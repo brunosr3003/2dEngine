@@ -19,15 +19,7 @@ pub const FONT_CHAR_PX: u32 = 8;
 pub const FONT_COLS: u32 = 32;
 pub const FONT_ORIGIN_Y: u32 = 64; // inicio da area de fonte em px
 
-/// IDs logicos de tile — usados no WorldMap e no TileDef lookup.
-pub mod tile_id {
-    pub const FLOOR: u16 = 1;
-    pub const WALL:  u16 = 2;
-    pub const DIRT:  u16 = 3;
-    pub const WATER: u16 = 4;
-    #[allow(dead_code)]
-    pub const WOOD:  u16 = 5;
-}
+
 
 /// Descricao do layout para usar fora do modulo.
 pub struct AtlasLayout {

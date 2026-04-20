@@ -13,8 +13,8 @@ use shared::{EntityId, EntitySnapshot};
 use std::collections::{HashMap, VecDeque};
 
 /// Delay de render em ms. Quanto maior, mais suave mas mais "atrasado".
-/// 100ms = ~3 ticks de 30Hz — safe mesmo com 1 snapshot dropado.
-pub const RENDER_DELAY_MS: u64 = 100;
+/// 10ms prioriza responsividade e ainda permite interpolacao entre snapshots.
+pub const RENDER_DELAY_MS: u64 = 10;
 
 /// Snapshot de mundo com timestamp.
 #[derive(Clone)]

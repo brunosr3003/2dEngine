@@ -122,7 +122,7 @@ impl<G: Game> ApplicationHandler for Runner<G> {
                 if let Some(r) = &mut self.renderer {
                     if let Err(e) = r.render(
                         self.ctx.camera.view_proj(),
-                        &self.batch,
+                        &mut self.batch,
                         [0.05, 0.05, 0.08, 1.0],
                     ) {
                         tracing::warn!("render error: {e:?}");

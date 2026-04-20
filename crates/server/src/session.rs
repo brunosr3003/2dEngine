@@ -15,6 +15,7 @@ pub async fn handle_connection(
     peer: SocketAddr,
     to_world: mpsc::UnboundedSender<IncomingMessage>,
 ) -> Result<()> {
+    stream.set_nodelay(true)?;
     let ws = tokio_tungstenite::accept_async(stream).await?;
     tracing::info!("ws accepted from {peer}");
     let (mut write, mut read) = ws.split();

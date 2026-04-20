@@ -70,6 +70,7 @@ impl DebugDraw {
             uv_max: WHITE_UV_MAX,
             tint: color,
             rotation: angle,
+            ..Default::default()
         });
     }
 

@@ -73,6 +73,21 @@ impl BitmapFont {
         color: Vec4,
         batch: &mut SpriteBatch,
     ) {
+        self.draw_depth(text, pos, scale, color, 0.0, batch);
+    }
+
+    /// Como `draw`, mas permite especificar a profundidade (z-order) dos
+    /// caracteres. Use `layer::HUD` ou similar para garantir que texto fique
+    /// acima de entidades.
+    pub fn draw_depth(
+        &self,
+        text: &str,
+        pos: Vec2,
+        scale: f32,
+        color: Vec4,
+        depth: f32,
+        batch: &mut SpriteBatch,
+    ) {
         let size = self.char_size * scale;
         let adv  = self.advance_x * scale;
         let lh   = self.line_height * scale;
@@ -98,6 +113,7 @@ impl BitmapFont {
                     uv_min,
                     uv_max,
                     tint: color,
+                    depth,
                     ..Default::default()
                 });
             }

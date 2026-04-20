@@ -40,6 +40,14 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # Audio (native only; wasm usa web-sys::AudioContext na fase 5)
 rodio = { version = "0.17", default-features = false, features = ["mp3", "wav"] }
 
+# Persistencia (servidor)
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "macros"] }
+
+# Web (auth / cadastro)
+axum = "0.7"
+tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }
+argon2 = "0.5"
+
 # Internal workspace crates
 engine = { path = "crates/engine" }
 shared = { path = "crates/shared" }

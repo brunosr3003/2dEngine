@@ -40,7 +40,7 @@ impl NetClient {
 #[cfg(not(target_family = "wasm"))]
 pub fn connect(url: String) -> Result<NetClient> {
     use futures_util::{SinkExt, StreamExt};
-    use tokio_tungstenite::connect_async;
+    use tokio_tungstenite::connect_async_with_config;
     use tokio_tungstenite::tungstenite::Message;
 
     let (tx_in, rx_in) = mpsc::unbounded_channel::<ServerMessage>();
@@ -63,7 +63,7 @@ pub fn connect(url: String) -> Result<NetClient> {
                 }
             };
             rt.block_on(async move {
-                let ws = match connect_async(&url).await {
+                let ws = match connect_async_with_config(&url, None, true).await {
                     Ok((ws, _)) => ws,
                     Err(e) => {
                         *status_t.lock().unwrap() =

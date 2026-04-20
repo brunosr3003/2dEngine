@@ -45,3 +45,6 @@ pub struct EntitySnapshot {
     pub hp: Option<Health>,
     pub name: Option<String>,
 }
+
+#[derive(Clone, Copy, Debug)]
+pub struct PhysicsHandle(pub rapier2d::prelude::RigidBodyHandle);

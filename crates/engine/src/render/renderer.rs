@@ -310,9 +310,11 @@ impl Renderer {
     pub fn render(
         &mut self,
         view_proj: Mat4,
-        batch: &SpriteBatch,
+        batch: &mut SpriteBatch,
         clear: [f32; 4],
     ) -> Result<()> {
+        // Aplica z-ordering top-down (depth ascendente, estavel).
+        batch.sort_by_depth();
         // Atualiza camera
         let uniform = CameraUniform { view_proj: view_proj.to_cols_array_2d() };
         self.queue.write_buffer(&self.camera_buf, 0, bytemuck::bytes_of(&uniform));

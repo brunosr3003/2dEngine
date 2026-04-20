@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MMO 2D — Cadastro</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header>
+        <h1>MMO 2D</h1>
+        <p class="sub">Cadastre-se pra entrar no mundo.</p>
+      </header>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="register">Cadastrar</button>
+        <button class="tab" data-tab="login">Entrar</button>
+      </div>
+
+      <form id="form-register" class="card active" autocomplete="off">
+        <label>
+          <span>Usuário</span>
+          <input name="username" required minlength="1" maxlength="32" placeholder="seu_nome" />
+        </label>
+        <label>
+          <span>Email</span>
+          <input name="email" type="email" required placeholder="voce@exemplo.com" />
+        </label>
+        <label>
+          <span>Senha</span>
+          <input name="password" type="password" required minlength="6" />
+        </label>
+        <button type="submit">Criar conta</button>
+        <p class="msg" data-msg></p>
+      </form>
+
+      <form id="form-login" class="card" autocomplete="off">
+        <label>
+          <span>Usuário</span>
+          <input name="username" required />
+        </label>
+        <label>
+          <span>Senha</span>
+          <input name="password" type="password" required />
+        </label>
+        <button type="submit">Entrar</button>
+        <p class="msg" data-msg></p>
+      </form>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

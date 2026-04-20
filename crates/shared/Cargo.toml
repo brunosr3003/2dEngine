@@ -13,3 +13,4 @@ bincode.workspace = true
 glam.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
+rapier2d = "0.32.0"

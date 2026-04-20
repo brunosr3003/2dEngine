@@ -14,16 +14,19 @@ pub enum ClientMessage {
         protocol_version: u16,
         client_version: String,
     },
-    /// Login apos handshake. No scaffold usamos token stub; trocar por
-    /// JWT/OAuth2/etc. em producao.
+    /// Login apos handshake. O servidor valida `password` contra a tabela
+    /// `accounts` (argon2id). Ha uma pagina web para cadastro.
     Login {
         username: String,
-        token: String,
+        password: String,
     },
     /// Envio periodico de intent do jogador. O servidor e a autoridade —
     /// aqui so dizemos "quero mover para X, mirando em Y".
     Input(InputFrame),
     Chat(String),
+    /// Ping com timestamp do cliente (ms). Servidor responde com `Pong` carregando
+    /// o mesmo valor para o cliente medir RTT.
+    Ping { client_time_ms: u64 },
     RequestDisconnect,
 }
 
@@ -66,6 +69,18 @@ pub enum ServerMessage {
     Chat {
         from: String,
         text: String,
+    },
+    /// Resposta a `ClientMessage::Ping`. Carrega o mesmo `client_time_ms` para
+    /// o cliente calcular RTT sem manter estado.
+    Pong {
+        client_time_ms: u64,
+        server_time_ms: u64,
+    },
+    /// Atualizacao de progresso do proprio jogador (XP, level). Enviada
+    /// no login e sempre que XP mudar.
+    ProgressUpdate {
+        xp: u64,
+        level: u32,
     },
     Kick {
         reason: String,

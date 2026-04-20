@@ -11,13 +11,13 @@ mod atlas_gen;
 mod interpolation;
 mod net_client;
 mod prediction;
-mod world_gen;
+
 
 use atlas_gen::AtlasLayout;
 use engine::anim::{AnimClip, AnimPlayer, AnimRegistry};
 use engine::app::{run, AppConfig, AppContext, Game};
 use engine::glam::{Vec2, Vec4};
-use engine::render::{BitmapFont, Renderer, Sprite, SpriteBatch};
+use engine::render::{layer, BitmapFont, Renderer, Sprite, SpriteBatch};
 use engine::tilemap::{TileDef, Tilemap};
 use engine::winit::keyboard::KeyCode;
 use interpolation::{InterpolationBuffer, RENDER_DELAY_MS};
@@ -47,12 +47,23 @@ fn main() -> anyhow::Result<()> {
 
     let server_url = std::env::var("SERVER_URL")
         .unwrap_or_else(|_| "ws://127.0.0.1:9000".into());
-    let username = std::env::var("USERNAME")
+    // PLAYER_NAME tem prioridade; depois USER (POSIX) / USERNAME (Windows)
+    // como fallback. Em macOS USER=bruno mas USERNAME nao e exportado.
+    let username = std::env::var("PLAYER_NAME")
+        .or_else(|_| std::env::var("USER"))
+        .or_else(|_| std::env::var("USERNAME"))
         .unwrap_or_else(|_| format!("Guest{}", std::process::id() & 0xFFFF));
+    let password = std::env::var("PLAYER_PASSWORD").unwrap_or_default();
+    if password.is_empty() {
+        tracing::warn!(
+            "PLAYER_PASSWORD nao definido — o servidor vai recusar o login. \
+             Cadastre a conta em http://localhost:5173 e exporte PLAYER_PASSWORD."
+        );
+    }
 
     run(
         AppConfig { title: "MMORPG 2D — Fase 2", tick_hz: 30, initial_size: (1280, 720) },
-        MmoClient::new(server_url, username),
+        MmoClient::new(server_url, username, password),
     )
 }
 
@@ -61,10 +72,12 @@ fn main() -> anyhow::Result<()> {
 pub struct MmoClient {
     server_url: String,
     username:   String,
+    password:   String,
     net:        Option<NetClient>,
 
     // Mundo
     tilemap:        Option<Tilemap>,
+    world_map:      Option<shared::world_gen::WorldMap>,
     anim_registry:  AnimRegistry,
     // AnimPlayer por EntityId (remoto) ou proprio jogador
     anim_players:   HashMap<EntityId, AnimPlayer>,
@@ -82,19 +95,30 @@ pub struct MmoClient {
     input_seq:            u32,
     server_time_offset_ms: i64,
     last_ping_ms:         u64,
+    ping_timer_s:         f32,
     connected:            bool,
+    xp:                   u64,
+    level:                u32,
+
+    // Chat log (display-only): ultimas mensagens recebidas
+    chat_log: std::collections::VecDeque<String>,
 
     // Debug
     show_debug: bool,
 }
 
+const CHAT_LOG_MAX: usize = 6;
+const PING_INTERVAL_S: f32 = 1.0;
+
 impl MmoClient {
-    pub fn new(server_url: String, username: String) -> Self {
+    pub fn new(server_url: String, username: String, password: String) -> Self {
         Self {
             server_url,
             username,
+            password,
             net: None,
             tilemap: None,
+            world_map: None,
             anim_registry: AnimRegistry::new(),
             anim_players: HashMap::new(),
             entity_names: HashMap::new(),
@@ -106,10 +130,15 @@ impl MmoClient {
             input_seq: 0,
             server_time_offset_ms: 0,
             last_ping_ms: 0,
+            ping_timer_s: 0.0,
             connected: false,
+            xp: 0,
+            level: 0,
+            chat_log: std::collections::VecDeque::with_capacity(CHAT_LOG_MAX),
             show_debug: false,
         }
     }
+
 }
 
 impl Game for MmoClient {
@@ -136,7 +165,7 @@ impl Game for MmoClient {
         ));
 
         // 4. Gerar tilemap procedural
-        let world = world_gen::generate(42, 80, 80);
+        let world = shared::world_gen::generate(42, 128, 128);
         let mut map = Tilemap::new(world.width, world.height, 1.0);
 
         // Adicionar TileDefs na ordem dos tile_id (1=FLOOR, 2=WALL...)
@@ -157,6 +186,7 @@ impl Game for MmoClient {
         ctx.camera.position = Vec2::new(sx as f32 + 0.5, sy as f32 + 0.5);
 
         self.tilemap = Some(map);
+        self.world_map = Some(world);
 
         // 5. Conectar ao servidor
         tracing::info!("conectando em {}", self.server_url);
@@ -168,7 +198,7 @@ impl Game for MmoClient {
                 });
                 n.send(ClientMessage::Login {
                     username: self.username.clone(),
-                    token: "dev".into(),
+                    password: self.password.clone(),
                 });
                 self.net = Some(n);
             }
@@ -184,12 +214,33 @@ impl Game for MmoClient {
                     ServerMessage::HandshakeAck { server_time_ms, .. } => {
                         let local_ms = now_ms() as i64;
                         self.server_time_offset_ms = server_time_ms as i64 - local_ms;
-                        self.last_ping_ms = (now_ms() as i64 - local_ms).unsigned_abs();
+                    }
+                    ServerMessage::ProgressUpdate { xp, level } => {
+                        let leveled_up = level > self.level && self.level > 0;
+                        self.xp = xp;
+                        self.level = level;
+                        if leveled_up {
+                            if self.chat_log.len() == CHAT_LOG_MAX {
+                                self.chat_log.pop_front();
+                            }
+                            self.chat_log.push_back(format!("LEVEL UP! L{level}"));
+                        }
+                    }
+                    ServerMessage::Pong { client_time_ms, server_time_ms } => {
+                        // RTT = agora - quando enviamos o Ping
+                        let rtt = now_ms().saturating_sub(client_time_ms);
+                        self.last_ping_ms = rtt;
+                        // Reestima offset assumindo latência simétrica
+                        let one_way = (rtt / 2) as i64;
+                        self.server_time_offset_ms =
+                            server_time_ms as i64 - (client_time_ms as i64 + one_way);
                     }
                     ServerMessage::LoginOk { entity_id, spawn, .. } => {
                         tracing::info!("login ok — {:?} @ {spawn}", entity_id);
                         self.self_entity = Some(entity_id);
-                        self.prediction  = Some(PredictionBuffer::new(spawn));
+                        if let Some(map) = &self.world_map {
+                            self.prediction = Some(PredictionBuffer::new(spawn, map));
+                        }
                         ctx.camera.position = spawn;
                         self.entity_names.insert(entity_id, self.username.clone());
                         self.connected = true;
@@ -200,11 +251,11 @@ impl Game for MmoClient {
                     }
                     ServerMessage::Snapshot(snap) => {
                         // Reconciliacao do proprio jogador
-                        if let (Some(sid), Some(pred)) =
-                            (self.self_entity, &mut self.prediction)
+                        if let (Some(sid), Some(pred), Some(map)) =
+                            (self.self_entity, &mut self.prediction, &self.world_map)
                         {
                             if let Some(e) = snap.entities.iter().find(|e| e.id == sid) {
-                                pred.reconcile(e.pos, snap.last_input_seq);
+                                pred.reconcile(e.pos, snap.last_input_seq, map);
                             }
                         }
                         // Nomes de jogadores que chegam no snapshot
@@ -217,12 +268,25 @@ impl Game for MmoClient {
                     }
                     ServerMessage::Chat { from, text } => {
                         tracing::info!("[chat] {from}: {text}");
+                        if self.chat_log.len() == CHAT_LOG_MAX {
+                            self.chat_log.pop_front();
+                        }
+                        self.chat_log.push_back(format!("{from}: {text}"));
                     }
                     ServerMessage::Kick { reason } => {
                         tracing::warn!("kicked: {reason}");
                         ctx.should_exit = true;
                     }
                 }
+            }
+        }
+
+        // --- Ping periódico para medir RTT ---
+        self.ping_timer_s += dt;
+        if self.connected && self.ping_timer_s >= PING_INTERVAL_S {
+            self.ping_timer_s = 0.0;
+            if let Some(net) = &self.net {
+                net.send(ClientMessage::Ping { client_time_ms: now_ms() });
             }
         }
 
@@ -236,7 +300,9 @@ impl Game for MmoClient {
             if ctx.input.key_pressed(KeyCode::ShiftLeft)  { btns |= buttons::DASH; }
 
             let frame = InputFrame { seq: self.input_seq, tick: 0, move_dir: mv, aim, buttons: btns };
-            if let Some(pred) = &mut self.prediction { pred.push_input(frame); }
+            if let (Some(pred), Some(map)) = (&mut self.prediction, &self.world_map) { 
+                pred.push_input(frame, map); 
+            }
             if let Some(net)  = &self.net            { net.send(ClientMessage::Input(frame)); }
         }
 
@@ -312,6 +378,7 @@ impl Game for MmoClient {
                     uv_min: Vec2::ZERO,
                     uv_max: Vec2::splat(0.004),
                     tint: Vec4::new(1.0, 0.9, 0.2, 1.0),
+                    depth: layer::ENTITY - pos.y,
                     ..Default::default()
                 });
                 continue;
@@ -335,16 +402,18 @@ impl Game for MmoClient {
                 uv_min,
                 uv_max,
                 tint,
+                depth: layer::ENTITY - pos.y,
                 ..Default::default()
             });
 
-            // Sombra circular no chao
+            // Sombra circular no chao (atras da entidade)
             batch.push(&Sprite {
                 position: pos - Vec2::Y * 0.38,
                 size: Vec2::new(0.5, 0.12),
                 uv_min: Vec2::ZERO,
                 uv_max: Vec2::splat(0.004),
                 tint: Vec4::new(0.0, 0.0, 0.0, 0.35),
+                depth: layer::SHADOW - pos.y,
                 ..Default::default()
             });
 
@@ -360,6 +429,7 @@ impl Game for MmoClient {
                     size: Vec2::new(bar_w, bar_h),
                     uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
                     tint: Vec4::new(0.2, 0.05, 0.05, 0.85),
+                    depth: layer::HP_BAR - pos.y,
                     ..Default::default()
                 });
                 // preenchimento
@@ -370,6 +440,7 @@ impl Game for MmoClient {
                         size: Vec2::new(bar_w * fill, bar_h),
                         uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
                         tint: fill_color,
+                        depth: layer::HP_BAR - pos.y + 0.1,
                         ..Default::default()
                     });
                 }
@@ -388,7 +459,7 @@ impl Game for MmoClient {
                     } else {
                         Vec4::new(0.9, 0.9, 0.9, 1.0)
                     };
-                    font.draw(name, name_pos, 1.0, color, batch);
+                    font.draw_depth(name, name_pos, 1.0, color, layer::NAMEPLATE - pos.y, batch);
                 }
             }
         }
@@ -400,12 +471,29 @@ impl Game for MmoClient {
             let top_left = Vec2::new(vis.min.x + margin, vis.max.y - margin);
             let bottom_left = Vec2::new(vis.min.x + margin, vis.min.y + 1.2);
 
-            // Coordenadas e dicas no topo
+            // Coordenadas, ping e dicas no topo
             let pos_text = format!(
-                "({:.0}, {:.0})  F3=debug  ESC=sair",
-                ctx.camera.position.x, ctx.camera.position.y
+                "({:.0}, {:.0})  ping={}ms  F3=debug  ESC=sair",
+                ctx.camera.position.x, ctx.camera.position.y, self.last_ping_ms
             );
-            font.draw(&pos_text, top_left, 0.85, Vec4::new(0.8, 0.8, 0.8, 1.0), batch);
+            font.draw_depth(&pos_text, top_left, 0.85, Vec4::new(0.8, 0.8, 0.8, 1.0), layer::HUD, batch);
+
+            // Chat log (display-only) sobreposto acima do status
+            if !self.chat_log.is_empty() {
+                let line_h = 0.35;
+                let base = Vec2::new(vis.min.x + margin, vis.min.y + 1.2 + line_h);
+                for (i, msg) in self.chat_log.iter().rev().enumerate() {
+                    let y = base.y + i as f32 * line_h;
+                    font.draw_depth(
+                        msg,
+                        Vec2::new(base.x, y),
+                        0.75,
+                        Vec4::new(0.85, 0.9, 1.0, 0.9),
+                        layer::HUD,
+                        batch,
+                    );
+                }
+            }
 
             // Status de conexao em baixo
             let status = if self.connected {
@@ -413,7 +501,7 @@ impl Game for MmoClient {
             } else {
                 "Conectando...".to_string()
             };
-            font.draw(&status, bottom_left, 0.85, Vec4::new(0.7, 0.8, 0.7, 1.0), batch);
+            font.draw_depth(&status, bottom_left, 0.85, Vec4::new(0.7, 0.8, 0.7, 1.0), layer::HUD, batch);
 
             // Painel de debug (F3)
             if self.show_debug {
@@ -423,7 +511,86 @@ impl Game for MmoClient {
                     RENDER_DELAY_MS,
                     ctx.camera.zoom,
                 );
-                font.draw(&dbg, top_left - Vec2::Y * 0.45, 0.8, Vec4::new(0.5, 1.0, 0.5, 1.0), batch);
+                font.draw_depth(&dbg, top_left - Vec2::Y * 0.45, 0.8, Vec4::new(0.5, 1.0, 0.5, 1.0), layer::HUD, batch);
+            }
+
+            // HUD do jogador (HP bar grande no meio da tela)
+            let self_hp = self.visible_entities.iter()
+                .find(|e| Some(e.id) == self.self_entity)
+                .and_then(|e| e.hp);
+                
+            if let Some(hp) = self_hp {
+                let bar_w = 5.0;
+                let bar_h = 0.4;
+                let fill = (hp.current as f32 / hp.max as f32).clamp(0.0, 1.0);
+                let bar_pos = Vec2::new(vis.min.x + (vis.max.x - vis.min.x) / 2.0, vis.min.y + margin + 0.3);
+                
+                // Fundo da barra
+                batch.push(&Sprite {
+                    position: bar_pos,
+                    size: Vec2::new(bar_w, bar_h),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(0.2, 0.05, 0.05, 0.9),
+                    depth: layer::HUD,
+                    ..Default::default()
+                });
+                // Preenchimento
+                if fill > 0.0 {
+                    batch.push(&Sprite {
+                        position: bar_pos + Vec2::new((fill - 1.0) * bar_w * 0.5, 0.0),
+                        size: Vec2::new(bar_w * fill, bar_h),
+                        uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                        tint: Vec4::new(0.9, 0.2, 0.2, 1.0),
+                        depth: layer::HUD + 0.1,
+                        ..Default::default()
+                    });
+                }
+
+                // Texto do HP centralizado
+                let hp_label = format!("{}/{}", hp.current, hp.max);
+                let label_w = font.measure_width(&hp_label) * 0.8;
+                font.draw_depth(&hp_label, bar_pos + Vec2::new(-label_w * 0.5, 0.15), 0.8, Vec4::ONE, layer::HUD + 0.2, batch);
+
+                // Barra de XP abaixo da HP
+                let next = shared::xp_for_level(self.level + 1);
+                let cur_floor = shared::xp_for_level(self.level);
+                let span = (next - cur_floor).max(1);
+                let progress = ((self.xp.saturating_sub(cur_floor)) as f32 / span as f32).clamp(0.0, 1.0);
+                let xp_bar_pos = bar_pos - Vec2::new(0.0, bar_h + 0.12);
+                let xp_bar_h = 0.18;
+                batch.push(&Sprite {
+                    position: xp_bar_pos,
+                    size: Vec2::new(bar_w, xp_bar_h),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(0.08, 0.08, 0.12, 0.9),
+                    depth: layer::HUD,
+                    ..Default::default()
+                });
+                if progress > 0.0 {
+                    batch.push(&Sprite {
+                        position: xp_bar_pos + Vec2::new((progress - 1.0) * bar_w * 0.5, 0.0),
+                        size: Vec2::new(bar_w * progress, xp_bar_h),
+                        uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                        tint: Vec4::new(0.35, 0.75, 1.0, 0.95),
+                        depth: layer::HUD + 0.1,
+                        ..Default::default()
+                    });
+                }
+                let xp_label = format!(
+                    "L{}  {}/{} XP",
+                    self.level,
+                    self.xp.saturating_sub(cur_floor),
+                    span
+                );
+                let xp_label_w = font.measure_width(&xp_label) * 0.7;
+                font.draw_depth(
+                    &xp_label,
+                    xp_bar_pos + Vec2::new(-xp_label_w * 0.5, 0.08),
+                    0.7,
+                    Vec4::new(0.9, 0.95, 1.0, 1.0),
+                    layer::HUD + 0.2,
+                    batch,
+                );
             }
         }
     }

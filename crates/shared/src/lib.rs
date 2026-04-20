@@ -6,6 +6,9 @@
 pub mod components;
 pub mod constants;
 pub mod protocol;
+pub mod world_gen;
+pub mod physics;
 
 pub use components::*;
 pub use constants::*;
+pub use physics::*;

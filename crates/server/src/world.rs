@@ -7,7 +7,7 @@ use shared::{
     EntityId, EntityKind, EntitySnapshot, Health, PlayerId, Position, Velocity,
     AOI_RADIUS, ATTACK_COOLDOWN, ENEMY_ATTACK_COOLDOWN, ENEMY_ATTACK_RANGE,
     ENEMY_DETECT_RANGE, ENEMY_SPEED, ENEMY_START_COUNT, ENTITY_RADIUS, PLAYER_SPEED,
-    PROJ_RADIUS, PROJ_SPEED, PROJ_TTL, RESPAWN_DELAY,
+    PROJ_RADIUS, PROJ_SPEED, PROJ_TTL, RESPAWN_DELAY, SPATIAL_CELL_SIZE,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -26,6 +26,9 @@ pub enum IncomingMessage {
     Connected(SessionHandle),
     Disconnected(SessionId),
     Message(SessionId, ClientMessage),
+    /// Resultado de uma autenticacao async (ver `auth::authenticate`).
+    /// Enviado pela task de auth de volta ao world loop.
+    AuthResult(SessionId, Result<crate::auth::AuthSuccess, crate::auth::AuthError>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -56,10 +59,23 @@ pub struct Session {
     pub last_input_seq: u32,
     pub pending_input: Option<InputFrame>,
     pub logged_in: bool,
+    /// True enquanto a verificacao de senha esta rodando — recusa logins
+    /// duplicados da mesma sessao.
+    pub auth_in_flight: bool,
     pub attack_cooldown: f32,
     pub respawn_timer: Option<f32>,
     pub name: String,
     pub player_id: PlayerId,
+    pub account_id: Option<i64>,
+    /// Progresso acumulado da conta (persistido em `characters.xp`).
+    pub xp: u64,
+}
+
+/// Recursos compartilhados para autenticacao assincrona.
+#[derive(Clone)]
+pub struct AuthCtx {
+    pub pool: sqlx::postgres::PgPool,
+    pub tx: mpsc::UnboundedSender<IncomingMessage>,
 }
 
 pub struct GameWorld {
@@ -67,22 +83,155 @@ pub struct GameWorld {
     pub sessions: HashMap<SessionId, Session>,
     pub tick: u32,
     pub removed_this_tick: Vec<EntityId>,
+    pub map: shared::world_gen::WorldMap,
+    pub physics: shared::physics::PhysicsWorld,
     next_entity_id: u32,
     next_player_id: u64,
+    /// Cache de personagens persistidos (login lookup / save batch).
+    characters: HashMap<String, crate::persistence::CharacterRow>,
+    /// Contexto de auth: pool Postgres + canal pra mandar AuthResult.
+    /// None = auth desabilitado (compat/testing).
+    auth_ctx: Option<AuthCtx>,
 }
 
 impl GameWorld {
-    pub fn new() -> Self {
+    pub fn new(characters: HashMap<String, crate::persistence::CharacterRow>) -> Self {
+        let map = shared::world_gen::generate(42, 128, 128);
+        let mut physics = shared::physics::PhysicsWorld::new();
+        map.build_colliders(&mut physics);
         let mut w = Self {
             ecs: World::new(),
             sessions: HashMap::new(),
             tick: 0,
             removed_this_tick: Vec::new(),
+            map,
+            physics,
             next_entity_id: 1,
             next_player_id: 1,
+            characters,
+            auth_ctx: None,
         };
         w.spawn_initial_enemies();
         w
+    }
+
+    pub fn set_auth_ctx(&mut self, ctx: AuthCtx) {
+        self.auth_ctx = Some(ctx);
+    }
+
+    /// Processa o resultado de autenticacao async. Se OK, faz o spawn completo
+    /// do jogador (carregando character salvo se existir).
+    pub fn on_auth_result(
+        &mut self,
+        sid: SessionId,
+        result: Result<crate::auth::AuthSuccess, crate::auth::AuthError>,
+    ) {
+        let handle = match self.sessions.get_mut(&sid) {
+            Some(s) => {
+                s.auth_in_flight = false;
+                s.handle.clone()
+            }
+            None => return,
+        };
+
+        let success = match result {
+            Ok(s) => s,
+            Err(e) => {
+                let reason = match e {
+                    crate::auth::AuthError::InvalidCredentials => {
+                        "credenciais invalidas".to_string()
+                    }
+                    crate::auth::AuthError::Internal(msg) => format!("erro interno: {msg}"),
+                };
+                tracing::info!("auth fail: {reason}");
+                let _ = handle.to_client.send(ServerMessage::LoginDenied { reason });
+                return;
+            }
+        };
+
+        // Recusa se o mesmo username ja esta logado em outra sessao.
+        let already_logged = self.sessions.values().any(|s| {
+            s.handle.id != sid
+                && s.logged_in
+                && s.account_id == Some(success.account_id)
+        });
+        if already_logged {
+            let _ = handle.to_client.send(ServerMessage::LoginDenied {
+                reason: "conta ja conectada".into(),
+            });
+            return;
+        }
+
+        let entity_id = match self.sessions.get(&sid) {
+            Some(s) => s.entity_id,
+            None => return,
+        };
+        let pid = self.alloc_player_id();
+        let default_spawn = {
+            let t = self.map.spawn_tile();
+            Vec2::new(t.0 as f32 + 0.5, t.1 as f32 + 0.5)
+        };
+        let (mut spawn, health, saved_xp) = match self.characters.get(&success.username) {
+            Some(row) => (row.pos, row.hp, row.xp),
+            None => (default_spawn, Health { current: 100, max: 100 }, 0u64),
+        };
+        // Valida que a posicao salva nao esta dentro de uma parede (mapa
+        // pode ter sido regenerado). Senao, volta pro spawn default.
+        let tx = spawn.x.floor() as i32;
+        let ty = spawn.y.floor() as i32;
+        if self.map.get(tx, ty) == shared::constants::tile_id::WALL {
+            tracing::warn!("saved pos ({tx},{ty}) em parede; usando spawn default");
+            spawn = default_spawn;
+        }
+        // Dá respiro ao jogador: despawna inimigos muito proximos do spawn.
+        let clear_r_sq: f32 = 6.0 * 6.0;
+        let close_enemies: Vec<(Entity, EntityId)> = self
+            .ecs
+            .query::<(&NetId, &Position, &EnemyTag)>()
+            .iter()
+            .filter_map(|(e, (net, pos, _))| {
+                if pos.0.distance_squared(spawn) < clear_r_sq {
+                    Some((e, net.0))
+                } else { None }
+            })
+            .collect();
+        for (e, eid) in close_enemies {
+            self.free_entity_body(e);
+            let _ = self.ecs.despawn(e);
+            self.removed_this_tick.push(eid);
+        }
+        let body = self.spawn_entity_body(spawn);
+        let e = self.ecs.spawn((
+            NetId(entity_id),
+            body,
+            Position(spawn),
+            Velocity(Vec2::ZERO),
+            health,
+            EntityKind::Player,
+            PlayerTag { name: success.username.clone(), player_id: pid },
+        ));
+
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.entity = Some(e);
+            s.logged_in = true;
+            s.name = success.username.clone();
+            s.player_id = pid;
+            s.account_id = Some(success.account_id);
+            s.xp = saved_xp;
+        }
+        tracing::info!(
+            "login ok: {} (account {}, xp {}) -> {:?} / {:?}",
+            success.username, success.account_id, saved_xp, pid, entity_id
+        );
+        let _ = handle.to_client.send(ServerMessage::LoginOk {
+            player_id: pid,
+            entity_id,
+            spawn,
+        });
+        let _ = handle.to_client.send(ServerMessage::ProgressUpdate {
+            xp: saved_xp,
+            level: shared::level_of_xp(saved_xp),
+        });
     }
 
     fn alloc_entity_id(&mut self) -> EntityId {
@@ -97,22 +246,81 @@ impl GameWorld {
         id
     }
 
+    /// Cria rigid body + collider dinâmico para jogador/inimigo em `pos`.
+    fn spawn_entity_body(&mut self, pos: Vec2) -> shared::PhysicsHandle {
+        let rb = rapier2d::prelude::RigidBodyBuilder::dynamic()
+            .translation([pos.x, pos.y].into())
+            .lock_rotations()
+            .build();
+        let rb_handle = self.physics.rigid_body_set.insert(rb);
+        let col = rapier2d::prelude::ColliderBuilder::ball(shared::constants::ENTITY_RADIUS)
+            .restitution(0.0)
+            .friction(0.0)
+            .collision_groups(rapier2d::prelude::InteractionGroups::new(
+                rapier2d::prelude::Group::GROUP_2,
+                rapier2d::prelude::Group::GROUP_1,
+                Default::default(),
+            ))
+            .build();
+        self.physics
+            .collider_set
+            .insert_with_parent(col, rb_handle, &mut self.physics.rigid_body_set);
+        shared::PhysicsHandle(rb_handle)
+    }
+
+    /// Remove o rigid body do ECS entity (se houver) antes de despawn.
+    fn free_entity_body(&mut self, e: Entity) {
+        if let Ok(h) = self.ecs.get::<&shared::PhysicsHandle>(e).map(|h| h.0) {
+            self.physics.remove_body(h);
+        }
+    }
+
     fn spawn_initial_enemies(&mut self) {
-        // Inimigos distribuidos em grid ao redor da origem
-        for i in 0..ENEMY_START_COUNT {
-            let angle = (i as f32 / ENEMY_START_COUNT as f32) * std::f32::consts::TAU;
-            let dist = 8.0 + (i % 3) as f32 * 5.0;
-            let pos = Vec2::new(angle.cos() * dist, angle.sin() * dist);
+        // Zona segura ao redor do spawn — nenhum inimigo nasce perto demais.
+        const SAFE_RADIUS: f32 = 14.0;
+        let spawn_tile = self.map.spawn_tile();
+        let safe_center = Vec2::new(spawn_tile.0 as f32 + 0.5, spawn_tile.1 as f32 + 0.5);
+        let safe_sq = SAFE_RADIUS * SAFE_RADIUS;
+        let w = self.map.width as i32;
+        let h = self.map.height as i32;
+        let floor = shared::constants::tile_id::FLOOR;
+
+        let mut seed: u64 = (self.tick as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xBEEF_1337;
+        let mut next_rand = || -> u64 {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            seed
+        };
+
+        let mut placed = 0usize;
+        let mut attempts = 0usize;
+        while placed < ENEMY_START_COUNT && attempts < ENEMY_START_COUNT * 50 {
+            attempts += 1;
+            let tx = (next_rand() % w as u64) as i32;
+            let ty = (next_rand() % h as u64) as i32;
+            if self.map.get(tx, ty) != floor { continue; }
+            let pos = Vec2::new(tx as f32 + 0.5, ty as f32 + 0.5);
+            if pos.distance_squared(safe_center) < safe_sq { continue; }
+
             let eid = self.alloc_entity_id();
+            let handle = self.spawn_entity_body(pos);
             self.ecs.spawn((
                 NetId(eid),
+                handle,
                 Position(pos),
                 Velocity(Vec2::ZERO),
                 Health { current: 50, max: 50 },
                 EntityKind::Enemy(0),
-                EnemyTag { attack_cooldown: (i as f32 * 0.3) % ENEMY_ATTACK_COOLDOWN, wander_timer: 0.0, wander_dir: Vec2::X },
+                EnemyTag {
+                    attack_cooldown: (placed as f32 * 0.3) % ENEMY_ATTACK_COOLDOWN,
+                    wander_timer: 0.0,
+                    wander_dir: Vec2::X,
+                },
             ));
+            placed += 1;
         }
+        tracing::info!("spawned {placed} inimigos (safe radius {SAFE_RADIUS})");
     }
 
     pub fn on_connect(&mut self, handle: SessionHandle) {
@@ -126,10 +334,13 @@ impl GameWorld {
                 last_input_seq: 0,
                 pending_input: None,
                 logged_in: false,
+                auth_in_flight: false,
                 attack_cooldown: 0.0,
                 respawn_timer: None,
                 name: String::new(),
                 player_id: PlayerId(0),
+                account_id: None,
+                xp: 0,
             },
         );
     }
@@ -137,6 +348,7 @@ impl GameWorld {
     pub fn on_disconnect(&mut self, id: SessionId) {
         if let Some(s) = self.sessions.remove(&id) {
             if let Some(e) = s.entity {
+                self.free_entity_body(e);
                 let _ = self.ecs.despawn(e);
             }
             tracing::info!("{:?} disconnected", s.entity_id);
@@ -162,32 +374,37 @@ impl GameWorld {
                     server_time_ms: now_ms(),
                 });
             }
-            ClientMessage::Login { username, .. } => {
-                let (entity_id, handle) = {
-                    let Some(session) = self.sessions.get(&id) else { return };
-                    (session.entity_id, session.handle.clone())
+            ClientMessage::Login { username, password } => {
+                // Nao autentica sincronamente — dispara task e marca sessao
+                // como auth_in_flight. O resultado volta via AuthResult.
+                let handle = {
+                    let Some(session) = self.sessions.get_mut(&id) else { return };
+                    if session.logged_in {
+                        return; // ja logado, ignorar duplicata
+                    }
+                    if session.auth_in_flight {
+                        return; // ja tem auth em andamento
+                    }
+                    session.auth_in_flight = true;
+                    session.name = username.clone();
+                    session.handle.clone()
                 };
-                let pid = self.alloc_player_id();
-                let spawn = Vec2::new(2.0, 2.0);
-                let e = self.ecs.spawn((
-                    NetId(entity_id),
-                    Position(spawn),
-                    Velocity(Vec2::ZERO),
-                    Health { current: 100, max: 100 },
-                    EntityKind::Player,
-                    PlayerTag { name: username.clone(), player_id: pid },
-                ));
-                if let Some(s) = self.sessions.get_mut(&id) {
-                    s.entity = Some(e);
-                    s.logged_in = true;
-                    s.name = username.clone();
-                    s.player_id = pid;
-                }
-                tracing::info!("login ok: {username} -> {:?} / {:?}", pid, entity_id);
-                let _ = handle.to_client.send(ServerMessage::LoginOk {
-                    player_id: pid,
-                    entity_id,
-                    spawn,
+
+                let Some(auth_ctx) = self.auth_ctx.clone() else {
+                    let _ = handle.to_client.send(ServerMessage::LoginDenied {
+                        reason: "auth nao disponivel".into(),
+                    });
+                    return;
+                };
+
+                tokio::spawn(async move {
+                    let result = crate::auth::authenticate(
+                        &auth_ctx.pool,
+                        &username,
+                        &password,
+                    )
+                    .await;
+                    let _ = auth_ctx.tx.send(IncomingMessage::AuthResult(id, result));
                 });
             }
             ClientMessage::Input(frame) => {
@@ -206,6 +423,14 @@ impl GameWorld {
                     let _ = s.handle.to_client.send(ServerMessage::Chat {
                         from: from.clone(),
                         text: text.clone(),
+                    });
+                }
+            }
+            ClientMessage::Ping { client_time_ms } => {
+                if let Some(session) = self.sessions.get(&id) {
+                    let _ = session.handle.to_client.send(ServerMessage::Pong {
+                        client_time_ms,
+                        server_time_ms: now_ms(),
                     });
                 }
             }
@@ -321,18 +546,50 @@ impl GameWorld {
         // ── E: spawnar projeteis ──────────────────────────────────────────────
         for sp in projs_to_spawn {
             let proj_id = self.alloc_entity_id();
+            let damage = if sp.from_player { 25 } else { 10 };
             self.ecs.spawn((
                 NetId(proj_id),
                 Position(sp.pos),
                 Velocity(sp.dir * PROJ_SPEED),
                 EntityKind::Projectile,
-                ProjTag { owner: sp.owner_id, from_player: sp.from_player, ttl: PROJ_TTL, damage: 10 },
+                ProjTag { owner: sp.owner_id, from_player: sp.from_player, ttl: PROJ_TTL, damage },
             ));
         }
 
-        // ── F: integrar movimento ─────────────────────────────────────────────
-        for (_, (pos, vel)) in self.ecs.query_mut::<(&mut Position, &Velocity)>() {
-            pos.0 += vel.0 * dt;
+        // ── F: integrar movimento e colisao com Rapier ────────────────────────
+        for (_, (handle, vel)) in self.ecs.query_mut::<(&shared::PhysicsHandle, &Velocity)>() {
+            if let Some(rb) = self.physics.rigid_body_set.get_mut(handle.0) {
+                rb.set_linvel([vel.0.x, vel.0.y].into(), true);
+            }
+        }
+
+        self.physics.step(dt);
+
+        for (_, (handle, pos)) in self.ecs.query_mut::<(&shared::PhysicsHandle, &mut Position)>() {
+            if let Some(rb) = self.physics.rigid_body_set.get(handle.0) {
+                pos.0.x = rb.translation().x;
+                pos.0.y = rb.translation().y;
+            }
+        }
+
+        // Projeteis nao tem rigidbody ainda, usam AABB manual
+        let mut proj_hit_wall: Vec<(Entity, EntityId)> = Vec::new();
+        for (e, (net, pos, vel, kind)) in self.ecs.query_mut::<(&NetId, &mut Position, &Velocity, &EntityKind)>() {
+            if matches!(kind, EntityKind::Projectile) {
+                let next_pos = pos.0 + vel.0 * dt;
+                let tx = next_pos.x.floor() as i32;
+                let ty = next_pos.y.floor() as i32;
+                if self.map.get(tx, ty) != shared::constants::tile_id::WALL {
+                    pos.0 = next_pos;
+                } else {
+                    proj_hit_wall.push((e, net.0));
+                }
+            }
+        }
+
+        for (e, eid) in proj_hit_wall {
+            let _ = self.ecs.despawn(e);
+            self.removed_this_tick.push(eid);
         }
 
         // ── G: deteccao de colisao projetil → entidade ────────────────────────
@@ -356,7 +613,8 @@ impl GameWorld {
 
         let hit_dist_sq = (ENTITY_RADIUS + PROJ_RADIUS) * (ENTITY_RADIUS + PROJ_RADIUS);
         let mut hit_projs: Vec<(Entity, EntityId)> = Vec::new();
-        let mut damage_events: Vec<(Entity, i32)> = Vec::new();
+        // damage: (target_entity, target_net_id, dmg, attacker_net_id, attacker_is_player)
+        let mut damage_events: Vec<(Entity, EntityId, i32, EntityId, bool)> = Vec::new();
 
         'outer: for (pe, pnet, ppos, powner, pfrom_player, pdmg) in &projs {
             for (te, tnet, tpos, is_player) in &targets {
@@ -364,16 +622,21 @@ impl GameWorld {
                 // Projetil de jogador só acerta inimigo; de inimigo só acerta jogador
                 if *pfrom_player == *is_player { continue; }
                 if ppos.distance_squared(*tpos) < hit_dist_sq {
-                    damage_events.push((*te, *pdmg));
+                    damage_events.push((*te, *tnet, *pdmg, *powner, *pfrom_player));
                     hit_projs.push((*pe, *pnet));
                     continue 'outer;
                 }
             }
         }
 
-        for (entity, dmg) in damage_events {
+        // Credita o golpe fatal ao atacante: alvo_net_id -> atacante_net_id
+        let mut kill_credits: HashMap<EntityId, EntityId> = HashMap::new();
+        for (entity, target_id, dmg, attacker_id, attacker_is_player) in damage_events {
             if let Ok(mut hp) = self.ecs.get::<&mut Health>(entity) {
                 hp.current = (hp.current - dmg).max(0);
+                if hp.current == 0 && attacker_is_player {
+                    kill_credits.insert(target_id, attacker_id);
+                }
             }
         }
         for (e, eid) in hit_projs {
@@ -392,6 +655,7 @@ impl GameWorld {
             .collect();
 
         for (e, eid, pos) in dead_enemies {
+            self.free_entity_body(e);
             let _ = self.ecs.despawn(e);
             self.removed_this_tick.push(eid);
             // Dropar loot
@@ -403,6 +667,28 @@ impl GameWorld {
                 EntityKind::Loot,
             ));
             tracing::debug!("enemy {:?} morreu, loot {:?}", eid, loot_id);
+
+            // Creditar XP para o jogador que matou
+            if let Some(attacker_eid) = kill_credits.get(&eid).copied() {
+                for session in self.sessions.values_mut() {
+                    if session.entity_id == attacker_eid && session.logged_in {
+                        session.xp = session.xp.saturating_add(shared::XP_PER_KILL);
+                        let new_level = shared::level_of_xp(session.xp);
+                        let _ = session
+                            .handle
+                            .to_client
+                            .send(ServerMessage::ProgressUpdate {
+                                xp: session.xp,
+                                level: new_level,
+                            });
+                        tracing::debug!(
+                            "kill credit: {} -> xp {} (L{})",
+                            session.name, session.xp, new_level
+                        );
+                        break;
+                    }
+                }
+            }
         }
 
         // ── I: morte de jogadores → respawn timer ─────────────────────────────
@@ -416,6 +702,7 @@ impl GameWorld {
             .collect();
 
         for (e, eid) in dead_players {
+            self.free_entity_body(e);
             let _ = self.ecs.despawn(e);
             self.removed_this_tick.push(eid);
             for session in self.sessions.values_mut() {
@@ -456,11 +743,16 @@ impl GameWorld {
     }
 
     fn respawn_player(&mut self, sid: SessionId, name: String, pid: PlayerId) {
-        let Some(session) = self.sessions.get(&sid) else { return };
-        let entity_id = session.entity_id;
-        let spawn = Vec2::new(2.0, 2.0);
+        let entity_id = match self.sessions.get(&sid) {
+            Some(s) => s.entity_id,
+            None => return,
+        };
+        let spawn_tile = self.map.spawn_tile();
+        let spawn = Vec2::new(spawn_tile.0 as f32 + 0.5, spawn_tile.1 as f32 + 0.5);
+        let handle = self.spawn_entity_body(spawn);
         let e = self.ecs.spawn((
             NetId(entity_id),
+            handle,
             Position(spawn),
             Velocity(Vec2::ZERO),
             Health { current: 100, max: 100 },
@@ -490,6 +782,16 @@ impl GameWorld {
 
         let removed = self.removed_this_tick.clone();
 
+        // Spatial hash: índices de `all` por célula. Cell size = AOI_RADIUS ⇒
+        // basta varrer 3×3 células ao redor do centro (ceil(AOI/cell) = 1).
+        let cell = AOI_RADIUS.max(SPATIAL_CELL_SIZE);
+        let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+        for (idx, snap) in all.iter().enumerate() {
+            let cx = (snap.pos.x / cell).floor() as i32;
+            let cy = (snap.pos.y / cell).floor() as i32;
+            grid.entry((cx, cy)).or_default().push(idx);
+        }
+
         let mut centers: HashMap<SessionId, Vec2> = HashMap::new();
         for (sid, session) in &self.sessions {
             if let Some(e) = session.entity {
@@ -503,11 +805,21 @@ impl GameWorld {
         for (sid, session) in &mut self.sessions {
             if !session.logged_in { continue; }
             let center = centers.get(sid).copied().unwrap_or(Vec2::ZERO);
-            let visible: Vec<EntitySnapshot> = all
-                .iter()
-                .filter(|s| s.pos.distance_squared(center) <= radius_sq)
-                .cloned()
-                .collect();
+            let ccx = (center.x / cell).floor() as i32;
+            let ccy = (center.y / cell).floor() as i32;
+            let mut visible: Vec<EntitySnapshot> = Vec::new();
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    if let Some(idxs) = grid.get(&(ccx + dx, ccy + dy)) {
+                        for &i in idxs {
+                            let s = &all[i];
+                            if s.pos.distance_squared(center) <= radius_sq {
+                                visible.push(s.clone());
+                            }
+                        }
+                    }
+                }
+            }
             let _ = session.handle.to_client.send(ServerMessage::Snapshot(WorldSnapshot {
                 tick: self.tick,
                 server_time_ms: now_ms(),
@@ -516,6 +828,52 @@ impl GameWorld {
                 removed: removed.clone(),
             }));
         }
+    }
+}
+
+impl GameWorld {
+    /// Monta linhas de persistencia com o estado atual de TODOS os jogadores
+    /// logados. Tambem atualiza o cache em memoria pra que o proximo login
+    /// (antes do DB terminar de gravar) ja veja dados novos.
+    pub fn collect_character_rows(&mut self) -> Vec<crate::persistence::CharacterRow> {
+        let mut out = Vec::with_capacity(self.sessions.len());
+        let mut entries: Vec<(String, Vec2, Health, u64)> = Vec::new();
+        for session in self.sessions.values() {
+            if !session.logged_in { continue; }
+            let Some(e) = session.entity else { continue };
+            let pos = match self.ecs.get::<&Position>(e) { Ok(p) => p.0, Err(_) => continue };
+            let hp = match self.ecs.get::<&Health>(e) { Ok(h) => *h, Err(_) => continue };
+            entries.push((session.name.clone(), pos, hp, session.xp));
+        }
+        for (name, pos, hp, xp) in entries {
+            let row = crate::persistence::CharacterRow {
+                name: name.clone(),
+                pos,
+                hp,
+                xp,
+            };
+            self.characters.insert(name, row.clone());
+            out.push(row);
+        }
+        out
+    }
+
+    /// Captura o estado do personagem de uma sessao especifica (para persistir
+    /// no disconnect). Retorna None se nao estiver logado ou ja morto.
+    pub fn take_character_for_disconnect(&mut self, sid: &SessionId) -> Option<crate::persistence::CharacterRow> {
+        let session = self.sessions.get(sid)?;
+        if !session.logged_in { return None; }
+        let e = session.entity?;
+        let pos = self.ecs.get::<&Position>(e).ok()?.0;
+        let hp = *self.ecs.get::<&Health>(e).ok()?;
+        let row = crate::persistence::CharacterRow {
+            name: session.name.clone(),
+            pos,
+            hp,
+            xp: session.xp,
+        };
+        self.characters.insert(session.name.clone(), row.clone());
+        Some(row)
     }
 }
 
