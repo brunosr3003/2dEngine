@@ -1,0 +1,26 @@
+[package]
+name = "engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+shared.workspace = true
+wgpu.workspace = true
+winit.workspace = true
+pollster.workspace = true
+glam.workspace = true
+bytemuck.workspace = true
+image.workspace = true
+hecs.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+
+[features]
+default = []
+# Habilita logging extra + assert de wgpu (mais lento).
+debug-gpu = []
