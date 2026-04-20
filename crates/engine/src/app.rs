@@ -1,6 +1,6 @@
 //! Event loop + bootstrap do renderer. Define a trait `Game` que clientes
-//! da engine implementam. O loop e fixed-timestep: `update()` roda em tick
-//! fixo (independente do FPS), `render()` roda por frame.
+//! implementam. Loop fixed-timestep: `update()` roda em tick fixo,
+//! `render()` roda a cada frame de display.
 
 use crate::input::Input;
 use crate::render::{Camera2D, Renderer, SpriteBatch};
@@ -13,15 +13,26 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
-/// Implementado pelo jogo. Todos os callbacks recebem `AppContext` com
-/// input, camera, viewport e flag de saida.
+/// Trait do jogo. O runner chama os metodos na ordem certa:
+/// `init` uma vez apos o renderer estar pronto, `update` em tick fixo,
+/// `render` todo frame.
 pub trait Game: 'static {
-    fn init(&mut self, ctx: &mut AppContext);
+    /// Chamado uma unica vez, apos o renderer estar pronto.
+    /// Use para carregar assets e fazer upload de atlas.
+    fn init(&mut self, ctx: &mut AppContext, renderer: &mut Renderer);
+
+    /// Chamado N vezes por frame (onde N = ticks acumulados).
+    /// `dt` = `TICK_DT` constante.
     fn update(&mut self, ctx: &mut AppContext, dt: f32);
+
+    /// Chamado uma vez por frame. Preencha `batch` com sprites.
+    /// `alpha` = fracao do tick para interpolacao de render.
     fn render(&mut self, ctx: &mut AppContext, batch: &mut SpriteBatch, alpha: f32);
+
     fn shutdown(&mut self, _ctx: &mut AppContext) {}
 }
 
+/// Dados de contexto disponiveis em todos os callbacks.
 pub struct AppContext {
     pub input: Input,
     pub camera: Camera2D,
@@ -65,9 +76,7 @@ struct Runner<G: Game> {
 
 impl<G: Game> ApplicationHandler for Runner<G> {
     fn resumed(&mut self, el: &ActiveEventLoop) {
-        if self.window.is_some() {
-            return;
-        }
+        if self.window.is_some() { return; }
         let (w, h) = self.config.initial_size;
         let attrs = Window::default_attributes()
             .with_title(self.config.title)
@@ -77,11 +86,15 @@ impl<G: Game> ApplicationHandler for Runner<G> {
         self.ctx.viewport = Vec2::new(size.width as f32, size.height as f32);
         self.ctx.camera.viewport = self.ctx.viewport;
         let renderer = pollster::block_on(Renderer::new(window.clone()))
-            .expect("renderer init failed");
+            .expect("renderer init");
         self.window = Some(window.clone());
         self.renderer = Some(renderer);
+
         if !self.initialized {
-            self.game.init(&mut self.ctx);
+            // Passa renderer mutavel para o jogo fazer upload de atlas, etc.
+            if let Some(r) = &mut self.renderer {
+                self.game.init(&mut self.ctx, r);
+            }
             self.initialized = true;
         }
         window.request_redraw();
@@ -90,9 +103,7 @@ impl<G: Game> ApplicationHandler for Runner<G> {
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         self.ctx.input.on_window_event(&event);
         match event {
-            WindowEvent::CloseRequested => {
-                self.ctx.should_exit = true;
-            }
+            WindowEvent::CloseRequested => { self.ctx.should_exit = true; }
             WindowEvent::Resized(size) => {
                 if let Some(r) = &mut self.renderer {
                     r.resize(size.width, size.height);
@@ -118,9 +129,7 @@ impl<G: Game> ApplicationHandler for Runner<G> {
                     }
                 }
                 self.ctx.input.end_frame();
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
+                if let Some(w) = &self.window { w.request_redraw(); }
             }
             _ => {}
         }
