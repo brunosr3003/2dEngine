@@ -20,6 +20,9 @@ tracing.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+rodio.workspace = true
+
 [features]
 default = []
 # Habilita logging extra + assert de wgpu (mais lento).

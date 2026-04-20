@@ -37,6 +37,9 @@ winit = "0.30"
 pollster = "0.3"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
+# Audio (native only; wasm usa web-sys::AudioContext na fase 5)
+rodio = { version = "0.17", default-features = false, features = ["mp3", "wav"] }
+
 # Internal workspace crates
 engine = { path = "crates/engine" }
 shared = { path = "crates/shared" }

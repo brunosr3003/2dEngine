@@ -1,3 +1,4 @@
+use crate::math::Rect;
 use glam::{Mat4, Vec2};
 
 /// Camera ortografica 2D. `zoom` e em pixels-por-tile — zoom=32 significa
@@ -18,6 +19,12 @@ impl Camera2D {
         let proj = Mat4::orthographic_rh(-half.x, half.x, -half.y, half.y, -1.0, 1.0);
         let view = Mat4::from_translation((-self.position).extend(0.0));
         proj * view
+    }
+
+    /// Retangulo visivel em coordenadas de mundo (com margem de 1 tile).
+    pub fn visible_rect(&self) -> Rect {
+        let half = self.viewport * 0.5 / self.zoom;
+        Rect { min: self.position - half, max: self.position + half }
     }
 
     /// Converte coordenada de tela (pixels, origem top-left) para mundo.

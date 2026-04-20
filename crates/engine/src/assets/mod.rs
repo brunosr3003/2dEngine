@@ -1,8 +1,6 @@
-//! Carregamento de imagens e atlas de texturas.
-//!
-//! Para a fase inicial usamos um atlas unico PNG carregado em RAM. Quando
-//! o jogo crescer, migrar para packer offline (TexturePacker-style) gerando
-//! `atlas.png + atlas.json` com sub-retangulos por sprite.
+pub mod manager;
+
+pub use manager::{AssetManager, ImageHandle};
 
 use anyhow::Result;
 use image::GenericImageView;
@@ -38,7 +36,6 @@ pub struct Atlas {
 impl Atlas {
     pub fn new() -> Self { Self::default() }
 
-    /// Helper: sub-retangulo em pixels dentro do atlas.
     pub fn insert_pixels(&mut self, name: impl Into<String>, x: u32, y: u32, w: u32, h: u32) {
         let Some(img) = &self.image else { return };
         let (iw, ih) = (img.width as f32, img.height as f32);
