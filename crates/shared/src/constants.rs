@@ -26,3 +26,12 @@ pub const PROTOCOL_VERSION: u16 = 1;
 
 /// Velocidade base do jogador em tiles/segundo.
 pub const PLAYER_SPEED: f32 = 5.0;
+
+/// Velocidade dos projeteis em tiles/segundo.
+pub const PROJ_SPEED: f32 = 15.0;
+
+/// Tempo de vida de um projetil em segundos.
+pub const PROJ_TTL: f32 = 1.5;
+
+/// Cooldown entre ataques em segundos.
+pub const ATTACK_COOLDOWN: f32 = 0.25;

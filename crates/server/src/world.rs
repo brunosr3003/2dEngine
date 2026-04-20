@@ -3,10 +3,10 @@
 
 use glam::Vec2;
 use hecs::{Entity, World};
-use shared::protocol::{ClientMessage, InputFrame, ServerMessage, WorldSnapshot};
+use shared::protocol::{buttons, ClientMessage, InputFrame, ServerMessage, WorldSnapshot};
 use shared::{
     EntityId, EntityKind, EntitySnapshot, Health, PlayerId, Position, Velocity, AOI_RADIUS,
-    PLAYER_SPEED,
+    ATTACK_COOLDOWN, PLAYER_SPEED, PROJ_SPEED, PROJ_TTL,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -30,6 +30,13 @@ pub enum IncomingMessage {
 #[derive(Debug, Clone, Copy)]
 pub struct NetId(pub EntityId);
 
+/// Tag de projetil.
+pub struct ProjTag {
+    pub owner: EntityId,
+    pub ttl: f32,
+    pub damage: i32,
+}
+
 /// Estado por sessao ativa.
 pub struct Session {
     pub handle: SessionHandle,
@@ -38,6 +45,7 @@ pub struct Session {
     pub last_input_seq: u32,
     pub pending_input: Option<InputFrame>,
     pub logged_in: bool,
+    pub attack_cooldown: f32,
 }
 
 /// Tag de jogador (so no servidor — nao serializa).
@@ -50,6 +58,7 @@ pub struct GameWorld {
     pub ecs: World,
     pub sessions: HashMap<SessionId, Session>,
     pub tick: u32,
+    pub removed_this_tick: Vec<EntityId>,
     next_entity_id: u32,
     next_player_id: u64,
 }
@@ -60,6 +69,7 @@ impl GameWorld {
             ecs: World::new(),
             sessions: HashMap::new(),
             tick: 0,
+            removed_this_tick: Vec::new(),
             next_entity_id: 1,
             next_player_id: 1,
         }
@@ -88,6 +98,7 @@ impl GameWorld {
                 last_input_seq: 0,
                 pending_input: None,
                 logged_in: false,
+                attack_cooldown: 0.0,
             },
         );
     }
@@ -121,7 +132,6 @@ impl GameWorld {
                 });
             }
             ClientMessage::Login { username, .. } => {
-                // Snapshot rapido para liberar o borrow.
                 let (entity_id, handle) = {
                     let Some(session) = self.sessions.get(&id) else { return };
                     (session.entity_id, session.handle.clone())
@@ -172,34 +182,97 @@ impl GameWorld {
 
     pub fn step(&mut self, dt: f32) {
         self.tick = self.tick.wrapping_add(1);
+        self.removed_this_tick.clear();
 
-        // Aplicar input pendente -> velocidade. Split-borrow manual.
-        let ecs = &mut self.ecs;
+        // Phase 1: processar inputs — coletar intenções de movimento e ataque.
+        // Split-borrow manual: sessions e ecs são campos separados.
+        struct InputResult {
+            entity: Entity,
+            new_vel: Vec2,
+            wants_attack: bool,
+            owner_id: EntityId,
+            aim: Vec2,
+        }
+        let mut input_results: Vec<InputResult> = Vec::new();
+
         for session in self.sessions.values_mut() {
+            if session.attack_cooldown > 0.0 {
+                session.attack_cooldown -= dt;
+            }
             let Some(entity) = session.entity else { continue };
             let Some(frame) = session.pending_input.take() else { continue };
             session.last_input_seq = frame.seq;
-            if let Ok(mut vel) = ecs.get::<&mut Velocity>(entity) {
-                let mag_sq = frame.move_dir.length_squared();
-                let dir = if mag_sq > 1.0 {
-                    frame.move_dir.normalize()
-                } else {
-                    frame.move_dir
-                };
-                vel.0 = dir * PLAYER_SPEED;
+
+            let dir = if frame.move_dir.length_squared() > 1.0 {
+                frame.move_dir.normalize()
+            } else {
+                frame.move_dir
+            };
+            let wants_attack =
+                (frame.buttons & buttons::PRIMARY != 0) && session.attack_cooldown <= 0.0;
+            if wants_attack {
+                session.attack_cooldown = ATTACK_COOLDOWN;
+            }
+            input_results.push(InputResult {
+                entity,
+                new_vel: dir * PLAYER_SPEED,
+                wants_attack,
+                owner_id: session.entity_id,
+                aim: frame.aim,
+            });
+        }
+
+        // Phase 2: aplicar velocidades ao ECS e coletar posições para spawn de projeteis.
+        struct AttackIntent {
+            owner_id: EntityId,
+            pos: Vec2,
+            dir: Vec2,
+        }
+        let mut attack_intents: Vec<AttackIntent> = Vec::new();
+
+        for ir in input_results {
+            if let Ok(mut vel) = self.ecs.get::<&mut Velocity>(ir.entity) {
+                vel.0 = ir.new_vel;
+            }
+            if ir.wants_attack {
+                let pos = self.ecs.get::<&Position>(ir.entity).map(|p| p.0).unwrap_or(Vec2::ZERO);
+                let shoot_dir = (ir.aim - pos).try_normalize().unwrap_or(Vec2::X);
+                attack_intents.push(AttackIntent { owner_id: ir.owner_id, pos, dir: shoot_dir });
             }
         }
 
-        // Integracao de movimento.
-        for (_e, (pos, vel)) in ecs.query_mut::<(&mut Position, &Velocity)>() {
+        // Phase 3: spawnar projeteis.
+        for intent in attack_intents {
+            let proj_id = self.alloc_entity_id();
+            self.ecs.spawn((
+                NetId(proj_id),
+                Position(intent.pos),
+                Velocity(intent.dir * PROJ_SPEED),
+                EntityKind::Projectile,
+                ProjTag { owner: intent.owner_id, ttl: PROJ_TTL, damage: 10 },
+            ));
+        }
+
+        // Phase 4: integrar movimento.
+        for (_e, (pos, vel)) in self.ecs.query_mut::<(&mut Position, &Velocity)>() {
             pos.0 += vel.0 * dt;
         }
 
-        // TODO: step de IA de NPCs, projeteis, colisoes.
+        // Phase 5: decrementar TTL de projeteis, coletar expirados.
+        let mut expired: Vec<(Entity, EntityId)> = Vec::new();
+        for (e, (net, proj)) in self.ecs.query_mut::<(&NetId, &mut ProjTag)>() {
+            proj.ttl -= dt;
+            if proj.ttl <= 0.0 {
+                expired.push((e, net.0));
+            }
+        }
+        for (e, eid) in expired {
+            let _ = self.ecs.despawn(e);
+            self.removed_this_tick.push(eid);
+        }
     }
 
     pub fn send_snapshots(&mut self) {
-        // Coletar todas as entidades networked de uma vez.
         let all: Vec<EntitySnapshot> = self
             .ecs
             .query::<(&NetId, &Position, &Velocity, &EntityKind)>()
@@ -214,7 +287,8 @@ impl GameWorld {
             })
             .collect();
 
-        // Centros (posicao do player de cada sessao).
+        let removed = self.removed_this_tick.clone();
+
         let mut centers: HashMap<SessionId, Vec2> = HashMap::new();
         for (sid, session) in &self.sessions {
             if let Some(e) = session.entity {
@@ -224,7 +298,6 @@ impl GameWorld {
             }
         }
 
-        // Snapshot por sessao (AOI ingenuo — melhorar para spatial grid).
         let radius_sq = AOI_RADIUS * AOI_RADIUS;
         for (sid, session) in &mut self.sessions {
             if !session.logged_in {
@@ -241,7 +314,7 @@ impl GameWorld {
                 server_time_ms: now_ms(),
                 last_input_seq: session.last_input_seq,
                 entities: visible,
-                removed: Vec::new(),
+                removed: removed.clone(),
             }));
         }
     }

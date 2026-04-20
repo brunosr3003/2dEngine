@@ -19,7 +19,6 @@ use engine::app::{run, AppConfig, AppContext, Game};
 use engine::glam::{Vec2, Vec4};
 use engine::render::{BitmapFont, Renderer, Sprite, SpriteBatch};
 use engine::tilemap::{TileDef, Tilemap};
-use engine::winit::event::MouseButton;
 use engine::winit::keyboard::KeyCode;
 use interpolation::{InterpolationBuffer, RENDER_DELAY_MS};
 use net_client::NetClient;
@@ -233,8 +232,8 @@ impl Game for MmoClient {
             let mv  = ctx.input.move_vector();
             let aim = ctx.camera.screen_to_world(ctx.input.mouse_pos());
             let mut btns = 0u32;
-            if ctx.input.mouse_pressed(MouseButton::Left) { btns |= buttons::PRIMARY; }
-            if ctx.input.key_pressed(KeyCode::Space)      { btns |= buttons::DASH; }
+            if ctx.input.key_down(KeyCode::Space)          { btns |= buttons::PRIMARY; }
+            if ctx.input.key_pressed(KeyCode::ShiftLeft)  { btns |= buttons::DASH; }
 
             let frame = InputFrame { seq: self.input_seq, tick: 0, move_dir: mv, aim, buttons: btns };
             if let Some(pred) = &mut self.prediction { pred.push_input(frame); }
@@ -305,16 +304,29 @@ impl Game for MmoClient {
                 e.pos
             };
 
+            // Projeteis: ponto amarelo pequeno, sem sombra ou nome
+            if matches!(e.kind, EntityKind::Projectile) {
+                batch.push(&Sprite {
+                    position: pos,
+                    size: Vec2::splat(0.3),
+                    uv_min: Vec2::ZERO,
+                    uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(1.0, 0.9, 0.2, 1.0),
+                    ..Default::default()
+                });
+                continue;
+            }
+
             let (uv_min, uv_max) = self.anim_players
                 .get(&e.id)
                 .map(|ap| ap.uvs(reg))
                 .unwrap_or((Vec2::ZERO, Vec2::ONE));
 
             let tint = match e.kind {
-                EntityKind::Player     => Vec4::ONE,
-                EntityKind::Enemy(_)   => Vec4::ONE,
-                EntityKind::Projectile => Vec4::new(1.0, 0.9, 0.2, 1.0),
-                EntityKind::Loot       => Vec4::new(0.6, 0.9, 1.0, 1.0),
+                EntityKind::Player   => Vec4::ONE,
+                EntityKind::Enemy(_) => Vec4::ONE,
+                EntityKind::Loot     => Vec4::new(0.6, 0.9, 1.0, 1.0),
+                _                    => Vec4::ONE,
             };
 
             batch.push(&Sprite {
@@ -345,7 +357,7 @@ impl Game for MmoClient {
                     let name_w = font.measure_width(name) * 0.35;
                     let name_pos = pos + Vec2::new(-name_w * 0.5, 0.65);
                     let color = if Some(e.id) == self_id {
-                        Vec4::new(1.0, 1.0, 0.4, 1.0) // proprio jogador: amarelo
+                        Vec4::new(1.0, 1.0, 0.4, 1.0)
                     } else {
                         Vec4::new(0.9, 0.9, 0.9, 1.0)
                     };
@@ -370,7 +382,7 @@ impl Game for MmoClient {
 
             // Status de conexao em baixo
             let status = if self.connected {
-                format!("{} jogadores  WASD=mover  LMB=atacar", self.visible_entities.len())
+                format!("{} jogadores  WASD=mover  SPACE=atacar", self.visible_entities.len())
             } else {
                 "Conectando...".to_string()
             };
