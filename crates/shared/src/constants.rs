@@ -35,3 +35,27 @@ pub const PROJ_TTL: f32 = 1.5;
 
 /// Cooldown entre ataques em segundos.
 pub const ATTACK_COOLDOWN: f32 = 0.25;
+
+/// Velocidade dos inimigos em tiles/segundo.
+pub const ENEMY_SPEED: f32 = 2.0;
+
+/// Raio em que o inimigo detecta e persegue jogadores.
+pub const ENEMY_DETECT_RANGE: f32 = 9.0;
+
+/// Raio de ataque do inimigo.
+pub const ENEMY_ATTACK_RANGE: f32 = 7.0;
+
+/// Cooldown de ataque dos inimigos.
+pub const ENEMY_ATTACK_COOLDOWN: f32 = 2.0;
+
+/// Raio de colisao de jogadores/inimigos (para hit detection).
+pub const ENTITY_RADIUS: f32 = 0.35;
+
+/// Raio de colisao de projeteis.
+pub const PROJ_RADIUS: f32 = 0.15;
+
+/// Tempo de respawn do jogador em segundos.
+pub const RESPAWN_DELAY: f32 = 3.0;
+
+/// Quantidade de inimigos gerados no inicio.
+pub const ENEMY_START_COUNT: usize = 20;

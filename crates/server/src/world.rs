@@ -1,12 +1,13 @@
-//! Mundo autoritativo. Owned inteiramente pela task `world_loop` em tick.rs —
-//! sem locks, sem Arc<Mutex>.
+//! Mundo autoritativo — Fase 3: combate, morte, respawn, inimigos com IA.
 
 use glam::Vec2;
 use hecs::{Entity, World};
 use shared::protocol::{buttons, ClientMessage, InputFrame, ServerMessage, WorldSnapshot};
 use shared::{
-    EntityId, EntityKind, EntitySnapshot, Health, PlayerId, Position, Velocity, AOI_RADIUS,
-    ATTACK_COOLDOWN, PLAYER_SPEED, PROJ_SPEED, PROJ_TTL,
+    EntityId, EntityKind, EntitySnapshot, Health, PlayerId, Position, Velocity,
+    AOI_RADIUS, ATTACK_COOLDOWN, ENEMY_ATTACK_COOLDOWN, ENEMY_ATTACK_RANGE,
+    ENEMY_DETECT_RANGE, ENEMY_SPEED, ENEMY_START_COUNT, ENTITY_RADIUS, PLAYER_SPEED,
+    PROJ_RADIUS, PROJ_SPEED, PROJ_TTL, RESPAWN_DELAY,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -30,14 +31,24 @@ pub enum IncomingMessage {
 #[derive(Debug, Clone, Copy)]
 pub struct NetId(pub EntityId);
 
-/// Tag de projetil.
 pub struct ProjTag {
     pub owner: EntityId,
+    pub from_player: bool,
     pub ttl: f32,
     pub damage: i32,
 }
 
-/// Estado por sessao ativa.
+pub struct EnemyTag {
+    pub attack_cooldown: f32,
+    pub wander_timer: f32,
+    pub wander_dir: Vec2,
+}
+
+pub struct PlayerTag {
+    pub name: String,
+    pub player_id: PlayerId,
+}
+
 pub struct Session {
     pub handle: SessionHandle,
     pub entity: Option<Entity>,
@@ -46,10 +57,7 @@ pub struct Session {
     pub pending_input: Option<InputFrame>,
     pub logged_in: bool,
     pub attack_cooldown: f32,
-}
-
-/// Tag de jogador (so no servidor — nao serializa).
-pub struct PlayerTag {
+    pub respawn_timer: Option<f32>,
     pub name: String,
     pub player_id: PlayerId,
 }
@@ -65,14 +73,16 @@ pub struct GameWorld {
 
 impl GameWorld {
     pub fn new() -> Self {
-        Self {
+        let mut w = Self {
             ecs: World::new(),
             sessions: HashMap::new(),
             tick: 0,
             removed_this_tick: Vec::new(),
             next_entity_id: 1,
             next_player_id: 1,
-        }
+        };
+        w.spawn_initial_enemies();
+        w
     }
 
     fn alloc_entity_id(&mut self) -> EntityId {
@@ -87,6 +97,24 @@ impl GameWorld {
         id
     }
 
+    fn spawn_initial_enemies(&mut self) {
+        // Inimigos distribuidos em grid ao redor da origem
+        for i in 0..ENEMY_START_COUNT {
+            let angle = (i as f32 / ENEMY_START_COUNT as f32) * std::f32::consts::TAU;
+            let dist = 8.0 + (i % 3) as f32 * 5.0;
+            let pos = Vec2::new(angle.cos() * dist, angle.sin() * dist);
+            let eid = self.alloc_entity_id();
+            self.ecs.spawn((
+                NetId(eid),
+                Position(pos),
+                Velocity(Vec2::ZERO),
+                Health { current: 50, max: 50 },
+                EntityKind::Enemy(0),
+                EnemyTag { attack_cooldown: (i as f32 * 0.3) % ENEMY_ATTACK_COOLDOWN, wander_timer: 0.0, wander_dir: Vec2::X },
+            ));
+        }
+    }
+
     pub fn on_connect(&mut self, handle: SessionHandle) {
         let entity_id = self.alloc_entity_id();
         self.sessions.insert(
@@ -99,6 +127,9 @@ impl GameWorld {
                 pending_input: None,
                 logged_in: false,
                 attack_cooldown: 0.0,
+                respawn_timer: None,
+                name: String::new(),
+                player_id: PlayerId(0),
             },
         );
     }
@@ -137,7 +168,7 @@ impl GameWorld {
                     (session.entity_id, session.handle.clone())
                 };
                 let pid = self.alloc_player_id();
-                let spawn = Vec2::new(0.0, 0.0);
+                let spawn = Vec2::new(2.0, 2.0);
                 let e = self.ecs.spawn((
                     NetId(entity_id),
                     Position(spawn),
@@ -149,6 +180,8 @@ impl GameWorld {
                 if let Some(s) = self.sessions.get_mut(&id) {
                     s.entity = Some(e);
                     s.logged_in = true;
+                    s.name = username.clone();
+                    s.player_id = pid;
                 }
                 tracing::info!("login ok: {username} -> {:?} / {:?}", pid, entity_id);
                 let _ = handle.to_client.send(ServerMessage::LoginOk {
@@ -184,8 +217,7 @@ impl GameWorld {
         self.tick = self.tick.wrapping_add(1);
         self.removed_this_tick.clear();
 
-        // Phase 1: processar inputs — coletar intenções de movimento e ataque.
-        // Split-borrow manual: sessions e ecs são campos separados.
+        // ── A: processar inputs de jogadores ──────────────────────────────────
         struct InputResult {
             entity: Entity,
             new_vel: Vec2,
@@ -194,15 +226,11 @@ impl GameWorld {
             aim: Vec2,
         }
         let mut input_results: Vec<InputResult> = Vec::new();
-
         for session in self.sessions.values_mut() {
-            if session.attack_cooldown > 0.0 {
-                session.attack_cooldown -= dt;
-            }
+            if session.attack_cooldown > 0.0 { session.attack_cooldown -= dt; }
             let Some(entity) = session.entity else { continue };
             let Some(frame) = session.pending_input.take() else { continue };
             session.last_input_seq = frame.seq;
-
             let dir = if frame.move_dir.length_squared() > 1.0 {
                 frame.move_dir.normalize()
             } else {
@@ -210,9 +238,7 @@ impl GameWorld {
             };
             let wants_attack =
                 (frame.buttons & buttons::PRIMARY != 0) && session.attack_cooldown <= 0.0;
-            if wants_attack {
-                session.attack_cooldown = ATTACK_COOLDOWN;
-            }
+            if wants_attack { session.attack_cooldown = ATTACK_COOLDOWN; }
             input_results.push(InputResult {
                 entity,
                 new_vel: dir * PLAYER_SPEED,
@@ -222,68 +248,243 @@ impl GameWorld {
             });
         }
 
-        // Phase 2: aplicar velocidades ao ECS e coletar posições para spawn de projeteis.
-        struct AttackIntent {
-            owner_id: EntityId,
-            pos: Vec2,
-            dir: Vec2,
-        }
-        let mut attack_intents: Vec<AttackIntent> = Vec::new();
+        // ── B: snapshot de posições de jogadores para IA dos inimigos ─────────
+        let player_positions: Vec<(EntityId, Vec2)> = self
+            .ecs
+            .query::<(&NetId, &Position, &EntityKind)>()
+            .iter()
+            .filter_map(|(_, (net, pos, kind))| {
+                if matches!(kind, EntityKind::Player) { Some((net.0, pos.0)) } else { None }
+            })
+            .collect();
 
+        // ── C: IA dos inimigos ────────────────────────────────────────────────
+        struct SpawnProj { owner_id: EntityId, from_player: bool, pos: Vec2, dir: Vec2 }
+        let mut projs_to_spawn: Vec<SpawnProj> = Vec::new();
+
+        for (_, (net, pos, vel, enemy)) in
+            self.ecs.query_mut::<(&NetId, &Position, &mut Velocity, &mut EnemyTag)>()
+        {
+            if enemy.attack_cooldown > 0.0 { enemy.attack_cooldown -= dt; }
+            enemy.wander_timer -= dt;
+
+            let nearest = player_positions.iter().min_by(|a, b| {
+                a.1.distance_squared(pos.0).partial_cmp(&b.1.distance_squared(pos.0)).unwrap()
+            });
+
+            if let Some((_, ppos)) = nearest {
+                let dist = pos.0.distance(*ppos);
+                if dist < ENEMY_DETECT_RANGE {
+                    let chase_dir = (*ppos - pos.0).try_normalize().unwrap_or(Vec2::X);
+                    vel.0 = chase_dir * ENEMY_SPEED;
+                    if dist < ENEMY_ATTACK_RANGE && enemy.attack_cooldown <= 0.0 {
+                        enemy.attack_cooldown = ENEMY_ATTACK_COOLDOWN;
+                        projs_to_spawn.push(SpawnProj {
+                            owner_id: net.0,
+                            from_player: false,
+                            pos: pos.0,
+                            dir: chase_dir,
+                        });
+                    }
+                } else {
+                    // Vagar aleatoriamente
+                    if enemy.wander_timer <= 0.0 {
+                        let seed = lcg(self.tick as u64 ^ net.0.0 as u64 ^ 0xCAFE);
+                        let angle = lcg_f32(seed) * std::f32::consts::TAU;
+                        enemy.wander_dir = Vec2::new(angle.cos(), angle.sin());
+                        enemy.wander_timer = 1.5 + lcg_f32(lcg(seed)) * 2.5;
+                    }
+                    vel.0 = enemy.wander_dir * ENEMY_SPEED * 0.4;
+                }
+            } else {
+                vel.0 = Vec2::ZERO;
+            }
+        }
+
+        // ── D: aplicar velocidades de jogadores + coletar ataques ────────────
         for ir in input_results {
             if let Ok(mut vel) = self.ecs.get::<&mut Velocity>(ir.entity) {
                 vel.0 = ir.new_vel;
             }
             if ir.wants_attack {
                 let pos = self.ecs.get::<&Position>(ir.entity).map(|p| p.0).unwrap_or(Vec2::ZERO);
-                let shoot_dir = (ir.aim - pos).try_normalize().unwrap_or(Vec2::X);
-                attack_intents.push(AttackIntent { owner_id: ir.owner_id, pos, dir: shoot_dir });
+                let dir = (ir.aim - pos).try_normalize().unwrap_or(Vec2::X);
+                projs_to_spawn.push(SpawnProj {
+                    owner_id: ir.owner_id,
+                    from_player: true,
+                    pos,
+                    dir,
+                });
             }
         }
 
-        // Phase 3: spawnar projeteis.
-        for intent in attack_intents {
+        // ── E: spawnar projeteis ──────────────────────────────────────────────
+        for sp in projs_to_spawn {
             let proj_id = self.alloc_entity_id();
             self.ecs.spawn((
                 NetId(proj_id),
-                Position(intent.pos),
-                Velocity(intent.dir * PROJ_SPEED),
+                Position(sp.pos),
+                Velocity(sp.dir * PROJ_SPEED),
                 EntityKind::Projectile,
-                ProjTag { owner: intent.owner_id, ttl: PROJ_TTL, damage: 10 },
+                ProjTag { owner: sp.owner_id, from_player: sp.from_player, ttl: PROJ_TTL, damage: 10 },
             ));
         }
 
-        // Phase 4: integrar movimento.
-        for (_e, (pos, vel)) in self.ecs.query_mut::<(&mut Position, &Velocity)>() {
+        // ── F: integrar movimento ─────────────────────────────────────────────
+        for (_, (pos, vel)) in self.ecs.query_mut::<(&mut Position, &Velocity)>() {
             pos.0 += vel.0 * dt;
         }
 
-        // Phase 5: decrementar TTL de projeteis, coletar expirados.
+        // ── G: deteccao de colisao projetil → entidade ────────────────────────
+        let projs: Vec<(Entity, EntityId, Vec2, EntityId, bool, i32)> = self
+            .ecs
+            .query::<(&NetId, &Position, &ProjTag)>()
+            .iter()
+            .map(|(e, (net, pos, p))| (e, net.0, pos.0, p.owner, p.from_player, p.damage))
+            .collect();
+
+        let targets: Vec<(Entity, EntityId, Vec2, bool)> = self
+            .ecs
+            .query::<(&NetId, &Position, &EntityKind)>()
+            .iter()
+            .filter_map(|(e, (net, pos, kind))| match kind {
+                EntityKind::Player => Some((e, net.0, pos.0, true)),
+                EntityKind::Enemy(_) => Some((e, net.0, pos.0, false)),
+                _ => None,
+            })
+            .collect();
+
+        let hit_dist_sq = (ENTITY_RADIUS + PROJ_RADIUS) * (ENTITY_RADIUS + PROJ_RADIUS);
+        let mut hit_projs: Vec<(Entity, EntityId)> = Vec::new();
+        let mut damage_events: Vec<(Entity, i32)> = Vec::new();
+
+        'outer: for (pe, pnet, ppos, powner, pfrom_player, pdmg) in &projs {
+            for (te, tnet, tpos, is_player) in &targets {
+                if tnet == powner { continue; } // sem auto-dano
+                // Projetil de jogador só acerta inimigo; de inimigo só acerta jogador
+                if *pfrom_player == *is_player { continue; }
+                if ppos.distance_squared(*tpos) < hit_dist_sq {
+                    damage_events.push((*te, *pdmg));
+                    hit_projs.push((*pe, *pnet));
+                    continue 'outer;
+                }
+            }
+        }
+
+        for (entity, dmg) in damage_events {
+            if let Ok(mut hp) = self.ecs.get::<&mut Health>(entity) {
+                hp.current = (hp.current - dmg).max(0);
+            }
+        }
+        for (e, eid) in hit_projs {
+            let _ = self.ecs.despawn(e);
+            self.removed_this_tick.push(eid);
+        }
+
+        // ── H: morte de inimigos → loot ───────────────────────────────────────
+        let dead_enemies: Vec<(Entity, EntityId, Vec2)> = self
+            .ecs
+            .query::<(&NetId, &Position, &Health, &EnemyTag)>()
+            .iter()
+            .filter_map(|(e, (net, pos, hp, _))| {
+                if hp.current <= 0 { Some((e, net.0, pos.0)) } else { None }
+            })
+            .collect();
+
+        for (e, eid, pos) in dead_enemies {
+            let _ = self.ecs.despawn(e);
+            self.removed_this_tick.push(eid);
+            // Dropar loot
+            let loot_id = self.alloc_entity_id();
+            self.ecs.spawn((
+                NetId(loot_id),
+                Position(pos),
+                Velocity(Vec2::ZERO),
+                EntityKind::Loot,
+            ));
+            tracing::debug!("enemy {:?} morreu, loot {:?}", eid, loot_id);
+        }
+
+        // ── I: morte de jogadores → respawn timer ─────────────────────────────
+        let dead_players: Vec<(Entity, EntityId)> = self
+            .ecs
+            .query::<(&NetId, &Health, &PlayerTag)>()
+            .iter()
+            .filter_map(|(e, (net, hp, _))| {
+                if hp.current <= 0 { Some((e, net.0)) } else { None }
+            })
+            .collect();
+
+        for (e, eid) in dead_players {
+            let _ = self.ecs.despawn(e);
+            self.removed_this_tick.push(eid);
+            for session in self.sessions.values_mut() {
+                if session.entity_id == eid {
+                    session.entity = None;
+                    session.respawn_timer = Some(RESPAWN_DELAY);
+                    tracing::info!("{} morreu, respawn em {}s", session.name, RESPAWN_DELAY);
+                    break;
+                }
+            }
+        }
+
+        // ── J: TTL de projeteis ───────────────────────────────────────────────
         let mut expired: Vec<(Entity, EntityId)> = Vec::new();
         for (e, (net, proj)) in self.ecs.query_mut::<(&NetId, &mut ProjTag)>() {
             proj.ttl -= dt;
-            if proj.ttl <= 0.0 {
-                expired.push((e, net.0));
-            }
+            if proj.ttl <= 0.0 { expired.push((e, net.0)); }
         }
         for (e, eid) in expired {
             let _ = self.ecs.despawn(e);
             self.removed_this_tick.push(eid);
         }
+
+        // ── K: timers de respawn ──────────────────────────────────────────────
+        let mut respawns: Vec<(SessionId, String, PlayerId)> = Vec::new();
+        for (sid, session) in self.sessions.iter_mut() {
+            if let Some(timer) = &mut session.respawn_timer {
+                *timer -= dt;
+                if *timer <= 0.0 {
+                    session.respawn_timer = None;
+                    respawns.push((*sid, session.name.clone(), session.player_id));
+                }
+            }
+        }
+        for (sid, name, pid) in respawns {
+            self.respawn_player(sid, name, pid);
+        }
+    }
+
+    fn respawn_player(&mut self, sid: SessionId, name: String, pid: PlayerId) {
+        let Some(session) = self.sessions.get(&sid) else { return };
+        let entity_id = session.entity_id;
+        let spawn = Vec2::new(2.0, 2.0);
+        let e = self.ecs.spawn((
+            NetId(entity_id),
+            Position(spawn),
+            Velocity(Vec2::ZERO),
+            Health { current: 100, max: 100 },
+            EntityKind::Player,
+            PlayerTag { name: name.clone(), player_id: pid },
+        ));
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.entity = Some(e);
+        }
+        tracing::info!("respawn: {name}");
     }
 
     pub fn send_snapshots(&mut self) {
         let all: Vec<EntitySnapshot> = self
             .ecs
-            .query::<(&NetId, &Position, &Velocity, &EntityKind)>()
+            .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>)>()
             .iter()
-            .map(|(_e, (net, pos, vel, kind))| EntitySnapshot {
+            .map(|(_, (net, pos, vel, kind, hp, ptag))| EntitySnapshot {
                 id: net.0,
                 kind: *kind,
                 pos: pos.0,
                 vel: vel.0,
-                hp: None,
-                name: None,
+                hp: hp.copied(),
+                name: ptag.map(|p| p.name.clone()),
             })
             .collect();
 
@@ -300,9 +501,7 @@ impl GameWorld {
 
         let radius_sq = AOI_RADIUS * AOI_RADIUS;
         for (sid, session) in &mut self.sessions {
-            if !session.logged_in {
-                continue;
-            }
+            if !session.logged_in { continue; }
             let center = centers.get(sid).copied().unwrap_or(Vec2::ZERO);
             let visible: Vec<EntitySnapshot> = all
                 .iter()
@@ -318,6 +517,15 @@ impl GameWorld {
             }));
         }
     }
+}
+
+// LCG deterministico para wander de inimigos (sem dep de rand)
+fn lcg(seed: u64) -> u64 {
+    seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407)
+}
+
+fn lcg_f32(seed: u64) -> f32 {
+    (seed >> 11) as f32 / (1u64 << 53) as f32
 }
 
 fn now_ms() -> u64 {

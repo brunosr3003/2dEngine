@@ -39,6 +39,10 @@
 ### Física / Colisão
 - ✅ `move_and_slide` AABB discreta por eixo vs tilemap
 - ✅ `overlaps_solid` query
+- ✅ Projéteis server-side (spawn, movimento, colisão, TTL)
+- ✅ Damage resolution (hit detection projetil → entidade)
+- ✅ Morte de inimigos → drop de loot
+- ✅ Morte de jogadores → respawn automático (3s)
 - ⬜ Colisão entidade vs entidade (broadphase + narrow)
 - ⬜ Swept AABB para projéteis rápidos (anti-tunneling)
 
@@ -76,10 +80,13 @@
 - ✅ AOI naive por raio — filtra entidades fora do alcance
 - ⬜ Spatial hash grid (O(E + ΣAOI) — substitui O(E×S))
 - ⬜ Colisão server-side contra tilemap compartilhado
-- ⬜ Spawner de NPCs / inimigos com seed
-- ⬜ Projéteis server-side (spawn, movimento, colisão, TTL)
-- ⬜ Sistema de combate (dano, morte, respawn)
-- ⬜ Loot (drop ao morrer, coleta por proximidade)
+- ✅ Spawner de inimigos (20 NPCs no init, distribuidos em anel)
+- ✅ IA de inimigos: wander + chase + ataque (cooldown 2s)
+- ✅ Projéteis server-side (spawn, movimento, colisão, TTL)
+- ✅ Sistema de combate (dano, morte de inimigos, morte/respawn de jogadores)
+- ✅ Loot drop ao matar inimigo (EntityKind::Loot)
+- ⬜ Coleta de loot por proximidade
+- ⬜ Inventário / efeitos de loot
 - ⬜ Persistência — SQLite dev / Postgres prod
 - ⬜ Auth real (argon2, JWT) — hoje só stub "dev"
 - ⬜ Rate-limit por sessão
@@ -148,8 +155,8 @@
 | Fase | Status | Goal |
 |------|--------|------|
 | **1 — Scaffold** | ✅ | Loop end-to-end: cliente conecta, quadrados coloridos, servidor simula |
-| **2 — Mundo Jogável** | 🚧 | Mapa com tiles, sprites reais, animações, HUD básico, nomes |
-| **3 — Combate** | ⬜ | Projéteis, dano, morte, NPCs com IA, loot |
+| **2 — Mundo Jogável** | ✅ | Mapa com tiles, sprites reais, animações, HUD básico, nomes |
+| **3 — Combate** | 🚧 | Projéteis, dano, morte, NPCs com IA, loot |
 | **4 — Persistência** | ⬜ | Contas, personagens, inventário, banco de dados |
 | **5 — Cross-platform** | ⬜ | Android, iOS, Web (wasm) |
 | **6 — Conteúdo** | ⬜ | Biomas, dungeons, bosses, economia, polish |

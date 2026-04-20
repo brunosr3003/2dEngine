@@ -348,6 +348,33 @@ impl Game for MmoClient {
                 ..Default::default()
             });
 
+            // Barra de HP
+            if let Some(hp) = e.hp {
+                let fill = (hp.current as f32 / hp.max as f32).clamp(0.0, 1.0);
+                let bar_w = 0.75f32;
+                let bar_h = 0.07f32;
+                let bar_pos = pos + Vec2::new(0.0, 0.58);
+                // fundo
+                batch.push(&Sprite {
+                    position: bar_pos,
+                    size: Vec2::new(bar_w, bar_h),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(0.2, 0.05, 0.05, 0.85),
+                    ..Default::default()
+                });
+                // preenchimento
+                if fill > 0.0 {
+                    let fill_color = Vec4::new(1.0 - fill * 0.8, fill * 0.85, 0.1, 0.9);
+                    batch.push(&Sprite {
+                        position: bar_pos + Vec2::new((fill - 1.0) * bar_w * 0.5, 0.0),
+                        size: Vec2::new(bar_w * fill, bar_h),
+                        uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                        tint: fill_color,
+                        ..Default::default()
+                    });
+                }
+            }
+
             // Nome acima do sprite
             if let Some(font) = &self.font {
                 if matches!(e.kind, EntityKind::Player) {
@@ -355,7 +382,7 @@ impl Game for MmoClient {
                         .map(|s| s.as_str())
                         .unwrap_or("?");
                     let name_w = font.measure_width(name) * 0.35;
-                    let name_pos = pos + Vec2::new(-name_w * 0.5, 0.65);
+                    let name_pos = pos + Vec2::new(-name_w * 0.5, 0.68);
                     let color = if Some(e.id) == self_id {
                         Vec4::new(1.0, 1.0, 0.4, 1.0)
                     } else {
