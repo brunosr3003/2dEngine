@@ -1338,17 +1338,48 @@ impl GameWorld {
         // Aplica mortes reais acumuladas (downed_hp zerou por player).
         let deaths: Vec<(Entity, EntityId)> = std::mem::take(&mut pending_real_death);
         for (entity, eid) in deaths {
+            // Captura pos + inventario + equip antes de despawn pra dropar.
+            let death_pos = self.ecs.get::<&Position>(entity).map(|p| p.0).unwrap_or(Vec2::ZERO);
+            let mut drops: Vec<(u16, u32)> = Vec::new();
+            for session in self.sessions.values_mut() {
+                if session.entity_id == eid {
+                    // Drop todos os slots de inventario com qty>0
+                    for slot in &session.inventory {
+                        if slot.qty > 0 { drops.push((slot.item_id, slot.qty)); }
+                    }
+                    // Drop equipamento tambem
+                    for opt in [session.equipment.weapon, session.equipment.armor, session.equipment.ring] {
+                        if let Some(iid) = opt { drops.push((iid, 1)); }
+                    }
+                    // Limpa inv + equip do player morto
+                    for slot in &mut session.inventory {
+                        *slot = shared::InventorySlot::default();
+                    }
+                    session.equipment = shared::Equipment::default();
+                    session.stats = effective_stats(session.class, &session.equipment);
+                    session.inventory_dirty = true;
+                    session.stats_dirty = true;
+                    break;
+                }
+            }
+
             self.free_entity_body(entity);
             let _ = self.ecs.despawn(entity);
             self.removed_this_tick.push(eid);
+
+            if !drops.is_empty() {
+                let seed = lcg(self.tick as u64 ^ eid.0 as u64 ^ 0xDEAD_DEAD);
+                self.spawn_loot_drops(death_pos, &drops, seed);
+            }
+
             for session in self.sessions.values_mut() {
                 if session.entity_id == eid {
                     session.entity = None;
                     session.respawn_timer = Some(RESPAWN_DELAY);
                     session.downed = false;
                     session.downed_hp = 0;
-                    tracing::info!("{} MORREU (barra downed zerou) — respawn em {}s",
-                                   session.name, RESPAWN_DELAY);
+                    tracing::info!("{} MORREU (barra downed zerou) — {} itens dropados, respawn em {}s",
+                                   session.name, drops.len(), RESPAWN_DELAY);
                     break;
                 }
             }
@@ -1806,6 +1837,27 @@ impl GameWorld {
         if moved {
             session.vault_dirty = true;
             session.inventory_dirty = true;
+        }
+    }
+
+    /// Spawna uma lista de (item_id, qty) como loots no mundo em `pos`,
+    /// levemente espalhados em circulo.
+    fn spawn_loot_drops(&mut self, pos: Vec2, drops: &[(u16, u32)], seed: u64) {
+        let n = drops.len().max(1);
+        for (i, (item_id, qty)) in drops.iter().enumerate() {
+            if *qty == 0 { continue; }
+            let loot_id = self.alloc_entity_id();
+            let a = (i as f32 / n as f32) * std::f32::consts::TAU
+                + lcg_f32(seed ^ (*item_id as u64)) * 0.4;
+            let r = 0.4 + lcg_f32(seed ^ (i as u64)) * 0.9;
+            let offset = Vec2::new(a.cos(), a.sin()) * r;
+            self.ecs.spawn((
+                NetId(loot_id),
+                Position(pos + offset),
+                Velocity(Vec2::ZERO),
+                EntityKind::Loot(*item_id),
+                LootTag { item_id: *item_id, qty: *qty },
+            ));
         }
     }
 
