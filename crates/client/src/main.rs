@@ -100,6 +100,7 @@ pub struct MmoClient {
     xp:                   u64,
     level:                u32,
     fame:                 u64,
+    aura:                 u64,
     inventory:            Vec<shared::InventorySlot>,
     class:                shared::PlayerClass,
     stats:                shared::PlayerStats,
@@ -599,6 +600,7 @@ impl MmoClient {
             xp: 0,
             level: 0,
             fame: 0,
+            aura: 0,
             inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
             class: shared::PlayerClass::Warrior,
             stats: shared::PlayerClass::Warrior.base_stats(),
@@ -1122,6 +1124,9 @@ impl Game for MmoClient {
                     }
                     ServerMessage::FameUpdate { fame } => {
                         self.fame = fame;
+                    }
+                    ServerMessage::AuraUpdate { aura } => {
+                        self.aura = aura;
                     }
                     ServerMessage::ProgressUpdate { xp, level } => {
                         let leveled_up = level > self.level && self.level > 0;
@@ -1971,8 +1976,9 @@ impl Game for MmoClient {
                 shared::PlayerClass::Wizard  => "WIZ",
             };
             let pos_text = format!(
-                "[{class_name}] dmg={}  fama={}  ({:.0}, {:.0})  ping={}ms  ESC=menu",
-                self.stats.attack_damage, self.fame, ctx.camera.position.x, ctx.camera.position.y, self.last_ping_ms
+                "[{class_name}] dmg={}  fama={}  aura={}  ({:.0}, {:.0})  ping={}ms  ESC=menu",
+                self.stats.attack_damage, self.fame, self.aura,
+                ctx.camera.position.x, ctx.camera.position.y, self.last_ping_ms
             );
             font.draw_depth(&pos_text, top_left, 0.85 * h, Vec4::new(0.8, 0.8, 0.8, 1.0), layer::HUD, batch);
 

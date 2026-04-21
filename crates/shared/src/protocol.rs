@@ -157,6 +157,8 @@ pub enum ServerMessage {
     DownedUpdate { active: bool, dhp: i32, dhp_max: i32, timer_s: f32 },
     /// Atualizacao de Fame (pontuacao de prestigio).
     FameUpdate { fame: u64 },
+    /// Atualizacao de Aura/Poise (pontos de PvP).
+    AuraUpdate { aura: u64 },
     Kick {
         reason: String,
     },
