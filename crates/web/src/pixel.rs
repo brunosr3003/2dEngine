@@ -142,20 +142,17 @@ async fn generate(
     let system_prompt = format!(
         "Gere um sprite pixel-art {size}x{size} do tema: \"{}\".
 
-Regras obrigatorias:
-- Estilo: pixel art dark fantasy (tipo Children of Morta, Moonlighter),
-  bordas nitidas, SEM anti-aliasing, sombreamento em 2-3 tons por area.
+Regras tecnicas obrigatorias (estilo/tema vem do prompt do usuario):
+- Pixel art puro: bordas nitidas, SEM anti-aliasing, SEM blur.
 - Sprite centralizado ocupando 70-90% da area (use MUITAS celulas de
   cor — NAO gere matriz vazia nem sprite minusculo num canto).
 - Fundo sempre transparente (\"#00000000\").
-- Paleta rica: 10-16 cores distintas + transparente. Inclua shading:
-  cada area tem pelo menos cor-base + sombra-escura + highlight-claro.
-- Linhas de contorno: preto profundo (#0a0a0aff) em volta de todo o
-  corpo. Detalhes internos com cinza-escuro (#2a2a2a) ou cor-base
-  shade, nao preto puro.
-- Para humanoides: proporcoes anatomicas corretas
-  (cabeca ~1/5 da altura, tronco ~2/5, pernas ~2/5). Nao use 'chibi'
-  nem 'boneco de palito'. Musculatura visivel onde aplicavel.
+- Paleta rica: 10-18 cores distintas + transparente. Shading em 2-3
+  tons por area (cor-base + sombra + highlight).
+- Contorno preto ou escuro em volta do sprite pra definicao.
+- Proporcoes anatomicas corretas pra humanoides: cabeca ~1/5 da altura,
+  tronco ~2/5, pernas ~2/5. NAO use chibi/boneco-de-palito a menos
+  que o usuario peça explicitamente.
 
 Saida OBRIGATORIA: JSON puro (sem markdown, sem explicacao, sem texto
 antes ou depois), exatamente neste formato:
