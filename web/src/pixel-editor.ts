@@ -434,14 +434,6 @@ function boot_editor() {
   refresh_list();
 }
 
-// Init: tenta lista (se cookie valido ja skip do login)
-api_list().then(names => {
-  if (names !== null) {
-    // Response ok, mas list retorna array vazio mesmo sem auth — isso falha.
-    // Melhor: testar via list que requer auth; se array existe e response 200, estamos logados.
-    // Simplesmente mostra o gate por padrao:
-    setup_auth();
-  } else {
-    setup_auth();
-  }
-});
+// Init: liga o form de login imediatamente. Se ja tiver cookie valido,
+// a primeira chamada autenticada (list) deve ir direto.
+setup_auth();
