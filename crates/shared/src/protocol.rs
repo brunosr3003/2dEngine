@@ -167,6 +167,8 @@ pub enum ServerMessage {
     FameUpdate { fame: u64 },
     /// Atualizacao de Aura/Poise (pontos de PvP).
     AuraUpdate { aura: u64 },
+    /// Proficiencias: XP por tipo de arma (indice = Proficiency as u8).
+    ProficienciesUpdate { xp: [u64; 6] },
     /// Convite de party recebido. Cliente mostra popup de aceitar/recusar.
     PartyInviteReceived { from: String },
     /// Estado atual da party. Vazio = sem party.

@@ -32,6 +32,8 @@ pub struct CharacterRow {
     /// Aura/Poise: pontos ganhos SOMENTE em vitorias PvP. Perde ao ser
     /// morto por outro player. Base pra sistema de stagger futuro.
     pub aura: u64,
+    /// XP por proficiencia (sword/staff/etc). Indice = Proficiency as u8.
+    pub proficiencies: [u64; 6],
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -86,6 +88,17 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
         .await?;
 
     sqlx::query(
+        "CREATE TABLE IF NOT EXISTS proficiencies (
+            character_name TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE,
+            prof_kind      INTEGER NOT NULL,
+            xp             BIGINT  NOT NULL DEFAULT 0,
+            PRIMARY KEY (character_name, prof_kind)
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
         "CREATE TABLE IF NOT EXISTS inventory (
             character_name TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE,
             slot           INTEGER NOT NULL,
@@ -135,6 +148,7 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
         let inv = load_inventory(pool, &name).await?;
         let equip = load_equipment(pool, &name).await?;
         let vault = load_vault(pool, &name).await?;
+        let profs = load_proficiencies(pool, &name).await?;
         out.insert(
             name.clone(),
             CharacterRow {
@@ -147,10 +161,29 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
                 vault,
                 fame: fame.max(0) as u64,
                 aura: aura.max(0) as u64,
+                proficiencies: profs,
             },
         );
     }
     Ok(out)
+}
+
+async fn load_proficiencies(pool: &PgPool, char_name: &str) -> Result<[u64; 6]> {
+    let mut arr = [0u64; 6];
+    let rows = sqlx::query_as::<_, (i32, i64)>(
+        "SELECT prof_kind, xp FROM proficiencies WHERE character_name = $1",
+    )
+    .bind(char_name)
+    .fetch_all(pool)
+    .await?;
+    for (kind, xp) in rows {
+        if kind < 0 { continue; }
+        let idx = kind as usize;
+        if idx < arr.len() {
+            arr[idx] = xp.max(0) as u64;
+        }
+    }
+    Ok(arr)
 }
 
 async fn load_vault(pool: &PgPool, char_name: &str) -> Result<Vec<shared::InventorySlot>> {
@@ -307,6 +340,21 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                 .execute(&mut *tx)
                 .await?;
             }
+        }
+
+        // Proficiencias: upsert por prof_kind.
+        for (i, xp) in row.proficiencies.iter().enumerate() {
+            if *xp == 0 { continue; }
+            sqlx::query(
+                "INSERT INTO proficiencies (character_name, prof_kind, xp)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT(character_name, prof_kind) DO UPDATE SET xp = EXCLUDED.xp",
+            )
+            .bind(&row.name)
+            .bind(i as i32)
+            .bind(*xp as i64)
+            .execute(&mut *tx)
+            .await?;
         }
 
         // Vault: mesmo padrao do inventory.

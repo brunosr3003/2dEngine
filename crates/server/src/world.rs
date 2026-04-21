@@ -127,6 +127,9 @@ pub struct Session {
     pub carrying: Option<EntityId>,
     /// Se Some, esse jogador esta sendo carregado por outro.
     pub carried_by: Option<EntityId>,
+    /// XP por proficiencia. Indice = Proficiency as u8.
+    pub proficiencies: [u64; 6],
+    pub proficiencies_dirty: bool,
     /// Inventario do jogador. Tamanho fixo = shared::INVENTORY_SLOTS.
     pub inventory: Vec<shared::InventorySlot>,
     /// True quando o inventario mudou e precisa ser enviado pro cliente
@@ -433,9 +436,10 @@ impl GameWorld {
             let t = self.map.spawn_tile();
             Vec2::new(t.0 as f32 + 0.5, t.1 as f32 + 0.5)
         };
-        let (mut spawn, mut health, saved_xp, saved_inv, saved_equip, saved_vault, saved_fame, saved_aura) = match self.characters.get(&success.username) {
+        let (mut spawn, mut health, saved_xp, saved_inv, saved_equip, saved_vault, saved_fame, saved_aura, saved_profs) = match self.characters.get(&success.username) {
             Some(row) => (
-                row.pos, row.hp, row.xp, row.inventory.clone(), row.equipment, row.vault.clone(), row.fame, row.aura,
+                row.pos, row.hp, row.xp, row.inventory.clone(), row.equipment, row.vault.clone(),
+                row.fame, row.aura, row.proficiencies,
             ),
             None => {
                 let base = success.class.base_stats();
@@ -448,6 +452,7 @@ impl GameWorld {
                     vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                     0u64,
                     0u64,
+                    [0u64; 6],
                 )
             }
         };
@@ -507,6 +512,8 @@ impl GameWorld {
             s.fame_last_sent = u64::MAX; // forca envio inicial
             s.aura = saved_aura;
             s.aura_last_sent = u64::MAX;
+            s.proficiencies = saved_profs;
+            s.proficiencies_dirty = true;
             s.inventory = saved_inv.clone();
             s.inventory_dirty = false;
             s.stats_dirty = false;
@@ -740,6 +747,8 @@ impl GameWorld {
                 party_invite_from: None,
                 carrying: None,
                 carried_by: None,
+                proficiencies: [0; 6],
+                proficiencies_dirty: false,
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 inventory_dirty: false,
                 stats_dirty: false,
@@ -1355,6 +1364,25 @@ impl GameWorld {
                     kill_credits.insert(target_id, attacker_id);
                 }
             }
+            // Proficiency XP: atacante ganha XP na arma equipada por hit no alvo.
+            if attacker_is_player {
+                if let Some(attacker) = self.sessions.values_mut()
+                    .find(|s| s.entity_id == attacker_id)
+                {
+                    let weapon_id = attacker.equipment.weapon.unwrap_or(0);
+                    let prof = shared::Proficiency::from_item(weapon_id);
+                    let idx = prof as usize;
+                    if idx < attacker.proficiencies.len() {
+                        let old_lvl = shared::proficiency_level(attacker.proficiencies[idx]);
+                        // 1 XP por hit; mais com kill (tratado no bloco de kill).
+                        attacker.proficiencies[idx] = attacker.proficiencies[idx].saturating_add(1);
+                        let new_lvl = shared::proficiency_level(attacker.proficiencies[idx]);
+                        if new_lvl != old_lvl {
+                            attacker.proficiencies_dirty = true;
+                        }
+                    }
+                }
+            }
         }
         for (e, eid) in hit_projs {
             let _ = self.ecs.despawn(e);
@@ -1453,6 +1481,17 @@ impl GameWorld {
                         session.xp = session.xp.saturating_add(share);
                         if session.entity_id == attacker_eid {
                             session.fame = session.fame.saturating_add(fame_share);
+                            // Bonus de proficiencia ao matar: 10 XP na arma atual
+                            let weapon_id = session.equipment.weapon.unwrap_or(0);
+                            let prof = shared::Proficiency::from_item(weapon_id);
+                            let idx = prof as usize;
+                            if idx < session.proficiencies.len() {
+                                let old = shared::proficiency_level(session.proficiencies[idx]);
+                                session.proficiencies[idx] = session.proficiencies[idx].saturating_add(10);
+                                if shared::proficiency_level(session.proficiencies[idx]) != old {
+                                    session.proficiencies_dirty = true;
+                                }
+                            }
                         }
                         let new_level = shared::level_of_xp(session.xp);
                         let _ = session
@@ -1815,6 +1854,12 @@ impl GameWorld {
                     aura: session.aura,
                 });
             }
+            if session.proficiencies_dirty {
+                session.proficiencies_dirty = false;
+                let _ = session.handle.to_client.send(ServerMessage::ProficienciesUpdate {
+                    xp: session.proficiencies,
+                });
+            }
             // DownedUpdate: envia entrada/saida + updates com quantizacao do timer
             // pra evitar spam (quantizado em inteiro de segundo).
             let timer_q = session.downed_heal_timer.ceil() as i32;
@@ -1863,7 +1908,7 @@ impl GameWorld {
     /// (antes do DB terminar de gravar) ja veja dados novos.
     pub fn collect_character_rows(&mut self) -> Vec<crate::persistence::CharacterRow> {
         let mut out = Vec::with_capacity(self.sessions.len());
-        let mut entries: Vec<(String, Vec2, Health, u64, Vec<shared::InventorySlot>, shared::Equipment, Vec<shared::InventorySlot>, u64, u64)> = Vec::new();
+        let mut entries: Vec<(String, Vec2, Health, u64, Vec<shared::InventorySlot>, shared::Equipment, Vec<shared::InventorySlot>, u64, u64, [u64; 6])> = Vec::new();
         for session in self.sessions.values() {
             if !session.logged_in { continue; }
             let Some(e) = session.entity else { continue };
@@ -1879,9 +1924,10 @@ impl GameWorld {
                 session.vault.clone(),
                 session.fame,
                 session.aura,
+                session.proficiencies,
             ));
         }
-        for (name, pos, hp, xp, inventory, equipment, vault, fame, aura) in entries {
+        for (name, pos, hp, xp, inventory, equipment, vault, fame, aura, proficiencies) in entries {
             let row = crate::persistence::CharacterRow {
                 name: name.clone(),
                 pos,
@@ -1892,6 +1938,7 @@ impl GameWorld {
                 vault,
                 fame,
                 aura,
+                proficiencies,
             };
             self.characters.insert(name, row.clone());
             out.push(row);
@@ -2545,6 +2592,7 @@ impl GameWorld {
             vault: session.vault.clone(),
             fame: session.fame,
             aura: session.aura,
+            proficiencies: session.proficiencies,
         };
         self.characters.insert(session.name.clone(), row.clone());
         Some(row)

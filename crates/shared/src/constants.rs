@@ -22,7 +22,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 19;
+pub const PROTOCOL_VERSION: u16 = 20;
 
 /// Velocidade base do jogador em tiles/segundo.
 pub const PLAYER_SPEED: f32 = 5.0;
@@ -84,6 +84,60 @@ pub const DOWNED_REVIVE_HP_PCT: f32 = 0.05;
 /// HP maximo da barra do Downed State. So jogadores (nao monstros)
 /// conseguem reduzir — quando zera, morte real com respawn.
 pub const DOWNED_HP_MAX: i32 = 100;
+
+/// Tipos de proficiencia (classless). XP se acumula ao usar arma do tipo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[repr(u8)]
+pub enum Proficiency {
+    Sword    = 0,
+    Staff    = 1,
+    Dagger   = 2,
+    Bow      = 3,
+    Wand     = 4,
+    Unarmed  = 5,
+}
+
+impl Proficiency {
+    pub fn all() -> &'static [Proficiency] {
+        &[Self::Sword, Self::Staff, Self::Dagger, Self::Bow, Self::Wand, Self::Unarmed]
+    }
+
+    pub fn from_item(id: u16) -> Self {
+        match id {
+            _ if id == item_id::SWORD || id == item_id::GREAT_SWORD => Self::Sword,
+            _ if id == item_id::STAFF    => Self::Staff,
+            _ if id == item_id::DAGGER   => Self::Dagger,
+            _ if id == item_id::BOW      => Self::Bow,
+            _ if id == item_id::WAND     => Self::Wand,
+            _                            => Self::Unarmed,
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Sword   => "Espada",
+            Self::Staff   => "Cajado",
+            Self::Dagger  => "Adaga",
+            Self::Bow     => "Arco",
+            Self::Wand    => "Varinha",
+            Self::Unarmed => "Desarmado",
+        }
+    }
+}
+
+/// Nivel de proficiencia dado XP acumulado (curva quadratica similar ao XP do player).
+pub const fn proficiency_level(prof_xp: u64) -> u32 {
+    let mut lvl = 1u32;
+    let mut need = 50u64;
+    let mut rem = prof_xp;
+    while rem >= need {
+        rem -= need;
+        lvl += 1;
+        need = (lvl as u64) * 50;
+        if lvl >= 100 { break; }
+    }
+    lvl
+}
 
 /// XP ganho por matar um inimigo (fallback — helpers por kind mais abaixo).
 pub const XP_PER_KILL: u64 = 30;

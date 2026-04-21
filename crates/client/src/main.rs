@@ -103,6 +103,7 @@ pub struct MmoClient {
     aura:                 u64,
     party_members:        Vec<String>,
     party_invite_from:    Option<String>,
+    proficiencies:        [u64; 6],
     inventory:            Vec<shared::InventorySlot>,
     class:                shared::PlayerClass,
     stats:                shared::PlayerStats,
@@ -540,7 +541,7 @@ fn full_inv_layout(vis_min: Vec2, vis_max: Vec2, hud_scale: f32)
     let qs_h = slot_size + 0.5 * h;
     let eq_w = slot_size + 0.6 * h;
     let panel_w = bp_w + 1.5 * h + eq_w;
-    let panel_h = qs_h + bp_h + 2.5 * h;
+    let panel_h = qs_h + bp_h + 3.5 * h;
     let cx = (vis_min.x + vis_max.x) * 0.5;
     let cy = (vis_min.y + vis_max.y) * 0.5;
     let qs_origin_x = cx - panel_w * 0.5 + 0.5 * h + slot_size * 0.5;
@@ -605,6 +606,7 @@ impl MmoClient {
             aura: 0,
             party_members: Vec::new(),
             party_invite_from: None,
+            proficiencies: [0; 6],
             inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
             class: shared::PlayerClass::Warrior,
             stats: shared::PlayerClass::Warrior.base_stats(),
@@ -1136,6 +1138,9 @@ impl Game for MmoClient {
                         self.party_invite_from = Some(from.clone());
                         if self.chat_log.len() == CHAT_LOG_MAX { self.chat_log.pop_front(); }
                         self.chat_log.push_back(format!("{from} te convidou! /party accept ou /party decline"));
+                    }
+                    ServerMessage::ProficienciesUpdate { xp } => {
+                        self.proficiencies = xp;
                     }
                     ServerMessage::PartyUpdate { members } => {
                         self.party_members = members;
@@ -2127,7 +2132,7 @@ impl Game for MmoClient {
                 let qs_h = slot_size + 0.5 * h;
                 let eq_w = slot_size + 0.6 * h;
                 let panel_w = bp_w + 1.5 * h + eq_w;
-                let panel_h = qs_h + bp_h + 2.5 * h;
+                let panel_h = qs_h + bp_h + 3.5 * h;
                 let cx = (vis.min.x + vis.max.x) * 0.5;
                 let cy = (vis.min.y + vis.max.y) * 0.5;
                 // Fundo
@@ -2246,6 +2251,31 @@ impl Game for MmoClient {
                             Vec2::new(eq_origin_x + slot_size * 0.6, sy - 0.08 * h),
                             0.4 * h,
                             Vec4::new(0.8, 0.85, 0.9, 1.0),
+                            layer::HUD + 1.2, batch);
+                    }
+                }
+
+                // Proficiencias (abaixo do equip)
+                if let Some(font) = font_opt {
+                    let prof_y0 = bp_origin_y - (backpack_rows as f32) * (slot_size + gap) - 0.3 * h;
+                    font.draw_depth("Proficiencias:",
+                        Vec2::new(qs_origin_x - slot_size * 0.5, prof_y0),
+                        0.5 * h,
+                        Vec4::new(0.85, 0.9, 1.0, 1.0),
+                        layer::HUD + 1.2, batch);
+                    for (i, prof) in shared::Proficiency::all().iter().enumerate() {
+                        let idx = *prof as usize;
+                        let xp = self.proficiencies.get(idx).copied().unwrap_or(0);
+                        let lvl = shared::proficiency_level(xp);
+                        let col = i % 3;
+                        let row = i / 3;
+                        let x = qs_origin_x + (col as f32) * (2.5 * h);
+                        let y = prof_y0 - 0.4 * h - (row as f32) * (0.4 * h);
+                        let txt = format!("{}: L{} ({})", prof.display_name(), lvl, xp);
+                        font.draw_depth(&txt,
+                            Vec2::new(x, y),
+                            0.38 * h,
+                            if lvl > 1 { Vec4::new(1.0, 0.9, 0.4, 1.0) } else { Vec4::new(0.7, 0.72, 0.8, 0.9) },
                             layer::HUD + 1.2, batch);
                     }
                 }

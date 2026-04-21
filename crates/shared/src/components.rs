@@ -74,13 +74,11 @@ impl PlayerClass {
         }
     }
 
-    /// Stats iniciais derivados da classe.
+    /// Stats iniciais. Classless: todos os jogadores comecam iguais.
+    /// A diferenciacao vem do equipamento + proficiencias (hoje tracked mas
+    /// nao muda dano; futuro: afeta dano por tipo de arma).
     pub fn base_stats(&self) -> PlayerStats {
-        match self {
-            Self::Warrior => PlayerStats { hp_max: 140, mp_max:  20, dex:  8, wis:  6, attack_damage: 30 },
-            Self::Archer  => PlayerStats { hp_max:  90, mp_max:  40, dex: 14, wis:  8, attack_damage: 22 },
-            Self::Wizard  => PlayerStats { hp_max:  70, mp_max: 100, dex:  6, wis: 14, attack_damage: 45 },
-        }
+        PlayerStats { hp_max: 100, mp_max: 50, dex: 10, wis: 10, attack_damage: 20 }
     }
 }
 
