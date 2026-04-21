@@ -115,3 +115,15 @@ pub struct EntitySnapshot {
 
 #[derive(Clone, Copy, Debug)]
 pub struct PhysicsHandle(pub rapier2d::prelude::RigidBodyHandle);
+
+/// Identifica em qual "mapa logico" uma entidade esta.
+///
+/// HOJE (v1): tudo fica em "overworld"; portais teleportam dentro desse
+/// mesmo espaco. A tag existe como preparacao pro refactor futuro onde
+/// cada mapa tera physics/ECS isolados (ver TODO em server::world).
+#[derive(Clone, Debug)]
+pub struct MapId(pub String);
+
+impl MapId {
+    pub fn overworld() -> Self { Self("overworld".into()) }
+}

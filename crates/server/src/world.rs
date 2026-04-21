@@ -127,6 +127,9 @@ pub struct Session {
     pub carrying: Option<EntityId>,
     /// Se Some, esse jogador esta sendo carregado por outro.
     pub carried_by: Option<EntityId>,
+    /// Mapa logico onde o player esta. Hoje sempre "overworld"; reservado
+    /// pra refactor futuro com physics/ECS isolados por mapa.
+    pub current_map: String,
     /// XP por proficiencia. Indice = Proficiency as u8.
     pub proficiencies: [u64; 6],
     pub proficiencies_dirty: bool,
@@ -150,6 +153,21 @@ pub struct AuthCtx {
     pub tx: mpsc::UnboundedSender<IncomingMessage>,
 }
 
+/// Mundo autoritativo.
+///
+/// ## Multi-mapa (atual vs futuro)
+///
+/// HOJE (v1): um unico `map` + um unico `physics`. Multiplos "mapas"
+/// coexistem como regioes do mesmo espaco, separadas geograficamente
+/// (AOI isola entidades naturalmente). Portais teleportam jogadores
+/// dentro desse espaco.
+///
+/// TODO (v2): `maps: HashMap<String, MapInstance>` onde cada MapInstance
+/// tem `map + physics + boss_state`. Refactor grande (~50 sites de
+/// self.map/self.physics). Entidades tagueadas com `shared::MapId`,
+/// sessoes com `current_map`. Portais entre mapas dispararao o ja
+/// reservado `ServerMessage::MapChange`. Motivacao: escalar pra muitas
+/// dungeons simultaneas sem colisao geografica ou risco de overlap.
 pub struct GameWorld {
     pub ecs: World,
     pub sessions: HashMap<SessionId, Session>,
@@ -747,6 +765,7 @@ impl GameWorld {
                 party_invite_from: None,
                 carrying: None,
                 carried_by: None,
+                current_map: "overworld".into(),
                 proficiencies: [0; 6],
                 proficiencies_dirty: false,
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
