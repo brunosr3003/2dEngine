@@ -74,7 +74,10 @@
         </label>
         <textarea id="ia-prompt" rows="4"
           placeholder="ex: um guerreiro com armadura preta segurando uma espada curva, dark fantasy"></textarea>
-        <button id="btn-generate">Gerar</button>
+        <div class="gen-buttons">
+          <button id="btn-generate">Gerar (matriz)</button>
+          <button id="btn-generate-svg" title="Gera SVG e rasteriza. ~10x mais rapido e barato. Melhor pra shapes geometricas.">Gerar (SVG)</button>
+        </div>
         <div id="ia-status" class="status"></div>
 
         <h2>Salvar</h2>

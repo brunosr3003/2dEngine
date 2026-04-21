@@ -342,6 +342,64 @@ async function api_generate(prompt: string, model: string): Promise<string[][]> 
   return body.pixels;
 }
 
+async function api_generate_svg(prompt: string, model: string): Promise<string> {
+  const r = await fetch("/api/pixel/generate-svg", {
+    method: "POST",
+    headers: {"Content-Type": "application/json", ...auth_headers()},
+    body: JSON.stringify({ prompt, size: SIZE, model }),
+  });
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.error || `http ${r.status}`);
+  return body.svg as string;
+}
+
+/// Rasteriza SVG string num canvas SIZExSIZE e extrai matriz de hex.
+/// Pixel-perfect: imageSmoothingEnabled=false. Transparente onde alpha < 10.
+async function rasterize_svg_to_matrix(svg_text: string): Promise<string[][]> {
+  // Garante viewBox SIZExSIZE mesmo se o IA deu width/height em px
+  let svg = svg_text.trim();
+  if (!/viewBox=/.test(svg)) {
+    svg = svg.replace(/<svg/i, `<svg viewBox="0 0 ${SIZE} ${SIZE}"`);
+  }
+  // Garante xmlns
+  if (!/xmlns=/.test(svg)) {
+    svg = svg.replace(/<svg/i, `<svg xmlns="http://www.w3.org/2000/svg"`);
+  }
+  const blob = new Blob([svg], { type: "image/svg+xml" });
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("falha ao carregar SVG como imagem"));
+      img.src = url;
+    });
+    const c = document.createElement("canvas");
+    c.width = SIZE; c.height = SIZE;
+    const ctx = c.getContext("2d")!;
+    ctx.imageSmoothingEnabled = false;
+    // drawImage em canvas quadrado com SVG -> cada pixel = 1 celula logica
+    ctx.drawImage(img, 0, 0, SIZE, SIZE);
+    const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
+    const to_hex = (n: number) => n.toString(16).padStart(2, "0");
+    const pixels: string[][] = [];
+    for (let y = 0; y < SIZE; y++) {
+      const row: string[] = [];
+      for (let x = 0; x < SIZE; x++) {
+        const i = (y * SIZE + x) * 4;
+        const r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
+        if (a < 10) row.push("#00000000");
+        else row.push(`#${to_hex(r)}${to_hex(g)}${to_hex(b)}${to_hex(a)}`);
+      }
+      pixels.push(row);
+    }
+    return pixels;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 async function api_save(name: string, pixels: string[][]): Promise<{txt: string; png: string}> {
   const r = await fetch("/api/pixel/save", {
     method: "POST",
@@ -424,35 +482,55 @@ function refresh_list() {
 // ────────────── Wire IA / Save / Auth ──────────────
 
 function setup_ia() {
-  const btn = document.getElementById("btn-generate") as HTMLButtonElement;
+  const btn       = document.getElementById("btn-generate") as HTMLButtonElement;
+  const btn_svg   = document.getElementById("btn-generate-svg") as HTMLButtonElement;
   const prompt_el = document.getElementById("ia-prompt") as HTMLTextAreaElement;
-  const status = document.getElementById("ia-status")!;
-  btn.addEventListener("click", async () => {
+  const status    = document.getElementById("ia-status")!;
+
+  /// Fluxo compartilhado: mostra contador, chama getter, aplica no editor.
+  const run = async (
+    label: string,
+    fn: () => Promise<string[][]>,
+  ) => {
     const p = prompt_el.value.trim();
     if (!p) { status.textContent = "descreva o sprite"; status.className = "status err"; return; }
-    const model_el = document.getElementById("ia-model") as HTMLSelectElement;
-    const model = model_el.value;
     btn.disabled = true;
+    btn_svg.disabled = true;
     status.className = "status";
-    // Contador crescente enquanto espera
     const t0 = Date.now();
     const tick = setInterval(() => {
       const s = Math.floor((Date.now() - t0) / 1000);
-      status.textContent = `gerando (${model})... ${s}s`;
+      status.textContent = `${label}... ${s}s`;
     }, 500);
     try {
-      const pixels = await api_generate(p, model);
+      const pixels = await fn();
       editor.load_pixels(pixels);
       status.className = "status ok";
       const s = Math.floor((Date.now() - t0) / 1000);
-      status.textContent = `pronto em ${s}s (${model})`;
+      status.textContent = `pronto em ${s}s (${label})`;
     } catch (e: any) {
       status.className = "status err";
       status.textContent = e.message || "erro";
     } finally {
       clearInterval(tick);
       btn.disabled = false;
+      btn_svg.disabled = false;
     }
+  };
+
+  btn.addEventListener("click", async () => {
+    const model = (document.getElementById("ia-model") as HTMLSelectElement).value;
+    const p = prompt_el.value.trim();
+    await run(`matriz/${model}`, () => api_generate(p, model));
+  });
+
+  btn_svg.addEventListener("click", async () => {
+    const model = (document.getElementById("ia-model") as HTMLSelectElement).value;
+    const p = prompt_el.value.trim();
+    await run(`svg/${model}`, async () => {
+      const svg = await api_generate_svg(p, model);
+      return await rasterize_svg_to_matrix(svg);
+    });
   });
 }
 

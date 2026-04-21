@@ -107,6 +107,7 @@ pub fn router(state: PixelState) -> Router {
         .route("/auth", post(auth))
         .route("/verify", post(verify))
         .route("/generate", post(generate))
+        .route("/generate-svg", post(generate_svg))
         .route("/save", post(save_sprite))
         .route("/load", post(load_sprite))
         .route("/list", post(list_sprites))
@@ -155,6 +156,188 @@ async fn verify(
         (StatusCode::UNAUTHORIZED,
          Json(serde_json::json!({"error": "token invalido"}))).into_response()
     }
+}
+
+// ── GENERATE SVG (modo economico: Gemini gera SVG -> frontend rasteriza) ──
+
+#[derive(Deserialize)]
+struct GenerateSvgReq {
+    prompt: String,
+    #[serde(default = "default_size")]
+    size: u32,
+    #[serde(default)]
+    model: Option<String>,
+}
+
+#[derive(Serialize)]
+struct GenerateSvgRes {
+    svg: String,
+}
+
+async fn generate_svg(
+    State(state): State<PixelState>,
+    headers: HeaderMap,
+    Json(req): Json<GenerateSvgReq>,
+) -> Response {
+    if !state.is_authed(&headers) {
+        return (StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "nao autenticado"}))).into_response();
+    }
+    let size = req.size.clamp(8, 128);
+    let Some(key) = state.gemini_key.as_ref().clone() else {
+        return (StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({"error": "GEMINI_API_KEY nao configurada"}))).into_response();
+    };
+
+    const ALLOWED: &[&str] = &[
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-3-flash-preview",
+        "gemini-3-pro-preview",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-3.1-pro-preview",
+    ];
+    let requested = req.model.clone()
+        .or_else(|| std::env::var("GEMINI_MODEL").ok())
+        .unwrap_or_else(|| "gemini-2.5-flash".into());
+    let model = if ALLOWED.contains(&requested.as_str()) {
+        requested
+    } else {
+        "gemini-2.5-flash".to_string()
+    };
+
+    let system_prompt = format!(
+        "Gere um SVG simples e geometricamente COMPACTO de pixel-art {size}x{size} do tema: \"{}\".
+
+### Estrutura do SVG:
+<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {size} {size}\" shape-rendering=\"crispEdges\">
+  ...shapes...
+</svg>
+
+### REGRA #1 (MAIS IMPORTANTE):
+NUNCA use <rect> 1x1. Pense em BLOCOS de pixels, nao pixel por pixel.
+Cada <rect> deve cobrir uma AREA de pelo menos 2x2 pixels (preferencia 3x3
+ou maior). Use formas que cubram areas continuas da mesma cor.
+A arte inteira deve caber em 20 a 60 shapes no maximo.
+
+### Paleta e cor:
+- fill=\"#RRGGBB\" hex 6 digitos (fundo ja e transparente por default)
+- Paleta com 8-14 cores. Shading em 2-3 tons por area.
+- Contorno do sprite em preto escuro (#0a0a0a) como rects/polygons de
+  area definida cobrindo a silhueta externa.
+
+### Coordenadas:
+- TUDO inteiro (sem decimais). Snap-to-pixel.
+- Sprite centralizado ocupando 70-90% do viewBox.
+
+### Formas permitidas:
+<rect x=\"..\" y=\"..\" width=\"..\" height=\"..\" fill=\"#rrggbb\"/>  ← prefira esta
+<circle cx=\"..\" cy=\"..\" r=\"..\" fill=\"#rrggbb\"/>
+<ellipse ..>
+<polygon points=\"x1,y1 x2,y2 ...\" fill=\"#rrggbb\"/>
+<path d=\"M x y L x y L x y Z\" fill=\"#rrggbb\"/>  ← usar so se necessario
+
+### PROIBIDO:
+- <text>, <filter>, <feGaussianBlur>, <linearGradient>, <radialGradient>
+- opacity, fill-opacity, stroke-opacity
+- shape-rendering diferente de crispEdges
+- decimais em coordenadas
+- rects menores que 2x2 (exceto bordas/contornos 1px justificados)
+
+### Para humanoides (se aplicavel):
+- cabeca ~1/5 altura (ou ~1/3 se chibi)
+- tronco ~2/5
+- pernas ~2/5
+- monte com poucos rects grandes, nao desenhe pixel a pixel
+
+### Saida OBRIGATORIA — JSON puro, sem markdown:
+
+{{\"svg\":\"<svg xmlns=...>...<\\/svg>\"}}",
+        req.prompt,
+    );
+
+    let body = serde_json::json!({
+        "contents": [{"parts": [{"text": system_prompt}]}],
+        "generationConfig": {
+            "temperature": 0.7,
+            "response_mime_type": "application/json",
+            "maxOutputTokens": 16384,
+            "thinkingConfig": {"thinkingBudget": 1024},
+        }
+    });
+
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+        model, key
+    );
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap();
+    let resp = match client.post(&url).json(&body).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let src = StdError::source(&e).map(|s| format!("{}", s)).unwrap_or_default();
+            return (StatusCode::BAD_GATEWAY,
+                    Json(serde_json::json!({"error": format!("gemini: {e} ({src})")}))).into_response();
+        }
+    };
+    if !resp.status().is_success() {
+        let st = resp.status();
+        let txt = resp.text().await.unwrap_or_default();
+        return (StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": format!("gemini {st}: {txt}")}))).into_response();
+    }
+    let raw: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(e) => return (StatusCode::BAD_GATEWAY,
+                          Json(serde_json::json!({"error": format!("parse json: {e}")}))).into_response(),
+    };
+    let gen_text = raw["candidates"][0]["content"]["parts"][0]["text"]
+        .as_str().unwrap_or("").trim();
+    let finish = raw["candidates"][0]["finishReason"].as_str().unwrap_or("?");
+    tracing::info!("gemini-svg finish={finish} len={} model={model}", gen_text.len());
+
+    if gen_text.is_empty() {
+        return (StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": format!("texto vazio (finish={finish})"), "raw": raw}))).into_response();
+    }
+    let json_str = gen_text
+        .trim_start_matches("```json")
+        .trim_start_matches("```xml")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    let svg = match serde_json::from_str::<serde_json::Value>(json_str) {
+        Ok(parsed) => parsed.get("svg").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        Err(_) => {
+            // Fallback: tenta extrair `<svg...>...</svg>` do texto cru (caso o
+            // JSON tenha estourado o limite ou vindo mal-formado).
+            let start = json_str.find("<svg");
+            let end = json_str.rfind("</svg>").map(|i| i + "</svg>".len());
+            match (start, end) {
+                (Some(s), Some(e)) if e > s => {
+                    // Unescape de \" -> "
+                    json_str[s..e].replace("\\\"", "\"").replace("\\/", "/")
+                }
+                _ => {
+                    tracing::warn!("svg parse falhou (preview): {}", &gen_text[..gen_text.len().min(400)]);
+                    return (StatusCode::BAD_GATEWAY,
+                            Json(serde_json::json!({
+                                "error": "svg nao encontrado na saida",
+                                "raw_preview": &gen_text[..gen_text.len().min(400)],
+                            }))).into_response();
+                }
+            }
+        }
+    };
+    if svg.is_empty() || !svg.contains("<svg") {
+        return (StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": "svg ausente ou invalido"}))).into_response();
+    }
+    Json(GenerateSvgRes { svg }).into_response()
 }
 
 // ── GENERATE ──────────────────────────────────────────────────────────────
