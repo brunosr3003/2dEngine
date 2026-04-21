@@ -1,111 +1,101 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" shape-rendering="crispEdges">
   <!-- =========================================================
-       PLAYER BASE 64x64 v4 — anime pirata
-       Proporcao esbelta (nao gordinho), cabeca arredondada,
-       shading rico com paleta similar ao v3
+       PLAYER BASE 64x64 v6 — correções de proporção:
+       - Cabelo sem espetos que saem do canvas
+       - Orelhas discretas (1 coluna)
+       - Pescoço curto (2 px)
+       - Tronco estreito (18 wide) + ombros modestos (24 wide)
        ========================================================= -->
 
-  <!-- =============== CABEÇA: silhueta oval =============== -->
-  <!-- Outline (degraus arredondando os cantos) -->
-  <rect x="23" y="2"  width="18" height="1" fill="#0a0a0a"/>
-  <rect x="21" y="3"  width="2"  height="1" fill="#0a0a0a"/>
-  <rect x="41" y="3"  width="2"  height="1" fill="#0a0a0a"/>
-  <rect x="20" y="4"  width="1"  height="2" fill="#0a0a0a"/>
-  <rect x="43" y="4"  width="1"  height="2" fill="#0a0a0a"/>
-  <rect x="19" y="6"  width="1"  height="18" fill="#0a0a0a"/>
-  <rect x="44" y="6"  width="1"  height="18" fill="#0a0a0a"/>
-  <rect x="20" y="24" width="1"  height="2" fill="#0a0a0a"/>
-  <rect x="43" y="24" width="1"  height="2" fill="#0a0a0a"/>
-  <rect x="21" y="26" width="2"  height="1" fill="#0a0a0a"/>
-  <rect x="41" y="26" width="2"  height="1" fill="#0a0a0a"/>
-  <rect x="23" y="27" width="18" height="1" fill="#0a0a0a"/>
+  <!-- =============== CABEÇA: silhueta oval (24 wide) =============== -->
+  <!-- Outline arredondado -->
+  <rect x="24" y="4"  width="16" height="1" fill="#0a0a0a"/>
+  <rect x="22" y="5"  width="2"  height="1" fill="#0a0a0a"/>
+  <rect x="40" y="5"  width="2"  height="1" fill="#0a0a0a"/>
+  <rect x="21" y="6"  width="1"  height="2" fill="#0a0a0a"/>
+  <rect x="42" y="6"  width="1"  height="2" fill="#0a0a0a"/>
+  <rect x="20" y="8"  width="1"  height="16" fill="#0a0a0a"/>
+  <rect x="43" y="8"  width="1"  height="16" fill="#0a0a0a"/>
+  <rect x="21" y="24" width="1"  height="2" fill="#0a0a0a"/>
+  <rect x="42" y="24" width="1"  height="2" fill="#0a0a0a"/>
+  <rect x="22" y="26" width="2"  height="1" fill="#0a0a0a"/>
+  <rect x="40" y="26" width="2"  height="1" fill="#0a0a0a"/>
+  <rect x="24" y="27" width="16" height="1" fill="#0a0a0a"/>
 
   <!-- Pele preenchida -->
-  <rect x="23" y="3"  width="18" height="1"  fill="#e6b37a"/>
-  <rect x="21" y="4"  width="22" height="2"  fill="#e6b37a"/>
-  <rect x="20" y="6"  width="24" height="18" fill="#e6b37a"/>
-  <rect x="21" y="24" width="22" height="2"  fill="#e6b37a"/>
-  <rect x="23" y="26" width="18" height="1"  fill="#e6b37a"/>
+  <rect x="24" y="5"  width="16" height="1"  fill="#e6b37a"/>
+  <rect x="22" y="6"  width="20" height="2"  fill="#e6b37a"/>
+  <rect x="21" y="8"  width="22" height="16" fill="#e6b37a"/>
+  <rect x="22" y="24" width="20" height="2"  fill="#e6b37a"/>
+  <rect x="24" y="26" width="16" height="1"  fill="#e6b37a"/>
 
-  <!-- Shading lateral (sombra anatomica) -->
-  <rect x="20" y="12" width="2" height="12" fill="#c48a58"/>
-  <rect x="42" y="12" width="2" height="12" fill="#c48a58"/>
+  <!-- Sombra lateral (volume) -->
+  <rect x="21" y="14" width="2" height="10" fill="#c48a58"/>
+  <rect x="41" y="14" width="2" height="10" fill="#c48a58"/>
   <!-- Sombra sob o queixo -->
-  <rect x="23" y="26" width="18" height="1" fill="#b87a4a"/>
-  <!-- Highlights na testa/macas (3 tons de pele) -->
-  <rect x="23" y="10" width="3"  height="2" fill="#f2d0a0"/>
-  <rect x="38" y="10" width="3"  height="2" fill="#f2d0a0"/>
-  <rect x="24" y="11" width="1"  height="1" fill="#ffeac9"/>
-  <rect x="39" y="11" width="1"  height="1" fill="#ffeac9"/>
+  <rect x="24" y="26" width="16" height="1" fill="#b87a4a"/>
+  <!-- Highlights testa/maçãs -->
+  <rect x="24" y="12" width="3"  height="2" fill="#f2d0a0"/>
+  <rect x="37" y="12" width="3"  height="2" fill="#f2d0a0"/>
+  <rect x="25" y="13" width="1"  height="1" fill="#ffeac9"/>
+  <rect x="38" y="13" width="1"  height="1" fill="#ffeac9"/>
 
-  <!-- =============== CABELO — massa + espetos + highlights =============== -->
-  <!-- Massa principal cobrindo topo e testa -->
-  <rect x="21" y="4"  width="22" height="2"  fill="#1a1a2a"/>
-  <rect x="20" y="6"  width="24" height="8"  fill="#1a1a2a"/>
-  <!-- Frange irregular caindo sobre a testa -->
-  <rect x="20" y="14" width="3"  height="2" fill="#1a1a2a"/>
-  <rect x="24" y="14" width="2"  height="3" fill="#1a1a2a"/>
-  <rect x="29" y="14" width="2"  height="2" fill="#1a1a2a"/>
-  <rect x="33" y="14" width="2"  height="2" fill="#1a1a2a"/>
-  <rect x="38" y="14" width="2"  height="3" fill="#1a1a2a"/>
-  <rect x="41" y="14" width="3"  height="2" fill="#1a1a2a"/>
+  <!-- =============== CABELO — simples e funcional =============== -->
+  <!-- Massa principal cobrindo testa -->
+  <rect x="22" y="6"  width="20" height="2"  fill="#1a1a2a"/>
+  <rect x="21" y="8"  width="22" height="6"  fill="#1a1a2a"/>
+  <!-- Franja caindo sobre a testa (3 tufos irregulares) -->
+  <rect x="22" y="14" width="3"  height="2" fill="#1a1a2a"/>
+  <rect x="28" y="14" width="3"  height="3" fill="#1a1a2a"/>
+  <rect x="34" y="14" width="3"  height="2" fill="#1a1a2a"/>
+  <rect x="39" y="14" width="3"  height="2" fill="#1a1a2a"/>
 
-  <!-- Espetos irregulares no topo -->
-  <rect x="21" y="0"  width="2" height="5" fill="#1a1a2a"/>
-  <rect x="24" y="-2" width="3" height="7" fill="#1a1a2a"/>
-  <rect x="28" y="0"  width="2" height="5" fill="#1a1a2a"/>
-  <rect x="31" y="-2" width="3" height="7" fill="#1a1a2a"/>
-  <rect x="35" y="0"  width="2" height="5" fill="#1a1a2a"/>
-  <rect x="38" y="-1" width="3" height="6" fill="#1a1a2a"/>
-  <rect x="42" y="1"  width="2" height="4" fill="#1a1a2a"/>
+  <!-- Espetos no topo (todos dentro do canvas, y>=1) -->
+  <rect x="22" y="3"  width="2" height="3" fill="#1a1a2a"/>
+  <rect x="26" y="1"  width="3" height="5" fill="#1a1a2a"/>
+  <rect x="31" y="2"  width="2" height="4" fill="#1a1a2a"/>
+  <rect x="35" y="1"  width="3" height="5" fill="#1a1a2a"/>
+  <rect x="40" y="3"  width="2" height="3" fill="#1a1a2a"/>
 
-  <!-- Sombras internas no cabelo (profundidade) -->
-  <rect x="20" y="12" width="3"  height="2" fill="#0f0f1a"/>
-  <rect x="41" y="12" width="3"  height="2" fill="#0f0f1a"/>
-  <rect x="21" y="6"  width="2"  height="2" fill="#0f0f1a"/>
-  <rect x="41" y="6"  width="2"  height="2" fill="#0f0f1a"/>
+  <!-- Sombras internas (profundidade) -->
+  <rect x="21" y="12" width="2" height="2" fill="#0f0f1a"/>
+  <rect x="41" y="12" width="2" height="2" fill="#0f0f1a"/>
 
-  <!-- Highlights (mechas brilhantes) -->
-  <rect x="25" y="1"  width="1" height="3" fill="#4a4a6a"/>
-  <rect x="32" y="0"  width="1" height="3" fill="#4a4a6a"/>
-  <rect x="39" y="1"  width="1" height="3" fill="#4a4a6a"/>
-  <rect x="24" y="6"  width="3" height="2" fill="#3a3a5a"/>
-  <rect x="34" y="7"  width="4" height="2" fill="#3a3a5a"/>
+  <!-- Highlights (mechas) -->
+  <rect x="27" y="2"  width="1" height="3" fill="#4a4a6a"/>
+  <rect x="36" y="2"  width="1" height="3" fill="#4a4a6a"/>
+  <rect x="25" y="8"  width="3" height="2" fill="#3a3a5a"/>
+  <rect x="36" y="9"  width="4" height="2" fill="#3a3a5a"/>
 
-  <!-- Sombra do cabelo na testa (transição suave) -->
-  <rect x="20" y="14" width="24" height="1" fill="#b87a4a"/>
+  <!-- Sombra do cabelo na testa -->
+  <rect x="21" y="14" width="22" height="1" fill="#b87a4a"/>
 
   <!-- =============== SOBRANCELHAS =============== -->
-  <rect x="22" y="16" width="7" height="1" fill="#0a0a0a"/>
-  <rect x="23" y="15" width="5" height="1" fill="#0a0a0a"/>
-  <rect x="35" y="16" width="7" height="1" fill="#0a0a0a"/>
-  <rect x="36" y="15" width="5" height="1" fill="#0a0a0a"/>
+  <rect x="23" y="16" width="6" height="1" fill="#0a0a0a"/>
+  <rect x="24" y="15" width="4" height="1" fill="#0a0a0a"/>
+  <rect x="35" y="16" width="6" height="1" fill="#0a0a0a"/>
+  <rect x="36" y="15" width="4" height="1" fill="#0a0a0a"/>
 
-  <!-- =============== OLHO ESQUERDO (6x4 com detalhes) =============== -->
-  <!-- Outline + cilios -->
-  <rect x="22" y="18" width="7" height="1" fill="#0a0a0a"/>
-  <rect x="22" y="22" width="7" height="1" fill="#0a0a0a"/>
-  <rect x="22" y="19" width="1" height="3" fill="#0a0a0a"/>
+  <!-- =============== OLHO ESQUERDO =============== -->
+  <rect x="23" y="18" width="6" height="1" fill="#0a0a0a"/>
+  <rect x="23" y="22" width="6" height="1" fill="#0a0a0a"/>
+  <rect x="23" y="19" width="1" height="3" fill="#0a0a0a"/>
   <rect x="28" y="19" width="1" height="3" fill="#0a0a0a"/>
-  <!-- Branco + iris 3 tons + pupila -->
-  <rect x="23" y="19" width="5" height="3" fill="#ffffff"/>
-  <rect x="23" y="19" width="5" height="3" fill="#f5c050"/>
-  <rect x="24" y="19" width="3" height="3" fill="#d4a53c"/>
+  <rect x="24" y="19" width="4" height="3" fill="#f5c050"/>
+  <rect x="25" y="19" width="2" height="3" fill="#d4a53c"/>
   <rect x="25" y="19" width="1" height="3" fill="#0f0f0f"/>
-  <!-- Shine duplo (anime) -->
-  <rect x="23" y="19" width="2" height="1" fill="#ffffff"/>
+  <rect x="25" y="19" width="1" height="1" fill="#ffffff"/>
   <rect x="26" y="21" width="1" height="1" fill="#ffffff"/>
 
   <!-- =============== OLHO DIREITO =============== -->
-  <rect x="35" y="18" width="7" height="1" fill="#0a0a0a"/>
-  <rect x="35" y="22" width="7" height="1" fill="#0a0a0a"/>
+  <rect x="35" y="18" width="6" height="1" fill="#0a0a0a"/>
+  <rect x="35" y="22" width="6" height="1" fill="#0a0a0a"/>
   <rect x="35" y="19" width="1" height="3" fill="#0a0a0a"/>
-  <rect x="41" y="19" width="1" height="3" fill="#0a0a0a"/>
-  <rect x="36" y="19" width="5" height="3" fill="#ffffff"/>
-  <rect x="36" y="19" width="5" height="3" fill="#f5c050"/>
-  <rect x="37" y="19" width="3" height="3" fill="#d4a53c"/>
+  <rect x="40" y="19" width="1" height="3" fill="#0a0a0a"/>
+  <rect x="36" y="19" width="4" height="3" fill="#f5c050"/>
+  <rect x="37" y="19" width="2" height="3" fill="#d4a53c"/>
   <rect x="38" y="19" width="1" height="3" fill="#0f0f0f"/>
-  <rect x="36" y="19" width="2" height="1" fill="#ffffff"/>
+  <rect x="38" y="19" width="1" height="1" fill="#ffffff"/>
   <rect x="39" y="21" width="1" height="1" fill="#ffffff"/>
 
   <!-- =============== CICATRIZ (abaixo olho direito) =============== -->
@@ -124,142 +114,127 @@
   <rect x="33" y="24" width="3"  height="1" fill="#2a1410"/>
   <rect x="29" y="25" width="2"  height="1" fill="#ffffff"/>
 
-  <!-- =============== BOCHECHAS =============== -->
-  <rect x="21" y="22" width="1" height="2" fill="#e88080"/>
-  <rect x="42" y="22" width="1" height="2" fill="#e88080"/>
-
-  <!-- =============== SARDAS =============== -->
+  <!-- =============== BOCHECHAS + SARDAS =============== -->
+  <rect x="22" y="22" width="1" height="2" fill="#e88080"/>
+  <rect x="41" y="22" width="1" height="2" fill="#e88080"/>
   <rect x="25" y="22" width="1" height="1" fill="#8a5a30"/>
   <rect x="27" y="23" width="1" height="1" fill="#8a5a30"/>
   <rect x="38" y="22" width="1" height="1" fill="#8a5a30"/>
   <rect x="40" y="23" width="1" height="1" fill="#8a5a30"/>
 
-  <!-- =============== ORELHAS + BRINCO =============== -->
-  <rect x="17" y="19" width="2" height="5" fill="#e6b37a"/>
-  <rect x="16" y="20" width="1" height="4" fill="#0a0a0a"/>
-  <rect x="17" y="19" width="1" height="1" fill="#0a0a0a"/>
-  <rect x="17" y="24" width="2" height="1" fill="#0a0a0a"/>
-  <rect x="18" y="21" width="1" height="2" fill="#c48a58"/>
-  <!-- Brinco dourado -->
-  <rect x="16" y="23" width="1" height="1" fill="#d4a53c"/>
-  <rect x="45" y="19" width="2" height="5" fill="#e6b37a"/>
-  <rect x="47" y="20" width="1" height="4" fill="#0a0a0a"/>
-  <rect x="46" y="19" width="1" height="1" fill="#0a0a0a"/>
-  <rect x="45" y="24" width="2" height="1" fill="#0a0a0a"/>
-  <rect x="45" y="21" width="1" height="2" fill="#c48a58"/>
+  <!-- =============== ORELHAS (discretas — 1 coluna) =============== -->
+  <rect x="19" y="20" width="1" height="4" fill="#e6b37a"/>
+  <rect x="18" y="20" width="1" height="4" fill="#0a0a0a"/>
+  <rect x="19" y="22" width="1" height="1" fill="#c48a58"/>
+  <!-- Brinco dourado (1 pixel) -->
+  <rect x="18" y="24" width="1" height="1" fill="#d4a53c"/>
 
-  <!-- =============== PESCOÇO (MAIS ALTO + COM CORDÃO) =============== -->
-  <!-- 9 wide (x=27-36), 4px altura (y=28-32) -->
-  <rect x="27" y="28" width="9"  height="4" fill="#e6b37a"/>
-  <rect x="26" y="28" width="1"  height="4" fill="#0a0a0a"/>
-  <rect x="36" y="28" width="1"  height="4" fill="#0a0a0a"/>
-  <!-- Sombra lateral (cilindro) -->
-  <rect x="27" y="28" width="1"  height="4" fill="#c48a58"/>
-  <rect x="35" y="28" width="1"  height="4" fill="#c48a58"/>
-  <!-- Sombra do queixo no pescoço -->
-  <rect x="27" y="28" width="9"  height="1" fill="#8a5a30"/>
-  <!-- Cordão do pingente -->
-  <rect x="27" y="32" width="9"  height="1" fill="#4a3020"/>
-  <!-- Pingente (esmeralda verde em ouro, pendurado abaixo) -->
-  <rect x="30" y="33" width="3"  height="2" fill="#d4a53c"/>
-  <rect x="30" y="33" width="3"  height="1" fill="#f5c050"/>
-  <rect x="31" y="33" width="1"  height="1" fill="#2ea080"/>
+  <rect x="44" y="20" width="1" height="4" fill="#e6b37a"/>
+  <rect x="45" y="20" width="1" height="4" fill="#0a0a0a"/>
+  <rect x="44" y="22" width="1" height="1" fill="#c48a58"/>
 
-  <!-- =============== OMBROS CHANFRADOS (mais largos que tronco) =============== -->
-  <!-- Outline dos ombros em degrau (x=15-47, mas chanfra nos cantos) -->
-  <rect x="17" y="33" width="4"  height="1" fill="#0a0a0a"/>
-  <rect x="42" y="33" width="4"  height="1" fill="#0a0a0a"/>
-  <rect x="15" y="34" width="2"  height="1" fill="#0a0a0a"/>
-  <rect x="46" y="34" width="2"  height="1" fill="#0a0a0a"/>
-  <!-- Pele dos deltoides (mais largos, 4-5 wide cada lado) -->
-  <rect x="15" y="35" width="5"  height="4" fill="#e6b37a"/>
-  <rect x="43" y="35" width="5"  height="4" fill="#e6b37a"/>
-  <rect x="17" y="34" width="4"  height="1" fill="#e6b37a"/>
-  <rect x="42" y="34" width="4"  height="1" fill="#e6b37a"/>
-  <!-- Highlights nos deltoides (anime brilho) -->
-  <rect x="16" y="35" width="3"  height="2" fill="#f2d0a0"/>
-  <rect x="44" y="35" width="3"  height="2" fill="#f2d0a0"/>
-  <rect x="17" y="35" width="1"  height="1" fill="#ffeac9"/>
-  <rect x="45" y="35" width="1"  height="1" fill="#ffeac9"/>
+  <!-- =============== PESCOÇO (curto, 2 px altura) =============== -->
+  <rect x="28" y="28" width="8" height="2" fill="#e6b37a"/>
+  <rect x="27" y="28" width="1" height="2" fill="#0a0a0a"/>
+  <rect x="36" y="28" width="1" height="2" fill="#0a0a0a"/>
+  <rect x="28" y="28" width="1" height="2" fill="#c48a58"/>
+  <rect x="35" y="28" width="1" height="2" fill="#c48a58"/>
+  <!-- Sombra do queixo -->
+  <rect x="28" y="28" width="8" height="1" fill="#8a5a30"/>
 
-  <!-- =============== TRONCO: MAIS ESTREITO (x=21-42, 21 wide) =============== -->
-  <!-- Outline do torso -->
-  <rect x="21" y="33" width="21" height="1" fill="#0a0a0a"/>
-  <rect x="20" y="34" width="1"  height="16" fill="#0a0a0a"/>
-  <rect x="43" y="34" width="1"  height="16" fill="#0a0a0a"/>
-  <rect x="21" y="50" width="22" height="1" fill="#0a0a0a"/>
+  <!-- =============== OMBROS (24 wide, chanfrados) =============== -->
+  <!-- Outline superior -->
+  <rect x="22" y="30" width="2" height="1" fill="#0a0a0a"/>
+  <rect x="40" y="30" width="2" height="1" fill="#0a0a0a"/>
+  <rect x="20" y="31" width="2" height="1" fill="#0a0a0a"/>
+  <rect x="42" y="31" width="2" height="1" fill="#0a0a0a"/>
+  <!-- Ombros pele -->
+  <rect x="22" y="30" width="20" height="1" fill="#e6b37a"/>
+  <rect x="20" y="31" width="24" height="2" fill="#e6b37a"/>
+  <!-- Deltoides highlights -->
+  <rect x="20" y="31" width="3"  height="2" fill="#f2d0a0"/>
+  <rect x="41" y="31" width="3"  height="2" fill="#f2d0a0"/>
+  <rect x="21" y="31" width="1"  height="1" fill="#ffeac9"/>
+  <rect x="42" y="31" width="1"  height="1" fill="#ffeac9"/>
+  <!-- Cordão + pingente descendo do pescoço até o peito -->
+  <rect x="30" y="30" width="4" height="1" fill="#4a3020"/>
+  <rect x="31" y="31" width="2" height="2" fill="#d4a53c"/>
+  <rect x="31" y="31" width="2" height="1" fill="#f5c050"/>
+
+  <!-- =============== TRONCO (ESTREITO: 18 wide) =============== -->
+  <!-- Outline -->
+  <rect x="23" y="33" width="1"  height="17" fill="#0a0a0a"/>
+  <rect x="40" y="33" width="1"  height="17" fill="#0a0a0a"/>
+  <rect x="24" y="33" width="16" height="1"  fill="#0a0a0a"/>
+  <rect x="24" y="50" width="16" height="1"  fill="#0a0a0a"/>
+
   <!-- Pele base -->
-  <rect x="21" y="34" width="22" height="16" fill="#e6b37a"/>
-  <!-- Linha de sombra nos flancos (cintura estreitando) -->
-  <rect x="20" y="45" width="1"  height="5" fill="#8a5a30"/>
-  <rect x="43" y="45" width="1"  height="5" fill="#8a5a30"/>
+  <rect x="24" y="33" width="16" height="17" fill="#e6b37a"/>
 
-  <!-- =============== PEITORAL (2 músculos definidos) =============== -->
+  <!-- =============== PEITORAL (compacto) =============== -->
   <!-- Linha central -->
-  <rect x="31" y="34" width="2" height="8" fill="#c48a58"/>
-  <!-- Contornos dos peitorais -->
-  <rect x="22" y="41" width="9"  height="1" fill="#b87a4a"/>
-  <rect x="33" y="41" width="9"  height="1" fill="#b87a4a"/>
+  <rect x="31" y="33" width="2" height="7" fill="#c48a58"/>
+  <!-- Contorno inferior do peito -->
+  <rect x="24" y="40" width="16" height="1" fill="#b87a4a"/>
   <!-- Highlights -->
-  <rect x="24" y="35" width="4" height="3" fill="#f2d0a0"/>
-  <rect x="36" y="35" width="4" height="3" fill="#f2d0a0"/>
-  <rect x="25" y="36" width="2" height="1" fill="#ffeac9"/>
-  <rect x="37" y="36" width="2" height="1" fill="#ffeac9"/>
+  <rect x="25" y="34" width="3" height="3" fill="#f2d0a0"/>
+  <rect x="36" y="34" width="3" height="3" fill="#f2d0a0"/>
+  <rect x="26" y="35" width="1" height="1" fill="#ffeac9"/>
+  <rect x="37" y="35" width="1" height="1" fill="#ffeac9"/>
   <!-- Laterais sombra -->
-  <rect x="21" y="38" width="2" height="12" fill="#c48a58"/>
-  <rect x="41" y="38" width="2" height="12" fill="#c48a58"/>
+  <rect x="24" y="37" width="1" height="13" fill="#c48a58"/>
+  <rect x="39" y="37" width="1" height="13" fill="#c48a58"/>
 
-  <!-- =============== ABDÔMEN 6-PACK COMPACTO =============== -->
-  <rect x="25" y="44" width="14" height="1" fill="#c48a58"/>
-  <rect x="25" y="47" width="14" height="1" fill="#c48a58"/>
-  <rect x="31" y="42" width="2"  height="8" fill="#c48a58"/>
-  <!-- Highlights -->
-  <rect x="26" y="45" width="5" height="1" fill="#f2d0a0"/>
-  <rect x="33" y="45" width="5" height="1" fill="#f2d0a0"/>
-  <rect x="26" y="48" width="5" height="1" fill="#f2d0a0"/>
-  <rect x="33" y="48" width="5" height="1" fill="#f2d0a0"/>
-  <!-- Obliquos (sombra lateral abs) -->
-  <rect x="22" y="43" width="2" height="7" fill="#b87a4a"/>
-  <rect x="40" y="43" width="2" height="7" fill="#b87a4a"/>
+  <!-- =============== ABDÔMEN =============== -->
+  <rect x="26" y="43" width="12" height="1" fill="#c48a58"/>
+  <rect x="26" y="46" width="12" height="1" fill="#c48a58"/>
+  <rect x="31" y="41" width="2"  height="9" fill="#c48a58"/>
+  <!-- Highlights abs -->
+  <rect x="27" y="44" width="4" height="1" fill="#f2d0a0"/>
+  <rect x="33" y="44" width="4" height="1" fill="#f2d0a0"/>
+  <rect x="27" y="47" width="4" height="1" fill="#f2d0a0"/>
+  <rect x="33" y="47" width="4" height="1" fill="#f2d0a0"/>
+  <!-- Obliquos -->
+  <rect x="25" y="42" width="1" height="7" fill="#b87a4a"/>
+  <rect x="38" y="42" width="1" height="7" fill="#b87a4a"/>
 
-  <!-- =============== BRAÇO ESQUERDO (mais fino, 3 wide) =============== -->
-  <rect x="14" y="36" width="1" height="14" fill="#0a0a0a"/>
-  <rect x="19" y="36" width="1" height="14" fill="#0a0a0a"/>
-  <rect x="14" y="50" width="6" height="1"  fill="#0a0a0a"/>
-  <rect x="15" y="36" width="4" height="14" fill="#e6b37a"/>
+  <!-- =============== BRAÇO ESQUERDO (fininho, 3 wide) =============== -->
+  <rect x="16" y="33" width="1" height="17" fill="#0a0a0a"/>
+  <rect x="20" y="33" width="1" height="17" fill="#0a0a0a"/>
+  <rect x="17" y="33" width="3" height="17" fill="#e6b37a"/>
+  <rect x="16" y="50" width="5" height="1"  fill="#0a0a0a"/>
   <!-- Bíceps -->
-  <rect x="15" y="36" width="3" height="5" fill="#f2d0a0"/>
-  <rect x="16" y="36" width="1" height="3" fill="#ffeac9"/>
+  <rect x="17" y="33" width="2" height="5" fill="#f2d0a0"/>
+  <rect x="18" y="33" width="1" height="3" fill="#ffeac9"/>
   <!-- Cotovelo -->
-  <rect x="15" y="41" width="4" height="1" fill="#b87a4a"/>
+  <rect x="17" y="40" width="3" height="1" fill="#b87a4a"/>
   <!-- Antebraço -->
-  <rect x="15" y="42" width="3" height="6" fill="#f2d0a0"/>
-  <rect x="18" y="42" width="1" height="7" fill="#c48a58"/>
-  <!-- Faixa vermelha no pulso -->
-  <rect x="15" y="48" width="4" height="2" fill="#a84030"/>
-  <rect x="15" y="48" width="4" height="1" fill="#d4523c"/>
+  <rect x="17" y="41" width="2" height="7" fill="#f2d0a0"/>
+  <rect x="19" y="41" width="1" height="8" fill="#c48a58"/>
+  <!-- Faixa vermelha -->
+  <rect x="17" y="48" width="3" height="2" fill="#a84030"/>
+  <rect x="17" y="48" width="3" height="1" fill="#d4523c"/>
 
   <!-- =============== BRAÇO DIREITO =============== -->
-  <rect x="44" y="36" width="1" height="14" fill="#0a0a0a"/>
-  <rect x="49" y="36" width="1" height="14" fill="#0a0a0a"/>
-  <rect x="44" y="50" width="6" height="1"  fill="#0a0a0a"/>
-  <rect x="45" y="36" width="4" height="14" fill="#e6b37a"/>
-  <rect x="46" y="36" width="3" height="5" fill="#f2d0a0"/>
-  <rect x="47" y="36" width="1" height="3" fill="#ffeac9"/>
-  <rect x="45" y="41" width="4" height="1" fill="#b87a4a"/>
-  <rect x="46" y="42" width="3" height="6" fill="#f2d0a0"/>
-  <rect x="45" y="42" width="1" height="7" fill="#c48a58"/>
-  <!-- Tatuagem tribal (2 linhas) -->
-  <rect x="46" y="44" width="3" height="1" fill="#0a0a0a"/>
-  <rect x="46" y="47" width="3" height="1" fill="#0a0a0a"/>
+  <rect x="43" y="33" width="1" height="17" fill="#0a0a0a"/>
+  <rect x="47" y="33" width="1" height="17" fill="#0a0a0a"/>
+  <rect x="44" y="33" width="3" height="17" fill="#e6b37a"/>
+  <rect x="43" y="50" width="5" height="1"  fill="#0a0a0a"/>
+  <rect x="45" y="33" width="2" height="5" fill="#f2d0a0"/>
+  <rect x="45" y="33" width="1" height="3" fill="#ffeac9"/>
+  <rect x="44" y="40" width="3" height="1" fill="#b87a4a"/>
+  <rect x="45" y="41" width="2" height="7" fill="#f2d0a0"/>
+  <rect x="44" y="41" width="1" height="8" fill="#c48a58"/>
+  <!-- Tatuagem tribal -->
+  <rect x="45" y="44" width="2" height="1" fill="#0a0a0a"/>
+  <rect x="45" y="47" width="2" height="1" fill="#0a0a0a"/>
 
-  <!-- =============== SHORTS (mais estreito, acompanha cintura) =============== -->
-  <rect x="21" y="51" width="22" height="6" fill="#6b3410"/>
-  <rect x="21" y="51" width="22" height="1" fill="#0a0a0a"/>
-  <rect x="21" y="57" width="22" height="1" fill="#0a0a0a"/>
-  <!-- Cós/highlight -->
-  <rect x="21" y="51" width="22" height="1" fill="#8a4820"/>
-  <rect x="21" y="56" width="22" height="1" fill="#4a2208"/>
+  <!-- =============== SHORTS (alinhados ao tronco 18 wide) =============== -->
+  <rect x="23" y="51" width="18" height="6" fill="#6b3410"/>
+  <rect x="23" y="51" width="18" height="1" fill="#0a0a0a"/>
+  <rect x="23" y="57" width="18" height="1" fill="#0a0a0a"/>
+  <rect x="23" y="51" width="18" height="1" fill="#8a4820"/>
+  <rect x="23" y="56" width="18" height="1" fill="#4a2208"/>
   <!-- Divisão central -->
   <rect x="31" y="52" width="2" height="5" fill="#4a2208"/>
   <!-- Cordão amarrado -->
@@ -268,36 +243,34 @@
   <rect x="31" y="54" width="2" height="2" fill="#d4a53c"/>
   <rect x="31" y="54" width="1" height="1" fill="#f5c050"/>
   <!-- Pregas -->
-  <rect x="24" y="52" width="1" height="4" fill="#4a2208"/>
-  <rect x="28" y="52" width="1" height="4" fill="#8a4820"/>
-  <rect x="37" y="52" width="1" height="4" fill="#4a2208"/>
-  <rect x="40" y="52" width="1" height="4" fill="#8a4820"/>
+  <rect x="26" y="52" width="1" height="4" fill="#4a2208"/>
+  <rect x="29" y="52" width="1" height="4" fill="#8a4820"/>
+  <rect x="36" y="52" width="1" height="4" fill="#4a2208"/>
+  <rect x="39" y="52" width="1" height="4" fill="#8a4820"/>
 
-  <!-- =============== PERNAS (coxas curtas, alinhadas ao novo tronco) =============== -->
-  <!-- Esquerda -->
-  <rect x="24" y="58" width="1" height="3" fill="#0a0a0a"/>
+  <!-- =============== PERNAS =============== -->
+  <rect x="25" y="58" width="1" height="3" fill="#0a0a0a"/>
   <rect x="30" y="58" width="1" height="3" fill="#0a0a0a"/>
-  <rect x="25" y="58" width="5" height="3" fill="#e6b37a"/>
+  <rect x="26" y="58" width="4" height="3" fill="#e6b37a"/>
   <rect x="26" y="58" width="3" height="2" fill="#f2d0a0"/>
   <rect x="29" y="59" width="1" height="2" fill="#c48a58"/>
-  <!-- Direita -->
+
   <rect x="33" y="58" width="1" height="3" fill="#0a0a0a"/>
-  <rect x="39" y="58" width="1" height="3" fill="#0a0a0a"/>
-  <rect x="34" y="58" width="5" height="3" fill="#e6b37a"/>
-  <rect x="35" y="58" width="3" height="2" fill="#f2d0a0"/>
-  <rect x="38" y="59" width="1" height="2" fill="#c48a58"/>
+  <rect x="38" y="58" width="1" height="3" fill="#0a0a0a"/>
+  <rect x="34" y="58" width="4" height="3" fill="#e6b37a"/>
+  <rect x="34" y="58" width="3" height="2" fill="#f2d0a0"/>
+  <rect x="37" y="59" width="1" height="2" fill="#c48a58"/>
 
   <!-- =============== BOTAS =============== -->
-  <rect x="23" y="61" width="9"  height="3" fill="#1a0a04"/>
-  <rect x="23" y="61" width="9"  height="1" fill="#0a0a0a"/>
-  <rect x="24" y="62" width="7"  height="2" fill="#2a1410"/>
-  <rect x="24" y="62" width="3"  height="1" fill="#4a2208"/>
-  <!-- Fivela -->
+  <rect x="24" y="61" width="7" height="3" fill="#1a0a04"/>
+  <rect x="24" y="61" width="7" height="1" fill="#0a0a0a"/>
+  <rect x="25" y="62" width="5" height="2" fill="#2a1410"/>
+  <rect x="25" y="62" width="3" height="1" fill="#4a2208"/>
   <rect x="28" y="62" width="1" height="1" fill="#d4a53c"/>
 
-  <rect x="32" y="61" width="9"  height="3" fill="#1a0a04"/>
-  <rect x="32" y="61" width="9"  height="1" fill="#0a0a0a"/>
-  <rect x="33" y="62" width="7"  height="2" fill="#2a1410"/>
-  <rect x="33" y="62" width="3"  height="1" fill="#4a2208"/>
+  <rect x="33" y="61" width="7" height="3" fill="#1a0a04"/>
+  <rect x="33" y="61" width="7" height="1" fill="#0a0a0a"/>
+  <rect x="34" y="62" width="5" height="2" fill="#2a1410"/>
+  <rect x="34" y="62" width="3" height="1" fill="#4a2208"/>
   <rect x="37" y="62" width="1" height="1" fill="#d4a53c"/>
 </svg>
