@@ -353,33 +353,94 @@ async function api_generate_svg(prompt: string, model: string): Promise<string> 
   return body.svg as string;
 }
 
-/// Rasteriza SVG string num canvas SIZExSIZE e extrai matriz de hex.
-/// Pixel-perfect: imageSmoothingEnabled=false. Transparente onde alpha < 10.
-async function rasterize_svg_to_matrix(svg_text: string): Promise<string[][]> {
-  // Garante viewBox SIZExSIZE mesmo se o IA deu width/height em px
+/// Normaliza o SVG: extrai o bloco <svg>..</svg> e garante xmlns/width/height
+/// que sao necessarios pro browser carregar como imagem.
+function sanitize_svg(svg_text: string): string {
   let svg = svg_text.trim();
-  if (!/viewBox=/.test(svg)) {
-    svg = svg.replace(/<svg/i, `<svg viewBox="0 0 ${SIZE} ${SIZE}"`);
+  // Tira markdown fences, lixo antes/depois
+  svg = svg.replace(/```(svg|xml|html)?/gi, "");
+  const start = svg.indexOf("<svg");
+  const end = svg.lastIndexOf("</svg>");
+  if (start !== -1 && end !== -1 && end > start) {
+    svg = svg.slice(start, end + "</svg>".length);
   }
+  // Desescape se vier com \" escapado
+  if (svg.includes('\\"')) svg = svg.replace(/\\"/g, '"');
+  if (svg.includes("\\/")) svg = svg.replace(/\\\//g, "/");
   // Garante xmlns
-  if (!/xmlns=/.test(svg)) {
-    svg = svg.replace(/<svg/i, `<svg xmlns="http://www.w3.org/2000/svg"`);
+  if (!/\sxmlns=/.test(svg)) {
+    svg = svg.replace(/<svg\b/i, `<svg xmlns="http://www.w3.org/2000/svg"`);
   }
-  const blob = new Blob([svg], { type: "image/svg+xml" });
+  // Garante viewBox
+  if (!/\sviewBox=/.test(svg)) {
+    svg = svg.replace(/<svg\b/i, `<svg viewBox="0 0 ${SIZE} ${SIZE}"`);
+  }
+  // Garante width/height explicitos (alguns browsers se recusam sem isso)
+  if (!/\swidth=/.test(svg))  svg = svg.replace(/<svg\b/i, `<svg width="${SIZE}"`);
+  if (!/\sheight=/.test(svg)) svg = svg.replace(/<svg\b/i, `<svg height="${SIZE}"`);
+  return svg;
+}
+
+/// Rasteriza SVG string num canvas SIZExSIZE e extrai matriz de hex.
+async function rasterize_svg_to_matrix(svg_text: string): Promise<string[][]> {
+  const svg = sanitize_svg(svg_text);
+  const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   try {
     const img = new Image();
     img.crossOrigin = "anonymous";
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve();
-      img.onerror = () => reject(new Error("falha ao carregar SVG como imagem"));
+      img.onerror = (ev) => {
+        console.error("[pixel] svg load err. content:", svg.slice(0, 500));
+        reject(new Error(`falha ao carregar SVG (${ev}). Ver console pro SVG bruto.`));
+      };
       img.src = url;
     });
     const c = document.createElement("canvas");
     c.width = SIZE; c.height = SIZE;
     const ctx = c.getContext("2d")!;
     ctx.imageSmoothingEnabled = false;
-    // drawImage em canvas quadrado com SVG -> cada pixel = 1 celula logica
+    ctx.drawImage(img, 0, 0, SIZE, SIZE);
+    const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
+    const to_hex = (n: number) => n.toString(16).padStart(2, "0");
+    const pixels: string[][] = [];
+    for (let y = 0; y < SIZE; y++) {
+      const row: string[] = [];
+      for (let x = 0; x < SIZE; x++) {
+        const i = (y * SIZE + x) * 4;
+        const r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
+        if (a < 10) row.push("#00000000");
+        else row.push(`#${to_hex(r)}${to_hex(g)}${to_hex(b)}${to_hex(a)}`);
+      }
+      pixels.push(row);
+    }
+    return pixels;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/// Rasteriza uma imagem (PNG/JPG/SVG) ja carregada num objeto File/Blob.
+async function rasterize_file_to_matrix(file: File): Promise<string[][]> {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".svg") || file.type.includes("svg")) {
+    const txt = await file.text();
+    return await rasterize_svg_to_matrix(txt);
+  }
+  // PNG/JPG/etc: desenha e extrai
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error(`falha ao carregar ${file.name}`));
+      img.src = url;
+    });
+    const c = document.createElement("canvas");
+    c.width = SIZE; c.height = SIZE;
+    const ctx = c.getContext("2d")!;
+    ctx.imageSmoothingEnabled = false;
     ctx.drawImage(img, 0, 0, SIZE, SIZE);
     const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
     const to_hex = (n: number) => n.toString(16).padStart(2, "0");
@@ -534,6 +595,37 @@ function setup_ia() {
   });
 }
 
+function setup_upload() {
+  const btn = document.getElementById("btn-upload") as HTMLButtonElement;
+  const input = document.getElementById("upload-input") as HTMLInputElement;
+  const status = document.getElementById("upload-status")!;
+  btn.addEventListener("click", () => input.click());
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    status.className = "status";
+    status.textContent = `processando ${file.name}...`;
+    try {
+      const pixels = await rasterize_file_to_matrix(file);
+      editor.load_pixels(pixels);
+      status.className = "status ok";
+      status.textContent = `importado: ${file.name} (${Math.round(file.size / 1024)}KB)`;
+      // Sugere nome a partir do arquivo
+      const name_el = document.getElementById("sprite-name") as HTMLInputElement;
+      if (!name_el.value) {
+        const base = file.name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9_-]/gi, "_");
+        name_el.value = base;
+      }
+    } catch (e: any) {
+      console.error("[pixel] upload err:", e);
+      status.className = "status err";
+      status.textContent = e.message || "erro";
+    } finally {
+      input.value = "";
+    }
+  });
+}
+
 function setup_save() {
   const btn_save = document.getElementById("btn-save") as HTMLButtonElement;
   const btn_dl = document.getElementById("btn-download") as HTMLButtonElement;
@@ -605,6 +697,7 @@ function boot_editor() {
   setup_keyboard();
   setup_ia();
   setup_save();
+  setup_upload();
   refresh_list();
 }
 
