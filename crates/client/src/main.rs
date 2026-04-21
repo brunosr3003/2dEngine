@@ -156,7 +156,7 @@ struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { hud_scale: 1.4, touch_mode: false, camera_zoom: 32.0 }
+        Self { hud_scale: 2.0, touch_mode: false, camera_zoom: 32.0 }
     }
 }
 
@@ -167,7 +167,7 @@ fn load_settings() -> Settings {
             let Some((k, v)) = line.split_once('=') else { continue };
             match k.trim() {
                 "hud_scale"   => if let Ok(v) = v.trim().parse::<f32>() {
-                    s.hud_scale = v.clamp(0.8, 2.5);
+                    s.hud_scale = v.clamp(0.8, 5.0);
                 },
                 "touch_mode"  => s.touch_mode = v.trim() == "true",
                 "camera_zoom" => if let Ok(v) = v.trim().parse::<f32>() {
@@ -326,29 +326,29 @@ impl MmoClient {
                 LoginField::Username => LoginField::Password,
                 LoginField::Password => LoginField::Username,
             };
-            let _ = ctx.input.take_text_input();
         }
 
-        // Backspace
-        if ctx.input.key_pressed(KeyCode::Backspace) {
-            match self.login_field {
-                LoginField::Username => { self.login_username.pop(); }
-                LoginField::Password => { self.login_password.pop(); }
-            }
-        }
-
-        // Digitar texto
+        // Texto (inclui repeticao de teclas — backspace via \x08, delete via \x7f)
         let incoming = ctx.input.take_text_input();
         for ch in incoming.chars() {
-            if ch.is_control() { continue; }
-            match self.login_field {
-                LoginField::Username if self.login_username.len() < 32 => {
-                    self.login_username.push(ch);
+            if ch == '\x08' || ch == '\x7f' {
+                // Backspace / Delete — funciona com auto-repeat
+                match self.login_field {
+                    LoginField::Username => { self.login_username.pop(); }
+                    LoginField::Password => { self.login_password.pop(); }
                 }
-                LoginField::Password if self.login_password.len() < 64 => {
-                    self.login_password.push(ch);
+            } else if ch == '\t' || ch == '\r' || ch == '\n' {
+                // Ignora tab/enter (tratados por key_pressed acima/abaixo)
+            } else if !ch.is_control() {
+                match self.login_field {
+                    LoginField::Username if self.login_username.len() < 32 => {
+                        self.login_username.push(ch);
+                    }
+                    LoginField::Password if self.login_password.len() < 64 => {
+                        self.login_password.push(ch);
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
 
@@ -367,12 +367,27 @@ impl MmoClient {
         let vis = ctx.camera.visible_rect();
         let cx = (vis.min.x + vis.max.x) * 0.5;
         let cy = (vis.min.y + vis.max.y) * 0.5;
-        let h = 1.0f32; // 1 tile world unit como referencia
+        let h = (vis.max.y - vis.min.y) / 12.0;
         let field_w = 8.0 * h;
         let user_y  = cy + 1.5 * h;
         let pass_y  = cy + 0.0 * h;
         let btn_y   = cy - 1.8 * h;
         let field_h = 0.8 * h;
+
+        // Link "Cadastre-se aqui" — mesmos calculos do render
+        let fs_hint = 0.5 * h;
+        let hint_pre  = "Sem conta? ";
+        let hint_link = "Cadastre-se aqui";
+        let (pre_w, link_w) = if let Some(font) = &self.font {
+            (font.measure_width(hint_pre) * fs_hint,
+             font.measure_width(hint_link) * fs_hint)
+        } else {
+            (hint_pre.len() as f32 * fs_hint * 0.6,
+             hint_link.len() as f32 * fs_hint * 0.6)
+        };
+        let total_w = pre_w + link_w;
+        let hint_y = cy - 3.0 * h;
+        let link_cx = cx - total_w * 0.5 + pre_w + link_w * 0.5;
 
         if ctx.input.mouse_pressed(engine::winit::event::MouseButton::Left) {
             let mw = ctx.camera.screen_to_world(ctx.input.mouse_pos());
@@ -386,6 +401,11 @@ impl MmoClient {
                     self.login_submitted = true;
                     self.do_connect();
                 }
+            } else if (mw.x - link_cx).abs() < link_w * 0.5 && (mw.y - hint_y).abs() < fs_hint {
+                // Abrir pagina de cadastro no browser
+                let _ = std::process::Command::new("open")
+                    .arg("http://localhost:5173")
+                    .spawn();
             }
         }
 
@@ -425,7 +445,8 @@ impl MmoClient {
         let vis = ctx.camera.visible_rect();
         let cx = (vis.min.x + vis.max.x) * 0.5;
         let cy = (vis.min.y + vis.max.y) * 0.5;
-        let h = 1.0f32;
+        // h escala com a altura visivel: painel ocupa ~55% da tela verticalmente
+        let h = (vis.max.y - vis.min.y) / 12.0;
         let field_w = 8.0 * h;
         let field_h = 0.8 * h;
         let user_y  = cy + 1.5 * h;
@@ -542,12 +563,28 @@ impl MmoClient {
                 0.6 * h, Vec4::new(1.0, 0.35, 0.3, 1.0), 0.2, batch);
         }
 
-        // Dica de cadastro
-        let hint = "Cadastre-se em http://localhost:5173";
-        let hw = font.measure_width(hint) * (0.45 * h);
-        font.draw_depth(hint,
-            Vec2::new(cx - hw * 0.5, cy - 3.0 * h),
-            0.45 * h, Vec4::new(0.5, 0.55, 0.65, 1.0), 0.2, batch);
+        // Link de cadastro (clicavel — highlight azul)
+        let hint_pre  = "Sem conta? ";
+        let hint_link = "Cadastre-se aqui";
+        let fs_hint = 0.5 * h;
+        let pre_w  = font.measure_width(hint_pre)  * fs_hint;
+        let link_w = font.measure_width(hint_link) * fs_hint;
+        let total_w = pre_w + link_w;
+        let hint_y = cy - 3.0 * h;
+        font.draw_depth(hint_pre,
+            Vec2::new(cx - total_w * 0.5, hint_y),
+            fs_hint, Vec4::new(0.65, 0.68, 0.75, 1.0), 0.2, batch);
+        font.draw_depth(hint_link,
+            Vec2::new(cx - total_w * 0.5 + pre_w, hint_y),
+            fs_hint, Vec4::new(0.35, 0.7, 1.0, 1.0), 0.2, batch);
+        // Sublinhado do link
+        batch.push(&Sprite {
+            position: Vec2::new(cx - total_w * 0.5 + pre_w + link_w * 0.5, hint_y - fs_hint * 0.15),
+            size: Vec2::new(link_w, fs_hint * 0.07),
+            uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+            tint: Vec4::new(0.35, 0.7, 1.0, 0.8),
+            depth: 0.25, ..Default::default()
+        });
 
         // Tab para trocar campo
         let tip = "Tab = trocar campo   Enter = confirmar";
@@ -732,35 +769,39 @@ impl Game for MmoClient {
         }
 
         // --- Chat: entrar/sair do modo digitando ---
-        if self.connected && !self.chat_typing && ctx.input.key_pressed(KeyCode::KeyT) {
+        let opened_chat_this_frame = self.connected
+            && !self.chat_typing
+            && ctx.input.key_pressed(KeyCode::KeyT);
+        if opened_chat_this_frame {
             self.chat_typing = true;
             self.chat_input_buf.clear();
-            // Consome qualquer texto que o KeyT gerou no mesmo frame
-            let _ = ctx.input.take_text_input();
+        }
+        // Sempre consome text_input — distribui para chat ou descarta
+        let mut text_this_frame = ctx.input.take_text_input();
+        // Se acabou de abrir o chat, descarta o 't' que ativou
+        if opened_chat_this_frame {
+            text_this_frame.retain(|c| c != 't' && c != 'T');
         }
         if self.chat_typing {
-            // ESC ja foi tratado no bloco unificado acima; aqui so texto.
-            if ctx.input.key_pressed(KeyCode::Backspace) {
-                self.chat_input_buf.pop();
-            }
-            let incoming = ctx.input.take_text_input();
-            for ch in incoming.chars() {
-                if !ch.is_control() && self.chat_input_buf.chars().count() < 200 {
+            for ch in text_this_frame.chars() {
+                if ch == '\x08' || ch == '\x7f' {
+                    self.chat_input_buf.pop();
+                } else if ch == '\r' || ch == '\n' {
+                    // Enter — envia mensagem
+                    let msg = self.chat_input_buf.trim().to_string();
+                    if !msg.is_empty() {
+                        if let Some(net) = &self.net {
+                            net.send(ClientMessage::Chat(msg));
+                        }
+                    }
+                    self.chat_typing = false;
+                    self.chat_input_buf.clear();
+                    break;
+                } else if !ch.is_control() && self.chat_input_buf.chars().count() < 200 {
                     self.chat_input_buf.push(ch);
                 }
             }
-            if ctx.input.key_pressed(KeyCode::Enter) {
-                let msg = self.chat_input_buf.trim().to_string();
-                if !msg.is_empty() {
-                    if let Some(net) = &self.net {
-                        net.send(ClientMessage::Chat(msg));
-                    }
-                }
-                self.chat_typing = false;
-                self.chat_input_buf.clear();
-            }
-        } else {
-            let _ = ctx.input.take_text_input();
+            // ESC fecha chat (tratado no bloco acima via key_pressed)
         }
 
         // --- Gerar e enviar input ---
@@ -972,10 +1013,10 @@ impl Game for MmoClient {
                         };
                         let mut changed = false;
                         if in_sub(row_hud_y, minus_cx) {
-                            self.hud_scale = (self.hud_scale - 0.1).max(0.8);
+                            self.hud_scale = (self.hud_scale - 0.2).max(0.8);
                             changed = true;
                         } else if in_sub(row_hud_y, plus_cx) {
-                            self.hud_scale = (self.hud_scale + 0.1).min(2.5);
+                            self.hud_scale = (self.hud_scale + 0.2).min(5.0);
                             changed = true;
                         } else if in_sub(row_zoom_y, minus_cx) {
                             self.camera_zoom = (self.camera_zoom - 4.0).max(12.0);

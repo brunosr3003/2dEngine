@@ -128,7 +128,12 @@ impl<G: Game> ApplicationHandler for Runner<G> {
                         tracing::warn!("render error: {e:?}");
                     }
                 }
-                self.ctx.input.end_frame();
+                // So limpa input apos pelo menos um update ter processado.
+                // Se ticks==0 o input acumula ate o proximo tick — nenhum
+                // caractere e perdido entre frames de display intermediarios.
+                if ticks > 0 {
+                    self.ctx.input.end_frame();
+                }
                 if let Some(w) = &self.window { w.request_redraw(); }
             }
             _ => {}
