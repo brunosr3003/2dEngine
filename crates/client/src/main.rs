@@ -2696,7 +2696,66 @@ impl Game for MmoClient {
                 );
             }
 
-            // (Inventario na base removido: ver painel I.)
+            // Slots de equipamento equipado (arma / armadura / anel) — HUD compacta
+            // na base-centro da tela. Sem hotbar de inventario; isso ta no painel I.
+            let eq_slot_size = 0.65 * h;
+            let eq_gap = 0.15 * h;
+            let eq_slots: [(Option<u16>, &str); 3] = [
+                (self.equipment.weapon, "W"),
+                (self.equipment.armor,  "A"),
+                (self.equipment.ring,   "R"),
+            ];
+            let eq_total_w = 3.0 * eq_slot_size + 2.0 * eq_gap;
+            let eq_center_x = vis.min.x + (vis.max.x - vis.min.x) / 2.0;
+            let eq_y = vis.min.y + margin + 0.7 * h;
+            for (i, (item_opt, label)) in eq_slots.iter().enumerate() {
+                let x = eq_center_x - eq_total_w * 0.5 + eq_slot_size * 0.5
+                    + i as f32 * (eq_slot_size + eq_gap);
+                let pos = Vec2::new(x, eq_y);
+                let bg = if item_opt.is_some() {
+                    Vec4::new(0.20, 0.18, 0.10, 0.92)
+                } else {
+                    Vec4::new(0.10, 0.10, 0.14, 0.70)
+                };
+                batch.push(&Sprite {
+                    position: pos,
+                    size: Vec2::splat(eq_slot_size),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: bg,
+                    depth: layer::HUD,
+                    ..Default::default()
+                });
+                if let Some(iid) = item_opt {
+                    batch.push(&Sprite {
+                        position: pos,
+                        size: Vec2::splat(eq_slot_size * 0.7),
+                        uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                        tint: item_tint(*iid),
+                        depth: layer::HUD + 0.1,
+                        ..Default::default()
+                    });
+                    // Primeira letra do nome no centro
+                    let nm = item_display_name(*iid);
+                    let letter = &nm[..1];
+                    font.draw_depth(
+                        letter,
+                        pos + Vec2::new(-0.13 * h, -0.18 * h),
+                        0.6 * h,
+                        Vec4::new(0.05, 0.05, 0.1, 1.0),
+                        layer::HUD + 0.15,
+                        batch,
+                    );
+                }
+                // Rotulo pequeno abaixo do slot (W/A/R)
+                font.draw_depth(
+                    label,
+                    pos + Vec2::new(-0.08 * h, -eq_slot_size * 0.55),
+                    0.45 * h,
+                    Vec4::new(0.7, 0.7, 0.75, 0.9),
+                    layer::HUD + 0.2,
+                    batch,
+                );
+            }
             } // show_game_hud
         }
     }
