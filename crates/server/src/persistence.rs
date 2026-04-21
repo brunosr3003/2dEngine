@@ -27,6 +27,8 @@ pub struct CharacterRow {
     pub equipment: shared::Equipment,
     /// Vault persistente (INVENTORY_SLOTS slots igual o inv do player).
     pub vault: Vec<shared::InventorySlot>,
+    /// Fame: pontuacao de prestigio; ganha matando players/bosses.
+    pub fame: u64,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -73,6 +75,9 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS xp BIGINT NOT NULL DEFAULT 0")
         .execute(&pool)
         .await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS fame BIGINT NOT NULL DEFAULT 0")
+        .execute(&pool)
+        .await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS inventory (
@@ -114,13 +119,13 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
 }
 
 pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
-    let rows = sqlx::query_as::<_, (String, f32, f32, i32, i32, i64)>(
-        "SELECT name, x, y, hp, max_hp, xp FROM characters",
+    let rows = sqlx::query_as::<_, (String, f32, f32, i32, i32, i64, i64)>(
+        "SELECT name, x, y, hp, max_hp, xp, fame FROM characters",
     )
     .fetch_all(pool)
     .await?;
     let mut out = HashMap::with_capacity(rows.len());
-    for (name, x, y, hp, max_hp, xp) in rows {
+    for (name, x, y, hp, max_hp, xp, fame) in rows {
         let inv = load_inventory(pool, &name).await?;
         let equip = load_equipment(pool, &name).await?;
         let vault = load_vault(pool, &name).await?;
@@ -134,6 +139,7 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
                 inventory: inv,
                 equipment: equip,
                 vault,
+                fame: fame.max(0) as u64,
             },
         );
     }
@@ -230,14 +236,15 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .unwrap_or(0);
     for row in &batch.rows {
         sqlx::query(
-            "INSERT INTO characters (name, x, y, hp, max_hp, xp, updated)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            "INSERT INTO characters (name, x, y, hp, max_hp, xp, fame, updated)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
                hp = EXCLUDED.hp,
                max_hp = EXCLUDED.max_hp,
                xp = EXCLUDED.xp,
+               fame = EXCLUDED.fame,
                updated = EXCLUDED.updated",
         )
         .bind(&row.name)
@@ -246,6 +253,7 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(row.hp.current)
         .bind(row.hp.max)
         .bind(row.xp as i64)
+        .bind(row.fame as i64)
         .bind(now)
         .execute(&mut *tx)
         .await?;

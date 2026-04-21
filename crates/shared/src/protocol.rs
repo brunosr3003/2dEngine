@@ -155,6 +155,8 @@ pub enum ServerMessage {
     /// `dhp/dhp_max` = barra de downed (so outros players reduzem).
     /// `timer_s` = segundos ate auto-revival.
     DownedUpdate { active: bool, dhp: i32, dhp_max: i32, timer_s: f32 },
+    /// Atualizacao de Fame (pontuacao de prestigio).
+    FameUpdate { fame: u64 },
     Kick {
         reason: String,
     },
