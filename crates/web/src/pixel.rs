@@ -111,6 +111,9 @@ struct GenerateReq {
     prompt: String,
     #[serde(default = "default_size")]
     size: u32,
+    /// Override opcional do modelo (senao cai no env GEMINI_MODEL ou default).
+    #[serde(default)]
+    model: Option<String>,
 }
 fn default_size() -> u32 { 32 }
 
@@ -173,9 +176,25 @@ A matriz toda deve ter exatamente {size} linhas e cada linha exatamente
         }
     });
 
-    // Modelo configuravel via env. Default: gemini-2.5-flash (barato/rapido).
-    let model = std::env::var("GEMINI_MODEL")
-        .unwrap_or_else(|_| "gemini-2.5-flash".into());
+    // Modelo: override do cliente > env GEMINI_MODEL > default.
+    // Whitelist pra evitar abuso.
+    const ALLOWED: &[&str] = &[
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-3-flash-preview",
+        "gemini-3-pro-preview",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-3.1-pro-preview",
+    ];
+    let requested = req.model.clone()
+        .or_else(|| std::env::var("GEMINI_MODEL").ok())
+        .unwrap_or_else(|| "gemini-2.5-flash".into());
+    let model = if ALLOWED.contains(&requested.as_str()) {
+        requested
+    } else {
+        "gemini-2.5-flash".to_string()
+    };
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
         model, key

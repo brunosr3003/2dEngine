@@ -301,12 +301,12 @@ async function api_auth(password: string): Promise<boolean> {
   return r.ok;
 }
 
-async function api_generate(prompt: string): Promise<string[][]> {
+async function api_generate(prompt: string, model: string): Promise<string[][]> {
   const r = await fetch("/api/pixel/generate", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     credentials: "include",
-    body: JSON.stringify({ prompt, size: SIZE }),
+    body: JSON.stringify({ prompt, size: SIZE, model }),
   });
   const body = await r.json();
   if (!r.ok) throw new Error(body.error || `http ${r.status}`);
@@ -356,14 +356,16 @@ function setup_ia() {
   btn.addEventListener("click", async () => {
     const p = prompt_el.value.trim();
     if (!p) { status.textContent = "descreva o sprite"; status.className = "status err"; return; }
+    const model_el = document.getElementById("ia-model") as HTMLSelectElement;
+    const model = model_el.value;
     btn.disabled = true;
     status.className = "status";
-    status.textContent = "gerando...";
+    status.textContent = `gerando (${model})...`;
     try {
-      const pixels = await api_generate(p);
+      const pixels = await api_generate(p, model);
       editor.load_pixels(pixels);
       status.className = "status ok";
-      status.textContent = "pronto";
+      status.textContent = `pronto (${model})`;
     } catch (e: any) {
       status.className = "status err";
       status.textContent = e.message || "erro";

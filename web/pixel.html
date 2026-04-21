@@ -59,6 +59,18 @@
 
       <aside class="ia-panel">
         <h2>Gerar com IA (Gemini)</h2>
+        <label class="model-sel">
+          <span>Modelo</span>
+          <select id="ia-model">
+            <option value="gemini-2.5-flash-lite">2.5 Flash-Lite (mais barato)</option>
+            <option value="gemini-2.5-flash" selected>2.5 Flash (padrao)</option>
+            <option value="gemini-2.5-pro">2.5 Pro (qualidade)</option>
+            <option value="gemini-3-flash-preview">3.0 Flash Preview</option>
+            <option value="gemini-3-pro-preview">3.0 Pro Preview</option>
+            <option value="gemini-3.1-flash-lite-preview">3.1 Flash-Lite Preview</option>
+            <option value="gemini-3.1-pro-preview">3.1 Pro Preview (top)</option>
+          </select>
+        </label>
         <textarea id="ia-prompt" rows="4"
           placeholder="ex: um guerreiro com armadura preta segurando uma espada curva, dark fantasy"></textarea>
         <button id="btn-generate">Gerar</button>
