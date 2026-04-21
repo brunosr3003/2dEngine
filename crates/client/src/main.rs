@@ -32,6 +32,19 @@ fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
+/// Unidade logica da HUD em world units, ajustada pra ficar com
+/// TAMANHO CONSTANTE EM PIXELS independente do zoom da camera.
+///
+/// Ideia: 1 unidade-h = 32 pixels na tela (com hud_scale=1). O usuario
+/// pode escalar com hud_scale (0.8-5.0 via menu).
+///
+/// Essa funcao substitui `h = self.hud_scale` pra tornar a HUD
+/// responsiva (antes: HUD em world units, escalava com zoom — era uma
+/// confusao de tamanhos).
+fn hud_h(hud_scale: f32, camera_zoom: f32) -> f32 {
+    hud_scale * 32.0 / camera_zoom.max(1.0)
+}
+
 // IDs de clip de animacao (indexados no AnimRegistry)
 const ANIM_PLAYER_WALK: &str = "player_walk";
 const ANIM_PLAYER_IDLE: &str = "player_idle";
@@ -528,10 +541,10 @@ fn draw_slot_contents(
 /// Retorna lista de (spot_logico, SlotRect). Usado tanto pra desenhar
 /// quanto pra deteccao de clique. Inclui a linha quickslot (0..HOTBAR_SLOTS)
 /// no topo, a mochila (HOTBAR_SLOTS..) embaixo, e os slots de equip a direita.
-fn full_inv_layout(vis_min: Vec2, vis_max: Vec2, hud_scale: f32)
+fn full_inv_layout(vis_min: Vec2, vis_max: Vec2, hud_scale: f32, camera_zoom: f32)
     -> Vec<(shared::protocol::InvSpot, SlotRect)>
 {
-    let h = hud_scale;
+    let h = hud_h(hud_scale, camera_zoom);
     let slot_size = 0.9 * h;
     let gap = 0.12 * h;
     let backpack_cols = 6usize;
@@ -1528,7 +1541,7 @@ impl Game for MmoClient {
             let vis = ctx.camera.visible_rect();
             let mw = ctx.camera.screen_to_world(ctx.input.mouse_pos());
             let mut hit: Option<shared::protocol::InvSpot> = None;
-            for (spot, r) in full_inv_layout(Vec2::new(vis.min.x, vis.min.y), Vec2::new(vis.max.x, vis.max.y), self.hud_scale) {
+            for (spot, r) in full_inv_layout(Vec2::new(vis.min.x, vis.min.y), Vec2::new(vis.max.x, vis.max.y), self.hud_scale, ctx.camera.zoom) {
                 if r.contains(mw) { hit = Some(spot); break; }
             }
             if let Some(clicked) = hit {
@@ -1553,7 +1566,7 @@ impl Game for MmoClient {
                 let cx = vis.min.x + (vis.max.x - vis.min.x) * 0.5;
                 let cy = vis.min.y + (vis.max.y - vis.min.y) * 0.5;
                 let mouse_world = ctx.camera.screen_to_world(ctx.input.mouse_pos());
-                let h = self.hud_scale;
+                let h = hud_h(self.hud_scale, ctx.camera.zoom);
                 let btn_w = 4.0 * h;
                 let btn_h = 0.8 * h;
                 let gap = 0.25 * h;
@@ -1894,8 +1907,8 @@ impl Game for MmoClient {
         if self.menu_state == MenuState::Closed {
         if let Some(world) = &self.world_map {
             let vis = ctx.camera.visible_rect();
-            let h = self.hud_scale;
-            let mm_size = 3.2 * h;         // lado do painel em unidades de mundo
+            let h = hud_h(self.hud_scale, ctx.camera.zoom);
+            let mm_size = 3.2 * h;         // tamanho em pixels (via h)
             let mm_tiles = 40i32;          // tiles mostrados por lado
             let cell = mm_size / mm_tiles as f32;
             // Canto inferior-direito — barras do jogador agora ficam no superior-direito.
@@ -1989,7 +2002,7 @@ impl Game for MmoClient {
         // 3. HUD (posicionado no canto superior-esquerdo em espaco de mundo)
         if let Some(font) = &self.font {
             let vis = ctx.camera.visible_rect();
-            let h = self.hud_scale; // multiplicador global
+            let h = hud_h(self.hud_scale, ctx.camera.zoom); // 1h = 32 px fixo
             let margin = 0.3 * h;
             let top_left = Vec2::new(vis.min.x + margin, vis.max.y - margin);
             let bottom_left = Vec2::new(vis.min.x + margin, vis.min.y + 1.2 * h);
