@@ -212,8 +212,8 @@ enum LoginField {
 /// Joystick virtual usado em modo touch/mouse-drag. Desenhado em coordenadas
 /// de mundo (via camera.visible_rect) perto do canto inferior-esquerdo.
 struct VirtualJoystick {
-    center_screen_offset: Vec2, // deslocamento do canto inferior-esquerdo do vis_rect
-    radius: f32,                // raio do base em unidades de mundo
+    center_world: Vec2,  // posicao dinamica: onde o usuario tocou
+    radius: f32,         // raio do base em unidades de mundo
     active: bool,
     thumb_offset: Vec2, // vetor do centro ate o thumb (clampeado)
 }
@@ -221,8 +221,8 @@ struct VirtualJoystick {
 impl VirtualJoystick {
     fn new() -> Self {
         Self {
-            center_screen_offset: Vec2::new(1.8, 1.8),
-            radius: 1.2,
+            center_world: Vec2::ZERO,
+            radius: 2.5,
             active: false,
             thumb_offset: Vec2::ZERO,
         }
@@ -1043,29 +1043,26 @@ impl Game for MmoClient {
             }
         }
 
-        // --- Joystick virtual (mouse-drag / touch futuro) ---
+        // --- Joystick virtual (mobile-style: ativa onde clicar na esquerda) ---
         if self.touch_mode && !menu_open {
             let vis = ctx.camera.visible_rect();
-            let jcenter = Vec2::new(
-                vis.min.x + self.joystick.center_screen_offset.x,
-                vis.min.y + self.joystick.center_screen_offset.y,
-            );
+            let screen_mid_x = (vis.min.x + vis.max.x) * 0.5;
             let mouse_world = ctx.camera.screen_to_world(ctx.input.mouse_pos());
-            let left_down = ctx.input.mouse_down(engine::winit::event::MouseButton::Left);
+            let left_pressed = ctx.input.mouse_pressed(engine::winit::event::MouseButton::Left);
+            let left_down    = ctx.input.mouse_down(engine::winit::event::MouseButton::Left);
             if self.joystick.active {
                 if left_down {
-                    let off = mouse_world - jcenter;
+                    let off = mouse_world - self.joystick.center_world;
                     self.joystick.thumb_offset = off.clamp_length_max(self.joystick.radius);
                 } else {
                     self.joystick.active = false;
                     self.joystick.thumb_offset = Vec2::ZERO;
                 }
-            } else if left_down
-                && (mouse_world - jcenter).length() < self.joystick.radius * 1.5
-            {
+            } else if left_pressed && mouse_world.x < screen_mid_x {
+                // Spawn joystick onde o usuario tocou
+                self.joystick.center_world = mouse_world;
                 self.joystick.active = true;
-                self.joystick.thumb_offset = (mouse_world - jcenter)
-                    .clamp_length_max(self.joystick.radius);
+                self.joystick.thumb_offset = Vec2::ZERO;
             }
         } else {
             self.joystick.active = false;
@@ -1455,44 +1452,35 @@ impl Game for MmoClient {
                 }
             }
 
-            // Joystick virtual (modo touch / F2)
-            if self.touch_mode {
-                let vis = ctx.camera.visible_rect();
-                let jcenter = Vec2::new(
-                    vis.min.x + self.joystick.center_screen_offset.x,
-                    vis.min.y + self.joystick.center_screen_offset.y,
-                );
+            // Joystick virtual (modo touch / F2) — aparece apenas quando ativo
+            if self.touch_mode && self.joystick.active {
+                let jcenter = self.joystick.center_world;
                 let r = self.joystick.radius;
-                // Base
+                // Base (anel externo semi-transparente)
                 batch.push(&Sprite {
                     position: jcenter,
                     size: Vec2::splat(r * 2.0),
                     uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                    tint: Vec4::new(0.08, 0.1, 0.15, 0.7),
+                    tint: Vec4::new(0.08, 0.1, 0.15, 0.55),
                     depth: layer::HUD + 0.3,
                     ..Default::default()
                 });
-                // Borda
+                // Borda circular (linha horizontal fina)
                 batch.push(&Sprite {
                     position: jcenter,
-                    size: Vec2::new(r * 2.0 + 0.06, 0.06),
+                    size: Vec2::new(r * 2.0 + 0.08, 0.08),
                     uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                    tint: Vec4::new(0.85, 0.85, 0.85, 0.5),
+                    tint: Vec4::new(0.9, 0.9, 0.9, 0.45),
                     depth: layer::HUD + 0.31,
                     ..Default::default()
                 });
                 // Thumb
                 let thumb_pos = jcenter + self.joystick.thumb_offset;
-                let thumb_color = if self.joystick.active {
-                    Vec4::new(1.0, 0.85, 0.35, 0.95)
-                } else {
-                    Vec4::new(0.7, 0.75, 0.8, 0.85)
-                };
                 batch.push(&Sprite {
                     position: thumb_pos,
-                    size: Vec2::splat(r * 0.6),
+                    size: Vec2::splat(r * 0.55),
                     uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                    tint: thumb_color,
+                    tint: Vec4::new(1.0, 0.85, 0.35, 0.92),
                     depth: layer::HUD + 0.4,
                     ..Default::default()
                 });
