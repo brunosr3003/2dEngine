@@ -146,6 +146,11 @@ pub enum ServerMessage {
     VaultUpdate { slots: Vec<crate::InventorySlot> },
     /// Fecha o vault (jogador afastou-se ou cancelou).
     VaultClose,
+    /// Estado de Downed do proprio jogador. `active=true` entrou/continua
+    /// derrubado; `active=false` sinaliza saida (levantou ou morreu de vdd).
+    /// `dhp/dhp_max` = barra de downed (so outros players reduzem).
+    /// `timer_s` = segundos ate auto-revival.
+    DownedUpdate { active: bool, dhp: i32, dhp_max: i32, timer_s: f32 },
     Kick {
         reason: String,
     },

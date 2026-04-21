@@ -89,6 +89,12 @@ pub struct Session {
     pub downed: bool,
     /// Timer regressivo (segundos) ate auto-revival com 5% HP.
     pub downed_heal_timer: f32,
+    /// HP da barra de Downed State. So outros jogadores reduzem — se zerar,
+    /// morte real (despawn + respawn_timer).
+    pub downed_hp: i32,
+    /// Ultimo snapshot enviado de downed (ativo/timer/hp) — usado pra
+    /// nao spammar DownedUpdate quando nada muda.
+    pub downed_last_sent: (bool, i32, i32),
     pub name: String,
     pub player_id: PlayerId,
     pub account_id: Option<i64>,
@@ -688,6 +694,8 @@ impl GameWorld {
                 respawn_timer: None,
                 downed: false,
                 downed_heal_timer: 0.0,
+                downed_hp: 0,
+                downed_last_sent: (false, 0, 0),
                 name: String::new(),
                 player_id: PlayerId(0),
                 account_id: None,
@@ -1194,7 +1202,9 @@ impl GameWorld {
 
         // Credita o golpe fatal ao atacante: alvo_net_id -> atacante_net_id
         let mut kill_credits: HashMap<EntityId, EntityId> = HashMap::new();
-        // Lookup rapido: target entity_id -> (session id) pra checar downed
+        // Entidades que devem morrer de verdade (downed_hp zerou por player)
+        let mut pending_real_death: Vec<(Entity, EntityId)> = Vec::new();
+        // Lookup rapido: target entity_id pra checar downed
         let downed_targets: std::collections::HashSet<EntityId> = self.sessions
             .values()
             .filter(|s| s.downed)
@@ -1202,15 +1212,18 @@ impl GameWorld {
             .collect();
         for (entity, target_id, dmg, attacker_id, attacker_is_player) in damage_events {
             if downed_targets.contains(&target_id) {
-                // Player ja esta downed: mob nao executa; so reseta o timer.
-                if !attacker_is_player {
+                // Player ja esta downed. So dano de outro jogador drena a
+                // barra de Downed. Mobs nao afetam.
+                if attacker_is_player && attacker_id != target_id {
                     if let Some(s) = self.sessions.values_mut()
                         .find(|s| s.entity_id == target_id) {
-                        s.downed_heal_timer = shared::DOWNED_HEAL_TIME;
+                        s.downed_hp = (s.downed_hp - dmg).max(0);
+                        if s.downed_hp <= 0 {
+                            kill_credits.insert(target_id, attacker_id);
+                            pending_real_death.push((entity, target_id));
+                        }
                     }
                 }
-                // (Execucao de PvP ainda nao implementada; players acertando
-                // downed tb nao matam por enquanto.)
                 continue;
             }
             if let Ok(mut hp) = self.ecs.get::<&mut Health>(entity) {
@@ -1293,10 +1306,12 @@ impl GameWorld {
             }
         }
 
-        // ── I: jogadores com HP<=0 entram em Downed State (nao morrem) ────────
-        // PvE: mobs derrubam mas nao executam. Player auto-revive em
-        // DOWNED_HEAL_TIME se nao levar mais dano nesse periodo.
-        let downed_new: Vec<(Entity, EntityId)> = self
+        // ── I: transicao para Downed State ─────────────────────────────────
+        // Jogadores com HP<=0 que nao estao downed entram no estado agora.
+        // Dano vindo de OUTROS jogadores ja drena `downed_hp` no damage
+        // handler acima; quando zera, ja foi empurrado para real_deaths
+        // via `pending_real_death`.
+        let hp_zero: Vec<(Entity, EntityId)> = self
             .ecs
             .query::<(&NetId, &Health, &PlayerTag)>()
             .iter()
@@ -1304,13 +1319,33 @@ impl GameWorld {
                 if hp.current <= 0 { Some((e, net.0)) } else { None }
             })
             .collect();
-        for (entity, eid) in downed_new {
+        for (entity, eid) in hp_zero {
             for session in self.sessions.values_mut() {
                 if session.entity_id == eid && !session.downed {
                     session.downed = true;
                     session.downed_heal_timer = shared::DOWNED_HEAL_TIME;
-                    tracing::info!("{} foi derrubado", session.name);
+                    session.downed_hp = shared::DOWNED_HP_MAX;
+                    tracing::info!("{} foi derrubado (dHP={})",
+                                   session.name, session.downed_hp);
                     let _ = self.ecs.insert_one(entity, Untargetable);
+                    break;
+                }
+            }
+        }
+        // Aplica mortes reais acumuladas (downed_hp zerou por player).
+        let deaths: Vec<(Entity, EntityId)> = std::mem::take(&mut pending_real_death);
+        for (entity, eid) in deaths {
+            self.free_entity_body(entity);
+            let _ = self.ecs.despawn(entity);
+            self.removed_this_tick.push(eid);
+            for session in self.sessions.values_mut() {
+                if session.entity_id == eid {
+                    session.entity = None;
+                    session.respawn_timer = Some(RESPAWN_DELAY);
+                    session.downed = false;
+                    session.downed_hp = 0;
+                    tracing::info!("{} MORREU (barra downed zerou) — respawn em {}s",
+                                   session.name, RESPAWN_DELAY);
                     break;
                 }
             }
@@ -1538,6 +1573,19 @@ impl GameWorld {
                     .send(ServerMessage::VaultUpdate {
                         slots: session.vault.clone(),
                     });
+            }
+            // DownedUpdate: envia entrada/saida + updates com quantizacao do timer
+            // pra evitar spam (quantizado em inteiro de segundo).
+            let timer_q = session.downed_heal_timer.ceil() as i32;
+            let snap = (session.downed, session.downed_hp, timer_q);
+            if snap != session.downed_last_sent {
+                session.downed_last_sent = snap;
+                let _ = session.handle.to_client.send(ServerMessage::DownedUpdate {
+                    active: session.downed,
+                    dhp: session.downed_hp,
+                    dhp_max: shared::DOWNED_HP_MAX,
+                    timer_s: session.downed_heal_timer.max(0.0),
+                });
             }
             if session.stats_dirty {
                 session.stats_dirty = false;

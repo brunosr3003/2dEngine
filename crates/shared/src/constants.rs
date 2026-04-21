@@ -22,7 +22,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 14;
+pub const PROTOCOL_VERSION: u16 = 15;
 
 /// Velocidade base do jogador em tiles/segundo.
 pub const PLAYER_SPEED: f32 = 5.0;
@@ -80,6 +80,10 @@ pub const DOWNED_SPEED_MULT: f32 = 0.2;
 
 /// HP que o jogador recebe ao se levantar do Downed State (fracao do max).
 pub const DOWNED_REVIVE_HP_PCT: f32 = 0.05;
+
+/// HP maximo da barra do Downed State. So jogadores (nao monstros)
+/// conseguem reduzir — quando zera, morte real com respawn.
+pub const DOWNED_HP_MAX: i32 = 100;
 
 /// XP ganho por matar um inimigo (fallback — helpers por kind mais abaixo).
 pub const XP_PER_KILL: u64 = 30;

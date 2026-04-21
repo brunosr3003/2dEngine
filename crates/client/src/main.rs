@@ -110,6 +110,11 @@ pub struct MmoClient {
     shop_items:           Option<Vec<(u16, u32)>>,
     // Vault aberto quando vault_slots = Some
     vault_slots:          Option<Vec<shared::InventorySlot>>,
+    // Downed State do proprio jogador (so enquanto ativo)
+    downed_active:        bool,
+    downed_hp:            i32,
+    downed_hp_max:        i32,
+    downed_timer_s:       f32,
     // Inventario cheio aberto (toggle com I)
     inv_open:             bool,
     inv_selected:         Option<shared::protocol::InvSpot>,
@@ -570,6 +575,10 @@ impl MmoClient {
             stamina_current: shared::STAMINA_MAX,
             shop_items: None,
             vault_slots: None,
+            downed_active: false,
+            downed_hp: 0,
+            downed_hp_max: shared::DOWNED_HP_MAX,
+            downed_timer_s: 0.0,
             inv_open: false,
             inv_selected: None,
             last_hp: HashMap::new(),
@@ -1073,6 +1082,12 @@ impl Game for MmoClient {
                     ServerMessage::VaultClose => {
                         self.vault_slots = None;
                     }
+                    ServerMessage::DownedUpdate { active, dhp, dhp_max, timer_s } => {
+                        self.downed_active  = active;
+                        self.downed_hp      = dhp;
+                        self.downed_hp_max  = dhp_max;
+                        self.downed_timer_s = timer_s;
+                    }
                     ServerMessage::ProgressUpdate { xp, level } => {
                         let leveled_up = level > self.level && self.level > 0;
                         self.xp = xp;
@@ -1355,6 +1370,11 @@ impl Game for MmoClient {
             d.world_pos.y += dt * 1.4; // flutua pra cima
         }
         self.damage_numbers.retain(|d| d.ttl > 0.0);
+
+        // Tick contador de downed (decrementa local entre updates do server)
+        if self.downed_active && self.downed_timer_s > 0.0 {
+            self.downed_timer_s = (self.downed_timer_s - dt).max(0.0);
+        }
 
         // Tick particulas
         for p in &mut self.particles {
@@ -2770,38 +2790,77 @@ impl Game for MmoClient {
                 );
             }
 
-            // Overlay DOWNED quando HP=0 (player ficou incapacitado).
-            if let Some(hp) = self_hp {
-                if hp.current <= 0 {
-                    let cx = (vis.min.x + vis.max.x) * 0.5;
-                    let cy = (vis.min.y + vis.max.y) * 0.5;
-                    // Vinheta vermelha sutil
+            // Overlay DOWNED — barra de vida do derrubado + timer de revival.
+            if self.downed_active {
+                let cx = (vis.min.x + vis.max.x) * 0.5;
+                let cy = (vis.min.y + vis.max.y) * 0.5;
+                // Vinheta vermelha sutil
+                batch.push(&Sprite {
+                    position: Vec2::new(cx, cy),
+                    size: Vec2::new(vis.max.x - vis.min.x, vis.max.y - vis.min.y),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(0.4, 0.0, 0.0, 0.18),
+                    depth: layer::HUD + 4.0,
+                    ..Default::default()
+                });
+                // Titulo DERRUBADO
+                let msg = "DERRUBADO";
+                let ms = 1.6 * h;
+                let mw = font.measure_width(msg) * ms;
+                font.draw_depth(msg,
+                    Vec2::new(cx - mw * 0.5, cy + 1.5 * h),
+                    ms,
+                    Vec4::new(1.0, 0.25, 0.25, 1.0),
+                    layer::HUD + 4.5, batch);
+
+                // Barra de HP de derrubado (so reduzida por outros jogadores)
+                let bar_w = 6.0 * h;
+                let bar_h = 0.5 * h;
+                let bar_y = cy + 0.4 * h;
+                batch.push(&Sprite {
+                    position: Vec2::new(cx, bar_y),
+                    size: Vec2::new(bar_w, bar_h),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(0.12, 0.04, 0.04, 0.95),
+                    depth: layer::HUD + 4.5,
+                    ..Default::default()
+                });
+                let dhp_fill = (self.downed_hp as f32
+                    / self.downed_hp_max.max(1) as f32).clamp(0.0, 1.0);
+                if dhp_fill > 0.0 {
                     batch.push(&Sprite {
-                        position: Vec2::new(cx, cy),
-                        size: Vec2::new(vis.max.x - vis.min.x, vis.max.y - vis.min.y),
+                        position: Vec2::new(cx + (dhp_fill - 1.0) * bar_w * 0.5, bar_y),
+                        size: Vec2::new(bar_w * dhp_fill, bar_h),
                         uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                        tint: Vec4::new(0.4, 0.0, 0.0, 0.18),
-                        depth: layer::HUD + 4.0,
+                        tint: Vec4::new(0.9, 0.18, 0.2, 1.0),
+                        depth: layer::HUD + 4.6,
                         ..Default::default()
                     });
-                    // Texto DERRUBADO
-                    let msg = "DERRUBADO";
-                    let ms = 1.8 * h;
-                    let mw = font.measure_width(msg) * ms;
-                    font.draw_depth(msg,
-                        Vec2::new(cx - mw * 0.5, cy + 1.0 * h),
-                        ms,
-                        Vec4::new(1.0, 0.25, 0.25, 1.0),
-                        layer::HUD + 4.5, batch);
-                    let sub = "rastejando... aguardando se levantar";
-                    let ss = 0.55 * h;
-                    let sw = font.measure_width(sub) * ss;
-                    font.draw_depth(sub,
-                        Vec2::new(cx - sw * 0.5, cy),
-                        ss,
-                        Vec4::new(0.9, 0.7, 0.7, 1.0),
-                        layer::HUD + 4.5, batch);
                 }
+                let dhp_label = format!("Downed HP: {}/{}", self.downed_hp, self.downed_hp_max);
+                let dw = font.measure_width(&dhp_label) * (0.45 * h);
+                font.draw_depth(&dhp_label,
+                    Vec2::new(cx - dw * 0.5, bar_y + 0.08 * h),
+                    0.45 * h, Vec4::ONE, layer::HUD + 4.7, batch);
+
+                // Contador de revival
+                let timer_txt = format!("Levanta em {:.1}s", self.downed_timer_s);
+                let ts = 0.75 * h;
+                let tw = font.measure_width(&timer_txt) * ts;
+                font.draw_depth(&timer_txt,
+                    Vec2::new(cx - tw * 0.5, bar_y - 1.0 * h),
+                    ts,
+                    Vec4::new(1.0, 0.85, 0.5, 1.0),
+                    layer::HUD + 4.7, batch);
+
+                let sub = "rastejando... so outros jogadores podem te matar";
+                let ss = 0.45 * h;
+                let sw = font.measure_width(sub) * ss;
+                font.draw_depth(sub,
+                    Vec2::new(cx - sw * 0.5, bar_y - 1.8 * h),
+                    ss,
+                    Vec4::new(0.9, 0.7, 0.7, 1.0),
+                    layer::HUD + 4.7, batch);
             }
             } // show_game_hud
         }
