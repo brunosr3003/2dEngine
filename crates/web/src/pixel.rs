@@ -173,9 +173,9 @@ A matriz toda deve ter exatamente {size} linhas e cada linha exatamente
         }
     });
 
-    // Modelo configuravel via env. Default: gemini-3.1-pro-preview (top).
+    // Modelo configuravel via env. Default: gemini-2.5-flash (barato/rapido).
     let model = std::env::var("GEMINI_MODEL")
-        .unwrap_or_else(|_| "gemini-3.1-pro-preview".into());
+        .unwrap_or_else(|_| "gemini-2.5-flash".into());
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
         model, key
