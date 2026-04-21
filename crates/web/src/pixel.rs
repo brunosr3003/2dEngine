@@ -137,30 +137,45 @@ async fn generate(
     };
 
     let system_prompt = format!(
-        "Voce e um gerador de pixel art. Responda APENAS com JSON puro (sem
-markdown, sem texto antes/depois) no formato:
-{{\"pixels\":[[\"#RRGGBBAA\",...],[\"#RRGGBBAA\",...],...]}}
-onde pixels e uma matriz {size}x{size} de strings hex RGBA (use
-\"#00000000\" para transparente). Paleta limitada a ate 16 cores
-distintas. Estilo: pixel art dark fantasy 32x32, bordas nitidas, sem
-anti-aliasing.
-Sprite solicitado: {}",
-        req.prompt
+        "Gere um sprite pixel-art {size}x{size} do tema: \"{}\".
+
+Regras obrigatorias:
+- Estilo: pixel art top-down dark fantasy, bordas nitidas, SEM anti-aliasing.
+- Sprite centralizado ocupando a maior parte da area (use pelo menos
+  60% das celulas — NAO gere uma matriz vazia).
+- Fundo sempre transparente (\"#00000000\").
+- Paleta limitada: no maximo 8 cores distintas + transparente.
+- Linhas de contorno em preto ou cinza muito escuro pra dar definicao.
+
+Saida OBRIGATORIA: JSON puro (sem markdown, sem explicacao, sem texto
+antes ou depois), exatamente neste formato:
+
+{{\"pixels\":[row0, row1, ..., row{last}]}}
+
+Onde cada row e um array de {size} strings no formato \"#RRGGBBAA\".
+A matriz toda deve ter exatamente {size} linhas e cada linha exatamente
+{size} colunas.",
+        req.prompt,
+        last = size - 1,
     );
 
     let body = serde_json::json!({
         "contents": [{"parts": [{"text": system_prompt}]}],
         "generationConfig": {
-            "temperature": 0.7,
+            "temperature": 0.9,
             "response_mime_type": "application/json",
-            // Gemini 2.5 tem 'thinking' por default — mata latencia. Desabilita.
-            "thinkingConfig": {"thinkingBudget": 0},
+            // 32x32 tem 1024 celulas * ~12 chars + virgulas ≈ 15k tokens.
+            // Damos folga. Pro 2.5-pro suporta bem.
+            "maxOutputTokens": 32768,
+            // Gemini 2.5 tem 'thinking' por default. Pro sprite art habilita
+            // pensamento leve (melhora qualidade/coerencia do JSON grande).
+            "thinkingConfig": {"thinkingBudget": 1024},
         }
     });
 
-    // Modelo configuravel via env. Default: gemini-2.5-flash (leve).
+    // Modelo configuravel via env. Default: gemini-3.1-pro-preview (top).
     let model = std::env::var("GEMINI_MODEL")
-        .unwrap_or_else(|_| "gemini-2.5-flash".into());
+        .unwrap_or_else(|_| "gemini-3.1-pro-preview".into());
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
         model, key
@@ -198,6 +213,18 @@ Sprite solicitado: {}",
         .as_str()
         .unwrap_or("")
         .trim();
+    let finish_reason = raw["candidates"][0]["finishReason"].as_str().unwrap_or("?");
+    tracing::info!("gemini finish={} text_len={} preview={:?}",
+        finish_reason, gen_text.len(),
+        gen_text.chars().take(120).collect::<String>());
+    if gen_text.is_empty() {
+        tracing::warn!("gemini raw: {}", raw);
+        return (StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({
+                    "error": format!("gemini retornou texto vazio (finish={finish_reason})"),
+                    "raw": raw,
+                }))).into_response();
+    }
     // Caso tenha vindo com code fence, strip
     let json_str = gen_text
         .trim_start_matches("```json")
