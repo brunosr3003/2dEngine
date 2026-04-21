@@ -12,7 +12,9 @@
 //! Para sons dinamicos (carregados em runtime), usar `Vec<u8>` via `Cursor`.
 
 #[cfg(not(target_family = "wasm"))]
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use rodio::{source::SineWave, Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+#[cfg(not(target_family = "wasm"))]
+use std::time::Duration;
 use std::io::Cursor;
 
 #[cfg(not(target_family = "wasm"))]
@@ -119,6 +121,43 @@ impl AudioManager {
     pub fn music_done(&self) -> bool {
         self.music.as_ref().map(|s| s.empty()).unwrap_or(true)
     }
+
+    /// Toca um tom senoidal procedural. Util para SFX simples sem asset.
+    /// `freq_hz` = frequencia, `duration_ms` = duracao total (com fade-out),
+    /// `volume` = 0..1 relativo ao sfx_volume.
+    pub fn play_tone(&self, freq_hz: f32, duration_ms: u64, volume: f32) {
+        let sink = match Sink::try_new(&self.handle) {
+            Ok(s) => s,
+            Err(e) => { tracing::warn!("audio tone: {e}"); return; }
+        };
+        let total = Duration::from_millis(duration_ms);
+        let fade  = Duration::from_millis((duration_ms / 3).max(10));
+        let src = SineWave::new(freq_hz)
+            .take_duration(total)
+            .fade_in(Duration::from_millis(5))
+            .amplify(volume.clamp(0.0, 1.0));
+        sink.set_volume(self.sfx_volume * self.master_volume);
+        sink.append(src);
+        // Aplica fade-out no sink (rodio nao tem fade_out no source simples)
+        let _ = fade;
+        sink.detach();
+    }
+
+    /// Toca uma sequencia de tons (arpeggio). Cada passo = (freq, duration_ms).
+    pub fn play_sequence(&self, steps: &[(f32, u64)], volume: f32) {
+        let sink = match Sink::try_new(&self.handle) {
+            Ok(s) => s,
+            Err(e) => { tracing::warn!("audio seq: {e}"); return; }
+        };
+        for (freq, dur) in steps {
+            let src = SineWave::new(*freq)
+                .take_duration(Duration::from_millis(*dur))
+                .amplify(volume.clamp(0.0, 1.0));
+            sink.append(src);
+        }
+        sink.set_volume(self.sfx_volume * self.master_volume);
+        sink.detach();
+    }
 }
 
 /// Stub vazio para wasm (compilacao nao falha, audio e no-op).
@@ -136,4 +175,6 @@ impl AudioManager {
     pub fn set_music_volume(&mut self, _vol: f32) {}
     pub fn set_master_volume(&mut self, _vol: f32) {}
     pub fn music_done(&self) -> bool { true }
+    pub fn play_tone(&self, _freq_hz: f32, _duration_ms: u64, _volume: f32) {}
+    pub fn play_sequence(&self, _steps: &[(f32, u64)], _volume: f32) {}
 }

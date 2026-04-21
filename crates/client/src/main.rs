@@ -119,6 +119,8 @@ pub struct MmoClient {
     toasts:    Vec<Toast>,
     // Tracking de inventario pra detectar pickups e disparar toast
     last_inventory: Vec<shared::InventorySlot>,
+    // Audio (SFX procedurais). None se inicializacao falhou.
+    audio: Option<engine::audio::AudioManager>,
 
     // Controle on-screen (joystick + botoes). Toggle com F2; ligado por
     // padrao nas plataformas touch e testavel com mouse-drag no desktop.
@@ -432,6 +434,7 @@ impl MmoClient {
             particles: Vec::new(),
             toasts: Vec::new(),
             last_inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
+            audio: engine::audio::AudioManager::new().ok(),
             touch_mode: load_settings().touch_mode,
             joystick: VirtualJoystick::new(),
             hud_scale: load_settings().hud_scale,
@@ -882,6 +885,11 @@ impl Game for MmoClient {
                                 if let Some(pred) = &self.prediction {
                                     spawn_pickup_burst(&mut self.particles, pred.predicted_pos, col);
                                 }
+                                // Tilinho de pickup — gold mais agudo
+                                if let Some(a) = &self.audio {
+                                    let freq = if *iid == shared::item_id::GOLD { 1200.0 } else { 880.0 };
+                                    a.play_tone(freq, 90, 0.22);
+                                }
                             }
                         }
                         self.last_inventory = slots.clone();
@@ -923,6 +931,13 @@ impl Game for MmoClient {
                             // Shower de particulas douradas na posicao do jogador
                             if let Some(pred) = &self.prediction {
                                 spawn_level_up_shower(&mut self.particles, pred.predicted_pos);
+                            }
+                            // Fanfarra crescente
+                            if let Some(a) = &self.audio {
+                                a.play_sequence(&[
+                                    (523.0, 110), (659.0, 110),
+                                    (784.0, 110), (1046.0, 220),
+                                ], 0.25);
                             }
                         }
                     }
@@ -1118,9 +1133,19 @@ impl Game for MmoClient {
                         Vec4::new(1.0, 0.9, 0.4, 1.0)
                     };
                     spawn_hit_sparks(&mut self.particles, e.pos, col, 8);
+                    // SFX: hurt grave se recebeu dano, hit agudo se acertou
+                    if let Some(a) = &self.audio {
+                        if is_self { a.play_tone(160.0, 90, 0.25); }
+                        else       { a.play_tone(520.0, 60, 0.18); }
+                    }
                 } else if hp.current > prev {
                     // heal / stat up
                     spawn_heal_sparks(&mut self.particles, e.pos);
+                    if Some(e.id) == self.self_entity {
+                        if let Some(a) = &self.audio {
+                            a.play_sequence(&[(660.0, 80), (880.0, 100)], 0.2);
+                        }
+                    }
                 }
             }
             self.last_hp.insert(e.id, hp.current);
@@ -1152,6 +1177,14 @@ impl Game for MmoClient {
                     Vec4::new(1.0, 0.55, 0.15, 1.0)
                 };
                 spawn_hit_sparks(&mut self.particles, pos, col, 18);
+                // SFX morte: descida triste ou "thump"
+                if let Some(a) = &self.audio {
+                    if is_self {
+                        a.play_sequence(&[(220.0, 200), (130.0, 260), (90.0, 340)], 0.3);
+                    } else {
+                        a.play_tone(110.0, 180, 0.3);
+                    }
+                }
             }
         }
 
