@@ -486,7 +486,8 @@ fn draw_slot_contents(
 
 /// Layout completo do painel de inventario (quando inv_open).
 /// Retorna lista de (spot_logico, SlotRect). Usado tanto pra desenhar
-/// quanto pra deteccao de clique.
+/// quanto pra deteccao de clique. Inclui a linha quickslot (0..HOTBAR_SLOTS)
+/// no topo, a mochila (HOTBAR_SLOTS..) embaixo, e os slots de equip a direita.
 fn full_inv_layout(vis_min: Vec2, vis_max: Vec2, hud_scale: f32)
     -> Vec<(shared::protocol::InvSpot, SlotRect)>
 {
@@ -497,15 +498,25 @@ fn full_inv_layout(vis_min: Vec2, vis_max: Vec2, hud_scale: f32)
     let backpack_rows = 3usize;
     let bp_w = backpack_cols as f32 * slot_size + (backpack_cols - 1) as f32 * gap;
     let bp_h = backpack_rows as f32 * slot_size + (backpack_rows - 1) as f32 * gap;
+    let qs_h = slot_size + 0.5 * h;
     let eq_w = slot_size + 0.6 * h;
     let panel_w = bp_w + 1.5 * h + eq_w;
-    let panel_h = bp_h + 2.0 * h;
+    let panel_h = qs_h + bp_h + 2.5 * h;
     let cx = (vis_min.x + vis_max.x) * 0.5;
     let cy = (vis_min.y + vis_max.y) * 0.5;
-    let bp_origin_x = cx - panel_w * 0.5 + 0.5 * h + slot_size * 0.5;
-    let bp_origin_y = cy + panel_h * 0.5 - 1.15 * h - slot_size * 0.5;
+    let qs_origin_x = cx - panel_w * 0.5 + 0.5 * h + slot_size * 0.5;
+    let qs_origin_y = cy + panel_h * 0.5 - 1.15 * h - slot_size * 0.5;
+    let bp_origin_x = qs_origin_x;
+    let bp_origin_y = qs_origin_y - slot_size - 0.8 * h;
 
     let mut out = Vec::new();
+    // Quickslot (slots 0..HOTBAR_SLOTS)
+    for i in 0..HOTBAR_SLOTS {
+        let sx = qs_origin_x + i as f32 * (slot_size + gap);
+        out.push((shared::protocol::InvSpot::Inv(i as u16),
+                  SlotRect { cx: sx, cy: qs_origin_y, size: slot_size }));
+    }
+    // Mochila (slots HOTBAR_SLOTS..)
     for row in 0..backpack_rows {
         for col in 0..backpack_cols {
             let idx = HOTBAR_SLOTS + row * backpack_cols + col;
@@ -516,30 +527,16 @@ fn full_inv_layout(vis_min: Vec2, vis_max: Vec2, hud_scale: f32)
                       SlotRect { cx: sx, cy: sy, size: slot_size }));
         }
     }
-    let eq_origin_x = bp_origin_x + bp_w + 1.3 * h;
+    // Equipamento (coluna direita, alinhado com quickslot no topo)
+    let eq_origin_x = qs_origin_x + bp_w + 1.3 * h;
     for (i, slot) in [shared::EquipSlot::Weapon, shared::EquipSlot::Armor, shared::EquipSlot::Ring].iter().enumerate() {
-        let sy = bp_origin_y - i as f32 * (slot_size + gap);
+        let sy = qs_origin_y - i as f32 * (slot_size + gap);
         out.push((shared::protocol::InvSpot::Equip(*slot),
                   SlotRect { cx: eq_origin_x, cy: sy, size: slot_size }));
     }
     out
 }
 
-/// Calcula retangulos dos slots da hotbar (fixa na base da tela).
-fn hotbar_rects(vis_min: Vec2, vis_max: Vec2, hud_scale: f32) -> [SlotRect; HOTBAR_SLOTS] {
-    let h = hud_scale;
-    let size = 0.9 * h;
-    let gap = 0.12 * h;
-    let total_w = HOTBAR_SLOTS as f32 * size + (HOTBAR_SLOTS - 1) as f32 * gap;
-    let cx = (vis_min.x + vis_max.x) * 0.5;
-    let base_x = cx - total_w * 0.5 + size * 0.5;
-    let cy = vis_min.y + 0.8 * h;
-    let mut out = [SlotRect { cx: 0.0, cy, size }; HOTBAR_SLOTS];
-    for i in 0..HOTBAR_SLOTS {
-        out[i] = SlotRect { cx: base_x + i as f32 * (size + gap), cy, size };
-    }
-    out
-}
 
 impl MmoClient {
     pub fn new(server_url: String, username: String, password: String) -> Self {
@@ -1440,19 +1437,13 @@ impl Game for MmoClient {
             if !self.inv_open { self.inv_selected = None; }
         }
 
-        // --- Clicks no painel de inventario (slots + hotbar quando aberto) ---
+        // --- Clicks no painel de inventario (quando aberto) ---
         if self.inv_open && ctx.input.mouse_pressed(engine::winit::event::MouseButton::Left) {
             let vis = ctx.camera.visible_rect();
             let mw = ctx.camera.screen_to_world(ctx.input.mouse_pos());
-            let hot = hotbar_rects(Vec2::new(vis.min.x, vis.min.y), Vec2::new(vis.max.x, vis.max.y), self.hud_scale);
             let mut hit: Option<shared::protocol::InvSpot> = None;
-            for (i, r) in hot.iter().enumerate() {
-                if r.contains(mw) { hit = Some(shared::protocol::InvSpot::Inv(i as u16)); break; }
-            }
-            if hit.is_none() {
-                for (spot, r) in full_inv_layout(Vec2::new(vis.min.x, vis.min.y), Vec2::new(vis.max.x, vis.max.y), self.hud_scale) {
-                    if r.contains(mw) { hit = Some(spot); break; }
-                }
+            for (spot, r) in full_inv_layout(Vec2::new(vis.min.x, vis.min.y), Vec2::new(vis.max.x, vis.max.y), self.hud_scale) {
+                if r.contains(mw) { hit = Some(spot); break; }
             }
             if let Some(clicked) = hit {
                 match self.inv_selected {
@@ -2028,81 +2019,6 @@ impl Game for MmoClient {
                 }
             }
 
-            // Hotbar (sempre visivel na base) — slots 0..HOTBAR_SLOTS
-            {
-                let rects = hotbar_rects(Vec2::new(vis.min.x, vis.min.y), Vec2::new(vis.max.x, vis.max.y), h);
-                for (i, r) in rects.iter().enumerate() {
-                    let slot = self.inventory.get(i).copied().unwrap_or_default();
-                    // Fundo do slot
-                    batch.push(&Sprite {
-                        position: Vec2::new(r.cx, r.cy),
-                        size: Vec2::splat(r.size),
-                        uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                        tint: Vec4::new(0.08, 0.10, 0.14, 0.92),
-                        depth: layer::HUD + 0.5,
-                        ..Default::default()
-                    });
-                    // Borda clara
-                    let sel = matches!(self.inv_selected, Some(shared::protocol::InvSpot::Inv(s)) if s as usize == i);
-                    let bcol = if sel { Vec4::new(1.0, 0.85, 0.3, 1.0) } else { Vec4::new(0.65, 0.65, 0.75, 0.7) };
-                    for (dy, dx, w, heights) in [
-                        ( r.size * 0.5 - 0.03, 0.0, r.size, 0.06),
-                        (-r.size * 0.5 + 0.03, 0.0, r.size, 0.06),
-                        (0.0,  r.size * 0.5 - 0.03, 0.06, r.size),
-                        (0.0, -r.size * 0.5 + 0.03, 0.06, r.size),
-                    ] {
-                        batch.push(&Sprite {
-                            position: Vec2::new(r.cx + dx, r.cy + dy),
-                            size: Vec2::new(w, heights),
-                            uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                            tint: bcol, depth: layer::HUD + 0.55,
-                            ..Default::default()
-                        });
-                    }
-                    if slot.qty > 0 {
-                        // Icone: quadrado colorido
-                        batch.push(&Sprite {
-                            position: Vec2::new(r.cx, r.cy),
-                            size: Vec2::splat(r.size * 0.62),
-                            uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                            tint: item_tint(slot.item_id),
-                            depth: layer::HUD + 0.6,
-                            ..Default::default()
-                        });
-                        // Letra (primeira do nome)
-                        if let Some(font) = &self.font {
-                            let letter = &item_display_name(slot.item_id)[..1];
-                            font.draw_depth(letter,
-                                Vec2::new(r.cx - 0.13 * h, r.cy - 0.15 * h),
-                                0.6 * h,
-                                Vec4::new(0.05, 0.05, 0.1, 1.0),
-                                layer::HUD + 0.65, batch);
-                        }
-                        // Quantidade
-                        if slot.qty > 1 {
-                            if let Some(font) = &self.font {
-                                let qty = format!("{}", slot.qty);
-                                let qw = font.measure_width(&qty) * 0.35 * h;
-                                font.draw_depth(&qty,
-                                    Vec2::new(r.cx + r.size * 0.5 - qw - 0.05 * h, r.cy - r.size * 0.5 + 0.04 * h),
-                                    0.35 * h,
-                                    Vec4::new(1.0, 1.0, 1.0, 1.0),
-                                    layer::HUD + 0.7, batch);
-                            }
-                        }
-                    }
-                    // Tecla
-                    if let Some(font) = &self.font {
-                        let key = format!("{}", i + 1);
-                        font.draw_depth(&key,
-                            Vec2::new(r.cx - r.size * 0.5 + 0.04 * h, r.cy + r.size * 0.5 - 0.25 * h),
-                            0.32 * h,
-                            Vec4::new(0.95, 0.85, 0.35, 1.0),
-                            layer::HUD + 0.7, batch);
-                    }
-                }
-            }
-
             // Painel do inventario cheio (I aberto)
             if self.inv_open {
                 let font_opt = self.font.as_ref();
@@ -2112,10 +2028,11 @@ impl Game for MmoClient {
                 let backpack_rows = 3;
                 let bp_w = backpack_cols as f32 * slot_size + (backpack_cols - 1) as f32 * gap;
                 let bp_h = backpack_rows as f32 * slot_size + (backpack_rows - 1) as f32 * gap;
+                // Linha da "quickslot" (primeiros 6 slots) no topo da mochila
+                let qs_h = slot_size + 0.5 * h;
                 let eq_w = slot_size + 0.6 * h;
-                let eq_h = 3.0 * slot_size + 2.0 * gap;
                 let panel_w = bp_w + 1.5 * h + eq_w;
-                let panel_h = bp_h + 2.0 * h;
+                let panel_h = qs_h + bp_h + 2.5 * h;
                 let cx = (vis.min.x + vis.max.x) * 0.5;
                 let cy = (vis.min.y + vis.max.y) * 0.5;
                 // Fundo
@@ -2144,9 +2061,38 @@ impl Game for MmoClient {
                         layer::HUD + 1.2, batch);
                 }
 
+                // Linha da quickslot (hotbar logica) no topo — slots 0..HOTBAR_SLOTS
+                let qs_origin_x = cx - panel_w * 0.5 + 0.5 * h + slot_size * 0.5;
+                let qs_origin_y = cy + panel_h * 0.5 - 1.15 * h - slot_size * 0.5;
+                if let Some(font) = font_opt {
+                    font.draw_depth("Quickslot (1..6):",
+                        Vec2::new(qs_origin_x - slot_size * 0.5, qs_origin_y + slot_size * 0.5 + 0.08 * h),
+                        0.5 * h,
+                        Vec4::new(1.0, 0.85, 0.35, 1.0),
+                        layer::HUD + 1.2, batch);
+                }
+                for i in 0..HOTBAR_SLOTS {
+                    let sx = qs_origin_x + i as f32 * (slot_size + gap);
+                    let sy = qs_origin_y;
+                    let r = SlotRect { cx: sx, cy: sy, size: slot_size };
+                    let slot = self.inventory.get(i).copied().unwrap_or_default();
+                    let selected = matches!(self.inv_selected,
+                        Some(shared::protocol::InvSpot::Inv(s)) if s as usize == i);
+                    draw_slot_box(&r, selected, layer::HUD + 1.3, batch);
+                    draw_slot_contents(&r, &slot, h, font_opt, layer::HUD + 1.4, batch);
+                    if let Some(font) = font_opt {
+                        let key = format!("{}", i + 1);
+                        font.draw_depth(&key,
+                            Vec2::new(r.cx - r.size * 0.5 + 0.04 * h, r.cy + r.size * 0.5 - 0.25 * h),
+                            0.3 * h,
+                            Vec4::new(0.95, 0.85, 0.35, 1.0),
+                            layer::HUD + 1.45, batch);
+                    }
+                }
+
                 // Mochila grid (slots HOTBAR_SLOTS..INVENTORY_SLOTS)
-                let bp_origin_x = cx - panel_w * 0.5 + 0.5 * h + slot_size * 0.5;
-                let bp_origin_y = cy + panel_h * 0.5 - 1.15 * h - slot_size * 0.5;
+                let bp_origin_x = qs_origin_x;
+                let bp_origin_y = qs_origin_y - slot_size - 0.8 * h;
                 if let Some(font) = font_opt {
                     font.draw_depth("Mochila:",
                         Vec2::new(bp_origin_x - slot_size * 0.5, bp_origin_y + slot_size * 0.5 + 0.08 * h),
@@ -2169,9 +2115,9 @@ impl Game for MmoClient {
                     }
                 }
 
-                // Equipamento (coluna direita)
-                let eq_origin_x = bp_origin_x + bp_w + 1.3 * h;
-                let eq_origin_y = bp_origin_y;
+                // Equipamento (coluna direita). Alinha topo com quickslot.
+                let eq_origin_x = qs_origin_x + bp_w + 1.3 * h;
+                let eq_origin_y = qs_origin_y;
                 if let Some(font) = font_opt {
                     font.draw_depth("Equip:",
                         Vec2::new(eq_origin_x - slot_size * 0.5, eq_origin_y + slot_size * 0.5 + 0.08 * h),
