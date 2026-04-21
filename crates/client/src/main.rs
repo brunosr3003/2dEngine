@@ -45,11 +45,11 @@ fn hud_h(hud_scale: f32, viewport_y_px: f32, camera_zoom: f32) -> f32 {
     target_px / camera_zoom.max(1.0)
 }
 
-/// Layout consistente da tela de login. Tudo em coordenadas de mundo
-/// mas calibrado pra tamanho em pixels (indep. de zoom). Usado pelo
-/// render e pelo hit-detect do click (update_login).
+/// Layout do login com dimensões em PIXELS reais convertidas pra world
+/// via zoom. Zero mistério: se campo tem 300px de largura aqui, ele
+/// aparece com 300px na tela, independente de zoom.
 struct LoginLayout {
-    h: f32,
+    h: f32,        // 1 "unidade" simbolica (usada pra fontes)
     cx: f32, cy: f32,
     panel_w: f32, panel_h: f32,
     title_y: f32,
@@ -58,53 +58,60 @@ struct LoginLayout {
     field_w: f32, field_h: f32,
     chk_size: f32,
     link_cx: f32, link_w: f32,
-    hint_pre_w: f32,
 }
 
 fn login_layout(ctx: &engine::app::AppContext) -> LoginLayout {
     let vis = ctx.camera.visible_rect();
     let cx = (vis.min.x + vis.max.x) * 0.5;
     let cy = (vis.min.y + vis.max.y) * 0.5;
-    let h = (ctx.viewport.y * 0.045) / ctx.camera.zoom.max(1.0);
+    let zoom = ctx.camera.zoom.max(1.0);
 
-    let field_w = 7.0 * h;
-    let field_h = 0.9 * h;
-    let panel_w = field_w + 2.0 * h;
-    let panel_h = 10.5 * h;
+    // Painel dimensionado proporcional ao viewport (55% da altura, 40% da largura max).
+    // Limites pra não ficar gigante em monitor 4K nem minusculo em janela pequena.
+    let vp_y = ctx.viewport.y;
+    let panel_h_px = (vp_y * 0.60).clamp(380.0, 640.0);
+    let panel_w_px = (panel_h_px * 0.82).clamp(320.0, 520.0);
+    let to_w = |px: f32| px / zoom;
 
-    // Posicao vertical de cada elemento (relativo a cy):
-    //   topo painel: cy + 5.25h
-    //   titulo:      cy + 3.8h
-    //   user field:  cy + 2.0h
-    //   pass field:  cy + 0.4h
-    //   btn:         cy - 1.3h
-    //   checkbox:    cy - 2.5h
-    //   error:       cy - 3.2h
-    //   hint link:   cy - 3.9h
-    //   tip:         cy - 4.7h
-    //   base painel: cy - 5.25h
-    let title_y    = cy + 3.8 * h;
-    let user_y     = cy + 2.0 * h;
-    let pass_y     = cy + 0.4 * h;
-    let btn_y      = cy - 1.3 * h;
-    let remember_y = cy - 2.5 * h;
-    let err_y      = cy - 3.2 * h;
-    let hint_y     = cy - 3.9 * h;
-    let tip_y      = cy - 4.7 * h;
+    let panel_w = to_w(panel_w_px);
+    let panel_h = to_w(panel_h_px);
 
-    // Link hit area
+    // Posicoes verticais em pixels desde o CENTRO do painel:
+    //   (positivos = acima, negativos = abaixo)
+    let title_y_px     =  panel_h_px * 0.35;  //  ~35%
+    let user_y_px      =  panel_h_px * 0.18;
+    let pass_y_px      =  panel_h_px * 0.02;
+    let btn_y_px       = -panel_h_px * 0.14;
+    let remember_y_px  = -panel_h_px * 0.26;
+    let err_y_px       = -panel_h_px * 0.32;
+    let hint_y_px      = -panel_h_px * 0.38;
+    let tip_y_px       = -panel_h_px * 0.44;
+
+    // 1 "h" = ~8% da altura do painel (pra dimensões de campo/fonte)
+    let h = to_w(panel_h_px * 0.08);
+
+    let field_w = to_w(panel_w_px * 0.82);
+    let field_h = to_w(panel_h_px * 0.085);
+    let chk_size = to_w(panel_h_px * 0.04);
+
     let fs_hint = 0.45 * h;
-    let pre_w  = 11.0 * fs_hint * 0.6; // aprox "Sem conta? " 11 chars
-    let link_w = 16.0 * fs_hint * 0.6; // aprox "Cadastre-se aqui"
-    let link_cx = cx - (pre_w + link_w) * 0.5 + pre_w + link_w * 0.5;
+    let pre_w  = 11.0 * fs_hint * 0.6;
+    let link_w = 16.0 * fs_hint * 0.6;
+    let link_cx = cx + (pre_w + link_w) * 0.5 - link_w * 0.5;
 
     LoginLayout {
         h, cx, cy, panel_w, panel_h,
-        title_y, user_y, pass_y, btn_y, remember_y, err_y, hint_y, tip_y,
+        title_y:    cy + to_w(title_y_px),
+        user_y:     cy + to_w(user_y_px),
+        pass_y:     cy + to_w(pass_y_px),
+        btn_y:      cy + to_w(btn_y_px),
+        remember_y: cy + to_w(remember_y_px),
+        err_y:      cy + to_w(err_y_px),
+        hint_y:     cy + to_w(hint_y_px),
+        tip_y:      cy + to_w(tip_y_px),
         field_w, field_h,
-        chk_size: 0.45 * h,
+        chk_size,
         link_cx, link_w,
-        hint_pre_w: pre_w,
     }
 }
 
