@@ -132,6 +132,14 @@ pub struct MmoClient {
 
     // Debug
     show_debug: bool,
+
+    // Tela de login
+    app_state:      AppState,
+    login_username: String,
+    login_password: String,
+    login_field:    LoginField,
+    login_error:    Option<String>,
+    login_submitted: bool,
 }
 
 const CHAT_LOG_MAX: usize = 6;
@@ -187,6 +195,18 @@ enum MenuState {
     Closed,
     Main,
     Settings,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum AppState {
+    Login,
+    Playing,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum LoginField {
+    Username,
+    Password,
 }
 
 /// Joystick virtual usado em modo touch/mouse-drag. Desenhado em coordenadas
@@ -268,7 +288,273 @@ impl MmoClient {
             chat_typing: false,
             chat_input_buf: String::new(),
             show_debug: false,
+            app_state: AppState::Login,
+            login_username: String::new(),
+            login_password: String::new(),
+            login_field: LoginField::Username,
+            login_error: None,
+            login_submitted: false,
         }
+    }
+
+    fn do_connect(&mut self) {
+        tracing::info!("conectando em {}", self.server_url);
+        match net_client::connect(self.server_url.clone()) {
+            Ok(n) => {
+                n.send(ClientMessage::Handshake {
+                    protocol_version: shared::PROTOCOL_VERSION,
+                    client_version: env!("CARGO_PKG_VERSION").to_string(),
+                });
+                n.send(ClientMessage::Login {
+                    username: self.login_username.trim().to_string(),
+                    password: self.login_password.clone(),
+                });
+                self.username = self.login_username.trim().to_string();
+                self.net = Some(n);
+            }
+            Err(e) => {
+                self.login_error = Some(format!("Erro de conexao: {e}"));
+                self.login_submitted = false;
+            }
+        }
+    }
+
+    fn update_login(&mut self, ctx: &mut AppContext) {
+        // Tab / click muda campo ativo
+        if ctx.input.key_pressed(KeyCode::Tab) {
+            self.login_field = match self.login_field {
+                LoginField::Username => LoginField::Password,
+                LoginField::Password => LoginField::Username,
+            };
+            let _ = ctx.input.take_text_input();
+        }
+
+        // Backspace
+        if ctx.input.key_pressed(KeyCode::Backspace) {
+            match self.login_field {
+                LoginField::Username => { self.login_username.pop(); }
+                LoginField::Password => { self.login_password.pop(); }
+            }
+        }
+
+        // Digitar texto
+        let incoming = ctx.input.take_text_input();
+        for ch in incoming.chars() {
+            if ch.is_control() { continue; }
+            match self.login_field {
+                LoginField::Username if self.login_username.len() < 32 => {
+                    self.login_username.push(ch);
+                }
+                LoginField::Password if self.login_password.len() < 64 => {
+                    self.login_password.push(ch);
+                }
+                _ => {}
+            }
+        }
+
+        // Enter submete
+        if ctx.input.key_pressed(KeyCode::Enter) && !self.login_submitted {
+            if self.login_field == LoginField::Username {
+                self.login_field = LoginField::Password;
+            } else if !self.login_username.trim().is_empty() && !self.login_password.is_empty() {
+                self.login_error = None;
+                self.login_submitted = true;
+                self.do_connect();
+            }
+        }
+
+        // Clique nos campos / botao — calculado em screen coords normalizadas
+        let vis = ctx.camera.visible_rect();
+        let cx = (vis.min.x + vis.max.x) * 0.5;
+        let cy = (vis.min.y + vis.max.y) * 0.5;
+        let h = 1.0f32; // 1 tile world unit como referencia
+        let field_w = 8.0 * h;
+        let user_y  = cy + 1.5 * h;
+        let pass_y  = cy + 0.0 * h;
+        let btn_y   = cy - 1.8 * h;
+        let field_h = 0.8 * h;
+
+        if ctx.input.mouse_pressed(engine::winit::event::MouseButton::Left) {
+            let mw = ctx.camera.screen_to_world(ctx.input.mouse_pos());
+            if (mw.x - cx).abs() < field_w * 0.5 && (mw.y - user_y).abs() < field_h * 0.5 {
+                self.login_field = LoginField::Username;
+            } else if (mw.x - cx).abs() < field_w * 0.5 && (mw.y - pass_y).abs() < field_h * 0.5 {
+                self.login_field = LoginField::Password;
+            } else if (mw.x - cx).abs() < field_w * 0.5 && (mw.y - btn_y).abs() < field_h * 0.5 {
+                if !self.login_submitted && !self.login_username.trim().is_empty() && !self.login_password.is_empty() {
+                    self.login_error = None;
+                    self.login_submitted = true;
+                    self.do_connect();
+                }
+            }
+        }
+
+        // Se ja submeteu, processar respostas do servidor
+        if self.login_submitted {
+            if let Some(net) = &mut self.net {
+                while let Ok(msg) = net.incoming.try_recv() {
+                    match msg {
+                        ServerMessage::HandshakeAck { server_time_ms, .. } => {
+                            let local_ms = now_ms() as i64;
+                            self.server_time_offset_ms = server_time_ms as i64 - local_ms;
+                        }
+                        ServerMessage::LoginOk { entity_id, spawn, .. } => {
+                            self.self_entity = Some(entity_id);
+                            if let Some(map) = &self.world_map {
+                                self.prediction = Some(PredictionBuffer::new(spawn, map));
+                            }
+                            ctx.camera.position = spawn;
+                            self.entity_names.insert(entity_id, self.username.clone());
+                            self.connected = true;
+                            self.app_state = AppState::Playing;
+                            self.login_submitted = false;
+                        }
+                        ServerMessage::LoginDenied { reason } => {
+                            self.login_error = Some(reason);
+                            self.login_submitted = false;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_login(&self, ctx: &AppContext, batch: &mut SpriteBatch) {
+        let Some(font) = &self.font else { return };
+        let vis = ctx.camera.visible_rect();
+        let cx = (vis.min.x + vis.max.x) * 0.5;
+        let cy = (vis.min.y + vis.max.y) * 0.5;
+        let h = 1.0f32;
+        let field_w = 8.0 * h;
+        let field_h = 0.8 * h;
+        let user_y  = cy + 1.5 * h;
+        let pass_y  = cy + 0.0 * h;
+        let btn_y   = cy - 1.8 * h;
+
+        // Fundo escuro
+        let sw = vis.max.x - vis.min.x;
+        let sh = vis.max.y - vis.min.y;
+        batch.push(&Sprite {
+            position: Vec2::new(cx, cy),
+            size: Vec2::new(sw, sh),
+            uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+            tint: Vec4::new(0.04, 0.05, 0.10, 1.0),
+            depth: 0.0,
+            ..Default::default()
+        });
+
+        // Painel central
+        batch.push(&Sprite {
+            position: Vec2::new(cx, cy),
+            size: Vec2::new(field_w + 2.0 * h, 7.0 * h),
+            uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+            tint: Vec4::new(0.08, 0.10, 0.16, 0.97),
+            depth: 0.05,
+            ..Default::default()
+        });
+        // Borda topo do painel
+        batch.push(&Sprite {
+            position: Vec2::new(cx, cy + 3.5 * h - 0.04),
+            size: Vec2::new(field_w + 2.0 * h, 0.07 * h),
+            uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+            tint: Vec4::new(1.0, 0.85, 0.3, 1.0),
+            depth: 0.06,
+            ..Default::default()
+        });
+
+        // Titulo
+        let title = "MMORPG 2D";
+        let ts = 1.1 * h;
+        let tw = font.measure_width(title) * ts;
+        font.draw_depth(title,
+            Vec2::new(cx - tw * 0.5, cy + 2.8 * h),
+            ts, Vec4::new(1.0, 0.85, 0.3, 1.0), 0.1, batch);
+
+        let draw_field = |label: &str, value: &str, y: f32, active: bool,
+                          is_pass: bool, batch: &mut SpriteBatch| {
+            // Label
+            let lw = font.measure_width(label) * (0.6 * h);
+            font.draw_depth(label,
+                Vec2::new(cx - field_w * 0.5, y + field_h * 0.5 + 0.25 * h),
+                0.6 * h, Vec4::new(0.75, 0.8, 0.95, 1.0), 0.1, batch);
+            // Fundo campo
+            let bg = if active { Vec4::new(0.14, 0.18, 0.28, 1.0) }
+                     else      { Vec4::new(0.10, 0.12, 0.18, 1.0) };
+            batch.push(&Sprite {
+                position: Vec2::new(cx, y),
+                size: Vec2::new(field_w, field_h),
+                uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                tint: bg, depth: 0.1, ..Default::default()
+            });
+            // Borda se ativo
+            if active {
+                batch.push(&Sprite {
+                    position: Vec2::new(cx, y - field_h * 0.5 + 0.03),
+                    size: Vec2::new(field_w, 0.06),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(0.4, 0.7, 1.0, 1.0), depth: 0.15, ..Default::default()
+                });
+            }
+            // Texto + cursor
+            let display = if is_pass {
+                "*".repeat(value.chars().count())
+            } else {
+                value.to_string()
+            };
+            let cursor = if active { "_" } else { "" };
+            let text = format!("{}{}", display, cursor);
+            let fs = 0.65 * h;
+            font.draw_depth(&text,
+                Vec2::new(cx - field_w * 0.5 + 0.2, y + field_h * 0.2),
+                fs, Vec4::ONE, 0.2, batch);
+            let _ = lw; // suppress warning
+        };
+
+        draw_field("USUARIO", &self.login_username, user_y,
+            self.login_field == LoginField::Username, false, batch);
+        draw_field("SENHA", &self.login_password, pass_y,
+            self.login_field == LoginField::Password, true, batch);
+
+        // Botao entrar
+        let btn_label = if self.login_submitted { "Conectando..." } else { "ENTRAR" };
+        let btn_color = if self.login_submitted {
+            Vec4::new(0.4, 0.4, 0.4, 1.0)
+        } else {
+            Vec4::new(1.0, 0.75, 0.2, 1.0)
+        };
+        batch.push(&Sprite {
+            position: Vec2::new(cx, btn_y),
+            size: Vec2::new(field_w, field_h),
+            uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+            tint: btn_color, depth: 0.1, ..Default::default()
+        });
+        let bw = font.measure_width(btn_label) * (0.75 * h);
+        font.draw_depth(btn_label,
+            Vec2::new(cx - bw * 0.5, btn_y + field_h * 0.2),
+            0.75 * h, Vec4::new(0.05, 0.05, 0.1, 1.0), 0.2, batch);
+
+        // Mensagem de erro
+        if let Some(err) = &self.login_error {
+            let ew = font.measure_width(err) * (0.6 * h);
+            font.draw_depth(err,
+                Vec2::new(cx - ew * 0.5, btn_y - 0.9 * h),
+                0.6 * h, Vec4::new(1.0, 0.35, 0.3, 1.0), 0.2, batch);
+        }
+
+        // Dica de cadastro
+        let hint = "Cadastre-se em http://localhost:5173";
+        let hw = font.measure_width(hint) * (0.45 * h);
+        font.draw_depth(hint,
+            Vec2::new(cx - hw * 0.5, cy - 3.0 * h),
+            0.45 * h, Vec4::new(0.5, 0.55, 0.65, 1.0), 0.2, batch);
+
+        // Tab para trocar campo
+        let tip = "Tab = trocar campo   Enter = confirmar";
+        let tiw = font.measure_width(tip) * (0.4 * h);
+        font.draw_depth(tip,
+            Vec2::new(cx - tiw * 0.5, cy - 3.6 * h),
+            0.4 * h, Vec4::new(0.4, 0.45, 0.55, 1.0), 0.2, batch);
     }
 
 }
@@ -321,25 +607,16 @@ impl Game for MmoClient {
         self.tilemap = Some(map);
         self.world_map = Some(world);
 
-        // 5. Conectar ao servidor
-        tracing::info!("conectando em {}", self.server_url);
-        match net_client::connect(self.server_url.clone()) {
-            Ok(n) => {
-                n.send(ClientMessage::Handshake {
-                    protocol_version: shared::PROTOCOL_VERSION,
-                    client_version: env!("CARGO_PKG_VERSION").to_string(),
-                });
-                n.send(ClientMessage::Login {
-                    username: self.username.clone(),
-                    password: self.password.clone(),
-                });
-                self.net = Some(n);
-            }
-            Err(e) => tracing::error!("connect: {e}"),
-        }
+        // 5. Conexao adiada ate o usuario preencher a tela de login
     }
 
     fn update(&mut self, ctx: &mut AppContext, dt: f32) {
+        // --- Tela de login ---
+        if self.app_state == AppState::Login {
+            self.update_login(ctx);
+            return;
+        }
+
         // --- Processar mensagens do servidor ---
         if let Some(net) = &mut self.net {
             while let Ok(msg) = net.incoming.try_recv() {
@@ -397,10 +674,14 @@ impl Game for MmoClient {
                         ctx.camera.position = spawn;
                         self.entity_names.insert(entity_id, self.username.clone());
                         self.connected = true;
+                        self.app_state = AppState::Playing;
+                        self.login_submitted = false;
                     }
                     ServerMessage::LoginDenied { reason } => {
                         tracing::error!("login negado: {reason}");
-                        ctx.should_exit = true;
+                        self.login_error = Some(reason);
+                        self.login_submitted = false;
+                        self.app_state = AppState::Login;
                     }
                     ServerMessage::Snapshot(snap) => {
                         // Reconciliacao do proprio jogador
@@ -781,6 +1062,11 @@ impl Game for MmoClient {
     }
 
     fn render(&mut self, ctx: &mut AppContext, batch: &mut SpriteBatch, _alpha: f32) {
+        if self.app_state == AppState::Login {
+            self.render_login(ctx, batch);
+            return;
+        }
+
         // 1. Tilemap
         if let Some(map) = &self.tilemap {
             map.fill_batch(&ctx.camera, batch);
