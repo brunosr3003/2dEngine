@@ -1,95 +1,213 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" shape-rendering="crispEdges">
-  <!-- ========== COQUEIRO 64x64 — vista top-down-isométrica leve ========== -->
+  <!-- ============================================================
+       COQUEIRO 64x64 v2 — copa frondosa + tronco curvo realista
+       Paleta: 14 cores, 3 tons pra folhas, 3 tons pro tronco
+       ============================================================ -->
+
   <!-- Sombra no chão -->
-  <ellipse cx="32" cy="56" rx="14" ry="3" fill="#000000" fill-opacity="0.35"/>
-  <rect x="18" y="54" width="28" height="4" fill="#3a2a1a" fill-opacity="0.2"/>
+  <ellipse cx="32" cy="60" rx="12" ry="3" fill="#000000" fill-opacity="0.4"/>
+  <rect x="24" y="58" width="18" height="3" fill="#2a1810" fill-opacity="0.3"/>
 
-  <!-- TRONCO (com anéis/gomos característicos do coqueiro) -->
-  <rect x="28" y="30" width="8"  height="26" fill="#6a3a20"/>
-  <!-- Linhas esquerdas (sombra) -->
-  <rect x="28" y="30" width="1"  height="26" fill="#4a2a18"/>
-  <!-- Highlight direito -->
-  <rect x="34" y="30" width="2"  height="26" fill="#8a5a30"/>
-  <!-- Anéis/gomos horizontais -->
-  <rect x="28" y="34" width="8"  height="1"  fill="#4a2a18"/>
-  <rect x="28" y="40" width="8"  height="1"  fill="#4a2a18"/>
-  <rect x="28" y="46" width="8"  height="1"  fill="#4a2a18"/>
-  <rect x="28" y="52" width="8"  height="1"  fill="#4a2a18"/>
-  <rect x="28" y="35" width="8"  height="1"  fill="#c08050"/>
-  <rect x="28" y="41" width="8"  height="1"  fill="#c08050"/>
-  <rect x="28" y="47" width="8"  height="1"  fill="#c08050"/>
-  <!-- Base do tronco (leve alargamento) -->
-  <rect x="26" y="53" width="12" height="3" fill="#4a2a18"/>
-  <rect x="27" y="54" width="10" height="2" fill="#6a3a20"/>
+  <!-- ============================================================
+       TRONCO (ligeiramente curvo, com anéis característicos)
+       ============================================================ -->
+  <!-- Base mais larga -->
+  <rect x="24" y="56" width="18" height="4"  fill="#4a2a18"/>
+  <rect x="24" y="56" width="18" height="1"  fill="#2a1810"/>
+  <rect x="24" y="56" width="1"  height="4"  fill="#2a1810"/>
+  <rect x="41" y="56" width="1"  height="4"  fill="#2a1810"/>
+  <rect x="25" y="57" width="16" height="1"  fill="#6a3a20"/>
 
-  <!-- Outline do tronco -->
-  <rect x="27" y="30" width="1"  height="26" fill="#2a1810"/>
-  <rect x="36" y="30" width="1"  height="26" fill="#2a1810"/>
+  <!-- Corpo do tronco (de baixo pra cima, com leve curva) -->
+  <rect x="26" y="48" width="14" height="8" fill="#6a3a20"/>
+  <rect x="27" y="40" width="12" height="8" fill="#6a3a20"/>
+  <rect x="28" y="32" width="10" height="8" fill="#6a3a20"/>
+  <rect x="29" y="26" width="8"  height="6" fill="#6a3a20"/>
 
-  <!-- ========== COPA DAS FOLHAS (6 folhas radiais) ========== -->
-  <!-- Folha CIMA -->
-  <rect x="30" y="4"  width="4"  height="8" fill="#206020"/>
-  <rect x="31" y="4"  width="2"  height="8" fill="#3a9030"/>
-  <rect x="28" y="6"  width="2"  height="4" fill="#206020"/>
-  <rect x="34" y="6"  width="2"  height="4" fill="#206020"/>
-  <rect x="28" y="10" width="8"  height="2" fill="#3a9030"/>
-  <rect x="29" y="10" width="6"  height="1" fill="#5ac04a"/>
+  <!-- Outline lateral do tronco -->
+  <rect x="26" y="48" width="1"  height="8" fill="#2a1810"/>
+  <rect x="39" y="48" width="1"  height="8" fill="#2a1810"/>
+  <rect x="27" y="40" width="1"  height="8" fill="#2a1810"/>
+  <rect x="38" y="40" width="1"  height="8" fill="#2a1810"/>
+  <rect x="28" y="32" width="1"  height="8" fill="#2a1810"/>
+  <rect x="37" y="32" width="1"  height="8" fill="#2a1810"/>
+  <rect x="29" y="26" width="1"  height="6" fill="#2a1810"/>
+  <rect x="36" y="26" width="1"  height="6" fill="#2a1810"/>
 
-  <!-- Folha ESQUERDA (diagonal) -->
-  <rect x="8"  y="12" width="8"  height="4" fill="#206020"/>
-  <rect x="16" y="10" width="6"  height="4" fill="#206020"/>
-  <rect x="22" y="10" width="4"  height="4" fill="#3a9030"/>
-  <rect x="10" y="14" width="4"  height="2" fill="#3a9030"/>
-  <rect x="16" y="12" width="6"  height="2" fill="#3a9030"/>
-  <rect x="22" y="12" width="4"  height="2" fill="#5ac04a"/>
-  <rect x="10" y="13" width="2"  height="1" fill="#5ac04a"/>
+  <!-- Highlight (luz lateral direita) -->
+  <rect x="37" y="48" width="2"  height="8" fill="#8a5a30"/>
+  <rect x="36" y="40" width="2"  height="8" fill="#8a5a30"/>
+  <rect x="35" y="32" width="2"  height="8" fill="#8a5a30"/>
+  <rect x="34" y="26" width="2"  height="6" fill="#8a5a30"/>
+  <rect x="38" y="52" width="1"  height="3" fill="#b07850"/>
 
-  <!-- Folha DIREITA (diagonal) -->
-  <rect x="48" y="12" width="8"  height="4" fill="#206020"/>
-  <rect x="42" y="10" width="6"  height="4" fill="#206020"/>
-  <rect x="38" y="10" width="4"  height="4" fill="#3a9030"/>
-  <rect x="50" y="14" width="4"  height="2" fill="#3a9030"/>
-  <rect x="42" y="12" width="6"  height="2" fill="#3a9030"/>
-  <rect x="38" y="12" width="4"  height="2" fill="#5ac04a"/>
-  <rect x="52" y="13" width="2"  height="1" fill="#5ac04a"/>
+  <!-- Sombra lateral esquerda -->
+  <rect x="27" y="48" width="2"  height="8" fill="#4a2a18"/>
+  <rect x="28" y="40" width="2"  height="8" fill="#4a2a18"/>
+  <rect x="29" y="32" width="2"  height="8" fill="#4a2a18"/>
+  <rect x="30" y="26" width="2"  height="6" fill="#4a2a18"/>
 
-  <!-- Folha SUP-ESQ (curta) -->
-  <rect x="16" y="4"  width="4"  height="6" fill="#206020"/>
-  <rect x="20" y="6"  width="4"  height="4" fill="#3a9030"/>
-  <rect x="17" y="6"  width="2"  height="4" fill="#3a9030"/>
-  <rect x="20" y="8"  width="2"  height="2" fill="#5ac04a"/>
+  <!-- ANÉIS/GOMOS característicos do coqueiro (horizontais escuros + claros) -->
+  <rect x="24" y="55" width="18" height="1" fill="#2a1810"/>
+  <rect x="26" y="47" width="14" height="1" fill="#2a1810"/>
+  <rect x="27" y="39" width="12" height="1" fill="#2a1810"/>
+  <rect x="28" y="31" width="10" height="1" fill="#2a1810"/>
+  <rect x="26" y="52" width="14" height="1" fill="#4a2a18"/>
+  <rect x="27" y="44" width="12" height="1" fill="#4a2a18"/>
+  <rect x="28" y="36" width="10" height="1" fill="#4a2a18"/>
+  <rect x="29" y="28" width="8"  height="1" fill="#4a2a18"/>
+  <!-- Claros acima de cada anel (efeito 'relevo') -->
+  <rect x="27" y="53" width="12" height="1" fill="#8a5a30"/>
+  <rect x="28" y="45" width="10" height="1" fill="#8a5a30"/>
+  <rect x="29" y="37" width="8"  height="1" fill="#8a5a30"/>
 
-  <!-- Folha SUP-DIR (curta) -->
-  <rect x="44" y="4"  width="4"  height="6" fill="#206020"/>
-  <rect x="40" y="6"  width="4"  height="4" fill="#3a9030"/>
-  <rect x="45" y="6"  width="2"  height="4" fill="#3a9030"/>
-  <rect x="42" y="8"  width="2"  height="2" fill="#5ac04a"/>
+  <!-- ============================================================
+       COCOS (3 cachos, atrás das folhas da frente)
+       ============================================================ -->
+  <!-- Coco central alto -->
+  <rect x="30" y="22" width="4"  height="4" fill="#4a2a18"/>
+  <rect x="30" y="22" width="4"  height="1" fill="#2a1810"/>
+  <rect x="30" y="22" width="1"  height="4" fill="#2a1810"/>
+  <rect x="33" y="22" width="1"  height="4" fill="#2a1810"/>
+  <rect x="30" y="25" width="4"  height="1" fill="#2a1810"/>
+  <rect x="31" y="23" width="2"  height="1" fill="#6a3a20"/>
 
-  <!-- Folha BAIXO-ESQ (pendurada) -->
-  <rect x="18" y="18" width="8"  height="4" fill="#206020"/>
-  <rect x="20" y="18" width="6"  height="2" fill="#3a9030"/>
-  <rect x="22" y="20" width="4"  height="2" fill="#3a9030"/>
+  <!-- Coco esquerdo -->
+  <rect x="25" y="24" width="4"  height="4" fill="#4a2a18"/>
+  <rect x="25" y="24" width="4"  height="1" fill="#2a1810"/>
+  <rect x="25" y="24" width="1"  height="4" fill="#2a1810"/>
+  <rect x="28" y="24" width="1"  height="4" fill="#2a1810"/>
+  <rect x="25" y="27" width="4"  height="1" fill="#2a1810"/>
+  <rect x="26" y="25" width="2"  height="1" fill="#6a3a20"/>
 
-  <!-- Folha BAIXO-DIR (pendurada) -->
-  <rect x="38" y="18" width="8"  height="4" fill="#206020"/>
-  <rect x="38" y="18" width="6"  height="2" fill="#3a9030"/>
-  <rect x="38" y="20" width="4"  height="2" fill="#3a9030"/>
+  <!-- Coco direito -->
+  <rect x="35" y="24" width="4"  height="4" fill="#4a2a18"/>
+  <rect x="35" y="24" width="4"  height="1" fill="#2a1810"/>
+  <rect x="35" y="24" width="1"  height="4" fill="#2a1810"/>
+  <rect x="38" y="24" width="1"  height="4" fill="#2a1810"/>
+  <rect x="35" y="27" width="4"  height="1" fill="#2a1810"/>
+  <rect x="36" y="25" width="2"  height="1" fill="#6a3a20"/>
 
-  <!-- ========== COCOS (3 no centro) ========== -->
-  <rect x="26" y="22" width="4"  height="4" fill="#4a2a18"/>
-  <rect x="27" y="22" width="2"  height="1" fill="#8a5a30"/>
-  <rect x="26" y="24" width="1"  height="1" fill="#2a1810"/>
+  <!-- ============================================================
+       FOLHAS RADIAIS — 7 folhas dramáticas em direções diferentes
+       Cada folha tem: outline + sombra + base + highlight + tip
+       ============================================================ -->
 
-  <rect x="30" y="20" width="4"  height="4" fill="#4a2a18"/>
-  <rect x="31" y="20" width="2"  height="1" fill="#8a5a30"/>
-  <rect x="30" y="22" width="1"  height="1" fill="#2a1810"/>
+  <!-- ========== FOLHA N (cima, vertical, dominante) ========== -->
+  <!-- Outline -->
+  <rect x="29" y="0"  width="6"  height="1"  fill="#0a3010"/>
+  <rect x="27" y="1"  width="10" height="1"  fill="#0a3010"/>
+  <rect x="25" y="2"  width="14" height="1"  fill="#0a3010"/>
+  <rect x="23" y="4"  width="18" height="1"  fill="#0a3010"/>
+  <rect x="25" y="22" width="14" height="1"  fill="#0a3010"/>
+  <!-- Preenchimento base -->
+  <rect x="29" y="1"  width="6"  height="1"  fill="#3a9030"/>
+  <rect x="27" y="2"  width="10" height="2"  fill="#3a9030"/>
+  <rect x="25" y="3"  width="14" height="3"  fill="#3a9030"/>
+  <rect x="23" y="5"  width="18" height="6"  fill="#3a9030"/>
+  <rect x="24" y="11" width="16" height="5"  fill="#3a9030"/>
+  <rect x="25" y="16" width="14" height="6"  fill="#3a9030"/>
+  <!-- Sombra inferior da folha -->
+  <rect x="24" y="14" width="16" height="2"  fill="#206020"/>
+  <rect x="25" y="19" width="14" height="3"  fill="#206020"/>
+  <!-- Veia central -->
+  <rect x="31" y="2"  width="2"  height="20" fill="#206020"/>
+  <rect x="31" y="5"  width="2"  height="1"  fill="#5ac04a"/>
+  <rect x="31" y="10" width="2"  height="1"  fill="#5ac04a"/>
+  <rect x="31" y="15" width="2"  height="1"  fill="#5ac04a"/>
+  <!-- Highlights (folíolos) -->
+  <rect x="28" y="4"  width="2"  height="2"  fill="#5ac04a"/>
+  <rect x="34" y="4"  width="2"  height="2"  fill="#5ac04a"/>
+  <rect x="25" y="7"  width="3"  height="2"  fill="#5ac04a"/>
+  <rect x="36" y="7"  width="3"  height="2"  fill="#5ac04a"/>
+  <rect x="24" y="12" width="3"  height="2"  fill="#5ac04a"/>
+  <rect x="37" y="12" width="3"  height="2"  fill="#5ac04a"/>
+  <rect x="25" y="17" width="3"  height="2"  fill="#5ac04a"/>
+  <rect x="36" y="17" width="3"  height="2"  fill="#5ac04a"/>
+  <!-- Tip brilhante no topo -->
+  <rect x="30" y="0"  width="4"  height="1"  fill="#80d060"/>
 
-  <rect x="34" y="22" width="4"  height="4" fill="#4a2a18"/>
-  <rect x="35" y="22" width="2"  height="1" fill="#8a5a30"/>
-  <rect x="34" y="24" width="1"  height="1" fill="#2a1810"/>
+  <!-- ========== FOLHA NE (diagonal cima-direita) ========== -->
+  <rect x="40" y="6"  width="20" height="3" fill="#3a9030"/>
+  <rect x="40" y="5"  width="20" height="1" fill="#0a3010"/>
+  <rect x="40" y="9"  width="20" height="1" fill="#0a3010"/>
+  <rect x="40" y="8"  width="18" height="1" fill="#206020"/>
+  <rect x="42" y="6"  width="14" height="1" fill="#5ac04a"/>
+  <rect x="58" y="4"  width="4"  height="2" fill="#3a9030"/>
+  <rect x="58" y="3"  width="4"  height="1" fill="#0a3010"/>
+  <rect x="58" y="6"  width="4"  height="1" fill="#5ac04a"/>
+  <rect x="60" y="2"  width="3"  height="1" fill="#80d060"/>
+  <!-- Conexao com a copa -->
+  <rect x="36" y="7"  width="6"  height="2" fill="#3a9030"/>
+  <rect x="36" y="6"  width="6"  height="1" fill="#0a3010"/>
+  <rect x="36" y="9"  width="6"  height="1" fill="#0a3010"/>
 
-  <!-- Centro da copa (topo do tronco) -->
-  <rect x="28" y="26" width="8"  height="4" fill="#3a9030"/>
-  <rect x="30" y="26" width="4"  height="2" fill="#5ac04a"/>
-  <rect x="28" y="28" width="8"  height="2" fill="#206020"/>
+  <!-- ========== FOLHA NW (diagonal cima-esquerda) ========== -->
+  <rect x="4"  y="6"  width="20" height="3" fill="#3a9030"/>
+  <rect x="4"  y="5"  width="20" height="1" fill="#0a3010"/>
+  <rect x="4"  y="9"  width="20" height="1" fill="#0a3010"/>
+  <rect x="6"  y="8"  width="18" height="1" fill="#206020"/>
+  <rect x="8"  y="6"  width="14" height="1" fill="#5ac04a"/>
+  <rect x="2"  y="4"  width="4"  height="2" fill="#3a9030"/>
+  <rect x="2"  y="3"  width="4"  height="1" fill="#0a3010"/>
+  <rect x="2"  y="6"  width="4"  height="1" fill="#5ac04a"/>
+  <rect x="1"  y="2"  width="3"  height="1" fill="#80d060"/>
+  <rect x="22" y="7"  width="6"  height="2" fill="#3a9030"/>
+  <rect x="22" y="6"  width="6"  height="1" fill="#0a3010"/>
+  <rect x="22" y="9"  width="6"  height="1" fill="#0a3010"/>
+
+  <!-- ========== FOLHA E (horizontal direita) ========== -->
+  <rect x="38" y="18" width="20" height="4" fill="#3a9030"/>
+  <rect x="38" y="17" width="20" height="1" fill="#0a3010"/>
+  <rect x="38" y="22" width="20" height="1" fill="#0a3010"/>
+  <rect x="40" y="20" width="16" height="1" fill="#206020"/>
+  <rect x="40" y="19" width="14" height="1" fill="#5ac04a"/>
+  <rect x="56" y="20" width="4"  height="1" fill="#5ac04a"/>
+  <rect x="58" y="17" width="2"  height="4" fill="#3a9030"/>
+  <rect x="58" y="16" width="2"  height="1" fill="#0a3010"/>
+  <rect x="58" y="21" width="2"  height="1" fill="#0a3010"/>
+  <rect x="60" y="18" width="3"  height="2" fill="#80d060"/>
+
+  <!-- ========== FOLHA W (horizontal esquerda) ========== -->
+  <rect x="6"  y="18" width="20" height="4" fill="#3a9030"/>
+  <rect x="6"  y="17" width="20" height="1" fill="#0a3010"/>
+  <rect x="6"  y="22" width="20" height="1" fill="#0a3010"/>
+  <rect x="8"  y="20" width="16" height="1" fill="#206020"/>
+  <rect x="10" y="19" width="14" height="1" fill="#5ac04a"/>
+  <rect x="4"  y="20" width="4"  height="1" fill="#5ac04a"/>
+  <rect x="4"  y="17" width="2"  height="4" fill="#3a9030"/>
+  <rect x="4"  y="16" width="2"  height="1" fill="#0a3010"/>
+  <rect x="4"  y="21" width="2"  height="1" fill="#0a3010"/>
+  <rect x="1"  y="18" width="3"  height="2" fill="#80d060"/>
+
+  <!-- ========== FOLHA SE (diagonal baixo-direita, pendurada) ========== -->
+  <rect x="40" y="28" width="14" height="3" fill="#3a9030"/>
+  <rect x="40" y="27" width="14" height="1" fill="#0a3010"/>
+  <rect x="40" y="31" width="14" height="1" fill="#0a3010"/>
+  <rect x="42" y="30" width="10" height="1" fill="#206020"/>
+  <rect x="42" y="29" width="10" height="1" fill="#5ac04a"/>
+  <rect x="54" y="29" width="4"  height="1" fill="#3a9030"/>
+  <rect x="54" y="28" width="4"  height="1" fill="#0a3010"/>
+  <rect x="54" y="30" width="4"  height="1" fill="#0a3010"/>
+  <rect x="58" y="30" width="3"  height="1" fill="#80d060"/>
+
+  <!-- ========== FOLHA SW (diagonal baixo-esquerda, pendurada) ========== -->
+  <rect x="10" y="28" width="14" height="3" fill="#3a9030"/>
+  <rect x="10" y="27" width="14" height="1" fill="#0a3010"/>
+  <rect x="10" y="31" width="14" height="1" fill="#0a3010"/>
+  <rect x="12" y="30" width="10" height="1" fill="#206020"/>
+  <rect x="12" y="29" width="10" height="1" fill="#5ac04a"/>
+  <rect x="6"  y="29" width="4"  height="1" fill="#3a9030"/>
+  <rect x="6"  y="28" width="4"  height="1" fill="#0a3010"/>
+  <rect x="6"  y="30" width="4"  height="1" fill="#0a3010"/>
+  <rect x="3"  y="30" width="3"  height="1" fill="#80d060"/>
+
+  <!-- ============================================================
+       CENTRO DA COPA (tufo de folhas novas no topo do tronco)
+       ============================================================ -->
+  <rect x="27" y="24" width="12" height="4" fill="#206020"/>
+  <rect x="29" y="22" width="8"  height="4" fill="#3a9030"/>
+  <rect x="30" y="23" width="6"  height="2" fill="#5ac04a"/>
+  <rect x="31" y="21" width="4"  height="2" fill="#5ac04a"/>
+  <rect x="32" y="20" width="2"  height="1" fill="#80d060"/>
 </svg>
