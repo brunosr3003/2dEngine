@@ -730,6 +730,7 @@ dependencies = [
  "futures-util",
  "glam 0.29.3",
  "hecs",
+ "image",
  "rapier2d",
  "serde",
  "shared",

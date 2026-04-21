@@ -19,6 +19,13 @@ pub const FONT_CHAR_PX: u32 = 8;
 pub const FONT_COLS: u32 = 32;
 pub const FONT_ORIGIN_Y: u32 = 64; // inicio da area de fonte em px
 
+/// Caminho e posicao do sprite HD do jogador (64x64) dentro do atlas.
+/// Carregado de `assets/sprites/player_base.png` em `generate()`. Se o
+/// arquivo nao existir, cai pro sprite procedural de 16x16.
+pub const PLAYER_HD_PX: u32 = 64;
+pub const PLAYER_HD_X:  u32 = 0;
+pub const PLAYER_HD_Y:  u32 = 128;
+
 
 
 /// Descricao do layout para usar fora do modulo.
@@ -52,10 +59,10 @@ pub fn generate() -> (Vec<u8>, AtlasLayout) {
     paint_tile(&mut px, 4, 0, water_pixel);
     paint_tile(&mut px, 5, 0, wood_pixel);
 
-    // ---- Sprites de jogador (linha 1, colunas 0-7) ----
+    // ---- Sprites de jogador (linha 1, colunas 0-7) — fallback procedural ----
     for frame in 0u32..4 {
-        paint_char_sprite(&mut px, frame, 1, [70, 130, 70, 255], frame);   // walk-down
-        paint_char_sprite(&mut px, frame + 4, 1, [70, 130, 70, 255], frame); // walk-right (mesmo sprite, flip via UV no anim)
+        paint_char_sprite(&mut px, frame, 1, [70, 130, 70, 255], frame);
+        paint_char_sprite(&mut px, frame + 4, 1, [70, 130, 70, 255], frame);
     }
 
     // ---- Sprites de inimigo basico (linha 2, colunas 0-3) ----
@@ -66,8 +73,44 @@ pub fn generate() -> (Vec<u8>, AtlasLayout) {
     // ---- Fonte 8x8 (linhas 4-6, a partir de y=64) ----
     paint_font(&mut px);
 
-    let layout = build_layout();
+    // ---- Player HD (64x64) carregado de assets/sprites/player_base.png ----
+    // Tenta 2 caminhos (cwd do bin e raiz do repo)
+    let hd_loaded = try_blit_png(
+        &mut px, PLAYER_HD_X, PLAYER_HD_Y, PLAYER_HD_PX,
+        &[
+            "assets/sprites/player_base.png",
+            "../assets/sprites/player_base.png",
+            "../../assets/sprites/player_base.png",
+        ],
+    );
+
+    let layout = build_layout(hd_loaded);
     (px, layout)
+}
+
+/// Tenta carregar um PNG de um dos caminhos (primeiro que existe) e
+/// blitar em `atlas[dst_x..dst_x+size][dst_y..dst_y+size]`. Retorna
+/// true se conseguiu, false se nenhum caminho abriu.
+fn try_blit_png(atlas: &mut [u8], dst_x: u32, dst_y: u32, size: u32, paths: &[&str]) -> bool {
+    for p in paths {
+        match image::open(p) {
+            Ok(img) => {
+                let rgba = img.to_rgba8();
+                let (iw, ih) = rgba.dimensions();
+                for y in 0..size.min(ih) {
+                    for x in 0..size.min(iw) {
+                        let p = rgba.get_pixel(x, y).0;
+                        set(atlas, dst_x + x, dst_y + y, p);
+                    }
+                }
+                tracing::info!("player_base.png carregado de '{}'", p);
+                return true;
+            }
+            Err(_) => continue,
+        }
+    }
+    tracing::warn!("player_base.png nao encontrado em nenhum path — usando sprite procedural");
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -303,7 +346,7 @@ fn tile_uv(col: u32, row: u32) -> (Vec2, Vec2) {
     uv(col * TILE_PX, row * TILE_PX, TILE_PX, TILE_PX)
 }
 
-fn build_layout() -> AtlasLayout {
+fn build_layout(hd_player: bool) -> AtlasLayout {
     let white_uv = uv(0, 0, 1, 1);
 
     // tile_uvs[0] = stub vazio (nao renderizado), [1-5] = floor..wood
@@ -316,7 +359,15 @@ fn build_layout() -> AtlasLayout {
         tile_uv(5, 0),             // 5: WOOD
     ];
 
-    let player_uvs: Vec<_> = (0..8).map(|f| tile_uv(f, 1)).collect();
+    // Se carregamos player_base.png (64x64 em PLAYER_HD_X, PLAYER_HD_Y),
+    // todos os frames apontam pra essa regiao (sprite HD estatico por enquanto).
+    // Quando tiver animacoes, basta expandir essa regiao ou usar mapa de frames.
+    let player_uvs: Vec<_> = if hd_player {
+        let hd = uv(PLAYER_HD_X, PLAYER_HD_Y, PLAYER_HD_PX, PLAYER_HD_PX);
+        (0..8).map(|_| hd).collect()
+    } else {
+        (0..8).map(|f| tile_uv(f, 1)).collect()
+    };
     let enemy_uvs:  Vec<_> = (0..4).map(|f| tile_uv(f, 2)).collect();
 
     AtlasLayout {
