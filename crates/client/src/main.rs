@@ -738,6 +738,12 @@ impl MmoClient {
                             self.connected = true;
                             self.app_state = AppState::Playing;
                             self.login_submitted = false;
+                            // Para o drain aqui — mensagens seguintes
+                            // (StatsUpdate, ProgressUpdate, InventoryUpdate
+                            // etc.) serao consumidas pelo update() normal
+                            // no proximo tick. Se continuassemos drenando,
+                            // o branch `_ => {}` abaixo descartaria elas.
+                            break;
                         }
                         ServerMessage::LoginDenied { reason } => {
                             self.login_error = Some(reason);

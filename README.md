@@ -1,9 +1,8 @@
 # 2dEngine
 
-Engine 2D própria em Rust + MMORPG pixel-art, multi-plataforma (PC, mobile, web).
-Estilo visual alvo: **Realm of the Mad God** — pixel art simples, top-down,
-muitos inimigos/projéteis na tela, multiplayer massivo.
-
+Engine 2D própria em Rust + MMORPG 2D multi-plataforma (PC, mobile, web).
+Estilo visual alvo: **Dark Fantasy / Gritty 2D** — visão top-down, foco em 
+sobrevivência, PvP de alto risco, sistema sem classes e combates tensos (hardcore).
 > **Status:** scaffold inicial. Compila e roda um loop end-to-end (cliente
 > conecta, servidor simula em tick fixo, entidades são replicadas). Falta
 > muita coisa — ver [docs/ROADMAP.md](docs/ROADMAP.md).
