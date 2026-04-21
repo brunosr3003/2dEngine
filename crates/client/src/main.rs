@@ -834,6 +834,8 @@ impl MmoClient {
                             if let Some(map) = &self.world_map {
                                 self.prediction = Some(PredictionBuffer::new(spawn, map));
                             }
+                            // Restaura zoom do jogo (sai do modo-tela do login)
+                            ctx.camera.zoom = self.camera_zoom;
                             ctx.camera.position = spawn;
                             self.entity_names.insert(entity_id, self.username.clone());
                             self.connected = true;
@@ -1076,14 +1078,12 @@ impl Game for MmoClient {
     fn update(&mut self, ctx: &mut AppContext, dt: f32) {
         // --- Tela de login ---
         if self.app_state == AppState::Login {
-            // Mesmo modo-tela do render (zoom=1, centro=vp/2)
-            let orig_zoom = ctx.camera.zoom;
-            let orig_pos = ctx.camera.position;
+            // Camera em modo-tela (zoom=1, centro=vp/2) pra hit-detect
+            // do mouse bater com o render. Nao restauramos — fica assim
+            // ate LoginOk, quando o update Playing seta o zoom do jogo.
             ctx.camera.zoom = 1.0;
             ctx.camera.position = ctx.viewport * 0.5;
             self.update_login(ctx);
-            ctx.camera.zoom = orig_zoom;
-            ctx.camera.position = orig_pos;
             return;
         }
 
@@ -1748,16 +1748,14 @@ impl Game for MmoClient {
 
     fn render(&mut self, ctx: &mut AppContext, batch: &mut SpriteBatch, _alpha: f32) {
         if self.app_state == AppState::Login {
-            // Forca camera em modo "tela": 1 world unit = 1 pixel, origem
-            // no canto inferior-esquerdo da janela. Assim o login ocupa
-            // EXATAMENTE a area da viewport independente do zoom do jogo.
-            let orig_zoom = ctx.camera.zoom;
-            let orig_pos = ctx.camera.position;
+            // Camera em modo "tela": 1 world unit = 1 pixel.
+            // NAO restauramos — o view_proj do renderer vai usar esses
+            // valores pra projetar sprites em pixels absolutos.
+            // Quando sair do login (LoginOk -> Playing), o update normal
+            // reseta a camera pro zoom/position do jogo.
             ctx.camera.zoom = 1.0;
             ctx.camera.position = ctx.viewport * 0.5;
             self.render_login(ctx, batch);
-            ctx.camera.zoom = orig_zoom;
-            ctx.camera.position = orig_pos;
             return;
         }
 
