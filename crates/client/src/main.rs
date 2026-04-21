@@ -114,6 +114,11 @@ pub struct MmoClient {
     last_hp: HashMap<EntityId, i32>,
     last_pos: HashMap<EntityId, Vec2>,
     damage_numbers: Vec<DamageNumber>,
+    // Polimento: particulas + toasts
+    particles: Vec<Particle>,
+    toasts:    Vec<Toast>,
+    // Tracking de inventario pra detectar pickups e disparar toast
+    last_inventory: Vec<shared::InventorySlot>,
 
     // Controle on-screen (joystick + botoes). Toggle com F2; ligado por
     // padrao nas plataformas touch e testavel com mouse-drag no desktop.
@@ -266,6 +271,130 @@ struct DamageNumber {
     ttl: f32,
 }
 
+#[derive(Clone)]
+struct Particle {
+    world_pos: Vec2,
+    vel:       Vec2,
+    color:     Vec4,
+    size:      f32,
+    ttl:       f32,
+    max_ttl:   f32,
+    /// Aceleracao vertical: negativo = sobe, positivo = cai.
+    gravity:   f32,
+}
+
+#[derive(Clone)]
+struct Toast {
+    text:    String,
+    color:   Vec4,
+    size:    f32,  // multiplier do font size base
+    ttl:     f32,
+    max_ttl: f32,
+}
+
+fn rng_f32(seed: &mut u64) -> f32 {
+    *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    ((*seed >> 32) as u32 as f32) / (u32::MAX as f32)
+}
+
+fn spawn_hit_sparks(particles: &mut Vec<Particle>, pos: Vec2, color: Vec4, count: usize) {
+    let mut s = pos.x.to_bits() as u64 ^ (pos.y.to_bits() as u64).wrapping_shl(32) ^ now_ms();
+    for _ in 0..count {
+        let ang = rng_f32(&mut s) * std::f32::consts::TAU;
+        let speed = 2.0 + rng_f32(&mut s) * 4.0;
+        let vel = Vec2::new(ang.cos(), ang.sin()) * speed;
+        let ttl = 0.35 + rng_f32(&mut s) * 0.3;
+        particles.push(Particle {
+            world_pos: pos + Vec2::new(0.0, 0.4),
+            vel,
+            color,
+            size: 0.08 + rng_f32(&mut s) * 0.08,
+            ttl, max_ttl: ttl,
+            gravity: -6.0, // cai rapido
+        });
+    }
+}
+
+fn spawn_heal_sparks(particles: &mut Vec<Particle>, pos: Vec2) {
+    let mut s = pos.x.to_bits() as u64 ^ now_ms();
+    for _ in 0..6 {
+        let x = (rng_f32(&mut s) - 0.5) * 0.6;
+        let ttl = 0.8 + rng_f32(&mut s) * 0.3;
+        particles.push(Particle {
+            world_pos: pos + Vec2::new(x, 0.0),
+            vel: Vec2::new(0.0, 1.5 + rng_f32(&mut s) * 0.8),
+            color: Vec4::new(0.4, 1.0, 0.5, 1.0),
+            size: 0.09,
+            ttl, max_ttl: ttl,
+            gravity: 0.0,
+        });
+    }
+}
+
+fn spawn_pickup_burst(particles: &mut Vec<Particle>, pos: Vec2, color: Vec4) {
+    let mut s = now_ms();
+    for _ in 0..10 {
+        let ang = rng_f32(&mut s) * std::f32::consts::TAU;
+        let speed = 1.2 + rng_f32(&mut s) * 1.6;
+        let ttl = 0.5 + rng_f32(&mut s) * 0.3;
+        particles.push(Particle {
+            world_pos: pos,
+            vel: Vec2::new(ang.cos(), ang.sin()) * speed,
+            color,
+            size: 0.1,
+            ttl, max_ttl: ttl,
+            gravity: 2.0, // flutua um pouco pra cima
+        });
+    }
+}
+
+fn spawn_level_up_shower(particles: &mut Vec<Particle>, pos: Vec2) {
+    let mut s = now_ms();
+    for _ in 0..40 {
+        let dx = (rng_f32(&mut s) - 0.5) * 3.0;
+        let ang = rng_f32(&mut s) * std::f32::consts::TAU;
+        let speed = 1.5 + rng_f32(&mut s) * 3.0;
+        let vel = Vec2::new(ang.cos() * 0.3, ang.sin().abs() * 2.0 + speed);
+        let ttl = 1.2 + rng_f32(&mut s) * 0.8;
+        particles.push(Particle {
+            world_pos: pos + Vec2::new(dx, 0.0),
+            vel,
+            color: Vec4::new(1.0, 0.85 + rng_f32(&mut s) * 0.15, 0.2, 1.0),
+            size: 0.12 + rng_f32(&mut s) * 0.08,
+            ttl, max_ttl: ttl,
+            gravity: -3.5,
+        });
+    }
+}
+
+fn item_display_name(id: u16) -> &'static str {
+    match id {
+        shared::item_id::GOLD          => "Ouro",
+        shared::item_id::HEALTH_POTION => "Pocao HP",
+        shared::item_id::MANA_POTION   => "Pocao MP",
+        shared::item_id::SWORD         => "Espada",
+        shared::item_id::STAFF         => "Cajado",
+        shared::item_id::ARMOR         => "Armadura",
+        shared::item_id::SHIELD        => "Escudo",
+        shared::item_id::RING          => "Anel",
+        _ => "Item",
+    }
+}
+
+fn item_tint(id: u16) -> Vec4 {
+    match id {
+        shared::item_id::GOLD          => Vec4::new(1.0, 0.85, 0.2, 1.0),
+        shared::item_id::HEALTH_POTION => Vec4::new(0.95, 0.35, 0.35, 1.0),
+        shared::item_id::MANA_POTION   => Vec4::new(0.35, 0.55, 1.0, 1.0),
+        shared::item_id::SWORD         => Vec4::new(0.85, 0.9, 0.95, 1.0),
+        shared::item_id::STAFF         => Vec4::new(0.6, 0.4, 1.0, 1.0),
+        shared::item_id::ARMOR         => Vec4::new(0.65, 0.65, 0.75, 1.0),
+        shared::item_id::SHIELD        => Vec4::new(0.4, 0.65, 0.95, 1.0),
+        shared::item_id::RING          => Vec4::new(1.0, 0.75, 0.95, 1.0),
+        _ => Vec4::ONE,
+    }
+}
+
 impl MmoClient {
     pub fn new(server_url: String, username: String, password: String) -> Self {
         Self {
@@ -300,6 +429,9 @@ impl MmoClient {
             last_hp: HashMap::new(),
             last_pos: HashMap::new(),
             damage_numbers: Vec::new(),
+            particles: Vec::new(),
+            toasts: Vec::new(),
+            last_inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
             touch_mode: load_settings().touch_mode,
             joystick: VirtualJoystick::new(),
             hud_scale: load_settings().hud_scale,
@@ -720,6 +852,39 @@ impl Game for MmoClient {
                         self.server_time_offset_ms = server_time_ms as i64 - local_ms;
                     }
                     ServerMessage::InventoryUpdate { slots } => {
+                        // Diff vs last_inventory por item_id -> toast
+                        use std::collections::HashMap as Map;
+                        let sum_old: Map<u16, u64> = self.last_inventory.iter()
+                            .filter(|s| s.qty > 0)
+                            .fold(Map::new(), |mut m, s| {
+                                *m.entry(s.item_id).or_default() += s.qty as u64;
+                                m
+                            });
+                        let sum_new: Map<u16, u64> = slots.iter()
+                            .filter(|s| s.qty > 0)
+                            .fold(Map::new(), |mut m, s| {
+                                *m.entry(s.item_id).or_default() += s.qty as u64;
+                                m
+                            });
+                        for (iid, new_qty) in &sum_new {
+                            let old_qty = sum_old.get(iid).copied().unwrap_or(0);
+                            if *new_qty > old_qty {
+                                let delta = *new_qty - old_qty;
+                                let name = item_display_name(*iid);
+                                let col = item_tint(*iid);
+                                self.toasts.push(Toast {
+                                    text: format!("+{} {}", delta, name),
+                                    color: col,
+                                    size: 1.0,
+                                    ttl: 2.0, max_ttl: 2.0,
+                                });
+                                // Sparkle burst na posicao do jogador
+                                if let Some(pred) = &self.prediction {
+                                    spawn_pickup_burst(&mut self.particles, pred.predicted_pos, col);
+                                }
+                            }
+                        }
+                        self.last_inventory = slots.clone();
                         self.inventory = slots;
                     }
                     ServerMessage::StatsUpdate { class, stats, equipment } => {
@@ -748,6 +913,17 @@ impl Game for MmoClient {
                                 self.chat_log.pop_front();
                             }
                             self.chat_log.push_back(format!("LEVEL UP! L{level}"));
+                            // Toast grande dourado
+                            self.toasts.push(Toast {
+                                text: format!("LEVEL UP! L{level}"),
+                                color: Vec4::new(1.0, 0.85, 0.2, 1.0),
+                                size: 1.6,
+                                ttl: 2.8, max_ttl: 2.8,
+                            });
+                            // Shower de particulas douradas na posicao do jogador
+                            if let Some(pred) = &self.prediction {
+                                spawn_level_up_shower(&mut self.particles, pred.predicted_pos);
+                            }
                         }
                     }
                     ServerMessage::Pong { client_time_ms, server_time_ms } => {
@@ -928,12 +1104,23 @@ impl Game for MmoClient {
             if let Some(prev) = self.last_hp.get(&e.id).copied() {
                 if hp.current < prev {
                     let dmg = prev - hp.current;
+                    let is_self = Some(e.id) == self.self_entity;
                     self.damage_numbers.push(DamageNumber {
                         world_pos: e.pos + Vec2::new(0.0, 0.6),
                         amount: dmg,
-                        is_self: Some(e.id) == self.self_entity,
+                        is_self,
                         ttl: DAMAGE_NUM_TTL,
                     });
+                    // Hit sparks
+                    let col = if is_self {
+                        Vec4::new(1.0, 0.3, 0.3, 1.0)
+                    } else {
+                        Vec4::new(1.0, 0.9, 0.4, 1.0)
+                    };
+                    spawn_hit_sparks(&mut self.particles, e.pos, col, 8);
+                } else if hp.current > prev {
+                    // heal / stat up
+                    spawn_heal_sparks(&mut self.particles, e.pos);
                 }
             }
             self.last_hp.insert(e.id, hp.current);
@@ -951,12 +1138,20 @@ impl Game for MmoClient {
             let prev_hp = self.last_hp.remove(&id).unwrap_or(0);
             let pos = self.last_pos.remove(&id).unwrap_or(Vec2::ZERO);
             if prev_hp > 0 {
+                let is_self = Some(id) == self.self_entity;
                 self.damage_numbers.push(DamageNumber {
                     world_pos: pos + Vec2::new(0.0, 0.6),
                     amount: prev_hp,
-                    is_self: Some(id) == self.self_entity,
+                    is_self,
                     ttl: DAMAGE_NUM_TTL,
                 });
+                // Explosao: mais particulas ao morrer
+                let col = if is_self {
+                    Vec4::new(1.0, 0.3, 0.3, 1.0)
+                } else {
+                    Vec4::new(1.0, 0.55, 0.15, 1.0)
+                };
+                spawn_hit_sparks(&mut self.particles, pos, col, 18);
             }
         }
 
@@ -966,6 +1161,20 @@ impl Game for MmoClient {
             d.world_pos.y += dt * 1.4; // flutua pra cima
         }
         self.damage_numbers.retain(|d| d.ttl > 0.0);
+
+        // Tick particulas
+        for p in &mut self.particles {
+            p.ttl -= dt;
+            p.vel.y += p.gravity * dt;
+            p.world_pos += p.vel * dt;
+        }
+        self.particles.retain(|p| p.ttl > 0.0);
+
+        // Tick toasts
+        for t in &mut self.toasts {
+            t.ttl -= dt;
+        }
+        self.toasts.retain(|t| t.ttl > 0.0);
 
         // --- Atualizar animacoes ---
         let moving = ctx.input.move_vector().length_squared() > 0.01;
@@ -1339,6 +1548,21 @@ impl Game for MmoClient {
             }
         }
 
+        // 2.6 Particulas
+        for p in &self.particles {
+            let t = (p.ttl / p.max_ttl).clamp(0.0, 1.0);
+            let alpha = t;
+            let tint = Vec4::new(p.color.x, p.color.y, p.color.z, p.color.w * alpha);
+            batch.push(&Sprite {
+                position: p.world_pos,
+                size: Vec2::splat(p.size),
+                uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                tint,
+                depth: layer::NAMEPLATE - p.world_pos.y + 50.0,
+                ..Default::default()
+            });
+        }
+
         // 2.75 Minimapa (canto superior-direito) — escondido quando menu aberto.
         if self.menu_state == MenuState::Closed {
         if let Some(world) = &self.world_map {
@@ -1454,6 +1678,31 @@ impl Game for MmoClient {
                 self.stats.attack_damage, ctx.camera.position.x, ctx.camera.position.y, self.last_ping_ms
             );
             font.draw_depth(&pos_text, top_left, 0.85 * h, Vec4::new(0.8, 0.8, 0.8, 1.0), layer::HUD, batch);
+
+            // Toasts (centro-topo, empilhados). Fade + slide.
+            let toast_cx = (vis.min.x + vis.max.x) * 0.5;
+            let toast_base_y = vis.max.y - 1.5 * h;
+            let gap_y = 0.6 * h;
+            for (i, t) in self.toasts.iter().enumerate() {
+                let age = 1.0 - (t.ttl / t.max_ttl).clamp(0.0, 1.0);
+                let alpha = (t.ttl / t.max_ttl).clamp(0.0, 1.0).min(1.0);
+                let fs = 0.7 * h * t.size;
+                let tw = font.measure_width(&t.text) * fs;
+                let y = toast_base_y - i as f32 * gap_y - age * 0.15 * h;
+                let col = Vec4::new(t.color.x, t.color.y, t.color.z, alpha);
+                // Fundo escuro semi-transp
+                batch.push(&Sprite {
+                    position: Vec2::new(toast_cx, y + fs * 0.25),
+                    size: Vec2::new(tw + 0.6 * h, fs * 1.2),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(0.05, 0.05, 0.08, 0.7 * alpha),
+                    depth: layer::HUD + 2.0,
+                    ..Default::default()
+                });
+                font.draw_depth(&t.text,
+                    Vec2::new(toast_cx - tw * 0.5, y),
+                    fs, col, layer::HUD + 2.1, batch);
+            }
 
             // Chat log (display-only) sobreposto acima do status
             if !self.chat_log.is_empty() {
