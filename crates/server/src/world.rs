@@ -60,6 +60,11 @@ pub struct PlayerTag {
     pub player_id: PlayerId,
 }
 
+/// Tag que marca uma entidade como invisivel aos sistemas de targeting.
+/// Usado hoje pra Downed State; reutilizavel pra stealth/invisibilidade
+/// e outras mecanicas futuras. Inimigos ignoram entidades com esta tag.
+pub struct Untargetable;
+
 /// Portal estatico — ao encostar, jogador e teleportado para `target`.
 pub struct PortalTag {
     pub target: Vec2,
@@ -952,12 +957,21 @@ impl GameWorld {
         }
 
         // ── B: snapshot de posições de jogadores para IA dos inimigos ─────────
+        // Coleta entidades untargetable pra que inimigos ignorem.
+        let untargetable: std::collections::HashSet<Entity> = self
+            .ecs
+            .query::<&Untargetable>()
+            .iter()
+            .map(|(e, _)| e)
+            .collect();
         let player_positions: Vec<(EntityId, Vec2)> = self
             .ecs
             .query::<(&NetId, &Position, &EntityKind)>()
             .iter()
-            .filter_map(|(_, (net, pos, kind))| {
-                if matches!(kind, EntityKind::Player) { Some((net.0, pos.0)) } else { None }
+            .filter_map(|(e, (net, pos, kind))| {
+                if matches!(kind, EntityKind::Player) && !untargetable.contains(&e) {
+                    Some((net.0, pos.0))
+                } else { None }
             })
             .collect();
 
@@ -1282,20 +1296,21 @@ impl GameWorld {
         // ── I: jogadores com HP<=0 entram em Downed State (nao morrem) ────────
         // PvE: mobs derrubam mas nao executam. Player auto-revive em
         // DOWNED_HEAL_TIME se nao levar mais dano nesse periodo.
-        let downed_new: Vec<EntityId> = self
+        let downed_new: Vec<(Entity, EntityId)> = self
             .ecs
             .query::<(&NetId, &Health, &PlayerTag)>()
             .iter()
-            .filter_map(|(_, (net, hp, _))| {
-                if hp.current <= 0 { Some(net.0) } else { None }
+            .filter_map(|(e, (net, hp, _))| {
+                if hp.current <= 0 { Some((e, net.0)) } else { None }
             })
             .collect();
-        for eid in downed_new {
+        for (entity, eid) in downed_new {
             for session in self.sessions.values_mut() {
                 if session.entity_id == eid && !session.downed {
                     session.downed = true;
                     session.downed_heal_timer = shared::DOWNED_HEAL_TIME;
                     tracing::info!("{} foi derrubado", session.name);
+                    let _ = self.ecs.insert_one(entity, Untargetable);
                     break;
                 }
             }
@@ -1322,6 +1337,7 @@ impl GameWorld {
             if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
                 hp.current = revive_hp;
             }
+            let _ = self.ecs.remove_one::<Untargetable>(e);
         }
 
         // ── J.5: pickup de loot ───────────────────────────────────────────────
