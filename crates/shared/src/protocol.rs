@@ -45,6 +45,10 @@ pub enum ClientMessage {
     /// Swap generico entre dois 'spots' do inventario + equipamento. Ver
     /// `InvSpot` pra semantica. Server valida (tipo de equip, etc) e aplica.
     InventorySwap { a: InvSpot, b: InvSpot },
+    /// Jogador aperta a tecla de levantar enquanto em Downed State e timer
+    /// de revival ja zerou. Server aplica DOWNED_REVIVE_HP_PCT e sai do
+    /// estado downed. Ignorado se nao estiver pronto ainda.
+    StandUp,
     RequestDisconnect,
 }
 

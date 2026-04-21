@@ -828,6 +828,9 @@ impl GameWorld {
             ClientMessage::InventorySwap { a, b } => {
                 self.handle_inventory_swap(id, a, b);
             }
+            ClientMessage::StandUp => {
+                self.handle_stand_up(id);
+            }
             ClientMessage::RequestDisconnect => self.on_disconnect(id),
         }
     }
@@ -1351,28 +1354,12 @@ impl GameWorld {
             }
         }
 
-        // Tick do timer de auto-revival e aplicacao quando zera.
-        let mut revives: Vec<(Entity, i32)> = Vec::new();
+        // Tick do timer de readiness. Quando zera, player pode apertar E
+        // pra se levantar (nao auto-revive mais).
         for session in self.sessions.values_mut() {
-            if !session.downed { continue; }
-            session.downed_heal_timer -= dt;
-            if session.downed_heal_timer <= 0.0 {
-                if let Some(e) = session.entity {
-                    let revive_hp = ((session.stats.hp_max as f32)
-                        * shared::DOWNED_REVIVE_HP_PCT)
-                        .round()
-                        .max(1.0) as i32;
-                    revives.push((e, revive_hp));
-                }
-                session.downed = false;
-                session.downed_heal_timer = 0.0;
+            if session.downed && session.downed_heal_timer > 0.0 {
+                session.downed_heal_timer = (session.downed_heal_timer - dt).max(0.0);
             }
-        }
-        for (e, revive_hp) in revives {
-            if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
-                hp.current = revive_hp;
-            }
-            let _ = self.ecs.remove_one::<Untargetable>(e);
         }
 
         // ── J.5: pickup de loot ───────────────────────────────────────────────
@@ -1820,6 +1807,28 @@ impl GameWorld {
             session.vault_dirty = true;
             session.inventory_dirty = true;
         }
+    }
+
+    /// Processa pedido do cliente pra sair do Downed State. So aceito
+    /// quando o timer de readiness ja zerou.
+    fn handle_stand_up(&mut self, sid: SessionId) {
+        let Some(session) = self.sessions.get_mut(&sid) else { return };
+        if !session.logged_in { return; }
+        if !session.downed { return; }
+        if session.downed_heal_timer > 0.0 { return; }
+        let Some(entity) = session.entity else { return };
+        let revive_hp = ((session.stats.hp_max as f32)
+            * shared::DOWNED_REVIVE_HP_PCT)
+            .round()
+            .max(1.0) as i32;
+        session.downed = false;
+        session.downed_heal_timer = 0.0;
+        session.downed_hp = 0;
+        tracing::info!("{} se levantou ({}hp)", session.name, revive_hp);
+        if let Ok(mut hp) = self.ecs.get::<&mut Health>(entity) {
+            hp.current = revive_hp;
+        }
+        let _ = self.ecs.remove_one::<Untargetable>(entity);
     }
 
     fn handle_interact(&mut self, sid: SessionId) {

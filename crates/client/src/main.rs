@@ -1598,10 +1598,14 @@ impl Game for MmoClient {
             self.joystick.thumb_offset = Vec2::ZERO;
         }
 
-        // Interacao com NPC (E)
+        // E: se downed com timer pronto, levanta; senao interacao com NPC
         if self.connected && !input_blocked && ctx.input.key_pressed(KeyCode::KeyE) {
             if let Some(net) = &self.net {
-                net.send(ClientMessage::Interact);
+                if self.downed_active && self.downed_timer_s <= 0.0 {
+                    net.send(ClientMessage::StandUp);
+                } else if !self.downed_active {
+                    net.send(ClientMessage::Interact);
+                }
             }
         }
 
@@ -2843,14 +2847,21 @@ impl Game for MmoClient {
                     Vec2::new(cx - dw * 0.5, bar_y + 0.08 * h),
                     0.45 * h, Vec4::ONE, layer::HUD + 4.7, batch);
 
-                // Contador de revival
-                let timer_txt = format!("Levanta em {:.1}s", self.downed_timer_s);
+                // Contador de revival / prompt pra levantar
+                let (timer_txt, color) = if self.downed_timer_s > 0.0 {
+                    (format!("Levanta em {:.1}s", self.downed_timer_s),
+                     Vec4::new(1.0, 0.85, 0.5, 1.0))
+                } else {
+                    // Pulsa quando pronto
+                    let t = ((now_ms() as f32 * 0.005).sin() * 0.3 + 0.7).clamp(0.4, 1.0);
+                    ("Aperte E para levantar".into(),
+                     Vec4::new(0.4 * t + 0.6, 1.0, 0.4 * t + 0.4, 1.0))
+                };
                 let ts = 0.75 * h;
                 let tw = font.measure_width(&timer_txt) * ts;
                 font.draw_depth(&timer_txt,
                     Vec2::new(cx - tw * 0.5, bar_y - 1.0 * h),
-                    ts,
-                    Vec4::new(1.0, 0.85, 0.5, 1.0),
+                    ts, color,
                     layer::HUD + 4.7, batch);
 
                 let sub = "rastejando... so outros jogadores podem te matar";
