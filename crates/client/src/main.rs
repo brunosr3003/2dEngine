@@ -730,7 +730,7 @@ impl MmoClient {
         let vis = ctx.camera.visible_rect();
         let cx = (vis.min.x + vis.max.x) * 0.5;
         let cy = (vis.min.y + vis.max.y) * 0.5;
-        let h = (vis.max.y - vis.min.y) / 12.0;
+        let h = (ctx.viewport.y * 0.05) / ctx.camera.zoom.max(1.0);
         let field_w = 8.0 * h;
         let user_y  = cy + 1.5 * h;
         let pass_y  = cy + 0.0 * h;
@@ -823,8 +823,10 @@ impl MmoClient {
         let vis = ctx.camera.visible_rect();
         let cx = (vis.min.x + vis.max.x) * 0.5;
         let cy = (vis.min.y + vis.max.y) * 0.5;
-        // h escala com a altura visivel: painel ocupa ~55% da tela verticalmente
-        let h = (vis.max.y - vis.min.y) / 12.0;
+        // h em world units, calibrado pra que painel ocupe ~55% da altura
+        // visivel em pixels, independente do zoom da camera.
+        // 1h = 5% da altura da viewport, convertido pra world via zoom.
+        let h = (ctx.viewport.y * 0.05) / ctx.camera.zoom.max(1.0);
         let field_w    = 8.0 * h;
         let field_h    = 0.8 * h;
         let user_y     = cy + 1.5 * h;
