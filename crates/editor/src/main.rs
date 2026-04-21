@@ -91,6 +91,63 @@ impl EditorApp {
         self.status = format!("novo mapa {}x{}", w, h);
     }
 
+    /// Gera um Nexus template funcional: sala retangular com paredes,
+    /// NPC vendor no meio, vault a esquerda, 4 portais nos cantos.
+    fn new_nexus_template(&mut self) {
+        let w = 40u32;
+        let h = 40u32;
+        let mut mf = MapFile::new("nexus", w, h);
+        mf.safe_zone = true;
+        // Paredes em todo o bordo + interior de floor
+        for y in 0..h as i32 {
+            for x in 0..w as i32 {
+                let is_edge = x == 0 || y == 0 || x == w as i32 - 1 || y == h as i32 - 1;
+                mf.set(x, y, if is_edge { tile_id::WALL } else { tile_id::FLOOR });
+            }
+        }
+        // Centro como spawn
+        let cx = w as f32 * 0.5;
+        let cy = h as f32 * 0.5;
+        mf.spawn = [cx, cy];
+        // NPC Vendor no centro
+        mf.entities.push(MapEntityPlacement {
+            pos: [cx, cy + 3.0],
+            entity: MapEntity::Npc { name: "Vendor".into() },
+        });
+        // Vault a esquerda
+        mf.entities.push(MapEntityPlacement {
+            pos: [cx - 6.0, cy],
+            entity: MapEntity::Vault,
+        });
+        // 4 portais nos cantos apontando para o 'overworld' (posicoes placeholder)
+        let inset = 3.0;
+        let portals = [
+            ("overworld_ne", [w as f32 - inset, h as f32 - inset], [120.0, 80.0]),
+            ("overworld_nw", [inset,           h as f32 - inset], [40.0,  80.0]),
+            ("overworld_se", [w as f32 - inset, inset          ], [120.0, 40.0]),
+            ("overworld_sw", [inset,           inset           ], [40.0,  40.0]),
+        ];
+        for (name, pos, target) in portals {
+            mf.entities.push(MapEntityPlacement {
+                pos,
+                entity: MapEntity::Portal {
+                    target_map: name.into(),
+                    target_spawn: target,
+                },
+            });
+        }
+        // Decoracao: alguns tiles de wood perto do vendor
+        let wood_positions = [(cx as i32 + 1, cy as i32 + 2), (cx as i32 - 1, cy as i32 + 2)];
+        for (x, y) in wood_positions {
+            mf.set(x, y, tile_id::WOOD);
+        }
+        self.map = mf;
+        self.current_path = None;
+        self.dirty = true;
+        self.selected_entity_idx = None;
+        self.status = "Nexus template carregado — ajuste e salve como map.bin".into();
+    }
+
     fn save_as(&mut self) {
         let dialog = rfd::FileDialog::new()
             .add_filter("MapFile", &["map"])
@@ -144,6 +201,7 @@ impl eframe::App for EditorApp {
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("Novo").clicked() { self.new_map(64, 64); }
+                if ui.button("Novo Nexus").clicked() { self.new_nexus_template(); }
                 if ui.button("Abrir").clicked() { self.open(); }
                 if ui.button("Salvar").clicked() { self.save(); }
                 if ui.button("Salvar como").clicked() { self.save_as(); }

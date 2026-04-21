@@ -35,6 +35,13 @@ pub enum ClientMessage {
     Interact,
     /// Compra o item em `slot_idx` da tabela SHOP_ITEMS.
     ShopBuy { slot_idx: u8 },
+    /// Deposita o item do `inv_slot` no proximo slot livre do vault.
+    /// So funciona se o vault esta aberto (interagiu com NPC(2)).
+    VaultDeposit { inv_slot: u16 },
+    /// Retira o item do `vault_slot` para o proximo slot livre do inv.
+    VaultWithdraw { vault_slot: u16 },
+    /// Fecha o vault (cliente saindo do vault UI).
+    VaultClose,
     RequestDisconnect,
 }
 
@@ -121,6 +128,12 @@ pub enum ServerMessage {
     ShopOpen { items: Vec<(u16, u32)> },
     /// Fecha a loja (jogador saiu do alcance ou cancelou).
     ShopClose,
+    /// Abre o vault — envia os slots atuais. Cliente passa a mostrar UI.
+    VaultOpen { slots: Vec<crate::InventorySlot> },
+    /// Update apos deposit/withdraw — cliente atualiza UI.
+    VaultUpdate { slots: Vec<crate::InventorySlot> },
+    /// Fecha o vault (jogador afastou-se ou cancelou).
+    VaultClose,
     Kick {
         reason: String,
     },

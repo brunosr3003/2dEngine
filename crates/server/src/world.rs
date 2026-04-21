@@ -103,6 +103,10 @@ pub struct Session {
     pub inventory_dirty: bool,
     /// True quando o equipamento mudou (envia StatsUpdate no proximo tick).
     pub stats_dirty: bool,
+    /// Slots do vault (INVENTORY_SLOTS); carregado no login, salvo no save.
+    pub vault: Vec<shared::InventorySlot>,
+    /// True quando vault mudou — envia VaultUpdate no proximo tick.
+    pub vault_dirty: bool,
 }
 
 /// Recursos compartilhados para autenticacao assincrona.
@@ -395,9 +399,9 @@ impl GameWorld {
             let t = self.map.spawn_tile();
             Vec2::new(t.0 as f32 + 0.5, t.1 as f32 + 0.5)
         };
-        let (mut spawn, mut health, saved_xp, saved_inv, saved_equip) = match self.characters.get(&success.username) {
+        let (mut spawn, mut health, saved_xp, saved_inv, saved_equip, saved_vault) = match self.characters.get(&success.username) {
             Some(row) => (
-                row.pos, row.hp, row.xp, row.inventory.clone(), row.equipment,
+                row.pos, row.hp, row.xp, row.inventory.clone(), row.equipment, row.vault.clone(),
             ),
             None => {
                 let base = success.class.base_stats();
@@ -407,6 +411,7 @@ impl GameWorld {
                     0u64,
                     vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                     shared::Equipment::default(),
+                    vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 )
             }
         };
@@ -465,6 +470,8 @@ impl GameWorld {
             s.inventory = saved_inv.clone();
             s.inventory_dirty = false;
             s.stats_dirty = false;
+            s.vault = saved_vault;
+            s.vault_dirty = false;
             s.mp_current = stats.mp_max as f32;
             s.mp_last_sent = stats.mp_max;
             s.stamina_current = shared::STAMINA_MAX as f32;
@@ -684,6 +691,8 @@ impl GameWorld {
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 inventory_dirty: false,
                 stats_dirty: false,
+                vault: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
+                vault_dirty: false,
             },
         );
     }
@@ -785,6 +794,17 @@ impl GameWorld {
             }
             ClientMessage::ShopBuy { slot_idx } => {
                 self.handle_shop_buy(id, slot_idx as usize);
+            }
+            ClientMessage::VaultDeposit { inv_slot } => {
+                self.handle_vault_deposit(id, inv_slot as usize);
+            }
+            ClientMessage::VaultWithdraw { vault_slot } => {
+                self.handle_vault_withdraw(id, vault_slot as usize);
+            }
+            ClientMessage::VaultClose => {
+                if let Some(s) = self.sessions.get(&id) {
+                    let _ = s.handle.to_client.send(ServerMessage::VaultClose);
+                }
             }
             ClientMessage::RequestDisconnect => self.on_disconnect(id),
         }
@@ -1434,6 +1454,15 @@ impl GameWorld {
                         slots: session.inventory.clone(),
                     });
             }
+            if session.vault_dirty {
+                session.vault_dirty = false;
+                let _ = session
+                    .handle
+                    .to_client
+                    .send(ServerMessage::VaultUpdate {
+                        slots: session.vault.clone(),
+                    });
+            }
             if session.stats_dirty {
                 session.stats_dirty = false;
                 let _ = session
@@ -1469,7 +1498,7 @@ impl GameWorld {
     /// (antes do DB terminar de gravar) ja veja dados novos.
     pub fn collect_character_rows(&mut self) -> Vec<crate::persistence::CharacterRow> {
         let mut out = Vec::with_capacity(self.sessions.len());
-        let mut entries: Vec<(String, Vec2, Health, u64, Vec<shared::InventorySlot>, shared::Equipment)> = Vec::new();
+        let mut entries: Vec<(String, Vec2, Health, u64, Vec<shared::InventorySlot>, shared::Equipment, Vec<shared::InventorySlot>)> = Vec::new();
         for session in self.sessions.values() {
             if !session.logged_in { continue; }
             let Some(e) = session.entity else { continue };
@@ -1482,9 +1511,10 @@ impl GameWorld {
                 session.xp,
                 session.inventory.clone(),
                 session.equipment,
+                session.vault.clone(),
             ));
         }
-        for (name, pos, hp, xp, inventory, equipment) in entries {
+        for (name, pos, hp, xp, inventory, equipment, vault) in entries {
             let row = crate::persistence::CharacterRow {
                 name: name.clone(),
                 pos,
@@ -1492,11 +1522,82 @@ impl GameWorld {
                 xp,
                 inventory,
                 equipment,
+                vault,
             };
             self.characters.insert(name, row.clone());
             out.push(row);
         }
         out
+    }
+
+    /// Move um item do inv[inv_slot] pro primeiro slot livre (ou stack) do vault.
+    fn handle_vault_deposit(&mut self, sid: SessionId, inv_slot: usize) {
+        let Some(session) = self.sessions.get_mut(&sid) else { return };
+        if !session.logged_in { return; }
+        if inv_slot >= session.inventory.len() { return; }
+        let src = session.inventory[inv_slot];
+        if src.qty == 0 { return; }
+        // Tenta stackar em slot existente do vault com mesmo item_id
+        let stack_max = shared::item_stack_max(src.item_id);
+        let mut moved = false;
+        for slot in session.vault.iter_mut() {
+            if slot.qty > 0 && slot.item_id == src.item_id && slot.qty < stack_max {
+                let can_add = (stack_max - slot.qty).min(src.qty);
+                slot.qty += can_add;
+                if let Some(iv) = session.inventory.get_mut(inv_slot) {
+                    iv.qty = iv.qty.saturating_sub(can_add);
+                    if iv.qty == 0 { *iv = shared::InventorySlot::default(); }
+                }
+                moved = true;
+                break;
+            }
+        }
+        if !moved {
+            // Primeiro slot livre
+            if let Some(empty) = session.vault.iter_mut().find(|s| s.qty == 0) {
+                *empty = src;
+                session.inventory[inv_slot] = shared::InventorySlot::default();
+                moved = true;
+            }
+        }
+        if moved {
+            session.vault_dirty = true;
+            session.inventory_dirty = true;
+        }
+    }
+
+    /// Move um item do vault[vault_slot] pro primeiro slot livre (ou stack) do inv.
+    fn handle_vault_withdraw(&mut self, sid: SessionId, vault_slot: usize) {
+        let Some(session) = self.sessions.get_mut(&sid) else { return };
+        if !session.logged_in { return; }
+        if vault_slot >= session.vault.len() { return; }
+        let src = session.vault[vault_slot];
+        if src.qty == 0 { return; }
+        let stack_max = shared::item_stack_max(src.item_id);
+        let mut moved = false;
+        for slot in session.inventory.iter_mut() {
+            if slot.qty > 0 && slot.item_id == src.item_id && slot.qty < stack_max {
+                let can_add = (stack_max - slot.qty).min(src.qty);
+                slot.qty += can_add;
+                if let Some(vv) = session.vault.get_mut(vault_slot) {
+                    vv.qty = vv.qty.saturating_sub(can_add);
+                    if vv.qty == 0 { *vv = shared::InventorySlot::default(); }
+                }
+                moved = true;
+                break;
+            }
+        }
+        if !moved {
+            if let Some(empty) = session.inventory.iter_mut().find(|s| s.qty == 0) {
+                *empty = src;
+                session.vault[vault_slot] = shared::InventorySlot::default();
+                moved = true;
+            }
+        }
+        if moved {
+            session.vault_dirty = true;
+            session.inventory_dirty = true;
+        }
     }
 
     fn handle_interact(&mut self, sid: SessionId) {
@@ -1508,19 +1609,34 @@ impl GameWorld {
             Err(_) => return,
         };
         let handle = session.handle.clone();
-        // Procura NPC em INTERACT_RADIUS
+        // Procura NPC mais proximo em INTERACT_RADIUS
         let r_sq = shared::INTERACT_RADIUS * shared::INTERACT_RADIUS;
-        let found = self
-            .ecs
-            .query::<(&Position, &EntityKind)>()
-            .iter()
-            .any(|(_, (p, k))| {
-                matches!(k, EntityKind::Npc(_))
-                    && p.0.distance_squared(player_pos) <= r_sq
-            });
-        if found {
-            let items: Vec<(u16, u32)> = shared::SHOP_ITEMS.to_vec();
-            let _ = handle.to_client.send(ServerMessage::ShopOpen { items });
+        let mut best: Option<(u16, f32)> = None;
+        for (_, (p, k)) in self.ecs.query::<(&Position, &EntityKind)>().iter() {
+            if let EntityKind::Npc(n) = k {
+                let d2 = p.0.distance_squared(player_pos);
+                if d2 <= r_sq {
+                    if best.map(|(_, bd)| d2 < bd).unwrap_or(true) {
+                        best = Some((*n, d2));
+                    }
+                }
+            }
+        }
+        match best {
+            Some((2, _)) => {
+                // Vault NPC — abre o vault.
+                let slots = self
+                    .sessions.get(&sid)
+                    .map(|s| s.vault.clone())
+                    .unwrap_or_default();
+                let _ = handle.to_client.send(ServerMessage::VaultOpen { slots });
+            }
+            Some(_) => {
+                // Qualquer outro NPC = vendedor.
+                let items: Vec<(u16, u32)> = shared::SHOP_ITEMS.to_vec();
+                let _ = handle.to_client.send(ServerMessage::ShopOpen { items });
+            }
+            None => {}
         }
     }
 
@@ -1740,6 +1856,7 @@ impl GameWorld {
             xp: session.xp,
             inventory: session.inventory.clone(),
             equipment: session.equipment,
+            vault: session.vault.clone(),
         };
         self.characters.insert(session.name.clone(), row.clone());
         Some(row)

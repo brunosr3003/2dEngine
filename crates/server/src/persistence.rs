@@ -25,6 +25,8 @@ pub struct CharacterRow {
     /// Vec com INVENTORY_SLOTS entradas (slots vazios = qty==0).
     pub inventory: Vec<shared::InventorySlot>,
     pub equipment: shared::Equipment,
+    /// Vault persistente (INVENTORY_SLOTS slots igual o inv do player).
+    pub vault: Vec<shared::InventorySlot>,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -95,6 +97,19 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     .execute(&pool)
     .await?;
 
+    // Vault: bau persistente por personagem. Estrutura igual a inventory.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS vault (
+            character_name TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE,
+            slot           INTEGER NOT NULL,
+            item_id        INTEGER NOT NULL,
+            qty            INTEGER NOT NULL,
+            PRIMARY KEY (character_name, slot)
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
     Ok(pool)
 }
 
@@ -108,6 +123,7 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
     for (name, x, y, hp, max_hp, xp) in rows {
         let inv = load_inventory(pool, &name).await?;
         let equip = load_equipment(pool, &name).await?;
+        let vault = load_vault(pool, &name).await?;
         out.insert(
             name.clone(),
             CharacterRow {
@@ -117,10 +133,30 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
                 xp: xp.max(0) as u64,
                 inventory: inv,
                 equipment: equip,
+                vault,
             },
         );
     }
     Ok(out)
+}
+
+async fn load_vault(pool: &PgPool, char_name: &str) -> Result<Vec<shared::InventorySlot>> {
+    let mut slots = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
+    let rows = sqlx::query_as::<_, (i32, i32, i32)>(
+        "SELECT slot, item_id, qty FROM vault WHERE character_name = $1",
+    )
+    .bind(char_name)
+    .fetch_all(pool)
+    .await?;
+    for (slot, item_id, qty) in rows {
+        if slot < 0 || (slot as usize) >= shared::INVENTORY_SLOTS { continue; }
+        if qty <= 0 { continue; }
+        slots[slot as usize] = shared::InventorySlot {
+            item_id: item_id as u16,
+            qty: qty as u32,
+        };
+    }
+    Ok(slots)
 }
 
 async fn load_equipment(pool: &PgPool, char_name: &str) -> Result<shared::Equipment> {
@@ -254,6 +290,25 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                 .execute(&mut *tx)
                 .await?;
             }
+        }
+
+        // Vault: mesmo padrao do inventory.
+        sqlx::query("DELETE FROM vault WHERE character_name = $1")
+            .bind(&row.name)
+            .execute(&mut *tx)
+            .await?;
+        for (i, slot) in row.vault.iter().enumerate() {
+            if slot.qty == 0 { continue; }
+            sqlx::query(
+                "INSERT INTO vault (character_name, slot, item_id, qty)
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(&row.name)
+            .bind(i as i32)
+            .bind(slot.item_id as i32)
+            .bind(slot.qty as i32)
+            .execute(&mut *tx)
+            .await?;
         }
     }
     tx.commit().await?;

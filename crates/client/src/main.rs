@@ -108,6 +108,8 @@ pub struct MmoClient {
 
     // Loja aberta quando shop_items = Some
     shop_items:           Option<Vec<(u16, u32)>>,
+    // Vault aberto quando vault_slots = Some
+    vault_slots:          Option<Vec<shared::InventorySlot>>,
 
     // HP + posicao do tick anterior — pra detectar dano e spawnar numero
     // (mesmo quando a entidade morre no mesmo tick e some do AOI).
@@ -428,6 +430,7 @@ impl MmoClient {
             mp_current: 0,
             stamina_current: shared::STAMINA_MAX,
             shop_items: None,
+            vault_slots: None,
             last_hp: HashMap::new(),
             last_pos: HashMap::new(),
             damage_numbers: Vec::new(),
@@ -912,6 +915,17 @@ impl Game for MmoClient {
                     ServerMessage::ShopClose => {
                         self.shop_items = None;
                     }
+                    ServerMessage::VaultOpen { slots } => {
+                        self.vault_slots = Some(slots);
+                    }
+                    ServerMessage::VaultUpdate { slots } => {
+                        if self.vault_slots.is_some() {
+                            self.vault_slots = Some(slots);
+                        }
+                    }
+                    ServerMessage::VaultClose => {
+                        self.vault_slots = None;
+                    }
                     ServerMessage::ProgressUpdate { xp, level } => {
                         let leveled_up = level > self.level && self.level > 0;
                         self.xp = xp;
@@ -1006,7 +1020,7 @@ impl Game for MmoClient {
         // Flags de bloqueio de input — precisam estar disponiveis em todos
         // os blocos abaixo (chat, menu, input, joystick).
         let menu_open = self.menu_state != MenuState::Closed;
-        let input_blocked = self.chat_typing || menu_open || self.shop_items.is_some();
+        let input_blocked = self.chat_typing || menu_open || self.shop_items.is_some() || self.vault_slots.is_some();
         // Zoom da camera reflete config salva (live-update via slider).
         ctx.camera.zoom = self.camera_zoom;
 
@@ -1253,6 +1267,11 @@ impl Game for MmoClient {
                 self.chat_input_buf.clear();
             } else if self.shop_items.is_some() {
                 self.shop_items = None;
+            } else if self.vault_slots.is_some() {
+                if let Some(net) = &self.net {
+                    net.send(ClientMessage::VaultClose);
+                }
+                self.vault_slots = None;
             } else {
                 self.menu_state = match self.menu_state {
                     MenuState::Closed   => MenuState::Main,
@@ -1382,7 +1401,11 @@ impl Game for MmoClient {
             }
         }
 
-        // Teclas 1..9: se loja aberta, compra slot N-1; senao usa item N-1.
+        // Teclas 1..9:
+        //  - loja aberta: compra slot N-1
+        //  - vault aberto + Shift: saca vault slot N-1 -> inv
+        //  - vault aberto: deposita inv slot N-1 -> vault
+        //  - caso contrario: usa item N-1
         if self.connected && !self.chat_typing && !menu_open {
             if let Some(net) = &self.net {
                 let digits = [
@@ -1390,11 +1413,19 @@ impl Game for MmoClient {
                     KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6,
                     KeyCode::Digit7, KeyCode::Digit8, KeyCode::Digit9,
                 ];
+                let shift = ctx.input.key_down(KeyCode::ShiftLeft)
+                          || ctx.input.key_down(KeyCode::ShiftRight);
                 for (i, code) in digits.iter().enumerate() {
                     if ctx.input.key_pressed(*code) {
                         if let Some(items) = &self.shop_items {
                             if i < items.len() {
                                 net.send(ClientMessage::ShopBuy { slot_idx: i as u8 });
+                            }
+                        } else if self.vault_slots.is_some() {
+                            if shift {
+                                net.send(ClientMessage::VaultWithdraw { vault_slot: i as u16 });
+                            } else {
+                                net.send(ClientMessage::VaultDeposit { inv_slot: i as u16 });
                             }
                         } else {
                             net.send(ClientMessage::UseItem { slot: i as u16 });
@@ -1807,6 +1838,87 @@ impl Game for MmoClient {
                         layer::HUD + 1.2,
                         batch,
                     );
+                }
+            }
+
+            // Painel do vault (overlay central, 2 colunas: inv / vault)
+            if let Some(vault) = self.vault_slots.clone() {
+                let panel_w = 9.0 * h;
+                let line_h = 0.45 * h;
+                let rows = (shared::INVENTORY_SLOTS.min(12)) as f32;
+                let panel_h = 1.2 * h + rows * line_h + 0.5 * h;
+                let cx = vis.min.x + (vis.max.x - vis.min.x) / 2.0;
+                let cy = vis.min.y + (vis.max.y - vis.min.y) / 2.0;
+                // Fundo
+                batch.push(&Sprite {
+                    position: Vec2::new(cx, cy),
+                    size: Vec2::new(panel_w, panel_h),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(0.05, 0.06, 0.10, 0.97),
+                    depth: layer::HUD + 1.0,
+                    ..Default::default()
+                });
+                // Borda
+                batch.push(&Sprite {
+                    position: Vec2::new(cx, cy + panel_h * 0.5 - 0.03),
+                    size: Vec2::new(panel_w, 0.06),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(1.0, 0.75, 0.35, 0.9),
+                    depth: layer::HUD + 1.1,
+                    ..Default::default()
+                });
+                font.draw_depth(
+                    "VAULT — 1..9 deposita | Shift+1..9 saca | ESC fecha",
+                    Vec2::new(cx - panel_w * 0.5 + 0.3 * h, cy + panel_h * 0.5 - 0.35 * h),
+                    0.65 * h,
+                    Vec4::new(1.0, 0.85, 0.35, 1.0),
+                    layer::HUD + 1.2,
+                    batch,
+                );
+                // Header das 2 colunas
+                let col_w = panel_w * 0.5;
+                let col_gap = 0.25 * h;
+                let col1_x = cx - col_w * 0.5;
+                let col2_x = cx + col_w * 0.5;
+                let head_y = cy + panel_h * 0.5 - 1.05 * h;
+                font.draw_depth("INVENTARIO",
+                    Vec2::new(col1_x - col_w * 0.5 + col_gap, head_y),
+                    0.6 * h, Vec4::new(0.75, 0.9, 1.0, 1.0), layer::HUD + 1.2, batch);
+                font.draw_depth("VAULT",
+                    Vec2::new(col2_x - col_w * 0.5 + col_gap, head_y),
+                    0.6 * h, Vec4::new(1.0, 0.8, 0.4, 1.0), layer::HUD + 1.2, batch);
+
+                let n_show = shared::INVENTORY_SLOTS.min(12);
+                for i in 0..n_show {
+                    let y = head_y - 0.55 * h - i as f32 * line_h;
+                    // Inv col
+                    let slot = self.inventory.get(i).copied().unwrap_or_default();
+                    let label = if slot.qty > 0 {
+                        let nm = item_display_name(slot.item_id);
+                        if slot.qty > 1 { format!("[{}] {} x{}", i + 1, nm, slot.qty) }
+                        else            { format!("[{}] {}",    i + 1, nm)           }
+                    } else {
+                        format!("[{}] -", i + 1)
+                    };
+                    font.draw_depth(&label,
+                        Vec2::new(col1_x - col_w * 0.5 + col_gap, y),
+                        0.55 * h,
+                        if slot.qty > 0 { item_tint(slot.item_id) } else { Vec4::new(0.4, 0.4, 0.5, 1.0) },
+                        layer::HUD + 1.2, batch);
+                    // Vault col
+                    let vslot = vault.get(i).copied().unwrap_or_default();
+                    let vlabel = if vslot.qty > 0 {
+                        let nm = item_display_name(vslot.item_id);
+                        if vslot.qty > 1 { format!("[{}] {} x{}", i + 1, nm, vslot.qty) }
+                        else             { format!("[{}] {}",    i + 1, nm)            }
+                    } else {
+                        format!("[{}] -", i + 1)
+                    };
+                    font.draw_depth(&vlabel,
+                        Vec2::new(col2_x - col_w * 0.5 + col_gap, y),
+                        0.55 * h,
+                        if vslot.qty > 0 { item_tint(vslot.item_id) } else { Vec4::new(0.4, 0.4, 0.5, 1.0) },
+                        layer::HUD + 1.2, batch);
                 }
             }
 
