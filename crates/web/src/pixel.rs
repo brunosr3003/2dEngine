@@ -132,7 +132,7 @@ async fn generate(
         return (StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({"error": "nao autenticado"}))).into_response();
     }
-    let size = req.size.clamp(8, 64);
+    let size = req.size.clamp(8, 128);
 
     let Some(key) = state.gemini_key.as_ref().clone() else {
         return (StatusCode::SERVICE_UNAVAILABLE,
@@ -143,12 +143,19 @@ async fn generate(
         "Gere um sprite pixel-art {size}x{size} do tema: \"{}\".
 
 Regras obrigatorias:
-- Estilo: pixel art top-down dark fantasy, bordas nitidas, SEM anti-aliasing.
-- Sprite centralizado ocupando a maior parte da area (use pelo menos
-  60% das celulas — NAO gere uma matriz vazia).
+- Estilo: pixel art dark fantasy (tipo Children of Morta, Moonlighter),
+  bordas nitidas, SEM anti-aliasing, sombreamento em 2-3 tons por area.
+- Sprite centralizado ocupando 70-90% da area (use MUITAS celulas de
+  cor — NAO gere matriz vazia nem sprite minusculo num canto).
 - Fundo sempre transparente (\"#00000000\").
-- Paleta limitada: no maximo 8 cores distintas + transparente.
-- Linhas de contorno em preto ou cinza muito escuro pra dar definicao.
+- Paleta rica: 10-16 cores distintas + transparente. Inclua shading:
+  cada area tem pelo menos cor-base + sombra-escura + highlight-claro.
+- Linhas de contorno: preto profundo (#0a0a0aff) em volta de todo o
+  corpo. Detalhes internos com cinza-escuro (#2a2a2a) ou cor-base
+  shade, nao preto puro.
+- Para humanoides: proporcoes anatomicas corretas
+  (cabeca ~1/5 da altura, tronco ~2/5, pernas ~2/5). Nao use 'chibi'
+  nem 'boneco de palito'. Musculatura visivel onde aplicavel.
 
 Saida OBRIGATORIA: JSON puro (sem markdown, sem explicacao, sem texto
 antes ou depois), exatamente neste formato:
@@ -167,9 +174,9 @@ A matriz toda deve ter exatamente {size} linhas e cada linha exatamente
         "generationConfig": {
             "temperature": 0.9,
             "response_mime_type": "application/json",
-            // 32x32 tem 1024 celulas * ~12 chars + virgulas ≈ 15k tokens.
-            // Damos folga. Pro 2.5-pro suporta bem.
-            "maxOutputTokens": 32768,
+            // 64x64 = 4096 celulas * ~13 chars ≈ 55k tokens de saida.
+            // Gemini 2.5/3.1 suportam ate 65k de output.
+            "maxOutputTokens": 65536,
             // Gemini 2.5 tem 'thinking' por default. Pro sprite art habilita
             // pensamento leve (melhora qualidade/coerencia do JSON grande).
             "thinkingConfig": {"thinkingBudget": 1024},

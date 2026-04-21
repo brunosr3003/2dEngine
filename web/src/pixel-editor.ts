@@ -1,8 +1,8 @@
 // Pixel Editor — 32x32 canvas, paleta, ferramentas, IA via Gemini.
 // Auth por cookie; todo request de API passa credentials: "include".
 
-const SIZE = 32;
-const CELL = 16; // cada pixel logico = 16 CSS px -> canvas 512x512
+const SIZE = 64;
+const CELL = 8;  // cada pixel logico = 8 CSS px -> canvas 512x512
 
 // Paleta dark-fantasy inicial (user pode adicionar via color picker)
 const DEFAULT_PALETTE: string[] = [
