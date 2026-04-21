@@ -2,7 +2,7 @@
 
 use glam::Vec2;
 use hecs::{Entity, World};
-use shared::protocol::{buttons, ClientMessage, InputFrame, ServerMessage, WorldSnapshot};
+use shared::protocol::{buttons, ClientMessage, InputFrame, InvSpot, ServerMessage, WorldSnapshot};
 use shared::mapfile::{MapEntity, MapFile};
 use shared::{
     EntityId, EntityKind, EntitySnapshot, Health, PlayerId, Position, Velocity,
@@ -806,6 +806,9 @@ impl GameWorld {
                     let _ = s.handle.to_client.send(ServerMessage::VaultClose);
                 }
             }
+            ClientMessage::InventorySwap { a, b } => {
+                self.handle_inventory_swap(id, a, b);
+            }
             ClientMessage::RequestDisconnect => self.on_disconnect(id),
         }
     }
@@ -1530,6 +1533,104 @@ impl GameWorld {
         out
     }
 
+    /// Swap generico entre dois spots (inv slot <-> inv slot, ou inv <-> equip).
+    /// Valida compatibilidade quando um dos lados e equipamento. Se inv slot
+    /// tem stack >1 tentando equipar, split nao e suportado — rejeita.
+    fn handle_inventory_swap(&mut self, sid: SessionId, a: InvSpot, b: InvSpot) {
+        let Some(session) = self.sessions.get_mut(&sid) else { return };
+        if !session.logged_in { return; }
+        if a == b { return; }
+
+        // Le valores atuais
+        let read_inv = |idx: u16| -> shared::InventorySlot {
+            session.inventory.get(idx as usize).copied().unwrap_or_default()
+        };
+        let read_eq  = |s: shared::EquipSlot| -> Option<u16> {
+            match s {
+                shared::EquipSlot::Weapon => session.equipment.weapon,
+                shared::EquipSlot::Armor  => session.equipment.armor,
+                shared::EquipSlot::Ring   => session.equipment.ring,
+            }
+        };
+
+        let va = match a {
+            InvSpot::Inv(i)   => (Some(read_inv(i)), None),
+            InvSpot::Equip(s) => (None, Some((s, read_eq(s)))),
+        };
+        let vb = match b {
+            InvSpot::Inv(i)   => (Some(read_inv(i)), None),
+            InvSpot::Equip(s) => (None, Some((s, read_eq(s)))),
+        };
+
+        // Helpers de validacao
+        let can_go_into_equip = |slot: shared::EquipSlot, item: &shared::InventorySlot| -> bool {
+            if item.qty == 0 { return true; } // tirar do equip pra slot vazio e OK
+            if item.qty > 1 { return false; } // stacks nao equipaveis
+            shared::equip_slot_of(item.item_id) == Some(slot)
+        };
+
+        match (a, b) {
+            // inv <-> inv: swap direto
+            (InvSpot::Inv(ai), InvSpot::Inv(bi)) => {
+                let (Some(ia), _) = va else { return };
+                let (Some(ib), _) = vb else { return };
+                // Stack-merge quando ambos tem o mesmo item_id: junta b em a.
+                if ia.qty > 0 && ib.qty > 0 && ia.item_id == ib.item_id {
+                    let cap = shared::item_stack_max(ia.item_id);
+                    let move_qty = (cap - ib.qty).min(ia.qty);
+                    if move_qty > 0 {
+                        let na = ia.qty - move_qty;
+                        let nb = ib.qty + move_qty;
+                        session.inventory[ai as usize] = if na == 0 {
+                            shared::InventorySlot::default()
+                        } else {
+                            shared::InventorySlot { item_id: ia.item_id, qty: na }
+                        };
+                        session.inventory[bi as usize] = shared::InventorySlot { item_id: ia.item_id, qty: nb };
+                        session.inventory_dirty = true;
+                        return;
+                    }
+                }
+                session.inventory[ai as usize] = ib;
+                session.inventory[bi as usize] = ia;
+                session.inventory_dirty = true;
+            }
+            // inv -> equip
+            (InvSpot::Inv(ai), InvSpot::Equip(bs)) => {
+                let (Some(ia), _) = va else { return };
+                let (_, Some((_, cur_eq))) = vb else { return };
+                if !can_go_into_equip(bs, &ia) { return; }
+                // Coloca item do inv no equip; devolve o antigo do equip pro inv.
+                let new_inv_slot = match cur_eq {
+                    Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1 },
+                    None         => shared::InventorySlot::default(),
+                };
+                set_equip(session, bs, if ia.qty > 0 { Some(ia.item_id) } else { None });
+                session.inventory[ai as usize] = new_inv_slot;
+                session.stats = effective_stats(session.class, &session.equipment);
+                session.stats_dirty = true;
+                session.inventory_dirty = true;
+            }
+            // equip -> inv (simetrico)
+            (InvSpot::Equip(as_), InvSpot::Inv(bi)) => {
+                let (Some(ib), _) = vb else { return };
+                let (_, Some((_, cur_eq))) = va else { return };
+                if !can_go_into_equip(as_, &ib) { return; }
+                let new_inv_slot = match cur_eq {
+                    Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1 },
+                    None         => shared::InventorySlot::default(),
+                };
+                set_equip(session, as_, if ib.qty > 0 { Some(ib.item_id) } else { None });
+                session.inventory[bi as usize] = new_inv_slot;
+                session.stats = effective_stats(session.class, &session.equipment);
+                session.stats_dirty = true;
+                session.inventory_dirty = true;
+            }
+            // equip <-> equip: so faz sentido se slots sao iguais (no-op)
+            _ => {}
+        }
+    }
+
     /// Move um item do inv[inv_slot] pro primeiro slot livre (ou stack) do vault.
     fn handle_vault_deposit(&mut self, sid: SessionId, inv_slot: usize) {
         let Some(session) = self.sessions.get_mut(&sid) else { return };
@@ -1860,6 +1961,15 @@ impl GameWorld {
         };
         self.characters.insert(session.name.clone(), row.clone());
         Some(row)
+    }
+}
+
+/// Aplica `item_id` (ou None para remover) num slot de equipamento da sessao.
+fn set_equip(session: &mut Session, slot: shared::EquipSlot, item_id: Option<u16>) {
+    match slot {
+        shared::EquipSlot::Weapon => session.equipment.weapon = item_id,
+        shared::EquipSlot::Armor  => session.equipment.armor  = item_id,
+        shared::EquipSlot::Ring   => session.equipment.ring   = item_id,
     }
 }
 

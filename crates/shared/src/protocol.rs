@@ -42,7 +42,19 @@ pub enum ClientMessage {
     VaultWithdraw { vault_slot: u16 },
     /// Fecha o vault (cliente saindo do vault UI).
     VaultClose,
+    /// Swap generico entre dois 'spots' do inventario + equipamento. Ver
+    /// `InvSpot` pra semantica. Server valida (tipo de equip, etc) e aplica.
+    InventorySwap { a: InvSpot, b: InvSpot },
     RequestDisconnect,
+}
+
+/// Localizacao logica de um slot no sistema de inventario do cliente.
+/// Inv(idx) = slot do grid (0..INVENTORY_SLOTS). Os primeiros 6 slots sao
+/// a hotbar; os demais sao a mochila. Equip(slot) = slot de equipamento.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum InvSpot {
+    Inv(u16),
+    Equip(crate::constants::EquipSlot),
 }
 
 /// Input de um tick do cliente.
