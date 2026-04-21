@@ -5,6 +5,7 @@
 
 pub mod components;
 pub mod constants;
+pub mod mapfile;
 pub mod protocol;
 pub mod world_gen;
 pub mod physics;

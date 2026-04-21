@@ -3,6 +3,7 @@
 use glam::Vec2;
 use hecs::{Entity, World};
 use shared::protocol::{buttons, ClientMessage, InputFrame, ServerMessage, WorldSnapshot};
+use shared::mapfile::{MapEntity, MapFile};
 use shared::{
     EntityId, EntityKind, EntitySnapshot, Health, PlayerId, Position, Velocity,
     AOI_RADIUS, ATTACK_COOLDOWN, ENEMY_START_COUNT, ENTITY_RADIUS, PLAYER_SPEED,
@@ -57,6 +58,13 @@ pub struct LootTag {
 pub struct PlayerTag {
     pub name: String,
     pub player_id: PlayerId,
+}
+
+/// Portal estatico — ao encostar, jogador e teleportado para `target`.
+pub struct PortalTag {
+    pub target: Vec2,
+    /// Cooldown pra evitar teletransporte infinito quando chega no destino.
+    pub cooldown: f32,
 }
 
 pub struct Session {
@@ -124,11 +132,29 @@ pub struct GameWorld {
     boss_entity: Option<Entity>,
     /// Contador regressivo em segundos ate o proximo spawn do boss.
     boss_respawn_timer: f32,
+    /// Se true, ataques/dano sao desabilitados em toda a area.
+    /// Vindo de MapFile.safe_zone quando o mapa e carregado de arquivo.
+    pub safe_zone: bool,
+    /// True se o mapa foi carregado de MapFile (suprime spawns procedurais).
+    from_mapfile: bool,
 }
 
 impl GameWorld {
     pub fn new(characters: HashMap<String, crate::persistence::CharacterRow>) -> Self {
-        let map = shared::world_gen::generate(42, 128, 128);
+        // Tenta carregar mapa de arquivo (editor); fallback pra proc-gen.
+        let (map, from_mapfile, safe_zone, mapfile) = match MapFile::load("assets/map.bin") {
+            Ok(mf) => {
+                tracing::info!("mapa carregado de assets/map.bin ({} x {}, {} entidades)",
+                               mf.width, mf.height, mf.entities.len());
+                let wm = mf.to_world_map();
+                let safe = mf.safe_zone;
+                (wm, true, safe, Some(mf))
+            }
+            Err(e) => {
+                tracing::info!("sem assets/map.bin ({e}); gerando mapa procedural");
+                (shared::world_gen::generate(42, 128, 128), false, false, None)
+            }
+        };
         let mut physics = shared::physics::PhysicsWorld::new();
         map.build_colliders(&mut physics);
         let mut w = Self {
@@ -145,10 +171,134 @@ impl GameWorld {
             enemy_spawn_timer: 0.0,
             boss_entity: None,
             boss_respawn_timer: 30.0, // primeiro boss aparece em 30s
+            safe_zone,
+            from_mapfile,
         };
-        w.spawn_initial_enemies();
-        w.spawn_vendor();
+        if let Some(mf) = mapfile {
+            w.spawn_mapfile_entities(&mf);
+        } else {
+            w.spawn_initial_enemies();
+            w.spawn_vendor();
+        }
         w
+    }
+
+    /// Raio em tiles para considerar que o jogador "encostou" no portal.
+    const PORTAL_TRIGGER_RADIUS: f32 = 0.9;
+
+    /// Checa cada jogador contra cada portal. Se proximo e sem cooldown,
+    /// move o rigid body pro destino. Portais em cooldown (acabou de
+    /// teleportar alguem) nao disparam pra evitar loop.
+    fn process_portal_teleports(&mut self, dt: f32) {
+        // Decrementa cooldowns
+        for (_, pt) in self.ecs.query_mut::<&mut PortalTag>() {
+            if pt.cooldown > 0.0 { pt.cooldown = (pt.cooldown - dt).max(0.0); }
+        }
+
+        // Snapshot de portais (pos, target, cooldown restante)
+        let portals: Vec<(Entity, Vec2, Vec2, f32)> = self.ecs
+            .query::<(&Position, &PortalTag)>()
+            .iter()
+            .map(|(e, (p, pt))| (e, p.0, pt.target, pt.cooldown))
+            .collect();
+        if portals.is_empty() { return; }
+
+        let r_sq = Self::PORTAL_TRIGGER_RADIUS * Self::PORTAL_TRIGGER_RADIUS;
+
+        // Jogadores: (entity, pos, handle)
+        let players: Vec<(Entity, Vec2, shared::PhysicsHandle)> = self.ecs
+            .query::<(&Position, &EntityKind, &shared::PhysicsHandle)>()
+            .iter()
+            .filter_map(|(e, (p, k, h))| match k {
+                EntityKind::Player => Some((e, p.0, *h)),
+                _ => None,
+            })
+            .collect();
+
+        for (pe, ppos, handle) in players {
+            for (portal_entity, portal_pos, target, cd) in &portals {
+                if *cd > 0.0 { continue; }
+                if ppos.distance_squared(*portal_pos) < r_sq {
+                    // Teleporta o rigid body
+                    if let Some(rb) = self.physics.rigid_body_set.get_mut(handle.0) {
+                        rb.set_translation([target.x, target.y].into(), true);
+                        rb.set_linvel([0.0, 0.0].into(), true);
+                    }
+                    // Atualiza Position tb pra evitar 1 frame de lag
+                    if let Ok(mut pos) = self.ecs.get::<&mut Position>(pe) {
+                        pos.0 = *target;
+                    }
+                    // Cooldown no portal (evita pingue-pongue)
+                    if let Ok(mut pt) = self.ecs.get::<&mut PortalTag>(*portal_entity) {
+                        pt.cooldown = 1.0;
+                    }
+                    tracing::debug!("portal teleport {:?} -> {:?}", ppos, target);
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Spawna todas as entidades pre-posicionadas de um MapFile.
+    fn spawn_mapfile_entities(&mut self, mf: &MapFile) {
+        for placement in &mf.entities {
+            let pos = Vec2::new(placement.pos[0], placement.pos[1]);
+            match &placement.entity {
+                MapEntity::Enemy { kind } => {
+                    self.place_enemy(pos, *kind, 0.0);
+                }
+                MapEntity::Boss { kind } => {
+                    let def = shared::enemy_def(*kind);
+                    let hp_max = def.hp_max;
+                    let net_id = self.alloc_entity_id();
+                    let handle = self.spawn_entity_body(pos);
+                    let e = self.ecs.spawn((
+                        NetId(net_id),
+                        Position(pos),
+                        Velocity(Vec2::ZERO),
+                        Health { current: hp_max, max: hp_max },
+                        EntityKind::Enemy(*kind),
+                        EnemyTag {
+                            attack_cooldown: 0.0,
+                            wander_timer: 0.0,
+                            wander_dir: Vec2::X,
+                        },
+                        handle,
+                    ));
+                    if *kind == 7 { self.boss_entity = Some(e); }
+                }
+                MapEntity::Npc { .. } => {
+                    let eid = self.alloc_entity_id();
+                    self.ecs.spawn((
+                        NetId(eid),
+                        Position(pos),
+                        Velocity(Vec2::ZERO),
+                        EntityKind::Npc(1),
+                    ));
+                }
+                MapEntity::Vault => {
+                    let eid = self.alloc_entity_id();
+                    self.ecs.spawn((
+                        NetId(eid),
+                        Position(pos),
+                        Velocity(Vec2::ZERO),
+                        EntityKind::Npc(2), // npc_id=2 = vault
+                    ));
+                }
+                MapEntity::Portal { target_spawn, .. } => {
+                    let eid = self.alloc_entity_id();
+                    let target = Vec2::new(target_spawn[0], target_spawn[1]);
+                    self.ecs.spawn((
+                        NetId(eid),
+                        Position(pos),
+                        Velocity(Vec2::ZERO),
+                        EntityKind::Portal,
+                        PortalTag { target, cooldown: 0.0 },
+                    ));
+                }
+            }
+        }
+        tracing::info!("mapfile: spawned {} entidades pre-posicionadas", mf.entities.len());
     }
 
     /// Spawna um vendedor estatico proximo ao spawn tile (decoracao + interacao).
@@ -643,31 +793,37 @@ impl GameWorld {
     pub fn step(&mut self, dt: f32) {
         self.tick = self.tick.wrapping_add(1);
 
-        // Respawn de inimigos: mantem populacao proxima de ENEMY_START_COUNT.
-        self.enemy_spawn_timer += dt;
-        if self.enemy_spawn_timer >= 1.0 {
-            self.enemy_spawn_timer = 0.0;
-            // Conta apenas inimigos nao-boss
-            let count = self.ecs
-                .query::<(&EnemyTag, &EntityKind)>()
-                .iter()
-                .filter(|(_, (_, k))| !matches!(k, EntityKind::Enemy(7)))
-                .count();
-            if count < ENEMY_START_COUNT {
-                let seed = lcg(self.tick as u64 ^ 0x51ED_BEEF_DEAD_BEEF);
-                if let Some(pos) = self.pick_enemy_tile(seed, 80) {
-                    let kind = Self::random_enemy_kind(lcg(seed ^ 0xDEAD));
-                    self.place_enemy(pos, kind, 0.0);
-                    tracing::debug!("enemy respawn kind={kind} {:?} (total {})", pos, count + 1);
+        // --- Teleporte via portais ---
+        self.process_portal_teleports(dt);
+
+        // Respawn procedural e desabilitado quando o mapa vem de MapFile
+        // (o editor define exatamente quais inimigos existem e onde).
+        if !self.from_mapfile {
+            // Respawn de inimigos: mantem populacao proxima de ENEMY_START_COUNT.
+            self.enemy_spawn_timer += dt;
+            if self.enemy_spawn_timer >= 1.0 {
+                self.enemy_spawn_timer = 0.0;
+                let count = self.ecs
+                    .query::<(&EnemyTag, &EntityKind)>()
+                    .iter()
+                    .filter(|(_, (_, k))| !matches!(k, EntityKind::Enemy(7)))
+                    .count();
+                if count < ENEMY_START_COUNT {
+                    let seed = lcg(self.tick as u64 ^ 0x51ED_BEEF_DEAD_BEEF);
+                    if let Some(pos) = self.pick_enemy_tile(seed, 80) {
+                        let kind = Self::random_enemy_kind(lcg(seed ^ 0xDEAD));
+                        self.place_enemy(pos, kind, 0.0);
+                        tracing::debug!("enemy respawn kind={kind} {:?} (total {})", pos, count + 1);
+                    }
                 }
             }
-        }
 
-        // Respawn do boss
-        if self.boss_entity.is_none() {
-            self.boss_respawn_timer -= dt;
-            if self.boss_respawn_timer <= 0.0 {
-                self.spawn_boss();
+            // Respawn do boss (so em proc-gen)
+            if self.boss_entity.is_none() {
+                self.boss_respawn_timer -= dt;
+                if self.boss_respawn_timer <= 0.0 {
+                    self.spawn_boss();
+                }
             }
         }
         self.removed_this_tick.clear();
@@ -965,13 +1121,16 @@ impl GameWorld {
         // damage: (target_entity, target_net_id, dmg, attacker_net_id, attacker_is_player)
         let mut damage_events: Vec<(Entity, EntityId, i32, EntityId, bool)> = Vec::new();
 
+        let combat_disabled = self.safe_zone;
         'outer: for (pe, pnet, ppos, powner, pfrom_player, pdmg) in &projs {
             for (te, tnet, tpos, is_player) in &targets {
                 if tnet == powner { continue; } // sem auto-dano
                 // Projetil de jogador só acerta inimigo; de inimigo só acerta jogador
                 if *pfrom_player == *is_player { continue; }
                 if ppos.distance_squared(*tpos) < hit_dist_sq {
-                    damage_events.push((*te, *tnet, *pdmg, *powner, *pfrom_player));
+                    if !combat_disabled {
+                        damage_events.push((*te, *tnet, *pdmg, *powner, *pfrom_player));
+                    }
                     hit_projs.push((*pe, *pnet));
                     continue 'outer;
                 }

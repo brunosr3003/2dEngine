@@ -1,0 +1,24 @@
+[package]
+name = "editor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "editor"
+path = "src/main.rs"
+
+[dependencies]
+shared.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+bincode.workspace = true
+glam.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# egui stack: simples e roda em winit
+eframe = { version = "0.29", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+egui = "0.29"
+rfd = "0.15"

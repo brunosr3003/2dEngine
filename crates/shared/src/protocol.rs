@@ -84,6 +84,16 @@ pub enum ServerMessage {
         client_time_ms: u64,
         server_time_ms: u64,
     },
+    /// Jogador foi movido para outro mapa (via portal ou first spawn).
+    /// Cliente deve: limpar entidades interpoladas, recarregar tilemap, reset prediction.
+    MapChange {
+        map_name: String,
+        width: u32,
+        height: u32,
+        tiles: Vec<u16>,
+        spawn: Vec2,
+        safe_zone: bool,
+    },
     /// Atualizacao de progresso do proprio jogador (XP, level). Enviada
     /// no login e sempre que XP mudar.
     ProgressUpdate {

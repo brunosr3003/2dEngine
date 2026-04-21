@@ -34,8 +34,10 @@ pub enum EntityKind {
     /// Loot drop. Carrega o item_id (ver constants::item_id) para o cliente
     /// diferenciar cor/sprite sem precisar de uma tabela separada.
     Loot(u16),
-    /// NPC estatico interagivel (vendedor). u16 = npc_id (1=vendor).
+    /// NPC estatico interagivel (vendedor). u16 = npc_id (1=vendor, 2=vault).
     Npc(u16),
+    /// Portal para outro mapa. Ao pisar, servidor teleporta o jogador.
+    Portal,
 }
 
 /// Slot de inventario. None = vazio. Quando `qty == 0`, o slot esta vazio.

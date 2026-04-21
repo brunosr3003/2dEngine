@@ -33,3 +33,11 @@ dist/
 
 # Session resume stubs
 2026-*-this-session-is-being-continued*.txt
+
+# Local client/server settings
+.mmo2d-settings.txt
+.mmo2d-creds.txt
+
+# Editor / server map assets (binarios gerados, nao versionados ainda)
+crates/server/assets/*.bin
+

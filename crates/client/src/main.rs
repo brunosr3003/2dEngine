@@ -805,6 +805,9 @@ impl Game for MmoClient {
                         tracing::warn!("kicked: {reason}");
                         ctx.should_exit = true;
                     }
+                    ServerMessage::MapChange { .. } => {
+                        // Reservado — troca de mapa ainda nao implementada no client
+                    }
                 }
             }
         }
@@ -1219,6 +1222,11 @@ impl Game for MmoClient {
                     _                              => Vec4::new(0.6, 0.9, 1.0, 1.0),
                 },
                 EntityKind::Npc(_)      => Vec4::new(0.95, 0.8, 0.4, 1.0),
+                EntityKind::Portal      => {
+                    // Cor pulsa com o tick pra destacar
+                    let t = (now_ms() as f32 * 0.003).sin() * 0.5 + 0.5;
+                    Vec4::new(0.6 + t * 0.4, 0.3, 1.0, 0.95)
+                }
                 _                       => Vec4::ONE,
             };
 
@@ -1288,9 +1296,15 @@ impl Game for MmoClient {
                         };
                         (n, c)
                     }
-                    EntityKind::Npc(_) => (
-                        Some("SHOP [E]".into()),
-                        Vec4::new(0.95, 0.85, 0.45, 1.0),
+                    EntityKind::Npc(n) => match n {
+                        2 => (Some("VAULT [E]".into()),
+                              Vec4::new(0.95, 0.7, 0.35, 1.0)),
+                        _ => (Some("SHOP [E]".into()),
+                              Vec4::new(0.95, 0.85, 0.45, 1.0)),
+                    },
+                    EntityKind::Portal => (
+                        Some("PORTAL".into()),
+                        Vec4::new(0.85, 0.6, 1.0, 1.0),
                     ),
                     _ => (None, Vec4::ONE),
                 };
@@ -1405,6 +1419,7 @@ impl Game for MmoClient {
                     }
                     EntityKind::Npc(_) => (Vec4::new(1.0, 0.85, 0.35, 1.0), false),
                     EntityKind::Loot(_) => (Vec4::new(0.6, 0.9, 0.6, 1.0), false),
+                    EntityKind::Portal => (Vec4::new(0.85, 0.5, 1.0, 1.0), false),
                     _ => continue,
                 };
                 let sz = if is_self { dot_half * 1.4 } else { dot_half };
