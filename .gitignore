@@ -46,3 +46,6 @@ dist/
 # Editor / server map assets (binarios gerados, nao versionados ainda)
 crates/server/assets/*.bin
 
+
+# Asset packs de terceiros (nao commitar — sao grandes e tem licenca)
+assets/manaseed_raw/
