@@ -10,6 +10,7 @@
 
 mod auth;
 mod db;
+mod pixel;
 
 use anyhow::Result;
 use axum::{
@@ -60,8 +61,13 @@ async fn main() -> Result<()> {
         .route("/login", post(login))
         .with_state(state);
 
+    let pixel_state = pixel::PixelState::from_env();
+    tracing::info!("pixel editor: gemini_key={}",
+        if pixel_state.gemini_key.is_some() { "configurada" } else { "NAO configurada" });
+
     let app = Router::new()
         .nest("/api", api)
+        .nest("/api/pixel", pixel::router(pixel_state))
         .fallback_service(ServeDir::new(&static_dir).append_index_html_on_directories(true))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http());

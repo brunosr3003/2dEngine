@@ -1,0 +1,198 @@
+:root {
+  --bg: #0a0a0e;
+  --panel: #15151c;
+  --panel-2: #1e1e28;
+  --border: #2a2a36;
+  --text: #e3e3ea;
+  --muted: #8a8a96;
+  --accent: #d4a53c;
+  --danger: #d4523c;
+  --ok: #3cd495;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* Auth gate */
+#auth-gate {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+#auth-form {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 28px 32px;
+  width: 320px;
+  text-align: center;
+}
+#auth-form h1 { margin: 0 0 4px; color: var(--accent); }
+#auth-form p  { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+#auth-form input {
+  width: 100%; padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+#auth-form button {
+  width: 100%; padding: 10px;
+  background: var(--accent);
+  border: none; border-radius: 4px;
+  color: #111; font-weight: 600; cursor: pointer;
+}
+#auth-form .err { color: var(--danger); font-size: 12px; margin-top: 8px; min-height: 16px; }
+
+/* Editor layout */
+#editor {
+  display: grid;
+  grid-template-columns: 240px 1fr 300px;
+  gap: 8px;
+  padding: 8px;
+  height: 100vh;
+}
+#editor aside, #editor main {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 14px;
+  overflow: auto;
+}
+h2 { font-size: 13px; color: var(--accent); margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+h2:first-child { margin-top: 0; }
+
+/* Tools */
+.tool-btns {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.tool-btns button {
+  padding: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.tool-btns button.active {
+  background: var(--accent);
+  color: #111;
+  border-color: var(--accent);
+}
+
+/* Palette */
+#palette {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 3px;
+}
+.sw {
+  aspect-ratio: 1;
+  border: 1px solid #333;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.sw.active { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sw.transparent {
+  background-image:
+    linear-gradient(45deg, #555 25%, transparent 25%, transparent 75%, #555 75%),
+    linear-gradient(45deg, #555 25%, transparent 25%, transparent 75%, #555 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+  background-color: #333;
+}
+
+.pick, .alpha {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 8px; font-size: 12px;
+}
+.pick span, .alpha span { min-width: 48px; color: var(--muted); }
+.pick input, .alpha input { flex: 1; }
+
+.actions {
+  display: grid; grid-template-columns: 1fr; gap: 6px;
+}
+.actions button {
+  padding: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Canvas */
+.canvas-wrap {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.canvas-header {
+  display: flex; gap: 16px; width: 100%;
+  color: var(--muted); font-size: 12px;
+}
+#c {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background:
+    linear-gradient(45deg, #2a2a36 25%, transparent 25%, transparent 75%, #2a2a36 75%),
+    linear-gradient(45deg, #2a2a36 25%, transparent 25%, transparent 75%, #2a2a36 75%);
+  background-size: 32px 32px;
+  background-position: 0 0, 16px 16px;
+  background-color: #1a1a22;
+  border: 2px solid var(--border);
+  cursor: crosshair;
+}
+
+/* IA panel */
+.ia-panel textarea, .ia-panel input[type="text"] {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px;
+  border-radius: 4px;
+  font-family: inherit;
+  resize: vertical;
+}
+.ia-panel button {
+  width: 100%; padding: 10px;
+  background: var(--accent);
+  color: #111;
+  border: none; border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-top: 6px;
+}
+#btn-download {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.status {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 8px;
+  min-height: 16px;
+}
+.status.ok { color: var(--ok); }
+.status.err { color: var(--danger); }
+#sprites-list {
+  list-style: none; padding: 0; margin: 0;
+  font-size: 12px; color: var(--muted);
+}
+#sprites-list li {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+}

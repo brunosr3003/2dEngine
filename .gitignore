@@ -38,6 +38,11 @@ dist/
 .mmo2d-settings.txt
 .mmo2d-creds.txt
 
+# Secrets — NAO commitar
+.env
+.env.local
+*.env
+
 # Editor / server map assets (binarios gerados, nao versionados ainda)
 crates/server/assets/*.bin
 

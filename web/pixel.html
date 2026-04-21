@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pixel Editor — 2dEngine</title>
+    <link rel="stylesheet" href="/src/pixel-style.css" />
+  </head>
+  <body>
+    <!-- Login screen -->
+    <div id="auth-gate">
+      <form id="auth-form">
+        <h1>Pixel Editor</h1>
+        <p>Ferramenta dev protegida.</p>
+        <input type="password" name="password" placeholder="senha" required />
+        <button type="submit">Entrar</button>
+        <div class="err" id="auth-err"></div>
+      </form>
+    </div>
+
+    <!-- Editor -->
+    <div id="editor" hidden>
+      <aside class="tools">
+        <h2>Ferramentas</h2>
+        <div class="tool-btns">
+          <button data-tool="brush" class="active" title="Pincel (B)">B</button>
+          <button data-tool="eraser" title="Borracha (E)">E</button>
+          <button data-tool="fill" title="Balde (F)">F</button>
+          <button data-tool="eyedrop" title="Conta-gotas (I)">I</button>
+        </div>
+
+        <h2>Paleta</h2>
+        <div id="palette"></div>
+        <label class="pick">
+          <span>Custom</span>
+          <input type="color" id="custom-color" value="#ffffff" />
+        </label>
+        <label class="alpha">
+          <span>Alpha</span>
+          <input type="range" id="alpha" min="0" max="255" value="255" />
+          <span id="alpha-val">255</span>
+        </label>
+
+        <h2>Ações</h2>
+        <div class="actions">
+          <button id="btn-clear">Limpar</button>
+          <button id="btn-undo">Undo (Ctrl+Z)</button>
+          <button id="btn-grid">Grid ON/OFF</button>
+        </div>
+      </aside>
+
+      <main class="canvas-wrap">
+        <div class="canvas-header">
+          <span id="coord">—</span>
+          <span id="size-label">32×32</span>
+        </div>
+        <canvas id="c" width="512" height="512"></canvas>
+      </main>
+
+      <aside class="ia-panel">
+        <h2>Gerar com IA (Gemini)</h2>
+        <textarea id="ia-prompt" rows="4"
+          placeholder="ex: um guerreiro com armadura preta segurando uma espada curva, dark fantasy"></textarea>
+        <button id="btn-generate">Gerar</button>
+        <div id="ia-status" class="status"></div>
+
+        <h2>Salvar</h2>
+        <input type="text" id="sprite-name" placeholder="nome_do_sprite" />
+        <button id="btn-save">Salvar em assets</button>
+        <button id="btn-download">Baixar PNG</button>
+        <div id="save-status" class="status"></div>
+
+        <h2>Sprites salvos</h2>
+        <ul id="sprites-list"></ul>
+      </aside>
+    </div>
+
+    <script type="module" src="/src/pixel-editor.ts"></script>
+  </body>
+</html>
