@@ -61,38 +61,32 @@ struct LoginLayout {
 }
 
 fn login_layout(ctx: &engine::app::AppContext) -> LoginLayout {
-    let vis = ctx.camera.visible_rect();
-    let cx = (vis.min.x + vis.max.x) * 0.5;
-    let cy = (vis.min.y + vis.max.y) * 0.5;
-    let zoom = ctx.camera.zoom.max(1.0);
+    // IMPORTANTE: chamado dentro de render/update com camera em modo-tela
+    // (zoom=1, position=vp/2). Entao 1 world unit = 1 pixel.
+    let vp = ctx.viewport;
+    let cx = vp.x * 0.5;
+    let cy = vp.y * 0.5;
 
-    // Painel dimensionado proporcional ao viewport (55% da altura, 40% da largura max).
-    // Limites pra não ficar gigante em monitor 4K nem minusculo em janela pequena.
-    let vp_y = ctx.viewport.y;
-    let panel_h_px = (vp_y * 0.60).clamp(380.0, 640.0);
-    let panel_w_px = (panel_h_px * 0.82).clamp(320.0, 520.0);
-    let to_w = |px: f32| px / zoom;
+    // Painel ocupa 55% da altura (com limites pra nao ficar gigante/minusculo)
+    let panel_h = (vp.y * 0.55).clamp(380.0, 680.0);
+    let panel_w = (panel_h * 0.82).clamp(320.0, 540.0);
 
-    let panel_w = to_w(panel_w_px);
-    let panel_h = to_w(panel_h_px);
+    // Y dos elementos em % do painel (positivo = acima do centro)
+    let title_y    = cy + panel_h * 0.35;
+    let user_y     = cy + panel_h * 0.18;
+    let pass_y     = cy + panel_h * 0.02;
+    let btn_y      = cy - panel_h * 0.14;
+    let remember_y = cy - panel_h * 0.26;
+    let err_y      = cy - panel_h * 0.32;
+    let hint_y     = cy - panel_h * 0.38;
+    let tip_y     = cy - panel_h * 0.44;
 
-    // Posicoes verticais em pixels desde o CENTRO do painel:
-    //   (positivos = acima, negativos = abaixo)
-    let title_y_px     =  panel_h_px * 0.35;  //  ~35%
-    let user_y_px      =  panel_h_px * 0.18;
-    let pass_y_px      =  panel_h_px * 0.02;
-    let btn_y_px       = -panel_h_px * 0.14;
-    let remember_y_px  = -panel_h_px * 0.26;
-    let err_y_px       = -panel_h_px * 0.32;
-    let hint_y_px      = -panel_h_px * 0.38;
-    let tip_y_px       = -panel_h_px * 0.44;
+    // h "simbólico" pra dimensões de fonte
+    let h = panel_h * 0.08;
 
-    // 1 "h" = ~8% da altura do painel (pra dimensões de campo/fonte)
-    let h = to_w(panel_h_px * 0.08);
-
-    let field_w = to_w(panel_w_px * 0.82);
-    let field_h = to_w(panel_h_px * 0.085);
-    let chk_size = to_w(panel_h_px * 0.04);
+    let field_w = panel_w * 0.82;
+    let field_h = panel_h * 0.085;
+    let chk_size = panel_h * 0.04;
 
     let fs_hint = 0.45 * h;
     let pre_w  = 11.0 * fs_hint * 0.6;
@@ -101,14 +95,7 @@ fn login_layout(ctx: &engine::app::AppContext) -> LoginLayout {
 
     LoginLayout {
         h, cx, cy, panel_w, panel_h,
-        title_y:    cy + to_w(title_y_px),
-        user_y:     cy + to_w(user_y_px),
-        pass_y:     cy + to_w(pass_y_px),
-        btn_y:      cy + to_w(btn_y_px),
-        remember_y: cy + to_w(remember_y_px),
-        err_y:      cy + to_w(err_y_px),
-        hint_y:     cy + to_w(hint_y_px),
-        tip_y:      cy + to_w(tip_y_px),
+        title_y, user_y, pass_y, btn_y, remember_y, err_y, hint_y, tip_y,
         field_w, field_h,
         chk_size,
         link_cx, link_w,
@@ -1089,7 +1076,14 @@ impl Game for MmoClient {
     fn update(&mut self, ctx: &mut AppContext, dt: f32) {
         // --- Tela de login ---
         if self.app_state == AppState::Login {
+            // Mesmo modo-tela do render (zoom=1, centro=vp/2)
+            let orig_zoom = ctx.camera.zoom;
+            let orig_pos = ctx.camera.position;
+            ctx.camera.zoom = 1.0;
+            ctx.camera.position = ctx.viewport * 0.5;
             self.update_login(ctx);
+            ctx.camera.zoom = orig_zoom;
+            ctx.camera.position = orig_pos;
             return;
         }
 
@@ -1754,7 +1748,16 @@ impl Game for MmoClient {
 
     fn render(&mut self, ctx: &mut AppContext, batch: &mut SpriteBatch, _alpha: f32) {
         if self.app_state == AppState::Login {
+            // Forca camera em modo "tela": 1 world unit = 1 pixel, origem
+            // no canto inferior-esquerdo da janela. Assim o login ocupa
+            // EXATAMENTE a area da viewport independente do zoom do jogo.
+            let orig_zoom = ctx.camera.zoom;
+            let orig_pos = ctx.camera.position;
+            ctx.camera.zoom = 1.0;
+            ctx.camera.position = ctx.viewport * 0.5;
             self.render_login(ctx, batch);
+            ctx.camera.zoom = orig_zoom;
+            ctx.camera.position = orig_pos;
             return;
         }
 
