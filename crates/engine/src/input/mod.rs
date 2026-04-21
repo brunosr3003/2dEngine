@@ -15,6 +15,9 @@ pub struct Input {
     mouse_released: HashSet<MouseButton>,
     mouse_pos: Vec2,
     scroll: f32,
+    /// Texto acumulado neste frame (de KeyEvent.text do winit). O jogo
+    /// consome via `take_text_input()` quando estiver em modo "digitando".
+    text_input: String,
 }
 
 impl Input {
@@ -28,6 +31,13 @@ impl Input {
         self.mouse_pressed.clear();
         self.mouse_released.clear();
         self.scroll = 0.0;
+        self.text_input.clear();
+    }
+
+    /// Consome e retorna o texto digitado no frame atual. Retorna string
+    /// vazia se nada foi digitado.
+    pub fn take_text_input(&mut self) -> String {
+        std::mem::take(&mut self.text_input)
     }
 
     pub fn on_window_event(&mut self, event: &WindowEvent) {
@@ -46,6 +56,13 @@ impl Input {
                             }
                         }
                         _ => {}
+                    }
+                }
+                // Acumula texto digitado no frame (respeita layout do SO,
+                // incluindo modificadores e caracteres fora ASCII).
+                if k.state == ElementState::Pressed {
+                    if let Some(txt) = &k.text {
+                        self.text_input.push_str(txt);
                     }
                 }
             }

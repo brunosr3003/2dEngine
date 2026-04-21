@@ -79,6 +79,7 @@ struct RegisterReq {
     username: String,
     email: String,
     password: String,
+    class: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -111,11 +112,15 @@ async fn register(
     if req.password.len() < 6 || req.password.len() > 128 {
         return Err(err(StatusCode::BAD_REQUEST, "senha deve ter 6-128 chars"));
     }
+    let class = match req.class.to_ascii_lowercase().as_str() {
+        "warrior" | "archer" | "wizard" => req.class.to_ascii_lowercase(),
+        _ => return Err(err(StatusCode::BAD_REQUEST, "classe invalida")),
+    };
 
     let hash = auth::hash_password(&req.password)
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, format!("hash: {e}")))?;
 
-    match db::insert_account(&s.pool, username, &email, &hash).await {
+    match db::insert_account(&s.pool, username, &email, &hash, &class).await {
         Ok(id) => Ok((StatusCode::CREATED, Json(RegisterRes { id, username: username.into() }))),
         Err(db::InsertError::Duplicate(field)) => {
             Err(err(StatusCode::CONFLICT, format!("{field} ja existe")))

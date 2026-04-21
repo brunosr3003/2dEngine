@@ -22,6 +22,9 @@ pub struct CharacterRow {
     pub pos: Vec2,
     pub hp: Health,
     pub xp: u64,
+    /// Vec com INVENTORY_SLOTS entradas (slots vazios = qty==0).
+    pub inventory: Vec<shared::InventorySlot>,
+    pub equipment: shared::Equipment,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -46,6 +49,12 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     .await?;
 
     sqlx::query(
+        "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS class TEXT NOT NULL DEFAULT 'warrior'",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
         "CREATE TABLE IF NOT EXISTS characters (
             name     TEXT PRIMARY KEY,
             x        REAL NOT NULL,
@@ -63,6 +72,29 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
         .execute(&pool)
         .await?;
 
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS inventory (
+            character_name TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE,
+            slot           INTEGER NOT NULL,
+            item_id        INTEGER NOT NULL,
+            qty            INTEGER NOT NULL,
+            PRIMARY KEY (character_name, slot)
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS equipment (
+            character_name TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE,
+            slot           TEXT NOT NULL,
+            item_id        INTEGER NOT NULL,
+            PRIMARY KEY (character_name, slot)
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
     Ok(pool)
 }
 
@@ -74,6 +106,8 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
     .await?;
     let mut out = HashMap::with_capacity(rows.len());
     for (name, x, y, hp, max_hp, xp) in rows {
+        let inv = load_inventory(pool, &name).await?;
+        let equip = load_equipment(pool, &name).await?;
         out.insert(
             name.clone(),
             CharacterRow {
@@ -81,10 +115,51 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
                 pos: Vec2::new(x, y),
                 hp: Health { current: hp, max: max_hp },
                 xp: xp.max(0) as u64,
+                inventory: inv,
+                equipment: equip,
             },
         );
     }
     Ok(out)
+}
+
+async fn load_equipment(pool: &PgPool, char_name: &str) -> Result<shared::Equipment> {
+    let rows = sqlx::query_as::<_, (String, i32)>(
+        "SELECT slot, item_id FROM equipment WHERE character_name = $1",
+    )
+    .bind(char_name)
+    .fetch_all(pool)
+    .await?;
+    let mut eq = shared::Equipment::default();
+    for (slot, item_id) in rows {
+        let iid = item_id as u16;
+        match slot.as_str() {
+            "weapon" => eq.weapon = Some(iid),
+            "armor"  => eq.armor  = Some(iid),
+            "ring"   => eq.ring   = Some(iid),
+            _ => {}
+        }
+    }
+    Ok(eq)
+}
+
+async fn load_inventory(pool: &PgPool, char_name: &str) -> Result<Vec<shared::InventorySlot>> {
+    let mut slots = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
+    let rows = sqlx::query_as::<_, (i32, i32, i32)>(
+        "SELECT slot, item_id, qty FROM inventory WHERE character_name = $1",
+    )
+    .bind(char_name)
+    .fetch_all(pool)
+    .await?;
+    for (slot, item_id, qty) in rows {
+        if slot < 0 || (slot as usize) >= shared::INVENTORY_SLOTS { continue; }
+        if qty <= 0 { continue; }
+        slots[slot as usize] = shared::InventorySlot {
+            item_id: item_id as u16,
+            qty: qty as u32,
+        };
+    }
+    Ok(slots)
 }
 
 /// Mensagem enviada pela thread do mundo pro writer task.
@@ -138,6 +213,48 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(now)
         .execute(&mut *tx)
         .await?;
+
+        // Inventario: delete-all + insert-rows pra ser simples. O FK cascade
+        // ja garante que deletar a linha do character limpa a inventory.
+        sqlx::query("DELETE FROM inventory WHERE character_name = $1")
+            .bind(&row.name)
+            .execute(&mut *tx)
+            .await?;
+        for (i, slot) in row.inventory.iter().enumerate() {
+            if slot.qty == 0 { continue; }
+            sqlx::query(
+                "INSERT INTO inventory (character_name, slot, item_id, qty)
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(&row.name)
+            .bind(i as i32)
+            .bind(slot.item_id as i32)
+            .bind(slot.qty as i32)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        // Equipment: mesmo padrao delete-all + insert.
+        sqlx::query("DELETE FROM equipment WHERE character_name = $1")
+            .bind(&row.name)
+            .execute(&mut *tx)
+            .await?;
+        for (slot_name, item_opt) in [
+            ("weapon", row.equipment.weapon),
+            ("armor",  row.equipment.armor),
+            ("ring",   row.equipment.ring),
+        ] {
+            if let Some(iid) = item_opt {
+                sqlx::query(
+                    "INSERT INTO equipment (character_name, slot, item_id) VALUES ($1, $2, $3)",
+                )
+                .bind(&row.name)
+                .bind(slot_name)
+                .bind(iid as i32)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
     }
     tx.commit().await?;
     Ok(())

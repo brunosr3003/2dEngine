@@ -90,17 +90,15 @@ posição.
 
 ## Fase 5 — Cross-platform (4 semanas)
 
-**Goal:** roda em desktop (Win/Mac/Linux), mobile (Android + iOS), e
-browser (wasm).
+**Goal:** roda nativo em desktop (Win/Mac/Linux) e mobile (Android + iOS)
+com **crossplay** no mesmo shard. **Sem build para browser** — o cliente
+é um app nativo em todas as plataformas.
 
-### Web (wasm)
-- [ ] Target `wasm32-unknown-unknown`.
-- [ ] `wasm-bindgen` + `wasm-pack`.
-- [ ] `NetClient` impl alternativa com `web_sys::WebSocket` + callbacks
-      → `mpsc` locais.
-- [ ] wgpu WebGPU backend + fallback GL (WebGL2).
-- [ ] `winit::platform::web` (usa um `<canvas>`).
-- [ ] Página HTML de entrada com login form.
+### Desktop (Win/Mac/Linux)
+- [x] Mac: funciona (wgpu/Metal).
+- [ ] Windows: validar em GitHub Actions `windows-latest` (DX12).
+- [ ] Linux: validar em `ubuntu-latest` (Vulkan).
+- [ ] Instaladores/binary artifacts por plataforma (cargo-bundle / MSI / dmg).
 
 ### Android
 - [ ] `cargo-apk` ou projeto Gradle embedando o crate.
@@ -108,11 +106,12 @@ browser (wasm).
 - [ ] UI de touch: joystick virtual (canto esquerdo), botão de atacar
       (direito). Adicionar `TouchInput` no engine/input.
 - [ ] Ciclo de lifecycle (Pause/Resume) → reconectar no servidor.
+- [ ] wgpu → Vulkan (backend preferido) com fallback GLES 3.
 
 ### iOS
 - [ ] `cargo-mobile2` (gera projeto Xcode) ou Xcode wrapper custom.
 - [ ] Metal backend do wgpu.
-- [ ] Mesma UI de touch.
+- [ ] Mesma UI de touch (compartilhada com Android).
 - [ ] App Store exige: LaunchScreen, ícones, TestFlight para beta.
 
 ### Multiplatform concerns

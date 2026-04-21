@@ -21,6 +21,12 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     .execute(&pool)
     .await?;
 
+    sqlx::query(
+        "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS class TEXT NOT NULL DEFAULT 'warrior'",
+    )
+    .execute(&pool)
+    .await?;
+
     Ok(pool)
 }
 
@@ -37,15 +43,17 @@ pub async fn insert_account(
     username: &str,
     email: &str,
     password_hash: &str,
+    class: &str,
 ) -> Result<i64, InsertError> {
     let result = sqlx::query_as::<_, (i64,)>(
-        "INSERT INTO accounts (username, email, password_hash)
-         VALUES ($1, $2, $3)
+        "INSERT INTO accounts (username, email, password_hash, class)
+         VALUES ($1, $2, $3, $4)
          RETURNING id",
     )
     .bind(username)
     .bind(email)
     .bind(password_hash)
+    .bind(class)
     .fetch_one(pool)
     .await;
 

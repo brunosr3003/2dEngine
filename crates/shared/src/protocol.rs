@@ -27,6 +27,14 @@ pub enum ClientMessage {
     /// Ping com timestamp do cliente (ms). Servidor responde com `Pong` carregando
     /// o mesmo valor para o cliente medir RTT.
     Ping { client_time_ms: u64 },
+    /// Usa o item no slot `slot` do inventario. Servidor aplica o efeito e
+    /// decrementa a quantidade.
+    UseItem { slot: u16 },
+    /// Interacao com o NPC mais proximo (dentro de INTERACT_RADIUS). Pro
+    /// vendedor, abre a loja.
+    Interact,
+    /// Compra o item em `slot_idx` da tabela SHOP_ITEMS.
+    ShopBuy { slot_idx: u8 },
     RequestDisconnect,
 }
 
@@ -82,6 +90,27 @@ pub enum ServerMessage {
         xp: u64,
         level: u32,
     },
+    /// Estado completo do inventario. Enviado no login e a cada mudanca.
+    /// `slots[i].qty == 0` = slot vazio.
+    InventoryUpdate {
+        slots: Vec<crate::InventorySlot>,
+    },
+    /// Stats do jogador (classe + bonus de equipamento aplicados) +
+    /// slots de equipamento. Enviado no login e a cada mudanca.
+    StatsUpdate {
+        class: crate::PlayerClass,
+        stats: crate::PlayerStats,
+        equipment: crate::Equipment,
+    },
+    /// MP atual do jogador. Enviado ao login, no gasto e periodicamente
+    /// conforme a regeneracao muda em +/-1.
+    ManaUpdate { current: i32 },
+    /// Stamina atual do jogador. Mesma logica do ManaUpdate.
+    StaminaUpdate { current: i32 },
+    /// Abre a loja do vendedor — lista de (item_id, preco).
+    ShopOpen { items: Vec<(u16, u32)> },
+    /// Fecha a loja (jogador saiu do alcance ou cancelou).
+    ShopClose,
     Kick {
         reason: String,
     },

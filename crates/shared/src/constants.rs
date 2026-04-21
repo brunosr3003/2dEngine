@@ -22,10 +22,22 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 4;
+pub const PROTOCOL_VERSION: u16 = 11;
 
 /// Velocidade base do jogador em tiles/segundo.
 pub const PLAYER_SPEED: f32 = 5.0;
+
+/// Multiplicador de velocidade durante sprint (Shift + stamina > 0).
+pub const SPRINT_SPEED_MULT: f32 = 1.65;
+
+/// Capacidade maxima de stamina (pontos). Fixa para todas as classes por ora.
+pub const STAMINA_MAX: i32 = 100;
+
+/// Drena stamina por segundo enquanto sprintando.
+pub const STAMINA_DRAIN_PER_SEC: f32 = 40.0;
+
+/// Regenera stamina por segundo quando NAO sprintando.
+pub const STAMINA_REGEN_PER_SEC: f32 = 25.0;
 
 /// Velocidade dos projeteis em tiles/segundo.
 pub const PROJ_SPEED: f32 = 15.0;
@@ -57,8 +69,56 @@ pub const PROJ_RADIUS: f32 = 0.15;
 /// Tempo de respawn do jogador em segundos.
 pub const RESPAWN_DELAY: f32 = 3.0;
 
-/// XP ganho por matar um inimigo (base — pode variar por tipo no futuro).
+/// XP ganho por matar um inimigo (fallback — helpers por kind mais abaixo).
 pub const XP_PER_KILL: u64 = 30;
+
+/// Definicao estatica de um tipo de inimigo.
+#[derive(Debug, Clone, Copy)]
+pub struct EnemyKindDef {
+    pub hp_max: i32,
+    pub speed: f32,
+    pub attack_damage: i32,
+    pub attack_cooldown: f32,
+    pub detect_range: f32,
+    pub xp_reward: u64,
+    /// Tint multiplicativo aplicado no sprite pelo cliente pra diferenciar.
+    pub tint_rgba: [f32; 4],
+}
+
+/// Tabela de kinds. O index no array == EntityKind::Enemy(u16).
+/// Manter em sincronia com spawn_initial_enemies / respawn do servidor.
+pub const ENEMY_KINDS: &[EnemyKindDef] = &[
+    // 0 — Grunt: o basico. Tint branco (sem multiplicacao).
+    EnemyKindDef {
+        hp_max: 50,  speed: 2.0, attack_damage: 10, attack_cooldown: 2.0,
+        detect_range: 9.0,  xp_reward: 30, tint_rgba: [1.0, 1.0, 1.0, 1.0],
+    },
+    // 1 — Tank: mais HP, mais lento, dano maior. Tint vermelho escuro.
+    EnemyKindDef {
+        hp_max: 120, speed: 1.3, attack_damage: 18, attack_cooldown: 2.8,
+        detect_range: 8.0,  xp_reward: 75, tint_rgba: [1.0, 0.35, 0.25, 1.0],
+    },
+    // 2 — Ranger: range longo, menos HP, mais rapido. Tint ciano forte.
+    EnemyKindDef {
+        hp_max: 35,  speed: 2.4, attack_damage: 12, attack_cooldown: 1.5,
+        detect_range: 13.0, xp_reward: 50, tint_rgba: [0.3, 0.9, 1.0, 1.0],
+    },
+];
+
+/// Tamanho do sprite relativo ao sprite padrao (0.95 tiles).
+pub fn enemy_size_scale(kind: u16) -> f32 {
+    match kind {
+        1 => 1.3,  // tank maior
+        2 => 0.85, // ranger menor
+        _ => 1.0,
+    }
+}
+
+pub fn enemy_def(kind: u16) -> &'static EnemyKindDef {
+    ENEMY_KINDS
+        .get(kind as usize)
+        .unwrap_or(&ENEMY_KINDS[0])
+}
 
 /// Retorna o level derivado a partir da XP acumulada.
 /// Curva simples quadratica: L = 1 + floor(sqrt(xp / 100)).
@@ -88,6 +148,99 @@ pub const fn xp_for_level(level: u32) -> u64 {
 
 /// Quantidade de inimigos gerados no inicio.
 pub const ENEMY_START_COUNT: usize = 24;
+
+/// Numero de slots do inventario do jogador.
+pub const INVENTORY_SLOTS: usize = 24;
+
+/// Raio em tiles pra coletar um loot.
+pub const PICKUP_RADIUS: f32 = 0.8;
+
+/// Itens conhecidos. Numeric id vai pro DB e rede. Manter sincronizado com
+/// o cliente para sprite/cor por item.
+pub mod item_id {
+    pub const GOLD:           u16 = 1;
+    pub const HEALTH_POTION:  u16 = 2;
+    pub const SWORD:          u16 = 3;
+    pub const ARMOR:          u16 = 4;
+    pub const RING:           u16 = 5;
+}
+
+/// Limite de stack por item (1 = nao stackavel / equipamento).
+pub const fn item_stack_max(id: u16) -> u32 {
+    match id {
+        item_id::GOLD          => 9999,
+        item_id::HEALTH_POTION => 20,
+        item_id::SWORD
+        | item_id::ARMOR
+        | item_id::RING        => 1,
+        _                      => 1,
+    }
+}
+
+/// Retorna o slot de equipamento para um item_id, ou None se nao for
+/// equipavel.
+pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
+    match item_id {
+        id if id == item_id::SWORD => Some(EquipSlot::Weapon),
+        id if id == item_id::ARMOR => Some(EquipSlot::Armor),
+        id if id == item_id::RING  => Some(EquipSlot::Ring),
+        _                          => None,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum EquipSlot {
+    Weapon,
+    Armor,
+    Ring,
+}
+
+/// Bonus aplicado por um equipamento. Somado aos stats base da classe.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct EquipBonus {
+    pub hp_max: i32,
+    pub attack_damage: i32,
+    pub dex: i32,
+    pub wis: i32,
+}
+
+pub const fn item_bonus(item_id: u16) -> EquipBonus {
+    match item_id {
+        id if id == item_id::SWORD => EquipBonus { hp_max: 0,  attack_damage: 10, dex: 0, wis: 0 },
+        id if id == item_id::ARMOR => EquipBonus { hp_max: 40, attack_damage: 0,  dex: 0, wis: 0 },
+        id if id == item_id::RING  => EquipBonus { hp_max: 0,  attack_damage: 0,  dex: 5, wis: 3 },
+        _                          => EquipBonus { hp_max: 0,  attack_damage: 0,  dex: 0, wis: 0 },
+    }
+}
+
+/// Quanto HP uma pocao de vida restaura.
+pub const HEALTH_POTION_HEAL: i32 = 50;
+
+/// Regen de MP por segundo (inteiro).
+pub const MP_REGEN_PER_SEC: f32 = 4.0;
+
+/// Custo em MP da habilidade secundaria (triple-shot).
+pub const SECONDARY_MP_COST: i32 = 25;
+
+/// Cooldown entre ataques secundarios em segundos.
+pub const SECONDARY_COOLDOWN: f32 = 0.5;
+
+/// Quantidade de projeteis disparados pela habilidade secundaria e abertura
+/// angular entre o primeiro e o ultimo (radianos).
+pub const SECONDARY_PROJ_COUNT: i32 = 3;
+pub const SECONDARY_SPREAD_RAD: f32 = 0.35; // ~20 graus
+
+/// Raio em tiles pra interagir com NPC vendedor.
+pub const INTERACT_RADIUS: f32 = 1.8;
+
+/// Precos fixos da loja (item_id, preco em ouro). Ordem define o indice
+/// usado em `ClientMessage::ShopBuy { slot_idx }`.
+pub const SHOP_ITEMS: [(u16, u32); 4] = [
+    (item_id::HEALTH_POTION, 10),
+    (item_id::SWORD,         100),
+    (item_id::ARMOR,         150),
+    (item_id::RING,          80),
+];
 
 /// IDs logicos de tile — usados no WorldMap e no TileDef lookup.
 pub mod tile_id {

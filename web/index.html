@@ -31,6 +31,14 @@
           <span>Senha</span>
           <input name="password" type="password" required minlength="6" />
         </label>
+        <label>
+          <span>Classe</span>
+          <select name="class" required>
+            <option value="warrior">Warrior — tankão (140 HP, dano 30)</option>
+            <option value="archer">Archer — ágil (90 HP, dano 22)</option>
+            <option value="wizard">Wizard — frágil explosivo (70 HP, dano 45)</option>
+          </select>
+        </label>
         <button type="submit">Criar conta</button>
         <p class="msg" data-msg></p>
       </form>
