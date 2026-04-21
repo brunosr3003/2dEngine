@@ -109,6 +109,22 @@ pub struct MmoClient {
     // Loja aberta quando shop_items = Some
     shop_items:           Option<Vec<(u16, u32)>>,
 
+    // HP + posicao do tick anterior — pra detectar dano e spawnar numero
+    // (mesmo quando a entidade morre no mesmo tick e some do AOI).
+    last_hp: HashMap<EntityId, i32>,
+    last_pos: HashMap<EntityId, Vec2>,
+    damage_numbers: Vec<DamageNumber>,
+
+    // Controle on-screen (joystick + botoes). Toggle com F2; ligado por
+    // padrao nas plataformas touch e testavel com mouse-drag no desktop.
+    touch_mode: bool,
+    joystick: VirtualJoystick,
+
+    // Settings persistidos em .mmo2d-settings.txt
+    hud_scale: f32,
+    camera_zoom: f32,
+    menu_state: MenuState,
+
     // Chat log (display-only): ultimas mensagens recebidas
     chat_log: std::collections::VecDeque<String>,
     chat_typing: bool,
@@ -120,6 +136,94 @@ pub struct MmoClient {
 
 const CHAT_LOG_MAX: usize = 6;
 const PING_INTERVAL_S: f32 = 1.0;
+const DAMAGE_NUM_TTL: f32 = 0.9;
+const SETTINGS_FILE: &str = ".mmo2d-settings.txt";
+
+#[derive(Clone, Copy)]
+struct Settings {
+    hud_scale: f32,
+    touch_mode: bool,
+    camera_zoom: f32,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self { hud_scale: 1.4, touch_mode: false, camera_zoom: 32.0 }
+    }
+}
+
+fn load_settings() -> Settings {
+    let mut s = Settings::default();
+    if let Ok(txt) = std::fs::read_to_string(SETTINGS_FILE) {
+        for line in txt.lines() {
+            let Some((k, v)) = line.split_once('=') else { continue };
+            match k.trim() {
+                "hud_scale"   => if let Ok(v) = v.trim().parse::<f32>() {
+                    s.hud_scale = v.clamp(0.8, 2.5);
+                },
+                "touch_mode"  => s.touch_mode = v.trim() == "true",
+                "camera_zoom" => if let Ok(v) = v.trim().parse::<f32>() {
+                    s.camera_zoom = v.clamp(12.0, 80.0);
+                },
+                _ => {}
+            }
+        }
+    }
+    s
+}
+
+fn save_settings(s: &Settings) {
+    let body = format!(
+        "hud_scale={:.2}\ntouch_mode={}\ncamera_zoom={:.1}\n",
+        s.hud_scale, s.touch_mode, s.camera_zoom
+    );
+    if let Err(e) = std::fs::write(SETTINGS_FILE, body) {
+        tracing::warn!("falhou salvar settings: {e}");
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum MenuState {
+    Closed,
+    Main,
+    Settings,
+}
+
+/// Joystick virtual usado em modo touch/mouse-drag. Desenhado em coordenadas
+/// de mundo (via camera.visible_rect) perto do canto inferior-esquerdo.
+struct VirtualJoystick {
+    center_screen_offset: Vec2, // deslocamento do canto inferior-esquerdo do vis_rect
+    radius: f32,                // raio do base em unidades de mundo
+    active: bool,
+    thumb_offset: Vec2, // vetor do centro ate o thumb (clampeado)
+}
+
+impl VirtualJoystick {
+    fn new() -> Self {
+        Self {
+            center_screen_offset: Vec2::new(1.8, 1.8),
+            radius: 1.2,
+            active: false,
+            thumb_offset: Vec2::ZERO,
+        }
+    }
+
+    /// Direcao normalizada [-1..1] no eixo X/Y. Vec2::ZERO quando inativo.
+    fn direction(&self) -> Vec2 {
+        if !self.active || self.thumb_offset.length_squared() < 0.01 {
+            return Vec2::ZERO;
+        }
+        (self.thumb_offset / self.radius).clamp_length_max(1.0)
+    }
+}
+
+#[derive(Clone)]
+struct DamageNumber {
+    world_pos: Vec2,
+    amount: i32,
+    is_self: bool,
+    ttl: f32,
+}
 
 impl MmoClient {
     pub fn new(server_url: String, username: String, password: String) -> Self {
@@ -152,6 +256,14 @@ impl MmoClient {
             mp_current: 0,
             stamina_current: shared::STAMINA_MAX,
             shop_items: None,
+            last_hp: HashMap::new(),
+            last_pos: HashMap::new(),
+            damage_numbers: Vec::new(),
+            touch_mode: load_settings().touch_mode,
+            joystick: VirtualJoystick::new(),
+            hud_scale: load_settings().hud_scale,
+            camera_zoom: load_settings().camera_zoom,
+            menu_state: MenuState::Closed,
             chat_log: std::collections::VecDeque::with_capacity(CHAT_LOG_MAX),
             chat_typing: false,
             chat_input_buf: String::new(),
@@ -204,6 +316,7 @@ impl Game for MmoClient {
         // Posicionar camera no ponto de spawn
         let (sx, sy) = world.spawn_tile();
         ctx.camera.position = Vec2::new(sx as f32 + 0.5, sy as f32 + 0.5);
+        ctx.camera.zoom = self.camera_zoom;
 
         self.tilemap = Some(map);
         self.world_map = Some(world);
@@ -321,6 +434,13 @@ impl Game for MmoClient {
             }
         }
 
+        // Flags de bloqueio de input — precisam estar disponiveis em todos
+        // os blocos abaixo (chat, menu, input, joystick).
+        let menu_open = self.menu_state != MenuState::Closed;
+        let input_blocked = self.chat_typing || menu_open || self.shop_items.is_some();
+        // Zoom da camera reflete config salva (live-update via slider).
+        ctx.camera.zoom = self.camera_zoom;
+
         // --- Ping periódico para medir RTT ---
         self.ping_timer_s += dt;
         if self.connected && self.ping_timer_s >= PING_INTERVAL_S {
@@ -338,46 +458,59 @@ impl Game for MmoClient {
             let _ = ctx.input.take_text_input();
         }
         if self.chat_typing {
-            // Esc cancela sem enviar
-            if ctx.input.key_pressed(KeyCode::Escape) {
-                self.chat_typing = false;
-                self.chat_input_buf.clear();
-            } else {
-                // Backspace remove ultimo char
-                if ctx.input.key_pressed(KeyCode::Backspace) {
-                    self.chat_input_buf.pop();
-                }
-                // Acumula texto do frame, filtrando control chars
-                let incoming = ctx.input.take_text_input();
-                for ch in incoming.chars() {
-                    if !ch.is_control() && self.chat_input_buf.chars().count() < 200 {
-                        self.chat_input_buf.push(ch);
-                    }
-                }
-                // Enter envia
-                if ctx.input.key_pressed(KeyCode::Enter) {
-                    let msg = self.chat_input_buf.trim().to_string();
-                    if !msg.is_empty() {
-                        if let Some(net) = &self.net {
-                            net.send(ClientMessage::Chat(msg));
-                        }
-                    }
-                    self.chat_typing = false;
-                    self.chat_input_buf.clear();
+            // ESC ja foi tratado no bloco unificado acima; aqui so texto.
+            if ctx.input.key_pressed(KeyCode::Backspace) {
+                self.chat_input_buf.pop();
+            }
+            let incoming = ctx.input.take_text_input();
+            for ch in incoming.chars() {
+                if !ch.is_control() && self.chat_input_buf.chars().count() < 200 {
+                    self.chat_input_buf.push(ch);
                 }
             }
+            if ctx.input.key_pressed(KeyCode::Enter) {
+                let msg = self.chat_input_buf.trim().to_string();
+                if !msg.is_empty() {
+                    if let Some(net) = &self.net {
+                        net.send(ClientMessage::Chat(msg));
+                    }
+                }
+                self.chat_typing = false;
+                self.chat_input_buf.clear();
+            }
         } else {
-            // Descarta texto digitado fora do modo chat para nao vazar pra
-            // proximos frames.
             let _ = ctx.input.take_text_input();
         }
 
         // --- Gerar e enviar input ---
         if self.connected {
             self.input_seq = self.input_seq.wrapping_add(1);
-            let (mv, aim, mut btns) = if self.chat_typing {
-                // Em modo digitando, jogador para de se mover/atacar
+            let (mv, aim, mut btns) = if input_blocked {
                 (Vec2::ZERO, ctx.camera.position, 0u32)
+            } else if self.touch_mode {
+                // Mover: direcao do joystick. Mira: inimigo mais proximo
+                // dentro de 10 tiles; fallback pra direcao de movimento.
+                let move_dir = self.joystick.direction();
+                let player_pos = self.prediction.as_ref()
+                    .map(|p| p.predicted_pos)
+                    .unwrap_or(ctx.camera.position);
+                let aim = self.visible_entities.iter()
+                    .filter(|e| matches!(e.kind, EntityKind::Enemy(_)))
+                    .min_by(|a, b| {
+                        a.pos.distance_squared(player_pos)
+                            .partial_cmp(&b.pos.distance_squared(player_pos))
+                            .unwrap()
+                    })
+                    .filter(|e| e.pos.distance_squared(player_pos) < 100.0)
+                    .map(|e| e.pos)
+                    .unwrap_or_else(|| {
+                        if move_dir.length_squared() > 0.01 {
+                            player_pos + move_dir * 5.0
+                        } else {
+                            player_pos + Vec2::X * 5.0
+                        }
+                    });
+                (move_dir, aim, 0u32)
             } else {
                 (
                     ctx.input.move_vector(),
@@ -385,7 +518,7 @@ impl Game for MmoClient {
                     0u32,
                 )
             };
-            if !self.chat_typing {
+            if !input_blocked {
                 if ctx.input.key_down(KeyCode::Space)         { btns |= buttons::PRIMARY; }
                 if ctx.input.key_down(KeyCode::KeyQ)          { btns |= buttons::SECONDARY; }
                 if ctx.input.key_down(KeyCode::ShiftLeft)     { btns |= buttons::DASH; }
@@ -402,6 +535,55 @@ impl Game for MmoClient {
         let server_now  = now_ms() as i64 + self.server_time_offset_ms;
         let render_time = (server_now as u64).saturating_sub(RENDER_DELAY_MS);
         self.visible_entities = self.interp.sample(render_time);
+
+        // --- Detectar dano recebido (diff de HP) e spawnar floaters ---
+        let visible_ids: std::collections::HashSet<EntityId> =
+            self.visible_entities.iter().map(|e| e.id).collect();
+
+        // Caso 1: entidade visivel, HP caiu
+        for e in &self.visible_entities {
+            let Some(hp) = e.hp else { continue };
+            if let Some(prev) = self.last_hp.get(&e.id).copied() {
+                if hp.current < prev {
+                    let dmg = prev - hp.current;
+                    self.damage_numbers.push(DamageNumber {
+                        world_pos: e.pos + Vec2::new(0.0, 0.6),
+                        amount: dmg,
+                        is_self: Some(e.id) == self.self_entity,
+                        ttl: DAMAGE_NUM_TTL,
+                    });
+                }
+            }
+            self.last_hp.insert(e.id, hp.current);
+            self.last_pos.insert(e.id, e.pos);
+        }
+        // Caso 2: entidade sumiu (morreu no mesmo tick do dano). Se tinhamos
+        // HP > 0 rastreado, spawnamos o valor do HP que "levou" como dano.
+        let vanished: Vec<EntityId> = self
+            .last_hp
+            .keys()
+            .filter(|id| !visible_ids.contains(id))
+            .copied()
+            .collect();
+        for id in vanished {
+            let prev_hp = self.last_hp.remove(&id).unwrap_or(0);
+            let pos = self.last_pos.remove(&id).unwrap_or(Vec2::ZERO);
+            if prev_hp > 0 {
+                self.damage_numbers.push(DamageNumber {
+                    world_pos: pos + Vec2::new(0.0, 0.6),
+                    amount: prev_hp,
+                    is_self: Some(id) == self.self_entity,
+                    ttl: DAMAGE_NUM_TTL,
+                });
+            }
+        }
+
+        // Tick + cull floaters
+        for d in &mut self.damage_numbers {
+            d.ttl -= dt;
+            d.world_pos.y += dt * 1.4; // flutua pra cima
+        }
+        self.damage_numbers.retain(|d| d.ttl > 0.0);
 
         // --- Atualizar animacoes ---
         let moving = ctx.input.move_vector().length_squared() > 0.01;
@@ -440,27 +622,143 @@ impl Game for MmoClient {
             ctx.camera.position = ctx.camera.position.lerp(smooth, t);
         }
 
-        // --- Atalhos ---
-        // Esc so fecha o jogo se NAO estiver digitando chat e NAO tiver loja
-        // aberta — nesses casos o Esc e consumido como "cancelar".
-        if !self.chat_typing && self.shop_items.is_none() {
-            if ctx.input.key_pressed(KeyCode::F3)    { self.show_debug = !self.show_debug; }
-            if ctx.input.key_pressed(KeyCode::Escape) { ctx.should_exit = true; }
+        // --- Atalhos / ESC ---
+        if ctx.input.key_pressed(KeyCode::Escape) {
+            if self.chat_typing {
+                self.chat_typing = false;
+                self.chat_input_buf.clear();
+            } else if self.shop_items.is_some() {
+                self.shop_items = None;
+            } else {
+                self.menu_state = match self.menu_state {
+                    MenuState::Closed   => MenuState::Main,
+                    MenuState::Settings => MenuState::Main,
+                    MenuState::Main     => MenuState::Closed,
+                };
+            }
+        }
+
+        // --- Clicks no menu (Main / Settings) ---
+        if self.menu_state != MenuState::Closed {
+            use engine::winit::event::MouseButton;
+            if ctx.input.mouse_pressed(MouseButton::Left) {
+                let vis = ctx.camera.visible_rect();
+                let cx = vis.min.x + (vis.max.x - vis.min.x) * 0.5;
+                let cy = vis.min.y + (vis.max.y - vis.min.y) * 0.5;
+                let mouse_world = ctx.camera.screen_to_world(ctx.input.mouse_pos());
+                let h = self.hud_scale;
+                let btn_w = 4.0 * h;
+                let btn_h = 0.8 * h;
+                let gap = 0.25 * h;
+                let in_btn = |row_y: f32| {
+                    (mouse_world.x - cx).abs() < btn_w * 0.5
+                        && (mouse_world.y - row_y).abs() < btn_h * 0.5
+                };
+                match self.menu_state {
+                    MenuState::Main => {
+                        // 2 botoes verticais centrados em cy
+                        let y0 = cy + (btn_h + gap) * 0.5;
+                        let y1 = cy - (btn_h + gap) * 0.5;
+                        if in_btn(y0) { self.menu_state = MenuState::Settings; }
+                        else if in_btn(y1) { ctx.should_exit = true; }
+                    }
+                    MenuState::Settings => {
+                        // Replica o layout do render (veja MenuState::Settings em
+                        // render pra detalhes).
+                        let ctrl_line_h = 0.3 * h;
+                        let panel_h_s = 0.9 * h
+                            + 8.0 * ctrl_line_h
+                            + 0.45 * h + btn_h
+                            + gap
+                            + 0.45 * h + btn_h
+                            + gap * 1.5
+                            + btn_h
+                            + gap * 1.5
+                            + btn_h
+                            + 0.4 * h;
+                        let bottom = cy - panel_h_s * 0.5;
+                        let row_back_y     = bottom + 0.4 * h + btn_h * 0.5;
+                        let row_joystick_y = row_back_y + btn_h + gap * 1.5;
+                        let row_zoom_y     = row_joystick_y + btn_h + gap * 1.5;
+                        let row_hud_y      = row_zoom_y + btn_h + gap + 0.45 * h;
+
+                        let minus_cx = cx - btn_w * 0.35;
+                        let plus_cx  = cx + btn_w * 0.35;
+                        let sub_w = btn_h * 0.9;
+                        let in_sub = |target_y: f32, sub_cx: f32| {
+                            (mouse_world.x - sub_cx).abs() < sub_w * 0.5
+                                && (mouse_world.y - target_y).abs() < btn_h * 0.5
+                        };
+                        let mut changed = false;
+                        if in_sub(row_hud_y, minus_cx) {
+                            self.hud_scale = (self.hud_scale - 0.1).max(0.8);
+                            changed = true;
+                        } else if in_sub(row_hud_y, plus_cx) {
+                            self.hud_scale = (self.hud_scale + 0.1).min(2.5);
+                            changed = true;
+                        } else if in_sub(row_zoom_y, minus_cx) {
+                            self.camera_zoom = (self.camera_zoom - 4.0).max(12.0);
+                            changed = true;
+                        } else if in_sub(row_zoom_y, plus_cx) {
+                            self.camera_zoom = (self.camera_zoom + 4.0).min(80.0);
+                            changed = true;
+                        } else if in_btn(row_joystick_y) {
+                            self.touch_mode = !self.touch_mode;
+                            changed = true;
+                        } else if in_btn(row_back_y) {
+                            self.menu_state = MenuState::Main;
+                        }
+                        if changed {
+                            save_settings(&Settings {
+                                hud_scale: self.hud_scale,
+                                touch_mode: self.touch_mode,
+                                camera_zoom: self.camera_zoom,
+                            });
+                        }
+                    }
+                    MenuState::Closed => {}
+                }
+            }
+        }
+
+        // --- Joystick virtual (mouse-drag / touch futuro) ---
+        if self.touch_mode && !menu_open {
+            let vis = ctx.camera.visible_rect();
+            let jcenter = Vec2::new(
+                vis.min.x + self.joystick.center_screen_offset.x,
+                vis.min.y + self.joystick.center_screen_offset.y,
+            );
+            let mouse_world = ctx.camera.screen_to_world(ctx.input.mouse_pos());
+            let left_down = ctx.input.mouse_down(engine::winit::event::MouseButton::Left);
+            if self.joystick.active {
+                if left_down {
+                    let off = mouse_world - jcenter;
+                    self.joystick.thumb_offset = off.clamp_length_max(self.joystick.radius);
+                } else {
+                    self.joystick.active = false;
+                    self.joystick.thumb_offset = Vec2::ZERO;
+                }
+            } else if left_down
+                && (mouse_world - jcenter).length() < self.joystick.radius * 1.5
+            {
+                self.joystick.active = true;
+                self.joystick.thumb_offset = (mouse_world - jcenter)
+                    .clamp_length_max(self.joystick.radius);
+            }
+        } else {
+            self.joystick.active = false;
+            self.joystick.thumb_offset = Vec2::ZERO;
         }
 
         // Interacao com NPC (E)
-        if self.connected && !self.chat_typing && ctx.input.key_pressed(KeyCode::KeyE) {
+        if self.connected && !input_blocked && ctx.input.key_pressed(KeyCode::KeyE) {
             if let Some(net) = &self.net {
                 net.send(ClientMessage::Interact);
             }
         }
-        // Fecha loja com Esc (client-side — nao precisa do server)
-        if self.shop_items.is_some() && ctx.input.key_pressed(KeyCode::Escape) {
-            self.shop_items = None;
-        }
 
         // Teclas 1..9: se loja aberta, compra slot N-1; senao usa item N-1.
-        if self.connected && !self.chat_typing {
+        if self.connected && !self.chat_typing && !menu_open {
             if let Some(net) = &self.net {
                 let digits = [
                     KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3,
@@ -616,12 +914,131 @@ impl Game for MmoClient {
             }
         }
 
+        // 2.5 Numeros de dano flutuantes
+        if let Some(font) = &self.font {
+            for d in &self.damage_numbers {
+                let t = (d.ttl / DAMAGE_NUM_TTL).clamp(0.0, 1.0);
+                let alpha = t; // fade-out linear
+                let (r, g, b) = if d.is_self {
+                    (1.0, 0.35, 0.35) // vermelho: dano no proprio
+                } else {
+                    (1.0, 0.95, 0.4)  // amarelo: dano em inimigo
+                };
+                let text = format!("-{}", d.amount);
+                let w = font.measure_width(&text) * 0.6;
+                font.draw_depth(
+                    &text,
+                    d.world_pos + Vec2::new(-w * 0.5, 0.0),
+                    0.6,
+                    Vec4::new(r, g, b, alpha),
+                    layer::NAMEPLATE - d.world_pos.y + 100.0,
+                    batch,
+                );
+            }
+        }
+
+        // 2.75 Minimapa (canto superior-direito) — escondido quando menu aberto.
+        if self.menu_state == MenuState::Closed {
+        if let Some(world) = &self.world_map {
+            let vis = ctx.camera.visible_rect();
+            let h = self.hud_scale;
+            let mm_size = 3.2 * h;         // lado do painel em unidades de mundo
+            let mm_tiles = 40i32;          // tiles mostrados por lado
+            let cell = mm_size / mm_tiles as f32;
+            // Canto inferior-direito — barras do jogador agora ficam no superior-direito.
+            let mm_max = Vec2::new(vis.max.x - 0.3 * h, vis.min.y + mm_size + 0.3 * h);
+            let mm_center = Vec2::new(
+                mm_max.x - mm_size * 0.5,
+                mm_max.y - mm_size * 0.5,
+            );
+            let player_world = self
+                .prediction
+                .as_ref()
+                .map(|p| p.predicted_pos)
+                .unwrap_or(ctx.camera.position);
+            let px = player_world.x.floor() as i32;
+            let py = player_world.y.floor() as i32;
+            // Fundo do painel
+            batch.push(&Sprite {
+                position: mm_center,
+                size: Vec2::splat(mm_size + 0.06 * h),
+                uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                tint: Vec4::new(1.0, 0.85, 0.35, 0.8),
+                depth: layer::HUD,
+                ..Default::default()
+            });
+            batch.push(&Sprite {
+                position: mm_center,
+                size: Vec2::splat(mm_size),
+                uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                tint: Vec4::new(0.08, 0.10, 0.14, 0.92),
+                depth: layer::HUD + 0.05,
+                ..Default::default()
+            });
+            // Paredes (sparse — amostra de 2 em 2 tiles pra cortar custo).
+            let half = mm_tiles / 2;
+            for dy in (-half..half).step_by(1) {
+                for dx in (-half..half).step_by(1) {
+                    let tx = px + dx;
+                    let ty = py + dy;
+                    if world.get(tx, ty) == shared::constants::tile_id::WALL {
+                        let cx = mm_center.x + (dx as f32 + 0.5) * cell;
+                        let cy = mm_center.y + (dy as f32 + 0.5) * cell;
+                        batch.push(&Sprite {
+                            position: Vec2::new(cx, cy),
+                            size: Vec2::splat(cell * 0.95),
+                            uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                            tint: Vec4::new(0.35, 0.35, 0.4, 0.85),
+                            depth: layer::HUD + 0.1,
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+            // Entidades (dots) — so pinta se cair dentro do painel
+            let dot_half = cell * 1.5;
+            for e in &self.visible_entities {
+                let dx = e.pos.x - player_world.x;
+                let dy = e.pos.y - player_world.y;
+                if dx.abs() > half as f32 || dy.abs() > half as f32 { continue; }
+                let cx = mm_center.x + dx * cell;
+                let cy = mm_center.y + dy * cell;
+                let (color, is_self) = match e.kind {
+                    EntityKind::Player => {
+                        if Some(e.id) == self.self_entity {
+                            (Vec4::new(1.0, 1.0, 0.4, 1.0), true)
+                        } else {
+                            (Vec4::new(1.0, 1.0, 1.0, 1.0), false)
+                        }
+                    }
+                    EntityKind::Enemy(k) => {
+                        let [r, g, b, _] = shared::enemy_def(k).tint_rgba;
+                        (Vec4::new(r, g, b, 1.0), false)
+                    }
+                    EntityKind::Npc(_) => (Vec4::new(1.0, 0.85, 0.35, 1.0), false),
+                    EntityKind::Loot(_) => (Vec4::new(0.6, 0.9, 0.6, 1.0), false),
+                    _ => continue,
+                };
+                let sz = if is_self { dot_half * 1.4 } else { dot_half };
+                batch.push(&Sprite {
+                    position: Vec2::new(cx, cy),
+                    size: Vec2::splat(sz),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: color,
+                    depth: layer::HUD + 0.2,
+                    ..Default::default()
+                });
+            }
+        }
+        } // menu_state == Closed guard do minimapa
+
         // 3. HUD (posicionado no canto superior-esquerdo em espaco de mundo)
         if let Some(font) = &self.font {
             let vis = ctx.camera.visible_rect();
-            let margin = 0.3;
+            let h = self.hud_scale; // multiplicador global
+            let margin = 0.3 * h;
             let top_left = Vec2::new(vis.min.x + margin, vis.max.y - margin);
-            let bottom_left = Vec2::new(vis.min.x + margin, vis.min.y + 1.2);
+            let bottom_left = Vec2::new(vis.min.x + margin, vis.min.y + 1.2 * h);
 
             // Coordenadas, ping e dicas no topo
             let class_name = match self.class {
@@ -630,21 +1047,21 @@ impl Game for MmoClient {
                 shared::PlayerClass::Wizard  => "WIZ",
             };
             let pos_text = format!(
-                "[{class_name}] dmg={}  ({:.0}, {:.0})  ping={}ms  F3=debug  ESC=sair",
+                "[{class_name}] dmg={}  ({:.0}, {:.0})  ping={}ms  ESC=menu",
                 self.stats.attack_damage, ctx.camera.position.x, ctx.camera.position.y, self.last_ping_ms
             );
-            font.draw_depth(&pos_text, top_left, 0.85, Vec4::new(0.8, 0.8, 0.8, 1.0), layer::HUD, batch);
+            font.draw_depth(&pos_text, top_left, 0.85 * h, Vec4::new(0.8, 0.8, 0.8, 1.0), layer::HUD, batch);
 
             // Chat log (display-only) sobreposto acima do status
             if !self.chat_log.is_empty() {
-                let line_h = 0.35;
-                let base = Vec2::new(vis.min.x + margin, vis.min.y + 1.2 + line_h);
+                let line_h = 0.35 * h;
+                let base = Vec2::new(vis.min.x + margin, vis.min.y + 1.2 * h + line_h);
                 for (i, msg) in self.chat_log.iter().rev().enumerate() {
                     let y = base.y + i as f32 * line_h;
                     font.draw_depth(
                         msg,
                         Vec2::new(base.x, y),
-                        0.75,
+                        0.75 * h,
                         Vec4::new(0.85, 0.9, 1.0, 0.9),
                         layer::HUD,
                         batch,
@@ -654,9 +1071,9 @@ impl Game for MmoClient {
 
             // Painel da loja (overlay central)
             if let Some(items) = self.shop_items.clone() {
-                let panel_w = 6.5f32;
-                let line_h = 0.5;
-                let panel_h = 0.8 + items.len() as f32 * line_h + 0.4;
+                let panel_w = 6.5 * h;
+                let line_h = 0.5 * h;
+                let panel_h = 0.8 * h + items.len() as f32 * line_h + 0.4 * h;
                 let cx = vis.min.x + (vis.max.x - vis.min.x) / 2.0;
                 let cy = vis.min.y + (vis.max.y - vis.min.y) / 2.0;
                 batch.push(&Sprite {
@@ -678,8 +1095,8 @@ impl Game for MmoClient {
                 });
                 font.draw_depth(
                     "LOJA — ESC fecha",
-                    Vec2::new(cx - panel_w * 0.5 + 0.3, cy + panel_h * 0.5 - 0.25),
-                    0.85,
+                    Vec2::new(cx - panel_w * 0.5 + 0.3 * h, cy + panel_h * 0.5 - 0.25 * h),
+                    0.85 * h,
                     Vec4::new(1.0, 0.85, 0.35, 1.0),
                     layer::HUD + 1.2,
                     batch,
@@ -693,11 +1110,11 @@ impl Game for MmoClient {
                         _                              => "Item",
                     };
                     let row = format!("[{}] {:<18} {} ouro", i + 1, iname, price);
-                    let y = cy + panel_h * 0.5 - 0.8 - i as f32 * line_h;
+                    let y = cy + panel_h * 0.5 - 0.8 * h - i as f32 * line_h;
                     font.draw_depth(
                         &row,
-                        Vec2::new(cx - panel_w * 0.5 + 0.3, y),
-                        0.75,
+                        Vec2::new(cx - panel_w * 0.5 + 0.3 * h, y),
+                        0.75 * h,
                         Vec4::new(0.9, 0.95, 1.0, 1.0),
                         layer::HUD + 1.2,
                         batch,
@@ -705,13 +1122,306 @@ impl Game for MmoClient {
                 }
             }
 
+            // Joystick virtual (modo touch / F2)
+            if self.touch_mode {
+                let vis = ctx.camera.visible_rect();
+                let jcenter = Vec2::new(
+                    vis.min.x + self.joystick.center_screen_offset.x,
+                    vis.min.y + self.joystick.center_screen_offset.y,
+                );
+                let r = self.joystick.radius;
+                // Base
+                batch.push(&Sprite {
+                    position: jcenter,
+                    size: Vec2::splat(r * 2.0),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(0.08, 0.1, 0.15, 0.7),
+                    depth: layer::HUD + 0.3,
+                    ..Default::default()
+                });
+                // Borda
+                batch.push(&Sprite {
+                    position: jcenter,
+                    size: Vec2::new(r * 2.0 + 0.06, 0.06),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(0.85, 0.85, 0.85, 0.5),
+                    depth: layer::HUD + 0.31,
+                    ..Default::default()
+                });
+                // Thumb
+                let thumb_pos = jcenter + self.joystick.thumb_offset;
+                let thumb_color = if self.joystick.active {
+                    Vec4::new(1.0, 0.85, 0.35, 0.95)
+                } else {
+                    Vec4::new(0.7, 0.75, 0.8, 0.85)
+                };
+                batch.push(&Sprite {
+                    position: thumb_pos,
+                    size: Vec2::splat(r * 0.6),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: thumb_color,
+                    depth: layer::HUD + 0.4,
+                    ..Default::default()
+                });
+            }
+
+            // Menu (ESC) — sobrepoe tudo menos o cursor
+            if self.menu_state != MenuState::Closed {
+                let cx = vis.min.x + (vis.max.x - vis.min.x) * 0.5;
+                let cy = vis.min.y + (vis.max.y - vis.min.y) * 0.5;
+                // Fundo escurecido
+                let full_w = vis.max.x - vis.min.x;
+                let full_h = vis.max.y - vis.min.y;
+                batch.push(&Sprite {
+                    position: Vec2::new(cx, cy),
+                    size: Vec2::new(full_w, full_h),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(0.0, 0.0, 0.0, 0.55),
+                    depth: layer::HUD + 5.0,
+                    ..Default::default()
+                });
+
+                let btn_w = 4.0 * h;
+                let btn_h = 0.8 * h;
+                let gap = 0.25 * h;
+
+                // Painel central — alturas calculadas pra nao sobrepor textos.
+                //   Main:     titulo + 2 botoes
+                //   Settings: titulo + 8 linhas de controles + label + slider + voltar
+                let panel_w = btn_w + 1.0 * h;
+                let ctrl_line_h = 0.3 * h;
+                let settings_controls_rows = 8.0;
+                let panel_h = match self.menu_state {
+                    MenuState::Settings => {
+                        0.9 * h                                  // titulo + padding
+                        + settings_controls_rows * ctrl_line_h   // lista de controles
+                        + 0.45 * h                               // label HUD
+                        + btn_h                                  // slider HUD
+                        + gap                                    // gap
+                        + 0.45 * h                               // label Zoom
+                        + btn_h                                  // slider Zoom
+                        + gap * 1.5
+                        + btn_h                                  // botao Joystick
+                        + gap * 1.5
+                        + btn_h                                  // botao Voltar
+                        + 0.4 * h                                // padding inferior
+                    }
+                    _ => btn_h * 2.0 + gap + 1.3 * h,
+                };
+                batch.push(&Sprite {
+                    position: Vec2::new(cx, cy),
+                    size: Vec2::new(panel_w, panel_h),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(0.08, 0.09, 0.14, 0.97),
+                    depth: layer::HUD + 5.1,
+                    ..Default::default()
+                });
+                batch.push(&Sprite {
+                    position: Vec2::new(cx, cy + panel_h * 0.5 - 0.03 * h),
+                    size: Vec2::new(panel_w, 0.06 * h),
+                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                    tint: Vec4::new(1.0, 0.85, 0.35, 0.9),
+                    depth: layer::HUD + 5.2,
+                    ..Default::default()
+                });
+
+                let draw_btn = |pos: Vec2, label: &str, font: &BitmapFont, batch: &mut SpriteBatch| {
+                    batch.push(&Sprite {
+                        position: pos,
+                        size: Vec2::new(btn_w, btn_h),
+                        uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                        tint: Vec4::new(0.15, 0.17, 0.23, 1.0),
+                        depth: layer::HUD + 5.3,
+                        ..Default::default()
+                    });
+                    let lw = font.measure_width(label) * (0.85 * h);
+                    font.draw_depth(
+                        label,
+                        pos + Vec2::new(-lw * 0.5, btn_h * 0.25),
+                        0.85 * h,
+                        Vec4::ONE,
+                        layer::HUD + 5.4,
+                        batch,
+                    );
+                };
+
+                match self.menu_state {
+                    MenuState::Main => {
+                        // Titulo
+                        let title = "MENU";
+                        let tw = font.measure_width(title) * (1.0 * h);
+                        font.draw_depth(
+                            title,
+                            Vec2::new(cx - tw * 0.5, cy + panel_h * 0.5 - 0.45 * h),
+                            1.0 * h,
+                            Vec4::new(1.0, 0.85, 0.35, 1.0),
+                            layer::HUD + 5.4,
+                            batch,
+                        );
+                        let y0 = cy + (btn_h + gap) * 0.5;
+                        let y1 = cy - (btn_h + gap) * 0.5;
+                        draw_btn(Vec2::new(cx, y0), "Configuracoes", font, batch);
+                        draw_btn(Vec2::new(cx, y1), "Sair do Jogo",  font, batch);
+                    }
+                    MenuState::Settings => {
+                        // Cursor vertical comeca no topo e empilha pra baixo.
+                        let top = cy + panel_h * 0.5;
+                        let bottom = cy - panel_h * 0.5;
+                        let title_size = 0.85 * h;
+                        // Titulo
+                        let title = "CONFIGURACOES";
+                        let tw = font.measure_width(title) * title_size;
+                        font.draw_depth(
+                            title,
+                            Vec2::new(cx - tw * 0.5, top - title_size * 0.55),
+                            title_size,
+                            Vec4::new(1.0, 0.85, 0.35, 1.0),
+                            layer::HUD + 5.4,
+                            batch,
+                        );
+
+                        // Controles (8 linhas)
+                        let controls = [
+                            "WASD   mover",
+                            "SHIFT  correr (stamina)",
+                            "SPACE  atacar",
+                            "Q      triple-shot (25 MP)",
+                            "E      interagir com NPC",
+                            "T      abrir chat",
+                            "1-9    usar / equipar item",
+                            "ESC    abrir/fechar menu",
+                        ];
+                        let ctrl_size = 0.55 * h;
+                        // Primeira linha comeca logo abaixo do titulo (com gap)
+                        let ctrl_start_y = top - 0.9 * h - ctrl_line_h * 0.5;
+                        for (i, line) in controls.iter().enumerate() {
+                            let y = ctrl_start_y - i as f32 * ctrl_line_h;
+                            font.draw_depth(
+                                line,
+                                Vec2::new(cx - btn_w * 0.5 + 0.15 * h, y),
+                                ctrl_size,
+                                Vec4::new(0.82, 0.88, 1.0, 1.0),
+                                layer::HUD + 5.4,
+                                batch,
+                            );
+                        }
+
+                        // Posicoes dos 3 widgets empilhados no fundo:
+                        //   row_back_y  → botao Voltar (mais baixo)
+                        //   row_zoom_y  → slider Zoom
+                        //   row_hud_y   → slider HUD
+                        // Cada slider tem seu label 0.18h acima.
+                        let row_back_y      = bottom + 0.4 * h + btn_h * 0.5;
+                        let row_joystick_y  = row_back_y + btn_h + gap * 1.5;
+                        let row_zoom_y      = row_joystick_y + btn_h + gap * 1.5;
+                        let row_hud_y       = row_zoom_y + btn_h + gap + 0.45 * h;
+
+                        // Helper render de um slider (label + base + -/+/valor)
+                        let draw_slider = |
+                            label: &str,
+                            value_text: String,
+                            y: f32,
+                            font: &BitmapFont,
+                            batch: &mut SpriteBatch,
+                        | {
+                            font.draw_depth(
+                                label,
+                                Vec2::new(cx - btn_w * 0.5 + 0.1 * h, y + btn_h * 0.5 + 0.2 * h),
+                                0.6 * h,
+                                Vec4::new(0.9, 0.95, 1.0, 1.0),
+                                layer::HUD + 5.4,
+                                batch,
+                            );
+                            batch.push(&Sprite {
+                                position: Vec2::new(cx, y),
+                                size: Vec2::new(btn_w, btn_h),
+                                uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                                tint: Vec4::new(0.1, 0.12, 0.17, 1.0),
+                                depth: layer::HUD + 5.3,
+                                ..Default::default()
+                            });
+                            let minus_cx = cx - btn_w * 0.35;
+                            let plus_cx  = cx + btn_w * 0.35;
+                            let sub_w = btn_h * 0.9;
+                            for (pos, sym) in [(minus_cx, "-"), (plus_cx, "+")] {
+                                batch.push(&Sprite {
+                                    position: Vec2::new(pos, y),
+                                    size: Vec2::new(sub_w, btn_h * 0.8),
+                                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                                    tint: Vec4::new(1.0, 0.85, 0.35, 0.9),
+                                    depth: layer::HUD + 5.4,
+                                    ..Default::default()
+                                });
+                                let sw = font.measure_width(sym) * (1.0 * h);
+                                font.draw_depth(
+                                    sym,
+                                    Vec2::new(pos - sw * 0.5, y + btn_h * 0.3),
+                                    1.0 * h,
+                                    Vec4::new(0.05, 0.05, 0.1, 1.0),
+                                    layer::HUD + 5.5,
+                                    batch,
+                                );
+                            }
+                            let vw = font.measure_width(&value_text) * (0.9 * h);
+                            font.draw_depth(
+                                &value_text,
+                                Vec2::new(cx - vw * 0.5, y + btn_h * 0.3),
+                                0.9 * h,
+                                Vec4::ONE,
+                                layer::HUD + 5.5,
+                                batch,
+                            );
+                        };
+
+                        draw_slider("Tamanho HUD",
+                            format!("{:.1}", self.hud_scale),
+                            row_hud_y, font, batch);
+                        draw_slider("Zoom Camera",
+                            format!("{:.0}", self.camera_zoom),
+                            row_zoom_y, font, batch);
+                        {
+                            let joy_label = if self.touch_mode {
+                                "Joystick: LIGADO"
+                            } else {
+                                "Joystick: DESLIGADO"
+                            };
+                            let joy_color = if self.touch_mode {
+                                Vec4::new(0.3, 1.0, 0.4, 1.0)
+                            } else {
+                                Vec4::new(0.7, 0.7, 0.75, 1.0)
+                            };
+                            // Fundo do botao
+                            batch.push(&Sprite {
+                                position: Vec2::new(cx, row_joystick_y),
+                                size: Vec2::new(btn_w, btn_h),
+                                uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                                tint: Vec4::new(0.12, 0.14, 0.2, 1.0),
+                                depth: layer::HUD + 5.3,
+                                ..Default::default()
+                            });
+                            let tw = font.measure_width(joy_label) * (0.7 * h);
+                            font.draw_depth(
+                                joy_label,
+                                Vec2::new(cx - tw * 0.5, row_joystick_y + btn_h * 0.25),
+                                0.7 * h,
+                                joy_color,
+                                layer::HUD + 5.5,
+                                batch,
+                            );
+                        }
+                        draw_btn(Vec2::new(cx, row_back_y), "Voltar", font, batch);
+                    }
+                    MenuState::Closed => {}
+                }
+            }
+
             // Campo de input de chat (aparece quando typing)
             if self.chat_typing {
                 let box_w = (vis.max.x - vis.min.x) * 0.55;
-                let box_h = 0.45;
+                let box_h = 0.45 * h;
                 let box_pos = Vec2::new(
                     vis.min.x + margin + box_w * 0.5,
-                    vis.min.y + margin + 0.25,
+                    vis.min.y + margin + 0.25 * h,
                 );
                 batch.push(&Sprite {
                     position: box_pos,
@@ -723,8 +1433,8 @@ impl Game for MmoClient {
                 });
                 // borda
                 batch.push(&Sprite {
-                    position: box_pos + Vec2::new(0.0, box_h * 0.5 - 0.02),
-                    size: Vec2::new(box_w, 0.04),
+                    position: box_pos + Vec2::new(0.0, box_h * 0.5 - 0.02 * h),
+                    size: Vec2::new(box_w, 0.04 * h),
                     uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
                     tint: Vec4::new(1.0, 0.85, 0.35, 0.9),
                     depth: layer::HUD + 0.05,
@@ -733,8 +1443,8 @@ impl Game for MmoClient {
                 let prompt = format!("> {}_", self.chat_input_buf);
                 font.draw_depth(
                     &prompt,
-                    box_pos + Vec2::new(-box_w * 0.5 + 0.15, 0.12),
-                    0.7,
+                    box_pos + Vec2::new(-box_w * 0.5 + 0.15 * h, 0.12 * h),
+                    0.7 * h,
                     Vec4::ONE,
                     layer::HUD + 0.1,
                     batch,
@@ -742,15 +1452,17 @@ impl Game for MmoClient {
             }
 
             // Status de conexao em baixo
-            let status = if self.connected {
-                format!(
-                    "{} jogadores  WASD=mover  SHIFT=sprint  SPACE=atk  Q=triple  E=npc  T=chat  1-9=item",
-                    self.visible_entities.len()
-                )
-            } else {
-                "Conectando...".to_string()
-            };
-            font.draw_depth(&status, bottom_left, 0.85, Vec4::new(0.7, 0.8, 0.7, 1.0), layer::HUD, batch);
+            // Quando nao conectado, exibe "Conectando..." central. Depois do
+            // login nao tem status permanente — controles estao no menu.
+            if !self.connected {
+                let msg = "Conectando...";
+                let cx = vis.min.x + (vis.max.x - vis.min.x) / 2.0;
+                let cy = vis.min.y + (vis.max.y - vis.min.y) / 2.0;
+                let lw = font.measure_width(msg) * (1.0 * h);
+                font.draw_depth(msg, Vec2::new(cx - lw * 0.5, cy), 1.0 * h,
+                    Vec4::new(1.0, 0.85, 0.35, 1.0), layer::HUD, batch);
+            }
+            let _ = bottom_left; // suprime unused warning
 
             // Painel de debug (F3)
             if self.show_debug {
@@ -760,167 +1472,121 @@ impl Game for MmoClient {
                     RENDER_DELAY_MS,
                     ctx.camera.zoom,
                 );
-                font.draw_depth(&dbg, top_left - Vec2::Y * 0.45, 0.8, Vec4::new(0.5, 1.0, 0.5, 1.0), layer::HUD, batch);
+                font.draw_depth(&dbg, top_left - Vec2::Y * 0.45 * h, 0.8 * h, Vec4::new(0.5, 1.0, 0.5, 1.0), layer::HUD, batch);
             }
 
-            // HUD do jogador (HP bar grande no meio da tela)
+            // HUD do jogador (HP/MP/XP + equip + hotbar). Esconde quando o
+            // menu do jogo esta aberto pra nao visualmente poluir.
             let self_hp = self.visible_entities.iter()
                 .find(|e| Some(e.id) == self.self_entity)
                 .and_then(|e| e.hp);
-                
+            let show_game_hud = self.menu_state == MenuState::Closed;
+
+            if show_game_hud {
             if let Some(hp) = self_hp {
-                let bar_w = 5.0;
-                let bar_h = 0.4;
-                let fill = (hp.current as f32 / hp.max as f32).clamp(0.0, 1.0);
-                let bar_pos = Vec2::new(vis.min.x + (vis.max.x - vis.min.x) / 2.0, vis.min.y + margin + 0.3);
-                
-                // Fundo da barra
-                batch.push(&Sprite {
-                    position: bar_pos,
-                    size: Vec2::new(bar_w, bar_h),
-                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                    tint: Vec4::new(0.2, 0.05, 0.05, 0.9),
-                    depth: layer::HUD,
-                    ..Default::default()
-                });
-                // Preenchimento
-                if fill > 0.0 {
+                // HUD de stats empilhado no canto SUPERIOR-DIREITO.
+                // Ordem (cima->baixo): HP, MP (se houver), Stamina, XP.
+                let bar_w = 3.4 * h;
+                let bar_h = 0.32 * h;
+                let gap = 0.08 * h;
+                // Ancora: canto superior direito, abaixo do texto de status.
+                let right_x = vis.max.x - margin;
+                let bar_cx = right_x - bar_w * 0.5;
+                let mut top_y = vis.max.y - margin - 0.7 * h - bar_h * 0.5;
+
+                let draw_bar = |
+                    center: Vec2,
+                    fill: f32,
+                    bg_tint: Vec4,
+                    fg_tint: Vec4,
+                    label: String,
+                    font: &BitmapFont,
+                    batch: &mut SpriteBatch,
+                | {
                     batch.push(&Sprite {
-                        position: bar_pos + Vec2::new((fill - 1.0) * bar_w * 0.5, 0.0),
-                        size: Vec2::new(bar_w * fill, bar_h),
+                        position: center,
+                        size: Vec2::new(bar_w, bar_h),
                         uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                        tint: Vec4::new(0.9, 0.2, 0.2, 1.0),
-                        depth: layer::HUD + 0.1,
+                        tint: bg_tint,
+                        depth: layer::HUD,
                         ..Default::default()
                     });
-                }
+                    let f = fill.clamp(0.0, 1.0);
+                    if f > 0.0 {
+                        batch.push(&Sprite {
+                            position: center + Vec2::new((f - 1.0) * bar_w * 0.5, 0.0),
+                            size: Vec2::new(bar_w * f, bar_h),
+                            uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                            tint: fg_tint,
+                            depth: layer::HUD + 0.1,
+                            ..Default::default()
+                        });
+                    }
+                    let lw = font.measure_width(&label) * (0.55 * h);
+                    font.draw_depth(
+                        &label,
+                        center + Vec2::new(-lw * 0.5, 0.1 * h),
+                        0.55 * h,
+                        Vec4::ONE,
+                        layer::HUD + 0.2,
+                        batch,
+                    );
+                };
 
-                // Texto do HP centralizado
-                let hp_label = format!("{}/{}", hp.current, hp.max);
-                let label_w = font.measure_width(&hp_label) * 0.8;
-                font.draw_depth(&hp_label, bar_pos + Vec2::new(-label_w * 0.5, 0.15), 0.8, Vec4::ONE, layer::HUD + 0.2, batch);
+                // HP
+                draw_bar(
+                    Vec2::new(bar_cx, top_y),
+                    hp.current as f32 / hp.max.max(1) as f32,
+                    Vec4::new(0.2, 0.05, 0.05, 0.9),
+                    Vec4::new(0.9, 0.2, 0.2, 1.0),
+                    format!("HP {}/{}", hp.current, hp.max),
+                    font, batch,
+                );
+                top_y -= bar_h + gap;
 
-                // Barras finas abaixo da HP (MP + Stamina empilhadas)
-                let thin_h = 0.18;
-                let thin_gap = 0.05;
-                let mut thin_offset = bar_h * 0.5 + 0.06 + thin_h * 0.5;
-                // MP
+                // MP (se tem mana)
                 if self.stats.mp_max > 0 {
-                    let mp_pos = bar_pos - Vec2::new(0.0, thin_offset);
-                    let mp_fill = (self.mp_current as f32 / self.stats.mp_max as f32).clamp(0.0, 1.0);
-                    batch.push(&Sprite {
-                        position: mp_pos,
-                        size: Vec2::new(bar_w, thin_h),
-                        uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                        tint: Vec4::new(0.05, 0.1, 0.25, 0.9),
-                        depth: layer::HUD,
-                        ..Default::default()
-                    });
-                    if mp_fill > 0.0 {
-                        batch.push(&Sprite {
-                            position: mp_pos + Vec2::new((mp_fill - 1.0) * bar_w * 0.5, 0.0),
-                            size: Vec2::new(bar_w * mp_fill, thin_h),
-                            uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                            tint: Vec4::new(0.25, 0.5, 1.0, 0.95),
-                            depth: layer::HUD + 0.1,
-                            ..Default::default()
-                        });
-                    }
-                    let mp_label = format!("{}/{} MP", self.mp_current, self.stats.mp_max);
-                    let mp_lw = font.measure_width(&mp_label) * 0.55;
-                    font.draw_depth(
-                        &mp_label,
-                        mp_pos + Vec2::new(-mp_lw * 0.5, 0.08),
-                        0.55,
-                        Vec4::new(0.9, 0.95, 1.0, 1.0),
-                        layer::HUD + 0.2,
-                        batch,
+                    draw_bar(
+                        Vec2::new(bar_cx, top_y),
+                        self.mp_current as f32 / self.stats.mp_max as f32,
+                        Vec4::new(0.05, 0.1, 0.25, 0.9),
+                        Vec4::new(0.25, 0.5, 1.0, 0.95),
+                        format!("MP {}/{}", self.mp_current, self.stats.mp_max),
+                        font, batch,
                     );
-                    thin_offset += thin_h + thin_gap;
-                }
-                // Stamina
-                {
-                    let stam_max = shared::STAMINA_MAX;
-                    let stam_pos = bar_pos - Vec2::new(0.0, thin_offset);
-                    let stam_fill = (self.stamina_current as f32 / stam_max as f32).clamp(0.0, 1.0);
-                    batch.push(&Sprite {
-                        position: stam_pos,
-                        size: Vec2::new(bar_w, thin_h),
-                        uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                        tint: Vec4::new(0.05, 0.15, 0.05, 0.9),
-                        depth: layer::HUD,
-                        ..Default::default()
-                    });
-                    if stam_fill > 0.0 {
-                        batch.push(&Sprite {
-                            position: stam_pos + Vec2::new((stam_fill - 1.0) * bar_w * 0.5, 0.0),
-                            size: Vec2::new(bar_w * stam_fill, thin_h),
-                            uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                            tint: Vec4::new(0.4, 0.9, 0.35, 0.95),
-                            depth: layer::HUD + 0.1,
-                            ..Default::default()
-                        });
-                    }
-                    let stam_label = format!("{}/{} SP", self.stamina_current, stam_max);
-                    let slw = font.measure_width(&stam_label) * 0.55;
-                    font.draw_depth(
-                        &stam_label,
-                        stam_pos + Vec2::new(-slw * 0.5, 0.08),
-                        0.55,
-                        Vec4::new(0.85, 1.0, 0.85, 1.0),
-                        layer::HUD + 0.2,
-                        batch,
-                    );
-                    thin_offset += thin_h + thin_gap;
+                    top_y -= bar_h + gap;
                 }
 
-                // Barra de XP abaixo da MP (ou abaixo da HP se mp_max=0)
+                // Stamina
+                let stam_max = shared::STAMINA_MAX;
+                draw_bar(
+                    Vec2::new(bar_cx, top_y),
+                    self.stamina_current as f32 / stam_max as f32,
+                    Vec4::new(0.05, 0.15, 0.05, 0.9),
+                    Vec4::new(0.4, 0.9, 0.35, 0.95),
+                    format!("SP {}/{}", self.stamina_current, stam_max),
+                    font, batch,
+                );
+                top_y -= bar_h + gap;
+
+                // XP
                 let next = shared::xp_for_level(self.level + 1);
                 let cur_floor = shared::xp_for_level(self.level);
                 let span = (next - cur_floor).max(1);
                 let progress = ((self.xp.saturating_sub(cur_floor)) as f32 / span as f32).clamp(0.0, 1.0);
-                // XP sempre fica abaixo das barras finas (MP opcional + Stamina)
-                let xp_y_offset = thin_offset + 0.15;
-                let xp_bar_pos = bar_pos - Vec2::new(0.0, xp_y_offset);
-                let xp_bar_h = 0.18;
-                batch.push(&Sprite {
-                    position: xp_bar_pos,
-                    size: Vec2::new(bar_w, xp_bar_h),
-                    uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                    tint: Vec4::new(0.08, 0.08, 0.12, 0.9),
-                    depth: layer::HUD,
-                    ..Default::default()
-                });
-                if progress > 0.0 {
-                    batch.push(&Sprite {
-                        position: xp_bar_pos + Vec2::new((progress - 1.0) * bar_w * 0.5, 0.0),
-                        size: Vec2::new(bar_w * progress, xp_bar_h),
-                        uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                        tint: Vec4::new(0.35, 0.75, 1.0, 0.95),
-                        depth: layer::HUD + 0.1,
-                        ..Default::default()
-                    });
-                }
-                let xp_label = format!(
-                    "L{}  {}/{} XP",
-                    self.level,
-                    self.xp.saturating_sub(cur_floor),
-                    span
-                );
-                let xp_label_w = font.measure_width(&xp_label) * 0.7;
-                font.draw_depth(
-                    &xp_label,
-                    xp_bar_pos + Vec2::new(-xp_label_w * 0.5, 0.08),
-                    0.7,
-                    Vec4::new(0.9, 0.95, 1.0, 1.0),
-                    layer::HUD + 0.2,
-                    batch,
+                draw_bar(
+                    Vec2::new(bar_cx, top_y),
+                    progress,
+                    Vec4::new(0.08, 0.08, 0.12, 0.9),
+                    Vec4::new(0.35, 0.75, 1.0, 0.95),
+                    format!("L{}  {}/{}", self.level, self.xp.saturating_sub(cur_floor), span),
+                    font, batch,
                 );
             }
 
             // Slots de equipamento (arma / armadura / anel) — acima da hotbar
-            let eq_slot_size = 0.55f32;
-            let eq_gap = 0.12f32;
+            let eq_slot_size = 0.55 * h;
+            let eq_gap = 0.12 * h;
             let eq_slots: [(Option<u16>, &str); 3] = [
                 (self.equipment.weapon, "W"),
                 (self.equipment.armor,  "A"),
@@ -928,7 +1594,7 @@ impl Game for MmoClient {
             ];
             let eq_total_w = 3.0 * eq_slot_size + 2.0 * eq_gap;
             let eq_center_x = vis.min.x + (vis.max.x - vis.min.x) / 2.0;
-            let eq_y = vis.min.y + margin + 1.7;
+            let eq_y = vis.min.y + margin + 1.7 * h;
             for (i, (item_opt, label)) in eq_slots.iter().enumerate() {
                 let x = eq_center_x - eq_total_w * 0.5 + eq_slot_size * 0.5
                     + i as f32 * (eq_slot_size + eq_gap);
@@ -965,8 +1631,8 @@ impl Game for MmoClient {
                 // Rotulo pequeno abaixo do slot (W/A/R)
                 font.draw_depth(
                     label,
-                    pos + Vec2::new(-0.08, -eq_slot_size * 0.55),
-                    0.6,
+                    pos + Vec2::new(-0.08 * h, -eq_slot_size * 0.55),
+                    0.6 * h,
                     Vec4::new(0.7, 0.7, 0.75, 0.8),
                     layer::HUD + 0.2,
                     batch,
@@ -974,12 +1640,12 @@ impl Game for MmoClient {
             }
 
             // Hotbar do inventario — 24 slots em linha na base da tela
-            let slot_size = 0.45f32;
-            let slot_gap = 0.06f32;
+            let slot_size = 0.45 * h;
+            let slot_gap = 0.06 * h;
             let cols = shared::INVENTORY_SLOTS as f32;
             let total_w = cols * slot_size + (cols - 1.0) * slot_gap;
             let center_x = vis.min.x + (vis.max.x - vis.min.x) / 2.0;
-            let row_y = vis.min.y + margin + 0.9;
+            let row_y = vis.min.y + margin + 0.9 * h;
             for (i, slot) in self.inventory.iter().enumerate() {
                 let x = center_x - total_w * 0.5 + slot_size * 0.5
                     + i as f32 * (slot_size + slot_gap);
@@ -1017,11 +1683,11 @@ impl Game for MmoClient {
                         } else {
                             format!("{}k", slot.qty / 1000)
                         };
-                        let lw = font.measure_width(&label) * 0.5;
+                        let lw = font.measure_width(&label) * (0.5 * h);
                         font.draw_depth(
                             &label,
-                            pos + Vec2::new(slot_size * 0.5 - lw - 0.02, -slot_size * 0.5 + 0.18),
-                            0.5,
+                            pos + Vec2::new(slot_size * 0.5 - lw - 0.02 * h, -slot_size * 0.5 + 0.18 * h),
+                            0.5 * h,
                             Vec4::ONE,
                             layer::HUD + 0.2,
                             batch,
@@ -1029,6 +1695,7 @@ impl Game for MmoClient {
                     }
                 }
             }
+            } // show_game_hud
         }
     }
 
