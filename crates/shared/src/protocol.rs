@@ -49,6 +49,14 @@ pub enum ClientMessage {
     /// de revival ja zerou. Server aplica DOWNED_REVIVE_HP_PCT e sai do
     /// estado downed. Ignorado se nao estiver pronto ainda.
     StandUp,
+    /// Convida outro jogador (por nome) pra party. Chega como PartyInviteReceived.
+    PartyInvite { target_name: String },
+    /// Aceita o convite pendente (ultimo recebido). Cria/junta a party.
+    PartyAccept,
+    /// Recusa convite pendente.
+    PartyDecline,
+    /// Sai da party atual.
+    PartyLeave,
     RequestDisconnect,
 }
 
@@ -159,6 +167,10 @@ pub enum ServerMessage {
     FameUpdate { fame: u64 },
     /// Atualizacao de Aura/Poise (pontos de PvP).
     AuraUpdate { aura: u64 },
+    /// Convite de party recebido. Cliente mostra popup de aceitar/recusar.
+    PartyInviteReceived { from: String },
+    /// Estado atual da party. Vazio = sem party.
+    PartyUpdate { members: Vec<String> },
     Kick {
         reason: String,
     },

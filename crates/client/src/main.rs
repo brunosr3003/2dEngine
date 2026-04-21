@@ -101,6 +101,8 @@ pub struct MmoClient {
     level:                u32,
     fame:                 u64,
     aura:                 u64,
+    party_members:        Vec<String>,
+    party_invite_from:    Option<String>,
     inventory:            Vec<shared::InventorySlot>,
     class:                shared::PlayerClass,
     stats:                shared::PlayerStats,
@@ -601,6 +603,8 @@ impl MmoClient {
             level: 0,
             fame: 0,
             aura: 0,
+            party_members: Vec::new(),
+            party_invite_from: None,
             inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
             class: shared::PlayerClass::Warrior,
             stats: shared::PlayerClass::Warrior.base_stats(),
@@ -1127,6 +1131,17 @@ impl Game for MmoClient {
                     }
                     ServerMessage::AuraUpdate { aura } => {
                         self.aura = aura;
+                    }
+                    ServerMessage::PartyInviteReceived { from } => {
+                        self.party_invite_from = Some(from.clone());
+                        if self.chat_log.len() == CHAT_LOG_MAX { self.chat_log.pop_front(); }
+                        self.chat_log.push_back(format!("{from} te convidou! /party accept ou /party decline"));
+                    }
+                    ServerMessage::PartyUpdate { members } => {
+                        self.party_members = members;
+                        if self.party_members.is_empty() {
+                            self.party_invite_from = None;
+                        }
                     }
                     ServerMessage::ProgressUpdate { xp, level } => {
                         let leveled_up = level > self.level && self.level > 0;
@@ -1800,8 +1815,13 @@ impl Game for MmoClient {
                 let (maybe_label, color) = match e.kind {
                     EntityKind::Player => {
                         let n = self.entity_names.get(&e.id).cloned();
+                        let is_party_ally = n.as_ref()
+                            .map(|nm| self.party_members.iter().any(|m| m == nm))
+                            .unwrap_or(false);
                         let c = if Some(e.id) == self_id {
                             Vec4::new(1.0, 1.0, 0.4, 1.0)
+                        } else if is_party_ally {
+                            Vec4::new(0.5, 1.0, 0.7, 1.0)
                         } else {
                             Vec4::new(0.9, 0.9, 0.9, 1.0)
                         };
@@ -2007,6 +2027,29 @@ impl Game for MmoClient {
                     fs, col, layer::HUD + 2.1, batch);
             }
 
+            // Party (lista no canto inferior-esquerdo acima do chat)
+            if !self.party_members.is_empty() {
+                let line_h = 0.4 * h;
+                let base_y = vis.max.y - 5.0 * h;
+                font.draw_depth("Party:",
+                    Vec2::new(vis.min.x + margin, base_y),
+                    0.55 * h,
+                    Vec4::new(1.0, 0.85, 0.4, 1.0),
+                    layer::HUD, batch);
+                for (i, m) in self.party_members.iter().enumerate() {
+                    let y = base_y - (i as f32 + 1.0) * line_h;
+                    let color = if m == &self.username {
+                        Vec4::new(1.0, 1.0, 0.5, 1.0)
+                    } else {
+                        Vec4::new(0.5, 1.0, 0.7, 1.0)
+                    };
+                    font.draw_depth(&format!("• {}", m),
+                        Vec2::new(vis.min.x + margin, y),
+                        0.5 * h,
+                        color,
+                        layer::HUD, batch);
+                }
+            }
             // Chat log (display-only) sobreposto acima do status
             if !self.chat_log.is_empty() {
                 let line_h = 0.35 * h;

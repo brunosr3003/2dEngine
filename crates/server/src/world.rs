@@ -117,6 +117,11 @@ pub struct Session {
     /// Aura (poise). Ganha/perde apenas em PvP. Base pro sistema de stagger.
     pub aura: u64,
     pub aura_last_sent: u64,
+    /// Party atual (None = solo). Guarda o ID unico da party; membros
+    /// sao buscados iterando sessoes.
+    pub party_id: Option<u32>,
+    /// Ultimo convite pendente (nome do convidante).
+    pub party_invite_from: Option<String>,
     /// Inventario do jogador. Tamanho fixo = shared::INVENTORY_SLOTS.
     pub inventory: Vec<shared::InventorySlot>,
     /// True quando o inventario mudou e precisa ser enviado pro cliente
@@ -162,6 +167,8 @@ pub struct GameWorld {
     pub safe_zone: bool,
     /// True se o mapa foi carregado de MapFile (suprime spawns procedurais).
     from_mapfile: bool,
+    /// Contador monotonico pra atribuir IDs de party.
+    next_party_id: u32,
 }
 
 impl GameWorld {
@@ -198,6 +205,7 @@ impl GameWorld {
             boss_respawn_timer: 30.0, // primeiro boss aparece em 30s
             safe_zone,
             from_mapfile,
+            next_party_id: 1,
         };
         if let Some(mf) = mapfile {
             w.spawn_mapfile_entities(&mf);
@@ -723,6 +731,8 @@ impl GameWorld {
                 fame_last_sent: u64::MAX,
                 aura: 0,
                 aura_last_sent: u64::MAX,
+                party_id: None,
+                party_invite_from: None,
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 inventory_dirty: false,
                 stats_dirty: false,
@@ -737,6 +747,20 @@ impl GameWorld {
             if let Some(e) = s.entity {
                 self.free_entity_body(e);
                 let _ = self.ecs.despawn(e);
+            }
+            // Se estava numa party, notifica remanescentes
+            if let Some(pid) = s.party_id {
+                let remaining = self.party_members(pid);
+                if remaining.len() <= 1 {
+                    for sess in self.sessions.values_mut() {
+                        if sess.party_id == Some(pid) {
+                            sess.party_id = None;
+                            let _ = sess.handle.to_client.send(ServerMessage::PartyUpdate { members: vec![] });
+                        }
+                    }
+                } else {
+                    self.broadcast_party_update(pid);
+                }
             }
             tracing::info!("{:?} disconnected", s.entity_id);
         }
@@ -800,6 +824,23 @@ impl GameWorld {
                 }
             }
             ClientMessage::Chat(text) => {
+                // Comandos de slash
+                let trimmed = text.trim();
+                if let Some(rest) = trimmed.strip_prefix("/party ") {
+                    let rest = rest.trim();
+                    if let Some(name) = rest.strip_prefix("invite ") {
+                        self.handle_party_invite(id, name.trim().to_string());
+                    } else if rest == "accept" {
+                        self.handle_party_accept(id);
+                    } else if rest == "decline" {
+                        if let Some(s) = self.sessions.get_mut(&id) {
+                            s.party_invite_from = None;
+                        }
+                    } else if rest == "leave" {
+                        self.handle_party_leave(id);
+                    }
+                    return;
+                }
                 let from = self
                     .sessions
                     .get(&id)
@@ -846,6 +887,20 @@ impl GameWorld {
             }
             ClientMessage::StandUp => {
                 self.handle_stand_up(id);
+            }
+            ClientMessage::PartyInvite { target_name } => {
+                self.handle_party_invite(id, target_name);
+            }
+            ClientMessage::PartyAccept => {
+                self.handle_party_accept(id);
+            }
+            ClientMessage::PartyDecline => {
+                if let Some(s) = self.sessions.get_mut(&id) {
+                    s.party_invite_from = None;
+                }
+            }
+            ClientMessage::PartyLeave => {
+                self.handle_party_leave(id);
             }
             ClientMessage::RequestDisconnect => self.on_disconnect(id),
         }
@@ -1308,10 +1363,48 @@ impl GameWorld {
                                   else if kind_id == 5 { 5 }    // berserker
                                   else if kind_id == 4 { 3 }    // mago
                                   else { 0 };
+                // Descobre party do matador + membros proximos (mesmo AOI do kill)
+                let (party_id, killer_pos) = {
+                    let mut p: Option<u32> = None;
+                    let mut pos = Vec2::ZERO;
+                    for s in self.sessions.values() {
+                        if s.entity_id == attacker_eid && s.logged_in {
+                            p = s.party_id;
+                            if let Some(e) = s.entity {
+                                if let Ok(pp) = self.ecs.get::<&Position>(e) { pos = pp.0; }
+                            }
+                            break;
+                        }
+                    }
+                    (p, pos)
+                };
+                // Lista de alvos a receber XP: matador + aliados dentro de PARTY_SHARE_RADIUS
+                const PARTY_SHARE_RADIUS_SQ: f32 = 25.0 * 25.0;
+                let mut recipients: Vec<EntityId> = vec![attacker_eid];
+                if let Some(pid) = party_id {
+                    for s in self.sessions.values() {
+                        if s.party_id == Some(pid) && s.entity_id != attacker_eid && s.logged_in {
+                            if let Some(e) = s.entity {
+                                if let Ok(p) = self.ecs.get::<&Position>(e) {
+                                    if p.0.distance_squared(killer_pos) <= PARTY_SHARE_RADIUS_SQ {
+                                        recipients.push(s.entity_id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // Com party, +20% bonus total; divide igual entre todos
+                let share = if recipients.len() > 1 {
+                    ((xp_reward as f32 * 1.2) / recipients.len() as f32) as u64
+                } else { xp_reward };
+                let fame_share = fame_reward;
                 for session in self.sessions.values_mut() {
-                    if session.entity_id == attacker_eid && session.logged_in {
-                        session.xp = session.xp.saturating_add(xp_reward);
-                        session.fame = session.fame.saturating_add(fame_reward);
+                    if recipients.contains(&session.entity_id) && session.logged_in {
+                        session.xp = session.xp.saturating_add(share);
+                        if session.entity_id == attacker_eid {
+                            session.fame = session.fame.saturating_add(fame_share);
+                        }
                         let new_level = shared::level_of_xp(session.xp);
                         let _ = session
                             .handle
@@ -1926,6 +2019,115 @@ impl GameWorld {
                 EntityKind::Loot(*item_id),
                 LootTag { item_id: *item_id, qty: *qty },
             ));
+        }
+    }
+
+    /// Retorna nomes dos membros de uma party_id.
+    fn party_members(&self, pid: u32) -> Vec<String> {
+        self.sessions.values()
+            .filter(|s| s.party_id == Some(pid) && s.logged_in)
+            .map(|s| s.name.clone())
+            .collect()
+    }
+
+    /// Envia PartyUpdate pra todos os membros da party.
+    fn broadcast_party_update(&self, pid: u32) {
+        let members = self.party_members(pid);
+        for s in self.sessions.values() {
+            if s.party_id == Some(pid) {
+                let _ = s.handle.to_client.send(ServerMessage::PartyUpdate {
+                    members: members.clone(),
+                });
+            }
+        }
+    }
+
+    fn handle_party_invite(&mut self, sid: SessionId, target_name: String) {
+        let Some(inviter) = self.sessions.get(&sid) else { return };
+        if !inviter.logged_in { return; }
+        let inviter_name = inviter.name.clone();
+        if inviter_name.eq_ignore_ascii_case(&target_name) { return; }
+        // Procura o alvo
+        let target_sid = self.sessions.iter()
+            .find(|(_, s)| s.logged_in && s.name.eq_ignore_ascii_case(&target_name))
+            .map(|(k, _)| *k);
+        let Some(target_sid) = target_sid else {
+            if let Some(s) = self.sessions.get(&sid) {
+                let _ = s.handle.to_client.send(ServerMessage::Chat {
+                    from: "PARTY".into(),
+                    text: format!("jogador {target_name} nao esta online"),
+                });
+            }
+            return;
+        };
+        if let Some(ts) = self.sessions.get_mut(&target_sid) {
+            ts.party_invite_from = Some(inviter_name.clone());
+            let _ = ts.handle.to_client.send(ServerMessage::PartyInviteReceived {
+                from: inviter_name,
+            });
+        }
+    }
+
+    fn handle_party_accept(&mut self, sid: SessionId) {
+        let (invite_from, accepter_name) = {
+            let Some(s) = self.sessions.get(&sid) else { return };
+            let Some(from) = s.party_invite_from.clone() else { return };
+            (from, s.name.clone())
+        };
+        // Find inviter session
+        let inviter_sid = self.sessions.iter()
+            .find(|(_, s)| s.name == invite_from && s.logged_in)
+            .map(|(k, _)| *k);
+        let Some(inviter_sid) = inviter_sid else {
+            if let Some(s) = self.sessions.get_mut(&sid) {
+                s.party_invite_from = None;
+            }
+            return;
+        };
+        // Descobre party_id (cria uma nova se inviter nao tem)
+        let party_id = match self.sessions.get(&inviter_sid).and_then(|s| s.party_id) {
+            Some(id) => id,
+            None => {
+                let id = self.next_party_id;
+                self.next_party_id = self.next_party_id.wrapping_add(1).max(1);
+                if let Some(s) = self.sessions.get_mut(&inviter_sid) {
+                    s.party_id = Some(id);
+                }
+                id
+            }
+        };
+        // Accepter entra na party
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.party_id = Some(party_id);
+            s.party_invite_from = None;
+        }
+        tracing::info!("{} entrou na party de {}", accepter_name, invite_from);
+        self.broadcast_party_update(party_id);
+    }
+
+    fn handle_party_leave(&mut self, sid: SessionId) {
+        let old_party = match self.sessions.get_mut(&sid) {
+            Some(s) => {
+                let p = s.party_id;
+                s.party_id = None;
+                let _ = s.handle.to_client.send(ServerMessage::PartyUpdate { members: vec![] });
+                p
+            }
+            None => return,
+        };
+        if let Some(pid) = old_party {
+            // Se sobrou so 1 membro, dissolve.
+            let remaining = self.party_members(pid);
+            if remaining.len() <= 1 {
+                for s in self.sessions.values_mut() {
+                    if s.party_id == Some(pid) {
+                        s.party_id = None;
+                        let _ = s.handle.to_client.send(ServerMessage::PartyUpdate { members: vec![] });
+                    }
+                }
+            } else {
+                self.broadcast_party_update(pid);
+            }
         }
     }
 
