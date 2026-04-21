@@ -80,6 +80,10 @@ pub struct Session {
     pub attack_cooldown: f32,
     pub secondary_cooldown: f32,
     pub respawn_timer: Option<f32>,
+    /// True enquanto HP<=0 e player esta incapacitado aguardando se levantar.
+    pub downed: bool,
+    /// Timer regressivo (segundos) ate auto-revival com 5% HP.
+    pub downed_heal_timer: f32,
     pub name: String,
     pub player_id: PlayerId,
     pub account_id: Option<i64>,
@@ -677,6 +681,8 @@ impl GameWorld {
                 attack_cooldown: 0.0,
                 secondary_cooldown: 0.0,
                 respawn_timer: None,
+                downed: false,
+                downed_heal_timer: 0.0,
                 name: String::new(),
                 player_id: PlayerId(0),
                 account_id: None,
@@ -895,12 +901,18 @@ impl GameWorld {
             } else {
                 frame.move_dir
             };
-            let wants_attack =
-                (frame.buttons & buttons::PRIMARY != 0) && session.attack_cooldown <= 0.0;
-            if wants_attack { session.attack_cooldown = ATTACK_COOLDOWN; }
+            // Downed: sem ataques, rastejando
+            let wants_attack = if session.downed {
+                false
+            } else {
+                let w = (frame.buttons & buttons::PRIMARY != 0) && session.attack_cooldown <= 0.0;
+                if w { session.attack_cooldown = ATTACK_COOLDOWN; }
+                w
+            };
 
             let has_mp = (session.mp_current as i32) >= shared::SECONDARY_MP_COST;
-            let wants_secondary = (frame.buttons & buttons::SECONDARY != 0)
+            let wants_secondary = !session.downed
+                && (frame.buttons & buttons::SECONDARY != 0)
                 && session.secondary_cooldown <= 0.0
                 && has_mp;
             if wants_secondary {
@@ -910,16 +922,22 @@ impl GameWorld {
 
             // Sprint (DASH): drena stamina e multiplica velocidade se stamina
             // > 0 e houver movimento. Regen ambiental ja foi aplicado acima.
-            let wants_sprint = (frame.buttons & buttons::DASH != 0)
+            let wants_sprint = !session.downed
+                && (frame.buttons & buttons::DASH != 0)
                 && session.stamina_current > 0.0
                 && dir.length_squared() > 0.0;
+            let base_speed = if session.downed {
+                PLAYER_SPEED * shared::DOWNED_SPEED_MULT
+            } else {
+                PLAYER_SPEED
+            };
             let speed = if wants_sprint {
                 session.stamina_current = (session.stamina_current
                     - shared::STAMINA_DRAIN_PER_SEC * dt)
                     .max(0.0);
-                PLAYER_SPEED * shared::SPRINT_SPEED_MULT
+                base_speed * shared::SPRINT_SPEED_MULT
             } else {
-                PLAYER_SPEED
+                base_speed
             };
 
             input_results.push(InputResult {
@@ -1162,7 +1180,25 @@ impl GameWorld {
 
         // Credita o golpe fatal ao atacante: alvo_net_id -> atacante_net_id
         let mut kill_credits: HashMap<EntityId, EntityId> = HashMap::new();
+        // Lookup rapido: target entity_id -> (session id) pra checar downed
+        let downed_targets: std::collections::HashSet<EntityId> = self.sessions
+            .values()
+            .filter(|s| s.downed)
+            .map(|s| s.entity_id)
+            .collect();
         for (entity, target_id, dmg, attacker_id, attacker_is_player) in damage_events {
+            if downed_targets.contains(&target_id) {
+                // Player ja esta downed: mob nao executa; so reseta o timer.
+                if !attacker_is_player {
+                    if let Some(s) = self.sessions.values_mut()
+                        .find(|s| s.entity_id == target_id) {
+                        s.downed_heal_timer = shared::DOWNED_HEAL_TIME;
+                    }
+                }
+                // (Execucao de PvP ainda nao implementada; players acertando
+                // downed tb nao matam por enquanto.)
+                continue;
+            }
             if let Ok(mut hp) = self.ecs.get::<&mut Health>(entity) {
                 hp.current = (hp.current - dmg).max(0);
                 if hp.current == 0 && attacker_is_player {
@@ -1243,27 +1279,48 @@ impl GameWorld {
             }
         }
 
-        // ── I: morte de jogadores → respawn timer ─────────────────────────────
-        let dead_players: Vec<(Entity, EntityId)> = self
+        // ── I: jogadores com HP<=0 entram em Downed State (nao morrem) ────────
+        // PvE: mobs derrubam mas nao executam. Player auto-revive em
+        // DOWNED_HEAL_TIME se nao levar mais dano nesse periodo.
+        let downed_new: Vec<EntityId> = self
             .ecs
             .query::<(&NetId, &Health, &PlayerTag)>()
             .iter()
-            .filter_map(|(e, (net, hp, _))| {
-                if hp.current <= 0 { Some((e, net.0)) } else { None }
+            .filter_map(|(_, (net, hp, _))| {
+                if hp.current <= 0 { Some(net.0) } else { None }
             })
             .collect();
-
-        for (e, eid) in dead_players {
-            self.free_entity_body(e);
-            let _ = self.ecs.despawn(e);
-            self.removed_this_tick.push(eid);
+        for eid in downed_new {
             for session in self.sessions.values_mut() {
-                if session.entity_id == eid {
-                    session.entity = None;
-                    session.respawn_timer = Some(RESPAWN_DELAY);
-                    tracing::info!("{} morreu, respawn em {}s", session.name, RESPAWN_DELAY);
+                if session.entity_id == eid && !session.downed {
+                    session.downed = true;
+                    session.downed_heal_timer = shared::DOWNED_HEAL_TIME;
+                    tracing::info!("{} foi derrubado", session.name);
                     break;
                 }
+            }
+        }
+
+        // Tick do timer de auto-revival e aplicacao quando zera.
+        let mut revives: Vec<(Entity, i32)> = Vec::new();
+        for session in self.sessions.values_mut() {
+            if !session.downed { continue; }
+            session.downed_heal_timer -= dt;
+            if session.downed_heal_timer <= 0.0 {
+                if let Some(e) = session.entity {
+                    let revive_hp = ((session.stats.hp_max as f32)
+                        * shared::DOWNED_REVIVE_HP_PCT)
+                        .round()
+                        .max(1.0) as i32;
+                    revives.push((e, revive_hp));
+                }
+                session.downed = false;
+                session.downed_heal_timer = 0.0;
+            }
+        }
+        for (e, revive_hp) in revives {
+            if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
+                hp.current = revive_hp;
             }
         }
 

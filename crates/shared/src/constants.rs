@@ -66,8 +66,20 @@ pub const ENTITY_RADIUS: f32 = 0.35;
 /// Raio de colisao de projeteis.
 pub const PROJ_RADIUS: f32 = 0.15;
 
-/// Tempo de respawn do jogador em segundos.
+/// Tempo de respawn do jogador em segundos (nao usado em PvE puro — player
+/// entra em Downed State; respawn so ocorre em PvP apos execucao).
 pub const RESPAWN_DELAY: f32 = 3.0;
+
+/// Tempo em segundos pra um jogador derrubado se levantar sozinho (PvE).
+/// Durante esse periodo, dano de monstros NAO mata mas reseta o timer.
+pub const DOWNED_HEAL_TIME: f32 = 10.0;
+
+/// Velocidade do jogador enquanto derrubado (fracao de PLAYER_SPEED).
+/// Rasteja lento, pode se esconder.
+pub const DOWNED_SPEED_MULT: f32 = 0.2;
+
+/// HP que o jogador recebe ao se levantar do Downed State (fracao do max).
+pub const DOWNED_REVIVE_HP_PCT: f32 = 0.05;
 
 /// XP ganho por matar um inimigo (fallback — helpers por kind mais abaixo).
 pub const XP_PER_KILL: u64 = 30;

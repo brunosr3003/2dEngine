@@ -2769,6 +2769,40 @@ impl Game for MmoClient {
                     batch,
                 );
             }
+
+            // Overlay DOWNED quando HP=0 (player ficou incapacitado).
+            if let Some(hp) = self_hp {
+                if hp.current <= 0 {
+                    let cx = (vis.min.x + vis.max.x) * 0.5;
+                    let cy = (vis.min.y + vis.max.y) * 0.5;
+                    // Vinheta vermelha sutil
+                    batch.push(&Sprite {
+                        position: Vec2::new(cx, cy),
+                        size: Vec2::new(vis.max.x - vis.min.x, vis.max.y - vis.min.y),
+                        uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+                        tint: Vec4::new(0.4, 0.0, 0.0, 0.18),
+                        depth: layer::HUD + 4.0,
+                        ..Default::default()
+                    });
+                    // Texto DERRUBADO
+                    let msg = "DERRUBADO";
+                    let ms = 1.8 * h;
+                    let mw = font.measure_width(msg) * ms;
+                    font.draw_depth(msg,
+                        Vec2::new(cx - mw * 0.5, cy + 1.0 * h),
+                        ms,
+                        Vec4::new(1.0, 0.25, 0.25, 1.0),
+                        layer::HUD + 4.5, batch);
+                    let sub = "rastejando... aguardando se levantar";
+                    let ss = 0.55 * h;
+                    let sw = font.measure_width(sub) * ss;
+                    font.draw_depth(sub,
+                        Vec2::new(cx - sw * 0.5, cy),
+                        ss,
+                        Vec4::new(0.9, 0.7, 0.7, 1.0),
+                        layer::HUD + 4.5, batch);
+                }
+            }
             } // show_game_hud
         }
     }
