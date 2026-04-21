@@ -412,6 +412,9 @@ function sanitize_svg(svg_text: string): string {
 /// Rasteriza SVG string num canvas SIZExSIZE e extrai matriz de hex.
 async function rasterize_svg_to_matrix(svg_text: string): Promise<string[][]> {
   const svg = sanitize_svg(svg_text);
+  if (!svg.includes("</svg>")) {
+    throw new Error("SVG truncado (sem </svg>). O modelo estourou limite de tokens — tenta 2.5-flash ou 64×64.");
+  }
   const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   try {

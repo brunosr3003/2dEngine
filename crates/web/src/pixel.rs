@@ -262,7 +262,7 @@ A arte inteira deve caber em 20 a 60 shapes no maximo.
         "generationConfig": {
             "temperature": 0.7,
             "response_mime_type": "application/json",
-            "maxOutputTokens": 16384,
+            "maxOutputTokens": 32768,
             "thinkingConfig": {"thinkingBudget": 1024},
         }
     });
@@ -272,7 +272,7 @@ A arte inteira deve caber em 20 a 60 shapes no maximo.
         model, key
     );
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(180))
+        .timeout(std::time::Duration::from_secs(300))
         .connect_timeout(std::time::Duration::from_secs(30))
         .build()
         .unwrap();
@@ -336,6 +336,18 @@ A arte inteira deve caber em 20 a 60 shapes no maximo.
     if svg.is_empty() || !svg.contains("<svg") {
         return (StatusCode::BAD_GATEWAY,
                 Json(serde_json::json!({"error": "svg ausente ou invalido"}))).into_response();
+    }
+    // Detecta truncamento: finishReason=MAX_TOKENS ou falta </svg>
+    let truncated = finish == "MAX_TOKENS" || !svg.contains("</svg>");
+    if truncated {
+        tracing::warn!("svg truncado (finish={finish}, len={})", svg.len());
+        return (StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({
+                    "error": format!("resposta truncada — o modelo estourou o limite (finish={finish}). \
+                                      Tenta: (1) modelo mais rapido (2.5-flash), \
+                                      (2) prompt mais curto, ou (3) tamanho menor (64×64)."),
+                    "svg_partial_len": svg.len(),
+                }))).into_response();
     }
     Json(GenerateSvgRes { svg }).into_response()
 }
