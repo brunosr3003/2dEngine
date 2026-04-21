@@ -256,8 +256,10 @@ A matriz toda deve ter exatamente {size} linhas e cada linha exatamente
         "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
         model, key
     );
+    // Modelos 'pro' podem gerar 4096 celulas x 12 chars = 50k tokens + thinking.
+    // 64x64 com pro pode bater 4-5 minutos.
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(180))
+        .timeout(std::time::Duration::from_secs(420))      // 7 min total
         .connect_timeout(std::time::Duration::from_secs(30))
         .build()
         .unwrap();

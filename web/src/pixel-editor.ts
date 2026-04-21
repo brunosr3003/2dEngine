@@ -388,16 +388,23 @@ function setup_ia() {
     const model = model_el.value;
     btn.disabled = true;
     status.className = "status";
-    status.textContent = `gerando (${model})...`;
+    // Contador crescente enquanto espera
+    const t0 = Date.now();
+    const tick = setInterval(() => {
+      const s = Math.floor((Date.now() - t0) / 1000);
+      status.textContent = `gerando (${model})... ${s}s`;
+    }, 500);
     try {
       const pixels = await api_generate(p, model);
       editor.load_pixels(pixels);
       status.className = "status ok";
-      status.textContent = `pronto (${model})`;
+      const s = Math.floor((Date.now() - t0) / 1000);
+      status.textContent = `pronto em ${s}s (${model})`;
     } catch (e: any) {
       status.className = "status err";
       status.textContent = e.message || "erro";
     } finally {
+      clearInterval(tick);
       btn.disabled = false;
     }
   });
