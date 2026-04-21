@@ -1,8 +1,15 @@
 // Pixel Editor — 32x32 canvas, paleta, ferramentas, IA via Gemini.
 // Auth por cookie; todo request de API passa credentials: "include".
 
-const SIZE = 64;
-const CELL = 8;  // cada pixel logico = 8 CSS px -> canvas 512x512
+// Tamanho configuravel: 32, 64 ou 128. Muda o canvas + API size.
+let SIZE = 64;
+// CELL escolhido pra canvas ficar ~512-1024 px (click-friendly)
+function cell_for(size: number): number {
+  if (size <= 32) return 16;    // canvas 512
+  if (size <= 64) return 8;     // canvas 512
+  return 6;                     // 128 -> canvas 768
+}
+let CELL = cell_for(SIZE);
 
 // Paleta dark-fantasy inicial (user pode adicionar via color picker)
 const DEFAULT_PALETTE: string[] = [
@@ -33,9 +40,22 @@ class Editor {
   constructor() {
     this.c = document.getElementById("c") as HTMLCanvasElement;
     this.ctx = this.c.getContext("2d")!;
+    this.resize_to(SIZE);
+  }
+
+  /// Redefine o tamanho logico do grid e o canvas. Limpa tudo.
+  resize_to(new_size: number) {
+    SIZE = new_size;
+    CELL = cell_for(SIZE);
+    this.c.width  = SIZE * CELL;
+    this.c.height = SIZE * CELL;
+    this.grid = [];
     for (let y = 0; y < SIZE; y++) {
       this.grid.push(new Array(SIZE).fill("#00000000"));
     }
+    this.history = [];
+    const lbl = document.getElementById("size-label");
+    if (lbl) lbl.textContent = `${SIZE}×${SIZE}`;
     this.render();
   }
 
@@ -92,6 +112,14 @@ class Editor {
   }
 
   load_pixels(pixels: string[][]) {
+    // Auto-resize se a matriz vem de tamanho diferente
+    const got = pixels.length;
+    if (got > 0 && got !== SIZE) {
+      console.log(`[pixel] load_pixels: resize ${SIZE}->${got}`);
+      this.resize_to(got);
+      const sel = document.getElementById("ia-size") as HTMLSelectElement | null;
+      if (sel && [32, 64, 128].includes(got)) sel.value = String(got);
+    }
     this.push_history();
     for (let y = 0; y < SIZE; y++) {
       for (let x = 0; x < SIZE; x++) {
@@ -580,6 +608,11 @@ function setup_ia() {
   };
 
   btn.addEventListener("click", async () => {
+    if (SIZE >= 128) {
+      status.className = "status err";
+      status.textContent = "matriz nao suporta 128×128 (use SVG) — limite do Gemini";
+      return;
+    }
     const model = (document.getElementById("ia-model") as HTMLSelectElement).value;
     const p = prompt_el.value.trim();
     await run(`matriz/${model}`, () => api_generate(p, model));
@@ -592,6 +625,18 @@ function setup_ia() {
       const svg = await api_generate_svg(p, model);
       return await rasterize_svg_to_matrix(svg);
     });
+  });
+
+  // Dropdown de tamanho: recria canvas
+  const size_el = document.getElementById("ia-size") as HTMLSelectElement;
+  size_el.addEventListener("change", () => {
+    const new_size = parseInt(size_el.value, 10);
+    if (new_size === SIZE) return;
+    if (!confirm(`Trocar pra ${new_size}×${new_size}? O canvas atual sera limpo.`)) {
+      size_el.value = String(SIZE);
+      return;
+    }
+    editor.resize_to(new_size);
   });
 }
 
