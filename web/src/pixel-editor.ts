@@ -265,6 +265,10 @@ function setup_tool_buttons() {
     editor.grid_on = !editor.grid_on;
     editor.render();
   });
+  document.getElementById("btn-logout")!.addEventListener("click", () => {
+    set_token(null);
+    location.reload();
+  });
 }
 
 function setup_keyboard() {
@@ -291,21 +295,46 @@ function set_tool(t: Tool) {
 
 // ────────────── API ──────────────
 
+const TOKEN_KEY = "pix_jwt";
+
+function get_token(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+function set_token(t: string | null) {
+  if (t) localStorage.setItem(TOKEN_KEY, t);
+  else   localStorage.removeItem(TOKEN_KEY);
+}
+function auth_headers(): Record<string, string> {
+  const t = get_token();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
 async function api_auth(password: string): Promise<boolean> {
   const r = await fetch("/api/pixel/auth", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    credentials: "include",
     body: JSON.stringify({ password }),
   });
+  if (!r.ok) return false;
+  const body = await r.json();
+  if (body.token) set_token(body.token);
+  return true;
+}
+
+async function api_verify(): Promise<boolean> {
+  if (!get_token()) return false;
+  const r = await fetch("/api/pixel/verify", {
+    method: "POST",
+    headers: { ...auth_headers() },
+  });
+  if (r.status === 401) { set_token(null); return false; }
   return r.ok;
 }
 
 async function api_generate(prompt: string, model: string): Promise<string[][]> {
   const r = await fetch("/api/pixel/generate", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
-    credentials: "include",
+    headers: {"Content-Type": "application/json", ...auth_headers()},
     body: JSON.stringify({ prompt, size: SIZE, model }),
   });
   const body = await r.json();
@@ -316,8 +345,7 @@ async function api_generate(prompt: string, model: string): Promise<string[][]> 
 async function api_save(name: string, png_base64: string): Promise<string> {
   const r = await fetch("/api/pixel/save", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
-    credentials: "include",
+    headers: {"Content-Type": "application/json", ...auth_headers()},
     body: JSON.stringify({ name, png_base64 }),
   });
   const body = await r.json();
@@ -328,10 +356,10 @@ async function api_save(name: string, png_base64: string): Promise<string> {
 async function api_list(): Promise<string[]> {
   const r = await fetch("/api/pixel/list", {
     method: "POST",
-    credentials: "include",
+    headers: { ...auth_headers() },
   });
-  const body = await r.json();
   if (!r.ok) return [];
+  const body = await r.json();
   return body.sprites as string[];
 }
 
@@ -450,11 +478,22 @@ function boot_editor() {
   refresh_list();
 }
 
-// Init: liga o form de login imediatamente. Se ja tiver cookie valido,
-// a primeira chamada autenticada (list) deve ir direto.
+// Init: valida token existente (se tiver). Token OK -> boot direto;
+// caso contrario mostra tela de login.
 console.log("[pixel] boot script");
+async function boot() {
+  if (await api_verify()) {
+    console.log("[pixel] token valido, boot direto");
+    document.getElementById("auth-gate")!.hidden = true;
+    document.getElementById("editor")!.hidden = false;
+    boot_editor();
+  } else {
+    console.log("[pixel] sem token, mostrando login");
+    setup_auth();
+  }
+}
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", setup_auth);
+  document.addEventListener("DOMContentLoaded", boot);
 } else {
-  setup_auth();
+  boot();
 }

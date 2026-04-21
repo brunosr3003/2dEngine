@@ -20,13 +20,22 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey};
 
 #[derive(Clone)]
 pub struct PixelState {
     pub admin_password: Arc<String>,
     pub gemini_key: Arc<Option<String>>,
     pub sprites_dir: Arc<PathBuf>,
-    pub session_cookie: Arc<String>,
+    pub jwt_secret: Arc<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct JwtClaims {
+    sub: String,  // "admin"
+    exp: u64,     // unix ts
+    iat: u64,
 }
 
 impl PixelState {
@@ -37,42 +46,67 @@ impl PixelState {
         let sprites_dir = PathBuf::from(
             std::env::var("SPRITES_DIR").unwrap_or_else(|_| "assets/sprites".into()),
         );
-        // Token simples derivado do hash SHA-ish da senha (sem crypto dep:
-        // usamos o tamanho+chars pra autenticidade basica — e ferramenta
-        // local, nao endpoint publico).
-        let token = format!("pix_{}", fnv1a(&admin_password));
+        // Secret do JWT. Em prod, definir PIXEL_JWT_SECRET em env.
+        let jwt_secret = std::env::var("PIXEL_JWT_SECRET")
+            .unwrap_or_else(|_| format!("pix-jwt-{}", admin_password));
         Self {
             admin_password: Arc::new(admin_password),
             gemini_key: Arc::new(gemini_key),
             sprites_dir: Arc::new(sprites_dir),
-            session_cookie: Arc::new(token),
+            jwt_secret: Arc::new(jwt_secret),
         }
     }
 
-    /// Verifica o cookie pix_auth. Retorna true se o token bate.
-    fn is_authed(&self, headers: &HeaderMap) -> bool {
-        let Some(cookie) = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()) else {
-            return false;
+    fn issue_token(&self) -> anyhow::Result<String> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        let claims = JwtClaims {
+            sub: "admin".into(),
+            iat: now,
+            exp: now + 7 * 24 * 3600, // 7 dias
         };
-        cookie
-            .split(';')
-            .map(|p| p.trim())
-            .any(|p| p == format!("pix_auth={}", self.session_cookie))
+        let tok = encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(self.jwt_secret.as_bytes()),
+        )?;
+        Ok(tok)
     }
-}
 
-fn fnv1a(s: &str) -> u64 {
-    let mut h: u64 = 0xcbf29ce484222325;
-    for b in s.bytes() {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x100000001b3);
+    /// Verifica token JWT em header `Authorization: Bearer <token>`.
+    /// Fallback: cookie pix_auth (compat temporaria).
+    fn is_authed(&self, headers: &HeaderMap) -> bool {
+        // Prefere Authorization header
+        if let Some(auth) = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()) {
+            if let Some(tok) = auth.strip_prefix("Bearer ") {
+                let ok = decode::<JwtClaims>(
+                    tok.trim(),
+                    &DecodingKey::from_secret(self.jwt_secret.as_bytes()),
+                    &Validation::default(),
+                );
+                if ok.is_ok() { return true; }
+            }
+        }
+        // Fallback cookie
+        if let Some(cookie) = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()) {
+            for part in cookie.split(';').map(|p| p.trim()) {
+                if let Some(tok) = part.strip_prefix("pix_auth=") {
+                    let ok = decode::<JwtClaims>(
+                        tok,
+                        &DecodingKey::from_secret(self.jwt_secret.as_bytes()),
+                        &Validation::default(),
+                    );
+                    if ok.is_ok() { return true; }
+                }
+            }
+        }
+        false
     }
-    h
 }
 
 pub fn router(state: PixelState) -> Router {
     Router::new()
         .route("/auth", post(auth))
+        .route("/verify", post(verify))
         .route("/generate", post(generate))
         .route("/save", post(save_sprite))
         .route("/list", post(list_sprites))
@@ -88,19 +122,38 @@ async fn auth(
     State(state): State<PixelState>,
     Json(req): Json<AuthReq>,
 ) -> Response {
-    if req.password == *state.admin_password {
-        let cookie = format!(
-            "pix_auth={}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400",
-            state.session_cookie
-        );
-        (
-            StatusCode::OK,
-            [(header::SET_COOKIE, cookie)],
-            Json(serde_json::json!({"ok": true})),
-        ).into_response()
+    if req.password != *state.admin_password {
+        return (StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "senha invalida"}))).into_response();
+    }
+    let token = match state.issue_token() {
+        Ok(t) => t,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR,
+                          Json(serde_json::json!({"error": format!("jwt: {e}")}))).into_response(),
+    };
+    // Tambem seta cookie (opcional, ajuda em casos de SSR/proxy). Mas o
+    // frontend vai usar o campo `token` pra localStorage.
+    let cookie = format!(
+        "pix_auth={}; Path=/; SameSite=Lax; Max-Age=604800",
+        token
+    );
+    (
+        StatusCode::OK,
+        [(header::SET_COOKIE, cookie)],
+        Json(serde_json::json!({"ok": true, "token": token})),
+    ).into_response()
+}
+
+/// Endpoint simples pra testar se o token ainda e valido.
+async fn verify(
+    State(state): State<PixelState>,
+    headers: HeaderMap,
+) -> Response {
+    if state.is_authed(&headers) {
+        Json(serde_json::json!({"ok": true})).into_response()
     } else {
         (StatusCode::UNAUTHORIZED,
-         Json(serde_json::json!({"error": "senha invalida"}))).into_response()
+         Json(serde_json::json!({"error": "token invalido"}))).into_response()
     }
 }
 
