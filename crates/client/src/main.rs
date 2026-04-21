@@ -134,18 +134,39 @@ pub struct MmoClient {
     show_debug: bool,
 
     // Tela de login
-    app_state:      AppState,
-    login_username: String,
-    login_password: String,
-    login_field:    LoginField,
-    login_error:    Option<String>,
+    app_state:       AppState,
+    login_username:  String,
+    login_password:  String,
+    login_field:     LoginField,
+    login_error:     Option<String>,
     login_submitted: bool,
+    login_remember:  bool,
 }
 
 const CHAT_LOG_MAX: usize = 6;
 const PING_INTERVAL_S: f32 = 1.0;
 const DAMAGE_NUM_TTL: f32 = 0.9;
 const SETTINGS_FILE: &str = ".mmo2d-settings.txt";
+const CREDS_FILE: &str = ".mmo2d-creds.txt";
+
+fn load_saved_creds() -> Option<(String, String)> {
+    let txt = std::fs::read_to_string(CREDS_FILE).ok()?;
+    let mut user = String::new();
+    let mut pass = String::new();
+    for line in txt.lines() {
+        if let Some(v) = line.strip_prefix("u=") { user = v.to_string(); }
+        if let Some(v) = line.strip_prefix("p=") { pass = v.to_string(); }
+    }
+    if user.is_empty() { None } else { Some((user, pass)) }
+}
+
+fn save_creds(user: &str, pass: &str) {
+    let _ = std::fs::write(CREDS_FILE, format!("u={}\np={}\n", user, pass));
+}
+
+fn clear_creds() {
+    let _ = std::fs::remove_file(CREDS_FILE);
+}
 
 #[derive(Clone, Copy)]
 struct Settings {
@@ -222,7 +243,7 @@ impl VirtualJoystick {
     fn new() -> Self {
         Self {
             center_pixel: Vec2::ZERO,
-            radius: 2.5,
+            radius: 1.6,
             active: false,
             thumb_offset: Vec2::ZERO,
         }
@@ -294,6 +315,7 @@ impl MmoClient {
             login_field: LoginField::Username,
             login_error: None,
             login_submitted: false,
+            login_remember: false,
         }
     }
 
@@ -371,8 +393,9 @@ impl MmoClient {
         let field_w = 8.0 * h;
         let user_y  = cy + 1.5 * h;
         let pass_y  = cy + 0.0 * h;
-        let btn_y   = cy - 1.8 * h;
-        let field_h = 0.8 * h;
+        let btn_y     = cy - 1.8 * h;
+        let field_h   = 0.8 * h;
+        let remember_y = cy - 2.8 * h;
 
         // Link "Cadastre-se aqui" — mesmos calculos do render
         let fs_hint = 0.5 * h;
@@ -386,8 +409,9 @@ impl MmoClient {
              hint_link.len() as f32 * fs_hint * 0.6)
         };
         let total_w = pre_w + link_w;
-        let hint_y = cy - 3.0 * h;
+        let hint_y = cy - 3.7 * h;
         let link_cx = cx - total_w * 0.5 + pre_w + link_w * 0.5;
+        let chk_size = 0.5 * h;
 
         if ctx.input.mouse_pressed(engine::winit::event::MouseButton::Left) {
             let mw = ctx.camera.screen_to_world(ctx.input.mouse_pos());
@@ -401,8 +425,10 @@ impl MmoClient {
                     self.login_submitted = true;
                     self.do_connect();
                 }
+            } else if (mw.x - (cx - field_w * 0.5 + chk_size * 0.5)).abs() < chk_size
+                   && (mw.y - remember_y).abs() < chk_size * 0.5 {
+                self.login_remember = !self.login_remember;
             } else if (mw.x - link_cx).abs() < link_w * 0.5 && (mw.y - hint_y).abs() < fs_hint {
-                // Abrir pagina de cadastro no browser
                 let _ = std::process::Command::new("open")
                     .arg("http://localhost:5173")
                     .spawn();
@@ -419,6 +445,11 @@ impl MmoClient {
                             self.server_time_offset_ms = server_time_ms as i64 - local_ms;
                         }
                         ServerMessage::LoginOk { entity_id, spawn, .. } => {
+                            if self.login_remember {
+                                save_creds(&self.login_username, &self.login_password);
+                            } else {
+                                clear_creds();
+                            }
                             self.self_entity = Some(entity_id);
                             if let Some(map) = &self.world_map {
                                 self.prediction = Some(PredictionBuffer::new(spawn, map));
@@ -447,11 +478,12 @@ impl MmoClient {
         let cy = (vis.min.y + vis.max.y) * 0.5;
         // h escala com a altura visivel: painel ocupa ~55% da tela verticalmente
         let h = (vis.max.y - vis.min.y) / 12.0;
-        let field_w = 8.0 * h;
-        let field_h = 0.8 * h;
-        let user_y  = cy + 1.5 * h;
-        let pass_y  = cy + 0.0 * h;
-        let btn_y   = cy - 1.8 * h;
+        let field_w    = 8.0 * h;
+        let field_h    = 0.8 * h;
+        let user_y     = cy + 1.5 * h;
+        let pass_y     = cy + 0.0 * h;
+        let btn_y      = cy - 1.8 * h;
+        let remember_y = cy - 2.8 * h;
 
         // Fundo escuro
         let sw = vis.max.x - vis.min.x;
@@ -465,10 +497,10 @@ impl MmoClient {
             ..Default::default()
         });
 
-        // Painel central
+        // Painel central (altura cresceu para acomodar checkbox)
         batch.push(&Sprite {
-            position: Vec2::new(cx, cy),
-            size: Vec2::new(field_w + 2.0 * h, 7.0 * h),
+            position: Vec2::new(cx, cy - 0.35 * h),
+            size: Vec2::new(field_w + 2.0 * h, 8.5 * h),
             uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
             tint: Vec4::new(0.08, 0.10, 0.16, 0.97),
             depth: 0.05,
@@ -476,7 +508,7 @@ impl MmoClient {
         });
         // Borda topo do painel
         batch.push(&Sprite {
-            position: Vec2::new(cx, cy + 3.5 * h - 0.04),
+            position: Vec2::new(cx, cy - 0.35 * h + 4.25 * h - 0.04),
             size: Vec2::new(field_w + 2.0 * h, 0.07 * h),
             uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
             tint: Vec4::new(1.0, 0.85, 0.3, 1.0),
@@ -555,11 +587,30 @@ impl MmoClient {
             Vec2::new(cx - bw * 0.5, btn_y + field_h * 0.2),
             0.75 * h, Vec4::new(0.05, 0.05, 0.1, 1.0), 0.2, batch);
 
+        // Checkbox "Lembrar acesso"
+        let chk_size = 0.5 * h;
+        let chk_x = cx - field_w * 0.5 + chk_size * 0.5;
+        let chk_color = if self.login_remember {
+            Vec4::new(0.3, 0.8, 0.4, 1.0)
+        } else {
+            Vec4::new(0.25, 0.28, 0.35, 1.0)
+        };
+        batch.push(&Sprite {
+            position: Vec2::new(chk_x, remember_y),
+            size: Vec2::splat(chk_size),
+            uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
+            tint: chk_color, depth: 0.1, ..Default::default()
+        });
+        let check_label = if self.login_remember { "[x] Lembrar acesso" } else { "[ ] Lembrar acesso" };
+        font.draw_depth(check_label,
+            Vec2::new(chk_x + chk_size * 0.7, remember_y - chk_size * 0.3),
+            0.5 * h, Vec4::new(0.75, 0.8, 0.85, 1.0), 0.2, batch);
+
         // Mensagem de erro
         if let Some(err) = &self.login_error {
             let ew = font.measure_width(err) * (0.6 * h);
             font.draw_depth(err,
-                Vec2::new(cx - ew * 0.5, btn_y - 0.9 * h),
+                Vec2::new(cx - ew * 0.5, remember_y - 0.7 * h),
                 0.6 * h, Vec4::new(1.0, 0.35, 0.3, 1.0), 0.2, batch);
         }
 
@@ -570,7 +621,7 @@ impl MmoClient {
         let pre_w  = font.measure_width(hint_pre)  * fs_hint;
         let link_w = font.measure_width(hint_link) * fs_hint;
         let total_w = pre_w + link_w;
-        let hint_y = cy - 3.0 * h;
+        let hint_y = cy - 3.7 * h;
         font.draw_depth(hint_pre,
             Vec2::new(cx - total_w * 0.5, hint_y),
             fs_hint, Vec4::new(0.65, 0.68, 0.75, 1.0), 0.2, batch);
@@ -644,7 +695,13 @@ impl Game for MmoClient {
         self.tilemap = Some(map);
         self.world_map = Some(world);
 
-        // 5. Conexao adiada ate o usuario preencher a tela de login
+        // 5. Pre-preencher credenciais salvas
+        if let Some((u, p)) = load_saved_creds() {
+            self.login_username = u;
+            self.login_password = p;
+            self.login_remember = true;
+            self.login_field    = LoginField::Password; // cursor no campo senha
+        }
     }
 
     fn update(&mut self, ctx: &mut AppContext, dt: f32) {
@@ -1052,11 +1109,11 @@ impl Game for MmoClient {
                 if left_down {
                     // thumb offset em pixels -> converte p/ world scale via camera zoom
                     let dp = mouse_pixel - self.joystick.center_pixel;
-                    // pixels_per_tile = viewport_pixels / tiles_visible
                     let vis = ctx.camera.visible_rect();
                     let tiles_w = vis.max.x - vis.min.x;
                     let ppt = ctx.viewport.x / tiles_w;
-                    let off_world = dp / ppt;
+                    // Y de tela cresce para baixo, Y de mundo cresce para cima
+                    let off_world = Vec2::new(dp.x / ppt, -dp.y / ppt);
                     self.joystick.thumb_offset = off_world.clamp_length_max(self.joystick.radius);
                 } else {
                     self.joystick.active = false;
