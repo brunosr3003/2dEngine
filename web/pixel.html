@@ -9,13 +9,13 @@
   <body>
     <!-- Login screen -->
     <div id="auth-gate">
-      <form id="auth-form">
+      <div id="auth-form">
         <h1>Pixel Editor</h1>
         <p>Ferramenta dev protegida.</p>
-        <input type="password" name="password" placeholder="senha" required />
-        <button type="submit">Entrar</button>
+        <input type="password" id="auth-password" placeholder="senha" />
+        <button id="auth-btn" type="button">Entrar</button>
         <div class="err" id="auth-err"></div>
-      </form>
+      </div>
     </div>
 
     <!-- Editor -->

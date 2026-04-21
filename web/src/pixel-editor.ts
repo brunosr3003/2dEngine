@@ -405,21 +405,35 @@ function setup_save() {
 }
 
 function setup_auth() {
-  const form = document.getElementById("auth-form") as HTMLFormElement;
-  const err = document.getElementById("auth-err")!;
-  form.addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    const data = new FormData(form);
-    const pw = data.get("password") as string;
-    err.textContent = "";
-    const ok = await api_auth(pw);
-    if (ok) {
-      document.getElementById("auth-gate")!.hidden = true;
-      document.getElementById("editor")!.hidden = false;
-      boot_editor();
-    } else {
-      err.textContent = "senha invalida";
+  console.log("[pixel] setup_auth called");
+  const btn = document.getElementById("auth-btn") as HTMLButtonElement | null;
+  const input = document.getElementById("auth-password") as HTMLInputElement | null;
+  const err = document.getElementById("auth-err");
+  if (!btn || !input) { console.error("[pixel] auth elements not found"); return; }
+  console.log("[pixel] button listener attached");
+  const do_submit = async () => {
+    console.log("[pixel] auth click");
+    const pw = input.value;
+    console.log("[pixel] pw length:", pw?.length);
+    if (err) err.textContent = "tentando...";
+    try {
+      const ok = await api_auth(pw);
+      console.log("[pixel] auth result:", ok);
+      if (ok) {
+        document.getElementById("auth-gate")!.hidden = true;
+        document.getElementById("editor")!.hidden = false;
+        boot_editor();
+      } else {
+        if (err) err.textContent = "senha invalida";
+      }
+    } catch (e: any) {
+      console.error("[pixel] auth fetch err:", e);
+      if (err) err.textContent = "erro: " + (e?.message || String(e));
     }
+  };
+  btn.addEventListener("click", do_submit);
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") do_submit();
   });
 }
 
@@ -436,4 +450,9 @@ function boot_editor() {
 
 // Init: liga o form de login imediatamente. Se ja tiver cookie valido,
 // a primeira chamada autenticada (list) deve ir direto.
-setup_auth();
+console.log("[pixel] boot script");
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", setup_auth);
+} else {
+  setup_auth();
+}
