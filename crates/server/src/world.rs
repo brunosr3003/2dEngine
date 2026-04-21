@@ -122,6 +122,11 @@ pub struct Session {
     pub party_id: Option<u32>,
     /// Ultimo convite pendente (nome do convidante).
     pub party_invite_from: Option<String>,
+    /// Se Some, esse jogador esta carregando outro (pelo entity_id dele).
+    /// Enquanto carrega: velocidade 50%, nao pode atacar.
+    pub carrying: Option<EntityId>,
+    /// Se Some, esse jogador esta sendo carregado por outro.
+    pub carried_by: Option<EntityId>,
     /// Inventario do jogador. Tamanho fixo = shared::INVENTORY_SLOTS.
     pub inventory: Vec<shared::InventorySlot>,
     /// True quando o inventario mudou e precisa ser enviado pro cliente
@@ -733,6 +738,8 @@ impl GameWorld {
                 aura_last_sent: u64::MAX,
                 party_id: None,
                 party_invite_from: None,
+                carrying: None,
+                carried_by: None,
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 inventory_dirty: false,
                 stats_dirty: false,
@@ -747,6 +754,17 @@ impl GameWorld {
             if let Some(e) = s.entity {
                 self.free_entity_body(e);
                 let _ = self.ecs.despawn(e);
+            }
+            // Libera carry se aplicavel
+            if let Some(target_eid) = s.carrying {
+                for ts in self.sessions.values_mut() {
+                    if ts.entity_id == target_eid { ts.carried_by = None; break; }
+                }
+            }
+            if let Some(carrier_eid) = s.carried_by {
+                for cs in self.sessions.values_mut() {
+                    if cs.entity_id == carrier_eid { cs.carrying = None; break; }
+                }
             }
             // Se estava numa party, notifica remanescentes
             if let Some(pid) = s.party_id {
@@ -983,13 +1001,17 @@ impl GameWorld {
             let Some(entity) = session.entity else { continue };
             let Some(frame) = session.pending_input.take() else { continue };
             session.last_input_seq = frame.seq;
+            // Se esta sendo carregado, posicao vem do carregador — ignora input
+            if session.carried_by.is_some() {
+                continue;
+            }
             let dir = if frame.move_dir.length_squared() > 1.0 {
                 frame.move_dir.normalize()
             } else {
                 frame.move_dir
             };
-            // Downed: sem ataques, rastejando
-            let wants_attack = if session.downed {
+            // Downed/Carregando: sem ataques
+            let wants_attack = if session.downed || session.carrying.is_some() {
                 false
             } else {
                 let w = (frame.buttons & buttons::PRIMARY != 0) && session.attack_cooldown <= 0.0;
@@ -1015,6 +1037,8 @@ impl GameWorld {
                 && dir.length_squared() > 0.0;
             let base_speed = if session.downed {
                 PLAYER_SPEED * shared::DOWNED_SPEED_MULT
+            } else if session.carrying.is_some() {
+                PLAYER_SPEED * 0.5
             } else {
                 PLAYER_SPEED
             };
@@ -1211,6 +1235,31 @@ impl GameWorld {
             if let Some(rb) = self.physics.rigid_body_set.get(handle.0) {
                 pos.0.x = rb.translation().x;
                 pos.0.y = rb.translation().y;
+            }
+        }
+
+        // Sincroniza posicao do carregado com a do carregador.
+        let carry_pairs: Vec<(EntityId, EntityId)> = self.sessions.values()
+            .filter_map(|s| s.carrying.map(|t| (s.entity_id, t)))
+            .collect();
+        for (carrier_eid, target_eid) in carry_pairs {
+            let carrier_pos = self.sessions.values()
+                .find(|s| s.entity_id == carrier_eid)
+                .and_then(|s| s.entity)
+                .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0));
+            let target_entity = self.sessions.values()
+                .find(|s| s.entity_id == target_eid)
+                .and_then(|s| s.entity);
+            if let (Some(cp), Some(te)) = (carrier_pos, target_entity) {
+                if let Ok(mut pos) = self.ecs.get::<&mut Position>(te) {
+                    pos.0 = cp;
+                }
+                if let Ok(handle) = self.ecs.get::<&shared::PhysicsHandle>(te).map(|h| h.0) {
+                    if let Some(rb) = self.physics.rigid_body_set.get_mut(handle) {
+                        rb.set_translation([cp.x, cp.y].into(), true);
+                        rb.set_linvel([0.0, 0.0].into(), true);
+                    }
+                }
             }
         }
 
@@ -1517,12 +1566,29 @@ impl GameWorld {
                 self.spawn_loot_drops(death_pos, &drops, seed);
             }
 
+            // Libera carry se o morto estava sendo carregado ou carregando
+            let (was_carried_by, was_carrying) = self.sessions.values()
+                .find(|s| s.entity_id == eid)
+                .map(|s| (s.carried_by, s.carrying))
+                .unwrap_or((None, None));
+            if let Some(carrier_eid) = was_carried_by {
+                for s in self.sessions.values_mut() {
+                    if s.entity_id == carrier_eid { s.carrying = None; break; }
+                }
+            }
+            if let Some(target_eid) = was_carrying {
+                for s in self.sessions.values_mut() {
+                    if s.entity_id == target_eid { s.carried_by = None; break; }
+                }
+            }
             for session in self.sessions.values_mut() {
                 if session.entity_id == eid {
                     session.entity = None;
                     session.respawn_timer = Some(RESPAWN_DELAY);
                     session.downed = false;
                     session.downed_hp = 0;
+                    session.carrying = None;
+                    session.carried_by = None;
                     tracing::info!("{} MORREU (barra downed zerou) — {} itens dropados, respawn em {}s",
                                    session.name, drops.len(), RESPAWN_DELAY);
                     break;
@@ -2156,14 +2222,41 @@ impl GameWorld {
     fn handle_interact(&mut self, sid: SessionId) {
         let Some(session) = self.sessions.get(&sid) else { return };
         if !session.logged_in { return; }
+        // Se ja esta carregando alguem: larga.
+        if let Some(target_eid) = session.carrying {
+            self.release_carried(sid, target_eid);
+            return;
+        }
         let Some(player_entity) = session.entity else { return };
         let player_pos = match self.ecs.get::<&Position>(player_entity) {
             Ok(p) => p.0,
             Err(_) => return,
         };
         let handle = session.handle.clone();
-        // Procura NPC mais proximo em INTERACT_RADIUS
+        // 1) Procura jogador downed aliado pra carregar (pre NPC)
         let r_sq = shared::INTERACT_RADIUS * shared::INTERACT_RADIUS;
+        let mut closest_downed: Option<(EntityId, f32)> = None;
+        for s in self.sessions.values() {
+            if !s.logged_in || !s.downed { continue; }
+            if s.entity_id == session.entity_id { continue; }
+            if s.carried_by.is_some() { continue; }
+            if let Some(e) = s.entity {
+                if let Ok(p) = self.ecs.get::<&Position>(e) {
+                    let d2 = p.0.distance_squared(player_pos);
+                    if d2 <= r_sq {
+                        if closest_downed.map(|(_, bd)| d2 < bd).unwrap_or(true) {
+                            closest_downed = Some((s.entity_id, d2));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some((target_eid, _)) = closest_downed {
+            self.start_carrying(sid, target_eid);
+            return;
+        }
+
+        // 2) Procura NPC
         let mut best: Option<(u16, f32)> = None;
         for (_, (p, k)) in self.ecs.query::<(&Position, &EntityKind)>().iter() {
             if let EntityKind::Npc(n) = k {
@@ -2177,7 +2270,6 @@ impl GameWorld {
         }
         match best {
             Some((2, _)) => {
-                // Vault NPC — abre o vault.
                 let slots = self
                     .sessions.get(&sid)
                     .map(|s| s.vault.clone())
@@ -2185,11 +2277,43 @@ impl GameWorld {
                 let _ = handle.to_client.send(ServerMessage::VaultOpen { slots });
             }
             Some(_) => {
-                // Qualquer outro NPC = vendedor.
                 let items: Vec<(u16, u32)> = shared::SHOP_ITEMS.to_vec();
                 let _ = handle.to_client.send(ServerMessage::ShopOpen { items });
             }
             None => {}
+        }
+    }
+
+    fn start_carrying(&mut self, carrier_sid: SessionId, target_eid: EntityId) {
+        let carrier_eid = match self.sessions.get(&carrier_sid) {
+            Some(s) => s.entity_id,
+            None => return,
+        };
+        if let Some(s) = self.sessions.get_mut(&carrier_sid) {
+            s.carrying = Some(target_eid);
+        }
+        for s in self.sessions.values_mut() {
+            if s.entity_id == target_eid {
+                s.carried_by = Some(carrier_eid);
+                let _ = s.handle.to_client.send(ServerMessage::Chat {
+                    from: "SYS".into(),
+                    text: "voce esta sendo carregado".into(),
+                });
+                tracing::info!("{} esta carregando {}", carrier_eid.0, target_eid.0);
+                break;
+            }
+        }
+    }
+
+    fn release_carried(&mut self, carrier_sid: SessionId, target_eid: EntityId) {
+        if let Some(s) = self.sessions.get_mut(&carrier_sid) {
+            s.carrying = None;
+        }
+        for s in self.sessions.values_mut() {
+            if s.entity_id == target_eid {
+                s.carried_by = None;
+                break;
+            }
         }
     }
 
