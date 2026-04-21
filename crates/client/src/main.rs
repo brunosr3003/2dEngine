@@ -2696,46 +2696,41 @@ impl Game for MmoClient {
                 );
             }
 
-            // Slots de equipamento equipado (arma / armadura / anel) — HUD compacta
-            // na base-centro da tela. Sem hotbar de inventario; isso ta no painel I.
-            let eq_slot_size = 0.65 * h;
-            let eq_gap = 0.15 * h;
-            let eq_slots: [(Option<u16>, &str); 3] = [
-                (self.equipment.weapon, "W"),
-                (self.equipment.armor,  "A"),
-                (self.equipment.ring,   "R"),
-            ];
-            let eq_total_w = 3.0 * eq_slot_size + 2.0 * eq_gap;
-            let eq_center_x = vis.min.x + (vis.max.x - vis.min.x) / 2.0;
-            let eq_y = vis.min.y + margin + 0.7 * h;
-            for (i, (item_opt, label)) in eq_slots.iter().enumerate() {
-                let x = eq_center_x - eq_total_w * 0.5 + eq_slot_size * 0.5
-                    + i as f32 * (eq_slot_size + eq_gap);
-                let pos = Vec2::new(x, eq_y);
-                let bg = if item_opt.is_some() {
-                    Vec4::new(0.20, 0.18, 0.10, 0.92)
+            // Quickslot (slots 0..HOTBAR_SLOTS do inventario) — HUD base-centro.
+            let qs_size = 0.7 * h;
+            let qs_gap = 0.15 * h;
+            let qs_total_w = HOTBAR_SLOTS as f32 * qs_size + (HOTBAR_SLOTS - 1) as f32 * qs_gap;
+            let qs_center_x = vis.min.x + (vis.max.x - vis.min.x) / 2.0;
+            let qs_y = vis.min.y + margin + 0.7 * h;
+            for i in 0..HOTBAR_SLOTS {
+                let x = qs_center_x - qs_total_w * 0.5 + qs_size * 0.5
+                    + i as f32 * (qs_size + qs_gap);
+                let pos = Vec2::new(x, qs_y);
+                let slot = self.inventory.get(i).copied().unwrap_or_default();
+                let bg = if slot.qty > 0 {
+                    Vec4::new(0.14, 0.16, 0.22, 0.92)
                 } else {
-                    Vec4::new(0.10, 0.10, 0.14, 0.70)
+                    Vec4::new(0.08, 0.09, 0.14, 0.70)
                 };
                 batch.push(&Sprite {
                     position: pos,
-                    size: Vec2::splat(eq_slot_size),
+                    size: Vec2::splat(qs_size),
                     uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
                     tint: bg,
                     depth: layer::HUD,
                     ..Default::default()
                 });
-                if let Some(iid) = item_opt {
+                if slot.qty > 0 {
                     batch.push(&Sprite {
                         position: pos,
-                        size: Vec2::splat(eq_slot_size * 0.7),
+                        size: Vec2::splat(qs_size * 0.68),
                         uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
-                        tint: item_tint(*iid),
+                        tint: item_tint(slot.item_id),
                         depth: layer::HUD + 0.1,
                         ..Default::default()
                     });
-                    // Primeira letra do nome no centro
-                    let nm = item_display_name(*iid);
+                    // Letra
+                    let nm = item_display_name(slot.item_id);
                     let letter = &nm[..1];
                     font.draw_depth(
                         letter,
@@ -2745,14 +2740,32 @@ impl Game for MmoClient {
                         layer::HUD + 0.15,
                         batch,
                     );
+                    // Qty
+                    if slot.qty > 1 {
+                        let label = if slot.qty < 1000 {
+                            format!("{}", slot.qty)
+                        } else {
+                            format!("{}k", slot.qty / 1000)
+                        };
+                        let lw = font.measure_width(&label) * (0.4 * h);
+                        font.draw_depth(
+                            &label,
+                            pos + Vec2::new(qs_size * 0.5 - lw - 0.05 * h, -qs_size * 0.5 + 0.1 * h),
+                            0.4 * h,
+                            Vec4::ONE,
+                            layer::HUD + 0.2,
+                            batch,
+                        );
+                    }
                 }
-                // Rotulo pequeno abaixo do slot (W/A/R)
+                // Tecla (1..6) no canto superior-esquerdo
+                let key = format!("{}", i + 1);
                 font.draw_depth(
-                    label,
-                    pos + Vec2::new(-0.08 * h, -eq_slot_size * 0.55),
-                    0.45 * h,
-                    Vec4::new(0.7, 0.7, 0.75, 0.9),
-                    layer::HUD + 0.2,
+                    &key,
+                    pos + Vec2::new(-qs_size * 0.5 + 0.04 * h, qs_size * 0.5 - 0.3 * h),
+                    0.35 * h,
+                    Vec4::new(0.95, 0.85, 0.35, 1.0),
+                    layer::HUD + 0.25,
                     batch,
                 );
             }
