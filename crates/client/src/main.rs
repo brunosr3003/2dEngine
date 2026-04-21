@@ -212,7 +212,7 @@ enum LoginField {
 /// Joystick virtual usado em modo touch/mouse-drag. Desenhado em coordenadas
 /// de mundo (via camera.visible_rect) perto do canto inferior-esquerdo.
 struct VirtualJoystick {
-    center_world: Vec2,  // posicao dinamica: onde o usuario tocou
+    center_pixel: Vec2,  // posicao em pixels da tela onde o toque iniciou
     radius: f32,         // raio do base em unidades de mundo
     active: bool,
     thumb_offset: Vec2, // vetor do centro ate o thumb (clampeado)
@@ -221,7 +221,7 @@ struct VirtualJoystick {
 impl VirtualJoystick {
     fn new() -> Self {
         Self {
-            center_world: Vec2::ZERO,
+            center_pixel: Vec2::ZERO,
             radius: 2.5,
             active: false,
             thumb_offset: Vec2::ZERO,
@@ -1044,23 +1044,27 @@ impl Game for MmoClient {
         }
 
         // --- Joystick virtual (mobile-style: ativa onde clicar na esquerda) ---
-        if self.touch_mode && !menu_open {
-            let vis = ctx.camera.visible_rect();
-            let screen_mid_x = (vis.min.x + vis.max.x) * 0.5;
-            let mouse_world = ctx.camera.screen_to_world(ctx.input.mouse_pos());
+        if self.touch_mode && !menu_open && !self.chat_typing {
+            let mouse_pixel  = ctx.input.mouse_pos();
             let left_pressed = ctx.input.mouse_pressed(engine::winit::event::MouseButton::Left);
             let left_down    = ctx.input.mouse_down(engine::winit::event::MouseButton::Left);
             if self.joystick.active {
                 if left_down {
-                    let off = mouse_world - self.joystick.center_world;
-                    self.joystick.thumb_offset = off.clamp_length_max(self.joystick.radius);
+                    // thumb offset em pixels -> converte p/ world scale via camera zoom
+                    let dp = mouse_pixel - self.joystick.center_pixel;
+                    // pixels_per_tile = viewport_pixels / tiles_visible
+                    let vis = ctx.camera.visible_rect();
+                    let tiles_w = vis.max.x - vis.min.x;
+                    let ppt = ctx.viewport.x / tiles_w;
+                    let off_world = dp / ppt;
+                    self.joystick.thumb_offset = off_world.clamp_length_max(self.joystick.radius);
                 } else {
                     self.joystick.active = false;
                     self.joystick.thumb_offset = Vec2::ZERO;
                 }
-            } else if left_pressed && mouse_world.x < screen_mid_x {
-                // Spawn joystick onde o usuario tocou
-                self.joystick.center_world = mouse_world;
+            } else if left_pressed && mouse_pixel.x < ctx.viewport.x * 0.5 {
+                // Spawn joystick onde o usuario tocou (metade esquerda da tela)
+                self.joystick.center_pixel = mouse_pixel;
                 self.joystick.active = true;
                 self.joystick.thumb_offset = Vec2::ZERO;
             }
@@ -1454,7 +1458,7 @@ impl Game for MmoClient {
 
             // Joystick virtual (modo touch / F2) — aparece apenas quando ativo
             if self.touch_mode && self.joystick.active {
-                let jcenter = self.joystick.center_world;
+                let jcenter = ctx.camera.screen_to_world(self.joystick.center_pixel);
                 let r = self.joystick.radius;
                 // Base (anel externo semi-transparente)
                 batch.push(&Sprite {
