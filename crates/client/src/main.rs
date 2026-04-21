@@ -45,6 +45,69 @@ fn hud_h(hud_scale: f32, viewport_y_px: f32, camera_zoom: f32) -> f32 {
     target_px / camera_zoom.max(1.0)
 }
 
+/// Layout consistente da tela de login. Tudo em coordenadas de mundo
+/// mas calibrado pra tamanho em pixels (indep. de zoom). Usado pelo
+/// render e pelo hit-detect do click (update_login).
+struct LoginLayout {
+    h: f32,
+    cx: f32, cy: f32,
+    panel_w: f32, panel_h: f32,
+    title_y: f32,
+    user_y: f32, pass_y: f32, btn_y: f32,
+    remember_y: f32, err_y: f32, hint_y: f32, tip_y: f32,
+    field_w: f32, field_h: f32,
+    chk_size: f32,
+    link_cx: f32, link_w: f32,
+    hint_pre_w: f32,
+}
+
+fn login_layout(ctx: &engine::app::AppContext) -> LoginLayout {
+    let vis = ctx.camera.visible_rect();
+    let cx = (vis.min.x + vis.max.x) * 0.5;
+    let cy = (vis.min.y + vis.max.y) * 0.5;
+    let h = (ctx.viewport.y * 0.045) / ctx.camera.zoom.max(1.0);
+
+    let field_w = 7.0 * h;
+    let field_h = 0.9 * h;
+    let panel_w = field_w + 2.0 * h;
+    let panel_h = 10.5 * h;
+
+    // Posicao vertical de cada elemento (relativo a cy):
+    //   topo painel: cy + 5.25h
+    //   titulo:      cy + 3.8h
+    //   user field:  cy + 2.0h
+    //   pass field:  cy + 0.4h
+    //   btn:         cy - 1.3h
+    //   checkbox:    cy - 2.5h
+    //   error:       cy - 3.2h
+    //   hint link:   cy - 3.9h
+    //   tip:         cy - 4.7h
+    //   base painel: cy - 5.25h
+    let title_y    = cy + 3.8 * h;
+    let user_y     = cy + 2.0 * h;
+    let pass_y     = cy + 0.4 * h;
+    let btn_y      = cy - 1.3 * h;
+    let remember_y = cy - 2.5 * h;
+    let err_y      = cy - 3.2 * h;
+    let hint_y     = cy - 3.9 * h;
+    let tip_y      = cy - 4.7 * h;
+
+    // Link hit area
+    let fs_hint = 0.45 * h;
+    let pre_w  = 11.0 * fs_hint * 0.6; // aprox "Sem conta? " 11 chars
+    let link_w = 16.0 * fs_hint * 0.6; // aprox "Cadastre-se aqui"
+    let link_cx = cx - (pre_w + link_w) * 0.5 + pre_w + link_w * 0.5;
+
+    LoginLayout {
+        h, cx, cy, panel_w, panel_h,
+        title_y, user_y, pass_y, btn_y, remember_y, err_y, hint_y, tip_y,
+        field_w, field_h,
+        chk_size: 0.45 * h,
+        link_cx, link_w,
+        hint_pre_w: pre_w,
+    }
+}
+
 // IDs de clip de animacao (indexados no AnimRegistry)
 const ANIM_PLAYER_WALK: &str = "player_walk";
 const ANIM_PLAYER_IDLE: &str = "player_idle";
@@ -726,50 +789,32 @@ impl MmoClient {
             }
         }
 
-        // Clique nos campos / botao — calculado em screen coords normalizadas
-        let vis = ctx.camera.visible_rect();
-        let cx = (vis.min.x + vis.max.x) * 0.5;
-        let cy = (vis.min.y + vis.max.y) * 0.5;
-        let h = (ctx.viewport.y * 0.05) / ctx.camera.zoom.max(1.0);
-        let field_w = 8.0 * h;
-        let user_y  = cy + 1.5 * h;
-        let pass_y  = cy + 0.0 * h;
-        let btn_y     = cy - 1.8 * h;
-        let field_h   = 0.8 * h;
-        let remember_y = cy - 2.8 * h;
-
-        // Link "Cadastre-se aqui" — mesmos calculos do render
-        let fs_hint = 0.5 * h;
-        let hint_pre  = "Sem conta? ";
-        let hint_link = "Cadastre-se aqui";
-        let (pre_w, link_w) = if let Some(font) = &self.font {
-            (font.measure_width(hint_pre) * fs_hint,
-             font.measure_width(hint_link) * fs_hint)
-        } else {
-            (hint_pre.len() as f32 * fs_hint * 0.6,
-             hint_link.len() as f32 * fs_hint * 0.6)
-        };
-        let total_w = pre_w + link_w;
-        let hint_y = cy - 3.7 * h;
-        let link_cx = cx - total_w * 0.5 + pre_w + link_w * 0.5;
-        let chk_size = 0.5 * h;
-
+        // Hit-detect do click usa mesmo layout do render
+        let lo = login_layout(ctx);
         if ctx.input.mouse_pressed(engine::winit::event::MouseButton::Left) {
             let mw = ctx.camera.screen_to_world(ctx.input.mouse_pos());
-            if (mw.x - cx).abs() < field_w * 0.5 && (mw.y - user_y).abs() < field_h * 0.5 {
+            let in_field = |y: f32| {
+                (mw.x - lo.cx).abs() < lo.field_w * 0.5
+                    && (mw.y - y).abs() < lo.field_h * 0.5
+            };
+            if in_field(lo.user_y) {
                 self.login_field = LoginField::Username;
-            } else if (mw.x - cx).abs() < field_w * 0.5 && (mw.y - pass_y).abs() < field_h * 0.5 {
+            } else if in_field(lo.pass_y) {
                 self.login_field = LoginField::Password;
-            } else if (mw.x - cx).abs() < field_w * 0.5 && (mw.y - btn_y).abs() < field_h * 0.5 {
+            } else if in_field(lo.btn_y) {
                 if !self.login_submitted && !self.login_username.trim().is_empty() && !self.login_password.is_empty() {
                     self.login_error = None;
                     self.login_submitted = true;
                     self.do_connect();
                 }
-            } else if (mw.x - (cx - field_w * 0.5 + chk_size * 0.5)).abs() < chk_size
-                   && (mw.y - remember_y).abs() < chk_size * 0.5 {
+            } else if {
+                let chk_x = lo.cx - lo.field_w * 0.5 + lo.chk_size * 0.5;
+                (mw.x - chk_x).abs() < lo.chk_size
+                    && (mw.y - lo.remember_y).abs() < lo.chk_size * 0.7
+            } {
                 self.login_remember = !self.login_remember;
-            } else if (mw.x - link_cx).abs() < link_w * 0.5 && (mw.y - hint_y).abs() < fs_hint {
+            } else if (mw.x - lo.link_cx).abs() < lo.link_w * 0.5
+                   && (mw.y - lo.hint_y).abs() < 0.25 * lo.h {
                 let _ = std::process::Command::new("open")
                     .arg("http://localhost:5173")
                     .spawn();
@@ -820,21 +865,11 @@ impl MmoClient {
 
     fn render_login(&self, ctx: &AppContext, batch: &mut SpriteBatch) {
         let Some(font) = &self.font else { return };
-        let vis = ctx.camera.visible_rect();
-        let cx = (vis.min.x + vis.max.x) * 0.5;
-        let cy = (vis.min.y + vis.max.y) * 0.5;
-        // h em world units, calibrado pra que painel ocupe ~55% da altura
-        // visivel em pixels, independente do zoom da camera.
-        // 1h = 5% da altura da viewport, convertido pra world via zoom.
-        let h = (ctx.viewport.y * 0.05) / ctx.camera.zoom.max(1.0);
-        let field_w    = 8.0 * h;
-        let field_h    = 0.8 * h;
-        let user_y     = cy + 1.5 * h;
-        let pass_y     = cy + 0.0 * h;
-        let btn_y      = cy - 1.8 * h;
-        let remember_y = cy - 2.8 * h;
+        let lo = login_layout(ctx);
+        let (cx, cy, h) = (lo.cx, lo.cy, lo.h);
 
-        // Fundo escuro
+        // Fundo cobrindo TODO o visible rect
+        let vis = ctx.camera.visible_rect();
         let sw = vis.max.x - vis.min.x;
         let sh = vis.max.y - vis.min.y;
         batch.push(&Sprite {
@@ -846,19 +881,20 @@ impl MmoClient {
             ..Default::default()
         });
 
-        // Painel central (altura cresceu para acomodar checkbox)
+        // Painel centralizado (centro em (cx, cy), tamanho panel_w x panel_h)
         batch.push(&Sprite {
-            position: Vec2::new(cx, cy - 0.35 * h),
-            size: Vec2::new(field_w + 2.0 * h, 8.5 * h),
+            position: Vec2::new(cx, cy),
+            size: Vec2::new(lo.panel_w, lo.panel_h),
             uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
             tint: Vec4::new(0.08, 0.10, 0.16, 0.97),
             depth: 0.05,
             ..Default::default()
         });
-        // Borda topo do painel
+        // Faixa dourada no topo do painel
+        let top_y = cy + lo.panel_h * 0.5 - 0.05 * h;
         batch.push(&Sprite {
-            position: Vec2::new(cx, cy - 0.35 * h + 4.25 * h - 0.04),
-            size: Vec2::new(field_w + 2.0 * h, 0.07 * h),
+            position: Vec2::new(cx, top_y),
+            size: Vec2::new(lo.panel_w, 0.1 * h),
             uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
             tint: Vec4::new(1.0, 0.85, 0.3, 1.0),
             depth: 0.06,
@@ -867,58 +903,51 @@ impl MmoClient {
 
         // Titulo
         let title = "MMORPG 2D";
-        let ts = 1.1 * h;
+        let ts = 0.9 * h;
         let tw = font.measure_width(title) * ts;
         font.draw_depth(title,
-            Vec2::new(cx - tw * 0.5, cy + 2.8 * h),
+            Vec2::new(cx - tw * 0.5, lo.title_y),
             ts, Vec4::new(1.0, 0.85, 0.3, 1.0), 0.1, batch);
 
+        // Campos (USUARIO + SENHA)
         let draw_field = |label: &str, value: &str, y: f32, active: bool,
                           is_pass: bool, batch: &mut SpriteBatch| {
-            // Label
-            let lw = font.measure_width(label) * (0.6 * h);
+            // Label acima do campo
             font.draw_depth(label,
-                Vec2::new(cx - field_w * 0.5, y + field_h * 0.5 + 0.25 * h),
-                0.6 * h, Vec4::new(0.75, 0.8, 0.95, 1.0), 0.1, batch);
+                Vec2::new(cx - lo.field_w * 0.5, y + lo.field_h * 0.5 + 0.1 * h),
+                0.5 * h, Vec4::new(0.75, 0.8, 0.95, 1.0), 0.1, batch);
             // Fundo campo
             let bg = if active { Vec4::new(0.14, 0.18, 0.28, 1.0) }
                      else      { Vec4::new(0.10, 0.12, 0.18, 1.0) };
             batch.push(&Sprite {
                 position: Vec2::new(cx, y),
-                size: Vec2::new(field_w, field_h),
+                size: Vec2::new(lo.field_w, lo.field_h),
                 uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
                 tint: bg, depth: 0.1, ..Default::default()
             });
-            // Borda se ativo
+            // Borda quando ativo
             if active {
                 batch.push(&Sprite {
-                    position: Vec2::new(cx, y - field_h * 0.5 + 0.03),
-                    size: Vec2::new(field_w, 0.06),
+                    position: Vec2::new(cx, y - lo.field_h * 0.5 + 0.03 * h),
+                    size: Vec2::new(lo.field_w, 0.06 * h),
                     uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
                     tint: Vec4::new(0.4, 0.7, 1.0, 1.0), depth: 0.15, ..Default::default()
                 });
             }
-            // Texto + cursor
-            let display = if is_pass {
-                "*".repeat(value.chars().count())
-            } else {
-                value.to_string()
-            };
+            let display = if is_pass { "*".repeat(value.chars().count()) } else { value.to_string() };
             let cursor = if active { "_" } else { "" };
             let text = format!("{}{}", display, cursor);
-            let fs = 0.65 * h;
             font.draw_depth(&text,
-                Vec2::new(cx - field_w * 0.5 + 0.2, y + field_h * 0.2),
-                fs, Vec4::ONE, 0.2, batch);
-            let _ = lw; // suppress warning
+                Vec2::new(cx - lo.field_w * 0.5 + 0.15 * h, y + lo.field_h * 0.15),
+                0.55 * h, Vec4::ONE, 0.2, batch);
         };
 
-        draw_field("USUARIO", &self.login_username, user_y,
+        draw_field("USUARIO", &self.login_username, lo.user_y,
             self.login_field == LoginField::Username, false, batch);
-        draw_field("SENHA", &self.login_password, pass_y,
+        draw_field("SENHA", &self.login_password, lo.pass_y,
             self.login_field == LoginField::Password, true, batch);
 
-        // Botao entrar
+        // Botão ENTRAR
         let btn_label = if self.login_submitted { "Conectando..." } else { "ENTRAR" };
         let btn_color = if self.login_submitted {
             Vec4::new(0.4, 0.4, 0.4, 1.0)
@@ -926,72 +955,69 @@ impl MmoClient {
             Vec4::new(1.0, 0.75, 0.2, 1.0)
         };
         batch.push(&Sprite {
-            position: Vec2::new(cx, btn_y),
-            size: Vec2::new(field_w, field_h),
+            position: Vec2::new(cx, lo.btn_y),
+            size: Vec2::new(lo.field_w, lo.field_h),
             uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
             tint: btn_color, depth: 0.1, ..Default::default()
         });
-        let bw = font.measure_width(btn_label) * (0.75 * h);
+        let bw = font.measure_width(btn_label) * (0.6 * h);
         font.draw_depth(btn_label,
-            Vec2::new(cx - bw * 0.5, btn_y + field_h * 0.2),
-            0.75 * h, Vec4::new(0.05, 0.05, 0.1, 1.0), 0.2, batch);
+            Vec2::new(cx - bw * 0.5, lo.btn_y + lo.field_h * 0.15),
+            0.6 * h, Vec4::new(0.05, 0.05, 0.1, 1.0), 0.2, batch);
 
         // Checkbox "Lembrar acesso"
-        let chk_size = 0.5 * h;
-        let chk_x = cx - field_w * 0.5 + chk_size * 0.5;
+        let chk_x = cx - lo.field_w * 0.5 + lo.chk_size * 0.5;
         let chk_color = if self.login_remember {
             Vec4::new(0.3, 0.8, 0.4, 1.0)
         } else {
             Vec4::new(0.25, 0.28, 0.35, 1.0)
         };
         batch.push(&Sprite {
-            position: Vec2::new(chk_x, remember_y),
-            size: Vec2::splat(chk_size),
+            position: Vec2::new(chk_x, lo.remember_y),
+            size: Vec2::splat(lo.chk_size),
             uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
             tint: chk_color, depth: 0.1, ..Default::default()
         });
         let check_label = if self.login_remember { "[x] Lembrar acesso" } else { "[ ] Lembrar acesso" };
         font.draw_depth(check_label,
-            Vec2::new(chk_x + chk_size * 0.7, remember_y - chk_size * 0.3),
-            0.5 * h, Vec4::new(0.75, 0.8, 0.85, 1.0), 0.2, batch);
+            Vec2::new(chk_x + lo.chk_size * 0.8, lo.remember_y - lo.chk_size * 0.35),
+            0.45 * h, Vec4::new(0.75, 0.8, 0.85, 1.0), 0.2, batch);
 
-        // Mensagem de erro
+        // Erro (se existir, abaixo do checkbox)
         if let Some(err) = &self.login_error {
-            let ew = font.measure_width(err) * (0.6 * h);
+            let ew = font.measure_width(err) * (0.45 * h);
             font.draw_depth(err,
-                Vec2::new(cx - ew * 0.5, remember_y - 0.7 * h),
-                0.6 * h, Vec4::new(1.0, 0.35, 0.3, 1.0), 0.2, batch);
+                Vec2::new(cx - ew * 0.5, lo.err_y),
+                0.45 * h, Vec4::new(1.0, 0.35, 0.3, 1.0), 0.2, batch);
         }
 
-        // Link de cadastro (clicavel — highlight azul)
+        // Link de cadastro (antes da tip)
         let hint_pre  = "Sem conta? ";
         let hint_link = "Cadastre-se aqui";
-        let fs_hint = 0.5 * h;
+        let fs_hint = 0.45 * h;
         let pre_w  = font.measure_width(hint_pre)  * fs_hint;
         let link_w = font.measure_width(hint_link) * fs_hint;
         let total_w = pre_w + link_w;
-        let hint_y = cy - 3.7 * h;
         font.draw_depth(hint_pre,
-            Vec2::new(cx - total_w * 0.5, hint_y),
+            Vec2::new(cx - total_w * 0.5, lo.hint_y),
             fs_hint, Vec4::new(0.65, 0.68, 0.75, 1.0), 0.2, batch);
         font.draw_depth(hint_link,
-            Vec2::new(cx - total_w * 0.5 + pre_w, hint_y),
+            Vec2::new(cx - total_w * 0.5 + pre_w, lo.hint_y),
             fs_hint, Vec4::new(0.35, 0.7, 1.0, 1.0), 0.2, batch);
-        // Sublinhado do link
         batch.push(&Sprite {
-            position: Vec2::new(cx - total_w * 0.5 + pre_w + link_w * 0.5, hint_y - fs_hint * 0.15),
+            position: Vec2::new(cx - total_w * 0.5 + pre_w + link_w * 0.5, lo.hint_y - fs_hint * 0.15),
             size: Vec2::new(link_w, fs_hint * 0.07),
             uv_min: Vec2::ZERO, uv_max: Vec2::splat(0.004),
             tint: Vec4::new(0.35, 0.7, 1.0, 0.8),
             depth: 0.25, ..Default::default()
         });
 
-        // Tab para trocar campo
+        // Tip de atalhos (logo acima do rodape do painel)
         let tip = "Tab = trocar campo   Enter = confirmar";
-        let tiw = font.measure_width(tip) * (0.4 * h);
+        let tiw = font.measure_width(tip) * (0.35 * h);
         font.draw_depth(tip,
-            Vec2::new(cx - tiw * 0.5, cy - 3.6 * h),
-            0.4 * h, Vec4::new(0.4, 0.45, 0.55, 1.0), 0.2, batch);
+            Vec2::new(cx - tiw * 0.5, lo.tip_y),
+            0.35 * h, Vec4::new(0.4, 0.45, 0.55, 1.0), 0.2, batch);
     }
 
 }
