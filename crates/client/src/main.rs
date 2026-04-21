@@ -381,28 +381,58 @@ fn spawn_level_up_shower(particles: &mut Vec<Particle>, pos: Vec2) {
 
 fn item_display_name(id: u16) -> &'static str {
     match id {
-        shared::item_id::GOLD          => "Ouro",
-        shared::item_id::HEALTH_POTION => "Pocao HP",
-        shared::item_id::MANA_POTION   => "Pocao MP",
-        shared::item_id::SWORD         => "Espada",
-        shared::item_id::STAFF         => "Cajado",
-        shared::item_id::ARMOR         => "Armadura",
-        shared::item_id::SHIELD        => "Escudo",
-        shared::item_id::RING          => "Anel",
+        shared::item_id::GOLD           => "Ouro",
+        shared::item_id::HEALTH_POTION  => "Pocao HP",
+        shared::item_id::MANA_POTION    => "Pocao MP",
+        shared::item_id::GREATER_HEAL   => "Pocao HP+",
+        shared::item_id::GREATER_MANA   => "Pocao MP+",
+        shared::item_id::STAMINA_POTION => "Pocao ST",
+        shared::item_id::SWORD          => "Espada",
+        shared::item_id::STAFF          => "Cajado",
+        shared::item_id::DAGGER         => "Adaga",
+        shared::item_id::GREAT_SWORD    => "Espada Grd",
+        shared::item_id::BOW            => "Arco",
+        shared::item_id::WAND           => "Varinha",
+        shared::item_id::ARMOR          => "Armadura",
+        shared::item_id::SHIELD         => "Escudo",
+        shared::item_id::LEATHER_ARMOR  => "Gibao",
+        shared::item_id::PLATE_ARMOR    => "Placa",
+        shared::item_id::ROBE           => "Tunica",
+        shared::item_id::RING           => "Anel",
+        shared::item_id::AMULET         => "Amuleto",
+        shared::item_id::LUCKY_RING     => "Anel Sorte",
+        shared::item_id::GEM            => "Gema",
+        shared::item_id::IRON_INGOT     => "Lingote",
+        shared::item_id::DRAGON_SCALE   => "Escama",
         _ => "Item",
     }
 }
 
 fn item_tint(id: u16) -> Vec4 {
     match id {
-        shared::item_id::GOLD          => Vec4::new(1.0, 0.85, 0.2, 1.0),
-        shared::item_id::HEALTH_POTION => Vec4::new(0.95, 0.35, 0.35, 1.0),
-        shared::item_id::MANA_POTION   => Vec4::new(0.35, 0.55, 1.0, 1.0),
-        shared::item_id::SWORD         => Vec4::new(0.85, 0.9, 0.95, 1.0),
-        shared::item_id::STAFF         => Vec4::new(0.6, 0.4, 1.0, 1.0),
-        shared::item_id::ARMOR         => Vec4::new(0.65, 0.65, 0.75, 1.0),
-        shared::item_id::SHIELD        => Vec4::new(0.4, 0.65, 0.95, 1.0),
-        shared::item_id::RING          => Vec4::new(1.0, 0.75, 0.95, 1.0),
+        shared::item_id::GOLD           => Vec4::new(1.0, 0.85, 0.2, 1.0),
+        shared::item_id::HEALTH_POTION  => Vec4::new(0.95, 0.35, 0.35, 1.0),
+        shared::item_id::GREATER_HEAL   => Vec4::new(1.0, 0.2, 0.35, 1.0),
+        shared::item_id::MANA_POTION    => Vec4::new(0.35, 0.55, 1.0, 1.0),
+        shared::item_id::GREATER_MANA   => Vec4::new(0.2, 0.4, 1.0, 1.0),
+        shared::item_id::STAMINA_POTION => Vec4::new(0.4, 0.9, 0.4, 1.0),
+        shared::item_id::SWORD          => Vec4::new(0.85, 0.9, 0.95, 1.0),
+        shared::item_id::STAFF          => Vec4::new(0.6, 0.4, 1.0, 1.0),
+        shared::item_id::DAGGER         => Vec4::new(0.75, 0.8, 0.85, 1.0),
+        shared::item_id::GREAT_SWORD    => Vec4::new(0.7, 0.5, 0.3, 1.0),
+        shared::item_id::BOW            => Vec4::new(0.6, 0.45, 0.2, 1.0),
+        shared::item_id::WAND           => Vec4::new(0.55, 0.25, 0.9, 1.0),
+        shared::item_id::ARMOR          => Vec4::new(0.65, 0.65, 0.75, 1.0),
+        shared::item_id::SHIELD         => Vec4::new(0.4, 0.65, 0.95, 1.0),
+        shared::item_id::LEATHER_ARMOR  => Vec4::new(0.55, 0.4, 0.25, 1.0),
+        shared::item_id::PLATE_ARMOR    => Vec4::new(0.8, 0.85, 0.9, 1.0),
+        shared::item_id::ROBE           => Vec4::new(0.35, 0.25, 0.7, 1.0),
+        shared::item_id::RING           => Vec4::new(1.0, 0.75, 0.95, 1.0),
+        shared::item_id::AMULET         => Vec4::new(0.85, 0.7, 1.0, 1.0),
+        shared::item_id::LUCKY_RING     => Vec4::new(1.0, 0.9, 0.4, 1.0),
+        shared::item_id::GEM            => Vec4::new(0.4, 1.0, 0.9, 1.0),
+        shared::item_id::IRON_INGOT     => Vec4::new(0.55, 0.58, 0.6, 1.0),
+        shared::item_id::DRAGON_SCALE   => Vec4::new(0.9, 0.3, 0.15, 1.0),
         _ => Vec4::ONE,
     }
 }
@@ -1691,17 +1721,7 @@ impl Game for MmoClient {
                     let [r, g, b, a] = shared::enemy_def(k).tint_rgba;
                     Vec4::new(r, g, b, a)
                 }
-                EntityKind::Loot(iid)   => match iid {
-                    shared::item_id::GOLD          => Vec4::new(1.0, 0.85, 0.2, 1.0),
-                    shared::item_id::HEALTH_POTION => Vec4::new(0.9, 0.3, 0.35, 1.0),
-                    shared::item_id::SWORD         => Vec4::new(0.8, 0.85, 0.95, 1.0),
-                    shared::item_id::ARMOR         => Vec4::new(0.6, 0.6, 0.7, 1.0),
-                    shared::item_id::RING          => Vec4::new(1.0, 0.7, 0.9, 1.0),
-                    shared::item_id::STAFF         => Vec4::new(0.55, 0.4, 1.0, 1.0),
-                    shared::item_id::SHIELD        => Vec4::new(0.4, 0.6, 0.9, 1.0),
-                    shared::item_id::MANA_POTION   => Vec4::new(0.3, 0.5, 1.0, 1.0),
-                    _                              => Vec4::new(0.6, 0.9, 1.0, 1.0),
-                },
+                EntityKind::Loot(iid)   => item_tint(iid),
                 EntityKind::Npc(_)      => Vec4::new(0.95, 0.8, 0.4, 1.0),
                 EntityKind::Portal      => {
                     // Cor pulsa com o tick pra destacar
@@ -2026,17 +2046,8 @@ impl Game for MmoClient {
                     batch,
                 );
                 for (i, (iid, price)) in items.iter().enumerate() {
-                    let iname = match *iid {
-                        shared::item_id::HEALTH_POTION => "Pocao de Vida",
-                        shared::item_id::MANA_POTION   => "Pocao de Mana",
-                        shared::item_id::SWORD         => "Espada",
-                        shared::item_id::STAFF         => "Cajado",
-                        shared::item_id::ARMOR         => "Armadura",
-                        shared::item_id::SHIELD        => "Escudo",
-                        shared::item_id::RING          => "Anel",
-                        _                              => "Item",
-                    };
-                    let row = format!("[{}] {:<18} {} ouro", i + 1, iname, price);
+                    let iname = item_display_name(*iid);
+                    let row = format!("[{}] {:<14} {} ouro", i + 1, iname, price);
                     let y = cy + panel_h * 0.5 - 0.8 * h - i as f32 * line_h;
                     font.draw_depth(
                         &row,

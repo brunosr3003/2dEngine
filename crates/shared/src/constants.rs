@@ -235,28 +235,45 @@ pub const PICKUP_RADIUS: f32 = 0.8;
 /// Itens conhecidos. Numeric id vai pro DB e rede. Manter sincronizado com
 /// o cliente para sprite/cor por item.
 pub mod item_id {
-    pub const GOLD:           u16 = 1;
-    pub const HEALTH_POTION:  u16 = 2;
-    pub const SWORD:          u16 = 3;
-    pub const ARMOR:          u16 = 4;
-    pub const RING:           u16 = 5;
-    pub const STAFF:          u16 = 6; // arma de mago: +dano +MP
-    pub const SHIELD:         u16 = 7; // armadura pesada: +HP, -dano
-    pub const MANA_POTION:    u16 = 8; // restaura MP
+    // Moeda / consumíveis
+    pub const GOLD:            u16 = 1;
+    pub const HEALTH_POTION:   u16 = 2;
+    pub const MANA_POTION:     u16 = 8;
+    pub const GREATER_HEAL:    u16 = 9;   // +150 HP
+    pub const GREATER_MANA:    u16 = 10;  // +100 MP
+    pub const STAMINA_POTION:  u16 = 11;  // restaura 100 stamina
+    // Armas
+    pub const SWORD:           u16 = 3;
+    pub const STAFF:           u16 = 6;
+    pub const DAGGER:          u16 = 12;  // rapido, menos dano, +dex
+    pub const GREAT_SWORD:     u16 = 13;  // muito dano, -mp
+    pub const BOW:             u16 = 14;  // ranged, +dex
+    pub const WAND:            u16 = 15;  // fraca mas muito mp
+    // Armaduras
+    pub const ARMOR:           u16 = 4;
+    pub const SHIELD:          u16 = 7;
+    pub const LEATHER_ARMOR:   u16 = 16;  // leve, +dex
+    pub const PLATE_ARMOR:     u16 = 17;  // pesada, muito HP, -dex
+    pub const ROBE:            u16 = 18;  // mago, +mp
+    // Acessórios
+    pub const RING:            u16 = 5;
+    pub const AMULET:          u16 = 19;  // +wis +mp
+    pub const LUCKY_RING:      u16 = 20;  // +dex +mp
+    // Materiais / loot raro
+    pub const GEM:             u16 = 21;  // valioso, vendavel
+    pub const IRON_INGOT:      u16 = 22;
+    pub const DRAGON_SCALE:    u16 = 23;  // raro de boss
 }
 
 /// Limite de stack por item (1 = nao stackavel / equipamento).
 pub const fn item_stack_max(id: u16) -> u32 {
     match id {
-        item_id::GOLD          => 9999,
-        item_id::HEALTH_POTION => 20,
-        item_id::MANA_POTION   => 20,
-        item_id::SWORD
-        | item_id::ARMOR
-        | item_id::RING
-        | item_id::STAFF
-        | item_id::SHIELD      => 1,
-        _                      => 1,
+        item_id::GOLD           => 9999,
+        item_id::HEALTH_POTION  | item_id::MANA_POTION
+        | item_id::GREATER_HEAL | item_id::GREATER_MANA
+        | item_id::STAMINA_POTION => 20,
+        item_id::GEM | item_id::IRON_INGOT | item_id::DRAGON_SCALE => 99,
+        _ => 1,
     }
 }
 
@@ -264,12 +281,21 @@ pub const fn item_stack_max(id: u16) -> u32 {
 /// equipavel.
 pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
     match item_id {
-        id if id == item_id::SWORD  => Some(EquipSlot::Weapon),
-        id if id == item_id::STAFF  => Some(EquipSlot::Weapon),
-        id if id == item_id::ARMOR  => Some(EquipSlot::Armor),
-        id if id == item_id::SHIELD => Some(EquipSlot::Armor),
-        id if id == item_id::RING   => Some(EquipSlot::Ring),
-        _                           => None,
+        id if id == item_id::SWORD
+            || id == item_id::STAFF
+            || id == item_id::DAGGER
+            || id == item_id::GREAT_SWORD
+            || id == item_id::BOW
+            || id == item_id::WAND           => Some(EquipSlot::Weapon),
+        id if id == item_id::ARMOR
+            || id == item_id::SHIELD
+            || id == item_id::LEATHER_ARMOR
+            || id == item_id::PLATE_ARMOR
+            || id == item_id::ROBE           => Some(EquipSlot::Armor),
+        id if id == item_id::RING
+            || id == item_id::AMULET
+            || id == item_id::LUCKY_RING     => Some(EquipSlot::Ring),
+        _                                    => None,
     }
 }
 
@@ -292,12 +318,24 @@ pub struct EquipBonus {
 
 pub const fn item_bonus(item_id: u16) -> EquipBonus {
     match item_id {
-        id if id == item_id::SWORD  => EquipBonus { hp_max: 0,   mp_max: 0,  attack_damage: 10, dex: 0, wis: 0 },
-        id if id == item_id::STAFF  => EquipBonus { hp_max: 0,   mp_max: 40, attack_damage: 20, dex: 0, wis: 5 },
-        id if id == item_id::ARMOR  => EquipBonus { hp_max: 40,  mp_max: 0,  attack_damage: 0,  dex: 0, wis: 0 },
-        id if id == item_id::SHIELD => EquipBonus { hp_max: 75,  mp_max: 0,  attack_damage: -5, dex: 0, wis: 0 },
-        id if id == item_id::RING   => EquipBonus { hp_max: 0,   mp_max: 0,  attack_damage: 0,  dex: 5, wis: 3 },
-        _                           => EquipBonus { hp_max: 0,   mp_max: 0,  attack_damage: 0,  dex: 0, wis: 0 },
+        // Armas
+        id if id == item_id::SWORD        => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 10, dex: 0,  wis: 0 },
+        id if id == item_id::STAFF        => EquipBonus { hp_max:  0,  mp_max:  40, attack_damage: 20, dex: 0,  wis: 5 },
+        id if id == item_id::DAGGER       => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  7, dex: 10, wis: 0 },
+        id if id == item_id::GREAT_SWORD  => EquipBonus { hp_max:  0,  mp_max: -20, attack_damage: 28, dex: -3, wis: 0 },
+        id if id == item_id::BOW          => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 14, dex: 12, wis: 0 },
+        id if id == item_id::WAND         => EquipBonus { hp_max:  0,  mp_max:  80, attack_damage:  6, dex: 0,  wis: 8 },
+        // Armaduras
+        id if id == item_id::ARMOR        => EquipBonus { hp_max: 40,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0 },
+        id if id == item_id::SHIELD       => EquipBonus { hp_max: 75,  mp_max:   0, attack_damage: -5, dex: 0,  wis: 0 },
+        id if id == item_id::LEATHER_ARMOR=> EquipBonus { hp_max: 25,  mp_max:   0, attack_damage:  0, dex: 6,  wis: 0 },
+        id if id == item_id::PLATE_ARMOR  => EquipBonus { hp_max:120,  mp_max: -10, attack_damage:  0, dex: -5, wis: 0 },
+        id if id == item_id::ROBE         => EquipBonus { hp_max: 10,  mp_max:  60, attack_damage:  0, dex: 0,  wis: 8 },
+        // Acessorios
+        id if id == item_id::RING         => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  0, dex: 5,  wis: 3 },
+        id if id == item_id::AMULET       => EquipBonus { hp_max: 15,  mp_max:  30, attack_damage:  0, dex: 0,  wis: 8 },
+        id if id == item_id::LUCKY_RING   => EquipBonus { hp_max: 10,  mp_max:  20, attack_damage:  2, dex: 6,  wis: 2 },
+        _                                 => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0 },
     }
 }
 
@@ -323,14 +361,16 @@ pub const INTERACT_RADIUS: f32 = 1.8;
 
 /// Precos fixos da loja (item_id, preco em ouro). Ordem define o indice
 /// usado em `ClientMessage::ShopBuy { slot_idx }`.
-pub const SHOP_ITEMS: [(u16, u32); 7] = [
+pub const SHOP_ITEMS: [(u16, u32); 9] = [
     (item_id::HEALTH_POTION, 10),
     (item_id::MANA_POTION,   15),
-    (item_id::SWORD,         100),
-    (item_id::STAFF,         200),
-    (item_id::ARMOR,         150),
-    (item_id::SHIELD,        180),
-    (item_id::RING,          80),
+    (item_id::GREATER_HEAL,  40),
+    (item_id::GREATER_MANA,  50),
+    (item_id::STAMINA_POTION, 20),
+    (item_id::DAGGER,        80),
+    (item_id::LEATHER_ARMOR, 120),
+    (item_id::BOW,           150),
+    (item_id::AMULET,        180),
 ];
 
 /// IDs logicos de tile — usados no WorldMap e no TileDef lookup.

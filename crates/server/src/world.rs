@@ -1977,7 +1977,13 @@ impl GameWorld {
 
     fn handle_use_item(&mut self, sid: SessionId, slot_idx: usize) {
         // Extrai estado + identifica a acao fora do borrow mutavel do ECS.
-        let (player_entity, new_hp_max) = {
+        enum UseAction {
+            Equip { new_hp_max: i32 },
+            HealHp(i32),
+            HealMp(i32),
+            HealStam(i32),
+        }
+        let (player_entity, action) = {
             let Some(session) = self.sessions.get_mut(&sid) else { return };
             if !session.logged_in { return; }
             if slot_idx >= session.inventory.len() { return; }
@@ -1992,14 +1998,12 @@ impl GameWorld {
                     shared::EquipSlot::Armor  => session.equipment.armor,
                     shared::EquipSlot::Ring   => session.equipment.ring,
                 };
-                // Equipa o novo (do inventario)
                 let new_id = slot.item_id;
                 match es {
                     shared::EquipSlot::Weapon => session.equipment.weapon = Some(new_id),
                     shared::EquipSlot::Armor  => session.equipment.armor  = Some(new_id),
                     shared::EquipSlot::Ring   => session.equipment.ring   = Some(new_id),
                 }
-                // Remove o item do inventario; coloca o antigo (se havia)
                 session.inventory[slot_idx] = match old {
                     Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1 },
                     None         => shared::InventorySlot::default(),
@@ -2007,67 +2011,72 @@ impl GameWorld {
                 session.stats = effective_stats(session.class, &session.equipment);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
-                (player_entity, Some(session.stats.hp_max))
-            } else if slot.item_id == shared::item_id::HEALTH_POTION {
-                (player_entity, None) // sinaliza pocao de vida
-            } else if slot.item_id == shared::item_id::MANA_POTION {
-                (player_entity, Some(-1)) // sinaliza pocao de mana (hp_max=-1 como flag)
+                (player_entity, UseAction::Equip { new_hp_max: session.stats.hp_max })
             } else {
-                return; // gold e outros nao usaveis
+                let a = match slot.item_id {
+                    id if id == shared::item_id::HEALTH_POTION  => UseAction::HealHp(50),
+                    id if id == shared::item_id::GREATER_HEAL   => UseAction::HealHp(150),
+                    id if id == shared::item_id::MANA_POTION    => UseAction::HealMp(50),
+                    id if id == shared::item_id::GREATER_MANA   => UseAction::HealMp(100),
+                    id if id == shared::item_id::STAMINA_POTION => UseAction::HealStam(100),
+                    _ => return,
+                };
+                (player_entity, a)
             }
         };
 
-        // Acoes no ECS fora do borrow do session
-        if let Some(nmax) = new_hp_max {
-            if nmax == -1 {
-                // Mana potion
-                let mp_max = self.sessions.get(&sid).map(|s| s.stats.mp_max).unwrap_or(100);
-                let healed = if let Some(session) = self.sessions.get_mut(&sid) {
-                    if (session.mp_current as i32) < mp_max {
-                        session.mp_current = ((session.mp_current as i32 + 50).min(mp_max)) as f32;
-                        let _ = session.handle.to_client.send(
-                            ServerMessage::ManaUpdate { current: session.mp_current as i32 }
-                        );
+        // Helper: consome 1 do slot (usado apos heal bem-sucedido).
+        let consume_slot = |sessions: &mut HashMap<SessionId, Session>| {
+            if let Some(session) = sessions.get_mut(&sid) {
+                if slot_idx < session.inventory.len() {
+                    let s = &mut session.inventory[slot_idx];
+                    if s.qty > 0 {
+                        s.qty -= 1;
+                        if s.qty == 0 { *s = shared::InventorySlot::default(); }
+                        session.inventory_dirty = true;
+                    }
+                }
+            }
+        };
+
+        match action {
+            UseAction::Equip { new_hp_max } => {
+                if let Ok(mut hp) = self.ecs.get::<&mut Health>(player_entity) {
+                    hp.max = new_hp_max;
+                }
+            }
+            UseAction::HealHp(amount) => {
+                let healed = if let Ok(mut hp) = self.ecs.get::<&mut Health>(player_entity) {
+                    if hp.current < hp.max {
+                        hp.current = (hp.current + amount).min(hp.max);
                         true
                     } else { false }
                 } else { false };
-                if healed {
-                    if let Some(session) = self.sessions.get_mut(&sid) {
-                        if slot_idx < session.inventory.len() {
-                            let s = &mut session.inventory[slot_idx];
-                            if s.qty > 0 {
-                                s.qty -= 1;
-                                if s.qty == 0 { *s = shared::InventorySlot::default(); }
-                                session.inventory_dirty = true;
-                            }
-                        }
-                    }
-                }
-            } else {
-                // Equipamento: atualiza hp_max
-                if let Ok(mut hp) = self.ecs.get::<&mut Health>(player_entity) {
-                    hp.max = nmax;
-                }
+                if healed { consume_slot(&mut self.sessions); }
             }
-        } else {
-            // Pocao de vida: aplica heal + decrementa
-            let healed = if let Ok(mut hp) = self.ecs.get::<&mut Health>(player_entity) {
-                if hp.current < hp.max {
-                    hp.current = (hp.current + shared::HEALTH_POTION_HEAL).min(hp.max);
-                    true
-                } else { false }
-            } else { false };
-            if healed {
-                if let Some(session) = self.sessions.get_mut(&sid) {
-                    if slot_idx < session.inventory.len() {
-                        let s = &mut session.inventory[slot_idx];
-                        if s.qty > 0 {
-                            s.qty -= 1;
-                            if s.qty == 0 { *s = shared::InventorySlot::default(); }
-                            session.inventory_dirty = true;
-                        }
-                    }
-                }
+            UseAction::HealMp(amount) => {
+                let mp_max = self.sessions.get(&sid).map(|s| s.stats.mp_max).unwrap_or(100);
+                let healed = if let Some(session) = self.sessions.get_mut(&sid) {
+                    if (session.mp_current as i32) < mp_max {
+                        session.mp_current = ((session.mp_current as i32 + amount).min(mp_max)) as f32;
+                        let _ = session.handle.to_client.send(
+                            ServerMessage::ManaUpdate { current: session.mp_current as i32 });
+                        true
+                    } else { false }
+                } else { false };
+                if healed { consume_slot(&mut self.sessions); }
+            }
+            UseAction::HealStam(amount) => {
+                let stam_max = shared::STAMINA_MAX;
+                let healed = if let Some(session) = self.sessions.get_mut(&sid) {
+                    if (session.stamina_current as i32) < stam_max {
+                        session.stamina_current = ((session.stamina_current as i32 + amount).min(stam_max)) as f32;
+                        let _ = session.handle.to_client.send(
+                            ServerMessage::StaminaUpdate { current: session.stamina_current as i32 });
+                        true
+                    } else { false }
+                } else { false };
+                if healed { consume_slot(&mut self.sessions); }
             }
         }
     }
@@ -2152,85 +2161,84 @@ fn add_to_inventory(inv: &mut [shared::InventorySlot], item_id: u16, mut qty: u3
 /// Retorna lista de (item_id, qty) a dropar quando o inimigo de `kind` morre.
 fn enemy_loot_drops(kind: u16, seed: u64) -> Vec<(u16, u32)> {
     use shared::item_id;
-    let r = lcg_f32(seed);
+    let r  = lcg_f32(seed);
     let r2 = lcg_f32(lcg(seed));
+    let r3 = lcg_f32(lcg(lcg(seed)));
+    let r4 = lcg_f32(lcg(lcg(lcg(seed))));
+    let r5 = lcg_f32(lcg(lcg(lcg(lcg(seed)))));
     match kind {
-        // Boss: sempre ouro grande + chance de cada equip
+        // Boss: ouro alto + varios equipaveis + raridades
         7 => {
             let mut drops = vec![
-                (item_id::GOLD, 100 + (r * 150.0) as u32),
+                (item_id::GOLD,           200 + (r * 300.0) as u32),
+                (item_id::DRAGON_SCALE,   1 + (r2 * 3.0) as u32),
+                (item_id::GREATER_HEAL,   2 + (r3 * 3.0) as u32),
+                (item_id::GREATER_MANA,   2),
             ];
-            // 70% cada equip
-            let r3 = lcg_f32(lcg(lcg(seed)));
-            let r4 = lcg_f32(lcg(lcg(lcg(seed))));
-            let r5 = lcg_f32(lcg(lcg(lcg(lcg(seed)))));
-            if r  < 0.70 { drops.push((item_id::SWORD,  1)); }
-            if r2 < 0.70 { drops.push((item_id::STAFF,  1)); }
-            if r3 < 0.70 { drops.push((item_id::SHIELD, 1)); }
-            if r4 < 0.70 { drops.push((item_id::ARMOR,  1)); }
-            if r5 < 0.80 { drops.push((item_id::HEALTH_POTION, 3)); }
+            // Equipamentos poderosos
+            if r  < 0.55 { drops.push((item_id::GREAT_SWORD, 1)); }
+            if r2 < 0.55 { drops.push((item_id::WAND, 1)); }
+            if r3 < 0.50 { drops.push((item_id::PLATE_ARMOR, 1)); }
+            if r4 < 0.55 { drops.push((item_id::ROBE, 1)); }
+            if r5 < 0.45 { drops.push((item_id::LUCKY_RING, 1)); }
             drops
         }
-        // Berserker: bom ouro + chance escudo/armor
+        // Berserker: pesado, drops de armadura
         5 => {
-            if r < 0.20 {
-                vec![(item_id::SHIELD, 1)]
-            } else if r < 0.35 {
-                vec![(item_id::ARMOR, 1)]
-            } else if r < 0.55 {
-                vec![(item_id::HEALTH_POTION, 1), (item_id::GOLD, 15 + (r2 * 20.0) as u32)]
-            } else {
-                vec![(item_id::GOLD, 20 + (r2 * 25.0) as u32)]
-            }
+            let mut drops = vec![(item_id::GOLD, 25 + (r * 35.0) as u32)];
+            if r2 < 0.22 { drops.push((item_id::PLATE_ARMOR, 1)); }
+            else if r2 < 0.45 { drops.push((item_id::ARMOR, 1)); }
+            if r3 < 0.30 { drops.push((item_id::GREATER_HEAL, 1)); }
+            if r4 < 0.20 { drops.push((item_id::IRON_INGOT, 1 + (r5 * 2.0) as u32)); }
+            drops
         }
-        // Mago: ouro + chance staff/mana potion
+        // Mago: staff/wand + mana potions
         4 => {
-            if r < 0.20 {
-                vec![(item_id::STAFF, 1)]
-            } else if r < 0.40 {
-                vec![(item_id::MANA_POTION, 1), (item_id::GOLD, 10 + (r2 * 15.0) as u32)]
-            } else {
-                vec![(item_id::GOLD, 12 + (r2 * 18.0) as u32)]
-            }
+            let mut drops = vec![(item_id::GOLD, 15 + (r * 20.0) as u32)];
+            if r2 < 0.22 { drops.push((item_id::WAND, 1)); }
+            else if r2 < 0.45 { drops.push((item_id::STAFF, 1)); }
+            if r3 < 0.35 { drops.push((item_id::MANA_POTION, 1 + (r4 * 2.0) as u32)); }
+            if r4 < 0.18 { drops.push((item_id::ROBE, 1)); }
+            if r5 < 0.12 { drops.push((item_id::GEM, 1)); }
+            drops
         }
-        // Tank: ouro medio + chance armor/sword
+        // Tank: armadura pesada
         1 => {
-            if r < 0.18 {
-                if r2 < 0.5 { vec![(item_id::ARMOR, 1)] }
-                else        { vec![(item_id::SWORD, 1)] }
-            } else if r < 0.35 {
-                vec![(item_id::HEALTH_POTION, 1)]
-            } else {
-                vec![(item_id::GOLD, 12 + (r2 * 20.0) as u32)]
-            }
+            let mut drops = vec![(item_id::GOLD, 15 + (r * 25.0) as u32)];
+            if r2 < 0.18 { drops.push((item_id::SHIELD, 1)); }
+            if r3 < 0.25 { drops.push((item_id::ARMOR, 1)); }
+            else if r3 < 0.35 { drops.push((item_id::SWORD, 1)); }
+            if r4 < 0.30 { drops.push((item_id::HEALTH_POTION, 1 + (r5 * 2.0) as u32)); }
+            if r5 < 0.15 { drops.push((item_id::IRON_INGOT, 1)); }
+            drops
         }
-        // Ranger/Arqueiro: ouro + chance anel
+        // Ranger/Arqueiro: bow + acessorios
         2 | 6 => {
-            if r < 0.15 {
-                vec![(item_id::RING, 1)]
-            } else if r < 0.30 {
-                vec![(item_id::HEALTH_POTION, 1)]
-            } else {
-                vec![(item_id::GOLD, 8 + (r2 * 14.0) as u32)]
+            let mut drops = vec![(item_id::GOLD, 10 + (r * 18.0) as u32)];
+            if r2 < 0.20 { drops.push((item_id::BOW, 1)); }
+            if r3 < 0.25 {
+                if r4 < 0.5 { drops.push((item_id::RING, 1)); }
+                else        { drops.push((item_id::AMULET, 1)); }
             }
+            if r4 < 0.35 { drops.push((item_id::STAMINA_POTION, 1)); }
+            drops
         }
-        // Ninja: ouro pequeno + chance anel
+        // Ninja: rapidez, drops leves
         3 => {
-            if r < 0.12 {
-                vec![(item_id::RING, 1)]
-            } else if r < 0.30 {
-                vec![(item_id::MANA_POTION, 1)]
-            } else {
-                vec![(item_id::GOLD, 6 + (r2 * 12.0) as u32)]
-            }
+            let mut drops = vec![(item_id::GOLD, 8 + (r * 14.0) as u32)];
+            if r2 < 0.25 { drops.push((item_id::DAGGER, 1)); }
+            if r3 < 0.22 { drops.push((item_id::LEATHER_ARMOR, 1)); }
+            if r4 < 0.35 { drops.push((item_id::MANA_POTION, 1)); }
+            if r5 < 0.10 { drops.push((item_id::LUCKY_RING, 1)); }
+            drops
         }
-        // Grunt (0) e fallback: ouro pequeno + pocao ocasional
+        // Grunt + fallback: base
         _ => {
-            if r < 0.20 {
-                vec![(item_id::HEALTH_POTION, 1)]
-            } else {
-                vec![(item_id::GOLD, 3 + (r2 * 8.0) as u32)]
-            }
+            let mut drops = vec![(item_id::GOLD, 4 + (r * 10.0) as u32)];
+            if r2 < 0.25 { drops.push((item_id::HEALTH_POTION, 1)); }
+            if r3 < 0.15 { drops.push((item_id::MANA_POTION, 1)); }
+            if r4 < 0.08 { drops.push((item_id::IRON_INGOT, 1)); }
+            drops
         }
     }
 }
