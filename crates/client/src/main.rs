@@ -828,6 +828,9 @@ impl Game for MmoClient {
                     shared::item_id::SWORD         => Vec4::new(0.8, 0.85, 0.95, 1.0),
                     shared::item_id::ARMOR         => Vec4::new(0.6, 0.6, 0.7, 1.0),
                     shared::item_id::RING          => Vec4::new(1.0, 0.7, 0.9, 1.0),
+                    shared::item_id::STAFF         => Vec4::new(0.55, 0.4, 1.0, 1.0),
+                    shared::item_id::SHIELD        => Vec4::new(0.4, 0.6, 0.9, 1.0),
+                    shared::item_id::MANA_POTION   => Vec4::new(0.3, 0.5, 1.0, 1.0),
                     _                              => Vec4::new(0.6, 0.9, 1.0, 1.0),
                 },
                 EntityKind::Npc(_)      => Vec4::new(0.95, 0.8, 0.4, 1.0),
@@ -1104,8 +1107,11 @@ impl Game for MmoClient {
                 for (i, (iid, price)) in items.iter().enumerate() {
                     let iname = match *iid {
                         shared::item_id::HEALTH_POTION => "Pocao de Vida",
+                        shared::item_id::MANA_POTION   => "Pocao de Mana",
                         shared::item_id::SWORD         => "Espada",
+                        shared::item_id::STAFF         => "Cajado",
                         shared::item_id::ARMOR         => "Armadura",
+                        shared::item_id::SHIELD        => "Escudo",
                         shared::item_id::RING          => "Anel",
                         _                              => "Item",
                     };
@@ -1614,10 +1620,12 @@ impl Game for MmoClient {
                 });
                 if let Some(iid) = item_opt {
                     let tint = match *iid {
-                        shared::item_id::SWORD => Vec4::new(0.8, 0.85, 0.95, 1.0),
-                        shared::item_id::ARMOR => Vec4::new(0.6, 0.6, 0.7, 1.0),
-                        shared::item_id::RING  => Vec4::new(1.0, 0.7, 0.9, 1.0),
-                        _                      => Vec4::ONE,
+                        shared::item_id::SWORD   => Vec4::new(0.8, 0.85, 0.95, 1.0),
+                        shared::item_id::STAFF   => Vec4::new(0.55, 0.4, 1.0, 1.0),
+                        shared::item_id::ARMOR   => Vec4::new(0.6, 0.6, 0.7, 1.0),
+                        shared::item_id::SHIELD  => Vec4::new(0.4, 0.6, 0.9, 1.0),
+                        shared::item_id::RING    => Vec4::new(1.0, 0.7, 0.9, 1.0),
+                        _                        => Vec4::ONE,
                     };
                     batch.push(&Sprite {
                         position: pos,
@@ -1667,6 +1675,12 @@ impl Game for MmoClient {
                     let icon_tint = match slot.item_id {
                         shared::item_id::GOLD          => Vec4::new(1.0, 0.85, 0.2, 1.0),
                         shared::item_id::HEALTH_POTION => Vec4::new(0.9, 0.3, 0.35, 1.0),
+                        shared::item_id::MANA_POTION   => Vec4::new(0.3, 0.5, 1.0, 1.0),
+                        shared::item_id::SWORD         => Vec4::new(0.8, 0.85, 0.95, 1.0),
+                        shared::item_id::STAFF         => Vec4::new(0.55, 0.4, 1.0, 1.0),
+                        shared::item_id::ARMOR         => Vec4::new(0.6, 0.6, 0.7, 1.0),
+                        shared::item_id::SHIELD        => Vec4::new(0.4, 0.6, 0.9, 1.0),
+                        shared::item_id::RING          => Vec4::new(1.0, 0.7, 0.9, 1.0),
                         _                              => Vec4::new(0.7, 0.8, 0.9, 1.0),
                     };
                     batch.push(&Sprite {

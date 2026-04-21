@@ -5,9 +5,9 @@ use hecs::{Entity, World};
 use shared::protocol::{buttons, ClientMessage, InputFrame, ServerMessage, WorldSnapshot};
 use shared::{
     EntityId, EntityKind, EntitySnapshot, Health, PlayerId, Position, Velocity,
-    AOI_RADIUS, ATTACK_COOLDOWN, ENEMY_ATTACK_COOLDOWN, ENEMY_ATTACK_RANGE,
-    ENEMY_DETECT_RANGE, ENEMY_SPEED, ENEMY_START_COUNT, ENTITY_RADIUS, PLAYER_SPEED,
+    AOI_RADIUS, ATTACK_COOLDOWN, ENEMY_START_COUNT, ENTITY_RADIUS, PLAYER_SPEED,
     PROJ_RADIUS, PROJ_SPEED, PROJ_TTL, RESPAWN_DELAY, SPATIAL_CELL_SIZE,
+    BOSS_RESPAWN_DELAY,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -120,6 +120,10 @@ pub struct GameWorld {
     auth_ctx: Option<AuthCtx>,
     /// Timer em segundos desde a ultima tentativa de respawn de inimigo.
     enemy_spawn_timer: f32,
+    /// Entidade atual do boss (None se morto/nao spawnado ainda).
+    boss_entity: Option<Entity>,
+    /// Contador regressivo em segundos ate o proximo spawn do boss.
+    boss_respawn_timer: f32,
 }
 
 impl GameWorld {
@@ -139,6 +143,8 @@ impl GameWorld {
             characters,
             auth_ctx: None,
             enemy_spawn_timer: 0.0,
+            boss_entity: None,
+            boss_respawn_timer: 30.0, // primeiro boss aparece em 30s
         };
         w.spawn_initial_enemies();
         w.spawn_vendor();
@@ -441,18 +447,23 @@ impl GameWorld {
         None
     }
 
-    /// Sorteia um kind com distribuicao fixa: 70% grunt, 20% tank, 10% ranger.
+    /// Sorteia um kind com distribuicao ponderada (sem boss — boss tem spawn proprio).
     fn random_enemy_kind(seed: u64) -> u16 {
         let r = lcg_f32(seed);
-        if r < 0.70 { 0 }
-        else if r < 0.90 { 1 }
-        else { 2 }
+        // grunt 40%, tank 12%, ranger 12%, ninja 12%, mago 8%, berserker 8%, arqueiro 8%
+        if      r < 0.40 { 0 }
+        else if r < 0.52 { 1 }
+        else if r < 0.64 { 2 }
+        else if r < 0.76 { 3 }
+        else if r < 0.84 { 4 }
+        else if r < 0.92 { 5 }
+        else             { 6 }
     }
 
     fn spawn_initial_enemies(&mut self) {
         let seed_base: u64 = 0xBEEF_1337;
         let mut placed = 0usize;
-        let mut counts = [0usize; 3];
+        let mut counts = [0usize; 7];
         while placed < ENEMY_START_COUNT {
             let seed = seed_base ^ (placed as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
             let Some(pos) = self.pick_enemy_tile(seed, 60) else { break };
@@ -463,9 +474,35 @@ impl GameWorld {
             placed += 1;
         }
         tracing::info!(
-            "spawned {placed} inimigos (grunt={} tank={} ranger={}) safe radius {}",
-            counts[0], counts[1], counts[2], Self::ENEMY_SAFE_RADIUS
+            "spawned {placed} inimigos (g={} tk={} rng={} ninja={} mago={} berserk={} arc={}) r={}",
+            counts[0], counts[1], counts[2], counts[3], counts[4], counts[5], counts[6],
+            Self::ENEMY_SAFE_RADIUS
         );
+    }
+
+    fn spawn_boss(&mut self) {
+        let seed = self.tick as u64 ^ 0xB055_B055;
+        if let Some(pos) = self.pick_enemy_tile(seed, 100) {
+            let def = shared::enemy_def(7);
+            let hp_max = def.hp_max;
+            let net_id = self.alloc_entity_id();
+            let handle = self.spawn_entity_body(pos);
+            let e = self.ecs.spawn((
+                NetId(net_id),
+                Position(pos),
+                Velocity(Vec2::ZERO),
+                Health { current: hp_max, max: hp_max },
+                EntityKind::Enemy(7),
+                EnemyTag {
+                    attack_cooldown: 0.0,
+                    wander_timer: 0.0,
+                    wander_dir: Vec2::X,
+                },
+                handle,
+            ));
+            self.boss_entity = Some(e);
+            tracing::info!("BOSS spawnado em ({:.1},{:.1})", pos.x, pos.y);
+        }
     }
 
     pub fn on_connect(&mut self, handle: SessionHandle) {
@@ -607,11 +644,15 @@ impl GameWorld {
         self.tick = self.tick.wrapping_add(1);
 
         // Respawn de inimigos: mantem populacao proxima de ENEMY_START_COUNT.
-        // Uma tentativa por segundo; spawna UM inimigo se houver deficit.
         self.enemy_spawn_timer += dt;
         if self.enemy_spawn_timer >= 1.0 {
             self.enemy_spawn_timer = 0.0;
-            let count = self.ecs.query::<&EnemyTag>().iter().count();
+            // Conta apenas inimigos nao-boss
+            let count = self.ecs
+                .query::<(&EnemyTag, &EntityKind)>()
+                .iter()
+                .filter(|(_, (_, k))| !matches!(k, EntityKind::Enemy(7)))
+                .count();
             if count < ENEMY_START_COUNT {
                 let seed = lcg(self.tick as u64 ^ 0x51ED_BEEF_DEAD_BEEF);
                 if let Some(pos) = self.pick_enemy_tile(seed, 80) {
@@ -619,6 +660,14 @@ impl GameWorld {
                     self.place_enemy(pos, kind, 0.0);
                     tracing::debug!("enemy respawn kind={kind} {:?} (total {})", pos, count + 1);
                 }
+            }
+        }
+
+        // Respawn do boss
+        if self.boss_entity.is_none() {
+            self.boss_respawn_timer -= dt;
+            if self.boss_respawn_timer <= 0.0 {
+                self.spawn_boss();
             }
         }
         self.removed_this_tick.clear();
@@ -671,7 +720,7 @@ impl GameWorld {
                 (frame.buttons & buttons::PRIMARY != 0) && session.attack_cooldown <= 0.0;
             if wants_attack { session.attack_cooldown = ATTACK_COOLDOWN; }
 
-            let has_mp = session.mp_current as i32 >= shared::SECONDARY_MP_COST;
+            let has_mp = (session.mp_current as i32) >= shared::SECONDARY_MP_COST;
             let wants_secondary = (frame.buttons & buttons::SECONDARY != 0)
                 && session.secondary_cooldown <= 0.0
                 && has_mp;
@@ -739,9 +788,8 @@ impl GameWorld {
                 let dist = pos.0.distance(*ppos);
                 if dist < def.detect_range {
                     let to_player = (*ppos - pos.0).try_normalize().unwrap_or(Vec2::X);
-                    // Ranger (kind 2) mantem distancia: persegue se longe, recua se muito perto.
-                    let move_dir = if kind_id == 2 {
-                        let kite = 5.0;
+                    // Comportamento de movimento por kind
+                    let move_dir = if let Some(kite) = shared::enemy_kite_dist(kind_id) {
                         if dist > kite + 0.5      { to_player }
                         else if dist < kite - 0.5 { -to_player }
                         else                      { Vec2::ZERO }
@@ -749,17 +797,40 @@ impl GameWorld {
                         to_player
                     };
                     vel.0 = move_dir * def.speed;
-                    // Atirar quando em range de ataque
-                    let attack_range = if kind_id == 2 { 9.0 } else { ENEMY_ATTACK_RANGE };
+
+                    let attack_range = shared::enemy_attack_range(kind_id);
                     if dist < attack_range && enemy.attack_cooldown <= 0.0 {
                         enemy.attack_cooldown = def.attack_cooldown;
-                        projs_to_spawn.push(SpawnProj {
-                            owner_id: net.0,
-                            from_player: false,
-                            pos: pos.0,
-                            dir: to_player,
-                            damage: def.attack_damage,
-                        });
+                        let proj_count = shared::enemy_proj_count(kind_id);
+                        if proj_count <= 1 {
+                            projs_to_spawn.push(SpawnProj {
+                                owner_id: net.0,
+                                from_player: false,
+                                pos: pos.0,
+                                dir: to_player,
+                                damage: def.attack_damage,
+                            });
+                        } else {
+                            // Cone attack (boss): distribui proj_count projéteis
+                            let spread = shared::BOSS_SPREAD_RAD;
+                            for i in 0..proj_count {
+                                let t = if proj_count <= 1 { 0.0 }
+                                    else { i as f32 / (proj_count - 1) as f32 };
+                                let angle = (t - 0.5) * spread;
+                                let (s, c) = angle.sin_cos();
+                                let dir = Vec2::new(
+                                    to_player.x * c - to_player.y * s,
+                                    to_player.x * s + to_player.y * c,
+                                );
+                                projs_to_spawn.push(SpawnProj {
+                                    owner_id: net.0,
+                                    from_player: false,
+                                    pos: pos.0,
+                                    dir,
+                                    damage: def.attack_damage,
+                                });
+                            }
+                        }
                     }
                 } else {
                     // Vagar aleatoriamente
@@ -936,40 +1007,35 @@ impl GameWorld {
             .collect();
 
         for (e, eid, pos, kind_id) in dead_enemies {
+            // Rastrear se era o boss
+            if self.boss_entity == Some(e) {
+                self.boss_entity = None;
+                self.boss_respawn_timer = BOSS_RESPAWN_DELAY;
+                tracing::info!("Boss morreu! Respawn em {BOSS_RESPAWN_DELAY}s");
+            }
             self.free_entity_body(e);
             let _ = self.ecs.despawn(e);
             self.removed_this_tick.push(eid);
-            // Drop aleatorio: 15% equipamento, 20% pocao, resto gold.
+
+            // Loot table por kind
             let seed = lcg(self.tick as u64 ^ eid.0 as u64 ^ 0xBADA_55);
-            let roll = lcg_f32(seed);
-            let (item_id, qty) = if roll < 0.15 {
-                let subroll = lcg_f32(lcg(seed));
-                let iid = if subroll < 0.4 {
-                    shared::item_id::SWORD
-                } else if subroll < 0.75 {
-                    shared::item_id::ARMOR
-                } else {
-                    shared::item_id::RING
-                };
-                (iid, 1u32)
-            } else if roll < 0.35 {
-                (shared::item_id::HEALTH_POTION, 1u32)
-            } else {
-                let amt = 1 + (lcg_f32(lcg(seed)) * 5.0) as u32;
-                (shared::item_id::GOLD, amt)
-            };
-            let loot_id = self.alloc_entity_id();
-            self.ecs.spawn((
-                NetId(loot_id),
-                Position(pos),
-                Velocity(Vec2::ZERO),
-                EntityKind::Loot(item_id),
-                LootTag { item_id, qty },
-            ));
-            tracing::debug!(
-                "enemy {:?} morreu, loot {:?} ({}×{})",
-                eid, loot_id, item_id, qty
-            );
+            let drops = enemy_loot_drops(kind_id, seed);
+            for (item_id, qty) in drops {
+                let loot_id = self.alloc_entity_id();
+                // Espalha levemente os drops do boss
+                let offset = if kind_id == 7 {
+                    let a = lcg_f32(lcg(seed ^ item_id as u64)) * std::f32::consts::TAU;
+                    Vec2::new(a.cos(), a.sin()) * lcg_f32(seed ^ (qty as u64)) * 1.5
+                } else { Vec2::ZERO };
+                self.ecs.spawn((
+                    NetId(loot_id),
+                    Position(pos + offset),
+                    Velocity(Vec2::ZERO),
+                    EntityKind::Loot(item_id),
+                    LootTag { item_id, qty },
+                ));
+                tracing::debug!("loot drop: kind={kind_id} item={item_id} qty={qty}");
+            }
 
             // Creditar XP para o jogador que matou
             if let Some(attacker_eid) = kill_credits.get(&eid).copied() {
@@ -1437,8 +1503,9 @@ impl GameWorld {
                 session.inventory_dirty = true;
                 (player_entity, Some(session.stats.hp_max))
             } else if slot.item_id == shared::item_id::HEALTH_POTION {
-                // Consome pocao
-                (player_entity, None)
+                (player_entity, None) // sinaliza pocao de vida
+            } else if slot.item_id == shared::item_id::MANA_POTION {
+                (player_entity, Some(-1)) // sinaliza pocao de mana (hp_max=-1 como flag)
             } else {
                 return; // gold e outros nao usaveis
             }
@@ -1446,11 +1513,38 @@ impl GameWorld {
 
         // Acoes no ECS fora do borrow do session
         if let Some(nmax) = new_hp_max {
-            if let Ok(mut hp) = self.ecs.get::<&mut Health>(player_entity) {
-                hp.max = nmax;
+            if nmax == -1 {
+                // Mana potion
+                let mp_max = self.sessions.get(&sid).map(|s| s.stats.mp_max).unwrap_or(100);
+                let healed = if let Some(session) = self.sessions.get_mut(&sid) {
+                    if (session.mp_current as i32) < mp_max {
+                        session.mp_current = ((session.mp_current as i32 + 50).min(mp_max)) as f32;
+                        let _ = session.handle.to_client.send(
+                            ServerMessage::ManaUpdate { current: session.mp_current as i32 }
+                        );
+                        true
+                    } else { false }
+                } else { false };
+                if healed {
+                    if let Some(session) = self.sessions.get_mut(&sid) {
+                        if slot_idx < session.inventory.len() {
+                            let s = &mut session.inventory[slot_idx];
+                            if s.qty > 0 {
+                                s.qty -= 1;
+                                if s.qty == 0 { *s = shared::InventorySlot::default(); }
+                                session.inventory_dirty = true;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Equipamento: atualiza hp_max
+                if let Ok(mut hp) = self.ecs.get::<&mut Health>(player_entity) {
+                    hp.max = nmax;
+                }
             }
         } else {
-            // Potion: aplica heal + decrementa
+            // Pocao de vida: aplica heal + decrementa
             let healed = if let Ok(mut hp) = self.ecs.get::<&mut Health>(player_entity) {
                 if hp.current < hp.max {
                     hp.current = (hp.current + shared::HEALTH_POTION_HEAL).min(hp.max);
@@ -1500,11 +1594,16 @@ fn effective_stats(class: shared::PlayerClass, equip: &shared::Equipment) -> sha
         if let Some(id) = opt {
             let b = shared::item_bonus(id);
             s.hp_max += b.hp_max;
+            s.mp_max += b.mp_max;
             s.attack_damage += b.attack_damage;
             s.dex += b.dex;
             s.wis += b.wis;
         }
     }
+    // Garantir minimos
+    s.hp_max = s.hp_max.max(1);
+    s.mp_max = s.mp_max.max(0);
+    s.attack_damage = s.attack_damage.max(1);
     s
 }
 
@@ -1532,6 +1631,92 @@ fn add_to_inventory(inv: &mut [shared::InventorySlot], item_id: u16, mut qty: u3
         qty -= add;
     }
     qty == 0
+}
+
+/// Retorna lista de (item_id, qty) a dropar quando o inimigo de `kind` morre.
+fn enemy_loot_drops(kind: u16, seed: u64) -> Vec<(u16, u32)> {
+    use shared::item_id;
+    let r = lcg_f32(seed);
+    let r2 = lcg_f32(lcg(seed));
+    match kind {
+        // Boss: sempre ouro grande + chance de cada equip
+        7 => {
+            let mut drops = vec![
+                (item_id::GOLD, 100 + (r * 150.0) as u32),
+            ];
+            // 70% cada equip
+            let r3 = lcg_f32(lcg(lcg(seed)));
+            let r4 = lcg_f32(lcg(lcg(lcg(seed))));
+            let r5 = lcg_f32(lcg(lcg(lcg(lcg(seed)))));
+            if r  < 0.70 { drops.push((item_id::SWORD,  1)); }
+            if r2 < 0.70 { drops.push((item_id::STAFF,  1)); }
+            if r3 < 0.70 { drops.push((item_id::SHIELD, 1)); }
+            if r4 < 0.70 { drops.push((item_id::ARMOR,  1)); }
+            if r5 < 0.80 { drops.push((item_id::HEALTH_POTION, 3)); }
+            drops
+        }
+        // Berserker: bom ouro + chance escudo/armor
+        5 => {
+            if r < 0.20 {
+                vec![(item_id::SHIELD, 1)]
+            } else if r < 0.35 {
+                vec![(item_id::ARMOR, 1)]
+            } else if r < 0.55 {
+                vec![(item_id::HEALTH_POTION, 1), (item_id::GOLD, 15 + (r2 * 20.0) as u32)]
+            } else {
+                vec![(item_id::GOLD, 20 + (r2 * 25.0) as u32)]
+            }
+        }
+        // Mago: ouro + chance staff/mana potion
+        4 => {
+            if r < 0.20 {
+                vec![(item_id::STAFF, 1)]
+            } else if r < 0.40 {
+                vec![(item_id::MANA_POTION, 1), (item_id::GOLD, 10 + (r2 * 15.0) as u32)]
+            } else {
+                vec![(item_id::GOLD, 12 + (r2 * 18.0) as u32)]
+            }
+        }
+        // Tank: ouro medio + chance armor/sword
+        1 => {
+            if r < 0.18 {
+                if r2 < 0.5 { vec![(item_id::ARMOR, 1)] }
+                else        { vec![(item_id::SWORD, 1)] }
+            } else if r < 0.35 {
+                vec![(item_id::HEALTH_POTION, 1)]
+            } else {
+                vec![(item_id::GOLD, 12 + (r2 * 20.0) as u32)]
+            }
+        }
+        // Ranger/Arqueiro: ouro + chance anel
+        2 | 6 => {
+            if r < 0.15 {
+                vec![(item_id::RING, 1)]
+            } else if r < 0.30 {
+                vec![(item_id::HEALTH_POTION, 1)]
+            } else {
+                vec![(item_id::GOLD, 8 + (r2 * 14.0) as u32)]
+            }
+        }
+        // Ninja: ouro pequeno + chance anel
+        3 => {
+            if r < 0.12 {
+                vec![(item_id::RING, 1)]
+            } else if r < 0.30 {
+                vec![(item_id::MANA_POTION, 1)]
+            } else {
+                vec![(item_id::GOLD, 6 + (r2 * 12.0) as u32)]
+            }
+        }
+        // Grunt (0) e fallback: ouro pequeno + pocao ocasional
+        _ => {
+            if r < 0.20 {
+                vec![(item_id::HEALTH_POTION, 1)]
+            } else {
+                vec![(item_id::GOLD, 3 + (r2 * 8.0) as u32)]
+            }
+        }
+    }
 }
 
 // LCG deterministico para wander de inimigos (sem dep de rand)

@@ -88,7 +88,7 @@ pub struct EnemyKindDef {
 /// Tabela de kinds. O index no array == EntityKind::Enemy(u16).
 /// Manter em sincronia com spawn_initial_enemies / respawn do servidor.
 pub const ENEMY_KINDS: &[EnemyKindDef] = &[
-    // 0 — Grunt: o basico. Tint branco (sem multiplicacao).
+    // 0 — Grunt: o basico. Tint branco.
     EnemyKindDef {
         hp_max: 50,  speed: 2.0, attack_damage: 10, attack_cooldown: 2.0,
         detect_range: 9.0,  xp_reward: 30, tint_rgba: [1.0, 1.0, 1.0, 1.0],
@@ -103,16 +103,77 @@ pub const ENEMY_KINDS: &[EnemyKindDef] = &[
         hp_max: 35,  speed: 2.4, attack_damage: 12, attack_cooldown: 1.5,
         detect_range: 13.0, xp_reward: 50, tint_rgba: [0.3, 0.9, 1.0, 1.0],
     },
+    // 3 — Ninja: muito rapido, melee, pouco HP. Tint roxo.
+    EnemyKindDef {
+        hp_max: 40,  speed: 4.2, attack_damage: 15, attack_cooldown: 1.0,
+        detect_range: 11.0, xp_reward: 55, tint_rgba: [0.75, 0.2, 1.0, 1.0],
+    },
+    // 4 — Mago: lento, projéteis de longo alcance, alto dano. Tint azul-índigo.
+    EnemyKindDef {
+        hp_max: 45,  speed: 1.4, attack_damage: 22, attack_cooldown: 2.2,
+        detect_range: 15.0, xp_reward: 70, tint_rgba: [0.4, 0.4, 1.0, 1.0],
+    },
+    // 5 — Berserker: muito HP, muito dano, lento. Tint laranja.
+    EnemyKindDef {
+        hp_max: 200, speed: 1.5, attack_damage: 28, attack_cooldown: 3.0,
+        detect_range: 8.0,  xp_reward: 110, tint_rgba: [1.0, 0.5, 0.1, 1.0],
+    },
+    // 6 — Arqueiro: distancia media, projéteis rapidos, kite. Tint verde.
+    EnemyKindDef {
+        hp_max: 45,  speed: 2.8, attack_damage: 14, attack_cooldown: 1.6,
+        detect_range: 13.0, xp_reward: 60, tint_rgba: [0.2, 0.9, 0.3, 1.0],
+    },
+    // 7 — Boss: enorme HP, ataque em cone, lento, detecta tudo. Tint dourado.
+    EnemyKindDef {
+        hp_max: 700, speed: 1.6, attack_damage: 40, attack_cooldown: 2.8,
+        detect_range: 18.0, xp_reward: 600, tint_rgba: [1.0, 0.85, 0.15, 1.0],
+    },
 ];
 
 /// Tamanho do sprite relativo ao sprite padrao (0.95 tiles).
 pub fn enemy_size_scale(kind: u16) -> f32 {
     match kind {
-        1 => 1.3,  // tank maior
-        2 => 0.85, // ranger menor
+        1 => 1.3,   // tank maior
+        2 => 0.85,  // ranger menor
+        3 => 0.75,  // ninja pequeno/rapido
+        5 => 1.5,   // berserker enorme
+        7 => 2.2,   // boss gigante
         _ => 1.0,
     }
 }
+
+/// Range de ataque de um tipo de inimigo (tiles).
+pub fn enemy_attack_range(kind: u16) -> f32 {
+    match kind {
+        2 | 6 => 9.0,    // ranger / arqueiro: alcance medio
+        4     => 12.0,   // mago: longo alcance
+        7     => 13.0,   // boss: muito longo
+        _     => 1.8,    // melee
+    }
+}
+
+/// Distancia de kite desejada (mob ranged se afasta se jogador muito perto).
+/// None = melee, sem kite.
+pub fn enemy_kite_dist(kind: u16) -> Option<f32> {
+    match kind {
+        2 => Some(5.0),
+        4 => Some(8.0),
+        6 => Some(7.0),
+        7 => Some(10.0),
+        _ => None,
+    }
+}
+
+/// Numero de projéteis por ataque (boss dispara cone).
+pub fn enemy_proj_count(kind: u16) -> u32 {
+    if kind == 7 { 5 } else { 1 }
+}
+
+/// Abertura angular do cone de ataque do boss (radianos entre 1o e ultimo proj).
+pub const BOSS_SPREAD_RAD: f32 = 1.0; // ~57 graus
+
+/// Tempo de respawn do boss em segundos.
+pub const BOSS_RESPAWN_DELAY: f32 = 120.0;
 
 pub fn enemy_def(kind: u16) -> &'static EnemyKindDef {
     ENEMY_KINDS
@@ -163,6 +224,9 @@ pub mod item_id {
     pub const SWORD:          u16 = 3;
     pub const ARMOR:          u16 = 4;
     pub const RING:           u16 = 5;
+    pub const STAFF:          u16 = 6; // arma de mago: +dano +MP
+    pub const SHIELD:         u16 = 7; // armadura pesada: +HP, -dano
+    pub const MANA_POTION:    u16 = 8; // restaura MP
 }
 
 /// Limite de stack por item (1 = nao stackavel / equipamento).
@@ -170,9 +234,12 @@ pub const fn item_stack_max(id: u16) -> u32 {
     match id {
         item_id::GOLD          => 9999,
         item_id::HEALTH_POTION => 20,
+        item_id::MANA_POTION   => 20,
         item_id::SWORD
         | item_id::ARMOR
-        | item_id::RING        => 1,
+        | item_id::RING
+        | item_id::STAFF
+        | item_id::SHIELD      => 1,
         _                      => 1,
     }
 }
@@ -181,10 +248,12 @@ pub const fn item_stack_max(id: u16) -> u32 {
 /// equipavel.
 pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
     match item_id {
-        id if id == item_id::SWORD => Some(EquipSlot::Weapon),
-        id if id == item_id::ARMOR => Some(EquipSlot::Armor),
-        id if id == item_id::RING  => Some(EquipSlot::Ring),
-        _                          => None,
+        id if id == item_id::SWORD  => Some(EquipSlot::Weapon),
+        id if id == item_id::STAFF  => Some(EquipSlot::Weapon),
+        id if id == item_id::ARMOR  => Some(EquipSlot::Armor),
+        id if id == item_id::SHIELD => Some(EquipSlot::Armor),
+        id if id == item_id::RING   => Some(EquipSlot::Ring),
+        _                           => None,
     }
 }
 
@@ -199,6 +268,7 @@ pub enum EquipSlot {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EquipBonus {
     pub hp_max: i32,
+    pub mp_max: i32,
     pub attack_damage: i32,
     pub dex: i32,
     pub wis: i32,
@@ -206,10 +276,12 @@ pub struct EquipBonus {
 
 pub const fn item_bonus(item_id: u16) -> EquipBonus {
     match item_id {
-        id if id == item_id::SWORD => EquipBonus { hp_max: 0,  attack_damage: 10, dex: 0, wis: 0 },
-        id if id == item_id::ARMOR => EquipBonus { hp_max: 40, attack_damage: 0,  dex: 0, wis: 0 },
-        id if id == item_id::RING  => EquipBonus { hp_max: 0,  attack_damage: 0,  dex: 5, wis: 3 },
-        _                          => EquipBonus { hp_max: 0,  attack_damage: 0,  dex: 0, wis: 0 },
+        id if id == item_id::SWORD  => EquipBonus { hp_max: 0,   mp_max: 0,  attack_damage: 10, dex: 0, wis: 0 },
+        id if id == item_id::STAFF  => EquipBonus { hp_max: 0,   mp_max: 40, attack_damage: 20, dex: 0, wis: 5 },
+        id if id == item_id::ARMOR  => EquipBonus { hp_max: 40,  mp_max: 0,  attack_damage: 0,  dex: 0, wis: 0 },
+        id if id == item_id::SHIELD => EquipBonus { hp_max: 75,  mp_max: 0,  attack_damage: -5, dex: 0, wis: 0 },
+        id if id == item_id::RING   => EquipBonus { hp_max: 0,   mp_max: 0,  attack_damage: 0,  dex: 5, wis: 3 },
+        _                           => EquipBonus { hp_max: 0,   mp_max: 0,  attack_damage: 0,  dex: 0, wis: 0 },
     }
 }
 
@@ -235,10 +307,13 @@ pub const INTERACT_RADIUS: f32 = 1.8;
 
 /// Precos fixos da loja (item_id, preco em ouro). Ordem define o indice
 /// usado em `ClientMessage::ShopBuy { slot_idx }`.
-pub const SHOP_ITEMS: [(u16, u32); 4] = [
+pub const SHOP_ITEMS: [(u16, u32); 7] = [
     (item_id::HEALTH_POTION, 10),
+    (item_id::MANA_POTION,   15),
     (item_id::SWORD,         100),
+    (item_id::STAFF,         200),
     (item_id::ARMOR,         150),
+    (item_id::SHIELD,        180),
     (item_id::RING,          80),
 ];
 
