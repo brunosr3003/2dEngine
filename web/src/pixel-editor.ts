@@ -24,7 +24,10 @@ const DEFAULT_PALETTE: string[] = [
   "#5c4a1aff", "#8a6f2eff", "#c7a346ff", "#f5d470ff",
 ];
 
-type Tool = "brush" | "eraser" | "fill" | "eyedrop";
+type Tool = "brush" | "eraser" | "fill" | "eyedrop" | "select";
+
+interface SelRect { x: number; y: number; w: number; h: number; }
+interface ClipData { pixels: string[][]; w: number; h: number; }
 
 class Editor {
   grid: string[][] = [];
@@ -36,6 +39,17 @@ class Editor {
   ctx: CanvasRenderingContext2D;
   palette: string[] = [...DEFAULT_PALETTE];
   drawing: boolean = false;
+  /// Seleção retangular ativa (null = sem seleção).
+  selection: SelRect | null = null;
+  /// Durante drag: "create" = criando novo retângulo; "move" = movendo.
+  sel_dragging: "create" | "move" | null = null;
+  /// Ponto inicial do drag (em celulas).
+  sel_start: { x: number; y: number } | null = null;
+  /// Pixels capturados no inicio do movimento (pra restaurar se cancelar).
+  sel_pixels_snap: string[][] | null = null;
+  /// Posicao (canto sup-esq) do conteudo movido atualmente.
+  sel_move_pos: { x: number; y: number } | null = null;
+  clipboard: ClipData | null = null;
 
   constructor() {
     this.c = document.getElementById("c") as HTMLCanvasElement;
@@ -86,6 +100,7 @@ class Editor {
         highlight_palette();
         break;
       }
+      case "select":  /* tratado via eventos */ break;
     }
     this.render();
   }
@@ -130,6 +145,144 @@ class Editor {
     this.render();
   }
 
+  /// Inicia criação de nova seleção (click num ponto).
+  start_selection(x: number, y: number) {
+    this.sel_dragging = "create";
+    this.sel_start = { x, y };
+    this.selection = { x, y, w: 1, h: 1 };
+  }
+
+  /// Atualiza a seleção enquanto o mouse arrasta.
+  update_selection(x: number, y: number) {
+    if (!this.sel_start) return;
+    const sx = Math.max(0, Math.min(this.sel_start.x, x));
+    const sy = Math.max(0, Math.min(this.sel_start.y, y));
+    const ex = Math.min(SIZE - 1, Math.max(this.sel_start.x, x));
+    const ey = Math.min(SIZE - 1, Math.max(this.sel_start.y, y));
+    this.selection = { x: sx, y: sy, w: ex - sx + 1, h: ey - sy + 1 };
+  }
+
+  /// Começa a mover o conteúdo da seleção. Captura pixels e limpa a área original.
+  start_move(cursor_x: number, cursor_y: number) {
+    if (!this.selection) return;
+    this.sel_dragging = "move";
+    this.sel_start = { x: cursor_x, y: cursor_y };
+    // Captura snapshot dos pixels da seleção
+    this.sel_pixels_snap = [];
+    for (let iy = 0; iy < this.selection.h; iy++) {
+      const row: string[] = [];
+      for (let ix = 0; ix < this.selection.w; ix++) {
+        const gx = this.selection.x + ix;
+        const gy = this.selection.y + iy;
+        row.push(this.grid[gy][gx]);
+        // Limpa do grid (preview mostra conteudo flutuando)
+        this.grid[gy][gx] = "#00000000";
+      }
+      this.sel_pixels_snap.push(row);
+    }
+    this.sel_move_pos = { x: this.selection.x, y: this.selection.y };
+    this.push_history();
+  }
+
+  /// Atualiza a posição do conteúdo durante o movimento.
+  update_move(cursor_x: number, cursor_y: number) {
+    if (!this.selection || !this.sel_start || !this.sel_move_pos) return;
+    const dx = cursor_x - this.sel_start.x;
+    const dy = cursor_y - this.sel_start.y;
+    this.sel_move_pos = {
+      x: this.selection.x + dx,
+      y: this.selection.y + dy,
+    };
+  }
+
+  /// Termina o movimento: escreve os pixels na nova posição.
+  commit_move() {
+    if (!this.sel_pixels_snap || !this.sel_move_pos || !this.selection) return;
+    for (let iy = 0; iy < this.sel_pixels_snap.length; iy++) {
+      for (let ix = 0; ix < this.sel_pixels_snap[iy].length; ix++) {
+        const gx = this.sel_move_pos.x + ix;
+        const gy = this.sel_move_pos.y + iy;
+        const c = this.sel_pixels_snap[iy][ix];
+        if (c === "#00000000") continue; // nao sobrescreve com transparente
+        if (gx < 0 || gy < 0 || gx >= SIZE || gy >= SIZE) continue;
+        this.grid[gy][gx] = c;
+      }
+    }
+    this.selection = {
+      x: this.sel_move_pos.x,
+      y: this.sel_move_pos.y,
+      w: this.selection.w,
+      h: this.selection.h,
+    };
+    this.sel_pixels_snap = null;
+    this.sel_move_pos = null;
+    this.sel_dragging = null;
+    this.sel_start = null;
+  }
+
+  /// Verifica se um ponto está dentro da seleção atual.
+  is_inside_selection(x: number, y: number): boolean {
+    const s = this.selection;
+    if (!s) return false;
+    return x >= s.x && x < s.x + s.w && y >= s.y && y < s.y + s.h;
+  }
+
+  /// Copia os pixels da seleção pro clipboard.
+  copy_selection(): boolean {
+    if (!this.selection) return false;
+    const pixels: string[][] = [];
+    for (let iy = 0; iy < this.selection.h; iy++) {
+      const row: string[] = [];
+      for (let ix = 0; ix < this.selection.w; ix++) {
+        row.push(this.grid[this.selection.y + iy][this.selection.x + ix]);
+      }
+      pixels.push(row);
+    }
+    this.clipboard = { pixels, w: this.selection.w, h: this.selection.h };
+    return true;
+  }
+
+  /// Recorta: copia + limpa a área da seleção.
+  cut_selection(): boolean {
+    if (!this.copy_selection()) return false;
+    if (!this.selection) return false;
+    this.push_history();
+    for (let iy = 0; iy < this.selection.h; iy++) {
+      for (let ix = 0; ix < this.selection.w; ix++) {
+        this.grid[this.selection.y + iy][this.selection.x + ix] = "#00000000";
+      }
+    }
+    return true;
+  }
+
+  /// Cola o clipboard numa posição (canto sup-esq) e ativa seleção lá.
+  paste_clipboard(tx?: number, ty?: number) {
+    if (!this.clipboard) return false;
+    const px = tx ?? Math.max(0, Math.floor((SIZE - this.clipboard.w) / 2));
+    const py = ty ?? Math.max(0, Math.floor((SIZE - this.clipboard.h) / 2));
+    this.push_history();
+    for (let iy = 0; iy < this.clipboard.h; iy++) {
+      for (let ix = 0; ix < this.clipboard.w; ix++) {
+        const gx = px + ix;
+        const gy = py + iy;
+        if (gx < 0 || gy < 0 || gx >= SIZE || gy >= SIZE) continue;
+        const c = this.clipboard.pixels[iy][ix];
+        if (c === "#00000000") continue;
+        this.grid[gy][gx] = c;
+      }
+    }
+    this.selection = { x: px, y: py, w: this.clipboard.w, h: this.clipboard.h };
+    return true;
+  }
+
+  clear_selection() {
+    this.selection = null;
+    this.sel_dragging = null;
+    this.sel_start = null;
+    this.sel_pixels_snap = null;
+    this.sel_move_pos = null;
+  }
+
   render() {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.c.width, this.c.height);
@@ -139,6 +292,20 @@ class Editor {
         if (col === "#00000000" || col === "#00000000ff") continue;
         ctx.fillStyle = col;
         ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+      }
+    }
+    // Preview do conteudo em movimento (seleção flutuante)
+    if (this.sel_dragging === "move" && this.sel_pixels_snap && this.sel_move_pos) {
+      for (let iy = 0; iy < this.sel_pixels_snap.length; iy++) {
+        for (let ix = 0; ix < this.sel_pixels_snap[iy].length; ix++) {
+          const c = this.sel_pixels_snap[iy][ix];
+          if (c === "#00000000") continue;
+          const gx = this.sel_move_pos.x + ix;
+          const gy = this.sel_move_pos.y + iy;
+          if (gx < 0 || gy < 0 || gx >= SIZE || gy >= SIZE) continue;
+          ctx.fillStyle = c;
+          ctx.fillRect(gx * CELL, gy * CELL, CELL, CELL);
+        }
       }
     }
     if (this.grid_on) {
@@ -154,6 +321,33 @@ class Editor {
         ctx.lineTo(this.c.width, i * CELL + 0.5);
         ctx.stroke();
       }
+    }
+    // Desenha retângulo de seleção (marching ants simulado via 2 cores)
+    if (this.selection) {
+      const s = this.selection;
+      // Se movendo, desenha no sel_move_pos em vez do rect original
+      const rx = (this.sel_dragging === "move" && this.sel_move_pos)
+        ? this.sel_move_pos.x : s.x;
+      const ry = (this.sel_dragging === "move" && this.sel_move_pos)
+        ? this.sel_move_pos.y : s.y;
+      const px = rx * CELL + 0.5;
+      const py = ry * CELL + 0.5;
+      const pw = s.w * CELL;
+      const ph = s.h * CELL;
+      // Fundo translúcido dentro da seleção
+      ctx.fillStyle = "rgba(255,210,50,0.15)";
+      ctx.fillRect(px, py, pw, ph);
+      // Borda dupla: preta + amarela pontilhada (efeito de marching ants)
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#000";
+      ctx.setLineDash([]);
+      ctx.strokeRect(px, py, pw, ph);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "#f0d030";
+      ctx.setLineDash([4, 4]);
+      ctx.lineDashOffset = (Date.now() / 100) % 8;
+      ctx.strokeRect(px, py, pw, ph);
+      ctx.setLineDash([]);
     }
   }
 
@@ -244,19 +438,55 @@ function setup_canvas_events() {
     return [x, y];
   };
   c.addEventListener("mousedown", (ev) => {
+    const [x, y] = getXY(ev);
+    if (editor.tool === "select") {
+      // Se clicou dentro de uma seleção existente → move
+      if (editor.selection && editor.is_inside_selection(x, y)) {
+        editor.start_move(x, y);
+      } else {
+        editor.start_selection(x, y);
+      }
+      editor.drawing = true;
+      editor.render();
+      return;
+    }
     editor.drawing = true;
     editor.push_history();
-    const [x, y] = getXY(ev);
     editor.apply_tool(x, y);
   });
   c.addEventListener("mousemove", (ev) => {
     const [x, y] = getXY(ev);
     coord_el.textContent = `${x}, ${y}`;
-    if (editor.drawing && (editor.tool === "brush" || editor.tool === "eraser")) {
+    if (!editor.drawing) return;
+    if (editor.tool === "select") {
+      if (editor.sel_dragging === "create") {
+        editor.update_selection(x, y);
+      } else if (editor.sel_dragging === "move") {
+        editor.update_move(x, y);
+      }
+      editor.render();
+      return;
+    }
+    if (editor.tool === "brush" || editor.tool === "eraser") {
       editor.apply_tool(x, y);
     }
   });
-  window.addEventListener("mouseup", () => { editor.drawing = false; });
+  window.addEventListener("mouseup", () => {
+    if (editor.drawing && editor.tool === "select") {
+      if (editor.sel_dragging === "create") {
+        editor.sel_dragging = null;
+        editor.sel_start = null;
+        // Se seleção ficou 1x1 e é clique único, desseleciona
+        if (editor.selection && editor.selection.w === 1 && editor.selection.h === 1) {
+          editor.clear_selection();
+        }
+      } else if (editor.sel_dragging === "move") {
+        editor.commit_move();
+      }
+      editor.render();
+    }
+    editor.drawing = false;
+  });
 }
 
 function setup_tool_buttons() {
@@ -297,19 +527,82 @@ function setup_tool_buttons() {
     set_token(null);
     location.reload();
   });
+
+  // Clipboard operations
+  document.getElementById("btn-copy")!.addEventListener("click", () => {
+    if (editor.copy_selection()) console.log("[pixel] copiado");
+  });
+  document.getElementById("btn-cut")!.addEventListener("click", () => {
+    if (editor.cut_selection()) {
+      editor.render();
+      console.log("[pixel] recortado");
+    }
+  });
+  document.getElementById("btn-paste")!.addEventListener("click", () => {
+    if (editor.paste_clipboard()) {
+      editor.render();
+      console.log("[pixel] colado");
+    }
+  });
+  document.getElementById("btn-deselect")!.addEventListener("click", () => {
+    editor.clear_selection();
+    editor.render();
+  });
 }
 
 function setup_keyboard() {
   window.addEventListener("keydown", (ev) => {
     if ((ev.target as HTMLElement)?.tagName === "INPUT") return;
     if ((ev.target as HTMLElement)?.tagName === "TEXTAREA") return;
+
+    const ctrl = ev.ctrlKey || ev.metaKey;
+
+    // Clipboard (Ctrl+C/X/V)
+    if (ctrl && ev.key.toLowerCase() === "c") {
+      ev.preventDefault();
+      editor.copy_selection();
+      return;
+    }
+    if (ctrl && ev.key.toLowerCase() === "x") {
+      ev.preventDefault();
+      if (editor.cut_selection()) editor.render();
+      return;
+    }
+    if (ctrl && ev.key.toLowerCase() === "v") {
+      ev.preventDefault();
+      if (editor.paste_clipboard()) editor.render();
+      return;
+    }
+    if (ctrl && ev.key.toLowerCase() === "z") {
+      ev.preventDefault();
+      editor.undo();
+      return;
+    }
+    if (ctrl && ev.key.toLowerCase() === "a") {
+      ev.preventDefault();
+      editor.selection = { x: 0, y: 0, w: SIZE, h: SIZE };
+      editor.render();
+      return;
+    }
+    if (ev.key === "Escape") {
+      if (editor.selection) {
+        editor.clear_selection();
+        editor.render();
+        ev.preventDefault();
+      }
+      return;
+    }
+    // Tools
     if (ev.key === "b") set_tool("brush");
     if (ev.key === "e") set_tool("eraser");
     if (ev.key === "f") set_tool("fill");
-    if (ev.key === "i") set_tool("eyedrop");
-    if ((ev.ctrlKey || ev.metaKey) && ev.key === "z") {
-      ev.preventDefault();
-      editor.undo();
+    if (ev.key === "p" || ev.key === "i") set_tool("eyedrop");
+    if (ev.key === "s") set_tool("select");
+    if (ev.key === "Delete" || ev.key === "Backspace") {
+      if (editor.selection) {
+        editor.cut_selection();
+        editor.render();
+      }
     }
   });
 }
@@ -747,6 +1040,10 @@ function boot_editor() {
   setup_save();
   setup_upload();
   refresh_list();
+  // Animacao das "marching ants" da seleção
+  setInterval(() => {
+    if (editor.selection) editor.render();
+  }, 120);
 }
 
 // Init: valida token existente (se tiver). Token OK -> boot direto;

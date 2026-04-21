@@ -76,23 +76,40 @@ h2:first-child { margin-top: 0; }
 /* Tools */
 .tool-btns {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
 }
 .tool-btns button {
-  padding: 10px;
+  padding: 8px 4px;
   background: var(--panel-2);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 4px;
   cursor: pointer;
   font-weight: 600;
+  font-size: 13px;
 }
 .tool-btns button.active {
   background: var(--accent);
   color: #111;
   border-color: var(--accent);
 }
+.clip-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 8px;
+}
+.clip-btns button {
+  padding: 6px 4px;
+  font-size: 11px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.clip-btns button:hover { background: var(--border); }
 
 /* Palette */
 #palette {
