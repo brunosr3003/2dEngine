@@ -16,7 +16,6 @@ use axum::{
     Json, Router,
 };
 use std::error::Error as StdError;
-use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -109,6 +108,7 @@ pub fn router(state: PixelState) -> Router {
         .route("/verify", post(verify))
         .route("/generate", post(generate))
         .route("/save", post(save_sprite))
+        .route("/load", post(load_sprite))
         .route("/list", post(list_sprites))
         .with_state(state)
 }
@@ -344,13 +344,200 @@ A matriz toda deve ter exatamente {size} linhas e cada linha exatamente
     Json(GenerateRes { pixels: out }).into_response()
 }
 
+// ── FORMATO TXT (XPM-like) + PNG ──────────────────────────────────────────
+
+/// Mapeia cores unicas da matriz pra caracteres legiveis e gera texto:
+///
+/// ```text
+/// # sprite 64x64
+/// # palette:
+/// #   . = #00000000  (transparent)
+/// #   K = #0a0a0a
+/// #   S = #e6b37a
+/// #   ...
+/// # pixels:
+/// .........KKKKK...
+/// .........KSSSK...
+/// ...
+/// ```
+///
+/// Edita-se trocando 1 carac por celula. Re-salva regera PNG.
+fn matrix_to_xpm(matrix: &[Vec<String>]) -> (String, std::collections::BTreeMap<String, char>) {
+    use std::collections::BTreeMap;
+    const POOL: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-=*^$%&@!?<>";
+    let mut pool_iter = POOL.chars();
+    let mut palette: BTreeMap<String, char> = BTreeMap::new();
+    // Transparente SEMPRE e '.'
+    palette.insert("#00000000".to_string(), '.');
+
+    // Coleta cores unicas na ordem de aparicao
+    let mut seen_order: Vec<String> = Vec::new();
+    for row in matrix {
+        for c in row {
+            let key = normalize_hex_str(c);
+            if key == "#00000000" { continue; }
+            if !palette.contains_key(&key) {
+                if let Some(ch) = pool_iter.next() {
+                    palette.insert(key.clone(), ch);
+                    seen_order.push(key);
+                } else {
+                    // Sem mais caracteres — cor cai no '.' (transparente). Raro
+                    // em paletas normais (~75 cores ja no pool).
+                }
+            }
+        }
+    }
+
+    let height = matrix.len();
+    let width = matrix.first().map(|r| r.len()).unwrap_or(0);
+
+    let mut out = String::new();
+    out.push_str(&format!("# sprite {width}x{height}\n"));
+    out.push_str("# palette:\n");
+    // Paleta em ordem: transparente primeiro, depois na ordem de aparicao.
+    out.push_str("#   . = #00000000  (transparent)\n");
+    for hex in &seen_order {
+        let ch = palette[hex];
+        out.push_str(&format!("#   {ch} = {hex}\n"));
+    }
+    out.push_str("#\n# pixels:\n");
+
+    for row in matrix {
+        for c in row {
+            let key = normalize_hex_str(c);
+            let ch = palette.get(&key).copied().unwrap_or('.');
+            out.push(ch);
+        }
+        out.push('\n');
+    }
+    (out, palette)
+}
+
+/// Parseia texto XPM-like de volta pra matriz.
+fn xpm_to_matrix(txt: &str) -> anyhow::Result<Vec<Vec<String>>> {
+    use std::collections::HashMap;
+    let mut palette: HashMap<char, String> = HashMap::new();
+    let mut in_pixels = false;
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut declared_width: Option<usize> = None;
+
+    for raw_line in txt.lines() {
+        if !in_pixels {
+            let line = raw_line.trim();
+            if line.starts_with("# pixels") {
+                in_pixels = true;
+                continue;
+            }
+            // Header com 'WxH' pra saber largura esperada (opcional)
+            if line.starts_with("# sprite") {
+                if let Some(rest) = line.strip_prefix("# sprite").map(|s| s.trim()) {
+                    if let Some((w_s, _)) = rest.split_once('x') {
+                        if let Ok(w) = w_s.trim().parse::<usize>() {
+                            declared_width = Some(w);
+                        }
+                    }
+                }
+                continue;
+            }
+            // Entrada de paleta: "#   X = #RRGGBBAA"
+            if let Some(body) = line.strip_prefix('#') {
+                let body = body.trim();
+                if let Some((lhs, rhs)) = body.split_once('=') {
+                    let lhs = lhs.trim();
+                    let rhs = rhs.trim();
+                    let ch = lhs.chars().next();
+                    let hex = rhs.split_whitespace().next().unwrap_or("");
+                    if hex.starts_with('#') {
+                        if let Some(c) = ch {
+                            palette.insert(c, normalize_hex_str(hex));
+                        }
+                    }
+                }
+            }
+        } else {
+            if raw_line.trim_start().starts_with('#') { continue; }
+            if raw_line.is_empty() { continue; }
+            let mut row: Vec<String> = Vec::new();
+            for ch in raw_line.chars() {
+                if ch == '\n' || ch == '\r' { continue; }
+                let hex = palette.get(&ch).cloned().unwrap_or_else(|| "#00000000".to_string());
+                row.push(hex);
+            }
+            // Remove padding de linha (se vier menor, completa com transparente;
+            // se vier maior, trunca).
+            if let Some(w) = declared_width {
+                while row.len() < w { row.push("#00000000".into()); }
+                row.truncate(w);
+            }
+            rows.push(row);
+        }
+    }
+    // Normaliza altura se nao bateu
+    if rows.is_empty() {
+        anyhow::bail!("arquivo .txt sem pixels");
+    }
+    Ok(rows)
+}
+
+fn normalize_hex_str(s: &str) -> String {
+    let s = s.trim().to_lowercase();
+    let s = if s.starts_with('#') { s } else { format!("#{s}") };
+    match s.len() {
+        4 => { // #rgb
+            let b = s.as_bytes();
+            format!("#{0}{0}{1}{1}{2}{2}ff",
+                b[1] as char, b[2] as char, b[3] as char)
+        }
+        7 => format!("{}ff", s),
+        9 => s,
+        _ => "#00000000".to_string(),
+    }
+}
+
+fn hex_to_rgba(hex: &str) -> (u8, u8, u8, u8) {
+    let h = normalize_hex_str(hex);
+    // h = #rrggbbaa
+    let b = h.as_bytes();
+    let p = |i: usize| {
+        let hi = (b[i] as char).to_digit(16).unwrap_or(0) as u8;
+        let lo = (b[i + 1] as char).to_digit(16).unwrap_or(0) as u8;
+        (hi << 4) | lo
+    };
+    (p(1), p(3), p(5), p(7))
+}
+
+/// Converte matriz de hex em bytes PNG.
+fn matrix_to_png_bytes(matrix: &[Vec<String>]) -> anyhow::Result<Vec<u8>> {
+    use image::{ImageBuffer, Rgba};
+    let height = matrix.len() as u32;
+    let width = matrix.first().map(|r| r.len()).unwrap_or(0) as u32;
+    if width == 0 || height == 0 { anyhow::bail!("matriz vazia"); }
+    let mut img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+    for (y, row) in matrix.iter().enumerate() {
+        for (x, hex) in row.iter().enumerate() {
+            let (r, g, b, a) = hex_to_rgba(hex);
+            img.put_pixel(x as u32, y as u32, Rgba([r, g, b, a]));
+        }
+    }
+    let mut buf = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)?;
+    Ok(buf)
+}
+
+fn valid_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
 // ── SAVE ──────────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 struct SaveReq {
     name: String,
-    /// PNG bytes em base64 (sem prefix 'data:image/png;base64,').
-    png_base64: String,
+    /// Matriz HxW de strings hex. A fonte canonica fica no .txt; o .png
+    /// e regerado a cada save pra o jogo carregar rapido.
+    pixels: Vec<Vec<String>>,
 }
 
 async fn save_sprite(
@@ -362,38 +549,80 @@ async fn save_sprite(
         return (StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({"error": "nao autenticado"}))).into_response();
     }
-    // Sanitiza nome: alfanumerico + '-' + '_' + '.png'
     let name = req.name.trim();
-    if name.is_empty() || name.len() > 64 {
+    if !valid_name(name) {
         return (StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "nome invalido"}))).into_response();
+                Json(serde_json::json!({"error": "nome so pode ter A-Z, 0-9, - e _ (max 64)"}))).into_response();
     }
-    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if req.pixels.is_empty() {
         return (StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "nome so pode ter A-Z, 0-9, - e _"}))).into_response();
+                Json(serde_json::json!({"error": "pixels vazio"}))).into_response();
     }
 
-    // Decodifica base64
-    let raw = match B64.decode(req.png_base64.trim()) {
-        Ok(b) => b,
-        Err(e) => {
-            return (StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({"error": format!("base64: {e}")}))).into_response();
-        }
-    };
-    // Cria dir se nao existe
     let dir: &Path = state.sprites_dir.as_path();
     if let Err(e) = std::fs::create_dir_all(dir) {
         return (StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": format!("mkdir: {e}")}))).into_response();
     }
-    let path = dir.join(format!("{name}.png"));
-    if let Err(e) = std::fs::write(&path, &raw) {
+
+    // Gera .txt (XPM-like) — fonte canonica pro dev editar
+    let (txt, _palette) = matrix_to_xpm(&req.pixels);
+    let txt_path = dir.join(format!("{name}.txt"));
+    if let Err(e) = std::fs::write(&txt_path, &txt) {
         return (StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": format!("write: {e}")}))).into_response();
+                Json(serde_json::json!({"error": format!("write txt: {e}")}))).into_response();
     }
-    tracing::info!("sprite salvo: {}", path.display());
-    Json(serde_json::json!({"saved": path.display().to_string()})).into_response()
+
+    // Gera .png — consumido pelo jogo
+    let png_bytes = match matrix_to_png_bytes(&req.pixels) {
+        Ok(b) => b,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR,
+                          Json(serde_json::json!({"error": format!("png: {e}")}))).into_response(),
+    };
+    let png_path = dir.join(format!("{name}.png"));
+    if let Err(e) = std::fs::write(&png_path, &png_bytes) {
+        return (StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("write png: {e}")}))).into_response();
+    }
+
+    tracing::info!("sprite '{name}' salvo: {} + {}", txt_path.display(), png_path.display());
+    Json(serde_json::json!({
+        "saved_txt": txt_path.display().to_string(),
+        "saved_png": png_path.display().to_string(),
+    })).into_response()
+}
+
+// ── LOAD ──────────────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct LoadReq { name: String }
+
+async fn load_sprite(
+    State(state): State<PixelState>,
+    headers: HeaderMap,
+    Json(req): Json<LoadReq>,
+) -> Response {
+    if !state.is_authed(&headers) {
+        return (StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "nao autenticado"}))).into_response();
+    }
+    let name = req.name.trim();
+    if !valid_name(name) {
+        return (StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "nome invalido"}))).into_response();
+    }
+    let dir: &Path = state.sprites_dir.as_path();
+    let txt_path = dir.join(format!("{name}.txt"));
+    let txt = match std::fs::read_to_string(&txt_path) {
+        Ok(s) => s,
+        Err(e) => return (StatusCode::NOT_FOUND,
+                          Json(serde_json::json!({"error": format!("{}: {e}", txt_path.display())}))).into_response(),
+    };
+    match xpm_to_matrix(&txt) {
+        Ok(m) => Json(serde_json::json!({"pixels": m})).into_response(),
+        Err(e) => (StatusCode::UNPROCESSABLE_ENTITY,
+                   Json(serde_json::json!({"error": format!("parse: {e}")}))).into_response(),
+    }
 }
 
 // ── LIST ──────────────────────────────────────────────────────────────────
@@ -407,16 +636,26 @@ async fn list_sprites(
                 Json(serde_json::json!({"error": "nao autenticado"}))).into_response();
     }
     let dir: &Path = state.sprites_dir.as_path();
-    let mut names: Vec<String> = Vec::new();
+    // Lista basenames (sem extensao) + quais formatos tem
+    use std::collections::BTreeMap;
+    let mut map: BTreeMap<String, (bool, bool)> = BTreeMap::new();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for e in entries.flatten() {
             if let Some(n) = e.file_name().to_str() {
-                if n.ends_with(".png") {
-                    names.push(n.to_string());
+                if let Some(stem) = n.strip_suffix(".txt") {
+                    map.entry(stem.to_string()).or_default().0 = true;
+                } else if let Some(stem) = n.strip_suffix(".png") {
+                    map.entry(stem.to_string()).or_default().1 = true;
                 }
             }
         }
     }
-    names.sort();
-    Json(serde_json::json!({"sprites": names})).into_response()
+    let sprites: Vec<serde_json::Value> = map.into_iter()
+        .map(|(name, (has_txt, has_png))| serde_json::json!({
+            "name": name,
+            "has_txt": has_txt,
+            "has_png": has_png,
+        }))
+        .collect();
+    Json(serde_json::json!({"sprites": sprites})).into_response()
 }

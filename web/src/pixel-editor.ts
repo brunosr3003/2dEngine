@@ -342,34 +342,80 @@ async function api_generate(prompt: string, model: string): Promise<string[][]> 
   return body.pixels;
 }
 
-async function api_save(name: string, png_base64: string): Promise<string> {
+async function api_save(name: string, pixels: string[][]): Promise<{txt: string; png: string}> {
   const r = await fetch("/api/pixel/save", {
     method: "POST",
     headers: {"Content-Type": "application/json", ...auth_headers()},
-    body: JSON.stringify({ name, png_base64 }),
+    body: JSON.stringify({ name, pixels }),
   });
   const body = await r.json();
   if (!r.ok) throw new Error(body.error || `http ${r.status}`);
-  return body.saved as string;
+  return { txt: body.saved_txt, png: body.saved_png };
 }
 
-async function api_list(): Promise<string[]> {
+async function api_load(name: string): Promise<string[][]> {
+  const r = await fetch("/api/pixel/load", {
+    method: "POST",
+    headers: {"Content-Type": "application/json", ...auth_headers()},
+    body: JSON.stringify({ name }),
+  });
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.error || `http ${r.status}`);
+  return body.pixels as string[][];
+}
+
+interface SpriteEntry { name: string; has_txt: boolean; has_png: boolean; }
+async function api_list(): Promise<SpriteEntry[]> {
   const r = await fetch("/api/pixel/list", {
     method: "POST",
     headers: { ...auth_headers() },
   });
   if (!r.ok) return [];
   const body = await r.json();
-  return body.sprites as string[];
+  return body.sprites as SpriteEntry[];
 }
 
 function refresh_list() {
-  api_list().then(names => {
+  api_list().then(sprites => {
     const ul = document.getElementById("sprites-list")!;
     ul.innerHTML = "";
-    names.forEach(n => {
+    sprites.forEach(s => {
       const li = document.createElement("li");
-      li.textContent = n;
+      li.className = "sprite-item";
+      // Label: nome + tags de formato
+      const label = document.createElement("span");
+      label.className = "sprite-label";
+      label.textContent = s.name;
+      const tags = document.createElement("span");
+      tags.className = "sprite-tags";
+      if (s.has_txt) {
+        const t = document.createElement("em"); t.className = "tag t-txt"; t.textContent = "TXT";
+        tags.appendChild(t);
+      }
+      if (s.has_png) {
+        const t = document.createElement("em"); t.className = "tag t-png"; t.textContent = "PNG";
+        tags.appendChild(t);
+      }
+      li.appendChild(label);
+      li.appendChild(tags);
+      // Click no item carrega no canvas
+      if (s.has_txt) {
+        li.style.cursor = "pointer";
+        li.title = "Clique pra carregar no canvas";
+        li.addEventListener("click", async () => {
+          try {
+            const pixels = await api_load(s.name);
+            editor.load_pixels(pixels);
+            const name_el = document.getElementById("sprite-name") as HTMLInputElement;
+            name_el.value = s.name;
+            const st = document.getElementById("save-status")!;
+            st.className = "status ok";
+            st.textContent = `carregado ${s.name}.txt`;
+          } catch (e: any) {
+            console.error("[pixel] load err:", e);
+          }
+        });
+      }
       ul.appendChild(li);
     });
   });
@@ -421,10 +467,9 @@ function setup_save() {
     status.className = "status";
     status.textContent = "salvando...";
     try {
-      const b64 = editor.to_png_base64();
-      const path = await api_save(name, b64);
+      const res = await api_save(name, editor.grid);
       status.className = "status ok";
-      status.textContent = `salvo: ${path}`;
+      status.textContent = `salvo: ${res.txt.split("/").slice(-1)[0]} + ${res.png.split("/").slice(-1)[0]}`;
       refresh_list();
     } catch (e: any) {
       status.className = "status err";
