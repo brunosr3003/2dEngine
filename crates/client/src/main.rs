@@ -1994,14 +1994,14 @@ impl Game for MmoClient {
             let top_left = Vec2::new(vis.min.x + margin, vis.max.y - margin);
             let bottom_left = Vec2::new(vis.min.x + margin, vis.min.y + 1.2 * h);
 
-            // Coordenadas, ping e dicas no topo
-            let class_name = match self.class {
-                shared::PlayerClass::Warrior => "WAR",
-                shared::PlayerClass::Archer  => "ARC",
-                shared::PlayerClass::Wizard  => "WIZ",
+            // Coordenadas, ping e dicas no topo. Mostra a arma equipada
+            // (classless: o tipo da arma = identidade de combate).
+            let weapon_label = match self.equipment.weapon {
+                Some(id) => shared::Proficiency::from_item(id).display_name(),
+                None     => "Desarmado",
             };
             let pos_text = format!(
-                "[{class_name}] dmg={}  fama={}  aura={}  ({:.0}, {:.0})  ping={}ms  ESC=menu",
+                "[{weapon_label}] dmg={}  fama={}  aura={}  ({:.0}, {:.0})  ping={}ms  ESC=menu",
                 self.stats.attack_damage, self.fame, self.aura,
                 ctx.camera.position.x, ctx.camera.position.y, self.last_ping_ms
             );
