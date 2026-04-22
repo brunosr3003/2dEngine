@@ -206,7 +206,38 @@ pub fn generate(seed: u64, width: u32, height: u32) -> WorldMap {
         }
     }
 
+    // Dungeon isolada no canto — sala retangular com tile distinto, sem corredor
+    // conectando. So se chega via portal.
+    carve_dungeon_room(&mut map, width, height);
+
     map
+}
+
+/// Posicao e tamanho da sala de dungeon. Determinista — outros modulos usam
+/// essa funcao pra saber onde colocar portais e inimigos.
+pub fn dungeon_room_rect(width: u32, height: u32) -> (i32, i32, i32, i32) {
+    let w = 24i32;
+    let h = 20i32;
+    let x = (width as i32 - w - 4).max(2);
+    let y = (height as i32 - h - 4).max(2);
+    (x, y, w, h)
+}
+
+/// Centro da dungeon (ponto de spawn do portal de retorno).
+pub fn dungeon_center(width: u32, height: u32) -> (i32, i32) {
+    let (x, y, w, h) = dungeon_room_rect(width, height);
+    (x + w / 2, y + h / 2)
+}
+
+fn carve_dungeon_room(map: &mut WorldMap, width: u32, height: u32) {
+    let (x, y, w, h) = dungeon_room_rect(width, height);
+    for dy in 0..h {
+        for dx in 0..w {
+            let is_edge = dx == 0 || dx == w - 1 || dy == 0 || dy == h - 1;
+            let tile = if is_edge { tile_id::WALL } else { tile_id::DUNGEON_FLOOR };
+            map.set(x + dx, y + dy, tile);
+        }
+    }
 }
 
 fn carve_room(map: &mut WorldMap, r: &Room, rng: &mut Lcg) {

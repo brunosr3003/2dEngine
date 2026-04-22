@@ -85,7 +85,9 @@ struct RegisterReq {
     username: String,
     email: String,
     password: String,
-    class: String,
+    /// Campo legado, ignorado (classes foram removidas do jogo).
+    #[serde(default)]
+    class: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -118,15 +120,14 @@ async fn register(
     if req.password.len() < 6 || req.password.len() > 128 {
         return Err(err(StatusCode::BAD_REQUEST, "senha deve ter 6-128 chars"));
     }
-    let class = match req.class.to_ascii_lowercase().as_str() {
-        "warrior" | "archer" | "wizard" => req.class.to_ascii_lowercase(),
-        _ => return Err(err(StatusCode::BAD_REQUEST, "classe invalida")),
-    };
+    // Class é campo legado — mantido na coluna só pra satisfazer o DEFAULT da
+    // coluna existente. Pode ser removido numa migration futura.
+    let _ = &req.class;
 
     let hash = auth::hash_password(&req.password)
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, format!("hash: {e}")))?;
 
-    match db::insert_account(&s.pool, username, &email, &hash, &class).await {
+    match db::insert_account(&s.pool, username, &email, &hash, "none").await {
         Ok(id) => Ok((StatusCode::CREATED, Json(RegisterRes { id, username: username.into() }))),
         Err(db::InsertError::Duplicate(field)) => {
             Err(err(StatusCode::CONFLICT, format!("{field} ja existe")))

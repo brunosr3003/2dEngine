@@ -98,7 +98,6 @@ pub struct Session {
     pub name: String,
     pub player_id: PlayerId,
     pub account_id: Option<i64>,
-    pub class: shared::PlayerClass,
     pub stats: shared::PlayerStats,
     pub equipment: shared::Equipment,
     /// MP atual (volatil, nao persiste). Regenera por segundo ate stats.mp_max.
@@ -133,6 +132,14 @@ pub struct Session {
     /// XP por proficiencia. Indice = Proficiency as u8.
     pub proficiencies: [u64; 6],
     pub proficiencies_dirty: bool,
+    /// Pontos de atributo disponiveis (ganhos por level-up, POINTS_PER_LEVEL cada).
+    pub unspent_points: u32,
+    /// Pontos ja alocados em cada stat [HP, MP, Atk, Dex, Wis, Res].
+    pub allocated_points: [u32; 6],
+    /// Marca que precisa enviar StatPointsUpdate no proximo tick.
+    pub stat_points_dirty: bool,
+    /// Ultimo level conhecido pra detectar level-up.
+    pub last_level: u32,
     /// Inventario do jogador. Tamanho fixo = shared::INVENTORY_SLOTS.
     pub inventory: Vec<shared::InventorySlot>,
     /// True quando o inventario mudou e precisa ser enviado pro cliente
@@ -238,6 +245,9 @@ impl GameWorld {
         } else {
             w.spawn_initial_enemies();
             w.spawn_vendor();
+            w.spawn_vault_npc();
+            w.spawn_dungeon_portals();
+            w.spawn_dungeon_enemies();
         }
         w
     }
@@ -361,6 +371,89 @@ impl GameWorld {
     }
 
     /// Spawna um vendedor estatico proximo ao spawn tile (decoracao + interacao).
+    /// Cria 2 portais — nexus -> dungeon e dungeon -> nexus. So em modo procedural.
+    fn spawn_dungeon_portals(&mut self) {
+        let w = self.map.width;
+        let h = self.map.height;
+        let (dx, dy) = shared::world_gen::dungeon_center(w, h);
+        let dungeon_target = Vec2::new(dx as f32 + 0.5, dy as f32 + 0.5);
+
+        // Portal no nexus (perto do spawn, lado esquerdo do vendor).
+        let nexus_tile = self.map.spawn_tile();
+        let nexus_portal_pos = Vec2::new(nexus_tile.0 as f32 - 3.0, nexus_tile.1 as f32 + 1.5);
+        // Fallback se a posicao cair em parede.
+        let nexus_portal_pos = if self.map.get(nexus_portal_pos.x.floor() as i32, nexus_portal_pos.y.floor() as i32)
+            == shared::constants::tile_id::WALL
+        {
+            Vec2::new(nexus_tile.0 as f32 + 0.5, nexus_tile.1 as f32 + 3.0)
+        } else {
+            nexus_portal_pos
+        };
+        let nexus_eid = self.alloc_entity_id();
+        self.ecs.spawn((
+            NetId(nexus_eid),
+            Position(nexus_portal_pos),
+            Velocity(Vec2::ZERO),
+            EntityKind::Portal,
+            PortalTag { target: dungeon_target, cooldown: 0.0 },
+        ));
+        tracing::info!("portal nexus->dungeon em {:?} -> {:?}", nexus_portal_pos, dungeon_target);
+
+        // Portal na dungeon (centro, teleporta de volta pro spawn do nexus).
+        let nexus_spawn = Vec2::new(nexus_tile.0 as f32 + 0.5, nexus_tile.1 as f32 + 0.5);
+        let dungeon_portal_pos = Vec2::new(dx as f32 + 0.5, dy as f32 - 5.0);
+        let dungeon_portal_pos = if self.map.get(dungeon_portal_pos.x.floor() as i32, dungeon_portal_pos.y.floor() as i32)
+            == shared::constants::tile_id::WALL
+        {
+            dungeon_target
+        } else {
+            dungeon_portal_pos
+        };
+        let dung_eid = self.alloc_entity_id();
+        self.ecs.spawn((
+            NetId(dung_eid),
+            Position(dungeon_portal_pos),
+            Velocity(Vec2::ZERO),
+            EntityKind::Portal,
+            PortalTag { target: nexus_spawn, cooldown: 1.0 }, // cooldown inicial pra nao quicar
+        ));
+        tracing::info!("portal dungeon->nexus em {:?} -> {:?}", dungeon_portal_pos, nexus_spawn);
+    }
+
+    /// Spawna inimigos mais fortes na dungeon (Tanks, Berserkers, Boss).
+    fn spawn_dungeon_enemies(&mut self) {
+        let w = self.map.width;
+        let h = self.map.height;
+        let (rx, ry, rw, rh) = shared::world_gen::dungeon_room_rect(w, h);
+        // 3 tanks + 2 berserkers em posicoes espalhadas dentro da sala.
+        let spots = [
+            (rx + 3, ry + 3, 1u16),
+            (rx + rw - 4, ry + 3, 1),
+            (rx + 3, ry + rh - 4, 5),
+            (rx + rw - 4, ry + rh - 4, 5),
+            (rx + rw / 2, ry + rh / 2 + 3, 1),
+        ];
+        for (x, y, kind) in spots {
+            if self.map.get(x, y) != shared::constants::tile_id::DUNGEON_FLOOR { continue; }
+            self.place_enemy(Vec2::new(x as f32 + 0.5, y as f32 + 0.5), kind, 0.0);
+        }
+        tracing::info!("dungeon: spawn de {} inimigos", spots.len());
+    }
+
+    fn handle_alloc_stat_point(&mut self, sid: SessionId, stat: u8) {
+        let Some(s) = self.sessions.get_mut(&sid) else { return; };
+        if !s.logged_in { return; }
+        let idx = stat as usize;
+        if idx >= s.allocated_points.len() { return; }
+        if s.unspent_points == 0 { return; }
+        s.unspent_points -= 1;
+        s.allocated_points[idx] = s.allocated_points[idx].saturating_add(1);
+        s.stat_points_dirty = true;
+        // Recalcula stats. max_hp pode ter subido — HP nao sobe automatico.
+        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies);
+        s.stats_dirty = true;
+    }
+
     fn spawn_vendor(&mut self) {
         let t = self.map.spawn_tile();
         let pos = Vec2::new(t.0 as f32 + 1.5, t.1 as f32 + 1.5);
@@ -380,6 +473,27 @@ impl GameWorld {
             EntityKind::Npc(1),
         ));
         tracing::info!("vendor spawnado em {:?}", pos);
+    }
+
+    /// Spawna NPC de vault proximo ao spawn, ao lado do vendedor.
+    fn spawn_vault_npc(&mut self) {
+        let t = self.map.spawn_tile();
+        let pos = Vec2::new(t.0 as f32 + 3.0, t.1 as f32 + 1.5);
+        let pos = if self.map.get(pos.x.floor() as i32, pos.y.floor() as i32)
+            == shared::constants::tile_id::WALL
+        {
+            Vec2::new(t.0 as f32 + 2.5, t.1 as f32 + 0.5)
+        } else {
+            pos
+        };
+        let eid = self.alloc_entity_id();
+        self.ecs.spawn((
+            NetId(eid),
+            Position(pos),
+            Velocity(Vec2::ZERO),
+            EntityKind::Npc(2),
+        ));
+        tracing::info!("vault npc spawnado em {:?}", pos);
     }
 
     pub fn set_auth_ctx(&mut self, ctx: AuthCtx) {
@@ -454,13 +568,13 @@ impl GameWorld {
             let t = self.map.spawn_tile();
             Vec2::new(t.0 as f32 + 0.5, t.1 as f32 + 0.5)
         };
-        let (mut spawn, mut health, saved_xp, saved_inv, saved_equip, saved_vault, saved_fame, saved_aura, saved_profs) = match self.characters.get(&success.username) {
+        let (mut spawn, mut health, saved_xp, saved_inv, saved_equip, saved_vault, saved_fame, saved_aura, saved_profs, saved_unspent, saved_alloc) = match self.characters.get(&success.username) {
             Some(row) => (
                 row.pos, row.hp, row.xp, row.inventory.clone(), row.equipment, row.vault.clone(),
-                row.fame, row.aura, row.proficiencies,
+                row.fame, row.aura, row.proficiencies, row.unspent_points, row.allocated_points,
             ),
             None => {
-                let base = success.class.base_stats();
+                let base = shared::base_player_stats();
                 (
                     default_spawn,
                     Health { current: base.hp_max, max: base.hp_max },
@@ -471,11 +585,13 @@ impl GameWorld {
                     0u64,
                     0u64,
                     [0u64; 6],
+                    0u32,
+                    [0u32; 6],
                 )
             }
         };
-        // Stats efetivos considerando equipamento salvo.
-        let stats = effective_stats(success.class, &saved_equip);
+        // Stats efetivos considerando equipamento salvo + pontos + profs.
+        let stats = effective_stats(&saved_equip, &saved_alloc, &saved_profs);
         // Re-sincroniza o max_hp (classe pode ter sido rebalanceada entre sessoes).
         health.max = stats.hp_max;
         if health.current > health.max { health.current = health.max; }
@@ -522,7 +638,6 @@ impl GameWorld {
             s.name = success.username.clone();
             s.player_id = pid;
             s.account_id = Some(success.account_id);
-            s.class = success.class;
             s.stats = stats;
             s.equipment = saved_equip;
             s.xp = saved_xp;
@@ -532,6 +647,10 @@ impl GameWorld {
             s.aura_last_sent = u64::MAX;
             s.proficiencies = saved_profs;
             s.proficiencies_dirty = true;
+            s.unspent_points = saved_unspent;
+            s.allocated_points = saved_alloc;
+            s.stat_points_dirty = true;
+            s.last_level = shared::level_of_xp(saved_xp);
             s.inventory = saved_inv.clone();
             s.inventory_dirty = false;
             s.stats_dirty = false;
@@ -543,8 +662,8 @@ impl GameWorld {
             s.stamina_last_sent = shared::STAMINA_MAX;
         }
         tracing::info!(
-            "login ok: {} ({}, acc {}, xp {}) -> {:?} / {:?}",
-            success.username, success.class.as_str(), success.account_id, saved_xp, pid, entity_id
+            "login ok: {} (acc {}, xp {}) -> {:?} / {:?}",
+            success.username, success.account_id, saved_xp, pid, entity_id
         );
         let _ = handle.to_client.send(ServerMessage::LoginOk {
             player_id: pid,
@@ -560,7 +679,6 @@ impl GameWorld {
             safe_zone: false,
         });
         let _ = handle.to_client.send(ServerMessage::StatsUpdate {
-            class: success.class,
             stats,
             equipment: saved_equip,
         });
@@ -757,9 +875,12 @@ impl GameWorld {
                 name: String::new(),
                 player_id: PlayerId(0),
                 account_id: None,
-                class: shared::PlayerClass::Warrior,
-                stats: shared::PlayerClass::Warrior.base_stats(),
+                stats: shared::base_player_stats(),
                 equipment: shared::Equipment::default(),
+                unspent_points: 0,
+                allocated_points: [0; 6],
+                stat_points_dirty: false,
+                last_level: 1,
                 mp_current: 0.0,
                 mp_last_sent: 0,
                 stamina_current: shared::STAMINA_MAX as f32,
@@ -958,6 +1079,9 @@ impl GameWorld {
             }
             ClientMessage::PartyLeave => {
                 self.handle_party_leave(id);
+            }
+            ClientMessage::AllocStatPoint { stat } => {
+                self.handle_alloc_stat_point(id, stat);
             }
             ClientMessage::RequestDisconnect => self.on_disconnect(id),
         }
@@ -1373,6 +1497,21 @@ impl GameWorld {
             .map(|s| s.entity_id)
             .collect();
         for (entity, target_id, dmg, attacker_id, attacker_is_player) in damage_events {
+            // Resistencia do alvo reduz dano recebido (min 1).
+            let target_defense = {
+                let mut d = 0i32;
+                // Se alvo eh player, pega defense dos stats
+                if let Some(s) = self.sessions.values().find(|s| s.entity_id == target_id) {
+                    d = s.stats.defense;
+                } else if let Ok(k) = self.ecs.get::<&EntityKind>(entity) {
+                    if let EntityKind::Enemy(kid) = *k {
+                        d = shared::enemy_def(kid).defense;
+                    }
+                }
+                d
+            };
+            let dmg = (dmg - target_defense).max(1);
+
             if downed_targets.contains(&target_id) {
                 // Player ja esta downed. So dano de outro jogador drena a
                 // barra de Downed. Mobs nao afetam.
@@ -1524,6 +1663,17 @@ impl GameWorld {
                             }
                         }
                         let new_level = shared::level_of_xp(session.xp);
+                        if new_level > session.last_level {
+                            let gained = new_level - session.last_level;
+                            session.unspent_points = session.unspent_points
+                                .saturating_add(gained * shared::POINTS_PER_LEVEL);
+                            session.stat_points_dirty = true;
+                            tracing::info!(
+                                "{} subiu pra L{} (+{} pontos livres)",
+                                session.name, new_level, gained * shared::POINTS_PER_LEVEL,
+                            );
+                        }
+                        session.last_level = new_level;
                         let _ = session
                             .handle
                             .to_client
@@ -1619,7 +1769,7 @@ impl GameWorld {
                         *slot = shared::InventorySlot::default();
                     }
                     session.equipment = shared::Equipment::default();
-                    session.stats = effective_stats(session.class, &session.equipment);
+                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
                     session.inventory_dirty = true;
                     session.stats_dirty = true;
                     break;
@@ -1713,7 +1863,7 @@ impl GameWorld {
                                     shared::EquipSlot::Armor  => session.equipment.armor  = Some(ltag.item_id),
                                     shared::EquipSlot::Ring   => session.equipment.ring   = Some(ltag.item_id),
                                 }
-                                session.stats = effective_stats(session.class, &session.equipment);
+                                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
                                 session.stats_dirty = true;
                                 if let Some(pe) = session.entity {
                                     hp_max_updates.push((pe, session.stats.hp_max));
@@ -1812,7 +1962,10 @@ impl GameWorld {
                 hp: hp.map(|h| h.current),
                 hp_max: hp.map(|h| h.max),
                 name: ptag.map(|p| p.name.clone()),
-                sprite_id: None,
+                sprite_id: match kind {
+                    EntityKind::Enemy(n) | EntityKind::Loot(n) | EntityKind::Npc(n) => Some(*n as u32),
+                    _ => None,
+                },
                 is_self: None,
             })
             .collect();
@@ -1905,6 +2058,13 @@ impl GameWorld {
                     xp: session.proficiencies,
                 });
             }
+            if session.stat_points_dirty {
+                session.stat_points_dirty = false;
+                let _ = session.handle.to_client.send(ServerMessage::StatPointsUpdate {
+                    unspent: session.unspent_points,
+                    allocated: session.allocated_points,
+                });
+            }
             // DownedUpdate: envia entrada/saida + updates com quantizacao do timer
             // pra evitar spam (quantizado em inteiro de segundo).
             let timer_q = session.downed_heal_timer.ceil() as i32;
@@ -1924,7 +2084,6 @@ impl GameWorld {
                     .handle
                     .to_client
                     .send(ServerMessage::StatsUpdate {
-                        class: session.class,
                         stats: session.stats,
                         equipment: session.equipment,
                     });
@@ -1953,7 +2112,7 @@ impl GameWorld {
     /// (antes do DB terminar de gravar) ja veja dados novos.
     pub fn collect_character_rows(&mut self) -> Vec<crate::persistence::CharacterRow> {
         let mut out = Vec::with_capacity(self.sessions.len());
-        let mut entries: Vec<(String, Vec2, Health, u64, Vec<shared::InventorySlot>, shared::Equipment, Vec<shared::InventorySlot>, u64, u64, [u64; 6])> = Vec::new();
+        let mut entries: Vec<(String, Vec2, Health, u64, Vec<shared::InventorySlot>, shared::Equipment, Vec<shared::InventorySlot>, u64, u64, [u64; 6], u32, [u32; 6])> = Vec::new();
         for session in self.sessions.values() {
             if !session.logged_in { continue; }
             let Some(e) = session.entity else { continue };
@@ -1970,9 +2129,11 @@ impl GameWorld {
                 session.fame,
                 session.aura,
                 session.proficiencies,
+                session.unspent_points,
+                session.allocated_points,
             ));
         }
-        for (name, pos, hp, xp, inventory, equipment, vault, fame, aura, proficiencies) in entries {
+        for (name, pos, hp, xp, inventory, equipment, vault, fame, aura, proficiencies, unspent_points, allocated_points) in entries {
             let row = crate::persistence::CharacterRow {
                 name: name.clone(),
                 pos,
@@ -1984,6 +2145,8 @@ impl GameWorld {
                 fame,
                 aura,
                 proficiencies,
+                unspent_points,
+                allocated_points,
             };
             self.characters.insert(name, row.clone());
             out.push(row);
@@ -2065,7 +2228,7 @@ impl GameWorld {
                 };
                 set_equip(session, bs, if ia.qty > 0 { Some(ia.item_id) } else { None });
                 session.inventory[ai as usize] = new_inv_slot;
-                session.stats = effective_stats(session.class, &session.equipment);
+                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
             }
@@ -2080,7 +2243,7 @@ impl GameWorld {
                 };
                 set_equip(session, as_, if ib.qty > 0 { Some(ib.item_id) } else { None });
                 session.inventory[bi as usize] = new_inv_slot;
-                session.stats = effective_stats(session.class, &session.equipment);
+                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
             }
@@ -2500,7 +2663,7 @@ impl GameWorld {
                         shared::EquipSlot::Armor  => session.equipment.armor  = Some(item_id),
                         shared::EquipSlot::Ring   => session.equipment.ring   = Some(item_id),
                     }
-                    session.stats = effective_stats(session.class, &session.equipment);
+                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
                     session.stats_dirty = true;
                     new_max = Some(session.stats.hp_max);
                     true
@@ -2572,7 +2735,7 @@ impl GameWorld {
                     Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1 },
                     None         => shared::InventorySlot::default(),
                 };
-                session.stats = effective_stats(session.class, &session.equipment);
+                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
                 (player_entity, UseAction::Equip { new_hp_max: session.stats.hp_max })
@@ -2664,6 +2827,8 @@ impl GameWorld {
             fame: session.fame,
             aura: session.aura,
             proficiencies: session.proficiencies,
+            unspent_points: session.unspent_points,
+            allocated_points: session.allocated_points,
         };
         self.characters.insert(session.name.clone(), row.clone());
         Some(row)
@@ -2679,9 +2844,28 @@ fn set_equip(session: &mut Session, slot: shared::EquipSlot, item_id: Option<u16
     }
 }
 
-/// Calcula stats efetivos = stats base da classe + bonus dos equipamentos.
-fn effective_stats(class: shared::PlayerClass, equip: &shared::Equipment) -> shared::PlayerStats {
-    let mut s = class.base_stats();
+/// Calcula stats efetivos = base + pontos alocados + equip + scaling da
+/// prof da arma equipada.
+fn effective_stats(
+    equip: &shared::Equipment,
+    allocated: &[u32; 6],
+    proficiencies: &[u64; 6],
+) -> shared::PlayerStats {
+    let mut s = shared::base_player_stats();
+
+    // Pontos alocados pelo player.
+    for (i, &pts) in allocated.iter().enumerate() {
+        if i >= shared::STAT_POINT_BONUS.len() || pts == 0 { continue; }
+        let b = shared::STAT_POINT_BONUS[i];
+        s.hp_max += b.hp_max * pts as i32;
+        s.mp_max += b.mp_max * pts as i32;
+        s.attack_damage += b.attack_damage * pts as i32;
+        s.dex += b.dex * pts as i32;
+        s.wis += b.wis * pts as i32;
+        s.defense += b.defense * pts as i32;
+    }
+
+    // Bonus do equipamento.
     for opt in [equip.weapon, equip.armor, equip.ring] {
         if let Some(id) = opt {
             let b = shared::item_bonus(id);
@@ -2690,12 +2874,35 @@ fn effective_stats(class: shared::PlayerClass, equip: &shared::Equipment) -> sha
             s.attack_damage += b.attack_damage;
             s.dex += b.dex;
             s.wis += b.wis;
+            s.defense += b.defense;
         }
     }
+
+    // Scaling da proficiencia da arma EQUIPADA.
+    let weapon_id = equip.weapon.unwrap_or(0);
+    let prof = shared::Proficiency::from_item(weapon_id);
+    let prof_idx = prof as usize;
+    let prof_lvl = if prof_idx < proficiencies.len() {
+        shared::proficiency_level(proficiencies[prof_idx])
+    } else { 1 };
+    let scaling = if weapon_id == 0 {
+        shared::unarmed_scaling()
+    } else {
+        shared::weapon_scaling(weapon_id)
+    };
+    let lvl = prof_lvl as f32;
+    s.hp_max += (scaling.hp_max * lvl) as i32;
+    s.mp_max += (scaling.mp_max * lvl) as i32;
+    s.attack_damage += (scaling.attack_damage * lvl) as i32;
+    s.dex += (scaling.dex * lvl) as i32;
+    s.wis += (scaling.wis * lvl) as i32;
+    s.defense += (scaling.defense * lvl) as i32;
+
     // Garantir minimos
     s.hp_max = s.hp_max.max(1);
     s.mp_max = s.mp_max.max(0);
     s.attack_damage = s.attack_damage.max(1);
+    s.defense = s.defense.max(0);
     s
 }
 

@@ -34,6 +34,10 @@ pub struct CharacterRow {
     pub aura: u64,
     /// XP por proficiencia (sword/staff/etc). Indice = Proficiency as u8.
     pub proficiencies: [u64; 6],
+    /// Pontos de atributo ainda nao distribuidos (ganhos via level-up).
+    pub unspent_points: u32,
+    /// Pontos ja alocados em cada stat [HP, MP, Atk, Dex, Wis, Res].
+    pub allocated_points: [u32; 6],
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -84,6 +88,13 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
         .execute(&pool)
         .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS aura BIGINT NOT NULL DEFAULT 0")
+        .execute(&pool)
+        .await?;
+    // Pontos de atributo: unspent counter + array de 6 alocados.
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS unspent_points INTEGER NOT NULL DEFAULT 0")
+        .execute(&pool)
+        .await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS allocated_points INTEGER[] NOT NULL DEFAULT '{0,0,0,0,0,0}'")
         .execute(&pool)
         .await?;
 
@@ -138,17 +149,21 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
 }
 
 pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
-    let rows = sqlx::query_as::<_, (String, f32, f32, i32, i32, i64, i64, i64)>(
-        "SELECT name, x, y, hp, max_hp, xp, fame, aura FROM characters",
+    let rows = sqlx::query_as::<_, (String, f32, f32, i32, i32, i64, i64, i64, i32, Vec<i32>)>(
+        "SELECT name, x, y, hp, max_hp, xp, fame, aura, unspent_points, allocated_points FROM characters",
     )
     .fetch_all(pool)
     .await?;
     let mut out = HashMap::with_capacity(rows.len());
-    for (name, x, y, hp, max_hp, xp, fame, aura) in rows {
+    for (name, x, y, hp, max_hp, xp, fame, aura, unspent, allocated_vec) in rows {
         let inv = load_inventory(pool, &name).await?;
         let equip = load_equipment(pool, &name).await?;
         let vault = load_vault(pool, &name).await?;
         let profs = load_proficiencies(pool, &name).await?;
+        let mut allocated = [0u32; 6];
+        for (i, v) in allocated_vec.into_iter().enumerate().take(6) {
+            allocated[i] = v.max(0) as u32;
+        }
         out.insert(
             name.clone(),
             CharacterRow {
@@ -162,6 +177,8 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
                 fame: fame.max(0) as u64,
                 aura: aura.max(0) as u64,
                 proficiencies: profs,
+                unspent_points: unspent.max(0) as u32,
+                allocated_points: allocated,
             },
         );
     }
@@ -275,9 +292,10 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
     for row in &batch.rows {
+        let allocated_vec: Vec<i32> = row.allocated_points.iter().map(|&v| v as i32).collect();
         sqlx::query(
-            "INSERT INTO characters (name, x, y, hp, max_hp, xp, fame, aura, updated)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            "INSERT INTO characters (name, x, y, hp, max_hp, xp, fame, aura, unspent_points, allocated_points, updated)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -286,6 +304,8 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                xp = EXCLUDED.xp,
                fame = EXCLUDED.fame,
                aura = EXCLUDED.aura,
+               unspent_points = EXCLUDED.unspent_points,
+               allocated_points = EXCLUDED.allocated_points,
                updated = EXCLUDED.updated",
         )
         .bind(&row.name)
@@ -296,6 +316,8 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(row.xp as i64)
         .bind(row.fame as i64)
         .bind(row.aura as i64)
+        .bind(row.unspent_points as i32)
+        .bind(&allocated_vec)
         .bind(now)
         .execute(&mut *tx)
         .await?;

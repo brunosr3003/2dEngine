@@ -41,6 +41,8 @@ pub enum ClientMessage {
     PartyAccept,
     PartyDecline,
     PartyLeave,
+    /// Aloca 1 ponto de atributo. `stat` indice em [0=HP,1=MP,2=Atk,3=Dex,4=Wis,5=Res].
+    AllocStatPoint { stat: u8 },
     RequestDisconnect,
 }
 
@@ -114,7 +116,6 @@ pub enum ServerMessage {
         slots: Vec<crate::InventorySlot>,
     },
     StatsUpdate {
-        class: crate::PlayerClass,
         stats: crate::PlayerStats,
         equipment: crate::Equipment,
     },
@@ -134,6 +135,11 @@ pub enum ServerMessage {
     },
     PartyInviteReceived { from: String },
     PartyUpdate { members: Vec<String> },
+    /// Pontos de atributo disponiveis + ja alocados em cada stat.
+    StatPointsUpdate {
+        unspent: u32,
+        allocated: [u32; 6],
+    },
     Kick {
         reason: String,
     },

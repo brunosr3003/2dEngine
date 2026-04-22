@@ -47,43 +47,21 @@ pub struct InventorySlot {
     pub qty: u32,
 }
 
-/// Classes disponiveis. A classe define stats base e dano dos projeteis.
-/// Persistida em `accounts.class` e imutavel pos-cadastro (por ora).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PlayerClass {
-    Warrior,
-    Archer,
-    Wizard,
-}
-
-impl PlayerClass {
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_ascii_lowercase().as_str() {
-            "warrior" => Some(Self::Warrior),
-            "archer"  => Some(Self::Archer),
-            "wizard"  => Some(Self::Wizard),
-            _         => None,
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Warrior => "warrior",
-            Self::Archer  => "archer",
-            Self::Wizard  => "wizard",
-        }
-    }
-
-    /// Stats iniciais. Classless: todos os jogadores comecam iguais.
-    /// A diferenciacao vem do equipamento + proficiencias (hoje tracked mas
-    /// nao muda dano; futuro: afeta dano por tipo de arma).
-    pub fn base_stats(&self) -> PlayerStats {
-        PlayerStats { hp_max: 100, mp_max: 50, dex: 10, wis: 10, attack_damage: 20 }
+/// Stats iniciais. Todos os jogadores comecam iguais (classless por
+/// proficiencia; a diferenciacao vem do equipamento + prof XP).
+pub const fn base_player_stats() -> PlayerStats {
+    PlayerStats {
+        hp_max: 100,
+        mp_max: 50,
+        dex: 10,
+        wis: 10,
+        attack_damage: 20,
+        defense: 0,
     }
 }
 
-/// Bloco de stats numericos do jogador. Pode ser sobrescrito por equipamentos
-/// futuros — enviado pro cliente pra HUD.
+/// Bloco de stats numericos do jogador. Sobrescrito por equipamentos —
+/// enviado pro cliente pra HUD/painel de status.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct PlayerStats {
     pub hp_max: i32,
@@ -91,6 +69,8 @@ pub struct PlayerStats {
     pub dex: i32,
     pub wis: i32,
     pub attack_damage: i32,
+    /// Resistencia. Reduz dano recebido: `dano_real = max(1, dmg - defense)`.
+    pub defense: i32,
 }
 
 /// Slots de equipamento. None = vazio; Some(item_id) = item equipado.

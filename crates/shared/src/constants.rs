@@ -22,7 +22,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 21;
+pub const PROTOCOL_VERSION: u16 = 23;
 
 /// Velocidade base do jogador em tiles/segundo.
 pub const PLAYER_SPEED: f32 = 5.0;
@@ -151,6 +151,8 @@ pub struct EnemyKindDef {
     pub attack_cooldown: f32,
     pub detect_range: f32,
     pub xp_reward: u64,
+    /// Resistencia flat; reduz dano recebido (`dano_real = max(1, dmg - defense)`).
+    pub defense: i32,
     /// Tint multiplicativo aplicado no sprite pelo cliente pra diferenciar.
     pub tint_rgba: [f32; 4],
 }
@@ -161,42 +163,42 @@ pub const ENEMY_KINDS: &[EnemyKindDef] = &[
     // 0 — Grunt: o basico. Tint branco.
     EnemyKindDef {
         hp_max: 50,  speed: 2.0, attack_damage: 10, attack_cooldown: 2.0,
-        detect_range: 9.0,  xp_reward: 30, tint_rgba: [1.0, 1.0, 1.0, 1.0],
+        detect_range: 9.0,  xp_reward: 30, defense: 0, tint_rgba: [1.0, 1.0, 1.0, 1.0],
     },
     // 1 — Tank: mais HP, mais lento, dano maior. Tint vermelho escuro.
     EnemyKindDef {
         hp_max: 120, speed: 1.3, attack_damage: 18, attack_cooldown: 2.8,
-        detect_range: 8.0,  xp_reward: 75, tint_rgba: [1.0, 0.35, 0.25, 1.0],
+        detect_range: 8.0,  xp_reward: 75, defense: 8, tint_rgba: [1.0, 0.35, 0.25, 1.0],
     },
     // 2 — Ranger: range longo, menos HP, mais rapido. Tint ciano forte.
     EnemyKindDef {
         hp_max: 35,  speed: 2.4, attack_damage: 12, attack_cooldown: 1.5,
-        detect_range: 13.0, xp_reward: 50, tint_rgba: [0.3, 0.9, 1.0, 1.0],
+        detect_range: 13.0, xp_reward: 50, defense: 0, tint_rgba: [0.3, 0.9, 1.0, 1.0],
     },
     // 3 — Ninja: muito rapido, melee, pouco HP. Tint roxo.
     EnemyKindDef {
         hp_max: 40,  speed: 4.2, attack_damage: 15, attack_cooldown: 1.0,
-        detect_range: 11.0, xp_reward: 55, tint_rgba: [0.75, 0.2, 1.0, 1.0],
+        detect_range: 11.0, xp_reward: 55, defense: 2, tint_rgba: [0.75, 0.2, 1.0, 1.0],
     },
     // 4 — Mago: lento, projéteis de longo alcance, alto dano. Tint azul-índigo.
     EnemyKindDef {
         hp_max: 45,  speed: 1.4, attack_damage: 22, attack_cooldown: 2.2,
-        detect_range: 15.0, xp_reward: 70, tint_rgba: [0.4, 0.4, 1.0, 1.0],
+        detect_range: 15.0, xp_reward: 70, defense: 1, tint_rgba: [0.4, 0.4, 1.0, 1.0],
     },
     // 5 — Berserker: muito HP, muito dano, lento. Tint laranja.
     EnemyKindDef {
         hp_max: 200, speed: 1.5, attack_damage: 28, attack_cooldown: 3.0,
-        detect_range: 8.0,  xp_reward: 110, tint_rgba: [1.0, 0.5, 0.1, 1.0],
+        detect_range: 8.0,  xp_reward: 110, defense: 4, tint_rgba: [1.0, 0.5, 0.1, 1.0],
     },
     // 6 — Arqueiro: distancia media, projéteis rapidos, kite. Tint verde.
     EnemyKindDef {
         hp_max: 45,  speed: 2.8, attack_damage: 14, attack_cooldown: 1.6,
-        detect_range: 13.0, xp_reward: 60, tint_rgba: [0.2, 0.9, 0.3, 1.0],
+        detect_range: 13.0, xp_reward: 60, defense: 1, tint_rgba: [0.2, 0.9, 0.3, 1.0],
     },
     // 7 — Boss: enorme HP, ataque em cone, lento, detecta tudo. Tint dourado.
     EnemyKindDef {
         hp_max: 700, speed: 1.6, attack_damage: 40, attack_cooldown: 2.8,
-        detect_range: 18.0, xp_reward: 600, tint_rgba: [1.0, 0.85, 0.15, 1.0],
+        detect_range: 18.0, xp_reward: 600, defense: 20, tint_rgba: [1.0, 0.85, 0.15, 1.0],
     },
 ];
 
@@ -360,7 +362,7 @@ pub enum EquipSlot {
     Ring,
 }
 
-/// Bonus aplicado por um equipamento. Somado aos stats base da classe.
+/// Bonus aplicado por um equipamento. Somado aos stats base.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EquipBonus {
     pub hp_max: i32,
@@ -368,28 +370,96 @@ pub struct EquipBonus {
     pub attack_damage: i32,
     pub dex: i32,
     pub wis: i32,
+    pub defense: i32,
+}
+
+/// Pontos de atributo ganhos por level-up.
+pub const POINTS_PER_LEVEL: u32 = 3;
+
+/// Bonus absoluto aplicado por 1 ponto investido em cada stat.
+/// Indices: 0=HP, 1=MP, 2=Atk, 3=Dex, 4=Wis, 5=Res.
+pub const STAT_POINT_BONUS: [EquipBonus; 6] = [
+    EquipBonus { hp_max: 5, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: 0 },
+    EquipBonus { hp_max: 0, mp_max: 2, attack_damage: 0, dex: 0, wis: 0, defense: 0 },
+    EquipBonus { hp_max: 0, mp_max: 0, attack_damage: 1, dex: 0, wis: 0, defense: 0 },
+    EquipBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 1, wis: 0, defense: 0 },
+    EquipBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 0, wis: 1, defense: 0 },
+    EquipBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: 1 },
+];
+
+/// Escalamento por level de proficiencia, aplicado quando a arma correspondente
+/// esta equipada. Tudo em f32 e truncado depois de multiplicar pelo level.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WeaponScaling {
+    pub hp_max: f32,
+    pub mp_max: f32,
+    pub attack_damage: f32,
+    pub dex: f32,
+    pub wis: f32,
+    pub defense: f32,
+}
+
+/// Scaling por arma equipada. level vem da Proficiency::from_item(weapon_id).
+/// Unarmed (sem arma): usa `unarmed_scaling()`.
+pub const fn weapon_scaling(item_id: u16) -> WeaponScaling {
+    match item_id {
+        // Espada (sword & board): tanque — +HP, +Res
+        id if id == item_id::SWORD => WeaponScaling {
+            hp_max: 1.0, mp_max: 0.0, attack_damage: 0.0, dex: 0.0, wis: 0.0, defense: 0.1,
+        },
+        // Espadao: DPS puro
+        id if id == item_id::GREAT_SWORD => WeaponScaling {
+            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.5, dex: 0.0, wis: 0.0, defense: 0.0,
+        },
+        // Adaga: duelista
+        id if id == item_id::DAGGER => WeaponScaling {
+            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.3, dex: 0.2, wis: 0.0, defense: 0.0,
+        },
+        // Cajado: caster hibrido
+        id if id == item_id::STAFF => WeaponScaling {
+            hp_max: 0.0, mp_max: 1.0, attack_damage: 0.0, dex: 0.0, wis: 0.2, defense: 0.0,
+        },
+        // Arco: ranger
+        id if id == item_id::BOW => WeaponScaling {
+            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.1, dex: 0.5, wis: 0.0, defense: 0.0,
+        },
+        // Varinha: caster puro
+        id if id == item_id::WAND => WeaponScaling {
+            hp_max: 0.0, mp_max: 1.0, attack_damage: 0.0, dex: 0.0, wis: 0.3, defense: 0.0,
+        },
+        _ => WeaponScaling {
+            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.0, dex: 0.0, wis: 0.0, defense: 0.0,
+        },
+    }
+}
+
+/// Scaling quando sem arma (Unarmed). Aplicado com Proficiency::Unarmed level.
+pub const fn unarmed_scaling() -> WeaponScaling {
+    WeaponScaling {
+        hp_max: 0.0, mp_max: 0.0, attack_damage: 0.2, dex: 0.0, wis: 0.0, defense: 0.0,
+    }
 }
 
 pub const fn item_bonus(item_id: u16) -> EquipBonus {
     match item_id {
         // Armas
-        id if id == item_id::SWORD        => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 10, dex: 0,  wis: 0 },
-        id if id == item_id::STAFF        => EquipBonus { hp_max:  0,  mp_max:  40, attack_damage: 20, dex: 0,  wis: 5 },
-        id if id == item_id::DAGGER       => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  7, dex: 10, wis: 0 },
-        id if id == item_id::GREAT_SWORD  => EquipBonus { hp_max:  0,  mp_max: -20, attack_damage: 28, dex: -3, wis: 0 },
-        id if id == item_id::BOW          => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 14, dex: 12, wis: 0 },
-        id if id == item_id::WAND         => EquipBonus { hp_max:  0,  mp_max:  80, attack_damage:  6, dex: 0,  wis: 8 },
+        id if id == item_id::SWORD        => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 10, dex: 0,  wis: 0, defense: 0 },
+        id if id == item_id::STAFF        => EquipBonus { hp_max:  0,  mp_max:  40, attack_damage: 20, dex: 0,  wis: 5, defense: 0 },
+        id if id == item_id::DAGGER       => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  7, dex: 10, wis: 0, defense: 0 },
+        id if id == item_id::GREAT_SWORD  => EquipBonus { hp_max:  0,  mp_max: -20, attack_damage: 28, dex: -3, wis: 0, defense: 0 },
+        id if id == item_id::BOW          => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 14, dex: 12, wis: 0, defense: 0 },
+        id if id == item_id::WAND         => EquipBonus { hp_max:  0,  mp_max:  80, attack_damage:  6, dex: 0,  wis: 8, defense: 0 },
         // Armaduras
-        id if id == item_id::ARMOR        => EquipBonus { hp_max: 40,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0 },
-        id if id == item_id::SHIELD       => EquipBonus { hp_max: 75,  mp_max:   0, attack_damage: -5, dex: 0,  wis: 0 },
-        id if id == item_id::LEATHER_ARMOR=> EquipBonus { hp_max: 25,  mp_max:   0, attack_damage:  0, dex: 6,  wis: 0 },
-        id if id == item_id::PLATE_ARMOR  => EquipBonus { hp_max:120,  mp_max: -10, attack_damage:  0, dex: -5, wis: 0 },
-        id if id == item_id::ROBE         => EquipBonus { hp_max: 10,  mp_max:  60, attack_damage:  0, dex: 0,  wis: 8 },
+        id if id == item_id::ARMOR        => EquipBonus { hp_max: 40,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0, defense:  5 },
+        id if id == item_id::SHIELD       => EquipBonus { hp_max: 75,  mp_max:   0, attack_damage: -5, dex: 0,  wis: 0, defense:  8 },
+        id if id == item_id::LEATHER_ARMOR=> EquipBonus { hp_max: 25,  mp_max:   0, attack_damage:  0, dex: 6,  wis: 0, defense:  3 },
+        id if id == item_id::PLATE_ARMOR  => EquipBonus { hp_max:120,  mp_max: -10, attack_damage:  0, dex: -5, wis: 0, defense: 12 },
+        id if id == item_id::ROBE         => EquipBonus { hp_max: 10,  mp_max:  60, attack_damage:  0, dex: 0,  wis: 8, defense:  2 },
         // Acessorios
-        id if id == item_id::RING         => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  0, dex: 5,  wis: 3 },
-        id if id == item_id::AMULET       => EquipBonus { hp_max: 15,  mp_max:  30, attack_damage:  0, dex: 0,  wis: 8 },
-        id if id == item_id::LUCKY_RING   => EquipBonus { hp_max: 10,  mp_max:  20, attack_damage:  2, dex: 6,  wis: 2 },
-        _                                 => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0 },
+        id if id == item_id::RING         => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  0, dex: 5,  wis: 3, defense: 0 },
+        id if id == item_id::AMULET       => EquipBonus { hp_max: 15,  mp_max:  30, attack_damage:  0, dex: 0,  wis: 8, defense: 1 },
+        id if id == item_id::LUCKY_RING   => EquipBonus { hp_max: 10,  mp_max:  20, attack_damage:  2, dex: 6,  wis: 2, defense: 0 },
+        _                                 => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0, defense: 0 },
     }
 }
 
@@ -433,5 +503,7 @@ pub mod tile_id {
     pub const WALL:  u16 = 2;
     pub const DIRT:  u16 = 3;
     pub const WATER: u16 = 4;
+    /// Piso de dungeon — visualmente distinto, colisoes iguais a FLOOR.
+    pub const DUNGEON_FLOOR: u16 = 5;
     pub const WOOD:  u16 = 5;
 }

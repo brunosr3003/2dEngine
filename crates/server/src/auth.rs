@@ -11,7 +11,6 @@ use sqlx::postgres::PgPool;
 pub struct AuthSuccess {
     pub account_id: i64,
     pub username: String,
-    pub class: shared::PlayerClass,
 }
 
 #[derive(Debug, Clone)]
@@ -25,19 +24,17 @@ pub async fn authenticate(
     username: &str,
     password: &str,
 ) -> Result<AuthSuccess, AuthError> {
-    let row = sqlx::query_as::<_, (i64, String, String, String)>(
-        "SELECT id, username, password_hash, class FROM accounts WHERE username = $1",
+    let row = sqlx::query_as::<_, (i64, String, String)>(
+        "SELECT id, username, password_hash FROM accounts WHERE username = $1",
     )
     .bind(username)
     .fetch_optional(pool)
     .await
     .map_err(|e| AuthError::Internal(format!("{e:?}")))?;
 
-    let Some((id, uname, hash, class_str)) = row else {
+    let Some((id, uname, hash)) = row else {
         return Err(AuthError::InvalidCredentials);
     };
-    let class = shared::PlayerClass::from_str(&class_str)
-        .unwrap_or(shared::PlayerClass::Warrior);
 
     // argon2 verify e CPU-bound; roda em blocking pool pra nao segurar o
     // runtime de io.
@@ -55,7 +52,7 @@ pub async fn authenticate(
     .map_err(|e| AuthError::Internal(format!("join: {e}")))?;
 
     if ok {
-        Ok(AuthSuccess { account_id: id, username: uname, class })
+        Ok(AuthSuccess { account_id: id, username: uname })
     } else {
         Err(AuthError::InvalidCredentials)
     }
