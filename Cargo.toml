@@ -17,11 +17,10 @@ thiserror = "1"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
-bincode = "1.3"
+serde_json = "1"
 
-# Math & bytemuck for GPU upload
-glam = { version = "0.29", features = ["serde", "bytemuck"] }
-bytemuck = { version = "1.16", features = ["derive"] }
+# Math
+glam = { version = "0.29", features = ["serde"] }
 
 # ECS
 hecs = "0.10"
@@ -30,15 +29,6 @@ hecs = "0.10"
 tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util"] }
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
-
-# Rendering / windowing (cliente)
-wgpu = "22.1"
-winit = "0.30"
-pollster = "0.3"
-image = { version = "0.25", default-features = false, features = ["png"] }
-
-# Audio (native only; wasm usa web-sys::AudioContext na fase 5)
-rodio = { version = "0.17", default-features = false, features = ["mp3", "wav"] }
 
 # Persistencia (servidor)
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "macros"] }
@@ -49,15 +39,14 @@ tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }
 argon2 = "0.5"
 
 # Internal workspace crates
-engine = { path = "crates/engine" }
 shared = { path = "crates/shared" }
 
 [profile.dev]
-opt-level = 1           # dev compila mais rapido mas roda decente
+opt-level = 1
 debug = 1
 
 [profile.dev.package."*"]
-opt-level = 3           # dependencias de terceiros sempre otimizadas
+opt-level = 3
 
 [profile.release]
 lto = "thin"

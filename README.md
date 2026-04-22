@@ -11,13 +11,15 @@ sobrevivência, PvP de alto risco, sistema sem classes e combates tensos (hardco
 
 | Camada | Tech |
 |---|---|
-| Render | `wgpu` (Vulkan/Metal/DX12/GL/WebGPU) |
-| Janela/input | `winit` (Windows/macOS/Linux/Android/iOS/Web) |
 | ECS | `hecs` |
-| Net (native) | `tokio` + `tokio-tungstenite` (WebSocket binário) |
-| Net (wasm) | `web-sys::WebSocket` *(planejado)* |
-| Serialização | `bincode` + `serde` |
+| Net | `tokio` + `tokio-tungstenite` (WebSocket binário) |
+| Serialização | `rmp-serde` (MessagePack named) + `serde` |
 | Matemática | `glam` |
+| Persistência | `sqlx` + Postgres |
+| Auth | `argon2` |
+| Web (cadastro) | `axum` |
+
+**Cliente:** Unity 6.4 + URP 2D (`/mmorpg`).
 
 Escolhas explicadas em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -27,12 +29,10 @@ Escolhas explicadas em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 2dEngine/
 ├── Cargo.toml              workspace
 ├── crates/
-│   ├── engine/             engine (render, input, ECS, assets)
-│   ├── shared/             protocolo + componentes cliente/servidor
+│   ├── shared/             protocolo + componentes (types compartilhados)
 │   ├── server/             servidor autoritativo tokio
-│   └── client/             cliente (usa engine)
-├── docs/                   arquitetura, roadmap, networking
-└── assets/                 sprites, tilemaps, sons
+│   └── web/                cadastro / admin HTTP (axum)
+└── docs/                   arquitetura, roadmap, networking
 ```
 
 ## Quick start
@@ -41,33 +41,28 @@ Escolhas explicadas em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-# siga as instruções; depois: source "$HOME/.cargo/env"
+source "$HOME/.cargo/env"
 ```
 
-Rust 1.82+ recomendado (definido em `rust-toolchain.toml`).
+### 2. Subir Postgres (dev)
 
-### 2. Rodar servidor
+```sh
+# Requer DATABASE_URL no .env.local
+# postgres://solar:solar_dev_123@localhost:5432/mmo_dev
+```
+
+### 3. Rodar servidor
 
 ```sh
 cd 2dEngine
 cargo run --bin server
-# server listening on ws://0.0.0.0:9000 (30 Hz)
+# ws://0.0.0.0:9000 — tick 30Hz
 ```
 
-### 3. Rodar cliente (em outro terminal)
+### 4. Conectar cliente Unity
 
-```sh
-cargo run --bin client
-# abre uma janela, conecta em ws://127.0.0.1:9000
-# WASD move, Esc sai
-```
-
-Múltiplos clientes na mesma máquina:
-
-```sh
-USERNAME=Alice cargo run --bin client
-USERNAME=Bob   cargo run --bin client
-```
+Abra o projeto `/Users/bruno/mmorpg` no Unity 6.4,
+rode a cena `Login` e conecte em `ws://127.0.0.1:9000`.
 
 ## Próximas fases
 

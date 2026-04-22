@@ -1,169 +1,130 @@
 # Roadmap
 
-> Cada fase tem um **goal** testável. Não avançar antes do goal estar
-> demonstrável (não "quase pronto").
+> Cada fase tem um **goal** testável. Não avançar antes do goal estar demonstrável.
 
 ---
 
-## Fase 1 — Scaffold e loop end-to-end ✅ (em andamento)
+## Fase 1 — Scaffold e loop end-to-end ✅
 
-**Goal:** cliente conecta, vê a si mesmo e outros clientes como quadrados
-coloridos movendo-se sincronizados pelo servidor autoritativo.
+**Goal:** cliente conecta, vê a si mesmo e outros clientes como quadrados coloridos movendo-se sincronizados pelo servidor autoritativo.
 
-Entregue no scaffold inicial:
-
-- [x] Workspace Cargo (engine / shared / server / client)
-- [x] Protocolo bincode (Handshake, Login, Input, Snapshot, Chat)
+- [x] Workspace Cargo (shared / server / web)
+- [x] Protocolo JSON (Handshake, Login, Input, Snapshot, Chat)
 - [x] Servidor tokio com tick loop 30Hz e AOI naive
-- [x] Cliente winit + wgpu renderizando sprites instanciados
 - [x] Input WASD + envio de InputFrames
-- [x] Câmera smooth-follow
-
-Pendências desta fase:
-
-- [ ] `cargo check` verde no workspace (user precisa instalar Rust).
-- [ ] Teste manual com 2 clientes na mesma máquina.
-- [ ] Smoke test automático: spawn server, conecta 1 cliente, recebe
-      snapshot, desconecta limpo.
+- [x] Cliente Unity scaffoldado (Universal 2D URP, Unity 6.4)
+- [x] MCP for Unity configurado (HTTP :8080)
+- [ ] `cargo check` verde no workspace
+- [ ] Teste manual: servidor Rust + cliente Unity conectam, snapshot chega
 
 ---
 
 ## Fase 2 — Mundo jogável mínimo (2 semanas)
 
-**Goal:** um mapa navegável com tiles, sprites de verdade, múltiplos
-jogadores se vendo com sprites animados, chat funcional.
+**Goal:** ilha navegável com tiles Mana Seed, sprite do jogador animado (paper doll), múltiplos jogadores visíveis, chat funcional.
 
-### Render
-- [ ] `Atlas` carregado de PNG + JSON (sub-retângulos).
-- [ ] `TilemapRenderer`: chunks instanciados de tiles (não um quad
-      por tile).
-- [ ] Z-ordering por `position.y` (top-down com profundidade).
-- [ ] Sprite animado: componente `AnimState { clip, frame, time }`
-      avançado no update.
-- [ ] UI mínima: HP bar sobre cada jogador, nome, caixa de chat.
+### Unity (cliente)
+- [ ] Importer de sprite sheets Mana Seed (64×64px, paper doll em layers)
+- [ ] Tilemap 16×16 com Mana Seed Forest tileset
+- [ ] Cena Login (TMP, NetClient, LoginUI)
+- [ ] Cena Game (câmera Pixel Perfect 320×180, Cinemachine follow, Tilemap, 2D Global Light)
+- [ ] EntityRenderer: recebe EntitySnapshot e renderiza sprite correto
+- [ ] Interpolação de posição entre snapshots (buffer 2–3, renderiza 100ms no passado)
+- [ ] HP bar + nome sobre entidade
+- [ ] Chat UI (TMP + scroll)
 
-### Simulação
-- [ ] Tiles bloqueantes (paredes). Colisão AABB vs grid.
-- [ ] **Predição client-side + reconciliação** (ver NETWORKING.md).
-- [ ] Interpolação entre snapshots para entidades remotas
-      (buffer de 2-3 snapshots, renderiza 100-150ms no passado).
-
-### Net
-- [ ] Spatial hash grid no servidor, substitui O(E×S) do AOI.
-- [ ] `last_input_seq` → reconciliação client-side.
-- [ ] Ping RTT medido com `server_time_ms`.
+### Rust (servidor)
+- [ ] MapFile com tileset de ilha rasa (gerado proceduralmente ou hardcoded)
+- [ ] Tiles bloqueantes (paredes, água). Colisão AABB vs grid
+- [ ] Predição client-side + reconciliação (`last_input_seq`)
+- [ ] Spatial hash grid (substitui AOI O(E×S))
 
 ---
 
 ## Fase 3 — Combate e NPCs (3 semanas)
 
-**Goal:** atirar em inimigos, tomar dano, morrer, ressuscitar. Mobs com
-IA básica que perseguem e atacam.
+**Goal:** atirar em mobs, tomar dano, cair em Downed State, ser revivido ou morrer.
 
-- [ ] `Projectile` entity + componente `Lifetime`, `Damage`, `OwnedBy`.
-- [ ] Ataque: `ClientMessage::Input.buttons & PRIMARY` → servidor gera
-      projétil no cooldown + mira.
-- [ ] Colisão projétil vs entidade (broadphase grid, narrow AABB).
-- [ ] `Enemy(kind)` com componente `AiState { target, patrol_origin }`.
-- [ ] State machine simples: idle → chase → attack.
-- [ ] Death + respawn: entidade despawna, envia `Kick`? não, spawna
-      de novo após timer.
-- [ ] Loot: ao morrer, mob dropa entity `Loot(kind)`; jogador coleta com
-      `INTERACT` se estiver em alcance.
+- [ ] `Projectile` entity: `lifetime`, `speed`, `damage`, `owner`
+- [ ] Ataque básico: cooldown por tipo de arma
+- [ ] Colisão projétil vs entidade (broadphase spatial grid, narrow AABB)
+- [ ] `Enemy { kind, ai_state }` com state machine idle → chase → attack
+- [ ] **Downed State:** HP → 0 = Downed (não morte). Barra `dhp`, timer auto-revival
+- [ ] Execução: player pode executar Downed inimigo (cast 3s)
+- [ ] Loot: mob dropa entidade `Loot { item_id, qty }` ao morrer
+- [ ] Coleta de loot por proximidade + INTERACT
 
 ---
 
-## Fase 4 — Progressão e persistência (3 semanas)
+## Fase 4 — Progressão Classless (3 semanas)
 
-**Goal:** contas persistentes. Sair e voltar mantém nível, inventário,
-posição.
+**Goal:** contas persistentes com proficiências funcionando. Equipar espada diferente de cajado em termos de dano.
 
-- [ ] `sqlx` + SQLite para dev (schema: accounts, characters, inventory).
-- [ ] Postgres como opção de prod via env var.
-- [ ] `AuthService`: username/password hashed (argon2), sessão por token.
-- [ ] Inventário (24 slots) + equipamento (arma, armadura, anel).
-- [ ] XP, level, stats base (HP, MP, DEX, WIS).
-- [ ] Classes iniciais: Archer, Warrior, Wizard.
-- [ ] Snapshot periódico do personagem → DB (a cada 30s + no logout).
-
----
-
-## Fase 5 — Cross-platform (4 semanas)
-
-**Goal:** roda nativo em desktop (Win/Mac/Linux) e mobile (Android + iOS)
-com **crossplay** no mesmo shard. **Sem build para browser** — o cliente
-é um app nativo em todas as plataformas.
-
-### Desktop (Win/Mac/Linux)
-- [x] Mac: funciona (wgpu/Metal).
-- [ ] Windows: validar em GitHub Actions `windows-latest` (DX12).
-- [ ] Linux: validar em `ubuntu-latest` (Vulkan).
-- [ ] Instaladores/binary artifacts por plataforma (cargo-bundle / MSI / dmg).
-
-### Android
-- [ ] `cargo-apk` ou projeto Gradle embedando o crate.
-- [ ] `NativeActivity` via `android-activity`.
-- [ ] UI de touch: joystick virtual (canto esquerdo), botão de atacar
-      (direito). Adicionar `TouchInput` no engine/input.
-- [ ] Ciclo de lifecycle (Pause/Resume) → reconectar no servidor.
-- [ ] wgpu → Vulkan (backend preferido) com fallback GLES 3.
-
-### iOS
-- [ ] `cargo-mobile2` (gera projeto Xcode) ou Xcode wrapper custom.
-- [ ] Metal backend do wgpu.
-- [ ] Mesma UI de touch (compartilhada com Android).
-- [ ] App Store exige: LaunchScreen, ícones, TestFlight para beta.
-
-### Multiplatform concerns
-- [ ] Assets compatíveis (evitar texturas >2048² em GL ES 2 / WebGL2).
-- [ ] Controles adaptativos: `InputSource { Keyboard, Touch, Gamepad }`.
-- [ ] Build script CI (GitHub Actions) que compila todos os targets
-      em cada PR.
+- [ ] Postgres (sqlx): schema `accounts`, `characters`, `inventory`, `proficiencies`
+- [ ] Auth: argon2id, sessão por token
+- [ ] **Nível Principal** (1–100): XP geral → pontos de atributo (FOR/DES/INT/VIT/SPD)
+- [ ] **Proficiências por uso:** tabela `proficiency_xp[kind]`, cap = f(level)
+- [ ] Tipos de arma: Espada, Arco, Cajado. Dano modificado por proficiência + atributo
+- [ ] Slots de equipamento: arma + armadura + anel×2
+- [ ] Durabilidade de itens: reduz com uso e na morte
+- [ ] Vault (baú permanente no Porto): depositar/retirar itens entre mortes
+- [ ] Snapshot periódico do personagem → DB (30s + logout)
 
 ---
 
-## Fase 6 — Conteúdo e lançamento (∞)
+## Fase 5 — Navegação e Ilhas (3 semanas)
+
+**Goal:** jogador navega de barco do Porto até ilha distante. Mapa do mundo visível.
+
+- [ ] Entidade `Boat`: item equipável de transporte. Velocidade e HP próprios
+- [ ] Mapa do mundo: grid de ilhas com tier e distância do Porto
+- [ ] Gerador procedural de ilhas (BSP ou drunkard's walk) por tier
+- [ ] Transição entre mapas (portal de barco → servidor troca MapFile)
+- [ ] Barco pode ser atacado em zonas PvP (tier 2+)
+- [ ] **Sistema de Aura/Poise:** tabela `aura_xp`, ganho em kills PvP, perda em mortes
+- [ ] Mecânica de carregar Downed (`F` key, penalidade de movimento)
+
+---
+
+## Fase 6 — Cross-platform (4 semanas)
+
+**Goal:** roda nativo em desktop (Win/Mac/Linux) e mobile (Android + iOS) com crossplay.
+
+- [ ] Android: Input System touch, joystick virtual, lifecycle pause/resume
+- [ ] iOS: Metal backend, TestFlight beta
+- [ ] Windows/Linux: validar CI (GitHub Actions)
+- [ ] Build scripts por plataforma
+
+---
+
+## Fase 7 — Conteúdo e lançamento (∞)
 
 **Goal:** um jogo que vale a pena jogar.
 
-- [ ] Gerador procedural de dungeons (BSP ou drunkard's walk).
-- [ ] Biomas: grassland, desert, cavern, nexus (hub social).
-- [ ] 15+ tipos de mobs com comportamento distintos.
-- [ ] 3+ bosses com scripts específicos.
-- [ ] Sistema de raridade de loot (5 tiers).
-- [ ] Party-finding + chat por canal.
-- [ ] Trade P2P entre jogadores.
-- [ ] Servidor de matchmaking para múltiplos shards.
-- [ ] Leaderboard / logros persistentes.
+- [ ] 15+ tipos de mobs com comportamentos distintos
+- [ ] 3+ bosses com mecânicas específicas
+- [ ] 5 tiers de raridade de loot funcionando
+- [ ] Biomas completos: Ilhas Rasas, Vulcânicas, Amaldiçoadas
+- [ ] Party-finding + guild system
+- [ ] Trade P2P entre jogadores
+- [ ] Leaderboard de Aura e Fama
+- [ ] Múltiplos shards com matchmaking
 
 ---
 
-## Infra / operacional (paralelo a tudo)
+## Infra (paralelo a tudo)
 
-- [ ] CI: `cargo check`, `cargo test`, `cargo clippy` em PR.
-- [ ] `cargo deny` para checar licenças e CVEs.
-- [ ] Docker/Nomad para o servidor.
-- [ ] Observabilidade: `tracing` → OTLP → Grafana/Tempo.
-- [ ] Backup do DB periódico.
-- [ ] Rate-limit + DDoS mitigation (Cloudflare na frente do WS).
-
----
-
-## Decisões a tomar quando a hora chegar
-
-- [ ] Monetização: F2P com cosméticos? B2P? Early access?
-- [ ] Hospedagem: VPS simples (Hetzner) vs Kubernetes? Resposta depende
-      da escala — começa com 1 VPS.
-- [ ] Shards: 1 servidor = 1 mapa = 1 processo? Ou 1 processo com N
-      mundos? Primeiro caso é mais simples, depois pode evoluir.
-- [ ] Suporte a mods? Luau/Rhai embarcado para scripts de enemy/item?
+- [ ] CI: `cargo check`, `cargo test`, `cargo clippy` em PR
+- [ ] Docker para o servidor Rust
+- [ ] Observabilidade: `tracing` → OTLP → Grafana
+- [ ] Rate-limit + DDoS mitigation no WS
+- [ ] Backup automático do DB
 
 ---
 
-## Anti-goals (coisas que NÃO vamos fazer)
+## Decisões futuras
 
-- ❌ Implementar bindings de Vulkan/Metal do zero.
-- ❌ Refazer hecs/glam/winit — "not invented here" é cilada.
-- ❌ Bevy (resolve demais — engine própria virou só camada fina).
-- ❌ 3D. Nunca.
-- ❌ Voice chat. Terceirizar se quiserem (Discord).
+- [ ] Monetização: F2P cosméticos? B2P?
+- [ ] Hospedagem: Hetzner VPS → Kubernetes conforme escala
+- [ ] Mods: Lua/Rhai embarcado para scripts de enemy/item?
+- [ ] Permadeath configurável: servidor em modo soft (mantém personagem) ou hard?

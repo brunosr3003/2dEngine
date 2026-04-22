@@ -1,8 +1,8 @@
-//! Formato de mapa serializavel (editor <-> servidor).
+//! Formato de mapa serializavel (ferramentas externas <-> servidor).
 //!
 //! Um MapFile descreve um mapa estatico: grid de tiles + entidades
 //! "pre-posicionadas" (spawns de inimigos, portais, NPCs). Salvo via
-//! bincode pra dar load rapido no servidor. Editado via crate `editor`.
+//! MessagePack (rmp-serde named) em disco.
 //!
 //! O servidor carrega um MapFile por "mapa" (nexus, dungeon X, etc).
 
@@ -71,14 +71,12 @@ impl MapFile {
         self.tiles[(y as u32 * self.width + x as u32) as usize] = id;
     }
 
-    /// Serializa pra bytes (bincode).
     pub fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
-        Ok(bincode::serialize(self)?)
+        Ok(serde_json::to_vec(self)?)
     }
 
-    /// Deserializa de bytes (bincode).
     pub fn from_bytes(data: &[u8]) -> anyhow::Result<Self> {
-        Ok(bincode::deserialize(data)?)
+        Ok(serde_json::from_slice(data)?)
     }
 
     /// Carrega de disco.

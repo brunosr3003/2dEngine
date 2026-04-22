@@ -16,9 +16,10 @@ pub async fn handle_connection(
     to_world: mpsc::UnboundedSender<IncomingMessage>,
 ) -> Result<()> {
     stream.set_nodelay(true)?;
-    let ws = tokio_tungstenite::accept_async(stream).await?;
+    let mut cfg = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default();
+    cfg.accept_unmasked_frames = true;
+    let mut ws = tokio_tungstenite::accept_async_with_config(stream, Some(cfg)).await?;
     tracing::info!("ws accepted from {peer}");
-    let (mut write, mut read) = ws.split();
 
     let (tx_out, mut rx_out) = mpsc::unbounded_channel::<ServerMessage>();
     let session_id = SessionId(peer);
@@ -27,44 +28,48 @@ pub async fn handle_connection(
         to_client: tx_out.clone(),
     }))?;
 
-    // Task de envio: serializa mensagens do world e escreve no socket.
-    let sender_task = tokio::spawn(async move {
-        while let Some(msg) = rx_out.recv().await {
-            let bytes = match shared::protocol::encode(&msg) {
-                Ok(b) => b,
-                Err(e) => {
-                    tracing::warn!("encode: {e}");
-                    continue;
+    loop {
+        tokio::select! {
+            // Mensagem chegando do world para enviar ao cliente
+            Some(server_msg) = rx_out.recv() => {
+                let bytes = match shared::protocol::encode(&server_msg) {
+                    Ok(b) => b,
+                    Err(e) => { tracing::warn!("encode: {e}"); continue; }
+                };
+                if ws.send(Message::Text(String::from_utf8_lossy(&bytes).into_owned())).await.is_err() {
+                    break;
                 }
-            };
-            if write.send(Message::Binary(bytes)).await.is_err() {
-                break;
             }
-        }
-    });
 
-    // Loop de leitura.
-    while let Some(msg) = read.next().await {
-        let msg = msg?;
-        match msg {
-            Message::Binary(b) => match shared::protocol::decode::<ClientMessage>(&b) {
-                Ok(cm) => {
-                    if to_world
-                        .send(IncomingMessage::Message(session_id, cm))
-                        .is_err()
-                    {
+            // Frame chegando do cliente
+            frame = ws.next() => {
+                match frame {
+                    None => break,
+                    Some(Err(e)) => {
+                        tracing::debug!("session {peer} ended: {e}");
                         break;
                     }
+                    Some(Ok(msg)) => match msg {
+                        Message::Binary(b) => match shared::protocol::decode::<ClientMessage>(&b) {
+                            Ok(cm) => { if to_world.send(IncomingMessage::Message(session_id, cm)).is_err() { break; } }
+                            Err(e) => tracing::warn!("decode binary from {peer}: {e}"),
+                        },
+                        Message::Text(t) => match shared::protocol::decode::<ClientMessage>(t.as_bytes()) {
+                            Ok(cm) => { if to_world.send(IncomingMessage::Message(session_id, cm)).is_err() { break; } }
+                            Err(e) => tracing::warn!("decode text from {peer}: {e}"),
+                        },
+                        Message::Ping(data) => {
+                            let _ = ws.send(Message::Pong(data)).await;
+                        }
+                        Message::Close(_) => break,
+                        _ => {}
+                    }
                 }
-                Err(e) => tracing::warn!("decode from {peer}: {e}"),
-            },
-            Message::Close(_) => break,
-            _ => {}
+            }
         }
     }
 
     let _ = to_world.send(IncomingMessage::Disconnected(session_id));
-    sender_task.abort();
     tracing::info!("session {peer} closed");
     Ok(())
 }

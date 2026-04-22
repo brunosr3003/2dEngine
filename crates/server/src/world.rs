@@ -549,7 +549,15 @@ impl GameWorld {
         let _ = handle.to_client.send(ServerMessage::LoginOk {
             player_id: pid,
             entity_id,
-            spawn,
+            spawn: [spawn.x, spawn.y],
+        });
+        let _ = handle.to_client.send(ServerMessage::MapChange {
+            map_name: "overworld".to_string(),
+            width: self.map.width,
+            height: self.map.height,
+            tiles: self.map.tiles.clone(),
+            spawn: [spawn.x, spawn.y],
+            safe_zone: false,
         });
         let _ = handle.to_client.send(ServerMessage::StatsUpdate {
             class: success.class,
@@ -864,12 +872,12 @@ impl GameWorld {
                     let _ = auth_ctx.tx.send(IncomingMessage::AuthResult(id, result));
                 });
             }
-            ClientMessage::Input(frame) => {
+            ClientMessage::Input { input: frame } => {
                 if let Some(s) = self.sessions.get_mut(&id) {
                     s.pending_input = Some(frame);
                 }
             }
-            ClientMessage::Chat(text) => {
+            ClientMessage::Chat { text } => {
                 // Comandos de slash
                 let trimmed = text.trim();
                 if let Some(rest) = trimmed.strip_prefix("/party ") {
@@ -933,6 +941,9 @@ impl GameWorld {
             }
             ClientMessage::StandUp => {
                 self.handle_stand_up(id);
+            }
+            ClientMessage::TeleportToVendor => {
+                self.handle_teleport_to_vendor(id);
             }
             ClientMessage::PartyInvite { target_name } => {
                 self.handle_party_invite(id, target_name);
@@ -1788,11 +1799,21 @@ impl GameWorld {
             .iter()
             .map(|(_, (net, pos, vel, kind, hp, ptag))| EntitySnapshot {
                 id: net.0,
-                kind: *kind,
+                kind: match kind {
+                    EntityKind::Player      => "Player".to_string(),
+                    EntityKind::Enemy(_)    => "Enemy".to_string(),
+                    EntityKind::Projectile  => "Projectile".to_string(),
+                    EntityKind::Loot(_)     => "Loot".to_string(),
+                    EntityKind::Npc(_)      => "Npc".to_string(),
+                    EntityKind::Portal      => "Portal".to_string(),
+                },
                 pos: pos.0,
                 vel: vel.0,
-                hp: hp.copied(),
+                hp: hp.map(|h| h.current),
+                hp_max: hp.map(|h| h.max),
                 name: ptag.map(|p| p.name.clone()),
+                sprite_id: None,
+                is_self: None,
             })
             .collect();
 
@@ -1823,6 +1844,7 @@ impl GameWorld {
             let center = centers.get(sid).copied().unwrap_or(Vec2::ZERO);
             let ccx = (center.x / cell).floor() as i32;
             let ccy = (center.y / cell).floor() as i32;
+            let my_entity_id = session.entity_id;
             let mut visible: Vec<EntitySnapshot> = Vec::new();
             for dy in -1..=1 {
                 for dx in -1..=1 {
@@ -1830,19 +1852,23 @@ impl GameWorld {
                         for &i in idxs {
                             let s = &all[i];
                             if s.pos.distance_squared(center) <= radius_sq {
-                                visible.push(s.clone());
+                                let mut snap = s.clone();
+                                if snap.id == my_entity_id {
+                                    snap.is_self = Some(true);
+                                }
+                                visible.push(snap);
                             }
                         }
                     }
                 }
             }
-            let _ = session.handle.to_client.send(ServerMessage::Snapshot(WorldSnapshot {
+            let _ = session.handle.to_client.send(ServerMessage::Snapshot { snapshot: WorldSnapshot {
                 tick: self.tick,
                 server_time_ms: now_ms(),
                 last_input_seq: session.last_input_seq,
                 entities: visible,
                 removed: removed.clone(),
-            }));
+            }});
             if session.inventory_dirty {
                 session.inventory_dirty = false;
                 let _ = session
@@ -2285,6 +2311,29 @@ impl GameWorld {
         let _ = self.ecs.remove_one::<Untargetable>(entity);
     }
 
+    fn handle_teleport_to_vendor(&mut self, sid: SessionId) {
+        let Some(session) = self.sessions.get(&sid) else { return };
+        if !session.logged_in || session.downed { return; }
+        let Some(player_entity) = session.entity else { return };
+
+        // Acha a posição do NPC vendor (npc_id=1)
+        let vendor_pos = self
+            .ecs
+            .query::<(&Position, &EntityKind)>()
+            .iter()
+            .find_map(|(_, (p, k))| {
+                if matches!(k, EntityKind::Npc(1)) { Some(p.0) } else { None }
+            });
+
+        let Some(vpos) = vendor_pos else { return };
+        let dest = vpos + glam::Vec2::new(1.0, 0.0);
+
+        if let Ok(mut pos) = self.ecs.get::<&mut Position>(player_entity) {
+            pos.0 = dest;
+        }
+        tracing::info!("{} teletransportado para loja {:?}", session.name, dest);
+    }
+
     fn handle_interact(&mut self, sid: SessionId) {
         let Some(session) = self.sessions.get(&sid) else { return };
         if !session.logged_in { return; }
@@ -2343,7 +2392,10 @@ impl GameWorld {
                 let _ = handle.to_client.send(ServerMessage::VaultOpen { slots });
             }
             Some(_) => {
-                let items: Vec<(u16, u32)> = shared::SHOP_ITEMS.to_vec();
+                let items: Vec<shared::protocol::ShopItem> = shared::SHOP_ITEMS
+                    .iter()
+                    .map(|&(item_id, price)| shared::protocol::ShopItem { item_id, price })
+                    .collect();
                 let _ = handle.to_client.send(ServerMessage::ShopOpen { items });
             }
             None => {}

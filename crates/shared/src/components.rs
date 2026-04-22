@@ -102,15 +102,26 @@ pub struct Equipment {
 }
 
 /// Snapshot de uma entidade enviado pelo servidor no tick.
-/// Campos `Option` permitem delta (omitir quando nao mudaram).
+/// Compativel com Protocol.cs do Unity (campos snake_case, Vec2 como [x,y]).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntitySnapshot {
     pub id: EntityId,
-    pub kind: EntityKind,
+    /// Nome da variante de EntityKind como string ("Player", "Enemy", etc.)
+    pub kind: String,
+    #[serde(with = "crate::vec2_arr")]
     pub pos: Vec2,
+    #[serde(with = "crate::vec2_arr")]
     pub vel: Vec2,
-    pub hp: Option<Health>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hp: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hp_max: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sprite_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_self: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug)]
