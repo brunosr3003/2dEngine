@@ -22,7 +22,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 23;
+pub const PROTOCOL_VERSION: u16 = 24;
 
 /// Velocidade base do jogador em tiles/segundo.
 pub const PLAYER_SPEED: f32 = 5.0;
@@ -439,6 +439,20 @@ pub const fn unarmed_scaling() -> WeaponScaling {
         hp_max: 0.0, mp_max: 0.0, attack_damage: 0.2, dex: 0.0, wis: 0.0, defense: 0.0,
     }
 }
+
+/// True se a arma e de corpo-a-corpo (gera dano em cone na frente ao atacar,
+/// nao projetil). Sem arma = melee (soco). BOW/WAND/STAFF disparam projetil.
+pub const fn weapon_is_melee(item_id: u16) -> bool {
+    item_id == 0
+        || item_id == item_id::SWORD
+        || item_id == item_id::GREAT_SWORD
+        || item_id == item_id::DAGGER
+}
+
+/// Raio do golpe melee em tiles.
+pub const MELEE_RANGE: f32 = 1.8;
+/// Meio-angulo do cone em radianos (cone total = 2x).
+pub const MELEE_CONE_HALF_ANGLE: f32 = std::f32::consts::FRAC_PI_3; // 60 graus -> 120 total
 
 pub const fn item_bonus(item_id: u16) -> EquipBonus {
     match item_id {

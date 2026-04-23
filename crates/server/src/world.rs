@@ -202,24 +202,26 @@ pub struct GameWorld {
     from_mapfile: bool,
     /// Contador monotonico pra atribuir IDs de party.
     next_party_id: u32,
+    /// Decoracoes estaticas enviadas ao cliente no login.
+    pub decorations: Vec<shared::world_gen::DecoPlacement>,
 }
 
 impl GameWorld {
     pub fn new(characters: HashMap<String, crate::persistence::CharacterRow>) -> Self {
-        // Tenta carregar mapa de arquivo (editor); fallback pra proc-gen.
-        let (map, from_mapfile, safe_zone, mapfile) = match MapFile::load("assets/map.bin") {
-            Ok(mf) => {
-                tracing::info!("mapa carregado de assets/map.bin ({} x {}, {} entidades)",
-                               mf.width, mf.height, mf.entities.len());
-                let wm = mf.to_world_map();
-                let safe = mf.safe_zone;
-                (wm, true, safe, Some(mf))
-            }
-            Err(e) => {
-                tracing::info!("sem assets/map.bin ({e}); gerando mapa procedural");
-                (shared::world_gen::generate(42, 128, 128), false, false, None)
-            }
-        };
+        // Mapa crafted pequeno (demo do tileset Gentle Forest). Sem inimigos,
+        // sem dungeon procedural — apenas vendor + vault + decoracoes.
+        let crafted = shared::world_gen::build_crafted_map();
+        tracing::info!(
+            "mapa crafted gerado ({}x{}, {} decoracoes)",
+            crafted.map.width, crafted.map.height, crafted.decorations.len(),
+        );
+        let decorations = crafted.decorations.clone();
+        let vendor_pos = crafted.vendor_pos;
+        let vault_pos = crafted.vault_pos;
+        let map = crafted.map;
+        let safe_zone = false;
+        let from_mapfile = true; // evita respawn de enemies (suprime procgen)
+
         let mut physics = shared::physics::PhysicsWorld::new();
         map.build_colliders(&mut physics);
         let mut w = Self {
@@ -235,20 +237,14 @@ impl GameWorld {
             auth_ctx: None,
             enemy_spawn_timer: 0.0,
             boss_entity: None,
-            boss_respawn_timer: 30.0, // primeiro boss aparece em 30s
+            boss_respawn_timer: f32::INFINITY, // desabilita boss
             safe_zone,
             from_mapfile,
             next_party_id: 1,
+            decorations,
         };
-        if let Some(mf) = mapfile {
-            w.spawn_mapfile_entities(&mf);
-        } else {
-            w.spawn_initial_enemies();
-            w.spawn_vendor();
-            w.spawn_vault_npc();
-            w.spawn_dungeon_portals();
-            w.spawn_dungeon_enemies();
-        }
+        w.spawn_vendor_at(vendor_pos);
+        w.spawn_vault_at(vault_pos);
         w
     }
 
@@ -454,17 +450,32 @@ impl GameWorld {
         s.stats_dirty = true;
     }
 
+    fn spawn_vendor_at(&mut self, pos: (f32, f32)) {
+        let eid = self.alloc_entity_id();
+        self.ecs.spawn((
+            NetId(eid),
+            Position(Vec2::new(pos.0, pos.1)),
+            Velocity(Vec2::ZERO),
+            EntityKind::Npc(1),
+        ));
+        tracing::info!("vendor crafted em {:?}", pos);
+    }
+
+    fn spawn_vault_at(&mut self, pos: (f32, f32)) {
+        let eid = self.alloc_entity_id();
+        self.ecs.spawn((
+            NetId(eid),
+            Position(Vec2::new(pos.0, pos.1)),
+            Velocity(Vec2::ZERO),
+            EntityKind::Npc(2),
+        ));
+        tracing::info!("vault crafted em {:?}", pos);
+    }
+
+    #[allow(dead_code)]
     fn spawn_vendor(&mut self) {
         let t = self.map.spawn_tile();
         let pos = Vec2::new(t.0 as f32 + 1.5, t.1 as f32 + 1.5);
-        // Acha o primeiro tile de chao adjacente se o exato esta em parede.
-        let pos = if self.map.get(pos.x.floor() as i32, pos.y.floor() as i32)
-            == shared::constants::tile_id::WALL
-        {
-            Vec2::new(t.0 as f32 + 0.5, t.1 as f32 + 0.5)
-        } else {
-            pos
-        };
         let eid = self.alloc_entity_id();
         self.ecs.spawn((
             NetId(eid),
@@ -472,20 +483,13 @@ impl GameWorld {
             Velocity(Vec2::ZERO),
             EntityKind::Npc(1),
         ));
-        tracing::info!("vendor spawnado em {:?}", pos);
+        tracing::info!("vendor spawnado (legado) em {:?}", pos);
     }
 
-    /// Spawna NPC de vault proximo ao spawn, ao lado do vendedor.
+    #[allow(dead_code)]
     fn spawn_vault_npc(&mut self) {
         let t = self.map.spawn_tile();
         let pos = Vec2::new(t.0 as f32 + 3.0, t.1 as f32 + 1.5);
-        let pos = if self.map.get(pos.x.floor() as i32, pos.y.floor() as i32)
-            == shared::constants::tile_id::WALL
-        {
-            Vec2::new(t.0 as f32 + 2.5, t.1 as f32 + 0.5)
-        } else {
-            pos
-        };
         let eid = self.alloc_entity_id();
         self.ecs.spawn((
             NetId(eid),
@@ -493,7 +497,7 @@ impl GameWorld {
             Velocity(Vec2::ZERO),
             EntityKind::Npc(2),
         ));
-        tracing::info!("vault npc spawnado em {:?}", pos);
+        tracing::info!("vault spawnado (legado) em {:?}", pos);
     }
 
     pub fn set_auth_ctx(&mut self, ctx: AuthCtx) {
@@ -677,6 +681,7 @@ impl GameWorld {
             tiles: self.map.tiles.clone(),
             spawn: [spawn.x, spawn.y],
             safe_zone: false,
+            decorations: self.decorations.clone(),
         });
         let _ = handle.to_client.send(ServerMessage::StatsUpdate {
             stats,
@@ -1134,6 +1139,7 @@ impl GameWorld {
             owner_id: EntityId,
             aim: Vec2,
             damage: i32,
+            is_melee: bool,
         }
         let mut input_results: Vec<InputResult> = Vec::new();
         for session in self.sessions.values_mut() {
@@ -1214,6 +1220,7 @@ impl GameWorld {
                 base_speed
             };
 
+            let weapon_id = session.equipment.weapon.unwrap_or(0);
             input_results.push(InputResult {
                 entity,
                 new_vel: dir * speed,
@@ -1222,6 +1229,7 @@ impl GameWorld {
                 owner_id: session.entity_id,
                 aim: frame.aim,
                 damage: session.stats.attack_damage,
+                is_melee: shared::weapon_is_melee(weapon_id),
             });
         }
 
@@ -1328,6 +1336,10 @@ impl GameWorld {
         }
 
         // ── D: aplicar velocidades de jogadores + coletar ataques ────────────
+        // Golpes melee: (attacker_eid, attacker_pos, direction, damage) — aplicados
+        // em cone na seção G depois que targets sao coletados.
+        struct MeleeSwing { attacker_eid: EntityId, pos: Vec2, dir: Vec2, damage: i32 }
+        let mut melee_swings: Vec<MeleeSwing> = Vec::new();
         for ir in input_results {
             if let Ok(mut vel) = self.ecs.get::<&mut Velocity>(ir.entity) {
                 vel.0 = ir.new_vel;
@@ -1335,13 +1347,19 @@ impl GameWorld {
             if ir.wants_attack {
                 let pos = self.ecs.get::<&Position>(ir.entity).map(|p| p.0).unwrap_or(Vec2::ZERO);
                 let dir = (ir.aim - pos).try_normalize().unwrap_or(Vec2::X);
-                projs_to_spawn.push(SpawnProj {
-                    owner_id: ir.owner_id,
-                    from_player: true,
-                    pos,
-                    dir,
-                    damage: ir.damage,
-                });
+                if ir.is_melee {
+                    melee_swings.push(MeleeSwing {
+                        attacker_eid: ir.owner_id, pos, dir, damage: ir.damage,
+                    });
+                } else {
+                    projs_to_spawn.push(SpawnProj {
+                        owner_id: ir.owner_id,
+                        from_player: true,
+                        pos,
+                        dir,
+                        damage: ir.damage,
+                    });
+                }
             }
             if ir.wants_secondary {
                 let pos = self.ecs.get::<&Position>(ir.entity).map(|p| p.0).unwrap_or(Vec2::ZERO);
@@ -1471,6 +1489,28 @@ impl GameWorld {
         let mut damage_events: Vec<(Entity, EntityId, i32, EntityId, bool)> = Vec::new();
 
         let combat_disabled = self.safe_zone;
+
+        // Aplica golpes melee: cada swing acerta inimigos em cone na frente.
+        if !combat_disabled {
+            let range_sq = shared::MELEE_RANGE * shared::MELEE_RANGE;
+            let cos_half = shared::MELEE_CONE_HALF_ANGLE.cos();
+            for sw in &melee_swings {
+                for (te, tnet, tpos, is_player) in &targets {
+                    // Player atacando nao bate em player
+                    if *is_player { continue; }
+                    if *tnet == sw.attacker_eid { continue; }
+                    let delta = *tpos - sw.pos;
+                    let d2 = delta.length_squared();
+                    if d2 > range_sq { continue; }
+                    // Cone: dot(dir, normalized_delta) >= cos(half_angle)
+                    if let Some(nd) = delta.try_normalize() {
+                        if sw.dir.dot(nd) < cos_half { continue; }
+                    }
+                    damage_events.push((*te, *tnet, sw.damage, sw.attacker_eid, true));
+                }
+            }
+        }
+
         'outer: for (pe, pnet, ppos, powner, pfrom_player, pdmg) in &projs {
             for (te, tnet, tpos, is_player) in &targets {
                 if tnet == powner { continue; } // sem auto-dano

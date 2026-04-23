@@ -11,6 +11,8 @@ pub struct WorldMap {
     pub width: u32,
     pub height: u32,
     pub tiles: Vec<u16>,
+    /// Se Some, substitui o spawn_tile() default (util em mapas craftados).
+    pub override_spawn: Option<(i32, i32)>,
 }
 
 impl WorldMap {
@@ -26,9 +28,9 @@ impl WorldMap {
         self.tiles[(y as u32 * self.width + x as u32) as usize] = id;
     }
 
-    /// Posicao de spawn padrao (centro da primeira sala carregada externamente,
-    /// ou 0,0 como fallback). O gerador preenche `spawn_tile` apos gerar.
+    /// Posicao de spawn padrao. Mapas craftados podem setar override_spawn.
     pub fn spawn_tile(&self) -> (i32, i32) {
+        if let Some(s) = self.override_spawn { return s; }
         // procura primeiro tile de chao
         for y in 0..self.height as i32 {
             for x in 0..self.width as i32 {
@@ -147,8 +149,8 @@ impl Room {
 
 pub fn generate(seed: u64, width: u32, height: u32) -> WorldMap {
     let mut rng = Lcg::new(seed);
-    let mut tiles = vec![tile_id::WALL; (width * height) as usize];
-    let mut map = WorldMap { width, height, tiles };
+    let tiles = vec![tile_id::WALL; (width * height) as usize];
+    let mut map = WorldMap { width, height, tiles, override_spawn: None };
 
     let mut rooms: Vec<Room> = Vec::new();
 
@@ -268,5 +270,190 @@ fn carve_v_corridor(map: &mut WorldMap, y0: i32, y1: i32, x: i32) {
         for dx in -1..=1 {
             if map.get(x + dx, y) == tile_id::WALL { map.set(x + dx, y, tile_id::FLOOR); }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mapa pequeno "craftado" - hand-designed para demonstrar o tileset Gentle
+// Forest. Segue os padroes dos exemplos: areas enclausuradas por cliff, pond
+// com paredes, caminhos de dirt, sem inimigos.
+// ---------------------------------------------------------------------------
+
+/// Decoracao nao-tile posicionada em tile coords. O cliente renderiza como
+/// sprite sobre o chao (nao bloqueia colisao aqui; server pode adicionar
+/// collider a parte se desejar).
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub enum Decoration {
+    /// Arvore grande (80x96 pixels = 5x6 tiles ocupando espaco visual).
+    BigTree,
+    /// Pedra decorativa (1 tile).
+    Stone,
+    /// Toco de arvore cortada (1 tile).
+    Stump,
+    /// Tronco caido horizontal (1 tile).
+    Log,
+    /// Cluster de flores (1 tile).
+    Flowers,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub struct DecoPlacement {
+    pub kind: Decoration,
+    /// Posicao em tile coords (pivot bottom-center do sprite).
+    pub pos: [i32; 2],
+}
+
+pub struct CraftedMap {
+    pub map: WorldMap,
+    pub decorations: Vec<DecoPlacement>,
+    /// Entidades importantes (vendor, vault) posicionadas.
+    pub vendor_pos: (f32, f32),
+    pub vault_pos: (f32, f32),
+}
+
+/// Constroi mapa crafted 32x32 baseado nos patterns do Gentle Forest.
+///
+/// Layout:
+/// - Grama em todo o interior
+/// - Cliff wall border (row 0 e 31; col 0 e 31)
+/// - Plaza central com DIRT circular (spawn zone)
+/// - Pond enclosure no canto superior-direito (water enclosed by cliff)
+/// - Dungeon cave no canto inferior-esquerdo (dungeon_floor enclosed)
+/// - Dirt paths conectando spawn → pond e spawn → dungeon
+/// - Arvores + decoracoes espalhadas pelo mapa
+pub fn build_crafted_map() -> CraftedMap {
+    let w = 40u32;
+    let h = 30u32;
+    let mut map = WorldMap {
+        width: w,
+        height: h,
+        tiles: vec![tile_id::FLOOR; (w * h) as usize],
+        override_spawn: Some((20, 15)),
+    };
+
+    // Border de cliff walls
+    let w_i = w as i32;
+    let h_i = h as i32;
+    for x in 0..w_i {
+        map.set(x, 0, tile_id::WALL);
+        map.set(x, h_i - 1, tile_id::WALL);
+    }
+    for y in 0..h_i {
+        map.set(0, y, tile_id::WALL);
+        map.set(w_i - 1, y, tile_id::WALL);
+    }
+
+    // Plaza central: circulo de dirt aprox 5x3 centrado em (20, 15)
+    for dy in -1..=1 {
+        for dx in -2..=2 {
+            map.set(20 + dx, 15 + dy, tile_id::DIRT);
+        }
+    }
+    // "orelhas" do circulo pra parecer organico
+    map.set(18, 16, tile_id::DIRT);
+    map.set(22, 16, tile_id::DIRT);
+    map.set(18, 14, tile_id::DIRT);
+    map.set(22, 14, tile_id::DIRT);
+
+    // Pond encloure (cliff walls + water) - canto superior-direito
+    // Rect (28..=34, 4..=9), borda = WALL, interior = WATER
+    let (px0, py0, px1, py1) = (28, 4, 34, 9);
+    for x in px0..=px1 {
+        map.set(x, py0, tile_id::WALL);
+        map.set(x, py1, tile_id::WALL);
+    }
+    for y in py0..=py1 {
+        map.set(px0, y, tile_id::WALL);
+        map.set(px1, y, tile_id::WALL);
+    }
+    for x in (px0 + 1)..px1 {
+        for y in (py0 + 1)..py1 {
+            map.set(x, y, tile_id::WATER);
+        }
+    }
+
+    // Dungeon cave - canto inferior-esquerdo
+    // Rect (5..=11, 20..=25), borda = WALL, interior = DUNGEON_FLOOR
+    let (dx0, dy0, dx1, dy1) = (5, 20, 11, 25);
+    for x in dx0..=dx1 {
+        map.set(x, dy0, tile_id::WALL);
+        map.set(x, dy1, tile_id::WALL);
+    }
+    for y in dy0..=dy1 {
+        map.set(dx0, y, tile_id::WALL);
+        map.set(dx1, y, tile_id::WALL);
+    }
+    for x in (dx0 + 1)..dx1 {
+        for y in (dy0 + 1)..dy1 {
+            map.set(x, y, tile_id::DUNGEON_FLOOR);
+        }
+    }
+    // Entrada da dungeon: abre o wall em (8, 20) e coloca DIRT pra conectar
+    map.set(8, 20, tile_id::DUNGEON_FLOOR);
+
+    // Caminho de dirt: plaza (20, 15) → dungeon (8, 20)
+    // Horizontal de x=9 a x=19 em y=17
+    for x in 9..=19 {
+        map.set(x, 17, tile_id::DIRT);
+    }
+    // Vertical de y=17 a y=19 em x=8
+    for y in 17..=19 {
+        map.set(8, y, tile_id::DIRT);
+    }
+    // Conecta plaza → path horizontal
+    map.set(19, 16, tile_id::DIRT);
+
+    // Caminho de dirt: plaza (20, 15) → pond (31, 6)
+    // Vertical de y=7 a y=14 em x=25
+    for y in 7..=14 {
+        map.set(25, y, tile_id::DIRT);
+    }
+    // Horizontal de x=21 a x=25 em y=14
+    for x in 21..=25 {
+        map.set(x, 14, tile_id::DIRT);
+    }
+    // Conecta pond → path
+    map.set(31, 10, tile_id::DIRT);
+    map.set(30, 10, tile_id::DIRT);
+    map.set(29, 10, tile_id::DIRT);
+    map.set(28, 10, tile_id::DIRT);
+    map.set(27, 10, tile_id::DIRT);
+    map.set(26, 10, tile_id::DIRT);
+    map.set(25, 10, tile_id::DIRT);
+
+    // Decoracoes: arvores grandes em clusters + objetos espalhados.
+    let decos = vec![
+        // Arvores grandes
+        DecoPlacement { kind: Decoration::BigTree, pos: [4, 6] },
+        DecoPlacement { kind: Decoration::BigTree, pos: [10, 4] },
+        DecoPlacement { kind: Decoration::BigTree, pos: [16, 5] },
+        DecoPlacement { kind: Decoration::BigTree, pos: [22, 25] },
+        DecoPlacement { kind: Decoration::BigTree, pos: [30, 22] },
+        DecoPlacement { kind: Decoration::BigTree, pos: [35, 14] },
+        DecoPlacement { kind: Decoration::BigTree, pos: [14, 24] },
+        // Pedras
+        DecoPlacement { kind: Decoration::Stone, pos: [6, 13] },
+        DecoPlacement { kind: Decoration::Stone, pos: [14, 11] },
+        DecoPlacement { kind: Decoration::Stone, pos: [28, 18] },
+        DecoPlacement { kind: Decoration::Stone, pos: [33, 25] },
+        // Tocos
+        DecoPlacement { kind: Decoration::Stump, pos: [7, 8] },
+        DecoPlacement { kind: Decoration::Stump, pos: [26, 23] },
+        // Troncos
+        DecoPlacement { kind: Decoration::Log,    pos: [13, 8] },
+        DecoPlacement { kind: Decoration::Log,    pos: [31, 17] },
+        // Flores
+        DecoPlacement { kind: Decoration::Flowers, pos: [11, 13] },
+        DecoPlacement { kind: Decoration::Flowers, pos: [17, 20] },
+        DecoPlacement { kind: Decoration::Flowers, pos: [27, 12] },
+        DecoPlacement { kind: Decoration::Flowers, pos: [34, 8] },
+        DecoPlacement { kind: Decoration::Flowers, pos: [19, 24] },
+    ];
+
+    CraftedMap {
+        map,
+        decorations: decos,
+        vendor_pos: (17.5, 11.5),
+        vault_pos: (22.5, 11.5),
     }
 }

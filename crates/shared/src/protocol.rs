@@ -107,6 +107,8 @@ pub enum ServerMessage {
         tiles: Vec<u16>,
         spawn: [f32; 2],
         safe_zone: bool,
+        #[serde(default)]
+        decorations: Vec<crate::world_gen::DecoPlacement>,
     },
     ProgressUpdate {
         xp: u64,

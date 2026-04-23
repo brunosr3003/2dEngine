@@ -98,6 +98,7 @@ impl MapFile {
             width: self.width,
             height: self.height,
             tiles: self.tiles.clone(),
+            override_spawn: None,
         }
     }
 }
