@@ -48,6 +48,30 @@ pub const PROJ_TTL: f32 = 1.5;
 /// Cooldown entre ataques em segundos.
 pub const ATTACK_COOLDOWN: f32 = 0.25;
 
+/// Cooldown estendido para Bow. Sincroniza com a anim de saque do arco
+/// (`ShootStraight`: 8 frames × 70ms = 560ms).
+pub const BOW_ATTACK_COOLDOWN: f32 = 0.55;
+/// Delay entre input e spawn real da flecha — frame de release do saque.
+pub const BOW_FIRE_DELAY: f32 = 0.40;
+
+/// Cooldown para Wand/Staff. Anim usada é `Thrust` (4 frames × 80ms = 320ms).
+pub const MAGIC_ATTACK_COOLDOWN: f32 = 0.32;
+/// Delay entre input e spawn da bola de fogo — durante a extensão do thrust
+/// (frame ~3 de 4, ~70% da anim). Match com o feel do bow (0.40/0.56 = 71%).
+/// O gate de PRIMARY no cliente (InputHandler) impede shots fantasmas pós-
+/// depleção, então não precisa empilhar o delay no fim da anim.
+pub const MAGIC_FIRE_DELAY: f32 = 0.22;
+
+/// Offset vertical (Y mundo) do spawn de projétil em relação à pos da entidade.
+/// Pos fica nos pés (PaperDoll pivot 0.40); arco/cajado é segurado próximo ao
+/// peito, então projétil sai ~0.5 unidade acima do pé.
+pub const PROJ_SPAWN_OFFSET_Y: f32 = 0.5;
+
+/// Offset adicional (na direção do tiro) para fireball — faz a bola sair da
+/// ponta da varinha em vez do peito do char. Aplicado só pra projéteis de
+/// magia; flechas continuam saindo do peito (saem do arco visualmente).
+pub const FIREBALL_FORWARD_OFFSET: f32 = 0.6;
+
 /// Stamina consumida por cada ataque primario (LMB).
 pub const ATTACK_STAMINA_COST: f32 = 15.0;
 
@@ -450,6 +474,13 @@ pub const fn weapon_is_melee(item_id: u16) -> bool {
         || item_id == item_id::SWORD
         || item_id == item_id::GREAT_SWORD
         || item_id == item_id::DAGGER
+}
+
+/// True se o inimigo desse kind ataca em melee (cone de dano direto na frente)
+/// ao inves de spawnar projetil. Kinds sem kite_dist são melee:
+/// 0=Grunt, 1=Tank, 3=Ninja, 5=Berserker. Ranger/Mago/Arqueiro/Boss = ranged.
+pub const fn enemy_is_melee(kind: u16) -> bool {
+    matches!(kind, 0 | 1 | 3 | 5)
 }
 
 /// Raio do golpe melee em tiles.

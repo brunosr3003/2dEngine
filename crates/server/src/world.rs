@@ -40,17 +40,49 @@ pub struct ProjTag {
     pub from_player: bool,
     pub ttl: f32,
     pub damage: i32,
+    /// Visual: 0 = arrow (default), 1 = fireball/magic.
+    /// Replicado pro cliente via EntitySnapshot.sprite_id.
+    pub kind: u8,
+}
+
+/// Tiro ranged pendente — agendado no input mas só spawna como projétil real
+/// no tick em que `release_tick` for atingido. Usado pra sincronizar o
+/// surgimento do projétil com o frame de release da animação de saque do arco
+/// /cajado, em vez de cuspir o projétil instantâneo no clique.
+struct PendingShot {
+    pos: Vec2,
+    dir: Vec2,
+    damage: i32,
+    kind: u8,
+    owner_id: EntityId,
+    from_player: bool,
+    release_tick: u32,
 }
 
 pub struct EnemyTag {
     pub attack_cooldown: f32,
     pub wander_timer: f32,
     pub wander_dir: Vec2,
+    /// Setado true no tick em que o inimigo dispara um swing. Snapshot loop
+    /// lê e clear pra que o cliente toque a anim de ataque uma vez.
+    pub attack_pending: bool,
+    /// Waypoint atual durante walk phase. Inimigo anda em direção a esse ponto
+    /// até chegar (< 0.3 tiles) ou wander_timer expirar.
+    pub wander_waypoint: Vec2,
     /// Ponto "home" — centro da spawn zone ou posicao de spawn inicial.
     /// Usado como ancora pelo leash: inimigo sempre volta se afastar demais.
     pub spawn_anchor: Vec2,
     /// Raio max do leash em tiles (0 = desabilitado, wander livre).
+    /// Inimigos podem se afastar até 2x esse valor antes de serem forçados de volta.
     pub leash_max: f32,
+    /// 0 = walking, 1 = paused. Alterna a cada wander_timer expirado.
+    pub wander_phase: u8,
+    /// Quando true, inimigo dropou aggro e ignora players até chegar bem perto
+    /// do anchor. Setado quando atravessa leash_hard ou aggro_timer estoura.
+    pub returning_home: bool,
+    /// Segundos chase ativos sem dar dano. Reset quando ataca com sucesso.
+    /// Ao passar de AGGRO_DROP_TIME, inimigo desiste e volta pra casa.
+    pub aggro_timer: f32,
 }
 
 /// Tag em inimigo spawnado por uma ServerSpawnZone — usado pra decrementar
@@ -239,6 +271,9 @@ pub struct GameWorld {
     pub spawn_zones: Vec<ServerSpawnZone>,
     /// Tempo acumulado de simulacao em segundos (pra timer de respawn).
     pub sim_time_s: f32,
+    /// Tiros ranged em andamento — drenados a cada tick e spawnados quando
+    /// `release_tick` é atingido. Sincroniza projétil com fim da anim de saque.
+    pending_shots: Vec<PendingShot>,
 }
 
 impl GameWorld {
@@ -279,6 +314,7 @@ impl GameWorld {
             decorations,
             spawn_zones: Vec::new(),
             sim_time_s: 0.0,
+            pending_shots: Vec::new(),
         };
         w.spawn_vendor_at(vendor_pos);
         w.spawn_vault_at(vault_pos);
@@ -322,6 +358,7 @@ impl GameWorld {
             decorations: Vec::new(),
             spawn_zones: Vec::new(),
             sim_time_s: 0.0,
+            pending_shots: Vec::new(),
         };
         w.spawn_mapfile_entities(&mf);
         w
@@ -446,25 +483,8 @@ impl GameWorld {
                 }
             }
 
-            // Fill initial: qualquer quota ainda abaixo do target = spawn imediato
-            // (sem delay, pra preencher quando a zona acabou de carregar).
-            let quotas = self.spawn_zones[zi].quotas.clone();
-            for (kind, target) in quotas {
-                let live = self.spawn_zones[zi].live.iter()
-                    .find(|(k, _)| *k == kind).map(|(_, c)| *c).unwrap_or(0);
-                if live >= target { continue; }
-
-                let seed = (self.tick as u64 ^ (zone_id as u64 * 0x9abc) ^ (kind as u64 * 0xf123))
-                    .wrapping_mul(0x9E37_79B9);
-                if let Some(pos) = self.pick_tile_in_zone(zone_orig, zone_size, seed, 40) {
-                    pending.push(PendingSpawn { zone_id, kind, pos });
-                    if let Some(entry) = self.spawn_zones[zi].live.iter_mut()
-                        .find(|(k, _)| *k == kind)
-                    {
-                        entry.1 += 1;
-                    }
-                }
-            }
+            // (Initial fill removido — população inicial agora vai pelo queue
+            // com ready_at=0 ao criar a zona; respeita respawn_delay nas mortes.)
         }
 
         // Executa os spawns (agora que o borrow em spawn_zones soltou)
@@ -500,8 +520,13 @@ impl GameWorld {
                 attack_cooldown: 0.0,
                 wander_timer: 0.0,
                 wander_dir: Vec2::X,
+                attack_pending: false,
+                wander_waypoint: pos,
                 spawn_anchor,
                 leash_max,
+                wander_phase: 1, // começa em pause: dá tempo de "carregar" no spawn
+                returning_home: false,
+                aggro_timer: 0.0,
             },
             SpawnedByZone { zone_id, kind },
             handle,
@@ -531,8 +556,13 @@ impl GameWorld {
                             attack_cooldown: 0.0,
                             wander_timer: 0.0,
                             wander_dir: Vec2::X,
+                            attack_pending: false,
+                            wander_waypoint: Vec2::ZERO,
                             spawn_anchor: Vec2::ZERO,
                             leash_max: 0.0,
+                            wander_phase: 0,
+                            returning_home: false,
+                            aggro_timer: 0.0,
                         },
                         handle,
                     ));
@@ -573,6 +603,15 @@ impl GameWorld {
                         .map(|q| (q.kind, q.count)).collect();
                     let live_vec: Vec<(u16, u32)> = quotas_vec.iter()
                         .map(|(k, _)| (*k, 0u32)).collect();
+                    // População inicial vai pelo respawn_queue com ready_at=0
+                    // (spawn imediato no primeiro tick). Depois disso, deaths
+                    // adicionam com sim_time + respawn_delay.
+                    let mut respawn_queue = Vec::new();
+                    for &(kind, count) in &quotas_vec {
+                        for _ in 0..count {
+                            respawn_queue.push((0.0f32, kind));
+                        }
+                    }
                     self.spawn_zones.push(ServerSpawnZone {
                         id: zone_id,
                         origin: pos,
@@ -580,7 +619,7 @@ impl GameWorld {
                         respawn_delay_s: *respawn_delay_s,
                         quotas: quotas_vec,
                         live: live_vec,
-                        respawn_queue: Vec::new(),
+                        respawn_queue,
                     });
                     tracing::info!(
                         "mapfile: spawn zone #{} at ({:.1},{:.1}) {}x{} ({} kinds)",
@@ -989,8 +1028,13 @@ impl GameWorld {
                 attack_cooldown: attack_cd,
                 wander_timer: 0.0,
                 wander_dir: Vec2::X,
+                attack_pending: false,
+                wander_waypoint: Vec2::ZERO,
                 spawn_anchor: Vec2::ZERO,
                 leash_max: 0.0,
+                wander_phase: 0,
+                returning_home: false,
+                aggro_timer: 0.0,
             },
         ));
     }
@@ -1078,8 +1122,13 @@ impl GameWorld {
                     attack_cooldown: 0.0,
                     wander_timer: 0.0,
                     wander_dir: Vec2::X,
+                    attack_pending: false,
+                    wander_waypoint: Vec2::ZERO,
                     spawn_anchor: Vec2::ZERO,
                     leash_max: 0.0,
+                    wander_phase: 0,
+                    returning_home: false,
+                    aggro_timer: 0.0,
                 },
                 handle,
             ));
@@ -1379,6 +1428,8 @@ impl GameWorld {
             aim: Vec2,
             damage: i32,
             is_melee: bool,
+            /// Visual do projétil: 0 = arrow (Bow), 1 = fireball (Staff/Wand).
+            proj_kind: u8,
         }
         let mut input_results: Vec<InputResult> = Vec::new();
         for session in self.sessions.values_mut() {
@@ -1427,7 +1478,16 @@ impl GameWorld {
                      && session.attack_cooldown <= 0.0
                      && has_stam;
                 if w {
-                    session.attack_cooldown = ATTACK_COOLDOWN;
+                    let weapon_id = session.equipment.weapon.unwrap_or(0);
+                    session.attack_cooldown = if shared::weapon_is_melee(weapon_id) {
+                        ATTACK_COOLDOWN
+                    } else {
+                        match shared::Proficiency::from_item(weapon_id) {
+                            shared::Proficiency::Wand | shared::Proficiency::Staff =>
+                                shared::MAGIC_ATTACK_COOLDOWN,
+                            _ => shared::BOW_ATTACK_COOLDOWN,
+                        }
+                    };
                     session.stamina_current =
                         (session.stamina_current - shared::ATTACK_STAMINA_COST).max(0.0);
                 }
@@ -1467,6 +1527,10 @@ impl GameWorld {
             };
 
             let weapon_id = session.equipment.weapon.unwrap_or(0);
+            let proj_kind: u8 = match shared::Proficiency::from_item(weapon_id) {
+                shared::Proficiency::Wand | shared::Proficiency::Staff => 1, // fireball
+                _ => 0,                                                       // arrow
+            };
             input_results.push(InputResult {
                 entity,
                 new_vel: dir * speed,
@@ -1476,6 +1540,7 @@ impl GameWorld {
                 aim: frame.aim,
                 damage: session.stats.attack_damage,
                 is_melee: shared::weapon_is_melee(weapon_id),
+                proj_kind,
             });
         }
 
@@ -1499,8 +1564,14 @@ impl GameWorld {
             .collect();
 
         // ── C: IA dos inimigos ────────────────────────────────────────────────
-        struct SpawnProj { owner_id: EntityId, from_player: bool, pos: Vec2, dir: Vec2, damage: i32 }
+        struct SpawnProj { owner_id: EntityId, from_player: bool, pos: Vec2, dir: Vec2, damage: i32, kind: u8 }
         let mut projs_to_spawn: Vec<SpawnProj> = Vec::new();
+        // Melee swings — usado por player attacks (sec D) e por enemies melee aqui (sec C).
+        struct MeleeSwing { attacker_eid: EntityId, pos: Vec2, dir: Vec2, damage: i32, from_player: bool }
+        let mut melee_swings: Vec<MeleeSwing> = Vec::new();
+        // Pending shots de enemies — coletados no loop de IA (que tem mut borrow do
+        // ecs) e fundidos em self.pending_shots logo depois.
+        let mut pending_enemy_shots: Vec<PendingShot> = Vec::new();
 
         for (_, (net, pos, vel, enemy, kind)) in
             self.ecs.query_mut::<(&NetId, &Position, &mut Velocity, &mut EnemyTag, &EntityKind)>()
@@ -1513,20 +1584,45 @@ impl GameWorld {
 
             if enemy.attack_cooldown > 0.0 { enemy.attack_cooldown -= dt; }
             enemy.wander_timer -= dt;
+            // aggro_timer só corre quando em chase ativo (gerenciado abaixo)
 
             let nearest = player_positions.iter().min_by(|a, b| {
                 a.1.distance_squared(pos.0).partial_cmp(&b.1.distance_squared(pos.0)).unwrap()
             });
 
-            // Leash: se longe da ancora, distancia override chase — volta pra casa.
+            // Leash + state machine:
+            //  1. Inside leash_max → wander/chase livre.
+            //  2. Cruzou leash_hard (2× leash_max) → seta returning_home=true.
+            //  3. returning_home: ignora players, vai pro anchor até ficar
+            //     dentro de 50% de leash_max → returning_home=false (de-aggro
+            //     completo). Isso quebra o loop chase↔pull na borda.
             let home_dist = if enemy.leash_max > 0.0 { pos.0.distance(enemy.spawn_anchor) } else { 0.0 };
-            let pulling_home = enemy.leash_max > 0.0 && home_dist > enemy.leash_max;
+            let leash_hard = enemy.leash_max * 2.0;
+
+            if enemy.leash_max > 0.0 {
+                if enemy.returning_home {
+                    if home_dist <= enemy.leash_max * 0.5 {
+                        enemy.returning_home = false;
+                    }
+                } else if home_dist > leash_hard {
+                    enemy.returning_home = true;
+                }
+            }
+            let pulling_home = enemy.returning_home;
 
             if let Some((_, ppos)) = nearest {
                 let dist = pos.0.distance(*ppos);
-                // Pode perseguir se estiver dentro do detect_range E ainda dentro do leash.
+                // Chase só se NÃO estiver returning home.
                 let can_chase = dist < def.detect_range && !pulling_home;
                 if can_chase {
+                    // Aggro timer: corre durante chase, reset ao acertar attack.
+                    enemy.aggro_timer += dt;
+                    const AGGRO_DROP_TIME: f32 = 10.0;
+                    if enemy.aggro_timer > AGGRO_DROP_TIME && enemy.leash_max > 0.0 {
+                        // Desistiu — volta pra casa.
+                        enemy.returning_home = true;
+                        enemy.aggro_timer = 0.0;
+                    }
                     let to_player = (*ppos - pos.0).try_normalize().unwrap_or(Vec2::X);
                     // Comportamento de movimento por kind
                     let move_dir = if let Some(kite) = shared::enemy_kite_dist(kind_id) {
@@ -1540,15 +1636,48 @@ impl GameWorld {
 
                     let attack_range = shared::enemy_attack_range(kind_id);
                     if dist < attack_range && enemy.attack_cooldown <= 0.0 {
+                        enemy.aggro_timer = 0.0; // reset ao atacar com sucesso
                         enemy.attack_cooldown = def.attack_cooldown;
-                        let proj_count = shared::enemy_proj_count(kind_id);
-                        if proj_count <= 1 {
-                            projs_to_spawn.push(SpawnProj {
-                                owner_id: net.0,
-                                from_player: false,
+                        enemy.attack_pending = true; // cliente toca anim
+                        if shared::enemy_is_melee(kind_id) {
+                            // Melee enemy: cone de dano direto na frente, sem projetil.
+                            // O snapshot leva attack_pending pra cliente animar.
+                            // Damage é aplicado via melee_swings junto com player swings.
+                            melee_swings.push(MeleeSwing {
+                                attacker_eid: net.0,
                                 pos: pos.0,
                                 dir: to_player,
                                 damage: def.attack_damage,
+                                from_player: false,
+                            });
+                        } else {
+                        // Demon Mago (kind 4) lança fireball; demais ranged usam arrow.
+                        let enemy_proj_kind: u8 = if kind_id == 4 { 1 } else { 0 };
+                        let proj_count = shared::enemy_proj_count(kind_id);
+                        // Mago = anim de swing curta (~340ms) → delay menor.
+                        let fire_delay = if enemy_proj_kind == 1 {
+                            shared::MAGIC_FIRE_DELAY
+                        } else {
+                            shared::BOW_FIRE_DELAY
+                        };
+                        let release_in_ticks = (fire_delay / dt).round() as u32;
+                        // Mago: fireball sai da varinha (offset na direção to_player).
+                        let forward = if enemy_proj_kind == 1 {
+                            to_player * shared::FIREBALL_FORWARD_OFFSET
+                        } else {
+                            Vec2::ZERO
+                        };
+                        let spawn_pos = pos.0 + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y) + forward;
+                        let release_tick = self.tick.wrapping_add(release_in_ticks);
+                        if proj_count <= 1 {
+                            pending_enemy_shots.push(PendingShot {
+                                owner_id: net.0,
+                                from_player: false,
+                                pos: spawn_pos,
+                                dir: to_player,
+                                damage: def.attack_damage,
+                                kind: enemy_proj_kind,
+                                release_tick,
                             });
                         } else {
                             // Cone attack (boss): distribui proj_count projéteis
@@ -1562,58 +1691,61 @@ impl GameWorld {
                                     to_player.x * c - to_player.y * s,
                                     to_player.x * s + to_player.y * c,
                                 );
-                                projs_to_spawn.push(SpawnProj {
+                                pending_enemy_shots.push(PendingShot {
                                     owner_id: net.0,
                                     from_player: false,
-                                    pos: pos.0,
+                                    pos: spawn_pos,
                                     dir,
                                     damage: def.attack_damage,
+                                    kind: enemy_proj_kind,
+                                    release_tick,
                                 });
                             }
                         }
+                        } // close else for is_melee
                     }
                 } else {
-                    // Sem chase: wander ou volta pra casa se fora do leash.
-                    if pulling_home {
-                        // Pull direto pra ancora (com jitter pequeno)
-                        let home_dir = (enemy.spawn_anchor - pos.0).try_normalize().unwrap_or(Vec2::X);
-                        enemy.wander_dir = home_dir;
-                        enemy.wander_timer = 0.3;
-                        vel.0 = home_dir * def.speed * 0.6;
-                    } else {
-                        if enemy.wander_timer <= 0.0 {
-                            enemy.wander_dir = pick_wander_dir(
-                                &self.map, pos.0, enemy.spawn_anchor, enemy.leash_max,
-                                self.tick as u64 ^ net.0.0 as u64);
-                            enemy.wander_timer = 0.6 + lcg_f32(lcg(self.tick as u64 ^ net.0.0 as u64)) * 1.2;
-                        }
-                        vel.0 = enemy.wander_dir * def.speed * 0.4;
-                    }
+                    // Sem chase: reseta aggro_timer e aplica wander.
+                    enemy.aggro_timer = 0.0;
+                    apply_wander(enemy, &mut vel.0, pos.0, def.speed,
+                        &self.map, self.tick, net.0.0, pulling_home);
                 }
             } else {
-                // Sem player algum: wander/leash mesmo assim (se leash ativo).
-                if pulling_home {
-                    let home_dir = (enemy.spawn_anchor - pos.0).try_normalize().unwrap_or(Vec2::X);
-                    vel.0 = home_dir * def.speed * 0.5;
-                } else if enemy.leash_max > 0.0 {
-                    if enemy.wander_timer <= 0.0 {
-                        enemy.wander_dir = pick_wander_dir(
-                            &self.map, pos.0, enemy.spawn_anchor, enemy.leash_max,
-                            self.tick as u64 ^ net.0.0 as u64);
-                        enemy.wander_timer = 0.8 + lcg_f32(lcg(self.tick as u64 ^ net.0.0 as u64)) * 1.5;
-                    }
-                    vel.0 = enemy.wander_dir * def.speed * 0.3;
-                } else {
-                    vel.0 = Vec2::ZERO;
-                }
+                // Sem player algum.
+                enemy.aggro_timer = 0.0;
+                apply_wander(enemy, &mut vel.0, pos.0, def.speed,
+                    &self.map, self.tick, net.0.0, pulling_home);
             }
         }
 
+        // ── C.1: transitions de Untargetable + heal ao re-engajar ─────────────
+        // Detecta enemies que entraram/saíram do estado returning_home pra
+        // adicionar/remover Untargetable e curar HP ao chegar em casa.
+        let mut entered_evade: Vec<Entity> = Vec::new();
+        let mut exited_evade:  Vec<Entity> = Vec::new();
+        for (e, (enemy, _kind)) in self.ecs.query::<(&EnemyTag, &EntityKind)>().iter() {
+            let has_un = self.ecs.get::<&Untargetable>(e).is_ok();
+            if enemy.returning_home && !has_un { entered_evade.push(e); }
+            else if !enemy.returning_home && has_un { exited_evade.push(e); }
+        }
+        for e in entered_evade {
+            let _ = self.ecs.insert_one(e, Untargetable);
+        }
+        for e in exited_evade {
+            let _ = self.ecs.remove_one::<Untargetable>(e);
+            // Heal ao chegar em casa (estilo WoW Classic).
+            if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
+                hp.current = hp.max;
+            }
+            if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(e) {
+                tag.attack_cooldown = 0.0;
+                tag.aggro_timer = 0.0;
+            }
+        }
+        // Funde shots agendados pelos enemies neste tick.
+        self.pending_shots.append(&mut pending_enemy_shots);
+
         // ── D: aplicar velocidades de jogadores + coletar ataques ────────────
-        // Golpes melee: (attacker_eid, attacker_pos, direction, damage) — aplicados
-        // em cone na seção G depois que targets sao coletados.
-        struct MeleeSwing { attacker_eid: EntityId, pos: Vec2, dir: Vec2, damage: i32 }
-        let mut melee_swings: Vec<MeleeSwing> = Vec::new();
         for ir in input_results {
             if let Ok(mut vel) = self.ecs.get::<&mut Velocity>(ir.entity) {
                 vel.0 = ir.new_vel;
@@ -1624,14 +1756,34 @@ impl GameWorld {
                 if ir.is_melee {
                     melee_swings.push(MeleeSwing {
                         attacker_eid: ir.owner_id, pos, dir, damage: ir.damage,
+                        from_player: true,
                     });
                 } else {
-                    projs_to_spawn.push(SpawnProj {
-                        owner_id: ir.owner_id,
-                        from_player: true,
-                        pos,
+                    // Ranged: queue com delay pro release coincidir com fim
+                    // da animação de saque. Bow tem delay maior (anim de 560ms);
+                    // wand/staff usa Thrust (320ms) → delay menor.
+                    let fire_delay = if ir.proj_kind == 1 {
+                        shared::MAGIC_FIRE_DELAY
+                    } else {
+                        shared::BOW_FIRE_DELAY
+                    };
+                    let release_in_ticks = (fire_delay / dt).round() as u32;
+                    // Fireball sai da ponta da varinha: pos peito + offset na
+                    // direção do tiro. Flecha continua saindo do peito.
+                    let forward = if ir.proj_kind == 1 {
+                        dir * shared::FIREBALL_FORWARD_OFFSET
+                    } else {
+                        Vec2::ZERO
+                    };
+                    let spawn_pos = pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y) + forward;
+                    self.pending_shots.push(PendingShot {
+                        pos: spawn_pos,
                         dir,
                         damage: ir.damage,
+                        kind: ir.proj_kind,
+                        owner_id: ir.owner_id,
+                        from_player: true,
+                        release_tick: self.tick.wrapping_add(release_in_ticks),
                     });
                 }
             }
@@ -1640,6 +1792,13 @@ impl GameWorld {
                 let base_dir = (ir.aim - pos).try_normalize().unwrap_or(Vec2::X);
                 let n = shared::SECONDARY_PROJ_COUNT;
                 let spread = shared::SECONDARY_SPREAD_RAD;
+                let fire_delay = if ir.proj_kind == 1 {
+                    shared::MAGIC_FIRE_DELAY
+                } else {
+                    shared::BOW_FIRE_DELAY
+                };
+                let release_in_ticks = (fire_delay / dt).round() as u32;
+                let spawn_pos = pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y);
                 for i in 0..n {
                     // Distribui simetricamente: -spread/2 .. +spread/2
                     let t = if n <= 1 { 0.0 } else { i as f32 / (n - 1) as f32 };
@@ -1649,18 +1808,39 @@ impl GameWorld {
                         base_dir.x * cos - base_dir.y * sin,
                         base_dir.x * sin + base_dir.y * cos,
                     );
-                    projs_to_spawn.push(SpawnProj {
-                        owner_id: ir.owner_id,
-                        from_player: true,
-                        pos,
+                    self.pending_shots.push(PendingShot {
+                        pos: spawn_pos,
                         dir: d,
                         damage: (ir.damage as f32 * 0.8) as i32,
+                        kind: ir.proj_kind,
+                        owner_id: ir.owner_id,
+                        from_player: true,
+                        release_tick: self.tick.wrapping_add(release_in_ticks),
                     });
                 }
             }
         }
 
         // ── E: spawnar projeteis ──────────────────────────────────────────────
+        // Drena pending shots cujo release_tick chegou; injeta como spawns regulares.
+        let now_tick = self.tick;
+        let mut still_pending: Vec<PendingShot> = Vec::with_capacity(self.pending_shots.len());
+        for ps in self.pending_shots.drain(..) {
+            if now_tick.wrapping_sub(ps.release_tick) < u32::MAX / 2 {
+                projs_to_spawn.push(SpawnProj {
+                    owner_id: ps.owner_id,
+                    from_player: ps.from_player,
+                    pos: ps.pos,
+                    dir: ps.dir,
+                    damage: ps.damage,
+                    kind: ps.kind,
+                });
+            } else {
+                still_pending.push(ps);
+            }
+        }
+        self.pending_shots = still_pending;
+
         for sp in projs_to_spawn {
             let proj_id = self.alloc_entity_id();
             self.ecs.spawn((
@@ -1673,6 +1853,7 @@ impl GameWorld {
                     from_player: sp.from_player,
                     ttl: PROJ_TTL,
                     damage: sp.damage,
+                    kind: sp.kind,
                 },
             ));
         }
@@ -1770,8 +1951,8 @@ impl GameWorld {
             let cos_half = shared::MELEE_CONE_HALF_ANGLE.cos();
             for sw in &melee_swings {
                 for (te, tnet, tpos, is_player) in &targets {
-                    // Player atacando nao bate em player
-                    if *is_player { continue; }
+                    // Player swing → só bate em enemy. Enemy swing → só em player.
+                    if sw.from_player == *is_player { continue; }
                     if *tnet == sw.attacker_eid { continue; }
                     let delta = *tpos - sw.pos;
                     let d2 = delta.length_squared();
@@ -2269,11 +2450,24 @@ impl GameWorld {
     }
 
     pub fn send_snapshots(&mut self) {
+        // Coleta attack_pending e zera o flag pra que o snapshot mande true 1 vez só.
+        let attacking_ids: std::collections::HashSet<EntityId> = self
+            .ecs
+            .query::<(&NetId, &mut EnemyTag)>()
+            .iter()
+            .filter_map(|(_, (net, t))| {
+                if t.attack_pending {
+                    t.attack_pending = false;
+                    Some(net.0)
+                } else { None }
+            })
+            .collect();
+
         let all: Vec<EntitySnapshot> = self
             .ecs
-            .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>)>()
+            .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>, Option<&ProjTag>)>()
             .iter()
-            .map(|(_, (net, pos, vel, kind, hp, ptag))| EntitySnapshot {
+            .map(|(_, (net, pos, vel, kind, hp, ptag, projtag))| EntitySnapshot {
                 id: net.0,
                 kind: match kind {
                     EntityKind::Player      => "Player".to_string(),
@@ -2290,9 +2484,11 @@ impl GameWorld {
                 name: ptag.map(|p| p.name.clone()),
                 sprite_id: match kind {
                     EntityKind::Enemy(n) | EntityKind::Loot(n) | EntityKind::Npc(n) => Some(*n as u32),
+                    EntityKind::Projectile => projtag.map(|p| p.kind as u32),
                     _ => None,
                 },
                 is_self: None,
+                attacking: if attacking_ids.contains(&net.0) { Some(true) } else { None },
             })
             .collect();
 
@@ -3352,45 +3548,85 @@ fn lcg_f32(seed: u64) -> f32 {
     (seed >> 11) as f32 / (1u64 << 53) as f32
 }
 
-/// Escolhe uma direcao de wander "andavel" — amostra 8 direcoes, prefere as
-/// que (a) levam para tile FLOOR 2 passos a frente e (b) nao afastam do anchor.
-/// Fallback: direcao aleatoria se todas baterem em wall.
-fn pick_wander_dir(
+/// Escolhe um waypoint random walkable dentro de raio em torno da ancora.
+/// Tenta `tries` vezes; fallback retorna `current` (fica parado).
+fn pick_waypoint(
     map: &shared::world_gen::WorldMap,
-    pos: glam::Vec2,
+    current: glam::Vec2,
     anchor: glam::Vec2,
-    leash_max: f32,
+    radius: f32,
     seed_in: u64,
+    tries: u32,
 ) -> glam::Vec2 {
-    const PROBE: f32 = 1.8;
-    // 8 direcoes cardinais + diagonais
-    let angles = [0.0f32, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75];
-    let mut best: Option<(f32, glam::Vec2)> = None;
-    for (i, &a) in angles.iter().enumerate() {
-        let theta = a * std::f32::consts::PI;
-        let d = glam::Vec2::new(theta.cos(), theta.sin());
-        // rotaciona o set por um offset seeded pra variar entre enemies
-        let s = lcg(seed_in ^ i as u64);
-        let d = d * (0.9 + lcg_f32(s) * 0.2); // leve jitter
-        let target = pos + d.normalize_or_zero() * PROBE;
+    let r = if radius > 0.0 { radius } else { 5.0 };
+    let mut s = seed_in;
+    for _ in 0..tries {
+        s = lcg(s);
+        let angle = lcg_f32(s) * std::f32::consts::TAU;
+        s = lcg(s);
+        let dist = lcg_f32(s) * r;
+        let target = anchor + glam::Vec2::new(angle.cos(), angle.sin()) * dist;
         let tx = target.x.floor() as i32;
         let ty = target.y.floor() as i32;
-        if map.get(tx, ty) != shared::constants::tile_id::FLOOR { continue; }
-        // Score: penaliza se afasta muito do anchor (quando leash ativo)
-        let score = if leash_max > 0.0 {
-            let home_dist = (target - anchor).length();
-            (leash_max - home_dist).max(0.0)
-        } else {
-            1.0 + lcg_f32(lcg(s)) // random tie-break
-        };
-        if best.map_or(true, |(s0, _)| score > s0) {
-            best = Some((score, d.normalize_or_zero()));
+        if map.get(tx, ty) == shared::constants::tile_id::FLOOR {
+            // Não escolhe waypoint a < 1 tile da pos atual (precisa andar algo)
+            let center = glam::Vec2::new(tx as f32 + 0.5, ty as f32 + 0.5);
+            if (center - current).length() > 1.0 {
+                return center;
+            }
         }
     }
-    if let Some((_, d)) = best { return d; }
-    // Fallback: angle random
-    let a = lcg_f32(seed_in) * std::f32::consts::TAU;
-    glam::Vec2::new(a.cos(), a.sin())
+    current
+}
+
+/// Aplica wander com waypoints aleatórios + fases walk/pause alternadas.
+/// Se pulling_home, EVADE: vai direto pro anchor com speed 1.5×.
+fn apply_wander(
+    enemy: &mut EnemyTag,
+    vel: &mut glam::Vec2,
+    pos: glam::Vec2,
+    speed: f32,
+    map: &shared::world_gen::WorldMap,
+    tick: u32,
+    net_id: u32,
+    pulling_home: bool,
+) {
+    if pulling_home {
+        // EVADE: speed 1.5× direto pro anchor (estilo WoW Classic).
+        let home_dir = (enemy.spawn_anchor - pos).try_normalize().unwrap_or(glam::Vec2::X);
+        enemy.wander_dir = home_dir;
+        enemy.wander_phase = 0;
+        enemy.wander_timer = 0.5;
+        *vel = home_dir * speed * 1.5;
+        return;
+    }
+
+    let seed = tick as u64 ^ net_id as u64 ^ 0xCAFE;
+
+    // Walk phase: vai em direção ao waypoint até chegar ou timeout.
+    if enemy.wander_phase == 0 {
+        let to_wp = enemy.wander_waypoint - pos;
+        let dist = to_wp.length();
+        let arrived = dist < 0.3;
+        let timed_out = enemy.wander_timer <= 0.0;
+        if arrived || timed_out {
+            enemy.wander_phase = 1;
+            enemy.wander_timer = 1.2 + lcg_f32(lcg(seed)) * 2.0; // 1.2-3.2s pause
+            *vel = glam::Vec2::ZERO;
+        } else {
+            let dir = to_wp / dist;
+            *vel = dir * speed * 0.4;
+        }
+    } else {
+        // Pause phase: parado até timer expirar, aí escolhe novo waypoint.
+        if enemy.wander_timer <= 0.0 {
+            enemy.wander_waypoint = pick_waypoint(
+                map, pos, enemy.spawn_anchor, enemy.leash_max, seed, 30);
+            enemy.wander_phase = 0;
+            enemy.wander_timer = 4.0; // safety timeout (caso não consiga chegar)
+        }
+        *vel = glam::Vec2::ZERO;
+    }
 }
 
 fn now_ms() -> u64 {

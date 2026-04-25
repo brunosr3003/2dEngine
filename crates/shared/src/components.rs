@@ -102,6 +102,10 @@ pub struct EntitySnapshot {
     pub sprite_id: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_self: Option<bool>,
+    /// Inimigo iniciou um swing de melee neste tick. Cliente toca anim de
+    /// ataque ao receber. None nas outras snapshots.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attacking: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug)]
