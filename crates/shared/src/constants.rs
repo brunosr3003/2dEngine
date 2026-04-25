@@ -48,6 +48,9 @@ pub const PROJ_TTL: f32 = 1.5;
 /// Cooldown entre ataques em segundos.
 pub const ATTACK_COOLDOWN: f32 = 0.25;
 
+/// Stamina consumida por cada ataque primario (LMB).
+pub const ATTACK_STAMINA_COST: f32 = 15.0;
+
 /// Velocidade dos inimigos em tiles/segundo.
 pub const ENEMY_SPEED: f32 = 2.0;
 

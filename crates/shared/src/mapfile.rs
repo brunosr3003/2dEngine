@@ -21,6 +21,22 @@ pub enum MapEntity {
     Vault,
     /// Boss unico (so 1 por mapa, respawn via constante).
     Boss { kind: u16 },
+    /// Zona de spawn gerenciada: mantem quotas de inimigos vivos, respawna
+    /// com delay configuravel. `pos` (do placement) e' o canto inferior-esquerdo;
+    /// `size` e' a extensao em tiles. `quotas` define quantos vivos manter por
+    /// kind. `respawn_delay_s` e' o tempo apos morte antes de spawnar de novo.
+    EnemySpawner {
+        size: [f32; 2],
+        quotas: Vec<SpawnQuota>,
+        respawn_delay_s: f32,
+    },
+}
+
+/// Quota de inimigos por kind dentro de uma EnemySpawner.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpawnQuota {
+    pub kind: u16,
+    pub count: u32,
 }
 
 /// Entidade posicionada num ponto do mapa.

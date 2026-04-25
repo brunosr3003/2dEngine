@@ -19,7 +19,7 @@ mod world;
 use anyhow::Result;
 use shared::TICK_RATE_HZ;
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -45,12 +45,28 @@ async fn main() -> Result<()> {
     tracing::info!("server listening on ws://{addr} ({TICK_RATE_HZ} Hz)");
 
     let (tx_incoming, rx_incoming) = mpsc::unbounded_channel();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
     let auth_pool = pool.clone();
     tokio::spawn(async move {
-        if let Err(e) = tick::run_world_loop(rx_incoming, characters, save_tx, auth_pool).await {
+        if let Err(e) = tick::run_world_loop(rx_incoming, characters, save_tx, auth_pool, shutdown_rx).await {
             tracing::error!("world loop exited: {e:?}");
         }
+    });
+
+    // Aguarda SIGTERM ou SIGINT para shutdown gracioso.
+    tokio::spawn(async move {
+        let mut sigterm = tokio::signal::unix::signal(
+            tokio::signal::unix::SignalKind::terminate(),
+        ).expect("failed to register SIGTERM handler");
+        tokio::select! {
+            _ = sigterm.recv() => tracing::info!("SIGTERM received"),
+            _ = tokio::signal::ctrl_c() => tracing::info!("SIGINT received"),
+        }
+        let _ = shutdown_tx.send(());
+        // Aguarda o world loop salvar (max 2s) antes de deixar o processo sair.
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        std::process::exit(0);
     });
 
     loop {

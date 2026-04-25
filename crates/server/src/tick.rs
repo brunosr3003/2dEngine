@@ -8,7 +8,7 @@ use shared::TICK_DT;
 use sqlx::postgres::PgPool;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 /// Intervalo em ticks entre persistencias periodicas (30s @ 30Hz).
 const SAVE_INTERVAL_TICKS: u32 = 30 * 30;
@@ -18,11 +18,24 @@ pub async fn run_world_loop(
     characters: HashMap<String, CharacterRow>,
     save_tx: mpsc::UnboundedSender<SaveBatch>,
     auth_pool: PgPool,
+    mut shutdown: oneshot::Receiver<()>,
 ) -> Result<()> {
     // Precisa de um tx pra devolver AuthResult pro loop. Criamos um par
     // interno que e fundido com o rx original via tarefa de forward.
     let (auth_tx, mut auth_rx) = mpsc::unbounded_channel::<IncomingMessage>();
-    let mut world = GameWorld::new(characters);
+    let mut world = match std::env::var("MAP_FILE") {
+        Ok(path) if !path.is_empty() => {
+            tracing::info!("loading MAP_FILE={}", path);
+            match shared::mapfile::MapFile::load(&path) {
+                Ok(mf) => GameWorld::new_from_mapfile(characters, mf),
+                Err(e) => {
+                    tracing::error!("failed to load MAP_FILE ({}): {}. Falling back to crafted map.", path, e);
+                    GameWorld::new(characters)
+                }
+            }
+        }
+        _ => GameWorld::new(characters),
+    };
     world.set_auth_ctx(AuthCtx {
         pool: auth_pool,
         tx: auth_tx,
@@ -33,6 +46,20 @@ pub async fn run_world_loop(
     tracing::info!("world loop started ({}ms/tick)", step.as_millis());
 
     loop {
+        // Verifica shutdown antes de processar mensagens.
+        if shutdown.try_recv().is_ok() {
+            tracing::info!("shutdown signal received — saving all characters...");
+            let rows = world.collect_character_rows();
+            if !rows.is_empty() {
+                let _ = save_tx.send(SaveBatch { rows });
+            }
+            // Aguarda o writer consumir o batch (drena o canal).
+            drop(save_tx);
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            tracing::info!("graceful shutdown complete");
+            return Ok(());
+        }
+
         // Drena mensagens da rede.
         loop {
             match rx.try_recv() {

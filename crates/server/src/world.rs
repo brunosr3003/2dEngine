@@ -46,6 +46,37 @@ pub struct EnemyTag {
     pub attack_cooldown: f32,
     pub wander_timer: f32,
     pub wander_dir: Vec2,
+    /// Ponto "home" — centro da spawn zone ou posicao de spawn inicial.
+    /// Usado como ancora pelo leash: inimigo sempre volta se afastar demais.
+    pub spawn_anchor: Vec2,
+    /// Raio max do leash em tiles (0 = desabilitado, wander livre).
+    pub leash_max: f32,
+}
+
+/// Tag em inimigo spawnado por uma ServerSpawnZone — usado pra decrementar
+/// o contador vivo e enfileirar respawn quando o inimigo morre.
+#[derive(Clone, Copy)]
+pub struct SpawnedByZone {
+    pub zone_id: u32,
+    pub kind: u16,
+}
+
+/// Zona de spawn gerenciada no server. Carregada do MapFile via
+/// MapEntity::EnemySpawner. Mantem o mundo vivo: sempre tenta atingir
+/// `quotas`; quando um inimigo da zona morre, enfileira respawn apos `respawn_delay_s`.
+pub struct ServerSpawnZone {
+    pub id: u32,
+    /// Canto inferior-esquerdo em tile coords.
+    pub origin: Vec2,
+    /// Extensao da zona em tiles.
+    pub size: Vec2,
+    pub respawn_delay_s: f32,
+    /// (kind, quantidade alvo) — quantos desse tipo manter vivos.
+    pub quotas: Vec<(u16, u32)>,
+    /// (kind, quantidade viva atualmente) — mantido em sync.
+    pub live: Vec<(u16, u32)>,
+    /// Fila de respawns pendentes: (game_time_s quando pronto, kind).
+    pub respawn_queue: Vec<(f32, u16)>,
 }
 
 /// Identifica um item dropado no chao.
@@ -204,6 +235,10 @@ pub struct GameWorld {
     next_party_id: u32,
     /// Decoracoes estaticas enviadas ao cliente no login.
     pub decorations: Vec<shared::world_gen::DecoPlacement>,
+    /// Zonas de spawn carregadas do MapFile — mantem quotas + respawn por delay.
+    pub spawn_zones: Vec<ServerSpawnZone>,
+    /// Tempo acumulado de simulacao em segundos (pra timer de respawn).
+    pub sim_time_s: f32,
 }
 
 impl GameWorld {
@@ -242,9 +277,53 @@ impl GameWorld {
             from_mapfile,
             next_party_id: 1,
             decorations,
+            spawn_zones: Vec::new(),
+            sim_time_s: 0.0,
         };
         w.spawn_vendor_at(vendor_pos);
         w.spawn_vault_at(vault_pos);
+        w
+    }
+
+    /// Constroi o mundo a partir de um MapFile (exportado pelo editor Unity).
+    /// Suprime procgen, vendor/vault crafted e dungeon — tudo vem do arquivo.
+    pub fn new_from_mapfile(
+        characters: HashMap<String, crate::persistence::CharacterRow>,
+        mf: MapFile,
+    ) -> Self {
+        let (sx, sy) = (mf.spawn[0] as i32, mf.spawn[1] as i32);
+        let mut map = mf.to_world_map();
+        map.override_spawn = Some((sx, sy));
+        tracing::info!(
+            "mapfile '{}' carregado ({}x{}, spawn=({},{}), {} entidades)",
+            mf.name, map.width, map.height, sx, sy, mf.entities.len(),
+        );
+
+        let safe_zone = mf.safe_zone;
+        let mut physics = shared::physics::PhysicsWorld::new();
+        map.build_colliders(&mut physics);
+        let mut w = Self {
+            ecs: World::new(),
+            sessions: HashMap::new(),
+            tick: 0,
+            removed_this_tick: Vec::new(),
+            map,
+            physics,
+            next_entity_id: 1,
+            next_player_id: 1,
+            characters,
+            auth_ctx: None,
+            enemy_spawn_timer: 0.0,
+            boss_entity: None,
+            boss_respawn_timer: f32::INFINITY,
+            safe_zone,
+            from_mapfile: true,
+            next_party_id: 1,
+            decorations: Vec::new(),
+            spawn_zones: Vec::new(),
+            sim_time_s: 0.0,
+        };
+        w.spawn_mapfile_entities(&mf);
         w
     }
 
@@ -304,6 +383,131 @@ impl GameWorld {
         }
     }
 
+    /// Tenta escolher uma posicao FLOOR aleatoria dentro de (origin, size).
+    /// Faz `tries` tentativas; retorna None se todas caem em WALL/fora.
+    fn pick_tile_in_zone(&self, origin: Vec2, size: Vec2, seed: u64, tries: u32) -> Option<Vec2> {
+        let mut s = seed;
+        for _ in 0..tries {
+            s = lcg(s);
+            let rx = lcg_f32(s);
+            s = lcg(s);
+            let ry = lcg_f32(s);
+            let px = origin.x + rx * size.x;
+            let py = origin.y + ry * size.y;
+            let tx = px.floor() as i32;
+            let ty = py.floor() as i32;
+            if self.map.get(tx, ty) == shared::constants::tile_id::FLOOR {
+                // Ajusta pra centro da tile
+                return Some(Vec2::new(tx as f32 + 0.5, ty as f32 + 0.5));
+            }
+        }
+        None
+    }
+
+    /// Processa todas as spawn zones: preenche quotas iniciais + respawn por delay.
+    /// Rodado 1x por tick.
+    fn tick_spawn_zones(&mut self) {
+        let now = self.sim_time_s;
+        // Coleta ações (spawns) primeiro pra não ter borrow conflict com self.ecs
+        struct PendingSpawn { zone_id: u32, kind: u16, pos: Vec2 }
+        let mut pending: Vec<PendingSpawn> = Vec::new();
+
+        for zi in 0..self.spawn_zones.len() {
+            // Move ready items off respawn_queue into "ready to spawn"
+            let zone_size = self.spawn_zones[zi].size;
+            let zone_orig = self.spawn_zones[zi].origin;
+            let zone_id = self.spawn_zones[zi].id;
+
+            // Respawn queue: drena items prontos
+            let mut idx = 0;
+            while idx < self.spawn_zones[zi].respawn_queue.len() {
+                let ready_at = self.spawn_zones[zi].respawn_queue[idx].0;
+                if ready_at > now { idx += 1; continue; }
+                let kind = self.spawn_zones[zi].respawn_queue[idx].1;
+                self.spawn_zones[zi].respawn_queue.swap_remove(idx);
+
+                // Verifica se ainda deve spawnar (quota não ultrapassada)
+                let target = self.spawn_zones[zi].quotas.iter()
+                    .find(|(k, _)| *k == kind).map(|(_, c)| *c).unwrap_or(0);
+                let live = self.spawn_zones[zi].live.iter()
+                    .find(|(k, _)| *k == kind).map(|(_, c)| *c).unwrap_or(0);
+                if live >= target { continue; }
+
+                let seed = (self.tick as u64 ^ (zone_id as u64 * 0x1357) ^ (kind as u64 * 0x2468))
+                    .wrapping_mul(0x9E37_79B9);
+                if let Some(pos) = self.pick_tile_in_zone(zone_orig, zone_size, seed, 40) {
+                    pending.push(PendingSpawn { zone_id, kind, pos });
+                    // Incrementa live otimisticamente
+                    if let Some(entry) = self.spawn_zones[zi].live.iter_mut()
+                        .find(|(k, _)| *k == kind)
+                    {
+                        entry.1 += 1;
+                    }
+                }
+            }
+
+            // Fill initial: qualquer quota ainda abaixo do target = spawn imediato
+            // (sem delay, pra preencher quando a zona acabou de carregar).
+            let quotas = self.spawn_zones[zi].quotas.clone();
+            for (kind, target) in quotas {
+                let live = self.spawn_zones[zi].live.iter()
+                    .find(|(k, _)| *k == kind).map(|(_, c)| *c).unwrap_or(0);
+                if live >= target { continue; }
+
+                let seed = (self.tick as u64 ^ (zone_id as u64 * 0x9abc) ^ (kind as u64 * 0xf123))
+                    .wrapping_mul(0x9E37_79B9);
+                if let Some(pos) = self.pick_tile_in_zone(zone_orig, zone_size, seed, 40) {
+                    pending.push(PendingSpawn { zone_id, kind, pos });
+                    if let Some(entry) = self.spawn_zones[zi].live.iter_mut()
+                        .find(|(k, _)| *k == kind)
+                    {
+                        entry.1 += 1;
+                    }
+                }
+            }
+        }
+
+        // Executa os spawns (agora que o borrow em spawn_zones soltou)
+        for ps in pending {
+            self.place_enemy_in_zone(ps.pos, ps.kind, ps.zone_id);
+        }
+    }
+
+    /// Spawna enemy e tagueia com SpawnedByZone pra track de quota.
+    fn place_enemy_in_zone(&mut self, pos: Vec2, kind: u16, zone_id: u32) {
+        let def = shared::enemy_def(kind);
+        let hp_max = def.hp_max;
+        let net_id = self.alloc_entity_id();
+        let handle = self.spawn_entity_body(pos);
+
+        // Leash: ancora no centro da zona, raio = maior lado * 0.6
+        // (permite vagar dentro da zona com folga mas nao escapar dela).
+        let (spawn_anchor, leash_max) = if let Some(zone) = self.spawn_zones.iter().find(|z| z.id == zone_id) {
+            let center = zone.origin + zone.size * 0.5;
+            let r = zone.size.x.max(zone.size.y) * 0.6;
+            (center, r)
+        } else {
+            (pos, 6.0)
+        };
+
+        self.ecs.spawn((
+            NetId(net_id),
+            Position(pos),
+            Velocity(Vec2::ZERO),
+            Health { current: hp_max, max: hp_max },
+            EntityKind::Enemy(kind),
+            EnemyTag {
+                attack_cooldown: 0.0,
+                wander_timer: 0.0,
+                wander_dir: Vec2::X,
+                spawn_anchor,
+                leash_max,
+            },
+            SpawnedByZone { zone_id, kind },
+            handle,
+        ));
+    }
+
     /// Spawna todas as entidades pre-posicionadas de um MapFile.
     fn spawn_mapfile_entities(&mut self, mf: &MapFile) {
         for placement in &mf.entities {
@@ -327,6 +531,8 @@ impl GameWorld {
                             attack_cooldown: 0.0,
                             wander_timer: 0.0,
                             wander_dir: Vec2::X,
+                            spawn_anchor: Vec2::ZERO,
+                            leash_max: 0.0,
                         },
                         handle,
                     ));
@@ -360,6 +566,26 @@ impl GameWorld {
                         EntityKind::Portal,
                         PortalTag { target, cooldown: 0.0 },
                     ));
+                }
+                MapEntity::EnemySpawner { size, quotas, respawn_delay_s } => {
+                    let zone_id = self.spawn_zones.len() as u32;
+                    let quotas_vec: Vec<(u16, u32)> = quotas.iter()
+                        .map(|q| (q.kind, q.count)).collect();
+                    let live_vec: Vec<(u16, u32)> = quotas_vec.iter()
+                        .map(|(k, _)| (*k, 0u32)).collect();
+                    self.spawn_zones.push(ServerSpawnZone {
+                        id: zone_id,
+                        origin: pos,
+                        size: Vec2::new(size[0], size[1]),
+                        respawn_delay_s: *respawn_delay_s,
+                        quotas: quotas_vec,
+                        live: live_vec,
+                        respawn_queue: Vec::new(),
+                    });
+                    tracing::info!(
+                        "mapfile: spawn zone #{} at ({:.1},{:.1}) {}x{} ({} kinds)",
+                        zone_id, pos.x, pos.y, size[0], size[1], quotas.len()
+                    );
                 }
             }
         }
@@ -763,6 +989,8 @@ impl GameWorld {
                 attack_cooldown: attack_cd,
                 wander_timer: 0.0,
                 wander_dir: Vec2::X,
+                spawn_anchor: Vec2::ZERO,
+                leash_max: 0.0,
             },
         ));
     }
@@ -850,6 +1078,8 @@ impl GameWorld {
                     attack_cooldown: 0.0,
                     wander_timer: 0.0,
                     wander_dir: Vec2::X,
+                    spawn_anchor: Vec2::ZERO,
+                    leash_max: 0.0,
                 },
                 handle,
             ));
@@ -1098,6 +1328,15 @@ impl GameWorld {
         // --- Teleporte via portais ---
         self.process_portal_teleports(dt);
 
+        // Tempo de simulação acumulado — usado pelas spawn zones pra calcular
+        // delay de respawn.
+        self.sim_time_s += dt;
+
+        // Spawn zones do MapFile: preenche quotas + respawna com delay.
+        if self.from_mapfile && !self.spawn_zones.is_empty() {
+            self.tick_spawn_zones();
+        }
+
         // Respawn procedural e desabilitado quando o mapa vem de MapFile
         // (o editor define exatamente quais inimigos existem e onde).
         if !self.from_mapfile {
@@ -1183,8 +1422,15 @@ impl GameWorld {
             let wants_attack = if session.downed || session.carrying.is_some() {
                 false
             } else {
-                let w = (frame.buttons & buttons::PRIMARY != 0) && session.attack_cooldown <= 0.0;
-                if w { session.attack_cooldown = ATTACK_COOLDOWN; }
+                let has_stam = session.stamina_current >= shared::ATTACK_STAMINA_COST;
+                let w = (frame.buttons & buttons::PRIMARY != 0)
+                     && session.attack_cooldown <= 0.0
+                     && has_stam;
+                if w {
+                    session.attack_cooldown = ATTACK_COOLDOWN;
+                    session.stamina_current =
+                        (session.stamina_current - shared::ATTACK_STAMINA_COST).max(0.0);
+                }
                 w
             };
 
@@ -1272,9 +1518,15 @@ impl GameWorld {
                 a.1.distance_squared(pos.0).partial_cmp(&b.1.distance_squared(pos.0)).unwrap()
             });
 
+            // Leash: se longe da ancora, distancia override chase — volta pra casa.
+            let home_dist = if enemy.leash_max > 0.0 { pos.0.distance(enemy.spawn_anchor) } else { 0.0 };
+            let pulling_home = enemy.leash_max > 0.0 && home_dist > enemy.leash_max;
+
             if let Some((_, ppos)) = nearest {
                 let dist = pos.0.distance(*ppos);
-                if dist < def.detect_range {
+                // Pode perseguir se estiver dentro do detect_range E ainda dentro do leash.
+                let can_chase = dist < def.detect_range && !pulling_home;
+                if can_chase {
                     let to_player = (*ppos - pos.0).try_normalize().unwrap_or(Vec2::X);
                     // Comportamento de movimento por kind
                     let move_dir = if let Some(kite) = shared::enemy_kite_dist(kind_id) {
@@ -1321,17 +1573,39 @@ impl GameWorld {
                         }
                     }
                 } else {
-                    // Vagar aleatoriamente
-                    if enemy.wander_timer <= 0.0 {
-                        let seed = lcg(self.tick as u64 ^ net.0.0 as u64 ^ 0xCAFE);
-                        let angle = lcg_f32(seed) * std::f32::consts::TAU;
-                        enemy.wander_dir = Vec2::new(angle.cos(), angle.sin());
-                        enemy.wander_timer = 1.5 + lcg_f32(lcg(seed)) * 2.5;
+                    // Sem chase: wander ou volta pra casa se fora do leash.
+                    if pulling_home {
+                        // Pull direto pra ancora (com jitter pequeno)
+                        let home_dir = (enemy.spawn_anchor - pos.0).try_normalize().unwrap_or(Vec2::X);
+                        enemy.wander_dir = home_dir;
+                        enemy.wander_timer = 0.3;
+                        vel.0 = home_dir * def.speed * 0.6;
+                    } else {
+                        if enemy.wander_timer <= 0.0 {
+                            enemy.wander_dir = pick_wander_dir(
+                                &self.map, pos.0, enemy.spawn_anchor, enemy.leash_max,
+                                self.tick as u64 ^ net.0.0 as u64);
+                            enemy.wander_timer = 0.6 + lcg_f32(lcg(self.tick as u64 ^ net.0.0 as u64)) * 1.2;
+                        }
+                        vel.0 = enemy.wander_dir * def.speed * 0.4;
                     }
-                    vel.0 = enemy.wander_dir * def.speed * 0.4;
                 }
             } else {
-                vel.0 = Vec2::ZERO;
+                // Sem player algum: wander/leash mesmo assim (se leash ativo).
+                if pulling_home {
+                    let home_dir = (enemy.spawn_anchor - pos.0).try_normalize().unwrap_or(Vec2::X);
+                    vel.0 = home_dir * def.speed * 0.5;
+                } else if enemy.leash_max > 0.0 {
+                    if enemy.wander_timer <= 0.0 {
+                        enemy.wander_dir = pick_wander_dir(
+                            &self.map, pos.0, enemy.spawn_anchor, enemy.leash_max,
+                            self.tick as u64 ^ net.0.0 as u64);
+                        enemy.wander_timer = 0.8 + lcg_f32(lcg(self.tick as u64 ^ net.0.0 as u64)) * 1.5;
+                    }
+                    vel.0 = enemy.wander_dir * def.speed * 0.3;
+                } else {
+                    vel.0 = Vec2::ZERO;
+                }
             }
         }
 
@@ -1617,6 +1891,18 @@ impl GameWorld {
                 self.boss_entity = None;
                 self.boss_respawn_timer = BOSS_RESPAWN_DELAY;
                 tracing::info!("Boss morreu! Respawn em {BOSS_RESPAWN_DELAY}s");
+            }
+            // Se pertencia a uma spawn zone, decrementa live + enfileira respawn.
+            let zone_info = self.ecs.get::<&SpawnedByZone>(e).ok()
+                .map(|t| (t.zone_id, t.kind));
+            if let Some((zid, zkind)) = zone_info {
+                if let Some(zone) = self.spawn_zones.iter_mut().find(|z| z.id == zid) {
+                    if let Some(entry) = zone.live.iter_mut().find(|(k, _)| *k == zkind) {
+                        if entry.1 > 0 { entry.1 -= 1; }
+                    }
+                    let ready_at = self.sim_time_s + zone.respawn_delay_s;
+                    zone.respawn_queue.push((ready_at, zkind));
+                }
             }
             self.free_entity_body(e);
             let _ = self.ecs.despawn(e);
@@ -3064,6 +3350,47 @@ fn lcg(seed: u64) -> u64 {
 
 fn lcg_f32(seed: u64) -> f32 {
     (seed >> 11) as f32 / (1u64 << 53) as f32
+}
+
+/// Escolhe uma direcao de wander "andavel" — amostra 8 direcoes, prefere as
+/// que (a) levam para tile FLOOR 2 passos a frente e (b) nao afastam do anchor.
+/// Fallback: direcao aleatoria se todas baterem em wall.
+fn pick_wander_dir(
+    map: &shared::world_gen::WorldMap,
+    pos: glam::Vec2,
+    anchor: glam::Vec2,
+    leash_max: f32,
+    seed_in: u64,
+) -> glam::Vec2 {
+    const PROBE: f32 = 1.8;
+    // 8 direcoes cardinais + diagonais
+    let angles = [0.0f32, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75];
+    let mut best: Option<(f32, glam::Vec2)> = None;
+    for (i, &a) in angles.iter().enumerate() {
+        let theta = a * std::f32::consts::PI;
+        let d = glam::Vec2::new(theta.cos(), theta.sin());
+        // rotaciona o set por um offset seeded pra variar entre enemies
+        let s = lcg(seed_in ^ i as u64);
+        let d = d * (0.9 + lcg_f32(s) * 0.2); // leve jitter
+        let target = pos + d.normalize_or_zero() * PROBE;
+        let tx = target.x.floor() as i32;
+        let ty = target.y.floor() as i32;
+        if map.get(tx, ty) != shared::constants::tile_id::FLOOR { continue; }
+        // Score: penaliza se afasta muito do anchor (quando leash ativo)
+        let score = if leash_max > 0.0 {
+            let home_dist = (target - anchor).length();
+            (leash_max - home_dist).max(0.0)
+        } else {
+            1.0 + lcg_f32(lcg(s)) // random tie-break
+        };
+        if best.map_or(true, |(s0, _)| score > s0) {
+            best = Some((score, d.normalize_or_zero()));
+        }
+    }
+    if let Some((_, d)) = best { return d; }
+    // Fallback: angle random
+    let a = lcg_f32(seed_in) * std::f32::consts::TAU;
+    glam::Vec2::new(a.cos(), a.sin())
 }
 
 fn now_ms() -> u64 {
