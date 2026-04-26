@@ -111,6 +111,11 @@ pub struct EntitySnapshot {
     /// None na maioria das snapshots; Some apenas no tick do hit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hurt_dir: Option<[f32; 2]>,
+    /// Preset visual pra NPCs (0..N). Cliente mapeia pra VisualConfig
+    /// (race + outfit + hair). None pra Player/Enemy (esses usam outros
+    /// caminhos de visual).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skin_preset: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug)]

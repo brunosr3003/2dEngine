@@ -49,13 +49,21 @@ pub struct LootEntry {
     pub chance:  f32, // 0.0..=1.0; 1.0 = sempre dropa
 }
 
+#[derive(Clone, Debug)]
+pub struct VendorShop {
+    pub shop_id: u32,
+    pub name:    String,
+    pub items:   Vec<u16>, // item_ids em ordem (sort_order ASC)
+}
+
 #[derive(Default)]
 pub struct EconomyConfig {
-    pub version:      i64,
-    pub items:        HashMap<u16, ItemDef>,
-    pub shop_items:   Vec<u16>,                 // ordenado por shop_order ASC
-    pub enemy_kinds:  HashMap<u16, EnemyKindDef>,
-    pub loot_tables:  HashMap<u16, Vec<LootEntry>>,
+    pub version:       i64,
+    pub items:         HashMap<u16, ItemDef>,
+    pub shop_items:    Vec<u16>,                 // legacy global shop list
+    pub enemy_kinds:   HashMap<u16, EnemyKindDef>,
+    pub loot_tables:   HashMap<u16, Vec<LootEntry>>,
+    pub vendor_shops:  HashMap<u32, VendorShop>,
 }
 
 impl EconomyConfig {
@@ -69,11 +77,25 @@ impl EconomyConfig {
         self.items.get(&id).map(|i| i.stack_max).unwrap_or(1)
     }
 
-    /// Lista (item_id, buy_price) na ordem da loja.
+    /// Lista (item_id, buy_price) na ordem da loja (legacy global).
     pub fn shop_listing(&self) -> Vec<(u16, u32)> {
         self.shop_items.iter()
             .filter_map(|id| self.items.get(id).and_then(|i| i.buy_price.map(|p| (*id, p))))
             .collect()
+    }
+
+    /// Lista (item_id, buy_price) pra um vendor específico. Se o shop não
+    /// existir, retorna vazio. Preço pega do `items.buy_price` (compartilhado);
+    /// se item não tem buy_price, é pulado.
+    pub fn shop_listing_for(&self, shop_id: u32) -> Vec<(u16, u32)> {
+        let Some(shop) = self.vendor_shops.get(&shop_id) else { return Vec::new() };
+        shop.items.iter()
+            .filter_map(|id| self.items.get(id).and_then(|i| i.buy_price.map(|p| (*id, p))))
+            .collect()
+    }
+
+    pub fn shop_name_for(&self, shop_id: u32) -> Option<&str> {
+        self.vendor_shops.get(&shop_id).map(|s| s.name.as_str())
     }
 
     pub fn enemy_kind(&self, kind: u16) -> Option<&EnemyKindDef> {
@@ -156,6 +178,14 @@ async fn check_and_reload(pool: &PgPool) -> Result<bool> {
 // ── Lookup helpers (mantém API antiga de shared::) ───────────────────────────
 
 pub fn sell_price_of(id: u16) -> u32 { cell().read().sell_price(id) }
+
+pub fn shop_listing_for(shop_id: u32) -> Vec<(u16, u32)> {
+    cell().read().shop_listing_for(shop_id)
+}
+
+pub fn shop_name_for(shop_id: u32) -> Option<String> {
+    cell().read().shop_name_for(shop_id).map(|s| s.to_string())
+}
 
 /// Lista (item_id, sell_price) de TODOS os itens com preço > 0. Usado na
 /// abertura do shop pra cliente saber valor de cada item do inventário.
@@ -267,5 +297,23 @@ async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
         });
     }
 
-    Ok(EconomyConfig { version, items, shop_items, enemy_kinds, loot_tables })
+    let shop_rows: Vec<(i32, String)> = sqlx::query_as(
+        "SELECT shop_id, name FROM vendor_shops"
+    ).fetch_all(pool).await?;
+    let mut vendor_shops = HashMap::with_capacity(shop_rows.len());
+    for (sid, name) in shop_rows {
+        vendor_shops.insert(sid as u32, VendorShop {
+            shop_id: sid as u32, name, items: Vec::new(),
+        });
+    }
+    let item_rows: Vec<(i32, i32)> = sqlx::query_as(
+        "SELECT shop_id, item_id FROM vendor_shop_items ORDER BY shop_id, sort_order"
+    ).fetch_all(pool).await?;
+    for (sid, item_id) in item_rows {
+        if let Some(shop) = vendor_shops.get_mut(&(sid as u32)) {
+            shop.items.push(item_id as u16);
+        }
+    }
+
+    Ok(EconomyConfig { version, items, shop_items, enemy_kinds, loot_tables, vendor_shops })
 }

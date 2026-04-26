@@ -113,6 +113,11 @@ pub enum ServerMessage {
         safe_zone: bool,
         #[serde(default)]
         decorations: Vec<crate::world_gen::DecoPlacement>,
+        /// Retângulos de zona segura do mapa (origem inferior-esquerda + tamanho).
+        /// Cliente renderiza tint/borda; gameplay (sem dano etc) é decidido
+        /// pelo servidor mas a UI ajuda o jogador a saber onde tá.
+        #[serde(default)]
+        safe_zones: Vec<SafeZoneRect>,
     },
     ProgressUpdate {
         xp: u64,
@@ -189,6 +194,15 @@ pub struct TradeBuyEntry {
 pub struct TradeSellEntry {
     pub inv_slot: u16,
     pub qty:      u32,
+}
+
+/// Retângulo de zona segura enviado ao cliente pra renderização.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SafeZoneRect {
+    pub x:      f32,
+    pub y:      f32,
+    pub width:  f32,
+    pub height: f32,
 }
 
 /// Resultado de um ShopTrade — sucesso ou erro com motivo amigável.

@@ -205,6 +205,24 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_loot_drops_kind ON loot_drops(enemy_kind)")
         .execute(&pool).await?;
 
+    // Vendor shops — cada vendor tem um shop_id que aponta pra uma lista
+    // curada de itens. Permite "espadeiro" que só vende espadas, "alquimista"
+    // que só vende poções, etc., independente da categoria genérica.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS vendor_shops (
+            shop_id  INTEGER PRIMARY KEY,
+            name     TEXT NOT NULL
+        )",
+    ).execute(&pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS vendor_shop_items (
+            shop_id     INTEGER NOT NULL REFERENCES vendor_shops(shop_id) ON DELETE CASCADE,
+            item_id     INTEGER NOT NULL,
+            sort_order  INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (shop_id, item_id)
+        )",
+    ).execute(&pool).await?;
+
     seed_economy_if_needed(&pool).await?;
 
     Ok(pool)
@@ -347,6 +365,52 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             .execute(pool).await?;
         }
         tracing::info!("economy seed: {} loot drops inseridos", drops.len());
+    }
+
+    // Seed dos shops dos vendors. shop_id=1 fica como generalista (legacy
+    // do shop antigo). Demais são especializados.
+    let shop_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vendor_shops")
+        .fetch_one(pool).await?;
+    if shop_count == 0 {
+        let shops: &[(i32, &str, &[u16])] = &[
+            (1, "Mercador", &[
+                item_id::HEALTH_POTION, item_id::MANA_POTION, item_id::GREATER_HEAL,
+                item_id::GREATER_MANA, item_id::STAMINA_POTION, item_id::DAGGER,
+                item_id::LEATHER_ARMOR, item_id::BOW, item_id::AMULET,
+            ]),
+            (2, "Espadeiro", &[
+                item_id::SWORD, item_id::DAGGER, item_id::GREAT_SWORD,
+            ]),
+            (3, "Alquimista", &[
+                item_id::HEALTH_POTION, item_id::MANA_POTION, item_id::GREATER_HEAL,
+                item_id::GREATER_MANA, item_id::STAMINA_POTION,
+            ]),
+            (4, "Ferreiro", &[
+                item_id::ARMOR, item_id::SHIELD, item_id::LEATHER_ARMOR,
+                item_id::PLATE_ARMOR,
+            ]),
+            (5, "Mística", &[
+                item_id::WAND, item_id::STAFF, item_id::ROBE, item_id::AMULET,
+                item_id::LUCKY_RING, item_id::RING,
+            ]),
+            (6, "Arqueiro", &[
+                item_id::BOW, item_id::STAMINA_POTION,
+            ]),
+        ];
+        for (sid, name, items) in shops {
+            sqlx::query(
+                "INSERT INTO vendor_shops (shop_id, name) VALUES ($1, $2) ON CONFLICT DO NOTHING"
+            ).bind(sid).bind(*name).execute(pool).await?;
+            for (i, &item) in items.iter().enumerate() {
+                sqlx::query(
+                    "INSERT INTO vendor_shop_items (shop_id, item_id, sort_order) \
+                     VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
+                )
+                .bind(sid).bind(item as i32).bind(i as i32)
+                .execute(pool).await?;
+            }
+        }
+        tracing::info!("economy seed: {} vendor shops inseridos", shops.len());
     }
     Ok(())
 }

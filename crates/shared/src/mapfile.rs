@@ -30,6 +30,32 @@ pub enum MapEntity {
         quotas: Vec<SpawnQuota>,
         respawn_delay_s: f32,
     },
+    /// Zona segura: dentro dela combate é desabilitado (sem dano dado nem
+    /// recebido), enemies dropam aggro de quem entra. `pos` (do placement) é
+    /// o canto inferior-esquerdo; `size` é a extensão em tiles.
+    SafeZone {
+        size: [f32; 2],
+    },
+    /// Vendedor com loja própria. `shop_id` referencia uma row em
+    /// `vendor_shops` no DB. `skin` é o índice do preset visual.
+    Vendor {
+        name:    String,
+        shop_id: u32,
+        skin:    u8,
+    },
+    /// NPC ambiental que anda por uma rota pré-definida. `route_id` referencia
+    /// uma `NpcRoute` no MAPA (definida via NpcRoute entity). `skin` é o preset.
+    WanderNpc {
+        name:     String,
+        route_id: u32,
+        skin:     u8,
+    },
+    /// Definição de uma rota nomeada — lista ordenada de waypoints absolutos
+    /// (em coords de tile). NPCs com WanderNpc { route_id } seguem em loop.
+    NpcRoute {
+        id:        u32,
+        waypoints: Vec<[f32; 2]>,
+    },
 }
 
 /// Quota de inimigos por kind dentro de uma EnemySpawner.

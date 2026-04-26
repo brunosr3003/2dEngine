@@ -108,6 +108,40 @@ pub struct SpawnedByZone {
     pub kind: u16,
 }
 
+/// Tag em vendor NPC — referencia o shop_id (lookup em vendor_shops).
+/// Cliente recebe os items + sell_prices baseado nesse shop_id.
+#[derive(Clone)]
+pub struct VendorTag {
+    pub shop_id: u32,
+    pub name:    String,
+}
+
+/// Tag em NPC ambiental que anda por uma rota (waypoints em loop).
+/// `current_idx` é o waypoint atual; `pause_until` é sim_time pra retomar
+/// movimento depois de chegar num waypoint (pequena pausa pra naturalidade).
+#[derive(Clone)]
+pub struct WanderRouteTag {
+    pub route_id:    u32,
+    pub current_idx: u32,
+    pub pause_until: f32,
+    pub name:        String,
+}
+
+/// Rota nomeada do mapa: lista ordenada de waypoints. NPCs com WanderRouteTag
+/// referenciam por `route_id`. Loop A→B→C→...→A.
+#[derive(Clone)]
+pub struct NpcRoute {
+    pub id:         u32,
+    pub waypoints:  Vec<Vec2>,
+}
+
+/// Visual config de um NPC — cliente usa pra render do paper-doll. Codifica
+/// o preset (farmer/merchant/guard/etc) num u8.
+#[derive(Clone, Copy)]
+pub struct NpcSkin {
+    pub preset: u8,
+}
+
 /// Zona de spawn gerenciada no server. Carregada do MapFile via
 /// MapEntity::EnemySpawner. Mantem o mundo vivo: sempre tenta atingir
 /// `quotas`; quando um inimigo da zona morre, enfileira respawn apos `respawn_delay_s`.
@@ -288,6 +322,11 @@ pub struct GameWorld {
     pub decorations: Vec<shared::world_gen::DecoPlacement>,
     /// Zonas de spawn carregadas do MapFile — mantem quotas + respawn por delay.
     pub spawn_zones: Vec<ServerSpawnZone>,
+    /// Zonas seguras: combate desabilitado, enemies dropam aggro de quem
+    /// entra. (origin_xy, size_xy). Lookup linear — esperado <10 zonas/mapa.
+    pub safe_zones: Vec<(Vec2, Vec2)>,
+    /// Rotas pré-definidas pra NPCs caminhantes — id → lista de waypoints.
+    pub npc_routes: HashMap<u32, NpcRoute>,
     /// Tempo acumulado de simulacao em segundos (pra timer de respawn).
     pub sim_time_s: f32,
     /// Tiros ranged em andamento — drenados a cada tick e spawnados quando
@@ -336,6 +375,8 @@ impl GameWorld {
             next_party_id: 1,
             decorations,
             spawn_zones: Vec::new(),
+            safe_zones: Vec::new(),
+            npc_routes: HashMap::new(),
             sim_time_s: 0.0,
             pending_shots: Vec::new(),
             hit_this_tick: HashMap::new(),
@@ -381,6 +422,8 @@ impl GameWorld {
             next_party_id: 1,
             decorations: Vec::new(),
             spawn_zones: Vec::new(),
+            safe_zones: Vec::new(),
+            npc_routes: HashMap::new(),
             sim_time_s: 0.0,
             pending_shots: Vec::new(),
             hit_this_tick: HashMap::new(),
@@ -464,6 +507,20 @@ impl GameWorld {
             }
         }
         None
+    }
+
+    /// True se a posição está dentro de qualquer zona segura. Combate
+    /// (dano dado/recebido, swing/shoot do player) é bloqueado nessa zona.
+    pub fn in_safe_zone(&self, pos: Vec2) -> bool {
+        if self.safe_zone { return true; } // mapa inteiro safe (legacy)
+        for (origin, size) in &self.safe_zones {
+            if pos.x >= origin.x && pos.x < origin.x + size.x
+                && pos.y >= origin.y && pos.y < origin.y + size.y
+            {
+                return true;
+            }
+        }
+        false
     }
 
     /// Processa todas as spawn zones: preenche quotas iniciais + respawn por delay.
@@ -603,14 +660,53 @@ impl GameWorld {
                     ));
                     if *kind == 7 { self.boss_entity = Some(e); }
                 }
-                MapEntity::Npc { .. } => {
+                MapEntity::Npc { name } => {
+                    // Legacy: vendor genérico. Vai pra shop_id=1.
                     let eid = self.alloc_entity_id();
                     self.ecs.spawn((
                         NetId(eid),
                         Position(pos),
                         Velocity(Vec2::ZERO),
                         EntityKind::Npc(1),
+                        VendorTag { shop_id: 1, name: name.clone() },
+                        NpcSkin { preset: 1 }, // merchant default
                     ));
+                }
+                MapEntity::Vendor { name, shop_id, skin } => {
+                    let eid = self.alloc_entity_id();
+                    self.ecs.spawn((
+                        NetId(eid),
+                        Position(pos),
+                        Velocity(Vec2::ZERO),
+                        EntityKind::Npc(1),
+                        VendorTag { shop_id: *shop_id, name: name.clone() },
+                        NpcSkin { preset: *skin },
+                    ));
+                    tracing::info!(
+                        "mapfile: vendor '{}' (shop {}) at ({:.1},{:.1})",
+                        name, shop_id, pos.x, pos.y
+                    );
+                }
+                MapEntity::WanderNpc { name, route_id, skin } => {
+                    let eid = self.alloc_entity_id();
+                    self.ecs.spawn((
+                        NetId(eid),
+                        Position(pos),
+                        Velocity(Vec2::ZERO),
+                        EntityKind::Npc(3), // 3 = wander NPC
+                        WanderRouteTag {
+                            route_id:    *route_id,
+                            current_idx: 0,
+                            pause_until: self.sim_time_s + 1.0,
+                            name:        name.clone(),
+                        },
+                        NpcSkin { preset: *skin },
+                    ));
+                }
+                MapEntity::NpcRoute { id, waypoints } => {
+                    let wp: Vec<Vec2> = waypoints.iter()
+                        .map(|w| Vec2::new(w[0], w[1])).collect();
+                    self.npc_routes.insert(*id, NpcRoute { id: *id, waypoints: wp });
                 }
                 MapEntity::Vault => {
                     let eid = self.alloc_entity_id();
@@ -631,6 +727,13 @@ impl GameWorld {
                         EntityKind::Portal,
                         PortalTag { target, cooldown: 0.0 },
                     ));
+                }
+                MapEntity::SafeZone { size } => {
+                    self.safe_zones.push((pos, Vec2::new(size[0], size[1])));
+                    tracing::info!(
+                        "mapfile: safe zone at ({:.1},{:.1}) {}x{}",
+                        pos.x, pos.y, size[0], size[1]
+                    );
                 }
                 MapEntity::EnemySpawner { size, quotas, respawn_delay_s } => {
                     let zone_id = self.spawn_zones.len() as u32;
@@ -757,6 +860,8 @@ impl GameWorld {
             Position(Vec2::new(pos.0, pos.1)),
             Velocity(Vec2::ZERO),
             EntityKind::Npc(1),
+            VendorTag { shop_id: 1, name: "Mercador".into() },
+            NpcSkin { preset: 1 },
         ));
         tracing::info!("vendor crafted em {:?}", pos);
     }
@@ -980,8 +1085,13 @@ impl GameWorld {
             height: self.map.height,
             tiles: self.map.tiles.clone(),
             spawn: [spawn.x, spawn.y],
-            safe_zone: false,
+            safe_zone: self.safe_zone,
             decorations: self.decorations.clone(),
+            safe_zones: self.safe_zones.iter()
+                .map(|(o, s)| shared::protocol::SafeZoneRect {
+                    x: o.x, y: o.y, width: s.x, height: s.y,
+                })
+                .collect(),
         });
         let _ = handle.to_client.send(ServerMessage::StatsUpdate {
             stats,
@@ -1611,12 +1721,17 @@ impl GameWorld {
             .iter()
             .map(|(e, _)| e)
             .collect();
+        // Players em zona segura são "invisíveis" pra IA — enemies dropam aggro
+        // automaticamente quando o alvo entra (lista some daqui no próximo tick).
         let player_positions: Vec<(EntityId, Vec2)> = self
             .ecs
             .query::<(&NetId, &Position, &EntityKind)>()
             .iter()
             .filter_map(|(e, (net, pos, kind))| {
-                if matches!(kind, EntityKind::Player) && !untargetable.contains(&e) {
+                if matches!(kind, EntityKind::Player)
+                    && !untargetable.contains(&e)
+                    && !self.in_safe_zone(pos.0)
+                {
                     Some((net.0, pos.0))
                 } else { None }
             })
@@ -1821,6 +1936,48 @@ impl GameWorld {
         // Funde shots agendados pelos enemies neste tick.
         self.pending_shots.append(&mut pending_enemy_shots);
 
+        // ── C.2: IA dos NPCs caminhantes (rotas pré-definidas) ────────────────
+        let now_npc = self.sim_time_s;
+        const NPC_SPEED: f32 = 1.4;     // mais lento que player (4.0)
+        const NPC_ARRIVE_DIST: f32 = 0.4;
+        const NPC_PAUSE_MIN: f32 = 1.5;
+        const NPC_PAUSE_MAX: f32 = 4.0;
+        for (e, (pos, vel, wtag)) in self.ecs.query_mut::<(&Position, &mut Velocity, &mut WanderRouteTag)>() {
+            // Pausa: parado até pause_until expirar
+            if wtag.pause_until > now_npc {
+                vel.0 = Vec2::ZERO;
+                continue;
+            }
+            // Acha rota
+            let Some(route) = self.npc_routes.get(&wtag.route_id) else {
+                vel.0 = Vec2::ZERO;
+                continue;
+            };
+            if route.waypoints.is_empty() {
+                vel.0 = Vec2::ZERO;
+                continue;
+            }
+            let wp = route.waypoints[(wtag.current_idx as usize) % route.waypoints.len()];
+            let to = wp - pos.0;
+            let dist = to.length();
+            if dist < NPC_ARRIVE_DIST {
+                // Chegou — avança e pausa.
+                wtag.current_idx = (wtag.current_idx + 1) % route.waypoints.len() as u32;
+                let seed = (e.id() as u64).wrapping_mul(0x9E37_79B9).wrapping_add(self.tick as u64);
+                let r = lcg_f32(lcg(seed));
+                wtag.pause_until = now_npc + NPC_PAUSE_MIN + r * (NPC_PAUSE_MAX - NPC_PAUSE_MIN);
+                vel.0 = Vec2::ZERO;
+            } else {
+                vel.0 = to / dist * NPC_SPEED;
+            }
+        }
+        // Aplica integração da velocity no Position (NPCs não usam physics body
+        // — colisão com paredes seria via leash dos waypoints; rota é responsabilidade
+        // do designer ficar dentro do walkable).
+        for (_, (pos, vel, _)) in self.ecs.query_mut::<(&mut Position, &Velocity, &WanderRouteTag)>() {
+            pos.0 += vel.0 * dt;
+        }
+
         // ── D: aplicar velocidades de jogadores + coletar ataques ────────────
         for ir in input_results {
             if let Ok(mut vel) = self.ecs.get::<&mut Velocity>(ir.entity) {
@@ -1829,6 +1986,11 @@ impl GameWorld {
             if ir.wants_attack {
                 let pos = self.ecs.get::<&Position>(ir.entity).map(|p| p.0).unwrap_or(Vec2::ZERO);
                 let dir = (ir.aim - pos).try_normalize().unwrap_or(Vec2::X);
+                // Player em zona segura não pode atacar — silenciosamente ignora.
+                if self.in_safe_zone(pos) {
+                    tracing::debug!("attack blocked: player at ({:.1},{:.1}) in safe zone", pos.x, pos.y);
+                    continue;
+                }
                 if ir.is_melee {
                     melee_swings.push(MeleeSwing {
                         attacker_eid: ir.owner_id, pos, dir, damage: ir.damage,
@@ -1865,6 +2027,7 @@ impl GameWorld {
             }
             if ir.wants_secondary {
                 let pos = self.ecs.get::<&Position>(ir.entity).map(|p| p.0).unwrap_or(Vec2::ZERO);
+                if self.in_safe_zone(pos) { continue; }
                 let base_dir = (ir.aim - pos).try_normalize().unwrap_or(Vec2::X);
                 let n = shared::SECONDARY_PROJ_COUNT;
                 let spread = shared::SECONDARY_SPREAD_RAD;
@@ -2010,9 +2173,12 @@ impl GameWorld {
             .query::<(&NetId, &Position, &EntityKind, Option<&EnemyTag>)>()
             .iter()
             .filter_map(|(e, (net, pos, kind, tag))| match kind {
-                EntityKind::Player => Some((e, net.0, pos.0, true)),
+                // Player em zona segura é imune a dano.
+                EntityKind::Player if !self.in_safe_zone(pos.0) => Some((e, net.0, pos.0, true)),
                 // Cadáveres e enemies em spawn-grace (invocação) não tomam dano.
+                // Enemies em zona segura também são imunes (caso entrem por bug).
                 EntityKind::Enemy(_) if tag.map(|t| !t.dead && t.spawn_grace_until <= now_sim).unwrap_or(true)
+                                     && !self.in_safe_zone(pos.0)
                     => Some((e, net.0, pos.0, false)),
                 _ => None,
             })
@@ -2606,9 +2772,9 @@ impl GameWorld {
 
         let all: Vec<EntitySnapshot> = self
             .ecs
-            .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>, Option<&ProjTag>)>()
+            .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>, Option<&ProjTag>, Option<&NpcSkin>, Option<&VendorTag>, Option<&WanderRouteTag>)>()
             .iter()
-            .map(|(_, (net, pos, vel, kind, hp, ptag, projtag))| EntitySnapshot {
+            .map(|(_, (net, pos, vel, kind, hp, ptag, projtag, skin, vtag, wtag))| EntitySnapshot {
                 id: net.0,
                 kind: match kind {
                     EntityKind::Player      => "Player".to_string(),
@@ -2622,7 +2788,9 @@ impl GameWorld {
                 vel: vel.0,
                 hp: hp.map(|h| h.current),
                 hp_max: hp.map(|h| h.max),
-                name: ptag.map(|p| p.name.clone()),
+                name: ptag.map(|p| p.name.clone())
+                    .or_else(|| vtag.map(|v| v.name.clone()))
+                    .or_else(|| wtag.map(|w| w.name.clone())),
                 sprite_id: match kind {
                     EntityKind::Enemy(n) | EntityKind::Loot(n) | EntityKind::Npc(n) => Some(*n as u32),
                     EntityKind::Projectile => projtag.map(|p| p.kind as u32),
@@ -2631,6 +2799,7 @@ impl GameWorld {
                 is_self: None,
                 attacking: if attacking_ids.contains(&net.0) { Some(true) } else { None },
                 hurt_dir: self.hit_this_tick.get(&net.0).map(|v| [v.x, v.y]),
+                skin_preset: skin.map(|s| s.preset),
             })
             .collect();
 
@@ -3198,28 +3367,31 @@ impl GameWorld {
             return;
         }
 
-        // 2) Procura NPC. Captura (npc_kind, vendor_eid, dist²).
-        let mut best: Option<(u16, u32, f32)> = None;
-        for (_, (net, p, k)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
+        // 2) Procura NPC. Captura (entity, npc_kind, vendor_eid, dist²).
+        let mut best: Option<(hecs::Entity, u16, u32, f32)> = None;
+        for (e, (net, p, k)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
             if let EntityKind::Npc(n) = k {
                 let d2 = p.0.distance_squared(player_pos);
                 if d2 <= r_sq {
-                    if best.map(|(_, _, bd)| d2 < bd).unwrap_or(true) {
-                        best = Some((*n, net.0.0 as u32, d2));
+                    if best.map(|(_, _, _, bd)| d2 < bd).unwrap_or(true) {
+                        best = Some((e, *n, net.0.0 as u32, d2));
                     }
                 }
             }
         }
         match best {
-            Some((2, _, _)) => {
+            Some((_, 2, _, _)) => {
                 let slots = self
                     .sessions.get(&sid)
                     .map(|s| s.vault.clone())
                     .unwrap_or_default();
                 let _ = handle.to_client.send(ServerMessage::VaultOpen { slots });
             }
-            Some((_npc_kind, vendor_eid, _)) => {
-                let items: Vec<shared::protocol::ShopItem> = crate::economy::shop_listing()
+            Some((entity, 1, vendor_eid, _)) => {
+                // Vendor — usa VendorTag.shop_id pra pegar listing específico.
+                let shop_id = self.ecs.get::<&VendorTag>(entity)
+                    .map(|t| t.shop_id).unwrap_or(1);
+                let items: Vec<shared::protocol::ShopItem> = crate::economy::shop_listing_for(shop_id)
                     .into_iter()
                     .map(|(item_id, price)| shared::protocol::ShopItem { item_id, price })
                     .collect();
@@ -3232,7 +3404,7 @@ impl GameWorld {
                     items, sell_prices, vendor_id: vendor_eid, buy_mult, sell_mult,
                 });
             }
-            None => {}
+            _ => {} // outros tipos de NPC (3=wander) sem interação por ora
         }
     }
 
