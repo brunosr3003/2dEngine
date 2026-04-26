@@ -22,7 +22,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 24;
+pub const PROTOCOL_VERSION: u16 = 26;
 
 /// Velocidade base do jogador em tiles/segundo.
 pub const PLAYER_SPEED: f32 = 5.0;
@@ -191,116 +191,14 @@ pub const fn proficiency_level(prof_xp: u64) -> u32 {
 /// XP ganho por matar um inimigo (fallback — helpers por kind mais abaixo).
 pub const XP_PER_KILL: u64 = 30;
 
-/// Definicao estatica de um tipo de inimigo.
-#[derive(Debug, Clone, Copy)]
-pub struct EnemyKindDef {
-    pub hp_max: i32,
-    pub speed: f32,
-    pub attack_damage: i32,
-    pub attack_cooldown: f32,
-    pub detect_range: f32,
-    pub xp_reward: u64,
-    /// Resistencia flat; reduz dano recebido (`dano_real = max(1, dmg - defense)`).
-    pub defense: i32,
-    /// Tint multiplicativo aplicado no sprite pelo cliente pra diferenciar.
-    pub tint_rgba: [f32; 4],
-}
-
-/// Tabela de kinds. O index no array == EntityKind::Enemy(u16).
-/// Manter em sincronia com spawn_initial_enemies / respawn do servidor.
-pub const ENEMY_KINDS: &[EnemyKindDef] = &[
-    // 0 — Grunt: o basico. Tint branco.
-    EnemyKindDef {
-        hp_max: 50,  speed: 2.0, attack_damage: 10, attack_cooldown: 2.0,
-        detect_range: 9.0,  xp_reward: 30, defense: 0, tint_rgba: [1.0, 1.0, 1.0, 1.0],
-    },
-    // 1 — Tank: mais HP, mais lento, dano maior. Tint vermelho escuro.
-    EnemyKindDef {
-        hp_max: 120, speed: 1.3, attack_damage: 18, attack_cooldown: 2.8,
-        detect_range: 8.0,  xp_reward: 75, defense: 8, tint_rgba: [1.0, 0.35, 0.25, 1.0],
-    },
-    // 2 — Ranger: range longo, menos HP, mais rapido. Tint ciano forte.
-    EnemyKindDef {
-        hp_max: 35,  speed: 2.4, attack_damage: 12, attack_cooldown: 1.5,
-        detect_range: 13.0, xp_reward: 50, defense: 0, tint_rgba: [0.3, 0.9, 1.0, 1.0],
-    },
-    // 3 — Ninja: muito rapido, melee, pouco HP. Tint roxo.
-    EnemyKindDef {
-        hp_max: 40,  speed: 4.2, attack_damage: 15, attack_cooldown: 1.0,
-        detect_range: 11.0, xp_reward: 55, defense: 2, tint_rgba: [0.75, 0.2, 1.0, 1.0],
-    },
-    // 4 — Mago: lento, projéteis de longo alcance, alto dano. Tint azul-índigo.
-    EnemyKindDef {
-        hp_max: 45,  speed: 1.4, attack_damage: 22, attack_cooldown: 2.2,
-        detect_range: 15.0, xp_reward: 70, defense: 1, tint_rgba: [0.4, 0.4, 1.0, 1.0],
-    },
-    // 5 — Berserker: muito HP, muito dano, lento. Tint laranja.
-    EnemyKindDef {
-        hp_max: 200, speed: 1.5, attack_damage: 28, attack_cooldown: 3.0,
-        detect_range: 8.0,  xp_reward: 110, defense: 4, tint_rgba: [1.0, 0.5, 0.1, 1.0],
-    },
-    // 6 — Arqueiro: distancia media, projéteis rapidos, kite. Tint verde.
-    EnemyKindDef {
-        hp_max: 45,  speed: 2.8, attack_damage: 14, attack_cooldown: 1.6,
-        detect_range: 13.0, xp_reward: 60, defense: 1, tint_rgba: [0.2, 0.9, 0.3, 1.0],
-    },
-    // 7 — Boss: enorme HP, ataque em cone, lento, detecta tudo. Tint dourado.
-    EnemyKindDef {
-        hp_max: 700, speed: 1.6, attack_damage: 40, attack_cooldown: 2.8,
-        detect_range: 18.0, xp_reward: 600, defense: 20, tint_rgba: [1.0, 0.85, 0.15, 1.0],
-    },
-];
-
-/// Tamanho do sprite relativo ao sprite padrao (0.95 tiles).
-pub fn enemy_size_scale(kind: u16) -> f32 {
-    match kind {
-        1 => 1.3,   // tank maior
-        2 => 0.85,  // ranger menor
-        3 => 0.75,  // ninja pequeno/rapido
-        5 => 1.5,   // berserker enorme
-        7 => 2.2,   // boss gigante
-        _ => 1.0,
-    }
-}
-
-/// Range de ataque de um tipo de inimigo (tiles).
-pub fn enemy_attack_range(kind: u16) -> f32 {
-    match kind {
-        2 | 6 => 9.0,    // ranger / arqueiro: alcance medio
-        4     => 12.0,   // mago: longo alcance
-        7     => 13.0,   // boss: muito longo
-        _     => 1.8,    // melee
-    }
-}
-
-/// Distancia de kite desejada (mob ranged se afasta se jogador muito perto).
-/// None = melee, sem kite.
-pub fn enemy_kite_dist(kind: u16) -> Option<f32> {
-    match kind {
-        2 => Some(5.0),
-        4 => Some(8.0),
-        6 => Some(7.0),
-        7 => Some(10.0),
-        _ => None,
-    }
-}
-
-/// Numero de projéteis por ataque (boss dispara cone).
-pub fn enemy_proj_count(kind: u16) -> u32 {
-    if kind == 7 { 5 } else { 1 }
-}
+// Stats/loot/shop de inimigos e itens vivem no DB (server crate::economy).
+// Constantes de gameplay puras (cones, delays sem balancing) ficam aqui.
 
 /// Abertura angular do cone de ataque do boss (radianos entre 1o e ultimo proj).
 pub const BOSS_SPREAD_RAD: f32 = 1.0; // ~57 graus
 
 /// Tempo de respawn do boss em segundos.
 pub const BOSS_RESPAWN_DELAY: f32 = 120.0;
-
-pub fn enemy_def(kind: u16) -> &'static EnemyKindDef {
-    ENEMY_KINDS
-        .get(kind as usize)
-        .unwrap_or(&ENEMY_KINDS[0])
-}
 
 /// Retorna o level derivado a partir da XP acumulada.
 /// Curva simples quadratica: L = 1 + floor(sqrt(xp / 100)).
@@ -370,17 +268,7 @@ pub mod item_id {
     pub const DRAGON_SCALE:    u16 = 23;  // raro de boss
 }
 
-/// Limite de stack por item (1 = nao stackavel / equipamento).
-pub const fn item_stack_max(id: u16) -> u32 {
-    match id {
-        item_id::GOLD           => 9999,
-        item_id::HEALTH_POTION  | item_id::MANA_POTION
-        | item_id::GREATER_HEAL | item_id::GREATER_MANA
-        | item_id::STAMINA_POTION => 20,
-        item_id::GEM | item_id::IRON_INGOT | item_id::DRAGON_SCALE => 99,
-        _ => 1,
-    }
-}
+// item_stack_max vive no DB (server crate::economy).
 
 /// Retorna o slot de equipamento para um item_id, ou None se nao for
 /// equipavel.
@@ -553,19 +441,7 @@ pub const SECONDARY_SPREAD_RAD: f32 = 0.35; // ~20 graus
 /// Raio em tiles pra interagir com NPC vendedor.
 pub const INTERACT_RADIUS: f32 = 3.0;
 
-/// Precos fixos da loja (item_id, preco em ouro). Ordem define o indice
-/// usado em `ClientMessage::ShopBuy { slot_idx }`.
-pub const SHOP_ITEMS: [(u16, u32); 9] = [
-    (item_id::HEALTH_POTION, 10),
-    (item_id::MANA_POTION,   15),
-    (item_id::GREATER_HEAL,  40),
-    (item_id::GREATER_MANA,  50),
-    (item_id::STAMINA_POTION, 20),
-    (item_id::DAGGER,        80),
-    (item_id::LEATHER_ARMOR, 120),
-    (item_id::BOW,           150),
-    (item_id::AMULET,        180),
-];
+// Loja e preços de venda vivem no DB (server crate::economy).
 
 /// IDs logicos de tile — usados no WorldMap e no TileDef lookup.
 pub mod tile_id {

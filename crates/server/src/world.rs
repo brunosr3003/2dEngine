@@ -520,7 +520,7 @@ impl GameWorld {
 
     /// Spawna enemy e tagueia com SpawnedByZone pra track de quota.
     fn place_enemy_in_zone(&mut self, pos: Vec2, kind: u16, zone_id: u32) {
-        let def = shared::enemy_def(kind);
+        let def = crate::economy::enemy_def(kind);
         let hp_max = def.hp_max;
         let net_id = self.alloc_entity_id();
         let handle = self.spawn_entity_body(pos);
@@ -572,7 +572,7 @@ impl GameWorld {
                     self.place_enemy(pos, *kind, 0.0);
                 }
                 MapEntity::Boss { kind } => {
-                    let def = shared::enemy_def(*kind);
+                    let def = crate::economy::enemy_def(*kind);
                     let hp_max = def.hp_max;
                     let net_id = self.alloc_entity_id();
                     let handle = self.spawn_entity_body(pos);
@@ -1049,7 +1049,7 @@ impl GameWorld {
 
     /// Cria um inimigo no tile `pos` com kind e cooldown de ataque iniciais.
     fn place_enemy(&mut self, pos: Vec2, kind: u16, attack_cd: f32) {
-        let def = shared::enemy_def(kind);
+        let def = crate::economy::enemy_def(kind);
         let eid = self.alloc_entity_id();
         let handle = self.spawn_entity_body(pos);
         self.ecs.spawn((
@@ -1134,7 +1134,7 @@ impl GameWorld {
             let Some(pos) = self.pick_enemy_tile(seed, 60) else { break };
             let kind = Self::random_enemy_kind(lcg(seed));
             counts[kind as usize] += 1;
-            let cd = (placed as f32 * 0.3) % shared::enemy_def(kind).attack_cooldown;
+            let cd = (placed as f32 * 0.3) % crate::economy::enemy_def(kind).attack_cooldown;
             self.place_enemy(pos, kind, cd);
             placed += 1;
         }
@@ -1148,7 +1148,7 @@ impl GameWorld {
     fn spawn_boss(&mut self) {
         let seed = self.tick as u64 ^ 0xB055_B055;
         if let Some(pos) = self.pick_enemy_tile(seed, 100) {
-            let def = shared::enemy_def(7);
+            let def = crate::economy::enemy_def(7);
             let hp_max = def.hp_max;
             let net_id = self.alloc_entity_id();
             let handle = self.spawn_entity_body(pos);
@@ -1376,6 +1376,12 @@ impl GameWorld {
             }
             ClientMessage::ShopBuy { slot_idx } => {
                 self.handle_shop_buy(id, slot_idx as usize);
+            }
+            ClientMessage::ShopSell { inv_slot } => {
+                self.handle_shop_sell(id, inv_slot as usize);
+            }
+            ClientMessage::ShopTrade { buying, selling } => {
+                self.handle_shop_trade(id, buying, selling);
             }
             ClientMessage::VaultDeposit { inv_slot } => {
                 self.handle_vault_deposit(id, inv_slot as usize);
@@ -1634,7 +1640,7 @@ impl GameWorld {
                 EntityKind::Enemy(k) => *k,
                 _ => 0,
             };
-            let def = shared::enemy_def(kind_id);
+            let def = crate::economy::enemy_def(kind_id);
 
             if enemy.attack_cooldown > 0.0 { enemy.attack_cooldown -= dt; }
             enemy.wander_timer -= dt;
@@ -1695,7 +1701,7 @@ impl GameWorld {
                     }
                     let to_player = (*ppos - pos.0).try_normalize().unwrap_or(Vec2::X);
                     // Comportamento de movimento por kind
-                    let move_dir = if let Some(kite) = shared::enemy_kite_dist(kind_id) {
+                    let move_dir = if let Some(kite) = crate::economy::enemy_kite_dist(kind_id) {
                         if dist > kite + 0.5      { to_player }
                         else if dist < kite - 0.5 { -to_player }
                         else                      { Vec2::ZERO }
@@ -1704,7 +1710,7 @@ impl GameWorld {
                     };
                     vel.0 = move_dir * def.speed;
 
-                    let attack_range = shared::enemy_attack_range(kind_id);
+                    let attack_range = crate::economy::enemy_attack_range(kind_id);
                     if dist < attack_range && enemy.attack_cooldown <= 0.0 {
                         enemy.aggro_timer = 0.0; // reset ao atacar com sucesso
                         enemy.attack_cooldown = def.attack_cooldown;
@@ -1723,7 +1729,7 @@ impl GameWorld {
                         } else {
                         // Demon Mago (kind 4) lança fireball; demais ranged usam arrow.
                         let enemy_proj_kind: u8 = if kind_id == 4 { 1 } else { 0 };
-                        let proj_count = shared::enemy_proj_count(kind_id);
+                        let proj_count = crate::economy::enemy_proj_count(kind_id);
                         // Mago = anim de swing curta (~340ms) → delay menor.
                         let fire_delay = if enemy_proj_kind == 1 {
                             shared::MAGIC_FIRE_DELAY
@@ -2096,7 +2102,7 @@ impl GameWorld {
                     d = s.stats.defense;
                 } else if let Ok(k) = self.ecs.get::<&EntityKind>(entity) {
                     if let EntityKind::Enemy(kid) = *k {
-                        d = shared::enemy_def(kid).defense;
+                        d = crate::economy::enemy_def(kid).defense;
                     }
                 }
                 d
@@ -2210,7 +2216,7 @@ impl GameWorld {
 
             // Loot table por kind
             let seed = lcg(self.tick as u64 ^ eid.0 as u64 ^ 0xBADA_55);
-            let drops = enemy_loot_drops(kind_id, seed);
+            let drops = crate::economy::enemy_loot_drops(kind_id, seed);
             for (item_id, qty) in drops {
                 let loot_id = self.alloc_entity_id();
                 // Espalha levemente os drops do boss
@@ -2230,7 +2236,7 @@ impl GameWorld {
 
             // Creditar XP (e Fame, se mob grande) para o jogador que matou
             if let Some(attacker_eid) = kill_credits.get(&eid).copied() {
-                let xp_reward = shared::enemy_def(kind_id).xp_reward;
+                let xp_reward = crate::economy::enemy_def(kind_id).xp_reward;
                 let fame_reward = if kind_id == 7 { 50 }        // boss
                                   else if kind_id == 5 { 5 }    // berserker
                                   else if kind_id == 4 { 3 }    // mago
@@ -2855,7 +2861,7 @@ impl GameWorld {
                 let (Some(ib), _) = vb else { return };
                 // Stack-merge quando ambos tem o mesmo item_id: junta b em a.
                 if ia.qty > 0 && ib.qty > 0 && ia.item_id == ib.item_id {
-                    let cap = shared::item_stack_max(ia.item_id);
+                    let cap = crate::economy::item_stack_max(ia.item_id);
                     let move_qty = (cap - ib.qty).min(ia.qty);
                     if move_qty > 0 {
                         let na = ia.qty - move_qty;
@@ -2918,7 +2924,7 @@ impl GameWorld {
         let src = session.inventory[inv_slot];
         if src.qty == 0 { return; }
         // Tenta stackar em slot existente do vault com mesmo item_id
-        let stack_max = shared::item_stack_max(src.item_id);
+        let stack_max = crate::economy::item_stack_max(src.item_id);
         let mut moved = false;
         for slot in session.vault.iter_mut() {
             if slot.qty > 0 && slot.item_id == src.item_id && slot.qty < stack_max {
@@ -2953,7 +2959,7 @@ impl GameWorld {
         if vault_slot >= session.vault.len() { return; }
         let src = session.vault[vault_slot];
         if src.qty == 0 { return; }
-        let stack_max = shared::item_stack_max(src.item_id);
+        let stack_max = crate::economy::item_stack_max(src.item_id);
         let mut moved = false;
         for slot in session.inventory.iter_mut() {
             if slot.qty > 0 && slot.item_id == src.item_id && slot.qty < stack_max {
@@ -3192,32 +3198,39 @@ impl GameWorld {
             return;
         }
 
-        // 2) Procura NPC
-        let mut best: Option<(u16, f32)> = None;
-        for (_, (p, k)) in self.ecs.query::<(&Position, &EntityKind)>().iter() {
+        // 2) Procura NPC. Captura (npc_kind, vendor_eid, dist²).
+        let mut best: Option<(u16, u32, f32)> = None;
+        for (_, (net, p, k)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
             if let EntityKind::Npc(n) = k {
                 let d2 = p.0.distance_squared(player_pos);
                 if d2 <= r_sq {
-                    if best.map(|(_, bd)| d2 < bd).unwrap_or(true) {
-                        best = Some((*n, d2));
+                    if best.map(|(_, _, bd)| d2 < bd).unwrap_or(true) {
+                        best = Some((*n, net.0.0 as u32, d2));
                     }
                 }
             }
         }
         match best {
-            Some((2, _)) => {
+            Some((2, _, _)) => {
                 let slots = self
                     .sessions.get(&sid)
                     .map(|s| s.vault.clone())
                     .unwrap_or_default();
                 let _ = handle.to_client.send(ServerMessage::VaultOpen { slots });
             }
-            Some(_) => {
-                let items: Vec<shared::protocol::ShopItem> = shared::SHOP_ITEMS
-                    .iter()
-                    .map(|&(item_id, price)| shared::protocol::ShopItem { item_id, price })
+            Some((_npc_kind, vendor_eid, _)) => {
+                let items: Vec<shared::protocol::ShopItem> = crate::economy::shop_listing()
+                    .into_iter()
+                    .map(|(item_id, price)| shared::protocol::ShopItem { item_id, price })
                     .collect();
-                let _ = handle.to_client.send(ServerMessage::ShopOpen { items });
+                let sell_prices: Vec<shared::protocol::SellPrice> = crate::economy::all_sell_prices()
+                    .into_iter()
+                    .map(|(item_id, price)| shared::protocol::SellPrice { item_id, price })
+                    .collect();
+                let (buy_mult, sell_mult) = crate::economy::vendor_modifiers(vendor_eid);
+                let _ = handle.to_client.send(ServerMessage::ShopOpen {
+                    items, sell_prices, vendor_id: vendor_eid, buy_mult, sell_mult,
+                });
             }
             None => {}
         }
@@ -3257,8 +3270,8 @@ impl GameWorld {
     }
 
     fn handle_shop_buy(&mut self, sid: SessionId, slot_idx: usize) {
-        if slot_idx >= shared::SHOP_ITEMS.len() { return; }
-        let (item_id, price) = shared::SHOP_ITEMS[slot_idx];
+        let listing = crate::economy::shop_listing();
+        let Some(&(item_id, price)) = listing.get(slot_idx) else { return };
 
         // 1) Valida sessao + proximidade (borrow imutavel da ECS)
         let (player_entity, player_pos) = match self.sessions.get(&sid) {
@@ -3357,6 +3370,232 @@ impl GameWorld {
             if let Ok(mut hp) = self.ecs.get::<&mut Health>(player_entity) {
                 hp.max = nmax;
             }
+        }
+    }
+
+    fn handle_shop_sell(&mut self, sid: SessionId, inv_slot: usize) {
+        // 1) Valida sessao + proximidade do vendor (igual ShopBuy).
+        let player_pos = match self.sessions.get(&sid) {
+            Some(s) if s.logged_in => match s.entity {
+                Some(e) => match self.ecs.get::<&Position>(e) {
+                    Ok(p) => p.0,
+                    Err(_) => return,
+                },
+                None => return,
+            },
+            _ => return,
+        };
+        let r_sq = shared::INTERACT_RADIUS * shared::INTERACT_RADIUS;
+        let near_vendor = self
+            .ecs
+            .query::<(&Position, &EntityKind)>()
+            .iter()
+            .any(|(_, (p, k))| {
+                matches!(k, EntityKind::Npc(_))
+                    && p.0.distance_squared(player_pos) <= r_sq
+            });
+        if !near_vendor { return; }
+
+        let Some(session) = self.sessions.get_mut(&sid) else { return };
+        if inv_slot >= session.inventory.len() { return; }
+        let slot = session.inventory[inv_slot];
+        if slot.qty == 0 { return; }
+        let price = crate::economy::sell_price_of(slot.item_id);
+        if price == 0 {
+            let _ = session.handle.to_client.send(ServerMessage::Chat {
+                from: "SHOP".into(),
+                text: "este item não pode ser vendido".into(),
+            });
+            return;
+        }
+
+        // Vende 1 unidade por click. Pra stacks (potions, gem) o jogador
+        // clica N vezes — UX simples sem precisar de input numérico.
+        session.inventory[inv_slot].qty -= 1;
+        if session.inventory[inv_slot].qty == 0 {
+            session.inventory[inv_slot] = shared::InventorySlot::default();
+        }
+        let placed = add_to_inventory(&mut session.inventory, shared::item_id::GOLD, price);
+        if !placed {
+            // Reverte: estranho mas não pode acontecer com gold (stack 9999).
+            session.inventory[inv_slot].item_id = slot.item_id;
+            session.inventory[inv_slot].qty = slot.qty;
+            let _ = session.handle.to_client.send(ServerMessage::Chat {
+                from: "SHOP".into(),
+                text: "inventário cheio (sem espaço pro ouro)".into(),
+            });
+            return;
+        }
+        session.inventory_dirty = true;
+        let _ = session.handle.to_client.send(ServerMessage::Chat {
+            from: "SHOP".into(),
+            text: format!("vendeu item {} por {price} ouro", slot.item_id),
+        });
+    }
+
+    /// Trade atômico: lista de compras + lista de vendas, executadas juntas.
+    /// Validação completa servidor-side (cliente é só preview). Em qualquer
+    /// erro: rollback total + envia ShopTradeResult { ok: false, reason }.
+    fn handle_shop_trade(
+        &mut self,
+        sid: SessionId,
+        buying: Vec<shared::protocol::TradeBuyEntry>,
+        selling: Vec<shared::protocol::TradeSellEntry>,
+    ) {
+        // 1) Sessão + proximidade do vendor.
+        let (player_pos, vendor_id) = match self.sessions.get(&sid) {
+            Some(s) if s.logged_in => match s.entity {
+                Some(e) => match self.ecs.get::<&Position>(e) {
+                    Ok(p) => (p.0, 0u32), // vendor_id será descoberto abaixo
+                    Err(_) => return,
+                },
+                None => return,
+            },
+            _ => return,
+        };
+        let r_sq = shared::INTERACT_RADIUS * shared::INTERACT_RADIUS;
+        let mut vendor_id = vendor_id;
+        let near = self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter()
+            .filter_map(|(_, (net, p, k))| {
+                if matches!(k, EntityKind::Npc(n) if *n != 2)
+                    && p.0.distance_squared(player_pos) <= r_sq
+                {
+                    Some((net.0.0 as u32, p.0.distance_squared(player_pos)))
+                } else { None }
+            })
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        let Some((vid, _)) = near else {
+            self.send_trade_result(sid, false, "longe demais do vendedor");
+            return;
+        };
+        vendor_id = vid;
+
+        let listing = crate::economy::shop_listing();
+        let (buy_mult, sell_mult) = crate::economy::vendor_modifiers(vendor_id);
+
+        // 2) Calcula custo de compra + valida slots.
+        let mut total_buy: u64 = 0;
+        let mut buys: Vec<(u16, u32)> = Vec::with_capacity(buying.len());
+        for entry in &buying {
+            if entry.qty == 0 { continue; }
+            let Some(&(item_id, base_price)) = listing.get(entry.shop_slot as usize) else {
+                self.send_trade_result(sid, false, "item de loja inválido");
+                return;
+            };
+            let unit_price = (base_price as f32 * buy_mult).round() as u64;
+            total_buy = total_buy.saturating_add(unit_price * entry.qty as u64);
+            buys.push((item_id, entry.qty));
+        }
+
+        // 3) Calcula valor de venda + valida slots do inventário.
+        // Snapshot do inventário pra validação (sem mutar ainda).
+        let inv_snapshot: Vec<shared::InventorySlot> = match self.sessions.get(&sid) {
+            Some(s) => s.inventory.clone(),
+            None => return,
+        };
+        let mut total_sell: u64 = 0;
+        // Agrega qty por inv_slot pra detectar duplicatas no payload.
+        let mut sell_by_slot: std::collections::HashMap<u16, u32> = std::collections::HashMap::new();
+        for entry in &selling {
+            if entry.qty == 0 { continue; }
+            *sell_by_slot.entry(entry.inv_slot).or_insert(0) += entry.qty;
+        }
+        let mut sells: Vec<(u16, u16, u32)> = Vec::new(); // (inv_slot, item_id, qty)
+        for (&slot_idx, &qty) in &sell_by_slot {
+            let idx = slot_idx as usize;
+            if idx >= inv_snapshot.len() {
+                self.send_trade_result(sid, false, "slot de inventário inválido");
+                return;
+            }
+            let slot = &inv_snapshot[idx];
+            if slot.qty < qty {
+                self.send_trade_result(sid, false, "quantidade indisponível no inventário");
+                return;
+            }
+            let unit_price = crate::economy::sell_price_of(slot.item_id);
+            if unit_price == 0 {
+                self.send_trade_result(sid, false, "item não vendável no basket");
+                return;
+            }
+            let unit_price_mod = (unit_price as f32 * sell_mult).round() as u64;
+            total_sell = total_sell.saturating_add(unit_price_mod * qty as u64);
+            sells.push((slot_idx, slot.item_id, qty));
+        }
+
+        // 4) Verifica saldo: gold do player + total_sell >= total_buy.
+        let gold_before: u64 = inv_snapshot.iter()
+            .filter(|s| s.item_id == shared::item_id::GOLD)
+            .map(|s| s.qty as u64)
+            .sum();
+        let gold_after = gold_before.saturating_add(total_sell).checked_sub(total_buy);
+        let Some(_) = gold_after else {
+            self.send_trade_result(sid, false, "ouro insuficiente");
+            return;
+        };
+
+        // 5) Simula o trade num clone do inventário pra validar inventory space.
+        let mut sim = inv_snapshot.clone();
+        // 5a) Remove vendidos
+        for &(slot_idx, _item_id, qty) in &sells {
+            let s = &mut sim[slot_idx as usize];
+            s.qty -= qty;
+            if s.qty == 0 { *s = shared::InventorySlot::default(); }
+        }
+        // 5b) Adiciona gold da venda (se houver)
+        if total_sell > 0 {
+            if !add_to_inventory(&mut sim, shared::item_id::GOLD, total_sell as u32) {
+                self.send_trade_result(sid, false, "sem espaço pro ouro recebido");
+                return;
+            }
+        }
+        // 5c) Subtrai gold da compra
+        if total_buy > 0 {
+            let mut left = total_buy as u32;
+            for s in sim.iter_mut() {
+                if s.item_id == shared::item_id::GOLD && s.qty > 0 {
+                    let take = s.qty.min(left);
+                    s.qty -= take;
+                    left -= take;
+                    if s.qty == 0 { *s = shared::InventorySlot::default(); }
+                    if left == 0 { break; }
+                }
+            }
+            if left > 0 {
+                self.send_trade_result(sid, false, "ouro insuficiente (sim)");
+                return;
+            }
+        }
+        // 5d) Adiciona itens comprados
+        for &(item_id, qty) in &buys {
+            if !add_to_inventory(&mut sim, item_id, qty) {
+                self.send_trade_result(sid, false, "inventário cheio pros itens comprados");
+                return;
+            }
+        }
+
+        // 6) Tudo validou — commita: substitui inventário pela simulação.
+        let Some(session) = self.sessions.get_mut(&sid) else { return };
+        session.inventory = sim;
+        session.inventory_dirty = true;
+
+        let summary = format!(
+            "trade ok: gastou {total_buy}, recebeu {total_sell} (saldo {:+})",
+            total_sell as i64 - total_buy as i64
+        );
+        let _ = session.handle.to_client.send(ServerMessage::ShopTradeResult {
+            ok: true, reason: summary.clone(),
+        });
+        let _ = session.handle.to_client.send(ServerMessage::Chat {
+            from: "SHOP".into(),
+            text:  summary,
+        });
+    }
+
+    fn send_trade_result(&self, sid: SessionId, ok: bool, reason: &str) {
+        if let Some(s) = self.sessions.get(&sid) {
+            let _ = s.handle.to_client.send(ServerMessage::ShopTradeResult {
+                ok, reason: reason.into(),
+            });
         }
     }
 
@@ -3568,7 +3807,7 @@ fn effective_stats(
 /// se nao couber, procura slot vazio. Retorna true se coube (parcial ou total
 /// dentro do stack do primeiro slot achado — se nao couber NADA, retorna false).
 fn add_to_inventory(inv: &mut [shared::InventorySlot], item_id: u16, mut qty: u32) -> bool {
-    let max_stack = shared::item_stack_max(item_id);
+    let max_stack = crate::economy::item_stack_max(item_id);
     // 1) stacka em slots existentes
     for slot in inv.iter_mut() {
         if slot.qty > 0 && slot.item_id == item_id && slot.qty < max_stack {
@@ -3588,91 +3827,6 @@ fn add_to_inventory(inv: &mut [shared::InventorySlot], item_id: u16, mut qty: u3
         qty -= add;
     }
     qty == 0
-}
-
-/// Retorna lista de (item_id, qty) a dropar quando o inimigo de `kind` morre.
-fn enemy_loot_drops(kind: u16, seed: u64) -> Vec<(u16, u32)> {
-    use shared::item_id;
-    let r  = lcg_f32(seed);
-    let r2 = lcg_f32(lcg(seed));
-    let r3 = lcg_f32(lcg(lcg(seed)));
-    let r4 = lcg_f32(lcg(lcg(lcg(seed))));
-    let r5 = lcg_f32(lcg(lcg(lcg(lcg(seed)))));
-    match kind {
-        // Boss: ouro alto + varios equipaveis + raridades
-        7 => {
-            let mut drops = vec![
-                (item_id::GOLD,           200 + (r * 300.0) as u32),
-                (item_id::DRAGON_SCALE,   1 + (r2 * 3.0) as u32),
-                (item_id::GREATER_HEAL,   2 + (r3 * 3.0) as u32),
-                (item_id::GREATER_MANA,   2),
-            ];
-            // Equipamentos poderosos
-            if r  < 0.55 { drops.push((item_id::GREAT_SWORD, 1)); }
-            if r2 < 0.55 { drops.push((item_id::WAND, 1)); }
-            if r3 < 0.50 { drops.push((item_id::PLATE_ARMOR, 1)); }
-            if r4 < 0.55 { drops.push((item_id::ROBE, 1)); }
-            if r5 < 0.45 { drops.push((item_id::LUCKY_RING, 1)); }
-            drops
-        }
-        // Berserker: pesado, drops de armadura
-        5 => {
-            let mut drops = vec![(item_id::GOLD, 25 + (r * 35.0) as u32)];
-            if r2 < 0.22 { drops.push((item_id::PLATE_ARMOR, 1)); }
-            else if r2 < 0.45 { drops.push((item_id::ARMOR, 1)); }
-            if r3 < 0.30 { drops.push((item_id::GREATER_HEAL, 1)); }
-            if r4 < 0.20 { drops.push((item_id::IRON_INGOT, 1 + (r5 * 2.0) as u32)); }
-            drops
-        }
-        // Mago: staff/wand + mana potions
-        4 => {
-            let mut drops = vec![(item_id::GOLD, 15 + (r * 20.0) as u32)];
-            if r2 < 0.22 { drops.push((item_id::WAND, 1)); }
-            else if r2 < 0.45 { drops.push((item_id::STAFF, 1)); }
-            if r3 < 0.35 { drops.push((item_id::MANA_POTION, 1 + (r4 * 2.0) as u32)); }
-            if r4 < 0.18 { drops.push((item_id::ROBE, 1)); }
-            if r5 < 0.12 { drops.push((item_id::GEM, 1)); }
-            drops
-        }
-        // Tank: armadura pesada
-        1 => {
-            let mut drops = vec![(item_id::GOLD, 15 + (r * 25.0) as u32)];
-            if r2 < 0.18 { drops.push((item_id::SHIELD, 1)); }
-            if r3 < 0.25 { drops.push((item_id::ARMOR, 1)); }
-            else if r3 < 0.35 { drops.push((item_id::SWORD, 1)); }
-            if r4 < 0.30 { drops.push((item_id::HEALTH_POTION, 1 + (r5 * 2.0) as u32)); }
-            if r5 < 0.15 { drops.push((item_id::IRON_INGOT, 1)); }
-            drops
-        }
-        // Ranger/Arqueiro: bow + acessorios
-        2 | 6 => {
-            let mut drops = vec![(item_id::GOLD, 10 + (r * 18.0) as u32)];
-            if r2 < 0.20 { drops.push((item_id::BOW, 1)); }
-            if r3 < 0.25 {
-                if r4 < 0.5 { drops.push((item_id::RING, 1)); }
-                else        { drops.push((item_id::AMULET, 1)); }
-            }
-            if r4 < 0.35 { drops.push((item_id::STAMINA_POTION, 1)); }
-            drops
-        }
-        // Ninja: rapidez, drops leves
-        3 => {
-            let mut drops = vec![(item_id::GOLD, 8 + (r * 14.0) as u32)];
-            if r2 < 0.25 { drops.push((item_id::DAGGER, 1)); }
-            if r3 < 0.22 { drops.push((item_id::LEATHER_ARMOR, 1)); }
-            if r4 < 0.35 { drops.push((item_id::MANA_POTION, 1)); }
-            if r5 < 0.10 { drops.push((item_id::LUCKY_RING, 1)); }
-            drops
-        }
-        // Grunt + fallback: base
-        _ => {
-            let mut drops = vec![(item_id::GOLD, 4 + (r * 10.0) as u32)];
-            if r2 < 0.25 { drops.push((item_id::HEALTH_POTION, 1)); }
-            if r3 < 0.15 { drops.push((item_id::MANA_POTION, 1)); }
-            if r4 < 0.08 { drops.push((item_id::IRON_INGOT, 1)); }
-            drops
-        }
-    }
 }
 
 // LCG deterministico para wander de inimigos (sem dep de rand)

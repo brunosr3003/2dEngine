@@ -2073,6 +2073,8 @@ dependencies = [
  "futures-util",
  "glam 0.29.3",
  "hecs",
+ "once_cell",
+ "parking_lot",
  "rapier2d",
  "serde",
  "serde_json",

@@ -11,6 +11,7 @@
 //! entidades. As sessoes se comunicam com o mundo SOMENTE via mpsc.
 
 mod auth;
+mod economy;
 mod persistence;
 mod session;
 mod tick;
@@ -40,6 +41,11 @@ async fn main() -> Result<()> {
     let characters = persistence::load_all(&pool).await?;
     tracing::info!("db conectado: {} personagens carregados", characters.len());
     let save_tx = persistence::spawn_writer(pool.clone());
+
+    // Inicializa economia + spawn da tarefa de hot-reload.
+    economy::init(&pool).await?;
+    economy::spawn_hot_reload(pool.clone());
+    tracing::info!("economia carregada (hot-reload a cada 5s; bumpa economy_version pra forçar)");
 
     let listener = TcpListener::bind(&addr).await?;
     tracing::info!("server listening on ws://{addr} ({TICK_RATE_HZ} Hz)");

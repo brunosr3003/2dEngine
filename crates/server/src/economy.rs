@@ -1,0 +1,271 @@
+//! Configuração econômica carregada do Postgres em vez de hardcoded.
+//!
+//! Contém: definições de itens (preços, stack), kinds de inimigo (HP, speed,
+//! XP) e tabelas de loot. Acessada via static `OnceCell<RwLock<EconomyConfig>>`
+//! pra que helpers como `sell_price_of(id)` funcionem como antes mas leiam do
+//! DB. Hot-reload checa `economy_version` a cada 5s e troca atomicamente.
+
+use anyhow::Result;
+use once_cell::sync::OnceCell;
+use parking_lot::RwLock;
+use sqlx::postgres::PgPool;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+
+#[derive(Clone, Debug)]
+pub struct ItemDef {
+    pub id:         u16,
+    pub name:       String,
+    pub sell_price: u32,
+    pub buy_price:  Option<u32>,
+    pub shop_order: Option<i32>,
+    pub stack_max:  u32,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct EnemyKindDef {
+    pub kind:            u16,
+    pub name:            String,
+    pub hp_max:          i32,
+    pub speed:           f32,
+    pub attack_damage:   i32,
+    pub attack_cooldown: f32,
+    pub detect_range:    f32,
+    pub attack_range:    f32,
+    pub kite_dist:       Option<f32>,
+    pub proj_count:      u32,
+    pub xp_reward:       u64,
+    pub defense:         i32,
+    pub size_scale:      f32,
+    pub tint_rgba:       [f32; 4],
+}
+
+#[derive(Clone, Debug)]
+pub struct LootEntry {
+    pub item_id: u16,
+    pub qty_min: u32,
+    pub qty_max: u32,
+    pub chance:  f32, // 0.0..=1.0; 1.0 = sempre dropa
+}
+
+#[derive(Default)]
+pub struct EconomyConfig {
+    pub version:      i64,
+    pub items:        HashMap<u16, ItemDef>,
+    pub shop_items:   Vec<u16>,                 // ordenado por shop_order ASC
+    pub enemy_kinds:  HashMap<u16, EnemyKindDef>,
+    pub loot_tables:  HashMap<u16, Vec<LootEntry>>,
+}
+
+impl EconomyConfig {
+    pub fn item(&self, id: u16) -> Option<&ItemDef> { self.items.get(&id) }
+
+    pub fn sell_price(&self, id: u16) -> u32 {
+        self.items.get(&id).map(|i| i.sell_price).unwrap_or(0)
+    }
+
+    pub fn stack_max(&self, id: u16) -> u32 {
+        self.items.get(&id).map(|i| i.stack_max).unwrap_or(1)
+    }
+
+    /// Lista (item_id, buy_price) na ordem da loja.
+    pub fn shop_listing(&self) -> Vec<(u16, u32)> {
+        self.shop_items.iter()
+            .filter_map(|id| self.items.get(id).and_then(|i| i.buy_price.map(|p| (*id, p))))
+            .collect()
+    }
+
+    pub fn enemy_kind(&self, kind: u16) -> Option<&EnemyKindDef> {
+        self.enemy_kinds.get(&kind)
+    }
+
+    /// Rola loot drops pra um kind. Cada entry independente: rand < chance →
+    /// dropa (qty random entre min..=max). Determinístico via seed.
+    pub fn roll_loot(&self, kind: u16, seed: u64) -> Vec<(u16, u32)> {
+        let Some(table) = self.loot_tables.get(&kind) else { return Vec::new(); };
+        let mut out = Vec::with_capacity(table.len());
+        let mut s = seed;
+        for entry in table {
+            s = lcg(s);
+            let r1 = lcg_f32(s);
+            if r1 >= entry.chance { continue; }
+            s = lcg(s);
+            let r2 = lcg_f32(s);
+            let span = entry.qty_max.saturating_sub(entry.qty_min) + 1;
+            let qty = entry.qty_min + ((r2 * span as f32) as u32).min(span - 1);
+            out.push((entry.item_id, qty));
+        }
+        out
+    }
+}
+
+// LCG dedicado pra rolagem de loot (não usa o do world.rs pra evitar dep cíclica)
+fn lcg(seed: u64) -> u64 {
+    seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407)
+}
+fn lcg_f32(seed: u64) -> f32 {
+    (seed >> 11) as f32 / (1u64 << 53) as f32
+}
+
+// ── Static accessor ──────────────────────────────────────────────────────────
+
+static ECONOMY: OnceCell<Arc<RwLock<EconomyConfig>>> = OnceCell::new();
+
+fn cell() -> &'static RwLock<EconomyConfig> {
+    ECONOMY.get().expect("economy não inicializada — chame economy::init() na boot")
+}
+
+/// Inicializa o singleton com a config carregada do DB. Chamar 1x na boot.
+pub async fn init(pool: &PgPool) -> Result<()> {
+    let cfg = load_from_db(pool).await?;
+    let _ = ECONOMY.set(Arc::new(RwLock::new(cfg)));
+    Ok(())
+}
+
+/// Spawn da tarefa de hot-reload. Verifica `economy_version` a cada 5s; se
+/// mudou, recarrega tudo. Apenas troca atomicamente — leitores no momento
+/// pegam ainda a versão antiga (sem dano, eventualmente consistente).
+pub fn spawn_hot_reload(pool: PgPool) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        interval.tick().await; // descarta o primeiro (imediato)
+        loop {
+            interval.tick().await;
+            match check_and_reload(&pool).await {
+                Ok(true) => {
+                    let v = cell().read().version;
+                    tracing::info!("economy hot-reload: v{v}");
+                }
+                Ok(false) => {}
+                Err(e) => tracing::warn!("economy reload falhou: {e}"),
+            }
+        }
+    });
+}
+
+async fn check_and_reload(pool: &PgPool) -> Result<bool> {
+    let v: i64 = sqlx::query_scalar("SELECT version FROM economy_version WHERE id = 1")
+        .fetch_one(pool).await?;
+    if v == cell().read().version { return Ok(false); }
+    let cfg = load_from_db(pool).await?;
+    *cell().write() = cfg;
+    Ok(true)
+}
+
+// ── Lookup helpers (mantém API antiga de shared::) ───────────────────────────
+
+pub fn sell_price_of(id: u16) -> u32 { cell().read().sell_price(id) }
+
+/// Lista (item_id, sell_price) de TODOS os itens com preço > 0. Usado na
+/// abertura do shop pra cliente saber valor de cada item do inventário.
+pub fn all_sell_prices() -> Vec<(u16, u32)> {
+    cell().read().items.values()
+        .filter(|i| i.sell_price > 0)
+        .map(|i| (i.id, i.sell_price))
+        .collect()
+}
+
+/// Multiplicadores de compra/venda de um vendor (buy_mult, sell_mult).
+/// Stub: retorna (1.0, 1.0). Futuro: lookup numa tabela `vendor_relationships`
+/// que considera reputação do player com aquele vendor específico.
+pub fn vendor_modifiers(_vendor_id: u32) -> (f32, f32) {
+    (1.0, 1.0)
+}
+pub fn item_stack_max(id: u16) -> u32 { cell().read().stack_max(id) }
+pub fn shop_listing() -> Vec<(u16, u32)> { cell().read().shop_listing() }
+
+pub fn enemy_def(kind: u16) -> EnemyKindDef {
+    cell().read().enemy_kinds.get(&kind).cloned().unwrap_or_default()
+}
+
+pub fn enemy_size_scale(kind: u16) -> f32 {
+    cell().read().enemy_kinds.get(&kind).map(|e| e.size_scale).unwrap_or(1.0)
+}
+
+pub fn enemy_attack_range(kind: u16) -> f32 {
+    cell().read().enemy_kinds.get(&kind).map(|e| e.attack_range).unwrap_or(1.8)
+}
+
+pub fn enemy_kite_dist(kind: u16) -> Option<f32> {
+    cell().read().enemy_kinds.get(&kind).and_then(|e| e.kite_dist)
+}
+
+pub fn enemy_proj_count(kind: u16) -> u32 {
+    cell().read().enemy_kinds.get(&kind).map(|e| e.proj_count).unwrap_or(1)
+}
+
+pub fn enemy_loot_drops(kind: u16, seed: u64) -> Vec<(u16, u32)> {
+    cell().read().roll_loot(kind, seed)
+}
+
+// ── DB load ──────────────────────────────────────────────────────────────────
+
+async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
+    let version: i64 = sqlx::query_scalar("SELECT version FROM economy_version WHERE id = 1")
+        .fetch_one(pool).await?;
+
+    let item_rows: Vec<(i32, String, i32, Option<i32>, Option<i32>, i32)> =
+        sqlx::query_as("SELECT id, name, sell_price, buy_price, shop_order, stack_max FROM items")
+            .fetch_all(pool).await?;
+    let mut items = HashMap::with_capacity(item_rows.len());
+    let mut shop_collected: Vec<(i32, u16)> = Vec::new(); // (order, id)
+    for (id, name, sell_price, buy_price, shop_order, stack_max) in item_rows {
+        let id_u16 = id as u16;
+        if let Some(ord) = shop_order {
+            shop_collected.push((ord, id_u16));
+        }
+        items.insert(id_u16, ItemDef {
+            id:         id_u16,
+            name,
+            sell_price: sell_price.max(0) as u32,
+            buy_price:  buy_price.map(|v| v.max(0) as u32),
+            shop_order,
+            stack_max:  stack_max.max(1) as u32,
+        });
+    }
+    shop_collected.sort_by_key(|(o, _)| *o);
+    let shop_items: Vec<u16> = shop_collected.into_iter().map(|(_, id)| id).collect();
+
+    #[derive(sqlx::FromRow)]
+    struct EnemyRow {
+        kind: i32, name: String, hp_max: i32, speed: f32, attack_damage: i32,
+        attack_cooldown: f32, detect_range: f32, attack_range: f32,
+        kite_dist: Option<f32>, proj_count: i32, xp_reward: i64, defense: i32,
+        size_scale: f32, tint_r: f32, tint_g: f32, tint_b: f32, tint_a: f32,
+    }
+    let enemy_rows: Vec<EnemyRow> = sqlx::query_as(
+        "SELECT kind, name, hp_max, speed, attack_damage, attack_cooldown, detect_range, \
+                attack_range, kite_dist, proj_count, xp_reward, defense, size_scale, \
+                tint_r, tint_g, tint_b, tint_a FROM enemy_kinds"
+    ).fetch_all(pool).await?;
+    let mut enemy_kinds = HashMap::with_capacity(enemy_rows.len());
+    for r in enemy_rows {
+        enemy_kinds.insert(r.kind as u16, EnemyKindDef {
+            kind: r.kind as u16, name: r.name,
+            hp_max: r.hp_max, speed: r.speed, attack_damage: r.attack_damage,
+            attack_cooldown: r.attack_cooldown,
+            detect_range: r.detect_range, attack_range: r.attack_range,
+            kite_dist: r.kite_dist,
+            proj_count: r.proj_count.max(1) as u32,
+            xp_reward: r.xp_reward.max(0) as u64,
+            defense: r.defense, size_scale: r.size_scale,
+            tint_rgba: [r.tint_r, r.tint_g, r.tint_b, r.tint_a],
+        });
+    }
+
+    let loot_rows: Vec<(i32, i32, i32, i32, f32)> =
+        sqlx::query_as("SELECT enemy_kind, item_id, qty_min, qty_max, chance FROM loot_drops ORDER BY id")
+            .fetch_all(pool).await?;
+    let mut loot_tables: HashMap<u16, Vec<LootEntry>> = HashMap::new();
+    for (kind, item_id, qmin, qmax, chance) in loot_rows {
+        loot_tables.entry(kind as u16).or_default().push(LootEntry {
+            item_id: item_id as u16,
+            qty_min: qmin.max(0) as u32,
+            qty_max: qmax.max(qmin) as u32,
+            chance:  chance.clamp(0.0, 1.0),
+        });
+    }
+
+    Ok(EconomyConfig { version, items, shop_items, enemy_kinds, loot_tables })
+}

@@ -31,6 +31,10 @@ pub enum ClientMessage {
     UseItem { slot: u16 },
     Interact,
     ShopBuy { slot_idx: u8 },
+    ShopSell { inv_slot: u16 },
+    /// Trade atômico — todas as compras E vendas executadas juntas, ou
+    /// nada. Cliente preview-only; servidor valida tudo de novo.
+    ShopTrade { buying: Vec<TradeBuyEntry>, selling: Vec<TradeSellEntry> },
     VaultDeposit { inv_slot: u16 },
     VaultWithdraw { vault_slot: u16 },
     VaultClose,
@@ -123,8 +127,20 @@ pub enum ServerMessage {
     },
     ManaUpdate { current: i32 },
     StaminaUpdate { current: i32 },
-    ShopOpen { items: Vec<ShopItem> },
+    ShopOpen {
+        items:        Vec<ShopItem>,
+        sell_prices:  Vec<SellPrice>,
+        /// Identificador opaco do vendor (NPC). Usado pelo cliente como
+        /// chave pra cache visual (nome, retrato, reputação no futuro).
+        vendor_id:    u32,
+        /// Multiplicador aplicado em compras (preço final = preço * mult).
+        /// Default 1.0 — futuro: depende da relação com vendor.
+        buy_mult:     f32,
+        /// Multiplicador aplicado em vendas. Default 1.0.
+        sell_mult:    f32,
+    },
     ShopClose,
+    ShopTradeResult { ok: bool, reason: String },
     VaultOpen { slots: Vec<crate::InventorySlot> },
     VaultUpdate { slots: Vec<crate::InventorySlot> },
     VaultClose,
@@ -151,6 +167,35 @@ pub enum ServerMessage {
 pub struct ShopItem {
     pub item_id: u16,
     pub price: u32,
+}
+
+/// Preço de venda de um item arbitrário (todos os itens vendáveis vêm na
+/// abertura do shop pra UI mostrar custos antes do clique).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SellPrice {
+    pub item_id: u16,
+    pub price:   u32,
+}
+
+/// Entrada do basket de compras dentro de um ShopTrade.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct TradeBuyEntry {
+    pub shop_slot: u8,
+    pub qty:       u32,
+}
+
+/// Entrada do basket de vendas dentro de um ShopTrade.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct TradeSellEntry {
+    pub inv_slot: u16,
+    pub qty:      u32,
+}
+
+/// Resultado de um ShopTrade — sucesso ou erro com motivo amigável.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShopTradeResult {
+    pub ok:     bool,
+    pub reason: String,
 }
 
 /// Replicacao do mundo enviada a cada tick.
