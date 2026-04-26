@@ -106,6 +106,11 @@ pub struct EntitySnapshot {
     /// ataque ao receber. None nas outras snapshots.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attacking: Option<bool>,
+    /// Vetor unitário do alvo TOWARD o atacante, no tick em que tomou dano.
+    /// Cliente usa pra setar facing (e knockback futuro = -hurt_dir).
+    /// None na maioria das snapshots; Some apenas no tick do hit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hurt_dir: Option<[f32; 2]>,
 }
 
 #[derive(Clone, Copy, Debug)]

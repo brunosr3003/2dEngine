@@ -61,6 +61,12 @@ struct PendingShot {
 
 pub struct EnemyTag {
     pub attack_cooldown: f32,
+    /// sim_time absoluto até o qual o enemy fica em stagger (sem mover/atacar).
+    /// Setado em damage hits. 0 = não está em hurt.
+    pub hurt_until: f32,
+    /// Vetor unitário do alvo TOWARD o último atacante. Persiste pra knockback
+    /// e outros efeitos direcionais. Reset somente em novo hit.
+    pub hurt_dir: Vec2,
     pub wander_timer: f32,
     pub wander_dir: Vec2,
     /// Setado true no tick em que o inimigo dispara um swing. Snapshot loop
@@ -147,6 +153,10 @@ pub struct Session {
     pub auth_in_flight: bool,
     pub attack_cooldown: f32,
     pub secondary_cooldown: f32,
+    /// sim_time absoluto até o qual o player fica em stagger (sem mover/atacar).
+    pub hurt_until: f32,
+    /// Vetor unitário do alvo TOWARD o último atacante (pra knockback futuro).
+    pub hurt_dir: Vec2,
     pub respawn_timer: Option<f32>,
     /// True enquanto HP<=0 e player esta incapacitado aguardando se levantar.
     pub downed: bool,
@@ -274,6 +284,10 @@ pub struct GameWorld {
     /// Tiros ranged em andamento — drenados a cada tick e spawnados quando
     /// `release_tick` é atingido. Sincroniza projétil com fim da anim de saque.
     pending_shots: Vec<PendingShot>,
+    /// Mapa por net_id → hurt_dir aplicado neste tick. Populado em step() ao
+    /// processar damage_events; lido em send_snapshots() pra preencher
+    /// EntitySnapshot.hurt_dir; limpo após envio.
+    pub hit_this_tick: HashMap<EntityId, Vec2>,
 }
 
 impl GameWorld {
@@ -315,6 +329,7 @@ impl GameWorld {
             spawn_zones: Vec::new(),
             sim_time_s: 0.0,
             pending_shots: Vec::new(),
+            hit_this_tick: HashMap::new(),
         };
         w.spawn_vendor_at(vendor_pos);
         w.spawn_vault_at(vault_pos);
@@ -359,6 +374,7 @@ impl GameWorld {
             spawn_zones: Vec::new(),
             sim_time_s: 0.0,
             pending_shots: Vec::new(),
+            hit_this_tick: HashMap::new(),
         };
         w.spawn_mapfile_entities(&mf);
         w
@@ -518,6 +534,8 @@ impl GameWorld {
             EntityKind::Enemy(kind),
             EnemyTag {
                 attack_cooldown: 0.0,
+                hurt_until: 0.0,
+                hurt_dir: Vec2::ZERO,
                 wander_timer: 0.0,
                 wander_dir: Vec2::X,
                 attack_pending: false,
@@ -554,6 +572,8 @@ impl GameWorld {
                         EntityKind::Enemy(*kind),
                         EnemyTag {
                             attack_cooldown: 0.0,
+                            hurt_until: 0.0,
+                            hurt_dir: Vec2::ZERO,
                             wander_timer: 0.0,
                             wander_dir: Vec2::X,
                             attack_pending: false,
@@ -1026,6 +1046,8 @@ impl GameWorld {
             EntityKind::Enemy(kind),
             EnemyTag {
                 attack_cooldown: attack_cd,
+                hurt_until: 0.0,
+                hurt_dir: Vec2::ZERO,
                 wander_timer: 0.0,
                 wander_dir: Vec2::X,
                 attack_pending: false,
@@ -1120,6 +1142,8 @@ impl GameWorld {
                 EntityKind::Enemy(7),
                 EnemyTag {
                     attack_cooldown: 0.0,
+                    hurt_until: 0.0,
+                    hurt_dir: Vec2::ZERO,
                     wander_timer: 0.0,
                     wander_dir: Vec2::X,
                     attack_pending: false,
@@ -1151,6 +1175,8 @@ impl GameWorld {
                 auth_in_flight: false,
                 attack_cooldown: 0.0,
                 secondary_cooldown: 0.0,
+                hurt_until: 0.0,
+                hurt_dir: Vec2::ZERO,
                 respawn_timer: None,
                 downed: false,
                 downed_heal_timer: 0.0,
@@ -1464,13 +1490,18 @@ impl GameWorld {
             if session.carried_by.is_some() {
                 continue;
             }
-            let dir = if frame.move_dir.length_squared() > 1.0 {
+            // Stagger/Downed: ignora movimento e ataques. Player downed fica
+            // travado na pose sentada — não pode andar até levantar.
+            let in_hurt = session.hurt_until > self.sim_time_s;
+            let dir = if in_hurt || session.downed {
+                Vec2::ZERO
+            } else if frame.move_dir.length_squared() > 1.0 {
                 frame.move_dir.normalize()
             } else {
                 frame.move_dir
             };
-            // Downed/Carregando: sem ataques
-            let wants_attack = if session.downed || session.carrying.is_some() {
+            // Downed/Carregando/Hurt: sem ataques
+            let wants_attack = if session.downed || session.carrying.is_some() || in_hurt {
                 false
             } else {
                 let has_stam = session.stamina_current >= shared::ATTACK_STAMINA_COST;
@@ -1496,6 +1527,7 @@ impl GameWorld {
 
             let has_mp = (session.mp_current as i32) >= shared::SECONDARY_MP_COST;
             let wants_secondary = !session.downed
+                && !in_hurt
                 && (frame.buttons & buttons::SECONDARY != 0)
                 && session.secondary_cooldown <= 0.0
                 && has_mp;
@@ -1572,6 +1604,7 @@ impl GameWorld {
         // Pending shots de enemies — coletados no loop de IA (que tem mut borrow do
         // ecs) e fundidos em self.pending_shots logo depois.
         let mut pending_enemy_shots: Vec<PendingShot> = Vec::new();
+        let now_sim = self.sim_time_s;
 
         for (_, (net, pos, vel, enemy, kind)) in
             self.ecs.query_mut::<(&NetId, &Position, &mut Velocity, &mut EnemyTag, &EntityKind)>()
@@ -1584,6 +1617,11 @@ impl GameWorld {
 
             if enemy.attack_cooldown > 0.0 { enemy.attack_cooldown -= dt; }
             enemy.wander_timer -= dt;
+            // Stagger: durante hurt_until, vel=0 e skipa o resto da IA.
+            if enemy.hurt_until > now_sim {
+                vel.0 = Vec2::ZERO;
+                continue;
+            }
             // aggro_timer só corre quando em chase ativo (gerenciado abaixo)
 
             let nearest = player_positions.iter().min_by(|a, b| {
@@ -1920,11 +1958,13 @@ impl GameWorld {
         }
 
         // ── G: deteccao de colisao projetil → entidade ────────────────────────
-        let projs: Vec<(Entity, EntityId, Vec2, EntityId, bool, i32)> = self
+        // Inclui Velocity pra calcular hurt_dir = -vel (direção OPOSTA ao voo
+        // = TOWARD atacante). Sem offset Y artificial do spawn no peito.
+        let projs: Vec<(Entity, EntityId, Vec2, Vec2, EntityId, bool, i32)> = self
             .ecs
-            .query::<(&NetId, &Position, &ProjTag)>()
+            .query::<(&NetId, &Position, &Velocity, &ProjTag)>()
             .iter()
-            .map(|(e, (net, pos, p))| (e, net.0, pos.0, p.owner, p.from_player, p.damage))
+            .map(|(e, (net, pos, vel, p))| (e, net.0, pos.0, vel.0, p.owner, p.from_player, p.damage))
             .collect();
 
         let targets: Vec<(Entity, EntityId, Vec2, bool)> = self
@@ -1943,10 +1983,18 @@ impl GameWorld {
         let hit_target_y_off  = shared::HIT_TARGET_Y_OFFSET;
         let hit_dist_sq = (hit_target_radius + PROJ_RADIUS) * (hit_target_radius + PROJ_RADIUS);
         let mut hit_projs: Vec<(Entity, EntityId)> = Vec::new();
-        // damage: (target_entity, target_net_id, dmg, attacker_net_id, attacker_is_player)
-        let mut damage_events: Vec<(Entity, EntityId, i32, EntityId, bool)> = Vec::new();
+        // damage: (target_entity, target_net_id, dmg, attacker_net_id,
+        //         attacker_is_player, hurt_dir TOWARD attacker desde alvo)
+        let mut damage_events: Vec<(Entity, EntityId, i32, EntityId, bool, Vec2)> = Vec::new();
 
         let combat_disabled = self.safe_zone;
+
+        // Helper: direção unitária do alvo TOWARD o ponto de origem do hit.
+        // Reusada por melee (sw.pos) e projétil (proj.pos). Knockback futuro:
+        // empurra o alvo na direção -hurt_dir.
+        fn calc_hurt_dir(target_pos: Vec2, attacker_pos: Vec2) -> Vec2 {
+            (attacker_pos - target_pos).try_normalize().unwrap_or(Vec2::ZERO)
+        }
 
         // Aplica golpes melee: cada swing acerta inimigos em cone na frente.
         // Range estendido por hit_target_radius (alcança a borda do hitbox).
@@ -1966,19 +2014,25 @@ impl GameWorld {
                     if let Some(nd) = delta.try_normalize() {
                         if sw.dir.dot(nd) < cos_half { continue; }
                     }
-                    damage_events.push((*te, *tnet, sw.damage, sw.attacker_eid, true));
+                    let hd = calc_hurt_dir(*tpos, sw.pos);
+                    damage_events.push((*te, *tnet, sw.damage, sw.attacker_eid, true, hd));
                 }
             }
         }
 
-        'outer: for (pe, pnet, ppos, powner, pfrom_player, pdmg) in &projs {
+        'outer: for (pe, pnet, ppos, pvel, powner, pfrom_player, pdmg) in &projs {
             for (te, tnet, tpos, is_player) in &targets {
                 if tnet == powner { continue; }
                 if *pfrom_player == *is_player { continue; }
                 let target_hit = *tpos + Vec2::new(0.0, hit_target_y_off);
                 if ppos.distance_squared(target_hit) < hit_dist_sq {
                     if !combat_disabled {
-                        damage_events.push((*te, *tnet, *pdmg, *powner, *pfrom_player));
+                        // Hurt_dir = -vel (TOWARD atacante). Evita Y artificial
+                        // do spawn no peito que distorce a direção pro Norte.
+                        // Fallback pra calc_hurt_dir se vel ≈ 0 (não deveria).
+                        let hd = (-*pvel).try_normalize()
+                            .unwrap_or_else(|| calc_hurt_dir(*tpos, *ppos));
+                        damage_events.push((*te, *tnet, *pdmg, *powner, *pfrom_player, hd));
                     }
                     hit_projs.push((*pe, *pnet));
                     continue 'outer;
@@ -1996,7 +2050,10 @@ impl GameWorld {
             .filter(|s| s.downed)
             .map(|s| s.entity_id)
             .collect();
-        for (entity, target_id, dmg, attacker_id, attacker_is_player) in damage_events {
+        // hit_this_tick é campo de GameWorld (acessado no send_snapshots).
+        // Limpa antes de popular este tick.
+        self.hit_this_tick.clear();
+        for (entity, target_id, dmg, attacker_id, attacker_is_player, hurt_dir) in damage_events {
             // Resistencia do alvo reduz dano recebido (min 1).
             let target_defense = {
                 let mut d = 0i32;
@@ -2033,6 +2090,21 @@ impl GameWorld {
                     kill_credits.insert(target_id, attacker_id);
                 }
             }
+            // Stagger: aplica hurt_until = sim_time + HURT_STAGGER_DURATION.
+            // Cliente recebe HP drop + hurt_dir no próximo snapshot, dispara
+            // TriggerHurt e seta facing TOWARD o atacante.
+            let hurt_until_ts = self.sim_time_s + shared::HURT_STAGGER_DURATION;
+            if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(entity) {
+                tag.hurt_until = hurt_until_ts;
+                tag.hurt_dir   = hurt_dir;
+            } else if let Some(s) = self.sessions.values_mut()
+                .find(|s| s.entity_id == target_id)
+            {
+                s.hurt_until = hurt_until_ts;
+                s.hurt_dir   = hurt_dir;
+            }
+            // Também marca pra snapshot deste tick (cliente lê e seta facing).
+            self.hit_this_tick.insert(target_id, hurt_dir);
             // Proficiency XP: atacante ganha XP na arma equipada por hit no alvo.
             if attacker_is_player {
                 if let Some(attacker) = self.sessions.values_mut()
@@ -2494,6 +2566,7 @@ impl GameWorld {
                 },
                 is_self: None,
                 attacking: if attacking_ids.contains(&net.0) { Some(true) } else { None },
+                hurt_dir: self.hit_this_tick.get(&net.0).map(|v| [v.x, v.y]),
             })
             .collect();
 

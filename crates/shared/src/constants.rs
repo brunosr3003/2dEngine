@@ -93,6 +93,10 @@ pub const ENTITY_RADIUS: f32 = 0.35;
 /// Raio de colisao de projeteis.
 pub const PROJ_RADIUS: f32 = 0.15;
 
+/// Duração do stagger ao tomar dano (s). Durante esse período a entidade
+/// não pode andar nem atacar — sincroniza com a anim de Hurt no cliente.
+pub const HURT_STAGGER_DURATION: f32 = 0.25;
+
 /// Raio do "hitbox" da entidade (envolve TORSO/CABEÇA, não só os pés).
 /// Usado por melee e projétil pra decidir se atinge — separado do
 /// ENTITY_RADIUS (que continua pequeno pra física/collisão).
