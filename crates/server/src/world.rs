@@ -67,6 +67,11 @@ pub struct EnemyTag {
     /// Vetor unitário do alvo TOWARD o último atacante. Persiste pra knockback
     /// e outros efeitos direcionais. Reset somente em novo hit.
     pub hurt_dir: Vec2,
+    /// True quando HP=0 (enemy entrou em estado de cadáver). Skipa IA, dano
+    /// e drops adicionais. Real despawn quando sim_time >= despawn_at.
+    pub dead: bool,
+    /// sim_time alvo pra despawn real do cadáver (HP_zero_time + ENEMY_CORPSE_LINGER).
+    pub despawn_at: f32,
     pub wander_timer: f32,
     pub wander_dir: Vec2,
     /// Setado true no tick em que o inimigo dispara um swing. Snapshot loop
@@ -89,6 +94,10 @@ pub struct EnemyTag {
     /// Segundos chase ativos sem dar dano. Reset quando ataca com sucesso.
     /// Ao passar de AGGRO_DROP_TIME, inimigo desiste e volta pra casa.
     pub aggro_timer: f32,
+    /// sim_time absoluto até o qual o enemy fica em "spawn grace" — cliente
+    /// roda VFX de invocação (~0.84s) com o enemy invisível e estático.
+    /// Durante esse intervalo: sem mover, sem atacar, sem tomar dano.
+    pub spawn_grace_until: f32,
 }
 
 /// Tag em inimigo spawnado por uma ServerSpawnZone — usado pra decrementar
@@ -536,6 +545,8 @@ impl GameWorld {
                 attack_cooldown: 0.0,
                 hurt_until: 0.0,
                 hurt_dir: Vec2::ZERO,
+                dead: false,
+                despawn_at: 0.0,
                 wander_timer: 0.0,
                 wander_dir: Vec2::X,
                 attack_pending: false,
@@ -545,6 +556,7 @@ impl GameWorld {
                 wander_phase: 1, // começa em pause: dá tempo de "carregar" no spawn
                 returning_home: false,
                 aggro_timer: 0.0,
+                spawn_grace_until: self.sim_time_s + shared::ENEMY_SPAWN_GRACE,
             },
             SpawnedByZone { zone_id, kind },
             handle,
@@ -574,6 +586,8 @@ impl GameWorld {
                             attack_cooldown: 0.0,
                             hurt_until: 0.0,
                             hurt_dir: Vec2::ZERO,
+                            dead: false,
+                            despawn_at: 0.0,
                             wander_timer: 0.0,
                             wander_dir: Vec2::X,
                             attack_pending: false,
@@ -583,6 +597,7 @@ impl GameWorld {
                             wander_phase: 0,
                             returning_home: false,
                             aggro_timer: 0.0,
+                            spawn_grace_until: self.sim_time_s + shared::ENEMY_SPAWN_GRACE,
                         },
                         handle,
                     ));
@@ -1048,6 +1063,8 @@ impl GameWorld {
                 attack_cooldown: attack_cd,
                 hurt_until: 0.0,
                 hurt_dir: Vec2::ZERO,
+                dead: false,
+                despawn_at: 0.0,
                 wander_timer: 0.0,
                 wander_dir: Vec2::X,
                 attack_pending: false,
@@ -1057,6 +1074,7 @@ impl GameWorld {
                 wander_phase: 0,
                 returning_home: false,
                 aggro_timer: 0.0,
+                spawn_grace_until: self.sim_time_s + shared::ENEMY_SPAWN_GRACE,
             },
         ));
     }
@@ -1144,6 +1162,8 @@ impl GameWorld {
                     attack_cooldown: 0.0,
                     hurt_until: 0.0,
                     hurt_dir: Vec2::ZERO,
+                    dead: false,
+                    despawn_at: 0.0,
                     wander_timer: 0.0,
                     wander_dir: Vec2::X,
                     attack_pending: false,
@@ -1153,6 +1173,7 @@ impl GameWorld {
                     wander_phase: 0,
                     returning_home: false,
                     aggro_timer: 0.0,
+                    spawn_grace_until: self.sim_time_s + shared::ENEMY_SPAWN_GRACE,
                 },
                 handle,
             ));
@@ -1617,8 +1638,19 @@ impl GameWorld {
 
             if enemy.attack_cooldown > 0.0 { enemy.attack_cooldown -= dt; }
             enemy.wander_timer -= dt;
+            // Cadáver: vel=0, skipa IA, espera o despawn loop limpar.
+            if enemy.dead {
+                vel.0 = Vec2::ZERO;
+                continue;
+            }
             // Stagger: durante hurt_until, vel=0 e skipa o resto da IA.
             if enemy.hurt_until > now_sim {
+                vel.0 = Vec2::ZERO;
+                continue;
+            }
+            // Spawn grace: enemy ainda em VFX de invocação no cliente. Não move
+            // nem ataca — fica plantado no spawn anchor.
+            if enemy.spawn_grace_until > now_sim {
                 vel.0 = Vec2::ZERO;
                 continue;
             }
@@ -1969,11 +2001,13 @@ impl GameWorld {
 
         let targets: Vec<(Entity, EntityId, Vec2, bool)> = self
             .ecs
-            .query::<(&NetId, &Position, &EntityKind)>()
+            .query::<(&NetId, &Position, &EntityKind, Option<&EnemyTag>)>()
             .iter()
-            .filter_map(|(e, (net, pos, kind))| match kind {
+            .filter_map(|(e, (net, pos, kind, tag))| match kind {
                 EntityKind::Player => Some((e, net.0, pos.0, true)),
-                EntityKind::Enemy(_) => Some((e, net.0, pos.0, false)),
+                // Cadáveres e enemies em spawn-grace (invocação) não tomam dano.
+                EntityKind::Enemy(_) if tag.map(|t| !t.dead && t.spawn_grace_until <= now_sim).unwrap_or(true)
+                    => Some((e, net.0, pos.0, false)),
                 _ => None,
             })
             .collect();
@@ -2131,12 +2165,15 @@ impl GameWorld {
         }
 
         // ── H: morte de inimigos → loot ───────────────────────────────────────
+        // Filtra só os FRESCOS (HP=0 mas ainda não marcados dead) — drop e
+        // bookkeeping rolam UMA vez. Cadáver fica em cena por
+        // ENEMY_CORPSE_LINGER segundos antes do despawn real (loop H.2 abaixo).
         let dead_enemies: Vec<(Entity, EntityId, Vec2, u16)> = self
             .ecs
             .query::<(&NetId, &Position, &Health, &EnemyTag, &EntityKind)>()
             .iter()
-            .filter_map(|(e, (net, pos, hp, _, kind))| {
-                if hp.current <= 0 {
+            .filter_map(|(e, (net, pos, hp, tag, kind))| {
+                if hp.current <= 0 && !tag.dead {
                     let kid = match kind { EntityKind::Enemy(k) => *k, _ => 0 };
                     Some((e, net.0, pos.0, kid))
                 } else { None }
@@ -2162,9 +2199,14 @@ impl GameWorld {
                     zone.respawn_queue.push((ready_at, zkind));
                 }
             }
+            // Marca cadáver — entidade segue na cena pra cliente exibir pose
+            // de morto. Real despawn no loop H.2.
+            if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(e) {
+                tag.dead = true;
+                tag.despawn_at = self.sim_time_s + shared::ENEMY_CORPSE_LINGER;
+            }
+            // Tira o body físico imediato (bate na entidade não faz sentido).
             self.free_entity_body(e);
-            let _ = self.ecs.despawn(e);
-            self.removed_this_tick.push(eid);
 
             // Loot table por kind
             let seed = lcg(self.tick as u64 ^ eid.0 as u64 ^ 0xBADA_55);
@@ -2273,6 +2315,22 @@ impl GameWorld {
                     }
                 }
             }
+        }
+
+        // ── H.2: despawn de cadáveres com linger expirado ────────────────────
+        let despawn_now: Vec<(Entity, EntityId)> = self
+            .ecs
+            .query::<(&NetId, &EnemyTag)>()
+            .iter()
+            .filter_map(|(e, (net, tag))| {
+                if tag.dead && tag.despawn_at <= self.sim_time_s {
+                    Some((e, net.0))
+                } else { None }
+            })
+            .collect();
+        for (e, eid) in despawn_now {
+            let _ = self.ecs.despawn(e);
+            self.removed_this_tick.push(eid);
         }
 
         // ── I: transicao para Downed State ─────────────────────────────────

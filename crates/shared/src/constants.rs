@@ -97,6 +97,16 @@ pub const PROJ_RADIUS: f32 = 0.15;
 /// não pode andar nem atacar — sincroniza com a anim de Hurt no cliente.
 pub const HURT_STAGGER_DURATION: f32 = 0.25;
 
+/// Tempo (s) que o cadáver de um inimigo fica no mapa antes de despawnar.
+/// Cliente exibe pose deitada + tint escuro durante esse período.
+pub const ENEMY_CORPSE_LINGER: f32 = 2.0;
+
+/// Duração do "spawn grace" — período após criar o enemy em que ele fica
+/// invisível no cliente (rodando VFX de invocação) e estático no servidor
+/// (sem mover, atacar ou tomar dano). Casa com a duração da spawn-VFX no
+/// cliente (Magic Bursts/round_sparkle_burst_001 = 14 frames × 60ms).
+pub const ENEMY_SPAWN_GRACE: f32 = 0.84;
+
 /// Raio do "hitbox" da entidade (envolve TORSO/CABEÇA, não só os pés).
 /// Usado por melee e projétil pra decidir se atinge — separado do
 /// ENTITY_RADIUS (que continua pequeno pra física/collisão).
