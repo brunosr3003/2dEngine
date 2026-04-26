@@ -93,6 +93,14 @@ pub const ENTITY_RADIUS: f32 = 0.35;
 /// Raio de colisao de projeteis.
 pub const PROJ_RADIUS: f32 = 0.15;
 
+/// Raio do "hitbox" da entidade (envolve TORSO/CABEÇA, não só os pés).
+/// Usado por melee e projétil pra decidir se atinge — separado do
+/// ENTITY_RADIUS (que continua pequeno pra física/collisão).
+pub const HIT_TARGET_RADIUS: f32 = 0.6;
+/// Offset vertical do centro do hitbox em relação ao Y da entidade (que fica
+/// nos pés). 0.6 ≈ altura do tronco/peito do paper-doll Mana Seed.
+pub const HIT_TARGET_Y_OFFSET: f32 = 0.6;
+
 /// Tempo de respawn do jogador em segundos (nao usado em PvE puro — player
 /// entra em Downed State; respawn so ocorre em PvP apos execucao).
 pub const RESPAWN_DELAY: f32 = 3.0;

@@ -1938,7 +1938,10 @@ impl GameWorld {
             })
             .collect();
 
-        let hit_dist_sq = (ENTITY_RADIUS + PROJ_RADIUS) * (ENTITY_RADIUS + PROJ_RADIUS);
+        // Hitbox engloba corpo todo (~0.6 raio centrado no peito), não só pés.
+        let hit_target_radius = shared::HIT_TARGET_RADIUS;
+        let hit_target_y_off  = shared::HIT_TARGET_Y_OFFSET;
+        let hit_dist_sq = (hit_target_radius + PROJ_RADIUS) * (hit_target_radius + PROJ_RADIUS);
         let mut hit_projs: Vec<(Entity, EntityId)> = Vec::new();
         // damage: (target_entity, target_net_id, dmg, attacker_net_id, attacker_is_player)
         let mut damage_events: Vec<(Entity, EntityId, i32, EntityId, bool)> = Vec::new();
@@ -1946,18 +1949,20 @@ impl GameWorld {
         let combat_disabled = self.safe_zone;
 
         // Aplica golpes melee: cada swing acerta inimigos em cone na frente.
+        // Range estendido por hit_target_radius (alcança a borda do hitbox).
         if !combat_disabled {
-            let range_sq = shared::MELEE_RANGE * shared::MELEE_RANGE;
+            let melee_max = shared::MELEE_RANGE + hit_target_radius;
+            let range_sq = melee_max * melee_max;
             let cos_half = shared::MELEE_CONE_HALF_ANGLE.cos();
             for sw in &melee_swings {
                 for (te, tnet, tpos, is_player) in &targets {
-                    // Player swing → só bate em enemy. Enemy swing → só em player.
                     if sw.from_player == *is_player { continue; }
                     if *tnet == sw.attacker_eid { continue; }
-                    let delta = *tpos - sw.pos;
+                    // Hit-point do alvo: peito (Y+offset), não os pés.
+                    let target_hit = *tpos + Vec2::new(0.0, hit_target_y_off);
+                    let delta = target_hit - sw.pos;
                     let d2 = delta.length_squared();
                     if d2 > range_sq { continue; }
-                    // Cone: dot(dir, normalized_delta) >= cos(half_angle)
                     if let Some(nd) = delta.try_normalize() {
                         if sw.dir.dot(nd) < cos_half { continue; }
                     }
@@ -1968,10 +1973,10 @@ impl GameWorld {
 
         'outer: for (pe, pnet, ppos, powner, pfrom_player, pdmg) in &projs {
             for (te, tnet, tpos, is_player) in &targets {
-                if tnet == powner { continue; } // sem auto-dano
-                // Projetil de jogador só acerta inimigo; de inimigo só acerta jogador
+                if tnet == powner { continue; }
                 if *pfrom_player == *is_player { continue; }
-                if ppos.distance_squared(*tpos) < hit_dist_sq {
+                let target_hit = *tpos + Vec2::new(0.0, hit_target_y_off);
+                if ppos.distance_squared(target_hit) < hit_dist_sq {
                     if !combat_disabled {
                         damage_events.push((*te, *tnet, *pdmg, *powner, *pfrom_player));
                     }
