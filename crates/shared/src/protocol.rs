@@ -45,8 +45,11 @@ pub enum ClientMessage {
     PartyAccept,
     PartyDecline,
     PartyLeave,
-    /// Aloca 1 ponto de atributo. `stat` indice em [0=HP,1=MP,2=Atk,3=Dex,4=Wis,5=Res].
+    /// Aloca 1 ponto de atributo. `stat` indice em [0=FOR,1=DES,2=INT,3=VIT,4=SPD].
     AllocStatPoint { stat: u8 },
+    /// Reseta TODOS os pontos alocados pra unspent_points. Util pra testes
+    /// e respec — server zera o array, devolve os pontos e reenvia stats.
+    ResetStats,
     RequestDisconnect,
 }
 
@@ -159,9 +162,10 @@ pub enum ServerMessage {
     PartyInviteReceived { from: String },
     PartyUpdate { members: Vec<String> },
     /// Pontos de atributo disponiveis + ja alocados em cada stat.
+    /// `allocated[i]` = pontos no stat com indice `i` (0=FOR..4=SPD, ver `crate::stat_idx`).
     StatPointsUpdate {
         unspent: u32,
-        allocated: [u32; 6],
+        allocated: [u32; crate::STAT_COUNT],
     },
     Kick {
         reason: String,

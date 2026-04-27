@@ -26,3 +26,4 @@ sqlx.workspace = true
 argon2.workspace = true
 once_cell = "1.19"
 parking_lot = "0.12"
+fastrand = "2"

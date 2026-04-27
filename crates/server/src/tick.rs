@@ -23,19 +23,22 @@ pub async fn run_world_loop(
     // Precisa de um tx pra devolver AuthResult pro loop. Criamos um par
     // interno que e fundido com o rx original via tarefa de forward.
     let (auth_tx, mut auth_rx) = mpsc::unbounded_channel::<IncomingMessage>();
-    let mut world = match std::env::var("MAP_FILE") {
-        Ok(path) if !path.is_empty() => {
-            tracing::info!("loading MAP_FILE={}", path);
-            match shared::mapfile::MapFile::load(&path) {
-                Ok(mf) => GameWorld::new_from_mapfile(characters, mf),
-                Err(e) => {
-                    tracing::error!("failed to load MAP_FILE ({}): {}. Falling back to crafted map.", path, e);
-                    GameWorld::new(characters)
-                }
-            }
-        }
-        _ => GameWorld::new(characters),
-    };
+    // Map loading: ENV override OR default ao mapfile do projeto. Sem fallback
+    // procedural — se o load falhar, o server aborta. O mapa procedural antigo
+    // (GameWorld::new) gerava um mundinho 40x30 que confundia (parecia "parede
+    // invisivel" pro player). Mantido em codigo so pra testes/legacy.
+    let map_path = std::env::var("MAP_FILE")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "data/maps/game.json".to_string());
+    tracing::info!("loading map: {}", map_path);
+    let mf = shared::mapfile::MapFile::load(&map_path)
+        .map_err(|e| anyhow::anyhow!(
+            "failed to load mapfile '{}': {}. \
+             Set MAP_FILE env var ou garanta que data/maps/game.json existe.",
+            map_path, e
+        ))?;
+    let mut world = GameWorld::new_from_mapfile(characters, mf);
     world.set_auth_ctx(AuthCtx {
         pool: auth_pool,
         tx: auth_tx,

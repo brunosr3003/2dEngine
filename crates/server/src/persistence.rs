@@ -36,8 +36,9 @@ pub struct CharacterRow {
     pub proficiencies: [u64; 6],
     /// Pontos de atributo ainda nao distribuidos (ganhos via level-up).
     pub unspent_points: u32,
-    /// Pontos ja alocados em cada stat [HP, MP, Atk, Dex, Wis, Res].
-    pub allocated_points: [u32; 6],
+    /// Pontos ja alocados em cada stat [FOR, DES, INT, VIT, SPD]
+    /// (5 stats — refactor M5 do design classless).
+    pub allocated_points: [u32; shared::STAT_COUNT],
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -97,6 +98,52 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS allocated_points INTEGER[] NOT NULL DEFAULT '{0,0,0,0,0,0}'")
         .execute(&pool)
         .await?;
+    // Migration M6: design atual tem 6 stats (FOR/DES/INT/VIT/SPD/RES). Linhas
+    // antigas com 5 elementos ganham um 0 no slot RES, preservando pontos ja
+    // alocados. Idempotente — arrays de 6 nao sao tocados.
+    sqlx::query(
+        "UPDATE characters
+         SET allocated_points = allocated_points || ARRAY[0]::INTEGER[]
+         WHERE array_length(allocated_points, 1) = 5"
+    ).execute(&pool).await?;
+
+    // Migration M7: escudo (item_id=7) sai do slot 'armor' e vai pra 'offhand'.
+    // Idempotente: se ja moveu, UPDATE nao acha mais nada.
+    sqlx::query(
+        "UPDATE equipment SET slot = 'offhand'
+         WHERE slot = 'armor' AND item_id = 7"
+    ).execute(&pool).await?;
+
+    // Migration M8: deixa escudo comprável no shop. So aplica se o DB ja
+    // tinha shield com buy_price=NULL (preserva tweaks manuais que o user
+    // fez via SQL).
+    sqlx::query(
+        "UPDATE items SET buy_price = 50, shop_order = 9
+         WHERE id = 7 AND buy_price IS NULL AND shop_order IS NULL"
+    ).execute(&pool).await?;
+
+    // Migration M9: garante que o Mercador (shop_id=1, vendor Klaus no mapa)
+    // venda escudo. ON CONFLICT DO NOTHING pra ser idempotente em DBs onde
+    // ja foi adicionado.
+    sqlx::query(
+        "INSERT INTO vendor_shop_items (shop_id, item_id, sort_order)
+         VALUES (1, 7, 9) ON CONFLICT DO NOTHING"
+    ).execute(&pool).await?;
+
+    // Migration M10: chars com shield (item_id=7) no offhand E weapon two-handed
+    // (great_sword=13, bow=14, staff=6, wand=15) ficaram com combo invalido —
+    // a M7 anterior moveu shield pro offhand sem checar a weapon. Apaga o offhand
+    // pra esses casos (shield perdido — raro; tradeoff aceitavel pro fix de design).
+    sqlx::query(
+        "DELETE FROM equipment e
+         WHERE e.slot = 'offhand' AND e.item_id = 7
+         AND EXISTS (
+             SELECT 1 FROM equipment w
+             WHERE w.character_name = e.character_name
+               AND w.slot = 'weapon'
+               AND w.item_id IN (13, 14, 6, 15)
+         )"
+    ).execute(&pool).await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS proficiencies (
@@ -249,7 +296,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         (item_id::BOW as i32,            "Arco",            75,   Some(150),      Some(7), 1),
         (item_id::WAND as i32,           "Varinha",         60,   None,           None,    1),
         (item_id::ARMOR as i32,          "Armadura",        25,   None,           None,    1),
-        (item_id::SHIELD as i32,         "Escudo",          25,   None,           None,    1),
+        (item_id::SHIELD as i32,         "Escudo",          25,   Some(50),       Some(9), 1),
         (item_id::LEATHER_ARMOR as i32,  "Couro",           60,   Some(120),      Some(6), 1),
         (item_id::PLATE_ARMOR as i32,    "Placa",           100,  None,           None,    1),
         (item_id::ROBE as i32,           "Manto",           50,   None,           None,    1),
@@ -376,7 +423,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             (1, "Mercador", &[
                 item_id::HEALTH_POTION, item_id::MANA_POTION, item_id::GREATER_HEAL,
                 item_id::GREATER_MANA, item_id::STAMINA_POTION, item_id::DAGGER,
-                item_id::LEATHER_ARMOR, item_id::BOW, item_id::AMULET,
+                item_id::LEATHER_ARMOR, item_id::BOW, item_id::AMULET, item_id::SHIELD,
             ]),
             (2, "Espadeiro", &[
                 item_id::SWORD, item_id::DAGGER, item_id::GREAT_SWORD,
@@ -427,8 +474,8 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
         let equip = load_equipment(pool, &name).await?;
         let vault = load_vault(pool, &name).await?;
         let profs = load_proficiencies(pool, &name).await?;
-        let mut allocated = [0u32; 6];
-        for (i, v) in allocated_vec.into_iter().enumerate().take(6) {
+        let mut allocated = [0u32; shared::STAT_COUNT];
+        for (i, v) in allocated_vec.into_iter().enumerate().take(shared::STAT_COUNT) {
             allocated[i] = v.max(0) as u32;
         }
         out.insert(
@@ -500,9 +547,10 @@ async fn load_equipment(pool: &PgPool, char_name: &str) -> Result<shared::Equipm
     for (slot, item_id) in rows {
         let iid = item_id as u16;
         match slot.as_str() {
-            "weapon" => eq.weapon = Some(iid),
-            "armor"  => eq.armor  = Some(iid),
-            "ring"   => eq.ring   = Some(iid),
+            "weapon"  => eq.weapon  = Some(iid),
+            "armor"   => eq.armor   = Some(iid),
+            "ring"    => eq.ring    = Some(iid),
+            "offhand" => eq.offhand = Some(iid),
             _ => {}
         }
     }
@@ -615,9 +663,10 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             .execute(&mut *tx)
             .await?;
         for (slot_name, item_opt) in [
-            ("weapon", row.equipment.weapon),
-            ("armor",  row.equipment.armor),
-            ("ring",   row.equipment.ring),
+            ("weapon",  row.equipment.weapon),
+            ("armor",   row.equipment.armor),
+            ("ring",    row.equipment.ring),
+            ("offhand", row.equipment.offhand),
         ] {
             if let Some(iid) = item_opt {
                 sqlx::query(

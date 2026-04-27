@@ -22,13 +22,26 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 28;
+pub const PROTOCOL_VERSION: u16 = 30;
 
 /// Velocidade base do jogador em tiles/segundo.
 pub const PLAYER_SPEED: f32 = 5.0;
 
 /// Multiplicador de velocidade durante sprint (Shift + stamina > 0).
 pub const SPRINT_SPEED_MULT: f32 = 1.65;
+
+// ── Dash ───────────────────────────────────────────────────────────────
+/// Duracao do impulso de dash em segundos.
+pub const DASH_DURATION: f32 = 0.20;
+/// Velocidade durante o dash (substitui PLAYER_SPEED * speed_mult).
+pub const DASH_SPEED: f32 = 14.0;
+/// Cooldown entre dashes em segundos. SPD reduz via divisao por
+/// `speed_mult` — clampado em `DASH_COOLDOWN_MIN`.
+pub const DASH_COOLDOWN: f32 = 1.5;
+/// Cooldown minimo de dash apos reducao por SPD (clamp).
+pub const DASH_COOLDOWN_MIN: f32 = 0.2;
+/// Custo de stamina pra dash.
+pub const DASH_STAMINA_COST: i32 = 30;
 
 /// Capacidade maxima de stamina (pontos). Fixa para todas as classes por ora.
 pub const STAMINA_MAX: i32 = 100;
@@ -270,6 +283,19 @@ pub mod item_id {
 
 // item_stack_max vive no DB (server crate::economy).
 
+/// Codigo de animacao (`attack_anim::*`) que o cliente deve tocar quando o
+/// player ataca com a arma indicada. Mantém em sync com
+/// `ItemInfo.AttackAnimOf` no cliente C#.
+pub fn weapon_attack_anim(weapon_id: u16) -> u8 {
+    use crate::components::attack_anim::*;
+    match weapon_id {
+        id if id == item_id::BOW   => SHOOT,
+        id if id == item_id::STAFF => THRUST,
+        id if id == item_id::WAND  => THRUST,
+        _ => SLASH,
+    }
+}
+
 /// Retorna o slot de equipamento para um item_id, ou None se nao for
 /// equipavel.
 pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
@@ -280,8 +306,8 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
             || id == item_id::GREAT_SWORD
             || id == item_id::BOW
             || id == item_id::WAND           => Some(EquipSlot::Weapon),
+        id if id == item_id::SHIELD          => Some(EquipSlot::Offhand),
         id if id == item_id::ARMOR
-            || id == item_id::SHIELD
             || id == item_id::LEATHER_ARMOR
             || id == item_id::PLATE_ARMOR
             || id == item_id::ROBE           => Some(EquipSlot::Armor),
@@ -292,10 +318,26 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
     }
 }
 
+/// True se este item_id eh um escudo (vai no slot Offhand).
+pub fn is_shield(item_id: u16) -> bool {
+    item_id == item_id::SHIELD
+}
+
+/// Quais armas permitem equipar um item no Offhand (escudo). One-handed melee
+/// (sword, dagger) + unarmed (item_id=0). Two-handed (great_sword) e ranged
+/// (bow/staff/wand) NAO permitem — o offhand fica trancado pelo server quando
+/// uma dessas armas esta equipada.
+pub fn weapon_allows_offhand(weapon_id: u16) -> bool {
+    weapon_id == 0
+        || weapon_id == item_id::SWORD
+        || weapon_id == item_id::DAGGER
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum EquipSlot {
     Weapon,
     Armor,
+    Offhand,
     Ring,
 }
 
@@ -313,16 +355,125 @@ pub struct EquipBonus {
 /// Pontos de atributo ganhos por level-up.
 pub const POINTS_PER_LEVEL: u32 = 3;
 
-/// Bonus absoluto aplicado por 1 ponto investido em cada stat.
-/// Indices: 0=HP, 1=MP, 2=Atk, 3=Dex, 4=Wis, 5=Res.
-pub const STAT_POINT_BONUS: [EquipBonus; 6] = [
-    EquipBonus { hp_max: 5, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: 0 },
-    EquipBonus { hp_max: 0, mp_max: 2, attack_damage: 0, dex: 0, wis: 0, defense: 0 },
-    EquipBonus { hp_max: 0, mp_max: 0, attack_damage: 1, dex: 0, wis: 0, defense: 0 },
-    EquipBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 1, wis: 0, defense: 0 },
-    EquipBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 0, wis: 1, defense: 0 },
-    EquipBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: 1 },
+/// Quantidade de stats alocaveis. Indices: 0=FOR, 1=DES, 2=INT, 3=VIT, 4=SPD, 5=RES.
+pub const STAT_COUNT: usize = 6;
+
+/// Aliases de indices pra deixar o codigo legivel.
+pub mod stat_idx {
+    pub const FOR: usize = 0;
+    pub const DES: usize = 1;
+    pub const INT: usize = 2;
+    pub const VIT: usize = 3;
+    pub const SPD: usize = 4;
+    pub const RES: usize = 5;
+}
+
+/// Multiplicador de velocidade adicional por ponto em SPD (somado a 1.0).
+pub const MOVE_SPEED_PCT_PER_SPD: f32 = 0.02; // +2% por ponto
+
+/// Chance de crit adicionada por ponto em DES (somada a 0.0).
+pub const CRIT_CHANCE_PER_DES: f32 = 0.005; // +0.5% por ponto
+
+/// Velocidade de ataque adicional por ponto em DES (somada a 1.0).
+/// Aplicada como divisor no cooldown — 1.5 = ataques 50% mais rapidos.
+pub const ATTACK_SPEED_PCT_PER_DES: f32 = 0.015; // +1.5% por ponto
+
+/// Stamina maxima adicional por ponto em SPD (somada ao base 100).
+pub const STAMINA_MAX_PER_SPD: i32 = 2;
+
+/// Regen de stamina/seg adicional por ponto em SPD (somado ao base 25).
+pub const STAMINA_REGEN_PER_SPD: f32 = 0.2;
+
+/// HP regenerado/seg adicionado por ponto em VIT.
+pub const HP_REGEN_PER_VIT: f32 = 0.2;
+
+/// Multiplicador de dano em hit critico.
+pub const CRIT_DAMAGE_MULT: f32 = 1.5;
+
+/// Defesa adicional por ponto em RES (somada ao base 0).
+pub const DEFENSE_PER_RES: i32 = 1;
+
+/// Aumento da fração de dano absorvido por block, por ponto em RES (somado
+/// ao base `BLOCK_DAMAGE_REDUCTION_BASE = 0.6`). Ex.: +0.003 × 100 pontos =
+/// +30% absorvido → 90% total. Capado em `BLOCK_REDUCTION_MAX`.
+pub const BLOCK_REDUCTION_PER_RES: f32 = 0.003;
+
+/// Reducao do multiplicador de custo de stamina por ponto em RES (subtraido
+/// do base 1.0). Aplica em block E parry. Ex.: -0.005 × 100 = -50% → custos
+/// caem pra 50%. Capado em `STAMINA_COST_MULT_MIN`.
+pub const STAMINA_COST_REDUCTION_PER_RES: f32 = 0.005;
+
+/// Custo BASE de stamina ao bloquear um ataque com sucesso. RES reduz via
+/// `defense_stamina_cost_mult`.
+pub const BLOCK_STAMINA_COST: f32 = 25.0;
+
+/// Custo BASE de stamina ao executar um parry com sucesso. RES reduz via
+/// `defense_stamina_cost_mult`.
+pub const PARRY_STAMINA_COST: f32 = 15.0;
+
+/// Fração base de dano absorvido por block (0.0 = sem efeito, 1.0 = anula tudo).
+/// RES soma `BLOCK_REDUCTION_PER_RES` por ponto.
+pub const BLOCK_DAMAGE_REDUCTION_BASE: f32 = 0.6;
+
+/// Cap maximo de absorcao de dano por block (player nunca toma menos que
+/// 5% do dano original quando bloqueia).
+pub const BLOCK_REDUCTION_MAX: f32 = 0.95;
+
+/// Cap minimo do multiplicador de custo de stamina (player nunca paga
+/// menos que 50% do custo base de block/parry).
+pub const STAMINA_COST_MULT_MIN: f32 = 0.5;
+
+/// Janela em segundos durante a qual o atacante fica em stagger apos um parry.
+pub const PARRY_STAGGER_S: f32 = 0.6;
+
+/// Multiplicador de velocidade enquanto o player segura RMB (defesa ativa).
+pub const MOVE_SPEED_DEFENDING_MULT: f32 = 0.4;
+
+/// Janela em segundos apos um press de PRIMARY/SECONDARY pra contar como
+/// tentativa de parry contra um hit incoming. ~250ms em 60fps = 15 frames.
+pub const PARRY_WINDOW_S: f32 = 0.25;
+
+/// Bonus aplicado por 1 ponto em cada stat (6 stats — design FOR/DES/INT/VIT/SPD/RES).
+/// Indices alinhados com `stat_idx::*`.
+///
+/// FOR (Forca):        +1 atk, +2 hp_max
+/// DES (Destreza):     +1 dex, +CRIT_CHANCE_PER_DES crit, +ATTACK_SPEED_PCT_PER_DES atk speed
+/// INT (Inteligencia): +1 wis, +2 mp_max
+/// VIT (Vitalidade):   +5 hp_max, +HP_REGEN_PER_VIT hp regen
+/// SPD (Velocidade):   +MOVE_SPEED_PCT_PER_SPD move speed, +STAMINA_MAX_PER_SPD stamina, +STAMINA_REGEN_PER_SPD st regen
+/// RES (Resistencia):  +DEFENSE_PER_RES def, +BLOCK_REDUCTION_PER_RES dmg absorvido em block,
+///                     -STAMINA_COST_REDUCTION_PER_RES no custo de block/parry
+pub const STAT_POINT_BONUS: [StatAllocBonus; STAT_COUNT] = [
+    /* FOR */ StatAllocBonus { hp_max: 2, mp_max: 0, attack_damage: 1, dex: 0, wis: 0, defense: 0,                speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0 },
+    /* DES */ StatAllocBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 1, wis: 0, defense: 0,                speed_pct: 0.0,                      crit_chance: CRIT_CHANCE_PER_DES,  hp_regen: 0.0,               attack_speed_pct: ATTACK_SPEED_PCT_PER_DES,  stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0 },
+    /* INT */ StatAllocBonus { hp_max: 0, mp_max: 2, attack_damage: 0, dex: 0, wis: 1, defense: 0,                speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0 },
+    /* VIT */ StatAllocBonus { hp_max: 5, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: 0,                speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: HP_REGEN_PER_VIT,  attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0 },
+    /* SPD */ StatAllocBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: 0,                speed_pct: MOVE_SPEED_PCT_PER_SPD,   crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: STAMINA_MAX_PER_SPD,stamina_regen: STAMINA_REGEN_PER_SPD,    block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0 },
+    /* RES */ StatAllocBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: DEFENSE_PER_RES,  speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: BLOCK_REDUCTION_PER_RES, stamina_cost_reduction: STAMINA_COST_REDUCTION_PER_RES },
 ];
+
+/// Bonus de alocacao de pontos. Difere de `EquipBonus` por incluir
+/// modificadores de velocidade / crit / regen / atk speed — campos que ainda
+/// nao sao expostos em equipamento (pode-se unificar futuramente).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StatAllocBonus {
+    pub hp_max: i32,
+    pub mp_max: i32,
+    pub attack_damage: i32,
+    pub dex: i32,
+    pub wis: i32,
+    pub defense: i32,
+    pub speed_pct: f32,
+    pub crit_chance: f32,
+    pub hp_regen: f32,
+    pub attack_speed_pct: f32,
+    pub stamina_max: i32,
+    pub stamina_regen: f32,
+    /// Adiciona ao base BLOCK_DAMAGE_REDUCTION_BASE — fração extra absorvida.
+    pub block_reduction_bonus: f32,
+    /// Subtrai do multiplicador de custo de stamina (1.0 = base).
+    pub stamina_cost_reduction: f32,
+}
 
 /// Escalamento por level de proficiencia, aplicado quando a arma correspondente
 /// esta equipada. Tudo em f32 e truncado depois de multiplicar pelo level.

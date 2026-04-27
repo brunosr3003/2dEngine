@@ -170,6 +170,11 @@ pub struct LootTag {
 pub struct PlayerTag {
     pub name: String,
     pub player_id: PlayerId,
+    /// Setado quando o player executa swing/shoot/thrust no tick. O codigo
+    /// (`shared::attack_anim::*`) é coletado em `send_snapshots` pra
+    /// `EntitySnapshot.attack_anim`, que faz outros clientes tocarem a anim
+    /// de ataque correta. None nos demais ticks.
+    pub attack_anim_pending: Option<u8>,
 }
 
 /// Tag que marca uma entidade como invisivel aos sistemas de targeting.
@@ -195,7 +200,12 @@ pub struct Session {
     /// duplicados da mesma sessao.
     pub auth_in_flight: bool,
     pub attack_cooldown: f32,
-    pub secondary_cooldown: f32,
+    /// sim_time ate o fim do dash atual. Player imovel/invuln enquanto > sim_time.
+    pub dash_until: f32,
+    /// Direcao unitaria do dash em curso.
+    pub dash_dir: Vec2,
+    /// Cooldown ate o proximo dash poder ser usado.
+    pub dash_cooldown: f32,
     /// sim_time absoluto até o qual o player fica em stagger (sem mover/atacar).
     pub hurt_until: f32,
     /// Vetor unitário do alvo TOWARD o último atacante (pra knockback futuro).
@@ -250,8 +260,8 @@ pub struct Session {
     pub proficiencies_dirty: bool,
     /// Pontos de atributo disponiveis (ganhos por level-up, POINTS_PER_LEVEL cada).
     pub unspent_points: u32,
-    /// Pontos ja alocados em cada stat [HP, MP, Atk, Dex, Wis, Res].
-    pub allocated_points: [u32; 6],
+    /// Pontos ja alocados em cada stat [FOR, DES, INT, VIT, SPD].
+    pub allocated_points: [u32; shared::STAT_COUNT],
     /// Marca que precisa enviar StatPointsUpdate no proximo tick.
     pub stat_points_dirty: bool,
     /// Ultimo level conhecido pra detectar level-up.
@@ -267,6 +277,29 @@ pub struct Session {
     pub vault: Vec<shared::InventorySlot>,
     /// True quando vault mudou — envia VaultUpdate no proximo tick.
     pub vault_dirty: bool,
+    /// Configuracao visual do paper-doll (skin/race/outfit/hair) replicada
+    /// em EntitySnapshot.visual pra todos os clientes que enxergam esse
+    /// player. Defaultada por classe no login.
+    pub visual: shared::VisualConfig,
+
+    // ── Defesa ativa (block + parry) ────────────────────────────────────
+    /// True enquanto o player segura RMB. Aplica reducao de dano +
+    /// drain de stamina nos hits, e reduz movement speed.
+    pub defending: bool,
+    /// `sim_time_s` do ultimo edge-press de PRIMARY (LMB). Usado pra detectar
+    /// parry: se um hit chegar dentro de PARRY_WINDOW_S, conta como parry.
+    pub last_press_primary_at: f32,
+    /// `sim_time_s` do ultimo edge-press de SECONDARY (RMB). Mesma logica
+    /// que primary — apertar RMB no timing perfeito tambem da parry.
+    pub last_press_secondary_at: f32,
+    /// Mascara de buttons do tick anterior (pra detectar edge transitions).
+    pub prev_buttons: u32,
+    /// `sim_time_s` ate quando o player esta em stagger (recebeu parry).
+    /// Enquanto > sim_time, ataque/dash/block sao bloqueados.
+    pub stagger_until: f32,
+    /// Pendente: dispara um attack_anim PARRY_FLASH no proximo snapshot.
+    /// Setado quando esse player parryou um hit recebido.
+    pub parry_flash_pending: bool,
 }
 
 /// Recursos compartilhados para autenticacao assincrona.
@@ -339,6 +372,10 @@ pub struct GameWorld {
 }
 
 impl GameWorld {
+    /// Cria mundo com mapa crafted procedural pequeno (40x30). DEAD CODE em
+    /// produção — `tick.rs` sempre chama `new_from_mapfile`. Mantido só pra
+    /// testes/REPL local que não querem carregar o game.json. Não use em main.
+    #[allow(dead_code)]
     pub fn new(characters: HashMap<String, crate::persistence::CharacterRow>) -> Self {
         // Mapa crafted pequeno (demo do tileset Gentle Forest). Sem inimigos,
         // sem dungeon procedural — apenas vendor + vault + decoracoes.
@@ -579,6 +616,10 @@ impl GameWorld {
     fn place_enemy_in_zone(&mut self, pos: Vec2, kind: u16, zone_id: u32) {
         let def = crate::economy::enemy_def(kind);
         let hp_max = def.hp_max;
+        tracing::info!(
+            "spawn zona #{}: kind={} hp={} pos=({:.1},{:.1})",
+            zone_id, kind, hp_max, pos.x, pos.y
+        );
         let net_id = self.alloc_entity_id();
         let handle = self.spawn_entity_body(pos);
 
@@ -853,6 +894,21 @@ impl GameWorld {
         s.stats_dirty = true;
     }
 
+    /// Refunda todos os pontos alocados pro unspent. Sem custo nem cooldown
+    /// — feature de teste/respec livre.
+    fn handle_reset_stats(&mut self, sid: SessionId) {
+        let Some(s) = self.sessions.get_mut(&sid) else { return; };
+        if !s.logged_in { return; }
+        let total: u32 = s.allocated_points.iter().sum();
+        if total == 0 { return; }
+        s.unspent_points = s.unspent_points.saturating_add(total);
+        s.allocated_points = [0u32; shared::STAT_COUNT];
+        s.stat_points_dirty = true;
+        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies);
+        s.stats_dirty = true;
+        tracing::info!("{} resetou atributos (refund {})", s.name, total);
+    }
+
     fn spawn_vendor_at(&mut self, pos: (f32, f32)) {
         let eid = self.alloc_entity_id();
         self.ecs.spawn((
@@ -995,7 +1051,7 @@ impl GameWorld {
                     0u64,
                     [0u64; 6],
                     0u32,
-                    [0u32; 6],
+                    [0u32; shared::STAT_COUNT],
                 )
             }
         };
@@ -1038,7 +1094,7 @@ impl GameWorld {
             Velocity(Vec2::ZERO),
             health,
             EntityKind::Player,
-            PlayerTag { name: success.username.clone(), player_id: pid },
+            PlayerTag { name: success.username.clone(), player_id: pid, attack_anim_pending: None },
         ));
 
         if let Some(s) = self.sessions.get_mut(&sid) {
@@ -1067,8 +1123,9 @@ impl GameWorld {
             s.vault_dirty = false;
             s.mp_current = stats.mp_max as f32;
             s.mp_last_sent = stats.mp_max;
-            s.stamina_current = shared::STAMINA_MAX as f32;
-            s.stamina_last_sent = shared::STAMINA_MAX;
+            s.stamina_current = stats.stamina_max as f32;
+            s.stamina_last_sent = stats.stamina_max;
+            s.visual = shared::VisualConfig::for_class(&success.class);
         }
         tracing::info!(
             "login ok: {} (acc {}, xp {}) -> {:?} / {:?}",
@@ -1101,7 +1158,7 @@ impl GameWorld {
             current: stats.mp_max,
         });
         let _ = handle.to_client.send(ServerMessage::StaminaUpdate {
-            current: shared::STAMINA_MAX,
+            current: stats.stamina_max,
         });
         let _ = handle.to_client.send(ServerMessage::ProgressUpdate {
             xp: saved_xp,
@@ -1305,7 +1362,9 @@ impl GameWorld {
                 logged_in: false,
                 auth_in_flight: false,
                 attack_cooldown: 0.0,
-                secondary_cooldown: 0.0,
+                dash_until: 0.0,
+                dash_dir: Vec2::ZERO,
+                dash_cooldown: 0.0,
                 hurt_until: 0.0,
                 hurt_dir: Vec2::ZERO,
                 respawn_timer: None,
@@ -1319,7 +1378,7 @@ impl GameWorld {
                 stats: shared::base_player_stats(),
                 equipment: shared::Equipment::default(),
                 unspent_points: 0,
-                allocated_points: [0; 6],
+                allocated_points: [0; shared::STAT_COUNT],
                 stat_points_dirty: false,
                 last_level: 1,
                 mp_current: 0.0,
@@ -1343,6 +1402,13 @@ impl GameWorld {
                 stats_dirty: false,
                 vault: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 vault_dirty: false,
+                visual: shared::VisualConfig::for_class("warrior"),
+                defending: false,
+                last_press_primary_at: f32::NEG_INFINITY,
+                last_press_secondary_at: f32::NEG_INFINITY,
+                prev_buttons: 0,
+                stagger_until: 0.0,
+                parry_flash_pending: false,
             },
         );
     }
@@ -1530,6 +1596,9 @@ impl GameWorld {
             ClientMessage::AllocStatPoint { stat } => {
                 self.handle_alloc_stat_point(id, stat);
             }
+            ClientMessage::ResetStats => {
+                self.handle_reset_stats(id);
+            }
             ClientMessage::RequestDisconnect => self.on_disconnect(id),
         }
     }
@@ -1586,18 +1655,23 @@ impl GameWorld {
             entity: Entity,
             new_vel: Vec2,
             wants_attack: bool,
-            wants_secondary: bool,
             owner_id: EntityId,
             aim: Vec2,
             damage: i32,
             is_melee: bool,
             /// Visual do projétil: 0 = arrow (Bow), 1 = fireball (Staff/Wand).
             proj_kind: u8,
+            /// Codigo de animacao (`shared::attack_anim::*`) que outros
+            /// clientes devem tocar nesse player no tick em que ataca.
+            attack_anim_code: u8,
+            /// True no tick em que o dash COMECA — usado pra marcar
+            /// PlayerTag.attack_anim_pending=DASH e replicar pra todos.
+            dash_started: bool,
         }
         let mut input_results: Vec<InputResult> = Vec::new();
         for session in self.sessions.values_mut() {
             if session.attack_cooldown > 0.0 { session.attack_cooldown -= dt; }
-            if session.secondary_cooldown > 0.0 { session.secondary_cooldown -= dt; }
+            if session.dash_cooldown > 0.0 { session.dash_cooldown -= dt; }
 
             // Regen de MP (continua mesmo sem input pendente).
             let mp_max = session.stats.mp_max as f32;
@@ -1605,19 +1679,28 @@ impl GameWorld {
                 session.mp_current = (session.mp_current + shared::MP_REGEN_PER_SEC * dt).min(mp_max);
             }
 
-            // Stamina default: regenera. Se sprint, drena abaixo.
-            let wants_sprint_ambient = session
-                .pending_input
-                .as_ref()
-                .map(|f| (f.buttons & buttons::DASH != 0) && f.move_dir.length_squared() > 0.0)
-                .unwrap_or(false);
-            if !wants_sprint_ambient {
-                let stam_max = shared::STAMINA_MAX as f32;
-                if session.stamina_current < stam_max {
-                    session.stamina_current = (session.stamina_current
-                        + shared::STAMINA_REGEN_PER_SEC * dt)
-                        .min(stam_max);
+            // Regen de HP (escalado por VIT via stats.hp_regen). Roda no
+            // tick em vez de em UseItem pra dar regen passivo continuo.
+            // Skipado se downed (player caido nao se cura sozinho).
+            if !session.downed && session.stats.hp_regen > 0.0 {
+                if let Some(e) = session.entity {
+                    if let Ok(mut h) = self.ecs.get::<&mut shared::Health>(e) {
+                        if h.current < h.max && h.current > 0 {
+                            // Acumula em ms*1000 pra evitar perda por f32→i32.
+                            // Simples: arredonda fracoes de HP entre ticks.
+                            let new_hp_f = h.current as f32 + session.stats.hp_regen * dt;
+                            h.current = (new_hp_f as i32).min(h.max);
+                        }
+                    }
                 }
+            }
+
+            // Regen de stamina (continua sempre — dash agora e tap, nao drena continuo).
+            let stam_max = session.stats.stamina_max as f32;
+            if session.stamina_current < stam_max {
+                session.stamina_current = (session.stamina_current
+                    + session.stats.stamina_regen * dt)
+                    .min(stam_max);
             }
 
             let Some(entity) = session.entity else { continue };
@@ -1627,18 +1710,42 @@ impl GameWorld {
             if session.carried_by.is_some() {
                 continue;
             }
+            // Edge-detect dos botoes pra parry window. Press = bit foi 0 no
+            // frame anterior e ficou 1 agora. Salva sim_time pra que o loop
+            // de damage_events compare com PARRY_WINDOW_S.
+            let pressed_primary   = (frame.buttons & buttons::PRIMARY   != 0)
+                                 && (session.prev_buttons & buttons::PRIMARY   == 0);
+            let pressed_secondary = (frame.buttons & buttons::SECONDARY != 0)
+                                 && (session.prev_buttons & buttons::SECONDARY == 0);
+            if pressed_primary   { session.last_press_primary_at   = self.sim_time_s; }
+            if pressed_secondary { session.last_press_secondary_at = self.sim_time_s; }
+            session.prev_buttons = frame.buttons;
+            // RMB held = defesa ativa. Drena stamina apenas no hit. Disponivel
+            // pra TODAS as armas — quem tem escudo no offhand bloqueia "fisico"
+            // (visual ShieldBash); o resto bloqueia com "escudo de energia"
+            // (visual Push + bolha) replicado pelo cliente. Stat bonuses do
+            // shield (defense+8, hp+75) sao o incentivo pra equipar.
+            let staggered = self.sim_time_s < session.stagger_until;
+            let block_cost_now = shared::combat::block_stamina_cost(&session.stats);
+            session.defending = (frame.buttons & buttons::SECONDARY != 0)
+                && !session.downed
+                && !staggered
+                && session.stamina_current >= block_cost_now;
+
             // Stagger/Downed: ignora movimento e ataques. Player downed fica
             // travado na pose sentada — não pode andar até levantar.
             let in_hurt = session.hurt_until > self.sim_time_s;
-            let dir = if in_hurt || session.downed {
+            let dir = if in_hurt || session.downed || staggered {
                 Vec2::ZERO
             } else if frame.move_dir.length_squared() > 1.0 {
                 frame.move_dir.normalize()
             } else {
                 frame.move_dir
             };
-            // Downed/Carregando/Hurt: sem ataques
-            let wants_attack = if session.downed || session.carrying.is_some() || in_hurt {
+            // Downed/Carregando/Hurt/Dashing/Defending/Staggered: sem ataques
+            let was_dashing = self.sim_time_s < session.dash_until;
+            let wants_attack = if session.downed || session.carrying.is_some() || in_hurt
+                || was_dashing || session.defending || staggered {
                 false
             } else {
                 let has_stam = session.stamina_current >= shared::ATTACK_STAMINA_COST;
@@ -1647,7 +1754,7 @@ impl GameWorld {
                      && has_stam;
                 if w {
                     let weapon_id = session.equipment.weapon.unwrap_or(0);
-                    session.attack_cooldown = if shared::weapon_is_melee(weapon_id) {
+                    let base_cd = if shared::weapon_is_melee(weapon_id) {
                         ATTACK_COOLDOWN
                     } else {
                         match shared::Proficiency::from_item(weapon_id) {
@@ -1656,43 +1763,75 @@ impl GameWorld {
                             _ => shared::BOW_ATTACK_COOLDOWN,
                         }
                     };
+                    // Atk speed (DES) divide o cooldown — clampeado pra evitar
+                    // cooldown=0 com builds extremos.
+                    let atk_speed = session.stats.attack_speed_mult.max(0.5);
+                    session.attack_cooldown = base_cd / atk_speed;
                     session.stamina_current =
                         (session.stamina_current - shared::ATTACK_STAMINA_COST).max(0.0);
                 }
                 w
             };
 
-            let has_mp = (session.mp_current as i32) >= shared::SECONDARY_MP_COST;
-            let wants_secondary = !session.downed
-                && !in_hurt
-                && (frame.buttons & buttons::SECONDARY != 0)
-                && session.secondary_cooldown <= 0.0
-                && has_mp;
-            if wants_secondary {
-                session.secondary_cooldown = shared::SECONDARY_COOLDOWN;
-                session.mp_current -= shared::SECONDARY_MP_COST as f32;
-            }
 
-            // Sprint (DASH): drena stamina e multiplica velocidade se stamina
-            // > 0 e houver movimento. Regen ambiental ja foi aplicado acima.
-            let wants_sprint = !session.downed
-                && (frame.buttons & buttons::DASH != 0)
-                && session.stamina_current > 0.0
-                && dir.length_squared() > 0.0;
+            // SPD escala speed_mult (1.0 + 0.02×SPD por ponto).
+            let spd_scale = session.stats.speed_mult.max(0.1);
             let base_speed = if session.downed {
-                PLAYER_SPEED * shared::DOWNED_SPEED_MULT
+                PLAYER_SPEED * shared::DOWNED_SPEED_MULT * spd_scale
             } else if session.carrying.is_some() {
-                PLAYER_SPEED * 0.5
+                PLAYER_SPEED * 0.5 * spd_scale
+            } else if session.defending {
+                PLAYER_SPEED * shared::MOVE_SPEED_DEFENDING_MULT * spd_scale
             } else {
-                PLAYER_SPEED
+                PLAYER_SPEED * spd_scale
             };
-            let speed = if wants_sprint {
-                session.stamina_current = (session.stamina_current
-                    - shared::STAMINA_DRAIN_PER_SEC * dt)
-                    .max(0.0);
-                base_speed * shared::SPRINT_SPEED_MULT
+
+            // Dash: tap-button (Space/Shift). Impulso linear na direcao do
+            // movimento atual (ou facing se parado), bloqueia movimento e
+            // da i-frames durante a duracao. Bloqueado enquanto defending
+            // (RMB held) ou em stagger pos-parry.
+            let wants_dash = !session.downed
+                && !in_hurt
+                && !session.defending
+                && !staggered
+                && (frame.buttons & buttons::DASH != 0)
+                && session.dash_cooldown <= 0.0
+                && session.stamina_current >= shared::DASH_STAMINA_COST as f32
+                && session.dash_until <= self.sim_time_s;
+            let dashing = self.sim_time_s < session.dash_until;
+            let speed = if dashing {
+                // Player ja esta dashando — mantem direcao/velocidade fixas
+                shared::DASH_SPEED
+            } else if wants_dash {
+                // Inicia dash agora
+                let dash_dir = if dir.length_squared() > 0.01 {
+                    dir.normalize()
+                } else {
+                    // sem input → usa hurt_dir oposto se existe, senao Vec2::Y
+                    Vec2::new(0.0, -1.0) // S como fallback
+                };
+                session.dash_until = self.sim_time_s + shared::DASH_DURATION;
+                session.dash_dir = dash_dir;
+                // SPD reduz cooldown via divisao por speed_mult.
+                // Cooldown comeca a contar a partir do FIM do dash — isso e
+                // garantido porque o decremento so roda no proximo tick e
+                // em sec A `dash_until <= sim_time` ja terminou.
+                let cd_mult = session.stats.speed_mult.max(0.1);
+                session.dash_cooldown = (shared::DASH_COOLDOWN / cd_mult)
+                    .max(shared::DASH_COOLDOWN_MIN)
+                    + shared::DASH_DURATION; // cd corre durante o dash; soma a duracao
+                                             // pra que o "0.2s minimo" seja apos o fim
+                session.stamina_current =
+                    (session.stamina_current - shared::DASH_STAMINA_COST as f32).max(0.0);
+                shared::DASH_SPEED
             } else {
                 base_speed
+            };
+            // Override de direcao se em dash
+            let dir = if dashing || wants_dash {
+                if wants_dash { session.dash_dir } else { session.dash_dir }
+            } else {
+                dir
             };
 
             let weapon_id = session.equipment.weapon.unwrap_or(0);
@@ -1700,16 +1839,28 @@ impl GameWorld {
                 shared::Proficiency::Wand | shared::Proficiency::Staff => 1, // fireball
                 _ => 0,                                                       // arrow
             };
+            // Crit roll por ataque: roll uniforme; se hit, multiplica
+            // damage. Roll feito no SOURCE pra gerar exatamente 1 valor de
+            // dano por swing — todos os alvos no cone recebem o mesmo
+            // (consistente com regras tipo Diablo/RoTMG).
+            let crit = session.stats.crit_chance > 0.0
+                && fastrand::f32() < session.stats.crit_chance;
+            let dmg_final = if crit {
+                (session.stats.attack_damage as f32 * shared::CRIT_DAMAGE_MULT).round() as i32
+            } else {
+                session.stats.attack_damage
+            };
             input_results.push(InputResult {
                 entity,
                 new_vel: dir * speed,
                 wants_attack,
-                wants_secondary,
                 owner_id: session.entity_id,
                 aim: frame.aim,
-                damage: session.stats.attack_damage,
+                damage: dmg_final,
                 is_melee: shared::weapon_is_melee(weapon_id),
                 proj_kind,
+                attack_anim_code: shared::weapon_attack_anim(weapon_id),
+                dash_started: wants_dash,
             });
         }
 
@@ -1983,6 +2134,13 @@ impl GameWorld {
             if let Ok(mut vel) = self.ecs.get::<&mut Velocity>(ir.entity) {
                 vel.0 = ir.new_vel;
             }
+            // Dash inicio: marca attack_anim_pending=DASH pra replicar a anim
+            // de jump pra todos os clientes que enxergam esse player.
+            if ir.dash_started {
+                if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(ir.entity) {
+                    tag.attack_anim_pending = Some(shared::attack_anim::DASH);
+                }
+            }
             if ir.wants_attack {
                 let pos = self.ecs.get::<&Position>(ir.entity).map(|p| p.0).unwrap_or(Vec2::ZERO);
                 let dir = (ir.aim - pos).try_normalize().unwrap_or(Vec2::X);
@@ -1990,6 +2148,11 @@ impl GameWorld {
                 if self.in_safe_zone(pos) {
                     tracing::debug!("attack blocked: player at ({:.1},{:.1}) in safe zone", pos.x, pos.y);
                     continue;
+                }
+                // Marca o tag pra que send_snapshots replique o trigger de
+                // animacao pros outros clientes neste tick.
+                if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(ir.entity) {
+                    tag.attack_anim_pending = Some(ir.attack_anim_code);
                 }
                 if ir.is_melee {
                     melee_swings.push(MeleeSwing {
@@ -2018,39 +2181,6 @@ impl GameWorld {
                         pos: spawn_pos,
                         dir,
                         damage: ir.damage,
-                        kind: ir.proj_kind,
-                        owner_id: ir.owner_id,
-                        from_player: true,
-                        release_tick: self.tick.wrapping_add(release_in_ticks),
-                    });
-                }
-            }
-            if ir.wants_secondary {
-                let pos = self.ecs.get::<&Position>(ir.entity).map(|p| p.0).unwrap_or(Vec2::ZERO);
-                if self.in_safe_zone(pos) { continue; }
-                let base_dir = (ir.aim - pos).try_normalize().unwrap_or(Vec2::X);
-                let n = shared::SECONDARY_PROJ_COUNT;
-                let spread = shared::SECONDARY_SPREAD_RAD;
-                let fire_delay = if ir.proj_kind == 1 {
-                    shared::MAGIC_FIRE_DELAY
-                } else {
-                    shared::BOW_FIRE_DELAY
-                };
-                let release_in_ticks = (fire_delay / dt).round() as u32;
-                let spawn_pos = pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y);
-                for i in 0..n {
-                    // Distribui simetricamente: -spread/2 .. +spread/2
-                    let t = if n <= 1 { 0.0 } else { i as f32 / (n - 1) as f32 };
-                    let angle = -spread * 0.5 + spread * t;
-                    let (sin, cos) = angle.sin_cos();
-                    let d = Vec2::new(
-                        base_dir.x * cos - base_dir.y * sin,
-                        base_dir.x * sin + base_dir.y * cos,
-                    );
-                    self.pending_shots.push(PendingShot {
-                        pos: spawn_pos,
-                        dir: d,
-                        damage: (ir.damage as f32 * 0.8) as i32,
                         kind: ir.proj_kind,
                         owner_id: ir.owner_id,
                         from_player: true,
@@ -2168,26 +2298,38 @@ impl GameWorld {
             .map(|(e, (net, pos, vel, p))| (e, net.0, pos.0, vel.0, p.owner, p.from_player, p.damage))
             .collect();
 
-        let targets: Vec<(Entity, EntityId, Vec2, bool)> = self
+        // I-frames de dash: players dashando ficam imunes a dano (mesmo
+        // criterio de safe zone). Set lookup por net_id pra O(1).
+        let dashing_players: std::collections::HashSet<EntityId> = self.sessions
+            .values()
+            .filter(|s| s.logged_in && self.sim_time_s < s.dash_until)
+            .map(|s| s.entity_id)
+            .collect();
+
+        // (entity, net_id, pos, is_player, size_scale) — size_scale escala
+        // hit_radius e Y-offset por target pra que enemies grandes (boss
+        // 2.2×) tenham hitbox proporcional ao corpo visivel.
+        let targets: Vec<(Entity, EntityId, Vec2, bool, f32)> = self
             .ecs
             .query::<(&NetId, &Position, &EntityKind, Option<&EnemyTag>)>()
             .iter()
             .filter_map(|(e, (net, pos, kind, tag))| match kind {
-                // Player em zona segura é imune a dano.
-                EntityKind::Player if !self.in_safe_zone(pos.0) => Some((e, net.0, pos.0, true)),
+                // Player em zona segura é imune a dano. Dashing tambem.
+                EntityKind::Player if !self.in_safe_zone(pos.0) && !dashing_players.contains(&net.0)
+                    => Some((e, net.0, pos.0, true, 1.0_f32)),
                 // Cadáveres e enemies em spawn-grace (invocação) não tomam dano.
                 // Enemies em zona segura também são imunes (caso entrem por bug).
-                EntityKind::Enemy(_) if tag.map(|t| !t.dead && t.spawn_grace_until <= now_sim).unwrap_or(true)
+                EntityKind::Enemy(k) if tag.map(|t| !t.dead && t.spawn_grace_until <= now_sim).unwrap_or(true)
                                      && !self.in_safe_zone(pos.0)
-                    => Some((e, net.0, pos.0, false)),
+                    => Some((e, net.0, pos.0, false, crate::economy::enemy_size_scale(*k))),
                 _ => None,
             })
             .collect();
 
-        // Hitbox engloba corpo todo (~0.6 raio centrado no peito), não só pés.
+        // Hitbox base (~0.6 raio centrado no peito), escalado por size_scale
+        // do alvo dentro dos loops abaixo — boss 2.2× tem hitbox 2.2× maior.
         let hit_target_radius = shared::HIT_TARGET_RADIUS;
         let hit_target_y_off  = shared::HIT_TARGET_Y_OFFSET;
-        let hit_dist_sq = (hit_target_radius + PROJ_RADIUS) * (hit_target_radius + PROJ_RADIUS);
         let mut hit_projs: Vec<(Entity, EntityId)> = Vec::new();
         // damage: (target_entity, target_net_id, dmg, attacker_net_id,
         //         attacker_is_player, hurt_dir TOWARD attacker desde alvo)
@@ -2203,17 +2345,20 @@ impl GameWorld {
         }
 
         // Aplica golpes melee: cada swing acerta inimigos em cone na frente.
-        // Range estendido por hit_target_radius (alcança a borda do hitbox).
+        // Range estendido por hit_target_radius escalado pelo size do alvo.
         if !combat_disabled {
-            let melee_max = shared::MELEE_RANGE + hit_target_radius;
-            let range_sq = melee_max * melee_max;
             let cos_half = shared::MELEE_CONE_HALF_ANGLE.cos();
             for sw in &melee_swings {
-                for (te, tnet, tpos, is_player) in &targets {
+                for (te, tnet, tpos, is_player, size) in &targets {
                     if sw.from_player == *is_player { continue; }
                     if *tnet == sw.attacker_eid { continue; }
+                    // Escala hitbox pelo tamanho do alvo (boss=2.2× → hitbox 2.2×).
+                    let r       = hit_target_radius * size;
+                    let y_off   = hit_target_y_off  * size;
+                    let melee_max = shared::MELEE_RANGE + r;
+                    let range_sq = melee_max * melee_max;
                     // Hit-point do alvo: peito (Y+offset), não os pés.
-                    let target_hit = *tpos + Vec2::new(0.0, hit_target_y_off);
+                    let target_hit = *tpos + Vec2::new(0.0, y_off);
                     let delta = target_hit - sw.pos;
                     let d2 = delta.length_squared();
                     if d2 > range_sq { continue; }
@@ -2227,11 +2372,14 @@ impl GameWorld {
         }
 
         'outer: for (pe, pnet, ppos, pvel, powner, pfrom_player, pdmg) in &projs {
-            for (te, tnet, tpos, is_player) in &targets {
+            for (te, tnet, tpos, is_player, size) in &targets {
                 if tnet == powner { continue; }
                 if *pfrom_player == *is_player { continue; }
-                let target_hit = *tpos + Vec2::new(0.0, hit_target_y_off);
-                if ppos.distance_squared(target_hit) < hit_dist_sq {
+                let r     = hit_target_radius * size;
+                let y_off = hit_target_y_off  * size;
+                let dist_sq = (r + PROJ_RADIUS) * (r + PROJ_RADIUS);
+                let target_hit = *tpos + Vec2::new(0.0, y_off);
+                if ppos.distance_squared(target_hit) < dist_sq {
                     if !combat_disabled {
                         // Hurt_dir = -vel (TOWARD atacante). Evita Y artificial
                         // do spawn no peito que distorce a direção pro Norte.
@@ -2273,7 +2421,64 @@ impl GameWorld {
                 }
                 d
             };
-            let dmg = (dmg - target_defense).max(1);
+            let mut dmg = (dmg - target_defense).max(1);
+
+            // ── Defesa ativa do alvo (player) ────────────────────────────────
+            // (1) Parry: edge-press de PRIMARY ou SECONDARY dentro de PARRY_WINDOW_S
+            //     → anula o dano + drena custo de parry (escala c/ RES) + staggera atacante.
+            //     Funciona p/ todas as armas (melee inclui).
+            // (2) Block: apenas armas ranged + RMB held + stamina suficiente
+            //     → reduz dano em block_dmg_reduction (escala c/ RES) + drena custo.
+            //     Melee NAO bloqueia (gateado em session.defending no input loop).
+            let mut parried = false;
+            let now_s = self.sim_time_s;
+            if let Some(target) = self.sessions.values_mut()
+                .find(|s| s.entity_id == target_id)
+            {
+                let in_parry_window =
+                    (now_s - target.last_press_primary_at)   <= shared::PARRY_WINDOW_S
+                 || (now_s - target.last_press_secondary_at) <= shared::PARRY_WINDOW_S;
+                let parry_cost = shared::combat::parry_stamina_cost(&target.stats);
+                let block_cost = shared::combat::block_stamina_cost(&target.stats);
+                if in_parry_window && target.stamina_current >= parry_cost {
+                    target.stamina_current = (target.stamina_current - parry_cost).max(0.0);
+                    target.parry_flash_pending = true;
+                    // Consome a janela pra impedir parry sequencial sem novo press.
+                    target.last_press_primary_at   = f32::NEG_INFINITY;
+                    target.last_press_secondary_at = f32::NEG_INFINITY;
+                    parried = true;
+                    dmg = 0;
+                } else if target.defending && target.stamina_current >= block_cost {
+                    target.stamina_current = (target.stamina_current - block_cost).max(0.0);
+                    dmg = shared::combat::apply_block_damage(&target.stats, dmg);
+                }
+            }
+
+            // Aplica stagger no atacante em caso de parry — funciona pra
+            // player (Session.stagger_until) e pra enemy (EnemyTag.hurt_until).
+            if parried {
+                let stagger_ts = now_s + shared::PARRY_STAGGER_S;
+                if attacker_is_player {
+                    if let Some(att) = self.sessions.values_mut()
+                        .find(|s| s.entity_id == attacker_id)
+                    {
+                        att.stagger_until = stagger_ts;
+                    }
+                } else {
+                    // Atacante eh enemy — encontra a Entity pelo EntityId.
+                    let attacker_entity = self.ecs
+                        .query::<&NetId>()
+                        .iter()
+                        .find(|(_, n)| n.0 == attacker_id)
+                        .map(|(e, _)| e);
+                    if let Some(ae) = attacker_entity {
+                        if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(ae) {
+                            tag.hurt_until = stagger_ts;
+                        }
+                    }
+                }
+                continue; // sem dano nem stagger no alvo
+            }
 
             if downed_targets.contains(&target_id) {
                 // Player ja esta downed. So dano de outro jogador drena a
@@ -2402,7 +2607,14 @@ impl GameWorld {
 
             // Creditar XP (e Fame, se mob grande) para o jogador que matou
             if let Some(attacker_eid) = kill_credits.get(&eid).copied() {
-                let xp_reward = crate::economy::enemy_def(kind_id).xp_reward;
+                // TEST OVERRIDE: boss (kind 7) da 100000 XP fixo pra
+                // facilitar level-up rapido em testes. Remover quando o
+                // balancing real for ajustado.
+                let xp_reward = if kind_id == 7 {
+                    100_000
+                } else {
+                    crate::economy::enemy_def(kind_id).xp_reward
+                };
                 let fame_reward = if kind_id == 7 { 50 }        // boss
                                   else if kind_id == 5 { 5 }    // berserker
                                   else if kind_id == 4 { 3 }    // mago
@@ -2575,7 +2787,7 @@ impl GameWorld {
                         if slot.qty > 0 { drops.push((slot.item_id, slot.qty)); }
                     }
                     // Drop equipamento tambem
-                    for opt in [session.equipment.weapon, session.equipment.armor, session.equipment.ring] {
+                    for opt in [session.equipment.weapon, session.equipment.armor, session.equipment.ring, session.equipment.offhand] {
                         if let Some(iid) = opt { drops.push((iid, 1)); }
                     }
                     // Limpa inv + equip do player morto
@@ -2665,17 +2877,21 @@ impl GameWorld {
                 if ppos.distance_squared(lpos) < pick_r_sq {
                     if let Some(session) = self.sessions.get_mut(sid) {
                         // Se for equipavel e o slot esta vazio, equipa direto.
+                        // Gate offhand+weapon: se incompativel, fallback pro inv.
                         if let Some(slot) = shared::equip_slot_of(ltag.item_id) {
                             let empty = match slot {
-                                shared::EquipSlot::Weapon => session.equipment.weapon.is_none(),
-                                shared::EquipSlot::Armor  => session.equipment.armor.is_none(),
-                                shared::EquipSlot::Ring   => session.equipment.ring.is_none(),
+                                shared::EquipSlot::Weapon  => session.equipment.weapon.is_none(),
+                                shared::EquipSlot::Armor   => session.equipment.armor.is_none(),
+                                shared::EquipSlot::Ring    => session.equipment.ring.is_none(),
+                                shared::EquipSlot::Offhand => session.equipment.offhand.is_none(),
                             };
-                            if empty {
+                            let allowed = can_equip_in_slot(&session.equipment, slot, ltag.item_id);
+                            if empty && allowed {
                                 match slot {
-                                    shared::EquipSlot::Weapon => session.equipment.weapon = Some(ltag.item_id),
-                                    shared::EquipSlot::Armor  => session.equipment.armor  = Some(ltag.item_id),
-                                    shared::EquipSlot::Ring   => session.equipment.ring   = Some(ltag.item_id),
+                                    shared::EquipSlot::Weapon  => session.equipment.weapon  = Some(ltag.item_id),
+                                    shared::EquipSlot::Armor   => session.equipment.armor   = Some(ltag.item_id),
+                                    shared::EquipSlot::Ring    => session.equipment.ring    = Some(ltag.item_id),
+                                    shared::EquipSlot::Offhand => session.equipment.offhand = Some(ltag.item_id),
                                 }
                                 session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
                                 session.stats_dirty = true;
@@ -2748,7 +2964,7 @@ impl GameWorld {
             Velocity(Vec2::ZERO),
             Health { current: 100, max: 100 },
             EntityKind::Player,
-            PlayerTag { name: name.clone(), player_id: pid },
+            PlayerTag { name: name.clone(), player_id: pid, attack_anim_pending: None },
         ));
         if let Some(s) = self.sessions.get_mut(&sid) {
             s.entity = Some(e);
@@ -2757,7 +2973,7 @@ impl GameWorld {
     }
 
     pub fn send_snapshots(&mut self) {
-        // Coleta attack_pending e zera o flag pra que o snapshot mande true 1 vez só.
+        // Coleta attack_pending dos inimigos e zera pra mandar 1 vez só.
         let attacking_ids: std::collections::HashSet<EntityId> = self
             .ecs
             .query::<(&NetId, &mut EnemyTag)>()
@@ -2770,36 +2986,88 @@ impl GameWorld {
             })
             .collect();
 
+        // Mesma logica pra players: drena attack_anim_pending por PlayerTag.
+        let player_attack_anim: HashMap<EntityId, u8> = self
+            .ecs
+            .query::<(&NetId, &mut PlayerTag)>()
+            .iter()
+            .filter_map(|(_, (net, t))| t.attack_anim_pending.take().map(|a| (net.0, a)))
+            .collect();
+
+        // Lookup rapido por entity_id pra popular weapon_id/downed/visual em
+        // snapshots de Player. Sessao não autenticada não entra (logged_in=false).
+        struct PlayerOverlay {
+            weapon_id: Option<u16>,
+            offhand_id: Option<u16>,
+            downed: bool,
+            visual: shared::VisualConfig,
+            attack_speed_mult: f32,
+            defending: bool,
+        }
+        // Drena parry_flash_pending no mesmo passo — uma vez por tick.
+        let mut player_overlay: HashMap<EntityId, PlayerOverlay> = HashMap::new();
+        let mut parry_flash_ids: std::collections::HashSet<EntityId> = std::collections::HashSet::new();
+        for s in self.sessions.values_mut() {
+            if !s.logged_in { continue; }
+            if s.parry_flash_pending {
+                s.parry_flash_pending = false;
+                parry_flash_ids.insert(s.entity_id);
+            }
+            player_overlay.insert(s.entity_id, PlayerOverlay {
+                weapon_id: s.equipment.weapon,
+                offhand_id: s.equipment.offhand,
+                downed: s.downed,
+                visual: s.visual.clone(),
+                attack_speed_mult: s.stats.attack_speed_mult,
+                defending: s.defending,
+            });
+        }
+
         let all: Vec<EntitySnapshot> = self
             .ecs
             .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>, Option<&ProjTag>, Option<&NpcSkin>, Option<&VendorTag>, Option<&WanderRouteTag>)>()
             .iter()
-            .map(|(_, (net, pos, vel, kind, hp, ptag, projtag, skin, vtag, wtag))| EntitySnapshot {
-                id: net.0,
-                kind: match kind {
-                    EntityKind::Player      => "Player".to_string(),
-                    EntityKind::Enemy(_)    => "Enemy".to_string(),
-                    EntityKind::Projectile  => "Projectile".to_string(),
-                    EntityKind::Loot(_)     => "Loot".to_string(),
-                    EntityKind::Npc(_)      => "Npc".to_string(),
-                    EntityKind::Portal      => "Portal".to_string(),
-                },
-                pos: pos.0,
-                vel: vel.0,
-                hp: hp.map(|h| h.current),
-                hp_max: hp.map(|h| h.max),
-                name: ptag.map(|p| p.name.clone())
-                    .or_else(|| vtag.map(|v| v.name.clone()))
-                    .or_else(|| wtag.map(|w| w.name.clone())),
-                sprite_id: match kind {
-                    EntityKind::Enemy(n) | EntityKind::Loot(n) | EntityKind::Npc(n) => Some(*n as u32),
-                    EntityKind::Projectile => projtag.map(|p| p.kind as u32),
-                    _ => None,
-                },
-                is_self: None,
-                attacking: if attacking_ids.contains(&net.0) { Some(true) } else { None },
-                hurt_dir: self.hit_this_tick.get(&net.0).map(|v| [v.x, v.y]),
-                skin_preset: skin.map(|s| s.preset),
+            .map(|(_, (net, pos, vel, kind, hp, ptag, projtag, skin, vtag, wtag))| {
+                let is_player = matches!(kind, EntityKind::Player);
+                let overlay = if is_player { player_overlay.get(&net.0) } else { None };
+                EntitySnapshot {
+                    id: net.0,
+                    kind: match kind {
+                        EntityKind::Player      => "Player".to_string(),
+                        EntityKind::Enemy(_)    => "Enemy".to_string(),
+                        EntityKind::Projectile  => "Projectile".to_string(),
+                        EntityKind::Loot(_)     => "Loot".to_string(),
+                        EntityKind::Npc(_)      => "Npc".to_string(),
+                        EntityKind::Portal      => "Portal".to_string(),
+                    },
+                    pos: pos.0,
+                    vel: vel.0,
+                    hp: hp.map(|h| h.current),
+                    hp_max: hp.map(|h| h.max),
+                    name: ptag.map(|p| p.name.clone())
+                        .or_else(|| vtag.map(|v| v.name.clone()))
+                        .or_else(|| wtag.map(|w| w.name.clone())),
+                    sprite_id: match kind {
+                        EntityKind::Enemy(n) | EntityKind::Loot(n) | EntityKind::Npc(n) => Some(*n as u32),
+                        EntityKind::Projectile => projtag.map(|p| p.kind as u32),
+                        _ => None,
+                    },
+                    is_self: None,
+                    attacking: if attacking_ids.contains(&net.0) { Some(true) } else { None },
+                    attack_anim: if parry_flash_ids.contains(&net.0) {
+                        Some(shared::components::attack_anim::PARRY_FLASH)
+                    } else {
+                        player_attack_anim.get(&net.0).copied()
+                    },
+                    weapon_id: overlay.and_then(|o| o.weapon_id),
+                    offhand_id: overlay.and_then(|o| o.offhand_id),
+                    downed: overlay.map(|o| o.downed),
+                    visual: overlay.map(|o| o.visual.clone()),
+                    attack_speed_mult: overlay.map(|o| o.attack_speed_mult),
+                    hurt_dir: self.hit_this_tick.get(&net.0).map(|v| [v.x, v.y]),
+                    skin_preset: skin.map(|s| s.preset),
+                    defending: overlay.and_then(|o| if o.defending { Some(true) } else { None }),
+                }
             })
             .collect();
 
@@ -2945,7 +3213,7 @@ impl GameWorld {
     /// (antes do DB terminar de gravar) ja veja dados novos.
     pub fn collect_character_rows(&mut self) -> Vec<crate::persistence::CharacterRow> {
         let mut out = Vec::with_capacity(self.sessions.len());
-        let mut entries: Vec<(String, Vec2, Health, u64, Vec<shared::InventorySlot>, shared::Equipment, Vec<shared::InventorySlot>, u64, u64, [u64; 6], u32, [u32; 6])> = Vec::new();
+        let mut entries: Vec<(String, Vec2, Health, u64, Vec<shared::InventorySlot>, shared::Equipment, Vec<shared::InventorySlot>, u64, u64, [u64; 6], u32, [u32; shared::STAT_COUNT])> = Vec::new();
         for session in self.sessions.values() {
             if !session.logged_in { continue; }
             let Some(e) = session.entity else { continue };
@@ -3001,9 +3269,10 @@ impl GameWorld {
         };
         let read_eq  = |s: shared::EquipSlot| -> Option<u16> {
             match s {
-                shared::EquipSlot::Weapon => session.equipment.weapon,
-                shared::EquipSlot::Armor  => session.equipment.armor,
-                shared::EquipSlot::Ring   => session.equipment.ring,
+                shared::EquipSlot::Weapon  => session.equipment.weapon,
+                shared::EquipSlot::Armor   => session.equipment.armor,
+                shared::EquipSlot::Ring    => session.equipment.ring,
+                shared::EquipSlot::Offhand => session.equipment.offhand,
             }
         };
 
@@ -3016,11 +3285,13 @@ impl GameWorld {
             InvSpot::Equip(s) => (None, Some((s, read_eq(s)))),
         };
 
-        // Helpers de validacao
+        // Helpers de validacao — slot vazio ou stack-de-um item compativel.
+        // Offhand+weapon e validado via `can_equip_in_slot`.
+        let equip_now = session.equipment;
         let can_go_into_equip = |slot: shared::EquipSlot, item: &shared::InventorySlot| -> bool {
-            if item.qty == 0 { return true; } // tirar do equip pra slot vazio e OK
-            if item.qty > 1 { return false; } // stacks nao equipaveis
-            shared::equip_slot_of(item.item_id) == Some(slot)
+            if item.qty == 0 { return true; }
+            if item.qty > 1 { return false; }
+            can_equip_in_slot(&equip_now, slot, item.item_id)
         };
 
         match (a, b) {
@@ -3054,6 +3325,13 @@ impl GameWorld {
                 let (Some(ia), _) = va else { return };
                 let (_, Some((_, cur_eq))) = vb else { return };
                 if !can_go_into_equip(bs, &ia) { return; }
+                // Equipando weapon two-handed: se shield ocupa offhand, move
+                // pro inventario. Aborta se inv cheio.
+                if bs == shared::EquipSlot::Weapon && ia.qty > 0 {
+                    if !maybe_unequip_offhand_for_weapon(session, ia.item_id) {
+                        return;
+                    }
+                }
                 // Coloca item do inv no equip; devolve o antigo do equip pro inv.
                 let new_inv_slot = match cur_eq {
                     Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1 },
@@ -3496,15 +3774,18 @@ impl GameWorld {
             let mut new_max: Option<i32> = None;
             let placed = if let Some(es) = equip {
                 let empty = match es {
-                    shared::EquipSlot::Weapon => session.equipment.weapon.is_none(),
-                    shared::EquipSlot::Armor  => session.equipment.armor.is_none(),
-                    shared::EquipSlot::Ring   => session.equipment.ring.is_none(),
+                    shared::EquipSlot::Weapon  => session.equipment.weapon.is_none(),
+                    shared::EquipSlot::Armor   => session.equipment.armor.is_none(),
+                    shared::EquipSlot::Ring    => session.equipment.ring.is_none(),
+                    shared::EquipSlot::Offhand => session.equipment.offhand.is_none(),
                 };
-                if empty {
+                let allowed = can_equip_in_slot(&session.equipment, es, item_id);
+                if empty && allowed {
                     match es {
-                        shared::EquipSlot::Weapon => session.equipment.weapon = Some(item_id),
-                        shared::EquipSlot::Armor  => session.equipment.armor  = Some(item_id),
-                        shared::EquipSlot::Ring   => session.equipment.ring   = Some(item_id),
+                        shared::EquipSlot::Weapon  => session.equipment.weapon  = Some(item_id),
+                        shared::EquipSlot::Armor   => session.equipment.armor   = Some(item_id),
+                        shared::EquipSlot::Ring    => session.equipment.ring    = Some(item_id),
+                        shared::EquipSlot::Offhand => session.equipment.offhand = Some(item_id),
                     }
                     session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
                     session.stats_dirty = true;
@@ -3789,16 +4070,28 @@ impl GameWorld {
 
             // Equipavel: swap entre inventario e slot de equip correspondente.
             if let Some(es) = shared::equip_slot_of(slot.item_id) {
+                // Gate: offhand exige weapon compativel; weapon two-handed
+                // auto-unequipa shield (se houver) pro inventario.
+                if !can_equip_in_slot(&session.equipment, es, slot.item_id) {
+                    return;
+                }
+                if es == shared::EquipSlot::Weapon
+                    && !maybe_unequip_offhand_for_weapon(session, slot.item_id)
+                {
+                    return; // inv cheio, abort equip
+                }
                 let old = match es {
-                    shared::EquipSlot::Weapon => session.equipment.weapon,
-                    shared::EquipSlot::Armor  => session.equipment.armor,
-                    shared::EquipSlot::Ring   => session.equipment.ring,
+                    shared::EquipSlot::Weapon  => session.equipment.weapon,
+                    shared::EquipSlot::Armor   => session.equipment.armor,
+                    shared::EquipSlot::Ring    => session.equipment.ring,
+                    shared::EquipSlot::Offhand => session.equipment.offhand,
                 };
                 let new_id = slot.item_id;
                 match es {
-                    shared::EquipSlot::Weapon => session.equipment.weapon = Some(new_id),
-                    shared::EquipSlot::Armor  => session.equipment.armor  = Some(new_id),
-                    shared::EquipSlot::Ring   => session.equipment.ring   = Some(new_id),
+                    shared::EquipSlot::Weapon  => session.equipment.weapon  = Some(new_id),
+                    shared::EquipSlot::Armor   => session.equipment.armor   = Some(new_id),
+                    shared::EquipSlot::Ring    => session.equipment.ring    = Some(new_id),
+                    shared::EquipSlot::Offhand => session.equipment.offhand = Some(new_id),
                 }
                 session.inventory[slot_idx] = match old {
                     Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1 },
@@ -3863,8 +4156,8 @@ impl GameWorld {
                 if healed { consume_slot(&mut self.sessions); }
             }
             UseAction::HealStam(amount) => {
-                let stam_max = shared::STAMINA_MAX;
                 let healed = if let Some(session) = self.sessions.get_mut(&sid) {
+                    let stam_max = session.stats.stamina_max;
                     if (session.stamina_current as i32) < stam_max {
                         session.stamina_current = ((session.stamina_current as i32 + amount).min(stam_max)) as f32;
                         let _ = session.handle.to_client.send(
@@ -3907,35 +4200,71 @@ impl GameWorld {
 /// Aplica `item_id` (ou None para remover) num slot de equipamento da sessao.
 fn set_equip(session: &mut Session, slot: shared::EquipSlot, item_id: Option<u16>) {
     match slot {
-        shared::EquipSlot::Weapon => session.equipment.weapon = item_id,
-        shared::EquipSlot::Armor  => session.equipment.armor  = item_id,
-        shared::EquipSlot::Ring   => session.equipment.ring   = item_id,
+        shared::EquipSlot::Weapon  => session.equipment.weapon  = item_id,
+        shared::EquipSlot::Armor   => session.equipment.armor   = item_id,
+        shared::EquipSlot::Ring    => session.equipment.ring    = item_id,
+        shared::EquipSlot::Offhand => session.equipment.offhand = item_id,
     }
+}
+
+/// Pode colocar `item_id` no `slot`, dado o estado atual de `equipment`?
+/// Cobre dois casos: (1) item vai pro slot certo; (2) Offhand exige weapon
+/// que permita two-handed. Centraliza a regra pra todos os caminhos de
+/// equip (UseItem, loot pickup, shop buy, drag-drop).
+fn can_equip_in_slot(equipment: &shared::Equipment, slot: shared::EquipSlot, item_id: u16) -> bool {
+    if shared::equip_slot_of(item_id) != Some(slot) { return false; }
+    if slot == shared::EquipSlot::Offhand {
+        let weapon = equipment.weapon.unwrap_or(0);
+        if !shared::weapon_allows_offhand(weapon) { return false; }
+    }
+    true
+}
+
+/// Auto-unequip do offhand quando o player troca pra weapon two-handed.
+/// Move o item do offhand pro inventario; se o inv estiver cheio, retorna
+/// false e o caller deve abortar o equip da weapon (mantendo estado consistente).
+/// No-op se a weapon nova permite offhand ou se offhand já está vazio.
+fn maybe_unequip_offhand_for_weapon(session: &mut Session, new_weapon: u16) -> bool {
+    if shared::weapon_allows_offhand(new_weapon) { return true; }
+    let Some(oh) = session.equipment.offhand else { return true; };
+    if !add_to_inventory(&mut session.inventory, oh, 1) { return false; }
+    session.equipment.offhand = None;
+    session.inventory_dirty = true;
+    true
 }
 
 /// Calcula stats efetivos = base + pontos alocados + equip + scaling da
 /// prof da arma equipada.
 fn effective_stats(
     equip: &shared::Equipment,
-    allocated: &[u32; 6],
+    allocated: &[u32; shared::STAT_COUNT],
     proficiencies: &[u64; 6],
 ) -> shared::PlayerStats {
     let mut s = shared::base_player_stats();
 
-    // Pontos alocados pelo player.
+    // Pontos alocados pelo player (FOR/DES/INT/VIT/SPD).
     for (i, &pts) in allocated.iter().enumerate() {
         if i >= shared::STAT_POINT_BONUS.len() || pts == 0 { continue; }
         let b = shared::STAT_POINT_BONUS[i];
-        s.hp_max += b.hp_max * pts as i32;
-        s.mp_max += b.mp_max * pts as i32;
-        s.attack_damage += b.attack_damage * pts as i32;
-        s.dex += b.dex * pts as i32;
-        s.wis += b.wis * pts as i32;
-        s.defense += b.defense * pts as i32;
+        let p = pts as i32;
+        s.hp_max += b.hp_max * p;
+        s.mp_max += b.mp_max * p;
+        s.attack_damage += b.attack_damage * p;
+        s.dex += b.dex * p;
+        s.wis += b.wis * p;
+        s.defense += b.defense * p;
+        s.speed_mult              += b.speed_pct             * pts as f32;
+        s.crit_chance             += b.crit_chance           * pts as f32;
+        s.hp_regen                += b.hp_regen              * pts as f32;
+        s.attack_speed_mult       += b.attack_speed_pct      * pts as f32;
+        s.stamina_max             += b.stamina_max           * p;
+        s.stamina_regen           += b.stamina_regen         * pts as f32;
+        s.block_dmg_reduction     += b.block_reduction_bonus * pts as f32;
+        s.defense_stamina_cost_mult -= b.stamina_cost_reduction * pts as f32;
     }
 
     // Bonus do equipamento.
-    for opt in [equip.weapon, equip.armor, equip.ring] {
+    for opt in [equip.weapon, equip.armor, equip.ring, equip.offhand] {
         if let Some(id) = opt {
             let b = shared::item_bonus(id);
             s.hp_max += b.hp_max;
@@ -3967,11 +4296,13 @@ fn effective_stats(
     s.wis += (scaling.wis * lvl) as i32;
     s.defense += (scaling.defense * lvl) as i32;
 
-    // Garantir minimos
+    // Garantir minimos / clamps
     s.hp_max = s.hp_max.max(1);
     s.mp_max = s.mp_max.max(0);
     s.attack_damage = s.attack_damage.max(1);
     s.defense = s.defense.max(0);
+    s.block_dmg_reduction = s.block_dmg_reduction.clamp(0.0, shared::BLOCK_REDUCTION_MAX);
+    s.defense_stamina_cost_mult = s.defense_stamina_cost_mult.max(shared::STAMINA_COST_MULT_MIN);
     s
 }
 
