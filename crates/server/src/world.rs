@@ -40,6 +40,9 @@ pub struct ProjTag {
     pub from_player: bool,
     pub ttl: f32,
     pub damage: i32,
+    /// True se o roll de crit ocorreu na hora do disparo. Aplica multiplier
+    /// `damage` e setta is_crit no snapshot do alvo quando hit.
+    pub is_crit: bool,
     /// Visual: 0 = arrow (default), 1 = fireball/magic.
     /// Replicado pro cliente via EntitySnapshot.sprite_id.
     pub kind: u8,
@@ -53,6 +56,7 @@ struct PendingShot {
     pos: Vec2,
     dir: Vec2,
     damage: i32,
+    is_crit: bool,
     kind: u8,
     owner_id: EntityId,
     from_player: bool,
@@ -369,6 +373,9 @@ pub struct GameWorld {
     /// processar damage_events; lido em send_snapshots() pra preencher
     /// EntitySnapshot.hurt_dir; limpo após envio.
     pub hit_this_tick: HashMap<EntityId, Vec2>,
+    /// Mapa por net_id → true se o hit do tick foi critico. Lido em
+    /// send_snapshots pra `EntitySnapshot.is_crit`. Limpo após envio.
+    pub crit_this_tick: HashMap<EntityId, bool>,
 }
 
 impl GameWorld {
@@ -417,6 +424,7 @@ impl GameWorld {
             sim_time_s: 0.0,
             pending_shots: Vec::new(),
             hit_this_tick: HashMap::new(),
+            crit_this_tick: HashMap::new(),
         };
         w.spawn_vendor_at(vendor_pos);
         w.spawn_vault_at(vault_pos);
@@ -464,6 +472,7 @@ impl GameWorld {
             sim_time_s: 0.0,
             pending_shots: Vec::new(),
             hit_this_tick: HashMap::new(),
+            crit_this_tick: HashMap::new(),
         };
         w.spawn_mapfile_entities(&mf);
         w
@@ -1658,6 +1667,7 @@ impl GameWorld {
             owner_id: EntityId,
             aim: Vec2,
             damage: i32,
+            is_crit: bool,
             is_melee: bool,
             /// Visual do projétil: 0 = arrow (Bow), 1 = fireball (Staff/Wand).
             proj_kind: u8,
@@ -1857,6 +1867,7 @@ impl GameWorld {
                 owner_id: session.entity_id,
                 aim: frame.aim,
                 damage: dmg_final,
+                is_crit: crit,
                 is_melee: shared::weapon_is_melee(weapon_id),
                 proj_kind,
                 attack_anim_code: shared::weapon_attack_anim(weapon_id),
@@ -1889,10 +1900,10 @@ impl GameWorld {
             .collect();
 
         // ── C: IA dos inimigos ────────────────────────────────────────────────
-        struct SpawnProj { owner_id: EntityId, from_player: bool, pos: Vec2, dir: Vec2, damage: i32, kind: u8 }
+        struct SpawnProj { owner_id: EntityId, from_player: bool, pos: Vec2, dir: Vec2, damage: i32, is_crit: bool, kind: u8 }
         let mut projs_to_spawn: Vec<SpawnProj> = Vec::new();
         // Melee swings — usado por player attacks (sec D) e por enemies melee aqui (sec C).
-        struct MeleeSwing { attacker_eid: EntityId, pos: Vec2, dir: Vec2, damage: i32, from_player: bool }
+        struct MeleeSwing { attacker_eid: EntityId, pos: Vec2, dir: Vec2, damage: i32, is_crit: bool, from_player: bool }
         let mut melee_swings: Vec<MeleeSwing> = Vec::new();
         // Pending shots de enemies — coletados no loop de IA (que tem mut borrow do
         // ecs) e fundidos em self.pending_shots logo depois.
@@ -1990,6 +2001,7 @@ impl GameWorld {
                                 pos: pos.0,
                                 dir: to_player,
                                 damage: def.attack_damage,
+                                is_crit: false, // enemies não fazem crit hoje
                                 from_player: false,
                             });
                         } else {
@@ -2018,6 +2030,7 @@ impl GameWorld {
                                 pos: spawn_pos,
                                 dir: to_player,
                                 damage: def.attack_damage,
+                                is_crit: false,
                                 kind: enemy_proj_kind,
                                 release_tick,
                             });
@@ -2039,6 +2052,7 @@ impl GameWorld {
                                     pos: spawn_pos,
                                     dir,
                                     damage: def.attack_damage,
+                                    is_crit: false,
                                     kind: enemy_proj_kind,
                                     release_tick,
                                 });
@@ -2157,6 +2171,7 @@ impl GameWorld {
                 if ir.is_melee {
                     melee_swings.push(MeleeSwing {
                         attacker_eid: ir.owner_id, pos, dir, damage: ir.damage,
+                        is_crit: ir.is_crit,
                         from_player: true,
                     });
                 } else {
@@ -2181,6 +2196,7 @@ impl GameWorld {
                         pos: spawn_pos,
                         dir,
                         damage: ir.damage,
+                        is_crit: ir.is_crit,
                         kind: ir.proj_kind,
                         owner_id: ir.owner_id,
                         from_player: true,
@@ -2202,6 +2218,7 @@ impl GameWorld {
                     pos: ps.pos,
                     dir: ps.dir,
                     damage: ps.damage,
+                    is_crit: ps.is_crit,
                     kind: ps.kind,
                 });
             } else {
@@ -2222,6 +2239,7 @@ impl GameWorld {
                     from_player: sp.from_player,
                     ttl: PROJ_TTL,
                     damage: sp.damage,
+                    is_crit: sp.is_crit,
                     kind: sp.kind,
                 },
             ));
@@ -2291,11 +2309,11 @@ impl GameWorld {
         // ── G: deteccao de colisao projetil → entidade ────────────────────────
         // Inclui Velocity pra calcular hurt_dir = -vel (direção OPOSTA ao voo
         // = TOWARD atacante). Sem offset Y artificial do spawn no peito.
-        let projs: Vec<(Entity, EntityId, Vec2, Vec2, EntityId, bool, i32)> = self
+        let projs: Vec<(Entity, EntityId, Vec2, Vec2, EntityId, bool, i32, bool)> = self
             .ecs
             .query::<(&NetId, &Position, &Velocity, &ProjTag)>()
             .iter()
-            .map(|(e, (net, pos, vel, p))| (e, net.0, pos.0, vel.0, p.owner, p.from_player, p.damage))
+            .map(|(e, (net, pos, vel, p))| (e, net.0, pos.0, vel.0, p.owner, p.from_player, p.damage, p.is_crit))
             .collect();
 
         // I-frames de dash: players dashando ficam imunes a dano (mesmo
@@ -2332,8 +2350,8 @@ impl GameWorld {
         let hit_target_y_off  = shared::HIT_TARGET_Y_OFFSET;
         let mut hit_projs: Vec<(Entity, EntityId)> = Vec::new();
         // damage: (target_entity, target_net_id, dmg, attacker_net_id,
-        //         attacker_is_player, hurt_dir TOWARD attacker desde alvo)
-        let mut damage_events: Vec<(Entity, EntityId, i32, EntityId, bool, Vec2)> = Vec::new();
+        //         attacker_is_player, hurt_dir TOWARD attacker, is_crit)
+        let mut damage_events: Vec<(Entity, EntityId, i32, EntityId, bool, Vec2, bool)> = Vec::new();
 
         let combat_disabled = self.safe_zone;
 
@@ -2366,12 +2384,12 @@ impl GameWorld {
                         if sw.dir.dot(nd) < cos_half { continue; }
                     }
                     let hd = calc_hurt_dir(*tpos, sw.pos);
-                    damage_events.push((*te, *tnet, sw.damage, sw.attacker_eid, true, hd));
+                    damage_events.push((*te, *tnet, sw.damage, sw.attacker_eid, true, hd, sw.is_crit));
                 }
             }
         }
 
-        'outer: for (pe, pnet, ppos, pvel, powner, pfrom_player, pdmg) in &projs {
+        'outer: for (pe, pnet, ppos, pvel, powner, pfrom_player, pdmg, pcrit) in &projs {
             for (te, tnet, tpos, is_player, size) in &targets {
                 if tnet == powner { continue; }
                 if *pfrom_player == *is_player { continue; }
@@ -2386,7 +2404,7 @@ impl GameWorld {
                         // Fallback pra calc_hurt_dir se vel ≈ 0 (não deveria).
                         let hd = (-*pvel).try_normalize()
                             .unwrap_or_else(|| calc_hurt_dir(*tpos, *ppos));
-                        damage_events.push((*te, *tnet, *pdmg, *powner, *pfrom_player, hd));
+                        damage_events.push((*te, *tnet, *pdmg, *powner, *pfrom_player, hd, *pcrit));
                     }
                     hit_projs.push((*pe, *pnet));
                     continue 'outer;
@@ -2407,7 +2425,8 @@ impl GameWorld {
         // hit_this_tick é campo de GameWorld (acessado no send_snapshots).
         // Limpa antes de popular este tick.
         self.hit_this_tick.clear();
-        for (entity, target_id, dmg, attacker_id, attacker_is_player, hurt_dir) in damage_events {
+        self.crit_this_tick.clear();
+        for (entity, target_id, dmg, attacker_id, attacker_is_player, hurt_dir, is_crit) in damage_events {
             // Resistencia do alvo reduz dano recebido (min 1).
             let target_defense = {
                 let mut d = 0i32;
@@ -2516,6 +2535,11 @@ impl GameWorld {
             }
             // Também marca pra snapshot deste tick (cliente lê e seta facing).
             self.hit_this_tick.insert(target_id, hurt_dir);
+            // Marca crit pra mostrar floating number diferenciado no cliente.
+            // Usa OR pra que multiple hits no mesmo tick (raro, mas possivel)
+            // mostrem crit se qualquer dos hits foi crit.
+            let prev = self.crit_this_tick.get(&target_id).copied().unwrap_or(false);
+            self.crit_this_tick.insert(target_id, prev || is_crit);
             // Proficiency XP: atacante ganha XP na arma equipada por hit no alvo.
             if attacker_is_player {
                 if let Some(attacker) = self.sessions.values_mut()
@@ -3065,6 +3089,7 @@ impl GameWorld {
                     visual: overlay.map(|o| o.visual.clone()),
                     attack_speed_mult: overlay.map(|o| o.attack_speed_mult),
                     hurt_dir: self.hit_this_tick.get(&net.0).map(|v| [v.x, v.y]),
+                    is_crit: self.crit_this_tick.get(&net.0).copied(),
                     skin_preset: skin.map(|s| s.preset),
                     defending: overlay.and_then(|o| if o.defending { Some(true) } else { None }),
                 }

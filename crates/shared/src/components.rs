@@ -185,6 +185,11 @@ pub struct EntitySnapshot {
     /// None na maioria das snapshots; Some apenas no tick do hit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hurt_dir: Option<[f32; 2]>,
+    /// True se o hit deste tick foi um critico. Cliente usa pra mostrar
+    /// floating damage number em estilo diferente (cor/tamanho).
+    /// None nos demais ticks; Some(true/false) só quando hp_dropped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_crit: Option<bool>,
     /// True enquanto o player segura RMB (defesa ativa). Cliente renderiza
     /// pose de bloqueio + (pra arco/cajado/varinha) bolha de energia.
     #[serde(skip_serializing_if = "Option::is_none")]
