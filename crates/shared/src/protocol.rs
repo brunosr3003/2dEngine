@@ -50,6 +50,10 @@ pub enum ClientMessage {
     /// Reseta TODOS os pontos alocados pra unspent_points. Util pra testes
     /// e respec — server zera o array, devolve os pontos e reenvia stats.
     ResetStats,
+    /// Refina um item do inventário (+1 nível). Requer ItemInstance
+    /// presente no slot. Custo: gold proporcional ao refinement atual.
+    /// Falha (chance crescente com nível) reseta refinement pra 0.
+    RefineItem { slot: u16 },
     RequestDisconnect,
 }
 
@@ -77,6 +81,9 @@ pub mod buttons {
     pub const SECONDARY: u32 = 1 << 1;
     pub const INTERACT:  u32 = 1 << 2;
     pub const DASH:      u32 = 1 << 3;
+    /// Shift held = sprint (multiplica speed por SPRINT_SPEED_MULT enquanto
+    /// drena stamina). Ignorado se stamina<=0 ou defendendo.
+    pub const SPRINT:    u32 = 1 << 4;
 }
 
 /// Servidor -> Cliente.

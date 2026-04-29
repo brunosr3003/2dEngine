@@ -6,6 +6,7 @@
 pub mod combat;
 pub mod components;
 pub mod constants;
+pub mod items;
 pub mod mapfile;
 pub mod protocol;
 pub mod world_gen;
@@ -14,6 +15,7 @@ pub mod physics;
 pub use combat::*;
 pub use components::*;
 pub use constants::*;
+pub use items::*;
 pub use physics::*;
 
 /// Serde helper: serializa/deserializa `glam::Vec2` como array `[x, y]`

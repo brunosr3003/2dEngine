@@ -164,11 +164,14 @@ pub struct ServerSpawnZone {
     pub respawn_queue: Vec<(f32, u16)>,
 }
 
-/// Identifica um item dropado no chao.
+/// Identifica um item dropado no chao. `instance` é Some pra
+/// equipáveis dropados (rarity + rolls), None pra stackáveis (gold,
+/// poções, materiais).
 #[derive(Debug, Clone, Copy)]
 pub struct LootTag {
     pub item_id: u16,
     pub qty: u32,
+    pub instance: Option<shared::items::ItemInstance>,
 }
 
 pub struct PlayerTag {
@@ -387,6 +390,10 @@ pub struct GameWorld {
     /// Mapa por net_id → true se o hit do tick foi critico. Lido em
     /// send_snapshots pra `EntitySnapshot.is_crit`. Limpo após envio.
     pub crit_this_tick: HashMap<EntityId, bool>,
+    /// Dano REAL do hit (sem clamp pelo HP atual). Cliente usa pra exibir
+    /// no floating damage text quando o hit mata o alvo: HP antes era 5,
+    /// dano real foi 50 → mostra "50" mesmo. Lido em send_snapshots.
+    pub damage_this_tick: HashMap<EntityId, i32>,
 }
 
 impl GameWorld {
@@ -436,6 +443,7 @@ impl GameWorld {
             pending_shots: Vec::new(),
             hit_this_tick: HashMap::new(),
             crit_this_tick: HashMap::new(),
+            damage_this_tick: HashMap::new(),
         };
         w.spawn_vendor_at(vendor_pos);
         w.spawn_vault_at(vault_pos);
@@ -484,6 +492,7 @@ impl GameWorld {
             pending_shots: Vec::new(),
             hit_this_tick: HashMap::new(),
             crit_this_tick: HashMap::new(),
+            damage_this_tick: HashMap::new(),
         };
         w.spawn_mapfile_entities(&mf);
         w
@@ -916,6 +925,73 @@ impl GameWorld {
 
     /// Refunda todos os pontos alocados pro unspent. Sem custo nem cooldown
     /// — feature de teste/respec livre.
+    /// Refina um item — gasta gold, +1 refinement (com chance crescente
+    /// de falhar a partir de +5; falha reseta refinement pra 0).
+    fn handle_refine_item(&mut self, sid: SessionId, slot_idx: u16) {
+        let Some(s) = self.sessions.get_mut(&sid) else { return; };
+        if !s.logged_in { return; }
+        let idx = slot_idx as usize;
+        if idx >= s.inventory.len() { return; }
+        let cur_inst = match s.inventory[idx].instance {
+            Some(i) => i,
+            None => {
+                let _ = s.handle.to_client.send(ServerMessage::Chat {
+                    from: "[refinar]".into(),
+                    text: "este item não pode ser refinado".into(),
+                });
+                return;
+            }
+        };
+        if cur_inst.refinement >= shared::items::MAX_REFINE {
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "[refinar]".into(),
+                text: format!("item já está em +{} (máximo)", shared::items::MAX_REFINE),
+            });
+            return;
+        }
+        // Custo: 100g × (refinement+1)^2. +0→+1 = 100g, +5→+6 = 3600g, etc.
+        let cost = 100u32 * (cur_inst.refinement as u32 + 1).pow(2);
+        let gold_idx = s.inventory.iter().position(|sl| sl.item_id == shared::item_id::GOLD && sl.qty > 0);
+        let player_gold = gold_idx.map(|i| s.inventory[i].qty).unwrap_or(0);
+        if player_gold < cost {
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "[refinar]".into(),
+                text: format!("precisa {}g (você tem {}g)", cost, player_gold),
+            });
+            return;
+        }
+        // Cobra ouro
+        if let Some(gi) = gold_idx {
+            s.inventory[gi].qty -= cost;
+            if s.inventory[gi].qty == 0 { s.inventory[gi] = shared::InventorySlot::default(); }
+        }
+        // Roll: 100% sucesso até +4. Depois cai 8% por nível (+5=92%, +14=20%).
+        let cur_lvl = cur_inst.refinement;
+        let success_chance = if cur_lvl < 4 { 1.0 } else { 1.0 - (cur_lvl as f32 - 3.0) * 0.08 };
+        let r = fastrand::f32();
+        if r < success_chance {
+            // Sucesso
+            if let Some(inst) = s.inventory[idx].instance.as_mut() {
+                inst.refinement += 1;
+            }
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "[refinar]".into(),
+                text: format!("✓ sucesso! item agora é +{} (-{}g)", cur_lvl + 1, cost),
+            });
+        } else {
+            // Falha — reseta refinement pra 0
+            if let Some(inst) = s.inventory[idx].instance.as_mut() {
+                inst.refinement = 0;
+            }
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "[refinar]".into(),
+                text: format!("✗ falhou! refinement resetou pra +0 (-{}g)", cost),
+            });
+        }
+        s.inventory_dirty = true;
+        // Se era item equipado (não é o caso aqui — só refina inv), recompute stats
+    }
+
     fn handle_reset_stats(&mut self, sid: SessionId) {
         let Some(s) = self.sessions.get_mut(&sid) else { return; };
         if !s.logged_in { return; }
@@ -1621,6 +1697,9 @@ impl GameWorld {
             ClientMessage::ResetStats => {
                 self.handle_reset_stats(id);
             }
+            ClientMessage::RefineItem { slot } => {
+                self.handle_refine_item(id, slot);
+            }
             ClientMessage::RequestDisconnect => self.on_disconnect(id),
         }
     }
@@ -1802,6 +1881,20 @@ impl GameWorld {
 
             // SPD escala speed_mult (1.0 + 0.02×SPD por ponto).
             let spd_scale = session.stats.speed_mult.max(0.1);
+            // Sprint: hold Shift (bit SPRINT) → 1.65× a velocidade base, drena
+            // stamina por segundo. Bloqueado se stamina vazia, defending,
+            // downed ou carrying.
+            let wants_sprint = !session.downed
+                && session.carrying.is_none()
+                && !session.defending
+                && (frame.buttons & buttons::SPRINT != 0)
+                && session.stamina_current > 0.0
+                && dir.length_squared() > 0.01; // só sprinta enquanto mexendo
+            let sprint_mult = if wants_sprint { shared::SPRINT_SPEED_MULT } else { 1.0 };
+            if wants_sprint {
+                session.stamina_current =
+                    (session.stamina_current - shared::STAMINA_DRAIN_PER_SEC * dt).max(0.0);
+            }
             let base_speed = if session.downed {
                 PLAYER_SPEED * shared::DOWNED_SPEED_MULT * spd_scale
             } else if session.carrying.is_some() {
@@ -1809,7 +1902,7 @@ impl GameWorld {
             } else if session.defending {
                 PLAYER_SPEED * shared::MOVE_SPEED_DEFENDING_MULT * spd_scale
             } else {
-                PLAYER_SPEED * spd_scale
+                PLAYER_SPEED * spd_scale * sprint_mult
             };
 
             // Dash: tap-button (Space/Shift). Impulso linear na direcao do
@@ -2459,6 +2552,7 @@ impl GameWorld {
         // Limpa antes de popular este tick.
         self.hit_this_tick.clear();
         self.crit_this_tick.clear();
+        self.damage_this_tick.clear();
         for (entity, target_id, dmg, attacker_id, attacker_is_player, hurt_dir, is_crit) in damage_events {
             // Resistencia do alvo reduz dano recebido (min 1).
             let target_defense = {
@@ -2576,6 +2670,10 @@ impl GameWorld {
             // mostrem crit se qualquer dos hits foi crit.
             let prev = self.crit_this_tick.get(&target_id).copied().unwrap_or(false);
             self.crit_this_tick.insert(target_id, prev || is_crit);
+            // Dano REAL acumulado (pre-clamp pelo HP). Cliente exibe esse
+            // valor mesmo se o alvo for morto — não fica clampado em "5/50".
+            let prev_dmg = self.damage_this_tick.get(&target_id).copied().unwrap_or(0);
+            self.damage_this_tick.insert(target_id, prev_dmg + dmg);
             // Proficiency XP: atacante ganha XP na arma equipada por hit no alvo.
             if attacker_is_player {
                 if let Some(attacker) = self.sessions.values_mut()
@@ -2655,14 +2753,33 @@ impl GameWorld {
                     let a = lcg_f32(lcg(seed ^ item_id as u64)) * std::f32::consts::TAU;
                     Vec2::new(a.cos(), a.sin()) * lcg_f32(seed ^ (qty as u64)) * 1.5
                 } else { Vec2::ZERO };
+                // Roll instance pra equipáveis (template com ranges); None
+                // pra stackáveis (gold/poções/materiais). Cada drop = roll
+                // independente — rarity + stats únicos por item.
+                // iLvl baseado no kind do enemy: bosses (kind 7) dropam
+                // tier alto. Outros enemies escalam pela attack damage do
+                // kind como proxy de "dificuldade".
+                let item_lvl: u16 = match kind_id {
+                    7 => 50,           // boss
+                    5 => 30,           // berserker
+                    3 => 25,           // ninja
+                    4 => 20,           // mago
+                    1 => 15,           // tank
+                    _ => 10,           // grunts
+                };
+                let instance = shared::items::ItemInstance::roll_for(
+                    item_id,
+                    item_lvl,
+                    || fastrand::f32(),
+                );
                 self.ecs.spawn((
                     NetId(loot_id),
                     Position(pos + offset),
                     Velocity(Vec2::ZERO),
                     EntityKind::Loot(item_id),
-                    LootTag { item_id, qty },
+                    LootTag { item_id, qty, instance },
                 ));
-                tracing::debug!("loot drop: kind={kind_id} item={item_id} qty={qty}");
+                tracing::debug!("loot drop: kind={kind_id} item={item_id} qty={qty} rarity={:?}", instance.map(|i| i.rarity()));
             }
 
             // Creditar XP (e Fame, se mob grande) para o jogador que matou
@@ -2948,10 +3065,22 @@ impl GameWorld {
                             let allowed = can_equip_in_slot(&session.equipment, slot, ltag.item_id);
                             if empty && allowed {
                                 match slot {
-                                    shared::EquipSlot::Weapon  => session.equipment.weapon  = Some(ltag.item_id),
-                                    shared::EquipSlot::Armor   => session.equipment.armor   = Some(ltag.item_id),
-                                    shared::EquipSlot::Ring    => session.equipment.ring    = Some(ltag.item_id),
-                                    shared::EquipSlot::Offhand => session.equipment.offhand = Some(ltag.item_id),
+                                    shared::EquipSlot::Weapon  => {
+                                        session.equipment.weapon = Some(ltag.item_id);
+                                        session.equipment.weapon_inst = ltag.instance;
+                                    }
+                                    shared::EquipSlot::Armor   => {
+                                        session.equipment.armor = Some(ltag.item_id);
+                                        session.equipment.armor_inst = ltag.instance;
+                                    }
+                                    shared::EquipSlot::Ring    => {
+                                        session.equipment.ring = Some(ltag.item_id);
+                                        session.equipment.ring_inst = ltag.instance;
+                                    }
+                                    shared::EquipSlot::Offhand => {
+                                        session.equipment.offhand = Some(ltag.item_id);
+                                        session.equipment.offhand_inst = ltag.instance;
+                                    }
                                 }
                                 session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
                                 session.stats_dirty = true;
@@ -2963,7 +3092,7 @@ impl GameWorld {
                             }
                         }
                         // Senao, inventario normal.
-                        if add_to_inventory(&mut session.inventory, ltag.item_id, ltag.qty) {
+                        if add_to_inventory(&mut session.inventory, ltag.item_id, ltag.qty, ltag.instance) {
                             session.inventory_dirty = true;
                             picked.push((le, leid));
                             continue 'loot_loop;
@@ -3133,6 +3262,7 @@ impl GameWorld {
                     attack_speed_mult: overlay.map(|o| o.attack_speed_mult),
                     hurt_dir: self.hit_this_tick.get(&net.0).map(|v| [v.x, v.y]),
                     is_crit: self.crit_this_tick.get(&net.0).copied(),
+                    last_damage: self.damage_this_tick.get(&net.0).copied(),
                     skin_preset: skin.map(|s| s.preset),
                     defending: overlay.and_then(|o| if o.defending { Some(true) } else { None }),
                 }
@@ -3377,9 +3507,9 @@ impl GameWorld {
                         session.inventory[ai as usize] = if na == 0 {
                             shared::InventorySlot::default()
                         } else {
-                            shared::InventorySlot { item_id: ia.item_id, qty: na }
+                            shared::InventorySlot { item_id: ia.item_id, qty: na, instance: None }
                         };
-                        session.inventory[bi as usize] = shared::InventorySlot { item_id: ia.item_id, qty: nb };
+                        session.inventory[bi as usize] = shared::InventorySlot { item_id: ia.item_id, qty: nb, instance: None };
                         session.inventory_dirty = true;
                         return;
                     }
@@ -3388,39 +3518,42 @@ impl GameWorld {
                 session.inventory[bi as usize] = ia;
                 session.inventory_dirty = true;
             }
-            // inv -> equip
+            // inv -> equip: preserva instance em ambos os sentidos.
             (InvSpot::Inv(ai), InvSpot::Equip(bs)) => {
                 let (Some(ia), _) = va else { return };
                 let (_, Some((_, cur_eq))) = vb else { return };
                 if !can_go_into_equip(bs, &ia) { return; }
-                // Equipando weapon two-handed: se shield ocupa offhand, move
-                // pro inventario. Aborta se inv cheio.
                 if bs == shared::EquipSlot::Weapon && ia.qty > 0 {
                     if !maybe_unequip_offhand_for_weapon(session, ia.item_id) {
                         return;
                     }
                 }
-                // Coloca item do inv no equip; devolve o antigo do equip pro inv.
+                // Antiga instance do equipment vai pro inv junto com o item_id.
+                let cur_inst = read_equip_instance(&session.equipment, bs);
                 let new_inv_slot = match cur_eq {
-                    Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1 },
+                    Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1, instance: cur_inst },
                     None         => shared::InventorySlot::default(),
                 };
-                set_equip(session, bs, if ia.qty > 0 { Some(ia.item_id) } else { None });
+                let new_id = if ia.qty > 0 { Some(ia.item_id) } else { None };
+                let new_inst = if ia.qty > 0 { ia.instance } else { None };
+                set_equip(session, bs, new_id, new_inst);
                 session.inventory[ai as usize] = new_inv_slot;
                 session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
             }
-            // equip -> inv (simetrico)
             (InvSpot::Equip(as_), InvSpot::Inv(bi)) => {
                 let (Some(ib), _) = vb else { return };
                 let (_, Some((_, cur_eq))) = va else { return };
                 if !can_go_into_equip(as_, &ib) { return; }
+                let cur_inst = read_equip_instance(&session.equipment, as_);
                 let new_inv_slot = match cur_eq {
-                    Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1 },
+                    Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1, instance: cur_inst },
                     None         => shared::InventorySlot::default(),
                 };
-                set_equip(session, as_, if ib.qty > 0 { Some(ib.item_id) } else { None });
+                let new_id = if ib.qty > 0 { Some(ib.item_id) } else { None };
+                let new_inst = if ib.qty > 0 { ib.instance } else { None };
+                set_equip(session, as_, new_id, new_inst);
                 session.inventory[bi as usize] = new_inv_slot;
                 session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
                 session.stats_dirty = true;
@@ -3517,7 +3650,11 @@ impl GameWorld {
                 Position(pos + offset),
                 Velocity(Vec2::ZERO),
                 EntityKind::Loot(*item_id),
-                LootTag { item_id: *item_id, qty: *qty },
+                LootTag {
+                    item_id: *item_id,
+                    qty: *qty,
+                    instance: shared::items::ItemInstance::roll_for(*item_id, 10, || fastrand::f32()),
+                },
             ));
         }
     }
@@ -3860,10 +3997,10 @@ impl GameWorld {
                     new_max = Some(session.stats.hp_max);
                     true
                 } else {
-                    add_to_inventory(&mut session.inventory, item_id, 1)
+                    add_to_inventory(&mut session.inventory, item_id, 1, None)
                 }
             } else {
-                add_to_inventory(&mut session.inventory, item_id, 1)
+                add_to_inventory(&mut session.inventory, item_id, 1, None)
             };
             if !placed {
                 let _ = session.handle.to_client.send(ServerMessage::Chat {
@@ -3936,7 +4073,7 @@ impl GameWorld {
         if session.inventory[inv_slot].qty == 0 {
             session.inventory[inv_slot] = shared::InventorySlot::default();
         }
-        let placed = add_to_inventory(&mut session.inventory, shared::item_id::GOLD, price);
+        let placed = add_to_inventory(&mut session.inventory, shared::item_id::GOLD, price, None);
         if !placed {
             // Reverte: estranho mas não pode acontecer com gold (stack 9999).
             session.inventory[inv_slot].item_id = slot.item_id;
@@ -4064,7 +4201,7 @@ impl GameWorld {
         }
         // 5b) Adiciona gold da venda (se houver)
         if total_sell > 0 {
-            if !add_to_inventory(&mut sim, shared::item_id::GOLD, total_sell as u32) {
+            if !add_to_inventory(&mut sim, shared::item_id::GOLD, total_sell as u32, None) {
                 self.send_trade_result(sid, false, "sem espaço pro ouro recebido");
                 return;
             }
@@ -4086,9 +4223,10 @@ impl GameWorld {
                 return;
             }
         }
-        // 5d) Adiciona itens comprados
+        // 5d) Adiciona itens comprados. Loja sempre vende stackáveis sem
+        // instance — pode ser estendido pra vender raros no futuro.
         for &(item_id, qty) in &buys {
-            if !add_to_inventory(&mut sim, item_id, qty) {
+            if !add_to_inventory(&mut sim, item_id, qty, None) {
                 self.send_trade_result(sid, false, "inventário cheio pros itens comprados");
                 return;
             }
@@ -4162,7 +4300,7 @@ impl GameWorld {
                     shared::EquipSlot::Offhand => session.equipment.offhand = Some(new_id),
                 }
                 session.inventory[slot_idx] = match old {
-                    Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1 },
+                    Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1, instance: None },
                     None         => shared::InventorySlot::default(),
                 };
                 session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
@@ -4266,12 +4404,40 @@ impl GameWorld {
 }
 
 /// Aplica `item_id` (ou None para remover) num slot de equipamento da sessao.
-fn set_equip(session: &mut Session, slot: shared::EquipSlot, item_id: Option<u16>) {
+/// Também atualiza `*_inst` em paralelo — passar `instance` é a forma de
+/// preservar rolls/rarity/refinement quando movendo de inventory pra equipment.
+fn set_equip(
+    session: &mut Session,
+    slot: shared::EquipSlot,
+    item_id: Option<u16>,
+    instance: Option<shared::items::ItemInstance>,
+) {
     match slot {
-        shared::EquipSlot::Weapon  => session.equipment.weapon  = item_id,
-        shared::EquipSlot::Armor   => session.equipment.armor   = item_id,
-        shared::EquipSlot::Ring    => session.equipment.ring    = item_id,
-        shared::EquipSlot::Offhand => session.equipment.offhand = item_id,
+        shared::EquipSlot::Weapon  => {
+            session.equipment.weapon = item_id;
+            session.equipment.weapon_inst = instance;
+        }
+        shared::EquipSlot::Armor   => {
+            session.equipment.armor = item_id;
+            session.equipment.armor_inst = instance;
+        }
+        shared::EquipSlot::Ring    => {
+            session.equipment.ring = item_id;
+            session.equipment.ring_inst = instance;
+        }
+        shared::EquipSlot::Offhand => {
+            session.equipment.offhand = item_id;
+            session.equipment.offhand_inst = instance;
+        }
+    }
+}
+
+fn read_equip_instance(equip: &shared::Equipment, slot: shared::EquipSlot) -> Option<shared::items::ItemInstance> {
+    match slot {
+        shared::EquipSlot::Weapon  => equip.weapon_inst,
+        shared::EquipSlot::Armor   => equip.armor_inst,
+        shared::EquipSlot::Ring    => equip.ring_inst,
+        shared::EquipSlot::Offhand => equip.offhand_inst,
     }
 }
 
@@ -4295,8 +4461,10 @@ fn can_equip_in_slot(equipment: &shared::Equipment, slot: shared::EquipSlot, ite
 fn maybe_unequip_offhand_for_weapon(session: &mut Session, new_weapon: u16) -> bool {
     if shared::weapon_allows_offhand(new_weapon) { return true; }
     let Some(oh) = session.equipment.offhand else { return true; };
-    if !add_to_inventory(&mut session.inventory, oh, 1) { return false; }
+    let oh_inst = session.equipment.offhand_inst;
+    if !add_to_inventory(&mut session.inventory, oh, 1, oh_inst) { return false; }
     session.equipment.offhand = None;
+    session.equipment.offhand_inst = None;
     session.inventory_dirty = true;
     true
 }
@@ -4331,16 +4499,40 @@ fn effective_stats(
         s.defense_stamina_cost_mult -= b.stamina_cost_reduction * pts as f32;
     }
 
-    // Bonus do equipamento.
-    for opt in [equip.weapon, equip.armor, equip.ring, equip.offhand] {
-        if let Some(id) = opt {
+    // Bonus do equipamento. Cada slot tem item_id (base bonus via
+    // item_bonus) + Option<ItemInstance> (rolls aleatorios × rarity ×
+    // refinement). Instance None = item legacy → só base bonus.
+    let slot_pairs = [
+        (equip.weapon,  equip.weapon_inst),
+        (equip.armor,   equip.armor_inst),
+        (equip.ring,    equip.ring_inst),
+        (equip.offhand, equip.offhand_inst),
+    ];
+    for (id_opt, inst_opt) in slot_pairs {
+        if let Some(id) = id_opt {
+            // Base bonus: stats fixos do item_id (legado / fallback)
             let b = shared::item_bonus(id);
-            s.hp_max += b.hp_max;
-            s.mp_max += b.mp_max;
+            s.hp_max        += b.hp_max;
+            s.mp_max        += b.mp_max;
             s.attack_damage += b.attack_damage;
-            s.dex += b.dex;
-            s.wis += b.wis;
-            s.defense += b.defense;
+            s.dex           += b.dex;
+            s.wis           += b.wis;
+            s.defense       += b.defense;
+            // Instance rolls (rolled at drop time × refinement) + affixes
+            if let Some(inst) = inst_opt {
+                let ib = inst.effective_bonus();
+                s.hp_max        += ib.hp_max;
+                s.mp_max        += ib.mp_max;
+                s.attack_damage += ib.attack_damage;
+                s.dex           += ib.dex;
+                s.wis           += ib.wis;
+                s.defense       += ib.defense;
+                let (crit, atks, mov, hpr) = inst.effective_pct_bonus();
+                s.crit_chance       += crit;
+                s.attack_speed_mult += atks;
+                s.speed_mult        += mov;
+                s.hp_regen          += hpr;
+            }
         }
     }
 
@@ -4377,11 +4569,27 @@ fn effective_stats(
 /// Tenta adicionar um item ao inventario. Stacka em slots existentes primeiro;
 /// se nao couber, procura slot vazio. Retorna true se coube (parcial ou total
 /// dentro do stack do primeiro slot achado — se nao couber NADA, retorna false).
-fn add_to_inventory(inv: &mut [shared::InventorySlot], item_id: u16, mut qty: u32) -> bool {
+fn add_to_inventory(
+    inv: &mut [shared::InventorySlot],
+    item_id: u16,
+    mut qty: u32,
+    instance: Option<shared::items::ItemInstance>,
+) -> bool {
     let max_stack = crate::economy::item_stack_max(item_id);
-    // 1) stacka em slots existentes
+    // Equipáveis com instance NÃO stackam — cada drop é único. Vai
+    // direto pra slot vazio.
+    if instance.is_some() {
+        if let Some(empty) = inv.iter_mut().find(|s| s.qty == 0) {
+            empty.item_id = item_id;
+            empty.qty = qty.max(1);
+            empty.instance = instance;
+            return true;
+        }
+        return false;
+    }
+    // Stackáveis: combina com slots existentes (instance None) primeiro.
     for slot in inv.iter_mut() {
-        if slot.qty > 0 && slot.item_id == item_id && slot.qty < max_stack {
+        if slot.qty > 0 && slot.item_id == item_id && slot.qty < max_stack && slot.instance.is_none() {
             let room = max_stack - slot.qty;
             let add = qty.min(room);
             slot.qty += add;
@@ -4389,12 +4597,12 @@ fn add_to_inventory(inv: &mut [shared::InventorySlot], item_id: u16, mut qty: u3
             if qty == 0 { return true; }
         }
     }
-    // 2) slot vazio
     while qty > 0 {
         let Some(empty) = inv.iter_mut().find(|s| s.qty == 0) else { break };
         let add = qty.min(max_stack);
         empty.item_id = item_id;
         empty.qty = add;
+        empty.instance = None;
         qty -= add;
     }
     qty == 0

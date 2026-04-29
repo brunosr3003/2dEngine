@@ -41,10 +41,16 @@ pub enum EntityKind {
 }
 
 /// Slot de inventario. None = vazio. Quando `qty == 0`, o slot esta vazio.
+///
+/// `instance`: Some(...) para itens equipáveis dropados (rolls aleatórios
+/// + rarity + refinement). None pra itens stackáveis (gold, poções) ou
+/// itens legacy pre-Fase A — esses usam stats base via `item_bonus`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub struct InventorySlot {
     pub item_id: u16,
     pub qty: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance: Option<crate::items::ItemInstance>,
 }
 
 /// Stats iniciais. Todos os jogadores comecam iguais (classless por
@@ -121,13 +127,25 @@ fn default_speed_mult() -> f32 { 1.0 }
 
 /// Slots de equipamento. None = vazio; Some(item_id) = item equipado.
 /// `offhand` = escudo (apenas com armas que permitem — ver `weapon_allows_offhand`).
+///
+/// `*_inst`: instância única do item equipado (rolls + rarity + refinement).
+/// None pra itens stackáveis ou legacy pre-Fase A — esses caem no
+/// `item_bonus(id)` base.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub struct Equipment {
     pub weapon: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weapon_inst: Option<crate::items::ItemInstance>,
     pub armor: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub armor_inst: Option<crate::items::ItemInstance>,
     pub ring: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ring_inst: Option<crate::items::ItemInstance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offhand: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offhand_inst: Option<crate::items::ItemInstance>,
 }
 
 /// Snapshot de uma entidade enviado pelo servidor no tick.
@@ -195,6 +213,11 @@ pub struct EntitySnapshot {
     /// dentro do combo. None fora do tick de attack ou em SHOOT/THRUST.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub combo_step: Option<u8>,
+    /// Dano REAL do hit (pre-clamp pelo HP atual). Cliente usa pra mostrar
+    /// no floating damage text mesmo se overkill — não fica clampado em
+    /// "5/50". None fora do tick de hit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_damage: Option<i32>,
     /// True enquanto o player segura RMB (defesa ativa). Cliente renderiza
     /// pose de bloqueio + (pra arco/cajado/varinha) bolha de energia.
     #[serde(skip_serializing_if = "Option::is_none")]

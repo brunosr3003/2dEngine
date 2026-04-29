@@ -167,6 +167,11 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     )
     .execute(&pool)
     .await?;
+    // Migration Fase A: instance_data armazena ItemInstance serializada
+    // como JSON. NULL pra stackáveis e itens legacy.
+    sqlx::query(
+        "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS instance_data TEXT NULL"
+    ).execute(&pool).await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS equipment (
@@ -178,6 +183,9 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     )
     .execute(&pool)
     .await?;
+    sqlx::query(
+        "ALTER TABLE equipment ADD COLUMN IF NOT EXISTS instance_data TEXT NULL"
+    ).execute(&pool).await?;
 
     // Vault: bau persistente por personagem. Estrutura igual a inventory.
     sqlx::query(
@@ -191,6 +199,9 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     )
     .execute(&pool)
     .await?;
+    sqlx::query(
+        "ALTER TABLE vault ADD COLUMN IF NOT EXISTS instance_data TEXT NULL"
+    ).execute(&pool).await?;
 
     // ── Economy tables ──────────────────────────────────────────────────────
     // Bumpa `economy_version.version` em qualquer ferramenta SQL pra forçar
@@ -519,38 +530,41 @@ async fn load_proficiencies(pool: &PgPool, char_name: &str) -> Result<[u64; 6]> 
 
 async fn load_vault(pool: &PgPool, char_name: &str) -> Result<Vec<shared::InventorySlot>> {
     let mut slots = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
-    let rows = sqlx::query_as::<_, (i32, i32, i32)>(
-        "SELECT slot, item_id, qty FROM vault WHERE character_name = $1",
+    let rows = sqlx::query_as::<_, (i32, i32, i32, Option<String>)>(
+        "SELECT slot, item_id, qty, instance_data FROM vault WHERE character_name = $1",
     )
     .bind(char_name)
     .fetch_all(pool)
     .await?;
-    for (slot, item_id, qty) in rows {
+    for (slot, item_id, qty, inst_json) in rows {
         if slot < 0 || (slot as usize) >= shared::INVENTORY_SLOTS { continue; }
         if qty <= 0 { continue; }
         slots[slot as usize] = shared::InventorySlot {
             item_id: item_id as u16,
             qty: qty as u32,
+            instance: inst_json.and_then(|s| serde_json::from_str(&s).ok()),
         };
     }
     Ok(slots)
 }
 
 async fn load_equipment(pool: &PgPool, char_name: &str) -> Result<shared::Equipment> {
-    let rows = sqlx::query_as::<_, (String, i32)>(
-        "SELECT slot, item_id FROM equipment WHERE character_name = $1",
+    let rows = sqlx::query_as::<_, (String, i32, Option<String>)>(
+        "SELECT slot, item_id, instance_data FROM equipment WHERE character_name = $1",
     )
     .bind(char_name)
     .fetch_all(pool)
     .await?;
     let mut eq = shared::Equipment::default();
-    for (slot, item_id) in rows {
+    for (slot, item_id, inst_json) in rows {
         let iid = item_id as u16;
+        let inst: Option<shared::items::ItemInstance> =
+            inst_json.and_then(|s| serde_json::from_str(&s).ok());
         match slot.as_str() {
-            "weapon"  => eq.weapon  = Some(iid),
-            "armor"   => eq.armor   = Some(iid),
-            "ring"    => eq.ring    = Some(iid),
-            "offhand" => eq.offhand = Some(iid),
+            "weapon"  => { eq.weapon  = Some(iid); eq.weapon_inst  = inst; }
+            "armor"   => { eq.armor   = Some(iid); eq.armor_inst   = inst; }
+            "ring"    => { eq.ring    = Some(iid); eq.ring_inst    = inst; }
+            "offhand" => { eq.offhand = Some(iid); eq.offhand_inst = inst; }
             _ => {}
         }
     }
@@ -559,18 +573,19 @@ async fn load_equipment(pool: &PgPool, char_name: &str) -> Result<shared::Equipm
 
 async fn load_inventory(pool: &PgPool, char_name: &str) -> Result<Vec<shared::InventorySlot>> {
     let mut slots = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
-    let rows = sqlx::query_as::<_, (i32, i32, i32)>(
-        "SELECT slot, item_id, qty FROM inventory WHERE character_name = $1",
+    let rows = sqlx::query_as::<_, (i32, i32, i32, Option<String>)>(
+        "SELECT slot, item_id, qty, instance_data FROM inventory WHERE character_name = $1",
     )
     .bind(char_name)
     .fetch_all(pool)
     .await?;
-    for (slot, item_id, qty) in rows {
+    for (slot, item_id, qty, inst_json) in rows {
         if slot < 0 || (slot as usize) >= shared::INVENTORY_SLOTS { continue; }
         if qty <= 0 { continue; }
         slots[slot as usize] = shared::InventorySlot {
             item_id: item_id as u16,
             qty: qty as u32,
+            instance: inst_json.and_then(|s| serde_json::from_str(&s).ok()),
         };
     }
     Ok(slots)
@@ -645,14 +660,16 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             .await?;
         for (i, slot) in row.inventory.iter().enumerate() {
             if slot.qty == 0 { continue; }
+            let inst_json = slot.instance.and_then(|i| serde_json::to_string(&i).ok());
             sqlx::query(
-                "INSERT INTO inventory (character_name, slot, item_id, qty)
-                 VALUES ($1, $2, $3, $4)",
+                "INSERT INTO inventory (character_name, slot, item_id, qty, instance_data)
+                 VALUES ($1, $2, $3, $4, $5)",
             )
             .bind(&row.name)
             .bind(i as i32)
             .bind(slot.item_id as i32)
             .bind(slot.qty as i32)
+            .bind(inst_json)
             .execute(&mut *tx)
             .await?;
         }
@@ -662,19 +679,21 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             .bind(&row.name)
             .execute(&mut *tx)
             .await?;
-        for (slot_name, item_opt) in [
-            ("weapon",  row.equipment.weapon),
-            ("armor",   row.equipment.armor),
-            ("ring",    row.equipment.ring),
-            ("offhand", row.equipment.offhand),
+        for (slot_name, item_opt, inst_opt) in [
+            ("weapon",  row.equipment.weapon,  row.equipment.weapon_inst),
+            ("armor",   row.equipment.armor,   row.equipment.armor_inst),
+            ("ring",    row.equipment.ring,    row.equipment.ring_inst),
+            ("offhand", row.equipment.offhand, row.equipment.offhand_inst),
         ] {
             if let Some(iid) = item_opt {
+                let inst_json = inst_opt.and_then(|i| serde_json::to_string(&i).ok());
                 sqlx::query(
-                    "INSERT INTO equipment (character_name, slot, item_id) VALUES ($1, $2, $3)",
+                    "INSERT INTO equipment (character_name, slot, item_id, instance_data) VALUES ($1, $2, $3, $4)",
                 )
                 .bind(&row.name)
                 .bind(slot_name)
                 .bind(iid as i32)
+                .bind(inst_json)
                 .execute(&mut *tx)
                 .await?;
             }
@@ -702,14 +721,16 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             .await?;
         for (i, slot) in row.vault.iter().enumerate() {
             if slot.qty == 0 { continue; }
+            let inst_json = slot.instance.and_then(|i| serde_json::to_string(&i).ok());
             sqlx::query(
-                "INSERT INTO vault (character_name, slot, item_id, qty)
-                 VALUES ($1, $2, $3, $4)",
+                "INSERT INTO vault (character_name, slot, item_id, qty, instance_data)
+                 VALUES ($1, $2, $3, $4, $5)",
             )
             .bind(&row.name)
             .bind(i as i32)
             .bind(slot.item_id as i32)
             .bind(slot.qty as i32)
+            .bind(inst_json)
             .execute(&mut *tx)
             .await?;
         }
