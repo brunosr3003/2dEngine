@@ -61,6 +61,12 @@ pub const PROJ_TTL: f32 = 1.5;
 /// Cooldown entre ataques em segundos.
 pub const ATTACK_COOLDOWN: f32 = 0.25;
 
+/// Tempo (s) sem atacar antes do combo melee resetar pra step 0 (Slash1).
+/// Mantém em sync com client `_comboResetTime` em CharacterAnimator.
+pub const COMBO_RESET_TIME: f32 = 1.0;
+/// Quantidade de steps no combo melee. 0=Slash1, 1=Slash2, 2=Finisher.
+pub const COMBO_STEPS: u8 = 3;
+
 /// Cooldown estendido para Bow. Sincroniza com a anim de saque do arco
 /// (`ShootStraight`: 8 frames × 70ms = 560ms).
 pub const BOW_ATTACK_COOLDOWN: f32 = 0.55;

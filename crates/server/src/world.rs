@@ -179,6 +179,10 @@ pub struct PlayerTag {
     /// `EntitySnapshot.attack_anim`, que faz outros clientes tocarem a anim
     /// de ataque correta. None nos demais ticks.
     pub attack_anim_pending: Option<u8>,
+    /// Step do combo no tick em que attack_anim_pending=SLASH. Usado pelos
+    /// clientes remotos pra escolher Slash1/Slash2/Finisher. None fora do
+    /// tick de attack ou em SHOOT/THRUST.
+    pub combo_step_pending: Option<u8>,
 }
 
 /// Tag que marca uma entidade como invisivel aos sistemas de targeting.
@@ -214,6 +218,13 @@ pub struct Session {
     pub hurt_until: f32,
     /// Vetor unitário do alvo TOWARD o último atacante (pra knockback futuro).
     pub hurt_dir: Vec2,
+    /// Step do combo melee atual (0=Slash1, 1=Slash2, 2=Finisher/Thrust). Server
+    /// cicla a cada SLASH attack e replica via EntitySnapshot.combo_step pra que
+    /// outros clientes vejam o alternance correto. Reset após
+    /// shared::COMBO_RESET_TIME sem ataque OU ao tomar hurt.
+    pub combo_step: u8,
+    /// sim_time do último ataque melee — usado pra reset do combo.
+    pub combo_last_attack: f32,
     pub respawn_timer: Option<f32>,
     /// True enquanto HP<=0 e player esta incapacitado aguardando se levantar.
     pub downed: bool,
@@ -1103,7 +1114,7 @@ impl GameWorld {
             Velocity(Vec2::ZERO),
             health,
             EntityKind::Player,
-            PlayerTag { name: success.username.clone(), player_id: pid, attack_anim_pending: None },
+            PlayerTag { name: success.username.clone(), player_id: pid, attack_anim_pending: None, combo_step_pending: None },
         ));
 
         if let Some(s) = self.sessions.get_mut(&sid) {
@@ -1376,6 +1387,8 @@ impl GameWorld {
                 dash_cooldown: 0.0,
                 hurt_until: 0.0,
                 hurt_dir: Vec2::ZERO,
+                combo_step: 0,
+                combo_last_attack: 0.0,
                 respawn_timer: None,
                 downed: false,
                 downed_heal_timer: 0.0,
@@ -1669,6 +1682,9 @@ impl GameWorld {
             damage: i32,
             is_crit: bool,
             is_melee: bool,
+            /// Step do combo (0=Slash1, 1=Slash2, 2=Finisher). Só relevante
+            /// pra SLASH attacks; ignorado em SHOOT/THRUST.
+            combo_step: u8,
             /// Visual do projétil: 0 = arrow (Bow), 1 = fireball (Staff/Wand).
             proj_kind: u8,
             /// Codigo de animacao (`shared::attack_anim::*`) que outros
@@ -1860,6 +1876,19 @@ impl GameWorld {
             } else {
                 session.stats.attack_damage
             };
+            // Combo step: incrementa só em SLASH (melee). Reset se passou
+            // COMBO_RESET_TIME desde o último attack. Replicado via snapshot.
+            let is_melee = shared::weapon_is_melee(weapon_id);
+            let attack_anim_code = shared::weapon_attack_anim(weapon_id);
+            let mut combo_step: u8 = 0;
+            if wants_attack && is_melee && attack_anim_code == shared::components::attack_anim::SLASH {
+                if self.sim_time_s - session.combo_last_attack > shared::COMBO_RESET_TIME {
+                    session.combo_step = 0;
+                }
+                combo_step = session.combo_step;
+                session.combo_step = (session.combo_step + 1) % shared::COMBO_STEPS;
+                session.combo_last_attack = self.sim_time_s;
+            }
             input_results.push(InputResult {
                 entity,
                 new_vel: dir * speed,
@@ -1868,9 +1897,10 @@ impl GameWorld {
                 aim: frame.aim,
                 damage: dmg_final,
                 is_crit: crit,
-                is_melee: shared::weapon_is_melee(weapon_id),
+                is_melee,
                 proj_kind,
-                attack_anim_code: shared::weapon_attack_anim(weapon_id),
+                attack_anim_code,
+                combo_step,
                 dash_started: wants_dash,
             });
         }
@@ -2167,6 +2197,9 @@ impl GameWorld {
                 // animacao pros outros clientes neste tick.
                 if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(ir.entity) {
                     tag.attack_anim_pending = Some(ir.attack_anim_code);
+                    if ir.attack_anim_code == shared::components::attack_anim::SLASH {
+                        tag.combo_step_pending = Some(ir.combo_step);
+                    }
                 }
                 if ir.is_melee {
                     melee_swings.push(MeleeSwing {
@@ -2532,6 +2565,9 @@ impl GameWorld {
             {
                 s.hurt_until = hurt_until_ts;
                 s.hurt_dir   = hurt_dir;
+                // Reset combo: levar dano interrompe o flow do combo.
+                s.combo_step = 0;
+                s.combo_last_attack = 0.0;
             }
             // Também marca pra snapshot deste tick (cliente lê e seta facing).
             self.hit_this_tick.insert(target_id, hurt_dir);
@@ -2988,7 +3024,7 @@ impl GameWorld {
             Velocity(Vec2::ZERO),
             Health { current: 100, max: 100 },
             EntityKind::Player,
-            PlayerTag { name: name.clone(), player_id: pid, attack_anim_pending: None },
+            PlayerTag { name: name.clone(), player_id: pid, attack_anim_pending: None, combo_step_pending: None },
         ));
         if let Some(s) = self.sessions.get_mut(&sid) {
             s.entity = Some(e);
@@ -3011,12 +3047,18 @@ impl GameWorld {
             .collect();
 
         // Mesma logica pra players: drena attack_anim_pending por PlayerTag.
-        let player_attack_anim: HashMap<EntityId, u8> = self
-            .ecs
-            .query::<(&NetId, &mut PlayerTag)>()
-            .iter()
-            .filter_map(|(_, (net, t))| t.attack_anim_pending.take().map(|a| (net.0, a)))
-            .collect();
+        // Também drena combo_step_pending no MESMO walk pra evitar dois queries.
+        let mut player_attack_anim: HashMap<EntityId, u8> = HashMap::new();
+        let mut player_combo_step: HashMap<EntityId, u8> = HashMap::new();
+        for (_, (net, t)) in self.ecs.query::<(&NetId, &mut PlayerTag)>().iter()
+        {
+            if let Some(a) = t.attack_anim_pending.take() {
+                player_attack_anim.insert(net.0, a);
+            }
+            if let Some(s) = t.combo_step_pending.take() {
+                player_combo_step.insert(net.0, s);
+            }
+        }
 
         // Lookup rapido por entity_id pra popular weapon_id/downed/visual em
         // snapshots de Player. Sessao não autenticada não entra (logged_in=false).
@@ -3083,6 +3125,7 @@ impl GameWorld {
                     } else {
                         player_attack_anim.get(&net.0).copied()
                     },
+                    combo_step: player_combo_step.get(&net.0).copied(),
                     weapon_id: overlay.and_then(|o| o.weapon_id),
                     offhand_id: overlay.and_then(|o| o.offhand_id),
                     downed: overlay.map(|o| o.downed),

@@ -190,6 +190,11 @@ pub struct EntitySnapshot {
     /// None nos demais ticks; Some(true/false) só quando hp_dropped.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_crit: Option<bool>,
+    /// Step do combo melee (0=Slash1, 1=Slash2, 2=Finisher). Acompanha
+    /// `attack_anim=SLASH` pra que outros clientes toquem a anim correta
+    /// dentro do combo. None fora do tick de attack ou em SHOOT/THRUST.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub combo_step: Option<u8>,
     /// True enquanto o player segura RMB (defesa ativa). Cliente renderiza
     /// pose de bloqueio + (pra arco/cajado/varinha) bolha de energia.
     #[serde(skip_serializing_if = "Option::is_none")]
