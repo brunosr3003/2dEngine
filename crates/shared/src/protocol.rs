@@ -54,6 +54,11 @@ pub enum ClientMessage {
     /// presente no slot. Custo: gold proporcional ao refinement atual.
     /// Falha (chance crescente com nível) reseta refinement pra 0.
     RefineItem { slot: u16 },
+    /// Encrava uma gema (`gem_slot`) em um socket livre do item em
+    /// `item_slot`. Requer ItemInstance com `sockets > 0`. Gema é
+    /// consumida do inventário. Falha silenciosamente se sem socket
+    /// livre ou item incompatível.
+    SocketGem { item_slot: u16, gem_slot: u16 },
     RequestDisconnect,
 }
 
@@ -159,6 +164,10 @@ pub enum ServerMessage {
     VaultOpen { slots: Vec<crate::InventorySlot> },
     VaultUpdate { slots: Vec<crate::InventorySlot> },
     VaultClose,
+    /// Sinaliza ao cliente abrir o painel do ferreiro (refinar + socket gem).
+    /// Sem payload — cliente apenas mostra a UI.
+    BlacksmithOpen,
+    BlacksmithClose,
     DownedUpdate { active: bool, dhp: i32, dhp_max: i32, timer_s: f32 },
     FameUpdate { fame: u64 },
     AuraUpdate { aura: u64 },

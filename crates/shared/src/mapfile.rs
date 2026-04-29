@@ -50,6 +50,11 @@ pub enum MapEntity {
         route_id: u32,
         skin:     u8,
     },
+    /// Ferreiro — refina itens e encrava gemas em sockets. `skin` é o preset.
+    Blacksmith {
+        name: String,
+        skin: u8,
+    },
     /// Definição de uma rota nomeada — lista ordenada de waypoints absolutos
     /// (em coords de tile). NPCs com WanderNpc { route_id } seguem em loop.
     NpcRoute {

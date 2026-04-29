@@ -120,6 +120,12 @@ pub struct VendorTag {
     pub name:    String,
 }
 
+/// Tag em NPC ferreiro — interagir abre painel de refinamento + socket gem.
+#[derive(Clone)]
+pub struct BlacksmithTag {
+    pub name: String,
+}
+
 /// Tag em NPC ambiental que anda por uma rota (waypoints em loop).
 /// `current_idx` é o waypoint atual; `pause_until` é sim_time pra retomar
 /// movimento depois de chegar num waypoint (pequena pausa pra naturalidade).
@@ -757,6 +763,21 @@ impl GameWorld {
                         name, shop_id, pos.x, pos.y
                     );
                 }
+                MapEntity::Blacksmith { name, skin } => {
+                    let eid = self.alloc_entity_id();
+                    self.ecs.spawn((
+                        NetId(eid),
+                        Position(pos),
+                        Velocity(Vec2::ZERO),
+                        EntityKind::Npc(4), // 4 = blacksmith
+                        BlacksmithTag { name: name.clone() },
+                        NpcSkin { preset: *skin },
+                    ));
+                    tracing::info!(
+                        "mapfile: blacksmith '{}' at ({:.1},{:.1})",
+                        name, pos.x, pos.y
+                    );
+                }
                 MapEntity::WanderNpc { name, route_id, skin } => {
                     let eid = self.alloc_entity_id();
                     self.ecs.spawn((
@@ -990,6 +1011,77 @@ impl GameWorld {
         }
         s.inventory_dirty = true;
         // Se era item equipado (não é o caso aqui — só refina inv), recompute stats
+    }
+
+    /// Encrava uma gema (`gem_slot`) num socket livre do item em `item_slot`.
+    /// Consome a gema do inventário. Item precisa ter ItemInstance com pelo
+    /// menos 1 socket livre. Gema precisa ser id GEM/IRON_INGOT/DRAGON_SCALE
+    /// (ver `shared::items::gem_bonus`).
+    fn handle_socket_gem(&mut self, sid: SessionId, item_slot: u16, gem_slot: u16) {
+        let Some(s) = self.sessions.get_mut(&sid) else { return; };
+        if !s.logged_in { return; }
+        let item_idx = item_slot as usize;
+        let gem_idx  = gem_slot  as usize;
+        if item_idx >= s.inventory.len() || gem_idx >= s.inventory.len() {
+            return;
+        }
+        if item_idx == gem_idx { return; }
+        // Valida gema
+        let gem_id = s.inventory[gem_idx].item_id;
+        if s.inventory[gem_idx].qty == 0
+            || (gem_id != shared::item_id::GEM
+                && gem_id != shared::item_id::IRON_INGOT
+                && gem_id != shared::item_id::DRAGON_SCALE)
+        {
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "[ferreiro]".into(),
+                text: "isso não é uma gema".into(),
+            });
+            return;
+        }
+        // Valida item destino
+        let Some(mut inst) = s.inventory[item_idx].instance else {
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "[ferreiro]".into(),
+                text: "esse item não suporta sockets".into(),
+            });
+            return;
+        };
+        if inst.sockets == 0 {
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "[ferreiro]".into(),
+                text: "esse item não tem sockets".into(),
+            });
+            return;
+        }
+        // Procura socket livre
+        let free = inst.socketed_gems.iter().position(|&g| g == 0);
+        let Some(slot_pos) = free else {
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "[ferreiro]".into(),
+                text: "todos os sockets já estão ocupados".into(),
+            });
+            return;
+        };
+        if slot_pos >= inst.sockets as usize {
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "[ferreiro]".into(),
+                text: "todos os sockets já estão ocupados".into(),
+            });
+            return;
+        }
+        inst.socketed_gems[slot_pos] = gem_id;
+        s.inventory[item_idx].instance = Some(inst);
+        // Consome a gema
+        s.inventory[gem_idx].qty -= 1;
+        if s.inventory[gem_idx].qty == 0 {
+            s.inventory[gem_idx] = shared::InventorySlot::default();
+        }
+        s.inventory_dirty = true;
+        let _ = s.handle.to_client.send(ServerMessage::Chat {
+            from: "[ferreiro]".into(),
+            text: format!("✓ gema encravada (socket {}/{})", slot_pos + 1, inst.sockets),
+        });
     }
 
     fn handle_reset_stats(&mut self, sid: SessionId) {
@@ -1699,6 +1791,9 @@ impl GameWorld {
             }
             ClientMessage::RefineItem { slot } => {
                 self.handle_refine_item(id, slot);
+            }
+            ClientMessage::SocketGem { item_slot, gem_slot } => {
+                self.handle_socket_gem(id, item_slot, gem_slot);
             }
             ClientMessage::RequestDisconnect => self.on_disconnect(id),
         }
@@ -3857,6 +3952,9 @@ impl GameWorld {
                 let _ = handle.to_client.send(ServerMessage::ShopOpen {
                     items, sell_prices, vendor_id: vendor_eid, buy_mult, sell_mult,
                 });
+            }
+            Some((_, 4, _, _)) => {
+                let _ = handle.to_client.send(ServerMessage::BlacksmithOpen);
             }
             _ => {} // outros tipos de NPC (3=wander) sem interação por ora
         }
