@@ -249,7 +249,7 @@ pub const fn xp_for_level(level: u32) -> u64 {
 pub const ENEMY_START_COUNT: usize = 24;
 
 /// Numero de slots do inventario do jogador.
-pub const INVENTORY_SLOTS: usize = 24;
+pub const INVENTORY_SLOTS: usize = 40;
 
 /// Raio em tiles pra coletar um loot.
 pub const PICKUP_RADIUS: f32 = 0.8;
