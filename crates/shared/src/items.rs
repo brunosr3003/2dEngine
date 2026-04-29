@@ -149,6 +149,14 @@ pub fn item_template(item_id: u16) -> ItemTemplate {
         RING         => ItemTemplate { dex: StatRange::new(2, 8),   wis: StatRange::new(1, 5), ..Default::default() },
         AMULET       => ItemTemplate { hp_max: StatRange::new(8, 25), mp_max: StatRange::new(15, 45), wis: StatRange::new(4, 12), defense: StatRange::new(0, 3), ..Default::default() },
         LUCKY_RING   => ItemTemplate { hp_max: StatRange::new(5, 18), mp_max: StatRange::new(10, 30), attack_damage: StatRange::new(1, 4), dex: StatRange::new(3, 9), wis: StatRange::new(1, 4), ..Default::default() },
+        // === Fase D — novos ===
+        SCIMITAR     => ItemTemplate { attack_damage: StatRange::new(6, 14),  dex: StatRange::new(4, 10), ..Default::default() },
+        HAMMER       => ItemTemplate { attack_damage: StatRange::new(16, 32), hp_max: StatRange::new(15, 35), defense: StatRange::new(2, 6), ..Default::default() },
+        SPEAR        => ItemTemplate { attack_damage: StatRange::new(12, 22), dex: StatRange::new(3, 9), ..Default::default() },
+        CROSSBOW     => ItemTemplate { attack_damage: StatRange::new(14, 24), dex: StatRange::new(6, 12), ..Default::default() },
+        HEAVY_SHIELD => ItemTemplate { hp_max: StatRange::new(70, 140), defense: StatRange::new(10, 20), ..Default::default() },
+        PENDANT      => ItemTemplate { hp_max: StatRange::new(15, 35), mp_max: StatRange::new(20, 50), wis: StatRange::new(2, 6), defense: StatRange::new(0, 2), ..Default::default() },
+        CHARM        => ItemTemplate { mp_max: StatRange::new(5, 20), attack_damage: StatRange::new(2, 6), dex: StatRange::new(2, 6), wis: StatRange::new(2, 6), ..Default::default() },
         _ => ItemTemplate::default(),
     }
 }
@@ -184,6 +192,13 @@ pub struct ItemInstance {
     /// vazias têm name_id=0.
     #[serde(default)]
     pub affixes: [AffixSlot; MAX_AFFIXES],
+    /// Sockets disponíveis (vem da rarity). 0..3.
+    #[serde(default)]
+    pub sockets: u8,
+    /// Gemas inseridas nos sockets (item_id da gema, 0 = vazio).
+    /// Aplicado em ordem: socketed_gems[0] vai pro 1° socket, etc.
+    #[serde(default)]
+    pub socketed_gems: [u16; 3],
 }
 
 fn default_ilvl() -> u16 { 1 }
@@ -382,6 +397,8 @@ impl ItemInstance {
             wis:           tpl.wis.roll(rng(), mult),
             defense:       tpl.defense.roll(rng(), mult),
             affixes: [AffixSlot::default(); MAX_AFFIXES],
+            sockets: sockets_for_rarity(rarity),
+            socketed_gems: [0; 3],
         };
         // Affixes: Magic=1, Rare=2 (1pre+1suf), Epic=3 (2pre+1suf),
         // Legendary=4 (2pre+2suf). Common não tem.
@@ -440,6 +457,21 @@ impl ItemInstance {
                 _ => {}
             }
         }
+        // Gemas socketed (não recebem refinement — bonus fixo).
+        for &gid in &self.socketed_gems {
+            if gid == 0 { continue; }
+            if let Some((stat, val, _)) = gem_bonus(gid) {
+                match stat {
+                    AffixStat::Hp      => b.hp_max += val,
+                    AffixStat::Mp      => b.mp_max += val,
+                    AffixStat::Attack  => b.attack_damage += val,
+                    AffixStat::Defense => b.defense += val,
+                    AffixStat::Dex     => b.dex += val,
+                    AffixStat::Wis     => b.wis += val,
+                    _ => {}
+                }
+            }
+        }
         b
     }
 
@@ -471,4 +503,103 @@ impl ItemInstance {
 /// cresce ~1% por level. Fórmula: 1.0 + (ilvl - 1) × 0.015.
 pub fn ilvl_scale(item_level: u16) -> f32 {
     1.0 + (item_level.saturating_sub(1) as f32) * 0.015
+}
+
+// ── Fase D: Item Sets ───────────────────────────────────────────────────
+// Items pertencem a um set_id. Equipar N peças do mesmo set ativa
+// `set_bonus(set_id, n)`. Não-stackable: cada peça única (anel + amuleto
+// contam como 2 peças se ambos do set).
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SetBonus {
+    pub hp:       i32,
+    pub mp:       i32,
+    pub atk:      i32,
+    pub def:      i32,
+    pub crit:     f32,
+    pub atk_spd:  f32,
+}
+
+/// Set ID por item_id. 0 = sem set.
+pub fn item_set_id(item_id: u16) -> u8 {
+    use crate::constants::item_id::*;
+    match item_id {
+        SWORD       | ARMOR         | RING       => 1, // Set do Aventureiro
+        STAFF       | ROBE          | AMULET     => 2, // Set do Sábio
+        DAGGER      | LEATHER_ARMOR | LUCKY_RING => 3, // Set do Ladino
+        GREAT_SWORD | PLATE_ARMOR   | SHIELD     => 4, // Set do Bárbaro
+        WAND        | BOW                        => 5, // Set do Caçador (só pra suffixos)
+        _ => 0,
+    }
+}
+
+pub fn set_name(set_id: u8) -> &'static str {
+    match set_id {
+        1 => "Conjunto do Aventureiro",
+        2 => "Conjunto do Sábio",
+        3 => "Conjunto do Ladino",
+        4 => "Conjunto do Bárbaro",
+        5 => "Conjunto do Caçador",
+        _ => "",
+    }
+}
+
+/// Quantidade total de peças no set.
+pub fn set_total_pieces(set_id: u8) -> u8 {
+    match set_id {
+        1 | 2 | 3 => 3,
+        4         => 3,
+        5         => 2,
+        _ => 0,
+    }
+}
+
+/// Bonus aplicado quando `pieces` peças do `set_id` estão equipadas.
+/// Cumulativo (set_bonus_for(2) inclui bonus de 2-piece, etc.) — caller
+/// chama uma vez com a contagem total e usa o valor retornado.
+pub fn set_bonus_for(set_id: u8, pieces: u8) -> SetBonus {
+    if pieces < 2 { return SetBonus::default(); }
+    match (set_id, pieces) {
+        // Aventureiro: balanced
+        (1, 2) => SetBonus { hp: 50, atk: 3, ..Default::default() },
+        (1, 3) => SetBonus { hp: 120, atk: 8, def: 4, crit: 0.03, ..Default::default() },
+        // Sábio: caster
+        (2, 2) => SetBonus { mp: 60, atk: 4, ..Default::default() },
+        (2, 3) => SetBonus { mp: 150, atk: 10, atk_spd: 0.10, ..Default::default() },
+        // Ladino: dex
+        (3, 2) => SetBonus { atk: 5, crit: 0.04, ..Default::default() },
+        (3, 3) => SetBonus { atk: 12, crit: 0.10, atk_spd: 0.08, ..Default::default() },
+        // Bárbaro: tanky DPS
+        (4, 2) => SetBonus { hp: 80, atk: 8, def: 4, ..Default::default() },
+        (4, 3) => SetBonus { hp: 200, atk: 18, def: 10, ..Default::default() },
+        // Caçador: 2-piece only
+        (5, 2) => SetBonus { atk: 6, atk_spd: 0.08, crit: 0.05, ..Default::default() },
+        _ => SetBonus::default(),
+    }
+}
+
+// ── Fase D: Sockets/Gems ────────────────────────────────────────────────
+// Gems têm um stat fixo. Inserir gema num socket adiciona o stat.
+// Socket count vem do template do item (tier rarity define max sockets).
+
+pub fn gem_bonus(gem_id: u16) -> Option<(AffixStat, i32, f32)> {
+    use crate::constants::item_id::*;
+    match gem_id {
+        GEM         => Some((AffixStat::Attack, 5, 0.0)),
+        IRON_INGOT  => Some((AffixStat::Defense, 3, 0.0)),
+        DRAGON_SCALE => Some((AffixStat::Hp, 40, 0.0)),
+        _ => None,
+    }
+}
+
+/// Quantos sockets um item tem baseado em sua rarity (Magic=0,
+/// Rare=1, Epic=2, Legendary=3). Common não tem socket.
+pub fn sockets_for_rarity(r: ItemRarity) -> u8 {
+    match r {
+        ItemRarity::Common    => 0,
+        ItemRarity::Magic     => 0,
+        ItemRarity::Rare      => 1,
+        ItemRarity::Epic      => 2,
+        ItemRarity::Legendary => 3,
+    }
 }

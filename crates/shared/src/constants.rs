@@ -285,6 +285,14 @@ pub mod item_id {
     pub const GEM:             u16 = 21;  // valioso, vendavel
     pub const IRON_INGOT:      u16 = 22;
     pub const DRAGON_SCALE:    u16 = 23;  // raro de boss
+    // === Fase D — novas armas + acessórios ===
+    pub const SCIMITAR:        u16 = 24;  // espada curva, atk+atk_spd
+    pub const HAMMER:          u16 = 25;  // martelo, atk alto + def
+    pub const SPEAR:           u16 = 26;  // lança, atk+dex
+    pub const CROSSBOW:        u16 = 27;  // besta, ranged + crit
+    pub const HEAVY_SHIELD:    u16 = 28;  // escudo pesado, def alta
+    pub const PENDANT:         u16 = 29;  // pingente, hp+mp
+    pub const CHARM:           u16 = 30;  // amuleto crit
 }
 
 // item_stack_max vive no DB (server crate::economy).
@@ -295,9 +303,11 @@ pub mod item_id {
 pub fn weapon_attack_anim(weapon_id: u16) -> u8 {
     use crate::components::attack_anim::*;
     match weapon_id {
-        id if id == item_id::BOW   => SHOOT,
-        id if id == item_id::STAFF => THRUST,
-        id if id == item_id::WAND  => THRUST,
+        id if id == item_id::BOW       => SHOOT,
+        id if id == item_id::CROSSBOW  => SHOOT,
+        id if id == item_id::STAFF     => THRUST,
+        id if id == item_id::WAND      => THRUST,
+        id if id == item_id::SPEAR     => THRUST,
         _ => SLASH,
     }
 }
@@ -311,15 +321,22 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
             || id == item_id::DAGGER
             || id == item_id::GREAT_SWORD
             || id == item_id::BOW
-            || id == item_id::WAND           => Some(EquipSlot::Weapon),
-        id if id == item_id::SHIELD          => Some(EquipSlot::Offhand),
+            || id == item_id::WAND
+            || id == item_id::SCIMITAR
+            || id == item_id::HAMMER
+            || id == item_id::SPEAR
+            || id == item_id::CROSSBOW       => Some(EquipSlot::Weapon),
+        id if id == item_id::SHIELD
+            || id == item_id::HEAVY_SHIELD   => Some(EquipSlot::Offhand),
         id if id == item_id::ARMOR
             || id == item_id::LEATHER_ARMOR
             || id == item_id::PLATE_ARMOR
             || id == item_id::ROBE           => Some(EquipSlot::Armor),
         id if id == item_id::RING
             || id == item_id::AMULET
-            || id == item_id::LUCKY_RING     => Some(EquipSlot::Ring),
+            || id == item_id::LUCKY_RING
+            || id == item_id::PENDANT
+            || id == item_id::CHARM          => Some(EquipSlot::Ring),
         _                                    => None,
     }
 }
@@ -337,6 +354,8 @@ pub fn weapon_allows_offhand(weapon_id: u16) -> bool {
     weapon_id == 0
         || weapon_id == item_id::SWORD
         || weapon_id == item_id::DAGGER
+        || weapon_id == item_id::SCIMITAR
+        || weapon_id == item_id::HAMMER
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -541,6 +560,12 @@ pub const fn weapon_is_melee(item_id: u16) -> bool {
         || item_id == item_id::SWORD
         || item_id == item_id::GREAT_SWORD
         || item_id == item_id::DAGGER
+        || item_id == item_id::SCIMITAR
+        || item_id == item_id::HAMMER
+        // SPEAR e melee mas usa anim Thrust — atualmente damage gen e
+        // controlado pela melee path baseado em is_melee, então mantém
+        // como melee aqui (cone na frente).
+        || item_id == item_id::SPEAR
 }
 
 /// True se o inimigo desse kind ataca em melee (cone de dano direto na frente)
@@ -574,6 +599,14 @@ pub const fn item_bonus(item_id: u16) -> EquipBonus {
         id if id == item_id::RING         => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  0, dex: 5,  wis: 3, defense: 0 },
         id if id == item_id::AMULET       => EquipBonus { hp_max: 15,  mp_max:  30, attack_damage:  0, dex: 0,  wis: 8, defense: 1 },
         id if id == item_id::LUCKY_RING   => EquipBonus { hp_max: 10,  mp_max:  20, attack_damage:  2, dex: 6,  wis: 2, defense: 0 },
+        // === Fase D — novas armas / armaduras / acessórios ===
+        id if id == item_id::SCIMITAR     => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  8, dex: 6,  wis: 0, defense: 0 },
+        id if id == item_id::HAMMER       => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage: 22, dex: -2, wis: 0, defense: 3 },
+        id if id == item_id::SPEAR        => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 16, dex: 5,  wis: 0, defense: 0 },
+        id if id == item_id::CROSSBOW     => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 18, dex: 8,  wis: 0, defense: 0 },
+        id if id == item_id::HEAVY_SHIELD => EquipBonus { hp_max: 110, mp_max:   0, attack_damage: -8, dex: -3, wis: 0, defense: 14 },
+        id if id == item_id::PENDANT      => EquipBonus { hp_max: 25,  mp_max:  35, attack_damage:  0, dex: 0,  wis: 4, defense: 1 },
+        id if id == item_id::CHARM        => EquipBonus { hp_max:  0,  mp_max:  10, attack_damage:  3, dex: 4,  wis: 4, defense: 0 },
         _                                 => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0, defense: 0 },
     }
 }

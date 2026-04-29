@@ -425,6 +425,60 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         tracing::info!("economy seed: {} loot drops inseridos", drops.len());
     }
 
+    // Seed aditivo — itens novos (ids 24-30) só são inseridos se ainda não
+    // existirem na tabela. Permite expandir o pool de drops sem resetar DB.
+    let new_drops: &[(i32, u16, i32, i32, f32)] = &[
+        // Scimitar (24) — light melee, ninja/ranger
+        (3, item_id::SCIMITAR,      1, 1, 0.18),
+        (2, item_id::SCIMITAR,      1, 1, 0.10),
+        (6, item_id::SCIMITAR,      1, 1, 0.10),
+        // Hammer (25) — heavy weapon
+        (5, item_id::HAMMER,        1, 1, 0.18),
+        (1, item_id::HAMMER,        1, 1, 0.12),
+        (7, item_id::HAMMER,        1, 1, 0.40),
+        // Spear (26) — pole
+        (1, item_id::SPEAR,         1, 1, 0.16),
+        (5, item_id::SPEAR,         1, 1, 0.14),
+        // Crossbow (27) — ranged
+        (2, item_id::CROSSBOW,      1, 1, 0.15),
+        (6, item_id::CROSSBOW,      1, 1, 0.18),
+        (7, item_id::CROSSBOW,      1, 1, 0.45),
+        // Heavy Shield (28) — defense
+        (1, item_id::HEAVY_SHIELD,  1, 1, 0.16),
+        (5, item_id::HEAVY_SHIELD,  1, 1, 0.10),
+        (7, item_id::HEAVY_SHIELD,  1, 1, 0.40),
+        // Pendant (29) — joia
+        (4, item_id::PENDANT,       1, 1, 0.10),
+        (7, item_id::PENDANT,       1, 1, 0.35),
+        (2, item_id::PENDANT,       1, 1, 0.08),
+        (6, item_id::PENDANT,       1, 1, 0.08),
+        // Charm (30) — joia
+        (3, item_id::CHARM,         1, 1, 0.12),
+        (4, item_id::CHARM,         1, 1, 0.10),
+        (2, item_id::CHARM,         1, 1, 0.08),
+        (6, item_id::CHARM,         1, 1, 0.08),
+    ];
+    let mut inserted = 0usize;
+    for (kind, item, qmin, qmax, chance) in new_drops {
+        let exists: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM loot_drops WHERE enemy_kind = $1 AND item_id = $2"
+        )
+        .bind(kind).bind(*item as i32)
+        .fetch_one(pool).await?;
+        if exists == 0 {
+            sqlx::query(
+                "INSERT INTO loot_drops (enemy_kind, item_id, qty_min, qty_max, chance) \
+                 VALUES ($1, $2, $3, $4, $5)"
+            )
+            .bind(kind).bind(*item as i32).bind(qmin).bind(qmax).bind(chance)
+            .execute(pool).await?;
+            inserted += 1;
+        }
+    }
+    if inserted > 0 {
+        tracing::info!("economy seed: {} loot drops aditivos (itens novos)", inserted);
+    }
+
     // Seed dos shops dos vendors. shop_id=1 fica como generalista (legacy
     // do shop antigo). Demais são especializados.
     let shop_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vendor_shops")
@@ -470,6 +524,34 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         }
         tracing::info!("economy seed: {} vendor shops inseridos", shops.len());
     }
+
+    // Adiciona itens novos aos vendors existentes (idempotente via ON CONFLICT).
+    let new_shop_items: &[(i32, u16)] = &[
+        (2, item_id::SCIMITAR), (2, item_id::SPEAR), (2, item_id::HAMMER),
+        (4, item_id::HEAVY_SHIELD),
+        (5, item_id::PENDANT), (5, item_id::CHARM),
+        (6, item_id::CROSSBOW),
+    ];
+    for (sid, item) in new_shop_items {
+        let exists: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM vendor_shop_items WHERE shop_id = $1 AND item_id = $2"
+        )
+        .bind(sid).bind(*item as i32)
+        .fetch_one(pool).await?;
+        if exists == 0 {
+            let next_order: i32 = sqlx::query_scalar(
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM vendor_shop_items WHERE shop_id = $1"
+            )
+            .bind(sid).fetch_one(pool).await?;
+            sqlx::query(
+                "INSERT INTO vendor_shop_items (shop_id, item_id, sort_order) \
+                 VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
+            )
+            .bind(sid).bind(*item as i32).bind(next_order)
+            .execute(pool).await?;
+        }
+    }
+
     Ok(())
 }
 

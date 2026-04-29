@@ -4508,6 +4508,16 @@ fn effective_stats(
         (equip.ring,    equip.ring_inst),
         (equip.offhand, equip.offhand_inst),
     ];
+    // Set tracking — count quantas peças de cada set_id estão equipadas.
+    let mut set_pieces: std::collections::HashMap<u8, u8> = std::collections::HashMap::new();
+    for (id_opt, _) in slot_pairs {
+        if let Some(id) = id_opt {
+            let sid = shared::items::item_set_id(id);
+            if sid > 0 {
+                *set_pieces.entry(sid).or_insert(0) += 1;
+            }
+        }
+    }
     for (id_opt, inst_opt) in slot_pairs {
         if let Some(id) = id_opt {
             // Base bonus: stats fixos do item_id (legado / fallback)
@@ -4534,6 +4544,17 @@ fn effective_stats(
                 s.hp_regen          += hpr;
             }
         }
+    }
+
+    // Aplica set bonuses (Fase D). Cada set ativa em 2+ peças.
+    for (&sid, &pieces) in set_pieces.iter() {
+        let sb = shared::items::set_bonus_for(sid, pieces);
+        s.hp_max            += sb.hp;
+        s.mp_max            += sb.mp;
+        s.attack_damage     += sb.atk;
+        s.defense           += sb.def;
+        s.crit_chance       += sb.crit;
+        s.attack_speed_mult += sb.atk_spd;
     }
 
     // Scaling da proficiencia da arma EQUIPADA.
