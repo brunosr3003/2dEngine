@@ -293,6 +293,22 @@ pub mod item_id {
     pub const HEAVY_SHIELD:    u16 = 28;  // escudo pesado, def alta
     pub const PENDANT:         u16 = 29;  // pingente, hp+mp
     pub const CHARM:           u16 = 30;  // amuleto crit
+
+    // === Fase E — slots novos (helm/legs/boots/gloves/belt/cape/necklace) ===
+    pub const HELM_LEATHER:    u16 = 31;  // capacete leve, def+dex
+    pub const HELM_PLATE:      u16 = 32;  // elmo pesado, hp+def
+    pub const LEGS_LEATHER:    u16 = 33;  // calça leve, dex+def
+    pub const LEGS_PLATE:      u16 = 34;  // calça pesada, hp+def
+    pub const BOOTS_LEATHER:   u16 = 35;  // botas leves, mov+dex
+    pub const BOOTS_PLATE:     u16 = 36;  // botas pesadas, def+hp
+    pub const GLOVES_LEATHER:  u16 = 37;  // luvas leves, atk_spd+dex
+    pub const GLOVES_PLATE:    u16 = 38;  // manoplas, atk+def
+    pub const BELT_BASIC:      u16 = 39;  // cinto, hp+def
+    pub const BELT_MAGIC:      u16 = 40;  // faixa magica, mp+wis
+    pub const CAPE_BASIC:      u16 = 41;  // capa, def+hp
+    pub const CAPE_MAGIC:      u16 = 42;  // manto magico, mp+wis
+    pub const NECKLACE_BASIC:  u16 = 43;  // colar, hp+wis
+    pub const NECKLACE_MAGIC:  u16 = 44;  // colar magico, mp+wis
 }
 
 // item_stack_max vive no DB (server crate::economy).
@@ -333,10 +349,25 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
             || id == item_id::PLATE_ARMOR
             || id == item_id::ROBE           => Some(EquipSlot::Armor),
         id if id == item_id::RING
-            || id == item_id::AMULET
-            || id == item_id::LUCKY_RING
+            || id == item_id::LUCKY_RING     => Some(EquipSlot::Ring),
+        // Fase E — Amulet/Pendant/Charm migram pra Necklace (slot dedicado)
+        id if id == item_id::AMULET
             || id == item_id::PENDANT
-            || id == item_id::CHARM          => Some(EquipSlot::Ring),
+            || id == item_id::CHARM
+            || id == item_id::NECKLACE_BASIC
+            || id == item_id::NECKLACE_MAGIC => Some(EquipSlot::Necklace),
+        id if id == item_id::HELM_LEATHER
+            || id == item_id::HELM_PLATE     => Some(EquipSlot::Helm),
+        id if id == item_id::LEGS_LEATHER
+            || id == item_id::LEGS_PLATE     => Some(EquipSlot::Legs),
+        id if id == item_id::BOOTS_LEATHER
+            || id == item_id::BOOTS_PLATE    => Some(EquipSlot::Boots),
+        id if id == item_id::GLOVES_LEATHER
+            || id == item_id::GLOVES_PLATE   => Some(EquipSlot::Gloves),
+        id if id == item_id::BELT_BASIC
+            || id == item_id::BELT_MAGIC     => Some(EquipSlot::Belt),
+        id if id == item_id::CAPE_BASIC
+            || id == item_id::CAPE_MAGIC     => Some(EquipSlot::Cape),
         _                                    => None,
     }
 }
@@ -364,6 +395,14 @@ pub enum EquipSlot {
     Armor,
     Offhand,
     Ring,
+    // Fase E
+    Helm,
+    Legs,
+    Boots,
+    Gloves,
+    Belt,
+    Cape,
+    Necklace,
 }
 
 /// Bonus aplicado por um equipamento. Somado aos stats base.
@@ -607,6 +646,21 @@ pub const fn item_bonus(item_id: u16) -> EquipBonus {
         id if id == item_id::HEAVY_SHIELD => EquipBonus { hp_max: 110, mp_max:   0, attack_damage: -8, dex: -3, wis: 0, defense: 14 },
         id if id == item_id::PENDANT      => EquipBonus { hp_max: 25,  mp_max:  35, attack_damage:  0, dex: 0,  wis: 4, defense: 1 },
         id if id == item_id::CHARM        => EquipBonus { hp_max:  0,  mp_max:  10, attack_damage:  3, dex: 4,  wis: 4, defense: 0 },
+        // === Fase E — slots novos ===
+        id if id == item_id::HELM_LEATHER => EquipBonus { hp_max: 15,  mp_max:   0, attack_damage:  0, dex: 4,  wis: 0, defense:  3 },
+        id if id == item_id::HELM_PLATE   => EquipBonus { hp_max: 45,  mp_max:   0, attack_damage:  0, dex: -2, wis: 0, defense:  7 },
+        id if id == item_id::LEGS_LEATHER => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage:  0, dex: 5,  wis: 0, defense:  3 },
+        id if id == item_id::LEGS_PLATE   => EquipBonus { hp_max: 60,  mp_max:   0, attack_damage:  0, dex: -3, wis: 0, defense:  9 },
+        id if id == item_id::BOOTS_LEATHER=> EquipBonus { hp_max: 10,  mp_max:   0, attack_damage:  0, dex: 6,  wis: 0, defense:  2 },
+        id if id == item_id::BOOTS_PLATE  => EquipBonus { hp_max: 30,  mp_max:   0, attack_damage:  0, dex: -2, wis: 0, defense:  5 },
+        id if id == item_id::GLOVES_LEATHER=>EquipBonus { hp_max:  5,  mp_max:   0, attack_damage:  3, dex: 5,  wis: 0, defense:  1 },
+        id if id == item_id::GLOVES_PLATE => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage:  6, dex: -1, wis: 0, defense:  4 },
+        id if id == item_id::BELT_BASIC   => EquipBonus { hp_max: 25,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0, defense:  2 },
+        id if id == item_id::BELT_MAGIC   => EquipBonus { hp_max:  5,  mp_max:  35, attack_damage:  0, dex: 0,  wis: 4, defense:  1 },
+        id if id == item_id::CAPE_BASIC   => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0, defense:  4 },
+        id if id == item_id::CAPE_MAGIC   => EquipBonus { hp_max:  0,  mp_max:  45, attack_damage:  0, dex: 0,  wis: 6, defense:  2 },
+        id if id == item_id::NECKLACE_BASIC=>EquipBonus { hp_max: 20,  mp_max:  10, attack_damage:  0, dex: 0,  wis: 3, defense:  0 },
+        id if id == item_id::NECKLACE_MAGIC=>EquipBonus { hp_max:  0,  mp_max:  40, attack_damage:  0, dex: 0,  wis: 7, defense:  0 },
         _                                 => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0, defense: 0 },
     }
 }

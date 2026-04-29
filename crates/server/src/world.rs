@@ -3056,32 +3056,10 @@ impl GameWorld {
                         // Se for equipavel e o slot esta vazio, equipa direto.
                         // Gate offhand+weapon: se incompativel, fallback pro inv.
                         if let Some(slot) = shared::equip_slot_of(ltag.item_id) {
-                            let empty = match slot {
-                                shared::EquipSlot::Weapon  => session.equipment.weapon.is_none(),
-                                shared::EquipSlot::Armor   => session.equipment.armor.is_none(),
-                                shared::EquipSlot::Ring    => session.equipment.ring.is_none(),
-                                shared::EquipSlot::Offhand => session.equipment.offhand.is_none(),
-                            };
+                            let empty = session.equipment.get(slot).is_none();
                             let allowed = can_equip_in_slot(&session.equipment, slot, ltag.item_id);
                             if empty && allowed {
-                                match slot {
-                                    shared::EquipSlot::Weapon  => {
-                                        session.equipment.weapon = Some(ltag.item_id);
-                                        session.equipment.weapon_inst = ltag.instance;
-                                    }
-                                    shared::EquipSlot::Armor   => {
-                                        session.equipment.armor = Some(ltag.item_id);
-                                        session.equipment.armor_inst = ltag.instance;
-                                    }
-                                    shared::EquipSlot::Ring    => {
-                                        session.equipment.ring = Some(ltag.item_id);
-                                        session.equipment.ring_inst = ltag.instance;
-                                    }
-                                    shared::EquipSlot::Offhand => {
-                                        session.equipment.offhand = Some(ltag.item_id);
-                                        session.equipment.offhand_inst = ltag.instance;
-                                    }
-                                }
+                                session.equipment.set(slot, Some(ltag.item_id), ltag.instance);
                                 session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
                                 session.stats_dirty = true;
                                 if let Some(pe) = session.entity {
@@ -3465,14 +3443,7 @@ impl GameWorld {
         let read_inv = |idx: u16| -> shared::InventorySlot {
             session.inventory.get(idx as usize).copied().unwrap_or_default()
         };
-        let read_eq  = |s: shared::EquipSlot| -> Option<u16> {
-            match s {
-                shared::EquipSlot::Weapon  => session.equipment.weapon,
-                shared::EquipSlot::Armor   => session.equipment.armor,
-                shared::EquipSlot::Ring    => session.equipment.ring,
-                shared::EquipSlot::Offhand => session.equipment.offhand,
-            }
-        };
+        let read_eq = |s: shared::EquipSlot| -> Option<u16> { session.equipment.get(s) };
 
         let va = match a {
             InvSpot::Inv(i)   => (Some(read_inv(i)), None),
@@ -3978,20 +3949,10 @@ impl GameWorld {
             let equip = shared::equip_slot_of(item_id);
             let mut new_max: Option<i32> = None;
             let placed = if let Some(es) = equip {
-                let empty = match es {
-                    shared::EquipSlot::Weapon  => session.equipment.weapon.is_none(),
-                    shared::EquipSlot::Armor   => session.equipment.armor.is_none(),
-                    shared::EquipSlot::Ring    => session.equipment.ring.is_none(),
-                    shared::EquipSlot::Offhand => session.equipment.offhand.is_none(),
-                };
+                let empty = session.equipment.get(es).is_none();
                 let allowed = can_equip_in_slot(&session.equipment, es, item_id);
                 if empty && allowed {
-                    match es {
-                        shared::EquipSlot::Weapon  => session.equipment.weapon  = Some(item_id),
-                        shared::EquipSlot::Armor   => session.equipment.armor   = Some(item_id),
-                        shared::EquipSlot::Ring    => session.equipment.ring    = Some(item_id),
-                        shared::EquipSlot::Offhand => session.equipment.offhand = Some(item_id),
-                    }
+                    session.equipment.set(es, Some(item_id), None);
                     session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
                     session.stats_dirty = true;
                     new_max = Some(session.stats.hp_max);
@@ -4286,21 +4247,13 @@ impl GameWorld {
                 {
                     return; // inv cheio, abort equip
                 }
-                let old = match es {
-                    shared::EquipSlot::Weapon  => session.equipment.weapon,
-                    shared::EquipSlot::Armor   => session.equipment.armor,
-                    shared::EquipSlot::Ring    => session.equipment.ring,
-                    shared::EquipSlot::Offhand => session.equipment.offhand,
-                };
-                let new_id = slot.item_id;
-                match es {
-                    shared::EquipSlot::Weapon  => session.equipment.weapon  = Some(new_id),
-                    shared::EquipSlot::Armor   => session.equipment.armor   = Some(new_id),
-                    shared::EquipSlot::Ring    => session.equipment.ring    = Some(new_id),
-                    shared::EquipSlot::Offhand => session.equipment.offhand = Some(new_id),
-                }
+                let old      = session.equipment.get(es);
+                let old_inst = session.equipment.get_inst(es);
+                let new_id   = slot.item_id;
+                let new_inst = slot.instance;
+                session.equipment.set(es, Some(new_id), new_inst);
                 session.inventory[slot_idx] = match old {
-                    Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1, instance: None },
+                    Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1, instance: old_inst },
                     None         => shared::InventorySlot::default(),
                 };
                 session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
@@ -4412,33 +4365,11 @@ fn set_equip(
     item_id: Option<u16>,
     instance: Option<shared::items::ItemInstance>,
 ) {
-    match slot {
-        shared::EquipSlot::Weapon  => {
-            session.equipment.weapon = item_id;
-            session.equipment.weapon_inst = instance;
-        }
-        shared::EquipSlot::Armor   => {
-            session.equipment.armor = item_id;
-            session.equipment.armor_inst = instance;
-        }
-        shared::EquipSlot::Ring    => {
-            session.equipment.ring = item_id;
-            session.equipment.ring_inst = instance;
-        }
-        shared::EquipSlot::Offhand => {
-            session.equipment.offhand = item_id;
-            session.equipment.offhand_inst = instance;
-        }
-    }
+    session.equipment.set(slot, item_id, instance);
 }
 
 fn read_equip_instance(equip: &shared::Equipment, slot: shared::EquipSlot) -> Option<shared::items::ItemInstance> {
-    match slot {
-        shared::EquipSlot::Weapon  => equip.weapon_inst,
-        shared::EquipSlot::Armor   => equip.armor_inst,
-        shared::EquipSlot::Ring    => equip.ring_inst,
-        shared::EquipSlot::Offhand => equip.offhand_inst,
-    }
+    equip.get_inst(slot)
 }
 
 /// Pode colocar `item_id` no `slot`, dado o estado atual de `equipment`?
@@ -4502,17 +4433,12 @@ fn effective_stats(
     // Bonus do equipamento. Cada slot tem item_id (base bonus via
     // item_bonus) + Option<ItemInstance> (rolls aleatorios × rarity ×
     // refinement). Instance None = item legacy → só base bonus.
-    let slot_pairs = [
-        (equip.weapon,  equip.weapon_inst),
-        (equip.armor,   equip.armor_inst),
-        (equip.ring,    equip.ring_inst),
-        (equip.offhand, equip.offhand_inst),
-    ];
+    let slot_pairs = equip.iter_equipped();
     // Set tracking — count quantas peças de cada set_id estão equipadas.
     let mut set_pieces: std::collections::HashMap<u8, u8> = std::collections::HashMap::new();
-    for (id_opt, _) in slot_pairs {
+    for (id_opt, _) in &slot_pairs {
         if let Some(id) = id_opt {
-            let sid = shared::items::item_set_id(id);
+            let sid = shared::items::item_set_id(*id);
             if sid > 0 {
                 *set_pieces.entry(sid).or_insert(0) += 1;
             }

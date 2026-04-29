@@ -457,6 +457,56 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         (4, item_id::CHARM,         1, 1, 0.10),
         (2, item_id::CHARM,         1, 1, 0.08),
         (6, item_id::CHARM,         1, 1, 0.08),
+        // === Fase E — slots novos ===
+        // Helm leather/plate (31, 32)
+        (3, item_id::HELM_LEATHER,  1, 1, 0.14),
+        (2, item_id::HELM_LEATHER,  1, 1, 0.12),
+        (6, item_id::HELM_LEATHER,  1, 1, 0.12),
+        (1, item_id::HELM_PLATE,    1, 1, 0.16),
+        (5, item_id::HELM_PLATE,    1, 1, 0.14),
+        (7, item_id::HELM_PLATE,    1, 1, 0.40),
+        // Legs leather/plate (33, 34)
+        (3, item_id::LEGS_LEATHER,  1, 1, 0.14),
+        (2, item_id::LEGS_LEATHER,  1, 1, 0.12),
+        (6, item_id::LEGS_LEATHER,  1, 1, 0.12),
+        (1, item_id::LEGS_PLATE,    1, 1, 0.16),
+        (5, item_id::LEGS_PLATE,    1, 1, 0.14),
+        (7, item_id::LEGS_PLATE,    1, 1, 0.40),
+        // Boots leather/plate (35, 36)
+        (3, item_id::BOOTS_LEATHER, 1, 1, 0.14),
+        (2, item_id::BOOTS_LEATHER, 1, 1, 0.12),
+        (6, item_id::BOOTS_LEATHER, 1, 1, 0.12),
+        (1, item_id::BOOTS_PLATE,   1, 1, 0.14),
+        (5, item_id::BOOTS_PLATE,   1, 1, 0.12),
+        (7, item_id::BOOTS_PLATE,   1, 1, 0.35),
+        // Gloves leather/plate (37, 38)
+        (3, item_id::GLOVES_LEATHER,1, 1, 0.14),
+        (2, item_id::GLOVES_LEATHER,1, 1, 0.12),
+        (6, item_id::GLOVES_LEATHER,1, 1, 0.12),
+        (1, item_id::GLOVES_PLATE,  1, 1, 0.14),
+        (5, item_id::GLOVES_PLATE,  1, 1, 0.12),
+        (7, item_id::GLOVES_PLATE,  1, 1, 0.35),
+        // Belt basic/magic (39, 40)
+        (0, item_id::BELT_BASIC,    1, 1, 0.10),
+        (1, item_id::BELT_BASIC,    1, 1, 0.12),
+        (5, item_id::BELT_BASIC,    1, 1, 0.10),
+        (4, item_id::BELT_MAGIC,    1, 1, 0.12),
+        (3, item_id::BELT_MAGIC,    1, 1, 0.10),
+        (7, item_id::BELT_MAGIC,    1, 1, 0.30),
+        // Cape basic/magic (41, 42)
+        (1, item_id::CAPE_BASIC,    1, 1, 0.10),
+        (5, item_id::CAPE_BASIC,    1, 1, 0.10),
+        (3, item_id::CAPE_BASIC,    1, 1, 0.10),
+        (4, item_id::CAPE_MAGIC,    1, 1, 0.12),
+        (6, item_id::CAPE_MAGIC,    1, 1, 0.10),
+        (7, item_id::CAPE_MAGIC,    1, 1, 0.30),
+        // Necklace basic/magic (43, 44)
+        (2, item_id::NECKLACE_BASIC,1, 1, 0.10),
+        (6, item_id::NECKLACE_BASIC,1, 1, 0.10),
+        (1, item_id::NECKLACE_BASIC,1, 1, 0.10),
+        (4, item_id::NECKLACE_MAGIC,1, 1, 0.12),
+        (3, item_id::NECKLACE_MAGIC,1, 1, 0.10),
+        (7, item_id::NECKLACE_MAGIC,1, 1, 0.35),
     ];
     let mut inserted = 0usize;
     for (kind, item, qmin, qmax, chance) in new_drops {
@@ -643,10 +693,17 @@ async fn load_equipment(pool: &PgPool, char_name: &str) -> Result<shared::Equipm
         let inst: Option<shared::items::ItemInstance> =
             inst_json.and_then(|s| serde_json::from_str(&s).ok());
         match slot.as_str() {
-            "weapon"  => { eq.weapon  = Some(iid); eq.weapon_inst  = inst; }
-            "armor"   => { eq.armor   = Some(iid); eq.armor_inst   = inst; }
-            "ring"    => { eq.ring    = Some(iid); eq.ring_inst    = inst; }
-            "offhand" => { eq.offhand = Some(iid); eq.offhand_inst = inst; }
+            "weapon"   => { eq.weapon   = Some(iid); eq.weapon_inst   = inst; }
+            "armor"    => { eq.armor    = Some(iid); eq.armor_inst    = inst; }
+            "ring"     => { eq.ring     = Some(iid); eq.ring_inst     = inst; }
+            "offhand"  => { eq.offhand  = Some(iid); eq.offhand_inst  = inst; }
+            "helm"     => { eq.helm     = Some(iid); eq.helm_inst     = inst; }
+            "legs"     => { eq.legs     = Some(iid); eq.legs_inst     = inst; }
+            "boots"    => { eq.boots    = Some(iid); eq.boots_inst    = inst; }
+            "gloves"   => { eq.gloves   = Some(iid); eq.gloves_inst   = inst; }
+            "belt"     => { eq.belt     = Some(iid); eq.belt_inst     = inst; }
+            "cape"     => { eq.cape     = Some(iid); eq.cape_inst     = inst; }
+            "necklace" => { eq.necklace = Some(iid); eq.necklace_inst = inst; }
             _ => {}
         }
     }
@@ -762,10 +819,17 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             .execute(&mut *tx)
             .await?;
         for (slot_name, item_opt, inst_opt) in [
-            ("weapon",  row.equipment.weapon,  row.equipment.weapon_inst),
-            ("armor",   row.equipment.armor,   row.equipment.armor_inst),
-            ("ring",    row.equipment.ring,    row.equipment.ring_inst),
-            ("offhand", row.equipment.offhand, row.equipment.offhand_inst),
+            ("weapon",   row.equipment.weapon,   row.equipment.weapon_inst),
+            ("armor",    row.equipment.armor,    row.equipment.armor_inst),
+            ("ring",     row.equipment.ring,     row.equipment.ring_inst),
+            ("offhand",  row.equipment.offhand,  row.equipment.offhand_inst),
+            ("helm",     row.equipment.helm,     row.equipment.helm_inst),
+            ("legs",     row.equipment.legs,     row.equipment.legs_inst),
+            ("boots",    row.equipment.boots,    row.equipment.boots_inst),
+            ("gloves",   row.equipment.gloves,   row.equipment.gloves_inst),
+            ("belt",     row.equipment.belt,     row.equipment.belt_inst),
+            ("cape",     row.equipment.cape,     row.equipment.cape_inst),
+            ("necklace", row.equipment.necklace, row.equipment.necklace_inst),
         ] {
             if let Some(iid) = item_opt {
                 let inst_json = inst_opt.and_then(|i| serde_json::to_string(&i).ok());

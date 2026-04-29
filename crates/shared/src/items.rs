@@ -157,6 +157,21 @@ pub fn item_template(item_id: u16) -> ItemTemplate {
         HEAVY_SHIELD => ItemTemplate { hp_max: StatRange::new(70, 140), defense: StatRange::new(10, 20), ..Default::default() },
         PENDANT      => ItemTemplate { hp_max: StatRange::new(15, 35), mp_max: StatRange::new(20, 50), wis: StatRange::new(2, 6), defense: StatRange::new(0, 2), ..Default::default() },
         CHARM        => ItemTemplate { mp_max: StatRange::new(5, 20), attack_damage: StatRange::new(2, 6), dex: StatRange::new(2, 6), wis: StatRange::new(2, 6), ..Default::default() },
+        // === Fase E — slots novos ===
+        HELM_LEATHER  => ItemTemplate { hp_max: StatRange::new(8, 22),   defense: StatRange::new(1, 5),  dex: StatRange::new(2, 6), ..Default::default() },
+        HELM_PLATE    => ItemTemplate { hp_max: StatRange::new(30, 60),  defense: StatRange::new(4, 10), ..Default::default() },
+        LEGS_LEATHER  => ItemTemplate { hp_max: StatRange::new(12, 28),  defense: StatRange::new(1, 5),  dex: StatRange::new(3, 7), ..Default::default() },
+        LEGS_PLATE    => ItemTemplate { hp_max: StatRange::new(40, 80),  defense: StatRange::new(6, 12), ..Default::default() },
+        BOOTS_LEATHER => ItemTemplate { hp_max: StatRange::new(5, 15),   defense: StatRange::new(0, 3),  dex: StatRange::new(4, 8), ..Default::default() },
+        BOOTS_PLATE   => ItemTemplate { hp_max: StatRange::new(20, 40),  defense: StatRange::new(3, 7), ..Default::default() },
+        GLOVES_LEATHER=> ItemTemplate { attack_damage: StatRange::new(1, 5), defense: StatRange::new(0, 2), dex: StatRange::new(3, 7), ..Default::default() },
+        GLOVES_PLATE  => ItemTemplate { hp_max: StatRange::new(12, 28),  attack_damage: StatRange::new(3, 8), defense: StatRange::new(2, 6), ..Default::default() },
+        BELT_BASIC    => ItemTemplate { hp_max: StatRange::new(15, 35),  defense: StatRange::new(0, 3), ..Default::default() },
+        BELT_MAGIC    => ItemTemplate { mp_max: StatRange::new(20, 50),  wis: StatRange::new(2, 6), ..Default::default() },
+        CAPE_BASIC    => ItemTemplate { hp_max: StatRange::new(12, 28),  defense: StatRange::new(2, 6), ..Default::default() },
+        CAPE_MAGIC    => ItemTemplate { mp_max: StatRange::new(25, 60),  wis: StatRange::new(3, 9), defense: StatRange::new(0, 3), ..Default::default() },
+        NECKLACE_BASIC=> ItemTemplate { hp_max: StatRange::new(12, 28),  mp_max: StatRange::new(5, 15),  wis: StatRange::new(2, 5), ..Default::default() },
+        NECKLACE_MAGIC=> ItemTemplate { mp_max: StatRange::new(25, 55),  wis: StatRange::new(4, 10), ..Default::default() },
         _ => ItemTemplate::default(),
     }
 }

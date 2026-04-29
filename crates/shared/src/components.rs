@@ -146,6 +146,108 @@ pub struct Equipment {
     pub offhand: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offhand_inst: Option<crate::items::ItemInstance>,
+    // Slots novos (Fase E)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub helm: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub helm_inst: Option<crate::items::ItemInstance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legs: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legs_inst: Option<crate::items::ItemInstance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boots: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boots_inst: Option<crate::items::ItemInstance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gloves: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gloves_inst: Option<crate::items::ItemInstance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub belt: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub belt_inst: Option<crate::items::ItemInstance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cape: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cape_inst: Option<crate::items::ItemInstance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub necklace: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub necklace_inst: Option<crate::items::ItemInstance>,
+}
+
+impl Equipment {
+    /// Lê o item_id atualmente equipado em `slot` (None = vazio).
+    pub fn get(&self, slot: crate::constants::EquipSlot) -> Option<u16> {
+        use crate::constants::EquipSlot::*;
+        match slot {
+            Weapon   => self.weapon,
+            Armor    => self.armor,
+            Ring     => self.ring,
+            Offhand  => self.offhand,
+            Helm     => self.helm,
+            Legs     => self.legs,
+            Boots    => self.boots,
+            Gloves   => self.gloves,
+            Belt     => self.belt,
+            Cape     => self.cape,
+            Necklace => self.necklace,
+        }
+    }
+
+    /// Lê a ItemInstance do slot (None = item sem rolls/legacy).
+    pub fn get_inst(&self, slot: crate::constants::EquipSlot) -> Option<crate::items::ItemInstance> {
+        use crate::constants::EquipSlot::*;
+        match slot {
+            Weapon   => self.weapon_inst,
+            Armor    => self.armor_inst,
+            Ring     => self.ring_inst,
+            Offhand  => self.offhand_inst,
+            Helm     => self.helm_inst,
+            Legs     => self.legs_inst,
+            Boots    => self.boots_inst,
+            Gloves   => self.gloves_inst,
+            Belt     => self.belt_inst,
+            Cape     => self.cape_inst,
+            Necklace => self.necklace_inst,
+        }
+    }
+
+    /// Sobrescreve item_id e instance do slot.
+    pub fn set(&mut self, slot: crate::constants::EquipSlot, id: Option<u16>, inst: Option<crate::items::ItemInstance>) {
+        use crate::constants::EquipSlot::*;
+        match slot {
+            Weapon   => { self.weapon   = id; self.weapon_inst   = inst; }
+            Armor    => { self.armor    = id; self.armor_inst    = inst; }
+            Ring     => { self.ring     = id; self.ring_inst     = inst; }
+            Offhand  => { self.offhand  = id; self.offhand_inst  = inst; }
+            Helm     => { self.helm     = id; self.helm_inst     = inst; }
+            Legs     => { self.legs     = id; self.legs_inst     = inst; }
+            Boots    => { self.boots    = id; self.boots_inst    = inst; }
+            Gloves   => { self.gloves   = id; self.gloves_inst   = inst; }
+            Belt     => { self.belt     = id; self.belt_inst     = inst; }
+            Cape     => { self.cape     = id; self.cape_inst     = inst; }
+            Necklace => { self.necklace = id; self.necklace_inst = inst; }
+        }
+    }
+
+    /// Itera todos os slots não-vazios — usado por effective_stats.
+    pub fn iter_equipped(&self) -> Vec<(Option<u16>, Option<crate::items::ItemInstance>)> {
+        vec![
+            (self.weapon,   self.weapon_inst),
+            (self.armor,    self.armor_inst),
+            (self.ring,     self.ring_inst),
+            (self.offhand,  self.offhand_inst),
+            (self.helm,     self.helm_inst),
+            (self.legs,     self.legs_inst),
+            (self.boots,    self.boots_inst),
+            (self.gloves,   self.gloves_inst),
+            (self.belt,     self.belt_inst),
+            (self.cape,     self.cape_inst),
+            (self.necklace, self.necklace_inst),
+        ]
+    }
 }
 
 /// Snapshot de uma entidade enviado pelo servidor no tick.
