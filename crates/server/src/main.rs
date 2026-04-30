@@ -14,6 +14,7 @@ mod auth;
 mod economy;
 mod persistence;
 mod session;
+mod skills;
 mod tick;
 mod world;
 
@@ -46,6 +47,11 @@ async fn main() -> Result<()> {
     economy::init(&pool).await?;
     economy::spawn_hot_reload(pool.clone());
     tracing::info!("economia carregada (hot-reload a cada 5s; bumpa economy_version pra forçar)");
+
+    // Skills (Phase 1). Compartilha o mesmo `economy_version`.
+    skills::init(&pool).await?;
+    skills::spawn_hot_reload(pool.clone());
+    tracing::info!("skills carregadas: {} entradas", skills::all_skills().len());
 
     let listener = TcpListener::bind(&addr).await?;
     tracing::info!("server listening on ws://{addr} ({TICK_RATE_HZ} Hz)");

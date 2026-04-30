@@ -8,6 +8,7 @@
 use anyhow::Result;
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
+use shared::items::{ItemTemplate, StatRange};
 use sqlx::postgres::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -21,6 +22,22 @@ pub struct ItemDef {
     pub buy_price:  Option<u32>,
     pub shop_order: Option<i32>,
     pub stack_max:  u32,
+    /// Slot do equipamento ("Weapon", "Armor", "Helm", ...). None = não-equip.
+    pub equip_slot: Option<String>,
+    /// Item level base — usado se enemy_kinds.loot_item_level for NULL.
+    pub item_level: u16,
+    /// Posição (col, row) no spritesheet 16×16. Cliente usa como fallback
+    /// quando icon_path está vazio.
+    pub icon_col:   i32,
+    pub icon_row:   i32,
+    /// Path no Resources do cliente (ex: "Items/sword"). Se setado,
+    /// cliente carrega via Resources.Load — bypass do spritesheet.
+    pub icon_path:  Option<String>,
+    /// Inativo: server não dropa, não equipa, não usa. Pode vender/guardar.
+    pub active:     bool,
+    /// Template de stat ranges. Usado por ItemInstance::roll_with_template
+    /// no drop pra rolar stats aleatórios.
+    pub template:   ItemTemplate,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -39,6 +56,8 @@ pub struct EnemyKindDef {
     pub defense:         i32,
     pub size_scale:      f32,
     pub tint_rgba:       [f32; 4],
+    /// Item level dos drops desse kind. None = usa items.item_level por item.
+    pub loot_item_level: Option<u16>,
 }
 
 #[derive(Clone, Debug)]
@@ -104,6 +123,7 @@ impl EconomyConfig {
 
     /// Rola loot drops pra um kind. Cada entry independente: rand < chance →
     /// dropa (qty random entre min..=max). Determinístico via seed.
+    /// Items com `active=false` são pulados (não dropam até admin reativar).
     pub fn roll_loot(&self, kind: u16, seed: u64) -> Vec<(u16, u32)> {
         let Some(table) = self.loot_tables.get(&kind) else { return Vec::new(); };
         let mut out = Vec::with_capacity(table.len());
@@ -112,6 +132,8 @@ impl EconomyConfig {
             s = lcg(s);
             let r1 = lcg_f32(s);
             if r1 >= entry.chance { continue; }
+            // Skip items inativos (admin desligou).
+            if !self.items.get(&entry.item_id).map(|i| i.active).unwrap_or(true) { continue; }
             s = lcg(s);
             let r2 = lcg_f32(s);
             let span = entry.qty_max.saturating_sub(entry.qty_min) + 1;
@@ -229,29 +251,103 @@ pub fn enemy_loot_drops(kind: u16, seed: u64) -> Vec<(u16, u32)> {
     cell().read().roll_loot(kind, seed)
 }
 
+/// Template de stat ranges do item (carregado do DB). Retorna default
+/// (todos 0) se item não existir — `roll_for` checa has_any_range e devolve
+/// None nesse caso (item não-equipável).
+pub fn item_template_of(id: u16) -> ItemTemplate {
+    cell().read().items.get(&id).map(|i| i.template).unwrap_or_default()
+}
+
+/// Versão atual do cache em memória — usada pelo world tick pra detectar
+/// hot-reload e disparar broadcast de `ItemsConfig`.
+pub fn current_version() -> i64 {
+    cell().read().version
+}
+
+/// Snapshot dos items pro wire `ItemsConfig`. Cliente usa pra sobrescrever
+/// nome/icone hardcoded em `ItemInfo.cs`.
+pub fn items_config() -> Vec<shared::protocol::ItemConfigEntry> {
+    let cfg = cell().read();
+    let mut out: Vec<_> = cfg.items.values().map(|i| shared::protocol::ItemConfigEntry {
+        id:         i.id,
+        name:       i.name.clone(),
+        icon_path:  i.icon_path.clone(),
+        icon_col:   i.icon_col,
+        icon_row:   i.icon_row,
+        equip_slot: i.equip_slot.clone(),
+        active:     i.active,
+    }).collect();
+    out.sort_by_key(|e| e.id);
+    out
+}
+
+/// True se o item está ativo (default true). Usado pra bloquear equip/use
+/// no servidor; client pode também consultar via `ItemsConfig.active`.
+pub fn is_item_active(id: u16) -> bool {
+    cell().read().items.get(&id).map(|i| i.active).unwrap_or(true)
+}
+
+/// Item level pra rolagem de drop por kind. Usa override do enemy_kinds
+/// se setado, senão volta pro item_level base do próprio item.
+pub fn loot_item_level(kind: u16, item_id: u16) -> u16 {
+    let cfg = cell().read();
+    if let Some(k) = cfg.enemy_kinds.get(&kind) {
+        if let Some(lvl) = k.loot_item_level { return lvl; }
+    }
+    cfg.items.get(&item_id).map(|i| i.item_level).unwrap_or(1)
+}
+
 // ── DB load ──────────────────────────────────────────────────────────────────
 
 async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
     let version: i64 = sqlx::query_scalar("SELECT version FROM economy_version WHERE id = 1")
         .fetch_one(pool).await?;
 
-    let item_rows: Vec<(i32, String, i32, Option<i32>, Option<i32>, i32)> =
-        sqlx::query_as("SELECT id, name, sell_price, buy_price, shop_order, stack_max FROM items")
-            .fetch_all(pool).await?;
+    #[derive(sqlx::FromRow)]
+    struct ItemRow {
+        id: i32, name: String, sell_price: i32, buy_price: Option<i32>,
+        shop_order: Option<i32>, stack_max: i32,
+        equip_slot: Option<String>, item_level: i32, icon_col: i32, icon_row: i32,
+        icon_path: Option<String>, active: bool,
+        hp_min: i32, hp_max: i32, mp_min: i32, mp_max: i32,
+        atk_min: i32, atk_max: i32, def_min: i32, def_max: i32,
+        dex_min: i32, dex_max: i32, wis_min: i32, wis_max: i32,
+    }
+    let item_rows: Vec<ItemRow> = sqlx::query_as(
+        "SELECT id, name, sell_price, buy_price, shop_order, stack_max, \
+                equip_slot, item_level, icon_col, icon_row, icon_path, active, \
+                hp_min, hp_max, mp_min, mp_max, atk_min, atk_max, \
+                def_min, def_max, dex_min, dex_max, wis_min, wis_max \
+         FROM items"
+    ).fetch_all(pool).await?;
     let mut items = HashMap::with_capacity(item_rows.len());
     let mut shop_collected: Vec<(i32, u16)> = Vec::new(); // (order, id)
-    for (id, name, sell_price, buy_price, shop_order, stack_max) in item_rows {
-        let id_u16 = id as u16;
-        if let Some(ord) = shop_order {
+    for r in item_rows {
+        let id_u16 = r.id as u16;
+        if let Some(ord) = r.shop_order {
             shop_collected.push((ord, id_u16));
         }
         items.insert(id_u16, ItemDef {
             id:         id_u16,
-            name,
-            sell_price: sell_price.max(0) as u32,
-            buy_price:  buy_price.map(|v| v.max(0) as u32),
-            shop_order,
-            stack_max:  stack_max.max(1) as u32,
+            name:       r.name,
+            sell_price: r.sell_price.max(0) as u32,
+            buy_price:  r.buy_price.map(|v| v.max(0) as u32),
+            shop_order: r.shop_order,
+            stack_max:  r.stack_max.max(1) as u32,
+            equip_slot: r.equip_slot,
+            item_level: r.item_level.max(1) as u16,
+            icon_col:   r.icon_col,
+            icon_row:   r.icon_row,
+            icon_path:  r.icon_path,
+            active:     r.active,
+            template: ItemTemplate {
+                hp_max:        StatRange::new(r.hp_min, r.hp_max),
+                mp_max:        StatRange::new(r.mp_min, r.mp_max),
+                attack_damage: StatRange::new(r.atk_min, r.atk_max),
+                defense:       StatRange::new(r.def_min, r.def_max),
+                dex:           StatRange::new(r.dex_min, r.dex_max),
+                wis:           StatRange::new(r.wis_min, r.wis_max),
+            },
         });
     }
     shop_collected.sort_by_key(|(o, _)| *o);
@@ -263,11 +359,12 @@ async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
         attack_cooldown: f32, detect_range: f32, attack_range: f32,
         kite_dist: Option<f32>, proj_count: i32, xp_reward: i64, defense: i32,
         size_scale: f32, tint_r: f32, tint_g: f32, tint_b: f32, tint_a: f32,
+        loot_item_level: Option<i32>,
     }
     let enemy_rows: Vec<EnemyRow> = sqlx::query_as(
         "SELECT kind, name, hp_max, speed, attack_damage, attack_cooldown, detect_range, \
                 attack_range, kite_dist, proj_count, xp_reward, defense, size_scale, \
-                tint_r, tint_g, tint_b, tint_a FROM enemy_kinds"
+                tint_r, tint_g, tint_b, tint_a, loot_item_level FROM enemy_kinds"
     ).fetch_all(pool).await?;
     let mut enemy_kinds = HashMap::with_capacity(enemy_rows.len());
     for r in enemy_rows {
@@ -281,6 +378,7 @@ async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
             xp_reward: r.xp_reward.max(0) as u64,
             defense: r.defense, size_scale: r.size_scale,
             tint_rgba: [r.tint_r, r.tint_g, r.tint_b, r.tint_a],
+            loot_item_level: r.loot_item_level.map(|v| v.max(1) as u16),
         });
     }
 

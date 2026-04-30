@@ -63,6 +63,25 @@ struct PendingShot {
     release_tick: u32,
 }
 
+/// Hit instant de skill (line/aoe/cone) enfileirado durante on_message;
+/// processado no step() junto com damage_events das outras fontes.
+#[derive(Clone, Copy)]
+struct PendingSkillHit {
+    target_net: EntityId,
+    damage: i32,
+    attacker_net: EntityId,
+    hurt_dir: Vec2,
+    is_crit: bool,
+    from_player: bool,
+}
+
+/// Heal aplicado em players (self/aliado) por skill; processado em step().
+#[derive(Clone, Copy)]
+struct PendingHeal {
+    target_net: EntityId,
+    amount: i32,
+}
+
 pub struct EnemyTag {
     pub attack_cooldown: f32,
     /// sim_time absoluto até o qual o enemy fica em stagger (sem mover/atacar).
@@ -280,8 +299,21 @@ pub struct Session {
     /// pra refactor futuro com physics/ECS isolados por mapa.
     pub current_map: String,
     /// XP por proficiencia. Indice = Proficiency as u8.
-    pub proficiencies: [u64; 6],
+    pub proficiencies: [u64; shared::PROF_COUNT],
     pub proficiencies_dirty: bool,
+    // ── Skills (Phase 1) ────────────────────────────────────────────────
+    /// SP totais ganhos. Cresce em level-up via SP_PER_LEVEL.
+    pub skill_points_earned: u32,
+    /// SP gastos em learn + rank-up.
+    pub skill_points_spent: u32,
+    /// Skills aprendidas + rank + slot equipado (None = passiva ou ativa
+    /// não-equipada).
+    pub learned_skills: Vec<shared::LearnedSkill>,
+    /// Marca que precisa enviar PlayerSkillsUpdate no próximo tick.
+    pub skills_dirty: bool,
+    /// Cooldown timestamps por skill_id. Valor = `sim_time_s` quando a skill
+    /// fica disponível de novo. Cast só é permitido se sim_time >= valor.
+    pub skill_cds: HashMap<u32, f32>,
     /// Pontos de atributo disponiveis (ganhos por level-up, POINTS_PER_LEVEL cada).
     pub unspent_points: u32,
     /// Pontos ja alocados em cada stat [FOR, DES, INT, VIT, SPD].
@@ -389,6 +421,8 @@ pub struct GameWorld {
     /// Tiros ranged em andamento — drenados a cada tick e spawnados quando
     /// `release_tick` é atingido. Sincroniza projétil com fim da anim de saque.
     pending_shots: Vec<PendingShot>,
+    pending_skill_hits: Vec<PendingSkillHit>,
+    pending_heals: Vec<PendingHeal>,
     /// Mapa por net_id → hurt_dir aplicado neste tick. Populado em step() ao
     /// processar damage_events; lido em send_snapshots() pra preencher
     /// EntitySnapshot.hurt_dir; limpo após envio.
@@ -400,6 +434,9 @@ pub struct GameWorld {
     /// no floating damage text quando o hit mata o alvo: HP antes era 5,
     /// dano real foi 50 → mostra "50" mesmo. Lido em send_snapshots.
     pub damage_this_tick: HashMap<EntityId, i32>,
+    /// Última versão de economy vista no broadcast — quando muda (admin
+    /// editou via web), reenviamos `ItemsConfig` pra todos os clientes.
+    pub last_econ_version: i64,
 }
 
 impl GameWorld {
@@ -447,9 +484,12 @@ impl GameWorld {
             npc_routes: HashMap::new(),
             sim_time_s: 0.0,
             pending_shots: Vec::new(),
+            pending_skill_hits: Vec::new(),
+            pending_heals: Vec::new(),
             hit_this_tick: HashMap::new(),
             crit_this_tick: HashMap::new(),
             damage_this_tick: HashMap::new(),
+            last_econ_version: 0,
         };
         w.spawn_vendor_at(vendor_pos);
         w.spawn_vault_at(vault_pos);
@@ -496,9 +536,12 @@ impl GameWorld {
             npc_routes: HashMap::new(),
             sim_time_s: 0.0,
             pending_shots: Vec::new(),
+            pending_skill_hits: Vec::new(),
+            pending_heals: Vec::new(),
             hit_this_tick: HashMap::new(),
             crit_this_tick: HashMap::new(),
             damage_this_tick: HashMap::new(),
+            last_econ_version: 0,
         };
         w.spawn_mapfile_entities(&mf);
         w
@@ -940,7 +983,7 @@ impl GameWorld {
         s.allocated_points[idx] = s.allocated_points[idx].saturating_add(1);
         s.stat_points_dirty = true;
         // Recalcula stats. max_hp pode ter subido — HP nao sobe automatico.
-        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies);
+        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, &s.learned_skills);
         s.stats_dirty = true;
     }
 
@@ -1092,7 +1135,7 @@ impl GameWorld {
         s.unspent_points = s.unspent_points.saturating_add(total);
         s.allocated_points = [0u32; shared::STAT_COUNT];
         s.stat_points_dirty = true;
-        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies);
+        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, &s.learned_skills);
         s.stats_dirty = true;
         tracing::info!("{} resetou atributos (refund {})", s.name, total);
     }
@@ -1221,30 +1264,39 @@ impl GameWorld {
             let t = self.map.spawn_tile();
             Vec2::new(t.0 as f32 + 0.5, t.1 as f32 + 0.5)
         };
-        let (mut spawn, mut health, saved_xp, saved_inv, saved_equip, saved_vault, saved_fame, saved_aura, saved_profs, saved_unspent, saved_alloc) = match self.characters.get(&success.username) {
-            Some(row) => (
-                row.pos, row.hp, row.xp, row.inventory.clone(), row.equipment, row.vault.clone(),
-                row.fame, row.aura, row.proficiencies, row.unspent_points, row.allocated_points,
-            ),
-            None => {
-                let base = shared::base_player_stats();
-                (
-                    default_spawn,
-                    Health { current: base.hp_max, max: base.hp_max },
-                    0u64,
-                    vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
-                    shared::Equipment::default(),
-                    vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
-                    0u64,
-                    0u64,
-                    [0u64; 6],
-                    0u32,
-                    [0u32; shared::STAT_COUNT],
-                )
-            }
-        };
+        let (mut spawn, mut health, saved_xp, saved_inv, saved_equip, saved_vault,
+             saved_fame, saved_aura, saved_profs, saved_unspent, saved_alloc,
+             saved_sp_earned, saved_sp_spent, saved_learned_skills) =
+            match self.characters.get(&success.username) {
+                Some(row) => (
+                    row.pos, row.hp, row.xp, row.inventory.clone(), row.equipment, row.vault.clone(),
+                    row.fame, row.aura, row.proficiencies, row.unspent_points, row.allocated_points,
+                    row.skill_points_earned, row.skill_points_spent, row.learned_skills.clone(),
+                ),
+                None => {
+                    let base = shared::base_player_stats();
+                    (
+                        default_spawn,
+                        Health { current: base.hp_max, max: base.hp_max },
+                        0u64,
+                        vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
+                        shared::Equipment::default(),
+                        vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
+                        0u64,
+                        0u64,
+                        [0u64; shared::PROF_COUNT],
+                        0u32,
+                        [0u32; shared::STAT_COUNT],
+                        // SP iniciais = 1 (level 1 base — ganha SP automático).
+                        // Backfill em DB já lidou com chars existentes.
+                        1u32,
+                        0u32,
+                        Vec::new(),
+                    )
+                }
+            };
         // Stats efetivos considerando equipamento salvo + pontos + profs.
-        let stats = effective_stats(&saved_equip, &saved_alloc, &saved_profs);
+        let stats = effective_stats(&saved_equip, &saved_alloc, &saved_profs, &saved_learned_skills);
         // Re-sincroniza o max_hp (classe pode ter sido rebalanceada entre sessoes).
         health.max = stats.hp_max;
         if health.current > health.max { health.current = health.max; }
@@ -1307,6 +1359,11 @@ impl GameWorld {
             s.inventory = saved_inv.clone();
             s.inventory_dirty = false;
             s.stats_dirty = false;
+            // Skills (Phase 1) — copia o estado salvo pra session.
+            s.skill_points_earned = saved_sp_earned;
+            s.skill_points_spent = saved_sp_spent;
+            s.learned_skills = saved_learned_skills.clone();
+            s.skills_dirty = false; // já enviamos PlayerSkillsUpdate no fim do login
             s.vault = saved_vault;
             s.vault_dirty = false;
             s.mp_current = stats.mp_max as f32;
@@ -1354,6 +1411,20 @@ impl GameWorld {
         });
         let _ = handle.to_client.send(ServerMessage::InventoryUpdate {
             slots: saved_inv,
+        });
+        let _ = handle.to_client.send(ServerMessage::ItemsConfig {
+            items: crate::economy::items_config(),
+        });
+        // Skills (Phase 1): catálogo + estado do player.
+        let _ = handle.to_client.send(ServerMessage::SkillsConfig {
+            skills: crate::skills::all_skills(),
+        });
+        let _ = handle.to_client.send(ServerMessage::PlayerSkillsUpdate {
+            state: shared::skills::PlayerSkillsState {
+                sp_earned: saved_sp_earned,
+                sp_spent: saved_sp_spent,
+                skills: saved_learned_skills.clone(),
+            },
         });
     }
 
@@ -1585,8 +1656,13 @@ impl GameWorld {
                 carrying: None,
                 carried_by: None,
                 current_map: "overworld".into(),
-                proficiencies: [0; 6],
+                proficiencies: [0; shared::PROF_COUNT],
                 proficiencies_dirty: false,
+                skill_points_earned: 0,
+                skill_points_spent: 0,
+                learned_skills: Vec::new(),
+                skills_dirty: false,
+                skill_cds: HashMap::new(),
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 inventory_dirty: false,
                 stats_dirty: false,
@@ -1796,11 +1872,438 @@ impl GameWorld {
                 self.handle_socket_gem(id, item_slot, gem_slot);
             }
             ClientMessage::RequestDisconnect => self.on_disconnect(id),
+            ClientMessage::SkillLearn { skill_id }   => self.handle_skill_learn(id, skill_id),
+            ClientMessage::SkillRankUp { skill_id }  => self.handle_skill_rank_up(id, skill_id),
+            ClientMessage::SkillEquip { skill_id, slot } => self.handle_skill_equip(id, skill_id, slot),
+            ClientMessage::SkillCast { skill_id, target_pos } => self.handle_skill_cast(id, skill_id, target_pos),
         }
+    }
+
+    /// Cast de skill ativa. Valida tudo, drena cost, dispara efeito.
+    /// Por enquanto suporta `target_type=projectile` (Fireball, Frost Bolt etc.)
+    /// e `self` (heal). Outros tipos serão adicionados na Phase 2.x.
+    fn handle_skill_cast(&mut self, sid: SessionId, skill_id: u32, target_pos: Vec2) {
+        // 1. Lookup
+        let Some(session) = self.sessions.get_mut(&sid) else { return };
+        if !session.logged_in { return; }
+        let Some(def) = crate::skills::skill_of(skill_id) else { return };
+        if def.is_passive { return; } // passivas não castam
+
+        // 2. Skill aprendida + equipada em algum slot?
+        let learned = session.learned_skills.iter().find(|s| s.skill_id == skill_id).copied();
+        let Some(ls) = learned else { return };
+        if ls.equipped_slot.is_none() { return; }
+        let rank = ls.rank;
+
+        // 3. Cooldown
+        let now = self.sim_time_s;
+        if let Some(&ready_at) = session.skill_cds.get(&skill_id) {
+            if now < ready_at { return; }
+        }
+
+        // 4. Weapon usable_with
+        let weapon_id = session.equipment.weapon.unwrap_or(0);
+        let weapon_prof = shared::Proficiency::from_item(weapon_id).as_db_str();
+        if let Some(uw) = &def.usable_with {
+            if !uw.is_empty() && !uw.iter().any(|p| p == weapon_prof) {
+                tracing::debug!("skill_cast: weapon prof {} não permitido pra skill {}", weapon_prof, skill_id);
+                return;
+            }
+        }
+
+        // 5. Cost (MP / stamina). Aplica per_rank_cost_pct: cost final = base × (1 - per_rank × (rank-1)).
+        let mut rank_factor = 1.0 - def.per_rank_cost_pct * (rank.saturating_sub(1) as f32);
+        // Mana Conduit (1050) — Staff T1 P: -1%/rank mp/stam cost. Aplicado
+        // multiplicativamente. Cap em -50% (rank 10 = -10% sozinho; com
+        // per_rank_cost_pct da skill some adicional).
+        if let Some(mc) = session.learned_skills.iter().find(|s| s.skill_id == 1050) {
+            let mc_factor = (1.0 - 0.01 * mc.rank as f32).max(0.5);
+            rank_factor *= mc_factor;
+        }
+        let rank_factor = rank_factor.max(0.1);
+        let mp_cost = ((def.cost_mp as f32) * rank_factor).round() as i32;
+        let st_cost = ((def.cost_stamina as f32) * rank_factor).round() as f32;
+        if (session.mp_current as i32) < mp_cost { return; }
+        if session.stamina_current < st_cost { return; }
+
+        // 6. Posição do player + direção pro target
+        let Some(e) = session.entity else { return };
+        let pos = match self.ecs.get::<&Position>(e) { Ok(p) => p.0, Err(_) => return };
+        let to_target = target_pos - pos;
+        let dir = if to_target.length_squared() > 0.001 {
+            to_target.normalize()
+        } else {
+            Vec2::new(1.0, 0.0)
+        };
+
+        // 7. Damage scaling: base + atk*scal_atk + wis*scal_wis + dex*scal_dex,
+        // depois aplica (1 + per_rank_dmg × rank).
+        let stats = session.stats;
+        let base_dmg = def.base_damage as f32
+            + stats.attack_damage as f32 * def.scaling_atk
+            + stats.wis as f32 * def.scaling_wis
+            + stats.dex as f32 * def.scaling_dex;
+        let scaled = base_dmg * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32));
+        let damage = scaled.round() as i32;
+
+        // 8. Drena cost + set cd
+        session.mp_current -= mp_cost as f32;
+        if session.mp_current < 0.0 { session.mp_current = 0.0; }
+        session.stamina_current = (session.stamina_current - st_cost).max(0.0);
+        let cd_factor = (1.0 - def.per_rank_cd_pct * (rank.saturating_sub(1) as f32)).max(0.1);
+        let cd_final = def.cooldown_s * cd_factor;
+        session.skill_cds.insert(skill_id, now + cd_final);
+
+        // 9. Dispatch por target_type
+        let owner_eid = session.entity_id;
+        match def.target_type.as_str() {
+            "projectile" => {
+                let spawn_pos = pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y)
+                    + dir * shared::FIREBALL_FORWARD_OFFSET;
+                // kind: 1 = fireball (default), 2 = lightning (raio).
+                // Mapeia pelo vfx_id pra cliente saber qual sprite usar.
+                let proj_kind: u8 = if def.vfx_id.as_deref().map(|v| v.contains("lightning")).unwrap_or(false) { 2 } else { 1 };
+                self.pending_shots.push(PendingShot {
+                    pos: spawn_pos,
+                    dir,
+                    damage,
+                    is_crit: false,
+                    kind: proj_kind,
+                    owner_id: owner_eid,
+                    from_player: true,
+                    release_tick: self.tick.wrapping_add(1),
+                });
+                tracing::info!(
+                    "skill cast: {} (skill {}, r{}) dmg={} kind={} dir=({:.2},{:.2})",
+                    def.name, skill_id, rank, damage, proj_kind, dir.x, dir.y
+                );
+            }
+            "self" => {
+                // Heal: aplica base_heal + scaling × wis.
+                let base_heal = def.base_heal as f32 + stats.wis as f32 * def.scaling_wis;
+                let heal = (base_heal * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32))).round() as i32;
+                if heal > 0 {
+                    if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
+                        hp.current = (hp.current + heal).min(hp.max);
+                    }
+                }
+                tracing::info!("skill cast: {} self-heal +{}", def.name, heal);
+            }
+            "line" => {
+                // Linha: pega 1º enemy hostile no caminho até range_tiles.
+                let range = def.range_tiles.max(1.0);
+                let nearest = self.find_nearest_enemy_in_line(pos, dir, range, owner_eid);
+                if let Some((target_net, target_pos2, _dist)) = nearest {
+                    let hd = (-dir).try_normalize().unwrap_or(Vec2::new(-1.0, 0.0));
+                    self.pending_skill_hits.push(PendingSkillHit {
+                        target_net, damage, attacker_net: owner_eid,
+                        hurt_dir: hd, is_crit: false, from_player: true,
+                    });
+                    // Chain Lightning (1054): bounce até 4 alvos extras com falloff 25%.
+                    if skill_id == 1054 {
+                        self.chain_lightning_bounces(target_pos2, target_net, owner_eid, damage, 4);
+                    }
+                    tracing::info!("skill cast: {} (line, r{}) dmg={}", def.name, rank, damage);
+                }
+            }
+            "aoe_circle" => {
+                let radius = def.radius_tiles.max(0.5);
+                // Heal variant: skill com base_heal>0 ou scaling_wis e base_damage==0.
+                let is_heal = def.base_heal > 0 || (def.scaling_wis > 0.0 && def.base_damage == 0);
+                if is_heal {
+                    let base_heal = def.base_heal as f32 + stats.wis as f32 * def.scaling_wis;
+                    let heal = (base_heal * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32))).round() as i32;
+                    if heal > 0 {
+                        let players = self.find_players_in_radius(target_pos, radius);
+                        for tn in players {
+                            self.pending_heals.push(PendingHeal { target_net: tn, amount: heal });
+                        }
+                    }
+                    tracing::info!("skill cast: {} (aoe heal r{:.1}) +{}", def.name, radius, heal);
+                } else {
+                    let enemies = self.find_enemies_in_radius(target_pos, radius);
+                    for tn in enemies {
+                        let hd = calc_hurt_dir_from_eid(&self.ecs, tn, target_pos);
+                        self.pending_skill_hits.push(PendingSkillHit {
+                            target_net: tn, damage, attacker_net: owner_eid,
+                            hurt_dir: hd, is_crit: false, from_player: true,
+                        });
+                    }
+                    tracing::info!("skill cast: {} (aoe r{:.1}) dmg={}", def.name, radius, damage);
+                }
+            }
+            "cone" => {
+                let range = def.range_tiles.max(shared::MELEE_RANGE);
+                let enemies = self.find_enemies_in_cone(pos, dir, range, shared::MELEE_CONE_HALF_ANGLE);
+                for tn in enemies {
+                    let hd = (-dir).try_normalize().unwrap_or(Vec2::new(-1.0, 0.0));
+                    self.pending_skill_hits.push(PendingSkillHit {
+                        target_net: tn, damage, attacker_net: owner_eid,
+                        hurt_dir: hd, is_crit: false, from_player: true,
+                    });
+                }
+                tracing::info!("skill cast: {} (cone r{:.1}) dmg={}", def.name, range, damage);
+            }
+            _ => {
+                // Outros target_types implementados na Phase 2.x.
+                tracing::debug!("skill cast: target_type '{}' não implementado ainda", def.target_type);
+            }
+        }
+
+        // Broadcast SkillCastFx pra todos clientes logados (gizmos no cliente).
+        // session já não está borrowed aqui — NLL drop após `let owner_eid`.
+        let fx = ServerMessage::SkillCastFx {
+            skill_id, caster_pos: pos, target_pos, target_eid: None,
+        };
+        for s in self.sessions.values() {
+            if s.logged_in {
+                let _ = s.handle.to_client.send(fx.clone());
+            }
+        }
+    }
+
+    /// Encontra inimigo mais próximo em linha do `pos` na direção `dir` até `range`.
+    /// Retorna (net_id, posição, distância). Filtra por hostilidade (player→enemy).
+    fn find_nearest_enemy_in_line(&self, pos: Vec2, dir: Vec2, range: f32, attacker_net: EntityId)
+        -> Option<(EntityId, Vec2, f32)> {
+        let mut best: Option<(EntityId, Vec2, f32)> = None;
+        let cos_half = (15f32.to_radians()).cos(); // lateral 15° de tolerância
+        for (_, (net, pos2, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
+            if !matches!(kind, EntityKind::Enemy(_)) { continue; }
+            if net.0 == attacker_net { continue; }
+            let delta = pos2.0 - pos;
+            let dist = delta.length();
+            if dist > range || dist < 0.01 { continue; }
+            let d_norm = delta / dist;
+            if dir.dot(d_norm) < cos_half { continue; }
+            if best.map_or(true, |(_,_,bd)| dist < bd) {
+                best = Some((net.0, pos2.0, dist));
+            }
+        }
+        best
+    }
+
+    fn find_enemies_in_radius(&self, center: Vec2, radius: f32) -> Vec<EntityId> {
+        let r2 = radius * radius;
+        let mut out = Vec::new();
+        for (_, (net, pos, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
+            if !matches!(kind, EntityKind::Enemy(_)) { continue; }
+            if pos.0.distance_squared(center) <= r2 {
+                out.push(net.0);
+            }
+        }
+        out
+    }
+
+    fn find_players_in_radius(&self, center: Vec2, radius: f32) -> Vec<EntityId> {
+        let r2 = radius * radius;
+        let mut out = Vec::new();
+        for (_, (net, pos, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
+            if !matches!(kind, EntityKind::Player) { continue; }
+            if pos.0.distance_squared(center) <= r2 {
+                out.push(net.0);
+            }
+        }
+        out
+    }
+
+    fn find_enemies_in_cone(&self, pos: Vec2, dir: Vec2, range: f32, half_angle: f32) -> Vec<EntityId> {
+        let cos_half = half_angle.cos();
+        let r2 = range * range;
+        let mut out = Vec::new();
+        for (_, (net, pos2, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
+            if !matches!(kind, EntityKind::Enemy(_)) { continue; }
+            let delta = pos2.0 - pos;
+            let d2 = delta.length_squared();
+            if d2 > r2 { continue; }
+            if let Some(nd) = delta.try_normalize() {
+                if dir.dot(nd) < cos_half { continue; }
+            }
+            out.push(net.0);
+        }
+        out
+    }
+
+    /// Chain Lightning: a partir do alvo principal, bounce até `bounces` alvos
+    /// extras, com falloff de 25% por bounce.
+    fn chain_lightning_bounces(&mut self, start_pos: Vec2, exclude: EntityId, attacker: EntityId, base_dmg: i32, bounces: u32) {
+        let mut excluded = std::collections::HashSet::new();
+        excluded.insert(exclude);
+        let mut current_pos = start_pos;
+        let mut current_dmg = (base_dmg as f32 * 0.75) as i32;
+        for _ in 0..bounces {
+            if current_dmg < 1 { break; }
+            // Próximo enemy mais próximo, raio max 8 tiles, não-excluido.
+            let mut best: Option<(EntityId, Vec2, f32)> = None;
+            for (_, (net, pos2, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
+                if !matches!(kind, EntityKind::Enemy(_)) { continue; }
+                if excluded.contains(&net.0) { continue; }
+                let dist = pos2.0.distance(current_pos);
+                if dist > 8.0 { continue; }
+                if best.map_or(true, |(_,_,bd)| dist < bd) {
+                    best = Some((net.0, pos2.0, dist));
+                }
+            }
+            if let Some((tn, tp, _)) = best {
+                let hd = calc_hurt_dir_from_eid(&self.ecs, tn, current_pos);
+                self.pending_skill_hits.push(PendingSkillHit {
+                    target_net: tn, damage: current_dmg, attacker_net: attacker,
+                    hurt_dir: hd, is_crit: false, from_player: true,
+                });
+                excluded.insert(tn);
+                current_pos = tp;
+                current_dmg = (current_dmg as f32 * 0.75) as i32;
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// Aprende rank 1 da skill — gasta 1 SP. Valida unlock_char_lvl,
+    /// unlock_prof_lvl, e SP suficiente. No-op silencioso se não pode.
+    fn handle_skill_learn(&mut self, sid: SessionId, skill_id: u32) {
+        let Some(session) = self.sessions.get_mut(&sid) else { return };
+        if !session.logged_in { return; }
+        // Já aprendida?
+        if session.learned_skills.iter().any(|s| s.skill_id == skill_id) {
+            tracing::debug!("skill_learn: {} já aprendida", skill_id);
+            return;
+        }
+        let Some(def) = crate::skills::skill_of(skill_id) else {
+            tracing::warn!("skill_learn: skill_id {} não existe", skill_id);
+            return;
+        };
+        let char_lvl = shared::level_of_xp(session.xp);
+        if !crate::skills::can_unlock(&def, char_lvl, &session.proficiencies) {
+            tracing::debug!(
+                "skill_learn: req não atendido (skill={} char_lvl={} need char>={} prof>={})",
+                skill_id, char_lvl, def.unlock_char_lvl, def.unlock_prof_lvl
+            );
+            return;
+        }
+        let cost = shared::sp_cost_for_next_rank(0); // rank 0→1
+        let avail = session.skill_points_earned.saturating_sub(session.skill_points_spent);
+        if avail < cost { return; }
+        session.skill_points_spent = session.skill_points_spent.saturating_add(cost);
+        session.learned_skills.push(shared::LearnedSkill {
+            skill_id,
+            rank: 1,
+            equipped_slot: None,
+        });
+        session.skills_dirty = true;
+    }
+
+    /// Sobe rank +1 (até MAX_SKILL_RANK). Custo varia por rank.
+    fn handle_skill_rank_up(&mut self, sid: SessionId, skill_id: u32) {
+        let Some(session) = self.sessions.get_mut(&sid) else { return };
+        if !session.logged_in { return; }
+        let Some(idx) = session.learned_skills.iter().position(|s| s.skill_id == skill_id) else {
+            return; // não aprendida ainda
+        };
+        let cur_rank = session.learned_skills[idx].rank;
+        if cur_rank >= shared::MAX_SKILL_RANK { return; }
+        let cost = shared::sp_cost_for_next_rank(cur_rank);
+        let avail = session.skill_points_earned.saturating_sub(session.skill_points_spent);
+        if avail < cost { return; }
+        session.skill_points_spent = session.skill_points_spent.saturating_add(cost);
+        session.learned_skills[idx].rank = cur_rank + 1;
+        session.skills_dirty = true;
+    }
+
+    /// Equipa skill ativa em slot 0..=5. `slot=None` ou `skill_id=0` desequipa.
+    /// Passivas ignoram (o slot fica None permanentemente).
+    fn handle_skill_equip(&mut self, sid: SessionId, skill_id: u32, slot: Option<u8>) {
+        let Some(session) = self.sessions.get_mut(&sid) else { return };
+        if !session.logged_in { return; }
+
+        // Caso 1: desequipar (skill_id=0 ou slot=None)
+        if skill_id == 0 {
+            if let Some(target_slot) = slot {
+                for s in session.learned_skills.iter_mut() {
+                    if s.equipped_slot == Some(target_slot) {
+                        s.equipped_slot = None;
+                    }
+                }
+                session.skills_dirty = true;
+            }
+            return;
+        }
+        if slot.is_none() {
+            // Desequipa essa skill de qualquer slot.
+            for s in session.learned_skills.iter_mut() {
+                if s.skill_id == skill_id {
+                    s.equipped_slot = None;
+                }
+            }
+            session.skills_dirty = true;
+            return;
+        }
+
+        let target_slot = slot.unwrap();
+        if (target_slot as usize) >= shared::SKILL_BAR_SLOTS {
+            return;
+        }
+
+        // Skill aprendida?
+        let Some(idx) = session.learned_skills.iter().position(|s| s.skill_id == skill_id) else {
+            return;
+        };
+
+        // Passivas não vão pra slot — ignoram silenciosamente.
+        let Some(def) = crate::skills::skill_of(skill_id) else { return };
+        if def.is_passive { return; }
+
+        // Tira quem estiver no slot alvo (swap implícito).
+        for (i, s) in session.learned_skills.iter_mut().enumerate() {
+            if i != idx && s.equipped_slot == Some(target_slot) {
+                s.equipped_slot = None;
+            }
+        }
+        session.learned_skills[idx].equipped_slot = Some(target_slot);
+        session.skills_dirty = true;
     }
 
     pub fn step(&mut self, dt: f32) {
         self.tick = self.tick.wrapping_add(1);
+
+        // Detecta hot-reload da economy (admin editou via web) e re-emite
+        // ItemsConfig pra todos os clientes logados — assim nomes/icones
+        // sobem ao vivo no inventario.
+        let v = crate::economy::current_version();
+        if v != self.last_econ_version {
+            self.last_econ_version = v;
+            let cfg = crate::economy::items_config();
+            let skills_cfg = crate::skills::all_skills();
+            for s in self.sessions.values() {
+                if !s.logged_in { continue; }
+                let _ = s.handle.to_client.send(ServerMessage::ItemsConfig {
+                    items: cfg.clone(),
+                });
+                // Skills compartilham o mesmo `economy_version` — re-broadcast
+                // junto pra UI atualizar nome/icon/scaling sem relogar.
+                let _ = s.handle.to_client.send(ServerMessage::SkillsConfig {
+                    skills: skills_cfg.clone(),
+                });
+            }
+        }
+
+        // Skills dirty: jogadores que aprenderam/upgrade/equiparam recebem o
+        // estado novo. Resta-se após o broadcast.
+        let dirty: Vec<SessionId> = self.sessions.iter()
+            .filter(|(_, s)| s.logged_in && s.skills_dirty)
+            .map(|(id, _)| *id)
+            .collect();
+        for sid in dirty {
+            if let Some(s) = self.sessions.get_mut(&sid) {
+                let state = shared::skills::PlayerSkillsState {
+                    sp_earned: s.skill_points_earned,
+                    sp_spent: s.skill_points_spent,
+                    skills: s.learned_skills.clone(),
+                };
+                let _ = s.handle.to_client.send(ServerMessage::PlayerSkillsUpdate { state });
+                s.skills_dirty = false;
+            }
+        }
 
         // --- Teleporte via portais ---
         self.process_portal_teleports(dt);
@@ -2633,6 +3136,37 @@ impl GameWorld {
             }
         }
 
+        // Drena pending_skill_hits — instant hits de skill (line/aoe/cone).
+        // Resolve net_id → Entity uma vez por hit (linear scan; pequeno).
+        if !combat_disabled && !self.pending_skill_hits.is_empty() {
+            let queue = std::mem::take(&mut self.pending_skill_hits);
+            for h in queue {
+                let mut found: Option<Entity> = None;
+                for (e, net) in self.ecs.query::<&NetId>().iter() {
+                    if net.0 == h.target_net { found = Some(e); break; }
+                }
+                if let Some(e) = found {
+                    damage_events.push((e, h.target_net, h.damage, h.attacker_net, h.from_player, h.hurt_dir, h.is_crit));
+                }
+            }
+        }
+
+        // Drena pending_heals — heals em players (self+ally) por skills.
+        if !self.pending_heals.is_empty() {
+            let queue = std::mem::take(&mut self.pending_heals);
+            for h in queue {
+                let mut e: Option<Entity> = None;
+                for (en, net) in self.ecs.query::<&NetId>().iter() {
+                    if net.0 == h.target_net { e = Some(en); break; }
+                }
+                if let Some(e) = e {
+                    if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
+                        hp.current = (hp.current + h.amount).min(hp.max);
+                    }
+                }
+            }
+        }
+
         // Credita o golpe fatal ao atacante: alvo_net_id -> atacante_net_id
         let mut kill_credits: HashMap<EntityId, EntityId> = HashMap::new();
         // Entidades que devem morrer de verdade (downed_hp zerou por player)
@@ -2740,6 +3274,22 @@ impl GameWorld {
                 hp.current = (hp.current - dmg).max(0);
                 if hp.current == 0 && attacker_is_player {
                     kill_credits.insert(target_id, attacker_id);
+                }
+            }
+            // Healing Touch (1052) — Staff T2 P: auto-attacks healam self
+            // 1%/rank do dmg dealt. Aplica em damage events de player → enemy.
+            if attacker_is_player {
+                if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == attacker_id) {
+                    if let Some(ht) = s.learned_skills.iter().find(|sk| sk.skill_id == 1052).copied() {
+                        let heal_amt = (dmg as f32 * 0.01 * ht.rank as f32).round() as i32;
+                        if heal_amt > 0 {
+                            if let Some(ae) = s.entity {
+                                if let Ok(mut hp2) = self.ecs.get::<&mut Health>(ae) {
+                                    hp2.current = (hp2.current + heal_amt).min(hp2.max);
+                                }
+                            }
+                        }
+                    }
                 }
             }
             // Stagger: aplica hurt_until = sim_time + HURT_STAGGER_DURATION.
@@ -2854,16 +3404,9 @@ impl GameWorld {
                 // iLvl baseado no kind do enemy: bosses (kind 7) dropam
                 // tier alto. Outros enemies escalam pela attack damage do
                 // kind como proxy de "dificuldade".
-                let item_lvl: u16 = match kind_id {
-                    7 => 50,           // boss
-                    5 => 30,           // berserker
-                    3 => 25,           // ninja
-                    4 => 20,           // mago
-                    1 => 15,           // tank
-                    _ => 10,           // grunts
-                };
-                let instance = shared::items::ItemInstance::roll_for(
-                    item_id,
+                let item_lvl = crate::economy::loot_item_level(kind_id, item_id);
+                let instance = shared::items::ItemInstance::roll_with_template(
+                    crate::economy::item_template_of(item_id),
                     item_lvl,
                     || fastrand::f32(),
                 );
@@ -2875,6 +3418,14 @@ impl GameWorld {
                     LootTag { item_id, qty, instance },
                 ));
                 tracing::debug!("loot drop: kind={kind_id} item={item_id} qty={qty} rarity={:?}", instance.map(|i| i.rarity()));
+                if let Some(ctx) = &self.auth_ctx {
+                    let r = instance.map(|i| i.rarity);
+                    let rf = instance.map(|i| i.refinement).unwrap_or(0);
+                    crate::persistence::log_drop(
+                        ctx.pool.clone(), kind_id, item_id, qty,
+                        r.unwrap_or(0), item_lvl, rf,
+                    );
+                }
             }
 
             // Creditar XP (e Fame, se mob grande) para o jogador que matou
@@ -2950,9 +3501,17 @@ impl GameWorld {
                             session.unspent_points = session.unspent_points
                                 .saturating_add(gained * shared::POINTS_PER_LEVEL);
                             session.stat_points_dirty = true;
+                            // Skills: ganha SP por level (cap em CHAR_LEVEL_CAP).
+                            // `level_of_xp` já clampa, mas o gain por delta
+                            // preserva idempotência se chamado mais de uma vez.
+                            session.skill_points_earned = session.skill_points_earned
+                                .saturating_add(gained * shared::SP_PER_LEVEL);
+                            session.skills_dirty = true;
                             tracing::info!(
-                                "{} subiu pra L{} (+{} pontos livres)",
-                                session.name, new_level, gained * shared::POINTS_PER_LEVEL,
+                                "{} subiu pra L{} (+{} pontos livres, +{} SP)",
+                                session.name, new_level,
+                                gained * shared::POINTS_PER_LEVEL,
+                                gained * shared::SP_PER_LEVEL,
                             );
                         }
                         session.last_level = new_level;
@@ -3067,7 +3626,7 @@ impl GameWorld {
                         *slot = shared::InventorySlot::default();
                     }
                     session.equipment = shared::Equipment::default();
-                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
+                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills);
                     session.inventory_dirty = true;
                     session.stats_dirty = true;
                     break;
@@ -3155,7 +3714,7 @@ impl GameWorld {
                             let allowed = can_equip_in_slot(&session.equipment, slot, ltag.item_id);
                             if empty && allowed {
                                 session.equipment.set(slot, Some(ltag.item_id), ltag.instance);
-                                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
+                                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills);
                                 session.stats_dirty = true;
                                 if let Some(pe) = session.entity {
                                     hp_max_updates.push((pe, session.stats.hp_max));
@@ -3484,43 +4043,69 @@ impl GameWorld {
     /// (antes do DB terminar de gravar) ja veja dados novos.
     pub fn collect_character_rows(&mut self) -> Vec<crate::persistence::CharacterRow> {
         let mut out = Vec::with_capacity(self.sessions.len());
-        let mut entries: Vec<(String, Vec2, Health, u64, Vec<shared::InventorySlot>, shared::Equipment, Vec<shared::InventorySlot>, u64, u64, [u64; 6], u32, [u32; shared::STAT_COUNT])> = Vec::new();
+        // Tuple grande pra escapar do borrow do ECS por sessão. Os campos extras
+        // (skill_points_*, learned_skills) vão direto no constructor abaixo
+        // pra não inflar mais o tuple.
+        struct E {
+            name: String,
+            pos: Vec2,
+            hp: Health,
+            xp: u64,
+            inventory: Vec<shared::InventorySlot>,
+            equipment: shared::Equipment,
+            vault: Vec<shared::InventorySlot>,
+            fame: u64,
+            aura: u64,
+            proficiencies: [u64; shared::PROF_COUNT],
+            unspent_points: u32,
+            allocated_points: [u32; shared::STAT_COUNT],
+            sp_earned: u32,
+            sp_spent: u32,
+            learned: Vec<shared::LearnedSkill>,
+        }
+        let mut entries: Vec<E> = Vec::new();
         for session in self.sessions.values() {
             if !session.logged_in { continue; }
             let Some(e) = session.entity else { continue };
             let pos = match self.ecs.get::<&Position>(e) { Ok(p) => p.0, Err(_) => continue };
             let hp = match self.ecs.get::<&Health>(e) { Ok(h) => *h, Err(_) => continue };
-            entries.push((
-                session.name.clone(),
+            entries.push(E {
+                name: session.name.clone(),
                 pos,
                 hp,
-                session.xp,
-                session.inventory.clone(),
-                session.equipment,
-                session.vault.clone(),
-                session.fame,
-                session.aura,
-                session.proficiencies,
-                session.unspent_points,
-                session.allocated_points,
-            ));
+                xp: session.xp,
+                inventory: session.inventory.clone(),
+                equipment: session.equipment,
+                vault: session.vault.clone(),
+                fame: session.fame,
+                aura: session.aura,
+                proficiencies: session.proficiencies,
+                unspent_points: session.unspent_points,
+                allocated_points: session.allocated_points,
+                sp_earned: session.skill_points_earned,
+                sp_spent: session.skill_points_spent,
+                learned: session.learned_skills.clone(),
+            });
         }
-        for (name, pos, hp, xp, inventory, equipment, vault, fame, aura, proficiencies, unspent_points, allocated_points) in entries {
+        for e in entries {
             let row = crate::persistence::CharacterRow {
-                name: name.clone(),
-                pos,
-                hp,
-                xp,
-                inventory,
-                equipment,
-                vault,
-                fame,
-                aura,
-                proficiencies,
-                unspent_points,
-                allocated_points,
+                name: e.name.clone(),
+                pos: e.pos,
+                hp: e.hp,
+                xp: e.xp,
+                inventory: e.inventory,
+                equipment: e.equipment,
+                vault: e.vault,
+                fame: e.fame,
+                aura: e.aura,
+                proficiencies: e.proficiencies,
+                unspent_points: e.unspent_points,
+                allocated_points: e.allocated_points,
+                skill_points_earned: e.sp_earned,
+                skill_points_spent: e.sp_spent,
+                learned_skills: e.learned,
             };
-            self.characters.insert(name, row.clone());
+            self.characters.insert(e.name, row.clone());
             out.push(row);
         }
         out
@@ -3555,6 +4140,8 @@ impl GameWorld {
         let can_go_into_equip = |slot: shared::EquipSlot, item: &shared::InventorySlot| -> bool {
             if item.qty == 0 { return true; }
             if item.qty > 1 { return false; }
+            // Item desativado pelo admin: bloqueado de ser equipado.
+            if !crate::economy::is_item_active(item.item_id) { return false; }
             can_equip_in_slot(&equip_now, slot, item.item_id)
         };
 
@@ -3604,7 +4191,7 @@ impl GameWorld {
                 let new_inst = if ia.qty > 0 { ia.instance } else { None };
                 set_equip(session, bs, new_id, new_inst);
                 session.inventory[ai as usize] = new_inv_slot;
-                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
+                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
             }
@@ -3621,7 +4208,7 @@ impl GameWorld {
                 let new_inst = if ib.qty > 0 { ib.instance } else { None };
                 set_equip(session, as_, new_id, new_inst);
                 session.inventory[bi as usize] = new_inv_slot;
-                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
+                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
             }
@@ -3711,17 +4298,26 @@ impl GameWorld {
                 + lcg_f32(seed ^ (*item_id as u64)) * 0.4;
             let r = 0.4 + lcg_f32(seed ^ (i as u64)) * 0.9;
             let offset = Vec2::new(a.cos(), a.sin()) * r;
+            let item_lvl = crate::economy::loot_item_level(0, *item_id);
+            let instance = shared::items::ItemInstance::roll_with_template(
+                crate::economy::item_template_of(*item_id),
+                item_lvl,
+                || fastrand::f32(),
+            );
             self.ecs.spawn((
                 NetId(loot_id),
                 Position(pos + offset),
                 Velocity(Vec2::ZERO),
                 EntityKind::Loot(*item_id),
-                LootTag {
-                    item_id: *item_id,
-                    qty: *qty,
-                    instance: shared::items::ItemInstance::roll_for(*item_id, 10, || fastrand::f32()),
-                },
+                LootTag { item_id: *item_id, qty: *qty, instance },
             ));
+            if let Some(ctx) = &self.auth_ctx {
+                let r = instance.map(|i| i.rarity).unwrap_or(0);
+                let rf = instance.map(|i| i.refinement).unwrap_or(0);
+                crate::persistence::log_drop(
+                    ctx.pool.clone(), 0, *item_id, *qty, r, item_lvl, rf,
+                );
+            }
         }
     }
 
@@ -3994,9 +4590,6 @@ impl GameWorld {
     }
 
     fn handle_shop_buy(&mut self, sid: SessionId, slot_idx: usize) {
-        let listing = crate::economy::shop_listing();
-        let Some(&(item_id, price)) = listing.get(slot_idx) else { return };
-
         // 1) Valida sessao + proximidade (borrow imutavel da ECS)
         let (player_entity, player_pos) = match self.sessions.get(&sid) {
             Some(s) if s.logged_in => match s.entity {
@@ -4009,15 +4602,24 @@ impl GameWorld {
             _ => return,
         };
         let r_sq = shared::INTERACT_RADIUS * shared::INTERACT_RADIUS;
-        let near_vendor = self
-            .ecs
-            .query::<(&Position, &EntityKind)>()
-            .iter()
-            .any(|(_, (p, k))| {
-                matches!(k, EntityKind::Npc(_))
-                    && p.0.distance_squared(player_pos) <= r_sq
-            });
-        if !near_vendor { return; }
+        // Acha o vendor mais próximo + seu shop_id (VendorTag).
+        let mut nearest_shop_id: Option<u32> = None;
+        let mut best_d = f32::INFINITY;
+        for (entity, (pos, kind)) in self.ecs.query::<(&Position, &EntityKind)>().iter() {
+            if !matches!(kind, EntityKind::Npc(n) if *n != 2) { continue; }
+            let d = pos.0.distance_squared(player_pos);
+            if d > r_sq { continue; }
+            if d < best_d {
+                best_d = d;
+                let sid_v = self.ecs.get::<&VendorTag>(entity).map(|t| t.shop_id).unwrap_or(1);
+                nearest_shop_id = Some(sid_v);
+            }
+        }
+        let Some(shop_id) = nearest_shop_id else { return; };
+
+        // Listing específico do vendor próximo (não global).
+        let listing = crate::economy::shop_listing_for(shop_id);
+        let Some(&(item_id, price)) = listing.get(slot_idx) else { return };
 
         // 2) Muta sessao + calcula se precisa atualizar Health.max
         let new_hp_max: Option<i32> = {
@@ -4051,7 +4653,7 @@ impl GameWorld {
                 let allowed = can_equip_in_slot(&session.equipment, es, item_id);
                 if empty && allowed {
                     session.equipment.set(es, Some(item_id), None);
-                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
+                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills);
                     session.stats_dirty = true;
                     new_max = Some(session.stats.hp_max);
                     true
@@ -4171,23 +4773,25 @@ impl GameWorld {
             _ => return,
         };
         let r_sq = shared::INTERACT_RADIUS * shared::INTERACT_RADIUS;
-        let mut vendor_id = vendor_id;
-        let near = self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter()
-            .filter_map(|(_, (net, p, k))| {
-                if matches!(k, EntityKind::Npc(n) if *n != 2)
-                    && p.0.distance_squared(player_pos) <= r_sq
-                {
-                    Some((net.0.0 as u32, p.0.distance_squared(player_pos)))
-                } else { None }
-            })
-            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        let Some((vid, _)) = near else {
+        let _ = vendor_id; // unused — vendor real é resolvido por proximidade abaixo
+        // Acha vendor mais próximo + shop_id correspondente.
+        let mut nearest: Option<(u32, u32, f32)> = None; // (vendor_eid, shop_id, dist²)
+        for (entity, (net, p, k)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
+            if !matches!(k, EntityKind::Npc(n) if *n != 2) { continue; }
+            let d = p.0.distance_squared(player_pos);
+            if d > r_sq { continue; }
+            let sid_v = self.ecs.get::<&VendorTag>(entity).map(|t| t.shop_id).unwrap_or(1);
+            if nearest.map_or(true, |(_,_,bd)| d < bd) {
+                nearest = Some((net.0.0 as u32, sid_v, d));
+            }
+        }
+        let Some((vendor_eid, shop_id, _)) = nearest else {
             self.send_trade_result(sid, false, "longe demais do vendedor");
             return;
         };
-        vendor_id = vid;
+        let vendor_id = vendor_eid;
 
-        let listing = crate::economy::shop_listing();
+        let listing = crate::economy::shop_listing_for(shop_id);
         let (buy_mult, sell_mult) = crate::economy::vendor_modifiers(vendor_id);
 
         // 2) Calcula custo de compra + valida slots.
@@ -4331,6 +4935,9 @@ impl GameWorld {
             if slot_idx >= session.inventory.len() { return; }
             let slot = session.inventory[slot_idx];
             if slot.qty == 0 { return; }
+            // Item desativado pelo admin: nao equipa, nao usa. Silent skip
+            // (cliente pode manter no inv pra vender/guardar).
+            if !crate::economy::is_item_active(slot.item_id) { return; }
             let Some(player_entity) = session.entity else { return };
 
             // Equipavel: swap entre inventario e slot de equip correspondente.
@@ -4354,7 +4961,7 @@ impl GameWorld {
                     Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1, instance: old_inst },
                     None         => shared::InventorySlot::default(),
                 };
-                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies);
+                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
                 (player_entity, UseAction::Equip { new_hp_max: session.stats.hp_max })
@@ -4448,6 +5055,9 @@ impl GameWorld {
             proficiencies: session.proficiencies,
             unspent_points: session.unspent_points,
             allocated_points: session.allocated_points,
+            skill_points_earned: session.skill_points_earned,
+            skill_points_spent: session.skill_points_spent,
+            learned_skills: session.learned_skills.clone(),
         };
         self.characters.insert(session.name.clone(), row.clone());
         Some(row)
@@ -4503,7 +5113,8 @@ fn maybe_unequip_offhand_for_weapon(session: &mut Session, new_weapon: u16) -> b
 fn effective_stats(
     equip: &shared::Equipment,
     allocated: &[u32; shared::STAT_COUNT],
-    proficiencies: &[u64; 6],
+    proficiencies: &[u64; shared::PROF_COUNT],
+    learned_skills: &[shared::LearnedSkill],
 ) -> shared::PlayerStats {
     let mut s = shared::base_player_stats();
 
@@ -4601,6 +5212,48 @@ fn effective_stats(
     s.wis += (scaling.wis * lvl) as i32;
     s.defense += (scaling.defense * lvl) as i32;
 
+    // Skill passives — sempre-ativas se aprendidas. Os usable_with são
+    // checados antes: passiva com prof específica só vale se a arma
+    // equipada bater. Passivas com usable_with=None aplicam sempre.
+    for ls in learned_skills {
+        if ls.rank == 0 { continue; }
+        let Some(def) = crate::skills::skill_of(ls.skill_id) else { continue };
+        if !def.is_passive { continue; }
+        if let Some(uw) = &def.usable_with {
+            if !uw.is_empty() && !uw.iter().any(|p| p == prof.as_db_str()) { continue; }
+        }
+        let r = ls.rank as i32;
+        // Mapeamento per-skill dos efeitos. Por enquanto hardcoded;
+        // futuramente migra pra effect_payload no DB.
+        match ls.skill_id {
+            // Mana Pool — Wand T1 P: +5 mp_max/rank, r5: +0.5 mp_regen, r10: -5% spell cost
+            1042 => {
+                s.mp_max += 5 * r;
+                // r5 / r10 milestones quando implementarmos mp_regen/cost runtime.
+            }
+            // Iron Will — Sword T4 P: <30% HP: -30% dmg taken (placeholder)
+            1008 => { /* aplicado em receive_damage path; sem stat permanente */ }
+            // Combat Stance — Sword T1 P: +1%/rank atk speed (Sword/Dagger)
+            1002 => { s.attack_speed_mult += 0.01 * r as f32; }
+            // Heavy Hands — Axe T1 P: +1%/rank atk dmg (Axe/Sword)
+            1010 => { s.attack_damage += s.attack_damage * r / 100; }
+            // Sharp Edge — Dagger T1 P: +0.3%/rank crit chance
+            1026 => { s.crit_chance += 0.003 * r as f32; }
+            // Eagle Eye — Bow T1 P: +5%/rank range (sem stat dedicado; aplicado em projectile spawn)
+            1034 => { /* TODO: hook em projectile range */ }
+            // Mana Conduit — Staff T1 P: -1%/rank mp cost (aplicado em handle_skill_cast)
+            1050 => { /* aplicado em cast cost */ }
+            // Hardened Fists — Unarmed T1 P: +2/rank atk dmg unarmed
+            1058 => {
+                if equip.weapon.is_none() || equip.weapon == Some(0) {
+                    s.attack_damage += 2 * r;
+                }
+            }
+            // Outras passivas (T2/T3/T4) implementadas progressivamente.
+            _ => {}
+        }
+    }
+
     // Garantir minimos / clamps
     s.hp_max = s.hp_max.max(1);
     s.mp_max = s.mp_max.max(0);
@@ -4609,6 +5262,17 @@ fn effective_stats(
     s.block_dmg_reduction = s.block_dmg_reduction.clamp(0.0, shared::BLOCK_REDUCTION_MAX);
     s.defense_stamina_cost_mult = s.defense_stamina_cost_mult.max(shared::STAMINA_COST_MULT_MIN);
     s
+}
+
+/// Calcula hurt_dir (TOWARD attacker) a partir do net_id do alvo.
+/// Free fn pra ser usada de fora do step() (ex: skill cast handler).
+fn calc_hurt_dir_from_eid(ecs: &World, target_net: EntityId, attacker_pos: Vec2) -> Vec2 {
+    for (_, (net, pos)) in ecs.query::<(&NetId, &Position)>().iter() {
+        if net.0 == target_net {
+            return (attacker_pos - pos.0).try_normalize().unwrap_or(Vec2::ZERO);
+        }
+    }
+    Vec2::ZERO
 }
 
 /// Tenta adicionar um item ao inventario. Stacka em slots existentes primeiro;

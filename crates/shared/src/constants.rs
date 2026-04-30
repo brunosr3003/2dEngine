@@ -22,7 +22,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 31;
+pub const PROTOCOL_VERSION: u16 = 34;
 
 /// Velocidade base do jogador em tiles/segundo.
 pub const PLAYER_SPEED: f32 = 5.0;
@@ -154,6 +154,10 @@ pub const DOWNED_REVIVE_HP_PCT: f32 = 0.05;
 pub const DOWNED_HP_MAX: i32 = 100;
 
 /// Tipos de proficiencia (classless). XP se acumula ao usar arma do tipo.
+///
+/// Variantes adicionadas no Skills Phase 1 (M11): `Axe` e `Spear`. Antes
+/// HAMMER (item 25) caía em Unarmed; agora vai pra Axe. SPEAR (item 26) idem.
+/// O array de proficiencies em CharacterRow cresceu de 6 pra `PROF_COUNT`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[repr(u8)]
 pub enum Proficiency {
@@ -163,11 +167,19 @@ pub enum Proficiency {
     Bow      = 3,
     Wand     = 4,
     Unarmed  = 5,
+    Axe      = 6,
+    Spear    = 7,
 }
+
+/// Total de proficiências (tamanho do array em CharacterRow.proficiencies).
+pub const PROF_COUNT: usize = 8;
 
 impl Proficiency {
     pub fn all() -> &'static [Proficiency] {
-        &[Self::Sword, Self::Staff, Self::Dagger, Self::Bow, Self::Wand, Self::Unarmed]
+        &[
+            Self::Sword, Self::Staff, Self::Dagger, Self::Bow,
+            Self::Wand, Self::Unarmed, Self::Axe, Self::Spear,
+        ]
     }
 
     pub fn from_item(id: u16) -> Self {
@@ -177,7 +189,39 @@ impl Proficiency {
             _ if id == item_id::DAGGER   => Self::Dagger,
             _ if id == item_id::BOW      => Self::Bow,
             _ if id == item_id::WAND     => Self::Wand,
+            _ if id == item_id::AXE      => Self::Axe,
+            _ if id == item_id::SPEAR    => Self::Spear,
             _                            => Self::Unarmed,
+        }
+    }
+
+    /// Identificador estável usado em DB e protocolo (campo `prof` da skill).
+    /// Mantém em sync com [`Self::from_str`].
+    pub fn as_db_str(&self) -> &'static str {
+        match self {
+            Self::Sword   => "Sword",
+            Self::Staff   => "Staff",
+            Self::Dagger  => "Dagger",
+            Self::Bow     => "Bow",
+            Self::Wand    => "Wand",
+            Self::Unarmed => "Unarmed",
+            Self::Axe     => "Axe",
+            Self::Spear   => "Spear",
+        }
+    }
+
+    /// Inverso de `as_db_str`. Retorna None pra strings desconhecidas.
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "Sword"   => Some(Self::Sword),
+            "Staff"   => Some(Self::Staff),
+            "Dagger"  => Some(Self::Dagger),
+            "Bow"     => Some(Self::Bow),
+            "Wand"    => Some(Self::Wand),
+            "Unarmed" => Some(Self::Unarmed),
+            "Axe"     => Some(Self::Axe),
+            "Spear"   => Some(Self::Spear),
+            _         => None,
         }
     }
 
@@ -189,6 +233,8 @@ impl Proficiency {
             Self::Bow     => "Arco",
             Self::Wand    => "Varinha",
             Self::Unarmed => "Desarmado",
+            Self::Axe     => "Machado",
+            Self::Spear   => "Lança",
         }
     }
 }
@@ -219,9 +265,16 @@ pub const BOSS_SPREAD_RAD: f32 = 1.0; // ~57 graus
 /// Tempo de respawn do boss em segundos.
 pub const BOSS_RESPAWN_DELAY: f32 = 120.0;
 
-/// Retorna o level derivado a partir da XP acumulada.
-/// Curva simples quadratica: L = 1 + floor(sqrt(xp / 100)).
-///     L1: 0 xp  L2: 100  L3: 400  L4: 900  L5: 1600  L10: 8100
+/// Cap máximo de level do personagem. Acima disso, XP continua acumulando
+/// mas `level_of_xp` clamp no valor; nenhum SP/stat point novo é gerado.
+pub const CHAR_LEVEL_CAP: u32 = 100;
+
+/// Retorna o level derivado a partir da XP acumulada, clamped em
+/// `CHAR_LEVEL_CAP`. Curva stair-step: precisa `lvl² × 100` xp pra avançar
+/// do lvl pro lvl+1. Cumulativa via loop.
+///     L→L+1 cost: 100, 400, 900, 1600, ..., L²×100
+///     Total acumulado pra reach L: 100·(L-1)·L·(2L-1)/6
+///     L1: 0  L2: 100  L3: 500  L4: 1400  L5: 3000  L10: 28500  L30: 855500  L100: ~33M
 pub const fn level_of_xp(xp: u64) -> u32 {
     let mut lvl = 1u32;
     let mut need = 100u64;
@@ -229,6 +282,7 @@ pub const fn level_of_xp(xp: u64) -> u32 {
     while remaining >= need {
         remaining -= need;
         lvl += 1;
+        if lvl >= CHAR_LEVEL_CAP { return CHAR_LEVEL_CAP; }
         need = (lvl as u64) * (lvl as u64) * 100;
     }
     lvl
@@ -287,7 +341,7 @@ pub mod item_id {
     pub const DRAGON_SCALE:    u16 = 23;  // raro de boss
     // === Fase D — novas armas + acessórios ===
     pub const SCIMITAR:        u16 = 24;  // espada curva, atk+atk_spd
-    pub const HAMMER:          u16 = 25;  // martelo, atk alto + def
+    pub const AXE:             u16 = 25;  // machado, atk alto + def (era HAMMER pré-M11)
     pub const SPEAR:           u16 = 26;  // lança, atk+dex
     pub const CROSSBOW:        u16 = 27;  // besta, ranged + crit
     pub const HEAVY_SHIELD:    u16 = 28;  // escudo pesado, def alta
@@ -339,7 +393,7 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
             || id == item_id::BOW
             || id == item_id::WAND
             || id == item_id::SCIMITAR
-            || id == item_id::HAMMER
+            || id == item_id::AXE
             || id == item_id::SPEAR
             || id == item_id::CROSSBOW       => Some(EquipSlot::Weapon),
         id if id == item_id::SHIELD
@@ -386,7 +440,7 @@ pub fn weapon_allows_offhand(weapon_id: u16) -> bool {
         || weapon_id == item_id::SWORD
         || weapon_id == item_id::DAGGER
         || weapon_id == item_id::SCIMITAR
-        || weapon_id == item_id::HAMMER
+        || weapon_id == item_id::AXE
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -418,6 +472,52 @@ pub struct EquipBonus {
 
 /// Pontos de atributo ganhos por level-up.
 pub const POINTS_PER_LEVEL: u32 = 3;
+
+/// Skill points ganhos por level-up. Pool global compartilhado entre profs.
+pub const SP_PER_LEVEL: u32 = 1;
+
+/// Rank máximo de uma skill (0 = não aprendida; 1..=10 = ranks).
+pub const MAX_SKILL_RANK: u8 = 10;
+
+/// Custo em SP de cada rank, indexado por rank (0 = unlock cost = 1, idx 1..10).
+/// Total para maxar uma skill = 1+1+1+2+2+2+3+3+3+5 = **23 SP**.
+pub const SP_COST_PER_RANK: [u32; 11] = [
+    0, // rank 0 = não aprendida
+    1, 1, 1,  // rank 1-3: cheap unlock + early
+    2, 2, 2,  // rank 4-6: meio (rank 5 = milestone)
+    3, 3, 3,  // rank 7-9
+    5,        // rank 10 = capstone
+];
+
+/// Custo em SP pra subir de `current_rank` para `current_rank + 1`.
+/// Retorna 0 se já está no max.
+pub const fn sp_cost_for_next_rank(current_rank: u8) -> u32 {
+    if current_rank >= MAX_SKILL_RANK { return 0; }
+    SP_COST_PER_RANK[(current_rank + 1) as usize]
+}
+
+/// Custo total acumulado pra alcançar `rank` (somando rank 1..=rank).
+pub const fn sp_cost_to_reach_rank(rank: u8) -> u32 {
+    let mut sum = 0u32;
+    let mut i = 1u8;
+    while i <= rank && i <= MAX_SKILL_RANK {
+        sum += SP_COST_PER_RANK[i as usize];
+        i += 1;
+    }
+    sum
+}
+
+/// Slots de skill ativa equipados na barra do HUD (teclas 1..=N).
+pub const SKILL_BAR_SLOTS: usize = 6;
+
+/// Tiers de skill — define unlock_char_lvl e unlock_prof_lvl recomendados.
+/// Skills no DB usam (char_lvl, prof_lvl) explícitos; estes são guidelines pro seed.
+pub const SKILL_TIER_UNLOCKS: [(u8, u8); 4] = [
+    (5, 10),   // T1 — Aprendiz
+    (15, 20),  // T2 — Adepto
+    (30, 40),  // T3 — Mestre
+    (60, 70),  // T4 — Lendário
+];
 
 /// Quantidade de stats alocaveis. Indices: 0=FOR, 1=DES, 2=INT, 3=VIT, 4=SPD, 5=RES.
 pub const STAT_COUNT: usize = 6;
@@ -579,6 +679,14 @@ pub const fn weapon_scaling(item_id: u16) -> WeaponScaling {
         id if id == item_id::WAND => WeaponScaling {
             hp_max: 0.0, mp_max: 1.0, attack_damage: 0.0, dex: 0.0, wis: 0.3, defense: 0.0,
         },
+        // Machado: heavy hitter — atk alto + um pouco de hp
+        id if id == item_id::AXE => WeaponScaling {
+            hp_max: 0.5, mp_max: 0.0, attack_damage: 0.4, dex: 0.0, wis: 0.0, defense: 0.0,
+        },
+        // Lança: zoning — atk médio + dex (alcance)
+        id if id == item_id::SPEAR => WeaponScaling {
+            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.25, dex: 0.15, wis: 0.0, defense: 0.0,
+        },
         _ => WeaponScaling {
             hp_max: 0.0, mp_max: 0.0, attack_damage: 0.0, dex: 0.0, wis: 0.0, defense: 0.0,
         },
@@ -600,7 +708,7 @@ pub const fn weapon_is_melee(item_id: u16) -> bool {
         || item_id == item_id::GREAT_SWORD
         || item_id == item_id::DAGGER
         || item_id == item_id::SCIMITAR
-        || item_id == item_id::HAMMER
+        || item_id == item_id::AXE
         // SPEAR e melee mas usa anim Thrust — atualmente damage gen e
         // controlado pela melee path baseado em is_melee, então mantém
         // como melee aqui (cone na frente).
@@ -640,7 +748,7 @@ pub const fn item_bonus(item_id: u16) -> EquipBonus {
         id if id == item_id::LUCKY_RING   => EquipBonus { hp_max: 10,  mp_max:  20, attack_damage:  2, dex: 6,  wis: 2, defense: 0 },
         // === Fase D — novas armas / armaduras / acessórios ===
         id if id == item_id::SCIMITAR     => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  8, dex: 6,  wis: 0, defense: 0 },
-        id if id == item_id::HAMMER       => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage: 22, dex: -2, wis: 0, defense: 3 },
+        id if id == item_id::AXE       => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage: 22, dex: -2, wis: 0, defense: 3 },
         id if id == item_id::SPEAR        => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 16, dex: 5,  wis: 0, defense: 0 },
         id if id == item_id::CROSSBOW     => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 18, dex: 8,  wis: 0, defense: 0 },
         id if id == item_id::HEAVY_SHIELD => EquipBonus { hp_max: 110, mp_max:   0, attack_damage: -8, dex: -3, wis: 0, defense: 14 },

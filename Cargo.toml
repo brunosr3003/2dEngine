@@ -31,7 +31,8 @@ tokio-tungstenite = "0.24"
 futures-util = "0.3"
 
 # Persistencia (servidor)
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "macros"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "macros", "chrono"] }
+chrono = { version = "0.4", default-features = false, features = ["serde"] }
 
 # Web (auth / cadastro)
 axum = "0.7"

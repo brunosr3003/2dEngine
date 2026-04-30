@@ -151,7 +151,7 @@ pub fn item_template(item_id: u16) -> ItemTemplate {
         LUCKY_RING   => ItemTemplate { hp_max: StatRange::new(5, 18), mp_max: StatRange::new(10, 30), attack_damage: StatRange::new(1, 4), dex: StatRange::new(3, 9), wis: StatRange::new(1, 4), ..Default::default() },
         // === Fase D — novos ===
         SCIMITAR     => ItemTemplate { attack_damage: StatRange::new(6, 14),  dex: StatRange::new(4, 10), ..Default::default() },
-        HAMMER       => ItemTemplate { attack_damage: StatRange::new(16, 32), hp_max: StatRange::new(15, 35), defense: StatRange::new(2, 6), ..Default::default() },
+        AXE          => ItemTemplate { attack_damage: StatRange::new(16, 32), hp_max: StatRange::new(15, 35), defense: StatRange::new(2, 6), ..Default::default() },
         SPEAR        => ItemTemplate { attack_damage: StatRange::new(12, 22), dex: StatRange::new(3, 9), ..Default::default() },
         CROSSBOW     => ItemTemplate { attack_damage: StatRange::new(14, 24), dex: StatRange::new(6, 12), ..Default::default() },
         HEAVY_SHIELD => ItemTemplate { hp_max: StatRange::new(70, 140), defense: StatRange::new(10, 20), ..Default::default() },
@@ -392,11 +392,17 @@ impl Affix {
 }
 
 impl ItemInstance {
-    /// Roll uma instance fresh pra um item_id. `item_level` define o
-    /// nível do drop (boss=alto, mob comum=baixo). `rng` retorna f32 [0,1).
-    /// None se item não tem template (não-equipável).
-    pub fn roll_for<F: FnMut() -> f32>(item_id: u16, item_level: u16, mut rng: F) -> Option<Self> {
-        let tpl = item_template(item_id);
+    /// Roll uma instance fresh pra um item_id usando lookup hardcoded
+    /// (legacy). Prefira `roll_with_template` em código novo — esse aqui
+    /// só sobrevive pra testes/tools que não tem acesso ao economy cache.
+    pub fn roll_for<F: FnMut() -> f32>(item_id: u16, item_level: u16, rng: F) -> Option<Self> {
+        Self::roll_with_template(item_template(item_id), item_level, rng)
+    }
+
+    /// Roll uma instance usando um template já obtido (do DB cache no server).
+    /// `item_level` define o nível (boss=alto, mob comum=baixo). None se
+    /// o template não tem nenhum range (item não-equipável).
+    pub fn roll_with_template<F: FnMut() -> f32>(tpl: ItemTemplate, item_level: u16, mut rng: F) -> Option<Self> {
         if !tpl.has_any_range() { return None; }
         let rarity = ItemRarity::roll(rng());
         let mult = rarity.stat_mult() * ilvl_scale(item_level);

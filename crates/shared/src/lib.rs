@@ -9,6 +9,7 @@ pub mod constants;
 pub mod items;
 pub mod mapfile;
 pub mod protocol;
+pub mod skills;
 pub mod world_gen;
 pub mod physics;
 
@@ -17,6 +18,7 @@ pub use components::*;
 pub use constants::*;
 pub use items::*;
 pub use physics::*;
+pub use skills::*;
 
 /// Serde helper: serializa/deserializa `glam::Vec2` como array `[x, y]`
 /// para compatibilidade com o cliente Unity (float[]).

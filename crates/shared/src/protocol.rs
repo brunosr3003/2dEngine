@@ -47,6 +47,23 @@ pub enum ClientMessage {
     PartyLeave,
     /// Aloca 1 ponto de atributo. `stat` indice em [0=FOR,1=DES,2=INT,3=VIT,4=SPD].
     AllocStatPoint { stat: u8 },
+    /// Aprende uma skill (rank 0 → 1) gastando 1 SP. Server valida
+    /// unlock_char_lvl + unlock_prof_lvl + SP suficiente.
+    SkillLearn { skill_id: u32 },
+    /// Sobe rank de uma skill já aprendida. Custo varia por rank (ver
+    /// `SP_COST_PER_RANK`). Falha se rank == MAX_SKILL_RANK.
+    SkillRankUp { skill_id: u32 },
+    /// Equipa skill ativa em slot 0..=5. `slot=None` ou `skill_id=0` desequipa.
+    /// Passivas ignoram esse req (sempre ativas se aprendidas).
+    SkillEquip { skill_id: u32, slot: Option<u8> },
+    /// Dispara cast de skill ativa. `target_pos` = world position do mouse
+    /// (mira pra projectile/AoE). Server valida cd/cost/weapon e dispatch
+    /// pelo target_type da SkillDef.
+    SkillCast {
+        skill_id: u32,
+        #[serde(with = "crate::vec2_arr")]
+        target_pos: glam::Vec2,
+    },
     /// Reseta TODOS os pontos alocados pra unspent_points. Util pra testes
     /// e respec — server zera o array, devolve os pontos e reenvia stats.
     ResetStats,
@@ -141,6 +158,16 @@ pub enum ServerMessage {
     InventoryUpdate {
         slots: Vec<crate::InventorySlot>,
     },
+    /// Snapshot dos items configurados no servidor — enviado no login e
+    /// re-enviado quando admin altera algo (hot-reload da economy).
+    /// Cliente usa pra sobrescrever nomes/icones hardcoded em ItemInfo.
+    ///
+    /// Campo `item_configs` em vez de `items` pra não colidir com `items` do
+    /// `ShopOpen` (mesma struct compartilhada no cliente C#).
+    ItemsConfig {
+        #[serde(rename = "item_configs")]
+        items: Vec<ItemConfigEntry>,
+    },
     StatsUpdate {
         stats: crate::PlayerStats,
         equipment: crate::Equipment,
@@ -173,7 +200,27 @@ pub enum ServerMessage {
     AuraUpdate { aura: u64 },
     ProficienciesUpdate {
         #[serde(rename = "proficiency_xp")]
-        xp: [u64; 6],
+        xp: [u64; crate::PROF_COUNT],
+    },
+    /// Catálogo de skills carregado do DB. Enviado uma vez no login + após
+    /// hot-reload (admin bumpou economy_version). Cliente cacheia em
+    /// `SkillsConfigCache` pra UI consultar nome/icon/descrição.
+    SkillsConfig { skills: Vec<crate::SkillDef> },
+    /// Estado completo de skills do player. Enviado no login + após qualquer
+    /// mutação (learn, rank-up, equip).
+    PlayerSkillsUpdate { state: crate::PlayerSkillsState },
+    /// Broadcast de cast pra renderização cliente (gizmos/VFX). Servidor
+    /// envia pra todos clientes em AOI quando alguém casta uma skill.
+    SkillCastFx {
+        skill_id: u32,
+        #[serde(with = "crate::vec2_arr")]
+        caster_pos: glam::Vec2,
+        #[serde(with = "crate::vec2_arr")]
+        target_pos: glam::Vec2,
+        /// EntityId do alvo principal pra skills line/single (Lightning Bolt etc).
+        /// None pra AoE/self/projectile (cliente desenha sem snap em alvo).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        target_eid: Option<crate::EntityId>,
     },
     PartyInviteReceived { from: String },
     PartyUpdate { members: Vec<String> },
@@ -231,6 +278,24 @@ pub struct ShopTradeResult {
     pub ok:     bool,
     pub reason: String,
 }
+
+/// Entrada da config de items enviada pro cliente. Cliente sobrescreve
+/// `ItemInfo.NameOf` e o icone via runtime cache. icon_path tem precedência
+/// sobre icon_col/icon_row.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemConfigEntry {
+    pub id:         u16,
+    pub name:       String,
+    pub icon_path:  Option<String>,
+    pub icon_col:   i32,
+    pub icon_row:   i32,
+    pub equip_slot: Option<String>,
+    /// Se false, server bloqueia equip/use. Client pode greyscale o ícone.
+    #[serde(default = "default_true")]
+    pub active:     bool,
+}
+
+fn default_true() -> bool { true }
 
 /// Replicacao do mundo enviada a cada tick.
 #[derive(Debug, Clone, Serialize, Deserialize)]
