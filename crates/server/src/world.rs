@@ -82,6 +82,17 @@ struct PendingHeal {
     amount: i32,
 }
 
+/// AOE skill agendada com cast_time_s — aplica damage só quando release_tick
+/// for atingido (sincroniza com animação de queda no cliente, ex: Meteor).
+#[derive(Clone, Copy)]
+struct DelayedAoe {
+    target_pos: Vec2,
+    radius: f32,
+    damage: i32,
+    owner_eid: EntityId,
+    release_tick: u32,
+}
+
 pub struct EnemyTag {
     pub attack_cooldown: f32,
     /// sim_time absoluto até o qual o enemy fica em stagger (sem mover/atacar).
@@ -314,6 +325,12 @@ pub struct Session {
     /// Cooldown timestamps por skill_id. Valor = `sim_time_s` quando a skill
     /// fica disponível de novo. Cast só é permitido se sim_time >= valor.
     pub skill_cds: HashMap<u32, f32>,
+    /// Sim_time em que o cast atual termina. 0 = não tá castando. Durante cast:
+    /// bloqueia movimento, ataque, defesa, e novos casts. Setado em
+    /// handle_skill_cast quando skill tem cast_time_s > 0.
+    pub casting_until: f32,
+    /// Skill_id do cast em progresso (usado pra notificar cliente da pose).
+    pub casting_skill_id: u32,
     /// Pontos de atributo disponiveis (ganhos por level-up, POINTS_PER_LEVEL cada).
     pub unspent_points: u32,
     /// Pontos ja alocados em cada stat [FOR, DES, INT, VIT, SPD].
@@ -423,6 +440,7 @@ pub struct GameWorld {
     pending_shots: Vec<PendingShot>,
     pending_skill_hits: Vec<PendingSkillHit>,
     pending_heals: Vec<PendingHeal>,
+    pending_delayed_aoe: Vec<DelayedAoe>,
     /// Mapa por net_id → hurt_dir aplicado neste tick. Populado em step() ao
     /// processar damage_events; lido em send_snapshots() pra preencher
     /// EntitySnapshot.hurt_dir; limpo após envio.
@@ -486,6 +504,7 @@ impl GameWorld {
             pending_shots: Vec::new(),
             pending_skill_hits: Vec::new(),
             pending_heals: Vec::new(),
+            pending_delayed_aoe: Vec::new(),
             hit_this_tick: HashMap::new(),
             crit_this_tick: HashMap::new(),
             damage_this_tick: HashMap::new(),
@@ -538,6 +557,7 @@ impl GameWorld {
             pending_shots: Vec::new(),
             pending_skill_hits: Vec::new(),
             pending_heals: Vec::new(),
+            pending_delayed_aoe: Vec::new(),
             hit_this_tick: HashMap::new(),
             crit_this_tick: HashMap::new(),
             damage_this_tick: HashMap::new(),
@@ -1663,6 +1683,8 @@ impl GameWorld {
                 learned_skills: Vec::new(),
                 skills_dirty: false,
                 skill_cds: HashMap::new(),
+                casting_until: 0.0,
+                casting_skill_id: 0,
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 inventory_dirty: false,
                 stats_dirty: false,
@@ -1900,6 +1922,8 @@ impl GameWorld {
         if let Some(&ready_at) = session.skill_cds.get(&skill_id) {
             if now < ready_at { return; }
         }
+        // 3b. Já castando outra skill? Rejeita (player travado).
+        if session.casting_until > now { return; }
 
         // 4. Weapon usable_with
         let weapon_id = session.equipment.weapon.unwrap_or(0);
@@ -1946,13 +1970,19 @@ impl GameWorld {
         let scaled = base_dmg * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32));
         let damage = scaled.round() as i32;
 
-        // 8. Drena cost + set cd
+        // 8. Drena cost + set cd + casting state se cast_time > 0.
         session.mp_current -= mp_cost as f32;
         if session.mp_current < 0.0 { session.mp_current = 0.0; }
         session.stamina_current = (session.stamina_current - st_cost).max(0.0);
         let cd_factor = (1.0 - def.per_rank_cd_pct * (rank.saturating_sub(1) as f32)).max(0.1);
         let cd_final = def.cooldown_s * cd_factor;
         session.skill_cds.insert(skill_id, now + cd_final);
+        if def.cast_time_s > 0.05 {
+            session.casting_until = now + def.cast_time_s;
+            session.casting_skill_id = skill_id;
+            // Para movimento e qualquer estado ativo durante o cast
+            session.defending = false;
+        }
 
         // 9. Dispatch por target_type
         let owner_eid = session.entity_id;
@@ -1960,9 +1990,14 @@ impl GameWorld {
             "projectile" => {
                 let spawn_pos = pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y)
                     + dir * shared::FIREBALL_FORWARD_OFFSET;
-                // kind: 1 = fireball (default), 2 = lightning (raio).
-                // Mapeia pelo vfx_id pra cliente saber qual sprite usar.
-                let proj_kind: u8 = if def.vfx_id.as_deref().map(|v| v.contains("lightning")).unwrap_or(false) { 2 } else { 1 };
+                // kind: 1 = fireball legacy (default), 2 = lightning,
+                // 3 = big fireball (skill), 4 = frost bolt (skill).
+                let vfx = def.vfx_id.as_deref().unwrap_or("");
+                let proj_kind: u8 =
+                    if vfx.contains("lightning") { 2 }
+                    else if vfx.contains("fireball") { 3 }
+                    else if vfx.contains("frost") { 4 }
+                    else { 1 };
                 self.pending_shots.push(PendingShot {
                     pos: spawn_pos,
                     dir,
@@ -2008,9 +2043,36 @@ impl GameWorld {
             }
             "aoe_circle" => {
                 let radius = def.radius_tiles.max(0.5);
-                // Heal variant: skill com base_heal>0 ou scaling_wis e base_damage==0.
                 let is_heal = def.base_heal > 0 || (def.scaling_wis > 0.0 && def.base_damage == 0);
-                if is_heal {
+                // Frost Nova (1046) e Meteor (1045): sustained rain — pulses
+                // de dano ao longo de 3s.
+                //
+                // Frost Nova: cast_time_s>0 → wind-up no qual o player fica
+                // imovel. Os pulses começam APOS o cast (offset = cast_time).
+                // Meteor: cast_time_s=3s = duração do rain (player fica
+                // imovel durante toda a chuva). Pulses começam imediatamente.
+                if skill_id == 1046 || skill_id == 1045 {
+                    const PULSES: u32 = 6;
+                    let total_s = 3.0f32;
+                    let per_pulse = (damage / PULSES as i32).max(1);
+                    let interval_ticks = (total_s / PULSES as f32 * shared::TICK_RATE_HZ as f32) as u32;
+                    // Frost Nova: offset todos os pulses pelo cast_time_s.
+                    // Meteor: offset = 0 (rain começa imediatamente).
+                    let pulse_offset_ticks = if skill_id == 1046 {
+                        (def.cast_time_s * shared::TICK_RATE_HZ as f32).round() as u32
+                    } else { 0 };
+                    for i in 0..PULSES {
+                        self.pending_delayed_aoe.push(DelayedAoe {
+                            target_pos, radius, damage: per_pulse, owner_eid,
+                            release_tick: self.tick.wrapping_add(pulse_offset_ticks + i * interval_ticks),
+                        });
+                    }
+                    tracing::info!(
+                        "skill cast: {} (sustained rain {}p × {} dmg over {:.1}s, r{:.1}, wind-up {:.1}s)",
+                        def.name, PULSES, per_pulse, total_s, radius,
+                        pulse_offset_ticks as f32 / shared::TICK_RATE_HZ as f32
+                    );
+                } else if is_heal {
                     let base_heal = def.base_heal as f32 + stats.wis as f32 * def.scaling_wis;
                     let heal = (base_heal * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32))).round() as i32;
                     if heal > 0 {
@@ -2020,6 +2082,18 @@ impl GameWorld {
                         }
                     }
                     tracing::info!("skill cast: {} (aoe heal r{:.1}) +{}", def.name, radius, heal);
+                } else if def.cast_time_s > 0.05 {
+                    // Damage delayed pelo cast_time_s — sincroniza com visual
+                    // de queda (Meteor) ou wind-up similar.
+                    let delay_ticks = (def.cast_time_s * shared::TICK_RATE_HZ as f32).round() as u32;
+                    self.pending_delayed_aoe.push(DelayedAoe {
+                        target_pos, radius, damage, owner_eid,
+                        release_tick: self.tick.wrapping_add(delay_ticks.max(1)),
+                    });
+                    tracing::info!(
+                        "skill cast: {} (aoe r{:.1}) dmg={} delayed {:.2}s ({} ticks)",
+                        def.name, radius, damage, def.cast_time_s, delay_ticks
+                    );
                 } else {
                     let enemies = self.find_enemies_in_radius(target_pos, radius);
                     for tn in enemies {
@@ -2054,6 +2128,7 @@ impl GameWorld {
         // session já não está borrowed aqui — NLL drop após `let owner_eid`.
         let fx = ServerMessage::SkillCastFx {
             skill_id, caster_pos: pos, target_pos, target_eid: None,
+            caster_eid: Some(owner_eid),
         };
         for s in self.sessions.values() {
             if s.logged_in {
@@ -2372,6 +2447,10 @@ impl GameWorld {
             dash_started: bool,
         }
         let mut input_results: Vec<InputResult> = Vec::new();
+        // Casters que tiveram o cast cancelado por movimento neste tick.
+        // Depois do loop de sessoes, dropa pending_delayed_aoe deles e
+        // broadcasta SkillCastCancel pra clientes.
+        let mut cancelled_cast_owners: Vec<EntityId> = Vec::new();
         for session in self.sessions.values_mut() {
             if session.attack_cooldown > 0.0 { session.attack_cooldown -= dt; }
             if session.dash_cooldown > 0.0 { session.dash_cooldown -= dt; }
@@ -2407,11 +2486,33 @@ impl GameWorld {
             }
 
             let Some(entity) = session.entity else { continue };
-            let Some(frame) = session.pending_input.take() else { continue };
+            let Some(mut frame) = session.pending_input.take() else { continue };
             session.last_input_seq = frame.seq;
             // Se esta sendo carregado, posicao vem do carregador — ignora input
             if session.carried_by.is_some() {
                 continue;
+            }
+            // CASTING: durante cast_time_s o player fica travado na pose, não
+            // pode atacar/defender/cast outro. Se ele se MOVER (move_dir != 0),
+            // o cast é CANCELADO — drop pending DelayedAoe + broadcast cancel
+            // pra cliente despawnar visuals e sair da pose.
+            let casting = session.casting_until > self.sim_time_s;
+            if casting {
+                if frame.move_dir.length_squared() > 0.001 {
+                    // Movimento detectado → cancela o cast.
+                    let cancelled_skill = session.casting_skill_id;
+                    session.casting_until = 0.0;
+                    session.casting_skill_id = 0;
+                    cancelled_cast_owners.push(session.entity_id);
+                    tracing::info!(
+                        "cast cancelado por movimento: skill={} player={:?}",
+                        cancelled_skill, session.entity_id
+                    );
+                    // Não zeramos move_dir — deixa o player andar imediatamente.
+                } else {
+                    // Sem movimento: continua travado, sem ataque/defesa.
+                    frame.buttons = 0;
+                }
             }
             // Edge-detect dos botoes pra parry window. Press = bit foi 0 no
             // frame anterior e ficou 1 agora. Salva sim_time pra que o loop
@@ -2594,6 +2695,22 @@ impl GameWorld {
                 combo_step,
                 dash_started: wants_dash,
             });
+        }
+
+        // Cleanup pos-loop: drop DelayedAoe pendente dos casters que cancelaram
+        // por movimento, e broadcast SkillCastCancel pra clientes despawnarem
+        // gizmos e parar coroutines de visual.
+        if !cancelled_cast_owners.is_empty() {
+            self.pending_delayed_aoe
+                .retain(|d| !cancelled_cast_owners.contains(&d.owner_eid));
+            for caster_eid in &cancelled_cast_owners {
+                let msg = ServerMessage::SkillCastCancel { caster_eid: *caster_eid };
+                for s in self.sessions.values() {
+                    if s.logged_in {
+                        let _ = s.handle.to_client.send(msg.clone());
+                    }
+                }
+            }
         }
 
         // ── B: snapshot de posições de jogadores para IA dos inimigos ─────────
@@ -3132,6 +3249,31 @@ impl GameWorld {
                     }
                     hit_projs.push((*pe, *pnet));
                     continue 'outer;
+                }
+            }
+        }
+
+        // Drena delayed_aoe cujo release_tick chegou — converte em pending_skill_hits.
+        if !combat_disabled && !self.pending_delayed_aoe.is_empty() {
+            let now_tick = self.tick;
+            // Particiona em ready (executa agora) e ainda-aguardando.
+            let queue = std::mem::take(&mut self.pending_delayed_aoe);
+            let mut still: Vec<DelayedAoe> = Vec::with_capacity(queue.len());
+            let mut to_fire: Vec<DelayedAoe> = Vec::new();
+            for d in queue {
+                let ready = d.release_tick.wrapping_sub(now_tick) > u32::MAX / 2
+                    || now_tick >= d.release_tick;
+                if ready { to_fire.push(d); } else { still.push(d); }
+            }
+            self.pending_delayed_aoe = still;
+            for d in to_fire {
+                let enemies = self.find_enemies_in_radius(d.target_pos, d.radius);
+                for tn in enemies {
+                    let hd = calc_hurt_dir_from_eid(&self.ecs, tn, d.target_pos);
+                    self.pending_skill_hits.push(PendingSkillHit {
+                        target_net: tn, damage: d.damage, attacker_net: d.owner_eid,
+                        hurt_dir: hd, is_crit: false, from_player: true,
+                    });
                 }
             }
         }
@@ -3830,16 +3972,19 @@ impl GameWorld {
             visual: shared::VisualConfig,
             attack_speed_mult: f32,
             defending: bool,
+            casting: bool,
         }
         // Drena parry_flash_pending no mesmo passo — uma vez por tick.
         let mut player_overlay: HashMap<EntityId, PlayerOverlay> = HashMap::new();
         let mut parry_flash_ids: std::collections::HashSet<EntityId> = std::collections::HashSet::new();
+        let now_for_cast = self.sim_time_s;
         for s in self.sessions.values_mut() {
             if !s.logged_in { continue; }
             if s.parry_flash_pending {
                 s.parry_flash_pending = false;
                 parry_flash_ids.insert(s.entity_id);
             }
+            let casting = s.casting_until > now_for_cast;
             player_overlay.insert(s.entity_id, PlayerOverlay {
                 weapon_id: s.equipment.weapon,
                 offhand_id: s.equipment.offhand,
@@ -3847,6 +3992,7 @@ impl GameWorld {
                 visual: s.visual.clone(),
                 attack_speed_mult: s.stats.attack_speed_mult,
                 defending: s.defending,
+                casting,
             });
         }
 
@@ -3897,6 +4043,7 @@ impl GameWorld {
                     last_damage: self.damage_this_tick.get(&net.0).copied(),
                     skin_preset: skin.map(|s| s.preset),
                     defending: overlay.and_then(|o| if o.defending { Some(true) } else { None }),
+                    casting: overlay.and_then(|o| if o.casting { Some(true) } else { None }),
                 }
             })
             .collect();

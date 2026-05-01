@@ -324,6 +324,12 @@ pub struct EntitySnapshot {
     /// pose de bloqueio + (pra arco/cajado/varinha) bolha de energia.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub defending: Option<bool>,
+    /// True enquanto o player está em cast (`session.casting_until > now`).
+    /// Cliente segura a pose de ataque (Thrust pra Wand/Staff) frame parado
+    /// até o cast terminar. Movimento/ataque/defesa estão bloqueados no
+    /// servidor durante este período.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub casting: Option<bool>,
     /// Preset visual pra NPCs (0..N). Cliente mapeia pra VisualConfig
     /// (race + outfit + hair). None pra Player/Enemy (esses usam outros
     /// caminhos de visual).

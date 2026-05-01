@@ -221,6 +221,16 @@ pub enum ServerMessage {
         /// None pra AoE/self/projectile (cliente desenha sem snap em alvo).
         #[serde(skip_serializing_if = "Option::is_none")]
         target_eid: Option<crate::EntityId>,
+        /// EntityId do caster — usado pelo cliente pra cancelar coroutines
+        /// quando o cast é interrompido (SkillCastCancel mata visuals deste eid).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        caster_eid: Option<crate::EntityId>,
+    },
+    /// Cast foi cancelado (player se moveu durante o cast). Cliente despawna
+    /// gizmos/VFX em andamento associados ao caster_eid. Tambem para qualquer
+    /// pose de Thrust travada — snap.casting tambem fica false no proximo tick.
+    SkillCastCancel {
+        caster_eid: crate::EntityId,
     },
     PartyInviteReceived { from: String },
     PartyUpdate { members: Vec<String> },

@@ -801,16 +801,16 @@ async fn seed_skills_if_needed(pool: &PgPool) -> Result<()> {
             desc:"Spells de fogo aplicam burn 3s. r5: stack 2x. r10: spread radius 1 ao matar."
         },
         S{ id:1045, name:"Meteor",           prof:"Wand",  tier:3, is_passive:false, path:"pyro",     unlock_char:t3c, unlock_prof:t3p,
-            usable_with: caster_v.clone(), cost_mp:80, cost_st:0, cd:25.0, cast:1.2, target:"aoe_circle",
+            usable_with: caster_v.clone(), cost_mp:80, cost_st:0, cd:25.0, cast:3.0, target:"aoe_circle",
             range_t:8.0, radius:4.0, base_dmg:40, base_heal:0,
             scal_atk:0.0, scal_wis:2.0, scal_dex:0.0, rank_dmg:0.10, rank_cd:0.0, rank_cost:0.0,
-            desc:"Wind-up 1.2s; AoE radius 4 com stun 1s."
+            desc:"Cast 3s (player imovel); chuva de meteoros AoE r4 ao longo do cast."
         },
         S{ id:1046, name:"Frost Nova",       prof:"Wand",  tier:3, is_passive:false, path:"frost",    unlock_char:t3c, unlock_prof:t3p,
-            usable_with: caster_v.clone(), cost_mp:50, cost_st:0, cd:15.0, cast:0.0, target:"aoe_circle",
+            usable_with: caster_v.clone(), cost_mp:50, cost_st:0, cd:15.0, cast:2.0, target:"aoe_circle",
             range_t:0.0, radius:3.0, base_dmg:20, base_heal:0,
             scal_atk:0.0, scal_wis:1.0, scal_dex:0.0, rank_dmg:0.10, rank_cd:0.0, rank_cost:0.0,
-            desc:"Self-radius 3; freeze 1s + 100% wis dmg."
+            desc:"Cast 2s (imovel); apos cast, chuva de frost bolts AoE r3 (3s) + slow."
         },
         S{ id:1047, name:"Inferno",          prof:"Wand",  tier:4, is_passive:false, path:"pyro",     unlock_char:t4c, unlock_prof:t4p,
             usable_with: caster_v.clone(), cost_mp:150, cost_st:0, cd:45.0, cast:0.5, target:"aoe_circle",

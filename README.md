@@ -82,6 +82,7 @@ Detalhes em [docs/ROADMAP.md](docs/ROADMAP.md). Resumo:
 - [Build (nativo, Android, iOS, web)](docs/BUILD.md)
 - [Gameplay design](docs/GAMEPLAY.md)
 - [Roadmap detalhado](docs/ROADMAP.md)
+- [Admin de Economia (web /econ.html)](docs/ADMIN_ECONOMY.md) — editar items, drops e mobs ao vivo (hot-reload)
 
 ## Licença
 
