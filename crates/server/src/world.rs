@@ -1986,6 +1986,27 @@ impl GameWorld {
 
         // 9. Dispatch por target_type
         let owner_eid = session.entity_id;
+        let owner_entity = session.entity;
+        // Trigger anim de "lancamento" pra skills com componente fisico
+        // (projectile/line/cone). Self toca via predicao no input handler;
+        // server replica pra outros clients via attack_anim_pending.
+        // AoE/self/heal nao usam anim de saque (cast wind-up tem visual proprio
+        // tipo Inferno crescendo o circulo, nao precisa de Thrust).
+        let casts_attack_anim = matches!(
+            def.target_type.as_str(),
+            "projectile" | "line" | "cone"
+        );
+        if casts_attack_anim {
+            if let Some(ent) = owner_entity {
+                if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(ent) {
+                    let anim = match shared::Proficiency::from_item(weapon_id) {
+                        shared::Proficiency::Bow => shared::components::attack_anim::SHOOT,
+                        _                        => shared::components::attack_anim::THRUST,
+                    };
+                    tag.attack_anim_pending = Some(anim);
+                }
+            }
+        }
         match def.target_type.as_str() {
             "projectile" => {
                 let spawn_pos = pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y)
@@ -2567,9 +2588,25 @@ impl GameWorld {
                             _ => shared::BOW_ATTACK_COOLDOWN,
                         }
                     };
-                    // Atk speed (DES) divide o cooldown — clampeado pra evitar
-                    // cooldown=0 com builds extremos.
-                    let atk_speed = session.stats.attack_speed_mult.max(0.5);
+                    // Atk speed (DES + items) divide o cooldown. Pra equilibrar:
+                    //   - Magia (Wand/Staff): scaling reduzido a 30% — DEX ajuda
+                    //     pouco no cast rate.
+                    //   - Two-handed nao-magia (GreatSword/Bow/Crossbow/Spear):
+                    //     scaling a 60% — armas pesadas/longas ganham menos.
+                    //   - 1H melee (Sword/Dagger/etc): full scaling.
+                    // Bonus = atk_speed_mult - 1; aplica fator e re-soma a 1.
+                    let raw_mult = session.stats.attack_speed_mult.max(0.5);
+                    let bonus = raw_mult - 1.0;
+                    let is_caster = matches!(
+                        shared::Proficiency::from_item(weapon_id),
+                        shared::Proficiency::Wand | shared::Proficiency::Staff
+                    );
+                    let is_two_handed = !shared::weapon_allows_offhand(weapon_id)
+                        && weapon_id != 0;
+                    let scale_factor = if is_caster { 0.30 }
+                        else if is_two_handed { 0.60 }
+                        else { 1.0 };
+                    let atk_speed = (1.0 + bonus * scale_factor).max(0.5);
                     session.attack_cooldown = base_cd / atk_speed;
                     session.stamina_current =
                         (session.stamina_current - shared::ATTACK_STAMINA_COST).max(0.0);
@@ -2654,8 +2691,9 @@ impl GameWorld {
 
             let weapon_id = session.equipment.weapon.unwrap_or(0);
             let proj_kind: u8 = match shared::Proficiency::from_item(weapon_id) {
-                shared::Proficiency::Wand | shared::Proficiency::Staff => 1, // fireball
-                _ => 0,                                                       // arrow
+                shared::Proficiency::Wand  => 1, // fireball
+                shared::Proficiency::Staff => 5, // electric ball
+                _                          => 0, // arrow
             };
             // Crit roll por ataque: roll uniforme; se hit, multiplica
             // damage. Roll feito no SOURCE pra gerar exatamente 1 valor de
@@ -2668,12 +2706,24 @@ impl GameWorld {
             } else {
                 session.stats.attack_damage
             };
-            // Combo step: incrementa só em SLASH (melee). Reset se passou
-            // COMBO_RESET_TIME desde o último attack. Replicado via snapshot.
+            // Combo step: incrementa em SLASH (melee) e em THRUST (Wand/Staff).
+            // Pra caster, o ciclo (Slash1/Slash2/Thrust) é puramente visual —
+            // damage e projectile sao iguais a cada step. Cliente usa o step
+            // pra escolher o anim + elemento overlay (fire/elec/heal/pois).
+            // Reset se passou COMBO_RESET_TIME desde o último attack.
             let is_melee = shared::weapon_is_melee(weapon_id);
             let attack_anim_code = shared::weapon_attack_anim(weapon_id);
+            let is_caster_thrust = matches!(
+                shared::Proficiency::from_item(weapon_id),
+                shared::Proficiency::Wand | shared::Proficiency::Staff
+            );
+            let combo_eligible = wants_attack
+                && (
+                    (is_melee && attack_anim_code == shared::components::attack_anim::SLASH)
+                    || is_caster_thrust
+                );
             let mut combo_step: u8 = 0;
-            if wants_attack && is_melee && attack_anim_code == shared::components::attack_anim::SLASH {
+            if combo_eligible {
                 if self.sim_time_s - session.combo_last_attack > shared::COMBO_RESET_TIME {
                     session.combo_step = 0;
                 }
@@ -3005,7 +3055,11 @@ impl GameWorld {
                 // animacao pros outros clientes neste tick.
                 if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(ir.entity) {
                     tag.attack_anim_pending = Some(ir.attack_anim_code);
-                    if ir.attack_anim_code == shared::components::attack_anim::SLASH {
+                    // SLASH e THRUST (caster) usam combo_step pra cyclar
+                    // Slash1/Slash2/Thrust no cliente.
+                    if ir.attack_anim_code == shared::components::attack_anim::SLASH
+                        || ir.attack_anim_code == shared::components::attack_anim::THRUST
+                    {
                         tag.combo_step_pending = Some(ir.combo_step);
                     }
                 }
@@ -3016,18 +3070,35 @@ impl GameWorld {
                         from_player: true,
                     });
                 } else {
+                    // Caster (proj_kind=1=fireball ou =5=electric) tem combo
+                    // de 3 steps:
+                    //   0 (Slash1) e 1 (Slash2) → swing em cone na frente,
+                    //     dano melee igual a espada. Sem projetil.
+                    //   2 (Thrust finisher) → spawna projetil (fireball/elec).
+                    // Bow nao tem combo — sempre cai no projetil direto.
+                    let is_caster_proj = matches!(ir.proj_kind, 1 | 5);
+                    let last_combo_step = ir.combo_step + 1 == shared::COMBO_STEPS as u8;
+                    if is_caster_proj && !last_combo_step {
+                        // Wind-up: swing melee em cone (mesma infra de espada).
+                        melee_swings.push(MeleeSwing {
+                            attacker_eid: ir.owner_id, pos, dir,
+                            damage: ir.damage, is_crit: ir.is_crit,
+                            from_player: true,
+                        });
+                        continue;
+                    }
                     // Ranged: queue com delay pro release coincidir com fim
                     // da animação de saque. Bow tem delay maior (anim de 560ms);
                     // wand/staff usa Thrust (320ms) → delay menor.
-                    let fire_delay = if ir.proj_kind == 1 {
+                    let fire_delay = if matches!(ir.proj_kind, 1 | 5) {
                         shared::MAGIC_FIRE_DELAY
                     } else {
                         shared::BOW_FIRE_DELAY
                     };
                     let release_in_ticks = (fire_delay / dt).round() as u32;
-                    // Fireball sai da ponta da varinha: pos peito + offset na
-                    // direção do tiro. Flecha continua saindo do peito.
-                    let forward = if ir.proj_kind == 1 {
+                    // Fireball/electric sai da ponta da varinha/cajado: pos
+                    // peito + offset na direção do tiro. Flecha sai do peito.
+                    let forward = if matches!(ir.proj_kind, 1 | 5) {
                         dir * shared::FIREBALL_FORWARD_OFFSET
                     } else {
                         Vec2::ZERO
@@ -4289,6 +4360,16 @@ impl GameWorld {
             if item.qty > 1 { return false; }
             // Item desativado pelo admin: bloqueado de ser equipado.
             if !crate::economy::is_item_active(item.item_id) { return false; }
+            // Profs ainda nao implementadas (Axe/Spear/Dagger): rejeita
+            // equip do weapon. UI tambem bloqueia client-side.
+            if slot == shared::EquipSlot::Weapon {
+                use shared::item_id;
+                if matches!(item.item_id, x if x == item_id::AXE
+                                              || x == item_id::SPEAR
+                                              || x == item_id::DAGGER) {
+                    return false;
+                }
+            }
             can_equip_in_slot(&equip_now, slot, item.item_id)
         };
 
