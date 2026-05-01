@@ -229,8 +229,26 @@ pub enum ServerMessage {
     /// Cast foi cancelado (player se moveu durante o cast). Cliente despawna
     /// gizmos/VFX em andamento associados ao caster_eid. Tambem para qualquer
     /// pose de Thrust travada — snap.casting tambem fica false no proximo tick.
+    /// Server tambem refunda mp/stamina e remove o cooldown — cliente reseta
+    /// local cd timer pra refletir.
     SkillCastCancel {
         caster_eid: crate::EntityId,
+        skill_id: u32,
+    },
+    /// Projetil atingiu um alvo. Cliente usa pra spawnar VFX de impacto
+    /// "atachado" ao alvo (ex: flecha presa no inimigo + splatter de
+    /// sangue rotacionado pela direção do projetil).
+    ProjectileImpact {
+        /// Entity_id do alvo atingido. Cliente lookup por NetId no
+        /// dicionario de entidades pra parentar o visual.
+        target_eid: crate::EntityId,
+        /// Direção da flecha (unitario, vel.normalize()). Cliente rotaciona
+        /// o stuck arrow + splatter pra alinhar.
+        #[serde(with = "crate::vec2_arr")]
+        dir: glam::Vec2,
+        /// proj_kind (0=arrow, 1=fireball, etc). So 0 (arrow) atualmente
+        /// dispara o visual stuck — outros kinds tem seu proprio impacto.
+        kind: u8,
     },
     PartyInviteReceived { from: String },
     PartyUpdate { members: Vec<String> },

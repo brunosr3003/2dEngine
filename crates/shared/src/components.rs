@@ -71,6 +71,7 @@ pub const fn base_player_stats() -> PlayerStats {
         stamina_regen: 25.0,
         block_dmg_reduction: 0.6,         // 60% absorvido por block (base)
         defense_stamina_cost_mult: 1.0,   // 100% do custo base (RES reduz)
+        bow_range_bonus_pct: 0.0,         // Eagle Eye passive (Bow T1)
     }
 }
 
@@ -115,6 +116,10 @@ pub struct PlayerStats {
     /// RES subtrai `STAMINA_COST_REDUCTION_PER_RES` por ponto.
     #[serde(default = "default_one")]
     pub defense_stamina_cost_mult: f32,
+    /// Bonus % no alcance de projeteis de arco (Eagle Eye passive). Aplicado
+    /// como multiplicador no PROJ_TTL ao spawnar arrow. 0 = sem bonus.
+    #[serde(default)]
+    pub bow_range_bonus_pct: f32,
 }
 
 fn default_block_reduction() -> f32 { 0.6 }
@@ -330,6 +335,11 @@ pub struct EntitySnapshot {
     /// servidor durante este período.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub casting: Option<bool>,
+    /// True enquanto o inimigo está envenenado (`poisoned_until > now`).
+    /// Cliente aplica tint verde no body sprite. Set por skills DOT (ex:
+    /// Smoke Bomb 1038). Snapshot só envia quando ativo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub poisoned: Option<bool>,
     /// Preset visual pra NPCs (0..N). Cliente mapeia pra VisualConfig
     /// (race + outfit + hair). None pra Player/Enemy (esses usam outros
     /// caminhos de visual).

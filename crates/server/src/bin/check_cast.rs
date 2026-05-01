@@ -14,6 +14,14 @@ async fn main() -> Result<()> {
     ).execute(&pool).await?;
     println!("frost nova updated: {}", updated.rows_affected());
 
+    // Smoke Bomb (1038): nuvem 5s com DOT + envenenado. Atualiza damage/scaling.
+    let updated = sqlx::query(
+        "UPDATE skills SET base_damage=5, scaling_dex=0.2, per_rank_dmg_pct=0.10,
+            description='Radius 3; nuvem 5s, dano AoE/s + envenenado nos alvos dentro.'
+         WHERE id = 1038"
+    ).execute(&pool).await?;
+    println!("smoke bomb updated: {}", updated.rows_affected());
+
     let rows: Vec<(i32, String, f32)> = sqlx::query_as(
         "SELECT id, name, cast_time_s FROM skills WHERE prof='Wand' ORDER BY id"
     ).fetch_all(&pool).await?;

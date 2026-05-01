@@ -91,6 +91,10 @@ struct DelayedAoe {
     damage: i32,
     owner_eid: EntityId,
     release_tick: u32,
+    /// Quando true, hits aplicam status `poisoned_until = now + poison_dur_s`
+    /// no EnemyTag (replicado pra client por snapshot pra render tint verde).
+    /// Set por skills de DOT-tipo Smoke Bomb. Default false (sem status).
+    poison_dur_s: f32,
 }
 
 pub struct EnemyTag {
@@ -132,6 +136,10 @@ pub struct EnemyTag {
     /// roda VFX de invocação (~0.84s) com o enemy invisível e estático.
     /// Durante esse intervalo: sem mover, sem atacar, sem tomar dano.
     pub spawn_grace_until: f32,
+    /// sim_time até quando o inimigo está envenenado (visual tint verde
+    /// no cliente). Setado por hits de Smoke Bomb (1038). 0 = não envenenado.
+    /// Status visual; o dano de fato vem dos pulses da DelayedAoe queue.
+    pub poisoned_until: f32,
 }
 
 /// Tag em inimigo spawnado por uma ServerSpawnZone — usado pra decrementar
@@ -329,8 +337,16 @@ pub struct Session {
     /// bloqueia movimento, ataque, defesa, e novos casts. Setado em
     /// handle_skill_cast quando skill tem cast_time_s > 0.
     pub casting_until: f32,
+    /// Sim_time em que o cast atual começou. Usado pra grace period no
+    /// cancel-por-movimento (player que clica skill enquanto andava nao
+    /// cancela de imediato — tem 0.3s pra parar).
+    pub casting_started_at_s: f32,
     /// Skill_id do cast em progresso (usado pra notificar cliente da pose).
     pub casting_skill_id: u32,
+    /// MP gasto no cast atual (pra refund se cancelar).
+    pub casting_mp_paid: f32,
+    /// Stamina gasta no cast atual (pra refund se cancelar).
+    pub casting_st_paid: f32,
     /// Pontos de atributo disponiveis (ganhos por level-up, POINTS_PER_LEVEL cada).
     pub unspent_points: u32,
     /// Pontos ja alocados em cada stat [FOR, DES, INT, VIT, SPD].
@@ -373,6 +389,19 @@ pub struct Session {
     /// Pendente: dispara um attack_anim PARRY_FLASH no proximo snapshot.
     /// Setado quando esse player parryou um hit recebido.
     pub parry_flash_pending: bool,
+
+    // ── Bow passives ─────────────────────────────────────────────────────
+    /// `sim_time_s` da última vez em que o player se moveu (move_dir != 0).
+    /// Usado por Quick Draw (1036): se ficar parado >= 1s, o próximo tiro
+    /// é guaranteed crit.
+    pub last_movement_at_s: f32,
+    /// True após um crit forçado por Quick Draw, falso ao se mover. Garante
+    /// que só a "1ª flecha" após ficar parado é crit (não todas enquanto
+    /// stationary).
+    pub quickdraw_consumed: bool,
+    /// Hunter's Mark (1040): mapa de target_eid → expires_at_sim_time. Hits
+    /// em targets marcados aplicam +20% damage. Hit refresh do mark.
+    pub hunter_marks: HashMap<EntityId, f32>,
 }
 
 /// Recursos compartilhados para autenticacao assincrona.
@@ -753,6 +782,7 @@ impl GameWorld {
                 returning_home: false,
                 aggro_timer: 0.0,
                 spawn_grace_until: self.sim_time_s + shared::ENEMY_SPAWN_GRACE,
+                poisoned_until: 0.0,
             },
             SpawnedByZone { zone_id, kind },
             handle,
@@ -794,6 +824,7 @@ impl GameWorld {
                             returning_home: false,
                             aggro_timer: 0.0,
                             spawn_grace_until: self.sim_time_s + shared::ENEMY_SPAWN_GRACE,
+                            poisoned_until: 0.0,
                         },
                         handle,
                     ));
@@ -1521,6 +1552,7 @@ impl GameWorld {
                 returning_home: false,
                 aggro_timer: 0.0,
                 spawn_grace_until: self.sim_time_s + shared::ENEMY_SPAWN_GRACE,
+                poisoned_until: 0.0,
             },
         ));
     }
@@ -1620,6 +1652,7 @@ impl GameWorld {
                     returning_home: false,
                     aggro_timer: 0.0,
                     spawn_grace_until: self.sim_time_s + shared::ENEMY_SPAWN_GRACE,
+                    poisoned_until: 0.0,
                 },
                 handle,
             ));
@@ -1684,7 +1717,10 @@ impl GameWorld {
                 skills_dirty: false,
                 skill_cds: HashMap::new(),
                 casting_until: 0.0,
+                casting_started_at_s: 0.0,
                 casting_skill_id: 0,
+                casting_mp_paid: 0.0,
+                casting_st_paid: 0.0,
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 inventory_dirty: false,
                 stats_dirty: false,
@@ -1697,6 +1733,9 @@ impl GameWorld {
                 prev_buttons: 0,
                 stagger_until: 0.0,
                 parry_flash_pending: false,
+                last_movement_at_s: 0.0,
+                quickdraw_consumed: false,
+                hunter_marks: HashMap::new(),
             },
         );
     }
@@ -1979,7 +2018,11 @@ impl GameWorld {
         session.skill_cds.insert(skill_id, now + cd_final);
         if def.cast_time_s > 0.05 {
             session.casting_until = now + def.cast_time_s;
+            session.casting_started_at_s = now;
             session.casting_skill_id = skill_id;
+            // Salva o que foi pago pra refund no cancel-por-movimento.
+            session.casting_mp_paid = mp_cost as f32;
+            session.casting_st_paid = st_cost;
             // Para movimento e qualquer estado ativo durante o cast
             session.defending = false;
         }
@@ -2011,27 +2054,48 @@ impl GameWorld {
             "projectile" => {
                 let spawn_pos = pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y)
                     + dir * shared::FIREBALL_FORWARD_OFFSET;
-                // kind: 1 = fireball legacy (default), 2 = lightning,
-                // 3 = big fireball (skill), 4 = frost bolt (skill).
+                // kind: 0 = arrow (bow), 1 = fireball legacy (default),
+                // 2 = lightning, 3 = big fireball (skill), 4 = frost bolt.
                 let vfx = def.vfx_id.as_deref().unwrap_or("");
-                let proj_kind: u8 =
-                    if vfx.contains("lightning") { 2 }
-                    else if vfx.contains("fireball") { 3 }
-                    else if vfx.contains("frost") { 4 }
-                    else { 1 };
-                self.pending_shots.push(PendingShot {
-                    pos: spawn_pos,
-                    dir,
-                    damage,
-                    is_crit: false,
-                    kind: proj_kind,
-                    owner_id: owner_eid,
-                    from_player: true,
-                    release_tick: self.tick.wrapping_add(1),
-                });
+                let proj_kind: u8 = match shared::Proficiency::from_item(weapon_id) {
+                    shared::Proficiency::Bow => {
+                        // Power Shot (1033): proj_kind=6 — flecha 2x scale +
+                        // 2x speed (cliente reconhece kind=6).
+                        if skill_id == 1033 { 6 } else { 0 }
+                    }
+                    _ => {
+                        if vfx.contains("lightning") { 2 }
+                        else if vfx.contains("fireball") { 3 }
+                        else if vfx.contains("frost") { 4 }
+                        else { 1 }
+                    }
+                };
+                // Multishot (1037): 5 flechas em leque ±30° (15° entre cada).
+                // Outras skills projectile: 1 projetil unico.
+                let dirs: Vec<Vec2> = if skill_id == 1037 {
+                    [-30.0_f32, -15.0, 0.0, 15.0, 30.0].iter().map(|&deg| {
+                        let rad = deg.to_radians();
+                        let (s, c) = (rad.sin(), rad.cos());
+                        Vec2::new(dir.x * c - dir.y * s, dir.x * s + dir.y * c)
+                    }).collect()
+                } else {
+                    vec![dir]
+                };
+                for d in &dirs {
+                    self.pending_shots.push(PendingShot {
+                        pos: spawn_pos,
+                        dir: *d,
+                        damage,
+                        is_crit: false,
+                        kind: proj_kind,
+                        owner_id: owner_eid,
+                        from_player: true,
+                        release_tick: self.tick.wrapping_add(1),
+                    });
+                }
                 tracing::info!(
-                    "skill cast: {} (skill {}, r{}) dmg={} kind={} dir=({:.2},{:.2})",
-                    def.name, skill_id, rank, damage, proj_kind, dir.x, dir.y
+                    "skill cast: {} (skill {}, r{}) dmg={} kind={} arrows={} dir=({:.2},{:.2})",
+                    def.name, skill_id, rank, damage, proj_kind, dirs.len(), dir.x, dir.y
                 );
             }
             "self" => {
@@ -2065,32 +2129,37 @@ impl GameWorld {
             "aoe_circle" => {
                 let radius = def.radius_tiles.max(0.5);
                 let is_heal = def.base_heal > 0 || (def.scaling_wis > 0.0 && def.base_damage == 0);
-                // Frost Nova (1046) e Meteor (1045): sustained rain — pulses
-                // de dano ao longo de 3s.
-                //
-                // Frost Nova: cast_time_s>0 → wind-up no qual o player fica
-                // imovel. Os pulses começam APOS o cast (offset = cast_time).
-                // Meteor: cast_time_s=3s = duração do rain (player fica
-                // imovel durante toda a chuva). Pulses começam imediatamente.
-                if skill_id == 1046 || skill_id == 1045 {
-                    const PULSES: u32 = 6;
-                    let total_s = 3.0f32;
-                    let per_pulse = (damage / PULSES as i32).max(1);
-                    let interval_ticks = (total_s / PULSES as f32 * shared::TICK_RATE_HZ as f32) as u32;
-                    // Frost Nova: offset todos os pulses pelo cast_time_s.
-                    // Meteor: offset = 0 (rain começa imediatamente).
-                    let pulse_offset_ticks = if skill_id == 1046 {
+                // Sustained rain — pulses de dano ao longo de N segundos.
+                //   Frost Nova (1046): cast_time_s>0 → wind-up parado, depois rain.
+                //   Meteor (1045):     cast_time_s=3s → player imovel durante o rain.
+                //   Rain of Arrows (1039): cast 0.5s, depois 8 flechas ao longo de 3s.
+                //   Smoke Bomb (1038): nuvem 5s, 5 pulses de dano + envenenado.
+                let is_rain = matches!(skill_id, 1045 | 1046 | 1039 | 1038);
+                if is_rain {
+                    let (pulses, total_s) = match skill_id {
+                        1039 => (8u32, 3.0f32),     // Rain of Arrows
+                        1038 => (5u32, 5.0f32),     // Smoke Bomb (1 pulse/s × 5s)
+                        _    => (6u32, 3.0f32),     // Frost Nova / Meteor
+                    };
+                    let per_pulse = (damage / pulses as i32).max(1);
+                    let interval_ticks = (total_s / pulses as f32 * shared::TICK_RATE_HZ as f32) as u32;
+                    // Frost Nova / Rain of Arrows: offset todos os pulses pelo cast_time_s.
+                    // Meteor / Smoke Bomb: offset = 0 (rain começa imediatamente).
+                    let pulse_offset_ticks = if skill_id == 1046 || skill_id == 1039 {
                         (def.cast_time_s * shared::TICK_RATE_HZ as f32).round() as u32
                     } else { 0 };
-                    for i in 0..PULSES {
+                    // Smoke Bomb (1038) aplica poisoned 5s nos hits (visual tint).
+                    let poison_dur = if skill_id == 1038 { 5.0_f32 } else { 0.0 };
+                    for i in 0..pulses {
                         self.pending_delayed_aoe.push(DelayedAoe {
                             target_pos, radius, damage: per_pulse, owner_eid,
                             release_tick: self.tick.wrapping_add(pulse_offset_ticks + i * interval_ticks),
+                            poison_dur_s: poison_dur,
                         });
                     }
                     tracing::info!(
                         "skill cast: {} (sustained rain {}p × {} dmg over {:.1}s, r{:.1}, wind-up {:.1}s)",
-                        def.name, PULSES, per_pulse, total_s, radius,
+                        def.name, pulses, per_pulse, total_s, radius,
                         pulse_offset_ticks as f32 / shared::TICK_RATE_HZ as f32
                     );
                 } else if is_heal {
@@ -2110,6 +2179,7 @@ impl GameWorld {
                     self.pending_delayed_aoe.push(DelayedAoe {
                         target_pos, radius, damage, owner_eid,
                         release_tick: self.tick.wrapping_add(delay_ticks.max(1)),
+                        poison_dur_s: 0.0,
                     });
                     tracing::info!(
                         "skill cast: {} (aoe r{:.1}) dmg={} delayed {:.2}s ({} ticks)",
@@ -2468,10 +2538,10 @@ impl GameWorld {
             dash_started: bool,
         }
         let mut input_results: Vec<InputResult> = Vec::new();
-        // Casters que tiveram o cast cancelado por movimento neste tick.
-        // Depois do loop de sessoes, dropa pending_delayed_aoe deles e
-        // broadcasta SkillCastCancel pra clientes.
-        let mut cancelled_cast_owners: Vec<EntityId> = Vec::new();
+        // Casters que tiveram o cast cancelado por movimento neste tick:
+        // (entity_id, skill_id). Depois do loop de sessoes, dropa
+        // pending_delayed_aoe deles e broadcasta SkillCastCancel pra clientes.
+        let mut cancelled_cast_owners: Vec<(EntityId, u32)> = Vec::new();
         for session in self.sessions.values_mut() {
             if session.attack_cooldown > 0.0 { session.attack_cooldown -= dt; }
             if session.dash_cooldown > 0.0 { session.dash_cooldown -= dt; }
@@ -2513,27 +2583,13 @@ impl GameWorld {
             if session.carried_by.is_some() {
                 continue;
             }
-            // CASTING: durante cast_time_s o player fica travado na pose, não
-            // pode atacar/defender/cast outro. Se ele se MOVER (move_dir != 0),
-            // o cast é CANCELADO — drop pending DelayedAoe + broadcast cancel
-            // pra cliente despawnar visuals e sair da pose.
+            // CASTING: durante cast_time_s o player fica travado na pose. A
+            // checagem de cancel-por-movimento eh feita ABAIXO, depois do dir
+            // ser processado (in_hurt zera dir → não cancela durante stagger).
+            // Aqui só zeramos buttons pra bloquear ataque/defesa/novo cast.
             let casting = session.casting_until > self.sim_time_s;
             if casting {
-                if frame.move_dir.length_squared() > 0.001 {
-                    // Movimento detectado → cancela o cast.
-                    let cancelled_skill = session.casting_skill_id;
-                    session.casting_until = 0.0;
-                    session.casting_skill_id = 0;
-                    cancelled_cast_owners.push(session.entity_id);
-                    tracing::info!(
-                        "cast cancelado por movimento: skill={} player={:?}",
-                        cancelled_skill, session.entity_id
-                    );
-                    // Não zeramos move_dir — deixa o player andar imediatamente.
-                } else {
-                    // Sem movimento: continua travado, sem ataque/defesa.
-                    frame.buttons = 0;
-                }
+                frame.buttons = 0;
             }
             // Edge-detect dos botoes pra parry window. Press = bit foi 0 no
             // frame anterior e ficou 1 agora. Salva sim_time pra que o loop
@@ -2567,6 +2623,39 @@ impl GameWorld {
             } else {
                 frame.move_dir
             };
+            // Quick Draw passive: rastreia ultimo movimento. Se mover (dir != 0),
+            // atualiza last_movement_at_s e reseta quickdraw_consumed pra liberar
+            // o crit da proxima "1ª flecha".
+            if dir.length_squared() > 0.001 {
+                session.last_movement_at_s = self.sim_time_s;
+                session.quickdraw_consumed = false;
+            }
+            // CAST CANCEL POR MOVIMENTO: usa `dir` processado (zerado em
+            // hurt/staggered/downed → cast NAO cancela durante stagger).
+            // Grace period 0.3s do inicio do cast → permite player que tava
+            // andando começar o cast sem cancelar de imediato.
+            // No cancel: REFUND mp/stamina + remove cooldown — skill nao foi
+            // efetivamente usada, então custo zero.
+            if casting && dir.length_squared() > 0.001 {
+                let cast_age = self.sim_time_s - session.casting_started_at_s;
+                if cast_age >= 0.3 {
+                    let cancelled_skill = session.casting_skill_id;
+                    let mp_max = session.stats.mp_max as f32;
+                    let st_max = session.stats.stamina_max as f32;
+                    session.mp_current = (session.mp_current + session.casting_mp_paid).min(mp_max);
+                    session.stamina_current = (session.stamina_current + session.casting_st_paid).min(st_max);
+                    session.skill_cds.remove(&cancelled_skill);
+                    session.casting_until = 0.0;
+                    session.casting_skill_id = 0;
+                    session.casting_mp_paid = 0.0;
+                    session.casting_st_paid = 0.0;
+                    cancelled_cast_owners.push((session.entity_id, cancelled_skill));
+                    tracing::info!(
+                        "cast cancelado por movimento: skill={} player={:?} age={:.2}s (refund mp+st+cd)",
+                        cancelled_skill, session.entity_id, cast_age
+                    );
+                }
+            }
             // Downed/Carregando/Hurt/Dashing/Defending/Staggered: sem ataques
             let was_dashing = self.sim_time_s < session.dash_until;
             let wants_attack = if session.downed || session.carrying.is_some() || in_hurt
@@ -2699,28 +2788,48 @@ impl GameWorld {
             // damage. Roll feito no SOURCE pra gerar exatamente 1 valor de
             // dano por swing — todos os alvos no cone recebem o mesmo
             // (consistente com regras tipo Diablo/RoTMG).
-            let crit = session.stats.crit_chance > 0.0
+            let mut crit = session.stats.crit_chance > 0.0
                 && fastrand::f32() < session.stats.crit_chance;
+            // Quick Draw passive (Bow T2): se Bow equipada e player parado
+            // >= 1.0s, força crit no próximo tiro (consome ate o player
+            // mover de novo). Rank ainda nao da bonus extra (r5/r10 TODO).
+            let quickdraw_rank = session.learned_skills.iter()
+                .find(|s| s.skill_id == 1036)
+                .map(|s| s.rank).unwrap_or(0);
+            if !crit
+                && wants_attack
+                && quickdraw_rank > 0
+                && matches!(shared::Proficiency::from_item(weapon_id), shared::Proficiency::Bow)
+                && self.sim_time_s - session.last_movement_at_s >= 1.0
+                && !session.quickdraw_consumed
+            {
+                crit = true;
+                session.quickdraw_consumed = true;
+            }
             let dmg_final = if crit {
                 (session.stats.attack_damage as f32 * shared::CRIT_DAMAGE_MULT).round() as i32
             } else {
                 session.stats.attack_damage
             };
-            // Combo step: incrementa em SLASH (melee) e em THRUST (Wand/Staff).
-            // Pra caster, o ciclo (Slash1/Slash2/Thrust) é puramente visual —
-            // damage e projectile sao iguais a cada step. Cliente usa o step
-            // pra escolher o anim + elemento overlay (fire/elec/heal/pois).
+            // Combo step: incrementa em SLASH (melee), THRUST (Wand/Staff)
+            // e SHOOT (Bow). Para caster, o step troca o overlay de spell
+            // visual + o ultimo step lança projetil (resto melee cone).
+            // Para Bow, o ultimo step lança 3 flechas em leque (finisher
+            // fluido) em vez de 1.
             // Reset se passou COMBO_RESET_TIME desde o último attack.
             let is_melee = shared::weapon_is_melee(weapon_id);
             let attack_anim_code = shared::weapon_attack_anim(weapon_id);
+            let prof = shared::Proficiency::from_item(weapon_id);
             let is_caster_thrust = matches!(
-                shared::Proficiency::from_item(weapon_id),
+                prof,
                 shared::Proficiency::Wand | shared::Proficiency::Staff
             );
+            let is_bow = matches!(prof, shared::Proficiency::Bow);
             let combo_eligible = wants_attack
                 && (
                     (is_melee && attack_anim_code == shared::components::attack_anim::SLASH)
                     || is_caster_thrust
+                    || is_bow
                 );
             let mut combo_step: u8 = 0;
             if combo_eligible {
@@ -2751,10 +2860,15 @@ impl GameWorld {
         // por movimento, e broadcast SkillCastCancel pra clientes despawnarem
         // gizmos e parar coroutines de visual.
         if !cancelled_cast_owners.is_empty() {
+            let cancelled_eids: std::collections::HashSet<EntityId> =
+                cancelled_cast_owners.iter().map(|(eid, _)| *eid).collect();
             self.pending_delayed_aoe
-                .retain(|d| !cancelled_cast_owners.contains(&d.owner_eid));
-            for caster_eid in &cancelled_cast_owners {
-                let msg = ServerMessage::SkillCastCancel { caster_eid: *caster_eid };
+                .retain(|d| !cancelled_eids.contains(&d.owner_eid));
+            for (caster_eid, skill_id) in &cancelled_cast_owners {
+                let msg = ServerMessage::SkillCastCancel {
+                    caster_eid: *caster_eid,
+                    skill_id: *skill_id,
+                };
                 for s in self.sessions.values() {
                     if s.logged_in {
                         let _ = s.handle.to_client.send(msg.clone());
@@ -3104,16 +3218,41 @@ impl GameWorld {
                         Vec2::ZERO
                     };
                     let spawn_pos = pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y) + forward;
-                    self.pending_shots.push(PendingShot {
-                        pos: spawn_pos,
-                        dir,
-                        damage: ir.damage,
-                        is_crit: ir.is_crit,
-                        kind: ir.proj_kind,
-                        owner_id: ir.owner_id,
-                        from_player: true,
-                        release_tick: self.tick.wrapping_add(release_in_ticks),
-                    });
+                    // Bow finisher (combo step 2): 3 flechas em leque ±15°.
+                    // Sem combo (combo_step==0 sem combo state): tiro unico.
+                    let is_bow_finisher = ir.proj_kind == 0 // arrow
+                        && ir.combo_step + 1 == shared::COMBO_STEPS as u8;
+                    if is_bow_finisher {
+                        for &spread_deg in &[-15.0_f32, 0.0, 15.0] {
+                            let rad = spread_deg.to_radians();
+                            let (s, c) = (rad.sin(), rad.cos());
+                            let fan_dir = Vec2::new(
+                                dir.x * c - dir.y * s,
+                                dir.x * s + dir.y * c,
+                            );
+                            self.pending_shots.push(PendingShot {
+                                pos: spawn_pos,
+                                dir: fan_dir,
+                                damage: ir.damage,
+                                is_crit: ir.is_crit,
+                                kind: ir.proj_kind,
+                                owner_id: ir.owner_id,
+                                from_player: true,
+                                release_tick: self.tick.wrapping_add(release_in_ticks),
+                            });
+                        }
+                    } else {
+                        self.pending_shots.push(PendingShot {
+                            pos: spawn_pos,
+                            dir,
+                            damage: ir.damage,
+                            is_crit: ir.is_crit,
+                            kind: ir.proj_kind,
+                            owner_id: ir.owner_id,
+                            from_player: true,
+                            release_tick: self.tick.wrapping_add(release_in_ticks),
+                        });
+                    }
                 }
             }
         }
@@ -3141,15 +3280,30 @@ impl GameWorld {
 
         for sp in projs_to_spawn {
             let proj_id = self.alloc_entity_id();
+            // Eagle Eye passive (Bow T1, +5%/rank range): aplica bonus no TTL
+            // do projetil quando arrow (kind=0 ou =6 power shot) lançada por
+            // player com a passiva.
+            let mut ttl = PROJ_TTL;
+            if matches!(sp.kind, 0 | 6) && sp.from_player {
+                let bonus = self.sessions.values()
+                    .find(|s| s.entity_id == sp.owner_id)
+                    .map(|s| s.stats.bow_range_bonus_pct)
+                    .unwrap_or(0.0);
+                if bonus > 0.0 {
+                    ttl *= 1.0 + bonus;
+                }
+            }
+            // Power Shot (kind=6): 2x velocidade. Outros tem speed normal.
+            let speed_mult: f32 = if sp.kind == 6 { 2.0 } else { 1.0 };
             self.ecs.spawn((
                 NetId(proj_id),
                 Position(sp.pos),
-                Velocity(sp.dir * PROJ_SPEED),
+                Velocity(sp.dir * PROJ_SPEED * speed_mult),
                 EntityKind::Projectile,
                 ProjTag {
                     owner: sp.owner_id,
                     from_player: sp.from_player,
-                    ttl: PROJ_TTL,
+                    ttl,
                     damage: sp.damage,
                     is_crit: sp.is_crit,
                     kind: sp.kind,
@@ -3221,11 +3375,11 @@ impl GameWorld {
         // ── G: deteccao de colisao projetil → entidade ────────────────────────
         // Inclui Velocity pra calcular hurt_dir = -vel (direção OPOSTA ao voo
         // = TOWARD atacante). Sem offset Y artificial do spawn no peito.
-        let projs: Vec<(Entity, EntityId, Vec2, Vec2, EntityId, bool, i32, bool)> = self
+        let projs: Vec<(Entity, EntityId, Vec2, Vec2, EntityId, bool, i32, bool, u8)> = self
             .ecs
             .query::<(&NetId, &Position, &Velocity, &ProjTag)>()
             .iter()
-            .map(|(e, (net, pos, vel, p))| (e, net.0, pos.0, vel.0, p.owner, p.from_player, p.damage, p.is_crit))
+            .map(|(e, (net, pos, vel, p))| (e, net.0, pos.0, vel.0, p.owner, p.from_player, p.damage, p.is_crit, p.kind))
             .collect();
 
         // I-frames de dash: players dashando ficam imunes a dano (mesmo
@@ -3301,7 +3455,10 @@ impl GameWorld {
             }
         }
 
-        'outer: for (pe, pnet, ppos, pvel, powner, pfrom_player, pdmg, pcrit) in &projs {
+        // Eventos de impacto: (target_eid, dir, kind) — broadcastados depois
+        // do loop pra evitar dupla mut borrow de self.sessions.
+        let mut projectile_impacts: Vec<(EntityId, Vec2, u8)> = Vec::new();
+        'outer: for (pe, pnet, ppos, pvel, powner, pfrom_player, pdmg, pcrit, pkind) in &projs {
             for (te, tnet, tpos, is_player, size) in &targets {
                 if tnet == powner { continue; }
                 if *pfrom_player == *is_player { continue; }
@@ -3318,8 +3475,28 @@ impl GameWorld {
                             .unwrap_or_else(|| calc_hurt_dir(*tpos, *ppos));
                         damage_events.push((*te, *tnet, *pdmg, *powner, *pfrom_player, hd, *pcrit));
                     }
+                    // Arrow (kind=0 ou =6 power shot): broadcast ProjectileImpact
+                    // pra cliente spawnar a flecha presa no alvo. Outros
+                    // projeteis (fireball/lightning) tem VFX no OnDestroy.
+                    if matches!(*pkind, 0 | 6) {
+                        let pdir = pvel.try_normalize().unwrap_or(Vec2::X);
+                        projectile_impacts.push((*tnet, pdir, *pkind));
+                    }
                     hit_projs.push((*pe, *pnet));
                     continue 'outer;
+                }
+            }
+        }
+        // Broadcast ProjectileImpact pra todos clientes logados.
+        for (target_eid, dir, kind) in &projectile_impacts {
+            let msg = ServerMessage::ProjectileImpact {
+                target_eid: *target_eid,
+                dir: *dir,
+                kind: *kind,
+            };
+            for s in self.sessions.values() {
+                if s.logged_in {
+                    let _ = s.handle.to_client.send(msg.clone());
                 }
             }
         }
@@ -3339,12 +3516,25 @@ impl GameWorld {
             self.pending_delayed_aoe = still;
             for d in to_fire {
                 let enemies = self.find_enemies_in_radius(d.target_pos, d.radius);
-                for tn in enemies {
-                    let hd = calc_hurt_dir_from_eid(&self.ecs, tn, d.target_pos);
+                let now_s = self.sim_time_s;
+                for tn in &enemies {
+                    let hd = calc_hurt_dir_from_eid(&self.ecs, *tn, d.target_pos);
                     self.pending_skill_hits.push(PendingSkillHit {
-                        target_net: tn, damage: d.damage, attacker_net: d.owner_eid,
+                        target_net: *tn, damage: d.damage, attacker_net: d.owner_eid,
                         hurt_dir: hd, is_crit: false, from_player: true,
                     });
+                }
+                // Aplica poisoned status (visual) nos hits se a DelayedAoe
+                // foi marcada com poison_dur_s > 0 (Smoke Bomb).
+                if d.poison_dur_s > 0.0 {
+                    let expires = now_s + d.poison_dur_s;
+                    let target_set: std::collections::HashSet<EntityId> =
+                        enemies.iter().copied().collect();
+                    for (_, (net, tag)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag)>() {
+                        if target_set.contains(&net.0) && tag.poisoned_until < expires {
+                            tag.poisoned_until = expires;
+                        }
+                    }
                 }
             }
         }
@@ -3410,6 +3600,30 @@ impl GameWorld {
                 d
             };
             let mut dmg = (dmg - target_defense).max(1);
+
+            // Hunter's Mark passive (Bow T4): +20% dmg em alvos marcados.
+            // Mark refresh on hit — qualquer hit estende a duracao por 6s.
+            // Escopo: so quando atacante eh player com a passiva (rank>0).
+            let now_for_mark = self.sim_time_s;
+            if attacker_is_player {
+                let attacker_session = self.sessions.values_mut()
+                    .find(|s| s.entity_id == attacker_id);
+                if let Some(att) = attacker_session {
+                    let hunter_rank = att.learned_skills.iter()
+                        .find(|s| s.skill_id == 1040)
+                        .map(|s| s.rank).unwrap_or(0);
+                    if hunter_rank > 0 {
+                        // Marcado e ativo? Aplica +20% dmg.
+                        if let Some(&exp) = att.hunter_marks.get(&target_id) {
+                            if exp > now_for_mark {
+                                dmg = ((dmg as f32) * 1.20).round() as i32;
+                            }
+                        }
+                        // Refresh/cria mark (6s) — proximo hit ja com bonus.
+                        att.hunter_marks.insert(target_id, now_for_mark + 6.0);
+                    }
+                }
+            }
 
             // ── Defesa ativa do alvo (player) ────────────────────────────────
             // (1) Parry: edge-press de PRIMARY ou SECONDARY dentro de PARRY_WINDOW_S
@@ -4067,6 +4281,17 @@ impl GameWorld {
             });
         }
 
+        // Coleta enemies envenenados (sim_time < poisoned_until) pra replicar
+        // tint verde no client. Pre-built map pra evitar lookup repetido.
+        let now_sim_for_poison = self.sim_time_s;
+        let poisoned_ids: std::collections::HashSet<EntityId> = self.ecs
+            .query::<(&NetId, &EnemyTag)>()
+            .iter()
+            .filter_map(|(_, (net, tag))| {
+                if tag.poisoned_until > now_sim_for_poison { Some(net.0) } else { None }
+            })
+            .collect();
+
         let all: Vec<EntitySnapshot> = self
             .ecs
             .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>, Option<&ProjTag>, Option<&NpcSkin>, Option<&VendorTag>, Option<&WanderRouteTag>)>()
@@ -4115,6 +4340,7 @@ impl GameWorld {
                     skin_preset: skin.map(|s| s.preset),
                     defending: overlay.and_then(|o| if o.defending { Some(true) } else { None }),
                     casting: overlay.and_then(|o| if o.casting { Some(true) } else { None }),
+                    poisoned: if poisoned_ids.contains(&net.0) { Some(true) } else { None },
                 }
             })
             .collect();
@@ -5467,8 +5693,9 @@ fn effective_stats(
             1010 => { s.attack_damage += s.attack_damage * r / 100; }
             // Sharp Edge — Dagger T1 P: +0.3%/rank crit chance
             1026 => { s.crit_chance += 0.003 * r as f32; }
-            // Eagle Eye — Bow T1 P: +5%/rank range (sem stat dedicado; aplicado em projectile spawn)
-            1034 => { /* TODO: hook em projectile range */ }
+            // Eagle Eye — Bow T1 P: +5%/rank range. Aplicado no spawn do
+            // projetil escalando o TTL (mais tempo voando = mais range).
+            1034 => { s.bow_range_bonus_pct += 0.05 * r as f32; }
             // Mana Conduit — Staff T1 P: -1%/rank mp cost (aplicado em handle_skill_cast)
             1050 => { /* aplicado em cast cost */ }
             // Hardened Fists — Unarmed T1 P: +2/rank atk dmg unarmed

@@ -758,9 +758,9 @@ async fn seed_skills_if_needed(pool: &PgPool) -> Result<()> {
         },
         S{ id:1038, name:"Smoke Bomb",       prof:"Bow",   tier:3, is_passive:false, path:"trapper",  unlock_char:t3c, unlock_prof:t3p,
             usable_with: none.clone(), cost_mp:0, cost_st:30, cd:18.0, cast:0.0, target:"aoe_circle",
-            range_t:5.0, radius:3.0, base_dmg:0, base_heal:0, scal_atk:0.0, scal_wis:0.0, scal_dex:0.0,
-            rank_dmg:0.0, rank_cd:0.05, rank_cost:0.0,
-            desc:"Radius 3; blind 4s (alvos perdem aim/atk)."
+            range_t:5.0, radius:3.0, base_dmg:5, base_heal:0,
+            scal_atk:0.0, scal_wis:0.0, scal_dex:0.2, rank_dmg:0.10, rank_cd:0.05, rank_cost:0.0,
+            desc:"Radius 3; nuvem 5s, dano AoE/s + envenenado nos alvos dentro."
         },
         S{ id:1039, name:"Rain of Arrows",   prof:"Bow",   tier:4, is_passive:false, path:"sniper",   unlock_char:t4c, unlock_prof:t4p,
             usable_with: ranged_v.clone(), cost_mp:0, cost_st:80, cd:30.0, cast:0.5, target:"aoe_circle",
