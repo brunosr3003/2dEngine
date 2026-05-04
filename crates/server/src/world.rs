@@ -61,6 +61,10 @@ struct PendingShot {
     dir: Vec2,
     damage: i32,
     is_crit: bool,
+    /// Visual + behavior kind:
+    ///   0 = arrow (bow basic), 1 = fireball, 2 = lightning, 3 = big fireball,
+    ///   4 = frost bolt, 5 = elec, 6 = power shot arrow, 7 = spear (harpoon —
+    ///   ao acertar set caster.harpoon state pra recast pull).
     kind: u8,
     owner_id: EntityId,
     from_player: bool,
@@ -663,6 +667,14 @@ pub struct Session {
     pub leap_damage: i32,
     /// Radius do AoE no fim do leap.
     pub leap_radius: f32,
+
+    // Spear Throw (1021) Harpoon state — quando o projetil de spear acerta um
+    // alvo, set harpoon_target_eid + harpoon_until. No proximo cast da skill
+    // 1021 (recast) dentro da janela, dasha o player ate o alvo (hook).
+    /// EntityId do alvo cravado pela lanca. None = sem harpoon ativo.
+    pub harpoon_target_eid: Option<EntityId>,
+    /// sim_time em que o harpoon expira (limpa state). 5s default.
+    pub harpoon_until: f32,
 
     // ── Poise ───────────────────────────────────────────────────────────
     /// Barra de poise atual (0..stats.poise_max). Drena com hits, absorve
@@ -2464,6 +2476,8 @@ impl GameWorld {
                 leap_target: Vec2::ZERO,
                 leap_damage: 0,
                 leap_radius: 0.0,
+                harpoon_target_eid: None,
+                harpoon_until: 0.0,
                 poise_current: 50.0, // base padrao; refresh via stats no login
                 last_combat_at_s: 0.0,
                 poise_last_sent: 0,
@@ -3176,10 +3190,59 @@ impl GameWorld {
                 // do caster por LEAP_DURATION antes de teleportar). Damage +
                 // stun aplicados no FIM do leap (no tick step). Anim de jump
                 // replicada via attack_anim_pending=DASH.
-                // Spear Throw (1021) tambem usa leap mechanic — visual de
-                // arremessar lança (cliente render projétil), player segue
-                // como hook ate o landing. Range maior (8t) que Leap (6t).
-                if skill_id == 1001 || skill_id == 1021 {
+                // ── Spear Throw (1021) — Harpoon 2-cast hook ──────────────
+                // Cast 1: throw projectile (kind=7). Ao acertar, server seta
+                // session.harpoon_target_eid = target.
+                // Cast 2 (recast dentro de 5s): leap ate o target cravado.
+                if skill_id == 1021 {
+                    // Check se eh recast (harpoon ativo + alvo ainda vivo).
+                    let harpoon_target = self.sessions.get(&sid)
+                        .filter(|s| s.harpoon_until > self.sim_time_s)
+                        .and_then(|s| s.harpoon_target_eid);
+                    let target_world_pos = harpoon_target.and_then(|teid| {
+                        // Find target entity pos pelo EntityId (NetId)
+                        let mut found: Option<Vec2> = None;
+                        for (_, (net, p)) in self.ecs.query_mut::<(&NetId, &Position)>() {
+                            if net.0 == teid { found = Some(p.0); break; }
+                        }
+                        found
+                    });
+                    if let Some(land_pos) = target_world_pos {
+                        // RECAST: leap ate o alvo. Limpa state, set leap.
+                        if let Some(s) = self.sessions.get_mut(&sid) {
+                            s.harpoon_target_eid = None;
+                            s.harpoon_until = 0.0;
+                            s.leap_until = self.sim_time_s + 0.4;
+                            s.leap_start_pos = pos;
+                            s.leap_target = land_pos;
+                            s.leap_damage = 0; // dano ja foi no projetil hit
+                            s.leap_radius = 0.0;
+                        }
+                        if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(e) {
+                            tag.attack_anim_pending = Some(shared::components::attack_anim::DASH);
+                        }
+                        tracing::info!("Spear Throw RECAST: hooking to target eid={:?} at {:?}",
+                            harpoon_target, land_pos);
+                        return;
+                    }
+                    // FIRST CAST: spawn projetil de spear (kind=7).
+                    let spawn_pos = pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y)
+                        + dir * shared::FIREBALL_FORWARD_OFFSET;
+                    self.pending_shots.push(PendingShot {
+                        pos: spawn_pos,
+                        dir,
+                        damage,
+                        is_crit: false,
+                        kind: 7, // SPEAR harpoon
+                        owner_id: owner_eid,
+                        from_player: true,
+                        release_tick: self.tick.wrapping_add(1),
+                    });
+                    tracing::info!("Spear Throw THROW: dmg={} dir=({:.2},{:.2})",
+                        damage, dir.x, dir.y);
+                    return;
+                }
+                if skill_id == 1001 {
                     // Mesma duracao do leap step (4736) — ambos compartilham
                     // o mecanismo de interpolacao.
                     let leap_duration: f32 = 0.5;
@@ -5109,12 +5172,29 @@ impl GameWorld {
                         damage_events.push((*te, *tnet, *pdmg, *powner, *pfrom_player, hd, *pcrit,
                             AttackInfo::Projectile { vel: *pvel, kind: *pkind }, proj_kb));
                     }
-                    // Arrow (kind=0 ou =6 power shot): broadcast ProjectileImpact
-                    // pra cliente spawnar a flecha presa no alvo. Outros
-                    // projeteis (fireball/lightning) tem VFX no OnDestroy.
-                    if matches!(*pkind, 0 | 6) {
+                    // Arrow (kind=0 ou =6 power shot) e Spear (kind=7):
+                    // broadcast ProjectileImpact pra cliente spawnar visual
+                    // do projetil cravado no alvo. Outros projeteis (fireball
+                    // /lightning) tem VFX no OnDestroy.
+                    if matches!(*pkind, 0 | 6 | 7) {
                         let pdir = pvel.try_normalize().unwrap_or(Vec2::X);
                         projectile_impacts.push((*tnet, pdir, *pkind));
+                    }
+                    // Spear Throw harpoon (kind=7): seta caster.harpoon state
+                    // pra permitir recast pull. Caster eh achado pelo owner
+                    // entity_id. 5s de janela; se alvo morrer antes a checagem
+                    // no recast retorna None e cai em first-cast novamente.
+                    if *pkind == 7 {
+                        for s in self.sessions.values_mut() {
+                            if s.logged_in && s.entity_id == *powner {
+                                s.harpoon_target_eid = Some(*tnet);
+                                s.harpoon_until = self.sim_time_s + 5.0;
+                                tracing::info!(
+                                    "Spear Throw HIT: harpoon attached owner_eid={:?} target_eid={:?}",
+                                    powner, tnet);
+                                break;
+                            }
+                        }
                     }
                     hit_projs.push((*pe, *pnet));
                     continue 'outer;
