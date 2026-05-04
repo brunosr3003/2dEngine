@@ -21,14 +21,45 @@ pub enum MapEntity {
     Vault,
     /// Boss unico (so 1 por mapa, respawn via constante).
     Boss { kind: u16 },
+    /// Area dedicada a UM boss procedural (level-based). Spawna 1 boss
+    /// dentro do polygon/rect, monitora morte, respawna apos `respawn_s`.
+    /// Independente de EnemySpawner — separar boss spawn de mob spawn
+    /// permite distribuir bosses em locais fixos sem misturar com hordas.
+    /// `pos` (do placement) = canto inferior-esquerdo do AABB.
+    BossSpawn {
+        size: [f32; 2],
+        /// Level do boss. Class e' sorteada do tier desse level.
+        level: u32,
+        /// Segundos apos morte ate o proximo spawn.
+        respawn_s: f32,
+        /// Vertices do poligono em coords LOCAIS (relativo a `pos`). None =
+        /// area = rect AABB inteiro.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        polygon: Option<Vec<[f32; 2]>>,
+    },
     /// Zona de spawn gerenciada: mantem quotas de inimigos vivos, respawna
-    /// com delay configuravel. `pos` (do placement) e' o canto inferior-esquerdo;
-    /// `size` e' a extensao em tiles. `quotas` define quantos vivos manter por
-    /// kind. `respawn_delay_s` e' o tempo apos morte antes de spawnar de novo.
+    /// com delay configuravel. `pos` (do placement) e' o canto inferior-esquerdo
+    /// do AABB; `size` e' a extensao do AABB em tiles. Se `polygon` Some,
+    /// vertices (em coords locais) definem a area exata via rejection
+    /// sampling + point-in-polygon; senao zona = rect AABB. `quotas` define
+    /// quantos vivos manter por kind. `respawn_delay_s` apos morte.
     EnemySpawner {
         size: [f32; 2],
         quotas: Vec<SpawnQuota>,
         respawn_delay_s: f32,
+        /// Vertices do poligono em coords LOCAIS (relativo a `pos` do
+        /// placement). None = zona e' o rect AABB inteiro (legacy).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        polygon: Option<Vec<[f32; 2]>>,
+        /// Modo level-range — quando Some(min) e Some(max), server ignora
+        /// `quotas` e sortea inimigos aleatorios de level no range,
+        /// mantendo `count` vivos.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        level_min: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        level_max: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        count: Option<u32>,
     },
     /// Zona segura: dentro dela combate é desabilitado (sem dano dado nem
     /// recebido), enemies dropam aggro de quem entra. `pos` (do placement) é

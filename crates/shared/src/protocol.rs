@@ -67,6 +67,10 @@ pub enum ClientMessage {
     /// Reseta TODOS os pontos alocados pra unspent_points. Util pra testes
     /// e respec — server zera o array, devolve os pontos e reenvia stats.
     ResetStats,
+    /// Reseta TODAS as skills aprendidas — refunda os SP gastos. Limpa
+    /// learned_skills, equipped slots, cooldowns e estados de skills (riposte,
+    /// hunter_marks, etc). Util pra respec do tree.
+    ResetSkills,
     /// Refina um item do inventário (+1 nível). Requer ItemInstance
     /// presente no slot. Custo: gold proporcional ao refinement atual.
     /// Falha (chance crescente com nível) reseta refinement pra 0.
@@ -76,7 +80,31 @@ pub enum ClientMessage {
     /// consumida do inventário. Falha silenciosamente se sem socket
     /// livre ou item incompatível.
     SocketGem { item_slot: u16, gem_slot: u16 },
+    /// Desmonta do barco atual. Server faz BFS pequeno (≤3 tiles) procurando
+    /// um tile walkable adjacente ao barco e teleporta o player. Falha se
+    /// nao houver terra acessivel — player precisa mover o barco antes.
+    DismountBoat,
+    /// Teletransporta o player para o spawn do mapa. Usar como escape em
+    /// caso de bug de colisão (player preso em wall, fora do mapa, etc.).
+    /// Permitido em qualquer estado — se montado em barco, desmonta antes.
+    ResetPosition,
     RequestDisconnect,
+    /// Cria novo personagem para a conta (multi-char). Aparece como nova
+    /// entry na CharacterList apos sucesso. Server valida nome unico.
+    CreateCharacter {
+        name: String,
+        visual: crate::VisualConfig,
+        starting_weapon: u16,
+    },
+    /// Seleciona um char da lista pra entrar no jogo. Server valida que
+    /// o char pertence a conta autenticada, carrega o estado e envia LoginOk.
+    SelectCharacter {
+        name: String,
+    },
+    /// Pula a janela de "stand up" e respawna direto na cidade. Disponivel
+    /// quando session.downed=true, sem precisar esperar o timer chegar a 0.
+    /// Server teleporta pro spawn_tile, restaura HP, limpa estado downed.
+    RespawnAtCity,
 }
 
 /// Localizacao logica de um slot no sistema de inventario do cliente.
@@ -122,6 +150,20 @@ pub enum ServerMessage {
         spawn: [f32; 2],
     },
     LoginDenied {
+        reason: String,
+    },
+    /// Lista de chars da conta autenticada — enviada apos Login bem-sucedido
+    /// e apos cada CreateCharacter ou SelectCharacter. Cliente exibe a tela
+    /// de selecao; pode estar vazia (conta nova) ou ter ate N chars.
+    /// `available_weapons` = item_ids que o cliente deve mostrar como opcoes
+    /// na criacao de char (filtrado por items.active=TRUE).
+    CharacterList {
+        chars: Vec<CharacterListEntry>,
+        available_weapons: Vec<u16>,
+    },
+    /// Resposta a `CreateCharacter` quando criacao falha (nome duplicado,
+    /// invalido, etc). Cliente mostra erro e reabre dialog.
+    CharacterCreationFailed {
         reason: String,
     },
     #[serde(rename = "WorldSnapshot")]
@@ -174,6 +216,9 @@ pub enum ServerMessage {
     },
     ManaUpdate { current: i32 },
     StaminaUpdate { current: i32 },
+    /// Poise atual do player (0..stats.poise_max). Server envia quando o
+    /// inteiro muda (poise inteiro, nao fracionado). Cliente atualiza barra.
+    PoiseUpdate { current: i32 },
     ShopOpen {
         items:        Vec<ShopItem>,
         sell_prices:  Vec<SellPrice>,
@@ -282,6 +327,17 @@ pub struct SellPrice {
 pub struct TradeBuyEntry {
     pub shop_slot: u8,
     pub qty:       u32,
+}
+
+/// Entry da lista de personagens enviada apos login. Cliente renderiza
+/// como card na tela de selecao (paper-doll thumbnail + nome + level).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterListEntry {
+    pub name: String,
+    pub level: u32,
+    pub visual: crate::VisualConfig,
+    /// item_id da arma equipada (informativo — mostra ao lado do nome).
+    pub weapon_id: Option<u16>,
 }
 
 /// Entrada do basket de vendas dentro de um ShopTrade.

@@ -38,6 +38,9 @@ pub enum EntityKind {
     Npc(u16),
     /// Portal para outro mapa. Ao pisar, servidor teleporta o jogador.
     Portal,
+    /// Barco navegavel. u16 = boat_kind (0=Lylian Leutard). Cliente usa o
+    /// kind pra escolher quais sprite-sheets carregar.
+    Boat(u16),
 }
 
 /// Slot de inventario. None = vazio. Quando `qty == 0`, o slot esta vazio.
@@ -68,10 +71,13 @@ pub const fn base_player_stats() -> PlayerStats {
         hp_regen: 0.5, // regen base de fora-de-combate
         attack_speed_mult: 1.0,
         stamina_max: 100,
-        stamina_regen: 25.0,
+        stamina_regen: 15.0,
         block_dmg_reduction: 0.6,         // 60% absorvido por block (base)
         defense_stamina_cost_mult: 1.0,   // 100% do custo base (RES reduz)
+        damage_reduction_pct: 0.0,        // breakpoints de VIT/RES somam aqui
         bow_range_bonus_pct: 0.0,         // Eagle Eye passive (Bow T1)
+        dash_cd_mult: 1.0,                // SPD soma reduction por ponto
+        poise_max: 50,                    // base poise — todas as classes
     }
 }
 
@@ -120,13 +126,30 @@ pub struct PlayerStats {
     /// como multiplicador no PROJ_TTL ao spawnar arrow. 0 = sem bonus.
     #[serde(default)]
     pub bow_range_bonus_pct: f32,
+    /// Multiplicador de redução de cooldown do dash. Final dash_cooldown =
+    /// DASH_COOLDOWN / dash_cd_mult. SPD soma DASH_CD_REDUCTION_PER_SPD por
+    /// ponto. Substituiu o uso de `speed_mult` pra dash CD (movement speed
+    /// agora e independente de SPD).
+    #[serde(default = "default_one")]
+    pub dash_cd_mult: f32,
+    /// Poise máximo. Barra que absorve dano antes do HP — enquanto poise > 0
+    /// o player nao toma stagger nem hurt anim. Regen fora de combate.
+    #[serde(default = "default_poise_max")]
+    pub poise_max: i32,
+    /// Fração de redução de dano percentual aplicada APOS defense flat. Vem de
+    /// breakpoints de stat (ex: cada 25 VIT = +5%). 0..0.75. Cap de 75% pra
+    /// evitar invulnerabilidade.
+    #[serde(default)]
+    pub damage_reduction_pct: f32,
 }
+
+fn default_poise_max() -> i32 { 50 }
 
 fn default_block_reduction() -> f32 { 0.6 }
 fn default_one() -> f32 { 1.0 }
 
 fn default_stamina_max() -> i32 { 100 }
-fn default_stamina_regen() -> f32 { 25.0 }
+fn default_stamina_regen() -> f32 { 15.0 }
 
 fn default_speed_mult() -> f32 { 1.0 }
 
@@ -340,11 +363,55 @@ pub struct EntitySnapshot {
     /// Smoke Bomb 1038). Snapshot só envia quando ativo.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub poisoned: Option<bool>,
+    /// True enquanto o inimigo está atordoado (`stunned_until > now`).
+    /// Set por Shield Bash (1003). Cliente renderiza tint amarelo + parado.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stunned: Option<bool>,
+    /// Offset Y visual pra arco de pulo (Leap Strike). Cliente soma esse
+    /// valor à posição do paper-doll pra simular trajetória parabolica.
+    /// Server calcula `4 * peak * t * (1-t)`. Snapshot envia somente
+    /// durante o leap.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leap_y: Option<f32>,
+    /// True enquanto o player tem poise > 0 (barra de poise ativa). Cliente
+    /// renderiza uma bolha visual em volta do char. Snapshot envia somente
+    /// quando ativo (poise > 0).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub poise_active: Option<bool>,
     /// Preset visual pra NPCs (0..N). Cliente mapeia pra VisualConfig
     /// (race + outfit + hair). None pra Player/Enemy (esses usam outros
     /// caminhos de visual).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skin_preset: Option<u8>,
+    /// Direcao do barco (0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW). Cliente
+    /// escolhe a sheet correta dentre as 8 direcoes. Some apenas em
+    /// EntityKind::Boat. None para outras entidades.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boat_dir: Option<u8>,
+    /// Animacao atual do barco (0=idle, 1=movement, 2=shoot). Cliente escolhe
+    /// sheet baseado nisso. Some apenas em EntityKind::Boat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boat_anim: Option<u8>,
+    /// Direcao do ULTIMO tiro (0..7). Independente da boat_dir (que e' a
+    /// direcao do casco/movimento). Cliente usa pra rotacionar o flash do
+    /// canhao pro mouse, nao pro casco. Some apenas em EntityKind::Boat
+    /// quando shoot anim ativa.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boat_shoot_dir: Option<u8>,
+    /// EntityId do passageiro (player montado). Cliente verifica se o local
+    /// player == passenger_eid pra decidir se a camera segue o barco. Some
+    /// apenas em EntityKind::Boat com passageiro.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub passenger_eid: Option<EntityId>,
+    /// True se o player esta montado em algum barco. Cliente esconde o
+    /// paper-doll do player local (ele eh representado pelo barco). Some
+    /// apenas em EntityKind::Player com Mounted ativo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mounted: Option<bool>,
+    /// True para inimigos boss. Cliente aplica scale maior + frame especial.
+    /// Some(true) apenas em EntityKind::Enemy quando EnemyTag.is_boss=true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_boss: Option<bool>,
 }
 
 /// Codigo enviado em `EntitySnapshot.attack_anim` pra discriminar qual
@@ -358,6 +425,7 @@ pub mod attack_anim {
     pub const ENEMY_SHOOT: u8  = 4; // Inimigo ranged (Goblin Archer / Mago)
     pub const DASH: u8         = 5; // Dash do player (anim de jump, p1 cols 4-7)
     pub const PARRY_FLASH: u8  = 6; // Parry sucesso — full ShieldBash swing + flash
+    pub const SHIELD_BASH: u8  = 7; // Shield Bash skill (1003) — pONE3 ShieldBash
 }
 
 /// Configuracao visual de um personagem (skin/race/outfit/hair). Replicada
@@ -380,6 +448,13 @@ pub struct VisualConfig {
     pub hair: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hair_color: Option<u8>,
+    /// Tint RGBA aplicado por cima do paper-doll inteiro. Usado pra
+    /// diferenciar mobs do mesmo "class visual" mas tier diferente
+    /// (goblin verde / amarelo / cinza / demonio roxo / vermelho / dourado).
+    /// None = sem tint (Color.white). Cliente multiplica este valor em todos
+    /// os SpriteRenderers do paper-doll.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_tint: Option<[f32; 4]>,
 }
 
 impl VisualConfig {
@@ -396,6 +471,7 @@ impl VisualConfig {
                 outfit_color: Some(4),
                 hair: Some("dap1".into()),
                 hair_color: Some(7),
+                body_tint: None,
             },
             "archer" => Self {
                 skin: Some(2),
@@ -404,6 +480,7 @@ impl VisualConfig {
                 outfit_color: Some(3),
                 hair: Some("bob1".into()),
                 hair_color: Some(2),
+                body_tint: None,
             },
             // "warrior" (default)
             _ => Self {
@@ -413,6 +490,7 @@ impl VisualConfig {
                 outfit_color: Some(1),
                 hair: Some("dap1".into()),
                 hair_color: Some(1),
+                body_tint: None,
             },
         }
     }

@@ -16,12 +16,27 @@ use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 
+/// Estado do barco persistido junto com o character — quando setado, o
+/// player desconectou montado e queremos recriar o barco no login.
+#[derive(Debug, Clone, Copy)]
+pub struct PersistedBoat {
+    /// boat_kind (0=Lylian Leutard).
+    pub kind: u16,
+    /// Posicao do casco (em world coords).
+    pub pos: Vec2,
+    /// Direcao do casco (0..7).
+    pub dir: u8,
+}
+
 #[derive(Debug, Clone)]
 pub struct CharacterRow {
     pub name: String,
     pub pos: Vec2,
     pub hp: Health,
     pub xp: u64,
+    /// Quando Some, player estava montado num barco no ultimo save. Login
+    /// recria o barco e re-mount.
+    pub boat: Option<PersistedBoat>,
     /// Vec com INVENTORY_SLOTS entradas (slots vazios = qty==0).
     pub inventory: Vec<shared::InventorySlot>,
     pub equipment: shared::Equipment,
@@ -46,6 +61,12 @@ pub struct CharacterRow {
     /// Skills aprendidas + rank atual + slot equipado (None pra passivas
     /// ou ativas não-equipadas).
     pub learned_skills: Vec<shared::LearnedSkill>,
+    /// Conta dona deste char (1:1, UNIQUE). None pra rows legacy nao migrados
+    /// — interpretado como "linkado pelo nome" (backfill ja roda).
+    pub account_id: Option<i64>,
+    /// VisualConfig escolhido na criacao (skin race + tone, outfit + color,
+    /// hair + color, body tint). None = usa default por classe.
+    pub visual: Option<shared::VisualConfig>,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -105,6 +126,39 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS allocated_points INTEGER[] NOT NULL DEFAULT '{0,0,0,0,0,0}'")
         .execute(&pool)
         .await?;
+
+    // Boat state — quando player desconecta montado, salvamos o tipo do
+    // barco + pos + direcao. Re-spawn no login. NULL = nao tava montado.
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_kind SMALLINT NULL")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_x REAL NULL")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_y REAL NULL")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_dir SMALLINT NULL")
+        .execute(&pool).await?;
+    // Character creation: account_id liga char a conta (1:1, UNIQUE).
+    // visual_json armazena VisualConfig serializado (skin/race/outfit/hair/color).
+    // starting_weapon = item_id escolhido na criacao (informativo; weapon ja
+    // ta em inventory+equipment do save).
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS account_id BIGINT NULL")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS visual_json TEXT NULL")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS starting_weapon SMALLINT NULL")
+        .execute(&pool).await?;
+    // Backfill account_id pra chars antigos (linka pelo username = char name).
+    sqlx::query(
+        "UPDATE characters c SET account_id = a.id
+         FROM accounts a
+         WHERE c.account_id IS NULL AND a.username = c.name"
+    ).execute(&pool).await?;
+    // Indice nao-unico em account_id pra lookup rapido de chars por conta.
+    // (Multi-char per account: removida constraint UNIQUE de versao anterior.)
+    sqlx::query("DROP INDEX IF EXISTS idx_characters_account_unique")
+        .execute(&pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_characters_account ON characters(account_id)")
+        .execute(&pool).await?;
     // Migration M6: design atual tem 6 stats (FOR/DES/INT/VIT/SPD/RES). Linhas
     // antigas com 5 elementos ganham um 0 no slot RES, preservando pontos ja
     // alocados. Idempotente — arrays de 6 nao sao tocados.
@@ -262,6 +316,22 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     }
     // Override de item_level no drop por enemy_kind (era hardcoded em
     // world.rs::spawn_loot_drops). NULL = usa items.item_level como fallback.
+    // Phase 5 enemy refactor: build "playerizado" — colunas opcionais pra
+    // weapon/offhand/armor + level. NULL = usa defaults hardcoded em
+    // enemy_builds.rs. Schema soft (nao quebra se NULL); admin pode editar
+    // via SQL ate ter UI dedicada.
+    sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_level INTEGER")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_weapon SMALLINT")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_offhand SMALLINT")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_armor SMALLINT")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_alloc_points INTEGER[]")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_learned_skills TEXT")
+        .execute(&pool).await?;
     sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS loot_item_level INTEGER")
         .execute(&pool).await?;
 
@@ -373,11 +443,96 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             effect_payload  JSONB,
             icon_path       TEXT,
             vfx_id          TEXT,
-            active          BOOLEAN NOT NULL DEFAULT TRUE
+            active          BOOLEAN NOT NULL DEFAULT TRUE,
+            knockback       REAL    NOT NULL DEFAULT 0.5
         )",
     ).execute(&pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_skills_prof ON skills(prof)")
         .execute(&pool).await?;
+    // Migration: ADD COLUMN knockback caso DB antigo nao tenha. Default 0.5
+    // pra qualquer skill direcional ter um shove leve sem precisar tunar.
+    sqlx::query("ALTER TABLE skills ADD COLUMN IF NOT EXISTS knockback REAL NOT NULL DEFAULT 0.5")
+        .execute(&pool).await?;
+    // Backfill knockback per-skill — UPDATE idempotente, sobrescreve a cada
+    // boot pra que ajustes aqui propaguem sem precisar wipar DB.
+    let kb_table: &[(i32, f32)] = &[
+        // ── Sword
+        (1001, 1.5),  // Leap Strike — alvo voa pelo impacto da queda
+        (1002, 0.0),  // Combat Stance (passive)
+        (1003, 1.8),  // Shield Bash — knockback grande + stun
+        (1004, 0.0),  // Bulwark (passive)
+        (1005, 0.6),  // Sword Dance
+        (1006, 0.0),  // Taunt (utility)
+        (1007, 0.0),  // Master's Counter (defensive)
+        (1008, 0.0),  // Iron Will (passive)
+        // ── Axe
+        (1009, 1.0),  // Cleave
+        (1010, 0.0),  // Heavy Hands (passive)
+        (1011, 0.4),  // Bloodthirst
+        (1012, 0.0),  // Frenzy (passive)
+        (1013, 0.7),  // Whirlwind
+        (1014, 0.5),  // Decapitate
+        (1015, 1.4),  // Earthshatter — chao explode
+        (1016, 0.0),  // Unstoppable (passive)
+        // ── Spear
+        (1017, 0.8),  // Lunge
+        (1018, 0.0),  // Long Reach (passive)
+        (1019, 0.6),  // Sweep
+        (1020, 0.0),  // Phalanx (passive)
+        (1021, 0.4),  // Impale
+        (1022, 1.6),  // Charge — empurra alvo na carga
+        (1023, 1.2),  // Dragon Tail
+        (1024, 0.0),  // Resolve (passive)
+        // ── Dagger
+        (1025, 0.3),  // Backstab — ataque rapido, kb pequeno
+        (1026, 0.0),  // Sharp Edge (passive)
+        (1027, 0.0),  // Vanish (utility)
+        (1028, 0.0),  // Toxic Coating (passive)
+        (1029, 0.4),  // Poison Strike
+        (1030, 0.0),  // Shadowstep (mobility)
+        (1031, 0.3),  // Death Mark
+        (1032, 0.0),  // Killer Instinct (passive)
+        // ── Bow
+        (1033, 1.2),  // Power Shot — tiro pesado
+        (1034, 0.0),  // Eagle Eye (passive)
+        (1035, 0.0),  // Caltrops (trap, sem direção)
+        (1036, 0.0),  // Quick Draw (passive)
+        (1037, 0.4),  // Multishot
+        (1038, 0.0),  // Smoke Bomb (DOT zone)
+        (1039, 0.5),  // Rain of Arrows
+        (1040, 0.0),  // Hunter's Mark (passive)
+        // ── Wand
+        (1041, 0.5),  // Fireball
+        (1042, 0.0),  // Mana Pool (passive)
+        (1043, 0.4),  // Frost Bolt — pequeno (efeito real e' slow)
+        (1044, 0.0),  // Ignite (passive)
+        (1045, 0.7),  // Meteor — radial
+        (1046, 1.0),  // Frost Nova — empurra circle
+        (1047, 0.6),  // Inferno
+        (1048, 0.0),  // Elemental Mastery (passive)
+        // ── Staff
+        (1049, 0.0),  // Lesser Heal
+        (1050, 0.0),  // Mana Conduit (passive)
+        (1051, 0.6),  // Lightning Bolt
+        (1052, 0.0),  // Healing Touch (passive)
+        (1053, 0.0),  // Group Heal
+        (1054, 0.5),  // Chain Lightning
+        (1055, 0.0),  // Resurrection
+        (1056, 0.0),  // Storm Caller (passive autocast — kb leve nos bolts via default base)
+        // ── Unarmed (legacy, active=false na maioria)
+        (1057, 0.4),  // Combo Strike
+        (1058, 0.0),  // Hardened Fists (passive)
+        (1059, 1.0),  // Knockout Punch
+        (1060, 0.0),  // Iron Body (passive)
+        (1061, 0.8),  // Hurricane Kick
+        (1062, 1.5),  // Body Throw — literalmente joga o alvo
+        (1063, 1.2),  // Flying Kick
+        (1064, 0.0),  // Master's Form (passive)
+    ];
+    for (sid, kb) in kb_table {
+        sqlx::query("UPDATE skills SET knockback = $1 WHERE id = $2")
+            .bind(*kb).bind(*sid).execute(&pool).await?;
+    }
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS player_skills (
@@ -525,12 +680,12 @@ async fn seed_skills_if_needed(pool: &PgPool) -> Result<()> {
 
     let seed: Vec<S> = vec![
         // ── SWORD (1001..1008) — Duelist (D) + Tank (T) ──────────────────────
-        S{ id:1001, name:"Riposte",          prof:"Sword", tier:1, is_passive:false, path:"duelist",  unlock_char:t1c, unlock_prof:t1p,
-            usable_with: h1_v.clone(), cost_mp:0, cost_st:10, cd:0.0, cast:0.0, target:"self",
-            range_t:0.0, radius:0.0, base_dmg:0, base_heal:0,
-            scal_atk:1.5, scal_wis:0.0, scal_dex:0.0,
+        S{ id:1001, name:"Leap Strike",      prof:"Sword", tier:1, is_passive:false, path:"duelist",  unlock_char:t1c, unlock_prof:t1p,
+            usable_with: h1_v.clone(), cost_mp:0, cost_st:25, cd:8.0, cast:0.0, target:"aoe_circle",
+            range_t:6.0, radius:2.0, base_dmg:15, base_heal:0,
+            scal_atk:0.8, scal_wis:0.0, scal_dex:0.0,
             rank_dmg:0.10, rank_cd:0.0, rank_cost:0.0,
-            desc:"Após parry com sucesso: contra-ataque livre +50% dmg, sem cooldown."
+            desc:"Pula ate 6 tiles na direção do mouse; dano AoE r2 + stun 1.5s na queda."
         },
         S{ id:1002, name:"Combat Stance",    prof:"Sword", tier:1, is_passive:true,  path:"duelist",  unlock_char:t1c, unlock_prof:t1p,
             usable_with: dagger_sword_v.clone(), cost_mp:0, cost_st:0, cd:0.0, cast:0.0, target:"none",
@@ -601,10 +756,10 @@ async fn seed_skills_if_needed(pool: &PgPool) -> Result<()> {
             desc:"Abaixo de 50% HP: +0.5% atk speed por rank. r5: +crit. r10: +mov speed."
         },
         S{ id:1013, name:"Whirlwind",        prof:"Axe",   tier:3, is_passive:false, path:"crusher",  unlock_char:t3c, unlock_prof:t3p,
-            usable_with: heavy_v.clone(), cost_mp:0, cost_st:50, cd:18.0, cast:0.0, target:"aoe_circle",
-            range_t:0.0, radius:2.5, base_dmg:8, base_heal:0,
-            scal_atk:0.7, scal_wis:0.0, scal_dex:0.0, rank_dmg:0.08, rank_cd:0.0, rank_cost:0.0,
-            desc:"Spin 360° raio 2.5; 4 hits ao longo de 1.5s."
+            usable_with: heavy_v.clone(), cost_mp:0, cost_st:60, cd:22.0, cast:0.0, target:"aoe_circle",
+            range_t:0.0, radius:2.5, base_dmg:30, base_heal:0,
+            scal_atk:0.8, scal_wis:0.0, scal_dex:0.0, rank_dmg:0.08, rank_cd:0.0, rank_cost:0.0,
+            desc:"Gira 360° raio 2.5 ao seu redor por 4s, 10 pulsos de dano."
         },
         S{ id:1014, name:"Decapitate",       prof:"Axe",   tier:3, is_passive:false, path:"berserker",unlock_char:t3c, unlock_prof:t3p,
             usable_with: melee_v.clone(), cost_mp:0, cost_st:40, cd:25.0, cast:0.0, target:"cone",
@@ -650,11 +805,11 @@ async fn seed_skills_if_needed(pool: &PgPool) -> Result<()> {
             rank_dmg:0.005, rank_cd:0.0, rank_cost:0.0,
             desc:"Sem mover por 1s: +0.5%/rank block reduction. r5: aplica a parry. r10: reflete 20% dmg."
         },
-        S{ id:1021, name:"Impale",           prof:"Spear", tier:3, is_passive:false, path:"reach",    unlock_char:t3c, unlock_prof:t3p,
-            usable_with: spear_v.clone(), cost_mp:0, cost_st:30, cd:14.0, cast:0.0, target:"line",
-            range_t:2.5, radius:0.0, base_dmg:18, base_heal:0,
+        S{ id:1021, name:"Spear Throw",      prof:"Spear", tier:3, is_passive:false, path:"reach",    unlock_char:t3c, unlock_prof:t3p,
+            usable_with: spear_v.clone(), cost_mp:0, cost_st:30, cd:14.0, cast:0.0, target:"aoe_circle",
+            range_t:8.0, radius:1.0, base_dmg:18, base_heal:0,
             scal_atk:2.0, scal_wis:0.0, scal_dex:0.0, rank_dmg:0.10, rank_cd:0.0, rank_cost:0.0,
-            desc:"200% atk single-target + bleed 6s."
+            desc:"Lanca a lanca 8 tiles + dash ate o alvo (hook). Dmg 200% atk + bleed."
         },
         S{ id:1022, name:"Charge",           prof:"Spear", tier:3, is_passive:false, path:"charger",  unlock_char:t3c, unlock_prof:t3p,
             usable_with: spear_v.clone(), cost_mp:0, cost_st:35, cd:18.0, cast:0.0, target:"line",
@@ -978,6 +1133,41 @@ async fn seed_skills_if_needed(pool: &PgPool) -> Result<()> {
         inserted += 1;
     }
     tracing::info!("seed_skills_if_needed: {} skills inseridas/atualizadas", inserted);
+
+    // Force-update pra mudancas de gameplay logic em skills existentes.
+    // Necessario porque o UPSERT acima soh atualiza WHERE description=''.
+    // Aqui o objetivo eh propagar redesigns de skill (1013 spinning Whirlwind,
+    // 1021 Spear Throw hook) pra produção sem precisar wipar a tabela.
+    sqlx::query(
+        "UPDATE skills SET name=$1, target_type=$2, range_tiles=$3, radius_tiles=$4,
+            base_damage=$5, scaling_atk=$6, cooldown_s=$7, cost_stamina=$8, description=$9
+         WHERE id = 1013"
+    )
+    .bind("Whirlwind")
+    .bind("aoe_circle")
+    .bind(0.0_f32)
+    .bind(2.5_f32)
+    .bind(30_i32)
+    .bind(0.8_f32)
+    .bind(22.0_f32)
+    .bind(60_i32)
+    .bind("Gira 360° raio 2.5 ao seu redor por 4s, 10 pulsos de dano.")
+    .execute(pool).await?;
+
+    sqlx::query(
+        "UPDATE skills SET name=$1, target_type=$2, range_tiles=$3, radius_tiles=$4,
+            base_damage=$5, scaling_atk=$6, description=$7
+         WHERE id = 1021"
+    )
+    .bind("Spear Throw")
+    .bind("aoe_circle")
+    .bind(8.0_f32)
+    .bind(1.0_f32)
+    .bind(18_i32)
+    .bind(2.0_f32)
+    .bind("Lanca a lanca 8 tiles + dash ate o alvo (hook). Dmg 200% atk + bleed.")
+    .execute(pool).await?;
+
     Ok(())
 }
 
@@ -1052,6 +1242,10 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         S{ id: item_id::CAPE_MAGIC as i32,     name:"Manto Mágico",    sell:80,  buy:None,         ord:None,    stack:1,    slot:Some("Cape"),   lvl:10, ic:4,  ir:134, hp:(0,0),    mp:(25,60),   atk:(0,0),   def:(0,3),  dex:(0,0),  wis:(3,9) },
         S{ id: item_id::NECKLACE_BASIC as i32, name:"Colar",           sell:50,  buy:None,         ord:None,    stack:1,    slot:Some("Necklace"),lvl:7,  ic:6,  ir:129, hp:(12,28),  mp:(5,15),    atk:(0,0),   def:(0,0),  dex:(0,0),  wis:(2,5) },
         S{ id: item_id::NECKLACE_MAGIC as i32, name:"Colar Mágico",    sell:100, buy:None,         ord:None,    stack:1,    slot:Some("Necklace"),lvl:11, ic:8,  ir:129, hp:(0,0),    mp:(25,55),   atk:(0,0),   def:(0,0),  dex:(0,0),  wis:(4,10) },
+        // Embarcacao — usavel na margem (consumida ao usar; volta no dismount).
+        // Sem equip slot. Stack 1 (item unico). Icone re-aproveitado de barril
+        // ate ter art proprio.
+        S{ id: item_id::BOAT_LYLIAN_LEUTARD as i32, name:"Lylian Leutard", sell:0, buy:Some(500), ord:Some(50), stack:1, slot:None, lvl:1, ic:0, ir:138, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
     ];
     for s in seed {
         sqlx::query(
@@ -1373,14 +1567,26 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
 }
 
 pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
-    let rows = sqlx::query_as::<_, (String, f32, f32, i32, i32, i64, i64, i64, i32, Vec<i32>, i32, i32)>(
+    let rows = sqlx::query_as::<_,
+        (String, f32, f32, i32, i32, i64, i64, i64, i32, Vec<i32>, i32, i32,
+         Option<i16>, Option<f32>, Option<f32>, Option<i16>)>(
         "SELECT name, x, y, hp, max_hp, xp, fame, aura, unspent_points, allocated_points, \
-                skill_points_earned, skill_points_spent FROM characters",
+                skill_points_earned, skill_points_spent, \
+                boat_kind, boat_x, boat_y, boat_dir FROM characters",
     )
     .fetch_all(pool)
     .await?;
+    // Query separada pra account_id + visual_json (tuple FromRow limit 16).
+    let extras: Vec<(String, Option<i64>, Option<String>)> = sqlx::query_as(
+        "SELECT name, account_id, visual_json FROM characters"
+    ).fetch_all(pool).await?;
+    let extras_map: HashMap<String, (Option<i64>, Option<String>)> =
+        extras.into_iter().map(|(n, a, v)| (n, (a, v))).collect();
     let mut out = HashMap::with_capacity(rows.len());
-    for (name, x, y, hp, max_hp, xp, fame, aura, unspent, allocated_vec, sp_earned, sp_spent) in rows {
+    for (name, x, y, hp, max_hp, xp, fame, aura, unspent, allocated_vec,
+         sp_earned, sp_spent, boat_kind, boat_x, boat_y, boat_dir) in rows
+    {
+        let (account_id, visual_json) = extras_map.get(&name).cloned().unwrap_or((None, None));
         let inv = load_inventory(pool, &name).await?;
         let equip = load_equipment(pool, &name).await?;
         let vault = load_vault(pool, &name).await?;
@@ -1390,6 +1596,14 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
         for (i, v) in allocated_vec.into_iter().enumerate().take(shared::STAT_COUNT) {
             allocated[i] = v.max(0) as u32;
         }
+        let boat = match (boat_kind, boat_x, boat_y, boat_dir) {
+            (Some(k), Some(bx), Some(by), Some(d)) =>
+                Some(PersistedBoat { kind: k.max(0) as u16, pos: Vec2::new(bx, by), dir: d.max(0) as u8 }),
+            _ => None,
+        };
+        let visual: Option<shared::VisualConfig> = visual_json
+            .as_deref()
+            .and_then(|j| serde_json::from_str(j).ok());
         out.insert(
             name.clone(),
             CharacterRow {
@@ -1397,6 +1611,7 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
                 pos: Vec2::new(x, y),
                 hp: Health { current: hp, max: max_hp },
                 xp: xp.max(0) as u64,
+                boat,
                 inventory: inv,
                 equipment: equip,
                 vault,
@@ -1408,10 +1623,78 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
                 skill_points_earned: sp_earned.max(0) as u32,
                 skill_points_spent: sp_spent.max(0) as u32,
                 learned_skills: learned,
+                account_id,
+                visual,
             },
         );
     }
     Ok(out)
+}
+
+/// Cria personagem inicial via tela de criacao do cliente. Insere row com
+/// account_id + visual escolhido + arma inicial em inventory[0]. Retorna
+/// `false` se name ja em uso (UNIQUE PK violation).
+pub async fn create_character(
+    pool: &PgPool,
+    account_id: i64,
+    name: &str,
+    visual: &shared::VisualConfig,
+    starting_weapon: u16,
+    spawn: Vec2,
+) -> Result<bool> {
+    let visual_json = serde_json::to_string(visual)?;
+    let allocated_zero: Vec<i32> = vec![0; shared::STAT_COUNT];
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let base = shared::base_player_stats();
+    // Insert character row. ON CONFLICT(name) DO NOTHING + check rows_affected
+    // pra detectar nome duplicado.
+    let res = sqlx::query(
+        "INSERT INTO characters
+         (name, x, y, hp, max_hp, xp, fame, aura, unspent_points, allocated_points,
+          skill_points_earned, skill_points_spent,
+          account_id, visual_json, starting_weapon, updated)
+         VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 0, $6, 1, 0, $7, $8, $9, $10)
+         ON CONFLICT(name) DO NOTHING"
+    )
+    .bind(name)
+    .bind(spawn.x)
+    .bind(spawn.y)
+    .bind(base.hp_max)
+    .bind(base.hp_max)
+    .bind(&allocated_zero)
+    .bind(account_id)
+    .bind(&visual_json)
+    .bind(starting_weapon as i16)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    if res.rows_affected() == 0 {
+        return Ok(false);
+    }
+    // Inventario[0] = arma escolhida (qty 1).
+    sqlx::query(
+        "INSERT INTO inventory (character_name, slot, item_id, qty)
+         VALUES ($1, 0, $2, 1)
+         ON CONFLICT (character_name, slot) DO NOTHING"
+    )
+    .bind(name)
+    .bind(starting_weapon as i32)
+    .execute(pool)
+    .await?;
+    // Equipa a arma na slot weapon (mainhand).
+    sqlx::query(
+        "INSERT INTO equipment (character_name, slot, item_id)
+         VALUES ($1, 'weapon', $2)
+         ON CONFLICT (character_name, slot) DO UPDATE SET item_id = EXCLUDED.item_id"
+    )
+    .bind(name)
+    .bind(starting_weapon as i32)
+    .execute(pool)
+    .await?;
+    Ok(true)
 }
 
 /// Carrega lista de skills aprendidas pelo personagem. Retorna Vec vazio
@@ -1585,11 +1868,17 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .unwrap_or(0);
     for row in &batch.rows {
         let allocated_vec: Vec<i32> = row.allocated_points.iter().map(|&v| v as i32).collect();
+        let (boat_kind, boat_x, boat_y, boat_dir): (Option<i16>, Option<f32>, Option<f32>, Option<i16>) =
+            match row.boat {
+                Some(b) => (Some(b.kind as i16), Some(b.pos.x), Some(b.pos.y), Some(b.dir as i16)),
+                None    => (None, None, None, None),
+            };
         sqlx::query(
             "INSERT INTO characters (name, x, y, hp, max_hp, xp, fame, aura,
                                      unspent_points, allocated_points,
-                                     skill_points_earned, skill_points_spent, updated)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                                     skill_points_earned, skill_points_spent,
+                                     boat_kind, boat_x, boat_y, boat_dir, updated)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -1602,6 +1891,10 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                allocated_points = EXCLUDED.allocated_points,
                skill_points_earned = EXCLUDED.skill_points_earned,
                skill_points_spent = EXCLUDED.skill_points_spent,
+               boat_kind = EXCLUDED.boat_kind,
+               boat_x = EXCLUDED.boat_x,
+               boat_y = EXCLUDED.boat_y,
+               boat_dir = EXCLUDED.boat_dir,
                updated = EXCLUDED.updated",
         )
         .bind(&row.name)
@@ -1616,6 +1909,10 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(&allocated_vec)
         .bind(row.skill_points_earned as i32)
         .bind(row.skill_points_spent as i32)
+        .bind(boat_kind)
+        .bind(boat_x)
+        .bind(boat_y)
+        .bind(boat_dir)
         .bind(now)
         .execute(&mut *tx)
         .await?;

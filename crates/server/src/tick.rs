@@ -10,8 +10,11 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 
-/// Intervalo em ticks entre persistencias periodicas (30s @ 30Hz).
-const SAVE_INTERVAL_TICKS: u32 = 30 * 30;
+/// Intervalo em ticks entre persistencias periodicas (1s @ 30Hz).
+/// Mudancas criticas (mount/dismount/equip/inventory) tambem disparam save
+/// IMMEDIATE via `world.save_dirty_now()`. Combinacao garante < 1s de perda
+/// em qualquer crash, evento ou desconexao.
+const SAVE_INTERVAL_TICKS: u32 = 30;
 
 pub async fn run_world_loop(
     mut rx: mpsc::UnboundedReceiver<IncomingMessage>,
@@ -76,6 +79,9 @@ pub async fn run_world_loop(
                 }
                 Ok(IncomingMessage::Message(id, m)) => world.on_message(id, m),
                 Ok(IncomingMessage::AuthResult(id, r)) => world.on_auth_result(id, r),
+                Ok(IncomingMessage::CharCreated(id, row, success)) => {
+                    world.on_char_created(id, *row, success);
+                }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
                     tracing::warn!("all senders dropped, exiting world loop");
@@ -88,6 +94,9 @@ pub async fn run_world_loop(
         loop {
             match auth_rx.try_recv() {
                 Ok(IncomingMessage::AuthResult(id, r)) => world.on_auth_result(id, r),
+                Ok(IncomingMessage::CharCreated(id, row, success)) => {
+                    world.on_char_created(id, *row, success);
+                }
                 Ok(_) => {} // outros variantes nao devem chegar aqui
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => break,
@@ -98,11 +107,15 @@ pub async fn run_world_loop(
         world.send_snapshots();
 
         save_counter = save_counter.wrapping_add(1);
-        if save_counter % SAVE_INTERVAL_TICKS == 0 {
+        // Trigger imediato (`save_pending`) ou periodico (1s). save_pending eh
+        // setado em mudancas criticas: mount/dismount, equip, inventario, etc.
+        let should_save = world.save_pending || (save_counter % SAVE_INTERVAL_TICKS == 0);
+        if should_save {
             let rows = world.collect_character_rows();
             if !rows.is_empty() {
                 let _ = save_tx.send(SaveBatch { rows });
             }
+            world.save_pending = false;
         }
 
         let now = Instant::now();

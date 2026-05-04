@@ -22,6 +22,16 @@ async fn main() -> Result<()> {
     ).execute(&pool).await?;
     println!("smoke bomb updated: {}", updated.rows_affected());
 
+    // Riposte → Leap Strike (1001): trocou tipo. AoE r2 cone 6 tiles + stun.
+    let updated = sqlx::query(
+        "UPDATE skills SET name='Leap Strike', target_type='aoe_circle',
+            cost_stamina=25, cooldown_s=8.0, range_tiles=6.0, radius_tiles=2.0,
+            base_damage=15, scaling_atk=0.8, scaling_wis=0.0,
+            description='Pula ate 6 tiles na direção do mouse; dano AoE r2 + stun 1.5s na queda.'
+         WHERE id = 1001"
+    ).execute(&pool).await?;
+    println!("leap strike updated: {}", updated.rows_affected());
+
     let rows: Vec<(i32, String, f32)> = sqlx::query_as(
         "SELECT id, name, cast_time_s FROM skills WHERE prof='Wand' ORDER BY id"
     ).fetch_all(&pool).await?;

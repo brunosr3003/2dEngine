@@ -30,6 +30,10 @@ pub enum IncomingMessage {
     /// Resultado de uma autenticacao async (ver `auth::authenticate`).
     /// Enviado pela task de auth de volta ao world loop.
     AuthResult(SessionId, Result<crate::auth::AuthSuccess, crate::auth::AuthError>),
+    /// Char criado via CharacterCreationUI — task async ja escreveu no DB
+    /// e leu de volta o row recem-criado. World insere no cache + roda
+    /// on_auth_result com AuthSuccess sintetico.
+    CharCreated(SessionId, Box<crate::persistence::CharacterRow>, crate::auth::AuthSuccess),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -73,6 +77,9 @@ struct PendingSkillHit {
     hurt_dir: Vec2,
     is_crit: bool,
     from_player: bool,
+    /// Knockback em tiles vindo do SkillDef.knockback (ou hardcoded para
+    /// skills que nao consultam DB). Aplicado como -hurt_dir × kb.
+    knockback: f32,
 }
 
 /// Heal aplicado em players (self/aliado) por skill; processado em step().
@@ -95,6 +102,9 @@ struct DelayedAoe {
     /// no EnemyTag (replicado pra client por snapshot pra render tint verde).
     /// Set por skills de DOT-tipo Smoke Bomb. Default false (sem status).
     poison_dur_s: f32,
+    /// Knockback em tiles vindo do SkillDef.knockback. Aplicado em cada hit
+    /// na direcao oposta ao centro do AoE.
+    knockback: f32,
 }
 
 pub struct EnemyTag {
@@ -140,6 +150,54 @@ pub struct EnemyTag {
     /// no cliente). Setado por hits de Smoke Bomb (1038). 0 = não envenenado.
     /// Status visual; o dano de fato vem dos pulses da DelayedAoe queue.
     pub poisoned_until: f32,
+    /// sim_time ate quando o inimigo esta atordoado (Shield Bash 1003).
+    /// Bloqueia AI/movement/atacks no while_active. Cliente renderiza tint
+    /// amarelo + parado.
+    pub stunned_until: f32,
+    /// sim_time ate quando o inimigo tem aggro forçado em outro target
+    /// (Taunt 1006). Enemy AI ignora target preferido e mira esse player.
+    /// 0 = sem taunt ativo.
+    pub forced_aggro_until: f32,
+    /// EntityId do player que tauntou (alvo forçado durante forced_aggro_until).
+    /// None = sem taunt ativo.
+    pub forced_aggro_target: Option<EntityId>,
+    /// Stats efetivos derivados do EnemyBuild (level + equip + alocados +
+    /// profs + skills aprendidas) via `effective_stats()`. Cacheados no spawn
+    /// — fonte da verdade pra HP_max, attack_damage, defense, etc. de combat.
+    /// Substitui leitura direta de `enemy_def(kind).attack_damage`/`defense`.
+    pub stats: shared::PlayerStats,
+    /// Equipamento do enemy (paper-doll ja vai puxar daqui na fase 3).
+    pub equipment: shared::Equipment,
+    /// Skills aprendidas — fase 4 AI escolhe entre auto-attack e skill cast.
+    pub learned_skills: Vec<shared::LearnedSkill>,
+    /// Level total do build (pra escalonamento futuro de loot/xp).
+    pub level: u32,
+    /// Visual do paper-doll. Replicado pro client renderizar enemy como
+    /// humanoide com a equipa certa em vez de sprite/quadrado tinted.
+    pub visual: shared::VisualConfig,
+    /// MP atual (regen passivo, gasto em skill cast). Cap = stats.mp_max.
+    pub mp_current: f32,
+    /// Cooldowns por skill_id — sim_time absoluto quando a skill volta.
+    /// Skill so pode ser usada se now >= ready_at.
+    pub skill_cds: std::collections::HashMap<u32, f32>,
+    // ── Comportamento AI cacheado do EnemyBuild ─────────────────────────
+    pub attack_cooldown_base: f32,
+    pub attack_range: f32,
+    pub detect_range: f32,
+    pub locomotor_speed: f32,
+    pub kite_dist: Option<f32>,
+    pub proj_count: u32,
+    pub proj_kind: u8,
+    pub is_melee: bool,
+    pub size_scale: f32,
+    pub xp_reward: u64,
+    pub is_boss: bool,
+    /// sim_time absoluto ate quando o enemy esta sendo empurrado por
+    /// knockback. Enquanto > now, vel forcada = knockback_vel.
+    pub knockback_until: f32,
+    /// Velocidade do empurrao (tiles/s). Aplicada enquanto knockback_until
+    /// > now. Calculada como `-hurt_dir × strength / KNOCKBACK_DURATION`.
+    pub knockback_vel: Vec2,
 }
 
 /// Tag em inimigo spawnado por uma ServerSpawnZone — usado pra decrementar
@@ -195,9 +253,9 @@ pub struct NpcSkin {
 /// `quotas`; quando um inimigo da zona morre, enfileira respawn apos `respawn_delay_s`.
 pub struct ServerSpawnZone {
     pub id: u32,
-    /// Canto inferior-esquerdo em tile coords.
+    /// Canto inferior-esquerdo do AABB em tile coords.
     pub origin: Vec2,
-    /// Extensao da zona em tiles.
+    /// Extensao do AABB em tiles.
     pub size: Vec2,
     pub respawn_delay_s: f32,
     /// (kind, quantidade alvo) — quantos desse tipo manter vivos.
@@ -206,6 +264,34 @@ pub struct ServerSpawnZone {
     pub live: Vec<(u16, u32)>,
     /// Fila de respawns pendentes: (game_time_s quando pronto, kind).
     pub respawn_queue: Vec<(f32, u16)>,
+    /// Vertices do poligono em WORLD coords (ja somado origin).
+    /// None = zona e' o rect AABB inteiro (legacy).
+    pub polygon: Option<Vec<Vec2>>,
+    /// Modo level-range: quando Some, ignora `quotas` e sortea kinds
+    /// aleatorios pra preencher `count` vivos. (level_min, level_max, count).
+    pub level_range: Option<(u32, u32, u32)>,
+    /// Quantos vivos no modo level-range (sem distincao de kind). 0 quando
+    /// level_range = None.
+    pub level_range_live: u32,
+    /// Fila de respawn pendente no modo level-range — apenas timestamps
+    /// (kind e' sorteado na hora do spawn).
+    pub level_range_queue: Vec<f32>,
+}
+
+/// Area de spawn dedicada a UM boss. Sem quotas: 1 boss alive por vez.
+/// Respawna apos morte com delay (boss-specific). Independente de
+/// ServerSpawnZone — sem mistura de hordas com boss.
+pub struct BossSpawnArea {
+    pub id: u32,
+    pub origin: Vec2,
+    pub size: Vec2,
+    pub polygon: Option<Vec<Vec2>>,
+    pub level: u32,
+    pub respawn_s: f32,
+    /// EntityId do boss vivo no momento (None = morto/aguardando respawn).
+    pub current_boss: Option<EntityId>,
+    /// Sim_time absoluto pra respawnar (quando current_boss vira None).
+    pub respawn_at: f32,
 }
 
 /// Identifica um item dropado no chao. `instance` é Some pra
@@ -244,6 +330,138 @@ pub struct PortalTag {
     pub cooldown: f32,
 }
 
+/// Barco navegavel. Spawnado quando um player usa um item de barco numa
+/// margem walkable; despawnado no dismount. Move-se exclusivamente em tiles
+/// WATER. Sem rigid body — server move a Position direto e bloqueia em tiles
+/// nao-water, sem sliding.
+pub struct BoatTag {
+    /// Kind visual do barco (0=Lylian Leutard). Cliente usa pra escolher
+    /// quais sprite-sheets carregar.
+    pub kind: u16,
+    /// PlayerId do dono — o unico autorizado a montar/dirigir.
+    pub owner_pid: PlayerId,
+    /// EntityId do passageiro atual (player montado). None se ancorado vazio.
+    pub passenger: Option<EntityId>,
+    /// hecs::Entity do passageiro pra acesso direto sem query.
+    pub passenger_entity: Option<Entity>,
+    /// Direcao do casco (0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW). Atualizado
+    /// pelo movimento; congelado em idle quando velocidade ≈ 0.
+    pub dir: u8,
+    /// Animacao atual (0=idle, 1=movement, 2=shoot). Idle quando |vel|<eps.
+    pub anim: u8,
+    /// Velocidade max em tiles/s. Lylian Leutard = 4.5 (devagar pra exploracao).
+    pub max_speed: f32,
+    /// sim_time_s do ultimo tiro de canhao. Usado pra cooldown de cannon.
+    pub last_shot_at_s: f32,
+    /// Quando > sim_time_s, animacao 'shoot' fica ativa visualmente. Setado
+    /// no tiro pra duracao da anim (~0.96s = 8 frames * 0.12s).
+    pub shoot_anim_until: f32,
+    /// Direcao do ULTIMO tiro (0..7), independente da direcao do barco.
+    /// Cliente usa pra rotacionar o flash overlay pro mouse, nao pro casco.
+    pub shoot_dir: u8,
+}
+
+/// Marca um player como montado num barco. Enquanto presente:
+/// - Input do player redireciona pro barco (BoatTag.passenger)
+/// - Player nao processa colisao terrestre (rigid body congelado)
+/// - Position do player espelha pos do barco a cada tick
+pub struct Mounted {
+    pub boat_entity: Entity,
+    pub boat_eid: EntityId,
+}
+
+/// Sortea uma posicao continua aleatoria dentro do polygon (ou do AABB se
+/// sem polygon). Sem checagem de tile/wall — caller assume que o collider
+/// foi desenhado em area valida. Retorna None se nao achar em `tries`.
+fn pick_random_in_polygon(
+    origin: Vec2,
+    size: Vec2,
+    seed: u64,
+    polygon: Option<&[Vec2]>,
+    tries: u32,
+) -> Option<Vec2> {
+    pick_random_in_polygon_with_map(origin, size, seed, polygon, tries, None)
+}
+
+/// Variante que tambem valida que o tile e' walkable (ground, nao water/wall).
+/// Quando `map` eh Some, descarta candidatos em water/wall e tenta de novo.
+fn pick_random_in_polygon_with_map(
+    origin: Vec2,
+    size: Vec2,
+    seed: u64,
+    polygon: Option<&[Vec2]>,
+    tries: u32,
+    map: Option<&shared::world_gen::WorldMap>,
+) -> Option<Vec2> {
+    let mut s = seed;
+    for _ in 0..tries {
+        s = lcg(s);
+        let rx = lcg_f32(s);
+        s = lcg(s);
+        let ry = lcg_f32(s);
+        let pos = Vec2::new(origin.x + rx * size.x, origin.y + ry * size.y);
+        if let Some(verts) = polygon {
+            if !point_in_polygon(pos, verts) { continue; }
+        }
+        if let Some(m) = map {
+            let tx = pos.x.floor() as i32;
+            let ty = pos.y.floor() as i32;
+            if !m.is_walkable(tx, ty) { continue; }
+        }
+        return Some(pos);
+    }
+    None
+}
+
+/// Point-in-polygon via ray casting horizontal. O & e' usado pra detectar
+/// cruzamentos pares=fora, impares=dentro. Funciona pra poligonos convexos
+/// e concavos. Vertices em CCW ou CW (irrelevante).
+fn point_in_polygon(p: Vec2, verts: &[Vec2]) -> bool {
+    let n = verts.len();
+    if n < 3 { return false; }
+    let mut inside = false;
+    let mut j = n - 1;
+    for i in 0..n {
+        let vi = verts[i];
+        let vj = verts[j];
+        if (vi.y > p.y) != (vj.y > p.y) {
+            let x_at_p_y = (vj.x - vi.x) * (p.y - vi.y) / (vj.y - vi.y) + vi.x;
+            if p.x < x_at_p_y { inside = !inside; }
+        }
+        j = i;
+    }
+    inside
+}
+
+/// Snap de um vetor 2D pra uma das 8 direcoes do boat sprite-sheet.
+/// 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW.
+/// Default = 4 (S) quando o vetor e' zero/quase-zero.
+fn dir8_from_vec(v: Vec2) -> u8 {
+    if v.length_squared() < 0.01 { return 4; }
+    // angle = atan2(y, x) em radianos. Conversao pra "compass":
+    // angulo 90deg = N, 0deg = E, -90deg = S, etc.
+    let angle = v.y.atan2(v.x);
+    // Normaliza pra [0, 2pi) onde 0 corresponde a E.
+    let mut a = angle;
+    if a < 0.0 { a += std::f32::consts::TAU; }
+    // Discretiza em 8 setores de 45deg cada, deslocado meio-setor pra que
+    // E (a=0) caia no centro do setor 0. Ordem (em sentido anti-horario,
+    // y+ pra cima): E=0, NE=1, N=2, NW=3, W=4, SW=5, S=6, SE=7.
+    let sector = ((a + std::f32::consts::FRAC_PI_8) / std::f32::consts::FRAC_PI_4) as i32 & 7;
+    // Mapeia pra ordem de sprite-sheet do cliente (N=0, NE=1, E=2, ...).
+    match sector {
+        0 => 2, // E
+        1 => 1, // NE
+        2 => 0, // N
+        3 => 7, // NW
+        4 => 6, // W
+        5 => 5, // SW
+        6 => 4, // S
+        7 => 3, // SE
+        _ => 4,
+    }
+}
+
 pub struct Session {
     pub handle: SessionHandle,
     pub entity: Option<Entity>,
@@ -265,6 +483,11 @@ pub struct Session {
     pub hurt_until: f32,
     /// Vetor unitário do alvo TOWARD o último atacante (pra knockback futuro).
     pub hurt_dir: Vec2,
+    /// sim_time ate quando o player esta sendo empurrado. Enquanto > now,
+    /// vel forcada = knockback_vel (override do input).
+    pub knockback_until: f32,
+    /// Vel do knockback (tiles/s).
+    pub knockback_vel: Vec2,
     /// Step do combo melee atual (0=Slash1, 1=Slash2, 2=Finisher/Thrust). Server
     /// cicla a cada SLASH attack e replica via EntitySnapshot.combo_step pra que
     /// outros clientes vejam o alternance correto. Reset após
@@ -286,6 +509,14 @@ pub struct Session {
     pub name: String,
     pub player_id: PlayerId,
     pub account_id: Option<i64>,
+    /// Setado quando login conclui auth mas account nao tem character ainda.
+    /// Cliente abre CharacterCreationUI; ao receber CreateCharacter, o
+    /// server consome este id pra criar a row. None apos creation.
+    pub pending_char_creation_account_id: Option<i64>,
+    /// Username da conta + class (defaults), salvos durante o gate pra
+    /// reconstruir o AuthSuccess ao receber CreateCharacter.
+    pub pending_auth_username: Option<String>,
+    pub pending_auth_class: Option<String>,
     pub stats: shared::PlayerStats,
     pub equipment: shared::Equipment,
     /// MP atual (volatil, nao persiste). Regenera por segundo ate stats.mp_max.
@@ -347,6 +578,10 @@ pub struct Session {
     pub casting_mp_paid: f32,
     /// Stamina gasta no cast atual (pra refund se cancelar).
     pub casting_st_paid: f32,
+    /// Storm Caller (1056) — sim_time da proxima auto-invocacao de
+    /// lightning bolt. 0 = nunca disparou ainda; setado por tick passive
+    /// proc se a skill estiver learned com rank > 0.
+    pub storm_caller_next: f32,
     /// Pontos de atributo disponiveis (ganhos por level-up, POINTS_PER_LEVEL cada).
     pub unspent_points: u32,
     /// Pontos ja alocados em cada stat [FOR, DES, INT, VIT, SPD].
@@ -402,6 +637,41 @@ pub struct Session {
     /// Hunter's Mark (1040): mapa de target_eid → expires_at_sim_time. Hits
     /// em targets marcados aplicam +20% damage. Hit refresh do mark.
     pub hunter_marks: HashMap<EntityId, f32>,
+
+    // ── Sword skills state ──────────────────────────────────────────────
+    /// Riposte (1001): timer ate quando o player tem o buff de "+50% dmg"
+    /// do proximo SLASH. Setado quando ele parry-flasha um hit recebido.
+    /// Consumido no proximo swing (zerado depois de aplicar o bonus).
+    pub riposte_until: f32,
+    /// Sword Dance (1005): janela durante a qual swings sao parte do combo
+    /// forçado de 3 hits. Reset quando expira ou completa 3 hits.
+    pub sword_dance_until: f32,
+    /// Step atual do Sword Dance (0..2). Quando == 2, proximo SLASH e
+    /// guaranteed crit (e zera o stance).
+    pub sword_dance_step: u8,
+    /// Master's Counter (1007): timer ate quando o player auto-parry
+    /// qualquer hit recebido + dispara contra-ataque livre.
+    pub counter_stance_until: f32,
+
+    // Leap Strike (1001) — animacao de pulo: server interpola posicao do
+    // caster de leap_start_pos → leap_target durante LEAP_DURATION segundos.
+    // Quando termina, aplica AoE damage + stun no leap_target.
+    pub leap_until: f32,
+    pub leap_start_pos: Vec2,
+    pub leap_target: Vec2,
+    /// Damage que sera aplicado no fim do leap (foi computado no cast).
+    pub leap_damage: i32,
+    /// Radius do AoE no fim do leap.
+    pub leap_radius: f32,
+
+    // ── Poise ───────────────────────────────────────────────────────────
+    /// Barra de poise atual (0..stats.poise_max). Drena com hits, absorve
+    /// damage e previne stagger enquanto > 0. Regen fora de combate.
+    pub poise_current: f32,
+    /// sim_time do ultimo hit recebido. Usado pra gate de regen out-of-combat.
+    pub last_combat_at_s: f32,
+    /// Ultimo poise inteiro enviado pro cliente — evita spam de PoiseUpdate.
+    pub poise_last_sent: i32,
 }
 
 /// Recursos compartilhados para autenticacao assincrona.
@@ -457,6 +727,9 @@ pub struct GameWorld {
     pub decorations: Vec<shared::world_gen::DecoPlacement>,
     /// Zonas de spawn carregadas do MapFile — mantem quotas + respawn por delay.
     pub spawn_zones: Vec<ServerSpawnZone>,
+    /// Areas dedicadas de boss spawn — independente das spawn_zones, 1 boss
+    /// por area, respawn timer separado.
+    pub boss_areas: Vec<BossSpawnArea>,
     /// Zonas seguras: combate desabilitado, enemies dropam aggro de quem
     /// entra. (origin_xy, size_xy). Lookup linear — esperado <10 zonas/mapa.
     pub safe_zones: Vec<(Vec2, Vec2)>,
@@ -464,6 +737,11 @@ pub struct GameWorld {
     pub npc_routes: HashMap<u32, NpcRoute>,
     /// Tempo acumulado de simulacao em segundos (pra timer de respawn).
     pub sim_time_s: f32,
+    /// True quando alguma mudanca critica aconteceu desde o ultimo save —
+    /// equip change, inventory swap, mount/dismount, gold transaction, etc.
+    /// Tick loop checa isso pra disparar save fora do intervalo periodico,
+    /// garantindo persistencia sub-segundo em eventos relevantes.
+    pub save_pending: bool,
     /// Tiros ranged em andamento — drenados a cada tick e spawnados quando
     /// `release_tick` é atingido. Sincroniza projétil com fim da anim de saque.
     pending_shots: Vec<PendingShot>,
@@ -527,9 +805,11 @@ impl GameWorld {
             next_party_id: 1,
             decorations,
             spawn_zones: Vec::new(),
+            boss_areas: Vec::new(),
             safe_zones: Vec::new(),
             npc_routes: HashMap::new(),
             sim_time_s: 0.0,
+            save_pending: false,
             pending_shots: Vec::new(),
             pending_skill_hits: Vec::new(),
             pending_heals: Vec::new(),
@@ -580,9 +860,11 @@ impl GameWorld {
             next_party_id: 1,
             decorations: Vec::new(),
             spawn_zones: Vec::new(),
+            boss_areas: Vec::new(),
             safe_zones: Vec::new(),
             npc_routes: HashMap::new(),
             sim_time_s: 0.0,
+            save_pending: false,
             pending_shots: Vec::new(),
             pending_skill_hits: Vec::new(),
             pending_heals: Vec::new(),
@@ -652,9 +934,17 @@ impl GameWorld {
         }
     }
 
-    /// Tenta escolher uma posicao FLOOR aleatoria dentro de (origin, size).
-    /// Faz `tries` tentativas; retorna None se todas caem em WALL/fora.
-    fn pick_tile_in_zone(&self, origin: Vec2, size: Vec2, seed: u64, tries: u32) -> Option<Vec2> {
+    /// Tenta escolher uma posicao FLOOR aleatoria dentro do AABB. Se
+    /// `polygon` Some, alem do FLOOR/AABB, valida point-in-polygon (ray
+    /// casting). Faz `tries` tentativas; None se todas falham.
+    fn pick_tile_in_zone(
+        &self,
+        origin: Vec2,
+        size: Vec2,
+        seed: u64,
+        tries: u32,
+        polygon: Option<&[Vec2]>,
+    ) -> Option<Vec2> {
         let mut s = seed;
         for _ in 0..tries {
             s = lcg(s);
@@ -665,10 +955,26 @@ impl GameWorld {
             let py = origin.y + ry * size.y;
             let tx = px.floor() as i32;
             let ty = py.floor() as i32;
-            if self.map.get(tx, ty) == shared::constants::tile_id::FLOOR {
-                // Ajusta pra centro da tile
-                return Some(Vec2::new(tx as f32 + 0.5, ty as f32 + 0.5));
+            if self.map.get(tx, ty) != shared::constants::tile_id::FLOOR {
+                continue;
             }
+            // Margem anti-wall: rejeita se algum dos 4 cardinais e' WALL.
+            // Body do enemy tem raio ~0.4 tile, so' o tile center dentro do
+            // FLOOR nao basta — sprite/colisao penetra na wall vizinha.
+            let mut blocked = false;
+            for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                if self.map.get(tx + dx, ty + dy) == shared::constants::tile_id::WALL {
+                    blocked = true;
+                    break;
+                }
+            }
+            if blocked { continue; }
+            // Centro da tile pra teste de poligono.
+            let center = Vec2::new(tx as f32 + 0.5, ty as f32 + 0.5);
+            if let Some(verts) = polygon {
+                if !point_in_polygon(center, verts) { continue; }
+            }
+            return Some(center);
         }
         None
     }
@@ -691,67 +997,244 @@ impl GameWorld {
     /// Rodado 1x por tick.
     fn tick_spawn_zones(&mut self) {
         let now = self.sim_time_s;
-        // Coleta ações (spawns) primeiro pra não ter borrow conflict com self.ecs
-        struct PendingSpawn { zone_id: u32, kind: u16, pos: Vec2 }
+        // Coleta ações (spawns) primeiro pra não ter borrow conflict com self.ecs.
+        // build = None pra spawns legacy (kinds 0-7); Some pra level-range.
+        struct PendingSpawn {
+            zone_id: u32, kind: u16, pos: Vec2,
+            build: Option<crate::enemy_builds::EnemyBuild>,
+        }
         let mut pending: Vec<PendingSpawn> = Vec::new();
 
         for zi in 0..self.spawn_zones.len() {
-            // Move ready items off respawn_queue into "ready to spawn"
             let zone_size = self.spawn_zones[zi].size;
             let zone_orig = self.spawn_zones[zi].origin;
             let zone_id = self.spawn_zones[zi].id;
 
-            // Respawn queue: drena items prontos
+            // Modo level-range: drena level_range_queue, sortea level+kind
+            // pra cada item pronto. Pos = pick_tile_spread (varias amostras
+            // pra distribuir uniformemente em areas grandes).
+            if let Some((lvl_min, lvl_max, _total_count)) = self.spawn_zones[zi].level_range {
+                let mut idx = 0;
+                let mut spawn_seq: u64 = 0;
+                while idx < self.spawn_zones[zi].level_range_queue.len() {
+                    let ready_at = self.spawn_zones[zi].level_range_queue[idx];
+                    if ready_at > now { idx += 1; continue; }
+                    self.spawn_zones[zi].level_range_queue.swap_remove(idx);
+                    spawn_seq = spawn_seq.wrapping_add(1);
+                    let s0 = (self.tick as u64
+                              ^ (zone_id as u64 * 0xC0FFEE)
+                              ^ (spawn_seq * 0xBADC0DE)
+                              ^ (self.spawn_zones[zi].level_range_live as u64 * 0xDEAD_F00D))
+                        .wrapping_mul(0x9E37_79B9);
+                    let s_lvl = lcg(s0);
+                    let lvl = if lvl_max > lvl_min {
+                        lvl_min + (lcg_f32(s_lvl) * (lvl_max - lvl_min + 1) as f32) as u32
+                    } else { lvl_min };
+                    let class = crate::enemy_builds::random_class_for_level(lvl, lcg(s_lvl));
+                    let build = crate::enemy_builds::build_for_level(lvl, class);
+                    // Random dentro do polygon — descarta candidatos em
+                    // water/wall (apenas ground walkable).
+                    let polygon_ref = self.spawn_zones[zi].polygon.as_deref();
+                    let pos_opt = pick_random_in_polygon_with_map(
+                        zone_orig, zone_size, s0, polygon_ref, 30, Some(&self.map),
+                    );
+                    if let Some(pos) = pos_opt {
+                        pending.push(PendingSpawn {
+                            zone_id, kind: lvl as u16, pos,
+                            build: Some(build),
+                        });
+                        self.spawn_zones[zi].level_range_live += 1;
+                    } else {
+                        self.spawn_zones[zi].level_range_queue.push(now + 0.1);
+                    }
+                }
+                continue; // skip caminho legacy
+            }
+
+            // ── Caminho legacy: quotas por kind ─────────────────────────────
             let mut idx = 0;
             while idx < self.spawn_zones[zi].respawn_queue.len() {
                 let ready_at = self.spawn_zones[zi].respawn_queue[idx].0;
                 if ready_at > now { idx += 1; continue; }
                 let kind = self.spawn_zones[zi].respawn_queue[idx].1;
                 self.spawn_zones[zi].respawn_queue.swap_remove(idx);
-
-                // Verifica se ainda deve spawnar (quota não ultrapassada)
                 let target = self.spawn_zones[zi].quotas.iter()
                     .find(|(k, _)| *k == kind).map(|(_, c)| *c).unwrap_or(0);
                 let live = self.spawn_zones[zi].live.iter()
                     .find(|(k, _)| *k == kind).map(|(_, c)| *c).unwrap_or(0);
                 if live >= target { continue; }
-
                 let seed = (self.tick as u64 ^ (zone_id as u64 * 0x1357) ^ (kind as u64 * 0x2468))
                     .wrapping_mul(0x9E37_79B9);
-                if let Some(pos) = self.pick_tile_in_zone(zone_orig, zone_size, seed, 40) {
-                    pending.push(PendingSpawn { zone_id, kind, pos });
-                    // Incrementa live otimisticamente
+                let polygon_ref = self.spawn_zones[zi].polygon.as_deref();
+                if let Some(pos) = self.pick_tile_in_zone(zone_orig, zone_size, seed, 40, polygon_ref) {
+                    pending.push(PendingSpawn { zone_id, kind, pos, build: None });
                     if let Some(entry) = self.spawn_zones[zi].live.iter_mut()
-                        .find(|(k, _)| *k == kind)
-                    {
-                        entry.1 += 1;
-                    }
+                        .find(|(k, _)| *k == kind) { entry.1 += 1; }
                 }
             }
-
-            // (Initial fill removido — população inicial agora vai pelo queue
-            // com ready_at=0 ao criar a zona; respeita respawn_delay nas mortes.)
         }
 
         // Executa os spawns (agora que o borrow em spawn_zones soltou)
         for ps in pending {
-            self.place_enemy_in_zone(ps.pos, ps.kind, ps.zone_id);
+            match ps.build {
+                Some(b) => self.place_enemy_in_zone_with_build(ps.pos, b, ps.zone_id, ps.kind),
+                None    => self.place_enemy_in_zone(ps.pos, ps.kind, ps.zone_id),
+            }
         }
     }
 
-    /// Spawna enemy e tagueia com SpawnedByZone pra track de quota.
-    fn place_enemy_in_zone(&mut self, pos: Vec2, kind: u16, zone_id: u32) {
-        let def = crate::economy::enemy_def(kind);
-        let hp_max = def.hp_max;
-        tracing::info!(
-            "spawn zona #{}: kind={} hp={} pos=({:.1},{:.1})",
-            zone_id, kind, hp_max, pos.x, pos.y
-        );
-        let net_id = self.alloc_entity_id();
-        let handle = self.spawn_entity_body(pos);
+    /// Constroi o EnemyTag + Health a partir do EnemyBuild do kind. Stats
+    /// efetivos vem de `effective_stats` — mesmo caminho dos players. Leash
+    /// configuravel pelo callsite (zona usa raio da zona; boss/Map fixed).
+    fn build_enemy_tag(&self, kind: u16, spawn_anchor: Vec2, leash_max: f32, pos: Vec2) -> (EnemyTag, Health) {
+        self.build_enemy_tag_from_build(crate::enemy_builds::enemy_build(kind), spawn_anchor, leash_max, pos)
+    }
 
-        // Leash: ancora no centro da zona, raio = maior lado * 0.6
-        // (permite vagar dentro da zona com folga mas nao escapar dela).
+    /// Variante que recebe o build pronto — usado pelas zonas com level-range
+    /// que sorteiam (level, classe) → build_for_level → placement.
+    fn build_enemy_tag_from_build(&self, build: crate::enemy_builds::EnemyBuild, spawn_anchor: Vec2, leash_max: f32, pos: Vec2) -> (EnemyTag, Health) {
+        let stats = effective_stats(
+            &build.equipment,
+            &build.allocated_points,
+            &build.proficiencies,
+            &build.learned_skills,
+        );
+        let hp_max = stats.hp_max;
+        let tag = EnemyTag {
+            attack_cooldown: 0.0,
+            hurt_until: 0.0,
+            hurt_dir: Vec2::ZERO,
+            dead: false,
+            despawn_at: 0.0,
+            wander_timer: 0.0,
+            wander_dir: Vec2::X,
+            attack_pending: false,
+            wander_waypoint: pos,
+            spawn_anchor,
+            leash_max,
+            wander_phase: 1,
+            returning_home: false,
+            aggro_timer: 0.0,
+            spawn_grace_until: self.sim_time_s + shared::ENEMY_SPAWN_GRACE,
+            poisoned_until: 0.0,
+            stunned_until: 0.0,
+            forced_aggro_until: 0.0,
+            forced_aggro_target: None,
+            mp_current: stats.mp_max as f32,
+            skill_cds: std::collections::HashMap::new(),
+            stats,
+            equipment: build.equipment,
+            learned_skills: build.learned_skills,
+            level: build.level,
+            visual: build.visual,
+            attack_cooldown_base: build.attack_cooldown,
+            attack_range: build.attack_range,
+            detect_range: build.detect_range,
+            locomotor_speed: build.locomotor_speed,
+            kite_dist: build.kite_dist,
+            proj_count: build.proj_count,
+            proj_kind: build.proj_kind,
+            is_melee: build.is_melee,
+            size_scale: build.size_scale,
+            xp_reward: build.xp_reward,
+            is_boss: build.is_boss,
+            knockback_until: 0.0,
+            knockback_vel: Vec2::ZERO,
+        };
+        (tag, Health { current: hp_max, max: hp_max })
+    }
+
+    /// Tenta castar a primeira skill aprendida cujo cooldown + MP + range +
+    /// weapon usable_with batem com a situacao. Retorna `Some(skill_id)` se
+    /// castou (caller skipa auto-attack); `None` senao.
+    ///
+    /// Implementacao MVP: aplica DAMAGE INSTANT em alvos via cone/aoe da
+    /// skill, sem replicar o full handle_skill_cast (que e' player-only).
+    /// Skills com `cast_time_s > 0.05` (channeled / wind-up) sao puladas —
+    /// enemy AI nao tem framework pra "ficar parado castando" ainda.
+    fn try_enemy_cast_skill(
+        &mut self,
+        enemy_eid: EntityId,
+        enemy_pos: Vec2,
+        target_pos: Vec2,
+    ) -> Option<u32> {
+        let now = self.sim_time_s;
+        // Resolve hecs::Entity via query (hecs nao tem find_by_id direto).
+        let mut enemy_entity: Option<Entity> = None;
+        for (e, net) in self.ecs.query::<&NetId>().iter() {
+            if net.0 == enemy_eid { enemy_entity = Some(e); break; }
+        }
+        let entity = enemy_entity?;
+        let (learned, mp_current, weapon_id, attack_damage, cd_map) = {
+            let tag = self.ecs.get::<&EnemyTag>(entity).ok()?;
+            (
+                tag.learned_skills.clone(),
+                tag.mp_current,
+                tag.equipment.weapon.unwrap_or(0),
+                tag.stats.attack_damage,
+                tag.skill_cds.clone(),
+            )
+        };
+        for ls in &learned {
+            let Some(def) = crate::skills::skill_of(ls.skill_id) else { continue };
+            if def.is_passive { continue; }
+            if def.cast_time_s > 0.05 { continue; }
+            let cd_ready = cd_map.get(&ls.skill_id).copied().unwrap_or(0.0);
+            if now < cd_ready { continue; }
+            let rank_factor = 1.0 - def.per_rank_cost_pct * (ls.rank.saturating_sub(1) as f32);
+            let mp_cost = (def.cost_mp as f32 * rank_factor).max(0.0);
+            if mp_current < mp_cost { continue; }
+            let prof = shared::Proficiency::from_item(weapon_id).as_db_str();
+            if let Some(uw) = &def.usable_with {
+                if !uw.is_empty() && !uw.iter().any(|p| p == prof) { continue; }
+            }
+            let dist = enemy_pos.distance(target_pos);
+            if dist > def.range_tiles + def.radius_tiles { continue; }
+            let dmg = def.base_damage
+                + ((attack_damage as f32 * def.scaling_atk) as i32)
+                + (def.base_damage as f32 * def.per_rank_dmg_pct
+                    * (ls.rank.saturating_sub(1) as f32)) as i32;
+            match def.target_type.as_str() {
+                "aoe_circle" | "cone" => {
+                    let radius = def.radius_tiles.max(0.5);
+                    let players = self.find_players_in_radius(target_pos, radius);
+                    for pid in &players {
+                        let hd = (-(target_pos - enemy_pos)).try_normalize().unwrap_or(Vec2::Y);
+                        self.pending_skill_hits.push(PendingSkillHit {
+                            target_net: *pid, damage: dmg, attacker_net: enemy_eid,
+                            hurt_dir: hd, is_crit: false, from_player: false,
+                            knockback: def.knockback,
+                        });
+                    }
+                }
+                _ => continue, // line/projectile nao suportados em enemy AI ainda
+            }
+            if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(entity) {
+                tag.mp_current -= mp_cost;
+                tag.skill_cds.insert(ls.skill_id, now + def.cooldown_s);
+            }
+            let fx = ServerMessage::SkillCastFx {
+                skill_id: ls.skill_id, caster_pos: enemy_pos, target_pos,
+                target_eid: None, caster_eid: Some(enemy_eid),
+            };
+            for s in self.sessions.values() {
+                if s.logged_in { let _ = s.handle.to_client.send(fx.clone()); }
+            }
+            return Some(ls.skill_id);
+        }
+        None
+    }
+
+    /// Spawna enemy a partir de um EnemyBuild (procedural por level/classe).
+    /// Usado pelas zonas level-range. `tag_kind` vai pro EntityKind::Enemy(_)
+    /// — pra zonas level-range, e' o level do mob (0..100).
+    fn place_enemy_in_zone_with_build(
+        &mut self,
+        pos: Vec2,
+        build: crate::enemy_builds::EnemyBuild,
+        zone_id: u32,
+        tag_kind: u16,
+    ) {
         let (spawn_anchor, leash_max) = if let Some(zone) = self.spawn_zones.iter().find(|z| z.id == zone_id) {
             let center = zone.origin + zone.size * 0.5;
             let r = zone.size.x.max(zone.size.y) * 0.6;
@@ -759,34 +1242,162 @@ impl GameWorld {
         } else {
             (pos, 6.0)
         };
-
+        let class_str = build.class.as_str().to_string();
+        let level = build.level;
+        let (tag, health) = self.build_enemy_tag_from_build(build, spawn_anchor, leash_max, pos);
+        let hp_max = health.max;
+        tracing::info!(
+            "spawn zona #{}: lv{} {} hp={} pos=({:.1},{:.1})",
+            zone_id, level, class_str, hp_max, pos.x, pos.y
+        );
+        let net_id = self.alloc_entity_id();
+        let handle = self.spawn_entity_body(pos);
         self.ecs.spawn((
             NetId(net_id),
             Position(pos),
             Velocity(Vec2::ZERO),
-            Health { current: hp_max, max: hp_max },
-            EntityKind::Enemy(kind),
-            EnemyTag {
-                attack_cooldown: 0.0,
-                hurt_until: 0.0,
-                hurt_dir: Vec2::ZERO,
-                dead: false,
-                despawn_at: 0.0,
-                wander_timer: 0.0,
-                wander_dir: Vec2::X,
-                attack_pending: false,
-                wander_waypoint: pos,
-                spawn_anchor,
-                leash_max,
-                wander_phase: 1, // começa em pause: dá tempo de "carregar" no spawn
-                returning_home: false,
-                aggro_timer: 0.0,
-                spawn_grace_until: self.sim_time_s + shared::ENEMY_SPAWN_GRACE,
-                poisoned_until: 0.0,
-            },
-            SpawnedByZone { zone_id, kind },
+            health,
+            EntityKind::Enemy(tag_kind),
+            tag,
+            SpawnedByZone { zone_id, kind: tag_kind },
             handle,
         ));
+    }
+
+    /// Wrapper legacy — chama o flow novo passando build derivado de kind.
+    fn place_enemy_in_zone(&mut self, pos: Vec2, kind: u16, zone_id: u32) {
+        let build = crate::enemy_builds::enemy_build(kind);
+        self.place_enemy_in_zone_with_build(pos, build, zone_id, kind);
+    }
+
+    /// Admin: despawna TODOS os enemies (incluindo bosses) e reseta as filas
+    /// pra que spawn zones repopulem imediato no proximo tick. Comando /despawn.
+    fn admin_despawn_all_enemies(&mut self) {
+        let to_despawn: Vec<(Entity, EntityId)> = self.ecs
+            .query::<(&NetId, &EntityKind)>()
+            .iter()
+            .filter_map(|(e, (n, k))| if matches!(k, EntityKind::Enemy(_)) { Some((e, n.0)) } else { None })
+            .collect();
+        let count = to_despawn.len();
+        for (e, eid) in to_despawn {
+            // Remove physics body se existir.
+            if let Ok(h) = self.ecs.get::<&shared::PhysicsHandle>(e).map(|h| h.0) {
+                self.physics.rigid_body_set.remove(
+                    h, &mut self.physics.island_manager,
+                    &mut self.physics.collider_set,
+                    &mut self.physics.impulse_joint_set,
+                    &mut self.physics.multibody_joint_set,
+                    true,
+                );
+            }
+            let _ = self.ecs.despawn(e);
+            self.removed_this_tick.push(eid);
+        }
+        // Reseta level_range_live + repopula queue pra spawn imediato.
+        for zone in self.spawn_zones.iter_mut() {
+            zone.level_range_live = 0;
+            if let Some((_, _, c)) = zone.level_range {
+                zone.level_range_queue = (0..c).map(|_| 0.0_f32).collect();
+            }
+            // Legacy quotas: reset live + repopular respawn_queue.
+            for (k, lv) in zone.live.iter_mut() {
+                let _ = k; *lv = 0;
+            }
+            zone.respawn_queue.clear();
+            for &(kind, target) in zone.quotas.iter() {
+                for _ in 0..target { zone.respawn_queue.push((0.0, kind)); }
+            }
+        }
+        // Boss areas: forca respawn imediato.
+        for area in self.boss_areas.iter_mut() {
+            area.current_boss = None;
+            area.respawn_at = 0.0;
+        }
+        tracing::info!("admin /despawn: {count} enemies removidos, zones reabastecidas");
+    }
+
+    /// Tick boss areas: spawn quando current_boss == None E sim_time >= respawn_at.
+    /// Detect morte: se current_boss aponta pra entity que nao existe mais,
+    /// reseta pra None + agenda respawn.
+    fn tick_boss_areas(&mut self) {
+        let now = self.sim_time_s;
+
+        // Coleta entity_ids vivos — usado pra detectar boss morto.
+        let alive_ids: std::collections::HashSet<EntityId> = self.ecs
+            .query::<&NetId>()
+            .iter()
+            .map(|(_, n)| n.0)
+            .collect();
+
+        // Detect mortes + coleta intents de spawn.
+        struct BossSpawnIntent { area_id: u32, pos: Vec2, level: u32 }
+        let mut intents: Vec<BossSpawnIntent> = Vec::new();
+        let map_ref = &self.map;
+        for area in self.boss_areas.iter_mut() {
+            if let Some(boss_eid) = area.current_boss {
+                if !alive_ids.contains(&boss_eid) {
+                    // Boss morreu — agenda respawn.
+                    area.current_boss = None;
+                    area.respawn_at = now + area.respawn_s;
+                    tracing::info!(
+                        "boss area #{}: morto, respawn em {:.0}s",
+                        area.id, area.respawn_s
+                    );
+                }
+            }
+            // Spawn novo boss se vazio E timer chegou.
+            if area.current_boss.is_none() && now >= area.respawn_at {
+                let seed = (now.to_bits() as u64) ^ (area.id as u64 * 0xBAD_F00D);
+                let polygon = area.polygon.as_deref();
+                if let Some(pos) = pick_random_in_polygon_with_map(area.origin, area.size, seed, polygon, 30, Some(map_ref)) {
+                    intents.push(BossSpawnIntent { area_id: area.id, pos, level: area.level });
+                } else {
+                    // Sem pos válida — tenta de novo no próximo tick.
+                    area.respawn_at = now + 1.0;
+                }
+            }
+        }
+
+        // Aplica spawns (fora do borrow).
+        for it in intents {
+            let class = crate::enemy_builds::random_class_for_level(
+                it.level,
+                (it.area_id as u64).wrapping_mul(0xC0FFEE) ^ self.tick as u64,
+            );
+            let build = crate::enemy_builds::build_boss(it.level, class);
+            let class_str = build.class.as_str().to_string();
+            let level = build.level;
+            // Anchor = centro da area, leash grande pra boss errar pelo polygon
+            let (anchor, leash) = {
+                let area = self.boss_areas.iter().find(|a| a.id == it.area_id).unwrap();
+                let center = area.origin + area.size * 0.5;
+                let r = area.size.x.max(area.size.y) * 0.7;
+                (center, r)
+            };
+            let (tag, health) = self.build_enemy_tag_from_build(build, anchor, leash, it.pos);
+            let hp_max = health.max;
+            let net_id = self.alloc_entity_id();
+            let handle = self.spawn_entity_body(it.pos);
+            // tag_kind = level (consistente com level-range zones)
+            let tag_kind = level as u16;
+            self.ecs.spawn((
+                NetId(net_id),
+                Position(it.pos),
+                Velocity(Vec2::ZERO),
+                health,
+                EntityKind::Enemy(tag_kind),
+                tag,
+                handle,
+            ));
+            // Marca current_boss na area.
+            if let Some(area) = self.boss_areas.iter_mut().find(|a| a.id == it.area_id) {
+                area.current_boss = Some(net_id);
+            }
+            tracing::info!(
+                "boss area #{}: SPAWN lv{} {} hp={} pos=({:.1},{:.1})",
+                it.area_id, level, class_str, hp_max, it.pos.x, it.pos.y
+            );
+        }
     }
 
     /// Spawna todas as entidades pre-posicionadas de um MapFile.
@@ -798,34 +1409,16 @@ impl GameWorld {
                     self.place_enemy(pos, *kind, 0.0);
                 }
                 MapEntity::Boss { kind } => {
-                    let def = crate::economy::enemy_def(*kind);
-                    let hp_max = def.hp_max;
+                    let (tag, health) = self.build_enemy_tag(*kind, Vec2::ZERO, 0.0, pos);
                     let net_id = self.alloc_entity_id();
                     let handle = self.spawn_entity_body(pos);
                     let e = self.ecs.spawn((
                         NetId(net_id),
                         Position(pos),
                         Velocity(Vec2::ZERO),
-                        Health { current: hp_max, max: hp_max },
+                        health,
                         EntityKind::Enemy(*kind),
-                        EnemyTag {
-                            attack_cooldown: 0.0,
-                            hurt_until: 0.0,
-                            hurt_dir: Vec2::ZERO,
-                            dead: false,
-                            despawn_at: 0.0,
-                            wander_timer: 0.0,
-                            wander_dir: Vec2::X,
-                            attack_pending: false,
-                            wander_waypoint: Vec2::ZERO,
-                            spawn_anchor: Vec2::ZERO,
-                            leash_max: 0.0,
-                            wander_phase: 0,
-                            returning_home: false,
-                            aggro_timer: 0.0,
-                            spawn_grace_until: self.sim_time_s + shared::ENEMY_SPAWN_GRACE,
-                            poisoned_until: 0.0,
-                        },
+                        tag,
                         handle,
                     ));
                     if *kind == 7 { self.boss_entity = Some(e); }
@@ -920,33 +1513,83 @@ impl GameWorld {
                         pos.x, pos.y, size[0], size[1]
                     );
                 }
-                MapEntity::EnemySpawner { size, quotas, respawn_delay_s } => {
+                MapEntity::EnemySpawner { size, quotas, respawn_delay_s, polygon, level_min, level_max, count } => {
                     let zone_id = self.spawn_zones.len() as u32;
-                    let quotas_vec: Vec<(u16, u32)> = quotas.iter()
-                        .map(|q| (q.kind, q.count)).collect();
-                    let live_vec: Vec<(u16, u32)> = quotas_vec.iter()
-                        .map(|(k, _)| (*k, 0u32)).collect();
-                    // População inicial vai pelo respawn_queue com ready_at=0
-                    // (spawn imediato no primeiro tick). Depois disso, deaths
-                    // adicionam com sim_time + respawn_delay.
-                    let mut respawn_queue = Vec::new();
-                    for &(kind, count) in &quotas_vec {
-                        for _ in 0..count {
-                            respawn_queue.push((0.0f32, kind));
+                    let polygon_world: Option<Vec<Vec2>> = polygon.as_ref().map(|verts| {
+                        verts.iter()
+                            .map(|v| Vec2::new(v[0] + pos.x, v[1] + pos.y))
+                            .collect()
+                    });
+                    let n_verts = polygon_world.as_ref().map(|v| v.len()).unwrap_or(0);
+                    // Modo level-range: prioritario sobre quotas se ambos setados.
+                    let level_range = match (*level_min, *level_max, *count) {
+                        (Some(min), Some(max), Some(c)) if min > 0 && max >= min && c > 0 =>
+                            Some((min, max, c)),
+                        _ => None,
+                    };
+                    let (quotas_vec, live_vec, respawn_queue) = if let Some((_, _, _)) = level_range {
+                        (Vec::new(), Vec::new(), Vec::new())
+                    } else {
+                        let qv: Vec<(u16, u32)> = quotas.iter()
+                            .map(|q| (q.kind, q.count)).collect();
+                        let lv: Vec<(u16, u32)> = qv.iter().map(|(k, _)| (*k, 0u32)).collect();
+                        let mut rq = Vec::new();
+                        for &(kind, count) in &qv {
+                            for _ in 0..count { rq.push((0.0f32, kind)); }
                         }
-                    }
+                        (qv, lv, rq)
+                    };
+                    // Initial fill (level-range): pre-popular queue com `count`
+                    // items ready_at=0 pra spawn imediato no primeiro tick.
+                    let level_range_queue: Vec<f32> = if let Some((_, _, c)) = level_range {
+                        (0..c).map(|_| 0.0_f32).collect()
+                    } else { Vec::new() };
+                    let zone_size = Vec2::new(size[0], size[1]);
                     self.spawn_zones.push(ServerSpawnZone {
                         id: zone_id,
                         origin: pos,
-                        size: Vec2::new(size[0], size[1]),
+                        size: zone_size,
                         respawn_delay_s: *respawn_delay_s,
                         quotas: quotas_vec,
                         live: live_vec,
                         respawn_queue,
+                        polygon: polygon_world,
+                        level_range,
+                        level_range_live: 0,
+                        level_range_queue,
+                    });
+                    if let Some((mn, mx, c)) = level_range {
+                        tracing::info!(
+                            "mapfile: spawn zone #{} at ({:.1},{:.1}) {}x{} (LEVEL {}-{}, count {}, {} polygon verts)",
+                            zone_id, pos.x, pos.y, size[0], size[1], mn, mx, c, n_verts
+                        );
+                    } else {
+                        tracing::info!(
+                            "mapfile: spawn zone #{} at ({:.1},{:.1}) {}x{} ({} kinds legacy, {} polygon verts)",
+                            zone_id, pos.x, pos.y, size[0], size[1], quotas.len(), n_verts
+                        );
+                    }
+                }
+                MapEntity::BossSpawn { size, level, respawn_s, polygon } => {
+                    let area_id = self.boss_areas.len() as u32;
+                    let polygon_world: Option<Vec<Vec2>> = polygon.as_ref().map(|verts|
+                        verts.iter().map(|pp| pos + Vec2::new(pp[0], pp[1])).collect()
+                    );
+                    let n_verts = polygon_world.as_ref().map(|v| v.len()).unwrap_or(0);
+                    self.boss_areas.push(BossSpawnArea {
+                        id: area_id,
+                        origin: pos,
+                        size: Vec2::new(size[0], size[1]),
+                        polygon: polygon_world,
+                        level: *level,
+                        respawn_s: *respawn_s,
+                        current_boss: None,
+                        // Spawn imediato no primeiro tick (respawn_at no passado).
+                        respawn_at: 0.0,
                     });
                     tracing::info!(
-                        "mapfile: spawn zone #{} at ({:.1},{:.1}) {}x{} ({} kinds)",
-                        zone_id, pos.x, pos.y, size[0], size[1], quotas.len()
+                        "mapfile: BOSS area #{} at ({:.1},{:.1}) {}x{} (lv{}, respawn {:.0}s, {} verts)",
+                        area_id, pos.x, pos.y, size[0], size[1], level, respawn_s, n_verts
                     );
                 }
             }
@@ -1191,6 +1834,35 @@ impl GameWorld {
         tracing::info!("{} resetou atributos (refund {})", s.name, total);
     }
 
+    /// Reseta TODAS as skills aprendidas — refunda SP de volta. Limpa
+    /// learned_skills, equipped slots e cooldowns. Tambem limpa estados
+    /// passivos (riposte_until, sword_dance_until, etc).
+    fn handle_reset_skills(&mut self, sid: SessionId) {
+        let Some(s) = self.sessions.get_mut(&sid) else { return; };
+        if !s.logged_in { return; }
+        // Total de SP gasto = soma dos ranks aprendidos (1 SP por rank).
+        let total_spent: u32 = s.learned_skills.iter()
+            .map(|ls| ls.rank as u32).sum();
+        if total_spent == 0 { return; }
+        s.skill_points_spent = s.skill_points_spent.saturating_sub(total_spent);
+        s.learned_skills.clear();
+        s.skill_cds.clear();
+        s.skills_dirty = true;
+        // Limpa estados de skills ativas/passivas.
+        s.casting_until = 0.0;
+        s.casting_skill_id = 0;
+        s.riposte_until = 0.0;
+        s.sword_dance_until = 0.0;
+        s.sword_dance_step = 0;
+        s.counter_stance_until = 0.0;
+        s.hunter_marks.clear();
+        // Recompute stats — sem passivas que escalavam (ex: Combat Stance,
+        // Bulwark, Mana Pool, Eagle Eye).
+        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, &s.learned_skills);
+        s.stats_dirty = true;
+        tracing::info!("{} resetou skills (refund {} SP)", s.name, total_spent);
+    }
+
     fn spawn_vendor_at(&mut self, pos: (f32, f32)) {
         let eid = self.alloc_entity_id();
         self.ecs.spawn((
@@ -1306,6 +1978,59 @@ impl GameWorld {
             self.on_disconnect(stale);
         }
 
+        // Multi-char: salva auth info na sessao e envia CharacterList.
+        // Cliente decide selecionar/criar; spawn de fato so acontece em
+        // handle_select_character (ou apos CreateCharacter via select).
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.pending_char_creation_account_id = Some(success.account_id);
+            s.pending_auth_username = Some(success.username.clone());
+            s.pending_auth_class = Some(success.class.clone());
+            s.account_id = Some(success.account_id);
+        }
+        self.send_character_list(sid, success.account_id);
+        return;
+    }
+
+    /// Envia ao cliente a lista de personagens da conta. Filtra `self.characters`
+    /// por account_id e converte em CharacterListEntry. Sempre disparado apos
+    /// auth success ou apos CreateCharacter. Inclui tambem available_weapons
+    /// (filtrado por items.active=TRUE) pra cliente exibir so armas validas.
+    fn send_character_list(&self, sid: SessionId, account_id: i64) {
+        let chars: Vec<shared::protocol::CharacterListEntry> = self.characters.values()
+            .filter(|r| r.account_id == Some(account_id))
+            .map(|r| shared::protocol::CharacterListEntry {
+                name: r.name.clone(),
+                level: shared::level_of_xp(r.xp),
+                visual: r.visual.clone().unwrap_or_else(|| shared::VisualConfig::for_class("warrior")),
+                weapon_id: r.equipment.weapon,
+            })
+            .collect();
+        // Whitelist de armas iniciais — filtrada por items.active. Mantem em
+        // sync com handle_create_character::ALLOWED_WEAPONS.
+        const ALL_STARTING_WEAPONS: &[u16] = &[3, 6, 12, 13, 14, 15, 25, 26];
+        let available_weapons: Vec<u16> = ALL_STARTING_WEAPONS.iter()
+            .filter(|id| crate::economy::is_item_active(**id))
+            .copied()
+            .collect();
+        if let Some(s) = self.sessions.get(&sid) {
+            let _ = s.handle.to_client.send(ServerMessage::CharacterList {
+                chars, available_weapons,
+            });
+        }
+    }
+
+    /// Spawn do char selecionado no mundo. Body extraido do antigo on_auth_result.
+    /// Validacao de ownership eh responsabilidade do caller (handle_select_character).
+    fn spawn_for_char(
+        &mut self,
+        sid: SessionId,
+        success: crate::auth::AuthSuccess,
+        row: crate::persistence::CharacterRow,
+    ) {
+        let handle = match self.sessions.get(&sid) {
+            Some(s) => s.handle.clone(),
+            None => return,
+        };
         let entity_id = match self.sessions.get(&sid) {
             Some(s) => s.entity_id,
             None => return,
@@ -1317,35 +2042,13 @@ impl GameWorld {
         };
         let (mut spawn, mut health, saved_xp, saved_inv, saved_equip, saved_vault,
              saved_fame, saved_aura, saved_profs, saved_unspent, saved_alloc,
-             saved_sp_earned, saved_sp_spent, saved_learned_skills) =
-            match self.characters.get(&success.username) {
-                Some(row) => (
-                    row.pos, row.hp, row.xp, row.inventory.clone(), row.equipment, row.vault.clone(),
-                    row.fame, row.aura, row.proficiencies, row.unspent_points, row.allocated_points,
-                    row.skill_points_earned, row.skill_points_spent, row.learned_skills.clone(),
-                ),
-                None => {
-                    let base = shared::base_player_stats();
-                    (
-                        default_spawn,
-                        Health { current: base.hp_max, max: base.hp_max },
-                        0u64,
-                        vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
-                        shared::Equipment::default(),
-                        vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
-                        0u64,
-                        0u64,
-                        [0u64; shared::PROF_COUNT],
-                        0u32,
-                        [0u32; shared::STAT_COUNT],
-                        // SP iniciais = 1 (level 1 base — ganha SP automático).
-                        // Backfill em DB já lidou com chars existentes.
-                        1u32,
-                        0u32,
-                        Vec::new(),
-                    )
-                }
-            };
+             saved_sp_earned, saved_sp_spent, saved_learned_skills, saved_boat,
+             saved_visual, saved_char_name) = (
+                row.pos, row.hp, row.xp, row.inventory.clone(), row.equipment, row.vault.clone(),
+                row.fame, row.aura, row.proficiencies, row.unspent_points, row.allocated_points,
+                row.skill_points_earned, row.skill_points_spent, row.learned_skills.clone(),
+                row.boat, row.visual.clone(), row.name.clone(),
+            );
         // Stats efetivos considerando equipamento salvo + pontos + profs.
         let stats = effective_stats(&saved_equip, &saved_alloc, &saved_profs, &saved_learned_skills);
         // Re-sincroniza o max_hp (classe pode ter sido rebalanceada entre sessoes).
@@ -1354,10 +2057,14 @@ impl GameWorld {
         if health.current <= 0 { health.current = stats.hp_max; }
         // Valida que a posicao salva nao esta dentro de uma parede (mapa
         // pode ter sido regenerado). Senao, volta pro spawn default.
+        // Excecao: se tinha barco salvo, pos vai ser em agua — eh OK porque
+        // vamos re-mountar o player no barco logo apos.
         let tx = spawn.x.floor() as i32;
         let ty = spawn.y.floor() as i32;
-        if self.map.get(tx, ty) == shared::constants::tile_id::WALL {
-            tracing::warn!("saved pos ({tx},{ty}) em parede; usando spawn default");
+        if saved_boat.is_some() && self.map.is_water(tx, ty) {
+            // Pos em agua eh esperado quando re-spawn em barco. Skip check.
+        } else if !self.map.is_walkable(tx, ty) {
+            tracing::warn!("saved pos ({tx},{ty}) nao-walkable (wall/water); usando spawn default");
             spawn = default_spawn;
         }
         // Dá respiro ao jogador: despawna inimigos muito proximos do spawn.
@@ -1385,13 +2092,48 @@ impl GameWorld {
             Velocity(Vec2::ZERO),
             health,
             EntityKind::Player,
-            PlayerTag { name: success.username.clone(), player_id: pid, attack_anim_pending: None, combo_step_pending: None },
+            PlayerTag { name: saved_char_name.clone(), player_id: pid, attack_anim_pending: None, combo_step_pending: None },
         ));
+
+        // Restaura barco se player desconectou montado. Spawna a entidade
+        // Boat na pos salva e adiciona Mounted no player. Se a pos do barco
+        // virou nao-water (mapa mudou), aborta restauracao — player continua
+        // a pe na pos do default_spawn (que foi clampado acima).
+        if let Some(b) = saved_boat {
+            let bx = b.pos.x.floor() as i32;
+            let by = b.pos.y.floor() as i32;
+            if self.map.is_water(bx, by) {
+                let boat_eid = self.alloc_entity_id();
+                let boat_entity = self.ecs.spawn((
+                    NetId(boat_eid),
+                    Position(b.pos),
+                    Velocity(Vec2::ZERO),
+                    EntityKind::Boat(b.kind),
+                    BoatTag {
+                        kind: b.kind,
+                        owner_pid: pid,
+                        passenger: Some(entity_id),
+                        passenger_entity: Some(e),
+                        dir: b.dir,
+                        anim: 0,
+                        max_speed: 4.5,
+                        last_shot_at_s: 0.0,
+                        shoot_anim_until: 0.0,
+                        shoot_dir: b.dir,
+                    },
+                ));
+                let _ = self.ecs.insert_one(e, Mounted { boat_entity, boat_eid });
+                tracing::info!("login: boat restaurado pid={:?} kind={} pos={:?}", pid, b.kind, b.pos);
+            } else {
+                tracing::warn!("login: boat pos ({bx},{by}) nao-water — restauracao abortada");
+            }
+        }
 
         if let Some(s) = self.sessions.get_mut(&sid) {
             s.entity = Some(e);
             s.logged_in = true;
-            s.name = success.username.clone();
+            s.name = saved_char_name.clone();
+            s.pending_char_creation_account_id = None;
             s.player_id = pid;
             s.account_id = Some(success.account_id);
             s.stats = stats;
@@ -1421,7 +2163,12 @@ impl GameWorld {
             s.mp_last_sent = stats.mp_max;
             s.stamina_current = stats.stamina_max as f32;
             s.stamina_last_sent = stats.stamina_max;
-            s.visual = shared::VisualConfig::for_class(&success.class);
+            s.poise_current = stats.poise_max as f32;
+            s.poise_last_sent = stats.poise_max;
+            // Visual: usa o salvo (escolhido na criacao). Fallback pra class
+            // default pra contas legacy sem visual_json.
+            s.visual = saved_visual.clone()
+                .unwrap_or_else(|| shared::VisualConfig::for_class(&success.class));
         }
         tracing::info!(
             "login ok: {} (acc {}, xp {}) -> {:?} / {:?}",
@@ -1526,7 +2273,8 @@ impl GameWorld {
 
     /// Cria um inimigo no tile `pos` com kind e cooldown de ataque iniciais.
     fn place_enemy(&mut self, pos: Vec2, kind: u16, attack_cd: f32) {
-        let def = crate::economy::enemy_def(kind);
+        let (mut tag, health) = self.build_enemy_tag(kind, Vec2::ZERO, 0.0, pos);
+        tag.attack_cooldown = attack_cd;
         let eid = self.alloc_entity_id();
         let handle = self.spawn_entity_body(pos);
         self.ecs.spawn((
@@ -1534,26 +2282,9 @@ impl GameWorld {
             handle,
             Position(pos),
             Velocity(Vec2::ZERO),
-            Health { current: def.hp_max, max: def.hp_max },
+            health,
             EntityKind::Enemy(kind),
-            EnemyTag {
-                attack_cooldown: attack_cd,
-                hurt_until: 0.0,
-                hurt_dir: Vec2::ZERO,
-                dead: false,
-                despawn_at: 0.0,
-                wander_timer: 0.0,
-                wander_dir: Vec2::X,
-                attack_pending: false,
-                wander_waypoint: Vec2::ZERO,
-                spawn_anchor: Vec2::ZERO,
-                leash_max: 0.0,
-                wander_phase: 0,
-                returning_home: false,
-                aggro_timer: 0.0,
-                spawn_grace_until: self.sim_time_s + shared::ENEMY_SPAWN_GRACE,
-                poisoned_until: 0.0,
-            },
+            tag,
         ));
     }
 
@@ -1626,34 +2357,16 @@ impl GameWorld {
     fn spawn_boss(&mut self) {
         let seed = self.tick as u64 ^ 0xB055_B055;
         if let Some(pos) = self.pick_enemy_tile(seed, 100) {
-            let def = crate::economy::enemy_def(7);
-            let hp_max = def.hp_max;
+            let (tag, health) = self.build_enemy_tag(7, Vec2::ZERO, 0.0, pos);
             let net_id = self.alloc_entity_id();
             let handle = self.spawn_entity_body(pos);
             let e = self.ecs.spawn((
                 NetId(net_id),
                 Position(pos),
                 Velocity(Vec2::ZERO),
-                Health { current: hp_max, max: hp_max },
+                health,
                 EntityKind::Enemy(7),
-                EnemyTag {
-                    attack_cooldown: 0.0,
-                    hurt_until: 0.0,
-                    hurt_dir: Vec2::ZERO,
-                    dead: false,
-                    despawn_at: 0.0,
-                    wander_timer: 0.0,
-                    wander_dir: Vec2::X,
-                    attack_pending: false,
-                    wander_waypoint: Vec2::ZERO,
-                    spawn_anchor: Vec2::ZERO,
-                    leash_max: 0.0,
-                    wander_phase: 0,
-                    returning_home: false,
-                    aggro_timer: 0.0,
-                    spawn_grace_until: self.sim_time_s + shared::ENEMY_SPAWN_GRACE,
-                    poisoned_until: 0.0,
-                },
+                tag,
                 handle,
             ));
             self.boss_entity = Some(e);
@@ -1679,6 +2392,8 @@ impl GameWorld {
                 dash_cooldown: 0.0,
                 hurt_until: 0.0,
                 hurt_dir: Vec2::ZERO,
+                knockback_until: 0.0,
+                knockback_vel: Vec2::ZERO,
                 combo_step: 0,
                 combo_last_attack: 0.0,
                 respawn_timer: None,
@@ -1689,6 +2404,9 @@ impl GameWorld {
                 name: String::new(),
                 player_id: PlayerId(0),
                 account_id: None,
+                pending_char_creation_account_id: None,
+                pending_auth_username: None,
+                pending_auth_class: None,
                 stats: shared::base_player_stats(),
                 equipment: shared::Equipment::default(),
                 unspent_points: 0,
@@ -1721,6 +2439,7 @@ impl GameWorld {
                 casting_skill_id: 0,
                 casting_mp_paid: 0.0,
                 casting_st_paid: 0.0,
+                storm_caller_next: 0.0,
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 inventory_dirty: false,
                 stats_dirty: false,
@@ -1736,6 +2455,18 @@ impl GameWorld {
                 last_movement_at_s: 0.0,
                 quickdraw_consumed: false,
                 hunter_marks: HashMap::new(),
+                riposte_until: 0.0,
+                sword_dance_until: 0.0,
+                sword_dance_step: 0,
+                counter_stance_until: 0.0,
+                leap_until: 0.0,
+                leap_start_pos: Vec2::ZERO,
+                leap_target: Vec2::ZERO,
+                leap_damage: 0,
+                leap_radius: 0.0,
+                poise_current: 50.0, // base padrao; refresh via stats no login
+                last_combat_at_s: 0.0,
+                poise_last_sent: 0,
             },
         );
     }
@@ -1743,6 +2474,15 @@ impl GameWorld {
     pub fn on_disconnect(&mut self, id: SessionId) {
         if let Some(s) = self.sessions.remove(&id) {
             if let Some(e) = s.entity {
+                // Se estava montado num barco, despawna o barco do mundo
+                // (mas o estado ja foi capturado em take_character_for_disconnect
+                // antes desse on_disconnect — re-spawn no proximo login no
+                // mesmo lugar com mesmo kind/dir).
+                if let Ok(m) = self.ecs.get::<&Mounted>(e).map(|m| (m.boat_entity, m.boat_eid)) {
+                    let (boat_e, boat_eid) = m;
+                    let _ = self.ecs.despawn(boat_e);
+                    self.removed_this_tick.push(boat_eid);
+                }
                 self.free_entity_body(e);
                 let _ = self.ecs.despawn(e);
             }
@@ -1850,6 +2590,11 @@ impl GameWorld {
                     }
                     return;
                 }
+                if trimmed == "/despawn" {
+                    self.admin_despawn_all_enemies();
+                    self.send_chat_to(id, "[Sistema] Todos os mobs despawnados. Spawn zones reabastecendo...");
+                    return;
+                }
                 let from = self
                     .sessions
                     .get(&id)
@@ -1926,18 +2671,231 @@ impl GameWorld {
             ClientMessage::ResetStats => {
                 self.handle_reset_stats(id);
             }
+            ClientMessage::ResetSkills => {
+                self.handle_reset_skills(id);
+            }
             ClientMessage::RefineItem { slot } => {
                 self.handle_refine_item(id, slot);
             }
             ClientMessage::SocketGem { item_slot, gem_slot } => {
                 self.handle_socket_gem(id, item_slot, gem_slot);
             }
+            ClientMessage::DismountBoat => {
+                self.handle_dismount_boat(id);
+            }
+            ClientMessage::ResetPosition => {
+                self.handle_reset_position(id);
+            }
             ClientMessage::RequestDisconnect => self.on_disconnect(id),
             ClientMessage::SkillLearn { skill_id }   => self.handle_skill_learn(id, skill_id),
             ClientMessage::SkillRankUp { skill_id }  => self.handle_skill_rank_up(id, skill_id),
             ClientMessage::SkillEquip { skill_id, slot } => self.handle_skill_equip(id, skill_id, slot),
             ClientMessage::SkillCast { skill_id, target_pos } => self.handle_skill_cast(id, skill_id, target_pos),
+            ClientMessage::CreateCharacter { name, visual, starting_weapon } => {
+                self.handle_create_character(id, name, visual, starting_weapon);
+            }
+            ClientMessage::SelectCharacter { name } => {
+                self.handle_select_character(id, name);
+            }
+            ClientMessage::RespawnAtCity => {
+                self.handle_respawn_at_city(id);
+            }
         }
+    }
+
+    /// Player downed escolheu respawnar direto na cidade — pula o timer de
+    /// stand-up. HP restaurado pra max, posicao = spawn_tile, downed limpa.
+    fn handle_respawn_at_city(&mut self, sid: SessionId) {
+        let (entity, hp_max, name) = {
+            let Some(session) = self.sessions.get_mut(&sid) else { return };
+            if !session.logged_in || !session.downed { return; }
+            let Some(entity) = session.entity else { return };
+            let hp_max = session.stats.hp_max;
+            session.downed = false;
+            session.downed_heal_timer = 0.0;
+            session.downed_hp = 0;
+            (entity, hp_max, session.name.clone())
+        };
+        let spawn = {
+            let t = self.map.spawn_tile();
+            Vec2::new(t.0 as f32 + 0.5, t.1 as f32 + 0.5)
+        };
+        if let Ok(mut hp) = self.ecs.get::<&mut Health>(entity) {
+            hp.current = hp_max;
+        }
+        if let Ok(mut pos) = self.ecs.get::<&mut Position>(entity) {
+            pos.0 = spawn;
+        }
+        if let Ok(mut vel) = self.ecs.get::<&mut Velocity>(entity) {
+            vel.0 = Vec2::ZERO;
+        }
+        // CRITICO: sincroniza physics rigid body (sem isso o player retorna
+        // pra posicao do collider no proximo step). Mesma logica do
+        // handle_reset_position.
+        if let Ok(h) = self.ecs.get::<&shared::PhysicsHandle>(entity).map(|h| h.0) {
+            if let Some(rb) = self.physics.rigid_body_set.get_mut(h) {
+                rb.set_translation([spawn.x, spawn.y].into(), true);
+                rb.set_linvel([0.0, 0.0].into(), true);
+            }
+        }
+        let _ = self.ecs.remove_one::<Untargetable>(entity);
+        self.save_pending = true;
+        tracing::info!("{} respawnou na cidade ({}hp, pos={:?})", name, hp_max, spawn);
+    }
+
+    /// Cliente clicou num char na lista — valida que pertence a conta e
+    /// faz spawn no mundo.
+    fn handle_select_character(&mut self, sid: SessionId, name: String) {
+        let (account_id, username, class) = match self.sessions.get(&sid) {
+            Some(s) if s.account_id.is_some() => (
+                s.account_id.unwrap(),
+                s.pending_auth_username.clone().unwrap_or_else(|| name.clone()),
+                s.pending_auth_class.clone().unwrap_or_else(|| "warrior".to_string()),
+            ),
+            _ => {
+                tracing::warn!("SelectCharacter: sessao sem auth");
+                return;
+            }
+        };
+        let row = match self.characters.get(&name).cloned() {
+            Some(r) => r,
+            None => {
+                tracing::warn!("SelectCharacter '{}': char nao encontrado", name);
+                let _ = self.sessions.get(&sid).map(|s| s.handle.to_client.send(
+                    ServerMessage::Kick { reason: "char nao encontrado".into() }));
+                return;
+            }
+        };
+        if row.account_id != Some(account_id) {
+            tracing::warn!("SelectCharacter '{}': char nao pertence a acc {}", name, account_id);
+            let _ = self.sessions.get(&sid).map(|s| s.handle.to_client.send(
+                ServerMessage::Kick { reason: "char nao autorizado".into() }));
+            return;
+        }
+        let success = crate::auth::AuthSuccess { account_id, username, class };
+        self.spawn_for_char(sid, success, row);
+    }
+
+    /// Cria personagem inicial pra conta. Disparado depois que login enviou
+    /// `NeedsCharacterCreation`. Valida nome, escreve row + inventory + equip
+    /// no DB sincronamente, recarrega o cache e re-dispara o login flow.
+    fn handle_create_character(
+        &mut self,
+        sid: SessionId,
+        name: String,
+        visual: shared::VisualConfig,
+        starting_weapon: u16,
+    ) {
+        // Validacao basica
+        let name = name.trim().to_string();
+        if name.len() < 2 || name.len() > 24 {
+            let _ = self.sessions.get(&sid).map(|s| s.handle.to_client.send(
+                ServerMessage::CharacterCreationFailed { reason: "nome 2-24 chars".into() }));
+            return;
+        }
+        if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            let _ = self.sessions.get(&sid).map(|s| s.handle.to_client.send(
+                ServerMessage::CharacterCreationFailed { reason: "nome so letras/numeros/_".into() }));
+            return;
+        }
+        // Whitelist de armas iniciais — item_ids reais do shared::constants::items.
+        // 3=Sword, 6=Staff, 12=Dagger, 13=GreatSword, 14=Bow, 15=Wand, 25=Axe, 26=Spear
+        const ALLOWED_WEAPONS: &[u16] = &[3, 6, 12, 13, 14, 15, 25, 26];
+        if !ALLOWED_WEAPONS.contains(&starting_weapon) {
+            let _ = self.sessions.get(&sid).map(|s| s.handle.to_client.send(
+                ServerMessage::CharacterCreationFailed { reason: "arma invalida".into() }));
+            return;
+        }
+        // Pega account_id da sessao (setado em handle_auth_result).
+        let Some(account_id) = self.sessions.get(&sid).and_then(|s| s.pending_char_creation_account_id)
+        else {
+            let _ = self.sessions.get(&sid).map(|s| s.handle.to_client.send(
+                ServerMessage::CharacterCreationFailed { reason: "sessao invalida".into() }));
+            return;
+        };
+        // Spawn = default tile do mapa.
+        let spawn = {
+            let t = self.map.spawn_tile();
+            Vec2::new(t.0 as f32 + 0.5, t.1 as f32 + 0.5)
+        };
+        // Snapshot do que precisamos da sessao antes de spawnar a task async.
+        let (auth_ctx, to_client, username, class) = {
+            let Some(s) = self.sessions.get(&sid) else { return };
+            let Some(ctx) = self.auth_ctx.clone() else {
+                let _ = s.handle.to_client.send(ServerMessage::CharacterCreationFailed {
+                    reason: "auth nao disponivel".into() });
+                return;
+            };
+            (
+                ctx,
+                s.handle.to_client.clone(),
+                s.pending_auth_username.clone().unwrap_or_else(|| name.clone()),
+                s.pending_auth_class.clone().unwrap_or_else(|| "warrior".to_string()),
+            )
+        };
+        let visual_for_db = visual.clone();
+        let name_for_db = name.clone();
+        // DB write async + recarga do cache + re-dispatch via AuthResult.
+        // Sucesso: gera AuthResult sintetico que faz on_auth_result rodar de
+        // novo (agora encontrando o char). Falha: manda CharacterCreationFailed.
+        tokio::spawn(async move {
+            match crate::persistence::create_character(
+                &auth_ctx.pool, account_id, &name_for_db, &visual_for_db, starting_weapon, spawn
+            ).await {
+                Ok(true) => {
+                    tracing::info!("CreateCharacter: '{}' criado (acc {}) weapon={}",
+                        name_for_db, account_id, starting_weapon);
+                    // Reload todos os chars pra pegar o row novo + pertencer
+                    // ao cache. Pega o specific row pra entregar inline.
+                    match crate::persistence::load_all(&auth_ctx.pool).await {
+                        Ok(map) => {
+                            if let Some(row) = map.get(&name_for_db).cloned() {
+                                let success = crate::auth::AuthSuccess {
+                                    account_id, username, class
+                                };
+                                let _ = auth_ctx.tx.send(
+                                    IncomingMessage::CharCreated(sid, Box::new(row), success)
+                                );
+                            } else {
+                                tracing::error!("CreateCharacter: row '{}' some apos load_all",
+                                    name_for_db);
+                                let _ = to_client.send(ServerMessage::CharacterCreationFailed {
+                                    reason: "erro interno".into() });
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("CreateCharacter load_all err: {e:?}");
+                            let _ = to_client.send(ServerMessage::CharacterCreationFailed {
+                                reason: "erro interno".into() });
+                        }
+                    }
+                }
+                Ok(false) => {
+                    let _ = to_client.send(ServerMessage::CharacterCreationFailed {
+                        reason: "nome ja em uso".into() });
+                }
+                Err(e) => {
+                    tracing::error!("CreateCharacter db err: {e:?}");
+                    let _ = to_client.send(ServerMessage::CharacterCreationFailed {
+                        reason: "erro interno".into() });
+                }
+            }
+        });
+    }
+
+    /// Recebido apos CreateCharacter ser completed pelo task async. Insere
+    /// a row no cache de chars e re-envia CharacterList (cliente vai mostrar
+    /// novo char na lista; usuario clica pra selecionar).
+    pub fn on_char_created(
+        &mut self,
+        sid: SessionId,
+        row: crate::persistence::CharacterRow,
+        success: crate::auth::AuthSuccess,
+    ) {
+        self.characters.insert(row.name.clone(), row);
+        // Sessao ja foi auth'd no Login original — apenas reenvia a lista
+        // atualizada com o novo char incluido.
+        self.send_character_list(sid, success.account_id);
     }
 
     /// Cast de skill ativa. Valida tudo, drena cost, dispara efeito.
@@ -1949,6 +2907,15 @@ impl GameWorld {
         if !session.logged_in { return; }
         let Some(def) = crate::skills::skill_of(skill_id) else { return };
         if def.is_passive { return; } // passivas não castam
+
+        // 1b. Player montado em barco: skills bloqueadas. Cliente deveria ja
+        // ter bloqueado o trigger local, mas o server e' a autoridade.
+        if let Some(pe) = session.entity {
+            if self.ecs.get::<&Mounted>(pe).is_ok() {
+                tracing::debug!("skill_cast: bloqueado — player montado em barco");
+                return;
+            }
+        }
 
         // 2. Skill aprendida + equipada em algum slot?
         let learned = session.learned_skills.iter().find(|s| s.skill_id == skill_id).copied();
@@ -2042,9 +3009,15 @@ impl GameWorld {
         if casts_attack_anim {
             if let Some(ent) = owner_entity {
                 if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(ent) {
-                    let anim = match shared::Proficiency::from_item(weapon_id) {
-                        shared::Proficiency::Bow => shared::components::attack_anim::SHOOT,
-                        _                        => shared::components::attack_anim::THRUST,
+                    // Shield Bash (1003): anim dedicada de ShieldBash. Outras
+                    // skills cone melee usam THRUST/SHOOT default.
+                    let anim = if skill_id == 1003 {
+                        shared::components::attack_anim::SHIELD_BASH
+                    } else {
+                        match shared::Proficiency::from_item(weapon_id) {
+                            shared::Proficiency::Bow => shared::components::attack_anim::SHOOT,
+                            _                        => shared::components::attack_anim::THRUST,
+                        }
                     };
                     tag.attack_anim_pending = Some(anim);
                 }
@@ -2099,18 +3072,87 @@ impl GameWorld {
                 );
             }
             "self" => {
-                // Heal: aplica base_heal + scaling × wis.
-                let base_heal = def.base_heal as f32 + stats.wis as f32 * def.scaling_wis;
-                let heal = (base_heal * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32))).round() as i32;
-                if heal > 0 {
-                    if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
-                        hp.current = (hp.current + heal).min(hp.max);
+                // Taunt (1006): forca enemies em radius a mirar o caster
+                // pelos proximos 4s. Override de AI target.
+                if skill_id == 1006 {
+                    let radius = def.radius_tiles.max(1.0);
+                    let now_s = self.sim_time_s;
+                    let dur = 4.0_f32;
+                    let enemies = self.find_enemies_in_radius(pos, radius);
+                    let target_set: std::collections::HashSet<EntityId> =
+                        enemies.iter().copied().collect();
+                    for (_, (net, tag)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag)>() {
+                        if target_set.contains(&net.0) {
+                            tag.forced_aggro_until = now_s + dur;
+                            tag.forced_aggro_target = Some(owner_eid);
+                        }
                     }
+                    tracing::info!("Taunt cast: {} enemies aggro'd r{:.1}", target_set.len(), radius);
                 }
-                tracing::info!("skill cast: {} self-heal +{}", def.name, heal);
+                // Master's Counter (1007): 2s auto-parry stance no caster.
+                else if skill_id == 1007 {
+                    if let Some(s) = self.sessions.get_mut(&sid) {
+                        s.counter_stance_until = self.sim_time_s + 2.0;
+                    }
+                    tracing::info!("Master's Counter cast (2s stance)");
+                }
+                else {
+                    // Heal padrão: aplica base_heal + scaling × wis.
+                    let base_heal = def.base_heal as f32 + stats.wis as f32 * def.scaling_wis;
+                    let heal = (base_heal * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32))).round() as i32;
+                    if heal > 0 {
+                        if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
+                            hp.current = (hp.current + heal).min(hp.max);
+                        }
+                    }
+                    tracing::info!("skill cast: {} self-heal +{}", def.name, heal);
+                }
             }
             "line" => {
-                // Linha: pega 1º enemy hostile no caminho até range_tiles.
+                // Resurrection (1055): pega ALIADO downed mais proximo em range
+                // e ressuscita com HP%. Custo: 80 mp, cd: 120s. Range: 5 tiles.
+                if skill_id == 1055 {
+                    let range = def.range_tiles.max(1.0);
+                    let r2 = range * range;
+                    // Acha o player downed mais proximo (excluindo o caster).
+                    let mut best: Option<(SessionId, f32)> = None;
+                    for (other_sid, other) in self.sessions.iter() {
+                        if *other_sid == sid { continue; }
+                        if !other.logged_in || !other.downed { continue; }
+                        let Some(oent) = other.entity else { continue };
+                        let opos = match self.ecs.get::<&Position>(oent) {
+                            Ok(p) => p.0, Err(_) => continue,
+                        };
+                        let d2 = opos.distance_squared(pos);
+                        if d2 > r2 { continue; }
+                        if best.map(|(_, bd)| d2 < bd).unwrap_or(true) {
+                            best = Some((*other_sid, d2));
+                        }
+                    }
+                    if let Some((target_sid, _)) = best {
+                        let revive_pct = 0.5_f32; // 50% HP no resurrect (vs 30% do StandUp)
+                        let target_session = self.sessions.get_mut(&target_sid).unwrap();
+                        let revive_hp = ((target_session.stats.hp_max as f32) * revive_pct)
+                            .round().max(1.0) as i32;
+                        target_session.downed = false;
+                        target_session.downed_heal_timer = 0.0;
+                        target_session.downed_hp = 0;
+                        let target_entity = target_session.entity;
+                        let target_name = target_session.name.clone();
+                        if let Some(te) = target_entity {
+                            if let Ok(mut hp) = self.ecs.get::<&mut Health>(te) {
+                                hp.current = revive_hp;
+                            }
+                            let _ = self.ecs.remove_one::<Untargetable>(te);
+                        }
+                        tracing::info!("skill cast: Resurrection — {} ressuscitado (+{}hp)",
+                            target_name, revive_hp);
+                    } else {
+                        tracing::info!("skill cast: Resurrection — sem aliado downed em range");
+                    }
+                    return; // skip damage logic abaixo
+                }
+                // Linha (default): pega 1º enemy hostile no caminho até range_tiles.
                 let range = def.range_tiles.max(1.0);
                 let nearest = self.find_nearest_enemy_in_line(pos, dir, range, owner_eid);
                 if let Some((target_net, target_pos2, _dist)) = nearest {
@@ -2118,6 +3160,7 @@ impl GameWorld {
                     self.pending_skill_hits.push(PendingSkillHit {
                         target_net, damage, attacker_net: owner_eid,
                         hurt_dir: hd, is_crit: false, from_player: true,
+                        knockback: def.knockback,
                     });
                     // Chain Lightning (1054): bounce até 4 alvos extras com falloff 25%.
                     if skill_id == 1054 {
@@ -2129,16 +3172,95 @@ impl GameWorld {
             "aoe_circle" => {
                 let radius = def.radius_tiles.max(0.5);
                 let is_heal = def.base_heal > 0 || (def.scaling_wis > 0.0 && def.base_damage == 0);
+                // Leap Strike (1001): seta estado de leap (interpola posicao
+                // do caster por LEAP_DURATION antes de teleportar). Damage +
+                // stun aplicados no FIM do leap (no tick step). Anim de jump
+                // replicada via attack_anim_pending=DASH.
+                // Spear Throw (1021) tambem usa leap mechanic — visual de
+                // arremessar lança (cliente render projétil), player segue
+                // como hook ate o landing. Range maior (8t) que Leap (6t).
+                if skill_id == 1001 || skill_id == 1021 {
+                    // Mesma duracao do leap step (4736) — ambos compartilham
+                    // o mecanismo de interpolacao.
+                    let leap_duration: f32 = 0.5;
+                    // Clampa target_pos ao range tiles do caster.
+                    let to = target_pos - pos;
+                    let dist = to.length();
+                    let mut landing = if dist > def.range_tiles && dist > 0.01 {
+                        pos + to.normalize() * def.range_tiles
+                    } else {
+                        target_pos
+                    };
+                    // Raycast de pos -> landing pra evitar atravessar walls/agua.
+                    // Sample em steps de 0.25 tiles. Se algum step bater em
+                    // tile nao-walkable, encurta o landing pro ultimo ponto
+                    // walkable (com pequeno recuo pra nao ficar grudado).
+                    let total = (landing - pos).length();
+                    if total > 0.01 {
+                        let dir_n = (landing - pos) / total;
+                        let mut last_ok = pos;
+                        let step_size = 0.25_f32;
+                        let steps = (total / step_size).ceil() as i32;
+                        for i in 1..=steps {
+                            let t = (i as f32 * step_size).min(total);
+                            let p = pos + dir_n * t;
+                            let tx = p.x.floor() as i32;
+                            let ty = p.y.floor() as i32;
+                            if !self.map.is_walkable(tx, ty) {
+                                // Recua um pouco pra nao colar na parede.
+                                let pulled_back = t - 0.4;
+                                if pulled_back > 0.01 {
+                                    landing = pos + dir_n * pulled_back;
+                                } else {
+                                    landing = pos;
+                                }
+                                tracing::info!(
+                                    "Leap Strike: parede no caminho — landing encurtado de {:.1} pra {:.1} tiles",
+                                    total, (landing - pos).length()
+                                );
+                                break;
+                            }
+                            last_ok = p;
+                        }
+                        let _ = last_ok;
+                    }
+                    // Set leap state — atualiza Position progressivamente no step.
+                    if let Some(s) = self.sessions.get_mut(&sid) {
+                        s.leap_until = self.sim_time_s + leap_duration;
+                        s.leap_start_pos = pos;
+                        s.leap_target = landing;
+                        s.leap_damage = damage;
+                        s.leap_radius = radius;
+                    }
+                    // Anim — Leap usa DASH (jump), Spear Throw usa THRUST
+                    // (arremesso/estocada extendida).
+                    if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(e) {
+                        let anim = if skill_id == 1021 {
+                            shared::components::attack_anim::THRUST
+                        } else {
+                            shared::components::attack_anim::DASH
+                        };
+                        tag.attack_anim_pending = Some(anim);
+                    }
+                    tracing::info!("{} start: jumping {:.1} tiles in {:.2}s, will hit r{:.1} dmg={}",
+                        if skill_id == 1021 { "Spear Throw" } else { "Leap Strike" },
+                        dist.min(def.range_tiles), leap_duration, radius, damage);
+                    // SkillCastFx (com explosao VFX) e broadcastado apenas no
+                    // LANDING (em E.1 step), nao no cast — cliente sincroniza
+                    // com a chegada do char.
+                    return;
+                }
                 // Sustained rain — pulses de dano ao longo de N segundos.
                 //   Frost Nova (1046): cast_time_s>0 → wind-up parado, depois rain.
                 //   Meteor (1045):     cast_time_s=3s → player imovel durante o rain.
                 //   Rain of Arrows (1039): cast 0.5s, depois 8 flechas ao longo de 3s.
                 //   Smoke Bomb (1038): nuvem 5s, 5 pulses de dano + envenenado.
-                let is_rain = matches!(skill_id, 1045 | 1046 | 1039 | 1038);
+                let is_rain = matches!(skill_id, 1045 | 1046 | 1039 | 1038 | 1013);
                 if is_rain {
                     let (pulses, total_s) = match skill_id {
                         1039 => (8u32, 3.0f32),     // Rain of Arrows
                         1038 => (5u32, 5.0f32),     // Smoke Bomb (1 pulse/s × 5s)
+                        1013 => (10u32, 4.0f32),    // Whirlwind — spin 10p × 4s ao redor do caster
                         _    => (6u32, 3.0f32),     // Frost Nova / Meteor
                     };
                     let per_pulse = (damage / pulses as i32).max(1);
@@ -2150,11 +3272,17 @@ impl GameWorld {
                     } else { 0 };
                     // Smoke Bomb (1038) aplica poisoned 5s nos hits (visual tint).
                     let poison_dur = if skill_id == 1038 { 5.0_f32 } else { 0.0 };
+                    // Whirlwind (1013) gira em volta do CASTER (pos), nao do
+                    // target_pos. Outros rain skills sao position-targeted.
+                    // Note: pra v1 Whirlwind centra na pos no momento do cast;
+                    // se o player se mover durante o spin, a area fica fixa.
+                    let pulse_center = if skill_id == 1013 { pos } else { target_pos };
                     for i in 0..pulses {
                         self.pending_delayed_aoe.push(DelayedAoe {
-                            target_pos, radius, damage: per_pulse, owner_eid,
+                            target_pos: pulse_center, radius, damage: per_pulse, owner_eid,
                             release_tick: self.tick.wrapping_add(pulse_offset_ticks + i * interval_ticks),
                             poison_dur_s: poison_dur,
+                            knockback: def.knockback,
                         });
                     }
                     tracing::info!(
@@ -2180,6 +3308,7 @@ impl GameWorld {
                         target_pos, radius, damage, owner_eid,
                         release_tick: self.tick.wrapping_add(delay_ticks.max(1)),
                         poison_dur_s: 0.0,
+                        knockback: def.knockback,
                     });
                     tracing::info!(
                         "skill cast: {} (aoe r{:.1}) dmg={} delayed {:.2}s ({} ticks)",
@@ -2192,6 +3321,7 @@ impl GameWorld {
                         self.pending_skill_hits.push(PendingSkillHit {
                             target_net: tn, damage, attacker_net: owner_eid,
                             hurt_dir: hd, is_crit: false, from_player: true,
+                            knockback: def.knockback,
                         });
                     }
                     tracing::info!("skill cast: {} (aoe r{:.1}) dmg={}", def.name, radius, damage);
@@ -2200,12 +3330,38 @@ impl GameWorld {
             "cone" => {
                 let range = def.range_tiles.max(shared::MELEE_RANGE);
                 let enemies = self.find_enemies_in_cone(pos, dir, range, shared::MELEE_CONE_HALF_ANGLE);
-                for tn in enemies {
+                // Shield Bash (1003): aplica stun nos hits + dispara o swing.
+                // Stun = 1.2s no EnemyTag.stunned_until (replicado no snap).
+                let is_shield_bash = skill_id == 1003;
+                let stun_dur: f32 = if is_shield_bash { 1.2 } else { 0.0 };
+                for tn in &enemies {
                     let hd = (-dir).try_normalize().unwrap_or(Vec2::new(-1.0, 0.0));
                     self.pending_skill_hits.push(PendingSkillHit {
-                        target_net: tn, damage, attacker_net: owner_eid,
+                        target_net: *tn, damage, attacker_net: owner_eid,
                         hurt_dir: hd, is_crit: false, from_player: true,
+                        knockback: def.knockback,
                     });
+                }
+                // Apply stun status nos enemies hit (Shield Bash).
+                if stun_dur > 0.0 {
+                    let now_s = self.sim_time_s;
+                    let target_set: std::collections::HashSet<EntityId> =
+                        enemies.iter().copied().collect();
+                    for (_, (net, tag)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag)>() {
+                        if target_set.contains(&net.0) {
+                            let exp = now_s + stun_dur;
+                            if tag.stunned_until < exp { tag.stunned_until = exp; }
+                        }
+                    }
+                }
+                // Sword Dance (1005): seta stance de 4s — proximos 3 SLASHes
+                // sao parte do combo, ultimo guaranteed crit. Stance reseta
+                // ao completar 3 swings ou expirar.
+                if skill_id == 1005 {
+                    if let Some(s) = self.sessions.get_mut(&sid) {
+                        s.sword_dance_until = self.sim_time_s + 4.0;
+                        s.sword_dance_step = 0;
+                    }
                 }
                 tracing::info!("skill cast: {} (cone r{:.1}) dmg={}", def.name, range, damage);
             }
@@ -2254,9 +3410,10 @@ impl GameWorld {
         let mut out = Vec::new();
         for (_, (net, pos, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
             if !matches!(kind, EntityKind::Enemy(_)) { continue; }
-            if pos.0.distance_squared(center) <= r2 {
-                out.push(net.0);
-            }
+            if pos.0.distance_squared(center) > r2 { continue; }
+            // LOS: AoE skill nao acerta atras de WALL.
+            if !self.map.has_line_of_sight(center, pos.0) { continue; }
+            out.push(net.0);
         }
         out
     }
@@ -2266,9 +3423,9 @@ impl GameWorld {
         let mut out = Vec::new();
         for (_, (net, pos, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
             if !matches!(kind, EntityKind::Player) { continue; }
-            if pos.0.distance_squared(center) <= r2 {
-                out.push(net.0);
-            }
+            if pos.0.distance_squared(center) > r2 { continue; }
+            if !self.map.has_line_of_sight(center, pos.0) { continue; }
+            out.push(net.0);
         }
         out
     }
@@ -2285,6 +3442,7 @@ impl GameWorld {
             if let Some(nd) = delta.try_normalize() {
                 if dir.dot(nd) < cos_half { continue; }
             }
+            if !self.map.has_line_of_sight(pos, pos2.0) { continue; }
             out.push(net.0);
         }
         out
@@ -2315,6 +3473,7 @@ impl GameWorld {
                 self.pending_skill_hits.push(PendingSkillHit {
                     target_net: tn, damage: current_dmg, attacker_net: attacker,
                     hurt_dir: hd, is_crit: false, from_player: true,
+                    knockback: 0.4, // Chain Lightning bounce: leve
                 });
                 excluded.insert(tn);
                 current_pos = tp;
@@ -2482,6 +3641,9 @@ impl GameWorld {
         if self.from_mapfile && !self.spawn_zones.is_empty() {
             self.tick_spawn_zones();
         }
+        if self.from_mapfile && !self.boss_areas.is_empty() {
+            self.tick_boss_areas();
+        }
 
         // Respawn procedural e desabilitado quando o mapa vem de MapFile
         // (o editor define exatamente quais inimigos existem e onde).
@@ -2538,6 +3700,14 @@ impl GameWorld {
             dash_started: bool,
         }
         let mut input_results: Vec<InputResult> = Vec::new();
+        // Inputs de players montados em barco — processado depois do physics
+        // step pra mover os barcos (tile-water-only) e disparar cannon.
+        struct MountedInput {
+            move_dir: Vec2,
+            aim:      Vec2,
+            buttons:  u32,
+        }
+        let mut mounted_inputs: HashMap<Entity, MountedInput> = HashMap::new();
         // Casters que tiveram o cast cancelado por movimento neste tick:
         // (entity_id, skill_id). Depois do loop de sessoes, dropa
         // pending_delayed_aoe deles e broadcasta SkillCastCancel pra clientes.
@@ -2575,6 +3745,18 @@ impl GameWorld {
                     + session.stats.stamina_regen * dt)
                     .min(stam_max);
             }
+            // Regen de poise: SO regenera fora de combate (>=5s sem hit).
+            // Recovery rate: 10 / s (poise volta cheio em 5s).
+            const POISE_REGEN_PER_SEC: f32 = 10.0;
+            const COMBAT_TIMEOUT_S: f32 = 5.0;
+            let poise_max = session.stats.poise_max as f32;
+            if session.poise_current < poise_max
+                && (self.sim_time_s - session.last_combat_at_s) >= COMBAT_TIMEOUT_S
+            {
+                session.poise_current = (session.poise_current
+                    + POISE_REGEN_PER_SEC * dt)
+                    .min(poise_max);
+            }
 
             let Some(entity) = session.entity else { continue };
             let Some(mut frame) = session.pending_input.take() else { continue };
@@ -2583,13 +3765,39 @@ impl GameWorld {
             if session.carried_by.is_some() {
                 continue;
             }
+            // Player montado em barco: input vai pro barco (capturado num
+            // hashmap separado e processado apos o physics step). Skip TODO o
+            // resto do input loop — sem ataques, sem skills, sem dash.
+            // Captura aim+buttons tambem pra dar suporte a cannon shot.
+            if self.ecs.get::<&Mounted>(entity).is_ok() {
+                let mv = if frame.move_dir.length_squared() > 1.0 {
+                    frame.move_dir.normalize()
+                } else { frame.move_dir };
+                mounted_inputs.insert(entity, MountedInput {
+                    move_dir: mv,
+                    aim:      frame.aim,
+                    buttons:  frame.buttons,
+                });
+                // Zera velocity do player pra Rapier nao tentar puxar ele
+                // pelo movimento residual quando o barco mover.
+                if let Ok(mut v) = self.ecs.get::<&mut Velocity>(entity) {
+                    v.0 = Vec2::ZERO;
+                }
+                continue;
+            }
             // CASTING: durante cast_time_s o player fica travado na pose. A
             // checagem de cancel-por-movimento eh feita ABAIXO, depois do dir
             // ser processado (in_hurt zera dir → não cancela durante stagger).
             // Aqui só zeramos buttons pra bloquear ataque/defesa/novo cast.
+            // LEAP: similar — durante leap_until, sem input (movimento e atacks
+            // bloqueados; pos eh interpolada no step E.1).
             let casting = session.casting_until > self.sim_time_s;
-            if casting {
+            let in_leap = session.leap_until > self.sim_time_s;
+            if casting || in_leap {
                 frame.buttons = 0;
+            }
+            if in_leap {
+                frame.move_dir = glam::Vec2::ZERO;
             }
             // Edge-detect dos botoes pra parry window. Press = bit foi 0 no
             // frame anterior e ficou 1 agora. Salva sim_time pra que o loop
@@ -2634,8 +3842,12 @@ impl GameWorld {
             // hurt/staggered/downed → cast NAO cancela durante stagger).
             // Grace period 0.3s do inicio do cast → permite player que tava
             // andando começar o cast sem cancelar de imediato.
-            // No cancel: REFUND mp/stamina + remove cooldown — skill nao foi
-            // efetivamente usada, então custo zero.
+            // No cancel: REFUND mp/stamina + remove cooldown PRA MAIORIA das
+            // skills. Excecao: skills high-impact (rain AoE + Group Heal)
+            // mantem cd pra evitar exploit de cast → preview/reposicionar →
+            // cancel/re-cast.
+            //   1045 Meteor, 1046 Frost Nova, 1039 Rain of Arrows,
+            //   1038 Smoke Bomb, 1053 Group Heal.
             if casting && dir.length_squared() > 0.001 {
                 let cast_age = self.sim_time_s - session.casting_started_at_s;
                 if cast_age >= 0.3 {
@@ -2644,15 +3856,19 @@ impl GameWorld {
                     let st_max = session.stats.stamina_max as f32;
                     session.mp_current = (session.mp_current + session.casting_mp_paid).min(mp_max);
                     session.stamina_current = (session.stamina_current + session.casting_st_paid).min(st_max);
-                    session.skill_cds.remove(&cancelled_skill);
+                    let keep_cd = matches!(cancelled_skill, 1045 | 1046 | 1039 | 1038 | 1053);
+                    if !keep_cd {
+                        session.skill_cds.remove(&cancelled_skill);
+                    }
                     session.casting_until = 0.0;
                     session.casting_skill_id = 0;
                     session.casting_mp_paid = 0.0;
                     session.casting_st_paid = 0.0;
                     cancelled_cast_owners.push((session.entity_id, cancelled_skill));
                     tracing::info!(
-                        "cast cancelado por movimento: skill={} player={:?} age={:.2}s (refund mp+st+cd)",
-                        cancelled_skill, session.entity_id, cast_age
+                        "cast cancelado por movimento: skill={} player={:?} age={:.2}s (refund mp+st{})",
+                        cancelled_skill, session.entity_id, cast_age,
+                        if keep_cd { ", cd MANTIDO" } else { ", cd reset" }
                     );
                 }
             }
@@ -2756,11 +3972,12 @@ impl GameWorld {
                 };
                 session.dash_until = self.sim_time_s + shared::DASH_DURATION;
                 session.dash_dir = dash_dir;
-                // SPD reduz cooldown via divisao por speed_mult.
+                // SPD reduz dash cooldown via dash_cd_mult (independente do
+                // speed_mult de movimento). Final cd = DASH_COOLDOWN / mult.
                 // Cooldown comeca a contar a partir do FIM do dash — isso e
                 // garantido porque o decremento so roda no proximo tick e
                 // em sec A `dash_until <= sim_time` ja terminou.
-                let cd_mult = session.stats.speed_mult.max(0.1);
+                let cd_mult = session.stats.dash_cd_mult.max(0.1);
                 session.dash_cooldown = (shared::DASH_COOLDOWN / cd_mult)
                     .max(shared::DASH_COOLDOWN_MIN)
                     + shared::DASH_DURATION; // cd corre durante o dash; soma a duracao
@@ -2806,11 +4023,30 @@ impl GameWorld {
                 crit = true;
                 session.quickdraw_consumed = true;
             }
-            let dmg_final = if crit {
+            let mut dmg_final = if crit {
                 (session.stats.attack_damage as f32 * shared::CRIT_DAMAGE_MULT).round() as i32
             } else {
                 session.stats.attack_damage
             };
+            // (Riposte removida — skill 1001 agora e Leap Strike.)
+            // Sword Dance (1005): se stance ativo, força crit no step final
+            // (terceiro hit). Step 0/1 sao normais; step 2 vira crit + reset.
+            if wants_attack
+                && self.sim_time_s < session.sword_dance_until
+                && shared::weapon_attack_anim(weapon_id) == shared::components::attack_anim::SLASH
+            {
+                if session.sword_dance_step >= 2 {
+                    // Hit final — força crit + reset stance.
+                    if !crit {
+                        crit = true;
+                        dmg_final = (session.stats.attack_damage as f32 * shared::CRIT_DAMAGE_MULT).round() as i32;
+                    }
+                    session.sword_dance_until = 0.0;
+                    session.sword_dance_step = 0;
+                } else {
+                    session.sword_dance_step += 1;
+                }
+            }
             // Combo step: incrementa em SLASH (melee), THRUST (Wand/Staff)
             // e SHOOT (Bow). Para caster, o step troca o overlay de spell
             // visual + o ultimo step lança projetil (resto melee cone).
@@ -2840,9 +4076,16 @@ impl GameWorld {
                 session.combo_step = (session.combo_step + 1) % shared::COMBO_STEPS;
                 session.combo_last_attack = self.sim_time_s;
             }
+            // Knockback override: enquanto knockback_until > now, vel forcada
+            // pra knockback_vel (ignora input do player).
+            let final_vel = if session.knockback_until > self.sim_time_s {
+                session.knockback_vel
+            } else {
+                dir * speed
+            };
             input_results.push(InputResult {
                 entity,
-                new_vel: dir * speed,
+                new_vel: final_vel,
                 wants_attack,
                 owner_id: session.entity_id,
                 aim: frame.aim,
@@ -2887,6 +4130,8 @@ impl GameWorld {
             .collect();
         // Players em zona segura são "invisíveis" pra IA — enemies dropam aggro
         // automaticamente quando o alvo entra (lista some daqui no próximo tick).
+        // Players Mounted em barco tambem ficam invisiveis: barco anda na agua,
+        // inimigos terrestres nao alcancam — sumem do radar pra evitar AI presa.
         let player_positions: Vec<(EntityId, Vec2)> = self
             .ecs
             .query::<(&NetId, &Position, &EntityKind)>()
@@ -2895,6 +4140,7 @@ impl GameWorld {
                 if matches!(kind, EntityKind::Player)
                     && !untargetable.contains(&e)
                     && !self.in_safe_zone(pos.0)
+                    && self.ecs.get::<&Mounted>(e).is_err()
                 {
                     Some((net.0, pos.0))
                 } else { None }
@@ -2905,11 +4151,15 @@ impl GameWorld {
         struct SpawnProj { owner_id: EntityId, from_player: bool, pos: Vec2, dir: Vec2, damage: i32, is_crit: bool, kind: u8 }
         let mut projs_to_spawn: Vec<SpawnProj> = Vec::new();
         // Melee swings — usado por player attacks (sec D) e por enemies melee aqui (sec C).
-        struct MeleeSwing { attacker_eid: EntityId, pos: Vec2, dir: Vec2, damage: i32, is_crit: bool, from_player: bool }
+        struct MeleeSwing { attacker_eid: EntityId, pos: Vec2, dir: Vec2, damage: i32, is_crit: bool, from_player: bool, knockback: f32 }
         let mut melee_swings: Vec<MeleeSwing> = Vec::new();
         // Pending shots de enemies — coletados no loop de IA (que tem mut borrow do
         // ecs) e fundidos em self.pending_shots logo depois.
         let mut pending_enemy_shots: Vec<PendingShot> = Vec::new();
+        // Skill cast intents — coletadas no AI loop (com snapshot do estado),
+        // processadas DEPOIS do loop pra evitar borrow conflict com self.
+        // Tuple: (enemy_eid, enemy_pos, target_pos).
+        let mut enemy_cast_intents: Vec<(EntityId, Vec2, Vec2)> = Vec::new();
         let now_sim = self.sim_time_s;
 
         for (_, (net, pos, vel, enemy, kind)) in
@@ -2928,8 +4178,20 @@ impl GameWorld {
                 vel.0 = Vec2::ZERO;
                 continue;
             }
+            // Knockback: enquanto knockback_until > now, vel = knockback_vel.
+            // Sobrepoe o stagger normal — alvo desliza pra tras antes de cair
+            // em hurt_until parado. Walls/colliders param naturalmente.
+            if enemy.knockback_until > now_sim {
+                vel.0 = enemy.knockback_vel;
+                continue;
+            }
             // Stagger: durante hurt_until, vel=0 e skipa o resto da IA.
             if enemy.hurt_until > now_sim {
+                vel.0 = Vec2::ZERO;
+                continue;
+            }
+            // Stun (Shield Bash 1003): enemy parado, sem ataque/movimento.
+            if enemy.stunned_until > now_sim {
                 vel.0 = Vec2::ZERO;
                 continue;
             }
@@ -2941,9 +4203,25 @@ impl GameWorld {
             }
             // aggro_timer só corre quando em chase ativo (gerenciado abaixo)
 
-            let nearest = player_positions.iter().min_by(|a, b| {
-                a.1.distance_squared(pos.0).partial_cmp(&b.1.distance_squared(pos.0)).unwrap()
-            });
+            // Taunt (1006): se forced_aggro ativo, mira EXCLUSIVAMENTE o
+            // tauntador (forced_aggro_target). Senao escolhe o nearest player.
+            let nearest = if enemy.forced_aggro_until > now_sim {
+                if let Some(target_eid) = enemy.forced_aggro_target {
+                    player_positions.iter()
+                        .find(|(eid, _)| *eid == target_eid)
+                        .or_else(|| player_positions.iter().min_by(|a, b| {
+                            a.1.distance_squared(pos.0).partial_cmp(&b.1.distance_squared(pos.0)).unwrap()
+                        }))
+                } else {
+                    player_positions.iter().min_by(|a, b| {
+                        a.1.distance_squared(pos.0).partial_cmp(&b.1.distance_squared(pos.0)).unwrap()
+                    })
+                }
+            } else {
+                player_positions.iter().min_by(|a, b| {
+                    a.1.distance_squared(pos.0).partial_cmp(&b.1.distance_squared(pos.0)).unwrap()
+                })
+            };
 
             // Leash + state machine:
             //  1. Inside leash_max → wander/chase livre.
@@ -2967,34 +4245,74 @@ impl GameWorld {
 
             if let Some((_, ppos)) = nearest {
                 let dist = pos.0.distance(*ppos);
-                // Chase só se NÃO estiver returning home.
-                let can_chase = dist < def.detect_range && !pulling_home;
+                // Line of sight: enemy nao "ve" player atraves de WALL.
+                // Player atras de parede = no aggro/chase. Player atras de
+                // agua/decoracao continua visivel (so WALL bloqueia).
+                let has_los = self.map.has_line_of_sight(pos.0, *ppos);
+                // Chase só se NÃO estiver returning home E tiver visao.
+                let can_chase = dist < enemy.detect_range && !pulling_home && has_los;
                 if can_chase {
                     // Aggro timer: corre durante chase, reset ao acertar attack.
                     enemy.aggro_timer += dt;
-                    const AGGRO_DROP_TIME: f32 = 10.0;
+                    const AGGRO_DROP_TIME: f32 = 5.0; // 5s sem dano = desiste
                     if enemy.aggro_timer > AGGRO_DROP_TIME && enemy.leash_max > 0.0 {
                         // Desistiu — volta pra casa.
                         enemy.returning_home = true;
                         enemy.aggro_timer = 0.0;
                     }
                     let to_player = (*ppos - pos.0).try_normalize().unwrap_or(Vec2::X);
-                    // Comportamento de movimento por kind
-                    let move_dir = if let Some(kite) = crate::economy::enemy_kite_dist(kind_id) {
+                    // Comportamento de movimento — kite_dist e speed cacheados
+                    // no EnemyTag a partir do EnemyBuild (procedural por classe).
+                    // Melee usa "stand_dist" = attack_range - 0.3 pra parar dentro
+                    // do range sem colidir com o body do player (evita jitter
+                    // ida-e-volta quando ambos os bodies se sobrepoem).
+                    let move_dir = if let Some(kite) = enemy.kite_dist {
                         if dist > kite + 0.5      { to_player }
                         else if dist < kite - 0.5 { -to_player }
                         else                      { Vec2::ZERO }
                     } else {
-                        to_player
+                        let stand = (enemy.attack_range - 0.3).max(0.8);
+                        if dist > stand + 0.3      { to_player }   // longe → aproxima
+                        else if dist < stand - 0.3 { -to_player }  // muito perto → afasta
+                        else                       { Vec2::ZERO }  // em range, parado
                     };
-                    vel.0 = move_dir * def.speed;
+                    vel.0 = move_dir * enemy.locomotor_speed;
 
-                    let attack_range = crate::economy::enemy_attack_range(kind_id);
+                    let attack_range = enemy.attack_range;
                     if dist < attack_range && enemy.attack_cooldown <= 0.0 {
                         enemy.aggro_timer = 0.0; // reset ao atacar com sucesso
-                        enemy.attack_cooldown = def.attack_cooldown;
+                        enemy.attack_cooldown = enemy.attack_cooldown_base;
                         enemy.attack_pending = true; // cliente toca anim
-                        if shared::enemy_is_melee(kind_id) {
+
+                        // Tenta casting de skill ANTES de fall-through pra
+                        // auto-attack. Skill eligibility check (sem borrow
+                        // self): cd ready, mp ok, weapon usable_with bate,
+                        // alvo dentro de range. Se passou, push intent
+                        // (processada fora do loop) e SKIPA auto-attack.
+                        let mut chose_skill = false;
+                        let weapon_id = enemy.equipment.weapon.unwrap_or(0);
+                        let prof = shared::Proficiency::from_item(weapon_id).as_db_str();
+                        for ls in &enemy.learned_skills {
+                            let Some(def_sk) = crate::skills::skill_of(ls.skill_id) else { continue };
+                            if def_sk.is_passive { continue; }
+                            if def_sk.cast_time_s > 0.05 { continue; }
+                            let cd_ready = enemy.skill_cds.get(&ls.skill_id).copied().unwrap_or(0.0);
+                            if now_sim < cd_ready { continue; }
+                            let rank_factor = 1.0 - def_sk.per_rank_cost_pct
+                                * (ls.rank.saturating_sub(1) as f32);
+                            let mp_cost = (def_sk.cost_mp as f32 * rank_factor).max(0.0);
+                            if enemy.mp_current < mp_cost { continue; }
+                            if let Some(uw) = &def_sk.usable_with {
+                                if !uw.is_empty() && !uw.iter().any(|p| p == prof) { continue; }
+                            }
+                            if dist > def_sk.range_tiles + def_sk.radius_tiles { continue; }
+                            // Skill apta — registra intent e pula auto-attack.
+                            enemy_cast_intents.push((net.0, pos.0, *ppos));
+                            chose_skill = true;
+                            break;
+                        }
+                        if chose_skill { continue; }
+                        if enemy.is_melee {
                             // Melee enemy: cone de dano direto na frente, sem projetil.
                             // O snapshot leva attack_pending pra cliente animar.
                             // Damage é aplicado via melee_swings junto com player swings.
@@ -3002,14 +4320,15 @@ impl GameWorld {
                                 attacker_eid: net.0,
                                 pos: pos.0,
                                 dir: to_player,
-                                damage: def.attack_damage,
+                                damage: enemy.stats.attack_damage,
                                 is_crit: false, // enemies não fazem crit hoje
                                 from_player: false,
+                                knockback: 0.3, // enemy auto-attack: shove leve
                             });
                         } else {
-                        // Demon Mago (kind 4) lança fireball; demais ranged usam arrow.
-                        let enemy_proj_kind: u8 = if kind_id == 4 { 1 } else { 0 };
-                        let proj_count = crate::economy::enemy_proj_count(kind_id);
+                        // proj_kind e proj_count cacheados a partir do EnemyBuild.
+                        let enemy_proj_kind: u8 = enemy.proj_kind;
+                        let proj_count = enemy.proj_count;
                         // Mago = anim de swing curta (~340ms) → delay menor.
                         let fire_delay = if enemy_proj_kind == 1 {
                             shared::MAGIC_FIRE_DELAY
@@ -3031,7 +4350,7 @@ impl GameWorld {
                                 from_player: false,
                                 pos: spawn_pos,
                                 dir: to_player,
-                                damage: def.attack_damage,
+                                damage: enemy.stats.attack_damage,
                                 is_crit: false,
                                 kind: enemy_proj_kind,
                                 release_tick,
@@ -3053,7 +4372,7 @@ impl GameWorld {
                                     from_player: false,
                                     pos: spawn_pos,
                                     dir,
-                                    damage: def.attack_damage,
+                                    damage: enemy.stats.attack_damage,
                                     is_crit: false,
                                     kind: enemy_proj_kind,
                                     release_tick,
@@ -3063,16 +4382,105 @@ impl GameWorld {
                         } // close else for is_melee
                     }
                 } else {
-                    // Sem chase: reseta aggro_timer e aplica wander.
+                    // Sem chase (player fora de detect/LOS, OR returning_home).
+                    // Se estava em chase ativo (aggro_timer > 0) E saiu do
+                    // anchor, volta pra casa imediatamente em vez de wander
+                    // random — evita inimigos longe do spawn parados/wandering.
+                    let was_chasing = enemy.aggro_timer > 0.5;
+                    let far_from_home = enemy.leash_max > 0.0
+                        && pos.0.distance(enemy.spawn_anchor) > enemy.leash_max * 0.4;
+                    if was_chasing && far_from_home {
+                        enemy.returning_home = true;
+                    }
                     enemy.aggro_timer = 0.0;
-                    apply_wander(enemy, &mut vel.0, pos.0, def.speed,
+                    let pulling_home = enemy.returning_home;
+                    apply_wander(enemy, &mut vel.0, pos.0, enemy.locomotor_speed,
                         &self.map, self.tick, net.0.0, pulling_home);
                 }
             } else {
-                // Sem player algum.
+                // Sem player algum — mesma logic, mas sem chase tracking.
+                let far_from_home = enemy.leash_max > 0.0
+                    && pos.0.distance(enemy.spawn_anchor) > enemy.leash_max * 0.4;
+                let was_chasing = enemy.aggro_timer > 0.5;
+                if was_chasing && far_from_home {
+                    enemy.returning_home = true;
+                }
                 enemy.aggro_timer = 0.0;
-                apply_wander(enemy, &mut vel.0, pos.0, def.speed,
+                let pulling_home = enemy.returning_home;
+                apply_wander(enemy, &mut vel.0, pos.0, enemy.locomotor_speed,
                     &self.map, self.tick, net.0.0, pulling_home);
+            }
+        }
+
+        // ── C.0b: Storm Caller passive (1056) — auto-cast lightning bolt ─────
+        // Cada player com a passiva learned (rank > 0) dispara lightning bolt
+        // no enemy mais proximo a cada N segundos. Interval reduz com rank.
+        // Damage scaling com WIS (igual Lightning Bolt manual).
+        {
+            let now_s = self.sim_time_s;
+            // Coleta intents (player_pos, target_pos, dmg, owner_eid).
+            struct StormShot { pos: Vec2, target_pos: Vec2, dir: Vec2, damage: i32, owner_eid: EntityId }
+            let mut shots: Vec<StormShot> = Vec::new();
+            for session in self.sessions.values_mut() {
+                if !session.logged_in || session.downed { continue; }
+                let Some(ls) = session.learned_skills.iter().find(|s| s.skill_id == 1056).copied()
+                    else { continue };
+                if ls.rank == 0 { continue; }
+                if now_s < session.storm_caller_next { continue; }
+                // Cd minimo 5s pra evitar que rank 10 vire DPS automatico OP.
+                let interval = match ls.rank {
+                    1..=2 => 8.0,
+                    3..=4 => 7.0,
+                    5..=6 => 6.0,
+                    _ => 5.0, // rank 7-10 = floor de 5s
+                };
+                session.storm_caller_next = now_s + interval;
+
+                // Pega player pos via ECS.
+                let Some(entity) = session.entity else { continue };
+                let player_pos = match self.ecs.get::<&Position>(entity) {
+                    Ok(p) => p.0, Err(_) => continue,
+                };
+                // Acha enemy mais proximo no raio 10 com LOS.
+                let mut best: Option<(Vec2, f32)> = None;
+                let r = 10.0_f32;
+                for (_, (pos2, ek)) in self.ecs.query::<(&Position, &EntityKind)>().iter() {
+                    if !matches!(ek, EntityKind::Enemy(_)) { continue; }
+                    let d = pos2.0.distance(player_pos);
+                    if d > r { continue; }
+                    if !self.map.has_line_of_sight(player_pos, pos2.0) { continue; }
+                    if best.map(|(_, bd)| d < bd).unwrap_or(true) {
+                        best = Some((pos2.0, d));
+                    }
+                }
+                let Some((target_pos, _)) = best else { continue };
+                let dir = (target_pos - player_pos).normalize_or_zero();
+                if dir == Vec2::ZERO { continue; }
+
+                // Damage: base 15 + WIS scaling 0.4 + rank scaling.
+                let base_dmg = 15;
+                let wis_dmg = (session.stats.wis as f32 * 0.4) as i32;
+                let rank_mult = 1.0 + (ls.rank as f32 - 1.0) * 0.05; // +5%/rank (anti-OP)
+                let damage = ((base_dmg + wis_dmg) as f32 * rank_mult).round() as i32;
+
+                shots.push(StormShot {
+                    pos: player_pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y),
+                    target_pos, dir, damage, owner_eid: session.entity_id,
+                });
+            }
+            for s in shots {
+                self.pending_shots.push(PendingShot {
+                    pos: s.pos,
+                    dir: s.dir,
+                    damage: s.damage,
+                    is_crit: false,
+                    kind: 2, // lightning
+                    owner_id: s.owner_eid,
+                    from_player: true,
+                    release_tick: self.tick.wrapping_add(1),
+                });
+                tracing::info!("storm caller proc: dmg={} → ({:.1},{:.1})",
+                    s.damage, s.target_pos.x, s.target_pos.y);
             }
         }
 
@@ -3102,6 +4510,13 @@ impl GameWorld {
         }
         // Funde shots agendados pelos enemies neste tick.
         self.pending_shots.append(&mut pending_enemy_shots);
+
+        // Processa skill cast intents dos enemies coletadas no AI loop.
+        // try_enemy_cast_skill aplica damage/AoE, drena MP, seta cd,
+        // broadcasta SkillCastFx pros clients renderizarem o VFX.
+        for (eid, e_pos, target_pos) in enemy_cast_intents {
+            let _ = self.try_enemy_cast_skill(eid, e_pos, target_pos);
+        }
 
         // ── C.2: IA dos NPCs caminhantes (rotas pré-definidas) ────────────────
         let now_npc = self.sim_time_s;
@@ -3178,10 +4593,18 @@ impl GameWorld {
                     }
                 }
                 if ir.is_melee {
+                    // Combo melee: knockback escala com step. Finisher (step 2)
+                    // empurra forte; Slash1/2 sao pouco mais que stagger.
+                    let kb = match ir.combo_step {
+                        0 => 0.3,
+                        1 => 0.4,
+                        _ => 1.4, // finisher
+                    };
                     melee_swings.push(MeleeSwing {
                         attacker_eid: ir.owner_id, pos, dir, damage: ir.damage,
                         is_crit: ir.is_crit,
                         from_player: true,
+                        knockback: kb,
                     });
                 } else {
                     // Caster (proj_kind=1=fireball ou =5=electric) tem combo
@@ -3194,10 +4617,12 @@ impl GameWorld {
                     let last_combo_step = ir.combo_step + 1 == shared::COMBO_STEPS as u8;
                     if is_caster_proj && !last_combo_step {
                         // Wind-up: swing melee em cone (mesma infra de espada).
+                        // Caster combo wind-up sao swings leves; kb minimo.
                         melee_swings.push(MeleeSwing {
                             attacker_eid: ir.owner_id, pos, dir,
                             damage: ir.damage, is_crit: ir.is_crit,
                             from_player: true,
+                            knockback: 0.25,
                         });
                         continue;
                     }
@@ -3311,6 +4736,86 @@ impl GameWorld {
             ));
         }
 
+        // ── E.1: Leap Strike — interpola posicao + aplica AoE no fim ──────────
+        // Player em leap_until > now: move suavemente de leap_start_pos pra
+        // leap_target. No tick em que leap_until expira: snap final + aplica
+        // damage + stun.
+        let now_sim = self.sim_time_s;
+        const LEAP_DURATION: f32 = 0.5;
+        let mut leap_landings: Vec<(EntityId, Vec2, i32, f32)> = Vec::new();
+        for s in self.sessions.values_mut() {
+            if !s.logged_in || s.leap_until <= 0.0 { continue; }
+            let leap_start = s.leap_until - LEAP_DURATION;
+            let elapsed = now_sim - leap_start;
+            if now_sim < s.leap_until {
+                // Em curso: lerp da posicao.
+                let t = (elapsed / LEAP_DURATION).clamp(0.0, 1.0);
+                let pos = s.leap_start_pos.lerp(s.leap_target, t);
+                if let Some(ent) = s.entity {
+                    if let Ok(mut p) = self.ecs.get::<&mut Position>(ent) {
+                        p.0 = pos;
+                    }
+                    if let Ok(handle) = self.ecs.get::<&shared::PhysicsHandle>(ent) {
+                        if let Some(rb) = self.physics.rigid_body_set.get_mut(handle.0) {
+                            rb.set_translation([pos.x, pos.y].into(), true);
+                            rb.set_linvel([0.0, 0.0].into(), true);
+                        }
+                    }
+                }
+            } else {
+                // Leap completou — snap final + agenda hit.
+                let landing = s.leap_target;
+                if let Some(ent) = s.entity {
+                    if let Ok(mut p) = self.ecs.get::<&mut Position>(ent) {
+                        p.0 = landing;
+                    }
+                    if let Ok(handle) = self.ecs.get::<&shared::PhysicsHandle>(ent) {
+                        if let Some(rb) = self.physics.rigid_body_set.get_mut(handle.0) {
+                            rb.set_translation([landing.x, landing.y].into(), true);
+                            rb.set_linvel([0.0, 0.0].into(), true);
+                        }
+                    }
+                }
+                leap_landings.push((s.entity_id, landing, s.leap_damage, s.leap_radius));
+                s.leap_until = 0.0;
+                s.leap_damage = 0;
+                s.leap_radius = 0.0;
+            }
+        }
+        // Aplica AoE damage + stun nos enemies do landing point.
+        for (owner_eid, landing, damage, radius) in leap_landings {
+            let stun_dur = 1.5_f32;
+            let enemies = self.find_enemies_in_radius(landing, radius);
+            for tn in &enemies {
+                let hd = calc_hurt_dir_from_eid(&self.ecs, *tn, landing);
+                self.pending_skill_hits.push(PendingSkillHit {
+                    target_net: *tn, damage, attacker_net: owner_eid,
+                    hurt_dir: hd, is_crit: false, from_player: true,
+                    knockback: 1.5, // Leap Strike landing — alvos voam
+                });
+            }
+            let target_set: std::collections::HashSet<EntityId> =
+                enemies.iter().copied().collect();
+            for (_, (net, tag)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag)>() {
+                if target_set.contains(&net.0) {
+                    let exp = now_sim + stun_dur;
+                    if tag.stunned_until < exp { tag.stunned_until = exp; }
+                }
+            }
+            tracing::info!("Leap Strike landed: {} enemies hit r{:.1} dmg={}",
+                enemies.len(), radius, damage);
+            // Broadcast SkillCastFx no LANDING — cliente spawna explosao agora.
+            let fx = ServerMessage::SkillCastFx {
+                skill_id: 1001, caster_pos: landing, target_pos: landing,
+                target_eid: None, caster_eid: Some(owner_eid),
+            };
+            for s in self.sessions.values() {
+                if s.logged_in {
+                    let _ = s.handle.to_client.send(fx.clone());
+                }
+            }
+        }
+
         // ── F: integrar movimento e colisao com Rapier ────────────────────────
         for (_, (handle, vel)) in self.ecs.query_mut::<(&shared::PhysicsHandle, &Velocity)>() {
             if let Some(rb) = self.physics.rigid_body_set.get_mut(handle.0) {
@@ -3324,6 +4829,112 @@ impl GameWorld {
             if let Some(rb) = self.physics.rigid_body_set.get(handle.0) {
                 pos.0.x = rb.translation().x;
                 pos.0.y = rb.translation().y;
+            }
+        }
+
+        // ── F.1: barcos — movimento custom (sem Rapier) com tile-water-only ─
+        // Cada barco com passenger usa o input do dono pra atualizar velocity.
+        // Position += vel * dt; rejeita axis se a celula destino nao for water.
+        // Mounted players sao sincronizados (pos = pos do barco) depois.
+        // Tambem processa cannon shot quando PRIMARY pressed + cooldown OK.
+        let mut boat_passenger_pairs: Vec<(Entity, Vec2)> = Vec::new();
+        let mut cannon_shots: Vec<(EntityId, Vec2, Vec2)> = Vec::new(); // (owner, pos, dir)
+        const CANNON_CD: f32 = 1.2_f32;
+        const SHOOT_ANIM_DURATION: f32 = 0.96_f32; // 8 frames * 0.12 = 0.96s
+        for (boat_e, (pos, vel, tag)) in self
+            .ecs
+            .query::<(&mut Position, &mut Velocity, &mut BoatTag)>()
+            .iter()
+        {
+            // Acha intent do passageiro. Sem passageiro = barco para.
+            let passenger_entity = tag.passenger_entity;
+            let mounted = passenger_entity.and_then(|pe| mounted_inputs.get(&pe));
+            let intent = mounted.map(|m| m.move_dir).unwrap_or(Vec2::ZERO);
+            // Velocidade target. Suaviza pra dar inercia (lerp 8.0 por seg).
+            let target_vel = if intent.length_squared() > 0.001 {
+                intent.normalize() * tag.max_speed
+            } else { Vec2::ZERO };
+            let lerp_t = (8.0 * dt).min(1.0);
+            vel.0 = vel.0 + (target_vel - vel.0) * lerp_t;
+            // Integra com slide axis-aligned: tenta x primeiro, depois y.
+            let mut new_pos = pos.0;
+            // Eixo X
+            let try_x = Vec2::new(pos.0.x + vel.0.x * dt, pos.0.y);
+            let tx = try_x.x.floor() as i32;
+            let ty = try_x.y.floor() as i32;
+            if self.map.is_navigable(tx, ty) {
+                new_pos.x = try_x.x;
+            } else {
+                vel.0.x = 0.0;
+            }
+            // Eixo Y (com X ja aplicado)
+            let try_y = Vec2::new(new_pos.x, new_pos.y + vel.0.y * dt);
+            let tx = try_y.x.floor() as i32;
+            let ty = try_y.y.floor() as i32;
+            if self.map.is_navigable(tx, ty) {
+                new_pos.y = try_y.y;
+            } else {
+                vel.0.y = 0.0;
+            }
+            pos.0 = new_pos;
+
+            // Cannon shot: PRIMARY + cooldown. Spawn simples — bola sai do
+            // CENTRO do barco em direcao do mouse, sem trocar sheet/dir/anim.
+            if let Some(m) = mounted {
+                let pressed = (m.buttons & buttons::PRIMARY) != 0;
+                if pressed && self.sim_time_s - tag.last_shot_at_s >= CANNON_CD {
+                    let to_aim = m.aim - pos.0;
+                    if to_aim.length_squared() > 0.04 {
+                        let dir = to_aim.normalize();
+                        tag.last_shot_at_s = self.sim_time_s;
+                        if let Some(owner_eid) = tag.passenger {
+                            cannon_shots.push((owner_eid, pos.0, dir));
+                        }
+                    }
+                }
+            }
+
+            // Dir/anim baseado em velocity. Sem anim de shoot — boat continua
+            // idle/movement como sempre.
+            if vel.0.length_squared() > 0.05 {
+                tag.dir = dir8_from_vec(vel.0);
+                tag.anim = 1; // movement
+            } else {
+                tag.anim = 0; // idle (mantem dir antiga)
+            }
+            // Coleta pra sync de mounted player depois.
+            if let Some(pe) = passenger_entity {
+                boat_passenger_pairs.push((pe, pos.0));
+            }
+            let _ = boat_e;
+        }
+        // Spawna projeteis de cannon (kind=10) saindo do CENTRO do barco.
+        for (owner, bpos, dir) in cannon_shots {
+            const CANNON_DAMAGE: i32 = 30;
+            const CANNON_SPEED_MULT: f32 = 1.5;
+            const CANNON_TTL: f32 = 2.5;
+            let proj_id = self.alloc_entity_id();
+            self.ecs.spawn((
+                NetId(proj_id),
+                Position(bpos),
+                Velocity(dir * shared::PROJ_SPEED * CANNON_SPEED_MULT),
+                EntityKind::Projectile,
+                ProjTag {
+                    owner, from_player: true, ttl: CANNON_TTL,
+                    damage: CANNON_DAMAGE, is_crit: false, kind: 10,
+                },
+            ));
+        }
+        // Sincroniza pos dos players montados com a pos do barco.
+        for (pe, boat_pos) in boat_passenger_pairs {
+            if let Ok(mut p) = self.ecs.get::<&mut Position>(pe) {
+                p.0 = boat_pos;
+            }
+            if let Ok(handle) = self.ecs.get::<&shared::PhysicsHandle>(pe).map(|h| h.0) {
+                if let Some(rb) = self.physics.rigid_body_set.get_mut(handle) {
+                    rb.set_translation([boat_pos.x, boat_pos.y].into(), true);
+                    rb.set_linvel([0.0, 0.0].into(), true);
+                }
             }
         }
 
@@ -3415,9 +5026,21 @@ impl GameWorld {
         let hit_target_radius = shared::HIT_TARGET_RADIUS;
         let hit_target_y_off  = shared::HIT_TARGET_Y_OFFSET;
         let mut hit_projs: Vec<(Entity, EntityId)> = Vec::new();
+        // Tipo de ataque — usado pelo parry handler pra decidir se faz
+        // contra-ataque melee ou refletir projectile.
+        #[derive(Clone, Copy)]
+        enum AttackInfo {
+            /// Melee swing — `attacker_pos` pra apontar contra-ataque do parryador.
+            Melee { attacker_pos: Vec2 },
+            /// Projectile — `vel` pra spawn de proj refletido (-vel) + `kind` visual.
+            Projectile { vel: Vec2, kind: u8 },
+            /// Skill hit (line/aoe) — sem refletir (so anula damage no parry).
+            Skill,
+        }
         // damage: (target_entity, target_net_id, dmg, attacker_net_id,
-        //         attacker_is_player, hurt_dir TOWARD attacker, is_crit)
-        let mut damage_events: Vec<(Entity, EntityId, i32, EntityId, bool, Vec2, bool)> = Vec::new();
+        //         attacker_is_player, hurt_dir TOWARD attacker, is_crit, info,
+        //         knockback_tiles)
+        let mut damage_events: Vec<(Entity, EntityId, i32, EntityId, bool, Vec2, bool, AttackInfo, f32)> = Vec::new();
 
         let combat_disabled = self.safe_zone;
 
@@ -3449,8 +5072,11 @@ impl GameWorld {
                     if let Some(nd) = delta.try_normalize() {
                         if sw.dir.dot(nd) < cos_half { continue; }
                     }
+                    // LOS: melee/cone nao atravessa WALL.
+                    if !self.map.has_line_of_sight(sw.pos, target_hit) { continue; }
                     let hd = calc_hurt_dir(*tpos, sw.pos);
-                    damage_events.push((*te, *tnet, sw.damage, sw.attacker_eid, true, hd, sw.is_crit));
+                    damage_events.push((*te, *tnet, sw.damage, sw.attacker_eid, sw.from_player, hd, sw.is_crit,
+                        AttackInfo::Melee { attacker_pos: sw.pos }, sw.knockback));
                 }
             }
         }
@@ -3473,7 +5099,15 @@ impl GameWorld {
                         // Fallback pra calc_hurt_dir se vel ≈ 0 (não deveria).
                         let hd = (-*pvel).try_normalize()
                             .unwrap_or_else(|| calc_hurt_dir(*tpos, *ppos));
-                        damage_events.push((*te, *tnet, *pdmg, *powner, *pfrom_player, hd, *pcrit));
+                        // Knockback projetil: pequeno (0.3) pra arrows, medio (0.5)
+                        // pra fireball/lightning, ja eh modesto pra nao virar boomerang.
+                        let proj_kb = match *pkind {
+                            0 | 6 => 0.3, // arrow / power shot arrow
+                            1 | 5 => 0.5, // fireball / electric
+                            _     => 0.4,
+                        };
+                        damage_events.push((*te, *tnet, *pdmg, *powner, *pfrom_player, hd, *pcrit,
+                            AttackInfo::Projectile { vel: *pvel, kind: *pkind }, proj_kb));
                     }
                     // Arrow (kind=0 ou =6 power shot): broadcast ProjectileImpact
                     // pra cliente spawnar a flecha presa no alvo. Outros
@@ -3522,6 +5156,7 @@ impl GameWorld {
                     self.pending_skill_hits.push(PendingSkillHit {
                         target_net: *tn, damage: d.damage, attacker_net: d.owner_eid,
                         hurt_dir: hd, is_crit: false, from_player: true,
+                        knockback: d.knockback,
                     });
                 }
                 // Aplica poisoned status (visual) nos hits se a DelayedAoe
@@ -3549,7 +5184,8 @@ impl GameWorld {
                     if net.0 == h.target_net { found = Some(e); break; }
                 }
                 if let Some(e) = found {
-                    damage_events.push((e, h.target_net, h.damage, h.attacker_net, h.from_player, h.hurt_dir, h.is_crit));
+                    damage_events.push((e, h.target_net, h.damage, h.attacker_net, h.from_player,
+                        h.hurt_dir, h.is_crit, AttackInfo::Skill, h.knockback));
                 }
             }
         }
@@ -3585,21 +5221,43 @@ impl GameWorld {
         self.hit_this_tick.clear();
         self.crit_this_tick.clear();
         self.damage_this_tick.clear();
-        for (entity, target_id, dmg, attacker_id, attacker_is_player, hurt_dir, is_crit) in damage_events {
+        for (entity, target_id, dmg, attacker_id, attacker_is_player, hurt_dir, is_crit, attack_info, kb_strength) in damage_events {
             // Resistencia do alvo reduz dano recebido (min 1).
-            let target_defense = {
+            let (target_defense, target_dmg_reduction_pct) = {
                 let mut d = 0i32;
-                // Se alvo eh player, pega defense dos stats
+                let mut pct = 0.0_f32;
                 if let Some(s) = self.sessions.values().find(|s| s.entity_id == target_id) {
                     d = s.stats.defense;
-                } else if let Ok(k) = self.ecs.get::<&EntityKind>(entity) {
-                    if let EntityKind::Enemy(kid) = *k {
-                        d = crate::economy::enemy_def(kid).defense;
+                    pct = s.stats.damage_reduction_pct;
+                } else if let Ok(tag) = self.ecs.get::<&EnemyTag>(entity) {
+                    d = tag.stats.defense;
+                    pct = tag.stats.damage_reduction_pct;
+                }
+                (d, pct.clamp(0.0, 0.75))
+            };
+            // Defense flat primeiro, depois redução percentual (breakpoints).
+            let after_def = (dmg - target_defense).max(1);
+            let mut dmg = ((after_def as f32) * (1.0 - target_dmg_reduction_pct)).round() as i32;
+            dmg = dmg.max(1);
+
+            // Iron Will passive (Sword T4): se alvo eh player com rank>0
+            // E HP <= 30% do max → -30% dmg recebido.
+            if let Some(target_session) = self.sessions.values()
+                .find(|s| s.entity_id == target_id)
+            {
+                let iron_will_rank = target_session.learned_skills.iter()
+                    .find(|s| s.skill_id == 1008)
+                    .map(|s| s.rank).unwrap_or(0);
+                if iron_will_rank > 0 {
+                    if let Ok(hp) = self.ecs.get::<&Health>(entity) {
+                        let hp_pct = (hp.current as f32) / (hp.max.max(1) as f32);
+                        if hp_pct <= 0.30 {
+                            dmg = ((dmg as f32) * 0.70).round() as i32;
+                            dmg = dmg.max(1);
+                        }
                     }
                 }
-                d
-            };
-            let mut dmg = (dmg - target_defense).max(1);
+            }
 
             // Hunter's Mark passive (Bow T4): +20% dmg em alvos marcados.
             // Mark refresh on hit — qualquer hit estende a duracao por 6s.
@@ -3642,14 +5300,21 @@ impl GameWorld {
                  || (now_s - target.last_press_secondary_at) <= shared::PARRY_WINDOW_S;
                 let parry_cost = shared::combat::parry_stamina_cost(&target.stats);
                 let block_cost = shared::combat::block_stamina_cost(&target.stats);
-                if in_parry_window && target.stamina_current >= parry_cost {
-                    target.stamina_current = (target.stamina_current - parry_cost).max(0.0);
+                // Master's Counter (1007): durante 2s, qualquer hit recebido
+                // e auto-parryado independente de timing/stamina (sem cost).
+                let counter_active = target.counter_stance_until > now_s;
+                let normal_parry = in_parry_window && target.stamina_current >= parry_cost;
+                if counter_active || normal_parry {
+                    if normal_parry {
+                        target.stamina_current = (target.stamina_current - parry_cost).max(0.0);
+                    }
                     target.parry_flash_pending = true;
                     // Consome a janela pra impedir parry sequencial sem novo press.
                     target.last_press_primary_at   = f32::NEG_INFINITY;
                     target.last_press_secondary_at = f32::NEG_INFINITY;
                     parried = true;
-                    dmg = 0;
+                    // dmg sera lido pelo counter handler abaixo (precisa do
+                    // valor original pra reflexo de projectile). Zerado depois.
                 } else if target.defending && target.stamina_current >= block_cost {
                     target.stamina_current = (target.stamina_current - block_cost).max(0.0);
                     dmg = shared::combat::apply_block_damage(&target.stats, dmg);
@@ -3679,6 +5344,64 @@ impl GameWorld {
                         }
                     }
                 }
+
+                // Counter automatico: melee gera contra-ataque na direcao do
+                // atacante; projectile e' refletido (dir = -vel original).
+                // Pega pos+stats do parryador (target_id == quem parryou).
+                let parryer_data = self.sessions.values()
+                    .find(|s| s.entity_id == target_id)
+                    .and_then(|s| {
+                        let entity = s.entity?;
+                        let pos = self.ecs.get::<&Position>(entity).ok()?.0;
+                        Some((pos, s.stats.attack_damage))
+                    });
+                if let Some((parryer_pos, atk_dmg)) = parryer_data {
+                    match attack_info {
+                        AttackInfo::Melee { attacker_pos } => {
+                            let dir = (attacker_pos - parryer_pos)
+                                .try_normalize().unwrap_or(Vec2::X);
+                            // Counter swing: 70% do ataque base do parryador,
+                            // dispara como melee swing parryador→atacante.
+                            let counter_dmg = ((atk_dmg as f32) * 0.70).round() as i32;
+                            melee_swings.push(MeleeSwing {
+                                attacker_eid: target_id,
+                                pos: parryer_pos,
+                                dir,
+                                damage: counter_dmg.max(1),
+                                is_crit: false,
+                                from_player: true,
+                                knockback: 1.0, // parry counter — empurra
+                            });
+                            tracing::info!("parry counter (melee): dmg={} from {} → {}",
+                                counter_dmg, target_id.0, attacker_id.0);
+                        }
+                        AttackInfo::Projectile { vel, kind } => {
+                            // Reflexo: spawn novo projectile na pos do parryador
+                            // com dir oposta (saindo de volta pra direcao do
+                            // atacante). Damage = 100% do dmg recebido.
+                            let reflect_dir = (-vel).try_normalize().unwrap_or(Vec2::X);
+                            let reflect_pos = parryer_pos
+                                + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y);
+                            self.pending_shots.push(PendingShot {
+                                pos: reflect_pos,
+                                dir: reflect_dir,
+                                damage: dmg.max(1),
+                                is_crit: false,
+                                kind,
+                                owner_id: target_id, // parryador agora e' o "dono"
+                                from_player: true,
+                                release_tick: self.tick.wrapping_add(1),
+                            });
+                            tracing::info!("parry reflect (proj): kind={} from {} → reflected",
+                                kind, target_id.0);
+                        }
+                        AttackInfo::Skill => {
+                            // Skill hit: so anula damage, sem counter (skills
+                            // costumam ser AoE/instantaneas — refletir e' awkward).
+                        }
+                    }
+                }
+
                 continue; // sem dano nem stagger no alvo
             }
 
@@ -3695,6 +5418,34 @@ impl GameWorld {
                         }
                     }
                 }
+                continue;
+            }
+            // Poise: se alvo eh player com poise > 0, absorve TODO o dano —
+            // sem HP drain, sem stagger, sem hurt anim. Defesa + defending
+            // reduzem o poise damage. Set last_combat_at pra gate de regen.
+            let mut absorbed_by_poise = false;
+            let now_s_poise = self.sim_time_s;
+            if let Some(target) = self.sessions.values_mut().find(|s| s.entity_id == target_id) {
+                if target.poise_current > 0.0 && dmg > 0 {
+                    let def_resist = (target.stats.defense as f32 * 0.04).min(0.8);
+                    let defending_bonus = if target.defending { 0.4 } else { 0.0 };
+                    let total_resist = (def_resist + defending_bonus).min(0.95);
+                    let poise_dmg = ((dmg as f32) * (1.0 - total_resist)).max(1.0);
+                    target.poise_current = (target.poise_current - poise_dmg).max(0.0);
+                    target.last_combat_at_s = now_s_poise;
+                    absorbed_by_poise = true;
+                } else if target.poise_current <= 0.0 {
+                    // Poise quebrado — hits chegam no HP, mas ainda registra
+                    // combat pra evitar regen prematuro.
+                    target.last_combat_at_s = now_s_poise;
+                }
+            }
+            if absorbed_by_poise {
+                // Display de dano segue (numero floating mostra absorbed) +
+                // facing direction. Mas SKIP HP drain + stagger.
+                let prev_dmg = self.damage_this_tick.get(&target_id).copied().unwrap_or(0);
+                self.damage_this_tick.insert(target_id, prev_dmg + dmg);
+                self.hit_this_tick.insert(target_id, hurt_dir);
                 continue;
             }
             if let Ok(mut hp) = self.ecs.get::<&mut Health>(entity) {
@@ -3723,14 +5474,31 @@ impl GameWorld {
             // Cliente recebe HP drop + hurt_dir no próximo snapshot, dispara
             // TriggerHurt e seta facing TOWARD o atacante.
             let hurt_until_ts = self.sim_time_s + shared::HURT_STAGGER_DURATION;
+            // Knockback: empurra alvo na direcao -hurt_dir (TOWARD atacante,
+            // entao -hurt_dir = AWAY from attacker). Velocidade calculada pra
+            // cobrir kb_strength tiles em KNOCKBACK_DURATION (0.18s).
+            const KNOCKBACK_DURATION: f32 = 0.18;
+            let kb_active = kb_strength > 0.05;
+            let kb_until_ts = if kb_active { self.sim_time_s + KNOCKBACK_DURATION } else { 0.0 };
+            let kb_vel = if kb_active {
+                (-hurt_dir).try_normalize().unwrap_or(Vec2::ZERO) * (kb_strength / KNOCKBACK_DURATION)
+            } else { Vec2::ZERO };
             if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(entity) {
                 tag.hurt_until = hurt_until_ts;
                 tag.hurt_dir   = hurt_dir;
+                if kb_active {
+                    tag.knockback_until = kb_until_ts;
+                    tag.knockback_vel   = kb_vel;
+                }
             } else if let Some(s) = self.sessions.values_mut()
                 .find(|s| s.entity_id == target_id)
             {
                 s.hurt_until = hurt_until_ts;
                 s.hurt_dir   = hurt_dir;
+                if kb_active {
+                    s.knockback_until = kb_until_ts;
+                    s.knockback_vel   = kb_vel;
+                }
                 // Reset combo: levar dano interrompe o flow do combo.
                 s.combo_step = 0;
                 s.combo_last_attack = 0.0;
@@ -3799,11 +5567,18 @@ impl GameWorld {
                 .map(|t| (t.zone_id, t.kind));
             if let Some((zid, zkind)) = zone_info {
                 if let Some(zone) = self.spawn_zones.iter_mut().find(|z| z.id == zid) {
-                    if let Some(entry) = zone.live.iter_mut().find(|(k, _)| *k == zkind) {
-                        if entry.1 > 0 { entry.1 -= 1; }
-                    }
                     let ready_at = self.sim_time_s + zone.respawn_delay_s;
-                    zone.respawn_queue.push((ready_at, zkind));
+                    if zone.level_range.is_some() {
+                        // Modo level-range: decrementa live total e enfileira
+                        // respawn (kind sera sorteado na hora do spawn).
+                        if zone.level_range_live > 0 { zone.level_range_live -= 1; }
+                        zone.level_range_queue.push(ready_at);
+                    } else {
+                        if let Some(entry) = zone.live.iter_mut().find(|(k, _)| *k == zkind) {
+                            if entry.1 > 0 { entry.1 -= 1; }
+                        }
+                        zone.respawn_queue.push((ready_at, zkind));
+                    }
                 }
             }
             // Marca cadáver — entidade segue na cena pra cliente exibir pose
@@ -3857,18 +5632,19 @@ impl GameWorld {
 
             // Creditar XP (e Fame, se mob grande) para o jogador que matou
             if let Some(attacker_eid) = kill_credits.get(&eid).copied() {
-                // TEST OVERRIDE: boss (kind 7) da 100000 XP fixo pra
-                // facilitar level-up rapido em testes. Remover quando o
-                // balancing real for ajustado.
-                let xp_reward = if kind_id == 7 {
-                    100_000
-                } else {
-                    crate::economy::enemy_def(kind_id).xp_reward
-                };
-                let fame_reward = if kind_id == 7 { 50 }        // boss
-                                  else if kind_id == 5 { 5 }    // berserker
-                                  else if kind_id == 4 { 3 }    // mago
-                                  else { 0 };
+                // XP/fame: bosses dao bonus, demais usam xp_reward cacheado
+                // no EnemyTag (procedural por level, level*12+20).
+                let (xp_reward, fame_reward) = self.ecs.get::<&EnemyTag>(e)
+                    .ok()
+                    .map(|t| {
+                        let xp = if t.is_boss { t.xp_reward * 5 } else { t.xp_reward };
+                        let fame = if t.is_boss { 50 }
+                                   else if t.level >= 50 { 5 }
+                                   else if t.level >= 30 { 3 }
+                                   else { 0 };
+                        (xp, fame)
+                    })
+                    .unwrap_or((0, 0));
                 // Descobre party do matador + membros proximos (mesmo AOI do kill)
                 let (party_id, killer_pos) = {
                     let mut p: Option<u32> = None;
@@ -4258,6 +6034,7 @@ impl GameWorld {
             attack_speed_mult: f32,
             defending: bool,
             casting: bool,
+            poise_active: bool,
         }
         // Drena parry_flash_pending no mesmo passo — uma vez por tick.
         let mut player_overlay: HashMap<EntityId, PlayerOverlay> = HashMap::new();
@@ -4270,6 +6047,7 @@ impl GameWorld {
                 parry_flash_ids.insert(s.entity_id);
             }
             let casting = s.casting_until > now_for_cast;
+            let poise_active = s.poise_current > 0.5;
             player_overlay.insert(s.entity_id, PlayerOverlay {
                 weapon_id: s.equipment.weapon,
                 offhand_id: s.equipment.offhand,
@@ -4278,25 +6056,56 @@ impl GameWorld {
                 attack_speed_mult: s.stats.attack_speed_mult,
                 defending: s.defending,
                 casting,
+                poise_active,
             });
         }
 
-        // Coleta enemies envenenados (sim_time < poisoned_until) pra replicar
-        // tint verde no client. Pre-built map pra evitar lookup repetido.
-        let now_sim_for_poison = self.sim_time_s;
+        // Coleta enemies com status visuais (poisoned, stunned) pra replicar
+        // tints no client. Pre-built maps pra evitar lookup repetido.
+        let now_sim_for_status = self.sim_time_s;
         let poisoned_ids: std::collections::HashSet<EntityId> = self.ecs
             .query::<(&NetId, &EnemyTag)>()
             .iter()
             .filter_map(|(_, (net, tag))| {
-                if tag.poisoned_until > now_sim_for_poison { Some(net.0) } else { None }
+                if tag.poisoned_until > now_sim_for_status { Some(net.0) } else { None }
             })
+            .collect();
+        let stunned_ids: std::collections::HashSet<EntityId> = self.ecs
+            .query::<(&NetId, &EnemyTag)>()
+            .iter()
+            .filter_map(|(_, (net, tag))| {
+                if tag.stunned_until > now_sim_for_status { Some(net.0) } else { None }
+            })
+            .collect();
+        // Computa leap_y por player que esta em leap. y = 4 * peak * t * (1-t)
+        // → parabola, peak no meio do leap (t=0.5).
+        const LEAP_PEAK_HEIGHT: f32 = 1.5; // pico ~1.5 tiles acima do chao
+        const LEAP_DURATION_SNAP: f32 = 0.5;
+        let mut leap_y_map: HashMap<EntityId, f32> = HashMap::new();
+        for s in self.sessions.values() {
+            if !s.logged_in || s.leap_until <= 0.0 { continue; }
+            if s.leap_until > now_sim_for_status {
+                let elapsed = LEAP_DURATION_SNAP - (s.leap_until - now_sim_for_status);
+                let t = (elapsed / LEAP_DURATION_SNAP).clamp(0.0, 1.0);
+                let y = 4.0 * LEAP_PEAK_HEIGHT * t * (1.0 - t);
+                if y > 0.01 {
+                    leap_y_map.insert(s.entity_id, y);
+                }
+            }
+        }
+
+        // Conjunto de player_eids montados (pra `mounted: true` no snapshot).
+        let mounted_player_eids: std::collections::HashSet<EntityId> = self.ecs
+            .query::<(&NetId, &Mounted)>()
+            .iter()
+            .map(|(_, (net, _))| net.0)
             .collect();
 
         let all: Vec<EntitySnapshot> = self
             .ecs
-            .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>, Option<&ProjTag>, Option<&NpcSkin>, Option<&VendorTag>, Option<&WanderRouteTag>)>()
+            .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>, Option<&ProjTag>, Option<&NpcSkin>, Option<&VendorTag>, Option<&WanderRouteTag>, Option<&BoatTag>, Option<&EnemyTag>)>()
             .iter()
-            .map(|(_, (net, pos, vel, kind, hp, ptag, projtag, skin, vtag, wtag))| {
+            .map(|(_, (net, pos, vel, kind, hp, ptag, projtag, skin, vtag, wtag, boat, etag))| {
                 let is_player = matches!(kind, EntityKind::Player);
                 let overlay = if is_player { player_overlay.get(&net.0) } else { None };
                 EntitySnapshot {
@@ -4308,6 +6117,7 @@ impl GameWorld {
                         EntityKind::Loot(_)     => "Loot".to_string(),
                         EntityKind::Npc(_)      => "Npc".to_string(),
                         EntityKind::Portal      => "Portal".to_string(),
+                        EntityKind::Boat(_)     => "Boat".to_string(),
                     },
                     pos: pos.0,
                     vel: vel.0,
@@ -4315,9 +6125,18 @@ impl GameWorld {
                     hp_max: hp.map(|h| h.max),
                     name: ptag.map(|p| p.name.clone())
                         .or_else(|| vtag.map(|v| v.name.clone()))
-                        .or_else(|| wtag.map(|w| w.name.clone())),
+                        .or_else(|| wtag.map(|w| w.name.clone()))
+                        .or_else(|| etag.map(|t| {
+                            let tier = crate::enemy_builds::tier_for_level(t.level);
+                            if t.is_boss {
+                                format!("[BOSS] {} Lv{}", tier.theme.display_name, t.level)
+                            } else {
+                                format!("{} Lv{}", tier.theme.display_name, t.level)
+                            }
+                        })),
                     sprite_id: match kind {
                         EntityKind::Enemy(n) | EntityKind::Loot(n) | EntityKind::Npc(n) => Some(*n as u32),
+                        EntityKind::Boat(n)    => Some(*n as u32),
                         EntityKind::Projectile => projtag.map(|p| p.kind as u32),
                         _ => None,
                     },
@@ -4329,10 +6148,13 @@ impl GameWorld {
                         player_attack_anim.get(&net.0).copied()
                     },
                     combo_step: player_combo_step.get(&net.0).copied(),
-                    weapon_id: overlay.and_then(|o| o.weapon_id),
-                    offhand_id: overlay.and_then(|o| o.offhand_id),
+                    weapon_id: overlay.and_then(|o| o.weapon_id)
+                        .or_else(|| etag.and_then(|t| t.equipment.weapon)),
+                    offhand_id: overlay.and_then(|o| o.offhand_id)
+                        .or_else(|| etag.and_then(|t| t.equipment.offhand)),
                     downed: overlay.map(|o| o.downed),
-                    visual: overlay.map(|o| o.visual.clone()),
+                    visual: overlay.map(|o| o.visual.clone())
+                        .or_else(|| etag.map(|t| t.visual.clone())),
                     attack_speed_mult: overlay.map(|o| o.attack_speed_mult),
                     hurt_dir: self.hit_this_tick.get(&net.0).map(|v| [v.x, v.y]),
                     is_crit: self.crit_this_tick.get(&net.0).copied(),
@@ -4341,6 +6163,15 @@ impl GameWorld {
                     defending: overlay.and_then(|o| if o.defending { Some(true) } else { None }),
                     casting: overlay.and_then(|o| if o.casting { Some(true) } else { None }),
                     poisoned: if poisoned_ids.contains(&net.0) { Some(true) } else { None },
+                    stunned: if stunned_ids.contains(&net.0) { Some(true) } else { None },
+                    leap_y: leap_y_map.get(&net.0).copied(),
+                    poise_active: overlay.and_then(|o| if o.poise_active { Some(true) } else { None }),
+                    boat_dir: boat.map(|b| b.dir),
+                    boat_anim: boat.map(|b| b.anim),
+                    boat_shoot_dir: boat.and_then(|b| if b.anim == 2 { Some(b.shoot_dir) } else { None }),
+                    passenger_eid: boat.and_then(|b| b.passenger),
+                    mounted: if is_player && mounted_player_eids.contains(&net.0) { Some(true) } else { None },
+                    is_boss: etag.and_then(|t| if t.is_boss { Some(true) } else { None }),
                 }
             })
             .collect();
@@ -4477,6 +6308,13 @@ impl GameWorld {
                     current: stam_i,
                 });
             }
+            let poise_i = session.poise_current as i32;
+            if poise_i != session.poise_last_sent {
+                session.poise_last_sent = poise_i;
+                let _ = session.handle.to_client.send(ServerMessage::PoiseUpdate {
+                    current: poise_i,
+                });
+            }
         }
     }
 }
@@ -4495,6 +6333,7 @@ impl GameWorld {
             pos: Vec2,
             hp: Health,
             xp: u64,
+            boat: Option<crate::persistence::PersistedBoat>,
             inventory: Vec<shared::InventorySlot>,
             equipment: shared::Equipment,
             vault: Vec<shared::InventorySlot>,
@@ -4506,17 +6345,28 @@ impl GameWorld {
             sp_earned: u32,
             sp_spent: u32,
             learned: Vec<shared::LearnedSkill>,
+            account_id: Option<i64>,
+            visual: shared::VisualConfig,
         }
         let mut entries: Vec<E> = Vec::new();
         for session in self.sessions.values() {
             if !session.logged_in { continue; }
             let Some(e) = session.entity else { continue };
-            let pos = match self.ecs.get::<&Position>(e) { Ok(p) => p.0, Err(_) => continue };
+            // Se montado, captura pos do barco + boat state.
+            let (pos, boat) = if let Ok(m) = self.ecs.get::<&Mounted>(e).map(|m| m.boat_entity) {
+                let bp = self.ecs.get::<&Position>(m).ok().map(|p| p.0).unwrap_or_default();
+                let (kind, dir) = self.ecs.get::<&BoatTag>(m)
+                    .map(|t| (t.kind, t.dir))
+                    .unwrap_or((0, 4));
+                (bp, Some(crate::persistence::PersistedBoat { kind, pos: bp, dir }))
+            } else {
+                let p = match self.ecs.get::<&Position>(e) { Ok(p) => p.0, Err(_) => continue };
+                (p, None)
+            };
             let hp = match self.ecs.get::<&Health>(e) { Ok(h) => *h, Err(_) => continue };
             entries.push(E {
                 name: session.name.clone(),
-                pos,
-                hp,
+                pos, hp, boat,
                 xp: session.xp,
                 inventory: session.inventory.clone(),
                 equipment: session.equipment,
@@ -4529,6 +6379,8 @@ impl GameWorld {
                 sp_earned: session.skill_points_earned,
                 sp_spent: session.skill_points_spent,
                 learned: session.learned_skills.clone(),
+                account_id: session.account_id,
+                visual: session.visual.clone(),
             });
         }
         for e in entries {
@@ -4537,6 +6389,7 @@ impl GameWorld {
                 pos: e.pos,
                 hp: e.hp,
                 xp: e.xp,
+                boat: e.boat,
                 inventory: e.inventory,
                 equipment: e.equipment,
                 vault: e.vault,
@@ -4548,6 +6401,8 @@ impl GameWorld {
                 skill_points_earned: e.sp_earned,
                 skill_points_spent: e.sp_spent,
                 learned_skills: e.learned,
+                account_id: e.account_id,
+                visual: Some(e.visual),
             };
             self.characters.insert(e.name, row.clone());
             out.push(row);
@@ -4927,6 +6782,67 @@ impl GameWorld {
             pos.0 = dest;
         }
         tracing::info!("{} teletransportado para loja {:?}", session.name, dest);
+    }
+
+    /// Teletransporta o player para o spawn do mapa. Escape de bug
+    /// (player preso em wall, fora do mapa). Permite mesmo se montado: o
+    /// barco vira item de volta no inventário antes do tp. Zera velocidade
+    /// e força save imediato.
+    fn handle_reset_position(&mut self, sid: SessionId) {
+        let (player_entity, name, was_mounted) = {
+            let Some(session) = self.sessions.get(&sid) else { return };
+            if !session.logged_in { return; }
+            let Some(pe) = session.entity else { return };
+            let mounted = self.ecs.get::<&Mounted>(pe).is_ok();
+            (pe, session.name.clone(), mounted)
+        };
+
+        if was_mounted {
+            // Coleta dados do mount, devolve item, despawna barco — mesma
+            // logica do dismount mas sem BFS (vai pro spawn de qq jeito).
+            let (boat_entity, boat_eid, boat_kind) = {
+                let Ok(m) = self.ecs.get::<&Mounted>(player_entity) else {
+                    return;
+                };
+                let kind = self.ecs.get::<&EntityKind>(m.boat_entity)
+                    .ok()
+                    .and_then(|k| if let EntityKind::Boat(n) = *k { Some(n) } else { None })
+                    .unwrap_or(0);
+                (m.boat_entity, m.boat_eid, kind)
+            };
+            let _ = self.ecs.remove_one::<Mounted>(player_entity);
+            let _ = self.ecs.despawn(boat_entity);
+            self.removed_this_tick.push(boat_eid);
+            let item_id = match boat_kind {
+                _ => shared::item_id::BOAT_LYLIAN_LEUTARD,
+            };
+            if let Some(session) = self.sessions.get_mut(&sid) {
+                for slot in session.inventory.iter_mut() {
+                    if slot.qty == 0 {
+                        *slot = shared::InventorySlot { item_id, qty: 1, instance: None };
+                        session.inventory_dirty = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        let spawn_tile = self.map.spawn_tile();
+        let dest = Vec2::new(spawn_tile.0 as f32 + 0.5, spawn_tile.1 as f32 + 0.5);
+        if let Ok(mut pos) = self.ecs.get::<&mut Position>(player_entity) {
+            pos.0 = dest;
+        }
+        if let Ok(mut v) = self.ecs.get::<&mut Velocity>(player_entity) {
+            v.0 = Vec2::ZERO;
+        }
+        if let Ok(h) = self.ecs.get::<&shared::PhysicsHandle>(player_entity).map(|h| h.0) {
+            if let Some(rb) = self.physics.rigid_body_set.get_mut(h) {
+                rb.set_translation([dest.x, dest.y].into(), true);
+                rb.set_linvel([0.0, 0.0].into(), true);
+            }
+        }
+        self.save_pending = true;
+        tracing::info!("{} reset position → spawn {:?}", name, dest);
     }
 
     fn handle_interact(&mut self, sid: SessionId) {
@@ -5382,6 +7298,9 @@ impl GameWorld {
             HealHp(i32),
             HealMp(i32),
             HealStam(i32),
+            /// Player tentou usar um item de barco. Server tenta spawnar
+            /// um barco em agua adjacente; consome o item se sucesso.
+            SpawnBoat { kind: u16, item_id: u16 },
         }
         let (player_entity, action) = {
             let Some(session) = self.sessions.get_mut(&sid) else { return };
@@ -5419,6 +7338,8 @@ impl GameWorld {
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
                 (player_entity, UseAction::Equip { new_hp_max: session.stats.hp_max })
+            } else if let Some(boat_kind) = shared::boat_kind_of(slot.item_id) {
+                (player_entity, UseAction::SpawnBoat { kind: boat_kind, item_id: slot.item_id })
             } else {
                 let a = match slot.item_id {
                     id if id == shared::item_id::HEALTH_POTION  => UseAction::HealHp(50),
@@ -5485,7 +7406,186 @@ impl GameWorld {
                 } else { false };
                 if healed { consume_slot(&mut self.sessions); }
             }
+            UseAction::SpawnBoat { kind, item_id: _ } => {
+                let player_pos = match self.ecs.get::<&Position>(player_entity) {
+                    Ok(p) => p.0,
+                    Err(_) => return,
+                };
+                // Player ja montado? Nao deixa "dobrar".
+                if self.ecs.get::<&Mounted>(player_entity).is_ok() {
+                    self.send_chat_to(sid, "[Sistema] Ja em uma embarcacao.");
+                    return;
+                }
+                // Procura tile de agua mais proximo do player (BFS Chebyshev,
+                // raio max 3). Se achar, spawna o barco la. Se nao, falha —
+                // player muito longe da agua.
+                let px = player_pos.x.floor() as i32;
+                let py = player_pos.y.floor() as i32;
+                let mut water_pos: Option<Vec2> = None;
+                'search: for r in 1i32..=3 {
+                    for dy in -r..=r {
+                        for dx in -r..=r {
+                            // So perimetro do anel r (skip interior ja varrido).
+                            if dx.abs() != r && dy.abs() != r { continue; }
+                            let tx = px + dx;
+                            let ty = py + dy;
+                            if self.map.is_water(tx, ty) {
+                                water_pos = Some(Vec2::new(tx as f32 + 0.5, ty as f32 + 0.5));
+                                break 'search;
+                            }
+                        }
+                    }
+                }
+                let Some(water_pos) = water_pos else {
+                    tracing::info!(
+                        "boat use: sem agua adjacente. player_pos=({:.2},{:.2}) tile=({},{}) tile_id={}",
+                        player_pos.x, player_pos.y, px, py, self.map.get(px, py)
+                    );
+                    self.send_chat_to(sid, "[Sistema] Aproxime-se mais da agua.");
+                    return;
+                };
+                // Spawna o barco. Sem rigid body — movimento custom em step E.
+                let boat_eid = self.alloc_entity_id();
+                let player_eid = match self.ecs.get::<&NetId>(player_entity) {
+                    Ok(n) => n.0,
+                    Err(_) => return,
+                };
+                let owner_pid = match self.ecs.get::<&PlayerTag>(player_entity) {
+                    Ok(p) => p.player_id,
+                    Err(_) => return,
+                };
+                // Direcao inicial: aponta pro lado oposto da margem (away from
+                // player). Calcula delta water - player e snap pra 8-dir.
+                let init_dir = dir8_from_vec(water_pos - player_pos);
+                let boat_entity = self.ecs.spawn((
+                    NetId(boat_eid),
+                    Position(water_pos),
+                    Velocity(Vec2::ZERO),
+                    EntityKind::Boat(kind),
+                    BoatTag {
+                        kind,
+                        owner_pid,
+                        passenger: Some(player_eid),
+                        passenger_entity: Some(player_entity),
+                        dir: init_dir,
+                        anim: 0, // idle
+                        max_speed: 4.5,
+                        last_shot_at_s: 0.0,
+                        shoot_anim_until: 0.0,
+                        shoot_dir: 4, // S inicial
+                    },
+                ));
+                // Marca o player como montado.
+                let _ = self.ecs.insert_one(player_entity, Mounted {
+                    boat_entity,
+                    boat_eid,
+                });
+                // Consome o item.
+                consume_slot(&mut self.sessions);
+                // Mount eh evento critico — forca save IMEDIATO (sub-1s).
+                self.save_pending = true;
+                tracing::info!("boat spawn: pid={:?} kind={} pos={:?}", owner_pid, kind, water_pos);
+            }
         }
+    }
+
+    /// Helper: envia mensagem de sistema (Chat from="System") pro cliente.
+    fn send_chat_to(&self, sid: SessionId, text: &str) {
+        if let Some(s) = self.sessions.get(&sid) {
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "System".to_string(),
+                text: text.to_string(),
+            });
+        }
+    }
+
+    /// Desmonta o player do barco e teleporta pra terra walkable mais
+    /// proxima (BFS ate 3 tiles a partir do barco). Falha se sem terra
+    /// alcancavel — player precisa mover o barco antes.
+    fn handle_dismount_boat(&mut self, sid: SessionId) {
+        // Acha entity + Mounted do player.
+        let (player_entity, mounted_boat_entity, mounted_boat_eid, boat_kind) = {
+            let Some(session) = self.sessions.get(&sid) else { return };
+            if !session.logged_in { return; }
+            let Some(pe) = session.entity else { return };
+            let Ok(m) = self.ecs.get::<&Mounted>(pe) else { return };
+            // Pega kind do barco antes de despawn pra devolver o item certo.
+            let kind = self.ecs.get::<&EntityKind>(m.boat_entity)
+                .ok()
+                .and_then(|k| if let EntityKind::Boat(n) = *k { Some(n) } else { None })
+                .unwrap_or(0);
+            (pe, m.boat_entity, m.boat_eid, kind)
+        };
+        // Pos do barco.
+        let boat_pos = match self.ecs.get::<&Position>(mounted_boat_entity) {
+            Ok(p) => p.0,
+            Err(_) => return,
+        };
+        let bx = boat_pos.x.floor() as i32;
+        let by = boat_pos.y.floor() as i32;
+        // BFS ate 3 tiles procurando walkable. Cardinais primeiro pra evitar
+        // saidas diagonais "estranhas" entre rochas.
+        let mut visited: std::collections::HashSet<(i32, i32)> = std::collections::HashSet::new();
+        let mut queue: std::collections::VecDeque<(i32, i32, u32)> = std::collections::VecDeque::new();
+        let cardinals = [(0i32, 1i32), (1, 0), (0, -1), (-1, 0)];
+        for (dx, dy) in cardinals { queue.push_back((bx + dx, by + dy, 1)); }
+        let mut land_target: Option<Vec2> = None;
+        while let Some((tx, ty, depth)) = queue.pop_front() {
+            if !visited.insert((tx, ty)) { continue; }
+            if self.map.is_walkable(tx, ty) {
+                land_target = Some(Vec2::new(tx as f32 + 0.5, ty as f32 + 0.5));
+                break;
+            }
+            if depth >= 3 { continue; }
+            for (dx, dy) in cardinals {
+                queue.push_back((tx + dx, ty + dy, depth + 1));
+            }
+        }
+        let Some(target) = land_target else {
+            self.send_chat_to(sid, "[Sistema] Sem terra acessivel. Mova o barco pra outra margem.");
+            return;
+        };
+        // Teleporta o player.
+        if let Ok(mut p) = self.ecs.get::<&mut Position>(player_entity) {
+            p.0 = target;
+        }
+        if let Ok(mut v) = self.ecs.get::<&mut Velocity>(player_entity) {
+            v.0 = Vec2::ZERO;
+        }
+        if let Ok(h) = self.ecs.get::<&shared::PhysicsHandle>(player_entity).map(|h| h.0) {
+            if let Some(rb) = self.physics.rigid_body_set.get_mut(h) {
+                rb.set_translation([target.x, target.y].into(), true);
+                rb.set_linvel([0.0, 0.0].into(), true);
+            }
+        }
+        // Remove Mounted, despawna barco.
+        let _ = self.ecs.remove_one::<Mounted>(player_entity);
+        let _ = self.ecs.despawn(mounted_boat_entity);
+        self.removed_this_tick.push(mounted_boat_eid);
+        // Dismount eh evento critico — forca save IMEDIATO (sub-1s).
+        self.save_pending = true;
+        // Devolve o item de barco no inventario do player.
+        let item_id = match boat_kind {
+            0 => shared::item_id::BOAT_LYLIAN_LEUTARD,
+            _ => shared::item_id::BOAT_LYLIAN_LEUTARD,
+        };
+        if let Some(session) = self.sessions.get_mut(&sid) {
+            // Procura slot vazio ou stack do mesmo item.
+            let mut placed = false;
+            for slot in session.inventory.iter_mut() {
+                if slot.qty == 0 {
+                    *slot = shared::InventorySlot { item_id, qty: 1, instance: None };
+                    placed = true;
+                    break;
+                }
+            }
+            if !placed {
+                tracing::warn!("dismount: inv cheio, barco descartado pid={:?}", session.player_id);
+            } else {
+                session.inventory_dirty = true;
+            }
+        }
+        tracing::info!("boat dismount: target={:?}", target);
     }
 
     /// Captura o estado do personagem de uma sessao especifica (para persistir
@@ -5494,13 +7594,26 @@ impl GameWorld {
         let session = self.sessions.get(sid)?;
         if !session.logged_in { return None; }
         let e = session.entity?;
-        let pos = self.ecs.get::<&Position>(e).ok()?.0;
         let hp = *self.ecs.get::<&Health>(e).ok()?;
+        // Se montado, captura o boat state (pos, kind, dir) e usa pos do
+        // BARCO como pos do char (no login restauramos no mesmo lugar).
+        let (pos, boat) = if let Ok(m) = self.ecs.get::<&Mounted>(e).map(|m| (m.boat_entity, m.boat_eid)) {
+            let (boat_e, _boat_eid) = m;
+            let bp = self.ecs.get::<&Position>(boat_e).ok().map(|p| p.0).unwrap_or_default();
+            let (kind, dir) = self.ecs.get::<&BoatTag>(boat_e)
+                .map(|t| (t.kind, t.dir))
+                .unwrap_or((0, 4));
+            (bp, Some(crate::persistence::PersistedBoat { kind, pos: bp, dir }))
+        } else {
+            let p = self.ecs.get::<&Position>(e).ok()?.0;
+            (p, None)
+        };
         let row = crate::persistence::CharacterRow {
             name: session.name.clone(),
             pos,
             hp,
             xp: session.xp,
+            boat,
             inventory: session.inventory.clone(),
             equipment: session.equipment,
             vault: session.vault.clone(),
@@ -5512,6 +7625,8 @@ impl GameWorld {
             skill_points_earned: session.skill_points_earned,
             skill_points_spent: session.skill_points_spent,
             learned_skills: session.learned_skills.clone(),
+            account_id: session.account_id,
+            visual: Some(session.visual.clone()),
         };
         self.characters.insert(session.name.clone(), row.clone());
         Some(row)
@@ -5591,7 +7706,16 @@ fn effective_stats(
         s.stamina_regen           += b.stamina_regen         * pts as f32;
         s.block_dmg_reduction     += b.block_reduction_bonus * pts as f32;
         s.defense_stamina_cost_mult -= b.stamina_cost_reduction * pts as f32;
+        s.dash_cd_mult            += b.dash_cd_reduction_pct * pts as f32;
     }
+
+    // Breakpoints de stat — milestones que dão build identity.
+    // VIT: cada 25 pontos → +5% damage reduction (cap 75% via clamp downstream).
+    let vit = allocated[shared::stat_idx::VIT];
+    s.damage_reduction_pct += (vit / 25) as f32 * 0.05;
+    // RES: cada 30 pontos → +5% damage reduction (stack com VIT).
+    let res = allocated[shared::stat_idx::RES];
+    s.damage_reduction_pct += (res / 30) as f32 * 0.05;
 
     // Bonus do equipamento. Cada slot tem item_id (base bonus via
     // item_bonus) + Option<ItemInstance> (rolls aleatorios × rarity ×
@@ -5687,8 +7811,11 @@ fn effective_stats(
             }
             // Iron Will — Sword T4 P: <30% HP: -30% dmg taken (placeholder)
             1008 => { /* aplicado em receive_damage path; sem stat permanente */ }
-            // Combat Stance — Sword T1 P: +1%/rank atk speed (Sword/Dagger)
-            1002 => { s.attack_speed_mult += 0.01 * r as f32; }
+            // Combat Stance — Sword T1 P: +1.5%/rank atk speed (Sword/Dagger)
+            1002 => { s.attack_speed_mult += 0.015 * r as f32; }
+            // Bulwark — Sword T2 P: +1%/rank block reduction. Soma direto
+            // ao block_dmg_reduction (cap em BLOCK_REDUCTION_MAX = 0.95).
+            1004 => { s.block_dmg_reduction += 0.01 * r as f32; }
             // Heavy Hands — Axe T1 P: +1%/rank atk dmg (Axe/Sword)
             1010 => { s.attack_damage += s.attack_damage * r / 100; }
             // Sharp Edge — Dagger T1 P: +0.3%/rank crit chance

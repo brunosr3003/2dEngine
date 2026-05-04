@@ -86,6 +86,11 @@ pub struct SkillDef {
     pub per_rank_cost_pct: f32,
     pub icon_path: Option<String>,
     pub vfx_id: Option<String>,
+    /// Knockback em tiles aplicado ao alvo na direcao OPOSTA ao atacante
+    /// (`-hurt_dir`). 0.0 = sem knockback. Direcional skills (line/aoe/cone)
+    /// usam, target/none ignoram.
+    #[serde(default)]
+    pub knockback: f32,
 }
 
 /// Estado por player de uma skill aprendida.

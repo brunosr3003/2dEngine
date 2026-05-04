@@ -22,7 +22,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 34;
+pub const PROTOCOL_VERSION: u16 = 42;
 
 /// Velocidade base do jogador em tiles/segundo.
 pub const PLAYER_SPEED: f32 = 5.0;
@@ -363,6 +363,25 @@ pub mod item_id {
     pub const CAPE_MAGIC:      u16 = 42;  // manto magico, mp+wis
     pub const NECKLACE_BASIC:  u16 = 43;  // colar, hp+wis
     pub const NECKLACE_MAGIC:  u16 = 44;  // colar magico, mp+wis
+
+    // === Fase Naval — barcos (consumiveis usados na margem) ===
+    /// Lylian Leutard — barco basico de exploracao costeira. Spawn na agua
+    /// adjacente quando usado a partir de uma margem walkable.
+    pub const BOAT_LYLIAN_LEUTARD: u16 = 100;
+}
+
+/// True se o item_id e' um barco (consumido ao usar; spawna entidade Boat).
+pub fn is_boat_item(id: u16) -> bool {
+    id == item_id::BOAT_LYLIAN_LEUTARD
+}
+
+/// Mapeia item_id de barco pra boat_kind do EntityKind::Boat. Mantenha em
+/// sync com o cliente (BoatRenderer escolhe sheets pelo kind).
+pub fn boat_kind_of(id: u16) -> Option<u16> {
+    match id {
+        item_id::BOAT_LYLIAN_LEUTARD => Some(0), // 0 = Lylian Leutard
+        _ => None,
+    }
 }
 
 // item_stack_max vive no DB (server crate::economy).
@@ -428,7 +447,7 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
 
 /// True se este item_id eh um escudo (vai no slot Offhand).
 pub fn is_shield(item_id: u16) -> bool {
-    item_id == item_id::SHIELD
+    item_id == item_id::SHIELD || item_id == item_id::HEAVY_SHIELD
 }
 
 /// Quais armas permitem equipar um item no Offhand (escudo). One-handed melee
@@ -533,7 +552,12 @@ pub mod stat_idx {
 }
 
 /// Multiplicador de velocidade adicional por ponto em SPD (somado a 1.0).
-pub const MOVE_SPEED_PCT_PER_SPD: f32 = 0.02; // +2% por ponto
+/// Zerado: SPD nao escala mais movement speed (movement vira default
+/// uniforme). SPD continua dando stamina/regen + dash CD reduction.
+pub const MOVE_SPEED_PCT_PER_SPD: f32 = 0.0;
+/// % redução de cooldown do dash por ponto em SPD. Final dash CD =
+/// DASH_COOLDOWN / (1 + DASH_CD_REDUCTION_PER_SPD * spd_points).
+pub const DASH_CD_REDUCTION_PER_SPD: f32 = 0.02; // +2% redução / ponto
 
 /// Chance de crit adicionada por ponto em DES (somada a 0.0).
 pub const CRIT_CHANCE_PER_DES: f32 = 0.005; // +0.5% por ponto
@@ -608,12 +632,12 @@ pub const PARRY_WINDOW_S: f32 = 0.25;
 /// RES (Resistencia):  +DEFENSE_PER_RES def, +BLOCK_REDUCTION_PER_RES dmg absorvido em block,
 ///                     -STAMINA_COST_REDUCTION_PER_RES no custo de block/parry
 pub const STAT_POINT_BONUS: [StatAllocBonus; STAT_COUNT] = [
-    /* FOR */ StatAllocBonus { hp_max: 2, mp_max: 0, attack_damage: 1, dex: 0, wis: 0, defense: 0,                speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0 },
-    /* DES */ StatAllocBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 1, wis: 0, defense: 0,                speed_pct: 0.0,                      crit_chance: CRIT_CHANCE_PER_DES,  hp_regen: 0.0,               attack_speed_pct: ATTACK_SPEED_PCT_PER_DES,  stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0 },
-    /* INT */ StatAllocBonus { hp_max: 0, mp_max: 2, attack_damage: 0, dex: 0, wis: 1, defense: 0,                speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0 },
-    /* VIT */ StatAllocBonus { hp_max: 5, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: 0,                speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: HP_REGEN_PER_VIT,  attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0 },
-    /* SPD */ StatAllocBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: 0,                speed_pct: MOVE_SPEED_PCT_PER_SPD,   crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: STAMINA_MAX_PER_SPD,stamina_regen: STAMINA_REGEN_PER_SPD,    block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0 },
-    /* RES */ StatAllocBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: DEFENSE_PER_RES,  speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: BLOCK_REDUCTION_PER_RES, stamina_cost_reduction: STAMINA_COST_REDUCTION_PER_RES },
+    /* FOR */ StatAllocBonus { hp_max: 2, mp_max: 0, attack_damage: 1, dex: 0, wis: 0, defense: 0,                speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0, dash_cd_reduction_pct: 0.0 },
+    /* DES */ StatAllocBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 1, wis: 0, defense: 0,                speed_pct: 0.0,                      crit_chance: CRIT_CHANCE_PER_DES,  hp_regen: 0.0,               attack_speed_pct: ATTACK_SPEED_PCT_PER_DES,  stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0, dash_cd_reduction_pct: 0.0 },
+    /* INT */ StatAllocBonus { hp_max: 0, mp_max: 2, attack_damage: 0, dex: 0, wis: 1, defense: 0,                speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0, dash_cd_reduction_pct: 0.0 },
+    /* VIT */ StatAllocBonus { hp_max: 5, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: 0,                speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: HP_REGEN_PER_VIT,  attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0, dash_cd_reduction_pct: 0.0 },
+    /* SPD */ StatAllocBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: 0,                speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: STAMINA_MAX_PER_SPD,stamina_regen: STAMINA_REGEN_PER_SPD,    block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0, dash_cd_reduction_pct: DASH_CD_REDUCTION_PER_SPD },
+    /* RES */ StatAllocBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: DEFENSE_PER_RES,  speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: BLOCK_REDUCTION_PER_RES, stamina_cost_reduction: STAMINA_COST_REDUCTION_PER_RES, dash_cd_reduction_pct: 0.0 },
 ];
 
 /// Bonus de alocacao de pontos. Difere de `EquipBonus` por incluir
@@ -637,6 +661,10 @@ pub struct StatAllocBonus {
     pub block_reduction_bonus: f32,
     /// Subtrai do multiplicador de custo de stamina (1.0 = base).
     pub stamina_cost_reduction: f32,
+    /// Adiciona ao bonus % de redução de cooldown do dash. Final mult =
+    /// 1.0 + dash_cd_reduction_pct (clampado em [1, X]). Cooldown final =
+    /// DASH_COOLDOWN / mult.
+    pub dash_cd_reduction_pct: f32,
 }
 
 /// Escalamento por level de proficiencia, aplicado quando a arma correspondente

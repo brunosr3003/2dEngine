@@ -12,6 +12,7 @@
 
 mod auth;
 mod economy;
+mod enemy_builds;
 mod persistence;
 mod session;
 mod skills;

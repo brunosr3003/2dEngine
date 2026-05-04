@@ -44,17 +44,45 @@ impl WorldMap {
 
     pub fn build_colliders(&self, physics: &mut crate::physics::PhysicsWorld) {
         use rapier2d::prelude::*;
-        for y in 0..self.height {
-            for x in 0..self.width {
-                if self.get(x as i32, y as i32) == crate::constants::tile_id::WALL {
-                    let collider = ColliderBuilder::cuboid(0.5, 0.5)
-                        .translation([x as f32 + 0.5, y as f32 + 0.5].into())
-                        .collision_groups(InteractionGroups::new(Group::GROUP_1, Group::GROUP_2, Default::default()))
-                        .build();
-                    physics.collider_set.insert(collider);
+        // Greedy meshing por linha: tiles bloqueantes consecutivos numa mesma
+        // linha viram UM cuboid horizontal. Sem merge vertical (suficiente
+        // pra reduzir de ~67k -> ~3k colliders no nosso mapa, sem custo de
+        // implementacao). Se virar gargalo, dah pra rodar 2D quad-merge.
+        let groups = InteractionGroups::new(Group::GROUP_1, Group::GROUP_2, Default::default());
+        let blocks_foot = |t: u16| {
+            t == crate::constants::tile_id::WALL
+                || t == crate::constants::tile_id::WATER
+        };
+        for y in 0..self.height as i32 {
+            let mut x0: Option<i32> = None;
+            for x in 0..self.width as i32 {
+                let t = self.get(x, y);
+                if blocks_foot(t) {
+                    if x0.is_none() { x0 = Some(x); }
+                } else if let Some(start) = x0.take() {
+                    Self::insert_run_collider(physics, start, y, x - start, groups);
                 }
             }
+            if let Some(start) = x0.take() {
+                Self::insert_run_collider(physics, start, y, self.width as i32 - start, groups);
+            }
         }
+    }
+
+    fn insert_run_collider(
+        physics: &mut crate::physics::PhysicsWorld,
+        x0: i32, y: i32, len: i32,
+        groups: rapier2d::prelude::InteractionGroups,
+    ) {
+        use rapier2d::prelude::*;
+        let half_w = len as f32 * 0.5;
+        let cx = x0 as f32 + half_w;
+        let cy = y as f32 + 0.5;
+        let collider = ColliderBuilder::cuboid(half_w, 0.5)
+            .translation([cx, cy].into())
+            .collision_groups(groups)
+            .build();
+        physics.collider_set.insert(collider);
     }
 
     pub fn move_and_slide(&self, pos: glam::Vec2, vel: glam::Vec2, dt: f32, radius: f32) -> glam::Vec2 {
@@ -97,12 +125,57 @@ impl WorldMap {
 
         for ty in min_y..=max_y {
             for tx in min_x..=max_x {
-                if self.get(tx, ty) == crate::constants::tile_id::WALL {
+                let t = self.get(tx, ty);
+                if t == crate::constants::tile_id::WALL
+                    || t == crate::constants::tile_id::WATER
+                {
                     return true;
                 }
             }
         }
         false
+    }
+
+    /// True se o tile e' agua (apenas barcos podem entrar).
+    pub fn is_water(&self, x: i32, y: i32) -> bool {
+        self.get(x, y) == crate::constants::tile_id::WATER
+    }
+
+    /// True se o tile e' navegavel por barco (somente water — areia ja e' bloqueada).
+    pub fn is_navigable(&self, x: i32, y: i32) -> bool {
+        self.is_water(x, y)
+    }
+
+    /// True se o tile e' walkable a pe (FLOOR/DUNGEON_FLOOR/DIRT — qualquer
+    /// nao-WALL e nao-WATER conta como walkable).
+    pub fn is_walkable(&self, x: i32, y: i32) -> bool {
+        let t = self.get(x, y);
+        t != crate::constants::tile_id::WALL && t != crate::constants::tile_id::WATER
+    }
+
+    /// True se a linha de A→B nao cruza nenhum tile WALL.
+    /// DDA por sub-tile (resolucao = 0.4 tile = ~2 amostras por tile).
+    /// Usado por IA pra "ver" o player e por checagens de cobertura.
+    pub fn has_line_of_sight(&self, a: glam::Vec2, b: glam::Vec2) -> bool {
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if dist < 0.001 { return true; }
+        // 2.5 amostras por tile pra evitar pular esquinas finas.
+        let steps = (dist * 2.5).ceil().max(1.0) as i32;
+        let inv = 1.0 / steps as f32;
+        // Pula start (i=0) — assumimos que o emissor já está em tile valido.
+        for i in 1..=steps {
+            let t = i as f32 * inv;
+            let px = a.x + dx * t;
+            let py = a.y + dy * t;
+            let tx = px.floor() as i32;
+            let ty = py.floor() as i32;
+            if self.get(tx, ty) == crate::constants::tile_id::WALL {
+                return false;
+            }
+        }
+        true
     }
 }
 

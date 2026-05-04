@@ -145,6 +145,7 @@ async fn load_from_db(pool: &PgPool) -> Result<SkillsConfig> {
         icon_path: Option<String>,
         vfx_id: Option<String>,
         active: bool,
+        knockback: f32,
     }
 
     let rows: Vec<SkillRow> = sqlx::query_as(
@@ -154,7 +155,7 @@ async fn load_from_db(pool: &PgPool) -> Result<SkillsConfig> {
                 target_type, range_tiles, radius_tiles,
                 base_damage, base_heal, scaling_atk, scaling_wis, scaling_dex,
                 per_rank_dmg_pct, per_rank_cd_pct, per_rank_cost_pct,
-                icon_path, vfx_id, active
+                icon_path, vfx_id, active, knockback
          FROM skills WHERE active = TRUE"
     ).fetch_all(pool).await?;
 
@@ -190,6 +191,7 @@ async fn load_from_db(pool: &PgPool) -> Result<SkillsConfig> {
             per_rank_cost_pct: r.per_rank_cost_pct,
             icon_path: r.icon_path,
             vfx_id: r.vfx_id,
+            knockback: r.knockback,
         };
         by_prof.entry(r.prof).or_default().push(id_u32);
         by_id.insert(id_u32, def);
