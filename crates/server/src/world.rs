@@ -676,6 +676,18 @@ pub struct Session {
     /// sim_time em que o harpoon expira (limpa state). 5s default.
     pub harpoon_until: f32,
 
+    // Bloodthirst (1011) — buff 4s com +20% atk speed + 10% lifesteal.
+    /// sim_time ate quando o buff esta ativo (0 = inativo).
+    pub bloodthirst_until: f32,
+
+    // Hunter's Mark (1040) — buff 8s + 3 charges com +50% crit + +5%/rank dmg.
+    /// sim_time ate quando o buff esta ativo.
+    pub hunters_mark_until: f32,
+    /// Charges restantes (decrementa em cada hit projetil; expira em 0 ou tempo).
+    pub hunters_mark_charges: u8,
+    /// Rank da skill 1040 aprendida (1..10) pra calcular bonus_dmg += 5%/rank.
+    pub hunters_mark_rank: u8,
+
     // ── Poise ───────────────────────────────────────────────────────────
     /// Barra de poise atual (0..stats.poise_max). Drena com hits, absorve
     /// damage e previne stagger enquanto > 0. Regen fora de combate.
@@ -2484,6 +2496,10 @@ impl GameWorld {
                 leap_radius: 0.0,
                 harpoon_target_eid: None,
                 harpoon_until: 0.0,
+                bloodthirst_until: 0.0,
+                hunters_mark_until: 0.0,
+                hunters_mark_charges: 0,
+                hunters_mark_rank: 0,
                 poise_current: 50.0, // base padrao; refresh via stats no login
                 last_combat_at_s: 0.0,
                 poise_last_sent: 0,
@@ -3118,6 +3134,41 @@ impl GameWorld {
                         s.counter_stance_until = self.sim_time_s + 2.0;
                     }
                     tracing::info!("Master's Counter cast (2s stance)");
+                }
+                // Bloodthirst (1011): buff 4s com +20% atk speed + 10% lifesteal.
+                else if skill_id == 1011 {
+                    if let Some(s) = self.sessions.get_mut(&sid) {
+                        s.bloodthirst_until = self.sim_time_s + 4.0;
+                    }
+                    // Broadcast BuffApplied{kind=1 dmg_buff} pro cliente.
+                    let bmsg = ServerMessage::BuffApplied {
+                        target_eid: owner_eid,
+                        kind: 1,
+                    };
+                    for s in self.sessions.values() {
+                        if s.logged_in {
+                            let _ = s.handle.to_client.send(bmsg.clone());
+                        }
+                    }
+                    tracing::info!("Bloodthirst cast: 4s atk speed + lifesteal");
+                }
+                // Hunter's Mark (1040): buff 8s + 3 charges com +50% crit + dmg.
+                else if skill_id == 1040 {
+                    if let Some(s) = self.sessions.get_mut(&sid) {
+                        s.hunters_mark_until = self.sim_time_s + 8.0;
+                        s.hunters_mark_charges = 3;
+                        s.hunters_mark_rank = rank;
+                    }
+                    let bmsg = ServerMessage::BuffApplied {
+                        target_eid: owner_eid,
+                        kind: 1, // dmg_buff visual
+                    };
+                    for s in self.sessions.values() {
+                        if s.logged_in {
+                            let _ = s.handle.to_client.send(bmsg.clone());
+                        }
+                    }
+                    tracing::info!("Hunter's Mark cast: 8s, 3 charges, rank {}", rank);
                 }
                 else {
                     // Heal padrão: aplica base_heal + scaling × wis.
@@ -3994,7 +4045,9 @@ impl GameWorld {
                     let scale_factor = if is_caster { 0.30 }
                         else if is_two_handed { 0.60 }
                         else { 1.0 };
-                    let atk_speed = (1.0 + bonus * scale_factor).max(0.5);
+                    // Bloodthirst (1011) buff: +20% atk speed enquanto ativo.
+                    let bt_mult = if session.bloodthirst_until > self.sim_time_s { 1.20 } else { 1.0 };
+                    let atk_speed = (1.0 + bonus * scale_factor).max(0.5) * bt_mult;
                     session.attack_cooldown = base_cd / atk_speed;
                     session.stamina_current =
                         (session.stamina_current - shared::ATTACK_STAMINA_COST).max(0.0);
@@ -5374,28 +5427,44 @@ impl GameWorld {
                 }
             }
 
-            // Hunter's Mark passive (Bow T4): +20% dmg em alvos marcados.
-            // Mark refresh on hit — qualquer hit estende a duracao por 6s.
-            // Escopo: so quando atacante eh player com a passiva (rank>0).
-            let now_for_mark = self.sim_time_s;
+            // Hunter's Mark active (skill 1040): buff 8s + 3 charges.
+            // Cada projetil consome 1 charge + aplica +5%/rank dmg.
+            // Bloodthirst (skill 1011): buff 4s — cura caster por 10% do
+            // dmg em hits (lifesteal).
+            // Coletamos info dos buffs primeiro (evita borrow conflict
+            // com self.pending_heals.push depois).
+            let now_for_buff = self.sim_time_s;
+            let mut bt_lifesteal_target: Option<EntityId> = None;
             if attacker_is_player {
-                let attacker_session = self.sessions.values_mut()
-                    .find(|s| s.entity_id == attacker_id);
-                if let Some(att) = attacker_session {
-                    let hunter_rank = att.learned_skills.iter()
-                        .find(|s| s.skill_id == 1040)
-                        .map(|s| s.rank).unwrap_or(0);
-                    if hunter_rank > 0 {
-                        // Marcado e ativo? Aplica +20% dmg.
-                        if let Some(&exp) = att.hunter_marks.get(&target_id) {
-                            if exp > now_for_mark {
-                                dmg = ((dmg as f32) * 1.20).round() as i32;
-                            }
+                if let Some(att) = self.sessions.values_mut()
+                    .find(|s| s.entity_id == attacker_id)
+                {
+                    // Hunter's Mark
+                    if att.hunters_mark_until > now_for_buff
+                        && att.hunters_mark_charges > 0
+                        && matches!(attack_info, AttackInfo::Projectile { .. })
+                    {
+                        let bonus_pct = 0.05 * att.hunters_mark_rank as f32;
+                        dmg = ((dmg as f32) * (1.0 + bonus_pct)).round() as i32;
+                        att.hunters_mark_charges -= 1;
+                        if att.hunters_mark_charges == 0 {
+                            att.hunters_mark_until = 0.0;
                         }
-                        // Refresh/cria mark (6s) — proximo hit ja com bonus.
-                        att.hunter_marks.insert(target_id, now_for_mark + 6.0);
+                    }
+                    // Bloodthirst
+                    if att.bloodthirst_until > now_for_buff
+                        && !matches!(attack_info, AttackInfo::Skill)
+                    {
+                        bt_lifesteal_target = Some(att.entity_id);
                     }
                 }
+            }
+            if let Some(owner_net) = bt_lifesteal_target {
+                let heal = ((dmg as f32) * 0.10).round().max(1.0) as i32;
+                self.pending_heals.push(PendingHeal {
+                    target_net: owner_net,
+                    amount: heal,
+                });
             }
 
             // ── Defesa ativa do alvo (player) ────────────────────────────────
