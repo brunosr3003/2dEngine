@@ -295,6 +295,18 @@ pub enum ServerMessage {
         /// dispara o visual stuck — outros kinds tem seu proprio impacto.
         kind: u8,
     },
+    /// Buff foi aplicado a uma entidade — visual feedback. Server emite
+    /// quando: heal recebido (de aliado), buff applied (Bloodthirst, Group
+    /// Heal aura, etc). Cliente spawna music_burst ou sparkle acima do alvo.
+    /// `kind`:
+    ///   0 = heal (aliado curou voce)
+    ///   1 = damage_buff (Bloodthirst, Attack Up)
+    ///   2 = defense_buff (Defense Up, Phalanx)
+    ///   3 = haste (atk speed buff)
+    BuffApplied {
+        target_eid: crate::EntityId,
+        kind: u8,
+    },
     PartyInviteReceived { from: String },
     PartyUpdate { members: Vec<String> },
     /// Pontos de atributo disponiveis + ja alocados em cada stat.

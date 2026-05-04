@@ -338,6 +338,17 @@ pub struct EntitySnapshot {
     /// None nos demais ticks; Some(true/false) só quando hp_dropped.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_crit: Option<bool>,
+    /// Item_id da arma do atacante no tick em que tomou dano. Cliente usa
+    /// pra escolher VFX de impacto diferenciado por arma (sword=clean cut,
+    /// axe=heavy slam, etc). Some apenas no tick do hit, None nos demais.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attacker_weapon_id: Option<u16>,
+    /// EntityId do dono pra projetil (player/enemy que disparou). Cliente
+    /// usa pra desenhar tether visual (Spear Throw harpoon line) e
+    /// outras integracoes player↔projectile. Some apenas em EntityKind::
+    /// Projectile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_eid: Option<EntityId>,
     /// Step do combo melee (0=Slash1, 1=Slash2, 2=Finisher). Acompanha
     /// `attack_anim=SLASH` pra que outros clientes toquem a anim correta
     /// dentro do combo. None fora do tick de attack ou em SHOOT/THRUST.

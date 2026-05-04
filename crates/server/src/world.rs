@@ -771,6 +771,10 @@ pub struct GameWorld {
     /// no floating damage text quando o hit mata o alvo: HP antes era 5,
     /// dano real foi 50 → mostra "50" mesmo. Lido em send_snapshots.
     pub damage_this_tick: HashMap<EntityId, i32>,
+    /// Item_id da arma do atacante no tick em que cada alvo foi ferido.
+    /// Cliente usa pra escolher VFX de impacto por arma. Lido em send_snapshots
+    /// pra EntitySnapshot.attacker_weapon_id; limpo apos envio.
+    pub attacker_weapon_this_tick: HashMap<EntityId, u16>,
     /// Última versão de economy vista no broadcast — quando muda (admin
     /// editou via web), reenviamos `ItemsConfig` pra todos os clientes.
     pub last_econ_version: i64,
@@ -829,6 +833,7 @@ impl GameWorld {
             hit_this_tick: HashMap::new(),
             crit_this_tick: HashMap::new(),
             damage_this_tick: HashMap::new(),
+            attacker_weapon_this_tick: HashMap::new(),
             last_econ_version: 0,
         };
         w.spawn_vendor_at(vendor_pos);
@@ -884,6 +889,7 @@ impl GameWorld {
             hit_this_tick: HashMap::new(),
             crit_this_tick: HashMap::new(),
             damage_this_tick: HashMap::new(),
+            attacker_weapon_this_tick: HashMap::new(),
             last_econ_version: 0,
         };
         w.spawn_mapfile_entities(&mf);
@@ -5273,6 +5279,7 @@ impl GameWorld {
         // Drena pending_heals — heals em players (self+ally) por skills.
         if !self.pending_heals.is_empty() {
             let queue = std::mem::take(&mut self.pending_heals);
+            let mut healed_targets: Vec<EntityId> = Vec::new();
             for h in queue {
                 let mut e: Option<Entity> = None;
                 for (en, net) in self.ecs.query::<&NetId>().iter() {
@@ -5280,7 +5287,20 @@ impl GameWorld {
                 }
                 if let Some(e) = e {
                     if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
-                        hp.current = (hp.current + h.amount).min(hp.max);
+                        if h.amount > 0 {
+                            hp.current = (hp.current + h.amount).min(hp.max);
+                            healed_targets.push(h.target_net);
+                        }
+                    }
+                }
+            }
+            // Broadcast BuffApplied {kind=0 heal} pra cada alvo curado —
+            // cliente renderiza music_burst em volta do char.
+            for tnet in healed_targets {
+                let msg = ServerMessage::BuffApplied { target_eid: tnet, kind: 0 };
+                for s in self.sessions.values() {
+                    if s.logged_in {
+                        let _ = s.handle.to_client.send(msg.clone());
                     }
                 }
             }
@@ -5301,6 +5321,7 @@ impl GameWorld {
         self.hit_this_tick.clear();
         self.crit_this_tick.clear();
         self.damage_this_tick.clear();
+        self.attacker_weapon_this_tick.clear();
         for (entity, target_id, dmg, attacker_id, attacker_is_player, hurt_dir, is_crit, attack_info, kb_strength) in damage_events {
             // Resistencia do alvo reduz dano recebido (min 1).
             let (target_defense, target_dmg_reduction_pct) = {
@@ -5600,6 +5621,11 @@ impl GameWorld {
                     .find(|s| s.entity_id == attacker_id)
                 {
                     let weapon_id = attacker.equipment.weapon.unwrap_or(0);
+                    // Replica weapon do atacante pro snapshot do alvo —
+                    // cliente escolhe VFX de impacto baseado nisso.
+                    if weapon_id != 0 {
+                        self.attacker_weapon_this_tick.insert(target_id, weapon_id);
+                    }
                     let prof = shared::Proficiency::from_item(weapon_id);
                     let idx = prof as usize;
                     if idx < attacker.proficiencies.len() {
@@ -6239,6 +6265,8 @@ impl GameWorld {
                     hurt_dir: self.hit_this_tick.get(&net.0).map(|v| [v.x, v.y]),
                     is_crit: self.crit_this_tick.get(&net.0).copied(),
                     last_damage: self.damage_this_tick.get(&net.0).copied(),
+                    attacker_weapon_id: self.attacker_weapon_this_tick.get(&net.0).copied(),
+                    owner_eid: projtag.map(|p| p.owner),
                     skin_preset: skin.map(|s| s.preset),
                     defending: overlay.and_then(|o| if o.defending { Some(true) } else { None }),
                     casting: overlay.and_then(|o| if o.casting { Some(true) } else { None }),
