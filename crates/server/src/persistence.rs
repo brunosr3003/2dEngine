@@ -687,11 +687,11 @@ async fn seed_skills_if_needed(pool: &PgPool) -> Result<()> {
             rank_dmg:0.10, rank_cd:0.0, rank_cost:0.0,
             desc:"Pula ate 6 tiles na direção do mouse; dano AoE r2 + stun 1.5s na queda."
         },
-        S{ id:1002, name:"Combat Stance",    prof:"Sword", tier:1, is_passive:true,  path:"duelist",  unlock_char:t1c, unlock_prof:t1p,
-            usable_with: dagger_sword_v.clone(), cost_mp:0, cost_st:0, cd:0.0, cast:0.0, target:"none",
-            range_t:0.0, radius:0.0, base_dmg:0, base_heal:0, scal_atk:0.0, scal_wis:0.0, scal_dex:0.0,
-            rank_dmg:0.01, rank_cd:0.0, rank_cost:0.0,
-            desc:"+1% atk speed por rank (Sword/Dagger). r5: +5% crit. r10: parry window +50ms."
+        S{ id:1002, name:"Wave Slash",       prof:"Sword", tier:1, is_passive:false, path:"duelist",  unlock_char:t1c, unlock_prof:t1p,
+            usable_with: h1_v.clone(), cost_mp:0, cost_st:25, cd:7.0, cast:0.0, target:"projectile",
+            range_t:8.0, radius:0.0, base_dmg:14, base_heal:0,
+            scal_atk:1.1, scal_wis:0.0, scal_dex:0.0, rank_dmg:0.10, rank_cd:0.0, rank_cost:0.0,
+            desc:"Onda de energia em linha 8t. 110% atk no primeiro alvo."
         },
         S{ id:1003, name:"Shield Bash",      prof:"Sword", tier:2, is_passive:false, path:"tank",     unlock_char:t2c, unlock_prof:t2p,
             usable_with: Some(vec!["Sword"]), cost_mp:0, cost_st:30, cd:8.0, cast:0.0, target:"cone",
@@ -706,10 +706,10 @@ async fn seed_skills_if_needed(pool: &PgPool) -> Result<()> {
             desc:"+0.5% block reduction por rank. r5: -5% block stam cost. r10: buff de 10s após bloquear."
         },
         S{ id:1005, name:"Sword Dance",      prof:"Sword", tier:3, is_passive:false, path:"duelist",  unlock_char:t3c, unlock_prof:t3p,
-            usable_with: h1_v.clone(), cost_mp:0, cost_st:40, cd:14.0, cast:0.0, target:"cone",
-            range_t:2.0, radius:0.0, base_dmg:14, base_heal:0,
-            scal_atk:1.2, scal_wis:0.0, scal_dex:0.0, rank_dmg:0.08, rank_cd:0.0, rank_cost:0.0,
-            desc:"Combo locked 3-hit; último guaranteed crit."
+            usable_with: h1_v.clone(), cost_mp:0, cost_st:45, cd:15.0, cast:0.0, target:"aoe_circle",
+            range_t:0.0, radius:1.8, base_dmg:24, base_heal:0,
+            scal_atk:1.0, scal_wis:0.0, scal_dex:0.0, rank_dmg:0.08, rank_cd:0.0, rank_cost:0.0,
+            desc:"Spinning attack 360° raio 1.8 ao redor do caster: 6 hits em 1.8s."
         },
         S{ id:1006, name:"Taunt",            prof:"Sword", tier:3, is_passive:false, path:"tank",     unlock_char:t3c, unlock_prof:t3p,
             usable_with: melee_v.clone(), cost_mp:0, cost_st:25, cd:10.0, cast:0.0, target:"self",
@@ -737,11 +737,11 @@ async fn seed_skills_if_needed(pool: &PgPool) -> Result<()> {
             scal_atk:1.0, scal_wis:0.0, scal_dex:0.0, rank_dmg:0.10, rank_cd:0.0, rank_cost:0.0,
             desc:"Cone 120° na frente. Atinge múltiplos alvos com 100% atk."
         },
-        S{ id:1010, name:"Heavy Hands",      prof:"Axe",   tier:1, is_passive:true,  path:"crusher",  unlock_char:t1c, unlock_prof:t1p,
-            usable_with: heavy_v.clone(), cost_mp:0, cost_st:0, cd:0.0, cast:0.0, target:"none",
-            range_t:0.0, radius:0.0, base_dmg:0, base_heal:0, scal_atk:0.0, scal_wis:0.0, scal_dex:0.0,
-            rank_dmg:0.01, rank_cd:0.0, rank_cost:0.0,
-            desc:"+1% atk dmg por rank com Axe/GS. r5: +5% knockback. r10: ignora 50% def."
+        S{ id:1010, name:"Throwing Axe",     prof:"Axe",   tier:1, is_passive:false, path:"crusher",  unlock_char:t1c, unlock_prof:t1p,
+            usable_with: axe_v.clone(), cost_mp:0, cost_st:30, cd:8.0, cast:0.0, target:"projectile",
+            range_t:6.0, radius:0.0, base_dmg:18, base_heal:0,
+            scal_atk:1.3, scal_wis:0.0, scal_dex:0.0, rank_dmg:0.10, rank_cd:0.0, rank_cost:0.0,
+            desc:"Arremessa machado 6t. 130% atk + knockback grande."
         },
         S{ id:1011, name:"Bloodthirst",      prof:"Axe",   tier:2, is_passive:false, path:"berserker",unlock_char:t2c, unlock_prof:t2p,
             usable_with: melee_v.clone(), cost_mp:0, cost_st:35, cd:18.0, cast:0.0, target:"self",
@@ -923,11 +923,11 @@ async fn seed_skills_if_needed(pool: &PgPool) -> Result<()> {
             scal_atk:0.4, scal_wis:0.0, scal_dex:0.3, rank_dmg:0.10, rank_cd:0.0, rank_cost:0.0,
             desc:"AoE radius 4; 8 flechas ao longo de 3s."
         },
-        S{ id:1040, name:"Hunter's Mark",    prof:"Bow",   tier:4, is_passive:true,  path:"trapper",  unlock_char:t4c, unlock_prof:t4p,
-            usable_with: none.clone(), cost_mp:0, cost_st:0, cd:0.0, cast:0.0, target:"none",
+        S{ id:1040, name:"Hunter's Mark",    prof:"Bow",   tier:4, is_passive:false, path:"trapper",  unlock_char:t4c, unlock_prof:t4p,
+            usable_with: ranged_v.clone(), cost_mp:0, cost_st:20, cd:18.0, cast:0.0, target:"self",
             range_t:0.0, radius:0.0, base_dmg:0, base_heal:0, scal_atk:0.0, scal_wis:0.0, scal_dex:0.0,
             rank_dmg:0.05, rank_cd:0.0, rank_cost:0.0,
-            desc:"First hit marca alvo: +20% dmg de todas fontes 6s. r5: marca aparece no minimap. r10: kill estende 4s."
+            desc:"Buff 8s: proximos 3 tiros tem +50% crit chance + +5%/rank dmg."
         },
 
         // ── WAND (1041..1048) — Pyro (Py) + Frost (Fr) ───────────────────────
@@ -937,11 +937,11 @@ async fn seed_skills_if_needed(pool: &PgPool) -> Result<()> {
             scal_atk:0.0, scal_wis:0.8, scal_dex:0.0, rank_dmg:0.10, rank_cd:0.0, rank_cost:0.0,
             desc:"Projétil AoE radius 1.5; 80% wis dano."
         },
-        S{ id:1042, name:"Mana Pool",        prof:"Wand",  tier:1, is_passive:true,  path:"pyro",     unlock_char:t1c, unlock_prof:t1p,
-            usable_with: none.clone(), cost_mp:0, cost_st:0, cd:0.0, cast:0.0, target:"none",
-            range_t:0.0, radius:0.0, base_dmg:0, base_heal:0, scal_atk:0.0, scal_wis:0.0, scal_dex:0.0,
-            rank_dmg:0.0, rank_cd:0.0, rank_cost:0.0,
-            desc:"+5/rank mp_max. r5: +0.5 mp regen/s. r10: -5% spell costs."
+        S{ id:1042, name:"Soul Drain",       prof:"Wand",  tier:1, is_passive:false, path:"pyro",     unlock_char:t1c, unlock_prof:t1p,
+            usable_with: caster_v.clone(), cost_mp:25, cost_st:0, cd:10.0, cast:0.0, target:"line",
+            range_t:6.0, radius:0.0, base_dmg:24, base_heal:18,
+            scal_atk:0.0, scal_wis:1.2, scal_dex:0.0, rank_dmg:0.10, rank_cd:0.0, rank_cost:0.0,
+            desc:"Drena alma do alvo (line 6t): 120% wis dmg + cura caster por 75% do dano."
         },
         S{ id:1043, name:"Frost Bolt",       prof:"Wand",  tier:2, is_passive:false, path:"frost",    unlock_char:t2c, unlock_prof:t2p,
             usable_with: caster_v.clone(), cost_mp:35, cost_st:0, cd:8.0, cast:0.3, target:"projectile",
@@ -1166,6 +1166,59 @@ async fn seed_skills_if_needed(pool: &PgPool) -> Result<()> {
     .bind(18_i32)
     .bind(2.0_f32)
     .bind("Lanca a lanca 8 tiles + dash ate o alvo (hook). Dmg 200% atk + bleed.")
+    .execute(pool).await?;
+
+    // Skill rework batch: passives → actives + 1005 cone → spin.
+    // Wave Slash (1002): Combat Stance passive → projectile line.
+    sqlx::query(
+        "UPDATE skills SET name=$1, target_type=$2, range_tiles=$3, base_damage=$4,
+            scaling_atk=$5, cooldown_s=$6, cost_stamina=$7, is_passive=FALSE,
+            description=$8 WHERE id = 1002"
+    )
+    .bind("Wave Slash").bind("projectile").bind(8.0_f32).bind(14_i32).bind(1.1_f32)
+    .bind(7.0_f32).bind(25_i32)
+    .bind("Onda de energia em linha 8t. 110% atk no primeiro alvo.")
+    .execute(pool).await?;
+
+    // Throwing Axe (1010): Heavy Hands passive → projectile.
+    sqlx::query(
+        "UPDATE skills SET name=$1, target_type=$2, range_tiles=$3, base_damage=$4,
+            scaling_atk=$5, cooldown_s=$6, cost_stamina=$7, is_passive=FALSE,
+            description=$8 WHERE id = 1010"
+    )
+    .bind("Throwing Axe").bind("projectile").bind(6.0_f32).bind(18_i32).bind(1.3_f32)
+    .bind(8.0_f32).bind(30_i32)
+    .bind("Arremessa machado 6t. 130% atk + knockback grande.")
+    .execute(pool).await?;
+
+    // Hunter's Mark (1040): passive → active self-buff.
+    sqlx::query(
+        "UPDATE skills SET target_type=$1, cost_stamina=$2, cooldown_s=$3, is_passive=FALSE,
+            description=$4 WHERE id = 1040"
+    )
+    .bind("self").bind(20_i32).bind(18.0_f32)
+    .bind("Buff 8s: proximos 3 tiros tem +50% crit chance + +5%/rank dmg.")
+    .execute(pool).await?;
+
+    // Soul Drain (1042): Mana Pool passive → line drain.
+    sqlx::query(
+        "UPDATE skills SET name=$1, target_type=$2, range_tiles=$3, base_damage=$4,
+            base_heal=$5, scaling_wis=$6, cost_mp=$7, cooldown_s=$8, is_passive=FALSE,
+            description=$9 WHERE id = 1042"
+    )
+    .bind("Soul Drain").bind("line").bind(6.0_f32).bind(24_i32).bind(18_i32)
+    .bind(1.2_f32).bind(25_i32).bind(10.0_f32)
+    .bind("Drena alma do alvo (line 6t): 120% wis dmg + cura caster por 75% do dano.")
+    .execute(pool).await?;
+
+    // Sword Dance (1005): cone single-hit → aoe sustained spin (like Whirlwind).
+    sqlx::query(
+        "UPDATE skills SET target_type=$1, range_tiles=$2, radius_tiles=$3, base_damage=$4,
+            scaling_atk=$5, cooldown_s=$6, cost_stamina=$7, description=$8 WHERE id = 1005"
+    )
+    .bind("aoe_circle").bind(0.0_f32).bind(1.8_f32).bind(24_i32).bind(1.0_f32)
+    .bind(15.0_f32).bind(45_i32)
+    .bind("Spinning attack 360° raio 1.8 ao redor do caster: 6 hits em 1.8s.")
     .execute(pool).await?;
 
     Ok(())

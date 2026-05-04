@@ -3048,21 +3048,24 @@ impl GameWorld {
                 let spawn_pos = pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y)
                     + dir * shared::FIREBALL_FORWARD_OFFSET;
                 // kind: 0 = arrow (bow), 1 = fireball legacy (default),
-                // 2 = lightning, 3 = big fireball (skill), 4 = frost bolt.
+                // 2 = lightning, 3 = big fireball (skill), 4 = frost bolt,
+                // 6 = power shot, 7 = spear (harpoon), 8 = wave slash,
+                // 9 = throwing axe.
                 let vfx = def.vfx_id.as_deref().unwrap_or("");
-                let proj_kind: u8 = match shared::Proficiency::from_item(weapon_id) {
-                    shared::Proficiency::Bow => {
-                        // Power Shot (1033): proj_kind=6 — flecha 2x scale +
-                        // 2x speed (cliente reconhece kind=6).
-                        if skill_id == 1033 { 6 } else { 0 }
-                    }
-                    _ => {
-                        if vfx.contains("lightning") { 2 }
-                        else if vfx.contains("fireball") { 3 }
-                        else if vfx.contains("frost") { 4 }
-                        else { 1 }
-                    }
-                };
+                let proj_kind: u8 = if skill_id == 1002 { 8 }    // Wave Slash
+                    else if skill_id == 1010 { 9 }                // Throwing Axe
+                    else { match shared::Proficiency::from_item(weapon_id) {
+                        shared::Proficiency::Bow => {
+                            // Power Shot (1033): proj_kind=6 — flecha 2x scale.
+                            if skill_id == 1033 { 6 } else { 0 }
+                        }
+                        _ => {
+                            if vfx.contains("lightning") { 2 }
+                            else if vfx.contains("fireball") { 3 }
+                            else if vfx.contains("frost") { 4 }
+                            else { 1 }
+                        }
+                    }};
                 // Multishot (1037): 5 flechas em leque ±30° (15° entre cada).
                 // Outras skills projectile: 1 projetil unico.
                 let dirs: Vec<Vec2> = if skill_id == 1037 {
@@ -3185,6 +3188,17 @@ impl GameWorld {
                     // Chain Lightning (1054): bounce até 4 alvos extras com falloff 25%.
                     if skill_id == 1054 {
                         self.chain_lightning_bounces(target_pos2, target_net, owner_eid, damage, 4);
+                    }
+                    // Soul Drain (1042): cura caster por 75% do dano causado.
+                    // Vampiric — converte HP do alvo em vida do caster.
+                    if skill_id == 1042 {
+                        let heal_amt = ((damage as f32) * 0.75).round() as i32;
+                        if heal_amt > 0 {
+                            self.pending_heals.push(PendingHeal {
+                                target_net: owner_eid,
+                                amount: heal_amt,
+                            });
+                        }
                     }
                     tracing::info!("skill cast: {} (line, r{}) dmg={}", def.name, rank, damage);
                 }
@@ -3324,12 +3338,13 @@ impl GameWorld {
                 //   Meteor (1045):     cast_time_s=3s → player imovel durante o rain.
                 //   Rain of Arrows (1039): cast 0.5s, depois 8 flechas ao longo de 3s.
                 //   Smoke Bomb (1038): nuvem 5s, 5 pulses de dano + envenenado.
-                let is_rain = matches!(skill_id, 1045 | 1046 | 1039 | 1038 | 1013);
+                let is_rain = matches!(skill_id, 1045 | 1046 | 1039 | 1038 | 1013 | 1005);
                 if is_rain {
                     let (pulses, total_s) = match skill_id {
                         1039 => (8u32, 3.0f32),     // Rain of Arrows
                         1038 => (5u32, 5.0f32),     // Smoke Bomb (1 pulse/s × 5s)
-                        1013 => (10u32, 4.0f32),    // Whirlwind — spin 10p × 4s ao redor do caster
+                        1013 => (10u32, 4.0f32),    // Whirlwind — spin 10p × 4s
+                        1005 => (6u32, 1.8f32),     // Sword Dance — spin 6 hits × 1.8s
                         _    => (6u32, 3.0f32),     // Frost Nova / Meteor
                     };
                     let per_pulse = (damage / pulses as i32).max(1);
@@ -3341,11 +3356,10 @@ impl GameWorld {
                     } else { 0 };
                     // Smoke Bomb (1038) aplica poisoned 5s nos hits (visual tint).
                     let poison_dur = if skill_id == 1038 { 5.0_f32 } else { 0.0 };
-                    // Whirlwind (1013) gira em volta do CASTER (pos), nao do
-                    // target_pos. Outros rain skills sao position-targeted.
-                    // Note: pra v1 Whirlwind centra na pos no momento do cast;
-                    // se o player se mover durante o spin, a area fica fixa.
-                    let pulse_center = if skill_id == 1013 { pos } else { target_pos };
+                    // Whirlwind (1013) e Sword Dance (1005) giram em volta do
+                    // CASTER (pos), nao do target_pos. Outros rain skills sao
+                    // position-targeted (Meteor cai onde o user mirou).
+                    let pulse_center = if skill_id == 1013 || skill_id == 1005 { pos } else { target_pos };
                     for i in 0..pulses {
                         self.pending_delayed_aoe.push(DelayedAoe {
                             target_pos: pulse_center, radius, damage: per_pulse, owner_eid,
