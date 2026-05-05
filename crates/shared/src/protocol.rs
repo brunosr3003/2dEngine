@@ -270,6 +270,11 @@ pub enum ServerMessage {
         /// quando o cast é interrompido (SkillCastCancel mata visuals deste eid).
         #[serde(skip_serializing_if = "Option::is_none")]
         caster_eid: Option<crate::EntityId>,
+        /// Posicoes encadeadas dos bounces (Chain Lightning, Lightning Bolt
+        /// rank 5+). Comeca no target_pos principal e segue por cada alvo
+        /// adicional. None se a skill nao tem chain.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        chain_points: Option<Vec<[f32; 2]>>,
     },
     /// Cast foi cancelado (player se moveu durante o cast). Cliente despawna
     /// gizmos/VFX em andamento associados ao caster_eid. Tambem para qualquer

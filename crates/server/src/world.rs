@@ -109,6 +109,12 @@ struct DelayedAoe {
     /// Knockback em tiles vindo do SkillDef.knockback. Aplicado em cada hit
     /// na direcao oposta ao centro do AoE.
     knockback: f32,
+    /// Quando true, target_pos eh ignorado e o AoE usa a pos ATUAL do owner
+    /// no momento do release. Permite Whirlwind/Sword Dance seguirem o
+    /// player enquanto ele anda durante o spin (ataque rotativo movel).
+    follow_owner: bool,
+    /// Stun aplicado nos hits (Caltrops trap). 0 = sem stun.
+    stun_dur_s: f32,
 }
 
 pub struct EnemyTag {
@@ -770,6 +776,11 @@ pub struct GameWorld {
     /// `release_tick` é atingido. Sincroniza projétil com fim da anim de saque.
     pending_shots: Vec<PendingShot>,
     pending_skill_hits: Vec<PendingSkillHit>,
+    /// Posicoes do ultimo chain dentro do handle_skill_cast — populado pelas
+    /// skills com bounce (Chain Lightning 1054, Lightning Bolt 1051 r5+).
+    /// Lido pelo broadcast de SkillCastFx no fim do mesmo handle_skill_cast,
+    /// depois resetado.
+    last_chain_pts: Vec<Vec2>,
     pending_heals: Vec<PendingHeal>,
     pending_delayed_aoe: Vec<DelayedAoe>,
     /// Mapa por net_id → hurt_dir aplicado neste tick. Populado em step() ao
@@ -840,6 +851,7 @@ impl GameWorld {
             save_pending: false,
             pending_shots: Vec::new(),
             pending_skill_hits: Vec::new(),
+            last_chain_pts: Vec::new(),
             pending_heals: Vec::new(),
             pending_delayed_aoe: Vec::new(),
             hit_this_tick: HashMap::new(),
@@ -896,6 +908,7 @@ impl GameWorld {
             save_pending: false,
             pending_shots: Vec::new(),
             pending_skill_hits: Vec::new(),
+            last_chain_pts: Vec::new(),
             pending_heals: Vec::new(),
             pending_delayed_aoe: Vec::new(),
             hit_this_tick: HashMap::new(),
@@ -1246,6 +1259,7 @@ impl GameWorld {
             let fx = ServerMessage::SkillCastFx {
                 skill_id: ls.skill_id, caster_pos: enemy_pos, target_pos,
                 target_eid: None, caster_eid: Some(enemy_eid),
+                chain_points: None,
             };
             for s in self.sessions.values() {
                 if s.logged_in { let _ = s.handle.to_client.send(fx.clone()); }
@@ -2961,8 +2975,14 @@ impl GameWorld {
 
         // 3. Cooldown
         let now = self.sim_time_s;
+        // Spear Throw (1021): segunda casta dentro da janela harpoon (5s) eh
+        // recast — bypass CD pra permitir o pull mesmo se cooldown nao
+        // expirou. CD do skill (14s) so' afeta primeira casta nova.
+        let is_spear_recast = skill_id == 1021
+            && session.harpoon_until > now
+            && session.harpoon_target_eid.is_some();
         if let Some(&ready_at) = session.skill_cds.get(&skill_id) {
-            if now < ready_at { return; }
+            if now < ready_at && !is_spear_recast { return; }
         }
         // 3b. Já castando outra skill? Rejeita (player travado).
         if session.casting_until > now { return; }
@@ -3059,6 +3079,49 @@ impl GameWorld {
                 }
             }
         }
+        // Earthshatter (1015) é aoe_circle (não cai no `casts_attack_anim`)
+        // mas a gente quer animacao de jump (DASH) parado durante o wind-up
+        // pra que outros clients vejam o caster "saltando" antes do impacto.
+        if skill_id == 1015 {
+            if let Some(ent) = owner_entity {
+                if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(ent) {
+                    tag.attack_anim_pending = Some(shared::components::attack_anim::DASH);
+                }
+            }
+        }
+        // Caltrops (1035): trap real — spawna 10 DelayedAoe ticks com 1s
+        // de gap, cada um com damage + stun_dur_s=1.5s nos enemies em radius.
+        // Skip do dispatch generico aoe_circle (que daria dano instantaneo
+        // unico). Nao usa `return` aqui pra que o broadcast SkillCastFx
+        // ainda fire no fim da funcao (cliente precisa pra desenhar visuais).
+        let mut skip_dispatch = false;
+        if skill_id == 1035 {
+            let radius = def.radius_tiles.max(1.0);
+            let trap_pos = target_pos;
+            const TRAP_DURATION_S: f32 = 10.0;
+            const TICK_INTERVAL_S: f32 = 1.0;
+            let ticks = (TRAP_DURATION_S / TICK_INTERVAL_S) as i32;
+            let now_tick = self.tick;
+            let ticks_per_sec = 30.0_f32;
+            for i in 0..ticks {
+                let release_tick = now_tick.wrapping_add(((i as f32) * TICK_INTERVAL_S * ticks_per_sec) as u32);
+                self.pending_delayed_aoe.push(DelayedAoe {
+                    target_pos: trap_pos,
+                    radius,
+                    damage,
+                    owner_eid,
+                    release_tick,
+                    poison_dur_s: 0.0,
+                    knockback: 0.0,
+                    follow_owner: false,
+                    stun_dur_s: 1.5,
+                });
+            }
+            tracing::info!("Caltrops cast: {} ticks × {}s @ ({:.1},{:.1}) r{} dmg={}",
+                ticks, TICK_INTERVAL_S, trap_pos.x, trap_pos.y, radius, damage);
+            skip_dispatch = true;
+        }
+        if !skip_dispatch {
         match def.target_type.as_str() {
             "projectile" => {
                 let spawn_pos = pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y)
@@ -3238,7 +3301,15 @@ impl GameWorld {
                     });
                     // Chain Lightning (1054): bounce até 4 alvos extras com falloff 25%.
                     if skill_id == 1054 {
-                        self.chain_lightning_bounces(target_pos2, target_net, owner_eid, damage, 4);
+                        let pts = self.chain_lightning_bounces(target_pos2, target_net, owner_eid, damage, 4);
+                        self.last_chain_pts = pts;
+                    }
+                    // Lightning Bolt (1051): a partir do rank 5 ganha bounce
+                    // pro proximo enemy. r5=+1, r6=+2 ... r10=+6 alvos extras.
+                    if skill_id == 1051 && rank >= 5 {
+                        let bonus = rank.saturating_sub(4) as u32;
+                        let pts = self.chain_lightning_bounces(target_pos2, target_net, owner_eid, damage, bonus);
+                        self.last_chain_pts = pts;
                     }
                     // Soul Drain (1042): cura caster por 75% do dano causado.
                     // Vampiric — converte HP do alvo em vida do caster.
@@ -3279,11 +3350,14 @@ impl GameWorld {
                         found
                     });
                     if let Some(land_pos) = target_world_pos {
-                        // RECAST: leap ate o alvo. Limpa state, set leap.
+                        // RECAST: leap ate o alvo. Duracao DEVE bater com
+                        // LEAP_DURATION=0.5 do step (linha ~4908) — senao o
+                        // step calcula leap_start errado e char comeca o
+                        // leap ja adiantado.
                         if let Some(s) = self.sessions.get_mut(&sid) {
                             s.harpoon_target_eid = None;
                             s.harpoon_until = 0.0;
-                            s.leap_until = self.sim_time_s + 0.4;
+                            s.leap_until = self.sim_time_s + 0.5;
                             s.leap_start_pos = pos;
                             s.leap_target = land_pos;
                             s.leap_damage = 0; // dano ja foi no projetil hit
@@ -3313,7 +3387,11 @@ impl GameWorld {
                         damage, dir.x, dir.y);
                     return;
                 }
-                if skill_id == 1001 {
+                // Spear movement skills (1017 Lunge, 1022 Charge, 1023
+                // Dragon Tail) usam mesmo leap mechanism do Leap Strike —
+                // player se move ate o target_pos com damage no landing.
+                // Diferenca: range/radius/stun por skill.
+                if skill_id == 1001 || skill_id == 1017 || skill_id == 1022 || skill_id == 1023 {
                     // Mesma duracao do leap step (4736) — ambos compartilham
                     // o mecanismo de interpolacao.
                     let leap_duration: f32 = 0.5;
@@ -3366,19 +3444,25 @@ impl GameWorld {
                         s.leap_damage = damage;
                         s.leap_radius = radius;
                     }
-                    // Anim — Leap usa DASH (jump), Spear Throw usa THRUST
-                    // (arremesso/estocada extendida).
+                    // Anim por skill: Leap Strike (1001) = DASH (jump), spear
+                    // skills (1021, 1017, 1022, 1023) = THRUST (estocada).
                     if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(e) {
-                        let anim = if skill_id == 1021 {
-                            shared::components::attack_anim::THRUST
-                        } else {
-                            shared::components::attack_anim::DASH
+                        let anim = match skill_id {
+                            1021 | 1017 | 1022 | 1023 => shared::components::attack_anim::THRUST,
+                            _                         => shared::components::attack_anim::DASH,
                         };
                         tag.attack_anim_pending = Some(anim);
                     }
+                    let skill_name = match skill_id {
+                        1001 => "Leap Strike",
+                        1017 => "Lunge",
+                        1021 => "Spear Throw",
+                        1022 => "Charge",
+                        1023 => "Dragon Tail",
+                        _    => "Unknown",
+                    };
                     tracing::info!("{} start: jumping {:.1} tiles in {:.2}s, will hit r{:.1} dmg={}",
-                        if skill_id == 1021 { "Spear Throw" } else { "Leap Strike" },
-                        dist.min(def.range_tiles), leap_duration, radius, damage);
+                        skill_name, dist.min(def.range_tiles), leap_duration, radius, damage);
                     // SkillCastFx (com explosao VFX) e broadcastado apenas no
                     // LANDING (em E.1 step), nao no cast — cliente sincroniza
                     // com a chegada do char.
@@ -3407,16 +3491,20 @@ impl GameWorld {
                     } else { 0 };
                     // Smoke Bomb (1038) aplica poisoned 5s nos hits (visual tint).
                     let poison_dur = if skill_id == 1038 { 5.0_f32 } else { 0.0 };
-                    // Whirlwind (1013) e Sword Dance (1005) giram em volta do
-                    // CASTER (pos), nao do target_pos. Outros rain skills sao
-                    // position-targeted (Meteor cai onde o user mirou).
-                    let pulse_center = if skill_id == 1013 || skill_id == 1005 { pos } else { target_pos };
+                    // Whirlwind (1013) e Sword Dance (1005) seguem o caster:
+                    // a cada pulse, o AoE eh aplicado na pos ATUAL do owner
+                    // (player pode andar durante o spin).  Outros rain skills
+                    // sao position-targeted (Meteor cai onde o user mirou).
+                    let follow = skill_id == 1013 || skill_id == 1005;
+                    let pulse_center = if follow { pos } else { target_pos };
                     for i in 0..pulses {
                         self.pending_delayed_aoe.push(DelayedAoe {
                             target_pos: pulse_center, radius, damage: per_pulse, owner_eid,
                             release_tick: self.tick.wrapping_add(pulse_offset_ticks + i * interval_ticks),
                             poison_dur_s: poison_dur,
                             knockback: def.knockback,
+                            follow_owner: follow,
+                            stun_dur_s: 0.0,
                         });
                     }
                     tracing::info!(
@@ -3443,6 +3531,8 @@ impl GameWorld {
                         release_tick: self.tick.wrapping_add(delay_ticks.max(1)),
                         poison_dur_s: 0.0,
                         knockback: def.knockback,
+                        follow_owner: false,
+                        stun_dur_s: 0.0,
                     });
                     tracing::info!(
                         "skill cast: {} (aoe r{:.1}) dmg={} delayed {:.2}s ({} ticks)",
@@ -3504,12 +3594,20 @@ impl GameWorld {
                 tracing::debug!("skill cast: target_type '{}' não implementado ainda", def.target_type);
             }
         }
+        } // end if !skip_dispatch
 
         // Broadcast SkillCastFx pra todos clientes logados (gizmos no cliente).
         // session já não está borrowed aqui — NLL drop após `let owner_eid`.
+        let chain_points = if self.last_chain_pts.is_empty() {
+            None
+        } else {
+            Some(self.last_chain_pts.iter().map(|v| [v.x, v.y]).collect::<Vec<_>>())
+        };
+        self.last_chain_pts.clear();
         let fx = ServerMessage::SkillCastFx {
             skill_id, caster_pos: pos, target_pos, target_eid: None,
             caster_eid: Some(owner_eid),
+            chain_points,
         };
         for s in self.sessions.values() {
             if s.logged_in {
@@ -3583,8 +3681,10 @@ impl GameWorld {
     }
 
     /// Chain Lightning: a partir do alvo principal, bounce até `bounces` alvos
-    /// extras, com falloff de 25% por bounce.
-    fn chain_lightning_bounces(&mut self, start_pos: Vec2, exclude: EntityId, attacker: EntityId, base_dmg: i32, bounces: u32) {
+    /// extras, com falloff de 25% por bounce. Retorna as posicoes encadeadas
+    /// pra cliente renderizar o feixe entre cada salto (Vec vazio = sem chain).
+    fn chain_lightning_bounces(&mut self, start_pos: Vec2, exclude: EntityId, attacker: EntityId, base_dmg: i32, bounces: u32) -> Vec<Vec2> {
+        let mut chain: Vec<Vec2> = Vec::new();
         let mut excluded = std::collections::HashSet::new();
         excluded.insert(exclude);
         let mut current_pos = start_pos;
@@ -3610,12 +3710,14 @@ impl GameWorld {
                     knockback: 0.4, // Chain Lightning bounce: leve
                 });
                 excluded.insert(tn);
+                chain.push(tp);
                 current_pos = tp;
                 current_dmg = (current_dmg as f32 * 0.75) as i32;
             } else {
                 break;
             }
         }
+        chain
     }
 
     /// Aprende rank 1 da skill — gasta 1 SP. Valida unlock_char_lvl,
@@ -4944,6 +5046,7 @@ impl GameWorld {
             let fx = ServerMessage::SkillCastFx {
                 skill_id: 1001, caster_pos: landing, target_pos: landing,
                 target_eid: None, caster_eid: Some(owner_eid),
+                chain_points: None,
             };
             for s in self.sessions.values() {
                 if s.logged_in {
@@ -5302,10 +5405,21 @@ impl GameWorld {
             }
             self.pending_delayed_aoe = still;
             for d in to_fire {
-                let enemies = self.find_enemies_in_radius(d.target_pos, d.radius);
+                // follow_owner: looka up pos atual do owner pra Whirlwind/
+                // Sword Dance acompanharem o player enquanto ele anda.
+                let center = if d.follow_owner {
+                    let mut found = d.target_pos;
+                    for (_, (net, p)) in self.ecs.query::<(&NetId, &Position)>().iter() {
+                        if net.0 == d.owner_eid { found = p.0; break; }
+                    }
+                    found
+                } else {
+                    d.target_pos
+                };
+                let enemies = self.find_enemies_in_radius(center, d.radius);
                 let now_s = self.sim_time_s;
                 for tn in &enemies {
-                    let hd = calc_hurt_dir_from_eid(&self.ecs, *tn, d.target_pos);
+                    let hd = calc_hurt_dir_from_eid(&self.ecs, *tn, center);
                     self.pending_skill_hits.push(PendingSkillHit {
                         target_net: *tn, damage: d.damage, attacker_net: d.owner_eid,
                         hurt_dir: hd, is_crit: false, from_player: true,
@@ -5321,6 +5435,18 @@ impl GameWorld {
                     for (_, (net, tag)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag)>() {
                         if target_set.contains(&net.0) && tag.poisoned_until < expires {
                             tag.poisoned_until = expires;
+                        }
+                    }
+                }
+                // Aplica stun status (Caltrops trap). Inimigo fica preso o
+                // tempo do trap tick — root effetivo enquanto pisa nele.
+                if d.stun_dur_s > 0.0 {
+                    let expires = now_s + d.stun_dur_s;
+                    let target_set: std::collections::HashSet<EntityId> =
+                        enemies.iter().copied().collect();
+                    for (_, (net, tag)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag)>() {
+                        if target_set.contains(&net.0) && tag.stunned_until < expires {
+                            tag.stunned_until = expires;
                         }
                     }
                 }
@@ -6224,6 +6350,7 @@ impl GameWorld {
             defending: bool,
             casting: bool,
             poise_active: bool,
+            buffs_mask: u8,
         }
         // Drena parry_flash_pending no mesmo passo — uma vez por tick.
         let mut player_overlay: HashMap<EntityId, PlayerOverlay> = HashMap::new();
@@ -6237,6 +6364,9 @@ impl GameWorld {
             }
             let casting = s.casting_until > now_for_cast;
             let poise_active = s.poise_current > 0.5;
+            let mut buffs_mask: u8 = 0;
+            if s.bloodthirst_until  > now_for_cast { buffs_mask |= shared::components::buffs_mask::BLOODTHIRST;  }
+            if s.hunters_mark_until > now_for_cast { buffs_mask |= shared::components::buffs_mask::HUNTERS_MARK; }
             player_overlay.insert(s.entity_id, PlayerOverlay {
                 weapon_id: s.equipment.weapon,
                 offhand_id: s.equipment.offhand,
@@ -6246,6 +6376,7 @@ impl GameWorld {
                 defending: s.defending,
                 casting,
                 poise_active,
+                buffs_mask,
             });
         }
 
@@ -6363,6 +6494,7 @@ impl GameWorld {
                     passenger_eid: boat.and_then(|b| b.passenger),
                     mounted: if is_player && mounted_player_eids.contains(&net.0) { Some(true) } else { None },
                     is_boss: etag.and_then(|t| if t.is_boss { Some(true) } else { None }),
+                    buffs: overlay.and_then(|o| if o.buffs_mask != 0 { Some(o.buffs_mask) } else { None }),
                 }
             })
             .collect();
@@ -6632,16 +6764,8 @@ impl GameWorld {
             if item.qty > 1 { return false; }
             // Item desativado pelo admin: bloqueado de ser equipado.
             if !crate::economy::is_item_active(item.item_id) { return false; }
-            // Profs ainda nao implementadas (Axe/Spear/Dagger): rejeita
-            // equip do weapon. UI tambem bloqueia client-side.
-            if slot == shared::EquipSlot::Weapon {
-                use shared::item_id;
-                if matches!(item.item_id, x if x == item_id::AXE
-                                              || x == item_id::SPEAR
-                                              || x == item_id::DAGGER) {
-                    return false;
-                }
-            }
+            // (Axe/Spear/Dagger gates removidos — profs implementadas com
+            // skill trees completas nas commits recentes.)
             can_equip_in_slot(&equip_now, slot, item.item_id)
         };
 

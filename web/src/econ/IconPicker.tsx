@@ -9,13 +9,17 @@ type Props = {
   onGrid: (c: number, r: number) => void;
 };
 
-let _iconsCache: { configured: boolean; icons: string[] } | null = null;
+let _iconsCache: { configured: boolean; icons: string[]; prefix: string } | null = null;
 
 async function fetchIcons() {
   if (_iconsCache) return _iconsCache;
   const r = await fetch('/api/econ/icons', { headers: { 'Authorization': 'Bearer ' + auth.get() } });
   const d = await r.json();
-  _iconsCache = { configured: !!d.configured, icons: d.icons || [] };
+  _iconsCache = {
+    configured: !!d.configured,
+    icons: d.icons || [],
+    prefix: (d.resources_prefix as string) || 'Items',
+  };
   return _iconsCache;
 }
 
@@ -27,13 +31,14 @@ export function IconPicker({ path, col, row, onPath, onGrid }: Props) {
   const [dragging, setDragging] = useState(false);
   const [icons, setIcons] = useState<string[]>([]);
   const [configured, setConfigured] = useState(false);
+  const [prefix, setPrefix] = useState<string>('Items');
   const [filter, setFilter] = useState('');
   const [showGrid, setShowGrid] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchIcons().then(({ configured, icons }) => {
-      setConfigured(configured); setIcons(icons);
+    fetchIcons().then(({ configured, icons, prefix }) => {
+      setConfigured(configured); setIcons(icons); setPrefix(prefix);
     }).catch(() => {});
   }, []);
 
@@ -47,7 +52,7 @@ export function IconPicker({ path, col, row, onPath, onGrid }: Props) {
       return;
     }
     const base = file.name.replace(/\.png$/i, '');
-    onPath(`Items/${base}`);
+    onPath(`${prefix}/${base}`);
     if (previewBlob) URL.revokeObjectURL(previewBlob);
     setPreviewBlob(URL.createObjectURL(file));
   };
@@ -59,8 +64,14 @@ export function IconPicker({ path, col, row, onPath, onGrid }: Props) {
     if (f) onFile(f);
   };
 
-  // basename derivado do path atual ("Items/sword" → "sword") pra highlight
-  const currentBase = path?.startsWith('Items/') ? path.slice('Items/'.length) : null;
+  // basename derivado do path atual ("Icons/sliced/sword" → "sword") pra highlight.
+  // Aceita tanto o prefixo do server quanto o legado "Items/" pra retro-compat.
+  const currentBase = (() => {
+    if (!path) return null;
+    if (prefix && path.startsWith(prefix + '/')) return path.slice(prefix.length + 1);
+    if (path.startsWith('Items/')) return path.slice('Items/'.length);
+    return null;
+  })();
 
   const filtered = filter
     ? icons.filter(n => n.toLowerCase().includes(filter.toLowerCase()))
@@ -142,7 +153,7 @@ export function IconPicker({ path, col, row, onPath, onGrid }: Props) {
                   type="button"
                   className={'icon-cell-btn' + (currentBase === name ? ' selected' : '')}
                   title={name}
-                  onClick={() => onPath(`Items/${name}`)}
+                  onClick={() => onPath(`${prefix}/${name}`)}
                 >
                   <img src={thumbUrl(name)} alt={name} />
                   <span>{name}</span>

@@ -609,6 +609,29 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
         "UPDATE items SET active = FALSE WHERE id IN (24, 27) AND active = TRUE"
     ).execute(&pool).await?;
 
+    // Garante AXE (25) e SPEAR (26) ativos. Em DBs antigos (pre-M11) podem
+    // ter ficado active=FALSE por algum hotfix; force enable pra que apareçam
+    // em char creation + sejam equipaveis.
+    sqlx::query(
+        "UPDATE items SET active = TRUE WHERE id IN (25, 26)"
+    ).execute(&pool).await?;
+    // Force buy_price em AXE (180) e SPEAR (130) — pra que vendor liste eles.
+    // shop_listing_for filtra .buy_price.is_some(); items sem buy_price NUNCA
+    // aparecem na loja mesmo estando em vendor_shop_items.
+    sqlx::query(
+        "UPDATE items SET buy_price = 180, name = 'Machado' WHERE id = 25"
+    ).execute(&pool).await?;
+    sqlx::query(
+        "UPDATE items SET buy_price = 130 WHERE id = 26"
+    ).execute(&pool).await?;
+
+    // Lunge (1017) e Charge (1022): converte de line → aoe_circle pra usar
+    // o leap mechanism (skill que MOVE o player ate o target). Range mantido,
+    // radius pequeno (0.5) pra simular single-target stab no landing.
+    sqlx::query(
+        "UPDATE skills SET target_type='aoe_circle', radius_tiles=0.5 WHERE id IN (1017, 1022)"
+    ).execute(&pool).await?;
+
     seed_economy_if_needed(&pool).await?;
     seed_skills_if_needed(&pool).await?;
 
@@ -1264,8 +1287,8 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         S{ id: item_id::STAFF as i32,          name:"Cajado",          sell:30,  buy:None,         ord:None,    stack:1,    slot:Some("Weapon"), lvl:6,  ic:3,  ir:93,  hp:(0,0),    mp:(20,60),   atk:(14,26), def:(0,0),  dex:(0,0),  wis:(3,8) },
         S{ id: item_id::WAND as i32,           name:"Varinha",         sell:60,  buy:None,         ord:None,    stack:1,    slot:Some("Weapon"), lvl:7,  ic:1,  ir:93,  hp:(0,0),    mp:(50,110),  atk:(4,10),  def:(0,0),  dex:(0,0),  wis:(5,12) },
         S{ id: item_id::SCIMITAR as i32,       name:"Cimitarra",       sell:50,  buy:None,         ord:None,    stack:1,    slot:Some("Weapon"), lvl:6,  ic:3,  ir:90,  hp:(0,0),    mp:(0,0),     atk:(6,14),  def:(0,0),  dex:(4,10), wis:(0,0) },
-        S{ id: item_id::AXE as i32,         name:"Martelo de Guerra",sell:90, buy:None,         ord:None,    stack:1,    slot:Some("Weapon"), lvl:12, ic:5,  ir:90,  hp:(15,35),  mp:(0,0),     atk:(16,32), def:(2,6),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::SPEAR as i32,          name:"Lança",           sell:65,  buy:None,         ord:None,    stack:1,    slot:Some("Weapon"), lvl:9,  ic:8,  ir:90,  hp:(0,0),    mp:(0,0),     atk:(12,22), def:(0,0),  dex:(3,9),  wis:(0,0) },
+        S{ id: item_id::AXE as i32,         name:"Machado",         sell:90,  buy:Some(180),    ord:Some(11),stack:1,    slot:Some("Weapon"), lvl:12, ic:5,  ir:90,  hp:(15,35),  mp:(0,0),     atk:(16,32), def:(2,6),  dex:(0,0),  wis:(0,0) },
+        S{ id: item_id::SPEAR as i32,          name:"Lança",           sell:65,  buy:Some(130),    ord:Some(10),stack:1,    slot:Some("Weapon"), lvl:9,  ic:8,  ir:90,  hp:(0,0),    mp:(0,0),     atk:(12,22), def:(0,0),  dex:(3,9),  wis:(0,0) },
         S{ id: item_id::CROSSBOW as i32,       name:"Besta",           sell:90,  buy:None,         ord:None,    stack:1,    slot:Some("Weapon"), lvl:10, ic:15, ir:93,  hp:(0,0),    mp:(0,0),     atk:(14,24), def:(0,0),  dex:(6,12), wis:(0,0) },
         // Armaduras / escudos
         S{ id: item_id::ARMOR as i32,          name:"Armadura",        sell:25,  buy:None,         ord:None,    stack:1,    slot:Some("Armor"),  lvl:5,  ic:0,  ir:120, hp:(25,60),  mp:(0,0),     atk:(0,0),   def:(3,8),  dex:(0,0),  wis:(0,0) },
@@ -1595,6 +1618,9 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         (4, item_id::HEAVY_SHIELD),
         (5, item_id::PENDANT), (5, item_id::CHARM),
         (6, item_id::CROSSBOW),
+        // Mercador (shop 1) tambem vende Axe e Spear — eh o unico vendor
+        // NPC que sempre tem no mundo, garante que o player consiga comprar.
+        (1, item_id::AXE), (1, item_id::SPEAR),
     ];
     for (sid, item) in new_shop_items {
         let exists: i64 = sqlx::query_scalar(

@@ -423,6 +423,17 @@ pub struct EntitySnapshot {
     /// Some(true) apenas em EntityKind::Enemy quando EnemyTag.is_boss=true.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_boss: Option<bool>,
+    /// Bitmask de buffs ativos no player. Cliente renderiza aura por bit set.
+    /// bit0=Bloodthirst (vermelho), bit1=Hunter's Mark (laranja). Some apenas
+    /// quando ao menos um bit ativo. Outros bits reservados pra buffs futuros.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub buffs: Option<u8>,
+}
+
+/// Bits do `EntitySnapshot.buffs` — mantém em sync com o cliente C#.
+pub mod buffs_mask {
+    pub const BLOODTHIRST:  u8 = 1 << 0;
+    pub const HUNTERS_MARK: u8 = 1 << 1;
 }
 
 /// Codigo enviado em `EntitySnapshot.attack_anim` pra discriminar qual

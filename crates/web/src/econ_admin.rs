@@ -451,7 +451,7 @@ async fn drops_delete(
 async fn icons_list(State(s): State<EconState>, headers: HeaderMap) -> Response {
     if !s.is_authed(&headers) { return unauth(); }
     let Some(dir) = s.icons_dir.as_ref().clone() else {
-        return Json(serde_json::json!({"icons": [], "configured": false})).into_response();
+        return Json(serde_json::json!({"icons": [], "configured": false, "resources_prefix": "Items"})).into_response();
     };
     let mut icons: Vec<String> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&dir) {
@@ -464,7 +464,24 @@ async fn icons_list(State(s): State<EconState>, headers: HeaderMap) -> Response 
         }
     }
     icons.sort();
-    Json(serde_json::json!({"icons": icons, "configured": true})).into_response()
+    // Deriva o prefixo Resources a partir do path absoluto do ICONS_DIR.
+    // Cliente precisa do path RELATIVO a Assets/_Project/Resources/ pra
+    // popular icon_path do item — Unity Resources.Load resolve assim.
+    // Ex: ICONS_DIR=/.../Resources/Icons/sliced → "Icons/sliced".
+    let prefix = dir.to_string_lossy().to_string();
+    let resources_prefix = if let Some(idx) = prefix.find("/Resources/") {
+        prefix[idx + "/Resources/".len()..].trim_end_matches('/').to_string()
+    } else if let Some(idx) = prefix.find("\\Resources\\") {
+        prefix[idx + "\\Resources\\".len()..].trim_end_matches('\\').replace('\\', "/")
+    } else {
+        // Fallback: usa o nome do diretorio final.
+        dir.file_name().and_then(|s| s.to_str()).unwrap_or("Items").to_string()
+    };
+    Json(serde_json::json!({
+        "icons": icons,
+        "configured": true,
+        "resources_prefix": resources_prefix,
+    })).into_response()
 }
 
 // ── relatório / observabilidade ─────────────────────────────────────────
