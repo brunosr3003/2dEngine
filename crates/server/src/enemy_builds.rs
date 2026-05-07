@@ -277,9 +277,9 @@ fn equip_for_class_level(class: EnemyClass, level: u32) -> Equipment {
 /// ganha 50% mais pontos pra ser threat real.
 fn allocated_for_level(class: EnemyClass, level: u32) -> [u32; STAT_COUNT] {
     let level_mult = if level >= 71 { 1.5 } else { 1.0 };
-    // Pontos por nível: ~3 pontos/level (player ganha 1, mas mob precisa
-    // de mais pra balance via stats puros).
-    let total = ((level as f32) * 3.0 * level_mult) as u32;
+    // Hardcore: 5 pontos/level (era 3) — mobs significativamente mais fortes
+    // pra que XP curva 5x lenta nao deixe player sub-leveled vs mobs.
+    let total = ((level as f32) * 5.0 * level_mult) as u32;
     // Distribuicao por classe — emula prioridade de cada arquetipo.
     // Indices: [FOR=0, DES=1, INT=2, VIT=3, SPD=4, RES=5]
     let weights = match class {
@@ -480,11 +480,26 @@ pub fn build_boss(level: u32, class: EnemyClass) -> EnemyBuild {
     b
 }
 
-/// Sortea uma classe permitida pelo tier do level.
+/// Sortea uma classe permitida pelo tier do level. Pesos: melee 4×, ranged 1×
+/// — bias significativo pra melee (~75% spawns) pra fechar a distancia faster.
 pub fn random_class_for_level(level: u32, rng_seed: u64) -> EnemyClass {
     let tier = tier_for_level(level);
     let pool = tier.allowed_classes;
-    pool[(rng_seed as usize) % pool.len()]
+    let weight = |c: EnemyClass| -> u32 {
+        match c {
+            EnemyClass::Bow | EnemyClass::Staff | EnemyClass::Wand => 1,
+            _ => 4,
+        }
+    };
+    let total: u32 = pool.iter().map(|c| weight(*c)).sum();
+    if total == 0 { return pool[(rng_seed as usize) % pool.len()]; }
+    let mut r = (rng_seed as u32) % total;
+    for &c in pool.iter() {
+        let w = weight(c);
+        if r < w { return c; }
+        r -= w;
+    }
+    pool[0]
 }
 
 /// Top-level: sortea level no range + classe permitida + retorna build.

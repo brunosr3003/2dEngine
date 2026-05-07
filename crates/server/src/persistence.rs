@@ -602,11 +602,22 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
          WHERE id = 25 AND name = 'Martelo de Guerra'"
     ).execute(&pool).await?;
 
-    // Migration M11c: desativa SCIMITAR (24) e CROSSBOW (27) — removidos
-    // do design Phase 1. Items continuam no DB pra players que tinham no
-    // inventário (vendem/guardam), mas não dropam mais nem podem equipar.
+    // Migration M11c: desativa DAGGER (12), GREATSWORD (13), SCIMITAR (24) e
+    // CROSSBOW (27) — removidos do design Phase 1. Items continuam no DB pra
+    // players que tinham no inventário (vendem/guardam), mas não dropam mais
+    // nem podem equipar. Greatsword compartilha prof Sword, então skills 1001-
+    // 1008 seguem acessíveis pelo Sword normal (id 3).
     sqlx::query(
-        "UPDATE items SET active = FALSE WHERE id IN (24, 27) AND active = TRUE"
+        "UPDATE items SET active = FALSE WHERE id IN (12, 13, 24, 27) AND active = TRUE"
+    ).execute(&pool).await?;
+
+    // M11e: desativa skills da proficiência Dagger (1025..1032). Sem item de
+    // Dagger ativo não há como ganhar prof XP, então essas skills viram
+    // inalcançáveis. SkillsConfig do server filtra `WHERE active = TRUE`, então
+    // somem da skill panel. Players que já aprenderam mantêm rank no DB
+    // (player_skills) mas a skill não aparece mais — reativar é só voltar p/ TRUE.
+    sqlx::query(
+        "UPDATE skills SET active = FALSE WHERE id BETWEEN 1025 AND 1032 AND active = TRUE"
     ).execute(&pool).await?;
 
     // Garante AXE (25) e SPEAR (26) ativos. Em DBs antigos (pre-M11) podem
@@ -1290,6 +1301,16 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         S{ id: item_id::AXE as i32,         name:"Machado",         sell:90,  buy:Some(180),    ord:Some(11),stack:1,    slot:Some("Weapon"), lvl:12, ic:5,  ir:90,  hp:(15,35),  mp:(0,0),     atk:(16,32), def:(2,6),  dex:(0,0),  wis:(0,0) },
         S{ id: item_id::SPEAR as i32,          name:"Lança",           sell:65,  buy:Some(130),    ord:Some(10),stack:1,    slot:Some("Weapon"), lvl:9,  ic:8,  ir:90,  hp:(0,0),    mp:(0,0),     atk:(12,22), def:(0,0),  dex:(3,9),  wis:(0,0) },
         S{ id: item_id::CROSSBOW as i32,       name:"Besta",           sell:90,  buy:None,         ord:None,    stack:1,    slot:Some("Weapon"), lvl:10, ic:15, ir:93,  hp:(0,0),    mp:(0,0),     atk:(14,24), def:(0,0),  dex:(6,12), wis:(0,0) },
+        // Fase F — armas tier 2 (gate de char_lvl + prof_lvl). Item lvl 10 marca o tier.
+        S{ id: item_id::ENHANCED_SWORD as i32, name:"Lâmina Polida",   sell:200, buy:Some(800),    ord:Some(20),stack:1,    slot:Some("Weapon"), lvl:10, ic:2,  ir:90,  hp:(8,15),   mp:(0,0),     atk:(18,22), def:(1,2),  dex:(2,4),  wis:(0,0) },
+        // Fase F — armas tier 3 (char_lvl 20, sword prof 10). Item lvl 20.
+        S{ id: item_id::VETERAN_SWORD as i32,  name:"Lâmina do Veterano", sell:600, buy:Some(2400), ord:Some(21),stack:1,    slot:Some("Weapon"), lvl:20, ic:4,  ir:90,  hp:(15,30),  mp:(0,0),     atk:(28,34), def:(2,4),  dex:(3,6),  wis:(0,0) },
+        // Fase F — armas tier 2 das outras 5 profs (char_lvl 10, prof respectiva 5).
+        S{ id: item_id::ENHANCED_BOW as i32,   name:"Arco Reforçado",   sell:200, buy:Some(800),    ord:Some(22),stack:1,    slot:Some("Weapon"), lvl:10, ic:14, ir:93,  hp:(0,0),    mp:(0,0),     atk:(22,30), def:(0,0),  dex:(18,30),wis:(0,0) },
+        S{ id: item_id::ENHANCED_STAFF as i32, name:"Cajado Encantado", sell:200, buy:Some(800),    ord:Some(23),stack:1,    slot:Some("Weapon"), lvl:10, ic:4,  ir:93,  hp:(0,0),    mp:(50,110),  atk:(28,40), def:(0,0),  dex:(0,0),  wis:(6,14) },
+        S{ id: item_id::ENHANCED_WAND as i32,  name:"Varinha Encantada",sell:200, buy:Some(800),    ord:Some(24),stack:1,    slot:Some("Weapon"), lvl:10, ic:2,  ir:93,  hp:(0,0),    mp:(100,180), atk:(8,16),  def:(0,0),  dex:(0,0),  wis:(10,20) },
+        S{ id: item_id::ENHANCED_AXE as i32,   name:"Machado Forjado",  sell:200, buy:Some(800),    ord:Some(25),stack:1,    slot:Some("Weapon"), lvl:10, ic:6,  ir:90,  hp:(25,50),  mp:(0,0),     atk:(32,46), def:(4,9),  dex:(0,0),  wis:(0,0) },
+        S{ id: item_id::ENHANCED_SPEAR as i32, name:"Lança Reforçada",  sell:200, buy:Some(800),    ord:Some(26),stack:1,    slot:Some("Weapon"), lvl:10, ic:9,  ir:90,  hp:(0,0),    mp:(0,0),     atk:(24,34), def:(0,0),  dex:(8,16), wis:(0,0) },
         // Armaduras / escudos
         S{ id: item_id::ARMOR as i32,          name:"Armadura",        sell:25,  buy:None,         ord:None,    stack:1,    slot:Some("Armor"),  lvl:5,  ic:0,  ir:120, hp:(25,60),  mp:(0,0),     atk:(0,0),   def:(3,8),  dex:(0,0),  wis:(0,0) },
         S{ id: item_id::SHIELD as i32,         name:"Escudo",          sell:25,  buy:Some(50),     ord:Some(9), stack:1,    slot:Some("Offhand"),lvl:5,  ic:6,  ir:132, hp:(50,100), mp:(0,0),     atk:(0,0),   def:(5,12), dex:(0,0),  wis:(0,0) },
@@ -1544,6 +1565,58 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         (4, item_id::NECKLACE_MAGIC,1, 1, 0.12),
         (3, item_id::NECKLACE_MAGIC,1, 1, 0.10),
         (7, item_id::NECKLACE_MAGIC,1, 1, 0.35),
+        // === Fase F — armas tier 2 ===
+        // Lâmina Polida (45) — drop em inimigos lvl 15-25 (sistema novo: kind=level).
+        // Chance baixa pra ser raro. Tank/Berserker (kinds 1, 5) também dropam
+        // pq são melee de tier médio no sistema legacy.
+        (15, item_id::ENHANCED_SWORD, 1, 1, 0.04),
+        (18, item_id::ENHANCED_SWORD, 1, 1, 0.05),
+        (20, item_id::ENHANCED_SWORD, 1, 1, 0.06),
+        (22, item_id::ENHANCED_SWORD, 1, 1, 0.06),
+        (25, item_id::ENHANCED_SWORD, 1, 1, 0.08),
+        (1,  item_id::ENHANCED_SWORD, 1, 1, 0.04),
+        (5,  item_id::ENHANCED_SWORD, 1, 1, 0.04),
+        // === Fase F — armas tier 3 ===
+        // Lâmina do Veterano (46) — drop em inimigos lvl 20-30. Mais raro que tier 2.
+        // Boss (kind 7 legacy) também dropa pq é o end-game current.
+        (20, item_id::VETERAN_SWORD,  1, 1, 0.02),
+        (23, item_id::VETERAN_SWORD,  1, 1, 0.03),
+        (25, item_id::VETERAN_SWORD,  1, 1, 0.04),
+        (27, item_id::VETERAN_SWORD,  1, 1, 0.05),
+        (30, item_id::VETERAN_SWORD,  1, 1, 0.06),
+        (7,  item_id::VETERAN_SWORD,  1, 1, 0.15),
+        // === Fase F — armas tier 2 outras profs (47..51) ===
+        // Distribuição: cada arma dropa em mobs lvl 15-25 com chance 0.04-0.06,
+        // + um kind legacy temático (Ranger pra Bow, Mago pra Staff/Wand,
+        // Berserker pra Axe, Tank pra Spear).
+        // Arco Reforçado (47) — Ranger/Arqueiro
+        (15, item_id::ENHANCED_BOW,    1, 1, 0.04),
+        (18, item_id::ENHANCED_BOW,    1, 1, 0.05),
+        (22, item_id::ENHANCED_BOW,    1, 1, 0.06),
+        (2,  item_id::ENHANCED_BOW,    1, 1, 0.04),
+        (6,  item_id::ENHANCED_BOW,    1, 1, 0.04),
+        // Cajado Encantado (48) — Mago
+        (15, item_id::ENHANCED_STAFF,  1, 1, 0.04),
+        (18, item_id::ENHANCED_STAFF,  1, 1, 0.05),
+        (22, item_id::ENHANCED_STAFF,  1, 1, 0.06),
+        (4,  item_id::ENHANCED_STAFF,  1, 1, 0.06),
+        // Varinha Encantada (49) — Mago
+        (15, item_id::ENHANCED_WAND,   1, 1, 0.04),
+        (18, item_id::ENHANCED_WAND,   1, 1, 0.05),
+        (22, item_id::ENHANCED_WAND,   1, 1, 0.06),
+        (4,  item_id::ENHANCED_WAND,   1, 1, 0.06),
+        // Machado Forjado (50) — Berserker/Tank
+        (15, item_id::ENHANCED_AXE,    1, 1, 0.04),
+        (18, item_id::ENHANCED_AXE,    1, 1, 0.05),
+        (22, item_id::ENHANCED_AXE,    1, 1, 0.06),
+        (5,  item_id::ENHANCED_AXE,    1, 1, 0.05),
+        (1,  item_id::ENHANCED_AXE,    1, 1, 0.04),
+        // Lança Reforçada (51) — Tank/Berserker
+        (15, item_id::ENHANCED_SPEAR,  1, 1, 0.04),
+        (18, item_id::ENHANCED_SPEAR,  1, 1, 0.05),
+        (22, item_id::ENHANCED_SPEAR,  1, 1, 0.06),
+        (1,  item_id::ENHANCED_SPEAR,  1, 1, 0.05),
+        (5,  item_id::ENHANCED_SPEAR,  1, 1, 0.04),
     ];
     let mut inserted = 0usize;
     for (kind, item, qmin, qmax, chance) in new_drops {
@@ -1621,6 +1694,26 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // Mercador (shop 1) tambem vende Axe e Spear — eh o unico vendor
         // NPC que sempre tem no mundo, garante que o player consiga comprar.
         (1, item_id::AXE), (1, item_id::SPEAR),
+        // Fase F — Lâmina Polida no Espadeiro (shop 2). Buy_price 800g vem do
+        // seed do item; gate de char_lvl + prof_lvl bloqueia equip mesmo após compra.
+        (2, item_id::ENHANCED_SWORD),
+        // Fase F — Lâmina do Veterano no Espadeiro (2400g, char_lvl 20, prof 10).
+        (2, item_id::VETERAN_SWORD),
+        // Fase F — armas tier 2 das outras profs (800g cada).
+        (6, item_id::ENHANCED_BOW),     // Arqueiro
+        (5, item_id::ENHANCED_STAFF),   // Mística
+        (5, item_id::ENHANCED_WAND),    // Mística
+        (2, item_id::ENHANCED_AXE),     // Espadeiro (também vende machados)
+        (2, item_id::ENHANCED_SPEAR),   // Espadeiro
+        // Mercador (1) — fallback acessível, vende TUDO tier 2/3. Garante que
+        // mesmo no mapa onde só Klaus existe, o player consiga comprar todas.
+        (1, item_id::ENHANCED_SWORD),
+        (1, item_id::VETERAN_SWORD),
+        (1, item_id::ENHANCED_BOW),
+        (1, item_id::ENHANCED_STAFF),
+        (1, item_id::ENHANCED_WAND),
+        (1, item_id::ENHANCED_AXE),
+        (1, item_id::ENHANCED_SPEAR),
     ];
     for (sid, item) in new_shop_items {
         let exists: i64 = sqlx::query_scalar(

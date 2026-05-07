@@ -208,6 +208,10 @@ pub struct EnemyTag {
     /// Velocidade do empurrao (tiles/s). Aplicada enquanto knockback_until
     /// > now. Calculada como `-hurt_dir × strength / KNOCKBACK_DURATION`.
     pub knockback_vel: Vec2,
+    /// Stamina atual do enemy. Cap = stats.stamina_max. Drena ao bloquear
+    /// projetil com escudo (so' enemies com offhand=Shield). Regen passivo
+    /// fora de combate. 0 = sem stamina, escudo nao bloqueia mais ate regen.
+    pub stamina_current: f32,
 }
 
 /// Tag em inimigo spawnado por uma ServerSpawnZone — usado pra decrementar
@@ -216,6 +220,20 @@ pub struct EnemyTag {
 pub struct SpawnedByZone {
     pub zone_id: u32,
     pub kind: u16,
+    /// Indice do slot fixo (Poisson disk) que ocupa nesta zona. u32::MAX = legacy
+    /// (zona quotas sem slots).
+    pub slot_idx: u32,
+}
+
+/// Slot fixo de spawn — gerado por Poisson disk sampling no init da zona.
+/// Cada slot e um spot pre-determinado; tipo de inimigo varia a cada spawn.
+#[derive(Clone, Copy)]
+pub struct SpawnSlot {
+    pub pos: Vec2,
+    /// EntityId do mob ocupando — None = livre (pronto pra spawn ou em respawn).
+    pub occupant: Option<EntityId>,
+    /// Sim_time absoluto quando o slot fica disponivel pra respawn.
+    pub respawn_at: f32,
 }
 
 /// Tag em vendor NPC — referencia o shop_id (lookup em vendor_shops).
@@ -286,6 +304,11 @@ pub struct ServerSpawnZone {
     /// Fila de respawn pendente no modo level-range — apenas timestamps
     /// (kind e' sorteado na hora do spawn).
     pub level_range_queue: Vec<f32>,
+    /// Slots fixos pre-computados via Poisson disk sampling. Cada slot e um
+    /// spot pre-determinado com spacing minimo garantido (~10 tiles). Tipo
+    /// de inimigo (classe/level) varia a cada (re)spawn no slot. Vazio em
+    /// zonas legacy quotas.
+    pub slots: Vec<SpawnSlot>,
 }
 
 /// Area de spawn dedicada a UM boss. Sem quotas: 1 boss alive por vez.
@@ -491,6 +514,10 @@ pub struct Session {
     pub dash_cooldown: f32,
     /// sim_time absoluto até o qual o player fica em stagger (sem mover/atacar).
     pub hurt_until: f32,
+    /// sim_time em que o player comecou a ficar idle (sem mover/cast/hit).
+    /// Apos 2s de idle continuo, regen de HP eh boostado 4x ("descansando").
+    /// 0 = nao idle.
+    pub idle_since: f32,
     /// Vetor unitário do alvo TOWARD o último atacante (pra knockback futuro).
     pub hurt_dir: Vec2,
     /// sim_time ate quando o player esta sendo empurrado. Enquanto > now,
@@ -1045,6 +1072,8 @@ impl GameWorld {
         struct PendingSpawn {
             zone_id: u32, kind: u16, pos: Vec2,
             build: Option<crate::enemy_builds::EnemyBuild>,
+            /// Indice do slot Poisson; u32::MAX = legacy quotas (sem slot).
+            slot_idx: u32,
         }
         let mut pending: Vec<PendingSpawn> = Vec::new();
 
@@ -1053,21 +1082,19 @@ impl GameWorld {
             let zone_orig = self.spawn_zones[zi].origin;
             let zone_id = self.spawn_zones[zi].id;
 
-            // Modo level-range: drena level_range_queue, sortea level+kind
-            // pra cada item pronto. Pos = pick_tile_spread (varias amostras
-            // pra distribuir uniformemente em areas grandes).
+            // Modo level-range com slots Poisson: itera slots fixos. Spawna
+            // num slot que esta livre (occupant=None) e respawn_at <= now.
+            // Tipo (level+classe) sortado a cada spawn — diversidade visual.
             if let Some((lvl_min, lvl_max, _total_count)) = self.spawn_zones[zi].level_range {
-                let mut idx = 0;
-                let mut spawn_seq: u64 = 0;
-                while idx < self.spawn_zones[zi].level_range_queue.len() {
-                    let ready_at = self.spawn_zones[zi].level_range_queue[idx];
-                    if ready_at > now { idx += 1; continue; }
-                    self.spawn_zones[zi].level_range_queue.swap_remove(idx);
-                    spawn_seq = spawn_seq.wrapping_add(1);
+                let _ = zone_orig; let _ = zone_size; // unused no slot path
+                let n_slots = self.spawn_zones[zi].slots.len();
+                for slot_idx in 0..n_slots {
+                    let slot = self.spawn_zones[zi].slots[slot_idx];
+                    if slot.occupant.is_some() { continue; }
+                    if slot.respawn_at > now { continue; }
                     let s0 = (self.tick as u64
-                              ^ (zone_id as u64 * 0xC0FFEE)
-                              ^ (spawn_seq * 0xBADC0DE)
-                              ^ (self.spawn_zones[zi].level_range_live as u64 * 0xDEAD_F00D))
+                              ^ (zone_id as u64).wrapping_mul(0xC0FFEE)
+                              ^ ((slot_idx as u64).wrapping_mul(0xBADC0DE)))
                         .wrapping_mul(0x9E37_79B9);
                     let s_lvl = lcg(s0);
                     let lvl = if lvl_max > lvl_min {
@@ -1075,23 +1102,18 @@ impl GameWorld {
                     } else { lvl_min };
                     let class = crate::enemy_builds::random_class_for_level(lvl, lcg(s_lvl));
                     let build = crate::enemy_builds::build_for_level(lvl, class);
-                    // Random dentro do polygon — descarta candidatos em
-                    // water/wall (apenas ground walkable).
-                    let polygon_ref = self.spawn_zones[zi].polygon.as_deref();
-                    let pos_opt = pick_random_in_polygon_with_map(
-                        zone_orig, zone_size, s0, polygon_ref, 30, Some(&self.map),
-                    );
-                    if let Some(pos) = pos_opt {
-                        pending.push(PendingSpawn {
-                            zone_id, kind: lvl as u16, pos,
-                            build: Some(build),
-                        });
-                        self.spawn_zones[zi].level_range_live += 1;
-                    } else {
-                        self.spawn_zones[zi].level_range_queue.push(now + 0.1);
-                    }
+                    pending.push(PendingSpawn {
+                        zone_id, kind: lvl as u16, pos: slot.pos,
+                        build: Some(build),
+                        slot_idx: slot_idx as u32,
+                    });
+                    // Marca slot como pendente (será setado occupant=eid após
+                    // place_enemy_in_zone_with_build retornar). Pra evitar
+                    // double-spawn no mesmo slot, ja seta um placeholder.
+                    self.spawn_zones[zi].slots[slot_idx].respawn_at = f32::INFINITY;
+                    self.spawn_zones[zi].level_range_live += 1;
                 }
-                continue; // skip caminho legacy
+                continue; // skip caminho legacy quotas
             }
 
             // ── Caminho legacy: quotas por kind ─────────────────────────────
@@ -1110,18 +1132,36 @@ impl GameWorld {
                     .wrapping_mul(0x9E37_79B9);
                 let polygon_ref = self.spawn_zones[zi].polygon.as_deref();
                 if let Some(pos) = self.pick_tile_in_zone(zone_orig, zone_size, seed, 40, polygon_ref) {
-                    pending.push(PendingSpawn { zone_id, kind, pos, build: None });
+                    pending.push(PendingSpawn { zone_id, kind, pos, build: None, slot_idx: u32::MAX });
                     if let Some(entry) = self.spawn_zones[zi].live.iter_mut()
                         .find(|(k, _)| *k == kind) { entry.1 += 1; }
                 }
             }
         }
 
-        // Executa os spawns (agora que o borrow em spawn_zones soltou)
+        // Executa os spawns (agora que o borrow em spawn_zones soltou).
+        // Pra slots Poisson: bind eid → slot.occupant + atualiza SpawnedByZone
+        // tag pra ter slot_idx correto (death handler usa pra liberar slot).
         for ps in pending {
-            match ps.build {
+            let eid = match ps.build {
                 Some(b) => self.place_enemy_in_zone_with_build(ps.pos, b, ps.zone_id, ps.kind),
-                None    => self.place_enemy_in_zone(ps.pos, ps.kind, ps.zone_id),
+                None    => { self.place_enemy_in_zone(ps.pos, ps.kind, ps.zone_id); EntityId(0) }
+            };
+            if eid.0 != 0 && ps.slot_idx != u32::MAX {
+                if let Some(zone) = self.spawn_zones.iter_mut().find(|z| z.id == ps.zone_id) {
+                    if let Some(slot) = zone.slots.get_mut(ps.slot_idx as usize) {
+                        slot.occupant = Some(eid);
+                        slot.respawn_at = 0.0;
+                    }
+                }
+                // Patch SpawnedByZone tag com slot_idx (placeholder no spawn).
+                let entity_for_eid = self.ecs.query::<(&NetId,)>().iter()
+                    .find_map(|(e, (n,))| if n.0 == eid { Some(e) } else { None });
+                if let Some(e) = entity_for_eid {
+                    if let Ok(mut tag) = self.ecs.get::<&mut SpawnedByZone>(e) {
+                        tag.slot_idx = ps.slot_idx;
+                    }
+                }
             }
         }
     }
@@ -1183,6 +1223,7 @@ impl GameWorld {
             is_boss: build.is_boss,
             knockback_until: 0.0,
             knockback_vel: Vec2::ZERO,
+            stamina_current: stats.stamina_max as f32,
         };
         (tag, Health { current: hp_max, max: hp_max })
     }
@@ -1278,7 +1319,7 @@ impl GameWorld {
         build: crate::enemy_builds::EnemyBuild,
         zone_id: u32,
         tag_kind: u16,
-    ) {
+    ) -> EntityId {
         let (spawn_anchor, leash_max) = if let Some(zone) = self.spawn_zones.iter().find(|z| z.id == zone_id) {
             let center = zone.origin + zone.size * 0.5;
             let r = zone.size.x.max(zone.size.y) * 0.6;
@@ -1303,15 +1344,18 @@ impl GameWorld {
             health,
             EntityKind::Enemy(tag_kind),
             tag,
-            SpawnedByZone { zone_id, kind: tag_kind },
+            // slot_idx setado externamente (caller atualiza apos spawn pra
+            // bind correto). Default u32::MAX = legacy / no-slot.
+            SpawnedByZone { zone_id, kind: tag_kind, slot_idx: u32::MAX },
             handle,
         ));
+        net_id
     }
 
     /// Wrapper legacy — chama o flow novo passando build derivado de kind.
     fn place_enemy_in_zone(&mut self, pos: Vec2, kind: u16, zone_id: u32) {
         let build = crate::enemy_builds::enemy_build(kind);
-        self.place_enemy_in_zone_with_build(pos, build, zone_id, kind);
+        let _ = self.place_enemy_in_zone_with_build(pos, build, zone_id, kind);
     }
 
     /// Admin: despawna TODOS os enemies (incluindo bosses) e reseta as filas
@@ -1565,6 +1609,8 @@ impl GameWorld {
                             .collect()
                     });
                     let n_verts = polygon_world.as_ref().map(|v| v.len()).unwrap_or(0);
+                    // Density agora vem direto do client (AreaPerMob = 210 tiles²).
+                    // Sem divider — quantidade exata do count exportado.
                     // Modo level-range: prioritario sobre quotas se ambos setados.
                     let level_range = match (*level_min, *level_max, *count) {
                         (Some(min), Some(max), Some(c)) if min > 0 && max >= min && c > 0 =>
@@ -1589,6 +1635,40 @@ impl GameWorld {
                         (0..c).map(|_| 0.0_f32).collect()
                     } else { Vec::new() };
                     let zone_size = Vec2::new(size[0], size[1]);
+
+                    // Compute spawn slots via Poisson disk (so' pra zonas
+                    // level-range — quotas legacy continua usando random pos).
+                    // Garante spacing minimo entre mobs e distribuicao uniforme.
+                    let slots: Vec<SpawnSlot> = if let Some((_, _, target_c)) = level_range {
+                        // Min_dist adaptativo — narrow polygons reduzem spacing
+                        // pra caber slots em corredores estreitos. Sem isso,
+                        // bridson nao alcanca areas estreitas e mobs ficam
+                        // todos na area larga (= clustered visualmente).
+                        let usable_area = polygon_world.as_ref()
+                            .map(|p| polygon_area(p))
+                            .unwrap_or(zone_size.x * zone_size.y);
+                        let min_dist = adaptive_min_dist(usable_area, target_c);
+                        let slot_seed = ((zone_id as u64).wrapping_mul(0x9E37_79B9))
+                            ^ 0xC0FFEE_BAD_DEED_u64;
+                        let positions = poisson_disk_in_polygon(
+                            polygon_world.as_deref(),
+                            pos,
+                            zone_size,
+                            min_dist,
+                            &self.map,
+                            slot_seed,
+                        );
+                        tracing::info!(
+                            "zona #{}: {} slots Poisson (min_dist={:.1} adapt, target={}, area={:.0})",
+                            zone_id, positions.len(), min_dist, target_c, usable_area,
+                        );
+                        let mut v: Vec<SpawnSlot> = positions.iter()
+                            .map(|&p| SpawnSlot { pos: p, occupant: None, respawn_at: 0.0 })
+                            .collect();
+                        v.truncate(target_c as usize);
+                        v
+                    } else { Vec::new() };
+
                     self.spawn_zones.push(ServerSpawnZone {
                         id: zone_id,
                         origin: pos,
@@ -1601,6 +1681,7 @@ impl GameWorld {
                         level_range,
                         level_range_live: 0,
                         level_range_queue,
+                        slots,
                     });
                     if let Some((mn, mx, c)) = level_range {
                         tracing::info!(
@@ -2044,7 +2125,7 @@ impl GameWorld {
             .filter(|r| r.account_id == Some(account_id))
             .map(|r| shared::protocol::CharacterListEntry {
                 name: r.name.clone(),
-                level: shared::level_of_xp(r.xp),
+                level: shared::level_of_xp_with_mult(r.xp, crate::economy::xp_multiplier()),
                 visual: r.visual.clone().unwrap_or_else(|| shared::VisualConfig::for_class("warrior")),
                 weapon_id: r.equipment.weapon,
             })
@@ -2192,7 +2273,7 @@ impl GameWorld {
             s.unspent_points = saved_unspent;
             s.allocated_points = saved_alloc;
             s.stat_points_dirty = true;
-            s.last_level = shared::level_of_xp(saved_xp);
+            s.last_level = shared::level_of_xp_with_mult(saved_xp, crate::economy::xp_multiplier());
             s.inventory = saved_inv.clone();
             s.inventory_dirty = false;
             s.stats_dirty = false;
@@ -2249,7 +2330,7 @@ impl GameWorld {
         });
         let _ = handle.to_client.send(ServerMessage::ProgressUpdate {
             xp: saved_xp,
-            level: shared::level_of_xp(saved_xp),
+            level: shared::level_of_xp_with_mult(saved_xp, crate::economy::xp_multiplier()),
         });
         let _ = handle.to_client.send(ServerMessage::InventoryUpdate {
             slots: saved_inv,
@@ -2260,6 +2341,10 @@ impl GameWorld {
         // Skills (Phase 1): catálogo + estado do player.
         let _ = handle.to_client.send(ServerMessage::SkillsConfig {
             skills: crate::skills::all_skills(),
+        });
+        // Recipes (Phase crafting): catalogo do DB. Cliente reconstroi UI.
+        let _ = handle.to_client.send(ServerMessage::CraftRecipes {
+            recipes: crate::recipes::all(),
         });
         let _ = handle.to_client.send(ServerMessage::PlayerSkillsUpdate {
             state: shared::skills::PlayerSkillsState {
@@ -2435,6 +2520,7 @@ impl GameWorld {
                 dash_dir: Vec2::ZERO,
                 dash_cooldown: 0.0,
                 hurt_until: 0.0,
+            idle_since: 0.0,
                 hurt_dir: Vec2::ZERO,
                 knockback_until: 0.0,
                 knockback_vel: Vec2::ZERO,
@@ -2582,6 +2668,7 @@ impl GameWorld {
                 let _ = session.handle.to_client.send(ServerMessage::HandshakeAck {
                     protocol_version: shared::PROTOCOL_VERSION,
                     server_time_ms: now_ms(),
+                    xp_multiplier: crate::economy::xp_multiplier(),
                 });
             }
             ClientMessage::Login { username, password } => {
@@ -2694,6 +2781,15 @@ impl GameWorld {
             }
             ClientMessage::InventorySwap { a, b } => {
                 self.handle_inventory_swap(id, a, b);
+            }
+            ClientMessage::InventoryAutoArrange => {
+                self.handle_inventory_auto_arrange(id);
+            }
+            ClientMessage::VaultAutoArrange => {
+                self.handle_vault_auto_arrange(id);
+            }
+            ClientMessage::Craft { recipe_id } => {
+                self.handle_craft(id, recipe_id);
             }
             ClientMessage::StandUp => {
                 self.handle_stand_up(id);
@@ -3734,7 +3830,7 @@ impl GameWorld {
             tracing::warn!("skill_learn: skill_id {} não existe", skill_id);
             return;
         };
-        let char_lvl = shared::level_of_xp(session.xp);
+        let char_lvl = shared::level_of_xp_with_mult(session.xp, crate::economy::xp_multiplier());
         if !crate::skills::can_unlock(&def, char_lvl, &session.proficiencies) {
             tracing::debug!(
                 "skill_learn: req não atendido (skill={} char_lvl={} need char>={} prof>={})",
@@ -3846,6 +3942,20 @@ impl GameWorld {
                     skills: skills_cfg.clone(),
                 });
             }
+        }
+
+        // Hot-reload de receitas — admin pode INSERT/UPDATE em `craft_recipes`,
+        // bumpar `recipes_version.version` e em ate 5s todos os clientes
+        // logados recebem o catalogo novo sem relogar.
+        if crate::recipes::take_broadcast_flag() {
+            let recipes_cfg = crate::recipes::all();
+            for s in self.sessions.values() {
+                if !s.logged_in { continue; }
+                let _ = s.handle.to_client.send(ServerMessage::CraftRecipes {
+                    recipes: recipes_cfg.clone(),
+                });
+            }
+            tracing::info!("[recipes] broadcast pra {} sessoes", self.sessions.len());
         }
 
         // Skills dirty: jogadores que aprenderam/upgrade/equiparam recebem o
@@ -3961,13 +4071,27 @@ impl GameWorld {
             // Regen de HP (escalado por VIT via stats.hp_regen). Roda no
             // tick em vez de em UseItem pra dar regen passivo continuo.
             // Skipado se downed (player caido nao se cura sozinho).
+            // Resting boost: se player tah parado (sem mover/cast/hit recente)
+            // por 2s, multiplica regen por 4x = "sentou pra recuperar".
             if !session.downed && session.stats.hp_regen > 0.0 {
+                let now_s = self.sim_time_s;
+                let move_sq = session.pending_input.as_ref()
+                    .map(|f| f.move_dir.length_squared()).unwrap_or(0.0);
+                let is_idle = move_sq < 0.01
+                    && session.casting_until <= now_s
+                    && session.hurt_until <= now_s
+                    && session.leap_until <= now_s;
+                if is_idle {
+                    if session.idle_since == 0.0 { session.idle_since = now_s; }
+                } else {
+                    session.idle_since = 0.0;
+                }
+                let resting = session.idle_since > 0.0 && (now_s - session.idle_since) > 2.0;
+                let regen_mult = if resting { 4.0 } else { 1.0 };
                 if let Some(e) = session.entity {
                     if let Ok(mut h) = self.ecs.get::<&mut shared::Health>(e) {
                         if h.current < h.max && h.current > 0 {
-                            // Acumula em ms*1000 pra evitar perda por f32→i32.
-                            // Simples: arredonda fracoes de HP entre ticks.
-                            let new_hp_f = h.current as f32 + session.stats.hp_regen * dt;
+                            let new_hp_f = h.current as f32 + session.stats.hp_regen * regen_mult * dt;
                             h.current = (new_hp_f as i32).min(h.max);
                         }
                     }
@@ -4411,6 +4535,14 @@ impl GameWorld {
 
             if enemy.attack_cooldown > 0.0 { enemy.attack_cooldown -= dt; }
             enemy.wander_timer -= dt;
+            // Stamina regen passivo (igual player base): recupera fora de combate
+            // e devagar dentro. Cap em stats.stamina_max. Drena via block de
+            // projetil com escudo (20 por bloqueio).
+            let stam_max = enemy.stats.stamina_max as f32;
+            if enemy.stamina_current < stam_max {
+                let regen = enemy.stats.stamina_regen.max(5.0); // floor 5/s
+                enemy.stamina_current = (enemy.stamina_current + regen * dt).min(stam_max);
+            }
             // Cadáver: vel=0, skipa IA, espera o despawn loop limpar.
             if enemy.dead {
                 vel.0 = Vec2::ZERO;
@@ -5332,6 +5464,32 @@ impl GameWorld {
                 let dist_sq = (r + PROJ_RADIUS) * (r + PROJ_RADIUS);
                 let target_hit = *tpos + Vec2::new(0.0, y_off);
                 if ppos.distance_squared(target_hit) < dist_sq {
+                    // BLOCK: enemy com escudo + stamina absorve projetil sem
+                    // tomar dano. Drena 20 stamina por bloqueio. Sem stamina,
+                    // recebe dano normal. So' aplica em projeteis vindos do
+                    // player (proj de enemy nao bloqueia entre enemies).
+                    let mut blocked_by_shield = false;
+                    if !*is_player && *pfrom_player {
+                        if let Ok(tag) = self.ecs.get::<&EnemyTag>(*te) {
+                            let oh = tag.equipment.offhand.unwrap_or(0);
+                            let has_shield = oh == shared::item_id::SHIELD
+                                          || oh == shared::item_id::HEAVY_SHIELD;
+                            if has_shield && tag.stamina_current >= 20.0 {
+                                blocked_by_shield = true;
+                            }
+                        }
+                    }
+                    if blocked_by_shield {
+                        if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(*te) {
+                            tag.stamina_current = (tag.stamina_current - 20.0).max(0.0);
+                            // Trigger defending pose curta — usa hurt_until com
+                            // duracao breve pra cliente exibir parry/block flash.
+                            tag.hurt_until = self.sim_time_s + 0.3;
+                            tag.hurt_dir = (-*pvel).try_normalize().unwrap_or(Vec2::ZERO);
+                        }
+                        hit_projs.push((*pe, *pnet));
+                        continue 'outer;
+                    }
                     if !combat_disabled {
                         // Hurt_dir = -vel (TOWARD atacante). Evita Y artificial
                         // do spawn no peito que distorce a direção pro Norte.
@@ -5879,15 +6037,20 @@ impl GameWorld {
             }
             // Se pertencia a uma spawn zone, decrementa live + enfileira respawn.
             let zone_info = self.ecs.get::<&SpawnedByZone>(e).ok()
-                .map(|t| (t.zone_id, t.kind));
-            if let Some((zid, zkind)) = zone_info {
+                .map(|t| (t.zone_id, t.kind, t.slot_idx));
+            if let Some((zid, zkind, slot_idx)) = zone_info {
                 if let Some(zone) = self.spawn_zones.iter_mut().find(|z| z.id == zid) {
                     let ready_at = self.sim_time_s + zone.respawn_delay_s;
                     if zone.level_range.is_some() {
-                        // Modo level-range: decrementa live total e enfileira
-                        // respawn (kind sera sorteado na hora do spawn).
                         if zone.level_range_live > 0 { zone.level_range_live -= 1; }
-                        zone.level_range_queue.push(ready_at);
+                        // Slots Poisson: libera slot pra respawn no mesmo lugar
+                        // depois do delay. Tipo varia (sortado a cada spawn).
+                        if slot_idx != u32::MAX {
+                            if let Some(slot) = zone.slots.get_mut(slot_idx as usize) {
+                                slot.occupant = None;
+                                slot.respawn_at = ready_at;
+                            }
+                        }
                     } else {
                         if let Some(entry) = zone.live.iter_mut().find(|(k, _)| *k == zkind) {
                             if entry.1 > 0 { entry.1 -= 1; }
@@ -6013,7 +6176,7 @@ impl GameWorld {
                                 }
                             }
                         }
-                        let new_level = shared::level_of_xp(session.xp);
+                        let new_level = shared::level_of_xp_with_mult(session.xp, crate::economy::xp_multiplier());
                         if new_level > session.last_level {
                             let gained = new_level - session.last_level;
                             session.unspent_points = session.unspent_points
@@ -6040,6 +6203,11 @@ impl GameWorld {
                                 xp: session.xp,
                                 level: new_level,
                             });
+                        tracing::info!(
+                            "[XP] {} ganhou xp -> total={} L{} (xp_for_next L{}={})",
+                            session.name, session.xp, new_level,
+                            new_level + 1, shared::xp_for_level_with_mult(new_level + 1, crate::economy::xp_multiplier())
+                        );
                         tracing::debug!(
                             "kill credit: {} -> xp {} (L{})",
                             session.name, session.xp, new_level
@@ -6423,9 +6591,9 @@ impl GameWorld {
 
         let all: Vec<EntitySnapshot> = self
             .ecs
-            .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>, Option<&ProjTag>, Option<&NpcSkin>, Option<&VendorTag>, Option<&WanderRouteTag>, Option<&BoatTag>, Option<&EnemyTag>)>()
+            .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>, Option<&ProjTag>, Option<&NpcSkin>, Option<&VendorTag>, Option<&WanderRouteTag>, Option<&BoatTag>, Option<&EnemyTag>, Option<&LootTag>)>()
             .iter()
-            .map(|(_, (net, pos, vel, kind, hp, ptag, projtag, skin, vtag, wtag, boat, etag))| {
+            .map(|(_, (net, pos, vel, kind, hp, ptag, projtag, skin, vtag, wtag, boat, etag, ltag))| {
                 let is_player = matches!(kind, EntityKind::Player);
                 let overlay = if is_player { player_overlay.get(&net.0) } else { None };
                 EntitySnapshot {
@@ -6495,6 +6663,10 @@ impl GameWorld {
                     mounted: if is_player && mounted_player_eids.contains(&net.0) { Some(true) } else { None },
                     is_boss: etag.and_then(|t| if t.is_boss { Some(true) } else { None }),
                     buffs: overlay.and_then(|o| if o.buffs_mask != 0 { Some(o.buffs_mask) } else { None }),
+                    // Tier do loot — usado pra colorir halo no chao (estilo MIR4):
+                    // resources (60-71) tier baked no item_id. Equipaveis com
+                    // instance.item_level → 1-4 via threshold (10/30/60).
+                    loot_tier: ltag.and_then(|l| compute_loot_tier(l)),
                 }
             })
             .collect();
@@ -6759,13 +6931,23 @@ impl GameWorld {
         // Helpers de validacao — slot vazio ou stack-de-um item compativel.
         // Offhand+weapon e validado via `can_equip_in_slot`.
         let equip_now = session.equipment;
+        let char_level_now = shared::level_of_xp_with_mult(session.xp, crate::economy::xp_multiplier());
+        let prof_xp_now = session.proficiencies;
         let can_go_into_equip = |slot: shared::EquipSlot, item: &shared::InventorySlot| -> bool {
             if item.qty == 0 { return true; }
             if item.qty > 1 { return false; }
             // Item desativado pelo admin: bloqueado de ser equipado.
             if !crate::economy::is_item_active(item.item_id) { return false; }
-            // (Axe/Spear/Dagger gates removidos — profs implementadas com
-            // skill trees completas nas commits recentes.)
+            // Char level gate por item_id (e.g., ENHANCED_SWORD requer char lvl 10).
+            if let Some(min_lvl) = shared::item_char_level_req(item.item_id) {
+                if (char_level_now as u16) < min_lvl { return false; }
+            }
+            // Proficiency level gate por item_id (e.g., ENHANCED_SWORD requer Sword prof 5).
+            if let Some((prof, min_prof_lvl)) = shared::item_prof_req(item.item_id) {
+                let prof_xp = prof_xp_now[prof as usize];
+                let prof_lvl = shared::proficiency_level(prof_xp);
+                if (prof_lvl as u16) < min_prof_lvl { return false; }
+            }
             can_equip_in_slot(&equip_now, slot, item.item_id)
         };
 
@@ -6839,6 +7021,101 @@ impl GameWorld {
             // equip <-> equip: so faz sentido se slots sao iguais (no-op)
             _ => {}
         }
+    }
+
+    /// Auto-arrange: agrupa stackaveis por item_id (respeitando stack_max),
+    /// ordena ascendente, mantem itens com instance ao final. Mesma logica
+    /// pra inv e vault — `auto_arrange_slots` faz o trabalho.
+    fn handle_inventory_auto_arrange(&mut self, sid: SessionId) {
+        let Some(session) = self.sessions.get_mut(&sid) else { return };
+        if !session.logged_in { return; }
+        auto_arrange_slots(&mut session.inventory);
+        session.inventory_dirty = true;
+    }
+
+    fn handle_vault_auto_arrange(&mut self, sid: SessionId) {
+        let Some(session) = self.sessions.get_mut(&sid) else { return };
+        if !session.logged_in { return; }
+        auto_arrange_slots(&mut session.vault);
+        session.vault_dirty = true;
+    }
+
+    /// Crafta receita: valida inputs no inv, consome, deposita output. Output
+    /// equipavel ganha ItemInstance rolado (rarity Common/Magic/Rare baseada em
+    /// rng) — qualidade emerge do roll. Falha silenciosa se faltam materiais ou
+    /// inv cheio. Sem retorno explicito — InventoryUpdate seguinte espelha.
+    fn handle_craft(&mut self, sid: SessionId, recipe_id: u16) {
+        let Some(session) = self.sessions.get_mut(&sid) else { return };
+        if !session.logged_in { return; }
+        // Recipes vem do DB cache (admin pode mudar custos sem rebuild).
+        // Fallback pro hardcoded se cache vazio (boot inicial).
+        let Some(recipe) = crate::recipes::find(recipe_id) else { return };
+        // Valida materiais.
+        for pair in recipe.inputs.iter() {
+            let in_id = pair[0] as u16;
+            let in_qty = pair[1];
+            if in_id == 0 { continue; }
+            let total: u32 = session.inventory.iter()
+                .filter(|s| s.item_id == in_id && s.instance.is_none())
+                .map(|s| s.qty)
+                .sum();
+            if total < in_qty { return; }
+        }
+        // Acha slot livre OU stack-merge slot pro output (precisa antes de consumir).
+        let cap = crate::economy::item_stack_max(recipe.output_item_id).max(1);
+        let mut place_idx: Option<usize> = None;
+        if !recipe.roll_instance {
+            // Stackavel: tenta stack existente primeiro.
+            for (i, s) in session.inventory.iter().enumerate() {
+                if s.item_id == recipe.output_item_id
+                    && s.instance.is_none()
+                    && s.qty + recipe.output_qty <= cap
+                {
+                    place_idx = Some(i); break;
+                }
+            }
+        }
+        if place_idx.is_none() {
+            for (i, s) in session.inventory.iter().enumerate() {
+                if s.qty == 0 { place_idx = Some(i); break; }
+            }
+        }
+        let Some(idx) = place_idx else { return }; // inv cheio
+        // Consome inputs.
+        for pair in recipe.inputs.iter() {
+            let in_id = pair[0] as u16;
+            let mut need = pair[1];
+            if in_id == 0 { continue; }
+            for s in session.inventory.iter_mut() {
+                if need == 0 { break; }
+                if s.item_id != in_id || s.instance.is_some() || s.qty == 0 { continue; }
+                let take = need.min(s.qty);
+                s.qty -= take;
+                need -= take;
+                if s.qty == 0 { *s = shared::InventorySlot::default(); }
+            }
+        }
+        // Gera output.
+        let new_slot = if recipe.roll_instance {
+            let tpl = crate::economy::item_template_of(recipe.output_item_id);
+            let mut rng = || fastrand::f32();
+            let inst = shared::ItemInstance::roll_with_template(tpl, recipe.output_item_level, &mut rng);
+            shared::InventorySlot {
+                item_id:  recipe.output_item_id,
+                qty:      1,
+                instance: inst,
+            }
+        } else {
+            // Stack — soma se ja tinha.
+            let prev_qty = session.inventory[idx].qty;
+            shared::InventorySlot {
+                item_id:  recipe.output_item_id,
+                qty:      prev_qty + recipe.output_qty,
+                instance: None,
+            }
+        };
+        session.inventory[idx] = new_slot;
+        session.inventory_dirty = true;
     }
 
     /// Move um item do inv[inv_slot] pro primeiro slot livre (ou stack) do vault.
@@ -8124,8 +8401,11 @@ fn effective_stats(
                 s.mp_max += 5 * r;
                 // r5 / r10 milestones quando implementarmos mp_regen/cost runtime.
             }
-            // Iron Will — Sword T4 P: <30% HP: -30% dmg taken (placeholder)
-            1008 => { /* aplicado em receive_damage path; sem stat permanente */ }
+            // Iron Will — Sword T4 P: +50 poise + (placeholder) <30% HP -30% dmg taken
+            1008 => { s.poise_max += 50 * r; }
+            // Unstoppable / Spearman's Resolve / Master's Form — T4 P de defesa
+            // tambem concedem poise (gateamento de poise: lvl 60 + prof 40).
+            1016 | 1024 | 1064 => { s.poise_max += 50 * r; }
             // Combat Stance — Sword T1 P: +1.5%/rank atk speed (Sword/Dagger)
             1002 => { s.attack_speed_mult += 0.015 * r as f32; }
             // Bulwark — Sword T2 P: +1%/rank block reduction. Soma direto
@@ -8304,9 +8584,187 @@ fn apply_wander(
     }
 }
 
+/// Floor absoluto pro min_dist do Poisson — slots nunca menos que 3 tiles
+/// apart pra evitar mobs literalmente em cima.
+const SPAWN_SLOT_MIN_DIST_FLOOR: f32 = 3.0;
+/// Ceiling pro min_dist — limita spacing maximo em zonas grandes pra densidade
+/// nao virar microscopica.
+const SPAWN_SLOT_MIN_DIST_MAX: f32 = 14.0;
+
+/// Computa min_dist adaptativo: spacing alvo pra que `target_count` slots
+/// caibam na area usavel (polygon ou AABB). Resolve o problema de polygon
+/// estreito onde min_dist constante deixa narrows sem slots.
+fn adaptive_min_dist(usable_area: f32, target_count: u32) -> f32 {
+    let target = target_count.max(1) as f32;
+    let raw = (usable_area / target).sqrt() * 0.85;
+    raw.clamp(SPAWN_SLOT_MIN_DIST_FLOOR, SPAWN_SLOT_MIN_DIST_MAX)
+}
+
+/// Area de polygon via shoelace formula. Vertices em ordem (CW ou CCW).
+fn polygon_area(verts: &[Vec2]) -> f32 {
+    if verts.len() < 3 { return 0.0; }
+    let mut area = 0.0_f32;
+    for i in 0..verts.len() {
+        let j = (i + 1) % verts.len();
+        area += verts[i].x * verts[j].y - verts[j].x * verts[i].y;
+    }
+    (area * 0.5).abs()
+}
+
+/// Bridson's Poisson Disk Sampling — gera pontos uniformemente espaçados
+/// dentro de um polygon (ou AABB se polygon=None). Garantia: cada par de
+/// pontos tem distância ≥ `min_dist`. Spawning resultante e' visualmente
+/// uniforme (sem clusters), simulando spawns "manuais" de level designer.
+///
+/// Filtra: tiles WALL/WATER (mob nao spawna em parede ou agua).
+/// Algoritmo O(n) onde n=slots gerados — grid acelera neighbor lookup.
+fn poisson_disk_in_polygon(
+    polygon: Option<&[Vec2]>,
+    aabb_min: Vec2,
+    aabb_size: Vec2,
+    min_dist: f32,
+    map: &shared::world_gen::WorldMap,
+    seed: u64,
+) -> Vec<Vec2> {
+    fastrand::seed(seed);
+    let cell_size = min_dist / 1.4142135f32;
+    let cols = ((aabb_size.x / cell_size).ceil() as i32).max(1);
+    let rows = ((aabb_size.y / cell_size).ceil() as i32).max(1);
+    let mut grid: Vec<Option<Vec2>> = vec![None; (cols * rows) as usize];
+    let to_cell = |p: Vec2| -> (i32, i32) {
+        let cx = ((p.x - aabb_min.x) / cell_size) as i32;
+        let cy = ((p.y - aabb_min.y) / cell_size) as i32;
+        (cx.clamp(0, cols - 1), cy.clamp(0, rows - 1))
+    };
+    let valid_at = |p: Vec2| -> bool {
+        if p.x < aabb_min.x || p.x > aabb_min.x + aabb_size.x { return false; }
+        if p.y < aabb_min.y || p.y > aabb_min.y + aabb_size.y { return false; }
+        if let Some(poly) = polygon {
+            if !point_in_polygon(p, poly) { return false; }
+        }
+        let tx = p.x.floor() as i32;
+        let ty = p.y.floor() as i32;
+        let t = map.get(tx, ty);
+        if t == shared::constants::tile_id::WALL || t == shared::constants::tile_id::WATER { return false; }
+        true
+    };
+    let no_neighbor_too_close = |p: Vec2, grid: &Vec<Option<Vec2>>| -> bool {
+        let (cx, cy) = to_cell(p);
+        for dy in -2i32..=2 {
+            for dx in -2i32..=2 {
+                let nx = cx + dx; let ny = cy + dy;
+                if nx < 0 || nx >= cols || ny < 0 || ny >= rows { continue; }
+                if let Some(other) = grid[(ny * cols + nx) as usize] {
+                    if p.distance(other) < min_dist { return false; }
+                }
+            }
+        }
+        true
+    };
+
+    let mut result: Vec<Vec2> = Vec::new();
+    let mut active: Vec<Vec2> = Vec::new();
+
+    // Initial point — tenta ate 200 tiros pra encontrar um spot valido.
+    for _ in 0..200 {
+        let p = Vec2::new(
+            aabb_min.x + fastrand::f32() * aabb_size.x,
+            aabb_min.y + fastrand::f32() * aabb_size.y,
+        );
+        if valid_at(p) {
+            let (cx, cy) = to_cell(p);
+            grid[(cy * cols + cx) as usize] = Some(p);
+            result.push(p);
+            active.push(p);
+            break;
+        }
+    }
+
+    const K: u32 = 30;
+    while !active.is_empty() {
+        let i = fastrand::usize(..active.len());
+        let p = active[i];
+        let mut placed = false;
+        for _ in 0..K {
+            let angle = fastrand::f32() * std::f32::consts::TAU;
+            let dist = min_dist + fastrand::f32() * min_dist;
+            let cand = Vec2::new(p.x + dist * angle.cos(), p.y + dist * angle.sin());
+            if !valid_at(cand) { continue; }
+            if !no_neighbor_too_close(cand, &grid) { continue; }
+            let (cx, cy) = to_cell(cand);
+            grid[(cy * cols + cx) as usize] = Some(cand);
+            result.push(cand);
+            active.push(cand);
+            placed = true;
+            break;
+        }
+        if !placed {
+            active.swap_remove(i);
+        }
+    }
+    result
+}
+
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// Computa tier 1-4 pra exibicao client-side do halo de loot. Resources
+/// (60-71) tem tier embutido no item_id; equipaveis com instance derivam
+/// do item_level. None pra itens sem tier (gold, pocoes, etc.).
+fn compute_loot_tier(l: &LootTag) -> Option<u8> {
+    if l.item_id >= 60 && l.item_id <= 71 {
+        return Some(((l.item_id - 60) % 4 + 1) as u8);
+    }
+    if let Some(inst) = l.instance {
+        let lvl = inst.item_level;
+        let t = if lvl <= 10 { 1 }
+        else if lvl <= 30 { 2 }
+        else if lvl <= 60 { 3 }
+        else { 4 };
+        return Some(t);
+    }
+    None
+}
+
+/// Sort + merge in-place de um conjunto de inventory slots. Itens stackaveis
+/// (instance==None) sao agrupados por item_id (respeitando stack_max), ordem
+/// ascendente. Itens com instance (rolls/refinement) sao mantidos individuais
+/// e ordenados ao final por item_id. Slots vazios ficam no fim.
+fn auto_arrange_slots(slots: &mut Vec<shared::InventorySlot>) {
+    use std::collections::BTreeMap;
+    let n = slots.len();
+    let mut totals: BTreeMap<u16, u32> = BTreeMap::new();
+    let mut instances: Vec<shared::InventorySlot> = Vec::new();
+    for s in slots.iter() {
+        if s.qty == 0 { continue; }
+        if s.instance.is_some() {
+            instances.push(*s);
+        } else {
+            *totals.entry(s.item_id).or_insert(0) += s.qty;
+        }
+    }
+    instances.sort_by_key(|s| s.item_id);
+    // Limpa o vetor.
+    for s in slots.iter_mut() {
+        *s = shared::InventorySlot::default();
+    }
+    let mut idx = 0usize;
+    for (id, mut qty) in totals {
+        let cap = crate::economy::item_stack_max(id).max(1);
+        while qty > 0 && idx < n {
+            let take = qty.min(cap);
+            slots[idx] = shared::InventorySlot { item_id: id, qty: take, instance: None };
+            qty -= take;
+            idx += 1;
+        }
+    }
+    for ii in instances {
+        if idx >= n { break; }
+        slots[idx] = ii;
+        idx += 1;
+    }
 }

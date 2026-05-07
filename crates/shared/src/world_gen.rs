@@ -161,11 +161,18 @@ impl WorldMap {
         let dy = b.y - a.y;
         let dist = (dx * dx + dy * dy).sqrt();
         if dist < 0.001 { return true; }
+        // Adjacencia: < 2 tiles. Sem LOS — DDA falha em diagonais que
+        // raspam canto de parede (t=0.5 cai exatamente em (n, n) com floor
+        // batendo no tile wall, falsa-positivo). Em melee range o player
+        // sempre alcanca alvo encostado.
+        if dist < 2.0 { return true; }
         // 2.5 amostras por tile pra evitar pular esquinas finas.
         let steps = (dist * 2.5).ceil().max(1.0) as i32;
         let inv = 1.0 / steps as f32;
-        // Pula start (i=0) — assumimos que o emissor já está em tile valido.
-        for i in 1..=steps {
+        // Pula start (i=0) e end (i=steps) — assume que emissor e alvo
+        // estao em tiles validos. Sample em corner exato (px,py == int)
+        // gerava falso-positivo bloqueando ataques adjacentes.
+        for i in 1..steps {
             let t = i as f32 * inv;
             let px = a.x + dx * t;
             let py = a.y + dy * t;

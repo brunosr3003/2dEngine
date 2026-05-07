@@ -39,6 +39,16 @@ pub enum ClientMessage {
     VaultWithdraw { vault_slot: u16 },
     VaultClose,
     InventorySwap { a: InvSpot, b: InvSpot },
+    /// Sort + merge stacks no inventario do player. Server agrupa stacks por
+    /// item_id (respeitando stack_max), ordena ascendente, mantem itens com
+    /// instance (rolls/refinamento) separados ao final.
+    InventoryAutoArrange,
+    /// Mesmo, pro vault aberto. Falha silenciosamente se vault nao aberto.
+    VaultAutoArrange,
+    /// Crafta uma receita (`id` na CRAFT_RECIPES table). Server valida inputs,
+    /// consome, gera output (com ItemInstance se equipavel). Falha silenciosa
+    /// se faltam materiais ou inv cheio.
+    Craft { recipe_id: u16 },
     StandUp,
     TeleportToVendor,
     PartyInvite { target_name: String },
@@ -143,6 +153,11 @@ pub enum ServerMessage {
     HandshakeAck {
         protocol_version: u16,
         server_time_ms: u64,
+        /// Multiplier da curva de XP (configuravel via DB pra eventos). Cliente
+        /// usa pra calcular display da barra de XP — DEVE bater com server.
+        /// Default `DEFAULT_XP_MULTIPLIER` (500); evento 2x = 250 (mais facil).
+        #[serde(default = "default_xp_mult")]
+        xp_multiplier: u64,
     },
     LoginOk {
         player_id: PlayerId,
@@ -251,6 +266,10 @@ pub enum ServerMessage {
     /// hot-reload (admin bumpou economy_version). Cliente cacheia em
     /// `SkillsConfigCache` pra UI consultar nome/icon/descrição.
     SkillsConfig { skills: Vec<crate::SkillDef> },
+    /// Catalogo de receitas de crafting carregado do DB. Enviado no login,
+    /// substitui o hardcoded client-side. Admin pode mudar custos/inputs/
+    /// outputs via DB — ideal pra eventos com receitas especiais.
+    CraftRecipes { recipes: Vec<CraftRecipeNet> },
     /// Estado completo de skills do player. Enviado no login + após qualquer
     /// mutação (learn, rank-up, equip).
     PlayerSkillsUpdate { state: crate::PlayerSkillsState },
@@ -346,6 +365,26 @@ pub struct TradeBuyEntry {
     pub qty:       u32,
 }
 
+/// Receita de crafting enviada do server pro client. Espelho do
+/// `crate::CraftRecipe` mas sem o `&'static str` (use `String` pra serializar).
+/// Usado pra cliente renderizar a UI de crafting baseada no que esta no DB,
+/// permitindo admin mudar receitas sem rebuild do client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CraftRecipeNet {
+    pub id:                u16,
+    pub name:              String,
+    /// 0=Other, 1=Weapon, 2=Armor, 3=Material/resource. UI filtra por tab.
+    pub category:          u8,
+    /// 1-4. UI exibe badge colorido.
+    pub tier:              u8,
+    /// (item_id, qty) pares de inputs (max 4 entradas).
+    pub inputs:            Vec<[u32; 2]>,
+    pub output_item_id:    u16,
+    pub output_qty:        u32,
+    pub output_item_level: u16,
+    pub roll_instance:     bool,
+}
+
 /// Entry da lista de personagens enviada apos login. Cliente renderiza
 /// como card na tela de selecao (paper-doll thumbnail + nome + level).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -407,6 +446,8 @@ pub struct WorldSnapshot {
     pub entities: Vec<EntitySnapshot>,
     pub removed: Vec<EntityId>,
 }
+
+fn default_xp_mult() -> u64 { crate::constants::DEFAULT_XP_MULTIPLIER }
 
 pub fn encode<T: Serialize>(msg: &T) -> anyhow::Result<Vec<u8>> {
     Ok(serde_json::to_vec(msg)?)

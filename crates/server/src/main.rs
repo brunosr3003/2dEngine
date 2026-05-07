@@ -14,6 +14,7 @@ mod auth;
 mod economy;
 mod enemy_builds;
 mod persistence;
+mod recipes;
 mod session;
 mod skills;
 mod tick;
@@ -47,6 +48,9 @@ async fn main() -> Result<()> {
     // Inicializa economia + spawn da tarefa de hot-reload.
     economy::init(&pool).await?;
     economy::spawn_hot_reload(pool.clone());
+    economy::load_server_config(&pool).await?;
+    recipes::init(&pool).await?;
+    recipes::spawn_hot_reload_task(pool.clone());
     tracing::info!("economia carregada (hot-reload a cada 5s; bumpa economy_version pra forçar)");
 
     // Skills (Phase 1). Compartilha o mesmo `economy_version`.

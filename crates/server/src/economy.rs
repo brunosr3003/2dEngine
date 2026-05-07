@@ -227,6 +227,37 @@ pub fn vendor_modifiers(_vendor_id: u32) -> (f32, f32) {
 pub fn item_stack_max(id: u16) -> u32 { cell().read().stack_max(id) }
 pub fn shop_listing() -> Vec<(u16, u32)> { cell().read().shop_listing() }
 
+/// Multiplier da curva de XP — configuravel via `server_config` table.
+/// Carregado uma vez no startup; mudar em DB + restart pra eventos.
+static XP_MULT: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(shared::DEFAULT_XP_MULTIPLIER);
+
+pub fn xp_multiplier() -> u64 {
+    XP_MULT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub async fn load_server_config(pool: &sqlx::PgPool) -> anyhow::Result<()> {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS server_config (
+            key   TEXT PRIMARY KEY,
+            value DOUBLE PRECISION NOT NULL
+        )"
+    ).execute(pool).await?;
+    sqlx::query("INSERT INTO server_config (key, value) VALUES ('xp_multiplier', $1)
+                 ON CONFLICT (key) DO NOTHING")
+        .bind(shared::DEFAULT_XP_MULTIPLIER as f64)
+        .execute(pool).await?;
+    let row: Option<(f64,)> = sqlx::query_as(
+        "SELECT value FROM server_config WHERE key='xp_multiplier'"
+    ).fetch_optional(pool).await?;
+    if let Some((v,)) = row {
+        let mult = v.max(1.0) as u64;
+        XP_MULT.store(mult, std::sync::atomic::Ordering::Relaxed);
+        tracing::info!("[config] xp_multiplier loaded: {} (DB)", mult);
+    }
+    Ok(())
+}
+
 pub fn enemy_def(kind: u16) -> EnemyKindDef {
     cell().read().enemy_kinds.get(&kind).cloned().unwrap_or_default()
 }

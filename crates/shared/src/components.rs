@@ -77,7 +77,7 @@ pub const fn base_player_stats() -> PlayerStats {
         damage_reduction_pct: 0.0,        // breakpoints de VIT/RES somam aqui
         bow_range_bonus_pct: 0.0,         // Eagle Eye passive (Bow T1)
         dash_cd_mult: 1.0,                // SPD soma reduction por ponto
-        poise_max: 50,                    // base poise — todas as classes
+        poise_max: 0,                     // hardcore: zero poise base — gateado em skill T4 (lvl 60+)
     }
 }
 
@@ -428,6 +428,11 @@ pub struct EntitySnapshot {
     /// quando ao menos um bit ativo. Outros bits reservados pra buffs futuros.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub buffs: Option<u8>,
+    /// Tier do item dropado (1-4) — cliente usa pra colorir a aura/halo da loot.
+    /// Resources (item_id 60-71) e equipaveis com `instance.item_level` >= 1.
+    /// None quando sem tier definido (gold, pocoes, itens legacy).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loot_tier: Option<u8>,
 }
 
 /// Bits do `EntitySnapshot.buffs` — mantém em sync com o cliente C#.
