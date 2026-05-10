@@ -92,10 +92,13 @@ pub enum MapEntity {
         id:        u32,
         waypoints: Vec<[f32; 2]>,
     },
-    /// Nó de recurso coletável (farming). Servidor ignora — gerenciado pelo cliente.
+    /// Nó de recurso coletável (farming). Servidor gerencia HP, drops e respawn.
+    /// `respawn_seconds`: override do default `FARM_NODE_RESPAWN_S` por tipo/tier.
     FarmNode {
         kind: String,
         tier: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        respawn_seconds: Option<f32>,
     },
 }
 

@@ -82,6 +82,9 @@ pub struct EconomyConfig {
     pub shop_items:    Vec<u16>,                 // legacy global shop list
     pub enemy_kinds:   HashMap<u16, EnemyKindDef>,
     pub loot_tables:   HashMap<u16, Vec<LootEntry>>,
+    /// Loot drops por (kind, tier) de farm nodes (Tree/Rock/Flower × T1..T4).
+    /// Cada entry rola independente (mesma semântica de `loot_tables`).
+    pub farm_loot_tables: HashMap<(String, u8), Vec<LootEntry>>,
     pub vendor_shops:  HashMap<u32, VendorShop>,
 }
 
@@ -126,22 +129,42 @@ impl EconomyConfig {
     /// Items com `active=false` são pulados (não dropam até admin reativar).
     pub fn roll_loot(&self, kind: u16, seed: u64) -> Vec<(u16, u32)> {
         let Some(table) = self.loot_tables.get(&kind) else { return Vec::new(); };
-        let mut out = Vec::with_capacity(table.len());
-        let mut s = seed;
-        for entry in table {
-            s = lcg(s);
-            let r1 = lcg_f32(s);
-            if r1 >= entry.chance { continue; }
-            // Skip items inativos (admin desligou).
-            if !self.items.get(&entry.item_id).map(|i| i.active).unwrap_or(true) { continue; }
-            s = lcg(s);
-            let r2 = lcg_f32(s);
-            let span = entry.qty_max.saturating_sub(entry.qty_min) + 1;
-            let qty = entry.qty_min + ((r2 * span as f32) as u32).min(span - 1);
-            out.push((entry.item_id, qty));
-        }
-        out
+        roll_entries(table, &self.items, seed)
     }
+
+    /// Mesma semântica de `roll_loot` mas pra farm nodes (kind+tier).
+    /// Tier acima de 4 cai pra 4; tier 0 vira 1 pra evitar lookup vazio.
+    pub fn roll_farm_loot(&self, kind: &str, tier: u8, seed: u64) -> Vec<(u16, u32)> {
+        let t = tier.max(1).min(4);
+        let key = (kind.to_string(), t);
+        let Some(table) = self.farm_loot_tables.get(&key) else { return Vec::new(); };
+        roll_entries(table, &self.items, seed)
+    }
+}
+
+fn roll_entries(table: &[LootEntry], items: &HashMap<u16, ItemDef>, seed: u64) -> Vec<(u16, u32)> {
+    let mut out = Vec::with_capacity(table.len());
+    let mut s = seed;
+    for entry in table {
+        s = lcg(s);
+        let r1 = lcg_f32(s);
+        if r1 >= entry.chance { continue; }
+        if !items.get(&entry.item_id).map(|i| i.active).unwrap_or(true) { continue; }
+        s = lcg(s);
+        let r2 = lcg_f32(s);
+        let span = entry.qty_max.saturating_sub(entry.qty_min) + 1;
+        let qty = entry.qty_min + ((r2 * span as f32) as u32).min(span - 1);
+        out.push((entry.item_id, qty));
+    }
+    out
+}
+
+/// Loot drops de um farm node (kind + tier). Retorna pares (item_id, qty).
+/// Seed deve ser diferente a cada coleta pra evitar resultados previsíveis.
+/// Tabela editável via admin (`farm_node_drops`). Default seedado em
+/// `seed_economy_if_needed` replica o comportamento legado.
+pub fn farm_node_loot(kind: &str, tier: u8, seed: u64) -> Vec<(u16, u32)> {
+    cell().read().roll_farm_loot(kind, tier, seed)
 }
 
 // LCG dedicado pra rolagem de loot (não usa o do world.rs pra evitar dep cíclica)
@@ -426,6 +449,21 @@ async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
         });
     }
 
+    let farm_rows: Vec<(String, i32, i32, i32, i32, f32)> = sqlx::query_as(
+        "SELECT kind, tier, item_id, qty_min, qty_max, chance \
+         FROM farm_node_drops ORDER BY kind, tier, id"
+    ).fetch_all(pool).await?;
+    let mut farm_loot_tables: HashMap<(String, u8), Vec<LootEntry>> = HashMap::new();
+    for (kind, tier, item_id, qmin, qmax, chance) in farm_rows {
+        let t = tier.max(1).min(4) as u8;
+        farm_loot_tables.entry((kind, t)).or_default().push(LootEntry {
+            item_id: item_id as u16,
+            qty_min: qmin.max(0) as u32,
+            qty_max: qmax.max(qmin) as u32,
+            chance:  chance.clamp(0.0, 1.0),
+        });
+    }
+
     let shop_rows: Vec<(i32, String)> = sqlx::query_as(
         "SELECT shop_id, name FROM vendor_shops"
     ).fetch_all(pool).await?;
@@ -444,5 +482,7 @@ async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
         }
     }
 
-    Ok(EconomyConfig { version, items, shop_items, enemy_kinds, loot_tables, vendor_shops })
+    Ok(EconomyConfig {
+        version, items, shop_items, enemy_kinds, loot_tables, farm_loot_tables, vendor_shops,
+    })
 }

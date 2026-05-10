@@ -135,7 +135,7 @@ pub fn tier_for_level(level: u32) -> TierConfig {
         1..=10 => TierConfig {
             id: 1, level_min: 1, level_max: 10,
             theme: TierTheme {
-                display_name: "Goblin Verde",
+                display_name: "Green Goblin",
                 visual_class: "warrior",
                 body_tint: [0.55, 0.85, 0.50, 1.0],   // verde claro
                 size_scale: 1.0,
@@ -145,7 +145,7 @@ pub fn tier_for_level(level: u32) -> TierConfig {
         11..=20 => TierConfig {
             id: 2, level_min: 11, level_max: 20,
             theme: TierTheme {
-                display_name: "Goblin Amarelo",
+                display_name: "Yellow Goblin",
                 visual_class: "warrior",
                 body_tint: [1.0, 0.9, 0.4, 1.0],
                 size_scale: 1.0,
@@ -155,7 +155,7 @@ pub fn tier_for_level(level: u32) -> TierConfig {
         21..=30 => TierConfig {
             id: 3, level_min: 21, level_max: 30,
             theme: TierTheme {
-                display_name: "Humano Vilao",
+                display_name: "Human Bandit",
                 visual_class: "warrior",
                 body_tint: [0.7, 0.55, 0.55, 1.0],   // tom escuro avermelhado
                 size_scale: 1.0,
@@ -165,7 +165,7 @@ pub fn tier_for_level(level: u32) -> TierConfig {
         31..=40 => TierConfig {
             id: 4, level_min: 31, level_max: 40,
             theme: TierTheme {
-                display_name: "Goblin Cinza",
+                display_name: "Gray Goblin",
                 visual_class: "warrior",
                 body_tint: [0.6, 0.6, 0.65, 1.0],
                 size_scale: 1.0,
@@ -175,7 +175,7 @@ pub fn tier_for_level(level: u32) -> TierConfig {
         41..=50 => TierConfig {
             id: 5, level_min: 41, level_max: 50,
             theme: TierTheme {
-                display_name: "Demonio Menor Verde",
+                display_name: "Lesser Green Demon",
                 visual_class: "wizard",
                 body_tint: [0.4, 0.85, 0.4, 1.0],
                 size_scale: 1.0,
@@ -185,7 +185,7 @@ pub fn tier_for_level(level: u32) -> TierConfig {
         51..=60 => TierConfig {
             id: 6, level_min: 51, level_max: 60,
             theme: TierTheme {
-                display_name: "Demonio Roxo",
+                display_name: "Purple Demon",
                 visual_class: "wizard",
                 body_tint: [0.7, 0.4, 0.95, 1.0],
                 size_scale: 1.0,
@@ -195,7 +195,7 @@ pub fn tier_for_level(level: u32) -> TierConfig {
         61..=70 => TierConfig {
             id: 7, level_min: 61, level_max: 70,
             theme: TierTheme {
-                display_name: "Demonio Vermelho Grande",
+                display_name: "Greater Red Demon",
                 visual_class: "warrior",
                 body_tint: [1.0, 0.4, 0.35, 1.0],
                 size_scale: 1.0,
@@ -205,7 +205,7 @@ pub fn tier_for_level(level: u32) -> TierConfig {
         71..=80 => TierConfig {
             id: 8, level_min: 71, level_max: 80,
             theme: TierTheme {
-                display_name: "Humano Elite Brilhante",
+                display_name: "Radiant Human Elite",
                 visual_class: "warrior",
                 body_tint: [1.05, 1.0, 0.7, 1.0],   // brilho dourado leve
                 size_scale: 1.0,
@@ -215,7 +215,7 @@ pub fn tier_for_level(level: u32) -> TierConfig {
         81..=90 => TierConfig {
             id: 9, level_min: 81, level_max: 90,
             theme: TierTheme {
-                display_name: "Demonio Dourado",
+                display_name: "Golden Demon",
                 visual_class: "warrior",
                 body_tint: [1.2, 1.05, 0.45, 1.0],
                 size_scale: 1.0,

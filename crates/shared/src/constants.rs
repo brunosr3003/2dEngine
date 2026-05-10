@@ -22,7 +22,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 47;
+pub const PROTOCOL_VERSION: u16 = 48;
 
 /// Velocidade base do jogador em tiles/segundo.
 pub const PLAYER_SPEED: f32 = 5.0;
@@ -323,6 +323,10 @@ pub const INVENTORY_SLOTS: usize = 40;
 /// Raio em tiles pra coletar um loot.
 pub const PICKUP_RADIUS: f32 = 0.8;
 
+/// Delay em segundos depois do spawn antes do auto-pickup ficar ativo.
+/// Garante que o player VEJA o drop cair antes de ele "voar" pro inv.
+pub const LOOT_PICKUP_DELAY_S: f32 = 0.6;
+
 /// Itens conhecidos. Numeric id vai pro DB e rede. Manter sincronizado com
 /// o cliente para sprite/cor por item.
 pub mod item_id {
@@ -523,6 +527,10 @@ pub const CRAFT_RECIPES: &[CraftRecipe] = &[
     CraftRecipe { id:166, name:"Botas Placa T4",    inputs:[(item_id::MINERAL_T4,4),(0,0),(0,0),(0,0)],                  output_item_id:item_id::BOOTS_PLATE,   output_qty:1, output_item_level:70, roll_instance:true },
     CraftRecipe { id:167, name:"Calças Couro T4",  inputs:[(item_id::LEATHER_T4,5),(item_id::MINERAL_T4,1),(0,0),(0,0)], output_item_id:item_id::LEGS_LEATHER,  output_qty:1, output_item_level:70, roll_instance:true },
     CraftRecipe { id:168, name:"Calças Placa T4",  inputs:[(item_id::MINERAL_T4,5),(item_id::LEATHER_T4,1),(0,0),(0,0)], output_item_id:item_id::LEGS_PLATE,    output_qty:1, output_item_level:70, roll_instance:true },
+
+    // Boats (Naval) — embarcacoes craftaveis. Ids 200+ reservados pra naval.
+    // Lylian Leutard usa: 100 madeira T1 + 100 madeira T2 + 100 mineral T2 + 100 monster heart T2.
+    CraftRecipe { id:200, name:"Lylian Leutard",  inputs:[(item_id::WOOD_T1,100),(item_id::WOOD_T2,100),(item_id::MINERAL_T2,100),(item_id::LEATHER_T2,100)], output_item_id:item_id::BOAT_LYLIAN_LEUTARD, output_qty:1, output_item_level:0, roll_instance:false },
 ];
 
 pub fn craft_recipe(id: u16) -> Option<&'static CraftRecipe> {
@@ -1043,4 +1051,29 @@ pub mod tile_id {
     /// Piso de dungeon — visualmente distinto, colisoes iguais a FLOOR.
     pub const DUNGEON_FLOOR: u16 = 5;
     pub const WOOD:  u16 = 5;
+}
+
+// ── Farm Nodes ────────────────────────────────────────────────────────────────
+
+/// Cooldown mínimo entre FarmHit validados do mesmo player+node.
+/// No modelo countdown, cada FarmHit = depleção completa de um node.
+/// 2s previne spam (cliente nunca envia mais rápido que isso normalmente).
+pub const FARM_HIT_COOLDOWN_S: f32 = 2.0;
+
+/// Tempo de respawn de um farm node após ser completamente coletado.
+pub const FARM_NODE_RESPAWN_S: f32 = 30.0;
+
+/// Distância máxima player → node para validar um FarmHit (em tiles).
+pub const FARM_MAX_RANGE: f32 = 2.2;
+
+/// HP máximo (= número de hits necessários) de acordo com kind e tier.
+pub fn farm_node_hp_max(kind: &str, tier: u8) -> i32 {
+    let base: i32 = match kind {
+        "Tree"   => 6,
+        "Rock"   => 5,
+        "Flower" => 3,
+        _        => 5,
+    };
+    // +1 HP por tier extra (tier 1 = base, tier 4 = base+3)
+    base + (tier.saturating_sub(1)) as i32
 }

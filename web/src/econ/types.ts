@@ -46,6 +46,18 @@ export type Drop = {
   chance: number;
 };
 
+export type FarmKind = 'Tree' | 'Rock' | 'Flower';
+
+export type FarmDrop = {
+  id: number;
+  kind: FarmKind;
+  tier: number;
+  item_id: number;
+  qty_min: number;
+  qty_max: number;
+  chance: number;
+};
+
 export const SLOTS = [
   '', 'Weapon', 'Offhand', 'Armor', 'Helm', 'Legs',
   'Boots', 'Gloves', 'Belt', 'Cape', 'Necklace', 'Ring',

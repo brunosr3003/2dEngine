@@ -112,6 +112,8 @@ pub fn router(state: EconState) -> Router {
         .route("/enemies/:kind",  put(enemies_update))
         .route("/drops",          get(drops_list).post(drops_create))
         .route("/drops/:id",      put(drops_update).delete(drops_delete))
+        .route("/farm-drops",     get(farm_drops_list).post(farm_drops_create))
+        .route("/farm-drops/:id", put(farm_drops_update).delete(farm_drops_delete))
         .route("/icons",          get(icons_list))
         .route("/icons/:name",    get(icon_file))
         .route("/report/summary",     get(report_summary))
@@ -441,6 +443,99 @@ async fn drops_delete(
 ) -> Response {
     if !s.is_authed(&headers) { return unauth(); }
     if let Err(e) = sqlx::query("DELETE FROM loot_drops WHERE id = $1")
+        .bind(id).execute(s.pool.as_ref()).await { return ise(e); }
+    let v = bump_version(s.pool.as_ref()).await.unwrap_or(0);
+    Json(serde_json::json!({"ok": true, "version": v})).into_response()
+}
+
+// ── farm-drops (Tree/Rock/Flower × tier 1..4) ───────────────────────────
+
+#[derive(Serialize, sqlx::FromRow)]
+struct FarmDropRow {
+    id: i32,
+    kind: String,
+    tier: i32,
+    item_id: i32,
+    qty_min: i32,
+    qty_max: i32,
+    chance: f32,
+}
+
+#[derive(Deserialize)]
+struct FarmDropPayload {
+    kind: String,
+    tier: i32,
+    item_id: i32,
+    qty_min: i32,
+    qty_max: i32,
+    chance: f32,
+}
+
+#[derive(Deserialize)]
+struct FarmDropsQuery { kind: Option<String> }
+
+fn validate_farm_kind(kind: &str) -> bool {
+    matches!(kind, "Tree" | "Rock" | "Flower")
+}
+
+async fn farm_drops_list(
+    State(s): State<EconState>, headers: HeaderMap, Query(q): Query<FarmDropsQuery>
+) -> Response {
+    if !s.is_authed(&headers) { return unauth(); }
+    let rows: Vec<FarmDropRow> = match q.kind.as_deref() {
+        Some(k) => sqlx::query_as(
+            "SELECT id, kind, tier, item_id, qty_min, qty_max, chance \
+             FROM farm_node_drops WHERE kind = $1 ORDER BY tier, id"
+        ).bind(k).fetch_all(s.pool.as_ref()).await,
+        None => sqlx::query_as(
+            "SELECT id, kind, tier, item_id, qty_min, qty_max, chance \
+             FROM farm_node_drops ORDER BY kind, tier, id"
+        ).fetch_all(s.pool.as_ref()).await,
+    }.unwrap_or_default();
+    Json(serde_json::json!({"farm_drops": rows})).into_response()
+}
+
+async fn farm_drops_create(
+    State(s): State<EconState>, headers: HeaderMap, Json(p): Json<FarmDropPayload>
+) -> Response {
+    if !s.is_authed(&headers) { return unauth(); }
+    if !validate_farm_kind(&p.kind) { return bad("kind deve ser Tree/Rock/Flower"); }
+    if p.tier < 1 || p.tier > 4   { return bad("tier deve estar em 1..4"); }
+    if p.qty_min < 0 || p.qty_max < p.qty_min { return bad("qty_min/max invalido"); }
+    let chance = p.chance.clamp(0.0, 1.0);
+    let id: i32 = match sqlx::query_scalar(
+        "INSERT INTO farm_node_drops (kind, tier, item_id, qty_min, qty_max, chance) \
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id"
+    )
+    .bind(&p.kind).bind(p.tier).bind(p.item_id).bind(p.qty_min).bind(p.qty_max).bind(chance)
+    .fetch_one(s.pool.as_ref()).await { Ok(v) => v, Err(e) => return ise(e) };
+    let v = bump_version(s.pool.as_ref()).await.unwrap_or(0);
+    Json(serde_json::json!({"ok": true, "id": id, "version": v})).into_response()
+}
+
+async fn farm_drops_update(
+    State(s): State<EconState>, headers: HeaderMap, Path(id): Path<i32>, Json(p): Json<FarmDropPayload>
+) -> Response {
+    if !s.is_authed(&headers) { return unauth(); }
+    if !validate_farm_kind(&p.kind) { return bad("kind deve ser Tree/Rock/Flower"); }
+    if p.tier < 1 || p.tier > 4   { return bad("tier deve estar em 1..4"); }
+    if p.qty_min < 0 || p.qty_max < p.qty_min { return bad("qty_min/max invalido"); }
+    let chance = p.chance.clamp(0.0, 1.0);
+    if let Err(e) = sqlx::query(
+        "UPDATE farm_node_drops SET kind = $2, tier = $3, item_id = $4, \
+         qty_min = $5, qty_max = $6, chance = $7 WHERE id = $1"
+    )
+    .bind(id).bind(&p.kind).bind(p.tier).bind(p.item_id).bind(p.qty_min).bind(p.qty_max).bind(chance)
+    .execute(s.pool.as_ref()).await { return ise(e); }
+    let v = bump_version(s.pool.as_ref()).await.unwrap_or(0);
+    Json(serde_json::json!({"ok": true, "version": v})).into_response()
+}
+
+async fn farm_drops_delete(
+    State(s): State<EconState>, headers: HeaderMap, Path(id): Path<i32>
+) -> Response {
+    if !s.is_authed(&headers) { return unauth(); }
+    if let Err(e) = sqlx::query("DELETE FROM farm_node_drops WHERE id = $1")
         .bind(id).execute(s.pool.as_ref()).await { return ise(e); }
     let v = bump_version(s.pool.as_ref()).await.unwrap_or(0);
     Json(serde_json::json!({"ok": true, "version": v})).into_response()

@@ -453,6 +453,8 @@ pub mod attack_anim {
     pub const DASH: u8         = 5; // Dash do player (anim de jump, p1 cols 4-7)
     pub const PARRY_FLASH: u8  = 6; // Parry sucesso — full ShieldBash swing + flash
     pub const SHIELD_BASH: u8  = 7; // Shield Bash skill (1003) — pONE3 ShieldBash
+    pub const TOOL_SWING:  u8  = 8; // Rock (mine) e Tree (wood) — p2 rows 0-3
+    pub const TOOL_GATHER: u8  = 9; // Flower — p2 rows 4-7
 }
 
 /// Configuracao visual de um personagem (skin/race/outfit/hair). Replicada

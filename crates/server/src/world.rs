@@ -335,6 +335,9 @@ pub struct LootTag {
     pub item_id: u16,
     pub qty: u32,
     pub instance: Option<shared::items::ItemInstance>,
+    /// `sim_time_s` no momento do spawn. Auto-pickup só roda depois de
+    /// `LOOT_PICKUP_DELAY_S` pra dar tempo do player VER o drop.
+    pub spawn_at: f32,
 }
 
 pub struct PlayerTag {
@@ -566,6 +569,11 @@ pub struct Session {
     pub stamina_last_sent: i32,
     /// Progresso acumulado da conta (persistido em `characters.xp`).
     pub xp: u64,
+    /// Moeda. Currency separado — não ocupa slot de inventário. Persistido
+    /// em `characters.gold`. Ver `LOOT_PICKUP` (gold loot vai pra cá),
+    /// shop buy/sell, refining.
+    pub gold: u64,
+    pub gold_last_sent: u64,
     /// Fame acumulada. Ganha matando players + bosses. Perde ao ser morto.
     pub fame: u64,
     pub fame_last_sent: u64,
@@ -729,6 +737,11 @@ pub struct Session {
     pub last_combat_at_s: f32,
     /// Ultimo poise inteiro enviado pro cliente — evita spam de PoiseUpdate.
     pub poise_last_sent: i32,
+    /// Farm skill levels (persistidos). Influenciam hits_required do cliente
+    /// e são enviados via FarmSkillsUpdate no login. Default 1.
+    pub woodcutting_lvl: u32,
+    pub mining_lvl:      u32,
+    pub gathering_lvl:   u32,
 }
 
 /// Recursos compartilhados para autenticacao assincrona.
@@ -828,6 +841,23 @@ pub struct GameWorld {
     /// Última versão de economy vista no broadcast — quando muda (admin
     /// editou via web), reenviamos `ItemsConfig` pra todos os clientes.
     pub last_econ_version: i64,
+    /// Farm nodes carregados do mapfile. Chave = ID sequencial (1-based).
+    /// HP reduz a cada FarmHit validado; quando chega a 0, node entra em
+    /// respawn_at > 0 e loot é spawnado.
+    farm_nodes: HashMap<u32, FarmNodeState>,
+    /// Cooldown por (SessionId, node_id) — impede spam de FarmHit acima da
+    /// cadência da animação. Valor = sim_time_s quando o cooldown expira.
+    farm_hit_cooldowns: HashMap<(SessionId, u32), f32>,
+}
+
+struct FarmNodeState {
+    kind:           String,
+    tier:           u8,
+    pos:            Vec2,
+    hp:             i32,
+    hp_max:         i32,
+    respawn_at:     f32, // 0.0 = vivo; >0 = em respawn até esse sim_time_s
+    respawn_seconds: f32, // tempo de respawn configurado por node (default = FARM_NODE_RESPAWN_S)
 }
 
 impl GameWorld {
@@ -886,6 +916,8 @@ impl GameWorld {
             damage_this_tick: HashMap::new(),
             attacker_weapon_this_tick: HashMap::new(),
             last_econ_version: 0,
+            farm_nodes: HashMap::new(),
+            farm_hit_cooldowns: HashMap::new(),
         };
         w.spawn_vendor_at(vendor_pos);
         w.spawn_vault_at(vault_pos);
@@ -943,6 +975,8 @@ impl GameWorld {
             damage_this_tick: HashMap::new(),
             attacker_weapon_this_tick: HashMap::new(),
             last_econ_version: 0,
+            farm_nodes: HashMap::new(),
+            farm_hit_cooldowns: HashMap::new(),
         };
         w.spawn_mapfile_entities(&mf);
         w
@@ -1717,7 +1751,21 @@ impl GameWorld {
                         area_id, pos.x, pos.y, size[0], size[1], level, respawn_s, n_verts
                     );
                 }
-                MapEntity::FarmNode { .. } => { /* gerenciado pelo cliente */ }
+                MapEntity::FarmNode { kind, tier, respawn_seconds } => {
+                    let node_id = self.farm_nodes.len() as u32 + 1;
+                    let hp_max  = shared::farm_node_hp_max(kind, *tier as u8);
+                    let rs      = respawn_seconds.unwrap_or(shared::FARM_NODE_RESPAWN_S).max(1.0);
+                    self.farm_nodes.insert(node_id, FarmNodeState {
+                        kind:            kind.clone(),
+                        tier:            *tier as u8,
+                        pos:             pos,
+                        hp:              hp_max,
+                        hp_max,
+                        respawn_at:      0.0,
+                        respawn_seconds: rs,
+                    });
+                    tracing::debug!("farm_node id={node_id} kind={kind} tier={tier} pos=({:.1},{:.1}) respawn={rs}s", pos.x, pos.y);
+                }
             }
         }
         tracing::info!("mapfile: spawned {} entidades pre-posicionadas", mf.entities.len());
@@ -1834,21 +1882,15 @@ impl GameWorld {
             return;
         }
         // Custo: 100g × (refinement+1)^2. +0→+1 = 100g, +5→+6 = 3600g, etc.
-        let cost = 100u32 * (cur_inst.refinement as u32 + 1).pow(2);
-        let gold_idx = s.inventory.iter().position(|sl| sl.item_id == shared::item_id::GOLD && sl.qty > 0);
-        let player_gold = gold_idx.map(|i| s.inventory[i].qty).unwrap_or(0);
-        if player_gold < cost {
+        let cost = 100u64 * (cur_inst.refinement as u64 + 1).pow(2);
+        if s.gold < cost {
             let _ = s.handle.to_client.send(ServerMessage::Chat {
                 from: "[refine]".into(),
-                text: format!("need {}g (you have {}g)", cost, player_gold),
+                text: format!("need {}g (you have {}g)", cost, s.gold),
             });
             return;
         }
-        // Cobra ouro
-        if let Some(gi) = gold_idx {
-            s.inventory[gi].qty -= cost;
-            if s.inventory[gi].qty == 0 { s.inventory[gi] = shared::InventorySlot::default(); }
-        }
+        s.gold -= cost;
         // Roll: 100% sucesso até +4. Depois cai 8% por nível (+5=92%, +14=20%).
         let cur_lvl = cur_inst.refinement;
         let success_chance = if cur_lvl < 4 { 1.0 } else { 1.0 - (cur_lvl as f32 - 3.0) * 0.08 };
@@ -2166,11 +2208,11 @@ impl GameWorld {
             let t = self.map.spawn_tile();
             Vec2::new(t.0 as f32 + 0.5, t.1 as f32 + 0.5)
         };
-        let (mut spawn, mut health, saved_xp, saved_inv, saved_equip, saved_vault,
+        let (mut spawn, mut health, saved_xp, saved_gold, saved_inv, saved_equip, saved_vault,
              saved_fame, saved_aura, saved_profs, saved_unspent, saved_alloc,
              saved_sp_earned, saved_sp_spent, saved_learned_skills, saved_boat,
              saved_visual, saved_char_name) = (
-                row.pos, row.hp, row.xp, row.inventory.clone(), row.equipment, row.vault.clone(),
+                row.pos, row.hp, row.xp, row.gold, row.inventory.clone(), row.equipment, row.vault.clone(),
                 row.fame, row.aura, row.proficiencies, row.unspent_points, row.allocated_points,
                 row.skill_points_earned, row.skill_points_spent, row.learned_skills.clone(),
                 row.boat, row.visual.clone(), row.name.clone(),
@@ -2265,12 +2307,17 @@ impl GameWorld {
             s.stats = stats;
             s.equipment = saved_equip;
             s.xp = saved_xp;
+            s.gold = saved_gold;
+            s.gold_last_sent = u64::MAX; // forca envio inicial
             s.fame = saved_fame;
-            s.fame_last_sent = u64::MAX; // forca envio inicial
+            s.fame_last_sent = u64::MAX;
             s.aura = saved_aura;
             s.aura_last_sent = u64::MAX;
             s.proficiencies = saved_profs;
             s.proficiencies_dirty = true;
+            s.woodcutting_lvl = row.woodcutting_lvl.max(1);
+            s.mining_lvl      = row.mining_lvl.max(1);
+            s.gathering_lvl   = row.gathering_lvl.max(1);
             s.unspent_points = saved_unspent;
             s.allocated_points = saved_alloc;
             s.stat_points_dirty = true;
@@ -2323,6 +2370,23 @@ impl GameWorld {
             stats,
             equipment: saved_equip,
         });
+        // Farm nodes — envia lista completa pra cliente associar IDs.
+        let farm_nodes_list: Vec<shared::protocol::FarmNodeInfo> = self.farm_nodes.iter()
+            .map(|(&id, n)| shared::protocol::FarmNodeInfo {
+                id, x: n.pos.x, y: n.pos.y, kind: n.kind.clone(), tier: n.tier,
+            })
+            .collect();
+        let _ = handle.to_client.send(ServerMessage::FarmNodesConfig {
+            nodes: farm_nodes_list,
+        });
+        // Farm skill levels do player.
+        if let Some(s_ref) = self.sessions.get(&sid) {
+            let _ = handle.to_client.send(ServerMessage::FarmSkillsUpdate {
+                woodcutting: s_ref.woodcutting_lvl,
+                mining:      s_ref.mining_lvl,
+                gathering:   s_ref.gathering_lvl,
+            });
+        }
         let _ = handle.to_client.send(ServerMessage::ManaUpdate {
             current: stats.mp_max,
         });
@@ -2549,6 +2613,8 @@ impl GameWorld {
                 stamina_current: shared::STAMINA_MAX as f32,
                 stamina_last_sent: shared::STAMINA_MAX,
                 xp: 0,
+                gold: 0,
+                gold_last_sent: u64::MAX,
                 fame: 0,
                 fame_last_sent: u64::MAX,
                 aura: 0,
@@ -2604,6 +2670,9 @@ impl GameWorld {
                 poise_current: 50.0, // base padrao; refresh via stats no login
                 last_combat_at_s: 0.0,
                 poise_last_sent: 0,
+                woodcutting_lvl: 1,
+                mining_lvl:      1,
+                gathering_lvl:   1,
             },
         );
     }
@@ -2846,6 +2915,9 @@ impl GameWorld {
             }
             ClientMessage::RespawnAtCity => {
                 self.handle_respawn_at_city(id);
+            }
+            ClientMessage::FarmHit { node_id } => {
+                self.handle_farm_hit(id, node_id);
             }
         }
     }
@@ -3990,6 +4062,10 @@ impl GameWorld {
         }
         if self.from_mapfile && !self.boss_areas.is_empty() {
             self.tick_boss_areas();
+        }
+        // Farm node respawn.
+        if self.from_mapfile && !self.farm_nodes.is_empty() {
+            self.tick_farm_respawn();
         }
 
         // Respawn procedural e desabilitado quando o mapa vem de MapFile
@@ -6069,45 +6145,12 @@ impl GameWorld {
             // Tira o body físico imediato (bate na entidade não faz sentido).
             self.free_entity_body(e);
 
-            // Loot table por kind
+            // Loot table por kind. Boss (7) ganha raio maior pelo volume
+            // de drops; demais usam ~3 tiles pra dar respiro visual.
             let seed = lcg(self.tick as u64 ^ eid.0 as u64 ^ 0xBADA_55);
             let drops = crate::economy::enemy_loot_drops(kind_id, seed);
-            for (item_id, qty) in drops {
-                let loot_id = self.alloc_entity_id();
-                // Espalha levemente os drops do boss
-                let offset = if kind_id == 7 {
-                    let a = lcg_f32(lcg(seed ^ item_id as u64)) * std::f32::consts::TAU;
-                    Vec2::new(a.cos(), a.sin()) * lcg_f32(seed ^ (qty as u64)) * 1.5
-                } else { Vec2::ZERO };
-                // Roll instance pra equipáveis (template com ranges); None
-                // pra stackáveis (gold/poções/materiais). Cada drop = roll
-                // independente — rarity + stats únicos por item.
-                // iLvl baseado no kind do enemy: bosses (kind 7) dropam
-                // tier alto. Outros enemies escalam pela attack damage do
-                // kind como proxy de "dificuldade".
-                let item_lvl = crate::economy::loot_item_level(kind_id, item_id);
-                let instance = shared::items::ItemInstance::roll_with_template(
-                    crate::economy::item_template_of(item_id),
-                    item_lvl,
-                    || fastrand::f32(),
-                );
-                self.ecs.spawn((
-                    NetId(loot_id),
-                    Position(pos + offset),
-                    Velocity(Vec2::ZERO),
-                    EntityKind::Loot(item_id),
-                    LootTag { item_id, qty, instance },
-                ));
-                tracing::debug!("loot drop: kind={kind_id} item={item_id} qty={qty} rarity={:?}", instance.map(|i| i.rarity()));
-                if let Some(ctx) = &self.auth_ctx {
-                    let r = instance.map(|i| i.rarity);
-                    let rf = instance.map(|i| i.refinement).unwrap_or(0);
-                    crate::persistence::log_drop(
-                        ctx.pool.clone(), kind_id, item_id, qty,
-                        r.unwrap_or(0), item_lvl, rf,
-                    );
-                }
-            }
+            let spread = if kind_id == 7 { 5.0 } else { 3.0 };
+            self.spawn_loot_drops(pos, &drops, seed, spread, kind_id);
 
             // Creditar XP (e Fame, se mob grande) para o jogador que matou
             if let Some(attacker_eid) = kill_credits.get(&eid).copied() {
@@ -6326,7 +6369,9 @@ impl GameWorld {
 
             if !drops.is_empty() {
                 let seed = lcg(self.tick as u64 ^ eid.0 as u64 ^ 0xDEAD_DEAD);
-                self.spawn_loot_drops(death_pos, &drops, seed);
+                // Player death: drops do inv+equip espalhados; kind=0 (sem
+                // override de loot_item_level — usa item_level base).
+                self.spawn_loot_drops(death_pos, &drops, seed, 3.0, 0);
             }
 
             // Libera carry se o morto estava sendo carregado ou carregando
@@ -6387,10 +6432,13 @@ impl GameWorld {
             .collect();
 
         let pick_r_sq = shared::PICKUP_RADIUS * shared::PICKUP_RADIUS;
+        let now = self.sim_time_s;
         let mut picked: Vec<(Entity, EntityId)> = Vec::new();
         // (player_entity, new_hp_max) — para ajustar Health.max apos equipar.
         let mut hp_max_updates: Vec<(Entity, i32)> = Vec::new();
         'loot_loop: for (le, leid, lpos, ltag) in loots {
+            // Janela de "ver o drop" antes do auto-pickup.
+            if now - ltag.spawn_at < shared::LOOT_PICKUP_DELAY_S { continue; }
             for (sid, ppos) in &pickup_players {
                 if ppos.distance_squared(lpos) < pick_r_sq {
                     if let Some(session) = self.sessions.get_mut(sid) {
@@ -6409,6 +6457,12 @@ impl GameWorld {
                                 picked.push((le, leid));
                                 continue 'loot_loop;
                             }
+                        }
+                        // Gold é currency: vai pro contador, não ocupa inventário.
+                        if ltag.item_id == shared::item_id::GOLD {
+                            session.gold = session.gold.saturating_add(ltag.qty as u64);
+                            picked.push((le, leid));
+                            continue 'loot_loop;
                         }
                         // Senao, inventario normal.
                         if add_to_inventory(&mut session.inventory, ltag.item_id, ltag.qty, ltag.instance) {
@@ -6742,6 +6796,12 @@ impl GameWorld {
                         slots: session.vault.clone(),
                     });
             }
+            if session.gold != session.gold_last_sent {
+                session.gold_last_sent = session.gold;
+                let _ = session.handle.to_client.send(ServerMessage::GoldUpdate {
+                    gold: session.gold,
+                });
+            }
             if session.fame != session.fame_last_sent {
                 session.fame_last_sent = session.fame;
                 let _ = session.handle.to_client.send(ServerMessage::FameUpdate {
@@ -6829,6 +6889,7 @@ impl GameWorld {
             pos: Vec2,
             hp: Health,
             xp: u64,
+            gold: u64,
             boat: Option<crate::persistence::PersistedBoat>,
             inventory: Vec<shared::InventorySlot>,
             equipment: shared::Equipment,
@@ -6843,6 +6904,9 @@ impl GameWorld {
             learned: Vec<shared::LearnedSkill>,
             account_id: Option<i64>,
             visual: shared::VisualConfig,
+            woodcutting_lvl: u32,
+            mining_lvl:      u32,
+            gathering_lvl:   u32,
         }
         let mut entries: Vec<E> = Vec::new();
         for session in self.sessions.values() {
@@ -6864,6 +6928,7 @@ impl GameWorld {
                 name: session.name.clone(),
                 pos, hp, boat,
                 xp: session.xp,
+                gold: session.gold,
                 inventory: session.inventory.clone(),
                 equipment: session.equipment,
                 vault: session.vault.clone(),
@@ -6877,6 +6942,9 @@ impl GameWorld {
                 learned: session.learned_skills.clone(),
                 account_id: session.account_id,
                 visual: session.visual.clone(),
+                woodcutting_lvl: session.woodcutting_lvl,
+                mining_lvl:      session.mining_lvl,
+                gathering_lvl:   session.gathering_lvl,
             });
         }
         for e in entries {
@@ -6885,6 +6953,7 @@ impl GameWorld {
                 pos: e.pos,
                 hp: e.hp,
                 xp: e.xp,
+                gold: e.gold,
                 boat: e.boat,
                 inventory: e.inventory,
                 equipment: e.equipment,
@@ -6899,6 +6968,9 @@ impl GameWorld {
                 learned_skills: e.learned,
                 account_id: e.account_id,
                 visual: Some(e.visual),
+                woodcutting_lvl: e.woodcutting_lvl,
+                mining_lvl:      e.mining_lvl,
+                gathering_lvl:   e.gathering_lvl,
             };
             self.characters.insert(e.name, row.clone());
             out.push(row);
@@ -7190,17 +7262,51 @@ impl GameWorld {
     }
 
     /// Spawna uma lista de (item_id, qty) como loots no mundo em `pos`,
-    /// levemente espalhados em circulo.
-    fn spawn_loot_drops(&mut self, pos: Vec2, drops: &[(u16, u32)], seed: u64) {
+    /// espalhados num anel ao redor de `pos`. `spread_max` define o raio
+    /// externo do anel; cada drop fica em [0.3·spread_max, spread_max] com
+    /// ângulo distribuído + jitter pra evitar empilhamento. Posições que
+    /// caem em WALL/WATER são realocadas pra tile walkable mais próximo.
+    /// `kind_id` é usado pro `loot_item_level` e log; passe 0 quando não
+    /// houver enemy_kind (player death, farm node).
+    fn spawn_loot_drops(&mut self, pos: Vec2, drops: &[(u16, u32)], seed: u64, spread_max: f32, kind_id: u16) {
         let n = drops.len().max(1);
+        let r_min = spread_max * 0.3;
+        let r_jit = spread_max * 0.7;
+        let now = self.sim_time_s;
         for (i, (item_id, qty)) in drops.iter().enumerate() {
             if *qty == 0 { continue; }
             let loot_id = self.alloc_entity_id();
             let a = (i as f32 / n as f32) * std::f32::consts::TAU
-                + lcg_f32(seed ^ (*item_id as u64)) * 0.4;
-            let r = 0.4 + lcg_f32(seed ^ (i as u64)) * 0.9;
-            let offset = Vec2::new(a.cos(), a.sin()) * r;
-            let item_lvl = crate::economy::loot_item_level(0, *item_id);
+                + lcg_f32(seed ^ (*item_id as u64)) * 0.6;
+            let r = r_min + lcg_f32(seed ^ (i as u64)) * r_jit;
+            let mut offset = Vec2::new(a.cos(), a.sin()) * r;
+            // Reje­ita offsets em tile não-walkable; tenta raios menores
+            // e em último caso cai no `pos` original.
+            let walkable = |p: Vec2, m: &shared::world_gen::WorldMap| {
+                m.is_walkable(p.x.floor() as i32, p.y.floor() as i32)
+            };
+            if !walkable(pos + offset, &self.map) {
+                let mut found = false;
+                for k in 1..6u32 {
+                    let shrink = 1.0 - (k as f32) * 0.15;
+                    let try_off = Vec2::new(a.cos(), a.sin()) * (r * shrink);
+                    if walkable(pos + try_off, &self.map) {
+                        offset = try_off; found = true; break;
+                    }
+                }
+                if !found {
+                    // 8 direções a meio raio do anel
+                    for d in 0..8 {
+                        let ang = (d as f32) * std::f32::consts::TAU / 8.0;
+                        let try_off = Vec2::new(ang.cos(), ang.sin()) * (spread_max * 0.4);
+                        if walkable(pos + try_off, &self.map) {
+                            offset = try_off; found = true; break;
+                        }
+                    }
+                }
+                if !found { offset = Vec2::ZERO; }
+            }
+            let item_lvl = crate::economy::loot_item_level(kind_id, *item_id);
             let instance = shared::items::ItemInstance::roll_with_template(
                 crate::economy::item_template_of(*item_id),
                 item_lvl,
@@ -7211,13 +7317,13 @@ impl GameWorld {
                 Position(pos + offset),
                 Velocity(Vec2::ZERO),
                 EntityKind::Loot(*item_id),
-                LootTag { item_id: *item_id, qty: *qty, instance },
+                LootTag { item_id: *item_id, qty: *qty, instance, spawn_at: now },
             ));
             if let Some(ctx) = &self.auth_ctx {
                 let r = instance.map(|i| i.rarity).unwrap_or(0);
                 let rf = instance.map(|i| i.refinement).unwrap_or(0);
                 crate::persistence::log_drop(
-                    ctx.pool.clone(), 0, *item_id, *qty, r, item_lvl, rf,
+                    ctx.pool.clone(), kind_id, *item_id, *qty, r, item_lvl, rf,
                 );
             }
         }
@@ -7588,19 +7694,8 @@ impl GameWorld {
         let new_hp_max: Option<i32> = {
             let Some(session) = self.sessions.get_mut(&sid) else { return };
 
-            // 2a) Verifica ouro
-            let gold_idx = session
-                .inventory
-                .iter()
-                .position(|s| s.qty > 0 && s.item_id == shared::item_id::GOLD);
-            let Some(gi) = gold_idx else {
-                let _ = session.handle.to_client.send(ServerMessage::Chat {
-                    from: "SHOP".into(),
-                    text: "no gold".into(),
-                });
-                return;
-            };
-            if session.inventory[gi].qty < price {
+            // 2a) Verifica gold (currency, não item)
+            if session.gold < price as u64 {
                 let _ = session.handle.to_client.send(ServerMessage::Chat {
                     from: "SHOP".into(),
                     text: format!("need {price} gold"),
@@ -7634,11 +7729,8 @@ impl GameWorld {
                 return;
             }
 
-            // 2c) Cobra ouro e sinaliza update
-            session.inventory[gi].qty -= price;
-            if session.inventory[gi].qty == 0 {
-                session.inventory[gi] = shared::InventorySlot::default();
-            }
+            // 2c) Cobra gold (currency)
+            session.gold = session.gold.saturating_sub(price as u64);
             session.inventory_dirty = true;
             let _ = session.handle.to_client.send(ServerMessage::Chat {
                 from: "SHOP".into(),
@@ -7697,17 +7789,7 @@ impl GameWorld {
         if session.inventory[inv_slot].qty == 0 {
             session.inventory[inv_slot] = shared::InventorySlot::default();
         }
-        let placed = add_to_inventory(&mut session.inventory, shared::item_id::GOLD, price, None);
-        if !placed {
-            // Reverte: estranho mas não pode acontecer com gold (stack 9999).
-            session.inventory[inv_slot].item_id = slot.item_id;
-            session.inventory[inv_slot].qty = slot.qty;
-            let _ = session.handle.to_client.send(ServerMessage::Chat {
-                from: "SHOP".into(),
-                text: "inventory full (no space for gold)".into(),
-            });
-            return;
-        }
+        session.gold = session.gold.saturating_add(price as u64);
         session.inventory_dirty = true;
         let _ = session.handle.to_client.send(ServerMessage::Chat {
             from: "SHOP".into(),
@@ -7806,13 +7888,9 @@ impl GameWorld {
             sells.push((slot_idx, slot.item_id, qty));
         }
 
-        // 4) Verifica saldo: gold do player + total_sell >= total_buy.
-        let gold_before: u64 = inv_snapshot.iter()
-            .filter(|s| s.item_id == shared::item_id::GOLD)
-            .map(|s| s.qty as u64)
-            .sum();
-        let gold_after = gold_before.saturating_add(total_sell).checked_sub(total_buy);
-        let Some(_) = gold_after else {
+        // 4) Verifica saldo: session.gold + total_sell >= total_buy.
+        let gold_before: u64 = self.sessions.get(&sid).map(|s| s.gold).unwrap_or(0);
+        let Some(gold_after) = gold_before.saturating_add(total_sell).checked_sub(total_buy) else {
             self.send_trade_result(sid, false, "ouro insuficiente");
             return;
         };
@@ -7825,31 +7903,7 @@ impl GameWorld {
             s.qty -= qty;
             if s.qty == 0 { *s = shared::InventorySlot::default(); }
         }
-        // 5b) Adiciona gold da venda (se houver)
-        if total_sell > 0 {
-            if !add_to_inventory(&mut sim, shared::item_id::GOLD, total_sell as u32, None) {
-                self.send_trade_result(sid, false, "sem espaço pro ouro recebido");
-                return;
-            }
-        }
-        // 5c) Subtrai gold da compra
-        if total_buy > 0 {
-            let mut left = total_buy as u32;
-            for s in sim.iter_mut() {
-                if s.item_id == shared::item_id::GOLD && s.qty > 0 {
-                    let take = s.qty.min(left);
-                    s.qty -= take;
-                    left -= take;
-                    if s.qty == 0 { *s = shared::InventorySlot::default(); }
-                    if left == 0 { break; }
-                }
-            }
-            if left > 0 {
-                self.send_trade_result(sid, false, "ouro insuficiente (sim)");
-                return;
-            }
-        }
-        // 5d) Adiciona itens comprados. Loja sempre vende stackáveis sem
+        // 5b) Adiciona itens comprados. Loja sempre vende stackáveis sem
         // instance — pode ser estendido pra vender raros no futuro.
         for &(item_id, qty) in &buys {
             if !add_to_inventory(&mut sim, item_id, qty, None) {
@@ -7858,9 +7912,10 @@ impl GameWorld {
             }
         }
 
-        // 6) Tudo validou — commita: substitui inventário pela simulação.
+        // 6) Tudo validou — commita: inventário e gold.
         let Some(session) = self.sessions.get_mut(&sid) else { return };
         session.inventory = sim;
+        session.gold = gold_after;
         session.inventory_dirty = true;
 
         let summary = format!(
@@ -8083,6 +8138,150 @@ impl GameWorld {
     }
 
     /// Helper: envia mensagem de sistema (Chat from="System") pro cliente.
+    // ── Farm Nodes ────────────────────────────────────────────────────────────
+
+    /// Valida e aplica um hit de coleta. Gateia: login, distância, cooldown,
+    /// node vivo. Em caso de sucesso, reduz HP, replica anim e, se HP=0,
+    /// spawna loot + agenda respawn + notifica clientes próximos.
+    fn handle_farm_hit(&mut self, sid: SessionId, node_id: u32) {
+        // Gate: player logado com entidade no mapa.
+        let player_pos = {
+            let Some(s) = self.sessions.get(&sid) else { return };
+            if !s.logged_in { return }
+            let Some(e) = s.entity else { return };
+            let Ok(p) = self.ecs.get::<&Position>(e) else { return };
+            p.0
+        };
+
+        // Gate: node existe e está vivo.
+        let node = match self.farm_nodes.get(&node_id) {
+            Some(n) if n.respawn_at <= 0.0 => n,
+            _ => return,
+        };
+
+        // Gate: distância máxima.
+        if player_pos.distance(node.pos) > shared::FARM_MAX_RANGE { return }
+
+        // Gate: cooldown por (player, node).
+        let cd_key = (sid, node_id);
+        if self.farm_hit_cooldowns.get(&cd_key)
+            .map(|&t| t > self.sim_time_s)
+            .unwrap_or(false)
+        { return }
+        self.farm_hit_cooldowns.insert(cd_key, self.sim_time_s + shared::FARM_HIT_COOLDOWN_S);
+
+        // Todos os tipos usam ToolSwing (cliente difere visualmente pelo tool code).
+        let anim_code = shared::attack_anim::TOOL_SWING;
+
+        // Modelo countdown: cada FarmHit = depleção completa do node.
+        // Cliente envia 1 hit ao final da duração calculada por skill+tool.
+        let node = self.farm_nodes.get_mut(&node_id).unwrap();
+        node.hp = 0;
+        let (hp, hp_max) = (node.hp, node.hp_max);
+        let node_pos = node.pos;
+        let node_kind = node.kind.clone();
+        let node_tier = node.tier;
+
+        // Replica anim de ferramenta no snapshot do player.
+        if let Some(s) = self.sessions.get(&sid) {
+            if let Some(e) = s.entity {
+                if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(e) {
+                    tag.attack_anim_pending = Some(anim_code);
+                }
+            }
+        }
+
+        // Broadcast FarmNodeUpdate pra todos os players na AOI.
+        let aoi_sq = shared::AOI_RADIUS * shared::AOI_RADIUS;
+        let update_msg = ServerMessage::FarmNodeUpdate { node_id, hp, hp_max };
+        for s in self.sessions.values() {
+            if !s.logged_in { continue }
+            let Some(e) = s.entity else { continue };
+            let Ok(p) = self.ecs.get::<&Position>(e) else { continue };
+            if p.0.distance_squared(node_pos) <= aoi_sq {
+                let _ = s.handle.to_client.send(update_msg.clone());
+            }
+        }
+
+        // Node esgotado: spawna loot e agenda respawn (usa tempo do mapfile ou default).
+        if hp <= 0 {
+            let node = self.farm_nodes.get_mut(&node_id).unwrap();
+            node.respawn_at = self.sim_time_s + node.respawn_seconds;
+
+            let seed = (self.tick as u64)
+                .wrapping_mul(0xDEAD_BEEF)
+                .wrapping_add(node_id as u64);
+            let drops = crate::economy::farm_node_loot(&node_kind, node_tier, seed);
+            // Farm drops caem nos arredores do node (raio 1.2-2.0 tiles)
+            // para não sobrepor o sprite de toco/entulho que fica no centro.
+            let drop_origin = {
+                let a = lcg_f32(seed ^ 0xF4_21) * std::f32::consts::TAU;
+                let r = 1.2 + lcg_f32(seed ^ 0xB3_11) * 0.8;
+                node_pos + Vec2::new(a.cos() * r, a.sin() * r * 0.5)
+            };
+            // Farm: drop_origin já está 1.2-2.0 do node; spread interno menor
+            // (1.0) pra não voar longe demais do toco. kind=0 (não é mob).
+            self.spawn_loot_drops(drop_origin, &drops, seed, 1.0, 0);
+
+            // Broadcast FarmNodeDepleted.
+            let depleted_msg = ServerMessage::FarmNodeDepleted { node_id };
+            for s in self.sessions.values() {
+                if !s.logged_in { continue }
+                let Some(e) = s.entity else { continue };
+                let Ok(p) = self.ecs.get::<&Position>(e) else { continue };
+                if p.0.distance_squared(node_pos) <= aoi_sq {
+                    let _ = s.handle.to_client.send(depleted_msg.clone());
+                }
+            }
+
+            // XP de farm skill e incremento de nível (a cada 10 coletas = +1 lvl, cap 100).
+            // TODO: persistir XP de farm separadamente; por ora incrementa lvl direto.
+            if let Some(s) = self.sessions.get_mut(&sid) {
+                let lvl_ref = match node_kind.as_str() {
+                    "Tree"   => &mut s.woodcutting_lvl,
+                    "Rock"   => &mut s.mining_lvl,
+                    _        => &mut s.gathering_lvl,
+                };
+                if *lvl_ref < 100 {
+                    *lvl_ref += 1; // 1 coleta = 1 lvl (temporário — substituir por XP)
+                    let (wc, mn, gt) = (s.woodcutting_lvl, s.mining_lvl, s.gathering_lvl);
+                    let _ = s.handle.to_client.send(ServerMessage::FarmSkillsUpdate {
+                        woodcutting: wc, mining: mn, gathering: gt,
+                    });
+                }
+            }
+            self.save_pending = true;
+        }
+    }
+
+    /// Verifica todos os farm nodes com respawn_at expirado e os restaura.
+    /// Chamado a cada tick em `step()`.
+    fn tick_farm_respawn(&mut self) {
+        let aoi_sq = shared::AOI_RADIUS * shared::AOI_RADIUS;
+        let now = self.sim_time_s;
+        let mut respawned: Vec<(u32, Vec2)> = Vec::new();
+        for (&id, node) in self.farm_nodes.iter_mut() {
+            if node.respawn_at > 0.0 && now >= node.respawn_at {
+                node.hp         = node.hp_max;
+                node.respawn_at = 0.0;
+                respawned.push((id, node.pos));
+            }
+        }
+        for (node_id, node_pos) in respawned {
+            let msg = ServerMessage::FarmNodeRespawned { node_id };
+            for s in self.sessions.values() {
+                if !s.logged_in { continue }
+                let Some(e) = s.entity else { continue };
+                let Ok(p) = self.ecs.get::<&Position>(e) else { continue };
+                if p.0.distance_squared(node_pos) <= aoi_sq {
+                    let _ = s.handle.to_client.send(msg.clone());
+                }
+            }
+        }
+        // Limpa cooldowns expirados pra não crescer indefinidamente.
+        self.farm_hit_cooldowns.retain(|_, &mut t| t > now);
+    }
+
     fn send_chat_to(&self, sid: SessionId, text: &str) {
         if let Some(s) = self.sessions.get(&sid) {
             let _ = s.handle.to_client.send(ServerMessage::Chat {
@@ -8206,6 +8405,7 @@ impl GameWorld {
             pos,
             hp,
             xp: session.xp,
+            gold: session.gold,
             boat,
             inventory: session.inventory.clone(),
             equipment: session.equipment,
@@ -8220,6 +8420,9 @@ impl GameWorld {
             learned_skills: session.learned_skills.clone(),
             account_id: session.account_id,
             visual: Some(session.visual.clone()),
+            woodcutting_lvl: session.woodcutting_lvl,
+            mining_lvl:      session.mining_lvl,
+            gathering_lvl:   session.gathering_lvl,
         };
         self.characters.insert(session.name.clone(), row.clone());
         Some(row)

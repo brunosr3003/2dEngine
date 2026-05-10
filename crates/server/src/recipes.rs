@@ -145,6 +145,8 @@ async fn seed_from_constants(pool: &PgPool) -> anyhow::Result<()> {
             | 31 | 32 | 33 | 34 | 35 | 36
             | 37 | 38 | 39 | 40 | 41 | 42
             | 43 | 44 => 2,
+            // Boats (naval) — barcos consumiveis.
+            100..=109 => 4,
             _ => 0,
         };
         let tier: i16 = derive_tier(r.output_item_id, r.output_item_level) as i16;

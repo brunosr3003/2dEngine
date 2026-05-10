@@ -99,6 +99,9 @@ pub enum ClientMessage {
     /// Permitido em qualquer estado — se montado em barco, desmonta antes.
     ResetPosition,
     RequestDisconnect,
+    /// Player tenta colher um farm node. Server valida distância, cooldown e
+    /// estado do node. `node_id` = ID sequencial atribuído ao carregar o mapa.
+    FarmHit { node_id: u32 },
     /// Cria novo personagem para a conta (multi-char). Aparece como nova
     /// entry na CharacterList apos sucesso. Server valida nome unico.
     CreateCharacter {
@@ -258,6 +261,22 @@ pub enum ServerMessage {
     DownedUpdate { active: bool, dhp: i32, dhp_max: i32, timer_s: f32 },
     FameUpdate { fame: u64 },
     AuraUpdate { aura: u64 },
+    /// Currency separado do inventário. Enviado no login e após cada
+    /// transação que muda gold (loot, shop buy/sell, refining, trade).
+    GoldUpdate { gold: u64 },
+
+    // ── Farm Nodes ──────────────────────────────────────────────────────────
+    /// Enviado após login com a lista completa de farm nodes do mapa. Cliente
+    /// usa para associar IDs aos GameObjects locais por posição.
+    FarmNodesConfig { nodes: Vec<FarmNodeInfo> },
+    /// HP atual do node após um hit validado. Broadcast pra players na AOI.
+    FarmNodeUpdate { node_id: u32, hp: i32, hp_max: i32 },
+    /// Node coletado — desaparece até respawn. Broadcast pra players na AOI.
+    FarmNodeDepleted { node_id: u32 },
+    /// Node respawnado — pode ser coletado novamente.
+    FarmNodeRespawned { node_id: u32 },
+    /// Farm skill levels do player (woodcutting / mining / gathering).
+    FarmSkillsUpdate { woodcutting: u32, mining: u32, gathering: u32 },
     ProficienciesUpdate {
         #[serde(rename = "proficiency_xp")]
         xp: [u64; crate::PROF_COUNT],
@@ -436,6 +455,16 @@ pub struct ItemConfigEntry {
 }
 
 fn default_true() -> bool { true }
+
+/// Descritor de um farm node carregado do mapa. Enviado no FarmNodesConfig.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FarmNodeInfo {
+    pub id:   u32,
+    pub x:    f32,
+    pub y:    f32,
+    pub kind: String,
+    pub tier: u8,
+}
 
 /// Replicacao do mundo enviada a cada tick.
 #[derive(Debug, Clone, Serialize, Deserialize)]
