@@ -4098,7 +4098,10 @@ impl GameWorld {
                 }
             }
         }
-        self.removed_this_tick.clear();
+        // NOTE: removed_this_tick NAO eh limpo aqui. O clear() agora roda no
+        // FIM de send_snapshots(), depois de despachar pra todos os clients.
+        // Limpar aqui apagava ids pushed em on_message (dismount, spawn boat)
+        // antes do snapshot conseguir incluir.
 
         // ── A: processar inputs de jogadores ──────────────────────────────────
         struct InputResult {
@@ -6872,6 +6875,12 @@ impl GameWorld {
                 });
             }
         }
+
+        // Limpa removed_this_tick DEPOIS de despachar pra todos os clients.
+        // Antes, o clear() ficava no inicio de step(), o que apagava ids de
+        // dismount/spawn/etc. processados em on_message ANTES do step rodar
+        // — fazia o cliente nunca receber a remocao do barco.
+        self.removed_this_tick.clear();
     }
 }
 
