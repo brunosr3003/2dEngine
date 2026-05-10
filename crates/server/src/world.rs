@@ -8128,8 +8128,8 @@ impl GameWorld {
                     boat_entity,
                     boat_eid,
                 });
-                // Consome o item.
-                consume_slot(&mut self.sessions);
+                // Item NAO eh consumido — barco e' permanente no inv. Spawn so'
+                // gera entidade temporaria; dismount despawna sem devolver nada.
                 // Mount eh evento critico — forca save IMEDIATO (sub-1s).
                 self.save_pending = true;
                 tracing::info!("boat spawn: pid={:?} kind={} pos={:?}", owner_pid, kind, water_pos);
@@ -8356,27 +8356,9 @@ impl GameWorld {
         self.removed_this_tick.push(mounted_boat_eid);
         // Dismount eh evento critico — forca save IMEDIATO (sub-1s).
         self.save_pending = true;
-        // Devolve o item de barco no inventario do player.
-        let item_id = match boat_kind {
-            0 => shared::item_id::BOAT_LYLIAN_LEUTARD,
-            _ => shared::item_id::BOAT_LYLIAN_LEUTARD,
-        };
-        if let Some(session) = self.sessions.get_mut(&sid) {
-            // Procura slot vazio ou stack do mesmo item.
-            let mut placed = false;
-            for slot in session.inventory.iter_mut() {
-                if slot.qty == 0 {
-                    *slot = shared::InventorySlot { item_id, qty: 1, instance: None };
-                    placed = true;
-                    break;
-                }
-            }
-            if !placed {
-                tracing::warn!("dismount: inv cheio, barco descartado pid={:?}", session.player_id);
-            } else {
-                session.inventory_dirty = true;
-            }
-        }
+        // Item de barco nunca foi consumido — fica no inv permanentemente.
+        // Player pode usar de novo pra spawnar outra entidade temporaria.
+        let _ = boat_kind; // suprime unused warning
         tracing::info!("boat dismount: target={:?}", target);
     }
 
