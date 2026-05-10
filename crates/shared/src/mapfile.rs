@@ -92,6 +92,11 @@ pub enum MapEntity {
         id:        u32,
         waypoints: Vec<[f32; 2]>,
     },
+    /// Nó de recurso coletável (farming). Servidor ignora — gerenciado pelo cliente.
+    FarmNode {
+        kind: String,
+        tier: u32,
+    },
 }
 
 /// Quota de inimigos por kind dentro de uma EnemySpawner.

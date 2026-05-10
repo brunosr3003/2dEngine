@@ -1717,6 +1717,7 @@ impl GameWorld {
                         area_id, pos.x, pos.y, size[0], size[1], level, respawn_s, n_verts
                     );
                 }
+                MapEntity::FarmNode { .. } => { /* gerenciado pelo cliente */ }
             }
         }
         tracing::info!("mapfile: spawned {} entidades pre-posicionadas", mf.entities.len());
@@ -1819,16 +1820,16 @@ impl GameWorld {
             Some(i) => i,
             None => {
                 let _ = s.handle.to_client.send(ServerMessage::Chat {
-                    from: "[refinar]".into(),
-                    text: "este item não pode ser refinado".into(),
+                    from: "[refine]".into(),
+                    text: "this item cannot be refined".into(),
                 });
                 return;
             }
         };
         if cur_inst.refinement >= shared::items::MAX_REFINE {
             let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "[refinar]".into(),
-                text: format!("item já está em +{} (máximo)", shared::items::MAX_REFINE),
+                from: "[refine]".into(),
+                text: format!("item already at +{} (max)", shared::items::MAX_REFINE),
             });
             return;
         }
@@ -1838,8 +1839,8 @@ impl GameWorld {
         let player_gold = gold_idx.map(|i| s.inventory[i].qty).unwrap_or(0);
         if player_gold < cost {
             let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "[refinar]".into(),
-                text: format!("precisa {}g (você tem {}g)", cost, player_gold),
+                from: "[refine]".into(),
+                text: format!("need {}g (you have {}g)", cost, player_gold),
             });
             return;
         }
@@ -1858,8 +1859,8 @@ impl GameWorld {
                 inst.refinement += 1;
             }
             let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "[refinar]".into(),
-                text: format!("✓ sucesso! item agora é +{} (-{}g)", cur_lvl + 1, cost),
+                from: "[refine]".into(),
+                text: format!("✓ success! item is now +{} (-{}g)", cur_lvl + 1, cost),
             });
         } else {
             // Falha — reseta refinement pra 0
@@ -1867,8 +1868,8 @@ impl GameWorld {
                 inst.refinement = 0;
             }
             let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "[refinar]".into(),
-                text: format!("✗ falhou! refinement resetou pra +0 (-{}g)", cost),
+                from: "[refine]".into(),
+                text: format!("✗ failed! refinement reset to +0 (-{}g)", cost),
             });
         }
         s.inventory_dirty = true;
@@ -1896,23 +1897,23 @@ impl GameWorld {
                 && gem_id != shared::item_id::DRAGON_SCALE)
         {
             let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "[ferreiro]".into(),
-                text: "isso não é uma gema".into(),
+                from: "[blacksmith]".into(),
+                text: "that's not a gem".into(),
             });
             return;
         }
         // Valida item destino
         let Some(mut inst) = s.inventory[item_idx].instance else {
             let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "[ferreiro]".into(),
-                text: "esse item não suporta sockets".into(),
+                from: "[blacksmith]".into(),
+                text: "this item does not support sockets".into(),
             });
             return;
         };
         if inst.sockets == 0 {
             let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "[ferreiro]".into(),
-                text: "esse item não tem sockets".into(),
+                from: "[blacksmith]".into(),
+                text: "this item has no sockets".into(),
             });
             return;
         }
@@ -1920,15 +1921,15 @@ impl GameWorld {
         let free = inst.socketed_gems.iter().position(|&g| g == 0);
         let Some(slot_pos) = free else {
             let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "[ferreiro]".into(),
-                text: "todos os sockets já estão ocupados".into(),
+                from: "[blacksmith]".into(),
+                text: "all sockets are already filled".into(),
             });
             return;
         };
         if slot_pos >= inst.sockets as usize {
             let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "[ferreiro]".into(),
-                text: "todos os sockets já estão ocupados".into(),
+                from: "[blacksmith]".into(),
+                text: "all sockets are already filled".into(),
             });
             return;
         }
@@ -1941,8 +1942,8 @@ impl GameWorld {
         }
         s.inventory_dirty = true;
         let _ = s.handle.to_client.send(ServerMessage::Chat {
-            from: "[ferreiro]".into(),
-            text: format!("✓ gema encravada (socket {}/{})", slot_pos + 1, inst.sockets),
+            from: "[blacksmith]".into(),
+            text: format!("✓ gem socketed ({}/{})", slot_pos + 1, inst.sockets),
         });
     }
 
@@ -1995,7 +1996,7 @@ impl GameWorld {
             Position(Vec2::new(pos.0, pos.1)),
             Velocity(Vec2::ZERO),
             EntityKind::Npc(1),
-            VendorTag { shop_id: 1, name: "Mercador".into() },
+            VendorTag { shop_id: 1, name: "Merchant".into() },
             NpcSkin { preset: 1 },
         ));
         tracing::info!("vendor crafted em {:?}", pos);
@@ -2064,9 +2065,9 @@ impl GameWorld {
             Err(e) => {
                 let reason = match e {
                     crate::auth::AuthError::InvalidCredentials => {
-                        "credenciais invalidas".to_string()
+                        "invalid credentials".to_string()
                     }
-                    crate::auth::AuthError::Internal(msg) => format!("erro interno: {msg}"),
+                    crate::auth::AuthError::Internal(msg) => format!("internal error: {msg}"),
                 };
                 tracing::info!("auth fail: {reason}");
                 let _ = handle.to_client.send(ServerMessage::LoginDenied { reason });
@@ -7255,7 +7256,7 @@ impl GameWorld {
             if let Some(s) = self.sessions.get(&sid) {
                 let _ = s.handle.to_client.send(ServerMessage::Chat {
                     from: "PARTY".into(),
-                    text: format!("jogador {target_name} nao esta online"),
+                    text: format!("player {target_name} is not online"),
                 });
             }
             return;
@@ -7595,14 +7596,14 @@ impl GameWorld {
             let Some(gi) = gold_idx else {
                 let _ = session.handle.to_client.send(ServerMessage::Chat {
                     from: "SHOP".into(),
-                    text: "sem ouro".into(),
+                    text: "no gold".into(),
                 });
                 return;
             };
             if session.inventory[gi].qty < price {
                 let _ = session.handle.to_client.send(ServerMessage::Chat {
                     from: "SHOP".into(),
-                    text: format!("precisa de {price} ouro"),
+                    text: format!("need {price} gold"),
                 });
                 return;
             }
@@ -7628,7 +7629,7 @@ impl GameWorld {
             if !placed {
                 let _ = session.handle.to_client.send(ServerMessage::Chat {
                     from: "SHOP".into(),
-                    text: "inventario cheio".into(),
+                    text: "inventory full".into(),
                 });
                 return;
             }
@@ -7641,7 +7642,7 @@ impl GameWorld {
             session.inventory_dirty = true;
             let _ = session.handle.to_client.send(ServerMessage::Chat {
                 from: "SHOP".into(),
-                text: format!("comprou item {item_id} por {price} ouro"),
+                text: format!("bought item {item_id} for {price} gold"),
             });
             new_max
         };
@@ -7685,7 +7686,7 @@ impl GameWorld {
         if price == 0 {
             let _ = session.handle.to_client.send(ServerMessage::Chat {
                 from: "SHOP".into(),
-                text: "este item não pode ser vendido".into(),
+                text: "this item cannot be sold".into(),
             });
             return;
         }
@@ -7703,14 +7704,14 @@ impl GameWorld {
             session.inventory[inv_slot].qty = slot.qty;
             let _ = session.handle.to_client.send(ServerMessage::Chat {
                 from: "SHOP".into(),
-                text: "inventário cheio (sem espaço pro ouro)".into(),
+                text: "inventory full (no space for gold)".into(),
             });
             return;
         }
         session.inventory_dirty = true;
         let _ = session.handle.to_client.send(ServerMessage::Chat {
             from: "SHOP".into(),
-            text: format!("vendeu item {} por {price} ouro", slot.item_id),
+            text: format!("sold item {} for {price} gold", slot.item_id),
         });
     }
 
@@ -7863,7 +7864,7 @@ impl GameWorld {
         session.inventory_dirty = true;
 
         let summary = format!(
-            "trade ok: gastou {total_buy}, recebeu {total_sell} (saldo {:+})",
+            "trade ok: spent {total_buy}, received {total_sell} (balance {:+})",
             total_sell as i64 - total_buy as i64
         );
         let _ = session.handle.to_client.send(ServerMessage::ShopTradeResult {
