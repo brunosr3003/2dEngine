@@ -2411,6 +2411,11 @@ impl GameWorld {
         let _ = handle.to_client.send(ServerMessage::CraftRecipes {
             recipes: crate::recipes::all(),
         });
+        // Reverse-index das loot tables — cliente usa pra mostrar "como obter"
+        // ao clicar num material faltante na UI de crafting.
+        let _ = handle.to_client.send(ServerMessage::ResourceSources {
+            items: crate::economy::resource_sources_snapshot(),
+        });
         let _ = handle.to_client.send(ServerMessage::PlayerSkillsUpdate {
             state: shared::skills::PlayerSkillsState {
                 sp_earned: saved_sp_earned,
@@ -2914,6 +2919,7 @@ impl GameWorld {
                 self.handle_select_character(id, name);
             }
             ClientMessage::RespawnAtCity => {
+                tracing::info!("[debug] RespawnAtCity recebido de sessao {:?}", id);
                 self.handle_respawn_at_city(id);
             }
             ClientMessage::FarmHit { node_id } => {
@@ -2926,9 +2932,22 @@ impl GameWorld {
     /// stand-up. HP restaurado pra max, posicao = spawn_tile, downed limpa.
     fn handle_respawn_at_city(&mut self, sid: SessionId) {
         let (entity, hp_max, name) = {
-            let Some(session) = self.sessions.get_mut(&sid) else { return };
-            if !session.logged_in || !session.downed { return; }
-            let Some(entity) = session.entity else { return };
+            let Some(session) = self.sessions.get_mut(&sid) else {
+                tracing::warn!("RespawnAtCity ignorado: sessao {:?} nao existe", sid);
+                return;
+            };
+            if !session.logged_in {
+                tracing::warn!("RespawnAtCity ignorado: sessao {:?} nao logada (name={})", sid, session.name);
+                return;
+            }
+            if !session.downed {
+                tracing::warn!("RespawnAtCity ignorado: {} nao esta em downed (logged_in={}, downed=false)", session.name, session.logged_in);
+                return;
+            }
+            let Some(entity) = session.entity else {
+                tracing::warn!("RespawnAtCity ignorado: {} sem entity associada", session.name);
+                return;
+            };
             let hp_max = session.stats.hp_max;
             session.downed = false;
             session.downed_heal_timer = 0.0;
@@ -4004,6 +4023,7 @@ impl GameWorld {
             self.last_econ_version = v;
             let cfg = crate::economy::items_config();
             let skills_cfg = crate::skills::all_skills();
+            let res_src = crate::economy::resource_sources_snapshot();
             for s in self.sessions.values() {
                 if !s.logged_in { continue; }
                 let _ = s.handle.to_client.send(ServerMessage::ItemsConfig {
@@ -4013,6 +4033,11 @@ impl GameWorld {
                 // junto pra UI atualizar nome/icon/scaling sem relogar.
                 let _ = s.handle.to_client.send(ServerMessage::SkillsConfig {
                     skills: skills_cfg.clone(),
+                });
+                // Reverse-index das loot tables muda junto com economy (mob
+                // drops, farm drops, item.active). Re-broadcast pra UI.
+                let _ = s.handle.to_client.send(ServerMessage::ResourceSources {
+                    items: res_src.clone(),
                 });
             }
         }
@@ -8258,6 +8283,14 @@ impl GameWorld {
                         woodcutting: wc, mining: mn, gathering: gt,
                     });
                 }
+
+                // Proficiência Farm: +30 XP por coleta. Aparece no painel C (StatsPanel).
+                let farm_idx = shared::Proficiency::Farm as usize;
+                s.proficiencies[farm_idx] = s.proficiencies[farm_idx].saturating_add(30);
+                s.proficiencies_dirty = true;
+                let _ = s.handle.to_client.send(ServerMessage::ProficienciesUpdate {
+                    xp: s.proficiencies,
+                });
             }
             self.save_pending = true;
         }

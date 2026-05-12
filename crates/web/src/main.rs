@@ -18,7 +18,7 @@ use axum::{
     extract::State,
     http::StatusCode,
     response::IntoResponse,
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -61,6 +61,7 @@ async fn main() -> Result<()> {
     let api = Router::new()
         .route("/register", post(register))
         .route("/login", post(login))
+        .route("/version", get(version))
         .with_state(state);
 
     let pixel_state = pixel::PixelState::from_env();
@@ -174,6 +175,53 @@ async fn login(
         return Err(err(StatusCode::UNAUTHORIZED, "credenciais invalidas"));
     }
     Ok(Json(LoginRes { id: row.id, username: row.username }))
+}
+
+// ── version endpoint ──────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+struct VersionRes {
+    /// Protocol version atual do servidor (espelho de shared::PROTOCOL_VERSION).
+    /// Cliente compara contra a sua propria const pra detectar mismatch antes
+    /// de tentar conectar no game server (preflight).
+    protocol_version: u16,
+    /// Versao "marketing" do cliente — opcional, pode usar pra changelog UI.
+    client_version: String,
+    /// URLs de download por plataforma. Cliente escolhe baseado em
+    /// Application.platform. Mobile (Android/iOS) tipicamente vai pra
+    /// store/TestFlight; desktop puxa o zip e auto-aplica.
+    downloads: VersionDownloads,
+}
+
+#[derive(Debug, Serialize)]
+struct VersionDownloads {
+    win:            String,
+    mac:            String,
+    linux:          String,
+    android:        String,
+    ios_testflight: String,
+}
+
+async fn version() -> Json<VersionRes> {
+    let base = std::env::var("DOWNLOAD_BASE_URL")
+        .unwrap_or_else(|_| "https://mmo.brunji.com.br/downloads".to_string());
+    // Mobile distribuido via stores — auto-update e gerenciado pelo Play
+    // Store / TestFlight, cliente so abre o URL.
+    let android = std::env::var("ANDROID_URL")
+        .unwrap_or_else(|_| "https://play.google.com/store/apps/details?id=com.brunji.tempest".to_string());
+    let testflight = std::env::var("TESTFLIGHT_URL")
+        .unwrap_or_else(|_| "https://mmo.brunji.com.br/downloads/ios-testflight.html".to_string());
+    Json(VersionRes {
+        protocol_version: shared::PROTOCOL_VERSION,
+        client_version:   env!("CARGO_PKG_VERSION").to_string(),
+        downloads: VersionDownloads {
+            win:            format!("{base}/MMORPG-Windows.zip"),
+            mac:            format!("{base}/MMORPG-Mac.zip"),
+            linux:          format!("{base}/MMORPG-Linux.zip"),
+            android,
+            ios_testflight: testflight,
+        },
+    })
 }
 
 // ── response helpers ──────────────────────────────────────────────────────

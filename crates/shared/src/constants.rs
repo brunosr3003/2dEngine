@@ -22,7 +22,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 48;
+pub const PROTOCOL_VERSION: u16 = 49;
 
 /// Velocidade base do jogador em tiles/segundo.
 pub const PLAYER_SPEED: f32 = 5.0;
@@ -169,16 +169,18 @@ pub enum Proficiency {
     Unarmed  = 5,
     Axe      = 6,
     Spear    = 7,
+    Farm     = 8,
 }
 
 /// Total de proficiências (tamanho do array em CharacterRow.proficiencies).
-pub const PROF_COUNT: usize = 8;
+pub const PROF_COUNT: usize = 9;
 
 impl Proficiency {
     pub fn all() -> &'static [Proficiency] {
         &[
             Self::Sword, Self::Staff, Self::Dagger, Self::Bow,
             Self::Wand, Self::Unarmed, Self::Axe, Self::Spear,
+            Self::Farm,
         ]
     }
 
@@ -215,6 +217,7 @@ impl Proficiency {
             Self::Unarmed => "Unarmed",
             Self::Axe     => "Axe",
             Self::Spear   => "Spear",
+            Self::Farm    => "Farm",
         }
     }
 
@@ -229,6 +232,7 @@ impl Proficiency {
             "Unarmed" => Some(Self::Unarmed),
             "Axe"     => Some(Self::Axe),
             "Spear"   => Some(Self::Spear),
+            "Farm"    => Some(Self::Farm),
             _         => None,
         }
     }
@@ -243,6 +247,7 @@ impl Proficiency {
             Self::Unarmed => "Desarmado",
             Self::Axe     => "Machado",
             Self::Spear   => "Lança",
+            Self::Farm    => "Coleta",
         }
     }
 }

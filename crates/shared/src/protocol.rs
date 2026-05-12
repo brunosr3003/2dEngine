@@ -289,6 +289,15 @@ pub enum ServerMessage {
     /// substitui o hardcoded client-side. Admin pode mudar custos/inputs/
     /// outputs via DB — ideal pra eventos com receitas especiais.
     CraftRecipes { recipes: Vec<CraftRecipeNet> },
+    /// Reverse-index de loot tables — pra cada item, quais mobs/farm nodes
+    /// dropam ele. Usado pela UI de crafting pra mostrar "como conseguir"
+    /// quando jogador clica num material que falta. Enviado no login + apos
+    /// hot-reload da economy. Campo nomeado `resource_sources` (nao `items`)
+    /// pra evitar colisao no deserializer compartilhado do cliente.
+    ResourceSources {
+        #[serde(rename = "resource_sources")]
+        items: Vec<ItemResourceSources>,
+    },
     /// Estado completo de skills do player. Enviado no login + após qualquer
     /// mutação (learn, rank-up, equip).
     PlayerSkillsUpdate { state: crate::PlayerSkillsState },
@@ -402,6 +411,28 @@ pub struct CraftRecipeNet {
     pub output_qty:        u32,
     pub output_item_level: u16,
     pub roll_instance:     bool,
+}
+
+/// Origem de um recurso — mob drop ou farm node (gather). Usado pelo
+/// painel de crafting pra mostrar "como obter" um material. `kind`:
+///   0 = mob drop (caçar/matar)
+///   1 = farm node / gather (Tree, Rock, Flower etc por tier)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceSource {
+    pub kind:    u8,
+    pub name:    String,
+    pub qty_min: u32,
+    pub qty_max: u32,
+    /// Probabilidade [0.0..1.0] por kill/coleta.
+    pub chance:  f32,
+}
+
+/// Conjunto de fontes que produzem um item específico. Reverse-index das
+/// loot tables, computado server-side e enviado no `ResourceSources`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemResourceSources {
+    pub item_id: u16,
+    pub sources: Vec<ResourceSource>,
 }
 
 /// Entry da lista de personagens enviada apos login. Cliente renderiza

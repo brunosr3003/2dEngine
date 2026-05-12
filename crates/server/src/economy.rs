@@ -305,6 +305,53 @@ pub fn enemy_loot_drops(kind: u16, seed: u64) -> Vec<(u16, u32)> {
     cell().read().roll_loot(kind, seed)
 }
 
+/// Reverse-index das loot tables: pra cada item dropavel, lista as fontes
+/// (mobs + farm nodes) com chance/quantidade. Usado pelo cliente na UI de
+/// crafting pra mostrar "como conseguir esse material". Recomputa do
+/// snapshot atual do economy cache.
+pub fn resource_sources_snapshot() -> Vec<shared::protocol::ItemResourceSources> {
+    use shared::protocol::{ItemResourceSources, ResourceSource};
+    let cfg = cell().read();
+    let mut by_item: HashMap<u16, Vec<ResourceSource>> = HashMap::new();
+    for (&kind, table) in &cfg.loot_tables {
+        let mob_name = cfg.enemy_kinds.get(&kind)
+            .map(|e| e.name.clone())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| format!("Mob #{kind}"));
+        for entry in table {
+            if !cfg.items.get(&entry.item_id).map(|i| i.active).unwrap_or(true) { continue; }
+            by_item.entry(entry.item_id).or_default().push(ResourceSource {
+                kind:    0,
+                name:    mob_name.clone(),
+                qty_min: entry.qty_min,
+                qty_max: entry.qty_max,
+                chance:  entry.chance,
+            });
+        }
+    }
+    for ((node_kind, tier), table) in &cfg.farm_loot_tables {
+        let name = format!("{node_kind} T{tier}");
+        for entry in table {
+            if !cfg.items.get(&entry.item_id).map(|i| i.active).unwrap_or(true) { continue; }
+            by_item.entry(entry.item_id).or_default().push(ResourceSource {
+                kind:    1,
+                name:    name.clone(),
+                qty_min: entry.qty_min,
+                qty_max: entry.qty_max,
+                chance:  entry.chance,
+            });
+        }
+    }
+    let mut out: Vec<ItemResourceSources> = by_item.into_iter()
+        .map(|(item_id, mut sources)| {
+            sources.sort_by(|a, b| b.chance.partial_cmp(&a.chance).unwrap_or(std::cmp::Ordering::Equal));
+            ItemResourceSources { item_id, sources }
+        })
+        .collect();
+    out.sort_by_key(|e| e.item_id);
+    out
+}
+
 /// Template de stat ranges do item (carregado do DB). Retorna default
 /// (todos 0) se item não existir — `roll_for` checa has_any_range e devolve
 /// None nesse caso (item não-equipável).
