@@ -146,6 +146,12 @@ async fn load_from_db(pool: &PgPool) -> Result<SkillsConfig> {
         vfx_id: Option<String>,
         active: bool,
         knockback: f32,
+        max_rank_damage_pct: f32,
+        max_rank_heal_pct: f32,
+        max_rank_radius_bonus: f32,
+        max_rank_range_bonus: f32,
+        max_rank_cooldown_red_pct: f32,
+        max_rank_crit_chance: f32,
     }
 
     let rows: Vec<SkillRow> = sqlx::query_as(
@@ -155,7 +161,9 @@ async fn load_from_db(pool: &PgPool) -> Result<SkillsConfig> {
                 target_type, range_tiles, radius_tiles,
                 base_damage, base_heal, scaling_atk, scaling_wis, scaling_dex,
                 per_rank_dmg_pct, per_rank_cd_pct, per_rank_cost_pct,
-                icon_path, vfx_id, active, knockback
+                icon_path, vfx_id, active, knockback,
+                max_rank_damage_pct, max_rank_heal_pct, max_rank_radius_bonus,
+                max_rank_range_bonus, max_rank_cooldown_red_pct, max_rank_crit_chance
          FROM skills WHERE active = TRUE"
     ).fetch_all(pool).await?;
 
@@ -192,6 +200,12 @@ async fn load_from_db(pool: &PgPool) -> Result<SkillsConfig> {
             icon_path: r.icon_path,
             vfx_id: r.vfx_id,
             knockback: r.knockback,
+            max_rank_damage_pct: r.max_rank_damage_pct,
+            max_rank_heal_pct: r.max_rank_heal_pct,
+            max_rank_radius_bonus: r.max_rank_radius_bonus,
+            max_rank_range_bonus: r.max_rank_range_bonus,
+            max_rank_cooldown_red_pct: r.max_rank_cooldown_red_pct,
+            max_rank_crit_chance: r.max_rank_crit_chance,
         };
         by_prof.entry(r.prof).or_default().push(id_u32);
         by_id.insert(id_u32, def);

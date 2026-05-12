@@ -91,6 +91,58 @@ pub struct SkillDef {
     /// usam, target/none ignoram.
     #[serde(default)]
     pub knockback: f32,
+
+    // ── Max-rank passive bonuses (aplicados quando rank == MAX_SKILL_RANK) ──
+    /// +X% damage (30 = +30%). 0 = sem bônus.
+    #[serde(default)] pub max_rank_damage_pct: f32,
+    /// +X% heal.
+    #[serde(default)] pub max_rank_heal_pct: f32,
+    /// +N tiles de AoE radius.
+    #[serde(default)] pub max_rank_radius_bonus: f32,
+    /// +N tiles de range.
+    #[serde(default)] pub max_rank_range_bonus: f32,
+    /// -X% cooldown (25 = 25% off).
+    #[serde(default)] pub max_rank_cooldown_red_pct: f32,
+    /// +X% crit chance.
+    #[serde(default)] pub max_rank_crit_chance: f32,
+}
+
+/// Defaults procedurais usados pelo SEED — popula colunas DB com bônus
+/// derivados do tipo de skill (dano, heal, utility). Admin pode UPDATE pra
+/// customizar depois sem mexer no código.
+///   - Skill de dano  → +30% damage, +1 radius se AoE
+///   - Skill de heal  → +30% heal, +1 radius se AoE
+///   - Utility/buff  → -25% cooldown
+///   - Long cd (≥10s) → +5% crit chance bonus (acumula)
+pub fn default_max_rank_bonus_for_seed(
+    base_damage: i32, base_heal: i32, radius_tiles: f32, cooldown_s: f32,
+) -> (f32, f32, f32, f32, f32, f32) {
+    // Retorna (damage_pct, heal_pct, radius_bonus, range_bonus, cd_red_pct, crit)
+    let mut dmg = 0.0; let mut heal = 0.0; let mut rad = 0.0;
+    let range = 0.0; let mut cd = 0.0; let mut crit = 0.0;
+    if base_damage > 0 {
+        dmg = 30.0;
+        if radius_tiles > 0.0 { rad = 1.0; }
+    } else if base_heal > 0 {
+        heal = 30.0;
+        if radius_tiles > 0.0 { rad = 1.0; }
+    } else {
+        cd = 25.0;
+    }
+    if cooldown_s >= 10.0 { crit = 5.0; }
+    (dmg, heal, rad, range, cd, crit)
+}
+
+/// Strings descritivas do bônus de max rank pra mostrar no tooltip cliente.
+pub fn max_rank_bonus_lines(skill: &SkillDef) -> Vec<String> {
+    let mut out = Vec::new();
+    if skill.max_rank_damage_pct > 0.0       { out.push(format!("+{:.0}% damage", skill.max_rank_damage_pct)); }
+    if skill.max_rank_heal_pct > 0.0         { out.push(format!("+{:.0}% heal", skill.max_rank_heal_pct)); }
+    if skill.max_rank_radius_bonus > 0.0     { out.push(format!("+{:.0} radius", skill.max_rank_radius_bonus)); }
+    if skill.max_rank_range_bonus > 0.0      { out.push(format!("+{:.0} range", skill.max_rank_range_bonus)); }
+    if skill.max_rank_cooldown_red_pct > 0.0 { out.push(format!("-{:.0}% cooldown", skill.max_rank_cooldown_red_pct)); }
+    if skill.max_rank_crit_chance > 0.0      { out.push(format!("+{:.0}% crit", skill.max_rank_crit_chance)); }
+    out
 }
 
 /// Estado por player de uma skill aprendida.

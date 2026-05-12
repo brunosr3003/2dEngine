@@ -736,12 +736,38 @@ pub const SKILL_BAR_SLOTS: usize = 6;
 
 /// Tiers de skill — define unlock_char_lvl e unlock_prof_lvl recomendados.
 /// Skills no DB usam (char_lvl, prof_lvl) explícitos; estes são guidelines pro seed.
+///
+/// Filosofia: TODAS as skills devem estar acessíveis até char lvl ~20/prof ~25.
+/// Após isso, progressão vira ranking de skills individuais (max rank desbloqueia
+/// passives que aumentam o efeito daquela skill especifica).
 pub const SKILL_TIER_UNLOCKS: [(u8, u8); 4] = [
-    (5, 10),   // T1 — Aprendiz
-    (15, 20),  // T2 — Adepto
-    (30, 40),  // T3 — Mestre
-    (60, 70),  // T4 — Lendário
+    (2,  3),   // T1 — Aprendiz (acessível quase imediato)
+    (6,  8),   // T2 — Adepto
+    (12, 15),  // T3 — Mestre
+    (20, 25),  // T4 — Lendário (cap onde TUDO ta unlocked)
 ];
+
+/// Delta de char_lvl e prof_lvl exigido por rank acima do baseline da skill.
+/// Rank N requer `unlock_X + (N-1) * delta_X`. Permite progressão escalonada:
+/// rank 1 = unlock baseline; rank 10 = baseline + 9*delta.
+///
+/// Ex: T1 unlock 2/3 → rank 10 precisa de char 20 / prof 39.
+/// Ex: T4 unlock 20/25 → rank 10 precisa de char 38 / prof 61.
+pub const SKILL_RANK_CHAR_DELTA: u8 = 2;
+pub const SKILL_RANK_PROF_DELTA: u8 = 4;
+
+/// Calcula char_lvl/prof_lvl necessário pra atingir um rank específico de uma
+/// skill. `target_rank` é 1-indexed (1 = aprender, 10 = max). Rank 1 retorna
+/// o baseline; ranks maiores aplicam o delta por rank.
+pub const fn skill_rank_requirements(
+    unlock_char: u8, unlock_prof: u8, target_rank: u8,
+) -> (u8, u8) {
+    if target_rank <= 1 { return (unlock_char, unlock_prof); }
+    let extra = target_rank - 1;
+    let char_need = unlock_char.saturating_add(extra.saturating_mul(SKILL_RANK_CHAR_DELTA));
+    let prof_need = unlock_prof.saturating_add(extra.saturating_mul(SKILL_RANK_PROF_DELTA));
+    (char_need, prof_need)
+}
 
 /// Quantidade de stats alocaveis. Indices: 0=FOR, 1=DES, 2=INT, 3=VIT, 4=SPD, 5=RES.
 pub const STAT_COUNT: usize = 6;

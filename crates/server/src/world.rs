@@ -3211,20 +3211,28 @@ impl GameWorld {
         };
 
         // 7. Damage scaling: base + atk*scal_atk + wis*scal_wis + dex*scal_dex,
-        // depois aplica (1 + per_rank_dmg × rank).
+        // depois aplica (1 + per_rank_dmg × rank). No max rank, aplica também
+        // bonus de damage_pct definido na skill.
         let stats = session.stats;
         let base_dmg = def.base_damage as f32
             + stats.attack_damage as f32 * def.scaling_atk
             + stats.wis as f32 * def.scaling_wis
             + stats.dex as f32 * def.scaling_dex;
-        let scaled = base_dmg * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32));
+        let mut scaled = base_dmg * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32));
+        let is_max_rank = rank >= shared::MAX_SKILL_RANK;
+        if is_max_rank && def.max_rank_damage_pct > 0.0 {
+            scaled *= 1.0 + def.max_rank_damage_pct / 100.0;
+        }
         let damage = scaled.round() as i32;
 
         // 8. Drena cost + set cd + casting state se cast_time > 0.
         session.mp_current -= mp_cost as f32;
         if session.mp_current < 0.0 { session.mp_current = 0.0; }
         session.stamina_current = (session.stamina_current - st_cost).max(0.0);
-        let cd_factor = (1.0 - def.per_rank_cd_pct * (rank.saturating_sub(1) as f32)).max(0.1);
+        let mut cd_factor = (1.0 - def.per_rank_cd_pct * (rank.saturating_sub(1) as f32)).max(0.1);
+        if is_max_rank && def.max_rank_cooldown_red_pct > 0.0 {
+            cd_factor *= 1.0 - def.max_rank_cooldown_red_pct / 100.0;
+        }
         let cd_final = def.cooldown_s * cd_factor;
         session.skill_cds.insert(skill_id, now + cd_final);
         if def.cast_time_s > 0.05 {
@@ -3424,7 +3432,11 @@ impl GameWorld {
                 else {
                     // Heal padrão: aplica base_heal + scaling × wis.
                     let base_heal = def.base_heal as f32 + stats.wis as f32 * def.scaling_wis;
-                    let heal = (base_heal * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32))).round() as i32;
+                    let mut heal_scaled = base_heal * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32));
+                    if rank >= shared::MAX_SKILL_RANK && def.max_rank_heal_pct > 0.0 {
+                        heal_scaled *= 1.0 + def.max_rank_heal_pct / 100.0;
+                    }
+                    let heal = heal_scaled.round() as i32;
                     if heal > 0 {
                         if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
                             hp.current = (hp.current + heal).min(hp.max);
@@ -3702,7 +3714,11 @@ impl GameWorld {
                     );
                 } else if is_heal {
                     let base_heal = def.base_heal as f32 + stats.wis as f32 * def.scaling_wis;
-                    let heal = (base_heal * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32))).round() as i32;
+                    let mut heal_scaled = base_heal * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32));
+                    if rank >= shared::MAX_SKILL_RANK && def.max_rank_heal_pct > 0.0 {
+                        heal_scaled *= 1.0 + def.max_rank_heal_pct / 100.0;
+                    }
+                    let heal = heal_scaled.round() as i32;
                     if heal > 0 {
                         let players = self.find_players_in_radius(target_pos, radius);
                         for tn in players {
@@ -3954,8 +3970,26 @@ impl GameWorld {
         let cost = shared::sp_cost_for_next_rank(cur_rank);
         let avail = session.skill_points_earned.saturating_sub(session.skill_points_spent);
         if avail < cost { return; }
+
+        // Gate: rank-up exige char_lvl + prof_lvl escalados por rank.
+        // Lookup da skill no cache pra pegar unlock_char/unlock_prof + prof_kind.
+        let target_rank = cur_rank + 1;
+        let skill_def = crate::skills::skill_of(skill_id);
+        if let Some(def) = skill_def {
+            let (need_char, need_prof) = shared::skill_rank_requirements(
+                def.unlock_char_lvl as u8, def.unlock_prof_lvl as u8, target_rank,
+            );
+            let char_lvl = shared::level_of_xp_with_mult(session.xp, crate::economy::xp_multiplier());
+            if (char_lvl as u8) < need_char { return; }
+            let prof_xp = shared::Proficiency::from_str(&def.prof)
+                .map(|p| session.proficiencies[p as usize])
+                .unwrap_or(0);
+            let prof_lvl = shared::proficiency_level(prof_xp);
+            if (prof_lvl as u8) < need_prof { return; }
+        }
+
         session.skill_points_spent = session.skill_points_spent.saturating_add(cost);
-        session.learned_skills[idx].rank = cur_rank + 1;
+        session.learned_skills[idx].rank = target_rank;
         session.skills_dirty = true;
     }
 

@@ -494,6 +494,23 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     // pra qualquer skill direcional ter um shove leve sem precisar tunar.
     sqlx::query("ALTER TABLE skills ADD COLUMN IF NOT EXISTS knockback REAL NOT NULL DEFAULT 0.5")
         .execute(&pool).await?;
+
+    // Max-rank passive bonuses — aplicados quando skill atinge MAX_SKILL_RANK.
+    // Seed popula com defaults procedurais; admin pode UPDATE pra customizar.
+    for col in &[
+        ("max_rank_damage_pct",       "REAL"),
+        ("max_rank_heal_pct",         "REAL"),
+        ("max_rank_radius_bonus",     "REAL"),
+        ("max_rank_range_bonus",      "REAL"),
+        ("max_rank_cooldown_red_pct", "REAL"),
+        ("max_rank_crit_chance",      "REAL"),
+    ] {
+        let q = format!(
+            "ALTER TABLE skills ADD COLUMN IF NOT EXISTS {} {} NOT NULL DEFAULT 0.0",
+            col.0, col.1
+        );
+        sqlx::query(&q).execute(&pool).await?;
+    }
     // Backfill knockback per-skill — UPDATE idempotente, sobrescreve a cada
     // boot pra que ajustes aqui propaguem sem precisar wipar DB.
     let kb_table: &[(i32, f32)] = &[
@@ -1215,6 +1232,26 @@ async fn seed_skills_if_needed(pool: &PgPool) -> Result<()> {
         .bind(s.target).bind(s.range_t).bind(s.radius)
         .bind(s.base_dmg).bind(s.base_heal).bind(s.scal_atk).bind(s.scal_wis).bind(s.scal_dex)
         .bind(s.rank_dmg).bind(s.rank_cd).bind(s.rank_cost)
+        .execute(pool).await?;
+
+        // Popula max-rank bonuses procedurais (sobrescreve se ainda for default 0).
+        let (dmg, heal, rad, rng, cd, crit) = shared::default_max_rank_bonus_for_seed(
+            s.base_dmg, s.base_heal, s.radius, s.cd,
+        );
+        sqlx::query(
+            "UPDATE skills SET
+               max_rank_damage_pct       = $2,
+               max_rank_heal_pct         = $3,
+               max_rank_radius_bonus     = $4,
+               max_rank_range_bonus      = $5,
+               max_rank_cooldown_red_pct = $6,
+               max_rank_crit_chance      = $7
+             WHERE id = $1
+               AND max_rank_damage_pct = 0 AND max_rank_heal_pct = 0
+               AND max_rank_radius_bonus = 0 AND max_rank_range_bonus = 0
+               AND max_rank_cooldown_red_pct = 0 AND max_rank_crit_chance = 0"
+        )
+        .bind(s.id).bind(dmg).bind(heal).bind(rad).bind(rng).bind(cd).bind(crit)
         .execute(pool).await?;
         inserted += 1;
     }
