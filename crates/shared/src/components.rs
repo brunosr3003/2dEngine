@@ -477,6 +477,12 @@ pub struct VisualConfig {
     pub hair: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hair_color: Option<u8>,
+    /// Hat layer (5hat sheet). None = sem chapeu. Cliente derive overlay
+    /// (chifres/cauda) a partir de skin_race; hat e independente.
+    /// NAO usa skip_serializing pra que client distinga "no hat" de
+    /// "campo omitido" — wardrobe pode REMOVER chapeu mid-game.
+    pub hat: Option<String>,
+    pub hat_color: Option<u8>,
     /// Tint RGBA aplicado por cima do paper-doll inteiro. Usado pra
     /// diferenciar mobs do mesmo "class visual" mas tier diferente
     /// (goblin verde / amarelo / cinza / demonio roxo / vermelho / dourado).
@@ -500,6 +506,8 @@ impl VisualConfig {
                 outfit_color: Some(4),
                 hair: Some("dap1".into()),
                 hair_color: Some(7),
+                hat: None,
+                hat_color: None,
                 body_tint: None,
             },
             "archer" => Self {
@@ -509,6 +517,8 @@ impl VisualConfig {
                 outfit_color: Some(3),
                 hair: Some("bob1".into()),
                 hair_color: Some(2),
+                hat: None,
+                hat_color: None,
                 body_tint: None,
             },
             // "warrior" (default)
@@ -519,6 +529,8 @@ impl VisualConfig {
                 outfit_color: Some(1),
                 hair: Some("dap1".into()),
                 hair_color: Some(1),
+                hat: None,
+                hat_color: None,
                 body_tint: None,
             },
         }

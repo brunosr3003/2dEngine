@@ -118,6 +118,13 @@ pub enum ClientMessage {
     /// quando session.downed=true, sem precisar esperar o timer chegar a 0.
     /// Server teleporta pro spawn_tile, restaura HP, limpa estado downed.
     RespawnAtCity,
+    /// Atualiza o visual do player mid-game (wardrobe). Server valida,
+    /// salva no Session, persiste no DB, e o proximo snapshot replica
+    /// pra todos os clientes — incluindo o autor (que ja aplicou local
+    /// pra responsividade, mas confirma com server snapshot).
+    UpdateVisual {
+        visual: crate::VisualConfig,
+    },
 }
 
 /// Localizacao logica de um slot no sistema de inventario do cliente.

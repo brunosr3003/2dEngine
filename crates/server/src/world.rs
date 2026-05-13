@@ -2925,6 +2925,34 @@ impl GameWorld {
             ClientMessage::FarmHit { node_id } => {
                 self.handle_farm_hit(id, node_id);
             }
+            ClientMessage::UpdateVisual { visual } => {
+                self.handle_update_visual(id, visual);
+            }
+        }
+    }
+
+    /// Atualiza o visual do player (wardrobe in-game). Sobrescreve o
+    /// VisualConfig no Session — o proximo snapshot ja replica o estado novo
+    /// pra todos os clientes (a flag dirty é via comparacao no client; server
+    /// sempre envia visual no snapshot).
+    ///
+    /// Persistencia: o save periodico (`flush_player_persistence`) escreve o
+    /// `Session.visual` no DB como `visual_json`, entao reload do player ja
+    /// vem com o wardrobe aplicado.
+    fn handle_update_visual(&mut self, sid: SessionId, visual: shared::VisualConfig) {
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            // Aceita tudo que o client enviou — sanitizacao basica de
+            // strings (clamp comprimento). Validacao de codes especificos
+            // (outfit em whitelist, cores em range) e deixada pro cliente
+            // por enquanto — server confia mas trunca pra evitar abuso.
+            let mut v = visual;
+            const MAX_STR: usize = 16;
+            if let Some(s) = v.skin_race.as_mut() { s.truncate(MAX_STR); }
+            if let Some(s) = v.outfit.as_mut()    { s.truncate(MAX_STR); }
+            if let Some(s) = v.hair.as_mut()      { s.truncate(MAX_STR); }
+            if let Some(s) = v.hat.as_mut()       { s.truncate(MAX_STR); }
+            s.visual = v;
+            tracing::info!("UpdateVisual sid={:?} → {:?}", sid, s.visual);
         }
     }
 
@@ -3826,9 +3854,11 @@ impl GameWorld {
         -> Option<(EntityId, Vec2, f32)> {
         let mut best: Option<(EntityId, Vec2, f32)> = None;
         let cos_half = (15f32.to_radians()).cos(); // lateral 15° de tolerância
-        for (_, (net, pos2, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
+        for (e, (net, pos2, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
             if !matches!(kind, EntityKind::Enemy(_)) { continue; }
             if net.0 == attacker_net { continue; }
+            // Ignora cadaveres em despawn anim — auto-aim n deve re-mirar morto.
+            if let Ok(hp) = self.ecs.get::<&Health>(e) { if hp.current <= 0 { continue; } }
             let delta = pos2.0 - pos;
             let dist = delta.length();
             if dist > range || dist < 0.01 { continue; }
@@ -3844,8 +3874,9 @@ impl GameWorld {
     fn find_enemies_in_radius(&self, center: Vec2, radius: f32) -> Vec<EntityId> {
         let r2 = radius * radius;
         let mut out = Vec::new();
-        for (_, (net, pos, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
+        for (e, (net, pos, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
             if !matches!(kind, EntityKind::Enemy(_)) { continue; }
+            if let Ok(hp) = self.ecs.get::<&Health>(e) { if hp.current <= 0 { continue; } }
             if pos.0.distance_squared(center) > r2 { continue; }
             // LOS: AoE skill nao acerta atras de WALL.
             if !self.map.has_line_of_sight(center, pos.0) { continue; }
@@ -3870,8 +3901,9 @@ impl GameWorld {
         let cos_half = half_angle.cos();
         let r2 = range * range;
         let mut out = Vec::new();
-        for (_, (net, pos2, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
+        for (e, (net, pos2, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
             if !matches!(kind, EntityKind::Enemy(_)) { continue; }
+            if let Ok(hp) = self.ecs.get::<&Health>(e) { if hp.current <= 0 { continue; } }
             let delta = pos2.0 - pos;
             let d2 = delta.length_squared();
             if d2 > r2 { continue; }
@@ -3897,9 +3929,10 @@ impl GameWorld {
             if current_dmg < 1 { break; }
             // Próximo enemy mais próximo, raio max 8 tiles, não-excluido.
             let mut best: Option<(EntityId, Vec2, f32)> = None;
-            for (_, (net, pos2, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
+            for (e, (net, pos2, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
                 if !matches!(kind, EntityKind::Enemy(_)) { continue; }
                 if excluded.contains(&net.0) { continue; }
+                if let Ok(hp) = self.ecs.get::<&Health>(e) { if hp.current <= 0 { continue; } }
                 let dist = pos2.0.distance(current_pos);
                 if dist > 8.0 { continue; }
                 if best.map_or(true, |(_,_,bd)| dist < bd) {
@@ -6030,10 +6063,27 @@ impl GameWorld {
             // Poise: se alvo eh player com poise > 0, absorve TODO o dano —
             // sem HP drain, sem stagger, sem hurt anim. Defesa + defending
             // reduzem o poise damage. Set last_combat_at pra gate de regen.
+            //
+            // Iframe: durante dash/leap/defending o player tem poise automatico.
+            // Hits absorvidos sem custar poise_current. Defending drena stamina
+            // por hit; sem stamina, defending auto-cancela em outro loop, então
+            // iframe acaba naturalmente.
             let mut absorbed_by_poise = false;
             let now_s_poise = self.sim_time_s;
             if let Some(target) = self.sessions.values_mut().find(|s| s.entity_id == target_id) {
-                if target.poise_current > 0.0 && dmg > 0 {
+                let in_iframe = target.dash_until > now_s_poise
+                             || target.leap_until > now_s_poise
+                             || target.defending;
+                if in_iframe && dmg > 0 {
+                    // Defending drena stamina por hit (igual block normal).
+                    // Dash/leap nao drenam — sao janelas curtas.
+                    if target.defending {
+                        let block_cost = shared::combat::block_stamina_cost(&target.stats);
+                        target.stamina_current = (target.stamina_current - block_cost).max(0.0);
+                    }
+                    target.last_combat_at_s = now_s_poise;
+                    absorbed_by_poise = true;
+                } else if target.poise_current > 0.0 && dmg > 0 {
                     let def_resist = (target.stats.defense as f32 * 0.04).min(0.8);
                     let defending_bonus = if target.defending { 0.4 } else { 0.0 };
                     let total_resist = (def_resist + defending_bonus).min(0.95);
@@ -6648,7 +6698,12 @@ impl GameWorld {
                 parry_flash_ids.insert(s.entity_id);
             }
             let casting = s.casting_until > now_for_cast;
-            let poise_active = s.poise_current > 0.5;
+            // poise_active inclui iframes de dash/leap/defending — bubble
+            // dourada durante pulos (Leap Strike, Spear), dash e defesa ativa.
+            let poise_active = s.poise_current > 0.5
+                || s.dash_until > now_for_cast
+                || s.leap_until > now_for_cast
+                || s.defending;
             let mut buffs_mask: u8 = 0;
             if s.bloodthirst_until  > now_for_cast { buffs_mask |= shared::components::buffs_mask::BLOODTHIRST;  }
             if s.hunters_mark_until > now_for_cast { buffs_mask |= shared::components::buffs_mask::HUNTERS_MARK; }

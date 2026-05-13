@@ -2224,14 +2224,19 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                 Some(b) => (Some(b.kind as i16), Some(b.pos.x), Some(b.pos.y), Some(b.dir as i16)),
                 None    => (None, None, None, None),
             };
+        // visual_json: persiste o VisualConfig em vigor (wardrobe mid-game).
+        // None = mantem o que ja existe no banco (mas atualizamos sempre que
+        // session.visual estiver setado, o que e o caso pra players logados).
+        let visual_json: Option<String> = row.visual.as_ref()
+            .and_then(|v| serde_json::to_string(v).ok());
         sqlx::query(
             "INSERT INTO characters (name, x, y, hp, max_hp, xp, fame, aura,
                                      unspent_points, allocated_points,
                                      skill_points_earned, skill_points_spent,
                                      boat_kind, boat_x, boat_y, boat_dir,
                                      woodcutting_lvl, mining_lvl, gathering_lvl,
-                                     gold, updated)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+                                     gold, visual_json, updated)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -2252,6 +2257,7 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                mining_lvl = EXCLUDED.mining_lvl,
                gathering_lvl = EXCLUDED.gathering_lvl,
                gold = EXCLUDED.gold,
+               visual_json = COALESCE(EXCLUDED.visual_json, characters.visual_json),
                updated = EXCLUDED.updated",
         )
         .bind(&row.name)
@@ -2274,6 +2280,7 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(row.mining_lvl as i32)
         .bind(row.gathering_lvl as i32)
         .bind(row.gold as i64)
+        .bind(&visual_json)
         .bind(now)
         .execute(&mut *tx)
         .await?;
