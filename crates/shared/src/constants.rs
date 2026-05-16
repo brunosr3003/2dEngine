@@ -22,7 +22,36 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 50;
+pub const PROTOCOL_VERSION: u16 = 51;
+
+// ── Boat (Sea-of-Thieves style: vela/leme/ancora separados) ─────────────────
+/// Velocidade maxima de qualquer barco (tiles/s). Atingida com vela full,
+/// vento maximo, alinhamento perfeito.
+pub const BOAT_MAX_SPEED: f32 = 6.0;
+/// Drag da agua aplicado por segundo (sem vento, barco para em ~4s).
+pub const BOAT_WATER_DRAG: f32 = 0.6;
+/// Multiplicador de drag quando ancora dropada (decel rapido).
+pub const BOAT_ANCHOR_DRAG_MULT: f32 = 8.0;
+/// Yaw rate maximo (rad/s) com leme totalmente virado e barco em velocidade
+/// total. Escala com `lin_vel.length() / BOAT_MAX_SPEED` — leme so funciona
+/// com movimento, igual barco real.
+pub const BOAT_MAX_YAW_RATE: f32 = 0.9;
+/// Tempo (s) para a animacao de drop/raise da ancora. Durante a anim a
+/// `anchor_progress` cresce de 0 ate 1 (drop) ou volta a 0 (raise).
+pub const BOAT_ANCHOR_ANIM_TIME: f32 = 2.5;
+/// Half-extents do deck do Lylian em tiles (local space). Player montado
+/// fica clamp ao bbox `[-x..x, -y..y]`. Tamanho visual do sprite eh
+/// 4×8 (PPU=16, sprite 64×128) — deck bate com o visual.
+pub const BOAT_LYLIAN_DECK_HALF_W: f32 = 2.0;
+pub const BOAT_LYLIAN_DECK_HALF_H: f32 = 4.0;
+
+/// Codigos de estacao usados em `GrabStation { station }` e
+/// `EntitySnapshot.station`. Manter em sync com o cliente C#.
+pub mod station {
+    pub const HELM:   u8 = 0;
+    pub const SAIL:   u8 = 1;
+    pub const ANCHOR: u8 = 2;
+}
 
 /// Velocidade base do jogador em tiles/segundo.
 pub const PLAYER_SPEED: f32 = 5.0;

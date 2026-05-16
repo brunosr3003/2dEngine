@@ -1,0 +1,149 @@
+//! Configuracao por boat_kind carregada de `data/boats/boat_kind_N.json`.
+//! Origem: Unity prefab exportado via Tools / Boat / Export Prefab Data.
+//!
+//! Fallback: se o arquivo nao existir, usa default hardcoded (compat com
+//! fluxo antigo).
+
+use glam::Vec2;
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::sync::OnceLock;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BoatStations {
+    pub helm:   [f32; 2],
+    pub sail:   [f32; 2],
+    pub anchor: [f32; 2],
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BoatKindConfig {
+    pub kind: u16,
+    pub deck_half_w: f32,
+    pub deck_half_h: f32,
+    pub stations: BoatStations,
+    #[serde(default)]
+    pub deck_polygon: Vec<[f32; 2]>,
+}
+
+impl BoatKindConfig {
+    pub fn deck_half(&self) -> Vec2 {
+        Vec2::new(self.deck_half_w, self.deck_half_h)
+    }
+    pub fn helm_local(&self)   -> Vec2 { Vec2::new(self.stations.helm[0],   self.stations.helm[1]) }
+    pub fn sail_local(&self)   -> Vec2 { Vec2::new(self.stations.sail[0],   self.stations.sail[1]) }
+    pub fn anchor_local(&self) -> Vec2 { Vec2::new(self.stations.anchor[0], self.stations.anchor[1]) }
+
+    /// Clampa `p` (local-space do barco) pra dentro do deck. Se ha
+    /// `deck_polygon`, usa point-in-polygon e empurra pra borda mais
+    /// proxima quando fora. Senao fall-back bbox.
+    pub fn clamp_to_deck(&self, p: Vec2) -> Vec2 {
+        if self.deck_polygon.len() < 3 {
+            let h = self.deck_half();
+            return Vec2::new(p.x.clamp(-h.x, h.x), p.y.clamp(-h.y, h.y));
+        }
+        if point_in_polygon(p, &self.deck_polygon) {
+            return p;
+        }
+        nearest_point_on_polygon(p, &self.deck_polygon)
+    }
+
+    /// Default hardcoded — usado quando o JSON nao existe (Lylian).
+    fn default_lylian() -> Self {
+        Self {
+            kind: 0,
+            deck_half_w: shared::constants::BOAT_LYLIAN_DECK_HALF_W,
+            deck_half_h: shared::constants::BOAT_LYLIAN_DECK_HALF_H,
+            stations: BoatStations {
+                helm:   [0.0, -shared::constants::BOAT_LYLIAN_DECK_HALF_H * 0.85],
+                sail:   [0.0, 0.0],
+                anchor: [0.0,  shared::constants::BOAT_LYLIAN_DECK_HALF_H * 0.85],
+            },
+            deck_polygon: Vec::new(),
+        }
+    }
+}
+
+static REGISTRY: OnceLock<HashMap<u16, BoatKindConfig>> = OnceLock::new();
+
+/// Carrega todos os boat_kind_*.json de `data/boats/`. Idempotente — primeira
+/// chamada faz scan; chamadas subsequentes reusam o cache.
+pub fn registry() -> &'static HashMap<u16, BoatKindConfig> {
+    REGISTRY.get_or_init(|| {
+        let mut map: HashMap<u16, BoatKindConfig> = HashMap::new();
+        let dir = std::path::Path::new("data/boats");
+        if let Ok(rd) = std::fs::read_dir(dir) {
+            for entry in rd.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") { continue; }
+                match std::fs::read_to_string(&path) {
+                    Ok(text) => match serde_json::from_str::<BoatKindConfig>(&text) {
+                        Ok(cfg) => {
+                            tracing::info!(
+                                "[boat_config] loaded {}: kind={} deck={:.1}x{:.1} stations(helm={:?}, sail={:?}, anchor={:?})",
+                                path.display(), cfg.kind,
+                                cfg.deck_half_w * 2.0, cfg.deck_half_h * 2.0,
+                                cfg.stations.helm, cfg.stations.sail, cfg.stations.anchor
+                            );
+                            map.insert(cfg.kind, cfg);
+                        }
+                        Err(e) => tracing::warn!("[boat_config] parse {} fail: {}", path.display(), e),
+                    },
+                    Err(e) => tracing::warn!("[boat_config] read {} fail: {}", path.display(), e),
+                }
+            }
+        }
+        // Garante que Lylian (kind=0) sempre exista — fallback hardcoded.
+        map.entry(0).or_insert_with(BoatKindConfig::default_lylian);
+        tracing::info!("[boat_config] registry pronto: {} kinds", map.len());
+        map
+    })
+}
+
+pub fn get(kind: u16) -> &'static BoatKindConfig {
+    let r = registry();
+    r.get(&kind).unwrap_or_else(|| r.get(&0).expect("boat_kind 0 default deve existir"))
+}
+
+// ── Geometry helpers ────────────────────────────────────────────────────────
+
+/// Point-in-polygon via ray casting (par/impar). Polygon = lista de
+/// [x, y] em ordem (CW ou CCW, qualquer).
+pub fn point_in_polygon(p: Vec2, poly: &[[f32; 2]]) -> bool {
+    let n = poly.len();
+    if n < 3 { return false; }
+    let mut inside = false;
+    let mut j = n - 1;
+    for i in 0..n {
+        let (xi, yi) = (poly[i][0], poly[i][1]);
+        let (xj, yj) = (poly[j][0], poly[j][1]);
+        let intersect = (yi > p.y) != (yj > p.y)
+            && p.x < (xj - xi) * (p.y - yi) / (yj - yi + 1e-9) + xi;
+        if intersect { inside = !inside; }
+        j = i;
+    }
+    inside
+}
+
+/// Acha o ponto mais proximo de `p` na perimetro do polygon (clamp pra dentro).
+pub fn nearest_point_on_polygon(p: Vec2, poly: &[[f32; 2]]) -> Vec2 {
+    let n = poly.len();
+    let mut best = Vec2::new(poly[0][0], poly[0][1]);
+    let mut best_d2 = (best - p).length_squared();
+    for i in 0..n {
+        let a = Vec2::new(poly[i][0], poly[i][1]);
+        let b = Vec2::new(poly[(i + 1) % n][0], poly[(i + 1) % n][1]);
+        let q = closest_on_segment(p, a, b);
+        let d2 = (q - p).length_squared();
+        if d2 < best_d2 { best_d2 = d2; best = q; }
+    }
+    best
+}
+
+fn closest_on_segment(p: Vec2, a: Vec2, b: Vec2) -> Vec2 {
+    let ab = b - a;
+    let len2 = ab.length_squared();
+    if len2 < 1e-6 { return a; }
+    let t = ((p - a).dot(ab) / len2).clamp(0.0, 1.0);
+    a + ab * t
+}

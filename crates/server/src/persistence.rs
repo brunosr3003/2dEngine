@@ -17,15 +17,26 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 
 /// Estado do barco persistido junto com o character — quando setado, o
-/// player desconectou montado e queremos recriar o barco no login.
+/// player desconectou perto/em cima do barco e queremos recriar o barco
+/// no login com o estado completo (sail, anchor, etc).
 #[derive(Debug, Clone, Copy)]
 pub struct PersistedBoat {
     /// boat_kind (0=Lylian Leutard).
     pub kind: u16,
     /// Posicao do casco (em world coords).
     pub pos: Vec2,
-    /// Direcao do casco (0..7).
+    /// Direcao do casco (0..7) — derivado do yaw, mantido pra compat
+    /// com BoatRenderer 2D atual.
     pub dir: u8,
+    /// Heading float (rad). Quando carregado de DB legado (NULL), eh
+    /// derivado de `dir * PI/4`.
+    pub yaw: f32,
+    /// Posicao da vela: 0=raised, 1=half, 2=full.
+    pub sail_position: u8,
+    /// Angulo da vela em rad relativo ao casco.
+    pub sail_angle: f32,
+    /// Ancora dropada.
+    pub anchor_dropped: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -39,6 +50,10 @@ pub struct CharacterRow {
     /// Quando Some, player estava montado num barco no ultimo save. Login
     /// recria o barco e re-mount.
     pub boat: Option<PersistedBoat>,
+    /// Posicao do player no deck local (relativa ao centro do barco) no
+    /// ultimo save. None = nao estava em cima do barco. Some = re-mountar
+    /// na mesma posicao do deck.
+    pub mounted_local: Option<Vec2>,
     /// Vec com INVENTORY_SLOTS entradas (slots vazios = qty==0).
     pub inventory: Vec<shared::InventorySlot>,
     pub equipment: shared::Equipment,
@@ -142,6 +157,20 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_y REAL NULL")
         .execute(&pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_dir SMALLINT NULL")
+        .execute(&pool).await?;
+    // Boat 2.5D: estado completo (yaw float, sail/anchor) + posicao do
+    // player no deck local. Tudo NULL pra rows legacy (load fall-back).
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_yaw REAL NULL")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_sail_pos SMALLINT NULL")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_sail_angle REAL NULL")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_anchor_dropped BOOLEAN NULL")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS mounted_local_x REAL NULL")
+        .execute(&pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS mounted_local_y REAL NULL")
         .execute(&pool).await?;
     // Character creation: account_id liga char a conta (1:1, UNIQUE).
     // visual_json armazena VisualConfig serializado (skin/race/outfit/hair/color).
@@ -1926,6 +1955,16 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
     ).fetch_all(pool).await?;
     let farm_map: HashMap<String, (u32, u32, u32)> =
         farm_rows.into_iter().map(|(n, w, m, g)| (n, (w.max(1) as u32, m.max(1) as u32, g.max(1) as u32))).collect();
+    // Boat 2.5D extras: yaw/sail/anchor + mounted_local. Tudo opcional pra
+    // compat com rows legacy (sao NULL quando antigos).
+    type BoatExtras = (Option<f32>, Option<i16>, Option<f32>, Option<bool>, Option<f32>, Option<f32>);
+    let boat_extras: Vec<(String, Option<f32>, Option<i16>, Option<f32>, Option<bool>, Option<f32>, Option<f32>)> = sqlx::query_as(
+        "SELECT name, boat_yaw, boat_sail_pos, boat_sail_angle, boat_anchor_dropped, \
+                mounted_local_x, mounted_local_y FROM characters"
+    ).fetch_all(pool).await?;
+    let boat_extras_map: HashMap<String, BoatExtras> = boat_extras.into_iter()
+        .map(|(n, y, sp, sa, a, lx, ly)| (n, (y, sp, sa, a, lx, ly)))
+        .collect();
 
     let mut out = HashMap::with_capacity(rows.len());
     for (name, x, y, hp, max_hp, xp, fame, aura, unspent, allocated_vec,
@@ -1943,9 +1982,28 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
         for (i, v) in allocated_vec.into_iter().enumerate().take(shared::STAT_COUNT) {
             allocated[i] = v.max(0) as u32;
         }
+        // Boat extras (Boat 2.5D — yaw/sail/anchor + mounted_local).
+        let extras = boat_extras_map.get(&name).copied();
+        let (b_yaw, b_sail_pos, b_sail_angle, b_anchor, ml_x, ml_y) = extras
+            .unwrap_or((None, None, None, None, None, None));
         let boat = match (boat_kind, boat_x, boat_y, boat_dir) {
-            (Some(k), Some(bx), Some(by), Some(d)) =>
-                Some(PersistedBoat { kind: k.max(0) as u16, pos: Vec2::new(bx, by), dir: d.max(0) as u8 }),
+            (Some(k), Some(bx), Some(by), Some(d)) => {
+                let dir = d.max(0) as u8;
+                // Fallback: derive yaw de dir se nao tem boat_yaw salvo.
+                let yaw = b_yaw.unwrap_or((dir as f32) * std::f32::consts::FRAC_PI_4);
+                Some(PersistedBoat {
+                    kind: k.max(0) as u16,
+                    pos: Vec2::new(bx, by),
+                    dir, yaw,
+                    sail_position: b_sail_pos.map(|s| s.max(0) as u8).unwrap_or(0),
+                    sail_angle: b_sail_angle.unwrap_or(0.0),
+                    anchor_dropped: b_anchor.unwrap_or(true),
+                })
+            }
+            _ => None,
+        };
+        let mounted_local = match (ml_x, ml_y) {
+            (Some(x), Some(y)) => Some(Vec2::new(x, y)),
             _ => None,
         };
         let visual: Option<shared::VisualConfig> = visual_json
@@ -1960,6 +2018,7 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
                 xp: xp.max(0) as u64,
                 gold,
                 boat,
+                mounted_local,
                 inventory: inv,
                 equipment: equip,
                 vault,
@@ -2224,6 +2283,16 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                 Some(b) => (Some(b.kind as i16), Some(b.pos.x), Some(b.pos.y), Some(b.dir as i16)),
                 None    => (None, None, None, None),
             };
+        let (boat_yaw, boat_sail_pos, boat_sail_angle, boat_anchor): (Option<f32>, Option<i16>, Option<f32>, Option<bool>) =
+            match row.boat {
+                Some(b) => (Some(b.yaw), Some(b.sail_position as i16), Some(b.sail_angle), Some(b.anchor_dropped)),
+                None    => (None, None, None, None),
+            };
+        let (mounted_local_x, mounted_local_y): (Option<f32>, Option<f32>) =
+            match row.mounted_local {
+                Some(p) => (Some(p.x), Some(p.y)),
+                None    => (None, None),
+            };
         // visual_json: persiste o VisualConfig em vigor (wardrobe mid-game).
         // None = mantem o que ja existe no banco (mas atualizamos sempre que
         // session.visual estiver setado, o que e o caso pra players logados).
@@ -2235,8 +2304,10 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                                      skill_points_earned, skill_points_spent,
                                      boat_kind, boat_x, boat_y, boat_dir,
                                      woodcutting_lvl, mining_lvl, gathering_lvl,
-                                     gold, visual_json, updated)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+                                     gold, visual_json, updated,
+                                     boat_yaw, boat_sail_pos, boat_sail_angle,
+                                     boat_anchor_dropped, mounted_local_x, mounted_local_y)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -2258,7 +2329,13 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                gathering_lvl = EXCLUDED.gathering_lvl,
                gold = EXCLUDED.gold,
                visual_json = COALESCE(EXCLUDED.visual_json, characters.visual_json),
-               updated = EXCLUDED.updated",
+               updated = EXCLUDED.updated,
+               boat_yaw = EXCLUDED.boat_yaw,
+               boat_sail_pos = EXCLUDED.boat_sail_pos,
+               boat_sail_angle = EXCLUDED.boat_sail_angle,
+               boat_anchor_dropped = EXCLUDED.boat_anchor_dropped,
+               mounted_local_x = EXCLUDED.mounted_local_x,
+               mounted_local_y = EXCLUDED.mounted_local_y",
         )
         .bind(&row.name)
         .bind(row.pos.x)
@@ -2282,6 +2359,12 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(row.gold as i64)
         .bind(&visual_json)
         .bind(now)
+        .bind(boat_yaw)
+        .bind(boat_sail_pos)
+        .bind(boat_sail_angle)
+        .bind(boat_anchor)
+        .bind(mounted_local_x)
+        .bind(mounted_local_y)
         .execute(&mut *tx)
         .await?;
 

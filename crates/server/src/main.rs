@@ -11,6 +11,7 @@
 //! entidades. As sessoes se comunicam com o mundo SOMENTE via mpsc.
 
 mod auth;
+mod boat_config;
 mod economy;
 mod enemy_builds;
 mod persistence;
@@ -57,6 +58,11 @@ async fn main() -> Result<()> {
     skills::init(&pool).await?;
     skills::spawn_hot_reload(pool.clone());
     tracing::info!("skills carregadas: {} entradas", skills::all_skills().len());
+
+    // Carrega configs de barco (lylian + outros kinds) de data/boats/*.json.
+    // Forca load no startup pra logs aparecerem cedo.
+    let boats_loaded = boat_config::registry().len();
+    tracing::info!("boats carregados: {} kinds", boats_loaded);
 
     let listener = TcpListener::bind(&addr).await?;
     tracing::info!("server listening on ws://{addr} ({TICK_RATE_HZ} Hz)");

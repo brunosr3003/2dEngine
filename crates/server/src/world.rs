@@ -366,44 +366,133 @@ pub struct PortalTag {
     pub cooldown: f32,
 }
 
-/// Barco navegavel. Spawnado quando um player usa um item de barco numa
-/// margem walkable; despawnado no dismount. Move-se exclusivamente em tiles
-/// WATER. Sem rigid body — server move a Position direto e bloqueia em tiles
-/// nao-water, sem sliding.
+/// Barco navegavel (Sea-of-Thieves style). Spawnado quando um player usa um
+/// item de barco em margem walkable; despawnado quando todos saem.
+///
+/// **Modelo de movimento (NAO mais "single-piloto + tile-snap"):**
+/// - Velocidade derivada de `sail_position * wind_intensity * sail_alignment`,
+///   nao do input do player.
+/// - Yaw vem do `helm_input` (player na estacao HELM ajusta -1..1).
+/// - Ancora dropada multiplica drag → barco trava rapido.
+/// - Multiplos players a bordo (passengers); cada um pode pegar uma estacao.
+/// - Posicao continua (sem snap a tile), mas colisao com tiles nao-water.
 pub struct BoatTag {
-    /// Kind visual do barco (0=Lylian Leutard). Cliente usa pra escolher
-    /// quais sprite-sheets carregar.
+    /// Kind visual do barco (0=Lylian Leutard).
     pub kind: u16,
-    /// PlayerId do dono — o unico autorizado a montar/dirigir.
+    /// PlayerId que SPAWNOU o barco (dono). Outros podem entrar livremente
+    /// — donho usado pra persistencia (qual char "tem" o barco).
     pub owner_pid: PlayerId,
-    /// EntityId do passageiro atual (player montado). None se ancorado vazio.
-    pub passenger: Option<EntityId>,
-    /// hecs::Entity do passageiro pra acesso direto sem query.
-    pub passenger_entity: Option<Entity>,
-    /// Direcao do casco (0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW). Atualizado
-    /// pelo movimento; congelado em idle quando velocidade ≈ 0.
+
+    // ── Heading e leme ─────────────────────────────────────────────────────
+    /// Heading do barco em rad world-space (0 = +X / leste).
+    pub yaw: f32,
+    /// Yaw rate em rad/s. Integrado por `helm_input`.
+    pub ang_vel: f32,
+    /// Input do leme em [-1, +1]. Setado pelo player na estacao HELM cada
+    /// tick. Reset a 0 quando estacao vazia (leme volta ao centro).
+    pub helm_input: f32,
+
+    // ── Vela ───────────────────────────────────────────────────────────────
+    /// 0=raised (sem propulsao), 1=half (50%), 2=full (100%).
+    pub sail_position: u8,
+    /// Angulo da vela em rad relativo ao casco (-PI/2..PI/2). 0 = vela
+    /// perpendicular ao casco (catch wind from behind).
+    pub sail_angle: f32,
+
+    // ── Ancora ─────────────────────────────────────────────────────────────
+    /// True se a ancora esta dropada (drag elevado, barco para).
+    pub anchor_dropped: bool,
+    /// Anim de drop/raise em [0, 1]. 1 = totalmente dropada (drag full),
+    /// 0 = totalmente recolhida (sem drag extra). Cresce/decresce com
+    /// `BOAT_ANCHOR_ANIM_TIME` segundos.
+    pub anchor_progress: f32,
+
+    // ── Estacoes ocupadas (player_eids) ────────────────────────────────────
+    pub helm_eid: Option<EntityId>,
+    pub sail_eid: Option<EntityId>,
+    pub anchor_eid: Option<EntityId>,
+
+    /// Lista de players a bordo (em estacao OU livre andando no deck).
+    pub passengers: Vec<EntityId>,
+
+    // ── Compat com BoatRenderer 2D atual ───────────────────────────────────
+    /// Direcao 8-cardeais (0..7) computada do `yaw`. Snapshot popula isso
+    /// pro BoatRenderer existente continuar funcionando ate o renderer 3D.
     pub dir: u8,
-    /// Animacao atual (0=idle, 1=movement, 2=shoot). Idle quando |vel|<eps.
+    /// Anim 0=idle / 1=movement, derivada de |vel|. Sem 'shoot' (canhoes
+    /// nao implementados nesta refatoracao — virao depois).
     pub anim: u8,
-    /// Velocidade max em tiles/s. Lylian Leutard = 4.5 (devagar pra exploracao).
-    pub max_speed: f32,
-    /// sim_time_s do ultimo tiro de canhao. Usado pra cooldown de cannon.
-    pub last_shot_at_s: f32,
-    /// Quando > sim_time_s, animacao 'shoot' fica ativa visualmente. Setado
-    /// no tiro pra duracao da anim (~0.96s = 8 frames * 0.12s).
-    pub shoot_anim_until: f32,
-    /// Direcao do ULTIMO tiro (0..7), independente da direcao do barco.
-    /// Cliente usa pra rotacionar o flash overlay pro mouse, nao pro casco.
-    pub shoot_dir: u8,
 }
 
-/// Marca um player como montado num barco. Enquanto presente:
-/// - Input do player redireciona pro barco (BoatTag.passenger)
-/// - Player nao processa colisao terrestre (rigid body congelado)
-/// - Position do player espelha pos do barco a cada tick
+/// Marca um player como montado num barco. Position do player no mundo =
+/// barco.pos + rotate(local_pos, barco.yaw), recalculado a cada tick.
 pub struct Mounted {
     pub boat_entity: Entity,
     pub boat_eid: EntityId,
+    /// Posicao do player no deck local (relativa ao centro do barco, sem
+    /// rotacao). Player anda no deck integrando isso com `move_dir` enquanto
+    /// `station` for None.
+    pub local_pos: Vec2,
+    /// Estacao operada pelo player. None = livre andando no deck.
+    /// Quando setada, player fica fixo na local_pos da estacao e o input
+    /// nao move ele — mas pode ajustar a estacao (helm/sail/anchor).
+    pub station: Option<u8>,
+    /// Ultimo move_dir recebido do client. Persistido entre ticks (input
+    /// vem ~60Hz, tick server e' 30Hz — sem persistir, ticks sem input
+    /// fariam vel=ZERO e walk anim flickaria).
+    pub last_move_dir: Vec2,
+}
+
+/// Estado global do vento. Constante por enquanto; futuro: drift suave +
+/// eventos de tempestade. Broadcastado no login + quando muda.
+#[derive(Debug, Clone, Copy)]
+pub struct WindState {
+    /// Direcao em rad world-space (0 = vento soprando pra +X / leste).
+    pub direction: f32,
+    /// Intensidade [0, 1]. 0 = calmaria (barco nao sai do lugar mesmo com
+    /// vela full); 1 = vendaval.
+    pub intensity: f32,
+}
+
+impl Default for WindState {
+    fn default() -> Self {
+        // Vento padrao: noroeste moderado. Ajustavel via admin no futuro.
+        Self {
+            direction: std::f32::consts::FRAC_PI_4, // 45° (nordeste)
+            intensity: 0.6,
+        }
+    }
+}
+
+// ── Helpers de geometria do barco ──────────────────────────────────────────
+// Os valores vem do `boat_config::registry()` carregado de JSONs em
+// `data/boats/`. JSONs sao exportados do prefab Unity (Tools / Boat /
+// Export Prefab Data). Fallback hardcoded em boat_config.rs se faltar arquivo.
+
+pub fn boat_deck_half(kind: u16) -> Vec2 {
+    crate::boat_config::get(kind).deck_half()
+}
+pub fn boat_helm_local(kind: u16)   -> Vec2 { crate::boat_config::get(kind).helm_local() }
+pub fn boat_sail_local(kind: u16)   -> Vec2 { crate::boat_config::get(kind).sail_local() }
+pub fn boat_anchor_local(kind: u16) -> Vec2 { crate::boat_config::get(kind).anchor_local() }
+
+/// Distancia maxima entre player e estacao pra interagir (em tiles).
+/// Escala com tamanho do deck — aqui ~25% do half_h pro Lylian (4 tiles half).
+pub const BOAT_STATION_REACH: f32 = 1.0;
+/// Velocidade do player andando no deck (tiles/s, deck-local).
+pub const BOAT_DECK_WALK_SPEED: f32 = 4.5;
+
+/// Forward unitario do barco (proa) dado yaw. Convencao: yaw=0 → +Y world
+/// (norte). +Y do FRAME LOCAL do barco aponta pro forward (proa). Helm
+/// (popa) eh -Y local; anchor (proa) eh +Y local.
+pub fn boat_forward(yaw: f32) -> Vec2 {
+    Vec2::new(-yaw.sin(), yaw.cos())
+}
+
+/// Rotaciona vetor 2D por angulo em rad.
+pub fn rotate_vec(v: Vec2, angle: f32) -> Vec2 {
+    let (s, c) = angle.sin_cos();
+    Vec2::new(v.x * c - v.y * s, v.x * s + v.y * c)
 }
 
 /// Sortea uma posicao continua aleatoria dentro do polygon (ou do AABB se
@@ -807,6 +896,10 @@ pub struct GameWorld {
     pub npc_routes: HashMap<u32, NpcRoute>,
     /// Tempo acumulado de simulacao em segundos (pra timer de respawn).
     pub sim_time_s: f32,
+    /// Estado global do vento (afeta TODOS os barcos no mundo). Constante
+    /// por enquanto — futuro: drift suave + storm events. Broadcast no
+    /// login + quando muda significativamente.
+    pub wind: WindState,
     /// True quando alguma mudanca critica aconteceu desde o ultimo save —
     /// equip change, inventory swap, mount/dismount, gold transaction, etc.
     /// Tick loop checa isso pra disparar save fora do intervalo periodico,
@@ -905,6 +998,7 @@ impl GameWorld {
             safe_zones: Vec::new(),
             npc_routes: HashMap::new(),
             sim_time_s: 0.0,
+            wind: WindState::default(),
             save_pending: false,
             pending_shots: Vec::new(),
             pending_skill_hits: Vec::new(),
@@ -964,6 +1058,7 @@ impl GameWorld {
             safe_zones: Vec::new(),
             npc_routes: HashMap::new(),
             sim_time_s: 0.0,
+            wind: WindState::default(),
             save_pending: false,
             pending_shots: Vec::new(),
             pending_skill_hits: Vec::new(),
@@ -2211,11 +2306,11 @@ impl GameWorld {
         let (mut spawn, mut health, saved_xp, saved_gold, saved_inv, saved_equip, saved_vault,
              saved_fame, saved_aura, saved_profs, saved_unspent, saved_alloc,
              saved_sp_earned, saved_sp_spent, saved_learned_skills, saved_boat,
-             saved_visual, saved_char_name) = (
+             saved_visual, saved_char_name, saved_mounted_local) = (
                 row.pos, row.hp, row.xp, row.gold, row.inventory.clone(), row.equipment, row.vault.clone(),
                 row.fame, row.aura, row.proficiencies, row.unspent_points, row.allocated_points,
                 row.skill_points_earned, row.skill_points_spent, row.learned_skills.clone(),
-                row.boat, row.visual.clone(), row.name.clone(),
+                row.boat, row.visual.clone(), row.name.clone(), row.mounted_local,
             );
         // Stats efetivos considerando equipamento salvo + pontos + profs.
         let stats = effective_stats(&saved_equip, &saved_alloc, &saved_profs, &saved_learned_skills);
@@ -2223,17 +2318,39 @@ impl GameWorld {
         health.max = stats.hp_max;
         if health.current > health.max { health.current = health.max; }
         if health.current <= 0 { health.current = stats.hp_max; }
-        // Valida que a posicao salva nao esta dentro de uma parede (mapa
-        // pode ter sido regenerado). Senao, volta pro spawn default.
-        // Excecao: se tinha barco salvo, pos vai ser em agua — eh OK porque
-        // vamos re-mountar o player no barco logo apos.
+        // Valida que a posicao salva nao esta dentro de uma parede ou na
+        // agua (mapa pode ter sido regenerado, OU player desconectou montado
+        // — agora boats nao auto-mountam, entao precisamos garantir terra).
+        // BFS curto procurando walkable proximo ANTES de cair pro spawn default.
         let tx = spawn.x.floor() as i32;
         let ty = spawn.y.floor() as i32;
-        if saved_boat.is_some() && self.map.is_water(tx, ty) {
-            // Pos em agua eh esperado quando re-spawn em barco. Skip check.
-        } else if !self.map.is_walkable(tx, ty) {
-            tracing::warn!("saved pos ({tx},{ty}) nao-walkable (wall/water); usando spawn default");
-            spawn = default_spawn;
+        if !self.map.is_walkable(tx, ty) {
+            // BFS Chebyshev raio 6 procurando tile walkable.
+            let mut found: Option<Vec2> = None;
+            'bfs: for r in 1i32..=6 {
+                for dy in -r..=r {
+                    for dx in -r..=r {
+                        if dx.abs() != r && dy.abs() != r { continue; }
+                        if self.map.is_walkable(tx + dx, ty + dy) {
+                            found = Some(Vec2::new(
+                                (tx + dx) as f32 + 0.5,
+                                (ty + dy) as f32 + 0.5,
+                            ));
+                            break 'bfs;
+                        }
+                    }
+                }
+            }
+            if let Some(p) = found {
+                tracing::warn!(
+                    "saved pos ({tx},{ty}) nao-walkable; teleportando pra terra adjacente {:?}",
+                    p
+                );
+                spawn = p;
+            } else {
+                tracing::warn!("saved pos ({tx},{ty}) sem terra adjacente; usando spawn default");
+                spawn = default_spawn;
+            }
         }
         // Dá respiro ao jogador: despawna inimigos muito proximos do spawn.
         let clear_r_sq: f32 = 6.0 * 6.0;
@@ -2263,15 +2380,21 @@ impl GameWorld {
             PlayerTag { name: saved_char_name.clone(), player_id: pid, attack_anim_pending: None, combo_step_pending: None },
         ));
 
-        // Restaura barco se player desconectou montado. Spawna a entidade
-        // Boat na pos salva e adiciona Mounted no player. Se a pos do barco
-        // virou nao-water (mapa mudou), aborta restauracao — player continua
-        // a pe na pos do default_spawn (que foi clampado acima).
+        // Restaura barco se player desconectou em cima dele. Spawna entidade
+        // Boat na pos salva com sail/anchor restaurados. Se mounted_local
+        // tambem foi salvo (player estava em cima do barco), re-monta o
+        // player no mesmo local_pos do deck — assim ao logar, voce ta DE
+        // VOLTA na mesma posicao do barco.
         if let Some(b) = saved_boat {
             let bx = b.pos.x.floor() as i32;
             let by = b.pos.y.floor() as i32;
             if self.map.is_water(bx, by) {
                 let boat_eid = self.alloc_entity_id();
+                // Inclui o player como passenger se vamos re-mountar.
+                let player_eid_for_passenger = entity_id;
+                let initial_passengers = if saved_mounted_local.is_some() {
+                    vec![player_eid_for_passenger]
+                } else { Vec::new() };
                 let boat_entity = self.ecs.spawn((
                     NetId(boat_eid),
                     Position(b.pos),
@@ -2280,18 +2403,33 @@ impl GameWorld {
                     BoatTag {
                         kind: b.kind,
                         owner_pid: pid,
-                        passenger: Some(entity_id),
-                        passenger_entity: Some(e),
+                        yaw: b.yaw,
+                        ang_vel: 0.0,
+                        helm_input: 0.0,
+                        sail_position: b.sail_position,
+                        sail_angle: b.sail_angle,
+                        anchor_dropped: b.anchor_dropped,
+                        anchor_progress: if b.anchor_dropped { 1.0 } else { 0.0 },
+                        helm_eid: None,
+                        sail_eid: None,
+                        anchor_eid: None,
+                        passengers: initial_passengers,
                         dir: b.dir,
                         anim: 0,
-                        max_speed: 4.5,
-                        last_shot_at_s: 0.0,
-                        shoot_anim_until: 0.0,
-                        shoot_dir: b.dir,
                     },
                 ));
-                let _ = self.ecs.insert_one(e, Mounted { boat_entity, boat_eid });
-                tracing::info!("login: boat restaurado pid={:?} kind={} pos={:?}", pid, b.kind, b.pos);
+                if let Some(local) = saved_mounted_local {
+                    let _ = self.ecs.insert_one(e, Mounted {
+                        boat_entity,
+                        boat_eid,
+                        local_pos: local,
+                        station: None, // estacao nao persistida — solta ao relogar
+                        last_move_dir: Vec2::ZERO,
+                    });
+                    tracing::info!("login: boat + player re-mountado pid={:?} kind={} local={:?}", pid, b.kind, local);
+                } else {
+                    tracing::info!("login: boat restaurado VAZIO pid={:?} kind={} pos={:?}", pid, b.kind, b.pos);
+                }
             } else {
                 tracing::warn!("login: boat pos ({bx},{by}) nao-water — restauracao abortada");
             }
@@ -2369,6 +2507,11 @@ impl GameWorld {
         let _ = handle.to_client.send(ServerMessage::StatsUpdate {
             stats,
             equipment: saved_equip,
+        });
+        // Estado do vento (Boat 2.5D) — cliente desenha indicador na HUD.
+        let _ = handle.to_client.send(ServerMessage::WindUpdate {
+            direction: self.wind.direction,
+            intensity: self.wind.intensity,
         });
         // Farm nodes — envia lista completa pra cliente associar IDs.
         let farm_nodes_list: Vec<shared::protocol::FarmNodeInfo> = self.farm_nodes.iter()
@@ -2901,8 +3044,23 @@ impl GameWorld {
             ClientMessage::SocketGem { item_slot, gem_slot } => {
                 self.handle_socket_gem(id, item_slot, gem_slot);
             }
-            ClientMessage::DismountBoat => {
+            ClientMessage::DismountBoat | ClientMessage::LeaveBoat => {
                 self.handle_dismount_boat(id);
+            }
+            ClientMessage::BoardBoat { boat_eid } => {
+                self.handle_board_boat(id, boat_eid);
+            }
+            ClientMessage::GrabStation { station } => {
+                self.handle_grab_station(id, station);
+            }
+            ClientMessage::ReleaseStation => {
+                self.handle_release_station(id);
+            }
+            ClientMessage::SailAdjust { delta_position, delta_angle } => {
+                self.handle_sail_adjust(id, delta_position, delta_angle);
+            }
+            ClientMessage::AnchorToggle => {
+                self.handle_anchor_toggle(id);
             }
             ClientMessage::ResetPosition => {
                 self.handle_reset_position(id);
@@ -4297,10 +4455,12 @@ impl GameWorld {
             if session.carried_by.is_some() {
                 continue;
             }
-            // Player montado em barco: input vai pro barco (capturado num
-            // hashmap separado e processado apos o physics step). Skip TODO o
-            // resto do input loop — sem ataques, sem skills, sem dash.
-            // Captura aim+buttons tambem pra dar suporte a cannon shot.
+            // Player montado em barco (Boat 2.5D): rota o move_dir pro
+            // mounted_inputs (boat le pra helm/walk on deck). Zera o
+            // move_dir do frame pra que o physics-loop normal NAO mova o
+            // player (boat fisica controla a posicao via local_pos+rotate).
+            // Mantem buttons/aim — assim ataques, skills, dash continuam
+            // funcionando normalmente em cima do barco.
             if self.ecs.get::<&Mounted>(entity).is_ok() {
                 let mv = if frame.move_dir.length_squared() > 1.0 {
                     frame.move_dir.normalize()
@@ -4310,12 +4470,15 @@ impl GameWorld {
                     aim:      frame.aim,
                     buttons:  frame.buttons,
                 });
-                // Zera velocity do player pra Rapier nao tentar puxar ele
-                // pelo movimento residual quando o barco mover.
-                if let Ok(mut v) = self.ecs.get::<&mut Velocity>(entity) {
-                    v.0 = Vec2::ZERO;
+                // Persiste o ultimo move_dir no Mounted — input vem ~60Hz,
+                // tick server e' 30Hz. Sem persistir, ticks sem input
+                // fariam vel=ZERO e walk anim flickaria.
+                if let Ok(mut m) = self.ecs.get::<&mut Mounted>(entity) {
+                    m.last_move_dir = mv;
                 }
-                continue;
+                // Zera move_dir do frame — boat fisica handla o player.
+                frame.move_dir = glam::Vec2::ZERO;
+                // NAO continue — segue pro processamento de attacks/skills/etc.
             }
             // CASTING: durante cast_time_s o player fica travado na pose. A
             // checagem de cancel-por-movimento eh feita ABAIXO, depois do dir
@@ -5375,33 +5538,106 @@ impl GameWorld {
             }
         }
 
-        // ── F.1: barcos — movimento custom (sem Rapier) com tile-water-only ─
-        // Cada barco com passenger usa o input do dono pra atualizar velocity.
-        // Position += vel * dt; rejeita axis se a celula destino nao for water.
-        // Mounted players sao sincronizados (pos = pos do barco) depois.
-        // Tambem processa cannon shot quando PRIMARY pressed + cooldown OK.
-        let mut boat_passenger_pairs: Vec<(Entity, Vec2)> = Vec::new();
-        let mut cannon_shots: Vec<(EntityId, Vec2, Vec2)> = Vec::new(); // (owner, pos, dir)
-        const CANNON_CD: f32 = 1.2_f32;
-        const SHOOT_ANIM_DURATION: f32 = 0.96_f32; // 8 frames * 0.12 = 0.96s
+        // ── F.1: barcos (Sea-of-Thieves) — fisica autonoma + walkable deck ─
+        //
+        // Modelo:
+        //   1. Helm input do player na estacao HELM vira `helm_input` no boat.
+        //   2. Yaw rate = helm_input * MAX_YAW * (|vel| / MAX_SPEED). Leme
+        //      so funciona com movimento — barco parado nao gira.
+        //   3. Sail thrust = sail_factor * wind_intensity * alignment.
+        //      Alignment = max(0, dot(wind_local, sail_normal_local)).
+        //   4. Drag d'agua decai vel; ancora dropada multiplica drag.
+        //   5. Players montados livres no deck integram local_pos por
+        //      input.move_dir; players em estacao ficam fixos na local
+        //      pos da estacao.
+        //   6. World pos do player = boat.pos + rotate(local_pos, boat.yaw).
+        //
+        // Recebe `mounted_inputs: HashMap<Entity, MountedInput>` com
+        // {move_dir, aim, buttons} de cada session deste tick.
+        let wind = self.wind;
+
+        // Pre-resolve EntityId (NetId) -> last_move_dir (Mounted). Persiste
+        // entre ticks — input vem ~60Hz mas tick e' 30Hz. Usar mounted_inputs
+        // direto deixava o helm_input "buracado" em ticks sem input novo.
+        let eid_to_input: HashMap<EntityId, Vec2> = self.ecs
+            .query::<(&NetId, &Mounted)>()
+            .iter()
+            .map(|(_, (n, m))| (n.0, m.last_move_dir))
+            .collect();
+
+        // ── F.1.a: Boat physics + helm input pickup ────────────────────────
+        let mut boat_world_state: HashMap<Entity, (Vec2, f32)> = HashMap::new(); // boat_e → (pos, yaw)
         for (boat_e, (pos, vel, tag)) in self
             .ecs
             .query::<(&mut Position, &mut Velocity, &mut BoatTag)>()
             .iter()
         {
-            // Acha intent do passageiro. Sem passageiro = barco para.
-            let passenger_entity = tag.passenger_entity;
-            let mounted = passenger_entity.and_then(|pe| mounted_inputs.get(&pe));
-            let intent = mounted.map(|m| m.move_dir).unwrap_or(Vec2::ZERO);
-            // Velocidade target. Suaviza pra dar inercia (lerp 8.0 por seg).
-            let target_vel = if intent.length_squared() > 0.001 {
-                intent.normalize() * tag.max_speed
-            } else { Vec2::ZERO };
-            let lerp_t = (8.0 * dt).min(1.0);
+            // 1. Pick up helm input do player na estacao HELM.
+            tag.helm_input = tag.helm_eid
+                .and_then(|eid| eid_to_input.get(&eid))
+                .map(|d| d.x.clamp(-1.0, 1.0))
+                .unwrap_or(0.0);
+
+            // 2. Atualiza anchor_progress (anim de drop/raise).
+            let anchor_step = dt / shared::constants::BOAT_ANCHOR_ANIM_TIME;
+            if tag.anchor_dropped {
+                tag.anchor_progress = (tag.anchor_progress + anchor_step).min(1.0);
+            } else {
+                tag.anchor_progress = (tag.anchor_progress - anchor_step).max(0.0);
+            }
+
+            // 3. Calcula thrust da vela.
+            let sail_factor = match tag.sail_position {
+                0 => 0.0, 1 => 0.5, _ => 1.0,
+            };
+            let forward = boat_forward(tag.yaw);
+            let target_speed = if sail_factor > 0.0 && wind.intensity > 0.0 {
+                // Vento no frame do barco. Convencao Y: direction=0 → vento
+                // pra +Y (norte). wind_w = (-sin, cos) (mesmo formato de
+                // boat_forward). Mantem coerencia com visual da seta de vento.
+                let wind_w = Vec2::new(-wind.direction.sin(), wind.direction.cos());
+                let wind_b = rotate_vec(wind_w, -tag.yaw);
+                // Normal da vela no frame do barco. sail_angle=0 → vela
+                // perpendicular ao casco (catch wind from behind = -Y local).
+                // Convencao Y: forward = +Y, normal aponta forward quando angle=0.
+                let sail_normal_b = Vec2::new(-tag.sail_angle.sin(), tag.sail_angle.cos());
+                let raw_alignment = wind_b.dot(sail_normal_b).max(0.0);
+                // Min alignment 0.20 — barco real pode "tackar" e mover lento
+                // ate contra o vento. SoT permite isso tambem (vento adversario
+                // = ~15-20% velocidade). Player pode rotacionar a vela (Z/X)
+                // pra otimizar quando navegando off-wind.
+                let alignment = raw_alignment.max(0.20);
+                sail_factor * wind.intensity * alignment * shared::constants::BOAT_MAX_SPEED
+            } else { 0.0 };
+            let target_vel = forward * target_speed;
+
+            // 4. Lerp vel → target (inercia do barco).
+            let lerp_k = 1.5; // s^-1; barco tem inercia alta, decai/acelera devagar
+            let lerp_t = (lerp_k * dt).min(1.0);
             vel.0 = vel.0 + (target_vel - vel.0) * lerp_t;
-            // Integra com slide axis-aligned: tenta x primeiro, depois y.
+
+            // 5. Drag d'agua + ancora.
+            let mut drag = shared::constants::BOAT_WATER_DRAG;
+            if tag.anchor_progress > 0.0 {
+                drag += shared::constants::BOAT_WATER_DRAG
+                    * shared::constants::BOAT_ANCHOR_DRAG_MULT
+                    * tag.anchor_progress;
+            }
+            let drag_factor = (1.0 - drag * dt).max(0.0);
+            vel.0 *= drag_factor;
+
+            // 6. Yaw rate — leme funciona mesmo parado (igual SoT — barco
+            // gira em torno do proprio eixo). Sem speed gating.
+            let speed = vel.0.length();
+            let yaw_rate = tag.helm_input * shared::constants::BOAT_MAX_YAW_RATE;
+            tag.ang_vel = yaw_rate;
+            tag.yaw += yaw_rate * dt;
+            // Normaliza yaw em [-PI, PI]
+            if tag.yaw > std::f32::consts::PI { tag.yaw -= std::f32::consts::TAU; }
+            if tag.yaw < -std::f32::consts::PI { tag.yaw += std::f32::consts::TAU; }
+
+            // 7. Integra posicao com slide axis-aligned em tiles navegaveis.
             let mut new_pos = pos.0;
-            // Eixo X
             let try_x = Vec2::new(pos.0.x + vel.0.x * dt, pos.0.y);
             let tx = try_x.x.floor() as i32;
             let ty = try_x.y.floor() as i32;
@@ -5410,7 +5646,6 @@ impl GameWorld {
             } else {
                 vel.0.x = 0.0;
             }
-            // Eixo Y (com X ja aplicado)
             let try_y = Vec2::new(new_pos.x, new_pos.y + vel.0.y * dt);
             let tx = try_y.x.floor() as i32;
             let ty = try_y.y.floor() as i32;
@@ -5421,62 +5656,82 @@ impl GameWorld {
             }
             pos.0 = new_pos;
 
-            // Cannon shot: PRIMARY + cooldown. Spawn simples — bola sai do
-            // CENTRO do barco em direcao do mouse, sem trocar sheet/dir/anim.
-            if let Some(m) = mounted {
-                let pressed = (m.buttons & buttons::PRIMARY) != 0;
-                if pressed && self.sim_time_s - tag.last_shot_at_s >= CANNON_CD {
-                    let to_aim = m.aim - pos.0;
-                    if to_aim.length_squared() > 0.04 {
-                        let dir = to_aim.normalize();
-                        tag.last_shot_at_s = self.sim_time_s;
-                        if let Some(owner_eid) = tag.passenger {
-                            cannon_shots.push((owner_eid, pos.0, dir));
-                        }
-                    }
-                }
-            }
+            // 8. Atualiza dir/anim derivados (compat com BoatRenderer 2D).
+            tag.dir = dir8_from_vec(forward);
+            tag.anim = if speed > 0.05 { 1 } else { 0 };
 
-            // Dir/anim baseado em velocity. Sem anim de shoot — boat continua
-            // idle/movement como sempre.
-            if vel.0.length_squared() > 0.05 {
-                tag.dir = dir8_from_vec(vel.0);
-                tag.anim = 1; // movement
-            } else {
-                tag.anim = 0; // idle (mantem dir antiga)
-            }
-            // Coleta pra sync de mounted player depois.
-            if let Some(pe) = passenger_entity {
-                boat_passenger_pairs.push((pe, pos.0));
-            }
+            boat_world_state.insert(boat_e, (pos.0, tag.yaw));
             let _ = boat_e;
         }
-        // Spawna projeteis de cannon (kind=10) saindo do CENTRO do barco.
-        for (owner, bpos, dir) in cannon_shots {
-            const CANNON_DAMAGE: i32 = 30;
-            const CANNON_SPEED_MULT: f32 = 1.5;
-            const CANNON_TTL: f32 = 2.5;
-            let proj_id = self.alloc_entity_id();
-            self.ecs.spawn((
-                NetId(proj_id),
-                Position(bpos),
-                Velocity(dir * shared::PROJ_SPEED * CANNON_SPEED_MULT),
-                EntityKind::Projectile,
-                ProjTag {
-                    owner, from_player: true, ttl: CANNON_TTL,
-                    damage: CANNON_DAMAGE, is_crit: false, kind: 10,
-                },
-            ));
-        }
-        // Sincroniza pos dos players montados com a pos do barco.
-        for (pe, boat_pos) in boat_passenger_pairs {
-            if let Ok(mut p) = self.ecs.get::<&mut Position>(pe) {
-                p.0 = boat_pos;
+
+        // ── F.1.b: Walkable deck — integra local_pos dos players montados ─
+        // Coletamos primeiro pra evitar conflito de borrows.
+        let mounted_player_data: Vec<(Entity, Entity, Vec2, Option<u8>, u16, Vec2)> = self.ecs
+            .query::<(&Mounted,)>()
+            .iter()
+            .filter_map(|(player_e, (m,))| {
+                // Usa last_move_dir persistido (sobrevive a ticks sem input
+                // novo do client — evita flicker da walk anim).
+                let kind = self.ecs.get::<&BoatTag>(m.boat_entity).ok().map(|t| t.kind).unwrap_or(0);
+                Some((player_e, m.boat_entity, m.local_pos, m.station, kind, m.last_move_dir))
+            })
+            .collect();
+
+        for (player_e, boat_e, mut local_pos, station, kind, move_input) in mounted_player_data {
+            // Estacao ocupada → snap na pos da estacao, sem walking.
+            if let Some(st) = station {
+                local_pos = match st {
+                    s if s == shared::constants::station::HELM   => boat_helm_local(kind),
+                    s if s == shared::constants::station::SAIL   => boat_sail_local(kind),
+                    s if s == shared::constants::station::ANCHOR => boat_anchor_local(kind),
+                    _ => local_pos,
+                };
+            } else {
+                // Livre — anda no deck baseado no input. `move_input` vem do
+                // cliente em WORLD frame (W = norte). Converte pra LOCAL frame
+                // do barco rotando por -yaw — assim WASD sempre eh intuitivo
+                // (W = norte do mundo, independente da orientacao do barco).
+                if move_input.length_squared() > 0.001 {
+                    let world_step = move_input.normalize_or_zero() * BOAT_DECK_WALK_SPEED * dt;
+                    let yaw = self.ecs.get::<&BoatTag>(boat_e).map(|t| t.yaw).unwrap_or(0.0);
+                    let local_step = rotate_vec(world_step, -yaw);
+                    local_pos += local_step;
+                }
+                // Clamp pra dentro do deck. Usa polygon se config tem
+                // (deck_polygon do prefab), senao bbox.
+                local_pos = crate::boat_config::get(kind).clamp_to_deck(local_pos);
             }
-            if let Ok(handle) = self.ecs.get::<&shared::PhysicsHandle>(pe).map(|h| h.0) {
-                if let Some(rb) = self.physics.rigid_body_set.get_mut(handle) {
-                    rb.set_translation([boat_pos.x, boat_pos.y].into(), true);
-                    rb.set_linvel([0.0, 0.0].into(), true);
+            // Velocidade do player em WORLD frame, pro client triggar walk anim.
+            // Quando station = Some, parado (vel ZERO). Quando livre, vel =
+            // move_input * walk_speed (worldframe ja).
+            let player_world_vel = if station.is_some() {
+                Vec2::ZERO
+            } else if move_input.length_squared() > 0.001 {
+                move_input.normalize_or_zero() * BOAT_DECK_WALK_SPEED
+            } else {
+                Vec2::ZERO
+            };
+            if let Ok(mut v) = self.ecs.get::<&mut Velocity>(player_e) {
+                v.0 = player_world_vel;
+            }
+
+            // Salva local_pos no Mounted.
+            if let Ok(mut m) = self.ecs.get::<&mut Mounted>(player_e) {
+                m.local_pos = local_pos;
+            }
+
+            // World pos = boat.pos + rotate(local_pos, boat.yaw)
+            if let Some((bpos, byaw)) = boat_world_state.get(&boat_e).copied() {
+                let world_offset = rotate_vec(local_pos, byaw);
+                let world_pos = bpos + world_offset;
+                if let Ok(mut p) = self.ecs.get::<&mut Position>(player_e) {
+                    p.0 = world_pos;
+                }
+                if let Ok(handle) = self.ecs.get::<&shared::PhysicsHandle>(player_e).map(|h| h.0) {
+                    if let Some(rb) = self.physics.rigid_body_set.get_mut(handle) {
+                        rb.set_translation([world_pos.x, world_pos.y].into(), true);
+                        rb.set_linvel([0.0, 0.0].into(), true);
+                    }
                 }
             }
         }
@@ -6761,6 +7016,13 @@ impl GameWorld {
             .map(|(_, (net, _))| net.0)
             .collect();
 
+        // Detalhes de cada player montado pra popular boat_2.5d snapshot fields.
+        let mounted_player_info: HashMap<EntityId, (EntityId, Vec2, Option<u8>)> = self.ecs
+            .query::<(&NetId, &Mounted)>()
+            .iter()
+            .map(|(_, (net, m))| (net.0, (m.boat_eid, m.local_pos, m.station)))
+            .collect();
+
         let all: Vec<EntitySnapshot> = self
             .ecs
             .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>, Option<&ProjTag>, Option<&NpcSkin>, Option<&VendorTag>, Option<&WanderRouteTag>, Option<&BoatTag>, Option<&EnemyTag>, Option<&LootTag>)>()
@@ -6830,8 +7092,10 @@ impl GameWorld {
                     poise_active: overlay.and_then(|o| if o.poise_active { Some(true) } else { None }),
                     boat_dir: boat.map(|b| b.dir),
                     boat_anim: boat.map(|b| b.anim),
-                    boat_shoot_dir: boat.and_then(|b| if b.anim == 2 { Some(b.shoot_dir) } else { None }),
-                    passenger_eid: boat.and_then(|b| b.passenger),
+                    // Sem cannons nesta refatoracao.
+                    boat_shoot_dir: None,
+                    // Legado: primeiro passenger (compat com BoatRenderer atual).
+                    passenger_eid: boat.and_then(|b| b.passengers.first().copied()),
                     mounted: if is_player && mounted_player_eids.contains(&net.0) { Some(true) } else { None },
                     is_boss: etag.and_then(|t| if t.is_boss { Some(true) } else { None }),
                     buffs: overlay.and_then(|o| if o.buffs_mask != 0 { Some(o.buffs_mask) } else { None }),
@@ -6839,6 +7103,30 @@ impl GameWorld {
                     // resources (60-71) tier baked no item_id. Equipaveis com
                     // instance.item_level → 1-4 via threshold (10/30/60).
                     loot_tier: ltag.and_then(|l| compute_loot_tier(l)),
+                    // ── Boat 2.5D ─────────────────────────────────────────
+                    boat_yaw: boat.map(|b| b.yaw),
+                    boat_lin_vx: if boat.is_some() { Some(vel.0.x) } else { None },
+                    boat_lin_vy: if boat.is_some() { Some(vel.0.y) } else { None },
+                    sail_position: boat.map(|b| b.sail_position),
+                    sail_angle: boat.map(|b| b.sail_angle),
+                    anchor_dropped: boat.map(|b| b.anchor_dropped),
+                    anchor_progress: boat.map(|b| b.anchor_progress),
+                    helm_eid: boat.and_then(|b| b.helm_eid),
+                    sail_eid: boat.and_then(|b| b.sail_eid),
+                    anchor_eid: boat.and_then(|b| b.anchor_eid),
+                    // Player montado: pop info de boat_eid/local/station.
+                    mounted_on: if is_player {
+                        mounted_player_info.get(&net.0).map(|(b, _, _)| *b)
+                    } else { None },
+                    mounted_local_x: if is_player {
+                        mounted_player_info.get(&net.0).map(|(_, l, _)| l.x)
+                    } else { None },
+                    mounted_local_y: if is_player {
+                        mounted_player_info.get(&net.0).map(|(_, l, _)| l.y)
+                    } else { None },
+                    station: if is_player {
+                        mounted_player_info.get(&net.0).and_then(|(_, _, s)| *s)
+                    } else { None },
                 }
             })
             .collect();
@@ -7014,6 +7302,7 @@ impl GameWorld {
             xp: u64,
             gold: u64,
             boat: Option<crate::persistence::PersistedBoat>,
+            mounted_local: Option<Vec2>,
             inventory: Vec<shared::InventorySlot>,
             equipment: shared::Equipment,
             vault: Vec<shared::InventorySlot>,
@@ -7035,21 +7324,27 @@ impl GameWorld {
         for session in self.sessions.values() {
             if !session.logged_in { continue; }
             let Some(e) = session.entity else { continue };
-            // Se montado, captura pos do barco + boat state.
-            let (pos, boat) = if let Ok(m) = self.ecs.get::<&Mounted>(e).map(|m| m.boat_entity) {
-                let bp = self.ecs.get::<&Position>(m).ok().map(|p| p.0).unwrap_or_default();
-                let (kind, dir) = self.ecs.get::<&BoatTag>(m)
-                    .map(|t| (t.kind, t.dir))
-                    .unwrap_or((0, 4));
-                (bp, Some(crate::persistence::PersistedBoat { kind, pos: bp, dir }))
+            // Boat 2.5D: captura estado completo do barco + posicao do
+            // player no deck (mounted_local) pra restaurar no login.
+            let mounted_data = self.ecs.get::<&Mounted>(e).ok()
+                .map(|m| (m.boat_entity, m.local_pos));
+            let (pos, boat, mounted_local) = if let Some((boat_e, lp)) = mounted_data {
+                let bp = self.ecs.get::<&Position>(boat_e).ok().map(|p| p.0).unwrap_or_default();
+                let (kind, dir, yaw, sp, sa, ad) = self.ecs.get::<&BoatTag>(boat_e)
+                    .map(|t| (t.kind, t.dir, t.yaw, t.sail_position, t.sail_angle, t.anchor_dropped))
+                    .unwrap_or((0, 4, 0.0, 0, 0.0, true));
+                (bp, Some(crate::persistence::PersistedBoat {
+                    kind, pos: bp, dir, yaw,
+                    sail_position: sp, sail_angle: sa, anchor_dropped: ad,
+                }), Some(lp))
             } else {
                 let p = match self.ecs.get::<&Position>(e) { Ok(p) => p.0, Err(_) => continue };
-                (p, None)
+                (p, None, None)
             };
             let hp = match self.ecs.get::<&Health>(e) { Ok(h) => *h, Err(_) => continue };
             entries.push(E {
                 name: session.name.clone(),
-                pos, hp, boat,
+                pos, hp, boat, mounted_local,
                 xp: session.xp,
                 gold: session.gold,
                 inventory: session.inventory.clone(),
@@ -7078,6 +7373,7 @@ impl GameWorld {
                 xp: e.xp,
                 gold: e.gold,
                 boat: e.boat,
+                mounted_local: e.mounted_local,
                 inventory: e.inventory,
                 equipment: e.equipment,
                 vault: e.vault,
@@ -8225,9 +8521,14 @@ impl GameWorld {
                     Ok(p) => p.player_id,
                     Err(_) => return,
                 };
-                // Direcao inicial: aponta pro lado oposto da margem (away from
-                // player). Calcula delta water - player e snap pra 8-dir.
-                let init_dir = dir8_from_vec(water_pos - player_pos);
+                // Direcao inicial: aponta away from margem. Yaw em rad
+                // pra usar no novo modelo continuo. dir 8-cardeal mantida
+                // pra compat com BoatRenderer (snapshot deriva do yaw).
+                let dir_vec = (water_pos - player_pos).normalize_or_zero();
+                let init_yaw = if dir_vec.length_squared() > 0.001 {
+                    dir_vec.y.atan2(dir_vec.x)
+                } else { 0.0 };
+                let init_dir = dir8_from_vec(dir_vec);
                 let boat_entity = self.ecs.spawn((
                     NetId(boat_eid),
                     Position(water_pos),
@@ -8236,26 +8537,27 @@ impl GameWorld {
                     BoatTag {
                         kind,
                         owner_pid,
-                        passenger: Some(player_eid),
-                        passenger_entity: Some(player_entity),
+                        yaw: init_yaw,
+                        ang_vel: 0.0,
+                        helm_input: 0.0,
+                        sail_position: 0,        // raised — barco para
+                        sail_angle: 0.0,
+                        anchor_dropped: true,    // recem-spawnado: ancorado
+                        anchor_progress: 1.0,
+                        helm_eid: None,
+                        sail_eid: None,
+                        anchor_eid: None,
+                        // Sea-of-Thieves: barco vazio. Player precisa andar
+                        // ate ele e clicar EMBARCAR pra subir.
+                        passengers: Vec::new(),
                         dir: init_dir,
-                        anim: 0, // idle
-                        max_speed: 4.5,
-                        last_shot_at_s: 0.0,
-                        shoot_anim_until: 0.0,
-                        shoot_dir: 4, // S inicial
+                        anim: 0,
                     },
                 ));
-                // Marca o player como montado.
-                let _ = self.ecs.insert_one(player_entity, Mounted {
-                    boat_entity,
-                    boat_eid,
-                });
-                // Item NAO eh consumido — barco e' permanente no inv. Spawn so'
-                // gera entidade temporaria; dismount despawna sem devolver nada.
-                // Mount eh evento critico — forca save IMEDIATO (sub-1s).
+                let _ = boat_entity; // suprime unused: ficamos com o eid
+                let _ = player_eid;
                 self.save_pending = true;
-                tracing::info!("boat spawn: pid={:?} kind={} pos={:?}", owner_pid, kind, water_pos);
+                tracing::info!("boat spawn (vazio): pid={:?} kind={} pos={:?}", owner_pid, kind, water_pos);
             }
         }
     }
@@ -8425,19 +8727,18 @@ impl GameWorld {
     /// Desmonta o player do barco e teleporta pra terra walkable mais
     /// proxima (BFS ate 3 tiles a partir do barco). Falha se sem terra
     /// alcancavel — player precisa mover o barco antes.
+    ///
+    /// Multi-passenger aware: remove player de `passengers` + clear
+    /// estacao se ocupando alguma. Despawna o barco APENAS se o owner
+    /// foi o ultimo a sair (legacy: spawn-via-item flow).
     fn handle_dismount_boat(&mut self, sid: SessionId) {
-        // Acha entity + Mounted do player.
-        let (player_entity, mounted_boat_entity, mounted_boat_eid, boat_kind) = {
+        let (player_entity, player_eid, mounted_boat_entity, mounted_boat_eid) = {
             let Some(session) = self.sessions.get(&sid) else { return };
             if !session.logged_in { return; }
             let Some(pe) = session.entity else { return };
             let Ok(m) = self.ecs.get::<&Mounted>(pe) else { return };
-            // Pega kind do barco antes de despawn pra devolver o item certo.
-            let kind = self.ecs.get::<&EntityKind>(m.boat_entity)
-                .ok()
-                .and_then(|k| if let EntityKind::Boat(n) = *k { Some(n) } else { None })
-                .unwrap_or(0);
-            (pe, m.boat_entity, m.boat_eid, kind)
+            let player_eid = self.ecs.get::<&NetId>(pe).map(|n| n.0).unwrap_or(EntityId(0));
+            (pe, player_eid, m.boat_entity, m.boat_eid)
         };
         // Pos do barco.
         let boat_pos = match self.ecs.get::<&Position>(mounted_boat_entity) {
@@ -8446,8 +8747,7 @@ impl GameWorld {
         };
         let bx = boat_pos.x.floor() as i32;
         let by = boat_pos.y.floor() as i32;
-        // BFS ate 3 tiles procurando walkable. Cardinais primeiro pra evitar
-        // saidas diagonais "estranhas" entre rochas.
+        // BFS ate 3 tiles procurando walkable.
         let mut visited: std::collections::HashSet<(i32, i32)> = std::collections::HashSet::new();
         let mut queue: std::collections::VecDeque<(i32, i32, u32)> = std::collections::VecDeque::new();
         let cardinals = [(0i32, 1i32), (1, 0), (0, -1), (-1, 0)];
@@ -8481,16 +8781,190 @@ impl GameWorld {
                 rb.set_linvel([0.0, 0.0].into(), true);
             }
         }
-        // Remove Mounted, despawna barco.
+        // Remove player do boat.passengers + clear estacao se ocupando.
+        let (was_owner, became_empty) = if let Ok(mut tag) = self.ecs.get::<&mut BoatTag>(mounted_boat_entity) {
+            tag.passengers.retain(|eid| *eid != player_eid);
+            if tag.helm_eid == Some(player_eid) {
+                tag.helm_eid = None;
+                tag.helm_input = 0.0;
+            }
+            if tag.sail_eid == Some(player_eid) { tag.sail_eid = None; }
+            if tag.anchor_eid == Some(player_eid) { tag.anchor_eid = None; }
+            // Owner check: dono e' o que SPAWNOU o barco (PlayerTag.player_id).
+            let player_pid = self.ecs.get::<&PlayerTag>(player_entity).map(|p| p.player_id).ok();
+            let is_owner = player_pid == Some(tag.owner_pid);
+            (is_owner, tag.passengers.is_empty())
+        } else { (false, false) };
         let _ = self.ecs.remove_one::<Mounted>(player_entity);
-        let _ = self.ecs.despawn(mounted_boat_entity);
-        self.removed_this_tick.push(mounted_boat_eid);
-        // Dismount eh evento critico — forca save IMEDIATO (sub-1s).
+        // Se owner foi o ultimo a sair → despawna barco (legacy flow).
+        // Senao barco continua flutuando pros outros usarem.
+        if was_owner && became_empty {
+            let _ = self.ecs.despawn(mounted_boat_entity);
+            self.removed_this_tick.push(mounted_boat_eid);
+            tracing::info!("boat dismount + despawn (owner last): target={:?}", target);
+        } else {
+            tracing::info!("boat dismount (boat fica): target={:?}", target);
+        }
         self.save_pending = true;
-        // Item de barco nunca foi consumido — fica no inv permanentemente.
-        // Player pode usar de novo pra spawnar outra entidade temporaria.
-        let _ = boat_kind; // suprime unused warning
-        tracing::info!("boat dismount: target={:?}", target);
+    }
+
+    // ── Boat 2.5D — handlers ────────────────────────────────────────────────
+
+    /// Player tenta subir num barco proximo. Valida proximidade (≤ 1.5 tiles
+    /// do centro do barco) e adiciona o player como passenger no centro do deck.
+    fn handle_board_boat(&mut self, sid: SessionId, boat_eid: EntityId) {
+        let (player_entity, player_eid, player_pos) = {
+            let Some(s) = self.sessions.get(&sid) else { return };
+            if !s.logged_in { return; }
+            let Some(pe) = s.entity else { return };
+            // Ja montado? skip.
+            if self.ecs.get::<&Mounted>(pe).is_ok() { return; }
+            let pid = self.ecs.get::<&NetId>(pe).map(|n| n.0).unwrap_or(EntityId(0));
+            let pos = self.ecs.get::<&Position>(pe).map(|p| p.0).unwrap_or(Vec2::ZERO);
+            (pe, pid, pos)
+        };
+        // Acha o boat entity por eid.
+        let boat_entity = self.ecs.query::<(&NetId, &BoatTag)>().iter()
+            .find(|(_, (n, _))| n.0 == boat_eid).map(|(e, _)| e);
+        let Some(boat_entity) = boat_entity else { return };
+        let boat_pos = match self.ecs.get::<&Position>(boat_entity) {
+            Ok(p) => p.0, Err(_) => return,
+        };
+        let kind = self.ecs.get::<&BoatTag>(boat_entity).map(|t| t.kind).unwrap_or(0);
+        let half = boat_deck_half(kind);
+        let max_reach = half.x.max(half.y) + 1.0;
+        if (player_pos - boat_pos).length() > max_reach { return; }
+        // Adiciona ao boat.passengers.
+        if let Ok(mut tag) = self.ecs.get::<&mut BoatTag>(boat_entity) {
+            if !tag.passengers.contains(&player_eid) {
+                tag.passengers.push(player_eid);
+            }
+        }
+        let _ = self.ecs.insert_one(player_entity, Mounted {
+            boat_entity, boat_eid,
+            local_pos: Vec2::ZERO,
+            station: None,
+            last_move_dir: Vec2::ZERO,
+        });
+        self.save_pending = true;
+        tracing::info!("boat board: player_eid={:?} boat_eid={:?}", player_eid, boat_eid);
+    }
+
+    /// Player na estacao tenta pega-la. Valida proximidade do hotspot da
+    /// estacao em local-space (BOAT_STATION_REACH).
+    fn handle_grab_station(&mut self, sid: SessionId, station: u8) {
+        use shared::constants::station as st;
+        if station != st::HELM && station != st::SAIL && station != st::ANCHOR { return; }
+        let (player_entity, player_eid, mounted) = {
+            let Some(s) = self.sessions.get(&sid) else { return };
+            if !s.logged_in { return; }
+            let Some(pe) = s.entity else { return };
+            let Ok(m) = self.ecs.get::<&Mounted>(pe) else { return };
+            let pid = self.ecs.get::<&NetId>(pe).map(|n| n.0).unwrap_or(EntityId(0));
+            (pe, pid, (m.boat_entity, m.local_pos))
+        };
+        let (boat_entity, local_pos) = mounted;
+        let kind = self.ecs.get::<&BoatTag>(boat_entity).map(|t| t.kind).unwrap_or(0);
+        let target_local = match station {
+            s if s == st::HELM   => boat_helm_local(kind),
+            s if s == st::SAIL   => boat_sail_local(kind),
+            s if s == st::ANCHOR => boat_anchor_local(kind),
+            _ => return,
+        };
+        if (local_pos - target_local).length() > BOAT_STATION_REACH {
+            self.send_chat_to(sid, "[Sistema] Aproxime-se da estacao.");
+            return;
+        }
+        // Set station eid no boat (se vazia).
+        if let Ok(mut tag) = self.ecs.get::<&mut BoatTag>(boat_entity) {
+            let slot = match station {
+                s if s == st::HELM   => &mut tag.helm_eid,
+                s if s == st::SAIL   => &mut tag.sail_eid,
+                _                    => &mut tag.anchor_eid,
+            };
+            if slot.is_some() && *slot != Some(player_eid) {
+                self.send_chat_to(sid, "[Sistema] Estacao ocupada.");
+                return;
+            }
+            *slot = Some(player_eid);
+        }
+        // Set Mounted.station + snap local_pos.
+        if let Ok(mut m) = self.ecs.get::<&mut Mounted>(player_entity) {
+            m.station = Some(station);
+            m.local_pos = target_local;
+        }
+    }
+
+    /// Player solta a estacao atual. Idempotente.
+    fn handle_release_station(&mut self, sid: SessionId) {
+        let (player_entity, player_eid, boat_entity, station) = {
+            let Some(s) = self.sessions.get(&sid) else { return };
+            if !s.logged_in { return; }
+            let Some(pe) = s.entity else { return };
+            let Ok(m) = self.ecs.get::<&Mounted>(pe) else { return };
+            let Some(st) = m.station else { return };
+            let pid = self.ecs.get::<&NetId>(pe).map(|n| n.0).unwrap_or(EntityId(0));
+            (pe, pid, m.boat_entity, st)
+        };
+        use shared::constants::station as st;
+        if let Ok(mut tag) = self.ecs.get::<&mut BoatTag>(boat_entity) {
+            match station {
+                s if s == st::HELM => {
+                    if tag.helm_eid == Some(player_eid) {
+                        tag.helm_eid = None;
+                        tag.helm_input = 0.0;
+                    }
+                }
+                s if s == st::SAIL => {
+                    if tag.sail_eid == Some(player_eid) { tag.sail_eid = None; }
+                }
+                s if s == st::ANCHOR => {
+                    if tag.anchor_eid == Some(player_eid) { tag.anchor_eid = None; }
+                }
+                _ => {}
+            }
+        }
+        if let Ok(mut m) = self.ecs.get::<&mut Mounted>(player_entity) {
+            m.station = None;
+        }
+    }
+
+    /// Ajusta posicao/angulo da vela. Player precisa estar na estacao SAIL.
+    fn handle_sail_adjust(&mut self, sid: SessionId, delta_position: i8, delta_angle: f32) {
+        let (boat_entity, player_eid) = {
+            let Some(s) = self.sessions.get(&sid) else { return };
+            if !s.logged_in { return; }
+            let Some(pe) = s.entity else { return };
+            let Ok(m) = self.ecs.get::<&Mounted>(pe) else { return };
+            if m.station != Some(shared::constants::station::SAIL) { return; }
+            let pid = self.ecs.get::<&NetId>(pe).map(|n| n.0).unwrap_or(EntityId(0));
+            (m.boat_entity, pid)
+        };
+        if let Ok(mut tag) = self.ecs.get::<&mut BoatTag>(boat_entity) {
+            // Confirma que ele ainda eh o sail_eid (anti-race).
+            if tag.sail_eid != Some(player_eid) { return; }
+            let new_pos = (tag.sail_position as i16 + delta_position as i16).clamp(0, 2) as u8;
+            tag.sail_position = new_pos;
+            let max_angle = std::f32::consts::FRAC_PI_2 * 0.95;
+            tag.sail_angle = (tag.sail_angle + delta_angle).clamp(-max_angle, max_angle);
+        }
+    }
+
+    /// Toggle ancora. Player precisa estar na estacao ANCHOR.
+    fn handle_anchor_toggle(&mut self, sid: SessionId) {
+        let (boat_entity, player_eid) = {
+            let Some(s) = self.sessions.get(&sid) else { return };
+            if !s.logged_in { return; }
+            let Some(pe) = s.entity else { return };
+            let Ok(m) = self.ecs.get::<&Mounted>(pe) else { return };
+            if m.station != Some(shared::constants::station::ANCHOR) { return; }
+            let pid = self.ecs.get::<&NetId>(pe).map(|n| n.0).unwrap_or(EntityId(0));
+            (m.boat_entity, pid)
+        };
+        if let Ok(mut tag) = self.ecs.get::<&mut BoatTag>(boat_entity) {
+            if tag.anchor_eid != Some(player_eid) { return; }
+            tag.anchor_dropped = !tag.anchor_dropped;
+        }
     }
 
     /// Captura o estado do personagem de uma sessao especifica (para persistir
@@ -8500,18 +8974,28 @@ impl GameWorld {
         if !session.logged_in { return None; }
         let e = session.entity?;
         let hp = *self.ecs.get::<&Health>(e).ok()?;
-        // Se montado, captura o boat state (pos, kind, dir) e usa pos do
-        // BARCO como pos do char (no login restauramos no mesmo lugar).
-        let (pos, boat) = if let Ok(m) = self.ecs.get::<&Mounted>(e).map(|m| (m.boat_entity, m.boat_eid)) {
-            let (boat_e, _boat_eid) = m;
+        // Boat 2.5D: captura estado completo do barco + posicao do player
+        // no deck (mounted_local). No login restauramos o barco + re-mount
+        // do player no mesmo local_pos.
+        let mounted_data = self.ecs.get::<&Mounted>(e).ok()
+            .map(|m| (m.boat_entity, m.local_pos));
+        let (pos, boat, mounted_local) = if let Some((boat_e, local_pos)) = mounted_data {
             let bp = self.ecs.get::<&Position>(boat_e).ok().map(|p| p.0).unwrap_or_default();
-            let (kind, dir) = self.ecs.get::<&BoatTag>(boat_e)
-                .map(|t| (t.kind, t.dir))
-                .unwrap_or((0, 4));
-            (bp, Some(crate::persistence::PersistedBoat { kind, pos: bp, dir }))
+            let (kind, dir, yaw, sail_position, sail_angle, anchor_dropped) =
+                self.ecs.get::<&BoatTag>(boat_e)
+                    .map(|t| (t.kind, t.dir, t.yaw, t.sail_position, t.sail_angle, t.anchor_dropped))
+                    .unwrap_or((0, 4, 0.0, 0, 0.0, true));
+            let pb = crate::persistence::PersistedBoat {
+                kind, pos: bp, dir, yaw,
+                sail_position, sail_angle, anchor_dropped,
+            };
+            // pos do player salva ainda como pos do barco (legacy fallback —
+            // no login se restaurar no barco, BFS pra walkable nao roda;
+            // se barco nao puder ser restaurado, pos vira o spawn default).
+            (bp, Some(pb), Some(local_pos))
         } else {
             let p = self.ecs.get::<&Position>(e).ok()?.0;
-            (p, None)
+            (p, None, None)
         };
         let row = crate::persistence::CharacterRow {
             name: session.name.clone(),
@@ -8520,6 +9004,7 @@ impl GameWorld {
             xp: session.xp,
             gold: session.gold,
             boat,
+            mounted_local,
             inventory: session.inventory.clone(),
             equipment: session.equipment,
             vault: session.vault.clone(),

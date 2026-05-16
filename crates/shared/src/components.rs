@@ -433,6 +433,60 @@ pub struct EntitySnapshot {
     /// None quando sem tier definido (gold, pocoes, itens legacy).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub loot_tier: Option<u8>,
+
+    // ── Boat 2.5D (Sea-of-Thieves) ─────────────────────────────────────────
+    /// Heading do barco em rad (world-space). Usar pra renderer 3D / shader
+    /// 2.5D. `boat_dir` (8-cardeais) é derivado disso server-side pra
+    /// compatibilidade com o BoatRenderer 2D atual. Some apenas em Boat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boat_yaw: Option<f32>,
+    /// Velocidade linear do barco no world-space (tiles/s). Cliente usa
+    /// pra interpolacao + indicador de speed. Some apenas em Boat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boat_lin_vx: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boat_lin_vy: Option<f32>,
+    /// Posicao da vela: 0=raised (sem propulsao), 1=half (50%), 2=full (100%).
+    /// Some apenas em Boat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sail_position: Option<u8>,
+    /// Angulo da vela em rad relativo ao casco. Range -PI/2..PI/2.
+    /// Some apenas em Boat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sail_angle: Option<f32>,
+    /// True se a ancora esta dropada (barco freado). Some apenas em Boat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_dropped: Option<bool>,
+    /// Progresso da animacao de drop/raise da ancora em [0,1].
+    /// 1 = totalmente dropada, 0 = totalmente recolhida. Some apenas em Boat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_progress: Option<f32>,
+    /// EntityId do player na estacao do leme. None se vazia. Some apenas em Boat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub helm_eid: Option<EntityId>,
+    /// EntityId do player na estacao da vela. Some apenas em Boat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sail_eid: Option<EntityId>,
+    /// EntityId do player na estacao da ancora. Some apenas em Boat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_eid: Option<EntityId>,
+
+    /// Player montado em qual barco (EntityId do barco). Some apenas em
+    /// Player com Mounted ativo. Substitui o boolean `mounted` do legado
+    /// (que vira `Some(true)` quando este campo é Some).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mounted_on: Option<EntityId>,
+    /// Posicao do player no deck local (relativa ao centro do barco, sem
+    /// rotacao). Cliente usa pra interpolar separado da posicao do barco
+    /// quando montado. Some apenas em Player com Mounted ativo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mounted_local_x: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mounted_local_y: Option<f32>,
+    /// Estacao que o player esta operando (0=helm, 1=sail, 2=anchor). None
+    /// = livre andando no deck. Some apenas em Player com Mounted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub station: Option<u8>,
 }
 
 /// Bits do `EntitySnapshot.buffs` — mantém em sync com o cliente C#.

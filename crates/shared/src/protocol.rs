@@ -90,10 +90,33 @@ pub enum ClientMessage {
     /// consumida do inventário. Falha silenciosamente se sem socket
     /// livre ou item incompatível.
     SocketGem { item_slot: u16, gem_slot: u16 },
-    /// Desmonta do barco atual. Server faz BFS pequeno (≤3 tiles) procurando
-    /// um tile walkable adjacente ao barco e teleporta o player. Falha se
-    /// nao houver terra acessivel — player precisa mover o barco antes.
+    /// Pede pra subir num barco. Server valida proximidade (player em
+    /// tile adjacente ao barco) e parenta o player (Mounted) com
+    /// local_pos no ponto de entrada do deck.
+    BoardBoat { boat_eid: EntityId },
+    /// Desce do barco atual. Server faz BFS pequeno procurando tile
+    /// walkable adjacente ao barco — falha se barco em alto-mar.
+    /// Mantém o nome `DismountBoat` por compat com clientes antigos —
+    /// `LeaveBoat` é o alias preferido daqui pra frente.
+    LeaveBoat,
+    /// LEGADO — alias de `LeaveBoat`. Manter pra clientes velhos
+    /// enquanto a transição rola.
     DismountBoat,
+    /// Pega uma estação do barco onde o player está. Player precisa
+    /// estar dentro da interaction zone da estação (helm/sail/anchor).
+    /// Falha silenciosamente se ocupada ou fora de zona.
+    GrabStation { station: u8 },
+    /// Solta a estação atual (se tiver alguma). Idempotente.
+    ReleaseStation,
+    /// Ajusta a vela do barco onde o player tem a estação SAIL.
+    /// `delta_position`: -1 baixa 1 nivel, +1 sobe 1 nivel
+    /// (clamp em [0..2]).
+    /// `delta_angle`: rad a adicionar ao angulo da vela (clamp -PI/2..PI/2).
+    SailAdjust { delta_position: i8, delta_angle: f32 },
+    /// Toggle da ancora. Player precisa ter station ANCHOR. Inicia
+    /// animacao de drop (se up) ou raise (se down). Anim leva
+    /// BOAT_ANCHOR_ANIM_TIME segundos.
+    AnchorToggle,
     /// Teletransporta o player para o spawn do mapa. Usar como escape em
     /// caso de bug de colisão (player preso em wall, fora do mapa, etc.).
     /// Permitido em qualquer estado — se montado em barco, desmonta antes.
@@ -376,6 +399,14 @@ pub enum ServerMessage {
     },
     Kick {
         reason: String,
+    },
+
+    /// Estado global do vento. Servidor envia no login (snapshot inicial)
+    /// + sempre que muda significativamente (drift suave ou storm event).
+    /// `direction` em rad world-space; `intensity` em [0,1] onde 1 = vendaval.
+    WindUpdate {
+        direction: f32,
+        intensity: f32,
     },
 }
 
