@@ -4028,6 +4028,16 @@ impl GameWorld {
                             knockback: def.knockback,
                         });
                     }
+                    // PvP: tambem inclui outros players elegiveis (PK ON ambos).
+                    let pvp_players = self.find_pvp_players_in_radius(target_pos, radius, owner_eid);
+                    for tn in pvp_players {
+                        let hd = calc_hurt_dir_from_eid(&self.ecs, tn, target_pos);
+                        self.pending_skill_hits.push(PendingSkillHit {
+                            target_net: tn, damage, attacker_net: owner_eid,
+                            hurt_dir: hd, is_crit: false, from_player: true,
+                            knockback: def.knockback,
+                        });
+                    }
                     tracing::info!("skill cast: {} (aoe r{:.1}) dmg={}", def.name, radius, damage);
                 }
             }
@@ -4039,6 +4049,16 @@ impl GameWorld {
                 let is_shield_bash = skill_id == 1003;
                 let stun_dur: f32 = if is_shield_bash { 1.2 } else { 0.0 };
                 for tn in &enemies {
+                    let hd = (-dir).try_normalize().unwrap_or(Vec2::new(-1.0, 0.0));
+                    self.pending_skill_hits.push(PendingSkillHit {
+                        target_net: *tn, damage, attacker_net: owner_eid,
+                        hurt_dir: hd, is_crit: false, from_player: true,
+                        knockback: def.knockback,
+                    });
+                }
+                // PvP: include outros players elegiveis no cone.
+                let pvp_players = self.find_pvp_players_in_cone(pos, dir, range, shared::MELEE_CONE_HALF_ANGLE, owner_eid);
+                for tn in &pvp_players {
                     let hd = (-dir).try_normalize().unwrap_or(Vec2::new(-1.0, 0.0));
                     self.pending_skill_hits.push(PendingSkillHit {
                         target_net: *tn, damage, attacker_net: owner_eid,
@@ -4140,6 +4160,43 @@ impl GameWorld {
             if !matches!(kind, EntityKind::Player) { continue; }
             if pos.0.distance_squared(center) > r2 { continue; }
             if !self.map.has_line_of_sight(center, pos.0) { continue; }
+            out.push(net.0);
+        }
+        out
+    }
+
+    /// Players (PvP-eligible vs `attacker_eid`) em radius. Usado por skills
+    /// AOE/cone do player pra incluir outros players com PK Mode compativel.
+    fn find_pvp_players_in_radius(&self, center: Vec2, radius: f32, attacker_eid: EntityId) -> Vec<EntityId> {
+        let r2 = radius * radius;
+        let mut out = Vec::new();
+        for (_, (net, pos, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
+            if !matches!(kind, EntityKind::Player) { continue; }
+            if net.0 == attacker_eid { continue; }
+            if pos.0.distance_squared(center) > r2 { continue; }
+            if !self.map.has_line_of_sight(center, pos.0) { continue; }
+            if !self.can_damage_player(attacker_eid, net.0) { continue; }
+            out.push(net.0);
+        }
+        out
+    }
+
+    /// Players (PvP-eligible) em cone (mesma geometria de find_enemies_in_cone).
+    fn find_pvp_players_in_cone(&self, origin: Vec2, dir: Vec2, range: f32, half_angle: f32, attacker_eid: EntityId) -> Vec<EntityId> {
+        let cos_half = half_angle.cos();
+        let r2 = range * range;
+        let mut out = Vec::new();
+        for (_, (net, pos, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
+            if !matches!(kind, EntityKind::Player) { continue; }
+            if net.0 == attacker_eid { continue; }
+            let delta = pos.0 - origin;
+            let d2 = delta.length_squared();
+            if d2 > r2 { continue; }
+            if let Some(nd) = delta.try_normalize() {
+                if dir.dot(nd) < cos_half { continue; }
+            }
+            if !self.map.has_line_of_sight(origin, pos.0) { continue; }
+            if !self.can_damage_player(attacker_eid, net.0) { continue; }
             out.push(net.0);
         }
         out
@@ -6124,6 +6181,17 @@ impl GameWorld {
                 let enemies = self.find_enemies_in_radius(center, d.radius);
                 let now_s = self.sim_time_s;
                 for tn in &enemies {
+                    let hd = calc_hurt_dir_from_eid(&self.ecs, *tn, center);
+                    self.pending_skill_hits.push(PendingSkillHit {
+                        target_net: *tn, damage: d.damage, attacker_net: d.owner_eid,
+                        hurt_dir: hd, is_crit: false, from_player: true,
+                        knockback: d.knockback,
+                    });
+                }
+                // PvP: delayed AOE (Meteor/Rain/Smoke) tambem hita outros
+                // players elegiveis.
+                let pvp_players = self.find_pvp_players_in_radius(center, d.radius, d.owner_eid);
+                for tn in &pvp_players {
                     let hd = calc_hurt_dir_from_eid(&self.ecs, *tn, center);
                     self.pending_skill_hits.push(PendingSkillHit {
                         target_net: *tn, damage: d.damage, attacker_net: d.owner_eid,
