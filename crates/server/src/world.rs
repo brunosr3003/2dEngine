@@ -386,11 +386,12 @@ pub struct BoatTag {
     // ── Heading e leme ─────────────────────────────────────────────────────
     /// Heading do barco em rad world-space (0 = +X / leste).
     pub yaw: f32,
-    /// Yaw rate em rad/s. Integrado por `helm_input`.
+    /// Yaw rate em rad/s. Integrado por `rudder_angle`.
     pub ang_vel: f32,
-    /// Input do leme em [-1, +1]. Setado pelo player na estacao HELM cada
-    /// tick. Reset a 0 quando estacao vazia (leme volta ao centro).
-    pub helm_input: f32,
+    /// Angulo acumulado da roda do leme em rad. Persiste mesmo sem player
+    /// na estacao HELM — barco continua virando ate alguem centralizar.
+    /// Clampado em [-BOAT_MAX_RUDDER_ANGLE, +].
+    pub rudder_angle: f32,
 
     // ── Vela ───────────────────────────────────────────────────────────────
     /// 0=raised (sem propulsao), 1=half (50%), 2=full (100%).
@@ -477,8 +478,8 @@ pub fn boat_sail_local(kind: u16)   -> Vec2 { crate::boat_config::get(kind).sail
 pub fn boat_anchor_local(kind: u16) -> Vec2 { crate::boat_config::get(kind).anchor_local() }
 
 /// Distancia maxima entre player e estacao pra interagir (em tiles).
-/// Escala com tamanho do deck — aqui ~25% do half_h pro Lylian (4 tiles half).
-pub const BOAT_STATION_REACH: f32 = 1.0;
+/// Escala com tamanho do deck — boat grande precisa de reach proporcional.
+pub const BOAT_STATION_REACH: f32 = 1.5;
 /// Velocidade do player andando no deck (tiles/s, deck-local).
 pub const BOAT_DECK_WALK_SPEED: f32 = 4.5;
 
@@ -2405,7 +2406,7 @@ impl GameWorld {
                         owner_pid: pid,
                         yaw: b.yaw,
                         ang_vel: 0.0,
-                        helm_input: 0.0,
+                        rudder_angle: 0.0,
                         sail_position: b.sail_position,
                         sail_angle: b.sail_angle,
                         anchor_dropped: b.anchor_dropped,
@@ -3061,6 +3062,9 @@ impl GameWorld {
             }
             ClientMessage::AnchorToggle => {
                 self.handle_anchor_toggle(id);
+            }
+            ClientMessage::HelmAdjust { delta_angle } => {
+                self.handle_helm_adjust(id, delta_angle);
             }
             ClientMessage::ResetPosition => {
                 self.handle_reset_position(id);
@@ -5556,14 +5560,8 @@ impl GameWorld {
         // {move_dir, aim, buttons} de cada session deste tick.
         let wind = self.wind;
 
-        // Pre-resolve EntityId (NetId) -> last_move_dir (Mounted). Persiste
-        // entre ticks — input vem ~60Hz mas tick e' 30Hz. Usar mounted_inputs
-        // direto deixava o helm_input "buracado" em ticks sem input novo.
-        let eid_to_input: HashMap<EntityId, Vec2> = self.ecs
-            .query::<(&NetId, &Mounted)>()
-            .iter()
-            .map(|(_, (n, m))| (n.0, m.last_move_dir))
-            .collect();
+        // (helm_input via move_dir foi removido — agora o leme usa
+        // rudder_angle persistido em BoatTag, controlado por HelmAdjust msgs)
 
         // ── F.1.a: Boat physics + helm input pickup ────────────────────────
         let mut boat_world_state: HashMap<Entity, (Vec2, f32)> = HashMap::new(); // boat_e → (pos, yaw)
@@ -5572,11 +5570,7 @@ impl GameWorld {
             .query::<(&mut Position, &mut Velocity, &mut BoatTag)>()
             .iter()
         {
-            // 1. Pick up helm input do player na estacao HELM.
-            tag.helm_input = tag.helm_eid
-                .and_then(|eid| eid_to_input.get(&eid))
-                .map(|d| d.x.clamp(-1.0, 1.0))
-                .unwrap_or(0.0);
+            // (rudder_angle ja persistido em tag — atualizado por HelmAdjust)
 
             // 2. Atualiza anchor_progress (anim de drop/raise).
             let anchor_step = dt / shared::constants::BOAT_ANCHOR_ANIM_TIME;
@@ -5626,10 +5620,12 @@ impl GameWorld {
             let drag_factor = (1.0 - drag * dt).max(0.0);
             vel.0 *= drag_factor;
 
-            // 6. Yaw rate — leme funciona mesmo parado (igual SoT — barco
-            // gira em torno do proprio eixo). Sem speed gating.
+            // 6. Yaw rate proporcional ao rudder_angle (persistido).
+            // Cap em ±BOAT_MAX_YAW_RATE quando rudder = ±MAX_RUDDER_ANGLE.
             let speed = vel.0.length();
-            let yaw_rate = tag.helm_input * shared::constants::BOAT_MAX_YAW_RATE;
+            let rudder_t = (tag.rudder_angle / shared::constants::BOAT_MAX_RUDDER_ANGLE)
+                .clamp(-1.0, 1.0);
+            let yaw_rate = rudder_t * shared::constants::BOAT_MAX_YAW_RATE;
             tag.ang_vel = yaw_rate;
             tag.yaw += yaw_rate * dt;
             // Normaliza yaw em [-PI, PI]
@@ -7114,6 +7110,7 @@ impl GameWorld {
                     helm_eid: boat.and_then(|b| b.helm_eid),
                     sail_eid: boat.and_then(|b| b.sail_eid),
                     anchor_eid: boat.and_then(|b| b.anchor_eid),
+                    rudder_angle: boat.map(|b| b.rudder_angle),
                     // Player montado: pop info de boat_eid/local/station.
                     mounted_on: if is_player {
                         mounted_player_info.get(&net.0).map(|(b, _, _)| *b)
@@ -8539,7 +8536,7 @@ impl GameWorld {
                         owner_pid,
                         yaw: init_yaw,
                         ang_vel: 0.0,
-                        helm_input: 0.0,
+                        rudder_angle: 0.0,
                         sail_position: 0,        // raised — barco para
                         sail_angle: 0.0,
                         anchor_dropped: true,    // recem-spawnado: ancorado
@@ -8786,7 +8783,7 @@ impl GameWorld {
             tag.passengers.retain(|eid| *eid != player_eid);
             if tag.helm_eid == Some(player_eid) {
                 tag.helm_eid = None;
-                tag.helm_input = 0.0;
+                // rudder_angle NAO eh zerado — persiste.
             }
             if tag.sail_eid == Some(player_eid) { tag.sail_eid = None; }
             if tag.anchor_eid == Some(player_eid) { tag.anchor_eid = None; }
@@ -8912,7 +8909,7 @@ impl GameWorld {
                 s if s == st::HELM => {
                     if tag.helm_eid == Some(player_eid) {
                         tag.helm_eid = None;
-                        tag.helm_input = 0.0;
+                        // rudder_angle NAO eh zerado — persiste.
                     }
                 }
                 s if s == st::SAIL => {
@@ -8929,8 +8926,10 @@ impl GameWorld {
         }
     }
 
-    /// Ajusta posicao/angulo da vela. Player precisa estar na estacao SAIL.
-    fn handle_sail_adjust(&mut self, sid: SessionId, delta_position: i8, delta_angle: f32) {
+    /// Ajusta posicao da vela. Player precisa estar na estacao SAIL.
+    /// `delta_angle` ignorado — vela fica sempre perpendicular ao casco
+    /// (sail_angle=0 fixo). Simplifica gameplay vs SoT.
+    fn handle_sail_adjust(&mut self, sid: SessionId, delta_position: i8, _delta_angle: f32) {
         let (boat_entity, player_eid) = {
             let Some(s) = self.sessions.get(&sid) else { return };
             if !s.logged_in { return; }
@@ -8945,8 +8944,27 @@ impl GameWorld {
             if tag.sail_eid != Some(player_eid) { return; }
             let new_pos = (tag.sail_position as i16 + delta_position as i16).clamp(0, 2) as u8;
             tag.sail_position = new_pos;
-            let max_angle = std::f32::consts::FRAC_PI_2 * 0.95;
-            tag.sail_angle = (tag.sail_angle + delta_angle).clamp(-max_angle, max_angle);
+            tag.sail_angle = 0.0; // vela perpendicular fixa
+        }
+    }
+
+    /// Ajusta o angulo da roda do leme. Player precisa estar na estacao HELM.
+    /// delta_angle vem em rad — server soma ao rudder_angle e clampa.
+    /// rudder_angle PERSISTE quando o player solta o leme.
+    fn handle_helm_adjust(&mut self, sid: SessionId, delta_angle: f32) {
+        let (boat_entity, player_eid) = {
+            let Some(s) = self.sessions.get(&sid) else { return };
+            if !s.logged_in { return; }
+            let Some(pe) = s.entity else { return };
+            let Ok(m) = self.ecs.get::<&Mounted>(pe) else { return };
+            if m.station != Some(shared::constants::station::HELM) { return; }
+            let pid = self.ecs.get::<&NetId>(pe).map(|n| n.0).unwrap_or(EntityId(0));
+            (m.boat_entity, pid)
+        };
+        if let Ok(mut tag) = self.ecs.get::<&mut BoatTag>(boat_entity) {
+            if tag.helm_eid != Some(player_eid) { return; }
+            let max_r = shared::constants::BOAT_MAX_RUDDER_ANGLE;
+            tag.rudder_angle = (tag.rudder_angle + delta_angle).clamp(-max_r, max_r);
         }
     }
 

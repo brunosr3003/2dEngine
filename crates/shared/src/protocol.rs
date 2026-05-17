@@ -117,6 +117,10 @@ pub enum ClientMessage {
     /// animacao de drop (se up) ou raise (se down). Anim leva
     /// BOAT_ANCHOR_ANIM_TIME segundos.
     AnchorToggle,
+    /// Ajusta angulo da roda do leme. Delta em rad — server soma e
+    /// clampa em [-BOAT_MAX_RUDDER_ANGLE, +]. rudder_angle PERSISTE
+    /// quando o player solta a estacao HELM (igual barco real).
+    HelmAdjust { delta_angle: f32 },
     /// Teletransporta o player para o spawn do mapa. Usar como escape em
     /// caso de bug de colisão (player preso em wall, fora do mapa, etc.).
     /// Permitido em qualquer estado — se montado em barco, desmonta antes.

@@ -487,6 +487,11 @@ pub struct EntitySnapshot {
     /// = livre andando no deck. Some apenas em Player com Mounted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub station: Option<u8>,
+    /// Angulo acumulado da roda do leme em rad. Persiste quando ninguem
+    /// esta no leme. Valores positivos viram pra direita; negativos esquerda.
+    /// Some apenas em Boat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rudder_angle: Option<f32>,
 }
 
 /// Bits do `EntitySnapshot.buffs` — mantém em sync com o cliente C#.

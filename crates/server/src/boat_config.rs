@@ -24,6 +24,11 @@ pub struct BoatKindConfig {
     pub stations: BoatStations,
     #[serde(default)]
     pub deck_polygon: Vec<[f32; 2]>,
+    /// Obstaculos internos (mastro, leme, bancos). Cada um eh uma lista
+    /// de pontos formando um poligono. Player nao consegue entrar.
+    /// Exportado de PolygonCollider2D em BoatVisualData.obstacleColliders.
+    #[serde(default)]
+    pub obstacles: Vec<Vec<[f32; 2]>>,
 }
 
 impl BoatKindConfig {
@@ -34,18 +39,39 @@ impl BoatKindConfig {
     pub fn sail_local(&self)   -> Vec2 { Vec2::new(self.stations.sail[0],   self.stations.sail[1]) }
     pub fn anchor_local(&self) -> Vec2 { Vec2::new(self.stations.anchor[0], self.stations.anchor[1]) }
 
-    /// Clampa `p` (local-space do barco) pra dentro do deck. Se ha
-    /// `deck_polygon`, usa point-in-polygon e empurra pra borda mais
-    /// proxima quando fora. Senao fall-back bbox.
+    /// Clampa `p` (local-space do barco) pra dentro do deck E fora dos
+    /// obstaculos. Etapas:
+    ///   1. Se fora do deck_polygon → push pra borda mais proxima do deck.
+    ///   2. Pra cada obstacle, se dentro → push pra borda mais proxima do obstacle.
+    /// Sem deck_polygon, fall-back bbox; sem obstacles, so' deck.
     pub fn clamp_to_deck(&self, p: Vec2) -> Vec2 {
-        if self.deck_polygon.len() < 3 {
+        let mut q = if self.deck_polygon.len() >= 3 {
+            if point_in_polygon(p, &self.deck_polygon) {
+                p
+            } else {
+                nearest_point_on_polygon(p, &self.deck_polygon)
+            }
+        } else {
             let h = self.deck_half();
-            return Vec2::new(p.x.clamp(-h.x, h.x), p.y.clamp(-h.y, h.y));
+            Vec2::new(p.x.clamp(-h.x, h.x), p.y.clamp(-h.y, h.y))
+        };
+        // Empurra pra fora de cada obstacle (mastro/leme/bancos). Iterativo
+        // ja que push de um obstacle pode jogar dentro de outro.
+        for _ in 0..3 {
+            let mut moved = false;
+            for obs in &self.obstacles {
+                if obs.len() < 3 { continue; }
+                if point_in_polygon(q, obs) {
+                    let edge = nearest_point_on_polygon(q, obs);
+                    // Pequeno epsilon pra ficar realmente FORA do obstacle.
+                    let dir = (edge - q).normalize_or_zero();
+                    q = edge + dir * 0.05;
+                    moved = true;
+                }
+            }
+            if !moved { break; }
         }
-        if point_in_polygon(p, &self.deck_polygon) {
-            return p;
-        }
-        nearest_point_on_polygon(p, &self.deck_polygon)
+        q
     }
 
     /// Default hardcoded — usado quando o JSON nao existe (Lylian).
@@ -60,6 +86,7 @@ impl BoatKindConfig {
                 anchor: [0.0,  shared::constants::BOAT_LYLIAN_DECK_HALF_H * 0.85],
             },
             deck_polygon: Vec::new(),
+            obstacles: Vec::new(),
         }
     }
 }
@@ -80,10 +107,11 @@ pub fn registry() -> &'static HashMap<u16, BoatKindConfig> {
                     Ok(text) => match serde_json::from_str::<BoatKindConfig>(&text) {
                         Ok(cfg) => {
                             tracing::info!(
-                                "[boat_config] loaded {}: kind={} deck={:.1}x{:.1} stations(helm={:?}, sail={:?}, anchor={:?})",
+                                "[boat_config] loaded {}: kind={} deck={:.1}x{:.1} stations(helm={:?}, sail={:?}, anchor={:?}) obstacles={}",
                                 path.display(), cfg.kind,
                                 cfg.deck_half_w * 2.0, cfg.deck_half_h * 2.0,
-                                cfg.stations.helm, cfg.stations.sail, cfg.stations.anchor
+                                cfg.stations.helm, cfg.stations.sail, cfg.stations.anchor,
+                                cfg.obstacles.len()
                             );
                             map.insert(cfg.kind, cfg);
                         }
