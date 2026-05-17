@@ -497,6 +497,11 @@ pub struct EntitySnapshot {
     /// que valida o handle_dismount_boat. Some apenas em Boat.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub can_dismount: Option<bool>,
+    /// True quando o player tem PK Mode ativado (opt-in PvP). HUD do
+    /// outro player mostra indicador (ex: nome vermelho) quando true.
+    /// Some apenas em Player.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pk_mode_on: Option<bool>,
 }
 
 /// Bits do `EntitySnapshot.buffs` — mantém em sync com o cliente C#.

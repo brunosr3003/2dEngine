@@ -128,7 +128,14 @@ impl EconomyConfig {
     /// dropa (qty random entre min..=max). Determinístico via seed.
     /// Items com `active=false` são pulados (não dropam até admin reativar).
     pub fn roll_loot(&self, kind: u16, seed: u64) -> Vec<(u16, u32)> {
-        let Some(table) = self.loot_tables.get(&kind) else { return Vec::new(); };
+        // Match exato primeiro; senao, fallback no kind mais proximo
+        // ABAIXO (level-range usa kind=level, ex: lv10 sem tabela cai
+        // pra lv7 — mobs de level intermediario nao ficam sem loot).
+        let table = self.loot_tables.get(&kind)
+            .or_else(|| {
+                (0..kind).rev().find_map(|k| self.loot_tables.get(&k))
+            });
+        let Some(table) = table else { return Vec::new(); };
         roll_entries(table, &self.items, seed)
     }
 

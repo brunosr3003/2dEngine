@@ -121,6 +121,10 @@ pub enum ClientMessage {
     /// clampa em [-BOAT_MAX_RUDDER_ANGLE, +]. rudder_angle PERSISTE
     /// quando o player solta a estacao HELM (igual barco real).
     HelmAdjust { delta_angle: f32 },
+    /// Toggle do PK Mode (player vs player opt-in). Quando ON, o player
+    /// pode dar/levar dano de outros players com pk_mode ON tambem.
+    /// Futuro: zonas PvP forcam ON; faccoes diferentes ignoram flag.
+    TogglePkMode { on: bool },
     /// Teletransporta o player para o spawn do mapa. Usar como escape em
     /// caso de bug de colisão (player preso em wall, fora do mapa, etc.).
     /// Permitido em qualquer estado — se montado em barco, desmonta antes.

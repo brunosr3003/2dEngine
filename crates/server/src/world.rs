@@ -470,6 +470,22 @@ impl Default for WindState {
 // `data/boats/`. JSONs sao exportados do prefab Unity (Tools / Boat /
 // Export Prefab Data). Fallback hardcoded em boat_config.rs se faltar arquivo.
 
+/// Gating de PvP entre dois players. Hoje: ambos com PK Mode ON.
+/// Futuro: OR com `in_pvp_zone(pos)` OU `diff_factions(a, b)`.
+/// Mantida como method pra extensao simples.
+impl GameWorld {
+    pub fn can_damage_player(&self, attacker_eid: EntityId, target_eid: EntityId) -> bool {
+        if attacker_eid == target_eid { return false; }
+        let attacker_pk = self.sessions.values()
+            .find(|s| s.entity_id == attacker_eid)
+            .map(|s| s.pk_mode_on).unwrap_or(false);
+        let target_pk = self.sessions.values()
+            .find(|s| s.entity_id == target_eid)
+            .map(|s| s.pk_mode_on).unwrap_or(false);
+        attacker_pk && target_pk
+    }
+}
+
 /// Espelha a BFS de handle_dismount_boat: ha terra walkable a ate
 /// max_radius tiles do centro do barco? Usado pra esconder o botao
 /// "Sair do Barco" no cliente quando dismount nao eh possivel.
@@ -735,6 +751,15 @@ pub struct Session {
     /// cancel-por-movimento (player que clica skill enquanto andava nao
     /// cancela de imediato — tem 0.3s pra parar).
     pub casting_started_at_s: f32,
+    /// Ticks consecutivos com `dir != 0` durante cast. Cast cancela so'
+    /// depois de >= 2 ticks pra evitar race: na tick que o player toma
+    /// hit, `hurt_until` ainda nao foi setado (damage_events roda DEPOIS
+    /// do input), entao `in_hurt` eh false e dir nao eh zerado → 1 tick
+    /// nao basta. Resetado quando dir == 0.
+    pub cast_movement_ticks: u8,
+    /// PK Mode (opt-in PvP). Quando ON, player aparece como targetavel
+    /// por outros players com PK ON. Default OFF.
+    pub pk_mode_on: bool,
     /// Skill_id do cast em progresso (usado pra notificar cliente da pose).
     pub casting_skill_id: u32,
     /// MP gasto no cast atual (pra refund se cancelar).
@@ -1234,6 +1259,13 @@ impl GameWorld {
             slot_idx: u32,
         }
         let mut pending: Vec<PendingSpawn> = Vec::new();
+        // Snapshot de NetIds vivos no ECS — usado pelo orphan cleanup
+        // O(1) em vez de query por slot. ~300 entries por tick.
+        let alive_eids: std::collections::HashSet<EntityId> = self.ecs
+            .query::<&NetId>()
+            .iter()
+            .map(|(_, n)| n.0)
+            .collect();
 
         for zi in 0..self.spawn_zones.len() {
             let zone_size = self.spawn_zones[zi].size;
@@ -1246,6 +1278,25 @@ impl GameWorld {
             if let Some((lvl_min, lvl_max, _total_count)) = self.spawn_zones[zi].level_range {
                 let _ = zone_orig; let _ = zone_size; // unused no slot path
                 let n_slots = self.spawn_zones[zi].slots.len();
+                // Orphan cleanup: se occupant referencia entidade que sumiu
+                // do ECS (despawn fora do death handler ou state corrompido),
+                // libera o slot pra respawn. O(1) via HashSet.
+                for slot_idx in 0..n_slots {
+                    let occupant = self.spawn_zones[zi].slots[slot_idx].occupant;
+                    if let Some(eid) = occupant {
+                        if !alive_eids.contains(&eid) {
+                            tracing::warn!(
+                                "zona #{} slot {} orphan (eid {:?} sumiu) — limpando",
+                                self.spawn_zones[zi].id, slot_idx, eid
+                            );
+                            self.spawn_zones[zi].slots[slot_idx].occupant = None;
+                            self.spawn_zones[zi].slots[slot_idx].respawn_at = 0.0;
+                            if self.spawn_zones[zi].level_range_live > 0 {
+                                self.spawn_zones[zi].level_range_live -= 1;
+                            }
+                        }
+                    }
+                }
                 for slot_idx in 0..n_slots {
                     let slot = self.spawn_zones[zi].slots[slot_idx];
                     if slot.occupant.is_some() { continue; }
@@ -2810,6 +2861,8 @@ impl GameWorld {
                 skill_cds: HashMap::new(),
                 casting_until: 0.0,
                 casting_started_at_s: 0.0,
+                cast_movement_ticks: 0,
+                pk_mode_on: false,
                 casting_skill_id: 0,
                 casting_mp_paid: 0.0,
                 casting_st_paid: 0.0,
@@ -3093,6 +3146,11 @@ impl GameWorld {
             }
             ClientMessage::HelmAdjust { delta_angle } => {
                 self.handle_helm_adjust(id, delta_angle);
+            }
+            ClientMessage::TogglePkMode { on } => {
+                if let Some(s) = self.sessions.get_mut(&id) {
+                    if s.logged_in { s.pk_mode_on = on; }
+                }
             }
             ClientMessage::ResetPosition => {
                 self.handle_reset_position(id);
@@ -4576,6 +4634,18 @@ impl GameWorld {
             //   1045 Meteor, 1046 Frost Nova, 1039 Rain of Arrows,
             //   1038 Smoke Bomb, 1053 Group Heal.
             if casting && dir.length_squared() > 0.001 {
+                session.cast_movement_ticks = session.cast_movement_ticks.saturating_add(1);
+            } else if casting {
+                session.cast_movement_ticks = 0;
+            }
+            // Cancela apos >= 2 ticks consecutivos de movimento. Na tick
+            // em que o player toma hit, `hurt_until` ainda nao foi setado
+            // (damage_events roda DEPOIS do input neste step), entao
+            // `in_hurt` eh false e `dir` nao eh zerado mesmo em hurt —
+            // 1 tick basta pra um falso-positive cancelar cast. 2 ticks
+            // garantem que a tick seguinte ja viu `in_hurt=true` e zerou
+            // dir, descartando o cancelamento.
+            if casting && session.cast_movement_ticks >= 2 {
                 let cast_age = self.sim_time_s - session.casting_started_at_s;
                 if cast_age >= 0.3 {
                     let cancelled_skill = session.casting_skill_id;
@@ -4591,6 +4661,7 @@ impl GameWorld {
                     session.casting_skill_id = 0;
                     session.casting_mp_paid = 0.0;
                     session.casting_st_paid = 0.0;
+                    session.cast_movement_ticks = 0;
                     cancelled_cast_owners.push((session.entity_id, cancelled_skill));
                     tracing::info!(
                         "cast cancelado por movimento: skill={} player={:?} age={:.2}s (refund mp+st{})",
@@ -5891,7 +5962,14 @@ impl GameWorld {
             let cos_half = shared::MELEE_CONE_HALF_ANGLE.cos();
             for sw in &melee_swings {
                 for (te, tnet, tpos, is_player, size) in &targets {
-                    if sw.from_player == *is_player { continue; }
+                    // PvP gating: player→player so' se can_damage_player.
+                    // player→enemy e enemy→player sempre permitidos.
+                    if sw.from_player && *is_player {
+                        if !self.can_damage_player(sw.attacker_eid, *tnet) { continue; }
+                    } else if !sw.from_player && !*is_player {
+                        // enemy→enemy: skip (sem friendly fire entre mobs)
+                        continue;
+                    }
                     if *tnet == sw.attacker_eid { continue; }
                     // Escala hitbox pelo tamanho do alvo (boss=2.2× → hitbox 2.2×).
                     let r       = hit_target_radius * size;
@@ -5921,7 +5999,13 @@ impl GameWorld {
         'outer: for (pe, pnet, ppos, pvel, powner, pfrom_player, pdmg, pcrit, pkind) in &projs {
             for (te, tnet, tpos, is_player, size) in &targets {
                 if tnet == powner { continue; }
-                if *pfrom_player == *is_player { continue; }
+                // PvP gating: player→player so' se can_damage_player.
+                if *pfrom_player && *is_player {
+                    if !self.can_damage_player(*powner, *tnet) { continue; }
+                } else if !*pfrom_player && !*is_player {
+                    // enemy proj vs enemy: skip (sem friendly fire).
+                    continue;
+                }
                 let r     = hit_target_radius * size;
                 let y_off = hit_target_y_off  * size;
                 let dist_sq = (r + PROJ_RADIUS) * (r + PROJ_RADIUS);
@@ -7153,6 +7237,11 @@ impl GameWorld {
                     rudder_angle: boat.map(|b| b.rudder_angle),
                     can_dismount: if boat.is_some() {
                         Some(boat_can_dismount(pos.0, boat.unwrap().kind, &self.map))
+                    } else { None },
+                    pk_mode_on: if is_player {
+                        self.sessions.values()
+                            .find(|s| s.entity_id == net.0)
+                            .map(|s| s.pk_mode_on)
                     } else { None },
                     // Player montado: pop info de boat_eid/local/station.
                     mounted_on: if is_player {
