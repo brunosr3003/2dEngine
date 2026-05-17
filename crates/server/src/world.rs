@@ -6163,11 +6163,23 @@ impl GameWorld {
         if !combat_disabled && !self.pending_skill_hits.is_empty() {
             let queue = std::mem::take(&mut self.pending_skill_hits);
             for h in queue {
-                let mut found: Option<Entity> = None;
-                for (e, net) in self.ecs.query::<&NetId>().iter() {
-                    if net.0 == h.target_net { found = Some(e); break; }
+                let mut found: Option<(Entity, bool)> = None;
+                for (e, (net, kind)) in self.ecs.query::<(&NetId, &EntityKind)>().iter() {
+                    if net.0 == h.target_net {
+                        let target_is_player = matches!(kind, EntityKind::Player);
+                        found = Some((e, target_is_player));
+                        break;
+                    }
                 }
-                if let Some(e) = found {
+                if let Some((e, target_is_player)) = found {
+                    // PvP gating em skill hits: player→player so' se
+                    // can_damage_player (PK Mode ambos ON, ou futuramente
+                    // zona PvP / faccoes). enemy→enemy: skip (sem ff).
+                    if h.from_player && target_is_player {
+                        if !self.can_damage_player(h.attacker_net, h.target_net) { continue; }
+                    } else if !h.from_player && !target_is_player {
+                        continue;
+                    }
                     damage_events.push((e, h.target_net, h.damage, h.attacker_net, h.from_player,
                         h.hurt_dir, h.is_crit, AttackInfo::Skill, h.knockback));
                 }
