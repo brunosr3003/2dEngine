@@ -27,7 +27,7 @@ pub const PROTOCOL_VERSION: u16 = 52;
 // ── Boat (Sea-of-Thieves style: vela/leme/ancora separados) ─────────────────
 /// Velocidade maxima de qualquer barco (tiles/s). Atingida com vela full,
 /// vento maximo, alinhamento perfeito.
-pub const BOAT_MAX_SPEED: f32 = 6.0;
+pub const BOAT_MAX_SPEED: f32 = 14.0;
 /// Drag da agua aplicado por segundo (sem vento, barco para em ~4s).
 pub const BOAT_WATER_DRAG: f32 = 0.6;
 /// Multiplicador de drag quando ancora dropada (decel rapido).

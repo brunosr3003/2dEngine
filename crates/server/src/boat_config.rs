@@ -24,6 +24,11 @@ pub struct BoatKindConfig {
     pub stations: BoatStations,
     #[serde(default)]
     pub deck_polygon: Vec<[f32; 2]>,
+    /// Hull collider — usado pra colisao do casco contra terra/margem.
+    /// Geralmente um pouco maior que o deck (engloba proa/popa fora da
+    /// area andavel). Se vazio, fall-back deck_polygon.
+    #[serde(default)]
+    pub hull_polygon: Vec<[f32; 2]>,
     /// Obstaculos internos (mastro, leme, bancos). Cada um eh uma lista
     /// de pontos formando um poligono. Player nao consegue entrar.
     /// Exportado de PolygonCollider2D em BoatVisualData.obstacleColliders.
@@ -74,6 +79,92 @@ impl BoatKindConfig {
         q
     }
 
+    /// True se TODOS os vertices do hull_polygon (ou deck_polygon como
+    /// fall-back), transformados pra world (rotacionados por yaw +
+    /// transladados por pos), caem em tile navegavel. Usado pra colisao
+    /// do casco contra ilhas — sem isso o barco entrava na terra ate o
+    /// tile central virar nao-navegavel.
+    pub fn is_hull_navigable(
+        &self,
+        pos: Vec2,
+        yaw: f32,
+        map: &shared::world_gen::WorldMap,
+    ) -> bool {
+        let cos_y = yaw.cos();
+        let sin_y = yaw.sin();
+        let check = |local: Vec2| -> bool {
+            // Y-forward: world = (local.x * cos - local.y * sin, local.x * sin + local.y * cos)
+            let wx = pos.x + local.x * cos_y - local.y * sin_y;
+            let wy = pos.y + local.x * sin_y + local.y * cos_y;
+            map.is_navigable(wx.floor() as i32, wy.floor() as i32)
+        };
+        let poly = if self.hull_polygon.len() >= 3 {
+            &self.hull_polygon
+        } else {
+            &self.deck_polygon
+        };
+        if poly.len() >= 3 {
+            for v in poly {
+                if !check(Vec2::new(v[0], v[1])) {
+                    return false;
+                }
+            }
+            true
+        } else {
+            // Fall-back final: 4 cantos da bbox.
+            let h = self.deck_half();
+            check(Vec2::new(-h.x, -h.y))
+                && check(Vec2::new( h.x, -h.y))
+                && check(Vec2::new(-h.x,  h.y))
+                && check(Vec2::new( h.x,  h.y))
+        }
+    }
+
+    /// Empurra `pos` pra longe de terra ate o casco caber. Itera N steps;
+    /// pra cada vertice do hull que cai em terra, acumula push = (boat_center
+    /// - vertex) normalizado, somando todos. Aplica fracao por step ate
+    /// chegar em pos navegavel ou esgotar tentativas. Sem mudar yaw — eh um
+    /// translation-only repel.
+    pub fn repel_from_land(
+        &self,
+        pos: Vec2,
+        yaw: f32,
+        map: &shared::world_gen::WorldMap,
+    ) -> Vec2 {
+        let poly = if self.hull_polygon.len() >= 3 {
+            &self.hull_polygon
+        } else {
+            &self.deck_polygon
+        };
+        if poly.len() < 3 { return pos; }
+        let cos_y = yaw.cos();
+        let sin_y = yaw.sin();
+        let mut p = pos;
+        for _ in 0..6 {
+            let mut push = Vec2::ZERO;
+            let mut count = 0usize;
+            for v in poly {
+                let lx = v[0]; let ly = v[1];
+                let wx = p.x + lx * cos_y - ly * sin_y;
+                let wy = p.y + lx * sin_y + ly * cos_y;
+                if !map.is_navigable(wx.floor() as i32, wy.floor() as i32) {
+                    let dx = p.x - wx;
+                    let dy = p.y - wy;
+                    let len = (dx * dx + dy * dy).sqrt();
+                    if len > 0.001 {
+                        push.x += dx / len;
+                        push.y += dy / len;
+                        count += 1;
+                    }
+                }
+            }
+            if count == 0 { break; }
+            push /= count as f32;
+            p += push * 0.15; // step pequeno pra nao teleportar
+        }
+        p
+    }
+
     /// Default hardcoded — usado quando o JSON nao existe (Lylian).
     fn default_lylian() -> Self {
         Self {
@@ -86,6 +177,7 @@ impl BoatKindConfig {
                 anchor: [0.0,  shared::constants::BOAT_LYLIAN_DECK_HALF_H * 0.85],
             },
             deck_polygon: Vec::new(),
+            hull_polygon: Vec::new(),
             obstacles: Vec::new(),
         }
     }

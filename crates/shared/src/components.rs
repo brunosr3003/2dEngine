@@ -492,6 +492,11 @@ pub struct EntitySnapshot {
     /// Some apenas em Boat.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rudder_angle: Option<f32>,
+    /// True se ha terra walkable proxima — cliente usa pra mostrar/esconder
+    /// botao "Sair do Barco". Calculado server-side via BFS, mesma logica
+    /// que valida o handle_dismount_boat. Some apenas em Boat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_dismount: Option<bool>,
 }
 
 /// Bits do `EntitySnapshot.buffs` — mantém em sync com o cliente C#.

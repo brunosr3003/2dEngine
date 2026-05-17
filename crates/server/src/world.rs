@@ -460,7 +460,7 @@ impl Default for WindState {
         // Vento padrao: noroeste moderado. Ajustavel via admin no futuro.
         Self {
             direction: std::f32::consts::FRAC_PI_4, // 45° (nordeste)
-            intensity: 0.6,
+            intensity: 0.85,
         }
     }
 }
@@ -469,6 +469,34 @@ impl Default for WindState {
 // Os valores vem do `boat_config::registry()` carregado de JSONs em
 // `data/boats/`. JSONs sao exportados do prefab Unity (Tools / Boat /
 // Export Prefab Data). Fallback hardcoded em boat_config.rs se faltar arquivo.
+
+/// Espelha a BFS de handle_dismount_boat: ha terra walkable a ate
+/// max_radius tiles do centro do barco? Usado pra esconder o botao
+/// "Sair do Barco" no cliente quando dismount nao eh possivel.
+/// Mesmos limites do handler — assim UI e regra batem.
+pub fn boat_can_dismount(
+    boat_pos: Vec2,
+    kind: u16,
+    map: &shared::world_gen::WorldMap,
+) -> bool {
+    let cfg = crate::boat_config::get(kind);
+    let max_radius = cfg.deck_half_w.max(cfg.deck_half_h).ceil() as u32 + 3;
+    let bx = boat_pos.x.floor() as i32;
+    let by = boat_pos.y.floor() as i32;
+    let mut visited: std::collections::HashSet<(i32, i32)> = std::collections::HashSet::new();
+    let mut queue: std::collections::VecDeque<(i32, i32, u32)> = std::collections::VecDeque::new();
+    let cardinals = [(0i32, 1i32), (1, 0), (0, -1), (-1, 0)];
+    for (dx, dy) in cardinals { queue.push_back((bx + dx, by + dy, 1)); }
+    while let Some((tx, ty, depth)) = queue.pop_front() {
+        if !visited.insert((tx, ty)) { continue; }
+        if map.is_walkable(tx, ty) { return true; }
+        if depth >= max_radius { continue; }
+        for (dx, dy) in cardinals {
+            queue.push_back((tx + dx, ty + dy, depth + 1));
+        }
+    }
+    false
+}
 
 pub fn boat_deck_half(kind: u16) -> Vec2 {
     crate::boat_config::get(kind).deck_half()
@@ -5627,25 +5655,37 @@ impl GameWorld {
                 .clamp(-1.0, 1.0);
             let yaw_rate = rudder_t * shared::constants::BOAT_MAX_YAW_RATE;
             tag.ang_vel = yaw_rate;
+            let old_yaw = tag.yaw;
             tag.yaw += yaw_rate * dt;
             // Normaliza yaw em [-PI, PI]
             if tag.yaw > std::f32::consts::PI { tag.yaw -= std::f32::consts::TAU; }
             if tag.yaw < -std::f32::consts::PI { tag.yaw += std::f32::consts::TAU; }
+            // Repel: se a rotacao jogou o casco em terra, empurra o barco
+            // pra fora ate caber. Se nem com push couber, reverte yaw.
+            let cfg_rot = crate::boat_config::get(tag.kind);
+            if !cfg_rot.is_hull_navigable(pos.0, tag.yaw, &self.map) {
+                let repelled = cfg_rot.repel_from_land(pos.0, tag.yaw, &self.map);
+                if cfg_rot.is_hull_navigable(repelled, tag.yaw, &self.map) {
+                    pos.0 = repelled;
+                } else {
+                    tag.yaw = old_yaw;
+                }
+            }
 
-            // 7. Integra posicao com slide axis-aligned em tiles navegaveis.
+            // 7. Integra posicao com slide axis-aligned + hull collision.
+            // Checa TODOS os vertices do casco (deck_polygon rotacionado por
+            // yaw) contra is_navigable — assim o barco para na margem da
+            // ilha em vez de afundar metade da quilha em terra.
+            let cfg = crate::boat_config::get(tag.kind);
             let mut new_pos = pos.0;
             let try_x = Vec2::new(pos.0.x + vel.0.x * dt, pos.0.y);
-            let tx = try_x.x.floor() as i32;
-            let ty = try_x.y.floor() as i32;
-            if self.map.is_navigable(tx, ty) {
+            if cfg.is_hull_navigable(try_x, tag.yaw, &self.map) {
                 new_pos.x = try_x.x;
             } else {
                 vel.0.x = 0.0;
             }
             let try_y = Vec2::new(new_pos.x, new_pos.y + vel.0.y * dt);
-            let tx = try_y.x.floor() as i32;
-            let ty = try_y.y.floor() as i32;
-            if self.map.is_navigable(tx, ty) {
+            if cfg.is_hull_navigable(try_y, tag.yaw, &self.map) {
                 new_pos.y = try_y.y;
             } else {
                 vel.0.y = 0.0;
@@ -7111,6 +7151,9 @@ impl GameWorld {
                     sail_eid: boat.and_then(|b| b.sail_eid),
                     anchor_eid: boat.and_then(|b| b.anchor_eid),
                     rudder_angle: boat.map(|b| b.rudder_angle),
+                    can_dismount: if boat.is_some() {
+                        Some(boat_can_dismount(pos.0, boat.unwrap().kind, &self.map))
+                    } else { None },
                     // Player montado: pop info de boat_eid/local/station.
                     mounted_on: if is_player {
                         mounted_player_info.get(&net.0).map(|(b, _, _)| *b)
@@ -8480,32 +8523,43 @@ impl GameWorld {
                     self.send_chat_to(sid, "[Sistema] Ja em uma embarcacao.");
                     return;
                 }
-                // Procura tile de agua mais proximo do player (BFS Chebyshev,
-                // raio max 3). Se achar, spawna o barco la. Se nao, falha —
-                // player muito longe da agua.
+                // Procura tile de agua onde o CASCO INTEIRO cabe. Raio max
+                // dimensionado pelo tamanho do barco (deck pode ter 13+
+                // tiles de altura; precisa procurar longe pra achar agua
+                // aberta). Direcao inicial calculada por tile candidato
+                // pra testar hull_navigable com yaw correto.
+                let cfg = crate::boat_config::get(kind);
+                let max_radius = cfg.deck_half_w.max(cfg.deck_half_h).ceil() as i32 + 4;
                 let px = player_pos.x.floor() as i32;
                 let py = player_pos.y.floor() as i32;
-                let mut water_pos: Option<Vec2> = None;
-                'search: for r in 1i32..=3 {
+                let mut spawn: Option<(Vec2, f32)> = None;
+                'search: for r in 1i32..=max_radius {
                     for dy in -r..=r {
                         for dx in -r..=r {
-                            // So perimetro do anel r (skip interior ja varrido).
                             if dx.abs() != r && dy.abs() != r { continue; }
                             let tx = px + dx;
                             let ty = py + dy;
-                            if self.map.is_water(tx, ty) {
-                                water_pos = Some(Vec2::new(tx as f32 + 0.5, ty as f32 + 0.5));
+                            if !self.map.is_water(tx, ty) { continue; }
+                            let candidate = Vec2::new(tx as f32 + 0.5, ty as f32 + 0.5);
+                            // Yaw inicial: barco aponta away from player
+                            // (proa pra agua aberta). Y-forward convention.
+                            let d = (candidate - player_pos).normalize_or_zero();
+                            let yaw = if d.length_squared() > 0.001 {
+                                (-d.x).atan2(d.y)
+                            } else { 0.0 };
+                            if cfg.is_hull_navigable(candidate, yaw, &self.map) {
+                                spawn = Some((candidate, yaw));
                                 break 'search;
                             }
                         }
                     }
                 }
-                let Some(water_pos) = water_pos else {
+                let Some((water_pos, init_yaw)) = spawn else {
                     tracing::info!(
-                        "boat use: sem agua adjacente. player_pos=({:.2},{:.2}) tile=({},{}) tile_id={}",
-                        player_pos.x, player_pos.y, px, py, self.map.get(px, py)
+                        "boat use: sem agua livre pra casco. player=({:.2},{:.2}) max_r={}",
+                        player_pos.x, player_pos.y, max_radius
                     );
-                    self.send_chat_to(sid, "[Sistema] Aproxime-se mais da agua.");
+                    self.send_chat_to(sid, "[Sistema] Sem agua aberta suficiente pra ancorar.");
                     return;
                 };
                 // Spawna o barco. Sem rigid body — movimento custom em step E.
@@ -8518,13 +8572,7 @@ impl GameWorld {
                     Ok(p) => p.player_id,
                     Err(_) => return,
                 };
-                // Direcao inicial: aponta away from margem. Yaw em rad
-                // pra usar no novo modelo continuo. dir 8-cardeal mantida
-                // pra compat com BoatRenderer (snapshot deriva do yaw).
                 let dir_vec = (water_pos - player_pos).normalize_or_zero();
-                let init_yaw = if dir_vec.length_squared() > 0.001 {
-                    dir_vec.y.atan2(dir_vec.x)
-                } else { 0.0 };
                 let init_dir = dir8_from_vec(dir_vec);
                 let boat_entity = self.ecs.spawn((
                     NetId(boat_eid),
@@ -8744,7 +8792,14 @@ impl GameWorld {
         };
         let bx = boat_pos.x.floor() as i32;
         let by = boat_pos.y.floor() as i32;
-        // BFS ate 3 tiles procurando walkable.
+        // BFS procurando walkable. Range = hull max_extent + margem — o
+        // casco grande (deck_half_h ~7) afasta o centro do barco bastante
+        // da margem quando colidindo.
+        let cfg = self.ecs.get::<&BoatTag>(mounted_boat_entity)
+            .ok().map(|t| crate::boat_config::get(t.kind));
+        let max_radius = cfg.as_ref()
+            .map(|c| c.deck_half_w.max(c.deck_half_h).ceil() as u32 + 3)
+            .unwrap_or(12);
         let mut visited: std::collections::HashSet<(i32, i32)> = std::collections::HashSet::new();
         let mut queue: std::collections::VecDeque<(i32, i32, u32)> = std::collections::VecDeque::new();
         let cardinals = [(0i32, 1i32), (1, 0), (0, -1), (-1, 0)];
@@ -8756,7 +8811,7 @@ impl GameWorld {
                 land_target = Some(Vec2::new(tx as f32 + 0.5, ty as f32 + 0.5));
                 break;
             }
-            if depth >= 3 { continue; }
+            if depth >= max_radius { continue; }
             for (dx, dy) in cardinals {
                 queue.push_back((tx + dx, ty + dy, depth + 1));
             }
@@ -8829,7 +8884,9 @@ impl GameWorld {
         };
         let kind = self.ecs.get::<&BoatTag>(boat_entity).map(|t| t.kind).unwrap_or(0);
         let half = boat_deck_half(kind);
-        let max_reach = half.x.max(half.y) + 1.0;
+        // Margem generosa: barco grande spawnando longe da margem precisa
+        // de reach > half + spawn-search-radius pra dar pra embarcar.
+        let max_reach = half.x.max(half.y) + 8.0;
         if (player_pos - boat_pos).length() > max_reach { return; }
         // Adiciona ao boat.passengers.
         if let Ok(mut tag) = self.ecs.get::<&mut BoatTag>(boat_entity) {
