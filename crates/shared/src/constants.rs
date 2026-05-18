@@ -27,7 +27,14 @@ pub const PROTOCOL_VERSION: u16 = 53;
 // ── Boat (Sea-of-Thieves style: vela/leme/ancora separados) ─────────────────
 /// Velocidade maxima de qualquer barco (tiles/s). Atingida com vela full,
 /// vento maximo, alinhamento perfeito.
-pub const BOAT_MAX_SPEED: f32 = 14.0;
+pub const BOAT_MAX_SPEED: f32 = 20.0;
+
+/// Velocidade base do barco com vela up — fracao de BOAT_MAX_SPEED garantida
+/// mesmo SEM vento ou contra vento (vento vira boost, nao condicao). Modelo:
+///   target = sail_factor × (BASE + BOOST × wind.intensity × alignment) × MAX
+/// Com BASE=0.55 BOOST=0.45 → contra-vento ~55%, a-favor ~100%.
+pub const BOAT_SAIL_BASE: f32  = 0.55;
+pub const BOAT_WIND_BOOST: f32 = 0.45;
 /// Drag da agua aplicado por segundo (sem vento, barco para em ~4s).
 pub const BOAT_WATER_DRAG: f32 = 0.6;
 /// Multiplicador de drag quando ancora dropada (decel rapido).
@@ -57,6 +64,11 @@ pub mod station {
 /// pra cada lado (lock-to-lock = 4 voltas total). Acima disso, server
 /// clamp. yaw_rate eh proporcional a rudder_angle / MAX_RUDDER_ANGLE.
 pub const BOAT_MAX_RUDDER_ANGLE: f32 = 4.0 * std::f32::consts::PI;
+
+/// Poise base concedido a todo player a partir do nivel `POISE_BASE_UNLOCK_LEVEL`.
+/// Skills T4 (Iron Will, Unstoppable, etc) somam +50/rank em cima disso.
+pub const POISE_BASE_VALUE: i32 = 30;
+pub const POISE_BASE_UNLOCK_LEVEL: u8 = 60;
 
 /// Velocidade base do jogador em tiles/segundo.
 pub const PLAYER_SPEED: f32 = 5.0;

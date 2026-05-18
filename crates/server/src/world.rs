@@ -880,6 +880,11 @@ pub struct Session {
     pub last_combat_at_s: f32,
     /// Ultimo poise inteiro enviado pro cliente — evita spam de PoiseUpdate.
     pub poise_last_sent: i32,
+    /// Buffer temporario de poise que defending (RMB) absorve. Setado no
+    /// edge-press de RMB via `defending_poise_max()` (escala com char_lvl
+    /// e bonus de escudo). Drena por hit. Quando zera, defending cancela
+    /// e o proximo hit vira HP+stagger normal.
+    pub defending_poise_buffer: f32,
     /// Farm skill levels (persistidos). Influenciam hits_required do cliente
     /// e são enviados via FarmSkillsUpdate no login. Default 1.
     pub woodcutting_lvl: u32,
@@ -1390,6 +1395,7 @@ impl GameWorld {
             &build.allocated_points,
             &build.proficiencies,
             &build.learned_skills,
+            0, // enemy nao tem xp (poise so' afeta players de qualquer forma)
         );
         let hp_max = stats.hp_max;
         let tag = EnemyTag {
@@ -2026,7 +2032,7 @@ impl GameWorld {
         s.allocated_points[idx] = s.allocated_points[idx].saturating_add(1);
         s.stat_points_dirty = true;
         // Recalcula stats. max_hp pode ter subido — HP nao sobe automatico.
-        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, &s.learned_skills);
+        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, &s.learned_skills, s.xp);
         s.stats_dirty = true;
     }
 
@@ -2172,7 +2178,7 @@ impl GameWorld {
         s.unspent_points = s.unspent_points.saturating_add(total);
         s.allocated_points = [0u32; shared::STAT_COUNT];
         s.stat_points_dirty = true;
-        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, &s.learned_skills);
+        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, &s.learned_skills, s.xp);
         s.stats_dirty = true;
         tracing::info!("{} resetou atributos (refund {})", s.name, total);
     }
@@ -2201,7 +2207,7 @@ impl GameWorld {
         s.hunter_marks.clear();
         // Recompute stats — sem passivas que escalavam (ex: Combat Stance,
         // Bulwark, Mana Pool, Eagle Eye).
-        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, &s.learned_skills);
+        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, &s.learned_skills, s.xp);
         s.stats_dirty = true;
         tracing::info!("{} resetou skills (refund {} SP)", s.name, total_spent);
     }
@@ -2393,7 +2399,7 @@ impl GameWorld {
                 row.boat, row.visual.clone(), row.name.clone(), row.mounted_local,
             );
         // Stats efetivos considerando equipamento salvo + pontos + profs.
-        let stats = effective_stats(&saved_equip, &saved_alloc, &saved_profs, &saved_learned_skills);
+        let stats = effective_stats(&saved_equip, &saved_alloc, &saved_profs, &saved_learned_skills, saved_xp);
         // Re-sincroniza o max_hp (classe pode ter sido rebalanceada entre sessoes).
         health.max = stats.hp_max;
         if health.current > health.max { health.current = health.max; }
@@ -2898,6 +2904,7 @@ impl GameWorld {
                 hunters_mark_charges: 0,
                 hunters_mark_rank: 0,
                 poise_current: 50.0, // base padrao; refresh via stats no login
+                defending_poise_buffer: 0.0,
                 last_combat_at_s: 0.0,
                 poise_last_sent: 0,
                 woodcutting_lvl: 1,
@@ -3175,6 +3182,56 @@ impl GameWorld {
             }
             ClientMessage::UpdateVisual { visual } => {
                 self.handle_update_visual(id, visual);
+            }
+            ClientMessage::AdminCommand { secret, action } => {
+                self.handle_admin_command(id, secret, action);
+            }
+        }
+    }
+
+    /// Aplica admin command ao player que enviou. Drop silencioso se
+    /// `MMORPG_ADMIN_SECRET` nao esta setada ou secret nao bate.
+    fn handle_admin_command(&mut self, sid: SessionId, secret: String, action: shared::protocol::AdminAction) {
+        let expected = std::env::var("MMORPG_ADMIN_SECRET").unwrap_or_default();
+        if expected.is_empty() || secret != expected {
+            tracing::warn!("AdminCommand rejeitado: secret invalido (sid={:?})", sid);
+            return;
+        }
+        let Some(session) = self.sessions.get_mut(&sid) else { return; };
+        let name = session.name.clone();
+        let ecs_entity = session.entity;
+        tracing::info!("AdminCommand from {}: {:?}", name, action);
+        match action {
+            shared::protocol::AdminAction::SetXp { xp } => {
+                session.xp = xp;
+                session.stats = effective_stats(
+                    &session.equipment, &session.allocated_points,
+                    &session.proficiencies, &session.learned_skills, session.xp);
+                session.poise_current = session.stats.poise_max as f32;
+            }
+            shared::protocol::AdminAction::SetGold { gold } => {
+                session.gold = gold.max(0) as u64;
+            }
+            shared::protocol::AdminAction::GiveItem { item_id, qty } => {
+                add_to_inventory(&mut session.inventory, item_id, qty as u32, None);
+                session.inventory_dirty = true;
+            }
+            shared::protocol::AdminAction::ClearInventory => {
+                session.inventory.clear();
+                session.inventory_dirty = true;
+            }
+            shared::protocol::AdminAction::HealFull => {
+                session.stamina_current = session.stats.stamina_max as f32;
+                session.mp_current = session.stats.mp_max as f32;
+                session.poise_current = session.stats.poise_max as f32;
+                if let Some(e) = ecs_entity {
+                    if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
+                        hp.current = hp.max;
+                    }
+                }
+            }
+            shared::protocol::AdminAction::GrantSp { amount } => {
+                session.skill_points_earned = session.skill_points_earned.saturating_add(amount);
             }
         }
     }
@@ -4582,10 +4639,10 @@ impl GameWorld {
                     + session.stats.stamina_regen * dt)
                     .min(stam_max);
             }
-            // Regen de poise: SO regenera fora de combate (>=5s sem hit).
+            // Regen de poise: SO regenera fora de combate (>=2s sem hit).
             // Recovery rate: 10 / s (poise volta cheio em 5s).
             const POISE_REGEN_PER_SEC: f32 = 10.0;
-            const COMBAT_TIMEOUT_S: f32 = 5.0;
+            const COMBAT_TIMEOUT_S: f32 = 2.0;
             let poise_max = session.stats.poise_max as f32;
             if session.poise_current < poise_max
                 && (self.sim_time_s - session.last_combat_at_s) >= COMBAT_TIMEOUT_S
@@ -4658,10 +4715,16 @@ impl GameWorld {
             // shield (defense+8, hp+75) sao o incentivo pra equipar.
             let staggered = self.sim_time_s < session.stagger_until;
             let block_cost_now = shared::combat::block_stamina_cost(&session.stats);
+            let was_defending = session.defending;
             session.defending = (frame.buttons & buttons::SECONDARY != 0)
                 && !session.downed
                 && !staggered
                 && session.stamina_current >= block_cost_now;
+            // Edge-press: ao iniciar defesa, recarrega o buffer de poise
+            // que defending absorve (escala com lvl + bonus de escudo).
+            if session.defending && !was_defending {
+                session.defending_poise_buffer = defending_poise_max(session);
+            }
 
             // Stagger/Downed: ignora movimento e ataques. Player downed fica
             // travado na pose sentada — não pode andar até levantar.
@@ -5752,12 +5815,13 @@ impl GameWorld {
                 // Convencao Y: forward = +Y, normal aponta forward quando angle=0.
                 let sail_normal_b = Vec2::new(-tag.sail_angle.sin(), tag.sail_angle.cos());
                 let raw_alignment = wind_b.dot(sail_normal_b).max(0.0);
-                // Min alignment 0.20 — barco real pode "tackar" e mover lento
-                // ate contra o vento. SoT permite isso tambem (vento adversario
-                // = ~15-20% velocidade). Player pode rotacionar a vela (Z/X)
-                // pra otimizar quando navegando off-wind.
-                let alignment = raw_alignment.max(0.20);
-                sail_factor * wind.intensity * alignment * shared::constants::BOAT_MAX_SPEED
+                // Vento como BOOST, nao multiplicador. Barco com vela up sempre
+                // tem BASE (55%); vento contribui ate +BOOST (45%) extra quando
+                // a-favor com intensidade total. Contra-vento = base only.
+                let wind_term = shared::constants::BOAT_WIND_BOOST
+                    * wind.intensity * raw_alignment;
+                let factor = shared::constants::BOAT_SAIL_BASE + wind_term;
+                sail_factor * factor * shared::constants::BOAT_MAX_SPEED
             } else { 0.0 };
             let target_vel = forward * target_speed;
 
@@ -6527,21 +6591,32 @@ impl GameWorld {
             let now_s_poise = self.sim_time_s;
             if let Some(target) = self.sessions.values_mut().find(|s| s.entity_id == target_id) {
                 let in_iframe = target.dash_until > now_s_poise
-                             || target.leap_until > now_s_poise
-                             || target.defending;
+                             || target.leap_until > now_s_poise;
                 if in_iframe && dmg > 0 {
-                    // Defending drena stamina por hit (igual block normal).
-                    // Dash/leap nao drenam — sao janelas curtas.
-                    if target.defending {
-                        let block_cost = shared::combat::block_stamina_cost(&target.stats);
-                        target.stamina_current = (target.stamina_current - block_cost).max(0.0);
-                    }
+                    // Dash/leap = iframe puro: absorve sem custo (janelas curtas).
                     target.last_combat_at_s = now_s_poise;
                     absorbed_by_poise = true;
+                } else if target.defending && target.defending_poise_buffer > 0.0 && dmg > 0 {
+                    // Defending: drena o buffer de poise (escalado por lvl+escudo)
+                    // + stamina por hit. Reducao de damage por defense + bonus
+                    // de block. Quando buffer zera, defending cancela e proximo
+                    // hit cai no caminho de poise normal / HP+stagger.
+                    let def_resist = (target.stats.defense as f32 * 0.04).min(0.8);
+                    let block_bonus = 0.4;
+                    let total_resist = (def_resist + block_bonus).min(0.95);
+                    let poise_dmg = ((dmg as f32) * (1.0 - total_resist)).max(1.0);
+                    target.defending_poise_buffer = (target.defending_poise_buffer - poise_dmg).max(0.0);
+                    let block_cost = shared::combat::block_stamina_cost(&target.stats);
+                    target.stamina_current = (target.stamina_current - block_cost).max(0.0);
+                    target.last_combat_at_s = now_s_poise;
+                    absorbed_by_poise = true;
+                    // Buffer zerou → defending falha; proximo hit nao usa essa branch
+                    if target.defending_poise_buffer <= 0.0 {
+                        target.defending = false;
+                    }
                 } else if target.poise_current > 0.0 && dmg > 0 {
                     let def_resist = (target.stats.defense as f32 * 0.04).min(0.8);
-                    let defending_bonus = if target.defending { 0.4 } else { 0.0 };
-                    let total_resist = (def_resist + defending_bonus).min(0.95);
+                    let total_resist = def_resist.min(0.95);
                     let poise_dmg = ((dmg as f32) * (1.0 - total_resist)).max(1.0);
                     target.poise_current = (target.poise_current - poise_dmg).max(0.0);
                     target.last_combat_at_s = now_s_poise;
@@ -6923,7 +6998,7 @@ impl GameWorld {
                         *slot = shared::InventorySlot::default();
                     }
                     session.equipment = shared::Equipment::default();
-                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills);
+                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills, session.xp);
                     session.inventory_dirty = true;
                     session.stats_dirty = true;
                     break;
@@ -7016,7 +7091,7 @@ impl GameWorld {
                             let allowed = can_equip_in_slot(&session.equipment, slot, ltag.item_id);
                             if empty && allowed {
                                 session.equipment.set(slot, Some(ltag.item_id), ltag.instance);
-                                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills);
+                                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills, session.xp);
                                 session.stats_dirty = true;
                                 if let Some(pe) = session.entity {
                                     hp_max_updates.push((pe, session.stats.hp_max));
@@ -7698,7 +7773,7 @@ impl GameWorld {
                 let new_inst = if ia.qty > 0 { ia.instance } else { None };
                 set_equip(session, bs, new_id, new_inst);
                 session.inventory[ai as usize] = new_inv_slot;
-                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills);
+                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills, session.xp);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
             }
@@ -7715,7 +7790,7 @@ impl GameWorld {
                 let new_inst = if ib.qty > 0 { ib.instance } else { None };
                 set_equip(session, as_, new_id, new_inst);
                 session.inventory[bi as usize] = new_inv_slot;
-                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills);
+                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills, session.xp);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
             }
@@ -8339,7 +8414,7 @@ impl GameWorld {
                 let allowed = can_equip_in_slot(&session.equipment, es, item_id);
                 if empty && allowed {
                     session.equipment.set(es, Some(item_id), None);
-                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills);
+                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills, session.xp);
                     session.stats_dirty = true;
                     new_max = Some(session.stats.hp_max);
                     true
@@ -8610,7 +8685,7 @@ impl GameWorld {
                     Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1, instance: old_inst },
                     None         => shared::InventorySlot::default(),
                 };
-                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills);
+                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills, session.xp);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
                 (player_entity, UseAction::Equip { new_hp_max: session.stats.hp_max })
@@ -9315,6 +9390,16 @@ fn maybe_unequip_offhand_for_weapon(session: &mut Session, new_weapon: u16) -> b
     true
 }
 
+/// Quanto poise o buffer de defending tem ao iniciar um block. Escala com
+/// char_lvl (30 por 10 lvls) e ganha 1.25x se equipou escudo no offhand.
+fn defending_poise_max(session: &Session) -> f32 {
+    let char_lvl = shared::level_of_xp_with_mult(session.xp, crate::economy::xp_multiplier());
+    let base = 30.0 * ((char_lvl as f32) / 10.0).floor();
+    let shield_mult = if session.equipment.offhand
+        .map_or(false, |id| shared::constants::is_shield(id)) { 1.25 } else { 1.0 };
+    base * shield_mult
+}
+
 /// Calcula stats efetivos = base + pontos alocados + equip + scaling da
 /// prof da arma equipada.
 fn effective_stats(
@@ -9322,8 +9407,16 @@ fn effective_stats(
     allocated: &[u32; shared::STAT_COUNT],
     proficiencies: &[u64; shared::PROF_COUNT],
     learned_skills: &[shared::LearnedSkill],
+    char_xp: u64,
 ) -> shared::PlayerStats {
     let mut s = shared::base_player_stats();
+
+    // Poise base — concedido a partir de POISE_BASE_UNLOCK_LEVEL (lvl 60).
+    // Skills T4 (Iron Will, Unstoppable, etc) somam +50/rank em cima disso.
+    let char_lvl = shared::level_of_xp_with_mult(char_xp, crate::economy::xp_multiplier());
+    if (char_lvl as u8) >= shared::constants::POISE_BASE_UNLOCK_LEVEL {
+        s.poise_max += shared::constants::POISE_BASE_VALUE;
+    }
 
     // Pontos alocados pelo player (FOR/DES/INT/VIT/SPD).
     for (i, &pts) in allocated.iter().enumerate() {

@@ -156,6 +156,33 @@ pub enum ClientMessage {
     UpdateVisual {
         visual: crate::VisualConfig,
     },
+    /// Comando admin — server valida `secret` contra env var
+    /// `MMORPG_ADMIN_SECRET`. Aplica `action` ao player que enviou.
+    /// Drop silencioso se secret invalido ou env nao configurada.
+    AdminCommand {
+        secret: String,
+        action: AdminAction,
+    },
+}
+
+/// Acoes administrativas aplicadas via `ClientMessage::AdminCommand`.
+/// Sempre afetam o player que enviou (self). Pra mexer em outro player,
+/// rode comando da conta desse player.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum AdminAction {
+    /// Seta xp absoluto — recomputa stats (level escala HP/MP/poise unlock).
+    SetXp { xp: u64 },
+    /// Seta gold absoluto.
+    SetGold { gold: i64 },
+    /// Adiciona item ao inventario (qty stackavel).
+    GiveItem { item_id: u16, qty: u16 },
+    /// Esvazia inventario completamente.
+    ClearInventory,
+    /// HP/MP/Stamina/Poise full.
+    HealFull,
+    /// Concede skill points (incrementa sp_earned).
+    GrantSp { amount: u32 },
 }
 
 /// Localizacao logica de um slot no sistema de inventario do cliente.
