@@ -502,6 +502,11 @@ pub struct EntitySnapshot {
     /// Some apenas em Player.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pk_mode_on: Option<bool>,
+    /// Facção do player. Cliente usa pra colorir (vermelho=Morganeers,
+    /// amarelo=Peacemain) e pra filtrar alvos (cross-facção sempre atacável).
+    /// Some apenas em Player.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub faction: Option<Faction>,
 }
 
 /// Bits do `EntitySnapshot.buffs` — mantém em sync com o cliente C#.
@@ -524,6 +529,37 @@ pub mod attack_anim {
     pub const SHIELD_BASH: u8  = 7; // Shield Bash skill (1003) — pONE3 ShieldBash
     pub const TOOL_SWING:  u8  = 8; // Rock (mine) e Tree (wood) — p2 rows 0-3
     pub const TOOL_GATHER: u8  = 9; // Flower — p2 rows 4-7
+}
+
+/// Facção do personagem, escolhida na criação. Define ilha de spawn e
+/// regras de PvP (facções diferentes = PvP sempre ON). Serializa como
+/// string lowercase ("morganeers"/"peacemain") pra interop com o cliente C#.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Faction {
+    /// Piratas — saque, roubo, caos e anarquia. Spawn na ilha Norte.
+    Morganeers,
+    /// Aventureiros e exploradores. Spawn na ilha Sul.
+    Peacemain,
+}
+
+impl Default for Faction {
+    fn default() -> Self { Faction::Peacemain }
+}
+
+impl Faction {
+    /// Parse tolerante (case-insensitive) — usado ao ler do DB (TEXT).
+    pub fn from_str_lenient(s: &str) -> Option<Faction> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "morganeers" => Some(Faction::Morganeers),
+            "peacemain"  => Some(Faction::Peacemain),
+            _ => None,
+        }
+    }
+    /// String estável pra persistir no DB.
+    pub fn as_db_str(self) -> &'static str {
+        match self { Faction::Morganeers => "morganeers", Faction::Peacemain => "peacemain" }
+    }
 }
 
 /// Configuracao visual de um personagem (skin/race/outfit/hair). Replicada

@@ -139,6 +139,10 @@ pub enum ClientMessage {
         name: String,
         visual: crate::VisualConfig,
         starting_weapon: u16,
+        /// Facção escolhida na criação. Default Peacemain se cliente antigo
+        /// não enviar (compat).
+        #[serde(default)]
+        faction: crate::Faction,
     },
     /// Seleciona um char da lista pra entrar no jogo. Server valida que
     /// o char pertence a conta autenticada, carrega o estado e envia LoginOk.
@@ -157,10 +161,13 @@ pub enum ClientMessage {
         visual: crate::VisualConfig,
     },
     /// Comando admin — server valida `secret` contra env var
-    /// `MMORPG_ADMIN_SECRET`. Aplica `action` ao player que enviou.
+    /// `MMORPG_ADMIN_SECRET`. Se `target_char` Some, aplica no char com
+    /// esse nome (precisa estar online); senao aplica no player que enviou.
     /// Drop silencioso se secret invalido ou env nao configurada.
     AdminCommand {
         secret: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_char: Option<String>,
         action: AdminAction,
     },
 }
@@ -183,6 +190,11 @@ pub enum AdminAction {
     HealFull,
     /// Concede skill points (incrementa sp_earned).
     GrantSp { amount: u32 },
+    /// Concede stat points (incrementa unspent_points).
+    GrantStatPoints { amount: u32 },
+    /// Seta level: xp = sum(1..lvl-1) * mult, unspent = 3*(lvl-1), sp = lvl-1.
+    /// Equivalente a fazer SetXp + ajuste de pontos atomicamente.
+    SetLevel { level: u32 },
 }
 
 /// Localizacao logica de um slot no sistema de inventario do cliente.
@@ -517,6 +529,9 @@ pub struct CharacterListEntry {
     pub visual: crate::VisualConfig,
     /// item_id da arma equipada (informativo — mostra ao lado do nome).
     pub weapon_id: Option<u16>,
+    /// Facção do char (cliente mostra cor/badge no card de seleção).
+    #[serde(default)]
+    pub faction: crate::Faction,
 }
 
 /// Entrada do basket de vendas dentro de um ShopTrade.

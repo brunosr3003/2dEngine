@@ -470,19 +470,31 @@ impl Default for WindState {
 // `data/boats/`. JSONs sao exportados do prefab Unity (Tools / Boat /
 // Export Prefab Data). Fallback hardcoded em boat_config.rs se faltar arquivo.
 
-/// Gating de PvP entre dois players. Hoje: ambos com PK Mode ON.
-/// Futuro: OR com `in_pvp_zone(pos)` OU `diff_factions(a, b)`.
-/// Mantida como method pra extensao simples.
+/// Gating de PvP entre dois players. Regras:
+///  - Safe zone (cidade) protege TODOS: se atacante ou alvo está em safe
+///    zone, nunca há dano (mesmo cross-facção).
+///  - Facções diferentes: PvP SEMPRE ON (Morganeers vs Peacemain).
+///  - Mesma facção: opt-in — ambos precisam de PK Mode ON.
 impl GameWorld {
     pub fn can_damage_player(&self, attacker_eid: EntityId, target_eid: EntityId) -> bool {
         if attacker_eid == target_eid { return false; }
-        let attacker_pk = self.sessions.values()
-            .find(|s| s.entity_id == attacker_eid)
-            .map(|s| s.pk_mode_on).unwrap_or(false);
-        let target_pk = self.sessions.values()
-            .find(|s| s.entity_id == target_eid)
-            .map(|s| s.pk_mode_on).unwrap_or(false);
-        attacker_pk && target_pk
+        let att = match self.sessions.values().find(|s| s.entity_id == attacker_eid) {
+            Some(s) => s, None => return false,
+        };
+        let tgt = match self.sessions.values().find(|s| s.entity_id == target_eid) {
+            Some(s) => s, None => return false,
+        };
+        // Safe zone protege todos — atacante OU alvo dentro = sem dano.
+        for sess in [att, tgt] {
+            if let Some(e) = sess.entity {
+                if let Ok(p) = self.ecs.get::<&Position>(e) {
+                    if self.in_safe_zone(p.0) { return false; }
+                }
+            }
+        }
+        // Cross-facção: sempre PvP. Mesma facção: opt-in (ambos PK ON).
+        if att.faction != tgt.faction { return true; }
+        att.pk_mode_on && tgt.pk_mode_on
     }
 }
 
@@ -760,6 +772,9 @@ pub struct Session {
     /// PK Mode (opt-in PvP). Quando ON, player aparece como targetavel
     /// por outros players com PK ON. Default OFF.
     pub pk_mode_on: bool,
+    /// Facção do char ativo. Carregada do CharacterRow ao spawnar. Define
+    /// PvP cross-facção (sempre ON) e cor no mapa.
+    pub faction: shared::Faction,
     /// Skill_id do cast em progresso (usado pra notificar cliente da pose).
     pub casting_skill_id: u32,
     /// MP gasto no cast atual (pra refund se cancelar).
@@ -2352,6 +2367,7 @@ impl GameWorld {
                 level: shared::level_of_xp_with_mult(r.xp, crate::economy::xp_multiplier()),
                 visual: r.visual.clone().unwrap_or_else(|| shared::VisualConfig::for_class("warrior")),
                 weapon_id: r.equipment.weapon,
+                faction: r.faction,
             })
             .collect();
         // Whitelist de armas iniciais — filtrada por items.active. Mantem em
@@ -2542,6 +2558,7 @@ impl GameWorld {
             s.woodcutting_lvl = row.woodcutting_lvl.max(1);
             s.mining_lvl      = row.mining_lvl.max(1);
             s.gathering_lvl   = row.gathering_lvl.max(1);
+            s.faction         = row.faction;
             s.unspent_points = saved_unspent;
             s.allocated_points = saved_alloc;
             s.stat_points_dirty = true;
@@ -2869,6 +2886,7 @@ impl GameWorld {
                 casting_started_at_s: 0.0,
                 cast_movement_ticks: 0,
                 pk_mode_on: false,
+                faction: shared::Faction::default(),
                 casting_skill_id: 0,
                 casting_mp_paid: 0.0,
                 casting_st_paid: 0.0,
@@ -3167,8 +3185,8 @@ impl GameWorld {
             ClientMessage::SkillRankUp { skill_id }  => self.handle_skill_rank_up(id, skill_id),
             ClientMessage::SkillEquip { skill_id, slot } => self.handle_skill_equip(id, skill_id, slot),
             ClientMessage::SkillCast { skill_id, target_pos } => self.handle_skill_cast(id, skill_id, target_pos),
-            ClientMessage::CreateCharacter { name, visual, starting_weapon } => {
-                self.handle_create_character(id, name, visual, starting_weapon);
+            ClientMessage::CreateCharacter { name, visual, starting_weapon, faction } => {
+                self.handle_create_character(id, name, visual, starting_weapon, faction);
             }
             ClientMessage::SelectCharacter { name } => {
                 self.handle_select_character(id, name);
@@ -3183,21 +3201,44 @@ impl GameWorld {
             ClientMessage::UpdateVisual { visual } => {
                 self.handle_update_visual(id, visual);
             }
-            ClientMessage::AdminCommand { secret, action } => {
-                self.handle_admin_command(id, secret, action);
+            ClientMessage::AdminCommand { secret, target_char, action } => {
+                self.handle_admin_command(id, secret, target_char, action);
             }
         }
     }
 
-    /// Aplica admin command ao player que enviou. Drop silencioso se
-    /// `MMORPG_ADMIN_SECRET` nao esta setada ou secret nao bate.
-    fn handle_admin_command(&mut self, sid: SessionId, secret: String, action: shared::protocol::AdminAction) {
+    /// Aplica admin command. Se `target_char` Some, busca a sessao pelo
+    /// nome do char (precisa estar online); senao aplica no sender (sid).
+    /// Drop silencioso se `MMORPG_ADMIN_SECRET` nao setada ou invalido.
+    fn handle_admin_command(
+        &mut self,
+        sid: SessionId,
+        secret: String,
+        target_char: Option<String>,
+        action: shared::protocol::AdminAction,
+    ) {
         let expected = std::env::var("MMORPG_ADMIN_SECRET").unwrap_or_default();
         if expected.is_empty() || secret != expected {
             tracing::warn!("AdminCommand rejeitado: secret invalido (sid={:?})", sid);
             return;
         }
-        let Some(session) = self.sessions.get_mut(&sid) else { return; };
+        // Resolve sid alvo
+        let target_sid = match &target_char {
+            Some(name) => {
+                let found = self.sessions.iter()
+                    .find(|(_, s)| s.logged_in && s.name == *name)
+                    .map(|(k, _)| *k);
+                match found {
+                    Some(s) => s,
+                    None => {
+                        tracing::warn!("AdminCommand: target_char '{}' nao esta online", name);
+                        return;
+                    }
+                }
+            }
+            None => sid,
+        };
+        let Some(session) = self.sessions.get_mut(&target_sid) else { return; };
         let name = session.name.clone();
         let ecs_entity = session.entity;
         tracing::info!("AdminCommand from {}: {:?}", name, action);
@@ -3233,6 +3274,27 @@ impl GameWorld {
             shared::protocol::AdminAction::GrantSp { amount } => {
                 session.skill_points_earned = session.skill_points_earned.saturating_add(amount);
             }
+            shared::protocol::AdminAction::GrantStatPoints { amount } => {
+                session.unspent_points = session.unspent_points.saturating_add(amount);
+                session.stat_points_dirty = true;
+            }
+            shared::protocol::AdminAction::SetLevel { level } => {
+                let lvl = level.clamp(1, shared::CHAR_LEVEL_CAP);
+                session.xp = shared::xp_for_level_with_mult(lvl, crate::economy::xp_multiplier());
+                let lvl_gained = lvl.saturating_sub(1);
+                session.unspent_points = lvl_gained * shared::POINTS_PER_LEVEL;
+                session.skill_points_earned = lvl_gained * shared::SP_PER_LEVEL;
+                session.skill_points_spent = 0;
+                session.allocated_points = [0; shared::STAT_COUNT];
+                session.learned_skills.clear();
+                session.last_level = lvl;
+                session.stats = effective_stats(
+                    &session.equipment, &session.allocated_points,
+                    &session.proficiencies, &session.learned_skills, session.xp);
+                session.poise_current = session.stats.poise_max as f32;
+                session.stat_points_dirty = true;
+                session.skills_dirty = true;
+            }
         }
     }
 
@@ -3264,7 +3326,7 @@ impl GameWorld {
     /// Player downed escolheu respawnar direto na cidade — pula o timer de
     /// stand-up. HP restaurado pra max, posicao = spawn_tile, downed limpa.
     fn handle_respawn_at_city(&mut self, sid: SessionId) {
-        let (entity, hp_max, name) = {
+        let (entity, hp_max, name, faction) = {
             let Some(session) = self.sessions.get_mut(&sid) else {
                 tracing::warn!("RespawnAtCity ignorado: sessao {:?} nao existe", sid);
                 return;
@@ -3285,10 +3347,10 @@ impl GameWorld {
             session.downed = false;
             session.downed_heal_timer = 0.0;
             session.downed_hp = 0;
-            (entity, hp_max, session.name.clone())
+            (entity, hp_max, session.name.clone(), session.faction)
         };
         let spawn = {
-            let t = self.map.spawn_tile();
+            let t = self.map.faction_spawn_tile(faction);
             Vec2::new(t.0 as f32 + 0.5, t.1 as f32 + 0.5)
         };
         if let Ok(mut hp) = self.ecs.get::<&mut Health>(entity) {
@@ -3356,6 +3418,7 @@ impl GameWorld {
         name: String,
         visual: shared::VisualConfig,
         starting_weapon: u16,
+        faction: shared::Faction,
     ) {
         // Validacao basica
         let name = name.trim().to_string();
@@ -3384,9 +3447,10 @@ impl GameWorld {
                 ServerMessage::CharacterCreationFailed { reason: "sessao invalida".into() }));
             return;
         };
-        // Spawn = default tile do mapa.
+        // Spawn = ilha-sede da facção (cai no spawn_tile() se o mapa ainda não
+        // tem markers de spawn por facção — ver WorldMap::faction_spawn_tile).
         let spawn = {
-            let t = self.map.spawn_tile();
+            let t = self.map.faction_spawn_tile(faction);
             Vec2::new(t.0 as f32 + 0.5, t.1 as f32 + 0.5)
         };
         // Snapshot do que precisamos da sessao antes de spawnar a task async.
@@ -3411,7 +3475,7 @@ impl GameWorld {
         // novo (agora encontrando o char). Falha: manda CharacterCreationFailed.
         tokio::spawn(async move {
             match crate::persistence::create_character(
-                &auth_ctx.pool, account_id, &name_for_db, &visual_for_db, starting_weapon, spawn
+                &auth_ctx.pool, account_id, &name_for_db, &visual_for_db, starting_weapon, spawn, faction
             ).await {
                 Ok(true) => {
                     tracing::info!("CreateCharacter: '{}' criado (acc {}) weapon={}",
@@ -6378,9 +6442,12 @@ impl GameWorld {
                 }
                 (d, pct.clamp(0.0, 0.75))
             };
-            // Defense flat primeiro, depois redução percentual (breakpoints).
-            let after_def = (dmg - target_defense).max(1);
-            let mut dmg = ((after_def as f32) * (1.0 - target_dmg_reduction_pct)).round() as i32;
+            // Defesa eh % redux (soulslike feel) em vez de subtracao flat.
+            // Cada ponto de defense = 1.5% redux, cap 75%. Reducao por
+            // breakpoints (damage_reduction_pct) soma em cima, cap final 90%.
+            let def_resist_pct = (target_defense as f32 * 0.015).clamp(0.0, 0.75);
+            let total_resist = (def_resist_pct + target_dmg_reduction_pct).min(0.90);
+            let mut dmg = ((dmg as f32) * (1.0 - total_resist)).round() as i32;
             dmg = dmg.max(1);
 
             // Iron Will passive (Sword T4): se alvo eh player com rank>0
@@ -7154,11 +7221,11 @@ impl GameWorld {
     }
 
     fn respawn_player(&mut self, sid: SessionId, name: String, pid: PlayerId) {
-        let entity_id = match self.sessions.get(&sid) {
-            Some(s) => s.entity_id,
+        let (entity_id, faction) = match self.sessions.get(&sid) {
+            Some(s) => (s.entity_id, s.faction),
             None => return,
         };
-        let spawn_tile = self.map.spawn_tile();
+        let spawn_tile = self.map.faction_spawn_tile(faction);
         let spawn = Vec2::new(spawn_tile.0 as f32 + 0.5, spawn_tile.1 as f32 + 0.5);
         let handle = self.spawn_entity_body(spawn);
         let e = self.ecs.spawn((
@@ -7398,6 +7465,11 @@ impl GameWorld {
                             .find(|s| s.entity_id == net.0)
                             .map(|s| s.pk_mode_on)
                     } else { None },
+                    faction: if is_player {
+                        self.sessions.values()
+                            .find(|s| s.entity_id == net.0)
+                            .map(|s| s.faction)
+                    } else { None },
                     // Player montado: pop info de boat_eid/local/station.
                     mounted_on: if is_player {
                         mounted_player_info.get(&net.0).map(|(b, _, _)| *b)
@@ -7603,6 +7675,7 @@ impl GameWorld {
             woodcutting_lvl: u32,
             mining_lvl:      u32,
             gathering_lvl:   u32,
+            faction: shared::Faction,
         }
         let mut entries: Vec<E> = Vec::new();
         for session in self.sessions.values() {
@@ -7647,6 +7720,7 @@ impl GameWorld {
                 woodcutting_lvl: session.woodcutting_lvl,
                 mining_lvl:      session.mining_lvl,
                 gathering_lvl:   session.gathering_lvl,
+                faction:         session.faction,
             });
         }
         for e in entries {
@@ -7674,6 +7748,7 @@ impl GameWorld {
                 woodcutting_lvl: e.woodcutting_lvl,
                 mining_lvl:      e.mining_lvl,
                 gathering_lvl:   e.gathering_lvl,
+                faction:         e.faction,
             };
             self.characters.insert(e.name, row.clone());
             out.push(row);
@@ -7776,6 +7851,14 @@ impl GameWorld {
                 session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills, session.xp);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
+                let new_hp_max = session.stats.hp_max;
+                let ent = session.entity;
+                if let Some(e) = ent {
+                    if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
+                        hp.max = new_hp_max;
+                        if hp.current > hp.max { hp.current = hp.max; }
+                    }
+                }
             }
             (InvSpot::Equip(as_), InvSpot::Inv(bi)) => {
                 let (Some(ib), _) = vb else { return };
@@ -7793,6 +7876,14 @@ impl GameWorld {
                 session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills, session.xp);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
+                let new_hp_max = session.stats.hp_max;
+                let ent = session.entity;
+                if let Some(e) = ent {
+                    if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
+                        hp.max = new_hp_max;
+                        if hp.current > hp.max { hp.current = hp.max; }
+                    }
+                }
             }
             // equip <-> equip: so faz sentido se slots sao iguais (no-op)
             _ => {}
@@ -9340,6 +9431,7 @@ impl GameWorld {
             woodcutting_lvl: session.woodcutting_lvl,
             mining_lvl:      session.mining_lvl,
             gathering_lvl:   session.gathering_lvl,
+            faction:         session.faction,
         };
         self.characters.insert(session.name.clone(), row.clone());
         Some(row)
@@ -9520,6 +9612,25 @@ fn effective_stats(
     s.dex += (scaling.dex * lvl) as i32;
     s.wis += (scaling.wis * lvl) as i32;
     s.defense += (scaling.defense * lvl) as i32;
+
+    // Atk-scaling extra por stat secundario:
+    //   Bow/Crossbow: cada DEX = +0.5 atk (ranger usa destreza) + atk_speed
+    //   Spear:        DEX bonus baixo (1/5), FOR bonus alto (1/1)
+    let for_pts = allocated[shared::stat_idx::FOR] as i32;
+    match weapon_id {
+        id if id == shared::item_id::BOW
+            || id == shared::item_id::ENHANCED_BOW
+            || id == shared::item_id::CROSSBOW => {
+            s.attack_damage += s.dex / 2;
+            s.attack_speed_mult += 0.25; // bow disparo rapido
+        }
+        id if id == shared::item_id::SPEAR
+            || id == shared::item_id::ENHANCED_SPEAR => {
+            s.attack_damage += s.dex / 5 + for_pts;
+            s.attack_speed_mult -= 0.15; // lanca eh lenta (alcance compensa)
+        }
+        _ => {}
+    }
 
     // Skill passives — sempre-ativas se aprendidas. Os usable_with são
     // checados antes: passiva com prof específica só vale se a arma

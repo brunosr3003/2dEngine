@@ -185,6 +185,10 @@ impl MapFile {
             height: self.height,
             tiles: self.tiles.clone(),
             override_spawn: None,
+            // TODO: popular a partir de markers de spawn por facção quando o
+            // GameArchipelago for exportado pro map file. Por ora cai no spawn_tile().
+            morganeer_spawn: None,
+            peacemain_spawn: None,
         }
     }
 }

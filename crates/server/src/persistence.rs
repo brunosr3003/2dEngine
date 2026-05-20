@@ -88,6 +88,9 @@ pub struct CharacterRow {
     pub woodcutting_lvl: u32,
     pub mining_lvl:      u32,
     pub gathering_lvl:   u32,
+    /// Facção escolhida na criação (Morganeers/Peacemain). Persistida como
+    /// TEXT. Default Peacemain pra rows legacy sem a coluna.
+    pub faction: shared::Faction,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -739,6 +742,9 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     ).execute(&pool).await?;
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS gathering_lvl INTEGER NOT NULL DEFAULT 1"
+    ).execute(&pool).await?;
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS faction TEXT NOT NULL DEFAULT 'peacemain'"
     ).execute(&pool).await?;
 
     seed_economy_if_needed(&pool).await?;
@@ -1955,6 +1961,13 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
     ).fetch_all(pool).await?;
     let farm_map: HashMap<String, (u32, u32, u32)> =
         farm_rows.into_iter().map(|(n, w, m, g)| (n, (w.max(1) as u32, m.max(1) as u32, g.max(1) as u32))).collect();
+    // Faction — query separada (TEXT). Parse tolerante; default Peacemain.
+    let faction_rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT name, faction FROM characters"
+    ).fetch_all(pool).await?;
+    let faction_map: HashMap<String, shared::Faction> = faction_rows.into_iter()
+        .map(|(n, f)| (n, shared::Faction::from_str_lenient(&f).unwrap_or_default()))
+        .collect();
     // Boat 2.5D extras: yaw/sail/anchor + mounted_local. Tudo opcional pra
     // compat com rows legacy (sao NULL quando antigos).
     type BoatExtras = (Option<f32>, Option<i16>, Option<f32>, Option<bool>, Option<f32>, Option<f32>);
@@ -1973,6 +1986,7 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
         let (account_id, visual_json, gold) = extras_map.get(&name).cloned().unwrap_or((None, None, 0));
         let (woodcutting_lvl, mining_lvl, gathering_lvl) =
             farm_map.get(&name).cloned().unwrap_or((1, 1, 1));
+        let faction = faction_map.get(&name).copied().unwrap_or_default();
         let inv = load_inventory(pool, &name).await?;
         let equip = load_equipment(pool, &name).await?;
         let vault = load_vault(pool, &name).await?;
@@ -2035,6 +2049,7 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
                 woodcutting_lvl,
                 mining_lvl,
                 gathering_lvl,
+                faction,
             },
         );
     }
@@ -2051,6 +2066,7 @@ pub async fn create_character(
     visual: &shared::VisualConfig,
     starting_weapon: u16,
     spawn: Vec2,
+    faction: shared::Faction,
 ) -> Result<bool> {
     let visual_json = serde_json::to_string(visual)?;
     let allocated_zero: Vec<i32> = vec![0; shared::STAT_COUNT];
@@ -2065,8 +2081,8 @@ pub async fn create_character(
         "INSERT INTO characters
          (name, x, y, hp, max_hp, xp, fame, aura, unspent_points, allocated_points,
           skill_points_earned, skill_points_spent,
-          account_id, visual_json, starting_weapon, updated)
-         VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 0, $6, 1, 0, $7, $8, $9, $10)
+          account_id, visual_json, starting_weapon, faction, updated)
+         VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 0, $6, 1, 0, $7, $8, $9, $10, $11)
          ON CONFLICT(name) DO NOTHING"
     )
     .bind(name)
@@ -2078,6 +2094,7 @@ pub async fn create_character(
     .bind(account_id)
     .bind(&visual_json)
     .bind(starting_weapon as i16)
+    .bind(faction.as_db_str())
     .bind(now)
     .execute(pool)
     .await?;

@@ -13,9 +13,26 @@ pub struct WorldMap {
     pub tiles: Vec<u16>,
     /// Se Some, substitui o spawn_tile() default (util em mapas craftados).
     pub override_spawn: Option<(i32, i32)>,
+    /// Spawn por facção (tile coords no espaço do mapa). Setados pelo loader
+    /// quando o map file marca as ilhas-sede. None = usa override_spawn/spawn_tile.
+    pub morganeer_spawn: Option<(i32, i32)>,
+    pub peacemain_spawn: Option<(i32, i32)>,
 }
 
 impl WorldMap {
+    /// Tile de spawn para uma facção. Usa o override por facção se setado e
+    /// walkable; senão cai no spawn_tile() padrão.
+    pub fn faction_spawn_tile(&self, faction: crate::Faction) -> (i32, i32) {
+        let pick = match faction {
+            crate::Faction::Morganeers => self.morganeer_spawn,
+            crate::Faction::Peacemain  => self.peacemain_spawn,
+        };
+        if let Some((x, y)) = pick {
+            if self.is_walkable(x, y) { return (x, y); }
+        }
+        self.spawn_tile()
+    }
+
     pub fn get(&self, x: i32, y: i32) -> u16 {
         if x < 0 || y < 0 || x >= self.width as i32 || y >= self.height as i32 {
             return tile_id::WALL;
@@ -230,7 +247,7 @@ impl Room {
 pub fn generate(seed: u64, width: u32, height: u32) -> WorldMap {
     let mut rng = Lcg::new(seed);
     let tiles = vec![tile_id::WALL; (width * height) as usize];
-    let mut map = WorldMap { width, height, tiles, override_spawn: None };
+    let mut map = WorldMap { width, height, tiles, override_spawn: None, morganeer_spawn: None, peacemain_spawn: None };
 
     let mut rooms: Vec<Room> = Vec::new();
 
@@ -409,6 +426,8 @@ pub fn build_crafted_map() -> CraftedMap {
         height: h,
         tiles: vec![tile_id::FLOOR; (w * h) as usize],
         override_spawn: Some((20, 15)),
+        morganeer_spawn: None,
+        peacemain_spawn: None,
     };
 
     // Border de cliff walls
