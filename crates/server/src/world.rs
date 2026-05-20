@@ -2597,7 +2597,11 @@ impl GameWorld {
             map_name: "overworld".to_string(),
             width: self.map.width,
             height: self.map.height,
-            tiles: self.map.tiles.clone(),
+            // Cliente renderiza da própria scene (GameArchipelago) e NÃO consome
+            // este array. Enviar 24M tiles do arquipélago seriam ~72MB de JSON
+            // por login — mandamos vazio. (Se um dia o cliente precisar dos tiles
+            // do server, reverter pra self.map.tiles.clone()).
+            tiles: Vec::new(),
             spawn: [spawn.x, spawn.y],
             safe_zone: self.safe_zone,
             decorations: self.decorations.clone(),

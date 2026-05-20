@@ -130,6 +130,12 @@ pub struct MapFile {
     pub safe_zone: bool,
     /// Entidades pre-posicionadas.
     pub entities: Vec<MapEntityPlacement>,
+    /// Spawn por facção (tile coords). Quando setados, o servidor spawna
+    /// Morganeers/Peacemain nas ilhas-sede respectivas em vez do spawn default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub morganeer_spawn: Option<[f32; 2]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peacemain_spawn: Option<[f32; 2]>,
 }
 
 impl MapFile {
@@ -142,6 +148,8 @@ impl MapFile {
             spawn: [width as f32 * 0.5, height as f32 * 0.5],
             safe_zone: false,
             entities: Vec::new(),
+            morganeer_spawn: None,
+            peacemain_spawn: None,
         }
     }
 
@@ -185,10 +193,9 @@ impl MapFile {
             height: self.height,
             tiles: self.tiles.clone(),
             override_spawn: None,
-            // TODO: popular a partir de markers de spawn por facção quando o
-            // GameArchipelago for exportado pro map file. Por ora cai no spawn_tile().
-            morganeer_spawn: None,
-            peacemain_spawn: None,
+            // Spawn por facção lido do map file (tile coords). None = spawn_tile().
+            morganeer_spawn: self.morganeer_spawn.map(|s| (s[0] as i32, s[1] as i32)),
+            peacemain_spawn: self.peacemain_spawn.map(|s| (s[0] as i32, s[1] as i32)),
         }
     }
 }
