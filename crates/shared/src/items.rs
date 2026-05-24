@@ -16,70 +16,69 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Tier de raridade. Cada tier multiplica os rolls por um fator e tem
-/// chance de drop diferente.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ItemRarity {
-    Common    = 0, // cinza      — 60% drop
-    Magic     = 1, // azul       — 25%
-    Rare      = 2, // amarelo    — 10%
-    Epic      = 3, // roxo       — 4%
-    Legendary = 4, // laranja    — 1%
+// ── Tier do item (1–5) ───────────────────────────────────────────────────
+// Substitui o antigo sistema de raridade ALEATÓRIA (Comum/Mágico/Raro/Épico/
+// Lendário). Agora a qualidade vem do TIER, derivado do item level: mob mais
+// forte / receita de tier maior → item de tier maior. O tier controla cor,
+// multiplicador de stats, nº de affixes e sockets — não há mais sorteio.
+// Cores no cliente: T1 cinza, T2 verde, T3 azul, T4 roxo, T5 laranja.
+//
+// O campo `ItemInstance.rarity` foi MANTIDO (compat de wire/DB) mas agora
+// guarda este tier (1–5). O cliente deriva o tier do item_level pra exibir,
+// então itens legados (com valor antigo no campo) também coloram certo.
+
+/// Tier (1–5) a partir do item level.
+pub fn tier_from_ilvl(item_level: u16) -> u8 {
+    match item_level {
+        0..=10  => 1,
+        11..=25 => 2,
+        26..=45 => 3,
+        46..=70 => 4,
+        _       => 5,
+    }
 }
 
-impl ItemRarity {
-    /// Multiplier aplicado nos rolls de stats.
-    pub fn stat_mult(self) -> f32 {
-        match self {
-            ItemRarity::Common    => 0.6,
-            ItemRarity::Magic     => 0.9,
-            ItemRarity::Rare      => 1.2,
-            ItemRarity::Epic      => 1.5,
-            ItemRarity::Legendary => 1.9,
-        }
+/// Multiplier aplicado nos rolls de stats por tier (T1 fraco → T5 forte).
+pub fn tier_stat_mult(tier: u8) -> f32 {
+    match tier {
+        1 => 0.6,
+        2 => 0.9,
+        3 => 1.2,
+        4 => 1.5,
+        _ => 1.9,
     }
+}
 
-    /// Cor RGB pra cliente (#RRGGBB).
-    pub fn color_hex(self) -> &'static str {
-        match self {
-            ItemRarity::Common    => "#bfbfbf",
-            ItemRarity::Magic     => "#5577ff",
-            ItemRarity::Rare      => "#ffd84d",
-            ItemRarity::Epic      => "#aa55ff",
-            ItemRarity::Legendary => "#ff7733",
-        }
+/// Cor RGB (#RRGGBB) por tier. Fallback — o cliente tem a própria tabela.
+pub fn tier_color_hex(tier: u8) -> &'static str {
+    match tier {
+        1 => "#bfbfbf", // cinza
+        2 => "#5fd35f", // verde
+        3 => "#5577ff", // azul
+        4 => "#aa55ff", // roxo
+        _ => "#ff7733", // laranja
     }
+}
 
-    pub fn name(self) -> &'static str {
-        match self {
-            ItemRarity::Common    => "Comum",
-            ItemRarity::Magic     => "Mágico",
-            ItemRarity::Rare      => "Raro",
-            ItemRarity::Epic      => "Épico",
-            ItemRarity::Legendary => "Lendário",
-        }
+/// Nome curto do tier pra exibição.
+pub fn tier_name(tier: u8) -> &'static str {
+    match tier {
+        1 => "T1",
+        2 => "T2",
+        3 => "T3",
+        4 => "T4",
+        _ => "T5",
     }
+}
 
-    pub fn from_u8(v: u8) -> Self {
-        match v {
-            1 => ItemRarity::Magic,
-            2 => ItemRarity::Rare,
-            3 => ItemRarity::Epic,
-            4 => ItemRarity::Legendary,
-            _ => ItemRarity::Common,
-        }
-    }
-
-    /// Roll uma rarity baseada num float [0,1).
-    pub fn roll(r: f32) -> Self {
-        // Tabela acumulada: Common 60, Magic 85, Rare 95, Epic 99, Leg 100.
-        let p = (r * 100.0) as i32;
-        if p < 60 { ItemRarity::Common }
-        else if p < 85 { ItemRarity::Magic }
-        else if p < 95 { ItemRarity::Rare }
-        else if p < 99 { ItemRarity::Epic }
-        else { ItemRarity::Legendary }
+/// (prefixos, sufixos) de affix por tier. T1=0, T2=1, T3=2, T4=3, T5=4.
+fn tier_affix_counts(tier: u8) -> (u8, u8) {
+    match tier {
+        1 => (0, 0),
+        2 => (1, 0),
+        3 => (1, 1),
+        4 => (2, 1),
+        _ => (2, 2),
     }
 }
 
@@ -188,6 +187,8 @@ pub const MAX_AFFIXES: usize = 4;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ItemInstance {
+    /// TIER do item (1–5). Nome `rarity` mantido por compat de wire/DB; o
+    /// sistema de raridade aleatória virou tier (ver `tier_from_ilvl`).
     pub rarity:     u8,
     pub refinement: u8,
     /// Item Level — vem do enemy que dropou. Escala stats no roll
@@ -355,17 +356,16 @@ pub fn affix_def(name_id: u16) -> Option<&'static AffixDef> {
 }
 
 impl Affix {
-    pub fn roll<F: FnMut() -> f32>(rng: &mut F, is_prefix: bool, rarity: ItemRarity) -> Option<Self> {
+    pub fn roll<F: FnMut() -> f32>(rng: &mut F, is_prefix: bool, item_tier: u8) -> Option<Self> {
         let pool: Vec<&AffixDef> = AFFIX_TABLE.iter().filter(|a| a.is_prefix == is_prefix).collect();
         if pool.is_empty() { return None; }
         let pick = &pool[(rng() * pool.len() as f32) as usize];
-        // Tier weighted by rarity: Magic→T1, Rare→T1/T2, Epic→T2/T3, Leg→T3
-        let tier_idx = match rarity {
-            ItemRarity::Common    => 0,
-            ItemRarity::Magic     => 0,
-            ItemRarity::Rare      => if rng() < 0.5 { 0 } else { 1 },
-            ItemRarity::Epic      => if rng() < 0.6 { 1 } else { 2 },
-            ItemRarity::Legendary => if rng() < 0.3 { 1 } else { 2 },
+        // Força do affix (T1 fraco → T3 forte) ponderada pelo tier do item.
+        let tier_idx = match item_tier {
+            1 | 2 => 0,
+            3     => if rng() < 0.5 { 0 } else { 1 },
+            4     => if rng() < 0.6 { 1 } else { 2 },
+            _     => if rng() < 0.3 { 1 } else { 2 },
         };
         let (lo, hi) = pick.tiers[tier_idx];
         let raw = lo as f32 + rng() * (hi - lo) as f32;
@@ -404,10 +404,10 @@ impl ItemInstance {
     /// o template não tem nenhum range (item não-equipável).
     pub fn roll_with_template<F: FnMut() -> f32>(tpl: ItemTemplate, item_level: u16, mut rng: F) -> Option<Self> {
         if !tpl.has_any_range() { return None; }
-        let rarity = ItemRarity::roll(rng());
-        let mult = rarity.stat_mult() * ilvl_scale(item_level);
+        let tier = tier_from_ilvl(item_level);
+        let mult = tier_stat_mult(tier) * ilvl_scale(item_level);
         let mut inst = ItemInstance {
-            rarity:     rarity as u8,
+            rarity:     tier, // campo `rarity` guarda o TIER (1–5)
             refinement: 0,
             item_level,
             level_req:  if item_level > 5 { Some(item_level / 2) } else { None },
@@ -418,27 +418,21 @@ impl ItemInstance {
             wis:           tpl.wis.roll(rng(), mult),
             defense:       tpl.defense.roll(rng(), mult),
             affixes: [AffixSlot::default(); MAX_AFFIXES],
-            sockets: sockets_for_rarity(rarity),
+            sockets: sockets_for_tier(tier),
             socketed_gems: [0; 3],
         };
-        // Affixes: Magic=1, Rare=2 (1pre+1suf), Epic=3 (2pre+1suf),
-        // Legendary=4 (2pre+2suf). Common não tem.
-        let (n_pre, n_suf) = match rarity {
-            ItemRarity::Common    => (0, 0),
-            ItemRarity::Magic     => (if rng() < 0.5 { 1 } else { 0 }, if rng() < 0.5 { 0 } else { 1 }),
-            ItemRarity::Rare      => (1, 1),
-            ItemRarity::Epic      => (2, 1),
-            ItemRarity::Legendary => (2, 2),
-        };
+        // Affixes por tier: T1=0, T2=1, T3=2 (1pre+1suf), T4=3 (2pre+1suf),
+        // T5=4 (2pre+2suf).
+        let (n_pre, n_suf) = tier_affix_counts(tier);
         let mut idx = 0;
         for _ in 0..n_pre {
-            if let Some(a) = Affix::roll(&mut rng, true, rarity) {
+            if let Some(a) = Affix::roll(&mut rng, true, tier) {
                 inst.affixes[idx] = AffixSlot::from_affix(a);
                 idx += 1;
             }
         }
         for _ in 0..n_suf {
-            if let Some(a) = Affix::roll(&mut rng, false, rarity) {
+            if let Some(a) = Affix::roll(&mut rng, false, tier) {
                 inst.affixes[idx] = AffixSlot::from_affix(a);
                 idx += 1;
             }
@@ -515,8 +509,10 @@ impl ItemInstance {
         (crit, atks, mov, hpr)
     }
 
-    pub fn rarity(&self) -> ItemRarity {
-        ItemRarity::from_u8(self.rarity)
+    /// Tier do item (1–5). Lê o campo `rarity` (mantido por compat, mas guarda
+    /// o tier) e clampa pra cobrir itens legados com valor fora de [1,5].
+    pub fn tier(&self) -> u8 {
+        self.rarity.clamp(1, 5)
     }
 }
 
@@ -613,14 +609,12 @@ pub fn gem_bonus(gem_id: u16) -> Option<(AffixStat, i32, f32)> {
     }
 }
 
-/// Quantos sockets um item tem baseado em sua rarity (Magic=0,
-/// Rare=1, Epic=2, Legendary=3). Common não tem socket.
-pub fn sockets_for_rarity(r: ItemRarity) -> u8 {
-    match r {
-        ItemRarity::Common    => 0,
-        ItemRarity::Magic     => 0,
-        ItemRarity::Rare      => 1,
-        ItemRarity::Epic      => 2,
-        ItemRarity::Legendary => 3,
+/// Quantos sockets um item tem baseado no tier: T1/T2=0, T3=1, T4=2, T5=3.
+pub fn sockets_for_tier(tier: u8) -> u8 {
+    match tier {
+        1 | 2 => 0,
+        3 => 1,
+        4 => 2,
+        _ => 3,
     }
 }

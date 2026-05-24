@@ -205,63 +205,87 @@ pub const QUESTS: &[QuestDef] = &[
         obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 10,
         reward_gold: 200, reward_xp: 150, repeatable: true, daily: true, ..q() },
 
-    // ===================== NPC (moradores — DIÁRIAS) =====================
-    // 12 quests, 1 por arauto (givers 101..112). 2 arautos por cidade são
-    // promovidos no load do mapa. Todas repetíveis com reset DIÁRIO.
+    // ===================== NPC (arautos das ILHAS — DIÁRIAS) =====================
+    // 12 quests, 1 por arauto (givers 101..112), 2 por cidade. As cidades têm
+    // dificuldades MUITO diferentes (nível dos inimigos ao redor), então cada
+    // par é escalado pro TIER da ilha: começo barato/fácil → endgame caro/difícil.
+    // Mapa giver→cidade→tier (cidade# = índice em CITY_CENTROIDS no world.rs):
+    //   T1 ilha lv1-5    : cidade#3, givers 107/108 (q207/208)  — início
+    //   T2 ilha lv1-5    : cidade#5, givers 111/112 (q211/212)  — início
+    //   T3 ilha lv31-40  : cidade#2, givers 105/106 (q205/206)
+    //   T4 ilha lv51-60  : cidade#0, givers 101/102 (q201/202)
+    //   T5 ilha lv71-80  : cidade#1, givers 103/104 (q203/204)  — +TRANSPORTE
+    //   T6 ilha lv91-100 : cidade#4, givers 109/110 (q209/210)  — +TESOURO
+    // (ids mantidos em ordem crescente por legibilidade; o tier vem do giver.)
+
+    // --- T4 · cidade#0 (lv51-60) ---
     QuestDef { id: 201, source: quest_source::NPC, giver: 101,
-        title: "Reforço de madeira", desc: "Um morador precisa de madeira para as obras.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::WOOD_T1, obj_count: 20,
-        reward_gold: 150, reward_xp: 90, repeatable: true, daily: true, ..q() },
+        title: "Madeira nobre", desc: "A fortaleza precisa de madeira tier 3 reforçada.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::WOOD_T3, obj_count: 10,
+        reward_gold: 600, reward_xp: 520, reward_item: item_id::GEM, reward_item_qty: 1,
+        repeatable: true, daily: true, min_level: 45, ..q() },
     QuestDef { id: 202, source: quest_source::NPC, giver: 102,
-        title: "Caça aos saqueadores", desc: "Bandidos rondam a cidade. Elimine-os.",
-        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 10,
-        reward_gold: 200, reward_xp: 150, repeatable: true, daily: true, ..q() },
+        title: "Caça aos saqueadores", desc: "Saqueadores veteranos cercam a região. Elimine-os.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 22,
+        reward_gold: 680, reward_xp: 600, repeatable: true, daily: true, min_level: 45, ..q() },
+
+    // --- T5 · cidade#1 (lv71-80) — inclui TRANSPORTE ---
     QuestDef { id: 203, source: quest_source::NPC, giver: 103,
-        title: "Minério para a fundição", desc: "A fundição precisa de minério bruto.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::MINERAL_T1, obj_count: 15,
-        reward_gold: 160, reward_xp: 100, repeatable: true, daily: true, ..q() },
+        title: "Suprimentos para a fortaleza do norte",
+        desc: "Leve 10 de madeira tier 3 até a ilha do norte (siga a bússola).",
+        obj_kind: objective_kind::TRANSPORT, obj_target: item_id::WOOD_T3, obj_count: 10,
+        obj_x: 11100.0, obj_y: 639.0, obj_radius: 45.0,
+        reward_gold: 1000, reward_xp: 900, reward_item: item_id::GEM, reward_item_qty: 2,
+        repeatable: true, daily: true, min_level: 65, ..q() },
     QuestDef { id: 204, source: quest_source::NPC, giver: 104,
-        title: "Couro para o curtume", desc: "O curtume precisa de couro fresco.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::LEATHER_T1, obj_count: 12,
-        reward_gold: 150, reward_xp: 90, repeatable: true, daily: true, ..q() },
+        title: "Ameaça crescente", desc: "Bestas poderosas ameaçam a ilha. Reduza-as.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 28,
+        reward_gold: 1100, reward_xp: 980, repeatable: true, daily: true, min_level: 65, ..q() },
+
+    // --- T3 · cidade#2 (lv31-40) ---
     QuestDef { id: 205, source: quest_source::NPC, giver: 105,
-        title: "Lenha resistente", desc: "Precisamos de madeira tier 2 para barcos.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::WOOD_T2, obj_count: 10,
-        reward_gold: 250, reward_xp: 160, repeatable: true, daily: true, min_level: 5, ..q() },
+        title: "Minério para a forja", desc: "O ferreiro precisa de minério tier 2.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::MINERAL_T2, obj_count: 12,
+        reward_gold: 350, reward_xp: 300, reward_item: item_id::IRON_INGOT, reward_item_qty: 2,
+        repeatable: true, daily: true, min_level: 25, ..q() },
     QuestDef { id: 206, source: quest_source::NPC, giver: 106,
-        title: "Pragas no campo", desc: "Criaturas atrapalham a plantação.",
-        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 12,
-        reward_gold: 180, reward_xp: 130, repeatable: true, daily: true, ..q() },
+        title: "Limpeza da floresta", desc: "Criaturas hostis tomaram a mata. Faça a limpeza.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 18,
+        reward_gold: 400, reward_xp: 340, repeatable: true, daily: true, min_level: 25, ..q() },
+
+    // --- T1 · cidade#3 (ilha inicial lv1-5) ---
     QuestDef { id: 207, source: quest_source::NPC, giver: 107,
-        title: "Aço para a forja", desc: "O ferreiro precisa de minério tier 2.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::MINERAL_T2, obj_count: 8,
-        reward_gold: 280, reward_xp: 200, reward_item: item_id::IRON_INGOT, reward_item_qty: 2,
-        repeatable: true, daily: true, min_level: 5, ..q() },
+        title: "Madeira para o porto", desc: "O porto da vila precisa de madeira para os reparos.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::WOOD_T1, obj_count: 15,
+        reward_gold: 80, reward_xp: 60, repeatable: true, daily: true, min_level: 1, ..q() },
     QuestDef { id: 208, source: quest_source::NPC, giver: 108,
-        title: "Suprimentos para a vila distante",
-        desc: "Leve 10 de madeira até a vila a leste (siga a bússola).",
-        obj_kind: objective_kind::TRANSPORT, obj_target: item_id::WOOD_T1, obj_count: 10,
-        obj_x: 8900.0, obj_y: 1359.0, obj_radius: 45.0,
-        reward_gold: 320, reward_xp: 240, repeatable: true, daily: true, ..q() },
+        title: "Bichos na praia", desc: "Pequenas criaturas incomodam os pescadores.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 8,
+        reward_gold: 100, reward_xp: 70, repeatable: true, daily: true, min_level: 1, ..q() },
+
+    // --- T6 · cidade#4 (ilha endgame lv91-100) — inclui TESOURO ---
     QuestDef { id: 209, source: quest_source::NPC, giver: 109,
-        title: "Couro reforçado", desc: "Couro tier 2 para armaduras melhores.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::LEATHER_T2, obj_count: 8,
-        reward_gold: 260, reward_xp: 170, repeatable: true, daily: true, min_level: 5, ..q() },
-    QuestDef { id: 210, source: quest_source::NPC, giver: 110,
-        title: "Caça ao tesouro",
-        desc: "Um baú aguarda numa vila distante. Abra-o (siga a bússola).",
+        title: "Tesouro lendário",
+        desc: "Um mapa aponta um baú lendário numa ilha distante. Abra-o (siga a bússola).",
         obj_kind: objective_kind::TREASURE, obj_count: 1,
         obj_x: 6820.0, obj_y: 624.0, obj_radius: 60.0,
-        reward_gold: 500, reward_xp: 400, reward_item: item_id::GEM, reward_item_qty: 1,
-        repeatable: true, daily: true, min_level: 3, ..q() },
+        reward_gold: 1800, reward_xp: 1600, reward_item: item_id::DRAGON_SCALE, reward_item_qty: 1,
+        repeatable: true, daily: true, min_level: 88, ..q() },
+    QuestDef { id: 210, source: quest_source::NPC, giver: 110,
+        title: "Senhores da guerra", desc: "Os monstros mais letais do arquipélago rondam aqui.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 35,
+        reward_gold: 2000, reward_xp: 1750, reward_item: item_id::GEM, reward_item_qty: 3,
+        repeatable: true, daily: true, min_level: 88, ..q() },
+
+    // --- T2 · cidade#5 (ilha inicial lv1-5) ---
     QuestDef { id: 211, source: quest_source::NPC, giver: 111,
-        title: "Limpeza pesada", desc: "Reduza os monstros mais perigosos da região.",
-        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 15,
-        reward_gold: 350, reward_xp: 280, repeatable: true, daily: true, min_level: 8, ..q() },
+        title: "Couro para o curtume", desc: "O curtume precisa de couro fresco para começar.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::LEATHER_T1, obj_count: 12,
+        reward_gold: 110, reward_xp: 90, repeatable: true, daily: true, min_level: 1, ..q() },
     QuestDef { id: 212, source: quest_source::NPC, giver: 112,
-        title: "Minério raro", desc: "A cidade precisa de minério tier 3.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::MINERAL_T3, obj_count: 6,
-        reward_gold: 400, reward_xp: 300, repeatable: true, daily: true, min_level: 10, ..q() },
+        title: "Ronda da vila", desc: "Mantenha os arredores da vila seguros.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 12,
+        reward_gold: 140, reward_xp: 110, repeatable: true, daily: true, min_level: 1, ..q() },
 
     // ===================== FACÇÃO (PvP; XP + pontos de facção, SEM ouro) ====
     QuestDef { id: 301, source: quest_source::FACTION, faction: faction_id::MORGANEERS,

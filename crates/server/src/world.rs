@@ -942,6 +942,39 @@ pub struct Session {
     pub faction_points_last_sent: u32,
 }
 
+impl Session {
+    /// Concede XP ao jogador — FONTE ÚNICA pra toda fonte de XP (combate,
+    /// quests, etc). Soma o XP, processa level-up (pontos de status + skill
+    /// points, idempotente via `last_level`) e envia `ProgressUpdate` pro
+    /// cliente na hora. Não cobre o bônus de proficiência de arma do combate
+    /// (esse é específico do kill e fica inline lá).
+    fn grant_xp(&mut self, amount: u64) {
+        if amount == 0 { return; }
+        self.xp = self.xp.saturating_add(amount);
+        let new_level = shared::level_of_xp_with_mult(self.xp, crate::economy::xp_multiplier());
+        if new_level > self.last_level {
+            let gained = new_level - self.last_level;
+            self.unspent_points = self.unspent_points
+                .saturating_add(gained * shared::POINTS_PER_LEVEL);
+            self.stat_points_dirty = true;
+            self.skill_points_earned = self.skill_points_earned
+                .saturating_add(gained * shared::SP_PER_LEVEL);
+            self.skills_dirty = true;
+            tracing::info!(
+                "{} subiu pra L{} (+{} pontos livres, +{} SP)",
+                self.name, new_level,
+                gained * shared::POINTS_PER_LEVEL,
+                gained * shared::SP_PER_LEVEL,
+            );
+        }
+        self.last_level = new_level;
+        let _ = self.handle.to_client.send(ServerMessage::ProgressUpdate {
+            xp: self.xp,
+            level: new_level,
+        });
+    }
+}
+
 /// Recursos compartilhados para autenticacao assincrona.
 #[derive(Clone)]
 pub struct AuthCtx {
@@ -7178,7 +7211,6 @@ impl GameWorld {
                 let fame_share = fame_reward;
                 for session in self.sessions.values_mut() {
                     if recipients.contains(&session.entity_id) && session.logged_in {
-                        session.xp = session.xp.saturating_add(share);
                         if session.entity_id == attacker_eid {
                             session.fame = session.fame.saturating_add(fame_share);
                             // Bonus de proficiencia ao matar: 10 XP na arma atual
@@ -7193,42 +7225,8 @@ impl GameWorld {
                                 }
                             }
                         }
-                        let new_level = shared::level_of_xp_with_mult(session.xp, crate::economy::xp_multiplier());
-                        if new_level > session.last_level {
-                            let gained = new_level - session.last_level;
-                            session.unspent_points = session.unspent_points
-                                .saturating_add(gained * shared::POINTS_PER_LEVEL);
-                            session.stat_points_dirty = true;
-                            // Skills: ganha SP por level (cap em CHAR_LEVEL_CAP).
-                            // `level_of_xp` já clampa, mas o gain por delta
-                            // preserva idempotência se chamado mais de uma vez.
-                            session.skill_points_earned = session.skill_points_earned
-                                .saturating_add(gained * shared::SP_PER_LEVEL);
-                            session.skills_dirty = true;
-                            tracing::info!(
-                                "{} subiu pra L{} (+{} pontos livres, +{} SP)",
-                                session.name, new_level,
-                                gained * shared::POINTS_PER_LEVEL,
-                                gained * shared::SP_PER_LEVEL,
-                            );
-                        }
-                        session.last_level = new_level;
-                        let _ = session
-                            .handle
-                            .to_client
-                            .send(ServerMessage::ProgressUpdate {
-                                xp: session.xp,
-                                level: new_level,
-                            });
-                        tracing::info!(
-                            "[XP] {} ganhou xp -> total={} L{} (xp_for_next L{}={})",
-                            session.name, session.xp, new_level,
-                            new_level + 1, shared::xp_for_level_with_mult(new_level + 1, crate::economy::xp_multiplier())
-                        );
-                        tracing::debug!(
-                            "kill credit: {} -> xp {} (L{})",
-                            session.name, session.xp, new_level
-                        );
+                        // XP + level-up + ProgressUpdate via fonte única.
+                        session.grant_xp(share);
                         break;
                     }
                 }
@@ -8194,11 +8192,12 @@ impl GameWorld {
         // Recipes vem do DB cache (admin pode mudar custos sem rebuild).
         // Fallback pro hardcoded se cache vazio (boot inicial).
         let Some(recipe) = crate::recipes::find(recipe_id) else { return };
-        // Gate: nível de proficiência de craft pro tier (T2=10/T3=20/T4=30).
+        // Gate: nível de proficiência de craft pro tier (T2=5/T3=20/T4=30).
+        // Fundição/Marcenaria têm T2=1 (sem receita T1, senão deadlock).
         // O cliente desabilita a receita; isto é a rede de segurança.
-        let craft_req = shared::tier_level_req(recipe.tier);
+        let prof = shared::Proficiency::from_craft_station(recipe.station);
+        let craft_req = shared::tier_level_req_for(prof, recipe.tier);
         if craft_req > 1 {
-            let prof = shared::Proficiency::from_craft_station(recipe.station);
             let cur = shared::proficiency_level(session.proficiencies[prof as usize]);
             if cur < craft_req { return; }
         }
@@ -8764,7 +8763,7 @@ impl GameWorld {
         }
         // Recompensas
         if def.reward_gold > 0 { s.gold = s.gold.saturating_add(def.reward_gold as u64); }
-        if def.reward_xp > 0 { s.xp = s.xp.saturating_add(def.reward_xp); }
+        if def.reward_xp > 0 { s.grant_xp(def.reward_xp); }
         if def.reward_faction_points > 0 { s.faction_points = s.faction_points.saturating_add(def.reward_faction_points); }
         if def.reward_item != 0 && def.reward_item_qty > 0 {
             add_to_inventory(&mut s.inventory, def.reward_item, def.reward_item_qty as u32, None);
@@ -9005,7 +9004,7 @@ impl GameWorld {
             return;
         }
         if def.reward_gold > 0 { s.gold = s.gold.saturating_add(def.reward_gold as u64); }
-        if def.reward_xp > 0 { s.xp = s.xp.saturating_add(def.reward_xp); }
+        if def.reward_xp > 0 { s.grant_xp(def.reward_xp); }
         if def.reward_faction_points > 0 { s.faction_points = s.faction_points.saturating_add(def.reward_faction_points); }
         if def.reward_item != 0 && def.reward_item_qty > 0 {
             add_to_inventory(&mut s.inventory, def.reward_item, def.reward_item_qty as u32, None);

@@ -59,14 +59,16 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     sqlx::query("INSERT INTO recipes_version (id, version) VALUES (1, 1) ON CONFLICT DO NOTHING")
         .execute(pool).await?;
 
-    // Seed se vazio.
+    // Seed IDEMPOTENTE: roda sempre. `seed_from_constants` usa
+    // `ON CONFLICT (id) DO NOTHING`, então insere apenas ids NOVOS de
+    // CRAFT_RECIPES (ex: barcos T1+) sem sobrescrever receitas já no DB ou
+    // editadas pelo admin. Antes só seedava com a tabela vazia, o que deixava
+    // receitas novas de fora até limpar a tabela.
+    seed_from_constants(pool).await?;
     let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM craft_recipes")
         .fetch_one(pool).await?;
-    if count.0 == 0 {
-        seed_from_constants(pool).await?;
-        tracing::info!("[recipes] seed inicial: {} recipes inseridas",
-            shared::CRAFT_RECIPES.len());
-    }
+    tracing::info!("[recipes] seed idempotente ok ({} defs estáticas, {} no DB)",
+        shared::CRAFT_RECIPES.len(), count.0);
 
     reload(pool).await?;
     let v: i64 = sqlx::query_scalar("SELECT version FROM recipes_version WHERE id = 1")

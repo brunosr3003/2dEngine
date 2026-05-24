@@ -348,14 +348,26 @@ impl Proficiency {
 }
 
 /// Nível mínimo de proficiência exigido para farmar/craftar um recurso de
-/// dado tier. T1 livre; T2=10, T3=20, T4=30. Vale tanto pra farm quanto craft.
+/// dado tier. T1 livre; T2=5, T3=20, T4=30. Vale tanto pra farm quanto craft.
 pub const fn tier_level_req(tier: u8) -> u32 {
     match tier {
         0 | 1 => 1,
-        2     => 10,
+        2     => 5,
         3     => 20,
         _     => 30, // tier 4+
     }
+}
+
+/// Igual a `tier_level_req`, mas ciente da proficiência. Fundição e Marcenaria
+/// não têm receita T1 (refinam mineral/madeira que já saem como T2+), então o
+/// T2 é o tier de ENTRADA delas e precisa ser craftável desde o nível 1 —
+/// senão deadlock: só se ganha XP fundindo/marcenando, mas não dá pra fazer
+/// isso sem o nível. As demais proficiências caem no gate padrão.
+pub const fn tier_level_req_for(prof: Proficiency, tier: u8) -> u32 {
+    if tier == 2 && matches!(prof, Proficiency::Smelting | Proficiency::Carpentry) {
+        return 1;
+    }
+    tier_level_req(tier)
 }
 
 /// Nivel de proficiencia dado XP acumulado (curva quadratica similar ao XP do player).
@@ -519,14 +531,19 @@ pub mod item_id {
     pub const MINERAL_T4:      u16 = 71;
 
     // === Fase Naval — barcos (consumiveis usados na margem) ===
-    /// Lylian Leutard — barco basico de exploracao costeira. Spawn na agua
+    /// Progressao de barcos por TIER: Esquife (T1, 1 lugar) → Lylian (T2) →
+    /// futuros T3/T4. O "tier" e' gameplay; o boat_kind (0/1) e' so id de
+    /// renderer/config. Esquife = kind 1, Lylian = kind 0 (legado).
+    /// Esquife — barquinho de 1 passageiro, primeiro barco craftavel (barato).
+    pub const BOAT_ESQUIFE: u16 = 101;
+    /// Lylian Leutard — barco T2 de exploracao costeira. Spawn na agua
     /// adjacente quando usado a partir de uma margem walkable.
     pub const BOAT_LYLIAN_LEUTARD: u16 = 100;
 }
 
 /// True se o item_id e' um barco (consumido ao usar; spawna entidade Boat).
 pub fn is_boat_item(id: u16) -> bool {
-    id == item_id::BOAT_LYLIAN_LEUTARD
+    id == item_id::BOAT_LYLIAN_LEUTARD || id == item_id::BOAT_ESQUIFE
 }
 
 // ============================================================================
@@ -640,7 +657,9 @@ pub const CRAFT_RECIPES: &[CraftRecipe] = &[
     CraftRecipe { id:168, name:"Calças Placa T4",  inputs:[(item_id::MINERAL_T4,5),(item_id::LEATHER_T4,1),(0,0),(0,0)], output_item_id:item_id::LEGS_PLATE,    output_qty:1, output_item_level:70, roll_instance:true },
 
     // Boats (Naval) — embarcacoes craftaveis. Ids 200+ reservados pra naval.
-    // Lylian Leutard usa: 100 madeira T1 + 100 madeira T2 + 100 mineral T2 + 100 monster heart T2.
+    // Esquife (T1) — primeiro barco, barato: 40 madeira T1 + 20 couro T1.
+    CraftRecipe { id:201, name:"Esquife",         inputs:[(item_id::WOOD_T1,40),(item_id::LEATHER_T1,20),(0,0),(0,0)], output_item_id:item_id::BOAT_ESQUIFE, output_qty:1, output_item_level:0, roll_instance:false },
+    // Lylian Leutard (T2) usa: 100 madeira T1 + 100 madeira T2 + 100 mineral T2 + 100 monster heart T2.
     CraftRecipe { id:200, name:"Lylian Leutard",  inputs:[(item_id::WOOD_T1,100),(item_id::WOOD_T2,100),(item_id::MINERAL_T2,100),(item_id::LEATHER_T2,100)], output_item_id:item_id::BOAT_LYLIAN_LEUTARD, output_qty:1, output_item_level:0, roll_instance:false },
 ];
 
@@ -684,7 +703,8 @@ pub fn craft_station_of(output_item_id: u16) -> u8 {
 /// sync com o cliente (BoatRenderer escolhe sheets pelo kind).
 pub fn boat_kind_of(id: u16) -> Option<u16> {
     match id {
-        item_id::BOAT_LYLIAN_LEUTARD => Some(0), // 0 = Lylian Leutard
+        item_id::BOAT_LYLIAN_LEUTARD => Some(0), // 0 = Lylian Leutard (T2)
+        item_id::BOAT_ESQUIFE        => Some(1), // 1 = Esquife (T1, 1 lugar)
         _ => None,
     }
 }
