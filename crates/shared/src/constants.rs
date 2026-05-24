@@ -22,7 +22,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 53;
+pub const PROTOCOL_VERSION: u16 = 60;
 
 // ── Boat (Sea-of-Thieves style: vela/leme/ancora separados) ─────────────────
 /// Velocidade maxima de qualquer barco (tiles/s). Atingida com vela full,
@@ -215,18 +215,28 @@ pub enum Proficiency {
     Unarmed  = 5,
     Axe      = 6,
     Spear    = 7,
-    Farm     = 8,
+    // Farm (coleta) — uma proficiência por tipo de nó. Substituiu o antigo
+    // `Farm` único (idx 8). XP de "Farm" legado é migrado pra Gathering.
+    Mining      = 8,
+    Woodcutting = 9,
+    Gathering   = 10,
+    // Craft — uma proficiência por estação de craft (`craft_station`).
+    Smithing    = 11, // FORGE
+    Tailoring   = 12, // ATELIER
+    Smelting    = 13, // SMELTER
+    Carpentry   = 14, // CARPENTRY
 }
 
 /// Total de proficiências (tamanho do array em CharacterRow.proficiencies).
-pub const PROF_COUNT: usize = 9;
+pub const PROF_COUNT: usize = 15;
 
 impl Proficiency {
     pub fn all() -> &'static [Proficiency] {
         &[
             Self::Sword, Self::Staff, Self::Dagger, Self::Bow,
             Self::Wand, Self::Unarmed, Self::Axe, Self::Spear,
-            Self::Farm,
+            Self::Mining, Self::Woodcutting, Self::Gathering,
+            Self::Smithing, Self::Tailoring, Self::Smelting, Self::Carpentry,
         ]
     }
 
@@ -263,11 +273,18 @@ impl Proficiency {
             Self::Unarmed => "Unarmed",
             Self::Axe     => "Axe",
             Self::Spear   => "Spear",
-            Self::Farm    => "Farm",
+            Self::Mining      => "Mining",
+            Self::Woodcutting => "Woodcutting",
+            Self::Gathering   => "Gathering",
+            Self::Smithing    => "Smithing",
+            Self::Tailoring   => "Tailoring",
+            Self::Smelting    => "Smelting",
+            Self::Carpentry   => "Carpentry",
         }
     }
 
     /// Inverso de `as_db_str`. Retorna None pra strings desconhecidas.
+    /// `"Farm"` (legado, idx 8 unificado) é migrado pra `Gathering`.
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "Sword"   => Some(Self::Sword),
@@ -278,7 +295,13 @@ impl Proficiency {
             "Unarmed" => Some(Self::Unarmed),
             "Axe"     => Some(Self::Axe),
             "Spear"   => Some(Self::Spear),
-            "Farm"    => Some(Self::Farm),
+            "Mining"      => Some(Self::Mining),
+            "Woodcutting" => Some(Self::Woodcutting),
+            "Gathering" | "Farm" => Some(Self::Gathering),
+            "Smithing"    => Some(Self::Smithing),
+            "Tailoring"   => Some(Self::Tailoring),
+            "Smelting"    => Some(Self::Smelting),
+            "Carpentry"   => Some(Self::Carpentry),
             _         => None,
         }
     }
@@ -293,8 +316,45 @@ impl Proficiency {
             Self::Unarmed => "Desarmado",
             Self::Axe     => "Machado",
             Self::Spear   => "Lança",
-            Self::Farm    => "Coleta",
+            Self::Mining      => "Mineração",
+            Self::Woodcutting => "Lenhador",
+            Self::Gathering   => "Coleta",
+            Self::Smithing    => "Ferraria",
+            Self::Tailoring   => "Alfaiataria",
+            Self::Smelting    => "Fundição",
+            Self::Carpentry   => "Carpintaria",
         }
+    }
+
+    /// Proficiência de farm correspondente ao tipo de nó (`FarmNode.kind`).
+    pub fn from_farm_kind(kind: &str) -> Self {
+        match kind {
+            "Tree" => Self::Woodcutting,
+            "Rock" => Self::Mining,
+            _      => Self::Gathering, // Flower e demais
+        }
+    }
+
+    /// Proficiência de craft correspondente à estação (`craft_station`).
+    pub fn from_craft_station(station: u8) -> Self {
+        match station {
+            craft_station::FORGE     => Self::Smithing,
+            craft_station::ATELIER   => Self::Tailoring,
+            craft_station::SMELTER   => Self::Smelting,
+            craft_station::CARPENTRY => Self::Carpentry,
+            _                        => Self::Smithing,
+        }
+    }
+}
+
+/// Nível mínimo de proficiência exigido para farmar/craftar um recurso de
+/// dado tier. T1 livre; T2=10, T3=20, T4=30. Vale tanto pra farm quanto craft.
+pub const fn tier_level_req(tier: u8) -> u32 {
+    match tier {
+        0 | 1 => 1,
+        2     => 10,
+        3     => 20,
+        _     => 30, // tier 4+
     }
 }
 
@@ -586,6 +646,38 @@ pub const CRAFT_RECIPES: &[CraftRecipe] = &[
 
 pub fn craft_recipe(id: u16) -> Option<&'static CraftRecipe> {
     CRAFT_RECIPES.iter().find(|r| r.id == id)
+}
+
+/// Estações de craft da praça. O cliente recebe `CraftRecipeNet.station` e
+/// filtra as receitas pela estação que o player abriu.
+pub mod craft_station {
+    pub const FORGE:     u8 = 0; // armas pesadas/médias + armadura placa
+    pub const ATELIER:   u8 = 1; // armas leves/mágicas + armadura couro/pano
+    pub const SMELTER:   u8 = 2; // refino de mineral + couro(=heart)
+    pub const CARPENTRY: u8 = 3; // refino de madeira + barcos
+}
+
+/// Deriva a estação de craft a partir do item de saída da receita
+/// (sem coluna nova no DB — mesma ideia da categoria). Mantenha em sync
+/// com o cliente se ele precisar derivar; hoje o cliente só LÊ o campo.
+pub fn craft_station_of(output_item_id: u16) -> u8 {
+    use item_id::*;
+    match output_item_id {
+        // Marcenaria: refino de madeira + barcos
+        WOOD_T2 | WOOD_T3 | WOOD_T4 => craft_station::CARPENTRY,
+        100..=109                   => craft_station::CARPENTRY,
+        // Smelter: refino de mineral + couro(heart)
+        MINERAL_T2 | MINERAL_T3 | MINERAL_T4
+        | LEATHER_T2 | LEATHER_T3 | LEATHER_T4 => craft_station::SMELTER,
+        // Ateliê: armas leves/mágicas + armadura couro/pano + acessórios de pano
+        DAGGER | STAFF | WAND
+        | LEATHER_ARMOR | ROBE
+        | HELM_LEATHER | LEGS_LEATHER | BOOTS_LEATHER | GLOVES_LEATHER
+        | BELT_BASIC | BELT_MAGIC | CAPE_BASIC | CAPE_MAGIC
+        | NECKLACE_BASIC | NECKLACE_MAGIC => craft_station::ATELIER,
+        // Forja: resto (armas marciais + armadura placa + escudos)
+        _ => craft_station::FORGE,
+    }
 }
 
 /// Mapeia item_id de barco pra boat_kind do EntityKind::Boat. Mantenha em
@@ -1054,9 +1146,9 @@ pub const fn item_bonus(item_id: u16) -> EquipBonus {
         id if id == item_id::WAND         => EquipBonus { hp_max:  0,  mp_max:  80, attack_damage:  6, dex: 0,  wis: 8, defense: 0 },
         // Armaduras
         id if id == item_id::ARMOR        => EquipBonus { hp_max: 40,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0, defense:  5 },
-        id if id == item_id::SHIELD       => EquipBonus { hp_max: 75,  mp_max:   0, attack_damage: -5, dex: 0,  wis: 0, defense:  8 },
+        id if id == item_id::SHIELD       => EquipBonus { hp_max: 75,  mp_max:   0, attack_damage: -7, dex: 0,  wis: 0, defense:  6 },
         id if id == item_id::LEATHER_ARMOR=> EquipBonus { hp_max: 25,  mp_max:   0, attack_damage:  0, dex: 6,  wis: 0, defense:  3 },
-        id if id == item_id::PLATE_ARMOR  => EquipBonus { hp_max:120,  mp_max: -10, attack_damage:  0, dex: -5, wis: 0, defense: 12 },
+        id if id == item_id::PLATE_ARMOR  => EquipBonus { hp_max:120,  mp_max: -10, attack_damage: -8, dex: -5, wis: 0, defense:  9 },
         id if id == item_id::ROBE         => EquipBonus { hp_max: 10,  mp_max:  60, attack_damage:  0, dex: 0,  wis: 8, defense:  2 },
         // Acessorios
         id if id == item_id::RING         => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  0, dex: 5,  wis: 3, defense: 0 },
@@ -1067,18 +1159,18 @@ pub const fn item_bonus(item_id: u16) -> EquipBonus {
         id if id == item_id::AXE       => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage: 22, dex: -2, wis: 0, defense: 3 },
         id if id == item_id::SPEAR        => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 16, dex: 5,  wis: 0, defense: 0 },
         id if id == item_id::CROSSBOW     => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 18, dex: 8,  wis: 0, defense: 0 },
-        id if id == item_id::HEAVY_SHIELD => EquipBonus { hp_max: 110, mp_max:   0, attack_damage: -8, dex: -3, wis: 0, defense: 14 },
+        id if id == item_id::HEAVY_SHIELD => EquipBonus { hp_max: 110, mp_max:   0, attack_damage:-12, dex: -5, wis: 0, defense: 10 },
         id if id == item_id::PENDANT      => EquipBonus { hp_max: 25,  mp_max:  35, attack_damage:  0, dex: 0,  wis: 4, defense: 1 },
         id if id == item_id::CHARM        => EquipBonus { hp_max:  0,  mp_max:  10, attack_damage:  3, dex: 4,  wis: 4, defense: 0 },
         // === Fase E — slots novos ===
         id if id == item_id::HELM_LEATHER => EquipBonus { hp_max: 15,  mp_max:   0, attack_damage:  0, dex: 4,  wis: 0, defense:  3 },
-        id if id == item_id::HELM_PLATE   => EquipBonus { hp_max: 45,  mp_max:   0, attack_damage:  0, dex: -2, wis: 0, defense:  7 },
+        id if id == item_id::HELM_PLATE   => EquipBonus { hp_max: 45,  mp_max:   0, attack_damage: -2, dex: -3, wis: 0, defense:  5 },
         id if id == item_id::LEGS_LEATHER => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage:  0, dex: 5,  wis: 0, defense:  3 },
-        id if id == item_id::LEGS_PLATE   => EquipBonus { hp_max: 60,  mp_max:   0, attack_damage:  0, dex: -3, wis: 0, defense:  9 },
+        id if id == item_id::LEGS_PLATE   => EquipBonus { hp_max: 60,  mp_max:   0, attack_damage: -3, dex: -4, wis: 0, defense:  6 },
         id if id == item_id::BOOTS_LEATHER=> EquipBonus { hp_max: 10,  mp_max:   0, attack_damage:  0, dex: 6,  wis: 0, defense:  2 },
-        id if id == item_id::BOOTS_PLATE  => EquipBonus { hp_max: 30,  mp_max:   0, attack_damage:  0, dex: -2, wis: 0, defense:  5 },
+        id if id == item_id::BOOTS_PLATE  => EquipBonus { hp_max: 30,  mp_max:   0, attack_damage: -1, dex: -3, wis: 0, defense:  3 },
         id if id == item_id::GLOVES_LEATHER=>EquipBonus { hp_max:  5,  mp_max:   0, attack_damage:  3, dex: 5,  wis: 0, defense:  1 },
-        id if id == item_id::GLOVES_PLATE => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage:  6, dex: -1, wis: 0, defense:  4 },
+        id if id == item_id::GLOVES_PLATE => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage:  4, dex: -2, wis: 0, defense:  3 },
         id if id == item_id::BELT_BASIC   => EquipBonus { hp_max: 25,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0, defense:  2 },
         id if id == item_id::BELT_MAGIC   => EquipBonus { hp_max:  5,  mp_max:  35, attack_damage:  0, dex: 0,  wis: 4, defense:  1 },
         id if id == item_id::CAPE_BASIC   => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0, defense:  4 },

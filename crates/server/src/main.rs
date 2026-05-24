@@ -15,6 +15,7 @@ mod boat_config;
 mod economy;
 mod enemy_builds;
 mod persistence;
+mod quests;
 mod recipes;
 mod session;
 mod skills;
@@ -42,6 +43,9 @@ async fn main() -> Result<()> {
 
     // Abre Postgres, carrega personagens existentes, sobe task de escrita.
     let pool = persistence::open_pool(&database_url).await?;
+    // Schema de quests ANTES do load_all (cria character_quests + coluna
+    // faction_points em characters, que o load_all lê por personagem).
+    quests::init(&pool).await?;
     let characters = persistence::load_all(&pool).await?;
     tracing::info!("db conectado: {} personagens carregados", characters.len());
     let save_tx = persistence::spawn_writer(pool.clone());

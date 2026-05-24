@@ -9,6 +9,7 @@ pub mod constants;
 pub mod items;
 pub mod mapfile;
 pub mod protocol;
+pub mod quests;
 pub mod skills;
 pub mod world_gen;
 pub mod physics;

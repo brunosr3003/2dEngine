@@ -507,6 +507,10 @@ pub struct EntitySnapshot {
     /// Some apenas em Player.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub faction: Option<Faction>,
+    /// Giver de quest deste NPC (kind 3 arauto). Cliente usa pra mostrar o
+    /// indicador !/? e casar com as quests ativas. Some quando não é arauto.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quest_giver: Option<u16>,
 }
 
 /// Bits do `EntitySnapshot.buffs` — mantém em sync com o cliente C#.

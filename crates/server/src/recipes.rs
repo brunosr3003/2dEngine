@@ -118,6 +118,7 @@ pub async fn reload(pool: &PgPool) -> anyhow::Result<()> {
             id:                id as u16,
             name,
             category:          cat.max(0) as u8,
+            station:           shared::craft_station_of(oid as u16),
             tier:              tier.max(1) as u8,
             inputs,
             output_item_id:    oid as u16,

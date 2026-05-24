@@ -250,6 +250,21 @@ pub struct BlacksmithTag {
     pub name: String,
 }
 
+/// Tag em NPC de facção (kind 6) — dá quests PvP da facção + loja de pontos.
+/// Só serve players da MESMA facção.
+#[derive(Clone)]
+pub struct FactionGiverTag {
+    pub faction: shared::Faction,
+    pub name: String,
+}
+
+/// Tag em baú de tesouro (kind 7) — abrir (interagir) conclui a quest TREASURE
+/// `quest_id` e concede a relíquia. Trancado sem a quest ativa.
+#[derive(Clone)]
+pub struct TreasureChestTag {
+    pub quest_id: u16,
+}
+
 /// Tag em NPC ambiental que anda por uma rota (waypoints em loop).
 /// `current_idx` é o waypoint atual; `pause_until` é sim_time pra retomar
 /// movimento depois de chegar num waypoint (pequena pausa pra naturalidade).
@@ -259,6 +274,13 @@ pub struct WanderRouteTag {
     pub current_idx: u32,
     pub pause_until: f32,
     pub name:        String,
+    /// Giver de quest deste morador (0 = ambiente, não dá quest). Um morador por
+    /// cidade é promovido a "arauto" com giver único (101+) no load do mapa.
+    pub giver:       u16,
+    /// Ponto de origem (spawn) — perambula num raio em volta dele.
+    pub home:        Vec2,
+    /// Alvo atual da perambulação (ponto aleatório perto de `home`).
+    pub target:      Vec2,
 }
 
 /// Rota nomeada do mapa: lista ordenada de waypoints. NPCs com WanderRouteTag
@@ -867,6 +889,12 @@ pub struct Session {
     /// Radius do AoE no fim do leap.
     pub leap_radius: f32,
 
+    /// Climb-jump: tempo acumulado (s) empurrando contra uma borda escalavel
+    /// (cliff). Ao passar de CLIMB_HOLD_TIME, dispara um leap por cima da wall.
+    pub climb_timer: f32,
+    /// sim_time ate quando nao pode disparar outro climb-jump (anti-spam).
+    pub climb_cooldown: f32,
+
     // Spear Throw (1021) Harpoon state — quando o projetil de spear acerta um
     // alvo, set harpoon_target_eid + harpoon_until. No proximo cast da skill
     // 1021 (recast) dentro da janela, dasha o player ate o alvo (hook).
@@ -905,6 +933,13 @@ pub struct Session {
     pub woodcutting_lvl: u32,
     pub mining_lvl:      u32,
     pub gathering_lvl:   u32,
+
+    /// Quests — estado por personagem (ativas/prontas/concluídas+cooldown).
+    pub quests: Vec<crate::quests::CharQuest>,
+    pub quests_dirty: bool,
+    /// Pontos de facção (moeda das quests de facção; compra itens de facção).
+    pub faction_points: u32,
+    pub faction_points_last_sent: u32,
 }
 
 /// Recursos compartilhados para autenticacao assincrona.
@@ -1551,9 +1586,18 @@ impl GameWorld {
         tag_kind: u16,
     ) -> EntityId {
         let (spawn_anchor, leash_max) = if let Some(zone) = self.spawn_zones.iter().find(|z| z.id == zone_id) {
-            let center = zone.origin + zone.size * 0.5;
-            let r = zone.size.x.max(zone.size.y) * 0.6;
-            (center, r)
+            if zone.level_range.is_some() {
+                // Zonas level-range nascem em PACKS. Ancora cada mob no PROPRIO
+                // spawn com leash curto pra o pack ficar "camped" (nao se
+                // dissolver pela ilha nem migrar pra cidade — o anchor fica
+                // dentro da banda). Chase curto + volta pro pack.
+                (pos, 12.0)
+            } else {
+                // Legacy quotas: roam a zona inteira (anchor no centro do AABB).
+                let center = zone.origin + zone.size * 0.5;
+                let r = zone.size.x.max(zone.size.y) * 0.6;
+                (center, r)
+            }
         } else {
             (pos, 6.0)
         };
@@ -1793,8 +1837,12 @@ impl GameWorld {
                         WanderRouteTag {
                             route_id:    *route_id,
                             current_idx: 0,
-                            pause_until: self.sim_time_s + 1.0,
+                            // Pausa inicial escalonada (hash do nome) pra dessincronizar.
+                            pause_until: self.sim_time_s + 0.5 + (name.len() as f32 % 5.0) * 0.4,
                             name:        name.clone(),
+                            giver:       0, // ambiente por default; arauto é promovido no load
+                            home:        pos,
+                            target:      pos,
                         },
                         NpcSkin { preset: *skin },
                     ));
@@ -1870,32 +1918,75 @@ impl GameWorld {
                     // level-range — quotas legacy continua usando random pos).
                     // Garante spacing minimo entre mobs e distribuicao uniforme.
                     let slots: Vec<SpawnSlot> = if let Some((_, _, target_c)) = level_range {
-                        // Min_dist adaptativo — narrow polygons reduzem spacing
-                        // pra caber slots em corredores estreitos. Sem isso,
-                        // bridson nao alcanca areas estreitas e mobs ficam
-                        // todos na area larga (= clustered visualmente).
                         let usable_area = polygon_world.as_ref()
                             .map(|p| polygon_area(p))
                             .unwrap_or(zone_size.x * zone_size.y);
-                        let min_dist = adaptive_min_dist(usable_area, target_c);
                         let slot_seed = ((zone_id as u64).wrapping_mul(0x9E37_79B9))
                             ^ 0xC0FFEE_BAD_DEED_u64;
-                        let positions = poisson_disk_in_polygon(
-                            polygon_world.as_deref(),
-                            pos,
-                            zone_size,
-                            min_dist,
-                            &self.map,
-                            slot_seed,
+
+                        // Spawn em GRUPOS (packs): em vez de `target_c` mobs
+                        // soltos uniformes (encontro = 1 mob, sensacao de vazio),
+                        // gera target_c/GROUP_SIZE "centros de pack" BEM espalhados
+                        // (Poisson + shuffle) e cola GROUP_SIZE mobs colados em
+                        // cada centro. Mesmo total de mobs, mas encontros viram
+                        // packs — bem mais interessante.
+                        const GROUP_SIZE: u32 = 3;
+                        const GROUP_RADIUS: f32 = 2.5; // raio do pack em tiles
+                        let n_groups = (target_c + GROUP_SIZE - 1) / GROUP_SIZE;
+
+                        // Centros: min_dist dimensionado p/ n_groups → packs
+                        // espacados entre si. Bridson gera muitos; shuffle+trunca
+                        // p/ n_groups uniformes (mesmo motivo do fix anti-blob).
+                        let center_min_dist = adaptive_min_dist(usable_area, n_groups);
+                        let mut centers = poisson_disk_in_polygon(
+                            polygon_world.as_deref(), pos, zone_size,
+                            center_min_dist, &self.map, slot_seed,
                         );
+                        if centers.len() > n_groups as usize {
+                            fastrand::seed(slot_seed.wrapping_add(0x5EED_5EED));
+                            let n = centers.len();
+                            for i in (1..n).rev() { let j = fastrand::usize(..=i); centers.swap(i, j); }
+                            centers.truncate(n_groups as usize);
+                        }
+
+                        // Validacao de membro do pack: dentro do AABB+polygon e
+                        // fora de WALL/WATER (cidade ja excluida pelo polygon).
+                        let map = &self.map;
+                        let amin = pos;
+                        let asize = zone_size;
+                        let poly_ref = polygon_world.as_deref();
+                        let member_ok = |p: Vec2| -> bool {
+                            if p.x < amin.x || p.x > amin.x + asize.x { return false; }
+                            if p.y < amin.y || p.y > amin.y + asize.y { return false; }
+                            if let Some(poly) = poly_ref { if !point_in_polygon(p, poly) { return false; } }
+                            let t = map.get(p.x.floor() as i32, p.y.floor() as i32);
+                            t != shared::constants::tile_id::WALL && t != shared::constants::tile_id::WATER
+                        };
+
+                        fastrand::seed(slot_seed.wrapping_add(0xBEEF_F00D));
+                        let mut v: Vec<SpawnSlot> = Vec::with_capacity(target_c as usize);
+                        'groups: for c in &centers {
+                            for m in 0..GROUP_SIZE {
+                                if v.len() >= target_c as usize { break 'groups; }
+                                let p = if m == 0 {
+                                    *c // lider no centro (ja valido pelo Poisson)
+                                } else {
+                                    let mut pick = *c; // fallback: empilha no centro
+                                    for _ in 0..10 {
+                                        let ang = fastrand::f32() * std::f32::consts::TAU;
+                                        let dist = 1.0 + fastrand::f32() * GROUP_RADIUS;
+                                        let cand = *c + Vec2::new(ang.cos() * dist, ang.sin() * dist);
+                                        if member_ok(cand) { pick = cand; break; }
+                                    }
+                                    pick
+                                };
+                                v.push(SpawnSlot { pos: p, occupant: None, respawn_at: 0.0 });
+                            }
+                        }
                         tracing::info!(
-                            "zona #{}: {} slots Poisson (min_dist={:.1} adapt, target={}, area={:.0})",
-                            zone_id, positions.len(), min_dist, target_c, usable_area,
+                            "zona #{}: {} packs de {} -> {} slots (center_min_dist={:.1}, target={}, area={:.0})",
+                            zone_id, centers.len(), GROUP_SIZE, v.len(), center_min_dist, target_c, usable_area,
                         );
-                        let mut v: Vec<SpawnSlot> = positions.iter()
-                            .map(|&p| SpawnSlot { pos: p, occupant: None, respawn_at: 0.0 })
-                            .collect();
-                        v.truncate(target_c as usize);
                         v
                     } else { Vec::new() };
 
@@ -1965,6 +2056,74 @@ impl GameWorld {
             }
         }
         tracing::info!("mapfile: spawned {} entidades pre-posicionadas", mf.entities.len());
+
+        // NPCs de facção (kind 6): um em cada sede, no spawn da facção (offset
+        // pra não ficar em cima do ponto de spawn do player). Dão quests PvP +
+        // loja de pontos. Spawnados server-side (sem placement no mapa).
+        let faction_npcs: [(Option<[f32;2]>, shared::Faction, &str); 2] = [
+            (mf.morganeer_spawn, shared::Faction::Morganeers, "Capitão Morganeer"),
+            (mf.peacemain_spawn, shared::Faction::Peacemain,  "Guardião Peacemain"),
+        ];
+        for (sp, fac, name) in faction_npcs.iter() {
+            if let Some(p) = sp {
+                let pos = Vec2::new(p[0] + 4.0, p[1]);
+                let eid = self.alloc_entity_id();
+                self.ecs.spawn((
+                    NetId(eid),
+                    Position(pos),
+                    Velocity(Vec2::ZERO),
+                    EntityKind::Npc(6), // 6 = NPC de facção
+                    FactionGiverTag { faction: *fac, name: (*name).to_string() },
+                    NpcSkin { preset: 1 },
+                ));
+                tracing::info!("faction NPC '{}' ({:?}) at ({:.1},{:.1})", name, fac, pos.x, pos.y);
+            }
+        }
+
+        // Baús de tesouro (kind 7): um por quest TREASURE, no obj_pos da quest.
+        for def in shared::quests::QUESTS.iter() {
+            if def.obj_kind != shared::quests::objective_kind::TREASURE { continue; }
+            let eid = self.alloc_entity_id();
+            let pos = Vec2::new(def.obj_x, def.obj_y);
+            self.ecs.spawn((
+                NetId(eid),
+                Position(pos),
+                Velocity(Vec2::ZERO),
+                EntityKind::Npc(7), // 7 = baú de tesouro
+                TreasureChestTag { quest_id: def.id },
+            ));
+            tracing::info!("treasure chest quest={} at ({:.1},{:.1})", def.id, pos.x, pos.y);
+        }
+
+        // Promove 2 moradores (WanderNpc) por cidade a "arautos" com givers
+        // únicos (101..112) → cada cidade oferece quests de NPC distintas.
+        // Centroides das cidades (devem bater com a cena GameArchipelago).
+        const CITY_CENTROIDS: [(f32, f32); 6] = [
+            (6800.0, 629.0), (8900.0, 1359.0), (4700.0, 1379.0),
+            (850.0, 599.0), (11100.0, 639.0), (600.0, 1329.0),
+        ];
+        const PER_CITY: usize = 2;
+        let mut taken: Vec<hecs::Entity> = Vec::new();
+        for (i, (cx, cy)) in CITY_CENTROIDS.iter().enumerate() {
+            let c = Vec2::new(*cx, *cy);
+            for slot in 0..PER_CITY {
+                let mut best: Option<(hecs::Entity, f32)> = None;
+                for (e, (p, k)) in self.ecs.query::<(&Position, &EntityKind)>().iter() {
+                    if !matches!(k, EntityKind::Npc(3)) { continue; }
+                    if taken.contains(&e) { continue; } // não reusar um já promovido
+                    let d = p.0.distance_squared(c);
+                    if best.map(|(_, bd)| d < bd).unwrap_or(true) { best = Some((e, d)); }
+                }
+                if let Some((e, _)) = best {
+                    taken.push(e);
+                    let giver = 101 + (i * PER_CITY + slot) as u16;
+                    if let Ok(mut tag) = self.ecs.get::<&mut WanderRouteTag>(e) {
+                        tag.giver = giver;
+                        tracing::info!("arauto cidade#{} slot{} giver={} ({})", i, slot, giver, tag.name);
+                    }
+                }
+            }
+        }
     }
 
     /// Spawna um vendedor estatico proximo ao spawn tile (decoracao + interacao).
@@ -2555,10 +2714,19 @@ impl GameWorld {
             s.aura_last_sent = u64::MAX;
             s.proficiencies = saved_profs;
             s.proficiencies_dirty = true;
-            s.woodcutting_lvl = row.woodcutting_lvl.max(1);
-            s.mining_lvl      = row.mining_lvl.max(1);
-            s.gathering_lvl   = row.gathering_lvl.max(1);
+            // Níveis de farm derivam do XP de prof (Mineração/Lenhador/Coleta).
+            // As colunas *_lvl no DB são só cache legado.
+            s.woodcutting_lvl = shared::proficiency_level(
+                saved_profs[shared::Proficiency::Woodcutting as usize]).max(1);
+            s.mining_lvl      = shared::proficiency_level(
+                saved_profs[shared::Proficiency::Mining as usize]).max(1);
+            s.gathering_lvl   = shared::proficiency_level(
+                saved_profs[shared::Proficiency::Gathering as usize]).max(1);
             s.faction         = row.faction;
+            s.quests          = row.quests.clone();
+            s.quests_dirty    = false;
+            s.faction_points  = row.faction_points;
+            s.faction_points_last_sent = u32::MAX;
             s.unspent_points = saved_unspent;
             s.allocated_points = saved_alloc;
             s.stat_points_dirty = true;
@@ -2673,6 +2841,9 @@ impl GameWorld {
                 skills: saved_learned_skills.clone(),
             },
         });
+        // Quests ativas + pontos de facção + givers disponíveis (indicador "!").
+        self.send_quest_log(sid);
+        self.send_quest_givers(sid);
     }
 
     fn alloc_entity_id(&mut self) -> EntityId {
@@ -2919,6 +3090,8 @@ impl GameWorld {
                 leap_target: Vec2::ZERO,
                 leap_damage: 0,
                 leap_radius: 0.0,
+                climb_timer: 0.0,
+                climb_cooldown: 0.0,
                 harpoon_target_eid: None,
                 harpoon_until: 0.0,
                 bloodthirst_until: 0.0,
@@ -2932,6 +3105,10 @@ impl GameWorld {
                 woodcutting_lvl: 1,
                 mining_lvl:      1,
                 gathering_lvl:   1,
+                quests: Vec::new(),
+                quests_dirty: false,
+                faction_points: 0,
+                faction_points_last_sent: u32::MAX,
             },
         );
     }
@@ -3085,8 +3262,26 @@ impl GameWorld {
             ClientMessage::UseItem { slot } => {
                 self.handle_use_item(id, slot as usize);
             }
-            ClientMessage::Interact => {
-                self.handle_interact(id);
+            ClientMessage::Interact { target_eid } => {
+                self.handle_interact(id, target_eid);
+            }
+            ClientMessage::AcceptQuest { quest_id } => {
+                self.handle_accept_quest(id, quest_id);
+                self.send_quest_givers(id);
+            }
+            ClientMessage::AbandonQuest { quest_id } => {
+                self.handle_abandon_quest(id, quest_id);
+                self.send_quest_givers(id);
+            }
+            ClientMessage::TurnInQuest { quest_id } => {
+                self.handle_turn_in_quest(id, quest_id);
+                self.send_quest_givers(id);
+            }
+            ClientMessage::RequestQuestOffer { source, giver } => {
+                self.send_quest_offer(id, source, giver, String::new());
+            }
+            ClientMessage::FactionShopBuy { item_id } => {
+                self.handle_faction_shop_buy(id, item_id);
             }
             ClientMessage::ShopBuy { slot_idx } => {
                 self.handle_shop_buy(id, slot_idx as usize);
@@ -4589,6 +4784,8 @@ impl GameWorld {
         if self.from_mapfile && !self.farm_nodes.is_empty() {
             self.tick_farm_respawn();
         }
+        // Quests EXPLORE: marca READY quando o player chega na área-alvo.
+        self.tick_quest_explore();
 
         // Respawn procedural e desabilitado quando o mapa vem de MapFile
         // (o editor define exatamente quais inimigos existem e onde).
@@ -4810,6 +5007,72 @@ impl GameWorld {
             if dir.length_squared() > 0.001 {
                 session.last_movement_at_s = self.sim_time_s;
                 session.quickdraw_consumed = false;
+            }
+
+            // ── Climb-jump: empurrar contra um cliff escalavel por
+            // CLIMB_HOLD_TIME dispara um pulo por cima da wall. Reusa o
+            // mecanismo de leap (move A→B ignorando colisao + anima via
+            // leap_y no snapshot). So' detecta aqui; o leap roda na pass E.1.
+            {
+                const CLIMB_HOLD_TIME: f32 = 0.25;     // s segurando contra a borda
+                const CLIMB_MAX_DIST: i32 = 3;         // tiles ate o chao do outro lado
+                const CLIMB_LEAP_DURATION: f32 = 0.5;  // = LEAP_DURATION (pass E.1)
+                const CLIMB_COOLDOWN: f32 = 0.2;       // anti double-fire
+                let now_s = self.sim_time_s;
+                let busy = in_hurt || session.downed || staggered
+                    || session.leap_until > now_s
+                    || now_s < session.dash_until
+                    || session.casting_until > now_s
+                    || now_s < session.climb_cooldown;
+                if busy || dir.length_squared() < 0.5 {
+                    session.climb_timer = 0.0;
+                } else if let Some(e) = session.entity {
+                    let pos = self.ecs.get::<&Position>(e).map(|p| p.0).unwrap_or(Vec2::ZERO);
+                    // Cardinal dominante do input (evita ambiguidade diagonal).
+                    let (cdx, cdy) = if dir.x.abs() >= dir.y.abs() {
+                        (dir.x.signum() as i32, 0)
+                    } else {
+                        (0, dir.y.signum() as i32)
+                    };
+                    let px = pos.x.floor() as i32;
+                    let py = pos.y.floor() as i32;
+                    // Tile imediatamente a frente precisa ser WALL (colado num
+                    // cliff). Procura o 1o FLOOR depois da(s) wall(s). WATER no
+                    // caminho = borda pro mar → nao escala. FLOOR em safe zone =
+                    // muro de cidade → nao escala. Sobra: cliffs entre niveis.
+                    let mut landing: Option<Vec2> = None;
+                    if self.map.get(px + cdx, py + cdy) == shared::constants::tile_id::WALL {
+                        let mut k = 2;
+                        while k <= CLIMB_MAX_DIST {
+                            let (tx, ty) = (px + cdx * k, py + cdy * k);
+                            let t = self.map.get(tx, ty);
+                            if t == shared::constants::tile_id::WATER { break; }
+                            if t == shared::constants::tile_id::FLOOR {
+                                let lp = Vec2::new(tx as f32 + 0.5, ty as f32 + 0.5);
+                                let in_safe = self.safe_zones.iter().any(|(o, sz)|
+                                    lp.x >= o.x && lp.x <= o.x + sz.x &&
+                                    lp.y >= o.y && lp.y <= o.y + sz.y);
+                                if !in_safe { landing = Some(lp); }
+                                break;
+                            }
+                            k += 1; // wall mais grosso, continua procurando
+                        }
+                    }
+                    if let Some(lp) = landing {
+                        session.climb_timer += dt;
+                        if session.climb_timer >= CLIMB_HOLD_TIME {
+                            session.leap_until = now_s + CLIMB_LEAP_DURATION;
+                            session.leap_start_pos = pos;
+                            session.leap_target = lp;
+                            session.leap_damage = 0;
+                            session.leap_radius = 0.0;
+                            session.climb_timer = 0.0;
+                            session.climb_cooldown = now_s + CLIMB_COOLDOWN;
+                        }
+                    } else {
+                        session.climb_timer = 0.0;
+                    }
+                }
             }
             // CAST CANCEL POR MOVIMENTO: usa `dir` processado (zerado em
             // hurt/staggered/downed → cast NAO cancela durante stagger).
@@ -5391,7 +5654,7 @@ impl GameWorld {
                     enemy.aggro_timer = 0.0;
                     let pulling_home = enemy.returning_home;
                     apply_wander(enemy, &mut vel.0, pos.0, enemy.locomotor_speed,
-                        &self.map, self.tick, net.0.0, pulling_home);
+                        &self.map, &self.safe_zones, self.tick, net.0.0, pulling_home);
                 }
             } else {
                 // Sem player algum — mesma logic, mas sem chase tracking.
@@ -5404,7 +5667,7 @@ impl GameWorld {
                 enemy.aggro_timer = 0.0;
                 let pulling_home = enemy.returning_home;
                 apply_wander(enemy, &mut vel.0, pos.0, enemy.locomotor_speed,
-                    &self.map, self.tick, net.0.0, pulling_home);
+                    &self.map, &self.safe_zones, self.tick, net.0.0, pulling_home);
             }
         }
 
@@ -5514,36 +5777,30 @@ impl GameWorld {
             let _ = self.try_enemy_cast_skill(eid, e_pos, target_pos);
         }
 
-        // ── C.2: IA dos NPCs caminhantes (rotas pré-definidas) ────────────────
+        // ── C.2: IA dos NPCs caminhantes (perambulação aleatória por raio) ────
+        // Cada morador anda pra pontos aleatórios em volta da própria `home` (sem
+        // rota compartilhada) → não empilham nem seguem o mesmo caminho.
         let now_npc = self.sim_time_s;
-        const NPC_SPEED: f32 = 1.4;     // mais lento que player (4.0)
-        const NPC_ARRIVE_DIST: f32 = 0.4;
+        let tick = self.tick;
+        const NPC_SPEED: f32 = 1.2;     // mais lento que player (4.0)
+        const NPC_ARRIVE_DIST: f32 = 0.35;
         const NPC_PAUSE_MIN: f32 = 1.5;
-        const NPC_PAUSE_MAX: f32 = 4.0;
+        const NPC_PAUSE_MAX: f32 = 5.0;
+        const WANDER_RADIUS: f32 = 5.0;
         for (e, (pos, vel, wtag)) in self.ecs.query_mut::<(&Position, &mut Velocity, &mut WanderRouteTag)>() {
-            // Pausa: parado até pause_until expirar
-            if wtag.pause_until > now_npc {
-                vel.0 = Vec2::ZERO;
-                continue;
-            }
-            // Acha rota
-            let Some(route) = self.npc_routes.get(&wtag.route_id) else {
-                vel.0 = Vec2::ZERO;
-                continue;
-            };
-            if route.waypoints.is_empty() {
-                vel.0 = Vec2::ZERO;
-                continue;
-            }
-            let wp = route.waypoints[(wtag.current_idx as usize) % route.waypoints.len()];
-            let to = wp - pos.0;
+            // Pausa: parado até pause_until expirar (inclui pausa ao interagir).
+            if wtag.pause_until > now_npc { vel.0 = Vec2::ZERO; continue; }
+            let to = wtag.target - pos.0;
             let dist = to.length();
             if dist < NPC_ARRIVE_DIST {
-                // Chegou — avança e pausa.
-                wtag.current_idx = (wtag.current_idx + 1) % route.waypoints.len() as u32;
-                let seed = (e.id() as u64).wrapping_mul(0x9E37_79B9).wrapping_add(self.tick as u64);
-                let r = lcg_f32(lcg(seed));
-                wtag.pause_until = now_npc + NPC_PAUSE_MIN + r * (NPC_PAUSE_MAX - NPC_PAUSE_MIN);
+                // Chegou — escolhe novo alvo aleatório perto da home + pausa.
+                let seed = (e.id() as u64).wrapping_mul(0x9E37_79B9)
+                    .wrapping_add((tick as u64).wrapping_mul(0x2545_F491));
+                let ang = lcg_f32(lcg(seed)) * std::f32::consts::TAU;
+                let rad = lcg_f32(lcg(seed ^ 0xABCD)).sqrt() * WANDER_RADIUS;
+                wtag.target = wtag.home + Vec2::new(ang.cos(), ang.sin()) * rad;
+                let pr = lcg_f32(lcg(seed ^ 0x1234_5678));
+                wtag.pause_until = now_npc + NPC_PAUSE_MIN + pr * (NPC_PAUSE_MAX - NPC_PAUSE_MIN);
                 vel.0 = Vec2::ZERO;
             } else {
                 vel.0 = to / dist * NPC_SPEED;
@@ -5780,6 +6037,9 @@ impl GameWorld {
         }
         // Aplica AoE damage + stun nos enemies do landing point.
         for (owner_eid, landing, damage, radius) in leap_landings {
+            // radius == 0 → climb-jump (pulo de escalada), nao a skill Leap
+            // Strike. Sem AoE, sem stun e SEM a explosao de impacto (SkillCastFx).
+            if radius <= 0.0 { continue; }
             let stun_dur = 1.5_f32;
             let enemies = self.find_enemies_in_radius(landing, radius);
             for tn in &enemies {
@@ -6972,6 +7232,8 @@ impl GameWorld {
                         break;
                     }
                 }
+                // Progresso de quests de KILL (mob) — credita todos os recipients.
+                for r in recipients.clone() { self.quest_on_kill(r, None); }
             }
         }
 
@@ -7371,9 +7633,9 @@ impl GameWorld {
 
         let all: Vec<EntitySnapshot> = self
             .ecs
-            .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>, Option<&ProjTag>, Option<&NpcSkin>, Option<&VendorTag>, Option<&WanderRouteTag>, Option<&BoatTag>, Option<&EnemyTag>, Option<&LootTag>)>()
+            .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>, Option<&ProjTag>, Option<&NpcSkin>, Option<&VendorTag>, Option<&WanderRouteTag>, Option<&BoatTag>, Option<&EnemyTag>, Option<&LootTag>, Option<&FactionGiverTag>)>()
             .iter()
-            .map(|(_, (net, pos, vel, kind, hp, ptag, projtag, skin, vtag, wtag, boat, etag, ltag))| {
+            .map(|(_, (net, pos, vel, kind, hp, ptag, projtag, skin, vtag, wtag, boat, etag, ltag, fgtag))| {
                 let is_player = matches!(kind, EntityKind::Player);
                 let overlay = if is_player { player_overlay.get(&net.0) } else { None };
                 EntitySnapshot {
@@ -7473,7 +7735,10 @@ impl GameWorld {
                         self.sessions.values()
                             .find(|s| s.entity_id == net.0)
                             .map(|s| s.faction)
-                    } else { None },
+                    } else {
+                        // NPC de facção também replica a facção (ícone/cor no client).
+                        fgtag.map(|t| t.faction)
+                    },
                     // Player montado: pop info de boat_eid/local/station.
                     mounted_on: if is_player {
                         mounted_player_info.get(&net.0).map(|(b, _, _)| *b)
@@ -7487,6 +7752,8 @@ impl GameWorld {
                     station: if is_player {
                         mounted_player_info.get(&net.0).and_then(|(_, _, s)| *s)
                     } else { None },
+                    // Giver do arauto (kind 3 com giver != 0) → indicador no cliente.
+                    quest_giver: wtag.and_then(|t| if t.giver != 0 { Some(t.giver) } else { None }),
                 }
             })
             .collect();
@@ -7680,6 +7947,8 @@ impl GameWorld {
             mining_lvl:      u32,
             gathering_lvl:   u32,
             faction: shared::Faction,
+            quests: Vec<crate::quests::CharQuest>,
+            faction_points: u32,
         }
         let mut entries: Vec<E> = Vec::new();
         for session in self.sessions.values() {
@@ -7725,6 +7994,8 @@ impl GameWorld {
                 mining_lvl:      session.mining_lvl,
                 gathering_lvl:   session.gathering_lvl,
                 faction:         session.faction,
+                quests: session.quests.clone(),
+                faction_points: session.faction_points,
             });
         }
         for e in entries {
@@ -7753,6 +8024,8 @@ impl GameWorld {
                 mining_lvl:      e.mining_lvl,
                 gathering_lvl:   e.gathering_lvl,
                 faction:         e.faction,
+                quests:          e.quests,
+                faction_points:  e.faction_points,
             };
             self.characters.insert(e.name, row.clone());
             out.push(row);
@@ -7921,6 +8194,14 @@ impl GameWorld {
         // Recipes vem do DB cache (admin pode mudar custos sem rebuild).
         // Fallback pro hardcoded se cache vazio (boot inicial).
         let Some(recipe) = crate::recipes::find(recipe_id) else { return };
+        // Gate: nível de proficiência de craft pro tier (T2=10/T3=20/T4=30).
+        // O cliente desabilita a receita; isto é a rede de segurança.
+        let craft_req = shared::tier_level_req(recipe.tier);
+        if craft_req > 1 {
+            let prof = shared::Proficiency::from_craft_station(recipe.station);
+            let cur = shared::proficiency_level(session.proficiencies[prof as usize]);
+            if cur < craft_req { return; }
+        }
         // Valida materiais.
         for pair in recipe.inputs.iter() {
             let in_id = pair[0] as u16;
@@ -7987,6 +8268,18 @@ impl GameWorld {
         };
         session.inventory[idx] = new_slot;
         session.inventory_dirty = true;
+
+        // XP de proficiência de craft (escala com o tier). Permite subir o nível
+        // que destrava tiers maiores — é o "leveling" de craft.
+        let prof = shared::Proficiency::from_craft_station(recipe.station);
+        let pi = prof as usize;
+        session.proficiencies[pi] = session.proficiencies[pi]
+            .saturating_add(40u64 * recipe.tier.max(1) as u64);
+        session.proficiencies_dirty = true;
+        let _ = session.handle.to_client.send(ServerMessage::ProficienciesUpdate {
+            xp: session.proficiencies,
+        });
+        self.save_pending = true;
     }
 
     /// Move um item do inv[inv_slot] pro primeiro slot livre (ou stack) do vault.
@@ -8342,7 +8635,241 @@ impl GameWorld {
         tracing::info!("{} reset position → spawn {:?}", name, dest);
     }
 
-    fn handle_interact(&mut self, sid: SessionId) {
+    // ============================ QUESTS ============================
+
+    /// Facção da sessão -> id usado nas quests (1=Morganeers, 2=Peacemain).
+    fn faction_qid(f: shared::Faction) -> u8 {
+        match f {
+            shared::Faction::Morganeers => shared::quests::faction_id::MORGANEERS,
+            shared::Faction::Peacemain  => shared::quests::faction_id::PEACEMAIN,
+        }
+    }
+
+    /// COLLECT/DELIVER são checados/consumidos no turn-in; resto é live-track.
+    fn quest_is_turnin_objective(obj_kind: u8) -> bool {
+        obj_kind == shared::quests::objective_kind::COLLECT
+            || obj_kind == shared::quests::objective_kind::DELIVER
+    }
+
+    /// Log das quests ativas + pontos de facção (login + ressync).
+    pub fn send_quest_log(&self, sid: SessionId) {
+        let Some(s) = self.sessions.get(&sid) else { return };
+        let active: Vec<shared::quests::QuestNet> = s.quests.iter()
+            .filter(|c| c.status != shared::quests::quest_status::TURNED_IN)
+            .filter_map(|c| shared::quests::quest_by_id(c.quest_id)
+                .map(|d| shared::quests::QuestNet::from_def(d, c.status, c.progress)))
+            .collect();
+        let _ = s.handle.to_client.send(ServerMessage::QuestLog { quests: active });
+        let _ = s.handle.to_client.send(ServerMessage::FactionPoints { points: s.faction_points });
+    }
+
+    /// Givers com quest aceitável agora — cliente mostra o "!" só sobre esses.
+    pub fn send_quest_givers(&self, sid: SessionId) {
+        let now = (now_ms() / 1000) as i64;
+        let xpmult = crate::economy::xp_multiplier();
+        let Some(s) = self.sessions.get(&sid) else { return };
+        let level = shared::level_of_xp_with_mult(s.xp, xpmult);
+        let fac = Self::faction_qid(s.faction);
+        let available = crate::quests::available_givers(level, fac, &s.quests, now);
+        let _ = s.handle.to_client.send(ServerMessage::QuestGivers { available });
+    }
+
+    /// Oferta de quests de um giver (chamado pelo handle_interact ao chegar perto).
+    fn send_quest_offer(&self, sid: SessionId, giver_source: u8, giver_id: u16, giver_name: String) {
+        let now = (now_ms() / 1000) as i64;
+        let xpmult = crate::economy::xp_multiplier();
+        let Some(s) = self.sessions.get(&sid) else { return };
+        let level = shared::level_of_xp_with_mult(s.xp, xpmult);
+        let fac = Self::faction_qid(s.faction);
+        let mut offer: Vec<shared::quests::QuestNet> =
+            crate::quests::offerable(giver_source, giver_id, level, fac, &s.quests, now)
+                .into_iter()
+                .map(|d| shared::quests::QuestNet::from_def(d, shared::quests::quest_status::ACTIVE, 0))
+                .collect();
+        // Inclui as repetíveis deste giver que estão EM COOLDOWN, pra o painel
+        // mostrar a contagem regressiva (em vez de a quest simplesmente sumir).
+        for cq in s.quests.iter() {
+            if cq.status != shared::quests::quest_status::TURNED_IN || cq.cooldown_until <= now { continue; }
+            let Some(def) = shared::quests::quest_by_id(cq.quest_id) else { continue };
+            if def.source != giver_source || def.giver != giver_id || !def.repeatable { continue; }
+            let mut qn = shared::quests::QuestNet::from_def(def, shared::quests::quest_status::TURNED_IN, def.obj_count);
+            qn.cooldown_until = cq.cooldown_until;
+            offer.push(qn);
+        }
+        let _ = s.handle.to_client.send(ServerMessage::QuestOffer { giver_source, giver_id, giver_name, quests: offer });
+    }
+
+    fn handle_accept_quest(&mut self, sid: SessionId, quest_id: u16) {
+        let now = (now_ms() / 1000) as i64;
+        let Some(def) = shared::quests::quest_by_id(quest_id) else { return };
+        let xpmult = crate::economy::xp_multiplier();
+        let Some(s) = self.sessions.get_mut(&sid) else { return };
+        if !s.logged_in { return; }
+        let level = shared::level_of_xp_with_mult(s.xp, xpmult);
+        if level < def.min_level { return; }
+        let fac = Self::faction_qid(s.faction);
+        if def.faction != shared::quests::faction_id::NONE && def.faction != fac { return; }
+        if let Some(c) = s.quests.iter().find(|c| c.quest_id == quest_id) {
+            if c.status != shared::quests::quest_status::TURNED_IN { return; }   // já ativa/pronta
+            if !def.repeatable || now < c.cooldown_until { return; }            // concluída/cooldown
+        }
+        let active_count = s.quests.iter()
+            .filter(|c| c.status == shared::quests::quest_status::ACTIVE
+                     || c.status == shared::quests::quest_status::READY)
+            .count();
+        if active_count >= 12 { return; } // limite de quests ativas
+        let st = shared::quests::quest_status::ACTIVE;
+        if let Some(c) = s.quests.iter_mut().find(|c| c.quest_id == quest_id) {
+            c.status = st; c.progress = 0; c.cooldown_until = 0;
+        } else {
+            s.quests.push(crate::quests::CharQuest { quest_id, status: st, progress: 0, cooldown_until: 0 });
+        }
+        s.quests_dirty = true;
+        let _ = s.handle.to_client.send(ServerMessage::QuestUpdate { quest_id, progress: 0, status: st });
+    }
+
+    fn handle_abandon_quest(&mut self, sid: SessionId, quest_id: u16) {
+        let Some(s) = self.sessions.get_mut(&sid) else { return };
+        let before = s.quests.len();
+        s.quests.retain(|c| c.quest_id != quest_id);
+        if s.quests.len() != before {
+            s.quests_dirty = true; // save_char reconcilia (deleta linhas ausentes)
+            let _ = s.handle.to_client.send(ServerMessage::QuestUpdate { quest_id, progress: 0, status: 255 });
+        }
+    }
+
+    fn handle_turn_in_quest(&mut self, sid: SessionId, quest_id: u16) {
+        let now = (now_ms() / 1000) as i64;
+        let Some(def) = shared::quests::quest_by_id(quest_id) else { return };
+        let Some(s) = self.sessions.get_mut(&sid) else { return };
+        if !s.logged_in { return; }
+        let Some(cq) = s.quests.iter().find(|c| c.quest_id == quest_id).cloned() else { return };
+        if cq.status == shared::quests::quest_status::TURNED_IN { return; }
+        if Self::quest_is_turnin_objective(def.obj_kind) {
+            let have: u32 = s.inventory.iter()
+                .filter(|sl| sl.item_id == def.obj_target && sl.instance.is_none())
+                .map(|sl| sl.qty).sum();
+            if have < def.obj_count { return; } // não tem o suficiente
+            let mut need = def.obj_count;
+            for sl in s.inventory.iter_mut() {
+                if need == 0 { break; }
+                if sl.item_id != def.obj_target || sl.instance.is_some() || sl.qty == 0 { continue; }
+                let take = need.min(sl.qty);
+                sl.qty -= take; need -= take;
+                if sl.qty == 0 { *sl = shared::InventorySlot::default(); }
+            }
+            s.inventory_dirty = true;
+        } else if cq.status != shared::quests::quest_status::READY {
+            return; // live-track ainda não concluído
+        }
+        // Recompensas
+        if def.reward_gold > 0 { s.gold = s.gold.saturating_add(def.reward_gold as u64); }
+        if def.reward_xp > 0 { s.xp = s.xp.saturating_add(def.reward_xp); }
+        if def.reward_faction_points > 0 { s.faction_points = s.faction_points.saturating_add(def.reward_faction_points); }
+        if def.reward_item != 0 && def.reward_item_qty > 0 {
+            add_to_inventory(&mut s.inventory, def.reward_item, def.reward_item_qty as u32, None);
+            s.inventory_dirty = true;
+        }
+        let cd = if def.repeatable {
+            if def.daily { ((now / 86400) + 1) * 86400 } // próxima meia-noite UTC
+            else { now + def.cooldown_secs as i64 }
+        } else { i64::MAX };
+        let new_status = shared::quests::quest_status::TURNED_IN;
+        if let Some(c) = s.quests.iter_mut().find(|c| c.quest_id == quest_id) {
+            c.status = new_status; c.progress = def.obj_count; c.cooldown_until = cd;
+        }
+        s.quests_dirty = true;
+        let pts = s.faction_points;
+        let h = s.handle.clone();
+        let _ = h.to_client.send(ServerMessage::QuestUpdate { quest_id, progress: def.obj_count, status: new_status });
+        let _ = h.to_client.send(ServerMessage::FactionPoints { points: pts });
+    }
+
+    /// Hook de KILL/PVP_KILL. `pvp_victim_faction`: Some(f) se foi PvP, None se mob.
+    fn quest_on_kill(&mut self, killer_eid: EntityId, pvp_victim_faction: Option<u8>) {
+        let mut updates: Vec<(u16, u32, u8)> = Vec::new();
+        let handle = {
+            let Some(s) = self.sessions.values_mut()
+                .find(|s| s.entity_id == killer_eid && s.logged_in) else { return };
+            for c in s.quests.iter_mut() {
+                if c.status != shared::quests::quest_status::ACTIVE { continue; }
+                let Some(def) = shared::quests::quest_by_id(c.quest_id) else { continue };
+                let hit = if def.obj_kind == shared::quests::objective_kind::KILL {
+                    pvp_victim_faction.is_none()
+                } else if def.obj_kind == shared::quests::objective_kind::PVP_KILL {
+                    pvp_victim_faction.map(|vf| vf != def.faction).unwrap_or(false)
+                } else { false };
+                if !hit { continue; }
+                c.progress = (c.progress + 1).min(def.obj_count);
+                if c.progress >= def.obj_count { c.status = shared::quests::quest_status::READY; }
+                updates.push((c.quest_id, c.progress, c.status));
+            }
+            if updates.is_empty() { return; }
+            s.quests_dirty = true;
+            s.handle.clone()
+        };
+        for (qid, pr, st) in updates {
+            let _ = handle.to_client.send(ServerMessage::QuestUpdate { quest_id: qid, progress: pr, status: st });
+        }
+    }
+
+    /// Hook por tick: quests EXPLORE viram READY quando o player entra na área.
+    fn tick_quest_explore(&mut self) {
+        // Pré-coleta posições dos players (evita conflito de borrow com sessions).
+        let mut ppos: std::collections::HashMap<EntityId, Vec2> = std::collections::HashMap::new();
+        for (_, (net, p, _)) in self.ecs.query::<(&NetId, &Position, &PlayerTag)>().iter() {
+            ppos.insert(net.0, p.0);
+        }
+        if ppos.is_empty() { return; }
+        let mut updates: Vec<(SessionHandle, u16, u32, u8)> = Vec::new();
+        for s in self.sessions.values_mut() {
+            if !s.logged_in { continue; }
+            let Some(pos) = ppos.get(&s.entity_id).copied() else { continue };
+            // 1) Determina quais quests EXPLORE/TRANSPORT completam (sem mutar ainda).
+            //    (quest_id, is_transport, obj_target, obj_count)
+            let mut to_complete: Vec<(u16, bool, u16, u32)> = Vec::new();
+            for c in s.quests.iter() {
+                if c.status != shared::quests::quest_status::ACTIVE { continue; }
+                let Some(def) = shared::quests::quest_by_id(c.quest_id) else { continue };
+                let is_explore   = def.obj_kind == shared::quests::objective_kind::EXPLORE;
+                let is_transport = def.obj_kind == shared::quests::objective_kind::TRANSPORT;
+                if !is_explore && !is_transport { continue; }
+                if pos.distance(Vec2::new(def.obj_x, def.obj_y)) > def.obj_radius.max(1.0) { continue; }
+                if is_transport {
+                    // Precisa ter a carga ao chegar; senão espera.
+                    let have: u32 = s.inventory.iter()
+                        .filter(|sl| sl.item_id == def.obj_target && sl.instance.is_none())
+                        .map(|sl| sl.qty).sum();
+                    if have < def.obj_count { continue; }
+                }
+                to_complete.push((c.quest_id, is_transport, def.obj_target, def.obj_count));
+            }
+            // 2) Aplica: consome carga (transport) + marca READY.
+            for (qid, is_transport, target, count) in to_complete {
+                if is_transport {
+                    let mut need = count;
+                    for sl in s.inventory.iter_mut() {
+                        if need == 0 { break; }
+                        if sl.item_id != target || sl.instance.is_some() || sl.qty == 0 { continue; }
+                        let take = need.min(sl.qty); sl.qty -= take; need -= take;
+                        if sl.qty == 0 { *sl = shared::InventorySlot::default(); }
+                    }
+                    s.inventory_dirty = true;
+                }
+                if let Some(c) = s.quests.iter_mut().find(|c| c.quest_id == qid) {
+                    c.progress = count.max(1);
+                    c.status = shared::quests::quest_status::READY;
+                }
+                s.quests_dirty = true;
+                updates.push((s.handle.clone(), qid, count.max(1), shared::quests::quest_status::READY));
+            }
+        }
+        for (h, qid, pr, st) in updates {
+            let _ = h.to_client.send(ServerMessage::QuestUpdate { quest_id: qid, progress: pr, status: st });
+        }
+    }
+
+    fn handle_interact(&mut self, sid: SessionId, clicked_eid: Option<u64>) {
         let Some(session) = self.sessions.get(&sid) else { return };
         if !session.logged_in { return; }
         // Se ja esta carregando alguem: larga.
@@ -8379,15 +8906,18 @@ impl GameWorld {
             return;
         }
 
-        // 2) Procura NPC. Captura (entity, npc_kind, vendor_eid, dist²).
+        // 2) Procura NPC. Se veio um alvo clicado, prioriza-o (dentro do alcance);
+        //    senão pega o NPC mais próximo. Assim clicar no arauto bate nele, não
+        //    no morador casualmente mais perto.
         let mut best: Option<(hecs::Entity, u16, u32, f32)> = None;
         for (e, (net, p, k)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
             if let EntityKind::Npc(n) = k {
                 let d2 = p.0.distance_squared(player_pos);
-                if d2 <= r_sq {
-                    if best.map(|(_, _, _, bd)| d2 < bd).unwrap_or(true) {
-                        best = Some((e, *n, net.0.0 as u32, d2));
-                    }
+                if d2 > r_sq { continue; }
+                if let Some(want) = clicked_eid {
+                    if net.0.0 as u64 == want { best = Some((e, *n, net.0.0 as u32, 0.0)); break; }
+                } else if best.map(|(_, _, _, bd)| d2 < bd).unwrap_or(true) {
+                    best = Some((e, *n, net.0.0 as u32, d2));
                 }
             }
         }
@@ -8419,8 +8949,124 @@ impl GameWorld {
             Some((_, 4, _, _)) => {
                 let _ = handle.to_client.send(ServerMessage::BlacksmithOpen);
             }
-            _ => {} // outros tipos de NPC (3=wander) sem interação por ora
+            Some((entity, 3, _, _)) => {
+                // Para de andar enquanto interage + pega giver/nome.
+                let (giver, gname) = {
+                    if let Ok(mut t) = self.ecs.get::<&mut WanderRouteTag>(entity) {
+                        t.pause_until = self.sim_time_s + 5.0;
+                        (t.giver, t.name.clone())
+                    } else { (0u16, String::new()) }
+                };
+                // Sempre abre o diálogo: arauto (giver != 0) traz quests; morador
+                // comum (giver 0) traz oferta vazia → diálogo com saudação.
+                self.send_quest_offer(sid, shared::quests::quest_source::NPC, giver, gname);
+            }
+            Some((entity, 7, _, _)) => {
+                // Baú de tesouro: abrir conclui a quest TREASURE + dá a relíquia.
+                if let Ok(qid) = self.ecs.get::<&TreasureChestTag>(entity).map(|t| t.quest_id) {
+                    self.open_treasure(sid, qid);
+                    self.send_quest_givers(sid);
+                }
+            }
+            Some((entity, 6, _, _)) => {
+                // NPC de facção: dá quests PvP + loja de pontos — só pra MESMA facção.
+                let npc = self.ecs.get::<&FactionGiverTag>(entity).map(|t| (t.faction, t.name.clone())).ok();
+                let player_fac = self.sessions.get(&sid).map(|s| s.faction);
+                if let (Some((npc_fac, npc_name)), Some(player_fac)) = (npc, player_fac) {
+                    if npc_fac == player_fac {
+                        self.send_quest_offer(sid, shared::quests::quest_source::FACTION,
+                                              Self::faction_qid(player_fac) as u16, npc_name);
+                        self.send_faction_shop(sid);
+                    } else {
+                        let _ = handle.to_client.send(ServerMessage::Chat {
+                            from: "SYS".into(),
+                            text: "Este representante não atende sua facção.".into(),
+                        });
+                    }
+                }
+            }
+            _ => {} // demais NPCs sem interação
         }
+    }
+
+    /// Abre o baú de tesouro: concede recompensa/relíquia + conclui a quest TREASURE.
+    fn open_treasure(&mut self, sid: SessionId, quest_id: u16) {
+        let now = (now_ms() / 1000) as i64;
+        let Some(def) = shared::quests::quest_by_id(quest_id) else { return };
+        let Some(s) = self.sessions.get_mut(&sid) else { return };
+        if !s.logged_in { return; }
+        let has_active = s.quests.iter().any(|c| c.quest_id == quest_id
+            && c.status == shared::quests::quest_status::ACTIVE);
+        if !has_active {
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "SYS".into(),
+                text: "O baú está trancado. Aceite a Caça ao tesouro com um morador.".into(),
+            });
+            return;
+        }
+        if def.reward_gold > 0 { s.gold = s.gold.saturating_add(def.reward_gold as u64); }
+        if def.reward_xp > 0 { s.xp = s.xp.saturating_add(def.reward_xp); }
+        if def.reward_faction_points > 0 { s.faction_points = s.faction_points.saturating_add(def.reward_faction_points); }
+        if def.reward_item != 0 && def.reward_item_qty > 0 {
+            add_to_inventory(&mut s.inventory, def.reward_item, def.reward_item_qty as u32, None);
+            s.inventory_dirty = true;
+        }
+        let cd = if def.repeatable {
+            if def.daily { ((now / 86400) + 1) * 86400 } // próxima meia-noite UTC
+            else { now + def.cooldown_secs as i64 }
+        } else { i64::MAX };
+        let new_status = shared::quests::quest_status::TURNED_IN;
+        if let Some(c) = s.quests.iter_mut().find(|c| c.quest_id == quest_id) {
+            c.status = new_status; c.progress = def.obj_count; c.cooldown_until = cd;
+        }
+        s.quests_dirty = true;
+        let pts = s.faction_points;
+        let fac_reward = def.reward_faction_points > 0;
+        let h = s.handle.clone();
+        let _ = h.to_client.send(ServerMessage::QuestUpdate { quest_id, progress: def.obj_count, status: new_status });
+        let _ = h.to_client.send(ServerMessage::Chat { from: "SYS".into(), text: "Você abriu o baú e encontrou a relíquia!".into() });
+        if fac_reward { let _ = h.to_client.send(ServerMessage::FactionPoints { points: pts }); }
+    }
+
+    /// Envia a loja de facção (itens em pontos) ao player.
+    fn send_faction_shop(&self, sid: SessionId) {
+        let Some(s) = self.sessions.get(&sid) else { return };
+        let items: Vec<shared::protocol::FactionShopItemNet> = shared::quests::FACTION_SHOP.iter()
+            .map(|(item_id, points)| shared::protocol::FactionShopItemNet { item_id: *item_id, points: *points })
+            .collect();
+        let _ = s.handle.to_client.send(ServerMessage::FactionShopOpen {
+            faction: Self::faction_qid(s.faction),
+            points: s.faction_points,
+            faction_items: items,
+        });
+    }
+
+    fn handle_faction_shop_buy(&mut self, sid: SessionId, item_id: u16) {
+        // Valida proximidade de um NPC de facção da MESMA facção.
+        let Some(s) = self.sessions.get(&sid) else { return };
+        if !s.logged_in { return; }
+        let player_fac = s.faction;
+        let Some(player_entity) = s.entity else { return };
+        let Ok(ppos) = self.ecs.get::<&Position>(player_entity).map(|p| p.0) else { return };
+        let r_sq = shared::INTERACT_RADIUS * shared::INTERACT_RADIUS;
+        let mut near = false;
+        for (_, (p, k, fg)) in self.ecs.query::<(&Position, &EntityKind, &FactionGiverTag)>().iter() {
+            if matches!(k, EntityKind::Npc(6)) && fg.faction == player_fac
+                && p.0.distance_squared(ppos) <= r_sq { near = true; break; }
+        }
+        if !near { return; }
+        let Some(price) = shared::quests::faction_shop_price(item_id) else { return };
+        let Some(s) = self.sessions.get_mut(&sid) else { return };
+        if s.faction_points < price { return; }
+        s.faction_points -= price;
+        add_to_inventory(&mut s.inventory, item_id, 1, None);
+        s.inventory_dirty = true;
+        s.quests_dirty = true; // persiste faction_points no batch
+        let pts = s.faction_points;
+        let h = s.handle.clone();
+        let _ = h.to_client.send(ServerMessage::FactionPoints { points: pts });
+        // Reenvia a loja com os pontos atualizados.
+        self.send_faction_shop(sid);
     }
 
     fn start_carrying(&mut self, carrier_sid: SessionId, target_eid: EntityId) {
@@ -8965,11 +9611,32 @@ impl GameWorld {
         // Gate: node existe e está vivo.
         let node = match self.farm_nodes.get(&node_id) {
             Some(n) if n.respawn_at <= 0.0 => n,
-            _ => return,
+            Some(_) => { tracing::info!("[farm diag] node {} em respawn — ignora", node_id); return }
+            None    => { tracing::info!("[farm diag] node {} NAO EXISTE (total={})", node_id, self.farm_nodes.len()); return }
         };
 
         // Gate: distância máxima.
-        if player_pos.distance(node.pos) > shared::FARM_MAX_RANGE { return }
+        let ndist = player_pos.distance(node.pos);
+        if ndist > shared::FARM_MAX_RANGE {
+            tracing::info!("[farm diag] node {} fora de alcance (dist={:.1} max={})", node_id, ndist, shared::FARM_MAX_RANGE);
+            return
+        }
+        tracing::info!("[farm diag] FarmHit OK node={} dist={:.1}", node_id, ndist);
+
+        // Gate: nível de proficiência mínimo pro tier do recurso (T2=10/T3=20/T4=30).
+        // O cliente também pré-checa e nem inicia a coleta; isto é a rede de segurança.
+        let req_lvl = shared::tier_level_req(node.tier);
+        if req_lvl > 1 {
+            let prof = shared::Proficiency::from_farm_kind(&node.kind);
+            let cur_lvl = self.sessions.get(&sid)
+                .map(|s| shared::proficiency_level(s.proficiencies[prof as usize]))
+                .unwrap_or(1);
+            if cur_lvl < req_lvl {
+                tracing::info!("[farm diag] node {} tier{} bloqueado: requer {} lv{} (player lv{})",
+                    node_id, node.tier, prof.as_db_str(), req_lvl, cur_lvl);
+                return;
+            }
+        }
 
         // Gate: cooldown por (player, node).
         let cd_key = (sid, node_id);
@@ -9021,6 +9688,7 @@ impl GameWorld {
                 .wrapping_mul(0xDEAD_BEEF)
                 .wrapping_add(node_id as u64);
             let drops = crate::economy::farm_node_loot(&node_kind, node_tier, seed);
+            tracing::info!("[farm diag] node {} ({} t{}) depletou — drops={}", node_id, node_kind, node_tier, drops.len());
             // Farm drops caem nos arredores do node (raio 1.2-2.0 tiles)
             // para não sobrepor o sprite de toco/entulho que fica no centro.
             let drop_origin = {
@@ -9043,26 +9711,28 @@ impl GameWorld {
                 }
             }
 
-            // XP de farm skill e incremento de nível (a cada 10 coletas = +1 lvl, cap 100).
-            // TODO: persistir XP de farm separadamente; por ora incrementa lvl direto.
+            // XP de proficiência de farm por TIPO (Mineração/Lenhador/Coleta).
+            // XP escala com o tier do recurso. Os níveis *_lvl viram cache
+            // derivado do XP de prof (usados pelo cliente em FarmSkillsUpdate).
             if let Some(s) = self.sessions.get_mut(&sid) {
-                let lvl_ref = match node_kind.as_str() {
-                    "Tree"   => &mut s.woodcutting_lvl,
-                    "Rock"   => &mut s.mining_lvl,
-                    _        => &mut s.gathering_lvl,
-                };
-                if *lvl_ref < 100 {
-                    *lvl_ref += 1; // 1 coleta = 1 lvl (temporário — substituir por XP)
-                    let (wc, mn, gt) = (s.woodcutting_lvl, s.mining_lvl, s.gathering_lvl);
-                    let _ = s.handle.to_client.send(ServerMessage::FarmSkillsUpdate {
-                        woodcutting: wc, mining: mn, gathering: gt,
-                    });
-                }
-
-                // Proficiência Farm: +30 XP por coleta. Aparece no painel C (StatsPanel).
-                let farm_idx = shared::Proficiency::Farm as usize;
-                s.proficiencies[farm_idx] = s.proficiencies[farm_idx].saturating_add(30);
+                let prof = shared::Proficiency::from_farm_kind(&node_kind);
+                let gain = 30u64 * node_tier.max(1) as u64;
+                let pi = prof as usize;
+                s.proficiencies[pi] = s.proficiencies[pi].saturating_add(gain);
                 s.proficiencies_dirty = true;
+
+                s.woodcutting_lvl = shared::proficiency_level(
+                    s.proficiencies[shared::Proficiency::Woodcutting as usize]);
+                s.mining_lvl = shared::proficiency_level(
+                    s.proficiencies[shared::Proficiency::Mining as usize]);
+                s.gathering_lvl = shared::proficiency_level(
+                    s.proficiencies[shared::Proficiency::Gathering as usize]);
+
+                let _ = s.handle.to_client.send(ServerMessage::FarmSkillsUpdate {
+                    woodcutting: s.woodcutting_lvl,
+                    mining:      s.mining_lvl,
+                    gathering:   s.gathering_lvl,
+                });
                 let _ = s.handle.to_client.send(ServerMessage::ProficienciesUpdate {
                     xp: s.proficiencies,
                 });
@@ -9436,6 +10106,8 @@ impl GameWorld {
             mining_lvl:      session.mining_lvl,
             gathering_lvl:   session.gathering_lvl,
             faction:         session.faction,
+            quests:          session.quests.clone(),
+            faction_points:  session.faction_points,
         };
         self.characters.insert(session.name.clone(), row.clone());
         Some(row)
@@ -9766,6 +10438,7 @@ fn pick_waypoint(
     radius: f32,
     seed_in: u64,
     tries: u32,
+    safe_zones: &[(Vec2, Vec2)],
 ) -> glam::Vec2 {
     let r = if radius > 0.0 { radius } else { 5.0 };
     let mut s = seed_in;
@@ -9780,7 +10453,11 @@ fn pick_waypoint(
         if map.get(tx, ty) == shared::constants::tile_id::FLOOR {
             // Não escolhe waypoint a < 1 tile da pos atual (precisa andar algo)
             let center = glam::Vec2::new(tx as f32 + 0.5, ty as f32 + 0.5);
-            if (center - current).length() > 1.0 {
+            // Nem dentro de safe zone (cidade) — evita mob vagando pro muro.
+            let in_safe = safe_zones.iter().any(|(o, sz)|
+                center.x >= o.x && center.x <= o.x + sz.x &&
+                center.y >= o.y && center.y <= o.y + sz.y);
+            if !in_safe && (center - current).length() > 1.0 {
                 return center;
             }
         }
@@ -9796,6 +10473,7 @@ fn apply_wander(
     pos: glam::Vec2,
     speed: f32,
     map: &shared::world_gen::WorldMap,
+    safe_zones: &[(Vec2, Vec2)],
     tick: u32,
     net_id: u32,
     pulling_home: bool,
@@ -9830,7 +10508,7 @@ fn apply_wander(
         // Pause phase: parado até timer expirar, aí escolhe novo waypoint.
         if enemy.wander_timer <= 0.0 {
             enemy.wander_waypoint = pick_waypoint(
-                map, pos, enemy.spawn_anchor, enemy.leash_max, seed, 30);
+                map, pos, enemy.spawn_anchor, enemy.leash_max, seed, 30, safe_zones);
             enemy.wander_phase = 0;
             enemy.wander_timer = 4.0; // safety timeout (caso não consiga chegar)
         }

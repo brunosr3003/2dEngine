@@ -29,7 +29,12 @@ pub enum ClientMessage {
     },
     Ping { client_time_ms: u64 },
     UseItem { slot: u16 },
-    Interact,
+    /// Interagir. `target_eid` Some = entidade clicada específica (NPC/baú);
+    /// None = pega o NPC mais próximo (tecla de interação / toggle).
+    Interact {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_eid: Option<u64>,
+    },
     ShopBuy { slot_idx: u8 },
     ShopSell { inv_slot: u16 },
     /// Trade atômico — todas as compras E vendas executadas juntas, ou
@@ -170,6 +175,22 @@ pub enum ClientMessage {
         target_char: Option<String>,
         action: AdminAction,
     },
+    /// Aceita uma quest oferecida (board/npc/facção mais próximo já validou
+    /// proximidade no Interact). Server valida level/facção/cooldown/slot.
+    AcceptQuest { quest_id: u16 },
+    /// Abandona uma quest ativa (libera o slot; repetível volta ao cooldown).
+    AbandonQuest { quest_id: u16 },
+    /// Entrega/conclui uma quest cujo objetivo está cumprido (status READY).
+    /// Server reconfere, consome itens (Collect/Deliver) e concede recompensa.
+    TurnInQuest { quest_id: u16 },
+    /// Pede a lista de quests oferecidas por um giver. Usado pelo QUADRO da
+    /// cidade (objeto de cena, não-entidade): source=BOARD(0), giver=0. NPCs e
+    /// facção são entidades-servidor e ofertam via Interact (handle_interact).
+    RequestQuestOffer { source: u8, giver: u16 },
+    /// Compra um item na loja de facção (gasta pontos de facção). Server valida
+    /// proximidade do NPC de facção da MESMA facção, pontos suficientes, e
+    /// concede o item.
+    FactionShopBuy { item_id: u16 },
 }
 
 /// Acoes administrativas aplicadas via `ClientMessage::AdminCommand`.
@@ -455,6 +476,51 @@ pub enum ServerMessage {
         direction: f32,
         intensity: f32,
     },
+    /// Resposta ao Interact com um quest giver (quadro/NPC/facção): lista de
+    /// quests DISPONÍVEIS pra aceitar dali (já filtradas por level/facção/cooldown).
+    QuestOffer {
+        giver_source: u8,  // quests::quest_source
+        giver_id: u16,     // shop_id do NPC, 0 (board) ou faction_id
+        #[serde(default)]
+        giver_name: String, // nome do NPC pro cabeçalho do diálogo ("" = board)
+        quests: Vec<crate::quests::QuestNet>,
+    },
+    /// Log completo das quests ativas do player (login + ressincronização).
+    /// Campo `quests` (não `active`) pra reusar o mesmo slot JSON do QuestOffer
+    /// no cliente — o `type` desambigua.
+    QuestLog {
+        quests: Vec<crate::quests::QuestNet>,
+    },
+    /// Atualização incremental de uma quest (progresso/status mudou).
+    QuestUpdate {
+        quest_id: u16,
+        progress: u32,
+        status: u8,        // quests::quest_status
+    },
+    /// Pontos de facção atuais do player (atualiza HUD).
+    FactionPoints {
+        points: u32,
+    },
+    /// Givers (ids) que têm AO MENOS uma quest aceitável agora pra este player.
+    /// Cliente usa pra mostrar o "!" só sobre quem realmente tem missão.
+    QuestGivers {
+        available: Vec<u16>,
+    },
+    /// Loja de facção (enviada ao interagir com o NPC de facção da própria
+    /// facção). Itens custam PONTOS DE FACÇÃO, não ouro.
+    FactionShopOpen {
+        faction: u8,
+        points: u32,
+        // Nome distinto de ShopOpen.items (tipo diferente, mesma key colidiria no client).
+        faction_items: Vec<FactionShopItemNet>,
+    },
+}
+
+/// Item da loja de facção (item_id + custo em pontos de facção).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FactionShopItemNet {
+    pub item_id: u16,
+    pub points: u32,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -488,6 +554,11 @@ pub struct CraftRecipeNet {
     pub name:              String,
     /// 0=Other, 1=Weapon, 2=Armor, 3=Material/resource. UI filtra por tab.
     pub category:          u8,
+    /// Estação de craft (shared::craft_station): 0=Forja 1=Ateliê 2=Smelter
+    /// 3=Marcenaria. UI filtra pela estação que o player abriu. serde(default)
+    /// pra compat com mensagens antigas sem o campo.
+    #[serde(default)]
+    pub station:           u8,
     /// 1-4. UI exibe badge colorido.
     pub tier:              u8,
     /// (item_id, qty) pares de inputs (max 4 entradas).

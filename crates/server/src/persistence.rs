@@ -91,6 +91,10 @@ pub struct CharacterRow {
     /// Facção escolhida na criação (Morganeers/Peacemain). Persistida como
     /// TEXT. Default Peacemain pra rows legacy sem a coluna.
     pub faction: shared::Faction,
+    /// Estado de quests do personagem (character_quests).
+    pub quests: Vec<crate::quests::CharQuest>,
+    /// Pontos de facção (moeda das quests de facção).
+    pub faction_points: u32,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -1992,6 +1996,7 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
         let vault = load_vault(pool, &name).await?;
         let profs = load_proficiencies(pool, &name).await?;
         let learned = load_learned_skills(pool, &name).await?;
+        let (quests, faction_points) = crate::quests::load_char(pool, &name).await.unwrap_or_default();
         let mut allocated = [0u32; shared::STAT_COUNT];
         for (i, v) in allocated_vec.into_iter().enumerate().take(shared::STAT_COUNT) {
             allocated[i] = v.max(0) as u32;
@@ -2050,6 +2055,8 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
                 mining_lvl,
                 gathering_lvl,
                 faction,
+                quests,
+                faction_points,
             },
         );
     }
@@ -2496,5 +2503,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         }
     }
     tx.commit().await?;
+    // Quests + pontos de facção (fora da tx; reconcilia character_quests).
+    for row in &batch.rows {
+        let _ = crate::quests::save_char(pool, &row.name, &row.quests, row.faction_points).await;
+    }
     Ok(())
 }
