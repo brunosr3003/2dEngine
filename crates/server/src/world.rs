@@ -572,7 +572,7 @@ pub fn boat_can_dismount(
     map: &shared::world_gen::WorldMap,
 ) -> bool {
     let cfg = crate::boat_config::get(kind);
-    let max_radius = cfg.deck_half_w.max(cfg.deck_half_h).ceil() as u32 + 8;
+    let max_radius = cfg.deck_half_w.max(cfg.deck_half_h).ceil() as u32 + 25;
     let bx = boat_pos.x.floor() as i32;
     let by = boat_pos.y.floor() as i32;
     let mut visited: std::collections::HashSet<(i32, i32)> = std::collections::HashSet::new();
@@ -3576,6 +3576,9 @@ impl GameWorld {
             }
             ClientMessage::ResetPosition => {
                 self.handle_reset_position(id);
+            }
+            ClientMessage::DropItem { slot } => {
+                self.handle_drop_item(id, slot);
             }
             ClientMessage::RequestDisconnect => self.on_disconnect(id),
             ClientMessage::SkillLearn { skill_id }   => self.handle_skill_learn(id, skill_id),
@@ -8919,6 +8922,62 @@ impl GameWorld {
         let _ = s.handle.to_client.send(ServerMessage::FactionPoints { points: s.faction_points });
     }
 
+    /// Joga item do slot do inventario no chao perto do player. Spawna
+    /// LootTag com a instance EXATA do slot (preserva rarity/refinement),
+    /// zera o slot e marca save pendente. Drop no proximo tile walkable
+    /// num pequeno offset (~1 tile) do player.
+    fn handle_drop_item(&mut self, sid: SessionId, slot: u16) {
+        let (player_entity, item_id, qty, instance) = {
+            let Some(s) = self.sessions.get(&sid) else { return };
+            if !s.logged_in { return; }
+            let Some(pe) = s.entity else { return };
+            let idx = slot as usize;
+            if idx >= s.inventory.len() { return; }
+            let inv = &s.inventory[idx];
+            if inv.item_id == 0 || inv.qty == 0 { return; }
+            (pe, inv.item_id, inv.qty, inv.instance)
+        };
+        let pos = match self.ecs.get::<&Position>(player_entity) {
+            Ok(p) => p.0,
+            Err(_) => return,
+        };
+        // Acha tile walkable proximo (1 tile na direcao S ou nas 8 cardinais).
+        let pick = {
+            let candidates = [
+                Vec2::new(0.0, -1.0), Vec2::new(1.0, -1.0), Vec2::new(-1.0, -1.0),
+                Vec2::new(1.0, 0.0), Vec2::new(-1.0, 0.0),
+                Vec2::new(0.0, 1.0), Vec2::new(1.0, 1.0), Vec2::new(-1.0, 1.0),
+            ];
+            let mut chosen = pos;
+            for c in candidates {
+                let p = pos + c;
+                if self.map.is_walkable(p.x.floor() as i32, p.y.floor() as i32) {
+                    chosen = p;
+                    break;
+                }
+            }
+            chosen
+        };
+        let loot_eid = self.alloc_entity_id();
+        let now = self.sim_time_s;
+        self.ecs.spawn((
+            NetId(loot_eid),
+            Position(pick),
+            Velocity(Vec2::ZERO),
+            EntityKind::Loot(item_id),
+            LootTag { item_id, qty, instance, spawn_at: now },
+        ));
+        // Zera o slot e marca save pendente.
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            let idx = slot as usize;
+            if idx < s.inventory.len() {
+                s.inventory[idx] = shared::InventorySlot::default();
+                s.inventory_dirty = true;
+            }
+        }
+        self.save_pending = true;
+    }
+
     /// Givers com quest aceitável agora — cliente mostra o "!" só sobre esses.
     pub fn send_quest_givers(&self, sid: SessionId) {
         let now = (now_ms() / 1000) as i64;
@@ -10066,8 +10125,8 @@ impl GameWorld {
         let cfg = self.ecs.get::<&BoatTag>(mounted_boat_entity)
             .ok().map(|t| crate::boat_config::get(t.kind));
         let max_radius = cfg.as_ref()
-            .map(|c| c.deck_half_w.max(c.deck_half_h).ceil() as u32 + 3)
-            .unwrap_or(12);
+            .map(|c| c.deck_half_w.max(c.deck_half_h).ceil() as u32 + 25)
+            .unwrap_or(32);
         let mut visited: std::collections::HashSet<(i32, i32)> = std::collections::HashSet::new();
         let mut queue: std::collections::VecDeque<(i32, i32, u32)> = std::collections::VecDeque::new();
         let cardinals = [(0i32, 1i32), (1, 0), (0, -1), (-1, 0)];

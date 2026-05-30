@@ -141,6 +141,9 @@ pub enum ClientMessage {
     /// caso de bug de colisão (player preso em wall, fora do mapa, etc.).
     /// Permitido em qualquer estado — se montado em barco, desmonta antes.
     ResetPosition,
+    /// Joga o item do slot do inventario no chao perto do player. Server
+    /// valida slot ocupado, decrementa qty (ou zera) e spawna LootTag.
+    DropItem { slot: u16 },
     RequestDisconnect,
     /// Player tenta colher um farm node. Server valida distância, cooldown e
     /// estado do node. `node_id` = ID sequencial atribuído ao carregar o mapa.
