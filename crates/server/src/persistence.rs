@@ -233,6 +233,19 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
          VALUES (1, 7, 9) ON CONFLICT DO NOTHING"
     ).execute(&pool).await?;
 
+    // Migration M14: garante que o Mercador venda as 4 ferramentas T1
+    // (machado de lenhador, foice, picareta, vara). Sort_order acima do
+    // shield (40+).
+    sqlx::query(
+        "INSERT INTO vendor_shop_items (shop_id, item_id, sort_order)
+         VALUES
+            (1, 80, 40),   -- WOODCUTTER_AXE_T1
+            (1, 84, 41),   -- SICKLE_T1
+            (1, 88, 42),   -- PICKAXE_T1
+            (1, 92, 43)    -- FISHING_ROD_T1
+         ON CONFLICT DO NOTHING"
+    ).execute(&pool).await?;
+
     // Migration M10: chars com shield (item_id=7) no offhand E weapon two-handed
     // (great_sword=13, bow=14, staff=6, wand=15) ficaram com combo invalido —
     // a M7 anterior moveu shield pro offhand sem checar a weapon. Apaga o offhand
@@ -1570,6 +1583,30 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // Sem equip slot. Stack 1 (item unico). Icone re-aproveitado de barril
         // ate ter art proprio.
         S{ id: item_id::BOAT_LYLIAN_LEUTARD as i32, name:"Lylian Leutard", sell:0, buy:Some(500), ord:Some(50), stack:1, slot:None, lvl:1, ic:0, ir:138, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+
+        // === Tools (ferramentas de farm/craft). Slot "Weapon" — usam a mao
+        // direita. T1 vendidos no Mercador; T2-T4 craftaveis. ic/ir sao
+        // placeholders de icon ate ter art definitiva.
+        // Machado de Lenhador (Axe) — coleta Tree.
+        S{ id: item_id::WOODCUTTER_AXE_T1 as i32, name:"Machado de Lenhador T1", sell:30,  buy:Some(60),   ord:Some(40), stack:1, slot:Some("Tool"), lvl:1,  ic:5, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::WOODCUTTER_AXE_T2 as i32, name:"Machado de Lenhador T2", sell:120, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:10, ic:5, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(1,3), wis:(0,0) },
+        S{ id: item_id::WOODCUTTER_AXE_T3 as i32, name:"Machado de Lenhador T3", sell:400, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:30, ic:5, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(2,6), wis:(1,3) },
+        S{ id: item_id::WOODCUTTER_AXE_T4 as i32, name:"Machado de Lenhador T4", sell:1200,buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:60, ic:5, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(4,10),wis:(2,6) },
+        // Foice (Sickle) — coleta Flower.
+        S{ id: item_id::SICKLE_T1 as i32,         name:"Foice T1",               sell:25,  buy:Some(50),   ord:Some(41), stack:1, slot:Some("Tool"), lvl:1,  ic:8, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::SICKLE_T2 as i32,         name:"Foice T2",               sell:100, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:10, ic:8, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(1,3), wis:(0,0) },
+        S{ id: item_id::SICKLE_T3 as i32,         name:"Foice T3",               sell:350, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:30, ic:8, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(2,6), wis:(1,3) },
+        S{ id: item_id::SICKLE_T4 as i32,         name:"Foice T4",               sell:1000,buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:60, ic:8, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(4,10),wis:(2,6) },
+        // Picareta (Pickaxe) — coleta Rock.
+        S{ id: item_id::PICKAXE_T1 as i32,        name:"Picareta T1",            sell:30,  buy:Some(60),   ord:Some(42), stack:1, slot:Some("Tool"), lvl:1,  ic:9, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::PICKAXE_T2 as i32,        name:"Picareta T2",            sell:120, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:10, ic:9, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(1,3), wis:(0,0) },
+        S{ id: item_id::PICKAXE_T3 as i32,        name:"Picareta T3",            sell:400, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:30, ic:9, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(2,6), wis:(1,3) },
+        S{ id: item_id::PICKAXE_T4 as i32,        name:"Picareta T4",            sell:1200,buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:60, ic:9, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(4,10),wis:(2,6) },
+        // Vara de Pesca (FishingRod) — pesca.
+        S{ id: item_id::FISHING_ROD_T1 as i32,    name:"Vara de Pesca T1",       sell:20,  buy:Some(40),   ord:Some(43), stack:1, slot:Some("Tool"), lvl:1,  ic:11,ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::FISHING_ROD_T2 as i32,    name:"Vara de Pesca T2",       sell:90,  buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:10, ic:11,ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(1,3), wis:(0,0) },
+        S{ id: item_id::FISHING_ROD_T3 as i32,    name:"Vara de Pesca T3",       sell:320, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:30, ic:11,ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(2,6), wis:(1,3) },
+        S{ id: item_id::FISHING_ROD_T4 as i32,    name:"Vara de Pesca T4",       sell:950, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:60, ic:11,ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(4,10),wis:(2,6) },
     ];
     for s in seed {
         sqlx::query(
@@ -2315,7 +2352,22 @@ async fn load_equipment(pool: &PgPool, char_name: &str) -> Result<shared::Equipm
             "gloves"   => { eq.gloves   = Some(iid); eq.gloves_inst   = inst; }
             "belt"     => { eq.belt     = Some(iid); eq.belt_inst     = inst; }
             "cape"     => { eq.cape     = Some(iid); eq.cape_inst     = inst; }
-            "necklace" => { eq.necklace = Some(iid); eq.necklace_inst = inst; }
+            "necklace"     => { eq.necklace     = Some(iid); eq.necklace_inst     = inst; }
+            "tool_axe"     => { eq.tool_axe     = Some(iid); eq.tool_axe_inst     = inst; }
+            "tool_sickle"  => { eq.tool_sickle  = Some(iid); eq.tool_sickle_inst  = inst; }
+            "tool_pickaxe" => { eq.tool_pickaxe = Some(iid); eq.tool_pickaxe_inst = inst; }
+            "tool_rod"     => { eq.tool_rod     = Some(iid); eq.tool_rod_inst     = inst; }
+            // Migracao "tool" legado: mapeia pelo item_id pra o slot certo.
+            "tool"         => {
+                use shared::item_id;
+                match item_id::tool_kind(iid) {
+                    Some(shared::ToolKind::Axe)        => { eq.tool_axe     = Some(iid); eq.tool_axe_inst     = inst; }
+                    Some(shared::ToolKind::Sickle)     => { eq.tool_sickle  = Some(iid); eq.tool_sickle_inst  = inst; }
+                    Some(shared::ToolKind::Pickaxe)    => { eq.tool_pickaxe = Some(iid); eq.tool_pickaxe_inst = inst; }
+                    Some(shared::ToolKind::FishingRod) => { eq.tool_rod     = Some(iid); eq.tool_rod_inst     = inst; }
+                    None                               => {}
+                }
+            }
             _ => {}
         }
     }
@@ -2529,7 +2581,11 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             ("gloves",   row.equipment.gloves,   row.equipment.gloves_inst),
             ("belt",     row.equipment.belt,     row.equipment.belt_inst),
             ("cape",     row.equipment.cape,     row.equipment.cape_inst),
-            ("necklace", row.equipment.necklace, row.equipment.necklace_inst),
+            ("necklace",     row.equipment.necklace,     row.equipment.necklace_inst),
+            ("tool_axe",     row.equipment.tool_axe,     row.equipment.tool_axe_inst),
+            ("tool_sickle",  row.equipment.tool_sickle,  row.equipment.tool_sickle_inst),
+            ("tool_pickaxe", row.equipment.tool_pickaxe, row.equipment.tool_pickaxe_inst),
+            ("tool_rod",     row.equipment.tool_rod,     row.equipment.tool_rod_inst),
         ] {
             if let Some(iid) = item_opt {
                 let inst_json = inst_opt.and_then(|i| serde_json::to_string(&i).ok());

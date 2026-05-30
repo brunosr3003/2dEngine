@@ -9956,6 +9956,31 @@ impl GameWorld {
             }
         }
 
+        // Gate: precisa de TOOL do tipo certo equipada no slot dedicado
+        // (axe→Tree, sickle→Flower, pickaxe→Rock) com tier >= node.tier.
+        let req_tool_kind = shared::item_id::tool_kind_for_farm(&node.kind);
+        if let Some(needed) = req_tool_kind {
+            let (eq_id, eq_kind, eq_tier) = self.sessions.get(&sid).map(|s| {
+                let id = match needed {
+                    shared::ToolKind::Axe        => s.equipment.tool_axe.unwrap_or(0),
+                    shared::ToolKind::Sickle     => s.equipment.tool_sickle.unwrap_or(0),
+                    shared::ToolKind::Pickaxe    => s.equipment.tool_pickaxe.unwrap_or(0),
+                    shared::ToolKind::FishingRod => s.equipment.tool_rod.unwrap_or(0),
+                };
+                (id, shared::item_id::tool_kind(id), shared::item_id::tool_tier(id))
+            }).unwrap_or((0, None, 0));
+            if eq_kind != Some(needed) {
+                tracing::info!("[farm diag] node {} bloqueado: precisa de {:?}, tem item={} ({:?})",
+                    node_id, needed, eq_id, eq_kind);
+                return;
+            }
+            if eq_tier < node.tier {
+                tracing::info!("[farm diag] node {} T{} bloqueado: tool tier {} < node tier",
+                    node_id, node.tier, eq_tier);
+                return;
+            }
+        }
+
         // Gate: cooldown por (player, node).
         let cd_key = (sid, node_id);
         if self.farm_hit_cooldowns.get(&cd_key)

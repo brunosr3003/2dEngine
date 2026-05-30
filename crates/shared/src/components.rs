@@ -206,6 +206,23 @@ pub struct Equipment {
     pub necklace: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub necklace_inst: Option<crate::items::ItemInstance>,
+    // 4 slots dedicados pras ferramentas — todas equipáveis ao mesmo tempo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_axe: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_axe_inst: Option<crate::items::ItemInstance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_sickle: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_sickle_inst: Option<crate::items::ItemInstance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_pickaxe: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_pickaxe_inst: Option<crate::items::ItemInstance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_rod: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_rod_inst: Option<crate::items::ItemInstance>,
 }
 
 impl Equipment {
@@ -223,7 +240,11 @@ impl Equipment {
             Gloves   => self.gloves,
             Belt     => self.belt,
             Cape     => self.cape,
-            Necklace => self.necklace,
+            Necklace     => self.necklace,
+            ToolAxe      => self.tool_axe,
+            ToolSickle   => self.tool_sickle,
+            ToolPickaxe  => self.tool_pickaxe,
+            ToolRod      => self.tool_rod,
         }
     }
 
@@ -241,7 +262,11 @@ impl Equipment {
             Gloves   => self.gloves_inst,
             Belt     => self.belt_inst,
             Cape     => self.cape_inst,
-            Necklace => self.necklace_inst,
+            Necklace     => self.necklace_inst,
+            ToolAxe      => self.tool_axe_inst,
+            ToolSickle   => self.tool_sickle_inst,
+            ToolPickaxe  => self.tool_pickaxe_inst,
+            ToolRod      => self.tool_rod_inst,
         }
     }
 
@@ -259,7 +284,11 @@ impl Equipment {
             Gloves   => { self.gloves   = id; self.gloves_inst   = inst; }
             Belt     => { self.belt     = id; self.belt_inst     = inst; }
             Cape     => { self.cape     = id; self.cape_inst     = inst; }
-            Necklace => { self.necklace = id; self.necklace_inst = inst; }
+            Necklace     => { self.necklace     = id; self.necklace_inst     = inst; }
+            ToolAxe      => { self.tool_axe     = id; self.tool_axe_inst     = inst; }
+            ToolSickle   => { self.tool_sickle  = id; self.tool_sickle_inst  = inst; }
+            ToolPickaxe  => { self.tool_pickaxe = id; self.tool_pickaxe_inst = inst; }
+            ToolRod      => { self.tool_rod     = id; self.tool_rod_inst     = inst; }
         }
     }
 
@@ -275,8 +304,12 @@ impl Equipment {
             (self.boots,    self.boots_inst),
             (self.gloves,   self.gloves_inst),
             (self.belt,     self.belt_inst),
-            (self.cape,     self.cape_inst),
-            (self.necklace, self.necklace_inst),
+            (self.cape,         self.cape_inst),
+            (self.necklace,     self.necklace_inst),
+            (self.tool_axe,     self.tool_axe_inst),
+            (self.tool_sickle,  self.tool_sickle_inst),
+            (self.tool_pickaxe, self.tool_pickaxe_inst),
+            (self.tool_rod,     self.tool_rod_inst),
         ]
     }
 }
