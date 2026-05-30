@@ -20,9 +20,13 @@ use std::time::Duration;
 pub struct SkillsConfig {
     pub version: i64,
     pub by_id:   HashMap<u32, SkillDef>,
-    /// Index por prof (`Sword`/`Axe`/...) → lista de skills daquela prof,
-    /// ordenado por (tier asc, is_passive false-first, name).
+    /// Index por arma RECOMENDADA (`Sword`/`Axe`/...) → skills com essa
+    /// afinidade, ordenado por (tier asc, is_passive false-first, id).
+    /// Skills nesse index ainda podem ser castadas por outras armas.
     pub by_prof: HashMap<String, Vec<u32>>,
+    /// Index por categoria (`offensive`, `support`, `control`, `mobility`,
+    /// `passive`) — usado pela UI nova.
+    pub by_category: HashMap<String, Vec<u32>>,
 }
 
 impl SkillsConfig {
@@ -30,6 +34,12 @@ impl SkillsConfig {
 
     pub fn skills_for_prof(&self, prof: &str) -> Vec<&SkillDef> {
         self.by_prof.get(prof)
+            .map(|ids| ids.iter().filter_map(|i| self.by_id.get(i)).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn skills_for_category(&self, cat: &str) -> Vec<&SkillDef> {
+        self.by_category.get(cat)
             .map(|ids| ids.iter().filter_map(|i| self.by_id.get(i)).collect())
             .unwrap_or_default()
     }
@@ -152,6 +162,11 @@ async fn load_from_db(pool: &PgPool) -> Result<SkillsConfig> {
         max_rank_range_bonus: f32,
         max_rank_cooldown_red_pct: f32,
         max_rank_crit_chance: f32,
+        category: String,
+        affinity_damage_pct: f32,
+        affinity_cooldown_red_pct: f32,
+        affinity_crit_pct: f32,
+        affinity_cost_red_pct: f32,
     }
 
     let rows: Vec<SkillRow> = sqlx::query_as(
@@ -163,12 +178,15 @@ async fn load_from_db(pool: &PgPool) -> Result<SkillsConfig> {
                 per_rank_dmg_pct, per_rank_cd_pct, per_rank_cost_pct,
                 icon_path, vfx_id, active, knockback,
                 max_rank_damage_pct, max_rank_heal_pct, max_rank_radius_bonus,
-                max_rank_range_bonus, max_rank_cooldown_red_pct, max_rank_crit_chance
+                max_rank_range_bonus, max_rank_cooldown_red_pct, max_rank_crit_chance,
+                category, affinity_damage_pct, affinity_cooldown_red_pct,
+                affinity_crit_pct, affinity_cost_red_pct
          FROM skills WHERE active = TRUE"
     ).fetch_all(pool).await?;
 
     let mut by_id = HashMap::with_capacity(rows.len());
     let mut by_prof: HashMap<String, Vec<u32>> = HashMap::new();
+    let mut by_category: HashMap<String, Vec<u32>> = HashMap::new();
     for r in rows {
         let id_u32 = r.id.max(0) as u32;
         let def = SkillDef {
@@ -176,6 +194,7 @@ async fn load_from_db(pool: &PgPool) -> Result<SkillsConfig> {
             name: r.name,
             description: r.description,
             prof: r.prof.clone(),
+            category: r.category.clone(),
             tier: r.tier.clamp(1, 4) as u8,
             is_passive: r.is_passive,
             path: r.path,
@@ -206,8 +225,13 @@ async fn load_from_db(pool: &PgPool) -> Result<SkillsConfig> {
             max_rank_range_bonus: r.max_rank_range_bonus,
             max_rank_cooldown_red_pct: r.max_rank_cooldown_red_pct,
             max_rank_crit_chance: r.max_rank_crit_chance,
+            affinity_damage_pct: r.affinity_damage_pct,
+            affinity_cooldown_red_pct: r.affinity_cooldown_red_pct,
+            affinity_crit_pct: r.affinity_crit_pct,
+            affinity_cost_red_pct: r.affinity_cost_red_pct,
         };
         by_prof.entry(r.prof).or_default().push(id_u32);
+        by_category.entry(r.category).or_default().push(id_u32);
         by_id.insert(id_u32, def);
     }
     // Sort por (tier asc, !is_passive primeiro, id). Ativas vêm antes de
@@ -218,6 +242,12 @@ async fn load_from_db(pool: &PgPool) -> Result<SkillsConfig> {
             (s.tier, s.is_passive as u8, s.id.0)
         });
     }
+    for ids in by_category.values_mut() {
+        ids.sort_by_key(|id| {
+            let s = &by_id[id];
+            (s.tier, s.is_passive as u8, s.id.0)
+        });
+    }
 
-    Ok(SkillsConfig { version, by_id, by_prof })
+    Ok(SkillsConfig { version, by_id, by_prof, by_category })
 }

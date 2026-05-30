@@ -22,12 +22,12 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 60;
+pub const PROTOCOL_VERSION: u16 = 62;
 
 // ── Boat (Sea-of-Thieves style: vela/leme/ancora separados) ─────────────────
 /// Velocidade maxima de qualquer barco (tiles/s). Atingida com vela full,
 /// vento maximo, alinhamento perfeito.
-pub const BOAT_MAX_SPEED: f32 = 20.0;
+pub const BOAT_MAX_SPEED: f32 = 32.0;
 
 /// Velocidade base do barco com vela up — fracao de BOAT_MAX_SPEED garantida
 /// mesmo SEM vento ou contra vento (vento vira boost, nao condicao). Modelo:
@@ -35,8 +35,9 @@ pub const BOAT_MAX_SPEED: f32 = 20.0;
 /// Com BASE=0.55 BOOST=0.45 → contra-vento ~55%, a-favor ~100%.
 pub const BOAT_SAIL_BASE: f32  = 0.55;
 pub const BOAT_WIND_BOOST: f32 = 0.45;
-/// Drag da agua aplicado por segundo (sem vento, barco para em ~4s).
-pub const BOAT_WATER_DRAG: f32 = 0.6;
+/// Drag da agua aplicado por segundo (sem vento, barco para em ~10s).
+/// Drag baixo + lerp_k baixo = barco com inercia (accel/decel lentos).
+pub const BOAT_WATER_DRAG: f32 = 0.25;
 /// Multiplicador de drag quando ancora dropada (decel rapido).
 pub const BOAT_ANCHOR_DRAG_MULT: f32 = 8.0;
 /// Yaw rate maximo (rad/s) com leme totalmente virado e barco em velocidade
@@ -54,11 +55,43 @@ pub const BOAT_LYLIAN_DECK_HALF_H: f32 = 4.0;
 
 /// Codigos de estacao usados em `GrabStation { station }` e
 /// `EntitySnapshot.station`. Manter em sync com o cliente C#.
+/// Canhoes: codigos >= CANNON_BASE. slot = code - CANNON_BASE.
+/// Permite barcos com N canhoes sem mexer no enum.
 pub mod station {
-    pub const HELM:   u8 = 0;
-    pub const SAIL:   u8 = 1;
-    pub const ANCHOR: u8 = 2;
+    pub const HELM:        u8 = 0;
+    pub const SAIL:        u8 = 1;
+    pub const ANCHOR:      u8 = 2;
+    pub const CANNON_BASE: u8 = 3;
+    pub const MAX_CANNONS: u8 = 16;
 }
+
+// ── Canhao ──────────────────────────────────────────────────────────────
+/// Range maximo do tiro (tiles) em power=100%. Pode ser override por
+/// upgrade no futuro (cannon_config tier).
+pub const CANNON_MAX_RANGE: f32 = 28.0;
+/// Range minimo do tiro (tiles) em power=0%. Garante que charge=0 nao
+/// derruba a bola no proprio barco.
+pub const CANNON_MIN_RANGE: f32 = 6.0;
+/// Range maximo dos canhoes em angulacao lateral (rad). Aim varia de
+/// -CANNON_AIM_MAX_RAD a +CANNON_AIM_MAX_RAD relativo ao "forward" do canhao
+/// (que e' o lado do barco onde ele esta instalado).
+pub const CANNON_AIM_MAX_RAD: f32 = std::f32::consts::FRAC_PI_4; // 45 graus
+/// Tempo de voo da bola — t_max do arco parabolico, em segundos.
+/// Range curto = vela rapida; range max = ~1.6s.
+pub const CANNON_FLIGHT_TIME_MIN: f32 = 0.55;
+pub const CANNON_FLIGHT_TIME_MAX: f32 = 1.60;
+/// Altura maxima do arco da bola (unidades world, render offset Y).
+/// Cresce com range pra dar a sensacao de tiro mais longo = arco mais alto.
+pub const CANNON_PEAK_HEIGHT_MIN: f32 = 2.0;
+pub const CANNON_PEAK_HEIGHT_MAX: f32 = 6.0;
+/// Tempo (s) pra carga ir de 0 -> 100% (depois para no topo).
+pub const CANNON_CHARGE_TIME_S: f32 = 2.0;
+/// Cooldown (s) entre tiros pra um canhao.
+pub const CANNON_COOLDOWN_S: f32 = 2.5;
+/// Dano base da bola no impacto (no centro do blast). Cai linear com distancia.
+pub const CANNON_DAMAGE_BASE: i32 = 80;
+/// Raio do AoE (tiles).
+pub const CANNON_BLAST_RADIUS: f32 = 2.5;
 
 /// Angulo maximo absoluto da roda do leme em radianos. 4π ≈ 2 voltas
 /// pra cada lado (lock-to-lock = 4 voltas total). Acima disso, server

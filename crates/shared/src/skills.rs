@@ -58,16 +58,23 @@ pub struct SkillDef {
     pub id: SkillId,
     pub name: String,
     pub description: String,
-    /// String do enum Proficiency (`Sword`, `Axe`, `Wand`, ...) — match com
-    /// `Proficiency::as_db_str`.
+    /// String do enum Proficiency — vira a ARMA RECOMENDADA (afinidade).
+    /// Todas as armas podem castar a skill; quando a arma equipada bate
+    /// com este `prof`, os bonus `affinity_*` abaixo entram.
     pub prof: String,
+    /// Categoria pra organização na UI: `offensive`, `support`, `control`,
+    /// `mobility`, `passive`. Default `offensive` em DB antigo.
+    #[serde(default = "default_category")]
+    pub category: String,
     pub tier: u8,
     pub is_passive: bool,
     pub path: Option<String>,
     pub unlock_char_lvl: u32,
     pub unlock_prof_lvl: u32,
-    /// Lista de profs com cujas armas a skill funciona quando equipada.
-    /// `None` = ALL (qualquer arma). Usado pra cross-weapon (warrior cura).
+    /// LEGACY (mantido pra back-compat com DB antigo). No design atual,
+    /// todas as armas podem usar todas as skills — campo é ignorado pelo
+    /// server na hora do cast. Active skills viram universais; o bonus
+    /// vem via afinidade. Passives ainda exigem `prof` ou universal.
     pub usable_with: Option<Vec<String>>,
     pub cost_mp: i32,
     pub cost_stamina: i32,
@@ -105,6 +112,41 @@ pub struct SkillDef {
     #[serde(default)] pub max_rank_cooldown_red_pct: f32,
     /// +X% crit chance.
     #[serde(default)] pub max_rank_crit_chance: f32,
+
+    // ── Afinidade de arma (bônus quando arma equipada == `prof`) ────────
+    /// +X% damage/heal quando a arma recomendada estiver equipada
+    /// (25 = +25%). 0 = sem bônus.
+    #[serde(default)] pub affinity_damage_pct: f32,
+    /// -X% cooldown quando arma recomendada estiver equipada.
+    #[serde(default)] pub affinity_cooldown_red_pct: f32,
+    /// +X% crit chance quando arma recomendada estiver equipada
+    /// (0..100). Aplicado só em skills com `base_damage > 0`.
+    #[serde(default)] pub affinity_crit_pct: f32,
+    /// -X% custo de MP/stamina quando arma recomendada estiver equipada.
+    #[serde(default)] pub affinity_cost_red_pct: f32,
+}
+
+fn default_category() -> String { "offensive".to_string() }
+
+/// Categorias válidas pra UI / DB enum. Match com web admin.
+pub const SKILL_CATEGORIES: &[&str] = &["offensive", "support", "control", "mobility", "passive"];
+
+impl SkillDef {
+    /// Retorna `true` se a arma equipada (item id) ativa a afinidade dessa
+    /// skill. Usado tanto no server (pra calcular bônus) quanto no cliente
+    /// (pra UI mostrar destaque).
+    pub fn is_affinity_weapon(&self, weapon_item_id: u16) -> bool {
+        let wp = crate::Proficiency::from_item(weapon_item_id).as_db_str();
+        wp == self.prof
+    }
+
+    /// `true` se essa skill tem QUALQUER bônus de afinidade configurado.
+    pub fn has_any_affinity_bonus(&self) -> bool {
+        self.affinity_damage_pct > 0.0
+            || self.affinity_cooldown_red_pct > 0.0
+            || self.affinity_crit_pct > 0.0
+            || self.affinity_cost_red_pct > 0.0
+    }
 }
 
 /// Defaults procedurais usados pelo SEED — popula colunas DB com bônus
@@ -131,6 +173,65 @@ pub fn default_max_rank_bonus_for_seed(
     }
     if cooldown_s >= 10.0 { crit = 5.0; }
     (dmg, heal, rad, range, cd, crit)
+}
+
+/// Heurística pra categorizar uma skill no seed/migration quando o DB
+/// ainda não tem a coluna preenchida. Admin pode UPDATE depois.
+///
+/// Ordem de preferência:
+///  1. passive          → `passive`
+///  2. nome contém dash/leap/charge/step/jump → `mobility`
+///  3. cura > 0 ou só scaling_wis (Resurrection, Group Heal, ...) → `support`
+///  4. nome contém taunt/mark/stance/buff/conduit/pool/will/frenzy → `support`
+///  5. nome contém stun/silence/slow/freeze/vanish/smoke/bomb/caltrops → `control`
+///  6. default            → `offensive`
+pub fn infer_default_category(name: &str, is_passive: bool, base_damage: i32, base_heal: i32, scaling_wis: f32) -> &'static str {
+    if is_passive { return "passive"; }
+    let n = name.to_lowercase();
+    let has = |s: &str| n.contains(s);
+    if has("dash") || has("leap") || has("charge") || has("step") || has("jump") || has("vanish")
+        || has("shadowstep") || has("hurricane") || has("flying") { return "mobility"; }
+    if base_heal > 0 || (base_damage == 0 && scaling_wis > 0.0 && !has("drain") && !has("strike")) {
+        return "support";
+    }
+    if has("taunt") || has("mark") || has("stance") || has("buff") || has("counter") { return "support"; }
+    if has("stun") || has("silence") || has("slow") || has("freeze") || has("nova")
+        || has("smoke") || has("bomb") || has("caltrops") || has("bash") { return "control"; }
+    "offensive"
+}
+
+/// Defaults procedurais de afinidade pra usar no seed/migration. Cada
+/// categoria define qual bonus faz mais sentido:
+///  - offensive       → +25% damage
+///  - support+heal    → +25% heal (já vai pelo damage_pct, que aplica em heals too no eval client)
+///  - support+buff    → -20% cooldown
+///  - control         → -15% custo + +10% crit (encorajar uso)
+///  - mobility        → -25% cooldown (re-usar a mobilidade mais rapido)
+///  - passive         → +15% damage (placeholder; passives nao se beneficiam de cd/cost mas aceitam dmg pra rolarem mais forte)
+///
+/// Retorna `(damage_pct, cooldown_red_pct, crit_pct, cost_red_pct)`.
+pub fn default_affinity_for_seed(category: &str, base_damage: i32, base_heal: i32) -> (f32, f32, f32, f32) {
+    match category {
+        "offensive" => (25.0, 0.0, 5.0, 0.0),
+        "support"   => {
+            if base_heal > 0 { (25.0, 0.0, 0.0, 15.0) }
+            else             { (0.0, 20.0, 0.0, 15.0) }
+        }
+        "control"   => (0.0, 15.0, 10.0, 15.0),
+        "mobility"  => (0.0, 25.0, 0.0, 15.0),
+        "passive"   => if base_damage > 0 { (15.0, 0.0, 0.0, 0.0) } else { (0.0, 0.0, 0.0, 0.0) },
+        _           => (20.0, 0.0, 0.0, 0.0),
+    }
+}
+
+/// Strings descritivas dos bônus de afinidade pra mostrar no tooltip.
+pub fn affinity_bonus_lines(skill: &SkillDef) -> Vec<String> {
+    let mut out = Vec::new();
+    if skill.affinity_damage_pct > 0.0       { out.push(format!("+{:.0}% damage", skill.affinity_damage_pct)); }
+    if skill.affinity_cooldown_red_pct > 0.0 { out.push(format!("-{:.0}% cooldown", skill.affinity_cooldown_red_pct)); }
+    if skill.affinity_crit_pct > 0.0         { out.push(format!("+{:.0}% crit chance", skill.affinity_crit_pct)); }
+    if skill.affinity_cost_red_pct > 0.0     { out.push(format!("-{:.0}% custo", skill.affinity_cost_red_pct)); }
+    out
 }
 
 /// Strings descritivas do bônus de max rank pra mostrar no tooltip cliente.

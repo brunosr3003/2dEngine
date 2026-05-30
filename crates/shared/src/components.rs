@@ -41,6 +41,9 @@ pub enum EntityKind {
     /// Barco navegavel. u16 = boat_kind (0=Lylian Leutard). Cliente usa o
     /// kind pra escolher quais sprite-sheets carregar.
     Boat(u16),
+    /// Bola de canhao em voo. Renderiza sprite + sombra; explode no impacto.
+    /// Snapshot envia `pos` (XY do landing) e `height` (offset Y do arco).
+    CannonBomb,
 }
 
 /// Slot de inventario. None = vazio. Quando `qty == 0`, o slot esta vazio.
@@ -511,6 +514,11 @@ pub struct EntitySnapshot {
     /// indicador !/? e casar com as quests ativas. Some quando não é arauto.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quest_giver: Option<u16>,
+    /// Altura (offset Y de render) da bola de canhao em voo. Some em
+    /// entities kind="CannonBomb". Cliente desenha sprite com Y += height
+    /// e sombra fixa em pos.y (Y zero) — sensacao de projetil balistico.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<f32>,
 }
 
 /// Bits do `EntitySnapshot.buffs` — mantém em sync com o cliente C#.

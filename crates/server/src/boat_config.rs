@@ -34,6 +34,34 @@ pub struct BoatKindConfig {
     /// Exportado de PolygonCollider2D em BoatVisualData.obstacleColliders.
     #[serde(default)]
     pub obstacles: Vec<Vec<[f32; 2]>>,
+    /// Canhoes — 1 entry por slot. Suporta 2 formatos do exporter:
+    ///   3 floats: [base_x, base_y, side_angle] (legado, muzzle = base)
+    ///   5 floats: [base_x, base_y, side_angle, muzzle_x, muzzle_y]
+    /// base = posicao do canhao (pivot que rotaciona com aim).
+    /// muzzle = ponto onde a bola sai (local-space).
+    /// side_angle (rad): direcao do "forward" do canhao no frame local do
+    /// barco (0=proa; +PI/2=lado direito; -PI/2=lado esquerdo).
+    #[serde(default)]
+    pub cannons: Vec<Vec<f32>>,
+}
+
+impl BoatKindConfig {
+    pub fn cannon_base(&self, slot: usize) -> Option<glam::Vec2> {
+        self.cannons.get(slot).and_then(|c| {
+            if c.len() >= 2 { Some(glam::Vec2::new(c[0], c[1])) } else { None }
+        })
+    }
+    pub fn cannon_side_angle(&self, slot: usize) -> f32 {
+        self.cannons.get(slot).map(|c| if c.len() >= 3 { c[2] } else { 0.0 }).unwrap_or(0.0)
+    }
+    pub fn cannon_muzzle(&self, slot: usize) -> glam::Vec2 {
+        // Se tiver muzzle (indices 3 e 4), usa; senao volta pro base.
+        if let Some(c) = self.cannons.get(slot) {
+            if c.len() >= 5 { return glam::Vec2::new(c[3], c[4]); }
+            if c.len() >= 2 { return glam::Vec2::new(c[0], c[1]); }
+        }
+        glam::Vec2::ZERO
+    }
 }
 
 impl BoatKindConfig {
@@ -179,6 +207,7 @@ impl BoatKindConfig {
             deck_polygon: Vec::new(),
             hull_polygon: Vec::new(),
             obstacles: Vec::new(),
+            cannons: Vec::new(),
         }
     }
 }

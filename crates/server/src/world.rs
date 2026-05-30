@@ -331,7 +331,22 @@ pub struct ServerSpawnZone {
     /// de inimigo (classe/level) varia a cada (re)spawn no slot. Vazio em
     /// zonas legacy quotas.
     pub slots: Vec<SpawnSlot>,
+    /// Lazy spawn: zona so spawna/tica quando algum player esta dentro do
+    /// AABB+SPAWN_WAKE_MARGIN. Quando ninguem perto por SPAWN_SLEEP_DELAY_S,
+    /// despawna todos os mobs vivos e libera slots — reduz tick cost de IA.
+    pub active: bool,
+    /// sim_time_s da ultima vez que algum player estava dentro do wake radius.
+    pub last_player_near_at: f32,
 }
+
+/// Wake radius (em tiles) ao redor do AABB da zona. Player precisa entrar
+/// nessa margem pra zona acordar e comecar a spawnar.
+pub const SPAWN_WAKE_MARGIN: f32 = 60.0;
+/// Tempo sem player no wake radius pra zona dormir e despawnar mobs.
+pub const SPAWN_SLEEP_DELAY_S: f32 = 30.0;
+/// Stagger entre spawns ao acordar — evita N spawns no mesmo tick (hitch).
+/// 0.033s = 1 spawn por tick a 30Hz. Zona com 100 slots leva ~3s pra povoar.
+pub const SPAWN_WAKE_STAGGER_S: f32 = 0.033;
 
 /// Area de spawn dedicada a UM boss. Sem quotas: 1 boss alive por vez.
 /// Respawna apos morte com delay (boss-specific). Independente de
@@ -360,6 +375,26 @@ pub struct LootTag {
     /// `sim_time_s` no momento do spawn. Auto-pickup só roda depois de
     /// `LOOT_PICKUP_DELAY_S` pra dar tempo do player VER o drop.
     pub spawn_at: f32,
+}
+
+/// Bola de canhao em voo. Trajetoria parabolica determinada na hora do tiro:
+/// pos = lerp(spawn_pos, target_pos, t/t_max); height = arc(t/t_max) * peak.
+/// Sem colisao no voo — explode no impacto (t >= t_max) com AoE no
+/// blast_radius. Damages players de outras faccoes e enemies.
+#[derive(Debug, Clone, Copy)]
+pub struct CannonBombTag {
+    pub spawn_pos: Vec2,
+    pub target_pos: Vec2,
+    pub peak_height: f32,
+    pub t_elapsed: f32,
+    pub t_max: f32,
+    pub damage: i32,
+    pub blast_radius: f32,
+    pub owner_pid: PlayerId,
+    /// Eid do barco que disparou — pra ignorar damage no proprio barco
+    /// (e nos passageiros) se quisermos no futuro.
+    pub owner_boat_eid: EntityId,
+    pub owner_player_eid: EntityId,
 }
 
 pub struct PlayerTag {
@@ -434,6 +469,13 @@ pub struct BoatTag {
     pub helm_eid: Option<EntityId>,
     pub sail_eid: Option<EntityId>,
     pub anchor_eid: Option<EntityId>,
+    /// Canhoes: 1 entry por slot, na mesma ordem do boat_config.cannons.
+    /// `cannon_eids[i]` = Some(eid) quando ocupado.
+    /// `cannon_aim[i]` = angulo de mira persistido (-CANNON_AIM_MAX_RAD..+).
+    /// `cannon_cd_until[i]` = sim_time_s em que o canhao volta a poder atirar.
+    pub cannon_eids: Vec<Option<EntityId>>,
+    pub cannon_aim: Vec<f32>,
+    pub cannon_cd_until: Vec<f32>,
 
     /// Lista de players a bordo (em estacao OU livre andando no deck).
     pub passengers: Vec<EntityId>,
@@ -530,7 +572,7 @@ pub fn boat_can_dismount(
     map: &shared::world_gen::WorldMap,
 ) -> bool {
     let cfg = crate::boat_config::get(kind);
-    let max_radius = cfg.deck_half_w.max(cfg.deck_half_h).ceil() as u32 + 3;
+    let max_radius = cfg.deck_half_w.max(cfg.deck_half_h).ceil() as u32 + 8;
     let bx = boat_pos.x.floor() as i32;
     let by = boat_pos.y.floor() as i32;
     let mut visited: std::collections::HashSet<(i32, i32)> = std::collections::HashSet::new();
@@ -557,7 +599,7 @@ pub fn boat_anchor_local(kind: u16) -> Vec2 { crate::boat_config::get(kind).anch
 
 /// Distancia maxima entre player e estacao pra interagir (em tiles).
 /// Escala com tamanho do deck — boat grande precisa de reach proporcional.
-pub const BOAT_STATION_REACH: f32 = 1.5;
+pub const BOAT_STATION_REACH: f32 = 3.0;
 /// Velocidade do player andando no deck (tiles/s, deck-local).
 pub const BOAT_DECK_WALK_SPEED: f32 = 4.5;
 
@@ -1069,6 +1111,12 @@ pub struct GameWorld {
     /// no floating damage text quando o hit mata o alvo: HP antes era 5,
     /// dano real foi 50 → mostra "50" mesmo. Lido em send_snapshots.
     pub damage_this_tick: HashMap<EntityId, i32>,
+    /// Hits de bomba de canhao pendentes — coletados em tick_cannon_bombs ao
+    /// explodir, drenados no inicio do processamento de damage_events pra
+    /// passar pelo pipeline normal (PvP rules + hit feedback + crit + xp).
+    /// (target_entity, target_eid, dmg, attacker_eid_player, hurt_dir,
+    ///  attacker_pos_for_dir_calc).
+    pub pending_bomb_hits: Vec<(Entity, EntityId, i32, EntityId, Vec2, Vec2)>,
     /// Item_id da arma do atacante no tick em que cada alvo foi ferido.
     /// Cliente usa pra escolher VFX de impacto por arma. Lido em send_snapshots
     /// pra EntitySnapshot.attacker_weapon_id; limpo apos envio.
@@ -1150,6 +1198,7 @@ impl GameWorld {
             hit_this_tick: HashMap::new(),
             crit_this_tick: HashMap::new(),
             damage_this_tick: HashMap::new(),
+            pending_bomb_hits: Vec::new(),
             attacker_weapon_this_tick: HashMap::new(),
             last_econ_version: 0,
             farm_nodes: HashMap::new(),
@@ -1210,6 +1259,7 @@ impl GameWorld {
             hit_this_tick: HashMap::new(),
             crit_this_tick: HashMap::new(),
             damage_this_tick: HashMap::new(),
+            pending_bomb_hits: Vec::new(),
             attacker_weapon_this_tick: HashMap::new(),
             last_econ_version: 0,
             farm_nodes: HashMap::new(),
@@ -1355,7 +1405,111 @@ impl GameWorld {
             .map(|(_, n)| n.0)
             .collect();
 
+        // ── Lazy spawn: wake/sleep das zonas por proximidade de player ──────
+        // Posicoes de TODOS os players (inclusive em safe zone — wake e
+        // geografico, nao ligado a aggro). Cheap: ~poucos players por server.
+        let player_pos: Vec<Vec2> = self.ecs
+            .query::<(&Position, &PlayerTag)>()
+            .iter()
+            .map(|(_, (p, _))| p.0)
+            .collect();
+        // Zonas que vao adormecer agora — coleta primeiro pra evitar borrow
+        // conflict ao despawnar mobs no ecs.
+        let mut zones_to_sleep: Vec<u32> = Vec::new();
+        for z in self.spawn_zones.iter_mut() {
+            let near = {
+                // AABB com margem; se polygon existir, usa o bbox dele
+                // (mais apertado que origin/size em zonas irregulares).
+                let (mn, mx) = if let Some(poly) = z.polygon.as_ref() {
+                    let mut mn = Vec2::new(f32::INFINITY, f32::INFINITY);
+                    let mut mx = Vec2::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
+                    for v in poly { mn = mn.min(*v); mx = mx.max(*v); }
+                    (mn, mx)
+                } else {
+                    (z.origin, z.origin + z.size)
+                };
+                let mn = mn - Vec2::splat(SPAWN_WAKE_MARGIN);
+                let mx = mx + Vec2::splat(SPAWN_WAKE_MARGIN);
+                player_pos.iter().any(|p|
+                    p.x >= mn.x && p.x <= mx.x && p.y >= mn.y && p.y <= mx.y
+                )
+            };
+            if near {
+                if !z.active {
+                    z.active = true;
+                    // Escalona o spawn inicial: 1 mob a cada SPAWN_WAKE_STAGGER_S
+                    // (~33ms = 1 tick). Pra zona com 120 slots, povoa em ~4s sem
+                    // criar hitch de 120 spawns num tick so. Slots com occupant
+                    // (raro, mas possivel se algo ficou pendurado) sao ignorados.
+                    // Caminho level-range: stagger por slot_idx.
+                    let mut idx = 0u32;
+                    for slot in z.slots.iter_mut() {
+                        if slot.occupant.is_some() { continue; }
+                        if !slot.respawn_at.is_finite() || slot.respawn_at <= now + 0.01 {
+                            slot.respawn_at = now + (idx as f32) * SPAWN_WAKE_STAGGER_S;
+                            idx += 1;
+                        }
+                    }
+                    // Caminho legacy quotas: stagger pelos itens da queue.
+                    for (i, q) in z.respawn_queue.iter_mut().enumerate() {
+                        if q.0 <= now + 0.01 {
+                            q.0 = now + (i as f32) * SPAWN_WAKE_STAGGER_S;
+                        }
+                    }
+                    tracing::debug!("zona #{} ACORDOU (player perto)", z.id);
+                }
+                z.last_player_near_at = now;
+            } else if z.active && now - z.last_player_near_at > SPAWN_SLEEP_DELAY_S {
+                zones_to_sleep.push(z.id);
+            }
+        }
+        // Adormece: despawna mobs vivos da zona + libera slots + zera respawn_queue.
+        if !zones_to_sleep.is_empty() {
+            let sleep_set: std::collections::HashSet<u32> = zones_to_sleep.iter().copied().collect();
+            let to_kill: Vec<(Entity, EntityId, u32)> = self.ecs
+                .query::<(&NetId, &SpawnedByZone)>()
+                .iter()
+                .filter_map(|(e, (n, by))| {
+                    if sleep_set.contains(&by.zone_id) { Some((e, n.0, by.zone_id)) } else { None }
+                })
+                .collect();
+            let killed = to_kill.len();
+            for (e, eid, _zid) in to_kill {
+                if let Ok(h) = self.ecs.get::<&shared::PhysicsHandle>(e).map(|h| h.0) {
+                    self.physics.rigid_body_set.remove(
+                        h, &mut self.physics.island_manager,
+                        &mut self.physics.collider_set,
+                        &mut self.physics.impulse_joint_set,
+                        &mut self.physics.multibody_joint_set,
+                        true,
+                    );
+                }
+                let _ = self.ecs.despawn(e);
+                self.removed_this_tick.push(eid);
+            }
+            for z in self.spawn_zones.iter_mut() {
+                if !sleep_set.contains(&z.id) { continue; }
+                z.active = false;
+                for slot in z.slots.iter_mut() {
+                    slot.occupant = None;
+                    slot.respawn_at = 0.0;
+                }
+                z.level_range_live = 0;
+                if let Some((_, _, c)) = z.level_range {
+                    z.level_range_queue = (0..c).map(|_| 0.0_f32).collect();
+                }
+                for (_, lv) in z.live.iter_mut() { *lv = 0; }
+                z.respawn_queue.clear();
+                for &(kind, target) in z.quotas.iter() {
+                    for _ in 0..target { z.respawn_queue.push((0.0, kind)); }
+                }
+                tracing::debug!("zona #{} DORMIU (sem player {:.0}s)", z.id, SPAWN_SLEEP_DELAY_S);
+            }
+            tracing::info!("lazy_spawn: {} zonas dormiram, {} mobs despawnados", zones_to_sleep.len(), killed);
+        }
+
         for zi in 0..self.spawn_zones.len() {
+            if !self.spawn_zones[zi].active { continue; }
             let zone_size = self.spawn_zones[zi].size;
             let zone_orig = self.spawn_zones[zi].origin;
             let zone_id = self.spawn_zones[zi].id;
@@ -1526,9 +1680,9 @@ impl GameWorld {
         (tag, Health { current: hp_max, max: hp_max })
     }
 
-    /// Tenta castar a primeira skill aprendida cujo cooldown + MP + range +
-    /// weapon usable_with batem com a situacao. Retorna `Some(skill_id)` se
-    /// castou (caller skipa auto-attack); `None` senao.
+    /// Tenta castar a primeira skill aprendida cujo cooldown + MP + range
+    /// batem com a situacao. Retorna `Some(skill_id)` se castou (caller skipa
+    /// auto-attack); `None` senao.
     ///
     /// Implementacao MVP: aplica DAMAGE INSTANT em alvos via cone/aoe da
     /// skill, sem replicar o full handle_skill_cast (que e' player-only).
@@ -1566,10 +1720,8 @@ impl GameWorld {
             let rank_factor = 1.0 - def.per_rank_cost_pct * (ls.rank.saturating_sub(1) as f32);
             let mp_cost = (def.cost_mp as f32 * rank_factor).max(0.0);
             if mp_current < mp_cost { continue; }
-            let prof = shared::Proficiency::from_item(weapon_id).as_db_str();
-            if let Some(uw) = &def.usable_with {
-                if !uw.is_empty() && !uw.iter().any(|p| p == prof) { continue; }
-            }
+            let _prof = shared::Proficiency::from_item(weapon_id).as_db_str();
+            // M13: skills universais — sem check de usable_with.
             let dist = enemy_pos.distance(target_pos);
             if dist > def.range_tiles + def.radius_tiles { continue; }
             let dmg = def.base_damage
@@ -2036,6 +2188,10 @@ impl GameWorld {
                         level_range_live: 0,
                         level_range_queue,
                         slots,
+                        // Comeca dormente — vai acordar quando o primeiro player
+                        // chegar perto. Economiza tick de IA pra zonas distantes.
+                        active: false,
+                        last_player_near_at: 0.0,
                     });
                     if let Some((mn, mx, c)) = level_range {
                         tracing::info!(
@@ -2707,6 +2863,9 @@ impl GameWorld {
                         helm_eid: None,
                         sail_eid: None,
                         anchor_eid: None,
+                        cannon_eids: vec![None; crate::boat_config::get(b.kind).cannons.len()],
+                        cannon_aim:  vec![0.0; crate::boat_config::get(b.kind).cannons.len()],
+                        cannon_cd_until: vec![0.0; crate::boat_config::get(b.kind).cannons.len()],
                         passengers: initial_passengers,
                         dir: b.dir,
                         anim: 0,
@@ -3404,6 +3563,12 @@ impl GameWorld {
             ClientMessage::HelmAdjust { delta_angle } => {
                 self.handle_helm_adjust(id, delta_angle);
             }
+            ClientMessage::CannonAim { slot, angle } => {
+                self.handle_cannon_aim(id, slot, angle);
+            }
+            ClientMessage::CannonFire { slot, power } => {
+                self.handle_cannon_fire(id, slot, power);
+            }
             ClientMessage::TogglePkMode { on } => {
                 if let Some(s) = self.sessions.get_mut(&id) {
                     if s.logged_in { s.pk_mode_on = on; }
@@ -3804,15 +3969,12 @@ impl GameWorld {
         // 3b. Já castando outra skill? Rejeita (player travado).
         if session.casting_until > now { return; }
 
-        // 4. Weapon usable_with
+        // 4. Weapon affinity — TODAS as armas podem castar QUALQUER skill.
+        // Quando a arma equipada bate com `def.prof` (arma recomendada),
+        // os bonus `affinity_*` entram em damage/cooldown/crit/cost.
         let weapon_id = session.equipment.weapon.unwrap_or(0);
         let weapon_prof = shared::Proficiency::from_item(weapon_id).as_db_str();
-        if let Some(uw) = &def.usable_with {
-            if !uw.is_empty() && !uw.iter().any(|p| p == weapon_prof) {
-                tracing::debug!("skill_cast: weapon prof {} não permitido pra skill {}", weapon_prof, skill_id);
-                return;
-            }
-        }
+        let is_affinity = weapon_prof == def.prof;
 
         // 5. Cost (MP / stamina). Aplica per_rank_cost_pct: cost final = base × (1 - per_rank × (rank-1)).
         let mut rank_factor = 1.0 - def.per_rank_cost_pct * (rank.saturating_sub(1) as f32);
@@ -3822,6 +3984,10 @@ impl GameWorld {
         if let Some(mc) = session.learned_skills.iter().find(|s| s.skill_id == 1050) {
             let mc_factor = (1.0 - 0.01 * mc.rank as f32).max(0.5);
             rank_factor *= mc_factor;
+        }
+        // Affinity cost reduction (multiplicativa, antes do clamp).
+        if is_affinity && def.affinity_cost_red_pct > 0.0 {
+            rank_factor *= 1.0 - def.affinity_cost_red_pct / 100.0;
         }
         let rank_factor = rank_factor.max(0.1);
         let mp_cost = ((def.cost_mp as f32) * rank_factor).round() as i32;
@@ -3841,7 +4007,7 @@ impl GameWorld {
 
         // 7. Damage scaling: base + atk*scal_atk + wis*scal_wis + dex*scal_dex,
         // depois aplica (1 + per_rank_dmg × rank). No max rank, aplica também
-        // bonus de damage_pct definido na skill.
+        // bonus de damage_pct definido na skill. Afinidade soma +X% no final.
         let stats = session.stats;
         let base_dmg = def.base_damage as f32
             + stats.attack_damage as f32 * def.scaling_atk
@@ -3852,6 +4018,19 @@ impl GameWorld {
         if is_max_rank && def.max_rank_damage_pct > 0.0 {
             scaled *= 1.0 + def.max_rank_damage_pct / 100.0;
         }
+        if is_affinity && def.affinity_damage_pct > 0.0 {
+            scaled *= 1.0 + def.affinity_damage_pct / 100.0;
+        }
+        // Affinity crit roll: chance extra de crit quando arma certa.
+        // Aplica só em skills com base_damage > 0 (utility skills ignoram).
+        let mut is_crit = false;
+        if is_affinity && def.affinity_crit_pct > 0.0 && def.base_damage > 0 {
+            let extra = def.affinity_crit_pct / 100.0;
+            if fastrand::f32() < extra {
+                is_crit = true;
+                scaled *= shared::CRIT_DAMAGE_MULT;
+            }
+        }
         let damage = scaled.round() as i32;
 
         // 8. Drena cost + set cd + casting state se cast_time > 0.
@@ -3861,6 +4040,9 @@ impl GameWorld {
         let mut cd_factor = (1.0 - def.per_rank_cd_pct * (rank.saturating_sub(1) as f32)).max(0.1);
         if is_max_rank && def.max_rank_cooldown_red_pct > 0.0 {
             cd_factor *= 1.0 - def.max_rank_cooldown_red_pct / 100.0;
+        }
+        if is_affinity && def.affinity_cooldown_red_pct > 0.0 {
+            cd_factor *= 1.0 - def.affinity_cooldown_red_pct / 100.0;
         }
         let cd_final = def.cooldown_s * cd_factor;
         session.skill_cds.insert(skill_id, now + cd_final);
@@ -3986,7 +4168,7 @@ impl GameWorld {
                         pos: spawn_pos,
                         dir: *d,
                         damage,
-                        is_crit: false,
+                        is_crit,
                         kind: proj_kind,
                         owner_id: owner_eid,
                         from_player: true,
@@ -4065,6 +4247,11 @@ impl GameWorld {
                     if rank >= shared::MAX_SKILL_RANK && def.max_rank_heal_pct > 0.0 {
                         heal_scaled *= 1.0 + def.max_rank_heal_pct / 100.0;
                     }
+                    // Affinity damage_pct também atua como heal bonus pra
+                    // skills de cura (não duplicamos campo no SkillDef).
+                    if is_affinity && def.affinity_damage_pct > 0.0 {
+                        heal_scaled *= 1.0 + def.affinity_damage_pct / 100.0;
+                    }
                     let heal = heal_scaled.round() as i32;
                     if heal > 0 {
                         if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
@@ -4125,7 +4312,7 @@ impl GameWorld {
                     let hd = (-dir).try_normalize().unwrap_or(Vec2::new(-1.0, 0.0));
                     self.pending_skill_hits.push(PendingSkillHit {
                         target_net, damage, attacker_net: owner_eid,
-                        hurt_dir: hd, is_crit: false, from_player: true,
+                        hurt_dir: hd, is_crit, from_player: true,
                         knockback: def.knockback,
                     });
                     // Chain Lightning (1054): bounce até 4 alvos extras com falloff 25%.
@@ -4206,7 +4393,7 @@ impl GameWorld {
                         pos: spawn_pos,
                         dir,
                         damage,
-                        is_crit: false,
+                        is_crit,
                         kind: 7, // SPEAR harpoon
                         owner_id: owner_eid,
                         from_player: true,
@@ -4377,7 +4564,7 @@ impl GameWorld {
                         let hd = calc_hurt_dir_from_eid(&self.ecs, tn, target_pos);
                         self.pending_skill_hits.push(PendingSkillHit {
                             target_net: tn, damage, attacker_net: owner_eid,
-                            hurt_dir: hd, is_crit: false, from_player: true,
+                            hurt_dir: hd, is_crit, from_player: true,
                             knockback: def.knockback,
                         });
                     }
@@ -4387,7 +4574,7 @@ impl GameWorld {
                         let hd = calc_hurt_dir_from_eid(&self.ecs, tn, target_pos);
                         self.pending_skill_hits.push(PendingSkillHit {
                             target_net: tn, damage, attacker_net: owner_eid,
-                            hurt_dir: hd, is_crit: false, from_player: true,
+                            hurt_dir: hd, is_crit, from_player: true,
                             knockback: def.knockback,
                         });
                     }
@@ -4405,7 +4592,7 @@ impl GameWorld {
                     let hd = (-dir).try_normalize().unwrap_or(Vec2::new(-1.0, 0.0));
                     self.pending_skill_hits.push(PendingSkillHit {
                         target_net: *tn, damage, attacker_net: owner_eid,
-                        hurt_dir: hd, is_crit: false, from_player: true,
+                        hurt_dir: hd, is_crit, from_player: true,
                         knockback: def.knockback,
                     });
                 }
@@ -4415,7 +4602,7 @@ impl GameWorld {
                     let hd = (-dir).try_normalize().unwrap_or(Vec2::new(-1.0, 0.0));
                     self.pending_skill_hits.push(PendingSkillHit {
                         target_net: *tn, damage, attacker_net: owner_eid,
-                        hurt_dir: hd, is_crit: false, from_player: true,
+                        hurt_dir: hd, is_crit, from_player: true,
                         knockback: def.knockback,
                     });
                 }
@@ -4805,6 +4992,9 @@ impl GameWorld {
         // Tempo de simulação acumulado — usado pelas spawn zones pra calcular
         // delay de respawn.
         self.sim_time_s += dt;
+
+        // Bombas de canhao em voo (parabolicas, AoE no impacto).
+        self.tick_cannon_bombs(dt);
 
         // Spawn zones do MapFile: preenche quotas + respawna com delay.
         if self.from_mapfile && !self.spawn_zones.is_empty() {
@@ -5537,10 +5727,22 @@ impl GameWorld {
 
             if let Some((_, ppos)) = nearest {
                 let dist = pos.0.distance(*ppos);
+                // Idle skip: player MUITO longe (alem do AOI) — congela mob,
+                // pula raycast LoS e toda decisao. Mob fica parado, mas ninguem
+                // ve (fora do AOI=24 tiles). Reduz drasticamente o custo de
+                // IA quando ha mobs em zonas vizinhas com poucos players.
+                const IDLE_SKIP_DIST: f32 = 50.0;
+                if dist > IDLE_SKIP_DIST && !pulling_home {
+                    vel.0 = Vec2::ZERO;
+                    continue;
+                }
                 // Line of sight: enemy nao "ve" player atraves de WALL.
                 // Player atras de parede = no aggro/chase. Player atras de
                 // agua/decoracao continua visivel (so WALL bloqueia).
-                let has_los = self.map.has_line_of_sight(pos.0, *ppos);
+                // Conditional: dist >= detect_range ja desqualifica chase,
+                // entao nao gasta o raycast nesses casos (caso comum).
+                let has_los = dist < enemy.detect_range
+                    && self.map.has_line_of_sight(pos.0, *ppos);
                 // Chase só se NÃO estiver returning home E tiver visao.
                 let can_chase = dist < enemy.detect_range && !pulling_home && has_los;
                 if can_chase {
@@ -5578,12 +5780,12 @@ impl GameWorld {
 
                         // Tenta casting de skill ANTES de fall-through pra
                         // auto-attack. Skill eligibility check (sem borrow
-                        // self): cd ready, mp ok, weapon usable_with bate,
-                        // alvo dentro de range. Se passou, push intent
-                        // (processada fora do loop) e SKIPA auto-attack.
+                        // self): cd ready, mp ok, alvo dentro de range. No
+                        // design novo (M13) todas as skills são universais
+                        // — sem mais check de usable_with.
                         let mut chose_skill = false;
                         let weapon_id = enemy.equipment.weapon.unwrap_or(0);
-                        let prof = shared::Proficiency::from_item(weapon_id).as_db_str();
+                        let _prof = shared::Proficiency::from_item(weapon_id).as_db_str();
                         for ls in &enemy.learned_skills {
                             let Some(def_sk) = crate::skills::skill_of(ls.skill_id) else { continue };
                             if def_sk.is_passive { continue; }
@@ -5594,9 +5796,6 @@ impl GameWorld {
                                 * (ls.rank.saturating_sub(1) as f32);
                             let mp_cost = (def_sk.cost_mp as f32 * rank_factor).max(0.0);
                             if enemy.mp_current < mp_cost { continue; }
-                            if let Some(uw) = &def_sk.usable_with {
-                                if !uw.is_empty() && !uw.iter().any(|p| p == prof) { continue; }
-                            }
                             if dist > def_sk.range_tiles + def_sk.radius_tiles { continue; }
                             // Skill apta — registra intent e pula auto-attack.
                             enemy_cast_intents.push((net.0, pos.0, *ppos));
@@ -6187,7 +6386,7 @@ impl GameWorld {
             let target_vel = forward * target_speed;
 
             // 4. Lerp vel → target (inercia do barco).
-            let lerp_k = 1.5; // s^-1; barco tem inercia alta, decai/acelera devagar
+            let lerp_k = 0.6; // s^-1; barco com inercia bem alta — accel/decel lentos
             let lerp_t = (lerp_k * dt).min(1.0);
             vel.0 = vel.0 + (target_vel - vel.0) * lerp_t;
 
@@ -6706,6 +6905,26 @@ impl GameWorld {
                         let _ = s.handle.to_client.send(msg.clone());
                     }
                 }
+            }
+        }
+
+        // Drena hits pendentes de bombas de canhao. Cada hit vira um
+        // damage_event normal — PvP gating + hit feedback + crit + xp passam
+        // automatico pelo pipeline. AttackInfo::Skill (sem refletir parry),
+        // knockback fixo pequeno pra dar feel de impacto.
+        if !self.pending_bomb_hits.is_empty() {
+            let queue = std::mem::take(&mut self.pending_bomb_hits);
+            for (e, eid, dmg, attacker_eid, hurt_dir, _impact_pos) in queue {
+                // Target kind = player? (sabemos pelo lookup do entity)
+                let target_is_player = self.ecs.get::<&PlayerTag>(e).is_ok();
+                // PvP gating: player→player so' se can_damage_player.
+                if target_is_player {
+                    if !self.can_damage_player(attacker_eid, eid) { continue; }
+                }
+                damage_events.push((
+                    e, eid, dmg, attacker_eid, true,
+                    hurt_dir, false, AttackInfo::Skill, 0.6,
+                ));
             }
         }
 
@@ -7622,6 +7841,18 @@ impl GameWorld {
             .map(|(_, (net, _))| net.0)
             .collect();
 
+        // Altura atual de cada bomba (offset Y de render do arco parabolico).
+        // y = 4 * peak * t * (1-t).
+        let cannon_height_map: HashMap<EntityId, f32> = self.ecs
+            .query::<(&NetId, &CannonBombTag)>()
+            .iter()
+            .map(|(_, (net, b))| {
+                let t = (b.t_elapsed / b.t_max).clamp(0.0, 1.0);
+                let h = 4.0 * b.peak_height * t * (1.0 - t);
+                (net.0, h)
+            })
+            .collect();
+
         // Detalhes de cada player montado pra popular boat_2.5d snapshot fields.
         let mounted_player_info: HashMap<EntityId, (EntityId, Vec2, Option<u8>)> = self.ecs
             .query::<(&NetId, &Mounted)>()
@@ -7646,6 +7877,7 @@ impl GameWorld {
                         EntityKind::Npc(_)      => "Npc".to_string(),
                         EntityKind::Portal      => "Portal".to_string(),
                         EntityKind::Boat(_)     => "Boat".to_string(),
+                        EntityKind::CannonBomb  => "CannonBomb".to_string(),
                     },
                     pos: pos.0,
                     vel: vel.0,
@@ -7752,6 +7984,8 @@ impl GameWorld {
                     } else { None },
                     // Giver do arauto (kind 3 com giver != 0) → indicador no cliente.
                     quest_giver: wtag.and_then(|t| if t.giver != 0 { Some(t.giver) } else { None }),
+                    // Altura render da bola de canhao (parabola). None pra outras.
+                    height: cannon_height_map.get(&net.0).copied(),
                 }
             })
             .collect();
@@ -7767,6 +8001,17 @@ impl GameWorld {
             let cy = (snap.pos.y / cell).floor() as i32;
             grid.entry((cx, cy)).or_default().push(idx);
         }
+        // Bombas: AOI estendido. Player que disparou (owner_pid) sempre
+        // recebe a bomba (independente de distancia). Outros recebem se a
+        // posicao atual OU o target estiverem no AOI. (idx, target, owner_pid).
+        let bomb_indices: Vec<(usize, Vec2, PlayerId)> = self.ecs
+            .query::<(&NetId, &CannonBombTag)>()
+            .iter()
+            .filter_map(|(_, (net, b))| {
+                let eid = net.0;
+                all.iter().position(|s| s.id == eid).map(|i| (i, b.target_pos, b.owner_pid))
+            })
+            .collect();
 
         let mut centers: HashMap<SessionId, Vec2> = HashMap::new();
         for (sid, session) in &self.sessions {
@@ -7800,6 +8045,18 @@ impl GameWorld {
                         }
                     }
                 }
+            }
+            // Bombas: include quando target esta no AOI ou o player e' o
+            // dono do disparo (atirador sempre ve a propria bola ate cair).
+            // Dedup vs spatial pass.
+            let my_pid = session.player_id;
+            for &(bi, target, owner_pid) in &bomb_indices {
+                let in_aoi = target.distance_squared(center) <= radius_sq;
+                let is_owner = owner_pid == my_pid;
+                if !in_aoi && !is_owner { continue; }
+                let s = &all[bi];
+                if visible.iter().any(|v| v.id == s.id) { continue; }
+                visible.push(s.clone());
             }
             let _ = session.handle.to_client.send(ServerMessage::Snapshot { snapshot: WorldSnapshot {
                 tick: self.tick,
@@ -9576,6 +9833,9 @@ impl GameWorld {
                         helm_eid: None,
                         sail_eid: None,
                         anchor_eid: None,
+                        cannon_eids: vec![None; crate::boat_config::get(kind).cannons.len()],
+                        cannon_aim:  vec![0.0; crate::boat_config::get(kind).cannons.len()],
+                        cannon_cd_until: vec![0.0; crate::boat_config::get(kind).cannons.len()],
                         // Sea-of-Thieves: barco vazio. Player precisa andar
                         // ate ele e clicar EMBARCAR pra subir.
                         passengers: Vec::new(),
@@ -9894,7 +10154,7 @@ impl GameWorld {
         let half = boat_deck_half(kind);
         // Margem generosa: barco grande spawnando longe da margem precisa
         // de reach > half + spawn-search-radius pra dar pra embarcar.
-        let max_reach = half.x.max(half.y) + 8.0;
+        let max_reach = half.x.max(half.y) + 14.0;
         if (player_pos - boat_pos).length() > max_reach { return; }
         // Adiciona ao boat.passengers.
         if let Ok(mut tag) = self.ecs.get::<&mut BoatTag>(boat_entity) {
@@ -9914,9 +10174,14 @@ impl GameWorld {
 
     /// Player na estacao tenta pega-la. Valida proximidade do hotspot da
     /// estacao em local-space (BOAT_STATION_REACH).
+    /// Canhoes: station >= CANNON_BASE; slot = station - CANNON_BASE.
     fn handle_grab_station(&mut self, sid: SessionId, station: u8) {
         use shared::constants::station as st;
-        if station != st::HELM && station != st::SAIL && station != st::ANCHOR { return; }
+        let is_cannon = station >= st::CANNON_BASE
+            && station < st::CANNON_BASE + st::MAX_CANNONS;
+        if station != st::HELM && station != st::SAIL && station != st::ANCHOR && !is_cannon {
+            return;
+        }
         let (player_entity, player_eid, mounted) = {
             let Some(s) = self.sessions.get(&sid) else { return };
             if !s.logged_in { return; }
@@ -9927,11 +10192,27 @@ impl GameWorld {
         };
         let (boat_entity, local_pos) = mounted;
         let kind = self.ecs.get::<&BoatTag>(boat_entity).map(|t| t.kind).unwrap_or(0);
-        let target_local = match station {
-            s if s == st::HELM   => boat_helm_local(kind),
-            s if s == st::SAIL   => boat_sail_local(kind),
-            s if s == st::ANCHOR => boat_anchor_local(kind),
-            _ => return,
+        let cfg = crate::boat_config::get(kind);
+        let target_local = if is_cannon {
+            let slot = (station - st::CANNON_BASE) as usize;
+            let Some(base) = cfg.cannon_base(slot) else {
+                self.send_chat_to(sid, "[Sistema] Canhao inexistente.");
+                return;
+            };
+            let side_angle = cfg.cannon_side_angle(slot);
+            // Player fica ATRAS do canhao (oposto da direcao do tiro), pra
+            // nao sobrepor o sprite. forward com theta_local = -side_angle.
+            let theta_local = -side_angle;
+            let fwd = Vec2::new(-theta_local.sin(), theta_local.cos());
+            const STAND_OFFSET: f32 = 1.4;
+            base - fwd * STAND_OFFSET
+        } else {
+            match station {
+                s if s == st::HELM   => boat_helm_local(kind),
+                s if s == st::SAIL   => boat_sail_local(kind),
+                s if s == st::ANCHOR => boat_anchor_local(kind),
+                _ => return,
+            }
         };
         if (local_pos - target_local).length() > BOAT_STATION_REACH {
             self.send_chat_to(sid, "[Sistema] Aproxime-se da estacao.");
@@ -9939,16 +10220,27 @@ impl GameWorld {
         }
         // Set station eid no boat (se vazia).
         if let Ok(mut tag) = self.ecs.get::<&mut BoatTag>(boat_entity) {
-            let slot = match station {
-                s if s == st::HELM   => &mut tag.helm_eid,
-                s if s == st::SAIL   => &mut tag.sail_eid,
-                _                    => &mut tag.anchor_eid,
-            };
-            if slot.is_some() && *slot != Some(player_eid) {
-                self.send_chat_to(sid, "[Sistema] Estacao ocupada.");
-                return;
+            if is_cannon {
+                let slot = (station - st::CANNON_BASE) as usize;
+                if let Some(slot_ref) = tag.cannon_eids.get_mut(slot) {
+                    if slot_ref.is_some() && *slot_ref != Some(player_eid) {
+                        self.send_chat_to(sid, "[Sistema] Canhao ocupado.");
+                        return;
+                    }
+                    *slot_ref = Some(player_eid);
+                }
+            } else {
+                let slot = match station {
+                    s if s == st::HELM   => &mut tag.helm_eid,
+                    s if s == st::SAIL   => &mut tag.sail_eid,
+                    _                    => &mut tag.anchor_eid,
+                };
+                if slot.is_some() && *slot != Some(player_eid) {
+                    self.send_chat_to(sid, "[Sistema] Estacao ocupada.");
+                    return;
+                }
+                *slot = Some(player_eid);
             }
-            *slot = Some(player_eid);
         }
         // Set Mounted.station + snap local_pos.
         if let Ok(mut m) = self.ecs.get::<&mut Mounted>(player_entity) {
@@ -9970,20 +10262,27 @@ impl GameWorld {
         };
         use shared::constants::station as st;
         if let Ok(mut tag) = self.ecs.get::<&mut BoatTag>(boat_entity) {
-            match station {
-                s if s == st::HELM => {
-                    if tag.helm_eid == Some(player_eid) {
-                        tag.helm_eid = None;
-                        // rudder_angle NAO eh zerado — persiste.
+            if station >= st::CANNON_BASE && station < st::CANNON_BASE + st::MAX_CANNONS {
+                let slot = (station - st::CANNON_BASE) as usize;
+                if let Some(slot_ref) = tag.cannon_eids.get_mut(slot) {
+                    if *slot_ref == Some(player_eid) { *slot_ref = None; }
+                }
+            } else {
+                match station {
+                    s if s == st::HELM => {
+                        if tag.helm_eid == Some(player_eid) {
+                            tag.helm_eid = None;
+                            // rudder_angle NAO eh zerado — persiste.
+                        }
                     }
+                    s if s == st::SAIL => {
+                        if tag.sail_eid == Some(player_eid) { tag.sail_eid = None; }
+                    }
+                    s if s == st::ANCHOR => {
+                        if tag.anchor_eid == Some(player_eid) { tag.anchor_eid = None; }
+                    }
+                    _ => {}
                 }
-                s if s == st::SAIL => {
-                    if tag.sail_eid == Some(player_eid) { tag.sail_eid = None; }
-                }
-                s if s == st::ANCHOR => {
-                    if tag.anchor_eid == Some(player_eid) { tag.anchor_eid = None; }
-                }
-                _ => {}
             }
         }
         if let Ok(mut m) = self.ecs.get::<&mut Mounted>(player_entity) {
@@ -10031,6 +10330,182 @@ impl GameWorld {
             let max_r = shared::constants::BOAT_MAX_RUDDER_ANGLE;
             tag.rudder_angle = (tag.rudder_angle + delta_angle).clamp(-max_r, max_r);
         }
+    }
+
+    /// Integra trajetoria das bombas em voo. Quando t >= t_max → explode
+    /// (AoE damage no blast_radius, dano cai linear com distancia). Despawn
+    /// no fim.
+    fn tick_cannon_bombs(&mut self, dt: f32) {
+        struct Explode {
+            entity: Entity,
+            eid: EntityId,
+            pos: Vec2,
+            damage: i32,
+            blast: f32,
+            owner_player_eid: EntityId,
+        }
+        let mut explosions: Vec<Explode> = Vec::new();
+        for (e, (net, pos, bomb)) in self.ecs.query_mut::<(&NetId, &mut Position, &mut CannonBombTag)>() {
+            bomb.t_elapsed += dt;
+            let t = (bomb.t_elapsed / bomb.t_max).clamp(0.0, 1.0);
+            // Trajetoria XY linear; altura parabolica.
+            pos.0 = bomb.spawn_pos.lerp(bomb.target_pos, t);
+            if bomb.t_elapsed >= bomb.t_max {
+                explosions.push(Explode {
+                    entity: e, eid: net.0, pos: bomb.target_pos,
+                    damage: bomb.damage, blast: bomb.blast_radius,
+                    owner_player_eid: bomb.owner_player_eid,
+                });
+            }
+        }
+        for ex in explosions {
+            // Coleta alvos no AoE: enemies + outros players. Push pra
+            // pending_bomb_hits — o pipeline de damage_events vai aplicar
+            // PvP rules, hit feedback, crit, knockback, xp etc.
+            let mut targets: Vec<(Entity, EntityId, f32, Vec2)> = Vec::new();
+            for (e, (net, p, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
+                let d = p.0.distance(ex.pos);
+                if d > ex.blast { continue; }
+                match kind {
+                    EntityKind::Enemy(_) | EntityKind::Player => {
+                        targets.push((e, net.0, d, p.0));
+                    }
+                    _ => {}
+                }
+            }
+            for (e, eid, d, tpos) in targets {
+                let falloff = (1.0 - d / ex.blast).clamp(0.0, 1.0);
+                let dmg = (ex.damage as f32 * falloff).round() as i32;
+                if dmg <= 0 { continue; }
+                // hurt_dir = TOWARD o ponto de impacto (mesma convencao do
+                // pipeline normal: alvo encara o "atacante" e o knockback
+                // empurra na direcao oposta).
+                let hurt_dir = (ex.pos - tpos).try_normalize().unwrap_or(Vec2::ZERO);
+                self.pending_bomb_hits.push((e, eid, dmg, ex.owner_player_eid, hurt_dir, ex.pos));
+            }
+            // Despawna bomba.
+            let _ = self.ecs.despawn(ex.entity);
+            self.removed_this_tick.push(ex.eid);
+        }
+    }
+
+    /// Ajusta angulo de mira do canhao do `slot`. Player precisa estar
+    /// na estacao do canhao correspondente. Clamp em [-CANNON_AIM_MAX_RAD, +].
+    fn handle_cannon_aim(&mut self, sid: SessionId, slot: u8, angle: f32) {
+        use shared::constants::station as st;
+        let (boat_entity, player_eid, expected_station) = {
+            let Some(s) = self.sessions.get(&sid) else { return };
+            if !s.logged_in { return; }
+            let Some(pe) = s.entity else { return };
+            let Ok(m) = self.ecs.get::<&Mounted>(pe) else { return };
+            let pid = self.ecs.get::<&NetId>(pe).map(|n| n.0).unwrap_or(EntityId(0));
+            (m.boat_entity, pid, m.station)
+        };
+        let want_station = st::CANNON_BASE + slot;
+        if expected_station != Some(want_station) { return; }
+        if let Ok(mut tag) = self.ecs.get::<&mut BoatTag>(boat_entity) {
+            if tag.cannon_eids.get(slot as usize).copied().flatten() != Some(player_eid) {
+                return;
+            }
+            let max = shared::constants::CANNON_AIM_MAX_RAD;
+            if let Some(a) = tag.cannon_aim.get_mut(slot as usize) {
+                *a = angle.clamp(-max, max);
+            }
+        }
+    }
+
+    /// Dispara o canhao com `power` 0..1. Spawn CannonBombTag no slot;
+    /// sem colisao ao longo do voo, AoE no impacto.
+    fn handle_cannon_fire(&mut self, sid: SessionId, slot: u8, power: f32) {
+        use shared::constants::station as st;
+        let now = self.sim_time_s;
+        let (boat_entity, player_eid, expected_station, owner_pid) = {
+            let Some(s) = self.sessions.get(&sid) else { return };
+            if !s.logged_in { return; }
+            let Some(pe) = s.entity else { return };
+            let Ok(m) = self.ecs.get::<&Mounted>(pe) else { return };
+            let pid = self.ecs.get::<&NetId>(pe).map(|n| n.0).unwrap_or(EntityId(0));
+            let owner_pid = self.ecs.get::<&PlayerTag>(pe).map(|p| p.player_id).unwrap_or(PlayerId(0));
+            (m.boat_entity, pid, m.station, owner_pid)
+        };
+        let want_station = st::CANNON_BASE + slot;
+        if expected_station != Some(want_station) { return; }
+        let power = power.clamp(0.0, 1.0);
+        // Pega dados do barco + canhao.
+        let (boat_pos, boat_yaw, kind, aim_angle, on_cd) = {
+            let Ok(tag) = self.ecs.get::<&BoatTag>(boat_entity) else { return };
+            if tag.cannon_eids.get(slot as usize).copied().flatten() != Some(player_eid) {
+                return;
+            }
+            let aim = tag.cannon_aim.get(slot as usize).copied().unwrap_or(0.0);
+            let cd  = tag.cannon_cd_until.get(slot as usize).copied().unwrap_or(0.0);
+            let pos = self.ecs.get::<&Position>(boat_entity).map(|p| p.0).unwrap_or(Vec2::ZERO);
+            (pos, tag.yaw, tag.kind, aim, cd)
+        };
+        if now < on_cd {
+            return; // cooldown — ignora silenciosamente, UI ja deve estar bloqueando
+        }
+        let cfg = crate::boat_config::get(kind);
+        let Some(base) = cfg.cannon_base(slot as usize) else { return };
+        let side_angle = cfg.cannon_side_angle(slot as usize);
+        let muzzle_local = cfg.cannon_muzzle(slot as usize);
+        // Espelha o muzzle ao redor do canhao pelo aim — assim a bola "sai"
+        // de onde o cano aponta apos a rotacao do canhao.
+        let offset = muzzle_local - base;
+        let (sa, ca) = aim_angle.sin_cos();
+        let muzzle_aimed_local = base + Vec2::new(
+            offset.x * ca - offset.y * sa,
+            offset.x * sa + offset.y * ca,
+        );
+        // Local → world (rotaciona pelo yaw do barco).
+        let (sin_y, cos_y) = boat_yaw.sin_cos();
+        let cannon_world = boat_pos + Vec2::new(
+            muzzle_aimed_local.x * cos_y - muzzle_aimed_local.y * sin_y,
+            muzzle_aimed_local.x * sin_y + muzzle_aimed_local.y * cos_y,
+        );
+        let _ = base;
+        // Direcao de tiro = forward do canhao (yaw - side_angle + aim).
+        // Convencao boat_forward(t) = (-sin t, cos t) → t=0 vira +Y (proa).
+        // Pra canhao direito (side_angle=+PI/2) queremos +X → theta = yaw - PI/2.
+        let theta = boat_yaw - side_angle + aim_angle;
+        let dir = Vec2::new(-theta.sin(), theta.cos());
+        let range = shared::constants::CANNON_MIN_RANGE
+            + (shared::constants::CANNON_MAX_RANGE - shared::constants::CANNON_MIN_RANGE) * power;
+        let target = cannon_world + dir * range;
+        let t_flight = shared::constants::CANNON_FLIGHT_TIME_MIN
+            + (shared::constants::CANNON_FLIGHT_TIME_MAX - shared::constants::CANNON_FLIGHT_TIME_MIN) * power;
+        let peak_h = shared::constants::CANNON_PEAK_HEIGHT_MIN
+            + (shared::constants::CANNON_PEAK_HEIGHT_MAX - shared::constants::CANNON_PEAK_HEIGHT_MIN) * power;
+        let boat_eid = self.ecs.get::<&NetId>(boat_entity).map(|n| n.0).unwrap_or(EntityId(0));
+        let bomb_eid = self.alloc_entity_id();
+        self.ecs.spawn((
+            NetId(bomb_eid),
+            Position(cannon_world),
+            Velocity(Vec2::ZERO),
+            EntityKind::CannonBomb,
+            CannonBombTag {
+                spawn_pos: cannon_world,
+                target_pos: target,
+                peak_height: peak_h,
+                t_elapsed: 0.0,
+                t_max: t_flight,
+                damage: shared::constants::CANNON_DAMAGE_BASE,
+                blast_radius: shared::constants::CANNON_BLAST_RADIUS,
+                owner_pid,
+                owner_boat_eid: boat_eid,
+                owner_player_eid: player_eid,
+            },
+        ));
+        // Cooldown.
+        if let Ok(mut tag) = self.ecs.get::<&mut BoatTag>(boat_entity) {
+            if let Some(cd) = tag.cannon_cd_until.get_mut(slot as usize) {
+                *cd = now + shared::constants::CANNON_COOLDOWN_S;
+            }
+        }
+        tracing::debug!(
+            "cannon fire: boat_eid={:?} slot={} power={:.2} range={:.1} target=({:.1},{:.1})",
+            boat_eid, slot, power, range, target.x, target.y
+        );
     }
 
     /// Toggle ancora. Player precisa estar na estacao ANCHOR.
@@ -10307,16 +10782,14 @@ fn effective_stats(
         _ => {}
     }
 
-    // Skill passives — sempre-ativas se aprendidas. Os usable_with são
-    // checados antes: passiva com prof específica só vale se a arma
-    // equipada bater. Passivas com usable_with=None aplicam sempre.
+    // Skill passives — sempre-ativas se aprendidas. M13: skills viraram
+    // universais (não dependem mais da arma equipada bater com `prof`).
+    // Passives que checam arma específica (ex: Hardened Fists exige unarmed)
+    // fazem o check inline no match abaixo.
     for ls in learned_skills {
         if ls.rank == 0 { continue; }
         let Some(def) = crate::skills::skill_of(ls.skill_id) else { continue };
         if !def.is_passive { continue; }
-        if let Some(uw) = &def.usable_with {
-            if !uw.is_empty() && !uw.iter().any(|p| p == prof.as_db_str()) { continue; }
-        }
         let r = ls.rank as i32;
         // Mapeamento per-skill dos efeitos. Por enquanto hardcoded;
         // futuramente migra pra effect_payload no DB.

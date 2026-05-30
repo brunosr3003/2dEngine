@@ -126,6 +126,13 @@ pub enum ClientMessage {
     /// clampa em [-BOAT_MAX_RUDDER_ANGLE, +]. rudder_angle PERSISTE
     /// quando o player solta a estacao HELM (igual barco real).
     HelmAdjust { delta_angle: f32 },
+    /// Ajusta o angulo de mira do canhao do slot `slot`. Player precisa
+    /// ter station CANNON_BASE+slot. Angle: -CANNON_AIM_MAX_RAD a +.
+    /// Server clampa e persiste.
+    CannonAim { slot: u8, angle: f32 },
+    /// Dispara o canhao. `power` 0..1 — controla range e altura do arco.
+    /// Spawn de CannonBombTag; explosao AoE no impacto.
+    CannonFire { slot: u8, power: f32 },
     /// Toggle do PK Mode (player vs player opt-in). Quando ON, o player
     /// pode dar/levar dano de outros players com pk_mode ON tambem.
     /// Futuro: zonas PvP forcam ON; faccoes diferentes ignoram flag.

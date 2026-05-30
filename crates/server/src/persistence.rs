@@ -547,6 +547,105 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
         );
         sqlx::query(&q).execute(&pool).await?;
     }
+
+    // ── Migration M13: Universal skills + weapon affinity ────────────────
+    // No design novo, todas as armas podem castar qualquer skill; o `prof`
+    // antigo vira a ARMA RECOMENDADA (afinidade) que dá bônus configuráveis.
+    // `category` substitui o agrupamento por arma na UI.
+    sqlx::query(
+        "ALTER TABLE skills ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'offensive'"
+    ).execute(&pool).await?;
+    for col in &[
+        "affinity_damage_pct",
+        "affinity_cooldown_red_pct",
+        "affinity_crit_pct",
+        "affinity_cost_red_pct",
+    ] {
+        let q = format!(
+            "ALTER TABLE skills ADD COLUMN IF NOT EXISTS {} REAL NOT NULL DEFAULT 0.0",
+            col
+        );
+        sqlx::query(&q).execute(&pool).await?;
+    }
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category)")
+        .execute(&pool).await?;
+    // Backfill da `category` por heurística — só pra rows ainda com default
+    // 'offensive'. Após admin editar (UPDATE pra outra categoria), seed nao
+    // sobrescreve.
+    sqlx::query(
+        "UPDATE skills SET category = 'passive' WHERE is_passive = TRUE AND category = 'offensive'"
+    ).execute(&pool).await?;
+    sqlx::query(
+        "UPDATE skills SET category = 'mobility' WHERE category = 'offensive' AND (
+            LOWER(name) LIKE '%dash%' OR LOWER(name) LIKE '%leap%' OR LOWER(name) LIKE '%charge%'
+            OR LOWER(name) LIKE '%shadowstep%' OR LOWER(name) LIKE '%hurricane%'
+            OR LOWER(name) LIKE '%flying%' OR LOWER(name) LIKE '%vanish%'
+        )"
+    ).execute(&pool).await?;
+    sqlx::query(
+        "UPDATE skills SET category = 'support' WHERE category = 'offensive' AND (
+            base_heal > 0
+            OR LOWER(name) LIKE '%taunt%' OR LOWER(name) LIKE '%mark%'
+            OR LOWER(name) LIKE '%counter%' OR LOWER(name) LIKE '%bloodthirst%'
+            OR LOWER(name) LIKE '%resurrection%' OR LOWER(name) LIKE '%conduit%'
+        )"
+    ).execute(&pool).await?;
+    sqlx::query(
+        "UPDATE skills SET category = 'control' WHERE category = 'offensive' AND (
+            LOWER(name) LIKE '%stun%' OR LOWER(name) LIKE '%slow%'
+            OR LOWER(name) LIKE '%freeze%' OR LOWER(name) LIKE '%nova%'
+            OR LOWER(name) LIKE '%smoke%' OR LOWER(name) LIKE '%bomb%'
+            OR LOWER(name) LIKE '%caltrops%' OR LOWER(name) LIKE '%bash%'
+        )"
+    ).execute(&pool).await?;
+    // Backfill affinity bonuses por categoria — só pra rows ainda zeradas.
+    sqlx::query(
+        "UPDATE skills SET
+            affinity_damage_pct = 25.0,
+            affinity_crit_pct   = 5.0
+         WHERE category = 'offensive'
+           AND affinity_damage_pct = 0 AND affinity_cooldown_red_pct = 0
+           AND affinity_crit_pct = 0 AND affinity_cost_red_pct = 0"
+    ).execute(&pool).await?;
+    sqlx::query(
+        "UPDATE skills SET
+            affinity_damage_pct = 25.0,
+            affinity_cost_red_pct = 15.0
+         WHERE category = 'support' AND base_heal > 0
+           AND affinity_damage_pct = 0 AND affinity_cooldown_red_pct = 0
+           AND affinity_crit_pct = 0 AND affinity_cost_red_pct = 0"
+    ).execute(&pool).await?;
+    sqlx::query(
+        "UPDATE skills SET
+            affinity_cooldown_red_pct = 20.0,
+            affinity_cost_red_pct = 15.0
+         WHERE category = 'support' AND base_heal = 0
+           AND affinity_damage_pct = 0 AND affinity_cooldown_red_pct = 0
+           AND affinity_crit_pct = 0 AND affinity_cost_red_pct = 0"
+    ).execute(&pool).await?;
+    sqlx::query(
+        "UPDATE skills SET
+            affinity_cooldown_red_pct = 15.0,
+            affinity_crit_pct = 10.0,
+            affinity_cost_red_pct = 15.0
+         WHERE category = 'control'
+           AND affinity_damage_pct = 0 AND affinity_cooldown_red_pct = 0
+           AND affinity_crit_pct = 0 AND affinity_cost_red_pct = 0"
+    ).execute(&pool).await?;
+    sqlx::query(
+        "UPDATE skills SET
+            affinity_cooldown_red_pct = 25.0,
+            affinity_cost_red_pct = 15.0
+         WHERE category = 'mobility'
+           AND affinity_damage_pct = 0 AND affinity_cooldown_red_pct = 0
+           AND affinity_crit_pct = 0 AND affinity_cost_red_pct = 0"
+    ).execute(&pool).await?;
+    sqlx::query(
+        "UPDATE skills SET affinity_damage_pct = 15.0
+         WHERE category = 'passive' AND base_damage > 0
+           AND affinity_damage_pct = 0 AND affinity_cooldown_red_pct = 0
+           AND affinity_crit_pct = 0 AND affinity_cost_red_pct = 0"
+    ).execute(&pool).await?;
     // Backfill knockback per-skill — UPDATE idempotente, sobrescreve a cada
     // boot pra que ajustes aqui propaguem sem precisar wipar DB.
     let kb_table: &[(i32, f32)] = &[
