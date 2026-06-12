@@ -120,8 +120,9 @@ export function ItemsTab({ items, reload }: Props) {
 }
 
 function ItemThumb({ path }: { path: string | null }) {
-  if (!path || !path.startsWith('Items/')) return <span className="muted small">—</span>;
-  const base = path.slice('Items/'.length);
+  if (!path) return <span className="muted small">—</span>;
+  // basename é o que o backend serve (ele resolve dentro do ICONS_DIR).
+  const base = path.split('/').pop() || path;
   // Token entra como cache-buster — quando você reloga, miniaturas atualizam.
   const url = `/api/econ/icons/${encodeURIComponent(base)}?t=${auth.get().slice(-8)}`;
   return (

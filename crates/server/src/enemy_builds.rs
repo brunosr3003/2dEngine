@@ -476,7 +476,69 @@ pub fn build_boss(level: u32, class: EnemyClass) -> EnemyBuild {
     b.size_scale = 2.0;
     b.xp_reward = (level as u64) * 200 + 500;
     b.is_boss = true;
+    // Mobilidade de duelista (player anda a 5.0) — a AI PvP do boss (dash/
+    // strafe/block, ver world.rs) precisa de pernas pra funcionar.
+    b.locomotor_speed = b.locomotor_speed.max(4.0);
     b.name = format!("[BOSS] {}", b.name);
+    b
+}
+
+/// Boss de DUNGEON — modelado como um PLAYER honesto do level da dungeon
+/// (pontos de player: 3/level, itens T1 + escudo via equip_for_class_level),
+/// com bônus de VIDA por ser boss. Luta via AI PvP (dash/block/strafe,
+/// world.rs) + kit de skills de duelista + lifesteal nos hits (25%).
+pub fn build_dungeon_boss(level: u32, class: EnemyClass) -> EnemyBuild {
+    let mut b = build_for_level(level, class);
+    // Pontos de PLAYER (3/level — não os 5/level dos mobs procedurais).
+    // Distribuição bruiser FOR/VIT/RES, "um jogador de espada e escudo".
+    let pts = level.saturating_sub(1) * shared::POINTS_PER_LEVEL; // lvl10 = 27
+    let mut alloc = [0u32; STAT_COUNT];
+    alloc[0] = (pts as f32 * 0.33) as u32;                    // FOR
+    alloc[3] = (pts as f32 * 0.45) as u32;                    // VIT
+    alloc[5] = (pts as f32 * 0.15) as u32;                    // RES
+    alloc[4] = pts.saturating_sub(alloc[0] + alloc[3] + alloc[5]); // resto SPD
+    // Bônus de BOSS: VIDA (auditoria: hp_max = 100 base + VIT×5 + FOR×2 —
+    // com +35 dava ~350 HP, menos que 2 mobs lixo; lvl10 → +200 VIT ≈ 1.16k)
+    // e DANO (FOR: lvl10 → +14 → swing ~42+arma em vez de ~28 — hit de boss
+    // tem que doer; em troca ele anda e ataca mais devagar, ver abaixo).
+    alloc[3] += 20 + level * 18;
+    alloc[0] += 4 + level;
+    b.allocated_points = alloc;
+    // Kit de duelista (todas cast 0.0 — suportadas pela enemy AI):
+    //   1001 Leap Strike  (pulo: aoe r2 até 6 tiles) — abre/fecha distância
+    //   1003 Shield Bash  (cone curto, stun)        — punição de quem cola
+    //   1005 Sword Dance  (giro 360° r1.8)          — anti-pressão melee
+    b.learned_skills = vec![
+        LearnedSkill { skill_id: 1001, rank: 3, equipped_slot: Some(0) },
+        LearnedSkill { skill_id: 1003, rank: 3, equipped_slot: Some(1) },
+        LearnedSkill { skill_id: 1005, rank: 2, equipped_slot: Some(2) },
+    ];
+    // Alcance de lâmina de boss (player MELEE_RANGE=1.8) — ele NÃO precisa
+    // colar pra acertar, acaba o cheese de out-range segurando ataque.
+    b.attack_range = 2.6;
+    // VISUAL: duelista HUMANO em tamanho de PLAYER com "armadura" reluzente
+    // (tint dourado no paper-doll inteiro) — PvE com cara de PvP, em vez do
+    // goblin gigante do tier. Outfit/hair de player (existem em TODAS as
+    // sheet pages — não somem em combate). Aura dourada no chão = client
+    // (EntityRenderer.BuildBossAura, gated is_boss).
+    b.size_scale = 1.0;
+    let mut v = VisualConfig::for_class("warrior");
+    v.skin = Some(1);
+    v.skin_race = Some("humn".to_string());
+    v.outfit = Some("bksm".to_string());
+    v.outfit_color = Some(2);
+    v.hair = Some("bob1".to_string());
+    v.hair_color = Some(1);
+    v.body_tint = Some([1.0, 0.93, 0.70, 1.0]); // dourado sutil, preserva detalhe
+    b.visual = v;
+    b.xp_reward = (level as u64) * 80 + 200;
+    b.is_boss = true;
+    // Andar PESADO de tanque mas que PRESSIONA (player 5.0; o Leap pune o
+    // kite) + swing mais LENTO e telegrafado (2.2 → ~2.85s): hits raros e
+    // fortes, com janela de leitura pro player esquivar.
+    b.locomotor_speed = 3.9;
+    b.attack_cooldown *= 1.3;
+    b.name = format!("[BOSS] Cavaleiro Radiante Lv{}", level);
     b
 }
 

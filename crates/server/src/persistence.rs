@@ -95,6 +95,9 @@ pub struct CharacterRow {
     pub quests: Vec<crate::quests::CharQuest>,
     /// Pontos de facção (moeda das quests de facção).
     pub faction_points: u32,
+    /// Epoch (segundos) de quando concluiu o tutorial pela última vez. None =
+    /// nunca concluiu → no login no mundo, é redirecionado pro tutorial.
+    pub last_tutorial_completed: Option<i64>,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -862,6 +865,12 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS faction TEXT NOT NULL DEFAULT 'peacemain'"
     ).execute(&pool).await?;
+    // Quando o personagem concluiu o tutorial pela ultima vez (NULL = nunca).
+    // Usado pra UI ("ja fez tutorial") e pro fluxo de re-treino. Nao gateia
+    // nada de forma rigida — tutorial e' repetivel.
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS last_tutorial_completed TIMESTAMPTZ NULL"
+    ).execute(&pool).await?;
 
     seed_economy_if_needed(&pool).await?;
     seed_skills_if_needed(&pool).await?;
@@ -1607,6 +1616,13 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         S{ id: item_id::FISHING_ROD_T2 as i32,    name:"Vara de Pesca T2",       sell:90,  buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:10, ic:11,ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(1,3), wis:(0,0) },
         S{ id: item_id::FISHING_ROD_T3 as i32,    name:"Vara de Pesca T3",       sell:320, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:30, ic:11,ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(2,6), wis:(1,3) },
         S{ id: item_id::FISHING_ROD_T4 as i32,    name:"Vara de Pesca T4",       sell:950, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:60, ic:11,ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(4,10),wis:(2,6) },
+        // Peixes (drop da pesca) — stackáveis, sem slot. icon_path setado
+        // explicitamente abaixo pros sprites de Fish/ (ic/ir são sentinela -1
+        // pra NÃO virar Items/r###_c## no backfill de icon_path).
+        S{ id: item_id::FISH_ANCHOVY as i32,      name:"Anchova",                sell:8,   buy:None,       ord:None,     stack:99,slot:None,         lvl:1,  ic:-1,ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::FISH_CLOWNFISH as i32,    name:"Peixe-palhaço",          sell:18,  buy:None,       ord:None,     stack:99,slot:None,         lvl:1,  ic:-1,ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::FISH_SURGEONFISH as i32,  name:"Peixe-cirurgião",        sell:35,  buy:None,       ord:None,     stack:99,slot:None,         lvl:1,  ic:-1,ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::FISH_PUFFERFISH as i32,   name:"Baiacu",                 sell:60,  buy:None,       ord:None,     stack:99,slot:None,         lvl:1,  ic:-1,ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
     ];
     for s in seed {
         sqlx::query(
@@ -1652,6 +1668,18 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                           '_c' || lpad(icon_col::text, 2, '0') \
          WHERE icon_path IS NULL AND icon_col >= 0 AND icon_row >= 0"
     ).execute(pool).await?;
+
+    // Peixes: icon vem dos sprites Fish/<Nome> (RemoteContent), não do
+    // spritesheet de Items. Só seta se NULL (admin pode sobrescrever).
+    for (id, addr) in [
+        (item_id::FISH_ANCHOVY,     "Fish/Anchovy"),
+        (item_id::FISH_CLOWNFISH,   "Fish/Clownfish"),
+        (item_id::FISH_SURGEONFISH, "Fish/Surgeonfish"),
+        (item_id::FISH_PUFFERFISH,  "Fish/Pufferfish"),
+    ] {
+        sqlx::query("UPDATE items SET icon_path = $1 WHERE id = $2 AND icon_path IS NULL")
+            .bind(addr).bind(id as i32).execute(pool).await?;
+    }
 
     // Enemy kinds — espelha o array hardcoded antigo. Tuple muito grande;
     // usa struct local pra clareza.
@@ -2108,6 +2136,11 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
     let faction_map: HashMap<String, shared::Faction> = faction_rows.into_iter()
         .map(|(n, f)| (n, shared::Faction::from_str_lenient(&f).unwrap_or_default()))
         .collect();
+    // Tutorial concluído (epoch). NULL = nunca → login no mundo redireciona pro tutorial.
+    let tut_rows: Vec<(String, Option<i64>)> = sqlx::query_as(
+        "SELECT name, EXTRACT(EPOCH FROM last_tutorial_completed)::BIGINT FROM characters"
+    ).fetch_all(pool).await?;
+    let tut_map: HashMap<String, Option<i64>> = tut_rows.into_iter().collect();
     // Boat 2.5D extras: yaw/sail/anchor + mounted_local. Tudo opcional pra
     // compat com rows legacy (sao NULL quando antigos).
     type BoatExtras = (Option<f32>, Option<i16>, Option<f32>, Option<bool>, Option<f32>, Option<f32>);
@@ -2164,6 +2197,7 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
         let visual: Option<shared::VisualConfig> = visual_json
             .as_deref()
             .and_then(|j| serde_json::from_str(j).ok());
+        let last_tut = tut_map.get(&name).cloned().flatten();
         out.insert(
             name.clone(),
             CharacterRow {
@@ -2193,6 +2227,7 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
                 faction,
                 quests,
                 faction_points,
+                last_tutorial_completed: last_tut,
             },
         );
     }
@@ -2244,26 +2279,30 @@ pub async fn create_character(
     if res.rows_affected() == 0 {
         return Ok(false);
     }
-    // Inventario[0] = arma escolhida (qty 1).
-    sqlx::query(
-        "INSERT INTO inventory (character_name, slot, item_id, qty)
-         VALUES ($1, 0, $2, 1)
-         ON CONFLICT (character_name, slot) DO NOTHING"
-    )
-    .bind(name)
-    .bind(starting_weapon as i32)
-    .execute(pool)
-    .await?;
-    // Equipa a arma na slot weapon (mainhand).
-    sqlx::query(
-        "INSERT INTO equipment (character_name, slot, item_id)
-         VALUES ($1, 'weapon', $2)
-         ON CONFLICT (character_name, slot) DO UPDATE SET item_id = EXCLUDED.item_id"
-    )
-    .bind(name)
-    .bind(starting_weapon as i32)
-    .execute(pool)
-    .await?;
+    // Arma inicial = 0 → personagem nasce SEM arma (o tutorial entrega a T1).
+    // Só popula inventário/equip se um id de arma válido foi passado (compat).
+    if starting_weapon != 0 {
+        // Inventario[0] = arma escolhida (qty 1).
+        sqlx::query(
+            "INSERT INTO inventory (character_name, slot, item_id, qty)
+             VALUES ($1, 0, $2, 1)
+             ON CONFLICT (character_name, slot) DO NOTHING"
+        )
+        .bind(name)
+        .bind(starting_weapon as i32)
+        .execute(pool)
+        .await?;
+        // Equipa a arma na slot weapon (mainhand).
+        sqlx::query(
+            "INSERT INTO equipment (character_name, slot, item_id)
+             VALUES ($1, 'weapon', $2)
+             ON CONFLICT (character_name, slot) DO UPDATE SET item_id = EXCLUDED.item_id"
+        )
+        .bind(name)
+        .bind(starting_weapon as i32)
+        .execute(pool)
+        .await?;
+    }
     Ok(true)
 }
 

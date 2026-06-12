@@ -201,6 +201,36 @@ pub enum ClientMessage {
     /// proximidade do NPC de facção da MESMA facção, pontos suficientes, e
     /// concede o item.
     FactionShopBuy { item_id: u16 },
+
+    // ── Pesca ────────────────────────────────────────────────────────────
+    /// Boia caiu na água em `pos`. Server valida vara equipada + que `pos` é
+    /// água dentro do alcance, e passa a atrair peixes pra esse ponto. Quando
+    /// um peixe encosta na boia, server responde `FishingBite`.
+    FishingCast {
+        #[serde(with = "crate::vec2_arr")]
+        pos: glam::Vec2,
+    },
+    /// Resultado do minigame de reel-in do peixe fisgado. `success=true` →
+    /// server remove o peixe do mundo e concede o item no inventário.
+    /// `success=false` → peixe é solto (volta a nadar). Idempotente se não há
+    /// peixe fisgado.
+    FishingReel { success: bool },
+    /// Cancela a pesca atual (player se moveu/desistiu antes da fisgada). Solta
+    /// o peixe fisgado se houver e limpa a boia. Idempotente.
+    FishingCancel,
+
+    // ── Tutorial ─────────────────────────────────────────────────────────
+    /// Player concluiu o tutorial (clicou "concluir" ou cumpriu objetivos).
+    /// Só tem efeito no processo de tutorial (TUTORIAL_MODE); o server marca
+    /// `last_tutorial_completed` no DB e responde `TutorialComplete`, que manda
+    /// o client reconectar no mundo aberto. Ignorado no processo do mundo.
+    FinishTutorial,
+
+    // ── Dungeon ──────────────────────────────────────────────────────────
+    /// Escolhe o modo da dungeon ANTES do SelectCharacter (processo :9002).
+    /// raid=true → RAID BOSS: sem waves/mobs, spawn perto da arena, só o boss.
+    /// Ignorado fora de DUNGEON_MODE.
+    SelectDungeonMode { raid: bool },
 }
 
 /// Acoes administrativas aplicadas via `ClientMessage::AdminCommand`.
@@ -523,6 +553,64 @@ pub enum ServerMessage {
         points: u32,
         // Nome distinto de ShopOpen.items (tipo diferente, mesma key colidiria no client).
         faction_items: Vec<FactionShopItemNet>,
+    },
+
+    /// Um peixe encostou na boia do player — fisgou. Cliente inicia o minigame
+    /// de reel-in com o `species` informado (1-4, mapeia pro catálogo de
+    /// peixes). Ao terminar, cliente manda `FishingReel{success}`.
+    FishingBite {
+        /// EntityId do peixe fisgado (cliente pode usar pra esconder/realçar).
+        fish_eid: EntityId,
+        /// Espécie do peixe (1=Anchova..4=Baiacu) — define dificuldade/sprite.
+        species: u16,
+    },
+
+    // ── Tutorial ─────────────────────────────────────────────────────────
+    /// Tutorial concluído (resposta ao `FinishTutorial`). O client deve
+    /// desconectar e reconectar no MUNDO ABERTO. `world_host`/`world_path`
+    /// vazios → client usa o default de produção (wss .../game).
+    TutorialComplete {
+        #[serde(default)]
+        world_host: String,
+        #[serde(default)]
+        world_path: String,
+    },
+    /// Manda o client ir pro TUTORIAL (emitido pelo mundo aberto quando o
+    /// player interage com o NPC de re-treino). `host`/`path` vazios → client
+    /// usa o default de tutorial (wss .../tutorial).
+    GoToTutorial {
+        #[serde(default)]
+        host: String,
+        #[serde(default)]
+        path: String,
+    },
+    /// Fala do NPC guia do tutorial (Matteo) — o client mostra um balão de
+    /// diálogo. Emitido ao falar com ele (dá machado / recebe madeira / etc).
+    TutorialSay {
+        #[serde(default)]
+        speaker: String,
+        #[serde(default)]
+        text: String,
+    },
+
+    // ── Dungeon ──────────────────────────────────────────────────────────
+    /// Uma sala da dungeon foi limpa (todos os mobs mortos) → o gate pra
+    /// próxima sala abriu (server flipou os tiles WALL→DUNGEON_FLOOR). O client
+    /// atualiza o tracker e abre o gate visual. `room_idx` = índice da sala
+    /// recém-limpa; o player avança pra `room_idx + 1`.
+    DungeonRoomCleared {
+        room_idx: u32,
+        total_rooms: u32,
+    },
+    /// Dungeon concluída (boss morto). Igual ao `TutorialComplete`: o client
+    /// reconecta no MUNDO ABERTO. host/path vazios → default de produção
+    /// (/game). O loot/XP ganho na dungeon JÁ está persistido (diferente do
+    /// tutorial, que descarta).
+    DungeonComplete {
+        #[serde(default)]
+        world_host: String,
+        #[serde(default)]
+        world_path: String,
     },
 }
 

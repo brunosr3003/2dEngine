@@ -34,6 +34,10 @@ pub enum IncomingMessage {
     /// e leu de volta o row recem-criado. World insere no cache + roda
     /// on_auth_result com AuthSuccess sintetico.
     CharCreated(SessionId, Box<crate::persistence::CharacterRow>, crate::auth::AuthSuccess),
+    /// SelectCharacter de um char que NÃO estava no cache (ex: criado em outro
+    /// processo — char novo criado no :9000 e selecionado no :9001 de tutorial).
+    /// Recarregado do DB; world insere no cache e spawna direto.
+    CharReloadedForSelect(SessionId, Box<crate::persistence::CharacterRow>, crate::auth::AuthSuccess),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -212,6 +216,59 @@ pub struct EnemyTag {
     /// projetil com escudo (so' enemies com offhand=Shield). Regen passivo
     /// fora de combate. 0 = sem stamina, escudo nao bloqueia mais ate regen.
     pub stamina_current: f32,
+    // ── Boss AI "PvP-like" (só roda quando is_boss — mobs comuns ignoram) ──
+    /// sim_time até quando o boss está em dash (vel = ai_dash_dir × DASH).
+    pub ai_dash_until: f32,
+    pub ai_dash_dir: Vec2,
+    /// Cooldown do dash do boss (gap-closer / sidestep).
+    pub ai_dash_cd_until: f32,
+    /// sim_time até quando o boss está BLOQUEANDO (dano recebido -75%,
+    /// anda devagar, não ataca; counter logo após).
+    pub ai_block_until: f32,
+    pub ai_block_cd_until: f32,
+    /// Strafe circular em range: direção (±1) e quando flipar.
+    pub ai_strafe_sign: f32,
+    pub ai_strafe_flip_at: f32,
+    /// Hit bloqueado neste tick → snapshot manda PARRY_FLASH (drenado em
+    /// send_snapshots, mesma mecânica do parry de player).
+    pub parry_flash_pending: bool,
+    /// Dash iniciado neste tick → snapshot manda attack_anim=DASH (anim de
+    /// jump, igual o dash do player). Drenado em send_snapshots.
+    pub dash_anim_pending: bool,
+    /// Hits recebidos recentemente (decai ~1.5/s) — dispara o block REATIVO
+    /// do boss: apanhou seguido → levanta a guarda.
+    pub ai_recent_hits: f32,
+    /// Nome custom de BOSS (ex "[BOSS] Cavaleiro Radiante Lv10") — snapshot
+    /// usa este em vez do nome derivado do tier. None = mobs comuns.
+    pub boss_name: Option<String>,
+    // ── Leap do boss (Leap Strike 1001) — MESMA mecânica do player: arco
+    // (leap_y no snapshot), posição lerpada no pass de leap, dano AoE no
+    // POUSO. Boss não age no ar (IA pula o tick).
+    pub leap_until: f32,
+    pub leap_start_pos: Vec2,
+    pub leap_target: Vec2,
+    pub leap_damage: i32,
+    pub leap_radius: f32,
+    /// Direção do golpe no tick em que attack_pending é setado (auto ou
+    /// skill). Snapshot replica como `aim_dir` pro cliente setar facing —
+    /// sem isso o boss strafando golpeia "pro lado" (facing vinha da vel).
+    pub attack_dir: Vec2,
+}
+
+/// Peixe nadando no oceano. Wander AI simples, sem combate, sem physics body —
+/// movido manualmente em `tick_fish`. Spawnado/culado dinamicamente perto dos
+/// players (ver tick_fish). Quando fisgado por uma boia, gruda nela e para de
+/// vaguear até o reel/cancel.
+pub struct FishTag {
+    /// Espécie 1-4 (= EntityKind::Fish(n) e fish_item_for_species).
+    pub species: u16,
+    /// Direção atual de natação (unit). Re-sorteada a cada wander_timer.
+    pub wander_dir: Vec2,
+    /// Segundos até re-sortear a direção de wander.
+    pub wander_timer: f32,
+    /// Sessão que fisgou este peixe (None = livre). Enquanto Some, o peixe não
+    /// vagueia, não é atraído por outras boias e não pode ser re-fisgado.
+    pub hooked_by: Option<SessionId>,
 }
 
 /// Tag em inimigo spawnado por uma ServerSpawnZone — usado pra decrementar
@@ -982,6 +1039,24 @@ pub struct Session {
     /// Pontos de facção (moeda das quests de facção; compra itens de facção).
     pub faction_points: u32,
     pub faction_points_last_sent: u32,
+
+    // ── Pesca ────────────────────────────────────────────────────────────
+    /// Posição da boia na água enquanto o player está pescando (None = não
+    /// está pescando). Server atrai peixes pra cá e detecta a fisgada.
+    pub fishing_bobber: Option<Vec2>,
+    /// EntityId do peixe atualmente fisgado (None = nenhum). Setado quando um
+    /// peixe encosta na boia; limpo no reel/cancel. Espelha FishTag.hooked_by.
+    pub hooked_fish: Option<EntityId>,
+    /// Índice da lane de tutorial ocupada por esta sessão (só em TUTORIAL_MODE).
+    /// None = não está numa lane (mundo normal ou ainda sem char). Liberada no
+    /// disconnect pra outro player poder usar.
+    pub tutorial_slot: Option<usize>,
+    /// Índice da lane de dungeon ocupada por esta sessão (só em DUNGEON_MODE).
+    /// None = não está numa dungeon. Liberada no disconnect/complete.
+    pub dungeon_slot: Option<usize>,
+    /// Modo RAID escolhido pelo client (SelectDungeonMode antes do select).
+    /// true → run só de boss, sem waves. Só relevante em DUNGEON_MODE.
+    pub pending_dungeon_raid: bool,
 }
 
 impl Session {
@@ -1131,6 +1206,256 @@ pub struct GameWorld {
     /// Cooldown por (SessionId, node_id) — impede spam de FarmHit acima da
     /// cadência da animação. Valor = sim_time_s quando o cooldown expira.
     farm_hit_cooldowns: HashMap<(SessionId, u32), f32>,
+    /// Processo de tutorial (env TUTORIAL_MODE=1). Quando true, players
+    /// spawnam numa lane isolada (ver `tutorial_slots`) em vez da pos salva,
+    /// não persistem posição, e o chat é restrito à própria lane.
+    tutorial_mode: bool,
+    /// Lanes isoladas do mapa de tutorial. Cada player ocupa uma; o AOI
+    /// (raio 24 tiles) garante que uma lane nunca vê a outra (espaçamento
+    /// TUTORIAL_LANE_SPACING). `base` = ponto de spawn da lane. O conteúdo
+    /// (NPC guia, nodes, água/barco, walls) é ESTÁTICO no tutorial.json,
+    /// replicado por lane — o server só aloca/libera o slot.
+    tutorial_slots: Vec<TutorialSlot>,
+    /// Processo de dungeon (env DUNGEON_MODE=1). Quando true, players entram
+    /// numa lane de dungeon isolada (ver `dungeon_slots`) e percorrem um caminho
+    /// predefinido matando salas de mobs até o boss. Espelha `tutorial_mode`.
+    dungeon_mode: bool,
+    /// Lanes de dungeon — cada player (MVP solo) ocupa uma; o layout (salas,
+    /// corredores, gates) é pintado por lane no startup. AOI isola as runs.
+    dungeon_slots: Vec<DungeonSlot>,
+    /// Runs ativas — máquina de estado por player (sala atual, mobs vivos,
+    /// colliders dos gates). Criada no spawn, removida no disconnect/complete.
+    dungeon_runs: Vec<DungeonRun>,
+}
+
+/// Lane isolada do mapa de tutorial.
+struct TutorialSlot {
+    base: Vec2,
+    occupant: Option<SessionId>,
+}
+
+/// Lane de dungeon (DUNGEON_MODE). `base` = canto inferior-esquerdo (tiles) da
+/// caixa da dungeon dessa lane.
+struct DungeonSlot {
+    base: Vec2,
+    occupant: Option<SessionId>,
+}
+
+/// Run ativa de dungeon — máquina de estado do caminho predefinido.
+struct DungeonRun {
+    lane: usize,
+    occupant: SessionId,
+    /// Sala atual sendo combatida (0..NUM_ROOMS-1). A última é o boss.
+    room_idx: usize,
+    /// Kills acumulados na sala atual (sistema de waves) — gate abre em
+    /// DUNGEON_ROOM_KILLS. Resetado ao avançar de sala.
+    kills_this_room: u32,
+    /// EntityIds dos mobs vivos da WAVE atual. Nova wave quando <= 1 vivo.
+    live_enemies: Vec<EntityId>,
+    /// Collider Rapier de cada gate (len = NUM_ROOMS-1). Some = fechado;
+    /// None = já aberto (removido do collider_set ao limpar a sala).
+    gate_handles: Vec<Option<rapier2d::prelude::ColliderHandle>>,
+    /// sim_time pra disparar o DungeonComplete depois do boss (deixa o player
+    /// pegar o loot antes de voltar pro mundo). None = boss ainda vivo.
+    complete_at: Option<f32>,
+    /// sim_time limite da run (DUNGEON_TIME_LIMIT_S após o início). Estourou
+    /// → player é mandado de volta pro mundo (run falhou).
+    deadline_at: f32,
+}
+
+// ── Layout da dungeon lvl 10 (relativo à base da lane, em tiles) ───────────
+// ARQUIPÉLAGO: vestíbulo seguro → ponte → 3 ilhas de combate (WAVES até
+// DUNGEON_ROOM_KILLS) → ilha do BOSS (bem maior). Pontes com gates (collider
+// Rapier em coluna fixa + pedras visuais no client) abrem ao limpar a sala.
+// ⚠️ O client (DungeonBuilder.cs) replica EXATAMENTE estas coords.
+const DUNGEON_NUM_ROOMS: i32 = 4;       // 3 salas de combate + boss
+const DUNGEON_BOX_W: i32 = 88;
+const DUNGEON_BOX_H: i32 = 19;
+/// Linhas (relativas) das pontes/gates (3 tiles, centro vertical).
+const DUNGEON_GATE_ROWS: [i32; 3] = [8, 9, 10];
+/// Coluna da ponte vestíbulo→sala0 (sempre ABERTA, sem collider).
+const DUNGEON_ENTRANCE_DIV: i32 = 13;
+/// Colunas dos gates de combate (sobre as pontes entre as ilhas).
+const DUNGEON_COMBAT_GATES: [i32; 3] = [29, 45, 61];
+/// Spawn do player (centro de tile, relativo à base) — centro do vestíbulo.
+const DUNGEON_ENTRY: (f32, f32) = (6.5, 9.5);
+/// Origem das lanes (mar aberto far-right do game.json 12000×2000).
+const DUNGEON_ORIGIN: (i32, i32) = (11000, 200);
+const DUNGEON_LANE_COUNT: usize = 8;
+const DUNGEON_LANE_SPACING: i32 = 80;
+/// Segundos entre o boss morrer e o player voltar pro mundo (pegar loot).
+const DUNGEON_LOOT_GRACE_S: f32 = 10.0;
+/// Kills necessários pra abrir o gate de cada sala de combate (sistema de
+/// WAVES: ondas de 3-4 mobs espalhados pela ilha até bater a cota).
+const DUNGEON_ROOM_KILLS: u32 = 20;
+/// Tempo limite da run (segundos). Estourou sem matar o boss → o player é
+/// mandado de volta pro mundo (morrer respawna no vestíbulo, o relógio segue).
+const DUNGEON_TIME_LIMIT_S: f32 = 600.0;
+
+fn dungeon_combat_gate_x(i: i32) -> i32 { DUNGEON_COMBAT_GATES[i as usize] }
+
+// ── Noise determinístico da caverna ─────────────────────────────────────
+// Hash inteiro + value-noise 1D suave. ⚠️ O client (DungeonBuilder.cs)
+// replica ESTAS funções com as MESMAS ops (u32 wrapping + f32 IEEE-754)
+// — paredes são colisão server-side, o visual TEM que bater bit a bit
+// (mesma técnica da ilha do tutorial).
+fn dgn_hash(x: i32, y: i32, seed: u32) -> u32 {
+    let mut h = (x as u32).wrapping_mul(374_761_393)
+        ^ (y as u32).wrapping_mul(668_265_263) ^ seed;
+    h = (h ^ (h >> 13)).wrapping_mul(1_274_126_177);
+    h ^ (h >> 16)
+}
+fn dgn_n01(x: i32, y: i32, seed: u32) -> f32 {
+    (dgn_hash(x, y, seed) & 0xFFFF) as f32 / 65535.0
+}
+/// Value-noise 2D suavizado (lattice 3×3 + smoothstep bilinear). coords >= 0.
+fn dgn_smooth2(x: i32, y: i32, seed: u32) -> f32 {
+    let cx = x / 3;
+    let cy = y / 3;
+    let tx = (x % 3) as f32 / 3.0;
+    let ty = (y % 3) as f32 / 3.0;
+    let sx = tx * tx * (3.0 - 2.0 * tx);
+    let sy = ty * ty * (3.0 - 2.0 * ty);
+    let a = dgn_n01(cx, cy, seed);
+    let b = dgn_n01(cx + 1, cy, seed);
+    let c = dgn_n01(cx, cy + 1, seed);
+    let d = dgn_n01(cx + 1, cy + 1, seed);
+    let top = a + (b - a) * sx;
+    let bot = c + (d - c) * sx;
+    top + (bot - top) * sy
+}
+
+/// As 5 ILHOTAS da dungeon: (cx, cy, rx, ry) relativos à base da lane —
+/// vestíbulo + 3 salas de combate + boss. Mesma estética do mundo real:
+/// terra de grama cercada de OCEANO (a água é a "parede" — WATER já
+/// bloqueia movimento) com pontes de terra entre as ilhas.
+const DUNGEON_ISLES: [(f32, f32, f32, f32); 5] = [
+    (6.5,  9.5, 5.5, 5.8),    // vestíbulo (spawn 6.5,9.5)
+    (21.0, 9.5, 7.2, 6.8),    // sala 0 (waves melee)
+    (37.0, 9.5, 7.2, 6.8),    // sala 1 (waves mescladas)
+    (53.0, 9.5, 7.2, 6.8),    // sala 2 (waves ranged)
+    (73.0, 9.5, 10.5, 8.6),   // boss — ilha bem maior (arena)
+];
+
+/// True se o tile (relativo) é TERRA: pontes (faixas de 3 rows nos gates/
+/// entrada, ±2 colunas) ou dentro de uma ilhota (elipse + wobble de noise).
+/// ⚠️ Espelhado bit-a-bit no client (DungeonBuilder.IsLand).
+fn dungeon_is_land(lx: i32, ly: i32) -> bool {
+    // Pontes: sempre terra (o bloqueio do gate é collider Rapier no x fixo).
+    if DUNGEON_GATE_ROWS.contains(&ly) {
+        if (lx - DUNGEON_ENTRANCE_DIV).abs() <= 2 { return true; }
+        for i in 0..(DUNGEON_NUM_ROOMS - 1) {
+            if (lx - dungeon_combat_gate_x(i)).abs() <= 2 { return true; }
+        }
+    }
+    // Ilhotas: elipse com borda ondulada (wobble ±0.225 no raio normalizado).
+    let w = (dgn_smooth2(lx, ly, 0x15E5) - 0.5) * 0.45;
+    for (cx, cy, rx, ry) in DUNGEON_ISLES {
+        let nx = (lx as f32 + 0.5 - cx) / rx;
+        let ny = (ly as f32 + 0.5 - cy) / ry;
+        if nx * nx + ny * ny + w < 1.0 { return true; }
+    }
+    false
+}
+
+/// Tile (relativo) da lane: ILHOTAS de grama no oceano. Terra = DUNGEON_FLOOR,
+/// resto = WATER (bloqueia movimento + collider Rapier no bake — o mar é a
+/// parede natural, igual ao arquipélago do mundo). Gates de combate continuam
+/// sendo colliders removíveis em colunas retas sobre as pontes.
+fn dungeon_tile(lx: i32, ly: i32) -> u16 {
+    use shared::constants::tile_id::{WATER, DUNGEON_FLOOR};
+    if lx <= 0 || lx >= DUNGEON_BOX_W - 1 || ly <= 0 || ly >= DUNGEON_BOX_H - 1 {
+        return WATER;
+    }
+    if dungeon_is_land(lx, ly) { DUNGEON_FLOOR } else { WATER }
+}
+
+/// Composição das salas de combate: (level dos mobs, pool de classes da wave).
+/// Progressão de arquétipo E de level: sala 0 só MELEE lvl 9 → sala 1 MESCLA
+/// lvl 10 → sala 2 só RANGED lvl 11. A sala do boss não usa isto.
+fn dungeon_room_spec(room: usize) -> (u32, &'static [crate::enemy_builds::EnemyClass]) {
+    use crate::enemy_builds::EnemyClass::*;
+    match room {
+        0 => (9,  &[Sword, Axe, SwordShield]),
+        1 => (10, &[Sword, Dagger, Spear, Bow, Staff]),
+        2 => (11, &[Bow, Staff, Wand]),
+        _ => (10, &[SwordShield]),
+    }
+}
+
+/// ILHA DE TUTORIAL: criada em RUNTIME (só no processo de tutorial) bem à
+/// esquerda do mundo, ANTES das ilhas iniciais (far-left era tudo água). Terra
+/// + árvores T1 pintadas em memória; o client pinta a mesma ilha quando
+/// InTutorial. Não toca o mapa do mundo (game.json/máscara). Centro = spawn.
+/// Centro do conteúdo (Matteo + craft + mob) — ao NORTE da pedra/cliff.
+const TUTORIAL_AREA: (f32, f32) = (195.5, 1030.5);
+/// Bounding box da ilha de tutorial em tiles (xmin,ymin,xmax,ymax).
+const TUTORIAL_ISLAND: (i32, i32, i32, i32) = (150, 990, 240, 1050);
+/// Formato ORGÂNICO da ilha = união de elipses (cx,cy,rx,ry). Não é retângulo.
+/// DEVE bater com o client (TutorialIslandBuilder.IslandBlobs).
+const TUTORIAL_ISLAND_BLOBS: [(f32, f32, f32, f32); 6] = [
+    (195.0, 1021.0, 39.0, 27.0), // corpo principal
+    (160.0, 1008.0, 15.0, 13.0), // oeste
+    (232.0, 1010.0, 13.0, 14.0), // leste
+    (176.0, 1041.0, 15.0, 11.0), // lóbulo sudoeste (norte)
+    (216.0, 1039.0, 14.0, 12.0), // lóbulo sudeste (norte)
+    (198.0, 1001.0, 17.0, 11.0), // sul
+];
+/// Spawn do player: ao SUL da pedra (precisa pular pra chegar no Matteo).
+const TUTORIAL_SPAWN: (f32, f32) = (195.5, 996.5);
+/// "Pedra"/cliff: linha de WALL que o player PULA (mecânica climb). y da linha
+/// + intervalo x (atravessa a ilha inteira → força o pulo).
+const TUTORIAL_CLIFF_Y: i32 = 1012;
+// Intervalo largo (além de qualquer borda da ilha) — o guard `contains` no loop
+// só pinta WALL onde há ilha, então auto-veda a linha do cliff seja qual for o
+// formato (sem brecha pra dar a volta).
+const TUTORIAL_CLIFF_X: (i32, i32) = (146, 246);
+/// Cais (pier de FLOOR) conectando a ilha ao barco, atravessando a costa murada.
+const TUTORIAL_DOCK_X: (i32, i32) = (193, 197);
+const TUTORIAL_DOCK_Y: (i32, i32) = (1049, 1051);
+/// Canal do barco: água NÃO-murada (gap na costa) onde o barco fica + embarca.
+const TUTORIAL_BOAT_CHANNEL: (i32, i32, i32, i32) = (192, 198, 1052, 1055);
+/// Barco (água no fim do cais) — dado na quest 905.
+const TUTORIAL_BOAT: (f32, f32) = (195.5, 1052.5);
+/// Arena de combate (leste) — 2 inimigos lvl 1 espaçados, mantidos vivos
+/// enquanto a quest 904 (matar 3) está ativa.
+const TUTORIAL_ENEMY_SPOTS: [(f32, f32); 2] = [(214.5, 1032.5), (226.5, 1039.5)];
+/// Farm nodes T1 (tile center) — DEVE bater com o client. Árvores p/ a quest
+/// de madeira + flores/rochas decorativos/funcionais pra preencher a ilha.
+const TUTORIAL_TREES: [(f32, f32); 7] = [
+    (172.5, 1038.5), (186.5, 1042.5), (204.5, 1038.5), (216.5, 1042.5),
+    // (195.5,1046.5) removida: tapava a vista do cais.
+    (168.5, 1024.5), (224.5, 1028.5), (180.5, 1034.5),
+];
+const TUTORIAL_FLOWERS: [(f32, f32); 8] = [
+    (178.5, 1020.5), (210.5, 1018.5), (165.5, 1018.5), (228.5, 1016.5),
+    (190.5, 1036.5), (208.5, 1044.5), (174.5, 1044.5), (200.5, 1022.5),
+];
+const TUTORIAL_ROCKS: [(f32, f32); 5] = [
+    (160.5, 1026.5), (230.5, 1022.5), (218.5, 1034.5), (176.5, 1008.5), (212.5, 1006.5),
+];
+
+/// True se o tile (x,y) está dentro da ilha de tutorial (união de elipses).
+fn tutorial_island_contains(x: i32, y: i32) -> bool {
+    let (fx, fy) = (x as f32, y as f32);
+    TUTORIAL_ISLAND_BLOBS.iter().any(|&(cx, cy, rx, ry)| {
+        let nx = (fx - cx) / rx;
+        let ny = (fy - cy) / ry;
+        nx * nx + ny * ny <= 1.0
+    })
+}
+
+/// FLOOR final da ilha = dentro da elipse E com >= 2 dos 8 vizinhos também dentro
+/// (erosão). Remove tiles ISOLADOS — o RuleTile junta 2+ tiles, então um tile
+/// sozinho vira "grama flutuando". Usa 8-conectividade (com diagonais): só tiles
+/// realmente soltos somem; os "polos" da borda (topo/base/laterais da elipse, que
+/// têm 1 vizinho cardinal mas 3 diagonais) sobrevivem — senão a fileira do topo
+/// inteira erode e o cais perde a conexão e flutua. DEVE bater com o client.
+fn tutorial_island_floor(x: i32, y: i32) -> bool {
+    if !tutorial_island_contains(x, y) { return false; }
+    let n = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)].iter()
+        .filter(|(dx, dy)| tutorial_island_contains(x + dx, y + dy)).count();
+    n >= 2
 }
 
 struct FarmNodeState {
@@ -1203,6 +1528,11 @@ impl GameWorld {
             last_econ_version: 0,
             farm_nodes: HashMap::new(),
             farm_hit_cooldowns: HashMap::new(),
+            tutorial_mode: false,
+            tutorial_slots: Vec::new(),
+            dungeon_mode: false,
+            dungeon_slots: Vec::new(),
+            dungeon_runs: Vec::new(),
         };
         w.spawn_vendor_at(vendor_pos);
         w.spawn_vault_at(vault_pos);
@@ -1224,6 +1554,77 @@ impl GameWorld {
         );
 
         let safe_zone = mf.safe_zone;
+        let tutorial_mode = std::env::var("TUTORIAL_MODE")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let dungeon_mode = std::env::var("DUNGEON_MODE")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        // Tutorial: pinta a ilha (FLOOR) ANTES de bakear os colliders Rapier —
+        // senão a água original vira collider e prende o player na ilha nova.
+        if tutorial_mode {
+            use shared::constants::tile_id::{FLOOR, WALL, WATER};
+            let (x0, y0, x1, y1) = TUTORIAL_ISLAND;
+            for y in y0..=y1 { for x in x0..=x1 {
+                if tutorial_island_floor(x, y) { map.set(x, y, FLOOR); }
+            }}
+            // Cais (pier): FLOOR conectando a ilha ao barco através da costa.
+            for y in TUTORIAL_DOCK_Y.0..=TUTORIAL_DOCK_Y.1 {
+                for x in TUTORIAL_DOCK_X.0..=TUTORIAL_DOCK_X.1 { map.set(x, y, FLOOR); }
+            }
+            // Pescoço sólido (3 tiles) ligando o cais ao CORPO da ilha. A erosão
+            // come o topo da elipse (só o polo x=195 sobra em y1048), então sem
+            // isto o cais vira ilhota flutuante. Liga y1047(corpo)→y1048→cais.
+            for y in (TUTORIAL_DOCK_Y.0 - 2)..TUTORIAL_DOCK_Y.0 {
+                for x in 194..=196 { map.set(x, y, FLOOR); }
+            }
+            // Pedra/cliff: a "crista" elevada (ground1) que o player PULA por cima.
+            // WALL em 2 linhas (y1011-1012) batendo com o visual (grass_cliff_rule
+            // 2 tiles no client) — senão dava pra andar em cima de meia pedra.
+            // Jumpável: player em y1010 → FLOOR em y1013 (k=3) dispara o leap.
+            for x in TUTORIAL_CLIFF_X.0..=TUTORIAL_CLIFF_X.1 {
+                if tutorial_island_contains(x, TUTORIAL_CLIFF_Y) || tutorial_island_contains(x, TUTORIAL_CLIFF_Y - 1) {
+                    map.set(x, TUTORIAL_CLIFF_Y, WALL);
+                    map.set(x, TUTORIAL_CLIFF_Y - 1, WALL);
+                }
+            }
+            // AUTO-WALL da costa: parede no anel MAIS EXTERNO de FLOOR (a borda da
+            // costa) — igual a borda 0/1 tem parede, pro player NÃO ficar em cima da
+            // beira ground/ocean (fica bloqueado 1 tile pra dentro). Vale pra todo
+            // FLOOR vizinho (8-conn) de água, EXCETO o cais/canal do barco.
+            let (dkx0, dkx1) = (TUTORIAL_DOCK_X.0 - 1, TUTORIAL_DOCK_X.1 + 1);
+            let (dky0, dky1) = (TUTORIAL_DOCK_Y.0 - 2, TUTORIAL_BOAT_CHANNEL.3);
+            let mut coast: Vec<(i32, i32)> = Vec::new();
+            for y in (y0 - 1)..=(y1 + 3) {
+                for x in (x0 - 1)..=(x1 + 1) {
+                    if map.get(x, y) != FLOOR { continue; }
+                    if x >= dkx0 && x <= dkx1 && y >= dky0 && y <= dky1 { continue; } // cais/canal
+                    let touches_water = (-1..=1i32).any(|dy| (-1..=1i32).any(|dx|
+                        (dx != 0 || dy != 0) && map.get(x + dx, y + dy) == WATER));
+                    if touches_water { coast.push((x, y)); }
+                }
+            }
+            for (x, y) in coast { map.set(x, y, WALL); }
+        }
+        // Dungeon: pinta a caixa de TODAS as lanes ANTES de bakear os colliders
+        // — as WALLs (perímetro + divisórias) viram colliders Rapier estáticos.
+        // Os gaps dos gates ficam FLOOR (sem collider); o bloqueio do gate é um
+        // collider separado adicionado por-run no spawn (removido ao limpar a sala).
+        let mut dungeon_slots: Vec<DungeonSlot> = Vec::new();
+        if dungeon_mode {
+            for i in 0..DUNGEON_LANE_COUNT {
+                let base = (DUNGEON_ORIGIN.0, DUNGEON_ORIGIN.1 + i as i32 * DUNGEON_LANE_SPACING);
+                for ly in 0..DUNGEON_BOX_H {
+                    for lx in 0..DUNGEON_BOX_W {
+                        map.set(base.0 + lx, base.1 + ly, dungeon_tile(lx, ly));
+                    }
+                }
+                dungeon_slots.push(DungeonSlot {
+                    base: Vec2::new(base.0 as f32, base.1 as f32),
+                    occupant: None,
+                });
+            }
+        }
         let mut physics = shared::physics::PhysicsWorld::new();
         map.build_colliders(&mut physics);
         let mut w = Self {
@@ -1264,9 +1665,86 @@ impl GameWorld {
             last_econ_version: 0,
             farm_nodes: HashMap::new(),
             farm_hit_cooldowns: HashMap::new(),
+            tutorial_mode,
+            tutorial_slots: Vec::new(),
+            dungeon_mode,
+            dungeon_slots,
+            dungeon_runs: Vec::new(),
         };
+        if w.tutorial_mode {
+            tracing::info!("[tutorial] modo tutorial ON — ilha única, spawn fixo no ponto do mapa");
+        }
+        if w.dungeon_mode {
+            // Safe zone cobrindo o vestíbulo de cada lane — o player nasce aqui
+            // e fica intocável enquanto o client carrega o mapa (inimigos só
+            // miram players FORA de safe zone). Sai dela ao entrar na sala 0.
+            for slot in 0..DUNGEON_LANE_COUNT {
+                let base = (DUNGEON_ORIGIN.0, DUNGEON_ORIGIN.1 + slot as i32 * DUNGEON_LANE_SPACING);
+                w.safe_zones.push((
+                    Vec2::new(base.0 as f32 + 1.0, base.1 as f32 + 1.0),
+                    Vec2::new(DUNGEON_ENTRANCE_DIV as f32, (DUNGEON_BOX_H - 2) as f32),
+                ));
+            }
+            tracing::info!("[dungeon] modo dungeon ON — {} lanes (lvl 10, solo, vestíbulo seguro)", DUNGEON_LANE_COUNT);
+        }
         w.spawn_mapfile_entities(&mf);
+        if w.tutorial_mode { w.spawn_tutorial_island(); w.spawn_tutorial_content(); }
         w
+    }
+
+    /// Insere as árvores T1 do tutorial. O chão (FLOOR) + a pedra (WALL) da ilha
+    /// são pintados ANTES do build_colliders (em new_from_mapfile) — NÃO repintar
+    /// aqui, senão a pedra (WALL no map.get) viraria FLOOR e o climb não dispara.
+    /// O client pinta a MESMA ilha quando InTutorial (TutorialIslandBuilder).
+    fn spawn_tutorial_island(&mut self) {
+        for (tx, ty) in TUTORIAL_TREES.iter()   { self.add_tutorial_farm("Tree", *tx, *ty); }
+        for (tx, ty) in TUTORIAL_FLOWERS.iter() { self.add_tutorial_farm("Flower", *tx, *ty); }
+        for (tx, ty) in TUTORIAL_ROCKS.iter()   { self.add_tutorial_farm("Rock", *tx, *ty); }
+        tracing::info!("[tutorial] {} farm nodes T1 ({} árvores/{} flores/{} rochas)",
+            TUTORIAL_TREES.len() + TUTORIAL_FLOWERS.len() + TUTORIAL_ROCKS.len(),
+            TUTORIAL_TREES.len(), TUTORIAL_FLOWERS.len(), TUTORIAL_ROCKS.len());
+    }
+
+    fn add_tutorial_farm(&mut self, kind: &str, tx: f32, ty: f32) {
+        let node_id = self.farm_nodes.len() as u32 + 1;
+        let hp_max = shared::farm_node_hp_max(kind, 1);
+        self.farm_nodes.insert(node_id, FarmNodeState {
+            kind: kind.to_string(), tier: 1, pos: Vec2::new(tx, ty),
+            hp: hp_max, hp_max, respawn_at: 0.0, respawn_seconds: shared::FARM_NODE_RESPAWN_S,
+        });
+    }
+
+    /// Conteúdo estático da ilha de tutorial (1x no boot). Só o Matteo (guia).
+    /// O barco NÃO nasce aqui — é dado na quest 905 (spawn_tutorial_boat).
+    fn spawn_tutorial_content(&mut self) {
+        let (ax, ay) = TUTORIAL_AREA;
+        // Matteo: NPC guia do tutorial. Interagir (no tutorial) abre o diálogo
+        // custom (dá machado / recebe madeira) — ver handle_interact.
+        let eid = self.alloc_entity_id();
+        self.ecs.spawn((
+            NetId(eid), Position(Vec2::new(ax, ay)), Velocity(Vec2::ZERO),
+            EntityKind::Npc(4), BlacksmithTag { name: "Matteo".to_string() }, NpcSkin { preset: 1 },
+        ));
+        tracing::info!("[tutorial] Matteo (guia) em ({:.0},{:.0})", ax, ay);
+    }
+
+    /// Spawna o barco do tutorial (recompensa da quest 905). No-op se já existe.
+    fn spawn_tutorial_boat(&mut self) {
+        if self.ecs.query::<&BoatTag>().iter().next().is_some() { return; }
+        let beid = self.alloc_entity_id();
+        let cn = crate::boat_config::get(0).cannons.len();
+        self.ecs.spawn((
+            NetId(beid), Position(Vec2::new(TUTORIAL_BOAT.0, TUTORIAL_BOAT.1)),
+            Velocity(Vec2::ZERO), EntityKind::Boat(0),
+            BoatTag {
+                kind: 0, owner_pid: PlayerId(0), yaw: 0.0, ang_vel: 0.0, rudder_angle: 0.0,
+                sail_position: 0, sail_angle: 0.0, anchor_dropped: true, anchor_progress: 1.0,
+                helm_eid: None, sail_eid: None, anchor_eid: None,
+                cannon_eids: vec![None; cn], cannon_aim: vec![0.0; cn], cannon_cd_until: vec![0.0; cn],
+                passengers: Vec::new(), dir: 4, anim: 0,
+            },
+        ));
+        tracing::info!("[tutorial] barco dado (quest 905) em ({:.0},{:.0})", TUTORIAL_BOAT.0, TUTORIAL_BOAT.1);
     }
 
     /// Raio em tiles para considerar que o jogador "encostou" no portal.
@@ -1676,6 +2154,23 @@ impl GameWorld {
             knockback_until: 0.0,
             knockback_vel: Vec2::ZERO,
             stamina_current: stats.stamina_max as f32,
+            ai_dash_until: 0.0,
+            ai_dash_dir: Vec2::ZERO,
+            ai_dash_cd_until: 0.0,
+            ai_block_until: 0.0,
+            ai_block_cd_until: 0.0,
+            ai_strafe_sign: 1.0,
+            ai_strafe_flip_at: 0.0,
+            parry_flash_pending: false,
+            dash_anim_pending: false,
+            ai_recent_hits: 0.0,
+            boss_name: if build.is_boss { Some(build.name.clone()) } else { None },
+            leap_until: 0.0,
+            leap_start_pos: Vec2::ZERO,
+            leap_target: Vec2::ZERO,
+            leap_damage: 0,
+            leap_radius: 0.0,
+            attack_dir: Vec2::X,
         };
         (tag, Health { current: hp_max, max: hp_max })
     }
@@ -1728,12 +2223,40 @@ impl GameWorld {
                 + ((attack_damage as f32 * def.scaling_atk) as i32)
                 + (def.base_damage as f32 * def.per_rank_dmg_pct
                     * (ls.rank.saturating_sub(1) as f32)) as i32;
+            // Leap Strike (1001): IGUAL AO PLAYER — pulo em ARCO (leap_until;
+            // client renderiza via leap_y) com dano AoE NO POUSO. Nada de
+            // dano instantâneo nem dash+swing simultâneo (era a "estranheza").
+            if ls.skill_id == 1001 {
+                if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(entity) {
+                    tag.mp_current -= mp_cost;
+                    tag.skill_cds.insert(ls.skill_id, now + def.cooldown_s);
+                    tag.leap_until = now + 0.5; // = LEAP_DURATION do player
+                    tag.leap_start_pos = enemy_pos;
+                    tag.leap_target = target_pos;
+                    tag.leap_damage = dmg;
+                    tag.leap_radius = def.radius_tiles.max(0.5);
+                    tag.ai_dash_until = 0.0; // garante: sem dash junto
+                }
+                let fx = ServerMessage::SkillCastFx {
+                    skill_id: 1001, caster_pos: enemy_pos, target_pos,
+                    target_eid: None, caster_eid: Some(enemy_eid),
+                    chain_points: None,
+                };
+                for s in self.sessions.values() {
+                    if s.logged_in { let _ = s.handle.to_client.send(fx.clone()); }
+                }
+                return Some(1001);
+            }
+            // Skills SELF-CENTERED (range 0, ex Sword Dance): área em volta
+            // do CASTER, não do alvo — corrige dano E ancora o FX no corpo
+            // do boss (antes o giro tocava em cima do player = "bugado").
+            let center = if def.range_tiles <= 0.05 { enemy_pos } else { target_pos };
             match def.target_type.as_str() {
                 "aoe_circle" | "cone" => {
                     let radius = def.radius_tiles.max(0.5);
-                    let players = self.find_players_in_radius(target_pos, radius);
+                    let players = self.find_players_in_radius(center, radius);
                     for pid in &players {
-                        let hd = (-(target_pos - enemy_pos)).try_normalize().unwrap_or(Vec2::Y);
+                        let hd = (-(center - enemy_pos)).try_normalize().unwrap_or(Vec2::Y);
                         self.pending_skill_hits.push(PendingSkillHit {
                             target_net: *pid, damage: dmg, attacker_net: enemy_eid,
                             hurt_dir: hd, is_crit: false, from_player: false,
@@ -1748,7 +2271,7 @@ impl GameWorld {
                 tag.skill_cds.insert(ls.skill_id, now + def.cooldown_s);
             }
             let fx = ServerMessage::SkillCastFx {
-                skill_id: ls.skill_id, caster_pos: enemy_pos, target_pos,
+                skill_id: ls.skill_id, caster_pos: enemy_pos, target_pos: center,
                 target_eid: None, caster_eid: Some(enemy_eid),
                 chain_points: None,
             };
@@ -1956,6 +2479,7 @@ impl GameWorld {
                     self.place_enemy(pos, *kind, 0.0);
                 }
                 MapEntity::Boss { kind } => {
+                    if self.tutorial_mode || self.dungeon_mode { continue; }
                     let (tag, health) = self.build_enemy_tag(*kind, Vec2::ZERO, 0.0, pos);
                     let net_id = self.alloc_entity_id();
                     let handle = self.spawn_entity_body(pos);
@@ -2065,6 +2589,9 @@ impl GameWorld {
                     );
                 }
                 MapEntity::EnemySpawner { size, quotas, respawn_delay_s, polygon, level_min, level_max, count } => {
+                    // Tutorial/dungeon: NÃO cria as spawn zones do arquipélago
+                    // (senão mobs do mundo aggrariam o player na área isolada).
+                    if self.tutorial_mode || self.dungeon_mode { continue; }
                     let zone_id = self.spawn_zones.len() as u32;
                     let polygon_world: Option<Vec<Vec2>> = polygon.as_ref().map(|verts| {
                         verts.iter()
@@ -2206,6 +2733,7 @@ impl GameWorld {
                     }
                 }
                 MapEntity::BossSpawn { size, level, respawn_s, polygon } => {
+                    if self.tutorial_mode || self.dungeon_mode { continue; }
                     let area_id = self.boss_areas.len() as u32;
                     let polygon_world: Option<Vec<Vec2>> = polygon.as_ref().map(|verts|
                         verts.iter().map(|pp| pos + Vec2::new(pp[0], pp[1])).collect()
@@ -2762,6 +3290,41 @@ impl GameWorld {
                 row.skill_points_earned, row.skill_points_spent, row.learned_skills.clone(),
                 row.boat, row.visual.clone(), row.name.clone(), row.mounted_local,
             );
+        // Tutorial: spawna numa área ISOLADA do arquipélago (game.json), perto do
+        // cluster de árvores. Ignora a pos salva. O BFS abaixo valida walkable.
+        let tutorial_slot_idx: Option<usize> = None;
+        if self.tutorial_mode {
+            spawn = Vec2::new(TUTORIAL_SPAWN.0, TUTORIAL_SPAWN.1);
+        }
+        // Dungeon: aloca a 1ª lane livre e spawna na entrada da caixa. Kick se
+        // todas ocupadas. A run em si (mobs + gates) inicia no fim de spawn_for_char.
+        let mut dungeon_lane_idx: Option<usize> = None;
+        let dungeon_raid = self.sessions.get(&sid)
+            .map(|s| s.pending_dungeon_raid).unwrap_or(false);
+        if self.dungeon_mode {
+            match self.dungeon_slots.iter().position(|s| s.occupant.is_none()) {
+                Some(idx) => {
+                    self.dungeon_slots[idx].occupant = Some(sid);
+                    dungeon_lane_idx = Some(idx);
+                    let base = self.dungeon_slots[idx].base;
+                    // RAID: spawna na ponte antes da arena do boss (gates
+                    // abertos, sem waves). Normal: vestíbulo.
+                    spawn = if dungeon_raid {
+                        Vec2::new(base.x + 58.5, base.y + 9.5)
+                    } else {
+                        Vec2::new(base.x + DUNGEON_ENTRY.0, base.y + DUNGEON_ENTRY.1)
+                    };
+                }
+                None => {
+                    if let Some(s) = self.sessions.get(&sid) {
+                        let _ = s.handle.to_client.send(ServerMessage::Kick {
+                            reason: "Dungeon cheia, tente novamente em instantes".to_string(),
+                        });
+                    }
+                    return;
+                }
+            }
+        }
         // Stats efetivos considerando equipamento salvo + pontos + profs.
         let stats = effective_stats(&saved_equip, &saved_alloc, &saved_profs, &saved_learned_skills, saved_xp);
         // Re-sincroniza o max_hp (classe pode ter sido rebalanceada entre sessoes).
@@ -2835,7 +3398,7 @@ impl GameWorld {
         // tambem foi salvo (player estava em cima do barco), re-monta o
         // player no mesmo local_pos do deck — assim ao logar, voce ta DE
         // VOLTA na mesma posicao do barco.
-        if let Some(b) = saved_boat {
+        if let Some(b) = saved_boat.filter(|_| !self.tutorial_mode && !self.dungeon_mode) {
             let bx = b.pos.x.floor() as i32;
             let by = b.pos.y.floor() as i32;
             if self.map.is_water(bx, by) {
@@ -2891,6 +3454,8 @@ impl GameWorld {
         if let Some(s) = self.sessions.get_mut(&sid) {
             s.entity = Some(e);
             s.logged_in = true;
+            s.tutorial_slot = tutorial_slot_idx;
+            s.dungeon_slot = dungeon_lane_idx;
             s.name = saved_char_name.clone();
             s.pending_char_creation_account_id = None;
             s.player_id = pid;
@@ -3036,6 +3601,230 @@ impl GameWorld {
         // Quests ativas + pontos de facção + givers disponíveis (indicador "!").
         self.send_quest_log(sid);
         self.send_quest_givers(sid);
+
+        // Dungeon: inicia a run (fecha gates + spawna mobs da sala 0). DEPOIS do
+        // "despawn close enemies" do spawn (senão limparia os mobs da sala 0).
+        if self.dungeon_mode {
+            if let Some(lane) = dungeon_lane_idx {
+                self.begin_dungeon_run(sid, lane, entity_id, dungeon_raid);
+            }
+        }
+    }
+
+    // ── Dungeon (DUNGEON_MODE) ────────────────────────────────────────────
+
+    /// Inicia a run de dungeon de um player recém-spawnado na lane: fecha todos
+    /// os gates (collider Rapier no gap) e spawna os mobs da sala 0.
+    fn begin_dungeon_run(&mut self, sid: SessionId, lane: usize, occupant_eid: EntityId, raid: bool) {
+        use rapier2d::prelude::*;
+        let base = self.dungeon_slots[lane].base;
+        let bx = base.x as i32;
+        let by = base.y as i32;
+        // RAID BOSS: sem waves/gates — player spawna na ponte da arena e luta
+        // só contra o boss (room_idx=3 direto; pontes todas abertas).
+        let (gate_handles, live_enemies, room_idx) = if raid {
+            let handles: Vec<Option<ColliderHandle>> =
+                vec![None; (DUNGEON_NUM_ROOMS - 1) as usize];
+            let boss = self.spawn_dungeon_boss_unit(lane);
+            (handles, boss, (DUNGEON_NUM_ROOMS - 1) as usize)
+        } else {
+            // Gate de cada ponte: cuboid (0.5 × 1.5) cobrindo o gap de 3 tiles
+            // (linhas 8-10 → centro y = by+9.5). GROUP_1 filtrando GROUP_2.
+            let mut handles: Vec<Option<ColliderHandle>> = Vec::new();
+            for i in 0..(DUNGEON_NUM_ROOMS - 1) {
+                let gx = bx + dungeon_combat_gate_x(i);
+                let col = ColliderBuilder::cuboid(0.5, 1.5)
+                    .translation([gx as f32 + 0.5, by as f32 + 9.5].into())
+                    .collision_groups(InteractionGroups::new(
+                        Group::GROUP_1, Group::GROUP_2, Default::default()))
+                    .build();
+                handles.push(Some(self.physics.collider_set.insert(col)));
+            }
+            (handles, self.spawn_dungeon_wave(lane, 0, 4), 0)
+        };
+        let deadline_at = self.sim_time_s + DUNGEON_TIME_LIMIT_S;
+        self.dungeon_runs.push(DungeonRun {
+            lane, occupant: sid, room_idx, kills_this_room: 0,
+            live_enemies, gate_handles, complete_at: None, deadline_at,
+        });
+        tracing::info!("[dungeon] run iniciada lane={} occupant_eid={:?} raid={}",
+            lane, occupant_eid, raid);
+    }
+
+    /// Spawna uma WAVE de `count` mobs ESPALHADOS pela ilhota da sala (pontos
+    /// aleatórios dentro da elipse, validados contra dungeon_is_land). Classe
+    /// sorteada do pool da sala (dungeon_room_spec). Devolve os EntityIds.
+    fn spawn_dungeon_wave(&mut self, lane: usize, room: usize, count: u32) -> Vec<EntityId> {
+        let base = self.dungeon_slots[lane].base;
+        let (level, pool) = dungeon_room_spec(room);
+        let isle = DUNGEON_ISLES[room + 1];
+        let mut s = lcg(self.tick as u64 ^ ((lane as u64) << 8) ^ 0x3A7E);
+        let mut ids = Vec::new();
+        let mut attempts = 0;
+        while ids.len() < count as usize && attempts < 150 {
+            attempts += 1;
+            s = lcg(s);
+            let ang = lcg_f32(s) * std::f32::consts::TAU;
+            s = lcg(s);
+            let rad = lcg_f32(s).sqrt() * 0.75; // disco uniforme, margem da costa
+            let lx = (isle.0 + ang.cos() * rad * isle.2).floor() as i32;
+            let ly = (isle.1 + ang.sin() * rad * isle.3).floor() as i32;
+            if !dungeon_is_land(lx, ly) { continue; }
+            s = lcg(s);
+            let class = pool[(s % pool.len() as u64) as usize];
+            let build = crate::enemy_builds::build_for_level(level, class);
+            let pos = Vec2::new(base.x + lx as f32 + 0.5, base.y + ly as f32 + 0.5);
+            ids.push(self.spawn_dungeon_enemy(pos, build, level as u16));
+        }
+        ids
+    }
+
+    /// Spawna o BOSS no centro da ilha final (kind 7 = loot de world-boss).
+    fn spawn_dungeon_boss_unit(&mut self, lane: usize) -> Vec<EntityId> {
+        let base = self.dungeon_slots[lane].base;
+        let isle = DUNGEON_ISLES[4];
+        let pos = Vec2::new(base.x + isle.0 + 0.5, base.y + isle.1);
+        let build = crate::enemy_builds::build_dungeon_boss(
+            10, crate::enemy_builds::EnemyClass::SwordShield);
+        vec![self.spawn_dungeon_enemy(pos, build, 7)]
+    }
+
+    /// Espelha `place_enemy` mas aceita um build pronto + o kind a guardar no
+    /// EntityKind (loot/sprite) e devolve o EntityId. leash alto (a sala já
+    /// confina) pra o mob não "voltar pra casa" no meio.
+    fn spawn_dungeon_enemy(&mut self, pos: Vec2, build: crate::enemy_builds::EnemyBuild, stored_kind: u16) -> EntityId {
+        let kind = stored_kind;
+        let (tag, health) = self.build_enemy_tag_from_build(build, pos, 14.0, pos);
+        let eid = self.alloc_entity_id();
+        let handle = self.spawn_entity_body(pos);
+        self.ecs.spawn((
+            NetId(eid), handle, Position(pos), Velocity(Vec2::ZERO),
+            health, EntityKind::Enemy(kind), tag,
+        ));
+        eid
+    }
+
+    /// Tick das runs: detecta sala limpa → abre gate + avança; boss morto →
+    /// agenda DungeonComplete (deixa pegar loot). Só roda em DUNGEON_MODE.
+    fn tick_dungeon_runs(&mut self) {
+        // NetIds de inimigos AINDA vivos (não-dead) neste tick.
+        let alive: std::collections::HashSet<EntityId> = self.ecs
+            .query::<(&NetId, &EnemyTag)>()
+            .iter()
+            .filter(|(_, (_, t))| !t.dead)
+            .map(|(_, (n, _))| n.0)
+            .collect();
+        let now = self.sim_time_s;
+        let n = self.dungeon_runs.len();
+        let mut completes: Vec<SessionId> = Vec::new();
+        for ri in 0..n {
+            if let Some(t) = self.dungeon_runs[ri].complete_at {
+                if now >= t { completes.push(self.dungeon_runs[ri].occupant); }
+                continue;
+            }
+            // TEMPO ESGOTADO (10 min): run falhou → manda de volta pro mundo.
+            if now >= self.dungeon_runs[ri].deadline_at {
+                tracing::info!("[dungeon] tempo esgotado lane={} — expulsando",
+                    self.dungeon_runs[ri].lane);
+                completes.push(self.dungeon_runs[ri].occupant);
+                continue;
+            }
+            // Drena os mortos da wave atual e credita os kills.
+            let before = self.dungeon_runs[ri].live_enemies.len();
+            self.dungeon_runs[ri].live_enemies.retain(|e| alive.contains(e));
+            let alive_n = self.dungeon_runs[ri].live_enemies.len();
+            self.dungeon_runs[ri].kills_this_room += (before - alive_n) as u32;
+            let room_idx = self.dungeon_runs[ri].room_idx;
+            let lane = self.dungeon_runs[ri].lane;
+            let occupant = self.dungeon_runs[ri].occupant;
+            let kills = self.dungeon_runs[ri].kills_this_room;
+            let is_boss_room = room_idx + 1 >= DUNGEON_NUM_ROOMS as usize;
+            if !is_boss_room {
+                if kills >= DUNGEON_ROOM_KILLS && alive_n == 0 {
+                    // Cota batida e wave limpa → gate abre, próxima sala.
+                    self.open_dungeon_gate(ri, room_idx);
+                    let next = room_idx + 1;
+                    let ids = if next + 1 >= DUNGEON_NUM_ROOMS as usize {
+                        self.spawn_dungeon_boss_unit(lane)
+                    } else {
+                        self.spawn_dungeon_wave(lane, next, 4)
+                    };
+                    self.dungeon_runs[ri].room_idx = next;
+                    self.dungeon_runs[ri].live_enemies = ids;
+                    self.dungeon_runs[ri].kills_this_room = 0;
+                    self.send_dungeon_room_cleared(occupant, room_idx as u32);
+                } else if alive_n <= 1 && kills + (alive_n as u32) < DUNGEON_ROOM_KILLS {
+                    // Wave quase limpa → próxima onda (3-4, capada pelo que
+                    // falta da cota). Mantém o fluxo contínuo de inimigos.
+                    let mut nw = 3 + (lcg(self.tick as u64 ^ ri as u64) % 2) as u32;
+                    nw = nw.min(DUNGEON_ROOM_KILLS - kills - alive_n as u32);
+                    if nw > 0 {
+                        let mut ids = self.spawn_dungeon_wave(lane, room_idx, nw);
+                        self.dungeon_runs[ri].live_enemies.append(&mut ids);
+                    }
+                }
+            } else if alive_n == 0 {
+                // Boss morto: anuncia vitória + agenda a volta pro mundo.
+                self.dungeon_runs[ri].complete_at = Some(now + DUNGEON_LOOT_GRACE_S);
+                self.send_dungeon_room_cleared(occupant, room_idx as u32);
+                tracing::info!("[dungeon] boss derrotado lane={} — completa em {}s", lane, DUNGEON_LOOT_GRACE_S);
+            }
+        }
+        for sid in completes { self.complete_dungeon_run(sid); }
+    }
+
+    /// Remove o collider de um gate do collider_set (abre fisicamente a passagem).
+    fn open_dungeon_gate(&mut self, run_idx: usize, gate_idx: usize) {
+        let handle = self.dungeon_runs[run_idx].gate_handles
+            .get_mut(gate_idx).and_then(|o| o.take());
+        if let Some(h) = handle {
+            self.physics.collider_set.remove(
+                h, &mut self.physics.island_manager, &mut self.physics.rigid_body_set, false);
+        }
+    }
+
+    fn send_dungeon_room_cleared(&self, sid: SessionId, room_idx: u32) {
+        if let Some(s) = self.sessions.get(&sid) {
+            let _ = s.handle.to_client.send(ServerMessage::DungeonRoomCleared {
+                room_idx, total_rooms: DUNGEON_NUM_ROOMS as u32,
+            });
+        }
+    }
+
+    /// Boss derrotado + grace expirado: manda o client voltar pro mundo e limpa
+    /// a run. O XP/loot do boss já foi concedido no caminho normal de morte.
+    fn complete_dungeon_run(&mut self, sid: SessionId) {
+        if let Some(s) = self.sessions.get(&sid) {
+            let _ = s.handle.to_client.send(ServerMessage::DungeonComplete {
+                world_host: String::new(), world_path: String::new(),
+            });
+        }
+        self.end_dungeon_run(sid);
+        tracing::info!("[dungeon] run completa → DungeonComplete enviado");
+    }
+
+    /// Limpa uma run: remove gates restantes, despawna mobs vivos e libera a lane.
+    /// Chamado no complete e no disconnect.
+    fn end_dungeon_run(&mut self, sid: SessionId) {
+        let Some(pos) = self.dungeon_runs.iter().position(|r| r.occupant == sid) else { return; };
+        let run = self.dungeon_runs.remove(pos);
+        for h in run.gate_handles.into_iter().flatten() {
+            self.physics.collider_set.remove(
+                h, &mut self.physics.island_manager, &mut self.physics.rigid_body_set, false);
+        }
+        let ids: std::collections::HashSet<EntityId> = run.live_enemies.iter().copied().collect();
+        let to_despawn: Vec<(Entity, EntityId)> = self.ecs.query::<&NetId>().iter()
+            .filter(|(_, n)| ids.contains(&n.0))
+            .map(|(e, n)| (e, n.0))
+            .collect();
+        for (e, eid) in to_despawn {
+            self.free_entity_body(e);
+            let _ = self.ecs.despawn(e);
+            self.removed_this_tick.push(eid);
+        }
+        if let Some(slot) = self.dungeon_slots.get_mut(run.lane) {
+            if slot.occupant == Some(sid) { slot.occupant = None; }
+        }
     }
 
     fn alloc_entity_id(&mut self) -> EntityId {
@@ -3083,6 +3872,20 @@ impl GameWorld {
     /// ou posicao de um jogador).
     const ENEMY_SAFE_RADIUS: f32 = 12.0;
 
+    /// Inimigo de TUTORIAL: level 1 (fraco), visual goblin (kind 0), ancorado no
+    /// próprio spawn com leash curto (fica na arena, não persegue pela ilha).
+    fn place_tutorial_enemy(&mut self, pos: Vec2) {
+        let build = crate::enemy_builds::build_for_level(1, crate::enemy_builds::EnemyClass::Sword);
+        let (mut tag, health) = self.build_enemy_tag_from_build(build, pos, 10.0, pos);
+        tag.attack_cooldown = 0.0;
+        let eid = self.alloc_entity_id();
+        let handle = self.spawn_entity_body(pos);
+        self.ecs.spawn((
+            NetId(eid), handle, Position(pos), Velocity(Vec2::ZERO), health,
+            EntityKind::Enemy(0), tag,
+        ));
+    }
+
     /// Cria um inimigo no tile `pos` com kind e cooldown de ataque iniciais.
     fn place_enemy(&mut self, pos: Vec2, kind: u16, attack_cd: f32) {
         let (mut tag, health) = self.build_enemy_tag(kind, Vec2::ZERO, 0.0, pos);
@@ -3098,6 +3901,274 @@ impl GameWorld {
             EntityKind::Enemy(kind),
             tag,
         ));
+    }
+
+    // ── Pesca: peixes do oceano ──────────────────────────────────────────
+
+    /// True se o tile que contém `p` é água. Free helper pra usar dentro de
+    /// loops que já têm `self.ecs` emprestado mutável (não pega `&self`).
+    fn tile_is_water(map: &shared::world_gen::WorldMap, p: Vec2) -> bool {
+        map.get(p.x.floor() as i32, p.y.floor() as i32) == shared::constants::tile_id::WATER
+    }
+
+    /// Sorteia a espécie de um peixe (1-4) com viés pra comuns.
+    fn random_fish_species(seed: u64) -> u16 {
+        let r = lcg_f32(seed);
+        if r < 0.50 { 1 } else if r < 0.78 { 2 } else if r < 0.93 { 3 } else { 4 }
+    }
+
+    /// Acha um tile de água perto de `center` (entre 6 e FISH_VIEW_RADIUS).
+    /// None se não achou em 12 tentativas (player longe de água).
+    fn pick_water_near(&self, center: Vec2, seed: u64) -> Option<Vec2> {
+        let mut s = seed;
+        for _ in 0..12 {
+            s = lcg(s);
+            let ang = lcg_f32(s) * std::f32::consts::TAU;
+            s = lcg(s);
+            let rad = 6.0 + lcg_f32(s) * (shared::FISH_VIEW_RADIUS - 6.0);
+            let p = center + Vec2::new(ang.cos(), ang.sin()) * rad;
+            if self.map.get(p.x.floor() as i32, p.y.floor() as i32)
+                == shared::constants::tile_id::WATER
+            {
+                return Some(p);
+            }
+        }
+        None
+    }
+
+    /// Cria um peixe nadando em `pos` (sem physics body — movido em tick_fish).
+    fn place_fish(&mut self, pos: Vec2, species: u16, seed: u64) {
+        let eid = self.alloc_entity_id();
+        let ang = lcg_f32(lcg(seed)) * std::f32::consts::TAU;
+        self.ecs.spawn((
+            NetId(eid),
+            Position(pos),
+            Velocity(Vec2::ZERO),
+            EntityKind::Fish(species),
+            FishTag {
+                species,
+                wander_dir: Vec2::new(ang.cos(), ang.sin()),
+                wander_timer: 0.0,
+                hooked_by: None,
+            },
+        ));
+    }
+
+    /// Mantém a população de peixes perto dos players, move (wander + atração
+    /// leve pela boia), e detecta a fisgada (peixe encosta na boia → FishingBite).
+    fn tick_fish(&mut self, dt: f32) {
+        // Centros = posições dos players logados (âncora pra spawn/cull).
+        let mut centers: Vec<Vec2> = Vec::new();
+        for s in self.sessions.values() {
+            if !s.logged_in { continue; }
+            if let Some(e) = s.entity {
+                if let Ok(p) = self.ecs.get::<&Position>(e) { centers.push(p.0); }
+            }
+        }
+        if centers.is_empty() { return; }
+
+        // Boias ativas: (sid, pos). Usadas pra atração e (separadamente) fisgada.
+        let bobbers: Vec<(SessionId, Vec2)> = self.sessions.iter()
+            .filter_map(|(sid, s)| s.fishing_bobber.map(|b| (*sid, b)))
+            .collect();
+
+        let tick = self.tick;
+        let cull_sq = shared::FISH_CULL_RADIUS * shared::FISH_CULL_RADIUS;
+        let swim_step = shared::FISH_SWIM_SPEED * dt;
+
+        // ── Move + cull ──────────────────────────────────────────────────
+        let mut to_despawn: Vec<(Entity, EntityId)> = Vec::new();
+        {
+            let map = &self.map;
+            let mut seq: u64 = 0;
+            for (e, (net, pos, vel, tag)) in self.ecs
+                .query_mut::<(&NetId, &mut Position, &mut Velocity, &mut FishTag)>()
+            {
+                // Fisgado: gruda na boia da sessão dona. Se a boia sumiu, solta.
+                if let Some(sid) = tag.hooked_by {
+                    if let Some((_, bpos)) = bobbers.iter().find(|(s, _)| *s == sid) {
+                        let to = *bpos - pos.0;
+                        vel.0 = to * 4.0;
+                        pos.0 += vel.0 * dt;
+                    } else {
+                        tag.hooked_by = None;
+                        vel.0 = Vec2::ZERO;
+                    }
+                    continue;
+                }
+
+                // Re-sorteia direção de wander periodicamente.
+                tag.wander_timer -= dt;
+                if tag.wander_timer <= 0.0 {
+                    seq += 1;
+                    let s = (tick as u64)
+                        .wrapping_mul(0x9E37_79B9)
+                        .wrapping_add((e.id() as u64).wrapping_mul(0x2545_F491))
+                        .wrapping_add(seq);
+                    let ang = lcg_f32(lcg(s)) * std::f32::consts::TAU;
+                    tag.wander_dir = Vec2::new(ang.cos(), ang.sin());
+                    tag.wander_timer = 1.0 + lcg_f32(lcg(s ^ 0xABCD)) * 2.5;
+                }
+
+                // Atração LEVE pela boia mais próxima dentro do raio (+ sorte:
+                // mistura com o wander_dir em vez de mirar direto).
+                let mut dir = tag.wander_dir;
+                let mut nearest: Option<(f32, Vec2)> = None;
+                for (_, bpos) in bobbers.iter() {
+                    let d = bpos.distance(pos.0);
+                    if d < shared::FISH_ATTRACT_RADIUS
+                        && nearest.map_or(true, |(bd, _)| d < bd)
+                    {
+                        nearest = Some((d, *bpos));
+                    }
+                }
+                if let Some((_, bpos)) = nearest {
+                    let to_b = (bpos - pos.0).normalize_or_zero();
+                    let k = shared::FISH_ATTRACT_STRENGTH;
+                    dir = (dir * (1.0 - k) + to_b * k).normalize_or_zero();
+                }
+
+                // Integra mantendo o peixe na água (reflete na borda water/land).
+                let mut newpos = pos.0 + dir * swim_step;
+                if !Self::tile_is_water(map, newpos) {
+                    tag.wander_dir = -tag.wander_dir;
+                    newpos = pos.0 + tag.wander_dir * swim_step;
+                    if !Self::tile_is_water(map, newpos) { newpos = pos.0; }
+                }
+                vel.0 = (newpos - pos.0) / dt.max(1e-4);
+                pos.0 = newpos;
+
+                // Cull: longe de todos os players.
+                let mut min_d_sq = f32::MAX;
+                for c in centers.iter() { min_d_sq = min_d_sq.min(c.distance_squared(pos.0)); }
+                if min_d_sq > cull_sq { to_despawn.push((e, net.0)); }
+            }
+        }
+        for (e, eid) in to_despawn {
+            let _ = self.ecs.despawn(e);
+            self.removed_this_tick.push(eid);
+        }
+
+        // ── Repopula até o alvo ──────────────────────────────────────────
+        let fish_count = self.ecs.query::<&FishTag>().iter().count();
+        let target = (shared::FISH_PER_PLAYER * centers.len()).min(64);
+        if fish_count < target {
+            let missing = target - fish_count;
+            for i in 0..missing {
+                let seed = (tick as u64)
+                    .wrapping_mul(0x2545_F491)
+                    .wrapping_add((i as u64).wrapping_mul(0x9E37_79B9));
+                let c = centers[(seed as usize) % centers.len()];
+                if let Some(p) = self.pick_water_near(c, seed) {
+                    let species = Self::random_fish_species(seed ^ 0xF00D);
+                    self.place_fish(p, species, seed);
+                }
+            }
+        }
+
+        // ── Fisgada: boia sem peixe fisgado pega o peixe livre mais próximo ──
+        let pending: Vec<(SessionId, Vec2)> = self.sessions.iter()
+            .filter(|(_, s)| s.fishing_bobber.is_some() && s.hooked_fish.is_none())
+            .map(|(sid, s)| (*sid, s.fishing_bobber.unwrap()))
+            .collect();
+        for (sid, bpos) in pending {
+            let mut best: Option<(Entity, EntityId, u16, f32)> = None;
+            for (e, (net, pos, tag)) in self.ecs
+                .query::<(&NetId, &Position, &FishTag)>().iter()
+            {
+                if tag.hooked_by.is_some() { continue; }
+                let d = bpos.distance(pos.0);
+                if d <= shared::FISH_HOOK_RADIUS
+                    && best.map_or(true, |(_, _, _, bd)| d < bd)
+                {
+                    best = Some((e, net.0, tag.species, d));
+                }
+            }
+            if let Some((fe, feid, species, _)) = best {
+                if let Ok(mut t) = self.ecs.get::<&mut FishTag>(fe) {
+                    t.hooked_by = Some(sid);
+                }
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    s.hooked_fish = Some(feid);
+                    let _ = s.handle.to_client.send(ServerMessage::FishingBite {
+                        fish_eid: feid,
+                        species,
+                    });
+                }
+            }
+        }
+    }
+
+    /// Solta o peixe fisgado (se houver) sem removê-lo do mundo — volta a nadar.
+    /// Limpa o estado da sessão e o `hooked_by` do peixe.
+    fn release_hooked_fish(&mut self, sid: SessionId) {
+        let feid = self.sessions.get(&sid).and_then(|s| s.hooked_fish);
+        if let Some(feid) = feid {
+            let ent = self.ecs.query::<&NetId>().iter()
+                .find(|(_, n)| n.0 == feid).map(|(e, _)| e);
+            if let Some(e) = ent {
+                if let Ok(mut t) = self.ecs.get::<&mut FishTag>(e) { t.hooked_by = None; }
+            }
+        }
+        if let Some(s) = self.sessions.get_mut(&sid) { s.hooked_fish = None; }
+    }
+
+    /// Player lançou a boia em `pos`. Valida vara equipada + água no alcance,
+    /// e passa a atrair peixes pra esse ponto.
+    fn handle_fishing_cast(&mut self, sid: SessionId, pos: Vec2) {
+        let player_pos = {
+            let Some(s) = self.sessions.get(&sid) else { return };
+            if !s.logged_in { return; }
+            let Some(e) = s.entity else { return };
+            if shared::item_id::tool_kind(s.equipment.tool_rod.unwrap_or(0))
+                != Some(shared::ToolKind::FishingRod)
+            { return; }
+            let Ok(p) = self.ecs.get::<&Position>(e) else { return };
+            p.0
+        };
+        if player_pos.distance(pos) > shared::FISH_CAST_MAX_RANGE { return; }
+        if self.map.get(pos.x.floor() as i32, pos.y.floor() as i32)
+            != shared::constants::tile_id::WATER
+        { return; }
+        // Re-cast solta qualquer peixe que estava fisgado.
+        self.release_hooked_fish(sid);
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.fishing_bobber = Some(pos);
+        }
+    }
+
+    /// Resultado do minigame. success → remove o peixe e concede o item.
+    /// Em qualquer caso limpa a boia e o estado de fisga.
+    fn handle_fishing_reel(&mut self, sid: SessionId, success: bool) {
+        let feid = self.sessions.get(&sid).and_then(|s| s.hooked_fish);
+        let found = feid.and_then(|feid| {
+            self.ecs.query::<(&NetId, &FishTag)>().iter()
+                .find(|(_, (n, _))| n.0 == feid)
+                .map(|(e, (n, t))| (e, n.0, t.species))
+        });
+        if success {
+            if let Some((e, eid, species)) = found {
+                let _ = self.ecs.despawn(e);
+                self.removed_this_tick.push(eid);
+                let item = shared::item_id::fish_item_for_species(species);
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    add_to_inventory(&mut s.inventory, item, 1, None);
+                    s.inventory_dirty = true;
+                }
+            }
+        } else if let Some((e, _, _)) = found {
+            if let Ok(mut t) = self.ecs.get::<&mut FishTag>(e) { t.hooked_by = None; }
+        }
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.hooked_fish = None;
+            s.fishing_bobber = None;
+        }
+    }
+
+    /// Cancela a pesca: solta o peixe fisgado e limpa a boia.
+    fn handle_fishing_cancel(&mut self, sid: SessionId) {
+        self.release_hooked_fish(sid);
+        if let Some(s) = self.sessions.get_mut(&sid) { s.fishing_bobber = None; }
     }
 
     /// Acha um tile de chao aleatorio longe de todos os jogadores e do spawn
@@ -3301,12 +4372,25 @@ impl GameWorld {
                 quests_dirty: false,
                 faction_points: 0,
                 faction_points_last_sent: u32::MAX,
+                fishing_bobber: None,
+                hooked_fish: None,
+                tutorial_slot: None,
+                dungeon_slot: None,
+                pending_dungeon_raid: false,
             },
         );
     }
 
     pub fn on_disconnect(&mut self, id: SessionId) {
         if let Some(s) = self.sessions.remove(&id) {
+            // Tutorial: libera a lane pra outro player poder usar.
+            if let Some(idx) = s.tutorial_slot {
+                if let Some(slot) = self.tutorial_slots.get_mut(idx) {
+                    if slot.occupant == Some(id) { slot.occupant = None; }
+                }
+            }
+            // Dungeon: limpa a run (gates + mobs) e libera a lane.
+            if self.dungeon_mode { self.end_dungeon_run(id); }
             if let Some(e) = s.entity {
                 // Se estava montado num barco, despawna o barco do mundo
                 // (mas o estado ja foi capturado em take_character_for_disconnect
@@ -3347,6 +4431,36 @@ impl GameWorld {
             }
             tracing::info!("{:?} disconnected", s.entity_id);
         }
+    }
+
+    /// Player concluiu o tutorial: marca `last_tutorial_completed` no DB e
+    /// manda o client reconectar no mundo aberto. No-op fora do processo de
+    /// tutorial (TUTORIAL_MODE). host/path vazios → client usa o default de
+    /// produção (/game).
+    fn handle_finish_tutorial(&mut self, sid: SessionId) {
+        if !self.tutorial_mode { return; }
+        let (to_client, name, pool) = {
+            let Some(s) = self.sessions.get(&sid) else { return };
+            if !s.logged_in { return; }
+            let pool = self.auth_ctx.as_ref().map(|c| c.pool.clone());
+            (s.handle.to_client.clone(), s.name.clone(), pool)
+        };
+        let _ = to_client.send(ServerMessage::TutorialComplete {
+            world_host: String::new(),
+            world_path: String::new(),
+        });
+        if let Some(pool) = pool {
+            let name_for_db = name.clone();
+            tokio::spawn(async move {
+                if let Err(e) = sqlx::query(
+                    "UPDATE characters SET last_tutorial_completed = NOW() WHERE name = $1"
+                ).bind(&name_for_db).execute(&pool).await {
+                    tracing::warn!("[tutorial] falha ao marcar last_tutorial_completed de '{}': {}",
+                        name_for_db, e);
+                }
+            });
+        }
+        tracing::info!("[tutorial] '{}' concluiu o tutorial → TutorialComplete enviado", name);
     }
 
     pub fn on_message(&mut self, id: SessionId, msg: ClientMessage) {
@@ -3430,13 +4544,46 @@ impl GameWorld {
                     self.send_chat_to(id, "[Sistema] Todos os mobs despawnados. Spawn zones reabastecendo...");
                     return;
                 }
+                if trimmed == "/who" {
+                    let mult = crate::economy::xp_multiplier();
+                    let mut list: Vec<(String, u32)> = self.sessions.values()
+                        .filter(|s| s.logged_in && !s.name.is_empty())
+                        .map(|s| (s.name.clone(), shared::level_of_xp_with_mult(s.xp, mult)))
+                        .collect();
+                    list.sort();
+                    let txt = if list.is_empty() {
+                        "[/who] ninguém online".to_string()
+                    } else {
+                        format!("[/who] {} online: {}", list.len(),
+                            list.iter().map(|(n, l)| format!("{} (lv{})", n, l))
+                                .collect::<Vec<_>>().join(", "))
+                    };
+                    self.send_chat_to(id, &txt);
+                    return;
+                }
+                if trimmed == "/tutorial" {
+                    // Replay do tutorial: só no mundo aberto. Manda o client
+                    // reconectar no servidor de tutorial.
+                    if !self.tutorial_mode {
+                        if let Some(s) = self.sessions.get(&id) {
+                            let _ = s.handle.to_client.send(ServerMessage::GoToTutorial {
+                                host: String::new(), path: String::new(),
+                            });
+                        }
+                    }
+                    return;
+                }
                 let from = self
                     .sessions
                     .get(&id)
                     .and_then(|s| s.entity)
                     .and_then(|e| self.ecs.get::<&PlayerTag>(e).ok().map(|p| p.name.clone()))
                     .unwrap_or_else(|| "?".into());
+                // Tutorial: chat fica restrito à própria lane (isolamento) —
+                // como cada lane tem 1 player, na prática só ecoa pro autor.
+                let sender_slot = self.sessions.get(&id).and_then(|s| s.tutorial_slot);
                 for s in self.sessions.values() {
+                    if self.tutorial_mode && s.tutorial_slot != sender_slot { continue; }
                     let _ = s.handle.to_client.send(ServerMessage::Chat {
                         from: from.clone(),
                         text: text.clone(),
@@ -3456,6 +4603,24 @@ impl GameWorld {
             }
             ClientMessage::Interact { target_eid } => {
                 self.handle_interact(id, target_eid);
+            }
+            ClientMessage::FishingCast { pos } => {
+                self.handle_fishing_cast(id, pos);
+            }
+            ClientMessage::FishingReel { success } => {
+                self.handle_fishing_reel(id, success);
+            }
+            ClientMessage::FishingCancel => {
+                self.handle_fishing_cancel(id);
+            }
+            ClientMessage::FinishTutorial => self.handle_finish_tutorial(id),
+            ClientMessage::SelectDungeonMode { raid } => {
+                // Só faz sentido no processo de dungeon, antes do spawn.
+                if self.dungeon_mode {
+                    if let Some(s) = self.sessions.get_mut(&id) {
+                        s.pending_dungeon_raid = raid;
+                    }
+                }
             }
             ClientMessage::AcceptQuest { quest_id } => {
                 self.handle_accept_quest(id, quest_id);
@@ -3631,7 +4796,11 @@ impl GameWorld {
                 match found {
                     Some(s) => s,
                     None => {
-                        tracing::warn!("AdminCommand: target_char '{}' nao esta online", name);
+                        // OFFLINE: aplica direto no DB por nome (level/xp/gold/pontos).
+                        // Próximo login do char recarrega do DB (CharReloadedForSelect).
+                        self.admin_db_apply(name.clone(), action);
+                        self.send_chat_to(sid, &format!(
+                            "[ADMIN] '{}' offline → aplicado no DB (vale no próximo login).", name));
                         return;
                     }
                 }
@@ -3698,6 +4867,52 @@ impl GameWorld {
         }
     }
 
+    /// Aplica uma AdminAction direto no DB por NOME (char OFFLINE). Suporta
+    /// level/xp/gold/pontos de atributo+skill; ações de runtime (item/heal/
+    /// clear_inv) só valem online. O próximo login do char recarrega do DB.
+    fn admin_db_apply(&self, name: String, action: shared::protocol::AdminAction) {
+        use shared::protocol::AdminAction::*;
+        let Some(pool) = self.auth_ctx.as_ref().map(|c| c.pool.clone()) else {
+            tracing::warn!("AdminCommand offline '{}': sem pool DB", name);
+            return;
+        };
+        let mult = crate::economy::xp_multiplier();
+        tokio::spawn(async move {
+            let res = match action {
+                SetXp { xp } => sqlx::query("UPDATE characters SET xp=$1 WHERE name=$2")
+                    .bind(xp as i64).bind(&name).execute(&pool).await,
+                SetGold { gold } => sqlx::query("UPDATE characters SET gold=$1 WHERE name=$2")
+                    .bind(gold.max(0)).bind(&name).execute(&pool).await,
+                GrantSp { amount } => sqlx::query(
+                    "UPDATE characters SET skill_points_earned=skill_points_earned+$1 WHERE name=$2")
+                    .bind(amount as i32).bind(&name).execute(&pool).await,
+                GrantStatPoints { amount } => sqlx::query(
+                    "UPDATE characters SET unspent_points=unspent_points+$1 WHERE name=$2")
+                    .bind(amount as i32).bind(&name).execute(&pool).await,
+                SetLevel { level } => {
+                    let lvl = level.clamp(1, shared::CHAR_LEVEL_CAP);
+                    let xp = shared::xp_for_level_with_mult(lvl, mult);
+                    let g = lvl.saturating_sub(1);
+                    sqlx::query("UPDATE characters SET xp=$1, unspent_points=$2, \
+                        skill_points_earned=$3, skill_points_spent=0, \
+                        allocated_points='{0,0,0,0,0,0}' WHERE name=$4")
+                        .bind(xp as i64)
+                        .bind((g * shared::POINTS_PER_LEVEL) as i32)
+                        .bind((g * shared::SP_PER_LEVEL) as i32)
+                        .bind(&name).execute(&pool).await
+                }
+                other => {
+                    tracing::warn!("AdminCommand offline {:?} não suportado p/ char offline", other);
+                    return;
+                }
+            };
+            match res {
+                Ok(r) => tracing::info!("AdminCommand offline DB: '{}' rows={}", name, r.rows_affected()),
+                Err(e) => tracing::error!("AdminCommand offline DB '{}' err: {e:?}", name),
+            }
+        });
+    }
+
     /// Atualiza o visual do player (wardrobe in-game). Sobrescreve o
     /// VisualConfig no Session — o proximo snapshot ja replica o estado novo
     /// pra todos os clientes (a flag dirty é via comparacao no client; server
@@ -3726,7 +4941,7 @@ impl GameWorld {
     /// Player downed escolheu respawnar direto na cidade — pula o timer de
     /// stand-up. HP restaurado pra max, posicao = spawn_tile, downed limpa.
     fn handle_respawn_at_city(&mut self, sid: SessionId) {
-        let (entity, hp_max, name, faction) = {
+        let (entity, hp_max, name, faction, dungeon_slot) = {
             let Some(session) = self.sessions.get_mut(&sid) else {
                 tracing::warn!("RespawnAtCity ignorado: sessao {:?} nao existe", sid);
                 return;
@@ -3747,9 +4962,20 @@ impl GameWorld {
             session.downed = false;
             session.downed_heal_timer = 0.0;
             session.downed_hp = 0;
-            (entity, hp_max, session.name.clone(), session.faction)
+            (entity, hp_max, session.name.clone(), session.faction, session.dungeon_slot)
         };
-        let spawn = {
+        // Tutorial: respawna na área do Matteo. Dungeon: respawna no INÍCIO
+        // da dungeon (vestíbulo da própria lane) — o countdown da run continua
+        // correndo. Mundo: cidade-sede da facção.
+        let spawn = if self.tutorial_mode {
+            Vec2::new(TUTORIAL_AREA.0, TUTORIAL_AREA.1)
+        } else if self.dungeon_mode {
+            let base = dungeon_slot
+                .and_then(|i| self.dungeon_slots.get(i))
+                .map(|s| s.base)
+                .unwrap_or(Vec2::new(DUNGEON_ORIGIN.0 as f32, DUNGEON_ORIGIN.1 as f32));
+            Vec2::new(base.x + DUNGEON_ENTRY.0, base.y + DUNGEON_ENTRY.1)
+        } else {
             let t = self.map.faction_spawn_tile(faction);
             Vec2::new(t.0 as f32 + 0.5, t.1 as f32 + 0.5)
         };
@@ -3793,6 +5019,31 @@ impl GameWorld {
         let row = match self.characters.get(&name).cloned() {
             Some(r) => r,
             None => {
+                // Char não está no cache local. Pode ter sido criado em OUTRO
+                // processo (char novo criado no :9000, selecionado aqui no
+                // tutorial :9001). Recarrega do DB async e re-tenta o spawn.
+                if let Some(ctx) = self.auth_ctx.clone() {
+                    let to_client = self.sessions.get(&sid).map(|s| s.handle.to_client.clone());
+                    let name2 = name.clone();
+                    let succ = crate::auth::AuthSuccess { account_id, username, class };
+                    tracing::info!("SelectCharacter '{}': fora do cache — recarregando do DB", name);
+                    tokio::spawn(async move {
+                        match crate::persistence::load_all(&ctx.pool).await {
+                            Ok(map) => {
+                                if let Some(r) = map.get(&name2).cloned() {
+                                    let _ = ctx.tx.send(IncomingMessage::CharReloadedForSelect(
+                                        sid, Box::new(r), succ));
+                                    return;
+                                }
+                            }
+                            Err(e) => tracing::error!("SelectCharacter reload load_all err: {e:?}"),
+                        }
+                        if let Some(tc) = to_client {
+                            let _ = tc.send(ServerMessage::Kick { reason: "char nao encontrado".into() });
+                        }
+                    });
+                    return;
+                }
                 tracing::warn!("SelectCharacter '{}': char nao encontrado", name);
                 let _ = self.sessions.get(&sid).map(|s| s.handle.to_client.send(
                     ServerMessage::Kick { reason: "char nao encontrado".into() }));
@@ -3803,6 +5054,16 @@ impl GameWorld {
             tracing::warn!("SelectCharacter '{}': char nao pertence a acc {}", name, account_id);
             let _ = self.sessions.get(&sid).map(|s| s.handle.to_client.send(
                 ServerMessage::Kick { reason: "char nao autorizado".into() }));
+            return;
+        }
+        // Gate de tutorial: no MUNDO, char que nunca concluiu o tutorial é
+        // redirecionado pra lá (vale pra char novo E existente). Quem concluiu
+        // (ou pulou) entra normal. O processo de tutorial não aplica o gate.
+        if !self.tutorial_mode && !self.dungeon_mode && row.last_tutorial_completed.is_none()
+            && std::env::var("SKIP_TUTORIAL_GATE").is_err() {
+            tracing::info!("SelectCharacter '{}': tutorial nao concluido → GoToTutorial", row.name);
+            let _ = self.sessions.get(&sid).map(|s| s.handle.to_client.send(
+                ServerMessage::GoToTutorial { host: String::new(), path: String::new() }));
             return;
         }
         let success = crate::auth::AuthSuccess { account_id, username, class };
@@ -3832,10 +5093,11 @@ impl GameWorld {
                 ServerMessage::CharacterCreationFailed { reason: "nome so letras/numeros/_".into() }));
             return;
         }
-        // Whitelist de armas iniciais — item_ids reais do shared::constants::items.
-        // 3=Sword, 6=Staff, 12=Dagger, 13=GreatSword, 14=Bow, 15=Wand, 25=Axe, 26=Spear
+        // Arma inicial NÃO é mais escolhida na criação — o tutorial entrega a
+        // arma T1. 0 = sem arma. (Mantém compat: se um client antigo mandar um
+        // id de arma válido, ainda aceita.)
         const ALLOWED_WEAPONS: &[u16] = &[3, 6, 12, 13, 14, 15, 25, 26];
-        if !ALLOWED_WEAPONS.contains(&starting_weapon) {
+        if starting_weapon != 0 && !ALLOWED_WEAPONS.contains(&starting_weapon) {
             let _ = self.sessions.get(&sid).map(|s| s.handle.to_client.send(
                 ServerMessage::CharacterCreationFailed { reason: "arma invalida".into() }));
             return;
@@ -3931,6 +5193,31 @@ impl GameWorld {
         // Sessao ja foi auth'd no Login original — apenas reenvia a lista
         // atualizada com o novo char incluido.
         self.send_character_list(sid, success.account_id);
+    }
+
+    /// Char recarregado do DB pra um SelectCharacter que deu cache-miss (criado
+    /// em outro processo). Insere no cache, valida o dono e spawna direto.
+    pub fn on_char_reloaded_for_select(
+        &mut self,
+        sid: SessionId,
+        row: crate::persistence::CharacterRow,
+        success: crate::auth::AuthSuccess,
+    ) {
+        self.characters.insert(row.name.clone(), row.clone());
+        if row.account_id != Some(success.account_id) {
+            tracing::warn!("SelectCharacter(reload) '{}': char nao pertence a acc {}",
+                row.name, success.account_id);
+            let _ = self.sessions.get(&sid).map(|s| s.handle.to_client.send(
+                ServerMessage::Kick { reason: "char nao autorizado".into() }));
+            return;
+        }
+        if !self.tutorial_mode && !self.dungeon_mode && row.last_tutorial_completed.is_none()
+            && std::env::var("SKIP_TUTORIAL_GATE").is_err() {
+            let _ = self.sessions.get(&sid).map(|s| s.handle.to_client.send(
+                ServerMessage::GoToTutorial { host: String::new(), path: String::new() }));
+            return;
+        }
+        self.spawn_for_char(sid, success, row);
     }
 
     /// Cast de skill ativa. Valida tudo, drena cost, dispara efeito.
@@ -5013,6 +6300,14 @@ impl GameWorld {
         // Quests EXPLORE: marca READY quando o player chega na área-alvo.
         self.tick_quest_explore();
 
+        // Tutorial: auto-grant da 1a quest, auto-avanço da cadeia e dummy de treino.
+        if self.tutorial_mode { self.tick_tutorial_quests(); }
+        if self.dungeon_mode { self.tick_dungeon_runs(); }
+
+        // Peixes do oceano: mantém população perto dos players, move wander +
+        // atração pela boia, detecta fisgada. Só faz algo se houver água.
+        self.tick_fish(dt);
+
         // Respawn procedural e desabilitado quando o mapa vem de MapFile
         // (o editor define exatamente quais inimigos existem e onde).
         if !self.from_mapfile {
@@ -5671,12 +6966,21 @@ impl GameWorld {
                 continue;
             }
             // Stagger: durante hurt_until, vel=0 e skipa o resto da IA.
-            if enemy.hurt_until > now_sim {
+            // BOSS tem HYPERARMOR: não trava em stagger — senão spam de atk
+            // stun-locka e ele NUNCA chega a esquivar/bloquear/responder.
+            // Knockback e stun (Shield Bash) continuam valendo pra ele.
+            if enemy.hurt_until > now_sim && !enemy.is_boss {
                 vel.0 = Vec2::ZERO;
                 continue;
             }
             // Stun (Shield Bash 1003): enemy parado, sem ataque/movimento.
             if enemy.stunned_until > now_sim {
+                vel.0 = Vec2::ZERO;
+                continue;
+            }
+            // Leap (boss, Leap Strike): NO AR — posição integrada no pass de
+            // leap (igual player). IA não anda/ataca/decide durante o pulo.
+            if enemy.leap_until > now_sim {
                 vel.0 = Vec2::ZERO;
                 continue;
             }
@@ -5758,6 +7062,53 @@ impl GameWorld {
                         enemy.aggro_timer = 0.0;
                     }
                     let to_player = (*ppos - pos.0).try_normalize().unwrap_or(Vec2::X);
+                    let perp = Vec2::new(-to_player.y, to_player.x);
+                    // ── BOSS AI "PvP-like": dash, esquiva, block, strafe ────
+                    // Gated em is_boss — mobs comuns mantêm a IA barata.
+                    if enemy.is_boss {
+                        // Mid-dash: direção travada, velocidade alta, sem atacar.
+                        if now_sim < enemy.ai_dash_until {
+                            vel.0 = enemy.ai_dash_dir * 11.0;
+                            continue;
+                        }
+                        // GUARD-WALK em andamento: avançando ATRÁS DA GUARDA
+                        // (-75% dano, ver damage_events). CHEGOU em range de
+                        // golpe → baixa a guarda e ataca NA HORA (cai pro fluxo
+                        // de ataque deste mesmo tick). Senão segue marchando.
+                        if now_sim < enemy.ai_block_until {
+                            if dist <= enemy.attack_range {
+                                enemy.ai_block_until = now_sim; // baixa a guarda
+                                enemy.attack_cooldown = 0.0;    // golpe imediato
+                            } else {
+                                vel.0 = to_player * (enemy.locomotor_speed * 0.85);
+                                continue;
+                            }
+                        }
+                        // Decai o contador de hits recentes (alimenta block e
+                        // esquiva REATIVOS). Decay LENTO (0.3/s): com decay 1.0
+                        // o threshold de 1.5 exigia 2 hits em <0.5s — block era
+                        // matematicamente impossível pra armas normais (~1.6s
+                        // entre swings). Agora 2 hits em ≤~3s disparam a guarda.
+                        enemy.ai_recent_hits = (enemy.ai_recent_hits - 0.3 * dt).max(0.0);
+                        // (Dashes REMOVIDOS do boss — feedback: boss é lento e
+                        // parrudo; a mobilidade dele é o Leap Strike. A defesa
+                        // agora é a STAGGER BAR: hyperarmor até a barra quebrar
+                        // → stun de punição → recarrega. Ver damage_events.)
+                        // GUARD-WALK (escudeiro): só na APROXIMAÇÃO FINAL
+                        //    (até 4.5 tiles) — ergue o escudo e marcha firme
+                        //    (-75% dano, 0.85× speed) até o range de golpe,
+                        //    aí baixa e ataca. Longe disso anda a velocidade
+                        //    CHEIA (sem guarda) — kitar tem que custar chão,
+                        //    e o Leap pune quem abre distância (cd próprio).
+                        if dist > enemy.attack_range + 0.4 && dist < 4.5
+                            && now_sim >= enemy.ai_block_cd_until {
+                            enemy.ai_block_until = now_sim + 2.0;
+                            enemy.ai_block_cd_until = now_sim + 4.0;
+                            enemy.parry_flash_pending = true; // "ergueu o escudo"
+                            vel.0 = to_player * (enemy.locomotor_speed * 0.85);
+                            continue;
+                        }
+                    }
                     // Comportamento de movimento — kite_dist e speed cacheados
                     // no EnemyTag a partir do EnemyBuild (procedural por classe).
                     // Melee usa "stand_dist" = attack_range - 0.3 pra parar dentro
@@ -5769,24 +7120,46 @@ impl GameWorld {
                         else                      { Vec2::ZERO }
                     } else {
                         let stand = (enemy.attack_range - 0.3).max(0.8);
-                        if dist > stand + 0.3      { to_player }   // longe → aproxima
+                        if dist > stand + 0.3 {
+                            // Boss aproxima em zigue (weave); mob comum em reta.
+                            if enemy.is_boss {
+                                (to_player + perp * enemy.ai_strafe_sign * 0.5)
+                                    .try_normalize().unwrap_or(to_player)
+                            } else { to_player }
+                        }
                         else if dist < stand - 0.3 { -to_player }  // muito perto → afasta
-                        else                       { Vec2::ZERO }  // em range, parado
+                        else if enemy.is_boss {
+                            // Em range esperando cooldown: strafe circular em
+                            // volta do player (flipa o lado num timer).
+                            if now_sim >= enemy.ai_strafe_flip_at {
+                                enemy.ai_strafe_sign = -enemy.ai_strafe_sign;
+                                enemy.ai_strafe_flip_at = now_sim + 0.9
+                                    + lcg_f32(lcg(self.tick as u64 ^ net.0.0 as u64)) * 1.1;
+                            }
+                            perp * enemy.ai_strafe_sign * 0.85
+                        }
+                        else { Vec2::ZERO }                        // em range, parado
                     };
                     vel.0 = move_dir * enemy.locomotor_speed;
 
                     let attack_range = enemy.attack_range;
-                    if dist < attack_range && enemy.attack_cooldown <= 0.0 {
-                        enemy.aggro_timer = 0.0; // reset ao atacar com sucesso
-                        enemy.attack_cooldown = enemy.attack_cooldown_base;
-                        enemy.attack_pending = true; // cliente toca anim
-
+                    // Boss "engaja" de mais longe: tenta skills até 7 tiles
+                    // (cada skill valida o próprio range) — luta com o kit
+                    // inteiro em vez de só auto-attack colado.
+                    let engage_range = if enemy.is_boss { attack_range.max(8.0) } else { attack_range };
+                    let can_auto = enemy.attack_cooldown <= 0.0;
+                    // BOSS: skills têm cadência PRÓPRIA (cada uma tem o seu cd)
+                    // — não esperam o ciclo do auto-attack (2.85s). Sem isso o
+                    // kit quase não saía e a luta ficava passiva: agora o Leap
+                    // pune o kite NA HORA, Shield Bash sai assim que você cola.
+                    if dist < engage_range && (can_auto || enemy.is_boss) {
                         // Tenta casting de skill ANTES de fall-through pra
                         // auto-attack. Skill eligibility check (sem borrow
                         // self): cd ready, mp ok, alvo dentro de range. No
                         // design novo (M13) todas as skills são universais
                         // — sem mais check de usable_with.
                         let mut chose_skill = false;
+                        let mut chosen_skill_id = 0u32;
                         let weapon_id = enemy.equipment.weapon.unwrap_or(0);
                         let _prof = shared::Proficiency::from_item(weapon_id).as_db_str();
                         for ls in &enemy.learned_skills {
@@ -5803,9 +7176,28 @@ impl GameWorld {
                             // Skill apta — registra intent e pula auto-attack.
                             enemy_cast_intents.push((net.0, pos.0, *ppos));
                             chose_skill = true;
+                            chosen_skill_id = ls.skill_id;
                             break;
                         }
-                        if chose_skill { continue; }
+                        if chose_skill {
+                            enemy.aggro_timer = 0.0;
+                            // Boss: GCD curto pós-skill (a anim respira mas o
+                            // ritmo do auto não é resetado pro ciclo inteiro).
+                            enemy.attack_cooldown = if enemy.is_boss { 0.8 }
+                                else { enemy.attack_cooldown_base };
+                            // Leap Strike (1001) NÃO toca swing — a anim é o
+                            // próprio arco do pulo (leap_y), igual ao player.
+                            enemy.attack_pending = chosen_skill_id != 1001;
+                            enemy.attack_dir = to_player;
+                            continue;
+                        }
+                        // Auto-attack só com o ciclo pronto e dentro do range
+                        // REAL da arma (boss fora disso: re-tenta próximo tick).
+                        if !can_auto || dist >= attack_range { continue; }
+                        enemy.aggro_timer = 0.0; // reset ao atacar com sucesso
+                        enemy.attack_cooldown = enemy.attack_cooldown_base;
+                        enemy.attack_pending = true; // cliente toca anim
+                        enemy.attack_dir = to_player;
                         if enemy.is_melee {
                             // Melee enemy: cone de dano direto na frente, sem projetil.
                             // O snapshot leva attack_pending pra cliente animar.
@@ -6305,6 +7697,60 @@ impl GameWorld {
                 if s.logged_in {
                     let _ = s.handle.to_client.send(fx.clone());
                 }
+            }
+        }
+
+        // Leap de ENEMIES (boss Leap Strike) — mesma mecânica do player:
+        // lerp da posição durante o arco; no pouso, AoE nos PLAYERS no raio.
+        let mut enemy_leap_landings: Vec<(EntityId, Vec2, i32, f32)> = Vec::new();
+        for (_, (net, tag, pos, ph)) in self.ecs
+            .query_mut::<(&NetId, &mut EnemyTag, &mut Position, &shared::PhysicsHandle)>()
+        {
+            if tag.leap_until <= 0.0 { continue; }
+            let leap_start = tag.leap_until - LEAP_DURATION;
+            let elapsed = now_sim - leap_start;
+            if now_sim < tag.leap_until {
+                let t = (elapsed / LEAP_DURATION).clamp(0.0, 1.0);
+                let p = tag.leap_start_pos.lerp(tag.leap_target, t);
+                pos.0 = p;
+                if let Some(rb) = self.physics.rigid_body_set.get_mut(ph.0) {
+                    rb.set_translation([p.x, p.y].into(), true);
+                    rb.set_linvel([0.0, 0.0].into(), true);
+                }
+            } else {
+                let landing = tag.leap_target;
+                pos.0 = landing;
+                if let Some(rb) = self.physics.rigid_body_set.get_mut(ph.0) {
+                    rb.set_translation([landing.x, landing.y].into(), true);
+                    rb.set_linvel([0.0, 0.0].into(), true);
+                }
+                enemy_leap_landings.push((net.0, landing, tag.leap_damage, tag.leap_radius));
+                tag.leap_until = 0.0;
+                tag.leap_damage = 0;
+                tag.leap_radius = 0.0;
+            }
+        }
+        // AoE do pouso do boss: dano + knockback nos players (sem stun — o
+        // enemy-cast não aplica status em players, consistente com o resto).
+        for (owner_eid, landing, damage, radius) in enemy_leap_landings {
+            if radius <= 0.0 { continue; }
+            let players = self.find_players_in_radius(landing, radius);
+            for pn in &players {
+                let hd = calc_hurt_dir_from_eid(&self.ecs, *pn, landing);
+                self.pending_skill_hits.push(PendingSkillHit {
+                    target_net: *pn, damage, attacker_net: owner_eid,
+                    hurt_dir: hd, is_crit: false, from_player: false,
+                    knockback: 1.5,
+                });
+            }
+            // Explosão de impacto no pouso (mesmo FX do player).
+            let fx = ServerMessage::SkillCastFx {
+                skill_id: 1001, caster_pos: landing, target_pos: landing,
+                target_eid: None, caster_eid: Some(owner_eid),
+                chain_points: None,
+            };
+            for s in self.sessions.values() {
+                if s.logged_in { let _ = s.handle.to_client.send(fx.clone()); }
             }
         }
 
@@ -6947,6 +8393,8 @@ impl GameWorld {
         self.crit_this_tick.clear();
         self.damage_this_tick.clear();
         self.attacker_weapon_this_tick.clear();
+        // Dano causado por ENEMIES neste tick — lifesteal do boss (25%).
+        let mut enemy_dealt: HashMap<EntityId, i32> = HashMap::new();
         for (entity, target_id, dmg, attacker_id, attacker_is_player, hurt_dir, is_crit, attack_info, kb_strength) in damage_events {
             // Resistencia do alvo reduz dano recebido (min 1).
             let (target_defense, target_dmg_reduction_pct) = {
@@ -6968,6 +8416,22 @@ impl GameWorld {
             let total_resist = (def_resist_pct + target_dmg_reduction_pct).min(0.90);
             let mut dmg = ((dmg as f32) * (1.0 - total_resist)).round() as i32;
             dmg = dmg.max(1);
+
+            // Boss bloqueando (AI PvP): -75% de dano + flash de parry no
+            // snapshot (feedback visual de "blocked!"). Também alimenta o
+            // contador de hits recentes que dispara o block reativo.
+            if let Ok(mut btag) = self.ecs.get::<&mut EnemyTag>(entity) {
+                if btag.is_boss {
+                    btag.ai_recent_hits += 1.0;
+                    if self.sim_time_s < btag.ai_block_until {
+                        dmg = ((dmg as f32) * 0.25).round().max(1.0) as i32;
+                        btag.parry_flash_pending = true;
+                    }
+                    // (Stagger bar REMOVIDA — boss tem hyperarmor permanente,
+                    // nunca flincha nem toma stun de quebra. Stun de skill
+                    // tipo Shield Bash continua valendo via stunned_until.)
+                }
+            }
 
             // Iron Will passive (Sword T4): se alvo eh player com rank>0
             // E HP <= 30% do max → -30% dmg recebido.
@@ -7227,6 +8691,10 @@ impl GameWorld {
                     kill_credits.insert(target_id, attacker_id);
                 }
             }
+            // Registra dano de enemy → lifesteal de boss aplicado pós-loop.
+            if !attacker_is_player {
+                *enemy_dealt.entry(attacker_id).or_insert(0) += dmg;
+            }
             // Healing Touch (1052) — Staff T2 P: auto-attacks healam self
             // 1%/rank do dmg dealt. Aplica em damage events de player → enemy.
             if attacker_is_player {
@@ -7259,7 +8727,12 @@ impl GameWorld {
             if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(entity) {
                 tag.hurt_until = hurt_until_ts;
                 tag.hurt_dir   = hurt_dir;
-                if kb_active {
+                // BOSS: hyperarmor de knockback — só hits PESADOS (skills com
+                // kb >= 1.0, ex Shield Bash) empurram. O shove do auto-attack
+                // (0.3-0.6) NÃO trava a IA dele — senão spam de ataque deixa
+                // ele knockback-locked e ele nunca bloqueia/esquiva/reage.
+                let kb_immune = tag.is_boss && kb_strength < 1.0;
+                if kb_active && !kb_immune {
                     tag.knockback_until = kb_until_ts;
                     tag.knockback_vel   = kb_vel;
                 }
@@ -7315,6 +8788,18 @@ impl GameWorld {
         for (e, eid) in hit_projs {
             let _ = self.ecs.despawn(e);
             self.removed_this_tick.push(eid);
+        }
+
+        // Lifesteal de BOSS (AI PvP): hits do boss curam 25% do dano causado
+        // — "roubo de vida com ataque". Pressiona o player a não trocar burro.
+        if !enemy_dealt.is_empty() {
+            for (_, (net, hp, tag)) in self.ecs.query_mut::<(&NetId, &mut Health, &EnemyTag)>() {
+                if !tag.is_boss || tag.dead { continue; }
+                if let Some(d) = enemy_dealt.get(&net.0) {
+                    let heal = ((*d as f32) * 0.25).round() as i32;
+                    if heal > 0 { hp.current = (hp.current + heal).min(hp.max); }
+                }
+            }
         }
 
         // ── H: morte de inimigos → loot ───────────────────────────────────────
@@ -7711,8 +9196,14 @@ impl GameWorld {
             Some(s) => (s.entity_id, s.faction),
             None => return,
         };
-        let spawn_tile = self.map.faction_spawn_tile(faction);
-        let spawn = Vec2::new(spawn_tile.0 as f32 + 0.5, spawn_tile.1 as f32 + 0.5);
+        // Tutorial: respawna na área do Matteo (depois da pedra, perto da arena) —
+        // NÃO na cidade-sede do mundo.
+        let spawn = if self.tutorial_mode {
+            Vec2::new(TUTORIAL_AREA.0, TUTORIAL_AREA.1)
+        } else {
+            let spawn_tile = self.map.faction_spawn_tile(faction);
+            Vec2::new(spawn_tile.0 as f32 + 0.5, spawn_tile.1 as f32 + 0.5)
+        };
         let handle = self.spawn_entity_body(spawn);
         let e = self.ecs.spawn((
             NetId(entity_id),
@@ -7731,6 +9222,9 @@ impl GameWorld {
 
     pub fn send_snapshots(&mut self) {
         // Coleta attack_pending dos inimigos e zera pra mandar 1 vez só.
+        // Junto vai a direção do golpe (attack_dir) — cliente seta facing
+        // do swing pra MIRAR O ALVO (boss strafando olhava pro lado).
+        let mut enemy_aim_dirs: HashMap<EntityId, [f32; 2]> = HashMap::new();
         let attacking_ids: std::collections::HashSet<EntityId> = self
             .ecs
             .query::<(&NetId, &mut EnemyTag)>()
@@ -7738,6 +9232,7 @@ impl GameWorld {
             .filter_map(|(_, (net, t))| {
                 if t.attack_pending {
                     t.attack_pending = false;
+                    enemy_aim_dirs.insert(net.0, [t.attack_dir.x, t.attack_dir.y]);
                     Some(net.0)
                 } else { None }
             })
@@ -7773,6 +9268,18 @@ impl GameWorld {
         // Drena parry_flash_pending no mesmo passo — uma vez por tick.
         let mut player_overlay: HashMap<EntityId, PlayerOverlay> = HashMap::new();
         let mut parry_flash_ids: std::collections::HashSet<EntityId> = std::collections::HashSet::new();
+        // Bosses: drena parry flash (block) e dash anim deste tick.
+        let mut enemy_dash_anim_ids: std::collections::HashSet<EntityId> = std::collections::HashSet::new();
+        for (_, (net, tag)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag)>() {
+            if tag.parry_flash_pending {
+                tag.parry_flash_pending = false;
+                parry_flash_ids.insert(net.0);
+            }
+            if tag.dash_anim_pending {
+                tag.dash_anim_pending = false;
+                enemy_dash_anim_ids.insert(net.0);
+            }
+        }
         let now_for_cast = self.sim_time_s;
         for s in self.sessions.values_mut() {
             if !s.logged_in { continue; }
@@ -7790,6 +9297,23 @@ impl GameWorld {
             let mut buffs_mask: u8 = 0;
             if s.bloodthirst_until  > now_for_cast { buffs_mask |= shared::components::buffs_mask::BLOODTHIRST;  }
             if s.hunters_mark_until > now_for_cast { buffs_mask |= shared::components::buffs_mask::HUNTERS_MARK; }
+            if let Some(ring_id) = s.equipment.ring {
+                match ring_id {
+                    shared::constants::item_id::RING_TIDE => {
+                        buffs_mask |= shared::components::buffs_mask::AURA_TIDE;
+                    }
+                    shared::constants::item_id::RING_IGNITION => {
+                        buffs_mask |= shared::components::buffs_mask::AURA_IGNITION;
+                    }
+                    shared::constants::item_id::RING_MIST => {
+                        buffs_mask |= shared::components::buffs_mask::AURA_MIST;
+                    }
+                    shared::constants::item_id::RING_TEMPEST => {
+                        buffs_mask |= shared::components::buffs_mask::AURA_TEMPEST;
+                    }
+                    _ => {}
+                }
+            }
             player_overlay.insert(s.entity_id, PlayerOverlay {
                 weapon_id: s.equipment.weapon,
                 offhand_id: s.equipment.offhand,
@@ -7834,6 +9358,15 @@ impl GameWorld {
                 if y > 0.01 {
                     leap_y_map.insert(s.entity_id, y);
                 }
+            }
+        }
+        // Enemies em leap (boss Leap Strike) — mesmo arco visual do player.
+        for (_, (net, tag)) in self.ecs.query::<(&NetId, &EnemyTag)>().iter() {
+            if tag.leap_until > now_sim_for_status {
+                let elapsed = LEAP_DURATION_SNAP - (tag.leap_until - now_sim_for_status);
+                let t = (elapsed / LEAP_DURATION_SNAP).clamp(0.0, 1.0);
+                let y = 4.0 * LEAP_PEAK_HEIGHT * t * (1.0 - t);
+                if y > 0.01 { leap_y_map.insert(net.0, y); }
             }
         }
 
@@ -7881,6 +9414,7 @@ impl GameWorld {
                         EntityKind::Portal      => "Portal".to_string(),
                         EntityKind::Boat(_)     => "Boat".to_string(),
                         EntityKind::CannonBomb  => "CannonBomb".to_string(),
+                        EntityKind::Fish(_)     => "Fish".to_string(),
                     },
                     pos: pos.0,
                     vel: vel.0,
@@ -7890,6 +9424,8 @@ impl GameWorld {
                         .or_else(|| vtag.map(|v| v.name.clone()))
                         .or_else(|| wtag.map(|w| w.name.clone()))
                         .or_else(|| etag.map(|t| {
+                            // Boss com nome custom (ex "Cavaleiro Radiante").
+                            if let Some(bn) = &t.boss_name { return bn.clone(); }
                             let tier = crate::enemy_builds::tier_for_level(t.level);
                             if t.is_boss {
                                 format!("[BOSS] {} Lv{}", tier.theme.display_name, t.level)
@@ -7900,13 +9436,18 @@ impl GameWorld {
                     sprite_id: match kind {
                         EntityKind::Enemy(n) | EntityKind::Loot(n) | EntityKind::Npc(n) => Some(*n as u32),
                         EntityKind::Boat(n)    => Some(*n as u32),
+                        EntityKind::Fish(n)    => Some(*n as u32),
                         EntityKind::Projectile => projtag.map(|p| p.kind as u32),
                         _ => None,
                     },
                     is_self: None,
                     attacking: if attacking_ids.contains(&net.0) { Some(true) } else { None },
+                    aim_dir: enemy_aim_dirs.get(&net.0).copied(),
                     attack_anim: if parry_flash_ids.contains(&net.0) {
                         Some(shared::components::attack_anim::PARRY_FLASH)
+                    } else if enemy_dash_anim_ids.contains(&net.0) {
+                        // Boss dashou neste tick → mesma anim de dash do player.
+                        Some(shared::components::attack_anim::DASH)
                     } else {
                         player_attack_anim.get(&net.0).copied()
                     },
@@ -7925,7 +9466,11 @@ impl GameWorld {
                     attacker_weapon_id: self.attacker_weapon_this_tick.get(&net.0).copied(),
                     owner_eid: projtag.map(|p| p.owner),
                     skin_preset: skin.map(|s| s.preset),
-                    defending: overlay.and_then(|o| if o.defending { Some(true) } else { None }),
+                    // Boss em GUARD-WALK replica defending=true — client toca a
+                    // pose de escudo (PhysicalShield), igual player defendendo.
+                    defending: overlay.and_then(|o| if o.defending { Some(true) } else { None })
+                        .or_else(|| etag.and_then(|t|
+                            if t.is_boss && t.ai_block_until > now_sim_for_status { Some(true) } else { None })),
                     casting: overlay.and_then(|o| if o.casting { Some(true) } else { None }),
                     poisoned: if poisoned_ids.contains(&net.0) { Some(true) } else { None },
                     stunned: if stunned_ids.contains(&net.0) { Some(true) } else { None },
@@ -8176,6 +9721,10 @@ impl GameWorld {
     /// logados. Tambem atualiza o cache em memoria pra que o proximo login
     /// (antes do DB terminar de gravar) ja veja dados novos.
     pub fn collect_character_rows(&mut self) -> Vec<crate::persistence::CharacterRow> {
+        // Tutorial: PERSISTE o progresso (xp/level/inventário/arma craftada) pro
+        // mundo — senão o lvl 2 e a arma sumiriam ao entrar no mundo. A POSIÇÃO é
+        // mascarada (spawna na ilha-sede da facção, não na água do tutorial) — ver
+        // a construção da row abaixo.
         let mut out = Vec::with_capacity(self.sessions.len());
         // Tuple grande pra escapar do borrow do ECS por sessão. Os campos extras
         // (skill_points_*, learned_skills) vão direto no constructor abaixo
@@ -8257,14 +9806,23 @@ impl GameWorld {
             });
         }
         for e in entries {
+            // Tutorial/dungeon: mascara posição/barco — o player volta pra
+            // ilha-sede da facção no mundo (e NÃO pra dentro da dungeon/tutorial).
+            // inv/xp/loot SÃO persistidos normalmente (o loot da dungeon é o ponto).
+            let (pos, boat, mounted_local) = if self.tutorial_mode || self.dungeon_mode {
+                let t = self.map.faction_spawn_tile(e.faction);
+                (Vec2::new(t.0 as f32 + 0.5, t.1 as f32 + 0.5), None, None)
+            } else {
+                (e.pos, e.boat, e.mounted_local)
+            };
             let row = crate::persistence::CharacterRow {
                 name: e.name.clone(),
-                pos: e.pos,
+                pos,
                 hp: e.hp,
                 xp: e.xp,
                 gold: e.gold,
-                boat: e.boat,
-                mounted_local: e.mounted_local,
+                boat,
+                mounted_local,
                 inventory: e.inventory,
                 equipment: e.equipment,
                 vault: e.vault,
@@ -8284,6 +9842,7 @@ impl GameWorld {
                 faction:         e.faction,
                 quests:          e.quests,
                 faction_points:  e.faction_points,
+                last_tutorial_completed: None, // save não escreve essa coluna (preservada no DB)
             };
             self.characters.insert(e.name, row.clone());
             out.push(row);
@@ -8452,6 +10011,7 @@ impl GameWorld {
         // Recipes vem do DB cache (admin pode mudar custos sem rebuild).
         // Fallback pro hardcoded se cache vazio (boot inicial).
         let Some(recipe) = crate::recipes::find(recipe_id) else { return };
+        let craft_output_id = recipe.output_item_id; // p/ o gatilho da quest 903
         // Gate: nível de proficiência de craft pro tier (T2=5/T3=20/T4=30).
         // Fundição/Marcenaria têm T2=1 (sem receita T1, senão deadlock).
         // O cliente desabilita a receita; isto é a rede de segurança.
@@ -8539,6 +10099,18 @@ impl GameWorld {
             xp: session.proficiencies,
         });
         self.save_pending = true;
+
+        // Tutorial: o GATILHO da quest 903 ("Forje sua Arma") é o ATO de craftar
+        // uma ARMA — checa pelo slot Weapon (os ids craftados são T1 migrados,
+        // 221..=268, NÃO os base 3/6/12...). Não ter/equipar (isso completaria
+        // sem craftar).
+        if self.tutorial_mode
+            && shared::constants::equip_slot_of(craft_output_id) == Some(shared::EquipSlot::Weapon)
+        {
+            let on_903 = self.sessions.get(&sid).map(|s| s.quests.iter().any(|c|
+                c.quest_id == 903 && c.status == shared::quests::quest_status::ACTIVE)).unwrap_or(false);
+            if on_903 { self.tutorial_advance(sid, 903); }
+        }
     }
 
     /// Move um item do inv[inv_slot] pro primeiro slot livre (ou stack) do vault.
@@ -9128,12 +10700,277 @@ impl GameWorld {
         }
     }
 
+    /// Tutorial (TUTORIAL_MODE): concede a 1a quest da cadeia, avança quando o
+    /// objetivo é cumprido (READY) e finaliza ao concluir a última. Mantém 1
+    /// boneco de treino vivo na ilha pra quest de combate.
+    /// IDs das armas T1 craftáveis — usado pra detectar "forjou uma arma" (903).
+    const TUTORIAL_T1_WEAPONS: [u16; 8] = [
+        shared::constants::item_id::SWORD, shared::constants::item_id::STAFF,
+        shared::constants::item_id::DAGGER, shared::constants::item_id::GREAT_SWORD,
+        shared::constants::item_id::BOW, shared::constants::item_id::WAND,
+        shared::constants::item_id::AXE, shared::constants::item_id::SPEAR,
+    ];
+
+    fn tick_tutorial_quests(&mut self) {
+        use shared::constants::item_id;
+        // Arena de combate (quest 904 = matar 3): mantém 2 inimigos lvl 1
+        // espaçados nos TUTORIAL_ENEMY_SPOTS enquanto alguém está em 904/ACTIVE.
+        // Quando um morre, o tick respawna no spot livre. Despawna todos quando
+        // ninguém está em 904 (pra não atacar o player antes da hora).
+        let anyone_on_combat = self.sessions.values().any(|s| s.logged_in
+            && s.quests.iter().any(|c| c.quest_id == 904
+                && c.status == shared::quests::quest_status::ACTIVE));
+        if anyone_on_combat {
+            for (sx, sy) in TUTORIAL_ENEMY_SPOTS.iter() {
+                let spot = Vec2::new(*sx, *sy);
+                let occupied = self.ecs.query::<(&Position, &EnemyTag)>().iter()
+                    .any(|(_, (p, _))| p.0.distance(spot) < 4.0);
+                if !occupied { self.place_tutorial_enemy(spot); }
+            }
+        } else {
+            let mobs: Vec<(hecs::Entity, EntityId)> = self.ecs
+                .query::<(&NetId, &EnemyTag)>().iter().map(|(e, (n, _))| (e, n.0)).collect();
+            for (e, eid) in mobs {
+                self.free_entity_body(e);
+                let _ = self.ecs.despawn(e);
+                self.removed_this_tick.push(eid);
+            }
+        }
+
+        // (Barco NÃO é mais pré-spawnado — o player ganha o ITEM na 905 e USA
+        // ele na costa pra colocar na água; ver tutorial_advance + handle_use_item.)
+
+        let sids: Vec<SessionId> = self.sessions.keys().copied().collect();
+        for sid in sids {
+            let (has_tut, cur, entity) = match self.sessions.get(&sid) {
+                Some(s) if s.logged_in => {
+                    let has = s.quests.iter().any(|c| shared::quests::is_tutorial_quest(c.quest_id));
+                    let cur = s.quests.iter()
+                        .find(|c| shared::quests::is_tutorial_quest(c.quest_id)
+                               && c.status != shared::quests::quest_status::TURNED_IN)
+                        .map(|c| (c.quest_id, c.status));
+                    (has, cur, s.entity)
+                }
+                _ => continue,
+            };
+            if !has_tut {
+                self.tutorial_give_starter_kit(sid);
+                self.tutorial_grant_quest(sid, shared::quests::tutorial_first());
+                continue;
+            }
+            let Some((qid, status)) = cur else { continue };
+            // 902: atualiza o progresso (madeira coletada) pro HUD; a CONCLUSÃO é
+            // por interação com o Matteo (entrega) — ver tutorial_npc_interact.
+            if qid == 902 {
+                let wood: u32 = self.sessions.get(&sid).map(|s| s.inventory.iter()
+                    .filter(|sl| sl.item_id == item_id::WOOD_T1).map(|sl| sl.qty).sum()).unwrap_or(0);
+                let pr = wood.min(5);
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    if let Some(c) = s.quests.iter_mut().find(|c| c.quest_id == 902) {
+                        if c.progress != pr {
+                            c.progress = pr; s.quests_dirty = true;
+                            let st = c.status;
+                            let _ = s.handle.to_client.send(ServerMessage::QuestUpdate {
+                                quest_id: 902, progress: pr, status: st });
+                        }
+                    }
+                }
+                continue;
+            }
+            // 905: garante que o player TEM o item do barco (cobre relog e a
+            // transição do fluxo antigo que spawnava o barco).
+            if qid == 905 {
+                let has_boat = self.sessions.get(&sid).map(|s| s.inventory.iter()
+                    .any(|sl| shared::constants::is_boat_item(sl.item_id) && sl.qty > 0)).unwrap_or(false);
+                if !has_boat {
+                    if let Some(s) = self.sessions.get_mut(&sid) {
+                        add_to_inventory(&mut s.inventory, shared::constants::item_id::BOAT_LYLIAN_LEUTARD, 1, None);
+                        s.inventory_dirty = true;
+                    }
+                }
+            }
+            let complete = match qid {
+                // 900 (falar com Matteo) → concluída via interação, não aqui.
+                900 => false,
+                // 901: equipou o machado no slot de ferramenta.
+                901 => self.sessions.get(&sid)
+                    .map(|s| s.equipment.get(shared::EquipSlot::ToolAxe) == Some(item_id::WOODCUTTER_AXE_T1))
+                    .unwrap_or(false),
+                // 903: concluída pelo GATILHO do craft (handle_craft), não aqui.
+                903 => false,
+                // 904: derrotou o mob (motor marca READY no kill).
+                904 => status == shared::quests::quest_status::READY,
+                // 905: usou o item do barco (deploy) → handle_use_item, não aqui.
+                905 => false,
+                // 906/907: montado e PERTO da estação (vela/leme) no convés —
+                // detecção DECK-RELATIVA (local_pos), então funciona em qualquer
+                // lugar/movimento do barco.
+                906 => self.tutorial_at_boat_station(entity, true),
+                907 => self.tutorial_at_boat_station(entity, false),
+                // 908: navegou até o mar aberto (motor marca READY no EXPLORE).
+                908 => status == shared::quests::quest_status::READY,
+                _ => false,
+            };
+            if complete { self.tutorial_advance(sid, qid); }
+        }
+    }
+
+    /// True se o player (montado) está PERTO da estação do convés (vela ou leme).
+    /// Deck-relativo: usa local_pos vs a posição da estação no boat_config, então
+    /// independe de onde o barco está/anda.
+    fn tutorial_at_boat_station(&self, entity: Option<Entity>, sail: bool) -> bool {
+        let Some(e) = entity else { return false };
+        let Ok(m) = self.ecs.get::<&Mounted>(e) else { return false };
+        let kind = self.ecs.get::<&BoatTag>(m.boat_entity).map(|t| t.kind).unwrap_or(0);
+        let station = if sail { boat_sail_local(kind) } else { boat_helm_local(kind) };
+        m.local_pos.distance(station) < 1.8
+    }
+
+    /// Kit inicial do tutorial: NADA. O player nasce sem arma (criação) e sem
+    /// ferramentas — o machado vem do Matteo (quest 900) e os materiais de craft
+    /// na entrega da madeira (quest 902). Mantida pra compat com o call-site.
+    fn tutorial_give_starter_kit(&mut self, _sid: SessionId) {}
+
+    /// Interação com o Matteo (NPC guia) DENTRO do tutorial: dá o machado ao
+    /// falar (900), recebe a madeira e entrega os materiais de craft (902), ou
+    /// dá uma dica contextual. Cada conclusão dispara um balão de diálogo.
+    fn tutorial_npc_interact(&mut self, sid: SessionId) {
+        use shared::constants::item_id;
+        let cur = self.sessions.get(&sid).and_then(|s| s.quests.iter()
+            .find(|c| shared::quests::is_tutorial_quest(c.quest_id)
+                   && c.status != shared::quests::quest_status::TURNED_IN)
+            .map(|c| c.quest_id));
+        let Some(qid) = cur else { return };
+        match qid {
+            900 => {
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    add_to_inventory(&mut s.inventory, item_id::WOODCUTTER_AXE_T1, 1, None);
+                    s.inventory_dirty = true;
+                }
+                self.tutorial_say(sid, "Matteo", "Boa, pulou a pedra direitinho! Toma esse machado. Abre o inventario e EQUIPA ele, depois corta umas arvores ali e me traz 5 madeiras.");
+                self.tutorial_advance(sid, 900);
+            }
+            902 => {
+                let wood: u32 = self.sessions.get(&sid).map(|s| s.inventory.iter()
+                    .filter(|sl| sl.item_id == item_id::WOOD_T1).map(|sl| sl.qty).sum()).unwrap_or(0);
+                if wood < 5 {
+                    self.tutorial_say(sid, "Matteo", "Ainda falta madeira. Corta as arvores ate juntar 5 e volta aqui.");
+                    return;
+                }
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    // Consome 5 madeiras e devolve um kit de craft completo (dá pra
+                    // forjar QUALQUER arma T1: 8 madeira / 5 couro / 7 minério).
+                    let mut need = 5u32;
+                    for sl in s.inventory.iter_mut() {
+                        if need == 0 { break; }
+                        if sl.item_id != item_id::WOOD_T1 || sl.qty == 0 { continue; }
+                        let take = need.min(sl.qty); sl.qty -= take; need -= take;
+                        if sl.qty == 0 { *sl = shared::InventorySlot::default(); }
+                    }
+                    add_to_inventory(&mut s.inventory, item_id::WOOD_T1, 8, None);
+                    add_to_inventory(&mut s.inventory, item_id::LEATHER_T1, 5, None);
+                    add_to_inventory(&mut s.inventory, item_id::MINERAL_T1, 7, None);
+                    s.inventory_dirty = true;
+                }
+                self.tutorial_say(sid, "Matteo", "Otimo! Aqui, leva esse material. Vai na estacao de craft e forja a arma T1 que voce quiser.");
+                self.tutorial_advance(sid, 902);
+            }
+            _ => {
+                let hint = match qid {
+                    901 => "Equipa o machado pelo inventario que ai a gente continua.",
+                    903 => "Vai na estacao de craft (a bigorna/bancada ali) e forja sua arma. Os materiais ja sao seus.",
+                    904 => "Cuidado, marujo! Derrota aquele inimigo ali primeiro.",
+                    905 => "Sua jornada comeca agora. Sobe no barco e zarpa pro mundo!",
+                    _ => "Continua firme, marujo.",
+                };
+                self.tutorial_say(sid, "Matteo", hint);
+            }
+        }
+    }
+
+    /// Envia um balão de diálogo do tutorial pro client.
+    fn tutorial_say(&self, sid: SessionId, speaker: &str, text: &str) {
+        if let Some(s) = self.sessions.get(&sid) {
+            let _ = s.handle.to_client.send(ServerMessage::TutorialSay {
+                speaker: speaker.to_string(), text: text.to_string() });
+        }
+    }
+
+    fn tutorial_grant_quest(&mut self, sid: SessionId, qid: u16) {
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            if let Some(c) = s.quests.iter_mut().find(|c| c.quest_id == qid) {
+                c.status = shared::quests::quest_status::ACTIVE; c.progress = 0; c.cooldown_until = 0;
+            } else {
+                s.quests.push(crate::quests::CharQuest {
+                    quest_id: qid, status: shared::quests::quest_status::ACTIVE, progress: 0, cooldown_until: 0 });
+            }
+            s.quests_dirty = true;
+            let _ = s.handle.to_client.send(ServerMessage::QuestUpdate {
+                quest_id: qid, progress: 0, status: shared::quests::quest_status::ACTIVE });
+        }
+        self.send_quest_log(sid);
+    }
+
+    fn tutorial_advance(&mut self, sid: SessionId, qid: u16) {
+        let count = shared::quests::quest_by_id(qid).map(|d| d.obj_count).unwrap_or(1);
+        let reward_xp = shared::quests::quest_by_id(qid).map(|d| d.reward_xp).unwrap_or(0);
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            if let Some(c) = s.quests.iter_mut().find(|c| c.quest_id == qid) {
+                c.status = shared::quests::quest_status::TURNED_IN; c.progress = count; c.cooldown_until = i64::MAX;
+            }
+            if reward_xp > 0 { s.grant_xp(reward_xp); }
+            // Quest de combate (904) GARANTE level 2 — "sobe o personagem pro lvl 2".
+            if qid == 904 {
+                let lvl2 = shared::constants::xp_for_level_with_mult(2, crate::economy::xp_multiplier());
+                if s.xp < lvl2 { s.grant_xp(lvl2 - s.xp); }
+            }
+            s.quests_dirty = true;
+            let _ = s.handle.to_client.send(ServerMessage::QuestUpdate {
+                quest_id: qid, progress: count, status: shared::quests::quest_status::TURNED_IN });
+        }
+        match shared::quests::tutorial_next(qid) {
+            Some(next) => {
+                self.tutorial_grant_quest(sid, next);
+                if next == 905 {
+                    // Recompensa: o ITEM do barco. O player vai à costa e USA o
+                    // item pra colocá-lo na água (handle_use_item).
+                    if let Some(s) = self.sessions.get_mut(&sid) {
+                        add_to_inventory(&mut s.inventory, shared::constants::item_id::BOAT_LYLIAN_LEUTARD, 1, None);
+                        s.inventory_dirty = true;
+                    }
+                    self.tutorial_say(sid, "Matteo", "Voce esta pronto, marujo! Toma o teu barco. Vai ate o cais ao norte e USA ele no inventario pra colocar na agua. Depois sobe e aprende a navegar!");
+                }
+                // Explicações do barco — disparam ao CHEGAR em cada estação.
+                if next == 907 {
+                    self.tutorial_say(sid, "Matteo", "Essa e a VELA. Clique nela pra alternar: ERGUIDA (parado) → MEIA (50%) → CHEIA (100%). Mais vela = mais velocidade (com vento a favor).");
+                }
+                if next == 908 {
+                    self.tutorial_say(sid, "Matteo", "Esse e o LEME. Segura e arrasta pra girar o barco esquerda/direita. Combine VELA (velocidade) + LEME (direcao) pra navegar ate o mar aberto!");
+                }
+            }
+            None => self.handle_finish_tutorial(sid), // última → finaliza o tutorial
+        }
+    }
+
     /// Hook por tick: quests EXPLORE viram READY quando o player entra na área.
     fn tick_quest_explore(&mut self) {
         // Pré-coleta posições dos players (evita conflito de borrow com sessions).
         let mut ppos: std::collections::HashMap<EntityId, Vec2> = std::collections::HashMap::new();
+        // Pro player MONTADO, "chegar no alvo" é o BARCO chegar — não a pos do
+        // player no deck (que tem offset do local_pos). Pré-coleta pos dos barcos.
+        let mut boatpos: std::collections::HashMap<Entity, Vec2> = std::collections::HashMap::new();
+        for (be, (p, _)) in self.ecs.query::<(&Position, &BoatTag)>().iter() {
+            boatpos.insert(be, p.0);
+        }
+        let mut mounted_boat: std::collections::HashMap<EntityId, Entity> = std::collections::HashMap::new();
+        for (_, (net, m)) in self.ecs.query::<(&NetId, &Mounted)>().iter() {
+            mounted_boat.insert(net.0, m.boat_entity);
+        }
         for (_, (net, p, _)) in self.ecs.query::<(&NetId, &Position, &PlayerTag)>().iter() {
-            ppos.insert(net.0, p.0);
+            let pos = mounted_boat.get(&net.0)
+                .and_then(|be| boatpos.get(be).copied())
+                .unwrap_or(p.0);
+            ppos.insert(net.0, pos);
         }
         if ppos.is_empty() { return; }
         let mut updates: Vec<(SessionHandle, u16, u32, u8)> = Vec::new();
@@ -9262,7 +11099,13 @@ impl GameWorld {
                 });
             }
             Some((_, 4, _, _)) => {
-                let _ = handle.to_client.send(ServerMessage::BlacksmithOpen);
+                // No tutorial, o "ferreiro" é o Matteo: interagir abre o diálogo
+                // guiado (dá machado / recebe madeira), não a UI de craft.
+                if self.tutorial_mode {
+                    self.tutorial_npc_interact(sid);
+                } else {
+                    let _ = handle.to_client.send(ServerMessage::BlacksmithOpen);
+                }
             }
             Some((entity, 3, _, _)) => {
                 // Para de andar enquanto interage + pega giver/nome.
@@ -9298,6 +11141,15 @@ impl GameWorld {
                             text: "Este representante não atende sua facção.".into(),
                         });
                     }
+                }
+            }
+            Some((_, 8, _, _)) => {
+                // Mestre do Treinamento — manda o player (re)fazer o tutorial.
+                // Só no mundo aberto; no próprio tutorial não faz sentido.
+                if !self.tutorial_mode {
+                    let _ = handle.to_client.send(ServerMessage::GoToTutorial {
+                        host: String::new(), path: String::new(),
+                    });
                 }
             }
             _ => {} // demais NPCs sem interação
@@ -9813,7 +11665,7 @@ impl GameWorld {
                 } else { false };
                 if healed { consume_slot(&mut self.sessions); }
             }
-            UseAction::SpawnBoat { kind, item_id: _ } => {
+            UseAction::SpawnBoat { kind, item_id: boat_item } => {
                 let player_pos = match self.ecs.get::<&Position>(player_entity) {
                     Ok(p) => p.0,
                     Err(_) => return,
@@ -9906,6 +11758,32 @@ impl GameWorld {
                 let _ = player_eid;
                 self.save_pending = true;
                 tracing::info!("boat spawn (vazio): pid={:?} kind={} pos={:?}", owner_pid, kind, water_pos);
+                // CONSOME o item do barco — 1 barco por item (sem spawnar
+                // infinitos). Volta ao inventário ao desembarcar (handle_dismount).
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    if slot_idx < s.inventory.len()
+                        && s.inventory[slot_idx].item_id == boat_item
+                        && s.inventory[slot_idx].qty > 0
+                    {
+                        s.inventory[slot_idx].qty -= 1;
+                        if s.inventory[slot_idx].qty == 0 {
+                            s.inventory[slot_idx] = shared::InventorySlot::default();
+                        }
+                        s.inventory_dirty = true;
+                    }
+                }
+                // Tutorial: a quest 905 ("Convoque o Barco") completa ao USAR o
+                // item (deploy). Depois o player embarca e aprende vela/leme.
+                if self.tutorial_mode {
+                    // 905 é EXPLORE(cais): pisar no cais já a vira READY antes de
+                    // usar o barco. Aceita ACTIVE **ou** READY — o gatilho real é
+                    // USAR o item (deploy), não só chegar no cais.
+                    let on_905 = self.sessions.get(&sid).map(|s| s.quests.iter().any(|c|
+                        c.quest_id == 905
+                        && (c.status == shared::quests::quest_status::ACTIVE
+                            || c.status == shared::quests::quest_status::READY))).unwrap_or(false);
+                    if on_905 { self.tutorial_advance(sid, 905); }
+                }
             }
         }
     }
@@ -10147,8 +12025,8 @@ impl GameWorld {
         // BFS procurando walkable. Range = hull max_extent + margem — o
         // casco grande (deck_half_h ~7) afasta o centro do barco bastante
         // da margem quando colidindo.
-        let cfg = self.ecs.get::<&BoatTag>(mounted_boat_entity)
-            .ok().map(|t| crate::boat_config::get(t.kind));
+        let boat_kind = self.ecs.get::<&BoatTag>(mounted_boat_entity).ok().map(|t| t.kind).unwrap_or(0);
+        let cfg = Some(crate::boat_config::get(boat_kind));
         let max_radius = cfg.as_ref()
             .map(|c| c.deck_half_w.max(c.deck_half_h).ceil() as u32 + 25)
             .unwrap_or(32);
@@ -10205,7 +12083,17 @@ impl GameWorld {
         if was_owner && became_empty {
             let _ = self.ecs.despawn(mounted_boat_entity);
             self.removed_this_tick.push(mounted_boat_eid);
-            tracing::info!("boat dismount + despawn (owner last): target={:?}", target);
+            // DEVOLVE o item do barco ao inventário (deploy consome; desembarque
+            // devolve) → sempre 1 barco por item, sem infinitos.
+            let boat_item = match boat_kind {
+                1 => shared::constants::item_id::BOAT_ESQUIFE,
+                _ => shared::constants::item_id::BOAT_LYLIAN_LEUTARD,
+            };
+            if let Some(s) = self.sessions.get_mut(&sid) {
+                add_to_inventory(&mut s.inventory, boat_item, 1, None);
+                s.inventory_dirty = true;
+            }
+            tracing::info!("boat dismount + despawn (owner last): item {} devolvido, target={:?}", boat_item, target);
         } else {
             tracing::info!("boat dismount (boat fica): target={:?}", target);
         }
@@ -10612,6 +12500,9 @@ impl GameWorld {
     /// Captura o estado do personagem de uma sessao especifica (para persistir
     /// no disconnect). Retorna None se nao estiver logado ou ja morto.
     pub fn take_character_for_disconnect(&mut self, sid: &SessionId) -> Option<crate::persistence::CharacterRow> {
+        // Tutorial: PERSISTE o progresso (xp/level/inventário/arma) — a posição é
+        // mascarada pra ilha-sede do mundo (ver abaixo), pra o player não cair na
+        // água do tutorial ao reconectar.
         let session = self.sessions.get(sid)?;
         if !session.logged_in { return None; }
         let e = session.entity?;
@@ -10639,6 +12530,13 @@ impl GameWorld {
             let p = self.ecs.get::<&Position>(e).ok()?.0;
             (p, None, None)
         };
+        // Tutorial/dungeon: NÃO persiste a pos/barco da lane — senão ao reconectar
+        // no mundo o player cairia dentro da instância. Mantém a pos do mundo já
+        // salva. inv/xp (loot da dungeon) SÃO persistidos abaixo normalmente.
+        let (pos, boat, mounted_local) = if self.tutorial_mode || self.dungeon_mode {
+            let world_pos = self.characters.get(&session.name).map(|r| r.pos).unwrap_or(pos);
+            (world_pos, None, None)
+        } else { (pos, boat, mounted_local) };
         let row = crate::persistence::CharacterRow {
             name: session.name.clone(),
             pos,
@@ -10666,6 +12564,7 @@ impl GameWorld {
             faction:         session.faction,
             quests:          session.quests.clone(),
             faction_points:  session.faction_points,
+            last_tutorial_completed: None, // save não escreve essa coluna (preservada no DB)
         };
         self.characters.insert(session.name.clone(), row.clone());
         Some(row)

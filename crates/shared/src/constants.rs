@@ -22,7 +22,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 62;
+pub const PROTOCOL_VERSION: u16 = 66;
 
 // ── Boat (Sea-of-Thieves style: vela/leme/ancora separados) ─────────────────
 /// Velocidade maxima de qualquer barco (tiles/s). Atingida com vela full,
@@ -117,8 +117,9 @@ pub const DASH_SPEED: f32 = 14.0;
 /// Cooldown entre dashes em segundos. SPD reduz via divisao por
 /// `speed_mult` — clampado em `DASH_COOLDOWN_MIN`.
 pub const DASH_COOLDOWN: f32 = 1.5;
-/// Cooldown minimo de dash apos reducao por SPD (clamp).
-pub const DASH_COOLDOWN_MIN: f32 = 0.2;
+/// Cooldown minimo de dash apos reducao por SPD (clamp). Baixo pra permitir
+/// dash quase instantaneo em SPD alto (~200+).
+pub const DASH_COOLDOWN_MIN: f32 = 0.08;
 /// Custo de stamina pra dash.
 pub const DASH_STAMINA_COST: i32 = 30;
 
@@ -301,6 +302,13 @@ impl Proficiency {
                 || id == item_id::ENHANCED_AXE   => Self::Axe,
             _ if id == item_id::SPEAR
                 || id == item_id::ENHANCED_SPEAR => Self::Spear,
+            // Phase G — armas T1-T4 (Espada+Espadão, Machado, Lança, Cajado, Varinha, Arco)
+            221..=228 => Self::Sword,
+            237..=240 => Self::Axe,
+            241..=244 => Self::Spear,
+            257..=260 => Self::Staff,
+            261..=264 => Self::Wand,
+            265..=268 => Self::Bow,
             _                                    => Self::Unarmed,
         }
     }
@@ -596,6 +604,25 @@ pub mod item_id {
     pub const FISHING_ROD_T3:     u16 = 94;
     pub const FISHING_ROD_T4:     u16 = 95;
 
+    // === Peixes (drop da pesca). Stackáveis, sem slot. O species da
+    // EntityKind::Fish(n) mapeia 1:1 pra estes IDs via fish_item_for_species. ===
+    pub const FISH_ANCHOVY:       u16 = 96;  // T1 comum
+    pub const FISH_CLOWNFISH:     u16 = 97;  // T2
+    pub const FISH_SURGEONFISH:   u16 = 98;  // T3
+    pub const FISH_PUFFERFISH:    u16 = 99;  // T4 raro
+
+    /// item_id do peixe pra um species da EntityKind::Fish (1-4). Espécie
+    /// fora do range cai no peixe T1. Server usa ao conceder o drop da pesca.
+    pub fn fish_item_for_species(species: u16) -> u16 {
+        match species {
+            1 => FISH_ANCHOVY,
+            2 => FISH_CLOWNFISH,
+            3 => FISH_SURGEONFISH,
+            4 => FISH_PUFFERFISH,
+            _ => FISH_ANCHOVY,
+        }
+    }
+
     /// Identifica o tipo da ferramenta de farm pra um item_id. None se nao
     /// for tool. Server usa pra gatear FarmHit pelo kind do node.
     pub fn tool_kind(item_id: u16) -> Option<super::ToolKind> {
@@ -640,6 +667,12 @@ pub mod item_id {
     /// Lylian Leutard — barco T2 de exploracao costeira. Spawn na agua
     /// adjacente quando usado a partir de uma margem walkable.
     pub const BOAT_LYLIAN_LEUTARD: u16 = 100;
+
+    // === Relíquias do Abismo — Anéis de Storyline ===
+    pub const RING_TIDE:      u16 = 161; // Anel da Maré Alta (Capítulo 2 - Lvl 20)
+    pub const RING_IGNITION:  u16 = 162; // Anel da Ignição Negra (Capítulo 3 - Lvl 50)
+    pub const RING_MIST:      u16 = 163; // Anel da Névoa Fantasma (Capítulo 5 - Lvl 85)
+    pub const RING_TEMPEST:   u16 = 164; // Coração da Tempestade (Capítulo 6 - Lvl 100)
 }
 
 /// True se o item_id e' um barco (consumido ao usar; spawna entidade Boat).
@@ -899,6 +932,18 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
         id if item_id::tool_kind(id) == Some(ToolKind::Sickle)     => Some(EquipSlot::ToolSickle),
         id if item_id::tool_kind(id) == Some(ToolKind::Pickaxe)    => Some(EquipSlot::ToolPickaxe),
         id if item_id::tool_kind(id) == Some(ToolKind::FishingRod) => Some(EquipSlot::ToolRod),
+        // Tier T1-T4 (Phase G): faixas atribuídas em ordem por slot.
+        101..=112 => Some(EquipSlot::Gloves),
+        113..=124 => Some(EquipSlot::Legs),
+        125..=136 => Some(EquipSlot::Boots),
+        137..=148 => Some(EquipSlot::Helm),
+        149..=160 => Some(EquipSlot::Armor),
+        161..=172 => Some(EquipSlot::Ring),
+        173..=184 => Some(EquipSlot::Necklace),
+        185..=196 => Some(EquipSlot::Belt),
+        197..=208 => Some(EquipSlot::Offhand),
+        209..=220 => Some(EquipSlot::Cape),
+        221..=268 => Some(EquipSlot::Weapon),
         _                                    => None,
     }
 }
@@ -906,6 +951,7 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
 /// True se este item_id eh um escudo (vai no slot Offhand).
 pub fn is_shield(item_id: u16) -> bool {
     item_id == item_id::SHIELD || item_id == item_id::HEAVY_SHIELD
+        || (197..=208).contains(&item_id)
 }
 
 /// Quais armas permitem equipar um item no Offhand (escudo). One-handed melee
@@ -921,6 +967,10 @@ pub fn weapon_allows_offhand(weapon_id: u16) -> bool {
         || weapon_id == item_id::ENHANCED_SWORD
         || weapon_id == item_id::VETERAN_SWORD
         || weapon_id == item_id::ENHANCED_AXE
+        // Phase G — armas T1-T4: Espada (221-224), Machado (237-240), Varinha (261-264) são 1H
+        || (221..=224).contains(&weapon_id)
+        || (237..=240).contains(&weapon_id)
+        || (261..=264).contains(&weapon_id)
 }
 
 /// Requisito de level de proficiência pra equipar este item. None = sem
@@ -1097,7 +1147,7 @@ pub mod stat_idx {
 pub const MOVE_SPEED_PCT_PER_SPD: f32 = 0.0;
 /// % redução de cooldown do dash por ponto em SPD. Final dash CD =
 /// DASH_COOLDOWN / (1 + DASH_CD_REDUCTION_PER_SPD * spd_points).
-pub const DASH_CD_REDUCTION_PER_SPD: f32 = 0.02; // +2% redução / ponto
+pub const DASH_CD_REDUCTION_PER_SPD: f32 = 0.065; // +6.5%/ponto (100 SPD→0.2s, 200→~0.1s)
 
 /// Chance de crit adicionada por ponto em DES (somada a 0.0).
 pub const CRIT_CHANCE_PER_DES: f32 = 0.005; // +0.5% por ponto
@@ -1110,7 +1160,7 @@ pub const ATTACK_SPEED_PCT_PER_DES: f32 = 0.015; // +1.5% por ponto
 pub const STAMINA_MAX_PER_SPD: i32 = 2;
 
 /// Regen de stamina/seg adicional por ponto em SPD (somado ao base 25).
-pub const STAMINA_REGEN_PER_SPD: f32 = 0.2;
+pub const STAMINA_REGEN_PER_SPD: f32 = 1.25; // regen escala forte c/ SPD → dash não fica gateado por stamina em builds de SPD
 
 /// HP regenerado/seg adicionado por ponto em VIT.
 pub const HP_REGEN_PER_VIT: f32 = 0.2;
@@ -1262,6 +1312,28 @@ pub const fn weapon_scaling(item_id: u16) -> WeaponScaling {
             || id == item_id::ENHANCED_SPEAR => WeaponScaling {
             hp_max: 0.0, mp_max: 0.0, attack_damage: 0.25, dex: 0.15, wis: 0.0, defense: 0.0,
         },
+        // Phase G — T1-T4 (mesmo scaling do equivalente base)
+        id if id >= 221 && id <= 224 => WeaponScaling { // Espada T1-T4
+            hp_max: 1.0, mp_max: 0.0, attack_damage: 0.0, dex: 0.0, wis: 0.0, defense: 0.1,
+        },
+        id if id >= 225 && id <= 228 => WeaponScaling { // Espadão T1-T4
+            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.5, dex: 0.0, wis: 0.0, defense: 0.0,
+        },
+        id if id >= 237 && id <= 240 => WeaponScaling { // Machado T1-T4
+            hp_max: 0.5, mp_max: 0.0, attack_damage: 0.4, dex: 0.0, wis: 0.0, defense: 0.0,
+        },
+        id if id >= 241 && id <= 244 => WeaponScaling { // Lança T1-T4
+            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.25, dex: 0.15, wis: 0.0, defense: 0.0,
+        },
+        id if id >= 257 && id <= 260 => WeaponScaling { // Cajado T1-T4
+            hp_max: 0.0, mp_max: 1.0, attack_damage: 0.0, dex: 0.0, wis: 0.2, defense: 0.0,
+        },
+        id if id >= 261 && id <= 264 => WeaponScaling { // Varinha T1-T4
+            hp_max: 0.0, mp_max: 1.0, attack_damage: 0.0, dex: 0.0, wis: 0.3, defense: 0.0,
+        },
+        id if id >= 265 && id <= 268 => WeaponScaling { // Arco T1-T4
+            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.1, dex: 0.5, wis: 0.0, defense: 0.0,
+        },
         _ => WeaponScaling {
             hp_max: 0.0, mp_max: 0.0, attack_damage: 0.0, dex: 0.0, wis: 0.0, defense: 0.0,
         },
@@ -1292,6 +1364,8 @@ pub const fn weapon_is_melee(item_id: u16) -> bool {
         // como melee aqui (cone na frente).
         || item_id == item_id::SPEAR
         || item_id == item_id::ENHANCED_SPEAR
+        // Phase G T1-T4 melee: Espada (221-224), Espadão (225-228), Machado (237-240), Lança (241-244)
+        || matches!(item_id, 221..=228 | 237..=244)
 }
 
 /// True se o inimigo desse kind ataca em melee (cone de dano direto na frente)
@@ -1325,6 +1399,10 @@ pub const fn item_bonus(item_id: u16) -> EquipBonus {
         id if id == item_id::RING         => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  0, dex: 5,  wis: 3, defense: 0 },
         id if id == item_id::AMULET       => EquipBonus { hp_max: 15,  mp_max:  30, attack_damage:  0, dex: 0,  wis: 8, defense: 1 },
         id if id == item_id::LUCKY_RING   => EquipBonus { hp_max: 10,  mp_max:  20, attack_damage:  2, dex: 6,  wis: 2, defense: 0 },
+        id if id == item_id::RING_TIDE    => EquipBonus { hp_max:  0,  mp_max:  15, attack_damage:  0, dex: 3,  wis: 0, defense: 0 },
+        id if id == item_id::RING_IGNITION => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  8, dex: 0,  wis: 5, defense: 0 },
+        id if id == item_id::RING_MIST    => EquipBonus { hp_max: 80,  mp_max:   0, attack_damage:  0, dex: 8,  wis: 8, defense: 0 },
+        id if id == item_id::RING_TEMPEST => EquipBonus { hp_max:150,  mp_max:  80, attack_damage: 10, dex:10,  wis:10, defense: 5 },
         // === Fase D — novas armas / armaduras / acessórios ===
         id if id == item_id::SCIMITAR     => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  8, dex: 6,  wis: 0, defense: 0 },
         id if id == item_id::AXE       => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage: 22, dex: -2, wis: 0, defense: 3 },
@@ -1405,6 +1483,26 @@ pub const FARM_NODE_RESPAWN_S: f32 = 30.0;
 
 /// Distância máxima player → node para validar um FarmHit (em tiles).
 pub const FARM_MAX_RANGE: f32 = 2.2;
+
+// ── Pesca (peixes do oceano) ──────────────────────────────────────────────
+/// População alvo de peixes nadando perto de CADA player logado. O servidor
+/// mantém ~este número dentro do raio de spawn.
+pub const FISH_PER_PLAYER: usize = 8;
+/// Raio (tiles) ao redor do player onde peixes são mantidos vivos. Peixes
+/// que saem além de FISH_CULL_RADIUS de todos os players são despawnados.
+pub const FISH_VIEW_RADIUS: f32 = 20.0;
+pub const FISH_CULL_RADIUS: f32 = 30.0;
+/// Velocidade de natação normal do peixe (tiles/s) — mais lento que player.
+pub const FISH_SWIM_SPEED: f32 = 1.3;
+/// Distância máxima player → ponto da boia pra validar um FishingCast (tiles).
+pub const FISH_CAST_MAX_RANGE: f32 = 14.0;
+/// Raio (tiles) ao redor da boia em que peixes sentem a atração leve.
+pub const FISH_ATTRACT_RADIUS: f32 = 6.0;
+/// Força da atração da boia (fração da velocidade direcionada à boia). Baixo
+/// = "atração leve" — o peixe tende à boia mas mantém seu wander/sorte.
+pub const FISH_ATTRACT_STRENGTH: f32 = 0.45;
+/// Distância (tiles) peixe ↔ boia pra considerar fisgado (encostou na boia).
+pub const FISH_HOOK_RADIUS: f32 = 0.7;
 
 /// HP máximo (= número de hits necessários) de acordo com kind e tier.
 pub fn farm_node_hp_max(kind: &str, tier: u8) -> i32 {

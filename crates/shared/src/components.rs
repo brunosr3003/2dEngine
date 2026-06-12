@@ -44,6 +44,11 @@ pub enum EntityKind {
     /// Bola de canhao em voo. Renderiza sprite + sombra; explode no impacto.
     /// Snapshot envia `pos` (XY do landing) e `height` (offset Y do arco).
     CannonBomb,
+    /// Peixe nadando no oceano. u16 = species (1=Anchova, 2=Peixe-palhaço,
+    /// 3=Peixe-cirurgião, 4=Baiacu). Spawnado pelo servidor perto dos players
+    /// em tiles de água; vagueia com wander AI. Ao pescar, é atraído pela boia
+    /// e fisgado quando encosta. Cliente usa o species pra escolher o sprite.
+    Fish(u16),
 }
 
 /// Slot de inventario. None = vazio. Quando `qty == 0`, o slot esta vazio.
@@ -339,6 +344,11 @@ pub struct EntitySnapshot {
     /// ataque ao receber. None nas outras snapshots.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attacking: Option<bool>,
+    /// Direção do golpe do inimigo (unit vector TOWARD o alvo) no tick em
+    /// que `attacking` dispara. Cliente seta o facing do swing — sem isso o
+    /// boss strafando atacava "pro lado" (facing vinha da velocity).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aim_dir: Option<[f32; 2]>,
     /// Player iniciou um ataque neste tick. Codifica qual animacao o cliente
     /// deve tocar (ver `AttackAnim` abaixo). None nas outras snapshots.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -558,6 +568,10 @@ pub struct EntitySnapshot {
 pub mod buffs_mask {
     pub const BLOODTHIRST:  u8 = 1 << 0;
     pub const HUNTERS_MARK: u8 = 1 << 1;
+    pub const AURA_TIDE:     u8 = 1 << 2;
+    pub const AURA_IGNITION: u8 = 1 << 3;
+    pub const AURA_MIST:     u8 = 1 << 4;
+    pub const AURA_TEMPEST:  u8 = 1 << 5;
 }
 
 /// Codigo enviado em `EntitySnapshot.attack_anim` pra discriminar qual

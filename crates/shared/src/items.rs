@@ -148,6 +148,10 @@ pub fn item_template(item_id: u16) -> ItemTemplate {
         RING         => ItemTemplate { dex: StatRange::new(2, 8),   wis: StatRange::new(1, 5), ..Default::default() },
         AMULET       => ItemTemplate { hp_max: StatRange::new(8, 25), mp_max: StatRange::new(15, 45), wis: StatRange::new(4, 12), defense: StatRange::new(0, 3), ..Default::default() },
         LUCKY_RING   => ItemTemplate { hp_max: StatRange::new(5, 18), mp_max: StatRange::new(10, 30), attack_damage: StatRange::new(1, 4), dex: StatRange::new(3, 9), wis: StatRange::new(1, 4), ..Default::default() },
+        RING_TIDE     => ItemTemplate { mp_max: StatRange::new(15, 15), dex: StatRange::new(3, 3), ..Default::default() },
+        RING_IGNITION => ItemTemplate { attack_damage: StatRange::new(8, 8), wis: StatRange::new(5, 5), ..Default::default() },
+        RING_MIST     => ItemTemplate { hp_max: StatRange::new(80, 80), dex: StatRange::new(8, 8), wis: StatRange::new(8, 8), ..Default::default() },
+        RING_TEMPEST  => ItemTemplate { hp_max: StatRange::new(150, 150), mp_max: StatRange::new(80, 80), attack_damage: StatRange::new(10, 10), dex: StatRange::new(10, 10), wis: StatRange::new(10, 10), defense: StatRange::new(5, 5), ..Default::default() },
         // === Fase D — novos ===
         SCIMITAR     => ItemTemplate { attack_damage: StatRange::new(6, 14),  dex: StatRange::new(4, 10), ..Default::default() },
         AXE          => ItemTemplate { attack_damage: StatRange::new(16, 32), hp_max: StatRange::new(15, 35), defense: StatRange::new(2, 6), ..Default::default() },

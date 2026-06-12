@@ -317,4 +317,173 @@ pub const QUESTS: &[QuestDef] = &[
         obj_x: 600.0, obj_y: 1350.0, obj_radius: 40.0,
         reward_xp: 400, reward_faction_points: 80, repeatable: true, cooldown_secs: 1800,
         min_level: 10, ..q() },
+
+    // ===================== TUTORIAL (9xx) — storyline auto-grant em TUTORIAL_MODE ====
+    // Concedidas/avançadas automaticamente pelo servidor de tutorial; não vêm
+    // de NPC/board. Ao concluir a última, o tutorial finaliza (teleporta pro mundo).
+    // Ordem da storyline: pular pedra+falar com Matteo → equipar machado →
+    // colher+entregar madeira → forjar arma T1 → matar o inimigo → embarcar.
+    // Conclusão é CUSTOM no servidor de tutorial (tick_tutorial_quests +
+    // handle_interact); obj_kind/coords aqui são pro display/HUD.
+    QuestDef { id: 900, title: "Pule a Pedra",
+        desc: "Ande contra a pedra segurando a direcao pra PULAR por cima dela, e fale com Matteo (chegue perto e aperte E / toque nele).",
+        obj_kind: objective_kind::EXPLORE, obj_count: 1,
+        obj_x: 195.5, obj_y: 1030.5, obj_radius: 4.0,
+        reward_xp: 40, ..q() },
+    QuestDef { id: 901, title: "Equipe o Machado",
+        desc: "Abra o inventario e EQUIPE o machado que Matteo te deu.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::WOODCUTTER_AXE_T1, obj_count: 1,
+        reward_xp: 40, ..q() },
+    QuestDef { id: 902, title: "Colha e Entregue Madeira",
+        desc: "Corte as arvores (clique nelas) ate juntar 5 Madeiras e ENTREGUE pro Matteo (fale com ele).",
+        obj_kind: objective_kind::DELIVER, obj_target: item_id::WOOD_T1, obj_count: 5,
+        reward_xp: 60, ..q() },
+    QuestDef { id: 903, title: "Forje sua Arma",
+        desc: "Va ate a estacao de craft e forje a arma T1 da sua escolha com os materiais do Matteo.",
+        obj_kind: objective_kind::COLLECT, obj_target: 0, obj_count: 1,
+        reward_xp: 70, ..q() },
+    QuestDef { id: 904, title: "Prove seu Valor",
+        desc: "Va ate a arena (a leste) e derrote 3 inimigos com sua arma nova. Vai te dar XP pra subir de nivel!",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 3,
+        reward_xp: 120, ..q() },
+    QuestDef { id: 905, title: "Convoque o Barco",
+        desc: "Va ate o cais (ao norte) e USE o item do barco no inventario pra coloca-lo na agua.",
+        obj_kind: objective_kind::EXPLORE, obj_count: 1,
+        obj_x: 195.5, obj_y: 1050.5, obj_radius: 6.0,
+        reward_xp: 50, ..q() },
+    // 906/907 são deck-relativos (detectados pela pos do player no convés vs a
+    // estação) — obj_kind COLLECT só pra não mostrar marcador de EXPLORE no mundo.
+    QuestDef { id: 906, title: "Vá até a Vela",
+        desc: "Suba no barco (interaja com ele) e ande pelo convés ate a VELA.",
+        obj_kind: objective_kind::COLLECT, obj_target: 0, obj_count: 1,
+        reward_xp: 40, ..q() },
+    QuestDef { id: 907, title: "Vá até o Leme",
+        desc: "Agora ande pelo convés ate o LEME (a roda do timao).",
+        obj_kind: objective_kind::COLLECT, obj_target: 0, obj_count: 1,
+        reward_xp: 40, ..q() },
+    QuestDef { id: 908, title: "Navegue até o Mar",
+        desc: "Use a VELA pra ganhar velocidade e o LEME pra virar. Navegue rumo ao mar aberto, ao norte.",
+        obj_kind: objective_kind::EXPLORE, obj_count: 1,
+        obj_x: 195.5, obj_y: 1085.5, obj_radius: 9.0,
+        reward_xp: 100, ..q() },
+
+    // ===================== STORYLINE (4xx) — Lvl 1-10 (Chapter 1) =====================
+    QuestDef { id: 401, source: quest_source::NPC, giver: 107,
+        title: "O Sal da Terra", desc: "A Armada Real bloqueou o porto. Fale com os pescadores e ajude coletando 15 Madeiras para reparar as barricadas.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::WOOD_T1, obj_count: 15,
+        reward_gold: 200, reward_xp: 100, reward_item: item_id::HEALTH_POTION, reward_item_qty: 5,
+        min_level: 1, ..q() },
+    QuestDef { id: 402, source: quest_source::NPC, giver: 107,
+        title: "A Força da Forja", desc: "O ferreiro precisa de minério para forjar armas de defesa. Traga 10 Minérios de Ferro T1.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::MINERAL_T1, obj_count: 10,
+        reward_gold: 250, reward_xp: 120, reward_item: item_id::MANA_POTION, reward_item_qty: 5,
+        min_level: 2, ..q() },
+    QuestDef { id: 403, source: quest_source::NPC, giver: 108,
+        title: "O Confronto no Cais", desc: "Derrote 10 capangas da guarnição corrupta da Armada que estão aterrorizando a praia do porto.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 10,
+        reward_gold: 400, reward_xp: 200, reward_item: item_id::LUCKY_RING, reward_item_qty: 1,
+        min_level: 3, ..q() },
+    QuestDef { id: 404, source: quest_source::NPC, giver: 108,
+        title: "O Juramento do Mar", desc: "A Armada recuou temporariamente. Vá até as docas ao norte para avaliar a situação e reivindicar seu barco.",
+        obj_kind: objective_kind::EXPLORE, obj_count: 1,
+        obj_x: 850.0, obj_y: 620.0, obj_radius: 20.0, // Doca da ilha inicial (Perto da cidade 3)
+        reward_gold: 500, reward_xp: 300, reward_item: item_id::BOAT_ESQUIFE, reward_item_qty: 1,
+        min_level: 4, ..q() },
+
+    // ===================== STORYLINE (4xx) — Lvl 10-30 (Chapter 2) =====================
+    QuestDef { id: 405, source: quest_source::NPC, giver: 107,
+        title: "Seguindo o Vento", desc: "Leve 10 Madeiras T1 para o posto avançado na ilha a leste (siga a bússola até a área indicada).",
+        obj_kind: objective_kind::TRANSPORT, obj_target: item_id::WOOD_T1, obj_count: 10,
+        obj_x: 1200.0, obj_y: 800.0, obj_radius: 30.0,
+        reward_gold: 300, reward_xp: 200, min_level: 10, ..q() },
+    QuestDef { id: 406, source: quest_source::NPC, giver: 107,
+        title: "A Relíquia Submersa", desc: "Elimine 12 criaturas hostis na praia para limpar as cavernas de contrabando e recuperar o primeiro Anel do Abismo.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 12,
+        reward_gold: 400, reward_xp: 350, reward_item: item_id::RING_TIDE, reward_item_qty: 1,
+        min_level: 12, ..q() },
+    QuestDef { id: 407, source: quest_source::NPC, giver: 108,
+        title: "O Forte Costeiro", desc: "Invada a praia do forte e derrote 15 soldados da Armada Real do Sol que controlam o primeiro fragmento do mapa.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 15,
+        reward_gold: 600, reward_xp: 500, reward_item: item_id::GEM, reward_item_qty: 2,
+        min_level: 15, ..q() },
+
+    // ===================== STORYLINE (4xx) — Lvl 30-50 (Chapter 3) =====================
+    QuestDef { id: 408, source: quest_source::NPC, giver: 105,
+        title: "Calor e Cinzas", desc: "Colete 15 Minérios de Ferro T2 nas encostas do vulcão para forjar escudos de proteção contra calor.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::MINERAL_T2, obj_count: 15,
+        reward_gold: 800, reward_xp: 1500, reward_item: item_id::IRON_INGOT, reward_item_qty: 5,
+        min_level: 30, ..q() },
+    QuestDef { id: 409, source: quest_source::NPC, giver: 105,
+        title: "O Despertar da Terra", desc: "Sabote as operações inimigas eliminando 20 criaturas vulcânicas nas profundezas das minas.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 20,
+        reward_gold: 1000, reward_xp: 2500, min_level: 40, ..q() },
+    QuestDef { id: 410, source: quest_source::NPC, giver: 106,
+        title: "O Coração de Pedra", desc: "Derrote 15 guardiões de magma e recupere o Anel da Ignição Negra e o segundo fragmento do mapa.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 15,
+        reward_gold: 1500, reward_xp: 4000, reward_item: item_id::RING_IGNITION, reward_item_qty: 1,
+        min_level: 45, ..q() },
+
+    // ===================== STORYLINE (4xx) — Lvl 50-70 (Chapter 4) =====================
+    QuestDef { id: 411, source: quest_source::NPC, giver: 101,
+        title: "Fogo Cruzado", desc: "Destrua a guarnição externa da Fortaleza de Ferro eliminando 25 soldados da Armada Real.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 25,
+        reward_gold: 2000, reward_xp: 8000, min_level: 50, ..q() },
+    QuestDef { id: 412, source: quest_source::NPC, giver: 101,
+        title: "Resgate Ousado", desc: "Infiltre-se nas masmorras e alcance a cela onde o historiador real está preso (siga a bússola).",
+        obj_kind: objective_kind::EXPLORE, obj_count: 1,
+        obj_x: 11100.0, obj_y: 639.0, obj_radius: 30.0,
+        reward_gold: 2500, reward_xp: 12000, reward_item: item_id::GEM, reward_item_qty: 5,
+        min_level: 60, ..q() },
+    QuestDef { id: 413, source: quest_source::NPC, giver: 102,
+        title: "Fuga dos Redemoinhos", desc: "Navegue através da frota de bloqueio e transporte o historiador ferido até a ilha segura ao norte.",
+        obj_kind: objective_kind::TRANSPORT, obj_target: item_id::WOOD_T3, obj_count: 5,
+        obj_x: 6820.0, obj_y: 624.0, obj_radius: 50.0,
+        reward_gold: 3000, reward_xp: 18000, min_level: 65, ..q() },
+
+    // ===================== STORYLINE (4xx) — Lvl 70-85 (Chapter 5) =====================
+    QuestDef { id: 414, source: quest_source::NPC, giver: 103,
+        title: "Pelas Névoas", desc: "Navegue no mar enevoado e colete 20 couros T4 para preparar velas resistentes à umidade do cemitério de navios.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::LEATHER_T4, obj_count: 20,
+        reward_gold: 4000, reward_xp: 30000, min_level: 70, ..q() },
+    QuestDef { id: 415, source: quest_source::NPC, giver: 103,
+        title: "Exorcismo Marítimo", desc: "Derrote 30 marinheiros fantasmas que assombram as brumas do leste para purificar o caminho.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 30,
+        reward_gold: 5000, reward_xp: 45000, reward_item: item_id::RING_MIST, reward_item_qty: 1,
+        min_level: 78, ..q() },
+    QuestDef { id: 416, source: quest_source::NPC, giver: 104,
+        title: "O Guardião das Profundezas", desc: "Confronte os monstros marinhos mutantes nas brumas profundas e derrote 15 criaturas de elite.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 15,
+        reward_gold: 6000, reward_xp: 60000, reward_item: item_id::DRAGON_SCALE, reward_item_qty: 2,
+        min_level: 82, ..q() },
+
+    // ===================== STORYLINE (4xx) — Lvl 85-100 (Chapter 6) =====================
+    QuestDef { id: 417, source: quest_source::NPC, giver: 109,
+        title: "A Quebra do Bloqueio", desc: "Enfrente a frota de elite da Armada Real derrotando 35 dos seus melhores combatentes no Abismo Central.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 35,
+        reward_gold: 8000, reward_xp: 100000, min_level: 85, ..q() },
+    QuestDef { id: 418, source: quest_source::NPC, giver: 109,
+        title: "Desbravando o Furacão", desc: "Alcance o topo da montanha do Templo das Marés no centro do Maelstrom para consagrar a busca.",
+        obj_kind: objective_kind::EXPLORE, obj_count: 1,
+        obj_x: 6820.0, obj_y: 624.0, obj_radius: 30.0,
+        reward_gold: 10000, reward_xp: 150000, min_level: 92, ..q() },
+    QuestDef { id: 419, source: quest_source::NPC, giver: 110,
+        title: "O Coração da Tempestade", desc: "Confronte e elimine os generais de elite da guarnição final do Almirante Vane e recupere o Coração da Tempestade.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 20,
+        reward_gold: 15000, reward_xp: 250000, reward_item: item_id::RING_TEMPEST, reward_item_qty: 1,
+        min_level: 96, ..q() },
 ];
+
+/// Cadeia ordenada das quests de tutorial. Concluir uma concede a próxima
+/// (auto em TUTORIAL_MODE); concluir a última finaliza o tutorial.
+/// Ordem: pular+falar → equipar → colher+entregar → forjar → combater →
+/// convocar barco → ir à vela → ir ao leme → navegar.
+pub const TUTORIAL_CHAIN: &[u16] = &[900, 901, 902, 903, 904, 905, 906, 907, 908];
+/// Primeira quest da cadeia (concedida no spawn do tutorial).
+pub fn tutorial_first() -> u16 { TUTORIAL_CHAIN[0] }
+/// Próxima quest após `id` na cadeia (None se foi a última).
+pub fn tutorial_next(id: u16) -> Option<u16> {
+    let i = TUTORIAL_CHAIN.iter().position(|&q| q == id)?;
+    TUTORIAL_CHAIN.get(i + 1).copied()
+}
+/// `id` faz parte da cadeia de tutorial?
+pub fn is_tutorial_quest(id: u16) -> bool { TUTORIAL_CHAIN.contains(&id) }

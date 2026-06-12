@@ -49,8 +49,10 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "${STAGE}"' EXIT
 cp "target/${TARGET}/${PROFILE}/server" "${STAGE}/server"
 mkdir -p "${STAGE}/data/maps"
-cp data/maps/game.json "${STAGE}/data/maps/game.json"
-tar -C "${STAGE}" -czf "${TAR}" server data/maps/game.json
+# Copia TODOS os mapas (game.json + tutorial.json) — o processo de tutorial
+# sobe com MAP_FILE=data/maps/tutorial.json.
+cp data/maps/*.json "${STAGE}/data/maps/"
+tar -C "${STAGE}" -czf "${TAR}" server data/maps
 
 ls -lh "${BIN}" "${TAR}"
 echo

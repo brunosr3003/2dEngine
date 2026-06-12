@@ -82,6 +82,9 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::CharCreated(id, row, success)) => {
                     world.on_char_created(id, *row, success);
                 }
+                Ok(IncomingMessage::CharReloadedForSelect(id, row, success)) => {
+                    world.on_char_reloaded_for_select(id, *row, success);
+                }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
                     tracing::warn!("all senders dropped, exiting world loop");
@@ -96,6 +99,9 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::AuthResult(id, r)) => world.on_auth_result(id, r),
                 Ok(IncomingMessage::CharCreated(id, row, success)) => {
                     world.on_char_created(id, *row, success);
+                }
+                Ok(IncomingMessage::CharReloadedForSelect(id, row, success)) => {
+                    world.on_char_reloaded_for_select(id, *row, success);
                 }
                 Ok(_) => {} // outros variantes nao devem chegar aqui
                 Err(mpsc::error::TryRecvError::Empty) => break,
