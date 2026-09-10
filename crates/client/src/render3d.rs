@@ -148,6 +148,34 @@ pub fn camera(target: Vec2, chao: f32, yaw: f32, zoom: f32, pitch: f32) -> Camer
 /// menos que qualquer arrasto de proposito.
 pub const ARRASTO_MINIMO: f32 = 6.0;
 
+/// Persegue a altura do alvo com atraso.
+///
+/// A camera olhava direto pro APOIO do jogador — o topo do bloco embaixo dele.
+/// Apoio e' funcao degrau: muda meia unidade de uma vez toda vez que o corpo
+/// cruza a divisa de um bloco. Andando por terreno irregular a 5 unidades por
+/// segundo, isso e' um tranco vertical a cada dois passos, e a camera dura
+/// faz o mundo inteiro pular junto.
+///
+/// O atraso e' so' na VERTICAL de proposito. Horizontal com atraso da a
+/// sensacao de arrastar o boneco por um elastico — quem joga quer que o
+/// personagem responda no eixo em que ele manda. Altura ninguem "manda": ela
+/// e' consequencia do chao, e suavizar consequencia nao tira controle de
+/// ninguem.
+///
+/// `K = 5` da' constante de tempo de 0,2 s: engole o degrau inteiro e ainda
+/// deixa o pulo levantar a camera um pouco, que e' o que faz o salto ler como
+/// salto em vez de o mundo afundar.
+pub fn altura_da_camera(atual: f32, alvo: f32, dt: f32) -> f32 {
+    const K: f32 = 5.0;
+    /// Acima disto nao e' relevo, e' teleporte (respawn, viagem, entrar no
+    /// AOI). Deslizar por vinte unidades de mundo seria pior que o corte.
+    const SALTO: f32 = 6.0;
+    if atual == f32::MIN || (alvo - atual).abs() > SALTO {
+        return alvo;
+    }
+    atual + (alvo - atual) * (1.0 - (-K * dt).exp())
+}
+
 /// Recuo e altura da camera pra um zoom e uma inclinacao.
 ///
 /// Uma conta so', usada pela camera E pelo desvio de morro: elas ja'
@@ -261,6 +289,34 @@ mod testes_camera {
             assert!(p - pitch_min_para(z) > 0.05, "zoom {z}: sem espaco pra deitar na mao");
             assert!(PITCH_MAX - p > 0.05, "zoom {z}: sem espaco pra levantar na mao");
         }
+    }
+
+    /// A altura da camera nao pode saltar com o degrau, e nao pode ficar pra
+    /// tras pra sempre.
+    #[test]
+    fn a_camera_engole_o_degrau() {
+        let dt = 1.0 / 60.0;
+        // Primeiro quadro assenta: entrar no mundo nao e' deslizar do zero.
+        assert_eq!(altura_da_camera(f32::MIN, 12.0, dt), 12.0);
+        // Degrau de meio bloco: o primeiro quadro anda pouco.
+        let depois = altura_da_camera(12.0, 12.5, dt);
+        assert!(
+            depois - 12.0 < 0.5 * 0.15,
+            "engoliu {:.3} de 0,5 num quadro so'", depois - 12.0
+        );
+        // E converge: meio segundo depois ja' andou 90% do degrau, e em um
+        // segundo chegou. Constante de tempo de 0,2 s.
+        let mut a = 12.0;
+        for _ in 0..30 {
+            a = altura_da_camera(a, 12.5, dt);
+        }
+        assert!(a > 12.45, "meio segundo depois so' tinha andado ate' {a}");
+        for _ in 0..30 {
+            a = altura_da_camera(a, 12.5, dt);
+        }
+        assert!((a - 12.5).abs() < 0.02, "um segundo depois ainda estava em {a}");
+        // Teleporte corta em vez de deslizar o mundo inteiro.
+        assert_eq!(altura_da_camera(12.0, 90.0, dt), 90.0);
     }
 
     /// A vista de repouso tem que ser EXATAMENTE a de antes de a banda

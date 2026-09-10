@@ -72,7 +72,19 @@ pub fn botao(r: Rect, rotulo: &str, ativo: bool) -> bool {
 
 /// Campo de texto. `foco` diz quem recebe o teclado; devolve `true` se o
 /// clique pediu o foco.
-pub fn campo(r: Rect, rotulo: &str, valor: &mut String, foco: bool, senha: bool) -> bool {
+/// Campo de texto.
+///
+/// `digitado` vem do `entrada::Teclado` e nao da fila crua da macroquad: la' a
+/// repeticao de tecla e' indistinguivel do toque, e uma tecla encostada por um
+/// instante entrava quatro vezes.
+pub fn campo(
+    r: Rect,
+    rotulo: &str,
+    valor: &mut String,
+    foco: bool,
+    senha: bool,
+    digitado: &[char],
+) -> bool {
     draw_text(rotulo, r.x, r.y - 8.0, 16.0, APAGADO);
     draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.10, 0.09, 0.11, 1.0));
     draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5, if foco { OURO } else { BORDA });
@@ -93,7 +105,7 @@ pub fn campo(r: Rect, rotulo: &str, valor: &mut String, foco: bool, senha: bool)
     );
 
     if foco {
-        while let Some(c) = get_char_pressed() {
+        for &c in digitado {
             // 8 = backspace, 13/10 = enter. O enter e' tratado por quem chama.
             if c as u32 == 8 {
                 valor.pop();
@@ -101,7 +113,9 @@ pub fn campo(r: Rect, rotulo: &str, valor: &mut String, foco: bool, senha: bool)
                 valor.push(c);
             }
         }
-        if is_key_pressed(KeyCode::Backspace) {
+        // Backspace nem sempre chega como caractere: em alguns teclados ele
+        // vem so' como tecla.
+        if is_key_pressed(KeyCode::Backspace) && !digitado.contains(&'\u{8}') {
             valor.pop();
         }
     }

@@ -9,6 +9,7 @@
 //! `Protocol.cs` com 1175 linhas espelhadas a mao.
 
 mod api;
+mod entrada;
 mod hud;
 mod map;
 mod net;
@@ -104,6 +105,15 @@ struct Jogo {
     cam_zoom: f32,
     /// Inclinacao da camera, em radianos acima do horizonte.
     cam_pitch: f32,
+    /// Altura pra onde a camera OLHA, com atraso.
+    ///
+    /// Campo e nao variavel local porque desenho e mira leem a mesma: com uma
+    /// conta em cada lugar, o clique mira num mundo e o olho ve' outro — e o
+    /// erro so' aparece quando o jogador esta' subindo um barranco.
+    /// `f32::MIN` = ainda nao assentou.
+    cam_altura: f32,
+    /// Fila de digitacao. Ver `entrada` — a repeticao de tecla passa por aqui.
+    teclado: entrada::Teclado,
     /// Quanto o jogador inclinou A MAIS do que o zoom pediu, em radianos.
     ///
     /// Guardar o DESVIO e nao o angulo e' o que deixa o automatico e a mao
@@ -165,6 +175,8 @@ async fn main() {
         cam_yaw: 0.0,
         cam_zoom: 1.0,
         cam_pitch: render3d::pitch_do_zoom(1.0),
+        cam_altura: f32::MIN,
+        teclado: entrada::Teclado::novo(),
         cam_pitch_ajuste: 0.0,
         arrasto_de: Vec2::ZERO,
         arrasto_virou_camera: false,
@@ -221,6 +233,9 @@ fn tamanho_janela() -> (i32, i32) {
 impl Jogo {
     // ─────────────────────────────── passo ───────────────────────────────
     fn passo(&mut self) {
+        // Antes de tudo: a digitacao deste quadro. Quem desenha campo de
+        // texto le' dela, e nao da fila crua da macroquad.
+        self.teclado.coleta(get_time());
         self.receber_lista();
         self.pump_rede();
         if matches!(self.tela, Tela::Jogando) {
@@ -230,6 +245,7 @@ impl Jogo {
                     terreno.map_or(0.0, |t| t.altura_apoio(x, z, shared::ENTITY_RADIUS))
                 });
             }
+            self.seguir_altura();
             self.atualizar_alvo();
             self.camera_controles();
             self.enviar_input();
@@ -415,11 +431,9 @@ impl Jogo {
             let escolhido = {
                 let terreno = self.terreno.as_ref();
                 let f = |x: f32, z: f32| terreno.map_or(0.0, |t| t.altura(x, z));
-                let apoio = terreno.map_or(0.0, |t| {
-                    t.altura_apoio(centro.x, centro.y, shared::ENTITY_RADIUS)
-                });
-                let vista =
-                    render3d::Vista::nova(centro, self.cam_yaw, self.cam_zoom, self.cam_pitch, apoio, &f);
+                let vista = render3d::Vista::nova(
+                    centro, self.cam_yaw, self.cam_zoom, self.cam_pitch, self.cam_altura, &f,
+                );
                 let alvo = render3d::pick(&self.world, &vista, vec2(mx, my), 48.0);
                 // Clicou no vazio? Entao foi no CHAO.
                 let destino = if alvo.is_none() {
@@ -487,11 +501,7 @@ impl Jogo {
         self.info = hud::Info::default();
         self.rede = hud::Rede::default();
         self.chat.clear();
-        // Esvazia a fila de caracteres do macroquad. Ninguem a consome
-        // durante o jogo (WASD e' lido por `is_key_down`), entao tudo que foi
-        // teclado no mundo estava esperando — e caia de uma vez no campo de
-        // usuario assim que a tela de login aparecia.
-        while get_char_pressed().is_some() {}
+        self.teclado.limpa();
         // Volta pro login e nao pra escolha de servidor: o canal continua
         // sendo o mesmo, quem mudou de ideia foi a conta.
         self.tela = Tela::Login;
@@ -506,6 +516,28 @@ impl Jogo {
     /// ele defende, arrastado ele e' camera. O esquerdo fica so' com a mira —
     /// esse nao da' pra dividir, porque clique de mira e arrasto de camera
     /// acontecem no mesmo instante e brigariam pelo alvo.
+    /// A altura pra onde a camera olha persegue o CORPO, nao o chao.
+    ///
+    /// Olhar pro apoio deixava o pulo invisivel na camera — o boneco subia e
+    /// o enquadramento ficava. E olhar pro corpo sem atraso poria a camera
+    /// pra cima e pra baixo junto com cada degrau. Perseguir com atraso
+    /// resolve os dois: o degrau some, o pulo levanta a camera um pouco.
+    fn seguir_altura(&mut self) {
+        let alvo = self
+            .world
+            .self_id
+            .and_then(|id| self.world.ents.get(&id))
+            .map(|e| e.render_y)
+            .or_else(|| {
+                // Sem corpo ainda (entrando no mundo): o chao serve.
+                let centro = self.world.self_pos()?;
+                let t = self.terreno.as_ref()?;
+                Some(t.altura_apoio(centro.x, centro.y, shared::ENTITY_RADIUS))
+            });
+        let Some(alvo) = alvo else { return };
+        self.cam_altura = render3d::altura_da_camera(self.cam_altura, alvo, get_frame_time());
+    }
+
     fn camera_controles(&mut self) {
         let dt = get_frame_time();
         if is_key_down(KeyCode::Q) {
@@ -665,9 +697,9 @@ impl Jogo {
         // morro assim que o terreno passou a ter 34 unidades de altura.
         let terreno = self.terreno.as_ref();
         let f = |x: f32, z: f32| terreno.map_or(0.0, |t| t.altura(x, z));
-        let apoio =
-            terreno.map_or(0.0, |t| t.altura_apoio(centro.x, centro.y, shared::ENTITY_RADIUS));
-        let vista = render3d::Vista::nova(centro, self.cam_yaw, self.cam_zoom, self.cam_pitch, apoio, &f);
+        let vista = render3d::Vista::nova(
+            centro, self.cam_yaw, self.cam_zoom, self.cam_pitch, self.cam_altura, &f,
+        );
         set_camera(&vista.cam);
         match &self.terreno {
             Some(t) => {
@@ -856,8 +888,9 @@ impl Jogo {
         let cs = Rect::new(r.x, r.y + 122.0, r.w, 42.0);
         let mut usuario = std::mem::take(&mut self.usuario);
         let mut senha = std::mem::take(&mut self.senha);
-        let clicou_u = ui::campo(cu, "usuário", &mut usuario, !self.foco_senha, false);
-        let clicou_s = ui::campo(cs, "senha", &mut senha, self.foco_senha, true);
+        let digitado = self.teclado.digitado().to_vec();
+        let clicou_u = ui::campo(cu, "usuário", &mut usuario, !self.foco_senha, false, &digitado);
+        let clicou_s = ui::campo(cs, "senha", &mut senha, self.foco_senha, true, &digitado);
         self.usuario = usuario;
         self.senha = senha;
         if clicou_u { self.foco_senha = false; }
@@ -895,7 +928,8 @@ impl Jogo {
             ui::texto(r.x, r.y + 30.0, "nenhum personagem ainda", 18, ui::OURO);
             let campo = Rect::new(r.x, r.y + 70.0, r.w, 40.0);
             let mut nome = std::mem::take(&mut self.nome_novo);
-            ui::campo(campo, "nome do personagem", &mut nome, true, false);
+            let digitado = self.teclado.digitado().to_vec();
+            ui::campo(campo, "nome do personagem", &mut nome, true, false, &digitado);
             self.nome_novo = nome;
             let pode = self.nome_novo.chars().count() >= 3;
             if ui::botao(Rect::new(r.x, r.y + 130.0, r.w, 44.0), "criar", pode) {
