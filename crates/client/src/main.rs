@@ -746,6 +746,15 @@ impl Jogo {
         }
         // A MESMA vista da mira: desenho e clique nao tem como divergir
         // porque nao existe a segunda conta.
+        // O furo vale so' pro CENARIO. Bicho nao e' obstaculo: ele e' o que
+        // se olha, e cortar um circulo no meio do lobo que esta' te atacando
+        // esconde exatamente o que precisa ser lido — de que lado ele vem,
+        // se ja' levantou o golpe, quanta vida sobrou.
+        //
+        // Desligar por UNIFORME e nao por material: o material carrega o
+        // descarte de face de costas, que os bichos tambem precisam. Dois
+        // materiais seriam dois lugares pra a configuracao divergir.
+        self.solido.set_uniform("Recorte", Vec3::ZERO);
         render3d::draw_entities(&mut self.world, &self.vox, self.alvo, &vista);
         gl_use_default_material();
         set_default_camera();
