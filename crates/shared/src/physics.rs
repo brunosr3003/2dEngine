@@ -138,6 +138,16 @@ mod testes {
 
     /// Dois imoveis nao se separam. Sobreposicao e' feia, mas melhor que um
     /// deles teleportar.
+    /// Dois corpos IMOVEIS ficam sobrepostos, e isso e' de proposito: nao ha'
+    /// pra onde empurrar quando ninguem cede.
+    ///
+    /// A consequencia e' que dois JOGADORES atravessam um ao outro, porque
+    /// jogador entra com mobilidade zero contra a horda de mob. Quem resolve
+    /// e' o servidor, numa segunda passada so' entre jogadores onde todos
+    /// cedem igual — ver `world.rs`, "SEGUNDA PASSADA".
+    ///
+    /// O teste esta' aqui pra ninguem "consertar" isto na `separar` e trazer
+    /// de volta a horda carregando o personagem pelo mapa.
     #[test]
     fn dois_imoveis_ficam_onde_estao() {
         let mut corpos = vec![
@@ -147,5 +157,38 @@ mod testes {
         separar(&mut corpos);
         assert_eq!(corpos[0].0.x, -0.1);
         assert_eq!(corpos[1].0.x, 0.1);
+    }
+}
+
+#[cfg(test)]
+mod testes_entre_iguais {
+    use super::*;
+
+    /// Corpos que cedem IGUAL se separam ate' encostar, e nao mais.
+    ///
+    /// E' a passada que o servidor roda so' entre jogadores. Medido com 12
+    /// bots no desembarque antes dela existir: dois pares a 0,368 de
+    /// distancia, com os corpos ocupando 0,70.
+    #[test]
+    fn iguais_se_separam_ate_encostar() {
+        let r = 0.35f32;
+        let mut corpos = vec![
+            (Vec2::new(0.0, 0.0), r, 1.0),
+            (Vec2::new(0.368, 0.0), r, 1.0),
+            (Vec2::new(9.0, 9.0), r, 1.0), // longe, nao pode se mexer
+        ];
+        let longe_antes = corpos[2].0;
+        for _ in 0..40 {
+            separar(&mut corpos);
+        }
+        let d = corpos[0].0.distance(corpos[1].0);
+        assert!(
+            d >= 2.0 * r - 1e-3,
+            "sobraram {d:.3} entre corpos que ocupam {:.2}", 2.0 * r
+        );
+        assert!(d < 2.0 * r + 0.05, "afastaram demais: {d:.3}");
+        assert_eq!(corpos[2].0, longe_antes, "corpo distante se mexeu");
+        // O par se abre pros DOIS lados: ninguem e' privilegiado.
+        assert!(corpos[0].0.x < 0.0 && corpos[1].0.x > 0.368);
     }
 }

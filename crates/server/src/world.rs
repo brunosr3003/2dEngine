@@ -8400,6 +8400,39 @@ impl GameWorld {
         let mut circulos: Vec<(Vec2, f32, f32)> =
             corpos.iter().map(|(_, p, m)| (*p, ENTITY_RADIUS, *m)).collect();
         shared::physics::separar(&mut circulos);
+
+        // ── SEGUNDA PASSADA: JOGADOR CONTRA JOGADOR ──
+        //
+        // A primeira nao separa dois jogadores. Ela nao pode: eles entram com
+        // mobilidade ZERO pra que uma horda de lobo, cada um cedendo metade,
+        // nao carregue o personagem pelo mapa — e `separar` pula o par quando
+        // as duas mobilidades somam zero, porque nao ha' pra onde empurrar.
+        //
+        // O efeito colateral so' aparece com gente em cena: dois jogadores
+        // atravessam um ao outro e ficam no mesmo lugar. Medido com 12 bots no
+        // desembarque, dois pares a 0,368 de distancia — metade do que os
+        // corpos ocupam.
+        //
+        // Entao os jogadores se separam entre si numa passada propria, onde
+        // todos cedem igual. "Nao ser empurrado" era regra contra MOB, e nao
+        // contra outro jogador; misturar as duas numa escala so' foi o erro.
+        let so_jogadores: Vec<usize> = corpos
+            .iter()
+            .enumerate()
+            .filter(|(_, (e, _, _))| self.ecs.get::<&PlayerTag>(*e).is_ok())
+            .map(|(i, _)| i)
+            .collect();
+        if so_jogadores.len() > 1 {
+            let mut entre_eles: Vec<(Vec2, f32, f32)> = so_jogadores
+                .iter()
+                .map(|&i| (circulos[i].0, ENTITY_RADIUS, 1.0))
+                .collect();
+            shared::physics::separar(&mut entre_eles);
+            for (k, &i) in so_jogadores.iter().enumerate() {
+                circulos[i].0 = entre_eles[k].0;
+            }
+        }
+
         for ((e, _, _), (p, _, _)) in corpos.iter().zip(circulos.iter()) {
             if let Ok(mut pos) = self.ecs.get::<&mut Position>(*e) {
                 pos.0 = *p;
