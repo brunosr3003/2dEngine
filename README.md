@@ -68,6 +68,7 @@ Detalhes de build em [docs/BUILD.md](docs/BUILD.md); operação de canais em
 | [COLETA](docs/COLETA.md) | coleta automática por densidade do lugar |
 | [ECONOMIA_DE_CRAFT](docs/ECONOMIA_DE_CRAFT.md) | materiais, receitas, síntese de cor |
 | [PERSONAGEM](docs/PERSONAGEM.md) | rig, animação, montaria |
+| [character create](docs/character%20create.md) | what to model: parts, sizes, pivots, palette (EN) |
 | [COMBATE_POR_ALVO](docs/COMBATE_POR_ALVO.md) | combate e wire binário |
 
 ## Stack
