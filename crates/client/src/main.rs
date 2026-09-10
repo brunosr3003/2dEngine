@@ -374,6 +374,21 @@ impl Jogo {
                 self.tela = Tela::Fila { posicao, total };
             }
             ServerMessage::LoginOk { .. } => self.tela = Tela::Jogando,
+            // Pedra de minerio: a pedra nasce da semente dos dois lados, entao
+            // o que o servidor manda e' so' QUAL sumiu. Sem isso o veio
+            // limpo continuaria brilhando e o jogador nao teria como saber
+            // onde ja' passou.
+            ServerMessage::PedrasEsgotadas { colunas } => {
+                if let Some(t) = &mut self.terreno {
+                    for c in colunas { t.marca_esgotada(c, true); }
+                }
+            }
+            ServerMessage::PedraEsgotada { coluna } => {
+                if let Some(t) = &mut self.terreno { t.marca_esgotada(coluna, true); }
+            }
+            ServerMessage::PedraVoltou { coluna } => {
+                if let Some(t) = &mut self.terreno { t.marca_esgotada(coluna, false); }
+            }
             ServerMessage::InfoCanal { realm, canal, zona, jogadores, capacidade } => {
                 self.info = hud::Info { realm, canal, zona, jogadores, capacidade };
             }

@@ -474,6 +474,67 @@ fn pedra(r: &mut Rng) -> Volume {
     v
 }
 
+/// Pedra de MINERIO: matacao escuro com cristal do tier cravado.
+///
+/// Nao e' o `pedra()` da forracao com outra cor. Ela e' maior (tem que valer
+/// como destino, nao como enfeite de chao), tem o corpo mais escuro pra o
+/// cristal ter contra o que brilhar, e o cristal sai em VEIOS que rompem a
+/// superficie — pedrinha colorida por cima leria como musgo.
+pub fn minerio(tier: u8, variante: u32) -> Modelo {
+    let mut r = Rng::nova(variante ^ (tier as u32) * 6151 ^ 0x9E37);
+    let cristal = shared::terreno::cristal_do_tier(tier);
+    let raio = r.i(4, 6);
+    let alt = r.i(4, raio + 3);
+    let mut v = caixa_vazia(raio + 2, alt + 5);
+
+    // ── corpo ────────────────────────────────────────────────────────────
+    for ix in -raio..=raio {
+        for iz in -raio..=raio {
+            for iy in 0..=alt {
+                let dx = ix as f32 / (raio as f32 + 0.5);
+                let dz = iz as f32 / (raio as f32 + 0.5);
+                let dy = iy as f32 / (alt as f32 + 0.8);
+                if dx * dx + dy * dy + dz * dz > 1.0 || r.proximo() % 13 == 0 {
+                    continue;
+                }
+                v.poe(ix, iy, iz, if r.proximo() % 3 == 0 { Material::Rocha } else { Material::RochaEscura });
+            }
+        }
+    }
+
+    // ── cristais ─────────────────────────────────────────────────────────
+    // Quantidade pelo TIER: a pedra roxa nao e' so' mais valiosa, ela PARECE
+    // mais valiosa. Quem ve' de longe ja' sabe o que vai achar.
+    let veios = 2 + tier as i32;
+    for _ in 0..veios {
+        // Nasce na casca e cresce pra fora, inclinado. Cristal saindo do
+        // centro ficaria enterrado; saindo reto pra cima, todos paralelos.
+        let a = r.f() * std::f32::consts::TAU;
+        let sobe = 0.35 + r.f() * 0.55;
+        let pe = (
+            (a.cos() * (raio as f32 - 0.5)) as i32,
+            (alt as f32 * sobe) as i32,
+            (a.sin() * (raio as f32 - 0.5)) as i32,
+        );
+        let comp = r.i(3, 4 + tier as i32);
+        let (mut x, mut y, mut z) = (pe.0 as f32, pe.1 as f32, pe.2 as f32);
+        let (dx, dy, dz) = (a.cos() * 0.62, 0.55 + r.f() * 0.45, a.sin() * 0.62);
+        for k in 0..comp {
+            // Afina na ponta: prisma de espessura constante le' como cano.
+            let grosso = if k < comp / 2 { 1 } else { 0 };
+            for ox in -grosso..=grosso {
+                for oz in -grosso..=grosso {
+                    v.poe(x as i32 + ox, y as i32, z as i32 + oz, cristal);
+                }
+            }
+            x += dx;
+            y += dy;
+            z += dz;
+        }
+    }
+    malha(&v)
+}
+
 fn toco(r: &mut Rng) -> Volume {
     let raio = r.i(2, 3);
     let h = r.i(2, 4);
@@ -652,7 +713,9 @@ fn emite(
     };
     let inicio = m.verts.len() as u16;
     for (pos, oc) in pontos {
-        let k = luz * (oc as f32 / 255.0);
+        // Cristal nao toma luz de face nem oclusao: ele e' a fonte. Ver
+        // `Material::emissivo`.
+        let k = if mat.emissivo() { 1.0 } else { luz * (oc as f32 / 255.0) };
         m.verts.push(Vertex {
             position: pos * VOX,
             uv: vec2(0.0, 0.0),
@@ -939,5 +1002,39 @@ mod testes_orientacao {
              de face vai mostrar o interior dela",
             volume / 6.0
         );
+    }
+
+    /// A pedra tem que ter cristal VISIVEL e do tier certo, e o cristal tem
+    /// que sair sem sombra.
+    ///
+    /// E' o unico jeito de o jogador ler o valor de uma pedra a distancia. Se
+    /// o veio ficar enterrado no corpo da rocha, ou se a face de baixo sair
+    /// escura, a cor deixa de significar alguma coisa — e nao ha' UI nenhuma
+    /// pra compensar isso.
+    #[test]
+    fn a_pedra_de_minerio_mostra_o_tier() {
+        for tier in 1..=4u8 {
+            let cor = shared::terreno::cristal_do_tier(tier).rgb();
+            let mut viu = 0usize;
+            for variante in 0..6u32 {
+                let m = minerio(tier, variante);
+                assert!(m.quads() > 0, "tier {tier} variante {variante}: modelo vazio");
+                for v in &m.verts {
+                    // Sem luz de face: a cor sai IGUAL a' da paleta.
+                    if v.color[..3] == [cor.0, cor.1, cor.2] { viu += 1 }
+                }
+            }
+            assert!(viu >= 24, "tier {tier}: so' {viu} vertices de cristal a' vista");
+        }
+        // Tier diferente, cor diferente — senao a leitura a distancia nao
+        // existe.
+        let cores: Vec<_> = (1..=4u8)
+            .map(|t| shared::terreno::cristal_do_tier(t).rgb())
+            .collect();
+        for a in 0..cores.len() {
+            for b in a + 1..cores.len() {
+                assert_ne!(cores[a], cores[b], "tiers {} e {} tem a mesma cor", a + 1, b + 1);
+            }
+        }
     }
 }

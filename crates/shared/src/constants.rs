@@ -1283,59 +1283,83 @@ pub mod tile_id {
 // ── Coleta ────────────────────────────────────────────────────────────────
 //
 // Nao ha' ferramenta, nivel nem proficiencia: qualquer um coleta qualquer
-// coisa. O que decide o ganho e' o LUGAR. O jogador parado numa mina recebe
-// pedra sozinho, e a frequencia sai da DENSIDADE de nos vivos ao redor dele.
-// Andar pra uma regiao pobre e' o unico jeito de coletar menos — e como dois
-// jogadores no mesmo spot esvaziam os mesmos nos, a disputa e' pelo spot.
+// coisa. O que decide o ganho e' O LUGAR — quantas pedras vivas ha' em volta
+// de quem esta' parado ali. Como cada pedra tem um numero FINITO de coletas,
+// o veio esvazia enquanto e' explorado e volta quando descansa; dois
+// jogadores no mesmo veio esvaziam as mesmas pedras e cada um leva metade,
+// sem nenhuma regra escrita a mao pra dividir. A disputa e' pelo spot.
 
 /// Raio (em unidades de mundo) do "spot": o que conta como estar na mina.
 /// 6 unidades = 12 blocos, mais que a maior clareira e menos que a ilha.
 pub const COLETA_RAIO_SPOT: f32 = 6.0;
 
-/// Numerador do intervalo entre coletas: `intervalo = BASE / nos_vivos`.
+/// Numerador do intervalo entre coletas: `intervalo = BASE / vivos`.
 ///
-/// Dividir pela densidade e' o modelo inteiro em uma linha. Com respawn de
-/// `FARM_NODE_RESPAWN_S`, um spot de N nos se equilibra sozinho em
-/// `N * BASE / (BASE + RESPAWN)` nos vivos — 12 nos com estes numeros param
-/// em ~3.4 vivos, uma coleta a cada ~3.5s. Dois jogadores no mesmo spot
-/// dividem esse mesmo teto: cada um leva metade, sem regra nova.
+/// Dividir pela densidade e' o modelo inteiro em uma linha. Um veio de 8
+/// pedras rende uma coleta a cada 1,5 s enquanto esta' cheio; sobrando duas,
+/// cai pra 6 s. Nao existe bonus por ficar parado: existe bonus por estar num
+/// lugar melhor.
 pub const COLETA_INTERVALO_BASE_S: f32 = 12.0;
 
-/// Piso do intervalo. Impede que um spot absurdamente denso vire torneira.
+/// Piso do intervalo. Impede que um veio grande vire torneira.
 pub const COLETA_INTERVALO_MIN_S: f32 = 1.0;
 
-/// Quanto vale, em troncos equivalentes, um spot 100% de rocha exposta.
+/// Quantas coletas uma pedra rende antes de acabar, por tier
+/// (1 cinza, 2 verde, 3 azul, 4 roxo).
 ///
-/// Serve pra somar duas coisas de unidade diferente: rocha e' AREA amostrada,
-/// tronco e' contagem. Medido na ilha inicial (32.214 amostras em terra): o
-/// bosque mais fechado tem 9 troncos no raio, 35% da terra nao tem nenhum, e
-/// o paredao mais cheio da' 113 de 113 colunas de rocha. Oito poe os dois no
-/// mesmo patamar — mina cheia rende como mata fechada, e o que muda entre
-/// elas e' O QUE cai, nao quanto.
-pub const COLETA_PEDRA_CHEIA: f32 = 8.0;
+/// E' a segunda metade do valor de um tier: a pedra roxa nao da' material
+/// roxo, ela da' MUITO mais material — 128 coletas contra 14 da cinza. Subir
+/// a montanha compra tempo de coleta, nao um item novo.
+pub const COLETAS_POR_PEDRA: [u32; 5] = [0, 14, 24, 64, 128];
 
-/// Lado, em unidades de mundo, da celula de RESERVA — o "spot" pra efeito de
-/// esgotamento. Quem coleta gasta a reserva da celula em que esta'; a reserva
-/// volta sozinha. E' o que faz a disputa ser real e nao decorativa: dois
-/// jogadores na mesma celula gastam a MESMA reserva e cada um leva metade.
-pub const COLETA_CELULA: f32 = 8.0;
-
-/// Fracao da reserva que volta por segundo. 1/40 = celula esgotada cheia de
-/// novo em quarenta segundos.
+/// Quanto uma pedra esgotada demora pra voltar, por tier.
 ///
-/// Junto com `COLETA_INTERVALO_BASE_S` este numero fixa o TETO de um spot:
-/// como cada coleta gasta `1/densidade` da reserva, a celula se equilibra em
-/// `BASE * REGEN` (aqui 0,3) e o intervalo estavel fica em
-/// `1 / (densidade * REGEN)` — proporcional a' densidade, como tem que ser, e
-/// independente de quantos jogadores estao em cima dela.
+/// Sobe com o tier pelo mesmo motivo que a contagem sobe: a pedra roxa e'
+/// destino, e destino que se repoe em dois minutos deixa de ser destino.
 ///
-/// Com os numeros de hoje: o melhor spot da ilha (densidade 8) da' uma coleta
-/// a cada 5s, um lugar comum (densidade 2) a cada 20s, e quem chega primeiro
-/// num spot descansado leva uma rajada de ~1,5s por coleta ate' a reserva
-/// baixar. Dois jogadores no mesmo spot ficam com 10s cada.
-pub const COLETA_RESERVA_REGEN_POR_S: f32 = 1.0 / 40.0;
+/// E' este numero que faz o veio ESVAZIAR de verdade. Com 300 s, um veio de
+/// 24 pedras cinza se acomoda em ~9 vivas: some dois tercos do que estava la'
+/// quando o jogador chegou, e ele ve' isso acontecer.
+pub const RESPAWN_DA_PEDRA: [f32; 5] = [0.0, 300.0, 420.0, 600.0, 900.0];
 
-/// Tempo de respawn de um no' depois de coletado.
+/// Quantas coletas um tronco rende, e em quanto tempo volta.
+///
+/// PROVISORIO: a arvore ainda nao tem o desenho que a pedra tem (tier por
+/// regiao da mata, contagem propria). Ela roda na mesma maquina com numeros
+/// de marcador pra madeira nao sumir do jogo enquanto isso.
+pub const COLETAS_POR_ARVORE: u32 = 8;
+pub const RESPAWN_DA_ARVORE: f32 = 90.0;
+
+/// O que uma pedra de cada tier ENTREGA, em peso por tier de material.
+///
+/// A escada e' a mesma em toda linha: o material cinza e' sempre a maioria, e
+/// cada tier acrescenta um pouco do proprio e um pouco mais do anterior. A
+/// pedra roxa NAO da' material roxo — ela da' mais azul que a azul, e paga a
+/// diferenca em tempo de coleta (`COLETAS_POR_PEDRA`).
+///
+/// Nao ha' material laranja: sao quatro cores e o teto e' o roxo.
+pub const RENDIMENTO_DA_PEDRA: [[u16; 4]; 5] = [
+    [  0,  0,  0, 0],
+    [100,  0,  0, 0], // cinza: so' cinza
+    [ 80, 20,  0, 0], // verde: verde, com muito mais cinza
+    [ 65, 25, 10, 0], // azul: cinza ainda manda, mais verde que a anterior, um pouco de azul
+    [ 55, 27, 18, 0], // roxo: mesma escada, sem roxo, um pouquinho mais de azul
+];
+
+/// Tier do MATERIAL que sai desta pedra neste sorteio. `f` e' 0..1.
+pub fn tier_do_rendimento(tier_da_pedra: u8, f: f32) -> u8 {
+    let pesos = RENDIMENTO_DA_PEDRA[(tier_da_pedra as usize).min(4)];
+    let total: u16 = pesos.iter().sum();
+    if total == 0 { return 1 }
+    let mut alvo = (f.clamp(0.0, 0.999) * total as f32) as u16;
+    for (i, p) in pesos.iter().enumerate() {
+        if alvo < *p { return i as u8 + 1 }
+        alvo -= *p;
+    }
+    1
+}
+
+/// Tempo de respawn de um no' de coleta posto a mao num mapa de arquivo.
 pub const FARM_NODE_RESPAWN_S: f32 = 30.0;
 
 // ── Pesca (peixes do oceano) ──────────────────────────────────────────────
@@ -1358,3 +1382,56 @@ pub const FISH_ATTRACT_STRENGTH: f32 = 0.45;
 /// Distância (tiles) peixe ↔ boia pra considerar fisgado (encostou na boia).
 pub const FISH_HOOK_RADIUS: f32 = 0.7;
 
+
+#[cfg(test)]
+mod testes_coleta {
+    use super::*;
+
+    /// A escada de rendimento tem que obedecer, linha por linha, o que foi
+    /// pedido: cinza sempre a maioria, cada tier acrescenta um pouco do
+    /// proprio e um pouco mais do anterior, e a pedra roxa NAO da' roxo.
+    #[test]
+    fn a_escada_de_rendimento_obedece_o_desenho() {
+        let p = RENDIMENTO_DA_PEDRA;
+        for t in 1..=4usize {
+            assert_eq!(p[t].iter().sum::<u16>(), 100, "tier {t} nao soma 100");
+            let maior = *p[t].iter().max().unwrap();
+            assert_eq!(p[t][0], maior, "tier {t}: cinza tem que ser a maioria");
+        }
+        assert_eq!(p[1], [100, 0, 0, 0], "pedra cinza so' da' cinza");
+        assert_eq!(p[4][3], 0, "pedra roxa NAO da' material roxo");
+        for t in 2..=4usize {
+            assert!(p[t][1] > p[t - 1][1], "tier {t}: verde tem que subir");
+        }
+        assert!(p[4][2] > p[3][2], "roxo tem que dar mais azul que o azul");
+        assert!(p[4][0] < p[3][0], "roxo tem que dar menos cinza que o azul");
+    }
+
+    /// O sorteio tem que devolver a mesma proporcao que a tabela declara.
+    #[test]
+    fn o_sorteio_bate_com_a_tabela() {
+        for tier in 1..=4u8 {
+            let mut conta = [0u32; 5];
+            const N: u32 = 100_000;
+            for k in 0..N {
+                conta[tier_do_rendimento(tier, k as f32 / N as f32) as usize] += 1;
+            }
+            for m in 1..=4usize {
+                let esperado = RENDIMENTO_DA_PEDRA[tier as usize][m - 1] as f32 / 100.0;
+                let obtido = conta[m] as f32 / N as f32;
+                assert!((obtido - esperado).abs() < 0.01,
+                    "pedra t{tier} material t{m}: {obtido:.3} != {esperado:.3}");
+            }
+        }
+    }
+
+    /// A pedra melhor tem que render MAIS, e o que ela rende a mais e' TEMPO.
+    #[test]
+    fn a_pedra_melhor_rende_mais_tempo() {
+        for t in 2..=4usize {
+            assert!(COLETAS_POR_PEDRA[t] > COLETAS_POR_PEDRA[t - 1]);
+            assert!(RESPAWN_DA_PEDRA[t] > RESPAWN_DA_PEDRA[t - 1]);
+        }
+        assert_eq!(COLETAS_POR_PEDRA[1..], [14, 24, 64, 128]);
+    }
+}

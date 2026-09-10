@@ -1294,11 +1294,9 @@ pub struct GameWorld {
     /// tick: roda a cada `COLETA_PASSO_S`, que e' o passo com que o progresso
     /// de cada jogador acumula.
     coleta_em: f32,
-    /// Reserva de cada celula de coleta: (quanto sobrou em [0,1], quando foi
-    /// lido pela ultima vez). So' existe celula que alguem visitou — a
-    /// regeneracao acontece na leitura, entao o custo e' proporcional ao
-    /// numero de jogadores e nao ao tamanho do mundo.
-    reservas: HashMap<(i32, i32), (f32, f32)>,
+    /// Quanto ja' saiu de cada pedra (ou tronco) TOCADA, por chave de coluna.
+    /// Pedra intocada nao tem entrada: a ilha tem milhares delas.
+    pedras: HashMap<u32, EstadoDaPedra>,
     /// Onde o jogador desembarca. E' a origem da progressao: nivel de mob e
     /// tier de recurso crescem com a distancia daqui.
     porto_da_ilha: Vec2,
@@ -1559,21 +1557,36 @@ fn tutorial_island_floor(x: i32, y: i32) -> bool {
 
 /// Quanto um lugar esta' rendendo de coleta. So' pra observacao.
 pub struct RetratoDaColeta {
-    pub pedra: f32,
-    pub madeira: f32,
+    /// Pedras vivas no raio, por tier (indice 1..4).
+    pub pedras: [u32; 5],
+    /// Troncos vivos no raio.
+    pub troncos: u32,
     pub densidade: f32,
-    pub reserva: f32,
     pub intervalo_s: f32,
-    pub sustentado_s: f32,
-    pub tier: u8,
+    /// Quantas coletas ainda cabem no que esta' vivo em volta. E' o tamanho
+    /// do veio em unidade que interessa: nao "quantas pedras", e sim "quanto
+    /// ainda sai daqui antes de acabar".
+    pub coletas_restantes: u32,
 }
 
 /// De onde a coleta de um jogador esta' saindo neste momento.
 enum FonteDeColeta {
     /// No' posto a mao no mapa (tutorial, mapas do editor).
     No(u32),
-    /// A propria ilha: rocha exposta e tronco.
-    Terreno { kind: &'static str, tier: u8, densidade: f32 },
+    /// Pedra ou tronco plantado no relevo da ilha.
+    Plantado(shared::terreno::Coletavel),
+}
+
+/// Quanto ja' saiu de uma pedra (ou tronco) e quando ela volta.
+///
+/// So' existe entrada pra corpo que alguem TOCOU. A ilha tem milhares de
+/// pedras; guardar estado das que ninguem visitou seria memoria proporcional
+/// ao tamanho do mundo em vez de ao que esta' acontecendo nele.
+#[derive(Default, Clone, Copy)]
+struct EstadoDaPedra {
+    coletas: u32,
+    /// 0.0 = viva; >0 = volta neste `sim_time_s`.
+    respawn_at: f32,
 }
 
 /// No' de coleta posto a mao num mapa de arquivo. Nao tem mais HP: uma coleta
@@ -1651,7 +1664,7 @@ impl GameWorld {
             last_econ_version: 0,
             farm_nodes: HashMap::new(),
             coleta_em: 0.0,
-            reservas: HashMap::new(),
+            pedras: HashMap::new(),
             porto_da_ilha: Vec2::ZERO,
             tutorial_mode: false,
             tutorial_slots: Vec::new(),
@@ -1795,7 +1808,7 @@ impl GameWorld {
             last_econ_version: 0,
             farm_nodes: HashMap::new(),
             coleta_em: 0.0,
-            reservas: HashMap::new(),
+            pedras: HashMap::new(),
             porto_da_ilha: Vec2::ZERO,
             tutorial_mode,
             tutorial_slots: Vec::new(),
@@ -4124,6 +4137,12 @@ impl GameWorld {
                 id, x: n.pos.x, y: n.pos.y, kind: n.kind.clone(), tier: n.tier,
             })
             .collect();
+        // Quais pedras da ilha estao esgotadas agora. So' a excecao viaja: a
+        // pedra em si os dois lados geram da mesma semente.
+        let esgotadas = self.pedras_esgotadas();
+        if !esgotadas.is_empty() {
+            let _ = handle.to_client.send(ServerMessage::PedrasEsgotadas { colunas: esgotadas });
+        }
         let _ = handle.to_client.send(ServerMessage::FarmNodesConfig {
             nodes: farm_nodes_list,
         });
@@ -5986,9 +6005,10 @@ impl GameWorld {
         if self.from_mapfile && !self.boss_areas.is_empty() {
             self.tick_boss_areas();
         }
-        // Coleta automatica: na ilha sai do relevo, no mapa de arquivo sai
-        // dos nos. Respawn so' importa onde ha' no'.
+        // Coleta automatica: na ilha sai das pedras plantadas no relevo, no
+        // mapa de arquivo sai dos nos postos a mao.
         self.tick_coleta();
+        self.tick_pedras();
         if !self.farm_nodes.is_empty() {
             self.tick_farm_respawn();
         }
@@ -11526,13 +11546,7 @@ impl GameWorld {
 
             match fonte {
                 FonteDeColeta::No(node_id) => self.coletar_no(sid, node_id),
-                FonteDeColeta::Terreno { kind, tier, densidade } => {
-                    // Uma coleta gasta `1/densidade` da reserva: lugar rico
-                    // aguenta mais coleta que lugar pobre, que e' a unica
-                    // forma de o teto do spot acompanhar a densidade.
-                    self.gastar_reserva(pos, 1.0 / densidade.max(1.0));
-                    self.coletar_do_terreno(sid, pos, kind, tier);
-                }
+                FonteDeColeta::Plantado(c) => self.coletar_plantado(sid, c),
             }
         }
     }
@@ -11540,9 +11554,8 @@ impl GameWorld {
     /// De onde sai a coleta de quem esta' em `pos`, e com que densidade.
     ///
     /// Mapa de arquivo (tutorial e mapas do editor) tem no' de coleta posto a
-    /// mao: la' a densidade e' a contagem de nos vivos. A ilha do arquipelago
-    /// nao tem no' nenhum — o recurso E' o relevo, e a densidade sai da
-    /// riqueza da vizinhanca.
+    /// mao. A ilha do arquipelago nao: la' o que se coleta e' a PEDRA plantada
+    /// no relevo, gerada da mesma semente nos dois lados.
     fn fonte_de_coleta(&mut self, pos: Vec2) -> Option<(f32, FonteDeColeta)> {
         if !self.farm_nodes.is_empty() {
             let raio_sq = shared::COLETA_RAIO_SPOT * shared::COLETA_RAIO_SPOT;
@@ -11555,107 +11568,52 @@ impl GameWorld {
         }
 
         let ilha = self.ilha.as_ref()?;
-        let riqueza = ilha.riqueza(pos, shared::COLETA_RAIO_SPOT);
-        if riqueza.vazia() { return None }
-        let densidade = riqueza.densidade();
-        let reserva = self.reserva_em(pos);
-        // Pedra ou madeira, sorteado pelo peso do que ha' em volta: quem esta'
-        // no paredao tira pedra quase sempre, quem esta' no bosque tira
-        // madeira, e quem esta' na beira dos dois tira dos dois.
-        let sorteio = lcg_f32(
-            (self.tick as u64)
-                .wrapping_mul(0x9E37_79B9)
-                .wrapping_add(pos.x.to_bits() as u64)
-                .wrapping_add((pos.y.to_bits() as u64) << 17),
-        );
-        let kind = if sorteio * densidade < riqueza.pedra_equivalente() { "Rock" } else { "Tree" };
-        Some((densidade * reserva, FonteDeColeta::Terreno {
-            kind,
-            tier: self.tier_do_lugar(pos),
-            densidade,
-        }))
-    }
-
-    /// Tier do recurso pelo LUGAR: a mesma regra que faz o mob distante ser
-    /// mais alto. Perto do desembarque e' T1; a ponta mais longe da ilha e'
-    /// T4. Sem tabela escrita a mao e sem portao — quem quiser T4 anda ate' la'.
-    fn tier_do_lugar(&self, pos: Vec2) -> u8 {
-        let Some(def) = shared::terreno::def_da_zona(&self.zona) else { return 1 };
-        let raio_un = def.raio_blocos as f32 * shared::terreno::BLOCO;
-        let t = (pos.distance(self.porto_da_ilha) / raio_un).clamp(0.0, 0.999);
-        1 + (t * 4.0) as u8
-    }
-
-    /// Celula de reserva que cobre `pos`.
-    fn celula_de_reserva(pos: Vec2) -> (i32, i32) {
-        (
-            (pos.x / shared::COLETA_CELULA).floor() as i32,
-            (pos.y / shared::COLETA_CELULA).floor() as i32,
-        )
-    }
-
-    /// Reserva atual da celula, em [0, 1]. Regenera na LEITURA: varrer o mapa
-    /// inteiro por tick pra encher celula que ninguem visita seria trabalho
-    /// proporcional ao tamanho do mundo em vez de ao numero de jogadores.
-    fn reserva_em(&mut self, pos: Vec2) -> f32 {
-        let agora = self.sim_time_s;
-        let celula = Self::celula_de_reserva(pos);
-        let Some(e) = self.reservas.get_mut(&celula) else { return 1.0 };
-        let dt = (agora - e.1).max(0.0);
-        e.0 += dt * shared::COLETA_RESERVA_REGEN_POR_S;
-        e.1 = agora;
-        if e.0 >= 1.0 {
-            // Celula cheia e' o padrao: guardar uma entrada pra dizer isso
-            // faria o mapa crescer com o passeio dos jogadores e nunca
-            // encolher.
-            self.reservas.remove(&celula);
-            return 1.0;
-        }
-        e.0
-    }
-
-    /// Reserva da celula SEM mexer no mapa — a mesma conta de `reserva_em`,
-    /// pra quem so' quer olhar (o panoptico).
-    pub fn reserva_lida(&self, pos: Vec2) -> f32 {
-        match self.reservas.get(&Self::celula_de_reserva(pos)) {
-            None => 1.0,
-            Some(&(v, visto)) => {
-                let dt = (self.sim_time_s - visto).max(0.0);
-                (v + dt * shared::COLETA_RESERVA_REGEN_POR_S).min(1.0)
-            }
-        }
+        let mut achados = Vec::new();
+        ilha.coletaveis_em(pos, shared::COLETA_RAIO_SPOT, &mut achados);
+        // Esgotado nao conta pra densidade NEM serve de alvo — e' exatamente
+        // isso que faz o veio render menos conforme e' explorado.
+        achados.retain(|c| !self.esgotado(c.coluna));
+        if achados.is_empty() { return None }
+        let densidade = achados.len() as f32;
+        let alvo = *achados.iter()
+            .min_by(|a, b| {
+                a.centro.distance_squared(pos).total_cmp(&b.centro.distance_squared(pos))
+            })?;
+        Some((densidade, FonteDeColeta::Plantado(alvo)))
     }
 
     /// O que a coleta esta' rendendo em `pos`, pra quem esta' de fora olhando.
     /// So' o caminho da ilha: no' de mapa se ve' pelo proprio no'.
     pub fn retrato_da_coleta(&self, pos: Vec2) -> Option<RetratoDaColeta> {
         if !self.farm_nodes.is_empty() { return None }
-        let riqueza = self.ilha.as_ref()?.riqueza(pos, shared::COLETA_RAIO_SPOT);
-        if riqueza.vazia() { return None }
-        let densidade = riqueza.densidade();
-        let reserva = self.reserva_lida(pos);
-        let intervalo = (shared::COLETA_INTERVALO_BASE_S / (densidade * reserva).max(1e-3))
-            .max(shared::COLETA_INTERVALO_MIN_S);
-        Some(RetratoDaColeta {
-            pedra: riqueza.pedra_equivalente(),
-            madeira: riqueza.madeira as f32,
-            densidade,
-            reserva,
-            intervalo_s: intervalo,
-            // O que o lugar aguenta em regime, que e' o numero que importa
-            // pra balancear. O instantaneo oscila muito: uma coleta num spot
-            // pobre zera a reserva e o intervalo dispara ate' ela voltar.
-            sustentado_s: 1.0 / (densidade * shared::COLETA_RESERVA_REGEN_POR_S).max(1e-3),
-            tier: self.tier_do_lugar(pos),
-        })
+        let mut achados = Vec::new();
+        self.ilha.as_ref()?.coletaveis_em(pos, shared::COLETA_RAIO_SPOT, &mut achados);
+        achados.retain(|c| !self.esgotado(c.coluna));
+        if achados.is_empty() { return None }
+        let mut r = RetratoDaColeta {
+            pedras: [0; 5],
+            troncos: 0,
+            densidade: achados.len() as f32,
+            intervalo_s: (shared::COLETA_INTERVALO_BASE_S / achados.len() as f32)
+                .max(shared::COLETA_INTERVALO_MIN_S),
+            coletas_restantes: 0,
+        };
+        for c in &achados {
+            let (limite, feitas) = if c.tier == 0 {
+                (shared::COLETAS_POR_ARVORE, 0)
+            } else {
+                (shared::COLETAS_POR_PEDRA[(c.tier as usize).min(4)], 0)
+            };
+            let feitas = self.pedras.get(&c.coluna).map_or(feitas, |e| e.coletas);
+            r.coletas_restantes += limite.saturating_sub(feitas);
+            if c.tier == 0 { r.troncos += 1 } else { r.pedras[(c.tier as usize).min(4)] += 1 }
+        }
+        Some(r)
     }
 
-    fn gastar_reserva(&mut self, pos: Vec2, quanto: f32) {
-        let agora = self.sim_time_s;
-        let e = self.reservas.entry(Self::celula_de_reserva(pos))
-            .or_insert((1.0, agora));
-        e.0 = (e.0 - quanto).max(0.0);
-        e.1 = agora;
+    /// Esta pedra (ou tronco) esta' em respawn?
+    fn esgotado(&self, coluna: u32) -> bool {
+        self.pedras.get(&coluna).is_some_and(|e| e.respawn_at > 0.0)
     }
 
     /// Multiplicador de velocidade de coleta do jogador. Hoje e' sempre 1.0.
@@ -11676,18 +11634,91 @@ impl GameWorld {
             .map(|(id, _)| id)
     }
 
-    /// Entrega o material do lugar. Vai DIRETO pra bolsa: a coleta e'
-    /// automatica, e obrigar a pisar num drop no chao devolveria justamente o
-    /// clique que saiu.
-    fn coletar_do_terreno(&mut self, sid: SessionId, pos: Vec2, kind: &str, tier: u8) {
+    /// Uma coleta numa pedra (ou tronco) plantado no relevo.
+    ///
+    /// Cada coleta soma um no contador daquele corpo. Quando o contador chega
+    /// no limite do tier, a pedra ACABA: some do mundo, para de contar pra
+    /// densidade de quem esta' ali, e volta depois do respawn dela.
+    fn coletar_plantado(&mut self, sid: SessionId, c: shared::terreno::Coletavel) {
+        let (limite, respawn_s, kind) = if c.tier == 0 {
+            (shared::COLETAS_POR_ARVORE, shared::RESPAWN_DA_ARVORE, "Tree")
+        } else {
+            let t = (c.tier as usize).min(4);
+            (shared::COLETAS_POR_PEDRA[t], shared::RESPAWN_DA_PEDRA[t], "Rock")
+        };
+
         let seed = (self.tick as u64)
             .wrapping_mul(0xDEAD_BEEF)
-            .wrapping_add(pos.x.to_bits() as u64);
-        let drops = crate::economy::farm_node_loot(kind, tier, seed);
+            .wrapping_add(c.coluna as u64);
+        // O tier do MATERIAL nao e' o tier da pedra: a pedra roxa entrega
+        // sobretudo cinza, e nao entrega roxo nenhum. Ver `RENDIMENTO_DA_PEDRA`.
+        let tier_material = if c.tier == 0 {
+            1
+        } else {
+            shared::tier_do_rendimento(c.tier, lcg_f32(seed ^ 0x5EED_C0DE))
+        };
+        let drops = crate::economy::farm_node_loot(kind, tier_material, seed);
         self.entregar_coleta(sid, &drops);
+
+        let e = self.pedras.entry(c.coluna).or_default();
+        e.coletas += 1;
+        if e.coletas < limite { return }
+        e.coletas = 0;
+        e.respawn_at = self.sim_time_s + respawn_s;
+        self.avisa_pedra(c.centro, ServerMessage::PedraEsgotada { coluna: c.coluna });
     }
 
-    /// Esgota um no' de mapa e entrega o material.
+    /// Devolve ao mundo as pedras cujo respawn venceu.
+    fn tick_pedras(&mut self) {
+        if self.pedras.is_empty() { return }
+        let agora = self.sim_time_s;
+        let voltaram: Vec<u32> = self.pedras.iter()
+            .filter(|(_, e)| e.respawn_at > 0.0 && agora >= e.respawn_at)
+            .map(|(&k, _)| k)
+            .collect();
+        for coluna in voltaram {
+            // Sai do mapa em vez de ficar zerada: pedra cheia e' o padrao, e
+            // guardar uma entrada pra dizer isso faria o mapa so' crescer.
+            self.pedras.remove(&coluna);
+            let centro = self.centro_da_coluna(coluna);
+            self.avisa_pedra(centro, ServerMessage::PedraVoltou { coluna });
+        }
+    }
+
+    /// Centro de mundo aproximado de uma chave de coluna. Serve pra decidir
+    /// quem esta' perto o bastante pra receber o aviso — meio bloco de erro
+    /// nao muda nada nessa conta.
+    fn centro_da_coluna(&self, coluna: u32) -> Vec2 {
+        let raio = self.ilha.as_ref().map_or(0, |i| i.raio_blocos);
+        let (ix, iz) = ((coluna >> 16) as i32, (coluna & 0xffff) as i32);
+        Vec2::new(
+            (ix - raio) as f32 * shared::terreno::BLOCO,
+            (iz - raio) as f32 * shared::terreno::BLOCO,
+        )
+    }
+
+    fn avisa_pedra(&self, centro: Vec2, msg: ServerMessage) {
+        let aoi_sq = shared::AOI_RADIUS * shared::AOI_RADIUS;
+        for s in self.sessions.values() {
+            if !s.logged_in { continue }
+            let Some(e) = s.entity else { continue };
+            let Ok(p) = self.ecs.get::<&Position>(e) else { continue };
+            if p.0.distance_squared(centro) <= aoi_sq {
+                let _ = s.handle.to_client.send(msg.clone());
+            }
+        }
+    }
+
+    /// Quais pedras estao esgotadas AGORA. Vai no login: a pedra em si os dois
+    /// lados geram da semente, entao o que viaja e' so' a excecao.
+    fn pedras_esgotadas(&self) -> Vec<u32> {
+        self.pedras.iter()
+            .filter(|(_, e)| e.respawn_at > 0.0)
+            .map(|(&k, _)| k)
+            .collect()
+    }
+
+    /// Esgota um no' de mapa e entrega o material.    /// Esgota um no' de mapa e entrega o material.
     fn coletar_no(&mut self, sid: SessionId, node_id: u32) {
         let (node_pos, node_kind, node_tier, respawn_s) = {
             let Some(n) = self.farm_nodes.get(&node_id) else { return };

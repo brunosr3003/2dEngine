@@ -567,6 +567,14 @@ pub enum Material {
     Folha,
     FolhaEscura,
     FolhaSeca,
+    /// Cristal de minerio. A COR E' O TIER — e' o unico jeito de o jogador
+    /// ler o valor de uma pedra do outro lado do vale, sem UI e sem chegar
+    /// perto. Saturados e claros de proposito: eles tem que gritar contra a
+    /// rocha cinzenta em que estao cravados.
+    CristalCinza,
+    CristalVerde,
+    CristalAzul,
+    CristalRoxo,
 }
 
 impl Material {
@@ -577,7 +585,7 @@ impl Material {
     /// `Tronco` (discriminante 11) cair fora dela, e todo tronco e toda folha
     /// da vegetacao viraram voxel INVISIVEL — solido pra colisao de face,
     /// vazio pra malha. O mundo ficou coberto de pedra e mais nada.
-    pub const TODOS: [Material; 21] = [
+    pub const TODOS: [Material; 25] = [
         Material::Agua,
         Material::AreiaMolhada,
         Material::Areia,
@@ -599,6 +607,10 @@ impl Material {
         Material::Folha,
         Material::FolhaEscura,
         Material::FolhaSeca,
+        Material::CristalCinza,
+        Material::CristalVerde,
+        Material::CristalAzul,
+        Material::CristalRoxo,
     ];
 
     pub fn de_u8(v: u8) -> Option<Material> {
@@ -632,7 +644,30 @@ impl Material {
             // lado na mesma ilha, e neve e gelo do mesmo branco seriam uma
             // ilha de um material so'.
             Material::Gelo => (176, 214, 238),
+            // O cinza do cristal e' CLARO, quase branco: cinza de pedra sobre
+            // pedra cinza nao se enxerga, e a pedra mais comum e' justamente
+            // a que o jogador precisa achar primeiro.
+            Material::CristalCinza => (214, 220, 228),
+            Material::CristalVerde => (96, 226, 138),
+            Material::CristalAzul => (92, 176, 250),
+            Material::CristalRoxo => (186, 112, 246),
         }
+    }
+
+    /// Materiais que nao recebem sombra: eles EMITEM.
+    ///
+    /// Cristal escurecido no lado de baixo vira pedra pintada, e ai' o tier
+    /// so' se le' de perto e de cima. O brilho nao e' enfeite — e' a leitura
+    /// do valor da pedra a distancia, que e' o que faz o jogador escolher pra
+    /// qual pico subir.
+    pub fn emissivo(self) -> bool {
+        matches!(
+            self,
+            Material::CristalCinza
+                | Material::CristalVerde
+                | Material::CristalAzul
+                | Material::CristalRoxo
+        )
     }
 
     /// O que aparece na LATERAL de um bloco deste material.
@@ -646,6 +681,8 @@ impl Material {
             Material::Areia | Material::AreiaMolhada => Material::Areia,
             Material::Neve => Material::Rocha,
             Material::Arenito => Material::Arenito,
+            // Cristal e' o mesmo de todo lado: a face lateral escurecida
+            // apagaria justamente o brilho que faz o tier ser legivel.
             outro => outro,
         }
     }
@@ -1075,21 +1112,131 @@ pub fn planta_da_coluna(
     })
 }
 
+/// Uma pedra de minerio, decidida.
+///
+/// Nao e' o matacao da forracao (`Planta::Pedra`), que e' cenario: esta e' a
+/// pedra que se COLETA, brilha na cor do tier e acaba depois de um numero de
+/// coletas. Nasce so' em altura de montanha e em veio — e' um lugar, nao um
+/// item espalhado pelo chao.
+#[derive(Debug, Clone, Copy)]
+pub struct Minerio {
+    pub centro: glam::Vec2,
+    /// 1 cinza, 2 verde, 3 azul, 4 roxo. A cor E' o tier.
+    pub tier: u8,
+    pub porte: f32,
+    pub variante: u32,
+}
+
+/// Cristal da cor do tier: 1 cinza, 2 verde, 3 azul, 4 roxo.
+pub fn cristal_do_tier(tier: u8) -> Material {
+    match tier {
+        2 => Material::CristalVerde,
+        3 => Material::CristalAzul,
+        4 => Material::CristalRoxo,
+        _ => Material::CristalCinza,
+    }
+}
+
+/// Raio de colisao da pedra de minerio, a porte 1. Maior que o matacao de
+/// cenario porque ela e' maior: se dois corpos podem ocupar o mesmo ponto que
+/// a pedra ocupa, ela deixa de ser um lugar disputado.
+pub const RAIO_DE_MINERIO: f32 = 0.75;
+
+/// Fracao do pico do bioma a partir da qual nasce minerio. Abaixo disso e'
+/// vale, e vale nao tem mina.
+///
+/// Medido na ilha inicial (1,16 milhao de colunas em terra, pico teorico
+/// 37,8): 0,42 poe o limiar em 15,9 unidades, que sao os 13% mais altos da
+/// terra. Menos que isso e a mina vira paisagem; mais e ela some.
+pub const MINERIO_LIMIAR: f32 = 0.42;
+
+/// Tier da pedra pela ALTURA, em fracao do pico do bioma. Quanto mais alto o
+/// pico, melhor o minerio — e a pedra roxa fica no ponto mais alto da ilha,
+/// que e' o unico jeito de o topo da montanha ser um destino.
+pub fn tier_de_minerio(altura: f32, pico: f32) -> u8 {
+    let t = altura / pico.max(1.0);
+    if t < 0.56 { 1 } else if t < 0.69 { 2 } else if t < 0.80 { 3 } else { 4 }
+}
+
+/// A pedra de minerio desta coluna, se houver.
+///
+/// Mesmo contrato de `arvore_da_coluna`: funcao pura do par de coordenadas,
+/// rodada identica nos dois lados. O cliente desenha, o servidor barra
+/// passagem e conta coleta — e nenhum byte de pedra viaja no fio.
+pub fn minerio_da_coluna(
+    bioma: Bioma,
+    bx: i32,
+    bz: i32,
+    topo: i32,
+    ger: &Gerador,
+    agua: bool,
+) -> Option<Minerio> {
+    if agua { return None }
+    let y = (topo + 1) as f32 * BLOCO;
+    let pico = ger.pico();
+    if y < pico * MINERIO_LIMIAR { return None }
+
+    // O veio decide ONDE. Sem ele a pedra sairia uniforme por toda a
+    // montanha, e "spot" perderia o sentido: se ha' minerio em qualquer
+    // encosta, andar ate' um lugar nao significa nada.
+    let veio = ger.veio(bx, bz);
+    if veio < 0.55 { return None }
+    let forca = (veio - 0.55) / 0.45;
+
+    let g0 = (bx as u32).wrapping_mul(2_654_435_761) ^ (bz as u32).wrapping_mul(1_597_334_677);
+    let g1 = g0.wrapping_mul(2_246_822_519).wrapping_add(374_761_393);
+    let sorteio = (g1 >> 8) as f32 / (1u32 << 24) as f32;
+    if sorteio >= DENSIDADE_DE_MINERIO * forca { return None }
+
+    let _ = bioma;
+    Some(Minerio {
+        centro: glam::Vec2::new(
+            bx as f32 * BLOCO + ((g0 >> 4 & 0xff) as f32 / 255.0 - 0.5) * BLOCO * 1.4,
+            bz as f32 * BLOCO + ((g1 >> 4 & 0xff) as f32 / 255.0 - 0.5) * BLOCO * 1.4,
+        ),
+        tier: tier_de_minerio(y, pico),
+        porte: 0.85 + ((g0 >> 14) & 0xff) as f32 / 255.0 * 0.45,
+        variante: (g1 >> 22) & 0x3f,
+    })
+}
+
+/// Chance de uma coluna elegivel ter pedra, no auge do veio.
+///
+/// Numero pequeno de proposito: pedra e' destino, nao forracao. Ver o teste
+/// `a_ilha_tem_minerio_dos_quatro_tiers` pra contagem por tier na ilha
+/// inicial.
+pub const DENSIDADE_DE_MINERIO: f32 = 0.035;
+
 /// Um corpo solido plantado no mundo: tronco, matacao ou toco.
 #[derive(Debug, Clone, Copy)]
 pub struct Estorvo {
     pub centro: glam::Vec2,
     pub raio: f32,
     pub tipo: TipoDeEstorvo,
+    /// Coluna que o gerou, empacotada em `chave_de_coluna`. E' a IDENTIDADE
+    /// do corpo: e' por ela que o servidor guarda quantas coletas ja' sairam
+    /// desta pedra e o cliente sabe qual deixar de desenhar.
+    pub coluna: u32,
 }
 
 /// O que o estorvo E'. A colisao nao se importa — barrar e' barrar —, mas a
-/// COLETA se importa: quem esta' no meio de um bosque tira madeira, e um
-/// arbusto nao e' arvore.
+/// COLETA se importa: pedra de minerio rende minerio, tronco rende madeira e
+/// arbusto nao rende nada.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TipoDeEstorvo {
     Tronco,
     Forracao,
+    /// Pedra de minerio, com o tier dela (1 cinza .. 4 roxo).
+    Minerio(u8),
+}
+
+/// Empacota a coluna da ILHA (indices 0..lado) numa chave de 32 bits.
+///
+/// Cabe: a maior ilha do arquipelago tem raio 800, entao o lado passa longe
+/// de 65.536. E' funcao pura dos dois indices, entao cliente e servidor
+/// chegam na mesma chave sem combinar nada.
+pub fn chave_de_coluna(ix: i32, iz: i32) -> u32 {
+    ((ix.clamp(0, 0xffff) as u32) << 16) | (iz.clamp(0, 0xffff) as u32)
 }
 
 /// Tudo que esta' coluna tem e BARRA passagem, acrescentado em `saida`.
@@ -1109,11 +1256,13 @@ pub fn estorvos_da_coluna(
     agua: bool,
     saida: &mut Vec<Estorvo>,
 ) {
+    let coluna = chave_de_coluna(bx + ger.raio_blocos, bz + ger.raio_blocos);
     if let Some(a) = arvore_da_coluna(bioma, bx, bz, topo, declive, ger, agua) {
         saida.push(Estorvo {
             centro: a.centro,
             raio: raio_de_tronco(a.especie) * a.porte,
             tipo: TipoDeEstorvo::Tronco,
+            coluna,
         });
     }
     if let Some(p) = planta_da_coluna(bioma, bx, bz, topo, declive, ger, agua) {
@@ -1122,8 +1271,21 @@ pub fn estorvos_da_coluna(
                 centro: p.centro,
                 raio: r * p.porte,
                 tipo: TipoDeEstorvo::Forracao,
+                coluna,
             });
         }
+    }
+    // A pedra vem por ULTIMO e ela manda: onde ha' minerio, a forracao da
+    // mesma coluna e' descartada. Matacao de cenario encostado numa pedra de
+    // minerio esconderia justamente o que o jogador precisa enxergar.
+    if let Some(m) = minerio_da_coluna(bioma, bx, bz, topo, ger, agua) {
+        saida.retain(|e| e.tipo != TipoDeEstorvo::Forracao);
+        saida.push(Estorvo {
+            centro: m.centro,
+            raio: RAIO_DE_MINERIO * m.porte,
+            tipo: TipoDeEstorvo::Minerio(m.tier),
+            coluna,
+        });
     }
 }
 
@@ -1211,6 +1373,21 @@ impl Gerador {
             .clamp(0.0, 1.0)
     }
 
+    /// Onde ha' VEIO de minerio, em 0..1. Frequencia mais baixa que a
+    /// mancha: minerio tem que sair em mancha grande o bastante pra virar
+    /// lugar ("aquele pico ali"), e nao pedra solta espalhada pelo mapa.
+    pub fn veio(&self, bx: i32, bz: i32) -> f32 {
+        (0.5 + self.pctrl.fbm(bx as f32 * 0.004 - 901.0, bz as f32 * 0.004 + 547.0, 2, 0.5) * 1.3)
+            .clamp(0.0, 1.0)
+    }
+
+    /// Teto teorico do relevo deste bioma, em unidades. E' a regua contra a
+    /// qual "topo de montanha" quer dizer a mesma coisa em todo bioma — o
+    /// pico da Floresta e o do Planalto sao numeros bem diferentes.
+    pub fn pico(&self) -> f32 {
+        (self.perfil.serra.0 + self.perfil.serra.1) * self.escala_altura
+    }
+
     /// Altura do chao em unidades de mundo, na coordenada de mundo `(x, z)`.
     pub fn altura(&self, x: f32, z: f32) -> f32 {
         let bx = (x / BLOCO).round() as i32;
@@ -1281,31 +1458,15 @@ pub struct Ilha {
     raio_max_estorvo: f32,
 }
 
-/// Quanto recurso ha' em volta de um ponto. Ver `Ilha::riqueza`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Riqueza {
-    /// Colunas de rocha exposta entre as `amostras`.
-    pub pedra: u32,
-    /// Troncos no raio. Este e' contado inteiro, nao amostrado.
-    pub madeira: u32,
-    /// Quantas colunas foram olhadas. Sem ela `pedra` seria incomparavel com
-    /// `madeira`: uma e' area amostrada, a outra e' contagem de coisas.
-    pub amostras: u32,
-}
-
-impl Riqueza {
-    /// Pedra em "troncos equivalentes": um paredao inteiro vale
-    /// `COLETA_PEDRA_CHEIA`. Sem esta conversao a rocha atropelaria a
-    /// madeira por unidade — 113 colunas de serra contra 20 arvores de mata
-    /// fechada — e todo lugar com pedra viraria mina, inclusive a mata.
-    pub fn pedra_equivalente(self) -> f32 {
-        crate::COLETA_PEDRA_CHEIA * self.pedra as f32 / self.amostras.max(1) as f32
-    }
-
-    /// O numero que decide a frequencia da coleta.
-    pub fn densidade(self) -> f32 { self.madeira as f32 + self.pedra_equivalente() }
-
-    pub fn vazia(self) -> bool { self.pedra == 0 && self.madeira == 0 }
+/// Uma coisa que se coleta, achada no raio do spot. Ver `Ilha::coletaveis_em`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Coletavel {
+    /// Identidade do corpo: e' por ela que o servidor guarda quantas coletas
+    /// ja' sairam dele, e por ela que o cliente sabe qual parar de desenhar.
+    pub coluna: u32,
+    pub centro: glam::Vec2,
+    /// 1..4 pra pedra (a cor E' o tier), 0 pra tronco.
+    pub tier: u8,
 }
 
 /// Lado da celula do indice de estorvos, em COLUNAS.
@@ -1497,20 +1658,15 @@ impl Ilha {
 
     /// O que ha' pra coletar em volta de `p`, num raio.
     ///
-    /// E' a peca central da coleta: nao ha' ferramenta, nivel nem no' clicavel
-    /// — o que decide o ganho e' O LUGAR, e o lugar e' este numero. Serra e
-    /// paredao dao PEDRA (rocha exposta e' exatamente onde o declive passou do
-    /// pulo, entao a mina e' visivel de longe e ninguem precisa de mapa);
-    /// bosque da' MADEIRA, contando tronco e nao forracao.
+    /// E' a peca central da coleta: nao ha' ferramenta, nivel nem clique — o
+    /// que decide o ganho e' O LUGAR, e o lugar e' esta lista. Devolve pedra
+    /// de minerio e tronco; quem filtra o que esta' esgotado e' o servidor,
+    /// que e' o unico que sabe disso.
     ///
-    /// A pedra e' amostrada de dois em dois blocos, nao coluna a coluna: o
-    /// raio inteiro seriam 576 colunas por consulta, e a diferenca entre 144
-    /// amostras e 576 nao muda decisao nenhuma — o numero so' precisa ordenar
-    /// lugares, nao medir a montanha.
-    pub fn riqueza(&self, p: glam::Vec2, raio: f32) -> Riqueza {
-        let mut r = Riqueza::default();
-
-        // ── madeira: troncos no raio, pelo indice de estorvos ────────────
+    /// Sai pelo indice de estorvos que a colisao ja' usa, entao custa o mesmo
+    /// que perguntar se cabe um corpo ali.
+    pub fn coletaveis_em(&self, p: glam::Vec2, raio: f32, saida: &mut Vec<Coletavel>) {
+        saida.clear();
         let (c0x, c0z) = self.celula(p.x - raio, p.y - raio);
         let (c1x, c1z) = self.celula(p.x + raio, p.y + raio);
         let raio_sq = raio * raio;
@@ -1519,49 +1675,20 @@ impl Ilha {
                 let Some(c) = self.celula_em(cx, cz) else { continue };
                 for &n in &self.grade[c] {
                     let e = self.estorvos[n as usize];
-                    if e.tipo != TipoDeEstorvo::Tronco { continue }
+                    let tier = match e.tipo {
+                        TipoDeEstorvo::Minerio(t) => t,
+                        TipoDeEstorvo::Tronco => 0,
+                        TipoDeEstorvo::Forracao => continue,
+                    };
                     if e.centro.distance_squared(p) > raio_sq { continue }
-                    // Uma arvore pode estar em varias celulas: so' conta na
-                    // celula que contem o centro dela, senao arvore grande
-                    // vale por quatro.
+                    // Um corpo grande entra em varias celulas: so' conta na
+                    // que tem o centro dele, senao pedra grande vale por
+                    // quatro e a densidade mente.
                     if self.celula(e.centro.x, e.centro.y) != (cx, cz) { continue }
-                    r.madeira += 1;
+                    saida.push(Coletavel { coluna: e.coluna, centro: e.centro, tier });
                 }
             }
         }
-
-        // ── pedra: colunas de rocha exposta, em rede de 2 blocos ─────────
-        let passo = 2i32;
-        let alcance = (raio / BLOCO).ceil() as i32;
-        let (px, pz) = self.coluna(p.x, p.y);
-        let mut dz = -alcance;
-        while dz <= alcance {
-            let mut dx = -alcance;
-            while dx <= alcance {
-                if (dx * dx + dz * dz) as f32 * BLOCO * BLOCO <= raio_sq {
-                    r.amostras += 1;
-                    let (ix, iz) = (px + dx, pz + dz);
-                    let topo = self.bloco(ix, iz);
-                    let altura = (topo + 1) as f32 * BLOCO;
-                    if altura > NIVEL_DO_MAR {
-                        let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                            .iter()
-                            .map(|(ax, az)| (topo - self.bloco(ix + ax, iz + az)).abs())
-                            .max()
-                            .unwrap_or(0);
-                        if matches!(
-                            material(self.bioma, altura, declive, false),
-                            Material::Rocha | Material::RochaEscura | Material::Arenito
-                        ) {
-                            r.pedra += 1;
-                        }
-                    }
-                }
-                dx += passo;
-            }
-            dz += passo;
-        }
-        r
     }
 
     /// Um corpo de raio `raio` cabe em `p` sem entrar em tronco, matacao ou
@@ -1638,6 +1765,10 @@ impl Ilha {
     }
 
     /// Quantos estorvos a ilha tem. So' pra medir.
+    /// Todos os corpos plantados. Pra medicao e pro servidor montar indice
+    /// proprio — no jogo se pergunta pelo raio, nunca pela lista inteira.
+    pub fn todos_os_estorvos(&self) -> &[Estorvo] { &self.estorvos }
+
     pub fn total_de_estorvos(&self) -> usize {
         self.estorvos.len()
     }
@@ -3021,12 +3152,11 @@ mod testes {
         }
     }
 
-    /// A ilha tem que dar PEDRA e MADEIRA, e nao no mesmo lugar.
+    /// A ilha tem que ter LUGAR bom e lugar ruim de coleta.
     ///
-    /// A coleta inteira pende deste numero: sem lugar rico e lugar pobre nao
-    /// existe spot, e sem spot nao existe disputa. Mede em vez de supor —
-    /// densidade e' coisa que muda quando alguem mexe no relevo, e o dia em
-    /// que a ilha ficar plana demais a coleta morre calada.
+    /// Sem contraste nao existe spot, e sem spot nao existe disputa. Mede em
+    /// vez de supor: densidade e' coisa que muda quando alguem mexe no
+    /// relevo, e o dia em que a ilha ficar plana demais a coleta morre calada.
     #[test]
     fn a_ilha_tem_onde_coletar() {
         use crate::{COLETA_INTERVALO_BASE_S, COLETA_RAIO_SPOT};
@@ -3034,38 +3164,61 @@ mod testes {
         let i = Ilha::gerar(d.semente, d.raio_blocos.min(800), d.bioma, ESCALA_ALTURA);
         let raio_un = i.raio_blocos as f32 * BLOCO;
 
-        let (mut pedra, mut madeira, mut secos, mut n) = (0u32, 0u32, 0u32, 0u32);
-        let (mut mina, mut bosque) = (Riqueza::default(), Riqueza::default());
-        let passo = raio_un / 20.0;
+        let (mut secos, mut n, mut melhor_veio, mut melhor_mata) = (0u32, 0u32, 0usize, 0usize);
+        let mut achados = Vec::new();
+        let passo = 3.0f32;
         let mut z = -raio_un;
         while z <= raio_un {
             let mut x = -raio_un;
             while x <= raio_un {
                 let p = glam::Vec2::new(x, z);
                 if !i.agua(p.x, p.y) {
-                    let r = i.riqueza(p, COLETA_RAIO_SPOT);
+                    i.coletaveis_em(p, COLETA_RAIO_SPOT, &mut achados);
                     n += 1;
-                    if r.pedra > r.madeira { pedra += 1 } else if r.madeira > 0 { madeira += 1 }
-                    if r.vazia() { secos += 1 }
-                    if r.pedra_equivalente() > mina.pedra_equivalente() { mina = r }
-                    if r.madeira > bosque.madeira { bosque = r }
+                    if achados.is_empty() { secos += 1 }
+                    melhor_veio = melhor_veio.max(achados.iter().filter(|c| c.tier > 0).count());
+                    melhor_mata = melhor_mata.max(achados.iter().filter(|c| c.tier == 0).count());
                 }
                 x += passo;
             }
             z += passo;
         }
-        let intervalo = |r: Riqueza| COLETA_INTERVALO_BASE_S / r.densidade().max(0.01);
+        let intervalo = |v: usize| COLETA_INTERVALO_BASE_S / v.max(1) as f32;
         println!(
-            "amostras em terra {n} | pedra {pedra} | madeira {madeira} | secos {secos}\n\
-             melhor mina:   {:>3}/{:<3} colunas de rocha, {:>2} troncos -> dens {:5.1}, {:4.1}s cheia\n\
-             melhor bosque: {:>3}/{:<3} colunas de rocha, {:>2} troncos -> dens {:5.1}, {:4.1}s cheia",
-            mina.pedra, mina.amostras, mina.madeira, mina.densidade(), intervalo(mina),
-            bosque.pedra, bosque.amostras, bosque.madeira, bosque.densidade(), intervalo(bosque),
+            "amostras em terra {n} | sem nada {secos} ({:.0}%)\n\
+             melhor veio: {melhor_veio} pedras -> {:.1}s por coleta\n\
+             melhor mata: {melhor_mata} troncos -> {:.1}s por coleta",
+            100.0 * secos as f32 / n as f32,
+            intervalo(melhor_veio), intervalo(melhor_mata),
         );
-        assert!(pedra > 0, "ilha sem lugar de pedra");
-        assert!(madeira > 0, "ilha sem lugar de madeira");
+        assert!(melhor_veio > 1, "nenhum veio com mais de uma pedra");
+        assert!(melhor_mata > 1, "nenhuma mata com mais de um tronco");
         // Lugar seco tem que existir: se der pra coletar em qualquer lugar, o
         // spot nao vale nada e andar ate' ele nao significa nada.
         assert!(secos * 10 > n, "so' {secos} de {n} amostras sem recurso — o mapa inteiro e' spot");
+    }
+
+    #[test]
+    fn a_ilha_tem_minerio_dos_quatro_tiers() {
+        let d = &ARQUIPELAGO[0];
+        let i = Ilha::gerar(d.semente, d.raio_blocos.min(800), d.bioma, ESCALA_ALTURA);
+        let mut por_tier = [0u32; 5];
+        let mut troncos = 0u32;
+        for e in i.todos_os_estorvos() {
+            match e.tipo {
+                TipoDeEstorvo::Minerio(t) => por_tier[t as usize] += 1,
+                TipoDeEstorvo::Tronco => troncos += 1,
+                _ => {}
+            }
+        }
+        println!("troncos {troncos} | pedras: cinza {} verde {} azul {} roxo {}",
+            por_tier[1], por_tier[2], por_tier[3], por_tier[4]);
+        for (t, nome) in [(1, "cinza"), (2, "verde"), (3, "azul"), (4, "roxo")] {
+            assert!(por_tier[t] > 0, "ilha sem pedra {nome}");
+        }
+        // A escada tem que DESCER: pedra melhor tem que ser mais rara, senao
+        // subir a montanha nao e' progressao, e' passeio.
+        assert!(por_tier[1] > por_tier[2] && por_tier[2] > por_tier[3] && por_tier[3] > por_tier[4],
+            "escada de raridade invertida: {:?}", &por_tier[1..]);
     }
 }

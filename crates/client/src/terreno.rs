@@ -79,6 +79,13 @@ pub struct Terreno {
     /// entao gerar de novo por planta seria refazer o volume milhares de vezes.
     arvores: Vec<crate::vegetacao::Modelo>,
     plantas: Vec<crate::vegetacao::Modelo>,
+    /// Um modelo por tier e variante. A pedra roxa nao e' a cinza pintada:
+    /// ela tem mais cristal, e o modelo carrega isso.
+    minerios: Vec<crate::vegetacao::Modelo>,
+    /// Colunas cujas pedras ja' foram esgotadas. Quem esta' aqui NAO e'
+    /// desenhado — sem isso o jogador nao teria como distinguir o veio cheio
+    /// do veio que ele acabou de limpar.
+    esgotadas: std::collections::HashSet<u32>,
     pedacos: HashMap<(i32, i32), Pedaco>,
     /// Quantos pedacos foram gerados desde o inicio — so' pra diagnostico.
     pub gerados: u32,
@@ -117,6 +124,8 @@ impl Terreno {
             bioma: def.bioma,
             arvores: Vec::new(),
             plantas: Vec::new(),
+            minerios: Vec::new(),
+            esgotadas: std::collections::HashSet::new(),
             pedacos: HashMap::new(),
             gerados: 0,
         };
@@ -136,7 +145,35 @@ impl Terreno {
                 t.plantas.push(crate::vegetacao::planta(e, k as u32 * 13 + e as u32 * 211));
             }
         }
+        for tier in 1..=4u8 {
+            for k in 0..VARIANTES {
+                t.minerios.push(crate::vegetacao::minerio(tier, k as u32 * 17 + tier as u32 * 331));
+            }
+        }
         t
+    }
+
+    fn modelo_de_minerio(&self, tier: u8, k: u32) -> &crate::vegetacao::Modelo {
+        let t = (tier.clamp(1, 4) - 1) as usize;
+        &self.minerios[t * VARIANTES + (k as usize % VARIANTES)]
+    }
+
+    /// Marca uma pedra como esgotada (ou de volta) e joga fora o pedaco que a
+    /// contem, pra ela sumir (ou reaparecer) no proximo quadro.
+    ///
+    /// Reconstruir o pedaco inteiro por uma pedra parece caro e nao e': o
+    /// pedaco leva ~0,9 ms e isso acontece uma vez por coleta que ACABA com
+    /// uma pedra, nao por coleta.
+    pub fn marca_esgotada(&mut self, coluna: u32, esgotada: bool) {
+        let mudou = if esgotada {
+            self.esgotadas.insert(coluna)
+        } else {
+            self.esgotadas.remove(&coluna)
+        };
+        if !mudou { return }
+        let (ix, iz) = ((coluna >> 16) as i32, (coluna & 0xffff) as i32);
+        let (bx, bz) = (ix - self.ger.raio_blocos, iz - self.ger.raio_blocos);
+        self.pedacos.remove(&(bx.div_euclid(CHUNK), bz.div_euclid(CHUNK)));
     }
 
     fn modelo_de_arvore(&self, e: Arvore, k: u32) -> &crate::vegetacao::Modelo {
@@ -559,6 +596,31 @@ impl Terreno {
             }
         }
 
+        // ── minerio ──────────────────────────────────────────────────────
+        // Vem ANTES da forracao pra casar com `estorvos_da_coluna`, que
+        // descarta a forracao da coluna onde ha' pedra.
+        for iz in 0..n as i32 {
+            for ix in 0..n as i32 {
+                let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
+                let topo = em(ix, iz);
+                let Some(m) = shared::terreno::minerio_da_coluna(
+                    self.bioma, bx, bz, topo, &self.ger, eh_agua(ix, iz),
+                ) else {
+                    continue;
+                };
+                let chave = shared::terreno::chave_de_coluna(
+                    bx + self.ger.raio_blocos, bz + self.ger.raio_blocos,
+                );
+                if self.esgotadas.contains(&chave) { continue }
+                crate::vegetacao::instancia(
+                    self.modelo_de_minerio(m.tier, m.variante),
+                    vec3(m.centro.x, (topo + 1) as f32 * BLOCO, m.centro.y),
+                    m.porte,
+                    &mut verts, &mut idx, &mut malhas, MAX_QUADS,
+                );
+            }
+        }
+
         // ── forracao ─────────────────────────────────────────────────────
         // Varias vezes mais densa que arvore, e e' ela que separa "campo de
         // golfe com arvore" de mundo. Cada planta sao uma ou duas caixinhas.
@@ -576,6 +638,14 @@ impl Terreno {
                 ) else {
                     continue;
                 };
+                // Onde ha' minerio a forracao nao entra — a mesma regra de
+                // `estorvos_da_coluna`. Matacao de cenario colado na pedra
+                // esconde justamente o que o jogador precisa enxergar.
+                if shared::terreno::minerio_da_coluna(
+                    self.bioma, bx, bz, topo, &self.ger, eh_agua(ix, iz),
+                ).is_some() {
+                    continue;
+                }
                 #[cfg(test)]
                 CENSO.with(|c| {
                     *c.borrow_mut().entry(format!("{:?}", pl.especie)).or_insert(0) += 1

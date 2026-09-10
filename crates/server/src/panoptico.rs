@@ -97,21 +97,16 @@ struct Jogador {
 
 #[derive(Serialize)]
 struct Coleta {
-    /// Rocha em volta, ja' convertida pra troncos equivalentes.
-    pedra: f32,
-    /// Troncos em volta.
-    madeira: f32,
-    /// A soma — e' ela que divide `COLETA_INTERVALO_BASE_S`.
+    /// Pedras VIVAS no raio, por tier: [_, cinza, verde, azul, roxo].
+    pedras: [u32; 5],
+    /// Troncos vivos no raio.
+    troncos: u32,
+    /// Corpos vivos no raio — e' ela que divide `COLETA_INTERVALO_BASE_S`.
     densidade: f32,
-    /// Quanto da celula ainda nao foi esgotado, em [0,1].
-    reserva: f32,
-    /// Segundos por coleta AGORA, ja' com a reserva descontada.
+    /// Segundos por coleta aqui, agora.
     intervalo_s: f32,
-    /// Segundos por coleta em REGIME, quando a reserva se acomoda. E' o
-    /// numero de balanceamento: o instantaneo oscila, este nao.
-    sustentado_s: f32,
-    /// Tier do material do lugar (1-4), pela distancia do desembarque.
-    tier: u8,
+    /// Quanto ainda sai deste spot antes de ele acabar, em coletas.
+    coletas_restantes: u32,
 }
 
 #[derive(Serialize)]
@@ -193,13 +188,11 @@ pub fn publicar(w: &GameWorld, ultima: &mut f32) {
             dano: s.stats.attack_damage,
             arma: s.equipment.weapon,
             coleta: w.retrato_da_coleta(pos).map(|r| Coleta {
-                pedra: r.pedra,
-                madeira: r.madeira,
+                pedras: r.pedras,
+                troncos: r.troncos,
                 densidade: r.densidade,
-                reserva: r.reserva,
                 intervalo_s: r.intervalo_s,
-                sustentado_s: r.sustentado_s,
-                tier: r.tier,
+                coletas_restantes: r.coletas_restantes,
             }),
         });
     }

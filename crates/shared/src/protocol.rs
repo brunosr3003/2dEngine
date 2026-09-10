@@ -454,6 +454,15 @@ pub enum ServerMessage {
     FarmNodesConfig { nodes: Vec<FarmNodeInfo> },
     /// Node coletado — desaparece até respawn. Broadcast pra players na AOI.
     FarmNodeDepleted { node_id: u32 },
+    /// Pedras de minerio ESGOTADAS no momento do login, por chave de coluna.
+    ///
+    /// A pedra em si nunca viaja: os dois lados a geram da mesma semente. O
+    /// que viaja e' so' a excecao — quais sumiram —, e ela e' curta porque
+    /// pedra esgotada e' minoria por construcao.
+    PedrasEsgotadas { colunas: Vec<u32> },
+    /// Uma pedra acabou de esgotar (ou de voltar). Broadcast na AOI.
+    PedraEsgotada { coluna: u32 },
+    PedraVoltou { coluna: u32 },
     /// Node respawnado — pode ser coletado novamente.
     FarmNodeRespawned { node_id: u32 },
     /// XP de proficiencia por CONJUNTO de arma. Coleta e artesanato nao tem.
