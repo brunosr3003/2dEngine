@@ -14,6 +14,30 @@
     height: 100vh; display: grid; grid-template-columns: 260px 1fr 340px;
   }
   aside, section { overflow-y: auto; height: 100vh; }
+  /* Barra de rolagem VISIVEL. A do sistema, num painel escuro, some: a
+     coluna rola mas nao parece que rola, e o que esta' embaixo da dobra
+     deixa de existir pra quem esta' olhando. Painel de operacao nao pode
+     esconder informacao por estetica. */
+  aside, section, #economia {
+    scrollbar-width: thin;
+    scrollbar-color: #3d4a5a var(--painel);
+  }
+  aside::-webkit-scrollbar,
+  section::-webkit-scrollbar,
+  #economia::-webkit-scrollbar { width: 10px; }
+  aside::-webkit-scrollbar-track,
+  section::-webkit-scrollbar-track,
+  #economia::-webkit-scrollbar-track {
+    background: #0d1014; border-left: 1px solid var(--linha);
+  }
+  aside::-webkit-scrollbar-thumb,
+  section::-webkit-scrollbar-thumb,
+  #economia::-webkit-scrollbar-thumb {
+    background: #3d4a5a; border-radius: 5px; border: 2px solid #0d1014;
+  }
+  aside::-webkit-scrollbar-thumb:hover,
+  section::-webkit-scrollbar-thumb:hover,
+  #economia::-webkit-scrollbar-thumb:hover { background: #55667c; }
   aside { background: var(--painel); border-right: 1px solid var(--linha); }
   section { background: var(--painel); border-left: 1px solid var(--linha); }
   main { position: relative; overflow: hidden; }
@@ -70,6 +94,10 @@
     padding: 10px 0; cursor: pointer; border-bottom: 2px solid transparent;
   }
   .aba.ativa { color: var(--texto); border-bottom-color: var(--jogador); }
+  /* Aba FECHADA tambem responde ao mouse. Sem isso a que nao esta' aberta
+     nao parece clicavel, e o painel le' como se tivesse uma aba so'. */
+  .aba:hover { color: var(--texto); background: #1b222b; }
+  .aba.ativa:hover { background: transparent; }
   #economia { grid-column: 2 / 4; overflow-y: auto; height: 100vh; padding: 0 0 40px; }
   .cartoes { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 14px; }
   .cartao {
@@ -88,6 +116,7 @@
   .barra-h > i { display: block; height: 100%; background: var(--jogador); border-radius: 2px; }
   .nota { color: var(--fraco); font-size: 11px; padding: 2px 14px 10px; max-width: 720px; line-height: 1.5; }
   label.f { display: block; padding: 2px 12px; color: var(--fraco); cursor: pointer; }
+  label.f:hover { color: var(--texto); background: #1b222b; }
 </style>
 
 <aside>
