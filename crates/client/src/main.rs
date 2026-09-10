@@ -721,13 +721,14 @@ impl Jogo {
         // ── VER O PERSONAGEM ATRAVES DO QUE ESTA' NA FRENTE ──
         //
         // O furo acompanha o jogador e so' vale pro que estiver a' frente
-        // dele. Raio em fracao da ALTURA da tela, e nao em pixels fixos:
-        // senao ele vira um ponto no monitor grande e um prato no celular.
+        // dele — e so' pro que for alto o bastante pra esconder alguem.
         let (recorte, corte_z) = match self.world.self_id.and_then(|id| self.world.ents.get(&id)) {
             Some(e) => render3d::recorte_do_jogador(
                 &vista.cam,
                 vista.pos_de(e),
-                screen_height() * 0.085,
+                // Fracao da ALTURA APARENTE do boneco, nao da tela: e' o que
+                // mantem o furo do mesmo tamanho relativo em qualquer zoom.
+                0.85,
                 vec2(screen_width(), screen_height()),
             ),
             None => (Vec3::ZERO, 0.0),

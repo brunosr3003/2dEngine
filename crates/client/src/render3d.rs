@@ -375,7 +375,7 @@ mod testes_camera {
             let cam = camera(Vec2::ZERO, 10.0, yaw, zoom, pitch_do_zoom(zoom));
             let jogador = vec3(0.0, 10.0, 0.0);
             let tela = vec2(1920.0, 1080.0);
-            let (recorte, corte_z) = recorte_do_jogador(&cam, jogador, 80.0, tela);
+            let (recorte, corte_z) = recorte_do_jogador(&cam, jogador, 0.85, tela);
 
             // O centro do furo cai onde o corpo e' desenhado.
             let m = matriz_da_camera(&cam, tela.x / tela.y);
@@ -403,6 +403,48 @@ mod testes_camera {
                 alvo.z - corte_z
             );
         }
+    }
+
+    /// O furo tem que crescer com o BONECO, e nao com a tela.
+    ///
+    /// Em fracao da tela ele erra nas duas pontas: aproximando, o boneco
+    /// cresce na perspectiva e o furo fica pequeno demais pra ele; afastando,
+    /// sobra furo em volta de um boneco minusculo.
+    #[test]
+    fn o_furo_acompanha_o_tamanho_do_boneco() {
+        let tela = vec2(1920.0, 1080.0);
+        let jogador = vec3(0.0, 10.0, 0.0);
+        let medida = |zoom: f32| {
+            let cam = camera(Vec2::ZERO, 10.0, 0.0, zoom, pitch_do_zoom(zoom));
+            let m = matriz_da_camera(&cam, tela.x / tela.y);
+            let pes = world_to_screen_com(&m, jogador, tela).unwrap();
+            let cabeca = world_to_screen_com(
+                &m,
+                jogador + vec3(0.0, crate::vegetacao::ALTURA_QUE_ESCONDE, 0.0),
+                tela,
+            )
+            .unwrap();
+            let corpo = (cabeca.y - pes.y).abs();
+            let (r, _) = recorte_do_jogador(&cam, jogador, 0.85, tela);
+            (corpo, r.z)
+        };
+        let (corpo_perto, raio_perto) = medida(ZOOM_MIN);
+        let (corpo_longe, raio_longe) = medida(ZOOM_MAX);
+
+        assert!(
+            corpo_perto > corpo_longe * 1.5,
+            "o teste nao esta' medindo nada: o boneco tem {corpo_perto:.0} px \
+             colado e {corpo_longe:.0} px afastado"
+        );
+        // A razao entre furo e corpo tem que ser a MESMA nas duas pontas.
+        let razao_perto = raio_perto / corpo_perto;
+        let razao_longe = raio_longe / corpo_longe;
+        assert!(
+            (razao_perto - razao_longe).abs() < 0.02,
+            "furo/corpo mudou com o zoom: {razao_perto:.3} colado contra \
+             {razao_longe:.3} afastado"
+        );
+        assert!(raio_perto > raio_longe, "o furo nao cresceu ao aproximar");
     }
 
     /// A camera nao pode ARRANCAR num degrau — e' o defeito que a mola veio
@@ -597,7 +639,7 @@ pub fn raio_da_tela(cam: &Camera3D, tela: Vec2) -> (Vec3, Vec3) {
 pub fn recorte_do_jogador(
     cam: &Camera3D,
     jogador: Vec3,
-    raio_px: f32,
+    fator: f32,
     tela: Vec2,
 ) -> (Vec3, f32) {
     /// Quanto um obstaculo precisa estar a' frente do jogador pra virar furo.
@@ -619,7 +661,27 @@ pub fn recorte_do_jogador(
         return (Vec3::ZERO, 0.0);
     };
     // `gl_FragCoord` conta o Y de baixo pra cima; a tela, de cima pra baixo.
-    (vec3(no_alvo.x, tela.y - no_alvo.y, raio_px), atras.z)
+    // ── O RAIO SAI DO TAMANHO APARENTE DO CORPO ──
+    //
+    // Em fracao da tela ele erra nas duas pontas: aproximando, o boneco cresce
+    // na perspectiva e o furo fica pequeno demais pra ele; afastando, sobra
+    // furo em volta de um boneco minusculo. O tamanho na tela e' a unica
+    // medida que ja' leva junto o zoom, a inclinacao, a abertura da lente e a
+    // resolucao.
+    // Mede o corpo INTEIRO, dos pes a' cabeca. Medir do meio pra cima e
+    // dobrar parece equivalente e nao e': em perspectiva, metades iguais no
+    // mundo nao dao metades iguais na tela, e a razao entre furo e boneco
+    // passava a depender do zoom — que e' justamente o que este raio existe
+    // pra tirar.
+    let cabeca = jogador + vec3(0.0, crate::vegetacao::ALTURA_QUE_ESCONDE, 0.0);
+    let alto_px = match (
+        world_to_screen_com(&m, jogador, tela),
+        world_to_screen_com(&m, cabeca, tela),
+    ) {
+        (Some(pes), Some(topo)) => (topo.y - pes.y).abs().max(1.0),
+        _ => tela.y * 0.1,
+    };
+    (vec3(no_alvo.x, tela.y - no_alvo.y, alto_px * fator), atras.z)
 }
 
 /// A matriz projecao×vista da camera, com a proporcao vinda de fora.
@@ -676,6 +738,9 @@ pub fn material_solido() -> Material {
 
     varying lowp vec2 uv;
     varying lowp vec4 color;
+    // 1 = esta' geometria pode virar furo; 0 = passa batido. Vem no
+    // `normal.x`, que este shader nao usa pra mais nada.
+    varying lowp float recortavel;
 
     uniform mat4 Model;
     uniform mat4 Projection;
@@ -684,6 +749,7 @@ pub fn material_solido() -> Material {
         gl_Position = Projection * Model * vec4(position, 1);
         color = color0 / 255.0;
         uv = texcoord;
+        recortavel = normal.x;
     }"#;
     // O recorte que deixa o jogador aparecer atraves do que estiver na
     // frente dele. Ver `recorte_do_jogador`.
@@ -696,13 +762,14 @@ pub fn material_solido() -> Material {
     const FRAGMENTO: &str = r#"#version 100
     varying lowp vec4 color;
     varying lowp vec2 uv;
+    varying lowp float recortavel;
 
     uniform sampler2D Texture;
     uniform highp vec3 Recorte;
     uniform highp float RecorteZ;
 
     void main() {
-        if (Recorte.z > 0.0 && gl_FragCoord.z < RecorteZ) {
+        if (recortavel > 0.5 && Recorte.z > 0.0 && gl_FragCoord.z < RecorteZ) {
             highp float d = distance(gl_FragCoord.xy, Recorte.xy) / Recorte.z;
             if (d < 1.0) {
                 // A borda some com PADRAO DE TELA e nao com transparencia:

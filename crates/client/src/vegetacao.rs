@@ -690,6 +690,16 @@ fn oclusao(v: &Volume, p: [i32; 3], n: [i32; 3], eu: usize, ev: usize, su: i32, 
 /// especie e variante, e instanciar e' copiar vertice com offset. A macroquad
 /// nao tem transform por malha, entao a alternativa seria transformar na CPU
 /// toda planta todo quadro.
+/// Altura a partir da qual uma coisa consegue esconder o jogador.
+///
+/// E' a altura do boneco. Abaixo disso o recorte da camera nao tem o que
+/// mostrar: forracao fica no joelho, e abrir um circulo careca no meio do
+/// capim chama mais atencao que o que ele revelaria.
+///
+/// E' regra e nao lista: prop novo entra pela propria altura, e nao por
+/// alguem lembrar de cadastrar.
+pub const ALTURA_QUE_ESCONDE: f32 = 1.68;
+
 pub fn instancia(
     modelo: &Modelo,
     em: Vec3,
@@ -704,6 +714,18 @@ pub fn instancia(
     // Cabia so' o caso "o modelo inteiro cabe no que sobrou". Um modelo maior
     // que o orcamento inteiro — e uma copada e' — passava direto e a malha
     // saia com o dobro do teto de indice, que a macroquad corta em silencio.
+    // Marca no vertice se este modelo participa do recorte da camera. Vai no
+    // `normal.x`, que o shader do mundo nao usa pra mais nada — a alternativa
+    // seria uma malha separada por categoria, e o pedaco ja' e' fatiado em
+    // dezenas de malhas pelo teto de indice.
+    let alto = modelo
+        .verts
+        .iter()
+        .map(|v| v.position.y)
+        .fold(0.0f32, f32::max)
+        * escala
+        >= ALTURA_QUE_ESCONDE;
+    let marca = if alto { 1.0 } else { 0.0 };
     let mut q = 0usize;
     let total = modelo.idx.len() / 6;
     while q < total {
@@ -718,7 +740,11 @@ pub fn instancia(
         let base = verts.len() as u16;
         for k in 0..cabe * 4 {
             let v = modelo.verts[q * 4 + k];
-            verts.push(Vertex { position: v.position * escala + em, ..v });
+            verts.push(Vertex {
+                position: v.position * escala + em,
+                normal: Vec4::new(marca, 0.0, 0.0, 0.0),
+                ..v
+            });
         }
         for k in 0..cabe {
             let b = base + (k * 4) as u16;

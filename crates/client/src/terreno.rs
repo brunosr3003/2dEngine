@@ -336,7 +336,8 @@ impl Terreno {
                     position: v,
                     uv: vec2(0.0, 0.0),
                     color: c,
-                    normal: Vec4::ZERO,
+                    // Relevo participa do recorte: penhasco esconde.
+                    normal: Vec4::new(1.0, 0.0, 0.0, 0.0),
                 });
             }
             idx.extend_from_slice(&ordem(b, p, n));
@@ -360,7 +361,8 @@ impl Terreno {
                     position: v,
                     uv: vec2(0.0, 0.0),
                     color: c,
-                    normal: Vec4::ZERO,
+                    // Relevo participa do recorte: penhasco esconde.
+                    normal: Vec4::new(1.0, 0.0, 0.0, 0.0),
                 });
             }
             idx.extend_from_slice(&ordem(b, p, n));
