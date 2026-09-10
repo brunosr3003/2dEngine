@@ -106,3 +106,32 @@ senão `"lobo_pequeno"`.
   o mapa de `enemy_kind` → sprite.
 - **Terreno.** Tile ainda é cor chapada. Voxel também serve pra tile, e aí o
   mundo inteiro fica no mesmo estilo.
+
+## A frente do modelo
+
+**Todo modelo olha pro `+Y` do voxel.** A malha manda esse eixo pro `+Z` do
+mundo, e é pra lá que o código de rotação assume que a frente aponta.
+
+Isso é o contrário do que a câmera padrão do MagicaVoxel mostra: modelando de
+frente pra ela, você está modelando o `-Y`. O `player.vox` chegou assim, e o
+sintoma no jogo foi o boneco **andando de costas** — virando o rosto pra
+câmera justamente quando corria pra longe dela.
+
+Para consertar um modelo virado, gire o ARQUIVO:
+
+```bash
+tools/voxrender/voxgira.py assets/vox/modelo.vox
+```
+
+Ele reescreve só as coordenadas dentro dos chunks `XYZI`, sem tocar em paleta,
+materiais ou grafo de cena, e nega os dois eixos horizontais — rotação, não
+espelho. Espelhar trocaria a mão do modelo e a orientação dos triângulos.
+
+Não corrija no cliente. Uma lista de exceções por modelo é o tipo de coisa que
+ninguém lembra de atualizar, e um modelo virado não quebra nada: ele
+simplesmente anda de costas, e isso passa despercebido por semanas.
+
+O teste `todo_modelo_olha_pra_frente` (em `crates/client/src/vox.rs`) lê os
+arquivos que vão pro jogo e confere, pelo detalhe do rosto — o olho azul do
+jogador, os dentes brancos do lobo —, que ele está na metade dianteira da
+cabeça. Modelo novo com rosto de outra cor precisa entrar na lista dele.

@@ -341,3 +341,93 @@ impl VoxCache {
         self.meshes.get(name)
     }
 }
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    /// TODO modelo tem que olhar pro `+Y` do voxel, que a malha manda pro
+    /// `+Z` do mundo — que e' pra onde o codigo de rotacao assume que a
+    /// frente aponta.
+    ///
+    /// O teste le' os ARQUIVOS que vao pro jogo. Conferir a leitura que EU
+    /// fiz deles nao serviria de nada: foi justamente ela que errou primeiro,
+    /// e so' o olho azul do modelo desmentiu.
+    ///
+    /// O `player.vox` chegou virado — feito olhando pra camera padrao do
+    /// MagicaVoxel — e o boneco andava de costas. Foi girado no arquivo com
+    /// `tools/voxrender/voxgira.py`, e nao contornado no cliente: lista de
+    /// excecao em convencao e' o tipo de coisa que ninguem lembra de manter.
+    #[test]
+    fn todo_modelo_olha_pra_frente() {
+        // (arquivo, cor do detalhe do rosto)
+        //   jogador: o olho azul, unico azul saturado do modelo
+        //   lobo:    os dentes, o unico branco puro
+        for (arquivo, marca) in [
+            ("player.vox", Detalhe::Azul),
+            ("pirate_captain.vox", Detalhe::Azul),
+            ("lobo.vox", Detalhe::Branco),
+            ("lobo_pequeno.vox", Detalhe::Branco),
+        ] {
+            let bytes = ler(arquivo);
+            // O MESMO modelo que o cliente carrega: o de mais voxels. Um
+            // `.vox` pode trazer varios, e testar outro seria testar o que
+            // nao vai pro jogo.
+            let m = parse(&bytes)
+                .expect("vox valido")
+                .into_iter()
+                .max_by_key(|m| m.cells.iter().filter(|c| **c != 0).count())
+                .expect("um modelo");
+            let (sx, sy) = (m.size[0], m.size[1]);
+
+            let combina = |c: [u8; 4]| match marca {
+                Detalhe::Azul => c[2] > 180 && c[0] < 80,
+                Detalhe::Branco => c[0] > 240 && c[1] > 240 && c[2] > 240,
+            };
+            let ocupado: Vec<usize> =
+                (0..m.cells.len()).filter(|&i| m.cells[i] != 0).collect();
+            // So' a cabeca: o terco de cima do que esta' OCUPADO, e nao da
+            // caixa. A caixa do lobo e' 128 de lado com o bicho ocupando uma
+            // parte dela; medir pela caixa poe o corte no lugar errado.
+            let zs: Vec<usize> = ocupado.iter().map(|&i| i / (sx * sy)).collect();
+            let (z0, z1) = (
+                zs.iter().copied().min().unwrap(),
+                zs.iter().copied().max().unwrap(),
+            );
+            let alto = z0 + (z1 - z0) * 62 / 100;
+            let ys_cabeca: Vec<usize> = ocupado
+                .iter()
+                .filter(|&&i| i / (sx * sy) >= alto)
+                .map(|&i| (i / sx) % sy)
+                .collect();
+            let centro = (ys_cabeca.iter().copied().min().unwrap()
+                + ys_cabeca.iter().copied().max().unwrap()) as f32
+                / 2.0;
+            let rosto: Vec<f32> = ocupado
+                .iter()
+                .filter(|&&i| i / (sx * sy) >= alto && combina(m.palette[m.cells[i] as usize]))
+                .map(|&i| ((i / sx) % sy) as f32)
+                .collect();
+            assert!(!rosto.is_empty(), "{arquivo}: nao achei o detalhe do rosto");
+            let media = rosto.iter().sum::<f32>() / rosto.len() as f32;
+            assert!(
+                media > centro,
+                "{arquivo}: rosto em Y={media:.1} contra centro da cabeca {centro:.1} — \
+                 modelo virado, o boneco vai andar de costas. Gire com \
+                 `tools/voxrender/voxgira.py {arquivo}`."
+            );
+        }
+    }
+
+    enum Detalhe {
+        Azul,
+        Branco,
+    }
+
+    fn ler(arquivo: &str) -> Vec<u8> {
+        let a = format!("../../assets/vox/{arquivo}");
+        std::fs::read(&a)
+            .or_else(|_| std::fs::read(format!("assets/vox/{arquivo}")))
+            .unwrap_or_else(|e| panic!("{a}: {e}"))
+    }
+}

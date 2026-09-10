@@ -291,6 +291,39 @@ mod testes_camera {
         }
     }
 
+    /// ANDANDO PRA FRENTE, A CAMERA TEM QUE VER AS COSTAS.
+    ///
+    /// A corrente inteira num teste so': tecla -> direcao de mundo -> angulo
+    /// da entidade -> rotacao da malha -> comparacao com a camera. Cada elo
+    /// ja' foi conferido isolado e todos passaram; o que ninguem tinha
+    /// medido era a corrente fechada.
+    #[test]
+    fn andando_pra_frente_a_camera_ve_as_costas() {
+        for cam_yaw in [0.0f32, 0.9, 2.4, -1.7] {
+            // W, em espaco de mundo.
+            let dir = input_para_mundo(vec2(0.0, -1.0), cam_yaw);
+            // O que `World::tick` faz com a velocidade.
+            let yaw = dir.x.atan2(dir.y);
+            // Pra onde a FRENTE do modelo aponta depois da rotacao de
+            // `draw_mesh_at`. O modelo nasce olhando pro +Z.
+            let (sin, cos) = yaw.sin_cos();
+            let frente_modelo = vec2(sin, cos);
+            // Da camera pro alvo.
+            let cam = camera(Vec2::ZERO, 0.0, cam_yaw, 1.0, pitch_padrao());
+            let d = cam.target - cam.position;
+            let camera_pra_alvo = vec2(d.x, d.z).normalize();
+            // Andando pra frente, o boneco vai NA MESMA direcao em que a
+            // camera olha — logo ela ve' as costas dele.
+            let alinhamento = frente_modelo.dot(camera_pra_alvo);
+            assert!(
+                alinhamento > 0.9,
+                "cam_yaw {cam_yaw}: o modelo aponta {frente_modelo:?} e a camera olha \
+                 pra {camera_pra_alvo:?} (alinhamento {alinhamento:.2}) — \
+                 negativo quer dizer rosto virado pra camera"
+            );
+        }
+    }
+
     /// A altura da camera nao pode saltar com o degrau, e nao pode ficar pra
     /// tras pra sempre.
     #[test]
