@@ -103,18 +103,72 @@ pior caso 1,8 KB/s por jogador sobre os 12,8 KB/s medidos hoje.
 **Nada disso vira decisão de jogo no cliente.** O servidor já sabe quando
 alguém ataca, conjura e defende; o byte só transporta o que ele decidiu.
 
-## O que precisa da sua decisão
+## DECIDIDO — a arma tem duas identidades
 
-1. **Montaria terrestre existe?** Se sim, é outro rig (o personagem senta,
-   pernas param) e mais um conjunto de animações. Se não, o barco continua
-   sendo a única montaria e o estado fica reservado no protocolo pra depois.
-2. **Montante e Espada+Escudo são armas ou variações?** O `EnemyClass` já
-   trata as duas como classes próprias (nove no total), mas a árvore de skills
-   tem oito e nenhuma delas. Precisam de árvore própria ou herdam a da Espada?
-3. **Aparência do personagem: o que o jogador escolhe?** A `VisualConfig`
-   morreu com o cliente 2D. O mínimo é cor de pele e cabelo; o máximo é o
-   equipamento inteiro aparecendo no corpo (paper-doll voxel), que multiplica o
-   trabalho de arte por slot.
-4. **Correr é um estado?** Existe `SPRINT_SPEED_MULT` e o bit no protocolo, mas
-   nada no cliente. Se corrida existe, é mais um ciclo de locomoção — que sai
-   de graça no procedural.
+Montante e Espada+Escudo são **variações**, não árvores. Isso já é o que o
+código faz: `Proficiency::from_item` manda `GREAT_SWORD` para a árvore da
+Espada, e "espada e escudo" nunca foi uma arma — é espada com um offhand.
+
+Mas a variação muda a **animação**, e não a skill. Então a arma passa a ter
+dois campos, e eles não são o mesmo:
+
+| | o que decide | exemplo |
+|---|---|---|
+| **árvore** | quais skills você pode usar | montante → Espada |
+| **família** | como o corpo se move | montante → pesada |
+
+Uma espada de uma mão e um montante compartilham as oito skills e não
+compartilham um único quadro de animação. Hoje só a árvore existe em código
+(`from_item`, por faixa de id); a família precisa do mesmo tipo de mapa.
+
+## DECIDIDO — todo mundo tem arma E secundária
+
+Nunca uma mão vazia. O que muda de arma pra arma é **onde** a secundária fica,
+e isso é rig e não regra:
+
+| família | primária | secundária | onde |
+|---|---|---|---|
+| lâmina | espada, adaga | escudo, adaga | mão esquerda |
+| pesada | machado, montante | bainha, contrapeso | **costas** |
+| haste | lança | bainha | **costas** |
+| arco | arco | aljava | **costas** |
+| foco | varinha | grimório, orbe | mão esquerda |
+| foco 2M | cajado | bainha de pergaminho | **costas** |
+| desarmado | — | manopla | mão esquerda |
+
+O rig ganha um ponto de encaixe a mais: além de `mão-D` e `mão-E`, um
+**`costas`**. Arma de duas mãos ocupa as duas mãos e joga a secundária pras
+costas; arma de uma mão deixa a esquerda livre pra secundária de mão.
+
+**O risco que isso abre.** Se o escudo for a única secundária que faz alguma
+coisa, todo mundo carrega escudo e o slot vira escolha falsa. Hoje o offhand
+só tem número de escudo (defesa e vida). Cada secundária precisa de um motivo
+próprio pra existir — bainha dá velocidade de saque, aljava dá alcance ou
+munição, grimório dá mana ou tempo de conjuração — senão a resposta é sempre a
+mesma e a decisão não é decisão.
+
+## DECIDIDO — montaria terrestre vai existir
+
+O encanamento já serve: `Mounted` aponta pra uma ENTIDADE, e barco é só um
+tipo dela. Montaria terrestre entra pelo mesmo caminho.
+
+O que ela acrescenta em animação:
+
+* **no personagem**, uma pose só — sentado, pernas paradas, tronco
+  acompanhando o trote. Não é um conjunto novo;
+* **na montaria**, um ciclo de locomoção próprio. Se ela for de quatro patas,
+  é o mesmo procedural das duas pernas com quatro fases em vez de duas —
+  custo de arte zero de novo;
+* **montar e desmontar**: duas poses de transição, ou nenhuma se o corte for
+  seco (aceitável no começo).
+
+## O que ainda precisa da sua decisão
+
+1. **Aparência do personagem** — em discussão separada, a seu pedido. A
+   `VisualConfig` morreu com o cliente 2D e precisa ser substituída; o que
+   entra no lugar depende de quanto do equipamento aparece no corpo.
+2. **Correr é um estado?** Existe `SPRINT_SPEED_MULT` e o bit `SPRINT` no
+   protocolo, mas nada no cliente. Se corrida existe, é mais um ciclo de
+   locomoção — que sai de graça no procedural.
+3. **Cada secundária faz o quê?** Ver o risco acima. Não trava a animação,
+   trava o balanceamento.
