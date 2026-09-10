@@ -21,6 +21,18 @@ cd "$(dirname "$0")/.."
 
 [ "${1:-}" = "--build" ] && { cargo build --bin client || exit 1; shift; }
 
+# Recompila sozinho quando o fonte esta' na frente do binario.
+#
+# Rodar `cargo test` NAO reconstroi o binario do jogo — ele constroi o
+# executavel de teste, que e' outro. Ja' aconteceu de eu tirar codigo, ver os
+# testes passarem e lancar um binario velho que ainda tinha o codigo removido:
+# o defeito volta e parece que a correcao nao funcionou.
+BIN=target/debug/client
+if [ ! -x "$BIN" ] || [ -n "$(find crates -name '*.rs' -newer "$BIN" -print -quit 2>/dev/null)" ]; then
+    echo "fonte mais novo que o binario — recompilando"
+    cargo build --bin client || exit 1
+fi
+
 swallow() { hyprctl eval "hl.config({ misc = { enable_swallow = $1 } })" >/dev/null 2>&1; }
 
 # Religa o swallow aconteca o que acontecer — Ctrl+C, crash, kill.
