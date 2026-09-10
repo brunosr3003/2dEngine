@@ -815,6 +815,57 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         S{ id: item_id::MINERAL_T3 as i32,     name:"Mineral T3",   sell:36,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::MINERAL_T4 as i32,     name:"Mineral T4",   sell:108,  buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
 
+        // === Materiais de craft. Poucos nomes girando muito: arma e sub-arma
+        // gastam o mesmo, armaduras entre si idem, acessorios idem. Cada um
+        // existe nas quatro cores, e a cor E' o tier.
+        S{ id: item_id::na_cor(item_id::STEEL, 1) as i32,                   name:"Aço Cinza",                      sell:3,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::STEEL, 2) as i32,                   name:"Aço Verde",                      sell:12,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::STEEL, 3) as i32,                   name:"Aço Azul",                       sell:48,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::STEEL, 4) as i32,                   name:"Aço Roxa",                       sell:192,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::DARK_HEART_STONE, 1) as i32,        name:"Pedra do Coração Negro Cinza",   sell:5,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::DARK_HEART_STONE, 2) as i32,        name:"Pedra do Coração Negro Verde",   sell:20,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::DARK_HEART_STONE, 3) as i32,        name:"Pedra do Coração Negro Azul",    sell:80,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::DARK_HEART_STONE, 4) as i32,        name:"Pedra do Coração Negro Roxa",    sell:320,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 1) as i32,       name:"Pedra Sombra-da-Lua Cinza",      sell:5,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 2) as i32,       name:"Pedra Sombra-da-Lua Verde",      sell:20,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 3) as i32,       name:"Pedra Sombra-da-Lua Azul",       sell:80,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 4) as i32,       name:"Pedra Sombra-da-Lua Roxa",       sell:320,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::QUINTESSENCE, 1) as i32,            name:"Quintessência Cinza",            sell:5,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::QUINTESSENCE, 2) as i32,            name:"Quintessência Verde",            sell:20,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::QUINTESSENCE, 3) as i32,            name:"Quintessência Azul",             sell:80,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::QUINTESSENCE, 4) as i32,            name:"Quintessência Roxa",             sell:320,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 1) as i32,         name:"Berloque de Exorcismo Cinza",    sell:5,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 2) as i32,         name:"Berloque de Exorcismo Verde",    sell:20,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 3) as i32,         name:"Berloque de Exorcismo Azul",     sell:80,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 4) as i32,         name:"Berloque de Exorcismo Roxa",     sell:320,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::PLATINUM, 1) as i32,                name:"Platina Cinza",                  sell:3,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::PLATINUM, 2) as i32,                name:"Platina Verde",                  sell:12,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::PLATINUM, 3) as i32,                name:"Platina Azul",                   sell:48,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::PLATINUM, 4) as i32,                name:"Platina Roxa",                   sell:192,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 1) as i32,   name:"Fragmento Iluminante Cinza",     sell:5,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 2) as i32,   name:"Fragmento Iluminante Verde",     sell:20,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 3) as i32,   name:"Fragmento Iluminante Azul",      sell:80,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 4) as i32,   name:"Fragmento Iluminante Roxa",      sell:320,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::ANIMA_STONE, 1) as i32,             name:"Pedra de Ânima Cinza",           sell:5,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::ANIMA_STONE, 2) as i32,             name:"Pedra de Ânima Verde",           sell:20,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::ANIMA_STONE, 3) as i32,             name:"Pedra de Ânima Azul",            sell:80,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::ANIMA_STONE, 4) as i32,             name:"Pedra de Ânima Roxa",            sell:320,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::SCALE, 1) as i32,                   name:"Escama Cinza",                   sell:40,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::SCALE, 2) as i32,                   name:"Escama Verde",                   sell:160,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::SCALE, 3) as i32,                   name:"Escama Azul",                    sell:640,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::SCALE, 4) as i32,                   name:"Escama Roxa",                    sell:2560,   buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::CLAW, 1) as i32,                    name:"Garra Cinza",                    sell:40,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::CLAW, 2) as i32,                    name:"Garra Verde",                    sell:160,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::CLAW, 3) as i32,                    name:"Garra Azul",                     sell:640,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::CLAW, 4) as i32,                    name:"Garra Roxa",                     sell:2560,   buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::HORN, 1) as i32,                    name:"Chifre Cinza",                   sell:40,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::HORN, 2) as i32,                    name:"Chifre Verde",                   sell:160,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::HORN, 3) as i32,                    name:"Chifre Azul",                    sell:640,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::na_cor(item_id::HORN, 4) as i32,                    name:"Chifre Roxa",                    sell:2560,   buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::COPPER as i32,                            name:"Cobre",                           sell:1, buy:None, ord:None, stack:999999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::DARKSTEEL as i32,                         name:"Darksteel",                       sell:4, buy:None, ord:None, stack:999999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::GLITTERING_POWDER as i32,                 name:"Pó Cintilante",                   sell:60, buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+
         // Peixes (drop da pesca) — stackáveis, sem slot. icon_path setado
         // explicitamente abaixo pros sprites de Fish/ (ic/ir são sentinela -1
         // pra NÃO virar Items/r###_c## no backfill de icon_path).
@@ -1306,6 +1357,63 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             .execute(pool).await?;
         }
         tracing::info!("economy seed: {} farm node drops inseridos", farm_drops.len());
+    }
+
+    // M25: a pedra deixou de dar "Mineral" e passou a dar os materiais de
+    // craft de verdade. Roda uma vez: se o Aco cinza ja' esta' na tabela, o
+    // trabalho ja' foi feito e nao se mexe mais (admin pode ter ajustado).
+    let ja: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM farm_node_drops WHERE kind = 'Rock' AND item_id = $1"
+    ).bind(item_id::STEEL as i32).fetch_one(pool).await?;
+    if ja == 0 {
+        sqlx::query("DELETE FROM farm_node_drops WHERE kind = 'Rock'").execute(pool).await?;
+        // (item base, qty_min, qty_max, chance)
+        //
+        // A taxa segue o CUSTO: o que a receita pede em 300 tem que cair mais
+        // que o que ela pede em 100, senao o gargalo muda de lugar sozinho.
+        // Aco serve arma E armadura, entao e' o que mais cai; platina serve
+        // acessorio; os de 100 caem a um quinto disso.
+        let coloridos: &[(u16, i32, i32, f32)] = &[
+            (item_id::STEEL,                 3, 6, 0.55),
+            (item_id::PLATINUM,              3, 6, 0.30),
+            (item_id::DARK_HEART_STONE,      2, 4, 0.12),
+            (item_id::MOON_SHADOW_STONE,     2, 4, 0.12),
+            (item_id::QUINTESSENCE,          2, 4, 0.12),
+            (item_id::EXORCISM_BAUBLE,       2, 4, 0.12),
+            (item_id::ILLUMINATING_FRAGMENT, 2, 4, 0.12),
+            (item_id::ANIMA_STONE,           2, 4, 0.12),
+            // As chaves de craft sao 1 por item craftado, entao caem raro: e'
+            // a peca que decide QUANTOS itens saem, e nao quanto material
+            // sobra. Ver docs/ECONOMIA_DE_CRAFT.md.
+            (item_id::SCALE,                 1, 1, 0.010),
+            (item_id::CLAW,                  1, 1, 0.010),
+            (item_id::HORN,                  1, 1, 0.010),
+            (item_id::HIDE,                  1, 1, 0.010),
+        ];
+        // Sem cor: caem igual em qualquer pedra.
+        let incolores: &[(u16, i32, i32, f32)] = &[
+            (item_id::COPPER,            40, 120, 1.00),
+            (item_id::DARKSTEEL,         10,  25, 0.35),
+            (item_id::GLITTERING_POWDER,  1,   1, 0.03),
+        ];
+        let mut n = 0;
+        for tier in 1..=4i32 {
+            for (base, qmin, qmax, chance) in coloridos.iter().chain(incolores) {
+                let id = if incolores.iter().any(|(b, ..)| b == base) {
+                    *base
+                } else {
+                    item_id::na_cor(*base, tier as u8)
+                };
+                sqlx::query(
+                    "INSERT INTO farm_node_drops (kind, tier, item_id, qty_min, qty_max, chance) \
+                     VALUES ('Rock', $1, $2, $3, $4, $5)"
+                )
+                .bind(tier).bind(id as i32).bind(qmin).bind(qmax).bind(chance)
+                .execute(pool).await?;
+                n += 1;
+            }
+        }
+        tracing::info!("economy: {n} drops de pedra (materiais de craft) inseridos");
     }
 
     Ok(())

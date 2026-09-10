@@ -477,6 +477,62 @@ pub mod item_id {
     pub const FISH_SURGEONFISH:   u16 = 98;  // T3
     pub const FISH_PUFFERFISH:    u16 = 99;  // T4 raro
 
+    // === Materiais de coleta ==========================================
+    //
+    // A economia inteira cabe em poucos nomes de proposito: arma e sub-arma
+    // gastam o MESMO tipo de recurso, armaduras diferentes gastam o mesmo
+    // entre si, acessorios idem. Sao poucos recursos girando muito, em vez de
+    // uma lista longa que ninguem consegue precificar.
+    //
+    // Cada material existe nas QUATRO cores. O id base e' a cinza e a cor
+    // soma um — ver `na_cor`.
+    //
+    //   arma / sub-arma : Scale ou Claw (1) + Steel 300 + Dark Heart Stone 100
+    //                     + Moon Shadow Stone 100
+    //   armadura        : Couro (1) + Steel 300 + Quintessence 100
+    //                     + Exorcism Bauble 100
+    //   acessorio       : Horn (1) + Platinum 300 + Illuminating Fragment 100
+    //                     + Anima Stone 100
+    //
+    // Darksteel e Copper variam com o NIVEL do item, nao com a cor. Glittering
+    // Powder nao entra em craft nenhum: ela sobe a cor do material.
+    pub const STEEL: u16                 = 300;
+    pub const DARK_HEART_STONE: u16      = 304;
+    pub const MOON_SHADOW_STONE: u16     = 308;
+    pub const QUINTESSENCE: u16          = 312;
+    pub const EXORCISM_BAUBLE: u16       = 316;
+    pub const PLATINUM: u16              = 320;
+    pub const ILLUMINATING_FRAGMENT: u16 = 324;
+    pub const ANIMA_STONE: u16           = 328;
+    /// Chave da arma: 1 por craft.
+    pub const SCALE: u16                 = 332;
+    /// Chave da sub-arma: 1 por craft.
+    pub const CLAW: u16                  = 336;
+    /// Chave do acessorio: 1 por craft.
+    pub const HORN: u16                  = 340;
+    /// Chave da armadura: 1 por craft. E' o `LEATHER_T*` que ja' existia.
+    pub const HIDE: u16                  = LEATHER_T1;
+
+    /// Sem cor: quantidade varia com o NIVEL do item, nao com a cor dele.
+    pub const COPPER: u16                = 344;
+    pub const DARKSTEEL: u16             = 345;
+    /// Sem cor porque ela E' a cor: e' o que sobe um material de uma cor pra
+    /// proxima. Ver `docs/ECONOMIA_DE_CRAFT.md`.
+    pub const GLITTERING_POWDER: u16     = 346;
+
+    /// Todos os materiais que existem nas quatro cores, pelo id da cinza.
+    pub const MATERIAIS_COLORIDOS: [u16; 12] = [
+        STEEL, DARK_HEART_STONE, MOON_SHADOW_STONE,
+        QUINTESSENCE, EXORCISM_BAUBLE,
+        PLATINUM, ILLUMINATING_FRAGMENT, ANIMA_STONE,
+        SCALE, CLAW, HORN, HIDE,
+    ];
+
+    /// O mesmo material, na cor pedida (1 cinza .. 4 roxo).
+    pub const fn na_cor(base: u16, cor: u8) -> u16 {
+        base + (if cor < 1 { 0 } else if cor > 4 { 3 } else { cor - 1 }) as u16
+    }
+
     /// item_id do peixe pra um species da EntityKind::Fish (1-4). Espécie
     /// fora do range cai no peixe T1. Server usa ao conceder o drop da pesca.
     pub fn fish_item_for_species(species: u16) -> u16 {

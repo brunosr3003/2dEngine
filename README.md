@@ -66,6 +66,7 @@ Detalhes de build em [docs/BUILD.md](docs/BUILD.md); operação de canais em
 | [PIPELINE_ARTE](docs/PIPELINE_ARTE.md) | voxel → sprite |
 | [COMBATE](docs/COMBATE.md) | conjuntos de arma, peso de armadura, skills |
 | [COLETA](docs/COLETA.md) | coleta automática por densidade do lugar |
+| [ECONOMIA_DE_CRAFT](docs/ECONOMIA_DE_CRAFT.md) | materiais, receitas, síntese de cor |
 | [PERSONAGEM](docs/PERSONAGEM.md) | rig, animação, montaria |
 | [COMBATE_POR_ALVO](docs/COMBATE_POR_ALVO.md) | combate e wire binário |
 
