@@ -179,8 +179,24 @@ pub const ARRASTO_MINIMO: f32 = 6.0;
 /// exponencial, estavel em qualquer `dt`. A integracao ingenua explode quando
 /// um quadro demora.
 pub fn altura_da_camera(atual: f32, vel: f32, alvo: f32, dt: f32) -> (f32, f32) {
-    /// Tempo aproximado pra fechar a distancia. Mais alto e' mais macio.
-    const TEMPO: f32 = 0.34;
+    /// Tempo aproximado pra fechar a distancia.
+    ///
+    /// Escolhido contra o RELOGIO DO CORPO, e nao por gosto: o boneco sobe
+    /// meio bloco em 125 ms, e a camera precisa estar andando DURANTE isso.
+    /// Com 0,34 o pico da velocidade dela caia no quadro 10 (167 ms) — ela so'
+    /// comecava a se mexer quando o degrau ja' tinha acabado, e o efeito era
+    /// a camera parecer presa no piso ate' o jogador sair do bloco.
+    ///
+    /// ```text
+    ///     T      1o quadro     pico    quadro do pico    50%      90%
+    ///   0,15       10,5 mm   40,7 mm         4          117 ms   283 ms
+    ///   0,34        2,2 mm   18,0 mm        10          283 ms   650 ms
+    /// ```
+    ///
+    /// O arranque continua macio — 10,5 mm contra os 21,2 mm da interpolacao
+    /// exponencial que estava aqui antes. E' a mola que tira o tranco; o
+    /// tempo so' decide se ela acompanha o corpo ou chega atrasada.
+    const TEMPO: f32 = 0.15;
     /// Acima disto nao e' relevo, e' teleporte (respawn, viagem, entrar no
     /// AOI). Deslizar por vinte unidades de mundo seria pior que o corte.
     const SALTO: f32 = 6.0;
@@ -358,8 +374,11 @@ mod testes_camera {
         // Meio bloco partindo do repouso: o primeiro quadro quase nao anda,
         // porque a mola precisa acelerar.
         let (h1, v1) = altura_da_camera(12.0, 0.0, 12.5, dt);
+        // Metade do que a interpolacao exponencial que estava aqui fazia
+        // (21,2 mm). O numero exato depende de `TEMPO`; o que nao pode e' o
+        // primeiro quadro ser o maior de todos, e disso cuida o teste do pico.
         assert!(
-            h1 - 12.0 < 0.5 * 0.02,
+            h1 - 12.0 < 0.5 * 0.05,
             "arrancou {:.4} de 0,5 no primeiro quadro", h1 - 12.0
         );
         assert!(v1 > 0.0, "a mola nem comecou a andar");
@@ -390,9 +409,12 @@ mod testes_camera {
                 quadro_do_pico = k;
             }
         }
+        // Nem no primeiro quadro (seria arranque), nem tarde demais: o corpo
+        // sobe o degrau em 7,5 quadros, e a camera tem que estar no meio do
+        // movimento dentro dessa janela — senao ela parece presa no piso.
         assert!(
-            quadro_do_pico >= 8,
-            "a camera correu mais no quadro {quadro_do_pico} — arrancou em vez de acelerar"
+            (2..=7).contains(&quadro_do_pico),
+            "pico da camera no quadro {quadro_do_pico}: fora da janela da subida do corpo (2..7)"
         );
     }
 
