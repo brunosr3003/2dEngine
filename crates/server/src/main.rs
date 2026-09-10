@@ -14,7 +14,6 @@ mod auth;
 mod boat_config;
 mod canais;
 mod economy;
-mod enemy_builds;
 mod panoptico;
 mod persistence;
 mod quests;

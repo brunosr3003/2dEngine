@@ -1460,16 +1460,17 @@ fn dungeon_tile(lx: i32, ly: i32) -> u16 {
     if dungeon_is_land(lx, ly) { DUNGEON_FLOOR } else { WATER }
 }
 
-/// Composição das salas de combate: (level dos mobs, pool de classes da wave).
-/// Progressão de arquétipo E de level: sala 0 só MELEE lvl 9 → sala 1 MESCLA
-/// lvl 10 → sala 2 só RANGED lvl 11. A sala do boss não usa isto.
-fn dungeon_room_spec(room: usize) -> (u32, &'static [crate::enemy_builds::EnemyClass]) {
-    use crate::enemy_builds::EnemyClass::*;
+/// Nivel dos mobs de cada sala de combate.
+///
+/// Era uma lista de CLASSES por sala (só melee, depois mesclado, depois só
+/// ranged). Mob nao tem classe: o que a sala escolhe agora e' o nivel, e o
+/// nivel escolhe o bicho na tabela.
+fn dungeon_room_spec(room: usize) -> u32 {
     match room {
-        0 => (9,  &[Sword, Axe, SwordShield]),
-        1 => (10, &[Sword, Dagger, Spear, Bow, Staff]),
-        2 => (11, &[Bow, Staff, Wand]),
-        _ => (10, &[SwordShield]),
+        0 => 9,
+        1 => 10,
+        2 => 11,
+        _ => 10,
     }
 }
 
@@ -2010,7 +2011,8 @@ impl GameWorld {
         // build = None pra spawns legacy (kinds 0-7); Some pra level-range.
         struct PendingSpawn {
             zone_id: u32, kind: u16, pos: Vec2,
-            build: Option<crate::enemy_builds::EnemyBuild>,
+            /// Kind da tabela escolhido pra este slot. `None` = usa `kind`.
+            escolhido: Option<u16>,
             /// Indice do slot Poisson; u32::MAX = legacy quotas (sem slot).
             slot_idx: u32,
         }
@@ -2160,11 +2162,13 @@ impl GameWorld {
                     let lvl = if lvl_max > lvl_min {
                         lvl_min + (lcg_f32(s_lvl) * (lvl_max - lvl_min + 1) as f32) as u32
                     } else { lvl_min };
-                    let class = crate::enemy_builds::random_class_for_level(lvl, lcg(s_lvl));
-                    let build = crate::enemy_builds::build_for_level(lvl, class);
+                    // Sorteia um BICHO da tabela pro nivel da banda. Antes
+                    // aqui se montava um build procedural (classe, equipamento,
+                    // skills); mob agora e' so' o que a tabela diz.
+                    let escolhido = crate::economy::kind_para_nivel(lvl, lcg(s_lvl));
                     pending.push(PendingSpawn {
                         zone_id, kind: lvl as u16, pos: slot.pos,
-                        build: Some(build),
+                        escolhido: Some(escolhido),
                         slot_idx: slot_idx as u32,
                     });
                     // Marca slot como pendente (será setado occupant=eid após
@@ -2192,7 +2196,7 @@ impl GameWorld {
                     .wrapping_mul(0x9E37_79B9);
                 let polygon_ref = self.spawn_zones[zi].polygon.as_deref();
                 if let Some(pos) = self.pick_tile_in_zone(zone_orig, zone_size, seed, 40, polygon_ref) {
-                    pending.push(PendingSpawn { zone_id, kind, pos, build: None, slot_idx: u32::MAX });
+                    pending.push(PendingSpawn { zone_id, kind, pos, escolhido: None, slot_idx: u32::MAX });
                     if let Some(entry) = self.spawn_zones[zi].live.iter_mut()
                         .find(|(k, _)| *k == kind) { entry.1 += 1; }
                 }
@@ -2203,7 +2207,7 @@ impl GameWorld {
         // Pra slots Poisson: bind eid → slot.occupant + atualiza SpawnedByZone
         // tag pra ter slot_idx correto (death handler usa pra liberar slot).
         for ps in pending {
-            let eid = match ps.build {
+            let eid = match ps.escolhido {
                 Some(b) => self.place_enemy_in_zone_with_build(ps.pos, b, ps.zone_id, ps.kind),
                 None    => { self.place_enemy_in_zone(ps.pos, ps.kind, ps.zone_id); EntityId(0) }
             };
@@ -2229,21 +2233,36 @@ impl GameWorld {
     /// Constroi o EnemyTag + Health a partir do EnemyBuild do kind. Stats
     /// efetivos vem de `effective_stats` — mesmo caminho dos players. Leash
     /// configuravel pelo callsite (zona usa raio da zona; boss/Map fixed).
-    fn build_enemy_tag(&self, kind: u16, spawn_anchor: Vec2, leash_max: f32, pos: Vec2) -> (EnemyTag, Health) {
-        self.build_enemy_tag_from_build(crate::enemy_builds::enemy_build(kind), spawn_anchor, leash_max, pos)
-    }
-
-    /// Variante que recebe o build pronto — usado pelas zonas com level-range
-    /// que sorteiam (level, classe) → build_for_level → placement.
-    fn build_enemy_tag_from_build(&self, build: crate::enemy_builds::EnemyBuild, spawn_anchor: Vec2, leash_max: f32, pos: Vec2) -> (EnemyTag, Health) {
-        let stats = effective_stats(
-            &build.equipment,
-            &build.allocated_points,
-            &build.proficiencies,
-            &build.learned_skills,
-            0, // enemy nao tem xp (poise so' afeta players de qualquer forma)
-        );
-        let hp_max = stats.hp_max;
+    /// Um mob, direto da tabela.
+    ///
+    /// Mob e' SIMPLES: atributos e tipo de ataque, corpo a corpo ou a
+    /// distancia. Nao tem classe, equipamento, skill nem visual proprio.
+    ///
+    /// Havia uma camada de 621 linhas por cima disto (`enemy_builds`) que
+    /// inventava classe, montava equipamento, alocava pontos de atributo e
+    /// distribuia skills pro bicho — um jogador procedural fazendo papel de
+    /// lobo. Ela saiu inteira: o que separa um Grunt de um Ranger e' o alcance
+    /// de ataque e o `kite_dist`, e isso a tabela `enemy_kinds` ja' dizia
+    /// antes de a camada existir.
+    fn build_enemy_tag(
+        &self,
+        kind: u16,
+        spawn_anchor: Vec2,
+        leash_max: f32,
+        pos: Vec2,
+    ) -> (EnemyTag, Health) {
+        let d = crate::economy::enemy_def(kind);
+        // `stats` sobrevive como TRANSPORTE dos tres numeros que o combate le'
+        // (vida, dano, defesa). Preencher o resto com zero e' de proposito:
+        // mob nao tem mana, vigor, destreza nem sabedoria.
+        let mut stats = shared::base_player_stats();
+        stats.hp_max = d.hp_max;
+        stats.attack_damage = d.attack_damage;
+        stats.defense = d.defense;
+        let hp_max = d.hp_max;
+        // Corpo a corpo ou a distancia: a tabela diz pelo ALCANCE, e o
+        // `kite_dist` e' o que faz o atirador recuar em vez de encostar.
+        let corpo_a_corpo = d.kite_dist.is_none();
         let tag = EnemyTag {
             ai_target: None,
             attack_cooldown: 0.0,
@@ -2265,27 +2284,27 @@ impl GameWorld {
             stunned_until: 0.0,
             forced_aggro_until: 0.0,
             forced_aggro_target: None,
-            mp_current: stats.mp_max as f32,
+            mp_current: 0.0,
             skill_cds: std::collections::HashMap::new(),
             stats,
-            equipment: build.equipment,
-            learned_skills: build.learned_skills,
-            level: build.level,
-            visual: build.visual,
-            attack_cooldown_base: build.attack_cooldown,
-            attack_range: build.attack_range,
-            detect_range: build.detect_range,
-            locomotor_speed: build.locomotor_speed,
-            kite_dist: build.kite_dist,
-            proj_count: build.proj_count,
-            proj_kind: build.proj_kind,
-            is_melee: build.is_melee,
-            size_scale: build.size_scale,
-            xp_reward: build.xp_reward,
-            is_boss: build.is_boss,
+            equipment: shared::Equipment::default(),
+            learned_skills: Vec::new(),
+            level: 1,
+            visual: shared::VisualConfig::default(),
+            attack_cooldown_base: d.attack_cooldown,
+            attack_range: d.attack_range,
+            detect_range: d.detect_range,
+            locomotor_speed: d.speed,
+            kite_dist: d.kite_dist,
+            proj_count: d.proj_count,
+            proj_kind: 0,
+            is_melee: corpo_a_corpo,
+            size_scale: d.size_scale,
+            xp_reward: d.xp_reward,
+            is_boss: false,
             knockback_until: 0.0,
             knockback_vel: Vec2::ZERO,
-            stamina_current: stats.stamina_max as f32,
+            stamina_current: 0.0,
             ai_dash_until: 0.0,
             ai_dash_dir: Vec2::ZERO,
             ai_dash_cd_until: 0.0,
@@ -2296,7 +2315,7 @@ impl GameWorld {
             parry_flash_pending: false,
             dash_anim_pending: false,
             ai_recent_hits: 0.0,
-            boss_name: if build.is_boss { Some(build.name.clone()) } else { None },
+            boss_name: None,
             leap_until: 0.0,
             leap_start_pos: Vec2::ZERO,
             leap_target: Vec2::ZERO,
@@ -2415,16 +2434,21 @@ impl GameWorld {
         None
     }
 
-    /// Spawna enemy a partir de um EnemyBuild (procedural por level/classe).
-    /// Usado pelas zonas level-range. `tag_kind` vai pro EntityKind::Enemy(_)
-    /// — pra zonas level-range, e' o level do mob (0..100).
+    /// Spawna um mob de um KIND da tabela, dentro de uma zona.
+    ///
+    /// O `EntityKind::Enemy` guarda o KIND, e nao o nivel. Guardava o nivel
+    /// nas zonas de faixa — herança de quando o mob era montado por nivel — e
+    /// isso fazia o resto do jogo ler a linha errada da tabela: o nome, o loot
+    /// e o modelo saem todos desse numero. Aparecia como "Ranger" com os
+    /// numeros do Grunt.
     fn place_enemy_in_zone_with_build(
         &mut self,
         pos: Vec2,
-        build: crate::enemy_builds::EnemyBuild,
+        kind_def: u16,
         zone_id: u32,
-        tag_kind: u16,
+        _nivel: u16,
     ) -> EntityId {
+        let tag_kind = kind_def;
         let (spawn_anchor, leash_max) = if let Some(zone) = self.spawn_zones.iter().find(|z| z.id == zone_id) {
             if zone.level_range.is_some() {
                 // Zonas level-range nascem em PACKS. Ancora cada mob no PROPRIO
@@ -2441,10 +2465,10 @@ impl GameWorld {
         } else {
             (pos, 6.0)
         };
-        let class_str = build.class.as_str().to_string();
-        let level = build.level;
-        let (tag, health) = self.build_enemy_tag_from_build(build, spawn_anchor, leash_max, pos);
+        let (tag, health) = self.build_enemy_tag(kind_def, spawn_anchor, leash_max, pos);
         let hp_max = health.max;
+        let class_str = crate::economy::enemy_def(kind_def).name.clone();
+        let level = 1u32;
         tracing::info!(
             "spawn zona #{}: lv{} {} hp={} pos=({:.1},{:.1})",
             zone_id, level, class_str, hp_max, pos.x, pos.y
@@ -2466,10 +2490,8 @@ impl GameWorld {
         net_id
     }
 
-    /// Wrapper legacy — chama o flow novo passando build derivado de kind.
     fn place_enemy_in_zone(&mut self, pos: Vec2, kind: u16, zone_id: u32) {
-        let build = crate::enemy_builds::enemy_build(kind);
-        let _ = self.place_enemy_in_zone_with_build(pos, build, zone_id, kind);
+        let _ = self.place_enemy_in_zone_with_build(pos, kind, zone_id, kind);
     }
 
     /// Admin: despawna TODOS os enemies (incluindo bosses) e reseta as filas
@@ -2552,13 +2574,11 @@ impl GameWorld {
 
         // Aplica spawns (fora do borrow).
         for it in intents {
-            let class = crate::enemy_builds::random_class_for_level(
-                it.level,
-                (it.area_id as u64).wrapping_mul(0xC0FFEE) ^ self.tick as u64,
-            );
-            let build = crate::enemy_builds::build_boss(it.level, class);
-            let class_str = build.class.as_str().to_string();
-            let level = build.level;
+            // Chefe e' o kind 7 da tabela. Nao ha' "build de chefe": o que
+            // faz o chefe ser chefe sao os numeros dele.
+            let build = crate::economy::KIND_CHEFE;
+            let class_str = crate::economy::enemy_def(build).name.clone();
+            let level = it.level;
             // Anchor = centro da area, leash grande pra boss errar pelo polygon
             let (anchor, leash) = {
                 let area = self.boss_areas.iter().find(|a| a.id == it.area_id).unwrap();
@@ -2566,12 +2586,11 @@ impl GameWorld {
                 let r = area.size.x.max(area.size.y) * 0.7;
                 (center, r)
             };
-            let (tag, health) = self.build_enemy_tag_from_build(build, anchor, leash, it.pos);
+            let (tag, health) = self.build_enemy_tag(build, anchor, leash, it.pos);
             let hp_max = health.max;
             let net_id = self.alloc_entity_id();
             let handle = self.spawn_entity_body(it.pos);
-            // tag_kind = level (consistente com level-range zones)
-            let tag_kind = level as u16;
+            let tag_kind = build;
             self.ecs.spawn((
                 NetId(net_id),
                 Position(it.pos),
@@ -4143,7 +4162,7 @@ impl GameWorld {
     /// sorteada do pool da sala (dungeon_room_spec). Devolve os EntityIds.
     fn spawn_dungeon_wave(&mut self, lane: usize, room: usize, count: u32) -> Vec<EntityId> {
         let base = self.dungeon_slots[lane].base;
-        let (level, pool) = dungeon_room_spec(room);
+        let level = dungeon_room_spec(room);
         let isle = DUNGEON_ISLES[room + 1];
         let mut s = lcg(self.tick as u64 ^ ((lane as u64) << 8) ^ 0x3A7E);
         let mut ids = Vec::new();
@@ -4158,8 +4177,7 @@ impl GameWorld {
             let ly = (isle.1 + ang.sin() * rad * isle.3).floor() as i32;
             if !dungeon_is_land(lx, ly) { continue; }
             s = lcg(s);
-            let class = pool[(s % pool.len() as u64) as usize];
-            let build = crate::enemy_builds::build_for_level(level, class);
+            let build = crate::economy::kind_para_nivel(level, s);
             let pos = Vec2::new(base.x + lx as f32 + 0.5, base.y + ly as f32 + 0.5);
             ids.push(self.spawn_dungeon_enemy(pos, build, level as u16));
         }
@@ -4171,17 +4189,15 @@ impl GameWorld {
         let base = self.dungeon_slots[lane].base;
         let isle = DUNGEON_ISLES[4];
         let pos = Vec2::new(base.x + isle.0 + 0.5, base.y + isle.1);
-        let build = crate::enemy_builds::build_dungeon_boss(
-            10, crate::enemy_builds::EnemyClass::SwordShield);
-        vec![self.spawn_dungeon_enemy(pos, build, 7)]
+        vec![self.spawn_dungeon_enemy(pos, crate::economy::KIND_CHEFE, 7)]
     }
 
     /// Espelha `place_enemy` mas aceita um build pronto + o kind a guardar no
     /// EntityKind (loot/sprite) e devolve o EntityId. leash alto (a sala já
     /// confina) pra o mob não "voltar pra casa" no meio.
-    fn spawn_dungeon_enemy(&mut self, pos: Vec2, build: crate::enemy_builds::EnemyBuild, stored_kind: u16) -> EntityId {
+    fn spawn_dungeon_enemy(&mut self, pos: Vec2, kind_def: u16, stored_kind: u16) -> EntityId {
         let kind = stored_kind;
-        let (tag, health) = self.build_enemy_tag_from_build(build, pos, 14.0, pos);
+        let (tag, health) = self.build_enemy_tag(kind_def, pos, 14.0, pos);
         let eid = self.alloc_entity_id();
         let handle = self.spawn_entity_body(pos);
         self.ecs.spawn((
@@ -4348,8 +4364,7 @@ impl GameWorld {
     /// Inimigo de TUTORIAL: level 1 (fraco), visual goblin (kind 0), ancorado no
     /// próprio spawn com leash curto (fica na arena, não persegue pela ilha).
     fn place_tutorial_enemy(&mut self, pos: Vec2) {
-        let build = crate::enemy_builds::build_for_level(1, crate::enemy_builds::EnemyClass::Sword);
-        let (mut tag, health) = self.build_enemy_tag_from_build(build, pos, 10.0, pos);
+        let (mut tag, health) = self.build_enemy_tag(0, pos, 10.0, pos);
         tag.attack_cooldown = 0.0;
         let eid = self.alloc_entity_id();
         let handle = self.spawn_entity_body(pos);
@@ -10120,15 +10135,18 @@ impl GameWorld {
                 let name = ptag.map(|p| p.name.clone())
                     .or_else(|| vtag.map(|v| v.name.clone()))
                     .or_else(|| wtag.map(|w| w.name.clone()))
-                    .or_else(|| etag.map(|t| {
-                        if let Some(bn) = &t.boss_name { return bn.clone(); }
-                        let tier = crate::enemy_builds::tier_for_level(t.level);
-                        if t.is_boss {
-                            format!("[BOSS] {} Lv{}", tier.theme.display_name, t.level)
-                        } else {
-                            format!("{} Lv{}", tier.theme.display_name, t.level)
-                        }
-                    }));
+                    // O nome do bicho e' o da TABELA. Havia um gerador de
+                    // nome por "tema de tier" aqui; mob nao tem tier nem tema.
+                    .or_else(|| {
+                        etag.map(|t| t.boss_name.clone()).flatten().or_else(|| {
+                            match kind {
+                                EntityKind::Enemy(kd) => {
+                                    Some(crate::economy::enemy_def(*kd).name.clone())
+                                }
+                                _ => None,
+                            }
+                        })
+                    });
                 let mut flags = 0u8;
                 if etag.map_or(false, |t| t.is_boss) {
                     flags |= shared::ent_flags::BOSS;

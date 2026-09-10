@@ -540,3 +540,34 @@ async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
         version, items, shop_items, enemy_kinds, loot_tables, farm_loot_tables, vendor_shops,
     })
 }
+
+/// O kind do CHEFE na tabela.
+///
+/// Um numero e nao um `build_boss`: o que faz o chefe ser chefe sao os numeros
+/// dele (700 de vida contra 50 do Grunt), e nao uma classe procedural.
+pub const KIND_CHEFE: u16 = 7;
+
+/// Um bicho da tabela adequado ao nivel pedido.
+///
+/// A tabela e' pequena e ordenada por xp, que cresce junto com a dificuldade.
+/// Entao "nivel" vira posicao na lista: nivel baixo pega os primeiros, nivel
+/// alto abre a escolha ate' o fim. Sorteio simples de proposito — mob nao tem
+/// classe nem build, e uma tabela de oito linhas nao pede mais que isto.
+pub fn kind_para_nivel(nivel: u32, semente: u64) -> u16 {
+    let mut comuns: Vec<u16> = cell()
+        .read()
+        .enemy_kinds
+        .keys()
+        .copied()
+        .filter(|&k| k != KIND_CHEFE)
+        .collect();
+    // Ordem estavel: a tabela vem de um mapa, e sorteio sobre ordem de hash
+    // daria um bicho diferente a cada reinicio do servidor.
+    comuns.sort_unstable();
+    if comuns.is_empty() {
+        return 0;
+    }
+    // Ate' onde a escolha vai: um bicho novo a cada tres niveis.
+    let teto = ((nivel as usize / 3) + 1).min(comuns.len());
+    comuns[(semente as usize) % teto]
+}
