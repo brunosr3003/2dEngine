@@ -1080,6 +1080,16 @@ pub fn planta_da_coluna(
 pub struct Estorvo {
     pub centro: glam::Vec2,
     pub raio: f32,
+    pub tipo: TipoDeEstorvo,
+}
+
+/// O que o estorvo E'. A colisao nao se importa — barrar e' barrar —, mas a
+/// COLETA se importa: quem esta' no meio de um bosque tira madeira, e um
+/// arbusto nao e' arvore.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TipoDeEstorvo {
+    Tronco,
+    Forracao,
 }
 
 /// Tudo que esta' coluna tem e BARRA passagem, acrescentado em `saida`.
@@ -1103,11 +1113,16 @@ pub fn estorvos_da_coluna(
         saida.push(Estorvo {
             centro: a.centro,
             raio: raio_de_tronco(a.especie) * a.porte,
+            tipo: TipoDeEstorvo::Tronco,
         });
     }
     if let Some(p) = planta_da_coluna(bioma, bx, bz, topo, declive, ger, agua) {
         if let Some(r) = raio_de_planta(p.especie) {
-            saida.push(Estorvo { centro: p.centro, raio: r * p.porte });
+            saida.push(Estorvo {
+                centro: p.centro,
+                raio: r * p.porte,
+                tipo: TipoDeEstorvo::Forracao,
+            });
         }
     }
 }
@@ -1264,6 +1279,33 @@ pub struct Ilha {
     /// precisa abrir em volta da linha — tirado do dado e nao de um palpite,
     /// que envelheceria calado no dia em que o matacao crescesse.
     raio_max_estorvo: f32,
+}
+
+/// Quanto recurso ha' em volta de um ponto. Ver `Ilha::riqueza`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Riqueza {
+    /// Colunas de rocha exposta entre as `amostras`.
+    pub pedra: u32,
+    /// Troncos no raio. Este e' contado inteiro, nao amostrado.
+    pub madeira: u32,
+    /// Quantas colunas foram olhadas. Sem ela `pedra` seria incomparavel com
+    /// `madeira`: uma e' area amostrada, a outra e' contagem de coisas.
+    pub amostras: u32,
+}
+
+impl Riqueza {
+    /// Pedra em "troncos equivalentes": um paredao inteiro vale
+    /// `COLETA_PEDRA_CHEIA`. Sem esta conversao a rocha atropelaria a
+    /// madeira por unidade — 113 colunas de serra contra 20 arvores de mata
+    /// fechada — e todo lugar com pedra viraria mina, inclusive a mata.
+    pub fn pedra_equivalente(self) -> f32 {
+        crate::COLETA_PEDRA_CHEIA * self.pedra as f32 / self.amostras.max(1) as f32
+    }
+
+    /// O numero que decide a frequencia da coleta.
+    pub fn densidade(self) -> f32 { self.madeira as f32 + self.pedra_equivalente() }
+
+    pub fn vazia(self) -> bool { self.pedra == 0 && self.madeira == 0 }
 }
 
 /// Lado da celula do indice de estorvos, em COLUNAS.
@@ -1451,6 +1493,75 @@ impl Ilha {
             }
         }
         pior.map(|(_, e)| e)
+    }
+
+    /// O que ha' pra coletar em volta de `p`, num raio.
+    ///
+    /// E' a peca central da coleta: nao ha' ferramenta, nivel nem no' clicavel
+    /// — o que decide o ganho e' O LUGAR, e o lugar e' este numero. Serra e
+    /// paredao dao PEDRA (rocha exposta e' exatamente onde o declive passou do
+    /// pulo, entao a mina e' visivel de longe e ninguem precisa de mapa);
+    /// bosque da' MADEIRA, contando tronco e nao forracao.
+    ///
+    /// A pedra e' amostrada de dois em dois blocos, nao coluna a coluna: o
+    /// raio inteiro seriam 576 colunas por consulta, e a diferenca entre 144
+    /// amostras e 576 nao muda decisao nenhuma — o numero so' precisa ordenar
+    /// lugares, nao medir a montanha.
+    pub fn riqueza(&self, p: glam::Vec2, raio: f32) -> Riqueza {
+        let mut r = Riqueza::default();
+
+        // ── madeira: troncos no raio, pelo indice de estorvos ────────────
+        let (c0x, c0z) = self.celula(p.x - raio, p.y - raio);
+        let (c1x, c1z) = self.celula(p.x + raio, p.y + raio);
+        let raio_sq = raio * raio;
+        for cz in c0z..=c1z {
+            for cx in c0x..=c1x {
+                let Some(c) = self.celula_em(cx, cz) else { continue };
+                for &n in &self.grade[c] {
+                    let e = self.estorvos[n as usize];
+                    if e.tipo != TipoDeEstorvo::Tronco { continue }
+                    if e.centro.distance_squared(p) > raio_sq { continue }
+                    // Uma arvore pode estar em varias celulas: so' conta na
+                    // celula que contem o centro dela, senao arvore grande
+                    // vale por quatro.
+                    if self.celula(e.centro.x, e.centro.y) != (cx, cz) { continue }
+                    r.madeira += 1;
+                }
+            }
+        }
+
+        // ── pedra: colunas de rocha exposta, em rede de 2 blocos ─────────
+        let passo = 2i32;
+        let alcance = (raio / BLOCO).ceil() as i32;
+        let (px, pz) = self.coluna(p.x, p.y);
+        let mut dz = -alcance;
+        while dz <= alcance {
+            let mut dx = -alcance;
+            while dx <= alcance {
+                if (dx * dx + dz * dz) as f32 * BLOCO * BLOCO <= raio_sq {
+                    r.amostras += 1;
+                    let (ix, iz) = (px + dx, pz + dz);
+                    let topo = self.bloco(ix, iz);
+                    let altura = (topo + 1) as f32 * BLOCO;
+                    if altura > NIVEL_DO_MAR {
+                        let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                            .iter()
+                            .map(|(ax, az)| (topo - self.bloco(ix + ax, iz + az)).abs())
+                            .max()
+                            .unwrap_or(0);
+                        if matches!(
+                            material(self.bioma, altura, declive, false),
+                            Material::Rocha | Material::RochaEscura | Material::Arenito
+                        ) {
+                            r.pedra += 1;
+                        }
+                    }
+                }
+                dx += passo;
+            }
+            dz += passo;
+        }
+        r
     }
 
     /// Um corpo de raio `raio` cabe em `p` sem entrar em tronco, matacao ou
@@ -2908,5 +3019,53 @@ mod testes {
             let e = i.estatisticas();
             assert!(e.sitio_chefe > 0.01, "{}: sitio de chefe {:.3}", d.zona, e.sitio_chefe);
         }
+    }
+
+    /// A ilha tem que dar PEDRA e MADEIRA, e nao no mesmo lugar.
+    ///
+    /// A coleta inteira pende deste numero: sem lugar rico e lugar pobre nao
+    /// existe spot, e sem spot nao existe disputa. Mede em vez de supor —
+    /// densidade e' coisa que muda quando alguem mexe no relevo, e o dia em
+    /// que a ilha ficar plana demais a coleta morre calada.
+    #[test]
+    fn a_ilha_tem_onde_coletar() {
+        use crate::{COLETA_INTERVALO_BASE_S, COLETA_RAIO_SPOT};
+        let d = &ARQUIPELAGO[0];
+        let i = Ilha::gerar(d.semente, d.raio_blocos.min(800), d.bioma, ESCALA_ALTURA);
+        let raio_un = i.raio_blocos as f32 * BLOCO;
+
+        let (mut pedra, mut madeira, mut secos, mut n) = (0u32, 0u32, 0u32, 0u32);
+        let (mut mina, mut bosque) = (Riqueza::default(), Riqueza::default());
+        let passo = raio_un / 20.0;
+        let mut z = -raio_un;
+        while z <= raio_un {
+            let mut x = -raio_un;
+            while x <= raio_un {
+                let p = glam::Vec2::new(x, z);
+                if !i.agua(p.x, p.y) {
+                    let r = i.riqueza(p, COLETA_RAIO_SPOT);
+                    n += 1;
+                    if r.pedra > r.madeira { pedra += 1 } else if r.madeira > 0 { madeira += 1 }
+                    if r.vazia() { secos += 1 }
+                    if r.pedra_equivalente() > mina.pedra_equivalente() { mina = r }
+                    if r.madeira > bosque.madeira { bosque = r }
+                }
+                x += passo;
+            }
+            z += passo;
+        }
+        let intervalo = |r: Riqueza| COLETA_INTERVALO_BASE_S / r.densidade().max(0.01);
+        println!(
+            "amostras em terra {n} | pedra {pedra} | madeira {madeira} | secos {secos}\n\
+             melhor mina:   {:>3}/{:<3} colunas de rocha, {:>2} troncos -> dens {:5.1}, {:4.1}s cheia\n\
+             melhor bosque: {:>3}/{:<3} colunas de rocha, {:>2} troncos -> dens {:5.1}, {:4.1}s cheia",
+            mina.pedra, mina.amostras, mina.madeira, mina.densidade(), intervalo(mina),
+            bosque.pedra, bosque.amostras, bosque.madeira, bosque.densidade(), intervalo(bosque),
+        );
+        assert!(pedra > 0, "ilha sem lugar de pedra");
+        assert!(madeira > 0, "ilha sem lugar de madeira");
+        // Lugar seco tem que existir: se der pra coletar em qualquer lugar, o
+        // spot nao vale nada e andar ate' ele nao significa nada.
+        assert!(secos * 10 > n, "so' {secos} de {n} amostras sem recurso — o mapa inteiro e' spot");
     }
 }

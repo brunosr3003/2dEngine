@@ -88,6 +88,30 @@ struct Jogador {
     defesa: i32,
     dano: i32,
     arma: Option<u16>,
+    /// O que o LUGAR esta' rendendo de coleta pra ele agora. `None` = lugar
+    /// sem recurso nenhum. E' a unica janela pra um sistema que nao tem UI:
+    /// a coleta e' automatica e silenciosa, e sem isto so' se enxerga o
+    /// inventario crescendo.
+    coleta: Option<Coleta>,
+}
+
+#[derive(Serialize)]
+struct Coleta {
+    /// Rocha em volta, ja' convertida pra troncos equivalentes.
+    pedra: f32,
+    /// Troncos em volta.
+    madeira: f32,
+    /// A soma — e' ela que divide `COLETA_INTERVALO_BASE_S`.
+    densidade: f32,
+    /// Quanto da celula ainda nao foi esgotado, em [0,1].
+    reserva: f32,
+    /// Segundos por coleta AGORA, ja' com a reserva descontada.
+    intervalo_s: f32,
+    /// Segundos por coleta em REGIME, quando a reserva se acomoda. E' o
+    /// numero de balanceamento: o instantaneo oscila, este nao.
+    sustentado_s: f32,
+    /// Tier do material do lugar (1-4), pela distancia do desembarque.
+    tier: u8,
 }
 
 #[derive(Serialize)]
@@ -168,6 +192,15 @@ pub fn publicar(w: &GameWorld, ultima: &mut f32) {
             defesa: s.stats.defense,
             dano: s.stats.attack_damage,
             arma: s.equipment.weapon,
+            coleta: w.retrato_da_coleta(pos).map(|r| Coleta {
+                pedra: r.pedra,
+                madeira: r.madeira,
+                densidade: r.densidade,
+                reserva: r.reserva,
+                intervalo_s: r.intervalo_s,
+                sustentado_s: r.sustentado_s,
+                tier: r.tier,
+            }),
         });
     }
 

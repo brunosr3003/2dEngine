@@ -470,6 +470,18 @@ function desenhaDetalhe() {
     campo('dano / defesa', `${e.dano} / ${e.defesa}`);
     campo('arma', e.arma ?? '—');
     campo('rota', e.rota ? `${e.rota} pontos → ${e.destino[0].toFixed(1)}, ${e.destino[1].toFixed(1)}` : '—');
+    // A coleta e' automatica e silenciosa: sem isto, so' se enxerga o
+    // inventario crescendo e nao POR QUE ele cresce nesse ritmo.
+    if (e.coleta) {
+      const c = e.coleta;
+      campo('coleta', `<b>${c.intervalo_s > 999 ? '—' : c.intervalo_s.toFixed(1) + 's'}</b> agora · ` +
+                      `${c.sustentado_s.toFixed(1)}s em regime · <span class="tag">T${c.tier}</span>`);
+      campo('spot', `densidade ${c.densidade.toFixed(2)} ` +
+                    `(pedra ${c.pedra.toFixed(2)} + madeira ${c.madeira.toFixed(0)})`);
+      campo('reserva', barra(Math.round(c.reserva * 100), 100, '#d9b45a'));
+    } else {
+      campo('coleta', 'lugar sem recurso');
+    }
   } else {
     campo('espécie', `${e.nome} <span class="tag">kind ${e.kind}</span>${e.chefe ? ' <span class="tag" style="color:var(--chefe)">CHEFE</span>' : ''}`);
     campo('dano / defesa', `${e.dano} / ${e.defesa}`);

@@ -64,6 +64,9 @@ Detalhes de build em [docs/BUILD.md](docs/BUILD.md); operação de canais em
 | [GAMEPLAY](docs/GAMEPLAY.md) / [NEW_MECHANICS](docs/NEW_MECHANICS.md) | design |
 | [PANOPTICO](docs/PANOPTICO.md) | painel de observabilidade |
 | [PIPELINE_ARTE](docs/PIPELINE_ARTE.md) | voxel → sprite |
+| [COMBATE](docs/COMBATE.md) | conjuntos de arma, peso de armadura, skills |
+| [COLETA](docs/COLETA.md) | coleta automática por densidade do lugar |
+| [PERSONAGEM](docs/PERSONAGEM.md) | rig, animação, montaria |
 | [COMBATE_POR_ALVO](docs/COMBATE_POR_ALVO.md) | combate e wire binário |
 
 ## Stack

@@ -829,6 +829,10 @@ pub struct Session {
     pub last_input_seq: u32,
     pub pending_input: Option<InputFrame>,
     pub logged_in: bool,
+    /// Progresso da coleta automatica, em nos. Passa de 1.0 e um no' cai.
+    /// Fica guardado quando o jogador sai do spot: quem interrompe pra lutar
+    /// volta de onde parou, em vez de recomecar do zero.
+    pub coleta_progresso: f32,
     /// True enquanto a verificacao de senha esta rodando — recusa logins
     /// duplicados da mesma sessao.
     pub auth_in_flight: bool,
@@ -1085,9 +1089,6 @@ pub struct Session {
     pub defending_poise_buffer: f32,
     /// Farm skill levels (persistidos). Influenciam hits_required do cliente
     /// e são enviados via FarmSkillsUpdate no login. Default 1.
-    pub woodcutting_lvl: u32,
-    pub mining_lvl:      u32,
-    pub gathering_lvl:   u32,
 
     /// Quests — estado por personagem (ativas/prontas/concluídas+cooldown).
     pub quests: Vec<crate::quests::CharQuest>,
@@ -1285,13 +1286,22 @@ pub struct GameWorld {
     /// Última versão de economy vista no broadcast — quando muda (admin
     /// editou via web), reenviamos `ItemsConfig` pra todos os clientes.
     pub last_econ_version: i64,
-    /// Farm nodes carregados do mapfile. Chave = ID sequencial (1-based).
-    /// HP reduz a cada FarmHit validado; quando chega a 0, node entra em
-    /// respawn_at > 0 e loot é spawnado.
+    /// Nos de coleta. Chave = ID sequencial (1-based). Coletar um no' o
+    /// esgota inteiro: nao ha' martelada, ha' o no' que sai do mapa e volta
+    /// depois de `respawn_seconds`.
     farm_nodes: HashMap<u32, FarmNodeState>,
-    /// Cooldown por (SessionId, node_id) — impede spam de FarmHit acima da
-    /// cadência da animação. Valor = sim_time_s quando o cooldown expira.
-    farm_hit_cooldowns: HashMap<(SessionId, u32), f32>,
+    /// `sim_time_s` da proxima varredura de coleta. A coleta nao roda por
+    /// tick: roda a cada `COLETA_PASSO_S`, que e' o passo com que o progresso
+    /// de cada jogador acumula.
+    coleta_em: f32,
+    /// Reserva de cada celula de coleta: (quanto sobrou em [0,1], quando foi
+    /// lido pela ultima vez). So' existe celula que alguem visitou — a
+    /// regeneracao acontece na leitura, entao o custo e' proporcional ao
+    /// numero de jogadores e nao ao tamanho do mundo.
+    reservas: HashMap<(i32, i32), (f32, f32)>,
+    /// Onde o jogador desembarca. E' a origem da progressao: nivel de mob e
+    /// tier de recurso crescem com a distancia daqui.
+    porto_da_ilha: Vec2,
     /// Processo de tutorial (env TUTORIAL_MODE=1). Quando true, players
     /// spawnam numa lane isolada (ver `tutorial_slots`) em vez da pos salva,
     /// não persistem posição, e o chat é restrito à própria lane.
@@ -1547,14 +1557,33 @@ fn tutorial_island_floor(x: i32, y: i32) -> bool {
     n >= 2
 }
 
+/// Quanto um lugar esta' rendendo de coleta. So' pra observacao.
+pub struct RetratoDaColeta {
+    pub pedra: f32,
+    pub madeira: f32,
+    pub densidade: f32,
+    pub reserva: f32,
+    pub intervalo_s: f32,
+    pub sustentado_s: f32,
+    pub tier: u8,
+}
+
+/// De onde a coleta de um jogador esta' saindo neste momento.
+enum FonteDeColeta {
+    /// No' posto a mao no mapa (tutorial, mapas do editor).
+    No(u32),
+    /// A propria ilha: rocha exposta e tronco.
+    Terreno { kind: &'static str, tier: u8, densidade: f32 },
+}
+
+/// No' de coleta posto a mao num mapa de arquivo. Nao tem mais HP: uma coleta
+/// esgota o no' inteiro, entao o unico estado que sobra e' vivo ou em respawn.
 struct FarmNodeState {
     kind:           String,
     tier:           u8,
     pos:            Vec2,
-    hp:             i32,
-    hp_max:         i32,
     respawn_at:     f32, // 0.0 = vivo; >0 = em respawn até esse sim_time_s
-    respawn_seconds: f32, // tempo de respawn configurado por node (default = FARM_NODE_RESPAWN_S)
+    respawn_seconds: f32, // tempo de respawn configurado por node
 }
 
 impl GameWorld {
@@ -1621,7 +1650,9 @@ impl GameWorld {
             attacker_weapon_this_tick: HashMap::new(),
             last_econ_version: 0,
             farm_nodes: HashMap::new(),
-            farm_hit_cooldowns: HashMap::new(),
+            coleta_em: 0.0,
+            reservas: HashMap::new(),
+            porto_da_ilha: Vec2::ZERO,
             tutorial_mode: false,
             tutorial_slots: Vec::new(),
             dungeon_mode: false,
@@ -1763,7 +1794,9 @@ impl GameWorld {
             attacker_weapon_this_tick: HashMap::new(),
             last_econ_version: 0,
             farm_nodes: HashMap::new(),
-            farm_hit_cooldowns: HashMap::new(),
+            coleta_em: 0.0,
+            reservas: HashMap::new(),
+            porto_da_ilha: Vec2::ZERO,
             tutorial_mode,
             tutorial_slots: Vec::new(),
             dungeon_mode,
@@ -1806,10 +1839,8 @@ impl GameWorld {
 
     fn add_tutorial_farm(&mut self, kind: &str, tx: f32, ty: f32) {
         let node_id = self.farm_nodes.len() as u32 + 1;
-        let hp_max = shared::farm_node_hp_max(kind, 1);
         self.farm_nodes.insert(node_id, FarmNodeState {
-            kind: kind.to_string(), tier: 1, pos: Vec2::new(tx, ty),
-            hp: hp_max, hp_max, respawn_at: 0.0, respawn_seconds: shared::FARM_NODE_RESPAWN_S,
+            kind: kind.to_string(), tier: 1, pos: Vec2::new(tx, ty), respawn_at: 0.0, respawn_seconds: shared::FARM_NODE_RESPAWN_S,
         });
     }
 
@@ -2788,14 +2819,11 @@ impl GameWorld {
                 }
                 MapEntity::FarmNode { kind, tier, respawn_seconds } => {
                     let node_id = self.farm_nodes.len() as u32 + 1;
-                    let hp_max  = shared::farm_node_hp_max(kind, *tier as u8);
                     let rs      = respawn_seconds.unwrap_or(shared::FARM_NODE_RESPAWN_S).max(1.0);
                     self.farm_nodes.insert(node_id, FarmNodeState {
                         kind:            kind.clone(),
                         tier:            *tier as u8,
                         pos:             pos,
-                        hp:              hp_max,
-                        hp_max,
                         respawn_at:      0.0,
                         respawn_seconds: rs,
                     });
@@ -3459,6 +3487,7 @@ impl GameWorld {
     /// distancia do desembarque, e quem escolhe a criatura e' a tabela de
     /// nivel. Mob novo entra sem tocar em codigo de mundo.
     pub fn povoar_ilha(&mut self, centro_jogador: Vec2) {
+        self.porto_da_ilha = centro_jogador;
         let (Some(ilha), Some(def)) = (
             self.ilha.as_ref(),
             shared::terreno::def_da_zona(&self.zona),
@@ -4628,16 +4657,13 @@ impl GameWorld {
         if let Some(s) = self.sessions.get_mut(&sid) { s.hooked_fish = None; }
     }
 
-    /// Player lançou a boia em `pos`. Valida vara equipada + água no alcance,
-    /// e passa a atrair peixes pra esse ponto.
+    /// Player lançou a boia em `pos`. Valida água no alcance e passa a atrair
+    /// peixes pra esse ponto. Nao ha' vara: pescar e' de graca, como coletar.
     fn handle_fishing_cast(&mut self, sid: SessionId, pos: Vec2) {
         let player_pos = {
             let Some(s) = self.sessions.get(&sid) else { return };
             if !s.logged_in { return; }
             let Some(e) = s.entity else { return };
-            if shared::item_id::tool_kind(s.equipment.tool_rod.unwrap_or(0))
-                != Some(shared::ToolKind::FishingRod)
-            { return; }
             let Ok(p) = self.ecs.get::<&Position>(e) else { return };
             p.0
         };
@@ -4790,6 +4816,7 @@ impl GameWorld {
                 last_input_seq: 0,
                 pending_input: None,
                 logged_in: false,
+                coleta_progresso: 0.0,
                 auth_in_flight: false,
                 attack_cooldown: 0.0,
                 dash_until: 0.0,
@@ -4886,9 +4913,6 @@ impl GameWorld {
                 defending_poise_buffer: 0.0,
                 last_combat_at_s: 0.0,
                 poise_last_sent: 0,
-                woodcutting_lvl: 1,
-                mining_lvl:      1,
-                gathering_lvl:   1,
                 quests: Vec::new(),
                 quests_dirty: false,
                 faction_points: 0,
@@ -5294,9 +5318,6 @@ impl GameWorld {
             ClientMessage::RespawnAtCity => {
                 tracing::info!("[debug] RespawnAtCity recebido de sessao {:?}", id);
                 self.handle_respawn_at_city(id);
-            }
-            ClientMessage::FarmHit { node_id } => {
-                self.handle_farm_hit(id, node_id);
             }
             ClientMessage::UpdateVisual { visual } => {
                 self.handle_update_visual(id, visual);
@@ -5965,8 +5986,10 @@ impl GameWorld {
         if self.from_mapfile && !self.boss_areas.is_empty() {
             self.tick_boss_areas();
         }
-        // Farm node respawn.
-        if self.from_mapfile && !self.farm_nodes.is_empty() {
+        // Coleta automatica: na ilha sai do relevo, no mapa de arquivo sai
+        // dos nos. Respawn so' importa onde ha' no'.
+        self.tick_coleta();
+        if !self.farm_nodes.is_empty() {
             self.tick_farm_respawn();
         }
         // Quests EXPLORE: marca READY quando o player chega na área-alvo.
@@ -9446,9 +9469,6 @@ impl GameWorld {
             sp_spent: u32,
             account_id: Option<i64>,
             visual: shared::VisualConfig,
-            woodcutting_lvl: u32,
-            mining_lvl:      u32,
-            gathering_lvl:   u32,
             faction: shared::Faction,
             quests: Vec<crate::quests::CharQuest>,
             faction_points: u32,
@@ -9492,9 +9512,6 @@ impl GameWorld {
                 sp_spent: session.skill_points_spent,
                 account_id: session.account_id,
                 visual: session.visual.clone(),
-                woodcutting_lvl: session.woodcutting_lvl,
-                mining_lvl:      session.mining_lvl,
-                gathering_lvl:   session.gathering_lvl,
                 faction:         session.faction,
                 quests: session.quests.clone(),
                 faction_points: session.faction_points,
@@ -9530,9 +9547,6 @@ impl GameWorld {
                 skill_points_spent: e.sp_spent,
                 account_id: e.account_id,
                 visual: Some(e.visual),
-                woodcutting_lvl: e.woodcutting_lvl,
-                mining_lvl:      e.mining_lvl,
-                gathering_lvl:   e.gathering_lvl,
                 faction:         e.faction,
                 quests:          e.quests,
                 faction_points:  e.faction_points,
@@ -10468,9 +10482,10 @@ impl GameWorld {
             let complete = match qid {
                 // 900 (falar com Matteo) → concluída via interação, não aqui.
                 900 => false,
-                // 901: equipou o machado no slot de ferramenta.
+                // 901: a coleta automatica rendeu a primeira madeira.
                 901 => self.sessions.get(&sid)
-                    .map(|s| s.equipment.get(shared::EquipSlot::ToolAxe) == Some(item_id::WOODCUTTER_AXE_T1))
+                    .map(|s| s.inventory.iter()
+                        .any(|sl| sl.item_id == item_id::WOOD_T1 && sl.qty > 0))
                     .unwrap_or(false),
                 // 903: concluída pelo GATILHO do craft (handle_craft), não aqui.
                 903 => false,
@@ -10502,14 +10517,14 @@ impl GameWorld {
         m.local_pos.distance(station) < 1.8
     }
 
-    /// Kit inicial do tutorial: NADA. O player nasce sem arma (criação) e sem
-    /// ferramentas — o machado vem do Matteo (quest 900) e os materiais de craft
-    /// na entrega da madeira (quest 902). Mantida pra compat com o call-site.
+    /// Kit inicial do tutorial: NADA. O player nasce sem arma (criação); a
+    /// madeira vem da coleta automática (quest 901/902) e os materiais de
+    /// craft na entrega dela. Mantida pra compat com o call-site.
     fn tutorial_give_starter_kit(&mut self, _sid: SessionId) {}
 
-    /// Interação com o Matteo (NPC guia) DENTRO do tutorial: dá o machado ao
-    /// falar (900), recebe a madeira e entrega os materiais de craft (902), ou
-    /// dá uma dica contextual. Cada conclusão dispara um balão de diálogo.
+    /// Interação com o Matteo (NPC guia) DENTRO do tutorial: ensina a coleta
+    /// automatica ao falar (900), recebe a madeira e entrega os materiais de
+    /// craft (902), ou dá uma dica contextual.
     fn tutorial_npc_interact(&mut self, sid: SessionId) {
         use shared::constants::item_id;
         let cur = self.sessions.get(&sid).and_then(|s| s.quests.iter()
@@ -10519,18 +10534,14 @@ impl GameWorld {
         let Some(qid) = cur else { return };
         match qid {
             900 => {
-                if let Some(s) = self.sessions.get_mut(&sid) {
-                    add_to_inventory(&mut s.inventory, item_id::WOODCUTTER_AXE_T1, 1, None);
-                    s.inventory_dirty = true;
-                }
-                self.tutorial_say(sid, "Matteo", "Boa, pulou a pedra direitinho! Toma esse machado. Abre o inventario e EQUIPA ele, depois corta umas arvores ali e me traz 5 madeiras.");
+                self.tutorial_say(sid, "Matteo", "Boa, pulou a pedra direitinho! Nao precisa de machado nem de nada: fica parado perto daquelas arvores que a madeira vem sozinha. Me traz 5.");
                 self.tutorial_advance(sid, 900);
             }
             902 => {
                 let wood: u32 = self.sessions.get(&sid).map(|s| s.inventory.iter()
                     .filter(|sl| sl.item_id == item_id::WOOD_T1).map(|sl| sl.qty).sum()).unwrap_or(0);
                 if wood < 5 {
-                    self.tutorial_say(sid, "Matteo", "Ainda falta madeira. Corta as arvores ate juntar 5 e volta aqui.");
+                    self.tutorial_say(sid, "Matteo", "Ainda falta madeira. Fica perto das arvores ate juntar 5 e volta aqui.");
                     return;
                 }
                 if let Some(s) = self.sessions.get_mut(&sid) {
@@ -11467,141 +11478,263 @@ impl GameWorld {
     /// Helper: envia mensagem de sistema (Chat from="System") pro cliente.
     // ── Farm Nodes ────────────────────────────────────────────────────────────
 
-    /// Valida e aplica um hit de coleta. Gateia: login, distância, cooldown,
-    /// node vivo. Em caso de sucesso, reduz HP, replica anim e, se HP=0,
-    /// spawna loot + agenda respawn + notifica clientes próximos.
-    fn handle_farm_hit(&mut self, sid: SessionId, node_id: u32) {
-        // Gate: player logado com entidade no mapa.
-        let player_pos = {
-            let Some(s) = self.sessions.get(&sid) else { return };
-            if !s.logged_in { return }
-            let Some(e) = s.entity else { return };
-            let Ok(p) = self.ecs.get::<&Position>(e) else { return };
-            p.0
-        };
+    /// Passo da varredura de coleta, em segundos. Nao e' o tick: e' a
+    /// resolucao com que o progresso anda. Meio segundo e' fino o bastante
+    /// pra ninguem sentir e grosso o bastante pra varredura nao pesar.
+    const COLETA_PASSO_S: f32 = 0.5;
 
-        // Gate: node existe e está vivo.
-        let node = match self.farm_nodes.get(&node_id) {
-            Some(n) if n.respawn_at <= 0.0 => n,
-            Some(_) => { tracing::info!("[farm diag] node {} em respawn — ignora", node_id); return }
-            None    => { tracing::info!("[farm diag] node {} NAO EXISTE (total={})", node_id, self.farm_nodes.len()); return }
-        };
+    /// Coleta automatica. Nao ha' pedido do cliente, alvo, ferramenta nem
+    /// nivel: quem esta' num lugar com recurso recebe recurso.
+    ///
+    /// A frequencia sai da DENSIDADE do lugar — quantos troncos e quanta
+    /// rocha exposta ha' em volta. Afastar-se pra uma regiao pobre e' o unico
+    /// jeito de coletar menos, e como a RESERVA que se gasta e' da celula (e
+    /// nao do jogador), dois jogadores no mesmo spot dividem o mesmo teto sem
+    /// nenhuma regra escrita a mao pra dividir. A disputa e' pelo lugar.
+    fn tick_coleta(&mut self) {
+        if self.sim_time_s < self.coleta_em { return }
+        self.coleta_em = self.sim_time_s + Self::COLETA_PASSO_S;
 
-        // Gate: distância máxima.
-        let ndist = player_pos.distance(node.pos);
-        if ndist > shared::FARM_MAX_RANGE {
-            tracing::info!("[farm diag] node {} fora de alcance (dist={:.1} max={})", node_id, ndist, shared::FARM_MAX_RANGE);
-            return
-        }
-        tracing::info!("[farm diag] FarmHit OK node={} dist={:.1}", node_id, ndist);
+        let jogadores: Vec<(SessionId, Vec2)> = self.sessions.iter()
+            .filter(|(_, s)| s.logged_in)
+            .filter_map(|(&sid, s)| {
+                let e = s.entity?;
+                let p = self.ecs.get::<&Position>(e).ok()?;
+                Some((sid, p.0))
+            })
+            .collect();
 
-        // Gate: nível de proficiência mínimo pro tier do recurso (T2=10/T3=20/T4=30).
-        // O cliente também pré-checa e nem inicia a coleta; isto é a rede de segurança.
-        // Coleta perdeu a proficiencia, e com ela o portao por NIVEL. O que
-        // trava no' alto agora e' a FERRAMENTA — e e' melhor assim: o jogador
-        // ve' a picareta que falta, e nao um numero que ele nao sabe onde sobe.
+        for (sid, pos) in jogadores {
+            let Some((densidade, fonte)) = self.fonte_de_coleta(pos) else {
+                // Fora de qualquer spot: o progresso nao anda, mas tambem nao
+                // se perde. Quem sai pra lutar volta de onde parou.
+                continue;
+            };
+            if densidade <= 0.0 { continue }
 
-        // Gate: precisa de TOOL do tipo certo equipada no slot dedicado
-        // (axe→Tree, sickle→Flower, pickaxe→Rock) com tier >= node.tier.
-        let req_tool_kind = shared::item_id::tool_kind_for_farm(&node.kind);
-        if let Some(needed) = req_tool_kind {
-            let (eq_id, eq_kind, eq_tier) = self.sessions.get(&sid).map(|s| {
-                let id = match needed {
-                    shared::ToolKind::Axe        => s.equipment.tool_axe.unwrap_or(0),
-                    shared::ToolKind::Sickle     => s.equipment.tool_sickle.unwrap_or(0),
-                    shared::ToolKind::Pickaxe    => s.equipment.tool_pickaxe.unwrap_or(0),
-                    shared::ToolKind::FishingRod => s.equipment.tool_rod.unwrap_or(0),
-                };
-                (id, shared::item_id::tool_kind(id), shared::item_id::tool_tier(id))
-            }).unwrap_or((0, None, 0));
-            if eq_kind != Some(needed) {
-                tracing::info!("[farm diag] node {} bloqueado: precisa de {:?}, tem item={} ({:?})",
-                    node_id, needed, eq_id, eq_kind);
-                return;
-            }
-            if eq_tier < node.tier {
-                tracing::info!("[farm diag] node {} T{} bloqueado: tool tier {} < node tier",
-                    node_id, node.tier, eq_tier);
-                return;
-            }
-        }
+            let mut intervalo = shared::COLETA_INTERVALO_BASE_S / densidade;
+            intervalo /= self.velocidade_de_coleta(sid);
+            let intervalo = intervalo.max(shared::COLETA_INTERVALO_MIN_S);
 
-        // Gate: cooldown por (player, node).
-        let cd_key = (sid, node_id);
-        if self.farm_hit_cooldowns.get(&cd_key)
-            .map(|&t| t > self.sim_time_s)
-            .unwrap_or(false)
-        { return }
-        self.farm_hit_cooldowns.insert(cd_key, self.sim_time_s + shared::FARM_HIT_COOLDOWN_S);
+            let progresso = {
+                let Some(s) = self.sessions.get_mut(&sid) else { continue };
+                s.coleta_progresso += Self::COLETA_PASSO_S / intervalo;
+                s.coleta_progresso
+            };
+            if progresso < 1.0 { continue }
+            if let Some(s) = self.sessions.get_mut(&sid) { s.coleta_progresso -= 1.0; }
 
-        // Todos os tipos usam ToolSwing (cliente difere visualmente pelo tool code).
-        let anim_code = shared::attack_anim::TOOL_SWING;
-
-        // Modelo countdown: cada FarmHit = depleção completa do node.
-        // Cliente envia 1 hit ao final da duração calculada por skill+tool.
-        let node = self.farm_nodes.get_mut(&node_id).unwrap();
-        node.hp = 0;
-        let (hp, hp_max) = (node.hp, node.hp_max);
-        let node_pos = node.pos;
-        let node_kind = node.kind.clone();
-        let node_tier = node.tier;
-
-        // Replica anim de ferramenta no snapshot do player.
-        if let Some(s) = self.sessions.get(&sid) {
-            if let Some(e) = s.entity {
-                if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(e) {
-                    tag.attack_anim_pending = Some(anim_code);
+            match fonte {
+                FonteDeColeta::No(node_id) => self.coletar_no(sid, node_id),
+                FonteDeColeta::Terreno { kind, tier, densidade } => {
+                    // Uma coleta gasta `1/densidade` da reserva: lugar rico
+                    // aguenta mais coleta que lugar pobre, que e' a unica
+                    // forma de o teto do spot acompanhar a densidade.
+                    self.gastar_reserva(pos, 1.0 / densidade.max(1.0));
+                    self.coletar_do_terreno(sid, pos, kind, tier);
                 }
             }
         }
+    }
 
-        // Broadcast FarmNodeUpdate pra todos os players na AOI.
+    /// De onde sai a coleta de quem esta' em `pos`, e com que densidade.
+    ///
+    /// Mapa de arquivo (tutorial e mapas do editor) tem no' de coleta posto a
+    /// mao: la' a densidade e' a contagem de nos vivos. A ilha do arquipelago
+    /// nao tem no' nenhum — o recurso E' o relevo, e a densidade sai da
+    /// riqueza da vizinhanca.
+    fn fonte_de_coleta(&mut self, pos: Vec2) -> Option<(f32, FonteDeColeta)> {
+        if !self.farm_nodes.is_empty() {
+            let raio_sq = shared::COLETA_RAIO_SPOT * shared::COLETA_RAIO_SPOT;
+            let vivos = self.farm_nodes.values()
+                .filter(|n| n.respawn_at <= 0.0 && n.pos.distance_squared(pos) <= raio_sq)
+                .count();
+            if vivos == 0 { return None }
+            let node_id = self.no_mais_perto_vivo(pos)?;
+            return Some((vivos as f32, FonteDeColeta::No(node_id)));
+        }
+
+        let ilha = self.ilha.as_ref()?;
+        let riqueza = ilha.riqueza(pos, shared::COLETA_RAIO_SPOT);
+        if riqueza.vazia() { return None }
+        let densidade = riqueza.densidade();
+        let reserva = self.reserva_em(pos);
+        // Pedra ou madeira, sorteado pelo peso do que ha' em volta: quem esta'
+        // no paredao tira pedra quase sempre, quem esta' no bosque tira
+        // madeira, e quem esta' na beira dos dois tira dos dois.
+        let sorteio = lcg_f32(
+            (self.tick as u64)
+                .wrapping_mul(0x9E37_79B9)
+                .wrapping_add(pos.x.to_bits() as u64)
+                .wrapping_add((pos.y.to_bits() as u64) << 17),
+        );
+        let kind = if sorteio * densidade < riqueza.pedra_equivalente() { "Rock" } else { "Tree" };
+        Some((densidade * reserva, FonteDeColeta::Terreno {
+            kind,
+            tier: self.tier_do_lugar(pos),
+            densidade,
+        }))
+    }
+
+    /// Tier do recurso pelo LUGAR: a mesma regra que faz o mob distante ser
+    /// mais alto. Perto do desembarque e' T1; a ponta mais longe da ilha e'
+    /// T4. Sem tabela escrita a mao e sem portao — quem quiser T4 anda ate' la'.
+    fn tier_do_lugar(&self, pos: Vec2) -> u8 {
+        let Some(def) = shared::terreno::def_da_zona(&self.zona) else { return 1 };
+        let raio_un = def.raio_blocos as f32 * shared::terreno::BLOCO;
+        let t = (pos.distance(self.porto_da_ilha) / raio_un).clamp(0.0, 0.999);
+        1 + (t * 4.0) as u8
+    }
+
+    /// Celula de reserva que cobre `pos`.
+    fn celula_de_reserva(pos: Vec2) -> (i32, i32) {
+        (
+            (pos.x / shared::COLETA_CELULA).floor() as i32,
+            (pos.y / shared::COLETA_CELULA).floor() as i32,
+        )
+    }
+
+    /// Reserva atual da celula, em [0, 1]. Regenera na LEITURA: varrer o mapa
+    /// inteiro por tick pra encher celula que ninguem visita seria trabalho
+    /// proporcional ao tamanho do mundo em vez de ao numero de jogadores.
+    fn reserva_em(&mut self, pos: Vec2) -> f32 {
+        let agora = self.sim_time_s;
+        let celula = Self::celula_de_reserva(pos);
+        let Some(e) = self.reservas.get_mut(&celula) else { return 1.0 };
+        let dt = (agora - e.1).max(0.0);
+        e.0 += dt * shared::COLETA_RESERVA_REGEN_POR_S;
+        e.1 = agora;
+        if e.0 >= 1.0 {
+            // Celula cheia e' o padrao: guardar uma entrada pra dizer isso
+            // faria o mapa crescer com o passeio dos jogadores e nunca
+            // encolher.
+            self.reservas.remove(&celula);
+            return 1.0;
+        }
+        e.0
+    }
+
+    /// Reserva da celula SEM mexer no mapa — a mesma conta de `reserva_em`,
+    /// pra quem so' quer olhar (o panoptico).
+    pub fn reserva_lida(&self, pos: Vec2) -> f32 {
+        match self.reservas.get(&Self::celula_de_reserva(pos)) {
+            None => 1.0,
+            Some(&(v, visto)) => {
+                let dt = (self.sim_time_s - visto).max(0.0);
+                (v + dt * shared::COLETA_RESERVA_REGEN_POR_S).min(1.0)
+            }
+        }
+    }
+
+    /// O que a coleta esta' rendendo em `pos`, pra quem esta' de fora olhando.
+    /// So' o caminho da ilha: no' de mapa se ve' pelo proprio no'.
+    pub fn retrato_da_coleta(&self, pos: Vec2) -> Option<RetratoDaColeta> {
+        if !self.farm_nodes.is_empty() { return None }
+        let riqueza = self.ilha.as_ref()?.riqueza(pos, shared::COLETA_RAIO_SPOT);
+        if riqueza.vazia() { return None }
+        let densidade = riqueza.densidade();
+        let reserva = self.reserva_lida(pos);
+        let intervalo = (shared::COLETA_INTERVALO_BASE_S / (densidade * reserva).max(1e-3))
+            .max(shared::COLETA_INTERVALO_MIN_S);
+        Some(RetratoDaColeta {
+            pedra: riqueza.pedra_equivalente(),
+            madeira: riqueza.madeira as f32,
+            densidade,
+            reserva,
+            intervalo_s: intervalo,
+            // O que o lugar aguenta em regime, que e' o numero que importa
+            // pra balancear. O instantaneo oscila muito: uma coleta num spot
+            // pobre zera a reserva e o intervalo dispara ate' ela voltar.
+            sustentado_s: 1.0 / (densidade * shared::COLETA_RESERVA_REGEN_POR_S).max(1e-3),
+            tier: self.tier_do_lugar(pos),
+        })
+    }
+
+    fn gastar_reserva(&mut self, pos: Vec2, quanto: f32) {
+        let agora = self.sim_time_s;
+        let e = self.reservas.entry(Self::celula_de_reserva(pos))
+            .or_insert((1.0, agora));
+        e.0 = (e.0 - quanto).max(0.0);
+        e.1 = agora;
+    }
+
+    /// Multiplicador de velocidade de coleta do jogador. Hoje e' sempre 1.0.
+    ///
+    /// E' o unico lugar onde bonus de coleta entra. O que vier acelerar a
+    /// coleta — e ja' esta' decidido que NAO sera' item de coleta nem nivel —
+    /// entra aqui e em lugar nenhum mais.
+    fn velocidade_de_coleta(&self, _sid: SessionId) -> f32 { 1.0 }
+
+    /// No' vivo mais perto de `pos` dentro do raio do spot.
+    fn no_mais_perto_vivo(&self, pos: Vec2) -> Option<u32> {
+        let raio_sq = shared::COLETA_RAIO_SPOT * shared::COLETA_RAIO_SPOT;
+        self.farm_nodes.iter()
+            .filter(|(_, n)| n.respawn_at <= 0.0)
+            .map(|(&id, n)| (id, n.pos.distance_squared(pos)))
+            .filter(|&(_, d)| d <= raio_sq)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(id, _)| id)
+    }
+
+    /// Entrega o material do lugar. Vai DIRETO pra bolsa: a coleta e'
+    /// automatica, e obrigar a pisar num drop no chao devolveria justamente o
+    /// clique que saiu.
+    fn coletar_do_terreno(&mut self, sid: SessionId, pos: Vec2, kind: &str, tier: u8) {
+        let seed = (self.tick as u64)
+            .wrapping_mul(0xDEAD_BEEF)
+            .wrapping_add(pos.x.to_bits() as u64);
+        let drops = crate::economy::farm_node_loot(kind, tier, seed);
+        self.entregar_coleta(sid, &drops);
+    }
+
+    /// Esgota um no' de mapa e entrega o material.
+    fn coletar_no(&mut self, sid: SessionId, node_id: u32) {
+        let (node_pos, node_kind, node_tier, respawn_s) = {
+            let Some(n) = self.farm_nodes.get(&node_id) else { return };
+            (n.pos, n.kind.clone(), n.tier, n.respawn_seconds)
+        };
+        {
+            let no = self.farm_nodes.get_mut(&node_id).unwrap();
+            no.respawn_at = self.sim_time_s + respawn_s;
+        }
+
+        let seed = (self.tick as u64)
+            .wrapping_mul(0xDEAD_BEEF)
+            .wrapping_add(node_id as u64);
+        let drops = crate::economy::farm_node_loot(&node_kind, node_tier, seed);
+        self.entregar_coleta(sid, &drops);
+
+        // O no' sumiu: quem esta' na AOI precisa saber, senao continua vendo
+        // arvore onde nao ha'.
         let aoi_sq = shared::AOI_RADIUS * shared::AOI_RADIUS;
-        let update_msg = ServerMessage::FarmNodeUpdate { node_id, hp, hp_max };
+        let msg = ServerMessage::FarmNodeDepleted { node_id };
         for s in self.sessions.values() {
             if !s.logged_in { continue }
             let Some(e) = s.entity else { continue };
             let Ok(p) = self.ecs.get::<&Position>(e) else { continue };
             if p.0.distance_squared(node_pos) <= aoi_sq {
-                let _ = s.handle.to_client.send(update_msg.clone());
+                let _ = s.handle.to_client.send(msg.clone());
             }
         }
+    }
 
-        // Node esgotado: spawna loot e agenda respawn (usa tempo do mapfile ou default).
-        if hp <= 0 {
-            let node = self.farm_nodes.get_mut(&node_id).unwrap();
-            node.respawn_at = self.sim_time_s + node.respawn_seconds;
-
-            let seed = (self.tick as u64)
-                .wrapping_mul(0xDEAD_BEEF)
-                .wrapping_add(node_id as u64);
-            let drops = crate::economy::farm_node_loot(&node_kind, node_tier, seed);
-            tracing::info!("[farm diag] node {} ({} t{}) depletou — drops={}", node_id, node_kind, node_tier, drops.len());
-            // Farm drops caem nos arredores do node (raio 1.2-2.0 tiles)
-            // para não sobrepor o sprite de toco/entulho que fica no centro.
-            let drop_origin = {
-                let a = lcg_f32(seed ^ 0xF4_21) * std::f32::consts::TAU;
-                let r = 1.2 + lcg_f32(seed ^ 0xB3_11) * 0.8;
-                node_pos + Vec2::new(a.cos() * r, a.sin() * r * 0.5)
-            };
-            // Farm: drop_origin já está 1.2-2.0 do node; spread interno menor
-            // (1.0) pra não voar longe demais do toco. kind=0 (não é mob).
-            self.spawn_loot_drops(drop_origin, &drops, seed, 1.0, 0);
-
-            // Broadcast FarmNodeDepleted.
-            let depleted_msg = ServerMessage::FarmNodeDepleted { node_id };
-            for s in self.sessions.values() {
-                if !s.logged_in { continue }
-                let Some(e) = s.entity else { continue };
-                let Ok(p) = self.ecs.get::<&Position>(e) else { continue };
-                if p.0.distance_squared(node_pos) <= aoi_sq {
-                    let _ = s.handle.to_client.send(depleted_msg.clone());
+    /// Material na bolsa + animacao de coleta em quem coletou, pra quem esta'
+    /// de fora ver o movimento e nao so' o item aparecendo.
+    fn entregar_coleta(&mut self, sid: SessionId, drops: &[(u16, u32)]) {
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            for &(item_id, qty) in drops {
+                add_to_inventory(&mut s.inventory, item_id, qty, None);
+            }
+            if !drops.is_empty() { s.inventory_dirty = true; }
+        }
+        if let Some(s) = self.sessions.get(&sid) {
+            if let Some(e) = s.entity {
+                if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(e) {
+                    tag.attack_anim_pending = Some(shared::attack_anim::TOOL_SWING);
                 }
             }
-
-            // Sem proficiencia de coleta, nao ha' XP de coleta.
-            self.save_pending = true;
         }
+        if !drops.is_empty() { self.save_pending = true; }
     }
 
     /// Verifica todos os farm nodes com respawn_at expirado e os restaura.
@@ -11612,7 +11745,6 @@ impl GameWorld {
         let mut respawned: Vec<(u32, Vec2)> = Vec::new();
         for (&id, node) in self.farm_nodes.iter_mut() {
             if node.respawn_at > 0.0 && now >= node.respawn_at {
-                node.hp         = node.hp_max;
                 node.respawn_at = 0.0;
                 respawned.push((id, node.pos));
             }
@@ -11628,8 +11760,6 @@ impl GameWorld {
                 }
             }
         }
-        // Limpa cooldowns expirados pra não crescer indefinidamente.
-        self.farm_hit_cooldowns.retain(|_, &mut t| t > now);
     }
 
     fn send_chat_to(&self, sid: SessionId, text: &str) {
@@ -12193,9 +12323,6 @@ impl GameWorld {
             skill_points_spent: session.skill_points_spent,
             account_id: session.account_id,
             visual: Some(session.visual.clone()),
-            woodcutting_lvl: session.woodcutting_lvl,
-            mining_lvl:      session.mining_lvl,
-            gathering_lvl:   session.gathering_lvl,
             faction:         session.faction,
             quests:          session.quests.clone(),
             faction_points:  session.faction_points,

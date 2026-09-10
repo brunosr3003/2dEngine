@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 71;
+pub const PROTOCOL_VERSION: u16 = 72;
 
 // ── Boat (Sea-of-Thieves style: vela/leme/ancora separados) ─────────────────
 /// Velocidade maxima de qualquer barco (tiles/s). Atingida com vela full,
@@ -301,36 +301,13 @@ pub const DOWNED_HP_MAX: i32 = 100;
 /// Variantes adicionadas no Skills Phase 1 (M11): `Axe` e `Spear`. Antes
 /// HAMMER (item 25) caía em Unarmed; agora vai pra Axe. SPEAR (item 26) idem.
 /// O array de proficiencies em CharacterRow cresceu de 6 pra `PROF_COUNT`.
-/// Tipo de ferramenta de farm/craft. Define qual FarmKind o tool consegue
-/// coletar (Axe→Tree, Sickle→Flower, Pickaxe→Rock, FishingRod→pesca).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[repr(u8)]
-pub enum ToolKind {
-    Axe        = 0,
-    Sickle     = 1,
-    Pickaxe    = 2,
-    FishingRod = 3,
-}
-
 /// Quantas proficiencias um personagem tem: uma por CONJUNTO de arma.
 ///
 /// Eram quinze — oito de arma, tres de coleta, quatro de artesanato. Coleta e
-/// artesanato perderam a proficiencia (o que trava no' alto agora e' a
-/// FERRAMENTA, que o jogador ve'), e as oito de arma viraram os quatro
-/// conjuntos. O indice e' `shared::skills::Conjunto as usize`.
+/// artesanato nao tem proficiencia NENHUMA: coletar e' automatico e nao tem
+/// portao. As oito de arma viraram os quatro conjuntos, e o indice e'
+/// `shared::skills::Conjunto as usize`.
 pub const PROF_COUNT: usize = 4;
-
-
-/// Nível mínimo de proficiência exigido para farmar/craftar um recurso de
-/// dado tier. T1 livre; T2=5, T3=20, T4=30. Vale tanto pra farm quanto craft.
-pub const fn tier_level_req(tier: u8) -> u32 {
-    match tier {
-        0 | 1 => 1,
-        2     => 5,
-        3     => 20,
-        _     => 30, // tier 4+
-    }
-}
 
 
 /// Nivel de proficiencia dado XP acumulado (curva quadratica similar ao XP do player).
@@ -493,28 +470,6 @@ pub mod item_id {
     pub const MINERAL_T3:      u16 = 70;
     pub const MINERAL_T4:      u16 = 71;
 
-    // === Fase Tools — Ferramentas de craft/farm com tier ===
-    // Tier define o tier MAX do farm_node que a ferramenta consegue coletar:
-    // T1 → node T1; T2 → T1-T2; T3 → T1-T3; T4 → todos. Tier mais alto = mais
-    // capacidade (drop count). T1 sao vendidos no Mercador (loja 1); T2-T4
-    // sao craftaveis no Carpintaria/Forja.
-    pub const WOODCUTTER_AXE_T1:  u16 = 80;
-    pub const WOODCUTTER_AXE_T2:  u16 = 81;
-    pub const WOODCUTTER_AXE_T3:  u16 = 82;
-    pub const WOODCUTTER_AXE_T4:  u16 = 83;
-    pub const SICKLE_T1:          u16 = 84;
-    pub const SICKLE_T2:          u16 = 85;
-    pub const SICKLE_T3:          u16 = 86;
-    pub const SICKLE_T4:          u16 = 87;
-    pub const PICKAXE_T1:         u16 = 88;
-    pub const PICKAXE_T2:         u16 = 89;
-    pub const PICKAXE_T3:         u16 = 90;
-    pub const PICKAXE_T4:         u16 = 91;
-    pub const FISHING_ROD_T1:     u16 = 92;
-    pub const FISHING_ROD_T2:     u16 = 93;
-    pub const FISHING_ROD_T3:     u16 = 94;
-    pub const FISHING_ROD_T4:     u16 = 95;
-
     // === Peixes (drop da pesca). Stackáveis, sem slot. O species da
     // EntityKind::Fish(n) mapeia 1:1 pra estes IDs via fish_item_for_species. ===
     pub const FISH_ANCHOVY:       u16 = 96;  // T1 comum
@@ -531,41 +486,6 @@ pub mod item_id {
             3 => FISH_SURGEONFISH,
             4 => FISH_PUFFERFISH,
             _ => FISH_ANCHOVY,
-        }
-    }
-
-    /// Identifica o tipo da ferramenta de farm pra um item_id. None se nao
-    /// for tool. Server usa pra gatear FarmHit pelo kind do node.
-    pub fn tool_kind(item_id: u16) -> Option<super::ToolKind> {
-        use super::ToolKind;
-        match item_id {
-            WOODCUTTER_AXE_T1 | WOODCUTTER_AXE_T2 | WOODCUTTER_AXE_T3 | WOODCUTTER_AXE_T4 => Some(ToolKind::Axe),
-            SICKLE_T1         | SICKLE_T2         | SICKLE_T3         | SICKLE_T4         => Some(ToolKind::Sickle),
-            PICKAXE_T1        | PICKAXE_T2        | PICKAXE_T3        | PICKAXE_T4        => Some(ToolKind::Pickaxe),
-            FISHING_ROD_T1    | FISHING_ROD_T2    | FISHING_ROD_T3    | FISHING_ROD_T4    => Some(ToolKind::FishingRod),
-            _ => None,
-        }
-    }
-
-    /// Tier do tool (1-4). 0 se nao for tool.
-    pub fn tool_tier(item_id: u16) -> u8 {
-        match item_id {
-            WOODCUTTER_AXE_T1 | SICKLE_T1 | PICKAXE_T1 | FISHING_ROD_T1 => 1,
-            WOODCUTTER_AXE_T2 | SICKLE_T2 | PICKAXE_T2 | FISHING_ROD_T2 => 2,
-            WOODCUTTER_AXE_T3 | SICKLE_T3 | PICKAXE_T3 | FISHING_ROD_T3 => 3,
-            WOODCUTTER_AXE_T4 | SICKLE_T4 | PICKAXE_T4 | FISHING_ROD_T4 => 4,
-            _ => 0,
-        }
-    }
-
-    /// ToolKind que coleta um dado FarmKind (do mapfile).
-    pub fn tool_kind_for_farm(farm_kind: &str) -> Option<super::ToolKind> {
-        use super::ToolKind;
-        match farm_kind {
-            "Tree"   => Some(ToolKind::Axe),
-            "Flower" => Some(ToolKind::Sickle),
-            "Rock"   => Some(ToolKind::Pickaxe),
-            _        => None,
         }
     }
 
@@ -701,22 +621,6 @@ pub const CRAFT_RECIPES: &[CraftRecipe] = &[
     CraftRecipe { id:167, name:"Calças Couro T4",  inputs:[(item_id::LEATHER_T4,5),(item_id::MINERAL_T4,1),(0,0),(0,0)], output_item_id:item_id::LEGS_LEATHER,  output_qty:1, output_item_level:70, roll_instance:true },
     CraftRecipe { id:168, name:"Calças Placa T4",  inputs:[(item_id::MINERAL_T4,5),(item_id::LEATHER_T4,1),(0,0),(0,0)], output_item_id:item_id::LEGS_PLATE,    output_qty:1, output_item_level:70, roll_instance:true },
 
-    // Tools T2 — ferramentas tier 2. Ilvl 20 (mas tool nao rola affixes — flat).
-    CraftRecipe { id:180, name:"Machado de Lenhador T2", inputs:[(item_id::WOOD_T2,4),(item_id::MINERAL_T2,5),(item_id::LEATHER_T1,2),(0,0)], output_item_id:item_id::WOODCUTTER_AXE_T2, output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:181, name:"Foice T2",                inputs:[(item_id::WOOD_T2,3),(item_id::MINERAL_T2,4),(item_id::LEATHER_T1,1),(0,0)], output_item_id:item_id::SICKLE_T2,         output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:182, name:"Picareta T2",             inputs:[(item_id::WOOD_T2,3),(item_id::MINERAL_T2,6),(item_id::LEATHER_T1,2),(0,0)], output_item_id:item_id::PICKAXE_T2,        output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:183, name:"Vara de Pesca T2",        inputs:[(item_id::WOOD_T2,5),(item_id::MINERAL_T2,2),(item_id::LEATHER_T1,3),(0,0)], output_item_id:item_id::FISHING_ROD_T2,    output_qty:1, output_item_level:20, roll_instance:true },
-    // Tools T3.
-    CraftRecipe { id:184, name:"Machado de Lenhador T3", inputs:[(item_id::WOOD_T3,4),(item_id::MINERAL_T3,5),(item_id::LEATHER_T2,2),(0,0)], output_item_id:item_id::WOODCUTTER_AXE_T3, output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:185, name:"Foice T3",                inputs:[(item_id::WOOD_T3,3),(item_id::MINERAL_T3,4),(item_id::LEATHER_T2,1),(0,0)], output_item_id:item_id::SICKLE_T3,         output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:186, name:"Picareta T3",             inputs:[(item_id::WOOD_T3,3),(item_id::MINERAL_T3,6),(item_id::LEATHER_T2,2),(0,0)], output_item_id:item_id::PICKAXE_T3,        output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:187, name:"Vara de Pesca T3",        inputs:[(item_id::WOOD_T3,5),(item_id::MINERAL_T3,2),(item_id::LEATHER_T2,3),(0,0)], output_item_id:item_id::FISHING_ROD_T3,    output_qty:1, output_item_level:40, roll_instance:true },
-    // Tools T4.
-    CraftRecipe { id:188, name:"Machado de Lenhador T4", inputs:[(item_id::WOOD_T4,4),(item_id::MINERAL_T4,5),(item_id::LEATHER_T3,2),(0,0)], output_item_id:item_id::WOODCUTTER_AXE_T4, output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:189, name:"Foice T4",                inputs:[(item_id::WOOD_T4,3),(item_id::MINERAL_T4,4),(item_id::LEATHER_T3,1),(0,0)], output_item_id:item_id::SICKLE_T4,         output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:190, name:"Picareta T4",             inputs:[(item_id::WOOD_T4,3),(item_id::MINERAL_T4,6),(item_id::LEATHER_T3,2),(0,0)], output_item_id:item_id::PICKAXE_T4,        output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:191, name:"Vara de Pesca T4",        inputs:[(item_id::WOOD_T4,5),(item_id::MINERAL_T4,2),(item_id::LEATHER_T3,3),(0,0)], output_item_id:item_id::FISHING_ROD_T4,    output_qty:1, output_item_level:70, roll_instance:true },
-
     // Boats (Naval) — embarcacoes craftaveis. Ids 200+ reservados pra naval.
     // Esquife (T1) — primeiro barco, barato: 40 madeira T1 + 20 couro T1.
     CraftRecipe { id:201, name:"Esquife",         inputs:[(item_id::WOOD_T1,40),(item_id::LEATHER_T1,20),(0,0),(0,0)], output_item_id:item_id::BOAT_ESQUIFE, output_qty:1, output_item_level:0, roll_instance:false },
@@ -838,11 +742,6 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
             || id == item_id::BELT_MAGIC     => Some(EquipSlot::Belt),
         id if id == item_id::CAPE_BASIC
             || id == item_id::CAPE_MAGIC     => Some(EquipSlot::Cape),
-        // Tools — cada tipo vai pro seu slot dedicado.
-        id if item_id::tool_kind(id) == Some(ToolKind::Axe)        => Some(EquipSlot::ToolAxe),
-        id if item_id::tool_kind(id) == Some(ToolKind::Sickle)     => Some(EquipSlot::ToolSickle),
-        id if item_id::tool_kind(id) == Some(ToolKind::Pickaxe)    => Some(EquipSlot::ToolPickaxe),
-        id if item_id::tool_kind(id) == Some(ToolKind::FishingRod) => Some(EquipSlot::ToolRod),
         // Tier T1-T4 (Phase G): faixas atribuídas em ordem por slot.
         101..=112 => Some(EquipSlot::Gloves),
         113..=124 => Some(EquipSlot::Legs),
@@ -923,12 +822,6 @@ pub enum EquipSlot {
     Belt,
     Cape,
     Necklace,
-    /// Slots dedicados pra cada tipo de ferramenta — player pode ter as 4
-    /// equipadas ao mesmo tempo (machado + foice + picareta + vara).
-    ToolAxe,
-    ToolSickle,
-    ToolPickaxe,
-    ToolRod,
 }
 
 impl EquipSlot {
@@ -946,10 +839,6 @@ impl EquipSlot {
             EquipSlot::Belt         => "belt",
             EquipSlot::Cape         => "cape",
             EquipSlot::Necklace     => "necklace",
-            EquipSlot::ToolAxe      => "tool_axe",
-            EquipSlot::ToolSickle   => "tool_sickle",
-            EquipSlot::ToolPickaxe  => "tool_pickaxe",
-            EquipSlot::ToolRod      => "tool_rod",
         }
     }
 }
@@ -1391,18 +1280,63 @@ pub mod tile_id {
     pub const WOOD:  u16 = 5;
 }
 
-// ── Farm Nodes ────────────────────────────────────────────────────────────────
+// ── Coleta ────────────────────────────────────────────────────────────────
+//
+// Nao ha' ferramenta, nivel nem proficiencia: qualquer um coleta qualquer
+// coisa. O que decide o ganho e' o LUGAR. O jogador parado numa mina recebe
+// pedra sozinho, e a frequencia sai da DENSIDADE de nos vivos ao redor dele.
+// Andar pra uma regiao pobre e' o unico jeito de coletar menos — e como dois
+// jogadores no mesmo spot esvaziam os mesmos nos, a disputa e' pelo spot.
 
-/// Cooldown mínimo entre FarmHit validados do mesmo player+node.
-/// No modelo countdown, cada FarmHit = depleção completa de um node.
-/// 2s previne spam (cliente nunca envia mais rápido que isso normalmente).
-pub const FARM_HIT_COOLDOWN_S: f32 = 2.0;
+/// Raio (em unidades de mundo) do "spot": o que conta como estar na mina.
+/// 6 unidades = 12 blocos, mais que a maior clareira e menos que a ilha.
+pub const COLETA_RAIO_SPOT: f32 = 6.0;
 
-/// Tempo de respawn de um farm node após ser completamente coletado.
+/// Numerador do intervalo entre coletas: `intervalo = BASE / nos_vivos`.
+///
+/// Dividir pela densidade e' o modelo inteiro em uma linha. Com respawn de
+/// `FARM_NODE_RESPAWN_S`, um spot de N nos se equilibra sozinho em
+/// `N * BASE / (BASE + RESPAWN)` nos vivos — 12 nos com estes numeros param
+/// em ~3.4 vivos, uma coleta a cada ~3.5s. Dois jogadores no mesmo spot
+/// dividem esse mesmo teto: cada um leva metade, sem regra nova.
+pub const COLETA_INTERVALO_BASE_S: f32 = 12.0;
+
+/// Piso do intervalo. Impede que um spot absurdamente denso vire torneira.
+pub const COLETA_INTERVALO_MIN_S: f32 = 1.0;
+
+/// Quanto vale, em troncos equivalentes, um spot 100% de rocha exposta.
+///
+/// Serve pra somar duas coisas de unidade diferente: rocha e' AREA amostrada,
+/// tronco e' contagem. Medido na ilha inicial (32.214 amostras em terra): o
+/// bosque mais fechado tem 9 troncos no raio, 35% da terra nao tem nenhum, e
+/// o paredao mais cheio da' 113 de 113 colunas de rocha. Oito poe os dois no
+/// mesmo patamar — mina cheia rende como mata fechada, e o que muda entre
+/// elas e' O QUE cai, nao quanto.
+pub const COLETA_PEDRA_CHEIA: f32 = 8.0;
+
+/// Lado, em unidades de mundo, da celula de RESERVA — o "spot" pra efeito de
+/// esgotamento. Quem coleta gasta a reserva da celula em que esta'; a reserva
+/// volta sozinha. E' o que faz a disputa ser real e nao decorativa: dois
+/// jogadores na mesma celula gastam a MESMA reserva e cada um leva metade.
+pub const COLETA_CELULA: f32 = 8.0;
+
+/// Fracao da reserva que volta por segundo. 1/40 = celula esgotada cheia de
+/// novo em quarenta segundos.
+///
+/// Junto com `COLETA_INTERVALO_BASE_S` este numero fixa o TETO de um spot:
+/// como cada coleta gasta `1/densidade` da reserva, a celula se equilibra em
+/// `BASE * REGEN` (aqui 0,3) e o intervalo estavel fica em
+/// `1 / (densidade * REGEN)` — proporcional a' densidade, como tem que ser, e
+/// independente de quantos jogadores estao em cima dela.
+///
+/// Com os numeros de hoje: o melhor spot da ilha (densidade 8) da' uma coleta
+/// a cada 5s, um lugar comum (densidade 2) a cada 20s, e quem chega primeiro
+/// num spot descansado leva uma rajada de ~1,5s por coleta ate' a reserva
+/// baixar. Dois jogadores no mesmo spot ficam com 10s cada.
+pub const COLETA_RESERVA_REGEN_POR_S: f32 = 1.0 / 40.0;
+
+/// Tempo de respawn de um no' depois de coletado.
 pub const FARM_NODE_RESPAWN_S: f32 = 30.0;
-
-/// Distância máxima player → node para validar um FarmHit (em tiles).
-pub const FARM_MAX_RANGE: f32 = 2.2;
 
 // ── Pesca (peixes do oceano) ──────────────────────────────────────────────
 /// População alvo de peixes nadando perto de CADA player logado. O servidor
@@ -1424,14 +1358,3 @@ pub const FISH_ATTRACT_STRENGTH: f32 = 0.45;
 /// Distância (tiles) peixe ↔ boia pra considerar fisgado (encostou na boia).
 pub const FISH_HOOK_RADIUS: f32 = 0.7;
 
-/// HP máximo (= número de hits necessários) de acordo com kind e tier.
-pub fn farm_node_hp_max(kind: &str, tier: u8) -> i32 {
-    let base: i32 = match kind {
-        "Tree"   => 6,
-        "Rock"   => 5,
-        "Flower" => 3,
-        _        => 5,
-    };
-    // +1 HP por tier extra (tier 1 = base, tier 4 = base+3)
-    base + (tier.saturating_sub(1)) as i32
-}

@@ -158,9 +158,6 @@ pub enum ClientMessage {
     /// valida slot ocupado, decrementa qty (ou zera) e spawna LootTag.
     DropItem { slot: u16 },
     RequestDisconnect,
-    /// Player tenta colher um farm node. Server valida distância, cooldown e
-    /// estado do node. `node_id` = ID sequencial atribuído ao carregar o mapa.
-    FarmHit { node_id: u32 },
     /// Cria novo personagem para a conta (multi-char). Aparece como nova
     /// entry na CharacterList apos sucesso. Server valida nome unico.
     CreateCharacter {
@@ -455,13 +452,11 @@ pub enum ServerMessage {
     /// Enviado após login com a lista completa de farm nodes do mapa. Cliente
     /// usa para associar IDs aos GameObjects locais por posição.
     FarmNodesConfig { nodes: Vec<FarmNodeInfo> },
-    /// HP atual do node após um hit validado. Broadcast pra players na AOI.
-    FarmNodeUpdate { node_id: u32, hp: i32, hp_max: i32 },
     /// Node coletado — desaparece até respawn. Broadcast pra players na AOI.
     FarmNodeDepleted { node_id: u32 },
     /// Node respawnado — pode ser coletado novamente.
     FarmNodeRespawned { node_id: u32 },
-    /// Farm skill levels do player (woodcutting / mining / gathering).
+    /// XP de proficiencia por CONJUNTO de arma. Coleta e artesanato nao tem.
     ProficienciesUpdate {
         #[serde(rename = "proficiency_xp")]
         xp: [u64; crate::PROF_COUNT],

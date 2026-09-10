@@ -82,9 +82,6 @@ pub struct CharacterRow {
     /// hair + color, body tint). None = usa default por classe.
     pub visual: Option<shared::VisualConfig>,
     /// Níveis de skill de coleta. Default 1 (sem bônus). Crescem ao colher.
-    pub woodcutting_lvl: u32,
-    pub mining_lvl:      u32,
-    pub gathering_lvl:   u32,
     /// Facção escolhida na criação (Morganeers/Peacemain). Persistida como
     /// TEXT. Default Peacemain pra rows legacy sem a coluna.
     pub faction: shared::Faction,
@@ -418,20 +415,7 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
          ON CONFLICT DO NOTHING"
     ).execute(pool).await?;
 
-    // Migration M14: garante que o Mercador venda as 4 ferramentas T1
-    // (machado de lenhador, foice, picareta, vara). Sort_order acima do
-    // shield (40+).
-    sqlx::query(
-        "INSERT INTO vendor_shop_items (shop_id, item_id, sort_order)
-         SELECT * FROM (VALUES
-            (1, 80, 40),   -- WOODCUTTER_AXE_T1
-            (1, 84, 41),   -- SICKLE_T1
-            (1, 88, 42),   -- PICKAXE_T1
-            (1, 92, 43)    -- FISHING_ROD_T1
-         ) AS v(shop_id, item_id, sort_order)
-         WHERE EXISTS (SELECT 1 FROM vendor_shops WHERE shop_id = 1)
-         ON CONFLICT DO NOTHING"
-    ).execute(pool).await?;
+
 
     // Migration M10: chars com shield (item_id=7) no offhand E weapon two-handed
     // (great_sword=13, bow=14, staff=6, wand=15) ficaram com combo invalido —
@@ -524,6 +508,18 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     ).execute(pool).await?;
 
     // ── Economy tables ──────────────────────────────────────────────────────
+    // Migration M23: as ferramentas deixaram de existir. Coleta e' automatica
+    // e nao tem portao, entao machado/foice/picareta/vara nao sao mais item.
+    // Tira da loja, do equipamento e do catalogo — item inativo some da UI
+    // sem quebrar linha de inventario antiga que ainda referencie o id.
+    for q in [
+        "DELETE FROM vendor_shop_items WHERE item_id BETWEEN 80 AND 95",
+        "DELETE FROM equipment WHERE item_id BETWEEN 80 AND 95",
+        "UPDATE items SET active = FALSE WHERE id BETWEEN 80 AND 95",
+    ] {
+        let _ = sqlx::query(q).execute(pool).await;
+    }
+
     // Bumpa `economy_version.version` em qualquer ferramenta SQL pra forçar
     // hot-reload no servidor.
     sqlx::query(
@@ -693,16 +689,13 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     // As migracoes da tabela de skills antiga sairam junto com ela: 44
     // colunas de rank, afinidade e payload pra um sistema que nao existe.
 
-    // M12: Farm skill levels — woodcutting, mining, gathering. Default 1.
-    sqlx::query(
-        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS woodcutting_lvl INTEGER NOT NULL DEFAULT 1"
-    ).execute(pool).await?;
-    sqlx::query(
-        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS mining_lvl INTEGER NOT NULL DEFAULT 1"
-    ).execute(pool).await?;
-    sqlx::query(
-        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS gathering_lvl INTEGER NOT NULL DEFAULT 1"
-    ).execute(pool).await?;
+    // M24: coleta nao tem mais nivel — nem de lenhador, nem de minerador, nem
+    // de coletor. O que rende agora e' o LUGAR, e lugar nao cabe em coluna de
+    // personagem. As tres colunas da M12 saem.
+    for c in ["woodcutting_lvl", "mining_lvl", "gathering_lvl"] {
+        let _ = sqlx::query(&format!("ALTER TABLE characters DROP COLUMN IF EXISTS {c}"))
+            .execute(pool).await;
+    }
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS faction TEXT NOT NULL DEFAULT 'peacemain'"
     ).execute(pool).await?;
@@ -805,29 +798,23 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // ate ter art proprio.
         S{ id: item_id::BOAT_LYLIAN_LEUTARD as i32, name:"Lylian Leutard", sell:0, buy:Some(500), ord:Some(50), stack:1, slot:None, lvl:1, ic:0, ir:138, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
 
-        // === Tools (ferramentas de farm/craft). Slot "Weapon" — usam a mao
-        // direita. T1 vendidos no Mercador; T2-T4 craftaveis. ic/ir sao
-        // placeholders de icon ate ter art definitiva.
-        // Machado de Lenhador (Axe) — coleta Tree.
-        S{ id: item_id::WOODCUTTER_AXE_T1 as i32, name:"Machado de Lenhador T1", sell:30,  buy:Some(60),   ord:Some(40), stack:1, slot:Some("Tool"), lvl:1,  ic:5, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::WOODCUTTER_AXE_T2 as i32, name:"Machado de Lenhador T2", sell:120, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:10, ic:5, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(1,3), wis:(0,0) },
-        S{ id: item_id::WOODCUTTER_AXE_T3 as i32, name:"Machado de Lenhador T3", sell:400, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:30, ic:5, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(2,6), wis:(1,3) },
-        S{ id: item_id::WOODCUTTER_AXE_T4 as i32, name:"Machado de Lenhador T4", sell:1200,buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:60, ic:5, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(4,10),wis:(2,6) },
-        // Foice (Sickle) — coleta Flower.
-        S{ id: item_id::SICKLE_T1 as i32,         name:"Foice T1",               sell:25,  buy:Some(50),   ord:Some(41), stack:1, slot:Some("Tool"), lvl:1,  ic:8, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::SICKLE_T2 as i32,         name:"Foice T2",               sell:100, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:10, ic:8, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(1,3), wis:(0,0) },
-        S{ id: item_id::SICKLE_T3 as i32,         name:"Foice T3",               sell:350, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:30, ic:8, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(2,6), wis:(1,3) },
-        S{ id: item_id::SICKLE_T4 as i32,         name:"Foice T4",               sell:1000,buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:60, ic:8, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(4,10),wis:(2,6) },
-        // Picareta (Pickaxe) — coleta Rock.
-        S{ id: item_id::PICKAXE_T1 as i32,        name:"Picareta T1",            sell:30,  buy:Some(60),   ord:Some(42), stack:1, slot:Some("Tool"), lvl:1,  ic:9, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::PICKAXE_T2 as i32,        name:"Picareta T2",            sell:120, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:10, ic:9, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(1,3), wis:(0,0) },
-        S{ id: item_id::PICKAXE_T3 as i32,        name:"Picareta T3",            sell:400, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:30, ic:9, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(2,6), wis:(1,3) },
-        S{ id: item_id::PICKAXE_T4 as i32,        name:"Picareta T4",            sell:1200,buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:60, ic:9, ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(4,10),wis:(2,6) },
-        // Vara de Pesca (FishingRod) — pesca.
-        S{ id: item_id::FISHING_ROD_T1 as i32,    name:"Vara de Pesca T1",       sell:20,  buy:Some(40),   ord:Some(43), stack:1, slot:Some("Tool"), lvl:1,  ic:11,ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::FISHING_ROD_T2 as i32,    name:"Vara de Pesca T2",       sell:90,  buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:10, ic:11,ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(1,3), wis:(0,0) },
-        S{ id: item_id::FISHING_ROD_T3 as i32,    name:"Vara de Pesca T3",       sell:320, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:30, ic:11,ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(2,6), wis:(1,3) },
-        S{ id: item_id::FISHING_ROD_T4 as i32,    name:"Vara de Pesca T4",       sell:950, buy:None,       ord:None,     stack:1, slot:Some("Tool"), lvl:60, ic:11,ir:90, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(4,10),wis:(2,6) },
+        // === Materiais de coleta e craft. Nunca estiveram na tabela: a coleta
+        // entregava um item sem nome e sem `stack_max`, que caia em stack de 1 e
+        // enchia a bolsa com dezenas de linhas de uma madeira cada. Achado com os
+        // bots coletando na ilha.
+        S{ id: item_id::WOOD_T1 as i32,        name:"Madeira T1",   sell:2,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::WOOD_T2 as i32,        name:"Madeira T2",   sell:6,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::WOOD_T3 as i32,        name:"Madeira T3",   sell:18,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::WOOD_T4 as i32,        name:"Madeira T4",   sell:54,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::LEATHER_T1 as i32,     name:"Couro T1",     sell:3,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::LEATHER_T2 as i32,     name:"Couro T2",     sell:9,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::LEATHER_T3 as i32,     name:"Couro T3",     sell:27,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::LEATHER_T4 as i32,     name:"Couro T4",     sell:81,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::MINERAL_T1 as i32,     name:"Mineral T1",   sell:4,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::MINERAL_T2 as i32,     name:"Mineral T2",   sell:12,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::MINERAL_T3 as i32,     name:"Mineral T3",   sell:36,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::MINERAL_T4 as i32,     name:"Mineral T4",   sell:108,  buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+
         // Peixes (drop da pesca) — stackáveis, sem slot. icon_path setado
         // explicitamente abaixo pros sprites de Fish/ (ic/ir são sentinela -1
         // pra NÃO virar Items/r###_c## no backfill de icon_path).
@@ -1340,12 +1327,6 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
     ).fetch_all(pool).await?;
     let extras_map: HashMap<String, (Option<i64>, Option<String>, u64)> =
         extras.into_iter().map(|(n, a, v, g)| (n, (a, v, g.max(0) as u64))).collect();
-    // Farm skills — query separada (evita ultrapassar limite de 16 colunas no sqlx tuple).
-    let farm_rows: Vec<(String, i32, i32, i32)> = sqlx::query_as(
-        "SELECT name, woodcutting_lvl, mining_lvl, gathering_lvl FROM characters"
-    ).fetch_all(pool).await?;
-    let farm_map: HashMap<String, (u32, u32, u32)> =
-        farm_rows.into_iter().map(|(n, w, m, g)| (n, (w.max(1) as u32, m.max(1) as u32, g.max(1) as u32))).collect();
     // Faction — query separada (TEXT). Parse tolerante; default Peacemain.
     let faction_rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT name, faction FROM characters"
@@ -1374,8 +1355,6 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
          sp_earned, sp_spent, boat_kind, boat_x, boat_y, boat_dir) in rows
     {
         let (account_id, visual_json, gold) = extras_map.get(&name).cloned().unwrap_or((None, None, 0));
-        let (woodcutting_lvl, mining_lvl, gathering_lvl) =
-            farm_map.get(&name).cloned().unwrap_or((1, 1, 1));
         let faction = faction_map.get(&name).copied().unwrap_or_default();
         let inv = load_inventory(pool, &name).await?;
         let equip = load_equipment(pool, &name).await?;
@@ -1436,9 +1415,6 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
                 skill_points_spent: sp_spent.max(0) as u32,
                 account_id,
                 visual,
-                woodcutting_lvl,
-                mining_lvl,
-                gathering_lvl,
                 faction,
                 quests,
                 faction_points,
@@ -1584,21 +1560,6 @@ async fn load_equipment(pool: &PgPool, char_name: &str) -> Result<shared::Equipm
             "belt"     => { eq.belt     = Some(iid); eq.belt_inst     = inst; }
             "cape"     => { eq.cape     = Some(iid); eq.cape_inst     = inst; }
             "necklace"     => { eq.necklace     = Some(iid); eq.necklace_inst     = inst; }
-            "tool_axe"     => { eq.tool_axe     = Some(iid); eq.tool_axe_inst     = inst; }
-            "tool_sickle"  => { eq.tool_sickle  = Some(iid); eq.tool_sickle_inst  = inst; }
-            "tool_pickaxe" => { eq.tool_pickaxe = Some(iid); eq.tool_pickaxe_inst = inst; }
-            "tool_rod"     => { eq.tool_rod     = Some(iid); eq.tool_rod_inst     = inst; }
-            // Migracao "tool" legado: mapeia pelo item_id pra o slot certo.
-            "tool"         => {
-                use shared::item_id;
-                match item_id::tool_kind(iid) {
-                    Some(shared::ToolKind::Axe)        => { eq.tool_axe     = Some(iid); eq.tool_axe_inst     = inst; }
-                    Some(shared::ToolKind::Sickle)     => { eq.tool_sickle  = Some(iid); eq.tool_sickle_inst  = inst; }
-                    Some(shared::ToolKind::Pickaxe)    => { eq.tool_pickaxe = Some(iid); eq.tool_pickaxe_inst = inst; }
-                    Some(shared::ToolKind::FishingRod) => { eq.tool_rod     = Some(iid); eq.tool_rod_inst     = inst; }
-                    None                               => {}
-                }
-            }
             _ => {}
         }
     }
@@ -1709,11 +1670,10 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                                      unspent_points, allocated_points,
                                      skill_points_earned, skill_points_spent,
                                      boat_kind, boat_x, boat_y, boat_dir,
-                                     woodcutting_lvl, mining_lvl, gathering_lvl,
                                      gold, visual_json, updated,
                                      boat_yaw, boat_sail_pos, boat_sail_angle,
                                      boat_anchor_dropped, mounted_local_x, mounted_local_y)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -1730,9 +1690,6 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                boat_x = EXCLUDED.boat_x,
                boat_y = EXCLUDED.boat_y,
                boat_dir = EXCLUDED.boat_dir,
-               woodcutting_lvl = EXCLUDED.woodcutting_lvl,
-               mining_lvl = EXCLUDED.mining_lvl,
-               gathering_lvl = EXCLUDED.gathering_lvl,
                gold = EXCLUDED.gold,
                visual_json = COALESCE(EXCLUDED.visual_json, characters.visual_json),
                updated = EXCLUDED.updated,
@@ -1759,9 +1716,6 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(boat_x)
         .bind(boat_y)
         .bind(boat_dir)
-        .bind(row.woodcutting_lvl as i32)
-        .bind(row.mining_lvl as i32)
-        .bind(row.gathering_lvl as i32)
         .bind(row.gold as i64)
         .bind(&visual_json)
         .bind(now)
@@ -1813,10 +1767,6 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             ("belt",     row.equipment.belt,     row.equipment.belt_inst),
             ("cape",     row.equipment.cape,     row.equipment.cape_inst),
             ("necklace",     row.equipment.necklace,     row.equipment.necklace_inst),
-            ("tool_axe",     row.equipment.tool_axe,     row.equipment.tool_axe_inst),
-            ("tool_sickle",  row.equipment.tool_sickle,  row.equipment.tool_sickle_inst),
-            ("tool_pickaxe", row.equipment.tool_pickaxe, row.equipment.tool_pickaxe_inst),
-            ("tool_rod",     row.equipment.tool_rod,     row.equipment.tool_rod_inst),
         ] {
             if let Some(iid) = item_opt {
                 let inst_json = inst_opt.and_then(|i| serde_json::to_string(&i).ok());

@@ -175,15 +175,6 @@ pub fn item_template(item_id: u16) -> ItemTemplate {
         CAPE_MAGIC    => ItemTemplate { mp_max: StatRange::new(25, 60),  wis: StatRange::new(3, 9), defense: StatRange::new(0, 3), ..Default::default() },
         NECKLACE_BASIC=> ItemTemplate { hp_max: StatRange::new(12, 28),  mp_max: StatRange::new(5, 15),  wis: StatRange::new(2, 5), ..Default::default() },
         NECKLACE_MAGIC=> ItemTemplate { mp_max: StatRange::new(25, 55),  wis: StatRange::new(4, 10), ..Default::default() },
-        // === Tools: ferramentas de farm/craft — sem stats de combate. ===
-        // Atribuir leve dex/wis nas tiers altas pra justificar drop premium.
-        WOODCUTTER_AXE_T1 | SICKLE_T1 | PICKAXE_T1 | FISHING_ROD_T1 => ItemTemplate::default(),
-        WOODCUTTER_AXE_T2 | SICKLE_T2 | PICKAXE_T2 | FISHING_ROD_T2 =>
-            ItemTemplate { dex: StatRange::new(1, 3), ..Default::default() },
-        WOODCUTTER_AXE_T3 | SICKLE_T3 | PICKAXE_T3 | FISHING_ROD_T3 =>
-            ItemTemplate { dex: StatRange::new(2, 6), wis: StatRange::new(1, 3), ..Default::default() },
-        WOODCUTTER_AXE_T4 | SICKLE_T4 | PICKAXE_T4 | FISHING_ROD_T4 =>
-            ItemTemplate { dex: StatRange::new(4, 10), wis: StatRange::new(2, 6), ..Default::default() },
         _ => ItemTemplate::default(),
     }
 }

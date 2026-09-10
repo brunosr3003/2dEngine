@@ -129,7 +129,8 @@ o nome no código é grau.
 
 # Itemização: os slots
 
-O código já tem `EquipSlot` com 11 peças de equipamento mais 4 de ferramenta.
+O código já tem `EquipSlot` com 11 peças de equipamento. Ferramenta não existe
+mais: ver `docs/COLETA.md`.
 O MIR4 tem **8** (arma, peito, calça, luvas, botas, colar, bracelete, anel).
 
 **Isso não é detalhe.** O número de slots multiplica a economia inteira: com o
