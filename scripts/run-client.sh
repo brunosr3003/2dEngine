@@ -35,6 +35,49 @@ fi
 
 swallow() { hyprctl eval "hl.config({ misc = { enable_swallow = $1 } })" >/dev/null 2>&1; }
 
+# ── LADO A LADO COM O TERMINAL ───────────────────────────────────────────────
+#
+# A janela nasce no workspace ATIVO, que nem sempre e' o do terminal que
+# chamou o script — rodando por fora (de outra aba, de uma sessao remota, de
+# uma ferramenta), o jogo abre sozinho num canto e o terminal fica noutro.
+#
+# Entao o script guarda onde o terminal esta' e, se o jogo cair em outro
+# lugar, traz de volta. `hl.dsp.window.move` age na janela ATIVA, e janela
+# nova nasce com foco — por isso a correcao e' logo depois de ela aparecer.
+workspace_do_terminal() {
+    local pid=$PPID
+    for _ in 1 2 3 4 5 6; do
+        [ -z "$pid" ] || [ "$pid" = 1 ] && break
+        local ws
+        ws=$(hyprctl clients -j 2>/dev/null | python3 -c "
+import json,sys
+alvo=int(sys.argv[1])
+for c in json.load(sys.stdin):
+    if c['pid']==alvo: print(c['workspace']['id']); break
+" "$pid" 2>/dev/null)
+        [ -n "$ws" ] && { echo "$ws"; return; }
+        pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    done
+}
+
+ALVO=$(workspace_do_terminal)
+if [ -n "$ALVO" ]; then
+    (
+        for _ in $(seq 1 40); do
+            sleep 0.5
+            atual=$(hyprctl clients -j 2>/dev/null | python3 -c "
+import json,sys
+for c in json.load(sys.stdin):
+    if c['class']=='tempest': print(c['workspace']['id']); break
+" 2>/dev/null)
+            [ -z "$atual" ] && continue
+            [ "$atual" = "$ALVO" ] && break
+            hyprctl dispatch "hl.dsp.window.move({ workspace = $ALVO })" >/dev/null 2>&1
+            break
+        done
+    ) &
+fi
+
 # Religa o swallow aconteca o que acontecer — Ctrl+C, crash, kill.
 trap 'swallow true' EXIT INT TERM
 swallow false

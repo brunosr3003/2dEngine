@@ -447,6 +447,59 @@ mod testes_camera {
         assert!(raio_perto > raio_longe, "o furo nao cresceu ao aproximar");
     }
 
+    /// A camera nunca pode ficar DENTRO do chao.
+    ///
+    /// Com o descarte de face de costas, de dentro da terra nao se ve' terra:
+    /// as faces do relevo olham pra fora, e o que aparece e' o vazio atras
+    /// delas. O sintoma nao parece camera — parece o mundo ter acabado.
+    #[test]
+    fn a_camera_nao_entra_no_chao() {
+        // Um morro de dez unidades onde a camera iria parar, e chao baixo
+        // onde o jogador esta'.
+        let alvo = Vec2::ZERO;
+        let apoio = 1.0;
+        for (yaw, zoom) in [(0.0f32, 1.0f32), (2.0, ZOOM_MIN), (-1.0, ZOOM_MAX)] {
+            let ideal = camera(alvo, apoio, yaw, zoom, pitch_do_zoom(zoom));
+            // Relevo alto EXATAMENTE onde o olho iria: e' o caso do morro
+            // atras do jogador, que e' o que acontece em ilha.
+            let morro = |x: f32, z: f32| {
+                if vec2(x, z).distance(vec2(ideal.position.x, ideal.position.z)) < 6.0 {
+                    ideal.position.y + 4.0
+                } else {
+                    0.0
+                }
+            };
+            let cam = camera_com_chao(alvo, apoio, yaw, zoom, pitch_do_zoom(zoom), &morro);
+            let solo = morro(cam.position.x, cam.position.z);
+            assert!(
+                cam.position.y >= solo + FOLGA_DA_CAMERA - 1e-4,
+                "yaw {yaw}: olho em {:.2} com chao em {solo:.2}",
+                cam.position.y
+            );
+            // E o alvo nao se mexe: quem sobe e' o olho, o enquadramento
+            // continua no boneco.
+            assert!((cam.target - ideal.target).length() < 1e-5);
+        }
+    }
+
+    /// Em terreno plano ela NAO se mexe. O desvio de morro foi tirado daqui
+    /// de proposito, e o conserto de nao-entrar-no-chao nao pode traze-lo de
+    /// volta pela porta dos fundos.
+    #[test]
+    fn em_terreno_plano_a_camera_nao_sobe() {
+        let plano = |_: f32, _: f32| 0.0f32;
+        for zoom in [ZOOM_MIN, 1.0, ZOOM_MAX] {
+            let p = pitch_do_zoom(zoom);
+            let ideal = camera(Vec2::ZERO, 0.0, 0.7, zoom, p);
+            let cam = camera_com_chao(Vec2::ZERO, 0.0, 0.7, zoom, p, &plano);
+            assert!(
+                (cam.position - ideal.position).length() < 1e-5,
+                "zoom {zoom}: a camera se mexeu {:.3} em terreno plano",
+                (cam.position - ideal.position).length()
+            );
+        }
+    }
+
     /// A camera nao pode ARRANCAR num degrau — e' o defeito que a mola veio
     /// consertar. A interpolacao exponencial anda proporcional a distancia,
     /// entao um degrau isolado saia macio e uma escada saia chicoteando.
@@ -554,15 +607,50 @@ pub struct Vista<'a> {
     chao: &'a dyn Fn(f32, f32) -> f32,
 }
 
+/// Folga minima entre o olho e o chao, em unidades.
+///
+/// Meio metro e pouco: mais que o plano de corte perto (0,01) com sobra, e o
+/// bastante pra o chao nao encher a base da tela quando a camera raspa um
+/// barranco.
+const FOLGA_DA_CAMERA: f32 = 0.6;
+
+/// A camera do quadro, garantidamente FORA do chao.
+///
+/// A camera nao desvia de morro — isso existiu aqui e foi tirado, porque o
+/// preco de nunca perder o boneco era ela se levantando sozinha perto de
+/// qualquer elevacao, e camera que se mexe sem o jogador pedir incomoda mais
+/// que o instante em que o relevo tapa a vista.
+///
+/// Mas ter o morro NA FRENTE e estar DENTRO dele sao coisas diferentes. Com o
+/// descarte de face de costas ligado, de dentro da terra nao se ve' terra: as
+/// faces do relevo olham todas pra fora, e o que aparece e' o vazio atras
+/// delas — meia tela de ceu, como se o mundo tivesse acabado ali.
+///
+/// Entao a unica correcao e' esta: subir o olho o MINIMO pra ele nao ficar
+/// enterrado. O relevo e' campo de altura e nao tem saliencia, entao estar
+/// acima da altura naquele ponto ja' garante estar do lado de fora.
+pub fn camera_com_chao(
+    alvo: Vec2,
+    apoio: f32,
+    yaw: f32,
+    zoom: f32,
+    pitch: f32,
+    chao: &dyn Fn(f32, f32) -> f32,
+) -> Camera3D {
+    let mut cam = camera(alvo, apoio, yaw, zoom, pitch);
+    let minimo = chao(cam.position.x, cam.position.z) + FOLGA_DA_CAMERA;
+    if cam.position.y < minimo {
+        cam.position.y = minimo;
+    }
+    cam
+}
+
 impl<'a> Vista<'a> {
     /// Monta a vista do quadro: camera girada e a funcao de chao que todo o
     /// resto vai consultar.
     ///
-    /// A camera NAO desvia do relevo. Havia um desvio aqui — ela subia ate' a
-    /// linha ate' o jogador ficar livre — e ele foi tirado: o preco de nunca
-    /// perder o boneco era a camera se levantando sozinha perto de qualquer
-    /// morro, e uma camera que se mexe sem o jogador pedir incomoda mais do
-    /// que o instante em que o relevo tapa a vista.
+    /// A camera nao desvia do relevo, mas nunca fica DENTRO dele. Ver
+    /// `camera_com_chao`.
     pub fn nova(
         alvo: Vec2,
         yaw: f32,
@@ -571,7 +659,7 @@ impl<'a> Vista<'a> {
         apoio: f32,
         chao: &'a dyn Fn(f32, f32) -> f32,
     ) -> Self {
-        Self { cam: camera(alvo, apoio, yaw, zoom, pitch), chao }
+        Self { cam: camera_com_chao(alvo, apoio, yaw, zoom, pitch, chao), chao }
     }
 
     pub fn chao_em(&self, x: f32, z: f32) -> f32 {
