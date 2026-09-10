@@ -339,3 +339,113 @@ mod testes {
         assert!(pecas_por(12) > 1e6, "o +12 tem que ser absurdo");
     }
 }
+
+// ─────────────────────── o custo da escada, fechado ───────────────────────
+
+/// Darksteel por hora de mineracao ATIVA.
+///
+/// Sai da coleta offline, que e' 25% disto e rende 85.200 por dia (ver
+/// `docs/ECONOMIA.md`): 85.200 / 0,25 / 24 = 14.200. Esta' aqui, e nao so' no
+/// documento, porque o painel de economia calcula TEMPO a partir dele — e
+/// numero de desenho que mora em dois lugares vira dois desenhos diferentes.
+pub const DARKSTEEL_POR_HORA: f64 = 14_200.0;
+
+/// O que custa levar UMA peca de zero ate' `alvo`.
+///
+/// Fecha as tres contas que a economia faz o tempo todo, e fecha juntas
+/// porque separadas elas mentem: contar so' tentativas ignora que do +6 pra
+/// cima a peca morre, e contar so' pecas ignora que cada tentativa cobra
+/// moeda de novo.
+#[derive(Debug, Clone, Copy)]
+pub struct Escada {
+    pub alvo: u8,
+    /// Quantas pecas se gastam, em media, ate' uma chegar.
+    pub pecas: f64,
+    /// Tentativas somadas, contando as das pecas que morreram no caminho.
+    pub tentativas: f64,
+    pub darksteel: f64,
+    pub cobre: f64,
+    /// Horas de mineracao ativa pra pagar o darksteel.
+    pub horas: f64,
+}
+
+/// A escada inteira de um grau, do +1 ao `REFINO_MAX`.
+///
+/// A conta separa os dois regimes, e tem que separar: eles cobram diferente.
+///
+///   * **ate' `REFINO_SEGURO`** a falha so' come material, entao a peca
+///     insiste ate' passar — `1 / chance` tentativas por nivel, sempre a
+///     mesma peca;
+///   * **do +6 em diante** cada tentativa e' moeda unica: ou sobe, ou destroi.
+///     Uma tentativa por peca viva, e as que morrem param de gastar ali.
+///
+/// A primeira versao multiplicava a escada inteira pelo numero de pecas, como
+/// se toda peca perdida tivesse pago ate' o topo. Dava o DOBRO: 205 horas
+/// pra um Raro +7 que o desenho da economia fixou em 106. Peca que morre no
+/// +6 nunca pagou a tentativa do +7.
+pub fn escada(grau: Grau) -> Vec<Escada> {
+    let (ds, cu) = custo_de_refino(grau);
+    let chance = |k: u8| chance_de_refino(k) as f64 / 100.0;
+    let mut fora = Vec::new();
+    for alvo in 1..=REFINO_MAX {
+        let pecas = pecas_por(alvo);
+        // Faixa segura: cada peca sobe sozinha, custando 1/chance por nivel.
+        let por_peca: f64 = (1..=alvo.min(REFINO_SEGURO)).map(|k| 1.0 / chance(k)).sum();
+        let mut tentativas = pecas * por_peca;
+        // Faixa de aposta: uma tentativa por peca VIVA, e a cada nivel sobram
+        // menos.
+        let mut vivas = pecas;
+        for k in (REFINO_SEGURO + 1)..=alvo {
+            tentativas += vivas;
+            vivas *= chance(k);
+        }
+        let darksteel = tentativas * ds as f64;
+        fora.push(Escada {
+            alvo,
+            pecas,
+            tentativas,
+            darksteel,
+            cobre: tentativas * cu as f64,
+            horas: darksteel / DARKSTEEL_POR_HORA,
+        });
+    }
+    fora
+}
+
+#[cfg(test)]
+mod testes_escada {
+    use super::*;
+
+    /// A escada tem que bater com o numero que decidiu o desenho da economia:
+    /// **Raro +7 sai por ~106 horas de mineracao ativa**. E' dele que veio a
+    /// colonia offline, e se ele mudar sem ninguem ver, a colonia passa a
+    /// resolver um problema que nao existe mais.
+    #[test]
+    fn raro_mais_sete_custa_cem_e_poucas_horas() {
+        let e = escada(Grau::Raro);
+        let sete = e.iter().find(|x| x.alvo == 7).unwrap();
+        assert!(
+            (sete.pecas - 17.0).abs() < 1.0,
+            "Raro +7 pede {:.1} pecas, esperado ~17", sete.pecas
+        );
+        assert!(
+            (90.0..130.0).contains(&sete.horas),
+            "Raro +7 sai por {:.0} h de mineracao, esperado ~106", sete.horas
+        );
+    }
+
+    /// Ate' o nivel seguro nao se perde peca: e' o que separa "tempo" de
+    /// "aposta", e a diferenca e' o jogo inteiro.
+    #[test]
+    fn ate_o_seguro_a_peca_sempre_chega() {
+        for grau in Grau::TODOS {
+            for e in escada(grau).iter().filter(|e| e.alvo <= REFINO_SEGURO) {
+                assert!(
+                    (e.pecas - 1.0).abs() < 1e-9,
+                    "{grau:?} +{}: {:.2} pecas dentro da faixa segura",
+                    e.alvo, e.pecas
+                );
+            }
+        }
+    }
+}

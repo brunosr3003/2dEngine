@@ -61,10 +61,36 @@
     background: #232d3a; color: var(--fraco); font-size: 11px;
   }
   .vazio { padding: 12px; color: var(--fraco); }
+  #abas { display: flex; border-bottom: 1px solid var(--linha); }
+  .aba {
+    flex: 1; background: none; border: 0; color: var(--fraco); font: inherit;
+    padding: 10px 0; cursor: pointer; border-bottom: 2px solid transparent;
+  }
+  .aba.ativa { color: var(--texto); border-bottom-color: var(--jogador); }
+  #economia { grid-column: 2 / 4; overflow-y: auto; height: 100vh; padding: 0 0 40px; }
+  .cartoes { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 14px; }
+  .cartao {
+    background: var(--painel); border: 1px solid var(--linha); border-radius: 5px;
+    padding: 10px 14px; min-width: 150px;
+  }
+  .cartao .rot { color: var(--fraco); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .cartao .num { font-size: 21px; margin-top: 3px; }
+  .cartao .pe { color: var(--fraco); font-size: 11px; }
+  table { border-collapse: collapse; width: calc(100% - 28px); margin: 8px 14px; font-size: 12px; }
+  th, td { text-align: right; padding: 3px 8px; border-bottom: 1px solid #1a2028; }
+  th { color: var(--fraco); font-weight: 400; text-transform: uppercase; font-size: 10px; letter-spacing: .08em; }
+  td:first-child, th:first-child { text-align: left; }
+  .aposta { color: var(--mob); }
+  .barra-h { background: #2a3440; height: 9px; border-radius: 2px; }
+  .barra-h > i { display: block; height: 100%; background: var(--jogador); border-radius: 2px; }
+  .nota { color: var(--fraco); font-size: 11px; padding: 2px 14px 10px; max-width: 720px; line-height: 1.5; }
   label.f { display: block; padding: 2px 12px; color: var(--fraco); cursor: pointer; }
 </style>
 
 <aside>
+  <div id="abas">
+    <button class="aba ativa" data-aba="mundo">mundo</button><button class="aba" data-aba="economia">economia</button>
+  </div>
   <h2>Canais</h2>
   <div id="canais"></div>
   <h2>Filtros</h2>
@@ -81,6 +107,44 @@
   <canvas id="tela"></canvas>
   <div id="hud"></div>
 </main>
+
+<div id="economia" hidden>
+  <h2>Moeda</h2>
+  <div class="cartoes" id="moeda"></div>
+  <p class="nota">
+    O ouro <b>online</b> é o que está em mãos agora; o total inclui quem está
+    fora. A diferença entre os dois é ouro parado — ele não circula, mas volta
+    a circular quando o dono voltar.
+  </p>
+
+  <h2>Progressão</h2>
+  <div id="niveis"></div>
+
+  <h2>A escada do refino</h2>
+  <p class="nota">
+    Previsão, não medição: sai da mesma <code>forja</code> que o jogo usa pra
+    refinar. Até o <b>+5</b> a falha só come material e a peça sempre chega;
+    do <b>+6</b> em diante cada tentativa arrisca a peça, e o custo deixa de
+    ser tempo e vira aposta — é onde a coluna de <b>peças</b> descola.
+    Horas são de mineração ativa.
+  </p>
+  <div id="escadas"></div>
+
+  <h2>Curva de loot configurada</h2>
+  <p class="nota">
+    Valor esperado por morte: chance × quantidade média × preço de venda,
+    somado sobre a tabela de drop do bicho. É o que foi <i>configurado</i>;
+    o que de fato caiu está na seção seguinte.
+  </p>
+  <div id="loot"></div>
+
+  <h2>Drops medidos (7 dias)</h2>
+  <div id="drops"></div>
+
+  <h2>Itens no mundo</h2>
+  <p class="nota">Mochila e baú somados, por item.</p>
+  <div id="itens"></div>
+</div>
 
 <section>
   <h2>Inspeção</h2>
@@ -401,6 +465,113 @@ window.irPara = (id) => {
   cam.x = e.x; cam.z = e.z;
   desenhaDetalhe();
 };
+
+// ── abas ───────────────────────────────────────────────────────────────
+let economia = null;
+document.querySelectorAll('.aba').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('.aba').forEach(x => x.classList.toggle('ativa', x === b));
+    const eco = b.dataset.aba === 'economia';
+    document.querySelector('main').hidden = eco;
+    document.querySelector('section').hidden = eco;
+    document.getElementById('economia').hidden = !eco;
+    if (eco) puxaEconomia();
+  };
+});
+
+async function puxaEconomia() {
+  const r = await fetch('/api/economia?token=' + encodeURIComponent(token));
+  if (!r.ok) return;
+  economia = await r.json();
+  desenhaEconomia();
+}
+// A economia anda em minutos, nao em quadros: puxar de meio em meio segundo
+// como o mapa seria varrer o banco inteiro pra ver o mesmo numero.
+setInterval(() => { if (!document.getElementById('economia').hidden) puxaEconomia(); }, 20000);
+
+const num = n => n === null || n === undefined ? '—' : n.toLocaleString('pt-BR');
+const curto = n => {
+  const a = Math.abs(n);
+  if (a >= 1e12) return (n / 1e12).toFixed(1) + ' tri';
+  if (a >= 1e9) return (n / 1e9).toFixed(1) + ' bi';
+  if (a >= 1e6) return (n / 1e6).toFixed(1) + ' mi';
+  if (a >= 1e3) return (n / 1e3).toFixed(1) + ' mil';
+  return n.toFixed(a < 10 ? 1 : 0);
+};
+const horas = h => h < 1 ? (h * 60).toFixed(0) + ' min'
+  : h < 48 ? h.toFixed(1) + ' h'
+  : h < 24 * 365 ? (h / 24).toFixed(0) + ' dias'
+  : (h / 24 / 365).toFixed(0) + ' anos';
+
+function tabela(cols, linhas) {
+  return `<table><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>` +
+    linhas.map(l => `<tr>${l.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') +
+    '</table>';
+}
+
+function desenhaEconomia() {
+  const d = economia; if (!d) return;
+  const j = d.jogadores;
+
+  const parado = j.ouro_total - d.ouro_online;
+  document.getElementById('moeda').innerHTML = [
+    ['personagens', num(j.total), ''],
+    ['ouro no mundo', num(j.ouro_total), ''],
+    ['em mãos agora', num(d.ouro_online), parado > 0 ? num(parado) + ' parado' : ''],
+    ['mediana', num(j.ouro_mediano), 'p90 ' + num(j.ouro_p90)],
+    ['maior fortuna', num(j.ouro_maior), j.maiores[0] ? j.maiores[0][0] : ''],
+    ['darksteel por hora', num(d.darksteel_por_hora), 'mineração ativa'],
+  ].map(([r, n, p]) =>
+    `<div class="cartao"><div class="rot">${r}</div><div class="num">${n}</div>
+     <div class="pe">${p}</div></div>`).join('');
+
+  const maxN = Math.max(1, ...j.por_nivel.map(x => x[1]));
+  document.getElementById('niveis').innerHTML = tabela(
+    ['nível', 'personagens', ''],
+    j.por_nivel.map(([nv, q]) => [
+      'n' + nv, num(q),
+      `<div class="barra-h"><i style="width:${(q / maxN * 100).toFixed(1)}%"></i></div>`,
+    ]));
+
+  document.getElementById('escadas').innerHTML = d.escadas.map(e => {
+    const linhas = e.degraus.filter(g => g.alvo >= 3).map(g => {
+      const aposta = g.alvo > d.refino_seguro;
+      return [
+        `<span class="${aposta ? 'aposta' : ''}">+${g.alvo}</span>`,
+        d.chances[g.alvo] + '%',
+        g.pecas < 1.001 ? '1' : curto(g.pecas),
+        curto(g.tentativas),
+        curto(g.darksteel),
+        horas(g.horas),
+      ];
+    });
+    return `<h2 style="padding-top:14px">${e.grau}
+      <span style="color:var(--fraco);text-transform:none;letter-spacing:0">
+        · ${num(e.tentativa[0])} darksteel + ${num(e.tentativa[1])} cobre por tentativa</span></h2>` +
+      tabela(['nível', 'chance', 'peças', 'tentativas', 'darksteel', 'mineração'], linhas);
+  }).join('');
+
+  const maxOuro = Math.max(1, ...d.tabela_de_loot.map(b => b.ouro_por_morte));
+  document.getElementById('loot').innerHTML = tabela(
+    ['bicho', 'xp', 'itens na tabela', 'ouro/morte', ''],
+    d.tabela_de_loot.map(b => [
+      b.nome, num(b.xp), b.itens, b.ouro_por_morte.toFixed(1),
+      `<div class="barra-h"><i style="width:${(b.ouro_por_morte / maxOuro * 100).toFixed(1)}%;background:var(--ouro)"></i></div>`,
+    ]));
+
+  document.getElementById('drops').innerHTML = d.drops.length
+    ? tabela(['item', 'vezes', 'quantidade', 'por hora'],
+        d.drops.map(x => [x.nome, num(x.vezes), num(x.quantidade), x.por_hora.toFixed(2)]))
+    : '<div class="vazio">nada caiu nos últimos 7 dias</div>';
+
+  document.getElementById('itens').innerHTML = d.itens.length
+    ? tabela(['item', 'quantidade', 'donos', 'venda', 'valor parado'],
+        d.itens.map(x => [
+          x.nome, num(x.quantidade), num(x.donos), num(x.preco_venda),
+          num(x.quantidade * x.preco_venda),
+        ]))
+    : '<div class="vazio">nenhum item no mundo</div>';
+}
 
 // ── busca ───────────────────────────────────────────────────────────────
 document.getElementById('busca').addEventListener('input', busca);

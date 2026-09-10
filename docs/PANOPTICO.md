@@ -74,6 +74,40 @@ decide se alguém precisa de atenção agora, e ela não pode exigir um clique.
 
 Linha tracejada é rota de jogador; linha vermelha é mob perseguindo.
 
+## A aba de economia
+
+Duas colunas lado a lado de propósito: **o que o desenho prevê** e **o que o
+banco mede**. Painel só com a previsão é a planilha de novo; painel só com a
+medição não diz se o número é alto ou baixo.
+
+O que é previsão sai de `shared::forja` — a mesma função que o jogo usa pra
+refinar. Nada é recalculado com fórmula própria aqui: painel com a sua versão
+da regra vira uma segunda regra, e as duas divergem.
+
+| seção | o que é | de onde vem |
+|---|---|---|
+| moeda | ouro no mundo, mediana, p90, maior fortuna, ouro em mãos | `characters` + retratos dos canais |
+| progressão | personagens por nível | `characters.xp` |
+| escada do refino | peças, tentativas, darksteel e horas por nível e grau | `shared::forja::escada` |
+| curva de loot | valor esperado por morte, por bicho | `loot_drops` × `items` |
+| drops medidos | o que de fato caiu nos últimos 7 dias | `item_drops_log` |
+| itens no mundo | estoque por item, mochila e baú somados | `inventory` + `vault` |
+
+**Ouro em mãos contra ouro no mundo.** O primeiro é de quem está logado; o
+segundo inclui quem está fora. A diferença é ouro parado — ele não circula,
+mas volta a circular quando o dono voltar, e é o tamanho dessa volta que
+importa saber antes que ela aconteça.
+
+**A escada mostra onde o jogo muda de natureza.** Até o +5 a falha só come
+material e a peça sempre chega: o custo é tempo. Do +6 em diante cada
+tentativa arrisca a peça, e a coluna de *peças* descola — 1, depois 3,3,
+depois 17, depois 111. É a mesma tabela que decidiu a colônia offline existir:
+Raro +7 são 1,51 milhão de darksteel, ou **106 horas** de mineração ativa.
+
+`DARKSTEEL_POR_HORA` mora em `shared::forja` e não só no `ECONOMIA.md` porque
+o painel calcula tempo a partir dele — número de desenho que mora em dois
+lugares vira dois desenhos diferentes.
+
 ## Um aviso que o painel já se deu
 
 A primeira versão desenhava uma linha pra todo mob com `ai_target`, e a tela

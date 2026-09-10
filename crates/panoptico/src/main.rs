@@ -34,6 +34,7 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 use tokio::sync::RwLock;
 
+mod economia;
 mod mapa;
 
 #[derive(Clone)]
@@ -92,6 +93,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/", get(pagina))
         .route("/api/mundo", get(mundo))
         .route("/api/mapa/:zona.png", get(mapa_png))
+        .route("/api/economia", get(economia))
         .with_state(st);
 
     let bind = std::env::var("PANOPTICO_WEB_BIND").unwrap_or_else(|_| "127.0.0.1:8090".into());
@@ -191,6 +193,38 @@ async fn mundo(
         }
     }
     axum::Json(serde_json::json!({ "canais": canais })).into_response()
+}
+
+/// A economia: o que o desenho preve ao lado do que o banco mede.
+async fn economia(
+    State(st): State<Estado>,
+    Query(q): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    if !autorizado(&st, &q) {
+        return (StatusCode::FORBIDDEN, "token").into_response();
+    }
+    // Ouro em MAO: so' quem esta' logado. O do banco inclui quem esta' fora, e
+    // a diferenca entre os dois e' informacao — ouro parado nao circula.
+    let mut ouro_online = 0u64;
+    let linhas = sqlx::query_as::<_, (String,)>(
+        "SELECT host FROM channels WHERE updated > NOW() - INTERVAL '15 seconds'",
+    )
+    .fetch_all(&*st.pool)
+    .await
+    .unwrap_or_default();
+    for (host,) in linhas {
+        if let Some(p) = endereco_do_painel(&host) {
+            if let Some(r) = buscar_retrato(&st, &p).await {
+                if let Some(js) = r.get("jogadores").and_then(|v| v.as_array()) {
+                    ouro_online += js
+                        .iter()
+                        .filter_map(|j| j.get("ouro").and_then(|v| v.as_u64()))
+                        .sum::<u64>();
+                }
+            }
+        }
+    }
+    axum::Json(economia::levantar(&st.pool, ouro_online).await).into_response()
 }
 
 async fn buscar_retrato(st: &Estado, painel: &str) -> Option<serde_json::Value> {
