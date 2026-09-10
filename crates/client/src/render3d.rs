@@ -780,8 +780,16 @@ pub fn material_solido() -> Material {
                 highp float ruido = fract(sin(dot(
                     floor(gl_FragCoord.xy * 0.5),
                     vec2(12.9898, 78.233))) * 43758.5453);
-                highp float borda = smoothstep(0.62, 1.0, d);
-                if (ruido >= borda) discard;
+                // Nao apaga TUDO: deixa uma fracao dos pixels de pe' no meio
+                // do furo. Sao eles que dizem "tem coisa aqui" — buraco limpo
+                // faz a arvore sumir e o jogador parecer estar num descampado
+                // que nao existe.
+                //
+                // Sobrar 10% e' pouco pra atrapalhar a leitura do boneco e o
+                // bastante pra o olho ver o veu.
+                highp float restante = 0.10;
+                highp float fica = mix(restante, 1.0, smoothstep(0.62, 1.0, d));
+                if (ruido >= fica) discard;
             }
         }
         gl_FragColor = color * texture2D(Texture, uv);
