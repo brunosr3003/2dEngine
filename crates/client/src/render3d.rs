@@ -468,8 +468,14 @@ pub struct Vista<'a> {
 }
 
 impl<'a> Vista<'a> {
-    /// Monta a vista do quadro: camera girada, levantada pra o relevo nao
-    /// tapar o jogador, e a funcao de chao que todo o resto vai consultar.
+    /// Monta a vista do quadro: camera girada e a funcao de chao que todo o
+    /// resto vai consultar.
+    ///
+    /// A camera NAO desvia do relevo. Havia um desvio aqui — ela subia ate' a
+    /// linha ate' o jogador ficar livre — e ele foi tirado: o preco de nunca
+    /// perder o boneco era a camera se levantando sozinha perto de qualquer
+    /// morro, e uma camera que se mexe sem o jogador pedir incomoda mais do
+    /// que o instante em que o relevo tapa a vista.
     pub fn nova(
         alvo: Vec2,
         yaw: f32,
@@ -478,8 +484,7 @@ impl<'a> Vista<'a> {
         apoio: f32,
         chao: &'a dyn Fn(f32, f32) -> f32,
     ) -> Self {
-        let sobe = altura_livre(alvo, apoio, yaw, zoom, pitch, chao);
-        Self { cam: camera(alvo, apoio + sobe, yaw, zoom, pitch), chao }
+        Self { cam: camera(alvo, apoio, yaw, zoom, pitch), chao }
     }
 
     pub fn chao_em(&self, x: f32, z: f32) -> f32 {
@@ -525,37 +530,6 @@ pub fn raio_da_tela(cam: &Camera3D, tela: Vec2) -> (Vec3, Vec3) {
     let larg = alt * (lw / lh);
     let dir = (frente + direita * (nx * larg) + cima * (ny * alt)).normalize();
     (cam.position, dir)
-}
-
-/// Sobe a camera ate' o jogador ficar visivel.
-///
-/// Com a camera girando, qualquer morro entre ela e o jogador tapa a vista, e
-/// perder o boneco atras do relevo e' pior que qualquer outra falha de camera.
-/// Em vez de raycast contra a malha, amostra a ALTURA ao longo da linha —
-/// o campo de altura ja' esta' ali, e e' consulta O(1) por amostra.
-pub fn altura_livre(
-    target: Vec2,
-    chao: f32,
-    yaw: f32,
-    zoom: f32,
-    pitch: f32,
-    altura_em: &dyn Fn(f32, f32) -> f32,
-) -> f32 {
-    let z = zoom.clamp(ZOOM_MIN, ZOOM_MAX);
-    let (recuo, altura) = recuo_e_altura(z, pitch);
-    let mut extra: f32 = 0.0;
-    const AMOSTRAS: i32 = 10;
-    for i in 1..=AMOSTRAS {
-        let t = i as f32 / AMOSTRAS as f32;
-        let x = target.x - yaw.sin() * recuo * t;
-        let zz = target.y + yaw.cos() * recuo * t;
-        // Altura da linha camera→alvo neste ponto, se a camera nao subisse.
-        let linha = chao + altura * t;
-        let solo = altura_em(x, zz);
-        // Uma folga acima do solo: rasar o morro deixa a camera dentro dele.
-        extra = extra.max(solo + 1.5 - linha);
-    }
-    extra.max(0.0)
 }
 
 pub fn clear() {
