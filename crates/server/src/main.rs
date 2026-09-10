@@ -78,8 +78,7 @@ async fn main() -> Result<()> {
 
     // Skills (Phase 1). Compartilha o mesmo `economy_version`.
     skills::init(&pool).await?;
-    skills::spawn_hot_reload(pool.clone());
-    tracing::info!("skills carregadas: {} entradas", skills::all_skills().len());
+    skills::recarregar(&pool).await;
 
     // Carrega configs de barco (lylian + outros kinds) de data/boats/*.json.
     // Forca load no startup pra logs aparecerem cedo.

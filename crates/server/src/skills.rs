@@ -1,253 +1,155 @@
-//! Configuração de skills carregada do Postgres.
+//! Carga das skills do banco.
 //!
-//! Análogo a `economy.rs`. Compartilha o `economy_version` pra hot-reload
-//! (admin bumpa um único contador, tanto items/enemies quanto skills
-//! recarregam atomicamente).
-//!
-//! Acesso global via `OnceCell<RwLock<SkillsConfig>>` — leitores pegam
-//! snapshot consistente; troca atômica no reload.
+//! Doze linhas, todas ativas, tres por conjunto de arma. A tabela antiga tinha
+//! 44 colunas — rank, afinidade, payload por rank, passiva — pra um sistema que
+//! nao existe mais.
 
-use anyhow::Result;
-use once_cell::sync::OnceCell;
-use parking_lot::RwLock;
-use shared::skills::SkillDef;
-use sqlx::postgres::PgPool;
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Duration;
+use shared::skills::{Conjunto, Forma, Skill};
+use sqlx::{PgPool, Row};
 
-#[derive(Default)]
-pub struct SkillsConfig {
-    pub version: i64,
-    pub by_id:   HashMap<u32, SkillDef>,
-    /// Index por arma RECOMENDADA (`Sword`/`Axe`/...) → skills com essa
-    /// afinidade, ordenado por (tier asc, is_passive false-first, id).
-    /// Skills nesse index ainda podem ser castadas por outras armas.
-    pub by_prof: HashMap<String, Vec<u32>>,
-    /// Index por categoria (`offensive`, `support`, `control`, `mobility`,
-    /// `passive`) — usado pela UI nova.
-    pub by_category: HashMap<String, Vec<u32>>,
-}
+/// Cria a tabela e semeia as doze do playtest, se estiver vazia.
+pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS skills (
+            id            INTEGER PRIMARY KEY,
+            nome          TEXT    NOT NULL,
+            conjunto      TEXT    NOT NULL,
+            ordem         SMALLINT NOT NULL,
+            forma         TEXT    NOT NULL,
+            custo_mp      INTEGER NOT NULL DEFAULT 0,
+            espera_s      REAL    NOT NULL DEFAULT 1,
+            conjuracao_s  REAL    NOT NULL DEFAULT 0,
+            dano          INTEGER NOT NULL DEFAULT 0,
+            cura          INTEGER NOT NULL DEFAULT 0,
+            alcance       REAL    NOT NULL DEFAULT 3,
+            raio          REAL    NOT NULL DEFAULT 0
+        )",
+    )
+    .execute(pool)
+    .await?;
 
-impl SkillsConfig {
-    pub fn skill(&self, id: u32) -> Option<&SkillDef> { self.by_id.get(&id) }
-
-    pub fn skills_for_prof(&self, prof: &str) -> Vec<&SkillDef> {
-        self.by_prof.get(prof)
-            .map(|ids| ids.iter().filter_map(|i| self.by_id.get(i)).collect())
-            .unwrap_or_default()
+    let (n,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM skills")
+        .fetch_one(pool)
+        .await
+        .unwrap_or((0,));
+    if n == 0 {
+        semear(pool).await?;
     }
-
-    pub fn skills_for_category(&self, cat: &str) -> Vec<&SkillDef> {
-        self.by_category.get(cat)
-            .map(|ids| ids.iter().filter_map(|i| self.by_id.get(i)).collect())
-            .unwrap_or_default()
-    }
-
-    /// Lista TODAS as skills (snapshot pra `SkillsConfig` wire), ordenadas
-    /// estavelmente por id pra delta-encoding eventual.
-    pub fn all_sorted(&self) -> Vec<SkillDef> {
-        let mut v: Vec<_> = self.by_id.values().cloned().collect();
-        v.sort_by_key(|s| s.id.0);
-        v
-    }
-}
-
-static SKILLS: OnceCell<Arc<RwLock<SkillsConfig>>> = OnceCell::new();
-
-fn cell() -> &'static RwLock<SkillsConfig> {
-    SKILLS.get().expect("skills não inicializada — chame skills::init() na boot")
-}
-
-pub async fn init(pool: &PgPool) -> Result<()> {
-    let cfg = load_from_db(pool).await?;
-    let _ = SKILLS.set(Arc::new(RwLock::new(cfg)));
     Ok(())
 }
 
-/// Hot-reload: checa `economy_version` a cada 5s (mesmo contador que items/enemies).
-/// Mantém em sync com o cache em `economy.rs`.
-pub fn spawn_hot_reload(pool: PgPool) {
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(5));
-        interval.tick().await;
-        loop {
-            interval.tick().await;
-            match check_and_reload(&pool).await {
-                Ok(true) => {
-                    let v = cell().read().version;
-                    tracing::info!("skills hot-reload: v{v}");
-                }
-                Ok(false) => {}
-                Err(e) => tracing::warn!("skills reload falhou: {e}"),
-            }
+/// As doze do playtest.
+///
+/// Numeros de partida, nao de equilibrio: eles existem pra o playtest ter o que
+/// apertar, e o painel de economia e' quem vai dizer se estao no lugar.
+async fn semear(pool: &PgPool) -> anyhow::Result<()> {
+    // (id, nome, conjunto, ordem, forma, mp, espera, conjuracao, dano, cura, alcance, raio)
+    let linhas: [(i32, &str, &str, i16, &str, i32, f32, f32, i32, i32, f32, f32); 12] = [
+        // ── espada e escudo: segurar a linha ──
+        (1, "Investida",   "espada_escudo", 1, "linha",   10, 8.0,  0.0, 25,  0, 6.0, 1.0),
+        (2, "Golpe Largo", "espada_escudo", 2, "cone",    15, 6.0,  0.0, 35,  0, 3.5, 0.0),
+        (3, "Muralha",     "espada_escudo", 3, "em_si",   25, 20.0, 0.0,  0,  0, 0.0, 0.0),
+        // ── katana: corte rapido ──
+        (4, "Saque",       "katana", 1, "linha",    8, 6.0,  0.0, 30,  0, 4.0, 0.8),
+        (5, "Dança",       "katana", 2, "circulo", 18, 10.0, 0.0, 28,  0, 0.0, 2.5),
+        (6, "Vento Cortante","katana",3,"projetil",22, 12.0, 0.3, 45,  0, 9.0, 0.0),
+        // ── duas pistolas: distancia ──
+        (7, "Tiro Certeiro","pistolas", 1, "projetil", 8, 4.0,  0.0, 28, 0, 11.0, 0.0),
+        (8, "Rajada",       "pistolas", 2, "cone",    16, 9.0,  0.0, 20, 0,  6.0, 0.0),
+        (9, "Barril",       "pistolas", 3, "circulo", 24, 16.0, 0.4, 50, 0,  8.0, 3.0),
+        // ── anel magico: cura e magia ──
+        (10, "Bênção",     "anel_magico", 1, "em_si",   14, 10.0, 0.0,  0, 40, 0.0, 0.0),
+        (11, "Aura",       "anel_magico", 2, "circulo", 26, 18.0, 0.5,  0, 30, 7.0, 4.0),
+        (12, "Julgamento", "anel_magico", 3, "circulo", 30, 14.0, 0.6, 55,  0, 9.0, 3.0),
+    ];
+    for l in linhas {
+        sqlx::query(
+            "INSERT INTO skills
+             (id, nome, conjunto, ordem, forma, custo_mp, espera_s, conjuracao_s,
+              dano, cura, alcance, raio)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(l.0).bind(l.1).bind(l.2).bind(l.3).bind(l.4).bind(l.5)
+        .bind(l.6).bind(l.7).bind(l.8).bind(l.9).bind(l.10).bind(l.11)
+        .execute(pool)
+        .await?;
+    }
+    tracing::info!("skills: 12 do playtest semeadas");
+    Ok(())
+}
+
+/// Catalogo em memoria. Doze linhas — cabe num `RwLock` sem cerimonia.
+static CATALOGO: parking_lot::RwLock<Vec<Skill>> = parking_lot::RwLock::new(Vec::new());
+
+/// Todas as skills, pro cliente montar a barra.
+pub fn all_skills() -> Vec<Skill> {
+    CATALOGO.read().clone()
+}
+
+/// A skill de um id.
+pub fn skill_of(id: u32) -> Option<Skill> {
+    CATALOGO.read().iter().find(|s| s.id == id).cloned()
+}
+
+/// As tres de um conjunto, na ordem.
+pub fn do_conjunto(c: Conjunto) -> Vec<Skill> {
+    let mut v: Vec<Skill> = CATALOGO.read().iter().filter(|s| s.conjunto == c).cloned().collect();
+    v.sort_by_key(|s| s.ordem);
+    v
+}
+
+pub async fn recarregar(pool: &PgPool) {
+    let v = carregar(pool).await;
+    tracing::info!("skills: {} carregadas", v.len());
+    *CATALOGO.write() = v;
+}
+
+pub async fn carregar(pool: &PgPool) -> Vec<Skill> {
+    let rs = match sqlx::query(
+        "SELECT id, nome, conjunto, ordem, forma, custo_mp, espera_s,
+                conjuracao_s, dano, cura, alcance, raio
+           FROM skills ORDER BY conjunto, ordem",
+    )
+    .fetch_all(pool)
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("skills: nao carregou: {e}");
+            return Vec::new();
         }
-    });
-}
-
-async fn check_and_reload(pool: &PgPool) -> Result<bool> {
-    let v: i64 = sqlx::query_scalar("SELECT version FROM economy_version WHERE id = 1")
-        .fetch_one(pool).await?;
-    if v == cell().read().version { return Ok(false); }
-    let cfg = load_from_db(pool).await?;
-    *cell().write() = cfg;
-    Ok(true)
-}
-
-// ── Lookup helpers ──────────────────────────────────────────────────────────
-
-pub fn skill_of(id: u32) -> Option<SkillDef> {
-    cell().read().by_id.get(&id).cloned()
-}
-
-pub fn skills_for_prof(prof: &str) -> Vec<SkillDef> {
-    let cfg = cell().read();
-    cfg.skills_for_prof(prof).into_iter().cloned().collect()
-}
-
-pub fn all_skills() -> Vec<SkillDef> { cell().read().all_sorted() }
-
-pub fn current_version() -> i64 { cell().read().version }
-
-/// Pode aprender a skill? Checa unlock_char_lvl + unlock_prof_lvl.
-/// `prof_levels` indexado por `Proficiency as usize` (size = PROF_COUNT).
-pub fn can_unlock(skill: &SkillDef, char_level: u32, prof_levels: &[u64; shared::PROF_COUNT]) -> bool {
-    if char_level < skill.unlock_char_lvl { return false; }
-    let Some(p) = shared::Proficiency::from_str(&skill.prof) else { return false };
-    let prof_xp = prof_levels[p as usize];
-    let prof_lvl = shared::proficiency_level(prof_xp);
-    prof_lvl >= skill.unlock_prof_lvl
-}
-
-// ── DB load ─────────────────────────────────────────────────────────────────
-
-async fn load_from_db(pool: &PgPool) -> Result<SkillsConfig> {
-    let version: i64 = sqlx::query_scalar("SELECT version FROM economy_version WHERE id = 1")
-        .fetch_one(pool).await?;
-
-    #[derive(sqlx::FromRow)]
-    struct SkillRow {
-        id: i32,
-        name: String,
-        description: String,
-        prof: String,
-        tier: i16,
-        is_passive: bool,
-        path: Option<String>,
-        unlock_char_lvl: i16,
-        unlock_prof_lvl: i16,
-        usable_with: Option<Vec<String>>,
-        cost_mp: i32,
-        cost_stamina: i32,
-        cooldown_s: f32,
-        cast_time_s: f32,
-        target_type: String,
-        range_tiles: f32,
-        radius_tiles: f32,
-        base_damage: i32,
-        base_heal: i32,
-        scaling_atk: f32,
-        scaling_wis: f32,
-        scaling_dex: f32,
-        per_rank_dmg_pct: f32,
-        per_rank_cd_pct: f32,
-        per_rank_cost_pct: f32,
-        icon_path: Option<String>,
-        vfx_id: Option<String>,
-        active: bool,
-        knockback: f32,
-        max_rank_damage_pct: f32,
-        max_rank_heal_pct: f32,
-        max_rank_radius_bonus: f32,
-        max_rank_range_bonus: f32,
-        max_rank_cooldown_red_pct: f32,
-        max_rank_crit_chance: f32,
-        category: String,
-        affinity_damage_pct: f32,
-        affinity_cooldown_red_pct: f32,
-        affinity_crit_pct: f32,
-        affinity_cost_red_pct: f32,
-    }
-
-    let rows: Vec<SkillRow> = sqlx::query_as(
-        "SELECT id, name, description, prof, tier, is_passive, path,
-                unlock_char_lvl, unlock_prof_lvl, usable_with,
-                cost_mp, cost_stamina, cooldown_s, cast_time_s,
-                target_type, range_tiles, radius_tiles,
-                base_damage, base_heal, scaling_atk, scaling_wis, scaling_dex,
-                per_rank_dmg_pct, per_rank_cd_pct, per_rank_cost_pct,
-                icon_path, vfx_id, active, knockback,
-                max_rank_damage_pct, max_rank_heal_pct, max_rank_radius_bonus,
-                max_rank_range_bonus, max_rank_cooldown_red_pct, max_rank_crit_chance,
-                category, affinity_damage_pct, affinity_cooldown_red_pct,
-                affinity_crit_pct, affinity_cost_red_pct
-         FROM skills WHERE active = TRUE"
-    ).fetch_all(pool).await?;
-
-    let mut by_id = HashMap::with_capacity(rows.len());
-    let mut by_prof: HashMap<String, Vec<u32>> = HashMap::new();
-    let mut by_category: HashMap<String, Vec<u32>> = HashMap::new();
-    for r in rows {
-        let id_u32 = r.id.max(0) as u32;
-        let def = SkillDef {
-            id: shared::SkillId(id_u32),
-            name: r.name,
-            description: r.description,
-            prof: r.prof.clone(),
-            category: r.category.clone(),
-            tier: r.tier.clamp(1, 4) as u8,
-            is_passive: r.is_passive,
-            path: r.path,
-            unlock_char_lvl: r.unlock_char_lvl.max(1) as u32,
-            unlock_prof_lvl: r.unlock_prof_lvl.max(1) as u32,
-            usable_with: r.usable_with,
-            cost_mp: r.cost_mp,
-            cost_stamina: r.cost_stamina,
-            cooldown_s: r.cooldown_s,
-            cast_time_s: r.cast_time_s,
-            target_type: r.target_type,
-            range_tiles: r.range_tiles,
-            radius_tiles: r.radius_tiles,
-            base_damage: r.base_damage,
-            base_heal: r.base_heal,
-            scaling_atk: r.scaling_atk,
-            scaling_wis: r.scaling_wis,
-            scaling_dex: r.scaling_dex,
-            per_rank_dmg_pct: r.per_rank_dmg_pct,
-            per_rank_cd_pct: r.per_rank_cd_pct,
-            per_rank_cost_pct: r.per_rank_cost_pct,
-            icon_path: r.icon_path,
-            vfx_id: r.vfx_id,
-            knockback: r.knockback,
-            max_rank_damage_pct: r.max_rank_damage_pct,
-            max_rank_heal_pct: r.max_rank_heal_pct,
-            max_rank_radius_bonus: r.max_rank_radius_bonus,
-            max_rank_range_bonus: r.max_rank_range_bonus,
-            max_rank_cooldown_red_pct: r.max_rank_cooldown_red_pct,
-            max_rank_crit_chance: r.max_rank_crit_chance,
-            affinity_damage_pct: r.affinity_damage_pct,
-            affinity_cooldown_red_pct: r.affinity_cooldown_red_pct,
-            affinity_crit_pct: r.affinity_crit_pct,
-            affinity_cost_red_pct: r.affinity_cost_red_pct,
-        };
-        by_prof.entry(r.prof).or_default().push(id_u32);
-        by_category.entry(r.category).or_default().push(id_u32);
-        by_id.insert(id_u32, def);
-    }
-    // Sort por (tier asc, !is_passive primeiro, id). Ativas vêm antes de
-    // passivas dentro do mesmo tier — bom pra UI.
-    for ids in by_prof.values_mut() {
-        ids.sort_by_key(|id| {
-            let s = &by_id[id];
-            (s.tier, s.is_passive as u8, s.id.0)
-        });
-    }
-    for ids in by_category.values_mut() {
-        ids.sort_by_key(|id| {
-            let s = &by_id[id];
-            (s.tier, s.is_passive as u8, s.id.0)
-        });
-    }
-
-    Ok(SkillsConfig { version, by_id, by_prof, by_category })
+    };
+    rs.iter()
+        .filter_map(|r| {
+            // Linha com conjunto ou forma desconhecidos e' PULADA e avisada.
+            // Cair no primeiro valor por padrao poria a skill na arma errada,
+            // e ninguem descobriria olhando o banco.
+            let conjunto: String = r.get("conjunto");
+            let forma: String = r.get("forma");
+            let (Some(conjunto), Some(forma)) =
+                (Conjunto::de_chave(&conjunto), Forma::de_chave(&forma))
+            else {
+                tracing::warn!(
+                    "skill #{}: conjunto/forma desconhecidos ({conjunto}/{forma}) — pulada",
+                    r.get::<i32, _>("id")
+                );
+                return None;
+            };
+            Some(Skill {
+                id: r.get::<i32, _>("id") as u32,
+                nome: r.get("nome"),
+                conjunto,
+                ordem: r.get::<i16, _>("ordem") as u8,
+                forma,
+                custo_mp: r.get("custo_mp"),
+                espera_s: r.get("espera_s"),
+                conjuracao_s: r.get("conjuracao_s"),
+                dano: r.get("dano"),
+                cura: r.get("cura"),
+                alcance: r.get("alcance"),
+                raio: r.get("raio"),
+            })
+        })
+        .collect()
 }

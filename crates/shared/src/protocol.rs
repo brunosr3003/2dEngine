@@ -81,13 +81,10 @@ pub enum ClientMessage {
     AllocStatPoint { stat: u8 },
     /// Aprende uma skill (rank 0 → 1) gastando 1 SP. Server valida
     /// unlock_char_lvl + unlock_prof_lvl + SP suficiente.
-    SkillLearn { skill_id: u32 },
     /// Sobe rank de uma skill já aprendida. Custo varia por rank (ver
     /// `SP_COST_PER_RANK`). Falha se rank == MAX_SKILL_RANK.
-    SkillRankUp { skill_id: u32 },
     /// Equipa skill ativa em slot 0..=5. `slot=None` ou `skill_id=0` desequipa.
     /// Passivas ignoram esse req (sempre ativas se aprendidas).
-    SkillEquip { skill_id: u32, slot: Option<u8> },
     /// Dispara cast de skill ativa. `target_pos` = world position do mouse
     /// (mira pra projectile/AoE). Server valida cd/cost/weapon e dispatch
     /// pelo target_type da SkillDef.
@@ -102,7 +99,6 @@ pub enum ClientMessage {
     /// Reseta TODAS as skills aprendidas — refunda os SP gastos. Limpa
     /// learned_skills, equipped slots, cooldowns e estados de skills (riposte,
     /// hunter_marks, etc). Util pra respec do tree.
-    ResetSkills,
     /// Refina um item do inventário (+1 nível). Requer ItemInstance
     /// presente no slot. Custo: gold proporcional ao refinement atual.
     /// Falha (chance crescente com nível) reseta refinement pra 0.
@@ -466,7 +462,6 @@ pub enum ServerMessage {
     /// Node respawnado — pode ser coletado novamente.
     FarmNodeRespawned { node_id: u32 },
     /// Farm skill levels do player (woodcutting / mining / gathering).
-    FarmSkillsUpdate { woodcutting: u32, mining: u32, gathering: u32 },
     ProficienciesUpdate {
         #[serde(rename = "proficiency_xp")]
         xp: [u64; crate::PROF_COUNT],
@@ -474,7 +469,7 @@ pub enum ServerMessage {
     /// Catálogo de skills carregado do DB. Enviado uma vez no login + após
     /// hot-reload (admin bumpou economy_version). Cliente cacheia em
     /// `SkillsConfigCache` pra UI consultar nome/icon/descrição.
-    SkillsConfig { skills: Vec<crate::SkillDef> },
+    SkillsConfig { skills: Vec<crate::skills::Skill> },
     /// Catalogo de receitas de crafting carregado do DB. Enviado no login,
     /// substitui o hardcoded client-side. Admin pode mudar custos/inputs/
     /// outputs via DB — ideal pra eventos com receitas especiais.
@@ -490,7 +485,6 @@ pub enum ServerMessage {
     },
     /// Estado completo de skills do player. Enviado no login + após qualquer
     /// mutação (learn, rank-up, equip).
-    PlayerSkillsUpdate { state: crate::PlayerSkillsState },
     /// Broadcast de cast pra renderização cliente (gizmos/VFX). Servidor
     /// envia pra todos clientes em AOI quando alguém casta uma skill.
     SkillCastFx {

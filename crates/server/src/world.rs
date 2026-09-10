@@ -198,7 +198,6 @@ pub struct EnemyTag {
     /// Equipamento do enemy (paper-doll ja vai puxar daqui na fase 3).
     pub equipment: shared::Equipment,
     /// Skills aprendidas — fase 4 AI escolhe entre auto-attack e skill cast.
-    pub learned_skills: Vec<shared::LearnedSkill>,
     /// Level total do build (pra escalonamento futuro de loot/xp).
     pub level: u32,
     /// Visual do paper-doll. Replicado pro client renderizar enemy como
@@ -928,7 +927,6 @@ pub struct Session {
     pub skill_points_spent: u32,
     /// Skills aprendidas + rank + slot equipado (None = passiva ou ativa
     /// não-equipada).
-    pub learned_skills: Vec<shared::LearnedSkill>,
     /// Marca que precisa enviar PlayerSkillsUpdate no próximo tick.
     pub skills_dirty: bool,
     /// Cooldown timestamps por skill_id. Valor = `sim_time_s` quando a skill
@@ -2288,7 +2286,6 @@ impl GameWorld {
             skill_cds: std::collections::HashMap::new(),
             stats,
             equipment: shared::Equipment::default(),
-            learned_skills: Vec::new(),
             level: 1,
             visual: shared::VisualConfig::default(),
             attack_cooldown_base: d.attack_cooldown,
@@ -2326,113 +2323,6 @@ impl GameWorld {
         (tag, Health { current: hp_max, max: hp_max })
     }
 
-    /// Tenta castar a primeira skill aprendida cujo cooldown + MP + range
-    /// batem com a situacao. Retorna `Some(skill_id)` se castou (caller skipa
-    /// auto-attack); `None` senao.
-    ///
-    /// Implementacao MVP: aplica DAMAGE INSTANT em alvos via cone/aoe da
-    /// skill, sem replicar o full handle_skill_cast (que e' player-only).
-    /// Skills com `cast_time_s > 0.05` (channeled / wind-up) sao puladas —
-    /// enemy AI nao tem framework pra "ficar parado castando" ainda.
-    fn try_enemy_cast_skill(
-        &mut self,
-        enemy_eid: EntityId,
-        enemy_pos: Vec2,
-        target_pos: Vec2,
-    ) -> Option<u32> {
-        let now = self.sim_time_s;
-        // Resolve hecs::Entity via query (hecs nao tem find_by_id direto).
-        let mut enemy_entity: Option<Entity> = None;
-        for (e, net) in self.ecs.query::<&NetId>().iter() {
-            if net.0 == enemy_eid { enemy_entity = Some(e); break; }
-        }
-        let entity = enemy_entity?;
-        let (learned, mp_current, weapon_id, attack_damage, cd_map) = {
-            let tag = self.ecs.get::<&EnemyTag>(entity).ok()?;
-            (
-                tag.learned_skills.clone(),
-                tag.mp_current,
-                tag.equipment.weapon.unwrap_or(0),
-                tag.stats.attack_damage,
-                tag.skill_cds.clone(),
-            )
-        };
-        for ls in &learned {
-            let Some(def) = crate::skills::skill_of(ls.skill_id) else { continue };
-            if def.is_passive { continue; }
-            if def.cast_time_s > 0.05 { continue; }
-            let cd_ready = cd_map.get(&ls.skill_id).copied().unwrap_or(0.0);
-            if now < cd_ready { continue; }
-            let rank_factor = 1.0 - def.per_rank_cost_pct * (ls.rank.saturating_sub(1) as f32);
-            let mp_cost = (def.cost_mp as f32 * rank_factor).max(0.0);
-            if mp_current < mp_cost { continue; }
-            let _prof = shared::Proficiency::from_item(weapon_id).as_db_str();
-            // M13: skills universais — sem check de usable_with.
-            let dist = enemy_pos.distance(target_pos);
-            if dist > def.range_tiles + def.radius_tiles { continue; }
-            let dmg = def.base_damage
-                + ((attack_damage as f32 * def.scaling_atk) as i32)
-                + (def.base_damage as f32 * def.per_rank_dmg_pct
-                    * (ls.rank.saturating_sub(1) as f32)) as i32;
-            // Leap Strike (1001): IGUAL AO PLAYER — pulo em ARCO (leap_until;
-            // client renderiza via leap_y) com dano AoE NO POUSO. Nada de
-            // dano instantâneo nem dash+swing simultâneo (era a "estranheza").
-            if ls.skill_id == 1001 {
-                if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(entity) {
-                    tag.mp_current -= mp_cost;
-                    tag.skill_cds.insert(ls.skill_id, now + def.cooldown_s);
-                    tag.leap_until = now + 0.5; // = LEAP_DURATION do player
-                    tag.leap_start_pos = enemy_pos;
-                    tag.leap_target = target_pos;
-                    tag.leap_damage = dmg;
-                    tag.leap_radius = def.radius_tiles.max(0.5);
-                    tag.ai_dash_until = 0.0; // garante: sem dash junto
-                }
-                let fx = ServerMessage::SkillCastFx {
-                    skill_id: 1001, caster_pos: enemy_pos, target_pos,
-                    target_eid: None, caster_eid: Some(enemy_eid),
-                    chain_points: None,
-                };
-                for s in self.sessions.values() {
-                    if s.logged_in { let _ = s.handle.to_client.send(fx.clone()); }
-                }
-                return Some(1001);
-            }
-            // Skills SELF-CENTERED (range 0, ex Sword Dance): área em volta
-            // do CASTER, não do alvo — corrige dano E ancora o FX no corpo
-            // do boss (antes o giro tocava em cima do player = "bugado").
-            let center = if def.range_tiles <= 0.05 { enemy_pos } else { target_pos };
-            match def.target_type.as_str() {
-                "aoe_circle" | "cone" => {
-                    let radius = def.radius_tiles.max(0.5);
-                    let players = self.find_players_in_radius(center, radius);
-                    for pid in &players {
-                        let hd = (-(center - enemy_pos)).try_normalize().unwrap_or(Vec2::Y);
-                        self.pending_skill_hits.push(PendingSkillHit {
-                            target_net: *pid, damage: dmg, attacker_net: enemy_eid,
-                            hurt_dir: hd, is_crit: false, from_player: false,
-                            knockback: def.knockback,
-                        });
-                    }
-                }
-                _ => continue, // line/projectile nao suportados em enemy AI ainda
-            }
-            if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(entity) {
-                tag.mp_current -= mp_cost;
-                tag.skill_cds.insert(ls.skill_id, now + def.cooldown_s);
-            }
-            let fx = ServerMessage::SkillCastFx {
-                skill_id: ls.skill_id, caster_pos: enemy_pos, target_pos: center,
-                target_eid: None, caster_eid: Some(enemy_eid),
-                chain_points: None,
-            };
-            for s in self.sessions.values() {
-                if s.logged_in { let _ = s.handle.to_client.send(fx.clone()); }
-            }
-            return Some(ls.skill_id);
-        }
-        None
-    }
 
     /// Spawna um mob de um KIND da tabela, dentro de uma zona.
     ///
@@ -3064,7 +2954,7 @@ impl GameWorld {
         s.allocated_points[idx] = s.allocated_points[idx].saturating_add(1);
         s.stat_points_dirty = true;
         // Recalcula stats. max_hp pode ter subido — HP nao sobe automatico.
-        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, &s.learned_skills, s.xp);
+        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp);
         s.stats_dirty = true;
     }
 
@@ -3202,6 +3092,188 @@ impl GameWorld {
         });
     }
 
+    /// Conjura uma skill.
+    ///
+    /// Cinco formas e nenhum caso especial. O executor anterior tinha 722
+    /// linhas, e 35 delas eram `match` por id de skill — Meteoro faz isto,
+    /// Nova de Gelo faz aquilo. Cada skill nova pedia codigo novo, e a
+    /// diferenca entre duas skills virava um galho de `if`.
+    ///
+    /// Aqui a skill so' diz FORMA, numero e alcance. O que ela faz sai da
+    /// forma, e a forma e' a mesma coisa que decide o gesto do corpo — entao
+    /// skill nova e' uma linha no banco, e nao um ramo aqui.
+    fn handle_skill_cast(&mut self, sid: SessionId, skill_id: u32, alvo: Vec2) {
+        let agora = self.sim_time_s;
+        let Some(skill) = crate::skills::skill_of(skill_id) else { return };
+
+        // ── o que o servidor confere antes de deixar acontecer ──
+        let Some(session) = self.sessions.get_mut(&sid) else { return };
+        if !session.logged_in || session.downed || agora < session.stagger_until {
+            return;
+        }
+        // A skill vem da ARMA na mao. Trocar de conjunto e' trocar de classe,
+        // entao skill de outro conjunto simplesmente nao existe pra este
+        // jogador — e conferir isso aqui e' o que impede um cliente modificado
+        // de conjurar a skill de uma arma que nao tem.
+        let conjunto = shared::skills::Conjunto::de_u8(
+            shared::Proficiency::from_item(session.equipment.weapon.unwrap_or(0)) as u8,
+        );
+        if conjunto != Some(skill.conjunto) {
+            return;
+        }
+        let nivel = shared::proficiency_level(session.proficiencies[skill.conjunto as usize]);
+        if !skill.destravada(nivel) {
+            return;
+        }
+        if agora < session.skill_cds.get(&skill_id).copied().unwrap_or(0.0) {
+            return;
+        }
+        if (session.mp_current as i32) < skill.custo_mp {
+            return;
+        }
+        let de = match session.entity.and_then(|e| self.ecs.get::<&Position>(e).ok()) {
+            Some(p) => p.0,
+            None => return,
+        };
+        // Alcance conferido no SERVIDOR: o cliente manda um ponto, e ponto
+        // longe demais e' encurtado, nao recusado — recusar faria a skill
+        // "nao sair" sem o jogador entender por que.
+        let alvo = if skill.alcance > 0.0 && de.distance(alvo) > skill.alcance {
+            de + (alvo - de).normalize_or_zero() * skill.alcance
+        } else {
+            alvo
+        };
+
+        session.mp_current -= skill.custo_mp as f32;
+        session.skill_cds.insert(skill_id, agora + skill.espera_s);
+        if skill.conjuracao_s > 0.0 {
+            session.casting_until = agora + skill.conjuracao_s;
+            session.casting_skill_id = skill_id;
+            session.casting_started_at_s = agora;
+        }
+        let quem = session.entity_id;
+        let dano = skill.dano;
+        let cura = skill.cura;
+
+        // ── e o que ela faz, pela FORMA ──
+        use shared::skills::Forma;
+        match skill.forma {
+            Forma::EmSi => {
+                if cura > 0 {
+                    self.pending_heals.push(PendingHeal { target_net: quem, amount: cura });
+                }
+            }
+            Forma::Projetil => {
+                self.pending_shots.push(PendingShot {
+                    pos: de,
+                    dir: (alvo - de).normalize_or_zero(),
+                    damage: dano,
+                    is_crit: false,
+                    kind: 0,
+                    owner_id: quem,
+                    from_player: true,
+                    release_tick: self.tick.wrapping_add(1),
+                });
+            }
+            Forma::Cone | Forma::Circulo | Forma::Linha => {
+                let dir = (alvo - de).normalize_or_zero();
+                let atingidos = self.alvos_da_forma(skill.forma, de, dir, alvo, &skill);
+                for (net, pos) in atingidos {
+                    if dano > 0 {
+                        self.pending_skill_hits.push(PendingSkillHit {
+                            target_net: net,
+                            damage: dano,
+                            attacker_net: quem,
+                            hurt_dir: (pos - de).normalize_or_zero(),
+                            is_crit: false,
+                            from_player: true,
+                            knockback: 0.0,
+                        });
+                    }
+                    if cura > 0 {
+                        self.pending_heals.push(PendingHeal { target_net: net, amount: cura });
+                    }
+                }
+            }
+        }
+
+        // O cliente precisa saber pra desenhar o gesto e o efeito.
+        for sessao in self.sessions.values() {
+            if !sessao.logged_in {
+                continue;
+            }
+            let _ = sessao.handle.to_client.send(ServerMessage::SkillCastFx {
+                skill_id,
+                caster_pos: de,
+                target_pos: alvo,
+                target_eid: None,
+                caster_eid: Some(quem),
+                chain_points: None,
+            });
+        }
+    }
+
+    /// Quem a forma pega. Uma conta por forma, e nenhuma sabe qual skill e'.
+    fn alvos_da_forma(
+        &self,
+        forma: shared::skills::Forma,
+        de: Vec2,
+        dir: Vec2,
+        alvo: Vec2,
+        skill: &shared::skills::Skill,
+    ) -> Vec<(EntityId, Vec2)> {
+        use shared::skills::Forma;
+        // Meia abertura do cone. Sessenta graus de abertura total: largo o
+        // bastante pra acertar quem esta' na frente, estreito o bastante pra
+        // errar quem esta' ao lado — e e' isso que o gesto do corpo mostra.
+        const COSSENO_DO_CONE: f32 = 0.5;
+        let cura = skill.cura > 0;
+        let mut fora = Vec::new();
+        for (e, (net, pos, kind)) in self
+            .ecs
+            .query::<(&NetId, &Position, &EntityKind)>()
+            .iter()
+        {
+            // Cura pega jogador; dano pega bicho. Uma skill nao faz as duas.
+            let vale = match kind {
+                EntityKind::Player => cura,
+                EntityKind::Enemy(_) => !cura,
+                _ => false,
+            };
+            if !vale {
+                continue;
+            }
+            if !cura {
+                if let Ok(h) = self.ecs.get::<&Health>(e) {
+                    if h.current <= 0 {
+                        continue;
+                    }
+                }
+            }
+            let d = pos.0 - de;
+            let dentro = match forma {
+                Forma::Cone => {
+                    d.length() <= skill.alcance
+                        && d.normalize_or_zero().dot(dir) >= COSSENO_DO_CONE
+                }
+                Forma::Circulo => pos.0.distance(alvo) <= skill.raio,
+                Forma::Linha => {
+                    // Distancia ao SEGMENTO, nao ao ponto: uma linha e' um
+                    // corredor, e conferir so' as pontas deixaria passar quem
+                    // esta' no meio dela.
+                    let t = (d.dot(dir) / skill.alcance.max(0.01)).clamp(0.0, 1.0);
+                    let no_eixo = de + dir * (t * skill.alcance);
+                    d.dot(dir) >= 0.0 && no_eixo.distance(pos.0) <= skill.raio.max(0.8)
+                }
+                _ => false,
+            };
+            if dentro {
+                fora.push((net.0, pos.0));
+            }
+        }
+        fora
+    }
+
     fn handle_reset_stats(&mut self, sid: SessionId) {
         let Some(s) = self.sessions.get_mut(&sid) else { return; };
         if !s.logged_in { return; }
@@ -3210,39 +3282,11 @@ impl GameWorld {
         s.unspent_points = s.unspent_points.saturating_add(total);
         s.allocated_points = [0u32; shared::STAT_COUNT];
         s.stat_points_dirty = true;
-        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, &s.learned_skills, s.xp);
+        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp);
         s.stats_dirty = true;
         tracing::info!("{} resetou atributos (refund {})", s.name, total);
     }
 
-    /// Reseta TODAS as skills aprendidas — refunda SP de volta. Limpa
-    /// learned_skills, equipped slots e cooldowns. Tambem limpa estados
-    /// passivos (riposte_until, sword_dance_until, etc).
-    fn handle_reset_skills(&mut self, sid: SessionId) {
-        let Some(s) = self.sessions.get_mut(&sid) else { return; };
-        if !s.logged_in { return; }
-        // Total de SP gasto = soma dos ranks aprendidos (1 SP por rank).
-        let total_spent: u32 = s.learned_skills.iter()
-            .map(|ls| ls.rank as u32).sum();
-        if total_spent == 0 { return; }
-        s.skill_points_spent = s.skill_points_spent.saturating_sub(total_spent);
-        s.learned_skills.clear();
-        s.skill_cds.clear();
-        s.skills_dirty = true;
-        // Limpa estados de skills ativas/passivas.
-        s.casting_until = 0.0;
-        s.casting_skill_id = 0;
-        s.riposte_until = 0.0;
-        s.sword_dance_until = 0.0;
-        s.sword_dance_step = 0;
-        s.counter_stance_until = 0.0;
-        s.hunter_marks.clear();
-        // Recompute stats — sem passivas que escalavam (ex: Combat Stance,
-        // Bulwark, Mana Pool, Eagle Eye).
-        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, &s.learned_skills, s.xp);
-        s.stats_dirty = true;
-        tracing::info!("{} resetou skills (refund {} SP)", s.name, total_spent);
-    }
 
     fn spawn_vendor_at(&mut self, pos: (f32, f32)) {
         let eid = self.alloc_entity_id();
@@ -3775,11 +3819,11 @@ impl GameWorld {
         };
         let (mut spawn, mut health, saved_xp, saved_gold, saved_inv, saved_equip, saved_vault,
              saved_fame, saved_aura, saved_profs, saved_unspent, saved_alloc,
-             saved_sp_earned, saved_sp_spent, saved_learned_skills, saved_boat,
+             saved_sp_earned, saved_sp_spent, saved_boat,
              saved_visual, saved_char_name, saved_mounted_local) = (
                 row.pos, row.hp, row.xp, row.gold, row.inventory.clone(), row.equipment, row.vault.clone(),
                 row.fame, row.aura, row.proficiencies, row.unspent_points, row.allocated_points,
-                row.skill_points_earned, row.skill_points_spent, row.learned_skills.clone(),
+                row.skill_points_earned, row.skill_points_spent,
                 row.boat, row.visual.clone(), row.name.clone(), row.mounted_local,
             );
         // Tutorial: spawna numa área ISOLADA do arquipélago (game.json), perto do
@@ -3818,7 +3862,7 @@ impl GameWorld {
             }
         }
         // Stats efetivos considerando equipamento salvo + pontos + profs.
-        let stats = effective_stats(&saved_equip, &saved_alloc, &saved_profs, &saved_learned_skills, saved_xp);
+        let stats = effective_stats(&saved_equip, &saved_alloc, &saved_profs, saved_xp);
         // Re-sincroniza o max_hp (classe pode ter sido rebalanceada entre sessoes).
         health.max = stats.hp_max;
         if health.current > health.max { health.current = health.max; }
@@ -4000,7 +4044,6 @@ impl GameWorld {
             // Skills (Phase 1) — copia o estado salvo pra session.
             s.skill_points_earned = saved_sp_earned;
             s.skill_points_spent = saved_sp_spent;
-            s.learned_skills = saved_learned_skills.clone();
             s.skills_dirty = false; // já enviamos PlayerSkillsUpdate no fim do login
             s.vault = saved_vault;
             s.vault_dirty = false;
@@ -4060,13 +4103,9 @@ impl GameWorld {
         let _ = handle.to_client.send(ServerMessage::FarmNodesConfig {
             nodes: farm_nodes_list,
         });
-        // Farm skill levels do player.
-        if let Some(s_ref) = self.sessions.get(&sid) {
-            let _ = handle.to_client.send(ServerMessage::FarmSkillsUpdate {
-                woodcutting: s_ref.woodcutting_lvl,
-                mining:      s_ref.mining_lvl,
-                gathering:   s_ref.gathering_lvl,
-            });
+        // Nivel de coleta nao viaja mais: coleta e artesanato perderam a
+        // proficiencia.
+        if false {
         }
         let _ = handle.to_client.send(ServerMessage::ManaUpdate {
             current: stats.mp_max,
@@ -4096,13 +4135,6 @@ impl GameWorld {
         // ao clicar num material faltante na UI de crafting.
         let _ = handle.to_client.send(ServerMessage::ResourceSources {
             items: crate::economy::resource_sources_snapshot(),
-        });
-        let _ = handle.to_client.send(ServerMessage::PlayerSkillsUpdate {
-            state: shared::skills::PlayerSkillsState {
-                sp_earned: saved_sp_earned,
-                sp_spent: saved_sp_spent,
-                skills: saved_learned_skills.clone(),
-            },
         });
         // Quests ativas + pontos de facção + givers disponíveis (indicador "!").
         self.send_quest_log(sid);
@@ -4812,8 +4844,7 @@ impl GameWorld {
                 proficiencies_dirty: false,
                 skill_points_earned: 0,
                 skill_points_spent: 0,
-                learned_skills: Vec::new(),
-                skills_dirty: false,
+                    skills_dirty: false,
                 skill_cds: HashMap::new(),
                 casting_until: 0.0,
                 casting_started_at_s: 0.0,
@@ -5211,9 +5242,6 @@ impl GameWorld {
             ClientMessage::ResetStats => {
                 self.handle_reset_stats(id);
             }
-            ClientMessage::ResetSkills => {
-                self.handle_reset_skills(id);
-            }
             ClientMessage::RefineItem { slot } => {
                 self.handle_refine_item(id, slot);
             }
@@ -5259,10 +5287,9 @@ impl GameWorld {
                 self.handle_drop_item(id, slot);
             }
             ClientMessage::RequestDisconnect => self.on_disconnect(id),
-            ClientMessage::SkillLearn { skill_id }   => self.handle_skill_learn(id, skill_id),
-            ClientMessage::SkillRankUp { skill_id }  => self.handle_skill_rank_up(id, skill_id),
-            ClientMessage::SkillEquip { skill_id, slot } => self.handle_skill_equip(id, skill_id, slot),
-            ClientMessage::SkillCast { skill_id, target_pos } => self.handle_skill_cast(id, skill_id, target_pos),
+            ClientMessage::SkillCast { skill_id, target_pos } => {
+                self.handle_skill_cast(id, skill_id, target_pos)
+            }
             ClientMessage::CreateCharacter { name, visual, starting_weapon, faction } => {
                 self.handle_create_character(id, name, visual, starting_weapon, faction);
             }
@@ -5329,7 +5356,7 @@ impl GameWorld {
                 session.xp = xp;
                 session.stats = effective_stats(
                     &session.equipment, &session.allocated_points,
-                    &session.proficiencies, &session.learned_skills, session.xp);
+                    &session.proficiencies, session.xp);
                 session.poise_current = session.stats.poise_max as f32;
             }
             shared::protocol::AdminAction::SetGold { gold } => {
@@ -5368,11 +5395,10 @@ impl GameWorld {
                 session.skill_points_earned = lvl_gained * shared::SP_PER_LEVEL;
                 session.skill_points_spent = 0;
                 session.allocated_points = [0; shared::STAT_COUNT];
-                session.learned_skills.clear();
                 session.last_level = lvl;
                 session.stats = effective_stats(
                     &session.equipment, &session.allocated_points,
-                    &session.proficiencies, &session.learned_skills, session.xp);
+                    &session.proficiencies, session.xp);
                 session.poise_current = session.stats.poise_max as f32;
                 session.stat_points_dirty = true;
                 session.skills_dirty = true;
@@ -5724,731 +5750,6 @@ impl GameWorld {
         self.spawn_for_char(sid, success, row);
     }
 
-    /// Cast de skill ativa. Valida tudo, drena cost, dispara efeito.
-    /// Por enquanto suporta `target_type=projectile` (Fireball, Frost Bolt etc.)
-    /// e `self` (heal). Outros tipos serão adicionados na Phase 2.x.
-    fn handle_skill_cast(&mut self, sid: SessionId, skill_id: u32, target_pos: Vec2) {
-        // 1. Lookup
-        let Some(session) = self.sessions.get_mut(&sid) else { return };
-        if !session.logged_in { return; }
-        let Some(def) = crate::skills::skill_of(skill_id) else { return };
-        if def.is_passive { return; } // passivas não castam
-
-        // 1b. Player montado em barco: skills bloqueadas. Cliente deveria ja
-        // ter bloqueado o trigger local, mas o server e' a autoridade.
-        if let Some(pe) = session.entity {
-            if self.ecs.get::<&Mounted>(pe).is_ok() {
-                tracing::debug!("skill_cast: bloqueado — player montado em barco");
-                return;
-            }
-        }
-
-        // 2. Skill aprendida + equipada em algum slot?
-        let learned = session.learned_skills.iter().find(|s| s.skill_id == skill_id).copied();
-        let Some(ls) = learned else { return };
-        if ls.equipped_slot.is_none() { return; }
-        let rank = ls.rank;
-
-        // 3. Cooldown
-        let now = self.sim_time_s;
-        // Spear Throw (1021): segunda casta dentro da janela harpoon (5s) eh
-        // recast — bypass CD pra permitir o pull mesmo se cooldown nao
-        // expirou. CD do skill (14s) so' afeta primeira casta nova.
-        let is_spear_recast = skill_id == 1021
-            && session.harpoon_until > now
-            && session.harpoon_target_eid.is_some();
-        if let Some(&ready_at) = session.skill_cds.get(&skill_id) {
-            if now < ready_at && !is_spear_recast { return; }
-        }
-        // 3b. Já castando outra skill? Rejeita (player travado).
-        if session.casting_until > now { return; }
-
-        // 4. Weapon affinity — TODAS as armas podem castar QUALQUER skill.
-        // Quando a arma equipada bate com `def.prof` (arma recomendada),
-        // os bonus `affinity_*` entram em damage/cooldown/crit/cost.
-        let weapon_id = session.equipment.weapon.unwrap_or(0);
-        let weapon_prof = shared::Proficiency::from_item(weapon_id).as_db_str();
-        let is_affinity = weapon_prof == def.prof;
-
-        // 5. Cost (MP / stamina). Aplica per_rank_cost_pct: cost final = base × (1 - per_rank × (rank-1)).
-        let mut rank_factor = 1.0 - def.per_rank_cost_pct * (rank.saturating_sub(1) as f32);
-        // Mana Conduit (1050) — Staff T1 P: -1%/rank mp/stam cost. Aplicado
-        // multiplicativamente. Cap em -50% (rank 10 = -10% sozinho; com
-        // per_rank_cost_pct da skill some adicional).
-        if let Some(mc) = session.learned_skills.iter().find(|s| s.skill_id == 1050) {
-            let mc_factor = (1.0 - 0.01 * mc.rank as f32).max(0.5);
-            rank_factor *= mc_factor;
-        }
-        // Affinity cost reduction (multiplicativa, antes do clamp).
-        if is_affinity && def.affinity_cost_red_pct > 0.0 {
-            rank_factor *= 1.0 - def.affinity_cost_red_pct / 100.0;
-        }
-        let rank_factor = rank_factor.max(0.1);
-        let mp_cost = ((def.cost_mp as f32) * rank_factor).round() as i32;
-        let st_cost = ((def.cost_stamina as f32) * rank_factor).round() as f32;
-        if (session.mp_current as i32) < mp_cost { return; }
-        if session.stamina_current < st_cost { return; }
-
-        // 6. Posição do player + direção pro target
-        let Some(e) = session.entity else { return };
-        let pos = match self.ecs.get::<&Position>(e) { Ok(p) => p.0, Err(_) => return };
-        let to_target = target_pos - pos;
-        let dir = if to_target.length_squared() > 0.001 {
-            to_target.normalize()
-        } else {
-            Vec2::new(1.0, 0.0)
-        };
-
-        // 7. Damage scaling: base + atk*scal_atk + wis*scal_wis + dex*scal_dex,
-        // depois aplica (1 + per_rank_dmg × rank). No max rank, aplica também
-        // bonus de damage_pct definido na skill. Afinidade soma +X% no final.
-        let stats = session.stats;
-        let base_dmg = def.base_damage as f32
-            + stats.attack_damage as f32 * def.scaling_atk
-            + stats.wis as f32 * def.scaling_wis
-            + stats.dex as f32 * def.scaling_dex;
-        let mut scaled = base_dmg * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32));
-        let is_max_rank = rank >= shared::MAX_SKILL_RANK;
-        if is_max_rank && def.max_rank_damage_pct > 0.0 {
-            scaled *= 1.0 + def.max_rank_damage_pct / 100.0;
-        }
-        if is_affinity && def.affinity_damage_pct > 0.0 {
-            scaled *= 1.0 + def.affinity_damage_pct / 100.0;
-        }
-        // Affinity crit roll: chance extra de crit quando arma certa.
-        // Aplica só em skills com base_damage > 0 (utility skills ignoram).
-        let mut is_crit = false;
-        if is_affinity && def.affinity_crit_pct > 0.0 && def.base_damage > 0 {
-            let extra = def.affinity_crit_pct / 100.0;
-            if fastrand::f32() < extra {
-                is_crit = true;
-                scaled *= shared::CRIT_DAMAGE_MULT;
-            }
-        }
-        let damage = scaled.round() as i32;
-
-        // 8. Drena cost + set cd + casting state se cast_time > 0.
-        session.mp_current -= mp_cost as f32;
-        if session.mp_current < 0.0 { session.mp_current = 0.0; }
-        session.stamina_current = (session.stamina_current - st_cost).max(0.0);
-        let mut cd_factor = (1.0 - def.per_rank_cd_pct * (rank.saturating_sub(1) as f32)).max(0.1);
-        if is_max_rank && def.max_rank_cooldown_red_pct > 0.0 {
-            cd_factor *= 1.0 - def.max_rank_cooldown_red_pct / 100.0;
-        }
-        if is_affinity && def.affinity_cooldown_red_pct > 0.0 {
-            cd_factor *= 1.0 - def.affinity_cooldown_red_pct / 100.0;
-        }
-        let cd_final = def.cooldown_s * cd_factor;
-        session.skill_cds.insert(skill_id, now + cd_final);
-        if def.cast_time_s > 0.05 {
-            session.casting_until = now + def.cast_time_s;
-            session.casting_started_at_s = now;
-            session.casting_skill_id = skill_id;
-            // Salva o que foi pago pra refund no cancel-por-movimento.
-            session.casting_mp_paid = mp_cost as f32;
-            session.casting_st_paid = st_cost;
-            // Para movimento e qualquer estado ativo durante o cast
-            session.defending = false;
-        }
-
-        // 9. Dispatch por target_type
-        let owner_eid = session.entity_id;
-        let owner_entity = session.entity;
-        // Trigger anim de "lancamento" pra skills com componente fisico
-        // (projectile/line/cone). Self toca via predicao no input handler;
-        // server replica pra outros clients via attack_anim_pending.
-        // AoE/self/heal nao usam anim de saque (cast wind-up tem visual proprio
-        // tipo Inferno crescendo o circulo, nao precisa de Thrust).
-        let casts_attack_anim = matches!(
-            def.target_type.as_str(),
-            "projectile" | "line" | "cone"
-        );
-        if casts_attack_anim {
-            if let Some(ent) = owner_entity {
-                if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(ent) {
-                    // Shield Bash (1003): anim dedicada de ShieldBash. Outras
-                    // skills cone melee usam THRUST/SHOOT default.
-                    let anim = if skill_id == 1003 {
-                        shared::components::attack_anim::SHIELD_BASH
-                    } else {
-                        match shared::Proficiency::from_item(weapon_id) {
-                            shared::Proficiency::Bow => shared::components::attack_anim::SHOOT,
-                            _                        => shared::components::attack_anim::THRUST,
-                        }
-                    };
-                    tag.attack_anim_pending = Some(anim);
-                }
-            }
-        }
-        // Earthshatter (1015) é aoe_circle (não cai no `casts_attack_anim`)
-        // mas a gente quer animacao de jump (DASH) parado durante o wind-up
-        // pra que outros clients vejam o caster "saltando" antes do impacto.
-        if skill_id == 1015 {
-            if let Some(ent) = owner_entity {
-                if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(ent) {
-                    tag.attack_anim_pending = Some(shared::components::attack_anim::DASH);
-                }
-            }
-        }
-        // Caltrops (1035): trap real — spawna 10 DelayedAoe ticks com 1s
-        // de gap, cada um com damage + stun_dur_s=1.5s nos enemies em radius.
-        // Skip do dispatch generico aoe_circle (que daria dano instantaneo
-        // unico). Nao usa `return` aqui pra que o broadcast SkillCastFx
-        // ainda fire no fim da funcao (cliente precisa pra desenhar visuais).
-        let mut skip_dispatch = false;
-        if skill_id == 1035 {
-            let radius = def.radius_tiles.max(1.0);
-            let trap_pos = target_pos;
-            const TRAP_DURATION_S: f32 = 10.0;
-            const TICK_INTERVAL_S: f32 = 1.0;
-            let ticks = (TRAP_DURATION_S / TICK_INTERVAL_S) as i32;
-            let now_tick = self.tick;
-            let ticks_per_sec = 30.0_f32;
-            for i in 0..ticks {
-                let release_tick = now_tick.wrapping_add(((i as f32) * TICK_INTERVAL_S * ticks_per_sec) as u32);
-                self.pending_delayed_aoe.push(DelayedAoe {
-                    target_pos: trap_pos,
-                    radius,
-                    damage,
-                    owner_eid,
-                    release_tick,
-                    poison_dur_s: 0.0,
-                    knockback: 0.0,
-                    follow_owner: false,
-                    stun_dur_s: 1.5,
-                });
-            }
-            tracing::info!("Caltrops cast: {} ticks × {}s @ ({:.1},{:.1}) r{} dmg={}",
-                ticks, TICK_INTERVAL_S, trap_pos.x, trap_pos.y, radius, damage);
-            skip_dispatch = true;
-        }
-        if !skip_dispatch {
-        match def.target_type.as_str() {
-            "projectile" => {
-                let spawn_pos = pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y)
-                    + dir * shared::FIREBALL_FORWARD_OFFSET;
-                // kind: 0 = arrow (bow), 1 = fireball legacy (default),
-                // 2 = lightning, 3 = big fireball (skill), 4 = frost bolt,
-                // 6 = power shot, 7 = spear (harpoon), 8 = wave slash,
-                // 9 = throwing axe.
-                let vfx = def.vfx_id.as_deref().unwrap_or("");
-                let proj_kind: u8 = if skill_id == 1002 { 8 }    // Wave Slash
-                    else if skill_id == 1010 { 9 }                // Throwing Axe
-                    else { match shared::Proficiency::from_item(weapon_id) {
-                        shared::Proficiency::Bow => {
-                            // Power Shot (1033): proj_kind=6 — flecha 2x scale.
-                            if skill_id == 1033 { 6 } else { 0 }
-                        }
-                        _ => {
-                            if vfx.contains("lightning") { 2 }
-                            else if vfx.contains("fireball") { 3 }
-                            else if vfx.contains("frost") { 4 }
-                            else { 1 }
-                        }
-                    }};
-                // Multishot (1037): 5 flechas em leque ±30° (15° entre cada).
-                // Outras skills projectile: 1 projetil unico.
-                let dirs: Vec<Vec2> = if skill_id == 1037 {
-                    [-30.0_f32, -15.0, 0.0, 15.0, 30.0].iter().map(|&deg| {
-                        let rad = deg.to_radians();
-                        let (s, c) = (rad.sin(), rad.cos());
-                        Vec2::new(dir.x * c - dir.y * s, dir.x * s + dir.y * c)
-                    }).collect()
-                } else {
-                    vec![dir]
-                };
-                for d in &dirs {
-                    self.pending_shots.push(PendingShot {
-                        pos: spawn_pos,
-                        dir: *d,
-                        damage,
-                        is_crit,
-                        kind: proj_kind,
-                        owner_id: owner_eid,
-                        from_player: true,
-                        release_tick: self.tick.wrapping_add(1),
-                    });
-                }
-                tracing::info!(
-                    "skill cast: {} (skill {}, r{}) dmg={} kind={} arrows={} dir=({:.2},{:.2})",
-                    def.name, skill_id, rank, damage, proj_kind, dirs.len(), dir.x, dir.y
-                );
-            }
-            "self" => {
-                // Taunt (1006): forca enemies em radius a mirar o caster
-                // pelos proximos 4s. Override de AI target.
-                if skill_id == 1006 {
-                    let radius = def.radius_tiles.max(1.0);
-                    let now_s = self.sim_time_s;
-                    let dur = 4.0_f32;
-                    let enemies = self.find_enemies_in_radius(pos, radius);
-                    let target_set: std::collections::HashSet<EntityId> =
-                        enemies.iter().copied().collect();
-                    for (_, (net, tag)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag)>() {
-                        if target_set.contains(&net.0) {
-                            tag.forced_aggro_until = now_s + dur;
-                            tag.forced_aggro_target = Some(owner_eid);
-                        }
-                    }
-                    tracing::info!("Taunt cast: {} enemies aggro'd r{:.1}", target_set.len(), radius);
-                }
-                // Master's Counter (1007): 2s auto-parry stance no caster.
-                else if skill_id == 1007 {
-                    if let Some(s) = self.sessions.get_mut(&sid) {
-                        s.counter_stance_until = self.sim_time_s + 2.0;
-                    }
-                    tracing::info!("Master's Counter cast (2s stance)");
-                }
-                // Bloodthirst (1011): buff 4s com +20% atk speed + 10% lifesteal.
-                else if skill_id == 1011 {
-                    if let Some(s) = self.sessions.get_mut(&sid) {
-                        s.bloodthirst_until = self.sim_time_s + 4.0;
-                    }
-                    // Broadcast BuffApplied{kind=1 dmg_buff} pro cliente.
-                    let bmsg = ServerMessage::BuffApplied {
-                        target_eid: owner_eid,
-                        kind: 1,
-                    };
-                    for s in self.sessions.values() {
-                        if s.logged_in {
-                            let _ = s.handle.to_client.send(bmsg.clone());
-                        }
-                    }
-                    tracing::info!("Bloodthirst cast: 4s atk speed + lifesteal");
-                }
-                // Hunter's Mark (1040): buff 8s + 3 charges com +50% crit + dmg.
-                else if skill_id == 1040 {
-                    if let Some(s) = self.sessions.get_mut(&sid) {
-                        s.hunters_mark_until = self.sim_time_s + 8.0;
-                        s.hunters_mark_charges = 3;
-                        s.hunters_mark_rank = rank;
-                    }
-                    let bmsg = ServerMessage::BuffApplied {
-                        target_eid: owner_eid,
-                        kind: 1, // dmg_buff visual
-                    };
-                    for s in self.sessions.values() {
-                        if s.logged_in {
-                            let _ = s.handle.to_client.send(bmsg.clone());
-                        }
-                    }
-                    tracing::info!("Hunter's Mark cast: 8s, 3 charges, rank {}", rank);
-                }
-                else {
-                    // Heal padrão: aplica base_heal + scaling × wis.
-                    let base_heal = def.base_heal as f32 + stats.wis as f32 * def.scaling_wis;
-                    let mut heal_scaled = base_heal * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32));
-                    if rank >= shared::MAX_SKILL_RANK && def.max_rank_heal_pct > 0.0 {
-                        heal_scaled *= 1.0 + def.max_rank_heal_pct / 100.0;
-                    }
-                    // Affinity damage_pct também atua como heal bonus pra
-                    // skills de cura (não duplicamos campo no SkillDef).
-                    if is_affinity && def.affinity_damage_pct > 0.0 {
-                        heal_scaled *= 1.0 + def.affinity_damage_pct / 100.0;
-                    }
-                    let heal = heal_scaled.round() as i32;
-                    if heal > 0 {
-                        if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
-                            hp.current = (hp.current + heal).min(hp.max);
-                        }
-                    }
-                    tracing::info!("skill cast: {} self-heal +{}", def.name, heal);
-                }
-            }
-            "line" => {
-                // Resurrection (1055): pega ALIADO downed mais proximo em range
-                // e ressuscita com HP%. Custo: 80 mp, cd: 120s. Range: 5 tiles.
-                if skill_id == 1055 {
-                    let range = def.range_tiles.max(1.0);
-                    let r2 = range * range;
-                    // Acha o player downed mais proximo (excluindo o caster).
-                    let mut best: Option<(SessionId, f32)> = None;
-                    for (other_sid, other) in self.sessions.iter() {
-                        if *other_sid == sid { continue; }
-                        if !other.logged_in || !other.downed { continue; }
-                        let Some(oent) = other.entity else { continue };
-                        let opos = match self.ecs.get::<&Position>(oent) {
-                            Ok(p) => p.0, Err(_) => continue,
-                        };
-                        let d2 = opos.distance_squared(pos);
-                        if d2 > r2 { continue; }
-                        if best.map(|(_, bd)| d2 < bd).unwrap_or(true) {
-                            best = Some((*other_sid, d2));
-                        }
-                    }
-                    if let Some((target_sid, _)) = best {
-                        let revive_pct = 0.5_f32; // 50% HP no resurrect (vs 30% do StandUp)
-                        let target_session = self.sessions.get_mut(&target_sid).unwrap();
-                        let revive_hp = ((target_session.stats.hp_max as f32) * revive_pct)
-                            .round().max(1.0) as i32;
-                        target_session.downed = false;
-                        target_session.downed_heal_timer = 0.0;
-                        target_session.downed_hp = 0;
-                        let target_entity = target_session.entity;
-                        let target_name = target_session.name.clone();
-                        if let Some(te) = target_entity {
-                            if let Ok(mut hp) = self.ecs.get::<&mut Health>(te) {
-                                hp.current = revive_hp;
-                            }
-                            let _ = self.ecs.remove_one::<Untargetable>(te);
-                        }
-                        tracing::info!("skill cast: Resurrection — {} ressuscitado (+{}hp)",
-                            target_name, revive_hp);
-                    } else {
-                        tracing::info!("skill cast: Resurrection — sem aliado downed em range");
-                    }
-                    return; // skip damage logic abaixo
-                }
-                // Linha (default): pega 1º enemy hostile no caminho até range_tiles.
-                let range = def.range_tiles.max(1.0);
-                let nearest = self.find_nearest_enemy_in_line(pos, dir, range, owner_eid);
-                if let Some((target_net, target_pos2, _dist)) = nearest {
-                    let hd = (-dir).try_normalize().unwrap_or(Vec2::new(-1.0, 0.0));
-                    self.pending_skill_hits.push(PendingSkillHit {
-                        target_net, damage, attacker_net: owner_eid,
-                        hurt_dir: hd, is_crit, from_player: true,
-                        knockback: def.knockback,
-                    });
-                    // Chain Lightning (1054): bounce até 4 alvos extras com falloff 25%.
-                    if skill_id == 1054 {
-                        let pts = self.chain_lightning_bounces(target_pos2, target_net, owner_eid, damage, 4);
-                        self.last_chain_pts = pts;
-                    }
-                    // Lightning Bolt (1051): a partir do rank 5 ganha bounce
-                    // pro proximo enemy. r5=+1, r6=+2 ... r10=+6 alvos extras.
-                    if skill_id == 1051 && rank >= 5 {
-                        let bonus = rank.saturating_sub(4) as u32;
-                        let pts = self.chain_lightning_bounces(target_pos2, target_net, owner_eid, damage, bonus);
-                        self.last_chain_pts = pts;
-                    }
-                    // Soul Drain (1042): cura caster por 75% do dano causado.
-                    // Vampiric — converte HP do alvo em vida do caster.
-                    if skill_id == 1042 {
-                        let heal_amt = ((damage as f32) * 0.75).round() as i32;
-                        if heal_amt > 0 {
-                            self.pending_heals.push(PendingHeal {
-                                target_net: owner_eid,
-                                amount: heal_amt,
-                            });
-                        }
-                    }
-                    tracing::info!("skill cast: {} (line, r{}) dmg={}", def.name, rank, damage);
-                }
-            }
-            "aoe_circle" => {
-                let radius = def.radius_tiles.max(0.5);
-                let is_heal = def.base_heal > 0 || (def.scaling_wis > 0.0 && def.base_damage == 0);
-                // Leap Strike (1001): seta estado de leap (interpola posicao
-                // do caster por LEAP_DURATION antes de teleportar). Damage +
-                // stun aplicados no FIM do leap (no tick step). Anim de jump
-                // replicada via attack_anim_pending=DASH.
-                // ── Spear Throw (1021) — Harpoon 2-cast hook ──────────────
-                // Cast 1: throw projectile (kind=7). Ao acertar, server seta
-                // session.harpoon_target_eid = target.
-                // Cast 2 (recast dentro de 5s): leap ate o target cravado.
-                if skill_id == 1021 {
-                    // Check se eh recast (harpoon ativo + alvo ainda vivo).
-                    let harpoon_target = self.sessions.get(&sid)
-                        .filter(|s| s.harpoon_until > self.sim_time_s)
-                        .and_then(|s| s.harpoon_target_eid);
-                    let target_world_pos = harpoon_target.and_then(|teid| {
-                        // Find target entity pos pelo EntityId (NetId)
-                        let mut found: Option<Vec2> = None;
-                        for (_, (net, p)) in self.ecs.query_mut::<(&NetId, &Position)>() {
-                            if net.0 == teid { found = Some(p.0); break; }
-                        }
-                        found
-                    });
-                    if let Some(land_pos) = target_world_pos {
-                        // RECAST: leap ate o alvo. Duracao DEVE bater com
-                        // LEAP_DURATION=0.5 do step (linha ~4908) — senao o
-                        // step calcula leap_start errado e char comeca o
-                        // leap ja adiantado.
-                        if let Some(s) = self.sessions.get_mut(&sid) {
-                            s.harpoon_target_eid = None;
-                            s.harpoon_until = 0.0;
-                            s.leap_until = self.sim_time_s + 0.5;
-                            s.leap_start_pos = pos;
-                            s.leap_target = land_pos;
-                            s.leap_damage = 0; // dano ja foi no projetil hit
-                            s.leap_radius = 0.0;
-                        }
-                        if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(e) {
-                            tag.attack_anim_pending = Some(shared::components::attack_anim::DASH);
-                        }
-                        tracing::info!("Spear Throw RECAST: hooking to target eid={:?} at {:?}",
-                            harpoon_target, land_pos);
-                        return;
-                    }
-                    // FIRST CAST: spawn projetil de spear (kind=7).
-                    let spawn_pos = pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y)
-                        + dir * shared::FIREBALL_FORWARD_OFFSET;
-                    self.pending_shots.push(PendingShot {
-                        pos: spawn_pos,
-                        dir,
-                        damage,
-                        is_crit,
-                        kind: 7, // SPEAR harpoon
-                        owner_id: owner_eid,
-                        from_player: true,
-                        release_tick: self.tick.wrapping_add(1),
-                    });
-                    tracing::info!("Spear Throw THROW: dmg={} dir=({:.2},{:.2})",
-                        damage, dir.x, dir.y);
-                    return;
-                }
-                // Spear movement skills (1017 Lunge, 1022 Charge, 1023
-                // Dragon Tail) usam mesmo leap mechanism do Leap Strike —
-                // player se move ate o target_pos com damage no landing.
-                // Diferenca: range/radius/stun por skill.
-                if skill_id == 1001 || skill_id == 1017 || skill_id == 1022 || skill_id == 1023 {
-                    // Mesma duracao do leap step (4736) — ambos compartilham
-                    // o mecanismo de interpolacao.
-                    let leap_duration: f32 = 0.5;
-                    // Clampa target_pos ao range tiles do caster.
-                    let to = target_pos - pos;
-                    let dist = to.length();
-                    let mut landing = if dist > def.range_tiles && dist > 0.01 {
-                        pos + to.normalize() * def.range_tiles
-                    } else {
-                        target_pos
-                    };
-                    // Raycast de pos -> landing pra evitar atravessar walls/agua.
-                    // Sample em steps de 0.25 tiles. Se algum step bater em
-                    // tile nao-walkable, encurta o landing pro ultimo ponto
-                    // walkable (com pequeno recuo pra nao ficar grudado).
-                    let total = (landing - pos).length();
-                    if total > 0.01 {
-                        let dir_n = (landing - pos) / total;
-                        let mut last_ok = pos;
-                        let step_size = 0.25_f32;
-                        let steps = (total / step_size).ceil() as i32;
-                        for i in 1..=steps {
-                            let t = (i as f32 * step_size).min(total);
-                            let p = pos + dir_n * t;
-                            let tx = p.x.floor() as i32;
-                            let ty = p.y.floor() as i32;
-                            if !self.map.is_walkable(tx, ty) {
-                                // Recua um pouco pra nao colar na parede.
-                                let pulled_back = t - 0.4;
-                                if pulled_back > 0.01 {
-                                    landing = pos + dir_n * pulled_back;
-                                } else {
-                                    landing = pos;
-                                }
-                                tracing::info!(
-                                    "Leap Strike: parede no caminho — landing encurtado de {:.1} pra {:.1} tiles",
-                                    total, (landing - pos).length()
-                                );
-                                break;
-                            }
-                            last_ok = p;
-                        }
-                        let _ = last_ok;
-                    }
-                    // Set leap state — atualiza Position progressivamente no step.
-                    if let Some(s) = self.sessions.get_mut(&sid) {
-                        s.leap_until = self.sim_time_s + leap_duration;
-                        s.leap_start_pos = pos;
-                        s.leap_target = landing;
-                        s.leap_damage = damage;
-                        s.leap_radius = radius;
-                    }
-                    // Anim por skill: Leap Strike (1001) = DASH (jump), spear
-                    // skills (1021, 1017, 1022, 1023) = THRUST (estocada).
-                    if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(e) {
-                        let anim = match skill_id {
-                            1021 | 1017 | 1022 | 1023 => shared::components::attack_anim::THRUST,
-                            _                         => shared::components::attack_anim::DASH,
-                        };
-                        tag.attack_anim_pending = Some(anim);
-                    }
-                    let skill_name = match skill_id {
-                        1001 => "Leap Strike",
-                        1017 => "Lunge",
-                        1021 => "Spear Throw",
-                        1022 => "Charge",
-                        1023 => "Dragon Tail",
-                        _    => "Unknown",
-                    };
-                    tracing::info!("{} start: jumping {:.1} tiles in {:.2}s, will hit r{:.1} dmg={}",
-                        skill_name, dist.min(def.range_tiles), leap_duration, radius, damage);
-                    // SkillCastFx (com explosao VFX) e broadcastado apenas no
-                    // LANDING (em E.1 step), nao no cast — cliente sincroniza
-                    // com a chegada do char.
-                    return;
-                }
-                // Sustained rain — pulses de dano ao longo de N segundos.
-                //   Frost Nova (1046): cast_time_s>0 → wind-up parado, depois rain.
-                //   Meteor (1045):     cast_time_s=3s → player imovel durante o rain.
-                //   Rain of Arrows (1039): cast 0.5s, depois 8 flechas ao longo de 3s.
-                //   Smoke Bomb (1038): nuvem 5s, 5 pulses de dano + envenenado.
-                let is_rain = matches!(skill_id, 1045 | 1046 | 1039 | 1038 | 1013 | 1005);
-                if is_rain {
-                    let (pulses, total_s) = match skill_id {
-                        1039 => (8u32, 3.0f32),     // Rain of Arrows
-                        1038 => (5u32, 5.0f32),     // Smoke Bomb (1 pulse/s × 5s)
-                        1013 => (10u32, 4.0f32),    // Whirlwind — spin 10p × 4s
-                        1005 => (6u32, 1.8f32),     // Sword Dance — spin 6 hits × 1.8s
-                        _    => (6u32, 3.0f32),     // Frost Nova / Meteor
-                    };
-                    let per_pulse = (damage / pulses as i32).max(1);
-                    let interval_ticks = (total_s / pulses as f32 * shared::TICK_RATE_HZ as f32) as u32;
-                    // Frost Nova / Rain of Arrows: offset todos os pulses pelo cast_time_s.
-                    // Meteor / Smoke Bomb: offset = 0 (rain começa imediatamente).
-                    let pulse_offset_ticks = if skill_id == 1046 || skill_id == 1039 {
-                        (def.cast_time_s * shared::TICK_RATE_HZ as f32).round() as u32
-                    } else { 0 };
-                    // Smoke Bomb (1038) aplica poisoned 5s nos hits (visual tint).
-                    let poison_dur = if skill_id == 1038 { 5.0_f32 } else { 0.0 };
-                    // Whirlwind (1013) e Sword Dance (1005) seguem o caster:
-                    // a cada pulse, o AoE eh aplicado na pos ATUAL do owner
-                    // (player pode andar durante o spin).  Outros rain skills
-                    // sao position-targeted (Meteor cai onde o user mirou).
-                    let follow = skill_id == 1013 || skill_id == 1005;
-                    let pulse_center = if follow { pos } else { target_pos };
-                    for i in 0..pulses {
-                        self.pending_delayed_aoe.push(DelayedAoe {
-                            target_pos: pulse_center, radius, damage: per_pulse, owner_eid,
-                            release_tick: self.tick.wrapping_add(pulse_offset_ticks + i * interval_ticks),
-                            poison_dur_s: poison_dur,
-                            knockback: def.knockback,
-                            follow_owner: follow,
-                            stun_dur_s: 0.0,
-                        });
-                    }
-                    tracing::info!(
-                        "skill cast: {} (sustained rain {}p × {} dmg over {:.1}s, r{:.1}, wind-up {:.1}s)",
-                        def.name, pulses, per_pulse, total_s, radius,
-                        pulse_offset_ticks as f32 / shared::TICK_RATE_HZ as f32
-                    );
-                } else if is_heal {
-                    let base_heal = def.base_heal as f32 + stats.wis as f32 * def.scaling_wis;
-                    let mut heal_scaled = base_heal * (1.0 + def.per_rank_dmg_pct * (rank.saturating_sub(1) as f32));
-                    if rank >= shared::MAX_SKILL_RANK && def.max_rank_heal_pct > 0.0 {
-                        heal_scaled *= 1.0 + def.max_rank_heal_pct / 100.0;
-                    }
-                    let heal = heal_scaled.round() as i32;
-                    if heal > 0 {
-                        let players = self.find_players_in_radius(target_pos, radius);
-                        for tn in players {
-                            self.pending_heals.push(PendingHeal { target_net: tn, amount: heal });
-                        }
-                    }
-                    tracing::info!("skill cast: {} (aoe heal r{:.1}) +{}", def.name, radius, heal);
-                } else if def.cast_time_s > 0.05 {
-                    // Damage delayed pelo cast_time_s — sincroniza com visual
-                    // de queda (Meteor) ou wind-up similar.
-                    let delay_ticks = (def.cast_time_s * shared::TICK_RATE_HZ as f32).round() as u32;
-                    self.pending_delayed_aoe.push(DelayedAoe {
-                        target_pos, radius, damage, owner_eid,
-                        release_tick: self.tick.wrapping_add(delay_ticks.max(1)),
-                        poison_dur_s: 0.0,
-                        knockback: def.knockback,
-                        follow_owner: false,
-                        stun_dur_s: 0.0,
-                    });
-                    tracing::info!(
-                        "skill cast: {} (aoe r{:.1}) dmg={} delayed {:.2}s ({} ticks)",
-                        def.name, radius, damage, def.cast_time_s, delay_ticks
-                    );
-                } else {
-                    let enemies = self.find_enemies_in_radius(target_pos, radius);
-                    for tn in enemies {
-                        let hd = calc_hurt_dir_from_eid(&self.ecs, tn, target_pos);
-                        self.pending_skill_hits.push(PendingSkillHit {
-                            target_net: tn, damage, attacker_net: owner_eid,
-                            hurt_dir: hd, is_crit, from_player: true,
-                            knockback: def.knockback,
-                        });
-                    }
-                    // PvP: tambem inclui outros players elegiveis (PK ON ambos).
-                    let pvp_players = self.find_pvp_players_in_radius(target_pos, radius, owner_eid);
-                    for tn in pvp_players {
-                        let hd = calc_hurt_dir_from_eid(&self.ecs, tn, target_pos);
-                        self.pending_skill_hits.push(PendingSkillHit {
-                            target_net: tn, damage, attacker_net: owner_eid,
-                            hurt_dir: hd, is_crit, from_player: true,
-                            knockback: def.knockback,
-                        });
-                    }
-                    tracing::info!("skill cast: {} (aoe r{:.1}) dmg={}", def.name, radius, damage);
-                }
-            }
-            "cone" => {
-                let range = def.range_tiles.max(shared::MELEE_RANGE);
-                let enemies = self.find_enemies_in_cone(pos, dir, range, shared::MELEE_CONE_HALF_ANGLE);
-                // Shield Bash (1003): aplica stun nos hits + dispara o swing.
-                // Stun = 1.2s no EnemyTag.stunned_until (replicado no snap).
-                let is_shield_bash = skill_id == 1003;
-                let stun_dur: f32 = if is_shield_bash { 1.2 } else { 0.0 };
-                for tn in &enemies {
-                    let hd = (-dir).try_normalize().unwrap_or(Vec2::new(-1.0, 0.0));
-                    self.pending_skill_hits.push(PendingSkillHit {
-                        target_net: *tn, damage, attacker_net: owner_eid,
-                        hurt_dir: hd, is_crit, from_player: true,
-                        knockback: def.knockback,
-                    });
-                }
-                // PvP: include outros players elegiveis no cone.
-                let pvp_players = self.find_pvp_players_in_cone(pos, dir, range, shared::MELEE_CONE_HALF_ANGLE, owner_eid);
-                for tn in &pvp_players {
-                    let hd = (-dir).try_normalize().unwrap_or(Vec2::new(-1.0, 0.0));
-                    self.pending_skill_hits.push(PendingSkillHit {
-                        target_net: *tn, damage, attacker_net: owner_eid,
-                        hurt_dir: hd, is_crit, from_player: true,
-                        knockback: def.knockback,
-                    });
-                }
-                // Apply stun status nos enemies hit (Shield Bash).
-                if stun_dur > 0.0 {
-                    let now_s = self.sim_time_s;
-                    let target_set: std::collections::HashSet<EntityId> =
-                        enemies.iter().copied().collect();
-                    for (_, (net, tag)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag)>() {
-                        if target_set.contains(&net.0) {
-                            let exp = now_s + stun_dur;
-                            if tag.stunned_until < exp { tag.stunned_until = exp; }
-                        }
-                    }
-                }
-                // Sword Dance (1005): seta stance de 4s — proximos 3 SLASHes
-                // sao parte do combo, ultimo guaranteed crit. Stance reseta
-                // ao completar 3 swings ou expirar.
-                if skill_id == 1005 {
-                    if let Some(s) = self.sessions.get_mut(&sid) {
-                        s.sword_dance_until = self.sim_time_s + 4.0;
-                        s.sword_dance_step = 0;
-                    }
-                }
-                tracing::info!("skill cast: {} (cone r{:.1}) dmg={}", def.name, range, damage);
-            }
-            _ => {
-                // Outros target_types implementados na Phase 2.x.
-                tracing::debug!("skill cast: target_type '{}' não implementado ainda", def.target_type);
-            }
-        }
-        } // end if !skip_dispatch
-
-        // Broadcast SkillCastFx pra todos clientes logados (gizmos no cliente).
-        // session já não está borrowed aqui — NLL drop após `let owner_eid`.
-        let chain_points = if self.last_chain_pts.is_empty() {
-            None
-        } else {
-            Some(self.last_chain_pts.iter().map(|v| [v.x, v.y]).collect::<Vec<_>>())
-        };
-        self.last_chain_pts.clear();
-        let fx = ServerMessage::SkillCastFx {
-            skill_id, caster_pos: pos, target_pos, target_eid: None,
-            caster_eid: Some(owner_eid),
-            chain_points,
-        };
-        for s in self.sessions.values() {
-            if s.logged_in {
-                let _ = s.handle.to_client.send(fx.clone());
-            }
-        }
-    }
 
     /// Encontra inimigo mais próximo em linha do `pos` na direção `dir` até `range`.
     /// Retorna (net_id, posição, distância). Filtra por hostilidade (player→enemy).
@@ -6596,127 +5897,8 @@ impl GameWorld {
         chain
     }
 
-    /// Aprende rank 1 da skill — gasta 1 SP. Valida unlock_char_lvl,
-    /// unlock_prof_lvl, e SP suficiente. No-op silencioso se não pode.
-    fn handle_skill_learn(&mut self, sid: SessionId, skill_id: u32) {
-        let Some(session) = self.sessions.get_mut(&sid) else { return };
-        if !session.logged_in { return; }
-        // Já aprendida?
-        if session.learned_skills.iter().any(|s| s.skill_id == skill_id) {
-            tracing::debug!("skill_learn: {} já aprendida", skill_id);
-            return;
-        }
-        let Some(def) = crate::skills::skill_of(skill_id) else {
-            tracing::warn!("skill_learn: skill_id {} não existe", skill_id);
-            return;
-        };
-        let char_lvl = shared::level_of_xp_with_mult(session.xp, crate::economy::xp_multiplier());
-        if !crate::skills::can_unlock(&def, char_lvl, &session.proficiencies) {
-            tracing::debug!(
-                "skill_learn: req não atendido (skill={} char_lvl={} need char>={} prof>={})",
-                skill_id, char_lvl, def.unlock_char_lvl, def.unlock_prof_lvl
-            );
-            return;
-        }
-        let cost = shared::sp_cost_for_next_rank(0); // rank 0→1
-        let avail = session.skill_points_earned.saturating_sub(session.skill_points_spent);
-        if avail < cost { return; }
-        session.skill_points_spent = session.skill_points_spent.saturating_add(cost);
-        session.learned_skills.push(shared::LearnedSkill {
-            skill_id,
-            rank: 1,
-            equipped_slot: None,
-        });
-        session.skills_dirty = true;
-    }
 
-    /// Sobe rank +1 (até MAX_SKILL_RANK). Custo varia por rank.
-    fn handle_skill_rank_up(&mut self, sid: SessionId, skill_id: u32) {
-        let Some(session) = self.sessions.get_mut(&sid) else { return };
-        if !session.logged_in { return; }
-        let Some(idx) = session.learned_skills.iter().position(|s| s.skill_id == skill_id) else {
-            return; // não aprendida ainda
-        };
-        let cur_rank = session.learned_skills[idx].rank;
-        if cur_rank >= shared::MAX_SKILL_RANK { return; }
-        let cost = shared::sp_cost_for_next_rank(cur_rank);
-        let avail = session.skill_points_earned.saturating_sub(session.skill_points_spent);
-        if avail < cost { return; }
 
-        // Gate: rank-up exige char_lvl + prof_lvl escalados por rank.
-        // Lookup da skill no cache pra pegar unlock_char/unlock_prof + prof_kind.
-        let target_rank = cur_rank + 1;
-        let skill_def = crate::skills::skill_of(skill_id);
-        if let Some(def) = skill_def {
-            let (need_char, need_prof) = shared::skill_rank_requirements(
-                def.unlock_char_lvl as u8, def.unlock_prof_lvl as u8, target_rank,
-            );
-            let char_lvl = shared::level_of_xp_with_mult(session.xp, crate::economy::xp_multiplier());
-            if (char_lvl as u8) < need_char { return; }
-            let prof_xp = shared::Proficiency::from_str(&def.prof)
-                .map(|p| session.proficiencies[p as usize])
-                .unwrap_or(0);
-            let prof_lvl = shared::proficiency_level(prof_xp);
-            if (prof_lvl as u8) < need_prof { return; }
-        }
-
-        session.skill_points_spent = session.skill_points_spent.saturating_add(cost);
-        session.learned_skills[idx].rank = target_rank;
-        session.skills_dirty = true;
-    }
-
-    /// Equipa skill ativa em slot 0..=5. `slot=None` ou `skill_id=0` desequipa.
-    /// Passivas ignoram (o slot fica None permanentemente).
-    fn handle_skill_equip(&mut self, sid: SessionId, skill_id: u32, slot: Option<u8>) {
-        let Some(session) = self.sessions.get_mut(&sid) else { return };
-        if !session.logged_in { return; }
-
-        // Caso 1: desequipar (skill_id=0 ou slot=None)
-        if skill_id == 0 {
-            if let Some(target_slot) = slot {
-                for s in session.learned_skills.iter_mut() {
-                    if s.equipped_slot == Some(target_slot) {
-                        s.equipped_slot = None;
-                    }
-                }
-                session.skills_dirty = true;
-            }
-            return;
-        }
-        if slot.is_none() {
-            // Desequipa essa skill de qualquer slot.
-            for s in session.learned_skills.iter_mut() {
-                if s.skill_id == skill_id {
-                    s.equipped_slot = None;
-                }
-            }
-            session.skills_dirty = true;
-            return;
-        }
-
-        let target_slot = slot.unwrap();
-        if (target_slot as usize) >= shared::SKILL_BAR_SLOTS {
-            return;
-        }
-
-        // Skill aprendida?
-        let Some(idx) = session.learned_skills.iter().position(|s| s.skill_id == skill_id) else {
-            return;
-        };
-
-        // Passivas não vão pra slot — ignoram silenciosamente.
-        let Some(def) = crate::skills::skill_of(skill_id) else { return };
-        if def.is_passive { return; }
-
-        // Tira quem estiver no slot alvo (swap implícito).
-        for (i, s) in session.learned_skills.iter_mut().enumerate() {
-            if i != idx && s.equipped_slot == Some(target_slot) {
-                s.equipped_slot = None;
-            }
-        }
-        session.learned_skills[idx].equipped_slot = Some(target_slot);
-        session.skills_dirty = true;
-    }
 
     pub fn step(&mut self, dt: f32) {
         self.tick = self.tick.wrapping_add(1);
@@ -6768,17 +5950,8 @@ impl GameWorld {
             .filter(|(_, s)| s.logged_in && s.skills_dirty)
             .map(|(id, _)| *id)
             .collect();
-        for sid in dirty {
-            if let Some(s) = self.sessions.get_mut(&sid) {
-                let state = shared::skills::PlayerSkillsState {
-                    sp_earned: s.skill_points_earned,
-                    sp_spent: s.skill_points_spent,
-                    skills: s.learned_skills.clone(),
-                };
-                let _ = s.handle.to_client.send(ServerMessage::PlayerSkillsUpdate { state });
-                s.skills_dirty = false;
-            }
-        }
+        // Estado de skill do jogador nao viaja mais: nao ha' o que
+        // aprender nem rank pra subir — a arma na mao ja' diz tudo.
 
         // --- Teleporte via portais ---
         self.process_portal_teleports(dt);
@@ -7393,22 +6566,7 @@ impl GameWorld {
             // (consistente com regras tipo Diablo/RoTMG).
             let mut crit = session.stats.crit_chance > 0.0
                 && fastrand::f32() < session.stats.crit_chance;
-            // Quick Draw passive (Bow T2): se Bow equipada e player parado
-            // >= 1.0s, força crit no próximo tiro (consome ate o player
-            // mover de novo). Rank ainda nao da bonus extra (r5/r10 TODO).
-            let quickdraw_rank = session.learned_skills.iter()
-                .find(|s| s.skill_id == 1036)
-                .map(|s| s.rank).unwrap_or(0);
-            if !crit
-                && wants_attack
-                && quickdraw_rank > 0
-                && matches!(shared::Proficiency::from_item(weapon_id), shared::Proficiency::Bow)
-                && self.sim_time_s - session.last_movement_at_s >= 1.0
-                && !session.quickdraw_consumed
-            {
-                crit = true;
-                session.quickdraw_consumed = true;
-            }
+            // A passiva de saque rapido morreu com as passivas.
             let mut dmg_final = if crit {
                 (session.stats.attack_damage as f32 * shared::CRIT_DAMAGE_MULT).round() as i32
             } else {
@@ -7812,44 +6970,8 @@ impl GameWorld {
                     // kit quase não saía e a luta ficava passiva: agora o Leap
                     // pune o kite NA HORA, Shield Bash sai assim que você cola.
                     if dist < engage_range && (can_auto || enemy.is_boss) {
-                        // Tenta casting de skill ANTES de fall-through pra
-                        // auto-attack. Skill eligibility check (sem borrow
-                        // self): cd ready, mp ok, alvo dentro de range. No
-                        // design novo (M13) todas as skills são universais
-                        // — sem mais check de usable_with.
-                        let mut chose_skill = false;
-                        let mut chosen_skill_id = 0u32;
-                        let weapon_id = enemy.equipment.weapon.unwrap_or(0);
-                        let _prof = shared::Proficiency::from_item(weapon_id).as_db_str();
-                        for ls in &enemy.learned_skills {
-                            let Some(def_sk) = crate::skills::skill_of(ls.skill_id) else { continue };
-                            if def_sk.is_passive { continue; }
-                            if def_sk.cast_time_s > 0.05 { continue; }
-                            let cd_ready = enemy.skill_cds.get(&ls.skill_id).copied().unwrap_or(0.0);
-                            if now_sim < cd_ready { continue; }
-                            let rank_factor = 1.0 - def_sk.per_rank_cost_pct
-                                * (ls.rank.saturating_sub(1) as f32);
-                            let mp_cost = (def_sk.cost_mp as f32 * rank_factor).max(0.0);
-                            if enemy.mp_current < mp_cost { continue; }
-                            if dist > def_sk.range_tiles + def_sk.radius_tiles { continue; }
-                            // Skill apta — registra intent e pula auto-attack.
-                            enemy_cast_intents.push((net.0, pos.0, *ppos));
-                            chose_skill = true;
-                            chosen_skill_id = ls.skill_id;
-                            break;
-                        }
-                        if chose_skill {
-                            enemy.aggro_timer = 0.0;
-                            // Boss: GCD curto pós-skill (a anim respira mas o
-                            // ritmo do auto não é resetado pro ciclo inteiro).
-                            enemy.attack_cooldown = if enemy.is_boss { 0.8 }
-                                else { enemy.attack_cooldown_base };
-                            // Leap Strike (1001) NÃO toca swing — a anim é o
-                            // próprio arco do pulo (leap_y), igual ao player.
-                            enemy.attack_pending = chosen_skill_id != 1001;
-                            enemy.attack_dir = to_player;
-                            continue;
-                        }
+                        // Mob nao tem skill: ele bate, e so'. O que muda de um
+                        // bicho pro outro e' alcance, dano e se ele recua.
                         // Auto-attack só com o ciclo pronto e dentro do range
                         // REAL da arma (boss fora disso: re-tenta próximo tick).
                         if !can_auto || dist >= attack_range { continue; }
@@ -7972,77 +7094,7 @@ impl GameWorld {
             }
         }
 
-        // ── C.0b: Storm Caller passive (1056) — auto-cast lightning bolt ─────
-        // Cada player com a passiva learned (rank > 0) dispara lightning bolt
-        // no enemy mais proximo a cada N segundos. Interval reduz com rank.
-        // Damage scaling com WIS (igual Lightning Bolt manual).
-        {
-            let now_s = self.sim_time_s;
-            // Coleta intents (player_pos, target_pos, dmg, owner_eid).
-            struct StormShot { pos: Vec2, target_pos: Vec2, dir: Vec2, damage: i32, owner_eid: EntityId }
-            let mut shots: Vec<StormShot> = Vec::new();
-            for session in self.sessions.values_mut() {
-                if !session.logged_in || session.downed { continue; }
-                let Some(ls) = session.learned_skills.iter().find(|s| s.skill_id == 1056).copied()
-                    else { continue };
-                if ls.rank == 0 { continue; }
-                if now_s < session.storm_caller_next { continue; }
-                // Cd minimo 5s pra evitar que rank 10 vire DPS automatico OP.
-                let interval = match ls.rank {
-                    1..=2 => 8.0,
-                    3..=4 => 7.0,
-                    5..=6 => 6.0,
-                    _ => 5.0, // rank 7-10 = floor de 5s
-                };
-                session.storm_caller_next = now_s + interval;
-
-                // Pega player pos via ECS.
-                let Some(entity) = session.entity else { continue };
-                let player_pos = match self.ecs.get::<&Position>(entity) {
-                    Ok(p) => p.0, Err(_) => continue,
-                };
-                // Acha enemy mais proximo no raio 10 com LOS.
-                let mut best: Option<(Vec2, f32)> = None;
-                let r = 10.0_f32;
-                for (_, (pos2, ek)) in self.ecs.query::<(&Position, &EntityKind)>().iter() {
-                    if !matches!(ek, EntityKind::Enemy(_)) { continue; }
-                    let d = pos2.0.distance(player_pos);
-                    if d > r { continue; }
-                    if !self.map.has_line_of_sight(player_pos, pos2.0) { continue; }
-                    if best.map(|(_, bd)| d < bd).unwrap_or(true) {
-                        best = Some((pos2.0, d));
-                    }
-                }
-                let Some((target_pos, _)) = best else { continue };
-                let dir = (target_pos - player_pos).normalize_or_zero();
-                if dir == Vec2::ZERO { continue; }
-
-                // Damage: base 15 + WIS scaling 0.4 + rank scaling.
-                let base_dmg = 15;
-                let wis_dmg = (session.stats.wis as f32 * 0.4) as i32;
-                let rank_mult = 1.0 + (ls.rank as f32 - 1.0) * 0.05; // +5%/rank (anti-OP)
-                let damage = ((base_dmg + wis_dmg) as f32 * rank_mult).round() as i32;
-
-                shots.push(StormShot {
-                    pos: player_pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y),
-                    target_pos, dir, damage, owner_eid: session.entity_id,
-                });
-            }
-            for s in shots {
-                self.pending_shots.push(PendingShot {
-                    pos: s.pos,
-                    dir: s.dir,
-                    damage: s.damage,
-                    is_crit: false,
-                    kind: 2, // lightning
-                    owner_id: s.owner_eid,
-                    from_player: true,
-                    release_tick: self.tick.wrapping_add(1),
-                });
-                tracing::info!("storm caller proc: dmg={} → ({:.1},{:.1})",
-                    s.damage, s.target_pos.x, s.target_pos.y);
-            }
-        }
+        // Storm Caller era passiva com tique proprio. Passiva morreu.
 
         // ── C.1: transitions de Untargetable + heal ao re-engajar ─────────────
         // Detecta enemies que entraram/saíram do estado returning_home pra
@@ -8071,12 +7123,6 @@ impl GameWorld {
         // Funde shots agendados pelos enemies neste tick.
         self.pending_shots.append(&mut pending_enemy_shots);
 
-        // Processa skill cast intents dos enemies coletadas no AI loop.
-        // try_enemy_cast_skill aplica damage/AoE, drena MP, seta cd,
-        // broadcasta SkillCastFx pros clients renderizarem o VFX.
-        for (eid, e_pos, target_pos) in enemy_cast_intents {
-            let _ = self.try_enemy_cast_skill(eid, e_pos, target_pos);
-        }
 
         // ── C.2: IA dos NPCs caminhantes (perambulação aleatória por raio) ────
         // Cada morador anda pra pontos aleatórios em volta da própria `home` (sem
@@ -9113,24 +8159,7 @@ impl GameWorld {
                 }
             }
 
-            // Iron Will passive (Sword T4): se alvo eh player com rank>0
-            // E HP <= 30% do max → -30% dmg recebido.
-            if let Some(target_session) = self.sessions.values()
-                .find(|s| s.entity_id == target_id)
-            {
-                let iron_will_rank = target_session.learned_skills.iter()
-                    .find(|s| s.skill_id == 1008)
-                    .map(|s| s.rank).unwrap_or(0);
-                if iron_will_rank > 0 {
-                    if let Ok(hp) = self.ecs.get::<&Health>(entity) {
-                        let hp_pct = (hp.current as f32) / (hp.max.max(1) as f32);
-                        if hp_pct <= 0.30 {
-                            dmg = ((dmg as f32) * 0.70).round() as i32;
-                            dmg = dmg.max(1);
-                        }
-                    }
-                }
-            }
+            // Iron Will era passiva.
 
             // Hunter's Mark active (skill 1040): buff 8s + 3 charges.
             // Cada projetil consome 1 charge + aplica +5%/rank dmg.
@@ -9384,22 +8413,7 @@ impl GameWorld {
             if !attacker_is_player {
                 *enemy_dealt.entry(attacker_id).or_insert(0) += dmg;
             }
-            // Healing Touch (1052) — Staff T2 P: auto-attacks healam self
-            // 1%/rank do dmg dealt. Aplica em damage events de player → enemy.
-            if attacker_is_player {
-                if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == attacker_id) {
-                    if let Some(ht) = s.learned_skills.iter().find(|sk| sk.skill_id == 1052).copied() {
-                        let heal_amt = (dmg as f32 * 0.01 * ht.rank as f32).round() as i32;
-                        if heal_amt > 0 {
-                            if let Some(ae) = s.entity {
-                                if let Ok(mut hp2) = self.ecs.get::<&mut Health>(ae) {
-                                    hp2.current = (hp2.current + heal_amt).min(hp2.max);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            // Healing Touch era passiva.
             // Stagger: aplica hurt_until = sim_time + HURT_STAGGER_DURATION.
             // Cliente recebe HP drop + hurt_dir no próximo snapshot, dispara
             // TriggerHurt e seta facing TOWARD o atacante.
@@ -9738,7 +8752,7 @@ impl GameWorld {
                         *slot = shared::InventorySlot::default();
                     }
                     session.equipment = shared::Equipment::default();
-                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills, session.xp);
+                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp);
                     session.inventory_dirty = true;
                     session.stats_dirty = true;
                     break;
@@ -9831,7 +8845,7 @@ impl GameWorld {
                             let allowed = can_equip_in_slot(&session.equipment, slot, ltag.item_id);
                             if empty && allowed {
                                 session.equipment.set(slot, Some(ltag.item_id), ltag.instance);
-                                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills, session.xp);
+                                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp);
                                 session.stats_dirty = true;
                                 if let Some(pe) = session.entity {
                                     hp_max_updates.push((pe, session.stats.hp_max));
@@ -10436,7 +9450,6 @@ impl GameWorld {
             allocated_points: [u32; shared::STAT_COUNT],
             sp_earned: u32,
             sp_spent: u32,
-            learned: Vec<shared::LearnedSkill>,
             account_id: Option<i64>,
             visual: shared::VisualConfig,
             woodcutting_lvl: u32,
@@ -10483,7 +9496,6 @@ impl GameWorld {
                 allocated_points: session.allocated_points,
                 sp_earned: session.skill_points_earned,
                 sp_spent: session.skill_points_spent,
-                learned: session.learned_skills.clone(),
                 account_id: session.account_id,
                 visual: session.visual.clone(),
                 woodcutting_lvl: session.woodcutting_lvl,
@@ -10522,7 +9534,6 @@ impl GameWorld {
                 allocated_points: e.allocated_points,
                 skill_points_earned: e.sp_earned,
                 skill_points_spent: e.sp_spent,
-                learned_skills: e.learned,
                 account_id: e.account_id,
                 visual: Some(e.visual),
                 woodcutting_lvl: e.woodcutting_lvl,
@@ -10631,7 +9642,7 @@ impl GameWorld {
                 let new_inst = if ia.qty > 0 { ia.instance } else { None };
                 set_equip(session, bs, new_id, new_inst);
                 session.inventory[ai as usize] = new_inv_slot;
-                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills, session.xp);
+                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
                 let new_hp_max = session.stats.hp_max;
@@ -10656,7 +9667,7 @@ impl GameWorld {
                 let new_inst = if ib.qty > 0 { ib.instance } else { None };
                 set_equip(session, as_, new_id, new_inst);
                 session.inventory[bi as usize] = new_inv_slot;
-                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills, session.xp);
+                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
                 let new_hp_max = session.stats.hp_max;
@@ -12005,7 +11016,7 @@ impl GameWorld {
                 let allowed = can_equip_in_slot(&session.equipment, es, item_id);
                 if empty && allowed {
                     session.equipment.set(es, Some(item_id), None);
-                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills, session.xp);
+                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp);
                     session.stats_dirty = true;
                     new_max = Some(session.stats.hp_max);
                     true
@@ -12276,7 +11287,7 @@ impl GameWorld {
                     Some(old_id) => shared::InventorySlot { item_id: old_id, qty: 1, instance: old_inst },
                     None         => shared::InventorySlot::default(),
                 };
-                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, &session.learned_skills, session.xp);
+                session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
                 (player_entity, UseAction::Equip { new_hp_max: session.stats.hp_max })
@@ -12632,11 +11643,7 @@ impl GameWorld {
                 s.gathering_lvl = shared::proficiency_level(
                     s.proficiencies[shared::Proficiency::Gathering as usize]);
 
-                let _ = s.handle.to_client.send(ServerMessage::FarmSkillsUpdate {
-                    woodcutting: s.woodcutting_lvl,
-                    mining:      s.mining_lvl,
-                    gathering:   s.gathering_lvl,
-                });
+                // coleta perdeu proficiencia: nada pra enviar
                 let _ = s.handle.to_client.send(ServerMessage::ProficienciesUpdate {
                     xp: s.proficiencies,
                 });
@@ -13232,7 +12239,6 @@ impl GameWorld {
             allocated_points: session.allocated_points,
             skill_points_earned: session.skill_points_earned,
             skill_points_spent: session.skill_points_spent,
-            learned_skills: session.learned_skills.clone(),
             account_id: session.account_id,
             visual: Some(session.visual.clone()),
             woodcutting_lvl: session.woodcutting_lvl,
@@ -13308,7 +12314,6 @@ fn effective_stats(
     equip: &shared::Equipment,
     allocated: &[u32; shared::STAT_COUNT],
     proficiencies: &[u64; shared::PROF_COUNT],
-    learned_skills: &[shared::LearnedSkill],
     char_xp: u64,
 ) -> shared::PlayerStats {
     let mut s = shared::base_player_stats();
@@ -13442,52 +12447,7 @@ fn effective_stats(
         _ => {}
     }
 
-    // Skill passives — sempre-ativas se aprendidas. M13: skills viraram
-    // universais (não dependem mais da arma equipada bater com `prof`).
-    // Passives que checam arma específica (ex: Hardened Fists exige unarmed)
-    // fazem o check inline no match abaixo.
-    for ls in learned_skills {
-        if ls.rank == 0 { continue; }
-        let Some(def) = crate::skills::skill_of(ls.skill_id) else { continue };
-        if !def.is_passive { continue; }
-        let r = ls.rank as i32;
-        // Mapeamento per-skill dos efeitos. Por enquanto hardcoded;
-        // futuramente migra pra effect_payload no DB.
-        match ls.skill_id {
-            // Mana Pool — Wand T1 P: +5 mp_max/rank, r5: +0.5 mp_regen, r10: -5% spell cost
-            1042 => {
-                s.mp_max += 5 * r;
-                // r5 / r10 milestones quando implementarmos mp_regen/cost runtime.
-            }
-            // Iron Will — Sword T4 P: +50 poise + (placeholder) <30% HP -30% dmg taken
-            1008 => { s.poise_max += 50 * r; }
-            // Unstoppable / Spearman's Resolve / Master's Form — T4 P de defesa
-            // tambem concedem poise (gateamento de poise: lvl 60 + prof 40).
-            1016 | 1024 | 1064 => { s.poise_max += 50 * r; }
-            // Combat Stance — Sword T1 P: +1.5%/rank atk speed (Sword/Dagger)
-            1002 => { s.attack_speed_mult += 0.015 * r as f32; }
-            // Bulwark — Sword T2 P: +1%/rank block reduction. Soma direto
-            // ao block_dmg_reduction (cap em BLOCK_REDUCTION_MAX = 0.95).
-            1004 => { s.block_dmg_reduction += 0.01 * r as f32; }
-            // Heavy Hands — Axe T1 P: +1%/rank atk dmg (Axe/Sword)
-            1010 => { s.attack_damage += s.attack_damage * r / 100; }
-            // Sharp Edge — Dagger T1 P: +0.3%/rank crit chance
-            1026 => { s.crit_chance += 0.003 * r as f32; }
-            // Eagle Eye — Bow T1 P: +5%/rank range. Aplicado no spawn do
-            // projetil escalando o TTL (mais tempo voando = mais range).
-            1034 => { s.bow_range_bonus_pct += 0.05 * r as f32; }
-            // Mana Conduit — Staff T1 P: -1%/rank mp cost (aplicado em handle_skill_cast)
-            1050 => { /* aplicado em cast cost */ }
-            // Hardened Fists — Unarmed T1 P: +2/rank atk dmg unarmed
-            1058 => {
-                if equip.weapon.is_none() || equip.weapon == Some(0) {
-                    s.attack_damage += 2 * r;
-                }
-            }
-            // Outras passivas (T2/T3/T4) implementadas progressivamente.
-            _ => {}
-        }
-    }
+    // Passiva nao existe mais: skill que nao aparece na tela nao e' skill.
 
     // Garantir minimos / clamps
     s.hp_max = s.hp_max.max(1);
