@@ -3915,7 +3915,12 @@ impl GameWorld {
         // BFS curto procurando walkable proximo ANTES de cair pro spawn default.
         let tx = spawn.x.floor() as i32;
         let ty = spawn.y.floor() as i32;
-        if !self.map.is_walkable(tx, ty) {
+        // Numa ilha o mapa de TILES nao tem autoridade nenhuma: ele e' o mundo
+        // 2D de 180x140, e a ilha tem 1,6 km. Qualquer coordenada real de
+        // ilha cai fora dele e era reprovada aqui, jogando o jogador de volta
+        // no spawn padrao — quem salvou no topo da montanha reaparecia no
+        // porto. Quem decide numa ilha e' o RELEVO, logo abaixo.
+        if self.ilha.is_none() && !self.map.is_walkable(tx, ty) {
             // BFS Chebyshev raio 6 procurando tile walkable.
             let mut found: Option<Vec2> = None;
             'bfs: for r in 1i32..=6 {
@@ -11655,7 +11660,12 @@ impl GameWorld {
         let tier_material = if c.tier == 0 {
             1
         } else {
-            shared::tier_do_rendimento(c.tier, lcg_f32(seed ^ 0x5EED_C0DE))
+            // `lcg` ANTES do `lcg_f32`: o `lcg_f32` so' le' os bits altos da
+            // semente, e `tick * 0xDEADBEEF` nunca passa de ~2^43 — sem
+            // embaralhar, o sorteio saia sempre ~0 e TODA pedra entregava
+            // so' cinza, a verde e a azul inclusive. Achado com bot minerando
+            // num veio de 11 verdes e 15 azuis e voltando com 100% cinza.
+            shared::tier_do_rendimento(c.tier, lcg_f32(lcg(seed ^ 0x5EED_C0DE)))
         };
         let drops = crate::economy::farm_node_loot(kind, tier_material, seed);
         self.entregar_coleta(sid, &drops);

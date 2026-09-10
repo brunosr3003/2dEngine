@@ -3221,4 +3221,5 @@ mod testes {
         assert!(por_tier[1] > por_tier[2] && por_tier[2] > por_tier[3] && por_tier[3] > por_tier[4],
             "escada de raridade invertida: {:?}", &por_tier[1..]);
     }
+
 }
