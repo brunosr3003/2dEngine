@@ -483,9 +483,12 @@ fn pedra(r: &mut Rng) -> Volume {
 pub fn minerio(tier: u8, variante: u32) -> Modelo {
     let mut r = Rng::nova(variante ^ (tier as u32) * 6151 ^ 0x9E37);
     let cristal = shared::terreno::cristal_do_tier(tier);
-    let raio = r.i(4, 6);
-    let alt = r.i(4, raio + 3);
-    let mut v = caixa_vazia(raio + 2, alt + 5);
+    // Do joelho a' cintura, e nao do tamanho do jogador: a primeira versao
+    // (raio 4-6 voxels) tinha ate' quatro unidades de largura e escondia o
+    // boneco inteiro atras dela. Pedra e' coisa que se junta do chao.
+    let raio = r.i(2, 3);
+    let alt = r.i(2, raio);
+    let mut v = caixa_vazia(raio + 3, alt + 5);
 
     // ── corpo ────────────────────────────────────────────────────────────
     for ix in -raio..=raio {
@@ -505,23 +508,26 @@ pub fn minerio(tier: u8, variante: u32) -> Modelo {
     // ── cristais ─────────────────────────────────────────────────────────
     // Quantidade pelo TIER: a pedra roxa nao e' so' mais valiosa, ela PARECE
     // mais valiosa. Quem ve' de longe ja' sabe o que vai achar.
-    let veios = 2 + tier as i32;
+    let veios = 1 + tier as i32;
     for _ in 0..veios {
         // Nasce na casca e cresce pra fora, inclinado. Cristal saindo do
         // centro ficaria enterrado; saindo reto pra cima, todos paralelos.
         let a = r.f() * std::f32::consts::TAU;
-        let sobe = 0.35 + r.f() * 0.55;
-        let pe = (
-            (a.cos() * (raio as f32 - 0.5)) as i32,
-            (alt as f32 * sobe) as i32,
-            (a.sin() * (raio as f32 - 0.5)) as i32,
+        let sobe = 0.3 + r.f() * 0.4;
+        // Nasce um voxel pra DENTRO da casca e sobe mais do que abre: cristal
+        // que abria pra fora era o que deixava a pedra mais larga que o chao
+        // limpo reservado pra ela — 1,31 u de meia-largura contra 1,25 u.
+        let (mut x, mut y, mut z) = (
+            a.cos() * (raio as f32 - 1.0),
+            alt as f32 * sobe,
+            a.sin() * (raio as f32 - 1.0),
         );
-        let comp = r.i(3, 4 + tier as i32);
-        let (mut x, mut y, mut z) = (pe.0 as f32, pe.1 as f32, pe.2 as f32);
-        let (dx, dy, dz) = (a.cos() * 0.62, 0.55 + r.f() * 0.45, a.sin() * 0.62);
+        let comp = r.i(2, 2 + tier as i32 / 3);
+        let (dx, dy, dz) = (a.cos() * 0.3, 0.3 + r.f() * 0.15, a.sin() * 0.3);
         for k in 0..comp {
-            // Afina na ponta: prisma de espessura constante le' como cano.
-            let grosso = if k < comp / 2 { 1 } else { 0 };
+            // Base mais grossa so' nos tiers altos: e' mais cristal, e mais
+            // cristal e' mais valor lido de longe.
+            let grosso = if k == 0 && tier >= 3 { 1 } else { 0 };
             for ox in -grosso..=grosso {
                 for oz in -grosso..=grosso {
                     v.poe(x as i32 + ox, y as i32, z as i32 + oz, cristal);
@@ -1036,5 +1042,36 @@ mod testes_orientacao {
                 assert_ne!(cores[a], cores[b], "tiers {} e {} tem a mesma cor", a + 1, b + 1);
             }
         }
+    }
+
+    /// A pedra tem que CABER no chao limpo que o gerador reservou pra ela, e
+    /// ficar abaixo do boneco.
+    ///
+    /// O gerador so' planta onde um quadrado de `MINERIO_PLANO` em volta esta'
+    /// todo na mesma altura. Se o modelo for maior que esse quadrado, ele sai
+    /// dele e volta a pendurar na quina — exatamente o que o chao limpo existe
+    /// pra impedir. Este teste amarra o tamanho do modelo a' regra do lugar.
+    #[test]
+    fn a_pedra_cabe_no_chao_limpo() {
+        use shared::terreno::{BLOCO, MINERIO_DESVIO, MINERIO_PLANO, MINERIO_PORTE};
+        let porte = MINERIO_PORTE.1;
+        let meio_lado = (MINERIO_PLANO as f32 + 0.5) * BLOCO;
+        let (mut maior_alt, mut maior_raio) = (0.0f32, 0.0f32);
+        for tier in 1..=4u8 {
+            for variante in 0..64u32 {
+                let m = minerio(tier, variante);
+                for v in &m.verts {
+                    let p = v.position * porte;
+                    maior_alt = maior_alt.max(p.y);
+                    // Chebyshev: o chao limpo e' um QUADRADO.
+                    maior_raio = maior_raio.max(p.x.abs().max(p.z.abs()));
+                }
+            }
+        }
+        println!("pedra: altura max {maior_alt:.2} u, meia-largura max {maior_raio:.2} u \
+                  (chao limpo: {meio_lado:.2} u de meia-largura)");
+        assert!(maior_raio + MINERIO_DESVIO <= meio_lado,
+            "pedra de {maior_raio:.2} u + desvio {MINERIO_DESVIO} nao cabe em {meio_lado:.2} u");
+        assert!(maior_alt < 1.3, "pedra de {maior_alt:.2} u — maior que joelho-a-cintura");
     }
 }

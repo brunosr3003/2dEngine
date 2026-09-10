@@ -818,6 +818,38 @@ mod testes {
         assert!(vazados > 100, "so' {vazados} plantas vazadas na amostra");
     }
 
+    /// O mesmo contrato, pela PEDRA: toda pedra que o servidor barra (e da'
+    /// coleta) tem que ser uma pedra que o cliente desenha — no mesmo lugar,
+    /// da mesma cor.
+    ///
+    /// Olha a ilha INTEIRA pelo lado do servidor, e nao uma janela: a pedra
+    /// mora nos cumes, longe do centro, e uma amostra perto do porto passaria
+    /// sem conferir nenhuma. Importa mais agora que a regra da pedra consulta
+    /// as colunas VIZINHAS (chao limpo, cume): se um lado lesse a altura por
+    /// outro caminho, a divergencia apareceria so' na beira do patamar.
+    #[test]
+    fn toda_pedra_do_servidor_e_desenhada_no_cliente() {
+        use shared::terreno::{Ilha, TipoDeEstorvo, ESCALA_ALTURA, NIVEL_DO_MAR};
+        let d = &ARQUIPELAGO[0];
+        let t = Terreno::novo(d);
+        let i = Ilha::carregar_ou_gerar("", d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+        let mut n = 0;
+        for e in i.todos_os_estorvos() {
+            let TipoDeEstorvo::Minerio(tier) = e.tipo else { continue };
+            let (ix, iz) = ((e.coluna >> 16) as i32, (e.coluna & 0xffff) as i32);
+            let (bx, bz) = (ix - d.raio_blocos, iz - d.raio_blocos);
+            let topo = t.ger.bloco_em(bx, bz);
+            let agua = (topo + 1) as f32 * BLOCO <= NIVEL_DO_MAR;
+            let m = shared::terreno::minerio_da_coluna(d.bioma, bx, bz, topo, &t.ger, agua)
+                .unwrap_or_else(|| panic!("servidor tem pedra em {:?} que o cliente nao desenha", e.centro));
+            assert_eq!(m.tier, tier, "pedra em {:?}: cor diferente nos dois lados", e.centro);
+            assert!(m.centro.distance(e.centro) < 1e-4, "pedra em lugares diferentes");
+            n += 1;
+        }
+        println!("{n} pedras conferidas dos dois lados");
+        assert!(n > 50, "so' {n} pedras na ilha — teste vazio");
+    }
+
     #[test]
     fn nenhum_pedaco_estoura_o_teto_de_indice() {
         for d in ARQUIPELAGO.iter() {

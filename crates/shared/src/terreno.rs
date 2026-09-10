@@ -1140,7 +1140,7 @@ pub fn cristal_do_tier(tier: u8) -> Material {
 /// Raio de colisao da pedra de minerio, a porte 1. Maior que o matacao de
 /// cenario porque ela e' maior: se dois corpos podem ocupar o mesmo ponto que
 /// a pedra ocupa, ela deixa de ser um lugar disputado.
-pub const RAIO_DE_MINERIO: f32 = 0.75;
+pub const RAIO_DE_MINERIO: f32 = 0.5;
 
 /// Fracao do pico do bioma a partir da qual nasce minerio. Abaixo disso e'
 /// vale, e vale nao tem mina.
@@ -1153,9 +1153,16 @@ pub const MINERIO_LIMIAR: f32 = 0.42;
 /// Tier da pedra pela ALTURA, em fracao do pico do bioma. Quanto mais alto o
 /// pico, melhor o minerio — e a pedra roxa fica no ponto mais alto da ilha,
 /// que e' o unico jeito de o topo da montanha ser um destino.
+///
+/// As faixas caem ENTRE os patamares do relevo (o terraco sobe de 2 em 2
+/// unidades), nunca em cima de um: faixa cortando um patamar ao meio poria
+/// pedra de duas cores no mesmo cume. Medido na ilha inicial com a regra de
+/// cume + chao limpo, estas faixas dao 226 cinza, 105 verde, 50 azul e 25
+/// roxo — cada cor com metade da anterior, e a roxa so' nos picos de 30 u
+/// pra cima.
 pub fn tier_de_minerio(altura: f32, pico: f32) -> u8 {
     let t = altura / pico.max(1.0);
-    if t < 0.56 { 1 } else if t < 0.69 { 2 } else if t < 0.80 { 3 } else { 4 }
+    if t < 0.57 { 1 } else if t < 0.73 { 2 } else if t < 0.78 { 3 } else { 4 }
 }
 
 /// A pedra de minerio desta coluna, se houver.
@@ -1163,6 +1170,18 @@ pub fn tier_de_minerio(altura: f32, pico: f32) -> u8 {
 /// Mesmo contrato de `arvore_da_coluna`: funcao pura do par de coordenadas,
 /// rodada identica nos dois lados. O cliente desenha, o servidor barra
 /// passagem e conta coleta — e nenhum byte de pedra viaja no fio.
+///
+/// Os filtros vao do barato pro caro, e a ORDEM so' muda o custo, nao a
+/// resposta: sao todos condicoes de "e", sobre funcoes puras.
+///
+///  1. altura de montanha         — conta de uma coluna so';
+///  2. espacamento                — hash dos vizinhos, sem ruido;
+///  3. chao limpo                 — o quadrado em volta todo na mesma altura;
+///  4. cume                       — nada bem mais alto por perto.
+///
+/// Os dois ultimos sao o que tira a pedra do degrau e da quina: eles olham
+/// as colunas VIZINHAS, pelo mesmo `bloco_em` que o cliente usa pra desenhar
+/// o chao, entao os dois lados continuam chegando na mesma resposta.
 pub fn minerio_da_coluna(
     bioma: Bioma,
     bx: i32,
@@ -1176,36 +1195,96 @@ pub fn minerio_da_coluna(
     let pico = ger.pico();
     if y < pico * MINERIO_LIMIAR { return None }
 
-    // O veio decide ONDE. Sem ele a pedra sairia uniforme por toda a
-    // montanha, e "spot" perderia o sentido: se ha' minerio em qualquer
-    // encosta, andar ate' um lugar nao significa nada.
-    let veio = ger.veio(bx, bz);
-    if veio < 0.55 { return None }
-    let forca = (veio - 0.55) / 0.45;
-
-    let g0 = (bx as u32).wrapping_mul(2_654_435_761) ^ (bz as u32).wrapping_mul(1_597_334_677);
+    // ── espacamento ─────────────────────────────────────────────────────
+    // So' e' candidata a coluna cujo sorteio e' o MENOR do quadrado em
+    // volta. Sorteio independente por coluna deixava duas pedras nascerem
+    // encostadas, uma atravessando a outra.
+    let meu = mistura_minerio(bx, bz);
+    for dz in -MINERIO_ESPACO..=MINERIO_ESPACO {
+        for dx in -MINERIO_ESPACO..=MINERIO_ESPACO {
+            if (dx, dz) != (0, 0) && mistura_minerio(bx + dx, bz + dz) <= meu {
+                return None;
+            }
+        }
+    }
+    let g0 = meu;
     let g1 = g0.wrapping_mul(2_246_822_519).wrapping_add(374_761_393);
-    let sorteio = (g1 >> 8) as f32 / (1u32 << 24) as f32;
-    if sorteio >= DENSIDADE_DE_MINERIO * forca { return None }
+
+    // ── chao limpo ──────────────────────────────────────────────────────
+    // O quadrado inteiro em volta na MESMA altura. E' o que tira a pedra da
+    // beira do degrau e da quina: la' metade dela ficava no ar ou enfiada
+    // no barranco.
+    for dz in -MINERIO_PLANO..=MINERIO_PLANO {
+        for dx in -MINERIO_PLANO..=MINERIO_PLANO {
+            if ger.bloco_em(bx + dx, bz + dz) != topo { return None }
+        }
+    }
+
+    // ── cume ────────────────────────────────────────────────────────────
+    // Nada mais que um bloco acima dela num raio de 8 unidades. Com o
+    // terraco de 4 blocos do relevo, isso quer dizer: ela esta' no patamar
+    // mais alto das redondezas — o TOPO, e nao uma prateleira no meio da
+    // encosta que por acaso passou do limiar de altura.
+    let c = MINERIO_CUME;
+    let mut dz = -c;
+    while dz <= c {
+        let mut dx = -c;
+        while dx <= c {
+            if dx * dx + dz * dz <= c * c && ger.bloco_em(bx + dx, bz + dz) > topo + 1 {
+                return None;
+            }
+            dx += 2;
+        }
+        dz += 2;
+    }
 
     let _ = bioma;
+    let (pmin, pmax) = MINERIO_PORTE;
     Some(Minerio {
+        // Desvio pequeno: o chao limpo foi medido em volta do CENTRO da
+        // coluna, e desviar muito levaria a pedra pra fora dele.
         centro: glam::Vec2::new(
-            bx as f32 * BLOCO + ((g0 >> 4 & 0xff) as f32 / 255.0 - 0.5) * BLOCO * 1.4,
-            bz as f32 * BLOCO + ((g1 >> 4 & 0xff) as f32 / 255.0 - 0.5) * BLOCO * 1.4,
+            bx as f32 * BLOCO + ((g0 >> 4 & 0xff) as f32 / 255.0 - 0.5) * MINERIO_DESVIO * 2.0,
+            bz as f32 * BLOCO + ((g1 >> 4 & 0xff) as f32 / 255.0 - 0.5) * MINERIO_DESVIO * 2.0,
         ),
         tier: tier_de_minerio(y, pico),
-        porte: 0.85 + ((g0 >> 14) & 0xff) as f32 / 255.0 * 0.45,
+        porte: pmin + ((g0 >> 14) & 0xff) as f32 / 255.0 * (pmax - pmin),
         variante: (g1 >> 22) & 0x3f,
     })
 }
 
-/// Chance de uma coluna elegivel ter pedra, no auge do veio.
-///
-/// Numero pequeno de proposito: pedra e' destino, nao forracao. Ver o teste
-/// `a_ilha_tem_minerio_dos_quatro_tiers` pra contagem por tier na ilha
-/// inicial.
-pub const DENSIDADE_DE_MINERIO: f32 = 0.035;
+/// Hash de coluna so' do espacamento. Separado do sorteio do plantio: se
+/// fosse o mesmo, "ganhar do vizinho" e "passar na densidade" seriam a mesma
+/// moeda jogada duas vezes, e o veio sairia com buracos em grade.
+fn mistura_minerio(x: i32, z: i32) -> u32 {
+    let mut h = (x as u32).wrapping_mul(0x8da6_b343) ^ (z as u32).wrapping_mul(0xd816_3841);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2c1b_3c6d);
+    h ^= h >> 12;
+    h = h.wrapping_mul(0x297a_2d39);
+    h ^ (h >> 15)
+}
+
+/// Distancia minima entre duas pedras, em blocos (Chebyshev). Com 3, duas
+/// pedras ficam a pelo menos 4 blocos — 2 unidades — uma da outra.
+pub const MINERIO_ESPACO: i32 = 3;
+
+/// Meio-lado do chao limpo exigido, em blocos. 2 = um quadrado de 5x5 blocos
+/// (2,5 unidades) todo na mesma altura. A pedra cabe dentro com folga; ver o
+/// teste `a_pedra_cabe_no_chao_limpo` no cliente.
+pub const MINERIO_PLANO: i32 = 2;
+
+/// Raio, em blocos, em que nada pode ser mais alto que a pedra (+1 bloco).
+/// 16 blocos = 8 unidades.
+pub const MINERIO_CUME: i32 = 16;
+
+/// Faixa de tamanho da pedra.
+pub const MINERIO_PORTE: (f32, f32) = (0.8, 1.05);
+
+/// Quanto o centro da pedra pode sair do centro da coluna, em unidades.
+pub const MINERIO_DESVIO: f32 = 0.15;
+
+
 
 /// Um corpo solido plantado no mundo: tronco, matacao ou toco.
 #[derive(Debug, Clone, Copy)]
@@ -1370,14 +1449,6 @@ impl Gerador {
     /// tem dezenas de metros, nao centimetros.
     pub fn mancha(&self, bx: i32, bz: i32) -> f32 {
         (0.5 + self.p.fbm(bx as f32 * 0.0075 + 313.0, bz as f32 * 0.0075 - 77.0, 3, 0.5) * 1.1)
-            .clamp(0.0, 1.0)
-    }
-
-    /// Onde ha' VEIO de minerio, em 0..1. Frequencia mais baixa que a
-    /// mancha: minerio tem que sair em mancha grande o bastante pra virar
-    /// lugar ("aquele pico ali"), e nao pedra solta espalhada pelo mapa.
-    pub fn veio(&self, bx: i32, bz: i32) -> f32 {
-        (0.5 + self.pctrl.fbm(bx as f32 * 0.004 - 901.0, bz as f32 * 0.004 + 547.0, 2, 0.5) * 1.3)
             .clamp(0.0, 1.0)
     }
 
@@ -3161,7 +3232,10 @@ mod testes {
     fn a_ilha_tem_onde_coletar() {
         use crate::{COLETA_INTERVALO_BASE_S, COLETA_RAIO_SPOT};
         let d = &ARQUIPELAGO[0];
-        let i = Ilha::gerar(d.semente, d.raio_blocos.min(800), d.bioma, ESCALA_ALTURA);
+        // A ilha REAL, e nao a de raio 800: o gerador refaz o relevo pelo
+        // tamanho, entao a de 800 e' outra ilha — deu azul acima de verde
+        // enquanto a do jogo da' a escada certa.
+        let i = Ilha::gerar(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
         let raio_un = i.raio_blocos as f32 * BLOCO;
 
         let (mut secos, mut n, mut melhor_veio, mut melhor_mata) = (0u32, 0u32, 0usize, 0usize);
@@ -3201,7 +3275,10 @@ mod testes {
     #[test]
     fn a_ilha_tem_minerio_dos_quatro_tiers() {
         let d = &ARQUIPELAGO[0];
-        let i = Ilha::gerar(d.semente, d.raio_blocos.min(800), d.bioma, ESCALA_ALTURA);
+        // A ilha REAL, e nao a de raio 800: o gerador refaz o relevo pelo
+        // tamanho, entao a de 800 e' outra ilha — deu azul acima de verde
+        // enquanto a do jogo da' a escada certa.
+        let i = Ilha::gerar(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
         let mut por_tier = [0u32; 5];
         let mut troncos = 0u32;
         for e in i.todos_os_estorvos() {
@@ -3221,5 +3298,6 @@ mod testes {
         assert!(por_tier[1] > por_tier[2] && por_tier[2] > por_tier[3] && por_tier[3] > por_tier[4],
             "escada de raridade invertida: {:?}", &por_tier[1..]);
     }
+
 
 }

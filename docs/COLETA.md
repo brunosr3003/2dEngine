@@ -40,25 +40,43 @@ fecha a economia (ver `docs/ECONOMIA_DE_CRAFT.md`).
 
 ## Onde a pedra nasce
 
-Acima de **42% do pico do bioma** e dentro de **veio** (ruído de baixa
-frequência). As duas condições juntas é o que faz mina ser *lugar*, e não
-pedra solta espalhada pelo mapa: se houvesse minério em qualquer encosta,
-andar até um lugar não significaria nada.
+No **topo** das montanhas, num **chão limpo**, e nunca encostada em outra.
+Quatro condições, todas funções puras das colunas — o cliente e o servidor
+chegam na mesma resposta sem trocar um byte:
 
-O tier vem da **altitude**: quanto mais alto o pico, melhor o minério, e a
-pedra roxa fica no ponto mais alto da ilha. É o único jeito de o topo da
-montanha ser um destino.
+1. **altura de montanha** — acima de 42% do pico do bioma;
+2. **espaçamento** — só nasce onde o sorteio da coluna é o menor num quadrado
+   de 7×7 blocos, então duas pedras ficam a pelo menos 2 unidades;
+3. **chão limpo** — o quadrado de 5×5 blocos em volta (2,5 u) inteiro na
+   mesma altura. É o que tira a pedra da quina e do degrau, onde metade dela
+   ficava no ar ou enfiada no barranco;
+4. **cume** — nada mais de um bloco acima dela num raio de 8 u. Com o terraço
+   de 4 blocos do relevo, isso quer dizer o patamar mais alto das redondezas,
+   e não uma prateleira no meio da encosta.
 
-Medido na ilha inicial (raio 800, metade da real):
+Não há sorteio de densidade nem "veio" de ruído: **o cume é o lugar**. O
+patamar do topo junta as pedras sozinho, e é ele que vira spot.
 
-| | pedras |
-|---|---|
-| cinza | 421 |
-| verde | 109 |
-| azul | 82 |
-| roxo | 21 |
+O tier vem da **altitude**, com as faixas caindo *entre* os patamares do
+relevo — nunca no meio de um, senão o mesmo cume teria pedra de duas cores.
+Medido na ilha inicial inteira (raio 1600):
 
-O melhor veio tem **24 pedras** no raio do spot; 33% da terra não tem nada.
+| cor | onde | pedras |
+|---|---|---|
+| cinza | cumes até 21 u | 226 |
+| verde | cumes de 22 a 27 u | 105 |
+| azul | cumes de 28 a 29 u | 50 |
+| roxa | picos de 30 u pra cima | 25 |
+
+Cada cor com metade da anterior, e a roxa só nos pontos mais altos da ilha.
+Só 1 das 406 pedras encosta num tronco, então o cume não precisa de regra
+própria pra árvore.
+
+A pedra vai **do joelho à cintura**: no máximo 1,05 u de altura e 1,05 u de
+meia-largura, dentro do chão limpo de 1,25 u que a regra reserva pra ela. O
+teste `a_pedra_cabe_no_chao_limpo` amarra o tamanho do modelo à regra do
+lugar — se alguém aumentar a pedra, ela volta a pendurar na quina, e o teste
+acusa.
 
 ## O ritmo
 
@@ -67,8 +85,9 @@ cheio de 8 pedras rende uma coleta a cada 1,5s; sobrando duas, cai para 6s.
 
 Como cada coleta gasta uma das 14–128 da pedra e a pedra **some do mundo**
 quando acaba, o veio esvazia enquanto é explorado e volta quando descansa. Um
-veio de 24 pedras cinza se acomoda em ~9 vivas sob um jogador: some dois
-terços do que estava lá quando ele chegou, e ele vê isso acontecer.
+cume de 11 pedras cinza — o tamanho dos maiores da ilha — se acomoda em ~4
+vivas sob um jogador, a uma coleta a cada ~3s: somem dois terços do que estava
+lá quando ele chegou, e ele vê isso acontecer.
 
 **Dois jogadores no mesmo veio esvaziam as mesmas pedras**, então cada um leva
 metade — sem nenhuma regra escrita à mão para dividir. É essa linha que faz a
@@ -117,7 +136,9 @@ Todas em `shared/constants.rs`, seção *Coleta*:
 | `RESPAWN_DA_PEDRA` | 300/420/600/900s | quanto o veio demora a voltar |
 | `RENDIMENTO_DA_PEDRA` | tabela acima | o que cada pedra entrega |
 | `MINERIO_LIMIAR` | 0,42 | altura mínima, em fração do pico |
-| `DENSIDADE_DE_MINERIO` | 0,035 | quão cheio é um veio |
+| `MINERIO_ESPACO` | 3 blocos | distância mínima entre pedras |
+| `MINERIO_PLANO` | 2 blocos | meio-lado do chão limpo exigido |
+| `MINERIO_CUME` | 16 blocos | raio em que ela tem que ser a mais alta |
 
 ## A árvore
 
@@ -130,8 +151,9 @@ bosques marcados.
 ## O que ainda não existe
 
 - **A árvore com desenho próprio** (acima).
-- **Mina como lugar construído.** Hoje o veio é ruído sobre o relevo. Uma
-  caverna ou pedreira desenhada seria trabalho de geração de terreno; a coleta
-  a leria de graça, porque ela só pergunta o que há em volta.
-- **Alcançabilidade.** Nada garante que toda pedra esteja num ponto em que o
-  jogador consiga pisar. Veio em face de paredão existe e fica inútil.
+- **Mina como lugar construído.** Hoje o lugar é o cume que o relevo já tem.
+  Uma caverna ou pedreira desenhada seria trabalho de geração de terreno; a
+  coleta a leria de graça, porque ela só pergunta o que há em volta.
+- **Caminho até o cume.** A pedra está sempre em chão plano, mas nada garante
+  que exista rampa até aquele patamar — um cume cercado de paredão acima do
+  pulo tem pedra que ninguém alcança.
