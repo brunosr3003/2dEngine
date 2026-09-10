@@ -7,7 +7,7 @@
 
 use macroquad::prelude::*;
 use macroquad::material::{load_material, Material, MaterialParams};
-use macroquad::miniquad::graphics::PipelineParams;
+use macroquad::miniquad::graphics::{PipelineParams, UniformDesc, UniformType};
 use macroquad::models::{Mesh, Vertex};
 use shared::constants::tile_id;
 
@@ -362,6 +362,49 @@ mod testes_camera {
         }
     }
 
+    /// O furo tem que ficar EM CIMA do jogador e comecar antes dele.
+    ///
+    /// Sao as duas coisas que decidem se o recorte serve: centrado fora do
+    /// boneco ele mostra o lugar errado, e comecando na profundidade do
+    /// proprio jogador ele abre um buraco no chao em volta dos pes — porque
+    /// visto de cima, o terreno logo a' frente do corpo esta' mais perto da
+    /// camera que o corpo.
+    #[test]
+    fn o_furo_fica_em_cima_do_jogador_e_comeca_antes_dele() {
+        for (yaw, zoom) in [(0.0f32, 1.0f32), (1.3, 0.6), (-2.2, 1.4)] {
+            let cam = camera(Vec2::ZERO, 10.0, yaw, zoom, pitch_do_zoom(zoom));
+            let jogador = vec3(0.0, 10.0, 0.0);
+            let tela = vec2(1920.0, 1080.0);
+            let (recorte, corte_z) = recorte_do_jogador(&cam, jogador, 80.0, tela);
+
+            // O centro do furo cai onde o corpo e' desenhado.
+            let m = matriz_da_camera(&cam, tela.x / tela.y);
+            let meio = jogador + vec3(0.0, 0.6, 0.0);
+            let alvo = world_to_screen_com(&m, meio, tela).expect("jogador na tela");
+            assert!(
+                (recorte.x - alvo.x).abs() < 1.0
+                    && (recorte.y - (tela.y - alvo.y)).abs() < 1.0,
+                "yaw {yaw}: furo em ({:.0}, {:.0}), jogador em ({:.0}, {:.0})",
+                recorte.x, recorte.y, alvo.x, tela.y - alvo.y
+            );
+
+            // E o corte comeca ANTES do jogador: a profundidade de referencia
+            // e' menor (mais perto da camera) que a dele.
+            assert!(
+                corte_z < alvo.z,
+                "yaw {yaw}: corte em {corte_z:.5} nao esta' na frente do \
+                 jogador em {:.5} — o furo vai comer o chao",
+                alvo.z
+            );
+            // E nao TAO antes a ponto de nunca pegar nada.
+            assert!(
+                alvo.z - corte_z < 0.02,
+                "yaw {yaw}: corte {:.5} longe demais do jogador",
+                alvo.z - corte_z
+            );
+        }
+    }
+
     /// A camera nao pode ARRANCAR num degrau — e' o defeito que a mola veio
     /// consertar. A interpolacao exponencial anda proporcional a distancia,
     /// entao um degrau isolado saia macio e uma escada saia chicoteando.
@@ -534,6 +577,81 @@ pub fn raio_da_tela(cam: &Camera3D, tela: Vec2) -> (Vec3, Vec3) {
     (cam.position, dir)
 }
 
+/// Onde e ate' onde furar o mundo pra o jogador aparecer.
+///
+/// Devolve `(centro_x, centro_y, raio)` em pixels de `gl_FragCoord` — origem
+/// embaixo — e a profundidade de janela a partir da qual um fragmento conta
+/// como estando NA FRENTE do jogador.
+///
+/// ── A margem e' o detalhe que faz funcionar ──────────────────────────────
+///
+/// Cortar tudo que estiver mais perto que o jogador parece certo e abre um
+/// buraco no chao em volta dos pes dele: a camera olha de cima, entao o
+/// terreno logo a' frente do corpo esta' a poucos centimetros de distancia da
+/// camera — mais perto, portanto cortado.
+///
+/// Entao a referencia nao e' o jogador: e' um ponto `MARGEM` unidades NA
+/// DIRECAO DA CAMERA a partir dele. Só o que estiver antes disso vira furo, e
+/// isso e' obstaculo de verdade — parede, tronco, casa — e nao o chao em que
+/// ele pisa.
+pub fn recorte_do_jogador(
+    cam: &Camera3D,
+    jogador: Vec3,
+    raio_px: f32,
+    tela: Vec2,
+) -> (Vec3, f32) {
+    /// Quanto um obstaculo precisa estar a' frente do jogador pra virar furo.
+    ///
+    /// Mais que a metade da profundidade do corpo e menos que a distancia
+    /// tipica de uma arvore vizinha.
+    const MARGEM: f32 = 1.1;
+
+    let m = matriz_da_camera(cam, tela.x / tela.y);
+    // Mira no MEIO do corpo e nao nos pes: o furo existe pra mostrar o
+    // boneco, e centrar nos pes joga metade dele pra fora do circulo.
+    let meio = jogador + vec3(0.0, 0.6, 0.0);
+    let Some(no_alvo) = world_to_screen_com(&m, meio, tela) else {
+        return (Vec3::ZERO, 0.0);
+    };
+    let pra_camera = (cam.position - meio).normalize_or_zero();
+    let corte = meio + pra_camera * MARGEM;
+    let Some(atras) = world_to_screen_com(&m, corte, tela) else {
+        return (Vec3::ZERO, 0.0);
+    };
+    // `gl_FragCoord` conta o Y de baixo pra cima; a tela, de cima pra baixo.
+    (vec3(no_alvo.x, tela.y - no_alvo.y, raio_px), atras.z)
+}
+
+/// A matriz projecao×vista da camera, com a proporcao vinda de fora.
+///
+/// A `Camera3D::matrix()` da macroquad consulta o tamanho da JANELA mesmo
+/// quando a proporcao esta' preenchida — e' a primeira coisa que ela faz.
+/// Isso amarra a conta ao contexto grafico e deixa a projecao sem teste, que
+/// e' justamente onde os erros de "clique mira num lugar, o olho ve' outro"
+/// moram. Aqui a proporcao e' argumento.
+fn matriz_da_camera(cam: &Camera3D, proporcao: f32) -> Mat4 {
+    Mat4::perspective_rh_gl(cam.fovy, proporcao, cam.z_near, cam.z_far)
+        * Mat4::look_at_rh(cam.position, cam.target, cam.up)
+}
+
+/// Projeta pra pixel de tela mais PROFUNDIDADE DE JANELA (0..1), que e' a
+/// escala em que o `gl_FragCoord.z` do shader vive.
+///
+/// A `world_to_screen` da macroquad joga o z fora, e e' justamente ele que
+/// decide o que esta' na frente de quem.
+fn world_to_screen_com(m: &Mat4, p: Vec3, tela: Vec2) -> Option<Vec3> {
+    let c = *m * p.extend(1.0);
+    if c.w.abs() < 1e-6 {
+        return None;
+    }
+    let ndc = c.truncate() / c.w;
+    Some(vec3(
+        (ndc.x * 0.5 + 0.5) * tela.x,
+        (0.5 - ndc.y * 0.5) * tela.y,
+        ndc.z * 0.5 + 0.5,
+    ))
+}
+
 /// Material que DESCARTA a face de costas.
 ///
 /// A macroquad desenha com `CullFace::Nothing` — todo triangulo e' rasterizado
@@ -567,19 +685,48 @@ pub fn material_solido() -> Material {
         color = color0 / 255.0;
         uv = texcoord;
     }"#;
+    // O recorte que deixa o jogador aparecer atraves do que estiver na
+    // frente dele. Ver `recorte_do_jogador`.
+    //
+    //   Recorte.xy  centro do furo, em pixels (origem embaixo, como o
+    //               `gl_FragCoord`)
+    //   Recorte.z   raio do furo, em pixels. Zero desliga.
+    //   RecorteZ    profundidade de janela a partir da qual um fragmento
+    //               conta como "na frente do jogador"
     const FRAGMENTO: &str = r#"#version 100
     varying lowp vec4 color;
     varying lowp vec2 uv;
 
     uniform sampler2D Texture;
+    uniform highp vec3 Recorte;
+    uniform highp float RecorteZ;
 
     void main() {
+        if (Recorte.z > 0.0 && gl_FragCoord.z < RecorteZ) {
+            highp float d = distance(gl_FragCoord.xy, Recorte.xy) / Recorte.z;
+            if (d < 1.0) {
+                // A borda some com PADRAO DE TELA e nao com transparencia:
+                // recorte transparente exigiria ordenar o mundo de tras pra
+                // frente, e o mundo aqui e' um monte de pedaco em cache. O
+                // pontilhado da a mesma leitura de "esta' sumindo" custando
+                // um `discard`.
+                highp float ruido = fract(sin(dot(
+                    floor(gl_FragCoord.xy * 0.5),
+                    vec2(12.9898, 78.233))) * 43758.5453);
+                highp float borda = smoothstep(0.62, 1.0, d);
+                if (ruido >= borda) discard;
+            }
+        }
         gl_FragColor = color * texture2D(Texture, uv);
     }"#;
 
     load_material(
         ShaderSource::Glsl { vertex: VERTICE, fragment: FRAGMENTO },
         MaterialParams {
+            uniforms: vec![
+                UniformDesc::new("Recorte", UniformType::Float3),
+                UniformDesc::new("RecorteZ", UniformType::Float1),
+            ],
             pipeline_params: PipelineParams {
                 cull_face: miniquad::graphics::CullFace::Back,
                 depth_test: miniquad::graphics::Comparison::LessOrEqual,

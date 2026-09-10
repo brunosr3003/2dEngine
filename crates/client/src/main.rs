@@ -718,6 +718,22 @@ impl Jogo {
         // face de costas. O HUD volta pro material padrao no fim, porque ele
         // e' 2D e nao tem lado de tras.
         gl_use_material(&self.solido);
+        // ── VER O PERSONAGEM ATRAVES DO QUE ESTA' NA FRENTE ──
+        //
+        // O furo acompanha o jogador e so' vale pro que estiver a' frente
+        // dele. Raio em fracao da ALTURA da tela, e nao em pixels fixos:
+        // senao ele vira um ponto no monitor grande e um prato no celular.
+        let (recorte, corte_z) = match self.world.self_id.and_then(|id| self.world.ents.get(&id)) {
+            Some(e) => render3d::recorte_do_jogador(
+                &vista.cam,
+                vista.pos_de(e),
+                screen_height() * 0.085,
+                vec2(screen_width(), screen_height()),
+            ),
+            None => (Vec3::ZERO, 0.0),
+        };
+        self.solido.set_uniform("Recorte", recorte);
+        self.solido.set_uniform("RecorteZ", corte_z);
         match &self.terreno {
             Some(t) => {
                 self.pedacos_desenhados = t.desenha(&vista.cam);
