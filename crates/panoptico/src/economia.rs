@@ -11,7 +11,7 @@
 //! formula propria — painel com a sua versao da regra vira uma segunda regra.
 
 use serde::Serialize;
-use shared::forja::{self, Grau, REFINO_MAX, REFINO_SEGURO};
+use shared::forja::{self, Degrau, Grau, REFINO_MAX, REFINO_SEGURO, TIER_MAX};
 use sqlx::{PgPool, Row};
 
 /// Le' uma coluna, ou o padrao.
@@ -31,6 +31,14 @@ where
 pub struct Economia {
     /// A escada de refino, por grau. Previsao.
     escadas: Vec<EscadaDoGrau>,
+    /// A escada de DEGRAUS (grau x tier) com o refino em cima. E' aqui que as
+    /// duas se multiplicam.
+    degraus: Vec<DegrauNoMundo>,
+    /// Os niveis de refino que a tabela de degraus mostra.
+    alvos: Vec<u8>,
+    /// A curva de demanda: o que cada passo da progressao cobra A MAIS.
+    demanda: Vec<PassoDaDemanda>,
+    tier_max: u8,
     /// Chance de chegar a cada nivel, e onde comeca a destruicao.
     chances: Vec<u8>,
     refino_seguro: u8,
@@ -49,11 +57,43 @@ struct EscadaDoGrau {
     grau: String,
     /// Custo de UMA tentativa: (darksteel, cobre).
     tentativa: [u32; 2],
-    degraus: Vec<Degrau>,
+    degraus: Vec<Nivel>,
+}
+
+/// Um passo da progressao, com o custo MARGINAL.
+///
+/// O acumulado sozinho engana: ele cresce e a pessoa se acostuma com a curva.
+/// O que decide se o jogador continua ou para e' o proximo passo — quanto ele
+/// cobra A MAIS do que o que acabou de ser pago.
+#[derive(Serialize)]
+struct PassoDaDemanda {
+    de: String,
+    para: String,
+    /// Acumulado: pecas de base pra ter esta peca, do zero.
+    total: f64,
+    /// So' este passo.
+    passo: f64,
+    /// Quantas vezes este passo custa em relacao ao anterior.
+    vezes: f64,
+    /// Horas de mineracao acumuladas (o darksteel do refino, quando ha').
+    horas: f64,
 }
 
 #[derive(Serialize)]
-struct Degrau {
+struct DegrauNoMundo {
+    nome: String,
+    grau: String,
+    tier: u8,
+    /// Pecas de Comum I que UMA peca deste degrau custa. Dobra a cada passo.
+    base: f64,
+    /// Custo fechado por nivel de refino, na ordem de `alvos`.
+    /// (pecas de base, darksteel, horas)
+    por_alvo: Vec<(f64, f64, f64)>,
+}
+
+/// Um nivel de refino dentro de um grau.
+#[derive(Serialize)]
+struct Nivel {
     alvo: u8,
     pecas: f64,
     tentativas: f64,
@@ -109,6 +149,10 @@ struct LootDoBicho {
 pub async fn levantar(pool: &PgPool, ouro_online: u64) -> Economia {
     Economia {
         escadas: escadas(),
+        degraus: degraus(),
+        alvos: ALVOS.to_vec(),
+        demanda: demanda(),
+        tier_max: TIER_MAX,
         chances: (0..=REFINO_MAX).map(forja::chance_de_refino).collect(),
         refino_seguro: REFINO_SEGURO,
         darksteel_por_hora: forja::DARKSTEEL_POR_HORA,
@@ -118,6 +162,78 @@ pub async fn levantar(pool: &PgPool, ouro_online: u64) -> Economia {
         tabela_de_loot: loot(pool).await,
         ouro_online,
     }
+}
+
+/// Os niveis que a tabela de degraus mostra.
+///
+/// Nao os doze: a tabela e' 20 degraus x N colunas, e doze colunas viram uma
+/// planilha que ninguem le'. Estes quatro contam a historia — sem refino, no
+/// fim da faixa segura, o primeiro degrau de aposta que vale a pena, e onde a
+/// conta ja' saiu do mundo real.
+const ALVOS: [u8; 4] = [0, 5, 7, 9];
+
+fn degraus() -> Vec<DegrauNoMundo> {
+    let base = Degrau::novo(Grau::Comum, 1);
+    let mut fora = Vec::new();
+    for grau in Grau::TODOS {
+        for tier in 1..=TIER_MAX {
+            let d = Degrau::novo(grau, tier);
+            fora.push(DegrauNoMundo {
+                nome: d.to_string(),
+                grau: grau.nome().to_string(),
+                tier,
+                base: d.custo_em(base) as f64,
+                por_alvo: ALVOS
+                    .iter()
+                    .map(|&a| {
+                        let c = forja::custo_total(d, a, base);
+                        (c.pecas_base, c.darksteel, c.horas)
+                    })
+                    .collect(),
+            });
+        }
+    }
+    fora
+}
+
+/// A progressao inteira, degrau a degrau, com o refino de referencia em cima.
+///
+/// O caminho e' o que o jogador realmente anda: sobe os vinte degraus, e em
+/// cada um o custo considera levar a peca ao `REFINO_DE_REFERENCIA`. Sem o
+/// refino a curva e' so' potencia de dois, que e' verdade e nao e' a conta —
+/// ninguem para no +0.
+fn demanda() -> Vec<PassoDaDemanda> {
+    /// O refino que o painel usa pra falar de "uma peca pronta".
+    ///
+    /// +7 e nao +12: e' o primeiro degrau de aposta que ainda cabe numa vida
+    /// (106 horas de mineracao num Raro), e foi o numero que decidiu o
+    /// desenho da colonia offline.
+    const REFINO_DE_REFERENCIA: u8 = 7;
+
+    let base = Degrau::novo(Grau::Comum, 1);
+    let mut fora: Vec<PassoDaDemanda> = Vec::new();
+    let mut anterior_total = 0.0f64;
+    let mut anterior_passo = 0.0f64;
+    let mut nome_anterior = String::from("nada");
+    for grau in Grau::TODOS {
+        for tier in 1..=TIER_MAX {
+            let d = Degrau::novo(grau, tier);
+            let c = forja::custo_total(d, REFINO_DE_REFERENCIA, base);
+            let passo = c.pecas_base - anterior_total;
+            fora.push(PassoDaDemanda {
+                de: nome_anterior.clone(),
+                para: d.to_string(),
+                total: c.pecas_base,
+                passo,
+                vezes: if anterior_passo > 0.0 { passo / anterior_passo } else { 0.0 },
+                horas: c.horas,
+            });
+            anterior_total = c.pecas_base;
+            anterior_passo = passo;
+            nome_anterior = d.to_string();
+        }
+    }
+    fora
 }
 
 fn escadas() -> Vec<EscadaDoGrau> {
@@ -130,7 +246,7 @@ fn escadas() -> Vec<EscadaDoGrau> {
                 tentativa: [ds, cu],
                 degraus: forja::escada(g)
                     .into_iter()
-                    .map(|e| Degrau {
+                    .map(|e| Nivel {
                         alvo: e.alvo,
                         pecas: e.pecas,
                         tentativas: e.tentativas,

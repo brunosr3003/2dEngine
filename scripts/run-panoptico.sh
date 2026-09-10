@@ -17,8 +17,18 @@ cd "$(dirname "$0")/.."
 
 [ "${1:-}" = "--build" ] && { cargo build --release -p panoptico; shift; }
 
-BIN=./target/release/panoptico
-[ -x "$BIN" ] || BIN=./target/debug/panoptico
+# Recompila sozinho quando o fonte esta' na frente do binario.
+#
+# A pagina e' `include_str!`: ela entra no binario em tempo de COMPILACAO.
+# Editar o HTML e reiniciar o processo nao muda nada — o painel continua
+# servindo a versao velha, e parece que a mudanca nao funcionou.
+BIN=target/release/panoptico
+[ -x "$BIN" ] || BIN=target/debug/panoptico
+if [ ! -x "$BIN" ] || [ -n "$(find crates/panoptico crates/shared -newer "$BIN" -print -quit 2>/dev/null)" ]; then
+    echo "fonte mais novo que o binario — recompilando"
+    cargo build -p panoptico || exit 1
+    BIN=target/debug/panoptico
+fi
 
 echo "painel:  http://${PANOPTICO_WEB_BIND:-127.0.0.1:8090}/?token=$PANOPTICO_TOKEN"
 exec "$BIN"

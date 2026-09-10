@@ -29,7 +29,10 @@
   .canal .id { font-weight: 700; }
   .canal .sub { color: var(--fraco); font-size: 11px; }
   .mudo { color: var(--mob); }
-  canvas { position: absolute; inset: 0; cursor: crosshair; }
+  /* So' o MAPA e' absoluto. A regra era `canvas` e pegava o grafico da
+     economia junto, jogando ele pro topo da pagina por cima dos cartoes. */
+  #tela { position: absolute; inset: 0; cursor: crosshair; }
+  #curva { display: block; }
   #hud {
     position: absolute; left: 10px; top: 10px; z-index: 2;
     background: rgba(13,16,20,.82); border: 1px solid var(--linha);
@@ -119,6 +122,31 @@
 
   <h2>Progressão</h2>
   <div id="niveis"></div>
+
+  <h2>Curva de demanda</h2>
+  <p class="nota">
+    O caminho inteiro, degrau a degrau, com cada peça levada ao <b>+7</b> — o
+    primeiro degrau de aposta que ainda cabe numa vida. Sem refino a curva é só
+    potência de dois, o que é verdade e não é a conta: ninguém para no +0.
+    <br>
+    A coluna que importa é <b>a mais</b>: o acumulado sozinho engana, porque a
+    pessoa se acostuma com ele. O que decide se o jogador continua ou para é
+    quanto o <i>próximo</i> passo cobra sobre o que ele acabou de pagar.
+  </p>
+  <canvas id="curva" height="220"></canvas>
+  <div id="demanda"></div>
+
+  <h2>A escada dos degraus</h2>
+  <p class="nota">
+    Grau × tier: <b>cada passo dobra</b>. Uma Rara IV são 2.048 Comuns I, uma
+    Lendária IV são 524.288 — dezenove dobras.
+    <br>
+    E as duas escadas se <b>multiplicam</b>: o refino come peças
+    <i>daquele degrau</i>, e cada uma delas já custou a escada inteira pra
+    existir. Uma Rara IV destruída no +6 não foi "uma peça", foram 2.048
+    Comuns I. Ler as duas separadas é o que faz um número parecer aceitável.
+  </p>
+  <div id="degraus"></div>
 
   <h2>A escada do refino</h2>
   <p class="nota">
@@ -468,16 +496,22 @@ window.irPara = (id) => {
 
 // ── abas ───────────────────────────────────────────────────────────────
 let economia = null;
+function mostraAba(nome) {
+  document.querySelectorAll('.aba').forEach(x => x.classList.toggle('ativa', x.dataset.aba === nome));
+  const eco = nome === 'economia';
+  document.querySelector('main').hidden = eco;
+  document.querySelector('section').hidden = eco;
+  document.getElementById('economia').hidden = !eco;
+  // A aba vai pra URL: painel de operacao se manda por link, e "abre o
+  // panoptico e clica em economia" nao e' link.
+  if (location.hash.slice(1) !== nome) history.replaceState(null, '', '#' + nome);
+  if (eco) puxaEconomia();
+}
 document.querySelectorAll('.aba').forEach(b => {
-  b.onclick = () => {
-    document.querySelectorAll('.aba').forEach(x => x.classList.toggle('ativa', x === b));
-    const eco = b.dataset.aba === 'economia';
-    document.querySelector('main').hidden = eco;
-    document.querySelector('section').hidden = eco;
-    document.getElementById('economia').hidden = !eco;
-    if (eco) puxaEconomia();
-  };
+  b.onclick = () => mostraAba(b.dataset.aba);
 });
+addEventListener('hashchange', () => mostraAba(location.hash.slice(1) || 'mundo'));
+if (location.hash.slice(1) === 'economia') mostraAba('economia');
 
 async function puxaEconomia() {
   const r = await fetch('/api/economia?token=' + encodeURIComponent(token));
@@ -509,6 +543,56 @@ function tabela(cols, linhas) {
     '</table>';
 }
 
+/// A curva em escala LOG.
+///
+/// Linear nao serve: o ultimo degrau custa meio milhao de vezes o primeiro, e
+/// num grafico linear os dezoito primeiros viram uma linha rente ao chao. Em
+/// log, dobrar vira sempre a mesma altura — e o que salta aos olhos passa a
+/// ser onde a curva DEIXA de dobrar, que e' onde o refino entra.
+function desenhaCurva(passos) {
+  const c = document.getElementById('curva');
+  const g = c.getContext('2d');
+  const larg = c.parentElement.clientWidth - 28;
+  const dpr = devicePixelRatio || 1;
+  c.width = larg * dpr; c.height = 220 * dpr;
+  c.style.width = larg + 'px'; c.style.height = '220px';
+  c.style.margin = '4px 14px';
+  g.scale(dpr, dpr);
+  g.clearRect(0, 0, larg, 220);
+
+  const vals = passos.map(p => Math.max(1, p.total));
+  const lo = Math.log10(vals[0]), hi = Math.log10(vals[vals.length - 1]);
+  const x = i => 34 + i * (larg - 50) / (passos.length - 1);
+  const y = v => 196 - (Math.log10(v) - lo) / (hi - lo) * 176;
+
+  // Linhas de decada, que em log ficam igualmente espacadas.
+  g.strokeStyle = '#232b35'; g.fillStyle = '#7c8ba0';
+  g.font = '10px ui-monospace, monospace'; g.textAlign = 'right';
+  for (let e = Math.ceil(lo); e <= hi; e++) {
+    const yy = y(Math.pow(10, e));
+    g.beginPath(); g.moveTo(34, yy); g.lineTo(larg - 16, yy); g.stroke();
+    g.fillText('1e' + e, 30, yy + 3);
+  }
+
+  // Barras: o custo DO PASSO. É a leitura que interessa.
+  g.fillStyle = '#2c4a6b';
+  for (let i = 0; i < passos.length; i++) {
+    const v = Math.max(1, passos[i].passo);
+    const yy = y(v);
+    g.fillRect(x(i) - 6, yy, 12, 196 - yy);
+  }
+  // Linha: o acumulado.
+  g.strokeStyle = '#d9b45a'; g.lineWidth = 2; g.beginPath();
+  passos.forEach((p, i) => i ? g.lineTo(x(i), y(p.total)) : g.moveTo(x(i), y(p.total)));
+  g.stroke();
+
+  // Marca a virada de cor: e' onde o jogador sente o degrau.
+  g.textAlign = 'center'; g.fillStyle = '#7c8ba0';
+  passos.forEach((p, i) => {
+    if (p.para.endsWith(' I')) g.fillText(p.para.split(' ')[0].slice(0, 4), x(i), 212);
+  });
+}
+
 function desenhaEconomia() {
   const d = economia; if (!d) return;
   const j = d.jogadores;
@@ -532,6 +616,36 @@ function desenhaEconomia() {
       'n' + nv, num(q),
       `<div class="barra-h"><i style="width:${(q / maxN * 100).toFixed(1)}%"></i></div>`,
     ]));
+
+  // ── curva de demanda ──
+  document.getElementById('demanda').innerHTML = tabela(
+    ['passo', 'total (peças de base)', 'a mais', 'vezes o anterior', 'mineração'],
+    d.demanda.map(p => [
+      `<b>${p.para}</b> <span style="color:var(--fraco)">← ${p.de}</span>`,
+      curto(p.total), curto(p.passo),
+      p.vezes ? p.vezes.toFixed(2) + '×' : '—',
+      horas(p.horas),
+    ]));
+  desenhaCurva(d.demanda);
+
+  // ── degraus: grau x tier, com o refino multiplicado por cima ──
+  const cabec = ['degrau', 'peças de base'];
+  for (const alvo of d.alvos) cabec.push(alvo === 0 ? 'sem refino' : '+' + alvo);
+  document.getElementById('degraus').innerHTML = tabela(
+    cabec,
+    d.degraus.map(g => {
+      const l = [
+        `<b>${g.nome}</b>`,
+        curto(g.base),
+      ];
+      for (const [pecas, , h] of g.por_alvo) {
+        // As duas moedas do custo, juntas: PEÇAS é o grind de drop, HORAS é a
+        // mineração que paga o darksteel. Uma sozinha não conta a história —
+        // o mesmo item pode ser barato em minério e impossível em peça.
+        l.push(`${curto(pecas)}<div class="pe">${h > 0 ? horas(h) : '—'}</div>`);
+      }
+      return l;
+    }));
 
   document.getElementById('escadas').innerHTML = d.escadas.map(e => {
     const linhas = e.degraus.filter(g => g.alvo >= 3).map(g => {

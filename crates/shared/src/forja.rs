@@ -449,3 +449,102 @@ mod testes_escada {
         }
     }
 }
+
+/// O custo FECHADO de uma peca: subir os degraus e refinar em cima do topo.
+///
+/// As duas escadas se multiplicam, e e' isso que o painel precisava dizer.
+/// `pecas_por` conta pecas DAQUELE degrau — e cada uma delas ja' custou
+/// `custo_em(base)` pecas de base pra existir. Uma Rara IV destruida no +6
+/// nao foi "uma peca": foram 2.048 Comuns I.
+///
+/// Mostrar as duas separadas, como o painel fazia, esconde justamente a conta
+/// que decide o jogo. Raro IV +7 nao custa 17 pecas: custa 34.816 de base.
+#[derive(Debug, Clone, Copy)]
+pub struct CustoTotal {
+    pub degrau: Degrau,
+    pub alvo: u8,
+    /// Pecas do degrau `base` que a coisa inteira consome.
+    pub pecas_base: f64,
+    /// Pecas DO PROPRIO degrau gastas no refino (as destruidas incluidas).
+    pub pecas_do_degrau: f64,
+    pub darksteel: f64,
+    pub cobre: f64,
+    pub horas: f64,
+}
+
+pub fn custo_total(degrau: Degrau, alvo: u8, base: Degrau) -> CustoTotal {
+    let e = escada(degrau.grau)
+        .into_iter()
+        .find(|e| e.alvo == alvo)
+        .unwrap_or(Escada {
+            alvo: 0,
+            pecas: 1.0,
+            tentativas: 0.0,
+            darksteel: 0.0,
+            cobre: 0.0,
+            horas: 0.0,
+        });
+    let por_peca = degrau.custo_em(base) as f64;
+    CustoTotal {
+        degrau,
+        alvo,
+        pecas_base: e.pecas * por_peca,
+        pecas_do_degrau: e.pecas,
+        darksteel: e.darksteel,
+        cobre: e.cobre,
+        horas: e.horas,
+    }
+}
+
+#[cfg(test)]
+mod testes_custo_total {
+    use super::*;
+
+    /// As duas escadas se MULTIPLICAM.
+    ///
+    /// Raro IV custa 2.048 Comuns I (onze dobras), e o +7 come 17 pecas do
+    /// proprio degrau. Sao 34 mil pecas de base, e nao 17 — a diferenca entre
+    /// as duas leituras e' de tres ordens de grandeza, e e' a leitura errada
+    /// que faz um numero parecer aceitavel.
+    #[test]
+    fn o_tier_multiplica_o_refino() {
+        let base = Degrau::novo(Grau::Comum, 1);
+        let raro4 = Degrau::novo(Grau::Raro, TIER_MAX);
+        assert_eq!(raro4.custo_em(base), 2048);
+
+        let c = custo_total(raro4, 7, base);
+        assert!((c.pecas_do_degrau - 16.67).abs() < 0.5, "{}", c.pecas_do_degrau);
+        assert!(
+            (c.pecas_base - 34_133.0).abs() < 200.0,
+            "Raro IV +7 deu {:.0} pecas de base, esperado ~34.100", c.pecas_base
+        );
+        // O darksteel NAO muda com o tier: ele e' por tentativa, e a tentativa
+        // cobra pelo grau. Quem paga o tier sao as pecas.
+        let raro1 = custo_total(Degrau::novo(Grau::Raro, 1), 7, base);
+        assert_eq!(c.darksteel.round(), raro1.darksteel.round());
+        assert!(c.pecas_base > raro1.pecas_base * 7.0);
+    }
+
+    /// Sem refino, o custo e' so' a escada de degraus: dobra a cada tier.
+    #[test]
+    fn cada_degrau_dobra() {
+        let base = Degrau::novo(Grau::Comum, 1);
+        let mut anterior = 0.0;
+        for grau in Grau::TODOS {
+            for tier in 1..=TIER_MAX {
+                let d = Degrau::novo(grau, tier);
+                let c = custo_total(d, 0, base);
+                if anterior > 0.0 {
+                    assert!(
+                        (c.pecas_base / anterior - 2.0).abs() < 1e-9,
+                        "{d}: {} nao e' o dobro de {anterior}", c.pecas_base
+                    );
+                }
+                anterior = c.pecas_base;
+            }
+        }
+        // Lendario IV: dezenove dobras a partir do Comum I.
+        let topo = custo_total(Degrau::novo(Grau::Lendario, TIER_MAX), 0, base);
+        assert_eq!(topo.pecas_base as u64, 1 << 19);
+    }
+}
