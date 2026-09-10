@@ -26,6 +26,15 @@ fn mq(v: ::glam::Vec2) -> Vec2 {
 const SMOOTH_K: f32 = 18.0;
 /// Abaixo disto a entidade e' considerada parada.
 const MOVING_EPS: f32 = 0.05;
+/// Velocidade de SUBIR DEGRAU, em unidades por segundo.
+///
+/// O corpo nao salta pro topo do bloco: ele sobe. Meio bloco (0,5) leva 125 ms
+/// — rapido o bastante pra nao virar elevador, devagar o bastante pra o olho
+/// ver o pe' passando por cima da quina em vez de o boneco piscar meio metro
+/// pra cima.
+///
+/// Nao vale pra DESCER: descer e' queda, e queda tem gravidade.
+const SUBIDA: f32 = 4.0;
 
 pub struct Ent {
     /// Dado estavel, recebido uma vez quando a entidade entrou no AOI.
@@ -137,9 +146,7 @@ impl World {
     pub fn tick(&mut self, dt: f32, chao: &dyn Fn(f32, f32) -> f32) {
         // Peso da suavizacao independente do frame rate.
         let a = 1.0 - (-SMOOTH_K * dt).exp();
-        // O apoio troca de bloco de uma vez; seguir mais rapido que a posicao
-        // faz o degrau subir junto com o passo em vez de depois dele.
-        let ay = 1.0 - (-14.0 * dt).exp();
+
         for ent in self.ents.values_mut() {
             let target = mq(ent.state.pos_f32());
             ent.render_pos += (target - ent.render_pos) * a;
@@ -199,10 +206,15 @@ impl World {
                 ent.voando = true;
                 ent.vel_y = 0.0;
             } else {
-                // No chao: sobe degrau suavemente. E' o pe' passando por cima
-                // da quina, e nao escalada — meio bloco em ~70 ms.
+                // No chao, subindo degrau: TAXA CONSTANTE, nao exponencial.
+                //
+                // A exponencial anda o grosso do caminho nos dois primeiros
+                // quadros e vai freando — o degrau lia como teleporte com um
+                // rastro. Taxa constante gasta o mesmo tempo em todo o degrau,
+                // e e' isso que faz o passo ler como passo: meio bloco em 125
+                // ms, rapido o bastante pra nao parecer elevador.
                 ent.vel_y = 0.0;
-                ent.render_y += (apoio - ent.render_y) * ay;
+                ent.render_y = (ent.render_y + SUBIDA * dt).min(apoio);
             }
 
             let vel = mq(ent.state.vel_f32());
@@ -315,6 +327,58 @@ mod testes {
             "o pico tem que ser PULO_ALTURA, foi {pico}"
         );
         assert!(alturas.last().is_some_and(|&h| h == 0.0), "tem que acabar no chao");
+    }
+
+    /// Subir degrau tem que ser SUBIDA, nao teleporte: nenhum quadro pode
+    /// engolir o degrau inteiro, e o tempo total tem que caber num passo.
+    ///
+    /// A versao anterior era exponencial e passava neste teste pela metade —
+    /// ela chegava perto rapido, mas gastava 70% do degrau nos dois primeiros
+    /// quadros, que e' o que o olho le' como salto.
+    #[test]
+    fn o_degrau_e_subido_e_nao_teleportado() {
+        let dt = 1.0 / 60.0;
+        let mut w = World::default();
+        let id = shared::EntityId(1);
+        w.apply(
+            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None }],
+            vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF }],
+            &[],
+        );
+        // Assenta no chao de baixo.
+        w.tick(dt, &|_, _| 0.0);
+        assert_eq!(w.ents[&id].render_y, 0.0);
+
+        // O chao sobe meio bloco de uma vez, como acontece ao cruzar a divisa.
+        let degrau = 0.5f32;
+        let mut alturas = vec![w.ents[&id].render_y];
+        for _ in 0..60 {
+            w.tick(dt, &|_, _| degrau);
+            alturas.push(w.ents[&id].render_y);
+        }
+
+        // Nenhum quadro anda mais que a taxa permite.
+        for par in alturas.windows(2) {
+            let passo = par[1] - par[0];
+            assert!(
+                passo <= SUBIDA * dt + 1e-5,
+                "um quadro subiu {passo:.4}, teto {:.4}", SUBIDA * dt
+            );
+            assert!(passo >= -1e-6, "a subida desceu {passo:.4}");
+        }
+        // E chega: meio bloco a 4 u/s sao 125 ms, ou 8 quadros a 60 Hz.
+        let chegou = alturas.iter().position(|h| (h - degrau).abs() < 1e-4);
+        let chegou = chegou.expect("nunca chegou no topo do degrau");
+        assert!(
+            (6..=10).contains(&chegou),
+            "levou {chegou} quadros pra subir meio bloco — esperado ~8"
+        );
+        // O primeiro quadro nao pode engolir o degrau: era o defeito da
+        // exponencial, que subia 21% do caminho de uma vez.
+        assert!(
+            alturas[1] < degrau * 0.2,
+            "o primeiro quadro subiu {:.0}% do degrau", alturas[1] / degrau * 100.0
+        );
     }
 
     /// O arco DESENHADO tem que ser o mesmo que o servidor usa pra liberar o
