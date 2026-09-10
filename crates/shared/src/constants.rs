@@ -312,155 +312,14 @@ pub enum ToolKind {
     FishingRod = 3,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[repr(u8)]
-pub enum Proficiency {
-    Sword    = 0,
-    Staff    = 1,
-    Dagger   = 2,
-    Bow      = 3,
-    Wand     = 4,
-    Unarmed  = 5,
-    Axe      = 6,
-    Spear    = 7,
-    // Farm (coleta) — uma proficiência por tipo de nó. Substituiu o antigo
-    // `Farm` único (idx 8). XP de "Farm" legado é migrado pra Gathering.
-    Mining      = 8,
-    Woodcutting = 9,
-    Gathering   = 10,
-    // Craft — uma proficiência por estação de craft (`craft_station`).
-    Smithing    = 11, // FORGE
-    Tailoring   = 12, // ATELIER
-    Smelting    = 13, // SMELTER
-    Carpentry   = 14, // CARPENTRY
-}
+/// Quantas proficiencias um personagem tem: uma por CONJUNTO de arma.
+///
+/// Eram quinze — oito de arma, tres de coleta, quatro de artesanato. Coleta e
+/// artesanato perderam a proficiencia (o que trava no' alto agora e' a
+/// FERRAMENTA, que o jogador ve'), e as oito de arma viraram os quatro
+/// conjuntos. O indice e' `shared::skills::Conjunto as usize`.
+pub const PROF_COUNT: usize = 4;
 
-/// Total de proficiências (tamanho do array em CharacterRow.proficiencies).
-pub const PROF_COUNT: usize = 15;
-
-impl Proficiency {
-    pub fn all() -> &'static [Proficiency] {
-        &[
-            Self::Sword, Self::Staff, Self::Dagger, Self::Bow,
-            Self::Wand, Self::Unarmed, Self::Axe, Self::Spear,
-            Self::Mining, Self::Woodcutting, Self::Gathering,
-            Self::Smithing, Self::Tailoring, Self::Smelting, Self::Carpentry,
-        ]
-    }
-
-    pub fn from_item(id: u16) -> Self {
-        match id {
-            _ if id == item_id::SWORD
-                || id == item_id::GREAT_SWORD
-                || id == item_id::ENHANCED_SWORD
-                || id == item_id::VETERAN_SWORD => Self::Sword,
-            _ if id == item_id::STAFF
-                || id == item_id::ENHANCED_STAFF => Self::Staff,
-            _ if id == item_id::DAGGER          => Self::Dagger,
-            _ if id == item_id::BOW
-                || id == item_id::ENHANCED_BOW   => Self::Bow,
-            _ if id == item_id::WAND
-                || id == item_id::ENHANCED_WAND  => Self::Wand,
-            _ if id == item_id::AXE
-                || id == item_id::ENHANCED_AXE   => Self::Axe,
-            _ if id == item_id::SPEAR
-                || id == item_id::ENHANCED_SPEAR => Self::Spear,
-            // Phase G — armas T1-T4 (Espada+Espadão, Machado, Lança, Cajado, Varinha, Arco)
-            221..=228 => Self::Sword,
-            237..=240 => Self::Axe,
-            241..=244 => Self::Spear,
-            257..=260 => Self::Staff,
-            261..=264 => Self::Wand,
-            265..=268 => Self::Bow,
-            _                                    => Self::Unarmed,
-        }
-    }
-
-    /// Identificador estável usado em DB e protocolo (campo `prof` da skill).
-    /// Mantém em sync com [`Self::from_str`].
-    pub fn as_db_str(&self) -> &'static str {
-        match self {
-            Self::Sword   => "Sword",
-            Self::Staff   => "Staff",
-            Self::Dagger  => "Dagger",
-            Self::Bow     => "Bow",
-            Self::Wand    => "Wand",
-            Self::Unarmed => "Unarmed",
-            Self::Axe     => "Axe",
-            Self::Spear   => "Spear",
-            Self::Mining      => "Mining",
-            Self::Woodcutting => "Woodcutting",
-            Self::Gathering   => "Gathering",
-            Self::Smithing    => "Smithing",
-            Self::Tailoring   => "Tailoring",
-            Self::Smelting    => "Smelting",
-            Self::Carpentry   => "Carpentry",
-        }
-    }
-
-    /// Inverso de `as_db_str`. Retorna None pra strings desconhecidas.
-    /// `"Farm"` (legado, idx 8 unificado) é migrado pra `Gathering`.
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "Sword"   => Some(Self::Sword),
-            "Staff"   => Some(Self::Staff),
-            "Dagger"  => Some(Self::Dagger),
-            "Bow"     => Some(Self::Bow),
-            "Wand"    => Some(Self::Wand),
-            "Unarmed" => Some(Self::Unarmed),
-            "Axe"     => Some(Self::Axe),
-            "Spear"   => Some(Self::Spear),
-            "Mining"      => Some(Self::Mining),
-            "Woodcutting" => Some(Self::Woodcutting),
-            "Gathering" | "Farm" => Some(Self::Gathering),
-            "Smithing"    => Some(Self::Smithing),
-            "Tailoring"   => Some(Self::Tailoring),
-            "Smelting"    => Some(Self::Smelting),
-            "Carpentry"   => Some(Self::Carpentry),
-            _         => None,
-        }
-    }
-
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            Self::Sword   => "Espada",
-            Self::Staff   => "Cajado",
-            Self::Dagger  => "Adaga",
-            Self::Bow     => "Arco",
-            Self::Wand    => "Varinha",
-            Self::Unarmed => "Desarmado",
-            Self::Axe     => "Machado",
-            Self::Spear   => "Lança",
-            Self::Mining      => "Mineração",
-            Self::Woodcutting => "Lenhador",
-            Self::Gathering   => "Coleta",
-            Self::Smithing    => "Ferraria",
-            Self::Tailoring   => "Alfaiataria",
-            Self::Smelting    => "Fundição",
-            Self::Carpentry   => "Carpintaria",
-        }
-    }
-
-    /// Proficiência de farm correspondente ao tipo de nó (`FarmNode.kind`).
-    pub fn from_farm_kind(kind: &str) -> Self {
-        match kind {
-            "Tree" => Self::Woodcutting,
-            "Rock" => Self::Mining,
-            _      => Self::Gathering, // Flower e demais
-        }
-    }
-
-    /// Proficiência de craft correspondente à estação (`craft_station`).
-    pub fn from_craft_station(station: u8) -> Self {
-        match station {
-            craft_station::FORGE     => Self::Smithing,
-            craft_station::ATELIER   => Self::Tailoring,
-            craft_station::SMELTER   => Self::Smelting,
-            craft_station::CARPENTRY => Self::Carpentry,
-            _                        => Self::Smithing,
-        }
-    }
-}
 
 /// Nível mínimo de proficiência exigido para farmar/craftar um recurso de
 /// dado tier. T1 livre; T2=5, T3=20, T4=30. Vale tanto pra farm quanto craft.
@@ -473,17 +332,6 @@ pub const fn tier_level_req(tier: u8) -> u32 {
     }
 }
 
-/// Igual a `tier_level_req`, mas ciente da proficiência. Fundição e Marcenaria
-/// não têm receita T1 (refinam mineral/madeira que já saem como T2+), então o
-/// T2 é o tier de ENTRADA delas e precisa ser craftável desde o nível 1 —
-/// senão deadlock: só se ganha XP fundindo/marcenando, mas não dá pra fazer
-/// isso sem o nível. As demais proficiências caem no gate padrão.
-pub const fn tier_level_req_for(prof: Proficiency, tier: u8) -> u32 {
-    if tier == 2 && matches!(prof, Proficiency::Smelting | Proficiency::Carpentry) {
-        return 1;
-    }
-    tier_level_req(tier)
-}
 
 /// Nivel de proficiencia dado XP acumulado (curva quadratica similar ao XP do player).
 pub const fn proficiency_level(prof_xp: u64) -> u32 {
@@ -1036,19 +884,20 @@ pub fn weapon_allows_offhand(weapon_id: u16) -> bool {
         || (261..=264).contains(&weapon_id)
 }
 
-/// Requisito de level de proficiência pra equipar este item. None = sem
-/// requisito (a maioria dos itens). Items com gate retornam (prof, min_level).
-/// Checked no equip path em `world.rs::handle_equip_request`. Char level
-/// requirement vem do `ItemInstance.level_req` (separado).
-pub const fn item_prof_req(item_id: u16) -> Option<(Proficiency, u16)> {
+/// Nivel de proficiencia do CONJUNTO pra equipar este item.
+///
+/// `None` = sem requisito. O conjunto sai da propria arma, entao o requisito e'
+/// so' o numero: quem pede espada aprimorada pede proficiencia 5 no conjunto
+/// que aquela espada e'.
+pub const fn item_prof_req(item_id: u16) -> Option<u16> {
     match item_id {
-        id if id == item_id::ENHANCED_SWORD => Some((Proficiency::Sword, 5)),
-        id if id == item_id::VETERAN_SWORD  => Some((Proficiency::Sword, 10)),
-        id if id == item_id::ENHANCED_BOW   => Some((Proficiency::Bow,   5)),
-        id if id == item_id::ENHANCED_STAFF => Some((Proficiency::Staff, 5)),
-        id if id == item_id::ENHANCED_WAND  => Some((Proficiency::Wand,  5)),
-        id if id == item_id::ENHANCED_AXE   => Some((Proficiency::Axe,   5)),
-        id if id == item_id::ENHANCED_SPEAR => Some((Proficiency::Spear, 5)),
+        id if id == item_id::ENHANCED_SWORD => Some(5),
+        id if id == item_id::VETERAN_SWORD  => Some(10),
+        id if id == item_id::ENHANCED_BOW   => Some(5),
+        id if id == item_id::ENHANCED_STAFF => Some(5),
+        id if id == item_id::ENHANCED_WAND  => Some(5),
+        id if id == item_id::ENHANCED_AXE   => Some(5),
+        id if id == item_id::ENHANCED_SPEAR => Some(5),
         _ => None,
     }
 }

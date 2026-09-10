@@ -3116,7 +3116,7 @@ impl GameWorld {
         // jogador — e conferir isso aqui e' o que impede um cliente modificado
         // de conjurar a skill de uma arma que nao tem.
         let conjunto = shared::skills::Conjunto::de_u8(
-            shared::Proficiency::from_item(session.equipment.weapon.unwrap_or(0)) as u8,
+            shared::skills::Conjunto::da_arma(session.equipment.weapon.unwrap_or(0)) as u8,
         );
         if conjunto != Some(skill.conjunto) {
             return;
@@ -4022,13 +4022,8 @@ impl GameWorld {
             s.proficiencies = saved_profs;
             s.proficiencies_dirty = true;
             // Níveis de farm derivam do XP de prof (Mineração/Lenhador/Coleta).
-            // As colunas *_lvl no DB são só cache legado.
-            s.woodcutting_lvl = shared::proficiency_level(
-                saved_profs[shared::Proficiency::Woodcutting as usize]).max(1);
-            s.mining_lvl      = shared::proficiency_level(
-                saved_profs[shared::Proficiency::Mining as usize]).max(1);
-            s.gathering_lvl   = shared::proficiency_level(
-                saved_profs[shared::Proficiency::Gathering as usize]).max(1);
+            // Coleta perdeu proficiencia: nao ha' nivel de lenha, mineracao
+            // nem colheita.
             s.faction         = row.faction;
             s.quests          = row.quests.clone();
             s.quests_dirty    = false;
@@ -6443,8 +6438,8 @@ impl GameWorld {
                     let base_cd = if shared::weapon_is_melee(weapon_id) {
                         ATTACK_COOLDOWN
                     } else {
-                        match shared::Proficiency::from_item(weapon_id) {
-                            shared::Proficiency::Wand | shared::Proficiency::Staff =>
+                        match shared::skills::Conjunto::da_arma(weapon_id) {
+                            shared::skills::Conjunto::AnelMagico =>
                                 shared::MAGIC_ATTACK_COOLDOWN,
                             _ => shared::BOW_ATTACK_COOLDOWN,
                         }
@@ -6459,8 +6454,8 @@ impl GameWorld {
                     let raw_mult = session.stats.attack_speed_mult.max(0.5);
                     let bonus = raw_mult - 1.0;
                     let is_caster = matches!(
-                        shared::Proficiency::from_item(weapon_id),
-                        shared::Proficiency::Wand | shared::Proficiency::Staff
+                        shared::skills::Conjunto::da_arma(weapon_id),
+                        shared::skills::Conjunto::AnelMagico
                     );
                     let is_two_handed = !shared::weapon_allows_offhand(weapon_id)
                         && weapon_id != 0;
@@ -6555,9 +6550,8 @@ impl GameWorld {
             };
 
             let weapon_id = session.equipment.weapon.unwrap_or(0);
-            let proj_kind: u8 = match shared::Proficiency::from_item(weapon_id) {
-                shared::Proficiency::Wand  => 1, // fireball
-                shared::Proficiency::Staff => 5, // electric ball
+            let proj_kind: u8 = match shared::skills::Conjunto::da_arma(weapon_id) {
+                shared::skills::Conjunto::AnelMagico => 1, // bola de magia
                 _                          => 0, // arrow
             };
             // Crit roll por ataque: roll uniforme; se hit, multiplica
@@ -6599,12 +6593,12 @@ impl GameWorld {
             // Reset se passou COMBO_RESET_TIME desde o último attack.
             let is_melee = shared::weapon_is_melee(weapon_id);
             let attack_anim_code = shared::weapon_attack_anim(weapon_id);
-            let prof = shared::Proficiency::from_item(weapon_id);
+            let prof = shared::skills::Conjunto::da_arma(weapon_id);
             let is_caster_thrust = matches!(
                 prof,
-                shared::Proficiency::Wand | shared::Proficiency::Staff
+                shared::skills::Conjunto::AnelMagico
             );
-            let is_bow = matches!(prof, shared::Proficiency::Bow);
+            let is_bow = matches!(prof, shared::skills::Conjunto::Pistolas);
             let combo_eligible = wants_attack
                 && (
                     (is_melee && attack_anim_code == shared::components::attack_anim::SLASH)
@@ -8487,7 +8481,7 @@ impl GameWorld {
                     if weapon_id != 0 {
                         self.attacker_weapon_this_tick.insert(target_id, weapon_id);
                     }
-                    let prof = shared::Proficiency::from_item(weapon_id);
+                    let prof = shared::skills::Conjunto::da_arma(weapon_id);
                     let idx = prof as usize;
                     if idx < attacker.proficiencies.len() {
                         let old_lvl = shared::proficiency_level(attacker.proficiencies[idx]);
@@ -8638,7 +8632,7 @@ impl GameWorld {
                             session.fame = session.fame.saturating_add(fame_share);
                             // Bonus de proficiencia ao matar: 10 XP na arma atual
                             let weapon_id = session.equipment.weapon.unwrap_or(0);
-                            let prof = shared::Proficiency::from_item(weapon_id);
+                            let prof = shared::skills::Conjunto::da_arma(weapon_id);
                             let idx = prof as usize;
                             if idx < session.proficiencies.len() {
                                 let old = shared::proficiency_level(session.proficiencies[idx]);
@@ -9587,10 +9581,11 @@ impl GameWorld {
             if let Some(min_lvl) = shared::item_char_level_req(item.item_id) {
                 if (char_level_now as u16) < min_lvl { return false; }
             }
-            // Proficiency level gate por item_id (e.g., ENHANCED_SWORD requer Sword prof 5).
-            if let Some((prof, min_prof_lvl)) = shared::item_prof_req(item.item_id) {
-                let prof_xp = prof_xp_now[prof as usize];
-                let prof_lvl = shared::proficiency_level(prof_xp);
+            // Portao de proficiencia do CONJUNTO: a arma diz qual conjunto e',
+            // e o item diz o nivel que pede.
+            if let Some(min_prof_lvl) = shared::item_prof_req(item.item_id) {
+                let conjunto = shared::skills::Conjunto::da_arma(item.item_id);
+                let prof_lvl = shared::proficiency_level(prof_xp_now[conjunto as usize]);
                 if (prof_lvl as u16) < min_prof_lvl { return false; }
             }
             can_equip_in_slot(&equip_now, slot, item.item_id)
@@ -9715,12 +9710,8 @@ impl GameWorld {
         // Gate: nível de proficiência de craft pro tier (T2=5/T3=20/T4=30).
         // Fundição/Marcenaria têm T2=1 (sem receita T1, senão deadlock).
         // O cliente desabilita a receita; isto é a rede de segurança.
-        let prof = shared::Proficiency::from_craft_station(recipe.station);
-        let craft_req = shared::tier_level_req_for(prof, recipe.tier);
-        if craft_req > 1 {
-            let cur = shared::proficiency_level(session.proficiencies[prof as usize]);
-            if cur < craft_req { return; }
-        }
+        // Artesanato perdeu proficiencia, e com ela o portao de tier. Nada
+        // trava receita alta hoje — ver docs/COMBATE.md, "o que falta decidir".
         // Valida materiais.
         for pair in recipe.inputs.iter() {
             let in_id = pair[0] as u16;
@@ -9788,16 +9779,7 @@ impl GameWorld {
         session.inventory[idx] = new_slot;
         session.inventory_dirty = true;
 
-        // XP de proficiência de craft (escala com o tier). Permite subir o nível
-        // que destrava tiers maiores — é o "leveling" de craft.
-        let prof = shared::Proficiency::from_craft_station(recipe.station);
-        let pi = prof as usize;
-        session.proficiencies[pi] = session.proficiencies[pi]
-            .saturating_add(40u64 * recipe.tier.max(1) as u64);
-        session.proficiencies_dirty = true;
-        let _ = session.handle.to_client.send(ServerMessage::ProficienciesUpdate {
-            xp: session.proficiencies,
-        });
+        // Sem proficiencia de artesanato, nao ha' XP de artesanato.
         self.save_pending = true;
 
         // Tutorial: o GATILHO da quest 903 ("Forje sua Arma") é o ATO de craftar
@@ -11515,18 +11497,9 @@ impl GameWorld {
 
         // Gate: nível de proficiência mínimo pro tier do recurso (T2=10/T3=20/T4=30).
         // O cliente também pré-checa e nem inicia a coleta; isto é a rede de segurança.
-        let req_lvl = shared::tier_level_req(node.tier);
-        if req_lvl > 1 {
-            let prof = shared::Proficiency::from_farm_kind(&node.kind);
-            let cur_lvl = self.sessions.get(&sid)
-                .map(|s| shared::proficiency_level(s.proficiencies[prof as usize]))
-                .unwrap_or(1);
-            if cur_lvl < req_lvl {
-                tracing::info!("[farm diag] node {} tier{} bloqueado: requer {} lv{} (player lv{})",
-                    node_id, node.tier, prof.as_db_str(), req_lvl, cur_lvl);
-                return;
-            }
-        }
+        // Coleta perdeu a proficiencia, e com ela o portao por NIVEL. O que
+        // trava no' alto agora e' a FERRAMENTA — e e' melhor assim: o jogador
+        // ve' a picareta que falta, e nao um numero que ele nao sabe onde sobe.
 
         // Gate: precisa de TOOL do tipo certo equipada no slot dedicado
         // (axe→Tree, sickle→Flower, pickaxe→Rock) com tier >= node.tier.
@@ -11626,28 +11599,7 @@ impl GameWorld {
                 }
             }
 
-            // XP de proficiência de farm por TIPO (Mineração/Lenhador/Coleta).
-            // XP escala com o tier do recurso. Os níveis *_lvl viram cache
-            // derivado do XP de prof (usados pelo cliente em FarmSkillsUpdate).
-            if let Some(s) = self.sessions.get_mut(&sid) {
-                let prof = shared::Proficiency::from_farm_kind(&node_kind);
-                let gain = 30u64 * node_tier.max(1) as u64;
-                let pi = prof as usize;
-                s.proficiencies[pi] = s.proficiencies[pi].saturating_add(gain);
-                s.proficiencies_dirty = true;
-
-                s.woodcutting_lvl = shared::proficiency_level(
-                    s.proficiencies[shared::Proficiency::Woodcutting as usize]);
-                s.mining_lvl = shared::proficiency_level(
-                    s.proficiencies[shared::Proficiency::Mining as usize]);
-                s.gathering_lvl = shared::proficiency_level(
-                    s.proficiencies[shared::Proficiency::Gathering as usize]);
-
-                // coleta perdeu proficiencia: nada pra enviar
-                let _ = s.handle.to_client.send(ServerMessage::ProficienciesUpdate {
-                    xp: s.proficiencies,
-                });
-            }
+            // Sem proficiencia de coleta, nao ha' XP de coleta.
             self.save_pending = true;
         }
     }
@@ -12410,7 +12362,7 @@ fn effective_stats(
 
     // Scaling da proficiencia da arma EQUIPADA.
     let weapon_id = equip.weapon.unwrap_or(0);
-    let prof = shared::Proficiency::from_item(weapon_id);
+    let prof = shared::skills::Conjunto::da_arma(weapon_id);
     let prof_idx = prof as usize;
     let prof_lvl = if prof_idx < proficiencies.len() {
         shared::proficiency_level(proficiencies[prof_idx])

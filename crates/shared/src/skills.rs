@@ -57,6 +57,46 @@ impl Conjunto {
         Self::TODOS.into_iter().find(|c| c.chave() == s)
     }
 
+    /// O conjunto que esta arma e'.
+    ///
+    /// PONTE: os itens ainda sao os antigos (espada, machado, arco, cajado…) e
+    /// os quatro conjuntos do playtest ainda nao existem como item. Cada arma
+    /// velha cai no conjunto mais proximo pra o jogo continuar jogavel — e o
+    /// mapa some no dia em que os itens de verdade entrarem.
+    pub fn da_arma(item_id: u16) -> Conjunto {
+        use crate::constants::item_id as i;
+        match item_id {
+            // lâmina pesada e escudo
+            x if x == i::SWORD
+                || x == i::GREAT_SWORD
+                || x == i::ENHANCED_SWORD
+                || x == i::VETERAN_SWORD
+                || x == i::AXE
+                || x == i::ENHANCED_AXE => Conjunto::EspadaEscudo,
+            221..=240 => Conjunto::EspadaEscudo,
+            // lâmina rápida
+            x if x == i::DAGGER || x == i::SPEAR || x == i::ENHANCED_SPEAR => Conjunto::Katana,
+            241..=244 => Conjunto::Katana,
+            // à distância
+            x if x == i::BOW || x == i::ENHANCED_BOW => Conjunto::Pistolas,
+            265..=268 => Conjunto::Pistolas,
+            // magia
+            x if x == i::STAFF
+                || x == i::ENHANCED_STAFF
+                || x == i::WAND
+                || x == i::ENHANCED_WAND => Conjunto::AnelMagico,
+            257..=264 => Conjunto::AnelMagico,
+            // Mão vazia segura uma espada: sem conjunto o jogador nao teria
+            // verbo nenhum, e "desarmado" deixou de ser uma arma.
+            _ => Conjunto::EspadaEscudo,
+        }
+    }
+
+    /// Este conjunto luta a' distancia?
+    pub fn a_distancia(self) -> bool {
+        matches!(self, Conjunto::Pistolas | Conjunto::AnelMagico)
+    }
+
     pub fn nome(self) -> &'static str {
         match self {
             Self::EspadaEscudo => "Espada e Escudo",
