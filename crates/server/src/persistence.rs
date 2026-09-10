@@ -101,11 +101,236 @@ pub struct CharacterRow {
 }
 
 /// Abre o pool Postgres, garante schema criado.
+/// Pre-passada: cria TODAS as tabelas antes de qualquer migration.
+///
+/// As migrations inline de `open_pool` (M7..M11, ALTERs de `enemy_kinds`)
+/// rodam antes dos `CREATE TABLE` das tabelas que elas tocam. Em DB que ja
+/// existe isso passa despercebido; em DB novo o server aborta no boot. Esta
+/// funcao roda os CREATEs na ordem em que aparecem (que ja respeita as FKs),
+/// deixando `open_pool` idempotente a partir de um banco vazio.
+async fn create_tables(pool: &PgPool) -> Result<()> {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS accounts (
+            id             BIGSERIAL PRIMARY KEY,
+            username       TEXT NOT NULL UNIQUE,
+            email          TEXT NOT NULL UNIQUE,
+            password_hash  TEXT NOT NULL,
+            created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS characters (
+            name     TEXT PRIMARY KEY,
+            x        REAL NOT NULL,
+            y        REAL NOT NULL,
+            hp       INTEGER NOT NULL,
+            max_hp   INTEGER NOT NULL,
+            updated  BIGINT NOT NULL
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS proficiencies (
+            character_name TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE,
+            prof_kind      INTEGER NOT NULL,
+            xp             BIGINT  NOT NULL DEFAULT 0,
+            PRIMARY KEY (character_name, prof_kind)
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS inventory (
+            character_name TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE,
+            slot           INTEGER NOT NULL,
+            item_id        INTEGER NOT NULL,
+            qty            INTEGER NOT NULL,
+            PRIMARY KEY (character_name, slot)
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS equipment (
+            character_name TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE,
+            slot           TEXT NOT NULL,
+            item_id        INTEGER NOT NULL,
+            PRIMARY KEY (character_name, slot)
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS vault (
+            character_name TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE,
+            slot           INTEGER NOT NULL,
+            item_id        INTEGER NOT NULL,
+            qty            INTEGER NOT NULL,
+            PRIMARY KEY (character_name, slot)
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS economy_version (
+            id          SMALLINT PRIMARY KEY DEFAULT 1,
+            version     BIGINT NOT NULL DEFAULT 1,
+            updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CHECK (id = 1)
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS items (
+            id          INTEGER PRIMARY KEY,
+            name        TEXT    NOT NULL,
+            sell_price  INTEGER NOT NULL DEFAULT 0,
+            buy_price   INTEGER,
+            shop_order  INTEGER,
+            stack_max   INTEGER NOT NULL DEFAULT 1
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS enemy_kinds (
+            kind             INTEGER PRIMARY KEY,
+            name             TEXT    NOT NULL,
+            hp_max           INTEGER NOT NULL,
+            speed            REAL    NOT NULL,
+            attack_damage    INTEGER NOT NULL,
+            attack_cooldown  REAL    NOT NULL,
+            detect_range     REAL    NOT NULL,
+            attack_range     REAL    NOT NULL,
+            kite_dist        REAL,
+            proj_count       INTEGER NOT NULL DEFAULT 1,
+            xp_reward        BIGINT  NOT NULL,
+            defense          INTEGER NOT NULL DEFAULT 0,
+            size_scale       REAL    NOT NULL DEFAULT 1.0,
+            tint_r           REAL    NOT NULL DEFAULT 1.0,
+            tint_g           REAL    NOT NULL DEFAULT 1.0,
+            tint_b           REAL    NOT NULL DEFAULT 1.0,
+            tint_a           REAL    NOT NULL DEFAULT 1.0
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS loot_drops (
+            id          SERIAL PRIMARY KEY,
+            enemy_kind  INTEGER NOT NULL REFERENCES enemy_kinds(kind) ON DELETE CASCADE,
+            item_id     INTEGER NOT NULL,
+            qty_min     INTEGER NOT NULL,
+            qty_max     INTEGER NOT NULL,
+            chance      REAL    NOT NULL DEFAULT 1.0
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS item_drops_log (
+            id          BIGSERIAL PRIMARY KEY,
+            ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            enemy_kind  INTEGER     NOT NULL,
+            item_id     INTEGER     NOT NULL,
+            qty         INTEGER     NOT NULL,
+            rarity      SMALLINT    NOT NULL DEFAULT 0,
+            item_level  INTEGER     NOT NULL DEFAULT 1,
+            refinement  SMALLINT    NOT NULL DEFAULT 0
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS farm_node_drops (
+            id       SERIAL PRIMARY KEY,
+            kind     TEXT    NOT NULL,
+            tier     INTEGER NOT NULL,
+            item_id  INTEGER NOT NULL,
+            qty_min  INTEGER NOT NULL,
+            qty_max  INTEGER NOT NULL,
+            chance   REAL    NOT NULL DEFAULT 1.0
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS vendor_shops (
+            shop_id  INTEGER PRIMARY KEY,
+            name     TEXT NOT NULL
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS vendor_shop_items (
+            shop_id     INTEGER NOT NULL REFERENCES vendor_shops(shop_id) ON DELETE CASCADE,
+            item_id     INTEGER NOT NULL,
+            sort_order  INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (shop_id, item_id)
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS skills (
+            id              INTEGER PRIMARY KEY,
+            name            TEXT NOT NULL,
+            description     TEXT NOT NULL DEFAULT '',
+            prof            TEXT NOT NULL,
+            tier            SMALLINT NOT NULL,
+            is_passive      BOOLEAN NOT NULL,
+            path            TEXT,
+            unlock_char_lvl SMALLINT NOT NULL DEFAULT 1,
+            unlock_prof_lvl SMALLINT NOT NULL DEFAULT 1,
+            usable_with     TEXT[],
+            cost_mp         INTEGER NOT NULL DEFAULT 0,
+            cost_stamina    INTEGER NOT NULL DEFAULT 0,
+            cooldown_s      REAL    NOT NULL DEFAULT 0.0,
+            cast_time_s     REAL    NOT NULL DEFAULT 0.0,
+            target_type     TEXT    NOT NULL DEFAULT 'none',
+            range_tiles     REAL    NOT NULL DEFAULT 0.0,
+            radius_tiles    REAL    NOT NULL DEFAULT 0.0,
+            base_damage     INTEGER NOT NULL DEFAULT 0,
+            base_heal       INTEGER NOT NULL DEFAULT 0,
+            scaling_atk     REAL    NOT NULL DEFAULT 0.0,
+            scaling_wis     REAL    NOT NULL DEFAULT 0.0,
+            scaling_dex     REAL    NOT NULL DEFAULT 0.0,
+            per_rank_dmg_pct  REAL  NOT NULL DEFAULT 0.0,
+            per_rank_cd_pct   REAL  NOT NULL DEFAULT 0.0,
+            per_rank_cost_pct REAL  NOT NULL DEFAULT 0.0,
+            rank5_payload   JSONB,
+            rank10_payload  JSONB,
+            effect_payload  JSONB,
+            icon_path       TEXT,
+            vfx_id          TEXT,
+            active          BOOLEAN NOT NULL DEFAULT TRUE,
+            knockback       REAL    NOT NULL DEFAULT 0.5
+        )",
+    ).execute(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS player_skills (
+            character_name  TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE,
+            skill_id        INTEGER NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+            rank            SMALLINT NOT NULL DEFAULT 1,
+            equipped_slot   SMALLINT,
+            PRIMARY KEY (character_name, skill_id)
+        )",
+    ).execute(pool).await?;
+    Ok(())
+}
+
 pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     let pool = PgPoolOptions::new()
         .max_connections(8)
         .connect(database_url)
         .await?;
+
+    // ── Trava de schema ───────────────────────────────────────────────────
+    // Com canais (varios processos do mesmo binario), todos sobem juntos e
+    // rodam as mesmas migrations ao mesmo tempo — o Postgres responde com
+    // "tuple concurrently updated" e um dos processos morre no boot.
+    //
+    // O advisory lock serializa: o primeiro cria o schema, os outros esperam e
+    // encontram tudo pronto (as migrations sao idempotentes). A trava e' da
+    // SESSAO, entao ela cai sozinha se o processo morrer no meio.
+    //
+    // A trava vive numa conexao PROPRIA, tirada do pool e segurada ate' o fim.
+    // Rodando `execute(&pool)` o lock e o unlock caem em conexoes quaisquer:
+    // o unlock nao encontra a trava, devolve `false` em silencio, e a conexao
+    // que travou volta pro pool AINDA SEGURANDO o lock — pra sempre, porque
+    // ninguem fecha conexao de pool. Visto em producao: 11 canais subindo
+    // juntos, 3 no ar e 8 parados em `pg_advisory_lock` por minutos.
+    // Com um canal so' isso nunca aparece; ninguem espera na fila.
+    let mut trava = pool.acquire().await?;
+    sqlx::query("SELECT pg_advisory_lock(728431)").execute(&mut *trava).await?;
+    let r = init_schema_travado(&pool).await;
+    let _ = sqlx::query("SELECT pg_advisory_unlock(728431)").execute(&mut *trava).await;
+    drop(trava);
+    r?;
+
+    Ok(pool)
+}
+
+async fn init_schema_travado(pool: &PgPool) -> Result<()> {
+    // Cria o schema base antes das migrations inline (ver create_tables).
+    create_tables(pool).await?;
 
     // `accounts` e mantida pelo crate `web`; aqui so garantimos que existe
     // (idempotente) para o caso do game server subir antes do web.
@@ -118,13 +343,13 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     sqlx::query(
         "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS class TEXT NOT NULL DEFAULT 'warrior'",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     sqlx::query(
@@ -137,73 +362,73 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             updated  BIGINT NOT NULL
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Migracao inline: colunas de progressao. IF NOT EXISTS para idempotencia.
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS xp BIGINT NOT NULL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS fame BIGINT NOT NULL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS aura BIGINT NOT NULL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await?;
     // Pontos de atributo: unspent counter + array de 6 alocados.
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS unspent_points INTEGER NOT NULL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS allocated_points INTEGER[] NOT NULL DEFAULT '{0,0,0,0,0,0}'")
-        .execute(&pool)
+        .execute(pool)
         .await?;
 
     // Boat state — quando player desconecta montado, salvamos o tipo do
     // barco + pos + direcao. Re-spawn no login. NULL = nao tava montado.
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_kind SMALLINT NULL")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_x REAL NULL")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_y REAL NULL")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_dir SMALLINT NULL")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     // Boat 2.5D: estado completo (yaw float, sail/anchor) + posicao do
     // player no deck local. Tudo NULL pra rows legacy (load fall-back).
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_yaw REAL NULL")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_sail_pos SMALLINT NULL")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_sail_angle REAL NULL")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_anchor_dropped BOOLEAN NULL")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS mounted_local_x REAL NULL")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS mounted_local_y REAL NULL")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     // Character creation: account_id liga char a conta (1:1, UNIQUE).
     // visual_json armazena VisualConfig serializado (skin/race/outfit/hair/color).
     // starting_weapon = item_id escolhido na criacao (informativo; weapon ja
     // ta em inventory+equipment do save).
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS account_id BIGINT NULL")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS visual_json TEXT NULL")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS starting_weapon SMALLINT NULL")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     // Backfill account_id pra chars antigos (linka pelo username = char name).
     sqlx::query(
         "UPDATE characters c SET account_id = a.id
          FROM accounts a
          WHERE c.account_id IS NULL AND a.username = c.name"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     // Indice nao-unico em account_id pra lookup rapido de chars por conta.
     // (Multi-char per account: removida constraint UNIQUE de versao anterior.)
     sqlx::query("DROP INDEX IF EXISTS idx_characters_account_unique")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_characters_account ON characters(account_id)")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     // Migration M6: design atual tem 6 stats (FOR/DES/INT/VIT/SPD/RES). Linhas
     // antigas com 5 elementos ganham um 0 no slot RES, preservando pontos ja
     // alocados. Idempotente — arrays de 6 nao sao tocados.
@@ -211,14 +436,14 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
         "UPDATE characters
          SET allocated_points = allocated_points || ARRAY[0]::INTEGER[]
          WHERE array_length(allocated_points, 1) = 5"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // Migration M7: escudo (item_id=7) sai do slot 'armor' e vai pra 'offhand'.
     // Idempotente: se ja moveu, UPDATE nao acha mais nada.
     sqlx::query(
         "UPDATE equipment SET slot = 'offhand'
          WHERE slot = 'armor' AND item_id = 7"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // Migration M8: deixa escudo comprável no shop. So aplica se o DB ja
     // tinha shield com buy_price=NULL (preserva tweaks manuais que o user
@@ -226,28 +451,35 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     sqlx::query(
         "UPDATE items SET buy_price = 50, shop_order = 9
          WHERE id = 7 AND buy_price IS NULL AND shop_order IS NULL"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // Migration M9: garante que o Mercador (shop_id=1, vendor Klaus no mapa)
     // venda escudo. ON CONFLICT DO NOTHING pra ser idempotente em DBs onde
     // ja foi adicionado.
     sqlx::query(
+        // WHERE EXISTS: em DB novo a loja 1 ainda nao foi semeada (isso
+        // acontece depois, no seed_economy_if_needed) — sem o guard o INSERT
+        // viola a FK e o server nao sobe.
         "INSERT INTO vendor_shop_items (shop_id, item_id, sort_order)
-         VALUES (1, 7, 9) ON CONFLICT DO NOTHING"
-    ).execute(&pool).await?;
+         SELECT 1, 7, 9
+         WHERE EXISTS (SELECT 1 FROM vendor_shops WHERE shop_id = 1)
+         ON CONFLICT DO NOTHING"
+    ).execute(pool).await?;
 
     // Migration M14: garante que o Mercador venda as 4 ferramentas T1
     // (machado de lenhador, foice, picareta, vara). Sort_order acima do
     // shield (40+).
     sqlx::query(
         "INSERT INTO vendor_shop_items (shop_id, item_id, sort_order)
-         VALUES
+         SELECT * FROM (VALUES
             (1, 80, 40),   -- WOODCUTTER_AXE_T1
             (1, 84, 41),   -- SICKLE_T1
             (1, 88, 42),   -- PICKAXE_T1
             (1, 92, 43)    -- FISHING_ROD_T1
+         ) AS v(shop_id, item_id, sort_order)
+         WHERE EXISTS (SELECT 1 FROM vendor_shops WHERE shop_id = 1)
          ON CONFLICT DO NOTHING"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // Migration M10: chars com shield (item_id=7) no offhand E weapon two-handed
     // (great_sword=13, bow=14, staff=6, wand=15) ficaram com combo invalido —
@@ -262,13 +494,13 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
                AND w.slot = 'weapon'
                AND w.item_id IN (13, 14, 6, 15)
          )"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // Migration M11: gold vira moeda (não-item). Coluna `characters.gold` +
     // backfill somando todo item_id=1 de inventory + vault, depois apaga as
     // rows. Idempotente: se rodar de novo, sum() vira 0 (nada pra somar).
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS gold BIGINT NOT NULL DEFAULT 0")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query(
         "UPDATE characters c SET gold = c.gold + COALESCE((
             SELECT SUM(qty)::BIGINT FROM inventory i
@@ -277,9 +509,9 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             SELECT SUM(qty)::BIGINT FROM vault v
             WHERE v.character_name = c.name AND v.item_id = 1
         ), 0)"
-    ).execute(&pool).await?;
-    sqlx::query("DELETE FROM inventory WHERE item_id = 1").execute(&pool).await?;
-    sqlx::query("DELETE FROM vault     WHERE item_id = 1").execute(&pool).await?;
+    ).execute(pool).await?;
+    sqlx::query("DELETE FROM inventory WHERE item_id = 1").execute(pool).await?;
+    sqlx::query("DELETE FROM vault     WHERE item_id = 1").execute(pool).await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS proficiencies (
@@ -289,7 +521,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             PRIMARY KEY (character_name, prof_kind)
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     sqlx::query(
@@ -301,13 +533,13 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             PRIMARY KEY (character_name, slot)
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
     // Migration Fase A: instance_data armazena ItemInstance serializada
     // como JSON. NULL pra stackáveis e itens legacy.
     sqlx::query(
         "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS instance_data TEXT NULL"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS equipment (
@@ -317,11 +549,11 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             PRIMARY KEY (character_name, slot)
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
     sqlx::query(
         "ALTER TABLE equipment ADD COLUMN IF NOT EXISTS instance_data TEXT NULL"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // Vault: bau persistente por personagem. Estrutura igual a inventory.
     sqlx::query(
@@ -333,11 +565,11 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             PRIMARY KEY (character_name, slot)
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
     sqlx::query(
         "ALTER TABLE vault ADD COLUMN IF NOT EXISTS instance_data TEXT NULL"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // ── Economy tables ──────────────────────────────────────────────────────
     // Bumpa `economy_version.version` em qualquer ferramenta SQL pra forçar
@@ -349,9 +581,9 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             CHECK (id = 1)
         )",
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query("INSERT INTO economy_version (id, version) VALUES (1, 1) ON CONFLICT DO NOTHING")
-        .execute(&pool).await?;
+        .execute(pool).await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS items (
@@ -362,7 +594,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             shop_order  INTEGER,
             stack_max   INTEGER NOT NULL DEFAULT 1
         )",
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     // Fase F — campos editáveis pelo admin (slot, level, icon, stat ranges).
     // Cada coluna idempotente; backfill abaixo popula valores hardcoded em
     // items existentes na primeira boot pós-upgrade.
@@ -387,7 +619,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
         // Inativo: server não dropa, não equipa, não usa. Pode vender/guardar.
         "ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE",
     ] {
-        sqlx::query(&format!("ALTER TABLE items {col}")).execute(&pool).await?;
+        sqlx::query(&format!("ALTER TABLE items {col}")).execute(pool).await?;
     }
     // Override de item_level no drop por enemy_kind (era hardcoded em
     // world.rs::spawn_loot_drops). NULL = usa items.item_level como fallback.
@@ -396,19 +628,19 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     // enemy_builds.rs. Schema soft (nao quebra se NULL); admin pode editar
     // via SQL ate ter UI dedicada.
     sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_level INTEGER")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_weapon SMALLINT")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_offhand SMALLINT")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_armor SMALLINT")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_alloc_points INTEGER[]")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_learned_skills TEXT")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS loot_item_level INTEGER")
-        .execute(&pool).await?;
+        .execute(pool).await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS enemy_kinds (
@@ -430,7 +662,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             tint_b           REAL    NOT NULL DEFAULT 1.0,
             tint_a           REAL    NOT NULL DEFAULT 1.0
         )",
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS loot_drops (
@@ -441,9 +673,9 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             qty_max     INTEGER NOT NULL,
             chance      REAL    NOT NULL DEFAULT 1.0
         )",
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_loot_drops_kind ON loot_drops(enemy_kind)")
-        .execute(&pool).await?;
+        .execute(pool).await?;
 
     // Log de cada drop emitido pelo server. Cresce monotonicamente — admin
     // usa pra observabilidade (quantidade dropada por mob/item, frequência
@@ -459,13 +691,13 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             item_level  INTEGER     NOT NULL DEFAULT 1,
             refinement  SMALLINT    NOT NULL DEFAULT 0
         )",
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_drops_log_ts   ON item_drops_log(ts DESC)")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_drops_log_item ON item_drops_log(item_id)")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_drops_log_kind ON item_drops_log(enemy_kind)")
-        .execute(&pool).await?;
+        .execute(pool).await?;
 
     // Farm node drops — análogo a loot_drops, mas keyed por (kind, tier).
     // kind = 'Tree' | 'Rock' | 'Flower'; tier = 1..4. Cada linha rola
@@ -480,10 +712,10 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             qty_max  INTEGER NOT NULL,
             chance   REAL    NOT NULL DEFAULT 1.0
         )",
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_farm_node_drops_kt \
                  ON farm_node_drops(kind, tier)")
-        .execute(&pool).await?;
+        .execute(pool).await?;
 
     // Vendor shops — cada vendor tem um shop_id que aponta pra uma lista
     // curada de itens. Permite "espadeiro" que só vende espadas, "alquimista"
@@ -493,7 +725,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             shop_id  INTEGER PRIMARY KEY,
             name     TEXT NOT NULL
         )",
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS vendor_shop_items (
             shop_id     INTEGER NOT NULL REFERENCES vendor_shops(shop_id) ON DELETE CASCADE,
@@ -501,7 +733,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             sort_order  INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (shop_id, item_id)
         )",
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // ── Skills (Phase 1 / M11) ──────────────────────────────────────────────
     sqlx::query(
@@ -539,13 +771,13 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             active          BOOLEAN NOT NULL DEFAULT TRUE,
             knockback       REAL    NOT NULL DEFAULT 0.5
         )",
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_skills_prof ON skills(prof)")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     // Migration: ADD COLUMN knockback caso DB antigo nao tenha. Default 0.5
     // pra qualquer skill direcional ter um shove leve sem precisar tunar.
     sqlx::query("ALTER TABLE skills ADD COLUMN IF NOT EXISTS knockback REAL NOT NULL DEFAULT 0.5")
-        .execute(&pool).await?;
+        .execute(pool).await?;
 
     // Max-rank passive bonuses — aplicados quando skill atinge MAX_SKILL_RANK.
     // Seed popula com defaults procedurais; admin pode UPDATE pra customizar.
@@ -561,7 +793,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             "ALTER TABLE skills ADD COLUMN IF NOT EXISTS {} {} NOT NULL DEFAULT 0.0",
             col.0, col.1
         );
-        sqlx::query(&q).execute(&pool).await?;
+        sqlx::query(&q).execute(pool).await?;
     }
 
     // ── Migration M13: Universal skills + weapon affinity ────────────────
@@ -570,7 +802,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     // `category` substitui o agrupamento por arma na UI.
     sqlx::query(
         "ALTER TABLE skills ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'offensive'"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     for col in &[
         "affinity_damage_pct",
         "affinity_cooldown_red_pct",
@@ -581,23 +813,23 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             "ALTER TABLE skills ADD COLUMN IF NOT EXISTS {} REAL NOT NULL DEFAULT 0.0",
             col
         );
-        sqlx::query(&q).execute(&pool).await?;
+        sqlx::query(&q).execute(pool).await?;
     }
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category)")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     // Backfill da `category` por heurística — só pra rows ainda com default
     // 'offensive'. Após admin editar (UPDATE pra outra categoria), seed nao
     // sobrescreve.
     sqlx::query(
         "UPDATE skills SET category = 'passive' WHERE is_passive = TRUE AND category = 'offensive'"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query(
         "UPDATE skills SET category = 'mobility' WHERE category = 'offensive' AND (
             LOWER(name) LIKE '%dash%' OR LOWER(name) LIKE '%leap%' OR LOWER(name) LIKE '%charge%'
             OR LOWER(name) LIKE '%shadowstep%' OR LOWER(name) LIKE '%hurricane%'
             OR LOWER(name) LIKE '%flying%' OR LOWER(name) LIKE '%vanish%'
         )"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query(
         "UPDATE skills SET category = 'support' WHERE category = 'offensive' AND (
             base_heal > 0
@@ -605,7 +837,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             OR LOWER(name) LIKE '%counter%' OR LOWER(name) LIKE '%bloodthirst%'
             OR LOWER(name) LIKE '%resurrection%' OR LOWER(name) LIKE '%conduit%'
         )"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query(
         "UPDATE skills SET category = 'control' WHERE category = 'offensive' AND (
             LOWER(name) LIKE '%stun%' OR LOWER(name) LIKE '%slow%'
@@ -613,7 +845,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             OR LOWER(name) LIKE '%smoke%' OR LOWER(name) LIKE '%bomb%'
             OR LOWER(name) LIKE '%caltrops%' OR LOWER(name) LIKE '%bash%'
         )"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     // Backfill affinity bonuses por categoria — só pra rows ainda zeradas.
     sqlx::query(
         "UPDATE skills SET
@@ -622,7 +854,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
          WHERE category = 'offensive'
            AND affinity_damage_pct = 0 AND affinity_cooldown_red_pct = 0
            AND affinity_crit_pct = 0 AND affinity_cost_red_pct = 0"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query(
         "UPDATE skills SET
             affinity_damage_pct = 25.0,
@@ -630,7 +862,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
          WHERE category = 'support' AND base_heal > 0
            AND affinity_damage_pct = 0 AND affinity_cooldown_red_pct = 0
            AND affinity_crit_pct = 0 AND affinity_cost_red_pct = 0"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query(
         "UPDATE skills SET
             affinity_cooldown_red_pct = 20.0,
@@ -638,7 +870,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
          WHERE category = 'support' AND base_heal = 0
            AND affinity_damage_pct = 0 AND affinity_cooldown_red_pct = 0
            AND affinity_crit_pct = 0 AND affinity_cost_red_pct = 0"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query(
         "UPDATE skills SET
             affinity_cooldown_red_pct = 15.0,
@@ -647,7 +879,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
          WHERE category = 'control'
            AND affinity_damage_pct = 0 AND affinity_cooldown_red_pct = 0
            AND affinity_crit_pct = 0 AND affinity_cost_red_pct = 0"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query(
         "UPDATE skills SET
             affinity_cooldown_red_pct = 25.0,
@@ -655,13 +887,13 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
          WHERE category = 'mobility'
            AND affinity_damage_pct = 0 AND affinity_cooldown_red_pct = 0
            AND affinity_crit_pct = 0 AND affinity_cost_red_pct = 0"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query(
         "UPDATE skills SET affinity_damage_pct = 15.0
          WHERE category = 'passive' AND base_damage > 0
            AND affinity_damage_pct = 0 AND affinity_cooldown_red_pct = 0
            AND affinity_crit_pct = 0 AND affinity_cost_red_pct = 0"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     // Backfill knockback per-skill — UPDATE idempotente, sobrescreve a cada
     // boot pra que ajustes aqui propaguem sem precisar wipar DB.
     let kb_table: &[(i32, f32)] = &[
@@ -740,7 +972,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     ];
     for (sid, kb) in kb_table {
         sqlx::query("UPDATE skills SET knockback = $1 WHERE id = $2")
-            .bind(*kb).bind(*sid).execute(&pool).await?;
+            .bind(*kb).bind(*sid).execute(pool).await?;
     }
 
     sqlx::query(
@@ -751,22 +983,22 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             equipped_slot   SMALLINT,
             PRIMARY KEY (character_name, skill_id)
         )",
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_pskills_char ON player_skills(character_name)")
-        .execute(&pool).await?;
+        .execute(pool).await?;
     // Slot 0..5 único por player (impede 2 skills no mesmo slot).
     sqlx::query(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_pskills_slot
          ON player_skills(character_name, equipped_slot)
          WHERE equipped_slot IS NOT NULL"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS skill_points_earned INTEGER NOT NULL DEFAULT 0"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS skill_points_spent INTEGER NOT NULL DEFAULT 0"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // Migration M11: backfill SP retroativo pra players existentes.
     //
@@ -790,7 +1022,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
             RETURN lvl;
          END;
          $$ LANGUAGE plpgsql IMMUTABLE"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // M11d: corrige o backfill anterior. Re-sync SP_earned pra char_level
     // sempre que ainda não tem skills aprendidas (estado clean = safe pra
@@ -802,14 +1034,14 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
              SELECT 1 FROM player_skills ps WHERE ps.character_name = c.name
          )
          AND c.skill_points_earned != compute_char_level(c.xp)"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // Migration M11b: rename HAMMER → AXE no DB. Idempotente:
     // só atualiza se ainda tem o nome antigo "Martelo de Guerra".
     sqlx::query(
         "UPDATE items SET name = 'Machado'
          WHERE id = 25 AND name = 'Martelo de Guerra'"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // Migration M11c: desativa DAGGER (12), GREATSWORD (13), SCIMITAR (24) e
     // CROSSBOW (27) — removidos do design Phase 1. Items continuam no DB pra
@@ -818,7 +1050,7 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     // 1008 seguem acessíveis pelo Sword normal (id 3).
     sqlx::query(
         "UPDATE items SET active = FALSE WHERE id IN (12, 13, 24, 27) AND active = TRUE"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // M11e: desativa skills da proficiência Dagger (1025..1032). Sem item de
     // Dagger ativo não há como ganhar prof XP, então essas skills viram
@@ -827,55 +1059,55 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     // (player_skills) mas a skill não aparece mais — reativar é só voltar p/ TRUE.
     sqlx::query(
         "UPDATE skills SET active = FALSE WHERE id BETWEEN 1025 AND 1032 AND active = TRUE"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // Garante AXE (25) e SPEAR (26) ativos. Em DBs antigos (pre-M11) podem
     // ter ficado active=FALSE por algum hotfix; force enable pra que apareçam
     // em char creation + sejam equipaveis.
     sqlx::query(
         "UPDATE items SET active = TRUE WHERE id IN (25, 26)"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     // Force buy_price em AXE (180) e SPEAR (130) — pra que vendor liste eles.
     // shop_listing_for filtra .buy_price.is_some(); items sem buy_price NUNCA
     // aparecem na loja mesmo estando em vendor_shop_items.
     sqlx::query(
         "UPDATE items SET buy_price = 180, name = 'Machado' WHERE id = 25"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query(
         "UPDATE items SET buy_price = 130 WHERE id = 26"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // Lunge (1017) e Charge (1022): converte de line → aoe_circle pra usar
     // o leap mechanism (skill que MOVE o player ate o target). Range mantido,
     // radius pequeno (0.5) pra simular single-target stab no landing.
     sqlx::query(
         "UPDATE skills SET target_type='aoe_circle', radius_tiles=0.5 WHERE id IN (1017, 1022)"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
     // M12: Farm skill levels — woodcutting, mining, gathering. Default 1.
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS woodcutting_lvl INTEGER NOT NULL DEFAULT 1"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS mining_lvl INTEGER NOT NULL DEFAULT 1"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS gathering_lvl INTEGER NOT NULL DEFAULT 1"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS faction TEXT NOT NULL DEFAULT 'peacemain'"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
     // Quando o personagem concluiu o tutorial pela ultima vez (NULL = nunca).
     // Usado pra UI ("ja fez tutorial") e pro fluxo de re-treino. Nao gateia
     // nada de forma rigida — tutorial e' repetivel.
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS last_tutorial_completed TIMESTAMPTZ NULL"
-    ).execute(&pool).await?;
+    ).execute(pool).await?;
 
-    seed_economy_if_needed(&pool).await?;
-    seed_skills_if_needed(&pool).await?;
+    seed_economy_if_needed(pool).await?;
+    seed_skills_if_needed(pool).await?;
 
-    Ok(pool)
+    Ok(())
 }
 
 /// Seed inicial das 64 skills (8 profs × 8 skills).
@@ -1924,13 +2156,18 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         .bind(kind).bind(*item as i32)
         .fetch_one(pool).await?;
         if exists == 0 {
-            sqlx::query(
+            // Guard de FK: parte dos `new_drops` referencia kinds do sistema
+            // level-based (15, 18, 20, ...) que nao estao no seed base de
+            // `enemy_kinds`. Em DB novo o INSERT direto viola a FK e derruba o
+            // boot; aqui a linha simplesmente e pulada.
+            let n = sqlx::query(
                 "INSERT INTO loot_drops (enemy_kind, item_id, qty_min, qty_max, chance) \
-                 VALUES ($1, $2, $3, $4, $5)"
+                 SELECT $1, $2, $3, $4, $5 \
+                 WHERE EXISTS (SELECT 1 FROM enemy_kinds WHERE kind = $1)"
             )
             .bind(kind).bind(*item as i32).bind(qmin).bind(qmax).bind(chance)
             .execute(pool).await?;
-            inserted += 1;
+            inserted += n.rows_affected() as usize;
         }
     }
     if inserted > 0 {

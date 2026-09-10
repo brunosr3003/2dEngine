@@ -13,6 +13,8 @@ pub mod quests;
 pub mod skills;
 pub mod world_gen;
 pub mod physics;
+pub mod forja;
+pub mod terreno;
 
 pub use combat::*;
 pub use components::*;

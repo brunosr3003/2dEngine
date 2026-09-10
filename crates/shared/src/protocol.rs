@@ -1,20 +1,31 @@
-//! Protocolo de rede. Serializado com JSON (serde_json).
-//! Compativel com Newtonsoft.Json no Unity (campo `type` como discriminante).
+//! Protocolo de rede. Serializado em binario com postcard (ver `encode`).
+//!
+//! Os enums sao TAGGED POR FORA (o default do serde): a variante vira um
+//! indice de 1 byte. O `#[serde(tag = "type")]` que existia aqui era pro
+//! Newtonsoft.Json do cliente Unity — enum tagueado por dentro escreve o NOME
+//! da variante e exige `deserialize_any` na volta, coisa que o postcard nao
+//! implementa. Com o Unity fora, o nome so' custava banda.
+//!
 //! Toda mudanca em `ClientMessage`/`ServerMessage` DEVE bumpar
 //! `PROTOCOL_VERSION` em `constants.rs`.
 
-use crate::{EntityId, EntitySnapshot, PlayerId, PROTOCOL_VERSION};
+use crate::{EntityId, EntityMeta, EntityState, PlayerId, PROTOCOL_VERSION};
 use serde::{Deserialize, Serialize};
 
 /// Cliente -> Servidor.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
 pub enum ClientMessage {
     /// Primeiro pacote; servidor responde com `HandshakeAck` ou `Kick`.
     Handshake {
         protocol_version: u16,
         client_version: String,
     },
+    /// Define (ou limpa) o alvo do combate por target.
+    ///
+    /// A partir daqui o ataque basico e' AUTOMATICO: enquanto o alvo estiver
+    /// vivo e no alcance da arma, o servidor bate sozinho no ritmo do
+    /// cooldown. O cliente nao manda mais botao de ataque nem mira.
+    SetTarget { target: Option<EntityId> },
     /// Login apos handshake.
     Login {
         username: String,
@@ -28,11 +39,17 @@ pub enum ClientMessage {
         text: String,
     },
     Ping { client_time_ms: u64 },
+    /// Toque no chao: "ande ate' aqui".
+    ///
+    /// O cliente manda um DESTINO, nunca um caminho — quem decide por onde
+    /// da' pra passar e' quem tem o relevo. E' um destino que ele ja' poderia
+    /// alcancar andando, entao nao concede nada que o joystick nao conceda.
+    MoverPara { x: f32, z: f32 },
     UseItem { slot: u16 },
     /// Interagir. `target_eid` Some = entidade clicada específica (NPC/baú);
     /// None = pega o NPC mais próximo (tecla de interação / toggle).
     Interact {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         target_eid: Option<u64>,
     },
     ShopBuy { slot_idx: u8 },
@@ -181,7 +198,7 @@ pub enum ClientMessage {
     /// Drop silencioso se secret invalido ou env nao configurada.
     AdminCommand {
         secret: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         target_char: Option<String>,
         action: AdminAction,
     },
@@ -289,7 +306,6 @@ pub mod buttons {
 
 /// Servidor -> Cliente.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
 pub enum ServerMessage {
     HandshakeAck {
         protocol_version: u16,
@@ -307,6 +323,38 @@ pub enum ServerMessage {
     },
     LoginDenied {
         reason: String,
+    },
+    /// Onde o jogador esta, e quao cheio. Vai no login e a cada poucos
+    /// segundos.
+    ///
+    /// O HUD precisa disso porque, num jogo com servidor/canal/zona, "onde eu
+    /// estou" deixa de ser obvio: o mesmo personagem aparece em lugares
+    /// diferentes conforme o canal, e lotacao muda o que da' pra fazer ali.
+    InfoCanal {
+        realm: String,
+        canal: String,
+        zona: String,
+        jogadores: u32,
+        capacidade: u32,
+    },
+    /// Portal pra outra ZONA: reconecte neste host.
+    ///
+    /// Zona (cidade, campo, dungeon) roda em processo proprio, entao mudar de
+    /// zona nao e' teleporte — e' trocar de servidor. O personagem e' o mesmo
+    /// (banco compartilhado no realm), so' a conexao muda.
+    TrocarZona {
+        zona: String,
+        host: String,
+    },
+    /// Canal cheio: o jogador esta na FILA, nao recusado.
+    ///
+    /// Area de canal unico (cidade, arena, boss de mundo) nao pode simplesmente
+    /// abrir outra instancia — a graca dela e' todo mundo estar no mesmo lugar.
+    /// Quando lota, a saida e' esperar, e o jogador precisa ver a posicao pra
+    /// decidir se espera ou faz outra coisa.
+    FilaDeEntrada {
+        posicao: u32,
+        total: u32,
     },
     /// Lista de chars da conta autenticada — enviada apos Login bem-sucedido
     /// e apos cada CreateCharacter ou SelectCharacter. Cliente exibe a tela
@@ -449,16 +497,14 @@ pub enum ServerMessage {
         target_pos: glam::Vec2,
         /// EntityId do alvo principal pra skills line/single (Lightning Bolt etc).
         /// None pra AoE/self/projectile (cliente desenha sem snap em alvo).
-        #[serde(skip_serializing_if = "Option::is_none")]
         target_eid: Option<crate::EntityId>,
         /// EntityId do caster — usado pelo cliente pra cancelar coroutines
         /// quando o cast é interrompido (SkillCastCancel mata visuals deste eid).
-        #[serde(skip_serializing_if = "Option::is_none")]
         caster_eid: Option<crate::EntityId>,
         /// Posicoes encadeadas dos bounces (Chain Lightning, Lightning Bolt
         /// rank 5+). Comeca no target_pos principal e segue por cada alvo
         /// adicional. None se a skill nao tem chain.
-        #[serde(skip_serializing_if = "Option::is_none", default)]
+        #[serde(default)]
         chain_points: Option<Vec<[f32; 2]>>,
     },
     /// Cast foi cancelado (player se moveu durante o cast). Cliente despawna
@@ -756,22 +802,46 @@ pub struct FarmNodeInfo {
 
 /// Replicacao do mundo enviada a cada tick.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Um tick de mundo, em delta.
+///
+/// Tres listas em vez de uma: `entered` traz o dado estavel de quem acabou de
+/// aparecer, `states` traz so' quem MUDOU de estado, `removed` quem saiu (por
+/// morte ou por sair do AOI). Entidade que nao aparece em lista nenhuma esta
+/// parada e nao custa byte.
 pub struct WorldSnapshot {
     pub tick: u32,
     pub server_time_ms: u64,
     pub last_input_seq: u32,
-    pub entities: Vec<EntitySnapshot>,
+    /// Entidades que entraram no campo de visao neste tick.
+    pub entered: Vec<EntityMeta>,
+    /// Estado de quem mudou.
+    pub states: Vec<EntityState>,
     pub removed: Vec<EntityId>,
 }
 
 fn default_xp_mult() -> u64 { crate::constants::DEFAULT_XP_MULTIPLIER }
 
+/// Codificacao do wire.
+///
+/// Era JSON. Com ~40 campos por entidade e nome de campo repetido em cada uma,
+/// uma entidade custava 297 bytes: 100 mobs a 30Hz davam 0,85 MB/s POR JOGADOR,
+/// ou 3 GB por hora de dado movel. Insustentavel no celular, que e' o alvo.
+///
+/// Postcard nao e' auto-descritivo: nao carrega nome de campo, inteiro vai em
+/// varint e `Option::None` custa 1 byte. Em troca, os dois lados precisam
+/// compilar exatamente a MESMA definicao — o que aqui e' de graca, porque
+/// cliente e servidor usam este crate. Foi por nao ter isso que a producao caiu
+/// com web em 63 e cliente em 66.
+///
+/// Por isso tambem NAO pode haver `skip_serializing_if` em tipo de wire: ele
+/// muda a quantidade de campos escritos, e sem nome de campo o outro lado nao
+/// tem como saber que faltou um.
 pub fn encode<T: Serialize>(msg: &T) -> anyhow::Result<Vec<u8>> {
-    Ok(serde_json::to_vec(msg)?)
+    Ok(postcard::to_allocvec(msg)?)
 }
 
 pub fn decode<T: for<'de> serde::Deserialize<'de>>(bytes: &[u8]) -> anyhow::Result<T> {
-    Ok(serde_json::from_slice(bytes)?)
+    Ok(postcard::from_bytes(bytes)?)
 }
 
 pub fn version() -> u16 {

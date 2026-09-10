@@ -1,0 +1,19 @@
+[package]
+name = "client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "client"
+path = "src/main.rs"
+
+[dependencies]
+# O crate `shared` e' a UNICA fonte do protocolo. Nada de espelhar tipos
+# a mao como o cliente Unity fazia em Protocol.cs — drift de versao
+# deixa de ser possivel por construcao.
+shared.workspace = true
+macroquad = "0.4"
+tungstenite = "0.24"
+anyhow.workspace = true
+glam.workspace = true

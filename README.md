@@ -13,13 +13,14 @@ sobrevivência, PvP de alto risco, sistema sem classes e combates tensos (hardco
 |---|---|
 | ECS | `hecs` |
 | Net | `tokio` + `tokio-tungstenite` (WebSocket binário) |
-| Serialização | `rmp-serde` (MessagePack named) + `serde` |
+| Serialização | `postcard` (binário, sem nome de campo) + `serde` |
 | Matemática | `glam` |
 | Persistência | `sqlx` + Postgres |
 | Auth | `argon2` |
 | Web (cadastro) | `axum` |
 
-**Cliente:** Unity 6.4 + URP 2D (`/mmorpg`).
+**Cliente:** `crates/client` — Rust + macroquad 3D, vista de cima, modelos `.vox`.
+O cliente Unity foi abandonado (ver `docs/PIPELINE_ARTE.md`).
 
 Escolhas explicadas em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -30,6 +31,7 @@ Escolhas explicadas em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ├── Cargo.toml              workspace
 ├── crates/
 │   ├── shared/             protocolo + componentes (types compartilhados)
+│   ├── client/             cliente 3D (macroquad)
 │   ├── server/             servidor autoritativo tokio
 │   └── web/                cadastro / admin HTTP (axum)
 └── docs/                   arquitetura, roadmap, networking

@@ -5,12 +5,19 @@ use hecs::{Entity, World};
 use shared::protocol::{buttons, ClientMessage, InputFrame, InvSpot, ServerMessage, WorldSnapshot};
 use shared::mapfile::{MapEntity, MapFile};
 use shared::{
-    EntityId, EntityKind, EntitySnapshot, Health, PlayerId, Position, Velocity,
+    EntityId, EntityKind, EntityMeta, EntityState, Health, PlayerId, Position, Velocity,
     AOI_RADIUS, ATTACK_COOLDOWN, ENEMY_START_COUNT, ENTITY_RADIUS, PLAYER_SPEED,
     PROJ_RADIUS, PROJ_SPEED, PROJ_TTL, RESPAWN_DELAY, SPATIAL_CELL_SIZE,
     BOSS_RESPAWN_DELAY,
 };
 use std::collections::HashMap;
+
+/// De quantos em quantos ticks um mob reescolhe o alvo.
+///
+/// 6 ticks = 5 decisoes por segundo. Mob nao precisa de 30: o mercado roda IA
+/// de MMO entre 2 e 5 Hz. O `+ id` no modulo espalha as decisoes entre os
+/// ticks pra nao concentrar tudo no mesmo quadro.
+const AI_DECISAO_TICKS: u32 = 6;
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 
@@ -122,6 +129,14 @@ struct DelayedAoe {
 }
 
 pub struct EnemyTag {
+    /// Alvo escolhido pela IA, revalidado a cada `AI_DECISAO_TICKS`.
+    ///
+    /// Escolher alvo e' um `min_by` sobre TODOS os jogadores. Rodando por mob
+    /// e por tick isso e' O(mobs x jogadores) — com 1000 mobs e 200 jogadores
+    /// sao 200 mil distancias por tick, 6 milhoes por segundo. A escolha e'
+    /// cara e muda pouco; a POSICAO do alvo escolhido continua sendo lida
+    /// todo tick, por id, em O(1).
+    pub ai_target: Option<EntityId>,
     pub attack_cooldown: f32,
     /// sim_time absoluto até o qual o enemy fica em stagger (sem mover/atacar).
     /// Setado em damage hits. 0 = não está em hurt.
@@ -396,6 +411,22 @@ pub struct ServerSpawnZone {
     pub last_player_near_at: f32,
 }
 
+/// Raio do disco plano que um mob comum exige pra nascer, em unidades.
+pub const MOB_RAIO_SITIO_UN: f32 = 3.0;
+/// Espacamento minimo entre centros de zona. Sem isso a mesma clareira recebe
+/// tres hordas e o resto da ilha fica vazio.
+pub const MOB_ZONA_ESPACO_UN: f32 = 90.0;
+/// Raio de uma zona: de onde ela tira os slots.
+pub const MOB_ZONA_RAIO_UN: f32 = 45.0;
+/// Espacamento minimo entre dois mobs da mesma zona.
+pub const MOB_ESPACO_UN: f32 = 7.0;
+/// Teto de mobs por zona.
+pub const MOB_POR_ZONA: u32 = 18;
+/// Teto de zonas por ilha. Vezes `MOB_POR_ZONA` da' a ordem de grandeza do
+/// mundo povoado — e o `lazy_spawn` garante que so' as perto do jogador
+/// custam alguma coisa.
+pub const MOB_ZONAS_MAX: u32 = 60;
+
 /// Wake radius (em tiles) ao redor do AABB da zona. Player precisa entrar
 /// nessa margem pra zona acordar e comecar a spawnar.
 pub const SPAWN_WAKE_MARGIN: f32 = 60.0;
@@ -475,6 +506,9 @@ pub struct Untargetable;
 
 /// Portal estatico — ao encostar, jogador e teleportado para `target`.
 pub struct PortalTag {
+    /// Zona de destino. Igual a' local = teleporte dentro do mapa; diferente =
+    /// o jogador reconecta no processo que serve aquela zona.
+    pub target_map: String,
     pub target: Vec2,
     /// Cooldown pra evitar teletransporte infinito quando chega no destino.
     pub cooldown: f32,
@@ -767,6 +801,24 @@ fn dir8_from_vec(v: Vec2) -> u8 {
 
 pub struct Session {
     pub handle: SessionHandle,
+    /// Dados guardados enquanto o jogador espera na fila de entrada.
+    pub entrada_pendente: Option<(crate::auth::AuthSuccess, crate::persistence::CharacterRow)>,
+    /// Alvo atual do combate por target. O auto-ataque dispara sozinho
+    /// enquanto houver alvo vivo no alcance — sem botao, como em MMO de
+    /// target. `None` = sem alvo, sem ataque.
+    pub target: Option<EntityId>,
+    /// Rota do toque no chao, calculada pelo SERVIDOR. Cada ponto e' um
+    /// destino intermediario; o desvio fino continua com `mover_e_deslizar`.
+    pub rota: std::collections::VecDeque<Vec2>,
+    /// `sim_time_s` do ultimo pedido de rota, pro limite de frequencia.
+    pub rota_pedida_em: f32,
+    /// Ultimo ESTADO enviado por entidade nesta sessao. E' a base do delta.
+    ///
+    /// Guarda `EntityState`, que e' `Copy` e tem 13 bytes — nao o struct de 58
+    /// campos com duas `String` dentro que existia antes. Com 100 jogadores
+    /// vendo 100 entidades, a diferenca e' 10 mil clones com alocacao por tick
+    /// contra 10 mil copias de bloco.
+    pub last_sent: HashMap<EntityId, EntityState>,
     pub entity: Option<Entity>,
     pub entity_id: EntityId,
     pub last_input_seq: u32,
@@ -1115,12 +1167,42 @@ pub struct AuthCtx {
 /// reservado `ServerMessage::MapChange`. Motivacao: escalar pra muitas
 /// dungeons simultaneas sem colisao geografica ou risco de overlap.
 pub struct GameWorld {
+    /// Contador de jogadores dentro, lido pelo heartbeat do canal.
+    pub populacao: Option<crate::canais::Populacao>,
+    /// p99 do tick desta instancia. E' o que segura a fila por CARGA e nao so'
+    /// por cabeca contada — ver `atualiza_trava`.
+    pub saude: Option<crate::canais::Saude>,
+    /// Admissao pausada porque o tick esta' perto de estourar. So' pausa
+    /// entrada; ninguem e' expulso.
+    pub admissao_travada: bool,
+    /// `MMO_IMORTAL=1`: dano em JOGADOR nao entra. E' ferramenta de
+    /// construcao de mundo — sem isso nao da' pra andar trinta segundos pra
+    /// olhar terreno sem morrer pro mob. Mob continua morrendo normalmente.
+    ///
+    /// Lido uma vez no boot e nao por evento de dano: e' o caminho mais
+    /// quente do tick.
+    pub imortal: bool,
+    /// Relevo desta zona, quando ela e' uma ilha do arquipelago. `None` nas
+    /// zonas antigas de tile — enquanto as duas convivem, quem manda e' o
+    /// nome da zona.
+    pub ilha: Option<shared::terreno::Ilha>,
+    /// Onde cada zona do realm esta rodando. Ver `canais::Diretorio`.
+    pub diretorio: Option<crate::canais::Diretorio>,
+    /// Zona servida por ESTE processo. Portal que aponta pra outra zona vira
+    /// troca de servidor, nao teleporte.
+    pub zona: String,
+    /// Fila de entrada, em ordem de chegada.
+    ///
+    /// Canal comum nao usa: quando enche, o supervisor abre outro e o cliente
+    /// entra la'. Area de canal UNICO nao tem essa saida — abrir uma segunda
+    /// cidade quebraria o proposito de ter cidade. Ai a fila e' a resposta
+    /// honesta: espera, com a posicao na tela.
+    pub fila: std::collections::VecDeque<SessionId>,
     pub ecs: World,
     pub sessions: HashMap<SessionId, Session>,
     pub tick: u32,
     pub removed_this_tick: Vec<EntityId>,
     pub map: shared::world_gen::WorldMap,
-    pub physics: shared::physics::PhysicsWorld,
     next_entity_id: u32,
     next_player_id: u64,
     /// Cache de personagens persistidos (login lookup / save batch).
@@ -1254,7 +1336,9 @@ struct DungeonRun {
     live_enemies: Vec<EntityId>,
     /// Collider Rapier de cada gate (len = NUM_ROOMS-1). Some = fechado;
     /// None = já aberto (removido do collider_set ao limpar a sala).
-    gate_handles: Vec<Option<rapier2d::prelude::ColliderHandle>>,
+    /// Tiles que fecham cada ponte: `(coluna, base_y)`. Era handle de
+    /// collider do rapier; virou parede de verdade no mapa.
+    gate_handles: Vec<Option<(i32, i32)>>,
     /// sim_time pra disparar o DungeonComplete depois do boss (deixa o player
     /// pegar o loot antes de voltar pro mundo). None = boss ainda vivo.
     complete_at: Option<f32>,
@@ -1488,15 +1572,20 @@ impl GameWorld {
         let safe_zone = false;
         let from_mapfile = true; // evita respawn de enemies (suprime procgen)
 
-        let mut physics = shared::physics::PhysicsWorld::new();
-        map.build_colliders(&mut physics);
         let mut w = Self {
+            populacao: None,
+            saude: None,
+            admissao_travada: false,
+            imortal: std::env::var("MMO_IMORTAL").as_deref() == Ok("1"),
+            ilha: None,
+            diretorio: None,
+            zona: "overworld".to_string(),
+            fila: std::collections::VecDeque::new(),
             ecs: World::new(),
             sessions: HashMap::new(),
             tick: 0,
             removed_this_tick: Vec::new(),
             map,
-            physics,
             next_entity_id: 1,
             next_player_id: 1,
             characters,
@@ -1625,15 +1714,20 @@ impl GameWorld {
                 });
             }
         }
-        let mut physics = shared::physics::PhysicsWorld::new();
-        map.build_colliders(&mut physics);
         let mut w = Self {
+            populacao: None,
+            saude: None,
+            admissao_travada: false,
+            imortal: std::env::var("MMO_IMORTAL").as_deref() == Ok("1"),
+            ilha: None,
+            diretorio: None,
+            zona: "overworld".to_string(),
+            fila: std::collections::VecDeque::new(),
             ecs: World::new(),
             sessions: HashMap::new(),
             tick: 0,
             removed_this_tick: Vec::new(),
             map,
-            physics,
             next_entity_id: 1,
             next_player_id: 1,
             characters,
@@ -1759,19 +1853,19 @@ impl GameWorld {
             if pt.cooldown > 0.0 { pt.cooldown = (pt.cooldown - dt).max(0.0); }
         }
 
-        // Snapshot de portais (pos, target, cooldown restante)
-        let portals: Vec<(Entity, Vec2, Vec2, f32)> = self.ecs
+        // Snapshot de portais (pos, zona destino, target, cooldown restante)
+        let portals: Vec<(Entity, Vec2, String, Vec2, f32)> = self.ecs
             .query::<(&Position, &PortalTag)>()
             .iter()
-            .map(|(e, (p, pt))| (e, p.0, pt.target, pt.cooldown))
+            .map(|(e, (p, pt))| (e, p.0, pt.target_map.clone(), pt.target, pt.cooldown))
             .collect();
         if portals.is_empty() { return; }
 
         let r_sq = Self::PORTAL_TRIGGER_RADIUS * Self::PORTAL_TRIGGER_RADIUS;
 
         // Jogadores: (entity, pos, handle)
-        let players: Vec<(Entity, Vec2, shared::PhysicsHandle)> = self.ecs
-            .query::<(&Position, &EntityKind, &shared::PhysicsHandle)>()
+        let players: Vec<(Entity, Vec2, shared::Solido)> = self.ecs
+            .query::<(&Position, &EntityKind, &shared::Solido)>()
             .iter()
             .filter_map(|(e, (p, k, h))| match k {
                 EntityKind::Player => Some((e, p.0, *h)),
@@ -1780,14 +1874,54 @@ impl GameWorld {
             .collect();
 
         for (pe, ppos, handle) in players {
-            for (portal_entity, portal_pos, target, cd) in &portals {
+            for (portal_entity, portal_pos, zona_destino, target, cd) in &portals {
                 if *cd > 0.0 { continue; }
                 if ppos.distance_squared(*portal_pos) < r_sq {
-                    // Teleporta o rigid body
-                    if let Some(rb) = self.physics.rigid_body_set.get_mut(handle.0) {
-                        rb.set_translation([target.x, target.y].into(), true);
-                        rb.set_linvel([0.0, 0.0].into(), true);
+                    // Outra zona = outro processo. Manda o jogador reconectar
+                    // em vez de teleportar dentro deste mapa.
+                    if !zona_destino.is_empty() && *zona_destino != self.zona {
+                        let host = self.diretorio.as_ref().and_then(|d| d.melhor(zona_destino));
+                        match host {
+                            Some(h) => {
+                                // A posicao de chegada e' gravada AQUI, antes
+                                // de mandar o jogador embora. As zonas sao
+                                // processos separados que compartilham o
+                                // banco: quem recebe le' a posicao salva, e
+                                // sem isso o jogador apareceria na cidade nas
+                                // coordenadas do campo.
+                                if let Ok(mut pos) = self.ecs.get::<&mut Position>(pe) {
+                                    pos.0 = *target;
+                                }
+                                self.save_pending = true;
+                                let sid = self.sessions.iter()
+                                    .find(|(_, s)| s.entity == Some(pe))
+                                    .map(|(k, _)| *k);
+                                if let Some(sid) = sid {
+                                    if let Some(s) = self.sessions.get(&sid) {
+                                        let _ = s.handle.to_client.send(ServerMessage::TrocarZona {
+                                            zona: zona_destino.clone(),
+                                            host: h,
+                                        });
+                                    }
+                                }
+                                tracing::info!(
+                                    "troca de zona: {} -> {} em ({:.0},{:.0})",
+                                    self.zona, zona_destino, target.x, target.y
+                                );
+                            }
+                            // Zona fora do ar: NAO teleporta pra lugar nenhum.
+                            // Sumir o jogador num portal quebrado e' pior que
+                            // o portal nao funcionar.
+                            None => tracing::warn!(
+                                "portal pra zona '{}' sem canal no ar", zona_destino
+                            ),
+                        }
+                        if let Ok(mut pt) = self.ecs.get::<&mut PortalTag>(*portal_entity) {
+                            pt.cooldown = 1.0;
+                        }
+                        continue;
                     }
+                    // Teleporta o rigid body
                     // Atualiza Position tb pra evitar 1 frame de lag
                     if let Ok(mut pos) = self.ecs.get::<&mut Position>(pe) {
                         pos.0 = *target;
@@ -1953,15 +2087,6 @@ impl GameWorld {
                 .collect();
             let killed = to_kill.len();
             for (e, eid, _zid) in to_kill {
-                if let Ok(h) = self.ecs.get::<&shared::PhysicsHandle>(e).map(|h| h.0) {
-                    self.physics.rigid_body_set.remove(
-                        h, &mut self.physics.island_manager,
-                        &mut self.physics.collider_set,
-                        &mut self.physics.impulse_joint_set,
-                        &mut self.physics.multibody_joint_set,
-                        true,
-                    );
-                }
                 let _ = self.ecs.despawn(e);
                 self.removed_this_tick.push(eid);
             }
@@ -2114,6 +2239,7 @@ impl GameWorld {
         );
         let hp_max = stats.hp_max;
         let tag = EnemyTag {
+            ai_target: None,
             attack_cooldown: 0.0,
             hurt_until: 0.0,
             hurt_dir: Vec2::ZERO,
@@ -2350,16 +2476,6 @@ impl GameWorld {
             .collect();
         let count = to_despawn.len();
         for (e, eid) in to_despawn {
-            // Remove physics body se existir.
-            if let Ok(h) = self.ecs.get::<&shared::PhysicsHandle>(e).map(|h| h.0) {
-                self.physics.rigid_body_set.remove(
-                    h, &mut self.physics.island_manager,
-                    &mut self.physics.collider_set,
-                    &mut self.physics.impulse_joint_set,
-                    &mut self.physics.multibody_joint_set,
-                    true,
-                );
-            }
             let _ = self.ecs.despawn(e);
             self.removed_this_tick.push(eid);
         }
@@ -2570,7 +2686,7 @@ impl GameWorld {
                         EntityKind::Npc(2), // npc_id=2 = vault
                     ));
                 }
-                MapEntity::Portal { target_spawn, .. } => {
+                MapEntity::Portal { target_map, target_spawn } => {
                     let eid = self.alloc_entity_id();
                     let target = Vec2::new(target_spawn[0], target_spawn[1]);
                     self.ecs.spawn((
@@ -2578,7 +2694,7 @@ impl GameWorld {
                         Position(pos),
                         Velocity(Vec2::ZERO),
                         EntityKind::Portal,
-                        PortalTag { target, cooldown: 0.0 },
+                        PortalTag { target_map: target_map.clone(), target, cooldown: 0.0 },
                     ));
                 }
                 MapEntity::SafeZone { size } => {
@@ -2868,7 +2984,7 @@ impl GameWorld {
             Position(nexus_portal_pos),
             Velocity(Vec2::ZERO),
             EntityKind::Portal,
-            PortalTag { target: dungeon_target, cooldown: 0.0 },
+            PortalTag { target_map: String::new(), target: dungeon_target, cooldown: 0.0 },
         ));
         tracing::info!("portal nexus->dungeon em {:?} -> {:?}", nexus_portal_pos, dungeon_target);
 
@@ -2888,7 +3004,7 @@ impl GameWorld {
             Position(dungeon_portal_pos),
             Velocity(Vec2::ZERO),
             EntityKind::Portal,
-            PortalTag { target: nexus_spawn, cooldown: 1.0 }, // cooldown inicial pra nao quicar
+            PortalTag { target_map: String::new(), target: nexus_spawn, cooldown: 1.0 }, // cooldown inicial pra nao quicar
         ));
         tracing::info!("portal dungeon->nexus em {:?} -> {:?}", dungeon_portal_pos, nexus_spawn);
     }
@@ -3262,6 +3378,345 @@ impl GameWorld {
 
     /// Spawn do char selecionado no mundo. Body extraido do antigo on_auth_result.
     /// Validacao de ownership eh responsabilidade do caller (handle_select_character).
+    /// Substitui as zonas de spawn do mapfile por zonas achadas NO RELEVO.
+    ///
+    /// As do mapfile foram desenhadas num mapa de tiles de 180x140; soltas
+    /// numa ilha de 1,6 km, a horda inteira nasce empilhada num canto. Pior:
+    /// nascem em declive, e mob em ladeira escorrega pro pe' dela.
+    ///
+    /// Aqui cada posicao de mob e' um sitio plano VALIDADO — `sitio_plano`
+    /// exige um disco sem degrau maior que um bloco e com o pe' seco. E o
+    /// BICHO nao aparece nesta funcao: o que ela decide e' o NIVEL, por
+    /// distancia do desembarque, e quem escolhe a criatura e' a tabela de
+    /// nivel. Mob novo entra sem tocar em codigo de mundo.
+    pub fn povoar_ilha(&mut self, centro_jogador: Vec2) {
+        let (Some(ilha), Some(def)) = (
+            self.ilha.as_ref(),
+            shared::terreno::def_da_zona(&self.zona),
+        ) else {
+            return;
+        };
+        use shared::terreno::BLOCO;
+        let raio_un = def.raio_blocos as f32 * BLOCO;
+
+        // ── 1. sitios ────────────────────────────────────────────────────
+        // Grade grossa: testar coluna a coluna seriam dez milhoes de discos.
+        // 12 blocos (6 unidades) e' mais fino que a menor clareira util.
+        let passo = 12i32;
+        let raio_mob = (MOB_RAIO_SITIO_UN / BLOCO) as i32;
+        let mut sitios: Vec<Vec2> = Vec::new();
+        let mut b = -def.raio_blocos;
+        while b < def.raio_blocos {
+            let mut a = -def.raio_blocos;
+            while a < def.raio_blocos {
+                let (ix, iz) = (a + def.raio_blocos, b + def.raio_blocos);
+                if ilha.sitio_plano(ix, iz, raio_mob) {
+                    sitios.push(Vec2::new(a as f32 * BLOCO, b as f32 * BLOCO));
+                }
+                a += passo;
+            }
+            b += passo;
+        }
+        if sitios.is_empty() {
+            tracing::warn!("ilha '{}' sem sitio plano — spawn do mapfile mantido", self.zona);
+            return;
+        }
+
+        // ── 2. zonas ─────────────────────────────────────────────────────
+        // Centros espacados: sem isso as zonas se sobrepoem e a mesma
+        // clareira recebe tres hordas.
+        let mut centros: Vec<Vec2> = Vec::new();
+        let mut semente = def.semente as u64 ^ 0x5A17_E5;
+        // Embaralha os sitios pra escolha nao virar varredura de cima pra
+        // baixo, que agruparia tudo no norte da ilha.
+        for i in (1..sitios.len()).rev() {
+            semente = lcg(semente);
+            sitios.swap(i, (semente % (i as u64 + 1)) as usize);
+        }
+        for s in &sitios {
+            if centros.len() as u32 >= MOB_ZONAS_MAX {
+                break;
+            }
+            if centros.iter().all(|c| c.distance(*s) >= MOB_ZONA_ESPACO_UN) {
+                centros.push(*s);
+            }
+        }
+
+        let mut zonas: Vec<ServerSpawnZone> = Vec::new();
+        for (i, c) in centros.iter().enumerate() {
+            // Nivel pela distancia do desembarque: perto e' o minimo da ilha,
+            // a ponta mais longe e' o maximo. E' a progressao inteira, e ela
+            // sai do relevo em vez de uma lista escrita a mao.
+            let t = (c.distance(centro_jogador) / raio_un).clamp(0.0, 1.0);
+            let faixa = (def.nivel.1 - def.nivel.0) as f32;
+            let lv_min = def.nivel.0 + (t * faixa * 0.8) as u32;
+            let lv_max = (lv_min + 2 + (t * faixa * 0.2) as u32).min(def.nivel.1);
+
+            // Slots: os sitios dentro do raio da zona, cada um ja' validado
+            // como plano. Nenhum mob nasce em ladeira porque nenhum SLOT esta'
+            // em ladeira.
+            let mut slots: Vec<SpawnSlot> = Vec::new();
+            for s in &sitios {
+                if slots.len() as u32 >= MOB_POR_ZONA {
+                    break;
+                }
+                if s.distance(*c) > MOB_ZONA_RAIO_UN {
+                    continue;
+                }
+                if slots.iter().any(|o: &SpawnSlot| o.pos.distance(*s) < MOB_ESPACO_UN) {
+                    continue;
+                }
+                slots.push(SpawnSlot { pos: *s, occupant: None, respawn_at: 0.0 });
+            }
+            if slots.len() < 3 {
+                continue;
+            }
+            let n = slots.len() as u32;
+            zonas.push(ServerSpawnZone {
+                id: 10_000 + i as u32,
+                origin: *c - Vec2::splat(MOB_ZONA_RAIO_UN),
+                size: Vec2::splat(MOB_ZONA_RAIO_UN * 2.0),
+                respawn_delay_s: 20.0,
+                quotas: Vec::new(),
+                live: Vec::new(),
+                respawn_queue: Vec::new(),
+                polygon: None,
+                level_range: Some((lv_min, lv_max, n)),
+                level_range_live: 0,
+                level_range_queue: (0..n).map(|_| 0.0_f32).collect(),
+                slots,
+                active: false,
+                last_player_near_at: -1e9,
+            });
+        }
+
+        let total: u32 = zonas.iter().map(|z| z.slots.len() as u32).sum();
+        tracing::info!(
+            "ilha '{}': {} sitios planos, {} zonas, {} mobs nivel {}..{} (mapfile descartado)",
+            self.zona, sitios.len(), zonas.len(), total, def.nivel.0, def.nivel.1
+        );
+        self.spawn_zones = zonas;
+        // As areas de boss do mapfile tem o mesmo problema de coordenada.
+        self.boss_areas.clear();
+
+        // E TODO o resto do mapfile junto: NPC, vendedor, ferreiro, portal,
+        // baus e os 220 nos de recurso nasceram em coordenadas de um mapa de
+        // tiles de 180x140 que nao existe mais aqui. Espalhados numa ilha de
+        // 1,6 km eles nao ficam "no lugar errado" — ficam em lugar nenhum, e
+        // aparecem como cubo cinza andando no meio do nada.
+        //
+        // Voltam depois, colocados pelo gerador nos sitios planos, do mesmo
+        // jeito que os mobs voltaram.
+        let restos: Vec<Entity> = self
+            .ecs
+            .query::<()>()
+            .iter()
+            .map(|(e, _)| e)
+            .filter(|e| self.ecs.get::<&PlayerTag>(*e).is_err())
+            .collect();
+        let n = restos.len();
+        for e in restos {
+            if let Ok(net) = self.ecs.get::<&NetId>(e).map(|n| n.0) {
+                self.removed_this_tick.push(net);
+            }
+            let _ = self.ecs.despawn(e);
+        }
+        self.decorations.clear();
+        // Os nos de recurso nao sao entidade do ECS — vivem num mapa proprio e
+        // vao pro cliente por outra mensagem. Sem limpar aqui, os 220 do
+        // mapfile continuariam aparecendo, e o `n` acima diria "6 descartadas"
+        // enquanto o jogador ve' duzentas.
+        let nos = self.farm_nodes.len();
+        self.farm_nodes.clear();
+        tracing::info!(
+            "ilha '{}': {} entidades e {} nos de recurso do mapfile descartados",
+            self.zona, n, nos
+        );
+    }
+
+    /// Toque no chao: calcula a rota no SERVIDOR e guarda na sessao.
+    ///
+    /// Tres travas, e as tres sao contra abuso e nao contra o jogador:
+    ///
+    ///   * **distancia** — destino do outro lado da ilha faria o A* varrer
+    ///     milhoes de nos por clique;
+    ///   * **frequencia** — um clique por `ROTA_INTERVALO_S` por sessao, senao
+    ///     um cliente modificado pede rota a 30Hz e ocupa o tick inteiro;
+    ///   * **orcamento de nos** — teto duro dentro do proprio A*.
+    ///
+    /// Nada disso confia no cliente: ele manda um ponto, e o ponto so' vira
+    /// movimento se o relevo do servidor concordar.
+    pub fn handle_mover_para(&mut self, sid: SessionId, destino: Vec2) {
+        const ROTA_ALCANCE: f32 = 220.0;
+        const ROTA_INTERVALO_S: f32 = 0.2;
+        const ROTA_ORCAMENTO: usize = 6_000;
+
+        let agora = self.sim_time_s;
+        let Some(pos_atual) = self
+            .sessions
+            .get(&sid)
+            .and_then(|s| s.entity)
+            .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))
+        else {
+            return;
+        };
+        {
+            let Some(s) = self.sessions.get_mut(&sid) else { return };
+            if agora - s.rota_pedida_em < ROTA_INTERVALO_S {
+                return;
+            }
+            s.rota_pedida_em = agora;
+            s.rota.clear();
+        }
+        if !destino.is_finite() || pos_atual.distance(destino) > ROTA_ALCANCE {
+            return;
+        }
+        let Some(ilha) = self.ilha.as_ref() else { return };
+        let Some(rota) = ilha.caminho(pos_atual, destino, ROTA_ORCAMENTO) else { return };
+        tracing::debug!(
+            "rota: {:.0},{:.0} -> {:.0},{:.0} em {} pontos",
+            pos_atual.x, pos_atual.y, destino.x, destino.y, rota.len()
+        );
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.rota = rota.into_iter().collect();
+        }
+    }
+
+    /// Poe uma posicao em terra firme.
+    ///
+    /// As posicoes herdadas (spawn de personagem, zona de mob do mapfile)
+    /// foram escolhidas num mapa de tiles plano. Soltas na ilha, muitas caem
+    /// no mar. Melhor mover um pouco do que nascer boiando.
+    pub fn pousar(&self, p: Vec2) -> Vec2 {
+        match &self.ilha {
+            Some(i) => i.terra_mais_proxima(p.x, p.y, 400.0),
+            None => p,
+        }
+    }
+
+    /// Teto de jogadores desta instancia. `0` = sem teto.
+    fn capacidade_canal(&self) -> usize {
+        std::env::var("MMO_CANAL_CAPACIDADE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0)
+    }
+
+    fn dentro(&self) -> usize {
+        self.sessions.values().filter(|s| s.logged_in).count()
+    }
+
+    pub fn dentro_pub(&self) -> usize {
+        self.dentro()
+    }
+
+    /// Fracao do orcamento de tick consumida (p99). `0.0` quando nao ha
+    /// medicao ainda — nos primeiros 10s a instancia admite normalmente.
+    fn carga_tick(&self) -> f32 {
+        self.saude.as_ref().map(|s| s.carga()).unwrap_or(0.0)
+    }
+
+    /// Pausa a admissao quando o tick encosta no orcamento, e libera quando
+    /// folga de novo.
+    ///
+    /// Dois limites e nao um: com um so', admitir faz a carga subir, travar faz
+    /// cair, e a instancia fica abrindo e fechando a porta. Os 15 pontos entre
+    /// travar e destravar sao o que impede esse serrote.
+    ///
+    /// Nunca SOBE o teto de populacao — so' desce o efetivo. Um teto que sobe
+    /// numa hora calma desaba quando o vizinho da maquina acorda, e esta VPS
+    /// divide CPU com outros servicos.
+    fn atualiza_trava(&mut self) {
+        let limite = |nome: &str, padrao: f32| -> f32 {
+            std::env::var(nome).ok().and_then(|v| v.parse().ok()).unwrap_or(padrao)
+        };
+        let trava = limite("MMO_TICK_TRAVA", 0.75);
+        let destrava = limite("MMO_TICK_DESTRAVA", 0.60);
+        let carga = self.carga_tick();
+        if self.admissao_travada {
+            if carga < destrava {
+                self.admissao_travada = false;
+                tracing::info!(
+                    "tick folgou ({:.0}% do orcamento); admitindo de novo",
+                    carga * 100.0
+                );
+            }
+        } else if carga >= trava {
+            self.admissao_travada = true;
+            tracing::warn!(
+                "tick em {:.0}% do orcamento com {} jogadores; pausando admissao (entra na fila)",
+                carga * 100.0,
+                self.dentro()
+            );
+        }
+    }
+
+    fn canal_cheio(&self) -> bool {
+        let cap = self.capacidade_canal();
+        // Duas razoes pra mandar pra fila, e as duas importam: cabeca contada
+        // (previsivel, e' o que o jogador ve no "91/100") e carga real (o que
+        // de fato quebra). A contagem sozinha nao distingue 60 pessoas
+        // espalhadas de 60 num boss com 300 mobs acordados.
+        (cap > 0 && self.dentro() >= cap) || self.admissao_travada
+    }
+
+    /// Manda a posicao pra cada um na fila. Sem isso o jogador olha pra uma
+    /// tela parada sem saber se esta esperando ou travado.
+    fn avisa_fila(&self) {
+        let total = self.fila.len() as u32;
+        for (i, sid) in self.fila.iter().enumerate() {
+            if let Some(s) = self.sessions.get(sid) {
+                let _ = s.handle.to_client.send(ServerMessage::FilaDeEntrada {
+                    posicao: i as u32 + 1,
+                    total,
+                });
+            }
+        }
+    }
+
+    /// Manda `InfoCanal` pra todo mundo dentro. Chamado a cada poucos
+    /// segundos — o numero muda devagar e nao merece um lugar no snapshot.
+    pub fn avisa_info_canal(&self) {
+        let realm = crate::canais::realm();
+        let canal = std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into());
+        let zona = self.zona.clone();
+        let jogadores = self.dentro() as u32;
+        let capacidade = self.capacidade_canal() as u32;
+        for s in self.sessions.values().filter(|s| s.logged_in) {
+            let _ = s.handle.to_client.send(ServerMessage::InfoCanal {
+                realm: realm.clone(),
+                canal: canal.clone(),
+                zona: zona.clone(),
+                jogadores,
+                capacidade,
+            });
+        }
+    }
+
+    /// Admite da fila enquanto houver vaga. Roda uma vez por segundo — nao ha
+    /// motivo pra checar 30 vezes.
+    pub fn tick_fila(&mut self) {
+        // Antes do early-return: a trava tem que ser reavaliada mesmo com a
+        // fila vazia, senao ela nunca destrava num canal sem ninguem esperando.
+        self.atualiza_trava();
+        if self.fila.is_empty() {
+            return;
+        }
+        // Quem desconectou enquanto esperava sai da fila.
+        self.fila.retain(|sid| self.sessions.contains_key(sid));
+        while !self.canal_cheio() {
+            let Some(sid) = self.fila.pop_front() else { break };
+            let pendente = self
+                .sessions
+                .get_mut(&sid)
+                .and_then(|s| s.entrada_pendente.take());
+            if let Some((success, row)) = pendente {
+                self.spawn_for_char(sid, success, row);
+            }
+        }
+        self.avisa_fila();
+    }
+
     fn spawn_for_char(
         &mut self,
         sid: SessionId,
@@ -3272,6 +3727,18 @@ impl GameWorld {
             Some(s) => s.handle.clone(),
             None => return,
         };
+        // Canal cheio: entra na fila em vez de entrar no mundo. O `tick_fila`
+        // admite quando abrir vaga, na ordem de chegada.
+        if self.canal_cheio() && !self.fila.contains(&sid) {
+            self.fila.push_back(sid);
+            self.avisa_fila();
+            // Guarda o que precisa pra spawnar quando a vez chegar.
+            if let Some(s) = self.sessions.get_mut(&sid) {
+                s.entrada_pendente = Some((success, row));
+            }
+            return;
+        }
+        self.fila.retain(|x| *x != sid);
         let entity_id = match self.sessions.get(&sid) {
             Some(s) => s.entity_id,
             None => return,
@@ -3363,6 +3830,20 @@ impl GameWorld {
             } else {
                 tracing::warn!("saved pos ({tx},{ty}) sem terra adjacente; usando spawn default");
                 spawn = default_spawn;
+            }
+        }
+        // Numa ilha o walkable de tile acima nao vale nada — o mapa de tiles
+        // e' outro mundo. Quem decide e' o relevo, e ele pode empurrar a
+        // posicao salva varias dezenas de metros: as coordenadas antigas
+        // foram escolhidas num mapa plano de 180x140 e a ilha tem 1,6 km.
+        if self.ilha.is_some() {
+            let antes = spawn;
+            spawn = self.pousar(spawn);
+            if antes.distance(spawn) > 0.5 {
+                tracing::info!(
+                    "spawn {:?} caia na agua; pousado em {:?} ({:.0}m de distancia)",
+                    antes, spawn, antes.distance(spawn)
+                );
             }
         }
         // Dá respiro ao jogador: despawna inimigos muito proximos do spawn.
@@ -3519,7 +4000,7 @@ impl GameWorld {
             spawn: [spawn.x, spawn.y],
         });
         let _ = handle.to_client.send(ServerMessage::MapChange {
-            map_name: "overworld".to_string(),
+            map_name: self.zona.clone(),
             width: self.map.width,
             height: self.map.height,
             // Cliente renderiza da própria scene (GameArchipelago) e NÃO consome
@@ -3616,29 +4097,29 @@ impl GameWorld {
     /// Inicia a run de dungeon de um player recém-spawnado na lane: fecha todos
     /// os gates (collider Rapier no gap) e spawna os mobs da sala 0.
     fn begin_dungeon_run(&mut self, sid: SessionId, lane: usize, occupant_eid: EntityId, raid: bool) {
-        use rapier2d::prelude::*;
         let base = self.dungeon_slots[lane].base;
         let bx = base.x as i32;
         let by = base.y as i32;
         // RAID BOSS: sem waves/gates — player spawna na ponte da arena e luta
         // só contra o boss (room_idx=3 direto; pontes todas abertas).
         let (gate_handles, live_enemies, room_idx) = if raid {
-            let handles: Vec<Option<ColliderHandle>> =
+            let handles: Vec<Option<(i32, i32)>> =
                 vec![None; (DUNGEON_NUM_ROOMS - 1) as usize];
             let boss = self.spawn_dungeon_boss_unit(lane);
             (handles, boss, (DUNGEON_NUM_ROOMS - 1) as usize)
         } else {
-            // Gate de cada ponte: cuboid (0.5 × 1.5) cobrindo o gap de 3 tiles
-            // (linhas 8-10 → centro y = by+9.5). GROUP_1 filtrando GROUP_2.
-            let mut handles: Vec<Option<ColliderHandle>> = Vec::new();
+            // Gate de cada ponte: 3 tiles de parede fechando o gap (linhas
+            // 8-10 da ponte). Era um collider avulso do rapier; virou o mesmo
+            // WALL que o resto do mundo usa, entao `move_and_slide` ja
+            // resolve — e o cliente enxerga o gate, que antes era invisivel
+            // porque so' existia na fisica.
+            let mut handles: Vec<Option<(i32, i32)>> = Vec::new();
             for i in 0..(DUNGEON_NUM_ROOMS - 1) {
                 let gx = bx + dungeon_combat_gate_x(i);
-                let col = ColliderBuilder::cuboid(0.5, 1.5)
-                    .translation([gx as f32 + 0.5, by as f32 + 9.5].into())
-                    .collision_groups(InteractionGroups::new(
-                        Group::GROUP_1, Group::GROUP_2, Default::default()))
-                    .build();
-                handles.push(Some(self.physics.collider_set.insert(col)));
+                for dy in 8..11 {
+                    self.map.set(gx, by + dy, shared::constants::tile_id::WALL);
+                }
+                handles.push(Some((gx, by)));
             }
             (handles, self.spawn_dungeon_wave(lane, 0, 4), 0)
         };
@@ -3775,11 +4256,12 @@ impl GameWorld {
 
     /// Remove o collider de um gate do collider_set (abre fisicamente a passagem).
     fn open_dungeon_gate(&mut self, run_idx: usize, gate_idx: usize) {
-        let handle = self.dungeon_runs[run_idx].gate_handles
+        let gate = self.dungeon_runs[run_idx].gate_handles
             .get_mut(gate_idx).and_then(|o| o.take());
-        if let Some(h) = handle {
-            self.physics.collider_set.remove(
-                h, &mut self.physics.island_manager, &mut self.physics.rigid_body_set, false);
+        if let Some((gx, by)) = gate {
+            for dy in 8..11 {
+                self.map.set(gx, by + dy, shared::constants::tile_id::DUNGEON_FLOOR);
+            }
         }
     }
 
@@ -3808,9 +4290,10 @@ impl GameWorld {
     fn end_dungeon_run(&mut self, sid: SessionId) {
         let Some(pos) = self.dungeon_runs.iter().position(|r| r.occupant == sid) else { return; };
         let run = self.dungeon_runs.remove(pos);
-        for h in run.gate_handles.into_iter().flatten() {
-            self.physics.collider_set.remove(
-                h, &mut self.physics.island_manager, &mut self.physics.rigid_body_set, false);
+        for (gx, by) in run.gate_handles.into_iter().flatten() {
+            for dy in 8..11 {
+                self.map.set(gx, by + dy, shared::constants::tile_id::DUNGEON_FLOOR);
+            }
         }
         let ids: std::collections::HashSet<EntityId> = run.live_enemies.iter().copied().collect();
         let to_despawn: Vec<(Entity, EntityId)> = self.ecs.query::<&NetId>().iter()
@@ -3839,34 +4322,18 @@ impl GameWorld {
         id
     }
 
-    /// Cria rigid body + collider dinâmico para jogador/inimigo em `pos`.
-    fn spawn_entity_body(&mut self, pos: Vec2) -> shared::PhysicsHandle {
-        let rb = rapier2d::prelude::RigidBodyBuilder::dynamic()
-            .translation([pos.x, pos.y].into())
-            .lock_rotations()
-            .build();
-        let rb_handle = self.physics.rigid_body_set.insert(rb);
-        let col = rapier2d::prelude::ColliderBuilder::ball(shared::constants::ENTITY_RADIUS)
-            .restitution(0.0)
-            .friction(0.0)
-            .collision_groups(rapier2d::prelude::InteractionGroups::new(
-                rapier2d::prelude::Group::GROUP_2,
-                rapier2d::prelude::Group::GROUP_1,
-                Default::default(),
-            ))
-            .build();
-        self.physics
-            .collider_set
-            .insert_with_parent(col, rb_handle, &mut self.physics.rigid_body_set);
-        shared::PhysicsHandle(rb_handle)
+    /// Marcador de corpo solido.
+    ///
+    /// Existia pra criar rigid body + collider no rapier. Hoje `Position` no
+    /// ECS e' a unica verdade e a colisao e' resolvida no passo F por
+    /// `move_and_slide` + separacao de circulos, entao aqui so' sobra a marca
+    /// de "esta entidade empurra e e' empurrada".
+    fn spawn_entity_body(&mut self, _pos: Vec2) -> shared::Solido {
+        shared::Solido
     }
 
-    /// Remove o rigid body do ECS entity (se houver) antes de despawn.
-    fn free_entity_body(&mut self, e: Entity) {
-        if let Ok(h) = self.ecs.get::<&shared::PhysicsHandle>(e).map(|h| h.0) {
-            self.physics.remove_body(h);
-        }
-    }
+    /// Sem corpo paralelo pra liberar: o despawn do ECS basta.
+    fn free_entity_body(&mut self, _e: Entity) {}
 
     /// Raio minimo entre um inimigo novo e um ponto "seguro" (spawn default
     /// ou posicao de um jogador).
@@ -4263,6 +4730,11 @@ impl GameWorld {
             handle.id,
             Session {
                 handle,
+                entrada_pendente: None,
+                target: None,
+                rota: std::collections::VecDeque::new(),
+                rota_pedida_em: -1e9,
+                last_sent: HashMap::new(),
                 entity: None,
                 entity_id,
                 last_input_seq: 0,
@@ -4483,6 +4955,17 @@ impl GameWorld {
                     xp_multiplier: crate::economy::xp_multiplier(),
                 });
             }
+            ClientMessage::SetTarget { target } => {
+                let Some(session) = self.sessions.get_mut(&id) else { return };
+                if !session.logged_in { return; }
+                // Alvo tem que existir e nao pode ser o proprio player. O
+                // resto (vivo, no alcance, PvP permitido) e' reavaliado a cada
+                // tick no auto-ataque — alvo pode morrer ou fugir.
+                session.target = match target {
+                    Some(t) if t != session.entity_id => Some(t),
+                    _ => None,
+                };
+            }
             ClientMessage::Login { username, password } => {
                 // Nao autentica sincronamente — dispara task e marca sessao
                 // como auth_in_flight. O resultado volta via AuthResult.
@@ -4518,9 +5001,16 @@ impl GameWorld {
             }
             ClientMessage::Input { input: frame } => {
                 if let Some(s) = self.sessions.get_mut(&id) {
+                    // Mexeu no joystick? A rota morre. Comando manual sempre
+                    // ganha do automatico — nada irrita mais que o boneco
+                    // insistir em ir pra onde o jogador desistiu de ir.
+                    if frame.move_dir.length_squared() > 0.01 {
+                        s.rota.clear();
+                    }
                     s.pending_input = Some(frame);
                 }
             }
+            ClientMessage::MoverPara { x, z } => self.handle_mover_para(id, Vec2::new(x, z)),
             ClientMessage::Chat { text } => {
                 // Comandos de slash
                 let trimmed = text.trim();
@@ -4987,15 +5477,6 @@ impl GameWorld {
         }
         if let Ok(mut vel) = self.ecs.get::<&mut Velocity>(entity) {
             vel.0 = Vec2::ZERO;
-        }
-        // CRITICO: sincroniza physics rigid body (sem isso o player retorna
-        // pra posicao do collider no proximo step). Mesma logica do
-        // handle_reset_position.
-        if let Ok(h) = self.ecs.get::<&shared::PhysicsHandle>(entity).map(|h| h.0) {
-            if let Some(rb) = self.physics.rigid_body_set.get_mut(h) {
-                rb.set_translation([spawn.x, spawn.y].into(), true);
-                rb.set_linvel([0.0, 0.0].into(), true);
-            }
         }
         let _ = self.ecs.remove_one::<Untargetable>(entity);
         self.save_pending = true;
@@ -6349,6 +6830,9 @@ impl GameWorld {
             new_vel: Vec2,
             wants_attack: bool,
             owner_id: EntityId,
+            /// Alvo do combate por target. `None` = ataque sem alvo (nao
+            /// acontece hoje, mas mantem a estrutura honesta).
+            target: Option<EntityId>,
             aim: Vec2,
             damage: i32,
             is_crit: bool,
@@ -6365,6 +6849,18 @@ impl GameWorld {
             /// PlayerTag.attack_anim_pending=DASH e replicar pra todos.
             dash_started: bool,
         }
+        // ── Alvos (combate por target) ────────────────────────────────────
+        // Posicao de tudo que pode ser alvo, montado UMA vez por tick. Sem
+        // isto cada player varreria o ECS atras do proprio alvo, o que vira
+        // O(jogadores x entidades) — o oposto do que "servidor aguentar
+        // muitos mobs" pede.
+        let target_pos: HashMap<EntityId, Vec2> = self
+            .ecs
+            .query::<(&NetId, &Position)>()
+            .iter()
+            .map(|(_, (net, pos))| (net.0, pos.0))
+            .collect();
+
         let mut input_results: Vec<InputResult> = Vec::new();
         // Inputs de players montados em barco — processado depois do physics
         // step pra mover os barcos (tile-water-only) e disparar cannon.
@@ -6515,6 +7011,25 @@ impl GameWorld {
             // Stagger/Downed: ignora movimento e ataques. Player downed fica
             // travado na pose sentada — não pode andar até levantar.
             let in_hurt = session.hurt_until > self.sim_time_s;
+            // Rota do toque no chao: o SERVIDOR conduz. Ela so' entra quando
+            // o joystick esta' parado — comando manual ja' limpou a fila la'
+            // no recebimento da mensagem.
+            // `target_pos` ja' tem a posicao de toda entidade deste tick.
+            let aqui = target_pos
+                .get(&session.entity_id)
+                .copied()
+                .unwrap_or(Vec2::ZERO);
+            if frame.move_dir.length_squared() <= 0.01 && !session.rota.is_empty() {
+                while let Some(&alvo) = session.rota.front() {
+                    if aqui.distance(alvo) <= 0.6 {
+                        session.rota.pop_front();
+                    } else {
+                        frame.move_dir =
+                            (alvo - aqui).try_normalize().unwrap_or(Vec2::ZERO);
+                        break;
+                    }
+                }
+            }
             let dir = if in_hurt || session.downed || staggered {
                 Vec2::ZERO
             } else if frame.move_dir.length_squared() > 1.0 {
@@ -6644,12 +7159,37 @@ impl GameWorld {
             }
             // Downed/Carregando/Hurt/Dashing/Defending/Staggered: sem ataques
             let was_dashing = self.sim_time_s < session.dash_until;
+            // Preenchida pelo bloco abaixo quando o auto-ataque dispara.
+            let mut attack_aim: Option<Vec2> = None;
             let wants_attack = if session.downed || session.carrying.is_some() || in_hurt
                 || was_dashing || session.defending || staggered {
                 false
             } else {
                 let has_stam = session.stamina_current >= shared::ATTACK_STAMINA_COST;
-                let w = (frame.buttons & buttons::PRIMARY != 0)
+                // ── Auto-ataque por alvo ──────────────────────────────────
+                // O ataque basico nao depende mais de botao nem de mira: com
+                // alvo vivo dentro do alcance da arma, o servidor bate no
+                // ritmo do cooldown. `auto_aim` e' a direcao ate o alvo, e e'
+                // ela que alimenta o cone/projetil la embaixo — o pipeline de
+                // dano continua o mesmo, so' mudou quem aponta.
+                let auto_aim = session.target.and_then(|t| {
+                    let me = target_pos.get(&session.entity_id)?;
+                    let tp = target_pos.get(&t)?;
+                    let d = *tp - *me;
+                    let wid = session.equipment.weapon.unwrap_or(0);
+                    let range = if shared::weapon_is_melee(wid) {
+                        shared::MELEE_RANGE
+                    } else {
+                        shared::RANGED_ATTACK_RANGE
+                    };
+                    let dist_sq = d.length_squared();
+                    if dist_sq > 1e-6 && dist_sq <= range * range {
+                        Some(d.normalize())
+                    } else {
+                        None
+                    }
+                });
+                let w = auto_aim.is_some()
                      && session.attack_cooldown <= 0.0
                      && has_stam;
                 if w {
@@ -6687,6 +7227,7 @@ impl GameWorld {
                     session.attack_cooldown = base_cd / atk_speed;
                     session.stamina_current =
                         (session.stamina_current - shared::ATTACK_STAMINA_COST).max(0.0);
+                    attack_aim = auto_aim;
                 }
                 w
             };
@@ -6860,7 +7401,10 @@ impl GameWorld {
                 new_vel: final_vel,
                 wants_attack,
                 owner_id: session.entity_id,
-                aim: frame.aim,
+                target: session.target,
+                // Mira do alvo quando o auto-ataque disparou; senao a do
+                // frame, que ainda serve pra skill mirada.
+                aim: attack_aim.unwrap_or(frame.aim),
                 damage: dmg_final,
                 is_crit: crit,
                 is_melee,
@@ -6904,6 +7448,8 @@ impl GameWorld {
         // automaticamente quando o alvo entra (lista some daqui no próximo tick).
         // Players Mounted em barco tambem ficam invisiveis: barco anda na agua,
         // inimigos terrestres nao alcancam — sumem do radar pra evitar AI presa.
+        // Indice por id pra IA ler a posicao do alvo em O(1) todo tick.
+        let player_pos_by_id: HashMap<EntityId, Vec2>;
         let player_positions: Vec<(EntityId, Vec2)> = self
             .ecs
             .query::<(&NetId, &Position, &EntityKind)>()
@@ -6918,12 +7464,28 @@ impl GameWorld {
                 } else { None }
             })
             .collect();
+        player_pos_by_id = player_positions.iter().copied().collect();
 
         // ── C: IA dos inimigos ────────────────────────────────────────────────
         struct SpawnProj { owner_id: EntityId, from_player: bool, pos: Vec2, dir: Vec2, damage: i32, is_crit: bool, kind: u8 }
         let mut projs_to_spawn: Vec<SpawnProj> = Vec::new();
         // Melee swings — usado por player attacks (sec D) e por enemies melee aqui (sec C).
-        struct MeleeSwing { attacker_eid: EntityId, pos: Vec2, dir: Vec2, damage: i32, is_crit: bool, from_player: bool, knockback: f32 }
+        /// Um golpe a resolver neste tick.
+        ///
+        /// `target` Some = ataque POR ALVO: acerta so' aquela entidade, por
+        /// distancia, sem cone e sem projetil. E' o modelo do jogo agora; o
+        /// cone sobrou pros mobs, que ainda batem em area.
+        struct MeleeSwing {
+            attacker_eid: EntityId,
+            pos: Vec2,
+            dir: Vec2,
+            damage: i32,
+            is_crit: bool,
+            from_player: bool,
+            knockback: f32,
+            target: Option<EntityId>,
+            max_range: f32,
+        }
         let mut melee_swings: Vec<MeleeSwing> = Vec::new();
         // Pending shots de enemies — coletados no loop de IA (que tem mut borrow do
         // ecs) e fundidos em self.pending_shots logo depois.
@@ -6993,24 +7555,38 @@ impl GameWorld {
             // aggro_timer só corre quando em chase ativo (gerenciado abaixo)
 
             // Taunt (1006): se forced_aggro ativo, mira EXCLUSIVAMENTE o
-            // tauntador (forced_aggro_target). Senao escolhe o nearest player.
-            let nearest = if enemy.forced_aggro_until > now_sim {
-                if let Some(target_eid) = enemy.forced_aggro_target {
-                    player_positions.iter()
-                        .find(|(eid, _)| *eid == target_eid)
-                        .or_else(|| player_positions.iter().min_by(|a, b| {
-                            a.1.distance_squared(pos.0).partial_cmp(&b.1.distance_squared(pos.0)).unwrap()
-                        }))
-                } else {
-                    player_positions.iter().min_by(|a, b| {
-                        a.1.distance_squared(pos.0).partial_cmp(&b.1.distance_squared(pos.0)).unwrap()
-                    })
-                }
+            // tauntador. Senao, o jogador mais perto.
+            //
+            // A ESCOLHA e' periodica (cara: varre todos os jogadores); a
+            // POSICAO do escolhido e' lida todo tick por id (O(1)), pra o mob
+            // nao perseguir um fantasma de 200ms atras.
+            let decide = (self.tick + net.0.0) % AI_DECISAO_TICKS == 0;
+            let forcado = if enemy.forced_aggro_until > now_sim {
+                enemy.forced_aggro_target
             } else {
-                player_positions.iter().min_by(|a, b| {
-                    a.1.distance_squared(pos.0).partial_cmp(&b.1.distance_squared(pos.0)).unwrap()
-                })
+                None
             };
+            if decide || enemy.ai_target.is_none() || forcado.is_some() {
+                enemy.ai_target = forcado
+                    .filter(|t| player_pos_by_id.contains_key(t))
+                    .or_else(|| {
+                        player_positions
+                            .iter()
+                            .min_by(|a, b| {
+                                a.1.distance_squared(pos.0)
+                                    .partial_cmp(&b.1.distance_squared(pos.0))
+                                    .unwrap()
+                            })
+                            .map(|(eid, _)| *eid)
+                    });
+            }
+            // Alvo que desconectou ou morreu sai do cache na hora.
+            let nearest: Option<(EntityId, Vec2)> = enemy
+                .ai_target
+                .and_then(|eid| player_pos_by_id.get(&eid).map(|p| (eid, *p)));
+            if nearest.is_none() {
+                enemy.ai_target = None;
+            }
 
             // Leash + state machine:
             //  1. Inside leash_max → wander/chase livre.
@@ -7032,7 +7608,7 @@ impl GameWorld {
             }
             let pulling_home = enemy.returning_home;
 
-            if let Some((_, ppos)) = nearest {
+            if let Some((_, ppos)) = nearest.as_ref() {
                 let dist = pos.0.distance(*ppos);
                 // Idle skip: player MUITO longe (alem do AOI) — congela mob,
                 // pula raycast LoS e toda decisao. Mob fica parado, mas ninguem
@@ -7209,7 +7785,22 @@ impl GameWorld {
                                 damage: enemy.stats.attack_damage,
                                 is_crit: false, // enemies não fazem crit hoje
                                 from_player: false,
-                                knockback: 0.3, // enemy auto-attack: shove leve
+                                // ZERO, e nao um "shove leve".
+                                //
+                                // O knockback sobrescreve a velocidade do
+                                // jogador (`Session.knockback_vel`), entao
+                                // cada mordida move o personagem. Um lobo
+                                // sozinho e' um cutucao; uma matilha e' o
+                                // jogador sendo carregado pelo mapa sem
+                                // conseguir andar pra onde quer.
+                                //
+                                // Isto e' o auto-attack. Knockback de SKILL
+                                // (`SkillDef.knockback`) continua valendo:
+                                // aquele e' efeito desenhado, este era
+                                // incidental.
+                                knockback: 0.0,
+                                target: None,
+                                max_range: shared::MELEE_RANGE,
                             });
                         } else {
                         // proj_kind e proj_count cacheados a partir do EnemyBuild.
@@ -7485,79 +8076,25 @@ impl GameWorld {
                         is_crit: ir.is_crit,
                         from_player: true,
                         knockback: kb,
+                        target: ir.target,
+                        max_range: shared::MELEE_RANGE,
                     });
                 } else {
-                    // Caster (proj_kind=1=fireball ou =5=electric) tem combo
-                    // de 3 steps:
-                    //   0 (Slash1) e 1 (Slash2) → swing em cone na frente,
-                    //     dano melee igual a espada. Sem projetil.
-                    //   2 (Thrust finisher) → spawna projetil (fireball/elec).
-                    // Bow nao tem combo — sempre cai no projetil direto.
-                    let is_caster_proj = matches!(ir.proj_kind, 1 | 5);
-                    let last_combo_step = ir.combo_step + 1 == shared::COMBO_STEPS as u8;
-                    if is_caster_proj && !last_combo_step {
-                        // Wind-up: swing melee em cone (mesma infra de espada).
-                        // Caster combo wind-up sao swings leves; kb minimo.
-                        melee_swings.push(MeleeSwing {
-                            attacker_eid: ir.owner_id, pos, dir,
-                            damage: ir.damage, is_crit: ir.is_crit,
-                            from_player: true,
-                            knockback: 0.25,
-                        });
-                        continue;
-                    }
-                    // Ranged: queue com delay pro release coincidir com fim
-                    // da animação de saque. Bow tem delay maior (anim de 560ms);
-                    // wand/staff usa Thrust (320ms) → delay menor.
-                    let fire_delay = if matches!(ir.proj_kind, 1 | 5) {
-                        shared::MAGIC_FIRE_DELAY
-                    } else {
-                        shared::BOW_FIRE_DELAY
-                    };
-                    let release_in_ticks = (fire_delay / dt).round() as u32;
-                    // Fireball/electric sai da ponta da varinha/cajado: pos
-                    // peito + offset na direção do tiro. Flecha sai do peito.
-                    let forward = if matches!(ir.proj_kind, 1 | 5) {
-                        dir * shared::FIREBALL_FORWARD_OFFSET
-                    } else {
-                        Vec2::ZERO
-                    };
-                    let spawn_pos = pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y) + forward;
-                    // Bow finisher (combo step 2): 3 flechas em leque ±15°.
-                    // Sem combo (combo_step==0 sem combo state): tiro unico.
-                    let is_bow_finisher = ir.proj_kind == 0 // arrow
-                        && ir.combo_step + 1 == shared::COMBO_STEPS as u8;
-                    if is_bow_finisher {
-                        for &spread_deg in &[-15.0_f32, 0.0, 15.0] {
-                            let rad = spread_deg.to_radians();
-                            let (s, c) = (rad.sin(), rad.cos());
-                            let fan_dir = Vec2::new(
-                                dir.x * c - dir.y * s,
-                                dir.x * s + dir.y * c,
-                            );
-                            self.pending_shots.push(PendingShot {
-                                pos: spawn_pos,
-                                dir: fan_dir,
-                                damage: ir.damage,
-                                is_crit: ir.is_crit,
-                                kind: ir.proj_kind,
-                                owner_id: ir.owner_id,
-                                from_player: true,
-                                release_tick: self.tick.wrapping_add(release_in_ticks),
-                            });
-                        }
-                    } else {
-                        self.pending_shots.push(PendingShot {
-                            pos: spawn_pos,
-                            dir,
-                            damage: ir.damage,
-                            is_crit: ir.is_crit,
-                            kind: ir.proj_kind,
-                            owner_id: ir.owner_id,
-                            from_player: true,
-                            release_tick: self.tick.wrapping_add(release_in_ticks),
-                        });
-                    }
+                    // Arma a distancia. O projetil-entidade morreu: ele existia
+                    // pro combate de acao, onde a flecha podia errar. Com alvo,
+                    // o acerto e' decidido por distancia no mesmo tick — o que
+                    // tambem apaga N entidades ticando a 30Hz por tiro dado.
+                    melee_swings.push(MeleeSwing {
+                        attacker_eid: ir.owner_id,
+                        pos,
+                        dir,
+                        damage: ir.damage,
+                        is_crit: ir.is_crit,
+                        from_player: true,
+                        knockback: 0.0,
+                        target: ir.target,
+                        max_range: shared::RANGED_ATTACK_RANGE,
+                    });
                 }
             }
         }
@@ -7635,12 +8172,6 @@ impl GameWorld {
                     if let Ok(mut p) = self.ecs.get::<&mut Position>(ent) {
                         p.0 = pos;
                     }
-                    if let Ok(handle) = self.ecs.get::<&shared::PhysicsHandle>(ent) {
-                        if let Some(rb) = self.physics.rigid_body_set.get_mut(handle.0) {
-                            rb.set_translation([pos.x, pos.y].into(), true);
-                            rb.set_linvel([0.0, 0.0].into(), true);
-                        }
-                    }
                 }
             } else {
                 // Leap completou — snap final + agenda hit.
@@ -7648,12 +8179,6 @@ impl GameWorld {
                 if let Some(ent) = s.entity {
                     if let Ok(mut p) = self.ecs.get::<&mut Position>(ent) {
                         p.0 = landing;
-                    }
-                    if let Ok(handle) = self.ecs.get::<&shared::PhysicsHandle>(ent) {
-                        if let Some(rb) = self.physics.rigid_body_set.get_mut(handle.0) {
-                            rb.set_translation([landing.x, landing.y].into(), true);
-                            rb.set_linvel([0.0, 0.0].into(), true);
-                        }
                     }
                 }
                 leap_landings.push((s.entity_id, landing, s.leap_damage, s.leap_radius));
@@ -7704,7 +8229,7 @@ impl GameWorld {
         // lerp da posição durante o arco; no pouso, AoE nos PLAYERS no raio.
         let mut enemy_leap_landings: Vec<(EntityId, Vec2, i32, f32)> = Vec::new();
         for (_, (net, tag, pos, ph)) in self.ecs
-            .query_mut::<(&NetId, &mut EnemyTag, &mut Position, &shared::PhysicsHandle)>()
+            .query_mut::<(&NetId, &mut EnemyTag, &mut Position, &shared::Solido)>()
         {
             if tag.leap_until <= 0.0 { continue; }
             let leap_start = tag.leap_until - LEAP_DURATION;
@@ -7713,17 +8238,9 @@ impl GameWorld {
                 let t = (elapsed / LEAP_DURATION).clamp(0.0, 1.0);
                 let p = tag.leap_start_pos.lerp(tag.leap_target, t);
                 pos.0 = p;
-                if let Some(rb) = self.physics.rigid_body_set.get_mut(ph.0) {
-                    rb.set_translation([p.x, p.y].into(), true);
-                    rb.set_linvel([0.0, 0.0].into(), true);
-                }
             } else {
                 let landing = tag.leap_target;
                 pos.0 = landing;
-                if let Some(rb) = self.physics.rigid_body_set.get_mut(ph.0) {
-                    rb.set_translation([landing.x, landing.y].into(), true);
-                    rb.set_linvel([0.0, 0.0].into(), true);
-                }
                 enemy_leap_landings.push((net.0, landing, tag.leap_damage, tag.leap_radius));
                 tag.leap_until = 0.0;
                 tag.leap_damage = 0;
@@ -7754,19 +8271,40 @@ impl GameWorld {
             }
         }
 
-        // ── F: integrar movimento e colisao com Rapier ────────────────────────
-        for (_, (handle, vel)) in self.ecs.query_mut::<(&shared::PhysicsHandle, &Velocity)>() {
-            if let Some(rb) = self.physics.rigid_body_set.get_mut(handle.0) {
-                rb.set_linvel([vel.0.x, vel.0.y].into(), true);
-            }
+        // ── F: integrar movimento e resolver colisao ──────────────────────
+        //
+        // Duas etapas, no lugar do motor de fisica: `move_and_slide` empurra o
+        // circulo contra a grade de tiles (deslizando na parede em vez de
+        // grudar), e depois um passe afasta quem ficou sobreposto. Ver
+        // `shared::physics`.
+        // A terceira coluna e' a MOBILIDADE: 0 = nao e' empurrado. Jogador
+        // entra com zero porque uma horda de vinte lobos, cada um cedendo
+        // metade, carrega o personagem pelo mapa — e quem joga sente que
+        // perdeu o controle do boneco. Ele empurra os mobs; eles nao a ele.
+        let mut corpos: Vec<(Entity, Vec2, f32)> = Vec::new();
+        for (e, (pos, vel, _)) in self
+            .ecs
+            .query::<(&Position, &Velocity, &shared::Solido)>()
+            .iter()
+        {
+            let mobilidade = if self.ecs.get::<&PlayerTag>(e).is_ok() { 0.0 } else { 1.0 };
+            // Numa ilha a parede nao e' tile, e' desnivel: quem barra e' a
+            // regra de degrau contra o campo de altura.
+            corpos.push((
+                e,
+                match &self.ilha {
+                    Some(i) => i.mover_e_deslizar(pos.0, vel.0, dt, ENTITY_RADIUS),
+                    None => self.map.move_and_slide(pos.0, vel.0, dt, ENTITY_RADIUS),
+                },
+                mobilidade,
+            ));
         }
-
-        self.physics.step(dt);
-
-        for (_, (handle, pos)) in self.ecs.query_mut::<(&shared::PhysicsHandle, &mut Position)>() {
-            if let Some(rb) = self.physics.rigid_body_set.get(handle.0) {
-                pos.0.x = rb.translation().x;
-                pos.0.y = rb.translation().y;
+        let mut circulos: Vec<(Vec2, f32, f32)> =
+            corpos.iter().map(|(_, p, m)| (*p, ENTITY_RADIUS, *m)).collect();
+        shared::physics::separar(&mut circulos);
+        for ((e, _, _), (p, _, _)) in corpos.iter().zip(circulos.iter()) {
+            if let Ok(mut pos) = self.ecs.get::<&mut Position>(*e) {
+                pos.0 = *p;
             }
         }
 
@@ -7964,12 +8502,6 @@ impl GameWorld {
                 if let Ok(mut p) = self.ecs.get::<&mut Position>(player_e) {
                     p.0 = world_pos;
                 }
-                if let Ok(handle) = self.ecs.get::<&shared::PhysicsHandle>(player_e).map(|h| h.0) {
-                    if let Some(rb) = self.physics.rigid_body_set.get_mut(handle) {
-                        rb.set_translation([world_pos.x, world_pos.y].into(), true);
-                        rb.set_linvel([0.0, 0.0].into(), true);
-                    }
-                }
             }
         }
 
@@ -7988,12 +8520,6 @@ impl GameWorld {
             if let (Some(cp), Some(te)) = (carrier_pos, target_entity) {
                 if let Ok(mut pos) = self.ecs.get::<&mut Position>(te) {
                     pos.0 = cp;
-                }
-                if let Ok(handle) = self.ecs.get::<&shared::PhysicsHandle>(te).map(|h| h.0) {
-                    if let Some(rb) = self.physics.rigid_body_set.get_mut(handle) {
-                        rb.set_translation([cp.x, cp.y].into(), true);
-                        rb.set_linvel([0.0, 0.0].into(), true);
-                    }
                 }
             }
         }
@@ -8101,18 +8627,26 @@ impl GameWorld {
                         continue;
                     }
                     if *tnet == sw.attacker_eid { continue; }
+                    // Ataque POR ALVO: acerta so' quem o jogador marcou. Sem
+                    // cone, sem area — o cone abaixo so' vale pros mobs.
+                    if let Some(alvo) = sw.target {
+                        if *tnet != alvo { continue; }
+                    }
                     // Escala hitbox pelo tamanho do alvo (boss=2.2× → hitbox 2.2×).
                     let r       = hit_target_radius * size;
                     let y_off   = hit_target_y_off  * size;
-                    let melee_max = shared::MELEE_RANGE + r;
+                    let melee_max = sw.max_range + r;
                     let range_sq = melee_max * melee_max;
                     // Hit-point do alvo: peito (Y+offset), não os pés.
                     let target_hit = *tpos + Vec2::new(0.0, y_off);
                     let delta = target_hit - sw.pos;
                     let d2 = delta.length_squared();
                     if d2 > range_sq { continue; }
-                    if let Some(nd) = delta.try_normalize() {
-                        if sw.dir.dot(nd) < cos_half { continue; }
+                    // Cone: so' quando NAO ha alvo (mob batendo em area).
+                    if sw.target.is_none() {
+                        if let Some(nd) = delta.try_normalize() {
+                            if sw.dir.dot(nd) < cos_half { continue; }
+                        }
                     }
                     // LOS: melee/cone nao atravessa WALL.
                     if !self.map.has_line_of_sight(sw.pos, target_hit) { continue; }
@@ -8580,6 +9114,8 @@ impl GameWorld {
                                 is_crit: false,
                                 from_player: true,
                                 knockback: 1.0, // parry counter — empurra
+                                target: None,
+                                max_range: shared::MELEE_RANGE,
                             });
                             tracing::info!("parry counter (melee): dmg={} from {} → {}",
                                 counter_dmg, target_id.0, attacker_id.0);
@@ -8685,10 +9221,17 @@ impl GameWorld {
                 self.hit_this_tick.insert(target_id, hurt_dir);
                 continue;
             }
-            if let Ok(mut hp) = self.ecs.get::<&mut Health>(entity) {
-                hp.current = (hp.current - dmg).max(0);
-                if hp.current == 0 && attacker_is_player {
-                    kill_credits.insert(target_id, attacker_id);
+            // Modo imortal: o dano segue sendo calculado e o numero flutuante
+            // continua aparecendo — so' o HP nao cai. Curto-circuitar antes
+            // esconderia justamente o que se quer ver enquanto se constroi
+            // mundo: se o mob ACERTA, e quanto.
+            let protegido = self.imortal && self.ecs.get::<&PlayerTag>(entity).is_ok();
+            if !protegido {
+                if let Ok(mut hp) = self.ecs.get::<&mut Health>(entity) {
+                    hp.current = (hp.current - dmg).max(0);
+                    if hp.current == 0 && attacker_is_player {
+                        kill_credits.insert(target_id, attacker_id);
+                    }
                 }
             }
             // Registra dano de enemy → lifesteal de boss aplicado pós-loop.
@@ -8739,11 +9282,24 @@ impl GameWorld {
             } else if let Some(s) = self.sessions.values_mut()
                 .find(|s| s.entity_id == target_id)
             {
-                s.hurt_until = hurt_until_ts;
-                s.hurt_dir   = hurt_dir;
-                if kb_active {
-                    s.knockback_until = kb_until_ts;
-                    s.knockback_vel   = kb_vel;
+                s.hurt_dir = hurt_dir;
+                // ── MOB NAO TRAVA NEM EMPURRA O JOGADOR ──
+                //
+                // `hurt_until` zera a velocidade e `knockback_vel` sobrescreve
+                // ela. Num jogo de um mob por vez isso e' peso do golpe; com
+                // matilha em cima, cada mordida rouba um pedaco do controle e
+                // o jogador passa a assistir o boneco em vez de guia-lo — que
+                // e' o pior que um MMO de celular pode fazer.
+                //
+                // Vale so' pra dano vindo de MOB. Dano de jogador (PvP) e
+                // skill continuam travando e empurrando: la' o golpe e' um
+                // evento, nao um chuvisco.
+                if attacker_is_player {
+                    s.hurt_until = hurt_until_ts;
+                    if kb_active {
+                        s.knockback_until = kb_until_ts;
+                        s.knockback_vel   = kb_vel;
+                    }
                 }
                 // Reset combo: levar dano interrompe o flow do combo.
                 s.combo_step = 0;
@@ -9396,170 +9952,76 @@ impl GameWorld {
             .map(|(_, (net, m))| (net.0, (m.boat_eid, m.local_pos, m.station)))
             .collect();
 
-        let all: Vec<EntitySnapshot> = self
+        // ── Estado do tick ────────────────────────────────────────────────
+        //
+        // Uma varredura do ECS produz META (dado estavel: tipo, nome, hp_max)
+        // e ESTADO (posicao, velocidade, hp, flags — quantizados). O meta so'
+        // vai pro wire quando a entidade ENTRA no campo de visao de alguem; o
+        // estado vai quando muda. Antes, tudo isso era um struct de 58 campos
+        // remandado inteiro por tick.
+        let all: Vec<(EntityMeta, EntityState)> = self
             .ecs
-            .query::<(&NetId, &Position, &Velocity, &EntityKind, Option<&Health>, Option<&PlayerTag>, Option<&ProjTag>, Option<&NpcSkin>, Option<&VendorTag>, Option<&WanderRouteTag>, Option<&BoatTag>, Option<&EnemyTag>, Option<&LootTag>, Option<&FactionGiverTag>)>()
+            .query::<(
+                &NetId, &Position, &Velocity, &EntityKind,
+                Option<&Health>, Option<&PlayerTag>, Option<&VendorTag>,
+                Option<&WanderRouteTag>, Option<&EnemyTag>,
+            )>()
             .iter()
-            .map(|(_, (net, pos, vel, kind, hp, ptag, projtag, skin, vtag, wtag, boat, etag, ltag, fgtag))| {
-                let is_player = matches!(kind, EntityKind::Player);
-                let overlay = if is_player { player_overlay.get(&net.0) } else { None };
-                EntitySnapshot {
-                    id: net.0,
-                    kind: match kind {
-                        EntityKind::Player      => "Player".to_string(),
-                        EntityKind::Enemy(_)    => "Enemy".to_string(),
-                        EntityKind::Projectile  => "Projectile".to_string(),
-                        EntityKind::Loot(_)     => "Loot".to_string(),
-                        EntityKind::Npc(_)      => "Npc".to_string(),
-                        EntityKind::Portal      => "Portal".to_string(),
-                        EntityKind::Boat(_)     => "Boat".to_string(),
-                        EntityKind::CannonBomb  => "CannonBomb".to_string(),
-                        EntityKind::Fish(_)     => "Fish".to_string(),
-                    },
-                    pos: pos.0,
-                    vel: vel.0,
-                    hp: hp.map(|h| h.current),
-                    hp_max: hp.map(|h| h.max),
-                    name: ptag.map(|p| p.name.clone())
-                        .or_else(|| vtag.map(|v| v.name.clone()))
-                        .or_else(|| wtag.map(|w| w.name.clone()))
-                        .or_else(|| etag.map(|t| {
-                            // Boss com nome custom (ex "Cavaleiro Radiante").
-                            if let Some(bn) = &t.boss_name { return bn.clone(); }
-                            let tier = crate::enemy_builds::tier_for_level(t.level);
-                            if t.is_boss {
-                                format!("[BOSS] {} Lv{}", tier.theme.display_name, t.level)
-                            } else {
-                                format!("{} Lv{}", tier.theme.display_name, t.level)
-                            }
-                        })),
-                    sprite_id: match kind {
-                        EntityKind::Enemy(n) | EntityKind::Loot(n) | EntityKind::Npc(n) => Some(*n as u32),
-                        EntityKind::Boat(n)    => Some(*n as u32),
-                        EntityKind::Fish(n)    => Some(*n as u32),
-                        EntityKind::Projectile => projtag.map(|p| p.kind as u32),
-                        _ => None,
-                    },
-                    is_self: None,
-                    attacking: if attacking_ids.contains(&net.0) { Some(true) } else { None },
-                    aim_dir: enemy_aim_dirs.get(&net.0).copied(),
-                    attack_anim: if parry_flash_ids.contains(&net.0) {
-                        Some(shared::components::attack_anim::PARRY_FLASH)
-                    } else if enemy_dash_anim_ids.contains(&net.0) {
-                        // Boss dashou neste tick → mesma anim de dash do player.
-                        Some(shared::components::attack_anim::DASH)
-                    } else {
-                        player_attack_anim.get(&net.0).copied()
-                    },
-                    combo_step: player_combo_step.get(&net.0).copied(),
-                    weapon_id: overlay.and_then(|o| o.weapon_id)
-                        .or_else(|| etag.and_then(|t| t.equipment.weapon)),
-                    offhand_id: overlay.and_then(|o| o.offhand_id)
-                        .or_else(|| etag.and_then(|t| t.equipment.offhand)),
-                    downed: overlay.map(|o| o.downed),
-                    visual: overlay.map(|o| o.visual.clone())
-                        .or_else(|| etag.map(|t| t.visual.clone())),
-                    attack_speed_mult: overlay.map(|o| o.attack_speed_mult),
-                    hurt_dir: self.hit_this_tick.get(&net.0).map(|v| [v.x, v.y]),
-                    is_crit: self.crit_this_tick.get(&net.0).copied(),
-                    last_damage: self.damage_this_tick.get(&net.0).copied(),
-                    attacker_weapon_id: self.attacker_weapon_this_tick.get(&net.0).copied(),
-                    owner_eid: projtag.map(|p| p.owner),
-                    skin_preset: skin.map(|s| s.preset),
-                    // Boss em GUARD-WALK replica defending=true — client toca a
-                    // pose de escudo (PhysicalShield), igual player defendendo.
-                    defending: overlay.and_then(|o| if o.defending { Some(true) } else { None })
-                        .or_else(|| etag.and_then(|t|
-                            if t.is_boss && t.ai_block_until > now_sim_for_status { Some(true) } else { None })),
-                    casting: overlay.and_then(|o| if o.casting { Some(true) } else { None }),
-                    poisoned: if poisoned_ids.contains(&net.0) { Some(true) } else { None },
-                    stunned: if stunned_ids.contains(&net.0) { Some(true) } else { None },
-                    leap_y: leap_y_map.get(&net.0).copied(),
-                    poise_active: overlay.and_then(|o| if o.poise_active { Some(true) } else { None }),
-                    boat_dir: boat.map(|b| b.dir),
-                    boat_anim: boat.map(|b| b.anim),
-                    // Sem cannons nesta refatoracao.
-                    boat_shoot_dir: None,
-                    // Legado: primeiro passenger (compat com BoatRenderer atual).
-                    passenger_eid: boat.and_then(|b| b.passengers.first().copied()),
-                    mounted: if is_player && mounted_player_eids.contains(&net.0) { Some(true) } else { None },
-                    is_boss: etag.and_then(|t| if t.is_boss { Some(true) } else { None }),
-                    buffs: overlay.and_then(|o| if o.buffs_mask != 0 { Some(o.buffs_mask) } else { None }),
-                    // Tier do loot — usado pra colorir halo no chao (estilo MIR4):
-                    // resources (60-71) tier baked no item_id. Equipaveis com
-                    // instance.item_level → 1-4 via threshold (10/30/60).
-                    loot_tier: ltag.and_then(|l| compute_loot_tier(l)),
-                    // ── Boat 2.5D ─────────────────────────────────────────
-                    boat_yaw: boat.map(|b| b.yaw),
-                    boat_lin_vx: if boat.is_some() { Some(vel.0.x) } else { None },
-                    boat_lin_vy: if boat.is_some() { Some(vel.0.y) } else { None },
-                    sail_position: boat.map(|b| b.sail_position),
-                    sail_angle: boat.map(|b| b.sail_angle),
-                    anchor_dropped: boat.map(|b| b.anchor_dropped),
-                    anchor_progress: boat.map(|b| b.anchor_progress),
-                    helm_eid: boat.and_then(|b| b.helm_eid),
-                    sail_eid: boat.and_then(|b| b.sail_eid),
-                    anchor_eid: boat.and_then(|b| b.anchor_eid),
-                    rudder_angle: boat.map(|b| b.rudder_angle),
-                    can_dismount: if boat.is_some() {
-                        Some(boat_can_dismount(pos.0, boat.unwrap().kind, &self.map))
-                    } else { None },
-                    pk_mode_on: if is_player {
-                        self.sessions.values()
-                            .find(|s| s.entity_id == net.0)
-                            .map(|s| s.pk_mode_on)
-                    } else { None },
-                    faction: if is_player {
-                        self.sessions.values()
-                            .find(|s| s.entity_id == net.0)
-                            .map(|s| s.faction)
-                    } else {
-                        // NPC de facção também replica a facção (ícone/cor no client).
-                        fgtag.map(|t| t.faction)
-                    },
-                    // Player montado: pop info de boat_eid/local/station.
-                    mounted_on: if is_player {
-                        mounted_player_info.get(&net.0).map(|(b, _, _)| *b)
-                    } else { None },
-                    mounted_local_x: if is_player {
-                        mounted_player_info.get(&net.0).map(|(_, l, _)| l.x)
-                    } else { None },
-                    mounted_local_y: if is_player {
-                        mounted_player_info.get(&net.0).map(|(_, l, _)| l.y)
-                    } else { None },
-                    station: if is_player {
-                        mounted_player_info.get(&net.0).and_then(|(_, _, s)| *s)
-                    } else { None },
-                    // Giver do arauto (kind 3 com giver != 0) → indicador no cliente.
-                    quest_giver: wtag.and_then(|t| if t.giver != 0 { Some(t.giver) } else { None }),
-                    // Altura render da bola de canhao (parabola). None pra outras.
-                    height: cannon_height_map.get(&net.0).copied(),
+            .map(|(_, (net, pos, vel, kind, hp, ptag, vtag, wtag, etag))| {
+                let tag = match kind {
+                    EntityKind::Player     => shared::EntityTag::Player,
+                    EntityKind::Enemy(_)   => shared::EntityTag::Enemy,
+                    EntityKind::Projectile => shared::EntityTag::Projectile,
+                    EntityKind::Loot(_)    => shared::EntityTag::Loot,
+                    EntityKind::Npc(_)     => shared::EntityTag::Npc,
+                    EntityKind::Portal     => shared::EntityTag::Portal,
+                    EntityKind::Boat(_)    => shared::EntityTag::Boat,
+                    _                      => shared::EntityTag::Other,
+                };
+                let name = ptag.map(|p| p.name.clone())
+                    .or_else(|| vtag.map(|v| v.name.clone()))
+                    .or_else(|| wtag.map(|w| w.name.clone()))
+                    .or_else(|| etag.map(|t| {
+                        if let Some(bn) = &t.boss_name { return bn.clone(); }
+                        let tier = crate::enemy_builds::tier_for_level(t.level);
+                        if t.is_boss {
+                            format!("[BOSS] {} Lv{}", tier.theme.display_name, t.level)
+                        } else {
+                            format!("{} Lv{}", tier.theme.display_name, t.level)
+                        }
+                    }));
+                let mut flags = 0u8;
+                if etag.map_or(false, |t| t.is_boss) {
+                    flags |= shared::ent_flags::BOSS;
                 }
+                let meta = EntityMeta {
+                    id: net.0,
+                    tag,
+                    name,
+                    hp_max: hp.map(|h| h.max.max(0) as u16).unwrap_or(0),
+                    faction: None,
+                };
+                let state = EntityState::quantize(
+                    net.0,
+                    pos.0,
+                    vel.0,
+                    hp.map(|h| h.current).unwrap_or(0),
+                    flags,
+                );
+                (meta, state)
             })
             .collect();
 
         let removed = self.removed_this_tick.clone();
 
-        // Spatial hash: índices de `all` por célula. Cell size = AOI_RADIUS ⇒
-        // basta varrer 3×3 células ao redor do centro (ceil(AOI/cell) = 1).
+        // Hash espacial pro AOI: celula do tamanho do raio, busca em 3x3.
         let cell = AOI_RADIUS.max(SPATIAL_CELL_SIZE);
         let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
-        for (idx, snap) in all.iter().enumerate() {
-            let cx = (snap.pos.x / cell).floor() as i32;
-            let cy = (snap.pos.y / cell).floor() as i32;
-            grid.entry((cx, cy)).or_default().push(idx);
+        for (idx, (_, st)) in all.iter().enumerate() {
+            let p = st.pos_f32();
+            let key = ((p.x / cell).floor() as i32, (p.y / cell).floor() as i32);
+            grid.entry(key).or_default().push(idx);
         }
-        // Bombas: AOI estendido. Player que disparou (owner_pid) sempre
-        // recebe a bomba (independente de distancia). Outros recebem se a
-        // posicao atual OU o target estiverem no AOI. (idx, target, owner_pid).
-        let bomb_indices: Vec<(usize, Vec2, PlayerId)> = self.ecs
-            .query::<(&NetId, &CannonBombTag)>()
-            .iter()
-            .filter_map(|(_, (net, b))| {
-                let eid = net.0;
-                all.iter().position(|s| s.id == eid).map(|i| (i, b.target_pos, b.owner_pid))
-            })
-            .collect();
 
         let mut centers: HashMap<SessionId, Vec2> = HashMap::new();
         for (sid, session) in &self.sessions {
@@ -9571,47 +10033,109 @@ impl GameWorld {
         }
 
         let radius_sq = AOI_RADIUS * AOI_RADIUS;
+        // Reaproveitado entre sessoes: com 200 jogadores isto seria 200
+        // alocacoes por tick.
+        let mut candidatos: Vec<(f32, usize)> = Vec::with_capacity(256);
         for (sid, session) in &mut self.sessions {
             if !session.logged_in { continue; }
             let center = centers.get(sid).copied().unwrap_or(Vec2::ZERO);
             let ccx = (center.x / cell).floor() as i32;
             let ccy = (center.y / cell).floor() as i32;
             let my_entity_id = session.entity_id;
-            let mut visible: Vec<EntitySnapshot> = Vec::new();
+
+            let mut entered: Vec<EntityMeta> = Vec::new();
+            let mut states: Vec<EntityState> = Vec::new();
+
+            // ── Candidatos, por distancia ─────────────────────────────────
+            // Sem cap, um jogador no meio de uma horda recebia TODAS as
+            // entidades mudando por tick — medido em 214 estados por snapshot
+            // com 200 jogadores, ou 66 KB/s cada (238 MB por hora de dado
+            // movel). O gargalo nao e' a codificacao: sao 10 bytes por
+            // entidade, e' a quantidade.
+            candidatos.clear();
             for dy in -1..=1 {
                 for dx in -1..=1 {
-                    if let Some(idxs) = grid.get(&(ccx + dx, ccy + dy)) {
-                        for &i in idxs {
-                            let s = &all[i];
-                            if s.pos.distance_squared(center) <= radius_sq {
-                                let mut snap = s.clone();
-                                if snap.id == my_entity_id {
-                                    snap.is_self = Some(true);
-                                }
-                                visible.push(snap);
-                            }
+                    let Some(idxs) = grid.get(&(ccx + dx, ccy + dy)) else { continue };
+                    for &i in idxs {
+                        let d2 = all[i].1.pos_f32().distance_squared(center);
+                        if d2 <= radius_sq {
+                            candidatos.push((d2, i));
                         }
                     }
                 }
             }
-            // Bombas: include quando target esta no AOI ou o player e' o
-            // dono do disparo (atirador sempre ve a propria bola ate cair).
-            // Dedup vs spatial pass.
-            let my_pid = session.player_id;
-            for &(bi, target, owner_pid) in &bomb_indices {
-                let in_aoi = target.distance_squared(center) <= radius_sq;
-                let is_owner = owner_pid == my_pid;
-                if !in_aoi && !is_owner { continue; }
-                let s = &all[bi];
-                if visible.iter().any(|v| v.id == s.id) { continue; }
-                visible.push(s.clone());
+            // Mais perto primeiro: se algo vai ficar de fora, que seja o que o
+            // jogador menos enxerga.
+            candidatos.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+            // Histerese: entidade JA conhecida sobrevive um pouco alem do cap,
+            // senao ela fica entrando e saindo a cada passo do jogador e o
+            // custo de `entered` (24 bytes) come o que o cap economizou.
+            let limite_conhecida = shared::AOI_MAX_ENTIDADES + shared::AOI_HISTERESE;
+            let mut visiveis: std::collections::HashSet<EntityId> =
+                std::collections::HashSet::with_capacity(shared::AOI_MAX_ENTIDADES);
+
+            for (rank, (d2, i)) in candidatos.iter().enumerate() {
+                let (meta, st) = &all[*i];
+                let conhecida = session.last_sent.contains_key(&st.id);
+                let cabe = rank < shared::AOI_MAX_ENTIDADES
+                    || (conhecida && rank < limite_conhecida)
+                    || st.id == my_entity_id;
+                if !cabe { continue; }
+                visiveis.insert(st.id);
+
+                let mut st = *st;
+                if st.id == my_entity_id {
+                    st.flags |= shared::ent_flags::SELF;
+                }
+
+                // ── Taxa por distancia ────────────────────────────────────
+                // Perto atualiza todo tick; longe, de N em N. O cliente
+                // interpola, entao um mob a 20 tiles andando a 5Hz continua
+                // liso na tela. O `+ id` espalha os vencimentos entre os
+                // ticks — sem isso todos os distantes vencem juntos e o
+                // trafego vira serrote.
+                let periodo = if st.id == my_entity_id {
+                    1
+                } else if *d2 <= shared::AOI_PERTO * shared::AOI_PERTO {
+                    1
+                } else if *d2 <= shared::AOI_MEIO * shared::AOI_MEIO {
+                    3
+                } else {
+                    6
+                };
+                let vencido = (self.tick as u64 + st.id.0 as u64) % periodo == 0;
+
+                match session.last_sent.get(&st.id) {
+                    // Entidade nova pro jogador: meta + estado, na hora.
+                    None => {
+                        entered.push(meta.clone());
+                        states.push(st);
+                        session.last_sent.insert(st.id, st);
+                    }
+                    // Ja conhecida: so' vai se mudou E se e' a vez dela.
+                    Some(anterior) if *anterior != st && vencido => {
+                        states.push(st);
+                        session.last_sent.insert(st.id, st);
+                    }
+                    _ => {}
+                }
             }
+
+            // Saiu do AOI ou morreu. O `removed` global so' cobre destruicao.
+            let mut removed_for_me = removed.clone();
+            session.last_sent.retain(|id, _| {
+                let fica = visiveis.contains(id);
+                if !fica { removed_for_me.push(*id); }
+                fica
+            });
+
             let _ = session.handle.to_client.send(ServerMessage::Snapshot { snapshot: WorldSnapshot {
                 tick: self.tick,
                 server_time_ms: now_ms(),
                 last_input_seq: session.last_input_seq,
-                entities: visible,
-                removed: removed.clone(),
+                entered,
+                states,
+                removed: removed_for_me,
             }});
             if session.inventory_dirty {
                 session.inventory_dirty = false;
@@ -9712,6 +10236,9 @@ impl GameWorld {
         // Antes, o clear() ficava no inicio de step(), o que apagava ids de
         // dismount/spawn/etc. processados em on_message ANTES do step rodar
         // — fazia o cliente nunca receber a remocao do barco.
+        if let Some(p) = &self.populacao {
+            p.set(self.sessions.values().filter(|s| s.logged_in).count());
+        }
         self.removed_this_tick.clear();
     }
 }
@@ -10455,12 +10982,6 @@ impl GameWorld {
         }
         if let Ok(mut v) = self.ecs.get::<&mut Velocity>(player_entity) {
             v.0 = Vec2::ZERO;
-        }
-        if let Ok(h) = self.ecs.get::<&shared::PhysicsHandle>(player_entity).map(|h| h.0) {
-            if let Some(rb) = self.physics.rigid_body_set.get_mut(h) {
-                rb.set_translation([dest.x, dest.y].into(), true);
-                rb.set_linvel([0.0, 0.0].into(), true);
-            }
         }
         self.save_pending = true;
         tracing::info!("{} reset position → spawn {:?}", name, dest);
@@ -12056,12 +12577,6 @@ impl GameWorld {
         }
         if let Ok(mut v) = self.ecs.get::<&mut Velocity>(player_entity) {
             v.0 = Vec2::ZERO;
-        }
-        if let Ok(h) = self.ecs.get::<&shared::PhysicsHandle>(player_entity).map(|h| h.0) {
-            if let Some(rb) = self.physics.rigid_body_set.get_mut(h) {
-                rb.set_translation([target.x, target.y].into(), true);
-                rb.set_linvel([0.0, 0.0].into(), true);
-            }
         }
         // Remove player do boat.passengers + clear estacao se ocupando.
         let (was_owner, became_empty) = if let Ok(mut tag) = self.ecs.get::<&mut BoatTag>(mounted_boat_entity) {

@@ -13,6 +13,23 @@ pub const TICK_DT: f32 = 1.0 / TICK_RATE_HZ as f32;
 /// reduz banda mas aumenta pop-in.
 pub const AOI_RADIUS: f32 = 24.0;
 
+/// Teto de entidades num snapshot, por jogador.
+///
+/// Sem teto, jogador no meio de uma horda recebe tudo que mexe: medido em 214
+/// estados por snapshot com 200 jogadores e 1000 mobs, 66 KB/s cada. As mais
+/// distantes ficam de fora — sao as que ele menos enxerga.
+pub const AOI_MAX_ENTIDADES: usize = 60;
+
+/// Folga pra entidade JA conhecida continuar dentro do teto. Sem histerese ela
+/// entra e sai a cada passo do jogador, e reenviar o meta (24 bytes) come o
+/// que o teto economizou.
+pub const AOI_HISTERESE: usize = 12;
+
+/// Ate esta distancia (tiles) a entidade atualiza todo tick.
+pub const AOI_PERTO: f32 = 10.0;
+/// Ate aqui, a cada 3 ticks. Depois, a cada 6.
+pub const AOI_MEIO: f32 = 17.0;
+
 /// Tamanho de uma celula do grid espacial (em tiles). Deve ser >= AOI/2
 /// para que a busca de vizinhos acesse no maximo 4 celulas.
 pub const SPATIAL_CELL_SIZE: f32 = 16.0;
@@ -22,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 66;
+pub const PROTOCOL_VERSION: u16 = 70;
 
 // ── Boat (Sea-of-Thieves style: vela/leme/ancora separados) ─────────────────
 /// Velocidade maxima de qualquer barco (tiles/s). Atingida com vela full,
@@ -1377,6 +1394,14 @@ pub const fn enemy_is_melee(kind: u16) -> bool {
 
 /// Raio do golpe melee em tiles.
 pub const MELEE_RANGE: f32 = 1.8;
+
+/// Alcance do auto-ataque com arma a distancia, em tiles.
+///
+/// No combate por target o servidor decide sozinho quando bater, entao ele
+/// precisa de um alcance explicito — antes quem decidia era o jogador,
+/// mirando. 9 tiles e' o mesmo alcance que o Ranger inimigo ja usa, pra
+/// player e mob brigarem em pe de igualdade.
+pub const RANGED_ATTACK_RANGE: f32 = 9.0;
 /// Meio-angulo do cone em radianos (cone total = 2x).
 pub const MELEE_CONE_HALF_ANGLE: f32 = std::f32::consts::FRAC_PI_3; // 60 graus -> 120 total
 

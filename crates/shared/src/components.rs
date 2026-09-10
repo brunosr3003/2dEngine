@@ -60,7 +60,7 @@ pub enum EntityKind {
 pub struct InventorySlot {
     pub item_id: u16,
     pub qty: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub instance: Option<crate::items::ItemInstance>,
 }
 
@@ -170,63 +170,63 @@ fn default_speed_mult() -> f32 { 1.0 }
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub struct Equipment {
     pub weapon: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub weapon_inst: Option<crate::items::ItemInstance>,
     pub armor: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub armor_inst: Option<crate::items::ItemInstance>,
     pub ring: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub ring_inst: Option<crate::items::ItemInstance>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub offhand: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub offhand_inst: Option<crate::items::ItemInstance>,
     // Slots novos (Fase E)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub helm: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub helm_inst: Option<crate::items::ItemInstance>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub legs: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub legs_inst: Option<crate::items::ItemInstance>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub boots: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub boots_inst: Option<crate::items::ItemInstance>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub gloves: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub gloves_inst: Option<crate::items::ItemInstance>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub belt: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub belt_inst: Option<crate::items::ItemInstance>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub cape: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub cape_inst: Option<crate::items::ItemInstance>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub necklace: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub necklace_inst: Option<crate::items::ItemInstance>,
     // 4 slots dedicados pras ferramentas — todas equipáveis ao mesmo tempo.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tool_axe: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tool_axe_inst: Option<crate::items::ItemInstance>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tool_sickle: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tool_sickle_inst: Option<crate::items::ItemInstance>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tool_pickaxe: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tool_pickaxe_inst: Option<crate::items::ItemInstance>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tool_rod: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tool_rod_inst: Option<crate::items::ItemInstance>,
 }
 
@@ -319,250 +319,86 @@ impl Equipment {
     }
 }
 
-/// Snapshot de uma entidade enviado pelo servidor no tick.
-/// Compativel com Protocol.cs do Unity (campos snake_case, Vec2 como [x,y]).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EntitySnapshot {
-    pub id: EntityId,
-    /// Nome da variante de EntityKind como string ("Player", "Enemy", etc.)
-    pub kind: String,
-    #[serde(with = "crate::vec2_arr")]
-    pub pos: Vec2,
-    #[serde(with = "crate::vec2_arr")]
-    pub vel: Vec2,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub hp: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub hp_max: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sprite_id: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_self: Option<bool>,
-    /// Inimigo iniciou um swing de melee neste tick. Cliente toca anim de
-    /// ataque ao receber. None nas outras snapshots.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub attacking: Option<bool>,
-    /// Direção do golpe do inimigo (unit vector TOWARD o alvo) no tick em
-    /// que `attacking` dispara. Cliente seta o facing do swing — sem isso o
-    /// boss strafando atacava "pro lado" (facing vinha da velocity).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub aim_dir: Option<[f32; 2]>,
-    /// Player iniciou um ataque neste tick. Codifica qual animacao o cliente
-    /// deve tocar (ver `AttackAnim` abaixo). None nas outras snapshots.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub attack_anim: Option<u8>,
-    /// Item_id da arma equipada, replicado pra que outros clientes mostrem
-    /// o sprite de arma correto no paper-doll. None se desarmado/desconhecido.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub weapon_id: Option<u16>,
-    /// Item_id do offhand (escudo). Replicado pra renderizar shield sprite
-    /// no `_weaponB` layer do paper-doll. None se sem offhand.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub offhand_id: Option<u16>,
-    /// True se o player esta no estado Downed. Replicado pra que outros
-    /// clientes mostrem a pose sentada + drip de sangue.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub downed: Option<bool>,
-    /// Visual config (skin/race/outfit/hair) replicada pra todos os players
-    /// visiveis. Permite que um wizard pareca diferente de um warrior.
-    /// None pra Enemy/Npc/Projectile/Loot/Portal.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub visual: Option<VisualConfig>,
-    /// Multiplicador de atk speed do player (1.0 = base). Cliente usa pra
-    /// acelerar a animacao de ataque proporcionalmente ao cooldown reduzido.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub attack_speed_mult: Option<f32>,
-    /// Vetor unitário do alvo TOWARD o atacante, no tick em que tomou dano.
-    /// Cliente usa pra setar facing (e knockback futuro = -hurt_dir).
-    /// None na maioria das snapshots; Some apenas no tick do hit.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub hurt_dir: Option<[f32; 2]>,
-    /// True se o hit deste tick foi um critico. Cliente usa pra mostrar
-    /// floating damage number em estilo diferente (cor/tamanho).
-    /// None nos demais ticks; Some(true/false) só quando hp_dropped.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_crit: Option<bool>,
-    /// Item_id da arma do atacante no tick em que tomou dano. Cliente usa
-    /// pra escolher VFX de impacto diferenciado por arma (sword=clean cut,
-    /// axe=heavy slam, etc). Some apenas no tick do hit, None nos demais.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub attacker_weapon_id: Option<u16>,
-    /// EntityId do dono pra projetil (player/enemy que disparou). Cliente
-    /// usa pra desenhar tether visual (Spear Throw harpoon line) e
-    /// outras integracoes player↔projectile. Some apenas em EntityKind::
-    /// Projectile.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub owner_eid: Option<EntityId>,
-    /// Step do combo melee (0=Slash1, 1=Slash2, 2=Finisher). Acompanha
-    /// `attack_anim=SLASH` pra que outros clientes toquem a anim correta
-    /// dentro do combo. None fora do tick de attack ou em SHOOT/THRUST.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub combo_step: Option<u8>,
-    /// Dano REAL do hit (pre-clamp pelo HP atual). Cliente usa pra mostrar
-    /// no floating damage text mesmo se overkill — não fica clampado em
-    /// "5/50". None fora do tick de hit.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_damage: Option<i32>,
-    /// True enquanto o player segura RMB (defesa ativa). Cliente renderiza
-    /// pose de bloqueio + (pra arco/cajado/varinha) bolha de energia.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub defending: Option<bool>,
-    /// True enquanto o player está em cast (`session.casting_until > now`).
-    /// Cliente segura a pose de ataque (Thrust pra Wand/Staff) frame parado
-    /// até o cast terminar. Movimento/ataque/defesa estão bloqueados no
-    /// servidor durante este período.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub casting: Option<bool>,
-    /// True enquanto o inimigo está envenenado (`poisoned_until > now`).
-    /// Cliente aplica tint verde no body sprite. Set por skills DOT (ex:
-    /// Smoke Bomb 1038). Snapshot só envia quando ativo.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub poisoned: Option<bool>,
-    /// True enquanto o inimigo está atordoado (`stunned_until > now`).
-    /// Set por Shield Bash (1003). Cliente renderiza tint amarelo + parado.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stunned: Option<bool>,
-    /// Offset Y visual pra arco de pulo (Leap Strike). Cliente soma esse
-    /// valor à posição do paper-doll pra simular trajetória parabolica.
-    /// Server calcula `4 * peak * t * (1-t)`. Snapshot envia somente
-    /// durante o leap.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub leap_y: Option<f32>,
-    /// True enquanto o player tem poise > 0 (barra de poise ativa). Cliente
-    /// renderiza uma bolha visual em volta do char. Snapshot envia somente
-    /// quando ativo (poise > 0).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub poise_active: Option<bool>,
-    /// Preset visual pra NPCs (0..N). Cliente mapeia pra VisualConfig
-    /// (race + outfit + hair). None pra Player/Enemy (esses usam outros
-    /// caminhos de visual).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub skin_preset: Option<u8>,
-    /// Direcao do barco (0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW). Cliente
-    /// escolhe a sheet correta dentre as 8 direcoes. Some apenas em
-    /// EntityKind::Boat. None para outras entidades.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub boat_dir: Option<u8>,
-    /// Animacao atual do barco (0=idle, 1=movement, 2=shoot). Cliente escolhe
-    /// sheet baseado nisso. Some apenas em EntityKind::Boat.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub boat_anim: Option<u8>,
-    /// Direcao do ULTIMO tiro (0..7). Independente da boat_dir (que e' a
-    /// direcao do casco/movimento). Cliente usa pra rotacionar o flash do
-    /// canhao pro mouse, nao pro casco. Some apenas em EntityKind::Boat
-    /// quando shoot anim ativa.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub boat_shoot_dir: Option<u8>,
-    /// EntityId do passageiro (player montado). Cliente verifica se o local
-    /// player == passenger_eid pra decidir se a camera segue o barco. Some
-    /// apenas em EntityKind::Boat com passageiro.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub passenger_eid: Option<EntityId>,
-    /// True se o player esta montado em algum barco. Cliente esconde o
-    /// paper-doll do player local (ele eh representado pelo barco). Some
-    /// apenas em EntityKind::Player com Mounted ativo.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mounted: Option<bool>,
-    /// True para inimigos boss. Cliente aplica scale maior + frame especial.
-    /// Some(true) apenas em EntityKind::Enemy quando EnemyTag.is_boss=true.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_boss: Option<bool>,
-    /// Bitmask de buffs ativos no player. Cliente renderiza aura por bit set.
-    /// bit0=Bloodthirst (vermelho), bit1=Hunter's Mark (laranja). Some apenas
-    /// quando ao menos um bit ativo. Outros bits reservados pra buffs futuros.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub buffs: Option<u8>,
-    /// Tier do item dropado (1-4) — cliente usa pra colorir a aura/halo da loot.
-    /// Resources (item_id 60-71) e equipaveis com `instance.item_level` >= 1.
-    /// None quando sem tier definido (gold, pocoes, itens legacy).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub loot_tier: Option<u8>,
-
-    // ── Boat 2.5D (Sea-of-Thieves) ─────────────────────────────────────────
-    /// Heading do barco em rad (world-space). Usar pra renderer 3D / shader
-    /// 2.5D. `boat_dir` (8-cardeais) é derivado disso server-side pra
-    /// compatibilidade com o BoatRenderer 2D atual. Some apenas em Boat.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub boat_yaw: Option<f32>,
-    /// Velocidade linear do barco no world-space (tiles/s). Cliente usa
-    /// pra interpolacao + indicador de speed. Some apenas em Boat.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub boat_lin_vx: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub boat_lin_vy: Option<f32>,
-    /// Posicao da vela: 0=raised (sem propulsao), 1=half (50%), 2=full (100%).
-    /// Some apenas em Boat.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sail_position: Option<u8>,
-    /// Angulo da vela em rad relativo ao casco. Range -PI/2..PI/2.
-    /// Some apenas em Boat.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sail_angle: Option<f32>,
-    /// True se a ancora esta dropada (barco freado). Some apenas em Boat.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub anchor_dropped: Option<bool>,
-    /// Progresso da animacao de drop/raise da ancora em [0,1].
-    /// 1 = totalmente dropada, 0 = totalmente recolhida. Some apenas em Boat.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub anchor_progress: Option<f32>,
-    /// EntityId do player na estacao do leme. None se vazia. Some apenas em Boat.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub helm_eid: Option<EntityId>,
-    /// EntityId do player na estacao da vela. Some apenas em Boat.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sail_eid: Option<EntityId>,
-    /// EntityId do player na estacao da ancora. Some apenas em Boat.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub anchor_eid: Option<EntityId>,
-
-    /// Player montado em qual barco (EntityId do barco). Some apenas em
-    /// Player com Mounted ativo. Substitui o boolean `mounted` do legado
-    /// (que vira `Some(true)` quando este campo é Some).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mounted_on: Option<EntityId>,
-    /// Posicao do player no deck local (relativa ao centro do barco, sem
-    /// rotacao). Cliente usa pra interpolar separado da posicao do barco
-    /// quando montado. Some apenas em Player com Mounted ativo.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mounted_local_x: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mounted_local_y: Option<f32>,
-    /// Estacao que o player esta operando (0=helm, 1=sail, 2=anchor). None
-    /// = livre andando no deck. Some apenas em Player com Mounted.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub station: Option<u8>,
-    /// Angulo acumulado da roda do leme em rad. Persiste quando ninguem
-    /// esta no leme. Valores positivos viram pra direita; negativos esquerda.
-    /// Some apenas em Boat.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub rudder_angle: Option<f32>,
-    /// True se ha terra walkable proxima — cliente usa pra mostrar/esconder
-    /// botao "Sair do Barco". Calculado server-side via BFS, mesma logica
-    /// que valida o handle_dismount_boat. Some apenas em Boat.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_dismount: Option<bool>,
-    /// True quando o player tem PK Mode ativado (opt-in PvP). HUD do
-    /// outro player mostra indicador (ex: nome vermelho) quando true.
-    /// Some apenas em Player.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pk_mode_on: Option<bool>,
-    /// Facção do player. Cliente usa pra colorir (vermelho=Morganeers,
-    /// amarelo=Peacemain) e pra filtrar alvos (cross-facção sempre atacável).
-    /// Some apenas em Player.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub faction: Option<Faction>,
-    /// Giver de quest deste NPC (kind 3 arauto). Cliente usa pra mostrar o
-    /// indicador !/? e casar com as quests ativas. Some quando não é arauto.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub quest_giver: Option<u16>,
-    /// Altura (offset Y de render) da bola de canhao em voo. Some em
-    /// entities kind="CannonBomb". Cliente desenha sprite com Y += height
-    /// e sombra fixa em pos.y (Y zero) — sensacao de projetil balistico.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub height: Option<f32>,
+/// Tipo de entidade no wire. Era `String` ("Player", "Enemy"...) reenviada a
+/// cada tick por entidade; virou um byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EntityTag {
+    Player,
+    Enemy,
+    Projectile,
+    Loot,
+    Npc,
+    Portal,
+    Boat,
+    Other,
 }
+
+pub mod ent_flags {
+    /// E' o personagem do proprio jogador que recebe o pacote.
+    pub const SELF: u8 = 1 << 0;
+    pub const DOWNED: u8 = 1 << 1;
+    pub const CASTING: u8 = 1 << 2;
+    pub const BOSS: u8 = 1 << 3;
+}
+
+/// Precisao da posicao no wire: 1/16 de tile.
+///
+/// Com `i16` isso cobre +-2048 tiles, folga de sobra pro mundo, e corta a
+/// posicao de 8 bytes (2x f32) pra 4. Um decimo de pixel de erro num jogo de
+/// vista de cima ninguem enxerga — e o cliente interpola por cima disso.
+pub const POS_SCALE: f32 = 16.0;
+
+/// Dado ESTAVEL de uma entidade: vai uma vez, quando ela entra no campo de
+/// visao do jogador.
+///
+/// Separar isto do estado por tick e' o que tira `name` e `kind` do caminho
+/// quente. Antes, um mob andando reenviava "Green Goblin Lv3" 30 vezes por
+/// segundo — 23 bytes por tick por mob, exatamente nas entidades que se movem.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EntityMeta {
+    pub id: EntityId,
+    pub tag: EntityTag,
+    pub name: Option<String>,
+    pub hp_max: u16,
+    pub faction: Option<Faction>,
+}
+
+/// Estado de uma entidade num tick. E' o unico dado que se repete.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct EntityState {
+    pub id: EntityId,
+    /// Posicao em 1/16 de tile (ver `POS_SCALE`).
+    pub pos: [i16; 2],
+    /// Velocidade em 1/16 de tile/s, saturada. O cliente usa pra girar o
+    /// modelo e decidir se anda — nao precisa de precisao.
+    pub vel: [i8; 2],
+    pub hp: u16,
+    /// Ver `ent_flags`.
+    pub flags: u8,
+}
+
+impl EntityState {
+    pub fn pos_f32(&self) -> Vec2 {
+        Vec2::new(self.pos[0] as f32 / POS_SCALE, self.pos[1] as f32 / POS_SCALE)
+    }
+
+    pub fn vel_f32(&self) -> Vec2 {
+        Vec2::new(self.vel[0] as f32 / POS_SCALE, self.vel[1] as f32 / POS_SCALE)
+    }
+
+    pub fn quantize(id: EntityId, pos: Vec2, vel: Vec2, hp: i32, flags: u8) -> Self {
+        let q = |v: f32| (v * POS_SCALE).round().clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+        let qv = |v: f32| (v * POS_SCALE).round().clamp(i8::MIN as f32, i8::MAX as f32) as i8;
+        Self {
+            id,
+            pos: [q(pos.x), q(pos.y)],
+            vel: [qv(vel.x), qv(vel.y)],
+            hp: hp.max(0) as u16,
+            flags,
+        }
+    }
+}
+
 
 /// Bits do `EntitySnapshot.buffs` — mantém em sync com o cliente C#.
 pub mod buffs_mask {
@@ -627,19 +463,13 @@ impl Faction {
 /// no cliente C#.
 ///
 /// Default por classe via `VisualConfig::for_class("warrior"|"wizard"|"archer")`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct VisualConfig {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub skin: Option<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub skin_race: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub outfit: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub outfit_color: Option<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub hair: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub hair_color: Option<u8>,
     /// Hat layer (5hat sheet). None = sem chapeu. Cliente derive overlay
     /// (chifres/cauda) a partir de skin_race; hat e independente.
@@ -652,7 +482,6 @@ pub struct VisualConfig {
     /// (goblin verde / amarelo / cinza / demonio roxo / vermelho / dourado).
     /// None = sem tint (Color.white). Cliente multiplica este valor em todos
     /// os SpriteRenderers do paper-doll.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub body_tint: Option<[f32; 4]>,
 }
 
@@ -701,8 +530,12 @@ impl VisualConfig {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct PhysicsHandle(pub rapier2d::prelude::RigidBodyHandle);
+/// Marca de corpo solido: empurra e e' empurrado no passe de separacao.
+///
+/// Era `PhysicsHandle`, que carregava o handle do rigid body no rapier. Com a
+/// colisao propria nao ha corpo paralelo — so' a marca.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct Solido;
 
 /// Identifica em qual "mapa logico" uma entidade esta.
 ///

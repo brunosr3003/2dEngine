@@ -544,8 +544,24 @@ pub fn build_dungeon_boss(level: u32, class: EnemyClass) -> EnemyBuild {
 
 /// Sortea uma classe permitida pelo tier do level. Pesos: melee 4×, ranged 1×
 /// — bias significativo pra melee (~75% spawns) pra fechar a distancia faster.
+/// Classe de um mob COMUM.
+///
+/// So' corpo a corpo. Mob comum que atira nao faz sentido no mundo que a gente
+/// tem: todo bicho comum e' desenhado como lobo, e lobo arqueiro atirando
+/// flecha e' o tipo de coisa que quebra a leitura antes de qualquer
+/// balanceamento. Se um dia houver bicho de longe, ele precisa de MODELO
+/// proprio — e ai' a classe volta.
+///
+/// Chefe continua com o sorteio cheio: ele tem modelo proprio.
 pub fn random_class_for_level(level: u32, rng_seed: u64) -> EnemyClass {
     let tier = tier_for_level(level);
+    let so_corpo: Vec<EnemyClass> =
+        tier.allowed_classes.iter().copied().filter(|c| c.is_melee()).collect();
+    if !so_corpo.is_empty() {
+        return so_corpo[(rng_seed as usize) % so_corpo.len()];
+    }
+    // Tier sem nenhuma classe de corpo a corpo: cai no sorteio antigo em vez
+    // de nao spawnar nada.
     let pool = tier.allowed_classes;
     let weight = |c: EnemyClass| -> u32 {
         match c {

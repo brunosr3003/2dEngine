@@ -49,3 +49,10 @@ crates/server/assets/*.bin
 
 # Asset packs de terceiros (nao commitar — sao grandes e tem licenca)
 assets/manaseed_raw/
+
+# Build cruzado pro VPS (Docker). 750 MB de artefato.
+/target-vps
+
+# Cache do campo de altura das ilhas: derivado da SEMENTE, regenerado em ~3s
+# no primeiro boot. 20 MB por ilha grande e sem valor nenhum no historico.
+/data/ilhas

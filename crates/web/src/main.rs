@@ -62,6 +62,7 @@ async fn main() -> Result<()> {
         .route("/register", post(register))
         .route("/login", post(login))
         .route("/version", get(version))
+        .route("/channels", get(channels))
         .with_state(state);
 
     let pixel_state = pixel::PixelState::from_env();
@@ -230,4 +231,46 @@ impl IntoResponse for RegisterRes {
     fn into_response(self) -> axum::response::Response {
         Json(self).into_response()
     }
+}
+
+
+/// Lista de canais vivos, do mais vazio pro mais cheio.
+///
+/// A vivacidade vem do `updated`: quem parou de bater o coracao ha mais de 15s
+/// nao entra na lista. Servidor que caiu deixa de ser oferecido sozinho, sem
+/// ninguem precisar limpar a tabela.
+async fn channels(State(st): State<AppState>) -> impl IntoResponse {
+    let rows = sqlx::query_as::<_, (String, String, i32, i32, String, String, bool, f32)>(
+        "SELECT id, host, players, capacity, map_name, zone, single, tick_p99_ms
+           FROM channels
+          WHERE updated > NOW() - INTERVAL '15 seconds'
+          ORDER BY players ASC, id ASC",
+    )
+    .fetch_all(&*st.pool)
+    .await
+    .unwrap_or_default();
+
+    let lista: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|(id, host, players, capacity, map_name, zone, single, tick_ms)| {
+            serde_json::json!({
+                "id": id,
+                "host": host,
+                "players": players,
+                "capacity": capacity,
+                "map": map_name,
+                "zone": zone,
+                "full": capacity > 0 && players >= capacity,
+                // Instancia unica: nao vai abrir outro canal, quem chega cheio
+                // entra na fila. O cliente diz isso na tela.
+                "single": single,
+                // Saude, nao lotacao: p99 do trabalho por tick e quanto isso
+                // consome do orcamento de 33ms. Canal pode estar com meia
+                // lotacao e ja' sem folga.
+                "tick_ms": ((tick_ms as f64) * 100.0).round() / 100.0,
+                "tick_load": ((tick_ms as f64) / 33.33 * 10000.0).round() / 100.0,
+            })
+        })
+        .collect();
+    axum::Json(serde_json::json!({ "channels": lista }))
 }

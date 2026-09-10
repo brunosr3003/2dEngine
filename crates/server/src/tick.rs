@@ -16,12 +16,22 @@ use tokio::sync::{mpsc, oneshot};
 /// em qualquer crash, evento ou desconexao.
 const SAVE_INTERVAL_TICKS: u32 = 30;
 
+/// Janela do p99 do tick: 10 segundos a 30Hz.
+///
+/// Curta demais e o numero pula com qualquer save; longa demais e ele demora
+/// pra reagir a uma horda chegando. Dez segundos e' o tempo que uma briga leva
+/// pra virar problema.
+const JANELA_TICK: usize = 300;
+
 pub async fn run_world_loop(
     mut rx: mpsc::UnboundedReceiver<IncomingMessage>,
     characters: HashMap<String, CharacterRow>,
     save_tx: mpsc::UnboundedSender<SaveBatch>,
     auth_pool: PgPool,
     mut shutdown: oneshot::Receiver<()>,
+    populacao: crate::canais::Populacao,
+    saude: crate::canais::Saude,
+    diretorio: crate::canais::Diretorio,
 ) -> Result<()> {
     // Precisa de um tx pra devolver AuthResult pro loop. Criamos um par
     // interno que e fundido com o rx original via tarefa de forward.
@@ -42,6 +52,33 @@ pub async fn run_world_loop(
             map_path, e
         ))?;
     let mut world = GameWorld::new_from_mapfile(characters, mf);
+    world.populacao = Some(populacao);
+    world.saude = Some(saude.clone());
+    world.diretorio = Some(diretorio);
+    world.zona = crate::canais::zona();
+    // Zona que e' ilha do arquipelago carrega o campo de altura. E' o mesmo
+    // `Gerador` que o cliente usa pra desenhar — colisao e desenho saem da
+    // mesma funcao, entao nao ha' como divergirem.
+    if let Some(def) = shared::terreno::def_da_zona(&world.zona) {
+        let dir = std::env::var("MMO_ILHAS").unwrap_or_else(|_| "data/ilhas".into());
+        let t0 = Instant::now();
+        let ilha = shared::terreno::Ilha::carregar_ou_gerar(
+            &dir,
+            def.semente,
+            def.raio_blocos,
+            def.bioma,
+            shared::terreno::ESCALA_ALTURA,
+        );
+        tracing::info!(
+            "ilha '{}' ({:?}, raio {} blocos) pronta em {:?}",
+            world.zona, def.bioma, def.raio_blocos, t0.elapsed()
+        );
+        world.ilha = Some(ilha);
+        // Desembarque: o relevo decide, nao a coordenada herdada. E' daqui
+        // que a dificuldade cresce pra fora.
+        let porto = world.pousar(glam::Vec2::ZERO);
+        world.povoar_ilha(porto);
+    }
     world.set_auth_ctx(AuthCtx {
         pool: auth_pool,
         tx: auth_tx,
@@ -49,9 +86,20 @@ pub async fn run_world_loop(
     let step = Duration::from_secs_f32(TICK_DT);
     let mut next = Instant::now() + step;
     let mut save_counter: u32 = 0;
+    // Amostras do tempo de TRABALHO por tick (nao do intervalo entre ticks —
+    // esse e' fixo por construcao e nao diria nada). Anel de tamanho fixo:
+    // nada aqui pode alocar por tick.
+    let mut amostras = [0u32; JANELA_TICK];
+    let mut amostra_i = 0usize;
+    if world.imortal {
+        // Alto e claro: invencibilidade silenciosa e' o melhor jeito de
+        // perder uma hora depois achando o balanceamento estranho.
+        tracing::warn!("MMO_IMORTAL=1 — jogadores NAO tomam dano nesta instancia");
+    }
     tracing::info!("world loop started ({}ms/tick)", step.as_millis());
 
     loop {
+        let inicio = Instant::now();
         // Verifica shutdown antes de processar mensagens.
         if shutdown.try_recv().is_ok() {
             tracing::info!("shutdown signal received — saving all characters...");
@@ -112,6 +160,14 @@ pub async fn run_world_loop(
         world.step(TICK_DT);
         world.send_snapshots();
 
+        // Fila de entrada: 1x por segundo basta, e evita 30 varreduras/s.
+        if save_counter % 30 == 0 {
+            world.tick_fila();
+        }
+        // Lotacao do canal pro HUD: a cada 5s.
+        if save_counter % 150 == 0 {
+            world.avisa_info_canal();
+        }
         save_counter = save_counter.wrapping_add(1);
         // Trigger imediato (`save_pending`) ou periodico (1s). save_pending eh
         // setado em mudancas criticas: mount/dismount, equip, inventario, etc.
@@ -122,6 +178,29 @@ pub async fn run_world_loop(
                 let _ = save_tx.send(SaveBatch { rows });
             }
             world.save_pending = false;
+        }
+
+        // ── Saude do tick ────────────────────────────────────────────────
+        // O aviso de lag que ja' existia so' dispara com 10 ticks de atraso —
+        // um terco de segundo DEPOIS do jogador ja' estar sentindo. Este p99
+        // e' o sinal antecedente: sobe enquanto ainda da' tempo de parar de
+        // admitir gente.
+        amostras[amostra_i] = inicio.elapsed().as_micros().min(u32::MAX as u128) as u32;
+        amostra_i = (amostra_i + 1) % JANELA_TICK;
+        if amostra_i == 0 {
+            let mut ordenado = amostras;
+            ordenado.sort_unstable();
+            let p99 = ordenado[JANELA_TICK * 99 / 100];
+            saude.set_p99_us(p99);
+            let carga = p99 as f32 / (TICK_DT * 1_000_000.0);
+            if carga >= 0.75 {
+                tracing::warn!(
+                    "tick p99 {:.1}ms ({:.0}% do orcamento) com {} jogadores",
+                    p99 as f32 / 1000.0,
+                    carga * 100.0,
+                    world.dentro_pub()
+                );
+            }
         }
 
         let now = Instant::now();

@@ -59,48 +59,8 @@ impl WorldMap {
         (self.width as i32 / 2, self.height as i32 / 2)
     }
 
-    pub fn build_colliders(&self, physics: &mut crate::physics::PhysicsWorld) {
-        use rapier2d::prelude::*;
-        // Greedy meshing por linha: tiles bloqueantes consecutivos numa mesma
-        // linha viram UM cuboid horizontal. Sem merge vertical (suficiente
-        // pra reduzir de ~67k -> ~3k colliders no nosso mapa, sem custo de
-        // implementacao). Se virar gargalo, dah pra rodar 2D quad-merge.
-        let groups = InteractionGroups::new(Group::GROUP_1, Group::GROUP_2, Default::default());
-        let blocks_foot = |t: u16| {
-            t == crate::constants::tile_id::WALL
-                || t == crate::constants::tile_id::WATER
-        };
-        for y in 0..self.height as i32 {
-            let mut x0: Option<i32> = None;
-            for x in 0..self.width as i32 {
-                let t = self.get(x, y);
-                if blocks_foot(t) {
-                    if x0.is_none() { x0 = Some(x); }
-                } else if let Some(start) = x0.take() {
-                    Self::insert_run_collider(physics, start, y, x - start, groups);
-                }
-            }
-            if let Some(start) = x0.take() {
-                Self::insert_run_collider(physics, start, y, self.width as i32 - start, groups);
-            }
-        }
-    }
-
-    fn insert_run_collider(
-        physics: &mut crate::physics::PhysicsWorld,
-        x0: i32, y: i32, len: i32,
-        groups: rapier2d::prelude::InteractionGroups,
-    ) {
-        use rapier2d::prelude::*;
-        let half_w = len as f32 * 0.5;
-        let cx = x0 as f32 + half_w;
-        let cy = y as f32 + 0.5;
-        let collider = ColliderBuilder::cuboid(half_w, 0.5)
-            .translation([cx, cy].into())
-            .collision_groups(groups)
-            .build();
-        physics.collider_set.insert(collider);
-    }
+    // `build_colliders` foi removido junto com o rapier: parede agora e' o
+    // proprio tile, e quem resolve e' `move_and_slide`.
 
     pub fn move_and_slide(&self, pos: glam::Vec2, vel: glam::Vec2, dt: f32, radius: f32) -> glam::Vec2 {
         let mut p = pos;

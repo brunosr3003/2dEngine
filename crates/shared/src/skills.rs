@@ -254,7 +254,7 @@ pub struct LearnedSkill {
     pub rank: u8,
     /// Slot 0..=5 da skill bar; None se não equipada (ativa) ou se passiva
     /// (passivas ignoram slot).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub equipped_slot: Option<u8>,
 }
 

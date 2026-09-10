@@ -36,7 +36,11 @@ pub async fn handle_connection(
                     Ok(b) => b,
                     Err(e) => { tracing::warn!("encode: {e}"); continue; }
                 };
-                if ws.send(Message::Text(String::from_utf8_lossy(&bytes).into_owned())).await.is_err() {
+                // BINARIO, nao texto. Com JSON dava pra mandar como texto; o
+                // wire agora e' postcard e `from_utf8_lossy` destruiria os
+                // bytes que nao formam UTF-8 valido — o cliente travava no
+                // handshake sem erro nenhum aparecer.
+                if ws.send(Message::Binary(bytes)).await.is_err() {
                     break;
                 }
             }

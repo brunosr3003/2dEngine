@@ -12,6 +12,7 @@
 
 mod auth;
 mod boat_config;
+mod canais;
 mod economy;
 mod enemy_builds;
 mod persistence;
@@ -50,6 +51,13 @@ async fn main() -> Result<()> {
     tracing::info!("db conectado: {} personagens carregados", characters.len());
     let save_tx = persistence::spawn_writer(pool.clone());
 
+    // Canal: este processo se anuncia e bate o coracao. Ver `canais`.
+    canais::init(&pool).await?;
+    let populacao = canais::Populacao::default();
+    let saude = canais::Saude::default();
+    let diretorio = canais::Diretorio::default();
+    canais::spawn_heartbeat(pool.clone(), populacao.clone(), saude.clone(), diretorio.clone());
+
     // Inicializa economia + spawn da tarefa de hot-reload.
     economy::init(&pool).await?;
     economy::spawn_hot_reload(pool.clone());
@@ -76,7 +84,7 @@ async fn main() -> Result<()> {
 
     let auth_pool = pool.clone();
     tokio::spawn(async move {
-        if let Err(e) = tick::run_world_loop(rx_incoming, characters, save_tx, auth_pool, shutdown_rx).await {
+        if let Err(e) = tick::run_world_loop(rx_incoming, characters, save_tx, auth_pool, shutdown_rx, populacao, saude, diretorio).await {
             tracing::error!("world loop exited: {e:?}");
         }
     });

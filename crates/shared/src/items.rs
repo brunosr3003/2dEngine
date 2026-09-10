@@ -209,7 +209,7 @@ pub struct ItemInstance {
     #[serde(default = "default_ilvl")]
     pub item_level: u16,
     /// Level mínimo do player pra equipar. None = sem requirement.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub level_req:  Option<u16>,
     pub hp_max:        i32,
     pub mp_max:        i32,
