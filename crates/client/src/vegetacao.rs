@@ -350,7 +350,7 @@ fn moita(r: &mut Rng) -> Volume {
 
 fn flor(r: &mut Rng) -> Volume {
     let raio = r.i(2, 4);
-    let mut v = caixa_vazia(raio, 11);
+    let mut v = caixa_vazia(raio, 7);
     // A cor da cabeca sai do sorteio: um campo de flor nao pode ser um campo
     // de UMA flor.
     let cor = match r.proximo() % 4 {
@@ -363,7 +363,12 @@ fn flor(r: &mut Rng) -> Volume {
     // e' a cabeca que se ve', nao a haste.
     for _ in 0..r.i(4, 8) {
         let (ix, iz) = (r.i(-raio, raio), r.i(-raio, raio));
-        let h = r.i(4, 7);
+        // Haste curta: 2 a 4 voxels poem a flor entre 0,75 e 1,25 de altura,
+        // a mesma faixa da moita e do arbusto. Ela vinha com 4 a 7, o que
+        // dava 2,0 — mais alta que o boneco, que tem 1,68. Forracao mais alta
+        // que o personagem esconde o que importa, e ainda fazia a flor entrar
+        // no recorte da camera junto com as arvores.
+        let h = r.i(2, 4);
         for iy in 0..h {
             v.poe(ix, iy, iz, Material::Folha);
         }
@@ -697,7 +702,9 @@ fn oclusao(v: &Volume, p: [i32; 3], n: [i32; 3], eu: usize, ev: usize, su: i32, 
 /// capim chama mais atencao que o que ele revelaria.
 ///
 /// E' regra e nao lista: prop novo entra pela propria altura, e nao por
-/// alguem lembrar de cadastrar.
+/// alguem lembrar de cadastrar. Quando a regra e a aparencia discordam, o
+/// errado costuma ser o modelo — a flor tinha 2,0 unidades, mais alta que o
+/// personagem, e o conserto foi encolher a flor e nao abrir excecao.
 pub const ALTURA_QUE_ESCONDE: f32 = 1.68;
 
 pub fn instancia(
@@ -817,6 +824,66 @@ mod testes {
         println!("copada {arv:.2}un · arbusto {arb:.2}un · moita {moi:.2}un (jogador 1,68)");
         assert!(arv > arb * 2.5, "arvore {arv:.2} nao e' o dobro do arbusto {arb:.2}");
         assert!(arb < 1.7, "arbusto {arb:.2} esta' na altura do jogador");
+    }
+}
+
+#[cfg(test)]
+mod testes_porte {
+    use super::*;
+
+    /// O que se ATRAVESSA nao pode esconder ninguem.
+    ///
+    /// E' a regra que faz a altura sozinha bastar pro recorte da camera. Nao
+    /// e' "forracao e' baixa" — matacao e' forracao e tem 1,75, mais que o
+    /// boneco, e esta' certo: ele BARRA passagem, e' obstaculo de verdade, e
+    /// esconder atras dele e' esperado.
+    ///
+    /// O que nao pode e' uma coisa que o corpo atravessa tapar a vista. A FLOR
+    /// estava assim: 2,0 unidades contra os 1,68 do personagem, escondendo o
+    /// que devia mostrar e entrando no recorte junto com as arvores. O
+    /// conserto foi encolher a flor, e nao abrir excecao no recorte —
+    /// excecao em regra visual e' divida: some do teste, some do comentario, e
+    /// volta como "por que a flor pisca quando eu ando atras dela?".
+    #[test]
+    fn o_que_se_atravessa_nao_esconde() {
+        for especie in [
+            Planta::Moita, Planta::Flor, Planta::Arbusto, Planta::Samambaia,
+            Planta::Pedra, Planta::Toco, Planta::Talo,
+        ] {
+            let barra = shared::terreno::raio_de_planta(especie).is_some();
+            // O talo e' declarado: ele existe justamente pra dar silhueta alta
+            // onde nao ha' arvore, e o deserto seria uma mesa sem ele. E' o
+            // unico atravessavel que passa da cabeca, e passa de proposito.
+            if barra || especie == Planta::Talo {
+                continue;
+            }
+            for variante in 0..6u32 {
+                let m = planta(especie, variante);
+                let alto = m.verts.iter().map(|v| v.position.y).fold(0.0f32, f32::max);
+                assert!(
+                    alto < ALTURA_QUE_ESCONDE,
+                    "{especie:?} #{variante} tem {alto:.2} de altura contra \
+                     {ALTURA_QUE_ESCONDE:.2} do boneco — se o corpo atravessa, \
+                     a vista tambem tem que atravessar"
+                );
+            }
+        }
+    }
+
+    /// E arvore fica ACIMA: e' o que faz ela valer como abrigo e como marco.
+    #[test]
+    fn arvore_passa_do_boneco() {
+        for especie in [Arvore::Copada, Arvore::Betula, Arvore::Pinheiro, Arvore::Seca] {
+            for variante in 0..6u32 {
+                let m = arvore(especie, variante);
+                let alto = m.verts.iter().map(|v| v.position.y).fold(0.0f32, f32::max);
+                // O porte encolhe ate' 0,62 na hora de plantar.
+                assert!(
+                    alto * 0.62 > ALTURA_QUE_ESCONDE,
+                    "{especie:?} #{variante}: {alto:.2} x 0,62 nao passa do boneco"
+                );
+            }
+        }
     }
 }
 
