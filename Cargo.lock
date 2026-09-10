@@ -1427,6 +1427,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "panoptico"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "glam 0.29.3",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "png 0.17.16",
+ "serde",
+ "serde_json",
+ "shared",
+ "sqlx",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1996,6 +2017,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "argon2",
+ "axum",
  "fastrand",
  "futures-util",
  "glam 0.29.3",

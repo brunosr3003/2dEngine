@@ -1,163 +1,81 @@
 # Networking
 
-## Modelo: servidor autoritativo + predição client-side
+## Modelo: servidor autoritativo, cliente que só suaviza
 
-O servidor é a única fonte da verdade. Clientes enviam *intents* e recebem
-*snapshots*. Para não sentir lag, o cliente **prediz** o resultado dos
-seus próprios inputs localmente, e **reconcilia** quando o snapshot do
-servidor chega.
+O servidor é a única fonte da verdade e o cliente **não prediz**. Ele recebe a
+posição autoritativa e persegue ela com suavização exponencial; a 30 Hz de
+tick e 60+ de desenho, isso basta pra o movimento não ler aos trancos.
 
-### Ciclo de um frame
+Isso é decisão, não falta de tempo. Predição paga latência com uma segunda
+simulação no cliente — e uma segunda simulação é uma segunda verdade, que
+diverge, que precisa de reconciliação, e que dá ao cliente modificado uma
+opinião sobre onde ele está. Sem ela, a única coisa que o cliente pode mentir
+é sobre qual botão apertou.
+
+O que o servidor decide e o cliente só desenha: posição, rota, pulo, alvo,
+dano, loot, level. O cliente calcula a ALTURA sozinho — mas do mesmo campo de
+altura que o servidor usa, então não é opinião, é a mesma conta.
 
 ```
-Cliente (30 Hz)                             Servidor (30 Hz)
-─────────────                                ───────────────
-1. capturar input (WASD, mouse)
-2. aplicar input localmente                 ← predição client-side
-   (mover jogador já)
-3. enviar InputFrame{seq, move, aim}  ────►
-                                             4. recebe InputFrame
-                                             5. tick: aplica, simula,
-                                                atualiza AOI
-                                             6. envia WorldSnapshot{
-                                                  last_input_seq: N,
-                                                  entities: [...]
-                                                }
-7. recebe Snapshot              ◄────
-8. RECONCILIAÇÃO:
-   - descarta inputs com seq ≤ N
-   - "rebobina" para a pos autoritativa
-   - "refaz" os inputs ainda pendentes
-9. render
+Cliente (60+ Hz)                            Servidor (30 Hz)
+──────────────                               ───────────────
+1. captura input (WASD, clique)
+2. envia InputFrame{seq, move_dir,   ────►
+   aim, buttons}
+                                             3. aplica input, simula,
+                                                monta AOI
+                                             4. envia só quem MUDOU
+5. recebe snapshot           ◄────
+6. persegue a posição nova
+   (suavização, nunca simulação)
+7. desenha
 ```
 
-## Transport
+## O que trafega
 
-Hoje: **WebSocket binário** sobre TCP. Razões em
-[ARCHITECTURE.md](ARCHITECTURE.md#por-que-websocket-e-não-udp).
+| Mensagem | Quando | Tamanho |
+|---|---|---|
+| `EntityMeta` | uma vez, ao entrar no AOI | nome, tipo, hp máximo, facção |
+| `EntityState` | por tick, só de quem mudou | **13 bytes** |
+| `ClientMessage::Input` | ~30 Hz | direção, mira, botões |
 
-Futuro (Fase 5):
+`EntityState` é `Copy`: posição em 1/16 de tile (`i16`), velocidade saturada
+em `i8`, hp em `u16`, um byte de bandeiras. Antes era um struct de 58 campos
+com duas `String` dentro — com 100 jogadores vendo 100 entidades, a diferença
+é 10 mil clones com alocação por tick contra 10 mil cópias de bloco.
 
-- Nativo: **QUIC** via `quinn` (UDP com streams ordenados +
-  datagrams não-confiáveis para snapshots).
-- Browser: **WebTransport** quando maduro; WebSocket como fallback.
-
-O `shared::protocol` é agnóstico ao transporte — mensagens são
-`Serialize/Deserialize` com bincode. Trocar de WS para QUIC é mudar a
-camada de I/O no client/server, sem tocar no protocolo.
-
-## Serialização
-
-`bincode` 1.3 com `serde`. Alternativas avaliadas:
-
-| Formato | Tamanho | Velocidade | Evolução |
-|---|---|---|---|
-| bincode | ★★★★★ | ★★★★★ | frágil sem versionamento manual |
-| postcard | ★★★★★ | ★★★★☆ | similar, mais no-std |
-| rkyv | ★★★★★ | ★★★★★ | zero-copy, sintaxe extra |
-| JSON | ★☆☆☆☆ | ★★☆☆☆ | máxima debugabilidade |
-
-Mantemos **bincode** pela simplicidade. Evolução do schema: bumpar
-`PROTOCOL_VERSION` em `shared/constants.rs`; servidor rejeita cliente
-com versão diferente no `Handshake`.
+**Não trafega:** terreno, vegetação, altura. Os dois lados geram a ilha da
+mesma semente com o mesmo código (`shared::terreno`). Um mapa de 1 km² são
+~16 MB no servidor e zero na rede.
 
 ## Interest Management (AOI)
 
-Não queremos mandar o mundo inteiro para cada cliente. Um MMO com 500
-jogadores e 2000 mobs em 1 mapa → 2500 entidades × 64 bytes × 30 tick/s
-× 500 clients = **2.4 GB/s**. Inviável.
+Mandar o mundo inteiro não fecha: 2500 entidades × 13 bytes × 30 Hz × 500
+clientes = 487 MB/s. Cada cliente recebe só o que está dentro de
+`AOI_RADIUS`, com teto de **60 entidades**.
 
-**Solução:** cada cliente só recebe entidades dentro de um raio
-`AOI_RADIUS` (24 tiles) da sua posição.
+O teto é o que faz o canal escalar: a banda por jogador passa a ser função da
+AOI e não da população. Medido em produção com 1000 jogadores em 11 canais:
+**12,8 KB/s por jogador**, com o canal cheio ou vazio.
 
-### Implementação atual (ingênua)
+Snapshot é DELTA: o servidor guarda o último `EntityState` enviado por
+entidade por sessão e só manda o que mudou. Entidade parada não custa nada.
 
-`GameWorld::send_snapshots` itera **todas** as entidades vs **todas** as
-sessões → O(E × S). Suficiente para testar com dezenas de jogadores.
+## Transporte e formato
 
-### Fase 2 — Spatial hash grid
+WebSocket binário sobre TCP, `postcard` (varint, sem nome de campo).
 
-```
-cell_size = SPATIAL_CELL_SIZE (16 tiles)
-grid: HashMap<IVec2, Vec<Entity>>
+Evolução de schema: subir `PROTOCOL_VERSION` em `shared/constants.rs`. O
+servidor recusa cliente de versão diferente no handshake — binário velho
+falhando o handshake é ruído de dois minutos; binário velho *quase*
+funcionando é bug de meia tarde.
 
-rebuild_grid() a cada tick:
-  for each entity with Position:
-    cell = (pos / cell_size) floor
-    grid[cell].push(entity)
+## Movimento por toque no chão
 
-query(center, radius):
-  cells = all cells intersecting circle(center, radius)
-  return entities in those cells
-```
+O clique manda `MoverPara{x, z}` — um PONTO, não um caminho. Quem calcula a
+rota é o servidor, com A\* numa grade grossa (8 blocos por célula) sobre o
+campo de altura, e quem anda é o seguidor de rota do servidor.
 
-Isso transforma o snapshot em O(E + ΣAOI) ≈ linear.
-
-### Fase 3 — Delta / eventual
-
-Hoje mandamos snapshot full do AOI a cada tick. A próxima otimização:
-
-- **Delta snapshots:** mandar só o que mudou vs último snapshot ack pelo
-  cliente. Requer IDs estáveis e histórico server-side (ring buffer de N
-  snapshots).
-- **Event-driven:** eventos raros (spawn, death, chat) em canal reliable;
-  state contínuo (posição) em canal unreliable com interpolação.
-- **Quantização:** positions em fixed-point 16 bits, não float32.
-  Reduz payload ~50%.
-
-## Predição client-side (a implementar)
-
-Ainda não implementado. Plano:
-
-1. Cliente mantém buffer `Vec<InputFrame>` com os últimos N inputs.
-2. Ao gerar input: aplica localmente na entidade do próprio jogador
-   (mover de acordo com `PLAYER_SPEED`).
-3. Ao receber `Snapshot`:
-   - `last_input_seq = M` — descarta inputs ≤ M do buffer.
-   - Pega `entity.pos` autoritativa do snapshot.
-   - Re-aplica os inputs restantes (> M) a partir dessa posição.
-4. Se a diferença autoritativa vs predita for grande (> threshold) → snap.
-   Se pequena → lerp suave em poucos frames (imperceptível).
-
-Isso dá a sensação de input instantâneo mesmo com 100ms+ de ping.
-
-## Anti-cheat (roadmap)
-
-Primeira passada — **servidor nunca confia no cliente**:
-
-- `ClientMessage::Input` só tem *intent* (dir + aim). Movimento real é
-  integrado pelo servidor com `PLAYER_SPEED`.
-- Dano não vem do cliente. Cliente manda "apertei o botão de ataque"
-  (em `buttons`), servidor valida cooldown, alcance, linha de vista.
-- Cooldowns e estado de habilidade são server-side.
-- Rate-limit de pacotes por sessão (a implementar).
-
-## Sequência de conexão
-
-```
-Cliente                              Servidor
-───────                              ────────
-TCP connect
-WebSocket handshake (HTTP upgrade)
-─── Handshake{proto, ver} ────────►
-                                  ◄─── HandshakeAck{proto, time}
-─── Login{username, token} ──────►
-                                      auth (stub / DB)
-                                  ◄─── LoginOk{pid, eid, spawn}
-(loop)
-─── Input{seq, ...} ──────────────►  (30x/s)
-                                  ◄─── Snapshot{tick, entities, ...} (30x/s)
-─── Chat(text) ───────────────────►
-                                  ◄─── Chat{from, text}
-─── RequestDisconnect ───────────►
-                                     despawn + fechar
-```
-
-## Métricas a instrumentar (Fase 3+)
-
-- `tick_duration` (histograma) — alerta se > 25ms no 30Hz.
-- `snapshot_bytes` por sessão — spotar crescimento anômalo de AOI.
-- `messages_dropped` — backpressure do mpsc cheio.
-- `ping_rtt` — cliente mede com `server_time_ms`.
-
-Via `tracing` + um exporter (Prometheus/OTLP).
+O cliente não manda rota porque rota é regra: um cliente modificado que
+mandasse a própria rota andaria por cima de paredão. Ver
+[MUNDO](MUNDO.md#movimento).

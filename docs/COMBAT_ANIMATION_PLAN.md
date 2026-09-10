@@ -61,7 +61,7 @@ Tudo autoritativo no servidor; o cliente prediz para latência zero.
 ### 3.1 Cliente — Pipeline de Renderização do Personagem
 
 ```
-Input (Unity Input System)
+Input (teclado/mouse)
   │
   ├─► Local prediction ──────────┐
   │                               ▼

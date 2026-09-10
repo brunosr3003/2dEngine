@@ -41,13 +41,29 @@ um bloco é plano, e interpolar faria a colisão discordar do que o olho vê.
 
 ```
 1 bloco de subida    anda (escada)
-2 blocos             só pulando
-3 ou mais            parede — não há escalada
+2 a 3 blocos         só pulando
+4 ou mais            parede — não há escalada
 ```
 
 É uma comparação de inteiros, e é a regra de colisão inteira. Não existe malha
 de navegação nem colisão 3D. Descer é livre: cair de um barranco é movimento
 válido, ficar preso em cima dele não.
+
+Três blocos são 1,5 unidade, quase a altura do boneco (1,68). É um pulo grande
+de propósito: com dois, quase todo barranco de ilha continuava parede e o
+relevo lia como corredor.
+
+O pulo **não muda a física, muda o degrau**: não existe gravidade nem
+velocidade vertical em lugar nenhum da simulação. Pular é o corpo aceitar um
+degrau mais alto por meio segundo. O arco vertical é o cliente contando o
+tempo — a altura não viaja no fio, então não há o que forjar.
+
+Além do relevo, **tronco, matação e toco barram passagem**; flor, capim,
+arbusto, samambaia e talo não. Colidir com a forração, que cobre o chão
+inteiro, transformaria o mundo em labirinto. Onde cada um nasce é decidido no
+`shared` e o cliente só desenha o que o servidor decidiu — se cada lado
+sorteasse por conta, a divergência viraria árvore atravessável de um lado e
+parede invisível do outro.
 
 Caverna e ponte não são andáveis. Boca de caverna vira **portal pra outra
 zona**, que é o que o jogo já faz com campo→cidade.
@@ -548,8 +564,6 @@ O `lazy_spawn` continua valendo: das 59 zonas, só as perto do jogador custam
 alguma coisa.
 
 
-- **O pulo não existe ainda.** A regra de 2 blocos está no `pulo_ok` e
-  testada, mas nada no jogo a chama — falta o movimento de pulo.
 - **Gate de tutorial herdado**: `SKIP_TUTORIAL_GATE=1` pra contornar. É lixo
   do projeto antigo e tem que sair.
 - **Colocar as zonas de spawn** nos sítios planos que `sitio_plano` acha.

@@ -206,6 +206,52 @@ pub const ENEMY_ATTACK_COOLDOWN: f32 = 2.0;
 /// Raio de colisao de jogadores/inimigos (para hit detection).
 pub const ENTITY_RADIUS: f32 = 0.35;
 
+/// Quanto tempo o corpo fica no ar num pulo.
+///
+/// Curto de proposito: pulo em MMO de vista de cima e' pra vencer degrau, nao
+/// pra plataforma. Longo demais e o jogador perde o controle do boneco no meio
+/// do combate por alvo.
+pub const PULO_DURACAO: f32 = 0.60;
+
+/// Espera entre um pulo e o proximo.
+pub const PULO_ESPERA: f32 = 0.15;
+
+/// Altura do PICO do pulo, em unidades.
+///
+/// Tem que passar do degrau maximo (`PULO_BLOCOS` x `BLOCO` = 1,5), senao o
+/// boneco subiria um barranco que o pulo nunca alcanca.
+pub const PULO_ALTURA: f32 = 1.8;
+
+/// Altura do corpo acima de onde ele saiu, `t` segundos depois do pulo.
+///
+/// Balistica de verdade: sobe, desacelera, para no pico, cai. `v0` e a
+/// gravidade saem de `PULO_ALTURA` e `PULO_DURACAO` — pico na metade do
+/// tempo, chao no fim — entao mexer nos dois numeros de cima continua dando
+/// um arco coerente.
+///
+/// **Esta funcao e' a regra, nao o desenho.** O cliente usa pra saber onde
+/// desenhar o corpo e o servidor usa pra saber que degrau aceitar naquele
+/// instante. Antes o arco era enfeite somado por cima do chao enquanto o
+/// servidor liberava o degrau inteiro durante todo o pulo: o corpo colava no
+/// piso de cima assim que saia do lugar, sem subida e sem queda. Duas
+/// verdades sobre a mesma altura, e o olho via a discordancia.
+pub fn altura_do_pulo(t: f32) -> f32 {
+    if t <= 0.0 || t >= PULO_DURACAO {
+        return 0.0;
+    }
+    let v0 = 4.0 * PULO_ALTURA / PULO_DURACAO;
+    let g = 8.0 * PULO_ALTURA / (PULO_DURACAO * PULO_DURACAO);
+    v0 * t - g * t * t * 0.5
+}
+
+/// Gravidade da queda, em unidades por segundo ao quadrado.
+///
+/// A MESMA do pulo: dois valores diferentes dariam ao mundo duas fisicas, e
+/// cair de um barranco pareceria outro jogo que pular nele.
+pub fn gravidade() -> f32 {
+    8.0 * PULO_ALTURA / (PULO_DURACAO * PULO_DURACAO)
+}
+
 /// Raio de colisao de projeteis.
 pub const PROJ_RADIUS: f32 = 0.15;
 

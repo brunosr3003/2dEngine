@@ -70,8 +70,8 @@ pub async fn run_world_loop(
             shared::terreno::ESCALA_ALTURA,
         );
         tracing::info!(
-            "ilha '{}' ({:?}, raio {} blocos) pronta em {:?}",
-            world.zona, def.bioma, def.raio_blocos, t0.elapsed()
+            "ilha '{}' ({:?}, raio {} blocos, {} troncos/matacoes) pronta em {:?}",
+            world.zona, def.bioma, def.raio_blocos, ilha.total_de_estorvos(), t0.elapsed()
         );
         world.ilha = Some(ilha);
         // Desembarque: o relevo decide, nao a coordenada herdada. E' daqui
@@ -97,6 +97,8 @@ pub async fn run_world_loop(
         tracing::warn!("MMO_IMORTAL=1 — jogadores NAO tomam dano nesta instancia");
     }
     tracing::info!("world loop started ({}ms/tick)", step.as_millis());
+    // Quando o ultimo retrato do panoptico foi tirado.
+    let mut panoptico_em = f32::MIN;
 
     loop {
         let inicio = Instant::now();
@@ -159,6 +161,9 @@ pub async fn run_world_loop(
 
         world.step(TICK_DT);
         world.send_snapshots();
+        // Retrato pro panoptico. Sai do laco ja' serializado; quem atende a
+        // requisicao nao encosta no mundo.
+        crate::panoptico::publicar(&world, &mut panoptico_em);
 
         // Fila de entrada: 1x por segundo basta, e evita 30 varreduras/s.
         if save_counter % 30 == 0 {

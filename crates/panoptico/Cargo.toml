@@ -1,0 +1,30 @@
+[package]
+name = "panoptico"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "panoptico"
+path = "src/main.rs"
+
+[dependencies]
+shared.workspace = true
+tokio.workspace = true
+axum.workspace = true
+tower-http.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+glam.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+# Cliente HTTP magro pra falar com os canais. Sem TLS: o panoptico so' fala
+# com processos de jogo na rede interna, e TLS aqui so' traria dependencia.
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", "tokio"] }
+http-body-util = "0.1"
+# PNG do mapa. O panoptico DESENHA a ilha do mesmo gerador que o jogo usa —
+# e' por isso que ele depende de `shared`.
+png = "0.17"

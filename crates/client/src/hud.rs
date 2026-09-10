@@ -160,12 +160,3 @@ pub fn draw_hud(
     // do cartao de localizacao, longe do centro onde se clica pra mirar.
     ui::botao(Rect::new(10.0, a + 18.0, 92.0, 26.0), "sair", true)
 }
-
-pub fn draw_status(texto: &str) {
-    ui::texto(24.0, 48.0, texto, 24, ui::OURO);
-}
-
-pub fn draw_error(por_que: &str) {
-    ui::texto(24.0, 48.0, "falhou", 32, RED);
-    ui::texto(24.0, 84.0, por_que, 20, WHITE);
-}

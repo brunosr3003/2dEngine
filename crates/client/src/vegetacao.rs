@@ -97,6 +97,7 @@ pub struct Modelo {
 }
 
 impl Modelo {
+    #[cfg(test)]
     pub fn quads(&self) -> usize {
         self.idx.len() / 6
     }

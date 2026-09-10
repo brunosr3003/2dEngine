@@ -1,5 +1,15 @@
 # Admin de Economia — Fluxo Completo
 
+> **Estado:** a metade do SERVIDOR está viva — o painel web edita items,
+> drops e mobs no Postgres e o servidor de jogo recarrega em até 5 s
+> (`POST /api/econ/login`, hot-reload em `economy::spawn_hot_reload`).
+>
+> A metade do CLIENTE descrita abaixo é do cliente Unity, que **não existe
+> mais**. Tudo que fala de `MMORPG/Assets/...`, `.meta`, Editor e
+> `ItemsConfigCache.cs` é história: o cliente Rust ainda não consome o
+> broadcast de `ItemsConfig`. Está aqui porque o desenho do fluxo continua
+> valendo — só falta o outro lado.
+
 Painel web pra editar **items / drops / mobs** sem rebuild do server. Mudanças
 caem no Postgres, o game server detecta via versionamento e recarrega o cache
 em até 5s. O cliente Unity recebe um broadcast de `ItemsConfig` e troca

@@ -15,6 +15,7 @@ mod boat_config;
 mod canais;
 mod economy;
 mod enemy_builds;
+mod panoptico;
 mod persistence;
 mod quests;
 mod recipes;
@@ -57,6 +58,16 @@ async fn main() -> Result<()> {
     let saude = canais::Saude::default();
     let diretorio = canais::Diretorio::default();
     canais::spawn_heartbeat(pool.clone(), populacao.clone(), saude.clone(), diretorio.clone());
+
+    // Olho de cima. So' sobe se PANOPTICO_BIND existir — sem ele o processo
+    // nao abre porta nenhuma a mais.
+    if panoptico::ativo() {
+        tokio::spawn(async {
+            if let Err(e) = panoptico::servir().await {
+                tracing::error!("panoptico caiu: {e:#}");
+            }
+        });
+    }
 
     // Inicializa economia + spawn da tarefa de hot-reload.
     economy::init(&pool).await?;

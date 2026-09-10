@@ -19,31 +19,116 @@ pub const TILE: f32 = 1.0;
 const CAM_HEIGHT: f32 = 14.0;
 /// Recuo da camera atras do alvo. Junto com a altura da a inclinacao.
 const CAM_BACK: f32 = 10.0;
-/// Limites do zoom, como fator sobre altura e recuo.
+/// Extremos da banda de inclinacao, em radianos acima do horizonte.
+///
+/// A banda nao e' gosto, e' o alcance do mundo carregado. Medido: o topo da
+/// tela encosta no chao a 22 unidades a 54°, a 45 a 35° — e a 167 a 25°. O
+/// mundo so' existe ate' 88 (raio de 5 pedacos), entao abaixo de ~30° o
+/// jogador ve' a BORDA: dali pra baixo o preco deixa de ser desenho e vira
+/// memoria, porque cobrir 167 unidades pede raio 11 — de 131 MB de malha pra
+/// 573 MB.
+///
+/// Em cima o limite e' outro: passando de 70° a vista fica cenital, o relevo
+/// perde relevo e o mundo achata.
+///
+/// E o piso NAO e' fixo: ele sobe conforme a camera se afasta. Ver
+/// `pitch_min_para`.
+pub const PITCH_MIN: f32 = 0.471_239; // 27°
+pub const PITCH_MAX: f32 = 1.308_997; // 75°
+
+/// Piso da inclinacao no zoom mais AFASTADO.
+///
+/// Afastado tambem da' pra deitar, so' que menos: os dois pisos foram
+/// escolhidos medindo, e o que os limita e' o mesmo em ambos — o alcance do
+/// topo da tela contra as 88 unidades de mundo carregado.
+///
+/// ```text
+///  zoom  pitch   altura do olho   topo da tela alcanca
+///  0,55    26°            4,1 u                  68 u
+///  0,55    27°            4,3 u                  55 u   <- piso de perto
+///  1,50    32°           13,7 u                  82 u   (no fio)
+///  1,50    34°           14,4 u                  71 u   <- piso de longe
+///  1,50    42°           17,3 u                  49 u   (sobrava banda)
+/// ```
+pub const PITCH_MIN_LONGE: f32 = 0.593_412; // 34°
+
+/// A inclinacao mais baixa permitida NESTE zoom.
+///
+/// Colada, a camera deita ate' 27°; afastada, ate' 42°. Nao e' gosto — e' a
+/// mesma conta da banda com o zoom dentro dela: o alcance do topo da tela
+/// cresce com a ALTURA do olho, e a altura e' `cam_dist() * zoom *
+/// sin(pitch)`. Deitar e afastar sao a mesma vontade de ver mais longe, e as
+/// duas no maximo mostram a borda do mundo carregado.
+pub fn pitch_min_para(zoom: f32) -> f32 {
+    let z = zoom.clamp(ZOOM_MIN, ZOOM_MAX);
+    let t = (z - ZOOM_MIN) / (ZOOM_MAX - ZOOM_MIN);
+    PITCH_MIN + (PITCH_MIN_LONGE - PITCH_MIN) * t
+}
+
+/// A inclinacao que o zoom PEDE, antes do ajuste manual.
+///
+/// Aproximar deita a camera, afastar levanta — sozinho, sem o jogador pedir.
+/// A vista de perto quer horizonte (o boneco, a arvore ao lado, o barranco a'
+/// frente); a de longe quer planta baixa (onde estao os mobs, por onde da'
+/// pra passar). Fazer as duas coisas com um gesto so' e' o que "semi
+/// automatico" quer dizer: a roda escolhe o enquadramento inteiro, e a mao
+/// so' corrige se discordar.
+pub fn pitch_do_zoom(zoom: f32) -> f32 {
+    let z = zoom.clamp(ZOOM_MIN, ZOOM_MAX);
+    let t = (z - ZOOM_MIN) / (ZOOM_MAX - ZOOM_MIN);
+    // Um pouco acima do piso: o automatico nao entrega a camera no limite,
+    // senao nao sobra pra onde deitar na mao.
+    let piso = pitch_min_para(z);
+    piso + (PITCH_MAX - piso) * (0.18 + 0.34 * t)
+}
+
+/// Distancia da camera ao alvo no zoom 1. E' ela que fica FIXA quando a
+/// inclinacao muda — girar a camera pra baixo nao pode aproximar o boneco.
+fn cam_dist() -> f32 {
+    (CAM_HEIGHT * CAM_HEIGHT + CAM_BACK * CAM_BACK).sqrt()
+}
+
+/// A inclinacao com que o jogo comeca.
+///
+/// Sai da altura e do recuo originais em vez de ser um numero solto: assim a
+/// vista inicial continua sendo exatamente a de antes de a banda existir.
+///
+/// E' so' o ponto de partida: depois disso a camera fica onde o jogador
+/// deixou. Ja' houve uma mola puxando de volta pra ca' e ela foi tirada —
+/// corrigir sozinha a vista que o jogador acabou de escolher e' a camera
+/// discordando dele.
+pub fn pitch_padrao() -> f32 {
+    CAM_HEIGHT.atan2(CAM_BACK)
+}
+
+/// Limites do zoom, como fator sobre a distancia ate' o alvo (`cam_dist()`).
+///
+/// O maximo baixou de 2,2 pra 1,5: la' em cima a camera ficava a 38 unidades
+/// do boneco e o mundo lia como maquete — bonito de printar, ruim de jogar.
 pub const ZOOM_MIN: f32 = 0.55;
-pub const ZOOM_MAX: f32 = 2.2;
+pub const ZOOM_MAX: f32 = 1.5;
 /// Metade da largura da area de chao desenhada, em tiles.
 const GROUND_RADIUS: i32 = 26;
 /// Tamanho de um voxel em unidades de mundo. Um bicho de ~40 voxels de altura
 /// fica com ~1,6 tile — a escala que a vista de cima pede.
 pub const VOXEL: f32 = 0.04;
 
-/// A camera do jogo: gira em torno do alvo (yaw), aproxima e afasta (zoom), e
-/// a INCLINACAO e' fixa.
+/// A camera do jogo: gira em torno do alvo (yaw), aproxima e afasta (zoom) e
+/// inclina dentro de uma BANDA.
 ///
-/// Inclinacao fixa nao e' limitacao, e' decisao: com pitch livre o jogador
-/// aponta a camera pro horizonte, ve' o mundo inteiro carregando e o jogo
-/// vira outra coisa. Travada, o orcamento de pedaco fecha e a leitura de cima
-/// — que e' o que faz combate por alvo funcionar — nao se perde.
+/// Inclinacao livre de verdade nao da': apontada pro horizonte ela mostra a
+/// borda do mundo carregado e o orcamento de pedaco estoura. Travada, o
+/// mundo achata. A banda resolve os dois, e dentro dela a camera fica onde o
+/// jogador deixou.
 ///
 /// `chao` sobe a camera junto com o relevo; sem isso o jogador some dentro do
 /// morro assim que o terreno passou a ter 34 unidades.
-pub fn camera(target: Vec2, chao: f32, yaw: f32, zoom: f32) -> Camera3D {
+pub fn camera(target: Vec2, chao: f32, yaw: f32, zoom: f32, pitch: f32) -> Camera3D {
     let z = zoom.clamp(ZOOM_MIN, ZOOM_MAX);
-    let recuo = CAM_BACK * z;
+    let (recuo, altura) = recuo_e_altura(z, pitch);
     let olho = vec3(
         target.x - yaw.sin() * recuo,
-        chao + CAM_HEIGHT * z,
+        chao + altura,
         target.y + yaw.cos() * recuo,
     );
     Camera3D {
@@ -52,6 +137,26 @@ pub fn camera(target: Vec2, chao: f32, yaw: f32, zoom: f32) -> Camera3D {
         up: vec3(0.0, 1.0, 0.0),
         ..Default::default()
     }
+}
+
+/// Quantos pixels o botao direito precisa andar pra deixar de ser defesa e
+/// virar camera.
+///
+/// O botao tem dois sentidos, e e' o MOVIMENTO que separa: parado ele
+/// bloqueia, arrastado ele gira. Zero nao serve — a mao treme, e o jogador
+/// perderia o bloqueio sem ter pedido. Seis pixels sao mais que o tremor e
+/// menos que qualquer arrasto de proposito.
+pub const ARRASTO_MINIMO: f32 = 6.0;
+
+/// Recuo e altura da camera pra um zoom e uma inclinacao.
+///
+/// Uma conta so', usada pela camera E pelo desvio de morro: elas ja'
+/// divergiram uma vez, e o resultado foi a camera subindo por um morro que
+/// nao estava mais no caminho.
+fn recuo_e_altura(zoom: f32, pitch: f32) -> (f32, f32) {
+    let p = pitch.clamp(pitch_min_para(zoom), PITCH_MAX);
+    let d = cam_dist() * zoom;
+    (d * p.cos(), d * p.sin())
 }
 
 /// Gira um vetor de input pra que "pra frente" seja **longe da camera**.
@@ -81,6 +186,92 @@ mod testes_camera {
         (a - b).length() < 1e-5
     }
 
+    /// A banda existe pra o jogador nao chegar na borda do mundo carregado
+    /// nem achatar o relevo. Se ela deixar de valer, a camera passa a mostrar
+    /// o vazio — e o sintoma nao parece camera, parece buraco na malha.
+    #[test]
+    fn a_inclinacao_fica_dentro_da_banda() {
+        for pedido in [-3.0f32, 0.0, 0.3, PITCH_MIN, 1.0, PITCH_MAX, 2.0, 9.0] {
+            for zoom in [ZOOM_MIN, 1.0, ZOOM_MAX] {
+                let cam = camera(Vec2::ZERO, 0.0, 0.0, zoom, pedido);
+                let d = cam.position - cam.target;
+                let p = d.y.atan2(vec2(d.x, d.z).length());
+                let piso = pitch_min_para(zoom);
+                assert!(
+                    p >= piso - 1e-4 && p <= PITCH_MAX + 1e-4,
+                    "pitch {pedido} no zoom {zoom} virou {p} — fora de [{piso}, {PITCH_MAX}]"
+                );
+            }
+        }
+    }
+
+    /// Inclinar NAO pode aproximar: se a distancia mudasse com o angulo, girar
+    /// a camera pra baixo daria zoom de graca e o alcance de visao viraria
+    /// funcao de para onde o jogador aponta.
+    #[test]
+    fn inclinar_nao_aproxima() {
+        let base = (camera(Vec2::ZERO, 0.0, 0.0, 1.0, pitch_padrao()).position).length();
+        for p in [PITCH_MIN, 0.8, pitch_padrao(), 1.1, PITCH_MAX] {
+            let d = camera(Vec2::ZERO, 0.0, 0.0, 1.0, p).position.length();
+            assert!((d - base).abs() < 1e-3, "pitch {p} mudou a distancia: {d} vs {base}");
+        }
+    }
+
+    /// Afastar tem que FECHAR a inclinacao: deitar a camera e afastar sao a
+    /// mesma vontade de ver mais longe, e as duas juntas passam da borda do
+    /// mundo carregado.
+    #[test]
+    fn afastar_fecha_a_inclinacao() {
+        let perto = pitch_min_para(ZOOM_MIN);
+        let longe = pitch_min_para(ZOOM_MAX);
+        assert!((perto - PITCH_MIN).abs() < 1e-5, "colado tem que deitar ate' o limite");
+        assert!(
+            (longe - PITCH_MIN_LONGE).abs() < 1e-5,
+            "afastado o piso tem que ser PITCH_MIN_LONGE, foi {longe}"
+        );
+        assert!(perto < longe, "colado tem que deitar MAIS que afastado");
+        // Monotonica: qualquer degrau intermediario tem que subir.
+        let mut anterior = perto;
+        for k in 1..=10 {
+            let z = ZOOM_MIN + (ZOOM_MAX - ZOOM_MIN) * k as f32 / 10.0;
+            let p = pitch_min_para(z);
+            assert!(p >= anterior - 1e-6, "piso caiu de {anterior} pra {p} no zoom {z}");
+            anterior = p;
+        }
+    }
+
+    /// A roda sozinha tem que dar um enquadramento util em todo o percurso:
+    /// deitada perto, de cima longe, e sempre dentro da banda daquele zoom.
+    #[test]
+    fn a_roda_escolhe_o_enquadramento() {
+        let mut anterior = 0.0f32;
+        for k in 0..=10 {
+            let z = ZOOM_MIN + (ZOOM_MAX - ZOOM_MIN) * k as f32 / 10.0;
+            let p = pitch_do_zoom(z);
+            assert!(
+                p >= pitch_min_para(z) - 1e-5 && p <= PITCH_MAX + 1e-5,
+                "zoom {z}: automatico {p} fora da banda"
+            );
+            assert!(p > anterior, "afastar tem que LEVANTAR: {anterior} -> {p} no zoom {z}");
+            anterior = p;
+        }
+        // E tem que sobrar espaco pra mao nos dois sentidos.
+        for z in [ZOOM_MIN, 1.0, ZOOM_MAX] {
+            let p = pitch_do_zoom(z);
+            assert!(p - pitch_min_para(z) > 0.05, "zoom {z}: sem espaco pra deitar na mao");
+            assert!(PITCH_MAX - p > 0.05, "zoom {z}: sem espaco pra levantar na mao");
+        }
+    }
+
+    /// A vista de repouso tem que ser EXATAMENTE a de antes de a banda
+    /// existir: a banda foi pra dar liberdade, nao pra mudar o padrao.
+    #[test]
+    fn a_vista_de_repouso_e_a_de_sempre() {
+        let cam = camera(Vec2::ZERO, 0.0, 0.0, 1.0, pitch_padrao());
+        assert!((cam.position.y - CAM_HEIGHT).abs() < 1e-3, "altura {}", cam.position.y);
+        assert!((cam.position.z - CAM_BACK).abs() < 1e-3, "recuo {}", cam.position.z);
+    }
+
     /// W tem que apontar pra LONGE da camera em qualquer angulo, e D pra
     /// direita da tela. E' a unica coisa que "camera relativa" quer dizer.
     #[test]
@@ -90,7 +281,7 @@ mod testes_camera {
         for yaw in [0.0f32, 0.7, 1.5707964, 3.14159, -2.1] {
             // Direcao camera→alvo, tirada da MESMA conta que posiciona a
             // camera em `camera()`: se uma mudar sem a outra, isto quebra.
-            let cam = camera(Vec2::ZERO, 0.0, yaw, 1.0);
+            let cam = camera(Vec2::ZERO, 0.0, yaw, 1.0, pitch_padrao());
             let frente = (cam.target - cam.position).normalize();
             let frente = vec2(frente.x, frente.z).normalize();
             let obtido = input_para_mundo(w, yaw);
@@ -128,11 +319,12 @@ impl<'a> Vista<'a> {
         alvo: Vec2,
         yaw: f32,
         zoom: f32,
+        pitch: f32,
         apoio: f32,
         chao: &'a dyn Fn(f32, f32) -> f32,
     ) -> Self {
-        let sobe = altura_livre(alvo, apoio, yaw, zoom, chao);
-        Self { cam: camera(alvo, apoio + sobe, yaw, zoom), chao }
+        let sobe = altura_livre(alvo, apoio, yaw, zoom, pitch, chao);
+        Self { cam: camera(alvo, apoio + sobe, yaw, zoom, pitch), chao }
     }
 
     pub fn chao_em(&self, x: f32, z: f32) -> f32 {
@@ -141,6 +333,8 @@ impl<'a> Vista<'a> {
 
     /// Onde a entidade esta', em mundo. **Unico lugar que responde isso.**
     pub fn pos_de(&self, e: &crate::world::Ent) -> Vec3 {
+        // `render_y` ja' e' a altura do corpo, no chao ou no ar. Mira, anel
+        // de alvo e modelo sobem juntos porque todos passam por aqui.
         vec3(e.render_pos.x, e.render_y, e.render_pos.y)
     }
 
@@ -189,10 +383,11 @@ pub fn altura_livre(
     chao: f32,
     yaw: f32,
     zoom: f32,
+    pitch: f32,
     altura_em: &dyn Fn(f32, f32) -> f32,
 ) -> f32 {
     let z = zoom.clamp(ZOOM_MIN, ZOOM_MAX);
-    let recuo = CAM_BACK * z;
+    let (recuo, altura) = recuo_e_altura(z, pitch);
     let mut extra: f32 = 0.0;
     const AMOSTRAS: i32 = 10;
     for i in 1..=AMOSTRAS {
@@ -200,7 +395,7 @@ pub fn altura_livre(
         let x = target.x - yaw.sin() * recuo * t;
         let zz = target.y + yaw.cos() * recuo * t;
         // Altura da linha camera→alvo neste ponto, se a camera nao subisse.
-        let linha = chao + CAM_HEIGHT * z * t;
+        let linha = chao + altura * t;
         let solo = altura_em(x, zz);
         // Uma folga acima do solo: rasar o morro deixa a camera dentro dele.
         extra = extra.max(solo + 1.5 - linha);

@@ -24,7 +24,6 @@ use macroquad::models::{Mesh, Vertex};
 use macroquad::prelude::*;
 
 use shared::terreno::{
-    densidade_de_arvore, densidade_de_planta, especie_de_arvore, especie_de_planta,
     material_de_profundidade, material_variado, tom_da_mancha, Arvore, Bioma, DefIlha, Gerador, Material,
     Planta, BLOCO, NIVEL_DO_MAR,
 };
@@ -482,52 +481,29 @@ impl Terreno {
         // cache, entao vegetacao estatica custa zero por quadro. Desenhar uma
         // a uma exigiria transformar a malha na CPU (a macroquad nao tem
         // transform por malha) centenas de vezes por frame.
-        let prob = densidade_de_arvore(self.bioma) * 0.0025; // coluna = 0,25 m²
         for iz in 0..n as i32 {
             for ix in 0..n as i32 {
                 let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
-                // Hash estavel da coluna: a mesma arvore no mesmo lugar em
-                // qualquer maquina, sem guardar nada.
-                let h0 = (bx as u32).wrapping_mul(374_761_393)
-                    ^ (bz as u32).wrapping_mul(668_265_263);
-                let h1 = h0.wrapping_mul(1_274_126_177);
-                if (h1 >> 8) as f32 / (1u32 << 24) as f32 >= prob || eh_agua(ix, iz) {
-                    continue;
-                }
-                // Hash INDEPENDENTE pra escolher a especie.
-                //
-                // Reaproveitar `h1` parecia economia e era bug: so' passa no
-                // teste de densidade quem tem `h1` PEQUENO, e um `h1` pequeno
-                // tem os bits de cima em zero. A especie saia sempre a
-                // primeira da lista — medido com censo: 100% de uma so'.
-                let h2 = h1.wrapping_mul(2_246_822_519).wrapping_add(374_761_393);
                 let topo = em(ix, iz);
-                let y = (topo + 1) as f32 * BLOCO;
                 let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                     .iter()
                     .map(|(dx, dz)| (topo - em(ix + dx, iz + dz)).abs())
                     .max()
                     .unwrap_or(0);
-                // So' onde o solo segura: nem rocha, nem encosta.
-                if !solo_vivo(material_variado(
-                    self.bioma, y, declive, false, self.ger.mancha(bx, bz),
-                )) {
+                // QUEM planta e' o `shared`, nao este laco. O tronco barra
+                // passagem, entao o lugar da arvore virou regra — e o
+                // servidor precisa chegar exatamente na mesma resposta sem
+                // nunca ter visto a malha. Aqui so' se DESENHA o que ele
+                // decidiu.
+                let Some(a) = shared::terreno::arvore_da_coluna(
+                    self.bioma, bx, bz, topo, declive, &self.ger, eh_agua(ix, iz),
+                ) else {
                     continue;
-                }
-                let especie = especie_de_arvore(self.bioma, (h2 >> 20) as f32 / 4096.0);
-                // Porte menor do que parece certo em pe': a camera olha de cima, e
-                // arvore de tres vezes o jogador esconde o mob que ele veio
-                // cacar. Alta o bastante pra ler, baixa o bastante pra ver
-                // atraves do bosque.
-                let porte = 0.62 + ((h0 >> 12) & 0xff) as f32 / 255.0 * 0.34;
-                // Deslocamento dentro da coluna: sem ele as arvores nascem
-                // todas no centro do bloco e o bosque vira grade.
-                let jx = ((h0 >> 4 & 0xff) as f32 / 255.0 - 0.5) * BLOCO * 1.6;
-                let jz = ((h1 >> 4 & 0xff) as f32 / 255.0 - 0.5) * BLOCO * 1.6;
+                };
                 crate::vegetacao::instancia(
-                    self.modelo_de_arvore(especie, h0 >> 26),
-                    vec3(bx as f32 * BLOCO + jx, y, bz as f32 * BLOCO + jz),
-                    porte,
+                    self.modelo_de_arvore(a.especie, a.variante),
+                    vec3(a.centro.x, (topo + 1) as f32 * BLOCO, a.centro.y),
+                    a.porte,
                     &mut verts, &mut idx, &mut malhas, MAX_QUADS,
                 );
             }
@@ -536,52 +512,28 @@ impl Terreno {
         // ── forracao ─────────────────────────────────────────────────────
         // Varias vezes mais densa que arvore, e e' ela que separa "campo de
         // golfe com arvore" de mundo. Cada planta sao uma ou duas caixinhas.
-        let prob_p = densidade_de_planta(self.bioma) * 0.0025;
         for iz in 0..n as i32 {
             for ix in 0..n as i32 {
                 let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
-                let g0 = (bx as u32).wrapping_mul(1_597_334_677) ^ (bz as u32).wrapping_mul(2_246_822_519);
-                let g1 = g0.wrapping_mul(2_654_435_761);
-                if (g1 >> 8) as f32 / (1u32 << 24) as f32 >= prob_p || eh_agua(ix, iz) {
-                    continue;
-                }
-                // Mesma armadilha das arvores: hash proprio pra especie.
-                let g2 = g1.wrapping_mul(1_597_334_677).wrapping_add(2_246_822_519);
                 let topo = em(ix, iz);
-                let y = (topo + 1) as f32 * BLOCO;
                 let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                     .iter()
                     .map(|(dx, dz)| (topo - em(ix + dx, iz + dz)).abs())
                     .max()
                     .unwrap_or(0);
-                let solo = material_variado(
-                    self.bioma, y, declive, false, self.ger.mancha(bx, bz),
-                );
-                let especie = especie_de_planta(self.bioma, (g2 >> 20) as f32 / 4096.0);
-                #[cfg(test)]
-                CENSO.with(|c| *c.borrow_mut().entry(format!("{especie:?}")).or_insert(0) += 1);
-                // Pedra nasce em qualquer chao, inclusive rocha e neve; o
-                // resto so' onde o solo segura. Matacao em cima de laje e'
-                // exatamente o que uma cordilheira tem.
-                if !matches!(especie, Planta::Pedra) && !solo_vivo(solo) {
+                let Some(pl) = shared::terreno::planta_da_coluna(
+                    self.bioma, bx, bz, topo, declive, &self.ger, eh_agua(ix, iz),
+                ) else {
                     continue;
-                }
-                let jx = ((g0 >> 4 & 0xff) as f32 / 255.0 - 0.5) * BLOCO * 1.8;
-                let jz = ((g1 >> 4 & 0xff) as f32 / 255.0 - 0.5) * BLOCO * 1.8;
-                // Forracao fica ABAIXO do joelho: planta da altura do
-                // jogador esconde o que importa e faz a arvore perder escala.
-                let porte = 0.55 + ((g0 >> 14) & 0xff) as f32 / 255.0 * 0.45;
-                // Variante por REGIAO e nao por planta: flores vizinhas saem
-                // da mesma variante, logo da mesma cor, e viram MANCHA. Flor
-                // solta de meia unidade some no verde a catorze unidades de
-                // camera; um canteiro vermelho, nao.
-                let regiao = ((bx.div_euclid(10)) as u32)
-                    .wrapping_mul(2_654_435_761)
-                    ^ ((bz.div_euclid(10)) as u32).wrapping_mul(40_503);
+                };
+                #[cfg(test)]
+                CENSO.with(|c| {
+                    *c.borrow_mut().entry(format!("{:?}", pl.especie)).or_insert(0) += 1
+                });
                 crate::vegetacao::instancia(
-                    self.modelo_de_planta(especie, regiao >> 8),
-                    vec3(bx as f32 * BLOCO + jx, y, bz as f32 * BLOCO + jz),
-                    porte,
+                    self.modelo_de_planta(pl.especie, pl.variante),
+                    vec3(pl.centro.x, (topo + 1) as f32 * BLOCO, pl.centro.y),
+                    pl.porte,
                     &mut verts, &mut idx, &mut malhas, MAX_QUADS,
                 );
             }
@@ -631,19 +583,6 @@ fn declive_col(em: &impl Fn(i32, i32) -> i32, ix: i32, iz: i32) -> i32 {
         .unwrap_or(0)
 }
 
-/// Chao em que planta vinga.
-fn solo_vivo(m: Material) -> bool {
-    matches!(
-        m,
-        Material::Grama
-            | Material::GramaClara
-            | Material::GramaEscura
-            | Material::Terra
-            | Material::Areia
-            | Material::Neve
-    )
-}
-
 #[cfg(test)]
 thread_local! {
     /// Censo de especies colocadas, so' em teste. Contar o que o gerador
@@ -691,6 +630,72 @@ mod testes {
     /// — buracos pretos em tabuleiro — parece bug de merge guloso ou de
     /// distancia de desenho. Foram 237 mil avisos no log antes de alguem
     /// olhar. Vegetacao so' faz o orcamento apertar, entao ele fica guardado.
+    /// O CONTRATO: o que o cliente desenha e' o que o servidor barra.
+    ///
+    /// Os dois chegam ao plantio por caminhos diferentes — o cliente gera a
+    /// coluna na hora, o servidor le' o campo de altura que ele guardou — e a
+    /// unica coisa que garante que batem e' os dois chamarem a MESMA funcao.
+    /// Este teste e' o que segura isso: se alguem replicar a conta de um lado
+    /// so', aparecem arvores atravessaveis ou paredes invisiveis.
+    #[test]
+    fn o_que_o_cliente_planta_o_servidor_barra() {
+        use shared::terreno::{Ilha, ESCALA_ALTURA};
+        let d = &ARQUIPELAGO[0];
+        let t = Terreno::novo(d);
+        let i = Ilha::carregar_ou_gerar("", d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+        let (mut solidos, mut vazados) = (0, 0);
+        for bz in -160..160 {
+            for bx in -160..160 {
+                let topo = t.ger.bloco_em(bx, bz);
+                let agua = (topo + 1) as f32 * BLOCO <= shared::terreno::NIVEL_DO_MAR;
+                let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .iter()
+                    .map(|(dx, dz)| (topo - t.ger.bloco_em(bx + dx, bz + dz)).abs())
+                    .max()
+                    .unwrap_or(0);
+                // Uma arvore desenhada tem que ser um estorvo no servidor.
+                if let Some(a) = shared::terreno::arvore_da_coluna(
+                    d.bioma, bx, bz, topo, declive, &t.ger, agua,
+                ) {
+                    solidos += 1;
+                    assert!(
+                        !i.sem_estorvo(a.centro, 0.01),
+                        "arvore desenhada em {:?} nao barra no servidor", a.centro
+                    );
+                }
+                let Some(pl) = shared::terreno::planta_da_coluna(
+                    d.bioma, bx, bz, topo, declive, &t.ger, agua,
+                ) else {
+                    continue;
+                };
+                match shared::terreno::raio_de_planta(pl.especie) {
+                    // Matacao e toco barram.
+                    Some(_) => {
+                        solidos += 1;
+                        assert!(
+                            !i.sem_estorvo(pl.centro, 0.01),
+                            "{:?} desenhada em {:?} nao barra no servidor",
+                            pl.especie, pl.centro
+                        );
+                    }
+                    // Flor, capim, arbusto, samambaia e talo NAO barram — e
+                    // este lado do teste importa tanto quanto o outro: uma
+                    // forracao solida viraria labirinto.
+                    None => {
+                        vazados += 1;
+                        // So' vale se nao houver um tronco ali por acaso.
+                        if i.sem_estorvo(pl.centro, 0.01) {
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+        println!("{solidos} estorvos e {vazados} plantas vazadas conferidos");
+        assert!(solidos > 20, "so' {solidos} estorvos na amostra — teste vazio");
+        assert!(vazados > 100, "so' {vazados} plantas vazadas na amostra");
+    }
+
     #[test]
     fn nenhum_pedaco_estoura_o_teto_de_indice() {
         for d in ARQUIPELAGO.iter() {
@@ -714,4 +719,5 @@ mod testes {
             assert!(pior_v <= 10_000, "{}: {pior_v} vertices", d.zona);
         }
     }
+
 }

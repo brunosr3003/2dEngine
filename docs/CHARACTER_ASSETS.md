@@ -3,7 +3,7 @@
 > Atualizado: 2026-04-24
 >
 > Mapeamento completo dos assets Mana Seed Character Base disponíveis no projeto e o
-> que é possível implementar com eles no cliente Unity.
+> que é possível implementar com eles no cliente.
 >
 > Todos os sprites estão em `Assets/_Project/Resources/Character/ManaBase/`.
 > Formato: sheets 512×512px, células 64×64px (8×8 grid), PPU=16.

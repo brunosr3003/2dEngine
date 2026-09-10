@@ -37,10 +37,24 @@ pub const DEGRAU_BLOCOS: i32 = 1;
 
 /// Degrau que se sobe PULANDO. Acima disto e' parede — nao ha' escalada.
 ///
-/// O teto existe porque "dois ou mais so' com pulo" sozinho deixaria um
-/// paredao de vinte blocos ser pulado tambem. Um bloco anda, dois pula, tres
-/// nao passa.
-pub const PULO_BLOCOS: i32 = 2;
+/// O teto existe porque "acima do degrau, so' com pulo" sozinho deixaria um
+/// paredao de vinte blocos ser pulado tambem. Um bloco anda, ate' tres pula,
+/// quatro nao passa.
+///
+/// Tres blocos sao 1,5 unidade — quase a altura do boneco (1,68). E' um pulo
+/// grande de proposito: com dois, quase todo barranco de ilha continuava
+/// parede e o relevo lia como corredor.
+pub const PULO_BLOCOS: i32 = 3;
+
+/// Quanto um trecho que so' se vence PULANDO custa a mais no A*, em milesimos
+/// de celula.
+///
+/// Sai do relogio e nao do gosto: o pulo trava por `PULO_DURACAO +
+/// PULO_ESPERA` (0,57 s), e a 5 unidades por segundo isso sao 2,85 unidades —
+/// setenta por cento de uma celula de quatro. Arredondado pra uma celula
+/// inteira, o A* aceita dar ate' uma celula de volta pra nao pular, e pula
+/// quando a volta sai mais cara.
+pub const CUSTO_DO_PULO: i64 = 1000;
 
 /// Lado da celula do A*, em blocos. Oito blocos = quatro unidades.
 ///
@@ -891,6 +905,213 @@ pub fn especie_de_arvore(bioma: Bioma, f: f32) -> Arvore {
     }
 }
 
+// ───────────────────── o que esta' plantado numa coluna ─────────────────────
+//
+// Esta decisao morava no cliente, junto do desenho. Ela subiu pra ca' quando
+// tronco, pedra e toco passaram a BARRAR passagem: virou regra, e regra que o
+// cliente decide sozinho o servidor tem que adivinhar. Cada divergencia entre
+// os dois viraria arvore atravessavel num lado e parede invisivel no outro —
+// as duas piores que nao ter colisao nenhuma.
+//
+// Nada disso e' guardado: e' funcao pura do par de coordenadas. A mesma
+// arvore no mesmo lugar em qualquer maquina, sem um byte no fio.
+
+/// Solo em que planta pega. Rocha e laje nao seguram raiz.
+pub fn solo_vivo(m: Material) -> bool {
+    matches!(
+        m,
+        Material::Grama
+            | Material::GramaClara
+            | Material::GramaEscura
+            | Material::Terra
+            | Material::Areia
+            | Material::Neve
+    )
+}
+
+/// Uma arvore, decidida.
+#[derive(Debug, Clone, Copy)]
+pub struct ArvorePlantada {
+    pub especie: Arvore,
+    /// Centro em coordenada de MUNDO, ja' com o desvio dentro da coluna.
+    pub centro: glam::Vec2,
+    pub porte: f32,
+    /// Qual dos modelos sorteados usar (o cliente tem varios por especie).
+    pub variante: u32,
+}
+
+/// Uma planta de forracao, decidida.
+#[derive(Debug, Clone, Copy)]
+pub struct PlantaPlantada {
+    pub especie: Planta,
+    pub centro: glam::Vec2,
+    pub porte: f32,
+    pub variante: u32,
+}
+
+/// Raio do TRONCO em unidades de mundo, a porte 1.
+///
+/// Bate com o modelo: a copada tem tronco de tres voxels (0,75 de largura), o
+/// resto tem um so'. O voxel do vegetal e' 0,25.
+///
+/// Nao vem do modelo, e' o contrario: o modelo obedece a este numero. O
+/// gerador de voxel sorteia a espessura do tronco, e o servidor nao roda o
+/// gerador — se a colisao dependesse dele, cada arvore teria um raio que so'
+/// o cliente conhece.
+pub fn raio_de_tronco(a: Arvore) -> f32 {
+    match a {
+        Arvore::Copada => 0.38,
+        // Um voxel de tronco da' 0,125 de raio. Ficaria fino a ponto de
+        // parecer poste invisivel, entao arredonda pra cima: melhor barrar um
+        // dedo antes que deixar o corpo entrar dentro da madeira.
+        Arvore::Betula | Arvore::Pinheiro | Arvore::Seca => 0.18,
+    }
+}
+
+/// Raio de colisao da forracao, a porte 1. `None` = passa por dentro.
+///
+/// Flor, moita, arbusto, samambaia e talo NAO barram: sao da altura do joelho
+/// pra baixo e cobrem o chao inteiro. Colidir com eles seria transformar a
+/// forracao — que existe pra o chao nao ser um campo de golfe — num labirinto.
+pub fn raio_de_planta(p: Planta) -> Option<f32> {
+    match p {
+        // Matacao: o modelo vai de 2 a 5 voxels de raio, media 0,875.
+        Planta::Pedra => Some(0.62),
+        // Toco: 2 a 3 voxels.
+        Planta::Toco => Some(0.5),
+        Planta::Moita | Planta::Flor | Planta::Arbusto | Planta::Samambaia | Planta::Talo => None,
+    }
+}
+
+/// A arvore desta coluna, se houver.
+///
+/// `topo` e `declive` vem de fora porque os dois lados tem o relevo por
+/// caminhos diferentes: o cliente gera coluna a coluna, o servidor tem a ilha
+/// inteira em memoria. O sorteio, que e' o que precisa casar, e' daqui.
+pub fn arvore_da_coluna(
+    bioma: Bioma,
+    bx: i32,
+    bz: i32,
+    topo: i32,
+    declive: i32,
+    ger: &Gerador,
+    agua: bool,
+) -> Option<ArvorePlantada> {
+    let prob = densidade_de_arvore(bioma) * 0.0025; // coluna = 0,25 m²
+    let h0 = (bx as u32).wrapping_mul(374_761_393) ^ (bz as u32).wrapping_mul(668_265_263);
+    let h1 = h0.wrapping_mul(1_274_126_177);
+    if (h1 >> 8) as f32 / (1u32 << 24) as f32 >= prob || agua {
+        return None;
+    }
+    // Hash INDEPENDENTE pra escolher a especie.
+    //
+    // Reaproveitar `h1` parecia economia e era bug: so' passa no teste de
+    // densidade quem tem `h1` PEQUENO, e um `h1` pequeno tem os bits de cima
+    // em zero. A especie saia sempre a primeira da lista — medido com censo:
+    // 100% de uma so'.
+    let h2 = h1.wrapping_mul(2_246_822_519).wrapping_add(374_761_393);
+    let y = (topo + 1) as f32 * BLOCO;
+    // So' onde o solo segura: nem rocha, nem encosta.
+    // A mancha e' fbm de tres oitavas — cara. Ela so' e' calculada aqui,
+    // depois de o sorteio de densidade ja' ter descartado 99,7% das colunas.
+    if !solo_vivo(material_variado(bioma, y, declive, false, ger.mancha(bx, bz))) {
+        return None;
+    }
+    Some(ArvorePlantada {
+        especie: especie_de_arvore(bioma, (h2 >> 20) as f32 / 4096.0),
+        // Desvio dentro da coluna: sem ele as arvores nascem todas no centro
+        // do bloco e o bosque vira grade.
+        centro: glam::Vec2::new(
+            bx as f32 * BLOCO + ((h0 >> 4 & 0xff) as f32 / 255.0 - 0.5) * BLOCO * 1.6,
+            bz as f32 * BLOCO + ((h1 >> 4 & 0xff) as f32 / 255.0 - 0.5) * BLOCO * 1.6,
+        ),
+        // Porte menor do que parece certo em pe': a camera olha de cima, e
+        // arvore de tres vezes o jogador esconde o mob que ele veio cacar.
+        porte: 0.62 + ((h0 >> 12) & 0xff) as f32 / 255.0 * 0.34,
+        variante: h0 >> 26,
+    })
+}
+
+/// A planta de forracao desta coluna, se houver.
+pub fn planta_da_coluna(
+    bioma: Bioma,
+    bx: i32,
+    bz: i32,
+    topo: i32,
+    declive: i32,
+    ger: &Gerador,
+    agua: bool,
+) -> Option<PlantaPlantada> {
+    let prob = densidade_de_planta(bioma) * 0.0025;
+    let g0 = (bx as u32).wrapping_mul(1_597_334_677) ^ (bz as u32).wrapping_mul(2_246_822_519);
+    let g1 = g0.wrapping_mul(2_654_435_761);
+    if (g1 >> 8) as f32 / (1u32 << 24) as f32 >= prob || agua {
+        return None;
+    }
+    // Mesma armadilha das arvores: hash proprio pra especie.
+    let g2 = g1.wrapping_mul(1_597_334_677).wrapping_add(2_246_822_519);
+    let y = (topo + 1) as f32 * BLOCO;
+    let solo = material_variado(bioma, y, declive, false, ger.mancha(bx, bz));
+    let especie = especie_de_planta(bioma, (g2 >> 20) as f32 / 4096.0);
+    // Pedra nasce em qualquer chao, inclusive rocha e neve; o resto so' onde o
+    // solo segura. Matacao em cima de laje e' o que uma cordilheira tem.
+    if !matches!(especie, Planta::Pedra) && !solo_vivo(solo) {
+        return None;
+    }
+    Some(PlantaPlantada {
+        especie,
+        centro: glam::Vec2::new(
+            bx as f32 * BLOCO + ((g0 >> 4 & 0xff) as f32 / 255.0 - 0.5) * BLOCO * 1.8,
+            bz as f32 * BLOCO + ((g1 >> 4 & 0xff) as f32 / 255.0 - 0.5) * BLOCO * 1.8,
+        ),
+        // Forracao fica ABAIXO do joelho: planta da altura do jogador esconde
+        // o que importa e faz a arvore perder escala.
+        porte: 0.55 + ((g0 >> 14) & 0xff) as f32 / 255.0 * 0.45,
+        // Variante por REGIAO e nao por planta: flores vizinhas saem da mesma
+        // variante, logo da mesma cor, e viram MANCHA.
+        variante: (((bx.div_euclid(10)) as u32).wrapping_mul(2_654_435_761)
+            ^ ((bz.div_euclid(10)) as u32).wrapping_mul(40_503))
+            >> 8,
+    })
+}
+
+/// Um corpo solido plantado no mundo: tronco, matacao ou toco.
+#[derive(Debug, Clone, Copy)]
+pub struct Estorvo {
+    pub centro: glam::Vec2,
+    pub raio: f32,
+}
+
+/// Tudo que esta' coluna tem e BARRA passagem, acrescentado em `saida`.
+///
+/// Podem ser DOIS: arvore e forracao sao sorteios independentes, com desvios
+/// independentes dentro da coluna, e nada impede um matacao ao pe' de um
+/// tronco. A primeira versao devolvia so' um e a pedra que dividia coluna com
+/// arvore ficava atravessavel — achado pelo teste que compara o que o cliente
+/// desenha com o que o servidor barra.
+pub fn estorvos_da_coluna(
+    bioma: Bioma,
+    bx: i32,
+    bz: i32,
+    topo: i32,
+    declive: i32,
+    ger: &Gerador,
+    agua: bool,
+    saida: &mut Vec<Estorvo>,
+) {
+    if let Some(a) = arvore_da_coluna(bioma, bx, bz, topo, declive, ger, agua) {
+        saida.push(Estorvo {
+            centro: a.centro,
+            raio: raio_de_tronco(a.especie) * a.porte,
+        });
+    }
+    if let Some(p) = planta_da_coluna(bioma, bx, bz, topo, declive, ger, agua) {
+        if let Some(r) = raio_de_planta(p.especie) {
+            saida.push(Estorvo { centro: p.centro, raio: r * p.porte });
+        }
+    }
+}
+
 // ────────────────────────────── o gerador ────────────────────────────
 
 /// Relevo COLUNA A COLUNA, sem precisar da ilha inteira.
@@ -1023,7 +1244,30 @@ pub struct Ilha {
     /// era o erro que tornava "um bloco de degrau" uma frase sem sentido —
     /// e a colisao passaria a discordar do que o olho ve'.
     blocos: Vec<i16>,
+    /// Perlin da ilha. Fica aqui porque o plantio precisa da MANCHA, e a
+    /// mancha e' ruido — nao da' pra tirar do campo de altura.
+    ger: Gerador,
+    /// Tronco, matacao e toco: o que barra passagem sem ser relevo.
+    ///
+    /// Sao ~0,5% das colunas, entao guardar a LISTA custa cem vezes menos que
+    /// um byte por coluna — e a alternativa, sortear na hora, sairia caro no
+    /// lugar errado: `mover` roda por eixo, por entidade, trinta vezes por
+    /// segundo, e o sorteio pede fbm de tres oitavas.
+    estorvos: Vec<Estorvo>,
+    /// Indice espacial dos estorvos: cada celula guarda os indices dos que
+    /// caem nela. Sem ele, achar o tronco perto do jogador seria varrer a
+    /// ilha inteira.
+    grade: Vec<Vec<u32>>,
+    /// Celulas por lado da grade.
+    grade_lado: usize,
+    /// Maior raio entre os estorvos. E' o alcance que a busca por segmento
+    /// precisa abrir em volta da linha — tirado do dado e nao de um palpite,
+    /// que envelheceria calado no dia em que o matacao crescesse.
+    raio_max_estorvo: f32,
 }
+
+/// Lado da celula do indice de estorvos, em COLUNAS.
+const CELULA_ESTORVO: i32 = 8;
 
 /// Cabecalho do arquivo de altura. Se qualquer um destes mudar, o cache e'
 /// descartado e a ilha e' gerada de novo — arquivo de uma semente servindo
@@ -1059,7 +1303,232 @@ impl Ilha {
                 blocos[iz * lado + ix] = ger.bloco_em(bx, bz) as i16;
             }
         }
-        Self { semente, raio_blocos, bioma, escala_altura, lado, blocos }
+        Self::com_blocos(semente, raio_blocos, bioma, escala_altura, lado, blocos, ger)
+    }
+
+    /// O caminho unico pra nascer uma ilha: gerada ou lida do cache, o indice
+    /// de estorvos e' construido aqui. O cache guarda so' altura — plantio e'
+    /// funcao pura da coordenada, entao refazer sai mais barato que gravar.
+    fn com_blocos(
+        semente: i32,
+        raio_blocos: i32,
+        bioma: Bioma,
+        escala_altura: f32,
+        lado: usize,
+        blocos: Vec<i16>,
+        ger: Gerador,
+    ) -> Self {
+        let mut i = Self {
+            semente,
+            raio_blocos,
+            bioma,
+            escala_altura,
+            lado,
+            blocos,
+            ger,
+            estorvos: Vec::new(),
+            grade: Vec::new(),
+            grade_lado: 0,
+            raio_max_estorvo: 0.0,
+        };
+        i.plantar();
+        i
+    }
+
+    /// Varre a ilha e guarda o que barra passagem.
+    ///
+    /// Publica porque quem mexe no relevo TEM que chamar de novo: o plantio
+    /// depende da altura da coluna (nada nasce na agua, nem na encosta), e um
+    /// indice velho vira tronco boiando ou parede invisivel.
+    pub fn replantar(&mut self) {
+        self.plantar();
+    }
+
+    fn plantar(&mut self) {
+        let l = self.lado as i32;
+        self.grade_lado = (l.div_euclid(CELULA_ESTORVO) + 1) as usize;
+        self.grade = vec![Vec::new(); self.grade_lado * self.grade_lado];
+        self.estorvos.clear();
+        self.raio_max_estorvo = 0.0;
+        let mut achados = Vec::new();
+        for iz in 0..l {
+            for ix in 0..l {
+                let topo = self.bloco(ix, iz);
+                if (topo + 1) as f32 * BLOCO <= NIVEL_DO_MAR {
+                    continue;
+                }
+                // Coordenada de BLOCO DE MUNDO, com o centro da ilha em zero:
+                // e' nela que o sorteio do plantio acontece, dos dois lados.
+                let (bx, bz) = (ix - self.raio_blocos, iz - self.raio_blocos);
+                let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .iter()
+                    .map(|(dx, dz)| (topo - self.bloco(ix + dx, iz + dz)).abs())
+                    .max()
+                    .unwrap_or(0);
+                achados.clear();
+                estorvos_da_coluna(
+                    self.bioma, bx, bz, topo, declive, &self.ger, false, &mut achados,
+                );
+                for e in achados.drain(..) {
+                    self.raio_max_estorvo = self.raio_max_estorvo.max(e.raio);
+                    let n = self.estorvos.len() as u32;
+                    self.estorvos.push(e);
+                    // Entra em TODAS as celulas que o corpo dele toca: um
+                    // matacao na divisa ficaria invisivel pra quem chegasse
+                    // pelo outro lado se so' o centro contasse.
+                    let (c0x, c0z) = self.celula(e.centro.x - e.raio, e.centro.y - e.raio);
+                    let (c1x, c1z) = self.celula(e.centro.x + e.raio, e.centro.y + e.raio);
+                    for cz in c0z..=c1z {
+                        for cx in c0x..=c1x {
+                            if let Some(c) = self.celula_em(cx, cz) {
+                                self.grade[c].push(n);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Celula da grade que cobre uma coordenada de mundo.
+    fn celula(&self, x: f32, z: f32) -> (i32, i32) {
+        let (ix, iz) = self.coluna(x, z);
+        (ix.div_euclid(CELULA_ESTORVO), iz.div_euclid(CELULA_ESTORVO))
+    }
+
+    fn celula_em(&self, cx: i32, cz: i32) -> Option<usize> {
+        if cx < 0 || cz < 0 || cx as usize >= self.grade_lado || cz as usize >= self.grade_lado {
+            return None;
+        }
+        Some(cz as usize * self.grade_lado + cx as usize)
+    }
+
+    /// Ponto que representa uma celula do A*: o centro dela, ou o mais perto
+    /// disso onde o corpo caiba.
+    ///
+    /// Sem este desvio, um matacao em cima do centro de celula vira um ponto
+    /// de rota DENTRO da pedra: o A* aprova (ele ignora estorvo nas pontas do
+    /// trecho, senao a celula ficaria ilhada), o corpo nunca chega la', e a
+    /// rota refeita devolve o mesmo ponto pra sempre. Medido num caso real:
+    /// centro de celula a 0,45 de um matacao de raio 0,62.
+    pub fn ponto_livre_perto(&self, centro: glam::Vec2, raio: f32) -> glam::Vec2 {
+        if self.estorvo_em(centro, raio).is_none() {
+            return centro;
+        }
+        // Espiral curta: o estorvo mais gordo tem 1,24 de diametro, entao um
+        // ponto livre esta' sempre a menos de uma unidade — se houver.
+        for anel in 1..=3 {
+            let d = anel as f32 * BLOCO;
+            for (dx, dz) in [
+                (1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0),
+                (0.7, 0.7), (0.7, -0.7), (-0.7, 0.7), (-0.7, -0.7),
+            ] {
+                let p = centro + glam::Vec2::new(dx * d, dz * d);
+                if self.estorvo_em(p, raio).is_none() && !self.agua(p.x, p.y) {
+                    return p;
+                }
+            }
+        }
+        centro
+    }
+
+    /// O estorvo que impede um corpo de raio `raio` de ocupar `p`, se houver.
+    pub fn estorvo_em(&self, p: glam::Vec2, raio: f32) -> Option<Estorvo> {
+        let (c0x, c0z) = self.celula(p.x - raio, p.y - raio);
+        let (c1x, c1z) = self.celula(p.x + raio, p.y + raio);
+        let mut pior: Option<(f32, Estorvo)> = None;
+        for cz in c0z..=c1z {
+            for cx in c0x..=c1x {
+                let Some(c) = self.celula_em(cx, cz) else { continue };
+                for &n in &self.grade[c] {
+                    let e = self.estorvos[n as usize];
+                    let d = raio + e.raio;
+                    let dist2 = e.centro.distance_squared(p);
+                    if dist2 < d * d && pior.is_none_or(|(m, _)| dist2 < m) {
+                        pior = Some((dist2, e));
+                    }
+                }
+            }
+        }
+        pior.map(|(_, e)| e)
+    }
+
+    /// Um corpo de raio `raio` cabe em `p` sem entrar em tronco, matacao ou
+    /// toco?
+    ///
+    /// Flor, capim, arbusto e samambaia NAO entram nesta conta: eles cobrem o
+    /// chao inteiro, e colidir com forracao transformaria o mundo em labirinto.
+    pub fn sem_estorvo(&self, p: glam::Vec2, raio: f32) -> bool {
+        let (c0x, c0z) = self.celula(p.x - raio, p.y - raio);
+        let (c1x, c1z) = self.celula(p.x + raio, p.y + raio);
+        for cz in c0z..=c1z {
+            for cx in c0x..=c1x {
+                let Some(c) = self.celula_em(cx, cz) else { continue };
+                for &n in &self.grade[c] {
+                    let e = self.estorvos[n as usize];
+                    let d = raio + e.raio;
+                    if e.centro.distance_squared(p) < d * d {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    /// Da' pra ir de `a` a `b` com um corpo de raio `raio` sem esbarrar em
+    /// tronco, matacao ou toco?
+    ///
+    /// Distancia PONTO-SEGMENTO e nao amostras ao longo da linha: um tronco
+    /// de betula tem 0,18 de raio e caberia inteiro entre duas amostras. O
+    /// custo e' o mesmo — o que decide e' quantos estorvos ha' por perto, e
+    /// sao ~0,1% das colunas.
+    /// Estorvo que engloba uma das PONTAS e' ignorado de proposito.
+    ///
+    /// Na origem, porque preso dentro de um tronco todo trecho seria invalido
+    /// e nao haveria rota nenhuma — nem a de sair dali. No destino, porque o
+    /// A* testa CENTRO DE CELULA: um centro que caiu dentro de um tronco
+    /// viraria celula ilhada, e cada clique la' dentro custaria o orcamento
+    /// inteiro de nos pra concluir que nao ha' caminho. Medido: 6,6 ms por
+    /// pedido de rota curta, contra 0,5 ms quando ha' caminho.
+    ///
+    /// O que continua valendo — e e' o que importa — e' o tronco NO MEIO do
+    /// trecho. Chegar ate' o pe' dele e' com o `mover_e_deslizar`, que
+    /// contorna; atravessa-lo, nao.
+    pub fn trecho_sem_estorvo(&self, a: glam::Vec2, b: glam::Vec2, raio: f32) -> bool {
+        let folga = raio + self.raio_max_estorvo;
+        let (c0x, c0z) = self.celula(a.x.min(b.x) - folga, a.y.min(b.y) - folga);
+        let (c1x, c1z) = self.celula(a.x.max(b.x) + folga, a.y.max(b.y) + folga);
+        let ab = b - a;
+        let comp2 = ab.length_squared();
+        for cz in c0z..=c1z {
+            for cx in c0x..=c1x {
+                let Some(c) = self.celula_em(cx, cz) else { continue };
+                for &n in &self.grade[c] {
+                    let e = self.estorvos[n as usize];
+                    let t = if comp2 < 1e-12 {
+                        0.0
+                    } else {
+                        ((e.centro - a).dot(ab) / comp2).clamp(0.0, 1.0)
+                    };
+                    let d = raio + e.raio;
+                    if e.centro.distance_squared(a) < d * d
+                        || e.centro.distance_squared(b) < d * d
+                    {
+                        continue;
+                    }
+                    if (a + ab * t).distance_squared(e.centro) < d * d {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    /// Quantos estorvos a ilha tem. So' pra medir.
+    pub fn total_de_estorvos(&self) -> usize {
+        self.estorvos.len()
     }
 
     /// Indice do bloco de topo. Fora da grade e' fundo: dado de indice nunca
@@ -1104,9 +1573,38 @@ impl Ilha {
         self.subida(de, para).map_or(false, |s| s <= DEGRAU_BLOCOS)
     }
 
-    /// Da' pra chegar PULANDO? Dois blocos sim, tres nao — nao ha' escalada.
+    /// Da' pra chegar PULANDO? Ate' `PULO_BLOCOS` sim, acima disso nao — nao
+    /// ha' escalada.
     pub fn pulo_ok(&self, de: (f32, f32), para: (f32, f32)) -> bool {
         self.subida(de, para).map_or(false, |s| s <= PULO_BLOCOS)
+    }
+
+    /// Pular faria o corpo andar mais que andar faria?
+    ///
+    /// A pergunta e' feita ao PROPRIO `mover_com_degrau`, duas vezes. Toda
+    /// outra formulacao ja' discordou dele:
+    ///
+    ///   * comparar a coluna do centro ignorava o OMBRO — o centro via um
+    ///     bloco, a amostra do lado via dois, e o corpo empurrava a quina pra
+    ///     sempre com o teste dizendo "nao precisa pular";
+    ///   * perguntar so' a `borda_livre` ignorava o ESTORVO — travado num
+    ///     matacao, o relevo estava livre, e ninguem via que pular contornava
+    ///     por cima do degrau ao lado.
+    ///
+    /// Duas chamadas a mais por tick por quem segue rota. E' barato, e e' a
+    /// unica versao que nao pode divergir de quem move o corpo.
+    pub fn precisa_pular(&self, pos: glam::Vec2, vel: glam::Vec2, dt: f32, raio: f32) -> bool {
+        let passo = vel.length() * dt;
+        if passo < 1e-4 {
+            return false;
+        }
+        let andando = pos.distance(self.mover_com_degrau(pos, vel, dt, raio, DEGRAU_BLOCOS));
+        // Andando bem? Nao ha' o que resolver.
+        if andando > passo * 0.5 {
+            return false;
+        }
+        let pulando = pos.distance(self.mover_com_degrau(pos, vel, dt, raio, PULO_BLOCOS));
+        pulando > andando * 2.0 + 1e-4
     }
 
     /// Blocos de subida entre duas colunas. `None` = destino na agua.
@@ -1136,6 +1634,23 @@ impl Ilha {
         dt: f32,
         raio: f32,
     ) -> glam::Vec2 {
+        self.mover_com_degrau(pos, vel, dt, raio, DEGRAU_BLOCOS)
+    }
+
+    /// O mesmo, dizendo quanto o corpo consegue subir.
+    ///
+    /// E' assim que o pulo entra: ele nao muda a fisica, muda o DEGRAU — de um
+    /// bloco pra dois. Nao ha' gravidade nem velocidade vertical em lugar
+    /// nenhum, e nao precisa haver: num mundo de blocos, "pular" e' aceitar um
+    /// degrau mais alto por meio segundo.
+    pub fn mover_com_degrau(
+        &self,
+        pos: glam::Vec2,
+        vel: glam::Vec2,
+        dt: f32,
+        raio: f32,
+        degrau: i32,
+    ) -> glam::Vec2 {
         // Amostra o DESTINO, nao o caminho: um passo maior que um bloco
         // atravessaria uma parede de uma coluna so'. A 30Hz e velocidade de
         // jogador o passo e' ~0,13 de unidade contra blocos de 0,5, entao
@@ -1143,15 +1658,44 @@ impl Ilha {
         // arranco, isto vira varredura.
         let v = vel * dt;
         let mut p = pos;
+        // ── TRONCO: desliza pela TANGENTE, nao pelos eixos ──
+        //
+        // Contra uma PAREDE, separar em X e Y funciona: um dos dois esta'
+        // livre. Contra um CIRCULO, nao — quem vem de frente tem os dois
+        // eixos quase bloqueados e anda tres milimetros por tick, empurrando
+        // o tronco pra sempre. Medido: era a metade dos travamentos.
+        //
+        // A saida e' a resposta certa pra circulo: projetar o passo na
+        // tangente do estorvo, do lado pra onde o corpo ja' ia. Ele contorna
+        // a arvore sem parar, que e' o que o olho espera.
+        let alvo_inteiro = pos + v;
+        if let Some(e) = self.estorvo_em(alvo_inteiro, raio) {
+            let fora = (pos - e.centro).normalize_or_zero();
+            if fora != glam::Vec2::ZERO {
+                let tang = glam::Vec2::new(-fora.y, fora.x);
+                let lado = if tang.dot(v) >= 0.0 { tang } else { -tang };
+                let alvo = pos + lado * v.length();
+                if self.borda_livre(pos, alvo, raio, lado, degrau)
+                    && self.sem_estorvo(alvo, raio)
+                {
+                    return alvo;
+                }
+            }
+        }
+        // Eixo a eixo pro RELEVO: barrado num eixo, continua andando no outro.
         if v.x != 0.0 {
             let alvo = glam::Vec2::new(p.x + v.x, p.y);
-            if self.borda_livre(p, alvo, raio, glam::Vec2::new(v.x.signum(), 0.0)) {
+            if self.borda_livre(p, alvo, raio, glam::Vec2::new(v.x.signum(), 0.0), degrau)
+                && self.sem_estorvo(alvo, raio)
+            {
                 p.x = alvo.x;
             }
         }
         if v.y != 0.0 {
             let alvo = glam::Vec2::new(p.x, p.y + v.y);
-            if self.borda_livre(p, alvo, raio, glam::Vec2::new(0.0, v.y.signum())) {
+            if self.borda_livre(p, alvo, raio, glam::Vec2::new(0.0, v.y.signum()), degrau)
+                && self.sem_estorvo(alvo, raio)
+            {
                 p.y = alvo.y;
             }
         }
@@ -1174,6 +1718,7 @@ impl Ilha {
         para: glam::Vec2,
         raio: f32,
         dir: glam::Vec2,
+        degrau: i32,
     ) -> bool {
         let (ax, az) = self.coluna(de.x, de.y);
         let base = self.bloco(ax, az);
@@ -1185,8 +1730,8 @@ impl Ilha {
             if (h + 1) as f32 * BLOCO <= NIVEL_DO_MAR {
                 return false;
             }
-            // Descer e' livre; subir so' um bloco. E' a regra inteira.
-            if h - base > DEGRAU_BLOCOS {
+            // Descer e' livre; subir so' o degrau permitido.
+            if h - base > degrau {
                 return false;
             }
         }
@@ -1200,22 +1745,30 @@ impl Ilha {
     /// caem no mar ou dentro de um paredao. Melhor mover um pouco do que
     /// nascer boiando.
     pub fn terra_mais_proxima(&self, x: f32, z: f32, limite_un: f32) -> glam::Vec2 {
-        if !self.agua(x, z) {
-            return glam::Vec2::new(x, z);
+        // Terra E livre. Nascer dentro de um tronco nao e' detalhe estetico:
+        // o corpo fica preso, e o A* — que testa o corredor a partir de onde
+        // se esta' — nao acha rota nenhuma. O sintoma aparece como "nao ha'
+        // caminho pra lugar nenhum" e nao como "spawn ruim".
+        let bom = |p: glam::Vec2| {
+            !self.agua(p.x, p.y) && self.sem_estorvo(p, crate::constants::ENTITY_RADIUS)
+        };
+        let aqui = glam::Vec2::new(x, z);
+        if bom(aqui) {
+            return aqui;
         }
         let passos = (limite_un / BLOCO) as i32;
         for r in 1..=passos {
             // So' o anel de raio r: o miolo ja' foi visto na volta anterior.
             for i in -r..=r {
                 for (dx, dz) in [(i, -r), (i, r), (-r, i), (r, i)] {
-                    let (px, pz) = (x + dx as f32 * BLOCO, z + dz as f32 * BLOCO);
-                    if !self.agua(px, pz) {
-                        return glam::Vec2::new(px, pz);
+                    let p = glam::Vec2::new(x + dx as f32 * BLOCO, z + dz as f32 * BLOCO);
+                    if bom(p) {
+                        return p;
                     }
                 }
             }
         }
-        glam::Vec2::new(x, z)
+        aqui
     }
 
     // ── caminho ──────────────────────────────────────────────────────────
@@ -1248,13 +1801,45 @@ impl Ilha {
                 (p.y / (BLOCO * PASSO_CAMINHO as f32)).round() as i32,
             )
         };
-        let mundo = |c: (i32, i32)| -> glam::Vec2 {
+        // O ponto de uma celula nao e' sempre o centro dela: se houver um
+        // tronco ali, ele anda pro lado. Guardado num mapa porque a mesma
+        // celula e' visitada como vizinha de varias outras.
+        let bruto = |c: (i32, i32)| -> glam::Vec2 {
             glam::Vec2::new(
                 c.0 as f32 * BLOCO * PASSO_CAMINHO as f32,
                 c.1 as f32 * BLOCO * PASSO_CAMINHO as f32,
             )
         };
-        let inicio = cel(de);
+        // ── A PORTA DO GRAFO ──
+        //
+        // O corpo nunca esta' num centro de celula, e a celula que o contem
+        // pode estar do outro lado de um paredao — literalmente: o corpo ao
+        // pe' de um barranco de quatro blocos, o centro da celula la' em
+        // cima. O A* saia do centro, aprovava o corredor de la', e a rota
+        // mandava o corpo atravessar a parede na PRIMEIRA perna, que era a
+        // unica que ninguem tinha validado.
+        //
+        // Entao a entrada no grafo e' escolhida: a celula mais proxima que o
+        // corpo REALMENTE alcanca de onde esta'.
+        let mut pontos: HashMap<(i32, i32), glam::Vec2> = HashMap::new();
+        let contendo = cel(de);
+        let mut inicio = contendo;
+        {
+            let mut melhor = f32::MAX;
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    let c = (contendo.0 + dx, contendo.1 + dz);
+                    let p = *pontos.entry(c).or_insert_with(|| {
+                        self.ponto_livre_perto(bruto(c), crate::constants::ENTITY_RADIUS)
+                    });
+                    let d = de.distance(p);
+                    if d < melhor && self.trecho_livre(de, p, PULO_BLOCOS) {
+                        melhor = d;
+                        inicio = c;
+                    }
+                }
+            }
+        }
         let fim = cel(para);
         if inicio == fim {
             return Some(vec![para]);
@@ -1299,10 +1884,27 @@ impl Ilha {
                 (1, 1), (1, -1), (-1, 1), (-1, -1),
             ] {
                 let viz = (atual.0 + dx, atual.1 + dz);
-                if !self.trecho_livre(mundo(atual), mundo(viz)) {
+                let base = if dx != 0 && dz != 0 { 1414 } else { 1000 };
+                // Anda? Custa o passo. Nao anda, mas PULA? Custa o passo mais
+                // a espera entre pulos.
+                //
+                // O pulo entra na rota porque sem ele o A* trata todo barranco
+                // de dois blocos como parede e da' a volta na ilha inteira —
+                // ou nao acha caminho nenhum. Com ele, a rota atravessa; e o
+                // seguidor pula sozinho ao chegar na quina.
+                let pa = *pontos.entry(atual).or_insert_with(|| {
+                    self.ponto_livre_perto(bruto(atual), crate::constants::ENTITY_RADIUS)
+                });
+                let pv = *pontos.entry(viz).or_insert_with(|| {
+                    self.ponto_livre_perto(bruto(viz), crate::constants::ENTITY_RADIUS)
+                });
+                let passo = if self.trecho_livre(pa, pv, DEGRAU_BLOCOS) {
+                    base
+                } else if self.trecho_livre(pa, pv, PULO_BLOCOS) {
+                    base + CUSTO_DO_PULO
+                } else {
                     continue;
-                }
-                let passo = if dx != 0 && dz != 0 { 1414 } else { 1000 };
+                };
                 let novo = g + passo;
                 if custo.get(&viz).is_some_and(|&c| c <= novo) {
                     continue;
@@ -1331,11 +1933,43 @@ impl Ilha {
             return None;
         }
         rota.reverse();
-        let mut saida: Vec<glam::Vec2> = rota.into_iter().skip(1).map(mundo).collect();
+        // `skip(1)` pula a celula de onde se saiu — menos quando a porta do
+        // grafo e' outra celula, que aí ela e' um ponto que o corpo precisa
+        // andar de verdade.
+        let pular = if inicio == contendo { 1 } else { 0 };
+        let mut saida: Vec<glam::Vec2> = rota
+            .into_iter()
+            .skip(pular)
+            .map(|c| {
+                *pontos.entry(c).or_insert_with(|| {
+                    self.ponto_livre_perto(bruto(c), crate::constants::ENTITY_RADIUS)
+                })
+            })
+            .collect();
         if melhor.0 == fim {
-            // O ultimo ponto e' o destino de verdade, nao o centro da celula.
+            // O ultimo ponto quer ser o destino de VERDADE e nao o centro da
+            // celula — mas so' se der pra chegar la'.
+            //
+            // Trocar sem checar era um furo: a rota valida celula a celula, e
+            // o ponto clicado pode estar num degrau de dois blocos ao lado do
+            // centro. A rota passava inteira no teste e o boneco descobria o
+            // problema no ultimo passo, empurrando a parede.
+            let penultimo = if saida.len() >= 2 {
+                saida[saida.len() - 2]
+            } else {
+                de
+            };
             saida.pop();
-            saida.push(para);
+            if self.trecho_livre(penultimo, para, PULO_BLOCOS) {
+                saida.push(para);
+            } else {
+                // Nao da' pra pisar onde clicou: para no centro da celula, que
+                // e' o mais perto validado. Chegar perto e' melhor que chegar
+                // e travar.
+                saida.push(*pontos.entry(fim).or_insert_with(|| {
+                    self.ponto_livre_perto(bruto(fim), crate::constants::ENTITY_RADIUS)
+                }));
+            }
         }
         Some(saida)
     }
@@ -1345,14 +1979,40 @@ impl Ilha {
     /// Checa as colunas FINAS no meio do caminho: um passo de oito blocos
     /// esconderia um paredao de oito blocos, e a rota mandaria o jogador
     /// andar contra a parede pra sempre.
-    fn trecho_livre(&self, de: glam::Vec2, para: glam::Vec2) -> bool {
-        let n = PASSO_CAMINHO.max(1);
+    ///
+    /// O numero de amostras sai da DISTANCIA, nao de uma constante. Com oito
+    /// fixas, um trecho diagonal (11,3 blocos) era amostrado a cada 2,7 —
+    /// dois blocos inteiros passavam despercebidos entre uma amostra e a
+    /// seguinte, e a rota atravessava degrau de dois.
+    ///
+    /// E cada amostra checa o CORPO, nao um ponto. A primeira versao validava
+    /// a linha central: corredor que cabe pra um ponto mas nao pra um circulo
+    /// de raio 0,35 virava rota valida, e o jogador travava no ombro. Medido
+    /// simulando a caminhada: **71 de 240 rotas travavam**.
+    fn trecho_livre(&self, de: glam::Vec2, para: glam::Vec2, degrau: i32) -> bool {
+        // Tronco, matacao e toco derrubam o trecho inteiro. Sem isto a rota
+        // atravessa a arvore, o corpo bate nela e o seguidor fica raspando de
+        // lado ate' a paciencia acabar.
+        if !self.trecho_sem_estorvo(de, para, crate::constants::ENTITY_RADIUS) {
+            return false;
+        }
+        let n = ((de.distance(para) / BLOCO).ceil() as i32).max(1);
+        let dir = (para - de).normalize_or_zero();
+        // Um pouco mais largo que o corpo: rota que passa raspando na quina
+        // trava assim que o jogador for empurrado um centimetro pro lado.
+        let perp = glam::Vec2::new(-dir.y, dir.x) * (crate::constants::ENTITY_RADIUS * 1.15);
         let mut anterior = de;
         for i in 1..=n {
             let t = i as f32 / n as f32;
             let p = de + (para - de) * t;
-            if !self.passo_ok((anterior.x, anterior.y), (p.x, p.y)) {
-                return false;
+            for lado in [glam::Vec2::ZERO, perp, -perp] {
+                let sobe = self.subida(
+                    (anterior.x + lado.x, anterior.y + lado.y),
+                    (p.x + lado.x, p.y + lado.y),
+                );
+                if !sobe.is_some_and(|s| s <= degrau) {
+                    return false;
+                }
             }
             anterior = p;
         }
@@ -1412,7 +2072,15 @@ impl Ilha {
             let j = cab + i * 2;
             *a = i16::from_le_bytes([dados[j], dados[j + 1]]);
         }
-        Some(Self { semente, raio_blocos, bioma, escala_altura, lado, blocos })
+        Some(Self::com_blocos(
+            semente,
+            raio_blocos,
+            bioma,
+            escala_altura,
+            lado,
+            blocos,
+            Gerador::novo(semente, raio_blocos, bioma, escala_altura),
+        ))
     }
 
     /// Quanto desta ilha serve pra jogar.
@@ -1554,6 +2222,112 @@ fn pct(a: usize, b: usize) -> f32 {
     if b == 0 { 0.0 } else { a as f32 * 100.0 / b as f32 }
 }
 
+// ─────────────────────────── seguidor de rota ────────────────────────
+
+/// Conduz o corpo pelos pontos da rota, e DESISTE de um ponto que nao da' pra
+/// alcancar.
+///
+/// A desistencia e' o que faltava: numa quina os dois eixos barram, o corpo
+/// para, e como o destino nao muda ele empurra a parede pra sempre. Medido
+/// simulando a caminhada, **35 de 240 rotas travavam** so' por isso — o
+/// caminho estava certo, faltava o seguidor admitir que aquele ponto nao vai
+/// rolar e ir pro proximo.
+///
+/// Mora aqui e nao no servidor porque assim o teste exercita o codigo DE
+/// VERDADE: seguidor testado e' seguidor que nao trava.
+#[derive(Debug, Default, Clone)]
+pub struct SeguidorDeRota {
+    pontos: std::collections::VecDeque<glam::Vec2>,
+    destino: glam::Vec2,
+    sem_avanco: u32,
+    melhor: f32,
+    travado: bool,
+}
+
+impl SeguidorDeRota {
+    /// Quantos ticks sem se aproximar antes de considerar a rota velha. Meio
+    /// segundo a 30Hz — curto o bastante pra ninguem ver, longo o bastante pra
+    /// nao desistir de um contorno legitimo.
+    const PACIENCIA: u32 = 15;
+    /// Distancia pra considerar o ponto alcancado.
+    const CHEGOU: f32 = 0.6;
+
+    pub fn nova(rota: impl IntoIterator<Item = glam::Vec2>, destino: glam::Vec2) -> Self {
+        Self {
+            pontos: rota.into_iter().collect(),
+            destino,
+            sem_avanco: 0,
+            melhor: f32::MAX,
+            travado: false,
+        }
+    }
+
+    pub fn vazia(&self) -> bool {
+        self.pontos.is_empty()
+    }
+
+    /// Quantos pontos ainda faltam. So' pra observabilidade.
+    pub fn restantes(&self) -> usize {
+        self.pontos.len()
+    }
+
+    pub fn limpa(&mut self) {
+        self.pontos.clear();
+        self.travado = false;
+    }
+
+    /// Pra onde o jogador mandou ir. E' o que a rota nova persegue.
+    pub fn destino(&self) -> glam::Vec2 {
+        self.destino
+    }
+
+    /// A rota travou e precisa ser refeita a partir de onde o corpo esta'.
+    ///
+    /// Antes, quem travava DESCARTAVA o ponto e seguia pro proximo. Parecia
+    /// recuperacao e era o contrario: o ponto seguinte esta' mais longe que o
+    /// que ja' nao dava, entao ele tambem trava, e a rota inteira evapora em
+    /// meio segundo. O boneco "chegava" parado no meio do caminho. Medido
+    /// varrendo a ilha: **109 de 364 rotas**.
+    ///
+    /// Rota velha nao se remenda, se refaz: o mundo em volta do corpo agora e'
+    /// outro, e quem sabe achar caminho e' o A*.
+    pub fn travado(&self) -> bool {
+        self.travado
+    }
+
+    /// Direcao pro proximo ponto, ou `None` quando a rota acabou.
+    pub fn direcao(&mut self, pos: glam::Vec2) -> Option<glam::Vec2> {
+        loop {
+            let alvo = *self.pontos.front()?;
+            let d = pos.distance(alvo);
+            if d <= Self::CHEGOU {
+                self.avanca();
+                continue;
+            }
+            // Aproximou? Zera a paciencia. Senao, gasta.
+            if d < self.melhor - 0.02 {
+                self.melhor = d;
+                self.sem_avanco = 0;
+            } else {
+                self.sem_avanco += 1;
+                if self.sem_avanco > Self::PACIENCIA {
+                    self.travado = true;
+                }
+            }
+            // Continua empurrando mesmo travado: quem pede rota nova e' o
+            // servidor, e ate' ela chegar e' melhor raspar na quina que parar.
+            return (alvo - pos).try_normalize();
+        }
+    }
+
+    fn avanca(&mut self) {
+        self.pontos.pop_front();
+        self.sem_avanco = 0;
+        self.melhor = f32::MAX;
+        self.travado = false;
+    }
+}
+
 // ───────────────────────────── arquipelago ───────────────────────────
 
 /// Uma ilha do arquipelago. Cada uma e' uma ZONA — processo proprio, mapa
@@ -1691,29 +2465,107 @@ mod testes {
         assert!(!i.passo_ok((0.0, 0.0), (99999.0, 0.0)));
     }
 
-    /// Um bloco anda, dois pula, tres nao passa. E' a regra de movimento
-    /// inteira, e ela cai fora se alguem mexer em `bloco()` sem perceber.
+    impl Ilha {
+        /// Tira toda a vegetacao. Os testes de DEGRAU sao sobre o relevo — um
+        /// tronco no meio do caminho testaria outra coisa, e um relevo
+        /// achatado na mao planta uma floresta uniforme que nao existe em
+        /// ilha nenhuma de verdade.
+        fn pelada(&mut self) {
+            self.estorvos.clear();
+            self.raio_max_estorvo = 0.0;
+            self.grade = vec![Vec::new(); self.grade_lado * self.grade_lado];
+        }
+    }
+
+    /// Um bloco anda, ate' tres pula, quatro nao passa. E' a regra de
+    /// movimento inteira, e ela cai fora se alguem mexer em `bloco()` sem
+    /// perceber.
     #[test]
-    fn um_anda_dois_pula_tres_nao_passa() {
+    fn um_anda_tres_pula_quatro_nao_passa() {
         let mut i = Ilha::gerar(3, 32, Bioma::Floresta, ESCALA_ALTURA);
         let l = i.lado;
         for c in i.blocos.iter_mut() {
             *c = 4;
         }
+        i.pelada();
         let x = |ix: usize| (ix as i32 - (l / 2) as i32) as f32 * BLOCO;
         // tres degraus a leste do centro, de 1, 2 e 3 blocos
         let meio = l / 2;
         i.blocos[meio * l + meio + 1] = 5;
         i.blocos[meio * l + meio + 2] = 6;
         i.blocos[meio * l + meio + 3] = 7;
+        i.blocos[meio * l + meio + 4] = 8;
         let z = 0.0;
         let p = |ix: usize| (x(ix), z);
         assert!(i.passo_ok(p(meio), p(meio + 1)), "1 bloco tem que andar");
         assert!(!i.passo_ok(p(meio), p(meio + 2)), "2 blocos nao anda");
         assert!(i.pulo_ok(p(meio), p(meio + 2)), "2 blocos tem que pular");
-        assert!(!i.pulo_ok(p(meio), p(meio + 3)), "3 blocos nao passa");
+        assert!(i.pulo_ok(p(meio), p(meio + 3)), "3 blocos tem que pular");
+        assert!(!i.pulo_ok(p(meio), p(meio + 4)), "4 blocos nao passa");
         // descer e' sempre livre
-        assert!(i.passo_ok(p(meio + 3), p(meio)));
+        assert!(i.passo_ok(p(meio + 4), p(meio)));
+    }
+
+    /// O arco desenhado tem que cobrir o degrau que o pulo vence. Se alguem
+    /// subir `PULO_BLOCOS` sem mexer no arco, o boneco atravessa a quina e a
+    /// altura aparece de um salto no fim do pulo.
+    #[test]
+    fn o_arco_cobre_o_degrau_maximo() {
+        let degrau = PULO_BLOCOS as f32 * BLOCO;
+        assert!(
+            crate::constants::PULO_ALTURA > degrau,
+            "arco de {} nao cobre degrau de {degrau}",
+            crate::constants::PULO_ALTURA
+        );
+    }
+
+    /// O pulo tem que VENCER o degrau que o passo recusa — e nao so' passar
+    /// no `pulo_ok`. Quem move o corpo e' `mover_com_degrau`, e ele tem tres
+    /// pontos de borda e raio: da' pra passar na regra e mesmo assim ficar
+    /// preso na quina.
+    #[test]
+    fn o_pulo_vence_o_degrau_que_o_passo_recusa() {
+        let mut i = Ilha::gerar(23, 32, Bioma::Floresta, ESCALA_ALTURA);
+        let l = i.lado;
+        for c in i.blocos.iter_mut() {
+            *c = 4;
+        }
+        i.pelada();
+        // Patamar ocupando toda a metade leste, na altura pedida.
+        let patamar = |i: &mut Ilha, h: i16| {
+            for iz in 0..l {
+                for ix in l / 2..l {
+                    i.blocos[iz * l + ix] = h;
+                }
+            }
+        };
+        let anda = |i: &Ilha, degrau: i32| {
+            let mut p = glam::Vec2::new(-1.5, 0.0);
+            let v = glam::Vec2::new(5.0, 0.0);
+            for _ in 0..60 {
+                p = i.mover_com_degrau(p, v, 1.0 / 30.0, crate::constants::ENTITY_RADIUS, degrau);
+            }
+            p.x
+        };
+        patamar(&mut i, 4 + PULO_BLOCOS as i16);
+        let andando = anda(&i, DEGRAU_BLOCOS);
+        let pulando = anda(&i, PULO_BLOCOS);
+        assert!(andando < 0.0, "andando tem que parar antes do patamar, parou em {andando}");
+        assert!(pulando > 1.0, "pulando tem que subir no patamar, parou em {pulando}");
+        // Um bloco acima do teto do pulo continua sendo parede: sem isto,
+        // "pula mais alto" viraria "escala qualquer coisa".
+        patamar(&mut i, 4 + PULO_BLOCOS as i16 + 1);
+        let alto_demais = anda(&i, PULO_BLOCOS);
+        assert!(
+            alto_demais < 0.0,
+            "um bloco acima do teto do pulo tem que barrar, subiu ate' {alto_demais}"
+        );
+        patamar(&mut i, 4 + PULO_BLOCOS as i16);
+        assert_eq!(
+            i.altura(pulando, 0.0),
+            (5 + PULO_BLOCOS) as f32 * BLOCO,
+            "depois do pulo o apoio tem que ser o topo do patamar"
+        );
     }
 
     /// Deslizar e nao grudar: quem bate na parede andando na diagonal tem que
@@ -1725,6 +2577,7 @@ mod testes {
         for c in i.blocos.iter_mut() {
             *c = 4;
         }
+        i.pelada();
         // Muro norte-sul de quatro colunas de largura, comecando no centro
         // (mundo x = 0). Largo pra o teste nao depender de arredondamento de
         // meia coluna.
@@ -1808,22 +2661,210 @@ mod testes {
         let rota = i.caminho(de, para, 20_000).expect("nao achou rota");
         assert!(!rota.is_empty());
         let mut p = de;
+        let (mut passos, mut pulos) = (0, 0);
         for alvo in &rota {
-            // Cada trecho da rota tem que ser andavel de ponta a ponta.
+            // Cada trecho tem que ser vencivel de ponta a ponta — andando ou,
+            // no maximo, pulando. O que NAO pode e' parede: rota que manda o
+            // jogador subir quatro blocos nao e' rota, e' ordem impossivel.
             let n = 12;
             let mut a = p;
             for k in 1..=n {
                 let t = k as f32 / n as f32;
                 let b = p + (*alvo - p) * t;
                 assert!(
-                    i.passo_ok((a.x, a.y), (b.x, b.y)),
+                    i.pulo_ok((a.x, a.y), (b.x, b.y)),
                     "a rota atravessa terreno intransitavel em {b:?}"
                 );
+                if i.passo_ok((a.x, a.y), (b.x, b.y)) { passos += 1 } else { pulos += 1 }
                 a = b;
             }
             p = *alvo;
         }
+        println!("{passos} trechos andados, {pulos} pulados");
+        // O pulo tem que ser EXCECAO na rota. Se ele virar regra, o custo do
+        // pulo no A* parou de valer e o boneco passa a caminhar aos saltos.
+        assert!(
+            pulos * 4 < passos,
+            "{pulos} pulos pra {passos} passos — o A* parou de preferir andar"
+        );
         assert!(p.distance(para) < 12.0, "parou a {:.0} do destino", p.distance(para));
+    }
+
+    /// O jogador tem que conseguir ANDAR a rota inteira.
+    ///
+    /// Nao amostra pontos: simula o passo com a MESMA `mover_e_deslizar` que o
+    /// servidor usa, a 30Hz, e verifica que ele chega. E' o unico teste que
+    /// responde a pergunta que o jogador faz — "o boneco travou?" — e ele pega
+    /// o que amostragem nao pega: a rota valida celula a celula mas o corpo
+    /// tem raio, e quem anda e' o corpo.
+    /// Anda a rota como o SERVIDOR anda: pula sozinho quando o trecho pede e
+    /// pede rota nova quando o seguidor trava. Devolve onde parou.
+    ///
+    /// E' o unico jeito de o teste responder a pergunta que o jogador faz —
+    /// "o boneco travou?" — porque cada uma dessas tres pecas passa sozinha e
+    /// e' o conjunto que falha.
+    fn simula_ida(i: &Ilha, de: glam::Vec2, para: glam::Vec2) -> glam::Vec2 {
+        const REFAZ_MAX: u32 = 8;
+        let dt = 1.0 / 30.0;
+        let vel = 5.0;
+        let Some(rota) = i.caminho(de, para, 20_000) else { return de };
+        let mut seg = SeguidorDeRota::nova(rota.iter().copied(), para);
+        let mut p = de;
+        let (mut pulo_ate, mut pronto, mut agora) = (-1.0f32, 0.0f32, 0.0f32);
+        let (mut refeitas, mut ultima_refeita) = (0u32, -1.0f32);
+        for _ in 0..6_000 {
+            let Some(dir) = seg.direcao(p) else { break };
+            if seg.travado() && agora - ultima_refeita >= 0.2 {
+                ultima_refeita = agora;
+                refeitas += 1;
+                if refeitas > REFAZ_MAX {
+                    break;
+                }
+                match i.caminho(p, para, 20_000) {
+                    Some(nova) => seg = SeguidorDeRota::nova(nova.iter().copied(), para),
+                    None => break,
+                }
+                continue;
+            }
+            if i.precisa_pular(p, dir * vel, dt, 0.35) && agora >= pronto {
+                pulo_ate = agora + crate::constants::PULO_DURACAO;
+                pronto = pulo_ate + crate::constants::PULO_ESPERA;
+            }
+            let degrau = if agora < pulo_ate { PULO_BLOCOS } else { DEGRAU_BLOCOS };
+            p = i.mover_com_degrau(p, dir * vel, dt, 0.35, degrau);
+            agora += dt;
+        }
+        p
+    }
+
+
+    #[test]
+    fn dbg_caso() {
+        let d = &ARQUIPELAGO[0];
+        let i = Ilha::gerar(d.semente, 800, d.bioma, ESCALA_ALTURA);
+        let de = glam::Vec2::new(-59.09517, 80.6707);
+        let para = glam::Vec2::new(-106.37446, 88.95736);
+        let rota = i.caminho(de, para, 20_000).unwrap();
+        println!("DBG rota {} pontos: {:?}", rota.len(), &rota[..rota.len().min(6)]);
+        let mut seg = SeguidorDeRota::nova(rota.iter().copied(), para);
+        let mut p = de;
+        let dt = 1.0 / 30.0;
+        let (mut pulo_ate, mut pronto, mut agora) = (-1.0f32, 0.0f32, 0.0f32);
+        for k in 0..400 {
+            let (dt, vel) = (1.0f32 / 30.0, 5.0f32);
+            let Some(dir) = seg.direcao(p) else { println!("DBG rota acabou em {k}"); break };
+            if seg.travado() {
+                println!("DBG travado no tick {k} em {p:?}, alvo {:?}", seg.pontos.front());
+                let bloco_aqui = i.bloco(i.coluna(p.x,p.y).0, i.coluna(p.x,p.y).1);
+                let a = p + dir * 0.5;
+                let bloco_la = i.bloco(i.coluna(a.x,a.y).0, i.coluna(a.x,a.y).1);
+                println!("DBG   bloco aqui {bloco_aqui} / meio bloco a' frente {bloco_la}");
+                println!("DBG   sem_estorvo aqui {} / a' frente {}",
+                    i.sem_estorvo(p, 0.35), i.sem_estorvo(a, 0.35));
+                println!("DBG   precisa_pular {}", i.precisa_pular(p, dir * vel, dt, 0.35));
+                println!("DBG   dir {dir:?}");
+                let est = i.estorvo_em(p + dir * 0.5, 0.35);
+                println!("DBG   estorvo a frente {est:?}");
+                let passo = i.mover_com_degrau(p, dir * 5.0, 1.0/30.0, 0.35, DEGRAU_BLOCOS);
+                println!("DBG   mover andou {:.4}", p.distance(passo));
+                let pulou = i.mover_com_degrau(p, dir * 5.0, 1.0/30.0, 0.35, PULO_BLOCOS);
+                println!("DBG   mover pulando andou {:.4}", p.distance(pulou));
+                if let Some(e) = est {
+                    let fora = (p - e.centro).normalize_or_zero();
+                    let t = glam::Vec2::new(-fora.y, fora.x);
+                    let lado = if t.dot(dir) >= 0.0 { t } else { -t };
+                    let alvo = p + lado * 0.167;
+                    println!("DBG   tangente {lado:?} borda {} estorvo_livre {}",
+                        i.borda_livre(p, alvo, 0.35, lado, DEGRAU_BLOCOS),
+                        i.sem_estorvo(alvo, 0.35));
+                    let cel = ((e.centro.x / (BLOCO * PASSO_CAMINHO as f32)).round(),
+                               (e.centro.y / (BLOCO * PASSO_CAMINHO as f32)).round());
+                    let cc = glam::Vec2::new(cel.0 * BLOCO * PASSO_CAMINHO as f32,
+                                             cel.1 * BLOCO * PASSO_CAMINHO as f32);
+                    println!("DBG   centro celula {cc:?} dist {:.2} raio {:.2}",
+                        cc.distance(e.centro), e.raio);
+                }
+                println!("DBG   rota nova? {:?}", i.caminho(p, para, 20_000).map(|r| r.len()));
+                break;
+            }
+            if i.precisa_pular(p, dir * vel, dt, 0.35) && agora >= pronto {
+                pulo_ate = agora + crate::constants::PULO_DURACAO;
+                pronto = pulo_ate + crate::constants::PULO_ESPERA;
+            }
+            let degrau = if agora < pulo_ate { PULO_BLOCOS } else { DEGRAU_BLOCOS };
+            let antes = p;
+            p = i.mover_com_degrau(p, dir * 5.0, dt, 0.35, degrau);
+            if k % 20 == 0 { println!("DBG t{k} {p:?} andou {:.3}", antes.distance(p)); }
+            agora += dt;
+        }
+    }
+
+    /// O boneco CHEGA, partindo de qualquer lugar da ilha.
+    ///
+    /// Este teste substituiu um que media 240 rotas a partir de UM unico
+    /// ponto — o desembarque. Ele dava 0 travadas e passava sempre, enquanto
+    /// o jogo travava em 34% das idas. Teste de escopo estreito nao e' teste
+    /// fraco: e' teste que mente, porque a confianca que ele da' e' real e a
+    /// cobertura nao.
+    ///
+    /// Aqui a partida varre o disco inteiro (angulo de ouro, raios variados),
+    /// e a simulacao e' a do servidor: rota, pulo automatico e rota refeita
+    /// quando o seguidor trava.
+    #[test]
+    fn o_boneco_chega_partindo_de_qualquer_lugar() {
+        let d = &ARQUIPELAGO[0];
+        let i = Ilha::gerar(d.semente, 800, d.bioma, ESCALA_ALTURA);
+        let dt = 1.0 / 30.0;
+        let vel = 5.0;
+        let (mut casos, mut sem_rota, mut parcial, mut travou_seguidor, mut ok) = (0, 0, 0, 0, 0);
+        let mut exemplos: Vec<String> = Vec::new();
+        for k in 0..400 {
+            // Pontos de partida espalhados pela ilha, nao so' o desembarque.
+            let a = k as f32 * 2.399_963; // angulo de ouro: cobre bem o disco
+            let r = 20.0 + (k % 37) as f32 * 8.0;
+            let de = i.terra_mais_proxima(a.cos() * r, a.sin() * r, 60.0);
+            if i.agua(de.x, de.y) { continue; }
+            let b = a * 3.7 + 1.1;
+            let alcance = 12.0 + (k % 11) as f32 * 9.0;
+            let para = de + glam::Vec2::new(b.cos() * alcance, b.sin() * alcance);
+            if i.agua(para.x, para.y) { continue; }
+            casos += 1;
+            let Some(r0) = i.caminho(de, para, 20_000) else { sem_rota += 1; continue };
+            let alcanca = r0.last().unwrap().distance(para) < 6.0;
+            let p = simula_ida(&i, de, para);
+            if !alcanca {
+                parcial += 1;
+                continue;
+            }
+            if p.distance(para) > 6.0 {
+                travou_seguidor += 1;
+                if exemplos.len() < 10 {
+                    let (cx, cz) = i.coluna(p.x, p.y);
+                    let (tx, tz) = i.coluna(para.x, para.y);
+                    exemplos.push(format!(
+                        "PAROU a {:.0} (andou {:.0}) | bloco {} -> {} | A* alcanca o alvo? {alcanca}",
+                        p.distance(para), de.distance(p), i.bloco(cx, cz), i.bloco(tx, tz)));
+                }
+            } else {
+                ok += 1;
+            }
+        }
+        println!(
+            "{casos} casos: {ok} chegaram, {sem_rota} sem rota, \
+             {parcial} inalcancaveis, {travou_seguidor} travaram"
+        );
+        for e in exemplos.iter().take(4) {
+            println!("  {e}");
+        }
+        assert!(casos > 300, "so' {casos} casos — a varredura encolheu");
+        // Alvo inalcancavel (topo de paredao, ilhota isolada) nao e' falha: a
+        // rota parcial leva o corpo ate' o pe' e para, que e' o certo. Falha e'
+        // o A* dizer que chega e o corpo nao chegar.
+        let alcancaveis = ok + travou_seguidor;
+        assert!(
+            travou_seguidor * 20 < alcancaveis,
+            "{travou_seguidor} de {alcancaveis} rotas alcancaveis travaram (teto: 5%)"
+        );
     }
 
     /// Destino inalcancavel devolve caminho PARCIAL, nao nada: andar na

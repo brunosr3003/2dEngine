@@ -102,6 +102,22 @@ struct Jogo {
     cam_yaw: f32,
     /// Fator de distancia da camera.
     cam_zoom: f32,
+    /// Inclinacao da camera, em radianos acima do horizonte.
+    cam_pitch: f32,
+    /// Quanto o jogador inclinou A MAIS do que o zoom pediu, em radianos.
+    ///
+    /// Guardar o DESVIO e nao o angulo e' o que deixa o automatico e a mao
+    /// conviverem: girar a roda muda o enquadramento sem apagar a correcao
+    /// que a mao fez, e a mao continua mandando dentro da banda daquele zoom.
+    cam_pitch_ajuste: f32,
+    /// Onde o arrasto de camera comecou.
+    arrasto_de: Vec2,
+    /// Este aperto do botao direito ja' virou camera?
+    ///
+    /// Vale pro APERTO INTEIRO: passou do limiar uma vez, nao volta a ser
+    /// defesa ate' o jogador soltar. Sem isso, parar a mao no meio do giro
+    /// levantaria o escudo no meio da briga.
+    arrasto_virou_camera: bool,
     /// Arrasto de rotacao em andamento: posicao do mouse no quadro anterior.
     arrasto: Option<Vec2>,
     rede: hud::Rede,
@@ -148,6 +164,10 @@ async fn main() {
         pedacos_desenhados: 0,
         cam_yaw: 0.0,
         cam_zoom: 1.0,
+        cam_pitch: render3d::pitch_do_zoom(1.0),
+        cam_pitch_ajuste: 0.0,
+        arrasto_de: Vec2::ZERO,
+        arrasto_virou_camera: false,
         arrasto: None,
         rede: hud::Rede::default(),
         ultimo_ping: 0.0,
@@ -399,7 +419,7 @@ impl Jogo {
                     t.altura_apoio(centro.x, centro.y, shared::ENTITY_RADIUS)
                 });
                 let vista =
-                    render3d::Vista::nova(centro, self.cam_yaw, self.cam_zoom, apoio, &f);
+                    render3d::Vista::nova(centro, self.cam_yaw, self.cam_zoom, self.cam_pitch, apoio, &f);
                 let alvo = render3d::pick(&self.world, &vista, vec2(mx, my), 48.0);
                 // Clicou no vazio? Entao foi no CHAO.
                 let destino = if alvo.is_none() {
@@ -477,10 +497,15 @@ impl Jogo {
         self.tela = Tela::Login;
     }
 
-    /// Rotacao e zoom. Botao do MEIO arrasta e Q/E giram; a roda aproxima.
+    /// Giro, inclinacao e zoom.
     ///
-    /// O botao direito continua sendo do jogo (`SECONDARY`) e o esquerdo mira
-    /// — camera em botao de combate e' briga garantida com o alvo.
+    /// Arrastar com o DIREITO ou com o do meio move a camera: horizontal
+    /// gira, vertical inclina. Q/E giram, R/F inclinam, a roda aproxima.
+    ///
+    /// O direito acumula dois sentidos porque e' onde a mao ja' esta': parado
+    /// ele defende, arrastado ele e' camera. O esquerdo fica so' com a mira —
+    /// esse nao da' pra dividir, porque clique de mira e arrasto de camera
+    /// acontecem no mesmo instante e brigariam pelo alvo.
     fn camera_controles(&mut self) {
         let dt = get_frame_time();
         if is_key_down(KeyCode::Q) {
@@ -489,16 +514,58 @@ impl Jogo {
         if is_key_down(KeyCode::E) {
             self.cam_yaw += 2.2 * dt;
         }
+        // R e F inclinam; o arrasto do botao do meio faz as duas coisas —
+        // horizontal gira, vertical inclina.
+        let mut mexeu = 0.0f32;
+        if is_key_down(KeyCode::R) {
+            mexeu += 1.2 * dt;
+        }
+        if is_key_down(KeyCode::F) {
+            mexeu -= 1.2 * dt;
+        }
         let (mx, my) = mouse_position();
-        if is_mouse_button_down(MouseButton::Middle) {
+        // O botao do meio e' sempre camera. O DIREITO tem dois sentidos:
+        // parado ele defende, arrastado ele move a camera — e quem separa e'
+        // o movimento, nao um modo. E' assim que MMO faz, e evita gastar
+        // outra tecla numa acao que o jogador ja' procura no direito.
+        if is_mouse_button_pressed(MouseButton::Right) {
+            self.arrasto_de = vec2(mx, my);
+            self.arrasto_virou_camera = false;
+        }
+        if is_mouse_button_down(MouseButton::Right)
+            && (vec2(mx, my) - self.arrasto_de).length() > render3d::ARRASTO_MINIMO
+        {
+            self.arrasto_virou_camera = true;
+        }
+        if !is_mouse_button_down(MouseButton::Right) {
+            self.arrasto_virou_camera = false;
+        }
+        if is_mouse_button_down(MouseButton::Middle) || self.arrasto_virou_camera {
             let p = vec2(mx, my);
             if let Some(anterior) = self.arrasto {
                 self.cam_yaw += (p.x - anterior.x) * 0.008;
+                // Arrastar pra baixo LEVANTA a camera. E' a leitura de quem
+                // esta' com o mundo na mao e nao com a cabeca: puxar o chao
+                // pra baixo e' olhar de mais alto.
+                mexeu += (p.y - anterior.y) * 0.004;
             }
             self.arrasto = Some(p);
         } else {
             self.arrasto = None;
         }
+        if mexeu != 0.0 {
+            self.cam_pitch_ajuste += mexeu;
+        }
+        // A roda escolhe o enquadramento; o ajuste da mao vai por cima. O
+        // recorte e' no fim, com a banda daquele zoom: afastar EMPURRA a
+        // camera pra cima em vez de recusar o zoom — recusar seria a roda
+        // parar de responder sem explicacao nenhuma na tela.
+        let base = render3d::pitch_do_zoom(self.cam_zoom);
+        let piso = render3d::pitch_min_para(self.cam_zoom);
+        self.cam_pitch = (base + self.cam_pitch_ajuste).clamp(piso, render3d::PITCH_MAX);
+        // Devolve o ajuste recortado, senao a mao acumula um desvio invisivel
+        // e a camera fica surda por meia volta de roda.
+        self.cam_pitch_ajuste = self.cam_pitch - base;
         let (_, roda) = mouse_wheel();
         if roda != 0.0 {
             self.cam_zoom = (self.cam_zoom - roda.signum() * 0.12)
@@ -534,8 +601,20 @@ impl Jogo {
         // aqui; o que sai no fio continua sendo direcao em espaco de mundo.
         dir = render3d::input_para_mundo(dir, self.cam_yaw);
         let mut buttons = 0u32;
-        if is_mouse_button_down(MouseButton::Right) {
+        // Direito parado defende; direito arrastando e' camera, e ai' ele
+        // NAO defende — girar a vista nao pode levantar o escudo.
+        if is_mouse_button_down(MouseButton::Right) && !self.arrasto_virou_camera {
             buttons |= shared::protocol::buttons::SECONDARY;
+        }
+        // O servidor detecta a BORDA de subida; aqui basta mandar o estado.
+        if is_key_down(KeyCode::Space) {
+            buttons |= shared::protocol::buttons::PULO;
+        }
+        // O arco comeca no quadro da tecla, sem esperar a ida e volta. So' a
+        // ANIMACAO: quem decide se o degrau de dois blocos foi vencido e' o
+        // servidor, e ele responde antes de o arco chegar ao topo.
+        if is_key_pressed(KeyCode::Space) {
+            self.world.pular_local();
         }
         self.input_seq += 1;
         self.envia(ClientMessage::Input {
@@ -588,7 +667,7 @@ impl Jogo {
         let f = |x: f32, z: f32| terreno.map_or(0.0, |t| t.altura(x, z));
         let apoio =
             terreno.map_or(0.0, |t| t.altura_apoio(centro.x, centro.y, shared::ENTITY_RADIUS));
-        let vista = render3d::Vista::nova(centro, self.cam_yaw, self.cam_zoom, apoio, &f);
+        let vista = render3d::Vista::nova(centro, self.cam_yaw, self.cam_zoom, self.cam_pitch, apoio, &f);
         set_camera(&vista.cam);
         match &self.terreno {
             Some(t) => {

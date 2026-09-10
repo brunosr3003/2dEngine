@@ -1,0 +1,429 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Panóptico — Tempest</title>
+<style>
+  :root {
+    --fundo: #0d1014; --painel: #151a21; --linha: #232b35;
+    --texto: #d8e0ea; --fraco: #7c8ba0; --ouro: #d9b45a;
+    --jogador: #4ea3ff; --mob: #e06a5a; --chefe: #f0c419; --morto: #5a6472;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fundo); color: var(--texto);
+    font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+    height: 100vh; display: grid; grid-template-columns: 260px 1fr 340px;
+  }
+  aside, section { overflow-y: auto; height: 100vh; }
+  aside { background: var(--painel); border-right: 1px solid var(--linha); }
+  section { background: var(--painel); border-left: 1px solid var(--linha); }
+  main { position: relative; overflow: hidden; }
+  h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .12em;
+    color: var(--fraco); margin: 0; padding: 12px 12px 6px;
+  }
+  .canal {
+    padding: 8px 12px; border-bottom: 1px solid var(--linha); cursor: pointer;
+  }
+  .canal:hover { background: #1b222b; }
+  .canal.ativo { background: #1e2a38; box-shadow: inset 3px 0 0 var(--jogador); }
+  .canal .id { font-weight: 700; }
+  .canal .sub { color: var(--fraco); font-size: 11px; }
+  .mudo { color: var(--mob); }
+  canvas { position: absolute; inset: 0; cursor: crosshair; }
+  #hud {
+    position: absolute; left: 10px; top: 10px; z-index: 2;
+    background: rgba(13,16,20,.82); border: 1px solid var(--linha);
+    padding: 6px 10px; border-radius: 4px; pointer-events: none;
+    white-space: pre; font-size: 11px; color: var(--fraco);
+  }
+  #busca {
+    width: 100%; background: #0d1014; border: 1px solid var(--linha);
+    color: var(--texto); padding: 6px 8px; font: inherit; border-radius: 3px;
+  }
+  .lista { padding: 0 12px 12px; }
+  .item {
+    display: flex; justify-content: space-between; gap: 8px; padding: 3px 0;
+    cursor: pointer; border-bottom: 1px solid #1a2028;
+  }
+  .item:hover { color: #fff; }
+  .item .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .v { color: var(--fraco); flex: none; }
+  dl { margin: 0; padding: 0 12px 16px; }
+  dt {
+    color: var(--fraco); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .08em; margin-top: 10px;
+  }
+  dd { margin: 2px 0 0; }
+  .barra { height: 6px; background: #222a34; border-radius: 3px; overflow: hidden; }
+  .barra > i { display: block; height: 100%; }
+  .tag {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    background: #232d3a; color: var(--fraco); font-size: 11px;
+  }
+  .vazio { padding: 12px; color: var(--fraco); }
+  label.f { display: block; padding: 2px 12px; color: var(--fraco); cursor: pointer; }
+</style>
+
+<aside>
+  <h2>Canais</h2>
+  <div id="canais"></div>
+  <h2>Filtros</h2>
+  <label class="f"><input type="checkbox" id="fJog" checked> jogadores</label>
+  <label class="f"><input type="checkbox" id="fMob" checked> mobs</label>
+  <label class="f"><input type="checkbox" id="fMortos"> incluir mortos</label>
+  <label class="f"><input type="checkbox" id="fRotas" checked> rotas e alvos</label>
+  <h2>Busca</h2>
+  <div class="lista"><input id="busca" placeholder="nome, id, nível…"></div>
+  <div class="lista" id="achados"></div>
+</aside>
+
+<main>
+  <canvas id="tela"></canvas>
+  <div id="hud"></div>
+</main>
+
+<section>
+  <h2>Inspeção</h2>
+  <div id="detalhe" class="vazio">Clique em alguém no mapa.</div>
+</section>
+
+<script>
+// ── O painel inteiro, sem framework ──────────────────────────────────────
+// Ele desenha algumas centenas de pontos por quadro sobre um PNG. Uma
+// biblioteca de componentes aqui custaria mais bytes que o mapa.
+
+const token = new URLSearchParams(location.search).get('token') || '';
+const tela = document.getElementById('tela');
+const ctx = tela.getContext('2d');
+
+let mundo = { canais: [] };
+let canalAtivo = null;
+let selecionado = null;      // {tipo, id}
+const mapas = {};            // zona -> Image
+
+// Camera do PAINEL, em unidades de MUNDO. O mapa e' desenhado em coordenada
+// de mundo e a camera so' translada e escala: assim o ponto de uma entidade
+// e' a posicao dela, sem conversao em lugar nenhum.
+let cam = { x: 0, z: 0, escala: 0 };   // 0 = ainda nao enquadrou
+let arrasto = null;
+
+// ── laco ────────────────────────────────────────────────────────────────
+async function puxar() {
+  try {
+    const r = await fetch('/api/mundo?token=' + encodeURIComponent(token));
+    if (r.ok) {
+      mundo = await r.json();
+      if (!canalAtivo && mundo.canais.length) canalAtivo = mundo.canais[0].id;
+      desenhaCanais();
+    }
+  } catch (e) { /* painel offline nao pode derrubar o painel */ }
+  setTimeout(puxar, 500);
+}
+puxar();
+
+function ativo() {
+  return mundo.canais.find(c => c.id === canalAtivo) || null;
+}
+function retrato() {
+  const c = ativo();
+  return c && c.retrato ? c.retrato : null;
+}
+
+// ── canais ──────────────────────────────────────────────────────────────
+function desenhaCanais() {
+  const el = document.getElementById('canais');
+  el.innerHTML = '';
+  for (const c of mundo.canais) {
+    const r = c.retrato;
+    const d = document.createElement('div');
+    d.className = 'canal' + (c.id === canalAtivo ? ' ativo' : '');
+    const carga = (c.tick_ms / 33.33 * 100).toFixed(0);
+    d.innerHTML = `<div class="id">${c.id}</div>
+      <div class="sub">${c.zona} · ${c.jogadores_db} jog · tick ${c.tick_ms.toFixed(2)}ms (${carga}%)</div>
+      <div class="sub">${r
+        ? `${r.jogadores.length} jog · ${r.mobs.length} mobs${r.imortal ? ' · <span class="tag">imortal</span>' : ''}`
+        : '<span class="mudo">sem retrato — canal mudo</span>'}</div>`;
+    d.onclick = () => { canalAtivo = c.id; selecionado = null; enquadra(); desenhaCanais(); };
+    el.appendChild(d);
+  }
+}
+
+// Enquadra a ilha inteira. E' a primeira vista que um painel de observacao
+// deve dar: onde esta' todo mundo, e so' depois quem e' cada um.
+function enquadra() {
+  const r = retrato();
+  if (!r) return;
+  cam.x = 0; cam.z = 0;
+  // `raio_blocos` esta' em COLUNAS; o bloco tem 0,5 unidade. Confundir os
+  // dois enquadrava o dobro da ilha, com ela minuscula no meio do vazio.
+  const meia = r.raio_blocos * 0.5;
+  const cabe = Math.min(tela.width, tela.height) / (meia * 2);
+  cam.escala = cabe * 0.95;
+}
+addEventListener('keydown', e => {
+  if (e.key === 'f' || e.key === 'F') enquadra();
+});
+
+// ── mapa ────────────────────────────────────────────────────────────────
+function imagemDaZona(zona) {
+  if (mapas[zona]) return mapas[zona];
+  const img = new Image();
+  img.src = '/api/mapa/' + encodeURIComponent(zona) + '.png?token=' + encodeURIComponent(token);
+  mapas[zona] = img;
+  return img;
+}
+
+function paraTela(x, z) {
+  return [
+    tela.width / 2 + (x - cam.x) * cam.escala,
+    tela.height / 2 + (z - cam.z) * cam.escala,
+  ];
+}
+function paraMundo(px, pz) {
+  return [
+    (px - tela.width / 2) / cam.escala + cam.x,
+    (pz - tela.height / 2) / cam.escala + cam.z,
+  ];
+}
+
+function quadro() {
+  const dpr = devicePixelRatio || 1;
+  const cx = tela.parentElement.clientWidth, cy = tela.parentElement.clientHeight;
+  if (tela.width !== cx * dpr || tela.height !== cy * dpr) {
+    tela.width = cx * dpr; tela.height = cy * dpr;
+    tela.style.width = cx + 'px'; tela.style.height = cy + 'px';
+  }
+  ctx.fillStyle = '#0d1014';
+  ctx.fillRect(0, 0, tela.width, tela.height);
+
+  const r = retrato();
+  if (!r) {
+    document.getElementById('hud').textContent = 'canal sem retrato';
+    return requestAnimationFrame(quadro);
+  }
+  if (!cam.escala) enquadra();
+
+  // O PNG cobre o mundo de -raio*BLOCO a +raio*BLOCO. BLOCO = 0,5.
+  const meio = r.raio_blocos * 0.5;
+  const img = imagemDaZona(r.zona);
+  if (img.complete && img.naturalWidth) {
+    const [x0, y0] = paraTela(-meio, -meio);
+    const lado = meio * 2 * cam.escala;
+    ctx.imageSmoothingEnabled = cam.escala < 1;
+    ctx.drawImage(img, x0, y0, lado, lado);
+  }
+
+  const verJog = document.getElementById('fJog').checked;
+  const verMob = document.getElementById('fMob').checked;
+  const verMortos = document.getElementById('fMortos').checked;
+  const verRotas = document.getElementById('fRotas').checked;
+
+  // Linhas primeiro: alvo e destino ficam ATRAS dos pontos, senao a linha
+  // corta o ponto e o olho perde quem e' quem.
+  if (verRotas) {
+    ctx.lineWidth = 1;
+    const porId = new Map();
+    for (const j of r.jogadores) porId.set(j.id, j);
+    for (const m of r.mobs) porId.set(m.id, m);
+    ctx.strokeStyle = 'rgba(224,106,90,.45)';
+    ctx.beginPath();
+    for (const m of r.mobs) {
+      // So' quem esta' PERSEGUINDO vira linha. Todo mob tem o jogador mais
+      // proximo em cache; desenhar isso ligaria a ilha inteira ao jogador e
+      // a tela diria "todo mundo vindo atras de voce", que e' falso.
+      if (!m.perseguindo || (m.estado === 'morto' && !verMortos)) continue;
+      const a = porId.get(m.alvo); if (!a) continue;
+      const p = paraTela(m.x, m.z), q = paraTela(a.x, a.z);
+      ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(78,163,255,.5)';
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    for (const j of r.jogadores) {
+      if (!j.destino) continue;
+      const p = paraTela(j.x, j.z), q = paraTela(j.destino[0], j.destino[1]);
+      ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  if (verMob) for (const m of r.mobs) {
+    if (m.estado === 'morto' && !verMortos) continue;
+    ponto(m, m.chefe ? 5 : 2.6,
+      m.estado === 'morto' ? 'var(--morto)' : m.chefe ? '#f0c419' : '#e06a5a');
+  }
+  if (verJog) for (const j of r.jogadores) ponto(j, 5, '#4ea3ff', j.nome);
+
+  const vivos = r.mobs.filter(m => m.estado !== 'morto').length;
+  document.getElementById('hud').textContent =
+    `${r.zona} · canal ${r.canal}\n` +
+    `${r.jogadores.length} jogadores · ${vivos} mobs vivos (${r.mobs.length - vivos} cadáveres)\n` +
+    `tick ${r.tick} · ${r.tempo_s.toFixed(0)}s · ${r.estorvos} troncos/matacões\n` +
+    `zoom ${cam.escala.toFixed(2)} · ${cam.x.toFixed(0)}, ${cam.z.toFixed(0)} · F enquadra`;
+
+  requestAnimationFrame(quadro);
+}
+
+function ponto(e, raio, cor, rotulo) {
+  const [x, y] = paraTela(e.x, e.z);
+  if (x < -20 || y < -20 || x > tela.width + 20 || y > tela.height + 20) return;
+  const sel = selecionado && selecionado.id === e.id;
+  ctx.beginPath();
+  ctx.arc(x, y, raio * (sel ? 1.8 : 1), 0, 6.284);
+  ctx.fillStyle = cor.startsWith('var') ? getComputedStyle(document.body).getPropertyValue(cor.slice(4, -1)) : cor;
+  ctx.fill();
+  if (sel) {
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x, y, raio * 3, 0, 6.284); ctx.stroke();
+  }
+  // Vida baixa vira anel vermelho: e' a informacao que decide se alguem
+  // precisa de atencao AGORA, e ela nao pode exigir um clique.
+  if (e.hp_max > 0 && e.hp > 0 && e.hp / e.hp_max < 0.35) {
+    ctx.strokeStyle = '#ff5252'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x, y, raio + 2.5, 0, 6.284); ctx.stroke();
+  }
+  if (rotulo && cam.escala > 0.35) {
+    ctx.fillStyle = 'rgba(216,224,234,.9)';
+    ctx.font = (11 * (devicePixelRatio || 1)) + 'px ui-monospace, monospace';
+    ctx.fillText(rotulo, x + raio + 4, y + 4);
+  }
+}
+requestAnimationFrame(quadro);
+
+// ── interacao ───────────────────────────────────────────────────────────
+tela.addEventListener('mousedown', e => { arrasto = { x: e.clientX, y: e.clientY, moveu: false }; });
+addEventListener('mouseup', e => {
+  if (arrasto && !arrasto.moveu) clique(e);
+  arrasto = null;
+});
+addEventListener('mousemove', e => {
+  if (!arrasto) return;
+  const dx = e.movementX, dy = e.movementY;
+  if (Math.abs(e.clientX - arrasto.x) + Math.abs(e.clientY - arrasto.y) > 3) arrasto.moveu = true;
+  cam.x -= dx * (devicePixelRatio || 1) / cam.escala;
+  cam.z -= dy * (devicePixelRatio || 1) / cam.escala;
+});
+tela.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = tela.getBoundingClientRect();
+  const [mx, mz] = paraMundo((e.clientX - r.left) * (devicePixelRatio || 1),
+                             (e.clientY - r.top) * (devicePixelRatio || 1));
+  const antes = cam.escala;
+  cam.escala = Math.min(14, Math.max(0.08, cam.escala * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+  // Zoom no PONTEIRO e nao no centro: quem esta' olhando um bosque nao quer
+  // que aproximar leve a vista pra outro lugar.
+  const k = 1 - antes / cam.escala;
+  cam.x += (mx - cam.x) * k;
+  cam.z += (mz - cam.z) * k;
+}, { passive: false });
+
+function clique(ev) {
+  const r = retrato(); if (!r) return;
+  const b = tela.getBoundingClientRect();
+  const [mx, mz] = paraMundo((ev.clientX - b.left) * (devicePixelRatio || 1),
+                             (ev.clientY - b.top) * (devicePixelRatio || 1));
+  const alcance = 14 / cam.escala;   // 14 pixels, em unidades de mundo
+  let melhor = null, dist = alcance * alcance;
+  const olha = (lista, tipo) => {
+    for (const e of lista) {
+      const d = (e.x - mx) ** 2 + (e.z - mz) ** 2;
+      if (d < dist) { dist = d; melhor = { tipo, id: e.id }; }
+    }
+  };
+  olha(r.jogadores, 'jogador');
+  olha(r.mobs, 'mob');
+  selecionado = melhor;
+  desenhaDetalhe();
+}
+
+// ── detalhe ─────────────────────────────────────────────────────────────
+function achaSelecionado() {
+  const r = retrato(); if (!r || !selecionado) return null;
+  const lista = selecionado.tipo === 'jogador' ? r.jogadores : r.mobs;
+  const e = lista.find(x => x.id === selecionado.id);
+  return e ? { e, tipo: selecionado.tipo } : null;
+}
+
+function barra(v, max, cor) {
+  const p = max > 0 ? Math.max(0, Math.min(1, v / max)) * 100 : 0;
+  return `<div class="barra"><i style="width:${p}%;background:${cor}"></i></div>
+          <div style="color:var(--fraco);font-size:11px">${v} / ${max}</div>`;
+}
+
+function desenhaDetalhe() {
+  const el = document.getElementById('detalhe');
+  const achado = achaSelecionado();
+  if (!achado) {
+    el.className = 'vazio';
+    el.textContent = 'Clique em alguém no mapa.';
+    return;
+  }
+  el.className = '';
+  const { e, tipo } = achado;
+  const linhas = [];
+  const campo = (k, v) => linhas.push(`<dt>${k}</dt><dd>${v}</dd>`);
+
+  campo('nome', `<b>${e.nome}</b> <span class="tag">${tipo}</span> <span class="tag">#${e.id}</span>`);
+  campo('estado', `<span class="tag">${e.estado}</span>`);
+  campo('nível', e.nivel);
+  campo('vida', barra(e.hp, e.hp_max, '#57c26a'));
+  if (tipo === 'jogador') {
+    campo('mana', barra(e.mp, e.mp_max, '#4ea3ff'));
+    campo('vigor', barra(e.stamina, e.stamina_max, '#d9b45a'));
+    campo('conta', e.conta ?? '—');
+    campo('sessão', e.sessao);
+    campo('xp / ouro', `${e.xp} xp · <span style="color:var(--ouro)">${e.ouro} ouro</span>`);
+    campo('dano / defesa', `${e.dano} / ${e.defesa}`);
+    campo('arma', e.arma ?? '—');
+    campo('rota', e.rota ? `${e.rota} pontos → ${e.destino[0].toFixed(1)}, ${e.destino[1].toFixed(1)}` : '—');
+  } else {
+    campo('espécie', `${e.nome} <span class="tag">kind ${e.kind}</span>${e.chefe ? ' <span class="tag" style="color:var(--chefe)">CHEFE</span>' : ''}`);
+    campo('dano / defesa', `${e.dano} / ${e.defesa}`);
+    campo('alcance / detecção', `${e.alcance.toFixed(1)} / ${e.deteccao.toFixed(1)}`);
+    campo('casa', `${e.casa[0].toFixed(0)}, ${e.casa[1].toFixed(0)} · coleira ${e.coleira.toFixed(0)}`);
+    campo('xp que dá', e.xp);
+  }
+  if (tipo === 'mob') campo('perseguindo', e.perseguindo ? 'sim' : 'não — alvo só em cache');
+  campo('alvo', e.alvo != null ? `#${e.alvo} <a href="#" onclick="irPara(${e.alvo});return false">ver</a>` : '—');
+  campo('posição', `${e.x.toFixed(2)}, ${e.z.toFixed(2)} · altura ${e.y.toFixed(2)}`);
+  campo('velocidade', `${Math.hypot(e.vx, e.vz).toFixed(2)} u/s`);
+  el.innerHTML = '<dl>' + linhas.join('') + '</dl>';
+}
+setInterval(desenhaDetalhe, 500);
+
+window.irPara = (id) => {
+  const r = retrato(); if (!r) return;
+  const e = [...r.jogadores, ...r.mobs].find(x => x.id === id);
+  if (!e) return;
+  selecionado = { tipo: r.jogadores.includes(e) ? 'jogador' : 'mob', id };
+  cam.x = e.x; cam.z = e.z;
+  desenhaDetalhe();
+};
+
+// ── busca ───────────────────────────────────────────────────────────────
+document.getElementById('busca').addEventListener('input', busca);
+setInterval(busca, 1000);
+function busca() {
+  const q = document.getElementById('busca').value.trim().toLowerCase();
+  const el = document.getElementById('achados');
+  const r = retrato();
+  if (!r) { el.innerHTML = ''; return; }
+  const todos = [
+    ...r.jogadores.map(j => ({ ...j, tipo: 'jogador' })),
+    ...r.mobs.map(m => ({ ...m, tipo: 'mob' })),
+  ];
+  const bate = q
+    ? todos.filter(e =>
+        e.nome.toLowerCase().includes(q) ||
+        String(e.id) === q ||
+        String(e.nivel) === q)
+    : r.jogadores.map(j => ({ ...j, tipo: 'jogador' }));
+  el.innerHTML = bate.slice(0, 60).map(e =>
+    `<div class="item" onclick="irPara(${e.id})">
+       <span class="n" style="color:${e.tipo === 'jogador' ? 'var(--jogador)' : 'var(--mob)'}">${e.nome}</span>
+       <span class="v">n${e.nivel} · ${e.estado}</span>
+     </div>`).join('') || '<div class="vazio">nada</div>';
+}
+</script>

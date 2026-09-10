@@ -807,9 +807,15 @@ pub struct Session {
     /// enquanto houver alvo vivo no alcance — sem botao, como em MMO de
     /// target. `None` = sem alvo, sem ataque.
     pub target: Option<EntityId>,
-    /// Rota do toque no chao, calculada pelo SERVIDOR. Cada ponto e' um
-    /// destino intermediario; o desvio fino continua com `mover_e_deslizar`.
-    pub rota: std::collections::VecDeque<Vec2>,
+    /// Rota do toque no chao, calculada pelo SERVIDOR. O seguidor tambem
+    /// DESISTE de ponto inalcancavel — sem isso o boneco empurra a quina pra
+    /// sempre. Ver `shared::terreno::SeguidorDeRota`.
+    pub rota: shared::terreno::SeguidorDeRota,
+    /// `sim_time_s` ate' quando o corpo esta' no ar. Enquanto isso, o degrau
+    /// que ele aceita sobe de um bloco pra dois.
+    pub pulo_ate: f32,
+    /// Quando o proximo pulo fica disponivel.
+    pub pulo_pronto_em: f32,
     /// `sim_time_s` do ultimo pedido de rota, pro limite de frequencia.
     pub rota_pedida_em: f32,
     /// Ultimo ESTADO enviado por entidade nesta sessao. E' a base do delta.
@@ -3566,7 +3572,7 @@ impl GameWorld {
                 return;
             }
             s.rota_pedida_em = agora;
-            s.rota.clear();
+            s.rota.limpa();
         }
         if !destino.is_finite() || pos_atual.distance(destino) > ROTA_ALCANCE {
             return;
@@ -3578,7 +3584,7 @@ impl GameWorld {
             pos_atual.x, pos_atual.y, destino.x, destino.y, rota.len()
         );
         if let Some(s) = self.sessions.get_mut(&sid) {
-            s.rota = rota.into_iter().collect();
+            s.rota = shared::terreno::SeguidorDeRota::nova(rota, destino);
         }
     }
 
@@ -4732,7 +4738,9 @@ impl GameWorld {
                 handle,
                 entrada_pendente: None,
                 target: None,
-                rota: std::collections::VecDeque::new(),
+                rota: shared::terreno::SeguidorDeRota::default(),
+                pulo_ate: 0.0,
+                pulo_pronto_em: 0.0,
                 rota_pedida_em: -1e9,
                 last_sent: HashMap::new(),
                 entity: None,
@@ -5005,7 +5013,7 @@ impl GameWorld {
                     // ganha do automatico — nada irrita mais que o boneco
                     // insistir em ir pra onde o jogador desistiu de ir.
                     if frame.move_dir.length_squared() > 0.01 {
-                        s.rota.clear();
+                        s.rota.limpa();
                     }
                     s.pending_input = Some(frame);
                 }
@@ -6874,7 +6882,11 @@ impl GameWorld {
         // (entity_id, skill_id). Depois do loop de sessoes, dropa
         // pending_delayed_aoe deles e broadcasta SkillCastCancel pra clientes.
         let mut cancelled_cast_owners: Vec<(EntityId, u32)> = Vec::new();
-        for session in self.sessions.values_mut() {
+        // Quem travou seguindo rota: o A* roda DEPOIS do laco, que aqui
+        // `self` esta' emprestado pelas sessoes.
+        let mut refazer_rota: Vec<(SessionId, Vec2)> = Vec::new();
+        for (sid_da_sessao, session) in self.sessions.iter_mut() {
+            let sid_da_sessao = *sid_da_sessao;
             if session.attack_cooldown > 0.0 { session.attack_cooldown -= dt; }
             if session.dash_cooldown > 0.0 { session.dash_cooldown -= dt; }
 
@@ -6989,6 +7001,20 @@ impl GameWorld {
                                  && (session.prev_buttons & buttons::SECONDARY == 0);
             if pressed_primary   { session.last_press_primary_at   = self.sim_time_s; }
             if pressed_secondary { session.last_press_secondary_at = self.sim_time_s; }
+            // ── PULO ──
+            // Borda de subida, e nao "botao segurado": pulo contínuo enquanto
+            // se segura a tecla vira voo rasante em terreno de degraus.
+            let pressed_pulo = (frame.buttons & buttons::PULO != 0)
+                && (session.prev_buttons & buttons::PULO == 0);
+            if pressed_pulo
+                && self.sim_time_s >= session.pulo_pronto_em
+                && !session.downed
+                && self.sim_time_s >= session.stagger_until
+            {
+                session.pulo_ate = self.sim_time_s + shared::PULO_DURACAO;
+                session.pulo_pronto_em =
+                    self.sim_time_s + shared::PULO_DURACAO + shared::PULO_ESPERA;
+            }
             session.prev_buttons = frame.buttons;
             // RMB held = defesa ativa. Drena stamina apenas no hit. Disponivel
             // pra TODAS as armas — quem tem escudo no offhand bloqueia "fisico"
@@ -7019,15 +7045,18 @@ impl GameWorld {
                 .get(&session.entity_id)
                 .copied()
                 .unwrap_or(Vec2::ZERO);
-            if frame.move_dir.length_squared() <= 0.01 && !session.rota.is_empty() {
-                while let Some(&alvo) = session.rota.front() {
-                    if aqui.distance(alvo) <= 0.6 {
-                        session.rota.pop_front();
-                    } else {
-                        frame.move_dir =
-                            (alvo - aqui).try_normalize().unwrap_or(Vec2::ZERO);
-                        break;
-                    }
+            let mut veio_da_rota = false;
+            if frame.move_dir.length_squared() <= 0.01 && !session.rota.vazia() {
+                if let Some(dir) = session.rota.direcao(aqui) {
+                    frame.move_dir = dir;
+                    veio_da_rota = true;
+                }
+                // Rota velha nao se remenda, se REFAZ. O seguidor avisa quando
+                // para de se aproximar; quem sabe achar caminho e' o A*, e ele
+                // vai achar a partir de onde o corpo esta' agora — que nao e'
+                // mais onde estava quando a rota saiu.
+                if session.rota.travado() {
+                    refazer_rota.push((sid_da_sessao, session.rota.destino()));
                 }
             }
             let dir = if in_hurt || session.downed || staggered {
@@ -7037,6 +7066,31 @@ impl GameWorld {
             } else {
                 frame.move_dir
             };
+            // ── PULO AUTOMATICO NA ROTA ──
+            //
+            // O A* pode escolher um trecho que so' se vence pulando (ele paga
+            // um custo a mais por isso, entao e' excecao). Quem anda no
+            // teclado aperta espaco; quem esta' seguindo rota nao tem mao
+            // nenhuma no teclado, e sem isto o boneco iria bater na quina ate'
+            // a paciencia do seguidor acabar.
+            if veio_da_rota && dir.length_squared() > 0.01 {
+                if let Some(ilha) = self.ilha.as_ref() {
+                    // A pergunta e' feita ao proprio mover: "pular me faria
+                    // andar mais que andar?". Qualquer outra formulacao ja'
+                    // discordou dele e deixou o corpo empurrando a quina.
+                    let passo = dir.normalize_or_zero() * shared::PLAYER_SPEED;
+                    if ilha.precisa_pular(aqui, passo, dt, ENTITY_RADIUS)
+                        && self.sim_time_s >= session.pulo_pronto_em
+                        && !session.downed
+                        && self.sim_time_s >= session.stagger_until
+                    {
+                        session.pulo_ate = self.sim_time_s + shared::PULO_DURACAO;
+                        session.pulo_pronto_em =
+                            self.sim_time_s + shared::PULO_DURACAO + shared::PULO_ESPERA;
+                    }
+                }
+            }
+
             // Quick Draw passive: rastreia ultimo movimento. Se mover (dir != 0),
             // atualiza last_movement_at_s e reseta quickdraw_consumed pra liberar
             // o crit da proxima "1ª flecha".
@@ -7055,7 +7109,11 @@ impl GameWorld {
                 const CLIMB_LEAP_DURATION: f32 = 0.5;  // = LEAP_DURATION (pass E.1)
                 const CLIMB_COOLDOWN: f32 = 0.2;       // anti double-fire
                 let now_s = self.sim_time_s;
-                let busy = in_hurt || session.downed || staggered
+                // Em ilha nao existe: o relevo e' campo de altura, nao tem
+                // tile WALL pra escalar, e o pulo de verdade ja' cobre o caso.
+                // Deixar rodando so' abriria porta pra um leap sem colisao.
+                let busy = self.ilha.is_some()
+                    || in_hurt || session.downed || staggered
                     || session.leap_until > now_s
                     || now_s < session.dash_until
                     || session.casting_until > now_s
@@ -7413,6 +7471,16 @@ impl GameWorld {
                 combo_step,
                 dash_started: wants_dash,
             });
+        }
+
+        // Rota nova pra quem travou. Fora do laco porque o A* precisa da ilha
+        // e o laco esta' com as sessoes emprestadas.
+        //
+        // `handle_mover_para` ja' tem o limite de um pedido por sessao a cada
+        // 0,2 s, entao um corpo genuinamente preso pede rota cinco vezes por
+        // segundo e nao trinta.
+        for (sid, destino) in refazer_rota {
+            self.handle_mover_para(sid, destino);
         }
 
         // Cleanup pos-loop: drop DelayedAoe pendente dos casters que cancelaram
@@ -8281,6 +8349,30 @@ impl GameWorld {
         // entra com zero porque uma horda de vinte lobos, cada um cedendo
         // metade, carrega o personagem pelo mapa — e quem joga sente que
         // perdeu o controle do boneco. Ele empurra os mobs; eles nao a ele.
+        // Quem esta' no ar, e QUE ALTURA o arco ja' alcancou.
+        //
+        // O degrau que o corpo aceita e' o que a altura do pulo cobre NESTE
+        // instante — nao o degrau maximo durante o pulo inteiro. E' a
+        // diferenca entre subir e colar: liberando tres blocos desde o
+        // primeiro quadro, o corpo se transporta pro piso de cima assim que
+        // encosta nele, sem ter subido. Agora ele sobe, e o barranco alto so'
+        // e' vencido perto do pico.
+        let no_ar: std::collections::HashMap<EntityId, i32> = self
+            .sessions
+            .values()
+            .filter(|s| s.pulo_ate > self.sim_time_s)
+            .map(|s| {
+                let t = shared::PULO_DURACAO - (s.pulo_ate - self.sim_time_s);
+                let alcanca = (shared::altura_do_pulo(t) / shared::terreno::BLOCO).floor() as i32;
+                (
+                    s.entity_id,
+                    alcanca.clamp(
+                        shared::terreno::DEGRAU_BLOCOS,
+                        shared::terreno::PULO_BLOCOS,
+                    ),
+                )
+            })
+            .collect();
         let mut corpos: Vec<(Entity, Vec2, f32)> = Vec::new();
         for (e, (pos, vel, _)) in self
             .ecs
@@ -8288,12 +8380,18 @@ impl GameWorld {
             .iter()
         {
             let mobilidade = if self.ecs.get::<&PlayerTag>(e).is_ok() { 0.0 } else { 1.0 };
+            let degrau = self
+                .ecs
+                .get::<&NetId>(e)
+                .ok()
+                .and_then(|n| no_ar.get(&n.0).copied())
+                .unwrap_or(shared::terreno::DEGRAU_BLOCOS);
             // Numa ilha a parede nao e' tile, e' desnivel: quem barra e' a
             // regra de degrau contra o campo de altura.
             corpos.push((
                 e,
                 match &self.ilha {
-                    Some(i) => i.mover_e_deslizar(pos.0, vel.0, dt, ENTITY_RADIUS),
+                    Some(i) => i.mover_com_degrau(pos.0, vel.0, dt, ENTITY_RADIUS, degrau),
                     None => self.map.move_and_slide(pos.0, vel.0, dt, ENTITY_RADIUS),
                 },
                 mobilidade,
@@ -9952,6 +10050,14 @@ impl GameWorld {
             .map(|(_, (net, m))| (net.0, (m.boat_eid, m.local_pos, m.station)))
             .collect();
 
+        // Quem esta' no ar neste tick, pra marcar a flag no estado.
+        let no_ar_agora: std::collections::HashSet<EntityId> = self
+            .sessions
+            .values()
+            .filter(|s| s.pulo_ate > self.sim_time_s)
+            .map(|s| s.entity_id)
+            .collect();
+
         // ── Estado do tick ────────────────────────────────────────────────
         //
         // Uma varredura do ECS produz META (dado estavel: tipo, nome, hp_max)
@@ -9993,6 +10099,11 @@ impl GameWorld {
                 let mut flags = 0u8;
                 if etag.map_or(false, |t| t.is_boss) {
                     flags |= shared::ent_flags::BOSS;
+                }
+                // No ar: o cliente desenha o arco. Quem decide que o pulo
+                // aconteceu e' este lado.
+                if no_ar_agora.contains(&net.0) {
+                    flags |= shared::ent_flags::PULANDO;
                 }
                 let meta = EntityMeta {
                     id: net.0,

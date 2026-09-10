@@ -302,6 +302,10 @@ pub mod buttons {
     /// Shift held = sprint (multiplica speed por SPRINT_SPEED_MULT enquanto
     /// drena stamina). Ignorado se stamina<=0 ou defendendo.
     pub const SPRINT:    u32 = 1 << 4;
+    /// Pulo. Vale por SUBIDA, nao por altura: o que ele muda e' o degrau
+    /// maximo que o corpo aceita — de um bloco pra dois. O arco vertical e'
+    /// so' o cliente contando o que o servidor ja' decidiu.
+    pub const PULO:      u32 = 1 << 5;
 }
 
 /// Servidor -> Cliente.

@@ -339,6 +339,9 @@ pub mod ent_flags {
     pub const DOWNED: u8 = 1 << 1;
     pub const CASTING: u8 = 1 << 2;
     pub const BOSS: u8 = 1 << 3;
+    /// No ar. O cliente desenha o arco; quem decide se o pulo aconteceu e'
+    /// o servidor.
+    pub const PULANDO: u8 = 1 << 4;
 }
 
 /// Precisao da posicao no wire: 1/16 de tile.

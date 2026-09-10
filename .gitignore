@@ -56,3 +56,7 @@ assets/manaseed_raw/
 # Cache do campo de altura das ilhas: derivado da SEMENTE, regenerado em ~3s
 # no primeiro boot. 20 MB por ilha grande e sem valor nenhum no historico.
 /data/ilhas
+
+# Bytecode do Python (as ferramentas de arte sao scripts, nao pacote)
+__pycache__/
+*.pyc

@@ -30,7 +30,7 @@ com número.
 - **`postcard`** em `protocol::{encode, decode}`. Não é auto-descritivo: não
   carrega nome de campo, inteiro vai em varint, `Option::None` custa 1 byte.
 - **Enums tagueados por fora.** O `#[serde(tag = "type")]` existia pro
-  Newtonsoft.Json do cliente Unity. Enum tagueado por dentro escreve o *nome* da
+  Newtonsoft.Json do cliente Unity da epoca (morto; hoje o wire e' postcard). Enum tagueado por dentro escreve o *nome* da
   variante e exige `deserialize_any` na volta — que o postcard nunca vai
   implementar. `Handshake` caiu de 17 pra 8 bytes.
 - **Sem `skip_serializing_if` em tipo de wire.** Ele muda a quantidade de campos
@@ -88,7 +88,7 @@ chão marca o alvo. Alvo que sai do mundo deixa de ser alvo.
 ## Snapshot magro
 
 `EntitySnapshot` tinha **58 campos**. O cliente 3D usa 7. A maioria existia pro
-paper doll 2D do Unity (`visual`, `skin_preset`, `attack_anim`, `combo_step`,
+paper doll 2D de entao (`visual`, `skin_preset`, `attack_anim`, `combo_step`,
 `hurt_dir`, `sprite_id`), pro combate de ação (`aim_dir`, `is_crit`,
 `poise_active`, `defending`) ou pra amarração dos barcos (20 campos de leme,
 vela, âncora, estação).

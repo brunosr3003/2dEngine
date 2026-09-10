@@ -397,7 +397,7 @@ O cliente tem as telas: **servidores** (agrupados, com online e nº de canais),
 **canais** do servidor escolhido (com barra de lotação e marca de fila),
 **login**, **personagens** e **fila** com a posição.
 
-São ~200 linhas de widgets de modo imediato em `ui.rs`. O cliente Unity tinha
+São ~200 linhas de widgets de modo imediato em `ui.rs`. O cliente Unity (morto) tinha
 24.491 linhas de uGUI pra fazer menos que isso.
 
 A lista vem de `/api/channels` por HTTP cru sobre `TcpStream`, sem dependência
