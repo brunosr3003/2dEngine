@@ -44,36 +44,49 @@ diferentes.
             │     │   cabeça      8   (1/5)
             └──┬──┘   pescoço     1
           ┌────┴────┐
-          │         │  torso      12   (com a bacia)
+          │         │  torso      13   (com a bacia)
       ┌─┐ │         │ ┌─┐
       │ │ └──┬───┬──┘ │ │  braços 17  (ombro → ponta da mão)
       │ │    │   │    │ │
       └─┘    │   │    └─┘
-             │   │        pernas  21
+             │   │        pernas  20
              │   │
              └┘ └┘        ────────────
                           total   42 voxels = 1,68 u
-   ombros: 16 voxels (dois palmos de cabeça)
+   ombros: 18 voxels — o diâmetro de colisão (0,70 u)
 ```
 
-**Pose de repouso: braços caídos, 10° afastados do corpo** — não a pose T de
-hoje. Numa peça rígida a pose de repouso é a pose parada: com os braços para
-baixo, o jogo parado não precisa girar nada, e o corte entre braço e torso
-fica limpo.
+**Pose de repouso: braços retos pra baixo, colados ao torso** — não a pose T
+de hoje. Numa peça rígida a pose de repouso é a pose parada: com os braços
+para baixo, o jogo parado não precisa girar nada, e o corte entre braço e
+torso fica limpo.
 
-### PROPOSTA — seis peças rígidas
+### DECIDIDO — dez peças rígidas: o membro é dividido
 
 ```
-cabeça · torso · braço-D · braço-E · perna-D · perna-E
+cabeça · torso · braço-D · antebraço-D · braço-E · antebraço-E
+                 coxa-D  · canela-D    · coxa-E  · canela-E
 ```
 
 Voxel não se deforma: anima girando peça inteira em volta de um pivô
-(pescoço, ombros, quadris). A mão faz parte do braço.
+(pescoço, ombros, cotovelos, quadris, joelhos). A mão faz parte do antebraço;
+o pé, da canela.
 
-**ABERTO — cotovelo e joelho.** Membro inteiro (seis peças, estilo Minecraft) é
-o que cabe no playtest. Dividir em braço e antebraço (dez peças) dá golpe e
-mira muito mais expressivos — mas o artista corta cada peça de novo, então a
-decisão tem que vir antes da arte final, não depois.
+**Por que dividido e não inteiro:** o que o código consegue animar sozinho.
+Um bloco do terreno tem 0,5 u — **~12 voxels do personagem, uns 60% da
+perna** — e o movimento sobe degrau de um bloco o tempo todo. Com perna
+inteira o pé do degrau de cima entra no bloco ou flutua; com joelho, o código
+dobra a perna e planta cada pé no seu degrau (IK de dois ossos, conta pura,
+nenhum animador). O mesmo joelho dá o agachamento do pouso e a perna dobrada
+de quem está montado; o cotovelo deixa o código apontar as pistolas pro alvo
+em qualquer direção, sem uma pose por ângulo.
+
+**O custo, declarado:** dez transformações por corpo em vez de seis
+(desprezível pra ~400 triângulos), armadura em 30 peças em vez de 18, e a
+**tampa** das juntas — ver `docs/ARTE_DO_PERSONAGEM.md`.
+
+**As medidas exatas, os nomes e o molde pra esculpir** estão em
+`docs/ARTE_DO_PERSONAGEM.md` e `tools/moldes/corpo_molde.vox`.
 
 ### PROPOSTA — os encaixes
 
@@ -81,8 +94,8 @@ Não são peças do corpo: são pontos onde outra coisa se prende e segue a peç
 
 | encaixe | preso em | quem usa |
 |---|---|---|
-| `mão-D` | braço-D | espada, katana, pistola, anel |
-| `mão-E` | braço-E | escudo, pistola |
+| `mão-D` | antebraço-D | espada, katana, pistola, anel |
+| `mão-E` | antebraço-E | escudo, pistola |
 | `cintura` | torso | bainha, coldre |
 | `costas` | torso | manto do guerreiro, manto do mago |
 
@@ -100,8 +113,10 @@ O manto é uma peça rígida que balança com a velocidade (procedural, custo ze
 
 ### A armadura
 
-Como o corpo anima por peça, **a armadura tem que vir cortada nas mesmas seis
-peças**: uma casca que se encaixa sobre cada uma e gira junto.
+Como o corpo anima por peça, **a armadura tem que vir cortada nas mesmas dez
+peças** — e cada peça de armadura SUBSTITUI a peça do corpo inteira, em vez
+de ser uma casca por cima: sem geometria escondida desenhada à toa, e sem
+face de corpo brigando com face de armadura.
 
 | peso | cabeça | torso | braços | pernas | silhueta |
 |---|---|---|---|---|---|
@@ -109,7 +124,7 @@ peças**: uma casca que se encaixa sobre cada uma e gira junto.
 | **média** | capuz ou tiara | gibão | ombreira pequena | caneleira | média |
 | **pesada** | elmo (esconde o cabelo) | placa | ombreira larga | grevas | larga, quadrada |
 
-Três pesos × seis peças = **18 peças de armadura**, no máximo. Tier não é peça:
+Três pesos × dez peças = **30 peças de armadura**, no máximo. Tier não é peça:
 é **troca de paleta**.
 
 ### O tier é uma cor, não um modelo
@@ -152,14 +167,15 @@ Três fontes, em ordem de custo:
 
 Sai da velocidade e das bandeiras que o servidor já manda. Nunca dessincroniza
 do movimento — que é o defeito clássico de clipe gravado — e vale pra todo
-modelo com as seis peças, inclusive humanoide de mob.
+modelo com as dez peças, inclusive humanoide de mob.
 
 | estado | de onde vem | o que mexe |
 |---|---|---|
 | parado | velocidade ~0 | torso sobe e desce 1 voxel (respiração) |
 | andar | velocidade | pernas e braços em seno, fase pela distância andada |
 | pulo | `PULANDO` + arco que o cliente já desenha | encolhe na subida, abre os braços na queda |
-| pouso / degrau | fim do arco / subida | agacha 0,1 s |
+| pouso | fim do arco | agacha dobrando os joelhos, 0,1 s |
+| degrau | altura do chão sob cada pé | cada pé plantado no seu bloco, joelho dobrado (IK de dois ossos) |
 | tomar dano | vida caiu | tranco do torso pra trás, 0,12 s |
 | caído | `DOWNED` | corpo inteiro deitado |
 | morte | vida 0 | cai pra trás e fica |
@@ -169,7 +185,7 @@ modelo com as seis peças, inclusive humanoide de mob.
 ### 2. Pose-chave — tabela, não quadro
 
 O que o corpo faz por INTENÇÃO: ataque e skill. Uma pose é **uma rotação por
-peça** (seis números de três eixos); o cliente interpola entre elas. Não se
+peça** (dez rotações); o cliente interpola entre elas. Não se
 desenha quadro nenhum.
 
 **Ataque básico:** um combo de três golpes por conjunto, três poses por golpe
@@ -269,6 +285,14 @@ bytes, vai no nascimento da entidade e quando algo muda. Substitui a
 **JÁ É — o leitor de `.vox` só entende uma peça por arquivo**, e fica com a
 maior. O rig precisa de mais que isso.
 
+**JÁ É — e ele ESPELHA o modelo.** A malha manda o voxel `(x, y, z)` pro mundo
+`(x, z, y)`: trocar dois eixos é reflexo, não rotação. Tudo que foi modelado
+na mão direita aparece na esquerda. O importador de peças usa o mapa certo
+(`(−x, z, y)`, que é rotação) — assim a regra pra quem modela fica a natural:
+a direita do personagem é o lado de X maior. E ele também **não recentraliza
+cada peça**: a malha de hoje centra cada modelo na própria caixa, o que
+desmontaria o corpo.
+
 **PROPOSTA — um arquivo por conjunto de peças, com os objetos NOMEADOS no
 MagicaVoxel.** O artista vê o personagem inteiro e move as peças juntas; o
 cliente lê o grafo de cena (`nTRN`/`nSHP`) e separa por nome:
@@ -294,27 +318,27 @@ bots na ilha.
 
 | etapa | entrega | arte nova? |
 |---|---|---|
-| **1. rig** | leitor de cena do `.vox`; corpo de rascunho nas seis peças; desenho por peça; locomoção procedural | não — rascunho gerado por script, já no formato final |
+| **1. rig** | leitor de cena do `.vox` (sem espelhar, sem recentralizar); corpo nas dez peças; desenho por peça; locomoção procedural; pé no degrau | não — o molde já está no formato final |
 | **2. fio + primeiro ataque** | byte `acao`; aparência na meta; combo da espada; **visualizador de pose** que recarrega a tabela a quente | não |
 | **3. os quatro conjuntos** | as 8 armas; os 4 combos; as 12 skills | armas |
-| **4. armadura e cabeça** | 3 pesos × 6 peças; tier por paleta; rosto, cabelo, pele; criação de personagem | armadura, cabeça |
+| **4. armadura e cabeça** | 3 pesos × 10 peças; tier por paleta; rosto, cabelo, pele; criação de personagem | armadura, cabeça |
 | **5. mobs** | criaturas simplificadas com marcha procedural; humanoides nas áreas | criaturas vêm do estoque |
 | **6. montaria** | cervo/tigre com sela; pose montado | vem do estoque |
 
-O **rascunho gerado por script** é o que destrava as etapas 1–3 sem esperar
-arte: um corpo de caixas em 1:5, já cortado e nomeado no formato final. A arte
-de verdade entra depois, **substituindo o arquivo** — nenhuma linha de código
-muda quando ela chega.
+O **molde** (`tools/moldes/corpo_molde.vox`, gerado por
+`tools/voxrender/molde_corpo.py`) é o que destrava as etapas 1–3 sem esperar
+arte: o corpo em caixas, já cortado, nomeado e com as tampas das juntas. A
+arte de verdade entra depois, **substituindo o arquivo** — nenhuma linha de
+código muda quando ela chega.
 
 ## O que ainda depende de você
 
-1. **Cotovelo e joelho** — membro inteiro (6 peças) ou dividido (10)? Decide
-   como o artista corta, então vem antes da arte final.
-2. **Arma fora de combate** — sempre na mão, ou guardada (a katana na bainha é
+1. **Arma fora de combate** — sempre na mão, ou guardada (a katana na bainha é
    a identidade do conjunto)?
-3. **Correr existe?** O protocolo tem o bit `SPRINT` e o servidor tem
+2. **Correr existe?** O protocolo tem o bit `SPRINT` e o servidor tem
    `SPRINT_SPEED_MULT`, mas nada usa. Se existir, é mais um ciclo procedural.
-4. **Quem faz a arte final** — você no MagicaVoxel, um artista, outra fonte?
+3. **Quem faz a arte final** — você no MagicaVoxel, um artista, outra fonte?
    Muda o quanto vale investir no visualizador de pose.
-5. **O mapa dos 8 tipos de mob** e as áreas dos humanoides.
+4. **O mapa dos 8 tipos de mob** e as áreas dos humanoides.
+5. **O visual do anel** — ele é um voxel de cima; brilho ou runa na mão?
 6. **Quantas variações de cabeça** e **quais montarias primeiro**.
