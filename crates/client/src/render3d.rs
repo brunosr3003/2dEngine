@@ -162,11 +162,13 @@ pub const ARRASTO_MINIMO: f32 = 6.0;
 /// e' consequencia do chao, e suavizar consequencia nao tira controle de
 /// ninguem.
 ///
-/// `K = 5` da' constante de tempo de 0,2 s: engole o degrau inteiro e ainda
-/// deixa o pulo levantar a camera um pouco, que e' o que faz o salto ler como
-/// salto em vez de o mundo afundar.
+/// `K = 2,6` da' constante de tempo de 0,38 s. Comecou em 5 (0,2 s) e ficou
+/// seco demais: o corpo ja' sobe o degrau em 125 ms, e a camera indo junto
+/// nesse ritmo devolve o tranco que ela existe pra tirar. Mais lenta, o
+/// degrau vira uma respiracao e o pulo ainda levanta a vista o bastante pra
+/// ler como salto.
 pub fn altura_da_camera(atual: f32, alvo: f32, dt: f32) -> f32 {
-    const K: f32 = 5.0;
+    const K: f32 = 2.6;
     /// Acima disto nao e' relevo, e' teleporte (respawn, viagem, entrar no
     /// AOI). Deslizar por vinte unidades de mundo seria pior que o corte.
     const SALTO: f32 = 6.0;
@@ -334,20 +336,20 @@ mod testes_camera {
         // Degrau de meio bloco: o primeiro quadro anda pouco.
         let depois = altura_da_camera(12.0, 12.5, dt);
         assert!(
-            depois - 12.0 < 0.5 * 0.15,
+            depois - 12.0 < 0.5 * 0.05,
             "engoliu {:.3} de 0,5 num quadro so'", depois - 12.0
         );
-        // E converge: meio segundo depois ja' andou 90% do degrau, e em um
-        // segundo chegou. Constante de tempo de 0,2 s.
+        // E converge, com calma: constante de tempo de 0,38 s, entao um
+        // segundo cobre ~93% e dois segundos chegam.
         let mut a = 12.0;
-        for _ in 0..30 {
+        for _ in 0..60 {
             a = altura_da_camera(a, 12.5, dt);
         }
-        assert!(a > 12.45, "meio segundo depois so' tinha andado ate' {a}");
-        for _ in 0..30 {
+        assert!(a > 12.44, "um segundo depois so' tinha andado ate' {a}");
+        for _ in 0..60 {
             a = altura_da_camera(a, 12.5, dt);
         }
-        assert!((a - 12.5).abs() < 0.02, "um segundo depois ainda estava em {a}");
+        assert!((a - 12.5).abs() < 0.02, "dois segundos depois ainda estava em {a}");
         // Teleporte corta em vez de deslizar o mundo inteiro.
         assert_eq!(altura_da_camera(12.0, 90.0, dt), 90.0);
     }

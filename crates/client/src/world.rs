@@ -35,6 +35,20 @@ const MOVING_EPS: f32 = 0.05;
 ///
 /// Nao vale pra DESCER: descer e' queda, e queda tem gravidade.
 const SUBIDA: f32 = 4.0;
+/// Fracao da subida que acontece ANTES de cruzar a quina.
+///
+/// Meio a meio, e o motivo e' que os dois extremos sao igualmente ruins:
+/// subir so' depois deixa o corpo com os pes dentro da terra durante a
+/// subida inteira; subir tudo antes deixa ele flutuando a mesma altura, so'
+/// que do outro lado. Centrar na travessia divide o erro pela metade nos dois
+/// sentidos — e e' o que um passo de verdade faz, com o corpo no meio da
+/// altura bem em cima da quina.
+const ANTECIPACAO: f32 = 0.5;
+/// Desnivel que a antecipacao aceita, em unidades. Um bloco.
+///
+/// Acima disso e' parede ou pulo — e nenhum dos dois deve levantar o corpo
+/// so' porque o jogador esta' andando na direcao.
+const DEGRAU_VISIVEL: f32 = 0.5;
 
 pub struct Ent {
     /// Dado estavel, recebido uma vez quando a entidade entrou no AOI.
@@ -163,6 +177,31 @@ impl World {
             // apoio. A gravidade e o impulso vem de `shared`, os mesmos que o
             // servidor usa pra decidir que degrau o pulo vence.
             let apoio = chao(ent.render_pos.x, ent.render_pos.y);
+            // ── DEGRAU ANTECIPADO ──
+            //
+            // Quem decide a posicao e' o servidor, e ele poe o corpo em cima
+            // do bloco alto DE UMA VEZ. Se a subida visual so' comecar depois
+            // disso, o corpo passa a subida inteira com os pes dentro da
+            // terra — foi o que apareceu quando a subida virou taxa constante.
+            //
+            // Entao o corpo olha um pouco a' frente e comeca a subir ANTES de
+            // chegar. Quando o servidor o move, ele ja' esta' na altura certa.
+            // So' vale pra degrau que da' pra subir: parede alta nao levanta
+            // ninguem, e parado tambem nao — senao o boneco flutua encostado
+            // num barranco.
+            let indo = mq(ent.state.vel_f32());
+            let alvo_alto = if indo.length_squared() > MOVING_EPS * MOVING_EPS {
+                // Olha a' frente a distancia que o corpo percorre em metade do
+                // tempo de subida. Sai da velocidade e nao de uma constante:
+                // correndo, o degrau chega antes e a subida tem que comecar
+                // mais cedo; parado, nao ha' o que antecipar.
+                let olhada = indo.length() * (DEGRAU_VISIVEL / SUBIDA) * ANTECIPACAO;
+                let frente = ent.render_pos + indo.normalize() * olhada;
+                let a = chao(frente.x, frente.y);
+                if a > apoio && a - apoio <= DEGRAU_VISIVEL { a } else { apoio }
+            } else {
+                apoio
+            };
             // Assenta ANTES de qualquer outra coisa: entidade recem-vista nao
             // pode cair do ceu, e se ela chegou no meio de um pulo o arco
             // comeca do chao dela. Fazer isto depois do impulso apagava o
@@ -200,9 +239,15 @@ impl World {
                     ent.vel_y = 0.0;
                     ent.voando = false;
                 }
-            } else if ent.render_y > apoio + 0.02 {
+            } else if ent.render_y > alvo_alto + 0.02 {
                 // Andou pra fora de um barranco: cai, nao afunda. Interpolar
                 // aqui comeca rapido e vai freando — o contrario da gravidade.
+                //
+                // A comparacao e' contra o degrau ANTECIPADO e nao contra o
+                // chao de baixo: subindo pra um degrau, o corpo passa alguns
+                // quadros acima do bloco em que ainda pisa, e comparar com o
+                // chao faria a queda comer a subida — o corpo caia de volta e
+                // so' entao era teleportado pro topo.
                 ent.voando = true;
                 ent.vel_y = 0.0;
             } else {
@@ -214,7 +259,18 @@ impl World {
                 // e e' isso que faz o passo ler como passo: meio bloco em 125
                 // ms, rapido o bastante pra nao parecer elevador.
                 ent.vel_y = 0.0;
-                ent.render_y = (ent.render_y + SUBIDA * dt).min(apoio);
+                // Sobe em direcao ao degrau que vem, com um piso.
+                //
+                // O piso NAO e' o chao. Proibir qualquer afundamento parece
+                // certo e e' o proprio salto: chegando na quina com meio
+                // degrau subido, "nunca abaixo do chao" empurra a outra
+                // metade num quadro so'. O piso e' a metade que a antecipacao
+                // ja' paga do outro lado — abaixo disso e' teleporte de
+                // verdade (nascer, respawn) e ai' sim vale cortar.
+                let piso = apoio - DEGRAU_VISIVEL * ANTECIPACAO * 1.05;
+                ent.render_y = (ent.render_y + SUBIDA * dt)
+                    .min(alvo_alto)
+                    .max(piso);
             }
 
             let vel = mq(ent.state.vel_f32());
@@ -329,55 +385,71 @@ mod testes {
         assert!(alturas.last().is_some_and(|&h| h == 0.0), "tem que acabar no chao");
     }
 
-    /// Subir degrau tem que ser SUBIDA, nao teleporte: nenhum quadro pode
-    /// engolir o degrau inteiro, e o tempo total tem que caber num passo.
+    /// ANDANDO ATE' UM DEGRAU: o corpo sobe, e NUNCA fica dentro da terra.
     ///
-    /// A versao anterior era exponencial e passava neste teste pela metade —
-    /// ela chegava perto rapido, mas gastava 70% do degrau nos dois primeiros
-    /// quadros, que e' o que o olho le' como salto.
+    /// Sao as duas coisas juntas, e uma sozinha nao serve. Sem a subida, o
+    /// degrau e' teleporte. Sem o limite, a subida acontece com os pes dentro
+    /// do bloco — porque quem move o corpo e' o servidor, e ele poe o jogador
+    /// em cima do bloco alto de uma vez.
+    ///
+    /// A saida e' o corpo olhar a' frente e comecar a subir ANTES de chegar.
+    /// E' isso que este teste mede: caminhada de verdade, chao que sobe meio
+    /// bloco no meio dela.
     #[test]
-    fn o_degrau_e_subido_e_nao_teleportado() {
+    fn sobe_o_degrau_sem_entrar_na_terra() {
         let dt = 1.0 / 60.0;
+        let vel = 5.0f32;
+        // Chao: meio bloco mais alto a partir de x = 2.
+        let chao = |x: f32, _z: f32| if x >= 2.0 { 0.5 } else { 0.0 };
+
         let mut w = World::default();
         let id = shared::EntityId(1);
+        let estado = |x: f32| EntityState {
+            id,
+            pos: [(x * shared::POS_SCALE) as i16, 0],
+            vel: [(vel * shared::POS_SCALE) as i8, 0],
+            hp: 100,
+            flags: ent_flags::SELF,
+        };
         w.apply(
             vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None }],
-            vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF }],
+            vec![estado(0.0)],
             &[],
         );
-        // Assenta no chao de baixo.
-        w.tick(dt, &|_, _| 0.0);
-        assert_eq!(w.ents[&id].render_y, 0.0);
+        w.tick(dt, &chao);
 
-        // O chao sobe meio bloco de uma vez, como acontece ao cruzar a divisa.
-        let degrau = 0.5f32;
-        let mut alturas = vec![w.ents[&id].render_y];
-        for _ in 0..60 {
-            w.tick(dt, &|_, _| degrau);
-            alturas.push(w.ents[&id].render_y);
+        let mut x = 0.0f32;
+        let (mut afundou, mut flutuou, mut maior_passo) = (0.0f32, 0.0f32, 0.0f32);
+        for _ in 0..180 {
+            x += vel * dt;
+            w.apply(Vec::new(), vec![estado(x)], &[]);
+            let antes = w.ents[&id].render_y;
+            w.tick(dt, &chao);
+            let e = &w.ents[&id];
+            let solo = chao(e.render_pos.x, e.render_pos.y);
+            afundou = afundou.max(solo - e.render_y);
+            flutuou = flutuou.max(e.render_y - solo);
+            maior_passo = maior_passo.max(e.render_y - antes);
         }
-
-        // Nenhum quadro anda mais que a taxa permite.
-        for par in alturas.windows(2) {
-            let passo = par[1] - par[0];
-            assert!(
-                passo <= SUBIDA * dt + 1e-5,
-                "um quadro subiu {passo:.4}, teto {:.4}", SUBIDA * dt
-            );
-            assert!(passo >= -1e-6, "a subida desceu {passo:.4}");
-        }
-        // E chega: meio bloco a 4 u/s sao 125 ms, ou 8 quadros a 60 Hz.
-        let chegou = alturas.iter().position(|h| (h - degrau).abs() < 1e-4);
-        let chegou = chegou.expect("nunca chegou no topo do degrau");
+        // Os dois erros existem e sao o mesmo erro visto dos dois lados. O que
+        // o teste garante e' que nenhum deles chega perto do degrau inteiro:
+        // meia unidade dentro da terra e' o que se via antes.
         assert!(
-            (6..=10).contains(&chegou),
-            "levou {chegou} quadros pra subir meio bloco — esperado ~8"
+            afundou < 0.3,
+            "o corpo entrou {afundou:.3} na terra — a antecipacao do degrau falhou"
         );
-        // O primeiro quadro nao pode engolir o degrau: era o defeito da
-        // exponencial, que subia 21% do caminho de uma vez.
         assert!(
-            alturas[1] < degrau * 0.2,
-            "o primeiro quadro subiu {:.0}% do degrau", alturas[1] / degrau * 100.0
+            flutuou < 0.3,
+            "o corpo flutuou {flutuou:.3} acima do chao — antecipou demais"
+        );
+        assert!(
+            maior_passo <= SUBIDA * dt + 1e-4,
+            "um quadro subiu {maior_passo:.4}, teto {:.4} — virou teleporte",
+            SUBIDA * dt
+        );
+        assert!(
+            (w.ents[&id].render_y - 0.5).abs() < 1e-3,
+            "terminou em {:.3} em vez de 0,5", w.ents[&id].render_y
         );
     }
 
