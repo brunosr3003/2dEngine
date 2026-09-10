@@ -1,174 +1,320 @@
-# O personagem: base, animação e o que define as duas
+# O personagem: modelos e animação
 
-> Documento de decisão. O que está marcado **PROPOSTA** ainda não foi
-> implementado; o que está marcado **JÁ É** está no código e restringe o resto.
+> Documento de decisão. **DECIDIDO** foi escolhido; **PROPOSTA** é o plano de
+> execução; **ABERTO** ainda depende de uma resposta. Substitui a versão
+> anterior, que era de antes do redesenho do combate (8 árvores de arma, 64
+> skills, passivas, ferramentas — tudo isso morreu; ver `docs/COMBATE.md`).
 
-Animar antes de decidir isto é construir em cima do que ainda vai mudar. E o
-código já decidiu mais coisa do que parece.
+## O que já está decidido
 
-## O que já está decidido (e não é opinião)
+**DECIDIDO — proporção estilizada 1:5.** Cabeça em ~1/5 da altura, mãos e arma
+um pouco maiores que o real. A câmera olha de 27° a 75° e o alvo é celular: no
+realista 1:7 a cabeça e a arma somem de cima, e no chibi 1:3 o corpo fica
+pequeno demais pra armadura aparecer. O 1:5 é o meio que lê de cima e ainda
+tem corpo.
 
-**JÁ É — classe é a ARMA.** Não existe classe separada. O banco tem 64 skills
-em **8 árvores de proficiência**, uma por arma: Espada, Machado, Lança, Adaga,
-Arco, Cajado, Varinha, Desarmado — 8 cada. A skill é liberada por
-`usable_with`, uma lista de armas. Trocar de arma é trocar de classe, e é isso
-que o MIR4 faz.
+**DECIDIDO — a armadura tem peso POR CONJUNTO.** Leve, média e pesada são três
+silhuetas de corpo inteiro, não quinze peças misturáveis. Num jogo de câmera
+alta dá pra saber o que o sujeito é olhando de longe — e isso fecha a questão
+que o `COMBATE.md` deixou em aberto. O tier é a COR, não o modelo.
 
-**JÁ É — 13 slots de equipamento** (arma, offhand, elmo, peito, pernas, botas,
-luvas, cinto, capa, colar, anel…) mais 4 dedicados a ferramenta (machado,
-foice, picareta, vara), todas equipáveis ao mesmo tempo.
+**DECIDIDO — um corpo só; a customização é a cabeça.** Rosto, cabelo e tom de
+pele. A armadura cobre o resto. Um rig, uma tabela de poses, e toda armadura
+serve em todo mundo.
 
-**JÁ É — 20 das 64 skills são passivas.** Elas nunca animam. Das 44 ativas, a
-forma se repete: 16 círculo, 9 cone, 7 projétil, 6 linha, 6 em si mesmo.
+**DECIDIDO — mob é criatura E humanoide.** Criaturas no mundo aberto;
+humanoides em áreas específicas (não necessariamente chefe).
 
-**JÁ É — o corpo tem 0,35 de raio e 1,68 de altura**, a câmera olha de 27° a
-75°, e o alvo é celular. Isso é o orçamento: o `player.vox` tem 356 triângulos,
-o `lobo.vox` tem 14.112 — o lobo é modelo de CHEFE e mob comum precisa passar
-pelo `voxsimplify.py`.
+**JÁ É — o corpo tem 1,68 u de altura e 0,35 de raio.** O `player.vox` atual
+tem 42 voxels de altura: **1 voxel ≈ 4 cm**. O corpo novo mantém essa escala.
 
-**JÁ É — montaria hoje é barco.** `Mounted` aponta pra uma entidade de barco,
-com estações (leme, canhão) e deck andável. Montaria terrestre não existe.
+**JÁ É — 12 skills, 5 formas.** Círculo ×4, linha ×2, cone ×2, projétil ×2, em
+si ×2. Nenhuma passiva: tudo que existe tem gesto.
 
-**MORREU — `VisualConfig`.** Ela descreve um paper-doll 2D: `skin_race`,
-`outfit`, `hair`, `hat`, tudo em nome de folha de sprite do cliente Unity. Não
-serve pro voxel e precisa ser substituída, não adaptada.
+**JÁ É — hoje o personagem é UMA peça em pose T.** Braços esticados, nada se
+move. E os 8 tipos de mob são o mesmo lobo pequeno com escala e tinta
+diferentes.
 
-## A decisão que trava todas as outras: o corpo é feito de PEÇAS
+## O corpo
 
-Voxel não anima por deformação de malha — anima por **peça rígida**. Então o
-personagem precisa nascer partido, e essa é a mudança de base:
+### Proporção, em voxels
 
 ```
-cabeça · torso · braço-E · braço-D · perna-E · perna-D
-        + mão-D (arma)  + mão-E (offhand/escudo)
+            ┌─────┐
+            │     │   cabeça      8   (1/5)
+            └──┬──┘   pescoço     1
+          ┌────┴────┐
+          │         │  torso      12   (com a bacia)
+      ┌─┐ │         │ ┌─┐
+      │ │ └──┬───┬──┘ │ │  braços 17  (ombro → ponta da mão)
+      │ │    │   │    │ │
+      └─┘    │   │    └─┘
+             │   │        pernas  21
+             │   │
+             └┘ └┘        ────────────
+                          total   42 voxels = 1,68 u
+   ombros: 16 voxels (dois palmos de cabeça)
 ```
 
-Oito peças, cada uma com seu pivô. Hoje o `player.vox` é uma peça só.
+**Pose de repouso: braços caídos, 10° afastados do corpo** — não a pose T de
+hoje. Numa peça rígida a pose de repouso é a pose parada: com os braços para
+baixo, o jogo parado não precisa girar nada, e o corte entre braço e torso
+fica limpo.
 
-O custo é conhecido: a transformação já existe (`draw_mesh_at` gira uma malha
-inteira na CPU por entidade). Passar de 1 para 8 matrizes por corpo não muda o
-número de vértices — muda o número de multiplicações, e 356 triângulos por
-personagem cabem. **O que não cabe é mob de 14 mil triângulos animado.**
+### PROPOSTA — seis peças rígidas
 
-## PROPOSTA — locomoção é procedural, ataque é autoral
+```
+cabeça · torso · braço-D · braço-E · perna-D · perna-E
+```
 
-Fazer 38 clipes à mão para voxel é trabalho que não termina. E não precisa:
+Voxel não se deforma: anima girando peça inteira em volta de um pivô
+(pescoço, ombros, quadris). A mão faz parte do braço.
 
-**Procedural (custo de arte zero):** parado, andar, correr, pulo (subida, topo,
-queda, pouso), subir degrau, cair derrubado. São funções de seno nas pernas e
-braços, com a fase saindo da velocidade que o servidor já manda. Nunca
-dessincroniza da velocidade — que é o defeito clássico de clipe gravado — e
-sai de graça para todo modelo que tenha as oito peças.
+**ABERTO — cotovelo e joelho.** Membro inteiro (seis peças, estilo Minecraft) é
+o que cabe no playtest. Dividir em braço e antebraço (dez peças) dá golpe e
+mira muito mais expressivos — mas o artista corta cada peça de novo, então a
+decisão tem que vir antes da arte final, não depois.
 
-**Autoral (poses-chave, não quadros):** os ataques. Três poses por gesto,
-interpoladas. E o gesto não é por skill, é por **forma** — que o banco já tem:
+### PROPOSTA — os encaixes
 
-| forma | quantas | gesto |
+Não são peças do corpo: são pontos onde outra coisa se prende e segue a peça.
+
+| encaixe | preso em | quem usa |
 |---|---|---|
-| `aoe_circle` | 16 | giro em volta / batida no chão |
-| `cone` | 9 | golpe largo à frente |
-| `projectile` | 7 | arremesso / disparo |
-| `line` | 6 | estocada / investida |
-| `self` | 6 | levantar a arma (buff) |
+| `mão-D` | braço-D | espada, katana, pistola, anel |
+| `mão-E` | braço-E | escudo, pistola |
+| `cintura` | torso | bainha, coldre |
+| `costas` | torso | manto do guerreiro, manto do mago |
 
-Cinco gestos, não sessenta e quatro. A diferença entre um machado e uma espada
-no mesmo gesto é a **velocidade** e o modelo na mão, não uma animação nova.
+O que isso dá por conjunto:
 
-Mais o **combo básico de três passos** por família de arma, que é o que o
-jogador vê o tempo todo. Seis famílias:
+| conjunto | mão-D | mão-E | cintura | costas |
+|---|---|---|---|---|
+| **espada e escudo** | espada | escudo | — | manto do guerreiro |
+| **katana** | katana | — | bainha | — |
+| **duas pistolas** | pistola | pistola | coldre | — |
+| **anel mágico** | anel | — | — | manto do mago |
 
-| família | armas | leitura |
+O manto é uma peça rígida que balança com a velocidade (procedural, custo zero)
+— capa de tecido de verdade não existe em voxel sem física, e não precisa.
+
+### A armadura
+
+Como o corpo anima por peça, **a armadura tem que vir cortada nas mesmas seis
+peças**: uma casca que se encaixa sobre cada uma e gira junto.
+
+| peso | cabeça | torso | braços | pernas | silhueta |
+|---|---|---|---|---|---|
+| **leve** | nada (cabelo à mostra) | couro justo | braçadeira | calça | fina, cabelo visível |
+| **média** | capuz ou tiara | gibão | ombreira pequena | caneleira | média |
+| **pesada** | elmo (esconde o cabelo) | placa | ombreira larga | grevas | larga, quadrada |
+
+Três pesos × seis peças = **18 peças de armadura**, no máximo. Tier não é peça:
+é **troca de paleta**.
+
+### O tier é uma cor, não um modelo
+
+A mesma convenção de paleta pra tudo — armadura, arma, secundária:
+
+| índices da paleta | o que são | como o cliente trata |
 |---|---|---|
-| lâmina | Espada, Adaga | rápido, três golpes encadeados |
-| pesada | Machado, Montante | lento, wind-up visível, dá pra reagir |
-| haste | Lança | estocada, alcance maior |
-| arco | Arco | sacar, mirar, soltar |
-| foco | Cajado, Varinha | sem contato, gesto de conjuração |
-| desarmado | — | soco, soco, chute |
+| **cor do tier** | frisos, gemas, detalhes | trocados por cinza, verde, azul ou roxo |
+| **pele** | rosto, mãos | trocados pelo tom escolhido |
+| resto | material | fica como está |
 
-**Total autoral: 5 gestos + 6 combos × 3 poses = 23 poses.** Contra 38 clipes
-completos.
+As quatro cores do tier são as mesmas do cristal da pedra (`cristal_do_tier`):
+quem aprendeu a ler a pedra lê a armadura do mesmo jeito. Quatro tiers custam
+quatro cópias da malha em memória, geradas no carregamento — **zero modelo a
+mais**.
 
-## PROPOSTA — o que o protocolo precisa
+### A cabeça
 
-Hoje `EntityState` leva 13 bytes e um byte de bandeiras com **3 bits livres**
-(`SELF`, `DOWNED`, `CASTING`, `BOSS`, `PULANDO` ocupam cinco). Animação precisa
-de mais estado que isso: atacando + qual passo do combo, guardando, coletando,
-montado, qual gesto de skill.
-
-A proposta é um byte novo, `acao`: 4 bits de estado e 4 de variante (passo do
-combo, gesto da skill). Custo: 14 bytes em vez de 13, e só de quem muda — no
-pior caso 1,8 KB/s por jogador sobre os 12,8 KB/s medidos hoje.
-
-**Nada disso vira decisão de jogo no cliente.** O servidor já sabe quando
-alguém ataca, conjura e defende; o byte só transporta o que ele decidiu.
-
-## DECIDIDO — a arma tem duas identidades
-
-Montante e Espada+Escudo são **variações**, não árvores. Isso já é o que o
-código faz: `Proficiency::from_item` manda `GREAT_SWORD` para a árvore da
-Espada, e "espada e escudo" nunca foi uma arma — é espada com um offhand.
-
-Mas a variação muda a **animação**, e não a skill. Então a arma passa a ter
-dois campos, e eles não são o mesmo:
-
-| | o que decide | exemplo |
+| | variações no playtest | como |
 |---|---|---|
-| **árvore** | quais skills você pode usar | montante → Espada |
-| **família** | como o corpo se move | montante → pesada |
+| rosto | 4 | modelo |
+| cabelo | 6 | modelo; o elmo pesado o esconde |
+| pele | 6 tons | paleta |
 
-Uma espada de uma mão e um montante compartilham as oito skills e não
-compartilham um único quadro de animação. Hoje só a árvore existe em código
-(`from_item`, por faixa de id); a família precisa do mesmo tipo de mapa.
+**ABERTO — os números acima são chute.** Eles decidem quanto se modela, então
+mudar é barato agora e caro depois.
 
-## DECIDIDO — todo mundo tem arma E secundária
+### Acessórios
 
-Nunca uma mão vazia. O que muda de arma pra arma é **onde** a secundária fica,
-e isso é rig e não regra:
+Brinco, amuleto, bracelete e cinto **não aparecem no corpo** no playtest. De
+27°–75° de altura e numa tela de celular, um brinco é um pixel. Eles existem
+como item e como número, não como modelo.
 
-| família | primária | secundária | onde |
+## A animação
+
+Três fontes, em ordem de custo:
+
+### 1. Procedural — código, zero arte
+
+Sai da velocidade e das bandeiras que o servidor já manda. Nunca dessincroniza
+do movimento — que é o defeito clássico de clipe gravado — e vale pra todo
+modelo com as seis peças, inclusive humanoide de mob.
+
+| estado | de onde vem | o que mexe |
+|---|---|---|
+| parado | velocidade ~0 | torso sobe e desce 1 voxel (respiração) |
+| andar | velocidade | pernas e braços em seno, fase pela distância andada |
+| pulo | `PULANDO` + arco que o cliente já desenha | encolhe na subida, abre os braços na queda |
+| pouso / degrau | fim do arco / subida | agacha 0,1 s |
+| tomar dano | vida caiu | tranco do torso pra trás, 0,12 s |
+| caído | `DOWNED` | corpo inteiro deitado |
+| morte | vida 0 | cai pra trás e fica |
+| manto | velocidade | ângulo da capa acompanha |
+| montado | `MONTADO` (novo) | pose sentada; tronco acompanha o trote |
+
+### 2. Pose-chave — tabela, não quadro
+
+O que o corpo faz por INTENÇÃO: ataque e skill. Uma pose é **uma rotação por
+peça** (seis números de três eixos); o cliente interpola entre elas. Não se
+desenha quadro nenhum.
+
+**Ataque básico:** um combo de três golpes por conjunto, três poses por golpe
+(preparo, impacto, volta).
+
+**Skills:** as 12, cada uma com seu gesto. O plano anterior juntava por FORMA,
+mas os quatro conjuntos são temas diferentes demais pra isso: o "círculo" da
+katana é um giro, o das pistolas é arremessar um barril e o do anel é abrir as
+mãos. Com só doze skills, gesto próprio custa pouco.
+
+| conjunto | skill | forma | gesto |
 |---|---|---|---|
-| lâmina | espada, adaga | escudo, adaga | mão esquerda |
-| pesada | machado, montante | bainha, contrapeso | **costas** |
-| haste | lança | bainha | **costas** |
-| arco | arco | aljava | **costas** |
-| foco | varinha | grimório, orbe | mão esquerda |
-| foco 2M | cajado | bainha de pergaminho | **costas** |
-| desarmado | — | manopla | mão esquerda |
+| espada e escudo | Investida | linha | avança com o escudo à frente |
+| | Golpe Largo | cone | corte horizontal de ombro a ombro |
+| | Muralha | em si | escudo erguido, pé no chão |
+| katana | Saque | linha | tira da bainha e corta no mesmo movimento |
+| | Dança | círculo | giro completo com a lâmina aberta |
+| | Vento Cortante | projétil | corte de cima pra baixo que solta a onda |
+| duas pistolas | Tiro Certeiro | projétil | as duas mãos juntas, mira |
+| | Rajada | cone | braços abrindo em leque, disparando |
+| | Barril | círculo | arremesso por cima do ombro |
+| anel mágico | Bênção | em si | mão do anel erguida |
+| | Aura | círculo | as duas mãos abertas pra fora |
+| | Julgamento | círculo | mão erguida e descida de uma vez |
 
-O rig ganha um ponto de encaixe a mais: além de `mão-D` e `mão-E`, um
-**`costas`**. Arma de duas mãos ocupa as duas mãos e joga a secundária pras
-costas; arma de uma mão deixa a esquerda livre pra secundária de mão.
+| | poses |
+|---|---|
+| combos: 4 conjuntos × 3 golpes × 3 | 36 |
+| skills: 12 × 3 | 36 |
+| coleta (agachado tocando a pedra, em laço) | 2 |
+| **total** | **74** |
 
-**O risco que isso abre.** Se o escudo for a única secundária que faz alguma
-coisa, todo mundo carrega escudo e o slot vira escolha falsa. Hoje o offhand
-só tem número de escudo (defesa e vida). Cada secundária precisa de um motivo
-próprio pra existir — bainha dá velocidade de saque, aljava dá alcance ou
-munição, grimório dá mana ou tempo de conjuração — senão a resposta é sempre a
-mesma e a decisão não é decisão.
+O tempo de cada pose sai do servidor: `espera_s` e `conjuracao_s` da skill, a
+cadência do ataque. A animação nunca decide nada — ela só mostra o que o
+servidor decidiu.
 
-## DECIDIDO — montaria terrestre vai existir
+### 3. Criaturas — procedural também
 
-O encanamento já serve: `Mounted` aponta pra uma ENTIDADE, e barco é só um
-tipo dela. Montaria terrestre entra pelo mesmo caminho.
+Os quadrúpedes do zone14 **já vêm em peças**: corpo, pescoço, cabeça, quatro
+patas, cauda, cada peça num arquivo, todas no mesmo quadro de 128³. É o rig
+pronto. A marcha de quatro patas é o mesmo seno das duas pernas com quatro
+fases (pares diagonais); cabeça e cauda balançam com a velocidade; o ataque é
+um bote do corpo pra frente. **Custo de arte zero de novo.**
 
-O que ela acrescenta em animação:
+Golem e ent são bípedes em peças: usam o procedural do humanoide.
 
-* **no personagem**, uma pose só — sentado, pernas paradas, tronco
-  acompanhando o trote. Não é um conjunto novo;
-* **na montaria**, um ciclo de locomoção próprio. Se ela for de quatro patas,
-  é o mesmo procedural das duas pernas com quatro fases em vez de duas —
-  custo de arte zero de novo;
-* **montar e desmontar**: duas poses de transição, ou nenhuma se o corte for
-  seco (aceitável no começo).
+## Os mobs
 
-## O que ainda precisa da sua decisão
+| | de onde vem | anima com |
+|---|---|---|
+| **criatura** | estoque do zone14, simplificado (`voxsimplify.py`) | procedural de criatura |
+| **humanoide** | o corpo do jogador + roupa de mob + arma | procedural + o combo do conjunto da arma |
 
-1. **Aparência do personagem** — em discussão separada, a seu pedido. A
-   `VisualConfig` morreu com o cliente 2D e precisa ser substituída; o que
-   entra no lugar depende de quanto do equipamento aparece no corpo.
-2. **Correr é um estado?** Existe `SPRINT_SPEED_MULT` e o bit `SPRINT` no
-   protocolo, mas nada no cliente. Se corrida existe, é mais um ciclo de
-   locomoção — que sai de graça no procedural.
-3. **Cada secundária faz o quê?** Ver o risco acima. Não trava a animação,
-   trava o balanceamento.
+Humanoide de mob não tem skill: o mob só tem ataque corpo a corpo ou à
+distância. Então ele reaproveita o **golpe 1 do combo** de um conjunto — de
+espada se for corpo a corpo, de pistola se for à distância — e não precisa de
+uma pose sequer.
+
+O estoque do zone14 em peças: lobo, urso, tigre, cervo, porco, dragão,
+hipogrifo, hidra, owlbear, golem de pedra, golem de terra, ent, escaravelho,
+morsa, e um punhado de aves. Sem peças: esqueleto-lorde, colosso, árvores.
+
+**ABERTO — o mapa dos 8 tipos.** Grunt, Tank, Ranger, Ninja, Mago, Berserker,
+Arqueiro e Chefe são nomes herdados. Qual vira criatura, qual vira humanoide,
+e em que áreas os humanoides aparecem.
+
+## A montaria
+
+Mesmo encanamento do barco: `Mounted` aponta pra uma entidade. A montaria é um
+quadrúpede do estoque com um encaixe `sela` no corpo; o jogador senta nele e
+fica na pose montado.
+
+Medido: o cervo do zone14 reduzido no fator 3 fica com **43 voxels de altura**
+— o tamanho certo pra montar ao lado de um corpo de 42 — e 2,8 mil voxels, o
+dobro do jogador. O tigre no mesmo fator fica com 4 mil. As "variações" de
+montaria são bicho diferente e paleta diferente, não rig novo.
+
+**ABERTO — quais bichos entram primeiro.** Cervo e tigre já estão medidos.
+
+## O que o fio precisa
+
+Os códigos de ataque de hoje (`SLASH`, `SHOOT`, `PARRY_FLASH`, `TOOL_SWING`…)
+apontam pra páginas de sprite do Mana Seed. Morrem junto com o cliente 2D.
+
+**PROPOSTA — um byte `acao` no `EntityState`:** 4 bits de estado (atacando,
+conjurando, coletando, montado…) e 4 de variante (passo do combo 0–2, qual das
+três skills do conjunto). O conjunto não precisa viajar a cada tick: ele já
+está na aparência.
+
+**PROPOSTA — aparência na META, não no tick.** Conjunto de arma, peso da
+armadura, tier da arma, tier da armadura, rosto, cabelo, pele: cabe em 7
+bytes, vai no nascimento da entidade e quando algo muda. Substitui a
+`VisualConfig`, que descrevia o paper doll 2D e morreu com ele.
+
+## O formato da arte
+
+**JÁ É — o leitor de `.vox` só entende uma peça por arquivo**, e fica com a
+maior. O rig precisa de mais que isso.
+
+**PROPOSTA — um arquivo por conjunto de peças, com os objetos NOMEADOS no
+MagicaVoxel.** O artista vê o personagem inteiro e move as peças juntas; o
+cliente lê o grafo de cena (`nTRN`/`nSHP`) e separa por nome:
+
+| arquivo | objetos dentro |
+|---|---|
+| `corpo.vox` | `cabeca`, `torso`, `braco_d`, `braco_e`, `perna_d`, `perna_e` |
+| `armadura_leve.vox` · `_media` · `_pesada` | as mesmas seis, só a casca |
+| `rosto_01.vox` … · `cabelo_01.vox` … | um objeto cada |
+| `espada.vox`, `escudo.vox`, … | um objeto; a origem é o ponto de pega |
+
+Tudo modelado **no mesmo quadro do corpo**, pra encaixar sem ajuste. Os pivôs
+(pescoço, ombros, quadris) ficam numa tabela no código — só existe um corpo,
+então só existe uma tabela.
+
+A frente continua sendo `+Y` do voxel, e o teste `todo_modelo_olha_pra_frente`
+continua valendo.
+
+## A ordem
+
+Cada etapa é jogável sozinha, e toda etapa que mexe no jogador sobe com os
+bots na ilha.
+
+| etapa | entrega | arte nova? |
+|---|---|---|
+| **1. rig** | leitor de cena do `.vox`; corpo de rascunho nas seis peças; desenho por peça; locomoção procedural | não — rascunho gerado por script, já no formato final |
+| **2. fio + primeiro ataque** | byte `acao`; aparência na meta; combo da espada; **visualizador de pose** que recarrega a tabela a quente | não |
+| **3. os quatro conjuntos** | as 8 armas; os 4 combos; as 12 skills | armas |
+| **4. armadura e cabeça** | 3 pesos × 6 peças; tier por paleta; rosto, cabelo, pele; criação de personagem | armadura, cabeça |
+| **5. mobs** | criaturas simplificadas com marcha procedural; humanoides nas áreas | criaturas vêm do estoque |
+| **6. montaria** | cervo/tigre com sela; pose montado | vem do estoque |
+
+O **rascunho gerado por script** é o que destrava as etapas 1–3 sem esperar
+arte: um corpo de caixas em 1:5, já cortado e nomeado no formato final. A arte
+de verdade entra depois, **substituindo o arquivo** — nenhuma linha de código
+muda quando ela chega.
+
+## O que ainda depende de você
+
+1. **Cotovelo e joelho** — membro inteiro (6 peças) ou dividido (10)? Decide
+   como o artista corta, então vem antes da arte final.
+2. **Arma fora de combate** — sempre na mão, ou guardada (a katana na bainha é
+   a identidade do conjunto)?
+3. **Correr existe?** O protocolo tem o bit `SPRINT` e o servidor tem
+   `SPRINT_SPEED_MULT`, mas nada usa. Se existir, é mais um ciclo procedural.
+4. **Quem faz a arte final** — você no MagicaVoxel, um artista, outra fonte?
+   Muda o quanto vale investir no visualizador de pose.
+5. **O mapa dos 8 tipos de mob** e as áreas dos humanoides.
+6. **Quantas variações de cabeça** e **quais montarias primeiro**.

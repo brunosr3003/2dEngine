@@ -99,13 +99,13 @@ senão `"lobo_pequeno"`.
 
 ## O que ainda falta
 
-- **Animação.** Hoje só o quadro parado. O próximo passo é uma spec por modelo
-  dizendo quais grupos de voxel movem e como (`patas: bob 2px, 6 quadros`),
-  gerando as linhas de animação da folha.
-- **Ligar no cliente.** O `render.rs` desenha inimigo e loot como círculo. Falta
-  o mapa de `enemy_kind` → sprite.
-- **Terreno.** Tile ainda é cor chapada. Voxel também serve pra tile, e aí o
-  mundo inteiro fica no mesmo estilo.
+- **Animação e rig.** O plano inteiro — corpo em seis peças, encaixes, poses,
+  criaturas procedurais, formato dos arquivos — está em `docs/PERSONAGEM.md`.
+  O leitor de `.vox` do cliente ainda só entende uma peça por arquivo; ler o
+  grafo de cena do MagicaVoxel é a primeira etapa de lá.
+- **Mob por tipo.** O cliente desenha os 8 tipos de mob com o mesmo lobo
+  pequeno. O mapa `enemy_kind` → modelo depende da decisão de quais tipos são
+  criatura e quais são humanoide.
 
 ## A frente do modelo
 
