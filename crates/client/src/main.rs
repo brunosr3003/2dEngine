@@ -112,6 +112,9 @@ struct Jogo {
     /// erro so' aparece quando o jogador esta' subindo um barranco.
     /// `f32::MIN` = ainda nao assentou.
     cam_altura: f32,
+    /// Velocidade vertical da camera. A mola precisa dela pra ter inercia —
+    /// sem guardar a velocidade, ela vira interpolacao de novo.
+    cam_altura_vel: f32,
     /// Fila de digitacao. Ver `entrada` — a repeticao de tecla passa por aqui.
     teclado: entrada::Teclado,
     /// Quanto o jogador inclinou A MAIS do que o zoom pediu, em radianos.
@@ -176,6 +179,7 @@ async fn main() {
         cam_zoom: 1.0,
         cam_pitch: render3d::pitch_do_zoom(1.0),
         cam_altura: f32::MIN,
+        cam_altura_vel: 0.0,
         teclado: entrada::Teclado::novo(),
         cam_pitch_ajuste: 0.0,
         arrasto_de: Vec2::ZERO,
@@ -535,7 +539,12 @@ impl Jogo {
                 Some(t.altura_apoio(centro.x, centro.y, shared::ENTITY_RADIUS))
             });
         let Some(alvo) = alvo else { return };
-        self.cam_altura = render3d::altura_da_camera(self.cam_altura, alvo, get_frame_time());
+        (self.cam_altura, self.cam_altura_vel) = render3d::altura_da_camera(
+            self.cam_altura,
+            self.cam_altura_vel,
+            alvo,
+            get_frame_time(),
+        );
     }
 
     fn camera_controles(&mut self) {

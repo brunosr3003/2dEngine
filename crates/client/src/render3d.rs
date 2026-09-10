@@ -148,34 +148,52 @@ pub fn camera(target: Vec2, chao: f32, yaw: f32, zoom: f32, pitch: f32) -> Camer
 /// menos que qualquer arrasto de proposito.
 pub const ARRASTO_MINIMO: f32 = 6.0;
 
-/// Persegue a altura do alvo com atraso.
+/// Persegue a altura do alvo com MOLA, e devolve altura e velocidade novas.
 ///
 /// A camera olhava direto pro APOIO do jogador — o topo do bloco embaixo dele.
 /// Apoio e' funcao degrau: muda meia unidade de uma vez toda vez que o corpo
-/// cruza a divisa de um bloco. Andando por terreno irregular a 5 unidades por
-/// segundo, isso e' um tranco vertical a cada dois passos, e a camera dura
-/// faz o mundo inteiro pular junto.
+/// cruza a divisa de um bloco, e andando a 5 unidades por segundo isso e' um
+/// tranco vertical a cada dois passos.
 ///
-/// O atraso e' so' na VERTICAL de proposito. Horizontal com atraso da a
+/// O atraso e' so' na VERTICAL de proposito. Horizontal com atraso da' a
 /// sensacao de arrastar o boneco por um elastico — quem joga quer que o
 /// personagem responda no eixo em que ele manda. Altura ninguem "manda": ela
 /// e' consequencia do chao, e suavizar consequencia nao tira controle de
 /// ninguem.
 ///
-/// `K = 2,6` da' constante de tempo de 0,38 s. Comecou em 5 (0,2 s) e ficou
-/// seco demais: o corpo ja' sobe o degrau em 125 ms, e a camera indo junto
-/// nesse ritmo devolve o tranco que ela existe pra tirar. Mais lenta, o
-/// degrau vira uma respiracao e o pulo ainda levanta a vista o bastante pra
-/// ler como salto.
-pub fn altura_da_camera(atual: f32, alvo: f32, dt: f32) -> f32 {
-    const K: f32 = 2.6;
+/// ── Por que MOLA e nao interpolacao ──────────────────────────────────────
+///
+/// A primeira versao era exponencial, e exponencial anda PROPORCIONAL A
+/// DISTANCIA: erro grande, arranque grande. O sintoma foi exatamente esse —
+/// cair de um barranco ficava perfeito e alguns degraus saiam rapido demais.
+/// Nao era coincidencia: caindo, o corpo acelera do zero e o alvo muda aos
+/// poucos, entao a camera nunca acumula erro; num degrau o alvo pula meia
+/// unidade de uma vez, e degraus encadeados acumulam mais ainda.
+///
+/// A mola tem INERCIA: parte do repouso e freia no fim, entao a mesma
+/// perseguicao serve pro degrau, pra escada e pra queda. Criticamente
+/// amortecida — chega e para, sem passar do ponto e voltar, que numa camera
+/// leria como enjoo.
+///
+/// A integracao e' a do `SmoothDamp` da Unity: aproximacao racional da
+/// exponencial, estavel em qualquer `dt`. A integracao ingenua explode quando
+/// um quadro demora.
+pub fn altura_da_camera(atual: f32, vel: f32, alvo: f32, dt: f32) -> (f32, f32) {
+    /// Tempo aproximado pra fechar a distancia. Mais alto e' mais macio.
+    const TEMPO: f32 = 0.34;
     /// Acima disto nao e' relevo, e' teleporte (respawn, viagem, entrar no
     /// AOI). Deslizar por vinte unidades de mundo seria pior que o corte.
     const SALTO: f32 = 6.0;
+
     if atual == f32::MIN || (alvo - atual).abs() > SALTO {
-        return alvo;
+        return (alvo, 0.0);
     }
-    atual + (alvo - atual) * (1.0 - (-K * dt).exp())
+    let w = 2.0 / TEMPO;
+    let x = w * dt;
+    let decai = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
+    let erro = atual - alvo;
+    let temp = (vel + w * erro) * dt;
+    (alvo + (erro + temp) * decai, (vel - w * temp) * decai)
 }
 
 /// Recuo e altura da camera pra um zoom e uma inclinacao.
@@ -326,32 +344,56 @@ mod testes_camera {
         }
     }
 
-    /// A altura da camera nao pode saltar com o degrau, e nao pode ficar pra
-    /// tras pra sempre.
+    /// A camera nao pode ARRANCAR num degrau — e' o defeito que a mola veio
+    /// consertar. A interpolacao exponencial anda proporcional a distancia,
+    /// entao um degrau isolado saia macio e uma escada saia chicoteando.
     #[test]
     fn a_camera_engole_o_degrau() {
         let dt = 1.0 / 60.0;
         // Primeiro quadro assenta: entrar no mundo nao e' deslizar do zero.
-        assert_eq!(altura_da_camera(f32::MIN, 12.0, dt), 12.0);
-        // Degrau de meio bloco: o primeiro quadro anda pouco.
-        let depois = altura_da_camera(12.0, 12.5, dt);
-        assert!(
-            depois - 12.0 < 0.5 * 0.05,
-            "engoliu {:.3} de 0,5 num quadro so'", depois - 12.0
-        );
-        // E converge, com calma: constante de tempo de 0,38 s, entao um
-        // segundo cobre ~93% e dois segundos chegam.
-        let mut a = 12.0;
-        for _ in 0..60 {
-            a = altura_da_camera(a, 12.5, dt);
-        }
-        assert!(a > 12.44, "um segundo depois so' tinha andado ate' {a}");
-        for _ in 0..60 {
-            a = altura_da_camera(a, 12.5, dt);
-        }
-        assert!((a - 12.5).abs() < 0.02, "dois segundos depois ainda estava em {a}");
+        assert_eq!(altura_da_camera(f32::MIN, 0.0, 12.0, dt), (12.0, 0.0));
         // Teleporte corta em vez de deslizar o mundo inteiro.
-        assert_eq!(altura_da_camera(12.0, 90.0, dt), 90.0);
+        assert_eq!(altura_da_camera(12.0, 0.0, 90.0, dt), (90.0, 0.0));
+
+        // Meio bloco partindo do repouso: o primeiro quadro quase nao anda,
+        // porque a mola precisa acelerar.
+        let (h1, v1) = altura_da_camera(12.0, 0.0, 12.5, dt);
+        assert!(
+            h1 - 12.0 < 0.5 * 0.02,
+            "arrancou {:.4} de 0,5 no primeiro quadro", h1 - 12.0
+        );
+        assert!(v1 > 0.0, "a mola nem comecou a andar");
+
+        // Chega, e SEM PASSAR DO PONTO: camera que passa e volta le' como
+        // enjoo.
+        let (mut h, mut v) = (12.0f32, 0.0f32);
+        let mut maior = f32::MIN;
+        for _ in 0..120 {
+            (h, v) = altura_da_camera(h, v, 12.5, dt);
+            maior = maior.max(h);
+        }
+        assert!((h - 12.5).abs() < 0.01, "dois segundos depois estava em {h}");
+        assert!(maior <= 12.5 + 1e-3, "passou do ponto ate' {maior}");
+
+        // O PICO da velocidade fica no MEIO do caminho, e nao no primeiro
+        // quadro. E' nisso que a mola difere da interpolacao, e e' o que o
+        // olho le' como "a camera acompanhou" em vez de "a camera arrancou":
+        // a exponencial e' mais rapida justamente no instante em que o degrau
+        // acontece, e vai freando dali em diante.
+        let (mut h, mut v) = (0.0f32, 0.0f32);
+        let (mut pico, mut quadro_do_pico) = (0.0f32, 0usize);
+        for k in 0..120 {
+            let antes = h;
+            (h, v) = altura_da_camera(h, v, 0.5, dt);
+            if h - antes > pico {
+                pico = h - antes;
+                quadro_do_pico = k;
+            }
+        }
+        assert!(
+            quadro_do_pico >= 8,
+            "a camera correu mais no quadro {quadro_do_pico} — arrancou em vez de acelerar"
+        );
     }
 
     /// A vista de repouso tem que ser EXATAMENTE a de antes de a banda
