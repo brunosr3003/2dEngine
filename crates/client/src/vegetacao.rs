@@ -625,6 +625,26 @@ fn emite(
         (canto(w as f32, h as f32), ao[2]),
         (canto(0.0, h as f32), ao[3]),
     ];
+    // A ORDEM dos quatro cantos decide o que a placa de video considera
+    // frente. Com o descarte de face de costas ligado, quad enrolado ao
+    // contrario some — e some de um lado so', entao o buraco espera o jogador
+    // virar a camera pra aparecer.
+    //
+    // Aqui a ordem sai da conta e nao da mao: os eixos `eu`/`ev` do merge
+    // guloso mudam de sentido conforme a face, e escrever a ordem certa pra
+    // cada combinacao e' exatamente o tipo de coisa que passa no olho e falha
+    // no conjunto.
+    //
+    // Inverter os CANTOS, e nao os indices: o `instancia` copia vertice a
+    // vertice e reconstroi os indices no padrao canonico, entao a ordem tem
+    // que estar guardada no modelo.
+    let normal = vec3(n[0] as f32, n[1] as f32, n[2] as f32);
+    let geom = (pontos[1].0 - pontos[0].0).cross(pontos[2].0 - pontos[0].0);
+    let pontos = if geom.dot(normal) >= 0.0 {
+        pontos
+    } else {
+        [pontos[0], pontos[3], pontos[2], pontos[1]]
+    };
     let inicio = m.verts.len() as u16;
     for (pos, oc) in pontos {
         let k = luz * (oc as f32 / 255.0);
@@ -771,5 +791,60 @@ mod testes {
         println!("copada {arv:.2}un · arbusto {arb:.2}un · moita {moi:.2}un (jogador 1,68)");
         assert!(arv > arb * 2.5, "arvore {arv:.2} nao e' o dobro do arbusto {arb:.2}");
         assert!(arb < 1.7, "arbusto {arb:.2} esta' na altura do jogador");
+    }
+}
+
+#[cfg(test)]
+mod testes_orientacao {
+    use super::*;
+
+    /// Toda planta e arvore aponta pra fora, e sem buraco.
+    ///
+    /// Mesma conta dos modelos `.vox`: volume com sinal. Numa malha fechada e
+    /// virada pra fora ele e' o volume de verdade; negativo e' avesso, e
+    /// diferente do volume esperado e' buraco.
+    ///
+    /// Vale pra TODAS as variantes de todas as especies, porque cada uma e'
+    /// sorteada e nenhuma foi olhada a olho nu.
+    #[test]
+    fn toda_vegetacao_aponta_pra_fora() {
+        let mut conferidos = 0;
+        for especie in [
+            Arvore::Copada, Arvore::Betula, Arvore::Pinheiro, Arvore::Seca,
+        ] {
+            for variante in 0..6u32 {
+                let m = arvore(especie, variante);
+                confere(&m, &format!("{especie:?} #{variante}"));
+                conferidos += 1;
+            }
+        }
+        for especie in [
+            Planta::Moita, Planta::Flor, Planta::Arbusto, Planta::Samambaia,
+            Planta::Pedra, Planta::Toco, Planta::Talo,
+        ] {
+            for variante in 0..6u32 {
+                let m = planta(especie, variante);
+                confere(&m, &format!("{especie:?} #{variante}"));
+                conferidos += 1;
+            }
+        }
+        assert!(conferidos > 30, "so' {conferidos} modelos conferidos");
+        println!("{conferidos} modelos de vegetacao, todos pra fora");
+    }
+
+    fn confere(m: &Modelo, quem: &str) {
+        let mut volume = 0.0f64;
+        for t in m.idx.chunks(3) {
+            let a = m.verts[t[0] as usize].position;
+            let b = m.verts[t[1] as usize].position;
+            let c = m.verts[t[2] as usize].position;
+            volume += a.dot(b.cross(c)) as f64;
+        }
+        assert!(
+            volume > 0.0,
+            "{quem}: volume com sinal {:.3} — malha pelo avesso, o descarte \
+             de face vai mostrar o interior dela",
+            volume / 6.0
+        );
     }
 }

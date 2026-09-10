@@ -272,9 +272,29 @@ pub fn mesh(model: &VoxModel, scale: f32) -> Vec<Mesh> {
                         corner(w, h),
                         corner(0, h),
                     ];
-                    // Inverte a ordem quando a face aponta pro outro lado, pra
-                    // manter o winding consistente.
-                    if !positive {
+                    // A ORDEM dos cantos decide o que a placa de video
+                    // considera frente. Com o descarte de face de costas
+                    // ligado, malha enrolada ao contrario nao mostra um erro
+                    // obvio: ela mostra o modelo pelo AVESSO — some a frente e
+                    // aparece o interior das costas. Fica estranho sem parecer
+                    // defeito.
+                    //
+                    // A ordem sai da conta e nao da mao. Antes era um
+                    // `swap` condicional escrito de cabeca, e ele estava
+                    // invertido: medido pelo volume com sinal, os tres modelos
+                    // do jogo estavam todos pelo avesso.
+                    //
+                    // A normal pretendida esta' no eixo da fatia, com o sinal
+                    // do lado exposto — e a comparacao e' feita em coordenada
+                    // de MUNDO, porque e' la' que o voxel (x, y, z) vira
+                    // (x, z, y).
+                    let mundo = |c: [f32; 3]| vec3(c[0], c[2], c[1]);
+                    let mut n = [0f32; 3];
+                    n[axis] = if positive { 1.0 } else { -1.0 };
+                    let n = mundo(n);
+                    let geom = (mundo(quad[1]) - mundo(quad[0]))
+                        .cross(mundo(quad[2]) - mundo(quad[0]));
+                    if geom.dot(n) < 0.0 {
                         quad.swap(1, 3);
                     }
 
@@ -429,5 +449,62 @@ mod testes {
         std::fs::read(&a)
             .or_else(|_| std::fs::read(format!("assets/vox/{arquivo}")))
             .unwrap_or_else(|e| panic!("{a}: {e}"))
+    }
+}
+
+#[cfg(test)]
+mod testes_orientacao {
+    use super::*;
+
+    /// As faces de um modelo voxel apontam pra FORA.
+    ///
+    /// Com o descarte de face de costas ligado, enrolamento invertido nao
+    /// desenha um erro visivel: ele desenha o modelo pelo AVESSO — some a
+    /// frente e aparece o interior das costas. Fica estranho sem parecer bug.
+    ///
+    /// A conta e' o volume com sinal (`v0 · (v1 × v2)` somado sobre os
+    /// triangulos). Num solido fechado ele e' o volume de verdade quando as
+    /// normais apontam pra fora, e o negativo dele quando apontam pra dentro.
+    /// Nao depende de escolher faces na mao nem de saber onde fica o rosto.
+    #[test]
+    fn os_modelos_apontam_pra_fora() {
+        for arquivo in ["player.vox", "lobo.vox", "lobo_pequeno.vox"] {
+            let bytes = std::fs::read(format!("../../assets/vox/{arquivo}"))
+                .or_else(|_| std::fs::read(format!("assets/vox/{arquivo}")))
+                .expect(arquivo);
+            let m = parse(&bytes)
+                .expect("vox valido")
+                .into_iter()
+                .max_by_key(|m| m.cells.iter().filter(|c| **c != 0).count())
+                .expect("um modelo");
+            let malhas = mesh(&m, 1.0);
+            let mut volume = 0.0f64;
+            let mut tris = 0;
+            for malha in &malhas {
+                for t in malha.indices.chunks(3) {
+                    let a = malha.vertices[t[0] as usize].position;
+                    let b = malha.vertices[t[1] as usize].position;
+                    let c = malha.vertices[t[2] as usize].position;
+                    volume += a.dot(b.cross(c)) as f64;
+                    tris += 1;
+                }
+            }
+            // O volume com sinal de uma malha FECHADA e virada pra fora e' o
+            // volume de verdade — e a escala 1 faz cada voxel valer 1. Entao
+            // ele tem que dar exatamente a contagem de voxels cheios.
+            //
+            // Isto prova as duas coisas de uma vez: negativo seria avesso,
+            // diferente seria buraco. E' bem mais forte que "maior que zero".
+            let cheios = m.cells.iter().filter(|c| **c != 0).count() as f64;
+            let volume = volume / 6.0;
+            assert!(tris > 100, "{arquivo}: so' {tris} triangulos");
+            assert!(
+                (volume - cheios).abs() < 0.5,
+                "{arquivo}: volume {volume:.0} contra {cheios:.0} voxels — \
+                 {} ",
+                if volume < 0.0 { "malha pelo avesso" } else { "malha com buraco" }
+            );
+            println!("{arquivo}: {tris} triangulos, volume {volume:.0} = {cheios:.0} voxels");
+        }
     }
 }

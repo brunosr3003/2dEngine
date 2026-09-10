@@ -6,6 +6,8 @@
 //! que manter chunk em cache e invalidar.
 
 use macroquad::prelude::*;
+use macroquad::material::{load_material, Material, MaterialParams};
+use macroquad::miniquad::graphics::PipelineParams;
 use macroquad::models::{Mesh, Vertex};
 use shared::constants::tile_id;
 
@@ -530,6 +532,73 @@ pub fn raio_da_tela(cam: &Camera3D, tela: Vec2) -> (Vec3, Vec3) {
     let larg = alt * (lw / lh);
     let dir = (frente + direita * (nx * larg) + cima * (ny * alt)).normalize();
     (cam.position, dir)
+}
+
+/// Material que DESCARTA a face de costas.
+///
+/// A macroquad desenha com `CullFace::Nothing` — todo triangulo e' rasterizado
+/// dos dois lados. Num mundo de blocos isso e' trabalho jogado fora: metade
+/// das faces de qualquer superficie fechada olha pra longe da camera, e todas
+/// elas passam por transformacao, rasterizacao e teste de profundidade antes
+/// de perder pro que esta' na frente.
+///
+/// So' da' pra ligar porque o enrolamento e' garantido por construcao nos tres
+/// geradores de malha (`terreno::ordem`, `vegetacao::emite`, `vox`): quad
+/// enrolado ao contrario SOME com o descarte ligado, e some de um lado so' —
+/// o buraco espera o jogador virar a camera pra aparecer.
+///
+/// O shader e' o mesmo da macroquad. Ele esta' copiado aqui porque o modulo
+/// dela e' privado; se um dia ela expuser, isto vira um `use`.
+pub fn material_solido() -> Material {
+    const VERTICE: &str = r#"#version 100
+    attribute vec3 position;
+    attribute vec2 texcoord;
+    attribute vec4 color0;
+    attribute vec4 normal;
+
+    varying lowp vec2 uv;
+    varying lowp vec4 color;
+
+    uniform mat4 Model;
+    uniform mat4 Projection;
+
+    void main() {
+        gl_Position = Projection * Model * vec4(position, 1);
+        color = color0 / 255.0;
+        uv = texcoord;
+    }"#;
+    const FRAGMENTO: &str = r#"#version 100
+    varying lowp vec4 color;
+    varying lowp vec2 uv;
+
+    uniform sampler2D Texture;
+
+    void main() {
+        gl_FragColor = color * texture2D(Texture, uv);
+    }"#;
+
+    load_material(
+        ShaderSource::Glsl { vertex: VERTICE, fragment: FRAGMENTO },
+        MaterialParams {
+            pipeline_params: PipelineParams {
+                cull_face: miniquad::graphics::CullFace::Back,
+                depth_test: miniquad::graphics::Comparison::LessOrEqual,
+                depth_write: true,
+                color_blend: Some(miniquad::graphics::BlendState::new(
+                    miniquad::graphics::Equation::Add,
+                    miniquad::graphics::BlendFactor::Value(
+                        miniquad::graphics::BlendValue::SourceAlpha,
+                    ),
+                    miniquad::graphics::BlendFactor::OneMinusValue(
+                        miniquad::graphics::BlendValue::SourceAlpha,
+                    ),
+                )),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    )
+    .expect("shader do mundo")
 }
 
 pub fn clear() {

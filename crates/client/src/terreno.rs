@@ -84,6 +84,27 @@ pub struct Terreno {
     pub gerados: u32,
 }
 
+/// Ordem dos indices que faz a normal GEOMETRICA do quad bater com `n`.
+///
+/// O enrolamento decide o que a placa de video considera frente. Com o
+/// descarte de face de costas ligado, quad enrolado ao contrario some — e
+/// some de um lado so', entao o buraco espera o jogador virar a camera pra
+/// aparecer.
+///
+/// Escrever a ordem certa a mao em cada um dos quatro sentidos e' o tipo de
+/// coisa que passa no olho e falha no conjunto: medido antes disto, os 25.960
+/// topos estavam TODOS invertidos e as paredes discordavam entre si por
+/// sentido. Aqui a ordem sai da conta, e a unica coisa que o chamador precisa
+/// saber e' pra onde a face olha.
+fn ordem(b: u16, p: [Vec3; 4], n: Vec3) -> [u16; 6] {
+    let geom = (p[1] - p[0]).cross(p[2] - p[0]);
+    if geom.dot(n) >= 0.0 {
+        [b, b + 1, b + 2, b, b + 2, b + 3]
+    } else {
+        [b, b + 2, b + 1, b, b + 3, b + 2]
+    }
+}
+
 impl Terreno {
     pub fn novo(def: &DefIlha) -> Self {
         let mut t = Self {
@@ -261,6 +282,16 @@ impl Terreno {
     // ── malha ────────────────────────────────────────────────────────────
 
     fn constroi(&self, cx: i32, cz: i32) -> Pedaco {
+        self.constroi_com(cx, cz, true)
+    }
+
+    /// `vegetacao = false` devolve so' o relevo.
+    ///
+    /// Existe pro teste de orientacao poder olhar o TERRENO sozinho: a
+    /// vegetacao e' assada na mesma malha, e uma arvore tem faces legitimamente
+    /// viradas pra baixo (a copa vista por baixo). Misturar as duas fazia o
+    /// teste acusar como defeito o que e' a arvore fazendo o certo.
+    fn constroi_com(&self, cx: i32, cz: i32, vegetacao: bool) -> Pedaco {
         let n = CHUNK as usize;
         // Uma coluna de borda de cada lado: a parede lateral precisa saber a
         // altura do vizinho, e sem a borda cada pedaco desenharia um muro
@@ -290,6 +321,7 @@ impl Terreno {
                          idx: &mut Vec<u16>,
                          malhas: &mut Vec<Mesh>,
                          p: [Vec3; 4],
+                         n: Vec3,
                          cores: [[u8; 4]; 4]| {
             if idx.len() + 6 > MAX_QUADS * 6 {
                 malhas.push(Mesh {
@@ -307,12 +339,13 @@ impl Terreno {
                     normal: Vec4::ZERO,
                 });
             }
-            idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
+            idx.extend_from_slice(&ordem(b, p, n));
         };
-        let mut quad = |verts: &mut Vec<Vertex>,
+        let quad = |verts: &mut Vec<Vertex>,
                         idx: &mut Vec<u16>,
                         malhas: &mut Vec<Mesh>,
                         p: [Vec3; 4],
+                        n: Vec3,
                         c: [u8; 4]| {
             if idx.len() + 6 > MAX_QUADS * 6 {
                 malhas.push(Mesh {
@@ -330,7 +363,7 @@ impl Terreno {
                     normal: Vec4::ZERO,
                 });
             }
-            idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
+            idx.extend_from_slice(&ordem(b, p, n));
         };
 
         // ── topos, com merge guloso ──────────────────────────────────────
@@ -373,8 +406,16 @@ impl Terreno {
                 }
 
                 let y = (h + 1) as f32 * BLOCO;
-                let x0 = (cx * CHUNK + ix) as f32 * BLOCO;
-                let z0 = (cz * CHUNK + iz) as f32 * BLOCO;
+                // A coluna `i` fica CENTRADA em `i * BLOCO`, e nao comecando
+                // nele. E' a convencao de `coluna()`, que faz o caminho
+                // inverso com `round(x / BLOCO)` — e e' ela que a colisao, o
+                // A* e o plantio usam. Desenhar a partir de `i * BLOCO`
+                // deixava a malha meio bloco fora de fase com o proprio campo
+                // de altura: o jogador pisava no degrau um quarto de bloco
+                // antes de ver a quina, e a arvore plantada no centro da
+                // coluna caia na divisa do bloco desenhado.
+                let x0 = (cx * CHUNK + ix) as f32 * BLOCO - BLOCO * 0.5;
+                let z0 = (cz * CHUNK + iz) as f32 * BLOCO - BLOCO * 0.5;
                 let x1 = x0 + w as f32 * BLOCO;
                 let z1 = z0 + d as f32 * BLOCO;
                 // Declive do canto do quad: o merge so' junta colunas do mesmo
@@ -401,6 +442,8 @@ impl Terreno {
                         vec3(x1, y, z1),
                         vec3(x0, y, z1),
                     ],
+                    // Topo: olha pra cima.
+                    Vec3::Y,
                     // CHAPADA, nao interpolada. Variar os cantos espalha o
                     // grao num gradiente macio, e o que o voxel pede e' o
                     // xadrez nitido de bloco contra bloco.
@@ -420,8 +463,9 @@ impl Terreno {
                 }
                 let h = em(ix, iz);
                 let topo = (h + 1) as f32 * BLOCO;
-                let x0 = (cx * CHUNK + ix) as f32 * BLOCO;
-                let z0 = (cz * CHUNK + iz) as f32 * BLOCO;
+                // Mesma fase dos topos: coluna centrada em `i * BLOCO`.
+                let x0 = (cx * CHUNK + ix) as f32 * BLOCO - BLOCO * 0.5;
+                let z0 = (cz * CHUNK + iz) as f32 * BLOCO - BLOCO * 0.5;
                 let x1 = x0 + BLOCO;
                 let z1 = z0 + BLOCO;
                 for (dx, dz) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
@@ -469,7 +513,10 @@ impl Terreno {
                         } else {
                             [vec3(x0, y0, z0), vec3(x1, y0, z0), vec3(x1, y1, z0), vec3(x0, y1, z0)]
                         };
-                        quad(&mut verts, &mut idx, &mut malhas, p, c);
+                        // A parede olha pro vizinho MAIS BAIXO, que e' o
+                        // lado por onde ela e' vista.
+                        let n = vec3(dx as f32, 0.0, dz as f32);
+                        quad(&mut verts, &mut idx, &mut malhas, p, n, c);
                         b = fim;
                     }
                 }
@@ -477,6 +524,7 @@ impl Terreno {
         }
 
         // ── vegetacao ────────────────────────────────────────────────────
+        if vegetacao {
         // Assada na malha do PEDACO, nao desenhada por arvore: pedaco e'
         // cache, entao vegetacao estatica custa zero por quadro. Desenhar uma
         // a uma exigiria transformar a malha na CPU (a macroquad nao tem
@@ -537,6 +585,8 @@ impl Terreno {
                     &mut verts, &mut idx, &mut malhas, MAX_QUADS,
                 );
             }
+        }
+
         }
 
         if !verts.is_empty() {
@@ -720,4 +770,119 @@ mod testes {
         }
     }
 
+}
+
+#[cfg(test)]
+mod testes_orientacao {
+    use super::*;
+    use shared::terreno::ARQUIPELAGO;
+
+    /// Toda face do terreno tem que apontar pra FORA do solido.
+    ///
+    /// E' o que permite ligar o descarte de face de costas: com o enrolamento
+    /// invertido em alguma direcao, a GPU jogaria fora justamente as faces
+    /// visiveis e o chao apareceria com buracos — e o buraco so' aparece de
+    /// um lado, entao passa despercebido ate' o jogador virar a camera.
+    ///
+    /// A conta nao confia em nenhuma anotacao: tira a normal do PRODUTO
+    /// VETORIAL dos vertices e compara com o relevo dos dois lados dela.
+    #[test]
+    fn as_faces_do_terreno_apontam_pra_fora() {
+        let d = &ARQUIPELAGO[0];
+        let t = Terreno::novo(d);
+        let (mut horizontais, mut verticais) = (0, 0);
+
+        for (cx, cz) in [(0, 0), (3, 2), (-5, 4), (12, -8)] {
+            let p = t.constroi_com(cx, cz, false);
+            for malha in &p.malhas {
+                for tri in malha.indices.chunks(3) {
+                    let [a, b, c] = [
+                        malha.vertices[tri[0] as usize].position,
+                        malha.vertices[tri[1] as usize].position,
+                        malha.vertices[tri[2] as usize].position,
+                    ];
+                    let n = (b - a).cross(c - a);
+                    if n.length_squared() < 1e-9 {
+                        continue; // degenerado: nao desenha nada
+                    }
+                    let n = n.normalize();
+                    let centro = (a + b + c) / 3.0;
+                    if n.y.abs() > 0.9 {
+                        // Face horizontal: o terreno so' tem TOPO, nunca
+                        // fundo — nada e' desenhado por baixo do chao.
+                        // O terreno so' tem TOPO: nada e' desenhado por
+                        // baixo do chao, entao face horizontal virada pra
+                        // baixo e' face que a GPU vai descartar.
+                        horizontais += 1;
+                        assert!(n.y > 0.0, "topo em {centro:?} aponta pra baixo");
+                    } else if n.y.abs() < 0.1 {
+                        // Face vertical: ela existe porque um lado e' mais
+                        // alto que o outro, e tem que olhar pro lado BAIXO.
+                        verticais += 1;
+                        let fora = centro + n * 0.3;
+                        let dentro = centro - n * 0.3;
+                        let h_fora = t.altura(fora.x, fora.z);
+                        let h_dentro = t.altura(dentro.x, dentro.z);
+                        // A parede existe porque um lado e' mais alto: ela
+                        // tem que olhar pro lado BAIXO, que e' de onde se ve'.
+                        assert!(
+                            h_fora < h_dentro + 1e-3,
+                            "parede em {centro:?} olha pro lado ALTO \
+                             ({h_fora:.2} contra {h_dentro:.2})"
+                        );
+                    }
+                }
+            }
+        }
+        assert!(horizontais > 5_000, "so' {horizontais} topos conferidos");
+        assert!(verticais > 1_000, "so' {verticais} paredes conferidas");
+        println!("{horizontais} topos e {verticais} paredes, todos pra fora");
+    }
+}
+
+#[cfg(test)]
+mod testes_alinhamento {
+    use super::*;
+    use shared::terreno::ARQUIPELAGO;
+
+    /// O chao DESENHADO e o chao CONSULTADO tem que ser o mesmo chao.
+    ///
+    /// A malha desenha a coluna `i` de `i*BLOCO` a `i*BLOCO + BLOCO`, e
+    /// `altura()` converte mundo pra coluna com `round(x / BLOCO)`, que cobre
+    /// `i*BLOCO - BLOCO/2` a `i*BLOCO + BLOCO/2`. Se as duas convencoes
+    /// discordarem, o jogador pisa num degrau um quarto de bloco antes ou
+    /// depois de ver a quina — e o erro so' aparece na borda, que e'
+    /// justamente onde ele importa.
+    #[test]
+    fn o_chao_desenhado_e_o_chao_consultado() {
+        let d = &ARQUIPELAGO[0];
+        let t = Terreno::novo(d);
+        let mut conferidos = 0;
+        for (cx, cz) in [(0, 0), (3, 2), (-5, 4)] {
+            let p = t.constroi_com(cx, cz, false);
+            for malha in &p.malhas {
+                for tri in malha.indices.chunks(3) {
+                    let v: Vec<Vec3> = tri
+                        .iter()
+                        .map(|&i| malha.vertices[i as usize].position)
+                        .collect();
+                    // So' topos: os tres vertices no mesmo Y.
+                    if (v[0].y - v[1].y).abs() > 1e-4 || (v[0].y - v[2].y).abs() > 1e-4 {
+                        continue;
+                    }
+                    let c = (v[0] + v[1] + v[2]) / 3.0;
+                    let consultada = t.altura(c.x, c.z);
+                    assert!(
+                        (consultada - c.y).abs() < 1e-3,
+                        "topo desenhado em y={:.3} no ponto ({:.3}, {:.3}), \
+                         mas altura() diz {:.3}",
+                        c.y, c.x, c.z, consultada
+                    );
+                    conferidos += 1;
+                }
+            }
+        }
+        assert!(conferidos > 1000, "so' {conferidos} topos conferidos");
+        println!("{conferidos} topos conferidos: desenho e consulta batem");
+    }
 }

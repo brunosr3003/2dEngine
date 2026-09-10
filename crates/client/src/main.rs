@@ -30,6 +30,7 @@ use api::Canal;
 use map::Map;
 use net::{Net, NetEvent};
 use vox::VoxCache;
+use macroquad::material::{gl_use_default_material, gl_use_material, Material};
 use world::World;
 
 /// O servidor tica a 30Hz; mandar input mais rapido que isso so' gasta banda.
@@ -84,6 +85,8 @@ struct Jogo {
     /// enquanto as duas convivem, quem manda e' o nome da zona.
     terreno: Option<terreno::Terreno>,
     vox: VoxCache,
+    /// Material com descarte de face de costas. Ver `render3d::material_solido`.
+    solido: Material,
     map: Option<Map>,
     world: World,
     alvo: Option<shared::EntityId>,
@@ -168,6 +171,7 @@ async fn main() {
         net: None,
         terreno: None,
         vox,
+        solido: render3d::material_solido(),
         map: None,
         world: World::default(),
         alvo: None,
@@ -710,6 +714,10 @@ impl Jogo {
             centro, self.cam_yaw, self.cam_zoom, self.cam_pitch, self.cam_altura, &f,
         );
         set_camera(&vista.cam);
+        // Tudo que e' mundo — chao, vegetacao, bichos — vai com descarte de
+        // face de costas. O HUD volta pro material padrao no fim, porque ele
+        // e' 2D e nao tem lado de tras.
+        gl_use_material(&self.solido);
         match &self.terreno {
             Some(t) => {
                 self.pedacos_desenhados = t.desenha(&vista.cam);
@@ -723,6 +731,7 @@ impl Jogo {
         // A MESMA vista da mira: desenho e clique nao tem como divergir
         // porque nao existe a segunda conta.
         render3d::draw_entities(&mut self.world, &self.vox, self.alvo, &vista);
+        gl_use_default_material();
         set_default_camera();
         if hud::draw_hud(
             &self.info,
