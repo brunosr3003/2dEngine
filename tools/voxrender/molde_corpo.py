@@ -91,10 +91,11 @@ def dic(d):
 def chunk(cid, conteudo, filhos=b""):
     return cid.encode() + struct.pack("<ii", len(conteudo), len(filhos)) + conteudo + filhos
 
-def rgba():
+def rgba(paleta=None):
+    paleta = paleta or cores
     out = b""
     for i in range(1, 257):
-        r, g, b = cores.get(i, (0, 0, 0)) if i < 256 else (0, 0, 0)
+        r, g, b = paleta.get(i, (0, 0, 0)) if i < 256 else (0, 0, 0)
         out += bytes((r, g, b, 255))
     return chunk("RGBA", out)
 
@@ -102,7 +103,7 @@ def modelo(vox):
     xyzi = struct.pack("<i", len(vox)) + b"".join(bytes((x, y, z, c)) for (x, y, z), c in sorted(vox.items()))
     return chunk("SIZE", struct.pack("<iii", W, D, H)) + chunk("XYZI", xyzi)
 
-def arquivo_cena(pecas):
+def arquivo_cena(pecas, paleta=None, camada="corpo"):
     filhos = b"".join(modelo(v) for _, v in pecas)
     n = len(pecas)
     filhos += chunk("nTRN", struct.pack("<i", 0) + dic({}) + struct.pack("<iiii", 1, -1, -1, 1) + dic({}))
@@ -113,14 +114,14 @@ def arquivo_cena(pecas):
                         + struct.pack("<iiii", 3 + 2 * k, -1, 0, 1) + dic({"_t": TRANSL}))
         filhos += chunk("nSHP", struct.pack("<i", 3 + 2 * k) + dic({}) + struct.pack("<i", 1)
                         + struct.pack("<i", k) + dic({}))
-    filhos += chunk("LAYR", struct.pack("<i", 0) + dic({"_name": "corpo"}) + struct.pack("<i", -1))
-    filhos += rgba()
+    filhos += chunk("LAYR", struct.pack("<i", 0) + dic({"_name": camada}) + struct.pack("<i", -1))
+    filhos += rgba(paleta)
     return b"VOX " + struct.pack("<i", 200) + chunk("MAIN", b"", filhos)
 
-def arquivo_plano(pecas):
+def arquivo_plano(pecas, paleta=None):
     tudo = {}
     for _, v in pecas: tudo.update(v)
-    return b"VOX " + struct.pack("<i", 150) + chunk("MAIN", b"", modelo(tudo) + rgba())
+    return b"VOX " + struct.pack("<i", 150) + chunk("MAIN", b"", modelo(tudo) + rgba(paleta))
 
 if __name__ == "__main__":
     raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

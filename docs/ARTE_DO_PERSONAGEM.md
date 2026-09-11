@@ -88,7 +88,7 @@ tapa o buraco que abriria na junta. **Mantenha a tampa** ao esculpir — ela é 
 | arquivo | objeto | onde | regras |
 |---|---|---|---|
 | `rosto_01.vox`… | `cabeca` | a mesma caixa da cabeça do corpo | **substitui** a cabeça do corpo; olhos na face +Y; pele em 249–252 |
-| `cabelo_01.vox`… | `cabelo` | até 2 voxels além da cabeça (x 10–21, y 6–17, z 32–43); rabo ou trança pode descer até z 28 nas costas | fica **por cima** da cabeça; cor em 245–248 |
+| `cabelo_01.vox`… | `cabelo` | até 2 voxels além da cabeça (x 10–21, y 6–17, z 32–43); rabo ou trança pode descer até z 28 nas costas. **Chapéu** pode ir até 3 além da cabeça de cada lado e até o topo da tela (x 9–22, y 5–18, z ≤ 47) | fica **por cima** da cabeça; cor em 245–248. A faixa do chapéu tem que ser **um voxel mais larga que a cabeça** em volta toda, pra as faces dele nunca caírem em cima das da cabeça |
 
 Proposta pro playtest: **4 rostos, 6 cabelos.**
 
@@ -145,14 +145,35 @@ um brilho ou runa sobre a mão feito em código (ABERTO em `PERSONAGEM.md`).
 
 | # | arquivos | destrava |
 |---|---|---|
-| 1 | `corpo.vox` | o rig com o corpo de verdade (até lá, o jogo usa o molde) |
-| 2 | `rosto_01`, `cabelo_01` | a cabeça |
+| 1 | `corpo.vox` — **feito: o piratinha** | o rig com o corpo de verdade |
+| 2 | `rosto_01`, `cabelo_01` — **`cabelo_01` feito: o tricórnio**; o rosto do pirata mora no `corpo.vox` | a cabeça |
 | 3 | `espada`, `escudo`, `manto_guerreiro` | o primeiro conjunto e o primeiro ataque |
 | 4 | `katana`, `bainha`, `pistola`, `coldre`, `manto_mago` | os outros três conjuntos |
 | 5 | `armadura_leve`, `_media`, `_pesada` | o peso da armadura |
 | 6 | `rosto_02–04`, `cabelo_02–06` | a criação de personagem |
 
 **22 arquivos no total.** Onde salvar: `assets/vox/personagem/`.
+
+## O primeiro personagem: o piratinha
+
+`assets/vox/personagem/corpo.vox` + `cabelo_01.vox`, gerados por
+`tools/voxrender/pirata.py`. O `pirate_captain.vox` de antes era uma peça só
+em pose T, mais fino e de cabeça menor que esta ficha (tronco 8×4, pernas 3×3,
+cabeça 1:6) — copiar voxel a voxel quebraria as juntas. Então ele foi
+**refeito nestas medidas, mantendo o que faz ele ser o pirata**: a mesma
+paleta, camisa branca de costas cinza, faixa vermelha, cinto de fivela
+dourada, calça preta, bota marrom, tapa-olho, um olho azul, barba emoldurando
+o rosto, rabicho com fita vermelha — e o tricórnio preto de aba dourada com a
+pena rosa.
+
+Duas mudanças em relação ao original, as duas pela câmera de cima:
+
+- **O tricórnio é um triângulo visto de cima** (ponta na frente, dois cantos
+  atrás), com a aba virada pra cima nos três lados e não nos cantos. Aba
+  quadrada virada em volta toda lia como moldura de quadro.
+- **Cabelo e barba num cinza mais claro** — com o (60,60,60) original debaixo
+  do chapéu preto, a cabeça virava um bloco escuro com uma janelinha de rosto.
+  Fica na faixa do cabelo, então trocar custa zero.
 
 ## Como conferir
 
