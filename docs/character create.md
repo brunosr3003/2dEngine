@@ -102,7 +102,7 @@ nothing while the character stands still.
 - **You can:** round, slim, add volume and clothing detail — up to **2
   voxels** outside each part's box.
 - **You cannot:** move the joints, change the total height, or change limb
-  lengths. Planting feet on steps and the 74 poses depend on those numbers:
+  lengths. Planting feet on steps and the 82 poses depend on those numbers:
   move a knee up one voxel and the foot starts sinking into the step.
 
 ### The joint cap
@@ -121,7 +121,7 @@ still required.
 | `rosto_01.vox`… | `cabeca` | the same box as the body's head | **replaces** the body's head; eyes on the +Y face; skin in 249–252 |
 | `cabelo_01.vox`… | `cabelo` | up to 2 voxels past the head (x 10–21, y 6–17, z 32–43); a ponytail or braid may go down to z 28 at the back. A **hat** may go up to 3 past the head on each side and up to the canvas top (x 9–22, y 5–18, z ≤ 47) | sits **on top of** the head; color in 245–248. A hat's band must be **one voxel wider than the head** all around, so its faces never sit on the head's faces |
 
-Proposed for the playtest: **4 faces, 6 hair styles.**
+**3 faces and 3 hair styles** for the playtest — the pirate is the first of each.
 
 ## Armor skins — `assets/vox/personagem/skins/armadura/<name>.vox`
 
@@ -178,8 +178,9 @@ voxel.
 Weapons are **1.25× real size** on purpose: seen from above on a phone
 screen, a real-size weapon becomes a line. Tier trims in 241–244.
 
-**The ring is not modeled** — from 27°–75° above, it is one voxel. The
-proposal is a glow or rune over the hand, done in code (still open).
+**The ring is not modeled.** Its look is **a circle around the forearm when
+the character attacks** — as if the blow were projected through it. A code
+effect (an emissive ring in the equipped ring's tier color): zero art.
 
 ## What NOT to model
 
@@ -198,9 +199,9 @@ proposal is a glow or rune over the hand, done in code (still open).
 | 3 | `espada`, `escudo`, `manto_guerreiro` — default skins of the first set | the first weapon set and the first attack |
 | 4 | `katana`, `bainha`, `pistola`, `coldre`, `manto_mago` — default skins | the other three sets |
 | 5 | armor skins | store content — made as they are sold, **not required to play** |
-| 6 | `rosto_02–04`, `cabelo_02–06` | character creation |
+| 6 | `rosto_02–03`, `cabelo_02–03` | character creation |
 
-**19 files to play** (the armor skins are store content, not a prerequisite). Save them in `assets/vox/personagem/`.
+**15 files to play** (the armor skins are store content, not a prerequisite). Save them in `assets/vox/personagem/`.
 
 ## The first character: the pirate
 
@@ -238,11 +239,6 @@ range, missing marker on a weapon — and says which file and which object.
 
 ## Still open
 
-1. Weapon **always in hand** or **put away out of combat** (the katana in its
-   scabbard is the set's identity)?
-2. Does **running** exist? (the protocol has a `SPRINT` bit nothing uses)
-3. **Who makes the final art** — you in MagicaVoxel, an artist, another source?
-4. Which of the **8 mob types** are creatures and which are humanoids, and in
-   which areas.
-5. The **ring's visual** — a glow or rune on the hand?
-6. How many **head variations**.
+1. Which of the 8 mob types are creatures and which are humanoids — the
+   proposal ("whatever bites is a creature, whatever shoots is a person") is
+   in `docs/PERSONAGEM.md`.

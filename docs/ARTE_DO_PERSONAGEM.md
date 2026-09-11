@@ -72,7 +72,7 @@ não gira nada.
 - **Pode:** arredondar, afinar, dar volume, detalhe de roupa — até **2 voxels**
   pra fora da caixa de cada peça.
 - **Não pode:** mover as juntas, mudar a altura total ou o comprimento dos
-  membros. O pé plantado no degrau e as 74 poses contam com esses números: um
+  membros. O pé plantado no degrau e as 82 poses contam com esses números: um
   joelho um voxel mais alto e o pé passa a entrar no degrau.
 
 ### A tampa das juntas
@@ -90,7 +90,7 @@ tapa o buraco que abriria na junta. **Mantenha a tampa** ao esculpir — ela é 
 | `rosto_01.vox`… | `cabeca` | a mesma caixa da cabeça do corpo | **substitui** a cabeça do corpo; olhos na face +Y; pele em 249–252 |
 | `cabelo_01.vox`… | `cabelo` | até 2 voxels além da cabeça (x 10–21, y 6–17, z 32–43); rabo ou trança pode descer até z 28 nas costas. **Chapéu** pode ir até 3 além da cabeça de cada lado e até o topo da tela (x 9–22, y 5–18, z ≤ 47) | fica **por cima** da cabeça; cor em 245–248. A faixa do chapéu tem que ser **um voxel mais larga que a cabeça** em volta toda, pra as faces dele nunca caírem em cima das da cabeça |
 
-Proposta pro playtest: **4 rostos, 6 cabelos.**
+**3 rostos e 3 cabelos** no playtest — o piratinha é o primeiro de cada.
 
 ## Skins de armadura — `assets/vox/personagem/skins/armadura/<nome>.vox`
 
@@ -146,8 +146,9 @@ ponto como o encaixe na mão e apaga o voxel.
 As armas são **1,25× o tamanho real** de propósito: de cima e numa tela de
 celular, arma em tamanho real vira um risco. Frisos de tier em 241–244.
 
-**O anel não se modela** — de 27°–75° de altura ele é um voxel. A proposta é
-um brilho ou runa sobre a mão feito em código (ABERTO em `PERSONAGEM.md`).
+**O anel não se modela.** O visual dele é **um círculo em volta do antebraço
+quando o personagem ataca** — como se o golpe fosse projetado através dele.
+Efeito de código (um anel emissivo na cor do tier do anel equipado): zero arte.
 
 ## O que NÃO modelar
 
@@ -164,9 +165,9 @@ um brilho ou runa sobre a mão feito em código (ABERTO em `PERSONAGEM.md`).
 | 3 | `espada`, `escudo`, `manto_guerreiro` — skins padrão do primeiro conjunto | o primeiro conjunto e o primeiro ataque |
 | 4 | `katana`, `bainha`, `pistola`, `coldre`, `manto_mago` — skins padrão | os outros três conjuntos |
 | 5 | skins de armadura | conteúdo de loja — feitas quando forem vendidas, **não são pré-requisito** |
-| 6 | `rosto_02–04`, `cabelo_02–06` | a criação de personagem |
+| 6 | `rosto_02–03`, `cabelo_02–03` | a criação de personagem |
 
-**19 arquivos pra jogar** (as skins de armadura são conteúdo de loja, não pré-requisito). Onde salvar: `assets/vox/personagem/`.
+**15 arquivos pra jogar** (as skins de armadura são conteúdo de loja, não pré-requisito). Onde salvar: `assets/vox/personagem/`.
 
 ## O primeiro personagem: o piratinha
 

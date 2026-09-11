@@ -28,6 +28,11 @@ conjunto: espada e escudo com outra cara, nunca uma katana que atira.
 pele. A armadura cobre o resto. Um rig, uma tabela de poses, e toda armadura
 serve em todo mundo.
 
+**DECIDIDO — a arte é feita por GERADOR.** Cada modelo é um script em
+`tools/voxrender/` que escreve o `.vox` no formato da ficha — como o piratinha
+(`pirata.py`). Refazer é rodar de novo, e o arquivo continua abrindo no
+MagicaVoxel pra quem quiser retocar à mão.
+
 **DECIDIDO — mob é criatura E humanoide.** Criaturas no mundo aberto;
 humanoides em áreas específicas (não necessariamente chefe).
 
@@ -117,6 +122,29 @@ O que isso dá por conjunto:
 O manto é uma peça rígida que balança com a velocidade (procedural, custo zero)
 — capa de tecido de verdade não existe em voxel sem física, e não precisa.
 
+### DECIDIDO — fora de combate, a arma é GUARDADA
+
+| conjunto | em combate | guardada |
+|---|---|---|
+| **espada e escudo** | espada na mão-D, escudo na mão-E | espada pendurada no quadril esquerdo, escudo nas costas por cima do manto |
+| **katana** | na mão-D | dentro da bainha |
+| **duas pistolas** | uma em cada mão | nos coldres |
+| **anel mágico** | no dedo | no dedo — o círculo só aparece atacando |
+
+Guardar não pede arte: é a MESMA malha da arma presa em outro encaixe, com
+outra posição — uma tabela no código. Pede duas coisas:
+
+- **sacar e guardar** — duas poses por conjunto (8 no total);
+- **o servidor dizer quem está em combate** — um estado novo no byte `acao`.
+  Critério proposto: atacou, conjurou ou tomou dano nos últimos 8 s.
+
+### DECIDIDO — o anel aparece como um CÍRCULO no braço
+
+O anel em si não se modela: de 27°–75° de altura ele é um voxel. O que
+aparece é **um círculo em volta do antebraço quando o personagem ataca**, como
+se o golpe fosse projetado através dele. É efeito de código — um anel
+emissivo na cor do tier do anel equipado —, zero arte.
+
 ### Skins de armadura
 
 Uma skin de armadura é **a roupa inteira**, no formato do corpo: os mesmos dez
@@ -164,12 +192,12 @@ malha em memória, geradas no carregamento: **zero modelo a mais**.
 
 | | variações no playtest | como |
 |---|---|---|
-| rosto | 4 | modelo |
-| cabelo | 6 | modelo; o elmo pesado o esconde |
+| rosto | 3 | modelo |
+| cabelo | 3 | modelo; capuz e elmo o escondem |
 | pele | 6 tons | paleta |
 
-**ABERTO — os números acima são chute.** Eles decidem quanto se modela, então
-mudar é barato agora e caro depois.
+**DECIDIDO — 3 de cada.** O piratinha é o primeiro rosto; o tricórnio, o
+primeiro cabelo.
 
 ### Acessórios
 
@@ -191,6 +219,7 @@ modelo com as dez peças, inclusive humanoide de mob.
 |---|---|---|
 | parado | velocidade ~0 | torso sobe e desce 1 voxel (respiração) |
 | andar | velocidade | pernas e braços em seno, fase pela distância andada |
+| correr | `SPRINT` + velocidade | o mesmo ciclo, passo mais longo e tronco inclinado pra frente |
 | pulo | `PULANDO` + arco que o cliente já desenha | encolhe na subida, abre os braços na queda |
 | pouso | fim do arco | agacha dobrando os joelhos, 0,1 s |
 | degrau | altura do chão sob cada pé | cada pé plantado no seu bloco, joelho dobrado (IK de dois ossos) |
@@ -234,7 +263,8 @@ mãos. Com só doze skills, gesto próprio custa pouco.
 | combos: 4 conjuntos × 3 golpes × 3 | 36 |
 | skills: 12 × 3 | 36 |
 | coleta (agachado tocando a pedra, em laço) | 2 |
-| **total** | **74** |
+| sacar e guardar: 4 conjuntos × 2 | 8 |
+| **total** | **82** |
 
 O tempo de cada pose sai do servidor: `espera_s` e `conjuracao_s` da skill, a
 cadência do ataque. A animação nunca decide nada — ela só mostra o que o
@@ -266,9 +296,22 @@ O estoque do zone14 em peças: lobo, urso, tigre, cervo, porco, dragão,
 hipogrifo, hidra, owlbear, golem de pedra, golem de terra, ent, escaravelho,
 morsa, e um punhado de aves. Sem peças: esqueleto-lorde, colosso, árvores.
 
-**ABERTO — o mapa dos 8 tipos.** Grunt, Tank, Ranger, Ninja, Mago, Berserker,
-Arqueiro e Chefe são nomes herdados. Qual vira criatura, qual vira humanoide,
-e em que áreas os humanoides aparecem.
+**PROPOSTA — o mapa dos 8 tipos: quem morde é bicho, quem atira é gente.**
+Os oito são os da tabela `enemy_kinds`, nomes herdados com atributos.
+
+| tipo | no banco | vira | por quê |
+|---|---|---|---|
+| Grunt | 50 de vida, corpo a corpo | lobo | o mob comum; já existe |
+| Tank | 120 de vida, lento, defesa 8 | urso | massa e lentidão |
+| Ninja | 40 de vida, o mais rápido (4,2) | tigre | o bote |
+| Berserker | 200 de vida, 28 de dano | owlbear | fúria |
+| Ranger | 35 de vida, à distância, foge | humanoide pistoleiro | reusa a pistola |
+| Mago | 45 de vida, à distância (12), foge | humanoide com anel | reusa o círculo no braço |
+| Arqueiro | 45 de vida, à distância (9), foge | humanoide com arco | um arco só de mob |
+| Chefe | 700 de vida, 5 projéteis | lobo grande | já existe (`lobo.vox`) |
+
+Bicho não segura arma, então tudo que atira vira humanoide — e o humanoide
+reaproveita o corpo e as poses do jogador.
 
 ## Montaria e pet
 
@@ -349,12 +392,5 @@ código muda quando ela chega.
 
 ## O que ainda depende de você
 
-1. **Arma fora de combate** — sempre na mão, ou guardada (a katana na bainha é
-   a identidade do conjunto)?
-2. **Correr existe?** O protocolo tem o bit `SPRINT` e o servidor tem
-   `SPRINT_SPEED_MULT`, mas nada usa. Se existir, é mais um ciclo procedural.
-3. **Quem faz a arte final** — você no MagicaVoxel, um artista, outra fonte?
-   Muda o quanto vale investir no visualizador de pose.
-4. **O mapa dos 8 tipos de mob** e as áreas dos humanoides.
-5. **O visual do anel** — ele é um voxel de cima; brilho ou runa na mão?
-6. **Quantas variações de cabeça**.
+1. **O mapa dos 8 tipos de mob** — confirma a proposta de "quem morde é bicho,
+   quem atira é gente"? E em que áreas os humanoides aparecem.
