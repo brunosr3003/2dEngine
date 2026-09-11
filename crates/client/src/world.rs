@@ -108,6 +108,12 @@ pub struct Ent {
     pub combo_ant: Option<(u8, f32)>,
     /// Segundos desde o ultimo dano recebido.
     pub ferido: Option<f32>,
+    /// De onde veio o ultimo golpe recebido (aponta pro atacante), em mundo.
+    pub golpe_de: Vec2,
+    /// A inercia de cada peca do boneco (`rig::Molas`).
+    pub molas: crate::rig::Molas,
+    /// O rastro da lamina: (base, ponta, quando), em mundo.
+    pub rastro: Vec<(macroquad::prelude::Vec3, macroquad::prelude::Vec3, f32)>,
     /// 0 andando .. 1 correndo, suavizado.
     pub correr: f32,
     /// 0 no chao .. 1 no ar, suavizado: descer um degrau tira o pe' do chao
@@ -124,6 +130,10 @@ impl Ent {
 #[derive(Default)]
 pub struct World {
     pub ents: HashMap<EntityId, Ent>,
+    /// Numeros e faiscas em curso (`efeitos`).
+    pub efeitos: Vec<Efeito>,
+    /// 0..1: a borda vermelha de quando o PROPRIO jogador apanha.
+    pub dor: f32,
     /// Ordem estavel de desenho (y crescente) recalculada por quadro.
     order: Vec<EntityId>,
     pub self_id: Option<EntityId>,
@@ -163,6 +173,47 @@ fn anda_a_fase(ent: &mut Ent, andou: f32, dt: f32) {
     ent.fase = (ent.fase + andou / passada * std::f32::consts::TAU) % (std::f32::consts::TAU * 64.0);
 }
 
+/// Um golpe que acertou alguem, na tela: o numero e a faisca.
+#[derive(Clone, Copy, Debug)]
+pub struct Efeito {
+    pub alvo: EntityId,
+    pub dano: i32,
+    pub critico: bool,
+    /// Foi no proprio jogador (vermelho, e a tela doi junto).
+    pub eu: bool,
+    pub t: f32,
+    /// 0..1: espalha numeros seguidos e gira a faisca.
+    pub semente: f32,
+}
+
+impl World {
+    /// Os acertos do tick (`WorldSnapshot::acertos`): quem apanhou da' o
+    /// tranco, e o golpe vira numero e faisca. Vem do servidor com o dano
+    /// REAL, e nao da queda de vida — no modo imortal a vida nao cai e o
+    /// golpe tem que aparecer do mesmo jeito.
+    pub fn acertos(&mut self, lista: &[shared::protocol::Acerto]) {
+        for a in lista {
+            let eu = self.self_id == Some(a.alvo);
+            if let Some(ent) = self.ents.get_mut(&a.alvo) {
+                ent.ferido = Some(0.0);
+                ent.golpe_de = Vec2::new(a.de[0] as f32, a.de[1] as f32) / 127.0;
+            }
+            if eu {
+                self.dor = 1.0;
+            }
+            let h = (a.alvo.0 as u64 ^ (self.efeitos.len() as u64).wrapping_mul(0x9E37_79B9)).wrapping_mul(2_654_435_761);
+            self.efeitos.push(Efeito {
+                alvo: a.alvo,
+                dano: a.dano,
+                critico: a.critico,
+                eu,
+                t: 0.0,
+                semente: (h % 1000) as f32 / 1000.0,
+            });
+        }
+    }
+}
+
 impl World {
     /// Aplica um tick em DELTA.
     ///
@@ -197,6 +248,9 @@ impl World {
                 combo: None,
                 combo_ant: None,
                 ferido: None,
+                golpe_de: Vec2::ZERO,
+                molas: Default::default(),
+                rastro: Vec::new(),
                 correr: 0.0,
                 ar: 0.0,
             });
@@ -229,10 +283,6 @@ impl World {
                     ent.sacada = 1.0;
                 }
             }
-            // Tomou dano: a vida caiu (e nao e' a entidade recem-chegada).
-            if ent.state.hp != 0 && st.hp < ent.state.hp {
-                ent.ferido = Some(0.0);
-            }
             ent.state = st;
         }
         for id in removed {
@@ -246,6 +296,11 @@ impl World {
     /// `chao` da' a altura de apoio: e' o mesmo campo de altura que o servidor
     /// usa pra colisao, entao a entidade pisa exatamente onde ela pisa la'.
     pub fn tick(&mut self, dt: f32, chao: &dyn Fn(f32, f32) -> f32) {
+        for ef in &mut self.efeitos {
+            ef.t += dt;
+        }
+        self.efeitos.retain(|ef| ef.t < 1.1);
+        self.dor = (self.dor - dt * 2.2).max(0.0);
         // Peso da suavizacao independente do frame rate.
         let a = 1.0 - (-SMOOTH_K * dt).exp();
 

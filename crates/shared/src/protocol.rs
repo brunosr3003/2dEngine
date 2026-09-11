@@ -819,6 +819,22 @@ pub struct WorldSnapshot {
     /// Estado de quem mudou.
     pub states: Vec<EntityState>,
     pub removed: Vec<EntityId>,
+    /// Quem apanhou neste tick, entre os que este jogador enxerga. O cliente
+    /// desenha o numero, a faisca e o tranco a partir daqui — e nao da queda
+    /// de vida, que no modo imortal nao acontece e num golpe absorvido
+    /// tambem nao.
+    pub acertos: Vec<Acerto>,
+}
+
+/// Um golpe que acertou alguem.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Acerto {
+    pub alvo: EntityId,
+    /// Dano REAL do golpe, sem o corte pela vida que sobrava.
+    pub dano: i32,
+    pub critico: bool,
+    /// De onde veio o golpe (aponta pro atacante), quantizado em -127..127.
+    pub de: [i8; 2],
 }
 
 fn default_xp_mult() -> u64 { crate::constants::DEFAULT_XP_MULTIPLIER }

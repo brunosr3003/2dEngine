@@ -42,13 +42,15 @@ fn main() {
             entered: Vec::new(),
             states: (0..n).map(state).collect(),
             removed: Vec::new(),
+            acertos: Vec::new(),
         };
         // Pior caso: todo mundo entrando de uma vez (troca de mapa, teleporte).
         let entrada = WorldSnapshot {
             entered: (0..n).map(meta).collect(),
             states: (0..n).map(state).collect(),
             ..WorldSnapshot { tick: 0, server_time_ms: 0, last_input_seq: 0,
-                              entered: Vec::new(), states: Vec::new(), removed: Vec::new() }
+                              entered: Vec::new(), states: Vec::new(), removed: Vec::new(),
+                              acertos: Vec::new() }
         };
         let r = shared::protocol::encode(&regime).unwrap().len();
         let e = shared::protocol::encode(&entrada).unwrap().len();

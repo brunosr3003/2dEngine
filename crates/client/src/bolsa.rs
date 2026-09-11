@@ -528,10 +528,11 @@ impl Bolsa {
             tempo: get_time() as f32,
             ar: 0.0,
             degrau: [0.0, 0.0],
-            combate: crate::rig::Combate { conjunto, sacada: 1.0, golpe: None, golpe_ant: None, ferido: None },
+            combate: crate::rig::Combate { conjunto, sacada: 1.0, ..Default::default() },
         };
         let base = Mat4::from_rotation_y((get_time() as f32 * 0.5).sin() * 0.9);
-        render3d::desenha_rig(base, &entrada, corpo, vox.rig(render3d::RIG_CHAPEU), vox);
+        let pose = crate::rig::pose(&entrada);
+        render3d::desenha_rig(base, &pose, corpo, vox.rig(render3d::RIG_CHAPEU), vox, None);
         gl_use_default_material();
         set_default_camera();
         draw_texture_ex(

@@ -130,6 +130,7 @@ pub struct Bicho {
 }
 
 /// O que a pose precisa saber do quadro.
+#[derive(Default)]
 pub struct Entrada {
     /// Fase da passada, em radianos: anda com a DISTANCIA (ver `ciclo`).
     pub passada: f32,
@@ -141,6 +142,10 @@ pub struct Entrada {
     pub golpe: f32,
     /// Desencontra bichos iguais lado a lado.
     pub semente: f32,
+    /// Segundos desde o ultimo golpe RECEBIDO.
+    pub ferido: Option<f32>,
+    /// Pra onde o golpe empurra (longe do atacante), no espaco do bicho.
+    pub recuo: Vec3,
 }
 
 struct Marcha {
@@ -330,6 +335,10 @@ pub struct Corpo {
     pub torce: f32,
     pub avanca: f32,
     pub sobe_tronco: f32,
+    /// Achatamento elastico do golpe recebido (fracao; `rig::esmagamento`).
+    pub esmaga: f32,
+    /// Deslize de lado do recuo, em unidades.
+    pub lado: f32,
 }
 
 /// O corpo sobe quando a perna abre: no extremo do passo ela esta' inclinada
@@ -338,12 +347,19 @@ pub fn corpo(e: &Entrada, a: &Anatomia) -> Corpo {
     let m = marcha(e.vel);
     let respiro = (e.tempo * 1.8 + e.semente * 0.37).sin() * 0.006 * a.altura;
     let g = golpe(e.golpe);
+    // o golpe recebido: empina, escorrega pra longe de quem bateu e amassa
+    let (k, esmaga) = match e.ferido {
+        Some(t) => (crate::rig::tranco(t), crate::rig::esmagamento(t)),
+        None => (0.0, 0.0),
+    };
     Corpo {
         sobe: e.passada.sin().abs() * 0.045 * a.altura * m.acorda + respiro,
-        pitch: g.pitch,
+        pitch: g.pitch - 0.30 * k,
         torce: g.torce * a.lado,
-        avanca: g.avanca * a.altura,
+        avanca: g.avanca * a.altura + e.recuo.z * 0.12 * a.altura * k,
         sobe_tronco: g.sobe * a.altura,
+        esmaga,
+        lado: e.recuo.x * 0.12 * a.altura * k,
     }
 }
 
@@ -352,11 +368,13 @@ pub fn corpo(e: &Entrada, a: &Anatomia) -> Corpo {
 pub fn peca(j: Junta, e: &Entrada, a: &Anatomia, pivo: Vec3) -> (Quat, Vec3) {
     let m = marcha(e.vel);
     let x = |ang: f32| Quat::from_rotation_x(ang);
+    let dor = e.ferido.map_or(0.0, crate::rig::tranco);
     match j {
         Junta::Tronco => (Quat::IDENTITY, Vec3::ZERO),
-        Junta::Cauda => (x((e.tempo * 2.2 + e.semente * 0.01).sin() * 0.18), Vec3::ZERO),
+        Junta::Cauda => (x((e.tempo * 2.2 + e.semente * 0.01).sin() * 0.18 + 0.4 * dor), Vec3::ZERO),
         Junta::Cabeca | Junta::Pescoco => {
-            (x((e.tempo * 1.6).sin() * 0.12 + e.passada.sin() * 0.05 * m.amp), Vec3::ZERO)
+            // no golpe a cabeca da' o tranco pra tras
+            (x((e.tempo * 1.6).sin() * 0.12 + e.passada.sin() * 0.05 * m.amp - 0.35 * dor), Vec3::ZERO)
         }
         Junta::Pata { frente, esq } => {
             // o toco inclina POUCO, acompanhando o passo: quem move o pe' e'
@@ -463,7 +481,7 @@ mod tests {
     }
 
     fn entrada(golpe: f32) -> Entrada {
-        Entrada { passada: 1.3, vel: 0.0, tempo: 4.0, golpe, semente: 7.0 }
+        Entrada { passada: 1.3, vel: 0.0, tempo: 4.0, golpe, semente: 7.0, ..Default::default() }
     }
 
     fn pata_que_golpeia(t: f32) -> Vec3 {

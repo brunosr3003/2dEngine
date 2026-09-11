@@ -11,6 +11,7 @@
 mod api;
 mod bicho;
 mod bolsa;
+mod efeitos;
 mod entrada;
 mod hud;
 mod map;
@@ -457,6 +458,7 @@ impl Jogo {
                 self.tick = snapshot.tick;
                 self.world
                     .apply(snapshot.entered, snapshot.states, &snapshot.removed);
+                self.world.acertos(&snapshot.acertos);
             }
             ServerMessage::Chat { from, text } => {
                 self.chat.push(format!("{from}: {text}"));
@@ -825,6 +827,8 @@ impl Jogo {
         render3d::draw_entities(&mut self.world, &self.vox, self.alvo, &vista);
         gl_use_default_material();
         set_default_camera();
+        // Numero de dano, faisca e a borda vermelha, por cima do mundo.
+        efeitos::desenha(&self.world, &vista);
         if hud::draw_hud(
             &self.info,
             &self.rede,

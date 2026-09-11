@@ -9403,6 +9403,24 @@ impl GameWorld {
                 fica
             });
 
+            // Os acertos do tick que este jogador enxerga. Vai o dano REAL: no
+            // modo imortal a vida nao cai, mas o golpe aconteceu e tem que
+            // aparecer.
+            let acertos: Vec<shared::protocol::Acerto> = self
+                .damage_this_tick
+                .iter()
+                .filter(|(id, _)| visiveis.contains(id))
+                .map(|(id, dano)| {
+                    let d = self.hit_this_tick.get(id).copied().unwrap_or(Vec2::ZERO);
+                    let q = |v: f32| (v.clamp(-1.0, 1.0) * 127.0).round() as i8;
+                    shared::protocol::Acerto {
+                        alvo: *id,
+                        dano: *dano,
+                        critico: self.crit_this_tick.get(id).copied().unwrap_or(false),
+                        de: [q(d.x), q(d.y)],
+                    }
+                })
+                .collect();
             let _ = session.handle.to_client.send(ServerMessage::Snapshot { snapshot: WorldSnapshot {
                 tick: self.tick,
                 server_time_ms: now_ms(),
@@ -9410,6 +9428,7 @@ impl GameWorld {
                 entered,
                 states,
                 removed: removed_for_me,
+                acertos,
             }});
             if session.inventory_dirty {
                 session.inventory_dirty = false;

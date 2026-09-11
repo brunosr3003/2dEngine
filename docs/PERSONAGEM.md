@@ -384,6 +384,26 @@ guinada e elevação, e a lâmina aponta pra onde a chave manda: o giro na mão
 sai da conta. Katana, pistolas e anel entram com a arte deles; as skills,
 quando o cliente tiver como conjurá-las.
 
+**FEITO — o que tira o duro.** Por cima da pose-chave roda uma MOLA por junta
+(`rig::Molas`): a pose do quadro vira alvo e cada peça chega nele com a
+própria inércia — o antebraço depois do braço, a lâmina depois do antebraço,
+e com amortecimento abaixo de 1 elas passam um pouco e voltam. As pernas não
+têm mola: pé plantado tem que cair exatamente onde a conta manda. O corte
+acelera e passa do ponto; o peso do corpo desce no impacto dobrando os dois
+joelhos na mesma conta do degrau (o pé não afunda); a guarda respira, a
+ponta da espada balança e, andando, os braços acompanham o passo. A lâmina
+deixa uma fita de rastro enquanto corta.
+
+**FEITO — apanhar.** O servidor manda os acertos do tick no snapshot
+(`WorldSnapshot::acertos`: alvo, dano real, crítico, de onde veio) — e não a
+queda de vida, que no modo imortal e no golpe absorvido não acontece. Quem
+apanha dá o tranco pra LONGE do atacante (tronco, cabeça, braços abrindo,
+joelhos cedendo), amassa e volta balançando (`rig::esmagamento`) e pisca:
+branco no bicho, vermelho em gente. O bicho empina, escorrega pra trás e
+a cabeça dá o tranco. Por cima, em 2D (`efeitos.rs`): o número do dano pula
+e sobe, a faísca estoura no peito e, quando é você, a borda da tela fica
+vermelha.
+
 **PROPOSTA — aparência na META, não no tick.** Skin de armadura, skin de arma
 do conjunto atual, conjunto, tier da arma e da armadura (pros frisos), peso
 (pro ícone), rosto, cabelo, pele: ~10 bytes, vai no nascimento da entidade e

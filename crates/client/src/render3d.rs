@@ -1088,8 +1088,10 @@ pub fn draw_entities(
     // Os rastros sao transparentes: vao depois de tudo que e' solido, senao
     // o que fosse desenhado atras deles depois nao apareceria atraves.
     let mut rastros = Vec::new();
+    let mut fitas = Vec::new();
+    let self_id = world.self_id;
     for id in order {
-        let Some(e) = world.ents.get(&id) else { continue };
+        let Some(e) = world.ents.get_mut(&id) else { continue };
         let p = vista.pos_de(e);
 
         // Marca do alvo: anel no chao, que e' como MMO de target sinaliza.
@@ -1101,7 +1103,9 @@ pub fn draw_entities(
         // Gente (jogador, NPC) e' desenhada em PECAS, com a pose do quadro.
         if matches!(e.meta.tag, shared::EntityTag::Player | shared::EntityTag::Npc) {
             if let Some(corpo) = vox.rig(RIG_CORPO) {
-                desenha_personagem(e, corpo, vox.rig(RIG_CHAPEU), vox, vista);
+                if let Some(f) = desenha_personagem(e, corpo, vox.rig(RIG_CHAPEU), vox, vista, self_id == Some(id)) {
+                    fitas.push(f);
+                }
                 continue;
             }
         }
@@ -1148,64 +1152,114 @@ pub fn draw_entities(
     for (base, r) in &rastros {
         desenha_rastro(base, r);
     }
+    let agora = get_time() as f32;
+    for f in &fitas {
+        desenha_fita(f, agora);
+    }
 }
 
 /// Os arquivos de pecas do personagem (docs/character create.md).
 pub const RIG_CORPO: &str = "personagem/corpo";
 pub const RIG_CHAPEU: &str = "personagem/cabelo_01";
 
-/// O personagem em pecas: pose do quadro, uma matriz por peca, e cada malha
-/// desenhada com a sua.
+/// Quanto o rastro da lamina dura.
+const VIDA_DO_RASTRO: f32 = 0.16;
+
+/// O clarao do golpe: o modelo pisca na hora do acerto — branco no bicho,
+/// vermelho em gente. E' o quadro que diz "pegou".
+fn clarao(e: &crate::world::Ent, eu: bool) -> Option<([f32; 3], f32)> {
+    let t = e.ferido?;
+    if t > 0.14 {
+        return None;
+    }
+    let k = (1.0 - t / 0.14) * 0.8;
+    let cor = if e.meta.tag == shared::EntityTag::Enemy {
+        [1.0, 1.0, 1.0]
+    } else if eu {
+        [1.0, 0.25, 0.2]
+    } else {
+        [1.0, 0.55, 0.45]
+    };
+    Some((cor, k))
+}
+
+/// O personagem em pecas: pose do quadro, a inercia das molas por cima, uma
+/// matriz por peca. Devolve o rastro da lamina, se ele esta' cortando.
 fn desenha_personagem(
-    e: &crate::world::Ent,
+    e: &mut crate::world::Ent,
     corpo: &std::collections::HashMap<String, Vec<Mesh>>,
     chapeu: Option<&std::collections::HashMap<String, Vec<Mesh>>>,
     vox: &VoxCache,
     vista: &Vista,
-) {
+    eu: bool,
+) -> Option<Vec<(Vec3, Vec3, f32)>> {
     let p = vista.pos_de(e);
     let (sin, cos) = e.yaw.sin_cos();
     // Quanto o chao sob cada pe' esta' acima da base do corpo, em voxels. O pe'
     // direito fica 2 voxels pro -X do rig (a direita do boneco), o esquerdo
     // pro +X; girado pela direcao da entidade.
+    let voando = e.voando;
     let degrau = |dx: f32| -> f32 {
-        if e.voando {
+        if voando {
             return 0.0;
         }
         let ox = dx * VOXEL;
         let (x, z) = (p.x + ox * cos, p.z - ox * sin);
         (vista.chao_em(x, z) - p.y) / VOXEL
     };
+    let pes = [degrau(-2.0), degrau(2.0)];
+    // o golpe empurra pra LONGE de quem bateu: do mundo pro espaco do boneco
+    let recuo = Quat::from_rotation_y(-e.yaw) * vec3(-e.golpe_de.x, 0.0, -e.golpe_de.y);
     let entrada = crate::rig::Entrada {
         fase: e.fase,
         andar: e.andar,
         correr: e.correr,
         tempo: get_time() as f32,
         ar: e.ar,
-        degrau: [degrau(-2.0), degrau(2.0)],
+        degrau: pes,
         combate: crate::rig::Combate {
             conjunto: shared::components::acao::conjunto(e.state.acao),
             sacada: e.sacada,
             golpe: e.combo,
             golpe_ant: e.combo_ant,
             ferido: e.ferido,
+            recuo,
         },
     };
-    let base = Mat4::from_translation(p) * Mat4::from_rotation_y(e.yaw);
-    desenha_rig(base, &entrada, corpo, chapeu, vox);
+    let mut pose = crate::rig::pose(&entrada);
+    e.molas.segue(&mut pose, get_frame_time());
+    let s = e.ferido.map_or(0.0, crate::rig::esmagamento);
+    let base = Mat4::from_translation(p)
+        * Mat4::from_rotation_y(e.yaw)
+        * Mat4::from_scale(vec3(1.0 + 0.5 * s, 1.0 - s, 1.0 + 0.5 * s));
+    let armas = desenha_rig(base, &pose, corpo, chapeu, vox, clarao(e, eu));
+
+    // O rastro da lamina: base e ponta a cada quadro enquanto o golpe corre.
+    let agora = get_time() as f32;
+    if e.combo.is_some() {
+        if let Some([espada, _]) = armas {
+            e.rastro.push((
+                espada.transform_point3(vec3(0.0, 0.0, 5.0 * VOXEL)),
+                espada.transform_point3(vec3(0.0, 0.0, 22.0 * VOXEL)),
+                agora,
+            ));
+        }
+    }
+    e.rastro.retain(|(_, _, t)| agora - t < VIDA_DO_RASTRO);
+    (e.rastro.len() >= 2).then(|| e.rastro.clone())
 }
 
 /// O boneco em pecas numa base qualquer — o mundo usa a posicao da entidade;
-/// a bolsa, a origem do retrato.
+/// a bolsa, a origem do retrato. Devolve onde ficaram a espada e o escudo.
 pub fn desenha_rig(
     base: Mat4,
-    entrada: &crate::rig::Entrada,
+    pose: &crate::rig::Pose,
     corpo: &std::collections::HashMap<String, Vec<Mesh>>,
     chapeu: Option<&std::collections::HashMap<String, Vec<Mesh>>>,
     vox: &VoxCache,
-) {
-    let pose = crate::rig::pose(entrada);
-    let mats = crate::rig::matrizes(&pose, base, VOXEL);
+    tinta: Option<([f32; 3], f32)>,
+) -> Option<[Mat4; 2]> {
+    let mats = crate::rig::matrizes(pose, base, VOXEL);
     for (i, (nome, _, _)) in crate::rig::PECAS.iter().enumerate() {
         let malhas = if *nome == "cabelo" {
             chapeu.and_then(|c| c.get("cabelo"))
@@ -1213,25 +1267,47 @@ pub fn desenha_rig(
             corpo.get(*nome)
         };
         for m in malhas.into_iter().flatten() {
-            draw_mesh_mat(m, &mats[i]);
+            draw_mesh_mat_tinta(m, &mats[i], tinta);
         }
     }
     // A espada e o escudo: na mao em combate, guardados fora dele.
-    if let Some(armas) = crate::rig::armas(&pose, &mats, VOXEL) {
+    let armas = crate::rig::armas(pose, &mats, VOXEL);
+    if let Some(armas) = armas {
         for (nome, mat) in ["espada", "escudo"].into_iter().zip(armas) {
             for m in vox.arma(nome).into_iter().flatten() {
                 draw_mesh_mat(m, &mat);
             }
         }
     }
+    armas
+}
+
+/// O rastro da lamina: uma fita entre a base e a ponta de cada amostra, que
+/// some com a idade. E' o que o olho le' como velocidade do corte.
+fn desenha_fita(amostras: &[(Vec3, Vec3, f32)], agora: f32) {
+    let mut vertices = Vec::with_capacity(amostras.len() * 2);
+    for (base, ponta, t) in amostras {
+        let u = ((agora - t) / VIDA_DO_RASTRO).clamp(0.0, 1.0);
+        let a = (1.0 - u).powi(2) * 170.0;
+        for (q, alfa) in [(*base, a / 3.0), (*ponta, a)] {
+            vertices.push(Vertex { position: q, uv: vec2(0.0, 0.0), color: [235, 244, 255, alfa as u8], normal: Vec4::ZERO });
+        }
+    }
+    let mut indices = Vec::new();
+    for i in 0..(amostras.len() as u16).saturating_sub(1) {
+        let (a0, a1, b0, b1) = (i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 3);
+        indices.extend_from_slice(&[a0, a1, b0, a1, b1, b0, a0, b0, a1, a1, b0, b1]);
+    }
+    draw_mesh(&Mesh { vertices, indices, texture: None });
 }
 
 /// Um bicho em pecas: a pose sai da passada e do golpe (`bicho.rs`), e cada
 /// peca gira em volta do proprio pivo.
 ///
 /// Duas bases: as PATAS ficam no chao, e o tronco (com cabeca e cauda)
-/// empina, torce e avanca por cima delas na patada. Devolve o rastro das
-/// garras, que e' desenhado depois de todo mundo (ver `desenha_rastro`).
+/// empina, torce e avanca por cima delas — na patada e no golpe recebido. O
+/// achatamento do golpe vai no bicho inteiro. Devolve o rastro das garras,
+/// desenhado depois de todo mundo (ver `desenha_rastro`).
 fn desenha_bicho(
     e: &crate::world::Ent,
     b: &crate::bicho::Bicho,
@@ -1244,14 +1320,19 @@ fn desenha_bicho(
         tempo: get_time() as f32,
         golpe: e.golpe,
         semente: e.meta.id.0 as f32,
+        ferido: e.ferido,
+        recuo: Quat::from_rotation_y(-e.yaw) * vec3(-e.golpe_de.x, 0.0, -e.golpe_de.y),
     };
     let c = crate::bicho::corpo(&entrada, &b.anat);
-    let chao = Mat4::from_translation(p) * Mat4::from_rotation_y(e.yaw);
+    let chao = Mat4::from_translation(p)
+        * Mat4::from_rotation_y(e.yaw)
+        * Mat4::from_scale(vec3(1.0 + 0.5 * c.esmaga, 1.0 - c.esmaga, 1.0 + 0.5 * c.esmaga));
     let patas = chao * Mat4::from_translation(vec3(0.0, c.sobe, 0.0));
     let tronco = patas
-        * Mat4::from_translation(vec3(0.0, c.sobe_tronco, c.avanca))
+        * Mat4::from_translation(vec3(c.lado, c.sobe_tronco, c.avanca))
         * Mat4::from_rotation_y(c.torce)
         * Mat4::from_rotation_x(c.pitch);
+    let tinta = clarao(e, false);
     for peca in &b.pecas {
         let (giro, desloca) = crate::bicho::peca(peca.junta, &entrada, &b.anat, peca.pivo);
         let base = if matches!(peca.junta, crate::bicho::Junta::Pata { .. }) { patas } else { tronco };
@@ -1260,7 +1341,7 @@ fn desenha_bicho(
             * Mat4::from_quat(giro)
             * Mat4::from_translation(-peca.pivo);
         for m in &peca.malhas {
-            draw_mesh_mat(m, &mat);
+            draw_mesh_mat_tinta(m, &mat, tinta);
         }
     }
     crate::bicho::rastro(&entrada, &b.anat).map(|r| (patas, r))
@@ -1317,11 +1398,26 @@ fn desenha_rastro(base: &Mat4, r: &crate::bicho::Rastro) {
 /// `draw_mesh_at` — vertice transformado na CPU —, so' que com rotacao em
 /// qualquer eixo, que e' o que uma peca do rig precisa.
 fn draw_mesh_mat(m: &Mesh, mat: &Mat4) {
+    draw_mesh_mat_tinta(m, mat, None);
+}
+
+/// A mesma coisa, puxando a cor de cada vertice pra `tinta` na fracao pedida
+/// — e' o clarao do golpe.
+fn draw_mesh_mat_tinta(m: &Mesh, mat: &Mat4, tinta: Option<([f32; 3], f32)>) {
+    let pinta = |c: [u8; 4]| -> [u8; 4] {
+        match tinta {
+            None => c,
+            Some((t, k)) => {
+                let f = |a: u8, b: f32| (a as f32 + (b * 255.0 - a as f32) * k).clamp(0.0, 255.0) as u8;
+                [f(c[0], t[0]), f(c[1], t[1]), f(c[2], t[2]), c[3]]
+            }
+        }
+    };
     let moved = Mesh {
         vertices: m
             .vertices
             .iter()
-            .map(|v| Vertex { position: mat.transform_point3(v.position), ..*v })
+            .map(|v| Vertex { position: mat.transform_point3(v.position), color: pinta(v.color), ..*v })
             .collect(),
         indices: m.indices.clone(),
         texture: None,

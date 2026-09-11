@@ -290,15 +290,17 @@ pub struct Combate {
     /// O golpe que este interrompeu, CONGELADO no instante da troca: o novo
     /// parte de onde o anterior estava, entao a troca nao estala.
     pub golpe_ant: Option<(u8, f32)>,
-    /// Segundos desde o ultimo dano.
+    /// Segundos desde o ultimo golpe recebido.
     pub ferido: Option<f32>,
+    /// Pra onde o golpe empurra (longe do atacante), no espaco do boneco.
+    pub recuo: Vec3,
 }
 
 /// Quanto tempo sacar (ou guardar) leva.
 pub const TEMPO_DE_SACAR: f32 = 0.4;
 
 const PREPARA: f32 = 0.08;
-const CORTA: f32 = 0.09;
+const CORTA: f32 = 0.11;
 const SEGURA: f32 = 0.04;
 const VOLTA: f32 = 0.24;
 /// Um golpe inteiro. A cadencia do ataque e' 0,25 s: o seguinte chega no meio
@@ -345,6 +347,9 @@ struct Chave {
     escudo: f32,
     /// 0..1: o passo a' frente do golpe de cima.
     avanco: f32,
+    /// Quanto o corpo desce (negativo) ou sobe, em voxels. O peso cai NO
+    /// golpe: e' isso que faz o corte ter massa.
+    agacha: f32,
 }
 
 const fn br(guinada: f32, elevacao: f32, cotovelo: f32) -> Braco {
@@ -366,6 +371,7 @@ const GUARDA: Chave = Chave {
     lamina: la(-0.2, 1.9, PI),
     escudo: 0.2,
     avanco: 0.0,
+    agacha: -0.5,
 };
 
 /// Sacando: a mao direita no quadril esquerdo, a esquerda por cima do ombro
@@ -378,6 +384,7 @@ const SACANDO: Chave = Chave {
     lamina: la(0.0, -0.5, 0.0),
     escudo: PI,
     avanco: 0.0,
+    agacha: 0.0,
 };
 
 /// Os tres golpes, (preparo, impacto). Cada um comeca onde o anterior
@@ -388,43 +395,47 @@ const GOLPES: [[Chave; 2]; 3] = [
     // 1 — corte horizontal, da direita pra esquerda
     [
         Chave {
-            torce: -0.55,
+            torce: -0.75,
             inclina: 0.0,
             d: br(-1.4, 1.35, 0.5),
             e: br(-0.1, 0.5, 1.4),
             lamina: la(-1.6, 1.5, MEIA_VOLTA),
             escudo: 0.3,
             avanco: 0.0,
+            agacha: 0.3,
         },
         Chave {
-            torce: 0.55,
+            torce: 0.75,
             inclina: 0.05,
             d: br(0.9, 1.45, 0.25),
             e: br(0.5, 0.4, 1.1),
             lamina: la(1.1, 1.55, MEIA_VOLTA),
             escudo: 0.7,
             avanco: 0.0,
+            agacha: -1.4,
         },
     ],
     // 2 — de volta, subindo da esquerda pra direita
     [
         Chave {
-            torce: 0.6,
+            torce: 0.75,
             inclina: 0.05,
             d: br(1.1, 1.1, 0.7),
             e: br(0.5, 0.4, 1.1),
             lamina: la(1.3, 1.2, -MEIA_VOLTA),
             escudo: 0.7,
             avanco: 0.0,
+            agacha: 0.2,
         },
         Chave {
-            torce: -0.45,
+            torce: -0.65,
             inclina: -0.05,
             d: br(-1.1, 1.8, 0.3),
             e: br(-0.1, 0.5, 1.4),
             lamina: la(-1.2, 1.9, -MEIA_VOLTA),
             escudo: 0.2,
             avanco: 0.0,
+            agacha: -1.2,
         },
     ],
     // 3 — de cima pra baixo, com o passo a' frente
@@ -437,6 +448,7 @@ const GOLPES: [[Chave; 2]; 3] = [
             lamina: la(-0.1, 3.3, PI),
             escudo: 0.2,
             avanco: 0.3,
+            agacha: 0.8,
         },
         Chave {
             torce: 0.05,
@@ -446,6 +458,7 @@ const GOLPES: [[Chave; 2]; 3] = [
             lamina: la(-0.05, 1.15, PI),
             escudo: 0.4,
             avanco: 1.0,
+            agacha: -2.2,
         },
     ],
 ];
@@ -465,7 +478,18 @@ fn mistura(a: &Chave, b: &Chave, k: f32) -> Chave {
         ),
         escudo: l(a.escudo, b.escudo),
         avanco: l(a.avanco, b.avanco),
+        agacha: l(a.agacha, b.agacha),
     }
+}
+
+/// Acelera, e PASSA do ponto (~10%) antes de assentar: o corte tem inercia.
+/// A curva de passar do ponto sozinha sai com 4x a velocidade media no
+/// primeiro instante — um tranco, nao um golpe. Correndo por cima de uma
+/// suave, ela sai do zero, e o pico cai pra ~2,4x.
+fn passa(u: f32) -> f32 {
+    let g = suave(u);
+    let (c1, c3) = (1.3, 2.3);
+    1.0 + c3 * (g - 1.0).powi(3) + c1 * (g - 1.0).powi(2)
 }
 
 fn suave(u: f32) -> f32 {
@@ -485,7 +509,7 @@ fn chave_do_golpe(passo: u8, t: f32, desde: &Chave) -> Chave {
         return mistura(desde, prep, 1.0 - (1.0 - u) * (1.0 - u));
     }
     if t < PREPARA + CORTA {
-        return mistura(prep, imp, suave((t - PREPARA) / CORTA));
+        return mistura(prep, imp, passa((t - PREPARA) / CORTA));
     }
     if t < PREPARA + CORTA + SEGURA {
         return *imp;
@@ -514,7 +538,7 @@ fn orienta_escudo(guinada: f32) -> Quat {
 }
 
 /// O tranco de quem apanhou: sobe em 0,05 s e some em ~0,3 s.
-fn tranco(t: f32) -> f32 {
+pub fn tranco(t: f32) -> f32 {
     if t < 0.05 {
         t / 0.05
     } else {
@@ -523,16 +547,63 @@ fn tranco(t: f32) -> f32 {
 }
 
 fn aplica_combate(p: &mut Pose, e: &Entrada) {
-    let c = &e.combate;
-    if let Some(t) = c.ferido {
-        let k = tranco(t);
-        if k > 0.001 {
-            p.rot[TORSO] = p.rot[TORSO] * Quat::from_rotation_x(-0.35 * k);
-            p.rot[1] = p.rot[1] * Quat::from_rotation_x(-0.2 * k);
-            p.rot[BRACO_D] = abre(1.0, 0.3 * k) * p.rot[BRACO_D];
-            p.rot[BRACO_E] = abre(-1.0, 0.3 * k) * p.rot[BRACO_E];
-        }
+    arma_na_mao(p, e);
+    // o golpe recebido vai POR CIMA de tudo, inclusive do golpe dado
+    if let Some(t) = e.combate.ferido {
+        aplica_ferido(p, t, e.combate.recuo);
     }
+}
+
+/// O tranco de quem apanhou: o tronco e a cabeca vao pra LONGE do atacante,
+/// os bracos abrem, os joelhos cedem e o corpo desce.
+fn aplica_ferido(p: &mut Pose, t: f32, recuo: Vec3) {
+    let k = tranco(t);
+    if k <= 0.001 {
+        return;
+    }
+    let recuo = if recuo.length_squared() > 0.01 { recuo.normalize() } else { vec3(0.0, 0.0, -1.0) };
+    let eixo = Vec3::Y.cross(recuo).normalize_or_zero();
+    p.rot[TORSO] = Quat::from_axis_angle(eixo, 0.5 * k) * p.rot[TORSO];
+    p.rot[1] = Quat::from_axis_angle(eixo, 0.35 * k) * p.rot[1];
+    p.rot[BRACO_D] = abre(1.0, 0.45 * k) * p.rot[BRACO_D];
+    p.rot[BRACO_E] = abre(-1.0, 0.45 * k) * p.rot[BRACO_E];
+    agacha(p, -1.6 * k);
+}
+
+/// Desce o corpo `-d` voxels dobrando os DOIS joelhos na conta do degrau (a
+/// mesma lei dos cossenos): sem isso o pe' afundaria no chao. Subir, so' um
+/// pouco — perna reta nao estica.
+fn agacha(p: &mut Pose, d: f32) {
+    if d < 0.0 {
+        let (coxa, joelho) = joelho_no_degrau(-d);
+        for (c, k) in [(COXA_D, CANELA_D), (COXA_E, CANELA_E)] {
+            p.rot[c] = p.rot[c] * frente(coxa);
+            p.rot[k] = p.rot[k] * dobra_pra_tras(joelho);
+        }
+        p.subida += d;
+    } else {
+        p.subida += d.min(0.5);
+    }
+}
+
+/// A guarda VIVA: respira, a ponta da espada balanca, e andando os bracos
+/// acompanham o passo e o tronco torce contra as pernas. Guarda parada lia
+/// como boneco de vitrine segurando uma espada.
+fn guarda_viva(e: &Entrada) -> Chave {
+    let mut c = GUARDA;
+    let (t, a) = (e.tempo, e.andar.clamp(0.0, 1.0));
+    let passo2 = (e.fase * 2.0).sin();
+    c.torce += 0.04 * (t * 1.1).sin() + 0.10 * a * e.fase.sin();
+    c.d.elevacao += 0.05 * (t * 2.1).sin() + 0.10 * a * passo2;
+    c.e.elevacao += 0.04 * (t * 2.1 + 0.4).sin() + 0.08 * a * (e.fase * 2.0 + 0.3).sin();
+    c.lamina.elevacao += 0.07 * (t * 2.1 + 0.9).sin() + 0.12 * a * (e.fase * 2.0 + 0.6).sin();
+    c.lamina.guinada += 0.04 * (t * 1.3).sin();
+    c.escudo += 0.05 * (t * 1.7).sin();
+    c
+}
+
+fn arma_na_mao(p: &mut Pose, e: &Entrada) {
+    let c = &e.combate;
     if c.conjunto != ESPADA_ESCUDO {
         return;
     }
@@ -553,8 +624,8 @@ fn aplica_combate(p: &mut Pose, e: &Entrada) {
             // Sacar e guardar sao o MESMO gesto de ida e volta: a mao vai ao
             // quadril na metade do caminho, e e' ai' que a arma troca de lugar.
             let bump = (sacada * PI).sin().max(0.0);
-            let g = suave(sacada);
-            (mistura(&GUARDA, &SACANDO, bump), (0.85 * g).max(bump), 0.6 * g)
+            let g = suave(sacada) * (1.0 - 0.3 * e.correr.clamp(0.0, 1.0));
+            (mistura(&guarda_viva(e), &SACANDO, bump), (0.85 * g).max(bump), 0.6 * g)
         }
     };
     if peso_bracos <= 0.0 && !p.na_mao {
@@ -571,15 +642,15 @@ fn aplica_combate(p: &mut Pose, e: &Entrada) {
     p.rot[BRACO_E] = p.rot[BRACO_E].slerp(ombro(&chave.e), peso_bracos);
     p.rot[ANTEBRACO_E] = p.rot[ANTEBRACO_E].slerp(frente(chave.e.cotovelo), peso_bracos);
 
-    // o passo a' frente: perna direita adiante, a esquerda firma atras, e o
-    // corpo desce um pouco
+    // o peso: desce no golpe, sobe um pouco na antecipacao
+    agacha(p, chave.agacha * peso_tronco);
+    // o passo a' frente: perna direita adiante, a esquerda firma atras
     if chave.avanco > 0.0 {
         let a = chave.avanco;
         p.rot[COXA_D] = p.rot[COXA_D] * frente(0.5 * a);
         p.rot[CANELA_D] = p.rot[CANELA_D] * dobra_pra_tras(0.35 * a);
         p.rot[COXA_E] = p.rot[COXA_E] * frente(-0.35 * a);
         p.rot[CANELA_E] = p.rot[CANELA_E] * dobra_pra_tras(0.3 * a);
-        p.subida -= 1.0 * a;
     }
 
     // a arma na mao aponta pra onde a chave manda, qualquer que seja o braco
@@ -589,6 +660,89 @@ fn aplica_combate(p: &mut Pose, e: &Entrada) {
         cadeia_d.inverse() * orienta_lamina(&chave.lamina),
         cadeia_e.inverse() * orienta_escudo(chave.escudo),
     ];
+}
+
+/// O achatamento elastico de quem apanha: amassa na hora do golpe e volta
+/// balancando. Fracao da altura (positivo = mais baixo e mais largo).
+pub fn esmagamento(t: f32) -> f32 {
+    if t > 0.6 {
+        return 0.0;
+    }
+    0.13 * (-t / 0.11).exp() * (t * std::f32::consts::TAU * 6.0).cos()
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  MOLAS — o que tira o duro
+// ═══════════════════════════════════════════════════════════════════════
+//
+// A pose do quadro vira ALVO, e cada peca chega nele com a propria inercia.
+// Quanto mais longe do tronco, mais mole: o antebraco chega depois do braco e
+// a lamina depois do antebraco — a quebra de juntas em sucessao da animacao
+// classica. Amortecimento abaixo de 1 deixa PASSAR um pouco e voltar: e' o
+// que faz a lamina chicotear no fim do corte e o chapeu balancar no tranco.
+
+const NM: usize = N + 2;
+/// As pernas nao ganham mola: o pe' plantado e o joelho do degrau tem que
+/// cair exatamente onde a conta manda — mola ali e' pe' patinando.
+const COM_MOLA: [bool; NM] = [true, true, true, true, true, true, true, false, false, false, false, true, true];
+/// Rigidez (1/s^2) por junta: torso, cabeca, chapeu, braco d, antebraco d,
+/// braco e, antebraco e, as quatro da perna, punho d (lamina), punho e.
+const RIGIDEZ: [f32; NM] = [650.0, 260.0, 160.0, 520.0, 360.0, 520.0, 360.0, 0.0, 0.0, 0.0, 0.0, 240.0, 380.0];
+/// Amortecimento relativo (1 = chega sem passar).
+const AMORTECE: [f32; NM] = [0.72, 0.55, 0.42, 0.6, 0.52, 0.6, 0.52, 1.0, 1.0, 1.0, 1.0, 0.45, 0.6];
+
+#[derive(Clone, Copy, Debug)]
+pub struct Molas {
+    rot: [Quat; NM],
+    vel: [Vec3; NM],
+    viva: bool,
+}
+
+impl Default for Molas {
+    fn default() -> Self {
+        Molas { rot: [Quat::IDENTITY; NM], vel: [Vec3::ZERO; NM], viva: false }
+    }
+}
+
+impl Molas {
+    /// Leva a pose do quadro pela inercia de cada junta. Na primeira vez (ou
+    /// depois de um soluco longo) so' copia: mola acordando longe do alvo
+    /// daria um chicote do nada.
+    pub fn segue(&mut self, p: &mut Pose, dt: f32) {
+        let alvo = |p: &Pose, i: usize| if i < N { p.rot[i] } else { p.punho[i - N] };
+        if !self.viva || dt > 0.25 {
+            for i in 0..NM {
+                self.rot[i] = alvo(p, i);
+                self.vel[i] = Vec3::ZERO;
+            }
+            self.viva = true;
+            return;
+        }
+        let passos = ((dt * 240.0).ceil() as usize).clamp(1, 16);
+        let h = dt / passos as f32;
+        for i in 0..NM {
+            if !COM_MOLA[i] {
+                continue;
+            }
+            let a = alvo(p, i);
+            let k = RIGIDEZ[i];
+            let c = 2.0 * AMORTECE[i] * k.sqrt();
+            for _ in 0..passos {
+                let mut erro = a * self.rot[i].conjugate();
+                if erro.w < 0.0 {
+                    erro = -erro;
+                }
+                let e = erro.to_scaled_axis();
+                self.vel[i] += (e * k - self.vel[i] * c) * h;
+                self.rot[i] = (Quat::from_scaled_axis(self.vel[i] * h) * self.rot[i]).normalize();
+            }
+            if i < N {
+                p.rot[i] = self.rot[i];
+            } else {
+                p.punho[i - N] = self.rot[i];
+            }
+        }
+    }
 }
 
 /// A matriz de mundo da espada e do escudo, na mao ou guardados. `None` se o
@@ -735,7 +889,7 @@ mod testes {
 
     fn em_combate(golpe: Option<(u8, f32)>, golpe_ant: Option<(u8, f32)>, sacada: f32) -> Entrada {
         let mut e = parado();
-        e.combate = Combate { conjunto: 0, sacada, golpe, golpe_ant, ferido: None };
+        e.combate = Combate { conjunto: 0, sacada, golpe, golpe_ant, ..Default::default() };
         e
     }
 
@@ -801,7 +955,9 @@ mod testes {
             while t < DURACAO_DO_GOLPE {
                 t += 0.001;
                 let agora = armas_em(&em_combate(Some((passo, t)), None, 1.0));
-                assert!(agora.0.distance(antes.0) < 3.0, "golpe {passo}: ponta saltou em t={t:.3}");
+                // o corte varre ~190 graus somando tronco e braco: rapido de verdade, mas
+                // continuo — estalo seria dezenas de voxels
+                assert!(agora.0.distance(antes.0) < 6.0, "golpe {passo}: ponta saltou em t={t:.3}");
                 assert!(agora.1.distance(antes.1) < 1.0, "golpe {passo}: escudo saltou em t={t:.3}");
                 antes = agora;
             }
@@ -828,5 +984,47 @@ mod testes {
         let parada = cabeca(&e);
         e.combate.ferido = Some(0.05);
         assert!(cabeca(&e).z < parada.z - 1.0);
+    }
+
+    #[test]
+    fn a_mola_chega_no_alvo_e_a_lamina_passa_um_pouco() {
+        let mut m = Molas::default();
+        let mut p = pose(&parado());
+        m.segue(&mut p, 1.0 / 60.0); // acorda copiando
+        let alvo = Quat::from_rotation_x(-1.0);
+        let mut max_lamina: f32 = 0.0;
+        for _ in 0..60 {
+            let mut q = pose(&parado());
+            q.rot[BRACO_D] = alvo;
+            q.punho[0] = alvo;
+            m.segue(&mut q, 1.0 / 60.0);
+            max_lamina = max_lamina.max(q.punho[0].angle_between(Quat::IDENTITY));
+            p = q;
+        }
+        assert!(p.rot[BRACO_D].angle_between(alvo) < 0.02, "braco nao chegou");
+        assert!(max_lamina > 1.02, "a lamina tinha que passar do alvo: {max_lamina:.3}");
+        // perna nao tem mola
+        assert_eq!(p.rot[COXA_D], pose(&parado()).rot[COXA_D]);
+    }
+
+    #[test]
+    fn no_golpe_o_peso_desce_sem_afundar_o_pe() {
+        let e = em_combate(Some((0, PREPARA + CORTA + 0.01)), None, 1.0);
+        let p = pose(&e);
+        assert!(p.subida < -0.8, "o corpo tinha que descer: {}", p.subida);
+        for (c, k) in [(COXA_D, CANELA_D), (COXA_E, CANELA_E)] {
+            let s = sola(&p, c, k);
+            assert!(s.y.abs() < 0.6, "pe' afundou ou saiu do chao: {s:?}");
+        }
+    }
+
+    #[test]
+    fn o_tranco_vai_pra_longe_do_atacante() {
+        let cabeca = |e: &Entrada| matrizes(&pose(e), Mat4::IDENTITY, 1.0)[1].transform_point3(vec3(0.0, 6.0, 0.0));
+        let mut e = parado();
+        let parada = cabeca(&e);
+        e.combate.ferido = Some(0.05);
+        e.combate.recuo = vec3(1.0, 0.0, 0.0); // golpe vindo da direita empurra pra esquerda (+X)
+        assert!(cabeca(&e).x > parada.x + 1.0);
     }
 }
