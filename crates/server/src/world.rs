@@ -5822,7 +5822,7 @@ impl GameWorld {
             if let Ok(hp) = self.ecs.get::<&Health>(e) { if hp.current <= 0 { continue; } }
             if pos.0.distance_squared(center) > r2 { continue; }
             // LOS: AoE skill nao acerta atras de WALL.
-            if !self.map.has_line_of_sight(center, pos.0) { continue; }
+            if !visada(self.ilha.as_ref(), &self.map, center, pos.0) { continue; }
             out.push(net.0);
         }
         out
@@ -5834,7 +5834,7 @@ impl GameWorld {
         for (_, (net, pos, kind)) in self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter() {
             if !matches!(kind, EntityKind::Player) { continue; }
             if pos.0.distance_squared(center) > r2 { continue; }
-            if !self.map.has_line_of_sight(center, pos.0) { continue; }
+            if !visada(self.ilha.as_ref(), &self.map, center, pos.0) { continue; }
             out.push(net.0);
         }
         out
@@ -5849,7 +5849,7 @@ impl GameWorld {
             if !matches!(kind, EntityKind::Player) { continue; }
             if net.0 == attacker_eid { continue; }
             if pos.0.distance_squared(center) > r2 { continue; }
-            if !self.map.has_line_of_sight(center, pos.0) { continue; }
+            if !visada(self.ilha.as_ref(), &self.map, center, pos.0) { continue; }
             if !self.can_damage_player(attacker_eid, net.0) { continue; }
             out.push(net.0);
         }
@@ -5870,7 +5870,7 @@ impl GameWorld {
             if let Some(nd) = delta.try_normalize() {
                 if dir.dot(nd) < cos_half { continue; }
             }
-            if !self.map.has_line_of_sight(origin, pos.0) { continue; }
+            if !visada(self.ilha.as_ref(), &self.map, origin, pos.0) { continue; }
             if !self.can_damage_player(attacker_eid, net.0) { continue; }
             out.push(net.0);
         }
@@ -5890,7 +5890,7 @@ impl GameWorld {
             if let Some(nd) = delta.try_normalize() {
                 if dir.dot(nd) < cos_half { continue; }
             }
-            if !self.map.has_line_of_sight(pos, pos2.0) { continue; }
+            if !visada(self.ilha.as_ref(), &self.map, pos, pos2.0) { continue; }
             out.push(net.0);
         }
         out
@@ -6908,7 +6908,7 @@ impl GameWorld {
                 // Conditional: dist >= detect_range ja desqualifica chase,
                 // entao nao gasta o raycast nesses casos (caso comum).
                 let has_los = dist < enemy.detect_range
-                    && self.map.has_line_of_sight(pos.0, *ppos);
+                    && visada(self.ilha.as_ref(), &self.map, pos.0, *ppos);
                 // Chase só se NÃO estiver returning home E tiver visao.
                 let can_chase = dist < enemy.detect_range && !pulling_home && has_los;
                 if can_chase {
@@ -7119,7 +7119,7 @@ impl GameWorld {
                     enemy.aggro_timer = 0.0;
                     let pulling_home = enemy.returning_home;
                     apply_wander(enemy, &mut vel.0, pos.0, enemy.locomotor_speed,
-                        &self.map, &self.safe_zones, self.tick, net.0.0, pulling_home);
+                        &self.map, self.ilha.as_ref(), &self.safe_zones, self.tick, net.0.0, pulling_home);
                 }
             } else {
                 // Sem player algum — mesma logic, mas sem chase tracking.
@@ -7132,7 +7132,7 @@ impl GameWorld {
                 enemy.aggro_timer = 0.0;
                 let pulling_home = enemy.returning_home;
                 apply_wander(enemy, &mut vel.0, pos.0, enemy.locomotor_speed,
-                    &self.map, &self.safe_zones, self.tick, net.0.0, pulling_home);
+                    &self.map, self.ilha.as_ref(), &self.safe_zones, self.tick, net.0.0, pulling_home);
             }
         }
 
@@ -7883,7 +7883,7 @@ impl GameWorld {
                         }
                     }
                     // LOS: melee/cone nao atravessa WALL.
-                    if !self.map.has_line_of_sight(sw.pos, target_hit) { continue; }
+                    if !visada(self.ilha.as_ref(), &self.map, sw.pos, target_hit) { continue; }
                     let hd = calc_hurt_dir(*tpos, sw.pos);
                     damage_events.push((*te, *tnet, sw.damage, sw.attacker_eid, sw.from_player, hd, sw.is_crit,
                         AttackInfo::Melee { attacker_pos: sw.pos }, sw.knockback));
@@ -9206,6 +9206,13 @@ impl GameWorld {
                 let mut flags = 0u8;
                 if etag.map_or(false, |t| t.is_boss) {
                     flags |= shared::ent_flags::BOSS;
+                }
+                // O golpe do mob: aceso do comeco do ataque ate' 0,25 s depois.
+                if etag.map_or(false, |t| {
+                    t.attack_cooldown_base > 0.3
+                        && t.attack_cooldown > t.attack_cooldown_base - 0.25
+                }) {
+                    flags |= shared::ent_flags::ATACANDO;
                 }
                 // No ar: o cliente desenha o arco. Quem decide que o pulo
                 // aconteceu e' este lado.
@@ -12653,8 +12660,28 @@ fn lcg_f32(seed: u64) -> f32 {
 
 /// Escolhe um waypoint random walkable dentro de raio em torno da ancora.
 /// Tenta `tries` vezes; fallback retorna `current` (fica parado).
+/// Um enxerga o outro? Numa ilha quem barra a vista e' o RELEVO; fora dela,
+/// a parede de tile.
+///
+/// O mapa de tiles nao vale nada na ilha: ele e' outro mundo, e fora da
+/// grade dele tudo e' WALL. Como a ilha mora em coordenada negativa, a
+/// visada pelo tile dava falso pra qualquer par a mais de 2 u — nenhum mob
+/// via jogador nenhum, e nenhum saia do lugar.
+fn visada(
+    ilha: Option<&shared::terreno::Ilha>,
+    map: &shared::world_gen::WorldMap,
+    a: Vec2,
+    b: Vec2,
+) -> bool {
+    match ilha {
+        Some(i) => i.visada(a, b),
+        None => map.has_line_of_sight(a, b),
+    }
+}
+
 fn pick_waypoint(
     map: &shared::world_gen::WorldMap,
+    ilha: Option<&shared::terreno::Ilha>,
     current: glam::Vec2,
     anchor: glam::Vec2,
     radius: f32,
@@ -12670,6 +12697,24 @@ fn pick_waypoint(
         s = lcg(s);
         let dist = lcg_f32(s) * r;
         let target = anchor + glam::Vec2::new(angle.cos(), angle.sin()) * dist;
+        let em_zona_segura = |c: glam::Vec2| safe_zones.iter().any(|(o, sz)|
+            c.x >= o.x && c.x <= o.x + sz.x && c.y >= o.y && c.y <= o.y + sz.y);
+        // Na ilha o chao e' o relevo, e o tile nao diz nada (ver `visada`).
+        // Nada de agua nem de tronco, e nada de subir pra outro patamar: o
+        // bicho vaga no degrau onde nasceu.
+        if let Some(i) = ilha {
+            let mesmo_patamar =
+                (i.altura(target.x, target.y) - i.altura(anchor.x, anchor.y)).abs() <= 1.0;
+            if !i.agua(target.x, target.y)
+                && i.sem_estorvo(target, ENTITY_RADIUS)
+                && mesmo_patamar
+                && !em_zona_segura(target)
+                && (target - current).length() > 1.0
+            {
+                return target;
+            }
+            continue;
+        }
         let tx = target.x.floor() as i32;
         let ty = target.y.floor() as i32;
         if map.get(tx, ty) == shared::constants::tile_id::FLOOR {
@@ -12695,6 +12740,7 @@ fn apply_wander(
     pos: glam::Vec2,
     speed: f32,
     map: &shared::world_gen::WorldMap,
+    ilha: Option<&shared::terreno::Ilha>,
     safe_zones: &[(Vec2, Vec2)],
     tick: u32,
     net_id: u32,
@@ -12730,7 +12776,7 @@ fn apply_wander(
         // Pause phase: parado até timer expirar, aí escolhe novo waypoint.
         if enemy.wander_timer <= 0.0 {
             enemy.wander_waypoint = pick_waypoint(
-                map, pos, enemy.spawn_anchor, enemy.leash_max, seed, 30, safe_zones);
+                map, ilha, pos, enemy.spawn_anchor, enemy.leash_max, seed, 30, safe_zones);
             enemy.wander_phase = 0;
             enemy.wander_timer = 4.0; // safety timeout (caso não consiga chegar)
         }

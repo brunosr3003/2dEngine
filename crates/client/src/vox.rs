@@ -425,6 +425,8 @@ pub struct VoxCache {
     /// Arquivos de PECAS: nome do arquivo -> nome da peca -> malhas em volta
     /// do pivo da peca.
     rigs: HashMap<String, HashMap<String, Vec<Mesh>>>,
+    /// Bichos em PECAS (`bicho.rs`): nome do arquivo -> pecas com pivo.
+    bichos: HashMap<String, crate::bicho::Bicho>,
 }
 
 impl VoxCache {
@@ -451,6 +453,71 @@ impl VoxCache {
     }
 
     /// As pecas ja' carregadas de um arquivo de rig.
+    pub fn bicho(&self, name: &str) -> Option<&crate::bicho::Bicho> {
+        self.bichos.get(name)
+    }
+
+    /// Carrega um bicho em PECAS (`tools/voxrender/bichos.py`) na altura
+    /// pedida.
+    ///
+    /// Todas as pecas vem na mesma tela, entao a malha de cada uma e' feita
+    /// em volta da origem do bicho INTEIRO (centro em X/Y, base em Z), e so'
+    /// o pivo e' da peca: a pose gira em volta dele sem desmontar o corpo.
+    pub async fn load_bicho(&mut self, name: &str, altura: f32) -> Option<usize> {
+        use crate::bicho::{junta_de, pivo_vox, Bicho, Junta, PecaDeBicho};
+        let root = std::env::var("MMO_VOX").unwrap_or_else(|_| "assets/vox".into());
+        let bytes = macroquad::file::load_file(&format!("{root}/{name}.vox")).await.ok()?;
+        let pecas = parse_nomeado(&bytes).ok()?;
+        let caixas: Vec<_> = pecas.iter().map(|(_, m)| m.bounds()).collect();
+        let mut lo = [usize::MAX; 3];
+        let mut hi = [0usize; 3];
+        for ((_, m), (l, h)) in pecas.iter().zip(&caixas) {
+            if m.cells.iter().all(|c| *c == 0) {
+                continue;
+            }
+            for i in 0..3 {
+                lo[i] = lo[i].min(l[i]);
+                hi[i] = hi[i].max(h[i]);
+            }
+        }
+        if lo[0] == usize::MAX {
+            return None;
+        }
+        let escala = altura / (hi[2] - lo[2] + 1) as f32;
+        let origem = [
+            (lo[0] + hi[0] + 1) as f32 * 0.5,
+            (lo[1] + hi[1] + 1) as f32 * 0.5,
+            lo[2] as f32,
+        ];
+        // mesma troca de eixos da `malha`: voxel (x, y, z) -> mundo (-x, z, y)
+        let no_mundo = |p: [f32; 3]| {
+            vec3((origem[0] - p[0]) * escala, (p[2] - origem[2]) * escala, (p[1] - origem[1]) * escala)
+        };
+        // A cabeca gira no pivo do PESCOCO quando ha' um: com pivos proprios,
+        // o mesmo angulo nos dois abria uma fresta entre eles.
+        let pescoco = pecas
+            .iter()
+            .zip(&caixas)
+            .find(|((n, _), _)| n == "pescoco")
+            .map(|(_, (l, h))| pivo_vox(Junta::Pescoco, *l, *h));
+        let mut out = Vec::new();
+        let mut tris = 0usize;
+        for ((nome, m), (l, h)) in pecas.iter().zip(&caixas) {
+            let Some(junta) = junta_de(nome) else { continue };
+            let pv = match (junta, pescoco) {
+                (Junta::Cabeca, Some(p)) => p,
+                _ => pivo_vox(junta, *l, *h),
+            };
+            let malhas = mesh_na_origem(m, escala, origem);
+            tris += malhas.iter().map(|x| x.indices.len() / 3).sum::<usize>();
+            out.push(PecaDeBicho { junta, pivo: no_mundo(pv), malhas });
+        }
+        let n = out.len();
+        println!("[vox] {name}: {n} pecas, {tris} triangulos");
+        self.bichos.insert(name.to_string(), Bicho { altura, pecas: out });
+        Some(n)
+    }
+
     pub fn rig(&self, name: &str) -> Option<&HashMap<String, Vec<Mesh>>> {
         self.rigs.get(name)
     }
@@ -753,5 +820,19 @@ mod testes_orientacao {
         let verde = cor([[96, 226, 138]; 4]);
         let roxo = cor([[186, 112, 246]; 4]);
         assert_ne!(verde, roxo, "trocar a faixa nao mudou a malha");
+    }
+
+    #[test]
+    fn todo_bicho_chega_com_tronco_e_quatro_patas() {
+        for (nome, _) in crate::bicho::BICHOS {
+            let caminho = format!("{}/../../assets/vox/{nome}.vox", env!("CARGO_MANIFEST_DIR"));
+            let dados = std::fs::read(&caminho).unwrap_or_else(|_| panic!("falta {caminho}"));
+            let pecas = parse_nomeado(&dados).unwrap();
+            let juntas: Vec<_> = pecas.iter().filter_map(|(n, _)| crate::bicho::junta_de(n)).collect();
+            assert_eq!(juntas.len(), pecas.len(), "{nome}: peca sem junta");
+            assert!(juntas.contains(&crate::bicho::Junta::Tronco), "{nome}: sem tronco");
+            let patas = juntas.iter().filter(|j| matches!(j, crate::bicho::Junta::Pata { .. })).count();
+            assert_eq!(patas, 4, "{nome}");
+        }
     }
 }

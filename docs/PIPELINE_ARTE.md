@@ -71,9 +71,20 @@ no jogo **sem encostar nada** (`tools/voxrender/mobs.py`): uma primeira versão
 
 `close_z_gaps` (ligado por default no render de sprite) encosta as peças pro
 caso estático — é escolha do render, não do modelo que vai pro jogo.
-Mas a separação **não é defeito, é o rig**: é ela que vai dar o ciclo de
+Mas a separação **não é defeito, é o rig**: é ela que dá o ciclo de
 caminhada de graça — basta mover o grupo das patas por quadro em vez de
 redesenhar o bicho inteiro.
+
+**E já anda assim.** `tools/voxrender/bichos.py` pega as fatias do zone14
+(`models/<bicho>_<peca>.vox`: tronco, cabeça, pescoço, cauda, quatro patas),
+reduz TODAS pelo mesmo fator no mesmo grid — senão a pata não casa com o
+tronco — e grava um `.vox` com as peças nomeadas em `assets/vox/bichos/`. O
+cliente (`crates/client/src/bicho.rs`) anima com a marcha do zone14: pata
+solta anda por TRANSLAÇÃO, o pé faz um D (reto pra trás plantado, volta pela
+frente levantando), passeio em quatro tempos que vira trote quando apressa,
+e o ciclo casa com a distância andada pra o pé não patinar. O golpe é a
+patada da direita. `mobs.py` continua gerando o modelo inteiro, que é o
+desenho de reserva quando o arquivo em peças falta.
 
 ## Orçamento de arte: mob comum é barato, boss é caro
 

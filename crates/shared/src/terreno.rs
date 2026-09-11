@@ -3301,3 +3301,27 @@ mod testes {
 
 
 }
+
+impl Ilha {
+    /// Um ponto enxerga o outro por cima do relevo?
+    ///
+    /// A linha vai do olho de um ao olho do outro; se o chao passa por cima
+    /// dela em algum ponto, a montanha esta' no meio. Nao olha arvore nem
+    /// pedra: vista barrada por tronco fino so' faria o bicho perder o
+    /// jogador atras de qualquer galho.
+    pub fn visada(&self, a: glam::Vec2, b: glam::Vec2) -> bool {
+        const OLHO: f32 = 1.2;
+        let d = a.distance(b);
+        if d < 2.0 {
+            return true;
+        }
+        let ha = self.altura(a.x, a.y) + OLHO;
+        let hb = self.altura(b.x, b.y) + OLHO;
+        let passos = (d * 2.0).ceil() as i32;
+        (1..passos).all(|k| {
+            let t = k as f32 / passos as f32;
+            let p = a.lerp(b, t);
+            self.altura(p.x, p.y) <= ha + (hb - ha) * t
+        })
+    }
+}

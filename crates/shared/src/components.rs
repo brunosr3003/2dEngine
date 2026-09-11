@@ -309,6 +309,10 @@ pub mod ent_flags {
     /// No ar. O cliente desenha o arco; quem decide se o pulo aconteceu e'
     /// o servidor.
     pub const PULANDO: u8 = 1 << 4;
+    /// O mob comecou um golpe ha' pouco. O servidor segura o bit uns quadros
+    /// (um quadro so' se perderia num snapshot pulado); o cliente toca a
+    /// animacao na borda de subida.
+    pub const ATACANDO: u8 = 1 << 5;
 }
 
 /// Precisao da posicao no wire: 1/16 de tile.

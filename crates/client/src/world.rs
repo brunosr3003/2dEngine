@@ -96,6 +96,9 @@ pub struct Ent {
     pub fase: f32,
     /// 0 parado .. 1 andando, suavizado — o passo entra e sai sem estalo.
     pub andar: f32,
+    /// Segundos desde que o mob comecou o ultimo golpe (a patada, ver
+    /// `bicho::golpe`). Grande = sem golpe.
+    pub golpe: f32,
     /// 0 andando .. 1 correndo, suavizado.
     pub correr: f32,
     /// 0 no chao .. 1 no ar, suavizado: descer um degrau tira o pe' do chao
@@ -141,7 +144,13 @@ fn anda_a_fase(ent: &mut Ent, andou: f32, dt: f32) {
         ((vel - shared::PLAYER_SPEED * 1.1) / (shared::PLAYER_SPEED * 0.45)).clamp(0.0, 1.0);
     ent.andar += (alvo_andar - ent.andar) * k;
     ent.correr += (alvo_correr - ent.correr) * k;
-    let passada = PASSADA_ANDANDO + (PASSADA_CORRENDO - PASSADA_ANDANDO) * ent.correr;
+    let boss = ent.state.flags & ent_flags::BOSS != 0;
+    let passada = match crate::bicho::do_mob(ent.meta.tag, ent.meta.kind, boss) {
+        // bicho: o ciclo casa com a viagem do pe' (ver `bicho`), senao a
+        // pata patina no chao
+        Some((_, altura)) => crate::bicho::ciclo(altura, ent.andar * shared::PLAYER_SPEED),
+        None => PASSADA_ANDANDO + (PASSADA_CORRENDO - PASSADA_ANDANDO) * ent.correr,
+    };
     ent.fase = (ent.fase + andou / passada * std::f32::consts::TAU) % (std::f32::consts::TAU * 64.0);
 }
 
@@ -174,6 +183,7 @@ impl World {
                 espera_pulo: 0.0,
                 fase: 0.0,
                 andar: 0.0,
+                golpe: 99.0,
                 correr: 0.0,
                 ar: 0.0,
             });
@@ -187,6 +197,11 @@ impl World {
             }
             if st.flags & ent_flags::SELF != 0 {
                 self.self_id = Some(st.id);
+            }
+            // O servidor segura o bit do golpe uns quadros; a patada comeca
+            // quando ele ACENDE.
+            if st.flags & ent_flags::ATACANDO != 0 && ent.state.flags & ent_flags::ATACANDO == 0 {
+                ent.golpe = 0.0;
             }
             ent.state = st;
         }
@@ -209,6 +224,7 @@ impl World {
             let antes = ent.render_pos;
             ent.render_pos += (target - ent.render_pos) * a;
             anda_a_fase(ent, (ent.render_pos - antes).length(), dt);
+            ent.golpe = (ent.golpe + dt).min(99.0);
             let alvo_ar = if ent.voando { 1.0 } else { 0.0 };
             ent.ar += (alvo_ar - ent.ar) * (1.0 - (-12.0 * dt).exp());
 

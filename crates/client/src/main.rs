@@ -9,6 +9,7 @@
 //! `Protocol.cs` com 1175 linhas espelhadas a mao.
 
 mod api;
+mod bicho;
 mod entrada;
 mod hud;
 mod map;
@@ -161,6 +162,11 @@ async fn main() {
     vox.load_rig(render3d::RIG_CORPO, render3d::VOXEL, rig::pivo).await;
     vox.load_rig(render3d::RIG_CHAPEU, render3d::VOXEL, rig::pivo).await;
     vox.load_variantes("saque", render3d::VOXEL, &render3d::variantes_do_saque()).await;
+    // Os bichos em PECAS (tools/voxrender/bichos.py). Sem o arquivo, o mob
+    // cai no modelo inteiro de antes.
+    for (nome, altura) in bicho::BICHOS {
+        vox.load_bicho(nome, altura).await;
+    }
 
     let mut jogo = Jogo {
         tela: Tela::Servidores,

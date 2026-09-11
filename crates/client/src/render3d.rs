@@ -1102,6 +1102,14 @@ pub fn draw_entities(
                 continue;
             }
         }
+        // Bicho de quatro patas anda em PECAS (`bicho.rs`). Sem o arquivo,
+        // cai no modelo inteiro abaixo, parado.
+        if let Some((arquivo, _)) = crate::bicho::do_mob(e.meta.tag, e.meta.kind, boss) {
+            if let Some(b) = vox.bicho(arquivo) {
+                desenha_bicho(e, b, vista);
+                continue;
+            }
+        }
         let drawn = model_for(e.meta.tag, boss, e.meta.kind)
             .and_then(|name| vox.peek(name))
             .map(|meshes| {
@@ -1178,6 +1186,33 @@ fn desenha_personagem(
         };
         for m in malhas.into_iter().flatten() {
             draw_mesh_mat(m, &mats[i]);
+        }
+    }
+}
+
+/// Um bicho em pecas: a pose sai da passada e do golpe (`bicho.rs`), e cada
+/// peca gira em volta do proprio pivo.
+fn desenha_bicho(e: &crate::world::Ent, b: &crate::bicho::Bicho, vista: &Vista) {
+    let p = vista.pos_de(e);
+    let entrada = crate::bicho::Entrada {
+        passada: e.fase,
+        vel: e.andar * shared::PLAYER_SPEED,
+        tempo: get_time() as f32,
+        golpe: e.golpe,
+        semente: e.meta.id.0 as f32,
+    };
+    let (sobe, pitch) = crate::bicho::corpo(&entrada, b.altura);
+    let base = Mat4::from_translation(p + vec3(0.0, sobe, 0.0))
+        * Mat4::from_rotation_y(e.yaw)
+        * Mat4::from_rotation_x(pitch);
+    for peca in &b.pecas {
+        let (giro, desloca) = crate::bicho::peca(peca.junta, &entrada, b.altura);
+        let mat = base
+            * Mat4::from_translation(peca.pivo + desloca)
+            * Mat4::from_rotation_x(giro)
+            * Mat4::from_translation(-peca.pivo);
+        for m in &peca.malhas {
+            draw_mesh_mat(m, &mat);
         }
     }
 }
