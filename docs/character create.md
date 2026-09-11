@@ -25,7 +25,7 @@ by `tools/voxrender/molde_corpo.py`; the measurements live there and here.
 | limbs | **split** — ten rigid parts (upper arm / forearm, thigh / shin) |
 | look | **purchased skins** — armor skin (the whole outfit) and weapon skin (one per weapon set). The equipped item does NOT change the look |
 | default look | **the pirate** — whoever bought nothing wears it |
-| skins | bought with **TC (Tempest Coin)**, the premium currency, and **bound to the character** — buying for one doesn't unlock the others |
+| skins | bought with **TP (Tempest Points)**, the premium currency, and **bound to the character** — buying for one doesn't unlock the others |
 | tier | still readable: the trim color (slots 241–244) comes from the **equipped item**, not from the skin |
 | armor weight | shown as an **icon on the nameplate** |
 | body | **one body**; customization is the head (face, hair, skin tone) |
@@ -125,7 +125,7 @@ Proposed for the playtest: **4 faces, 6 hair styles.**
 
 ## Armor skins — `assets/vox/personagem/skins/armadura/<name>.vox`
 
-An armor skin is **the whole outfit**, bought in the store with TC and bound
+An armor skin is **the whole outfit**, bought in the store with TP and bound
 to the character. Equipped armor
 (its weight, its tier) does not change the look.
 
@@ -185,8 +185,9 @@ proposal is a glow or rune over the hand, done in code (still open).
 
 - **Accessories** (earring, amulet, bracelet, belt): they don't show on the
   body.
-- **Creatures and mounts:** they come from the zone14 stock, already split
-  into parts.
+- **Creatures (mobs):** they come from the zone14 stock, already split into
+  parts.
+- **Mounts and pets:** later — their models haven't been decided.
 
 ## Deliverables, in order
 
@@ -244,4 +245,4 @@ range, missing marker on a weapon — and says which file and which object.
 4. Which of the **8 mob types** are creatures and which are humanoids, and in
    which areas.
 5. The **ring's visual** — a glow or rune on the hand?
-6. How many **head variations**, and **which mounts** come first.
+6. How many **head variations**.

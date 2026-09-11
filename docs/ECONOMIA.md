@@ -12,17 +12,17 @@ Números de refino, craft e mineração: `docs/ITENS.md`.
 torneiras                        ralos
   mineração (ativa)                darksteel consumido no refino
   colônia offline (passiva)        item destruído acima do +5
-  dinheiro de verdade → TC         gold: refino, upgrade, poção, item,
+  dinheiro de verdade → TP         gold: refino, upgrade, poção, item,
                                          taxa do mercado
-                                   TC:   loja de cash — montaria, skin, pet,
+                                   TP:   loja de cash — montaria, skin, pet,
                                          livros de habilidade, pedra de refino
-                                   taxa da troca TC↔gold
+                                   taxa da troca TP↔gold
 ```
 
-(A TC não cria gold: a troca só MOVE gold entre jogadores.)
+(A TP não cria gold: a troca só MOVE gold entre jogadores.)
 
 A maioria dos MMOs quebra por torneira demais e ralo de menos, e a inflação
-come o jogo em seis meses. A TC entra por dinheiro de verdade, mas **não cria
+come o jogo em seis meses. A TP entra por dinheiro de verdade, mas **não cria
 gold nenhum**: ela só compra gold que outro jogador já tinha farmado.
 
 ## Colônia offline
@@ -88,7 +88,7 @@ conteúdo.
 ## Mercado
 
 Modelo do MIR4: **quase nada é comerciável**, só existe **venda** (não troca),
-e a venda é em **gold**, com **taxa em gold**. A exceção é a TC, que se vende
+e a venda é em **gold**, com **taxa em gold**. A exceção é a TP, que se vende
 por gold — ver a seção dela.
 
 ### Vinculado é o padrão
@@ -126,20 +126,20 @@ que **sai torto**: o material raro que um jogador tirou três e o outro nenhum
 na mesma semana.
 
 **Mercado bom conserta distribuição desigual.** O único lugar onde tempo e
-dinheiro se encontram é a troca TC↔gold — e ela não cria nada, só move.
+dinheiro se encontram é a troca TP↔gold — e ela não cria nada, só move.
 
-## TC — Tempest Coin
+## TP — Tempest Points
 
 **DECIDIDO:**
 
-- **TC é da CONTA e vale em todos os servidores.**
-- **Por enquanto, TC só entra comprando com dinheiro.**
-- **TC compra na loja de cash**: montaria, skins de armadura e de arma, pets,
+- **TP é da CONTA e vale em todos os servidores.**
+- **Por enquanto, TP só entra comprando com dinheiro.**
+- **TP compra na loja de cash**: montaria, skins de armadura e de arma, pets,
   livros de habilidade de pet e de montaria, e pedras de refino. As skins
   ficam presas ao personagem (ver `docs/PERSONAGEM.md`).
 - **Gold é gasto** em refino, upgrade, poção, item e na taxa do mercado.
-- **TC se vende no mercado por gold.** É assim que quem paga consegue gold, e
-  quem não paga consegue TC. **Todo o resto do mercado é em gold: o gold é a
+- **TP se vende no mercado por gold.** É assim que quem paga consegue gold, e
+  quem não paga consegue TP. **Todo o resto do mercado é em gold: o gold é a
   moeda principal do jogo.**
 
 É o modelo do WoW Token, das gemas do Guild Wars 2 e do PLEX do EVE.
@@ -147,58 +147,58 @@ dinheiro se encontram é a troca TC↔gold — e ela não cria nada, só move.
 ### O ciclo
 
 ```
-quem paga:   dinheiro ─► TC ─► vende a TC por gold ─► compra item em gold
-quem farma:  farma ─► vende item por gold ─► compra TC com gold ─► loja de cash
+quem paga:   dinheiro ─► TP ─► vende a TP por gold ─► compra item em gold
+quem farma:  farma ─► vende item por gold ─► compra TP com gold ─► loja de cash
 ```
 
-### Por que assim, e não TC como moeda do mercado
+### Por que assim, e não TP como moeda do mercado
 
-A versão anterior punha a TC como moeda do mercado inteiro. Esta é melhor em
+A versão anterior punha a TP como moeda do mercado inteiro. Esta é melhor em
 quatro pontos:
 
 - **O gold tem ralo e tem demanda.** A taxa do mercado volta a queimar gold, e
-  comprar TC dá a ele um uso que não acaba.
+  comprar TP dá a ele um uso que não acaba.
 - **A troca não cria gold.** Dinheiro de verdade só compra gold que alguém
   farmou. Nenhuma torneira nova.
-- **A TC não volta a virar dinheiro dentro do jogo.** Farmar rende skin, não
-  saque. Bot ainda ganha alguma coisa (gold → TC → skin), mas muito menos do
-  que ganharia vendendo item direto por TC.
-- **O preço da TC em gold é o termômetro da economia.** Subindo, ou o gold
-  está inflacionando ou a TC está escassa. Vai pro panóptico, na aba de
+- **A TP não volta a virar dinheiro dentro do jogo.** Farmar rende skin, não
+  saque. Bot ainda ganha alguma coisa (gold → TP → skin), mas muito menos do
+  que ganharia vendendo item direto por TP.
+- **O preço da TP em gold é o termômetro da economia.** Subindo, ou o gold
+  está inflacionando ou a TP está escassa. Vai pro panóptico, na aba de
   economia.
 
 ### O que a loja vende, quem não paga também alcança
 
-Como a TC se compra com gold, tudo que a loja vende chega em quem não paga —
-pelo caminho mais longo: farmar, vender por gold, comprar TC. É isso que
+Como a TP se compra com gold, tudo que a loja vende chega em quem não paga —
+pelo caminho mais longo: farmar, vender por gold, comprar TP. É isso que
 impede a loja de ser exclusiva de quem paga. E dá uma âncora de preço: **o
 que a pedra de refino custa na loja é o teto do que vale a pedra farmada.**
 
 ### Como funciona por baixo
 
-A TC mora na CONTA (global) e o gold no PERSONAGEM (banco do realm). Por isso:
+A TP mora na CONTA (global) e o gold no PERSONAGEM (banco do realm). Por isso:
 
-- **A troca TC↔gold é por realm** — o gold de um realm só existe no banco dele.
+- **A troca TP↔gold é por realm** — o gold de um realm só existe no banco dele.
 - **Cadastro de conta único e livro-caixa central**, fora dos `DATABASE_URL`
   dos realms (hoje a tabela `accounts` mora dentro de cada realm; isso muda).
-  Como é dinheiro de verdade, cada movimento de TC é uma linha de razão (quem,
+  Como é dinheiro de verdade, cada movimento de TP é uma linha de razão (quem,
   quanto, por quê, saldo depois) — nunca um saldo sobrescrito.
-- **Custódia, nunca "debita dos dois e torce".** Ao anunciar TC, ela sai do
+- **Custódia, nunca "debita dos dois e torce".** Ao anunciar TP, ela sai do
   livro central na hora e fica guardada; quem compra paga o gold no realm;
-  só então a TC é creditada a ele. Dois bancos diferentes não têm transação
-  comum — a custódia é o que garante que TC nunca some nem duplica no meio.
+  só então a TP é creditada a ele. Dois bancos diferentes não têm transação
+  comum — a custódia é o que garante que TP nunca some nem duplica no meio.
 
 ### Pra depois
 
-- **A taxa da troca TC↔gold** — cobrada em gold (mais um ralo de gold) ou em TC
-  (queima TC)? E quanto.
+- **A taxa da troca TP↔gold** — cobrada em gold (mais um ralo de gold) ou em TP
+  (queima TP)? E quanto.
 - **A loja de cash vende gold direto?** Recomendo que não: gold criado pela
   loja é torneira comprada — inflação e pay-to-win ao mesmo tempo. Gold só
   pela troca entre jogadores.
 - **A taxa do mercado de itens.**
 - **Portão pra vender** (nível, progresso de história) contra conta
   descartável.
-- A TC um dia entra por outro caminho além da compra (evento, conquista)?
+- A TP um dia entra por outro caminho além da compra (evento, conquista)?
 
 ## O que falta decidir
 

@@ -15,7 +15,7 @@ tem corpo.
 
 **DECIDIDO — a aparência é SKIN comprada, não o item equipado.** O que o
 jogador veste por número (arma, armadura, tier, peso) não muda o visual; o
-visual vem de **skins compradas com TC (Tempest Coin)**, a moeda premium —
+visual vem de **skins compradas com TP (Tempest Points)**, a moeda premium —
 de armadura (a roupa inteira) e de arma (uma por conjunto). **A skin fica no
 PERSONAGEM**, não na conta: comprar pra um não libera pros outros. O peso da armadura continua POR CONJUNTO, mas como regra
 de jogo (`COMBATE.md`), não como silhueta.
@@ -270,22 +270,15 @@ morsa, e um punhado de aves. Sem peças: esqueleto-lorde, colosso, árvores.
 Arqueiro e Chefe são nomes herdados. Qual vira criatura, qual vira humanoide,
 e em que áreas os humanoides aparecem.
 
-## A montaria
+## Montaria e pet
 
-Mesmo encanamento do barco: `Mounted` aponta pra uma entidade. A montaria é um
-quadrúpede do estoque com um encaixe `sela` no corpo; o jogador senta nele e
-fica na pose montado.
+**DECIDIDO — os dois são itens da loja de cash**, comprados com TP, cada um com
+livro de habilidade próprio (também TP).
 
-Medido: o cervo do zone14 reduzido no fator 3 fica com **43 voxels de altura**
-— o tamanho certo pra montar ao lado de um corpo de 42 — e 2,8 mil voxels, o
-dobro do jogador. O tigre no mesmo fator fica com 4 mil. As "variações" de
-montaria são bicho diferente e paleta diferente, não rig novo.
-
-**ABERTO — quais bichos entram primeiro.** Cervo e tigre já estão medidos.
-
-**DECIDIDO — montaria é item da loja de cash**, comprada com TC, com livro de
-habilidade próprio (também TC). **Pets** entram do mesmo jeito — e o estoque do
-zone14 já tem as criaturas pequenas pra eles (aves, porco), em peças.
+**DEPOIS — o modelo.** De onde vêm e como são fica pra quando essa parte
+começar. O que já está pronto e não depende disso: o encanamento (`Mounted`
+aponta pra uma entidade, e o barco já usa) e a pose do personagem montado, que
+é procedural — ver a tabela da animação.
 
 ## O que o fio precisa
 
@@ -346,7 +339,7 @@ bots na ilha.
 | **3. os quatro conjuntos** | as 8 armas; os 4 combos; as 12 skills | armas |
 | **4. skins e cabeça** | troca de skin; frisos pelo tier do item; rosto, cabelo, pele; criação de personagem | cabeça — skin é loja, não pré-requisito |
 | **5. mobs** | criaturas simplificadas com marcha procedural; humanoides nas áreas | criaturas vêm do estoque |
-| **6. montaria** | cervo/tigre com sela; pose montado | vem do estoque |
+| **6. montaria e pet** | depois — o modelo ainda não foi decidido | — |
 
 O **molde** (`tools/moldes/corpo_molde.vox`, gerado por
 `tools/voxrender/molde_corpo.py`) é o que destrava as etapas 1–3 sem esperar
@@ -364,4 +357,4 @@ código muda quando ela chega.
    Muda o quanto vale investir no visualizador de pose.
 4. **O mapa dos 8 tipos de mob** e as áreas dos humanoides.
 5. **O visual do anel** — ele é um voxel de cima; brilho ou runa na mão?
-6. **Quantas variações de cabeça** e **quais montarias primeiro**.
+6. **Quantas variações de cabeça**.

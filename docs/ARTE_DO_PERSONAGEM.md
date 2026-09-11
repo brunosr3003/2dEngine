@@ -94,7 +94,7 @@ Proposta pro playtest: **4 rostos, 6 cabelos.**
 
 ## Skins de armadura — `assets/vox/personagem/skins/armadura/<nome>.vox`
 
-Uma skin de armadura é **a roupa inteira**, comprada na loja com **TC (Tempest
+Uma skin de armadura é **a roupa inteira**, comprada na loja com **TP (Tempest
 Coin)** e presa ao personagem. A armadura
 equipada (o peso, o tier) não muda o visual.
 
@@ -152,7 +152,8 @@ um brilho ou runa sobre a mão feito em código (ABERTO em `PERSONAGEM.md`).
 ## O que NÃO modelar
 
 - **Acessórios** (brinco, amuleto, bracelete, cinto): não aparecem no corpo.
-- **Criaturas e montarias**: vêm do estoque do zone14, já em peças.
+- **Criaturas (mobs)**: vêm do estoque do zone14, já em peças.
+- **Montarias e pets**: ficam pra depois — o modelo ainda não foi decidido.
 
 ## As entregas, em ordem
 

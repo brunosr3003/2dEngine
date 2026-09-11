@@ -9,10 +9,10 @@ Jogador de um servidor não vê nem encontra jogador de outro. Só se cruzam num
 **merge**, que é operação de banco, não de rede — juntar dois realms é mover
 linhas, e é decisão de operação, não algo que o jogador faz.
 
-**A exceção é a TC.** A Tempest Coin é da CONTA e vale em todos os realms —
+**A exceção é a TP.** A Tempest Points é da CONTA e vale em todos os realms —
 então ela não pode morar no banco de nenhum. Exige um cadastro de conta único
 e um livro-caixa central, fora dos `DATABASE_URL` dos realms. Ver
-`docs/ECONOMIA.md`, seção TC.
+`docs/ECONOMIA.md`, seção TP.
 
 Tem lotação global: `MMO_REALM_CAPACIDADE`, hoje **1500**. Batido o teto, o
 supervisor para de abrir canal e quem chega espera na fila. De onde sai esse
