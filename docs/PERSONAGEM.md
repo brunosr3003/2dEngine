@@ -96,6 +96,23 @@ em qualquer direção, sem uma pose por ângulo.
 (desprezível pra ~400 triângulos), cada skin de armadura cortada em dez
 peças em vez de seis, e a **tampa** das juntas — ver `docs/ARTE_DO_PERSONAGEM.md`.
 
+**Considerado e descartado — mãos e pés flutuantes** (o estilo dos bichos do
+zone14: sem braço nem perna, mão e bota soltas). Ele é mais fácil de animar —
+o pé pousa direto no degrau sem dobrar joelho, não há tampa nem manga
+dobrando, e cada pose vira quatro pontos soltos em vez de dez rotações
+encadeadas. Ficou de fora, comparado lado a lado no ângulo da câmera, por
+três razões que não se pagam depois:
+
+- **personalidade** — a 65° os dois quase se igualam, mas a 40° o flutuante
+  perde manga, calça e largura de ombro e vira tronco com peças soltas;
+- **espaço de skin** — skin é o produto da TP, e braço e perna são onde entram
+  manga, calça e ombreira;
+- **contraste com os bichos** — gente com membros, bicho com pata solta: de
+  longe dá pra separar jogador e humanoide de criatura.
+
+A dificuldade a mais é de código e acontece uma vez só; a personalidade e o
+espaço de skin ficam pra sempre.
+
 **As medidas exatas, os nomes e o molde pra esculpir** estão em
 `docs/ARTE_DO_PERSONAGEM.md` e `tools/moldes/corpo_molde.vox`.
 
