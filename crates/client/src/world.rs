@@ -345,7 +345,7 @@ mod testes {
         let mut w = World::default();
         let id = shared::EntityId(1);
         w.apply(
-            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None }],
+            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0 }],
             vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF }],
             &[],
         );
@@ -412,7 +412,7 @@ mod testes {
             flags: ent_flags::SELF,
         };
         w.apply(
-            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None }],
+            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0 }],
             vec![estado(0.0)],
             &[],
         );
@@ -492,7 +492,7 @@ mod testes {
         let mut w = World::default();
         let id = shared::EntityId(1);
         w.apply(
-            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None }],
+            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0 }],
             vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF }],
             &[],
         );

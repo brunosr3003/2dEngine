@@ -13,6 +13,7 @@ fn meta(i: u32) -> EntityMeta {
         name: Some("Green Goblin Lv3".to_string()),
         hp_max: 200,
         faction: None,
+        kind: 0,
     }
 }
 

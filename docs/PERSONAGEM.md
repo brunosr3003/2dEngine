@@ -296,7 +296,7 @@ O estoque do zone14 em peças: lobo, urso, tigre, cervo, porco, dragão,
 hipogrifo, hidra, owlbear, golem de pedra, golem de terra, ent, escaravelho,
 morsa, e um punhado de aves. Sem peças: esqueleto-lorde, colosso, árvores.
 
-**PROPOSTA — o mapa dos 8 tipos: quem morde é bicho, quem atira é gente.**
+**DECIDIDO — os oito mobs: quem morde é bicho, quem atira é gente.**
 Os oito são os da tabela `enemy_kinds`, nomes herdados com atributos.
 
 | tipo | no banco | vira | por quê |
@@ -312,6 +312,27 @@ Os oito são os da tabela `enemy_kinds`, nomes herdados com atributos.
 
 Bicho não segura arma, então tudo que atira vira humanoide — e o humanoide
 reaproveita o corpo e as poses do jogador.
+
+Os tipos antigos (Grunt, Tank, Ranger, Ninja, Berserker) saíram do jogo: a
+tabela `enemy_kinds` guarda os mesmos números de antes com os bichos novos, e
+o chefe passou a MORDER — alcance de corpo a corpo, sem fugir, sem os cinco
+projéteis que ele atirava.
+
+**Onde cada um aparece sai do nível**, não de área marcada: o sorteio libera
+um tipo novo a cada três níveis, na ordem da tabela, e o chefe fica de fora.
+
+| a partir do nível | entra |
+|---|---|
+| 1 | lobo |
+| 3 | urso |
+| 6 | pistoleiro |
+| 9 | tigre |
+| 12 | mago |
+| 15 | owlbear |
+| 18 | arqueiro |
+
+A ilha inicial vai do nível 1 ao 15: nela o **arqueiro não aparece**, e o
+owlbear só na ponta mais longe do desembarque.
 
 ## Montaria e pet
 
@@ -392,5 +413,6 @@ código muda quando ela chega.
 
 ## O que ainda depende de você
 
-1. **O mapa dos 8 tipos de mob** — confirma a proposta de "quem morde é bicho,
-   quem atira é gente"? E em que áreas os humanoides aparecem.
+1. **Área de humanoide.** Hoje o humanoide entra pela progressão de nível, como
+   os bichos. Se ele tiver que aparecer só em áreas marcadas (acampamento,
+   forte), é uma regra nova no sorteio.

@@ -935,14 +935,18 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     // usa struct local pra clareza.
     struct E { kind:i32,name:&'static str,hp:i32,sp:f32,dmg:i32,cd:f32,det:f32,rng:f32,kite:Option<f32>,proj:i32,xp:i64,def:i32,sz:f32,t:[f32;4] }
     let kinds: &[E] = &[
-        E{ kind:0, name:"Grunt",     hp:50,  sp:2.0, dmg:10, cd:2.0, det:9.0,  rng:1.8,  kite:None,        proj:1, xp:30,  def:0,  sz:1.0,  t:[1.0,1.0,1.0,1.0] },
-        E{ kind:1, name:"Tank",      hp:120, sp:1.3, dmg:18, cd:2.8, det:8.0,  rng:1.8,  kite:None,        proj:1, xp:75,  def:8,  sz:1.3,  t:[1.0,0.35,0.25,1.0] },
-        E{ kind:2, name:"Ranger",    hp:35,  sp:2.4, dmg:12, cd:1.5, det:13.0, rng:9.0,  kite:Some(5.0),   proj:1, xp:50,  def:0,  sz:0.85, t:[0.3,0.9,1.0,1.0] },
-        E{ kind:3, name:"Ninja",     hp:40,  sp:4.2, dmg:15, cd:1.0, det:11.0, rng:1.8,  kite:None,        proj:1, xp:55,  def:2,  sz:0.75, t:[0.75,0.2,1.0,1.0] },
-        E{ kind:4, name:"Mago",      hp:45,  sp:1.4, dmg:22, cd:2.2, det:15.0, rng:12.0, kite:Some(8.0),   proj:1, xp:70,  def:1,  sz:1.0,  t:[0.4,0.4,1.0,1.0] },
-        E{ kind:5, name:"Berserker", hp:200, sp:1.5, dmg:28, cd:3.0, det:8.0,  rng:1.8,  kite:None,        proj:1, xp:110, def:4,  sz:1.5,  t:[1.0,0.5,0.1,1.0] },
-        E{ kind:6, name:"Arqueiro",  hp:45,  sp:2.8, dmg:14, cd:1.6, det:13.0, rng:9.0,  kite:Some(7.0),   proj:1, xp:60,  def:1,  sz:1.0,  t:[0.2,0.9,0.3,1.0] },
-        E{ kind:7, name:"Boss",      hp:700, sp:1.6, dmg:40, cd:2.8, det:18.0, rng:13.0, kite:Some(10.0),  proj:5, xp:600, def:20, sz:2.2,  t:[1.0,0.85,0.15,1.0] },
+        // Os oito mobs do jogo. A regra: quem MORDE e' bicho, quem ATIRA e'
+        // gente. Os numeros de antes ficaram (sao o que o balanceamento ja'
+        // conhece); mudou quem eles sao — e o chefe, que agora e' um lobo
+        // grande e por isso MORDE em vez de atirar cinco projeteis.
+        E{ kind:0, name:"Lobo",        hp:50,  sp:2.0, dmg:10, cd:2.0, det:9.0,  rng:1.8,  kite:None,        proj:1, xp:30,  def:0,  sz:1.0,  t:[1.0,1.0,1.0,1.0] },
+        E{ kind:1, name:"Urso",        hp:120, sp:1.3, dmg:18, cd:2.8, det:8.0,  rng:1.8,  kite:None,        proj:1, xp:75,  def:8,  sz:1.3,  t:[1.0,1.0,1.0,1.0] },
+        E{ kind:2, name:"Pistoleiro",  hp:35,  sp:2.4, dmg:12, cd:1.5, det:13.0, rng:9.0,  kite:Some(5.0),   proj:1, xp:50,  def:0,  sz:1.0,  t:[1.0,1.0,1.0,1.0] },
+        E{ kind:3, name:"Tigre",       hp:40,  sp:4.2, dmg:15, cd:1.0, det:11.0, rng:1.8,  kite:None,        proj:1, xp:55,  def:2,  sz:1.0,  t:[1.0,1.0,1.0,1.0] },
+        E{ kind:4, name:"Mago",        hp:45,  sp:1.4, dmg:22, cd:2.2, det:15.0, rng:12.0, kite:Some(8.0),   proj:1, xp:70,  def:1,  sz:1.0,  t:[1.0,1.0,1.0,1.0] },
+        E{ kind:5, name:"Owlbear",     hp:200, sp:1.5, dmg:28, cd:3.0, det:8.0,  rng:1.8,  kite:None,        proj:1, xp:110, def:4,  sz:1.5,  t:[1.0,1.0,1.0,1.0] },
+        E{ kind:6, name:"Arqueiro",    hp:45,  sp:2.8, dmg:14, cd:1.6, det:13.0, rng:9.0,  kite:Some(7.0),   proj:1, xp:60,  def:1,  sz:1.0,  t:[1.0,1.0,1.0,1.0] },
+        E{ kind:7, name:"Lobo Grande", hp:700, sp:1.6, dmg:40, cd:2.8, det:18.0, rng:2.6,  kite:None,        proj:1, xp:600, def:20, sz:2.2,  t:[1.0,1.0,1.0,1.0] },
     ];
     for e in kinds {
         sqlx::query(
@@ -957,17 +961,43 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         .bind(e.t[0]).bind(e.t[1]).bind(e.t[2]).bind(e.t[3])
         .execute(pool).await?;
     }
+    // M26: os oito tipos antigos (Grunt, Tank, Ranger, Ninja, Berserker...)
+    // saem do jogo. O `INSERT ... DO NOTHING` acima nao renomeia linha que ja'
+    // existe, entao quem ja' tinha banco ficaria com os nomes velhos. So' mexe
+    // em linha que AINDA tem o nome antigo — nome editado pelo admin fica.
+    // A tinta volta ao neutro: ela existia pra o mesmo lobo parecer oito
+    // bichos diferentes, e agora cada um tem modelo proprio.
+    //
+    // O chefe vira lobo grande e passa a MORDER: alcance de corpo a corpo, sem
+    // fugir, sem os cinco projeteis. Vai antes do rename porque se apoia no
+    // nome velho pra rodar uma vez so'.
+    sqlx::query(
+        "UPDATE enemy_kinds SET attack_range = 2.6, kite_dist = NULL, proj_count = 1 \
+         WHERE kind = 7 AND name = 'Boss'"
+    ).execute(pool).await?;
+    for (kind, velho, novo) in [
+        (0, "Grunt", "Lobo"), (1, "Tank", "Urso"), (2, "Ranger", "Pistoleiro"),
+        (3, "Ninja", "Tigre"), (4, "Mago", "Mago"), (5, "Berserker", "Owlbear"),
+        (6, "Arqueiro", "Arqueiro"), (7, "Boss", "Lobo Grande"),
+    ] {
+        sqlx::query(
+            "UPDATE enemy_kinds SET name = $3, tint_r = 1, tint_g = 1, tint_b = 1, tint_a = 1, \
+             size_scale = CASE WHEN kind IN (2, 3, 4, 6) THEN 1.0 ELSE size_scale END \
+             WHERE kind = $1 AND name = $2"
+        ).bind(kind).bind(velho).bind(novo).execute(pool).await?;
+    }
+
     // Backfill do loot_item_level — antes hardcoded em world.rs.
     // Só seta se NULL (admin pode editar via web admin sem ser sobrescrito).
     let item_levels: &[(i32, i32)] = &[
-        (0, 10),  // Grunt
-        (1, 15),  // Tank
-        (2, 10),  // Ranger
-        (3, 25),  // Ninja
+        (0, 10),  // Lobo
+        (1, 15),  // Urso
+        (2, 10),  // Pistoleiro
+        (3, 25),  // Tigre
         (4, 20),  // Mago
-        (5, 30),  // Berserker
+        (5, 30),  // Owlbear
         (6, 10),  // Arqueiro
-        (7, 50),  // Boss
+        (7, 50),  // Lobo Grande
     ];
     for (kind, lvl) in item_levels {
         sqlx::query("UPDATE enemy_kinds SET loot_item_level = $2 WHERE kind = $1 AND loot_item_level IS NULL")

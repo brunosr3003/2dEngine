@@ -149,8 +149,11 @@ async fn main() {
     // Os modelos entram uma vez, no boot. O desenho e' sincrono, entao nada
     // pode ficar carregando no meio do quadro.
     let mut vox = VoxCache::default();
-    for nome in ["player", "lobo", "lobo_pequeno"] {
+    for nome in render3d::MODELOS_DE_GENTE {
         vox.load(nome, render3d::VOXEL).await;
+    }
+    for (nome, altura) in render3d::ALTURA_DO_BICHO {
+        vox.load_na_altura(nome, altura).await;
     }
 
     let mut jogo = Jogo {

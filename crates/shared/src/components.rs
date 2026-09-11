@@ -331,6 +331,10 @@ pub struct EntityMeta {
     pub name: Option<String>,
     pub hp_max: u16,
     pub faction: Option<Faction>,
+    /// Qual mob da tabela (`enemy_kinds.kind`) — e' por ele que o cliente
+    /// escolhe o MODELO. Zero pra quem nao e' mob. Vai so' na meta, que sai
+    /// uma vez quando a entidade entra na visao: nao pesa por tick.
+    pub kind: u16,
 }
 
 /// Estado de uma entidade num tick. E' o unico dado que se repete.

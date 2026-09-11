@@ -345,6 +345,21 @@ impl VoxCache {
     /// Carrega `<raiz>/<nome>.vox`. `None` quando o arquivo nao existe — mob
     /// sem modelo cai no desenho de fallback em vez de derrubar o cliente.
     pub async fn load(&mut self, name: &str, scale: f32) -> Option<&Vec<Mesh>> {
+        self.carrega(name, |_| scale).await
+    }
+
+    /// Carrega o modelo na ALTURA pedida, em unidades de mundo, qualquer que
+    /// seja a resolucao do arquivo. E' o que separa quantas faces um bicho tem
+    /// de quao grande ele aparece.
+    pub async fn load_na_altura(&mut self, name: &str, altura: f32) -> Option<&Vec<Mesh>> {
+        self.carrega(name, |m| {
+            let (lo, hi) = m.bounds();
+            altura / (hi[2] - lo[2] + 1).max(1) as f32
+        })
+        .await
+    }
+
+    async fn carrega(&mut self, name: &str, escala: impl Fn(&VoxModel) -> f32) -> Option<&Vec<Mesh>> {
         if !self.meshes.contains_key(name) {
             let root = std::env::var("MMO_VOX").unwrap_or_else(|_| "assets/vox".into());
             let path = format!("{root}/{name}.vox");
@@ -353,7 +368,7 @@ impl VoxCache {
             let m = models.into_iter().max_by_key(|m| {
                 m.cells.iter().filter(|c| **c != 0).count()
             })?;
-            let meshes = mesh(&m, scale);
+            let meshes = mesh(&m, escala(&m));
             let tris: usize = meshes.iter().map(|x| x.indices.len() / 3).sum();
             println!("[vox] {name}: {} malha(s), {tris} triangulos", meshes.len());
             self.meshes.insert(name.to_string(), meshes);

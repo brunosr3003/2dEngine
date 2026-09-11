@@ -1007,15 +1007,50 @@ pub fn draw_ground(map: &Map, center: Vec2) {
 /// original da 14.112 triangulos — isso e' modelo de boss, do qual ha um na
 /// tela. Mob comum usa a versao reduzida (`tools/voxrender/voxsimplify.py`),
 /// menor e com uma fracao dos triangulos, porque ha dezenas deles.
-fn model_for(tag: shared::EntityTag, boss: bool) -> Option<&'static str> {
+fn model_for(tag: shared::EntityTag, boss: bool, kind: u16) -> Option<&'static str> {
     use shared::EntityTag as T;
     match tag {
         T::Player | T::Npc => Some("player"),
         T::Enemy if boss => Some("lobo"),
-        T::Enemy => Some("lobo_pequeno"),
+        T::Enemy => Some(modelo_do_mob(kind)),
         _ => None,
     }
 }
+
+/// O modelo de cada tipo de mob (`enemy_kinds.kind`). Quem MORDE e' bicho,
+/// quem ATIRA e' gente — ver docs/PERSONAGEM.md.
+pub fn modelo_do_mob(kind: u16) -> &'static str {
+    match kind {
+        1 => "urso",
+        2 => "pistoleiro",
+        3 => "tigre",
+        4 => "mago",
+        5 => "owlbear",
+        6 => "arqueiro",
+        _ => "lobo_pequeno",
+    }
+}
+
+/// Altura de cada BICHO na tela, em unidades de mundo.
+///
+/// O arquivo decide a resolucao (quantas faces cabem no orcamento, ver
+/// `tools/voxrender/mobs.py`); isto decide o tamanho. Separar os dois e' o que
+/// deixa um urso de 16 voxels de altura aparecer maior que o lobo de 19 — e o
+/// que impede os dois de desencontrarem: a escala e' calculada no carregamento
+/// pela altura do proprio modelo.
+///
+/// Gente (jogador, pistoleiro, mago, arqueiro) nao entra aqui: ela usa o
+/// mesmo `VOXEL` do corpo, porque o rig inteiro depende de 1 voxel = 4 cm.
+pub const ALTURA_DO_BICHO: [(&str, f32); 5] = [
+    ("lobo_pequeno", 0.9),
+    ("urso", 1.3),
+    ("tigre", 0.95),
+    ("owlbear", 1.5),
+    ("lobo", 2.8),
+];
+
+/// Modelos de gente, desenhados na escala do corpo.
+pub const MODELOS_DE_GENTE: [&str; 4] = ["player", "pistoleiro", "mago", "arqueiro"];
 
 pub fn draw_entities(
     world: &mut World,
@@ -1034,7 +1069,7 @@ pub fn draw_entities(
         }
 
         let boss = e.state.flags & shared::ent_flags::BOSS != 0;
-        let drawn = model_for(e.meta.tag, boss)
+        let drawn = model_for(e.meta.tag, boss, e.meta.kind)
             .and_then(|name| vox.peek(name))
             .map(|meshes| {
                 // A malha nasce centrada em X/Z e apoiada em Y=0; girar em

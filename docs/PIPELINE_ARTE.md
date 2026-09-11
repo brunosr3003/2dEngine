@@ -61,7 +61,16 @@ corpo no eixo Z (o `lobo.vox` tem as patas em z 0..12 e o corpo só a partir de
 z 31, com 18 camadas vazias no meio), porque foram autorados pra ser riggados
 em runtime no zone14.
 
-`close_z_gaps` (ligado por default) encosta as peças e resolve o caso estático.
+**E a separação é também o ESTILO.** O gerador do zone14 desenha esses
+quadrúpedes SEM PERNAS, com as patas flutuando de propósito — "SOMENTE AS
+PATAS FLUTUANTES DE LOBO, SEM PERNAS", com um vão de ar entre pata e tronco
+(`generate_wolf.py`); tigre e urso seguem o mesmo desenho. No lobo as patas
+ficam até do LADO do tronco, não embaixo. Por isso os modelos de mob entram
+no jogo **sem encostar nada** (`tools/voxrender/mobs.py`): uma primeira versão
+"consertava" isso e mudava o desenho dos bichos.
+
+`close_z_gaps` (ligado por default no render de sprite) encosta as peças pro
+caso estático — é escolha do render, não do modelo que vai pro jogo.
 Mas a separação **não é defeito, é o rig**: é ela que vai dar o ciclo de
 caminhada de graça — basta mover o grupo das patas por quadro em vez de
 redesenhar o bicho inteiro.

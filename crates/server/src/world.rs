@@ -9218,6 +9218,7 @@ impl GameWorld {
                     name,
                     hp_max: hp.map(|h| h.max.max(0) as u16).unwrap_or(0),
                     faction: None,
+                    kind: if let EntityKind::Enemy(k) = kind { *k } else { 0 },
                 };
                 let state = EntityState::quantize(
                     net.0,
