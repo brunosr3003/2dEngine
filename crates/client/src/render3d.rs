@@ -1131,8 +1131,7 @@ fn desenha_personagem(
         andar: e.andar,
         correr: e.correr,
         tempo: get_time() as f32,
-        no_ar: e.voando,
-        subindo: e.vel_y > 0.0,
+        ar: e.ar,
         degrau: [degrau(-2.0), degrau(2.0)],
     };
     let pose = crate::rig::pose(&entrada);

@@ -98,6 +98,9 @@ pub struct Ent {
     pub andar: f32,
     /// 0 andando .. 1 correndo, suavizado.
     pub correr: f32,
+    /// 0 no chao .. 1 no ar, suavizado: descer um degrau tira o pe' do chao
+    /// por um instante, e a pose nao pode trocar num estalo.
+    pub ar: f32,
 }
 
 impl Ent {
@@ -172,6 +175,7 @@ impl World {
                 fase: 0.0,
                 andar: 0.0,
                 correr: 0.0,
+                ar: 0.0,
             });
         }
         for st in states {
@@ -205,6 +209,8 @@ impl World {
             let antes = ent.render_pos;
             ent.render_pos += (target - ent.render_pos) * a;
             anda_a_fase(ent, (ent.render_pos - antes).length(), dt);
+            let alvo_ar = if ent.voando { 1.0 } else { 0.0 };
+            ent.ar += (alvo_ar - ent.ar) * (1.0 - (-12.0 * dt).exp());
 
             // ── VERTICAL ──
             //

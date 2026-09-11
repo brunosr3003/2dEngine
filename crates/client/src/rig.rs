@@ -74,8 +74,9 @@ pub struct Entrada {
     pub correr: f32,
     /// Relógio, só pra respiração de quem está parado.
     pub tempo: f32,
-    pub no_ar: bool,
-    pub subindo: bool,
+    /// 0 no chao .. 1 no ar, suavizado. Descer um degrau tambem poe o corpo
+    /// no ar por um instante; sem suavizar, a pose trocaria num estalo.
+    pub ar: f32,
     /// Quanto o chão sob cada pé (direito, esquerdo) está ACIMA da base do
     /// corpo, em voxels. Positivo = degrau.
     pub degrau: [f32; 2],
@@ -123,24 +124,42 @@ pub fn joelho_no_degrau(delta: f32) -> (f32, f32) {
 }
 
 pub fn pose(e: &Entrada) -> Pose {
+    let chao = pose_no_chao(e);
+    let ar = e.ar.clamp(0.0, 1.0);
+    if ar <= 0.0 {
+        return chao;
+    }
+    let voo = pose_no_ar();
+    let mut rot = [Quat::IDENTITY; N];
+    for i in 0..N {
+        rot[i] = chao.rot[i].slerp(voo.rot[i], ar);
+    }
+    Pose { rot, subida: chao.subida * (1.0 - ar) }
+}
+
+/// O corpo no ar. NAO e' pulo: o jogo nao tem pulo atletico — o que tira o
+/// pe' do chao e' vencer um degrau de dois ou tres blocos, ou cair de uma
+/// borda. A primeira versao encolhia as pernas subindo e jogava os bracos pra
+/// fora caindo, e contava uma historia que nao acontece. Aqui e' so' o corpo
+/// solto: pernas um pouco separadas, joelho mal dobrado, bracos soltos — igual
+/// subindo e descendo.
+fn pose_no_ar() -> Pose {
+    let mut rot = [Quat::IDENTITY; N];
+    rot[COXA_D] = frente(0.15);
+    rot[COXA_E] = frente(-0.05);
+    rot[CANELA_D] = dobra_pra_tras(0.25);
+    rot[CANELA_E] = dobra_pra_tras(0.15);
+    rot[BRACO_D] = abre(1.0, 0.18);
+    rot[BRACO_E] = abre(-1.0, 0.18);
+    rot[ANTEBRACO_D] = frente(0.2);
+    rot[ANTEBRACO_E] = frente(0.2);
+    Pose { rot, subida: 0.0 }
+}
+
+fn pose_no_chao(e: &Entrada) -> Pose {
     let mut rot = [Quat::IDENTITY; N];
     let andar = e.andar.clamp(0.0, 1.0);
     let correr = e.correr.clamp(0.0, 1.0);
-
-    if e.no_ar {
-        // Subindo: encolhe as pernas. Caindo: estica e abre os braços.
-        let (coxa, joelho, braco) = if e.subindo { (0.6, 1.1, 0.5) } else { (0.2, 0.35, 0.9) };
-        rot[COXA_D] = frente(coxa);
-        rot[COXA_E] = frente(coxa * 0.6);
-        rot[CANELA_D] = dobra_pra_tras(joelho);
-        rot[CANELA_E] = dobra_pra_tras(joelho * 0.8);
-        rot[BRACO_D] = abre(1.0, braco);
-        rot[BRACO_E] = abre(-1.0, braco);
-        rot[ANTEBRACO_D] = frente(0.4);
-        rot[ANTEBRACO_E] = frente(0.4);
-        return Pose { rot, subida: 0.0 };
-    }
-
     let s = e.fase.sin();
     let passo = (0.45 + 0.30 * correr) * andar * s;
     let dobra = (0.6 + 0.5 * correr) * andar;
@@ -204,7 +223,7 @@ mod testes {
     use super::*;
 
     fn parado() -> Entrada {
-        Entrada { fase: 0.0, andar: 0.0, correr: 0.0, tempo: 0.0, no_ar: false, subindo: false, degrau: [0.0, 0.0] }
+        Entrada { fase: 0.0, andar: 0.0, correr: 0.0, tempo: 0.0, ar: 0.0, degrau: [0.0, 0.0] }
     }
 
     /// Onde a sola de um pé fica, em voxels, com a raiz no chão.
@@ -239,6 +258,23 @@ mod testes {
             // O outro pé continua no chão.
             assert!(sola(&p, COXA_E, CANELA_E).y.abs() < 0.01);
         }
+    }
+
+    /// No ar o corpo fica SOLTO, não encolhido: sola perto da altura de
+    /// parado e braço perto do corpo. Encolher a perna e jogar o braço pra
+    /// fora é pose de pulo, e o jogo não tem pulo atlético.
+    #[test]
+    fn no_ar_o_corpo_fica_solto_e_nao_pula() {
+        let mut e = parado();
+        e.ar = 1.0;
+        let p = pose(&e);
+        for (c, k) in [(COXA_D, CANELA_D), (COXA_E, CANELA_E)] {
+            let s = sola(&p, c, k);
+            assert!(s.y < 1.5, "perna encolhida no ar: sola em y {:.2}", s.y);
+        }
+        let m = matrizes(&p, Mat4::IDENTITY, 1.0);
+        let mao = m[ANTEBRACO_D].transform_point3(mapa([23.0, 12.0, 16.0], 1.0) - mapa(PECAS[ANTEBRACO_D].2, 1.0));
+        assert!(mao.x.abs() < 11.0, "braço jogado pra fora no ar: mão em x {:.2}", mao.x);
     }
 
     /// No meio do passo a perna direita está NA FRENTE (o +Z do rig) e a
