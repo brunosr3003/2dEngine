@@ -381,8 +381,20 @@ no meio), os três golpes do combo — horizontal da direita pra esquerda, de
 volta subindo, de cima com o passo à frente —, cada um partindo de onde o
 anterior parou, e o tranco de quem apanha. Braço e lâmina se descrevem por
 guinada e elevação, e a lâmina aponta pra onde a chave manda: o giro na mão
-sai da conta. Katana, pistolas e anel entram com a arte deles; as skills,
-quando o cliente tiver como conjurá-las.
+sai da conta. **FEITO — os outros três conjuntos**, na mesma tabela (`rig::Estilo`: guarda,
+sacar e três golpes por conjunto):
+
+| conjunto | guarda | golpes | guardada |
+|---|---|---|---|
+| katana | baixa, lâmina à frente na diagonal | diagonal descendo do ombro, diagonal subindo, estocada com passo longo | na bainha do quadril esquerdo, cabo pra fora |
+| duas pistolas | os dois braços à frente, canos baixos | tiro da direita, da esquerda, das duas — cada um com o coice subindo o cano | nos coldres, dos dois lados |
+| anel mágico | mãos abertas à frente do peito | palma empurrando, as duas mãos, mão erguida descendo | — (o círculo só aparece atacando) |
+
+O tiro da pistola acende um clarão na boca do cano; o anel acende o círculo no
+pulso e, no impacto, projeta um segundo círculo pra frente. O projétil deixa
+de ser um cubo: bala é um ponto quente com risco, magia é um orbe com halo (o
+tipo vai no `kind` da meta do projétil). As skills entram quando o cliente
+tiver como conjurá-las.
 
 **FEITO — o que tira o duro.** Por cima da pose-chave roda uma MOLA por junta
 (`rig::Molas`): a pose do quadro vira alvo e cada peça chega nele com a

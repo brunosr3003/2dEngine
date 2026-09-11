@@ -171,7 +171,7 @@ async fn main() {
     // Os bichos em PECAS (tools/voxrender/bichos.py). Sem o arquivo, o mob
     // cai no modelo inteiro de antes.
     // As armas do primeiro conjunto (tools/voxrender/armas.py).
-    for nome in ["espada", "escudo"] {
+    for nome in ["espada", "escudo", "katana", "bainha", "pistola", "coldre"] {
         vox.load_arma(nome, render3d::VOXEL).await;
     }
     for (nome, altura) in bicho::BICHOS {

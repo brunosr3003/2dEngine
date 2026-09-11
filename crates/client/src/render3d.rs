@@ -1088,7 +1088,7 @@ pub fn draw_entities(
     // Os rastros sao transparentes: vao depois de tudo que e' solido, senao
     // o que fosse desenhado atras deles depois nao apareceria atraves.
     let mut rastros = Vec::new();
-    let mut fitas = Vec::new();
+    let mut brilhos: Vec<Brilho> = Vec::new();
     let self_id = world.self_id;
     for id in order {
         let Some(e) = world.ents.get_mut(&id) else { continue };
@@ -1103,9 +1103,7 @@ pub fn draw_entities(
         // Gente (jogador, NPC) e' desenhada em PECAS, com a pose do quadro.
         if matches!(e.meta.tag, shared::EntityTag::Player | shared::EntityTag::Npc) {
             if let Some(corpo) = vox.rig(RIG_CORPO) {
-                if let Some(f) = desenha_personagem(e, corpo, vox.rig(RIG_CHAPEU), vox, vista, self_id == Some(id)) {
-                    fitas.push(f);
-                }
+                brilhos.extend(desenha_personagem(e, corpo, vox.rig(RIG_CHAPEU), vox, vista, self_id == Some(id)));
                 continue;
             }
         }
@@ -1118,6 +1116,10 @@ pub fn draw_entities(
                 }
                 continue;
             }
+        }
+        if e.meta.tag == shared::EntityTag::Projectile {
+            desenha_projetil(e, p);
+            continue;
         }
         let drawn = model_for(e.meta.tag, boss, e.meta.kind)
             .and_then(|name| vox.peek(name))
@@ -1153,8 +1155,12 @@ pub fn draw_entities(
         desenha_rastro(base, r);
     }
     let agora = get_time() as f32;
-    for f in &fitas {
-        desenha_fita(f, agora);
+    for b in &brilhos {
+        match b {
+            Brilho::Fita(f) => desenha_fita(f, agora),
+            Brilho::Clarao(p, u) => desenha_clarao(*p, *u),
+            Brilho::Circulo(pulso, t) => desenha_circulo(*pulso, *t),
+        }
     }
 }
 
@@ -1205,7 +1211,7 @@ fn desenha_personagem(
     vox: &VoxCache,
     vista: &Vista,
     eu: bool,
-) -> Option<Vec<(Vec3, Vec3, f32)>> {
+) -> Vec<Brilho> {
     let p = vista.pos_de(e);
     let (sin, cos) = e.yaw.sin_cos();
     // Quanto o chao sob cada pe' esta' acima da base do corpo, em voxels. O pe'
@@ -1259,21 +1265,172 @@ fn desenha_personagem(
         * Mat4::from_rotation_y(e.yaw)
         * Mat4::from_rotation_x(-cai)
         * Mat4::from_scale(vec3(1.0 + 0.5 * s, 1.0 - s, 1.0 + 0.5 * s));
-    let armas = desenha_rig(base, &pose, corpo, chapeu, vox, clarao(e, eu));
+    let (mats, armas) = desenha_rig(base, &pose, corpo, chapeu, vox, clarao(e, eu));
+    let mut brilhos = Vec::new();
 
     // O rastro da lamina: base e ponta a cada quadro enquanto o golpe corre.
+    // (onde a lamina comeca e termina, em voxels a partir da pega)
     let agora = get_time() as f32;
     if e.combo.is_some() {
-        if let Some([espada, _]) = armas {
+        let lamina = armas.iter().find_map(|(n, m)| match *n {
+            "espada" => Some((*m, 5.0, 22.0)),
+            "katana" => Some((*m, 6.0, 26.0)),
+            _ => None,
+        });
+        if let Some((m, de, ate)) = lamina {
             e.rastro.push((
-                espada.transform_point3(vec3(0.0, 0.0, 5.0 * VOXEL)),
-                espada.transform_point3(vec3(0.0, 0.0, 22.0 * VOXEL)),
+                m.transform_point3(vec3(0.0, 0.0, de * VOXEL)),
+                m.transform_point3(vec3(0.0, 0.0, ate * VOXEL)),
                 agora,
             ));
         }
     }
     e.rastro.retain(|(_, _, t)| agora - t < VIDA_DO_RASTRO);
-    (e.rastro.len() >= 2).then(|| e.rastro.clone())
+    if e.rastro.len() >= 2 {
+        brilhos.push(Brilho::Fita(e.rastro.clone()));
+    }
+
+    if let Some((passo, t)) = e.combo {
+        // Pistolas: o clarao do cano no instante do tiro — da direita no
+        // primeiro, da esquerda no segundo, das duas no terceiro.
+        if crate::rig::e_pistolas(&pose) {
+            let dt = t - crate::rig::IMPACTO;
+            if (0.0..0.08).contains(&dt) {
+                let pistolas: Vec<Mat4> = armas.iter().filter(|(n, _)| *n == "pistola").map(|(_, m)| *m).collect();
+                let quais: &[usize] = match passo {
+                    0 => &[0],
+                    1 => &[1],
+                    _ => &[0, 1],
+                };
+                for &i in quais {
+                    if let Some(m) = pistolas.get(i) {
+                        brilhos.push(Brilho::Clarao(m.transform_point3(vec3(0.0, 2.5 * VOXEL, 9.5 * VOXEL)), dt / 0.08));
+                    }
+                }
+            }
+        }
+        // Anel: o circulo no pulso da mao que empurra (as duas no segundo).
+        if crate::rig::e_anel(&pose) {
+            let pulsos = crate::rig::pulsos(&mats, VOXEL);
+            let quais: &[usize] = if passo == 1 { &[0, 1] } else { &[0] };
+            for &i in quais {
+                brilhos.push(Brilho::Circulo(pulsos[i], t));
+            }
+        }
+    }
+    brilhos
+}
+
+/// O que brilha por cima do mundo, transparente, depois de todo mundo: o
+/// rastro da lamina, o clarao do cano e o circulo do anel.
+pub enum Brilho {
+    Fita(Vec<(Vec3, Vec3, f32)>),
+    /// Posicao e 0..1 da vida do clarao.
+    Clarao(Vec3, f32),
+    /// O pulso e o instante do golpe.
+    Circulo(Mat4, f32),
+}
+
+/// Malha transparente das duas faces (o descarte de face de costas esta'
+/// ligado e o efeito e' visto dos dois lados).
+fn dupla(vertices: Vec<Vertex>, tris: Vec<[u16; 3]>) {
+    let mut indices = Vec::with_capacity(tris.len() * 6);
+    for [a, b, c] in tris {
+        indices.extend_from_slice(&[a, b, c, a, c, b]);
+    }
+    draw_mesh(&Mesh { vertices, indices, texture: None });
+}
+
+fn vtx(p: Vec3, cor: [u8; 4]) -> Vertex {
+    Vertex { position: p, uv: vec2(0.0, 0.0), color: cor, normal: Vec4::ZERO }
+}
+
+/// O clarao do tiro: tres quadrados cruzados, amarelo quente, que encolhem
+/// e somem em 0,08 s.
+fn desenha_clarao(p: Vec3, u: f32) {
+    let s = (1.0 - u) * 0.20 + 0.04;
+    let a = ((1.0 - u) * 235.0) as u8;
+    let mut v = Vec::new();
+    let mut t = Vec::new();
+    for (ea, eb) in [(Vec3::X, Vec3::Y), (Vec3::Y, Vec3::Z), (Vec3::X, Vec3::Z)] {
+        let b0 = v.len() as u16;
+        for q in [p - ea * s - eb * s, p + ea * s - eb * s, p + ea * s + eb * s, p - ea * s + eb * s] {
+            v.push(vtx(q, [255, 232, 160, a]));
+        }
+        t.push([b0, b0 + 1, b0 + 2]);
+        t.push([b0, b0 + 2, b0 + 3]);
+    }
+    dupla(v, t);
+}
+
+/// Uma faixa circular no plano XZ de `m`, a `y` do centro.
+fn faixa_circular(m: Mat4, y: f32, raio: f32, largura: f32, cor: [u8; 4]) {
+    const N: u16 = 28;
+    let mut v = Vec::new();
+    let mut t = Vec::new();
+    for i in 0..=N {
+        let a = i as f32 / N as f32 * std::f32::consts::TAU;
+        for r in [raio - largura * 0.5, raio + largura * 0.5] {
+            v.push(vtx(m.transform_point3(vec3(a.cos() * r, y, a.sin() * r)), cor));
+        }
+    }
+    for i in 0..N {
+        let (a0, a1, b0, b1) = (i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 3);
+        t.push([a0, a1, b0]);
+        t.push([a1, b1, b0]);
+    }
+    dupla(v, t);
+}
+
+/// O anel magico: o circulo aceso em volta do pulso enquanto o golpe arma, e
+/// no impacto um segundo circulo SAI da mao pra frente, crescendo e sumindo —
+/// o golpe projetado atraves do anel (docs/PERSONAGEM.md).
+fn desenha_circulo(pulso: Mat4, t: f32) {
+    let imp = crate::rig::IMPACTO;
+    let aceso = if t < imp { t / imp } else { (1.0 - (t - imp) / 0.25).max(0.0) };
+    faixa_circular(pulso, 0.0, 3.6 * VOXEL, 0.9 * VOXEL, [190, 130, 255, (aceso * 220.0) as u8]);
+    if t > imp {
+        let u = ((t - imp) / 0.22).min(1.0);
+        faixa_circular(
+            pulso,
+            -(4.0 + 14.0 * u) * VOXEL,
+            (4.0 + 7.0 * u) * VOXEL,
+            (1.2 * (1.0 - u) + 0.3) * VOXEL,
+            [215, 170, 255, ((1.0 - u) * 200.0) as u8],
+        );
+    }
+}
+
+/// Octaedro: o menor solido que le' como bola de longe.
+fn octaedro(c: Vec3, r: f32, cor: [u8; 4]) {
+    let v = [Vec3::X, -Vec3::X, Vec3::Y, -Vec3::Y, Vec3::Z, -Vec3::Z].map(|d| vtx(c + d * r, cor)).to_vec();
+    let t = vec![[0, 2, 4], [2, 1, 4], [1, 3, 4], [3, 0, 4], [2, 0, 5], [1, 2, 5], [3, 1, 5], [0, 3, 5]];
+    dupla(v, t);
+}
+
+/// O projetil: bala e' um ponto quente com um risco atras; magia e' um orbe
+/// violeta com halo. Vem o tipo no `kind` da meta.
+fn desenha_projetil(e: &crate::world::Ent, p: Vec3) {
+    let alto = p + vec3(0.0, 1.05, 0.0);
+    let v = e.state.vel_f32();
+    let dir = vec3(v.x, 0.0, v.y).normalize_or_zero();
+    if e.meta.kind == 1 {
+        octaedro(alto, 0.15, [205, 150, 255, 255]);
+        octaedro(alto, 0.27, [170, 110, 255, 90]);
+    } else {
+        octaedro(alto, 0.06, [255, 244, 200, 255]);
+        let lado = dir.cross(Vec3::Y).normalize_or_zero() * 0.035;
+        let atras = alto - dir * 0.8;
+        dupla(
+            vec![
+                vtx(alto + lado, [255, 214, 130, 180]),
+                vtx(alto - lado, [255, 214, 130, 180]),
+                vtx(atras - lado, [255, 214, 130, 0]),
+                vtx(atras + lado, [255, 214, 130, 0]),
+            ],
+            vec![[0, 1, 2], [0, 2, 3]],
+        );
+    }
 }
 
 /// O boneco em pecas numa base qualquer — o mundo usa a posicao da entidade;
@@ -1285,7 +1442,7 @@ pub fn desenha_rig(
     chapeu: Option<&std::collections::HashMap<String, Vec<Mesh>>>,
     vox: &VoxCache,
     tinta: Option<([f32; 3], f32)>,
-) -> Option<[Mat4; 2]> {
+) -> ([Mat4; crate::rig::N], Vec<(&'static str, Mat4)>) {
     let mats = crate::rig::matrizes(pose, base, VOXEL);
     for (i, (nome, _, _)) in crate::rig::PECAS.iter().enumerate() {
         let malhas = if *nome == "cabelo" {
@@ -1297,16 +1454,15 @@ pub fn desenha_rig(
             draw_mesh_mat_tinta(m, &mats[i], tinta);
         }
     }
-    // A espada e o escudo: na mao em combate, guardados fora dele.
+    // As armas do conjunto: na mao em combate, guardadas fora dele — e o que
+    // se veste junto (bainha, coldres).
     let armas = crate::rig::armas(pose, &mats, VOXEL);
-    if let Some(armas) = armas {
-        for (nome, mat) in ["espada", "escudo"].into_iter().zip(armas) {
-            for m in vox.arma(nome).into_iter().flatten() {
-                draw_mesh_mat(m, &mat);
-            }
+    for (nome, mat) in &armas {
+        for m in vox.arma(nome).into_iter().flatten() {
+            draw_mesh_mat(m, mat);
         }
     }
-    armas
+    (mats, armas)
 }
 
 /// O rastro da lamina: uma fita entre a base e a ponta de cada amostra, que

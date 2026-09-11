@@ -9241,9 +9241,10 @@ impl GameWorld {
                 &NetId, &Position, &Velocity, &EntityKind,
                 Option<&Health>, Option<&PlayerTag>, Option<&VendorTag>,
                 Option<&WanderRouteTag>, Option<&EnemyTag>, Option<&LootTag>,
+                Option<&ProjTag>,
             )>()
             .iter()
-            .map(|(_, (net, pos, vel, kind, hp, ptag, vtag, wtag, etag, ltag))| {
+            .map(|(_, (net, pos, vel, kind, hp, ptag, vtag, wtag, etag, ltag, projtag))| {
                 let tag = match kind {
                     EntityKind::Player     => shared::EntityTag::Player,
                     EntityKind::Enemy(_)   => shared::EntityTag::Enemy,
@@ -9303,6 +9304,9 @@ impl GameWorld {
                             .and_then(|l| l.instance.as_ref())
                             .map(|i| i.rarity.clamp(1, 4) as u16)
                             .unwrap_or(0),
+                        // Projetil: o tipo (0 flecha/bala, 1 magia...), pra o
+                        // cliente desenhar bala como bala e magia como orbe.
+                        EntityKind::Projectile => projtag.map_or(0, |p| p.kind as u16),
                         _ => 0,
                     },
                 };

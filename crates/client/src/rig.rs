@@ -96,11 +96,13 @@ pub struct Pose {
     pub na_mao: bool,
     /// Tem arma pra desenhar (o conjunto ja' tem modelo).
     pub armado: bool,
+    /// Qual conjunto (`shared::skills::Conjunto as u8`).
+    pub conjunto: u8,
 }
 
 impl Pose {
     fn de(rot: [Quat; N], subida: f32) -> Pose {
-        Pose { rot, subida, punho: [Quat::IDENTITY; 2], na_mao: false, armado: false }
+        Pose { rot, subida, punho: [Quat::IDENTITY; 2], na_mao: false, armado: false, conjunto: 0 }
     }
 }
 
@@ -307,17 +309,27 @@ const VOLTA: f32 = 0.24;
 /// da VOLTA deste e parte dali (`Combate::golpe_ant`).
 pub const DURACAO_DO_GOLPE: f32 = PREPARA + CORTA + SEGURA + VOLTA;
 
-/// So' espada e escudo tem modelo por enquanto (docs/ARTE_DO_PERSONAGEM.md,
-/// entrega 3). Os outros conjuntos entram com a arte deles.
+/// Os conjuntos (`shared::skills::Conjunto as u8`).
 const ESPADA_ESCUDO: u8 = 0;
+const KATANA: u8 = 1;
+const PISTOLAS: u8 = 2;
+const ANEL: u8 = 3;
 
 /// Onde as armas se prendem, em voxel da tela comum.
 const MAO_D: [f32; 3] = [23.0, 12.0, 17.5];
 const MAO_E: [f32; 3] = [9.0, 12.0, 17.5];
+/// O pulso: e' ali que o anel projeta o circulo.
+const PULSO_D: [f32; 3] = [23.0, 12.0, 19.5];
+const PULSO_E: [f32; 3] = [9.0, 12.0, 19.5];
 /// Guardadas: a espada pendurada no quadril ESQUERDO — a mao direita saca
 /// cruzando o corpo — e o escudo nas costas.
 const QUADRIL_E: [f32; 3] = [10.2, 13.5, 21.5];
 const COSTAS: [f32; 3] = [16.0, 8.4, 26.0];
+/// A boca da bainha, no quadril esquerdo um pouco a' frente; os coldres, um
+/// de cada lado, atras do braco (docs/ARTE_DO_PERSONAGEM.md).
+const BAINHA: [f32; 3] = [9.6, 14.5, 21.5];
+const COLDRE_D: [f32; 3] = [21.8, 11.0, 22.0];
+const COLDRE_E: [f32; 3] = [10.2, 11.0, 22.0];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Braco {
@@ -332,7 +344,7 @@ struct Lamina {
     elevacao: f32,
     /// Giro em volta do proprio eixo: 0 = o fio vai pra onde a elevacao
     /// SOBE; pi = pra onde desce (golpe de cima); +-pi/2 = fio de lado, a
-    /// lamina deitada (corte horizontal).
+    /// lamina deitada (corte horizontal). Na pistola, 0 = em pe'.
     giro: f32,
 }
 
@@ -342,10 +354,13 @@ struct Chave {
     inclina: f32,
     d: Braco,
     e: Braco,
+    /// A arma da mao direita (lamina, cano).
     lamina: Lamina,
+    /// A arma da mao esquerda quando ela nao e' escudo (a segunda pistola).
+    arma_e: Lamina,
     /// Pra onde a face do escudo olha: guinada, 0 = frente.
     escudo: f32,
-    /// 0..1: o passo a' frente do golpe de cima.
+    /// 0..1: o passo a' frente.
     avanco: f32,
     /// Quanto o corpo desce (negativo) ou sobe, em voxels. O peso cai NO
     /// golpe: e' isso que faz o corte ter massa.
@@ -358,124 +373,138 @@ const fn br(guinada: f32, elevacao: f32, cotovelo: f32) -> Braco {
 const fn la(guinada: f32, elevacao: f32, giro: f32) -> Lamina {
     Lamina { guinada, elevacao, giro }
 }
+/// Uma chave, na ordem: torcao, inclinacao, braco direito, braco esquerdo,
+/// arma direita, arma esquerda, escudo, avanco, agacha.
+#[allow(clippy::too_many_arguments)]
+const fn ch(torce: f32, inclina: f32, d: Braco, e: Braco, lamina: Lamina, arma_e: Lamina, escudo: f32, avanco: f32, agacha: f32) -> Chave {
+    Chave { torce, inclina, d, e, lamina, arma_e, escudo, avanco, agacha }
+}
 const MEIA_VOLTA: f32 = std::f32::consts::FRAC_PI_2;
 const PI: f32 = std::f32::consts::PI;
+/// Chave sem arma na mao esquerda / sem lamina (o anel).
+const SEM: Lamina = la(0.0, 1.5, 0.0);
 
-/// Em guarda: a espada erguida a' frente com o fio pra baixo, o escudo
-/// cobrindo o peito.
-const GUARDA: Chave = Chave {
-    torce: -0.15,
-    inclina: 0.05,
-    d: br(-0.35, 0.45, 1.25),
-    e: br(-0.15, 0.55, 1.35),
-    lamina: la(-0.2, 1.9, PI),
-    escudo: 0.2,
-    avanco: 0.0,
-    agacha: -0.5,
+/// Um conjunto inteiro: a guarda, o gesto de sacar e os tres golpes, cada um
+/// (preparo, impacto). Cada golpe comeca onde o anterior termina.
+struct Estilo {
+    guarda: Chave,
+    sacando: Chave,
+    golpes: [[Chave; 2]; 3],
+}
+
+/// Espada e escudo. Guarda: espada erguida a' frente com o fio pra baixo,
+/// escudo cobrindo o peito. Golpes: horizontal da direita pra esquerda, de
+/// volta subindo, e de cima com o passo a' frente.
+const ESTILO_ESPADA: Estilo = Estilo {
+    guarda: ch(-0.15, 0.05, br(-0.35, 0.45, 1.25), br(-0.15, 0.55, 1.35), la(-0.2, 1.9, PI), SEM, 0.2, 0.0, -0.5),
+    // a mao direita no quadril esquerdo, a esquerda por cima do ombro
+    sacando: ch(0.3, 0.05, br(0.9, 0.35, 1.0), br(0.3, 2.6, 1.6), la(0.0, -0.5, 0.0), SEM, PI, 0.0, 0.0),
+    golpes: [
+        [
+            ch(-0.75, 0.0, br(-1.4, 1.35, 0.5), br(-0.1, 0.5, 1.4), la(-1.6, 1.5, MEIA_VOLTA), SEM, 0.3, 0.0, 0.3),
+            ch(0.75, 0.05, br(0.9, 1.45, 0.25), br(0.5, 0.4, 1.1), la(1.1, 1.55, MEIA_VOLTA), SEM, 0.7, 0.0, -1.4),
+        ],
+        [
+            ch(0.75, 0.05, br(1.1, 1.1, 0.7), br(0.5, 0.4, 1.1), la(1.3, 1.2, -MEIA_VOLTA), SEM, 0.7, 0.0, 0.2),
+            ch(-0.65, -0.05, br(-1.1, 1.8, 0.3), br(-0.1, 0.5, 1.4), la(-1.2, 1.9, -MEIA_VOLTA), SEM, 0.2, 0.0, -1.2),
+        ],
+        [
+            ch(-0.1, -0.25, br(-0.2, 2.8, 0.6), br(-0.1, 0.6, 1.3), la(-0.1, 3.3, PI), SEM, 0.2, 0.3, 0.8),
+            ch(0.05, 0.35, br(-0.1, 1.2, 0.15), br(0.2, 0.35, 1.0), la(-0.05, 1.15, PI), SEM, 0.4, 1.0, -2.2),
+        ],
+    ],
 };
 
-/// Sacando: a mao direita no quadril esquerdo, a esquerda por cima do ombro
-/// buscando o escudo.
-const SACANDO: Chave = Chave {
-    torce: 0.3,
-    inclina: 0.05,
-    d: br(0.9, 0.35, 1.0),
-    e: br(0.3, 2.6, 1.6),
-    lamina: la(0.0, -0.5, 0.0),
-    escudo: PI,
-    avanco: 0.0,
-    agacha: 0.0,
+/// Katana: postura baixa, a lamina a' frente na diagonal. Golpes: diagonal
+/// descendo do ombro direito (kesa-giri), diagonal subindo de volta
+/// (gyaku-kesa) e a estocada com o passo longo (tsuki).
+const ESTILO_KATANA: Estilo = Estilo {
+    guarda: ch(-0.25, 0.08, br(-0.2, 0.6, 1.15), br(0.35, 0.3, 0.7), la(-0.3, 1.25, PI), SEM, 0.0, 0.0, -0.9),
+    // a mao direita no cabo, na boca da bainha; a esquerda segura a bainha
+    sacando: ch(0.35, 0.05, br(0.95, 0.45, 1.1), br(0.55, 0.3, 0.8), la(0.15, -1.12, 0.0), SEM, 0.0, 0.0, -0.4),
+    golpes: [
+        [
+            ch(-0.55, -0.1, br(-0.8, 2.5, 0.9), br(0.3, 0.5, 1.0), la(-0.5, 2.9, PI), SEM, 0.0, 0.0, 0.4),
+            ch(0.6, 0.25, br(0.7, 0.95, 0.2), br(0.5, 0.3, 0.8), la(0.9, 0.85, PI), SEM, 0.0, 0.0, -1.8),
+        ],
+        [
+            ch(0.6, 0.2, br(0.9, 0.8, 0.5), br(0.5, 0.3, 0.8), la(1.0, 0.7, 0.0), SEM, 0.0, 0.0, -0.6),
+            ch(-0.6, -0.05, br(-1.0, 2.05, 0.25), br(0.2, 0.5, 1.0), la(-1.1, 2.35, 0.0), SEM, 0.0, 0.0, -0.8),
+        ],
+        [
+            ch(-0.45, 0.0, br(-0.25, 1.0, 1.6), br(0.3, 0.9, 1.4), la(-0.1, 1.55, -MEIA_VOLTA), SEM, 0.0, 0.2, 0.2),
+            ch(0.25, 0.2, br(0.0, 1.5, 0.05), br(0.5, 0.4, 0.8), la(0.0, 1.57, -MEIA_VOLTA), SEM, 0.0, 1.0, -2.0),
+        ],
+    ],
 };
 
-/// Os tres golpes, (preparo, impacto). Cada um comeca onde o anterior
-/// termina: o corte da direita pra esquerda deixa a lamina a' esquerda, e e'
-/// dali que sai o de volta; o de volta termina no alto a' direita, de onde
-/// sobe o de cima.
-const GOLPES: [[Chave; 2]; 3] = [
-    // 1 — corte horizontal, da direita pra esquerda
-    [
-        Chave {
-            torce: -0.75,
-            inclina: 0.0,
-            d: br(-1.4, 1.35, 0.5),
-            e: br(-0.1, 0.5, 1.4),
-            lamina: la(-1.6, 1.5, MEIA_VOLTA),
-            escudo: 0.3,
-            avanco: 0.0,
-            agacha: 0.3,
-        },
-        Chave {
-            torce: 0.75,
-            inclina: 0.05,
-            d: br(0.9, 1.45, 0.25),
-            e: br(0.5, 0.4, 1.1),
-            lamina: la(1.1, 1.55, MEIA_VOLTA),
-            escudo: 0.7,
-            avanco: 0.0,
-            agacha: -1.4,
-        },
+/// Duas pistolas: os dois bracos a' frente, os canos baixos. Golpes: tiro da
+/// direita, tiro da esquerda, e as duas juntas — cada tiro com o COICE, o
+/// braco e o cano subindo e o corpo cedendo.
+const ESTILO_PISTOLAS: Estilo = Estilo {
+    guarda: ch(0.0, 0.05, br(-0.25, 0.75, 0.9), br(0.25, 0.75, 0.9), la(-0.1, 1.45, 0.0), la(0.1, 1.45, 0.0), 0.0, 0.0, -0.4),
+    // as duas maos nos coldres
+    sacando: ch(0.0, 0.05, br(-0.35, 0.05, 0.4), br(0.35, 0.05, 0.4), la(0.0, 0.0, 0.0), la(0.0, 0.0, 0.0), 0.0, 0.0, -0.3),
+    golpes: [
+        [
+            ch(-0.25, 0.0, br(-0.1, 1.35, 0.35), br(0.25, 0.75, 0.9), la(-0.05, 1.5, 0.0), la(0.1, 1.45, 0.0), 0.0, 0.0, 0.0),
+            ch(-0.15, -0.08, br(-0.05, 1.8, 0.25), br(0.25, 0.75, 0.9), la(0.0, 2.0, 0.0), la(0.1, 1.45, 0.0), 0.0, 0.0, -0.7),
+        ],
+        [
+            ch(0.25, 0.0, br(-0.25, 0.8, 0.9), br(0.1, 1.35, 0.35), la(-0.1, 1.45, 0.0), la(0.05, 1.5, 0.0), 0.0, 0.0, 0.0),
+            ch(0.15, -0.08, br(-0.25, 0.8, 0.9), br(0.05, 1.8, 0.25), la(-0.1, 1.45, 0.0), la(0.0, 2.0, 0.0), 0.0, 0.0, -0.7),
+        ],
+        [
+            ch(0.0, 0.05, br(-0.12, 1.4, 0.4), br(0.12, 1.4, 0.4), la(-0.05, 1.5, 0.0), la(0.05, 1.5, 0.0), 0.0, 0.0, 0.3),
+            ch(0.0, -0.15, br(-0.08, 1.95, 0.3), br(0.08, 1.95, 0.3), la(-0.05, 2.1, 0.0), la(0.05, 2.1, 0.0), 0.0, 0.0, -1.2),
+        ],
     ],
-    // 2 — de volta, subindo da esquerda pra direita
-    [
-        Chave {
-            torce: 0.75,
-            inclina: 0.05,
-            d: br(1.1, 1.1, 0.7),
-            e: br(0.5, 0.4, 1.1),
-            lamina: la(1.3, 1.2, -MEIA_VOLTA),
-            escudo: 0.7,
-            avanco: 0.0,
-            agacha: 0.2,
-        },
-        Chave {
-            torce: -0.65,
-            inclina: -0.05,
-            d: br(-1.1, 1.8, 0.3),
-            e: br(-0.1, 0.5, 1.4),
-            lamina: la(-1.2, 1.9, -MEIA_VOLTA),
-            escudo: 0.2,
-            avanco: 0.0,
-            agacha: -1.2,
-        },
+};
+
+/// Anel magico: sem arma — as maos abertas a' frente do peito. Golpes: a
+/// palma direita empurrando, as duas juntas, e a mao erguida descendo de uma
+/// vez. O anel projeta o circulo no pulso (efeito, nao modelo).
+const ESTILO_ANEL: Estilo = Estilo {
+    guarda: ch(-0.1, 0.05, br(-0.25, 0.95, 1.6), br(0.25, 0.95, 1.6), SEM, SEM, 0.0, 0.0, -0.3),
+    // "sacar" o anel e' erguer a mao
+    sacando: ch(0.0, 0.0, br(-0.3, 1.9, 1.3), br(0.3, 0.9, 1.6), SEM, SEM, 0.0, 0.0, 0.0),
+    golpes: [
+        [
+            ch(-0.45, 0.0, br(-0.45, 1.25, 1.95), br(0.3, 0.9, 1.6), SEM, SEM, 0.0, 0.0, 0.2),
+            ch(0.3, 0.1, br(-0.05, 1.55, 0.05), br(0.35, 0.8, 1.5), SEM, SEM, 0.0, 0.0, -0.9),
+        ],
+        [
+            ch(0.0, -0.05, br(-0.35, 1.1, 1.9), br(0.35, 1.1, 1.9), SEM, SEM, 0.0, 0.0, 0.3),
+            ch(0.0, 0.1, br(-0.12, 1.5, 0.1), br(0.12, 1.5, 0.1), SEM, SEM, 0.0, 0.0, -1.0),
+        ],
+        [
+            ch(-0.1, -0.2, br(-0.2, 2.95, 0.4), br(0.35, 0.6, 1.2), SEM, SEM, 0.0, 0.0, 0.6),
+            ch(0.05, 0.3, br(-0.1, 1.0, 0.2), br(0.3, 0.5, 1.0), SEM, SEM, 0.0, 0.6, -1.8),
+        ],
     ],
-    // 3 — de cima pra baixo, com o passo a' frente
-    [
-        Chave {
-            torce: -0.1,
-            inclina: -0.25,
-            d: br(-0.2, 2.8, 0.6),
-            e: br(-0.1, 0.6, 1.3),
-            lamina: la(-0.1, 3.3, PI),
-            escudo: 0.2,
-            avanco: 0.3,
-            agacha: 0.8,
-        },
-        Chave {
-            torce: 0.05,
-            inclina: 0.35,
-            d: br(-0.1, 1.2, 0.15),
-            e: br(0.2, 0.35, 1.0),
-            lamina: la(-0.05, 1.15, PI),
-            escudo: 0.4,
-            avanco: 1.0,
-            agacha: -2.2,
-        },
-    ],
-];
+};
+
+fn estilo(conjunto: u8) -> Option<&'static Estilo> {
+    match conjunto {
+        ESPADA_ESCUDO => Some(&ESTILO_ESPADA),
+        KATANA => Some(&ESTILO_KATANA),
+        PISTOLAS => Some(&ESTILO_PISTOLAS),
+        ANEL => Some(&ESTILO_ANEL),
+        _ => None,
+    }
+}
 
 fn mistura(a: &Chave, b: &Chave, k: f32) -> Chave {
     let l = |x: f32, y: f32| x + (y - x) * k;
     let bra = |x: &Braco, y: &Braco| br(l(x.guinada, y.guinada), l(x.elevacao, y.elevacao), l(x.cotovelo, y.cotovelo));
+    let lam = |x: &Lamina, y: &Lamina| la(l(x.guinada, y.guinada), l(x.elevacao, y.elevacao), l(x.giro, y.giro));
     Chave {
         torce: l(a.torce, b.torce),
         inclina: l(a.inclina, b.inclina),
         d: bra(&a.d, &b.d),
         e: bra(&a.e, &b.e),
-        lamina: la(
-            l(a.lamina.guinada, b.lamina.guinada),
-            l(a.lamina.elevacao, b.lamina.elevacao),
-            l(a.lamina.giro, b.lamina.giro),
-        ),
+        lamina: lam(&a.lamina, &b.lamina),
+        arma_e: lam(&a.arma_e, &b.arma_e),
         escudo: l(a.escudo, b.escudo),
         avanco: l(a.avanco, b.avanco),
         agacha: l(a.agacha, b.agacha),
@@ -500,10 +529,10 @@ fn suave(u: f32) -> f32 {
 /// A chave do golpe `passo` no instante `t`, saindo de `desde`.
 ///
 /// Preparo sai rapido e chega devagar (a antecipacao); o corte acelera e
-/// freia (o meio e' o tapa); segura um instante no impacto, que e' o quadro
-/// que o olho guarda; e volta pra guarda.
-fn chave_do_golpe(passo: u8, t: f32, desde: &Chave) -> Chave {
-    let [prep, imp] = &GOLPES[passo.min(2) as usize];
+/// passa do ponto; segura um instante no impacto, que e' o quadro que o olho
+/// guarda; e volta pra guarda.
+fn chave_do_golpe(est: &Estilo, passo: u8, t: f32, desde: &Chave) -> Chave {
+    let [prep, imp] = &est.golpes[passo.min(2) as usize];
     if t < PREPARA {
         let u = t / PREPARA;
         return mistura(desde, prep, 1.0 - (1.0 - u) * (1.0 - u));
@@ -514,16 +543,16 @@ fn chave_do_golpe(passo: u8, t: f32, desde: &Chave) -> Chave {
     if t < PREPARA + CORTA + SEGURA {
         return *imp;
     }
-    mistura(imp, &GUARDA, suave((t - PREPARA - CORTA - SEGURA) / VOLTA))
+    mistura(imp, &est.guarda, suave((t - PREPARA - CORTA - SEGURA) / VOLTA))
 }
 
 fn ombro(b: &Braco) -> Quat {
     Quat::from_rotation_y(b.guinada) * Quat::from_rotation_x(-b.elevacao)
 }
 
-/// A lamina no espaco do tronco. A malha da espada tem a lamina no +Z, o fio
-/// no +Y e a face chata no X; `x(pi/2)` a pendura apontando pra baixo com o
-/// fio pra frente, e dai' guinada, elevacao e giro fazem o resto.
+/// A arma no espaco do tronco. A malha tem a lamina (ou o cano) no +Z, o fio
+/// (ou a pega) no +Y e a face chata no X; `x(pi/2)` a pendura apontando pra
+/// baixo com o fio pra frente, e dai' guinada, elevacao e giro fazem o resto.
 fn orienta_lamina(l: &Lamina) -> Quat {
     Quat::from_rotation_y(l.guinada)
         * Quat::from_rotation_x(-l.elevacao)
@@ -586,11 +615,11 @@ fn agacha(p: &mut Pose, d: f32) {
     }
 }
 
-/// A guarda VIVA: respira, a ponta da espada balanca, e andando os bracos
+/// A guarda VIVA: respira, a ponta da arma balanca, e andando os bracos
 /// acompanham o passo e o tronco torce contra as pernas. Guarda parada lia
 /// como boneco de vitrine segurando uma espada.
-fn guarda_viva(e: &Entrada) -> Chave {
-    let mut c = GUARDA;
+fn guarda_viva(est: &Estilo, e: &Entrada) -> Chave {
+    let mut c = est.guarda;
     let (t, a) = (e.tempo, e.andar.clamp(0.0, 1.0));
     let passo2 = (e.fase * 2.0).sin();
     c.torce += 0.04 * (t * 1.1).sin() + 0.10 * a * e.fase.sin();
@@ -598,16 +627,16 @@ fn guarda_viva(e: &Entrada) -> Chave {
     c.e.elevacao += 0.04 * (t * 2.1 + 0.4).sin() + 0.08 * a * (e.fase * 2.0 + 0.3).sin();
     c.lamina.elevacao += 0.07 * (t * 2.1 + 0.9).sin() + 0.12 * a * (e.fase * 2.0 + 0.6).sin();
     c.lamina.guinada += 0.04 * (t * 1.3).sin();
+    c.arma_e.elevacao += 0.06 * (t * 2.1 + 1.3).sin() + 0.10 * a * (e.fase * 2.0 + 0.9).sin();
     c.escudo += 0.05 * (t * 1.7).sin();
     c
 }
 
 fn arma_na_mao(p: &mut Pose, e: &Entrada) {
     let c = &e.combate;
-    if c.conjunto != ESPADA_ESCUDO {
-        return;
-    }
+    let Some(est) = estilo(c.conjunto) else { return };
     p.armado = true;
+    p.conjunto = c.conjunto;
     let sacada = c.sacada.clamp(0.0, 1.0);
     p.na_mao = c.golpe.is_some() || sacada >= 0.5;
 
@@ -615,21 +644,20 @@ fn arma_na_mao(p: &mut Pose, e: &Entrada) {
     let (chave, peso_bracos, peso_tronco) = match c.golpe {
         Some((passo, t)) => {
             let desde = match c.golpe_ant {
-                Some((pa, ta)) => chave_do_golpe(pa, ta, &GUARDA),
-                None => GUARDA,
+                Some((pa, ta)) => chave_do_golpe(est, pa, ta, &est.guarda),
+                None => est.guarda,
             };
-            (chave_do_golpe(passo, t, &desde), 1.0, 1.0)
+            (chave_do_golpe(est, passo, t, &desde), 1.0, 1.0)
         }
         None => {
-            // Sacar e guardar sao o MESMO gesto de ida e volta: a mao vai ao
-            // quadril na metade do caminho, e e' ai' que a arma troca de lugar.
+            // Sacar e guardar sao o MESMO gesto de ida e volta: a mao vai a'
+            // arma na metade do caminho, e e' ai' que ela troca de lugar.
             let bump = (sacada * PI).sin().max(0.0);
             let g = suave(sacada) * (1.0 - 0.3 * e.correr.clamp(0.0, 1.0));
-            (mistura(&guarda_viva(e), &SACANDO, bump), (0.85 * g).max(bump), 0.6 * g)
+            (mistura(&guarda_viva(est, e), &est.sacando, bump), (0.85 * g).max(bump), 0.6 * g)
         }
     };
     if peso_bracos <= 0.0 && !p.na_mao {
-        p.punho = [orienta_lamina(&SACANDO.lamina), orienta_escudo(PI)];
         return;
     }
 
@@ -656,10 +684,12 @@ fn arma_na_mao(p: &mut Pose, e: &Entrada) {
     // a arma na mao aponta pra onde a chave manda, qualquer que seja o braco
     let cadeia_d = p.rot[BRACO_D] * p.rot[ANTEBRACO_D];
     let cadeia_e = p.rot[BRACO_E] * p.rot[ANTEBRACO_E];
-    p.punho = [
-        cadeia_d.inverse() * orienta_lamina(&chave.lamina),
-        cadeia_e.inverse() * orienta_escudo(chave.escudo),
-    ];
+    let esquerda = if c.conjunto == ESPADA_ESCUDO {
+        orienta_escudo(chave.escudo)
+    } else {
+        orienta_lamina(&chave.arma_e)
+    };
+    p.punho = [cadeia_d.inverse() * orienta_lamina(&chave.lamina), cadeia_e.inverse() * esquerda];
 }
 
 /// O achatamento elastico de quem apanha: amassa na hora do golpe e volta
@@ -745,27 +775,67 @@ impl Molas {
     }
 }
 
-/// A matriz de mundo da espada e do escudo, na mao ou guardados. `None` se o
-/// conjunto ainda nao tem arma pra desenhar.
-pub fn armas(p: &Pose, m: &[Mat4; N], voxel: f32) -> Option<[Mat4; 2]> {
+/// As pecas do conjunto, com a matriz de mundo de cada uma: a arma na mao
+/// ou guardada, e o que se veste junto (bainha, coldres). Vazio pra quem
+/// nao tem arma pra desenhar (o anel, que e' efeito).
+pub fn armas(p: &Pose, m: &[Mat4; N], voxel: f32) -> Vec<(&'static str, Mat4)> {
     if !p.armado {
-        return None;
+        return Vec::new();
     }
     let encaixe = |pt: [f32; 3], pai: usize| {
         Mat4::from_translation(mapa(pt, voxel) - mapa(PECAS[pai].2, voxel))
     };
-    Some(if p.na_mao {
-        [
-            m[ANTEBRACO_D] * encaixe(MAO_D, ANTEBRACO_D) * Mat4::from_quat(p.punho[0]),
-            m[ANTEBRACO_E] * encaixe(MAO_E, ANTEBRACO_E) * Mat4::from_quat(p.punho[1]),
-        ]
-    } else {
-        [
-            m[TORSO] * encaixe(QUADRIL_E, TORSO) * Mat4::from_quat(orienta_lamina(&SACANDO.lamina)),
-            m[TORSO] * encaixe(COSTAS, TORSO) * Mat4::from_quat(orienta_escudo(PI)),
-        ]
-    })
+    let mao_d = m[ANTEBRACO_D] * encaixe(MAO_D, ANTEBRACO_D) * Mat4::from_quat(p.punho[0]);
+    let mao_e = m[ANTEBRACO_E] * encaixe(MAO_E, ANTEBRACO_E) * Mat4::from_quat(p.punho[1]);
+    let no_torso = |pt: [f32; 3], q: Quat| m[TORSO] * encaixe(pt, TORSO) * Mat4::from_quat(q);
+    // puxa a peca `v` voxels pra FORA pelo proprio eixo: e' assim que o cabo
+    // da katana fica pra fora da bainha e a pega da pistola pra fora do coldre
+    let pra_fora = |mat: Mat4, v: f32| mat * Mat4::from_translation(vec3(0.0, 0.0, -v * voxel));
+    match p.conjunto {
+        ESPADA_ESCUDO => {
+            if p.na_mao {
+                vec![("espada", mao_d), ("escudo", mao_e)]
+            } else {
+                vec![
+                    ("espada", no_torso(QUADRIL_E, orienta_lamina(&ESTILO_ESPADA.sacando.lamina))),
+                    ("escudo", no_torso(COSTAS, orienta_escudo(PI))),
+                ]
+            }
+        }
+        KATANA => {
+            let bainha = no_torso(BAINHA, orienta_lamina(&ESTILO_KATANA.sacando.lamina));
+            let katana = if p.na_mao { mao_d } else { pra_fora(bainha, 5.0) };
+            vec![("bainha", bainha), ("katana", katana)]
+        }
+        PISTOLAS => {
+            let q = orienta_lamina(&la(0.0, 0.0, 0.0));
+            let (cd, ce) = (no_torso(COLDRE_D, q), no_torso(COLDRE_E, q));
+            let (pd, pe) = if p.na_mao { (mao_d, mao_e) } else { (pra_fora(cd, 3.0), pra_fora(ce, 3.0)) };
+            vec![("coldre", cd), ("coldre", ce), ("pistola", pd), ("pistola", pe)]
+        }
+        _ => Vec::new(),
+    }
 }
+
+/// Os dois pulsos (direito, esquerdo), no espaco de mundo: e' neles que o
+/// anel projeta o circulo. O eixo -Y de cada um aponta pra mao.
+pub fn pulsos(m: &[Mat4; N], voxel: f32) -> [Mat4; 2] {
+    let em = |pt: [f32; 3], pai: usize| m[pai] * Mat4::from_translation(mapa(pt, voxel) - mapa(PECAS[pai].2, voxel));
+    [em(PULSO_D, ANTEBRACO_D), em(PULSO_E, ANTEBRACO_E)]
+}
+
+/// O conjunto e' o anel? (o render desenha o circulo no pulso)
+pub fn e_anel(p: &Pose) -> bool {
+    p.armado && p.conjunto == ANEL
+}
+
+/// O conjunto e' de pistolas? (o render desenha o clarao do cano)
+pub fn e_pistolas(p: &Pose) -> bool {
+    p.armado && p.conjunto == PISTOLAS
+}
+
+/// O instante do tiro/impacto dentro do golpe, pro efeito casar com o gesto.
+pub const IMPACTO: f32 = PREPARA + CORTA * 0.35;
 
 
 #[cfg(test)]
@@ -897,7 +967,9 @@ mod testes {
     fn armas_em(e: &Entrada) -> (Vec3, Vec3, Vec3) {
         let p = pose(e);
         let m = matrizes(&p, Mat4::IDENTITY, 1.0);
-        let [espada, escudo] = armas(&p, &m, 1.0).expect("espada e escudo");
+        let a = armas(&p, &m, 1.0);
+        let pega = |n: &str| a.iter().find(|(x, _)| *x == n).map(|(_, m)| *m).expect(n);
+        let (espada, escudo) = (pega("espada"), pega("escudo"));
         (
             espada.transform_point3(vec3(0.0, 0.0, 20.0)),
             escudo.transform_point3(Vec3::ZERO),
@@ -917,7 +989,9 @@ mod testes {
     fn guardada_a_espada_fica_no_quadril_esquerdo_e_o_escudo_nas_costas() {
         let p = pose(&em_combate(None, None, 0.0));
         let m = matrizes(&p, Mat4::IDENTITY, 1.0);
-        let [espada, escudo] = armas(&p, &m, 1.0).unwrap();
+        let a = armas(&p, &m, 1.0);
+        let pega = |n: &str| a.iter().find(|(x, _)| *x == n).map(|(_, m)| *m).expect(n);
+        let (espada, escudo) = (pega("espada"), pega("escudo"));
         let (e, s) = (espada.transform_point3(Vec3::ZERO), escudo.transform_point3(Vec3::ZERO));
         // a esquerda do boneco e' o +X
         assert!(e.x > 4.0 && (15.0..26.0).contains(&e.y), "espada em {e:?}");
@@ -1026,5 +1100,80 @@ mod testes {
         e.combate.ferido = Some(0.05);
         e.combate.recuo = vec3(1.0, 0.0, 0.0); // golpe vindo da direita empurra pra esquerda (+X)
         assert!(cabeca(&e).x > parada.x + 1.0);
+    }
+
+    fn com_conjunto(conj: u8, golpe: Option<(u8, f32)>, sacada: f32) -> Entrada {
+        let mut e = em_combate(golpe, None, sacada);
+        e.combate.conjunto = conj;
+        e
+    }
+
+    fn arma_em(e: &Entrada, nome: &str, i: usize) -> Mat4 {
+        let p = pose(e);
+        let m = matrizes(&p, Mat4::IDENTITY, 1.0);
+        armas(&p, &m, 1.0).into_iter().filter(|(n, _)| *n == nome).nth(i).expect(nome).1
+    }
+
+    #[test]
+    fn a_katana_estoca_pra_frente_no_terceiro() {
+        let e = com_conjunto(KATANA, Some((2, PREPARA + CORTA)), 1.0);
+        let ponta = arma_em(&e, "katana", 0).transform_point3(vec3(0.0, 0.0, 22.0));
+        assert!(ponta.z > 22.0 && (15.0..38.0).contains(&ponta.y), "{ponta:?}");
+    }
+
+    #[test]
+    fn guardada_a_katana_fica_dentro_da_bainha() {
+        let e = com_conjunto(KATANA, None, 0.0);
+        let (k, b) = (arma_em(&e, "katana", 0), arma_em(&e, "bainha", 0));
+        let ponta = k.transform_point3(vec3(0.0, 0.0, 20.0));
+        let meio = b.transform_point3(vec3(0.0, 0.0, 12.0));
+        assert!(ponta.distance(meio) < 6.0, "a lamina tem que estar na bainha: {ponta:?} x {meio:?}");
+        assert!(b.transform_point3(Vec3::ZERO).x > 4.0, "bainha no quadril esquerdo");
+    }
+
+    #[test]
+    fn a_pistola_aponta_pra_frente_e_da_coice() {
+        let cano = |t: f32| arma_em(&com_conjunto(PISTOLAS, Some((0, t)), 1.0), "pistola", 0).transform_vector3(Vec3::Z);
+        let (prep, imp) = (cano(PREPARA), cano(PREPARA + CORTA));
+        assert!(prep.z > 0.8, "{prep:?}");
+        assert!(imp.y > prep.y + 0.2, "o coice levanta o cano: {prep:?} -> {imp:?}");
+    }
+
+    #[test]
+    fn guardadas_as_pistolas_ficam_nos_coldres() {
+        let e = com_conjunto(PISTOLAS, None, 0.0);
+        for i in 0..2 {
+            let (pi, co) = (arma_em(&e, "pistola", i), arma_em(&e, "coldre", i));
+            let d = pi.transform_point3(vec3(0.0, 0.0, 6.0)).distance(co.transform_point3(vec3(0.0, 0.0, 4.0)));
+            assert!(d < 4.0, "pistola {i} fora do coldre: {d:.1}");
+        }
+    }
+
+    #[test]
+    fn todo_conjunto_golpeia_sem_estalo() {
+        for conj in [KATANA, PISTOLAS, ANEL] {
+            for passo in 0..3u8 {
+                let mao = |t: f32| {
+                    let p = pose(&com_conjunto(conj, Some((passo, t)), 1.0));
+                    matrizes(&p, Mat4::IDENTITY, 1.0)[ANTEBRACO_D].transform_point3(vec3(0.0, -8.0, 0.0))
+                };
+                let mut antes = mao(0.0);
+                let mut t = 0.0;
+                while t < DURACAO_DO_GOLPE {
+                    t += 0.001;
+                    let agora = mao(t);
+                    assert!(agora.distance(antes) < 3.0, "conjunto {conj} golpe {passo} saltou em {t:.3}");
+                    antes = agora;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn o_anel_nao_tem_arma_pra_desenhar() {
+        let p = pose(&com_conjunto(ANEL, Some((0, 0.1)), 1.0));
+        let m = matrizes(&p, Mat4::IDENTITY, 1.0);
+        assert!(armas(&p, &m, 1.0).is_empty());
+        assert!(e_anel(&p));
     }
 }

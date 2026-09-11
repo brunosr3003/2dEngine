@@ -95,9 +95,96 @@ def escudo():
     return v, (3, 14, 14)
 
 
+# ── o segundo, o terceiro e o quarto conjunto ──
+PRETO, BRANCO, LACA, LACA_ESC, LATAO, MADEIRA_ESC2 = range(11, 17)
+cores.update({
+    PRETO: (32, 30, 34), BRANCO: (228, 224, 214), LACA: (120, 28, 34), LACA_ESC: (78, 16, 22),
+    LATAO: (196, 150, 64), MADEIRA_ESC2: (92, 56, 32),
+})
+
+
+def katana():
+    """30 (Y) x 3 (Z) x 2 (X): cabo 8 com a trama preta e branca, tsuba de
+    1, lamina de 21 com o fio claro embaixo, o dorso escuro em cima e a
+    curva (sori) subindo um voxel no ultimo terco."""
+    v = {}
+    for y in range(0, 8):
+        for x in range(2):
+            v[(x, y, 1)] = PRETO if (y + x) % 2 else BRANCO      # tsuka-ito
+    v[(0, 0, 1)] = T[2]                                         # kashira
+    for z in range(3):
+        for x in range(2):
+            v[(x, 8, z)] = T[1]                                  # tsuba
+    for y in range(9, 30):
+        sori = 1 if y >= 22 else 0
+        if y <= 27:
+            v[(0, y, 1 + sori)] = ACO_FIO                         # fio
+            v[(0, y, 2 + sori if 2 + sori < 3 else 2)] = ACO_ESC  # dorso
+        else:
+            v[(0, y, 1 + sori)] = ACO_FIO                         # a ponta afina
+    v[(1, 3, 1)] = MARCA                                          # meio do cabo
+    return v, (2, 30, 3)
+
+
+def bainha():
+    """24 (Y) x 3 (Z) x 2 (X): laca vermelha escura, a boca (koiguchi) e a
+    ponta (kojiri) na cor do tier. O marcador fica na BOCA: e' por ali que a
+    lamina entra, e o jogo prende a bainha no quadril por esse ponto."""
+    v = {}
+    for y in range(1, 24):
+        for z in range(3):
+            for x in range(2):
+                v[(x, y, z)] = LACA if (z + y // 6) % 2 else LACA_ESC
+    for z in range(3):
+        for x in range(2):
+            v[(x, 1, z)] = T[1]                                    # koiguchi
+            v[(x, 23, z)] = T[2]                                   # kojiri
+    v[(0, 0, 1)] = MARCA
+    return v, (2, 24, 3)
+
+
+def pistola():
+    """11 (Y) x 6 (Z) x 2 (X): pistola de pederneira, de pirata. Cano de aco
+    pra +Y, o fecho em latao, a coronha de madeira descendo curva pra tras
+    (a pega), e o marcador no meio dela."""
+    v = {}
+    for y in range(3, 11):
+        v[(0, y, 4)] = ACO_ESC                                     # cano
+        v[(0, y, 5)] = ACO
+    v[(0, 10, 5)] = FERRO                                          # boca
+    for y in range(0, 4):
+        for z in range(3, 6):
+            v[(0, y, z)] = MADEIRA_ESC2                            # corpo
+    v[(1, 2, 4)] = LATAO                                           # fecho
+    v[(1, 3, 5)] = LATAO                                           # cao
+    for (y, z) in [(1, 2), (0, 2), (0, 1), (1, 1), (0, 0)]:
+        v[(0, y, z)] = MADEIRA_ESC2                                 # coronha
+    v[(0, 0, 0)] = T[1]                                            # coice de latao
+    v[(0, 3, 2)] = LATAO                                           # guarda-mato
+    v[(0, 1, 2)] = MARCA                                           # meio da pega
+    return v, (2, 11, 6)
+
+
+def coldre():
+    """4 (Y) x 6 (Z) x 3 (X): bolsa de couro. O comprimento (Y) e' a
+    profundidade — o jogo pendura o coldre com a boca pra cima e o Y
+    descendo. O marcador fica na boca."""
+    v = {}
+    for y in range(1, 9):
+        for z in range(1, 5):
+            for x in range(3):
+                if x in (0, 2) or z in (1, 4) or y == 8:
+                    v[(x, y, z)] = COURO if y % 3 else COURO_ESC
+    for z in range(1, 5):
+        v[(1, 1, z)] = T[1]                                        # o friso da boca
+    v[(1, 0, 2)] = MARCA
+    return v, (3, 9, 6)
+
+
 if __name__ == "__main__":
     raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     pasta = os.path.join(raiz, "assets", "vox", "personagem")
-    for nome, (vox, tam) in [("espada", espada()), ("escudo", escudo())]:
+    for nome, (vox, tam) in [("espada", espada()), ("escudo", escudo()), ("katana", katana()),
+                             ("bainha", bainha()), ("pistola", pistola()), ("coldre", coldre())]:
         escrever_vox(os.path.join(pasta, f"{nome}.vox"), vox, tam, paleta())
         print(f"{nome}.vox: {len(vox)} voxels, tela {tam[0]}x{tam[1]}x{tam[2]}")

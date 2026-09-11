@@ -123,6 +123,8 @@ equipada (o peso, o tier) não muda o visual.
 | `coldre.vox` | `coldre` | cinto na bacia (z 19–23) com um coldre de cada lado, atrás do braço (y 8–9); **não descer abaixo de z 19**, senão a coxa atravessa andando | torso |
 | `bainha.vox` | `bainha` | quadril esquerdo, inclinada: boca à frente e acima (y 15, z 22), ponta atrás e abaixo (y 4, z 16), por fora da coxa (x 8–9) | torso |
 
+> **Mudou na prática:** bainha e coldre saíram como as armas — tela livre, um objeto, com o **marcador (255) na boca**. O jogo prende a boca no quadril e pendura a peça pelo próprio eixo (+Y do arquivo = pra dentro); a katana e a pistola guardadas entram por essa boca. Fica mais simples de desenhar e de trocar por skin do que uma peça na tela do corpo.
+
 ## Skins de arma — tela livre, um objeto
 
 Uma skin de arma é de **um conjunto** — troca a cara da arma, nunca o
@@ -163,7 +165,7 @@ Efeito de código (um anel emissivo na cor do tier do anel equipado): zero arte.
 | 1 | `corpo.vox` — **feito: o piratinha** | o rig com o corpo de verdade |
 | 2 | `rosto_01`, `cabelo_01` — **`cabelo_01` feito: o tricórnio**; o rosto do pirata mora no `corpo.vox` | a cabeça |
 | 3 | `espada`, `escudo`, `manto_guerreiro` — skins padrão do primeiro conjunto — **`espada` e `escudo` feitos** (`tools/voxrender/armas.py`) | o primeiro conjunto e o primeiro ataque |
-| 4 | `katana`, `bainha`, `pistola`, `coldre`, `manto_mago` — skins padrão | os outros três conjuntos |
+| 4 | `katana`, `bainha`, `pistola`, `coldre`, `manto_mago` — skins padrão — **`katana`, `bainha`, `pistola` e `coldre` feitos** (`tools/voxrender/armas.py`) | os outros três conjuntos |
 | 5 | skins de armadura | conteúdo de loja — feitas quando forem vendidas, **não são pré-requisito** |
 | 6 | `rosto_02–03`, `cabelo_02–03` | a criação de personagem |
 
