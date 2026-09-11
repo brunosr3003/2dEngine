@@ -9174,10 +9174,10 @@ impl GameWorld {
             .query::<(
                 &NetId, &Position, &Velocity, &EntityKind,
                 Option<&Health>, Option<&PlayerTag>, Option<&VendorTag>,
-                Option<&WanderRouteTag>, Option<&EnemyTag>,
+                Option<&WanderRouteTag>, Option<&EnemyTag>, Option<&LootTag>,
             )>()
             .iter()
-            .map(|(_, (net, pos, vel, kind, hp, ptag, vtag, wtag, etag))| {
+            .map(|(_, (net, pos, vel, kind, hp, ptag, vtag, wtag, etag, ltag))| {
                 let tag = match kind {
                     EntityKind::Player     => shared::EntityTag::Player,
                     EntityKind::Enemy(_)   => shared::EntityTag::Enemy,
@@ -9218,7 +9218,16 @@ impl GameWorld {
                     name,
                     hp_max: hp.map(|h| h.max.max(0) as u16).unwrap_or(0),
                     faction: None,
-                    kind: if let EntityKind::Enemy(k) = kind { *k } else { 0 },
+                    kind: match kind {
+                        EntityKind::Enemy(k) => *k,
+                        // Saque: o TIER do item (1-4), pra o cliente pintar a
+                        // faixa do saquinho. Sem instancia (ouro, pocao) = 0.
+                        EntityKind::Loot(_) => ltag
+                            .and_then(|l| l.instance.as_ref())
+                            .map(|i| i.rarity.clamp(1, 4) as u16)
+                            .unwrap_or(0),
+                        _ => 0,
+                    },
                 };
                 let state = EntityState::quantize(
                     net.0,

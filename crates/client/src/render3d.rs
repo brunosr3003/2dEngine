@@ -1013,6 +1013,14 @@ fn model_for(tag: shared::EntityTag, boss: bool, kind: u16) -> Option<&'static s
         T::Player | T::Npc => Some("player"),
         T::Enemy if boss => Some("lobo"),
         T::Enemy => Some(modelo_do_mob(kind)),
+        // O saque vem com o tier do item no `kind` (0 = ouro/pocao).
+        T::Loot => Some(match kind {
+            1 => "saque_1",
+            2 => "saque_2",
+            3 => "saque_3",
+            4 => "saque_4",
+            _ => "saque_0",
+        }),
         _ => None,
     }
 }
@@ -1049,6 +1057,24 @@ pub const ALTURA_DO_BICHO: [(&str, f32); 5] = [
     ("lobo", 2.8),
 ];
 
+/// As cores da faixa do saquinho, por tier do item: as mesmas do cristal da
+/// pedra (quem le' a pedra le' o saque), e dourada pra ouro e pocao, que nao
+/// tem tier. Quatro tons do claro ao escuro, um por indice 241-244.
+pub fn variantes_do_saque() -> Vec<(&'static str, [[u8; 3]; 4])> {
+    let rampa = |c: (u8, u8, u8)| {
+        let t = |f: f32| [(c.0 as f32 * f) as u8, (c.1 as f32 * f) as u8, (c.2 as f32 * f) as u8];
+        [t(1.0), t(0.82), t(0.66), t(0.5)]
+    };
+    let cristal = |t: u8| shared::terreno::cristal_do_tier(t).rgb();
+    vec![
+        ("0", rampa((235, 190, 50))),
+        ("1", rampa(cristal(1))),
+        ("2", rampa(cristal(2))),
+        ("3", rampa(cristal(3))),
+        ("4", rampa(cristal(4))),
+    ]
+}
+
 /// Modelos de gente, desenhados na escala do corpo.
 pub const MODELOS_DE_GENTE: [&str; 4] = ["player", "pistoleiro", "mago", "arqueiro"];
 
@@ -1082,8 +1108,15 @@ pub fn draw_entities(
                 // A malha nasce centrada em X/Z e apoiada em Y=0; girar em
                 // torno de Y bastaria, mas a macroquad nao transforma malha —
                 // entao a rotacao vira quando houver malha por direcao.
+                // Saque nao anda nem vira: sem isto todo saquinho do chao
+                // olharia pro mesmo lado, e o monte leria como carimbo.
+                let yaw = if e.meta.tag == shared::EntityTag::Loot {
+                    (e.meta.id.0 as f32 * 2.399).rem_euclid(std::f32::consts::TAU)
+                } else {
+                    e.yaw
+                };
                 for m in meshes {
-                    draw_mesh_at(m, p, e.yaw);
+                    draw_mesh_at(m, p, yaw);
                 }
             })
             .is_some();

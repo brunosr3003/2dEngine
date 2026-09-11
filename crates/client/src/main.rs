@@ -160,6 +160,7 @@ async fn main() {
     // desenho cai no modelo inteiro de antes.
     vox.load_rig(render3d::RIG_CORPO, render3d::VOXEL, rig::pivo).await;
     vox.load_rig(render3d::RIG_CHAPEU, render3d::VOXEL, rig::pivo).await;
+    vox.load_variantes("saque", render3d::VOXEL, &render3d::variantes_do_saque()).await;
 
     let mut jogo = Jogo {
         tela: Tela::Servidores,

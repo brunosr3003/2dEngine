@@ -188,6 +188,15 @@ pub fn parse_nomeado(data: &[u8]) -> Result<Vec<(String, VoxModel)>, String> {
         .collect())
 }
 
+/// O modelo com os quatro indices do tier (241-244) trocados por `cores`.
+pub fn na_cor(base: &VoxModel, cores: &[[u8; 3]; 4]) -> VoxModel {
+    let mut palette = base.palette;
+    for (k, c) in cores.iter().enumerate() {
+        palette[241 + k] = [c[0], c[1], c[2], 255];
+    }
+    VoxModel { size: base.size, cells: base.cells.clone(), palette }
+}
+
 fn default_palette() -> [[u8; 4]; 256] {
     let mut p = [[200u8, 200, 200, 255]; 256];
     p[0] = [0, 0, 0, 0];
@@ -423,6 +432,22 @@ impl VoxCache {
     /// antes (`load`) e aqui so' se consulta.
     pub fn peek(&self, name: &str) -> Option<&Vec<Mesh>> {
         self.meshes.get(name)
+    }
+
+    /// Carrega o MESMO modelo em varias cores: cada variante troca os quatro
+    /// indices reservados do tier (241-244, docs/character create.md) e vira
+    /// `<nome>_<sufixo>`. E' a regra "o tier e' uma cor, nao um modelo" — um
+    /// arquivo, varias malhas geradas no carregamento.
+    pub async fn load_variantes(&mut self, name: &str, scale: f32, variantes: &[(&str, [[u8; 3]; 4])]) -> Option<()> {
+        let root = std::env::var("MMO_VOX").unwrap_or_else(|_| "assets/vox".into());
+        let bytes = macroquad::file::load_file(&format!("{root}/{name}.vox")).await.ok()?;
+        let base = parse(&bytes).ok()?.into_iter().max_by_key(|m| m.cells.iter().filter(|c| **c != 0).count())?;
+        for (sufixo, cores) in variantes {
+            let m = na_cor(&base, cores);
+            self.meshes.insert(format!("{name}_{sufixo}"), mesh(&m, scale));
+        }
+        println!("[vox] {name}: {} cores", variantes.len());
+        Some(())
     }
 
     /// As pecas ja' carregadas de um arquivo de rig.
@@ -712,5 +737,21 @@ mod testes_orientacao {
             println!("{nome:13} {} malhas, volume {volume:.0}", malhas.len());
             assert!(volume > 0.0, "{nome}: volume {volume:.1} — malha pelo avesso");
         }
+    }
+
+    /// O saquinho usa a faixa do tier (241-244), e trocar a cor da faixa muda
+    /// a cor da malha — e' isso que pinta o saque pela raridade.
+    #[test]
+    fn o_saquinho_muda_de_cor_pela_faixa_do_tier() {
+        let m = parse(&arquivo("saque.vox")).unwrap().into_iter().next().unwrap();
+        let usa = |k: u8| m.cells.iter().any(|c| *c == k);
+        assert!((241..=244).any(usa), "o saquinho nao tem faixa de tier");
+        let cor = |cores: [[u8; 3]; 4]| -> std::collections::HashSet<[u8; 3]> {
+            mesh(&na_cor(&m, &cores), 1.0).iter().flat_map(|mm| mm.vertices.iter())
+                .map(|v| [v.color[0], v.color[1], v.color[2]]).collect()
+        };
+        let verde = cor([[96, 226, 138]; 4]);
+        let roxo = cor([[186, 112, 246]; 4]);
+        assert_ne!(verde, roxo, "trocar a faixa nao mudou a malha");
     }
 }

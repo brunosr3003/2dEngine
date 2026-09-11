@@ -332,7 +332,8 @@ pub struct EntityMeta {
     pub hp_max: u16,
     pub faction: Option<Faction>,
     /// Qual mob da tabela (`enemy_kinds.kind`) — e' por ele que o cliente
-    /// escolhe o MODELO. Zero pra quem nao e' mob. Vai so' na meta, que sai
+    /// escolhe o MODELO. No SAQUE, e' o tier do item (1-4; 0 = ouro/pocao,
+    /// sem tier), que pinta a faixa do saquinho. Zero pro resto. Vai so' na meta, que sai
     /// uma vez quando a entidade entra na visao: nao pesa por tick.
     pub kind: u16,
 }
