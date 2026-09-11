@@ -139,32 +139,41 @@ pub fn pose(e: &Entrada) -> Pose {
 
 /// O corpo no ar. NAO e' pulo: o jogo nao tem pulo atletico — o que tira o
 /// pe' do chao e' vencer um degrau de dois ou tres blocos, ou cair de uma
-/// borda. A primeira versao encolhia as pernas subindo e jogava os bracos pra
-/// fora caindo, e contava uma historia que nao acontece. Aqui e' so' o corpo
-/// solto — igual subindo e descendo.
+/// borda.
 ///
-/// Solto nao e' parado: a versao parada ficava dura no ar. Pernas e bracos
-/// vao e voltam num balanco leve, perna contra braco como no passo, com o
-/// joelho dobrando na volta. Anda pelo TEMPO e nao pela distancia, porque o
-/// corpo sobe um degrau quase sem andar — pela distancia, ficaria parado de
-/// novo justamente ali.
+/// Tres tentativas ate' aqui, e o que cada uma ensinou:
+///  1. encolher a perna subindo e jogar o braco caindo — pose de pulo, conta
+///     uma historia que nao acontece;
+///  2. corpo solto e PARADO — duro no ar;
+///  3. perna e braco indo e voltando pra frente e pra tras — parece ANDAR no
+///     ar. Qualquer vai-e-volta no eixo do passo le' como passo.
+///
+/// Entao o movimento e' DE LADO: bracos abertos pra fora e ainda pra baixo,
+/// abrindo e fechando juntos como quem se equilibra; pernas abertas,
+/// balancando soltas e defasadas — nunca uma na frente e a outra atras.
 fn pose_no_ar(tempo: f32) -> Pose {
     let mut rot = [Quat::IDENTITY; N];
-    let s = (tempo * std::f32::consts::TAU * AR_BALANCO_HZ).sin();
-    rot[COXA_D] = frente(0.10 + 0.35 * s);
-    rot[COXA_E] = frente(0.10 - 0.35 * s);
-    rot[CANELA_D] = dobra_pra_tras(0.25 + 0.30 * (-s).max(0.0));
-    rot[CANELA_E] = dobra_pra_tras(0.25 + 0.30 * s.max(0.0));
-    rot[BRACO_D] = abre(1.0, 0.25) * frente(-0.45 * s);
-    rot[BRACO_E] = abre(-1.0, 0.25) * frente(0.45 * s);
-    rot[ANTEBRACO_D] = frente(0.3);
-    rot[ANTEBRACO_E] = frente(0.3);
+    let f = tempo * std::f32::consts::TAU * AR_BALANCO_HZ;
+    let (a, b) = (f.sin(), (f + 1.3).sin());
+    // Pernas: abertas pro lado, balancando soltas. O pouco de frente/tras e'
+    // no MESMO sentido nas duas, pra nao virar passo.
+    rot[COXA_D] = abre(1.0, 0.28 + 0.08 * a) * frente(0.06 * b);
+    rot[COXA_E] = abre(-1.0, 0.28 + 0.08 * b) * frente(0.06 * a);
+    rot[CANELA_D] = dobra_pra_tras(0.20 + 0.10 * a.abs());
+    rot[CANELA_E] = dobra_pra_tras(0.20 + 0.10 * b.abs());
+    // Bracos: abertos e pra baixo, abrindo e fechando juntos.
+    let braco = 0.55 + 0.14 * a;
+    rot[BRACO_D] = abre(1.0, braco);
+    rot[BRACO_E] = abre(-1.0, braco);
+    rot[ANTEBRACO_D] = frente(0.2);
+    rot[ANTEBRACO_E] = frente(0.2);
     Pose { rot, subida: 0.0 }
 }
 
-/// Balancos por segundo de perna e braco no ar. O ar dura 0,6 s (o arco do
-/// degrau), entao isto da' pouco mais de um vai-e-volta por subida.
-const AR_BALANCO_HZ: f32 = 2.2;
+/// Balancos por segundo no ar. O ar dura ~0,6 s (o arco do degrau): da' pouco
+/// menos de um abre-e-fecha por subida, que e' o que le' como equilibrio e
+/// nao como pedalada.
+const AR_BALANCO_HZ: f32 = 1.6;
 
 fn pose_no_chao(e: &Entrada) -> Pose {
     let mut rot = [Quat::IDENTITY; N];
@@ -270,49 +279,57 @@ mod testes {
         }
     }
 
-    /// No ar o corpo fica SOLTO, não encolhido: sola perto da altura de
-    /// parado e braço perto do corpo. Encolher a perna e jogar o braço pra
-    /// fora é pose de pulo, e o jogo não tem pulo atlético.
+    fn mao(p: &Pose, antebraco: usize) -> Vec3 {
+        let x = PECAS[antebraco].2[0];
+        matrizes(p, Mat4::IDENTITY, 1.0)[antebraco]
+            .transform_point3(mapa([x, 12.0, 16.0], 1.0) - mapa(PECAS[antebraco].2, 1.0))
+    }
+
+    /// No ar o corpo fica SOLTO, não encolhido como num pulo: em nenhum ponto
+    /// do balanço a sola passa de poucos voxels acima da altura de parado. A
+    /// pose de pulo antiga levantava a sola uns 8.
     #[test]
     fn no_ar_o_corpo_fica_solto_e_nao_pula() {
         let mut e = parado();
         e.ar = 1.0;
-        let p = pose(&e);
-        for (c, k) in [(COXA_D, CANELA_D), (COXA_E, CANELA_E)] {
-            let s = sola(&p, c, k);
-            assert!(s.y < 1.5, "perna encolhida no ar: sola em y {:.2}", s.y);
-        }
-        let m = matrizes(&p, Mat4::IDENTITY, 1.0);
-        let mao = m[ANTEBRACO_D].transform_point3(mapa([23.0, 12.0, 16.0], 1.0) - mapa(PECAS[ANTEBRACO_D].2, 1.0));
-        assert!(mao.x.abs() < 11.0, "braço jogado pra fora no ar: mão em x {:.2}", mao.x);
-        // Em nenhum ponto do balanço a perna encolhe como num pulo. Voltando,
-        // o joelho dobra e o calcanhar sobe uns 3 voxels — é o chute natural
-        // da perna. A pose de pulo antiga levantava a sola uns 8.
-        for k in 0..20 {
-            e.tempo = k as f32 * 0.025;
+        for k in 0..32 {
+            e.tempo = k as f32 * 0.02;
             let p = pose(&e);
-            let s = sola(&p, COXA_D, CANELA_D);
-            assert!(s.y < 4.5, "no tempo {:.3} a perna encolheu: sola em y {:.2}", e.tempo, s.y);
+            for (c, kk) in [(COXA_D, CANELA_D), (COXA_E, CANELA_E)] {
+                let s = sola(&p, c, kk);
+                assert!(s.y < 4.5, "tempo {:.2}: perna encolhida, sola em y {:.2}", e.tempo, s.y);
+            }
         }
     }
 
-    /// Solto não é parado: no ar a perna e o braço VÃO E VOLTAM — a versão
-    /// sem movimento ficava dura. Meio balanço depois, a perna direita que
-    /// estava na frente está atrás, e o braço direito o contrário.
+    /// No ar o movimento é DE LADO, não de passo. Braço aberto e apontando
+    /// PRA BAIXO; perna aberta; e as duas pernas nunca uma na frente e a
+    /// outra atrás — foi isso que fez a terceira tentativa parecer andar no ar.
     #[test]
-    fn no_ar_pernas_e_bracos_vao_e_voltam() {
+    fn no_ar_nao_parece_andar() {
         let mut e = parado();
+        let parada = pose(&e);
+        let sola_parada = sola(&parada, COXA_D, CANELA_D).x.abs();
         e.ar = 1.0;
-        let quarto = 0.25 / AR_BALANCO_HZ;
-        e.tempo = quarto;
-        let ida = pose(&e);
-        e.tempo = 3.0 * quarto;
-        let volta = pose(&e);
-        let (a, b) = (sola(&ida, COXA_D, CANELA_D).z, sola(&volta, COXA_D, CANELA_D).z);
-        assert!(a - b > 4.0, "a perna direita não foi e voltou: {a:.2} -> {b:.2}");
-        let mao = |p: &Pose| matrizes(p, Mat4::IDENTITY, 1.0)[ANTEBRACO_D]
-            .transform_point3(mapa([23.0, 12.0, 16.0], 1.0) - mapa(PECAS[ANTEBRACO_D].2, 1.0)).z;
-        assert!(mao(&volta) - mao(&ida) > 3.0, "o braço direito não se opôs à perna");
+        let mut maos = Vec::new();
+        for k in 0..32 {
+            e.tempo = k as f32 * 0.02;
+            let p = pose(&e);
+            let (d, es) = (sola(&p, COXA_D, CANELA_D), sola(&p, COXA_E, CANELA_E));
+            assert!((d.z - es.z).abs() < 2.5,
+                "tempo {:.2}: uma perna na frente da outra ({:.2} x {:.2}) — isso é passo", e.tempo, d.z, es.z);
+            assert!(d.x.abs() > sola_parada + 2.0 && es.x.abs() > sola_parada + 2.0,
+                "tempo {:.2}: perna não está aberta ({:.2}, {:.2})", e.tempo, d.x, es.x);
+            let (md, me) = (mao(&p, ANTEBRACO_D), mao(&p, ANTEBRACO_E));
+            let ombro = mapa(PECAS[BRACO_D].2, 1.0);
+            assert!(md.x.abs() > ombro.x.abs() + 2.0, "tempo {:.2}: braço direito não abriu", e.tempo);
+            assert!(md.y < ombro.y - 6.0 && me.y < ombro.y - 6.0,
+                "tempo {:.2}: braço subiu — tem que ser aberto PRA BAIXO", e.tempo);
+            maos.push(md);
+        }
+        // E não é parado: o braço de fato abre e fecha.
+        let (lo, hi) = maos.iter().fold((f32::MAX, f32::MIN), |(lo, hi), m| (lo.min(m.x), hi.max(m.x)));
+        assert!(hi - lo > 1.5, "o braço não se mexe no ar ({lo:.2}..{hi:.2})");
     }
 
     /// No meio do passo a perna direita está NA FRENTE (o +Z do rig) e a
