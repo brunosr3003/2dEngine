@@ -99,6 +99,15 @@ pub struct Ent {
     /// Segundos desde que o mob comecou o ultimo golpe (a patada, ver
     /// `bicho::golpe`). Grande = sem golpe.
     pub golpe: f32,
+    /// 0 = arma guardada .. 1 = na mao. Persegue o `acao::em_combate` do
+    /// servidor no tempo de sacar (`rig::TEMPO_DE_SACAR`).
+    pub sacada: f32,
+    /// Golpe do combo do JOGADOR em curso: (passo, segundos). E o que ele
+    /// interrompeu, congelado no instante da troca (`rig::Combate`).
+    pub combo: Option<(u8, f32)>,
+    pub combo_ant: Option<(u8, f32)>,
+    /// Segundos desde o ultimo dano recebido.
+    pub ferido: Option<f32>,
     /// 0 andando .. 1 correndo, suavizado.
     pub correr: f32,
     /// 0 no chao .. 1 no ar, suavizado: descer um degrau tira o pe' do chao
@@ -169,7 +178,7 @@ impl World {
         for meta in entered {
             let id = meta.id;
             // O estado real vem no mesmo pacote, logo abaixo.
-            let state = EntityState { id, pos: [0, 0], vel: [0, 0], hp: 0, flags: 0 };
+            let state = EntityState { id, pos: [0, 0], vel: [0, 0], hp: 0, flags: 0, acao: 0 };
             self.ents.entry(id).or_insert(Ent {
                 meta,
                 state,
@@ -184,6 +193,10 @@ impl World {
                 fase: 0.0,
                 andar: 0.0,
                 golpe: 99.0,
+                sacada: 0.0,
+                combo: None,
+                combo_ant: None,
+                ferido: None,
                 correr: 0.0,
                 ar: 0.0,
             });
@@ -202,6 +215,23 @@ impl World {
             // quando ele ACENDE.
             if st.flags & ent_flags::ATACANDO != 0 && ent.state.flags & ent_flags::ATACANDO == 0 {
                 ent.golpe = 0.0;
+            }
+            // Golpe do combo: comeca quando o gesto ACENDE ou quando o passo
+            // muda — golpes seguidos a 0,25 s nem sempre apagam o bit no meio.
+            {
+                use shared::components::acao;
+                let (g, v) = (acao::gesto(st.acao), acao::variante(st.acao));
+                let (ga, va) = (acao::gesto(ent.state.acao), acao::variante(ent.state.acao));
+                if g == acao::GOLPE && (ga != acao::GOLPE || va != v) {
+                    ent.combo_ant = ent.combo;
+                    ent.combo = Some((v, 0.0));
+                    // quem golpeia ja' esta' com a arma: nao espera sacar
+                    ent.sacada = 1.0;
+                }
+            }
+            // Tomou dano: a vida caiu (e nao e' a entidade recem-chegada).
+            if ent.state.hp != 0 && st.hp < ent.state.hp {
+                ent.ferido = Some(0.0);
             }
             ent.state = st;
         }
@@ -225,6 +255,22 @@ impl World {
             ent.render_pos += (target - ent.render_pos) * a;
             anda_a_fase(ent, (ent.render_pos - antes).length(), dt);
             ent.golpe = (ent.golpe + dt).min(99.0);
+            let saca = if shared::components::acao::em_combate(ent.state.acao) { 1.0 } else { 0.0 };
+            let passo = dt / crate::rig::TEMPO_DE_SACAR;
+            ent.sacada += (saca - ent.sacada).clamp(-passo, passo);
+            if let Some((_, t)) = ent.combo.as_mut() {
+                *t += dt;
+            }
+            if ent.combo.map_or(false, |(_, t)| t > crate::rig::DURACAO_DO_GOLPE) {
+                ent.combo = None;
+                ent.combo_ant = None;
+            }
+            if let Some(t) = ent.ferido.as_mut() {
+                *t += dt;
+            }
+            if ent.ferido.map_or(false, |t| t > 1.0) {
+                ent.ferido = None;
+            }
             let alvo_ar = if ent.voando { 1.0 } else { 0.0 };
             ent.ar += (alvo_ar - ent.ar) * (1.0 - (-12.0 * dt).exp());
 
@@ -409,7 +455,7 @@ mod testes {
         let id = shared::EntityId(1);
         w.apply(
             vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0 }],
-            vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF }],
+            vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF, acao: 0 }],
             &[],
         );
         w.pular_local();
@@ -423,7 +469,7 @@ mod testes {
                 | if (0.05..voo).contains(&t) { ent_flags::PULANDO } else { 0 };
             w.apply(
                 Vec::new(),
-                vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags }],
+                vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags, acao: 0 }],
                 &[],
             );
             w.tick(dt, &chao);
@@ -472,7 +518,7 @@ mod testes {
             pos: [(x * shared::POS_SCALE) as i16, 0],
             vel: [(vel * shared::POS_SCALE) as i8, 0],
             hp: 100,
-            flags: ent_flags::SELF,
+            flags: ent_flags::SELF, acao: 0,
         };
         w.apply(
             vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0 }],
@@ -556,7 +602,7 @@ mod testes {
         let id = shared::EntityId(1);
         w.apply(
             vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0 }],
-            vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF }],
+            vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF, acao: 0 }],
             &[],
         );
         let chao = |_: f32, _: f32| 0.0;

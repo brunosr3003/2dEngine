@@ -418,6 +418,18 @@ fn malha(model: &VoxModel, scale: f32, origem: [f32; 3]) -> Vec<Mesh> {
     out
 }
 
+/// O modelo de uma arma e o centro da pega, com o marcador ja' apagado.
+/// `None` se o arquivo nao tem marcador — arma sem pega nao tem onde a mao
+/// fechar, e desenhar em volta de um canto qualquer poria a espada no ombro.
+pub fn modelo_de_arma(bytes: &[u8]) -> Option<(VoxModel, [f32; 3])> {
+    let mut m = parse(bytes).ok()?.into_iter().max_by_key(|m| m.cells.iter().filter(|c| **c != 0).count())?;
+    let i = m.cells.iter().position(|c| *c == 255)?;
+    m.cells[i] = 0;
+    let [sx, sy, _] = m.size;
+    let (x, y, z) = (i % sx, (i / sx) % sy, i / (sx * sy));
+    Some((m, [x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5]))
+}
+
 /// Cache de modelos ja carregados e transformados em malha.
 #[derive(Default)]
 pub struct VoxCache {
@@ -427,6 +439,8 @@ pub struct VoxCache {
     rigs: HashMap<String, HashMap<String, Vec<Mesh>>>,
     /// Bichos em PECAS (`bicho.rs`): nome do arquivo -> pecas com pivo.
     bichos: HashMap<String, crate::bicho::Bicho>,
+    /// Armas, com a malha em volta da PEGA (o voxel magenta do arquivo).
+    armas: HashMap<String, Vec<Mesh>>,
 }
 
 impl VoxCache {
@@ -453,6 +467,24 @@ impl VoxCache {
     }
 
     /// As pecas ja' carregadas de um arquivo de rig.
+    pub fn arma(&self, name: &str) -> Option<&Vec<Mesh>> {
+        self.armas.get(name)
+    }
+
+    /// Carrega `personagem/<nome>.vox` como ARMA: acha o voxel marcador (255)
+    /// no centro da pega, apaga ele e faz a malha em volta desse ponto — e'
+    /// onde a mao fecha (docs/ARTE_DO_PERSONAGEM.md, skins de arma).
+    pub async fn load_arma(&mut self, name: &str, scale: f32) -> Option<usize> {
+        let root = std::env::var("MMO_VOX").unwrap_or_else(|_| "assets/vox".into());
+        let bytes = macroquad::file::load_file(&format!("{root}/personagem/{name}.vox")).await.ok()?;
+        let (m, pega) = modelo_de_arma(&bytes)?;
+        let malhas = mesh_na_origem(&m, scale, pega);
+        let tris = malhas.iter().map(|x| x.indices.len() / 3).sum::<usize>();
+        println!("[vox] arma {name}: {tris} triangulos");
+        self.armas.insert(name.to_string(), malhas);
+        Some(tris)
+    }
+
     pub fn bicho(&self, name: &str) -> Option<&crate::bicho::Bicho> {
         self.bichos.get(name)
     }
@@ -846,6 +878,17 @@ mod testes_orientacao {
             assert!(juntas.contains(&crate::bicho::Junta::Tronco), "{nome}: sem tronco");
             let patas = juntas.iter().filter(|j| matches!(j, crate::bicho::Junta::Pata { .. })).count();
             assert_eq!(patas, 4, "{nome}");
+        }
+    }
+
+    #[test]
+    fn a_espada_e_o_escudo_tem_a_pega_marcada() {
+        for nome in ["espada", "escudo"] {
+            let caminho = format!("{}/../../assets/vox/personagem/{nome}.vox", env!("CARGO_MANIFEST_DIR"));
+            let dados = std::fs::read(&caminho).unwrap_or_else(|_| panic!("falta {caminho}"));
+            let (m, pega) = modelo_de_arma(&dados).unwrap_or_else(|| panic!("{nome}: sem marcador na pega"));
+            assert!(m.cells.iter().all(|c| *c != 255), "{nome}: sobrou marcador");
+            assert!(pega.iter().all(|v| *v > 0.0));
         }
     }
 }

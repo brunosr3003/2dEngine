@@ -300,6 +300,64 @@ pub enum EntityTag {
     Other,
 }
 
+/// O que o corpo esta' fazendo, num byte do `EntityState`.
+///
+/// ```text
+/// bit   7 6    | 5 4 3 | 2          | 1 0
+///       variante | gesto | em combate | conjunto
+/// ```
+///
+/// O conjunto viaja no TICK, e nao na meta, porque trocar de arma no meio do
+/// jogo nao reenvia a meta — e um byte que quase nunca muda nao pesa no delta.
+/// A variante e' o passo do combo (0-2) ou a ordem da skill (0-2).
+pub mod acao {
+    pub const NADA: u8 = 0;
+    pub const GOLPE: u8 = 1;
+    pub const SKILL: u8 = 2;
+    /// Quanto o gesto fica aceso depois de comecar, em segundos. Um quadro so'
+    /// se perderia num snapshot pulado; o cliente toca na borda de subida ou
+    /// quando a variante muda.
+    pub const SEGURA_S: f32 = 0.2;
+    /// Sem atacar, conjurar nem apanhar por isto, a arma volta pra bainha
+    /// (docs/PERSONAGEM.md).
+    pub const EM_COMBATE_S: f32 = 8.0;
+
+    pub fn monta(conjunto: u8, em_combate: bool, gesto: u8, variante: u8) -> u8 {
+        (conjunto & 0b11) | ((em_combate as u8) << 2) | ((gesto & 0b111) << 3) | ((variante & 0b11) << 6)
+    }
+    pub fn conjunto(a: u8) -> u8 {
+        a & 0b11
+    }
+    pub fn em_combate(a: u8) -> bool {
+        a & 0b100 != 0
+    }
+    pub fn gesto(a: u8) -> u8 {
+        (a >> 3) & 0b111
+    }
+    pub fn variante(a: u8) -> u8 {
+        a >> 6
+    }
+
+    #[cfg(test)]
+    mod testes {
+        use super::*;
+
+        #[test]
+        fn o_byte_da_a_volta() {
+            for c in 0..4 {
+                for combate in [false, true] {
+                    for g in [NADA, GOLPE, SKILL] {
+                        for v in 0..3 {
+                            let a = monta(c, combate, g, v);
+                            assert_eq!((conjunto(a), em_combate(a), gesto(a), variante(a)), (c, combate, g, v));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub mod ent_flags {
     /// E' o personagem do proprio jogador que recebe o pacote.
     pub const SELF: u8 = 1 << 0;
@@ -354,6 +412,8 @@ pub struct EntityState {
     pub hp: u16,
     /// Ver `ent_flags`.
     pub flags: u8,
+    /// O que o corpo esta' fazendo — ver `acao`.
+    pub acao: u8,
 }
 
 impl EntityState {
@@ -374,6 +434,7 @@ impl EntityState {
             vel: [qv(vel.x), qv(vel.y)],
             hp: hp.max(0) as u16,
             flags,
+            acao: 0,
         }
     }
 }

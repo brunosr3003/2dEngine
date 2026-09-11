@@ -940,6 +940,11 @@ pub struct Session {
     /// bloqueia movimento, ataque, defesa, e novos casts. Setado em
     /// handle_skill_cast quando skill tem cast_time_s > 0.
     pub casting_until: f32,
+    /// Quando a ultima skill saiu e qual a ordem dela no conjunto — o gesto
+    /// que os outros veem (`shared::acao`). Skill instantanea nao tem
+    /// `casting_until`, e o corpo ainda assim tem que fazer o gesto.
+    pub gesto_skill_em: f32,
+    pub gesto_skill_ordem: u8,
     /// Sim_time em que o cast atual começou. Usado pra grace period no
     /// cancel-por-movimento (player que clica skill enquanto andava nao
     /// cancela de imediato — tem 0.3s pra parar).
@@ -3187,6 +3192,8 @@ impl GameWorld {
 
         session.mp_current -= skill.custo_mp as f32;
         session.skill_cds.insert(skill_id, agora + skill.espera_s);
+        session.gesto_skill_em = agora;
+        session.gesto_skill_ordem = skill.ordem;
         if skill.conjuracao_s > 0.0 {
             session.casting_until = agora + skill.conjuracao_s;
             session.casting_skill_id = skill_id;
@@ -4893,6 +4900,8 @@ impl GameWorld {
                     skills_dirty: false,
                 skill_cds: HashMap::new(),
                 casting_until: 0.0,
+                gesto_skill_em: 0.0,
+                gesto_skill_ordem: 0,
                 casting_started_at_s: 0.0,
                 cast_movement_ticks: 0,
                 pk_mode_on: false,
@@ -9169,6 +9178,35 @@ impl GameWorld {
         // vai pro wire quando a entidade ENTRA no campo de visao de alguem; o
         // estado vai quando muda. Antes, tudo isso era um struct de 58 campos
         // remandado inteiro por tick.
+        // O que cada jogador esta' fazendo (`shared::acao`): o conjunto na
+        // mao, se a arma esta' SACADA, e o gesto do momento com a variante.
+        let acao_de: HashMap<EntityId, u8> = {
+            use shared::components::acao;
+            let agora = self.sim_time_s;
+            self.sessions
+                .values()
+                .filter(|s| s.logged_in)
+                .map(|s| {
+                    let conjunto =
+                        shared::skills::Conjunto::da_arma(s.equipment.weapon.unwrap_or(0)) as u8;
+                    let golpe = s.combo_last_attack > 0.0
+                        && agora - s.combo_last_attack < acao::SEGURA_S;
+                    let skill = s.gesto_skill_em > 0.0
+                        && (agora - s.gesto_skill_em < acao::SEGURA_S || s.casting_until > agora);
+                    let ultimo = s.last_combat_at_s.max(s.combo_last_attack).max(s.gesto_skill_em);
+                    let em_combate = ultimo > 0.0 && agora - ultimo < acao::EM_COMBATE_S;
+                    let (gesto, variante) = if golpe {
+                        // o passo que ACABOU de sair: o contador ja' andou
+                        (acao::GOLPE, (s.combo_step + shared::COMBO_STEPS - 1) % shared::COMBO_STEPS)
+                    } else if skill {
+                        (acao::SKILL, s.gesto_skill_ordem.saturating_sub(1).min(2))
+                    } else {
+                        (acao::NADA, 0)
+                    };
+                    (s.entity_id, acao::monta(conjunto, em_combate, gesto, variante))
+                })
+                .collect()
+        };
         let all: Vec<(EntityMeta, EntityState)> = self
             .ecs
             .query::<(
@@ -9236,13 +9274,14 @@ impl GameWorld {
                         _ => 0,
                     },
                 };
-                let state = EntityState::quantize(
+                let mut state = EntityState::quantize(
                     net.0,
                     pos.0,
                     vel.0,
                     hp.map(|h| h.current).unwrap_or(0),
                     flags,
                 );
+                state.acao = acao_de.get(&net.0).copied().unwrap_or(0);
                 (meta, state)
             })
             .collect();

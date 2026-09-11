@@ -164,6 +164,10 @@ async fn main() {
     vox.load_variantes("saque", render3d::VOXEL, &render3d::variantes_do_saque()).await;
     // Os bichos em PECAS (tools/voxrender/bichos.py). Sem o arquivo, o mob
     // cai no modelo inteiro de antes.
+    // As armas do primeiro conjunto (tools/voxrender/armas.py).
+    for nome in ["espada", "escudo"] {
+        vox.load_arma(nome, render3d::VOXEL).await;
+    }
     for (nome, altura) in bicho::BICHOS {
         vox.load_bicho(nome, altura).await;
     }

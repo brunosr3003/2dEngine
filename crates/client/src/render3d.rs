@@ -1101,7 +1101,7 @@ pub fn draw_entities(
         // Gente (jogador, NPC) e' desenhada em PECAS, com a pose do quadro.
         if matches!(e.meta.tag, shared::EntityTag::Player | shared::EntityTag::Npc) {
             if let Some(corpo) = vox.rig(RIG_CORPO) {
-                desenha_personagem(e, corpo, vox.rig(RIG_CHAPEU), vista);
+                desenha_personagem(e, corpo, vox.rig(RIG_CHAPEU), vox, vista);
                 continue;
             }
         }
@@ -1160,6 +1160,7 @@ fn desenha_personagem(
     e: &crate::world::Ent,
     corpo: &std::collections::HashMap<String, Vec<Mesh>>,
     chapeu: Option<&std::collections::HashMap<String, Vec<Mesh>>>,
+    vox: &VoxCache,
     vista: &Vista,
 ) {
     let p = vista.pos_de(e);
@@ -1182,6 +1183,13 @@ fn desenha_personagem(
         tempo: get_time() as f32,
         ar: e.ar,
         degrau: [degrau(-2.0), degrau(2.0)],
+        combate: crate::rig::Combate {
+            conjunto: shared::components::acao::conjunto(e.state.acao),
+            sacada: e.sacada,
+            golpe: e.combo,
+            golpe_ant: e.combo_ant,
+            ferido: e.ferido,
+        },
     };
     let pose = crate::rig::pose(&entrada);
     let base = Mat4::from_translation(p) * Mat4::from_rotation_y(e.yaw);
@@ -1194,6 +1202,14 @@ fn desenha_personagem(
         };
         for m in malhas.into_iter().flatten() {
             draw_mesh_mat(m, &mats[i]);
+        }
+    }
+    // A espada e o escudo: na mao em combate, guardados fora dele.
+    if let Some(armas) = crate::rig::armas(&pose, &mats, VOXEL) {
+        for (nome, mat) in ["espada", "escudo"].into_iter().zip(armas) {
+            for m in vox.arma(nome).into_iter().flatten() {
+                draw_mesh_mat(m, &mat);
+            }
         }
     }
 }

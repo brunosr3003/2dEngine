@@ -366,10 +366,23 @@ aponta pra uma entidade, e o barco já usa) e a pose do personagem montado, que
 Os códigos de ataque de hoje (`SLASH`, `SHOOT`, `PARRY_FLASH`, `TOOL_SWING`…)
 apontam pra páginas de sprite do Mana Seed. Morrem junto com o cliente 2D.
 
-**PROPOSTA — um byte `acao` no `EntityState`:** 4 bits de estado (atacando,
-conjurando, coletando, montado…) e 4 de variante (passo do combo 0–2, qual das
-três skills do conjunto). O conjunto não precisa viajar a cada tick: ele já
-está na aparência.
+**FEITO — um byte `acao` no `EntityState`** (`shared::components::acao`,
+protocolo 74): 2 bits de conjunto, 1 de "em combate" (arma sacada), 3 de gesto
+(nada, golpe, skill) e 2 de variante (passo do combo 0–2, ordem da skill). O
+conjunto foi pro tick e não pra aparência porque trocar de arma no meio do jogo
+não reenvia a meta — e um byte que quase nunca muda não pesa no delta. "Em
+combate" é atacou, conjurou ou apanhou nos últimos 8 s. O gesto fica aceso
+0,2 s depois do golpe; o cliente toca na borda de subida ou quando o passo
+muda.
+
+**FEITO — espada e escudo** (`crates/client/src/rig.rs`, seção COMBATE): em
+guarda, sacar e guardar (o mesmo gesto de ida e volta, a arma troca de lugar
+no meio), os três golpes do combo — horizontal da direita pra esquerda, de
+volta subindo, de cima com o passo à frente —, cada um partindo de onde o
+anterior parou, e o tranco de quem apanha. Braço e lâmina se descrevem por
+guinada e elevação, e a lâmina aponta pra onde a chave manda: o giro na mão
+sai da conta. Katana, pistolas e anel entram com a arte deles; as skills,
+quando o cliente tiver como conjurá-las.
 
 **PROPOSTA — aparência na META, não no tick.** Skin de armadura, skin de arma
 do conjunto atual, conjunto, tier da arma e da armadura (pros frisos), peso

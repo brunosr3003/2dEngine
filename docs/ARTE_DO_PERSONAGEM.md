@@ -162,7 +162,7 @@ Efeito de código (um anel emissivo na cor do tier do anel equipado): zero arte.
 |---|---|---|
 | 1 | `corpo.vox` — **feito: o piratinha** | o rig com o corpo de verdade |
 | 2 | `rosto_01`, `cabelo_01` — **`cabelo_01` feito: o tricórnio**; o rosto do pirata mora no `corpo.vox` | a cabeça |
-| 3 | `espada`, `escudo`, `manto_guerreiro` — skins padrão do primeiro conjunto | o primeiro conjunto e o primeiro ataque |
+| 3 | `espada`, `escudo`, `manto_guerreiro` — skins padrão do primeiro conjunto — **`espada` e `escudo` feitos** (`tools/voxrender/armas.py`) | o primeiro conjunto e o primeiro ataque |
 | 4 | `katana`, `bainha`, `pistola`, `coldre`, `manto_mago` — skins padrão | os outros três conjuntos |
 | 5 | skins de armadura | conteúdo de loja — feitas quando forem vendidas, **não são pré-requisito** |
 | 6 | `rosto_02–03`, `cabelo_02–03` | a criação de personagem |
