@@ -15,8 +15,9 @@ tem corpo.
 
 **DECIDIDO — a aparência é SKIN comprada, não o item equipado.** O que o
 jogador veste por número (arma, armadura, tier, peso) não muda o visual; o
-visual vem de **skins compradas** — de armadura (a roupa inteira) e de arma
-(uma por conjunto). O peso da armadura continua POR CONJUNTO, mas como regra
+visual vem de **skins compradas com TC (Tempest Coin)**, a moeda premium —
+de armadura (a roupa inteira) e de arma (uma por conjunto). **A skin fica no
+PERSONAGEM**, não na conta: comprar pra um não libera pros outros. O peso da armadura continua POR CONJUNTO, mas como regra
 de jogo (`COMBATE.md`), não como silhueta.
 
 **O que a skin não pode esconder: o CONJUNTO de arma.** A animação sai do
@@ -135,7 +136,7 @@ Uma por **conjunto**: espada e escudo, katana, pistolas, anel. A skin troca a
 CARA, não o conjunto. Cada conjunto tem uma skin padrão — é ela que entra no
 playtest.
 
-### PROPOSTA — o que a skin não esconde
+### DECIDIDO — o que a skin não esconde
 
 Aparência comprada tem um custo pro combate: de longe, ninguém mais lê o que o
 outro está usando. Três coisas continuam legíveis, e nenhuma custa modelo:
@@ -359,8 +360,4 @@ código muda quando ela chega.
    Muda o quanto vale investir no visualizador de pose.
 4. **O mapa dos 8 tipos de mob** e as áreas dos humanoides.
 5. **O visual do anel** — ele é um voxel de cima; brilho ou runa na mão?
-6. **Skin comprada com o quê** — dinheiro de verdade, moeda premium, ouro do
-   jogo? E fica na CONTA ou no personagem?
-7. **O friso pelo tier do item e o ícone de peso** — confirma a proposta de o
-   que a skin não esconde?
-8. **Quantas variações de cabeça** e **quais montarias primeiro**.
+6. **Quantas variações de cabeça** e **quais montarias primeiro**.

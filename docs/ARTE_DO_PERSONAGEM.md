@@ -94,7 +94,8 @@ Proposta pro playtest: **4 rostos, 6 cabelos.**
 
 ## Skins de armadura — `assets/vox/personagem/skins/armadura/<nome>.vox`
 
-Uma skin de armadura é **a roupa inteira**, comprada na loja. A armadura
+Uma skin de armadura é **a roupa inteira**, comprada na loja com **TC (Tempest
+Coin)** e presa ao personagem. A armadura
 equipada (o peso, o tier) não muda o visual.
 
 - **Os mesmos dez objetos, com os mesmos nomes do corpo.** Cada objeto

@@ -25,7 +25,9 @@ by `tools/voxrender/molde_corpo.py`; the measurements live there and here.
 | limbs | **split** — ten rigid parts (upper arm / forearm, thigh / shin) |
 | look | **purchased skins** — armor skin (the whole outfit) and weapon skin (one per weapon set). The equipped item does NOT change the look |
 | default look | **the pirate** — whoever bought nothing wears it |
-| tier | still readable (proposal): the trim color (slots 241–244) comes from the **equipped item**, not from the skin |
+| skins | bought with **TC (Tempest Coin)**, the premium currency, and **bound to the character** — buying for one doesn't unlock the others |
+| tier | still readable: the trim color (slots 241–244) comes from the **equipped item**, not from the skin |
+| armor weight | shown as an **icon on the nameplate** |
 | body | **one body**; customization is the head (face, hair, skin tone) |
 | mobs | creatures **and** humanoids |
 
@@ -123,7 +125,8 @@ Proposed for the playtest: **4 faces, 6 hair styles.**
 
 ## Armor skins — `assets/vox/personagem/skins/armadura/<name>.vox`
 
-An armor skin is **the whole outfit**, bought in the store. Equipped armor
+An armor skin is **the whole outfit**, bought in the store with TC and bound
+to the character. Equipped armor
 (its weight, its tier) does not change the look.
 
 - **The same ten objects, with the same names as the body.** Each object
@@ -242,7 +245,3 @@ range, missing marker on a weapon — and says which file and which object.
    which areas.
 5. The **ring's visual** — a glow or rune on the hand?
 6. How many **head variations**, and **which mounts** come first.
-7. Skins bought with what — real money, premium currency, in-game gold? Per
-   account or per character?
-8. Confirm the proposal: **trim color from the equipped item's tier**, and
-   **armor weight as an icon on the nameplate**.

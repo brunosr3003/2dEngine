@@ -118,6 +118,40 @@ na mesma semana.
 
 **Mercado bom conserta distribuição desigual; não converte tempo em dinheiro.**
 
+## TC — Tempest Coin, a moeda premium
+
+**DECIDIDO:** a moeda premium do jogo se chama **TC (Tempest Coin)**. É com ela
+que se compram as **skins** — de armadura e de arma (ver `docs/PERSONAGEM.md`)
+— e a skin comprada fica **presa ao personagem**: comprar pra um não libera
+pros outros.
+
+É o "vinculado é o padrão" levado um passo além: a skin nem chega a ser da
+conta.
+
+### Por que ela fica fora das torneiras e dos ralos
+
+TC não aparece no diagrama lá de cima porque não toca o gold. Duas coisas
+garantem isso, e as duas já estão decididas:
+
+- **skin não é vendável** — presa ao personagem, ela não entra no mercado;
+- **skin não dá número** — a aparência não muda o combate. O tier continua
+  visível pela cor dos frisos, que sai do item EQUIPADO, não da skin.
+
+Enquanto as duas forem verdade, dinheiro de verdade não vira gold nem vira
+poder, e a economia de cima não precisa ser rebalanceada por causa da loja.
+**Qualquer coisa nova que a TC venha a comprar tem que passar pelo mesmo
+teste** — não vira gold, não vira número —, senão ela vira a terceira
+torneira e nenhum ralo dá conta.
+
+### O que ainda falta decidir sobre ela
+
+- **O saldo de TC fica na conta ou no personagem?** Proposta: na conta — é a
+  conta que paga —, e a skin se prende ao personagem na hora da compra.
+- **TC pode ser presenteada ou negociada?** Proposta: não. TC negociável é a
+  porta pra vender gold por dinheiro por fora do jogo.
+- **TC compra mais alguma coisa além de skin?** Cada item novo passa pelo
+  teste acima.
+
 ## O que falta decidir
 
 - Quais peças exatamente entram nos ~10% vendáveis.
