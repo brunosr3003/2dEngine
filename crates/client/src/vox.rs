@@ -512,9 +512,22 @@ impl VoxCache {
             tris += malhas.iter().map(|x| x.indices.len() / 3).sum::<usize>();
             out.push(PecaDeBicho { junta, pivo: no_mundo(pv), malhas });
         }
+        // A patada precisa do focinho (ate' onde o arco passa) e do ombro da
+        // pata que golpeia (de onde ele parte).
+        let frente = (hi[1] + 1) as f32 - origem[1];
+        let ombro = out
+            .iter()
+            .find(|p| p.junta == Junta::Pata { frente: true, esq: false })
+            .map_or(vec3(0.0, altura * 0.3, 0.0), |p| p.pivo);
+        let anat = crate::bicho::Anatomia {
+            altura,
+            frente: frente * escala,
+            ombro,
+            lado: if ombro.x < 0.0 { -1.0 } else { 1.0 },
+        };
         let n = out.len();
         println!("[vox] {name}: {n} pecas, {tris} triangulos");
-        self.bichos.insert(name.to_string(), Bicho { altura, pecas: out });
+        self.bichos.insert(name.to_string(), Bicho { anat, pecas: out });
         Some(n)
     }
 

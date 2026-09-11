@@ -1085,6 +1085,9 @@ pub fn draw_entities(
     vista: &Vista,
 ) {
     let order: Vec<_> = world.draw_order().to_vec();
+    // Os rastros sao transparentes: vao depois de tudo que e' solido, senao
+    // o que fosse desenhado atras deles depois nao apareceria atraves.
+    let mut rastros = Vec::new();
     for id in order {
         let Some(e) = world.ents.get(&id) else { continue };
         let p = vista.pos_de(e);
@@ -1106,7 +1109,9 @@ pub fn draw_entities(
         // cai no modelo inteiro abaixo, parado.
         if let Some((arquivo, _)) = crate::bicho::do_mob(e.meta.tag, e.meta.kind, boss) {
             if let Some(b) = vox.bicho(arquivo) {
-                desenha_bicho(e, b, vista);
+                if let Some(r) = desenha_bicho(e, b, vista) {
+                    rastros.push(r);
+                }
                 continue;
             }
         }
@@ -1139,6 +1144,9 @@ pub fn draw_entities(
             };
             draw_cube(p + vec3(0.0, 0.35, 0.0), vec3(0.6, 0.7, 0.6), None, c);
         }
+    }
+    for (base, r) in &rastros {
+        desenha_rastro(base, r);
     }
 }
 
@@ -1192,7 +1200,15 @@ fn desenha_personagem(
 
 /// Um bicho em pecas: a pose sai da passada e do golpe (`bicho.rs`), e cada
 /// peca gira em volta do proprio pivo.
-fn desenha_bicho(e: &crate::world::Ent, b: &crate::bicho::Bicho, vista: &Vista) {
+///
+/// Duas bases: as PATAS ficam no chao, e o tronco (com cabeca e cauda)
+/// empina, torce e avanca por cima delas na patada. Devolve o rastro das
+/// garras, que e' desenhado depois de todo mundo (ver `desenha_rastro`).
+fn desenha_bicho(
+    e: &crate::world::Ent,
+    b: &crate::bicho::Bicho,
+    vista: &Vista,
+) -> Option<(Mat4, crate::bicho::Rastro)> {
     let p = vista.pos_de(e);
     let entrada = crate::bicho::Entrada {
         passada: e.fase,
@@ -1201,20 +1217,72 @@ fn desenha_bicho(e: &crate::world::Ent, b: &crate::bicho::Bicho, vista: &Vista) 
         golpe: e.golpe,
         semente: e.meta.id.0 as f32,
     };
-    let (sobe, pitch) = crate::bicho::corpo(&entrada, b.altura);
-    let base = Mat4::from_translation(p + vec3(0.0, sobe, 0.0))
-        * Mat4::from_rotation_y(e.yaw)
-        * Mat4::from_rotation_x(pitch);
+    let c = crate::bicho::corpo(&entrada, &b.anat);
+    let chao = Mat4::from_translation(p) * Mat4::from_rotation_y(e.yaw);
+    let patas = chao * Mat4::from_translation(vec3(0.0, c.sobe, 0.0));
+    let tronco = patas
+        * Mat4::from_translation(vec3(0.0, c.sobe_tronco, c.avanca))
+        * Mat4::from_rotation_y(c.torce)
+        * Mat4::from_rotation_x(c.pitch);
     for peca in &b.pecas {
-        let (giro, desloca) = crate::bicho::peca(peca.junta, &entrada, b.altura);
+        let (giro, desloca) = crate::bicho::peca(peca.junta, &entrada, &b.anat, peca.pivo);
+        let base = if matches!(peca.junta, crate::bicho::Junta::Pata { .. }) { patas } else { tronco };
         let mat = base
             * Mat4::from_translation(peca.pivo + desloca)
-            * Mat4::from_rotation_x(giro)
+            * Mat4::from_quat(giro)
             * Mat4::from_translation(-peca.pivo);
         for m in &peca.malhas {
             draw_mesh_mat(m, &mat);
         }
     }
+    crate::bicho::rastro(&entrada, &b.anat).map(|r| (patas, r))
+}
+
+/// O rastro das garras: tres riscos finos acompanhando o arco, por cima de um
+/// brilho largo e fraco.
+///
+/// Cada risco nasce fino na cauda, engrossa e termina em PONTA na cabeca, que
+/// e' onde a garra esta' — e e' mais forte na cabeca, porque o que passou ha'
+/// mais tempo ja' esta' sumindo. A fita fica inclinada a 45 graus, entre o
+/// chao e a parede: deitada ela sumiria de camera baixa, em pe' sumiria de
+/// cima. Vai com as duas faces, porque o descarte de face de costas esta'
+/// ligado e a camera ve' a fita pelos dois lados.
+fn desenha_rastro(base: &Mat4, r: &crate::bicho::Rastro) {
+    const N: usize = 20;
+    let mut vertices: Vec<Vertex> = Vec::new();
+    let mut indices: Vec<u16> = Vec::new();
+    let riscos: [(f32, f32, [u8; 3], f32); 4] = [
+        (0.0, 3.2, [255, 196, 120], 0.22),
+        (-r.vao, 1.0, [255, 244, 222], 0.95),
+        (0.0, 1.0, [255, 244, 222], 0.95),
+        (r.vao, 1.0, [255, 244, 222], 0.95),
+    ];
+    for (dr, larg, cor, forca) in riscos {
+        let b0 = vertices.len() as u16;
+        for i in 0..=N {
+            let v = i as f32 / N as f32;
+            let phi = r.de + (r.ate - r.de) * v;
+            let raio = r.raio + dr;
+            let radial = vec3(r.lado * phi.sin(), 0.0, phi.cos());
+            let meio = r.centro + radial * raio;
+            let w = r.largura * larg * v.powf(0.6) * (1.0 - v.powi(6));
+            let meia = (radial + Vec3::Y).normalize() * (w * 0.5);
+            let a = (255.0 * r.forca * forca * (0.2 + 0.8 * v)).clamp(0.0, 255.0) as u8;
+            for q in [meio + meia, meio - meia] {
+                vertices.push(Vertex {
+                    position: base.transform_point3(q),
+                    uv: vec2(0.0, 0.0),
+                    color: [cor[0], cor[1], cor[2], a],
+                    normal: Vec4::ZERO,
+                });
+            }
+        }
+        for i in 0..N as u16 {
+            let (a0, a1, b1, c1) = (b0 + i * 2, b0 + i * 2 + 1, b0 + i * 2 + 2, b0 + i * 2 + 3);
+            indices.extend_from_slice(&[a0, a1, b1, a1, c1, b1, a0, b1, a1, a1, b1, c1]);
+        }
+    }
+    draw_mesh(&Mesh { vertices, indices, texture: None });
 }
 
 /// Desenha uma malha com uma matriz de mundo inteira. Mesma conta do
