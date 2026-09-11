@@ -1230,15 +1230,36 @@ pub fn pick(world: &World, vista: &Vista, mouse: Vec2, raio_px: f32) -> Option<s
     melhor.map(|(_, id)| id)
 }
 
+/// Anel de alvo: uma faixa de TRIANGULOS no chao, e nao linhas.
+///
+/// Era `draw_line_3d`, e linha desenhada com o material do mundo (o que
+/// descarta face de costas e faz o recorte) estragava o desenho do proprio
+/// alvo: o modelo selecionado — urso ou jogador — saia como um emaranhado de
+/// arestas. O anel era a UNICA coisa que mudava quando havia alvo, e e' o que
+/// saiu. Triangulo e' o que todo o resto do mundo ja' desenha.
 fn draw_ring(center: Vec3, r: f32, color: Color) {
-    const N: usize = 24;
+    const N: usize = 32;
+    const LARGURA: f32 = 0.06;
+    let cor: [u8; 4] = color.into();
+    let ponto = |a: f32, raio: f32| center + vec3(a.cos() * raio, 0.02, a.sin() * raio);
+    let mut vertices = Vec::with_capacity(N * 2);
     for i in 0..N {
-        let a0 = i as f32 / N as f32 * std::f32::consts::TAU;
-        let a1 = (i + 1) as f32 / N as f32 * std::f32::consts::TAU;
-        draw_line_3d(
-            center + vec3(a0.cos() * r, 0.02, a0.sin() * r),
-            center + vec3(a1.cos() * r, 0.02, a1.sin() * r),
-            color,
-        );
+        let a = i as f32 / N as f32 * std::f32::consts::TAU;
+        for raio in [r + LARGURA, r - LARGURA] {
+            vertices.push(Vertex { position: ponto(a, raio), uv: vec2(0.0, 0.0), color: cor, normal: Vec4::ZERO });
+        }
     }
+    let mut indices = Vec::with_capacity(N * 6);
+    for i in 0..N as u16 {
+        let (o0, i0) = (i * 2, i * 2 + 1);
+        let (o1, i1) = (((i + 1) % N as u16) * 2, ((i + 1) % N as u16) * 2 + 1);
+        for tri in [[o0, i0, o1], [i0, i1, o1]] {
+            // A face tem que olhar pra CIMA: com o descarte de face de costas
+            // ligado, enrolada ao contrario ela some vista de cima.
+            let p = |k: u16| vertices[k as usize].position;
+            let n = (p(tri[1]) - p(tri[0])).cross(p(tri[2]) - p(tri[0]));
+            if n.y >= 0.0 { indices.extend_from_slice(&tri) } else { indices.extend_from_slice(&[tri[0], tri[2], tri[1]]) }
+        }
+    }
+    draw_mesh(&Mesh { vertices, indices, texture: None });
 }

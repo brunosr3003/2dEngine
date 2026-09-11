@@ -678,4 +678,39 @@ mod testes_orientacao {
         assert!(media(true) < 0.0 && media(false) > 0.0,
             "azul em {:.2}, vermelho em {:.2}", media(true), media(false));
     }
+
+    /// Toda malha de modelo do jogo tem que estar INTEIRA: índice dentro dos
+    /// vértices, nenhum triângulo esticado além do tamanho do próprio modelo,
+    /// e as faces pra fora (volume com sinal positivo). Um urso que sai como
+    /// emaranhado de fiapos quebra pelo menos uma dessas três.
+    #[test]
+    fn toda_malha_de_bicho_e_de_gente_esta_inteira() {
+        let nomes = ["player", "pistoleiro", "mago", "arqueiro",
+                     "lobo_pequeno", "urso", "tigre", "owlbear", "lobo"];
+        for nome in nomes {
+            let modelos = parse(&arquivo(&format!("{nome}.vox"))).unwrap();
+            let m = modelos.into_iter().max_by_key(|m| m.cells.iter().filter(|c| **c != 0).count()).unwrap();
+            let diag = ((m.size[0].pow(2) + m.size[1].pow(2) + m.size[2].pow(2)) as f32).sqrt();
+            let malhas = mesh(&m, 1.0);
+            let mut volume = 0.0f64;
+            for (k, mm) in malhas.iter().enumerate() {
+                let n = mm.vertices.len();
+                assert!(mm.indices.len() % 3 == 0, "{nome} malha {k}: indices nao fecham triangulo");
+                assert!(mm.indices.len() <= 5_000, "{nome} malha {k}: {} indices, acima do lote", mm.indices.len());
+                for t in mm.indices.chunks(3) {
+                    for &i in t {
+                        assert!((i as usize) < n, "{nome} malha {k}: indice {i} fora de {n} vertices");
+                    }
+                    let (a, b, c) = (mm.vertices[t[0] as usize].position, mm.vertices[t[1] as usize].position,
+                                     mm.vertices[t[2] as usize].position);
+                    for (p, q) in [(a, b), (b, c), (c, a)] {
+                        assert!(p.distance(q) <= diag + 0.01, "{nome} malha {k}: aresta de {:.1} num modelo de {:.1}", p.distance(q), diag);
+                    }
+                    volume += (a.dot(b.cross(c)) / 6.0) as f64;
+                }
+            }
+            println!("{nome:13} {} malhas, volume {volume:.0}", malhas.len());
+            assert!(volume > 0.0, "{nome}: volume {volume:.1} — malha pelo avesso");
+        }
+    }
 }
