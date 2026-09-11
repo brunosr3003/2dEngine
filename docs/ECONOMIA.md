@@ -12,10 +12,14 @@ Números de refino, craft e mineração: `docs/ITENS.md`.
 torneiras                        ralos
   mineração (ativa)                darksteel consumido no refino
   colônia offline (passiva)        item destruído acima do +5
-                                   gold queimado na taxa do mercado
+  dinheiro de verdade → TC         gold: refino, upgrade, poção, item,
+                                         taxa do mercado
+                                   TC:   loja de cash — montaria, skin, pet,
+                                         livros de habilidade, pedra de refino
                                    taxa da troca TC↔gold
-  dinheiro de verdade → TC         (não cria gold: a troca só MOVE gold)
 ```
+
+(A TC não cria gold: a troca só MOVE gold entre jogadores.)
 
 A maioria dos MMOs quebra por torneira demais e ralo de menos, e a inflação
 come o jogo em seis meses. A TC entra por dinheiro de verdade, mas **não cria
@@ -130,8 +134,10 @@ dinheiro se encontram é a troca TC↔gold — e ela não cria nada, só move.
 
 - **TC é da CONTA e vale em todos os servidores.**
 - **Por enquanto, TC só entra comprando com dinheiro.**
-- **TC compra na loja de cash** — as skins de armadura e de arma, que ficam
-  presas ao personagem (ver `docs/PERSONAGEM.md`).
+- **TC compra na loja de cash**: montaria, skins de armadura e de arma, pets,
+  livros de habilidade de pet e de montaria, e pedras de refino. As skins
+  ficam presas ao personagem (ver `docs/PERSONAGEM.md`).
+- **Gold é gasto** em refino, upgrade, poção, item e na taxa do mercado.
 - **TC se vende no mercado por gold.** É assim que quem paga consegue gold, e
   quem não paga consegue TC. **Todo o resto do mercado é em gold: o gold é a
   moeda principal do jogo.**
@@ -161,6 +167,13 @@ quatro pontos:
   está inflacionando ou a TC está escassa. Vai pro panóptico, na aba de
   economia.
 
+### O que a loja vende, quem não paga também alcança
+
+Como a TC se compra com gold, tudo que a loja vende chega em quem não paga —
+pelo caminho mais longo: farmar, vender por gold, comprar TC. É isso que
+impede a loja de ser exclusiva de quem paga. E dá uma âncora de preço: **o
+que a pedra de refino custa na loja é o teto do que vale a pedra farmada.**
+
 ### Como funciona por baixo
 
 A TC mora na CONTA (global) e o gold no PERSONAGEM (banco do realm). Por isso:
@@ -175,7 +188,7 @@ A TC mora na CONTA (global) e o gold no PERSONAGEM (banco do realm). Por isso:
   só então a TC é creditada a ele. Dois bancos diferentes não têm transação
   comum — a custódia é o que garante que TC nunca some nem duplica no meio.
 
-### O que ainda falta decidir sobre ela
+### Pra depois
 
 - **A taxa da troca TC↔gold** — cobrada em gold (mais um ralo de gold) ou em TC
   (queima TC)? E quanto.

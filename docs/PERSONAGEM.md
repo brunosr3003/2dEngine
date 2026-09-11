@@ -283,6 +283,10 @@ montaria são bicho diferente e paleta diferente, não rig novo.
 
 **ABERTO — quais bichos entram primeiro.** Cervo e tigre já estão medidos.
 
+**DECIDIDO — montaria é item da loja de cash**, comprada com TC, com livro de
+habilidade próprio (também TC). **Pets** entram do mesmo jeito — e o estoque do
+zone14 já tem as criaturas pequenas pra eles (aves, porco), em peças.
+
 ## O que o fio precisa
 
 Os códigos de ataque de hoje (`SLASH`, `SHOOT`, `PARRY_FLASH`, `TOOL_SWING`…)
