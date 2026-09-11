@@ -114,6 +114,12 @@ pub struct Ent {
     pub molas: crate::rig::Molas,
     /// O rastro da lamina: (base, ponta, quando), em mundo.
     pub rastro: Vec<(macroquad::prelude::Vec3, macroquad::prelude::Vec3, f32)>,
+    /// Pra onde olhar enquanto golpeia: (posicao do alvo, segundos). Sem
+    /// isto o boneco olhava pra onde ANDAVA, e golpeava de costas.
+    pub mira: Option<(Vec2, f32)>,
+    /// Segundos desde que morreu (ou caiu). Morto fica na tela — o corpo
+    /// tomba e fica —, mas nao e' mais selecionavel.
+    pub morte: Option<f32>,
     /// 0 andando .. 1 correndo, suavizado.
     pub correr: f32,
     /// 0 no chao .. 1 no ar, suavizado: descer um degrau tira o pe' do chao
@@ -134,6 +140,8 @@ pub struct World {
     pub efeitos: Vec<Efeito>,
     /// 0..1: a borda vermelha de quando o PROPRIO jogador apanha.
     pub dor: f32,
+    /// O alvo do jogador local (espelho do `Jogo::alvo`).
+    pub alvo: Option<EntityId>,
     /// Ordem estavel de desenho (y crescente) recalculada por quadro.
     order: Vec<EntityId>,
     pub self_id: Option<EntityId>,
@@ -198,6 +206,11 @@ impl World {
                 ent.ferido = Some(0.0);
                 ent.golpe_de = Vec2::new(a.de[0] as f32, a.de[1] as f32) / 127.0;
             }
+            // quem bateu vira pra quem apanhou
+            let onde = self.ents.get(&a.alvo).map(|e| e.render_pos);
+            if let (Some(p), Some(at)) = (onde, self.ents.get_mut(&a.atacante)) {
+                at.mira = Some((p, 0.6));
+            }
             if eu {
                 self.dor = 1.0;
             }
@@ -251,6 +264,8 @@ impl World {
                 golpe_de: Vec2::ZERO,
                 molas: Default::default(),
                 rastro: Vec::new(),
+                mira: None,
+                morte: None,
                 correr: 0.0,
                 ar: 0.0,
             });
@@ -283,6 +298,20 @@ impl World {
                     ent.sacada = 1.0;
                 }
             }
+            // Morreu (ou caiu): conta o tempo do tombo. Quem ja' chega morto no
+            // campo de visao nasce no chao, sem cair de novo na frente de todo
+            // mundo.
+            {
+                let caido = st.hp == 0 || st.flags & ent_flags::DOWNED != 0;
+                let tem_vida = matches!(ent.meta.tag, shared::EntityTag::Enemy | shared::EntityTag::Player);
+                if tem_vida && caido {
+                    if ent.morte.is_none() {
+                        ent.morte = Some(if ent.state.pos == [0, 0] { 9.0 } else { 0.0 });
+                    }
+                } else {
+                    ent.morte = None;
+                }
+            }
             ent.state = st;
         }
         for id in removed {
@@ -301,6 +330,7 @@ impl World {
         }
         self.efeitos.retain(|ef| ef.t < 1.1);
         self.dor = (self.dor - dt * 2.2).max(0.0);
+        let alvo_pos = self.alvo.and_then(|a| self.ents.get(&a)).map(|e| e.render_pos);
         // Peso da suavizacao independente do frame rate.
         let a = 1.0 - (-SMOOTH_K * dt).exp();
 
@@ -322,6 +352,9 @@ impl World {
             }
             if let Some(t) = ent.ferido.as_mut() {
                 *t += dt;
+            }
+            if let Some(t) = ent.morte.as_mut() {
+                *t = (*t + dt).min(99.0);
             }
             if ent.ferido.map_or(false, |t| t > 1.0) {
                 ent.ferido = None;
@@ -437,10 +470,28 @@ impl World {
                     .max(piso);
             }
 
+            // Quem esta' golpeando olha pra quem golpeia, mesmo andando de
+            // lado; fora disso, pra onde anda.
+            if ent.is_self() && ent.combo.is_some() {
+                if let Some(p) = alvo_pos {
+                    ent.mira = Some((p, 0.6));
+                }
+            }
+            if let Some((_, t)) = ent.mira.as_mut() {
+                *t -= dt;
+            }
+            if ent.mira.map_or(false, |(_, t)| t <= 0.0) {
+                ent.mira = None;
+            }
             let vel = mq(ent.state.vel_f32());
-            if vel.length_squared() > MOVING_EPS * MOVING_EPS {
+            let olhar = match ent.mira {
+                Some((p, _)) => Some(p - ent.render_pos),
+                None if vel.length_squared() > MOVING_EPS * MOVING_EPS => Some(vel),
+                None => None,
+            };
+            if let Some(dir) = olhar.filter(|d| d.length_squared() > 1e-4) {
                 // O modelo nasce olhando pro +Z do mundo.
-                let want = vel.x.atan2(vel.y);
+                let want = dir.x.atan2(dir.y);
                 // Caminho mais curto no circulo, senao ele gira 350 graus pra
                 // virar 10.
                 let mut d = want - ent.yaw;
@@ -509,7 +560,7 @@ mod testes {
         let mut w = World::default();
         let id = shared::EntityId(1);
         w.apply(
-            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0 }],
+            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0, nivel: 0 }],
             vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF, acao: 0 }],
             &[],
         );
@@ -576,7 +627,7 @@ mod testes {
             flags: ent_flags::SELF, acao: 0,
         };
         w.apply(
-            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0 }],
+            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0, nivel: 0 }],
             vec![estado(0.0)],
             &[],
         );
@@ -656,7 +707,7 @@ mod testes {
         let mut w = World::default();
         let id = shared::EntityId(1);
         w.apply(
-            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0 }],
+            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0, nivel: 0 }],
             vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF, acao: 0 }],
             &[],
         );

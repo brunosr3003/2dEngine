@@ -96,6 +96,8 @@ struct Jogo {
     alvo: Option<shared::EntityId>,
     /// Inventario e equipamento (tecla I). Ver `bolsa`.
     bolsa: bolsa::Bolsa,
+    /// Ultima vez que o "ir ate' o alvo" pediu rota.
+    ultima_aproximacao: f64,
     input_seq: u32,
     ultimo_input: f64,
     tick: u32,
@@ -199,6 +201,7 @@ async fn main() {
         world: World::default(),
         alvo: None,
         bolsa: bolsa::Bolsa::default(),
+        ultima_aproximacao: 0.0,
         input_seq: 0,
         ultimo_input: 0.0,
         tick: 0,
@@ -288,6 +291,8 @@ impl Jogo {
             } else if !self.bolsa.pega_o_mouse() {
                 self.atualizar_alvo();
             }
+            self.world.alvo = self.alvo;
+            self.ir_ate_o_alvo();
             self.camera_controles();
             self.enviar_input();
             self.medir_rede();
@@ -515,7 +520,17 @@ impl Jogo {
                 };
                 (alvo, destino)
             };
-            self.alvo = escolhido.0;
+            // So' bicho e gente viram alvo. Clicar no saque e' ir BUSCAR (ele
+            // e' pego por proximidade); clicar em NPC nao mira ninguem.
+            let tag = escolhido.0.and_then(|id| self.world.ents.get(&id)).map(|e| (e.meta.tag, e.render_pos));
+            match tag {
+                Some((shared::EntityTag::Enemy | shared::EntityTag::Player, _)) => self.alvo = escolhido.0,
+                Some((shared::EntityTag::Loot, p)) => {
+                    self.envia(ClientMessage::MoverPara { x: p.x, z: p.y });
+                }
+                Some(_) => {}
+                None => self.alvo = None,
+            }
             // O cliente nunca manda rota — so' um ponto que ele ja' poderia
             // alcancar andando.
             if let Some(p) = escolhido.1 {
@@ -524,13 +539,45 @@ impl Jogo {
 
         }
         if let Some(t) = self.alvo {
-            if !self.world.ents.contains_key(&t) {
+            // sumiu ou morreu: o alvo solta
+            if self.world.ents.get(&t).map_or(true, |e| e.morte.is_some()) {
                 self.alvo = None;
             }
         }
         if self.alvo != antes {
             self.envia(ClientMessage::SetTarget { target: self.alvo });
         }
+    }
+
+    /// Com um inimigo selecionado e fora do alcance, anda ate' ele: o "clicou,
+    /// foi" do MIR4. O destino e' um pouco DENTRO do alcance, do lado de ca',
+    /// e e' refeito a cada 0,35 s enquanto ele se mexe. O teclado manda mais:
+    /// com WASD apertado, quem anda e' a mao.
+    fn ir_ate_o_alvo(&mut self) {
+        let Some(alvo) = self.alvo else { return };
+        let teclas = [KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D, KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right];
+        if teclas.iter().any(|k| is_key_down(*k)) {
+            return;
+        }
+        let eu = self.world.self_id.and_then(|i| self.world.ents.get(&i));
+        let (Some(eu), Some(ele)) = (eu, self.world.ents.get(&alvo)) else { return };
+        if ele.state.hp == 0 {
+            return;
+        }
+        let conjunto = shared::skills::Conjunto::de_u8(shared::components::acao::conjunto(eu.state.acao))
+            .unwrap_or(shared::skills::Conjunto::EspadaEscudo);
+        let alcance = if conjunto.a_distancia() { shared::RANGED_ATTACK_RANGE } else { shared::MELEE_RANGE };
+        let (a, b) = (eu.render_pos, ele.render_pos);
+        if a.distance(b) <= alcance * 0.9 {
+            return;
+        }
+        let agora = get_time();
+        if agora - self.ultima_aproximacao < 0.35 {
+            return;
+        }
+        self.ultima_aproximacao = agora;
+        let destino = b + (a - b).normalize_or_zero() * (alcance * 0.6);
+        self.envia(ClientMessage::MoverPara { x: destino.x, z: destino.y });
     }
 
     /// Ping de 1 em 1 segundo e janela de banda de 1 segundo.

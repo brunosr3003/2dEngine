@@ -835,6 +835,8 @@ pub struct Acerto {
     pub critico: bool,
     /// De onde veio o golpe (aponta pro atacante), quantizado em -127..127.
     pub de: [i8; 2],
+    /// Quem bateu — o cliente vira ele pro alvo.
+    pub atacante: EntityId,
 }
 
 fn default_xp_mult() -> u64 { crate::constants::DEFAULT_XP_MULTIPLIER }

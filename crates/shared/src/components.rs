@@ -398,6 +398,8 @@ pub struct EntityMeta {
     /// sem tier), que pinta a faixa do saquinho. Zero pro resto. Vai so' na meta, que sai
     /// uma vez quando a entidade entra na visao: nao pesa por tick.
     pub kind: u16,
+    /// Nivel: o do mob, ou o do personagem. Vai na placa em cima da cabeca.
+    pub nivel: u16,
 }
 
 /// Estado de uma entidade num tick. E' o unico dado que se repete.

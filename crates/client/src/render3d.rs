@@ -1162,6 +1162,19 @@ pub fn draw_entities(
 pub const RIG_CORPO: &str = "personagem/corpo";
 pub const RIG_CHAPEU: &str = "personagem/cabelo_01";
 
+/// O tombo de quem morre: vai a 90 graus acelerando, como quem cai de
+/// verdade, quica um pouco no chao e fica.
+fn queda(t: f32) -> f32 {
+    let u = (t / 0.5).clamp(0.0, 1.0);
+    let caindo = std::f32::consts::FRAC_PI_2 * u * u;
+    let quique = if t > 0.5 {
+        -0.12 * (-(t - 0.5) * 7.0).exp() * ((t - 0.5) * 22.0).sin().abs()
+    } else {
+        0.0
+    };
+    caindo + quique
+}
+
 /// Quanto o rastro da lamina dura.
 const VIDA_DO_RASTRO: f32 = 0.16;
 
@@ -1226,11 +1239,25 @@ fn desenha_personagem(
             recuo,
         },
     };
+    let mut entrada = entrada;
+    // Morto: sem passo, sem golpe, sem tranco — so' o tombo.
+    let cai = e.morte.map_or(0.0, queda);
+    if e.morte.is_some() {
+        entrada.andar = 0.0;
+        entrada.correr = 0.0;
+        entrada.ar = 0.0;
+        entrada.combate.golpe = None;
+        entrada.combate.ferido = None;
+    }
     let mut pose = crate::rig::pose(&entrada);
     e.molas.segue(&mut pose, get_frame_time());
-    let s = e.ferido.map_or(0.0, crate::rig::esmagamento);
-    let base = Mat4::from_translation(p)
+    let s = if e.morte.is_some() { 0.0 } else { e.ferido.map_or(0.0, crate::rig::esmagamento) };
+    // Cai de COSTAS girando em volta do pe': deitado, as costas ficariam 3
+    // voxels abaixo do chao, entao o corpo sobe isso junto com o tombo.
+    let sobe = cai / std::f32::consts::FRAC_PI_2 * 3.5 * VOXEL;
+    let base = Mat4::from_translation(p + vec3(0.0, sobe, 0.0))
         * Mat4::from_rotation_y(e.yaw)
+        * Mat4::from_rotation_x(-cai)
         * Mat4::from_scale(vec3(1.0 + 0.5 * s, 1.0 - s, 1.0 + 0.5 * s));
     let armas = desenha_rig(base, &pose, corpo, chapeu, vox, clarao(e, eu));
 
@@ -1314,25 +1341,31 @@ fn desenha_bicho(
     vista: &Vista,
 ) -> Option<(Mat4, crate::bicho::Rastro)> {
     let p = vista.pos_de(e);
+    // Morto: as patas param, a cauda para, e ele TOMBA de lado (o lado sai do
+    // id, pra dois corpos vizinhos nao caírem iguais).
+    let morto = e.morte.is_some();
     let entrada = crate::bicho::Entrada {
         passada: e.fase,
-        vel: e.andar * shared::PLAYER_SPEED,
-        tempo: get_time() as f32,
-        golpe: e.golpe,
+        vel: if morto { 0.0 } else { e.andar * shared::PLAYER_SPEED },
+        tempo: if morto { 0.0 } else { get_time() as f32 },
+        golpe: if morto { 99.0 } else { e.golpe },
         semente: e.meta.id.0 as f32,
-        ferido: e.ferido,
+        ferido: if morto { None } else { e.ferido },
         recuo: Quat::from_rotation_y(-e.yaw) * vec3(-e.golpe_de.x, 0.0, -e.golpe_de.y),
     };
     let c = crate::bicho::corpo(&entrada, &b.anat);
+    let lado = if e.meta.id.0 % 2 == 0 { 1.0 } else { -1.0 };
     let chao = Mat4::from_translation(p)
         * Mat4::from_rotation_y(e.yaw)
+        * Mat4::from_rotation_z(lado * e.morte.map_or(0.0, queda))
         * Mat4::from_scale(vec3(1.0 + 0.5 * c.esmaga, 1.0 - c.esmaga, 1.0 + 0.5 * c.esmaga));
     let patas = chao * Mat4::from_translation(vec3(0.0, c.sobe, 0.0));
     let tronco = patas
         * Mat4::from_translation(vec3(c.lado, c.sobe_tronco, c.avanca))
         * Mat4::from_rotation_y(c.torce)
         * Mat4::from_rotation_x(c.pitch);
-    let tinta = clarao(e, false);
+    // o corpo escurece um pouco: de longe, morto nao se confunde com vivo
+    let tinta = if morto { Some(([0.0, 0.0, 0.0], 0.3)) } else { clarao(e, false) };
     for peca in &b.pecas {
         let (giro, desloca) = crate::bicho::peca(peca.junta, &entrada, &b.anat, peca.pivo);
         let base = if matches!(peca.junta, crate::bicho::Junta::Pata { .. }) { patas } else { tronco };
@@ -1478,7 +1511,8 @@ pub fn world_to_screen(cam: &Camera3D, p: Vec3) -> Option<Vec2> {
 pub fn pick(world: &World, vista: &Vista, mouse: Vec2, raio_px: f32) -> Option<shared::EntityId> {
     let mut melhor: Option<(f32, shared::EntityId)> = None;
     for (id, e) in &world.ents {
-        if e.is_self() {
+        // morto nao se seleciona: o corpo fica, o alvo nao
+        if e.is_self() || e.morte.is_some() {
             continue;
         }
         let Some(sp) = vista.na_tela(vista.mira_de(e)) else { continue };

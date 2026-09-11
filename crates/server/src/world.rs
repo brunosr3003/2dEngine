@@ -1288,6 +1288,9 @@ pub struct GameWorld {
     /// Cliente usa pra escolher VFX de impacto por arma. Lido em send_snapshots
     /// pra EntitySnapshot.attacker_weapon_id; limpo apos envio.
     pub attacker_weapon_this_tick: HashMap<EntityId, u16>,
+    /// Quem bateu em cada alvo neste tick — vai no `Acerto` pro cliente
+    /// virar o atacante pro alvo. Limpo junto com os outros.
+    pub attacker_this_tick: HashMap<EntityId, EntityId>,
     /// Última versão de economy vista no broadcast — quando muda (admin
     /// editou via web), reenviamos `ItemsConfig` pra todos os clientes.
     pub last_econ_version: i64,
@@ -1666,6 +1669,7 @@ impl GameWorld {
             damage_this_tick: HashMap::new(),
             pending_bomb_hits: Vec::new(),
             attacker_weapon_this_tick: HashMap::new(),
+            attacker_this_tick: HashMap::new(),
             last_econ_version: 0,
             farm_nodes: HashMap::new(),
             coleta_em: 0.0,
@@ -1810,6 +1814,7 @@ impl GameWorld {
             damage_this_tick: HashMap::new(),
             pending_bomb_hits: Vec::new(),
             attacker_weapon_this_tick: HashMap::new(),
+            attacker_this_tick: HashMap::new(),
             last_econ_version: 0,
             farm_nodes: HashMap::new(),
             coleta_em: 0.0,
@@ -5062,12 +5067,25 @@ impl GameWorld {
                 });
             }
             ClientMessage::SetTarget { target } => {
+                // So' se mira quem da' pra atacar: bicho ou gente. O saquinho de
+                // saque virava alvo e o boneco ficava batendo nele.
+                let atacavel = target.filter(|t| {
+                    self.ecs
+                        .query::<(&NetId, &EntityKind, Option<&Health>)>()
+                        .iter()
+                        .any(|(_, (n, k, hp))| {
+                            n.0 == *t
+                                && matches!(k, EntityKind::Enemy(_) | EntityKind::Player)
+                                // morto fica na tela como corpo, mas nao e' alvo
+                                && hp.map_or(true, |h| h.current > 0)
+                        })
+                });
                 let Some(session) = self.sessions.get_mut(&id) else { return };
                 if !session.logged_in { return; }
                 // Alvo tem que existir e nao pode ser o proprio player. O
                 // resto (vivo, no alcance, PvP permitido) e' reavaliado a cada
                 // tick no auto-ataque — alvo pode morrer ou fugir.
-                session.target = match target {
+                session.target = match atacavel {
                     Some(t) if t != session.entity_id => Some(t),
                     _ => None,
                 };
@@ -8170,6 +8188,7 @@ impl GameWorld {
         self.crit_this_tick.clear();
         self.damage_this_tick.clear();
         self.attacker_weapon_this_tick.clear();
+        self.attacker_this_tick.clear();
         // Dano causado por ENEMIES neste tick — lifesteal do boss (25%).
         let mut enemy_dealt: HashMap<EntityId, i32> = HashMap::new();
         for (entity, target_id, dmg, attacker_id, attacker_is_player, hurt_dir, is_crit, attack_info, kb_strength) in damage_events {
@@ -8445,6 +8464,7 @@ impl GameWorld {
                 let prev_dmg = self.damage_this_tick.get(&target_id).copied().unwrap_or(0);
                 self.damage_this_tick.insert(target_id, prev_dmg + dmg);
                 self.hit_this_tick.insert(target_id, hurt_dir);
+                self.attacker_this_tick.insert(target_id, attacker_id);
                 continue;
             }
             // Modo imortal: o dano segue sendo calculado e o numero flutuante
@@ -8527,6 +8547,7 @@ impl GameWorld {
             // valor mesmo se o alvo for morto — não fica clampado em "5/50".
             let prev_dmg = self.damage_this_tick.get(&target_id).copied().unwrap_or(0);
             self.damage_this_tick.insert(target_id, prev_dmg + dmg);
+            self.attacker_this_tick.insert(target_id, attacker_id);
             // Proficiency XP: atacante ganha XP na arma equipada por hit no alvo.
             if attacker_is_player {
                 if let Some(attacker) = self.sessions.values_mut()
@@ -9180,6 +9201,13 @@ impl GameWorld {
         // remandado inteiro por tick.
         // O que cada jogador esta' fazendo (`shared::acao`): o conjunto na
         // mao, se a arma esta' SACADA, e o gesto do momento com a variante.
+        // O nivel de cada personagem, pra placa em cima da cabeca.
+        let nivel_de: HashMap<EntityId, u16> = self
+            .sessions
+            .values()
+            .filter(|s| s.logged_in)
+            .map(|s| (s.entity_id, shared::level_of_xp(s.xp) as u16))
+            .collect();
         let acao_de: HashMap<EntityId, u8> = {
             use shared::components::acao;
             let agora = self.sim_time_s;
@@ -9263,6 +9291,10 @@ impl GameWorld {
                     name,
                     hp_max: hp.map(|h| h.max.max(0) as u16).unwrap_or(0),
                     faction: None,
+                    nivel: etag
+                        .map(|t| t.level as u16)
+                        .or_else(|| nivel_de.get(&net.0).copied())
+                        .unwrap_or(0),
                     kind: match kind {
                         EntityKind::Enemy(k) => *k,
                         // Saque: o TIER do item (1-4), pra o cliente pintar a
@@ -9418,6 +9450,7 @@ impl GameWorld {
                         dano: *dano,
                         critico: self.crit_this_tick.get(id).copied().unwrap_or(false),
                         de: [q(d.x), q(d.y)],
+                        atacante: self.attacker_this_tick.get(id).copied().unwrap_or(EntityId(0)),
                     }
                 })
                 .collect();

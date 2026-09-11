@@ -9,6 +9,7 @@
 use macroquad::prelude::*;
 
 use crate::render3d::{world_to_screen, Vista};
+use crate::ui;
 use crate::world::World;
 
 /// Quanto tempo o numero fica na tela.
@@ -31,7 +32,49 @@ fn texto_contornado(s: &str, x: f32, y: f32, tam: f32, cor: Color) {
     draw_text(s, x, y, tam, cor);
 }
 
+/// A placa do inimigo, em cima da cabeca: nivel e nome, e a vida embaixo.
+/// So' pra quem esta' perto — a tela nao pode virar um mural —, e o alvo
+/// ganha a borda dourada e cresce um pouco.
+fn placas(world: &World, vista: &Vista) {
+    let eu = world.self_id.and_then(|i| world.ents.get(&i)).map(|e| e.render_pos);
+    for (id, e) in &world.ents {
+        if e.meta.tag != shared::EntityTag::Enemy || e.state.hp == 0 {
+            continue;
+        }
+        if eu.map_or(false, |p| p.distance(e.render_pos) > 26.0) {
+            continue;
+        }
+        let alvo = world.alvo == Some(*id);
+        let topo = vista.pos_de(e) + vec3(0.0, altura_de(e) + 0.35, 0.0);
+        let Some(c) = world_to_screen(&vista.cam, topo) else { continue };
+        let (w, h) = if alvo { (86.0, 7.0) } else { (64.0, 5.0) };
+        let f = (e.state.hp as f32 / e.meta.hp_max.max(1) as f32).clamp(0.0, 1.0);
+        let (x, y) = (c.x - w * 0.5, c.y);
+        draw_rectangle(x - 1.0, y - 1.0, w + 2.0, h + 2.0, Color::new(0.0, 0.0, 0.0, 0.75));
+        draw_rectangle(x, y, w, h, Color::new(0.25, 0.06, 0.05, 0.9));
+        draw_rectangle(x, y, w * f, h, Color::new(0.86, 0.22, 0.18, 1.0));
+        draw_rectangle(x, y, w * f, h * 0.35, Color::new(1.0, 0.45, 0.38, 0.8));
+        if alvo {
+            draw_rectangle_lines(x - 2.5, y - 2.5, w + 5.0, h + 5.0, 1.5, ui::OURO);
+        }
+        let nome = e.meta.name.as_deref().unwrap_or("?");
+        let txt = if e.meta.nivel > 0 { format!("Lv {} {nome}", e.meta.nivel) } else { nome.to_string() };
+        let tam = if alvo { 17.0 } else { 14.0 };
+        let d = measure_text(&txt, None, tam as u16, 1.0);
+        let boss = e.state.flags & shared::ent_flags::BOSS != 0;
+        let cor = if boss {
+            Color::new(1.0, 0.55, 0.25, 1.0)
+        } else if alvo {
+            Color::new(1.0, 0.93, 0.7, 1.0)
+        } else {
+            Color::new(0.92, 0.92, 0.92, 0.95)
+        };
+        texto_contornado(&txt, c.x - d.width * 0.5, y - 5.0, tam, cor);
+    }
+}
+
 pub fn desenha(world: &World, vista: &Vista) {
+    placas(world, vista);
     for ef in &world.efeitos {
         let Some(e) = world.ents.get(&ef.alvo) else { continue };
         let pe = vista.pos_de(e);

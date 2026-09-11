@@ -14,6 +14,7 @@ fn meta(i: u32) -> EntityMeta {
         hp_max: 200,
         faction: None,
         kind: 0,
+        nivel: 1,
     }
 }
 
