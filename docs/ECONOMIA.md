@@ -12,14 +12,14 @@ Números de refino, craft e mineração: `docs/ITENS.md`.
 torneiras                        ralos
   mineração (ativa)                darksteel consumido no refino
   colônia offline (passiva)        item destruído acima do +5
-  dinheiro de verdade → TC         TC queimada na taxa do mercado
-                                   (gold: SEM ralo — ver "TC", item 1)
+                                   gold queimado na taxa do mercado
+                                   taxa da troca TC↔gold
+  dinheiro de verdade → TC         (não cria gold: a troca só MOVE gold)
 ```
 
 A maioria dos MMOs quebra por torneira demais e ralo de menos, e a inflação
-come o jogo em seis meses. O mercado passou a ser em TC, e isso mexeu no
-diagrama em dois pontos: a taxa agora queima TC, e **o gold perdeu o único
-ralo que tinha**.
+come o jogo em seis meses. A TC entra por dinheiro de verdade, mas **não cria
+gold nenhum**: ela só compra gold que outro jogador já tinha farmado.
 
 ## Colônia offline
 
@@ -84,7 +84,8 @@ conteúdo.
 ## Mercado
 
 Modelo do MIR4: **quase nada é comerciável**, só existe **venda** (não troca),
-e a venda é em **TC**, com taxa em TC.
+e a venda é em **gold**, com **taxa em gold**. A exceção é a TC, que se vende
+por gold — ver a seção dela.
 
 ### Vinculado é o padrão
 
@@ -101,19 +102,17 @@ vinte alts produzem vinte pilhas que não se juntam — e não é preciso detect
 nada, provar nada nem banir ninguém. **Sistema anti-trapaça que não existe é o
 único sem falso positivo.**
 
-Com a TC na conta, o alt que vende recebe TC na conta DELE. O único caminho
-pra levar isso pra principal é o próprio mercado: a principal põe um item
-qualquer à venda e o alt compra caro — e a taxa come uma fatia a cada
-passagem. **A taxa virou a alavanca contra multi-conta:** quanto maior, mais
-caro lavar TC de uma conta pra outra.
+O auto-negócio também não fecha: o alt vende e o gold fica no alt. O único
+caminho pra levar esse gold pra principal é o próprio mercado — a principal
+anuncia qualquer coisa e o alt compra caro —, e a taxa come uma fatia a cada
+passagem. **A taxa é a alavanca contra multi-conta:** quanto maior, mais caro
+lavar gold de um personagem pro outro.
 
 ### A taxa sai do valor da venda, não do bolso
 
-Cobrada adiantado, o jogador que não paga — e que não tem TC nenhuma, porque
-ela só entra comprando — **nunca começaria a vender**, e o mercado viraria só
-de quem já pagou. Descontando do que ele recebe, a mesma TC é queimada e a
-porta fica aberta. Com a TC, essa regra deixou de ser detalhe: é ela que
-deixa quem não paga participar da economia.
+Cobrada adiantado, o jogador novo sem gold **nunca começa a vender**, e o
+mercado vira recurso de quem já tem. Descontando do que ele recebe, o mesmo
+gold é queimado e a porta fica aberta.
 
 ### Vender o que é irregular, vincular o que é constante
 
@@ -122,69 +121,71 @@ no mesmo ritmo — no mercado viraria só um índice de preço. Merece mercado o
 que **sai torto**: o material raro que um jogador tirou três e o outro nenhum
 na mesma semana.
 
-**Com a TC, o mercado converte tempo em dinheiro — de propósito.** É o modelo
-do MIR4 e do Lineage W: quem paga compra TC, quem farma vende item por TC. Isso
-deixou de ser efeito a evitar e virou o desenho — e muda o que o vínculo
-protege: não é mais só a economia do jogo, é dinheiro de verdade.
+**Mercado bom conserta distribuição desigual.** O único lugar onde tempo e
+dinheiro se encontram é a troca TC↔gold — e ela não cria nada, só move.
 
 ## TC — Tempest Coin
 
 **DECIDIDO:**
 
-- **TC é da CONTA e vale em todos os servidores.** Um saldo só, em qualquer
-  realm.
-- **TC é a moeda do mercado.** Todo item negociado no mercado é negociado em
-  TC — ela é a base da economia entre jogadores.
-- **Por enquanto, TC só entra comprando com dinheiro.** Quem não paga
-  consegue TC vendendo no mercado pra quem pagou.
-- **Skins** de armadura e de arma são compradas com TC e ficam presas ao
-  personagem (ver `docs/PERSONAGEM.md`).
+- **TC é da CONTA e vale em todos os servidores.**
+- **Por enquanto, TC só entra comprando com dinheiro.**
+- **TC compra na loja de cash** — as skins de armadura e de arma, que ficam
+  presas ao personagem (ver `docs/PERSONAGEM.md`).
+- **TC se vende no mercado por gold.** É assim que quem paga consegue gold, e
+  quem não paga consegue TC. **Todo o resto do mercado é em gold: o gold é a
+  moeda principal do jogo.**
+
+É o modelo do WoW Token, das gemas do Guild Wars 2 e do PLEX do EVE.
 
 ### O ciclo
 
 ```
-dinheiro ──► TC ──► compra item no mercado ──► TC vai pro vendedor
-                                               (menos a taxa, que QUEIMA)
-                    vendedor gasta a TC em skin ou em item
+quem paga:   dinheiro ─► TC ─► vende a TC por gold ─► compra item em gold
+quem farma:  farma ─► vende item por gold ─► compra TC com gold ─► loja de cash
 ```
 
-Quem paga compra tempo; quem tem tempo vende o que farmou. A taxa é o único
-ralo de TC — é ela que impede a massa de TC em circulação de só crescer.
+### Por que assim, e não TC como moeda do mercado
 
-### O que isso muda, e precisa de resposta
+A versão anterior punha a TC como moeda do mercado inteiro. Esta é melhor em
+quatro pontos:
 
-**1. O gold ficou sem ralo.** A taxa do mercado era o único ralo de gold do
-diagrama; os outros dois gastam darksteel e item. O gold continua entrando
-(drop, coleta) e não sai mais por lugar nenhum — é inflação de gold garantida.
-Precisa de um ralo novo (conserto, custo em gold no refino ou no craft,
-serviço de NPC), ou o gold deixa de existir como moeda.
+- **O gold tem ralo e tem demanda.** A taxa do mercado volta a queimar gold, e
+  comprar TC dá a ele um uso que não acaba.
+- **A troca não cria gold.** Dinheiro de verdade só compra gold que alguém
+  farmou. Nenhuma torneira nova.
+- **A TC não volta a virar dinheiro dentro do jogo.** Farmar rende skin, não
+  saque. Bot ainda ganha alguma coisa (gold → TC → skin), mas muito menos do
+  que ganharia vendendo item direto por TC.
+- **O preço da TC em gold é o termômetro da economia.** Subindo, ou o gold
+  está inflacionando ou a TC está escassa. Vai pro panóptico, na aba de
+  economia.
 
-**2. Farmar passou a render dinheiro, e isso atrai bot.** Antes, multi-conta
-não rendia porque o recurso não atravessava de uma conta pra outra. Agora
-atravessa — pelo próprio mercado, que é pra isso que ele existe. Foi o que
-encheu o MIR4 de fazenda de bot. As defesas passam a ser três: o **vínculo**
-(o que NÃO pode ser vendido continua sendo a maioria), a **taxa** (o custo de
-lavar TC entre contas) e, se precisar, um **portão pra vender** (nível,
-progresso de história).
+### Como funciona por baixo
 
-**3. TC global exige um livro-caixa fora dos realms.** Hoje cada realm tem
-banco próprio e a conta mora nele — o `merge-realms.sh` até trata conta em
-colisão. Um saldo que vale em todo servidor não pode morar em nenhum deles:
-precisa de um **cadastro de conta único** e de um **livro-caixa central**. E
-como é dinheiro de verdade, cada movimento vira uma linha de razão (quem,
-quanto, por quê, saldo depois), nunca um número sobrescrito. O mercado
-continua por realm — o item mora no banco do realm —, mas o pagamento sai e
-entra no livro central.
+A TC mora na CONTA (global) e o gold no PERSONAGEM (banco do realm). Por isso:
+
+- **A troca TC↔gold é por realm** — o gold de um realm só existe no banco dele.
+- **Cadastro de conta único e livro-caixa central**, fora dos `DATABASE_URL`
+  dos realms (hoje a tabela `accounts` mora dentro de cada realm; isso muda).
+  Como é dinheiro de verdade, cada movimento de TC é uma linha de razão (quem,
+  quanto, por quê, saldo depois) — nunca um saldo sobrescrito.
+- **Custódia, nunca "debita dos dois e torce".** Ao anunciar TC, ela sai do
+  livro central na hora e fica guardada; quem compra paga o gold no realm;
+  só então a TC é creditada a ele. Dois bancos diferentes não têm transação
+  comum — a custódia é o que garante que TC nunca some nem duplica no meio.
 
 ### O que ainda falta decidir sobre ela
 
-- O ralo novo do gold (item 1).
-- A taxa do mercado — é ao mesmo tempo o ralo da TC e a defesa contra
-  multi-conta.
-- Mercado por realm ou global? Proposta: por realm (o item mora no banco do
-  realm); só o dinheiro é global.
+- **A taxa da troca TC↔gold** — cobrada em gold (mais um ralo de gold) ou em TC
+  (queima TC)? E quanto.
+- **A loja de cash vende gold direto?** Recomendo que não: gold criado pela
+  loja é torneira comprada — inflação e pay-to-win ao mesmo tempo. Gold só
+  pela troca entre jogadores.
+- **A taxa do mercado de itens.**
+- **Portão pra vender** (nível, progresso de história) contra conta
+  descartável.
 - A TC um dia entra por outro caminho além da compra (evento, conquista)?
-- Portão pra vender no mercado (nível, história, verificação)?
 
 ## O que falta decidir
 
