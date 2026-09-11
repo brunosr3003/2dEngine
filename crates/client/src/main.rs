@@ -10,6 +10,7 @@
 
 mod api;
 mod bicho;
+mod bolsa;
 mod entrada;
 mod hud;
 mod map;
@@ -92,6 +93,8 @@ struct Jogo {
     map: Option<Map>,
     world: World,
     alvo: Option<shared::EntityId>,
+    /// Inventario e equipamento (tecla I). Ver `bolsa`.
+    bolsa: bolsa::Bolsa,
     input_seq: u32,
     ultimo_input: f64,
     tick: u32,
@@ -194,6 +197,7 @@ async fn main() {
         map: None,
         world: World::default(),
         alvo: None,
+        bolsa: bolsa::Bolsa::default(),
         input_seq: 0,
         ultimo_input: 0.0,
         tick: 0,
@@ -273,7 +277,16 @@ impl Jogo {
                 });
             }
             self.seguir_altura();
-            self.atualizar_alvo();
+            // A bolsa: I abre e fecha, Esc fecha. Com o mouse em cima dela o
+            // clique e' dela e nao do mundo — andar pelo teclado continua.
+            if is_key_pressed(KeyCode::I) {
+                self.bolsa.alterna();
+            }
+            if self.bolsa.aberta && is_key_pressed(KeyCode::Escape) {
+                self.bolsa.fecha();
+            } else if !self.bolsa.pega_o_mouse() {
+                self.atualizar_alvo();
+            }
             self.camera_controles();
             self.enviar_input();
             self.medir_rede();
@@ -451,7 +464,19 @@ impl Jogo {
                     self.chat.remove(0);
                 }
             }
-            // As demais (inventario, skills, loja, quests) ainda nao tem UI;
+            // O que a bolsa mostra. O servidor manda tudo no login e de novo a
+            // cada mudanca; aqui so' se guarda.
+            ServerMessage::InventoryUpdate { slots } => self.bolsa.slots = slots,
+            ServerMessage::ItemsConfig { items } => {
+                self.bolsa.nomes = items.into_iter().map(|i| (i.id, i.name)).collect();
+            }
+            ServerMessage::StatsUpdate { stats, equipment } => {
+                self.bolsa.stats = Some(stats);
+                self.bolsa.equip = equipment;
+            }
+            ServerMessage::GoldUpdate { gold } => self.bolsa.ouro = gold,
+            ServerMessage::ProgressUpdate { level, .. } => self.bolsa.nivel = level,
+            // As demais (skills, loja, quests) ainda nao tem UI;
             // ignorar e' seguro porque nada aqui e' autoritativo.
             _ => {}
         }
@@ -543,6 +568,7 @@ impl Jogo {
         self.info = hud::Info::default();
         self.rede = hud::Rede::default();
         self.chat.clear();
+        self.bolsa = bolsa::Bolsa::default();
         self.teclado.limpa();
         // Volta pro login e nao pra escolha de servidor: o canal continua
         // sendo o mesmo, quem mudou de ideia foi a conta.
@@ -811,6 +837,10 @@ impl Jogo {
             &self.chat,
         ) {
             self.sair();
+        }
+        // A bolsa por cima de tudo.
+        if let Some(pedido) = self.bolsa.desenha(&self.vox, &self.solido) {
+            self.envia(pedido);
         }
     }
 

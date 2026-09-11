@@ -1191,8 +1191,20 @@ fn desenha_personagem(
             ferido: e.ferido,
         },
     };
-    let pose = crate::rig::pose(&entrada);
     let base = Mat4::from_translation(p) * Mat4::from_rotation_y(e.yaw);
+    desenha_rig(base, &entrada, corpo, chapeu, vox);
+}
+
+/// O boneco em pecas numa base qualquer — o mundo usa a posicao da entidade;
+/// a bolsa, a origem do retrato.
+pub fn desenha_rig(
+    base: Mat4,
+    entrada: &crate::rig::Entrada,
+    corpo: &std::collections::HashMap<String, Vec<Mesh>>,
+    chapeu: Option<&std::collections::HashMap<String, Vec<Mesh>>>,
+    vox: &VoxCache,
+) {
+    let pose = crate::rig::pose(entrada);
     let mats = crate::rig::matrizes(&pose, base, VOXEL);
     for (i, (nome, _, _)) in crate::rig::PECAS.iter().enumerate() {
         let malhas = if *nome == "cabelo" {
