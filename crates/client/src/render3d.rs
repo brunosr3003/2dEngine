@@ -1069,6 +1069,13 @@ pub fn draw_entities(
         }
 
         let boss = e.state.flags & shared::ent_flags::BOSS != 0;
+        // Gente (jogador, NPC) e' desenhada em PECAS, com a pose do quadro.
+        if matches!(e.meta.tag, shared::EntityTag::Player | shared::EntityTag::Npc) {
+            if let Some(corpo) = vox.rig(RIG_CORPO) {
+                desenha_personagem(e, corpo, vox.rig(RIG_CHAPEU), vista);
+                continue;
+            }
+        }
         let drawn = model_for(e.meta.tag, boss, e.meta.kind)
             .and_then(|name| vox.peek(name))
             .map(|meshes| {
@@ -1092,6 +1099,71 @@ pub fn draw_entities(
             draw_cube(p + vec3(0.0, 0.35, 0.0), vec3(0.6, 0.7, 0.6), None, c);
         }
     }
+}
+
+/// Os arquivos de pecas do personagem (docs/character create.md).
+pub const RIG_CORPO: &str = "personagem/corpo";
+pub const RIG_CHAPEU: &str = "personagem/cabelo_01";
+
+/// O personagem em pecas: pose do quadro, uma matriz por peca, e cada malha
+/// desenhada com a sua.
+fn desenha_personagem(
+    e: &crate::world::Ent,
+    corpo: &std::collections::HashMap<String, Vec<Mesh>>,
+    chapeu: Option<&std::collections::HashMap<String, Vec<Mesh>>>,
+    vista: &Vista,
+) {
+    let p = vista.pos_de(e);
+    let (sin, cos) = e.yaw.sin_cos();
+    // Quanto o chao sob cada pe' esta' acima da base do corpo, em voxels. O pe'
+    // direito fica 2 voxels pro -X do rig (a direita do boneco), o esquerdo
+    // pro +X; girado pela direcao da entidade.
+    let degrau = |dx: f32| -> f32 {
+        if e.voando {
+            return 0.0;
+        }
+        let ox = dx * VOXEL;
+        let (x, z) = (p.x + ox * cos, p.z - ox * sin);
+        (vista.chao_em(x, z) - p.y) / VOXEL
+    };
+    let entrada = crate::rig::Entrada {
+        fase: e.fase,
+        andar: e.andar,
+        correr: e.correr,
+        tempo: get_time() as f32,
+        no_ar: e.voando,
+        subindo: e.vel_y > 0.0,
+        degrau: [degrau(-2.0), degrau(2.0)],
+    };
+    let pose = crate::rig::pose(&entrada);
+    let base = Mat4::from_translation(p) * Mat4::from_rotation_y(e.yaw);
+    let mats = crate::rig::matrizes(&pose, base, VOXEL);
+    for (i, (nome, _, _)) in crate::rig::PECAS.iter().enumerate() {
+        let malhas = if *nome == "cabelo" {
+            chapeu.and_then(|c| c.get("cabelo"))
+        } else {
+            corpo.get(*nome)
+        };
+        for m in malhas.into_iter().flatten() {
+            draw_mesh_mat(m, &mats[i]);
+        }
+    }
+}
+
+/// Desenha uma malha com uma matriz de mundo inteira. Mesma conta do
+/// `draw_mesh_at` — vertice transformado na CPU —, so' que com rotacao em
+/// qualquer eixo, que e' o que uma peca do rig precisa.
+fn draw_mesh_mat(m: &Mesh, mat: &Mat4) {
+    let moved = Mesh {
+        vertices: m
+            .vertices
+            .iter()
+            .map(|v| Vertex { position: mat.transform_point3(v.position), ..*v })
+            .collect(),
+        indices: m.indices.clone(),
+        texture: None,
+    };
+    draw_mesh(&moved);
 }
 
 /// Desenha uma malha girada em Y e deslocada.

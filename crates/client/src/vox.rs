@@ -60,34 +60,63 @@ impl VoxModel {
 
 /// Le um `.vox`. Arquivos de cena trazem varios modelos; devolve todos.
 pub fn parse(data: &[u8]) -> Result<Vec<VoxModel>, String> {
+    parse_nomeado(data).map(|v| v.into_iter().map(|(_, m)| m).collect())
+}
+
+/// Le um `.vox` com o NOME de cada modelo.
+///
+/// O nome mora no grafo de cena do MagicaVoxel: um `nTRN` (transformacao) tem
+/// o atributo `_name` e aponta pra um `nSHP` (forma), que aponta pro modelo
+/// pela ordem em que ele aparece no arquivo. E' assim que o rig do personagem
+/// sabe qual modelo e' `braco_d` e qual e' `canela_e` — ver
+/// docs/character create.md. Modelo sem nome volta com nome vazio.
+pub fn parse_nomeado(data: &[u8]) -> Result<Vec<(String, VoxModel)>, String> {
     if data.len() < 8 || &data[0..4] != b"VOX " {
         return Err("nao e' um .vox".into());
     }
-    let mut models: Vec<(([usize; 3]), Vec<(u8, u8, u8, u8)>)> = Vec::new();
+    let mut models: Vec<([usize; 3], Vec<(u8, u8, u8, u8)>)> = Vec::new();
     let mut palette = default_palette();
     let mut pending: Option<[usize; 3]> = None;
+    // nTRN: filho -> nome.  nSHP: no' -> modelos.
+    let mut nome_do_filho: std::collections::HashMap<i32, String> = Default::default();
+    let mut modelos_do_no: std::collections::HashMap<i32, Vec<i32>> = Default::default();
+
+    let i32_em = |o: usize| i32::from_le_bytes(data[o..o + 4].try_into().unwrap());
+    // DICT: n, e n pares de STRING (tamanho + bytes). Devolve o mapa e onde parou.
+    let dict = |mut o: usize| -> (std::collections::HashMap<String, String>, usize) {
+        let mut d = std::collections::HashMap::new();
+        let n = i32_em(o).max(0) as usize;
+        o += 4;
+        for _ in 0..n {
+            let lk = i32_em(o).max(0) as usize;
+            let k = String::from_utf8_lossy(&data[o + 4..o + 4 + lk]).into_owned();
+            o += 4 + lk;
+            let lv = i32_em(o).max(0) as usize;
+            let v = String::from_utf8_lossy(&data[o + 4..o + 4 + lv]).into_owned();
+            o += 4 + lv;
+            d.insert(k, v);
+        }
+        (d, o)
+    };
 
     // O formato e' RIFF-like: id(4) tam_conteudo(4) tam_filhos(4) + corpo.
     let mut stack = vec![(8usize, data.len())];
     while let Some((mut i, end)) = stack.pop() {
         while i + 12 <= end {
             let id = &data[i..i + 4];
-            let n = i32::from_le_bytes(data[i + 4..i + 8].try_into().unwrap()) as usize;
-            let m = i32::from_le_bytes(data[i + 8..i + 12].try_into().unwrap()) as usize;
+            let n = i32_em(i + 4) as usize;
+            let m = i32_em(i + 8) as usize;
             let body = i + 12;
             if body + n + m > end {
                 break;
             }
             match id {
                 b"SIZE" => {
-                    let g = |o: usize| {
-                        i32::from_le_bytes(data[body + o..body + o + 4].try_into().unwrap()) as usize
-                    };
+                    let g = |o: usize| i32_em(body + o) as usize;
                     pending = Some([g(0), g(4), g(8)]);
                 }
                 b"XYZI" => {
-                    let count =
-                        i32::from_le_bytes(data[body..body + 4].try_into().unwrap()) as usize;
+                    let count = i32_em(body) as usize;
                     let mut vs = Vec::with_capacity(count);
                     for k in 0..count {
                         let o = body + 4 + k * 4;
@@ -104,6 +133,25 @@ pub fn parse(data: &[u8]) -> Result<Vec<VoxModel>, String> {
                         palette[k + 1] = [data[o], data[o + 1], data[o + 2], data[o + 3]];
                     }
                 }
+                b"nTRN" => {
+                    let (attrs, o) = dict(body + 4);
+                    let filho = i32_em(o);
+                    if let Some(nome) = attrs.get("_name") {
+                        nome_do_filho.insert(filho, nome.clone());
+                    }
+                }
+                b"nSHP" => {
+                    let no = i32_em(body);
+                    let (_, mut o) = dict(body + 4);
+                    let k = i32_em(o).max(0) as usize;
+                    o += 4;
+                    let mut ids = Vec::with_capacity(k);
+                    for _ in 0..k {
+                        ids.push(i32_em(o));
+                        o = dict(o + 4).1;
+                    }
+                    modelos_do_no.insert(no, ids);
+                }
                 _ => {}
             }
             if m > 0 {
@@ -113,9 +161,21 @@ pub fn parse(data: &[u8]) -> Result<Vec<VoxModel>, String> {
         }
     }
 
+    let mut nomes = vec![String::new(); models.len()];
+    for (no, ids) in &modelos_do_no {
+        if let Some(nome) = nome_do_filho.get(no) {
+            for &id in ids {
+                if let Some(slot) = nomes.get_mut(id.max(0) as usize) {
+                    *slot = nome.clone();
+                }
+            }
+        }
+    }
+
     Ok(models
         .into_iter()
-        .map(|(size, vs)| {
+        .zip(nomes)
+        .map(|((size, vs), nome)| {
             let mut cells = vec![0u8; size[0] * size[1] * size[2]];
             for (x, y, z, c) in vs {
                 let (x, y, z) = (x as usize, y as usize, z as usize);
@@ -123,7 +183,7 @@ pub fn parse(data: &[u8]) -> Result<Vec<VoxModel>, String> {
                     cells[x + y * size[0] + z * size[0] * size[1]] = c;
                 }
             }
-            VoxModel { size, cells, palette }
+            (nome, VoxModel { size, cells, palette })
         })
         .collect())
 }
@@ -157,11 +217,28 @@ fn shade(axis: usize, positive: bool) -> f32 {
 /// Devolve mais de uma malha quando passa do limite de `u16` do indice.
 pub fn mesh(model: &VoxModel, scale: f32) -> Vec<Mesh> {
     let (lo, hi) = model.bounds();
-    let dims = [model.size[0], model.size[1], model.size[2]];
     // Centro em X/Y do voxel (que viram X/Z do mundo); base em Z.
-    let cx = (lo[0] + hi[0] + 1) as f32 * 0.5;
-    let cy = (lo[1] + hi[1] + 1) as f32 * 0.5;
-    let base = lo[2] as f32;
+    let origem = [
+        (lo[0] + hi[0] + 1) as f32 * 0.5,
+        (lo[1] + hi[1] + 1) as f32 * 0.5,
+        lo[2] as f32,
+    ];
+    malha(model, scale, origem)
+}
+
+/// Malha de uma PECA do rig: em volta do pivo dela, sem recentralizar.
+///
+/// `mesh` centra cada modelo na propria caixa — certo pra um bicho inteiro,
+/// errado pra peca: cada braco iria pro centro e o corpo se desmontaria. As
+/// pecas do personagem vem todas na MESMA tela (docs/character create.md), e
+/// e' justamente essa tela comum que faz uma encaixar na outra.
+pub fn mesh_na_origem(model: &VoxModel, scale: f32, origem: [f32; 3]) -> Vec<Mesh> {
+    malha(model, scale, origem)
+}
+
+fn malha(model: &VoxModel, scale: f32, origem: [f32; 3]) -> Vec<Mesh> {
+    let dims = [model.size[0], model.size[1], model.size[2]];
+    let (cx, cy, base) = (origem[0], origem[1], origem[2]);
 
     let mut out: Vec<Mesh> = Vec::new();
     let mut verts: Vec<Vertex> = Vec::new();
@@ -174,9 +251,11 @@ pub fn mesh(model: &VoxModel, scale: f32) -> Vec<Mesh> {
         let b = verts.len() as u16;
         for c in corners {
             verts.push(Vertex {
-                // voxel (x, y, z) -> mundo (x, z, y)
+                // voxel (x, y, z) -> mundo (-x, z, y). ROTACAO, nao espelho:
+                // trocar so' dois eixos, como era antes, e' reflexo — e tudo
+                // que o modelo tinha na mao direita aparecia na esquerda.
                 position: vec3(
-                    (c[0] - cx) * scale,
+                    (cx - c[0]) * scale,
                     (c[2] - base) * scale,
                     (c[1] - cy) * scale,
                 ),
@@ -287,8 +366,9 @@ pub fn mesh(model: &VoxModel, scale: f32) -> Vec<Mesh> {
                     // A normal pretendida esta' no eixo da fatia, com o sinal
                     // do lado exposto — e a comparacao e' feita em coordenada
                     // de MUNDO, porque e' la' que o voxel (x, y, z) vira
-                    // (x, z, y).
-                    let mundo = |c: [f32; 3]| vec3(c[0], c[2], c[1]);
+                    // (-x, z, y). E' por sair da conta que trocar o mapa nao
+                    // vira o modelo do avesso.
+                    let mundo = |c: [f32; 3]| vec3(-c[0], c[2], c[1]);
                     let mut n = [0f32; 3];
                     n[axis] = if positive { 1.0 } else { -1.0 };
                     let n = mundo(n);
@@ -333,6 +413,9 @@ pub fn mesh(model: &VoxModel, scale: f32) -> Vec<Mesh> {
 #[derive(Default)]
 pub struct VoxCache {
     meshes: HashMap<String, Vec<Mesh>>,
+    /// Arquivos de PECAS: nome do arquivo -> nome da peca -> malhas em volta
+    /// do pivo da peca.
+    rigs: HashMap<String, HashMap<String, Vec<Mesh>>>,
 }
 
 impl VoxCache {
@@ -340,6 +423,35 @@ impl VoxCache {
     /// antes (`load`) e aqui so' se consulta.
     pub fn peek(&self, name: &str) -> Option<&Vec<Mesh>> {
         self.meshes.get(name)
+    }
+
+    /// As pecas ja' carregadas de um arquivo de rig.
+    pub fn rig(&self, name: &str) -> Option<&HashMap<String, Vec<Mesh>>> {
+        self.rigs.get(name)
+    }
+
+    /// Carrega um arquivo de PECAS (objetos nomeados no MagicaVoxel). Cada
+    /// peca vira malha em volta do proprio pivo, que `pivo` responde pelo
+    /// nome. `None` quando o arquivo nao existe — o cliente cai no modelo
+    /// inteiro de antes.
+    pub async fn load_rig(&mut self, name: &str, scale: f32, pivo: impl Fn(&str) -> [f32; 3]) -> Option<usize> {
+        let root = std::env::var("MMO_VOX").unwrap_or_else(|_| "assets/vox".into());
+        let bytes = macroquad::file::load_file(&format!("{root}/{name}.vox")).await.ok()?;
+        let pecas = parse_nomeado(&bytes).ok()?;
+        let mut mapa = HashMap::new();
+        let mut tris = 0usize;
+        for (nome, m) in pecas {
+            if nome.is_empty() {
+                continue;
+            }
+            let ms = mesh_na_origem(&m, scale, pivo(&nome));
+            tris += ms.iter().map(|x| x.indices.len() / 3).sum::<usize>();
+            mapa.insert(nome, ms);
+        }
+        let n = mapa.len();
+        println!("[vox] {name}: {n} pecas, {tris} triangulos");
+        self.rigs.insert(name.to_string(), mapa);
+        Some(n)
     }
 
     /// Carrega `<raiz>/<nome>.vox`. `None` quando o arquivo nao existe — mob
@@ -521,5 +633,49 @@ mod testes_orientacao {
             );
             println!("{arquivo}: {tris} triangulos, volume {volume:.0} = {cheios:.0} voxels");
         }
+    }
+
+    fn arquivo(rel: &str) -> Vec<u8> {
+        std::fs::read(format!("{}/../../assets/vox/{rel}", env!("CARGO_MANIFEST_DIR")))
+            .unwrap_or_else(|e| panic!("{rel}: {e}"))
+    }
+
+    /// O corpo do personagem chega com as dez pecas, pelo NOME — e' o nome
+    /// que o rig procura. Um objeto renomeado no MagicaVoxel sumiria calado.
+    #[test]
+    fn o_corpo_chega_com_as_dez_pecas_nomeadas() {
+        let pecas = parse_nomeado(&arquivo("personagem/corpo.vox")).unwrap();
+        let nomes: std::collections::HashSet<&str> = pecas.iter().map(|(n, _)| n.as_str()).collect();
+        for n in ["cabeca", "torso", "braco_d", "antebraco_d", "braco_e", "antebraco_e",
+                  "coxa_d", "canela_d", "coxa_e", "canela_e"] {
+            assert!(nomes.contains(n), "falta a peca {n}; vieram {nomes:?}");
+        }
+        for (n, m) in &pecas {
+            assert!(m.cells.iter().any(|c| *c != 0), "peca {n} vazia");
+        }
+        let chapeu = parse_nomeado(&arquivo("personagem/cabelo_01.vox")).unwrap();
+        assert!(chapeu.iter().any(|(n, _)| n == "cabelo"), "o chapeu nao se chama `cabelo`");
+    }
+
+    /// A malha e' ROTACAO, nao espelho: o que esta' no X maior do voxel (a
+    /// direita do personagem, olhando pra +Y) cai no -X do mundo — que e' a
+    /// direita de quem olha pra +Z. Com o mapa antigo, `(x, z, y)`, a mao
+    /// direita modelada aparecia na esquerda.
+    #[test]
+    fn a_direita_do_modelo_e_a_direita_do_boneco() {
+        let mut palette = default_palette();
+        palette[1] = [255, 0, 0, 255];
+        palette[2] = [0, 0, 255, 255];
+        let m = VoxModel { size: [3, 1, 1], cells: vec![1, 0, 2], palette };
+        let malhas = mesh(&m, 1.0);
+        let media = |azul: bool| -> f32 {
+            let xs: Vec<f32> = malhas.iter().flat_map(|mm| mm.vertices.iter())
+                .filter(|v| (v.color[2] > v.color[0]) == azul)
+                .map(|v| v.position.x).collect();
+            xs.iter().sum::<f32>() / xs.len() as f32
+        };
+        // O azul esta' no X MAIOR do voxel.
+        assert!(media(true) < 0.0 && media(false) > 0.0,
+            "azul em {:.2}, vermelho em {:.2}", media(true), media(false));
     }
 }

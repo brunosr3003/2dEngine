@@ -14,6 +14,7 @@ mod hud;
 mod map;
 mod net;
 mod render3d;
+mod rig;
 mod terreno;
 mod vegetacao;
 mod ui;
@@ -155,6 +156,10 @@ async fn main() {
     for (nome, altura) in render3d::ALTURA_DO_BICHO {
         vox.load_na_altura(nome, altura).await;
     }
+    // O personagem em PECAS (docs/character create.md). Sem o arquivo, o
+    // desenho cai no modelo inteiro de antes.
+    vox.load_rig(render3d::RIG_CORPO, render3d::VOXEL, rig::pivo).await;
+    vox.load_rig(render3d::RIG_CHAPEU, render3d::VOXEL, rig::pivo).await;
 
     let mut jogo = Jogo {
         tela: Tela::Servidores,
@@ -668,6 +673,12 @@ impl Jogo {
         // NAO defende — girar a vista nao pode levantar o escudo.
         if is_mouse_button_down(MouseButton::Right) && !self.arrasto_virou_camera {
             buttons |= shared::protocol::buttons::SECONDARY;
+        }
+        // Shift segurado corre: o servidor multiplica a velocidade
+        // (`SPRINT_SPEED_MULT`) e gasta vigor. A animacao de correr nao olha
+        // a tecla — sai da velocidade, igual pra quem esta' de fora.
+        if is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) {
+            buttons |= shared::protocol::buttons::SPRINT;
         }
         // O servidor detecta a BORDA de subida; aqui basta mandar o estado.
         if is_key_down(KeyCode::Space) {

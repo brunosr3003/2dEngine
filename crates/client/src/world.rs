@@ -90,6 +90,14 @@ pub struct Ent {
     /// entre o fim do arco e o fim do cooldown: o arco tocaria sem que pulo
     /// nenhum tivesse acontecido.
     pub espera_pulo: f32,
+    /// Fase do passo, em radianos. Anda com a DISTANCIA percorrida e nao com
+    /// o tempo: parado, a perna para junto; correndo, ela nao dispara na
+    /// mesma proporcao da velocidade. Ver `rig::pose`.
+    pub fase: f32,
+    /// 0 parado .. 1 andando, suavizado — o passo entra e sai sem estalo.
+    pub andar: f32,
+    /// 0 andando .. 1 correndo, suavizado.
+    pub correr: f32,
 }
 
 impl Ent {
@@ -104,6 +112,34 @@ pub struct World {
     /// Ordem estavel de desenho (y crescente) recalculada por quadro.
     order: Vec<EntityId>,
     pub self_id: Option<EntityId>,
+}
+
+/// Distancia, em unidades, de um ciclo inteiro de passo (dois passos).
+///
+/// Andando a 5 u/s da' ~2,3 ciclos por segundo. Correndo, a passada abre: sem
+/// isso o ciclo iria junto com os 1,65x da velocidade e as pernas virariam
+/// um borrao.
+const PASSADA_ANDANDO: f32 = 2.2;
+const PASSADA_CORRENDO: f32 = 3.0;
+
+/// Avanca a fase do passo pela distancia que o corpo DESENHADO andou, e
+/// suaviza "andando" e "correndo" a partir da velocidade que sai dela.
+///
+/// Vem da posicao desenhada, nao da velocidade do servidor: e' ela que o
+/// jogador ve' andar, e se as duas discordassem o pe' patinaria no chao.
+fn anda_a_fase(ent: &mut Ent, andou: f32, dt: f32) {
+    if dt <= 0.0 {
+        return;
+    }
+    let vel = andou / dt;
+    let k = 1.0 - (-8.0 * dt).exp();
+    let alvo_andar = (vel / shared::PLAYER_SPEED).clamp(0.0, 1.0);
+    let alvo_correr =
+        ((vel - shared::PLAYER_SPEED * 1.1) / (shared::PLAYER_SPEED * 0.45)).clamp(0.0, 1.0);
+    ent.andar += (alvo_andar - ent.andar) * k;
+    ent.correr += (alvo_correr - ent.correr) * k;
+    let passada = PASSADA_ANDANDO + (PASSADA_CORRENDO - PASSADA_ANDANDO) * ent.correr;
+    ent.fase = (ent.fase + andou / passada * std::f32::consts::TAU) % (std::f32::consts::TAU * 64.0);
 }
 
 impl World {
@@ -133,6 +169,9 @@ impl World {
                 no_ar_antes: false,
                 voando: false,
                 espera_pulo: 0.0,
+                fase: 0.0,
+                andar: 0.0,
+                correr: 0.0,
             });
         }
         for st in states {
@@ -163,7 +202,9 @@ impl World {
 
         for ent in self.ents.values_mut() {
             let target = mq(ent.state.pos_f32());
+            let antes = ent.render_pos;
             ent.render_pos += (target - ent.render_pos) * a;
+            anda_a_fase(ent, (ent.render_pos - antes).length(), dt);
 
             // ── VERTICAL ──
             //
