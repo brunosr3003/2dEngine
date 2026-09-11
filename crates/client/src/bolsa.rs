@@ -37,22 +37,18 @@ const APAGADO: Color = Color::new(0.52, 0.51, 0.54, 1.0);
 const VERDE: Color = Color::new(0.45, 0.80, 0.42, 1.0);
 const VERMELHO: Color = Color::new(0.88, 0.38, 0.32, 1.0);
 
-/// Os slots em volta do retrato, como no MIR4: arma e armadura de um lado,
-/// o resto do corpo e os acessorios do outro.
-const ESQUERDA: [(EquipSlot, &str); 6] = [
+/// Os slots em volta do retrato, como no MIR4: o que se empunha e se veste
+/// de um lado, os acessorios do outro (docs/COMBATE.md).
+const ESQUERDA: [(EquipSlot, &str); 3] = [
     (EquipSlot::Weapon, "Arma"),
     (EquipSlot::Offhand, "Secundária"),
     (EquipSlot::Armor, "Armadura"),
-    (EquipSlot::Helm, "Elmo"),
-    (EquipSlot::Legs, "Calça"),
-    (EquipSlot::Boots, "Botas"),
 ];
-const DIREITA: [(EquipSlot, &str); 5] = [
-    (EquipSlot::Gloves, "Luvas"),
-    (EquipSlot::Cape, "Capa"),
+const DIREITA: [(EquipSlot, &str); 4] = [
+    (EquipSlot::Earring, "Brinco"),
+    (EquipSlot::Necklace, "Amuleto"),
+    (EquipSlot::Bracelet, "Bracelete"),
     (EquipSlot::Belt, "Cinto"),
-    (EquipSlot::Necklace, "Colar"),
-    (EquipSlot::Ring, "Anel"),
 ];
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -430,12 +426,12 @@ impl Bolsa {
         };
         ui::texto(r.x + 14.0, r.y + 44.0, &em_uso, 16, ui::OURO_CLARO);
 
-        let s = ((r.h - 60.0 - 170.0) / 6.0 - 16.0).clamp(40.0, 56.0).floor();
+        let s = ((r.h - 60.0 - 170.0) / 4.0 - 16.0).clamp(40.0, 64.0).floor();
         let passo = s + 16.0;
         let y0 = r.y + 60.0;
         let xe = r.x + 14.0;
         let xd = r.x + r.w - 14.0 - s;
-        let retrato = Rect::new(xe + s + 12.0, y0, xd - 12.0 - (xe + s + 12.0), 6.0 * passo - 16.0);
+        let retrato = Rect::new(xe + s + 12.0, y0, xd - 12.0 - (xe + s + 12.0), 4.0 * passo - 16.0);
         self.desenha_retrato(retrato, vox, solido);
 
         let mut acao = None;
@@ -459,7 +455,7 @@ impl Bolsa {
         }
 
         // O poder e a ficha, embaixo do retrato.
-        let mut y = y0 + 6.0 * passo + 8.0;
+        let mut y = y0 + 4.0 * passo + 8.0;
         if let Some(st) = &self.stats {
             ui::texto_centro(r.x + r.w * 0.5, y + 12.0, "PODER", 14, APAGADO);
             ui::texto_centro(r.x + r.w * 0.5, y + 42.0, &milhar(poder(st).max(0) as u64), 32, ui::OURO);
@@ -788,10 +784,25 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
             draw_circle(c.x + s * 0.38, c.y - s * 0.72, s * 0.11, k(0.85, 0.92, 1.0));
         }
         Tipo::Slot(EquipSlot::Offhand) => {
-            draw_circle(c.x, c.y, s * 0.95, aco_esc);
-            draw_circle(c.x, c.y, s * 0.78, k(0.20, 0.32, 0.58));
-            linha(-0.78, 0.0, 0.78, 0.0, 0.2, k(0.86, 0.84, 0.78));
-            draw_circle(c.x, c.y, s * 0.2, aco);
+            // a secundaria do conjunto: manto, bainha ou coldre
+            match id {
+                item_id::BAINHA => {
+                    linha(-0.75, 0.75, 0.75, -0.75, 0.3, k(0.55, 0.12, 0.14));
+                    linha(0.55, -0.55, 0.8, -0.8, 0.3, ouro);
+                    linha(-0.75, 0.75, -0.6, 0.6, 0.3, ouro);
+                }
+                item_id::COLDRE => {
+                    draw_rectangle(c.x - s * 0.5, c.y - s * 0.6, s * 1.0, s * 1.4, couro);
+                    draw_rectangle(c.x - s * 0.55, c.y - s * 0.7, s * 1.1, s * 0.22, ouro);
+                    draw_rectangle(c.x - s * 0.15, c.y - s * 0.95, s * 0.3, s * 0.3, aco_esc);
+                }
+                _ => {
+                    let cor = if id == item_id::MANTO_DO_MAGO { k(0.22, 0.28, 0.62) } else { k(0.62, 0.18, 0.18) };
+                    draw_triangle(vec2(c.x - s * 0.4, c.y - s * 0.85), vec2(c.x + s * 0.4, c.y - s * 0.85), vec2(c.x - s * 0.9, c.y + s * 0.9), cor);
+                    draw_triangle(vec2(c.x + s * 0.4, c.y - s * 0.85), vec2(c.x + s * 0.9, c.y + s * 0.9), vec2(c.x - s * 0.9, c.y + s * 0.9), cor);
+                    draw_rectangle(c.x - s * 0.45, c.y - s * 0.92, s * 0.9, s * 0.16, ouro);
+                }
+            }
         }
         Tipo::Slot(EquipSlot::Armor) => {
             draw_rectangle(c.x - s * 0.55, c.y - s * 0.55, s * 1.1, s * 1.4, pano);
@@ -799,43 +810,22 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
             draw_triangle(vec2(c.x + s * 0.55, c.y - s * 0.55), vec2(c.x + s * 0.95, c.y - s * 0.2), vec2(c.x + s * 0.55, c.y + s * 0.05), pano);
             draw_triangle(vec2(c.x - s * 0.22, c.y - s * 0.56), vec2(c.x + s * 0.22, c.y - s * 0.56), vec2(c.x, c.y - s * 0.2), k(0.3, 0.3, 0.34));
         }
-        Tipo::Slot(EquipSlot::Helm) => {
-            draw_circle(c.x, c.y + s * 0.1, s * 0.75, aco);
-            draw_rectangle(c.x - s * 0.8, c.y + s * 0.1, s * 1.6, s * 0.7, VAZIA_A(a));
-            draw_rectangle(c.x - s * 0.75, c.y + s * 0.05, s * 1.5, s * 0.18, aco_esc);
-            draw_rectangle(c.x - s * 0.08, c.y + s * 0.05, s * 0.16, s * 0.55, aco_esc);
-        }
-        Tipo::Slot(EquipSlot::Legs) => {
-            draw_rectangle(c.x - s * 0.6, c.y - s * 0.8, s * 1.2, s * 0.35, couro);
-            draw_rectangle(c.x - s * 0.6, c.y - s * 0.45, s * 0.5, s * 1.3, pano);
-            draw_rectangle(c.x + s * 0.1, c.y - s * 0.45, s * 0.5, s * 1.3, pano);
-        }
-        Tipo::Slot(EquipSlot::Boots) => {
-            draw_rectangle(c.x - s * 0.45, c.y - s * 0.8, s * 0.55, s * 1.2, couro);
-            draw_rectangle(c.x - s * 0.45, c.y + s * 0.2, s * 1.2, s * 0.5, couro);
-            draw_rectangle(c.x - s * 0.5, c.y + s * 0.62, s * 1.3, s * 0.14, k(0.25, 0.16, 0.1));
-        }
-        Tipo::Slot(EquipSlot::Gloves) => {
-            draw_rectangle(c.x - s * 0.45, c.y - s * 0.55, s * 0.9, s * 1.0, couro);
-            draw_rectangle(c.x - s * 0.45, c.y + s * 0.4, s * 0.9, s * 0.4, pano);
-            linha(0.45, -0.1, 0.8, -0.45, 0.3, couro);
-        }
         Tipo::Slot(EquipSlot::Belt) => {
             draw_rectangle(c.x - s * 0.95, c.y - s * 0.22, s * 1.9, s * 0.44, couro);
             draw_rectangle_lines(c.x - s * 0.25, c.y - s * 0.32, s * 0.5, s * 0.64, s * 0.14, ouro);
-        }
-        Tipo::Slot(EquipSlot::Cape) => {
-            draw_triangle(vec2(c.x - s * 0.4, c.y - s * 0.85), vec2(c.x + s * 0.4, c.y - s * 0.85), vec2(c.x - s * 0.9, c.y + s * 0.9), k(0.62, 0.18, 0.18));
-            draw_triangle(vec2(c.x + s * 0.4, c.y - s * 0.85), vec2(c.x + s * 0.9, c.y + s * 0.9), vec2(c.x - s * 0.9, c.y + s * 0.9), k(0.62, 0.18, 0.18));
-            draw_rectangle(c.x - s * 0.45, c.y - s * 0.92, s * 0.9, s * 0.16, ouro);
         }
         Tipo::Slot(EquipSlot::Necklace) => {
             draw_circle_lines(c.x, c.y - s * 0.25, s * 0.65, s * 0.12, ouro);
             draw_poly(c.x, c.y + s * 0.5, 4, s * 0.3, 45.0, k(0.55, 0.3, 0.9));
         }
-        Tipo::Slot(EquipSlot::Ring) | Tipo::Slot(_) => {
-            draw_circle_lines(c.x, c.y + s * 0.15, s * 0.55, s * 0.18, ouro);
-            draw_poly(c.x, c.y - s * 0.5, 6, s * 0.28, 0.0, k(0.35, 0.8, 0.95));
+        Tipo::Slot(EquipSlot::Earring) => {
+            draw_circle_lines(c.x, c.y - s * 0.35, s * 0.3, s * 0.12, ouro);
+            linha(0.0, -0.05, 0.0, 0.3, 0.1, ouro);
+            draw_poly(c.x, c.y + s * 0.55, 4, s * 0.28, 45.0, k(0.35, 0.8, 0.95));
+        }
+        Tipo::Slot(EquipSlot::Bracelet) | Tipo::Slot(_) => {
+            draw_circle_lines(c.x, c.y, s * 0.62, s * 0.26, ouro);
+            draw_poly(c.x, c.y - s * 0.62, 6, s * 0.2, 0.0, k(0.9, 0.35, 0.4));
         }
         Tipo::Pocao(q) => {
             let liq = match q {
@@ -899,12 +889,13 @@ mod testes {
 
     #[test]
     fn as_abas_separam_as_categorias() {
-        assert_eq!(aba_de(tipo(item_id::SWORD)), Aba::Equip);
-        assert_eq!(aba_de(tipo(item_id::HEAVY_SHIELD)), Aba::Equip);
+        assert_eq!(aba_de(tipo(item_id::ESPADA_E_ESCUDO)), Aba::Equip);
+        assert_eq!(aba_de(tipo(item_id::MANTO_DO_GUERREIRO)), Aba::Equip);
         assert_eq!(aba_de(tipo(item_id::HEALTH_POTION)), Aba::Consumivel);
         assert_eq!(aba_de(tipo(item_id::STEEL)), Aba::Material);
         assert_eq!(aba_de(tipo(item_id::GOLD)), Aba::Material);
-        assert_eq!(tipo(item_id::SWORD), Tipo::Arma(Conjunto::EspadaEscudo));
+        assert_eq!(tipo(item_id::ESPADA_E_ESCUDO), Tipo::Arma(Conjunto::EspadaEscudo));
+        assert_eq!(tipo(item_id::PISTOLAS), Tipo::Arma(Conjunto::Pistolas));
     }
 
     #[test]
@@ -918,11 +909,7 @@ mod testes {
 
     #[test]
     fn todo_slot_de_equipamento_aparece_na_tela() {
-        for s in [
-            EquipSlot::Weapon, EquipSlot::Armor, EquipSlot::Offhand, EquipSlot::Ring, EquipSlot::Helm,
-            EquipSlot::Legs, EquipSlot::Boots, EquipSlot::Gloves, EquipSlot::Belt, EquipSlot::Cape,
-            EquipSlot::Necklace,
-        ] {
+        for s in EquipSlot::TODOS {
             assert_ne!(nome_do_slot(s), "?", "{s:?} nao tem lugar na bolsa");
         }
     }

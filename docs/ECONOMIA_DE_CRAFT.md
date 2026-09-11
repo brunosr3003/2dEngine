@@ -89,10 +89,10 @@ e vira **matéria-prima de progressão**.
 
 ## O que ainda não existe no código
 
-- **As receitas.** Estão descritas aqui, não implementadas: os itens que elas
-  produzem — os quatro conjuntos de arma, os três pesos de armadura, os quatro
-  acessórios (`docs/COMBATE.md`) — ainda não existem como item. Receita sem
-  produto não tem o que escrever.
+- **As receitas.** Estão descritas aqui, não implementadas. Os itens que elas
+  produzem já existem (ids 400–414: os quatro conjuntos, as quatro
+  secundárias, os três pesos de armadura, os quatro acessórios); as receitas
+  antigas saíram na M27 e só os barcos continuam craftáveis.
 - **`CraftRecipe` cabe 4 ingredientes**; estas receitas pedem 6 (chave + 3
   materiais + darksteel + cobre). O struct precisa crescer.
 - **A síntese de cor** (10 → 1 com pó cintilante) não está implementada.

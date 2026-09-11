@@ -741,58 +741,13 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         S{ id: item_id::GREATER_HEAL as i32,   name:"HP Potion+",      sell:20,  buy:Some(40),     ord:Some(2), stack:20,   slot:None, lvl:1, ic:11, ir:17,  hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::GREATER_MANA as i32,   name:"MP Potion+",      sell:25,  buy:Some(50),     ord:Some(3), stack:20,   slot:None, lvl:1, ic:9,  ir:7,   hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::STAMINA_POTION as i32, name:"Stamina Potion",  sell:10,  buy:Some(20),     ord:Some(4), stack:20,   slot:None, lvl:1, ic:8,  ir:7,   hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::GEM as i32,            name:"Gem",             sell:50,  buy:None,         ord:None,    stack:99,   slot:None, lvl:1, ic:15, ir:10,  hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::IRON_INGOT as i32,     name:"Iron Bar",        sell:30,  buy:None,         ord:None,    stack:99,   slot:None, lvl:1, ic:10, ir:13,  hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::DRAGON_SCALE as i32,   name:"Dragon Scale",    sell:200, buy:None,         ord:None,    stack:99,   slot:None, lvl:1, ic:12, ir:12,  hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
         // Armas
-        S{ id: item_id::SWORD as i32,          name:"Sword",           sell:30,  buy:None,         ord:None,    stack:1,    slot:Some("Weapon"), lvl:5,  ic:1,  ir:90,  hp:(0,0),    mp:(0,0),     atk:(8,16),  def:(0,0),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::DAGGER as i32,         name:"Dagger",          sell:40,  buy:Some(80),     ord:Some(5), stack:1,    slot:Some("Weapon"), lvl:5,  ic:0,  ir:90,  hp:(0,0),    mp:(0,0),     atk:(5,12),  def:(0,0),  dex:(6,14), wis:(0,0) },
-        S{ id: item_id::GREAT_SWORD as i32,    name:"Greatsword",      sell:80,  buy:None,         ord:None,    stack:1,    slot:Some("Weapon"), lvl:10, ic:7,  ir:90,  hp:(0,0),    mp:(0,0),     atk:(20,36), def:(0,0),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::BOW as i32,            name:"Bow",             sell:75,  buy:Some(150),    ord:Some(7), stack:1,    slot:Some("Weapon"), lvl:8,  ic:13, ir:93,  hp:(0,0),    mp:(0,0),     atk:(10,20), def:(0,0),  dex:(8,16), wis:(0,0) },
-        S{ id: item_id::STAFF as i32,          name:"Staff",           sell:30,  buy:None,         ord:None,    stack:1,    slot:Some("Weapon"), lvl:6,  ic:3,  ir:93,  hp:(0,0),    mp:(20,60),   atk:(14,26), def:(0,0),  dex:(0,0),  wis:(3,8) },
-        S{ id: item_id::WAND as i32,           name:"Wand",            sell:60,  buy:None,         ord:None,    stack:1,    slot:Some("Weapon"), lvl:7,  ic:1,  ir:93,  hp:(0,0),    mp:(50,110),  atk:(4,10),  def:(0,0),  dex:(0,0),  wis:(5,12) },
-        S{ id: item_id::SCIMITAR as i32,       name:"Scimitar",        sell:50,  buy:None,         ord:None,    stack:1,    slot:Some("Weapon"), lvl:6,  ic:3,  ir:90,  hp:(0,0),    mp:(0,0),     atk:(6,14),  def:(0,0),  dex:(4,10), wis:(0,0) },
-        S{ id: item_id::AXE as i32,         name:"Axe",                sell:90,  buy:Some(180),    ord:Some(11),stack:1,    slot:Some("Weapon"), lvl:12, ic:5,  ir:90,  hp:(15,35),  mp:(0,0),     atk:(16,32), def:(2,6),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::SPEAR as i32,          name:"Spear",           sell:65,  buy:Some(130),    ord:Some(10),stack:1,    slot:Some("Weapon"), lvl:9,  ic:8,  ir:90,  hp:(0,0),    mp:(0,0),     atk:(12,22), def:(0,0),  dex:(3,9),  wis:(0,0) },
-        S{ id: item_id::CROSSBOW as i32,       name:"Crossbow",        sell:90,  buy:None,         ord:None,    stack:1,    slot:Some("Weapon"), lvl:10, ic:15, ir:93,  hp:(0,0),    mp:(0,0),     atk:(14,24), def:(0,0),  dex:(6,12), wis:(0,0) },
         // Fase F — armas tier 2 (gate de char_lvl + prof_lvl). Item lvl 10 marca o tier.
-        S{ id: item_id::ENHANCED_SWORD as i32, name:"Polished Blade",  sell:200, buy:Some(800),    ord:Some(20),stack:1,    slot:Some("Weapon"), lvl:10, ic:2,  ir:90,  hp:(8,15),   mp:(0,0),     atk:(18,22), def:(1,2),  dex:(2,4),  wis:(0,0) },
         // Fase F — armas tier 3 (char_lvl 20, sword prof 10). Item lvl 20.
-        S{ id: item_id::VETERAN_SWORD as i32,  name:"Veteran's Blade", sell:600, buy:Some(2400), ord:Some(21),stack:1,    slot:Some("Weapon"), lvl:20, ic:4,  ir:90,  hp:(15,30),  mp:(0,0),     atk:(28,34), def:(2,4),  dex:(3,6),  wis:(0,0) },
         // Fase F — armas tier 2 das outras 5 profs (char_lvl 10, prof respectiva 5).
-        S{ id: item_id::ENHANCED_BOW as i32,   name:"Reinforced Bow",  sell:200, buy:Some(800),    ord:Some(22),stack:1,    slot:Some("Weapon"), lvl:10, ic:14, ir:93,  hp:(0,0),    mp:(0,0),     atk:(22,30), def:(0,0),  dex:(18,30),wis:(0,0) },
-        S{ id: item_id::ENHANCED_STAFF as i32, name:"Enchanted Staff", sell:200, buy:Some(800),    ord:Some(23),stack:1,    slot:Some("Weapon"), lvl:10, ic:4,  ir:93,  hp:(0,0),    mp:(50,110),  atk:(28,40), def:(0,0),  dex:(0,0),  wis:(6,14) },
-        S{ id: item_id::ENHANCED_WAND as i32,  name:"Enchanted Wand",  sell:200, buy:Some(800),    ord:Some(24),stack:1,    slot:Some("Weapon"), lvl:10, ic:2,  ir:93,  hp:(0,0),    mp:(100,180), atk:(8,16),  def:(0,0),  dex:(0,0),  wis:(10,20) },
-        S{ id: item_id::ENHANCED_AXE as i32,   name:"Forged Axe",      sell:200, buy:Some(800),    ord:Some(25),stack:1,    slot:Some("Weapon"), lvl:10, ic:6,  ir:90,  hp:(25,50),  mp:(0,0),     atk:(32,46), def:(4,9),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::ENHANCED_SPEAR as i32, name:"Reinforced Spear",sell:200, buy:Some(800),    ord:Some(26),stack:1,    slot:Some("Weapon"), lvl:10, ic:9,  ir:90,  hp:(0,0),    mp:(0,0),     atk:(24,34), def:(0,0),  dex:(8,16), wis:(0,0) },
         // Armaduras / escudos
-        S{ id: item_id::ARMOR as i32,          name:"Armor",           sell:25,  buy:None,         ord:None,    stack:1,    slot:Some("Armor"),  lvl:5,  ic:0,  ir:120, hp:(25,60),  mp:(0,0),     atk:(0,0),   def:(3,8),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::SHIELD as i32,         name:"Shield",          sell:25,  buy:Some(50),     ord:Some(9), stack:1,    slot:Some("Offhand"),lvl:5,  ic:6,  ir:132, hp:(50,100), mp:(0,0),     atk:(0,0),   def:(5,12), dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::LEATHER_ARMOR as i32,  name:"Leather Armor",   sell:60,  buy:Some(120),    ord:Some(6), stack:1,    slot:Some("Armor"),  lvl:7,  ic:2,  ir:120, hp:(15,35),  mp:(0,0),     atk:(0,0),   def:(1,5),  dex:(3,9),  wis:(0,0) },
-        S{ id: item_id::PLATE_ARMOR as i32,    name:"Plate Armor",     sell:100, buy:None,         ord:None,    stack:1,    slot:Some("Armor"),  lvl:12, ic:12, ir:120, hp:(80,160), mp:(0,0),     atk:(0,0),   def:(8,16), dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::ROBE as i32,           name:"Tunic",           sell:50,  buy:None,         ord:None,    stack:1,    slot:Some("Armor"),  lvl:7,  ic:0,  ir:123, hp:(5,15),   mp:(30,90),   atk:(0,0),   def:(1,4),  dex:(0,0),  wis:(4,12) },
-        S{ id: item_id::HEAVY_SHIELD as i32,   name:"Heavy Shield",    sell:90,  buy:None,         ord:None,    stack:1,    slot:Some("Offhand"),lvl:12, ic:8,  ir:132, hp:(70,140), mp:(0,0),     atk:(0,0),   def:(10,20),dex:(0,0),  wis:(0,0) },
         // Acessórios
-        S{ id: item_id::RING as i32,           name:"Ring",            sell:20,  buy:None,         ord:None,    stack:1,    slot:Some("Ring"),    lvl:5,  ic:12, ir:128, hp:(0,0),    mp:(0,0),     atk:(0,0),   def:(0,0),  dex:(2,8),  wis:(1,5) },
-        S{ id: item_id::AMULET as i32,         name:"Amulet",          sell:90,  buy:Some(180),    ord:Some(8), stack:1,    slot:Some("Necklace"),lvl:7,  ic:0,  ir:129, hp:(8,25),   mp:(15,45),   atk:(0,0),   def:(0,3),  dex:(0,0),  wis:(4,12) },
-        S{ id: item_id::LUCKY_RING as i32,     name:"Lucky Ring",      sell:80,  buy:None,         ord:None,    stack:1,    slot:Some("Ring"),    lvl:8,  ic:13, ir:128, hp:(5,18),   mp:(10,30),   atk:(1,4),   def:(0,0),  dex:(3,9),  wis:(1,4) },
-        S{ id: item_id::PENDANT as i32,        name:"Pendant",         sell:80,  buy:None,         ord:None,    stack:1,    slot:Some("Necklace"),lvl:9,  ic:2,  ir:129, hp:(15,35),  mp:(20,50),   atk:(0,0),   def:(0,2),  dex:(0,0),  wis:(2,6) },
-        S{ id: item_id::CHARM as i32,          name:"Mystic Amulet",   sell:100, buy:None,         ord:None,    stack:1,    slot:Some("Necklace"),lvl:10, ic:4,  ir:129, hp:(0,0),    mp:(5,20),    atk:(2,6),   def:(0,0),  dex:(2,6),  wis:(2,6) },
         // Phase E — slots novos
-        S{ id: item_id::HELM_LEATHER as i32,   name:"Leather Cap",     sell:40,  buy:None,         ord:None,    stack:1,    slot:Some("Helm"),   lvl:6,  ic:0,  ir:116, hp:(8,22),   mp:(0,0),     atk:(0,0),   def:(1,5),  dex:(2,6),  wis:(0,0) },
-        S{ id: item_id::HELM_PLATE as i32,     name:"Plate Helm",      sell:80,  buy:None,         ord:None,    stack:1,    slot:Some("Helm"),   lvl:11, ic:4,  ir:116, hp:(30,60),  mp:(0,0),     atk:(0,0),   def:(4,10), dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::LEGS_LEATHER as i32,   name:"Leather Pants",   sell:45,  buy:None,         ord:None,    stack:1,    slot:Some("Legs"),   lvl:6,  ic:0,  ir:124, hp:(12,28),  mp:(0,0),     atk:(0,0),   def:(1,5),  dex:(3,7),  wis:(0,0) },
-        S{ id: item_id::LEGS_PLATE as i32,     name:"Plate Pants",     sell:90,  buy:None,         ord:None,    stack:1,    slot:Some("Legs"),   lvl:11, ic:4,  ir:124, hp:(40,80),  mp:(0,0),     atk:(0,0),   def:(6,12), dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::BOOTS_LEATHER as i32,  name:"Leather Boots",   sell:35,  buy:None,         ord:None,    stack:1,    slot:Some("Boots"),  lvl:5,  ic:0,  ir:126, hp:(5,15),   mp:(0,0),     atk:(0,0),   def:(0,3),  dex:(4,8),  wis:(0,0) },
-        S{ id: item_id::BOOTS_PLATE as i32,    name:"Plate Boots",     sell:70,  buy:None,         ord:None,    stack:1,    slot:Some("Boots"),  lvl:10, ic:4,  ir:126, hp:(20,40),  mp:(0,0),     atk:(0,0),   def:(3,7),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::GLOVES_LEATHER as i32, name:"Leather Gloves",  sell:30,  buy:None,         ord:None,    stack:1,    slot:Some("Gloves"), lvl:5,  ic:0,  ir:122, hp:(0,0),    mp:(0,0),     atk:(1,5),   def:(0,2),  dex:(3,7),  wis:(0,0) },
-        S{ id: item_id::GLOVES_PLATE as i32,   name:"Gauntlets",       sell:65,  buy:None,         ord:None,    stack:1,    slot:Some("Gloves"), lvl:10, ic:4,  ir:122, hp:(12,28),  mp:(0,0),     atk:(3,8),   def:(2,6),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::BELT_BASIC as i32,     name:"Belt",            sell:35,  buy:None,         ord:None,    stack:1,    slot:Some("Belt"),   lvl:5,  ic:0,  ir:130, hp:(15,35),  mp:(0,0),     atk:(0,0),   def:(0,3),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::BELT_MAGIC as i32,     name:"Magic Sash",      sell:75,  buy:None,         ord:None,    stack:1,    slot:Some("Belt"),   lvl:9,  ic:4,  ir:130, hp:(0,0),    mp:(20,50),   atk:(0,0),   def:(0,0),  dex:(0,0),  wis:(2,6) },
-        S{ id: item_id::CAPE_BASIC as i32,     name:"Cape",            sell:40,  buy:None,         ord:None,    stack:1,    slot:Some("Cape"),   lvl:6,  ic:0,  ir:134, hp:(12,28),  mp:(0,0),     atk:(0,0),   def:(2,6),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::CAPE_MAGIC as i32,     name:"Magic Cloak",     sell:80,  buy:None,         ord:None,    stack:1,    slot:Some("Cape"),   lvl:10, ic:4,  ir:134, hp:(0,0),    mp:(25,60),   atk:(0,0),   def:(0,3),  dex:(0,0),  wis:(3,9) },
-        S{ id: item_id::NECKLACE_BASIC as i32, name:"Necklace",        sell:50,  buy:None,         ord:None,    stack:1,    slot:Some("Necklace"),lvl:7,  ic:6,  ir:129, hp:(12,28),  mp:(5,15),    atk:(0,0),   def:(0,0),  dex:(0,0),  wis:(2,5) },
-        S{ id: item_id::NECKLACE_MAGIC as i32, name:"Magic Necklace",  sell:100, buy:None,         ord:None,    stack:1,    slot:Some("Necklace"),lvl:11, ic:8,  ir:129, hp:(0,0),    mp:(25,55),   atk:(0,0),   def:(0,0),  dex:(0,0),  wis:(4,10) },
         // Embarcacao — usavel na margem (consumida ao usar; volta no dismount).
         // Sem equip slot. Stack 1 (item unico). Icone re-aproveitado de barril
         // ate ter art proprio.
@@ -802,6 +757,24 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // entregava um item sem nome e sem `stack_max`, que caia em stack de 1 e
         // enchia a bolsa com dezenas de linhas de uma madeira cada. Achado com os
         // bots coletando na ilha.
+        // === O equipamento (docs/COMBATE.md): um id por peca; grau e refino
+        // moram na instancia. As faixas de stat sao as do template
+        // (`items::item_template`). ===
+        S{ id: item_id::ESPADA_E_ESCUDO as i32,    name:"Espada e Escudo",    sell:60, buy:Some(240), ord:Some(20), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(10,30), mp:(0,0),   atk:(8,16), def:(0,0),  dex:(0,0),  wis:(0,0) },
+        S{ id: item_id::KATANA as i32,             name:"Katana",             sell:60, buy:Some(240), ord:Some(21), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(8,15), def:(0,0),  dex:(5,12), wis:(0,0) },
+        S{ id: item_id::PISTOLAS as i32,           name:"Duas Pistolas",      sell:60, buy:Some(240), ord:Some(22), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(7,14), def:(0,0),  dex:(6,13), wis:(0,0) },
+        S{ id: item_id::ANEL_MAGICO as i32,        name:"Anel Mágico",        sell:60, buy:Some(240), ord:Some(23), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(30,70), atk:(6,13), def:(0,0),  dex:(0,0),  wis:(4,10) },
+        S{ id: item_id::MANTO_DO_GUERREIRO as i32, name:"Manto do Guerreiro", sell:40, buy:Some(160), ord:Some(24), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(20,50), mp:(0,0),   atk:(0,0),  def:(3,8),  dex:(0,0),  wis:(0,0) },
+        S{ id: item_id::BAINHA as i32,             name:"Bainha",             sell:40, buy:Some(160), ord:Some(25), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(1,4),  def:(0,0),  dex:(3,8),  wis:(0,0) },
+        S{ id: item_id::COLDRE as i32,             name:"Coldre",             sell:40, buy:Some(160), ord:Some(26), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(2,5),  def:(0,0),  dex:(3,7),  wis:(0,0) },
+        S{ id: item_id::MANTO_DO_MAGO as i32,      name:"Manto do Mago",      sell:40, buy:Some(160), ord:Some(27), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(25,60), atk:(0,0),  def:(0,0),  dex:(0,0),  wis:(3,8) },
+        S{ id: item_id::ARMADURA_LEVE as i32,      name:"Armadura Leve",      sell:50, buy:Some(200), ord:Some(28), stack:1, slot:Some("Armor"),    lvl:1, ic:-1, ir:-1, hp:(15,35), mp:(0,0),   atk:(0,0),  def:(1,4),  dex:(2,6),  wis:(0,0) },
+        S{ id: item_id::ARMADURA_MEDIA as i32,     name:"Armadura Média",     sell:70, buy:Some(280), ord:Some(29), stack:1, slot:Some("Armor"),    lvl:1, ic:-1, ir:-1, hp:(30,60), mp:(0,0),   atk:(0,0),  def:(4,9),  dex:(0,0),  wis:(0,0) },
+        S{ id: item_id::ARMADURA_PESADA as i32,    name:"Armadura Pesada",    sell:90, buy:Some(360), ord:Some(30), stack:1, slot:Some("Armor"),    lvl:1, ic:-1, ir:-1, hp:(60,120),mp:(0,0),   atk:(0,0),  def:(8,16), dex:(0,0),  wis:(0,0) },
+        S{ id: item_id::BRINCO as i32,             name:"Brinco",             sell:35, buy:Some(140), ord:Some(31), stack:1, slot:Some("Earring"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(1,4),  def:(0,0),  dex:(2,6),  wis:(0,0) },
+        S{ id: item_id::AMULETO as i32,            name:"Amuleto",            sell:35, buy:Some(140), ord:Some(32), stack:1, slot:Some("Necklace"), lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(20,50), atk:(0,0),  def:(0,0),  dex:(0,0),  wis:(2,6) },
+        S{ id: item_id::BRACELETE as i32,          name:"Bracelete",          sell:35, buy:Some(140), ord:Some(33), stack:1, slot:Some("Bracelet"), lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(2,5),  def:(1,3),  dex:(0,0),  wis:(0,0) },
+        S{ id: item_id::CINTO as i32,              name:"Cinto",              sell:35, buy:Some(140), ord:Some(34), stack:1, slot:Some("Belt"),     lvl:1, ic:-1, ir:-1, hp:(20,45), mp:(0,0),   atk:(0,0),  def:(1,3),  dex:(0,0),  wis:(0,0) },
         S{ id: item_id::WOOD_T1 as i32,        name:"Madeira T1",   sell:2,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::WOOD_T2 as i32,        name:"Madeira T2",   sell:6,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::WOOD_T3 as i32,        name:"Madeira T3",   sell:18,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
@@ -810,10 +783,6 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         S{ id: item_id::LEATHER_T2 as i32,     name:"Couro T2",     sell:9,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::LEATHER_T3 as i32,     name:"Couro T3",     sell:27,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::LEATHER_T4 as i32,     name:"Couro T4",     sell:81,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::MINERAL_T1 as i32,     name:"Mineral T1",   sell:4,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::MINERAL_T2 as i32,     name:"Mineral T2",   sell:12,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::MINERAL_T3 as i32,     name:"Mineral T3",   sell:36,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::MINERAL_T4 as i32,     name:"Mineral T4",   sell:108,  buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
 
         // === Materiais de craft. Poucos nomes girando muito: arma e sub-arma
         // gastam o mesmo, armaduras entre si idem, acessorios idem. Cada um
@@ -1013,56 +982,29 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         let drops: &[(i32, u16, i32, i32, f32)] = &[
             // Boss (7) — alto valor + raridades
             (7, item_id::GOLD,           200, 500, 1.0),
-            (7, item_id::DRAGON_SCALE,   1,   4,   1.0),
             (7, item_id::GREATER_HEAL,   2,   5,   1.0),
             (7, item_id::GREATER_MANA,   2,   2,   1.0),
-            (7, item_id::GREAT_SWORD,    1,   1,   0.55),
-            (7, item_id::WAND,           1,   1,   0.55),
-            (7, item_id::PLATE_ARMOR,    1,   1,   0.50),
-            (7, item_id::ROBE,           1,   1,   0.55),
-            (7, item_id::LUCKY_RING,     1,   1,   0.45),
             // Berserker (5) — armadura
             (5, item_id::GOLD,           25,  60,  1.0),
-            (5, item_id::PLATE_ARMOR,    1,   1,   0.22),
-            (5, item_id::ARMOR,          1,   1,   0.23),
             (5, item_id::GREATER_HEAL,   1,   1,   0.30),
-            (5, item_id::IRON_INGOT,     1,   3,   0.20),
             // Mago (4) — staff/wand + mana
             (4, item_id::GOLD,           15,  35,  1.0),
-            (4, item_id::WAND,           1,   1,   0.22),
-            (4, item_id::STAFF,          1,   1,   0.23),
             (4, item_id::MANA_POTION,    1,   3,   0.35),
-            (4, item_id::ROBE,           1,   1,   0.18),
-            (4, item_id::GEM,            1,   1,   0.12),
             // Tank (1)
             (1, item_id::GOLD,           15,  40,  1.0),
-            (1, item_id::SHIELD,         1,   1,   0.18),
-            (1, item_id::ARMOR,          1,   1,   0.25),
-            (1, item_id::SWORD,          1,   1,   0.10),
             (1, item_id::HEALTH_POTION,  1,   3,   0.30),
-            (1, item_id::IRON_INGOT,     1,   1,   0.15),
             // Ranger/Arqueiro (2 e 6)
             (2, item_id::GOLD,           10,  28,  1.0),
-            (2, item_id::BOW,            1,   1,   0.20),
-            (2, item_id::RING,           1,   1,   0.13),
-            (2, item_id::AMULET,         1,   1,   0.12),
             (2, item_id::STAMINA_POTION, 1,   1,   0.35),
             (6, item_id::GOLD,           10,  28,  1.0),
-            (6, item_id::BOW,            1,   1,   0.20),
-            (6, item_id::RING,           1,   1,   0.13),
-            (6, item_id::AMULET,         1,   1,   0.12),
             (6, item_id::STAMINA_POTION, 1,   1,   0.35),
             // Ninja (3) — leve + dagger
             (3, item_id::GOLD,           8,   22,  1.0),
-            (3, item_id::DAGGER,         1,   1,   0.25),
-            (3, item_id::LEATHER_ARMOR,  1,   1,   0.22),
             (3, item_id::MANA_POTION,    1,   1,   0.35),
-            (3, item_id::LUCKY_RING,     1,   1,   0.10),
             // Grunt (0)
             (0, item_id::GOLD,           4,   14,  1.0),
             (0, item_id::HEALTH_POTION,  1,   1,   0.25),
             (0, item_id::MANA_POTION,    1,   1,   0.15),
-            (0, item_id::IRON_INGOT,     1,   1,   0.08),
         ];
         for (kind, item, qmin, qmax, chance) in drops {
             sqlx::query(
@@ -1079,122 +1021,34 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     // existirem na tabela. Permite expandir o pool de drops sem resetar DB.
     let new_drops: &[(i32, u16, i32, i32, f32)] = &[
         // Scimitar (24) — light melee, ninja/ranger
-        (3, item_id::SCIMITAR,      1, 1, 0.18),
-        (2, item_id::SCIMITAR,      1, 1, 0.10),
-        (6, item_id::SCIMITAR,      1, 1, 0.10),
         // Hammer (25) — heavy weapon
-        (5, item_id::AXE,        1, 1, 0.18),
-        (1, item_id::AXE,        1, 1, 0.12),
-        (7, item_id::AXE,        1, 1, 0.40),
         // Spear (26) — pole
-        (1, item_id::SPEAR,         1, 1, 0.16),
-        (5, item_id::SPEAR,         1, 1, 0.14),
         // Crossbow (27) — ranged
-        (2, item_id::CROSSBOW,      1, 1, 0.15),
-        (6, item_id::CROSSBOW,      1, 1, 0.18),
-        (7, item_id::CROSSBOW,      1, 1, 0.45),
         // Heavy Shield (28) — defense
-        (1, item_id::HEAVY_SHIELD,  1, 1, 0.16),
-        (5, item_id::HEAVY_SHIELD,  1, 1, 0.10),
-        (7, item_id::HEAVY_SHIELD,  1, 1, 0.40),
         // Pendant (29) — joia
-        (4, item_id::PENDANT,       1, 1, 0.10),
-        (7, item_id::PENDANT,       1, 1, 0.35),
-        (2, item_id::PENDANT,       1, 1, 0.08),
-        (6, item_id::PENDANT,       1, 1, 0.08),
         // Charm (30) — joia
-        (3, item_id::CHARM,         1, 1, 0.12),
-        (4, item_id::CHARM,         1, 1, 0.10),
-        (2, item_id::CHARM,         1, 1, 0.08),
-        (6, item_id::CHARM,         1, 1, 0.08),
         // === Fase E — slots novos ===
         // Helm leather/plate (31, 32)
-        (3, item_id::HELM_LEATHER,  1, 1, 0.14),
-        (2, item_id::HELM_LEATHER,  1, 1, 0.12),
-        (6, item_id::HELM_LEATHER,  1, 1, 0.12),
-        (1, item_id::HELM_PLATE,    1, 1, 0.16),
-        (5, item_id::HELM_PLATE,    1, 1, 0.14),
-        (7, item_id::HELM_PLATE,    1, 1, 0.40),
         // Boots leather/plate (35, 36)
-        (3, item_id::BOOTS_LEATHER, 1, 1, 0.14),
-        (2, item_id::BOOTS_LEATHER, 1, 1, 0.12),
-        (6, item_id::BOOTS_LEATHER, 1, 1, 0.12),
-        (1, item_id::BOOTS_PLATE,   1, 1, 0.14),
-        (5, item_id::BOOTS_PLATE,   1, 1, 0.12),
-        (7, item_id::BOOTS_PLATE,   1, 1, 0.35),
         // Gloves leather/plate (37, 38)
-        (3, item_id::GLOVES_LEATHER,1, 1, 0.14),
-        (2, item_id::GLOVES_LEATHER,1, 1, 0.12),
-        (6, item_id::GLOVES_LEATHER,1, 1, 0.12),
-        (1, item_id::GLOVES_PLATE,  1, 1, 0.14),
-        (5, item_id::GLOVES_PLATE,  1, 1, 0.12),
-        (7, item_id::GLOVES_PLATE,  1, 1, 0.35),
         // Cape basic/magic (41, 42)
-        (1, item_id::CAPE_BASIC,    1, 1, 0.10),
-        (5, item_id::CAPE_BASIC,    1, 1, 0.10),
-        (3, item_id::CAPE_BASIC,    1, 1, 0.10),
-        (4, item_id::CAPE_MAGIC,    1, 1, 0.12),
-        (6, item_id::CAPE_MAGIC,    1, 1, 0.10),
-        (7, item_id::CAPE_MAGIC,    1, 1, 0.30),
         // Necklace basic/magic (43, 44)
-        (2, item_id::NECKLACE_BASIC,1, 1, 0.10),
-        (6, item_id::NECKLACE_BASIC,1, 1, 0.10),
-        (1, item_id::NECKLACE_BASIC,1, 1, 0.10),
-        (4, item_id::NECKLACE_MAGIC,1, 1, 0.12),
-        (3, item_id::NECKLACE_MAGIC,1, 1, 0.10),
-        (7, item_id::NECKLACE_MAGIC,1, 1, 0.35),
         // === Fase F — armas tier 2 ===
         // Lâmina Polida (45) — drop em inimigos lvl 15-25 (sistema novo: kind=level).
         // Chance baixa pra ser raro. Tank/Berserker (kinds 1, 5) também dropam
         // pq são melee de tier médio no sistema legacy.
-        (15, item_id::ENHANCED_SWORD, 1, 1, 0.04),
-        (18, item_id::ENHANCED_SWORD, 1, 1, 0.05),
-        (20, item_id::ENHANCED_SWORD, 1, 1, 0.06),
-        (22, item_id::ENHANCED_SWORD, 1, 1, 0.06),
-        (25, item_id::ENHANCED_SWORD, 1, 1, 0.08),
-        (1,  item_id::ENHANCED_SWORD, 1, 1, 0.04),
-        (5,  item_id::ENHANCED_SWORD, 1, 1, 0.04),
         // === Fase F — armas tier 3 ===
         // Lâmina do Veterano (46) — drop em inimigos lvl 20-30. Mais raro que tier 2.
         // Boss (kind 7 legacy) também dropa pq é o end-game current.
-        (20, item_id::VETERAN_SWORD,  1, 1, 0.02),
-        (23, item_id::VETERAN_SWORD,  1, 1, 0.03),
-        (25, item_id::VETERAN_SWORD,  1, 1, 0.04),
-        (27, item_id::VETERAN_SWORD,  1, 1, 0.05),
-        (30, item_id::VETERAN_SWORD,  1, 1, 0.06),
-        (7,  item_id::VETERAN_SWORD,  1, 1, 0.15),
         // === Fase F — armas tier 2 outras profs (47..51) ===
         // Distribuição: cada arma dropa em mobs lvl 15-25 com chance 0.04-0.06,
         // + um kind legacy temático (Ranger pra Bow, Mago pra Staff/Wand,
         // Berserker pra Axe, Tank pra Spear).
         // Arco Reforçado (47) — Ranger/Arqueiro
-        (15, item_id::ENHANCED_BOW,    1, 1, 0.04),
-        (18, item_id::ENHANCED_BOW,    1, 1, 0.05),
-        (22, item_id::ENHANCED_BOW,    1, 1, 0.06),
-        (2,  item_id::ENHANCED_BOW,    1, 1, 0.04),
-        (6,  item_id::ENHANCED_BOW,    1, 1, 0.04),
         // Cajado Encantado (48) — Mago
-        (15, item_id::ENHANCED_STAFF,  1, 1, 0.04),
-        (18, item_id::ENHANCED_STAFF,  1, 1, 0.05),
-        (22, item_id::ENHANCED_STAFF,  1, 1, 0.06),
-        (4,  item_id::ENHANCED_STAFF,  1, 1, 0.06),
         // Varinha Encantada (49) — Mago
-        (15, item_id::ENHANCED_WAND,   1, 1, 0.04),
-        (18, item_id::ENHANCED_WAND,   1, 1, 0.05),
-        (22, item_id::ENHANCED_WAND,   1, 1, 0.06),
-        (4,  item_id::ENHANCED_WAND,   1, 1, 0.06),
         // Machado Forjado (50) — Berserker/Tank
-        (15, item_id::ENHANCED_AXE,    1, 1, 0.04),
-        (18, item_id::ENHANCED_AXE,    1, 1, 0.05),
-        (22, item_id::ENHANCED_AXE,    1, 1, 0.06),
-        (5,  item_id::ENHANCED_AXE,    1, 1, 0.05),
-        (1,  item_id::ENHANCED_AXE,    1, 1, 0.04),
         // Lança Reforçada (51) — Tank/Berserker
-        (15, item_id::ENHANCED_SPEAR,  1, 1, 0.04),
-        (18, item_id::ENHANCED_SPEAR,  1, 1, 0.05),
-        (22, item_id::ENHANCED_SPEAR,  1, 1, 0.06),
-        (1,  item_id::ENHANCED_SPEAR,  1, 1, 0.05),
-        (5,  item_id::ENHANCED_SPEAR,  1, 1, 0.04),
     ];
     let mut inserted = 0usize;
     for (kind, item, qmin, qmax, chance) in new_drops {
@@ -1222,6 +1076,37 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         tracing::info!("economy seed: {} loot drops aditivos (itens novos)", inserted);
     }
 
+    // O equipamento novo (docs/COMBATE.md) cai de qualquer bicho, com chance
+    // baixa; do chefe (7), dez vezes mais. Aditivo e idempotente: so' entra o
+    // par (bicho, peca) que ainda nao existe, entao o admin pode ajustar.
+    {
+        use item_id::*;
+        let pecas: [(u16, f32); 15] = [
+            (ESPADA_E_ESCUDO, 0.02), (KATANA, 0.02), (PISTOLAS, 0.02), (ANEL_MAGICO, 0.02),
+            (MANTO_DO_GUERREIRO, 0.015), (BAINHA, 0.015), (COLDRE, 0.015), (MANTO_DO_MAGO, 0.015),
+            (ARMADURA_LEVE, 0.02), (ARMADURA_MEDIA, 0.02), (ARMADURA_PESADA, 0.02),
+            (BRINCO, 0.015), (AMULETO, 0.015), (BRACELETE, 0.015), (CINTO, 0.015),
+        ];
+        let mut n = 0u64;
+        for kind in 0..=7i32 {
+            for (item, chance) in pecas {
+                let c = if kind == 7 { (chance * 10.0).min(0.5) } else { chance };
+                n += sqlx::query(
+                    "INSERT INTO loot_drops (enemy_kind, item_id, qty_min, qty_max, chance) \
+                     SELECT $1, $2, 1, 1, $3 \
+                     WHERE EXISTS (SELECT 1 FROM enemy_kinds WHERE kind = $1) \
+                       AND NOT EXISTS (SELECT 1 FROM loot_drops WHERE enemy_kind = $1 AND item_id = $2)"
+                )
+                .bind(kind).bind(item as i32).bind(c)
+                .execute(pool).await?
+                .rows_affected();
+            }
+        }
+        if n > 0 {
+            tracing::info!("economy seed: {n} drops do equipamento novo");
+        }
+    }
+
     // Seed dos shops dos vendors. shop_id=1 fica como generalista (legacy
     // do shop antigo). Demais são especializados.
     let shop_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vendor_shops")
@@ -1230,26 +1115,26 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         let shops: &[(i32, &str, &[u16])] = &[
             (1, "Merchant", &[
                 item_id::HEALTH_POTION, item_id::MANA_POTION, item_id::GREATER_HEAL,
-                item_id::GREATER_MANA, item_id::STAMINA_POTION, item_id::DAGGER,
-                item_id::LEATHER_ARMOR, item_id::BOW, item_id::AMULET, item_id::SHIELD,
+                item_id::GREATER_MANA, item_id::STAMINA_POTION,
+                item_id::ESPADA_E_ESCUDO, item_id::KATANA, item_id::PISTOLAS, item_id::ANEL_MAGICO,
+                item_id::ARMADURA_MEDIA,
             ]),
             (2, "Swordsmith", &[
-                item_id::SWORD, item_id::DAGGER, item_id::GREAT_SWORD,
+                item_id::ESPADA_E_ESCUDO, item_id::KATANA, item_id::MANTO_DO_GUERREIRO, item_id::BAINHA,
             ]),
             (3, "Alchemist", &[
                 item_id::HEALTH_POTION, item_id::MANA_POTION, item_id::GREATER_HEAL,
                 item_id::GREATER_MANA, item_id::STAMINA_POTION,
             ]),
             (4, "Blacksmith", &[
-                item_id::ARMOR, item_id::SHIELD, item_id::LEATHER_ARMOR,
-                item_id::PLATE_ARMOR,
+                item_id::ARMADURA_LEVE, item_id::ARMADURA_MEDIA, item_id::ARMADURA_PESADA,
             ]),
             (5, "Mage", &[
-                item_id::WAND, item_id::STAFF, item_id::ROBE, item_id::AMULET,
-                item_id::LUCKY_RING, item_id::RING,
+                item_id::ANEL_MAGICO, item_id::MANTO_DO_MAGO, item_id::BRINCO, item_id::AMULETO,
+                item_id::BRACELETE, item_id::CINTO,
             ]),
             (6, "Archer", &[
-                item_id::BOW, item_id::STAMINA_POTION,
+                item_id::PISTOLAS, item_id::COLDRE, item_id::STAMINA_POTION,
             ]),
         ];
         for (sid, name, items) in shops {
@@ -1270,38 +1155,18 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
 
     // Adiciona itens novos aos vendors existentes (idempotente via ON CONFLICT).
     let new_shop_items: &[(i32, u16)] = &[
-        (2, item_id::SCIMITAR), (2, item_id::SPEAR), (2, item_id::AXE),
-        (4, item_id::HEAVY_SHIELD),
-        (5, item_id::PENDANT), (5, item_id::CHARM),
-        (6, item_id::CROSSBOW),
-        // Mercador (shop 1) tambem vende Axe e Spear — eh o unico vendor
-        // NPC que sempre tem no mundo, garante que o player consiga comprar.
-        (1, item_id::AXE), (1, item_id::SPEAR),
-        // Fase F — Lâmina Polida no Espadeiro (shop 2). Buy_price 800g vem do
-        // seed do item; gate de char_lvl + prof_lvl bloqueia equip mesmo após compra.
-        (2, item_id::ENHANCED_SWORD),
-        // Fase F — Lâmina do Veterano no Espadeiro (2400g, char_lvl 20, prof 10).
-        (2, item_id::VETERAN_SWORD),
-        // Fase F — armas tier 2 das outras profs (800g cada).
-        (6, item_id::ENHANCED_BOW),     // Arqueiro
-        (5, item_id::ENHANCED_STAFF),   // Mística
-        (5, item_id::ENHANCED_WAND),    // Mística
-        (2, item_id::ENHANCED_AXE),     // Espadeiro (também vende machados)
-        (2, item_id::ENHANCED_SPEAR),   // Espadeiro
-        // Mercador (1) — fallback acessível, vende TUDO tier 2/3. Garante que
-        // mesmo no mapa onde só Klaus existe, o player consiga comprar todas.
-        (1, item_id::ENHANCED_SWORD),
-        (1, item_id::VETERAN_SWORD),
-        (1, item_id::ENHANCED_BOW),
-        (1, item_id::ENHANCED_STAFF),
-        (1, item_id::ENHANCED_WAND),
-        (1, item_id::ENHANCED_AXE),
-        (1, item_id::ENHANCED_SPEAR),
-        // Recursos T1 vendaveis no Mercador — facilita early game (wood/leather/mineral
-        // basicos). Buy price = sell_price * 3 setado em UPDATE separado abaixo.
+        // O equipamento novo em cada loja (docs/COMBATE.md). O Mercador (1) e' o
+        // unico que sempre existe no mundo, entao vende as quatro armas.
+        (1, item_id::ESPADA_E_ESCUDO), (1, item_id::KATANA), (1, item_id::PISTOLAS), (1, item_id::ANEL_MAGICO),
+        (1, item_id::ARMADURA_MEDIA),
+        (2, item_id::ESPADA_E_ESCUDO), (2, item_id::KATANA), (2, item_id::MANTO_DO_GUERREIRO), (2, item_id::BAINHA),
+        (4, item_id::ARMADURA_LEVE), (4, item_id::ARMADURA_MEDIA), (4, item_id::ARMADURA_PESADA),
+        (5, item_id::ANEL_MAGICO), (5, item_id::MANTO_DO_MAGO), (5, item_id::BRINCO), (5, item_id::AMULETO),
+        (5, item_id::BRACELETE), (5, item_id::CINTO),
+        (6, item_id::PISTOLAS), (6, item_id::COLDRE),
+        // Recursos T1 vendaveis no Mercador — facilita early game.
         (1, item_id::WOOD_T1),
         (1, item_id::LEATHER_T1),
-        (1, item_id::MINERAL_T1),
     ];
     for (sid, item) in new_shop_items {
         let exists: i64 = sqlx::query_scalar(
@@ -1327,7 +1192,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     // Idempotente: so seta se ainda for NULL/0 — admin pode editar via web sem
     // ser sobrescrito.
     let t1_resources: &[u16] = &[
-        item_id::WOOD_T1, item_id::LEATHER_T1, item_id::MINERAL_T1,
+        item_id::WOOD_T1, item_id::LEATHER_T1,
     ];
     for &iid in t1_resources {
         sqlx::query(
@@ -1355,10 +1220,10 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             ("Tree",   3, item_id::WOOD_T3,    5, 7, 1.0),
             ("Tree",   4, item_id::WOOD_T4,    6, 8, 1.0),
             // Rock → Mineral
-            ("Rock",   1, item_id::MINERAL_T1, 3, 5, 1.0),
-            ("Rock",   2, item_id::MINERAL_T2, 4, 6, 1.0),
-            ("Rock",   3, item_id::MINERAL_T3, 5, 7, 1.0),
-            ("Rock",   4, item_id::MINERAL_T4, 6, 8, 1.0),
+            ("Rock",   1, item_id::na_cor(item_id::STEEL, 1), 3, 5, 1.0),
+            ("Rock",   2, item_id::na_cor(item_id::STEEL, 2), 4, 6, 1.0),
+            ("Rock",   3, item_id::na_cor(item_id::STEEL, 3), 5, 7, 1.0),
+            ("Rock",   4, item_id::na_cor(item_id::STEEL, 4), 6, 8, 1.0),
             // Flower → Couro (default legado; admin troca pra herbal/etc.)
             ("Flower", 1, item_id::LEATHER_T1, 3, 5, 1.0),
             ("Flower", 2, item_id::LEATHER_T2, 4, 6, 1.0),
@@ -1444,6 +1309,69 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             }
         }
         tracing::info!("economy: {n} drops de pedra (materiais de craft) inseridos");
+    }
+
+    // M27: os itens do sistema antigo viram os do formato novo (docs/COMBATE.md)
+    // — a arma pelo conjunto que ela ja' era, o escudo pela secundaria do
+    // conjunto da arma, a armadura pelo peso, colar em amuleto, anel em
+    // brinco ou bracelete, cinto em cinto. O que nao tem para onde ir (elmo,
+    // calca, bota, luva, capa, os aneis de capitulo, gema, barra, escama de
+    // dragao, minerio, ferramenta, as faixas de tier da Fase G) sai.
+    //
+    // Roda em todo boot e e' idempotente: depois da primeira vez nao sobra id
+    // velho pra trocar nem pra apagar.
+    {
+        const PRA_NOVO: &str = "CASE \
+            WHEN item_id IN (3,13,24,25,45,46,50) THEN 400 \
+            WHEN item_id IN (12,26,51) THEN 401 \
+            WHEN item_id IN (14,27,47) THEN 402 \
+            WHEN item_id IN (6,15,48,49) THEN 403 \
+            WHEN item_id IN (7,28) THEN 404 \
+            WHEN item_id IN (16,18) THEN 408 \
+            WHEN item_id = 4 THEN 409 \
+            WHEN item_id = 17 THEN 410 \
+            WHEN item_id = 5 THEN 411 \
+            WHEN item_id IN (19,29,30,43,44) THEN 412 \
+            WHEN item_id = 20 THEN 413 \
+            WHEN item_id IN (39,40) THEN 414 END";
+        const TEM_NOVO: &str = "item_id IN (3,4,5,6,7,12,13,14,15,16,17,18,19,20,24,25,26,27,28,29,30,39,40,43,44,45,46,47,48,49,50,51)";
+        const SO_VELHO: &str = "((item_id BETWEEN 3 AND 51 AND item_id NOT IN (8,9,10,11)) \
+            OR item_id BETWEEN 68 AND 71 OR item_id BETWEEN 80 AND 95 OR item_id BETWEEN 102 AND 268)";
+        let na_coluna = |sql: &str, col: &str| sql.replace("item_id", col);
+        let mut feitos = 0u64;
+        for sql in [
+            format!("UPDATE equipment SET item_id = {PRA_NOVO} WHERE {TEM_NOVO}"),
+            format!("UPDATE inventory SET item_id = {PRA_NOVO} WHERE {TEM_NOVO}"),
+            format!("UPDATE vault SET item_id = {PRA_NOVO} WHERE {TEM_NOVO}"),
+            // o anel virou brinco ou bracelete: o slot acompanha
+            "UPDATE equipment SET slot = 'earring' WHERE slot = 'ring' AND item_id = 411".to_string(),
+            "UPDATE equipment SET slot = 'bracelet' WHERE slot = 'ring' AND item_id = 413".to_string(),
+            // a secundaria e' a do conjunto da arma
+            "UPDATE equipment e SET item_id = CASE (SELECT w.item_id FROM equipment w \
+                 WHERE w.character_name = e.character_name AND w.slot = 'weapon') \
+                 WHEN 401 THEN 405 WHEN 402 THEN 406 WHEN 403 THEN 407 ELSE 404 END \
+             WHERE e.slot = 'offhand' AND e.item_id BETWEEN 404 AND 407".to_string(),
+            "DELETE FROM equipment WHERE slot NOT IN ('weapon','offhand','armor','earring','necklace','bracelet','belt')".to_string(),
+            format!("DELETE FROM equipment WHERE {SO_VELHO}"),
+            format!("DELETE FROM inventory WHERE {SO_VELHO}"),
+            format!("DELETE FROM vault WHERE {SO_VELHO}"),
+            format!("DELETE FROM loot_drops WHERE {SO_VELHO}"),
+            format!("DELETE FROM vendor_shop_items WHERE {SO_VELHO}"),
+            format!("DELETE FROM farm_node_drops WHERE {SO_VELHO}"),
+            // receita: so' os barcos ficam, e o Lylian troca minerio por aco
+            "DELETE FROM craft_recipes WHERE id NOT IN (200, 201)".to_string(),
+            "UPDATE craft_recipes SET inputs = '[[60,100],[61,100],[300,100],[65,100]]' WHERE id = 200".to_string(),
+            format!("UPDATE characters SET starting_weapon = {} WHERE {}",
+                na_coluna(PRA_NOVO, "starting_weapon"), na_coluna(TEM_NOVO, "starting_weapon")),
+            format!("UPDATE enemy_kinds SET build_weapon = {} WHERE {}",
+                na_coluna(PRA_NOVO, "build_weapon"), na_coluna(TEM_NOVO, "build_weapon")),
+            format!("DELETE FROM items WHERE {}", na_coluna(SO_VELHO, "id")),
+        ] {
+            feitos += sqlx::query(&sql).execute(pool).await?.rows_affected();
+        }
+        if feitos > 0 {
+            tracing::info!("M27: {feitos} linhas migradas pro equipamento novo");
+        }
     }
 
     Ok(())
@@ -1686,19 +1614,8 @@ async fn load_equipment(pool: &PgPool, char_name: &str) -> Result<shared::Equipm
         let iid = item_id as u16;
         let inst: Option<shared::items::ItemInstance> =
             inst_json.and_then(|s| serde_json::from_str(&s).ok());
-        match slot.as_str() {
-            "weapon"   => { eq.weapon   = Some(iid); eq.weapon_inst   = inst; }
-            "armor"    => { eq.armor    = Some(iid); eq.armor_inst    = inst; }
-            "ring"     => { eq.ring     = Some(iid); eq.ring_inst     = inst; }
-            "offhand"  => { eq.offhand  = Some(iid); eq.offhand_inst  = inst; }
-            "helm"     => { eq.helm     = Some(iid); eq.helm_inst     = inst; }
-            "legs"     => { eq.legs     = Some(iid); eq.legs_inst     = inst; }
-            "boots"    => { eq.boots    = Some(iid); eq.boots_inst    = inst; }
-            "gloves"   => { eq.gloves   = Some(iid); eq.gloves_inst   = inst; }
-            "belt"     => { eq.belt     = Some(iid); eq.belt_inst     = inst; }
-            "cape"     => { eq.cape     = Some(iid); eq.cape_inst     = inst; }
-            "necklace"     => { eq.necklace     = Some(iid); eq.necklace_inst     = inst; }
-            _ => {}
+        if let Some(s) = shared::EquipSlot::de_db_str(slot.as_str()) {
+            eq.set(s, Some(iid), inst);
         }
     }
     Ok(eq)
@@ -1893,19 +1810,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             .bind(&row.name)
             .execute(&mut *tx)
             .await?;
-        for (slot_name, item_opt, inst_opt) in [
-            ("weapon",   row.equipment.weapon,   row.equipment.weapon_inst),
-            ("armor",    row.equipment.armor,    row.equipment.armor_inst),
-            ("ring",     row.equipment.ring,     row.equipment.ring_inst),
-            ("offhand",  row.equipment.offhand,  row.equipment.offhand_inst),
-            ("helm",     row.equipment.helm,     row.equipment.helm_inst),
-            ("legs",     row.equipment.legs,     row.equipment.legs_inst),
-            ("boots",    row.equipment.boots,    row.equipment.boots_inst),
-            ("gloves",   row.equipment.gloves,   row.equipment.gloves_inst),
-            ("belt",     row.equipment.belt,     row.equipment.belt_inst),
-            ("cape",     row.equipment.cape,     row.equipment.cape_inst),
-            ("necklace",     row.equipment.necklace,     row.equipment.necklace_inst),
-        ] {
+        for slot in shared::EquipSlot::TODOS {
+            let (slot_name, item_opt, inst_opt) =
+                (slot.as_db_str(), row.equipment.get(slot), row.equipment.get_inst(slot));
             if let Some(iid) = item_opt {
                 let inst_json = inst_opt.and_then(|i| serde_json::to_string(&i).ok());
                 sqlx::query(

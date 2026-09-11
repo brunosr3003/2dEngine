@@ -103,11 +103,6 @@ pub enum ClientMessage {
     /// presente no slot. Custo: gold proporcional ao refinement atual.
     /// Falha (chance crescente com nível) reseta refinement pra 0.
     RefineItem { slot: u16 },
-    /// Encrava uma gema (`gem_slot`) em um socket livre do item em
-    /// `item_slot`. Requer ItemInstance com `sockets > 0`. Gema é
-    /// consumida do inventário. Falha silenciosamente se sem socket
-    /// livre ou item incompatível.
-    SocketGem { item_slot: u16, gem_slot: u16 },
     /// Pede pra subir num barco. Server valida proximidade (player em
     /// tile adjacente ao barco) e parenta o player (Mounted) com
     /// local_pos no ponto de entrada do deck.

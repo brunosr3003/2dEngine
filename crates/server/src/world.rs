@@ -3072,77 +3072,6 @@ impl GameWorld {
         // Se era item equipado (não é o caso aqui — só refina inv), recompute stats
     }
 
-    /// Encrava uma gema (`gem_slot`) num socket livre do item em `item_slot`.
-    /// Consome a gema do inventário. Item precisa ter ItemInstance com pelo
-    /// menos 1 socket livre. Gema precisa ser id GEM/IRON_INGOT/DRAGON_SCALE
-    /// (ver `shared::items::gem_bonus`).
-    fn handle_socket_gem(&mut self, sid: SessionId, item_slot: u16, gem_slot: u16) {
-        let Some(s) = self.sessions.get_mut(&sid) else { return; };
-        if !s.logged_in { return; }
-        let item_idx = item_slot as usize;
-        let gem_idx  = gem_slot  as usize;
-        if item_idx >= s.inventory.len() || gem_idx >= s.inventory.len() {
-            return;
-        }
-        if item_idx == gem_idx { return; }
-        // Valida gema
-        let gem_id = s.inventory[gem_idx].item_id;
-        if s.inventory[gem_idx].qty == 0
-            || (gem_id != shared::item_id::GEM
-                && gem_id != shared::item_id::IRON_INGOT
-                && gem_id != shared::item_id::DRAGON_SCALE)
-        {
-            let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "[blacksmith]".into(),
-                text: "that's not a gem".into(),
-            });
-            return;
-        }
-        // Valida item destino
-        let Some(mut inst) = s.inventory[item_idx].instance else {
-            let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "[blacksmith]".into(),
-                text: "this item does not support sockets".into(),
-            });
-            return;
-        };
-        if inst.sockets == 0 {
-            let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "[blacksmith]".into(),
-                text: "this item has no sockets".into(),
-            });
-            return;
-        }
-        // Procura socket livre
-        let free = inst.socketed_gems.iter().position(|&g| g == 0);
-        let Some(slot_pos) = free else {
-            let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "[blacksmith]".into(),
-                text: "all sockets are already filled".into(),
-            });
-            return;
-        };
-        if slot_pos >= inst.sockets as usize {
-            let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "[blacksmith]".into(),
-                text: "all sockets are already filled".into(),
-            });
-            return;
-        }
-        inst.socketed_gems[slot_pos] = gem_id;
-        s.inventory[item_idx].instance = Some(inst);
-        // Consome a gema
-        s.inventory[gem_idx].qty -= 1;
-        if s.inventory[gem_idx].qty == 0 {
-            s.inventory[gem_idx] = shared::InventorySlot::default();
-        }
-        s.inventory_dirty = true;
-        let _ = s.handle.to_client.send(ServerMessage::Chat {
-            from: "[blacksmith]".into(),
-            text: format!("✓ gem socketed ({}/{})", slot_pos + 1, inst.sockets),
-        });
-    }
-
     /// Conjura uma skill.
     ///
     /// Cinco formas e nenhum caso especial. O executor anterior tinha 722
@@ -3486,7 +3415,7 @@ impl GameWorld {
             .collect();
         // Whitelist de armas iniciais — filtrada por items.active. Mantem em
         // sync com handle_create_character::ALLOWED_WEAPONS.
-        const ALL_STARTING_WEAPONS: &[u16] = &[3, 6, 12, 13, 14, 15, 25, 26];
+        const ALL_STARTING_WEAPONS: &[u16] = &[400, 401, 402, 403];
         let available_weapons: Vec<u16> = ALL_STARTING_WEAPONS.iter()
             .filter(|id| crate::economy::is_item_active(**id))
             .copied()
@@ -5315,9 +5244,6 @@ impl GameWorld {
             ClientMessage::RefineItem { slot } => {
                 self.handle_refine_item(id, slot);
             }
-            ClientMessage::SocketGem { item_slot, gem_slot } => {
-                self.handle_socket_gem(id, item_slot, gem_slot);
-            }
             ClientMessage::DismountBoat | ClientMessage::LeaveBoat => {
                 self.handle_dismount_boat(id);
             }
@@ -5693,7 +5619,7 @@ impl GameWorld {
         // Arma inicial NÃO é mais escolhida na criação — o tutorial entrega a
         // arma T1. 0 = sem arma. (Mantém compat: se um client antigo mandar um
         // id de arma válido, ainda aceita.)
-        const ALLOWED_WEAPONS: &[u16] = &[3, 6, 12, 13, 14, 15, 25, 26];
+        const ALLOWED_WEAPONS: &[u16] = &[400, 401, 402, 403];
         if starting_weapon != 0 && !ALLOWED_WEAPONS.contains(&starting_weapon) {
             let _ = self.sessions.get(&sid).map(|s| s.handle.to_client.send(
                 ServerMessage::CharacterCreationFailed { reason: "arma invalida".into() }));
@@ -6532,8 +6458,10 @@ impl GameWorld {
                         shared::skills::Conjunto::da_arma(weapon_id),
                         shared::skills::Conjunto::AnelMagico
                     );
-                    let is_two_handed = !shared::weapon_allows_offhand(weapon_id)
-                        && weapon_id != 0;
+                    let is_two_handed = matches!(
+                        shared::skills::Conjunto::da_arma(weapon_id),
+                        shared::skills::Conjunto::Pistolas
+                    );
                     let scale_factor = if is_caster { 0.30 }
                         else if is_two_handed { 0.60 }
                         else { 1.0 };
@@ -7943,9 +7871,8 @@ impl GameWorld {
                     let mut blocked_by_shield = false;
                     if !*is_player && *pfrom_player {
                         if let Ok(tag) = self.ecs.get::<&EnemyTag>(*te) {
-                            let oh = tag.equipment.offhand.unwrap_or(0);
-                            let has_shield = oh == shared::item_id::SHIELD
-                                          || oh == shared::item_id::HEAVY_SHIELD;
+                            // o escudo agora e' parte do conjunto "espada e escudo"
+                            let has_shield = tag.equipment.weapon == Some(shared::item_id::ESPADA_E_ESCUDO);
                             if has_shield && tag.stamina_current >= 20.0 {
                                 blocked_by_shield = true;
                             }
@@ -8816,8 +8743,8 @@ impl GameWorld {
                         if slot.qty > 0 { drops.push((slot.item_id, slot.qty)); }
                     }
                     // Drop equipamento tambem
-                    for opt in [session.equipment.weapon, session.equipment.armor, session.equipment.ring, session.equipment.offhand] {
-                        if let Some(iid) = opt { drops.push((iid, 1)); }
+                    for slot in shared::EquipSlot::TODOS {
+                        if let Some(iid) = session.equipment.get(slot) { drops.push((iid, 1)); }
                     }
                     // Limpa inv + equip do player morto
                     for slot in &mut session.inventory {
@@ -9085,23 +9012,6 @@ impl GameWorld {
             let mut buffs_mask: u8 = 0;
             if s.bloodthirst_until  > now_for_cast { buffs_mask |= shared::components::buffs_mask::BLOODTHIRST;  }
             if s.hunters_mark_until > now_for_cast { buffs_mask |= shared::components::buffs_mask::HUNTERS_MARK; }
-            if let Some(ring_id) = s.equipment.ring {
-                match ring_id {
-                    shared::constants::item_id::RING_TIDE => {
-                        buffs_mask |= shared::components::buffs_mask::AURA_TIDE;
-                    }
-                    shared::constants::item_id::RING_IGNITION => {
-                        buffs_mask |= shared::components::buffs_mask::AURA_IGNITION;
-                    }
-                    shared::constants::item_id::RING_MIST => {
-                        buffs_mask |= shared::components::buffs_mask::AURA_MIST;
-                    }
-                    shared::constants::item_id::RING_TEMPEST => {
-                        buffs_mask |= shared::components::buffs_mask::AURA_TEMPEST;
-                    }
-                    _ => {}
-                }
-            }
             player_overlay.insert(s.entity_id, PlayerOverlay {
                 weapon_id: s.equipment.weapon,
                 offhand_id: s.equipment.offhand,
@@ -9728,17 +9638,6 @@ impl GameWorld {
             if item.qty > 1 { return false; }
             // Item desativado pelo admin: bloqueado de ser equipado.
             if !crate::economy::is_item_active(item.item_id) { return false; }
-            // Char level gate por item_id (e.g., ENHANCED_SWORD requer char lvl 10).
-            if let Some(min_lvl) = shared::item_char_level_req(item.item_id) {
-                if (char_level_now as u16) < min_lvl { return false; }
-            }
-            // Portao de proficiencia do CONJUNTO: a arma diz qual conjunto e',
-            // e o item diz o nivel que pede.
-            if let Some(min_prof_lvl) = shared::item_prof_req(item.item_id) {
-                let conjunto = shared::skills::Conjunto::da_arma(item.item_id);
-                let prof_lvl = shared::proficiency_level(prof_xp_now[conjunto as usize]);
-                if (prof_lvl as u16) < min_prof_lvl { return false; }
-            }
             can_equip_in_slot(&equip_now, slot, item.item_id)
         };
 
@@ -10531,11 +10430,9 @@ impl GameWorld {
     /// objetivo é cumprido (READY) e finaliza ao concluir a última. Mantém 1
     /// boneco de treino vivo na ilha pra quest de combate.
     /// IDs das armas T1 craftáveis — usado pra detectar "forjou uma arma" (903).
-    const TUTORIAL_T1_WEAPONS: [u16; 8] = [
-        shared::constants::item_id::SWORD, shared::constants::item_id::STAFF,
-        shared::constants::item_id::DAGGER, shared::constants::item_id::GREAT_SWORD,
-        shared::constants::item_id::BOW, shared::constants::item_id::WAND,
-        shared::constants::item_id::AXE, shared::constants::item_id::SPEAR,
+    const TUTORIAL_T1_WEAPONS: [u16; 4] = [
+        shared::constants::item_id::ESPADA_E_ESCUDO, shared::constants::item_id::KATANA,
+        shared::constants::item_id::PISTOLAS, shared::constants::item_id::ANEL_MAGICO,
     ];
 
     fn tick_tutorial_quests(&mut self) {
@@ -10693,7 +10590,7 @@ impl GameWorld {
                     }
                     add_to_inventory(&mut s.inventory, item_id::WOOD_T1, 8, None);
                     add_to_inventory(&mut s.inventory, item_id::LEATHER_T1, 5, None);
-                    add_to_inventory(&mut s.inventory, item_id::MINERAL_T1, 7, None);
+                    add_to_inventory(&mut s.inventory, item_id::STEEL, 7, None);
                     s.inventory_dirty = true;
                 }
                 self.tutorial_say(sid, "Matteo", "Otimo! Aqui, leva esse material. Vai na estacao de craft e forja a arma T1 que voce quiser.");
@@ -12508,9 +12405,11 @@ fn read_equip_instance(equip: &shared::Equipment, slot: shared::EquipSlot) -> Op
 /// equip (UseItem, loot pickup, shop buy, drag-drop).
 fn can_equip_in_slot(equipment: &shared::Equipment, slot: shared::EquipSlot, item_id: u16) -> bool {
     if shared::equip_slot_of(item_id) != Some(slot) { return false; }
+    // A secundaria vem amarrada ao conjunto (docs/COMBATE.md): bainha so' com
+    // katana, coldre so' com pistolas, e assim por diante.
     if slot == shared::EquipSlot::Offhand {
-        let weapon = equipment.weapon.unwrap_or(0);
-        if !shared::weapon_allows_offhand(weapon) { return false; }
+        let conjunto = shared::skills::Conjunto::da_arma(equipment.weapon.unwrap_or(0));
+        if shared::skills::Conjunto::da_secundaria(item_id) != Some(conjunto) { return false; }
     }
     true
 }
@@ -12520,8 +12419,10 @@ fn can_equip_in_slot(equipment: &shared::Equipment, slot: shared::EquipSlot, ite
 /// false e o caller deve abortar o equip da weapon (mantendo estado consistente).
 /// No-op se a weapon nova permite offhand ou se offhand já está vazio.
 fn maybe_unequip_offhand_for_weapon(session: &mut Session, new_weapon: u16) -> bool {
-    if shared::weapon_allows_offhand(new_weapon) { return true; }
     let Some(oh) = session.equipment.offhand else { return true; };
+    // trocou de conjunto: a secundaria do conjunto velho vai pra bolsa
+    let conjunto = shared::skills::Conjunto::da_arma(new_weapon);
+    if shared::skills::Conjunto::da_secundaria(oh) == Some(conjunto) { return true; }
     let oh_inst = session.equipment.offhand_inst;
     if !add_to_inventory(&mut session.inventory, oh, 1, oh_inst) { return false; }
     session.equipment.offhand = None;
@@ -12535,8 +12436,7 @@ fn maybe_unequip_offhand_for_weapon(session: &mut Session, new_weapon: u16) -> b
 fn defending_poise_max(session: &Session) -> f32 {
     let char_lvl = shared::level_of_xp_with_mult(session.xp, crate::economy::xp_multiplier());
     let base = 30.0 * ((char_lvl as f32) / 10.0).floor();
-    let shield_mult = if session.equipment.offhand
-        .map_or(false, |id| shared::constants::is_shield(id)) { 1.25 } else { 1.0 };
+    let shield_mult = if session.equipment.weapon == Some(shared::item_id::ESPADA_E_ESCUDO) { 1.25 } else { 1.0 };
     base * shield_mult
 }
 
@@ -12591,16 +12491,6 @@ fn effective_stats(
     // item_bonus) + Option<ItemInstance> (rolls aleatorios × rarity ×
     // refinement). Instance None = item legacy → só base bonus.
     let slot_pairs = equip.iter_equipped();
-    // Set tracking — count quantas peças de cada set_id estão equipadas.
-    let mut set_pieces: std::collections::HashMap<u8, u8> = std::collections::HashMap::new();
-    for (id_opt, _) in &slot_pairs {
-        if let Some(id) = id_opt {
-            let sid = shared::items::item_set_id(*id);
-            if sid > 0 {
-                *set_pieces.entry(sid).or_insert(0) += 1;
-            }
-        }
-    }
     for (id_opt, inst_opt) in slot_pairs {
         if let Some(id) = id_opt {
             // Base bonus: stats fixos do item_id (legado / fallback)
@@ -12629,16 +12519,6 @@ fn effective_stats(
         }
     }
 
-    // Aplica set bonuses (Fase D). Cada set ativa em 2+ peças.
-    for (&sid, &pieces) in set_pieces.iter() {
-        let sb = shared::items::set_bonus_for(sid, pieces);
-        s.hp_max            += sb.hp;
-        s.mp_max            += sb.mp;
-        s.attack_damage     += sb.atk;
-        s.defense           += sb.def;
-        s.crit_chance       += sb.crit;
-        s.attack_speed_mult += sb.atk_spd;
-    }
 
     // Scaling da proficiencia da arma EQUIPADA.
     let weapon_id = equip.weapon.unwrap_or(0);
@@ -12665,19 +12545,22 @@ fn effective_stats(
     //   Spear:        DEX bonus baixo (1/5), FOR bonus alto (1/1)
     let for_pts = allocated[shared::stat_idx::FOR] as i32;
     match weapon_id {
-        id if id == shared::item_id::BOW
-            || id == shared::item_id::ENHANCED_BOW
-            || id == shared::item_id::CROSSBOW => {
+        // pistolas: a destreza vira dano, e o disparo e' rapido
+        shared::item_id::PISTOLAS => {
             s.attack_damage += s.dex / 2;
-            s.attack_speed_mult += 0.25; // bow disparo rapido
+            s.attack_speed_mult += 0.25;
         }
-        id if id == shared::item_id::SPEAR
-            || id == shared::item_id::ENHANCED_SPEAR => {
-            s.attack_damage += s.dex / 5 + for_pts;
-            s.attack_speed_mult -= 0.15; // lanca eh lenta (alcance compensa)
+        // katana: corte rapido — um pouco de destreza e de forca
+        shared::item_id::KATANA => {
+            s.attack_damage += s.dex / 5 + for_pts / 2;
+            s.attack_speed_mult += 0.10;
         }
         _ => {}
     }
+    // O PESO da armadura (docs/COMBATE.md): leve da' dano, pesada resistencia.
+    let (mult_dano, reducao) = shared::peso_da_armadura(equip.armor.unwrap_or(0));
+    s.attack_damage = (s.attack_damage as f32 * mult_dano).round() as i32;
+    s.damage_reduction_pct += reducao;
 
     // Passiva nao existe mais: skill que nao aparece na tela nao e' skill.
 

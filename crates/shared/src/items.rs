@@ -130,51 +130,28 @@ impl ItemTemplate {
 /// vazio (sem ranges → drop não gera instance).
 pub fn item_template(item_id: u16) -> ItemTemplate {
     use crate::constants::item_id::*;
+    let r = StatRange::new;
     match item_id {
-        // === Armas ===
-        SWORD        => ItemTemplate { attack_damage: StatRange::new(8, 16),  ..Default::default() },
-        DAGGER       => ItemTemplate { attack_damage: StatRange::new(5, 12),  dex: StatRange::new(6, 14), ..Default::default() },
-        GREAT_SWORD  => ItemTemplate { attack_damage: StatRange::new(20, 36), ..Default::default() },
-        BOW          => ItemTemplate { attack_damage: StatRange::new(10, 20), dex: StatRange::new(8, 16), ..Default::default() },
-        STAFF        => ItemTemplate { attack_damage: StatRange::new(14, 26), mp_max: StatRange::new(20, 60),  wis: StatRange::new(3, 8), ..Default::default() },
-        WAND         => ItemTemplate { attack_damage: StatRange::new(4, 10),  mp_max: StatRange::new(50, 110), wis: StatRange::new(5, 12), ..Default::default() },
-        // === Armaduras ===
-        ARMOR        => ItemTemplate { hp_max: StatRange::new(25, 60),  defense: StatRange::new(3, 8),  ..Default::default() },
-        SHIELD       => ItemTemplate { hp_max: StatRange::new(50, 100), defense: StatRange::new(5, 12), ..Default::default() },
-        LEATHER_ARMOR=> ItemTemplate { hp_max: StatRange::new(15, 35),  defense: StatRange::new(1, 5),  dex: StatRange::new(3, 9), ..Default::default() },
-        PLATE_ARMOR  => ItemTemplate { hp_max: StatRange::new(80, 160), defense: StatRange::new(8, 16), ..Default::default() },
-        ROBE         => ItemTemplate { hp_max: StatRange::new(5, 15),   mp_max: StatRange::new(30, 90), defense: StatRange::new(1, 4), wis: StatRange::new(4, 12), ..Default::default() },
-        // === Acessórios ===
-        RING         => ItemTemplate { dex: StatRange::new(2, 8),   wis: StatRange::new(1, 5), ..Default::default() },
-        AMULET       => ItemTemplate { hp_max: StatRange::new(8, 25), mp_max: StatRange::new(15, 45), wis: StatRange::new(4, 12), defense: StatRange::new(0, 3), ..Default::default() },
-        LUCKY_RING   => ItemTemplate { hp_max: StatRange::new(5, 18), mp_max: StatRange::new(10, 30), attack_damage: StatRange::new(1, 4), dex: StatRange::new(3, 9), wis: StatRange::new(1, 4), ..Default::default() },
-        RING_TIDE     => ItemTemplate { mp_max: StatRange::new(15, 15), dex: StatRange::new(3, 3), ..Default::default() },
-        RING_IGNITION => ItemTemplate { attack_damage: StatRange::new(8, 8), wis: StatRange::new(5, 5), ..Default::default() },
-        RING_MIST     => ItemTemplate { hp_max: StatRange::new(80, 80), dex: StatRange::new(8, 8), wis: StatRange::new(8, 8), ..Default::default() },
-        RING_TEMPEST  => ItemTemplate { hp_max: StatRange::new(150, 150), mp_max: StatRange::new(80, 80), attack_damage: StatRange::new(10, 10), dex: StatRange::new(10, 10), wis: StatRange::new(10, 10), defense: StatRange::new(5, 5), ..Default::default() },
-        // === Fase D — novos ===
-        SCIMITAR     => ItemTemplate { attack_damage: StatRange::new(6, 14),  dex: StatRange::new(4, 10), ..Default::default() },
-        AXE          => ItemTemplate { attack_damage: StatRange::new(16, 32), hp_max: StatRange::new(15, 35), defense: StatRange::new(2, 6), ..Default::default() },
-        SPEAR        => ItemTemplate { attack_damage: StatRange::new(12, 22), dex: StatRange::new(3, 9), ..Default::default() },
-        CROSSBOW     => ItemTemplate { attack_damage: StatRange::new(14, 24), dex: StatRange::new(6, 12), ..Default::default() },
-        HEAVY_SHIELD => ItemTemplate { hp_max: StatRange::new(70, 140), defense: StatRange::new(10, 20), ..Default::default() },
-        PENDANT      => ItemTemplate { hp_max: StatRange::new(15, 35), mp_max: StatRange::new(20, 50), wis: StatRange::new(2, 6), defense: StatRange::new(0, 2), ..Default::default() },
-        CHARM        => ItemTemplate { mp_max: StatRange::new(5, 20), attack_damage: StatRange::new(2, 6), dex: StatRange::new(2, 6), wis: StatRange::new(2, 6), ..Default::default() },
-        // === Fase E — slots novos ===
-        HELM_LEATHER  => ItemTemplate { hp_max: StatRange::new(8, 22),   defense: StatRange::new(1, 5),  dex: StatRange::new(2, 6), ..Default::default() },
-        HELM_PLATE    => ItemTemplate { hp_max: StatRange::new(30, 60),  defense: StatRange::new(4, 10), ..Default::default() },
-        LEGS_LEATHER  => ItemTemplate { hp_max: StatRange::new(12, 28),  defense: StatRange::new(1, 5),  dex: StatRange::new(3, 7), ..Default::default() },
-        LEGS_PLATE    => ItemTemplate { hp_max: StatRange::new(40, 80),  defense: StatRange::new(6, 12), ..Default::default() },
-        BOOTS_LEATHER => ItemTemplate { hp_max: StatRange::new(5, 15),   defense: StatRange::new(0, 3),  dex: StatRange::new(4, 8), ..Default::default() },
-        BOOTS_PLATE   => ItemTemplate { hp_max: StatRange::new(20, 40),  defense: StatRange::new(3, 7), ..Default::default() },
-        GLOVES_LEATHER=> ItemTemplate { attack_damage: StatRange::new(1, 5), defense: StatRange::new(0, 2), dex: StatRange::new(3, 7), ..Default::default() },
-        GLOVES_PLATE  => ItemTemplate { hp_max: StatRange::new(12, 28),  attack_damage: StatRange::new(3, 8), defense: StatRange::new(2, 6), ..Default::default() },
-        BELT_BASIC    => ItemTemplate { hp_max: StatRange::new(15, 35),  defense: StatRange::new(0, 3), ..Default::default() },
-        BELT_MAGIC    => ItemTemplate { mp_max: StatRange::new(20, 50),  wis: StatRange::new(2, 6), ..Default::default() },
-        CAPE_BASIC    => ItemTemplate { hp_max: StatRange::new(12, 28),  defense: StatRange::new(2, 6), ..Default::default() },
-        CAPE_MAGIC    => ItemTemplate { mp_max: StatRange::new(25, 60),  wis: StatRange::new(3, 9), defense: StatRange::new(0, 3), ..Default::default() },
-        NECKLACE_BASIC=> ItemTemplate { hp_max: StatRange::new(12, 28),  mp_max: StatRange::new(5, 15),  wis: StatRange::new(2, 5), ..Default::default() },
-        NECKLACE_MAGIC=> ItemTemplate { mp_max: StatRange::new(25, 55),  wis: StatRange::new(4, 10), ..Default::default() },
+        // === a arma: o conjunto ===
+        ESPADA_E_ESCUDO => ItemTemplate { attack_damage: r(8, 16), hp_max: r(10, 30), ..Default::default() },
+        KATANA => ItemTemplate { attack_damage: r(8, 15), dex: r(5, 12), ..Default::default() },
+        PISTOLAS => ItemTemplate { attack_damage: r(7, 14), dex: r(6, 13), ..Default::default() },
+        ANEL_MAGICO => ItemTemplate { attack_damage: r(6, 13), mp_max: r(30, 70), wis: r(4, 10), ..Default::default() },
+        // === a secundaria de cada conjunto ===
+        MANTO_DO_GUERREIRO => ItemTemplate { hp_max: r(20, 50), defense: r(3, 8), ..Default::default() },
+        BAINHA => ItemTemplate { attack_damage: r(1, 4), dex: r(3, 8), ..Default::default() },
+        COLDRE => ItemTemplate { attack_damage: r(2, 5), dex: r(3, 7), ..Default::default() },
+        MANTO_DO_MAGO => ItemTemplate { mp_max: r(25, 60), wis: r(3, 8), ..Default::default() },
+        // === armadura: o peso e' a escolha (o dano/resistencia do peso sai de
+        // `peso_da_armadura`, aqui e' so' o que ela rola) ===
+        ARMADURA_LEVE => ItemTemplate { hp_max: r(15, 35), defense: r(1, 4), dex: r(2, 6), ..Default::default() },
+        ARMADURA_MEDIA => ItemTemplate { hp_max: r(30, 60), defense: r(4, 9), ..Default::default() },
+        ARMADURA_PESADA => ItemTemplate { hp_max: r(60, 120), defense: r(8, 16), ..Default::default() },
+        // === acessorios: iguais pra todo mundo ===
+        BRINCO => ItemTemplate { attack_damage: r(1, 4), dex: r(2, 6), ..Default::default() },
+        AMULETO => ItemTemplate { mp_max: r(20, 50), wis: r(2, 6), ..Default::default() },
+        BRACELETE => ItemTemplate { attack_damage: r(2, 5), defense: r(1, 3), ..Default::default() },
+        CINTO => ItemTemplate { hp_max: r(20, 45), defense: r(1, 3), ..Default::default() },
         _ => ItemTemplate::default(),
     }
 }
@@ -476,21 +453,6 @@ impl ItemInstance {
                 _ => {}
             }
         }
-        // Gemas socketed (não recebem refinement — bonus fixo).
-        for &gid in &self.socketed_gems {
-            if gid == 0 { continue; }
-            if let Some((stat, val, _)) = gem_bonus(gid) {
-                match stat {
-                    AffixStat::Hp      => b.hp_max += val,
-                    AffixStat::Mp      => b.mp_max += val,
-                    AffixStat::Attack  => b.attack_damage += val,
-                    AffixStat::Defense => b.defense += val,
-                    AffixStat::Dex     => b.dex += val,
-                    AffixStat::Wis     => b.wis += val,
-                    _ => {}
-                }
-            }
-        }
         b
     }
 
@@ -531,87 +493,15 @@ pub fn ilvl_scale(item_level: u16) -> f32 {
 // `set_bonus(set_id, n)`. Não-stackable: cada peça única (anel + amuleto
 // contam como 2 peças se ambos do set).
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SetBonus {
-    pub hp:       i32,
-    pub mp:       i32,
-    pub atk:      i32,
-    pub def:      i32,
-    pub crit:     f32,
-    pub atk_spd:  f32,
-}
 
-/// Set ID por item_id. 0 = sem set.
-pub fn item_set_id(item_id: u16) -> u8 {
-    use crate::constants::item_id::*;
-    match item_id {
-        SWORD       | ARMOR         | RING       => 1, // Set do Aventureiro
-        STAFF       | ROBE          | AMULET     => 2, // Set do Sábio
-        DAGGER      | LEATHER_ARMOR | LUCKY_RING => 3, // Set do Ladino
-        GREAT_SWORD | PLATE_ARMOR   | SHIELD     => 4, // Set do Bárbaro
-        WAND        | BOW                        => 5, // Set do Caçador (só pra suffixos)
-        _ => 0,
-    }
-}
 
-pub fn set_name(set_id: u8) -> &'static str {
-    match set_id {
-        1 => "Conjunto do Aventureiro",
-        2 => "Conjunto do Sábio",
-        3 => "Conjunto do Ladino",
-        4 => "Conjunto do Bárbaro",
-        5 => "Conjunto do Caçador",
-        _ => "",
-    }
-}
 
-/// Quantidade total de peças no set.
-pub fn set_total_pieces(set_id: u8) -> u8 {
-    match set_id {
-        1 | 2 | 3 => 3,
-        4         => 3,
-        5         => 2,
-        _ => 0,
-    }
-}
 
-/// Bonus aplicado quando `pieces` peças do `set_id` estão equipadas.
-/// Cumulativo (set_bonus_for(2) inclui bonus de 2-piece, etc.) — caller
-/// chama uma vez com a contagem total e usa o valor retornado.
-pub fn set_bonus_for(set_id: u8, pieces: u8) -> SetBonus {
-    if pieces < 2 { return SetBonus::default(); }
-    match (set_id, pieces) {
-        // Aventureiro: balanced
-        (1, 2) => SetBonus { hp: 50, atk: 3, ..Default::default() },
-        (1, 3) => SetBonus { hp: 120, atk: 8, def: 4, crit: 0.03, ..Default::default() },
-        // Sábio: caster
-        (2, 2) => SetBonus { mp: 60, atk: 4, ..Default::default() },
-        (2, 3) => SetBonus { mp: 150, atk: 10, atk_spd: 0.10, ..Default::default() },
-        // Ladino: dex
-        (3, 2) => SetBonus { atk: 5, crit: 0.04, ..Default::default() },
-        (3, 3) => SetBonus { atk: 12, crit: 0.10, atk_spd: 0.08, ..Default::default() },
-        // Bárbaro: tanky DPS
-        (4, 2) => SetBonus { hp: 80, atk: 8, def: 4, ..Default::default() },
-        (4, 3) => SetBonus { hp: 200, atk: 18, def: 10, ..Default::default() },
-        // Caçador: 2-piece only
-        (5, 2) => SetBonus { atk: 6, atk_spd: 0.08, crit: 0.05, ..Default::default() },
-        _ => SetBonus::default(),
-    }
-}
 
 // ── Fase D: Sockets/Gems ────────────────────────────────────────────────
 // Gems têm um stat fixo. Inserir gema num socket adiciona o stat.
 // Socket count vem do template do item (tier rarity define max sockets).
 
-pub fn gem_bonus(gem_id: u16) -> Option<(AffixStat, i32, f32)> {
-    use crate::constants::item_id::*;
-    match gem_id {
-        GEM         => Some((AffixStat::Attack, 5, 0.0)),
-        IRON_INGOT  => Some((AffixStat::Defense, 3, 0.0)),
-        DRAGON_SCALE => Some((AffixStat::Hp, 40, 0.0)),
-        _ => None,
-    }
-}
 
 /// Quantos sockets um item tem baseado no tier: T1/T2=0, T3=1, T4=2, T5=3.
 pub fn sockets_for_tier(tier: u8) -> u8 {

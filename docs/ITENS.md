@@ -138,7 +138,17 @@ O MIR4 tem **8** (arma, peito, calça, luvas, botas, colar, bracelete, anel).
 12.200 — o mesmo jogo fica 37% mais longo sem que nenhuma tabela mude. Vale
 decidir de propósito, não por herança.
 
-## Proposta: 11 slots, quatro famílias
+## DECIDIDO: 7 slots (docs/COMBATE.md)
+
+A proposta de 11 slots abaixo ficou pra trás. O jogo tem **arma** (o conjunto
+inteiro), **secundária** (amarrada ao conjunto: manto do guerreiro, bainha,
+coldre, manto do mago — só entra a do conjunto da arma), **armadura** (uma,
+em três pesos) e **quatro acessórios iguais pra todo mundo**: brinco, amuleto,
+bracelete, cinto. Um id por peça (400–414); o grau e o refino moram na
+instância. Os itens antigos foram migrados ou apagados pela M27
+(`server/persistence.rs`).
+
+## (histórico) Proposta: 11 slots, quatro famílias
 
 | família | slots | identidade |
 |---|---|---|

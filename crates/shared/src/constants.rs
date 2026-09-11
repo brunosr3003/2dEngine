@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 76;
+pub const PROTOCOL_VERSION: u16 = 77;
 
 // ── Boat (Sea-of-Thieves style: vela/leme/ancora separados) ─────────────────
 /// Velocidade maxima de qualquer barco (tiles/s). Atingida com vela full,
@@ -393,6 +393,25 @@ pub const LOOT_PICKUP_DELAY_S: f32 = 0.6;
 /// Itens conhecidos. Numeric id vai pro DB e rede. Manter sincronizado com
 /// o cliente para sprite/cor por item.
 pub mod item_id {
+    // ── O equipamento (docs/COMBATE.md) ──
+    // A arma e' o CONJUNTO inteiro; a secundaria vem amarrada a ela — so'
+    // entra a do conjunto da arma. O grau (cor) e o refino moram na
+    // instancia, nao no id: um id por peca, nao um por cor.
+    pub const ESPADA_E_ESCUDO: u16 = 400;
+    pub const KATANA: u16 = 401;
+    pub const PISTOLAS: u16 = 402;
+    pub const ANEL_MAGICO: u16 = 403;
+    pub const MANTO_DO_GUERREIRO: u16 = 404;
+    pub const BAINHA: u16 = 405;
+    pub const COLDRE: u16 = 406;
+    pub const MANTO_DO_MAGO: u16 = 407;
+    pub const ARMADURA_LEVE: u16 = 408;
+    pub const ARMADURA_MEDIA: u16 = 409;
+    pub const ARMADURA_PESADA: u16 = 410;
+    pub const BRINCO: u16 = 411;
+    pub const AMULETO: u16 = 412;
+    pub const BRACELETE: u16 = 413;
+    pub const CINTO: u16 = 414;
     // Moeda / consumíveis
     pub const GOLD:            u16 = 1;
     pub const HEALTH_POTION:   u16 = 2;
@@ -401,59 +420,14 @@ pub mod item_id {
     pub const GREATER_MANA:    u16 = 10;  // +100 MP
     pub const STAMINA_POTION:  u16 = 11;  // restaura 100 stamina
     // Armas
-    pub const SWORD:           u16 = 3;
-    pub const STAFF:           u16 = 6;
-    pub const DAGGER:          u16 = 12;  // rapido, menos dano, +dex
-    pub const GREAT_SWORD:     u16 = 13;  // muito dano, -mp
-    pub const BOW:             u16 = 14;  // ranged, +dex
-    pub const WAND:            u16 = 15;  // fraca mas muito mp
     // Armaduras
-    pub const ARMOR:           u16 = 4;
-    pub const SHIELD:          u16 = 7;
-    pub const LEATHER_ARMOR:   u16 = 16;  // leve, +dex
-    pub const PLATE_ARMOR:     u16 = 17;  // pesada, muito HP, -dex
-    pub const ROBE:            u16 = 18;  // mago, +mp
     // Acessórios
-    pub const RING:            u16 = 5;
-    pub const AMULET:          u16 = 19;  // +wis +mp
-    pub const LUCKY_RING:      u16 = 20;  // +dex +mp
     // Materiais / loot raro
-    pub const GEM:             u16 = 21;  // valioso, vendavel
-    pub const IRON_INGOT:      u16 = 22;
-    pub const DRAGON_SCALE:    u16 = 23;  // raro de boss
     // === Fase D — novas armas + acessórios ===
-    pub const SCIMITAR:        u16 = 24;  // espada curva, atk+atk_spd
-    pub const AXE:             u16 = 25;  // machado, atk alto + def (era HAMMER pré-M11)
-    pub const SPEAR:           u16 = 26;  // lança, atk+dex
-    pub const CROSSBOW:        u16 = 27;  // besta, ranged + crit
-    pub const HEAVY_SHIELD:    u16 = 28;  // escudo pesado, def alta
-    pub const PENDANT:         u16 = 29;  // pingente, hp+mp
-    pub const CHARM:           u16 = 30;  // amuleto crit
 
     // === Fase E — slots novos (helm/legs/boots/gloves/belt/cape/necklace) ===
-    pub const HELM_LEATHER:    u16 = 31;  // capacete leve, def+dex
-    pub const HELM_PLATE:      u16 = 32;  // elmo pesado, hp+def
-    pub const LEGS_LEATHER:    u16 = 33;  // calça leve, dex+def
-    pub const LEGS_PLATE:      u16 = 34;  // calça pesada, hp+def
-    pub const BOOTS_LEATHER:   u16 = 35;  // botas leves, mov+dex
-    pub const BOOTS_PLATE:     u16 = 36;  // botas pesadas, def+hp
-    pub const GLOVES_LEATHER:  u16 = 37;  // luvas leves, atk_spd+dex
-    pub const GLOVES_PLATE:    u16 = 38;  // manoplas, atk+def
-    pub const BELT_BASIC:      u16 = 39;  // cinto, hp+def
-    pub const BELT_MAGIC:      u16 = 40;  // faixa magica, mp+wis
-    pub const CAPE_BASIC:      u16 = 41;  // capa, def+hp
-    pub const CAPE_MAGIC:      u16 = 42;  // manto magico, mp+wis
-    pub const NECKLACE_BASIC:  u16 = 43;  // colar, hp+wis
-    pub const NECKLACE_MAGIC:  u16 = 44;  // colar magico, mp+wis
 
     // === Fase F — armas tier 2 (gate de level + proficiência) ===
-    pub const ENHANCED_SWORD:  u16 = 45;  // espada lvl 10, sword prof 5 — atk dobrado, hp+10
-    pub const VETERAN_SWORD:   u16 = 46;  // espada lvl 20, sword prof 10 — atk +28, hp+20, def+2
-    pub const ENHANCED_BOW:    u16 = 47;  // arco lvl 10, bow prof 5 — atk dobrado, dex bump
-    pub const ENHANCED_STAFF:  u16 = 48;  // cajado lvl 10, staff prof 5 — mp+atk dobrados
-    pub const ENHANCED_WAND:   u16 = 49;  // varinha lvl 10, wand prof 5 — mp+wis dobrados
-    pub const ENHANCED_AXE:    u16 = 50;  // machado lvl 10, axe prof 5 — atk +hp dobrado
-    pub const ENHANCED_SPEAR:  u16 = 51;  // lança lvl 10, spear prof 5 — atk+dex dobrados
 
     // Resources — material de crafting. Tier define poder do item resultante.
     // Drops de mob baseados em loot_item_level: 1-15→t1, 16-30→t2, 31-50→t3, 51+→t4.
@@ -465,10 +439,6 @@ pub mod item_id {
     pub const LEATHER_T2:      u16 = 65;
     pub const LEATHER_T3:      u16 = 66;
     pub const LEATHER_T4:      u16 = 67;
-    pub const MINERAL_T1:      u16 = 68;
-    pub const MINERAL_T2:      u16 = 69;
-    pub const MINERAL_T3:      u16 = 70;
-    pub const MINERAL_T4:      u16 = 71;
 
     // === Peixes (drop da pesca). Stackáveis, sem slot. O species da
     // EntityKind::Fish(n) mapeia 1:1 pra estes IDs via fish_item_for_species. ===
@@ -556,10 +526,6 @@ pub mod item_id {
     pub const BOAT_LYLIAN_LEUTARD: u16 = 100;
 
     // === Relíquias do Abismo — Anéis de Storyline ===
-    pub const RING_TIDE:      u16 = 161; // Anel da Maré Alta (Capítulo 2 - Lvl 20)
-    pub const RING_IGNITION:  u16 = 162; // Anel da Ignição Negra (Capítulo 3 - Lvl 50)
-    pub const RING_MIST:      u16 = 163; // Anel da Névoa Fantasma (Capítulo 5 - Lvl 85)
-    pub const RING_TEMPEST:   u16 = 164; // Coração da Tempestade (Capítulo 6 - Lvl 100)
 }
 
 /// True se o item_id e' um barco (consumido ao usar; spawna entidade Boat).
@@ -587,101 +553,11 @@ pub struct CraftRecipe {
 
 /// Tabela hardcoded. Hot-reload via DB em fase futura.
 pub const CRAFT_RECIPES: &[CraftRecipe] = &[
-    // Weapons T1 — ilvl 5 (Common/Magic baixos).
-    CraftRecipe { id:1, name:"Espada T1",  inputs:[(item_id::WOOD_T1,5),(item_id::LEATHER_T1,3),(item_id::MINERAL_T1,4),(0,0)], output_item_id:item_id::SWORD,  output_qty:1, output_item_level:5, roll_instance:true },
-    CraftRecipe { id:2, name:"Arco T1",    inputs:[(item_id::WOOD_T1,6),(item_id::LEATHER_T1,4),(item_id::MINERAL_T1,2),(0,0)], output_item_id:item_id::BOW,    output_qty:1, output_item_level:5, roll_instance:true },
-    CraftRecipe { id:3, name:"Machado T1", inputs:[(item_id::WOOD_T1,4),(item_id::LEATHER_T1,2),(item_id::MINERAL_T1,6),(0,0)], output_item_id:item_id::AXE,    output_qty:1, output_item_level:5, roll_instance:true },
-    CraftRecipe { id:4, name:"Lança T1",   inputs:[(item_id::WOOD_T1,6),(item_id::LEATHER_T1,2),(item_id::MINERAL_T1,4),(0,0)], output_item_id:item_id::SPEAR,  output_qty:1, output_item_level:5, roll_instance:true },
-    CraftRecipe { id:5, name:"Adaga T1",   inputs:[(item_id::WOOD_T1,2),(item_id::LEATHER_T1,3),(item_id::MINERAL_T1,4),(0,0)], output_item_id:item_id::DAGGER, output_qty:1, output_item_level:5, roll_instance:true },
-    CraftRecipe { id:6, name:"Cajado T1",  inputs:[(item_id::WOOD_T1,7),(item_id::LEATHER_T1,1),(item_id::MINERAL_T1,3),(0,0)], output_item_id:item_id::STAFF,  output_qty:1, output_item_level:5, roll_instance:true },
-    CraftRecipe { id:7, name:"Varinha T1", inputs:[(item_id::WOOD_T1,3),(item_id::LEATHER_T1,1),(item_id::MINERAL_T1,2),(0,0)], output_item_id:item_id::WAND,   output_qty:1, output_item_level:5, roll_instance:true },
-    // Tier upgrades — 5 unidades T(n) → 1 unidade T(n+1).
-    CraftRecipe { id:10, name:"Madeira T2", inputs:[(item_id::WOOD_T1,5),(0,0),(0,0),(0,0)],    output_item_id:item_id::WOOD_T2,    output_qty:1, output_item_level:0, roll_instance:false },
-    CraftRecipe { id:11, name:"Couro T2",   inputs:[(item_id::LEATHER_T1,5),(0,0),(0,0),(0,0)], output_item_id:item_id::LEATHER_T2, output_qty:1, output_item_level:0, roll_instance:false },
-    CraftRecipe { id:12, name:"Mineral T2", inputs:[(item_id::MINERAL_T1,5),(0,0),(0,0),(0,0)], output_item_id:item_id::MINERAL_T2, output_qty:1, output_item_level:0, roll_instance:false },
-    CraftRecipe { id:13, name:"Madeira T3", inputs:[(item_id::WOOD_T2,5),(0,0),(0,0),(0,0)],    output_item_id:item_id::WOOD_T3,    output_qty:1, output_item_level:0, roll_instance:false },
-    CraftRecipe { id:14, name:"Couro T3",   inputs:[(item_id::LEATHER_T2,5),(0,0),(0,0),(0,0)], output_item_id:item_id::LEATHER_T3, output_qty:1, output_item_level:0, roll_instance:false },
-    CraftRecipe { id:15, name:"Mineral T3", inputs:[(item_id::MINERAL_T2,5),(0,0),(0,0),(0,0)], output_item_id:item_id::MINERAL_T3, output_qty:1, output_item_level:0, roll_instance:false },
-    CraftRecipe { id:16, name:"Madeira T4", inputs:[(item_id::WOOD_T3,5),(0,0),(0,0),(0,0)],    output_item_id:item_id::WOOD_T4,    output_qty:1, output_item_level:0, roll_instance:false },
-    CraftRecipe { id:17, name:"Couro T4",   inputs:[(item_id::LEATHER_T3,5),(0,0),(0,0),(0,0)], output_item_id:item_id::LEATHER_T4, output_qty:1, output_item_level:0, roll_instance:false },
-    CraftRecipe { id:18, name:"Mineral T4", inputs:[(item_id::MINERAL_T3,5),(0,0),(0,0),(0,0)], output_item_id:item_id::MINERAL_T4, output_qty:1, output_item_level:0, roll_instance:false },
-
-    // Weapons T2 — ilvl 20 (Magic/Rare comum, stats melhores que T1).
-    CraftRecipe { id:100, name:"Espada T2",  inputs:[(item_id::WOOD_T2,5),(item_id::LEATHER_T2,3),(item_id::MINERAL_T2,4),(0,0)], output_item_id:item_id::SWORD,  output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:101, name:"Arco T2",    inputs:[(item_id::WOOD_T2,6),(item_id::LEATHER_T2,4),(item_id::MINERAL_T2,2),(0,0)], output_item_id:item_id::BOW,    output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:102, name:"Machado T2", inputs:[(item_id::WOOD_T2,4),(item_id::LEATHER_T2,2),(item_id::MINERAL_T2,6),(0,0)], output_item_id:item_id::AXE,    output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:103, name:"Lança T2",   inputs:[(item_id::WOOD_T2,6),(item_id::LEATHER_T2,2),(item_id::MINERAL_T2,4),(0,0)], output_item_id:item_id::SPEAR,  output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:104, name:"Adaga T2",   inputs:[(item_id::WOOD_T2,2),(item_id::LEATHER_T2,3),(item_id::MINERAL_T2,4),(0,0)], output_item_id:item_id::DAGGER, output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:105, name:"Cajado T2",  inputs:[(item_id::WOOD_T2,7),(item_id::LEATHER_T2,1),(item_id::MINERAL_T2,3),(0,0)], output_item_id:item_id::STAFF,  output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:106, name:"Varinha T2", inputs:[(item_id::WOOD_T2,3),(item_id::LEATHER_T2,1),(item_id::MINERAL_T2,2),(0,0)], output_item_id:item_id::WAND,   output_qty:1, output_item_level:20, roll_instance:true },
-
-    // Weapons T3 — ilvl 40.
-    CraftRecipe { id:107, name:"Espada T3",  inputs:[(item_id::WOOD_T3,5),(item_id::LEATHER_T3,3),(item_id::MINERAL_T3,4),(0,0)], output_item_id:item_id::SWORD,  output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:108, name:"Arco T3",    inputs:[(item_id::WOOD_T3,6),(item_id::LEATHER_T3,4),(item_id::MINERAL_T3,2),(0,0)], output_item_id:item_id::BOW,    output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:109, name:"Machado T3", inputs:[(item_id::WOOD_T3,4),(item_id::LEATHER_T3,2),(item_id::MINERAL_T3,6),(0,0)], output_item_id:item_id::AXE,    output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:110, name:"Lança T3",   inputs:[(item_id::WOOD_T3,6),(item_id::LEATHER_T3,2),(item_id::MINERAL_T3,4),(0,0)], output_item_id:item_id::SPEAR,  output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:111, name:"Adaga T3",   inputs:[(item_id::WOOD_T3,2),(item_id::LEATHER_T3,3),(item_id::MINERAL_T3,4),(0,0)], output_item_id:item_id::DAGGER, output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:112, name:"Cajado T3",  inputs:[(item_id::WOOD_T3,7),(item_id::LEATHER_T3,1),(item_id::MINERAL_T3,3),(0,0)], output_item_id:item_id::STAFF,  output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:113, name:"Varinha T3", inputs:[(item_id::WOOD_T3,3),(item_id::LEATHER_T3,1),(item_id::MINERAL_T3,2),(0,0)], output_item_id:item_id::WAND,   output_qty:1, output_item_level:40, roll_instance:true },
-
-    // Weapons T4 — ilvl 70 (Epic/Legendary chance crescente).
-    CraftRecipe { id:114, name:"Espada T4",  inputs:[(item_id::WOOD_T4,5),(item_id::LEATHER_T4,3),(item_id::MINERAL_T4,4),(0,0)], output_item_id:item_id::SWORD,  output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:115, name:"Arco T4",    inputs:[(item_id::WOOD_T4,6),(item_id::LEATHER_T4,4),(item_id::MINERAL_T4,2),(0,0)], output_item_id:item_id::BOW,    output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:116, name:"Machado T4", inputs:[(item_id::WOOD_T4,4),(item_id::LEATHER_T4,2),(item_id::MINERAL_T4,6),(0,0)], output_item_id:item_id::AXE,    output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:117, name:"Lança T4",   inputs:[(item_id::WOOD_T4,6),(item_id::LEATHER_T4,2),(item_id::MINERAL_T4,4),(0,0)], output_item_id:item_id::SPEAR,  output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:118, name:"Adaga T4",   inputs:[(item_id::WOOD_T4,2),(item_id::LEATHER_T4,3),(item_id::MINERAL_T4,4),(0,0)], output_item_id:item_id::DAGGER, output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:119, name:"Cajado T4",  inputs:[(item_id::WOOD_T4,7),(item_id::LEATHER_T4,1),(item_id::MINERAL_T4,3),(0,0)], output_item_id:item_id::STAFF,  output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:120, name:"Varinha T4", inputs:[(item_id::WOOD_T4,3),(item_id::LEATHER_T4,1),(item_id::MINERAL_T4,2),(0,0)], output_item_id:item_id::WAND,   output_qty:1, output_item_level:70, roll_instance:true },
-
-    // Armor T1 — base pieces, ilvl 5.
-    CraftRecipe { id:130, name:"Armadura Couro T1",  inputs:[(item_id::LEATHER_T1,8),(item_id::MINERAL_T1,2),(0,0),(0,0)], output_item_id:item_id::LEATHER_ARMOR, output_qty:1, output_item_level:5, roll_instance:true },
-    CraftRecipe { id:131, name:"Armadura Placa T1",  inputs:[(item_id::MINERAL_T1,8),(item_id::LEATHER_T1,2),(0,0),(0,0)], output_item_id:item_id::PLATE_ARMOR,   output_qty:1, output_item_level:5, roll_instance:true },
-    CraftRecipe { id:132, name:"Manto T1",           inputs:[(item_id::LEATHER_T1,5),(item_id::WOOD_T1,3),(0,0),(0,0)],    output_item_id:item_id::ROBE,          output_qty:1, output_item_level:5, roll_instance:true },
-    CraftRecipe { id:133, name:"Capacete Couro T1", inputs:[(item_id::LEATHER_T1,4),(item_id::MINERAL_T1,1),(0,0),(0,0)], output_item_id:item_id::HELM_LEATHER,  output_qty:1, output_item_level:5, roll_instance:true },
-    CraftRecipe { id:134, name:"Elmo Placa T1",      inputs:[(item_id::MINERAL_T1,4),(item_id::LEATHER_T1,1),(0,0),(0,0)], output_item_id:item_id::HELM_PLATE,    output_qty:1, output_item_level:5, roll_instance:true },
-    CraftRecipe { id:135, name:"Botas Couro T1",     inputs:[(item_id::LEATHER_T1,3),(item_id::MINERAL_T1,1),(0,0),(0,0)], output_item_id:item_id::BOOTS_LEATHER, output_qty:1, output_item_level:5, roll_instance:true },
-    CraftRecipe { id:136, name:"Botas Placa T1",     inputs:[(item_id::MINERAL_T1,4),(0,0),(0,0),(0,0)],                  output_item_id:item_id::BOOTS_PLATE,   output_qty:1, output_item_level:5, roll_instance:true },
-    CraftRecipe { id:137, name:"Calças Couro T1",   inputs:[(item_id::LEATHER_T1,5),(item_id::MINERAL_T1,1),(0,0),(0,0)], output_item_id:item_id::LEGS_LEATHER,  output_qty:1, output_item_level:5, roll_instance:true },
-    CraftRecipe { id:138, name:"Calças Placa T1",   inputs:[(item_id::MINERAL_T1,5),(item_id::LEATHER_T1,1),(0,0),(0,0)], output_item_id:item_id::LEGS_PLATE,    output_qty:1, output_item_level:5, roll_instance:true },
-
-    // Armor T2 — ilvl 20.
-    CraftRecipe { id:140, name:"Armadura Couro T2", inputs:[(item_id::LEATHER_T2,8),(item_id::MINERAL_T2,2),(0,0),(0,0)], output_item_id:item_id::LEATHER_ARMOR, output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:141, name:"Armadura Placa T2", inputs:[(item_id::MINERAL_T2,8),(item_id::LEATHER_T2,2),(0,0),(0,0)], output_item_id:item_id::PLATE_ARMOR,   output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:142, name:"Manto T2",          inputs:[(item_id::LEATHER_T2,5),(item_id::WOOD_T2,3),(0,0),(0,0)],    output_item_id:item_id::ROBE,          output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:143, name:"Capacete Couro T2", inputs:[(item_id::LEATHER_T2,4),(item_id::MINERAL_T2,1),(0,0),(0,0)], output_item_id:item_id::HELM_LEATHER,  output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:144, name:"Elmo Placa T2",     inputs:[(item_id::MINERAL_T2,4),(item_id::LEATHER_T2,1),(0,0),(0,0)], output_item_id:item_id::HELM_PLATE,    output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:145, name:"Botas Couro T2",    inputs:[(item_id::LEATHER_T2,3),(item_id::MINERAL_T2,1),(0,0),(0,0)], output_item_id:item_id::BOOTS_LEATHER, output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:146, name:"Botas Placa T2",    inputs:[(item_id::MINERAL_T2,4),(0,0),(0,0),(0,0)],                  output_item_id:item_id::BOOTS_PLATE,   output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:147, name:"Calças Couro T2",  inputs:[(item_id::LEATHER_T2,5),(item_id::MINERAL_T2,1),(0,0),(0,0)], output_item_id:item_id::LEGS_LEATHER,  output_qty:1, output_item_level:20, roll_instance:true },
-    CraftRecipe { id:148, name:"Calças Placa T2",  inputs:[(item_id::MINERAL_T2,5),(item_id::LEATHER_T2,1),(0,0),(0,0)], output_item_id:item_id::LEGS_PLATE,    output_qty:1, output_item_level:20, roll_instance:true },
-
-    // Armor T3 — ilvl 40.
-    CraftRecipe { id:150, name:"Armadura Couro T3", inputs:[(item_id::LEATHER_T3,8),(item_id::MINERAL_T3,2),(0,0),(0,0)], output_item_id:item_id::LEATHER_ARMOR, output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:151, name:"Armadura Placa T3", inputs:[(item_id::MINERAL_T3,8),(item_id::LEATHER_T3,2),(0,0),(0,0)], output_item_id:item_id::PLATE_ARMOR,   output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:152, name:"Manto T3",          inputs:[(item_id::LEATHER_T3,5),(item_id::WOOD_T3,3),(0,0),(0,0)],    output_item_id:item_id::ROBE,          output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:153, name:"Capacete Couro T3", inputs:[(item_id::LEATHER_T3,4),(item_id::MINERAL_T3,1),(0,0),(0,0)], output_item_id:item_id::HELM_LEATHER,  output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:154, name:"Elmo Placa T3",     inputs:[(item_id::MINERAL_T3,4),(item_id::LEATHER_T3,1),(0,0),(0,0)], output_item_id:item_id::HELM_PLATE,    output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:155, name:"Botas Couro T3",    inputs:[(item_id::LEATHER_T3,3),(item_id::MINERAL_T3,1),(0,0),(0,0)], output_item_id:item_id::BOOTS_LEATHER, output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:156, name:"Botas Placa T3",    inputs:[(item_id::MINERAL_T3,4),(0,0),(0,0),(0,0)],                  output_item_id:item_id::BOOTS_PLATE,   output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:157, name:"Calças Couro T3",  inputs:[(item_id::LEATHER_T3,5),(item_id::MINERAL_T3,1),(0,0),(0,0)], output_item_id:item_id::LEGS_LEATHER,  output_qty:1, output_item_level:40, roll_instance:true },
-    CraftRecipe { id:158, name:"Calças Placa T3",  inputs:[(item_id::MINERAL_T3,5),(item_id::LEATHER_T3,1),(0,0),(0,0)], output_item_id:item_id::LEGS_PLATE,    output_qty:1, output_item_level:40, roll_instance:true },
-
-    // Armor T4 — ilvl 70.
-    CraftRecipe { id:160, name:"Armadura Couro T4", inputs:[(item_id::LEATHER_T4,8),(item_id::MINERAL_T4,2),(0,0),(0,0)], output_item_id:item_id::LEATHER_ARMOR, output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:161, name:"Armadura Placa T4", inputs:[(item_id::MINERAL_T4,8),(item_id::LEATHER_T4,2),(0,0),(0,0)], output_item_id:item_id::PLATE_ARMOR,   output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:162, name:"Manto T4",          inputs:[(item_id::LEATHER_T4,5),(item_id::WOOD_T4,3),(0,0),(0,0)],    output_item_id:item_id::ROBE,          output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:163, name:"Capacete Couro T4", inputs:[(item_id::LEATHER_T4,4),(item_id::MINERAL_T4,1),(0,0),(0,0)], output_item_id:item_id::HELM_LEATHER,  output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:164, name:"Elmo Placa T4",     inputs:[(item_id::MINERAL_T4,4),(item_id::LEATHER_T4,1),(0,0),(0,0)], output_item_id:item_id::HELM_PLATE,    output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:165, name:"Botas Couro T4",    inputs:[(item_id::LEATHER_T4,3),(item_id::MINERAL_T4,1),(0,0),(0,0)], output_item_id:item_id::BOOTS_LEATHER, output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:166, name:"Botas Placa T4",    inputs:[(item_id::MINERAL_T4,4),(0,0),(0,0),(0,0)],                  output_item_id:item_id::BOOTS_PLATE,   output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:167, name:"Calças Couro T4",  inputs:[(item_id::LEATHER_T4,5),(item_id::MINERAL_T4,1),(0,0),(0,0)], output_item_id:item_id::LEGS_LEATHER,  output_qty:1, output_item_level:70, roll_instance:true },
-    CraftRecipe { id:168, name:"Calças Placa T4",  inputs:[(item_id::MINERAL_T4,5),(item_id::LEATHER_T4,1),(0,0),(0,0)], output_item_id:item_id::LEGS_PLATE,    output_qty:1, output_item_level:70, roll_instance:true },
-
-    // Boats (Naval) — embarcacoes craftaveis. Ids 200+ reservados pra naval.
-    // Esquife (T1) — primeiro barco, barato: 40 madeira T1 + 20 couro T1.
+    // As receitas do equipamento novo (chave + 3 materiais + darksteel +
+    // cobre, docs/ECONOMIA_DE_CRAFT.md) pedem 6 ingredientes e ainda nao
+    // existem. Sobram os barcos.
     CraftRecipe { id:201, name:"Esquife",         inputs:[(item_id::WOOD_T1,40),(item_id::LEATHER_T1,20),(0,0),(0,0)], output_item_id:item_id::BOAT_ESQUIFE, output_qty:1, output_item_level:0, roll_instance:false },
-    // Lylian Leutard (T2) usa: 100 madeira T1 + 100 madeira T2 + 100 mineral T2 + 100 monster heart T2.
-    CraftRecipe { id:200, name:"Lylian Leutard",  inputs:[(item_id::WOOD_T1,100),(item_id::WOOD_T2,100),(item_id::MINERAL_T2,100),(item_id::LEATHER_T2,100)], output_item_id:item_id::BOAT_LYLIAN_LEUTARD, output_qty:1, output_item_level:0, roll_instance:false },
+    CraftRecipe { id:200, name:"Lylian Leutard",  inputs:[(item_id::WOOD_T1,100),(item_id::WOOD_T2,100),(item_id::STEEL,100),(item_id::LEATHER_T2,100)], output_item_id:item_id::BOAT_LYLIAN_LEUTARD, output_qty:1, output_item_level:0, roll_instance:false },
 ];
 
 pub fn craft_recipe(id: u16) -> Option<&'static CraftRecipe> {
@@ -701,21 +577,8 @@ pub mod craft_station {
 /// (sem coluna nova no DB — mesma ideia da categoria). Mantenha em sync
 /// com o cliente se ele precisar derivar; hoje o cliente só LÊ o campo.
 pub fn craft_station_of(output_item_id: u16) -> u8 {
-    use item_id::*;
     match output_item_id {
-        // Marcenaria: refino de madeira + barcos
-        WOOD_T2 | WOOD_T3 | WOOD_T4 => craft_station::CARPENTRY,
-        100..=109                   => craft_station::CARPENTRY,
-        // Smelter: refino de mineral + couro(heart)
-        MINERAL_T2 | MINERAL_T3 | MINERAL_T4
-        | LEATHER_T2 | LEATHER_T3 | LEATHER_T4 => craft_station::SMELTER,
-        // Ateliê: armas leves/mágicas + armadura couro/pano + acessórios de pano
-        DAGGER | STAFF | WAND
-        | LEATHER_ARMOR | ROBE
-        | HELM_LEATHER | LEGS_LEATHER | BOOTS_LEATHER | GLOVES_LEATHER
-        | BELT_BASIC | BELT_MAGIC | CAPE_BASIC | CAPE_MAGIC
-        | NECKLACE_BASIC | NECKLACE_MAGIC => craft_station::ATELIER,
-        // Forja: resto (armas marciais + armadura placa + escudos)
+        100..=109 => craft_station::CARPENTRY,
         _ => craft_station::FORGE,
     }
 }
@@ -737,16 +600,10 @@ pub fn boat_kind_of(id: u16) -> Option<u16> {
 /// `ItemInfo.AttackAnimOf` no cliente C#.
 pub fn weapon_attack_anim(weapon_id: u16) -> u8 {
     use crate::components::attack_anim::*;
-    match weapon_id {
-        id if id == item_id::BOW           => SHOOT,
-        id if id == item_id::CROSSBOW      => SHOOT,
-        id if id == item_id::ENHANCED_BOW  => SHOOT,
-        id if id == item_id::STAFF         => THRUST,
-        id if id == item_id::WAND          => THRUST,
-        id if id == item_id::SPEAR         => THRUST,
-        id if id == item_id::ENHANCED_STAFF => THRUST,
-        id if id == item_id::ENHANCED_WAND  => THRUST,
-        id if id == item_id::ENHANCED_SPEAR => THRUST,
+    use crate::skills::Conjunto;
+    match Conjunto::da_arma(weapon_id) {
+        Conjunto::Pistolas => SHOOT,
+        Conjunto::AnelMagico => THRUST,
         _ => SLASH,
     }
 }
@@ -754,148 +611,73 @@ pub fn weapon_attack_anim(weapon_id: u16) -> u8 {
 /// Retorna o slot de equipamento para um item_id, ou None se nao for
 /// equipavel.
 pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
+    use item_id::*;
     match item_id {
-        id if id == item_id::SWORD
-            || id == item_id::STAFF
-            || id == item_id::DAGGER
-            || id == item_id::GREAT_SWORD
-            || id == item_id::BOW
-            || id == item_id::WAND
-            || id == item_id::SCIMITAR
-            || id == item_id::AXE
-            || id == item_id::SPEAR
-            || id == item_id::CROSSBOW
-            || id == item_id::ENHANCED_SWORD
-            || id == item_id::VETERAN_SWORD
-            || id == item_id::ENHANCED_BOW
-            || id == item_id::ENHANCED_STAFF
-            || id == item_id::ENHANCED_WAND
-            || id == item_id::ENHANCED_AXE
-            || id == item_id::ENHANCED_SPEAR => Some(EquipSlot::Weapon),
-        id if id == item_id::SHIELD
-            || id == item_id::HEAVY_SHIELD   => Some(EquipSlot::Offhand),
-        id if id == item_id::ARMOR
-            || id == item_id::LEATHER_ARMOR
-            || id == item_id::PLATE_ARMOR
-            || id == item_id::ROBE           => Some(EquipSlot::Armor),
-        id if id == item_id::RING
-            || id == item_id::LUCKY_RING     => Some(EquipSlot::Ring),
-        // Fase E — Amulet/Pendant/Charm migram pra Necklace (slot dedicado)
-        id if id == item_id::AMULET
-            || id == item_id::PENDANT
-            || id == item_id::CHARM
-            || id == item_id::NECKLACE_BASIC
-            || id == item_id::NECKLACE_MAGIC => Some(EquipSlot::Necklace),
-        id if id == item_id::HELM_LEATHER
-            || id == item_id::HELM_PLATE     => Some(EquipSlot::Helm),
-        id if id == item_id::LEGS_LEATHER
-            || id == item_id::LEGS_PLATE     => Some(EquipSlot::Legs),
-        id if id == item_id::BOOTS_LEATHER
-            || id == item_id::BOOTS_PLATE    => Some(EquipSlot::Boots),
-        id if id == item_id::GLOVES_LEATHER
-            || id == item_id::GLOVES_PLATE   => Some(EquipSlot::Gloves),
-        id if id == item_id::BELT_BASIC
-            || id == item_id::BELT_MAGIC     => Some(EquipSlot::Belt),
-        id if id == item_id::CAPE_BASIC
-            || id == item_id::CAPE_MAGIC     => Some(EquipSlot::Cape),
-        // Tier T1-T4 (Phase G): faixas atribuídas em ordem por slot.
-        101..=112 => Some(EquipSlot::Gloves),
-        113..=124 => Some(EquipSlot::Legs),
-        125..=136 => Some(EquipSlot::Boots),
-        137..=148 => Some(EquipSlot::Helm),
-        149..=160 => Some(EquipSlot::Armor),
-        161..=172 => Some(EquipSlot::Ring),
-        173..=184 => Some(EquipSlot::Necklace),
-        185..=196 => Some(EquipSlot::Belt),
-        197..=208 => Some(EquipSlot::Offhand),
-        209..=220 => Some(EquipSlot::Cape),
-        221..=268 => Some(EquipSlot::Weapon),
-        _                                    => None,
-    }
-}
-
-/// True se este item_id eh um escudo (vai no slot Offhand).
-pub fn is_shield(item_id: u16) -> bool {
-    item_id == item_id::SHIELD || item_id == item_id::HEAVY_SHIELD
-        || (197..=208).contains(&item_id)
-}
-
-/// Quais armas permitem equipar um item no Offhand (escudo). One-handed melee
-/// (sword, dagger) + unarmed (item_id=0). Two-handed (great_sword) e ranged
-/// (bow/staff/wand) NAO permitem — o offhand fica trancado pelo server quando
-/// uma dessas armas esta equipada.
-pub fn weapon_allows_offhand(weapon_id: u16) -> bool {
-    weapon_id == 0
-        || weapon_id == item_id::SWORD
-        || weapon_id == item_id::DAGGER
-        || weapon_id == item_id::SCIMITAR
-        || weapon_id == item_id::AXE
-        || weapon_id == item_id::ENHANCED_SWORD
-        || weapon_id == item_id::VETERAN_SWORD
-        || weapon_id == item_id::ENHANCED_AXE
-        // Phase G — armas T1-T4: Espada (221-224), Machado (237-240), Varinha (261-264) são 1H
-        || (221..=224).contains(&weapon_id)
-        || (237..=240).contains(&weapon_id)
-        || (261..=264).contains(&weapon_id)
-}
-
-/// Nivel de proficiencia do CONJUNTO pra equipar este item.
-///
-/// `None` = sem requisito. O conjunto sai da propria arma, entao o requisito e'
-/// so' o numero: quem pede espada aprimorada pede proficiencia 5 no conjunto
-/// que aquela espada e'.
-pub const fn item_prof_req(item_id: u16) -> Option<u16> {
-    match item_id {
-        id if id == item_id::ENHANCED_SWORD => Some(5),
-        id if id == item_id::VETERAN_SWORD  => Some(10),
-        id if id == item_id::ENHANCED_BOW   => Some(5),
-        id if id == item_id::ENHANCED_STAFF => Some(5),
-        id if id == item_id::ENHANCED_WAND  => Some(5),
-        id if id == item_id::ENHANCED_AXE   => Some(5),
-        id if id == item_id::ENHANCED_SPEAR => Some(5),
+        ESPADA_E_ESCUDO | KATANA | PISTOLAS | ANEL_MAGICO => Some(EquipSlot::Weapon),
+        MANTO_DO_GUERREIRO | BAINHA | COLDRE | MANTO_DO_MAGO => Some(EquipSlot::Offhand),
+        ARMADURA_LEVE | ARMADURA_MEDIA | ARMADURA_PESADA => Some(EquipSlot::Armor),
+        BRINCO => Some(EquipSlot::Earring),
+        AMULETO => Some(EquipSlot::Necklace),
+        BRACELETE => Some(EquipSlot::Bracelet),
+        CINTO => Some(EquipSlot::Belt),
         _ => None,
     }
 }
 
-/// Char level mínimo pra equipar este item. Hardcore design removeu o gate de
-/// char level — agora so' Proficiency level (`item_prof_req`) gateia equip.
-/// Mantido como function (sempre None) pra preservar call sites no equip path.
-pub const fn item_char_level_req(_item_id: u16) -> Option<u16> {
-    None
+/// O peso da armadura (docs/COMBATE.md): leve da' dano e cobra resistencia,
+/// pesada o contrario, media e' o meio. Devolve (multiplicador de dano,
+/// reducao de dano somada). Sem armadura conta como media.
+pub fn peso_da_armadura(item_id: u16) -> (f32, f32) {
+    match item_id {
+        item_id::ARMADURA_LEVE => (1.10, 0.0),
+        item_id::ARMADURA_PESADA => (0.90, 0.10),
+        _ => (1.0, 0.0),
+    }
 }
+
+
+
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum EquipSlot {
+    /// A arma: o conjunto (docs/COMBATE.md).
     Weapon,
-    Armor,
+    /// A secundaria amarrada ao conjunto (manto, bainha, coldre).
     Offhand,
-    Ring,
-    // Fase E
-    Helm,
-    Legs,
-    Boots,
-    Gloves,
-    Belt,
-    Cape,
+    Armor,
+    Earring,
     Necklace,
+    Bracelet,
+    Belt,
 }
 
 impl EquipSlot {
+    pub const TODOS: [EquipSlot; 7] = [
+        EquipSlot::Weapon,
+        EquipSlot::Offhand,
+        EquipSlot::Armor,
+        EquipSlot::Earring,
+        EquipSlot::Necklace,
+        EquipSlot::Bracelet,
+        EquipSlot::Belt,
+    ];
+
     /// String do slot pra ser persistido no DB (coluna `slot`).
     pub fn as_db_str(&self) -> &'static str {
         match self {
-            EquipSlot::Weapon       => "weapon",
-            EquipSlot::Armor        => "armor",
-            EquipSlot::Offhand      => "offhand",
-            EquipSlot::Ring         => "ring",
-            EquipSlot::Helm         => "helm",
-            EquipSlot::Legs         => "legs",
-            EquipSlot::Boots        => "boots",
-            EquipSlot::Gloves       => "gloves",
-            EquipSlot::Belt         => "belt",
-            EquipSlot::Cape         => "cape",
-            EquipSlot::Necklace     => "necklace",
+            EquipSlot::Weapon => "weapon",
+            EquipSlot::Offhand => "offhand",
+            EquipSlot::Armor => "armor",
+            EquipSlot::Earring => "earring",
+            EquipSlot::Necklace => "necklace",
+            EquipSlot::Bracelet => "bracelet",
+            EquipSlot::Belt => "belt",
         }
+    }
+
+    pub fn de_db_str(s: &str) -> Option<EquipSlot> {
+        Self::TODOS.into_iter().find(|x| x.as_db_str() == s)
     }
 }
 
@@ -1129,71 +911,17 @@ pub struct WeaponScaling {
 /// Scaling por arma equipada. level vem da Proficiency::from_item(weapon_id).
 /// Unarmed (sem arma): usa `unarmed_scaling()`.
 pub const fn weapon_scaling(item_id: u16) -> WeaponScaling {
+    let z = WeaponScaling { hp_max: 0.0, mp_max: 0.0, attack_damage: 0.0, dex: 0.0, wis: 0.0, defense: 0.0 };
     match item_id {
-        // Espada (sword & board): tanque — +HP, +Res
-        id if id == item_id::SWORD
-            || id == item_id::ENHANCED_SWORD
-            || id == item_id::VETERAN_SWORD => WeaponScaling {
-            hp_max: 1.0, mp_max: 0.0, attack_damage: 0.0, dex: 0.0, wis: 0.0, defense: 0.1,
-        },
-        // Espadao: DPS puro
-        id if id == item_id::GREAT_SWORD => WeaponScaling {
-            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.5, dex: 0.0, wis: 0.0, defense: 0.0,
-        },
-        // Adaga: duelista
-        id if id == item_id::DAGGER => WeaponScaling {
-            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.3, dex: 0.2, wis: 0.0, defense: 0.0,
-        },
-        // Cajado: caster hibrido
-        id if id == item_id::STAFF
-            || id == item_id::ENHANCED_STAFF => WeaponScaling {
-            hp_max: 0.0, mp_max: 1.0, attack_damage: 0.0, dex: 0.0, wis: 0.2, defense: 0.0,
-        },
-        // Arco: ranger
-        id if id == item_id::BOW
-            || id == item_id::ENHANCED_BOW => WeaponScaling {
-            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.1, dex: 0.5, wis: 0.0, defense: 0.0,
-        },
-        // Varinha: caster puro
-        id if id == item_id::WAND
-            || id == item_id::ENHANCED_WAND => WeaponScaling {
-            hp_max: 0.0, mp_max: 1.0, attack_damage: 0.0, dex: 0.0, wis: 0.3, defense: 0.0,
-        },
-        // Machado: heavy hitter — atk alto + um pouco de hp
-        id if id == item_id::AXE
-            || id == item_id::ENHANCED_AXE => WeaponScaling {
-            hp_max: 0.5, mp_max: 0.0, attack_damage: 0.4, dex: 0.0, wis: 0.0, defense: 0.0,
-        },
-        // Lança: zoning — atk médio + dex (alcance)
-        id if id == item_id::SPEAR
-            || id == item_id::ENHANCED_SPEAR => WeaponScaling {
-            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.25, dex: 0.15, wis: 0.0, defense: 0.0,
-        },
-        // Phase G — T1-T4 (mesmo scaling do equivalente base)
-        id if id >= 221 && id <= 224 => WeaponScaling { // Espada T1-T4
-            hp_max: 1.0, mp_max: 0.0, attack_damage: 0.0, dex: 0.0, wis: 0.0, defense: 0.1,
-        },
-        id if id >= 225 && id <= 228 => WeaponScaling { // Espadão T1-T4
-            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.5, dex: 0.0, wis: 0.0, defense: 0.0,
-        },
-        id if id >= 237 && id <= 240 => WeaponScaling { // Machado T1-T4
-            hp_max: 0.5, mp_max: 0.0, attack_damage: 0.4, dex: 0.0, wis: 0.0, defense: 0.0,
-        },
-        id if id >= 241 && id <= 244 => WeaponScaling { // Lança T1-T4
-            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.25, dex: 0.15, wis: 0.0, defense: 0.0,
-        },
-        id if id >= 257 && id <= 260 => WeaponScaling { // Cajado T1-T4
-            hp_max: 0.0, mp_max: 1.0, attack_damage: 0.0, dex: 0.0, wis: 0.2, defense: 0.0,
-        },
-        id if id >= 261 && id <= 264 => WeaponScaling { // Varinha T1-T4
-            hp_max: 0.0, mp_max: 1.0, attack_damage: 0.0, dex: 0.0, wis: 0.3, defense: 0.0,
-        },
-        id if id >= 265 && id <= 268 => WeaponScaling { // Arco T1-T4
-            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.1, dex: 0.5, wis: 0.0, defense: 0.0,
-        },
-        _ => WeaponScaling {
-            hp_max: 0.0, mp_max: 0.0, attack_damage: 0.0, dex: 0.0, wis: 0.0, defense: 0.0,
-        },
+        // espada e escudo: linha de frente — vida e resistencia
+        item_id::ESPADA_E_ESCUDO => WeaponScaling { hp_max: 1.0, defense: 0.1, ..z },
+        // katana: corte rapido — dano e destreza
+        item_id::KATANA => WeaponScaling { attack_damage: 0.3, dex: 0.2, ..z },
+        // pistolas: a' distancia — destreza
+        item_id::PISTOLAS => WeaponScaling { attack_damage: 0.1, dex: 0.5, ..z },
+        // anel: magia — mana e sabedoria
+        item_id::ANEL_MAGICO => WeaponScaling { mp_max: 1.0, wis: 0.3, ..z },
+        _ => z,
     }
 }
 
@@ -1206,23 +934,8 @@ pub const fn unarmed_scaling() -> WeaponScaling {
 
 /// True se a arma e de corpo-a-corpo (gera dano em cone na frente ao atacar,
 /// nao projetil). Sem arma = melee (soco). BOW/WAND/STAFF disparam projetil.
-pub const fn weapon_is_melee(item_id: u16) -> bool {
-    item_id == 0
-        || item_id == item_id::SWORD
-        || item_id == item_id::GREAT_SWORD
-        || item_id == item_id::DAGGER
-        || item_id == item_id::SCIMITAR
-        || item_id == item_id::AXE
-        || item_id == item_id::ENHANCED_SWORD
-        || item_id == item_id::VETERAN_SWORD
-        || item_id == item_id::ENHANCED_AXE
-        // SPEAR e melee mas usa anim Thrust — atualmente damage gen e
-        // controlado pela melee path baseado em is_melee, então mantém
-        // como melee aqui (cone na frente).
-        || item_id == item_id::SPEAR
-        || item_id == item_id::ENHANCED_SPEAR
-        // Phase G T1-T4 melee: Espada (221-224), Espadão (225-228), Machado (237-240), Lança (241-244)
-        || matches!(item_id, 221..=228 | 237..=244)
+pub fn weapon_is_melee(item_id: u16) -> bool {
+    !crate::skills::Conjunto::da_arma(item_id).a_distancia()
 }
 
 /// True se o inimigo desse kind ataca em melee (cone de dano direto na frente)
@@ -1246,60 +959,28 @@ pub const RANGED_ATTACK_RANGE: f32 = 9.0;
 pub const MELEE_CONE_HALF_ANGLE: f32 = std::f32::consts::FRAC_PI_3; // 60 graus -> 120 total
 
 pub const fn item_bonus(item_id: u16) -> EquipBonus {
+    // O que a peca da' SEM instancia (sem rolagem) — a mesma ordem de grandeza
+    // do meio do template (`items::item_template`).
+    const fn b(hp_max: i32, mp_max: i32, attack_damage: i32, dex: i32, wis: i32, defense: i32) -> EquipBonus {
+        EquipBonus { hp_max, mp_max, attack_damage, dex, wis, defense }
+    }
     match item_id {
-        // Armas
-        id if id == item_id::SWORD        => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 10, dex: 0,  wis: 0, defense: 0 },
-        id if id == item_id::STAFF        => EquipBonus { hp_max:  0,  mp_max:  40, attack_damage: 20, dex: 0,  wis: 5, defense: 0 },
-        id if id == item_id::DAGGER       => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  7, dex: 10, wis: 0, defense: 0 },
-        id if id == item_id::GREAT_SWORD  => EquipBonus { hp_max:  0,  mp_max: -20, attack_damage: 28, dex: -3, wis: 0, defense: 0 },
-        id if id == item_id::BOW          => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 14, dex: 12, wis: 0, defense: 0 },
-        id if id == item_id::WAND         => EquipBonus { hp_max:  0,  mp_max:  80, attack_damage:  6, dex: 0,  wis: 8, defense: 0 },
-        // Armaduras
-        id if id == item_id::ARMOR        => EquipBonus { hp_max: 40,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0, defense:  5 },
-        id if id == item_id::SHIELD       => EquipBonus { hp_max: 75,  mp_max:   0, attack_damage: -7, dex: 0,  wis: 0, defense:  6 },
-        id if id == item_id::LEATHER_ARMOR=> EquipBonus { hp_max: 25,  mp_max:   0, attack_damage:  0, dex: 6,  wis: 0, defense:  3 },
-        id if id == item_id::PLATE_ARMOR  => EquipBonus { hp_max:120,  mp_max: -10, attack_damage: -8, dex: -5, wis: 0, defense:  9 },
-        id if id == item_id::ROBE         => EquipBonus { hp_max: 10,  mp_max:  60, attack_damage:  0, dex: 0,  wis: 8, defense:  2 },
-        // Acessorios
-        id if id == item_id::RING         => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  0, dex: 5,  wis: 3, defense: 0 },
-        id if id == item_id::AMULET       => EquipBonus { hp_max: 15,  mp_max:  30, attack_damage:  0, dex: 0,  wis: 8, defense: 1 },
-        id if id == item_id::LUCKY_RING   => EquipBonus { hp_max: 10,  mp_max:  20, attack_damage:  2, dex: 6,  wis: 2, defense: 0 },
-        id if id == item_id::RING_TIDE    => EquipBonus { hp_max:  0,  mp_max:  15, attack_damage:  0, dex: 3,  wis: 0, defense: 0 },
-        id if id == item_id::RING_IGNITION => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  8, dex: 0,  wis: 5, defense: 0 },
-        id if id == item_id::RING_MIST    => EquipBonus { hp_max: 80,  mp_max:   0, attack_damage:  0, dex: 8,  wis: 8, defense: 0 },
-        id if id == item_id::RING_TEMPEST => EquipBonus { hp_max:150,  mp_max:  80, attack_damage: 10, dex:10,  wis:10, defense: 5 },
-        // === Fase D — novas armas / armaduras / acessórios ===
-        id if id == item_id::SCIMITAR     => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  8, dex: 6,  wis: 0, defense: 0 },
-        id if id == item_id::AXE       => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage: 22, dex: -2, wis: 0, defense: 3 },
-        id if id == item_id::SPEAR        => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 16, dex: 5,  wis: 0, defense: 0 },
-        id if id == item_id::CROSSBOW     => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 18, dex: 8,  wis: 0, defense: 0 },
-        id if id == item_id::HEAVY_SHIELD => EquipBonus { hp_max: 110, mp_max:   0, attack_damage:-12, dex: -5, wis: 0, defense: 10 },
-        id if id == item_id::PENDANT      => EquipBonus { hp_max: 25,  mp_max:  35, attack_damage:  0, dex: 0,  wis: 4, defense: 1 },
-        id if id == item_id::CHARM        => EquipBonus { hp_max:  0,  mp_max:  10, attack_damage:  3, dex: 4,  wis: 4, defense: 0 },
-        // === Fase E — slots novos ===
-        id if id == item_id::HELM_LEATHER => EquipBonus { hp_max: 15,  mp_max:   0, attack_damage:  0, dex: 4,  wis: 0, defense:  3 },
-        id if id == item_id::HELM_PLATE   => EquipBonus { hp_max: 45,  mp_max:   0, attack_damage: -2, dex: -3, wis: 0, defense:  5 },
-        id if id == item_id::LEGS_LEATHER => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage:  0, dex: 5,  wis: 0, defense:  3 },
-        id if id == item_id::LEGS_PLATE   => EquipBonus { hp_max: 60,  mp_max:   0, attack_damage: -3, dex: -4, wis: 0, defense:  6 },
-        id if id == item_id::BOOTS_LEATHER=> EquipBonus { hp_max: 10,  mp_max:   0, attack_damage:  0, dex: 6,  wis: 0, defense:  2 },
-        id if id == item_id::BOOTS_PLATE  => EquipBonus { hp_max: 30,  mp_max:   0, attack_damage: -1, dex: -3, wis: 0, defense:  3 },
-        id if id == item_id::GLOVES_LEATHER=>EquipBonus { hp_max:  5,  mp_max:   0, attack_damage:  3, dex: 5,  wis: 0, defense:  1 },
-        id if id == item_id::GLOVES_PLATE => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage:  4, dex: -2, wis: 0, defense:  3 },
-        id if id == item_id::BELT_BASIC   => EquipBonus { hp_max: 25,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0, defense:  2 },
-        id if id == item_id::BELT_MAGIC   => EquipBonus { hp_max:  5,  mp_max:  35, attack_damage:  0, dex: 0,  wis: 4, defense:  1 },
-        id if id == item_id::CAPE_BASIC   => EquipBonus { hp_max: 20,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0, defense:  4 },
-        id if id == item_id::CAPE_MAGIC   => EquipBonus { hp_max:  0,  mp_max:  45, attack_damage:  0, dex: 0,  wis: 6, defense:  2 },
-        id if id == item_id::NECKLACE_BASIC=>EquipBonus { hp_max: 20,  mp_max:  10, attack_damage:  0, dex: 0,  wis: 3, defense:  0 },
-        id if id == item_id::NECKLACE_MAGIC=>EquipBonus { hp_max:  0,  mp_max:  40, attack_damage:  0, dex: 0,  wis: 7, defense:  0 },
-        // === Fase F — armas tier 2/3 ===
-        id if id == item_id::ENHANCED_SWORD=>EquipBonus { hp_max: 10,  mp_max:   0, attack_damage: 18, dex: 2,  wis: 0, defense:  1 },
-        id if id == item_id::VETERAN_SWORD =>EquipBonus { hp_max: 20,  mp_max:   0, attack_damage: 28, dex: 4,  wis: 0, defense:  2 },
-        id if id == item_id::ENHANCED_BOW  =>EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 26, dex:24,  wis: 0, defense:  0 },
-        id if id == item_id::ENHANCED_STAFF=>EquipBonus { hp_max:  0,  mp_max:  80, attack_damage: 36, dex: 0,  wis:10, defense:  0 },
-        id if id == item_id::ENHANCED_WAND =>EquipBonus { hp_max:  0,  mp_max: 150, attack_damage: 12, dex: 0,  wis:16, defense:  0 },
-        id if id == item_id::ENHANCED_AXE  =>EquipBonus { hp_max: 35,  mp_max:   0, attack_damage: 40, dex:-2,  wis: 0, defense:  6 },
-        id if id == item_id::ENHANCED_SPEAR=>EquipBonus { hp_max:  0,  mp_max:   0, attack_damage: 30, dex:10,  wis: 0, defense:  0 },
-        _                                 => EquipBonus { hp_max:  0,  mp_max:   0, attack_damage:  0, dex: 0,  wis: 0, defense: 0 },
+        item_id::ESPADA_E_ESCUDO => b(20, 0, 12, 0, 0, 0),
+        item_id::KATANA => b(0, 0, 11, 8, 0, 0),
+        item_id::PISTOLAS => b(0, 0, 10, 9, 0, 0),
+        item_id::ANEL_MAGICO => b(0, 50, 9, 0, 7, 0),
+        item_id::MANTO_DO_GUERREIRO => b(35, 0, 0, 0, 0, 5),
+        item_id::BAINHA => b(0, 0, 3, 5, 0, 0),
+        item_id::COLDRE => b(0, 0, 3, 5, 0, 0),
+        item_id::MANTO_DO_MAGO => b(0, 45, 0, 0, 5, 0),
+        item_id::ARMADURA_LEVE => b(25, 0, 0, 4, 0, 2),
+        item_id::ARMADURA_MEDIA => b(45, 0, 0, 0, 0, 6),
+        item_id::ARMADURA_PESADA => b(90, 0, 0, 0, 0, 12),
+        item_id::BRINCO => b(0, 0, 3, 4, 0, 0),
+        item_id::AMULETO => b(0, 35, 0, 0, 4, 0),
+        item_id::BRACELETE => b(0, 0, 3, 0, 0, 2),
+        item_id::CINTO => b(30, 0, 0, 0, 0, 2),
+        _ => b(0, 0, 0, 0, 0, 0),
     }
 }
 

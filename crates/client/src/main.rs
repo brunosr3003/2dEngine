@@ -96,6 +96,8 @@ struct Jogo {
     alvo: Option<shared::EntityId>,
     /// Inventario e equipamento (tecla I). Ver `bolsa`.
     bolsa: bolsa::Bolsa,
+    /// Vida, mana, vigor e experiencia do HUD (`hud::Ficha`).
+    ficha: hud::Ficha,
     /// Ultima vez que o "ir ate' o alvo" pediu rota.
     ultima_aproximacao: f64,
     input_seq: u32,
@@ -201,6 +203,7 @@ async fn main() {
         world: World::default(),
         alvo: None,
         bolsa: bolsa::Bolsa::default(),
+        ficha: hud::Ficha::default(),
         ultima_aproximacao: 0.0,
         input_seq: 0,
         ultimo_input: 0.0,
@@ -361,7 +364,8 @@ impl Jogo {
 
     fn on_message(&mut self, msg: ServerMessage) {
         match msg {
-            ServerMessage::HandshakeAck { .. } => {
+            ServerMessage::HandshakeAck { xp_multiplier, .. } => {
+                self.ficha.mult_xp = xp_multiplier;
                 self.envia(ClientMessage::Login {
                     username: self.usuario.clone(),
                     password: self.senha.clone(),
@@ -482,7 +486,13 @@ impl Jogo {
                 self.bolsa.equip = equipment;
             }
             ServerMessage::GoldUpdate { gold } => self.bolsa.ouro = gold,
-            ServerMessage::ProgressUpdate { level, .. } => self.bolsa.nivel = level,
+            ServerMessage::ProgressUpdate { xp, level } => {
+                self.bolsa.nivel = level;
+                self.ficha.xp = xp;
+                self.ficha.nivel = level;
+            }
+            ServerMessage::ManaUpdate { current } => self.ficha.mp = Some(current),
+            ServerMessage::StaminaUpdate { current } => self.ficha.vigor = Some(current),
             // As demais (skills, loja, quests) ainda nao tem UI;
             // ignorar e' seguro porque nada aqui e' autoritativo.
             _ => {}
@@ -618,6 +628,7 @@ impl Jogo {
         self.rede = hud::Rede::default();
         self.chat.clear();
         self.bolsa = bolsa::Bolsa::default();
+        self.ficha = hud::Ficha::default();
         self.teclado.limpa();
         // Volta pro login e nao pra escolha de servidor: o canal continua
         // sendo o mesmo, quem mudou de ideia foi a conta.
@@ -888,6 +899,30 @@ impl Jogo {
             &self.chat,
         ) {
             self.sair();
+        }
+        // A ficha do MIR4: vida, mana, vigor e nivel no canto, a experiencia no
+        // pe' da tela, e o alvo no alto.
+        if let Some(e) = self.world.self_id.and_then(|id| self.world.ents.get(&id)) {
+            let st = self.bolsa.stats.as_ref();
+            let nivel = if self.ficha.nivel > 0 { self.ficha.nivel } else { e.meta.nivel as u32 };
+            let nome = e.meta.name.clone().unwrap_or_default();
+            hud::draw_ficha(
+                &mut self.ficha,
+                get_frame_time(),
+                &nome,
+                nivel,
+                e.state.hp as i32,
+                st.map_or(e.meta.hp_max as i32, |s| s.hp_max),
+                st.map_or(50, |s| s.mp_max),
+                st.map_or(100, |s| s.stamina_max),
+            );
+            hud::draw_exp(&self.ficha, nivel);
+        }
+        if let Some(a) = self.alvo.and_then(|id| self.world.ents.get(&id)) {
+            if a.morte.is_none() {
+                let chefe = a.state.flags & shared::ent_flags::BOSS != 0;
+                hud::draw_alvo(a.meta.name.as_deref().unwrap_or("?"), a.meta.nivel, a.state.hp, a.meta.hp_max, chefe);
+            }
         }
         // A bolsa por cima de tudo.
         if let Some(pedido) = self.bolsa.desenha(&self.vox, &self.solido) {
