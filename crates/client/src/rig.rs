@@ -824,6 +824,13 @@ pub fn pulsos(m: &[Mat4; N], voxel: f32) -> [Mat4; 2] {
     [em(PULSO_D, ANTEBRACO_D), em(PULSO_E, ANTEBRACO_E)]
 }
 
+/// Onde fica a palma de cada mao (direita, esquerda), no mundo: e' ali que o
+/// anel brilha.
+pub fn palmas(m: &[Mat4; N], voxel: f32) -> [Vec3; 2] {
+    let em = |pt: [f32; 3], pai: usize| m[pai].transform_point3(mapa(pt, voxel) - mapa(PECAS[pai].2, voxel));
+    [em(MAO_D, ANTEBRACO_D), em(MAO_E, ANTEBRACO_E)]
+}
+
 /// O conjunto e' o anel? (o render desenha o circulo no pulso)
 pub fn e_anel(p: &Pose) -> bool {
     p.armado && p.conjunto == ANEL

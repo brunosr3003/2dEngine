@@ -1160,6 +1160,7 @@ pub fn draw_entities(
             Brilho::Fita(f) => desenha_fita(f, agora),
             Brilho::Clarao(p, u) => desenha_clarao(*p, *u),
             Brilho::Circulo(pulso, t) => desenha_circulo(*pulso, *t),
+            Brilho::Mao(p, forca, t) => desenha_mao(*p, *forca, *t),
         }
     }
 }
@@ -1318,7 +1319,34 @@ fn desenha_personagem(
             }
         }
     }
+    // Anel: as maos BRILHAM enquanto ele esta' em uso — fraco com ele
+    // guardado, forte em combate, e um pico no instante do golpe. Anel nao
+    // tem modelo (de cima ele e' um voxel): o brilho e' como ele aparece.
+    if crate::rig::e_anel(&pose) {
+        let pico = e.combo.map_or(0.0, |(_, t)| (1.0 - (t - crate::rig::IMPACTO).abs() / 0.12).max(0.0));
+        let forca = 0.55 + 0.45 * e.sacada.clamp(0.0, 1.0) + 0.8 * pico;
+        for (i, p) in crate::rig::palmas(&mats, VOXEL).iter().enumerate() {
+            brilhos.push(Brilho::Mao(*p, forca, agora + i as f32 * 1.7));
+        }
+    }
     brilhos
+}
+
+/// O brilho do anel numa mao: um nucleo claro, dois halos violeta pulsando
+/// e tres faiscas orbitando. O nucleo vai PRIMEIRO: o halo por cima dele o
+/// deixa passar; na ordem contraria o halo escreveria profundidade na frente
+/// e o nucleo sumiria.
+fn desenha_mao(p: Vec3, forca: f32, t: f32) {
+    let pulso = 1.0 + 0.15 * (t * 6.0).sin();
+    let alfa = |x: f32| (x * forca.min(1.0)).clamp(0.0, 255.0) as u8;
+    octaedro(p, 0.045 * pulso * forca.max(0.6), [255, 240, 255, alfa(255.0)]);
+    octaedro(p, 0.10 * pulso * forca, [205, 150, 255, alfa(120.0)]);
+    octaedro(p, 0.19 * pulso * forca, [170, 110, 255, alfa(45.0)]);
+    for k in 0..3 {
+        let ang = t * 4.0 + k as f32 * 2.094;
+        let q = p + vec3(ang.cos() * 0.16, (t * 3.0 + k as f32).sin() * 0.06, ang.sin() * 0.16) * forca.max(0.7);
+        octaedro(q, 0.02, [235, 210, 255, alfa(220.0)]);
+    }
 }
 
 /// O que brilha por cima do mundo, transparente, depois de todo mundo: o
@@ -1329,6 +1357,8 @@ pub enum Brilho {
     Clarao(Vec3, f32),
     /// O pulso e o instante do golpe.
     Circulo(Mat4, f32),
+    /// O brilho do anel na mao: onde, com que forca e a fase do pulso.
+    Mao(Vec3, f32, f32),
 }
 
 /// Malha transparente das duas faces (o descarte de face de costas esta'
@@ -1388,14 +1418,14 @@ fn faixa_circular(m: Mat4, y: f32, raio: f32, largura: f32, cor: [u8; 4]) {
 fn desenha_circulo(pulso: Mat4, t: f32) {
     let imp = crate::rig::IMPACTO;
     let aceso = if t < imp { t / imp } else { (1.0 - (t - imp) / 0.25).max(0.0) };
-    faixa_circular(pulso, 0.0, 3.6 * VOXEL, 0.9 * VOXEL, [190, 130, 255, (aceso * 220.0) as u8]);
+    faixa_circular(pulso, 0.0, 7.0 * VOXEL, 2.0 * VOXEL, [190, 130, 255, (aceso * 230.0) as u8]);
     if t > imp {
         let u = ((t - imp) / 0.22).min(1.0);
         faixa_circular(
             pulso,
-            -(4.0 + 14.0 * u) * VOXEL,
-            (4.0 + 7.0 * u) * VOXEL,
-            (1.2 * (1.0 - u) + 0.3) * VOXEL,
+            -(3.0 + 18.0 * u) * VOXEL,
+            (7.0 + 12.0 * u) * VOXEL,
+            (2.2 * (1.0 - u) + 0.5) * VOXEL,
             [215, 170, 255, ((1.0 - u) * 200.0) as u8],
         );
     }
