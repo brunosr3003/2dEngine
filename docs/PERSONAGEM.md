@@ -237,7 +237,7 @@ modelo com as dez peças, inclusive humanoide de mob.
 | parado | velocidade ~0 | torso sobe e desce 1 voxel (respiração) |
 | andar | velocidade | pernas e braços em seno, fase pela distância andada |
 | correr | `SPRINT` + velocidade | o mesmo ciclo, passo mais longo e tronco inclinado pra frente |
-| no ar | `PULANDO` + arco que o cliente já desenha | corpo SOLTO, movimento DE LADO: braços abertos e ainda pra baixo, abrindo e fechando juntos como quem se equilibra; pernas abertas balançando soltas e defasadas — nunca uma na frente e outra atrás, que lê como andar no ar — o jogo não tem pulo atlético, o que tira o pé do chão é vencer degrau de 2–3 blocos ou cair de uma borda; a pose entra e sai suavizada |
+| no ar | `PULANDO` + arco que o cliente já desenha | o instante de uma corrida CONGELADO: uma perna na frente, a outra atrás com o joelho dobrado, SEM trocar de lado (perna que troca lê como andar no ar); só a abertura balança um pouco; braços abertos balançando leve — o jogo não tem pulo atlético, o que tira o pé do chão é vencer degrau de 2–3 blocos ou cair de uma borda; a pose entra e sai suavizada |
 | pouso | fim do arco | agacha dobrando os joelhos, 0,1 s |
 | degrau | altura do chão sob cada pé | cada pé plantado no seu bloco, joelho dobrado (IK de dois ossos) |
 | tomar dano | vida caiu | tranco do torso pra trás, 0,12 s |

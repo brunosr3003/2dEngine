@@ -141,28 +141,29 @@ pub fn pose(e: &Entrada) -> Pose {
 /// pe' do chao e' vencer um degrau de dois ou tres blocos, ou cair de uma
 /// borda.
 ///
-/// Tres tentativas ate' aqui, e o que cada uma ensinou:
+/// Quatro tentativas ate' aqui, e o que cada uma ensinou:
 ///  1. encolher a perna subindo e jogar o braco caindo — pose de pulo, conta
 ///     uma historia que nao acontece;
 ///  2. corpo solto e PARADO — duro no ar;
 ///  3. perna e braco indo e voltando pra frente e pra tras — parece ANDAR no
-///     ar. Qualquer vai-e-volta no eixo do passo le' como passo.
+///     ar: perna que TROCA de lado le' como passo;
+///  4. tudo de lado (perna aberta, braco aberto pra baixo) — nao agradou.
 ///
-/// Entao o movimento e' DE LADO: bracos abertos pra fora e ainda pra baixo,
-/// abrindo e fechando juntos como quem se equilibra; pernas abertas,
-/// balancando soltas e defasadas — nunca uma na frente e a outra atras.
+/// O que ficou: o instante de uma corrida CONGELADO. Uma perna na frente, a
+/// outra atras com o joelho dobrado, e elas NAO trocam de lado — so' a
+/// abertura balanca um pouco. Bracos abertos, balancando leve como quem se
+/// equilibra.
 fn pose_no_ar(tempo: f32) -> Pose {
     let mut rot = [Quat::IDENTITY; N];
-    let f = tempo * std::f32::consts::TAU * AR_BALANCO_HZ;
-    let (a, b) = (f.sin(), (f + 1.3).sin());
-    // Pernas: abertas pro lado, balancando soltas. O pouco de frente/tras e'
-    // no MESMO sentido nas duas, pra nao virar passo.
-    rot[COXA_D] = abre(1.0, 0.28 + 0.08 * a) * frente(0.06 * b);
-    rot[COXA_E] = abre(-1.0, 0.28 + 0.08 * b) * frente(0.06 * a);
-    rot[CANELA_D] = dobra_pra_tras(0.20 + 0.10 * a.abs());
-    rot[CANELA_E] = dobra_pra_tras(0.20 + 0.10 * b.abs());
-    // Bracos: abertos e pra baixo, abrindo e fechando juntos.
-    let braco = 0.55 + 0.14 * a;
+    let s = (tempo * std::f32::consts::TAU * AR_BALANCO_HZ).sin();
+    // Abertura da passada congelada: abre e fecha um pouco, sem trocar de lado.
+    let abertura = 0.33 + 0.07 * s;
+    rot[COXA_D] = frente(abertura);
+    rot[CANELA_D] = dobra_pra_tras(0.25);
+    rot[COXA_E] = frente(-abertura);
+    rot[CANELA_E] = dobra_pra_tras(0.45);
+    // Bracos abertos, balancando leve.
+    let braco = 0.75 + 0.10 * s;
     rot[BRACO_D] = abre(1.0, braco);
     rot[BRACO_E] = abre(-1.0, braco);
     rot[ANTEBRACO_D] = frente(0.2);
@@ -171,8 +172,7 @@ fn pose_no_ar(tempo: f32) -> Pose {
 }
 
 /// Balancos por segundo no ar. O ar dura ~0,6 s (o arco do degrau): da' pouco
-/// menos de um abre-e-fecha por subida, que e' o que le' como equilibrio e
-/// nao como pedalada.
+/// menos de um balanco por subida — balancadinho, nao pedalada.
 const AR_BALANCO_HZ: f32 = 1.6;
 
 fn pose_no_chao(e: &Entrada) -> Pose {
@@ -302,34 +302,34 @@ mod testes {
         }
     }
 
-    /// No ar o movimento é DE LADO, não de passo. Braço aberto e apontando
-    /// PRA BAIXO; perna aberta; e as duas pernas nunca uma na frente e a
-    /// outra atrás — foi isso que fez a terceira tentativa parecer andar no ar.
+    /// No ar é o instante de uma corrida CONGELADO: a perna direita fica na
+    /// frente e a esquerda atrás o tempo todo. Perna que TROCA de lado lê
+    /// como andar no ar — foi o que a terceira tentativa fez. Braço aberto, e
+    /// tudo balançando um pouco, não parado.
     #[test]
-    fn no_ar_nao_parece_andar() {
+    fn no_ar_um_pe_na_frente_outro_atras_sem_trocar() {
         let mut e = parado();
-        let parada = pose(&e);
-        let sola_parada = sola(&parada, COXA_D, CANELA_D).x.abs();
         e.ar = 1.0;
-        let mut maos = Vec::new();
+        let (mut lo, mut hi) = (f32::MAX, f32::MIN);
         for k in 0..32 {
             e.tempo = k as f32 * 0.02;
             let p = pose(&e);
             let (d, es) = (sola(&p, COXA_D, CANELA_D), sola(&p, COXA_E, CANELA_E));
-            assert!((d.z - es.z).abs() < 2.5,
-                "tempo {:.2}: uma perna na frente da outra ({:.2} x {:.2}) — isso é passo", e.tempo, d.z, es.z);
-            assert!(d.x.abs() > sola_parada + 2.0 && es.x.abs() > sola_parada + 2.0,
-                "tempo {:.2}: perna não está aberta ({:.2}, {:.2})", e.tempo, d.x, es.x);
-            let (md, me) = (mao(&p, ANTEBRACO_D), mao(&p, ANTEBRACO_E));
+            // O que importa é NUNCA trocar de lado: a da frente sempre à
+            // frente do corpo, a de trás sempre atrás, bem separadas. Quando
+            // a abertura fecha, a da frente fica ~3 voxels à frente — ainda
+            // na frente.
+            assert!(d.z > 1.5, "tempo {:.2}: a perna da frente saiu da frente ({:.2})", e.tempo, d.z);
+            assert!(es.z < -1.5, "tempo {:.2}: a perna de trás saiu de trás ({:.2})", e.tempo, es.z);
+            assert!(d.z - es.z > 4.0, "tempo {:.2}: as pernas se juntaram ({:.2} x {:.2})", e.tempo, d.z, es.z);
             let ombro = mapa(PECAS[BRACO_D].2, 1.0);
-            assert!(md.x.abs() > ombro.x.abs() + 2.0, "tempo {:.2}: braço direito não abriu", e.tempo);
-            assert!(md.y < ombro.y - 6.0 && me.y < ombro.y - 6.0,
-                "tempo {:.2}: braço subiu — tem que ser aberto PRA BAIXO", e.tempo);
-            maos.push(md);
+            let (md, me) = (mao(&p, ANTEBRACO_D), mao(&p, ANTEBRACO_E));
+            assert!(md.x.abs() > ombro.x.abs() + 3.0 && me.x.abs() > ombro.x.abs() + 3.0,
+                "tempo {:.2}: braço não está aberto", e.tempo);
+            lo = lo.min(d.z);
+            hi = hi.max(d.z);
         }
-        // E não é parado: o braço de fato abre e fecha.
-        let (lo, hi) = maos.iter().fold((f32::MAX, f32::MIN), |(lo, hi), m| (lo.min(m.x), hi.max(m.x)));
-        assert!(hi - lo > 1.5, "o braço não se mexe no ar ({lo:.2}..{hi:.2})");
+        assert!(hi - lo > 0.8, "a perna não balança no ar ({lo:.2}..{hi:.2})");
     }
 
     /// No meio do passo a perna direita está NA FRENTE (o +Z do rig) e a
