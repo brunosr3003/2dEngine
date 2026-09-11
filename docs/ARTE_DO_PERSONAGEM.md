@@ -92,19 +92,26 @@ tapa o buraco que abriria na junta. **Mantenha a tampa** ao esculpir — ela é 
 
 Proposta pro playtest: **4 rostos, 6 cabelos.**
 
-## A armadura — `armadura_leve.vox`, `armadura_media.vox`, `armadura_pesada.vox`
+## Skins de armadura — `assets/vox/personagem/skins/armadura/<nome>.vox`
 
-- **Os mesmos dez objetos, com os mesmos nomes.** Cada objeto **substitui a
-  peça inteira do corpo** — não é casca por cima. A mão continua no antebraço,
-  em pele (249–252).
-- **Como fazer:** duplique o `corpo.vox` e esculpa a armadura em cima, peça
-  por peça. As juntas e as tampas vêm junto.
-- **Quanto pode crescer:** leve quase o corpo; média até +1 voxel; pesada até
-  +2, ombreira até +3.
-- **Frisos que mudam com o tier:** 241–244. Uma armadura serve os quatro tiers.
-- **Cabeça:** a leve não tem. A média tem um objeto `capuz` (substitui o
-  cabelo; o rosto aparece). A pesada tem um objeto `elmo` (substitui o cabelo
-  e cobre o rosto).
+Uma skin de armadura é **a roupa inteira**, comprada na loja. A armadura
+equipada (o peso, o tier) não muda o visual.
+
+- **Os mesmos dez objetos, com os mesmos nomes do corpo.** Cada objeto
+  **substitui a peça inteira do corpo** — não é casca por cima. A mão
+  continua no antebraço, em pele (249–252).
+- **Como fazer:** duplique o `corpo.vox` e esculpa a roupa em cima, peça por
+  peça. As juntas e as tampas vêm junto.
+- **Quanto pode crescer:** até +2 voxels além da caixa de cada peça;
+  ombreira até +3.
+- **Frisos em 241–244.** A cor sai do tier do item que o jogador tem
+  EQUIPADO — a skin decide o desenho, o item decide a cor. Uma skin serve os
+  quatro tiers.
+- **Cabeça:** a skin pode trazer um objeto `capuz` (substitui o cabelo; o
+  rosto aparece) ou `elmo` (substitui o cabelo e cobre o rosto).
+- **O piratinha (`corpo.vox`) é a roupa padrão.** Nenhuma skin é
+  pré-requisito de jogo; cada uma nova é conteúdo de loja, feita quando for
+  vendida.
 
 ## O que se veste — mesma tela, um objeto cada
 
@@ -115,7 +122,12 @@ Proposta pro playtest: **4 rostos, 6 cabelos.**
 | `coldre.vox` | `coldre` | cinto na bacia (z 19–23) com um coldre de cada lado, atrás do braço (y 8–9); **não descer abaixo de z 19**, senão a coxa atravessa andando | torso |
 | `bainha.vox` | `bainha` | quadril esquerdo, inclinada: boca à frente e acima (y 15, z 22), ponta atrás e abaixo (y 4, z 16), por fora da coxa (x 8–9) | torso |
 
-## As armas de mão — tela livre, um objeto
+## Skins de arma — tela livre, um objeto
+
+Uma skin de arma é de **um conjunto** — troca a cara da arma, nunca o
+conjunto: a animação sai do conjunto, e quem usa pistola saca pistola. Cada
+conjunto tem uma **skin padrão** (os arquivos abaixo); as compradas vão em
+`assets/vox/personagem/skins/arma/<conjunto>/<nome>.vox`.
 
 **Orientação: como ela fica na mão com o braço caído.** Cabo ao longo do Y,
 lâmina ou cano apontando pra **+Y** (frente).
@@ -147,12 +159,12 @@ um brilho ou runa sobre a mão feito em código (ABERTO em `PERSONAGEM.md`).
 |---|---|---|
 | 1 | `corpo.vox` — **feito: o piratinha** | o rig com o corpo de verdade |
 | 2 | `rosto_01`, `cabelo_01` — **`cabelo_01` feito: o tricórnio**; o rosto do pirata mora no `corpo.vox` | a cabeça |
-| 3 | `espada`, `escudo`, `manto_guerreiro` | o primeiro conjunto e o primeiro ataque |
-| 4 | `katana`, `bainha`, `pistola`, `coldre`, `manto_mago` | os outros três conjuntos |
-| 5 | `armadura_leve`, `_media`, `_pesada` | o peso da armadura |
+| 3 | `espada`, `escudo`, `manto_guerreiro` — skins padrão do primeiro conjunto | o primeiro conjunto e o primeiro ataque |
+| 4 | `katana`, `bainha`, `pistola`, `coldre`, `manto_mago` — skins padrão | os outros três conjuntos |
+| 5 | skins de armadura | conteúdo de loja — feitas quando forem vendidas, **não são pré-requisito** |
 | 6 | `rosto_02–04`, `cabelo_02–06` | a criação de personagem |
 
-**22 arquivos no total.** Onde salvar: `assets/vox/personagem/`.
+**19 arquivos pra jogar** (as skins de armadura são conteúdo de loja, não pré-requisito). Onde salvar: `assets/vox/personagem/`.
 
 ## O primeiro personagem: o piratinha
 

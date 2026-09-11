@@ -23,8 +23,9 @@ by `tools/voxrender/molde_corpo.py`; the measurements live there and here.
 |---|---|
 | proportion | **stylized 1:5** — head ~1/5 of the height, hands and weapons slightly bigger than real |
 | limbs | **split** — ten rigid parts (upper arm / forearm, thigh / shin) |
-| armor weight | **per set** — three full-body silhouettes (light, medium, heavy) |
-| tier | **a color, not a model** — gray, green, blue, purple via palette swap |
+| look | **purchased skins** — armor skin (the whole outfit) and weapon skin (one per weapon set). The equipped item does NOT change the look |
+| default look | **the pirate** — whoever bought nothing wears it |
+| tier | still readable (proposal): the trim color (slots 241–244) comes from the **equipped item**, not from the skin |
 | body | **one body**; customization is the head (face, hair, skin tone) |
 | mobs | creatures **and** humanoids |
 
@@ -120,27 +121,26 @@ still required.
 
 Proposed for the playtest: **4 faces, 6 hair styles.**
 
-## Armor — `armadura_leve.vox`, `armadura_media.vox`, `armadura_pesada.vox`
+## Armor skins — `assets/vox/personagem/skins/armadura/<name>.vox`
 
-- **The same ten objects, with the same names.** Each object **replaces the
-  whole body part** — it is not a shell on top. The hand stays in the
-  forearm, in skin (249–252).
-- **How to make it:** duplicate `corpo.vox` and sculpt the armor on top, part
-  by part. The joints and caps come along.
-- **How much it can grow:** light is almost the body; medium up to +1 voxel;
-  heavy up to +2, shoulder pads up to +3.
+An armor skin is **the whole outfit**, bought in the store. Equipped armor
+(its weight, its tier) does not change the look.
 
-| weight | head | torso | arms | legs | silhouette |
-|---|---|---|---|---|---|
-| **light** | none (hair shows) | tight leather | bracers | trousers | slim |
-| **medium** | hood or circlet | doublet | small pauldron | shin guards | medium |
-| **heavy** | helmet (hides hair) | plate | wide pauldron | greaves | wide, square |
-
-- **Trims that change with the tier:** 241–244. One armor file serves all
-  four tiers.
-- **Head:** light has none. Medium has a `capuz` object (hood — replaces the
-  hair; the face shows). Heavy has an `elmo` object (helmet — replaces the
-  hair and covers the face).
+- **The same ten objects, with the same names as the body.** Each object
+  **replaces the whole body part** — it is not a shell on top. The hand stays
+  in the forearm, in skin (249–252).
+- **How to make one:** duplicate `corpo.vox` and sculpt the outfit on top,
+  part by part. The joints and caps come along.
+- **How much it can grow:** up to +2 voxels past each part's box; shoulder
+  pads up to +3.
+- **Trims in 241–244.** Their color comes from the tier of the item the
+  player has EQUIPPED — the skin decides the shape, the item decides the
+  color. One skin serves all four tiers.
+- **Head:** a skin may add a `capuz` object (hood — replaces the hair; the
+  face shows) or an `elmo` object (helmet — replaces the hair and covers the
+  face).
+- **The pirate (`corpo.vox`) is the default outfit.** No skin is required to
+  play; each new one is store content, made when it will be sold.
 
 ## Worn items — same canvas, one object each
 
@@ -151,7 +151,12 @@ Proposed for the playtest: **4 faces, 6 hair styles.**
 | `coldre.vox` | `coldre` | belt at the hips (z 19–23) with one holster on each side, behind the arm (y 8–9); **don't go below z 19**, or the thigh passes through it while walking | torso |
 | `bainha.vox` | `bainha` | left hip, angled: mouth forward and up (y 15, z 22), tip back and down (y 4, z 16), outside the thigh (x 8–9) | torso |
 
-## Hand weapons — any canvas, one object
+## Weapon skins — any canvas, one object
+
+A weapon skin belongs to **one weapon set** — it changes the weapon's look,
+never the set: the animations come from the set, so a pistol user always
+draws pistols. Each set has a **default skin** (the files below); bought ones
+go in `assets/vox/personagem/skins/arma/<set>/<name>.vox`.
 
 **Orientation: the way it sits in the hand with the arm hanging down.** Handle
 along Y, blade or barrel pointing **+Y** (forward).
@@ -186,12 +191,12 @@ proposal is a glow or rune over the hand, done in code (still open).
 |---|---|---|
 | 1 | `corpo.vox` — **done: the pirate** | the rig with the real body |
 | 2 | `rosto_01`, `cabelo_01` — **`cabelo_01` done: the tricorn**; the pirate's face lives in `corpo.vox` | the head |
-| 3 | `espada`, `escudo`, `manto_guerreiro` | the first weapon set and the first attack |
-| 4 | `katana`, `bainha`, `pistola`, `coldre`, `manto_mago` | the other three sets |
-| 5 | `armadura_leve`, `_media`, `_pesada` | armor weight |
+| 3 | `espada`, `escudo`, `manto_guerreiro` — default skins of the first set | the first weapon set and the first attack |
+| 4 | `katana`, `bainha`, `pistola`, `coldre`, `manto_mago` — default skins | the other three sets |
+| 5 | armor skins | store content — made as they are sold, **not required to play** |
 | 6 | `rosto_02–04`, `cabelo_02–06` | character creation |
 
-**22 files in total.** Save them in `assets/vox/personagem/`.
+**19 files to play** (the armor skins are store content, not a prerequisite). Save them in `assets/vox/personagem/`.
 
 ## The first character: the pirate
 
@@ -237,3 +242,7 @@ range, missing marker on a weapon — and says which file and which object.
    which areas.
 5. The **ring's visual** — a glow or rune on the hand?
 6. How many **head variations**, and **which mounts** come first.
+7. Skins bought with what — real money, premium currency, in-game gold? Per
+   account or per character?
+8. Confirm the proposal: **trim color from the equipped item's tier**, and
+   **armor weight as an icon on the nameplate**.

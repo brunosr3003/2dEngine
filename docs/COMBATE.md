@@ -79,9 +79,10 @@ trocar de classe.
 
 ## O que ainda falta decidir
 
-1. **O peso da armadura é por PEÇA ou por conjunto?** Misturar peito pesado com
-   botas leves dá mais escolha; travar o conjunto dá leitura visual imediata —
-   num jogo de câmera alta, dá pra saber o que o sujeito é olhando de longe.
+1. ~~O peso da armadura é por PEÇA ou por conjunto?~~ **Decidido: por
+   conjunto**, como regra de jogo. O VISUAL não sai do item: a aparência é
+   skin comprada (ver `docs/PERSONAGEM.md`), e o peso aparece como ícone na
+   placa de nome.
 2. **Os números.** Quanto a armadura leve dá de dano e tira de resistência, o
    que cada skill custa e cobra de espera. Isso é balanceamento e não trava a
    estrutura — mas trava o playtest.
