@@ -105,6 +105,8 @@ pub struct Ent {
     /// Golpe do combo do JOGADOR em curso: (passo, segundos). E o que ele
     /// interrompeu, congelado no instante da troca (`rig::Combate`).
     pub combo: Option<(u8, f32)>,
+    /// Id, tempo desde o inicio e instante de impacto da skill confirmada.
+    pub skill: Option<(u32, f32, f32)>,
     pub combo_ant: Option<(u8, f32)>,
     /// Segundos desde o ultimo dano recebido.
     pub ferido: Option<f32>,
@@ -117,6 +119,9 @@ pub struct Ent {
     /// Pra onde olhar enquanto golpeia: (posicao do alvo, segundos). Sem
     /// isto o boneco olhava pra onde ANDAVA, e golpeava de costas.
     pub mira: Option<(Vec2, f32)>,
+    pub ataque_mob: Option<(Option<EntityId>, f32, f32)>,
+    /// Palmas/canos calculados pelo rig no quadro, usados pelos efeitos 3D.
+    pub emissores: [Vec3; 2],
     /// Segundos desde que morreu (ou caiu). Morto fica na tela — o corpo
     /// tomba e fica —, mas nao e' mais selecionavel.
     pub morte: Option<f32>,
@@ -243,11 +248,18 @@ impl World {
             let id = meta.id;
             // O estado real vem no mesmo pacote, logo abaixo.
             let state = EntityState { id, pos: [0, 0], vel: [0, 0], hp: 0, flags: 0, acao: 0 };
+            // NPC de porta vem com o rumo no `kind`: nasce olhando pra fora e,
+            // parado, o tick nao mexe no yaw.
+            let yaw = if meta.tag == shared::EntityTag::Npc {
+                shared::npc_yaw_de_kind(meta.kind).unwrap_or(0.0)
+            } else {
+                0.0
+            };
             self.ents.entry(id).or_insert(Ent {
                 meta,
                 state,
                 render_pos: Vec2::ZERO,
-                yaw: 0.0,
+                yaw,
                 render_y: f32::MIN,
                 pulo_local: 0.0,
                 vel_y: 0.0,
@@ -259,12 +271,15 @@ impl World {
                 golpe: 99.0,
                 sacada: 0.0,
                 combo: None,
+                skill: None,
                 combo_ant: None,
                 ferido: None,
                 golpe_de: Vec2::ZERO,
                 molas: Default::default(),
                 rastro: Vec::new(),
                 mira: None,
+                ataque_mob: None,
+                emissores: [Vec3::ZERO; 2],
                 morte: None,
                 correr: 0.0,
                 ar: 0.0,
@@ -325,6 +340,7 @@ impl World {
     /// `chao` da' a altura de apoio: e' o mesmo campo de altura que o servidor
     /// usa pra colisao, entao a entidade pisa exatamente onde ela pisa la'.
     pub fn tick(&mut self, dt: f32, chao: &dyn Fn(f32, f32) -> f32) {
+        let posicoes: HashMap<_, _> = self.ents.iter().map(|(&id, e)| (id, e.render_pos)).collect();
         for ef in &mut self.efeitos {
             ef.t += dt;
         }
@@ -340,6 +356,13 @@ impl World {
             ent.render_pos += (target - ent.render_pos) * a;
             anda_a_fase(ent, (ent.render_pos - antes).length(), dt);
             ent.golpe = (ent.golpe + dt).min(99.0);
+            if let Some((alvo, t, impacto)) = ent.ataque_mob.as_mut() {
+                *t += dt;
+                if let Some(p) = alvo.and_then(|id| posicoes.get(&id)) { ent.mira = Some((*p, 0.2)); }
+                if *t > *impacto + 0.3 || ent.morte.is_some() { ent.ataque_mob = None; }
+            }
+            if let Some((_, t, _)) = ent.skill.as_mut() { *t += dt; }
+            if ent.skill.is_some_and(|(_, t, impacto)| t > impacto + shared::skills::RECUPERACAO_S) || ent.morte.is_some() { ent.skill = None; }
             let saca = if shared::components::acao::em_combate(ent.state.acao) { 1.0 } else { 0.0 };
             let passo = dt / crate::rig::TEMPO_DE_SACAR;
             ent.sacada += (saca - ent.sacada).clamp(-passo, passo);
@@ -535,6 +558,22 @@ impl World {
 mod testes {
     use super::*;
     use shared::{EntityTag, PULO_DURACAO, PULO_ESPERA};
+
+    #[test]
+    fn mob_em_strafe_mira_no_alvo_durante_todo_o_golpe() {
+        let mut w = World::default();
+        for (id,tag,pos) in [(EntityId(1),EntityTag::Enemy,[16,16]),(EntityId(2),EntityTag::Player,[16,48])] {
+            w.apply(vec![EntityMeta { id,tag,name:None,hp_max:100,faction:None,kind:2,nivel:1 }],
+                vec![EntityState { id,pos,vel:[16,0],hp:100,flags:0,acao:0 }],&[]);
+        }
+        w.ents.get_mut(&EntityId(1)).unwrap().ataque_mob = Some((Some(EntityId(2)),0.0,0.46));
+        for _ in 0..26 { w.tick(1.0 / 60.0,&|_,_|0.0); }
+        assert!(w.ents[&EntityId(1)].yaw.abs() < 0.01, "virou para a velocidade lateral");
+        w.ents.get_mut(&EntityId(2)).unwrap().render_pos = vec2(3.0,1.0);
+        w.ents.get_mut(&EntityId(2)).unwrap().state.pos = [48,16];
+        for _ in 0..16 { w.tick(1.0 / 60.0,&|_,_|0.0); }
+        assert!((w.ents[&EntityId(1)].yaw - std::f32::consts::FRAC_PI_2).abs() < 0.02);
+    }
 
     /// Quantas vezes o corpo sobe e volta ao chao numa sequencia de alturas.
     ///

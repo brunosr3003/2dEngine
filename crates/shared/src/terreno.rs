@@ -575,6 +575,12 @@ pub enum Material {
     CristalVerde,
     CristalAzul,
     CristalRoxo,
+    /// Chao dos povoados: pedra da praca e do caminho, terra batida do
+    /// caminho e a grama cuidada de dentro da cidade.
+    Calcada,
+    CalcadaEscura,
+    Caminho,
+    GramaCuidada,
 }
 
 impl Material {
@@ -585,7 +591,7 @@ impl Material {
     /// `Tronco` (discriminante 11) cair fora dela, e todo tronco e toda folha
     /// da vegetacao viraram voxel INVISIVEL — solido pra colisao de face,
     /// vazio pra malha. O mundo ficou coberto de pedra e mais nada.
-    pub const TODOS: [Material; 25] = [
+    pub const TODOS: [Material; 29] = [
         Material::Agua,
         Material::AreiaMolhada,
         Material::Areia,
@@ -611,6 +617,10 @@ impl Material {
         Material::CristalVerde,
         Material::CristalAzul,
         Material::CristalRoxo,
+        Material::Calcada,
+        Material::CalcadaEscura,
+        Material::Caminho,
+        Material::GramaCuidada,
     ];
 
     pub fn de_u8(v: u8) -> Option<Material> {
@@ -651,6 +661,10 @@ impl Material {
             Material::CristalVerde => (96, 226, 138),
             Material::CristalAzul => (92, 176, 250),
             Material::CristalRoxo => (186, 112, 246),
+            Material::Calcada => (178, 170, 156),
+            Material::CalcadaEscura => (134, 126, 116),
+            Material::Caminho => (172, 142, 102),
+            Material::GramaCuidada => (98, 178, 84),
         }
     }
 
@@ -1037,7 +1051,7 @@ pub fn arvore_da_coluna(
     let prob = densidade_de_arvore(bioma) * 0.0025; // coluna = 0,25 m²
     let h0 = (bx as u32).wrapping_mul(374_761_393) ^ (bz as u32).wrapping_mul(668_265_263);
     let h1 = h0.wrapping_mul(1_274_126_177);
-    if (h1 >> 8) as f32 / (1u32 << 24) as f32 >= prob || agua {
+    if (h1 >> 8) as f32 / (1u32 << 24) as f32 >= prob || agua || ger.na_cidade(bx, bz) {
         return None;
     }
     // Hash INDEPENDENTE pra escolher a especie.
@@ -1082,7 +1096,7 @@ pub fn planta_da_coluna(
     let prob = densidade_de_planta(bioma) * 0.0025;
     let g0 = (bx as u32).wrapping_mul(1_597_334_677) ^ (bz as u32).wrapping_mul(2_246_822_519);
     let g1 = g0.wrapping_mul(2_654_435_761);
-    if (g1 >> 8) as f32 / (1u32 << 24) as f32 >= prob || agua {
+    if (g1 >> 8) as f32 / (1u32 << 24) as f32 >= prob || agua || ger.na_cidade(bx, bz) {
         return None;
     }
     // Mesma armadilha das arvores: hash proprio pra especie.
@@ -1190,7 +1204,7 @@ pub fn minerio_da_coluna(
     ger: &Gerador,
     agua: bool,
 ) -> Option<Minerio> {
-    if agua { return None }
+    if agua || ger.na_cidade(bx, bz) { return None }
     let y = (topo + 1) as f32 * BLOCO;
     let pico = ger.pico();
     if y < pico * MINERIO_LIMIAR { return None }
@@ -1389,6 +1403,154 @@ pub struct Gerador {
     pub escala_altura: f32,
     terraco_blocos: i32,
     terraco_forca: f32,
+    pub semente: i32,
+    cidade: Option<Cidade>,
+    porto: Option<SitioPorto>,
+    /// Casas, props e NPCs. Calculada na primeira vez que alguem pede — o
+    /// cliente e o servidor pedem, o `terreno --varre` nao.
+    vila: std::sync::OnceLock<crate::vila::Vila>,
+}
+
+/// Terraplanagem de um sitio: plato cheio ate' `raio_plato`, smoothstep ate'
+/// `raio`. Nao aterra o mar e nao arrasa morro.
+fn aplainar_sitio(cx: f32, cz: f32, nivel: i32, raio_plato: f32, raio: f32, bx: i32, bz: i32, cru: i32) -> i32 {
+    let d = ((bx as f32 - cx).powi(2) + (bz as f32 - cz).powi(2)).sqrt() * BLOCO;
+    if d >= raio {
+        return cru;
+    }
+    if (cru + 1) as f32 * BLOCO <= Cidade::SECO {
+        return cru;
+    }
+    if ((cru - nivel) as f32 * BLOCO).abs() > Cidade::MORRO {
+        return cru;
+    }
+    let t = suave(((d - raio_plato) / (raio - raio_plato)).clamp(0.0, 1.0));
+    (nivel as f32 + (cru - nivel) as f32 * t).round() as i32
+}
+
+/// O PORTO da ilha: um patio aplainado na costa e o PIER.
+///
+/// O movimento barra agua, entao o cais nao pode ser so' tabuado voxel sobre
+/// o mar: o gerador ERGUE as colunas da faixa do pier ate' o nivel do patio —
+/// um molhe de pedra com o tabuado da doca por cima. Da' pra andar do patio
+/// ate' a ponta, e cliente e servidor enxergam o mesmo molhe.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SitioPorto {
+    /// Centro do patio, em unidades de mundo.
+    pub centro: glam::Vec2,
+    /// Bloco de topo do patio e do pier.
+    pub nivel: i32,
+    /// Quarto de volta cuja frente aponta pro MAR (`construcao::frente_de`).
+    pub mar_q: u8,
+    /// Onde o pier toca a costa.
+    pub raiz: glam::Vec2,
+    /// Da raiz ate' o centro do patio, na direcao da terra.
+    pub recuo: f32,
+    /// Comprimento e largura do cais, em unidades.
+    pub comp: f32,
+    pub larg: f32,
+    pub doca_seed: i32,
+}
+
+impl SitioPorto {
+    pub const RAIO_PLATO: f32 = 18.0;
+    pub const RAIO: f32 = 28.0;
+
+    pub fn altura(&self) -> f32 {
+        (self.nivel + 1) as f32 * BLOCO
+    }
+
+    pub fn mar(&self) -> glam::Vec2 {
+        crate::construcao::frente_de(self.mar_q)
+    }
+
+    /// Na faixa do pier (do centro do patio ate' a ponta), com `folga`.
+    fn no_pier(&self, p: glam::Vec2, folga: f32) -> bool {
+        let mar = self.mar();
+        let rel = p - self.raiz;
+        let ao_longo = rel.dot(mar);
+        let de_lado = rel.dot(glam::Vec2::new(-mar.y, mar.x)).abs();
+        ao_longo >= -self.recuo - folga && ao_longo <= self.comp + folga && de_lado <= self.larg * 0.5 + folga
+    }
+
+    /// Dentro do porto (patio ou pier), com `folga`.
+    pub fn contem(&self, p: glam::Vec2, folga: f32) -> bool {
+        p.distance(self.centro) < Self::RAIO + folga || self.no_pier(p, folga)
+    }
+
+    fn aplainar(&self, bx: i32, bz: i32, cru: i32) -> i32 {
+        if self.no_pier(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO), BLOCO * 0.5) {
+            return self.nivel;
+        }
+        aplainar_sitio(
+            self.centro.x / BLOCO, self.centro.y / BLOCO, self.nivel,
+            Self::RAIO_PLATO, Self::RAIO, bx, bz, cru,
+        )
+    }
+}
+
+/// A cidade da ilha: um PLATO aplainado pelo proprio gerador.
+///
+/// E' a segunda camada do sistema do zone14. A primeira ja' existia — a
+/// enseada, que puxa o noise pra um patamar raso e deixa o lugar da vila mais
+/// manso. Mas manso nao e' plano: o terraco e o respiro do ruido continuam la',
+/// e cidade quer chao de praca. Aqui o relevo cru e' dobrado pra um nivel so'
+/// ate' `RAIO_PLATO` e volta a ele por smoothstep ate' `RAIO`.
+///
+/// Mora no GERADOR, e nao numa edicao de blocos do servidor, pelo mesmo motivo
+/// de todo o resto do terreno: o cliente gera o chao coluna a coluna da mesma
+/// funcao. Aplainar so' no servidor faria o jogador andar num chao que ele nao
+/// ve'.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Cidade {
+    /// Centro, em BLOCOS a partir do centro da ilha.
+    pub cx: f32,
+    pub cz: f32,
+    /// Bloco de topo do plato.
+    pub nivel: i32,
+}
+
+impl Cidade {
+    /// Plato cheio, em unidades de mundo. Grande o bastante pro anel de
+    /// oficios (lojas de ate' 12 x 9 u) caber inteiro no plano.
+    pub const RAIO_PLATO: f32 = 28.0;
+    /// Fim da rampa: dali pra fora o relevo e' o cru.
+    pub const RAIO: f32 = 42.0;
+    /// Alem do raio, onde mato, arvore e pedra ainda nao nascem.
+    pub const FOLGA_DO_MATO: f32 = 3.0;
+    /// Acima disto (topo do bloco, em unidades) e' terra seca.
+    pub(crate) const SECO: f32 = 0.35;
+    /// Desnivel alem do qual o morro fica morro: aterrar uma serra inteira
+    /// pra caber a praca e' pior que a praca ter um barranco.
+    pub(crate) const MORRO: f32 = 4.5;
+
+    /// Centro em unidades de mundo.
+    pub fn centro(&self) -> glam::Vec2 {
+        glam::Vec2::new(self.cx * BLOCO, self.cz * BLOCO)
+    }
+
+    /// Altura do chao da praca, em unidades de mundo.
+    pub fn altura(&self) -> f32 {
+        (self.nivel + 1) as f32 * BLOCO
+    }
+
+    /// Distancia de `p` (unidades de mundo) ao centro, em unidades.
+    pub fn distancia(&self, p: glam::Vec2) -> f32 {
+        p.distance(self.centro())
+    }
+
+    fn dist_blocos(&self, bx: f32, bz: f32) -> f32 {
+        ((bx - self.cx).powi(2) + (bz - self.cz).powi(2)).sqrt()
+    }
+
+    /// O bloco de topo da coluna depois da terraplanagem.
+    ///
+    /// Trabalha em INDICE de bloco dos dois lados. O zone14 misturava altura
+    /// em metros (topo + 1) com indice, e a borda da rampa saia meio bloco
+    /// acima do terreno de fora.
+    fn aplainar(&self, bx: i32, bz: i32, cru: i32) -> i32 {
+        aplainar_sitio(self.cx, self.cz, self.nivel, Self::RAIO_PLATO, Self::RAIO, bx, bz, cru)
+    }
 }
 
 impl Gerador {
@@ -1406,7 +1568,7 @@ impl Gerador {
         terraco_blocos: i32,
         terraco_forca: f32,
     ) -> Self {
-        Self {
+        let mut g = Self {
             p: Perlin::novo(semente),
             pw: Perlin::novo(semente ^ 0x5f37_59df),
             pctrl: Perlin::novo(semente ^ 0x1b87_3593),
@@ -1416,12 +1578,236 @@ impl Gerador {
             escala_altura,
             terraco_blocos,
             terraco_forca,
-        }
+            semente,
+            cidade: None,
+            porto: None,
+            vila: std::sync::OnceLock::new(),
+        };
+        g.cidade = g.achar_cidade();
+        g.porto = g.achar_porto(g.cidade);
+        g
     }
 
     /// Indice do bloco de topo na coluna `(bx, bz)`, em blocos a partir do
-    /// CENTRO da ilha.
+    /// CENTRO da ilha. Ja' com a cidade e o porto aplainados.
     pub fn bloco_em(&self, bx: i32, bz: i32) -> i32 {
+        let cru = self.bloco_cru(bx, bz);
+        let b = match &self.cidade {
+            Some(c) => c.aplainar(bx, bz, cru),
+            None => cru,
+        };
+        match &self.porto {
+            Some(p) => p.aplainar(bx, bz, b),
+            None => b,
+        }
+    }
+
+    /// A cidade desta ilha, se ela coube.
+    pub fn cidade(&self) -> Option<Cidade> {
+        self.cidade
+    }
+
+    /// O porto desta ilha, se achou costa que sirva.
+    pub fn porto(&self) -> Option<SitioPorto> {
+        self.porto
+    }
+
+    /// Casas, props e NPCs da cidade e do porto. Ver `vila`.
+    pub fn vila(&self) -> &crate::vila::Vila {
+        self.vila.get_or_init(|| crate::vila::montar(self))
+    }
+
+    /// A tinta do chao dos povoados na coluna: praca e caminho calcados,
+    /// grama cuidada. `None` = o chao natural. So' cor — a altura nao muda,
+    /// entao o cache de relevo nao precisa de versao nova.
+    pub fn pintura_do_chao(&self, bx: i32, bz: i32) -> Option<Material> {
+        if !self.na_cidade(bx, bz) {
+            return None;
+        }
+        crate::vila::pintura_em(self.vila(), glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO), bx, bz)
+    }
+
+    /// Coluna dentro de um povoado — cidade ou porto, com a folga do mato:
+    /// nada nasce ali.
+    pub fn na_cidade(&self, bx: i32, bz: i32) -> bool {
+        let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
+        self.cidade.is_some_and(|c| c.distancia(p) < Cidade::RAIO + Cidade::FOLGA_DO_MATO)
+            || self.porto.is_some_and(|s| s.contem(p, Cidade::FOLGA_DO_MATO))
+    }
+
+    /// Onde o porto fica: na COSTA, longe da cidade.
+    ///
+    /// Adaptado do `Porto.Gerar` do zone14: 48 rumos saindo do centro da
+    /// ilha ate' a costa. O cais so' gira de 90 em 90 graus (a doca e' um
+    /// volume de blocos), entao o rumo vira o eixo mais proximo e a costa e'
+    /// medida DE NOVO ao longo dele. Exige patio seco e raso, agua funda na
+    /// ponta do cais e 150 u da cidade; entre os que servem, o mais plano,
+    /// com um puxao pra longe (ate' 320 u — mais que isso vira viagem).
+    fn achar_porto(&self, cidade: Option<Cidade>) -> Option<SitioPorto> {
+        use crate::construcao::{frente_de, gerar, quarto_para, Papel, TipoCasa, B_CASA};
+        let v2 = glam::Vec2::new;
+        let raio_un = self.raio_blocos as f32 * BLOCO;
+        let topo = |p: glam::Vec2| {
+            (self.bloco_cru((p.x / BLOCO).round() as i32, (p.y / BLOCO).round() as i32) + 1) as f32 * BLOCO
+        };
+        let seco = |p: glam::Vec2| topo(p) > Cidade::SECO;
+        let doca_seed = self.semente ^ 0x0D0C_A5;
+        let doca = gerar(TipoCasa::Doca, Papel::Estaleiro, doca_seed);
+        let (comp, larg) = (doca.v.nz as f32 * B_CASA, doca.v.nx as f32 * B_CASA);
+        let mut melhor: Option<(f32, SitioPorto)> = None;
+        for k in 0..48 {
+            let a = k as f32 / 48.0 * std::f32::consts::TAU;
+            let rumo = v2(a.cos(), a.sin());
+            let mut visto_seco = false;
+            let mut costa = None;
+            let mut d = 20.0;
+            while d < raio_un {
+                let p = rumo * d;
+                if seco(p) {
+                    visto_seco = true;
+                } else if visto_seco && (1..=6).all(|j| !seco(rumo * (d + j as f32))) {
+                    costa = Some(p);
+                    break;
+                }
+                d += 1.0;
+            }
+            let Some(pc) = costa else { continue };
+            let mar_q = quarto_para(rumo);
+            let mar = frente_de(mar_q);
+            let centro = pc - mar * 14.0;
+            let mut t = 0.0;
+            let mut praia = None;
+            while t < 40.0 {
+                if !seco(centro + mar * t) {
+                    praia = Some(t);
+                    break;
+                }
+                t += 0.5;
+            }
+            let Some(praia) = praia else { continue };
+            if praia < 8.0 {
+                continue;
+            }
+            let recuo = praia - 1.0;
+            let raiz = centro + mar * recuo;
+            let fundo = |p: glam::Vec2| topo(p) <= -1.0;
+            if seco(raiz + mar * (comp * 0.5)) || !fundo(raiz + mar * comp) || !fundo(raiz + mar * (comp + 2.0)) {
+                continue;
+            }
+            let (mut soma, mut soma2, mut n, mut molhado) = (0.0f32, 0.0f32, 0.0f32, false);
+            for anel in 0..=4 {
+                let r = 10.0 * anel as f32 / 4.0;
+                let k_max = if anel == 0 { 1 } else { 12 };
+                for j in 0..k_max {
+                    let b = j as f32 / k_max as f32 * std::f32::consts::TAU;
+                    let p = centro + v2(b.cos(), b.sin()) * r;
+                    if !seco(p) {
+                        molhado = true;
+                    }
+                    let blocos = topo(p) / BLOCO - 1.0;
+                    soma += blocos;
+                    soma2 += blocos * blocos;
+                    n += 1.0;
+                }
+            }
+            if molhado {
+                continue;
+            }
+            let media = soma / n;
+            let altura = (media + 1.0) * BLOCO;
+            if !(0.8..=6.0).contains(&altura) {
+                continue;
+            }
+            let longe = cidade.map_or(1000.0, |c| c.centro().distance(centro));
+            if longe < 150.0 {
+                continue;
+            }
+            let nota = (soma2 / n - media * media) - longe.min(320.0) / 80.0;
+            if melhor.is_none_or(|(m, _)| nota < m) {
+                melhor = Some((nota, SitioPorto {
+                    centro,
+                    nivel: media.round() as i32,
+                    mar_q,
+                    raiz,
+                    recuo,
+                    comp,
+                    larg,
+                    doca_seed,
+                }));
+            }
+        }
+        melhor.map(|(_, s)| s)
+    }
+
+    /// Onde a cidade assenta: perto da ENSEADA, no sitio mais plano.
+    ///
+    /// Como no zone14, a enseada decide a regiao — ela ja' puxou o noise pra
+    /// um patamar raso. Mas o centro dela nao e' garantia: fica a 0,66 do raio
+    /// da ilha, perto de onde a mascara da costa comeca a derrubar o chao.
+    /// Entao varre uma grade em volta e fica com o sitio de menor variancia
+    /// que tenha o plato inteiro seco. Ordem fixa e desempate pelo primeiro:
+    /// cliente e servidor escolhem o mesmo.
+    fn achar_cidade(&self) -> Option<Cidade> {
+        let (ex, ez, er) = self.forma.enseada?;
+        let passo = er * 0.12;
+        let mut melhor: Option<(f32, Cidade)> = None;
+        for iz in -4..=4 {
+            for ix in -4..=4 {
+                let (cx, cz) = (ex + ix as f32 * passo, ez + iz as f32 * passo);
+                let Some((var, nivel)) = self.avaliar_sitio(cx, cz) else { continue };
+                // Um empurrao pro centro da enseada: entre dois sitios quase
+                // iguais, o que ela desenhou.
+                let nota = var + ((ix * ix + iz * iz) as f32).sqrt() * 0.5;
+                if melhor.is_none_or(|(n, _)| nota < n) {
+                    melhor = Some((nota, Cidade { cx, cz, nivel }));
+                }
+            }
+        }
+        melhor.map(|(_, c)| c)
+    }
+
+    /// (variancia em blocos², nivel do plato) do sitio, ou `None` se nao serve:
+    /// agua no plato, costa demais na rampa, ou alto/baixo demais.
+    fn avaliar_sitio(&self, cx: f32, cz: f32) -> Option<(f32, i32)> {
+        let raio_b = Cidade::RAIO / BLOCO;
+        let plato_b = Cidade::RAIO_PLATO / BLOCO;
+        let (mut soma, mut soma2, mut n) = (0.0f32, 0.0f32, 0.0f32);
+        let (mut fora, mut molhado_fora) = (0, 0);
+        for anel in 0..=6 {
+            let r = raio_b * anel as f32 / 6.0;
+            let k_max = if anel == 0 { 1 } else { 12 };
+            for k in 0..k_max {
+                let a = k as f32 / k_max as f32 * std::f32::consts::TAU;
+                let b = self.bloco_cru((cx + a.cos() * r).round() as i32, (cz + a.sin() * r).round() as i32);
+                let seco = (b + 1) as f32 * BLOCO > Cidade::SECO;
+                if r <= plato_b {
+                    if !seco {
+                        return None;
+                    }
+                    soma += b as f32;
+                    soma2 += (b * b) as f32;
+                    n += 1.0;
+                } else {
+                    fora += 1;
+                    if !seco {
+                        molhado_fora += 1;
+                    }
+                }
+            }
+        }
+        if molhado_fora * 4 > fora {
+            return None;
+        }
+        let media = soma / n;
+        let altura = (media + 1.0) * BLOCO;
+        if !(1.2..=9.0).contains(&altura) {
+            return None;
+        }
+        Some((soma2 / n - media * media, media.round() as i32))
+    }
+
+    /// O bloco de topo do relevo CRU, antes da cidade.
+    fn bloco_cru(&self, bx: i32, bz: i32) -> i32 {
         let h = altura_do_relevo(
             &self.p,
             &self.pw,
@@ -1527,6 +1913,42 @@ pub struct Ilha {
     /// precisa abrir em volta da linha — tirado do dado e nao de um palpite,
     /// que envelheceria calado no dia em que o matacao crescesse.
     raio_max_estorvo: f32,
+    /// Paredes das casas e o poco, projetados no chao. Ver `vila::caixas_solidas`.
+    solidos: Vec<crate::vila::Caixa2>,
+    /// Indice dos solidos, na mesma grade dos estorvos.
+    grade_solidos: Vec<Vec<u32>>,
+}
+
+/// Distancia com sinal de `p` a caixa: negativa dentro.
+fn dist_caixa(c: &crate::vila::Caixa2, p: glam::Vec2) -> f32 {
+    let dx = (c.min.x - p.x).max(p.x - c.max.x);
+    let dz = (c.min.y - p.y).max(p.y - c.max.y);
+    if dx <= 0.0 && dz <= 0.0 {
+        dx.max(dz)
+    } else {
+        glam::Vec2::new(dx.max(0.0), dz.max(0.0)).length()
+    }
+}
+
+/// O segmento `a -> b` corta a caixa? (teste de lajes)
+fn segmento_corta(c: &crate::vila::Caixa2, a: glam::Vec2, b: glam::Vec2) -> bool {
+    let d = b - a;
+    let (mut t0, mut t1) = (0.0f32, 1.0f32);
+    for (o, dd, mn, mx) in [(a.x, d.x, c.min.x, c.max.x), (a.y, d.y, c.min.y, c.max.y)] {
+        if dd.abs() < 1e-9 {
+            if o < mn || o > mx {
+                return false;
+            }
+        } else {
+            let (u, v) = ((mn - o) / dd, (mx - o) / dd);
+            t0 = t0.max(u.min(v));
+            t1 = t1.min(u.max(v));
+            if t0 > t1 {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// Uma coisa que se coleta, achada no raio do spot. Ver `Ilha::coletaveis_em`.
@@ -1547,7 +1969,10 @@ const CELULA_ESTORVO: i32 = 8;
 /// descartado e a ilha e' gerada de novo — arquivo de uma semente servindo
 /// como se fosse de outra e' o tipo de bug que so' aparece em producao.
 const MAGICA: [u8; 4] = *b"TALT";
-const VERSAO: u16 = 1;
+/// 2: a cidade aplainada entrou no gerador. Cache v1 e' relevo sem praca — o
+/// servidor andaria num chao que o cliente nao desenha.
+/// 3: plato da cidade maior, patio do porto e o pier erguido no relevo.
+const VERSAO: u16 = 3;
 
 impl Ilha {
     pub fn gerar(semente: i32, raio_blocos: i32, bioma: Bioma, escala_altura: f32) -> Self {
@@ -1604,9 +2029,85 @@ impl Ilha {
             grade: Vec::new(),
             grade_lado: 0,
             raio_max_estorvo: 0.0,
+            solidos: Vec::new(),
+            grade_solidos: Vec::new(),
         };
         i.plantar();
+        i.indexar_vila();
         i
+    }
+
+    /// Indexa as paredes e o poco da vila na grade de colisao.
+    fn indexar_vila(&mut self) {
+        let caixas = crate::vila::caixas_solidas(self.ger.vila());
+        self.grade_solidos = vec![Vec::new(); self.grade_lado * self.grade_lado];
+        for (n, c) in caixas.iter().enumerate() {
+            let (c0x, c0z) = self.celula(c.min.x, c.min.y);
+            let (c1x, c1z) = self.celula(c.max.x, c.max.y);
+            for cz in c0z..=c1z {
+                for cx in c0x..=c1x {
+                    if let Some(k) = self.celula_em(cx, cz) {
+                        self.grade_solidos[k].push(n as u32);
+                    }
+                }
+            }
+        }
+        self.solidos = caixas;
+    }
+
+    /// Casas, props e NPCs desta ilha.
+    pub fn vila(&self) -> &crate::vila::Vila {
+        self.ger.vila()
+    }
+
+    /// O porto desta ilha. Ver `SitioPorto`.
+    pub fn porto(&self) -> Option<SitioPorto> {
+        self.ger.porto()
+    }
+
+    /// Alguma caixa solida no retangulo satisfaz `f`?
+    fn caixas_perto(&self, x0: f32, z0: f32, x1: f32, z1: f32, mut f: impl FnMut(&crate::vila::Caixa2) -> bool) -> bool {
+        if self.solidos.is_empty() {
+            return false;
+        }
+        let (c0x, c0z) = self.celula(x0, z0);
+        let (c1x, c1z) = self.celula(x1, z1);
+        for cz in c0z..=c1z {
+            for cx in c0x..=c1x {
+                let Some(k) = self.celula_em(cx, cz) else { continue };
+                for &n in &self.grade_solidos[k] {
+                    if f(&self.solidos[n as usize]) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Um corpo de raio `raio` em `p` encosta numa parede ou no poco?
+    pub fn caixa_toca(&self, p: glam::Vec2, raio: f32) -> bool {
+        self.caixas_perto(p.x - raio, p.y - raio, p.x + raio, p.y + raio, |c| dist_caixa(c, p) < raio)
+    }
+
+    /// Nao cabe um corpo aqui: tronco, pedra ou parede.
+    pub fn ocupado(&self, p: glam::Vec2, raio: f32) -> bool {
+        self.estorvo_em(p, raio).is_some() || self.caixa_toca(p, raio)
+    }
+
+    /// O trecho nao atravessa parede. Como nos estorvos, caixa que ja'
+    /// engloba uma das pontas e' ignorada.
+    fn trecho_sem_caixa(&self, a: glam::Vec2, b: glam::Vec2, raio: f32) -> bool {
+        !self.caixas_perto(
+            a.x.min(b.x) - raio, a.y.min(b.y) - raio, a.x.max(b.x) + raio, a.y.max(b.y) + raio,
+            |c| {
+                let e = crate::vila::Caixa2 { min: c.min - glam::Vec2::splat(raio), max: c.max + glam::Vec2::splat(raio) };
+                if dist_caixa(&e, a) < 0.0 || dist_caixa(&e, b) < 0.0 {
+                    return false;
+                }
+                segmento_corta(&e, a, b)
+            },
+        )
     }
 
     /// Varre a ilha e guarda o que barra passagem.
@@ -1616,6 +2117,11 @@ impl Ilha {
     /// indice velho vira tronco boiando ou parede invisivel.
     pub fn replantar(&mut self) {
         self.plantar();
+    }
+
+    /// A cidade desta ilha. Ver `Cidade`.
+    pub fn cidade(&self) -> Option<Cidade> {
+        self.ger.cidade()
     }
 
     fn plantar(&mut self) {
@@ -1686,7 +2192,7 @@ impl Ilha {
     /// rota refeita devolve o mesmo ponto pra sempre. Medido num caso real:
     /// centro de celula a 0,45 de um matacao de raio 0,62.
     pub fn ponto_livre_perto(&self, centro: glam::Vec2, raio: f32) -> glam::Vec2 {
-        if self.estorvo_em(centro, raio).is_none() {
+        if !self.ocupado(centro, raio) {
             return centro;
         }
         // Espiral curta: o estorvo mais gordo tem 1,24 de diametro, entao um
@@ -1698,7 +2204,7 @@ impl Ilha {
                 (0.7, 0.7), (0.7, -0.7), (-0.7, 0.7), (-0.7, -0.7),
             ] {
                 let p = centro + glam::Vec2::new(dx * d, dz * d);
-                if self.estorvo_em(p, raio).is_none() && !self.agua(p.x, p.y) {
+                if !self.ocupado(p, raio) && !self.agua(p.x, p.y) {
                     return p;
                 }
             }
@@ -1782,7 +2288,57 @@ impl Ilha {
                 }
             }
         }
-        true
+        !self.caixa_toca(p, raio)
+    }
+
+    /// O passo de `de` pra `para` e' aceitavel pros estorvos?
+    ///
+    /// Livre, ou — pra quem JA' esta' dentro de um tronco — sem entrar mais
+    /// nele. Perguntar so' `sem_estorvo(para)` prendia pra sempre quem comecou
+    /// sobreposto: todo passo terminava encostado na arvore, inclusive o de
+    /// sair. Medido: 600 de 600 corpos plantados dentro do tronco nao saiam.
+    /// E sobreposicao acontece — slot de spawn que nao olhou a arvore, ou o
+    /// empurrao entre corpos.
+    pub fn cabe(&self, de: glam::Vec2, para: glam::Vec2, raio: f32) -> bool {
+        let (c0x, c0z) = self.celula(de.x.min(para.x) - raio, de.y.min(para.y) - raio);
+        let (c1x, c1z) = self.celula(de.x.max(para.x) + raio, de.y.max(para.y) + raio);
+        // Por tronco: entrar MAIS em algum reprova. Mas num bolsao de dois,
+        // sair de um e' chegar mais perto do outro, e essa regra sozinha
+        // prendia pra sempre quem ja' estava dentro. Entao, pra quem ja' esta'
+        // sobreposto, vale tambem a SOMA: se a sobreposicao total diminui, o
+        // passo passa. Corpo livre continua sem poder entrar em nada — a soma
+        // dele parte de zero e so' pode subir.
+        let mut viola = false;
+        let (mut pen_de, mut pen_para) = (0.0f32, 0.0f32);
+        let mut vistos: Vec<u32> = Vec::new();
+        for cz in c0z..=c1z {
+            for cx in c0x..=c1x {
+                let Some(c) = self.celula_em(cx, cz) else { continue };
+                for &n in &self.grade[c] {
+                    if vistos.contains(&n) {
+                        continue;
+                    }
+                    vistos.push(n);
+                    let e = self.estorvos[n as usize];
+                    let d = raio + e.raio;
+                    let la = e.centro.distance_squared(para);
+                    let ld = e.centro.distance_squared(de);
+                    pen_para += (d - la.sqrt()).max(0.0);
+                    pen_de += (d - ld.sqrt()).max(0.0);
+                    if la < d * d && la < ld - 1e-6 {
+                        viola = true;
+                    }
+                }
+            }
+        }
+        if viola && !(pen_de > 0.0 && pen_para < pen_de - 1e-4) {
+            return false;
+        }
+        // Parede: a mesma regra — livre, ou saindo dela.
+        !self.caixas_perto(para.x - raio, para.y - raio, para.x + raio, para.y + raio, |c| {
+            let dp = dist_caixa(c, para);
+            dp < raio && dp < dist_caixa(c, de) - 1e-6
+        })
     }
 
     /// Da' pra ir de `a` a `b` com um corpo de raio `raio` sem esbarrar em
@@ -1832,7 +2388,7 @@ impl Ilha {
                 }
             }
         }
-        true
+        self.trecho_sem_caixa(a, b, raio)
     }
 
     /// Quantos estorvos a ilha tem. So' pra medir.
@@ -1987,11 +2543,25 @@ impl Ilha {
             if fora != glam::Vec2::ZERO {
                 let tang = glam::Vec2::new(-fora.y, fora.x);
                 let lado = if tang.dot(v) >= 0.0 { tang } else { -tang };
-                let alvo = pos + lado * v.length();
-                if self.borda_livre(pos, alvo, raio, lado, degrau)
-                    && self.sem_estorvo(alvo, raio)
-                {
-                    return alvo;
+                // A tangente pode estar barrada — outro tronco colado, ou um
+                // degrau encostado na arvore. Abrir um pouco pra fora resolve
+                // o tronco vizinho; o OUTRO lado resolve o degrau. Sem as
+                // alternativas o corpo parava de frente pra arvore e o eixo a
+                // eixo abaixo tambem reprovava tudo.
+                // Por ultimo, SAIR reto do tronco: preso num bolsao de dois,
+                // nenhuma tangente cabe, mas afastar-se do centro sempre
+                // reduz a sobreposicao.
+                for dir in [
+                    lado,
+                    (lado + fora).normalize_or_zero(),
+                    -lado,
+                    (-lado + fora).normalize_or_zero(),
+                    fora,
+                ] {
+                    let alvo = pos + dir * v.length();
+                    if self.borda_livre(pos, alvo, raio, dir, degrau) && self.cabe(pos, alvo, raio) {
+                        return alvo;
+                    }
                 }
             }
         }
@@ -1999,7 +2569,7 @@ impl Ilha {
         if v.x != 0.0 {
             let alvo = glam::Vec2::new(p.x + v.x, p.y);
             if self.borda_livre(p, alvo, raio, glam::Vec2::new(v.x.signum(), 0.0), degrau)
-                && self.sem_estorvo(alvo, raio)
+                && self.cabe(p, alvo, raio)
             {
                 p.x = alvo.x;
             }
@@ -2007,7 +2577,7 @@ impl Ilha {
         if v.y != 0.0 {
             let alvo = glam::Vec2::new(p.x, p.y + v.y);
             if self.borda_livre(p, alvo, raio, glam::Vec2::new(0.0, v.y.signum()), degrau)
-                && self.sem_estorvo(alvo, raio)
+                && self.cabe(p, alvo, raio)
             {
                 p.y = alvo.y;
             }
@@ -2107,6 +2677,17 @@ impl Ilha {
         orcamento: usize,
     ) -> Option<Vec<glam::Vec2>> {
         use std::collections::{BinaryHeap, HashMap};
+
+        // Destino dentro de um tronco — o jogador indo ate' um bicho que esta'
+        // colado na arvore — vira o ponto livre mais perto. O ultimo trecho
+        // ignora estorvo na ponta, entao sem isto a rota terminava DENTRO da
+        // arvore e o corpo empurrava o tronco ate' o seguidor pedir rota nova,
+        // que dava o mesmo ponto.
+        let para = if self.ocupado(para, crate::constants::ENTITY_RADIUS) {
+            self.ponto_livre_perto(para, crate::constants::ENTITY_RADIUS)
+        } else {
+            para
+        };
 
         let cel = |p: glam::Vec2| -> (i32, i32) {
             (
@@ -2211,6 +2792,12 @@ impl Ilha {
                 let pv = *pontos.entry(viz).or_insert_with(|| {
                     self.ponto_livre_perto(bruto(viz), crate::constants::ENTITY_RADIUS)
                 });
+                // Mata fechada: sem ponto livre perto do centro, o ponto da
+                // celula ficou DENTRO do tronco — e o trecho, que ignora
+                // estorvo nas pontas, aprovaria a entrada. Nao e' passagem.
+                if viz != fim && self.ocupado(pv, crate::constants::ENTITY_RADIUS) {
+                    continue;
+                }
                 let passo = if self.trecho_livre(pa, pv, DEGRAU_BLOCOS) {
                     base
                 } else if self.trecho_livre(pa, pv, PULO_BLOCOS) {
@@ -2584,6 +3171,11 @@ impl SeguidorDeRota {
         self.pontos.len()
     }
 
+    /// Os pontos que faltam, na ordem. Pro tracejado do cliente.
+    pub fn pontos(&self) -> impl Iterator<Item = glam::Vec2> + '_ {
+        self.pontos.iter().copied()
+    }
+
     pub fn limpa(&mut self) {
         self.pontos.clear();
         self.travado = false;
@@ -2638,6 +3230,98 @@ impl SeguidorDeRota {
         self.sem_avanco = 0;
         self.melhor = f32::MAX;
         self.travado = false;
+    }
+}
+
+/// Mob indo atras de um alvo: RETO enquanto o reto avanca, A* quando empaca.
+///
+/// O mob nao pede rota a cada tick como o clique do jogador: sao centenas
+/// deles, e em campo aberto a reta ja' e' o caminho. Mas reta mais deslize nao
+/// sai de bolsao — dois troncos vizinhos, o corpo escorrega de um pro outro e
+/// volta, a velocidade cheia, sem nunca chegar. Medido: 7 de 281 perseguicoes
+/// com tronco no meio oscilavam assim pra sempre.
+///
+/// "Empacou" e' AVANCO NA DIRECAO DO ALVO, e nao distancia andada: quem
+/// oscila anda muito e avanca nada.
+#[derive(Debug, Default, Clone)]
+pub struct Perseguicao {
+    rota: SeguidorDeRota,
+    ultima: Option<(glam::Vec2, glam::Vec2, f32)>,
+    avanco: f32,
+    ticks: u32,
+    pediu_em: Option<f32>,
+}
+
+impl Perseguicao {
+    /// Janela de medida, em chamadas. Um terco de segundo a 30Hz.
+    const JANELA: u32 = 10;
+    /// Menos que isto do avanco possivel na janela = empacou.
+    const MINIMO: f32 = 0.3;
+    /// Um A* por mob por segundo, no maximo.
+    const INTERVALO_S: f32 = 1.0;
+    /// Rota de mob e' curta: contornar a arvore, nao atravessar a ilha.
+    const ORCAMENTO: usize = 1_500;
+    /// O alvo andou isto desde a rota: ela ficou velha.
+    const ALVO_MUDOU: f32 = 2.0;
+    /// Intervalo entre chamadas que zera a medida (o mob parou pra bater).
+    const LACUNA_S: f32 = 0.25;
+
+    /// Direcao pra andar neste tick. `passo` e' quanto o corpo anda num tick
+    /// livre (velocidade vezes dt).
+    pub fn direcao(
+        &mut self,
+        ilha: &Ilha,
+        pos: glam::Vec2,
+        alvo: glam::Vec2,
+        passo: f32,
+        agora: f32,
+    ) -> glam::Vec2 {
+        let reto = (alvo - pos).normalize_or_zero();
+        match self.ultima {
+            Some((antes, dir, t)) if agora - t <= Self::LACUNA_S => {
+                self.avanco += (pos - antes).dot(dir);
+                self.ticks += 1;
+            }
+            _ => {
+                self.avanco = 0.0;
+                self.ticks = 0;
+            }
+        }
+        self.ultima = Some((pos, reto, agora));
+
+        if !self.rota.vazia() {
+            if self.rota.travado() || self.rota.destino().distance(alvo) > Self::ALVO_MUDOU {
+                self.rota.limpa();
+            } else if let Some(dir) = self.rota.direcao(pos) {
+                // Seguindo rota o avanco na reta pode ser negativo de
+                // proposito (contornando): a medida so' vale fora dela.
+                self.avanco = 0.0;
+                self.ticks = 0;
+                return dir;
+            }
+        }
+
+        if self.ticks >= Self::JANELA {
+            let empacou = self.avanco < Self::JANELA as f32 * passo * Self::MINIMO;
+            self.avanco = 0.0;
+            self.ticks = 0;
+            let pode = self.pediu_em.is_none_or(|t| agora - t >= Self::INTERVALO_S);
+            if empacou && pode {
+                self.pediu_em = Some(agora);
+                if let Some(r) = ilha.caminho(pos, alvo, Self::ORCAMENTO) {
+                    self.rota = SeguidorDeRota::nova(r, alvo);
+                    if let Some(dir) = self.rota.direcao(pos) {
+                        return dir;
+                    }
+                }
+            }
+        }
+        reto
+    }
+
+    /// Alvo perdido, mob voltou pra casa: a rota velha nao serve mais.
+    pub fn esquece(&mut self) {
+        *self = Self::default();
     }
 }
 
@@ -3155,8 +3839,10 @@ mod testes {
                     let (cx, cz) = i.coluna(p.x, p.y);
                     let (tx, tz) = i.coluna(para.x, para.y);
                     exemplos.push(format!(
-                        "PAROU a {:.0} (andou {:.0}) | bloco {} -> {} | A* alcanca o alvo? {alcanca}",
-                        p.distance(para), de.distance(p), i.bloco(cx, cz), i.bloco(tx, tz)));
+                        "PAROU a {:.0} (andou {:.0}) | bloco {} -> {} | A* alcanca o alvo? {alcanca} \
+                         | tronco encostado? {}",
+                        p.distance(para), de.distance(p), i.bloco(cx, cz), i.bloco(tx, tz),
+                        i.estorvo_em(p, 0.35 + 0.15).is_some()));
                 }
             } else {
                 ok += 1;
@@ -3178,6 +3864,243 @@ mod testes {
             travou_seguidor * 20 < alcancaveis,
             "{travou_seguidor} de {alcancaveis} rotas alcancaveis travaram (teto: 5%)"
         );
+    }
+
+    /// Toda ilha do arquipelago tem cidade: plato seco, no nivel, e sem
+    /// arvore, planta ou pedra. So' o gerador — a ilha inteira custaria
+    /// segundos por ilha, e a cidade e' funcao dele.
+    #[test]
+    fn toda_ilha_tem_cidade_plana_seca_e_sem_mato() {
+        for d in &ARQUIPELAGO {
+            let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+            let c = ger.cidade().unwrap_or_else(|| panic!("{}: sem cidade", d.zona));
+            let r = (Cidade::RAIO_PLATO / BLOCO) as i32;
+            let (mut total, mut no_nivel) = (0, 0);
+            for dz in -r..=r {
+                for dx in -r..=r {
+                    if dx * dx + dz * dz > r * r { continue; }
+                    let (bx, bz) = (c.cx.round() as i32 + dx, c.cz.round() as i32 + dz);
+                    let b = ger.bloco_em(bx, bz);
+                    assert!((b + 1) as f32 * BLOCO > 0.35, "{}: agua dentro da cidade", d.zona);
+                    total += 1;
+                    if b == c.nivel { no_nivel += 1; }
+                    assert!(arvore_da_coluna(d.bioma, bx, bz, b, 0, &ger, false).is_none(),
+                        "{}: arvore na cidade", d.zona);
+                    assert!(planta_da_coluna(d.bioma, bx, bz, b, 0, &ger, false).is_none(),
+                        "{}: planta na cidade", d.zona);
+                    assert!(minerio_da_coluna(d.bioma, bx, bz, b, &ger, false).is_none(),
+                        "{}: pedra na cidade", d.zona);
+                }
+            }
+            println!(
+                "{}: cidade em {:?} (enseada {:?}), chao {:.1}, {:.0}% do plato no nivel",
+                d.zona, c.centro(), Forma::de(d.semente, d.raio_blocos).enseada,
+                c.altura(), no_nivel as f32 / total as f32 * 100.0
+            );
+            assert!(no_nivel * 100 >= total * 95,
+                "{}: so' {no_nivel} de {total} colunas no nivel do plato", d.zona);
+        }
+    }
+
+    /// Da' pra SAIR da cidade andando: a rampa nao pode virar muralha.
+    #[test]
+    fn da_pra_sair_da_cidade_andando() {
+        for d in &ARQUIPELAGO {
+            let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+            let c = ger.cidade().unwrap();
+            let mut saidas = 0;
+            for k in 0..16 {
+                let a = k as f32 / 16.0 * std::f32::consts::TAU;
+                let dir = glam::Vec2::new(a.cos(), a.sin());
+                let mut anterior = c.nivel;
+                let mut livre = true;
+                let mut dist = 0.0;
+                while dist < Cidade::RAIO + 2.0 {
+                    dist += BLOCO;
+                    let p = c.centro() + dir * dist;
+                    let b = ger.bloco_em((p.x / BLOCO).round() as i32, (p.y / BLOCO).round() as i32);
+                    if (b + 1) as f32 * BLOCO <= 0.0 || (b - anterior).abs() > DEGRAU_BLOCOS {
+                        livre = false;
+                        break;
+                    }
+                    anterior = b;
+                }
+                if livre { saidas += 1; }
+            }
+            println!("{}: {saidas} de 16 direcoes saem andando", d.zona);
+            assert!(saidas >= 6, "{}: so' {saidas} saidas da cidade", d.zona);
+        }
+    }
+
+    /// Cliente e servidor constroem o gerador cada um pelo seu lado: a cidade
+    /// tem que sair igual.
+    #[test]
+    fn a_cidade_sai_igual_nos_dois_lados() {
+        let d = &ARQUIPELAGO[0];
+        let a = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+        let b = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+        assert_eq!(a.cidade(), b.cidade());
+        let c = a.cidade().unwrap();
+        for k in 0..200 {
+            let (bx, bz) = (c.cx as i32 + (k * 7) % 140 - 70, c.cz as i32 + (k * 13) % 140 - 70);
+            assert_eq!(a.bloco_em(bx, bz), b.bloco_em(bx, bz));
+        }
+    }
+
+    /// Troncos em chao plano, com folga pra montar os casos em volta.
+    fn troncos_no_plano(i: &Ilha, quantos: usize) -> Vec<Estorvo> {
+        i.todos_os_estorvos()
+            .iter()
+            .copied()
+            .filter(|e| matches!(e.tipo, TipoDeEstorvo::Tronco))
+            .filter(|e| {
+                let h = i.altura(e.centro.x, e.centro.y);
+                (0..16).all(|k| {
+                    let a = k as f32 / 16.0 * std::f32::consts::TAU;
+                    let p = e.centro + glam::Vec2::new(a.cos(), a.sin()) * 4.0;
+                    !i.agua(p.x, p.y) && (i.altura(p.x, p.y) - h).abs() < 0.01
+                })
+            })
+            .take(quantos)
+            .collect()
+    }
+
+    /// Corpo que COMECA dentro de um tronco tem que conseguir sair.
+    ///
+    /// E' o mob que nasceu num slot de spawn escolhido sem olhar estorvo, ou
+    /// que a separacao entre corpos empurrou pra dentro da arvore. Antes, todo
+    /// passo terminava encostado no tronco, `sem_estorvo` reprovava todos — o
+    /// de sair inclusive — e o bicho ficava plantado ali pra sempre.
+    #[test]
+    fn corpo_dentro_do_tronco_consegue_sair() {
+        let d = &ARQUIPELAGO[0];
+        let i = Ilha::gerar(d.semente, 800, d.bioma, ESCALA_ALTURA);
+        let troncos = troncos_no_plano(&i, 200);
+        assert!(troncos.len() > 50, "so' {} troncos no plano", troncos.len());
+        let (dt, vel, raio) = (1.0 / 30.0, 3.0, 0.35);
+        let (mut casos, mut presos) = (0, 0);
+        for (n, e) in troncos.iter().enumerate() {
+            // Metade da sobreposicao, e o bicho quer ir pra um lado qualquer —
+            // inclusive ATRAVES do tronco.
+            let a = n as f32 * 2.399_963;
+            let fora = glam::Vec2::new(a.cos(), a.sin());
+            let inicio = e.centro + fora * (e.raio + raio) * 0.5;
+            for quer in [fora, -fora, glam::Vec2::new(-fora.y, fora.x)] {
+                casos += 1;
+                let mut p = inicio;
+                for _ in 0..60 {
+                    p = i.mover_e_deslizar(p, quer * vel, dt, raio);
+                }
+                // Preso e' quem continua DENTRO do tronco de partida. Quem saiu
+                // e parou encostado no vizinho porque insiste num rumo
+                // barrado ja' saiu — "andou pouco" nao e' "ficou preso".
+                if p.distance(inicio) < 0.3 && e.centro.distance(p) < e.raio + raio - 0.02 {
+                    presos += 1;
+                    let perto = i.todos_os_estorvos().iter()
+                        .filter(|o| o.centro.distance(inicio) < o.raio + raio + 1.0).count();
+                    let (ax, az) = i.coluna(inicio.x, inicio.y);
+                    let degraus: Vec<i32> = [(1, 0), (-1, 0), (0, 1), (0, -1)].iter()
+                        .map(|(dx, dz)| i.bloco(ax + dx, az + dz) - i.bloco(ax, az)).collect();
+                    println!(
+                        "  PRESO em {inicio:?} quer {quer:?} | tronco raio {:.2} | estorvos em 1: {perto} \
+                         | parede? {} | degraus vizinhos {degraus:?} | andou {:.3}",
+                        e.raio, i.caixa_toca(inicio, raio), p.distance(inicio));
+                }
+            }
+        }
+        println!("{casos} casos: {presos} presos dentro do tronco");
+        assert_eq!(presos, 0, "{presos} de {casos} corpos nao sairam do tronco");
+    }
+
+    /// Mob perseguindo em LINHA RETA com um tronco no meio tem que contornar.
+    ///
+    /// O mob nao usa A*: ele vai direto no jogador e confia no deslize. Com
+    /// dois troncos vizinhos ou um tronco colado num degrau, o deslize pela
+    /// tangente pode nao ter pra onde ir.
+    #[test]
+    fn perseguicao_em_linha_reta_contorna_troncos() {
+        let d = &ARQUIPELAGO[0];
+        let i = Ilha::gerar(d.semente, 800, d.bioma, ESCALA_ALTURA);
+        let troncos = troncos_no_plano(&i, 300);
+        let (dt, vel, raio) = (1.0 / 30.0, 3.0, 0.35);
+        let (mut casos, mut presos) = (0, 0);
+        for (n, e) in troncos.iter().enumerate() {
+            let a = n as f32 * 2.399_963;
+            let eixo = glam::Vec2::new(a.cos(), a.sin());
+            // Um tiquinho fora do eixo, pra nao cair no caso degenerado de
+            // mirar exatamente o centro.
+            let torto = glam::Vec2::new(-eixo.y, eixo.x) * 0.02;
+            let de = e.centro - eixo * 3.0 + torto;
+            let para = e.centro + eixo * 3.0 + torto;
+            if !i.sem_estorvo(de, raio) || !i.sem_estorvo(para, raio) {
+                continue;
+            }
+            casos += 1;
+            // O mesmo condutor do servidor: reto, e A* quando empaca.
+            let mut perseguicao = Perseguicao::default();
+            let mut p = de;
+            let mut mexeu_no_fim = 0.0;
+            for k in 0..150 {
+                if p.distance(para) < 0.5 { break; }
+                let dir = perseguicao.direcao(&i, p, para, vel * dt, k as f32 * dt);
+                let antes = p;
+                p = i.mover_e_deslizar(p, dir * vel, dt, raio);
+                if k >= 120 { mexeu_no_fim += antes.distance(p); }
+            }
+            if p.distance(para) > 1.0 {
+                presos += 1;
+                let perto = i.todos_os_estorvos().iter()
+                    .filter(|o| o.centro.distance(p) < o.raio + raio + 1.5).count();
+                let frente = p + (para - p).normalize_or_zero() * 0.5;
+                let (ax, az) = i.coluna(p.x, p.y);
+                let (bx, bz) = i.coluna(frente.x, frente.y);
+                println!(
+                    "  PRESO a {:.2} do alvo | estorvos em 1,5: {perto} | subida a' frente {} \
+                     | mexeu nos ultimos 30 ticks {mexeu_no_fim:.2} | raio do tronco {:.2}",
+                    p.distance(para), i.bloco(bx, bz) - i.bloco(ax, az), e.raio);
+            }
+        }
+        println!("{casos} casos: {presos} nao passaram do tronco");
+        assert!(casos > 100, "so' {casos} casos");
+        assert!(presos * 50 < casos, "{presos} de {casos} perseguicoes travaram no tronco (teto: 2%)");
+    }
+
+    /// Ir pela ROTA ate' um ponto dentro de um tronco — o bicho colado na
+    /// arvore — tem que chegar ao pe' dela, e nao empurrar o tronco.
+    #[test]
+    fn rota_ate_bicho_colado_no_tronco_chega() {
+        let d = &ARQUIPELAGO[0];
+        let i = Ilha::gerar(d.semente, 800, d.bioma, ESCALA_ALTURA);
+        let troncos = troncos_no_plano(&i, 150);
+        let (mut casos, mut presos) = (0, 0);
+        for (n, e) in troncos.iter().enumerate() {
+            let a = n as f32 * 2.399_963;
+            let de = i.terra_mais_proxima(
+                e.centro.x + a.cos() * 14.0,
+                e.centro.y + a.sin() * 14.0,
+                6.0,
+            );
+            if i.agua(de.x, de.y) { continue; }
+            let para = e.centro + glam::Vec2::new(a.cos(), a.sin()) * e.raio * 0.5;
+            // Partida noutro patamar (so' o anel de 4 em volta do tronco e'
+            // plano): o A* nao alcanca, e rota parcial nao e' o que se mede.
+            let livre = i.ponto_livre_perto(para, 0.35);
+            let Some(r0) = i.caminho(de, para, 20_000) else { continue };
+            if r0.last().unwrap().distance(livre) > 1.0 { continue; }
+            casos += 1;
+            let p = simula_ida(&i, de, para);
+            if p.distance(e.centro) > e.raio + 0.35 + 1.5 {
+                presos += 1;
+                println!(
+                    "  PAROU a {:.2} do tronco (raio {:.2}) | estorvos em 1,5: {} | ponto livre a {:.2}",
+                    p.distance(e.centro), e.raio,
+                    i.todos_os_estorvos().iter().filter(|o| o.centro.distance(p) < o.raio + 1.85).count(),
+                    livre.distance(e.centro));
+            }
+        }
+        println!("{casos} casos: {presos} nao chegaram ao pe' do tronco");
+        assert!(casos > 50, "so' {casos} casos");
+        assert!(presos * 50 < casos, "{presos} de {casos} rotas nao chegaram ao pe' do tronco (teto: 2%)");
     }
 
     /// Destino inalcancavel devolve caminho PARCIAL, nao nada: andar na

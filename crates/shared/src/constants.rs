@@ -39,7 +39,26 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 77;
+pub const PROTOCOL_VERSION: u16 = 86;
+
+/// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
+/// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
+pub const BONUS_XP_PCT: u64 = 30;
+pub const DURACAO_BONUS_XP_S: i64 = 3600;
+
+/// XP com o bonus aplicado, se ele estiver ativo em `agora` (unix secs).
+pub fn xp_com_bonus(amount: u64, agora: i64, bonus_ate: i64) -> u64 {
+    if agora < bonus_ate {
+        amount.saturating_add(amount * BONUS_XP_PCT / 100)
+    } else {
+        amount
+    }
+}
+
+/// Ate' quando o bonus vale depois de beber uma pocao agora.
+pub fn renovar_bonus_xp(agora: i64) -> i64 {
+    agora + DURACAO_BONUS_XP_S
+}
 
 // ── Boat (Sea-of-Thieves style: vela/leme/ancora separados) ─────────────────
 /// Velocidade maxima de qualquer barco (tiles/s). Atingida com vela full,
@@ -489,6 +508,10 @@ pub mod item_id {
     /// Sem cor porque ela E' a cor: e' o que sobe um material de uma cor pra
     /// proxima. Ver `docs/ECONOMIA_DE_CRAFT.md`.
     pub const GLITTERING_POWDER: u16     = 346;
+    /// Pocao de Experiencia (+30% XP por 1 h). So' sai de recompensa de
+    /// missao de area — nao ha' loja que venda. Fora das faixas que a M27
+    /// apaga (3..51, 68..71, 80..95, 102..268).
+    pub const XP_POTION: u16             = 350;
 
     /// Todos os materiais que existem nas quatro cores, pelo id da cinza.
     pub const MATERIAIS_COLORIDOS: [u16; 12] = [
@@ -1172,3 +1195,11 @@ mod testes_coleta {
         assert_eq!(COLETAS_POR_PEDRA[1..], [14, 24, 64, 128]);
     }
 }
+/// Tempos das animacoes de ataque, compartilhados com o servidor. O dano
+/// acontece ao terminar o corte, nunca no inicio da antecipacao.
+pub const PLAYER_ATTACK_PREPARE_S: f32 = 0.08;
+pub const PLAYER_ATTACK_CUT_S: f32 = 0.11;
+pub const PLAYER_ATTACK_IMPACT_S: f32 = PLAYER_ATTACK_PREPARE_S + PLAYER_ATTACK_CUT_S;
+pub const MOB_ATTACK_PREPARE_S: f32 = 0.24;
+pub const MOB_ATTACK_CUT_S: f32 = 0.22;
+pub const MOB_ATTACK_IMPACT_S: f32 = MOB_ATTACK_PREPARE_S + MOB_ATTACK_CUT_S;

@@ -221,8 +221,8 @@ pub fn passo_da_pata(frente: bool, esq: bool, passada: f32, corre: f32, meia: f3
 // Cada grandeza termina um tempo exatamente onde o seguinte comeca, entao a
 // curva nao tem estalo — `a_patada_nao_tem_estalo` cobra.
 
-pub const T_LEVANTA: f32 = 0.24;
-pub const T_VARRE: f32 = 0.22;
+pub const T_LEVANTA: f32 = shared::MOB_ATTACK_PREPARE_S;
+pub const T_VARRE: f32 = shared::MOB_ATTACK_CUT_S;
 pub const T_VOLTA: f32 = 0.32;
 pub const DURACAO_DO_GOLPE: f32 = T_LEVANTA + T_VARRE + T_VOLTA;
 

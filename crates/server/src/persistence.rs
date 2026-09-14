@@ -92,6 +92,15 @@ pub struct CharacterRow {
     /// Epoch (segundos) de quando concluiu o tutorial pela última vez. None =
     /// nunca concluiu → no login no mundo, é redirecionado pro tutorial.
     pub last_tutorial_completed: Option<i64>,
+    /// Mana e stamina no ultimo save. None = row antiga: entra cheio.
+    pub mp: Option<f32>,
+    pub stamina: Option<f32>,
+    /// Ilha (zona) onde a posicao vale. None = row antiga. Sem isto, quem
+    /// entrava num canal de outra ilha usava coordenadas que eram de la'.
+    pub zona: Option<String>,
+    /// Pocao de Experiencia: bonus de XP ate' este instante (unix secs; 0 =
+    /// nenhum). Absoluto, entao sobrevive a relog e reinicio.
+    pub xp_bonus_ate: i64,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -435,6 +444,15 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     // Migration M11: gold vira moeda (não-item). Coluna `characters.gold` +
     // backfill somando todo item_id=1 de inventory + vault, depois apaga as
     // rows. Idempotente: se rodar de novo, sum() vira 0 (nada pra somar).
+    // Estado que sumia no reinicio: mana, stamina e a zona da posicao.
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS mp REAL NULL")
+        .execute(pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS stamina REAL NULL")
+        .execute(pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS zona TEXT NULL")
+        .execute(pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS xp_bonus_ate BIGINT NOT NULL DEFAULT 0")
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS gold BIGINT NOT NULL DEFAULT 0")
         .execute(pool).await?;
     sqlx::query(
@@ -741,6 +759,8 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         S{ id: item_id::GREATER_HEAL as i32,   name:"HP Potion+",      sell:20,  buy:Some(40),     ord:Some(2), stack:20,   slot:None, lvl:1, ic:11, ir:17,  hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::GREATER_MANA as i32,   name:"MP Potion+",      sell:25,  buy:Some(50),     ord:Some(3), stack:20,   slot:None, lvl:1, ic:9,  ir:7,   hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::STAMINA_POTION as i32, name:"Stamina Potion",  sell:10,  buy:Some(20),     ord:Some(4), stack:20,   slot:None, lvl:1, ic:8,  ir:7,   hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
+        // So' recompensa de missao de area: sem preco de compra, venda simbolica.
+        S{ id: item_id::XP_POTION as i32,      name:"Poção de Experiência", sell:1, buy:None,     ord:None,    stack:20,   slot:None, lvl:1, ic:-1, ir:-1,  hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
         // Armas
         // Fase F — armas tier 2 (gate de char_lvl + prof_lvl). Item lvl 10 marca o tier.
         // Fase F — armas tier 3 (char_lvl 20, sword prof 10). Item lvl 20.
@@ -973,139 +993,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             .bind(kind).bind(lvl).execute(pool).await?;
     }
 
-    // Loot — só seeda se totalmente vazio (rebalanceios manuais não são
-    // sobrescritos).
-    let loot_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM loot_drops")
-        .fetch_one(pool).await?;
-    if loot_count == 0 {
-        // (enemy_kind, item_id, qty_min, qty_max, chance)
-        let drops: &[(i32, u16, i32, i32, f32)] = &[
-            // Boss (7) — alto valor + raridades
-            (7, item_id::GOLD,           200, 500, 1.0),
-            (7, item_id::GREATER_HEAL,   2,   5,   1.0),
-            (7, item_id::GREATER_MANA,   2,   2,   1.0),
-            // Berserker (5) — armadura
-            (5, item_id::GOLD,           25,  60,  1.0),
-            (5, item_id::GREATER_HEAL,   1,   1,   0.30),
-            // Mago (4) — staff/wand + mana
-            (4, item_id::GOLD,           15,  35,  1.0),
-            (4, item_id::MANA_POTION,    1,   3,   0.35),
-            // Tank (1)
-            (1, item_id::GOLD,           15,  40,  1.0),
-            (1, item_id::HEALTH_POTION,  1,   3,   0.30),
-            // Ranger/Arqueiro (2 e 6)
-            (2, item_id::GOLD,           10,  28,  1.0),
-            (2, item_id::STAMINA_POTION, 1,   1,   0.35),
-            (6, item_id::GOLD,           10,  28,  1.0),
-            (6, item_id::STAMINA_POTION, 1,   1,   0.35),
-            // Ninja (3) — leve + dagger
-            (3, item_id::GOLD,           8,   22,  1.0),
-            (3, item_id::MANA_POTION,    1,   1,   0.35),
-            // Grunt (0)
-            (0, item_id::GOLD,           4,   14,  1.0),
-            (0, item_id::HEALTH_POTION,  1,   1,   0.25),
-            (0, item_id::MANA_POTION,    1,   1,   0.15),
-        ];
-        for (kind, item, qmin, qmax, chance) in drops {
-            sqlx::query(
-                "INSERT INTO loot_drops (enemy_kind, item_id, qty_min, qty_max, chance) \
-                 VALUES ($1, $2, $3, $4, $5)"
-            )
-            .bind(kind).bind(*item as i32).bind(qmin).bind(qmax).bind(chance)
-            .execute(pool).await?;
-        }
-        tracing::info!("economy seed: {} loot drops inseridos", drops.len());
-    }
-
-    // Seed aditivo — itens novos (ids 24-30) só são inseridos se ainda não
-    // existirem na tabela. Permite expandir o pool de drops sem resetar DB.
-    let new_drops: &[(i32, u16, i32, i32, f32)] = &[
-        // Scimitar (24) — light melee, ninja/ranger
-        // Hammer (25) — heavy weapon
-        // Spear (26) — pole
-        // Crossbow (27) — ranged
-        // Heavy Shield (28) — defense
-        // Pendant (29) — joia
-        // Charm (30) — joia
-        // === Fase E — slots novos ===
-        // Helm leather/plate (31, 32)
-        // Boots leather/plate (35, 36)
-        // Gloves leather/plate (37, 38)
-        // Cape basic/magic (41, 42)
-        // Necklace basic/magic (43, 44)
-        // === Fase F — armas tier 2 ===
-        // Lâmina Polida (45) — drop em inimigos lvl 15-25 (sistema novo: kind=level).
-        // Chance baixa pra ser raro. Tank/Berserker (kinds 1, 5) também dropam
-        // pq são melee de tier médio no sistema legacy.
-        // === Fase F — armas tier 3 ===
-        // Lâmina do Veterano (46) — drop em inimigos lvl 20-30. Mais raro que tier 2.
-        // Boss (kind 7 legacy) também dropa pq é o end-game current.
-        // === Fase F — armas tier 2 outras profs (47..51) ===
-        // Distribuição: cada arma dropa em mobs lvl 15-25 com chance 0.04-0.06,
-        // + um kind legacy temático (Ranger pra Bow, Mago pra Staff/Wand,
-        // Berserker pra Axe, Tank pra Spear).
-        // Arco Reforçado (47) — Ranger/Arqueiro
-        // Cajado Encantado (48) — Mago
-        // Varinha Encantada (49) — Mago
-        // Machado Forjado (50) — Berserker/Tank
-        // Lança Reforçada (51) — Tank/Berserker
-    ];
-    let mut inserted = 0usize;
-    for (kind, item, qmin, qmax, chance) in new_drops {
-        let exists: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM loot_drops WHERE enemy_kind = $1 AND item_id = $2"
-        )
-        .bind(kind).bind(*item as i32)
-        .fetch_one(pool).await?;
-        if exists == 0 {
-            // Guard de FK: parte dos `new_drops` referencia kinds do sistema
-            // level-based (15, 18, 20, ...) que nao estao no seed base de
-            // `enemy_kinds`. Em DB novo o INSERT direto viola a FK e derruba o
-            // boot; aqui a linha simplesmente e pulada.
-            let n = sqlx::query(
-                "INSERT INTO loot_drops (enemy_kind, item_id, qty_min, qty_max, chance) \
-                 SELECT $1, $2, $3, $4, $5 \
-                 WHERE EXISTS (SELECT 1 FROM enemy_kinds WHERE kind = $1)"
-            )
-            .bind(kind).bind(*item as i32).bind(qmin).bind(qmax).bind(chance)
-            .execute(pool).await?;
-            inserted += n.rows_affected() as usize;
-        }
-    }
-    if inserted > 0 {
-        tracing::info!("economy seed: {} loot drops aditivos (itens novos)", inserted);
-    }
-
-    // O equipamento novo (docs/COMBATE.md) cai de qualquer bicho, com chance
-    // baixa; do chefe (7), dez vezes mais. Aditivo e idempotente: so' entra o
-    // par (bicho, peca) que ainda nao existe, entao o admin pode ajustar.
-    {
-        use item_id::*;
-        let pecas: [(u16, f32); 15] = [
-            (ESPADA_E_ESCUDO, 0.02), (KATANA, 0.02), (PISTOLAS, 0.02), (ANEL_MAGICO, 0.02),
-            (MANTO_DO_GUERREIRO, 0.015), (BAINHA, 0.015), (COLDRE, 0.015), (MANTO_DO_MAGO, 0.015),
-            (ARMADURA_LEVE, 0.02), (ARMADURA_MEDIA, 0.02), (ARMADURA_PESADA, 0.02),
-            (BRINCO, 0.015), (AMULETO, 0.015), (BRACELETE, 0.015), (CINTO, 0.015),
-        ];
-        let mut n = 0u64;
-        for kind in 0..=7i32 {
-            for (item, chance) in pecas {
-                let c = if kind == 7 { (chance * 10.0).min(0.5) } else { chance };
-                n += sqlx::query(
-                    "INSERT INTO loot_drops (enemy_kind, item_id, qty_min, qty_max, chance) \
-                     SELECT $1, $2, 1, 1, $3 \
-                     WHERE EXISTS (SELECT 1 FROM enemy_kinds WHERE kind = $1) \
-                       AND NOT EXISTS (SELECT 1 FROM loot_drops WHERE enemy_kind = $1 AND item_id = $2)"
-                )
-                .bind(kind).bind(item as i32).bind(c)
-                .execute(pool).await?
-                .rows_affected();
-            }
-        }
-        if n > 0 {
-            tracing::info!("economy seed: {n} drops do equipamento novo");
-        }
-    }
+    // O loot de mobs e migrado em loot_mobs, depois da conversao de IDs.
 
     // Seed dos shops dos vendors. shop_id=1 fica como generalista (legacy
     // do shop antigo). Demais são especializados.
@@ -1262,51 +1150,17 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     ).bind(item_id::STEEL as i32).fetch_one(pool).await?;
     if ja == 0 {
         sqlx::query("DELETE FROM farm_node_drops WHERE kind = 'Rock'").execute(pool).await?;
-        // (item base, qty_min, qty_max, chance)
-        //
-        // A taxa segue o CUSTO: o que a receita pede em 300 tem que cair mais
-        // que o que ela pede em 100, senao o gargalo muda de lugar sozinho.
-        // Aco serve arma E armadura, entao e' o que mais cai; platina serve
-        // acessorio; os de 100 caem a um quinto disso.
-        let coloridos: &[(u16, i32, i32, f32)] = &[
-            (item_id::STEEL,                 3, 6, 0.55),
-            (item_id::PLATINUM,              3, 6, 0.30),
-            (item_id::DARK_HEART_STONE,      2, 4, 0.12),
-            (item_id::MOON_SHADOW_STONE,     2, 4, 0.12),
-            (item_id::QUINTESSENCE,          2, 4, 0.12),
-            (item_id::EXORCISM_BAUBLE,       2, 4, 0.12),
-            (item_id::ILLUMINATING_FRAGMENT, 2, 4, 0.12),
-            (item_id::ANIMA_STONE,           2, 4, 0.12),
-            // As chaves de craft sao 1 por item craftado, entao caem raro: e'
-            // a peca que decide QUANTOS itens saem, e nao quanto material
-            // sobra. Ver docs/ECONOMIA_DE_CRAFT.md.
-            (item_id::SCALE,                 1, 1, 0.010),
-            (item_id::CLAW,                  1, 1, 0.010),
-            (item_id::HORN,                  1, 1, 0.010),
-            (item_id::HIDE,                  1, 1, 0.010),
-        ];
-        // Sem cor: caem igual em qualquer pedra.
-        let incolores: &[(u16, i32, i32, f32)] = &[
-            (item_id::COPPER,            40, 120, 1.00),
-            (item_id::DARKSTEEL,         10,  25, 0.35),
-            (item_id::GLITTERING_POWDER,  1,   1, 0.03),
-        ];
+        // A tabela mora em `economy::linhas_da_pedra` — a mesma que os testes
+        // de proporcao usam. Ver docs/ECONOMIA_DE_CRAFT.md.
         let mut n = 0;
-        for tier in 1..=4i32 {
-            for (base, qmin, qmax, chance) in coloridos.iter().chain(incolores) {
-                let id = if incolores.iter().any(|(b, ..)| b == base) {
-                    *base
-                } else {
-                    item_id::na_cor(*base, tier as u8)
-                };
-                sqlx::query(
-                    "INSERT INTO farm_node_drops (kind, tier, item_id, qty_min, qty_max, chance) \
-                     VALUES ('Rock', $1, $2, $3, $4, $5)"
-                )
-                .bind(tier).bind(id as i32).bind(qmin).bind(qmax).bind(chance)
-                .execute(pool).await?;
-                n += 1;
-            }
+        for (tier, id, qmin, qmax, chance) in crate::economy::linhas_da_pedra() {
+            sqlx::query(
+                "INSERT INTO farm_node_drops (kind, tier, item_id, qty_min, qty_max, chance) \
+                 VALUES ('Rock', $1, $2, $3, $4, $5)"
+            )
+            .bind(tier as i32).bind(id as i32).bind(qmin).bind(qmax).bind(chance)
+            .execute(pool).await?;
+            n += 1;
         }
         tracing::info!("economy: {n} drops de pedra (materiais de craft) inseridos");
     }
@@ -1359,7 +1213,8 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             format!("DELETE FROM vendor_shop_items WHERE {SO_VELHO}"),
             format!("DELETE FROM farm_node_drops WHERE {SO_VELHO}"),
             // receita: so' os barcos ficam, e o Lylian troca minerio por aco
-            "DELETE FROM craft_recipes WHERE id NOT IN (200, 201)".to_string(),
+            // (as de equipamento, 1000+, sao semeadas pelo `recipes` e ficam)
+            "DELETE FROM craft_recipes WHERE id NOT IN (200, 201) AND id < 1000".to_string(),
             "UPDATE craft_recipes SET inputs = '[[60,100],[61,100],[300,100],[65,100]]' WHERE id = 200".to_string(),
             format!("UPDATE characters SET starting_weapon = {} WHERE {}",
                 na_coluna(PRA_NOVO, "starting_weapon"), na_coluna(TEM_NOVO, "starting_weapon")),
@@ -1374,47 +1229,64 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         }
     }
 
+    crate::loot_mobs::migrar(pool).await?;
     Ok(())
 }
 
 pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
-    let rows = sqlx::query_as::<_,
+    load(pool, None).await
+}
+
+/// Um personagem direto do banco — a verdade entre processos. A copia em
+/// memoria de cada canal envelhece assim que o jogador joga noutro.
+pub async fn load_one(pool: &PgPool, name: &str) -> Result<Option<CharacterRow>> {
+    Ok(load(pool, Some(name)).await?.remove(name))
+}
+
+async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, CharacterRow>> {
+    let onde = if so.is_some() { " WHERE name = $1" } else { "" };
+    macro_rules! busca {
+        ($t:ty, $colunas:expr) => {{
+            let sql = format!("SELECT {} FROM characters{onde}", $colunas);
+            let mut q = sqlx::query_as::<_, $t>(&sql);
+            if let Some(n) = so { q = q.bind(n); }
+            q.fetch_all(pool).await?
+        }};
+    }
+    let rows = busca!(
         (String, f32, f32, i32, i32, i64, i64, i64, i32, Vec<i32>, i32, i32,
-         Option<i16>, Option<f32>, Option<f32>, Option<i16>)>(
-        "SELECT name, x, y, hp, max_hp, xp, fame, aura, unspent_points, allocated_points, \
-                skill_points_earned, skill_points_spent, \
-                boat_kind, boat_x, boat_y, boat_dir FROM characters",
-    )
-    .fetch_all(pool)
-    .await?;
+         Option<i16>, Option<f32>, Option<f32>, Option<i16>),
+        "name, x, y, hp, max_hp, xp, fame, aura, unspent_points, allocated_points, \
+         skill_points_earned, skill_points_spent, boat_kind, boat_x, boat_y, boat_dir"
+    );
     // Query separada pra account_id + visual_json + gold (tuple FromRow limit 16).
-    let extras: Vec<(String, Option<i64>, Option<String>, i64)> = sqlx::query_as(
-        "SELECT name, account_id, visual_json, gold FROM characters"
-    ).fetch_all(pool).await?;
+    let extras = busca!((String, Option<i64>, Option<String>, i64), "name, account_id, visual_json, gold");
     let extras_map: HashMap<String, (Option<i64>, Option<String>, u64)> =
         extras.into_iter().map(|(n, a, v, g)| (n, (a, v, g.max(0) as u64))).collect();
     // Faction — query separada (TEXT). Parse tolerante; default Peacemain.
-    let faction_rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT name, faction FROM characters"
-    ).fetch_all(pool).await?;
+    let faction_rows = busca!((String, String), "name, faction");
     let faction_map: HashMap<String, shared::Faction> = faction_rows.into_iter()
         .map(|(n, f)| (n, shared::Faction::from_str_lenient(&f).unwrap_or_default()))
         .collect();
     // Tutorial concluído (epoch). NULL = nunca → login no mundo redireciona pro tutorial.
-    let tut_rows: Vec<(String, Option<i64>)> = sqlx::query_as(
-        "SELECT name, EXTRACT(EPOCH FROM last_tutorial_completed)::BIGINT FROM characters"
-    ).fetch_all(pool).await?;
+    let tut_rows = busca!((String, Option<i64>), "name, EXTRACT(EPOCH FROM last_tutorial_completed)::BIGINT");
     let tut_map: HashMap<String, Option<i64>> = tut_rows.into_iter().collect();
     // Boat 2.5D extras: yaw/sail/anchor + mounted_local. Tudo opcional pra
     // compat com rows legacy (sao NULL quando antigos).
     type BoatExtras = (Option<f32>, Option<i16>, Option<f32>, Option<bool>, Option<f32>, Option<f32>);
-    let boat_extras: Vec<(String, Option<f32>, Option<i16>, Option<f32>, Option<bool>, Option<f32>, Option<f32>)> = sqlx::query_as(
-        "SELECT name, boat_yaw, boat_sail_pos, boat_sail_angle, boat_anchor_dropped, \
-                mounted_local_x, mounted_local_y FROM characters"
-    ).fetch_all(pool).await?;
+    let boat_extras = busca!(
+        (String, Option<f32>, Option<i16>, Option<f32>, Option<bool>, Option<f32>, Option<f32>),
+        "name, boat_yaw, boat_sail_pos, boat_sail_angle, boat_anchor_dropped, mounted_local_x, mounted_local_y"
+    );
     let boat_extras_map: HashMap<String, BoatExtras> = boat_extras.into_iter()
         .map(|(n, y, sp, sa, a, lx, ly)| (n, (y, sp, sa, a, lx, ly)))
         .collect();
+    // Mana, stamina e zona. NULL = row de antes das colunas.
+    let vida = busca!((String, Option<f32>, Option<f32>, Option<String>), "name, mp, stamina, zona");
+    let vida_map: HashMap<String, (Option<f32>, Option<f32>, Option<String>)> =
+        vida.into_iter().map(|(n, m, s, z)| (n, (m, s, z))).collect();
+    let bonus = busca!((String, i64), "name, xp_bonus_ate");
+    let bonus_map: HashMap<String, i64> = bonus.into_iter().collect();
 
     let mut out = HashMap::with_capacity(rows.len());
     for (name, x, y, hp, max_hp, xp, fame, aura, unspent, allocated_vec,
@@ -1459,6 +1331,8 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
             .as_deref()
             .and_then(|j| serde_json::from_str(j).ok());
         let last_tut = tut_map.get(&name).cloned().flatten();
+        let (mp, stamina, zona) = vida_map.get(&name).cloned().unwrap_or_default();
+        let xp_bonus_ate = bonus_map.get(&name).copied().unwrap_or(0);
         out.insert(
             name.clone(),
             CharacterRow {
@@ -1485,6 +1359,10 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, CharacterRow>> {
                 quests,
                 faction_points,
                 last_tutorial_completed: last_tut,
+                mp,
+                stamina,
+                zona,
+                xp_bonus_ate,
             },
         );
     }
@@ -1727,8 +1605,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                                      boat_kind, boat_x, boat_y, boat_dir,
                                      gold, visual_json, updated,
                                      boat_yaw, boat_sail_pos, boat_sail_angle,
-                                     boat_anchor_dropped, mounted_local_x, mounted_local_y)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+                                     boat_anchor_dropped, mounted_local_x, mounted_local_y,
+                                     mp, stamina, zona, xp_bonus_ate)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -1753,7 +1632,11 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                boat_sail_angle = EXCLUDED.boat_sail_angle,
                boat_anchor_dropped = EXCLUDED.boat_anchor_dropped,
                mounted_local_x = EXCLUDED.mounted_local_x,
-               mounted_local_y = EXCLUDED.mounted_local_y",
+               mounted_local_y = EXCLUDED.mounted_local_y,
+               mp = EXCLUDED.mp,
+               stamina = EXCLUDED.stamina,
+               zona = COALESCE(EXCLUDED.zona, characters.zona),
+               xp_bonus_ate = EXCLUDED.xp_bonus_ate",
         )
         .bind(&row.name)
         .bind(row.pos.x)
@@ -1780,6 +1663,10 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(boat_anchor)
         .bind(mounted_local_x)
         .bind(mounted_local_y)
+        .bind(row.mp)
+        .bind(row.stamina)
+        .bind(&row.zona)
+        .bind(row.xp_bonus_ate)
         .execute(&mut *tx)
         .await?;
 
@@ -1825,6 +1712,28 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                 .execute(&mut *tx)
                 .await?;
             }
+        }
+
+        // Cofre: mesmo padrao. Ele era CARREGADO e nunca gravado — o que se
+        // guardava sumia no primeiro reinicio do servidor.
+        sqlx::query("DELETE FROM vault WHERE character_name = $1")
+            .bind(&row.name)
+            .execute(&mut *tx)
+            .await?;
+        for (i, slot) in row.vault.iter().enumerate() {
+            if slot.qty == 0 { continue; }
+            let inst_json = slot.instance.and_then(|i| serde_json::to_string(&i).ok());
+            sqlx::query(
+                "INSERT INTO vault (character_name, slot, item_id, qty, instance_data)
+                 VALUES ($1, $2, $3, $4, $5)",
+            )
+            .bind(&row.name)
+            .bind(i as i32)
+            .bind(slot.item_id as i32)
+            .bind(slot.qty as i32)
+            .bind(inst_json)
+            .execute(&mut *tx)
+            .await?;
         }
 
         // Proficiencias: upsert por prof_kind.

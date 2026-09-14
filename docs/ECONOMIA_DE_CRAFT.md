@@ -27,7 +27,9 @@ compartilham a linha de baixo inteira; só a chave muda.
 
 ## Onde tudo isso sai
 
-Da **pedra**. Ver `docs/COLETA.md` para como a pedra funciona; aqui importa
+A **pedra** é uma fonte de materiais; os mobs também fornecem cobre,
+materiais e poucas poções conforme [Loot dos mobs](LOOT_DOS_MOBS.md).
+Mobs e chefes não dropam equipamentos. Ver `docs/COLETA.md` para como a pedra funciona; aqui importa
 só a proporção, e ela segue o custo — o que a receita pede em 300 tem que
 cair mais que o que ela pede em 100, senão o gargalo muda de lugar sozinho:
 
@@ -87,14 +89,36 @@ refino.
 É por aí que o `+1/+2/+3…` entra na economia: o refino deixa de ser só poder
 e vira **matéria-prima de progressão**.
 
+## O que o código faz hoje
+
+- **As 60 receitas existem** (`shared::receitas`): 15 peças (ids 400–414) × 4
+  cores, ids de receita `1000 + faixa×100 + peça`. Cada uma pede os seis
+  ingredientes da tabela acima — a quantidade é **nossa, de play test**, não a
+  do MIR4:
+
+  | cor | grau que sai | nível mín. | chave | principal | cada secundário | darksteel | cobre |
+  |---|---|---|---|---|---|---|---|
+  | cinza | Comum | 1 | 1 | 30 | 10 | 200 | 300 |
+  | verde | Fino | 15 | 1 | 90 | 30 | 1.500 | 2.000 |
+  | azul | Raro | 30 | 1 | 300 | 100 | 8.000 | 10.000 |
+  | roxo | Épico | 60 | 1 | 300 | 100 | 60.000 | 50.000 |
+
+  O grau sai da cor (o nível da instância rolada cai no tier certo) e o nível
+  mínimo é validado no servidor: **nível 20 não cria Épico** — só a partir do
+  60 (docs/DUNGEONS_E_RAIDS.md).
+- **Banco:** o `recipes` semeia as receitas em `craft_recipes` (coluna nova
+  `nivel_min`) com `ON CONFLICT DO NOTHING` — ajuste manual fica. A M27 não
+  apaga mais ids 1000+.
+- **Servidor:** `craft::conferir` (nível, cada ingrediente, espaço) e
+  `craft::aplicar` (consome e cria com instância rolada), e a resposta
+  `CraftResultado` diz o motivo da recusa ("faltam: Aço 12/30").
+- **Cliente:** painel de Craft (abas Arma/Secundária/Armadura/Acessório/Barco,
+  ingredientes com tem/precisa, botão Criar), aberto pelo HUD — sem tecla.
+- **Material roxo continua sem fonte** até a síntese de cor, então a receita
+  Épica existe mas ainda não se cumpre.
+
 ## O que ainda não existe no código
 
-- **As receitas.** Estão descritas aqui, não implementadas. Os itens que elas
-  produzem já existem (ids 400–414: os quatro conjuntos, as quatro
-  secundárias, os três pesos de armadura, os quatro acessórios); as receitas
-  antigas saíram na M27 e só os barcos continuam craftáveis.
-- **`CraftRecipe` cabe 4 ingredientes**; estas receitas pedem 6 (chave + 3
-  materiais + darksteel + cobre). O struct precisa crescer.
 - **A síntese de cor** (10 → 1 com pó cintilante) não está implementada.
 - **A troca por equipamento +8** depende do refino, que existe em
   `shared/forja.rs` mas ainda não conversa com o craft.

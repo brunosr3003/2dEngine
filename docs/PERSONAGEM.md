@@ -1,9 +1,8 @@
 # O personagem: modelos e animação
 
 > Documento de decisão. **DECIDIDO** foi escolhido; **PROPOSTA** é o plano de
-> execução; **ABERTO** ainda depende de uma resposta. Substitui a versão
-> anterior, que era de antes do redesenho do combate (8 árvores de arma, 64
-> skills, passivas, ferramentas — tudo isso morreu; ver `docs/COMBATE.md`).
+> execução; **ABERTO** ainda depende de uma resposta. As regras de combate e
+> skills estão em [COMBATE.md](COMBATE.md) e [SKILLS.md](SKILLS.md).
 
 ## O que já está decidido
 
@@ -39,8 +38,8 @@ humanoides em áreas específicas (não necessariamente chefe).
 **JÁ É — o corpo tem 1,68 u de altura e 0,35 de raio.** O `player.vox` atual
 tem 42 voxels de altura: **1 voxel ≈ 4 cm**. O corpo novo mantém essa escala.
 
-**JÁ É — 12 skills, 5 formas.** Círculo ×4, linha ×2, cone ×2, projétil ×2, em
-si ×2. Nenhuma passiva: tudo que existe tem gesto.
+**12 skills, 5 formas e 12 gestos próprios.** As formas são círculo, linha,
+cone, projétil e em si. O desbloqueio acontece nos níveis 1, 5 e 10.
 
 **JÁ É — hoje o personagem é UMA peça em pose T.** Braços esticados, nada se
 move. E os 8 tipos de mob são o mesmo lobo pequeno com escala e tinta
@@ -132,7 +131,7 @@ O que isso dá por conjunto:
 | conjunto | mão-D | mão-E | cintura | costas |
 |---|---|---|---|---|
 | **espada e escudo** | espada | escudo | — | manto do guerreiro |
-| **katana** | katana | — | bainha | — |
+| **katana** | cabo junto à guarda | cabo junto ao pomo | bainha | — |
 | **duas pistolas** | pistola | pistola | coldre | — |
 | **anel mágico** | anel | — | — | manto do mago |
 
@@ -144,7 +143,7 @@ O manto é uma peça rígida que balança com a velocidade (procedural, custo ze
 | conjunto | em combate | guardada |
 |---|---|---|
 | **espada e escudo** | espada na mão-D, escudo na mão-E | espada pendurada no quadril esquerdo, escudo nas costas por cima do manto |
-| **katana** | na mão-D | dentro da bainha |
+| **katana** | nas duas mãos | dentro da bainha |
 | **duas pistolas** | uma em cada mão | nos coldres |
 | **anel mágico** | no dedo | no dedo — o círculo só aparece atacando |
 
@@ -386,15 +385,23 @@ sacar e três golpes por conjunto):
 
 | conjunto | guarda | golpes | guardada |
 |---|---|---|---|
-| katana | baixa, lâmina à frente na diagonal | diagonal descendo do ombro, diagonal subindo, estocada com passo longo | na bainha do quadril esquerdo, cabo pra fora |
+| katana | duas mãos no cabo, lâmina erguida na diagonal | diagonal descendo do ombro, diagonal subindo, estocada com passo longo | na bainha do quadril esquerdo, cabo pra fora |
 | duas pistolas | os dois braços à frente, canos baixos | tiro da direita, da esquerda, das duas — cada um com o coice subindo o cano | nos coldres, dos dois lados |
 | anel mágico | mãos abertas à frente do peito | palma empurrando, as duas mãos, mão erguida descendo | — (o círculo só aparece atacando) |
 
 O tiro da pistola acende um clarão na boca do cano; o anel acende o círculo no
 pulso e, no impacto, projeta um segundo círculo pra frente. O projétil deixa
 de ser um cubo: bala é um ponto quente com risco, magia é um orbe com halo (o
-tipo vai no `kind` da meta do projétil). As skills entram quando o cliente
-tiver como conjurá-las.
+tipo vai no `kind` da meta do projétil). As 12 skills têm barra de uso,
+gestos próprios e efeitos de início e impacto; ver [SKILLS.md](SKILLS.md).
+
+**Humanoides animados.** Pistoleiro, mago e arqueiro carregam as dez peças
+de `assets/vox/humanoides/` no mesmo esqueleto. O arqueiro segura um arco e
+puxa a corda; pistoleiro e mago usam os gestos das respectivas armas.
+`MobAttackFx` leva alvo, direção e tempo do disparo/impacto ao cliente.
+O corpo olha para esse alvo durante o ataque, mesmo que estivesse andando
+de lado antes. O servidor segura o movimento na preparação e usa o alcance
+do próprio mob para resolver o golpe.
 
 **FEITO — o que tira o duro.** Por cima da pose-chave roda uma MOLA por junta
 (`rig::Molas`): a pose do quadro vira alvo e cada peça chega nele com a

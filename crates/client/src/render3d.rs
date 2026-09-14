@@ -1078,6 +1078,54 @@ pub fn variantes_do_saque() -> Vec<(&'static str, [[u8; 3]; 4])> {
 /// Modelos de gente, desenhados na escala do corpo.
 pub const MODELOS_DE_GENTE: [&str; 4] = ["player", "pistoleiro", "mago", "arqueiro"];
 
+/// Os NPCs da vila, um rig de dez pecas por oficio (`tools/voxrender/npcs.py`).
+pub const MODELOS_DE_NPC: [&str; 15] = [
+    "npcs/alquimista", "npcs/ferreiro", "npcs/armeiro", "npcs/taberneiro", "npcs/alfaiate",
+    "npcs/treinador", "npcs/identificador", "npcs/cartografo", "npcs/estivador", "npcs/capitao",
+    "npcs/mestre_missoes", "npcs/mercador", "npcs/aldeao_1", "npcs/aldeao_2", "npcs/aldeao_3",
+];
+
+/// `Papel::Missoes`: o proximo depois de `Alquimista` no enum do shared.
+/// Constante aqui porque o modelo existe antes da variante — o teste
+/// `o_papel_de_missoes_e_o_seguinte` amarra os dois.
+pub const PAPEL_MISSOES: u8 = shared::construcao::Papel::Alquimista as u8 + 1;
+
+/// Sem arma pra desenhar: nenhum conjunto tem este numero.
+const SEM_ARMA: u8 = u8::MAX;
+
+/// O rig do NPC pelo papel que veio no `kind` (`shared::npc_papel_de_kind`).
+///
+/// Papel sem modelo proprio — morador, naufrago, ou um que o cliente ainda
+/// nao conhece — cai num aldeao, escolhido pelo id pra dois vizinhos nao
+/// sairem iguais.
+pub fn rig_do_npc(papel: u8, id: u64) -> &'static str {
+    use shared::construcao::Papel as P;
+    const ALDEOES: [&str; 3] = ["npcs/aldeao_1", "npcs/aldeao_2", "npcs/aldeao_3"];
+    match papel {
+        p if p == P::Alquimista as u8 => "npcs/alquimista",
+        p if p == P::Ferreiro as u8 => "npcs/ferreiro",
+        p if p == P::Armas as u8 || p == P::Armaduras as u8 => "npcs/armeiro",
+        p if p == P::Taberna as u8 => "npcs/taberneiro",
+        p if p == P::Alfaiate as u8 => "npcs/alfaiate",
+        p if p == P::Treinador as u8 => "npcs/treinador",
+        p if p == P::Identificador as u8 => "npcs/identificador",
+        p if p == P::Cartografo as u8 => "npcs/cartografo",
+        p if p == P::Deposito as u8 => "npcs/estivador",
+        p if p == P::Estaleiro as u8 => "npcs/capitao",
+        p if p == P::Itens as u8 || p == P::Mercador as u8 => "npcs/mercador",
+        PAPEL_MISSOES => "npcs/mestre_missoes",
+        _ => ALDEOES[(id % ALDEOES.len() as u64) as usize],
+    }
+}
+
+fn rig_do_humanoide(e: &crate::world::Ent) -> Option<&'static str> {
+    if e.meta.tag != shared::EntityTag::Enemy || e.state.flags & shared::ent_flags::BOSS != 0 { return None; }
+    match e.meta.kind {
+        2 => Some("humanoides/pistoleiro"), 4 => Some("humanoides/mago"),
+        6 => Some("humanoides/arqueiro"), _ => None,
+    }
+}
+
 pub fn draw_entities(
     world: &mut World,
     vox: &VoxCache,
@@ -1100,6 +1148,19 @@ pub fn draw_entities(
         }
 
         let boss = e.state.flags & shared::ent_flags::BOSS != 0;
+        if let Some(corpo) = rig_do_humanoide(e).and_then(|nome| vox.rig(nome)) {
+            brilhos.extend(desenha_personagem(e, corpo, None, vox, vista, false));
+            continue;
+        }
+        // NPC da vila: o rig do OFICIO dele. Sem o arquivo, cai no corpo de
+        // gente abaixo, como antes.
+        if e.meta.tag == shared::EntityTag::Npc {
+            let nome = rig_do_npc(shared::npc_papel_de_kind(e.meta.kind), e.meta.id.0 as u64);
+            if let Some(corpo) = vox.rig(nome) {
+                brilhos.extend(desenha_personagem(e, corpo, None, vox, vista, false));
+                continue;
+            }
+        }
         // Gente (jogador, NPC) e' desenhada em PECAS, com a pose do quadro.
         if matches!(e.meta.tag, shared::EntityTag::Player | shared::EntityTag::Npc) {
             if let Some(corpo) = vox.rig(RIG_CORPO) {
@@ -1242,11 +1303,28 @@ fn desenha_personagem(
             sacada: e.sacada,
             golpe: e.combo,
             golpe_ant: e.combo_ant,
+            skill: e.skill,
             ferido: e.ferido,
             recuo,
         },
     };
     let mut entrada = entrada;
+    let humanoide = rig_do_humanoide(e).is_some();
+    if humanoide {
+        entrada.combate.conjunto = if e.meta.kind == 4 { 3 } else { 2 };
+        entrada.combate.sacada = 1.0;
+        entrada.combate.golpe = e.ataque_mob.map(|(_, t, impacto)| {
+            let relogio = if t <= impacto { t / impacto.max(0.01) * crate::rig::IMPACTO }
+                else { crate::rig::IMPACTO + t - impacto };
+            (0, relogio)
+        });
+    }
+    // NPC nao anda armado: o `acao` dele e' zero, que e' o conjunto de espada
+    // e escudo, e ele saia com a espada no quadril e o escudo nas costas. O que
+    // ele segura (martelo, caneca, livro) ja' vem no modelo.
+    if e.meta.tag == shared::EntityTag::Npc {
+        entrada.combate.conjunto = SEM_ARMA;
+    }
     // Morto: sem passo, sem golpe, sem tranco — so' o tombo.
     let cai = e.morte.map_or(0.0, queda);
     if e.morte.is_some() {
@@ -1254,9 +1332,12 @@ fn desenha_personagem(
         entrada.correr = 0.0;
         entrada.ar = 0.0;
         entrada.combate.golpe = None;
+        entrada.combate.skill = None;
         entrada.combate.ferido = None;
     }
     let mut pose = crate::rig::pose(&entrada);
+    if e.skill.is_some_and(|(id, _, _)| id == 9) { pose.na_mao = false; }
+    if humanoide && e.meta.kind == 6 { crate::rig::aplica_arqueiro(&mut pose, entrada.combate.golpe.map(|(_, t)| t)); }
     e.molas.segue(&mut pose, get_frame_time());
     let s = if e.morte.is_some() { 0.0 } else { e.ferido.map_or(0.0, crate::rig::esmagamento) };
     // Cai de COSTAS girando em volta do pe': deitado, as costas ficariam 3
@@ -1267,12 +1348,35 @@ fn desenha_personagem(
         * Mat4::from_rotation_x(-cai)
         * Mat4::from_scale(vec3(1.0 + 0.5 * s, 1.0 - s, 1.0 + 0.5 * s));
     let (mats, armas) = desenha_rig(base, &pose, corpo, chapeu, vox, clarao(e, eu));
+    e.emissores = crate::rig::palmas(&mats, VOXEL);
+    if crate::rig::e_pistolas(&pose) && pose.na_mao {
+        for (i, (_, m)) in armas.iter().filter(|(n, _)| *n == "pistola").take(2).enumerate() {
+            e.emissores[i] = m.transform_point3(vec3(0.0, 2.5 * VOXEL, 9.5 * VOXEL));
+        }
+    }
+    if humanoide && e.meta.kind == 6 {
+        let maos = crate::rig::palmas(&mats, VOXEL);
+        let centro = maos[1];
+        let frente = vec3(e.yaw.sin(), 0.0, e.yaw.cos());
+        let ponta = |u: f32| centro + Vec3::Y * (u * 0.65) + frente * ((1.0 - u * u) * 0.18);
+        for k in 0..16 {
+            let a = ponta(k as f32 / 8.0 - 1.0);
+            let b = ponta((k + 1) as f32 / 8.0 - 1.0);
+            draw_cube(a.lerp(b,0.5),vec3(0.055,0.095,0.055),None,BROWN);
+        }
+        let puxada = if e.ataque_mob.is_some() { maos[0] } else { centro };
+        draw_line_3d(ponta(-1.0), puxada, LIGHTGRAY);
+        draw_line_3d(puxada, ponta(1.0), LIGHTGRAY);
+        if e.ataque_mob.is_some_and(|(_, t, impacto)| t < impacto) {
+            draw_line_3d(puxada, centro + frente * 0.7, BEIGE);
+        }
+    }
     let mut brilhos = Vec::new();
 
     // O rastro da lamina: base e ponta a cada quadro enquanto o golpe corre.
     // (onde a lamina comeca e termina, em voxels a partir da pega)
     let agora = get_time() as f32;
-    if e.combo.is_some() {
+    if e.combo.is_some() || e.skill.is_some_and(|(_, t, impacto)| t > impacto - 0.16 && t < impacto + 0.12) {
         let lamina = armas.iter().find_map(|(n, m)| match *n {
             "espada" => Some((*m, 5.0, 22.0)),
             "katana" => Some((*m, 6.0, 26.0)),
@@ -1291,7 +1395,7 @@ fn desenha_personagem(
         brilhos.push(Brilho::Fita(e.rastro.clone()));
     }
 
-    if let Some((passo, t)) = e.combo {
+    if let Some((passo, t)) = entrada.combate.golpe {
         // Pistolas: o clarao do cano no instante do tiro — da direita no
         // primeiro, da esquerda no segundo, das duas no terceiro.
         if crate::rig::e_pistolas(&pose) {
@@ -1444,7 +1548,18 @@ fn desenha_projetil(e: &crate::world::Ent, p: Vec3) {
     let alto = p + vec3(0.0, 1.05, 0.0);
     let v = e.state.vel_f32();
     let dir = vec3(v.x, 0.0, v.y).normalize_or_zero();
-    if e.meta.kind == 1 {
+    if e.meta.kind == 2 {
+        // Vento Cortante: uma meia-lua clara atravessando o ar.
+        let lado = dir.cross(Vec3::Y).normalize_or_zero();
+        for i in 0..12 {
+            let a = -1.3 + i as f32 * 2.6 / 12.0;
+            let b = -1.3 + (i + 1) as f32 * 2.6 / 12.0;
+            let ponto = |ang: f32, r: f32| alto + lado * ang.sin() * r + dir * ang.cos() * r;
+            dupla(vec![vtx(ponto(a, 0.85), [155, 235, 255, 255]), vtx(ponto(b, 0.85), [155, 235, 255, 255]),
+                vtx(ponto(b, 0.62), [90, 180, 255, 40]), vtx(ponto(a, 0.62), [90, 180, 255, 40])],
+                vec![[0, 1, 2], [0, 2, 3]]);
+        }
+    } else if e.meta.kind == 1 {
         octaedro(alto, 0.15, [205, 150, 255, 255]);
         octaedro(alto, 0.27, [170, 110, 255, 90]);
     } else {

@@ -1,13 +1,12 @@
 # Combate: o desenho do playtest
 
-> Substitui o sistema anterior por inteiro. O que havia — 8 árvores de
-> proficiência, 64 skills, offhand livre, arma de duas mãos, build procedural
-> de mob — foi descartado. Ver `docs/PERSONAGEM.md` para o rig e a animação.
+As regras atuais de skills estão em [SKILLS.md](SKILLS.md). Ver
+[PERSONAGEM.md](PERSONAGEM.md) para o rig e a animação.
 
 ## A arma é um CONJUNTO, não uma peça
 
-Não existe mais offhand livre nem "duas mãos". A arma é o par inteiro, e a
-secundária vem amarrada a ela:
+A arma é o conjunto inteiro, e a secundária vem amarrada a ela. A katana é
+segurada com as duas mãos, na guarda e nos golpes:
 
 | arma (principal) | secundária | leitura |
 |---|---|---|
@@ -53,29 +52,14 @@ rolou, não a lista de slots.
 
 **Três por conjunto de arma, todas ATIVAS.** Doze no playtest.
 
-Passiva não existe mais. Das 64 antigas, 20 eram passivas — número que sobe sem
-nada acontecer na tela. Isso importa duplamente aqui: passiva não tem
-animação, não tem leitura, e num jogo de vista alta o que o outro jogador vê
-você fazer é metade do combate.
-
-Doze ativas é o que dimensiona a arte: cada uma precisa de um gesto, e o
-documento do personagem prevê pose-chave por FORMA (cone, círculo, projétil,
-linha, em si mesmo). Com doze, o pior caso é doze gestos; o provável é bem
-menos, porque formas se repetem entre conjuntos.
-
-## O que isso apaga
-
-* as 8 proficiências de arma (Espada, Machado, Lança, Adaga, Arco, Cajado,
-  Varinha, Desarmado) — viram as do conjunto novo;
-* `usable_with` por nome de arma nas skills;
-* o slot `offhand` como escolha livre;
-* arma de duas mãos como categoria;
-* o build procedural de mob — **já foi**, ver commit anterior.
+Desbloqueio automático pelo nível do personagem: **1, 5 e 10**, na ordem de
+cada arma. Não há compra com pontos, ranks ou passivas. Cada skill tem gesto
+próprio, custo de mana e recarga. Atalhos **1, 2 e 3** ou clique na barra.
 
 ## Proficiência
 
-Uma árvore por conjunto de arma — quatro. Trocar de conjunto continua sendo
-trocar de classe.
+Uma proficiência por conjunto de arma — quatro. O desbloqueio das skills usa
+o nível do personagem, independente da proficiência.
 
 ## O que ainda falta decidir
 

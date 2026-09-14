@@ -1,0 +1,1345 @@
+//! Mapa da ilha (M), minimapa e viagem por clique.
+//!
+//! A imagem sai da SEMENTE, pelo mesmo `Gerador` que desenha o chao — nada
+//! viaja pela rede. Ela e' amostrada numa grade grossa numa thread: a ilha
+//! grande tem dez milhoes de colunas, e o quadro nao pode esperar por isso.
+//!
+//! Eixos: o mundo e' (x, z), e a camera em yaw 0 olha pra -z. O mapa usa norte
+//! fixo com x pra direita e z pra BAIXO — a vista da camera sem giro —, entao
+//! o que esta' a' esquerda no mundo esta' a' esquerda no mapa.
+use crate::{hud_estilo as estilo, world::World};
+use macroquad::prelude::*;
+use shared::terreno::{Bioma, Cidade, DefIlha, Gerador, BLOCO, ESCALA_ALTURA, NIVEL_DO_MAR};
+use shared::EntityTag;
+use std::sync::mpsc::{channel, Receiver};
+
+/// Pixels da imagem por lado. 384 sobre 1,6 km da uns 4 m por pixel: le'
+/// costa, rio de pedra e a praca da cidade, e gera em fracao de segundo.
+use shared::protocol::{RegiaoNoMapa, ZonaNoMapa};
+use std::collections::{HashMap, HashSet};
+
+use crate::ir_para::{Alvo, Objetivo};
+
+/// O que chega do servidor em `MapaDaIlha`, arrumado pro desenho.
+#[derive(Debug, Default, Clone)]
+pub struct InfoDaIlha {
+    pub zonas: Vec<ZonaNoMapa>,
+    pub recursos: Vec<RegiaoNoMapa>,
+    pub nomes: HashMap<u16, String>,
+    pub rendimentos: HashMap<u8, String>,
+}
+
+/// Chance (em %) pra zona contar como "onde o bicho nasce": a mesma do
+/// servidor (`quests::zona_do_bicho`).
+const CHANCE_MINIMA_PCT: u8 = 15;
+
+impl InfoDaIlha {
+    pub fn nome(&self, kind: u16) -> String {
+        self.nomes.get(&kind).cloned().unwrap_or_else(|| format!("Bicho {kind}"))
+    }
+
+    /// Todo bicho que nasce em alguma zona da ilha, do mais baixo pro mais alto.
+    pub fn bichos(&self) -> Vec<u16> {
+        let mut v: Vec<u16> = self.zonas.iter().flat_map(|z| z.bichos.iter().map(|b| b.0)).collect();
+        v.sort_unstable();
+        v.dedup();
+        v.sort_by_key(|k| self.faixa(*k).map_or(u16::MAX, |f| f.0));
+        v
+    }
+
+    /// Faixa de nivel das zonas onde o bicho e' o dominante ou sai com chance
+    /// razoavel; sem nenhuma assim, a da zona onde ele mais sai.
+    pub fn faixa(&self, kind: u16) -> Option<(u16, u16)> {
+        let boas: Vec<&ZonaNoMapa> = self.zonas.iter()
+            .filter(|z| chance_na_zona(z, kind) >= CHANCE_MINIMA_PCT || z.bichos.first().is_some_and(|b| b.0 == kind))
+            .collect();
+        if boas.is_empty() {
+            let z = self.zonas.iter().filter(|z| chance_na_zona(z, kind) > 0).max_by_key(|z| chance_na_zona(z, kind))?;
+            return Some((z.lv_min, z.lv_max));
+        }
+        Some((boas.iter().map(|z| z.lv_min).min()?, boas.iter().map(|z| z.lv_max).max()?))
+    }
+
+    /// Tipos de recurso que a ilha tem.
+    pub fn tipos(&self) -> Vec<u8> {
+        let mut v: Vec<u8> = self.recursos.iter().map(|r| r.tipo).collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+}
+
+pub fn chance_na_zona(z: &ZonaNoMapa, kind: u16) -> u8 {
+    z.bichos.iter().find(|b| b.0 == kind).map_or(0, |b| b.1)
+}
+
+fn centro_da_zona(z: &ZonaNoMapa) -> Vec2 {
+    vec2(z.centro[0], z.centro[1])
+}
+
+/// A zona pra ir caçar `kind` — a mesma escolha de `quests::zona_do_bicho` do
+/// servidor: a mais perto em que ele sai com chance razoavel e cujo nivel o
+/// jogador aguenta; senao a mais perto com chance; senao a de maior chance.
+pub fn zona_mais_perto(zonas: &[ZonaNoMapa], kind: u16, eu: Vec2, nivel: u32) -> Option<&ZonaNoMapa> {
+    fn perto<'a>(v: Vec<&'a ZonaNoMapa>, eu: Vec2) -> Option<&'a ZonaNoMapa> {
+        v.into_iter().min_by(|a, b| centro_da_zona(a).distance_squared(eu).total_cmp(&centro_da_zona(b).distance_squared(eu)))
+    }
+    let boas: Vec<&ZonaNoMapa> = zonas.iter()
+        .filter(|z| chance_na_zona(z, kind) >= CHANCE_MINIMA_PCT && z.lv_min as u32 <= nivel + 3)
+        .collect();
+    if let Some(z) = perto(boas, eu) {
+        return Some(z);
+    }
+    let com: Vec<&ZonaNoMapa> = zonas.iter().filter(|z| chance_na_zona(z, kind) >= CHANCE_MINIMA_PCT).collect();
+    if let Some(z) = perto(com, eu) {
+        return Some(z);
+    }
+    zonas.iter().filter(|z| chance_na_zona(z, kind) > 0).max_by(|a, b| {
+        chance_na_zona(a, kind)
+            .cmp(&chance_na_zona(b, kind))
+            .then(centro_da_zona(b).distance_squared(eu).total_cmp(&centro_da_zona(a).distance_squared(eu)))
+    })
+}
+
+/// A regiao do tipo mais perto do jogador.
+pub fn regiao_mais_perto(recursos: &[RegiaoNoMapa], tipo: u8, eu: Vec2) -> Option<&RegiaoNoMapa> {
+    recursos.iter().filter(|r| r.tipo == tipo).min_by(|a, b| {
+        vec2(a.centro[0], a.centro[1]).distance_squared(eu).total_cmp(&vec2(b.centro[0], b.centro[1]).distance_squared(eu))
+    })
+}
+
+pub fn nome_do_tipo(t: u8) -> &'static str {
+    match t {
+        0 => "Madeira",
+        1 => "Pedra cinza",
+        2 => "Pedra verde",
+        3 => "Pedra azul",
+        4 => "Pedra roxa",
+        _ => "Recurso",
+    }
+}
+
+fn cor_do_tipo(t: u8) -> Color {
+    match t {
+        0 => Color::new(0.55, 0.78, 0.35, 1.0),
+        1 => Color::new(0.78, 0.78, 0.78, 1.0),
+        2 => Color::new(0.35, 0.90, 0.45, 1.0),
+        3 => Color::new(0.35, 0.60, 1.0, 1.0),
+        4 => Color::new(0.78, 0.45, 1.0, 1.0),
+        _ => WHITE,
+    }
+}
+
+/// Uma cor por bicho, estavel pelo kind.
+fn cor_do_bicho(kind: u16) -> Color {
+    const CORES: [Color; 8] = [
+        Color::new(0.95, 0.35, 0.28, 1.0),
+        Color::new(0.95, 0.62, 0.22, 1.0),
+        Color::new(0.93, 0.85, 0.30, 1.0),
+        Color::new(0.85, 0.35, 0.70, 1.0),
+        Color::new(0.55, 0.40, 0.95, 1.0),
+        Color::new(0.35, 0.80, 0.85, 1.0),
+        Color::new(0.75, 0.55, 0.40, 1.0),
+        Color::new(1.0, 0.45, 0.55, 1.0),
+    ];
+    CORES[kind as usize % CORES.len()]
+}
+
+/// Filtros do mapa grande e do minimapa. Tudo DESLIGADO de inicio — o mapa
+/// abre limpo e o jogador liga o que quer achar; o `main`
+/// guarda a escolha quando o mapa e' recriado (troca de zona), entao ela vale
+/// a sessao inteira.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Filtros {
+    pub mobs: bool,
+    pub bichos_ocultos: HashSet<u16>,
+    /// Por tipo: 0 madeira, 1..4 pedra pela cor.
+    pub recursos: [bool; 5],
+    /// Cidade, porto, predios e NPCs.
+    pub vila: bool,
+}
+
+impl Default for Filtros {
+    fn default() -> Self {
+        Self { mobs: false, bichos_ocultos: HashSet::new(), recursos: [false; 5], vila: false }
+    }
+}
+
+impl Filtros {
+    /// Zona aparece se mobs estao ligados e o bicho DOMINANTE dela nao foi
+    /// escondido: esconder "Lobo" tira as zonas de lobo.
+    pub fn zona_visivel(&self, z: &ZonaNoMapa) -> bool {
+        self.mobs && z.bichos.first().is_some_and(|b| !self.bichos_ocultos.contains(&b.0))
+    }
+
+    pub fn regiao_visivel(&self, r: &RegiaoNoMapa) -> bool {
+        self.recursos.get(r.tipo as usize).copied().unwrap_or(false)
+    }
+}
+
+/// O que um clique no mapa pede ao `main`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Entrada {
+    /// Ponto qualquer: viagem.
+    Viajar(Vec2),
+    /// Zona de bicho ou regiao de recurso (ou "Ir" do painel): ir e fazer.
+    Ir(Alvo),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Marcador {
+    Zona(usize),
+    Regiao(usize),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Chip {
+    Mobs,
+    Bicho(u16),
+    Recurso(u8),
+    Vila,
+}
+
+/// Largura do painel de filtros e "Ir para" ao lado do mapa grande.
+const LARGURA_LATERAL: f32 = 260.0;
+const LINHA_IR: f32 = 26.0;
+
+const LADO: usize = 384;
+
+/// Linha tracejada 2D pelos pontos (ja' em tela). Com `recorte`, so' os
+/// tracos com as duas pontas dentro dele.
+fn tracejado(pontos: &[Vec2], traco: f32, vao: f32, espessura: f32, cor: Color, recorte: Option<Rect>) {
+    let periodo = traco + vao;
+    let mut fase = 0.0f32;
+    for par in pontos.windows(2) {
+        let (a, b) = (par[0], par[1]);
+        let comp = a.distance(b);
+        if comp < 1e-3 {
+            continue;
+        }
+        let dir = (b - a) / comp;
+        let mut s = 0.0;
+        while s < comp {
+            let pos = fase % periodo;
+            let resto = if pos < traco { traco - pos } else { periodo - pos };
+            let passo = resto.min(comp - s);
+            if pos < traco {
+                let (p0, p1) = (a + dir * s, a + dir * (s + passo));
+                if recorte.map_or(true, |r| r.contains(p0) && r.contains(p1)) {
+                    draw_line(p0.x, p0.y, p1.x, p1.y, espessura, cor);
+                }
+            }
+            s += passo;
+            fase += passo;
+        }
+    }
+}
+
+// ─────────────────────────────── viagem ──────────────────────────────
+
+/// Ate' aqui o destino vai direto. O servidor recusa rota acima de 220
+/// (`handle_mover_para`); a folga cobre o A* dar a volta num morro.
+pub const ALCANCE_DIRETO: f32 = 180.0;
+/// Tamanho de cada etapa de uma viagem longa.
+pub const ETAPA: f32 = 160.0;
+/// Perto disto de uma etapa intermediaria, manda a proxima.
+const CHEGOU_ETAPA: f32 = 6.0;
+/// Perto disto do destino, a viagem acabou.
+pub const CHEGOU: f32 = 2.0;
+/// Parado por este tempo: a rota acabou antes (parcial, obstaculo). Pede de novo.
+const PARADO_S: f64 = 1.5;
+/// Nunca mais de um pedido nesse intervalo — o servidor ignora os de 0,2 s.
+const INTERVALO_S: f64 = 0.35;
+/// Pedidos seguidos parado sem chegar mais perto do destino: desiste.
+const DESISTE_APOS: u32 = 6;
+
+#[derive(Debug, PartialEq)]
+pub enum Passo {
+    Nada,
+    Enviar(Vec2),
+    Chegou,
+    Desistiu,
+}
+
+/// Viagem por etapas. Sem macroquad: quem desenha e manda mensagem e' o
+/// `main`, aqui so' se decide QUANDO pedir rota e PRA ONDE.
+#[derive(Default)]
+pub struct Viagem {
+    destino: Option<Vec2>,
+    etapa: Option<Vec2>,
+    ultimo_envio: f64,
+    ultima_pos: Option<Vec2>,
+    parado_desde: f64,
+    melhor: f32,
+    sem_progresso: u32,
+}
+
+impl Viagem {
+    pub fn iniciar(&mut self, destino: Vec2, agora: f64) {
+        *self = Self {
+            destino: Some(destino),
+            ultimo_envio: f64::MIN,
+            parado_desde: agora,
+            melhor: f32::MAX,
+            ..Default::default()
+        };
+    }
+
+    pub fn cancelar(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn ativa(&self) -> bool {
+        self.destino.is_some()
+    }
+
+    pub fn destino(&self) -> Option<Vec2> {
+        self.destino
+    }
+
+    /// O que fazer neste quadro. `terra` responde se um ponto e' chao firme.
+    pub fn passo(&mut self, eu: Vec2, agora: f64, terra: impl Fn(Vec2) -> bool) -> Passo {
+        let Some(destino) = self.destino else { return Passo::Nada };
+        if eu.distance(destino) <= CHEGOU {
+            self.cancelar();
+            return Passo::Chegou;
+        }
+        if self.ultima_pos.is_none_or(|u| u.distance(eu) > 0.3) {
+            self.ultima_pos = Some(eu);
+            self.parado_desde = agora;
+        }
+        // A ultima etapa E' o destino: chegar perto dela nao pede outra, quem
+        // encerra e' o `CHEGOU` acima.
+        let chegou_na_etapa = self.etapa.is_some_and(|e| e != destino && eu.distance(e) <= CHEGOU_ETAPA);
+        let parado = self.etapa.is_some() && agora - self.parado_desde >= PARADO_S;
+        if !(self.etapa.is_none() || chegou_na_etapa || parado) {
+            return Passo::Nada;
+        }
+        if agora - self.ultimo_envio < INTERVALO_S {
+            return Passo::Nada;
+        }
+        if parado {
+            let d = eu.distance(destino);
+            if d < self.melhor - 2.0 {
+                self.melhor = d;
+                self.sem_progresso = 0;
+            } else {
+                self.sem_progresso += 1;
+                if self.sem_progresso >= DESISTE_APOS {
+                    self.cancelar();
+                    return Passo::Desistiu;
+                }
+            }
+        }
+        let p = proxima_etapa(eu, destino, &terra);
+        self.etapa = Some(p);
+        self.ultimo_envio = agora;
+        self.parado_desde = agora;
+        Passo::Enviar(p)
+    }
+}
+
+/// O proximo ponto a pedir: o destino, se ele esta' ao alcance; senao um
+/// ponto a `ETAPA` na direcao dele — em TERRA, recuando e abrindo pros lados
+/// se a reta cair na agua. Etapa no mar e' rota que o servidor nao faz.
+fn proxima_etapa(eu: Vec2, destino: Vec2, terra: &impl Fn(Vec2) -> bool) -> Vec2 {
+    let d = destino - eu;
+    let dist = d.length();
+    if dist <= ALCANCE_DIRETO {
+        return destino;
+    }
+    let dir = d / dist;
+    let lado = vec2(-dir.y, dir.x);
+    for k in 0..=10 {
+        let recuo = ETAPA - k as f32 * 12.0;
+        for desvio in [0.0, 1.0, -1.0, 2.0, -2.0] {
+            let p = eu + dir * recuo + lado * desvio * 12.0;
+            if terra(p) {
+                return p;
+            }
+        }
+    }
+    eu + dir * ETAPA
+}
+
+// ─────────────────────────────── imagem ──────────────────────────────
+
+fn misturar(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    let t = t.clamp(0.0, 1.0);
+    [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+}
+
+fn cor_da_agua(h: f32) -> [f32; 3] {
+    misturar([0.33, 0.62, 0.72], [0.07, 0.20, 0.36], -h / 6.0)
+}
+
+fn cor_de_terra(bioma: Bioma, h: f32, pico: f32) -> [f32; 3] {
+    if h < 0.8 {
+        return [0.80, 0.74, 0.52]; // praia
+    }
+    let base = match bioma {
+        Bioma::Floresta => [0.36, 0.55, 0.27],
+        Bioma::Gelo => [0.78, 0.84, 0.88],
+        Bioma::Deserto => [0.80, 0.66, 0.42],
+        Bioma::Montanha => [0.45, 0.52, 0.36],
+    };
+    let (rocha, neve) = ([0.50, 0.48, 0.45], [0.93, 0.95, 0.97]);
+    let t = (h / pico).clamp(0.0, 1.0);
+    if t > 0.75 {
+        misturar(rocha, neve, (t - 0.75) / 0.25)
+    } else if t > 0.45 {
+        misturar(base, rocha, (t - 0.45) / 0.30)
+    } else {
+        base
+    }
+}
+
+/// O que a thread do mapa entrega: a imagem e o desenho da vila por cima.
+struct Dados {
+    rgba: Vec<u8>,
+    pegadas: Vec<(Vec2, Vec2)>,
+    porto: Option<PortoNoMapa>,
+    /// Onde fica o Mestre de Missoes (pro "Ir" do menu de missoes).
+    mestre: Option<Vec2>,
+}
+
+#[derive(Clone, Copy)]
+struct PortoNoMapa {
+    centro: Vec2,
+    raio: f32,
+    raiz: Vec2,
+    ponta: Vec2,
+}
+
+const COR_PREDIO: Color = Color::new(0.62, 0.40, 0.26, 1.0);
+const COR_PORTO: Color = Color::new(0.55, 0.82, 0.95, 1.0);
+
+/// Imagem mais pegadas dos predios e o porto. Tudo FORA do quadro: a vila
+/// gera o voxel de cada predio pra saber o tamanho dele.
+fn gerar_dados(def: &'static DefIlha) -> Dados {
+    let rgba = gerar_imagem(def);
+    let ger = Gerador::novo(def.semente, def.raio_blocos, def.bioma, ESCALA_ALTURA);
+    let vila = ger.vila();
+    let pegadas = vila
+        .predios
+        .iter()
+        .filter(|p| p.tipo != shared::construcao::TipoCasa::Doca)
+        .map(|p| {
+            let m = p.construcao().meia(p.yaw_q);
+            (vec2(p.pos.x, p.pos.z), vec2(m.x, m.y))
+        })
+        .collect();
+    let porto = vila.porto.map(|p| PortoNoMapa {
+        centro: vec2(p.centro.x, p.centro.y),
+        raio: p.raio,
+        raiz: vec2(p.raiz.x, p.raiz.y),
+        ponta: vec2(p.ponta.x, p.ponta.y),
+    });
+    let mestre = vila
+        .npcs
+        .iter()
+        .find(|n| matches!(n.papel, shared::construcao::Papel::Missoes))
+        .map(|n| vec2(n.pos.x, n.pos.y));
+    Dados { rgba, pegadas, porto, mestre }
+}
+
+/// RGBA da ilha inteira. Roda FORA do quadro.
+fn gerar_imagem(def: &'static DefIlha) -> Vec<u8> {
+    let ger = Gerador::novo(def.semente, def.raio_blocos, def.bioma, ESCALA_ALTURA);
+    let raio = def.raio_blocos as f32 * BLOCO;
+    let pico = ger.pico().max(1.0);
+    let mut hs = vec![0f32; LADO * LADO];
+    for j in 0..LADO {
+        let z = -raio + (j as f32 + 0.5) / LADO as f32 * 2.0 * raio;
+        for i in 0..LADO {
+            let x = -raio + (i as f32 + 0.5) / LADO as f32 * 2.0 * raio;
+            hs[j * LADO + i] = ger.altura(x, z);
+        }
+    }
+    let mut rgba = vec![255u8; LADO * LADO * 4];
+    for j in 0..LADO {
+        for i in 0..LADO {
+            let h = hs[j * LADO + i];
+            let c = if h <= NIVEL_DO_MAR {
+                cor_da_agua(h)
+            } else {
+                // Luz de noroeste: o vizinho de cima-esquerda mais baixo
+                // clareia, mais alto sombreia. E' o que faz o relevo ler.
+                let viz = hs[j.saturating_sub(1) * LADO + i.saturating_sub(1)];
+                let luz = (1.0 + (h - viz) * 0.18).clamp(0.72, 1.22);
+                cor_de_terra(def.bioma, h, pico).map(|v| v * luz)
+            };
+            let k = (j * LADO + i) * 4;
+            for (n, v) in c.iter().enumerate() {
+                rgba[k + n] = (v.clamp(0.0, 1.0) * 255.0) as u8;
+            }
+        }
+    }
+    rgba
+}
+
+/// Ponto do mundo -> pixel do retangulo que mostra a ilha inteira.
+fn para_tela(p: Vec2, r: Rect, raio: f32) -> Vec2 {
+    vec2(r.x + (p.x + raio) / (2.0 * raio) * r.w, r.y + (p.y + raio) / (2.0 * raio) * r.h)
+}
+
+/// Pixel do retangulo da ilha inteira -> ponto do mundo.
+fn de_tela(t: Vec2, r: Rect, raio: f32) -> Vec2 {
+    vec2((t.x - r.x) / r.w * 2.0 * raio - raio, (t.y - r.y) / r.h * 2.0 * raio - raio)
+}
+
+// ─────────────────────────────── mapa ────────────────────────────────
+
+const COR_MOB: Color = Color::new(0.95, 0.30, 0.25, 1.0);
+const COR_NPC: Color = Color::new(1.0, 0.85, 0.25, 1.0);
+const COR_GENTE: Color = Color::new(0.45, 0.75, 1.0, 1.0);
+const COR_AGUA: Color = Color::new(0.07, 0.20, 0.36, 1.0);
+
+pub struct Mapa {
+    def: Option<&'static DefIlha>,
+    ger: Option<Gerador>,
+    cidade: Option<Cidade>,
+    rx: Option<Receiver<Dados>>,
+    /// Pegada dos predios no chao: (centro, meias-dimensoes).
+    pegadas: Vec<(Vec2, Vec2)>,
+    porto: Option<PortoNoMapa>,
+    tex: Option<Texture2D>,
+    pub aberto: bool,
+    /// Raio visivel do minimapa, em unidades. A roda sobre ele muda.
+    alcance_mini: f32,
+    pub viagem: Viagem,
+    /// A rota em andamento (personagem + pontos que faltam), posta pelo
+    /// `main` a cada quadro. Tracejada no minimapa e no mapa grande.
+    pub rota: Vec<Vec2>,
+    /// Onde fica o Mestre de Missoes nesta ilha.
+    pub mestre: Option<Vec2>,
+    /// Zonas de mob e regioes de recurso (`MapaDaIlha`).
+    pub info: Option<InfoDaIlha>,
+    pub filtros: Filtros,
+    rolagem_lateral: f32,
+}
+
+impl Default for Mapa {
+    fn default() -> Self {
+        Self {
+            def: None,
+            ger: None,
+            cidade: None,
+            rx: None,
+            pegadas: Vec::new(),
+            porto: None,
+            tex: None,
+            aberto: false,
+            alcance_mini: 90.0,
+            viagem: Viagem::default(),
+            rota: Vec::new(),
+            mestre: None,
+            info: None,
+            filtros: Filtros::default(),
+            rolagem_lateral: 0.0,
+        }
+    }
+}
+
+impl Mapa {
+    /// Mapa da ilha `def`. Zona sem ilha (mapa de tiles antigo) fica vazio e
+    /// nao desenha nada.
+    pub fn para(def: Option<&'static DefIlha>) -> Self {
+        let mut m = Self::default();
+        let Some(def) = def else { return m };
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(gerar_dados(def));
+        });
+        let ger = Gerador::novo(def.semente, def.raio_blocos, def.bioma, ESCALA_ALTURA);
+        m.cidade = ger.cidade();
+        m.ger = Some(ger);
+        m.def = Some(def);
+        m.rx = Some(rx);
+        m
+    }
+
+    /// Sobe a textura quando a thread terminar. GL so' no thread principal.
+    pub fn acompanhar(&mut self) {
+        let Some(rx) = &self.rx else { return };
+        if let Ok(dados) = rx.try_recv() {
+            self.pegadas = dados.pegadas;
+            self.porto = dados.porto;
+            self.mestre = dados.mestre;
+            let t = Texture2D::from_rgba8(LADO as u16, LADO as u16, &dados.rgba);
+            t.set_filter(FilterMode::Linear);
+            self.tex = Some(t);
+            self.rx = None;
+        }
+    }
+
+    pub fn tem_ilha(&self) -> bool {
+        self.def.is_some()
+    }
+
+    /// Os vendedores desta ilha (NPC com loja), da vila gerada da semente:
+    /// (nome, posicao). E' o painel "Lojas da ilha" do Menu.
+    pub fn lojas(&self) -> Vec<(String, Vec2)> {
+        let Some(g) = &self.ger else { return Vec::new() };
+        g.vila()
+            .npcs
+            .iter()
+            .filter(|n| n.loja.is_some())
+            .map(|n| (n.nome.to_string(), vec2(n.pos.x, n.pos.y)))
+            .collect()
+    }
+
+    /// Zona (ilha) deste mapa.
+    pub fn zona(&self) -> Option<&'static str> {
+        self.def.map(|d| d.zona)
+    }
+
+    /// `MapaDaIlha` chegou.
+    pub fn define_info(
+        &mut self,
+        zonas: Vec<ZonaNoMapa>,
+        recursos: Vec<RegiaoNoMapa>,
+        nomes: Vec<(u16, String)>,
+        rendimentos: Vec<(u8, String)>,
+    ) {
+        self.info = Some(InfoDaIlha {
+            zonas,
+            recursos,
+            nomes: nomes.into_iter().collect(),
+            rendimentos: rendimentos.into_iter().collect(),
+        });
+    }
+
+    /// A zona ou regiao VISIVEL sob o mouse no mapa grande. Regiao primeiro:
+    /// e' o marcador pequeno, que fica por cima da zona.
+    fn marcador_sob(&self, m: Vec2, r: Rect) -> Option<Marcador> {
+        let info = self.info.as_ref()?;
+        let raio = self.raio();
+        let escala = r.w / (2.0 * raio);
+        let regiao = info.recursos.iter().enumerate()
+            .filter(|(_, g)| self.filtros.regiao_visivel(g))
+            .map(|(i, g)| (i, para_tela(vec2(g.centro[0], g.centro[1]), r, raio).distance(m)))
+            .filter(|(_, d)| *d <= 7.0)
+            .min_by(|a, b| a.1.total_cmp(&b.1));
+        if let Some((i, _)) = regiao {
+            return Some(Marcador::Regiao(i));
+        }
+        info.zonas.iter().enumerate()
+            .filter(|(_, z)| self.filtros.zona_visivel(z))
+            .map(|(i, z)| (i, para_tela(centro_da_zona(z), r, raio).distance(m), (z.raio * escala).max(7.0)))
+            .filter(|(_, d, rp)| d <= rp)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(i, _, _)| Marcador::Zona(i))
+    }
+
+    fn alvo_do_marcador(&self, mk: Marcador) -> Option<Alvo> {
+        let info = self.info.as_ref()?;
+        Some(match mk {
+            Marcador::Zona(i) => {
+                let z = info.zonas.get(i)?;
+                let dominante = z.bichos.first().map_or(0, |b| b.0);
+                Alvo { objetivo: Objetivo::Combate, pos: centro_da_zona(z), raio: z.raio, rotulo: info.nome(dominante) }
+            }
+            Marcador::Regiao(i) => {
+                let g = info.recursos.get(i)?;
+                Alvo {
+                    objetivo: Objetivo::Coleta(g.tipo),
+                    pos: vec2(g.centro[0], g.centro[1]),
+                    raio: g.raio,
+                    rotulo: nome_do_tipo(g.tipo).to_string(),
+                }
+            }
+        })
+    }
+
+    /// Tooltip do marcador sob o mouse.
+    fn dica(&self, mk: Marcador, m: Vec2) {
+        let Some(info) = self.info.as_ref() else { return };
+        let mut linhas: Vec<(String, Color)> = Vec::new();
+        match mk {
+            Marcador::Zona(i) => {
+                let Some(z) = info.zonas.get(i) else { return };
+                linhas.push((format!("Zona de caça · Nv {}–{}", z.lv_min, z.lv_max), estilo::OURO));
+                for (k, c) in &z.bichos {
+                    linhas.push((format!("{}  {c}%", info.nome(*k)), cor_do_bicho(*k)));
+                }
+                linhas.push(("clique: ir caçar (auto combate)".into(), estilo::AUTO));
+            }
+            Marcador::Regiao(i) => {
+                let Some(g) = info.recursos.get(i) else { return };
+                linhas.push((format!("{} · {} corpos", nome_do_tipo(g.tipo), g.contagem), cor_do_tipo(g.tipo)));
+                if let Some(rende) = info.rendimentos.get(&g.tipo) {
+                    for parte in rende.split(", ").filter(|s| !s.is_empty()) {
+                        linhas.push((parte.to_string(), estilo::TEXTO));
+                    }
+                }
+                linhas.push(("clique: ir coletar (auto coleta)".into(), estilo::AUTO));
+            }
+        }
+        let w = linhas.iter().map(|(s, _)| estilo::medir(s, 13)).fold(120.0f32, f32::max) + 24.0;
+        let h = 14.0 + linhas.len() as f32 * 19.0;
+        let x = (m.x + 16.0).min(screen_width() - w - 8.0);
+        let y = (m.y + 12.0).min(screen_height() - h - 8.0);
+        estilo::painel(Rect::new(x, y, w, h));
+        for (i, (s, cor)) in linhas.iter().enumerate() {
+            estilo::texto(x + 12.0, y + 22.0 + i as f32 * 19.0, s, 13, *cor);
+        }
+    }
+
+    fn lateral_rect(r: Rect) -> Rect {
+        Rect::new(r.x + r.w + 14.0, r.y - 38.0, LARGURA_LATERAL, r.h + 46.0)
+    }
+
+    /// Filtros e "Ir para", ao lado do mapa grande. Devolve o "Ir" clicado.
+    fn desenha_lateral(&mut self, r: Rect, eu: Option<Vec2>, nivel: u32) -> Option<Entrada> {
+        let lat = Self::lateral_rect(r);
+        estilo::painel(lat);
+        let Some(info) = self.info.as_ref() else {
+            estilo::texto(lat.x + 14.0, lat.y + 28.0, "carregando zonas…", 14, estilo::SUAVE);
+            return None;
+        };
+        let mouse = Vec2::from(mouse_position());
+        let clique = is_mouse_button_pressed(MouseButton::Left);
+        let mut toggle: Option<Chip> = None;
+        let mut saida: Option<Entrada> = None;
+
+        // ── filtros ──
+        estilo::texto(lat.x + 14.0, lat.y + 26.0, "Filtros", 16, estilo::OURO);
+        let (mut x, mut y) = (lat.x + 12.0, lat.y + 38.0);
+        let mut chips: Vec<(String, bool, Color, Chip)> = vec![("Mobs".into(), self.filtros.mobs, COR_MOB, Chip::Mobs)];
+        for k in info.bichos() {
+            chips.push((info.nome(k), !self.filtros.bichos_ocultos.contains(&k), cor_do_bicho(k), Chip::Bicho(k)));
+        }
+        for t in 0..5u8 {
+            chips.push((nome_do_tipo(t).into(), self.filtros.recursos[t as usize], cor_do_tipo(t), Chip::Recurso(t)));
+        }
+        chips.push(("Vila".into(), self.filtros.vila, estilo::OURO, Chip::Vila));
+        for (rotulo, ligado, cor, id) in &chips {
+            let w = estilo::medir(rotulo, 13) + 24.0;
+            if x + w > lat.x + lat.w - 10.0 {
+                x = lat.x + 12.0;
+                y += 27.0;
+            }
+            let c = Rect::new(x, y, w, 22.0);
+            let alfa = if *ligado { 0.30 } else { 0.0 };
+            draw_rectangle(c.x, c.y, c.w, c.h, Color::new(cor.r, cor.g, cor.b, alfa));
+            draw_rectangle_lines(c.x, c.y, c.w, c.h, 1.0, Color::new(cor.r, cor.g, cor.b, if *ligado { 0.9 } else { 0.35 }));
+            draw_circle(c.x + 9.0, c.y + 11.0, 3.5, if *ligado { *cor } else { Color::new(cor.r, cor.g, cor.b, 0.3) });
+            estilo::texto(c.x + 16.0, c.y + 16.0, rotulo, 13, if *ligado { estilo::TEXTO } else { estilo::SUAVE });
+            if clique && c.contains(mouse) {
+                toggle = Some(*id);
+            }
+            x += w + 6.0;
+        }
+
+        // ── ir para ──
+        y += 44.0;
+        estilo::texto(lat.x + 14.0, y, "Ir para", 16, estilo::OURO);
+        let area = Rect::new(lat.x + 6.0, y + 8.0, lat.w - 12.0, lat.y + lat.h - (y + 16.0));
+        let eu = eu.unwrap_or(Vec2::ZERO);
+        let bichos = info.bichos();
+        let tipos = info.tipos();
+        let total = (2 + bichos.len() + tipos.len()) as f32 * LINHA_IR;
+        let mut rolagem = self.rolagem_lateral;
+        if area.contains(mouse) {
+            let (_, roda) = mouse_wheel();
+            rolagem = (rolagem - roda.signum() * LINHA_IR).clamp(0.0, (total - area.h).max(0.0));
+        }
+        let mut ly = area.y - rolagem;
+        let visivel = |yy: f32| yy >= area.y - 1.0 && yy + LINHA_IR <= area.y + area.h + 1.0;
+        let mut linha = |rotulo: &str, detalhe: String, cor: Color, alvo: Option<Alvo>, ly: f32, saida: &mut Option<Entrada>| {
+            if !visivel(ly) {
+                return;
+            }
+            draw_circle(area.x + 10.0, ly + 13.0, 4.0, cor);
+            estilo::texto_ajustado(rotulo, area.x + 20.0, ly + 12.0, area.w - 80.0, 13, estilo::TEXTO);
+            estilo::texto_ajustado(&detalhe, area.x + 20.0, ly + 24.0, area.w - 80.0, 11, estilo::SUAVE);
+            let b = Rect::new(area.x + area.w - 52.0, ly + 2.0, 46.0, 22.0);
+            if let Some(a) = alvo {
+                if crate::ui::botao(b, "Ir", true) {
+                    *saida = Some(Entrada::Ir(a));
+                }
+            }
+        };
+        if visivel(ly) {
+            estilo::texto(area.x + 6.0, ly + 18.0, "Bichos", 13, estilo::SUAVE);
+        }
+        ly += LINHA_IR;
+        for k in &bichos {
+            let nome = info.nome(*k);
+            let z = zona_mais_perto(&info.zonas, *k, eu, nivel);
+            let faixa = info.faixa(*k).map_or(String::new(), |(a, b)| format!("Nv {a}–{b} · "));
+            let detalhe = z.map_or("sem zona".to_string(), |z| format!("{faixa}{:.0} m", centro_da_zona(z).distance(eu)));
+            let alvo = z.map(|z| Alvo { objetivo: Objetivo::Combate, pos: centro_da_zona(z), raio: z.raio, rotulo: nome.clone() });
+            linha(&nome, detalhe, cor_do_bicho(*k), alvo, ly, &mut saida);
+            ly += LINHA_IR;
+        }
+        if visivel(ly) {
+            estilo::texto(area.x + 6.0, ly + 18.0, "Recursos", 13, estilo::SUAVE);
+        }
+        ly += LINHA_IR;
+        for t in &tipos {
+            let g = regiao_mais_perto(&info.recursos, *t, eu);
+            let n = info.recursos.iter().filter(|r| r.tipo == *t).count();
+            let detalhe = g.map_or("—".to_string(), |g| {
+                format!("{n} regiões · {:.0} m", vec2(g.centro[0], g.centro[1]).distance(eu))
+            });
+            let alvo = g.map(|g| Alvo {
+                objetivo: Objetivo::Coleta(*t),
+                pos: vec2(g.centro[0], g.centro[1]),
+                raio: g.raio,
+                rotulo: nome_do_tipo(*t).to_string(),
+            });
+            linha(nome_do_tipo(*t), detalhe, cor_do_tipo(*t), alvo, ly, &mut saida);
+            ly += LINHA_IR;
+        }
+        self.rolagem_lateral = rolagem;
+        match toggle {
+            Some(Chip::Mobs) => self.filtros.mobs = !self.filtros.mobs,
+            Some(Chip::Bicho(k)) => {
+                if !self.filtros.bichos_ocultos.remove(&k) {
+                    self.filtros.bichos_ocultos.insert(k);
+                }
+            }
+            Some(Chip::Recurso(t)) => self.filtros.recursos[t as usize] = !self.filtros.recursos[t as usize],
+            Some(Chip::Vila) => self.filtros.vila = !self.filtros.vila,
+            None => {}
+        }
+        saida
+    }
+
+    fn raio(&self) -> f32 {
+        self.def.map_or(1.0, |d| d.raio_blocos as f32 * BLOCO)
+    }
+
+    /// Chao firme? Pela mesma funcao que desenha o chao.
+    pub fn terra(&self, p: Vec2) -> bool {
+        self.ger
+            .as_ref()
+            .is_some_and(|g| p.length() < self.raio() && g.altura(p.x, p.y) > NIVEL_DO_MAR + 0.1)
+    }
+
+    pub fn alterna(&mut self) {
+        if self.tem_ilha() {
+            self.aberto = !self.aberto;
+        }
+    }
+
+    /// Abre pelo nome da zona, pelo ⤢ do minimapa ou pelo Menu — nunca tecla.
+    pub fn abrir(&mut self) {
+        if self.tem_ilha() {
+            self.aberto = true;
+        }
+    }
+
+    /// Canto de cima a' direita, abaixo da area e canal (ver `hud_layout`).
+    pub fn mini_rect() -> Rect {
+        crate::hud_layout::atual().minimapa
+    }
+
+    /// O mapa quadrado, com o painel lateral de filtros e "Ir para" a' direita.
+    fn grande_rect() -> Rect {
+        let lado = (screen_width() - LARGURA_LATERAL - 60.0).min(screen_height() - 90.0).max(200.0);
+        let total = lado + 14.0 + LARGURA_LATERAL;
+        Rect::new(((screen_width() - total) * 0.5).max(8.0), (screen_height() - lado) * 0.5 + 12.0, lado, lado)
+    }
+
+    fn fechar_rect(r: Rect) -> Rect {
+        Rect::new(r.x + r.w - 26.0, r.y - 32.0, 26.0, 26.0)
+    }
+
+    /// O clique e a roda sao do mapa (e nao do mundo nem da camera)?
+    pub fn pega_mouse(&self) -> bool {
+        self.tem_ilha()
+            && (self.aberto || Self::mini_rect().contains(Vec2::from(mouse_position())))
+    }
+
+    /// Roda e clique. Devolve o que o clique pede: viajar a um ponto, ou ir a
+    /// uma zona/regiao (clicada no mapa grande).
+    pub fn entrada(&mut self, eu: Option<Vec2>) -> Option<Entrada> {
+        if !self.tem_ilha() {
+            return None;
+        }
+        let m = Vec2::from(mouse_position());
+        if self.aberto {
+            let r = Self::grande_rect();
+            if is_mouse_button_pressed(MouseButton::Left) {
+                // O painel lateral trata os proprios botoes no desenho.
+                if Self::lateral_rect(r).contains(m) {
+                    return None;
+                }
+                // Fora do mapa ou no X: fecha. Numa zona/regiao: vai. No resto: viaja.
+                if Self::fechar_rect(r).contains(m) || !r.contains(m) {
+                    self.aberto = false;
+                    return None;
+                }
+                if let Some(a) = self.marcador_sob(m, r).and_then(|mk| self.alvo_do_marcador(mk)) {
+                    return Some(Entrada::Ir(a));
+                }
+                return Some(Entrada::Viajar(de_tela(m, r, self.raio())));
+            }
+            return None;
+        }
+        let r = Self::mini_rect();
+        if !r.contains(m) {
+            return None;
+        }
+        // O ⤢ da moldura abre o mapa grande em vez de viajar.
+        if crate::hud_layout::atual().mapa_icone.contains(m) {
+            if is_mouse_button_pressed(MouseButton::Left) {
+                self.aberto = true;
+            }
+            return None;
+        }
+        let (_, roda) = mouse_wheel();
+        if roda != 0.0 {
+            let f = if roda > 0.0 { 0.8 } else { 1.25 };
+            self.alcance_mini = (self.alcance_mini * f).clamp(30.0, 400.0);
+        }
+        if is_mouse_button_pressed(MouseButton::Left) {
+            let eu = eu?;
+            return Some(Entrada::Viajar(eu + (m - r.center()) / (r.w * 0.5) * self.alcance_mini));
+        }
+        None
+    }
+
+    pub fn desenha_mini(&self, world: &World) {
+        if !self.tem_ilha() {
+            return;
+        }
+        let r = Self::mini_rect();
+        estilo::painel(r);
+        let dentro = Rect::new(r.x + 4.0, r.y + 4.0, r.w - 8.0, r.h - 8.0);
+        draw_rectangle(dentro.x, dentro.y, dentro.w, dentro.h, COR_AGUA);
+        let Some(eu) = world.self_pos() else { return };
+        // Desenha por cima de tudo no fim: a moldura do ⤢ e as coordenadas.
+        struct Moldura(Rect, Vec2);
+        impl Drop for Moldura {
+            fn drop(&mut self) {
+                let (r, eu) = (self.0, self.1);
+                let ic = crate::hud_layout::atual().mapa_icone;
+                let sobre = ic.contains(Vec2::from(mouse_position()));
+                draw_rectangle(ic.x, ic.y, ic.w, ic.h, estilo::FUNDO);
+                draw_rectangle_lines(ic.x, ic.y, ic.w, ic.h, 1.0, estilo::BORDA);
+                let cor = if sobre { estilo::OURO } else { estilo::TEXTO };
+                let (a, b, d) = (vec2(ic.x + 5.0, ic.y + 5.0), vec2(ic.x + ic.w - 5.0, ic.y + ic.h - 5.0), ic.w * 0.28);
+                draw_line(a.x, a.y, b.x, b.y, 1.5, cor);
+                draw_line(a.x, a.y, a.x + d, a.y, 1.5, cor);
+                draw_line(a.x, a.y, a.x, a.y + d, 1.5, cor);
+                draw_line(b.x, b.y, b.x - d, b.y, 1.5, cor);
+                draw_line(b.x, b.y, b.x, b.y - d, 1.5, cor);
+                let t = format!("{:.0}, {:.0}", eu.x, eu.y);
+                let w = estilo::medir(&t, 12) + 14.0;
+                let caixa = Rect::new(r.center().x - w * 0.5, r.y + r.h - 22.0, w, 18.0);
+                draw_rectangle(caixa.x, caixa.y, caixa.w, caixa.h, estilo::FUNDO);
+                estilo::texto_centro(caixa.center().x, caixa.y + 13.0, &t, 12, estilo::TEXTO);
+            }
+        }
+        let _moldura = Moldura(r, eu);
+        let raio = self.raio();
+        let alcance = self.alcance_mini;
+        let escala = dentro.w * 0.5 / alcance;
+        let c = dentro.center();
+        match &self.tex {
+            Some(tex) => {
+                // Janela do minimapa recortada pela borda da imagem: fonte fora
+                // da textura repetiria a ilha do outro lado.
+                let px = LADO as f32 / (2.0 * raio);
+                let (u0, v0) = ((eu.x - alcance).max(-raio), (eu.y - alcance).max(-raio));
+                let (u1, v1) = ((eu.x + alcance).min(raio), (eu.y + alcance).min(raio));
+                if u1 > u0 && v1 > v0 {
+                    draw_texture_ex(
+                        tex,
+                        c.x + (u0 - eu.x) * escala,
+                        c.y + (v0 - eu.y) * escala,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(vec2((u1 - u0) * escala, (v1 - v0) * escala)),
+                            source: Some(Rect::new((u0 + raio) * px, (v0 + raio) * px, (u1 - u0) * px, (v1 - v0) * px)),
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
+            None => estilo::texto_centro(c.x, c.y + 30.0, "carregando mapa…", 12, estilo::SUAVE),
+        }
+        let ponto = |p: Vec2| c + (p - eu) * escala;
+        let visivel = |q: Vec2| dentro.contains(q);
+        // Zonas e regioes de leve: o minimapa e' pra se achar, nao pra ler.
+        if let Some(info) = &self.info {
+            for z in info.zonas.iter().filter(|z| self.filtros.zona_visivel(z)) {
+                let q = ponto(centro_da_zona(z));
+                let rp = (z.raio * escala).max(3.0);
+                if q.distance(c) - rp < dentro.w * 0.75 {
+                    let cor = z.bichos.first().map_or(COR_MOB, |b| cor_do_bicho(b.0));
+                    draw_circle_lines(q.x, q.y, rp, 1.0, Color::new(cor.r, cor.g, cor.b, 0.45));
+                }
+            }
+            for g in info.recursos.iter().filter(|g| self.filtros.regiao_visivel(g)) {
+                let q = ponto(vec2(g.centro[0], g.centro[1]));
+                if visivel(q) {
+                    let cor = cor_do_tipo(g.tipo);
+                    draw_circle(q.x, q.y, 2.0, Color::new(cor.r, cor.g, cor.b, 0.8));
+                }
+            }
+        }
+        if let Some(ci) = self.cidade.filter(|_| self.filtros.vila) {
+            // O Vec2 do shared e' de outra versao do glam.
+            let q = ponto(vec2(ci.centro().x, ci.centro().y));
+            if visivel(q) {
+                draw_circle_lines(q.x, q.y, (Cidade::RAIO * escala).max(4.0), 1.5, estilo::OURO);
+                casinha(q, 5.0, estilo::OURO);
+            }
+        }
+        for (centro, meia) in self.pegadas.iter().filter(|_| self.filtros.vila) {
+            let (a, b) = (ponto(*centro - *meia), ponto(*centro + *meia));
+            if visivel(a) || visivel(b) {
+                pegada(a, b, 1.5);
+            }
+        }
+        if let Some(po) = self.porto.filter(|_| self.filtros.vila) {
+            let (a, b) = (ponto(po.raiz), ponto(po.ponta));
+            if visivel(a) || visivel(b) {
+                draw_line(a.x, a.y, b.x, b.y, (3.0f32).max(escala * 2.5), COR_PREDIO);
+            }
+            let q = ponto(po.centro);
+            if visivel(q) {
+                ancora(q, 5.0, COR_PORTO);
+            }
+        }
+        for (id, e) in &world.ents {
+            if Some(*id) == world.self_id {
+                continue;
+            }
+            let cor = match e.meta.tag {
+                EntityTag::Enemy if e.morte.is_none() => COR_MOB,
+                EntityTag::Npc => COR_NPC,
+                EntityTag::Player => COR_GENTE,
+                _ => continue,
+            };
+            let q = ponto(e.render_pos);
+            if visivel(q) {
+                draw_circle(q.x, q.y, 2.5, cor);
+            }
+        }
+        let rota: Vec<Vec2> = self.rota.iter().map(|p| ponto(*p)).collect();
+        tracejado(&rota, 4.0, 3.0, 2.0, estilo::AUTO, Some(dentro));
+        if let Some(d) = self.viagem.destino() {
+            let q = ponto(d);
+            // Fora do minimapa, o destino fica preso na borda, na direcao dele.
+            let preso = vec2(
+                q.x.clamp(dentro.x + 5.0, dentro.x + dentro.w - 5.0),
+                q.y.clamp(dentro.y + 5.0, dentro.y + dentro.h - 5.0),
+            );
+            marca_destino(preso, 5.0);
+        }
+        let yaw = world.self_id.and_then(|id| world.ents.get(&id)).map_or(0.0, |e| e.yaw);
+        seta(c, yaw, 7.0, estilo::TEXTO);
+        estilo::texto_centro(c.x, r.y + 16.0, "N", 12, estilo::SUAVE);
+    }
+
+    /// O mapa grande (M) com o painel lateral. Devolve o "Ir" clicado no
+    /// painel. `nivel` escolhe a zona certa pra cada bicho.
+    pub fn desenha_grande(&mut self, world: &World, nivel: u32) -> Option<Entrada> {
+        if !self.aberto || !self.tem_ilha() {
+            return None;
+        }
+        self.desenha_grande_mapa(world);
+        let m = Vec2::from(mouse_position());
+        let r = Self::grande_rect();
+        if r.contains(m) {
+            if let Some(mk) = self.marcador_sob(m, r) {
+                self.dica(mk, m);
+            }
+        }
+        self.desenha_lateral(r, world.self_pos(), nivel)
+    }
+
+    fn desenha_grande_mapa(&self, world: &World) {
+        let (sw, sh) = (screen_width(), screen_height());
+        draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.45));
+        let r = Self::grande_rect();
+        estilo::painel(Rect::new(r.x - 8.0, r.y - 38.0, r.w + 16.0, r.h + 46.0));
+        let nome = self.def.map_or("", |d| d.nome);
+        estilo::texto(r.x, r.y - 14.0, &format!("Mapa · {nome}"), 17, estilo::OURO);
+        let dica = "clique: viajar · zona/recurso: ir · Esc fecha";
+        estilo::texto(r.x + r.w - 36.0 - estilo::medir(dica, 13), r.y - 14.0, dica, 13, estilo::SUAVE);
+        let f = Self::fechar_rect(r);
+        estilo::texto_centro(f.x + f.w * 0.5, f.y + 19.0, "x", 18, estilo::TEXTO);
+
+        draw_rectangle(r.x, r.y, r.w, r.h, COR_AGUA);
+        match &self.tex {
+            Some(tex) => draw_texture_ex(tex, r.x, r.y, WHITE, DrawTextureParams {
+                dest_size: Some(vec2(r.w, r.h)),
+                ..Default::default()
+            }),
+            None => estilo::texto_centro(r.x + r.w * 0.5, r.y + r.h * 0.5, "carregando mapa…", 18, estilo::SUAVE),
+        }
+        let raio = self.raio();
+        let escala = r.w / (2.0 * raio);
+        let ponto = |p: Vec2| para_tela(p, r, raio);
+        if let Some(info) = &self.info {
+            for z in info.zonas.iter().filter(|z| self.filtros.zona_visivel(z)) {
+                let q = ponto(centro_da_zona(z));
+                let rp = (z.raio * escala).max(5.0);
+                let cor = z.bichos.first().map_or(COR_MOB, |b| cor_do_bicho(b.0));
+                draw_circle(q.x, q.y, rp, Color::new(cor.r, cor.g, cor.b, 0.16));
+                draw_circle_lines(q.x, q.y, rp, 1.5, Color::new(cor.r, cor.g, cor.b, 0.85));
+                if rp >= 14.0 {
+                    if let Some(b) = z.bichos.first() {
+                        let t = format!("{} · Nv {}–{}", info.nome(b.0), z.lv_min, z.lv_max);
+                        estilo::texto_centro(q.x + 1.0, q.y + 5.0, &t, 12, Color::new(0.0, 0.0, 0.0, 0.8));
+                        estilo::texto_centro(q.x, q.y + 4.0, &t, 12, estilo::TEXTO);
+                    }
+                }
+            }
+            for g in info.recursos.iter().filter(|g| self.filtros.regiao_visivel(g)) {
+                let q = ponto(vec2(g.centro[0], g.centro[1]));
+                let s = 3.0 + (g.contagem as f32).sqrt().min(3.5);
+                let cor = cor_do_tipo(g.tipo);
+                losango(q, s + 1.2, Color::new(0.0, 0.0, 0.0, 0.7));
+                losango(q, s, cor);
+            }
+        }
+        if let Some(ci) = self.cidade.filter(|_| self.filtros.vila) {
+            // O Vec2 do shared e' de outra versao do glam.
+            let q = ponto(vec2(ci.centro().x, ci.centro().y));
+            draw_circle_lines(q.x, q.y, (Cidade::RAIO * escala).max(6.0), 2.0, estilo::OURO);
+            casinha(q, 7.0, estilo::OURO);
+            estilo::texto_centro(q.x, q.y - 12.0, "Cidade", 14, estilo::OURO);
+        }
+        for (centro, meia) in self.pegadas.iter().filter(|_| self.filtros.vila) {
+            pegada(ponto(*centro - *meia), ponto(*centro + *meia), 1.0);
+        }
+        if let Some(po) = self.porto.filter(|_| self.filtros.vila) {
+            let q = ponto(po.centro);
+            let (a, b) = (ponto(po.raiz), ponto(po.ponta));
+            draw_circle_lines(q.x, q.y, (po.raio * escala).max(6.0), 2.0, COR_PORTO);
+            draw_line(a.x, a.y, b.x, b.y, 3.0, COR_PREDIO);
+            ancora(q, 7.0, COR_PORTO);
+            estilo::texto_centro(q.x, q.y - 14.0, "Porto", 14, COR_PORTO);
+        }
+        for (id, e) in &world.ents {
+            if Some(*id) == world.self_id {
+                continue;
+            }
+            let cor = match e.meta.tag {
+                EntityTag::Npc if self.filtros.vila => COR_NPC,
+                EntityTag::Player => COR_GENTE,
+                _ => continue,
+            };
+            let q = ponto(e.render_pos);
+            draw_circle(q.x, q.y, 3.0, cor);
+        }
+        let rota: Vec<Vec2> = self.rota.iter().map(|p| ponto(*p)).collect();
+        tracejado(&rota, 5.0, 3.0, 2.5, estilo::AUTO, None);
+        let eu = world.self_pos();
+        if let Some(d) = self.viagem.destino() {
+            let q = ponto(d);
+            if let Some(eu) = eu {
+                let p = ponto(eu);
+                draw_line(p.x, p.y, q.x, q.y, 1.5, Color::new(estilo::AUTO.r, estilo::AUTO.g, estilo::AUTO.b, 0.7));
+                estilo::texto_centro(q.x, q.y + 20.0, &format!("{:.0} m", eu.distance(d)), 13, estilo::AUTO);
+            }
+            marca_destino(q, 7.0);
+        }
+        if let Some(eu) = eu {
+            let yaw = world.self_id.and_then(|id| world.ents.get(&id)).map_or(0.0, |e| e.yaw);
+            seta(ponto(eu), yaw, 9.0, estilo::TEXTO);
+        }
+        // Onde o clique cairia: agua avisa antes de clicar.
+        let m = Vec2::from(mouse_position());
+        if r.contains(m) && self.tex.is_some() && !self.terra(de_tela(m, r, raio)) {
+            estilo::texto_centro(m.x, m.y - 12.0, "água", 13, estilo::SUAVE);
+        }
+    }
+
+    /// "Viajando · N m" enquanto houver viagem: o texto da faixa de estado.
+    pub fn faixa_viagem(&self, eu: Option<Vec2>) -> Option<String> {
+        let (Some(d), Some(eu)) = (self.viagem.destino(), eu) else { return None };
+        Some(format!("Viajando · {:.0} m", eu.distance(d)))
+    }
+}
+
+/// Seta do jogador. O modelo olha pra `(sin yaw, cos yaw)` em (x, z), e z
+/// cresce pra baixo no mapa.
+fn seta(c: Vec2, yaw: f32, s: f32, cor: Color) {
+    let dir = vec2(yaw.sin(), yaw.cos());
+    let perp = vec2(-dir.y, dir.x);
+    let (a, b, d) = (c + dir * s, c - dir * s * 0.6 + perp * s * 0.6, c - dir * s * 0.6 - perp * s * 0.6);
+    draw_triangle(a, b, d, Color::new(0.0, 0.0, 0.0, 0.6));
+    draw_triangle(a, b, d, cor);
+    draw_triangle_lines(a, b, d, 1.0, Color::new(0.0, 0.0, 0.0, 0.8));
+}
+
+fn marca_destino(q: Vec2, s: f32) {
+    draw_line(q.x - s, q.y - s, q.x + s, q.y + s, 2.5, estilo::AUTO);
+    draw_line(q.x - s, q.y + s, q.x + s, q.y - s, 2.5, estilo::AUTO);
+}
+
+/// Losango: o icone de regiao de recurso.
+fn losango(q: Vec2, s: f32, cor: Color) {
+    draw_triangle(vec2(q.x, q.y - s), vec2(q.x - s, q.y), vec2(q.x + s, q.y), cor);
+    draw_triangle(vec2(q.x, q.y + s), vec2(q.x - s, q.y), vec2(q.x + s, q.y), cor);
+}
+
+/// Retangulo da pegada de um predio, com tamanho minimo pra nao sumir de longe.
+fn pegada(a: Vec2, b: Vec2, minimo: f32) {
+    let (mn, mx) = (a.min(b), a.max(b));
+    let (w, h) = ((mx.x - mn.x).max(minimo), (mx.y - mn.y).max(minimo));
+    draw_rectangle(mn.x, mn.y, w, h, COR_PREDIO);
+}
+
+/// Ancora: haste, argola e braco curvo.
+fn ancora(q: Vec2, s: f32, cor: Color) {
+    let sombra = Color::new(0.0, 0.0, 0.0, 0.6);
+    for (c, g) in [(sombra, 3.0), (cor, 1.6)] {
+        draw_circle_lines(q.x, q.y - s * 0.85, s * 0.25, g * 0.7, c);
+        draw_line(q.x, q.y - s * 0.6, q.x, q.y + s * 0.8, g, c);
+        draw_line(q.x - s * 0.45, q.y - s * 0.3, q.x + s * 0.45, q.y - s * 0.3, g, c);
+        draw_line(q.x - s * 0.75, q.y + s * 0.35, q.x, q.y + s * 0.8, g, c);
+        draw_line(q.x + s * 0.75, q.y + s * 0.35, q.x, q.y + s * 0.8, g, c);
+    }
+}
+
+fn casinha(q: Vec2, s: f32, cor: Color) {
+    draw_rectangle(q.x - s * 0.6, q.y - s * 0.1, s * 1.2, s * 0.8, cor);
+    draw_triangle(vec2(q.x - s * 0.85, q.y - s * 0.05), vec2(q.x + s * 0.85, q.y - s * 0.05), vec2(q.x, q.y - s * 0.8), cor);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tudo_terra(_: Vec2) -> bool {
+        true
+    }
+
+    #[test]
+    fn perto_vai_direto_ao_destino() {
+        let mut v = Viagem::default();
+        v.iniciar(vec2(100.0, 0.0), 0.0);
+        assert_eq!(v.passo(Vec2::ZERO, 0.0, tudo_terra), Passo::Enviar(vec2(100.0, 0.0)));
+    }
+
+    #[test]
+    fn longe_vira_etapa_dentro_do_alcance_do_servidor() {
+        let mut v = Viagem::default();
+        v.iniciar(vec2(500.0, 30.0), 0.0);
+        let Passo::Enviar(p) = v.passo(Vec2::ZERO, 0.0, tudo_terra) else { panic!("devia enviar") };
+        assert!(p.length() <= ALCANCE_DIRETO, "etapa a {:.0}", p.length());
+        assert!(p.x > 100.0, "etapa na direcao do destino: {p:?}");
+        // Chegou perto da etapa: manda a proxima, mas respeitando o intervalo.
+        assert_eq!(v.passo(p, 0.1, tudo_terra), Passo::Nada);
+        let Passo::Enviar(q) = v.passo(p, 0.5, tudo_terra) else { panic!("devia mandar a proxima") };
+        assert!(q.distance(vec2(500.0, 30.0)) < p.distance(vec2(500.0, 30.0)));
+    }
+
+    #[test]
+    fn etapa_na_agua_procura_terra() {
+        // Faixa de agua em x 140..175, bem onde cairia a etapa reta.
+        let terra = |p: Vec2| !(140.0..175.0).contains(&p.x);
+        let mut v = Viagem::default();
+        v.iniciar(vec2(600.0, 0.0), 0.0);
+        let Passo::Enviar(p) = v.passo(Vec2::ZERO, 0.0, terra) else { panic!() };
+        assert!(terra(p), "etapa caiu na agua: {p:?}");
+    }
+
+    #[test]
+    fn parado_pede_de_novo_e_desiste_sem_progresso() {
+        let mut v = Viagem::default();
+        v.iniciar(vec2(100.0, 0.0), 0.0);
+        let eu = Vec2::ZERO;
+        assert!(matches!(v.passo(eu, 0.0, tudo_terra), Passo::Enviar(_)));
+        assert_eq!(v.passo(eu, 1.0, tudo_terra), Passo::Nada);
+        assert!(matches!(v.passo(eu, 1.6, tudo_terra), Passo::Enviar(_)));
+        let mut t = 1.6;
+        let mut desistiu = false;
+        for _ in 0..20 {
+            t += 1.6;
+            match v.passo(eu, t, tudo_terra) {
+                Passo::Desistiu => { desistiu = true; break; }
+                Passo::Enviar(_) | Passo::Nada => {}
+                Passo::Chegou => panic!(),
+            }
+        }
+        assert!(desistiu, "parado no mesmo lugar devia desistir");
+        assert!(!v.ativa());
+    }
+
+    #[test]
+    fn chega_e_cancela() {
+        let mut v = Viagem::default();
+        v.iniciar(vec2(10.0, 0.0), 0.0);
+        assert!(matches!(v.passo(Vec2::ZERO, 0.0, tudo_terra), Passo::Enviar(_)));
+        assert_eq!(v.passo(vec2(9.0, 0.0), 1.0, tudo_terra), Passo::Chegou);
+        assert!(!v.ativa());
+        v.iniciar(vec2(10.0, 0.0), 2.0);
+        v.cancelar();
+        assert_eq!(v.passo(Vec2::ZERO, 3.0, tudo_terra), Passo::Nada);
+    }
+
+    fn zona(x: f32, lv: (u16, u16), bichos: Vec<(u16, u8)>) -> ZonaNoMapa {
+        ZonaNoMapa { centro: [x, 0.0], raio: 45.0, lv_min: lv.0, lv_max: lv.1, bichos }
+    }
+
+    fn regiao(x: f32, tipo: u8) -> RegiaoNoMapa {
+        RegiaoNoMapa { centro: [x, 0.0], raio: 10.0, tipo, contagem: 5 }
+    }
+
+    #[test]
+    fn filtros_escondem_zona_pelo_dominante_e_regiao_pelo_tipo() {
+        let lobos = zona(0.0, (1, 3), vec![(0, 83), (1, 17)]);
+        // O mapa abre limpo: nada aparece ate' o jogador ligar.
+        let padrao = Filtros::default();
+        assert!(!padrao.zona_visivel(&lobos));
+        assert!((0..5).all(|t| !padrao.regiao_visivel(&regiao(0.0, t))));
+        assert!(!padrao.vila);
+        let mut f = Filtros { mobs: true, bichos_ocultos: HashSet::new(), recursos: [true; 5], vila: true };
+        assert!(f.zona_visivel(&lobos));
+        f.bichos_ocultos.insert(1);
+        assert!(f.zona_visivel(&lobos), "esconder o secundario nao tira a zona");
+        f.bichos_ocultos.insert(0);
+        assert!(!f.zona_visivel(&lobos));
+        f.bichos_ocultos.clear();
+        f.mobs = false;
+        assert!(!f.zona_visivel(&lobos));
+        f.recursos[3] = false;
+        assert!(!f.regiao_visivel(&regiao(0.0, 3)));
+        assert!(f.regiao_visivel(&regiao(0.0, 0)));
+    }
+
+    #[test]
+    fn a_zona_e_a_regiao_escolhidas_sao_as_certas() {
+        let zonas = vec![
+            zona(-300.0, (1, 3), vec![(0, 83), (1, 17)]),
+            // Zona alta: empate vai pro kind maior (a ordem que o servidor manda).
+            zona(100.0, (20, 25), vec![(1, 13), (0, 13), (7, 12)]),
+            zona(400.0, (1, 3), vec![(0, 83), (1, 17)]),
+        ];
+        // Lobo (kind 0): a mais perto em que ele sai bem e que o nivel aguenta.
+        let z = zona_mais_perto(&zonas, 0, vec2(200.0, 0.0), 1).unwrap();
+        assert_eq!(z.centro[0], 400.0, "mandou pra zona alta so' por estar perto");
+        // Kind 7 so' sai na zona alta, abaixo da chance minima: a de maior chance.
+        assert_eq!(zona_mais_perto(&zonas, 7, Vec2::ZERO, 1).unwrap().centro[0], 100.0);
+        assert!(zona_mais_perto(&zonas, 5, Vec2::ZERO, 1).is_none());
+        let recursos = vec![regiao(-50.0, 3), regiao(30.0, 3), regiao(5.0, 0)];
+        assert_eq!(regiao_mais_perto(&recursos, 3, vec2(10.0, 0.0)).unwrap().centro[0], 30.0);
+        assert!(regiao_mais_perto(&recursos, 4, Vec2::ZERO).is_none());
+        let info = InfoDaIlha { zonas, recursos, ..Default::default() };
+        assert_eq!(info.faixa(0), Some((1, 3)));
+        assert_eq!(info.tipos(), vec![0, 3]);
+        assert_eq!(info.bichos()[0], 0);
+    }
+
+    #[test]
+    fn tela_e_mundo_vao_e_voltam() {
+        let r = Rect::new(100.0, 50.0, 400.0, 400.0);
+        for p in [vec2(0.0, 0.0), vec2(-800.0, 800.0), vec2(123.0, -456.0)] {
+            let t = para_tela(p, r, 800.0);
+            assert!(de_tela(t, r, 800.0).distance(p) < 0.01);
+        }
+        // Norte fixo: z negativo (pra frente da camera em yaw 0) fica em cima.
+        assert!(para_tela(vec2(0.0, -100.0), r, 800.0).y < para_tela(Vec2::ZERO, r, 800.0).y);
+    }
+}

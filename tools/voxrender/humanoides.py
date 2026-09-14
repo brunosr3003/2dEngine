@@ -9,9 +9,9 @@ capuz) e a arma.
 Cada um sai em dois arquivos:
 
 - `assets/vox/humanoides/<nome>.vox` — as dez pecas nomeadas, sem a arma
-  (a arma vai no encaixe da mao quando o importador de pecas existir);
+  (carregadas pelo cliente no rig; arma no encaixe da mao);
 - `assets/vox/<nome>.vox` — UMA peca so', parada, com a arma na mao. E' o que
-  o cliente de hoje consegue desenhar.
+  o fallback do cliente se as pecas nao estiverem disponiveis.
 
 Uso:  python3 tools/voxrender/humanoides.py
 """

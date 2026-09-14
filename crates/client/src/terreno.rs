@@ -410,6 +410,11 @@ impl Terreno {
         // vizinhos no mesmo nivel. Sem juntar, cada uma viraria um quad de
         // quatro vertices e o pedaco estouraria o teto da chamada sozinho.
         let mut usado = vec![false; n * n];
+        // Tinta dos povoados (praca, caminho, gramado): entra na chave do
+        // merge, senao um quad de grama engoliria a borda da calcada.
+        let tinta = |x: i32, z: i32| {
+            if eh_agua(x, z) { None } else { self.ger.pintura_do_chao(cx * CHUNK + x, cz * CHUNK + z) }
+        };
         for iz in 0..n as i32 {
             for ix in 0..n as i32 {
                 if usado[iz as usize * n + ix as usize] {
@@ -417,7 +422,8 @@ impl Terreno {
                 }
                 let h = em(ix, iz);
                 let a = eh_agua(ix, iz);
-                let igual = |x: i32, z: i32| em(x, z) == h && eh_agua(x, z) == a;
+                let t0 = tinta(ix, iz);
+                let igual = |x: i32, z: i32| em(x, z) == h && eh_agua(x, z) == a && tinta(x, z) == t0;
 
                 let mut w = 1;
                 while w < MERGE_MAX
@@ -466,6 +472,19 @@ impl Terreno {
                     .unwrap_or(0);
                 let manchinha = self.ger.mancha(cx * CHUNK + ix, cz * CHUNK + iz);
                 let mat = material_variado(self.bioma, y, declive, a, manchinha);
+                let mat = match t0 {
+                    // Grama cuidada so' onde ja' era grama: na Geleira a
+                    // cidade continua branca.
+                    Some(Material::GramaCuidada) => {
+                        if matches!(mat, Material::Grama | Material::GramaClara | Material::GramaEscura | Material::Terra) {
+                            Material::GramaCuidada
+                        } else {
+                            mat
+                        }
+                    }
+                    Some(m) => m,
+                    None => mat,
+                };
                 // Grao POR VERTICE: mesmo com o teto de merge, um quad de 3x3
                 // com uma cor so' ainda le' como azulejo. Variando os quatro
                 // cantos, o interpolador espalha a variacao pelo quad inteiro
@@ -587,6 +606,12 @@ impl Terreno {
                 ) else {
                     continue;
                 };
+                // Tronco esgotado some como a pedra: sem isto o jogador via a
+                // arvore de pe' e nao tinha como saber que ali ja' nao rende.
+                let chave = shared::terreno::chave_de_coluna(
+                    bx + self.ger.raio_blocos, bz + self.ger.raio_blocos,
+                );
+                if self.esgotadas.contains(&chave) { continue }
                 crate::vegetacao::instancia(
                     self.modelo_de_arvore(a.especie, a.variante),
                     vec3(a.centro.x, (topo + 1) as f32 * BLOCO, a.centro.y),

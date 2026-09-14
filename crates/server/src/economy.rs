@@ -136,7 +136,14 @@ impl EconomyConfig {
                 (0..kind).rev().find_map(|k| self.loot_tables.get(&k))
             });
         let Some(table) = table else { return Vec::new(); };
-        roll_entries(table, &self.items, seed)
+        roll_entries(table, &self.items, seed).into_iter()
+            .filter(|(id,_)|self.permitido_em_mob(*id)).collect()
+    }
+
+    /// Vale tambem para tabelas antigas ou reintroduzidas pelo hot-reload.
+    fn permitido_em_mob(&self, id: u16) -> bool {
+        shared::equip_slot_of(id).is_none()
+            && self.items.get(&id).is_some_and(|i|i.active && i.equip_slot.as_deref().is_none_or(|s|s.is_empty()))
     }
 
     /// Mesma semântica de `roll_loot` mas pra farm nodes (kind+tier).
@@ -155,7 +162,7 @@ fn roll_entries(table: &[LootEntry], items: &HashMap<u16, ItemDef>, seed: u64) -
     for entry in table {
         s = lcg(s);
         let r1 = lcg_f32(s);
-        if r1 >= entry.chance { continue; }
+        if entry.chance < 1.0 && r1 >= entry.chance { continue; }
         if !items.get(&entry.item_id).map(|i| i.active).unwrap_or(true) { continue; }
         s = lcg(s);
         let r2 = lcg_f32(s);
@@ -292,6 +299,11 @@ pub fn enemy_def(kind: u16) -> EnemyKindDef {
     cell().read().enemy_kinds.get(&kind).cloned().unwrap_or_default()
 }
 
+/// Nome do item pra texto de UI. Item fora do cache vira "item N".
+pub fn nome_do_item(id: u16) -> String {
+    cell().read().item(id).map(|i| i.name.clone()).unwrap_or_else(|| format!("item {id}"))
+}
+
 pub fn enemy_size_scale(kind: u16) -> f32 {
     cell().read().enemy_kinds.get(&kind).map(|e| e.size_scale).unwrap_or(1.0)
 }
@@ -306,6 +318,76 @@ pub fn enemy_kite_dist(kind: u16) -> Option<f32> {
 
 pub fn enemy_proj_count(kind: u16) -> u32 {
     cell().read().enemy_kinds.get(&kind).map(|e| e.proj_count).unwrap_or(1)
+}
+
+/// Os kinds comuns (sem o chefe), na MESMA ordem do sorteio de
+/// `kind_para_nivel`: o indice de um kind aqui diz a partir de que nivel ele
+/// pode nascer.
+pub fn kinds_comuns() -> Vec<u16> {
+    let mut k: Vec<u16> = cell().read().enemy_kinds.keys().copied().filter(|&k| k != KIND_CHEFE).collect();
+    k.sort_unstable();
+    k
+}
+
+/// Kinds comuns cuja tabela de loot tem `item` (com chance).
+pub fn kinds_que_dropam(item: u16) -> Vec<u16> {
+    let c = cell().read();
+    let mut k: Vec<u16> = c.loot_tables.iter()
+        .filter(|(kind, t)| **kind != KIND_CHEFE && t.iter().any(|e| e.item_id == item && e.chance > 0.0))
+        .map(|(kind, _)| *kind)
+        .collect();
+    k.sort_unstable();
+    k
+}
+
+/// A coleta entrega `item`? `(tronco, pedra)`.
+pub fn coleta_fornece(item: u16) -> (bool, bool) {
+    let c = cell().read();
+    let tem = |nome: &str| c.farm_loot_tables.iter()
+        .any(|((k, _), t)| k == nome && t.iter().any(|e| e.item_id == item && e.chance > 0.0));
+    (tem("Tree"), tem("Rock"))
+}
+
+/// As linhas da PEDRA em `farm_node_drops`: `(tier da tabela, item, min, max,
+/// chance)`. Uma fonte so' pro seed (M25) e pros testes de proporcao — a
+/// tabela do doc (`docs/ECONOMIA_DE_CRAFT.md`) nao pode morar em dois lugares.
+///
+/// O tier da TABELA e' o tier do MATERIAL, nao o da pedra: a pedra sorteia a
+/// cor com `shared::tier_do_rendimento` e rola a linha daquela cor.
+pub fn linhas_da_pedra() -> Vec<(u8, u16, i32, i32, f32)> {
+    use shared::item_id::*;
+    // A taxa segue o CUSTO: o que a receita pede em 300 cai mais que o que ela
+    // pede em 100. As chaves sao 1 por item craftado: caem raro.
+    const COLORIDOS: [(u16, i32, i32, f32); 12] = [
+        (STEEL, 3, 6, 0.55),
+        (PLATINUM, 3, 6, 0.30),
+        (DARK_HEART_STONE, 2, 4, 0.12),
+        (MOON_SHADOW_STONE, 2, 4, 0.12),
+        (QUINTESSENCE, 2, 4, 0.12),
+        (EXORCISM_BAUBLE, 2, 4, 0.12),
+        (ILLUMINATING_FRAGMENT, 2, 4, 0.12),
+        (ANIMA_STONE, 2, 4, 0.12),
+        (SCALE, 1, 1, 0.010),
+        (CLAW, 1, 1, 0.010),
+        (HORN, 1, 1, 0.010),
+        (HIDE, 1, 1, 0.010),
+    ];
+    // Sem cor: caem igual em qualquer pedra.
+    const INCOLORES: [(u16, i32, i32, f32); 3] = [
+        (COPPER, 40, 120, 1.00),
+        (DARKSTEEL, 10, 25, 0.35),
+        (GLITTERING_POWDER, 1, 1, 0.03),
+    ];
+    let mut v = Vec::with_capacity(4 * (COLORIDOS.len() + INCOLORES.len()));
+    for tier in 1..=4u8 {
+        for &(base, mn, mx, chance) in &COLORIDOS {
+            v.push((tier, na_cor(base, tier), mn, mx, chance));
+        }
+        for &(id, mn, mx, chance) in &INCOLORES {
+            v.push((tier, id, mn, mx, chance));
+        }
+    }
+    v
 }
 
 pub fn enemy_loot_drops(kind: u16, seed: u64) -> Vec<(u16, u32)> {
@@ -326,7 +408,7 @@ pub fn resource_sources_snapshot() -> Vec<shared::protocol::ItemResourceSources>
             .filter(|n| !n.is_empty())
             .unwrap_or_else(|| format!("Mob #{kind}"));
         for entry in table {
-            if !cfg.items.get(&entry.item_id).map(|i| i.active).unwrap_or(true) { continue; }
+            if !cfg.permitido_em_mob(entry.item_id) { continue; }
             by_item.entry(entry.item_id).or_default().push(ResourceSource {
                 kind:    0,
                 name:    mob_name.clone(),
@@ -407,7 +489,7 @@ pub fn loot_item_level(kind: u16, item_id: u16) -> u16 {
 
 // ── DB load ──────────────────────────────────────────────────────────────────
 
-async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
+pub(crate) async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
     let version: i64 = sqlx::query_scalar("SELECT version FROM economy_version WHERE id = 1")
         .fetch_one(pool).await?;
 
@@ -547,6 +629,31 @@ async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
 /// dele (700 de vida contra 50 do Grunt), e nao uma classe procedural.
 pub const KIND_CHEFE: u16 = 7;
 
+#[cfg(test)]
+mod loot_tests {
+    use super::*;
+    fn item(id:u16,slot:Option<&str>,active:bool)->ItemDef {
+        ItemDef{id,name:format!("Item {id}"),sell_price:1,buy_price:None,shop_order:None,stack_max:999,
+            equip_slot:slot.map(str::to_owned),item_level:1,icon_col:0,icon_row:0,icon_path:None,active,template:Default::default()}
+    }
+    #[test]
+    fn tabela_legada_nao_volta_a_dropar_equipamento_nem_item_desconhecido() {
+        use shared::item_id::*;
+        let mut cfg=EconomyConfig::default();
+        for i in [item(COPPER,None,true),item(KATANA,None,true),item(999,Some("Weapon"),true),
+            item(HEALTH_POTION,None,true),item(STEEL,None,false)] {cfg.items.insert(i.id,i);}
+        let table:Vec<_>=[COPPER,KATANA,999,HEALTH_POTION,STEEL,998].into_iter()
+            .map(|id|LootEntry{item_id:id,qty_min:1,qty_max:1,chance:1.0}).collect();
+        cfg.loot_tables.insert(0,table.clone());
+        for seed in 0..1000 {
+            assert_eq!(cfg.roll_loot(0,seed),vec![(COPPER,1),(HEALTH_POTION,1)]);
+            assert_eq!(cfg.roll_loot(5,seed),vec![(COPPER,1),(HEALTH_POTION,1)]); // fallback tem a mesma regra
+        }
+        cfg.farm_loot_tables.insert(("Rock".into(),1),table);
+        assert!(cfg.roll_farm_loot("Rock",1,10).contains(&(KATANA,1))); // filtro restrito ao loot de mobs
+    }
+}
+
 /// Um bicho da tabela adequado ao nivel pedido.
 ///
 /// A tabela e' pequena e ordenada por xp, que cresce junto com a dificuldade.
@@ -570,4 +677,91 @@ pub fn kind_para_nivel(nivel: u32, semente: u64) -> u16 {
     // Ate' onde a escolha vai: um bicho novo a cada tres niveis.
     let teto = ((nivel as usize / 3) + 1).min(comuns.len());
     comuns[(semente as usize) % teto]
+}
+
+#[cfg(test)]
+mod testes_da_pedra {
+    use super::*;
+    use shared::item_id::*;
+
+    fn config_da_pedra() -> EconomyConfig {
+        let mut c = EconomyConfig::default();
+        for (t, id, mn, mx, chance) in linhas_da_pedra() {
+            c.farm_loot_tables.entry(("Rock".to_string(), t)).or_default().push(LootEntry {
+                item_id: id,
+                qty_min: mn as u32,
+                qty_max: mx as u32,
+                chance,
+            });
+        }
+        c
+    }
+
+    /// A pedra rende o que o planejamento diz, pelo MESMO caminho da coleta:
+    /// sorteia a cor com `tier_do_rendimento` e rola a linha daquela cor.
+    /// docs/ECONOMIA_DE_CRAFT.md (chances) e docs/COLETA.md (cor por pedra).
+    #[test]
+    fn cada_pedra_rende_os_materiais_do_planejamento() {
+        let c = config_da_pedra();
+        const N: u32 = 60_000;
+        let taxa = |x: u32| x as f32 / N as f32;
+        for pedra in 1..=4u8 {
+            let mut vezes: HashMap<u16, u32> = HashMap::new();
+            let mut cobre = (u32::MAX, 0u32);
+            let mut s = 0x5EED_0000u64 ^ pedra as u64;
+            for _ in 0..N {
+                s = lcg(s);
+                let cor = shared::tier_do_rendimento(pedra, lcg_f32(lcg(s ^ 0x5EED_C0DE)));
+                for (id, q) in c.roll_farm_loot("Rock", cor, s) {
+                    *vezes.entry(id).or_default() += 1;
+                    if id == COPPER { cobre = (cobre.0.min(q), cobre.1.max(q)); }
+                }
+            }
+            let soma = |base: u16| (1..=4).map(|k| vezes.get(&na_cor(base, k)).copied().unwrap_or(0)).sum::<u32>();
+            assert_eq!(vezes.get(&COPPER).copied(), Some(N), "pedra {pedra}: cobre tem que cair sempre");
+            assert!(cobre.0 >= 40 && cobre.1 <= 120, "pedra {pedra}: cobre {cobre:?} fora de 40-120");
+            for (nome, base, esperado, tol) in [
+                ("Aço", STEEL, 0.55, 0.015), ("Platina", PLATINUM, 0.30, 0.015),
+                ("Coração Negro", DARK_HEART_STONE, 0.12, 0.01), ("Ânima", ANIMA_STONE, 0.12, 0.01),
+                ("Escama", SCALE, 0.01, 0.003), ("Couro", HIDE, 0.01, 0.003),
+            ] {
+                let t = taxa(soma(base));
+                assert!((t - esperado).abs() < tol, "pedra {pedra}: {nome} a {t:.3}, doc diz {esperado}");
+            }
+            assert!((taxa(vezes.get(&DARKSTEEL).copied().unwrap_or(0)) - 0.35).abs() < 0.015);
+            assert!((taxa(vezes.get(&GLITTERING_POWDER).copied().unwrap_or(0)) - 0.03).abs() < 0.005);
+            // A COR do material segue a escada da pedra, e roxo nao cai.
+            let aco = soma(STEEL);
+            for cor in 1..=4u8 {
+                let obtido = vezes.get(&na_cor(STEEL, cor)).copied().unwrap_or(0) as f32 / aco as f32;
+                let esperado = shared::RENDIMENTO_DA_PEDRA[pedra as usize][cor as usize - 1] as f32 / 100.0;
+                assert!((obtido - esperado).abs() < 0.02, "pedra {pedra}: aço cor {cor} a {obtido:.3}, escada diz {esperado}");
+            }
+            for base in MATERIAIS_COLORIDOS {
+                assert!(vezes.get(&na_cor(base, 4)).is_none(), "pedra {pedra}: material roxo caiu ({base})");
+            }
+            println!(
+                "pedra {pedra}: aço {:.1}% (cinza {:.0}/verde {:.0}/azul {:.0}), platina {:.1}%, darksteel {:.1}%, pó {:.2}%, chave escama {:.2}%",
+                taxa(aco) * 100.0,
+                vezes.get(&na_cor(STEEL, 1)).copied().unwrap_or(0) as f32 / aco as f32 * 100.0,
+                vezes.get(&na_cor(STEEL, 2)).copied().unwrap_or(0) as f32 / aco as f32 * 100.0,
+                vezes.get(&na_cor(STEEL, 3)).copied().unwrap_or(0) as f32 / aco as f32 * 100.0,
+                taxa(soma(PLATINUM)) * 100.0,
+                taxa(vezes.get(&DARKSTEEL).copied().unwrap_or(0)) * 100.0,
+                taxa(vezes.get(&GLITTERING_POWDER).copied().unwrap_or(0)) * 100.0,
+                taxa(soma(SCALE)) * 100.0,
+            );
+        }
+    }
+
+    /// Doze materiais coloridos + tres sem cor, nas quatro linhas de tier.
+    #[test]
+    fn a_tabela_da_pedra_tem_as_quatro_cores() {
+        let l = linhas_da_pedra();
+        assert_eq!(l.len(), 4 * 15);
+        for t in 1..=4u8 {
+            assert!(l.iter().any(|&(tt, id, ..)| tt == t && id == na_cor(STEEL, t)));
+            assert_eq!(l.iter().filter(|&&(tt, id, ..)| tt == t && id == COPPER).count(), 1);
+        }
+    }
 }

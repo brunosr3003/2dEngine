@@ -13,7 +13,10 @@
 mod auth;
 mod boat_config;
 mod canais;
+mod craft;
 mod economy;
+mod loot_mobs;
+mod mapa_ilha;
 mod panoptico;
 mod persistence;
 mod quests;

@@ -79,29 +79,17 @@ pub enum ClientMessage {
     PartyLeave,
     /// Aloca 1 ponto de atributo. `stat` indice em [0=FOR,1=DES,2=INT,3=VIT,4=SPD].
     AllocStatPoint { stat: u8 },
-    /// Aprende uma skill (rank 0 → 1) gastando 1 SP. Server valida
-    /// unlock_char_lvl + unlock_prof_lvl + SP suficiente.
-    /// Sobe rank de uma skill já aprendida. Custo varia por rank (ver
-    /// `SP_COST_PER_RANK`). Falha se rank == MAX_SKILL_RANK.
-    /// Equipa skill ativa em slot 0..=5. `slot=None` ou `skill_id=0` desequipa.
-    /// Passivas ignoram esse req (sempre ativas se aprendidas).
-    /// Dispara cast de skill ativa. `target_pos` = world position do mouse
-    /// (mira pra projectile/AoE). Server valida cd/cost/weapon e dispatch
-    /// pelo target_type da SkillDef.
+    /// Usa uma das tres skills da arma equipada. O servidor valida o nivel
+    /// do personagem, mana, recarga, estado de combate e alcance. Ataques usam
+    /// a entidade selecionada por SetTarget; suporte usa o proprio personagem.
     SkillCast {
         skill_id: u32,
-        #[serde(with = "crate::vec2_arr")]
-        target_pos: glam::Vec2,
     },
     /// Reseta TODOS os pontos alocados pra unspent_points. Util pra testes
     /// e respec — server zera o array, devolve os pontos e reenvia stats.
     ResetStats,
-    /// Reseta TODAS as skills aprendidas — refunda os SP gastos. Limpa
-    /// learned_skills, equipped slots, cooldowns e estados de skills (riposte,
-    /// hunter_marks, etc). Util pra respec do tree.
-    /// Refina um item do inventário (+1 nível). Requer ItemInstance
-    /// presente no slot. Custo: gold proporcional ao refinement atual.
-    /// Falha (chance crescente com nível) reseta refinement pra 0.
+    /// Refina uma peca da BOLSA. Mesmo que `Refinar { alvo: Bolsa(slot) }` —
+    /// regras de `forja` e resposta `RefinoResultado`.
     RefineItem { slot: u16 },
     /// Pede pra subir num barco. Server valida proximidade (player em
     /// tile adjacente ao barco) e parenta o player (Mounted) com
@@ -236,13 +224,38 @@ pub enum ClientMessage {
     /// raid=true → RAID BOSS: sem waves/mobs, spawn perto da arena, só o boss.
     /// Ignorado fora de DUNGEON_MODE.
     SelectDungeonMode { raid: bool },
+
+    // ── Auto missao / auto coleta ────────────────────────────────────────
+    /// Onde fica o objetivo desta missao ativa? Resposta: `QuestDestino`.
+    QuestDestino { quest_id: u16 },
+    /// Terminou o dialogo de uma missao "fale com" com este NPC. O servidor
+    /// confere a distancia e marca a conversa — nao e' mais no clique.
+    ConcluirConversa { npc_eid: u64 },
+    /// Auto coleta: qual o melhor spot de coleta perto de mim? Resposta:
+    /// `SpotDeColeta`.
+    PedirSpotDeColeta,
+    /// Auto coleta de UM tipo (0 madeira, 1..4 pedra pela cor), procurando em
+    /// volta de `perto` (a regiao escolhida no mapa). Resposta: `SpotDeColeta`.
+    PedirSpotDeColetaDe { tipo: u8, perto: [f32; 2] },
+
+    // ── Forja ────────────────────────────────────────────────────────────
+    /// Refina uma peca da bolsa ou equipada pelas regras de `forja`: +1..+12,
+    /// seguro ate' +5, do +6 em diante falhar DESTROI. Resposta:
+    /// `RefinoResultado`. Vale de qualquer lugar (menu).
+    Refinar { alvo: AlvoDaForja },
+}
+
+/// Onde esta' a peca que a forja vai refinar.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum AlvoDaForja {
+    Bolsa(u16),
+    Equipado(crate::EquipSlot),
 }
 
 /// Acoes administrativas aplicadas via `ClientMessage::AdminCommand`.
 /// Sempre afetam o player que enviou (self). Pra mexer em outro player,
 /// rode comando da conta desse player.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
 pub enum AdminAction {
     /// Seta xp absoluto — recomputa stats (level escala HP/MP/poise unlock).
     SetXp { xp: u64 },
@@ -261,6 +274,24 @@ pub enum AdminAction {
     /// Seta level: xp = sum(1..lvl-1) * mult, unspent = 3*(lvl-1), sp = lvl-1.
     /// Equivalente a fazer SetXp + ajuste de pontos atomicamente.
     SetLevel { level: u32 },
+    /// Boss temporario perto destas coordenadas, para testar combate.
+    SpawnTestBoss { x: f32, z: f32, hp: i32 },
+}
+
+#[cfg(test)]
+mod admin_tests {
+    use super::*;
+
+    #[test]
+    fn admin_command_roundtrip_postcard() {
+        for action in [AdminAction::HealFull, AdminAction::SetLevel { level: 10 },
+            AdminAction::SpawnTestBoss { x: 74.5, z: -138.0, hp: 50_000 }] {
+            let msg = ClientMessage::AdminCommand { secret: "test-only".into(), target_char: None, action };
+            let bytes = encode(&msg).unwrap();
+            let decoded: ClientMessage = decode(&bytes).unwrap();
+            assert_eq!(encode(&decoded).unwrap(), bytes);
+        }
+    }
 }
 
 /// Localizacao logica de um slot no sistema de inventario do cliente.
@@ -482,10 +513,7 @@ pub enum ServerMessage {
         #[serde(rename = "resource_sources")]
         items: Vec<ItemResourceSources>,
     },
-    /// Estado completo de skills do player. Enviado no login + após qualquer
-    /// mutação (learn, rank-up, equip).
-    /// Broadcast de cast pra renderização cliente (gizmos/VFX). Servidor
-    /// envia pra todos clientes em AOI quando alguém casta uma skill.
+    /// Inicio confirmado de uma skill: inicia o gesto e a antecipacao visual.
     SkillCastFx {
         skill_id: u32,
         #[serde(with = "crate::vec2_arr")]
@@ -655,6 +683,73 @@ pub enum ServerMessage {
         #[serde(default)]
         world_path: String,
     },
+    /// Recargas autoritativas em segundos restantes e trava da animacao.
+    SkillsState { cooldowns: Vec<(u32, f32)>, busy_s: f32 },
+    SkillRejected { skill_id: u32, motivo: String },
+    /// Momento em que a skill realmente produz seu efeito.
+    SkillImpactFx {
+        skill_id: u32,
+        caster_eid: EntityId,
+        #[serde(with = "crate::vec2_arr")]
+        caster_pos: glam::Vec2,
+        #[serde(with = "crate::vec2_arr")]
+        target_pos: glam::Vec2,
+    },
+    /// Alvo e tempo do ataque de um mob; locomocao nao determina sua mira.
+    MobAttackFx { attacker: EntityId, target: Option<EntityId>, dir: [f32; 2], impact_s: f32 },
+    /// Onde fica o objetivo de uma missao (`quests::destino_tipo`). `npc_eid`
+    /// quando e' pra falar ou entregar.
+    QuestDestino { quest_id: u16, tipo: u8, pos: [f32; 2], raio: f32, npc_eid: Option<u64> },
+    /// Melhor spot de coleta perto do jogador, e quantos corpos vivos ele tem.
+    /// `None` = nada vivo por perto.
+    SpotDeColeta { pos: Option<[f32; 2]>, densidade: u32 },
+    /// A rota que o servidor calculou pro proprio jogador, pro tracejado no
+    /// chao. Vai quando a rota nasce ou e' refeita; `pontos` vazio = acabou
+    /// (chegou, comando manual, limpa). O cliente descarta sozinho os pontos
+    /// ja' alcancados.
+    Rota { pontos: Vec<[f32; 2]>, destino: [f32; 2] },
+    /// O que o mapa mostra da ilha: zonas de mob (com os bichos e a chance de
+    /// cada um) e regioes de recurso. Vai uma vez, logo depois do `MapChange`.
+    /// `nomes` = (kind, nome) dos bichos; `rendimentos` = (tipo, o que rende).
+    MapaDaIlha {
+        zonas: Vec<ZonaNoMapa>,
+        recursos: Vec<RegiaoNoMapa>,
+        nomes: Vec<(u16, String)>,
+        rendimentos: Vec<(u8, String)>,
+    },
+    /// Estado das missoes que o `QuestLog` nao carrega: as ja' entregues (com o
+    /// fim do cooldown, 0 = sem) e a faccao do personagem (`quests::faction_id`).
+    /// Pro menu de todas as missoes calcular bloqueio sem perguntar.
+    QuestEstado { entregues: Vec<(u16, i64)>, faccao: u8 },
+    /// Resultado de um `Craft`: criou `item_id`, ou o motivo da recusa.
+    CraftResultado { recipe_id: u16, ok: bool, motivo: String, item_id: u16 },
+    /// Resultado de `Refinar` (`forja::resultado`), com o nivel da peca agora
+    /// (0 se destruida) e o motivo quando nem tentou.
+    RefinoResultado { resultado: u8, nivel: u8, item_id: u16, motivo: String },
+    /// Bonus de XP da Pocao de Experiencia ativo ate' `ate` (unix secs; 0 =
+    /// nenhum). Vai no login e ao beber.
+    BuffXp { ate: i64 },
+}
+
+/// Uma zona de spawn no mapa. `bichos` = (kind, chance em %), da maior chance
+/// pra menor — a mesma conta de `quests::chance_do_kind` que a auto missao usa.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ZonaNoMapa {
+    pub centro: [f32; 2],
+    pub raio: f32,
+    pub lv_min: u16,
+    pub lv_max: u16,
+    pub bichos: Vec<(u16, u8)>,
+}
+
+/// Regiao de recurso: corpos coletaveis de UM tipo agrupados. `tipo` 0 =
+/// madeira, 1..4 = pedra pela cor (cinza, verde, azul, roxa).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct RegiaoNoMapa {
+    pub centro: [f32; 2],
+    pub raio: f32,
+    pub tipo: u8,
+    pub contagem: u16,
 }
 
 /// Item da loja de facção (item_id + custo em pontos de facção).
@@ -708,6 +803,9 @@ pub struct CraftRecipeNet {
     pub output_qty:        u32,
     pub output_item_level: u16,
     pub roll_instance:     bool,
+    /// Nivel de personagem pra criar. 1 = qualquer um.
+    #[serde(default)]
+    pub nivel_min:         u16,
 }
 
 /// Origem de um recurso — mob drop ou farm node (gather). Usado pelo

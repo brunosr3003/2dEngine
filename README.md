@@ -65,11 +65,17 @@ Detalhes de build em [docs/BUILD.md](docs/BUILD.md); operação de canais em
 | [PANOPTICO](docs/PANOPTICO.md) | painel de observabilidade |
 | [PIPELINE_ARTE](docs/PIPELINE_ARTE.md) | voxel → sprite |
 | [COMBATE](docs/COMBATE.md) | conjuntos de arma, peso de armadura, skills |
+| [SKILLS](docs/SKILLS.md) | as 12 habilidades e desbloqueio por nível |
 | [COLETA](docs/COLETA.md) | coleta automática por densidade do lugar |
 | [ECONOMIA_DE_CRAFT](docs/ECONOMIA_DE_CRAFT.md) | materiais, receitas, síntese de cor |
 | [PERSONAGEM](docs/PERSONAGEM.md) | rig, animação, montaria |
 | [character create](docs/character%20create.md) | what to model: parts, sizes, pivots, palette (EN) |
 | [COMBATE_POR_ALVO](docs/COMBATE_POR_ALVO.md) | combate e wire binário |
+| [VILA_E_PORTO](docs/VILA_E_PORTO.md) | cidade, porto, casas voxel, NPCs de porta |
+| [MISSOES](docs/MISSOES.md) | Mestre de Missões, cadeia da ilha inicial, diário (J) |
+| [HISTORIA](docs/HISTORIA.md) | a missão principal sem fim: capítulos por ilha, travas de nível, Crônicas da Tempestade |
+| [DUNGEONS_E_RAIDS](docs/DUNGEONS_E_RAIDS.md) | desenho: dungeons, raids, chefes, matchmaking entre realms, recompensas por faixa |
+| [HUD](docs/HUD.md) | HUD e Menu Principal no molde do MIR4: layout, painéis, nada abre por tecla |
 
 ## Stack
 

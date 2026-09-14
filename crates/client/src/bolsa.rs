@@ -164,6 +164,7 @@ fn tipo(id: u16) -> Tipo {
         x if x == item_id::HEALTH_POTION || x == item_id::GREATER_HEAL => Tipo::Pocao(0),
         x if x == item_id::MANA_POTION || x == item_id::GREATER_MANA => Tipo::Pocao(1),
         x if x == item_id::STAMINA_POTION => Tipo::Pocao(2),
+        x if x == item_id::XP_POTION => Tipo::Pocao(3),
         _ => Tipo::Material,
     }
 }
@@ -204,7 +205,7 @@ fn curta(q: u32) -> String {
 }
 
 /// 1234567 -> "1.234.567".
-fn milhar(v: u64) -> String {
+pub(crate) fn milhar(v: u64) -> String {
     let s = v.to_string();
     let mut out = String::new();
     for (i, c) in s.chars().enumerate() {
@@ -226,7 +227,7 @@ fn primeiro_vazio(slots: &[InventorySlot]) -> Option<usize> {
 }
 
 /// O "poder" do MIR4: um numero so' que resume a ficha. A conta e' nossa.
-fn poder(s: &PlayerStats) -> i32 {
+pub(crate) fn poder(s: &PlayerStats) -> i32 {
     s.attack_damage * 10
         + s.defense * 8
         + s.hp_max
@@ -261,10 +262,6 @@ fn tela() -> Tela {
     Tela { painel, esq, dir, cel }
 }
 
-fn botao_da_bolsa() -> Rect {
-    Rect::new(screen_width() - 136.0, screen_height() - 52.0, 122.0, 38.0)
-}
-
 fn mouse() -> Vec2 {
     mouse_position().into()
 }
@@ -274,6 +271,12 @@ fn clicou_em(r: Rect) -> bool {
 }
 
 impl Bolsa {
+    /// Abre pelo icone do HUD ou pelo Menu — nunca por tecla.
+    pub fn abrir(&mut self) {
+        self.aberta = true;
+        self.sel = None;
+    }
+
     pub fn alterna(&mut self) {
         self.aberta = !self.aberta;
         self.sel = None;
@@ -284,14 +287,10 @@ impl Bolsa {
         self.sel = None;
     }
 
-    /// O mouse esta' em cima da bolsa (ou do botao dela)? Entao o clique e'
-    /// dela, e nao do mundo.
+    /// O mouse esta' em cima da bolsa aberta? Entao o clique e' dela, e nao do
+    /// mundo. (Fechada ela nao tem botao proprio: o icone e' do HUD.)
     pub fn pega_o_mouse(&self) -> bool {
-        if self.aberta {
-            tela().painel.contains(mouse())
-        } else {
-            botao_da_bolsa().contains(mouse())
-        }
+        self.aberta && tela().painel.contains(mouse())
     }
 
     fn peca(&self, s: Sel) -> Option<Peca> {
@@ -308,7 +307,7 @@ impl Bolsa {
         }
     }
 
-    fn nome(&self, id: u16) -> String {
+    pub(crate) fn nome(&self, id: u16) -> String {
         self.nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"))
     }
 
@@ -351,13 +350,10 @@ impl Bolsa {
         }
     }
 
-    /// Desenha a bolsa (ou so' o botao, fechada). Devolve o pedido pro
-    /// servidor, se o jogador fez alguma coisa.
+    /// Desenha a bolsa aberta. Devolve o pedido pro servidor, se o jogador fez
+    /// alguma coisa.
     pub fn desenha(&mut self, vox: &VoxCache, solido: &Material) -> Option<ClientMessage> {
         if !self.aberta {
-            if ui::botao(botao_da_bolsa(), "Bolsa  [I]", true) {
-                self.aberta = true;
-            }
             return None;
         }
         let t = tela();
@@ -678,6 +674,7 @@ impl Bolsa {
             let txt = match t {
                 Tipo::Pocao(0) => "Recupera vida.",
                 Tipo::Pocao(1) => "Recupera mana.",
+                Tipo::Pocao(3) => "+30% de XP por 1 hora. Beber outra renova a hora.",
                 Tipo::Pocao(_) => "Recupera vigor.",
                 Tipo::Arma(_) | Tipo::Slot(_) => "Peça básica, sem atributos rolados.",
                 _ => "Material de criação.",
@@ -749,6 +746,11 @@ fn celula(r: Rect, peca: Option<Peca>, selecionada: bool, vazio: Option<EquipSlo
     if selecionada {
         draw_rectangle_lines(r.x - 2.0, r.y - 2.0, r.w + 4.0, r.h + 4.0, 2.5, ui::OURO);
     }
+}
+
+/// O icone de um item fora da bolsa (a loja usa o mesmo desenho).
+pub(crate) fn icone_do_item(r: Rect, id: u16, a: f32) {
+    icone(r, tipo(id), id, a);
 }
 
 /// O icone de um item, desenhado por categoria. Nao ha arte de icone ainda:
@@ -831,6 +833,8 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
             let liq = match q {
                 0 => k(0.85, 0.18, 0.2),
                 1 => k(0.22, 0.42, 0.95),
+                // Experiencia: dourado, pra nao confundir com as de cura.
+                3 => k(0.98, 0.80, 0.22),
                 _ => k(0.3, 0.8, 0.35),
             };
             draw_circle(c.x, c.y + s * 0.3, s * 0.62, k(0.75, 0.82, 0.88));

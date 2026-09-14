@@ -10,11 +10,15 @@ pub mod items;
 pub mod mapfile;
 pub mod protocol;
 pub mod quests;
+pub mod historia;
 pub mod skills;
 pub mod world_gen;
 pub mod physics;
 pub mod forja;
+pub mod receitas;
 pub mod terreno;
+pub mod construcao;
+pub mod vila;
 
 pub use combat::*;
 pub use components::*;

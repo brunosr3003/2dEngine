@@ -353,6 +353,78 @@ pub struct EntityMeta {
     pub nivel: u16,
 }
 
+/// Rumo de NPC parado, guardado no `EntityMeta::kind` (so' pra
+/// `EntityTag::Npc`, onde o campo nao tinha uso).
+///
+/// O estado por tick nao leva angulo: o cliente tira o rumo da velocidade, e
+/// NPC parado nascia olhando pro +Z — o vendedor de costas pra propria porta.
+/// Vai na meta, que sai uma vez, e nao pesa por tick.
+///
+/// `0` = sem rumo. `1..=256` = a volta inteira em 256 passos. Convencao do
+/// cliente: `yaw = atan2(dir.x, dir.z)`.
+pub fn kind_de_npc_yaw(yaw: f32) -> u16 {
+    let t = yaw.rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU;
+    1 + ((t * 256.0).round() as u16 % 256)
+}
+
+/// Bits de baixo do `kind` de NPC que guardam o rumo (0..=256 cabe em 9).
+const NPC_BITS_DO_RUMO: u16 = 9;
+const NPC_MASCARA_DO_RUMO: u16 = (1 << NPC_BITS_DO_RUMO) - 1;
+
+/// O `EntityMeta.kind` de um NPC da vila: rumo E oficio no mesmo `u16`.
+///
+/// Os 9 bits de baixo sao o rumo (`kind_de_npc_yaw`, 0 = sem rumo) e os de
+/// cima o PAPEL (`shared::construcao::Papel as u8`). O papel e' o que o
+/// cliente usa pra escolher o modelo: sem ele todo NPC saia com o corpo do
+/// jogador.
+pub fn npc_kind(yaw: Option<f32>, papel: u8) -> u16 {
+    ((papel as u16) << NPC_BITS_DO_RUMO) | yaw.map_or(0, kind_de_npc_yaw)
+}
+
+/// O rumo que `npc_kind`/`kind_de_npc_yaw` guardou, se houver. Ignora o
+/// papel: um `kind` so' de rumo (sem papel) continua valendo.
+pub fn npc_yaw_de_kind(kind: u16) -> Option<f32> {
+    let rumo = kind & NPC_MASCARA_DO_RUMO;
+    if rumo == 0 || rumo > 256 {
+        return None;
+    }
+    Some((rumo - 1) as f32 / 256.0 * std::f32::consts::TAU)
+}
+
+/// O papel que `npc_kind` guardou. `0` (`Papel::Casa`) quando nao veio papel.
+pub fn npc_papel_de_kind(kind: u16) -> u8 {
+    (kind >> NPC_BITS_DO_RUMO) as u8
+}
+
+#[cfg(test)]
+mod testes_npc_kind {
+    use super::*;
+
+    #[test]
+    fn rumo_e_papel_vao_e_voltam_juntos() {
+        for papel in [0u8, 1, 14, 15, 40, 127] {
+            for passo in 0..256 {
+                let yaw = passo as f32 / 256.0 * std::f32::consts::TAU;
+                let k = npc_kind(Some(yaw), papel);
+                assert_eq!(npc_papel_de_kind(k), papel);
+                let volta = npc_yaw_de_kind(k).unwrap();
+                assert!((volta - yaw).abs() < 1e-3, "papel {papel}, passo {passo}: {volta} != {yaw}");
+            }
+            let sem = npc_kind(None, papel);
+            assert_eq!(npc_yaw_de_kind(sem), None);
+            assert_eq!(npc_papel_de_kind(sem), papel);
+        }
+    }
+
+    /// O `kind` antigo, so' com rumo, continua lido igual.
+    #[test]
+    fn kind_so_de_rumo_continua_valendo() {
+        let k = kind_de_npc_yaw(2.0);
+        assert_eq!(npc_papel_de_kind(k), 0);
+        assert!((npc_yaw_de_kind(k).unwrap() - npc_yaw_de_kind(npc_kind(Some(2.0), 0)).unwrap()).abs() < 1e-6);
+    }
+}
+
 /// Estado de uma entidade num tick. E' o unico dado que se repete.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct EntityState {

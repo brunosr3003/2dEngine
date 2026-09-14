@@ -140,13 +140,62 @@ Todas em `shared/constants.rs`, seção *Coleta*:
 | `MINERIO_PLANO` | 2 blocos | meio-lado do chão limpo exigido |
 | `MINERIO_CUME` | 16 blocos | raio em que ela tem que ser a mais alta |
 
+## O que cada coleta entrega (estado real)
+
+Uma coleta numa pedra sorteia a **cor do material** pela escada da pedra
+(`tier_do_rendimento`) e rola a linha daquela cor em `farm_node_drops`, cada
+entrada independente. A tabela mora em **um lugar só**,
+`economy::linhas_da_pedra`, que o seed (M25) grava e o teste
+`cada_pedra_rende_os_materiais_do_planejamento` simula (60 mil coletas por cor
+de pedra):
+
+| material | quantidade | chance | cor |
+|---|---|---|---|
+| Cobre | 40–120 | sempre | — |
+| Aço | 3–6 | 55% | a sorteada |
+| Darksteel | 10–25 | 35% | — |
+| Platina | 3–6 | 30% | a sorteada |
+| Coração Negro, Sombra-da-Lua, Quintessência, Berloque, Fragmento, Ânima | 2–4 | 12% cada | a sorteada |
+| Pó Cintilante | 1 | 3% | — |
+| Escama, Garra, Chifre, Couro (chaves) | 1 | 1% cada | a sorteada |
+
+A cor sorteada segue a tabela da pedra acima (a verde dá 80% cinza / 20%
+verde, a roxa 55/27/18 e **nunca roxo**). O banco já tem essas linhas; a
+migração só roda num banco sem Aço cinza na pedra e não sobrescreve ajuste de
+admin.
+
+**O jogador vê o que ganhou:** o cliente compara a bolsa antes e depois de cada
+`InventoryUpdate` e faz "+57 Cobre" subir do personagem (`client/ganhos.rs`).
+Não vai pro chat — a coleta entrega a cada um ou dois segundos e empurraria
+pra fora as mensagens de missão.
+
 ## A árvore
 
 Roda **na mesma máquina**, com números de marcador — 8 coletas, volta em 90s,
-sem tier e sem brilho — só para a madeira não sumir do jogo. Ela ainda não
-ganhou o desenho que a pedra ganhou: tier por região da mata, contagem
-própria, e a decisão de se a floresta comum inteira é coletável ou se há
-bosques marcados.
+sem tier e sem brilho — só para a madeira não sumir do jogo. Entrega **Madeira
+T1** (3–5, sempre) e às vezes ouro. Esgotada, **some da tela** como a pedra
+(o cliente pula a coluna esgotada). Ela ainda não ganhou o desenho que a pedra
+ganhou: tier por região da mata, contagem própria, e a decisão de se a
+floresta comum inteira é coletável ou se há bosques marcados.
+
+## Auto coleta
+
+**X** (ou o botão COLETA, acima do COMBATE) liga e desliga. Como a coleta é o
+lugar, o auto não "clica" em nada: ele **escolhe o spot e fica lá**.
+
+- O cliente pede `PedirSpotDeColeta`; o **servidor** responde `SpotDeColeta`
+  com o ponto onde há mais pedra/tronco **vivo** no raio do spot, num raio de
+  60 u do jogador, ignorando o que está esgotado, já deslocado pra fora dos
+  corpos (`ponto_livre_perto`) — e **alcançável**: percorre os seis melhores
+  veios (`quests::spots_ordenados`, sem dois no mesmo veio) e fica com o
+  primeiro a que o A* chega. Cume cercado de paredão não é mais escolhido.
+- O personagem vai até lá pela viagem do mapa e fica parado; a coleta sai
+  sozinha, como sempre.
+- Parado no spot sem a bolsa crescer por 18 s (o veio acabou), pede outro.
+- Nada vivo por perto: avisa e tenta de novo a cada 6 s.
+- Desliga com andar no teclado, Esc, Z (auto combate) ou X. Auto coleta e auto
+  combate são exclusivos: ligar um desliga o outro.
+- A auto missão de coleta liga a auto coleta no spot que o servidor indicou.
 
 ## O que ainda não existe
 
@@ -156,4 +205,10 @@ bosques marcados.
   coleta a leria de graça, porque ela só pergunta o que há em volta.
 - **Caminho até o cume.** A pedra está sempre em chão plano, mas nada garante
   que exista rampa até aquele patamar — um cume cercado de paredão acima do
-  pulo tem pedra que ninguém alcança.
+  pulo tem pedra que ninguém alcança. A auto coleta já desvia disso (spot
+  alcançável); o mundo em si ainda tem essas pedras.
+- **Corpo esgotado ainda barra.** A pedra/árvore esgotada some da tela, mas a
+  colisão do servidor (estorvos do `shared`) não sabe de esgotamento: fica um
+  obstáculo invisível até ela voltar.
+- **Síntese de cor e receitas** — ver `docs/ECONOMIA_DE_CRAFT.md`; não são
+  coleta.

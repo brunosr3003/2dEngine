@@ -46,17 +46,15 @@ Todos os jogadores começam iguais. A build emerge do que vc usa.
 - **Level cap: 100.** O nível principal define o **cap máximo** de cada Proficiência.
 
 ### Proficiências
-- Evoluem pelo uso real: bater com espada → XP em "Espada". Lançar fogo → XP em "Magia de Fogo".
-- Cada proficiência desbloqueia passivas e melhora multiplicadores daquele estilo.
-- Exemplos: Espada, Arco, Cajado, Magia de Fogo, Magia de Cura, Navegação, Pesca, Ferraria.
-- Cap de proficiência = f(nível principal) → impede ser bom em tudo ao mesmo tempo.
-- **Balanceamento natural:** ter 100 em Espada E 100 em Magia exige atributos divididos — espada fraca se INT alta, magia fraca se FOR alta.
+
+Uma por conjunto de arma: espada e escudo, katana, duas pistolas e anel
+mágico. As skills usam o nível do personagem para desbloqueio; não há
+passivas ou árvores de compra de habilidades. Ver [SKILLS.md](SKILLS.md).
 
 ### Equipamento define estilo
-- **Espada/Machado:** melee, dano direto, low range.
-- **Arco/Besta:** ranged, projéteis retos, kite.
-- **Cajado/Varinha:** magia (fogo, cura, lightning), AOE ou seeking.
-- **Slots:** arma + armadura + 2 anéis. Anéis dão habilidades ativas swappable.
+- **Conjuntos:** espada e escudo, katana, duas pistolas e anel mágico.
+- **Skills:** três por conjunto, liberadas nos níveis 1, 5 e 10 do personagem.
+  Regras e catálogo em [SKILLS.md](SKILLS.md); equipamentos em [COMBATE.md](COMBATE.md).
 
 ---
 
@@ -104,14 +102,54 @@ Todos os jogadores começam iguais. A build emerge do que vc usa.
 ## Controles
 
 ### Desktop
-- **WASD:** mover.
-- **Mouse:** mirar.
-- **LMB:** ataque básico.
-- **RMB / Space:** habilidade ativa (do anel equipado).
-- **Shift:** dash (I-frames 300ms, cooldown 2s).
-- **E:** interagir (loot, NPC, barco, reviver aliado).
-- **F:** carregar/largar Downed.
-- **T:** chat. **Tab:** mapa. **Esc:** menu.
+
+HUD no molde do MIR4 (ver [HUD.md](HUD.md)). **Nenhum painel abre por tecla:**
+tudo abre por ícone do HUD ou pelo **≡ MENU** (canto superior direito). Esc
+só **fecha** (o painel aberto pelo Menu volta ao Menu); sem nada aberto,
+limpa o alvo e desliga o AUTO.
+
+- **Abrir coisas (só clique):** 🎒 Bolsa e 📜 Missões no topo direito; nome da
+  zona ou ⤢ do minimapa abrem o **Mapa**; título "Missões ›" do rastreador abre
+  o diário e o rodapé "Todas as missões" abre a lista completa; o **MENU** tem
+  Bolsa, Missões, Todas, Craft, Forja, Mapa, Vendedores (só "Ir" até o NPC; a Loja do Menu é a de cash, em breve) e Sair.
+- **WASD / setas:** mover. **Espaço:** pular. **Shift:** correr.
+- **F** ou botão **ATACAR:** ataca o alvo; sem alvo, mira o inimigo mais perto.
+- **Tab:** próximo inimigo perto.
+- **1 / 2 / 3:** skills (também clicáveis no arco; arrastar ↑ AUTO / ↓ manual).
+- **Z:** auto combate. **X:** auto coleta (também pelos botões).
+- **C:** poção de vida. **8 / 9 / 0:** poção de mana, vigor e experiência.
+- **Alt:** mostra a tecla de cada botão. **Alt+Enter:** tela cheia.
+- **Q / E** giram a câmera; **roda** aproxima; arrastar com o botão do meio (ou
+  o direito) gira e inclina.
+- **LMB:** seleciona alvo ou anda até o chão clicado; ataque básico automático.
+- **Mapa** (nome da zona, ⤢ do minimapa ou Menu; Esc, X ou clique fora
+  fecham). O minimapa fica no canto superior direito; a roda sobre ele muda o zoom.
+  Clicar num ponto de terra do mapa ou do minimapa **viaja** até lá: desliga o
+  auto combate, solta o alvo e anda sozinho por etapas de até 160 m. Andar no
+  teclado, clicar no mundo, ligar o auto combate ou abrir a loja cancelam.
+  O mapa grande mostra as **zonas de mob** (círculo na cor do bicho dominante,
+  "Lobo · Nv 1–3"; o hover lista todos os bichos da zona com a chance de cada
+  um) e as **regiões de recurso** (losango na cor: madeira, pedra cinza, verde,
+  azul, roxa; o hover diz quantos corpos e o que rende). O painel à direita tem
+  os **filtros** (Mobs, cada bicho, cada recurso, Vila) — a escolha vale a
+  sessão — e o **Ir para**: cada bicho da ilha com a faixa de nível e a
+  distância da zona mais perta, cada recurso com a região mais perta. "Ir" (ou
+  clicar numa zona/região no mapa) fecha o mapa, anda até lá e, ao chegar, liga
+  o **auto combate** na zona ou a **auto coleta** só daquele recurso. O
+  minimapa mostra zonas e regiões de leve, respeitando os filtros.
+- **Todas as missões** (rodapé do rastreador ou Menu → Progresso → Todas),
+  por ilha e na ordem da cadeia: Disponível, Em andamento (com progresso),
+  Pronta pra entregar, Concluída ou Bloqueada. Bloqueada mostra o cadeado e, no
+  hover, o pré-requisito exato ("Requer nível 3", "Conclua: …", "Na ilha …").
+  "Ir" numa liberada desta ilha: disponível anda até o Mestre e abre a oferta;
+  em andamento ou pronta liga a auto missão. Clicar numa bloqueada só avisa.
+  Missões antigas do mapa de tiles (sem quem as dê nas ilhas) ficam fora.
+- **LMB num NPC vendedor:** longe, o personagem anda até ele; perto, abre a loja.
+  Clique num item compra 1, Shift+clique compra 5. A loja fecha com Esc, no X
+  ou ao se afastar do vendedor. O servidor valida ouro, bolsa e alcance.
+- **X do alvo** (no painel do alvo) ou **Esc:** limpa o alvo.
+- Reservados pro que ainda não existe (igual ao MIR4): **R** golpe letal,
+  **Shift** esquiva (hoje é correr), **4** quarta skill.
 
 ### Touch (mobile)
 - Joystick virtual esquerdo: mover.

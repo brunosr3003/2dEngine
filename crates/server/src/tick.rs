@@ -76,7 +76,7 @@ pub async fn run_world_loop(
         world.ilha = Some(ilha);
         // Desembarque: o relevo decide, nao a coordenada herdada. E' daqui
         // que a dificuldade cresce pra fora.
-        let porto = world.pousar(glam::Vec2::ZERO);
+        let porto = world.porto();
         world.povoar_ilha(porto);
     }
     world.set_auth_ctx(AuthCtx {
@@ -168,6 +168,7 @@ pub async fn run_world_loop(
         // Fila de entrada: 1x por segundo basta, e evita 30 varreduras/s.
         if save_counter % 30 == 0 {
             world.tick_fila();
+            world.tick_diarias();
         }
         // Lotacao do canal pro HUD: a cada 5s.
         if save_counter % 150 == 0 {

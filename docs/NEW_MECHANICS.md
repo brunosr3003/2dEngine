@@ -4,17 +4,10 @@ Este documento guarda as ideias de Game Design elaboradas para estruturar a prog
 
 ## 1. Sistema de Progressão "Classless" (Sem Classes)
 
-A ideia central é não prender o jogador a uma classe. A evolução ocorre fluidamente com base no uso.
-
-*   **Atributos Base Zerados:** Todos os jogadores começam exatamente iguais (ex: 10 pontos em Força, Destreza, Inteligência, etc.).
-*   **Progressão Baseada no Uso (Proficiências):** 
-    *   Bater com uma espada dá XP para "Habilidade de Espada".
-    *   Usar magias de cura dá XP para "Magia de Cura".
-    *   Usar magias de fogo dá XP para "Magia de Fogo".
-*   **A Relação Nível Principal vs. Proficiências:**
-    *   O jogador possui um Nível Principal, obtido ganhando XP geral no mundo.
-    *   O Nível Principal dita a distribuição de Pontos de Atributo (Força, Inteligência, etc.) e **define o limite máximo (cap)** do nível que uma Proficiência específica pode atingir.
-    *   *Balanceamento:* Um jogador pode ter nível 100 em Espada e 100 em Magia, mas como os pontos de Atributo globais são limitados, a Espada só dará um dano absurdo se ele tiver investido seus atributos em Força (deixando a magia fraca, e vice-versa).
+A arma equipada define as três skills do personagem. Elas são liberadas
+automaticamente nos níveis 1, 5 e 10. O planejamento de skills vigente está
+em [SKILLS.md](SKILLS.md); o restante deste documento trata das propostas
+de morte e resgate.
 
 ## 2. Sistema de Morte Hardcore (Downed State & Execução)
 

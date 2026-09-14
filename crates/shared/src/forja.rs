@@ -208,6 +208,30 @@ pub fn custo_de_refino(grau: Grau) -> (u32, u32) {
     }
 }
 
+/// Divisor do custo no JOGO. Os numeros de `custo_de_refino` sao os do MIR4
+/// (Comum +1 = 3.000 darksteel); com o rendimento da pedra daqui isso seriam
+/// centenas de coletas por tentativa. A estrutura fica, o valor cabe numa
+/// sessao (docs/ITENS.md). Mudou aqui, muda pra todos.
+pub const DIVISOR_DO_CUSTO_EM_JOGO: u32 = 10;
+
+/// (darksteel, cobre) de UMA tentativa no jogo.
+pub fn custo_em_jogo(grau: Grau) -> (u32, u32) {
+    let (d, c) = custo_de_refino(grau);
+    (d / DIVISOR_DO_CUSTO_EM_JOGO, c / DIVISOR_DO_CUSTO_EM_JOGO)
+}
+
+/// `ServerMessage::RefinoResultado::resultado`.
+pub mod resultado {
+    pub const SUBIU: u8 = 0;
+    /// Falhou na faixa segura: so' o material foi.
+    pub const FALHOU: u8 = 1;
+    /// Falhou do +6 em diante: a peca se foi.
+    pub const DESTRUIU: u8 = 2;
+    pub const NO_TOPO: u8 = 3;
+    pub const SEM_MATERIAL: u8 = 4;
+    pub const INVALIDO: u8 = 5;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refino {
     Subiu(u8),

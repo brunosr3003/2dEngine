@@ -12,6 +12,7 @@
 
 use macroquad::input::utils::{register_input_subscriber, repeat_all_miniquad_input};
 use macroquad::miniquad::{EventHandler, KeyCode, KeyMods};
+use std::collections::HashSet;
 
 /// Quanto uma tecla precisa ficar apertada antes de comecar a repetir.
 const ESPERA: f64 = 0.42;
@@ -34,6 +35,9 @@ pub struct Teclado {
     repetindo_desde: f64,
     ultima_repeticao: f64,
     agora: f64,
+    pressionadas: HashSet<KeyCode>,
+    tecla_atual: Option<KeyCode>,
+    tecla_repetida: bool,
 }
 
 impl Teclado {
@@ -45,6 +49,9 @@ impl Teclado {
             repetindo_desde: 0.0,
             ultima_repeticao: 0.0,
             agora: 0.0,
+            pressionadas: HashSet::new(),
+            tecla_atual: None,
+            tecla_repetida: false,
         }
     }
 
@@ -86,7 +93,15 @@ impl EventHandler for Ouvinte<'_> {
     fn update(&mut self) {}
     fn draw(&mut self) {}
 
+    fn key_down_event(&mut self, k: KeyCode, _m: KeyMods, repeticao: bool) {
+        // Alguns caminhos de entrada entregam key-down repetido sem marcar
+        // repeat. Uma nova digitacao exige soltar a tecla primeiro.
+        self.dono.tecla_repetida = !self.dono.pressionadas.insert(k) || repeticao;
+        self.dono.tecla_atual = Some(k);
+    }
+
     fn char_event(&mut self, c: char, _m: KeyMods, repeticao: bool) {
+        let repeticao = repeticao || self.dono.tecla_repetida;
         let agora = self.dono.agora;
         if self.dono.registra {
             eprintln!("[tecla] {c:?} repeticao={repeticao} t={agora:.3}");
@@ -95,6 +110,8 @@ impl EventHandler for Ouvinte<'_> {
             self.dono.repetindo_desde = agora;
             self.dono.ultima_repeticao = 0.0;
             self.dono.fila.push(c);
+            // Tambem cobre caracteres duplicados entre o mesmo down/up.
+            self.dono.tecla_repetida = self.dono.tecla_atual.is_some();
             return;
         }
         // Repeticao: so' depois da espera, e espacada.
@@ -108,8 +125,63 @@ impl EventHandler for Ouvinte<'_> {
         self.dono.fila.push(c);
     }
 
-    fn key_up_event(&mut self, _k: KeyCode, _m: KeyMods) {
+    fn key_up_event(&mut self, k: KeyCode, _m: KeyMods) {
+        self.dono.pressionadas.remove(&k);
         // Soltou: a proxima repeticao comeca a contar do zero.
-        self.dono.repetindo_desde = f64::MAX;
+        if self.dono.tecla_atual == Some(k) {
+            self.dono.repetindo_desde = f64::MAX;
+            self.dono.tecla_atual = None;
+            self.dono.tecla_repetida = false;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn teclado() -> Teclado {
+        Teclado {
+            inscricao: 0, registra: false, fila: Vec::new(), repetindo_desde: 0.0,
+            ultima_repeticao: 0.0, agora: 1.0, pressionadas: HashSet::new(),
+            tecla_atual: None, tecla_repetida: false,
+        }
+    }
+
+    #[test]
+    fn quatro_eventos_sem_repeat_digitam_uma_letra() {
+        let mut t = teclado();
+        let mut o = Ouvinte { dono: &mut t };
+        for _ in 0..4 {
+            o.key_down_event(KeyCode::A, KeyMods::default(), false);
+            o.char_event('a', KeyMods::default(), false);
+        }
+        assert_eq!(t.digitado(), &['a']);
+    }
+
+    #[test]
+    fn soltar_e_apertar_de_novo_preserva_letras_iguais() {
+        let mut t = teclado();
+        let mut o = Ouvinte { dono: &mut t };
+        for _ in 0..4 {
+            o.key_down_event(KeyCode::A, KeyMods::default(), false);
+            o.char_event('a', KeyMods::default(), false);
+            o.key_up_event(KeyCode::A, KeyMods::default());
+        }
+        assert_eq!(t.digitado(), &['a', 'a', 'a', 'a']);
+    }
+
+    #[test]
+    fn segurar_so_repete_depois_da_espera_e_com_intervalo() {
+        let mut t = teclado();
+        let mut o = Ouvinte { dono: &mut t };
+        o.key_down_event(KeyCode::A, KeyMods::default(), false);
+        o.char_event('a', KeyMods::default(), false);
+        for agora in [1.1, 1.2, 1.43, 1.44, 1.48] {
+            o.dono.agora = agora;
+            o.key_down_event(KeyCode::A, KeyMods::default(), false);
+            o.char_event('a', KeyMods::default(), false);
+        }
+        assert_eq!(t.digitado(), &['a', 'a', 'a']);
     }
 }

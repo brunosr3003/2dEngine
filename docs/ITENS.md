@@ -228,6 +228,10 @@ mesmo jeito que mob novo é dado.
 
 # De onde vem o equipamento (o fluxo real do MIR4)
 
+> Referência do MIR4 abaixo. No Tempest, a regra atual é **zero equipamento
+> de mobs ou chefes**; eles dão cobre, materiais e poucas poções.
+> Veja [a tabela do jogo](LOOT_DOS_MOBS.md).
+
 Pesquisado, não lembrado. **Matar mob não dá peça** — ou quase nunca.
 
 | fonte | o que dá |
@@ -293,3 +297,25 @@ A proposta é manter cada regra e escalar as três constantes que ligam esforço
 resultado — **darksteel por tentativa**, **rendimento de mineração** e **peças
 por craft** — até um Raro +7 caber em algumas horas em vez de 106. Continua
 sendo o mesmo jogo; só cabe numa sessão.
+
+# Estado real no código (forja e poção de XP)
+
+- **Refino ligado:** o `RefineItem` antigo (só ouro, até +15) saiu. A Forja usa
+  `shared::forja`: +1..+12, chance da tabela acima, até +5 falhar só gasta o
+  material, **do +6 em diante falhar destrói a peça**. Vale pra peça da bolsa
+  e pra peça vestida (`ClientMessage::Refinar { alvo }` → `RefinoResultado`;
+  vestida destruída sai do slot e os stats são recalculados).
+- **Custo por tentativa no jogo:** o de `custo_de_refino` dividido por 10
+  (`forja::DIVISOR_DO_CUSTO_EM_JOGO`) — Comum/Fino 300 darksteel + 100 cobre,
+  Raro 1.200 + 800, Épico 12.000 + 5.000. A Pedra de Melhoria ainda não existe
+  como item e não é cobrada.
+- **Onde se refina:** pelo botão Forja do HUD, de qualquer lugar, ou clicando no
+  Ferreiro da vila. Nenhuma tecla abre.
+- **Combinação de tier e encanto:** continuam só em `forja.rs`/documento.
+- **Poção de Experiência** (`item_id::XP_POTION` = 350, stack 20, sem compra,
+  venda 1): usar dá **+30% de XP de personagem por 1 hora**; beber outra com o
+  bônus ativo renova a hora cheia (não acumula %). O fim do bônus é um instante
+  absoluto salvo em `characters.xp_bonus_ate`, então sobrevive a relog,
+  reinício e troca de ilha. Aplica em todo XP que passa por `grant_xp`
+  (kill, missão); não mexe em XP de proficiência. Só sai de recompensa de
+  missão de área (ver MISSOES.md).

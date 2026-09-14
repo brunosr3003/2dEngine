@@ -6,6 +6,12 @@ celular com muitos mobs.
 
 ## O wire
 
+Ataques de mobs também prendem a entidade alvo durante a preparação.
+`MobAttackFx` informa a mira e o tempo ao cliente; a velocidade lateral não
+determina mais a direção da animação. Melee usa o alcance configurado do mob
+e posições X/Z no impacto. O disparo de humanoides atualiza a direção no
+momento de soltar o projétil; a colisão decide o dano.
+
 Era JSON. Com ~40 campos por entidade e o nome de cada campo repetido em toda
 entidade, um snapshot custava isto:
 
@@ -72,10 +78,10 @@ e, a cada tick, dispara o ataque sozinho enquanto o alvo estiver vivo e dentro
 do alcance da arma — `MELEE_RANGE` (1,8) ou `RANGED_ATTACK_RANGE` (9,0), o mesmo
 alcance que o Ranger inimigo já usava.
 
-A direção até o alvo alimenta o cone/projétil que já existia: **o pipeline de
-dano não mudou, só mudou quem aponta.** As 56 skills também seguem valendo — a
-tabela sempre foi de tab-target (`target_type`, `range_tiles`, `cast_time_s`,
-`cooldown_s`).
+A direção até o alvo alimenta os ataques. As 12 skills por arma estão
+definidas em [SKILLS.md](SKILLS.md), com desbloqueio por nível do personagem.
+Ataques básicos e skills aplicam dano no impacto; projéteis causam dano ao
+colidir. O servidor valida novamente a posição e a área ao resolver o acerto.
 
 `target_pos` é montado uma vez por tick, não por jogador: varrer o ECS por
 jogador seria O(jogadores × entidades), o oposto do que "aguentar muitos mobs"

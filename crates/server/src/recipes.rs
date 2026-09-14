@@ -58,6 +58,9 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     ).execute(pool).await?;
     sqlx::query("INSERT INTO recipes_version (id, version) VALUES (1, 1) ON CONFLICT DO NOTHING")
         .execute(pool).await?;
+    sqlx::query("ALTER TABLE craft_recipes ADD COLUMN IF NOT EXISTS nivel_min SMALLINT NOT NULL DEFAULT 1")
+        .execute(pool).await?;
+    seed_equipamento(pool).await?;
 
     // Seed IDEMPOTENTE: roda sempre. `seed_from_constants` usa
     // `ON CONFLICT (id) DO NOTHING`, então insere apenas ids NOVOS de
@@ -107,13 +110,13 @@ pub fn spawn_hot_reload_task(pool: PgPool) {
 
 /// Recarrega o cache do DB. Pode ser chamado externamente (futuro hot-reload).
 pub async fn reload(pool: &PgPool) -> anyhow::Result<()> {
-    let rows: Vec<(i32, String, i16, i16, JsonValue, i32, i32, i32, bool)> = sqlx::query_as(
-        "SELECT id, name, category, tier, inputs, output_item_id, output_qty, output_item_level, roll_instance \
+    let rows: Vec<(i32, String, i16, i16, JsonValue, i32, i32, i32, bool, i16)> = sqlx::query_as(
+        "SELECT id, name, category, tier, inputs, output_item_id, output_qty, output_item_level, roll_instance, nivel_min \
          FROM craft_recipes WHERE active = TRUE ORDER BY id"
     ).fetch_all(pool).await?;
 
     let mut recipes: Vec<CraftRecipeNet> = Vec::with_capacity(rows.len());
-    for (id, name, cat, tier, inputs_json, oid, oqty, olvl, roll) in rows {
+    for (id, name, cat, tier, inputs_json, oid, oqty, olvl, roll, nivel_min) in rows {
         let inputs: Vec<[u32; 2]> = serde_json::from_value(inputs_json)
             .unwrap_or_default();
         recipes.push(CraftRecipeNet {
@@ -127,6 +130,7 @@ pub async fn reload(pool: &PgPool) -> anyhow::Result<()> {
             output_qty:        oqty.max(1) as u32,
             output_item_level: olvl.max(0) as u16,
             roll_instance:     roll,
+            nivel_min:         nivel_min.max(1) as u16,
         });
     }
     *cell().write() = recipes;
@@ -176,6 +180,36 @@ async fn seed_from_constants(pool: &PgPool) -> anyhow::Result<()> {
         .bind(r.output_item_level as i32)
         .bind(r.roll_instance)
         .execute(pool).await?;
+    }
+    Ok(())
+}
+
+/// As receitas de equipamento (`shared::receitas`, ids 1000+). Idempotente:
+/// `ON CONFLICT DO NOTHING` — so' entra id novo; ajuste feito no banco fica.
+async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
+    let mut novas = 0u64;
+    for r in shared::receitas::receitas_de_equipamento() {
+        novas += sqlx::query(
+            "INSERT INTO craft_recipes (id, name, category, tier, inputs, \
+                output_item_id, output_qty, output_item_level, roll_instance, nivel_min) \
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) \
+             ON CONFLICT (id) DO NOTHING"
+        )
+        .bind(r.id as i32)
+        .bind(&r.name)
+        .bind(r.category as i16)
+        .bind(r.tier as i16)
+        .bind(serde_json::to_value(&r.inputs)?)
+        .bind(r.output_item_id as i32)
+        .bind(r.output_qty as i32)
+        .bind(r.output_item_level as i32)
+        .bind(r.roll_instance)
+        .bind(r.nivel_min as i16)
+        .execute(pool).await?
+        .rows_affected();
+    }
+    if novas > 0 {
+        tracing::info!("[recipes] {novas} receitas de equipamento semeadas");
     }
     Ok(())
 }

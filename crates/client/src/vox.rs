@@ -891,4 +891,62 @@ mod testes_orientacao {
             assert!(pega.iter().all(|v| *v > 0.0));
         }
     }
+
+    /// Todo NPC da vila tem as dez pecas do corpo, cada malha dentro do lote
+    /// da macroquad, e custa no maximo o triplo de um humanoide de mob — o
+    /// detalhe mora no chapeu e na mao, nao em triangulo.
+    #[test]
+    fn todo_npc_tem_as_dez_pecas_e_cabe_no_lote() {
+        let tris = |rel: &str| -> usize {
+            parse_nomeado(&arquivo(&format!("{rel}.vox"))).unwrap().iter()
+                .filter(|(n, _)| !n.is_empty())
+                .flat_map(|(_, m)| mesh_na_origem(m, 1.0, [0.0; 3]))
+                .map(|m| m.indices.len() / 3)
+                .sum()
+        };
+        let base = tris("humanoides/mago");
+        let corpo: Vec<&str> = crate::rig::PECAS.iter().map(|p| p.0).filter(|n| *n != "cabelo").collect();
+        for nome in crate::render3d::MODELOS_DE_NPC {
+            let pecas = parse_nomeado(&arquivo(&format!("{nome}.vox"))).unwrap();
+            for p in &corpo {
+                assert!(pecas.iter().any(|(n, _)| n == p), "{nome}: falta a peca {p}");
+            }
+            for (peca, m) in &pecas {
+                for mm in mesh_na_origem(m, 1.0, [0.0; 3]) {
+                    assert!(mm.indices.len() <= 5_000, "{nome}/{peca}: {} indices", mm.indices.len());
+                }
+            }
+            let t = tris(nome);
+            println!("{nome:22} {t} triangulos (mago {base})");
+            assert!(t <= base * 3, "{nome}: {t} triangulos, mais que o triplo do mago ({base})");
+        }
+    }
+
+    /// Todo papel — os que existem, o de missoes e um que ainda nao existe —
+    /// sai com um modelo que esta' na lista de carga e no disco.
+    #[test]
+    fn todo_papel_de_npc_tem_modelo() {
+        for papel in (0u8..=40).chain([127, 255]) {
+            for id in [0u64, 1, 2, 7] {
+                let nome = crate::render3d::rig_do_npc(papel, id);
+                assert!(crate::render3d::MODELOS_DE_NPC.contains(&nome), "papel {papel}: {nome} fora da lista");
+                let _ = arquivo(&format!("{nome}.vox"));
+            }
+        }
+        use shared::construcao::Papel;
+        assert_eq!(crate::render3d::rig_do_npc(Papel::Alquimista as u8, 0), "npcs/alquimista");
+        assert_eq!(crate::render3d::rig_do_npc(Papel::Estaleiro as u8, 0), "npcs/capitao");
+        assert_eq!(crate::render3d::rig_do_npc(crate::render3d::PAPEL_MISSOES, 0), "npcs/mestre_missoes");
+        // Morador varia pelo id.
+        let casa = Papel::Casa as u8;
+        let variados: std::collections::HashSet<_> = (0..3).map(|id| crate::render3d::rig_do_npc(casa, id)).collect();
+        assert_eq!(variados.len(), 3);
+    }
+
+    /// `PAPEL_MISSOES` e' o seguinte a `Alquimista`: e' la' que a variante
+    /// `Papel::Missoes` entra no enum.
+    #[test]
+    fn o_papel_de_missoes_e_o_seguinte() {
+        assert_eq!(crate::render3d::PAPEL_MISSOES, shared::construcao::Papel::Alquimista as u8 + 1);
+    }
 }

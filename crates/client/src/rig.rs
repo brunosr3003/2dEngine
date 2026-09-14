@@ -251,7 +251,60 @@ pub fn matrizes(p: &Pose, base: Mat4, voxel: f32) -> [Mat4; N] {
         let desloca = mapa(*piv, voxel) - mapa(pp, voxel);
         m[i] = mp * Mat4::from_translation(desloca) * Mat4::from_quat(p.rot[i]);
     }
+    if p.armado && p.na_mao && p.conjunto == KATANA {
+        segura_katana(p, &mut m, voxel);
+    }
     m
+}
+
+/// Resolve os dois bracos depois das molas: as maos continuam no mesmo cabo
+/// mesmo quando o golpe, a locomocao e o impacto recebido se misturam.
+fn segura_katana(p: &Pose, m: &mut [Mat4; N], voxel: f32) {
+    let torso = m[TORSO];
+    let local = torso.inverse();
+    let ombro = |i: usize| mapa(PECAS[i].2, voxel) - mapa(PECAS[TORSO].2, voxel);
+    let sd = ombro(BRACO_D);
+    let se = ombro(BRACO_E);
+    let direcao = (p.rot[BRACO_D] * p.rot[ANTEBRACO_D] * p.punho[0]) * Vec3::Z;
+    let separacao = direcao * (5.0 * voxel);
+    let mut direita = local.transform_point3(m[ANTEBRACO_D].transform_point3(
+        mapa(MAO_D, voxel) - mapa(PECAS[ANTEBRACO_D].2, voxel),
+    ));
+    // A direita fica perto da guarda e a esquerda junto ao pomo. Trazemos
+    // o cabo para o alcance dos DOIS ombros, sem esticar os membros.
+    let alcance = 13.4 * voxel;
+    for _ in 0..64 {
+        for centro in [sd, se + separacao] {
+            let delta = direita - centro;
+            if delta.length() > alcance {
+                direita = centro + delta.normalize() * alcance;
+            }
+        }
+        if direita.distance(sd) <= alcance + voxel * 0.0001 {
+            break;
+        }
+    }
+    for (braco, antebraco, origem, alvo, lado) in [
+        (BRACO_D, ANTEBRACO_D, sd, direita, -1.0),
+        (BRACO_E, ANTEBRACO_E, se, direita - separacao, 1.0),
+    ] {
+        let delta = alvo - origem;
+        let distancia = delta.length();
+        let eixo = delta / distancia;
+        let superior = 6.0 * voxel;
+        let inferior = 7.5 * voxel;
+        let ao_longo = (superior * superior - inferior * inferior + distancia * distancia)
+            / (2.0 * distancia);
+        let altura = (superior * superior - ao_longo * ao_longo).max(0.0).sqrt();
+        // Cotovelos abertos para os lados e baixos, fora do peito.
+        let polo = vec3(lado, -0.5, -0.25);
+        let dobra = (polo - eixo * polo.dot(eixo)).normalize();
+        let cotovelo = origem + eixo * ao_longo + dobra * altura;
+        let superior_rot = Quat::from_rotation_arc(-Vec3::Y, (cotovelo - origem).normalize());
+        let inferior_rot = Quat::from_rotation_arc(-Vec3::Y, (alvo - cotovelo).normalize());
+        m[braco] = torso * Mat4::from_translation(origem) * Mat4::from_quat(superior_rot);
+        m[antebraco] = torso * Mat4::from_translation(cotovelo) * Mat4::from_quat(inferior_rot);
+    }
 }
 
 /// A pose do quadro: a locomocao e, por cima dela, o combate.
@@ -289,6 +342,8 @@ pub struct Combate {
     pub sacada: f32,
     /// Golpe do combo em curso: (passo 0-2, segundos desde o comeco).
     pub golpe: Option<(u8, f32)>,
+    /// Skill confirmada: id, tempo e instante de impacto.
+    pub skill: Option<(u32, f32, f32)>,
     /// O golpe que este interrompeu, CONGELADO no instante da troca: o novo
     /// parte de onde o anterior estava, entao a troca nao estala.
     pub golpe_ant: Option<(u8, f32)>,
@@ -301,8 +356,8 @@ pub struct Combate {
 /// Quanto tempo sacar (ou guardar) leva.
 pub const TEMPO_DE_SACAR: f32 = 0.4;
 
-const PREPARA: f32 = 0.08;
-const CORTA: f32 = 0.11;
+const PREPARA: f32 = shared::PLAYER_ATTACK_PREPARE_S;
+const CORTA: f32 = shared::PLAYER_ATTACK_CUT_S;
 const SEGURA: f32 = 0.04;
 const VOLTA: f32 = 0.24;
 /// Um golpe inteiro. A cadencia do ataque e' 0,25 s: o seguinte chega no meio
@@ -415,11 +470,11 @@ const ESTILO_ESPADA: Estilo = Estilo {
     ],
 };
 
-/// Katana: postura baixa, a lamina a' frente na diagonal. Golpes: diagonal
+/// Katana: guarda firme, a lamina erguida a' frente na diagonal. Golpes: diagonal
 /// descendo do ombro direito (kesa-giri), diagonal subindo de volta
 /// (gyaku-kesa) e a estocada com o passo longo (tsuki).
 const ESTILO_KATANA: Estilo = Estilo {
-    guarda: ch(-0.25, 0.08, br(-0.2, 0.6, 1.15), br(0.35, 0.3, 0.7), la(-0.3, 1.25, PI), SEM, 0.0, 0.0, -0.9),
+    guarda: ch(-0.15, 0.03, br(-0.1, 0.75, 1.2), br(0.35, 0.3, 0.7), la(-0.1, 2.15, PI), SEM, 0.0, 0.0, -0.6),
     // a mao direita no cabo, na boca da bainha; a esquerda segura a bainha
     sacando: ch(0.35, 0.05, br(0.95, 0.45, 1.1), br(0.55, 0.3, 0.8), la(0.15, -1.12, 0.0), SEM, 0.0, 0.0, -0.4),
     golpes: [
@@ -632,16 +687,82 @@ fn guarda_viva(est: &Estilo, e: &Entrada) -> Chave {
     c
 }
 
+/// Cada habilidade tem antecipacao, impacto e retorno proprios; o relogio
+/// vem do mesmo catalogo que agenda o efeito no servidor.
+fn chave_da_skill(est: &Estilo, id: u32, t: f32, impacto: f32) -> Chave {
+    if t >= impacto + shared::skills::RECUPERACAO_S { return est.guarda; }
+    let mut prep = est.guarda;
+    let mut hit = est.guarda;
+    match id {
+        1 => { // investida: escudo firme e peso para a frente
+            prep.e = br(-0.12, 1.05, 1.4); prep.d = br(-0.6, 0.65, 1.5);
+            prep.inclina = 0.2; prep.agacha = -1.5; prep.escudo = 0.0;
+            hit = prep; hit.e = br(0.0, 1.45, 0.25); hit.inclina = 0.38; hit.avanco = 0.9; hit.agacha = -2.1;
+        }
+        2 => { prep = est.golpes[0][0]; prep.torce = -0.85; prep.agacha = -0.8;
+            hit = est.golpes[0][1]; hit.torce = 0.85; hit.avanco = 0.8; hit.agacha = -1.8; }
+        3 => { prep.e = br(-0.25, 0.7, 1.8); prep.agacha = -1.2;
+            hit.e = br(0.0, 1.3, 0.8); hit.d = br(-0.25, 0.9, 1.4); hit.agacha = -2.0; hit.escudo = 0.0; }
+        4 => { prep = est.golpes[1][0]; prep.torce = 0.65; prep.agacha = -1.6;
+            hit = est.golpes[1][1]; hit.torce = -0.65; hit.avanco = 0.95; hit.lamina = la(-0.75, 1.6, -MEIA_VOLTA); }
+        5 => {
+            prep = est.golpes[0][0]; prep.torce = -0.65; prep.agacha = -0.9;
+            hit = est.golpes[1][1]; hit.torce = -0.7; hit.avanco = 0.7;
+            // Duas diagonais ligadas pelo quadril; nenhuma volta instantanea do tronco.
+            let meio = est.golpes[0][1];
+            if t < impacto * 0.34 { return mistura(&est.guarda, &prep, suave(t / (impacto * 0.34))); }
+            if t < impacto * 0.65 { return mistura(&prep, &meio, suave((t / impacto - 0.34) / 0.31)); }
+            if t < impacto { return mistura(&meio, &hit, suave((t / impacto - 0.65) / 0.35)); }
+        }
+        6 => { prep = est.golpes[0][0]; prep.d = br(-0.15, 2.6, 0.9); prep.lamina = la(0.0, 2.9, PI);
+            hit = est.golpes[0][1]; hit.torce = 0.05; hit.d = br(0.0, 1.15, 0.2); hit.lamina = la(0.0, 1.05, PI); hit.avanco = 0.8; }
+        7 | 8 => {
+            prep = est.golpes[if id == 7 { 0 } else { 2 }][0];
+            prep.agacha = -0.8; prep.torce = if id == 7 { -0.25 } else { 0.0 };
+            hit = prep;
+            // O cano aponta ao alvo no disparo; o coice acontece DEPOIS.
+            if t >= impacto {
+                let dt = t - impacto;
+                let coice = (dt / 0.045).min(1.0) * (1.0 - dt / shared::skills::RECUPERACAO_S).max(0.0);
+                hit.d.elevacao += coice * 0.42; hit.lamina.elevacao += coice * 0.35;
+                if id == 8 { hit.e.elevacao += coice * 0.38; hit.arma_e.elevacao += coice * 0.35; }
+                hit.inclina -= coice * 0.12; hit.agacha -= coice * 0.7;
+                return mistura(&hit, &est.guarda, suave((dt / shared::skills::RECUPERACAO_S).clamp(0.0, 1.0)));
+            }
+        }
+        9 => { prep.d = br(-0.4, 2.45, 1.4); prep.e = br(0.2, 0.55, 1.3); prep.torce = -0.35;
+            hit.d = br(0.05, 1.3, 0.12); hit.torce = 0.25; hit.inclina = 0.18; hit.avanco = 0.6;
+            let solta = impacto * 0.45;
+            if t < solta * 0.6 { return mistura(&est.guarda, &prep, suave(t / (solta * 0.6))); }
+            if t < solta { return mistura(&prep, &hit, suave((t / solta - 0.6) / 0.4)); }
+            return mistura(&hit, &est.guarda, suave(((t - solta) / (impacto + shared::skills::RECUPERACAO_S - solta)).clamp(0.0, 1.0)));
+        }
+        10 => { prep.d = br(0.35, 1.15, 1.7); prep.e = br(-0.35, 1.15, 1.7); prep.agacha = -0.7;
+            hit.d = br(-0.35, 1.75, 0.8); hit.e = br(0.35, 1.75, 0.8); hit.inclina = -0.08; }
+        11 => { prep.d = br(0.35, 1.05, 1.8); prep.e = br(-0.35, 1.05, 1.8); prep.agacha = -1.1;
+            hit.d = br(-1.0, 1.5, 0.3); hit.e = br(1.0, 1.5, 0.3); hit.agacha = -0.4; }
+        12 => { prep.d = br(-0.15, 2.75, 0.4); prep.e = br(0.25, 1.35, 1.5); prep.inclina = -0.12;
+            hit.d = br(0.0, 1.3, 0.12); hit.e = br(0.2, 1.0, 0.7); hit.inclina = 0.25; hit.agacha = -1.8; hit.avanco = 0.7; }
+        _ => return est.guarda,
+    }
+    let prepara = (impacto - 0.14).max(0.06);
+    if t < prepara { mistura(&est.guarda, &prep, suave((t / prepara).clamp(0.0, 1.0))) }
+    else if t < impacto { mistura(&prep, &hit, suave(((t - prepara) / (impacto - prepara)).clamp(0.0, 1.0))) }
+    else { mistura(&hit, &est.guarda, suave(((t - impacto) / shared::skills::RECUPERACAO_S).clamp(0.0, 1.0))) }
+}
+
 fn arma_na_mao(p: &mut Pose, e: &Entrada) {
     let c = &e.combate;
     let Some(est) = estilo(c.conjunto) else { return };
     p.armado = true;
     p.conjunto = c.conjunto;
     let sacada = c.sacada.clamp(0.0, 1.0);
-    p.na_mao = c.golpe.is_some() || sacada >= 0.5;
+    p.na_mao = c.skill.is_some() || c.golpe.is_some() || sacada >= 0.5;
 
     // A chave do quadro e o quanto ela manda sobre a locomocao.
-    let (chave, peso_bracos, peso_tronco) = match c.golpe {
+    let (chave, peso_bracos, peso_tronco) = if let Some((id, t, impacto)) = c.skill {
+        (chave_da_skill(est, id, t, impacto), 1.0, 1.0)
+    } else { match c.golpe {
         Some((passo, t)) => {
             let desde = match c.golpe_ant {
                 Some((pa, ta)) => chave_do_golpe(est, pa, ta, &est.guarda),
@@ -656,7 +777,7 @@ fn arma_na_mao(p: &mut Pose, e: &Entrada) {
             let g = suave(sacada) * (1.0 - 0.3 * e.correr.clamp(0.0, 1.0));
             (mistura(&guarda_viva(est, e), &est.sacando, bump), (0.85 * g).max(bump), 0.6 * g)
         }
-    };
+    }};
     if peso_bracos <= 0.0 && !p.na_mao {
         return;
     }
@@ -804,7 +925,14 @@ pub fn armas(p: &Pose, m: &[Mat4; N], voxel: f32) -> Vec<(&'static str, Mat4)> {
         }
         KATANA => {
             let bainha = no_torso(BAINHA, orienta_lamina(&ESTILO_KATANA.sacando.lamina));
-            let katana = if p.na_mao { mao_d } else { pra_fora(bainha, 5.0) };
+            let katana = if p.na_mao {
+                let pega = (m[ANTEBRACO_D] * encaixe(MAO_D, ANTEBRACO_D)).transform_point3(Vec3::ZERO);
+                let orientacao = p.rot[BRACO_D] * p.rot[ANTEBRACO_D] * p.punho[0];
+                let local = m[TORSO].inverse().transform_point3(pega);
+                // O marcador do modelo fica no voxel 3 do cabo; a direita
+                // segura no 6, a esquerda no 1 (cinco voxels entre as maos).
+                pra_fora(m[TORSO] * Mat4::from_translation(local) * Mat4::from_quat(orientacao), 3.0)
+            } else { pra_fora(bainha, 5.0) };
             vec![("bainha", bainha), ("katana", katana)]
         }
         PISTOLAS => {
@@ -822,6 +950,19 @@ pub fn armas(p: &Pose, m: &[Mat4; N], voxel: f32) -> Vec<(&'static str, Mat4)> {
 pub fn pulsos(m: &[Mat4; N], voxel: f32) -> [Mat4; 2] {
     let em = |pt: [f32; 3], pai: usize| m[pai] * Mat4::from_translation(mapa(pt, voxel) - mapa(PECAS[pai].2, voxel));
     [em(PULSO_D, ANTEBRACO_D), em(PULSO_E, ANTEBRACO_E)]
+}
+
+/// Arco na esquerda; direita puxa a corda ate o rosto e solta no disparo.
+pub fn aplica_arqueiro(p: &mut Pose, golpe: Option<f32>) {
+    p.armado = false;
+    p.na_mao = false;
+    let puxar = golpe.map_or(0.2, |t| if t < IMPACTO { suave((t / IMPACTO).clamp(0.0, 1.0)) }
+        else { 1.0 - suave(((t - IMPACTO) / 0.16).clamp(0.0, 1.0)) });
+    p.rot[TORSO] = Quat::from_rotation_y(-0.3);
+    p.rot[BRACO_E] = ombro(&br(0.05, 1.45, 0.15));
+    p.rot[ANTEBRACO_E] = frente(0.15);
+    p.rot[BRACO_D] = ombro(&br(-0.5 - 0.35 * puxar, 1.45, 0.0));
+    p.rot[ANTEBRACO_D] = frente(0.3 + 1.65 * puxar);
 }
 
 /// Onde fica a palma de cada mao (direita, esquerda), no mundo: e' ali que o
@@ -1119,6 +1260,77 @@ mod testes {
         let p = pose(e);
         let m = matrizes(&p, Mat4::IDENTITY, 1.0);
         armas(&p, &m, 1.0).into_iter().filter(|(n, _)| *n == nome).nth(i).expect(nome).1
+    }
+
+    #[test]
+    fn katana_fica_nas_duas_maos_durante_guarda_e_combo() {
+        for voxel in [1.0, 0.04] {
+            let mut molas = Molas::default();
+            for quadro in 0..240 {
+                let mut e = com_conjunto(KATANA, if quadro < 60 { None } else {
+                    Some((((quadro - 60) / 60) as u8, ((quadro - 60) % 60) as f32 / 60.0))
+                }, 1.0);
+                e.tempo = quadro as f32 / 60.0;
+                e.fase = e.tempo * 8.0;
+                e.andar = 1.0;
+                e.correr = 1.0;
+                let mut p = pose(&e);
+                molas.segue(&mut p, 1.0 / 60.0);
+                let base = Mat4::from_translation(vec3(3.0, 2.0, -4.0))
+                    * Mat4::from_rotation_y(0.8);
+                let m = matrizes(&p, base, voxel);
+                let katana = armas(&p, &m, voxel).into_iter().find(|(n, _)| *n == "katana").unwrap().1;
+                for (braco, antebraco, mao, pega) in [
+                    (BRACO_D, ANTEBRACO_D, MAO_D, 3.0),
+                    (BRACO_E, ANTEBRACO_E, MAO_E, -2.0),
+                ] {
+                    let pos = m[antebraco].transform_point3(mapa(mao, voxel) - mapa(PECAS[antebraco].2, voxel));
+                    let cabo = katana.transform_point3(Vec3::Z * pega * voxel);
+                    assert!(pos.distance(cabo) < 0.01 * voxel, "mao solta no quadro {quadro}: {pos:?} / {cabo:?}");
+                    let ombro = m[braco].transform_point3(Vec3::ZERO);
+                    let cotovelo = m[antebraco].transform_point3(Vec3::ZERO);
+                    assert!((ombro.distance(cotovelo) / voxel - 6.0).abs() < 0.01);
+                    assert!((cotovelo.distance(pos) / voxel - 7.5).abs() < 0.01);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn skills_tem_pose_finita_e_katana_mantem_as_duas_maos_no_cabo() {
+        for skill in shared::skills::playtest() {
+            let mut molas = Molas::default();
+            for quadro in 0..120 {
+                let t = quadro as f32 / 120.0 * (skill.impacto_em() + shared::skills::RECUPERACAO_S);
+                let mut e = com_conjunto(skill.conjunto as u8, None, 1.0);
+                e.combate.skill = Some((skill.id, t, skill.impacto_em()));
+                let mut p = pose(&e);
+                molas.segue(&mut p, 1.0 / 120.0);
+                let m = matrizes(&p, Mat4::IDENTITY, 1.0);
+                assert!(m.iter().all(|mat| mat.is_finite()), "{} quadro {quadro}", skill.nome);
+                if skill.conjunto == shared::skills::Conjunto::Katana {
+                    let k = armas(&p, &m, 1.0).into_iter().find(|(n, _)| *n == "katana").unwrap().1;
+                    for (i, mao, z) in [(ANTEBRACO_D, MAO_D, 3.0), (ANTEBRACO_E, MAO_E, -2.0)] {
+                        let pos = m[i].transform_point3(mapa(mao, 1.0) - mapa(PECAS[i].2, 1.0));
+                        assert!(pos.distance(k.transform_point3(Vec3::Z * z)) < 0.01, "{}: mao solta", skill.nome);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn skills_voltam_a_guarda_sem_torcer_o_tronco_uma_volta_inteira() {
+        for skill in shared::skills::playtest() {
+            let est = estilo(skill.conjunto as u8).unwrap();
+            for i in 0..=120 {
+                let t = i as f32 / 120.0 * (skill.impacto_em() + shared::skills::RECUPERACAO_S);
+                let c = chave_da_skill(est,skill.id,t,skill.impacto_em());
+                assert!(c.torce.abs() < 1.2, "{} torce demais",skill.nome);
+            }
+            let c = chave_da_skill(est,skill.id,skill.impacto_em() + shared::skills::RECUPERACAO_S + 0.001,skill.impacto_em());
+            assert_eq!(c,est.guarda,"{} nao voltou a guarda",skill.nome);
+        }
     }
 
     #[test]

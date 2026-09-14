@@ -1,23 +1,14 @@
 //! Skills: doze, todas ativas, três por conjunto de arma.
 //!
-//! Substitui um sistema de 64 skills com oito árvores, ranks, afinidades e
-//! passivas. O que sobrou é o que se vê acontecer na tela.
-//!
-//! **Passiva não existe.** Vinte das sessenta e quatro eram — número que sobe
-//! sem nada acontecer. Num jogo de vista alta, o que o outro jogador vê você
-//! fazer é metade do combate, e uma passiva não é vista por ninguém.
-//!
-//! **Não se APRENDE skill.** Ela vem com o conjunto de arma que está na mão, e
-//! a ordem dela destrava com a proficiência daquele conjunto. Trocar de arma é
-//! trocar de classe — então trocar de arma é trocar de skills, e não haveria
-//! sentido em decorar as de uma arma que não se usa.
+//! As skills acompanham a arma equipada e sao liberadas pelo nivel do
+//! personagem. Nao gastam pontos e nao dependem da proficiencia.
 
 use serde::{Deserialize, Serialize};
 
 /// O conjunto de arma. É também a proficiência: uma árvore por conjunto.
 ///
 /// A arma é o PAR — principal mais secundária amarrada a ela. Não existe
-/// offhand livre nem "duas mãos".
+/// offhand livre. A katana e' empunhada com as duas maos.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Conjunto {
@@ -118,20 +109,16 @@ impl Conjunto {
     }
 }
 
-/// A forma do efeito — e, por consequência, o gesto que o corpo faz.
-///
-/// É por AQUI que a animação é dimensionada: o gesto sai da forma, não da
-/// skill. Doze skills em cinco formas são cinco gestos, e a diferença entre
-/// duas skills da mesma forma é velocidade e efeito visual.
+/// A forma geometrica do efeito. Cada uma das doze skills tem gesto proprio.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Forma {
     /// Em si mesmo: cura, escudo, impulso.
     EmSi,
-    /// Projétil na direção da mira.
+    /// Disparo vinculado ao alvo selecionado.
     Projetil,
     /// Cone à frente.
     Cone,
-    /// Círculo num ponto do chão.
+    /// Círculo centrado na entidade alvo.
     Circulo,
     /// Linha reta do corpo até o alcance.
     Linha,
@@ -177,17 +164,55 @@ pub struct Skill {
     pub raio: f32,
 }
 
-/// Nível de proficiência que destrava cada ordem.
+/// Nivel do personagem que destrava cada ordem.
 ///
 /// A primeira vem junto com a arma: pegar o conjunto e não ter o que apertar
 /// seria uma arma sem verbo.
-pub const DESTRAVA_EM: [u32; 3] = [1, 10, 25];
+pub const DESTRAVA_EM: [u32; 3] = [1, 5, 10];
+pub const RECUPERACAO_S: f32 = 0.36;
 
 impl Skill {
-    /// Esta skill está disponível com este nível de proficiência?
-    pub fn destravada(&self, nivel_da_proficiencia: u32) -> bool {
-        let i = (self.ordem.max(1) - 1).min(2) as usize;
-        nivel_da_proficiencia >= DESTRAVA_EM[i]
+    /// Skills ofensivas exigem uma entidade selecionada; suporte usa o conjurador.
+    pub fn alcance_alvo(&self) -> f32 {
+        if self.alcance > 0.0 { self.alcance } else { self.raio }
+    }
+
+    pub fn nivel_necessario(&self) -> u32 {
+        DESTRAVA_EM.get(self.ordem.wrapping_sub(1) as usize).copied().unwrap_or(u32::MAX)
+    }
+
+    /// Inicio do efeito depois da antecipacao e da conjuracao, em segundos.
+    pub fn impacto_em(&self) -> f32 {
+        self.conjuracao_s.max(0.0) + match self.id {
+            1 => 0.52, 2 => 0.48, 3 => 0.42, 4 => 0.42, 5 => 0.64,
+            6 => 0.38, 7 => 0.34, 8 => 0.46, 9 => 0.48, 10 => 0.55,
+            11 => 0.35, 12 => 0.38, _ => crate::PLAYER_ATTACK_IMPACT_S,
+        }
+    }
+
+    pub fn duracao_efeito(&self) -> f32 { if self.id == 3 { 5.0 } else { 0.65 } }
+
+    pub fn descricao(&self) -> &'static str {
+        match self.id {
+            1 => "Avança até o alvo e atinge inimigos no caminho.",
+            2 => "Corte amplo voltado para o alvo selecionado.",
+            3 => "Reduz o dano recebido em 50% por 5 segundos.",
+            4 => "Saca a katana e corta em linha até o alvo.",
+            5 => "Atinge o alvo próximo e os inimigos ao redor dele.",
+            6 => "Uma onda cortante atinge o alvo selecionado.",
+            7 => "Dispara um tiro poderoso no alvo selecionado.",
+            8 => "Rajada em leque voltada para o alvo selecionado.",
+            9 => "Arremessa um barril que explode no alvo.",
+            10 => "Restaura a própria vida.",
+            11 => "Cura você e aliados ao seu redor.",
+            12 => "Impacto mágico no alvo e nos inimigos próximos.",
+            _ => "",
+        }
+    }
+
+    /// Esta skill está disponível com este nivel de personagem?
+    pub fn destravada(&self, nivel_do_personagem: u32) -> bool {
+        (1..=3).contains(&self.ordem) && nivel_do_personagem >= self.nivel_necessario()
     }
 }
 
@@ -231,4 +256,50 @@ mod testes {
             assert_eq!(Forma::de_chave(f.chave()), Some(f));
         }
     }
+
+    #[test]
+    fn catalogo_tem_tres_skills_por_arma_e_desbloqueios_validos() {
+        let todas = playtest();
+        assert_eq!(todas.len(), 12);
+        for conjunto in Conjunto::TODOS {
+            let skills: Vec<_> = todas.iter().filter(|s| s.conjunto == conjunto).collect();
+            assert_eq!(skills.len(), 3);
+            for (i, skill) in skills.iter().enumerate() {
+                assert_eq!(skill.ordem, i as u8 + 1);
+                let nivel = DESTRAVA_EM[i];
+                assert!(!skill.destravada(nivel - 1));
+                assert!(skill.destravada(nivel));
+                assert!(skill.impacto_em() > skill.conjuracao_s);
+            }
+        }
+        let mut invalida = todas[0].clone();
+        for ordem in [0, 4, 255] { invalida.ordem = ordem; assert!(!invalida.destravada(100)); }
+    }
+}
+
+/// Catalogo inicial unico, tambem usado para semear o banco.
+pub fn playtest() -> Vec<Skill> {
+    let linhas: [(u32, &str, &str, u8, &str, i32, f32, f32, i32, i32, f32, f32); 12] = [
+        // ── espada e escudo: segurar a linha ──
+        (1, "Investida",   "espada_escudo", 1, "linha",   10, 8.0,  0.0, 25,  0, 6.0, 1.0),
+        (2, "Golpe Largo", "espada_escudo", 2, "cone",    15, 6.0,  0.0, 35,  0, 3.5, 0.0),
+        (3, "Muralha",     "espada_escudo", 3, "em_si",   25, 20.0, 0.0,  0,  0, 0.0, 0.0),
+        // ── katana: corte rapido ──
+        (4, "Saque",       "katana", 1, "linha",    8, 6.0,  0.0, 30,  0, 4.0, 0.8),
+        (5, "Dança",       "katana", 2, "circulo", 18, 10.0, 0.0, 28,  0, 0.0, 2.5),
+        (6, "Vento Cortante","katana",3,"projetil",22, 12.0, 0.3, 45,  0, 9.0, 0.0),
+        // ── duas pistolas: distancia ──
+        (7, "Tiro Certeiro","pistolas", 1, "projetil", 8, 4.0,  0.0, 28, 0, 11.0, 0.0),
+        (8, "Rajada",       "pistolas", 2, "cone",    16, 9.0,  0.0, 20, 0,  6.0, 0.0),
+        (9, "Barril",       "pistolas", 3, "circulo", 24, 16.0, 0.4, 50, 0,  8.0, 3.0),
+        // ── anel magico: cura e magia ──
+        (10, "Bênção",     "anel_magico", 1, "em_si",   14, 10.0, 0.0,  0, 40, 0.0, 0.0),
+        (11, "Aura",       "anel_magico", 2, "circulo", 26, 18.0, 0.5,  0, 30, 7.0, 4.0),
+        (12, "Julgamento", "anel_magico", 3, "circulo", 30, 14.0, 0.6, 55,  0, 9.0, 3.0),
+    ];
+    linhas.into_iter().map(|l| Skill {
+        id: l.0, nome: l.1.into(), conjunto: Conjunto::de_chave(l.2).unwrap(),
+        ordem: l.3, forma: Forma::de_chave(l.4).unwrap(), custo_mp: l.5,
+        espera_s: l.6, conjuracao_s: l.7, dano: l.8, cura: l.9, alcance: l.10, raio: l.11,
+    }).collect()
 }
