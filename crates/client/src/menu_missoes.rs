@@ -134,13 +134,14 @@ fn profundidade(d: &QuestDef) -> u32 {
 }
 
 /// As missoes do menu, por ilha e na ordem da cadeia. As do mapa de tiles
-/// antigo (sem giver nas ilhas) ficam FORA: nao ha' como fazer nenhuma.
+/// antigo (sem giver nas ilhas) ficam FORA: nao ha' como fazer nenhuma. As
+/// DIARIAS tambem: tem painel proprio (`diarias`).
 pub fn todas() -> Vec<&'static QuestDef> {
-    let mut v: Vec<&'static QuestDef> = QUESTS.iter().filter(|d| zona_da_missao(d.id).is_some()).collect();
+    let mut v: Vec<&'static QuestDef> =
+        QUESTS.iter().filter(|d| !d.daily && zona_da_missao(d.id).is_some()).collect();
     v.sort_by(|a, b| {
         zona_da_missao(a.id)
             .cmp(&zona_da_missao(b.id))
-            .then(a.daily.cmp(&b.daily))
             .then(profundidade(a).cmp(&profundidade(b)))
             .then(a.id.cmp(&b.id))
     });
@@ -207,7 +208,7 @@ pub fn lista_do_menu(log: &[QuestNet]) -> Vec<&'static QuestDef> {
 fn grupo(d: &QuestDef) -> String {
     match historia::indice(d.id) {
         Some(i) => format!("História · {}", historia::nome_do_capitulo(i)),
-        None => format!("{:?}{}", zona_da_missao(d.id), d.daily),
+        None => format!("{:?}", zona_da_missao(d.id)),
     }
 }
 
@@ -255,7 +256,7 @@ impl MenuMissoes {
         let mouse = Vec2::from(mouse_position());
         let lista = lista_do_menu(c.log);
         // Altura total pra limitar a rolagem.
-        // Grupo = capitulo da historia, ou ilha (com as diarias num proprio).
+        // Grupo = capitulo da historia, ou ilha.
         let mut grupos = 0;
         let mut ultima: Option<String> = None;
         for d in &lista {
@@ -289,11 +290,7 @@ impl MenuMissoes {
                     } else {
                         let aqui = z == c.zona;
                         let ilha = z.map_or_else(|| "?".into(), nome_da_zona);
-                        let t = if d.daily {
-                            format!("{ilha} · Diárias · reset em {}", reset_em(c.agora_unix))
-                        } else {
-                            format!("{ilha}{}", if aqui { " · você está aqui" } else { "" })
-                        };
+                        let t = format!("{ilha}{}", if aqui { " · você está aqui" } else { "" });
                         (t, aqui)
                     };
                     estilo::texto(area.x + 6.0, y + 21.0, &t, 15, if destaque { estilo::OURO } else { estilo::SUAVE });
@@ -364,7 +361,10 @@ impl MenuMissoes {
 }
 
 /// Cadeado: arco em cima e corpo.
-fn cadeado(c: Vec2, s: f32, cor: Color) {
+pub(crate) fn cadeado(c: Vec2, s: f32, cor: Color) {
+    if crate::icones_ui::ui("cadeado", c, s * 2.6, cor) {
+        return;
+    }
     draw_circle_lines(c.x, c.y - s * 0.35, s * 0.55, s * 0.22, cor);
     draw_rectangle(c.x - s * 0.8, c.y - s * 0.2, s * 1.6, s * 1.2, cor);
     draw_circle(c.x, c.y + s * 0.3, s * 0.18, Color::new(0.0, 0.0, 0.0, 0.7));
@@ -436,8 +436,8 @@ mod tests {
     #[test]
     fn o_menu_lista_a_cadeia_em_ordem_e_esconde_as_legadas() {
         let bosque: Vec<u16> = todas().iter().filter(|d| zona_da_missao(d.id) == Some("ilha_inicial")).map(|d| d.id).collect();
-        assert_eq!(&bosque[..5], &[501, 502, 503, 504, 505], "a cadeia vem antes das diarias");
-        assert_eq!(&bosque[5..], &[601, 602, 603, 604, 605, 606, 607]);
+        assert_eq!(&bosque[..], &[501, 502, 503, 504, 505], "so' a cadeia, em ordem");
+        assert!(todas().iter().all(|d| !d.daily), "diaria no menu de todas: tem painel proprio");
         assert!(todas().iter().all(|d| zona_da_missao(d.id).is_some()), "legada no menu");
     }
 

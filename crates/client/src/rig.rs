@@ -98,11 +98,14 @@ pub struct Pose {
     pub armado: bool,
     /// Qual conjunto (`shared::skills::Conjunto as u8`).
     pub conjunto: u8,
+    /// Coletando: a ferramenta na mao direita (`FERRAMENTAS`) no lugar da
+    /// arma.
+    pub ferramenta: Option<&'static str>,
 }
 
 impl Pose {
     fn de(rot: [Quat; N], subida: f32) -> Pose {
-        Pose { rot, subida, punho: [Quat::IDENTITY; 2], na_mao: false, armado: false, conjunto: 0 }
+        Pose { rot, subida, punho: [Quat::IDENTITY; 2], na_mao: false, armado: false, conjunto: 0, ferramenta: None }
     }
 }
 
@@ -251,22 +254,40 @@ pub fn matrizes(p: &Pose, base: Mat4, voxel: f32) -> [Mat4; N] {
         let desloca = mapa(*piv, voxel) - mapa(pp, voxel);
         m[i] = mp * Mat4::from_translation(desloca) * Mat4::from_quat(p.rot[i]);
     }
-    if p.armado && p.na_mao && p.conjunto == KATANA {
-        segura_katana(p, &mut m, voxel);
+    if p.armado && p.na_mao {
+        if p.ferramenta.is_some() {
+            segura_duas_maos(p, &mut m, voxel, MAOS_NA_FERRAMENTA);
+        } else if p.conjunto == KATANA {
+            segura_duas_maos(p, &mut m, voxel, MAOS_NA_KATANA);
+        }
     }
     m
 }
 
+/// Voxels entre a mao direita e a esquerda no cabo da katana (6 e 1).
+const MAOS_NA_KATANA: f32 = 5.0;
+/// Voxels entre as maos no cabo do machado e da picareta: a esquerda no
+/// marcador (voxel 3 do cabo, perto da ponta), a direita 6 acima, perto da
+/// cabeca. Coleta e' com as DUAS maos — golpe de ferramenta pesada com uma so'
+/// le' como brinquedo.
+pub const MAOS_NA_FERRAMENTA: f32 = 6.0;
+
 /// Resolve os dois bracos depois das molas: as maos continuam no mesmo cabo
-/// mesmo quando o golpe, a locomocao e o impacto recebido se misturam.
-fn segura_katana(p: &Pose, m: &mut [Mat4; N], voxel: f32) {
+/// mesmo quando o golpe, a locomocao e o impacto recebido se misturam. Vale
+/// pra katana e pras ferramentas de coleta; `entre_maos` e' a distancia, em
+/// voxels, da direita (perto da lamina/cabeca) ate' a esquerda (perto da
+/// ponta do cabo), ao longo do eixo da arma.
+///
+/// E' IK de dois ossos: o cabo e' trazido pro alcance dos DOIS ombros, e cada
+/// cotovelo sai da lei dos cossenos com o polo aberto pro lado e pra baixo.
+fn segura_duas_maos(p: &Pose, m: &mut [Mat4; N], voxel: f32, entre_maos: f32) {
     let torso = m[TORSO];
     let local = torso.inverse();
     let ombro = |i: usize| mapa(PECAS[i].2, voxel) - mapa(PECAS[TORSO].2, voxel);
     let sd = ombro(BRACO_D);
     let se = ombro(BRACO_E);
     let direcao = (p.rot[BRACO_D] * p.rot[ANTEBRACO_D] * p.punho[0]) * Vec3::Z;
-    let separacao = direcao * (5.0 * voxel);
+    let separacao = direcao * (entre_maos * voxel);
     let mut direita = local.transform_point3(m[ANTEBRACO_D].transform_point3(
         mapa(MAO_D, voxel) - mapa(PECAS[ANTEBRACO_D].2, voxel),
     ));
@@ -342,6 +363,9 @@ pub struct Combate {
     pub sacada: f32,
     /// Golpe do combo em curso: (passo 0-2, segundos desde o comeco).
     pub golpe: Option<(u8, f32)>,
+    /// Coletando: (tipo 0 madeira / 1..4 pedra, segundos desde o comeco).
+    /// Guarda a arma e poe a ferramenta do tipo na mao.
+    pub coleta: Option<(u8, f32)>,
     /// Skill confirmada: id, tempo e instante de impacto.
     pub skill: Option<(u32, f32, f32)>,
     /// O golpe que este interrompeu, CONGELADO no instante da troca: o novo
@@ -631,10 +655,188 @@ pub fn tranco(t: f32) -> f32 {
 }
 
 fn aplica_combate(p: &mut Pose, e: &Entrada) {
-    arma_na_mao(p, e);
+    if let Some((tipo, t)) = e.combate.coleta {
+        aplica_coleta(p, tipo, t);
+    } else {
+        arma_na_mao(p, e);
+    }
     // o golpe recebido vai POR CIMA de tudo, inclusive do golpe dado
     if let Some(t) = e.combate.ferido {
         aplica_ferido(p, t, e.combate.recuo);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  COLETA — machado e picareta
+// ═══════════════════════════════════════════════════════════════════════
+
+/// A ferramenta de cada tipo de coleta (0 madeira, 1..4 pedra pela cor da
+/// pedra: a cabeca da picareta sai na cor do veio). `tools/voxrender/armas.py`.
+pub const FERRAMENTAS: [&str; 5] = ["machado", "picareta_1", "picareta_2", "picareta_3", "picareta_4"];
+
+/// Um golpe de coleta. O ciclo do servidor (2,0 s no tronco, 2,5–3,4 s na
+/// pedra) cabe um golpe e meio a dois: o impacto le' como "trabalho", sem
+/// sincronia exata com o rendimento — que e' do servidor.
+pub const PERIODO_DA_COLETA: f32 = 1.3;
+
+pub fn ferramenta_de(tipo: u8) -> &'static str {
+    FERRAMENTAS[(tipo as usize).min(FERRAMENTAS.len() - 1)]
+}
+
+/// Fase (0..1 do golpe) do IMPACTO: o fim da varrida do machado e o fim da
+/// descida da picareta (`chave_da_coleta`). E' onde saem as lascas.
+pub fn fase_do_impacto(tipo: u8) -> f32 {
+    if tipo == 0 { 0.55 } else { 0.58 }
+}
+
+/// Onde a cabeca bate, no espaco da ferramenta (voxels a partir do marcador,
+/// que fica na mao esquerda): a malha tem o cabo no +Z e o fio no +Y. Machado:
+/// o fio da cunha (voxels 13–18 do cabo, fio 3 a frente). Picareta: o olho da
+/// cabeca, no alto do cabo (voxel 17).
+pub fn cabeca_da_ferramenta(tipo: u8) -> Vec3 {
+    if tipo == 0 { vec3(0.0, 3.5, 12.5) } else { vec3(0.0, 0.0, 14.0) }
+}
+
+/// O braco direito, a ferramenta (no espaco do tronco) e o corpo (torce,
+/// inclina, agacha) na fase `u` (0..1) de um golpe.
+///
+/// Picareta: sobe as duas maos acima da cabeca, desce de uma vez com o tronco
+/// inclinando e o peso caindo, quica um pouco no impacto e volta.
+/// Machado: arma de lado (a direita do boneco), varre em arco horizontal
+/// torcendo o tronco, recua no impacto e volta.
+fn chave_da_coleta(tipo: u8, u: f32) -> (Braco, Lamina, f32, f32, f32) {
+    let u = u.clamp(0.0, 1.0);
+    if tipo == 0 {
+        // machado: guinada negativa = lado DIREITO do boneco
+        let (g, torce) = if u < 0.40 {
+            let k = suave(u / 0.40);
+            (-1.3 * k, -0.5 * k)
+        } else if u < 0.55 {
+            let k = passa((u - 0.40) / 0.15);
+            (-1.3 + 2.0 * k, -0.5 + 0.9 * k)
+        } else if u < 0.63 {
+            let k = suave((u - 0.55) / 0.08);
+            (0.7 - 0.2 * k, 0.4 - 0.1 * k)
+        } else {
+            let k = suave((u - 0.63) / 0.37);
+            (0.5 * (1.0 - k), 0.3 * (1.0 - k))
+        };
+        let d = br(g, 1.35, 0.35);
+        return (d, la(g, 1.45, MEIA_VOLTA), torce, 0.12, if (0.5..0.63).contains(&u) { -0.8 } else { 0.0 });
+    }
+    // picareta: elevacao pi = pra cima
+    let (e, lamina_e, inclina, agacha) = if u < 0.45 {
+        let k = suave(u / 0.45);
+        (0.9 + 2.0 * k, 1.1 + 2.0 * k, -0.1 * k, 0.4 * k)
+    } else if u < 0.58 {
+        let k = passa((u - 0.45) / 0.13);
+        (2.9 - 2.3 * k, 3.1 - 2.9 * k, -0.1 + 0.5 * k, 0.4 - 1.8 * k)
+    } else if u < 0.66 {
+        let k = suave((u - 0.58) / 0.08);
+        (0.6 + 0.15 * k, 0.2 + 0.15 * k, 0.4 - 0.05 * k, -1.4 + 0.2 * k)
+    } else {
+        let k = suave((u - 0.66) / 0.34);
+        (0.75 + 0.15 * k, 0.35 + 0.75 * k, 0.35 * (1.0 - k), -1.2 * (1.0 - k))
+    };
+    (br(0.15, e, 0.3), la(0.15, lamina_e, PI), 0.0, inclina, agacha)
+}
+
+fn aplica_coleta(p: &mut Pose, tipo: u8, t: f32) {
+    let u = (t.max(0.0) / PERIODO_DA_COLETA).fract();
+    let (d, lamina, torce, inclina, agacha_d) = chave_da_coleta(tipo, u);
+    p.armado = true;
+    p.na_mao = true;
+    p.ferramenta = Some(ferramenta_de(tipo));
+    p.rot[TORSO] = Quat::from_rotation_y(torce) * Quat::from_rotation_x(inclina);
+    p.rot[1] = Quat::from_rotation_y(-torce * 0.6);
+    p.rot[BRACO_D] = ombro(&d);
+    p.rot[ANTEBRACO_D] = frente(d.cotovelo);
+    // A esquerda aqui e' so' o ponto de partida das molas: quem poe as DUAS
+    // maos no cabo e' a IK em `matrizes` (`segura_duas_maos`).
+    let e = br(d.guinada + 0.3, (d.elevacao - 0.2).max(0.3), d.cotovelo + 0.3);
+    p.rot[BRACO_E] = ombro(&e);
+    p.rot[ANTEBRACO_E] = frente(e.cotovelo);
+    agacha(p, agacha_d);
+    let cadeia = p.rot[BRACO_D] * p.rot[ANTEBRACO_D];
+    p.punho = [cadeia.inverse() * orienta_lamina(&lamina), Quat::IDENTITY];
+}
+
+#[cfg(test)]
+mod testes_de_coleta {
+    use super::*;
+
+    #[test]
+    fn cada_tipo_segura_a_sua_ferramenta() {
+        assert_eq!(ferramenta_de(0), "machado");
+        for t in 1..=4 {
+            assert_eq!(ferramenta_de(t), format!("picareta_{t}"));
+        }
+        assert_eq!(ferramenta_de(9), "picareta_4");
+        let mut p = Pose::de([Quat::IDENTITY; N], 0.0);
+        aplica_coleta(&mut p, 2, 0.1);
+        assert_eq!(p.ferramenta, Some("picareta_2"));
+        assert!(p.armado && p.na_mao);
+    }
+
+    /// As DUAS maos no cabo, em toda a volta do golpe (preparacao, impacto,
+    /// recuo), pro machado e pra picareta: direita 6 voxels acima do marcador,
+    /// esquerda no marcador, e os ossos do braco sem esticar.
+    #[test]
+    fn coleta_segura_o_cabo_com_as_duas_maos() {
+        for voxel in [1.0, 0.04] {
+            for tipo in [0u8, 1, 4] {
+                for u in [0.0, 0.2, 0.44, fase_do_impacto(tipo), 0.62, 0.8, 0.99] {
+                    let mut p = Pose::de([Quat::IDENTITY; N], 0.0);
+                    aplica_coleta(&mut p, tipo, u * PERIODO_DA_COLETA);
+                    let base = Mat4::from_translation(vec3(2.0, 1.0, -3.0)) * Mat4::from_rotation_y(0.6);
+                    let m = matrizes(&p, base, voxel);
+                    let (nome, f) = armas(&p, &m, voxel)[0];
+                    assert_eq!(nome, ferramenta_de(tipo));
+                    for (braco, antebraco, mao, no_cabo) in [
+                        (BRACO_D, ANTEBRACO_D, MAO_D, MAOS_NA_FERRAMENTA),
+                        (BRACO_E, ANTEBRACO_E, MAO_E, 0.0),
+                    ] {
+                        let pos = m[antebraco].transform_point3(mapa(mao, voxel) - mapa(PECAS[antebraco].2, voxel));
+                        let cabo = f.transform_point3(Vec3::Z * no_cabo * voxel);
+                        assert!(
+                            pos.distance(cabo) <= 0.06 * voxel / 0.04,
+                            "tipo {tipo} u {u}: mao a {} do cabo",
+                            pos.distance(cabo) / voxel
+                        );
+                        let ombro = m[braco].transform_point3(Vec3::ZERO);
+                        let cotovelo = m[antebraco].transform_point3(Vec3::ZERO);
+                        assert!((ombro.distance(cotovelo) / voxel - 6.0).abs() < 0.01, "braco esticou");
+                        assert!((cotovelo.distance(pos) / voxel - 7.5).abs() < 0.01, "antebraco esticou");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn o_golpe_percorre_a_pose_e_volta() {
+        // picareta: sobe ate' acima da cabeca, desce abaixo do comeco no
+        // impacto, e termina o ciclo onde comecou.
+        let (ini, _, _, _, _) = chave_da_coleta(1, 0.0);
+        let (alto, _, _, _, _) = chave_da_coleta(1, 0.44);
+        let (baixo, _, _, inclina, agacha) = chave_da_coleta(1, 0.58);
+        let (fim, _, _, _, _) = chave_da_coleta(1, 1.0);
+        assert!(alto.elevacao > 2.5, "levanta acima da cabeca: {}", alto.elevacao);
+        assert!(baixo.elevacao < ini.elevacao, "desce no impacto");
+        assert!(inclina > 0.3 && agacha < -1.0, "o corpo vai junto no impacto");
+        assert!((fim.elevacao - ini.elevacao).abs() < 0.05, "volta ao comeco");
+        // machado: arma pra direita, varre pra esquerda, volta ao meio.
+        let (a, _, _, _, _) = chave_da_coleta(0, 0.39);
+        let (b, _, _, _, _) = chave_da_coleta(0, 0.55);
+        let (c, _, _, _, _) = chave_da_coleta(0, 1.0);
+        assert!(a.guinada < -1.0 && b.guinada > 0.5, "arco lateral");
+        assert!(c.guinada.abs() < 0.05, "volta ao meio");
+        // O relogio repete o golpe.
+        let mut p1 = Pose::de([Quat::IDENTITY; N], 0.0);
+        let mut p2 = Pose::de([Quat::IDENTITY; N], 0.0);
+        aplica_coleta(&mut p1, 1, 0.3);
+        aplica_coleta(&mut p2, 1, 0.3 + PERIODO_DA_COLETA);
+        assert!(p1.rot[BRACO_D].abs_diff_eq(p2.rot[BRACO_D], 1e-4));
     }
 }
 
@@ -908,6 +1110,20 @@ pub fn armas(p: &Pose, m: &[Mat4; N], voxel: f32) -> Vec<(&'static str, Mat4)> {
     };
     let mao_d = m[ANTEBRACO_D] * encaixe(MAO_D, ANTEBRACO_D) * Mat4::from_quat(p.punho[0]);
     let mao_e = m[ANTEBRACO_E] * encaixe(MAO_E, ANTEBRACO_E) * Mat4::from_quat(p.punho[1]);
+    // Coletando: so' a ferramenta, nas DUAS maos. A arma some (guardada).
+    // Presa como a katana: a pega sai da mao direita ja' resolvida pela IK, a
+    // direcao sai da pose, e a malha anda `MAOS_NA_FERRAMENTA` voxels pra
+    // tras — o marcador do modelo fica na mao esquerda e a direita fica 6
+    // voxels acima dele, perto da cabeca.
+    if let Some(f) = p.ferramenta {
+        let pega = (m[ANTEBRACO_D] * encaixe(MAO_D, ANTEBRACO_D)).transform_point3(Vec3::ZERO);
+        let orientacao = p.rot[BRACO_D] * p.rot[ANTEBRACO_D] * p.punho[0];
+        let local = m[TORSO].inverse().transform_point3(pega);
+        let presa = m[TORSO] * Mat4::from_translation(local) * Mat4::from_quat(orientacao)
+            * Mat4::from_translation(vec3(0.0, 0.0, -MAOS_NA_FERRAMENTA * voxel));
+        let _ = mao_d;
+        return vec![(f, presa)];
+    }
     let no_torso = |pt: [f32; 3], q: Quat| m[TORSO] * encaixe(pt, TORSO) * Mat4::from_quat(q);
     // puxa a peca `v` voxels pra FORA pelo proprio eixo: e' assim que o cabo
     // da katana fica pra fora da bainha e a pega da pistola pra fora do coldre

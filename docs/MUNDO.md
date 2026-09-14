@@ -189,8 +189,9 @@ abaixo do limite. Zero avisos.
 **Merge guloso nos topos.** 66% a 80% das colunas de terra têm os quatro
 vizinhos no mesmo nível (medido no gerador) — sem juntar, cada uma viraria um
 quad e o pedaço estouraria sozinho o teto de 10.000 vértices por chamada da
-macroquad. O mar entra no mesmo merge: coluna abaixo da linha d'água vira uma
-superfície só, senão a costa vira milhares de quads.
+macroquad. O leito submerso entra no mesmo merge: coluna abaixo da linha d'água
+vira uma superfície só, senão a costa vira milhares de quads. A água em si é
+outra malha, com material próprio (ver "O mar", abaixo).
 
 A variação de cor vem da **posição do quad**, não da coluna: por coluna, cada
 vizinha teria cor própria, o merge deixaria de juntar, e o pedaço
@@ -203,6 +204,39 @@ encosta.
 
 Medido em jogo: **60 fps, 121 pedaços vivos** (raio 5), terreno contínuo até o
 horizonte.
+
+## O mar
+
+Antes o mar era o topo das colunas submersas num azul chapado, e além do
+último pedaço gerado aparecia o céu no lugar do oceano. Agora
+(`crates/client/src/agua.rs`):
+
+- **Leito:** o topo das colunas submersas é areia que escurece com a
+  profundidade (`cor_do_leito`). É o que a água rasa deixa ver.
+- **Superfície própria** por pedaço, em `ALTURA_DA_AGUA` (nível do mar +
+  0,12), acima do leito e abaixo do primeiro bloco de terra. Grade de 1 u
+  perto da costa e de 4 u em mar aberto; pedaço todo terra não gera nada.
+- **Cor por profundidade**, calculada uma vez por vértice na geração do
+  pedaço (profundidade = nível do mar − fundo do `Gerador`): turquesa e
+  translúcido no raso, azul no meio, azul escuro quase opaco a partir de 6 u.
+- **Horizonte:** um anel de oceano de 84 a 800 u segue o alvo da câmera
+  (refeito a cada 32 u andados) e some na cor do céu.
+
+**Animação, só no shader**, com um uniform de tempo e nada de vértice na CPU:
+
+- onda: soma de duas senoides (0,06 + 0,05 u) no vertex shader, com amplitude
+  zero até 0,5 u de profundidade e cheia a partir de 3 u, pra água não
+  descolar da areia (`onda_de`);
+- espuma: faixa clara na linha da costa (`espuma_de`), pulsando e deslizando;
+- brilho: manchas claras que andam devagar, só onde há onda.
+
+Pra GPU fraca, `ONDAS = false` desliga a ondulação e mantém o resto. O fragment
+shader usa `highp` só quando o driver oferece (GLES2 deixa opcional).
+
+Custo medido (teste `malha_da_agua_cabe_no_desenho`, 11 × 11 pedaços em volta
+do porto da ilha inicial): 76 pedaços com água, 41.840 vértices, 62.760
+índices em 76 malhas, gerados em ~11 ms; horizonte com 2.016 índices. Toda
+malha respeita o teto de 800 quads por chamada.
 
 ## A colisão é a regra de degrau
 

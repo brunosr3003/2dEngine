@@ -121,6 +121,11 @@ limpa o alvo e desliga o AUTO.
 - **Alt:** mostra a tecla de cada botão. **Alt+Enter:** tela cheia.
 - **Q / E** giram a câmera; **roda** aproxima; arrastar com o botão do meio (ou
   o direito) gira e inclina.
+- **Toque (iOS):** um dedo arrastando no **mundo** gira (horizontal) e inclina
+  (vertical) a câmera, com a mesma sensibilidade do mouse; **pinça** com dois
+  dedos aproxima/afasta na faixa da roda. Toque curto parado é o clique normal
+  (andar/selecionar) e sai no **soltar** — arrastar ou pôr o segundo dedo cancela
+  o clique. Começar o gesto em cima de botão ou painel do HUD não mexe na câmera.
 - **LMB:** seleciona alvo ou anda até o chão clicado; ataque básico automático.
 - **Mapa** (nome da zona, ⤢ do minimapa ou Menu; Esc, X ou clique fora
   fecham). O minimapa fica no canto superior direito; a roda sobre ele muda o zoom.
@@ -159,6 +164,17 @@ limpa o alvo e desliga o AUTO.
 ---
 
 ## Progressão e Morte
+
+### Morte (como está implementado, molde MIR4)
+
+- HP chega a 0: o personagem cai e aparece a **tela de derrota** por cima de tudo. Mob para de mirar nele. Auto missão, auto combate e auto coleta param e os painéis fecham.
+- **Reviver na cidade** (só clique; Esc não revive): renasce na cidade da **ilha onde está**, com HP cheio, sem custo.
+- **Perda de XP:** 10% do XP que o nível atual pede pra subir (`lvl² × mult`), limitado ao que o jogador tem acima do início do nível — morrer **nunca** derruba nível nem deixa XP negativo. Recém-chegado no nível perde pouco ou nada.
+- **Recuperar XP:** cada morte fica recuperável por **24 h** (guardam-se as 10 mais recentes). As **3 primeiras recuperações do dia são grátis** (reset à meia-noite UTC); depois custa **100 + 50 × nível + metade do XP devolvido** em ouro. Sem ouro, não recupera. O XP devolvido não ganha o bônus da Poção de Experiência.
+- Onde recuperar: botão na tela de derrota (a morte mais recente) e **Menu → Aventura → Recuperar XP** (lista todas, com prazo e preço).
+- Persistido no personagem: `mortes_json`, `recuperacoes_dia`, `recuperacoes_usadas`. Regras em `crates/server/src/morte.rs`.
+
+### Planejado
 
 - Level cap 100. Morre (executado) → perde o personagem em modo **permadeath configurável** (pode ser soft).
 - Loot coletado na sessão é perdido na morte. Loot depositado no baú do Porto é permanente.
@@ -218,3 +234,18 @@ limpa o alvo e desliga o AUTO.
 - ❌ Lobby de matchmaking. Porto Central É o lobby.
 - ❌ Grinding sem fim. Cap 100 + permadeath empurra rotatividade de personagens.
 - ❌ 3D. Nunca.
+
+## Barra de itens
+
+Quatro espaços no canto inferior direito — **C, 8, 9 e 0** (teclas de ação, não abrem painel). Cada espaço guarda um consumível, se usa sozinho (AUTO) e o limiar.
+
+- **Clique** usa. **Arrastar pra cima** liga o AUTO daquele espaço, **pra baixo** desliga (mesmo gesto das skills). Botão direito ou clique num espaço vazio abre o configurador.
+- **Configurador** (Menu → Sistema → Barra): escolha um consumível da bolsa e um espaço (ou o contrário), ligue o AUTO, ajuste o limiar em passos de 5% e limpe espaços. Fica salvo no personagem, no servidor.
+- **AUTO**: vida/mana/vigor bebem abaixo do limiar (padrão 60/40/30%) com o grupo fora da recarga; o tier é o menor cujo total cobre o que falta pro máximo, senão o maior disponível. Experiência, Fortuna e Sorte bebem quando o buff não está ativo. Morto não bebe; sem estoque o botão fica apagado.
+- **Poções curam ao longo do tempo** (parte na hora + ticks de 1 s) e têm **recarga por grupo** (Vida/Vida+ 8 s, Mana/Mana+ 8 s, Vigor 15 s) que cobre a cura inteira: não dá pra tomar outra no meio. O botão mostra a recarga e brilha enquanto cura. Ver `docs/ITENS.md`.
+
+## Coleta
+
+- **Clique numa pedra ou tronco:** o personagem anda até o alcance e coleta aquele nó, ciclo a ciclo, golpeando; a barrinha "Coletando · tipo · N s" mostra o próximo ciclo. Andar cancela. O nó esgota, some (e para de barrar a passagem) e volta no respawn.
+- **AUTO COLETA** (X ou botão): vai de nó em nó dos tipos marcados dentro do raio; sem nó, "Aguardando recursos…". **Botão direito** no AUTO COLETA configura tipos e raio (salvo no personagem). Ver `docs/COLETA.md`.
+- Padrão de quem nunca configurou: Vida (AUTO ligado), Mana, Vigor e Experiência.

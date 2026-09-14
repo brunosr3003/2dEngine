@@ -17,6 +17,14 @@ coloridos desta tabela vêm na cor cinza. Este é o balanceamento inicial.
 | Owlbear | 25–60 | Platina (1–3; 25%), Berloque de Exorcismo (1–2; 15%), Chifre (1; 3%) | Vida maior (1; 10%) |
 | Arqueiro | 10–28 | Fragmento Iluminante (1–2; 20%), Aço (1–2; 20%) | Vigor (1; 8%) |
 | Chefe / Lobo Grande | 200–500 | Darksteel (5–12; 50%), Pó Cintilante (1; 5%), Escama (1; 5%) | Vida maior (1–2; 35%), Mana maior (1; 25%) |
+| Caranguejo | 3–10 | Garra (1; 6%), Escama (1; 1%) | Vida (1; 8%) |
+| Caranguejo-rei | 12–30 | Garra (1–2; 15%), Aço (1–2; 15%), Escama (1; 3%) | Vida (1; 12%) |
+
+Os caranguejos (kinds 8 e 9) só nascem nas **zonas de praia**: chão plano e
+baixo de areia com o oceano a poucos passos, fora da cidade e do porto
+(`world::sitios_de_praia`, zonas com id a partir de `ZONA_DE_PRAIA_ID`). Um em
+cada quatro é rei. As zonas comuns nunca sorteiam caranguejo. O loot deles vai
+ao banco pela migração `loot_caranguejos_v1`.
 
 A tabela é por tipo de mob, inclusive quando o nível varia. A coleta de
 recursos continua com sua tabela própria em `farm_node_drops`.

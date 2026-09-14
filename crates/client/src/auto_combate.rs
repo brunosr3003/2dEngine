@@ -81,13 +81,13 @@ impl AutoCombate {
     pub fn desenha(&self) {
         let r=retangulo(); let c=r.center(); let raio=r.w*0.49;
         let cor=if self.ativo() {estilo::AUTO} else {estilo::OURO};
-        draw_circle(c.x,c.y+3.0,raio+3.0,Color::new(0.0,0.0,0.0,0.35));
-        draw_circle(c.x,c.y,raio,estilo::FUNDO);
-        draw_circle_lines(c.x,c.y,raio,2.0,cor);
-        draw_circle_lines(c.x,c.y,raio*0.88,1.0,Color::new(cor.r,cor.g,cor.b,0.3));
+        let e=estilo::estado_de(r,false,self.ativo());
+        estilo::botao_redondo(c,raio,cor,e,self.ativo());
         if self.ativo() { estilo::arco(c,raio+4.0,get_time() as f32*0.8,0.20,2.0,cor); }
-        estilo::icone(2,c-vec2(0.0,raio*0.16),raio*0.46,cor);
-        estilo::texto_centro(c.x,c.y+raio*0.62,if self.ativo() {"AUTO"} else {"COMBATE"},11,cor);
+        if !crate::icones_ui::ui("auto_combate",c-vec2(0.0,raio*0.16),raio*1.0,cor) {
+            estilo::icone(2,c-vec2(0.0,raio*0.16),raio*0.46,cor);
+        }
+        estilo::texto_centro_forte(c.x,c.y+raio*0.62,if self.ativo() {"AUTO"} else {"COMBATE"},10,cor);
         crate::hud_layout::chip(r,"Z");
     }
 

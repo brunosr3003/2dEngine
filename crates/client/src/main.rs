@@ -18,6 +18,8 @@ mod hud_layout;
 mod habilidades;
 mod habilidades_input;
 mod hud_estilo;
+mod icones;
+mod icones_ui;
 mod lojas;
 mod menu;
 mod auto_combate;
@@ -32,9 +34,21 @@ mod dialogo;
 mod construcoes;
 mod mapa;
 mod rastro;
+mod telegrafico;
+mod chefe_anim;
+mod toque;
+mod gesto_camera;
+mod barra;
+mod preferencias;
+mod config_barra;
+mod config_coleta;
+mod coleta_hud;
+mod lascas;
+mod morte;
 mod corrida;
 mod ir_para;
 mod menu_missoes;
+mod diarias;
 mod personagens;
 mod habilidades_vfx;
 mod previa_skills;
@@ -43,6 +57,7 @@ mod net;
 mod render3d;
 mod rig;
 mod terreno;
+mod agua;
 mod vegetacao;
 mod ui;
 mod vox;
@@ -62,18 +77,6 @@ use world::World;
 
 /// O servidor tica a 30Hz; mandar input mais rapido que isso so' gasta banda.
 const INPUT_HZ: f64 = 30.0;
-
-/// A pocao (C) e os slots rapidos 8/9/0, no molde do MIR4: o que cada um
-/// procura na bolsa (o primeiro que tiver) e o nome no aviso.
-const RAPIDOS: [(&[u16], &str); 4] = {
-    use shared::constants::item_id as it;
-    [
-        (&[it::HEALTH_POTION, it::GREATER_HEAL], "poção de vida"),
-        (&[it::MANA_POTION, it::GREATER_MANA], "poção de mana"),
-        (&[it::STAMINA_POTION], "poção de vigor"),
-        (&[it::XP_POTION], "poção de experiência"),
-    ]
-};
 
 /// Raio em que F e Tab procuram inimigo.
 const RAIO_DE_MIRA: f32 = 24.0;
@@ -149,16 +152,42 @@ struct Jogo {
     forja: forja_ui::Forja,
     /// Pocao de Experiencia: bonus ativo ate' (unix secs; 0 = nenhum).
     bonus_xp_ate: i64,
+    /// Pocoes de Fortuna e de Sorte ativas ate' (unix secs; 0 = nenhuma).
+    bonus_fortuna_ate: i64,
+    bonus_sorte_ate: i64,
+    /// Barra de itens (C, 8, 9, 0) e o configurador dela.
+    barra: barra::Barra,
+    /// Quando mandar as preferencias de tela pro servidor.
+    prefs: preferencias::Sincronia,
+    config_barra: config_barra::ConfigBarra,
+    /// Tipos e raio do AUTO COLETA (botao direito no AUTO COLETA).
+    config_coleta: config_coleta::ConfigColeta,
+    /// A barrinha "Coletando · tipo · N s".
+    coleta_hud: coleta_hud::BarraDeColeta,
+    /// Clique numa pedra/tronco: (coluna, centro, raio) — anda e coleta ao chegar.
+    coleta_pendente: Option<(u32, Vec2, f32)>,
+    /// O AUTO COLETA estava ligado no quadro anterior (desligou: para no servidor).
+    coleta_auto_estava: bool,
     /// Janela do Mestre de Missoes, diario (J) e rastreador.
     missoes: missoes::Missoes,
     /// Clicou numa missao do rastreador: o personagem vai sozinho.
     auto_missao: auto_missao::AutoMissao,
     /// X: fica coletando no melhor spot perto.
     auto_coleta: auto_coleta::AutoColeta,
+    /// Toque longo no AUTO COLETA e na barra de itens: o que no PC e' o botao
+    /// direito (configuracao), no toque e' segurar.
+    toque_coleta: toque::ToqueLongo,
+    toque_barra: toque::ToqueLongo,
     /// Falas das missoes (Proximo / Receber / Aceitar).
     dialogo: dialogo::Dialogo,
     /// A rota do servidor, pro tracejado no chao.
     rastro: rastro::Rastro,
+    /// Golpes de chefe carregando: a forma no chao.
+    telegrafos: telegrafico::Telegrafos,
+    /// Tremor de camera do impacto de chefe: (forca, ate quando).
+    tremor: (f32, f64),
+    /// Tela de morte e "Recuperar XP".
+    morte: morte::Morte,
     /// Indo sozinho ha' 1,5 s: corre. `correndo_auto` e' o resultado do quadro.
     corrida: corrida::Corrida,
     correndo_auto: bool,
@@ -174,6 +203,8 @@ struct Jogo {
     ir_para: ir_para::IrPara,
     /// Menu de todas as missoes (rodape do rastreador ou Menu).
     menu_missoes: menu_missoes::MenuMissoes,
+    /// Painel das diarias: icone no topo e Menu, separado das outras missoes.
+    diarias: diarias::Diarias,
     /// O Menu Principal (botao ≡ do HUD). Nenhum painel abre por tecla.
     menu: menu::Menu,
     /// Menu → Comercio: os vendedores da ilha com "Ir".
@@ -236,6 +267,12 @@ struct Jogo {
     arrasto_virou_camera: bool,
     /// Arrasto de rotacao em andamento: posicao do mouse no quadro anterior.
     arrasto: Option<Vec2>,
+    /// Camera por toque (um dedo gira, pinca da' zoom). Ver `gesto_camera`.
+    gesto_camera: gesto_camera::GestoCamera,
+    /// O que o toque pediu NESTE quadro.
+    toque_acao: gesto_camera::Acao,
+    /// Havia dedo na tela neste quadro: o aperto simulado do mouse nao vale.
+    toque_ativo: bool,
     rede: hud::Rede,
     ultimo_ping: f64,
     /// Marca da ultima janela de banda: instante e total de bytes.
@@ -271,7 +308,8 @@ async fn main() {
     // Os bichos em PECAS (tools/voxrender/bichos.py). Sem o arquivo, o mob
     // cai no modelo inteiro de antes.
     // As armas do primeiro conjunto (tools/voxrender/armas.py).
-    for nome in ["espada", "escudo", "katana", "bainha", "pistola", "coldre"] {
+    // E as ferramentas de coleta (machado, picareta de cada cor).
+    for nome in ["espada", "escudo", "katana", "bainha", "pistola", "coldre"].into_iter().chain(rig::FERRAMENTAS) {
         vox.load_arma(nome, render3d::VOXEL).await;
     }
     for (nome, altura) in bicho::BICHOS {
@@ -318,11 +356,25 @@ async fn main() {
         craft: craft_ui::Craft::default(),
         forja: forja_ui::Forja::default(),
         bonus_xp_ate: 0,
+        bonus_fortuna_ate: 0,
+        bonus_sorte_ate: 0,
+        barra: Default::default(),
+        prefs: Default::default(),
+        config_barra: Default::default(),
+        config_coleta: Default::default(),
+        coleta_hud: Default::default(),
+        coleta_pendente: None,
+        coleta_auto_estava: false,
         missoes: missoes::Missoes::default(),
         auto_missao: auto_missao::AutoMissao::default(),
         auto_coleta: auto_coleta::AutoColeta::default(),
+        toque_coleta: toque::ToqueLongo::default(),
+        toque_barra: toque::ToqueLongo::default(),
         dialogo: dialogo::Dialogo::default(),
         rastro: rastro::Rastro::default(),
+        telegrafos: telegrafico::Telegrafos::default(),
+        tremor: (0.0, 0.0),
+        morte: morte::Morte::default(),
         corrida: corrida::Corrida::default(),
         correndo_auto: false,
         ultimo_npc: None,
@@ -330,6 +382,7 @@ async fn main() {
         construcoes: construcoes::Construcoes::default(),
         ir_para: ir_para::IrPara::default(),
         menu_missoes: menu_missoes::MenuMissoes::default(),
+        diarias: diarias::Diarias::default(),
         menu: menu::Menu::default(),
         lojas: lojas::Lojas::default(),
         voltar_ao_menu: false,
@@ -352,6 +405,9 @@ async fn main() {
         arrasto_de: Vec2::ZERO,
         arrasto_virou_camera: false,
         arrasto: None,
+        gesto_camera: gesto_camera::GestoCamera::default(),
+        toque_acao: gesto_camera::Acao::Nada,
+        toque_ativo: false,
         rede: hud::Rede::default(),
         ultimo_ping: 0.0,
         banda_marca: (0.0, 0),
@@ -434,6 +490,9 @@ impl Jogo {
                 }
             }
             self.esc_consumido = is_key_pressed(KeyCode::Escape) && self.esc();
+            // Toques antes de qualquer clique: com dedo, o clique no mundo sai
+            // no SOLTAR (ver `gesto_camera`).
+            self.ler_toques();
             if !ui_pega {
                 self.atualizar_alvo();
             }
@@ -445,6 +504,7 @@ impl Jogo {
             self.acompanhar_loja();
             self.atualizar_auto_combate();
             self.usar_habilidade();
+            self.auto_da_barra();
             self.world.alvo = self.alvo;
             self.ir_ate_o_alvo();
             self.conduzir_viagem();
@@ -468,6 +528,7 @@ impl Jogo {
             self.conduzir_auto_missao();
             self.camera_controles();
             self.enviar_input();
+            self.sincroniza_preferencias();
             self.medir_rede();
             if let Some(t) = &mut self.terreno {
                 let centro = self.world.self_pos().unwrap_or(Vec2::ZERO);
@@ -498,6 +559,9 @@ impl Jogo {
 
     fn conectar(&mut self) {
         let Some(host) = self.host.clone() else { return };
+        // Trocando de zona: o pendente vai pelo canal velho antes de soltar.
+        self.guardar_preferencias_agora();
+        self.prefs = preferencias::Sincronia::default();
         self.world = World::default();
         self.ganhos = ganhos::Ganhos::default();
         self.habilidades = habilidades::Habilidades::default();
@@ -514,6 +578,7 @@ impl Jogo {
         self.mapa.filtros = filtros;
         self.ir_para.parar();
         self.menu_missoes.aberto = false;
+        self.diarias.fechar();
         self.quest_entregues.clear();
         self.construcoes = construcoes::Construcoes::default();
         self.rastro.limpa();
@@ -714,6 +779,29 @@ impl Jogo {
                 self.forja.abrir();
             }
             ServerMessage::BuffXp { ate } => self.bonus_xp_ate = ate,
+            ServerMessage::BuffsDeDrop { fortuna_ate, sorte_ate } => {
+                self.bonus_fortuna_ate = fortuna_ate;
+                self.bonus_sorte_ate = sorte_ate;
+            }
+            ServerMessage::BarraDeItens { espacos } => self.barra.do_servidor(&espacos),
+            ServerMessage::Preferencias { prefs } => self.aplica_preferencias(prefs),
+            ServerMessage::Morte { xp_perdido } => {
+                self.parar_tudo_ao_morrer();
+                self.morte.morreu(xp_perdido);
+            }
+            ServerMessage::DownedUpdate { active, .. } => {
+                if active && !self.morte.morto {
+                    self.parar_tudo_ao_morrer();
+                }
+                self.morte.caido(active);
+            }
+            ServerMessage::Recuperaveis { mortes, gratis_restantes } => {
+                self.morte.recuperaveis(mortes, gratis_restantes);
+            }
+            ServerMessage::RecuperarXpResultado { ok, motivo, .. } => {
+                self.chat.push(motivo.clone());
+                self.morte.resultado(ok, motivo);
+            }
             ServerMessage::ShopOpen { items, vendor_id, .. } => {
                 self.interacao.cancela();
                 self.missoes.fecha();
@@ -794,8 +882,44 @@ impl Jogo {
                 self.quest_entregues = entregues.into_iter().collect();
                 self.faccao_qid = faccao;
             }
-            ServerMessage::MapaDaIlha { zonas, recursos, nomes, rendimentos } => {
+            ServerMessage::MapaDaIlha { zonas, recursos, nomes, rendimentos, chefes } => {
                 self.mapa.define_info(zonas, recursos, nomes, rendimentos);
+                self.mapa.define_chefes(chefes);
+            }
+            ServerMessage::Telegrafico { id, chefe, forma, centro, dir, carga_s } => {
+                let agora = get_time();
+                self.telegrafos.comeca(id, chefe, forma, centro, dir, carga_s, agora);
+                // O chefe arma o golpe no desenho (preparacao ate' o impacto).
+                if let Some(e) = self.world.ents.get_mut(&chefe) {
+                    let (c, d) = (vec2(centro[0], centro[1]), vec2(dir[0], dir[1]));
+                    e.carga_chefe = Some(chefe_anim::Carga::nova(&forma, c, d, e.render_pos, carga_s, agora));
+                }
+            }
+            ServerMessage::TelegraficoFim { id, impacto } => {
+                let agora = get_time();
+                if let Some((chefe, forma, centro, dir)) = self.telegrafos.termina(id, impacto, agora) {
+                    // Cancelado (chefe morreu): o gesto para. Impacto: sai o golpe.
+                    let kind = self.world.ents.get(&chefe).map_or(0, |e| e.meta.kind);
+                    if let Some(e) = self.world.ents.get_mut(&chefe) {
+                        match (&mut e.carga_chefe, impacto) {
+                            (Some(c), true) => c.bateu(agora),
+                            (c, false) => *c = None,
+                            _ => {}
+                        }
+                    }
+                    if impacto {
+                        if let Some(t) = &self.terreno {
+                            let cor = chefe_anim::cor_do_chefe(kind);
+                            for (k, p) in chefe_anim::pontos_de_impacto(&forma, centro, dir).into_iter().enumerate() {
+                                lascas::explosao(vec3(p.x, t.altura(p.x, p.y) + 0.1, p.y), cor, id.wrapping_mul(31) ^ k as u32);
+                            }
+                        }
+                        // Perto do golpe: a camera sente (curto e com teto).
+                        if self.world.self_pos().is_some_and(|eu| eu.distance(centro) <= forma.alcance() + 8.0) {
+                            self.tremor = (chefe_anim::TREMOR_FORCA, agora + chefe_anim::TREMOR_S as f64);
+                        }
+                    }
+                }
             }
             ServerMessage::QuestGivers { available } => self.missoes.define_givers(available),
             ServerMessage::Rota { pontos, destino } => {
@@ -825,16 +949,18 @@ impl Jogo {
                     }
                 }
             }
-            ServerMessage::SpotDeColeta { pos, .. } => {
-                let estava = self.auto_coleta.ativo();
-                match self.auto_coleta.spot_recebido(pos.map(|p| vec2(p[0], p[1])), get_time()) {
-                    auto_coleta::Acao::Ir(p) => self.mapa.viagem.iniciar(p, get_time()),
-                    _ => {
-                        if estava && pos.is_none() && self.auto_coleta.falhas == 1 {
-                            self.chat.push("auto coleta: nada vivo pra coletar por perto".into());
-                        }
-                    }
+            ServerMessage::NoDeColeta { no } => {
+                let no = no.map(|(k, onde, c, t)| (k, vec2(onde[0], onde[1]), vec2(c[0], c[1]), t));
+                if let auto_coleta::Acao::Ir(p) = self.auto_coleta.no_recebido(no, get_time()) {
+                    self.mapa.viagem.iniciar(p, get_time());
                 }
+            }
+            ServerMessage::ColetaEstado { tipo, intervalo_s, progresso, centro, pausado } => {
+                self.coleta_hud.recebe(tipo, intervalo_s, progresso, centro, pausado, get_time());
+                self.auto_coleta.estado_coleta(tipo, pausado, get_time());
+            }
+            ServerMessage::PocaoGrupo { grupo, recarga_s, cura_s } => {
+                self.barra.pocao_grupo(grupo, recarga_s, cura_s, get_time());
             }
             // As demais ainda nao tem UI;
             // ignorar e' seguro porque nada aqui e' autoritativo.
@@ -851,7 +977,7 @@ impl Jogo {
         if is_key_pressed(KeyCode::Escape) && !self.esc_consumido {
             self.alvo = None;
         }
-        if is_mouse_button_pressed(MouseButton::Left) {
+        if self.clique_no_mundo() {
             // Clique no mundo e' comando novo: a viagem do mapa acaba aqui, e a
             // auto missao junto.
             self.mapa.viagem.cancelar();
@@ -860,7 +986,7 @@ impl Jogo {
             let centro = self.world.self_pos().unwrap_or(Vec2::ZERO);
             // Empresta so' o CAMPO `terreno`, nao `self` inteiro: o alvo e a
             // rota sao escritos logo abaixo.
-            let (mx, my) = mouse_position();
+            let (mx, my) = self.pos_do_clique();
             let escolhido = {
                 let terreno = self.terreno.as_ref();
                 let f = |x: f32, z: f32| terreno.map_or(0.0, |t| t.altura(x, z));
@@ -898,9 +1024,21 @@ impl Jogo {
                 None => self.alvo = None,
             }
             // O cliente nunca manda rota — so' um ponto que ele ja' poderia
-            // alcancar andando.
+            // alcancar andando. Clicou numa pedra/tronco: vai ate' o alcance
+            // dela e coleta ao chegar (`acompanhar_coleta_manual`).
+            self.coleta_pendente = None;
             if let Some(p) = escolhido.1 {
-                self.envia(ClientMessage::MoverPara { x: p.x, z: p.y });
+                let no = self.terreno.as_ref().and_then(|t| t.coletavel_perto(p, 0.8));
+                match (no, self.world.self_pos()) {
+                    (Some((coluna, c, _tipo, raio)), Some(eu)) => {
+                        let dir = (eu - c).try_normalize().unwrap_or(Vec2::X);
+                        let onde = c + dir * (raio + shared::ENTITY_RADIUS + shared::COLETA_ALCANCE_UN * 0.5);
+                        self.auto_coleta.parar();
+                        self.coleta_pendente = Some((coluna, c, raio));
+                        self.envia(ClientMessage::MoverPara { x: onde.x, z: onde.y });
+                    }
+                    _ => self.envia(ClientMessage::MoverPara { x: p.x, z: p.y }),
+                }
             }
 
         }
@@ -1018,6 +1156,7 @@ impl Jogo {
         self.auto_coleta.parar();
         self.ir_para.parar();
         self.menu_missoes.aberto = false;
+        self.diarias.fechar();
         self.interacao.cancela();
         self.loja.fecha();
         self.missoes.aberta = false;
@@ -1038,14 +1177,28 @@ impl Jogo {
             || self.craft.aberto()
             || self.forja.aberto()
             || self.menu_missoes.aberto
+            || self.diarias.aberto
             || self.lojas.aberto
+            || self.morte.painel
+            || self.config_barra.aberto
+            || self.config_coleta.aberto
+    }
+
+    /// Morreu: nada automatico continua e os paineis fecham — a tela de morte
+    /// fica sozinha na frente.
+    fn parar_tudo_ao_morrer(&mut self) {
+        self.auto_missao.parar();
+        self.auto_coleta.parar();
+        self.auto_combate.parar();
+        self.fecha_paineis();
+        self.alvo = None;
     }
 
     /// O mouse esta' sobre a interface (o mundo nao recebe o clique)? Uma
     /// pergunta so', no lugar da condicao de onze termos que crescia a cada
     /// painel novo.
     fn ui_pega_mouse(&self) -> bool {
-        if self.painel_grande() {
+        if self.painel_grande() || self.morte.pega_mouse() {
             return true;
         }
         let m = Vec2::from(mouse_position());
@@ -1066,7 +1219,11 @@ impl Jogo {
         self.craft.fechar();
         self.forja.fechar();
         self.menu_missoes.aberto = false;
+        self.diarias.fechar();
         self.lojas.fechar();
+        self.morte.painel = false;
+        self.config_barra.fechar();
+        self.config_coleta.fechar();
         self.menu.fechar();
         self.voltar_ao_menu = false;
     }
@@ -1095,6 +1252,7 @@ impl Jogo {
                 self.missoes.alterna_diario();
             }
             Item::TodasMissoes => self.menu_missoes.abrir(),
+            Item::Diarias => self.diarias.abrir(),
             Item::Craft => self.craft.abrir(),
             Item::Forja => self.forja.abrir(),
             Item::Mapa if self.mapa.tem_ilha() => self.mapa.abrir(),
@@ -1103,6 +1261,9 @@ impl Jogo {
                 self.chat.push("Mapa: só nas ilhas.".into());
             }
             Item::Lojas => self.lojas.abrir(),
+            Item::RecuperarXp => self.morte.painel = true,
+            Item::BarraItens => self.config_barra.abrir(None),
+            Item::Coleta => self.config_coleta.abrir(),
             Item::Sair => {
                 self.voltar_ao_menu = false;
                 self.sair();
@@ -1121,14 +1282,26 @@ impl Jogo {
             return true;
         }
         let do_menu = std::mem::take(&mut self.voltar_ao_menu);
-        let fechou_painel = if self.forja.aberto() {
+        let fechou_painel = if self.config_coleta.aberto {
+            self.config_coleta.fechar();
+            true
+        } else if self.config_barra.aberto {
+            self.config_barra.fechar();
+            true
+        } else if self.forja.aberto() {
             self.forja.fechar();
             true
         } else if self.craft.aberto() {
             self.craft.fechar();
             true
+        } else if self.morte.painel {
+            self.morte.painel = false;
+            true
         } else if self.lojas.aberto {
             self.lojas.fechar();
+            true
+        } else if self.diarias.aberto {
+            self.diarias.fechar();
             true
         } else if self.menu_missoes.aberto {
             self.menu_missoes.aberto = false;
@@ -1170,6 +1343,25 @@ impl Jogo {
         self.missoes.marcador(&|id| missoes::na_bolsa(slots, id)).is_some()
     }
 
+    /// Diaria pra aceitar ou entregar: ponto vermelho no icone e no MENU.
+    fn selo_diarias(&self) -> bool {
+        let agora_unix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        let slots = &self.bolsa.slots;
+        let tem = |id: u16| missoes::na_bolsa(slots, id);
+        let c = menu_missoes::Contexto {
+            log: &self.missoes.log,
+            entregues: &self.quest_entregues,
+            nivel: self.ficha.nivel,
+            faccao: self.faccao_qid,
+            zona: self.mapa.zona(),
+            agora_unix,
+            tem: &tem,
+        };
+        diarias::tem_pendente(&c)
+    }
+
     /// A faixa de estado UNICA: aviso de skill > INDO > AUTO MISSAO >
     /// Viajando > AUTO COLETA > AUTO COMBATE.
     fn texto_da_faixa(&self) -> Option<(String, Color)> {
@@ -1189,7 +1381,13 @@ impl Jogo {
         if let Some(t) = self.auto_coleta.faixa(eu) {
             return Some((t.to_string(), hud_estilo::AUTO));
         }
-        self.auto_combate.faixa(self.alvo.is_some()).map(|t| (t.to_string(), hud_estilo::AUTO))
+        if let Some(t) = self.auto_combate.faixa(self.alvo.is_some()) {
+            return Some((t.to_string(), hud_estilo::AUTO));
+        }
+        // Andando por clique, sem modo nenhum: quanto falta pelo caminho.
+        rastro::restante(&self.rastro, eu?, self.mapa.viagem.destino())
+            .filter(|m| *m >= 1.0)
+            .map(|m| (format!("Andando · {}", rastro::formata_distancia(m)), hud_estilo::AUTO))
     }
 
     /// Teclas de ACAO no molde do MIR4 de PC (docs/HUD.md 2.5). Nenhuma abre
@@ -1269,21 +1467,115 @@ impl Jogo {
         self.mirar(lista[i]);
     }
 
-    /// Quanto de cada pocao rapida a bolsa tem.
-    fn qtd_rapidos(&self) -> [u32; 4] {
-        let mut q = [0u32; 4];
-        for (i, (ids, _)) in RAPIDOS.iter().enumerate() {
-            q[i] = self.bolsa.slots.iter().filter(|s| ids.contains(&s.item_id) && s.instance.is_none()).map(|s| s.qty).sum();
-        }
-        q
+    /// Quanto a bolsa tem do consumivel de cada espaco da barra.
+    fn qtd_rapidos(&self) -> [u32; barra::ESPACOS] {
+        self.barra.espacos.map(|e| barra::quantidade(&self.bolsa.slots, e.item_id))
     }
 
-    /// C (0) ou 8/9/0 (1..3): usa a primeira pocao daquele tipo na bolsa.
+    /// C (0) ou 8/9/0 (1..3): usa o consumivel do espaco. Vazio abre o
+    /// configurador ja' com aquele espaco escolhido.
     fn usar_rapido(&mut self, i: usize) {
-        let Some((ids, nome)) = RAPIDOS.get(i) else { return };
-        match self.bolsa.slots.iter().position(|s| ids.contains(&s.item_id) && s.qty > 0 && s.instance.is_none()) {
+        self.usar_espaco(i, false);
+    }
+
+    fn usar_espaco(&mut self, i: usize, forte: bool) {
+        let Some(esp) = self.barra.espacos.get(i).copied() else { return };
+        if esp.item_id == 0 {
+            self.fecha_paineis();
+            self.config_barra.abrir(Some(i));
+            return;
+        }
+        match barra::slot_para_usar(&self.bolsa.slots, esp.item_id, forte) {
             Some(slot) => self.envia(ClientMessage::UseItem { slot: slot as u16 }),
-            None => self.chat.push(format!("Sem {nome} na bolsa.")),
+            None => self.chat.push(format!("Sem {} na bolsa.", self.bolsa.nome(esp.item_id))),
+        }
+    }
+
+    fn salvar_barra(&mut self) {
+        let espacos = self.barra.para_servidor();
+        self.envia(ClientMessage::SalvarBarra { espacos });
+    }
+
+    /// Preferencias guardadas no servidor: skills AUTO, filtros do mapa e
+    /// zooms. Aplica e so' entao libera a sincronia a mandar mudancas.
+    fn aplica_preferencias(&mut self, p: shared::protocol::Preferencias) {
+        self.habilidades.automaticas = p.skills_auto.iter().copied().collect();
+        self.mapa.filtros = mapa::Filtros::from(&p.filtros_mapa);
+        if let Some(a) = p.alcance_minimapa {
+            self.mapa.define_alcance_minimapa(a);
+        }
+        if let Some(z) = p.camera_zoom {
+            self.cam_zoom = z.clamp(render3d::ZOOM_MIN, render3d::ZOOM_MAX);
+        }
+        if let Some(a) = p.camera_pitch_ajuste {
+            self.cam_pitch_ajuste = a;
+        }
+        if let Some(t) = p.coleta_tipos {
+            self.auto_coleta.tipos = t;
+        }
+        if let Some(r) = p.coleta_raio {
+            self.auto_coleta.raio = r;
+        }
+        let atual = self.preferencias_atuais();
+        self.prefs.recebeu(&atual);
+    }
+
+    /// O estado de agora, no formato guardado. Numeros em centesimos: a
+    /// camera recalcula o ajuste todo quadro e ruido de f32 nao e' mudanca.
+    fn preferencias_atuais(&self) -> shared::protocol::Preferencias {
+        let cent = |v: f32| (v * 100.0).round() / 100.0;
+        let mut skills: Vec<u32> = self.habilidades.automaticas.iter().copied().collect();
+        skills.sort_unstable();
+        shared::protocol::Preferencias {
+            versao: shared::protocol::Preferencias::VERSAO,
+            skills_auto: skills,
+            filtros_mapa: self.mapa.filtros.para_rede(),
+            alcance_minimapa: Some(cent(self.mapa.alcance_minimapa())),
+            camera_zoom: Some(cent(self.cam_zoom)),
+            camera_pitch_ajuste: Some(cent(self.cam_pitch_ajuste)),
+            coleta_tipos: Some(self.auto_coleta.tipos),
+            coleta_raio: Some(cent(self.auto_coleta.raio)),
+        }
+    }
+
+    /// A cada quadro: manda as preferencias quando pararam de mudar.
+    fn sincroniza_preferencias(&mut self) {
+        let atual = self.preferencias_atuais();
+        if let Some(prefs) = self.prefs.acompanhar(&atual, get_time()) {
+            self.envia(ClientMessage::SalvarPreferencias { prefs });
+        }
+    }
+
+    /// Saindo ou trocando de zona: o pendente vai agora.
+    fn guardar_preferencias_agora(&mut self) {
+        let atual = self.preferencias_atuais();
+        if let Some(prefs) = self.prefs.forcar(&atual) {
+            self.envia(ClientMessage::SalvarPreferencias { prefs });
+        }
+    }
+
+    /// A cada quadro: o AUTO de cada espaco da barra. Roda com painel aberto
+    /// tambem — pocao nao espera o jogador fechar a bolsa.
+    fn auto_da_barra(&mut self) {
+        let Some(eu) = self.world.self_id.and_then(|id| self.world.ents.get(&id)) else { return };
+        let st = self.bolsa.stats.as_ref();
+        let mp_max = st.map_or(50, |s| s.mp_max).max(1) as f32;
+        let vigor_max = st.map_or(100, |s| s.stamina_max).max(1) as f32;
+        let agora_unix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        let estado = barra::Estado {
+            vivo: eu.state.hp > 0 && eu.morte.is_none() && eu.state.flags & shared::ent_flags::DOWNED == 0 && !self.morte.morto,
+            hp: eu.state.hp as f32 / eu.meta.hp_max.max(1) as f32,
+            mp: self.ficha.mp.map_or(1.0, |m| m as f32 / mp_max),
+            vigor: self.ficha.vigor.map_or(1.0, |v| v as f32 / vigor_max),
+            xp_ativo: self.bonus_xp_ate > agora_unix,
+            fortuna_ativo: self.bonus_fortuna_ate > agora_unix,
+            sorte_ativo: self.bonus_sorte_ate > agora_unix,
+        };
+        let qtd = self.qtd_rapidos();
+        if let Some((i, forte)) = self.barra.decide(&estado, &qtd, &self.bolsa.slots, get_time()) {
+            self.usar_espaco(i, forte);
         }
     }
 
@@ -1339,7 +1631,9 @@ impl Jogo {
                 }
                 auto_missao::Acao::LigarColeta(p) => {
                     self.auto_combate.parar();
-                    self.auto_coleta.ligar(p, agora);
+                    // Missao de coleta: os tipos DELA, nao os da configuracao.
+                    let tipos = shared::quests::quest_by_id(id).map_or([true; 5], |d| auto_coleta::tipos_da_missao(d));
+                    self.auto_coleta.ligar_missao(p, tipos, agora);
                 }
                 auto_missao::Acao::PararAutos => {
                     self.auto_combate.parar();
@@ -1353,13 +1647,48 @@ impl Jogo {
         }
     }
 
-    /// X (ou o botao): auto coleta. Teclado, Esc ou Z desligam.
+    /// X (ou o botao): auto coleta. Teclado, Esc ou Z desligam. Tambem conduz
+    /// a coleta manual (clique numa pedra/tronco) e vira o boneco pro no'.
     fn atualizar_auto_coleta(&mut self) {
         let agora = get_time();
+        // Desligou (aqui ou em qualquer outro lugar): a coleta em curso para.
+        if self.coleta_auto_estava && !self.auto_coleta.ativo() && self.coleta_pendente.is_none() {
+            self.envia(ClientMessage::PararColeta);
+        }
+        self.coleta_auto_estava = self.auto_coleta.ativo();
+        // Coletando: olha pro no'.
+        if let (Some(c), Some(id)) = (self.coleta_hud.centro, self.world.self_id) {
+            if let Some(e) = self.world.ents.get_mut(&id) {
+                e.mira = Some((c, 0.3));
+            }
+        }
         let movimento = [KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D, KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right]
             .iter().any(|k| is_key_down(*k));
-        let alterna = is_key_pressed(KeyCode::X)
-            || (!self.painel_grande() && auto_coleta::pega_mouse() && is_mouse_button_pressed(MouseButton::Left));
+        self.acompanhar_coleta_manual(movimento);
+        // O botao: toque CURTO liga/desliga; SEGURAR ou a engrenagem no canto
+        // abrem a configuracao (sem botao direito no toque). Liga no SOLTAR, e
+        // nao no apertar, senao todo toque longo ligaria o AUTO antes de abrir.
+        let mouse = Vec2::from(mouse_position());
+        let livre = !self.painel_grande();
+        let na_engrenagem = livre && auto_coleta::engrenagem().contains(mouse);
+        if na_engrenagem && is_mouse_button_pressed(MouseButton::Left) {
+            self.fecha_paineis();
+            self.config_coleta.abrir();
+        }
+        let sobre_botao = (livre && auto_coleta::pega_mouse() && !na_engrenagem).then_some(0);
+        let toque = self.toque_coleta.quadro(
+            is_mouse_button_pressed(MouseButton::Left),
+            is_mouse_button_down(MouseButton::Left),
+            is_mouse_button_released(MouseButton::Left),
+            sobre_botao,
+            mouse,
+            get_time(),
+        );
+        if matches!(toque, toque::Toque::Longo(_)) {
+            self.fecha_paineis();
+            self.config_coleta.abrir();
+        }
+        let alterna = is_key_pressed(KeyCode::X) || matches!(toque, toque::Toque::Curto(_));
         let esc = is_key_pressed(KeyCode::Escape) && !self.esc_consumido;
         if self.auto_coleta.ativo() && (movimento || alterna || esc || is_key_pressed(KeyCode::Z)) {
             self.auto_coleta.parar();
@@ -1385,15 +1714,32 @@ impl Jogo {
             return;
         }
         let Some(eu) = self.world.self_pos() else { return };
-        let total: u32 = self.bolsa.slots.iter().map(|s| s.qty).sum();
-        match self.auto_coleta.passo(eu, agora, total, self.mapa.viagem.ativa()) {
+        match self.auto_coleta.passo(eu, agora, self.mapa.viagem.ativa()) {
+            auto_coleta::Acao::PedirNo { tipos, raio, centro } => {
+                self.envia(ClientMessage::PedirNoDeColeta { tipos, raio, centro: [centro.x, centro.y] });
+            }
             // Veio do mapa ("Ir" numa regiao): so' aquele tipo, em volta dela.
-            auto_coleta::Acao::PedirSpot => match self.auto_coleta.filtro {
-                Some((tipo, p)) => self.envia(ClientMessage::PedirSpotDeColetaDe { tipo, perto: [p.x, p.y] }),
-                None => self.envia(ClientMessage::PedirSpotDeColeta),
-            },
+            auto_coleta::Acao::PedirNoDoTipo { tipo, perto } => {
+                self.envia(ClientMessage::PedirSpotDeColetaDe { tipo, perto: [perto.x, perto.y] });
+            }
             auto_coleta::Acao::Ir(p) => self.mapa.viagem.iniciar(p, agora),
+            auto_coleta::Acao::Coletar(coluna) => self.envia(ClientMessage::ColetarNo { coluna }),
             auto_coleta::Acao::Nada => {}
+        }
+    }
+
+    /// Clique numa pedra/tronco: anda ate' o alcance e manda coletar ao
+    /// chegar. Teclado ou ligar o AUTO desistem.
+    fn acompanhar_coleta_manual(&mut self, movimento: bool) {
+        let Some((coluna, centro, raio)) = self.coleta_pendente else { return };
+        if movimento || self.auto_coleta.ativo() {
+            self.coleta_pendente = None;
+            return;
+        }
+        let Some(eu) = self.world.self_pos() else { return };
+        if eu.distance(centro) - raio - shared::ENTITY_RADIUS <= shared::COLETA_ALCANCE_UN {
+            self.envia(ClientMessage::ColetarNo { coluna });
+            self.coleta_pendente = None;
         }
     }
 
@@ -1484,9 +1830,11 @@ impl Jogo {
         match c {
             menu_missoes::Clique::AutoMissao(id) => {
                 self.menu_missoes.aberto = false;
+                self.diarias.fechar();
                 self.iniciar_auto_missao(id);
             }
             menu_missoes::Clique::IrAoGiver(_) => {
+                self.diarias.fechar();
                 let nome = shared::construcao::Papel::Missoes.nome();
                 let mestre = self.mapa.mestre.or_else(|| {
                     self.world.ents.values()
@@ -1547,7 +1895,7 @@ impl Jogo {
 
     fn atualizar_auto_combate(&mut self) {
         let movimento=[KeyCode::W,KeyCode::A,KeyCode::S,KeyCode::D,KeyCode::Up,KeyCode::Down,KeyCode::Left,KeyCode::Right].iter().any(|k|is_key_down(*k));
-        let clique_mundo=is_mouse_button_pressed(MouseButton::Left) && !self.ui_pega_mouse();
+        let clique_mundo=self.clique_no_mundo() && !self.ui_pega_mouse();
         // O botao so' existe com o HUD a' mostra; a tecla Z vale sempre. Painel
         // aberto NAO desliga o AUTO (MIR4: o menu aberto nao para o combate).
         let alterna=is_key_pressed(KeyCode::Z) || (!self.painel_grande() && auto_combate::pega_mouse() && is_mouse_button_pressed(MouseButton::Left));
@@ -1647,6 +1995,8 @@ impl Jogo {
     /// manda o close pro servidor — que aproveita pra salvar o personagem em
     /// vez de esperar o socket morrer de timeout.
     fn sair(&mut self) {
+        self.guardar_preferencias_agora();
+        self.prefs = preferencias::Sincronia::default();
         self.auto_combate.parar();
         self.loja.fecha();
         self.interacao.cancela();
@@ -1660,6 +2010,7 @@ impl Jogo {
         self.mapa.filtros = filtros;
         self.ir_para.parar();
         self.menu_missoes.aberto = false;
+        self.diarias.fechar();
         self.quest_entregues.clear();
         self.construcoes = construcoes::Construcoes::default();
         self.rastro.limpa();
@@ -1721,6 +2072,44 @@ impl Jogo {
         );
     }
 
+    /// Le os dedos deste quadro e decide o gesto (ver `gesto_camera`).
+    fn ler_toques(&mut self) {
+        let brutos = touches();
+        self.toque_ativo = !brutos.is_empty() || self.gesto_camera.ativo();
+        let toques: Vec<gesto_camera::ToqueNoQuadro> = brutos
+            .iter()
+            .map(|t| gesto_camera::ToqueNoQuadro {
+                id: t.id,
+                fase: match t.phase {
+                    TouchPhase::Started => gesto_camera::Fase::Comecou,
+                    TouchPhase::Ended | TouchPhase::Cancelled => gesto_camera::Fase::Acabou,
+                    _ => gesto_camera::Fase::Segurando,
+                },
+                pos: t.position,
+            })
+            .collect();
+        // O HUD e' conferido no ponto do dedo (a macroquad ja' levou o mouse
+        // simulado pra la').
+        let sobre_hud = !toques.is_empty() && self.ui_pega_mouse();
+        self.toque_acao = self.gesto_camera.quadro(&toques, sobre_hud);
+    }
+
+    /// Clique no MUNDO neste quadro: com dedo, so' o toque curto no soltar;
+    /// sem dedo, o aperto do botao esquerdo como sempre.
+    fn clique_no_mundo(&self) -> bool {
+        match self.toque_acao {
+            gesto_camera::Acao::Clique(_) => true,
+            _ => !self.toque_ativo && is_mouse_button_pressed(MouseButton::Left),
+        }
+    }
+
+    fn pos_do_clique(&self) -> (f32, f32) {
+        match self.toque_acao {
+            gesto_camera::Acao::Clique(p) => (p.x, p.y),
+            _ => mouse_position(),
+        }
+    }
+
     fn camera_controles(&mut self) {
         let dt = get_frame_time();
         if is_key_down(KeyCode::Q) {
@@ -1762,6 +2151,19 @@ impl Jogo {
             self.arrasto = Some(p);
         } else {
             self.arrasto = None;
+        }
+        // Toque: um dedo arrastando no mundo gira com a MESMA sensibilidade do
+        // arrasto do mouse; a pinca aproxima/afasta na faixa da roda.
+        match self.toque_acao {
+            gesto_camera::Acao::Gira(d) => {
+                self.cam_yaw += d.x * 0.008;
+                mexeu += d.y * 0.004;
+            }
+            gesto_camera::Acao::Zoom(d) if !self.painel_grande() => {
+                // Abrir os dedos aproxima, como a roda pra cima.
+                self.cam_zoom = (self.cam_zoom - d * 0.004).clamp(render3d::ZOOM_MIN, render3d::ZOOM_MAX);
+            }
+            _ => {}
         }
         if mexeu != 0.0 {
             self.cam_pitch_ajuste += mexeu;
@@ -1879,7 +2281,8 @@ impl Jogo {
 
     fn desenhar_mundo(&mut self) {
         render3d::clear();
-        let centro = self.world.self_pos().unwrap_or(Vec2::ZERO);
+        let centro = self.world.self_pos().unwrap_or(Vec2::ZERO)
+            + chefe_anim::sacudida(self.tremor.0, self.tremor.1, get_time());
         // A camera sobe com o chao. Presa em zero, o jogador some dentro do
         // morro assim que o terreno passou a ter 34 unidades de altura.
         let terreno = self.terreno.as_ref();
@@ -1921,6 +2324,15 @@ impl Jogo {
                     let altura = |x: f32, z: f32| t.altura(x, z);
                     rastro::desenha(&self.rastro, eu, self.mapa.viagem.destino(), &altura, get_time() as f32);
                 }
+                // Golpe de chefe carregando: onde vai bater, crescendo ate' o impacto.
+                {
+                    let altura = |x: f32, z: f32| t.altura(x, z);
+                    self.telegrafos.desenha(&altura, get_time());
+                }
+                // O mar por cima do leito, com material proprio (onda no
+                // shader); depois o solido volta pro resto do mundo.
+                agua::desenha(t, &vista.cam, get_time() as f32);
+                gl_use_material(&self.solido);
             }
             None => {
                 if let Some(m) = &self.map {
@@ -1945,6 +2357,11 @@ impl Jogo {
         set_default_camera();
         // Numero de dano, faisca e a borda vermelha, por cima do mundo.
         efeitos::desenha(&self.world, &vista);
+        // Quanto falta andar, sobre o destino.
+        if let (Some(t), Some(eu)) = (&self.terreno, self.world.self_pos()) {
+            let altura = |x: f32, z: f32| t.altura(x, z);
+            rastro::desenha_distancia(&self.rastro, eu, self.mapa.viagem.destino(), &altura, &vista.cam);
+        }
         if let Some(e) = self.world.self_id.and_then(|i| self.world.ents.get(&i)) {
             let bolsa = &self.bolsa;
             self.ganhos.desenha(&vista.cam, vista.pos_de(e), |id| bolsa.nome(id));
@@ -1988,7 +2405,7 @@ impl Jogo {
                 let (hp_max, mp_max, vigor_max, poder) =
                     (st.map_or(hp_max, |s| s.hp_max), st.map_or(50, |s| s.mp_max), st.map_or(100, |s| s.stamina_max), st.map(crate::bolsa::poder));
                 hud::draw_ficha(&z, &mut self.ficha, get_frame_time(), &nome, nivel, hp, hp_max, mp_max, vigor_max, poder);
-                hud::draw_buff_xp(self.bonus_xp_ate, agora_unix, Rect::new(z.buffs.x, z.buffs.y - 6.0, z.buffs.w, 0.0));
+                hud::draw_buffs(self.bonus_xp_ate, self.bonus_fortuna_ate, self.bonus_sorte_ate, agora_unix, Rect::new(z.buffs.x, z.buffs.y - 6.0, z.buffs.w, 0.0), self.barra.curas(get_time()));
                 let conjunto = shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0));
                 self.habilidades.barra(conjunto, nivel, self.ficha.mp.unwrap_or(0));
                 self.auto_combate.desenha();
@@ -1996,8 +2413,60 @@ impl Jogo {
                 if hud::draw_atacar(&z, self.alvo.is_some()) {
                     self.atacar();
                 }
-                if let Some(i) = hud::draw_rapidos(&z, self.qtd_rapidos()) {
-                    self.usar_rapido(i);
+                {
+                    let bolsa = &self.bolsa;
+                    let itens = self.barra.espacos.map(|e| e.item_id);
+                    let auto = self.barra.espacos.map(|e| e.auto);
+                    let agora_s = get_time();
+                    let recarga = std::array::from_fn(|i| self.barra.recarga(i, agora_s));
+                    let curando = std::array::from_fn(|i| self.barra.curando(i, agora_s));
+                    hud::draw_rapidos(&z, itens, self.qtd_rapidos(), auto, recarga, curando, self.barra.arrastando(), &|id| bolsa.nome(id));
+                }
+                // Barra de itens: clique usa, arrastar ↑/↓ liga/desliga o AUTO
+                // do espaco, botao direito abre o configurador.
+                let rects = hud::rects_rapidos(&z);
+                let mouse = Vec2::from(mouse_position());
+                if is_mouse_button_pressed(MouseButton::Right) {
+                    if let Some(i) = rects.iter().position(|r| r.contains(mouse)) {
+                        self.fecha_paineis();
+                        self.config_barra.abrir(Some(i));
+                    }
+                }
+                // Botao direito no AUTO COLETA: o que coletar e o raio.
+                if is_mouse_button_pressed(MouseButton::Right) && auto_coleta::retangulo().contains(mouse) {
+                    self.fecha_paineis();
+                    self.config_coleta.abrir();
+                }
+                // Segurar um espaco parado (toque longo) tambem abre o
+                // configurador; arrastar continua sendo o AUTO.
+                let sob_dedo = rects.iter().position(|r| r.contains(mouse)).map(|i| i as u32);
+                if let toque::Toque::Longo(i) = self.toque_barra.quadro(
+                    is_mouse_button_pressed(MouseButton::Left),
+                    is_mouse_button_down(MouseButton::Left),
+                    is_mouse_button_released(MouseButton::Left),
+                    sob_dedo,
+                    mouse,
+                    get_time(),
+                ) {
+                    self.barra.cancela_gesto();
+                    self.fecha_paineis();
+                    self.config_barra.abrir(Some(i as usize));
+                }
+                let gesto = self.barra.entrada(
+                    &rects,
+                    mouse,
+                    is_mouse_button_pressed(MouseButton::Left),
+                    is_mouse_button_down(MouseButton::Left),
+                    is_mouse_button_released(MouseButton::Left),
+                );
+                if let Some(g) = gesto {
+                    let (usar, mudou) = self.barra.aplica(g);
+                    if let Some(i) = usar {
+                        self.usar_rapido(i);
+                    }
+                    if mudou {
+                        self.salvar_barra();
+                    }
                 }
                 // A janela do NPC (ou o diario) e a loja cobrem o mesmo canto.
                 if !self.missoes.aberta && !self.loja.aberta() {
@@ -2028,14 +2497,27 @@ impl Jogo {
                     self.alvo = None;
                     self.envia(ClientMessage::SetTarget { target: None });
                 }
+                if chefe {
+                    telegrafico::rotulo_de_fase(z.alvo, hp, hp_max);
+                }
+            } else if let Some((nome, nv, hp, hp_max)) =
+                self.world.self_pos().and_then(|eu| telegrafico::chefe_perto(&self.world, eu))
+            {
+                // Chefe em luta por perto sem estar selecionado: a barra dele.
+                telegrafico::desenha_barra_de_chefe(z.alvo, &nome, nv, hp, hp_max);
             }
             let selo = self.selo_missoes();
-            match hud::draw_topo(&z, selo, selo) {
+            let selo_diarias = self.selo_diarias();
+            match hud::draw_topo(&z, selo, selo_diarias, selo || selo_diarias) {
                 Some(hud::Topo::Bolsa) => {
                     self.fecha_paineis();
                     self.bolsa.abrir();
                 }
                 Some(hud::Topo::Missoes) => self.abrir_diario(),
+                Some(hud::Topo::Diarias) => {
+                    self.fecha_paineis();
+                    self.diarias.abrir();
+                }
                 Some(hud::Topo::Grupo) => self.chat.push("Grupo: em breve.".into()),
                 Some(hud::Topo::Avisos) => self.chat.push("Avisos: nada novo.".into()),
                 Some(hud::Topo::Menu) => {
@@ -2047,6 +2529,9 @@ impl Jogo {
         }
         if let Some((texto, cor)) = self.texto_da_faixa() {
             hud_layout::desenha_faixa(&z, &texto, cor);
+        }
+        if self.coleta_hud.ativa() {
+            self.coleta_hud.desenha(&z, get_time());
         }
         if eu.is_some() {
             hud::draw_exp(&z, &self.ficha, nivel);
@@ -2060,8 +2545,22 @@ impl Jogo {
                 self.envia(pedido);
             }
         }
-        if self.craft.aberto() || self.forja.aberto() {
+        if self.craft.aberto() || self.forja.aberto() || self.config_barra.aberto || self.config_coleta.aberto {
             hud_layout::escurece(0.55);
+        }
+        if self.config_coleta.aberto {
+            let (mut tipos, mut raio) = (self.auto_coleta.tipos, self.auto_coleta.raio);
+            if self.config_coleta.desenha(&mut tipos, &mut raio) {
+                // Vai pro servidor pelas preferencias (sincronia a cada quadro).
+                self.auto_coleta.tipos = tipos;
+                self.auto_coleta.raio = raio;
+            }
+        }
+        if self.config_barra.aberto {
+            let bolsa = &self.bolsa;
+            if self.config_barra.desenha(&mut self.barra, &bolsa.slots, &|id| bolsa.nome(id)) {
+                self.salvar_barra();
+            }
         }
         if self.craft.aberto() {
             let nivel = self.ficha.nivel.max(1);
@@ -2102,6 +2601,29 @@ impl Jogo {
                     tem: &tem,
                 };
                 self.menu_missoes.desenha(&c)
+            };
+            if let Some(c) = clique {
+                self.clique_menu_missoes(c);
+            }
+        }
+        if self.diarias.aberto {
+            hud_layout::escurece(0.55);
+            let agora_unix = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs() as i64);
+            let clique = {
+                let slots = &self.bolsa.slots;
+                let tem = |id: u16| missoes::na_bolsa(slots, id);
+                let c = menu_missoes::Contexto {
+                    log: &self.missoes.log,
+                    entregues: &self.quest_entregues,
+                    nivel: self.ficha.nivel,
+                    faccao: self.faccao_qid,
+                    zona: self.mapa.zona(),
+                    agora_unix,
+                    tem: &tem,
+                };
+                self.diarias.desenha(&c, &self.bolsa.nomes)
             };
             if let Some(c) = clique {
                 self.clique_menu_missoes(c);
@@ -2162,7 +2684,13 @@ impl Jogo {
                 ("Cobre", tem(shared::constants::item_id::COPPER)),
                 ("Darksteel", tem(shared::constants::item_id::DARKSTEEL)),
             ];
-            let selos: Vec<menu::Item> = if self.selo_missoes() { vec![menu::Item::Missoes] } else { Vec::new() };
+            let mut selos: Vec<menu::Item> = Vec::new();
+            if self.selo_missoes() {
+                selos.push(menu::Item::Missoes);
+            }
+            if self.selo_diarias() {
+                selos.push(menu::Item::Diarias);
+            }
             let ctx = menu::Contexto {
                 nome: &nome,
                 nivel,
@@ -2176,6 +2704,13 @@ impl Jogo {
                 Some(menu::Clique::Aviso(t)) => self.chat.push(t),
                 None => {}
             }
+        }
+        // Morte e "Recuperar XP" por cima de tudo. So' clique: Esc nao revive.
+        let agora_unix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        if let Some(pedido) = self.morte.desenha(self.bolsa.ouro, agora_unix) {
+            self.envia(pedido);
         }
     }
 
@@ -2272,7 +2807,7 @@ impl Jogo {
             if y >= topo && y + 20.0 <= base {
                 ui::texto(r.x + 2.0, y + 14.0, zona, 17, ui::OURO);
                 let dir = format!("{online} online");
-                let d = measure_text(&dir, None, 14, 1.0);
+                let d = crate::hud_estilo::medir_dim(&dir, 14);
                 ui::texto(r.x + r.w - d.width - 2.0, y + 14.0, &dir, 14,
                     Color::new(0.55, 0.55, 0.58, 1.0));
             }

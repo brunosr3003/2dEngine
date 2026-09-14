@@ -11,16 +11,23 @@
 //! entidades. As sessoes se comunicam com o mundo SOMENTE via mpsc.
 
 mod auth;
+#[cfg(test)]
+mod balanceamento;
 mod boat_config;
 mod canais;
+mod coleta;
 mod craft;
 mod economy;
 mod loot_mobs;
 mod mapa_ilha;
 mod panoptico;
+mod morte;
+mod barra;
+mod preferencias;
 mod persistence;
 mod quests;
 mod recipes;
+mod rumo;
 mod session;
 mod skills;
 mod tick;

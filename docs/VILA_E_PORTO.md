@@ -11,8 +11,14 @@ viaja pela rede.
 - **Porto** (`SitioPorto`): pátio aplainado na costa (18/28 u), a ≥ 150 u da
   cidade, com água funda na ponta do cais. O **píer** é erguido no relevo
   (a faixa do cais vai ao nível do pátio), porque o movimento barra água.
+- **Só em mar aberto.** Os 48 rumos consideram TODA passagem de terra pra água
+  (não só a primeira: saindo do centro, a primeira água pode ser um lago), e o
+  candidato só vale se a ponta do cais e 6 u além dela forem oceano —
+  `Gerador::mar_aberto`: busca gulosa pra fora numa grade de 2 u, só por água,
+  até passar do raio da ilha (lago esgota o contorno e é recusado). O teste
+  `o_porto_da_no_oceano` confere as 4 ilhas.
 - Nada de árvore, planta ou pedra nos dois (`Gerador::na_cidade`).
-- Mudou o relevo: `VERSAO` do cache de altura sobe (hoje 3).
+- Mudou o relevo: `VERSAO` do cache de altura sobe (hoje 4).
 
 ## Construções (`shared::construcao`)
 

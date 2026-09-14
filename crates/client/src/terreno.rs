@@ -69,6 +69,35 @@ const BLOCO_DO_MAR: i32 = (NIVEL_DO_MAR / BLOCO) as i32 - 1;
 
 struct Pedaco {
     malhas: Vec<Mesh>,
+    /// A superficie do mar deste pedaco (`agua::malhas_do_pedaco`), com
+    /// material proprio. Vazia em pedaco todo terra.
+    agua: Vec<Mesh>,
+}
+
+/// O pedaco `(cx, cz)` cai no cone da camera? O mesmo teste pro chao e pro
+/// mar: dois testes seriam dois lugares pro buraco aparecer.
+fn pedaco_visivel(cam: &Camera3D, cx: i32, cz: i32) -> bool {
+    let olho = cam.position;
+    let frente = (cam.target - cam.position).normalize();
+    // Meia abertura generosa: melhor desenhar um pedaco a mais na borda
+    // que abrir um buraco quando o jogador gira depressa.
+    let cos_limite = (cam.fovy * 0.5 + 0.55).cos();
+    let raio_pedaco = CHUNK as f32 * BLOCO * 0.87; // meia diagonal
+    let centro = vec3(
+        (cx as f32 + 0.5) * CHUNK as f32 * BLOCO,
+        olho.y * 0.5,
+        (cz as f32 + 0.5) * CHUNK as f32 * BLOCO,
+    );
+    let d = centro - olho;
+    let dist = d.length();
+    // Pedaco em cima do olho passa sempre: normalizar vetor curto e'
+    // ruido, e ele esta' na tela de qualquer jeito.
+    if dist <= raio_pedaco {
+        return true;
+    }
+    // Folga angular proporcional ao tamanho do pedaco na distancia.
+    let folga = (raio_pedaco / dist).min(1.0).asin();
+    d.normalize().dot(frente) >= (cos_limite.acos() + folga).cos()
 }
 
 pub struct Terreno {
@@ -176,6 +205,46 @@ impl Terreno {
         self.pedacos.remove(&(bx.div_euclid(CHUNK), bz.div_euclid(CHUNK)));
     }
 
+    /// A pedra ou tronco VIVO mais perto de `p` (borda a ate' `raio`):
+    /// (coluna, centro, tipo 0 madeira / 1..4 pedra, raio do corpo). Pro
+    /// clique no mundo virar "coletar isto". Sai do mesmo
+    /// `estorvos_da_coluna` que o servidor planta, entao coluna e raio batem.
+    pub fn coletavel_perto(&self, p: Vec2, raio: f32) -> Option<(u32, Vec2, u8, f32)> {
+        use shared::terreno::TipoDeEstorvo;
+        let r = (raio / BLOCO).ceil() as i32 + 3;
+        let (cx, cz) = ((p.x / BLOCO).round() as i32, (p.y / BLOCO).round() as i32);
+        let mut buf = Vec::new();
+        let mut melhor: Option<(u32, Vec2, u8, f32, f32)> = None;
+        for bz in cz - r..=cz + r {
+            for bx in cx - r..=cx + r {
+                let topo = self.ger.bloco_em(bx, bz);
+                let agua = (topo + 1) as f32 * BLOCO <= NIVEL_DO_MAR;
+                let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .iter()
+                    .map(|(dx, dz)| (topo - self.ger.bloco_em(bx + dx, bz + dz)).abs())
+                    .max()
+                    .unwrap_or(0);
+                buf.clear();
+                shared::terreno::estorvos_da_coluna(self.bioma, bx, bz, topo, declive, &self.ger, agua, &mut buf);
+                for e in buf.drain(..) {
+                    let tipo = match e.tipo {
+                        TipoDeEstorvo::Minerio(t) => t,
+                        TipoDeEstorvo::Tronco => 0,
+                        TipoDeEstorvo::Forracao => continue,
+                    };
+                    if self.esgotadas.contains(&e.coluna) {
+                        continue;
+                    }
+                    let borda = e.centro.distance(::glam::Vec2::new(p.x, p.y)) - e.raio;
+                    if borda <= raio && melhor.is_none_or(|m| borda < m.4) {
+                        melhor = Some((e.coluna, vec2(e.centro.x, e.centro.y), tipo, e.raio, borda));
+                    }
+                }
+            }
+        }
+        melhor.map(|(k, c, t, rr, _)| (k, c, t, rr))
+    }
+
     fn modelo_de_arvore(&self, e: Arvore, k: u32) -> &crate::vegetacao::Modelo {
         &self.arvores[e as usize * VARIANTES + (k as usize % VARIANTES)]
     }
@@ -247,29 +316,10 @@ impl Terreno {
     ///
     /// Devolve quantos pedacos foram desenhados, pro HUD.
     pub fn desenha(&self, cam: &Camera3D) -> usize {
-        let olho = cam.position;
-        let frente = (cam.target - cam.position).normalize();
-        // Meia abertura generosa: melhor desenhar um pedaco a mais na borda
-        // que abrir um buraco quando o jogador gira depressa.
-        let cos_limite = (cam.fovy * 0.5 + 0.55).cos();
-        let raio_pedaco = CHUNK as f32 * BLOCO * 0.87; // meia diagonal
         let mut desenhados = 0;
         for ((cx, cz), p) in &self.pedacos {
-            let centro = vec3(
-                (*cx as f32 + 0.5) * CHUNK as f32 * BLOCO,
-                olho.y * 0.5,
-                (*cz as f32 + 0.5) * CHUNK as f32 * BLOCO,
-            );
-            let d = centro - olho;
-            let dist = d.length();
-            // Pedaco em cima do olho passa sempre: normalizar vetor curto e'
-            // ruido, e ele esta' na tela de qualquer jeito.
-            if dist > raio_pedaco {
-                // Folga angular proporcional ao tamanho do pedaco na distancia.
-                let folga = (raio_pedaco / dist).min(1.0).asin();
-                if d.normalize().dot(frente) < (cos_limite.acos() + folga).cos() {
-                    continue;
-                }
+            if !pedaco_visivel(cam, *cx, *cz) {
+                continue;
             }
             desenhados += 1;
             for m in &p.malhas {
@@ -277,6 +327,19 @@ impl Terreno {
             }
         }
         desenhados
+    }
+
+    /// A superficie do mar dos pedacos visiveis. Quem chama ja' pos o
+    /// material da agua (ver `agua::desenha`).
+    pub fn desenha_agua(&self, cam: &Camera3D) {
+        for ((cx, cz), p) in &self.pedacos {
+            if p.agua.is_empty() || !pedaco_visivel(cam, *cx, *cz) {
+                continue;
+            }
+            for m in &p.agua {
+                draw_mesh(m);
+            }
+        }
     }
 
     /// Onde o raio da tela encosta no chao.
@@ -505,7 +568,13 @@ impl Terreno {
                     // CHAPADA, nao interpolada. Variar os cantos espalha o
                     // grao num gradiente macio, e o que o voxel pede e' o
                     // xadrez nitido de bloco contra bloco.
-                    [self.cor(mat, gx, gz, h, 1.0, tom_da_mancha(manchinha)); 4],
+                    // Submerso e' LEITO: areia escurecendo com a fundura,
+                    // que a agua rasa translucida deixa ver.
+                    [if a {
+                        crate::agua::cor_do_leito(self.ger.bloco_em(gx, gz), gx, gz)
+                    } else {
+                        self.cor(mat, gx, gz, h, 1.0, tom_da_mancha(manchinha))
+                    }; 4],
                 );
             }
         }
@@ -689,7 +758,7 @@ impl Terreno {
         if !verts.is_empty() {
             malhas.push(Mesh { vertices: verts, indices: idx, texture: None });
         }
-        Pedaco { malhas }
+        Pedaco { malhas, agua: crate::agua::malhas_do_pedaco(&self.ger, cx, cz) }
     }
 
     /// Cor de uma face, ja' com a luz do lado aplicada.

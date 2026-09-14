@@ -16,8 +16,10 @@ pub enum Item {
     Ficha,
     Habilidades,
     Montaria,
+    RecuperarXp,
     Missoes,
     TodasMissoes,
+    Diarias,
     Conquistas,
     Craft,
     Forja,
@@ -31,6 +33,9 @@ pub enum Item {
     Lojas,
     Mercado,
     LojaTp,
+    BarraItens,
+    /// O que coletar e o raio do AUTO COLETA (toque: sem botao direito).
+    Coleta,
     Configuracoes,
     TrocarPersonagem,
     Sair,
@@ -50,16 +55,19 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
     ("PROGRESSO", &[
         (Item::Missoes, "Missões", None),
         (Item::TodasMissoes, "Todas", None),
+        (Item::Diarias, "Diárias", None),
         (Item::Conquistas, "Conquistas", Some("Em breve")),
     ]),
     ("OFICINA", &[
         (Item::Craft, "Craft", None),
         (Item::Forja, "Forja", None),
         (Item::Encantar, "Encantar", Some("Em breve")),
+        (Item::Coleta, "Coleta", None),
     ]),
     ("AVENTURA", &[
         (Item::Mapa, "Mapa", None),
         (Item::Aventuras, "Dungeons", Some("Em breve")),
+        (Item::RecuperarXp, "Recuperar XP", None),
     ]),
     ("SOCIAL", &[
         (Item::Grupo, "Grupo", Some("Em breve")),
@@ -75,6 +83,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
         (Item::Mercado, "Mercado", Some("Em breve")),
     ]),
     ("SISTEMA", &[
+        (Item::BarraItens, "Barra", None),
         (Item::Configuracoes, "Ajustes", Some("Em breve")),
         (Item::TrocarPersonagem, "Trocar", Some("Em breve")),
         (Item::Sair, "Sair", None),
@@ -144,24 +153,23 @@ impl Menu {
         }
         crate::hud_layout::escurece(0.6);
         let p = Self::painel();
-        estilo::painel(p);
+        estilo::painel_destaque(p, estilo::OURO);
         let m = Vec2::from(mouse_position());
         let clique = is_mouse_button_pressed(MouseButton::Left);
-        estilo::texto(p.x + 20.0, p.y + 34.0, "MENU", 24, estilo::OURO);
+        estilo::texto_forte(p.x + 20.0, p.y + 34.0, "MENU", 24, estilo::OURO);
         if crate::ui::botao(Rect::new(p.x + p.w - 46.0, p.y + 12.0, 34.0, 30.0), "x", true) {
             self.aberto = false;
             return None;
         }
-        draw_line(p.x + 14.0, p.y + 50.0, p.x + p.w - 14.0, p.y + 50.0, 1.0, estilo::BORDA);
+        estilo::separador(p.x + 14.0, p.y + 50.0, p.w - 28.0);
 
         // ── coluna da esquerda: personagem e saldos ──
         let esq = Rect::new(p.x + 14.0, p.y + 60.0, (p.w * 0.26).clamp(170.0, 300.0), p.h - 74.0);
-        estilo::painel(esq);
+        estilo::cartao(esq, false, false);
         let cx = esq.center().x;
-        draw_circle(cx, esq.y + 56.0, 38.0, Color::new(0.075, 0.10, 0.14, 1.0));
-        draw_circle_lines(cx, esq.y + 56.0, 38.0, 1.5, estilo::OURO);
-        estilo::texto_centro(cx, esq.y + 52.0, "LV", 11, estilo::SUAVE);
-        estilo::texto_centro(cx, esq.y + 76.0, &c.nivel.to_string(), 26, estilo::TEXTO);
+        estilo::botao_redondo(vec2(cx, esq.y + 56.0), 38.0, estilo::OURO, estilo::Estado::Normal, false);
+        estilo::texto_centro_forte(cx, esq.y + 52.0, "LV", 11, estilo::SUAVE);
+        estilo::texto_centro_forte(cx, esq.y + 76.0, &c.nivel.to_string(), 26, estilo::TEXTO);
         let mut y = esq.y + 122.0;
         estilo::texto_ajustado(c.nome, esq.x + 14.0, y, esq.w - 28.0, 19, estilo::TEXTO);
         y += 24.0;
@@ -171,7 +179,7 @@ impl Menu {
         let poder = c.poder.map(|v| crate::bolsa::milhar(v.max(0) as u64)).unwrap_or_else(|| "—".into());
         estilo::texto(esq.x + esq.w - 14.0 - estilo::medir(&poder, 18), y + 2.0, &poder, 18, estilo::OURO);
         y += 16.0;
-        draw_line(esq.x + 10.0, y, esq.x + esq.w - 10.0, y, 1.0, estilo::BORDA);
+        estilo::separador(esq.x + 10.0, y, esq.w - 20.0);
         y += 24.0;
         estilo::texto(esq.x + 14.0, y, "SALDOS", 11, estilo::SUAVE);
         for (rotulo, valor) in c.saldos {
@@ -198,16 +206,13 @@ impl Menu {
             let x0 = dir.x + k as f32 * (col_w + 14.0);
             let mut gy = dir.y;
             for (nome, itens) in grupos.iter() {
-                estilo::texto(x0, gy + 16.0, nome, 13, estilo::SUAVE);
+                estilo::texto_forte(x0, gy + 16.0, nome, 12, estilo::SUAVE);
                 gy += 24.0;
                 for (i, l) in itens.iter().enumerate() {
                     let r = Rect::new(x0 + i as f32 * (t + 10.0), gy, t, t);
                     let sobre = r.contains(m);
                     let travado = l.2.is_some();
-                    estilo::painel(r);
-                    if sobre {
-                        draw_rectangle(r.x, r.y, r.w, r.h, Color::new(1.0, 1.0, 1.0, 0.06));
-                    }
+                    estilo::cartao(r, sobre && !travado, false);
                     let cor = if travado {
                         Color::new(0.45, 0.47, 0.50, 1.0)
                     } else if sobre {
@@ -233,11 +238,7 @@ impl Menu {
             }
         }
         if let Some((r, texto)) = dica {
-            let w = estilo::medir(&texto, 13) + 16.0;
-            let x = (r.center().x - w * 0.5).clamp(4.0, screen_width() - w - 4.0);
-            let caixa = Rect::new(x, r.y + r.h + 4.0, w, 24.0);
-            estilo::painel(caixa);
-            estilo::texto(caixa.x + 8.0, caixa.y + 17.0, &texto, 13, estilo::TEXTO);
+            estilo::tooltip(r, &texto, false);
         }
         saida
     }
@@ -245,14 +246,49 @@ impl Menu {
 
 fn cadeado(c: Vec2, s: f32) {
     let cor = Color::new(0.85, 0.74, 0.50, 1.0);
-    draw_rectangle(c.x - s, c.y - s * 0.2, s * 2.0, s * 1.5, cor);
+    if crate::icones_ui::ui("cadeado", c, s * 2.6, cor) {
+        return;
+    }
+    estilo::ret_arredondado(Rect::new(c.x - s, c.y - s * 0.2, s * 2.0, s * 1.5), s * 0.35, cor);
     estilo::arco(c - vec2(0.0, s * 0.2), s * 0.7, std::f32::consts::PI, 0.5, 1.8, cor);
 }
 
 fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
+    let nome = match item {
+        Item::Bolsa => "bolsa",
+        Item::Ficha => "ficha",
+        Item::Habilidades => "habilidades",
+        Item::Montaria => "montaria",
+        Item::RecuperarXp => "recuperar_xp",
+        Item::Missoes => "missoes",
+        Item::TodasMissoes => "todas_missoes",
+        Item::Diarias => "diarias",
+        Item::Conquistas => "conquistas",
+        Item::Craft => "craft",
+        Item::Forja => "forja",
+        Item::Encantar => "encantar",
+        Item::Mapa => "mapa",
+        Item::Aventuras => "aventuras",
+        Item::Grupo => "grupo",
+        Item::Amigos => "amigos",
+        Item::Correio => "correio",
+        Item::Clan => "clan",
+        Item::Lojas => "lojas",
+        Item::Mercado => "mercado",
+        Item::LojaTp => "loja_tp",
+        Item::BarraItens => "barra_itens",
+        Item::Coleta => "coleta",
+        Item::Configuracoes => "configuracoes",
+        Item::TrocarPersonagem => "trocar_personagem",
+        Item::Sair => "sair",
+    };
+    if crate::icones_ui::ui(nome, c, s * 2.6, cor) {
+        return;
+    }
     match item {
         Item::Bolsa => pictograma(0, c, s, cor),
         Item::Missoes | Item::TodasMissoes | Item::Conquistas => pictograma(1, c, s, cor),
+        Item::Diarias => pictograma(5, c, s, cor),
         Item::Grupo | Item::Amigos | Item::Clan => pictograma(2, c, s, cor),
         Item::Correio => pictograma(3, c, s, cor),
         Item::Craft => estilo::icone(3, c, s * 1.1, cor),
@@ -273,7 +309,7 @@ mod tests {
 
     #[test]
     fn todo_sistema_que_existe_abre_e_o_resto_so_avisa() {
-        let abre = [Item::Bolsa, Item::Missoes, Item::TodasMissoes, Item::Craft, Item::Forja, Item::Mapa, Item::Lojas, Item::Sair];
+        let abre = [Item::Bolsa, Item::Missoes, Item::TodasMissoes, Item::Diarias, Item::Craft, Item::Forja, Item::Mapa, Item::Lojas, Item::RecuperarXp, Item::BarraItens, Item::Coleta, Item::Sair];
         for (_, itens) in GRUPOS.iter() {
             for l in itens.iter() {
                 match clique_de(l) {

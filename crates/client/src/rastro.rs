@@ -126,6 +126,61 @@ fn comprimento(caminho: &[Vec2]) -> f32 {
     caminho.windows(2).map(|p| p[0].distance(p[1])).sum()
 }
 
+/// Quanto falta andar, PELO CAMINHO: a rota que o servidor mandou e, se a
+/// viagem vai alem dela, a reta do fim da rota ate' o destino final. Em reta
+/// do personagem ao destino mentiria toda vez que a rota contorna um morro.
+pub fn restante(r: &Rastro, eu: Vec2, destino_final: Option<Vec2>) -> Option<f32> {
+    if !r.ativo() && destino_final.is_none() {
+        return None;
+    }
+    let (mut total, fim) = if r.ativo() {
+        let c = r.caminho(eu);
+        (comprimento(&c), *c.last()?)
+    } else {
+        (0.0, eu)
+    };
+    if let Some(f) = destino_final {
+        if f.distance(fim) > 0.5 {
+            total += fim.distance(f);
+        }
+    }
+    Some(total)
+}
+
+/// "13 m", ou "1,5 km" a partir de mil. Arredonda pra CIMA: chegar a zero so'
+/// quando chegou de verdade.
+pub fn formata_distancia(m: f32) -> String {
+    if m >= 1000.0 {
+        format!("{:.1} km", m / 1000.0).replace('.', ",")
+    } else {
+        format!("{} m", m.ceil().max(1.0) as i32)
+    }
+}
+
+/// O contador sobre o destino: plaquinha com quanto falta. Vai no passe 2D,
+/// depois do mundo.
+pub fn desenha_distancia(
+    r: &Rastro,
+    eu: Vec2,
+    destino_final: Option<Vec2>,
+    altura: &dyn Fn(f32, f32) -> f32,
+    cam: &Camera3D,
+) {
+    let Some(m) = restante(r, eu, destino_final) else { return };
+    if m < 1.0 {
+        return;
+    }
+    // Na viagem longa o numero e' do destino FINAL, entao mora nele; senao no
+    // fim da rota.
+    let Some(alvo) = destino_final.or_else(|| r.destino()) else { return };
+    let topo = vec3(alvo.x, altura(alvo.x, alvo.y) + 1.1, alvo.y);
+    let Some(c) = crate::render3d::world_to_screen(cam, topo) else { return };
+    let texto = formata_distancia(m);
+    let largura = texto.chars().count() as f32 * 8.0 + 18.0;
+    crate::hud_estilo::painel(Rect::new(c.x - largura * 0.5, c.y - 24.0, largura, 22.0));
+    crate::hud_estilo::texto_centro(c.x, c.y - 8.0, &texto, 15, crate::hud_estilo::OURO);
+}
+
 /// O ponto da amostra na distancia `s` (interpola entre vizinhas).
 fn ponto_em(amostras: &[(Vec3, f32)], s: f32) -> Vec3 {
     let i = amostras.partition_point(|(_, d)| *d < s);
@@ -297,6 +352,20 @@ pub fn desenha(r: &Rastro, eu: Vec2, destino_final: Option<Vec2>, altura: &dyn F
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conta_o_que_falta_pelo_caminho() {
+        let mut r = Rastro::default();
+        assert_eq!(restante(&r, Vec2::ZERO, None), None, "parado: sem contador");
+        r.define(vec![vec2(10.0, 0.0), vec2(10.0, 10.0)], vec2(10.0, 10.0));
+        let m = restante(&r, Vec2::ZERO, None).unwrap();
+        assert!((m - 20.0).abs() < 1e-3, "pelo caminho (20), nao em reta: {m}");
+        let m = restante(&r, Vec2::ZERO, Some(vec2(10.0, 40.0))).unwrap();
+        assert!((m - 50.0).abs() < 1e-3, "viagem alem da rota soma a reta final: {m}");
+        assert_eq!(formata_distancia(0.2), "1 m");
+        assert_eq!(formata_distancia(12.3), "13 m");
+        assert_eq!(formata_distancia(1540.0), "1,5 km");
+    }
 
     #[test]
     fn descarta_pontos_alcancados_e_passados() {

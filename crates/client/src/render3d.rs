@@ -1118,9 +1118,34 @@ pub fn rig_do_npc(papel: u8, id: u64) -> &'static str {
     }
 }
 
+/// Escala de desenho do chefe de campo (1 pra quem nao e' chefe).
+pub(crate) fn escala_de_chefe(e: &crate::world::Ent) -> f32 {
+    if e.meta.tag == shared::EntityTag::Enemy && e.state.flags & shared::ent_flags::BOSS != 0 {
+        shared::bosses::chefe(e.meta.kind).map_or(1.0, |c| c.escala) * crate::bicho::fator_do_modelo_de_chefe(e.meta.kind)
+    } else {
+        1.0
+    }
+}
+
+/// Altura do chefe na tela (u), pra sombra, aura, placa e poeira.
+pub(crate) fn altura_de_chefe(e: &crate::world::Ent) -> f32 {
+    crate::bicho::do_mob(e.meta.tag, e.meta.kind, true).map_or(1.95, |(_, a)| a) * escala_de_chefe(e)
+}
+
+/// O tombo do chefe: o dobro do tempo do tombo comum e o mesmo quique — o
+/// corpo grande cai pesado, e a poeira sai quando ele bate (`chefe_anim`).
+fn queda_de_chefe(t: f32) -> f32 {
+    queda(t * 0.5)
+}
+
 fn rig_do_humanoide(e: &crate::world::Ent) -> Option<&'static str> {
-    if e.meta.tag != shared::EntityTag::Enemy || e.state.flags & shared::ent_flags::BOSS != 0 { return None; }
-    match e.meta.kind {
+    if e.meta.tag != shared::EntityTag::Enemy { return None; }
+    // Chefe: so' o feito de gente anda neste rig (o kind do corpo preset).
+    let chefe = e.state.flags & shared::ent_flags::BOSS != 0;
+    if chefe && !matches!(shared::bosses::chefe(e.meta.kind).map(|c| c.corpo), Some(shared::bosses::Corpo::Gente(_))) {
+        return None;
+    }
+    match shared::bosses::kind_do_corpo(e.meta.kind) {
         2 => Some("humanoides/pistoleiro"), 4 => Some("humanoides/mago"),
         6 => Some("humanoides/arqueiro"), _ => None,
     }
@@ -1148,6 +1173,10 @@ pub fn draw_entities(
         }
 
         let boss = e.state.flags & shared::ent_flags::BOSS != 0;
+        // Chefe vivo: sombra larga e aura na cor do elemento.
+        if boss && e.meta.tag == shared::EntityTag::Enemy && e.morte.is_none() {
+            crate::chefe_anim::presenca(e.meta.id.0 as u64, e.meta.kind, p, altura_de_chefe(e), get_time() as f32, get_frame_time());
+        }
         if let Some(corpo) = rig_do_humanoide(e).and_then(|nome| vox.rig(nome)) {
             brilhos.extend(desenha_personagem(e, corpo, None, vox, vista, false));
             continue;
@@ -1158,6 +1187,13 @@ pub fn draw_entities(
             let nome = rig_do_npc(shared::npc_papel_de_kind(e.meta.kind), e.meta.id.0 as u64);
             if let Some(corpo) = vox.rig(nome) {
                 brilhos.extend(desenha_personagem(e, corpo, None, vox, vista, false));
+                continue;
+            }
+        }
+        // Chefe pirata: o corpo do personagem com o chapeu, na escala de chefe.
+        if boss && shared::bosses::chefe(e.meta.kind).is_some_and(|c| c.corpo == shared::bosses::Corpo::Pirata) {
+            if let Some(corpo) = vox.rig(RIG_CORPO) {
+                brilhos.extend(desenha_personagem(e, corpo, vox.rig(RIG_CHAPEU), vox, vista, false));
                 continue;
             }
         }
@@ -1224,6 +1260,8 @@ pub fn draw_entities(
             Brilho::Mao(p, forca, t) => desenha_mao(*p, *forca, *t),
         }
     }
+    // Lascas e faiscas da coleta: um pool so', avancado uma vez por quadro.
+    crate::lascas::avanca_e_desenha(get_frame_time());
 }
 
 /// Os arquivos de pecas do personagem (docs/character create.md).
@@ -1306,12 +1344,13 @@ fn desenha_personagem(
             skill: e.skill,
             ferido: e.ferido,
             recuo,
+            coleta: e.coleta.filter(|_| e.morte.is_none()).map(|t| (t, e.coleta_t)),
         },
     };
     let mut entrada = entrada;
     let humanoide = rig_do_humanoide(e).is_some();
     if humanoide {
-        entrada.combate.conjunto = if e.meta.kind == 4 { 3 } else { 2 };
+        entrada.combate.conjunto = if shared::bosses::kind_do_corpo(e.meta.kind) == 4 { 3 } else { 2 };
         entrada.combate.sacada = 1.0;
         entrada.combate.golpe = e.ataque_mob.map(|(_, t, impacto)| {
             let relogio = if t <= impacto { t / impacto.max(0.01) * crate::rig::IMPACTO }
@@ -1325,8 +1364,17 @@ fn desenha_personagem(
     if e.meta.tag == shared::EntityTag::Npc {
         entrada.combate.conjunto = SEM_ARMA;
     }
+    // Chefe de gente com golpe telegrafado: o braco arma na carga e completa
+    // no impacto; o corpo inteiro ganha o ajuste de `chefe_anim` la' embaixo.
+    let chefe = e.meta.tag == shared::EntityTag::Enemy && e.state.flags & shared::ent_flags::BOSS != 0;
+    let agora = get_time();
+    let carga = e.carga_chefe.filter(|_| chefe && e.morte.is_none());
+    let ajuste = carga.and_then(|c| crate::chefe_anim::ajuste(&c, agora));
+    if let (Some(c), Some(_)) = (carga, ajuste) {
+        entrada.combate.golpe = Some((0, crate::chefe_anim::relogio_do_braco(&c, agora, crate::rig::IMPACTO)));
+    }
     // Morto: sem passo, sem golpe, sem tranco — so' o tombo.
-    let cai = e.morte.map_or(0.0, queda);
+    let cai = e.morte.map_or(0.0, |t| if chefe { queda_de_chefe(t) } else { queda(t) });
     if e.morte.is_some() {
         entrada.andar = 0.0;
         entrada.correr = 0.0;
@@ -1343,12 +1391,46 @@ fn desenha_personagem(
     // Cai de COSTAS girando em volta do pe': deitado, as costas ficariam 3
     // voxels abaixo do chao, entao o corpo sobe isso junto com o tombo.
     let sobe = cai / std::f32::consts::FRAC_PI_2 * 3.5 * VOXEL;
-    let base = Mat4::from_translation(p + vec3(0.0, sobe, 0.0))
-        * Mat4::from_rotation_y(e.yaw)
-        * Mat4::from_rotation_x(-cai)
+    let esc = escala_de_chefe(e);
+    let (desloca, giro, inclina, agacha) = match (ajuste, carga) {
+        (Some(a), Some(c)) => {
+            let alt = 1.95 * esc;
+            let tz = crate::chefe_anim::tremor_xz(&a, agora as f32, alt);
+            (
+                vec3(c.dir.x * a.desloca + tz.x, a.voa * alt + a.sobe * alt * 0.5, c.dir.y * a.desloca + tz.y),
+                a.giro,
+                a.pitch * 0.6,
+                a.agacha,
+            )
+        }
+        _ => (Vec3::ZERO, 0.0, 0.0, 0.0),
+    };
+    let s = (s + agacha).min(0.45);
+    if chefe {
+        crate::chefe_anim::poeira_da_queda(e.morte, get_frame_time(), p, 1.95 * esc, e.meta.kind);
+    }
+    let base = Mat4::from_translation(p + vec3(0.0, sobe, 0.0) + desloca)
+        * Mat4::from_scale(Vec3::splat(esc))
+        * Mat4::from_rotation_y(e.yaw + giro)
+        * Mat4::from_rotation_x(-cai + inclina)
         * Mat4::from_scale(vec3(1.0 + 0.5 * s, 1.0 - s, 1.0 + 0.5 * s));
     let (mats, armas) = desenha_rig(base, &pose, corpo, chapeu, vox, clarao(e, eu));
     e.emissores = crate::rig::palmas(&mats, VOXEL);
+    // Coleta: a rajada de lascas no quadro em que a cabeca da ferramenta bate.
+    if let Some((tipo, _)) = entrada.combate.coleta {
+        let u = (e.coleta_t.max(0.0) / crate::rig::PERIODO_DA_COLETA).fract();
+        if crate::lascas::cruzou(e.coleta_u_ant, u, crate::rig::fase_do_impacto(tipo)) {
+            let nome = crate::rig::ferramenta_de(tipo);
+            if let Some((_, m)) = armas.iter().find(|(n, _)| *n == nome) {
+                let ponto = m.transform_point3(crate::rig::cabeca_da_ferramenta(tipo) * VOXEL);
+                let semente = (e.meta.id.0 as u32).wrapping_mul(31) ^ (e.coleta_t * 997.0) as u32;
+                crate::lascas::impacto(ponto, tipo, semente);
+            }
+        }
+        e.coleta_u_ant = u;
+    } else {
+        e.coleta_u_ant = 0.0;
+    }
     if crate::rig::e_pistolas(&pose) && pose.na_mao {
         for (i, (_, m)) in armas.iter().filter(|(n, _)| *n == "pistola").take(2).enumerate() {
             e.emissores[i] = m.transform_point3(vec3(0.0, 2.5 * VOXEL, 9.5 * VOXEL));
@@ -1645,20 +1727,41 @@ fn desenha_bicho(
     // Morto: as patas param, a cauda para, e ele TOMBA de lado (o lado sai do
     // id, pra dois corpos vizinhos nao caírem iguais).
     let morto = e.morte.is_some();
+    let agora = get_time();
+    let boss = e.state.flags & shared::ent_flags::BOSS != 0;
+    // Chefe com golpe telegrafado: a pose da carga/golpe/recuperacao por cima.
+    let carga = e.carga_chefe.filter(|_| boss && !morto);
+    let ajuste = carga.and_then(|c| crate::chefe_anim::ajuste(&c, agora));
     let entrada = crate::bicho::Entrada {
         passada: e.fase,
         vel: if morto { 0.0 } else { e.andar * shared::PLAYER_SPEED },
-        tempo: if morto { 0.0 } else { get_time() as f32 },
-        golpe: if morto { 99.0 } else { e.golpe },
+        tempo: if morto { 0.0 } else { agora as f32 },
+        golpe: if morto { 99.0 } else { carga.and_then(|c| crate::chefe_anim::relogio_da_pata(&c, agora)).unwrap_or(e.golpe) },
         semente: e.meta.id.0 as f32,
         ferido: if morto { None } else { e.ferido },
         recuo: Quat::from_rotation_y(-e.yaw) * vec3(-e.golpe_de.x, 0.0, -e.golpe_de.y),
     };
-    let c = crate::bicho::corpo(&entrada, &b.anat);
+    let mut c = crate::bicho::corpo(&entrada, &b.anat);
+    let esc = escala_de_chefe(e);
+    let (mut desloca, mut giro) = (Vec3::ZERO, 0.0);
+    if let (Some(a), Some(cg)) = (ajuste, carga) {
+        c.pitch += a.pitch;
+        c.sobe_tronco += a.sobe * b.anat.altura;
+        c.avanca += a.avanca * b.anat.altura;
+        c.esmaga = (c.esmaga + a.agacha).min(0.45);
+        let tz = crate::chefe_anim::tremor_xz(&a, agora as f32, b.anat.altura * esc);
+        desloca = vec3(cg.dir.x * a.desloca + tz.x, a.voa * b.anat.altura * esc, cg.dir.y * a.desloca + tz.y);
+        giro = a.giro;
+    }
     let lado = if e.meta.id.0 % 2 == 0 { 1.0 } else { -1.0 };
-    let chao = Mat4::from_translation(p)
-        * Mat4::from_rotation_y(e.yaw)
-        * Mat4::from_rotation_z(lado * e.morte.map_or(0.0, queda))
+    let cai = e.morte.map_or(0.0, |t| if boss { queda_de_chefe(t) } else { queda(t) });
+    if boss {
+        crate::chefe_anim::poeira_da_queda(e.morte, get_frame_time(), p, b.anat.altura * esc, e.meta.kind);
+    }
+    let chao = Mat4::from_translation(p + desloca)
+        * Mat4::from_scale(Vec3::splat(esc))
+        * Mat4::from_rotation_y(e.yaw + giro + crate::bicho::yaw_lateral(&b.anat, &entrada))
+        * Mat4::from_rotation_z(lado * cai)
         * Mat4::from_scale(vec3(1.0 + 0.5 * c.esmaga, 1.0 - c.esmaga, 1.0 + 0.5 * c.esmaga));
     let patas = chao * Mat4::from_translation(vec3(0.0, c.sobe, 0.0));
     let tronco = patas

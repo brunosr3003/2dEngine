@@ -27,6 +27,8 @@ pub struct InfoDaIlha {
     pub recursos: Vec<RegiaoNoMapa>,
     pub nomes: HashMap<u16, String>,
     pub rendimentos: HashMap<u8, String>,
+    /// Chefes de campo (coroa no mapa, sempre visivel).
+    pub chefes: Vec<shared::bosses::ChefeNoMapa>,
 }
 
 /// Chance (em %) pra zona contar como "onde o bicho nasce": a mesma do
@@ -142,7 +144,12 @@ fn cor_do_bicho(kind: u16) -> Color {
         Color::new(0.75, 0.55, 0.40, 1.0),
         Color::new(1.0, 0.45, 0.55, 1.0),
     ];
-    CORES[kind as usize % CORES.len()]
+    match kind {
+        // os de praia: coral e verde-agua, como o casco de cada um
+        8 => Color::new(1.0, 0.55, 0.35, 1.0),
+        9 => Color::new(0.30, 0.78, 0.82, 1.0),
+        _ => CORES[kind as usize % CORES.len()],
+    }
 }
 
 /// Filtros do mapa grande e do minimapa. Tudo DESLIGADO de inicio — o mapa
@@ -165,7 +172,21 @@ impl Default for Filtros {
     }
 }
 
+impl From<&shared::protocol::FiltrosDoMapa> for Filtros {
+    fn from(f: &shared::protocol::FiltrosDoMapa) -> Self {
+        Self { mobs: f.mobs, bichos_ocultos: f.bichos_ocultos.iter().copied().collect(), recursos: f.recursos, vila: f.vila }
+    }
+}
+
 impl Filtros {
+    /// Pra guardar no servidor. Lista ordenada: o mesmo conjunto sempre vira
+    /// o mesmo valor, e a sincronia nao ve' "mudanca" que nao houve.
+    pub fn para_rede(&self) -> shared::protocol::FiltrosDoMapa {
+        let mut bichos: Vec<u16> = self.bichos_ocultos.iter().copied().collect();
+        bichos.sort_unstable();
+        shared::protocol::FiltrosDoMapa { mobs: self.mobs, bichos_ocultos: bichos, recursos: self.recursos, vila: self.vila }
+    }
+
     /// Zona aparece se mobs estao ligados e o bicho DOMINANTE dela nao foi
     /// escondido: esconder "Lobo" tira as zonas de lobo.
     pub fn zona_visivel(&self, z: &ZonaNoMapa) -> bool {
@@ -542,6 +563,15 @@ impl Default for Mapa {
 }
 
 impl Mapa {
+    /// Raio visivel do minimapa (as preferencias guardam).
+    pub fn alcance_minimapa(&self) -> f32 {
+        self.alcance_mini
+    }
+
+    pub fn define_alcance_minimapa(&mut self, a: f32) {
+        self.alcance_mini = a.clamp(30.0, 400.0);
+    }
+
     /// Mapa da ilha `def`. Zona sem ilha (mapa de tiles antigo) fica vazio e
     /// nao desenha nada.
     pub fn para(def: Option<&'static DefIlha>) -> Self {
@@ -607,7 +637,16 @@ impl Mapa {
             recursos,
             nomes: nomes.into_iter().collect(),
             rendimentos: rendimentos.into_iter().collect(),
+            chefes: Vec::new(),
         });
+    }
+
+    /// Chefes de campo do `MapaDaIlha` (vem junto; separado pra nao mexer na
+    /// assinatura de `define_info`).
+    pub fn define_chefes(&mut self, chefes: Vec<shared::bosses::ChefeNoMapa>) {
+        if let Some(info) = self.info.as_mut() {
+            info.chefes = chefes;
+        }
     }
 
     /// A zona ou regiao VISIVEL sob o mouse no mapa grande. Regiao primeiro:
@@ -704,7 +743,7 @@ impl Mapa {
         let mut saida: Option<Entrada> = None;
 
         // ── filtros ──
-        estilo::texto(lat.x + 14.0, lat.y + 26.0, "Filtros", 16, estilo::OURO);
+        estilo::texto_forte(lat.x + 14.0, lat.y + 26.0, "Filtros", 16, estilo::OURO);
         let (mut x, mut y) = (lat.x + 12.0, lat.y + 38.0);
         let mut chips: Vec<(String, bool, Color, Chip)> = vec![("Mobs".into(), self.filtros.mobs, COR_MOB, Chip::Mobs)];
         for k in info.bichos() {
@@ -721,9 +760,9 @@ impl Mapa {
                 y += 27.0;
             }
             let c = Rect::new(x, y, w, 22.0);
-            let alfa = if *ligado { 0.30 } else { 0.0 };
-            draw_rectangle(c.x, c.y, c.w, c.h, Color::new(cor.r, cor.g, cor.b, alfa));
-            draw_rectangle_lines(c.x, c.y, c.w, c.h, 1.0, Color::new(cor.r, cor.g, cor.b, if *ligado { 0.9 } else { 0.35 }));
+            let alfa = if *ligado { 0.26 } else { 0.0 };
+            estilo::ret_arredondado(c, c.h * 0.5, Color::new(cor.r, cor.g, cor.b, alfa));
+            estilo::borda_arredondada(c, c.h * 0.5, 1.0, Color::new(cor.r, cor.g, cor.b, if *ligado { 0.85 } else { 0.30 }));
             draw_circle(c.x + 9.0, c.y + 11.0, 3.5, if *ligado { *cor } else { Color::new(cor.r, cor.g, cor.b, 0.3) });
             estilo::texto(c.x + 16.0, c.y + 16.0, rotulo, 13, if *ligado { estilo::TEXTO } else { estilo::SUAVE });
             if clique && c.contains(mouse) {
@@ -919,8 +958,8 @@ impl Mapa {
                 let (r, eu) = (self.0, self.1);
                 let ic = crate::hud_layout::atual().mapa_icone;
                 let sobre = ic.contains(Vec2::from(mouse_position()));
-                draw_rectangle(ic.x, ic.y, ic.w, ic.h, estilo::FUNDO);
-                draw_rectangle_lines(ic.x, ic.y, ic.w, ic.h, 1.0, estilo::BORDA);
+                estilo::ret_arredondado(ic, estilo::RAIO_PEQUENO, estilo::FUNDO_ALTO);
+                estilo::borda_arredondada(ic, estilo::RAIO_PEQUENO, 1.0, if sobre { estilo::alfa(estilo::ACENTO, 0.7) } else { estilo::BORDA_FORTE });
                 let cor = if sobre { estilo::OURO } else { estilo::TEXTO };
                 let (a, b, d) = (vec2(ic.x + 5.0, ic.y + 5.0), vec2(ic.x + ic.w - 5.0, ic.y + ic.h - 5.0), ic.w * 0.28);
                 draw_line(a.x, a.y, b.x, b.y, 1.5, cor);
@@ -973,6 +1012,15 @@ impl Mapa {
                 if q.distance(c) - rp < dentro.w * 0.75 {
                     let cor = z.bichos.first().map_or(COR_MOB, |b| cor_do_bicho(b.0));
                     draw_circle_lines(q.x, q.y, rp, 1.0, Color::new(cor.r, cor.g, cor.b, 0.45));
+                }
+            }
+            for ch in &info.chefes {
+                let q = ponto(vec2(ch.centro[0], ch.centro[1]));
+                if visivel(q) {
+                    let ouro = Color::new(1.0, 0.72, 0.25, if ch.vivo { 1.0 } else { 0.45 });
+                    if !crate::icones_ui::mapa("chefe", q, 15.0, ouro, 0.0) {
+                        crate::telegrafico::desenha_coroa(q, 4.0);
+                    }
                 }
             }
             for g in info.recursos.iter().filter(|g| self.filtros.regiao_visivel(g)) {
@@ -1061,11 +1109,13 @@ impl Mapa {
         let r = Self::grande_rect();
         estilo::painel(Rect::new(r.x - 8.0, r.y - 38.0, r.w + 16.0, r.h + 46.0));
         let nome = self.def.map_or("", |d| d.nome);
-        estilo::texto(r.x, r.y - 14.0, &format!("Mapa · {nome}"), 17, estilo::OURO);
+        estilo::texto_forte(r.x, r.y - 14.0, &format!("Mapa · {nome}"), 17, estilo::OURO);
         let dica = "clique: viajar · zona/recurso: ir · Esc fecha";
         estilo::texto(r.x + r.w - 36.0 - estilo::medir(dica, 13), r.y - 14.0, dica, 13, estilo::SUAVE);
         let f = Self::fechar_rect(r);
-        estilo::texto_centro(f.x + f.w * 0.5, f.y + 19.0, "x", 18, estilo::TEXTO);
+        if !crate::icones_ui::ui("fechar", f.center(), f.w.min(f.h) * 0.55, estilo::TEXTO) {
+            estilo::texto_centro(f.x + f.w * 0.5, f.y + 19.0, "x", 18, estilo::TEXTO);
+        }
 
         draw_rectangle(r.x, r.y, r.w, r.h, COR_AGUA);
         match &self.tex {
@@ -1079,12 +1129,28 @@ impl Mapa {
         let escala = r.w / (2.0 * raio);
         let ponto = |p: Vec2| para_tela(p, r, raio);
         if let Some(info) = &self.info {
+            // Chefes sempre visiveis: sao o que se procura no mapa.
+            for ch in &info.chefes {
+                let q = ponto(vec2(ch.centro[0], ch.centro[1]));
+                let ouro = Color::new(1.0, 0.72, 0.25, if ch.vivo { 1.0 } else { 0.5 });
+                if !crate::icones_ui::mapa("chefe", q, 26.0, ouro, 0.0) {
+                    crate::telegrafico::desenha_coroa(q, 8.0);
+                }
+                let t = format!("{} · Nv {}{}", ch.nome, ch.nivel, if ch.vivo { "" } else { " (renascendo)" });
+                estilo::texto_centro(q.x + 1.0, q.y + 23.0, &t, 12, Color::new(0.0, 0.0, 0.0, 0.8));
+                estilo::texto_centro(q.x, q.y + 22.0, &t, 12, Color::new(1.0, 0.64, 0.37, 1.0));
+            }
             for z in info.zonas.iter().filter(|z| self.filtros.zona_visivel(z)) {
                 let q = ponto(centro_da_zona(z));
                 let rp = (z.raio * escala).max(5.0);
                 let cor = z.bichos.first().map_or(COR_MOB, |b| cor_do_bicho(b.0));
                 draw_circle(q.x, q.y, rp, Color::new(cor.r, cor.g, cor.b, 0.16));
                 draw_circle_lines(q.x, q.y, rp, 1.5, Color::new(cor.r, cor.g, cor.b, 0.85));
+                // Marcador do bicho dominante no centro da zona (acima do rotulo).
+                if let Some(b) = z.bichos.first() {
+                    let y = if rp >= 14.0 { 13.0 } else { 0.0 };
+                    crate::icones_ui::mapa(crate::icones_ui::nome_do_bicho(b.0), q - vec2(0.0, y), 18.0, cor, 0.0);
+                }
                 if rp >= 14.0 {
                     if let Some(b) = z.bichos.first() {
                         let t = format!("{} · Nv {}–{}", info.nome(b.0), z.lv_min, z.lv_max);
@@ -1097,8 +1163,11 @@ impl Mapa {
                 let q = ponto(vec2(g.centro[0], g.centro[1]));
                 let s = 3.0 + (g.contagem as f32).sqrt().min(3.5);
                 let cor = cor_do_tipo(g.tipo);
-                losango(q, s + 1.2, Color::new(0.0, 0.0, 0.0, 0.7));
-                losango(q, s, cor);
+                let nome = if g.tipo == 0 { "madeira" } else { "pedra" };
+                if !crate::icones_ui::mapa(nome, q, (s + 1.2) * 3.2, cor, 0.0) {
+                    losango(q, s + 1.2, Color::new(0.0, 0.0, 0.0, 0.7));
+                    losango(q, s, cor);
+                }
             }
         }
         if let Some(ci) = self.cidade.filter(|_| self.filtros.vila) {
@@ -1129,6 +1198,9 @@ impl Mapa {
                 _ => continue,
             };
             let q = ponto(e.render_pos);
+            if e.meta.tag == EntityTag::Npc && crate::icones_ui::mapa("npc", q, 15.0, cor, 0.0) {
+                continue;
+            }
             draw_circle(q.x, q.y, 3.0, cor);
         }
         let rota: Vec<Vec2> = self.rota.iter().map(|p| ponto(*p)).collect();
@@ -1164,6 +1236,11 @@ impl Mapa {
 /// Seta do jogador. O modelo olha pra `(sin yaw, cos yaw)` em (x, z), e z
 /// cresce pra baixo no mapa.
 fn seta(c: Vec2, yaw: f32, s: f32, cor: Color) {
+    // A seta do atlas aponta pra cima; girar `PI - yaw` leva o "cima" pra
+    // `(sin yaw, cos yaw)` na tela (y pra baixo).
+    if crate::icones_ui::mapa("jogador", c, s * 2.6, cor, std::f32::consts::PI - yaw) {
+        return;
+    }
     let dir = vec2(yaw.sin(), yaw.cos());
     let perp = vec2(-dir.y, dir.x);
     let (a, b, d) = (c + dir * s, c - dir * s * 0.6 + perp * s * 0.6, c - dir * s * 0.6 - perp * s * 0.6);
@@ -1173,6 +1250,9 @@ fn seta(c: Vec2, yaw: f32, s: f32, cor: Color) {
 }
 
 fn marca_destino(q: Vec2, s: f32) {
+    if crate::icones_ui::mapa("destino", q, s * 3.4, estilo::AUTO, 0.0) {
+        return;
+    }
     draw_line(q.x - s, q.y - s, q.x + s, q.y + s, 2.5, estilo::AUTO);
     draw_line(q.x - s, q.y + s, q.x + s, q.y - s, 2.5, estilo::AUTO);
 }
@@ -1192,6 +1272,9 @@ fn pegada(a: Vec2, b: Vec2, minimo: f32) {
 
 /// Ancora: haste, argola e braco curvo.
 fn ancora(q: Vec2, s: f32, cor: Color) {
+    if crate::icones_ui::mapa("porto", q, s * 3.0, cor, 0.0) {
+        return;
+    }
     let sombra = Color::new(0.0, 0.0, 0.0, 0.6);
     for (c, g) in [(sombra, 3.0), (cor, 1.6)] {
         draw_circle_lines(q.x, q.y - s * 0.85, s * 0.25, g * 0.7, c);
@@ -1203,6 +1286,9 @@ fn ancora(q: Vec2, s: f32, cor: Color) {
 }
 
 fn casinha(q: Vec2, s: f32, cor: Color) {
+    if crate::icones_ui::mapa("cidade", q, s * 3.0, cor, 0.0) {
+        return;
+    }
     draw_rectangle(q.x - s * 0.6, q.y - s * 0.1, s * 1.2, s * 0.8, cor);
     draw_triangle(vec2(q.x - s * 0.85, q.y - s * 0.05), vec2(q.x + s * 0.85, q.y - s * 0.05), vec2(q.x, q.y - s * 0.8), cor);
 }

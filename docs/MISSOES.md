@@ -125,3 +125,7 @@ entregar, com travas só por nível e pela rota entre ilhas. Detalhes em
 - Destinos novos da auto missão: `LUGAR` (ir e esperar no ponto) e `TRAVA`
   (parar com aviso).
 - A história não pode ser abandonada; o rastreador a mantém no topo.
+
+### Recompensas extras das diárias
+
+Além da recompensa própria, cada diária paga uma poção: as de área (quebrar pedra, caçar) dão **Poção de Experiência**, a de criar item dá **Poção de Fortuna** e a de refinar dá **Poção de Sorte** (ver `docs/ITENS.md`).

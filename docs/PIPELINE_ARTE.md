@@ -155,3 +155,59 @@ O teste `todo_modelo_olha_pra_frente` (em `crates/client/src/vox.rs`) lê os
 arquivos que vão pro jogo e confere, pelo detalhe do rosto — o olho azul do
 jogador, os dentes brancos do lobo —, que ele está na metade dianteira da
 cabeça. Modelo novo com rosto de outra cor precisa entrar na lista dele.
+
+## Ícones dos itens
+
+Os ícones da bolsa, loja, barra, craft e forja saem de um **atlas de pixel
+art gerado por código**, um ícone único por item (85 hoje):
+
+```sh
+python3 tools/icones/gerar_icones.py
+```
+
+- Python puro (só `zlib`/`struct`, sem PIL) e determinístico: rodar de novo
+  gera os mesmos bytes.
+- Saídas: `assets/icones/itens.png` (células de 48×48, 10 por linha) e
+  `crates/client/src/icones_indice.rs` (item_id → célula, ordenado). Os dois
+  vão pro git; o PNG entra no binário por `include_bytes!`.
+- Estilo: silhueta por categoria, 4 tons com luz de cima-esquerda, contorno
+  escuro tirado da própria cor e sombra curta. A cor do tier
+  (`tier_color_hex`) entra nos materiais coloridos, madeira e couro.
+- A moldura de raridade **não** é assada: raridade é da instância. O cliente
+  desenha com `icones::icone(id, rect, Some(raridade), qtd)`.
+- Item novo: acrescente o desenho em `catalogo()` e rode o script. Item sem
+  ícone cai no desenho antigo por categoria (`bolsa::icone`). O teste
+  `todo_item_conhecido_tem_icone_dentro_do_atlas` (em `icones.rs`) lista os
+  itens do seed — item novo entra lá também; `icones_nao_vazios_e_todos_diferentes`
+  garante que nenhum ícone saiu vazio ou igual a outro.
+
+## Ícones do HUD, das skills e do mapa
+
+Arte vetorial própria, gerada por script e rasterizada em três atlas:
+
+```sh
+python3 tools/icones/gerar_icones_ui.py
+```
+
+- Cada ícone é um SVG 64×64 descrito em Python (`HUD`, `MAPA`, `SKILLS` no
+  script). `rsvg-convert` rasteriza a 3× o tamanho da célula e o Pillow
+  reduz com LANCZOS em alfa pré-multiplicado (sem franja escura). Mesma
+  entrada → mesmo PNG, byte a byte.
+- Saídas: `assets/icones/hud.png` (64 px, 37 ícones), `mapa.png` (48 px, 16),
+  `skills.png` (96 px, 12) e `crates/client/src/icones_ui_indice.rs`.
+- Estilo HUD/menu/mapa: silhueta **branca** com gradiente vertical suave,
+  contorno escuro translúcido e detalhes escuros; cantos e pontas redondos. O
+  cliente **tinge** pela cor do estado (normal, sobre, ativo, travado) — o
+  branco vira a cor, o contorno continua escuro e legível em qualquer fundo.
+- Estilo skills: disco com gradiente radial na cor da arma (espada dourado,
+  katana ciano, pistolas laranja, anel verde, Julgamento roxo), aro claro,
+  brilho no topo e o glifo claro por cima. Só o alfa muda (0,3–0,4 =
+  indisponível).
+- Cliente: `icones_ui::ui(nome, centro, lado, cor)`, `icones_ui::mapa(nome,
+  centro, lado, cor, rotação)` e `icones_ui::skill(id, centro, lado, alfa)`,
+  com filtro linear. Se o nome não existir, cada ponto de desenho cai no vetor
+  antigo.
+- Ícone novo: acrescente no dicionário do script, rode, e ponha o nome em
+  `USADOS_UI`/`USADOS_MAPA` (`icones_ui.rs`). Os testes conferem que todo nome
+  usado existe, que as células cabem no atlas e que nenhum ícone saiu vazio ou
+  igual a outro.

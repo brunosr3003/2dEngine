@@ -4,6 +4,57 @@
 > picareta, vara de pesca, três proficiências de coleta e um portão de nível
 > por tier — foi descartado. Não existe mais ferramenta no jogo.
 
+## Estado atual: coleta POR NÓ
+
+> Substitui a coleta passiva por lugar descrita nas seções abaixo ("A regra",
+> "O ritmo", "Auto coleta"), que ficam como histórico. Continua valendo:
+> onde a pedra nasce, a cor é o tier, o que cada coleta entrega e o que
+> viaja no fio.
+
+**Parado perto não rende.** O jogador escolhe uma pedra (ou tronco), anda até
+ficar ao alcance e coleta **ela**, ciclo a ciclo. Cada ciclo rende a tabela
+daquele nó (`economy::linhas_da_pedra` / madeira) e conta um da **reserva**
+do nó. Andar, cair ou sair do alcance encerra.
+Quando a reserva zera o nó **esgota**: some pra todo mundo, **sai da colisão**
+(não barra mais a passagem) e volta no respawn, na colisão e na tela.
+
+| número | valor | fonte |
+|---|---|---|
+| reserva da pedra (coletas) | cinza 14 · verde 24 · azul 64 · roxa 128 | `docs/COLETA.md` "A pedra é uma pedra" (tabela) · `COLETAS_POR_PEDRA` |
+| respawn da pedra | 300 · 420 · 600 · 900 s | `docs/COLETA.md` (mesma tabela) · `RESPAWN_DA_PEDRA` |
+| rendimento por coleta | Cobre 40–120 sempre; Aço 55%; Darksteel 35%; Platina 30%; … | `docs/ECONOMIA_DE_CRAFT.md` "Onde tudo isso sai" · `linhas_da_pedra` |
+| cor do material por pedra | 100/0/0 · 80/20/0 · 65/25/10 · 55/27/18 | `docs/COLETA.md` (tabela) · `RENDIMENTO_DA_PEDRA` |
+| reserva e respawn da árvore | 8 coletas · 90 s | já era **provisório** no código (`COLETAS_POR_ARVORE`); o planejamento não define |
+| tempo de um ciclo | pedra 2,5 · 2,8 · 3,1 · 3,4 s; tronco 2,0 s | **decisão provisória (não estava no planejamento)** — o doc só tinha o ritmo por densidade |
+| alcance | 1,4 u de borda a borda | **decisão provisória (não estava no planejamento)** |
+| raio do AUTO COLETA | 20–100 u, padrão 60 | **decisão provisória (não estava no planejamento)** |
+
+Missões e diárias de coleta (`GATHER`) contam **por coleta rendida** (cada
+ciclo), não por nó esgotado.
+
+**Manual:** clicar numa pedra/tronco no mundo anda até o ponto de alcance e,
+ao chegar, manda `ColetarNo { coluna }`; o servidor valida existência,
+esgotamento e alcance e começa os ciclos. Sem tecla.
+
+**AUTO COLETA** (X ou o botão; **botão direito** abre a configuração):
+tipos marcados (Madeira, Pedra cinza/verde/azul/roxa) e raio, salvos nas
+preferências do personagem. O servidor aponta o nó vivo mais perto e
+alcançável andando (`PedirNoDeColeta` → `NoDeColeta`); o personagem vai,
+coleta até esgotar e pede o próximo. Sem nó no raio: "Aguardando recursos…",
+sem sair da área. Auto missão de coleta usa os tipos **da missão**, não os da
+configuração. O "Ir" do mapa numa região pede o nó daquele tipo.
+
+**Na tela:** o personagem golpeia enquanto coleta (gesto `acao::COLETA`, que
+todo mundo vê; pedra de cima, tronco de lado) e vira pro nó; a barrinha
+"Coletando · Pedra azul · 2,4 s" enche até o próximo ciclo (`ColetaEstado`).
+Não há ferramenta desenhada na mão — decisão provisória.
+
+**Mapas de arquivo** (tutorial) mantêm o nó posto à mão com a coleta passiva
+antiga.
+
+**Pendências:** bolsa cheia não para a coleta (o material que não cabe se
+perde); outros jogadores não viram pro nó (o rumo não viaja no fio).
+
 ## A regra, em uma frase
 
 **Qualquer um coleta qualquer coisa. O que muda o ganho é onde você está.**
@@ -212,3 +263,42 @@ lugar, o auto não "clica" em nada: ele **escolhe o spot e fica lá**.
   obstáculo invisível até ela voltar.
 - **Síntese de cor e receitas** — ver `docs/ECONOMIA_DE_CRAFT.md`; não são
   coleta.
+
+## Bolsa cheia, ferramentas e gesto
+
+**Bolsa cheia pausa, nunca perde item.** Antes de concluir um ciclo, o
+servidor sorteia o que sai e simula a entrega numa cópia da bolsa
+(`coleta::cabe_tudo`: empilha no que já tem, depois ocupa espaço vazio). Se um
+item sequer não couber, o ciclo **não conclui**: nada é entregue, a reserva do
+nó não anda, a missão não conta. A coleta fica **pausada** no mesmo nó
+(`ColetaEstado { pausado: true }`), a animação apaga, o chat avisa "Bolsa cheia
+— coleta pausada" e a barra mostra o aviso parada. Ela tenta de novo sozinha
+quando a bolsa **muda** (impressão da bolsa guardada na pausa) — tentar a cada
+ciclo com a bolsa igual só piscaria a barra. O AUTO COLETA fica no nó com a
+faixa "AUTO COLETA · BOLSA CHEIA"; a auto missão de coleta, que usa o mesmo
+auto, também. Andar encerra como sempre.
+
+**Ferramenta por tipo.** Durante a coleta a arma some e a mão direita segura a
+ferramenta do tipo — `tools/voxrender/armas.py`, pega marcada como as armas:
+
+| Tipo | Ferramenta | Arquivo |
+|---|---|---|
+| Madeira | machado | `personagem/machado.vox` |
+| Pedra cinza/verde/azul/roxa | picareta com a cabeça na cor do veio | `personagem/picareta_1..4.vox` |
+
+Quatro arquivos pequenos (70 voxels cada) em vez de troca de paleta no
+carregamento: a regra "tier é cor" do saque vale pro item, e aqui a cor é do
+veio, que só existe na coleta.
+
+**O tipo vai no fio.** O byte `acao` leva o gesto `COLETA` (pedra, variante =
+cor − 1) ou `COLETA_MADEIRA`; quem está de fora vê a ferramenta e a cor certas.
+
+**Gesto** (rig por código, `rig::aplica_coleta`, um golpe a cada 1,3 s — cabe
+um e meio a dois por ciclo):
+
+- **picareta:** sobe as duas mãos acima da cabeça, desce de uma vez com o
+  tronco inclinando e o peso caindo, quica no impacto e volta;
+- **machado:** arma pra direita, varre em arco horizontal torcendo o tronco,
+  recua no impacto e volta ao meio.
+
+Sem partícula de lasca/faísca ainda (pendência).

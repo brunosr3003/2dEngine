@@ -198,8 +198,7 @@ impl Habilidades {
         // O slot 4: reservado, cinza, ate' existir a quarta skill.
         let r4 = retangulo(3);
         let c4 = r4.center();
-        draw_circle(c4.x, c4.y, r4.w * 0.5, Color::new(estilo::FUNDO.r, estilo::FUNDO.g, estilo::FUNDO.b, 0.55));
-        draw_circle_lines(c4.x, c4.y, r4.w * 0.5, 1.0, Color::new(0.35, 0.37, 0.40, 0.6));
+        estilo::botao_redondo(c4, r4.w * 0.5, estilo::SUAVE, estilo::Estado::Desabilitado, false);
         crate::hud_layout::chip(r4, "4");
         for i in 0..3 {
             let r = retangulo(i);
@@ -212,26 +211,29 @@ impl Habilidades {
             let c = vec2(r.x + r.w * 0.5, r.y + r.h * 0.5);
             let raio = r.w * 0.5;
             let cor = if livre { estilo::cor_skill(s.id) } else { estilo::SUAVE };
-            draw_circle(c.x,c.y+3.0,raio+4.0,Color::new(0.0,0.0,0.0,0.35));
-            draw_circle(c.x,c.y,raio,estilo::FUNDO);
-            for k in (1..=8).rev() {
-                draw_circle(c.x,c.y,raio*0.90*k as f32/8.0,Color::new(cor.r,cor.g,cor.b,0.022));
+            let sobre_botao = r.contains(Vec2::from(mouse_position()));
+            let e = estilo::estado(sobre_botao, is_mouse_button_down(MouseButton::Left), !livre, false);
+            estilo::botao_redondo(c, raio, if auto { estilo::AUTO } else { cor }, e, pronto && auto);
+            let alfa = if pronto { 1.0 } else { 0.40 };
+            // Arte colorida da skill no disco da arma; o vetor so' se faltar.
+            if !crate::icones_ui::skill(s.id, c, raio * 1.5, if livre { alfa } else { 0.30 }) {
+                estilo::icone(s.id,c,raio*0.58,Color::new(cor.r,cor.g,cor.b,alfa));
             }
-            draw_circle_lines(c.x,c.y,raio,1.0,if auto { estilo::AUTO } else { estilo::BORDA });
-            draw_circle_lines(c.x,c.y,raio-4.0,1.0,Color::new(cor.r,cor.g,cor.b,if pronto { 0.55 } else { 0.2 }));
-            estilo::icone(s.id,c,raio*0.58,Color::new(cor.r,cor.g,cor.b,if pronto { 1.0 } else { 0.40 }));
             if cd > 0.0 {
                 let f = (cd as f32 / s.espera_s.max(0.01)).min(1.0);
                 estilo::setor(c,raio-3.0,f,Color::new(0.0,0.0,0.0,0.62));
                 estilo::arco(c,raio-2.0,-std::f32::consts::FRAC_PI_2,f,2.0,estilo::OURO);
-                estilo::texto_centro(c.x,c.y+8.0,&format!("{cd:.1}"),23,WHITE);
+                let t = format!("{cd:.1}");
+                estilo::texto_sombra(c.x-estilo::medir_forte(&t,22)*0.5,c.y+8.0,&t,22,WHITE,true);
             } else if !livre {
                 estilo::texto_centro(c.x,c.y+7.0,&format!("Lv {}",s.nivel_necessario()),18,estilo::TEXTO);
             }
             crate::hud_layout::chip(r,&(i+1).to_string());
             if auto {
-                draw_rectangle(c.x-22.0,r.y+r.h-10.0,44.0,17.0,estilo::FUNDO);
-                estilo::texto_centro(c.x,r.y+r.h+3.0,"AUTO",12,estilo::AUTO);
+                let pilula = Rect::new(c.x-22.0,r.y+r.h-10.0,44.0,17.0);
+                estilo::ret_arredondado(pilula,8.5,estilo::FUNDO_BAIXO);
+                estilo::borda_arredondada(pilula,8.5,1.0,estilo::alfa(estilo::AUTO,0.7));
+                estilo::texto_centro_forte(c.x,r.y+r.h+3.0,"AUTO",11,estilo::AUTO);
             }
             estilo::texto_centro(c.x,r.y+r.h+23.0,&format!("{} MP",s.custo_mp),13,if mp<s.custo_mp { ORANGE } else { estilo::SUAVE });
             let arrastando = self.arrasto.inicio.is_some_and(|(id,_)| id == s.id);

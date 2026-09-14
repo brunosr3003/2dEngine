@@ -15,6 +15,8 @@ pub mod skills;
 pub mod world_gen;
 pub mod physics;
 pub mod forja;
+pub mod pocoes;
+pub mod bosses;
 pub mod receitas;
 pub mod terreno;
 pub mod construcao;

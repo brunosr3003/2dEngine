@@ -31,8 +31,8 @@ pub struct Zonas {
     pub missoes_no_rastreador: usize,
     /// Alvo selecionado: no alto, centrado no vao entre a ficha e a direita.
     pub alvo: Rect,
-    /// Bolsa, Missoes, Grupo, Avisos — a' esquerda do MENU.
-    pub icones: [Rect; 4],
+    /// Bolsa, Missoes, Diarias, Grupo, Avisos — a' esquerda do MENU.
+    pub icones: [Rect; 5],
     pub menu: Rect,
     /// Nome da zona e canal (clique abre o Mapa).
     pub area: Rect,
@@ -42,6 +42,8 @@ pub struct Zonas {
     pub chat: Rect,
     /// A faixa de estado UNICA (INDO, AUTO MISSAO, AUTO COMBATE…).
     pub faixa: Rect,
+    /// A barrinha "Coletando · tipo · N s", logo abaixo da faixa.
+    pub coleta: Rect,
     /// O botao grande de ataque (F).
     pub atacar: Rect,
     /// Skills 1, 2, 3 e o 4 reservado, em arco em volta do ATACAR.
@@ -74,8 +76,8 @@ pub fn zonas(sw: f32, sh: f32) -> Zonas {
     // ── topo direito: icones, MENU, area, minimapa ──
     let menu = Rect::new(sw - m - 64.0 * s, m, 64.0 * s, 48.0 * s);
     let (icone, vao) = (48.0 * s, 8.0 * s);
-    let icones = [0usize, 1, 2, 3].map(|i| {
-        Rect::new(menu.x - 16.0 * s - (4 - i) as f32 * (icone + vao) + vao, m, icone, icone)
+    let icones = [0usize, 1, 2, 3, 4].map(|i| {
+        Rect::new(menu.x - 16.0 * s - (5 - i) as f32 * (icone + vao) + vao, m, icone, icone)
     });
     let area = Rect::new(sw - m - 320.0 * s, menu.y + menu.h + 12.0 * s, 320.0 * s, 56.0 * s);
     let minimapa = Rect::new(area.x, area.y + area.h + 4.0 * s, 320.0 * s, 320.0 * s);
@@ -113,6 +115,8 @@ pub fn zonas(sw: f32, sh: f32) -> Zonas {
     let auto_coleta = Rect::new(auto_combate.x - 10.0 * s - 88.0 * s, yb - 88.0 * s, 88.0 * s, 88.0 * s);
     let fw = 520.0 * s;
     let faixa = Rect::new(sw * 0.5 - fw * 0.5, sh - 330.0 * s, fw, 34.0 * s);
+    let cw = 380.0 * s;
+    let coleta = Rect::new(sw * 0.5 - cw * 0.5, faixa.y + faixa.h + 6.0 * s, cw, 30.0 * s);
 
     Zonas {
         s,
@@ -128,6 +132,7 @@ pub fn zonas(sw: f32, sh: f32) -> Zonas {
         mapa_icone,
         chat,
         faixa,
+        coleta,
         atacar,
         skills,
         auto_combate,
@@ -152,6 +157,7 @@ impl Zonas {
             ("minimapa", self.minimapa),
             ("chat", self.chat),
             ("faixa", self.faixa),
+            ("coleta", self.coleta),
             ("atacar", self.atacar),
             ("auto_combate", self.auto_combate),
             ("auto_coleta", self.auto_coleta),
@@ -159,7 +165,7 @@ impl Zonas {
             ("exp", self.exp),
         ];
         for (i, r) in self.icones.iter().enumerate() {
-            v.push((["icone_bolsa", "icone_missoes", "icone_grupo", "icone_avisos"][i], *r));
+            v.push((["icone_bolsa", "icone_missoes", "icone_diarias", "icone_grupo", "icone_avisos"][i], *r));
         }
         for (i, r) in self.skills.iter().enumerate() {
             v.push((["skill1", "skill2", "skill3", "skill4"][i], *r));
@@ -200,19 +206,21 @@ pub fn chip(r: Rect, tecla: &str) {
     if !alt() {
         return;
     }
-    let w = (estilo::medir(tecla, 13) + 10.0).max(20.0);
-    let c = Rect::new(r.x - 2.0, r.y - 2.0, w, 20.0);
-    draw_rectangle(c.x, c.y, c.w, c.h, Color::new(0.0, 0.0, 0.0, 0.85));
-    draw_rectangle_lines(c.x, c.y, c.w, c.h, 1.0, estilo::OURO);
-    estilo::texto_centro(c.x + c.w * 0.5, c.y + 15.0, tecla, 13, estilo::OURO);
+    estilo::chip_tecla(vec2(r.x, r.y), tecla);
 }
 
 /// A faixa de estado unica, no centro. Quem decide o texto e' o `main`.
 pub fn desenha_faixa(z: &Zonas, texto: &str, cor: Color) {
-    let w = (estilo::medir(texto, 14) + 40.0).clamp(z.faixa.w * 0.5, z.faixa.w.max(240.0));
+    let w = (estilo::medir_forte(texto, 14) + 52.0).clamp(z.faixa.w * 0.5, z.faixa.w.max(240.0));
     let r = Rect::new(z.faixa.center().x - w * 0.5, z.faixa.y, w, z.faixa.h);
-    estilo::painel(r);
-    estilo::texto_centro(r.center().x, r.y + r.h * 0.5 + 5.0, texto, 14, cor);
+    let raio = r.h * 0.5;
+    // Pilula: vidro escuro, borda na cor do estado e um ponto pulsando.
+    estilo::sombra(r, raio, 1.0);
+    estilo::ret_gradiente(r, raio, estilo::FUNDO_ALTO, estilo::FUNDO);
+    estilo::borda_arredondada(r, raio, 1.0, estilo::alfa(cor, 0.45));
+    let pulso = 0.6 + 0.4 * (get_time() as f32 * 3.0).sin();
+    draw_circle(r.x + raio + 2.0, r.center().y, 4.0, estilo::alfa(cor, pulso));
+    estilo::texto_centro_forte(r.center().x + 6.0, r.y + r.h * 0.5 + 5.0, texto, 14, cor);
 }
 
 /// Mundo escurecido atras de painel grande (Menu, Bolsa, Mapa, Craft…).
@@ -277,5 +285,18 @@ mod tests {
         assert!(z.mapa_icone.x >= z.minimapa.x && z.mapa_icone.y >= z.minimapa.y, "⤢ dentro do minimapa");
         assert_eq!(zonas(1920.0, 1200.0).missoes_no_rastreador, 5);
         assert_eq!(z.missoes_no_rastreador, 4);
+    }
+
+    /// O icone das Diarias mora no topo direito, logo depois de Missoes e antes
+    /// do MENU, em toda tela.
+    #[test]
+    fn icone_das_diarias_ao_lado_de_missoes() {
+        for (sw, sh) in TELAS {
+            let z = zonas(sw, sh);
+            let (missoes, diarias) = (z.icones[1], z.icones[2]);
+            assert!(diarias.x > missoes.x + missoes.w, "{sw}×{sh}: diarias a' direita de missoes");
+            assert!(diarias.x + diarias.w < z.menu.x, "{sw}×{sh}: diarias antes do MENU");
+            assert_eq!(diarias.y, missoes.y);
+        }
     }
 }

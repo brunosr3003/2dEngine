@@ -181,10 +181,76 @@ def coldre():
     return v, (3, 9, 6)
 
 
+# ── as ferramentas de coleta ──
+# Mesma convencao das armas: cabo ao longo do Y, a cabeca pra +Y, o marcador
+# no meio da pega. A picareta sai em QUATRO arquivos, um por cor de pedra: a
+# cabeca e' da cor do veio que se esta' minerando (cinza, verde, azul, roxa),
+# e quem esta' de fora le' de longe o que o outro minera.
+CABO, CABO_ESC, CUNHA, CUNHA_ESC, CUNHA_FIO = range(17, 22)
+cores.update({
+    CABO: (150, 104, 62), CABO_ESC: (112, 76, 44),
+    CUNHA: (170, 176, 186), CUNHA_ESC: (120, 126, 136), CUNHA_FIO: (226, 232, 238),
+})
+COR_DA_PEDRA = {
+    1: ((150, 150, 156), (110, 110, 118)),   # cinza
+    2: ((86, 170, 96), (56, 120, 66)),       # verde
+    3: ((74, 124, 214), (48, 84, 160)),      # azul
+    4: ((156, 94, 206), (108, 60, 150)),     # roxa
+}
+PICO, PICO_ESC = 22, 23
+
+
+def machado():
+    """20 (Y) x 7 (Z) x 2 (X): cabo de madeira com fita de couro na pega, a
+    cunha de aco atravessada no alto com o fio claro na frente (+Z)."""
+    v = {}
+    for y in range(0, 17):
+        for x in range(2):
+            v[(x, y, 2)] = CABO if (y // 3) % 2 else CABO_ESC
+    for y in range(1, 5):
+        v[(0, y, 2)] = COURO                                     # fita da pega
+    for y in range(13, 19):
+        for z in range(0, 7):
+            if z <= 1 and (y in (13, 18)):
+                continue                                          # a cunha afina atras
+            cor = CUNHA_FIO if z >= 5 else (CUNHA_ESC if z <= 1 else CUNHA)
+            v[(0, y, z)] = cor
+            v[(1, y, z)] = cor
+    v[(1, 3, 2)] = MARCA
+    return v, (2, 19, 7)
+
+
+def picareta(tier):
+    """20 (Y) x 13 (Z) x 2 (X): cabo de madeira, a cabeca atravessada no alto
+    com dois bicos curvos, na cor da pedra do tier."""
+    clara, escura = COR_DA_PEDRA[tier]
+    cores[PICO], cores[PICO_ESC] = clara, escura
+    v = {}
+    for y in range(0, 18):
+        for x in range(2):
+            v[(x, y, 6)] = CABO if (y // 3) % 2 else CABO_ESC
+    for y in range(1, 5):
+        v[(0, y, 6)] = COURO
+    for z in range(0, 13):
+        d = abs(z - 6)
+        y = 17 - (1 if d >= 5 else 0)                            # os bicos descem
+        for x in range(2):
+            v[(x, y, z)] = PICO if d <= 4 else PICO_ESC
+            if d <= 2:
+                v[(x, y + 1, z)] = PICO                           # o olho, mais grosso
+    v[(1, 3, 6)] = MARCA
+    return v, (2, 19, 13)
+
+
 if __name__ == "__main__":
     raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     pasta = os.path.join(raiz, "assets", "vox", "personagem")
     for nome, (vox, tam) in [("espada", espada()), ("escudo", escudo()), ("katana", katana()),
                              ("bainha", bainha()), ("pistola", pistola()), ("coldre", coldre())]:
+        escrever_vox(os.path.join(pasta, f"{nome}.vox"), vox, tam, paleta())
+        print(f"{nome}.vox: {len(vox)} voxels, tela {tam[0]}x{tam[1]}x{tam[2]}")
+    ferramentas = [("machado", machado)] + [(f"picareta_{t}", (lambda t=t: picareta(t))) for t in (1, 2, 3, 4)]
+    for nome, gera in ferramentas:
+        vox, tam = gera()  # a picareta troca a cor da cabeca na paleta antes
         escrever_vox(os.path.join(pasta, f"{nome}.vox"), vox, tam, paleta())
         print(f"{nome}.vox: {len(vox)} voxels, tela {tam[0]}x{tam[1]}x{tam[2]}")

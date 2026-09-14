@@ -79,3 +79,17 @@ campo de altura, e quem anda é o seguidor de rota do servidor.
 O cliente não manda rota porque rota é regra: um cliente modificado que
 mandasse a própria rota andaria por cima de paredão. Ver
 [MUNDO](MUNDO.md#movimento).
+
+## Rumo no estado (`EntityState::rumo`)
+
+Um byte: 0 = sem rumo (o cliente segue a velocidade), 1..=255 = a volta em 255
+passos (~1,4°). O servidor escreve, na ordem: o **ponto** pra onde o corpo
+olha (o nó que coleta, o alvo enquanto golpeia ou conjura), a **direção do
+golpe** do mob que morde, a **velocidade** andando, o rumo fixo do NPC da
+vila. O cliente vira os OUTROS pro rumo do fio com suavização angular; o
+próprio personagem continua na previsão local.
+
+Custo medido com `cargo run --bin wire_size`: o estado por entidade foi de 11
+pra 12 bytes. Como o estado só vai quando muda e o rumo só muda quando o corpo
+vira, o regime de quem está parado não cresce; no pior caso (todos mudando),
++1 byte por entidade por tick.

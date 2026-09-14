@@ -115,6 +115,7 @@ pub fn draw_hud(
 pub enum Topo {
     Bolsa,
     Missoes,
+    Diarias,
     Grupo,
     Avisos,
     Menu,
@@ -124,22 +125,29 @@ const VERMELHO: Color = Color::new(0.92, 0.22, 0.20, 1.0);
 
 /// O ponto vermelho de "ha' algo a fazer" (MIR4).
 pub fn selo(r: Rect) {
-    draw_circle(r.x + r.w - 5.0, r.y + 5.0, 5.5, Color::new(0.0, 0.0, 0.0, 0.6));
-    draw_circle(r.x + r.w - 5.0, r.y + 5.0, 4.5, VERMELHO);
+    estilo::badge(r);
 }
 
 /// Pictogramas do topo e do menu: 0 mochila, 1 pergaminho, 2 grupo, 3 sino,
-/// 4 menu (tres riscos). Vetor proprio, nenhuma arte de outro jogo.
+/// 4 menu (tres riscos), 5 calendario (diarias). Vetor proprio, nenhuma arte
+/// de outro jogo.
 pub fn pictograma(i: usize, c: Vec2, s: f32, cor: Color) {
-    let linha = |a: Vec2, b: Vec2| draw_line(a.x, a.y, b.x, b.y, (s * 0.14).max(1.5), cor);
+    // Arte do atlas (tools/icones/gerar_icones_ui.py); o vetor abaixo so' se
+    // faltar o icone.
+    const NOMES: [&str; 6] = ["bolsa", "missoes", "grupo", "avisos", "menu", "diarias"];
+    if NOMES.get(i).is_some_and(|n| crate::icones_ui::ui(n, c, s * 2.3, cor)) {
+        return;
+    }
+    let esp = (s * 0.14).max(1.5);
+    let linha = |a: Vec2, b: Vec2| estilo::traco(a, b, esp, cor);
     match i {
         0 => {
-            draw_rectangle_lines(c.x - s * 0.8, c.y - s * 0.35, s * 1.6, s * 1.25, (s * 0.14).max(1.5), cor);
+            estilo::borda_arredondada(Rect::new(c.x - s * 0.8, c.y - s * 0.35, s * 1.6, s * 1.25), s * 0.28, esp, cor);
             estilo::arco(c - vec2(0.0, s * 0.35), s * 0.45, PI, 0.5, (s * 0.14).max(1.5), cor);
             linha(c + vec2(-s * 0.5, s * 0.25), c + vec2(s * 0.5, s * 0.25));
         }
         1 => {
-            draw_rectangle_lines(c.x - s * 0.6, c.y - s * 0.85, s * 1.2, s * 1.7, (s * 0.14).max(1.5), cor);
+            estilo::borda_arredondada(Rect::new(c.x - s * 0.6, c.y - s * 0.85, s * 1.2, s * 1.7), s * 0.2, esp, cor);
             for k in 0..3 {
                 let y = c.y - s * 0.4 + k as f32 * s * 0.4;
                 linha(vec2(c.x - s * 0.35, y), vec2(c.x + s * 0.35, y));
@@ -158,6 +166,15 @@ pub fn pictograma(i: usize, c: Vec2, s: f32, cor: Color) {
             linha(c + vec2(-s * 0.8, s * 0.55), c + vec2(s * 0.8, s * 0.55));
             draw_circle(c.x, c.y + s * 0.8, s * 0.14, cor);
         }
+        5 => {
+            // Calendario com visto: o que se faz todo dia.
+            estilo::borda_arredondada(Rect::new(c.x - s * 0.8, c.y - s * 0.6, s * 1.6, s * 1.4), s * 0.22, esp, cor);
+            linha(vec2(c.x - s * 0.8, c.y - s * 0.25), vec2(c.x + s * 0.8, c.y - s * 0.25));
+            linha(vec2(c.x - s * 0.4, c.y - s * 0.85), vec2(c.x - s * 0.4, c.y - s * 0.45));
+            linha(vec2(c.x + s * 0.4, c.y - s * 0.85), vec2(c.x + s * 0.4, c.y - s * 0.45));
+            linha(vec2(c.x - s * 0.38, c.y + s * 0.28), vec2(c.x - s * 0.08, c.y + s * 0.55));
+            linha(vec2(c.x - s * 0.08, c.y + s * 0.55), vec2(c.x + s * 0.45, c.y));
+        }
         _ => {
             for k in -1..=1 {
                 let y = c.y + k as f32 * s * 0.45;
@@ -168,26 +185,25 @@ pub fn pictograma(i: usize, c: Vec2, s: f32, cor: Color) {
 }
 
 fn dica(r: Rect, texto: &str) {
-    let w = estilo::medir(texto, 13) + 16.0;
-    let x = (r.center().x - w * 0.5).clamp(4.0, screen_width() - w - 4.0);
-    let c = Rect::new(x, r.y + r.h + 4.0, w, 24.0);
-    estilo::painel(c);
-    estilo::texto(c.x + 8.0, c.y + 17.0, texto, 13, estilo::TEXTO);
+    estilo::tooltip(r, texto, false);
 }
 
-/// Icones Bolsa/Missoes/Grupo/Avisos e o botao ≡ MENU. So' clique: nenhum
-/// deles tem tecla (docs/HUD.md 2.5).
-pub fn draw_topo(z: &Zonas, selo_missoes: bool, selo_menu: bool) -> Option<Topo> {
+/// Icones Bolsa/Missoes/Diarias/Grupo/Avisos e o botao ≡ MENU. So' clique:
+/// nenhum deles tem tecla (docs/HUD.md 2.5).
+pub fn draw_topo(z: &Zonas, selo_missoes: bool, selo_diarias: bool, selo_menu: bool) -> Option<Topo> {
     let m = mouse();
     let clique = is_mouse_button_pressed(MouseButton::Left);
     let mut saida = None;
-    let (nomes, alvos) = (["Bolsa", "Missões", "Grupo", "Avisos"], [Topo::Bolsa, Topo::Missoes, Topo::Grupo, Topo::Avisos]);
+    let nomes = ["Bolsa", "Missões", "Diárias", "Grupo", "Avisos"];
+    let alvos = [Topo::Bolsa, Topo::Missoes, Topo::Diarias, Topo::Grupo, Topo::Avisos];
+    // Qual pictograma cada icone usa (o 4 e' o do MENU).
+    let pictos = [0usize, 1, 5, 2, 3];
     let mut tooltip = None;
     for (i, r) in z.icones.iter().enumerate() {
         let sobre = r.contains(m);
-        estilo::painel(*r);
-        pictograma(i, r.center(), r.w * 0.30, if sobre { estilo::OURO } else { estilo::TEXTO });
-        if i == 1 && selo_missoes {
+        estilo::cartao(*r, sobre, false);
+        pictograma(pictos[i], r.center(), r.w * 0.30, if sobre { estilo::ACENTO } else { estilo::TEXTO });
+        if (i == 1 && selo_missoes) || (i == 2 && selo_diarias) {
             selo(*r);
         }
         if sobre {
@@ -199,10 +215,10 @@ pub fn draw_topo(z: &Zonas, selo_missoes: bool, selo_menu: bool) -> Option<Topo>
     }
     let r = z.menu;
     let sobre = r.contains(m);
-    estilo::painel(r);
-    let cor = if sobre { estilo::OURO } else { estilo::TEXTO };
+    estilo::cartao(r, sobre, false);
+    let cor = if sobre { estilo::ACENTO } else { estilo::TEXTO };
     pictograma(4, vec2(r.center().x, r.y + r.h * 0.38), r.h * 0.26, cor);
-    estilo::texto_centro(r.center().x, r.y + r.h * 0.88, "MENU", 11, cor);
+    estilo::texto_centro_forte(r.center().x, r.y + r.h * 0.88, "MENU", 10, cor);
     if selo_menu {
         selo(r);
     }
@@ -225,64 +241,91 @@ pub fn draw_atacar(z: &Zonas, tem_alvo: bool) -> bool {
     let c = r.center();
     let raio = r.w * 0.5;
     let sobre = c.distance(mouse()) <= raio;
-    draw_circle(c.x, c.y + 4.0, raio + 4.0, Color::new(0.0, 0.0, 0.0, 0.35));
-    draw_circle(c.x, c.y, raio, estilo::FUNDO);
     let cor = if tem_alvo { Color::new(1.0, 0.62, 0.36, 1.0) } else { estilo::OURO };
-    for k in (1..=8).rev() {
-        draw_circle(c.x, c.y, raio * 0.92 * k as f32 / 8.0, Color::new(cor.r, cor.g, cor.b, 0.025));
+    let e = estilo::estado(sobre, is_mouse_button_down(MouseButton::Left), false, false);
+    estilo::botao_redondo(c, raio, cor, e, tem_alvo);
+    if !crate::icones_ui::ui("atacar", c - vec2(0.0, raio * 0.12), raio * 0.92, cor) {
+        estilo::icone(1, c - vec2(0.0, raio * 0.12), raio * 0.42, cor);
     }
-    draw_circle_lines(c.x, c.y, raio, 2.0, if sobre { estilo::TEXTO } else { cor });
-    draw_circle_lines(c.x, c.y, raio - 5.0, 1.0, Color::new(cor.r, cor.g, cor.b, 0.35));
-    estilo::icone(1, c - vec2(0.0, raio * 0.12), raio * 0.42, cor);
-    estilo::texto_centro(c.x, c.y + raio * 0.62, if tem_alvo { "ATACAR" } else { "ALVO" }, 12, cor);
+    estilo::texto_centro_forte(c.x, c.y + raio * 0.62, if tem_alvo { "ATACAR" } else { "ALVO" }, 12, cor);
     layout::chip(r, "F");
     sobre && is_mouse_button_pressed(MouseButton::Left)
 }
 
-/// Pocao de vida (C) e os slots rapidos 8/9/0 (mana, vigor, experiencia).
-/// `qtd` na mesma ordem. Devolve o indice clicado (0 = pocao).
-pub fn draw_rapidos(z: &Zonas, qtd: [u32; 4]) -> Option<usize> {
+/// Os quatro botoes de pocao, na ordem de `pocoes_auto`: vida (C), mana (8),
+/// vigor (9), experiencia (0).
+pub fn rects_rapidos(z: &Zonas) -> [Rect; 4] {
+    [z.pocao, z.rapidos[0], z.rapidos[1], z.rapidos[2]]
+}
+
+/// A barra de itens: C, 8, 9 e 0, cada espaco com o consumivel que o jogador
+/// escolheu (`itens`, 0 = vazio). `qtd` e `auto` na mesma ordem. So'
+/// DESENHA: clique e arrasto sao do `barra`, com o mesmo gesto das skills.
+pub fn draw_rapidos(
+    z: &Zonas,
+    itens: [u16; 4],
+    qtd: [u32; 4],
+    auto: [bool; 4],
+    recarga: [Option<(f32, f32)>; 4],
+    curando: [bool; 4],
+    arrastando: Option<(usize, Vec2)>,
+    nome: &dyn Fn(u16) -> String,
+) {
     let m = mouse();
-    let clique = is_mouse_button_pressed(MouseButton::Left);
-    let rects = [z.pocao, z.rapidos[0], z.rapidos[1], z.rapidos[2]];
-    let cores = [
-        Color::new(0.86, 0.22, 0.26, 1.0),
-        Color::new(0.24, 0.50, 0.92, 1.0),
-        Color::new(0.35, 0.80, 0.40, 1.0),
-        Color::new(0.98, 0.80, 0.22, 1.0),
-    ];
-    let nomes = ["Poção de vida", "Poção de mana", "Poção de vigor", "Poção de experiência"];
+    let rects = rects_rapidos(z);
     let teclas = ["C", "8", "9", "0"];
-    let mut saida = None;
     let mut tooltip = None;
     for i in 0..4 {
         let r = rects[i];
-        let sobre = r.contains(m);
-        estilo::painel(r);
-        let cor = if qtd[i] > 0 { cores[i] } else { Color::new(0.35, 0.36, 0.38, 1.0) };
-        let c = r.center();
-        let s = r.w * 0.22;
-        draw_rectangle(c.x - s * 0.3, c.y - s * 1.35, s * 0.6, s * 0.6, Color::new(0.75, 0.80, 0.86, 1.0));
-        draw_circle(c.x, c.y + s * 0.2, s, cor);
-        draw_circle_lines(c.x, c.y + s * 0.2, s, 1.5, Color::new(0.0, 0.0, 0.0, 0.6));
-        let t = qtd[i].to_string();
-        estilo::texto(r.x + r.w - estilo::medir(&t, 13) - 5.0, r.y + r.h - 5.0, &t, 13, if qtd[i] > 0 { estilo::TEXTO } else { VERMELHO });
-        layout::chip(r, teclas[i]);
-        if sobre {
-            tooltip = Some((r, if qtd[i] > 0 { nomes[i].to_string() } else { format!("{} · sem estoque", nomes[i]) }));
-            if clique {
-                saida = Some(i);
+        estilo::slot(r, None, r.contains(m), false);
+        if itens[i] == 0 {
+            if !crate::icones_ui::ui("mais", r.center(), r.w * 0.40, estilo::SUAVE) {
+                estilo::texto_centro(r.center().x, r.center().y + 8.0, "+", 22, estilo::SUAVE);
             }
+        } else {
+            let a = if qtd[i] > 0 { 1.0 } else { 0.35 };
+            crate::bolsa::icone_do_item(Rect::new(r.x + r.w * 0.12, r.y + r.h * 0.08, r.w * 0.76, r.h * 0.76), itens[i], a);
+            let t = qtd[i].to_string();
+            estilo::texto(r.x + r.w - estilo::medir(&t, 13) - 5.0, r.y + r.h - 5.0, &t, 13, if qtd[i] > 0 { estilo::TEXTO } else { VERMELHO });
+            if auto[i] {
+                estilo::borda_arredondada(r, estilo::RAIO_PEQUENO + 1.0, 2.0, estilo::AUTO);
+                estilo::texto_centro_forte(r.center().x, r.y + r.h + 12.0, "AUTO", 10, estilo::AUTO);
+            }
+            // Recarga do grupo: a sombra desce do topo e o numero conta.
+            if let Some((resta, total)) = recarga[i] {
+                let f = (resta / total.max(0.01)).clamp(0.0, 1.0);
+                estilo::ret_arredondado(Rect::new(r.x, r.y, r.w, r.h * f), estilo::RAIO_PEQUENO + 1.0, Color::new(0.0, 0.0, 0.0, 0.55));
+                let t = format!("{:.0}", resta.ceil());
+                estilo::texto_sombra(r.center().x - estilo::medir_forte(&t, 18) * 0.5, r.center().y + 6.0, &t, 18, estilo::TEXTO, true);
+            }
+            // Cura correndo: borda verde pulsando.
+            if curando[i] {
+                let a = 0.5 + 0.5 * (get_time() as f32 * 6.0).sin();
+                estilo::borda_arredondada(Rect::new(r.x - 3.0, r.y - 3.0, r.w + 6.0, r.h + 6.0), estilo::RAIO_PEQUENO + 4.0, 2.0, Color::new(0.35, 0.95, 0.45, 0.4 + 0.5 * a));
+            }
+        }
+        layout::chip(r, teclas[i]);
+        match arrastando {
+            Some((j, de)) if j == i => {
+                let texto = if m.y > de.y + 20.0 { "↓ Solte: MANUAL" } else { "↑ Solte: AUTO" };
+                estilo::texto_centro(r.center().x, r.y - 36.0, texto, 14, estilo::AUTO);
+                draw_line(r.center().x, r.y - 6.0, r.center().x, r.y - 24.0, 2.0, estilo::AUTO);
+            }
+            None if r.contains(m) => {
+                let t = if itens[i] == 0 {
+                    "Espaço vazio · clique pra configurar".to_string()
+                } else {
+                    let base = if qtd[i] > 0 { nome(itens[i]) } else { format!("{} · sem estoque", nome(itens[i])) };
+                    format!("{base} · {} · arraste ↑ AUTO / ↓ manual · botão direito configura", if auto[i] { "AUTO" } else { "manual" })
+                };
+                tooltip = Some((r, t));
+            }
+            _ => {}
         }
     }
     if let Some((r, t)) = tooltip {
-        let w = estilo::medir(&t, 13) + 16.0;
-        let x = (r.center().x - w * 0.5).clamp(4.0, screen_width() - w - 4.0);
-        let c = Rect::new(x, r.y - 30.0, w, 24.0);
-        estilo::painel(c);
-        estilo::texto(c.x + 8.0, c.y + 17.0, &t, 13, estilo::TEXTO);
+        estilo::tooltip(r, &t, true);
     }
-    saida
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -306,28 +349,13 @@ pub struct Ficha {
 }
 
 fn texto_contornado(s: &str, x: f32, y: f32, tam: u16, cor: Color) {
-    for (dx, dy) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
-        estilo::texto(x + dx, y + dy, s, tam, Color::new(0.0, 0.0, 0.0, 0.85));
-    }
-    estilo::texto(x, y, s, tam, cor);
+    estilo::texto_sombra(x, y, s, tam, cor, true);
 }
 
-/// Uma barra de recurso: fundo escuro, o preenchimento com um brilho em
-/// cima, o rastro claro do que acabou de sair e o numero no meio.
-fn barra_de_recurso(r: Rect, f: f32, rastro: f32, cor: Color, brilho: Color, texto: Option<&str>) {
-    let f = f.clamp(0.0, 1.0);
-    draw_rectangle(r.x - 1.5, r.y - 1.5, r.w + 3.0, r.h + 3.0, Color::new(0.0, 0.0, 0.0, 0.7));
-    draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.10, 0.08, 0.09, 0.95));
-    if rastro > f {
-        draw_rectangle(r.x + r.w * f, r.y, r.w * (rastro.min(1.0) - f), r.h, Color::new(1.0, 0.92, 0.85, 0.7));
-    }
-    draw_rectangle(r.x, r.y, r.w * f, r.h, cor);
-    draw_rectangle(r.x, r.y, r.w * f, r.h * 0.38, brilho);
-    if let Some(t) = texto {
-        let tam = (r.h * 0.85).clamp(10.0, 15.0) as u16;
-        let largura = estilo::medir(t, tam);
-        texto_contornado(t, r.x + (r.w - largura) * 0.5, r.y + r.h * 0.5 + tam as f32 * 0.35, tam, WHITE);
-    }
+/// Uma barra de recurso: pilula com trilho rebaixado, gradiente, brilho, o
+/// rastro claro do que acabou de sair e o numero no meio (`estilo::barra`).
+fn barra_de_recurso(r: Rect, f: f32, rastro: f32, cor: Color, _brilho: Color, texto: Option<&str>) {
+    estilo::barra(r, f, rastro, cor, texto);
 }
 
 /// Tamanho de fonte na escala `k`.
@@ -343,15 +371,14 @@ pub fn draw_ficha(z: &Zonas, ficha: &mut Ficha, dt: f32, nome: &str, nivel: u32,
     let k = r.w / 306.0;
     estilo::painel(r);
     let c = vec2(r.x + 38.0 * k, r.y + 40.0 * k);
-    draw_circle(c.x, c.y, 28.0 * k, Color::new(0.075, 0.10, 0.14, 1.0));
-    draw_circle_lines(c.x, c.y, 28.0 * k, 1.5, estilo::OURO);
-    estilo::arco(c, 32.0 * k, -2.8, 0.39, 1.0, estilo::BORDA);
-    estilo::arco(c, 32.0 * k, 0.35, 0.39, 1.0, estilo::BORDA);
-    estilo::texto_centro(c.x, c.y - 7.0 * k, "LV", fonte(10.0, k), estilo::SUAVE);
-    estilo::texto_centro(c.x, c.y + 14.0 * k, &nivel.to_string(), fonte(25.0, k), estilo::TEXTO);
-    estilo::texto_centro(c.x, r.y + 88.0 * k, "PODER", fonte(9.0, k), estilo::SUAVE);
+    estilo::botao_redondo(c, 28.0 * k, estilo::OURO, estilo::Estado::Normal, false);
+    estilo::arco(c, 32.0 * k, -2.8, 0.39, 1.5, estilo::alfa(estilo::OURO, 0.35));
+    estilo::arco(c, 32.0 * k, 0.35, 0.39, 1.5, estilo::alfa(estilo::OURO, 0.35));
+    estilo::texto_centro_forte(c.x, c.y - 7.0 * k, "LV", fonte(10.0, k), estilo::SUAVE);
+    estilo::texto_centro_forte(c.x, c.y + 14.0 * k, &nivel.to_string(), fonte(25.0, k), estilo::TEXTO);
+    estilo::texto_centro_forte(c.x, r.y + 88.0 * k, "PODER", fonte(9.0, k), estilo::SUAVE);
     let poder = poder.map(|v| crate::bolsa::milhar(v.max(0) as u64)).unwrap_or_else(|| "—".into());
-    estilo::texto_centro(c.x, r.y + 105.0 * k, &poder, fonte(if poder.len() > 7 { 12.0 } else { 16.0 }, k), estilo::OURO);
+    estilo::texto_centro_forte(c.x, r.y + 105.0 * k, &poder, fonte(if poder.len() > 7 { 12.0 } else { 16.0 }, k), estilo::OURO);
     let bx = r.x + 80.0 * k;
     let bw = r.w - 94.0 * k;
     estilo::texto_ajustado(nome, bx, r.y + 24.0 * k, bw, fonte(19.0, k), estilo::TEXTO);
@@ -369,26 +396,58 @@ pub fn draw_ficha(z: &Zonas, ficha: &mut Ficha, dt: f32, nome: &str, nivel: u32,
     estilo::texto(bx + 46.0 * k, r.y + 102.0 * k, &format!("{vigor}/{vigor_max}"), fonte(11.0, k), estilo::OURO);
 }
 
-/// O bonus da Pocao de Experiencia: icone com os minutos restantes, logo
-/// abaixo de `abaixo_de`; o hover diz "+30% XP · 47 min". Sem bonus, nada.
-pub fn draw_buff_xp(ate: i64, agora: i64, abaixo_de: Rect) {
-    if ate <= agora {
-        return;
+/// Os buffs de pocao lado a lado, logo abaixo de `abaixo_de`: Experiencia,
+/// Fortuna e Sorte, cada um com os minutos que faltam; o hover explica.
+/// Buff inativo nao aparece.
+pub fn draw_buffs(xp_ate: i64, fortuna_ate: i64, sorte_ate: i64, agora: i64, abaixo_de: Rect, curas: [f32; 3]) {
+    let lista = [
+        (xp_ate, "XP", Color::new(0.98, 0.80, 0.22, 1.0), format!("+{}% XP", shared::BONUS_XP_PCT)),
+        (fortuna_ate, "$", Color::new(0.95, 0.55, 0.15, 1.0), format!("+{}% ouro e cobre de bicho", shared::BONUS_FORTUNA_PCT)),
+        (sorte_ate, "S", Color::new(0.70, 0.45, 0.95, 1.0), format!("+{}% chance de drop", shared::BONUS_SORTE_PCT)),
+    ];
+    let mut x = abaixo_de.x;
+    let mut dica_ativa = None;
+    for (ate, sigla, cor, dica) in lista {
+        if ate <= agora {
+            continue;
+        }
+        let min = ((ate - agora) as f32 / 60.0).ceil() as i64;
+        let r = Rect::new(x, abaixo_de.y + abaixo_de.h + 6.0, 40.0, 40.0);
+        estilo::cartao(r, r.contains(mouse()), false);
+        let c = r.center();
+        estilo::ret_arredondado(Rect::new(c.x - 3.0, c.y - 15.0, 6.0, 8.0), 2.0, Color::new(0.75, 0.82, 0.88, 1.0));
+        draw_circle(c.x, c.y + 3.0, 11.0, cor);
+        estilo::texto_centro(c.x, c.y + 7.0, sigla, 11, Color::new(0.12, 0.09, 0.02, 1.0));
+        estilo::texto_centro(c.x, r.y + r.h + 12.0, &format!("{min}m"), 11, estilo::OURO);
+        if r.contains(mouse()) {
+            dica_ativa = Some((r, format!("{dica} · {min} min")));
+        }
+        x += 48.0;
     }
-    let min = ((ate - agora) as f32 / 60.0).ceil() as i64;
-    let r = Rect::new(abaixo_de.x, abaixo_de.y + abaixo_de.h + 6.0, 40.0, 40.0);
-    estilo::painel(r);
-    let c = r.center();
-    draw_rectangle(c.x - 3.0, c.y - 15.0, 6.0, 8.0, Color::new(0.75, 0.82, 0.88, 1.0));
-    draw_circle(c.x, c.y + 3.0, 11.0, Color::new(0.98, 0.80, 0.22, 1.0));
-    estilo::texto_centro(c.x, c.y + 7.0, "XP", 11, Color::new(0.12, 0.09, 0.02, 1.0));
-    estilo::texto(r.x + r.w + 6.0, c.y + 5.0, &format!("+{}% · {min} min", shared::BONUS_XP_PCT), 13, estilo::OURO);
-    if r.contains(mouse()) {
-        let dica = format!("+{}% XP · {min} min", shared::BONUS_XP_PCT);
-        let w = estilo::medir(&dica, 14) + 20.0;
-        let caixa = Rect::new(r.x + r.w + 6.0, r.y + r.h + 4.0, w, 30.0);
-        estilo::painel(caixa);
-        estilo::texto(caixa.x + 10.0, caixa.y + 20.0, &dica, 14, estilo::TEXTO);
+    // Curas de pocao correndo (vida, mana, vigor), com os segundos que faltam.
+    let curando = [
+        ("+V", Color::new(0.85, 0.25, 0.28, 1.0), "Curando vida"),
+        ("+M", Color::new(0.25, 0.50, 0.90, 1.0), "Recuperando mana"),
+        ("+E", Color::new(0.95, 0.75, 0.25, 1.0), "Recuperando vigor"),
+    ];
+    for (g, (sigla, cor, nome)) in curando.into_iter().enumerate() {
+        let s = curas[g];
+        if s <= 0.0 {
+            continue;
+        }
+        let r = Rect::new(x, abaixo_de.y + abaixo_de.h + 6.0, 40.0, 40.0);
+        estilo::cartao(r, r.contains(mouse()), false);
+        let c = r.center();
+        draw_circle(c.x, c.y, 13.0, cor);
+        estilo::texto_centro(c.x, c.y + 5.0, sigla, 12, Color::new(0.08, 0.06, 0.05, 1.0));
+        estilo::texto_centro(c.x, r.y + r.h + 12.0, &format!("{:.0}s", s.ceil()), 11, estilo::OURO);
+        if r.contains(mouse()) {
+            dica_ativa = Some((r, format!("{nome} · {:.0} s", s.ceil())));
+        }
+        x += 48.0;
+    }
+    if let Some((r, dica)) = dica_ativa {
+        estilo::tooltip(r, &dica, false);
     }
 }
 
@@ -400,12 +459,16 @@ pub fn draw_exp(z: &Zonas, ficha: &Ficha, nivel: u32) {
     let prox = shared::xp_for_level_with_mult(nivel + 1, mult);
     let f = if prox > base { (ficha.xp.saturating_sub(base)) as f32 / (prox - base) as f32 } else { 0.0 };
     let (w, h, y) = (z.exp.w, z.exp.h, z.exp.y);
-    draw_rectangle(0.0, y, w, h, Color::new(0.06, 0.05, 0.07, 0.9));
-    draw_rectangle(0.0, y, w * f.clamp(0.0, 1.0), h, estilo::OURO);
-    draw_rectangle(0.0, y, w * f.clamp(0.0, 1.0), h * 0.4, Color::new(1.0, 0.88, 0.55, 0.5));
+    draw_rectangle(0.0, y, w, h, estilo::FUNDO_BAIXO);
+    let fw = w * f.clamp(0.0, 1.0);
+    if fw > 0.5 {
+        estilo::ret_gradiente(Rect::new(0.0, y, fw, h), 0.0, estilo::clarear(estilo::OURO, 0.25), estilo::clarear(estilo::OURO, -0.15));
+        draw_rectangle(0.0, y, fw, h * 0.35, Color::new(1.0, 1.0, 1.0, 0.18));
+        draw_rectangle((fw - 2.0).max(0.0), y, 2.0, h, Color::new(1.0, 0.97, 0.85, 0.9));
+    }
     for k in 1..10 {
         let x = w * k as f32 / 10.0;
-        draw_line(x, y, x, y + h, 1.0, Color::new(0.0, 0.0, 0.0, 0.45));
+        draw_line(x, y, x, y + h, 1.0, Color::new(0.0, 0.0, 0.0, 0.25));
     }
     let t = format!("EXP {:.2}%", (f * 100.0).clamp(0.0, 100.0));
     let largura = estilo::medir(&t, 13);
@@ -417,9 +480,9 @@ pub fn draw_exp(z: &Zonas, ficha: &Ficha, nivel: u32) {
 pub fn draw_alvo(z: &Zonas, nome: &str, nivel: u16, hp: u16, hp_max: u16, chefe: bool) -> bool {
     let r = z.alvo;
     let k = r.h / 69.0;
-    estilo::painel(r);
     let cor = if chefe { Color::new(1.0, 0.64, 0.37, 1.0) } else { estilo::OURO };
-    estilo::texto(r.x + 12.0, r.y + 16.0 * k, if chefe { "CHEFE" } else { "ALVO" }, fonte(10.0, k), cor);
+    estilo::painel_destaque(r, cor);
+    estilo::texto_forte(r.x + 12.0, r.y + 16.0 * k, if chefe { "CHEFE" } else { "ALVO" }, fonte(10.0, k), cor);
     estilo::texto_ajustado(nome, r.x + 12.0, r.y + 36.0 * k, r.w - 110.0, fonte(17.0, k), estilo::TEXTO);
     estilo::texto(r.x + r.w - 88.0, r.y + 35.0 * k, &format!("Lv {nivel}"), fonte(13.0, k), cor);
     let f = hp as f32 / hp_max.max(1) as f32;
@@ -430,8 +493,11 @@ pub fn draw_alvo(z: &Zonas, nome: &str, nivel: u16, hp: u16, hp_max: u16, chefe:
     let corx = if sobre { estilo::TEXTO } else { estilo::SUAVE };
     let c = x.center();
     let d = x.w * 0.25;
-    draw_line(c.x - d, c.y - d, c.x + d, c.y + d, 2.0, corx);
-    draw_line(c.x - d, c.y + d, c.x + d, c.y - d, 2.0, corx);
+    if sobre {
+        draw_circle(c.x, c.y, x.w * 0.48, estilo::alfa(estilo::FUNDO_ALTO, 0.9));
+    }
+    estilo::traco(vec2(c.x - d, c.y - d), vec2(c.x + d, c.y + d), 2.0, corx);
+    estilo::traco(vec2(c.x - d, c.y + d), vec2(c.x + d, c.y - d), 2.0, corx);
     layout::chip(Rect::new(r.x + r.w - 60.0, r.y + r.h - 18.0, 0.0, 0.0), "Tab");
     sobre && is_mouse_button_pressed(MouseButton::Left)
 }

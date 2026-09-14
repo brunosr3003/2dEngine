@@ -445,8 +445,18 @@ const fn diaria(
     QuestDef {
         id, title, desc, obj_kind, obj_target, obj_count,
         reward_gold, reward_xp, reward_item, reward_item_qty,
-        reward_item2: if area { item_id::XP_POTION } else { 0 },
-        reward_item2_qty: if area { 1 } else { 0 },
+        // As de oficina pagam as pocoes de drop: criar da' Fortuna, refinar
+        // da' Sorte. As de area continuam com a de Experiencia.
+        reward_item2: if area {
+            item_id::XP_POTION
+        } else if obj_kind == objective_kind::CRAFT {
+            item_id::FORTUNA_POTION
+        } else if obj_kind == objective_kind::REFINE {
+            item_id::SORTE_POTION
+        } else {
+            0
+        },
+        reward_item2_qty: if area || obj_kind == objective_kind::CRAFT || obj_kind == objective_kind::REFINE { 1 } else { 0 },
         min_level, repeatable: true, daily: true, em_breve,
         ..mestre()
     }

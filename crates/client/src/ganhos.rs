@@ -81,13 +81,13 @@ impl Ganhos {
             let y = c.y - 18.0 - k as f32 * 20.0 - 30.0 * u;
             let txt = format!("+{q} {}", nome(*id));
             let tam = 19.0;
-            let w = measure_text(&txt, None, tam as u16, 1.0).width;
+            let w = crate::hud_estilo::medir_forte(&txt, tam as u16);
             let x = c.x - w * 0.5;
             let sombra = Color::new(0.0, 0.0, 0.0, 0.85 * alfa);
-            for (dx, dy) in [(-2.0, 0.0), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0)] {
-                draw_text(&txt, x + dx, y + dy, tam, sombra);
+            for (dx, dy) in [(-1.5, 0.0), (1.5, 0.0), (0.0, -1.5), (0.0, 1.5)] {
+                crate::hud_estilo::texto_forte(x + dx, y + dy, &txt, tam as u16, sombra);
             }
-            draw_text(&txt, x, y, tam, Color::new(0.62, 1.0, 0.55, alfa));
+            crate::hud_estilo::texto_forte(x, y, &txt, tam as u16, Color::new(0.62, 1.0, 0.55, alfa));
         }
     }
 }

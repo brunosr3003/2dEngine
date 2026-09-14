@@ -165,6 +165,8 @@ fn tipo(id: u16) -> Tipo {
         x if x == item_id::MANA_POTION || x == item_id::GREATER_MANA => Tipo::Pocao(1),
         x if x == item_id::STAMINA_POTION => Tipo::Pocao(2),
         x if x == item_id::XP_POTION => Tipo::Pocao(3),
+        x if x == item_id::FORTUNA_POTION => Tipo::Pocao(4),
+        x if x == item_id::SORTE_POTION => Tipo::Pocao(5),
         _ => Tipo::Material,
     }
 }
@@ -359,12 +361,12 @@ impl Bolsa {
         let t = tela();
         let p = t.painel;
         draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.35));
-        draw_rectangle(p.x, p.y, p.w, p.h, FUNDO);
-        draw_rectangle_lines(p.x, p.y, p.w, p.h, 2.0, com_alfa(ui::OURO, 0.75));
-        draw_line(p.x + 16.0, p.y + 46.0, p.x + p.w - 16.0, p.y + 46.0, 1.0, BORDA);
+        crate::hud_estilo::ret_arredondado(p, crate::hud_estilo::RAIO, FUNDO);
+        crate::hud_estilo::painel_destaque(p, ui::OURO);
+        crate::hud_estilo::separador(p.x + 16.0, p.y + 46.0, p.w - 32.0);
         ui::texto(p.x + 22.0, p.y + 33.0, "BOLSA", 26, ui::OURO);
         let ouro = format!("Ouro  {}", milhar(self.ouro));
-        let d = measure_text(&ouro, None, 20, 1.0);
+        let d = crate::hud_estilo::medir_dim(&ouro, 20);
         ui::texto(p.x + p.w - 70.0 - d.width, p.y + 31.0, &ouro, 20, ui::OURO_CLARO);
         draw_circle(p.x + p.w - 84.0 - d.width, p.y + 25.0, 7.0, ui::OURO);
         if ui::botao(Rect::new(p.x + p.w - 50.0, p.y + 9.0, 34.0, 30.0), "x", true) {
@@ -407,11 +409,11 @@ impl Bolsa {
         solido: &Material,
         bloqueio: Option<Rect>,
     ) -> Option<Acao> {
-        draw_rectangle(r.x, r.y, r.w, r.h, SECAO);
+        crate::hud_estilo::cartao(r, false, false);
         ui::texto(r.x + 14.0, r.y + 24.0, "Equipamento", 20, ui::OURO);
         if self.nivel > 0 {
             let n = format!("Nível {}", self.nivel);
-            let d = measure_text(&n, None, 17, 1.0);
+            let d = crate::hud_estilo::medir_dim(&n, 17);
             ui::texto(r.x + r.w - 14.0 - d.width, r.y + 24.0, &n, 17, TEXTO);
         }
         // O que esta' na mao — a pergunta que a bolsa existe pra responder.
@@ -474,7 +476,7 @@ impl Bolsa {
                     break;
                 }
                 ui::texto(cx, cy, rot, 16, APAGADO);
-                let d = measure_text(val, None, 16, 1.0);
+                let d = crate::hud_estilo::medir_dim(val, 16);
                 ui::texto(cx + col_w - 16.0 - d.width, cy, val, 16, TEXTO);
             }
         }
@@ -537,7 +539,7 @@ impl Bolsa {
         // a plataforma dourada do MIR4, em 2D por cima do pe'
         let (cx, cy) = (r.x + r.w * 0.5, r.y + r.h * 0.90);
         draw_ellipse_lines(cx, cy, r.w * 0.30, r.w * 0.06, 0.0, 1.5, com_alfa(ui::OURO, 0.55));
-        draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.0, BORDA);
+        crate::hud_estilo::borda_arredondada(r, crate::hud_estilo::RAIO_PEQUENO + 2.0, 1.0, crate::hud_estilo::BORDA_FORTE);
     }
 
     // ── a metade dos itens ──
@@ -550,11 +552,7 @@ impl Bolsa {
             let a = Rect::new(r.x + k as f32 * (aba_w + 6.0), r.y, aba_w, 32.0);
             let ativa = self.aba == *aba;
             let sobre = a.contains(mouse());
-            draw_rectangle(a.x, a.y, a.w, a.h, if ativa { Color::new(0.20, 0.17, 0.12, 1.0) } else if sobre { Color::new(0.16, 0.15, 0.17, 1.0) } else { SECAO });
-            if ativa {
-                draw_rectangle(a.x, a.y + a.h - 3.0, a.w, 3.0, ui::OURO);
-            }
-            ui::texto_centro(a.x + a.w * 0.5, a.y + 22.0, rotulo, 17, if ativa { ui::OURO_CLARO } else { APAGADO });
+            crate::hud_estilo::aba(a, rotulo, ativa, sobre);
             if clicou_em(a) {
                 self.aba = *aba;
                 self.sel = None;
@@ -610,9 +608,9 @@ impl Bolsa {
 
     fn desenha_cartao(&mut self, r: Rect, sel: Sel, peca: Peca) -> Option<Acao> {
         let cor = cor_do_tier(peca.tier());
-        draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.07, 0.06, 0.09, 0.98));
-        draw_rectangle(r.x, r.y, r.w, 4.0, cor);
-        draw_rectangle_lines(r.x, r.y, r.w, r.h, 2.0, com_alfa(cor, 0.9));
+        crate::hud_estilo::ret_arredondado(r, crate::hud_estilo::RAIO, Color::new(0.05, 0.06, 0.09, 0.97));
+        crate::hud_estilo::painel_destaque(r, cor);
+        crate::hud_estilo::borda_arredondada(r, crate::hud_estilo::RAIO, 1.0, com_alfa(cor, 0.55));
 
         let ic = Rect::new(r.x + 16.0, r.y + 18.0, 64.0, 64.0);
         celula(ic, Some(peca), false, None);
@@ -636,7 +634,7 @@ impl Bolsa {
         }
 
         let mut y = r.y + 112.0;
-        draw_line(r.x + 16.0, y - 12.0, r.x + r.w - 16.0, y - 12.0, 1.0, BORDA);
+        crate::hud_estilo::separador(r.x + 16.0, y - 12.0, r.w - 32.0);
         if let Some(i) = peca.inst {
             let atributos = [
                 ("Ataque", i.attack_damage),
@@ -649,7 +647,7 @@ impl Bolsa {
             for (rot, v) in atributos.iter().filter(|(_, v)| *v != 0) {
                 ui::texto(r.x + 20.0, y + 4.0, rot, 17, TEXTO);
                 let val = format!("+{v}");
-                let d = measure_text(&val, None, 17, 1.0);
+                let d = crate::hud_estilo::medir_dim(&val, 17);
                 ui::texto(r.x + r.w - 20.0 - d.width, y + 4.0, &val, 17, VERDE);
                 y += 22.0;
             }
@@ -675,6 +673,8 @@ impl Bolsa {
                 Tipo::Pocao(0) => "Recupera vida.",
                 Tipo::Pocao(1) => "Recupera mana.",
                 Tipo::Pocao(3) => "+30% de XP por 1 hora. Beber outra renova a hora.",
+                Tipo::Pocao(4) => "+30% de ouro e cobre dos bichos por 1 hora. Beber outra renova a hora.",
+                Tipo::Pocao(5) => "+20% de chance de drop (bichos e coleta) por 1 hora. Beber outra renova a hora.",
                 Tipo::Pocao(_) => "Recupera vigor.",
                 Tipo::Arma(_) | Tipo::Slot(_) => "Peça básica, sem atributos rolados.",
                 _ => "Material de criação.",
@@ -711,45 +711,46 @@ impl Bolsa {
 /// slot de equipamento sem nada: aparece a silhueta apagada do que vai ali.
 fn celula(r: Rect, peca: Option<Peca>, selecionada: bool, vazio: Option<EquipSlot>) {
     let sobre = r.contains(mouse());
-    draw_rectangle(r.x, r.y, r.w, r.h, VAZIA);
     match peca {
         Some(p) => {
             let cor = cor_do_tier(p.tier());
-            draw_rectangle(r.x, r.y, r.w, r.h, com_alfa(cor, 0.16));
-            draw_rectangle(r.x, r.y + r.h * 0.5, r.w, r.h * 0.5, com_alfa(cor, 0.14));
-            icone(r, tipo(p.id), p.id, 1.0);
-            draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5, com_alfa(cor, if sobre { 1.0 } else { 0.75 }));
+            crate::hud_estilo::slot(r, Some(cor), sobre, false);
+            icone_do_item(r, p.id, 1.0);
             let fonte = (r.w * 0.26).clamp(11.0, 16.0) as u16;
             if p.inst.is_some() {
                 ui::texto(r.x + 4.0, r.y + fonte as f32, ROMANO[(p.tier() - 1) as usize], fonte, cor);
             }
             if p.refino() > 0 {
                 let t = format!("+{}", p.refino());
-                let d = measure_text(&t, None, fonte, 1.0);
+                let d = crate::hud_estilo::medir_dim(&t, fonte);
                 ui::texto(r.x + r.w - d.width - 4.0, r.y + fonte as f32, &t, fonte, ui::OURO_CLARO);
             }
             if p.qty > 1 {
                 let t = curta(p.qty);
-                let d = measure_text(&t, None, fonte, 1.0);
+                let d = crate::hud_estilo::medir_dim(&t, fonte);
                 ui::texto(r.x + r.w - d.width - 3.0, r.y + r.h - 4.0, &t, fonte, BLACK);
                 ui::texto(r.x + r.w - d.width - 4.0, r.y + r.h - 5.0, &t, fonte, TEXTO);
             }
         }
         None => {
+            crate::hud_estilo::slot(r, None, sobre && vazio.is_none(), false);
             if let Some(s) = vazio {
                 let t = if s == EquipSlot::Weapon { Tipo::Arma(Conjunto::EspadaEscudo) } else { Tipo::Slot(s) };
                 icone(r, t, 0, 0.18);
             }
-            draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.0, if sobre && vazio.is_none() { BORDA } else { com_alfa(BORDA, 0.7) });
         }
     }
     if selecionada {
-        draw_rectangle_lines(r.x - 2.0, r.y - 2.0, r.w + 4.0, r.h + 4.0, 2.5, ui::OURO);
+        crate::hud_estilo::borda_arredondada(Rect::new(r.x - 3.0, r.y - 3.0, r.w + 6.0, r.h + 6.0), crate::hud_estilo::RAIO_PEQUENO + 4.0, 2.0, ui::OURO);
     }
 }
 
-/// O icone de um item fora da bolsa (a loja usa o mesmo desenho).
+/// O icone de um item (bolsa, loja, barra, craft, forja). A arte e' o atlas
+/// de `icones`; o desenho por categoria abaixo so' cobre item sem icone.
 pub(crate) fn icone_do_item(r: Rect, id: u16, a: f32) {
+    if crate::icones::desenha(id, r, a) {
+        return;
+    }
     icone(r, tipo(id), id, a);
 }
 
@@ -835,6 +836,9 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
                 1 => k(0.22, 0.42, 0.95),
                 // Experiencia: dourado, pra nao confundir com as de cura.
                 3 => k(0.98, 0.80, 0.22),
+                // Fortuna laranja, Sorte roxa: nao confundem com cura nem XP.
+                4 => k(0.95, 0.55, 0.15),
+                5 => k(0.70, 0.45, 0.95),
                 _ => k(0.3, 0.8, 0.35),
             };
             draw_circle(c.x, c.y + s * 0.3, s * 0.62, k(0.75, 0.82, 0.88));

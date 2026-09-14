@@ -556,6 +556,7 @@ impl VoxCache {
             frente: frente * escala,
             ombro,
             lado: if ombro.x < 0.0 { -1.0 } else { 1.0 },
+            lateral: name.contains("caranguejo"),
         };
         let n = out.len();
         println!("[vox] {name}: {n} pecas, {tris} triangulos");
@@ -851,6 +852,31 @@ mod testes_orientacao {
         }
     }
 
+    /// Os caranguejos vem em PECAS com as juntas que o `bicho.rs` conhece, e
+    /// sao leves como mob comum.
+    #[test]
+    fn caranguejos_em_pecas_leves_e_inteiros() {
+        for nome in ["bichos/caranguejo", "bichos/caranguejo_rei"] {
+            let pecas = parse_nomeado(&arquivo(&format!("{nome}.vox"))).unwrap();
+            for p in ["tronco", "pata_fd", "pata_fe", "pata_td", "pata_te"] {
+                assert!(pecas.iter().any(|(n, _)| n == p), "{nome}: sem a peca {p}");
+            }
+            let mut tris = 0usize;
+            for (n, m) in &pecas {
+                if n.is_empty() {
+                    continue;
+                }
+                assert!(crate::bicho::junta_de(n).is_some(), "{nome}: peca {n} sem junta");
+                for mm in mesh_na_origem(m, 1.0, [0.0; 3]) {
+                    assert!(mm.indices.len() <= 5_000, "{nome}/{n}: {} indices", mm.indices.len());
+                    tris += mm.indices.len() / 3;
+                }
+            }
+            println!("{nome}: {tris} triangulos");
+            assert!(tris > 100 && tris <= 3_000, "{nome}: {tris} triangulos — mob comum e' leve");
+        }
+    }
+
     /// O saquinho usa a faixa do tier (241-244), e trocar a cor da faixa muda
     /// a cor da malha — e' isso que pinta o saque pela raridade.
     #[test]
@@ -878,6 +904,26 @@ mod testes_orientacao {
             assert!(juntas.contains(&crate::bicho::Junta::Tronco), "{nome}: sem tronco");
             let patas = juntas.iter().filter(|j| matches!(j, crate::bicho::Junta::Pata { .. })).count();
             assert_eq!(patas, 4, "{nome}");
+        }
+    }
+
+    /// Toda ferramenta de coleta tem a pega marcada e custa o que uma arma
+    /// custa: no lote da macroquad e sem passar do dobro da espada.
+    #[test]
+    fn as_ferramentas_tem_pega_e_cabem_no_lote() {
+        let tris = |nome: &str| -> usize {
+            let caminho = format!("{}/../../assets/vox/personagem/{nome}.vox", env!("CARGO_MANIFEST_DIR"));
+            let dados = std::fs::read(&caminho).unwrap_or_else(|_| panic!("falta {caminho}"));
+            let (m, pega) = modelo_de_arma(&dados).unwrap_or_else(|| panic!("{nome}: sem marcador na pega"));
+            assert!(pega.iter().all(|v| *v > 0.0), "{nome}: pega fora da tela");
+            let malhas = mesh_na_origem(&m, 0.04, pega);
+            assert!(malhas.iter().all(|x| x.indices.len() <= 5000), "{nome}: malha fora do lote");
+            malhas.iter().map(|x| x.indices.len() / 3).sum()
+        };
+        let espada = tris("espada");
+        for nome in crate::rig::FERRAMENTAS {
+            let t = tris(nome);
+            assert!(t > 0 && t <= espada * 2, "{nome}: {t} triangulos (espada {espada})");
         }
     }
 

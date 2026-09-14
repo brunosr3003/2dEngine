@@ -19,6 +19,10 @@ const VIDA_DA_FAISCA: f32 = 0.2;
 
 fn altura_de(e: &crate::world::Ent) -> f32 {
     let boss = e.state.flags & shared::ent_flags::BOSS != 0;
+    if boss && e.meta.tag == shared::EntityTag::Enemy {
+        // O chefe e' desenhado em escala: a placa e o numero vao pra cabeca dele.
+        return crate::render3d::altura_de_chefe(e);
+    }
     crate::bicho::do_mob(e.meta.tag, e.meta.kind, boss).map_or(1.95, |(_, a)| a)
 }
 
@@ -26,10 +30,11 @@ fn altura_de(e: &crate::world::Ent) -> f32 {
 /// leitura.
 fn texto_contornado(s: &str, x: f32, y: f32, tam: f32, cor: Color) {
     let sombra = Color::new(0.0, 0.0, 0.0, cor.a * 0.85);
-    for (dx, dy) in [(-2.0, 0.0), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0), (1.5, 1.5)] {
-        draw_text(s, x + dx, y + dy, tam, sombra);
+    let t = tam.round().clamp(8.0, 64.0) as u16;
+    for (dx, dy) in [(-1.5, 0.0), (1.5, 0.0), (0.0, -1.5), (0.0, 1.5), (1.5, 2.0)] {
+        crate::hud_estilo::texto_forte(x + dx, y + dy, s, t, sombra);
     }
-    draw_text(s, x, y, tam, cor);
+    crate::hud_estilo::texto_forte(x, y, s, t, cor);
 }
 
 /// A placa do inimigo, em cima da cabeca: nivel e nome, e a vida embaixo.
@@ -41,27 +46,31 @@ fn placas(world: &World, vista: &Vista) {
         if e.meta.tag != shared::EntityTag::Enemy || e.state.hp == 0 {
             continue;
         }
-        if eu.map_or(false, |p| p.distance(e.render_pos) > 26.0) {
+        let boss = e.state.flags & shared::ent_flags::BOSS != 0;
+        if eu.map_or(false, |p| p.distance(e.render_pos) > if boss { 40.0 } else { 26.0 }) {
             continue;
         }
         let alvo = world.alvo == Some(*id);
         let topo = vista.pos_de(e) + vec3(0.0, altura_de(e) + 0.35, 0.0);
         let Some(c) = world_to_screen(&vista.cam, topo) else { continue };
-        let (w, h) = if alvo { (86.0, 7.0) } else { (64.0, 5.0) };
+        // Chefe: placa maior, moldura dourada e coroa ao lado do nome.
+        let (w, h) = if boss { (128.0, 9.0) } else if alvo { (86.0, 7.0) } else { (64.0, 5.0) };
         let f = (e.state.hp as f32 / e.meta.hp_max.max(1) as f32).clamp(0.0, 1.0);
         let (x, y) = (c.x - w * 0.5, c.y);
         draw_rectangle(x - 1.0, y - 1.0, w + 2.0, h + 2.0, Color::new(0.0, 0.0, 0.0, 0.75));
         draw_rectangle(x, y, w, h, Color::new(0.25, 0.06, 0.05, 0.9));
         draw_rectangle(x, y, w * f, h, Color::new(0.86, 0.22, 0.18, 1.0));
         draw_rectangle(x, y, w * f, h * 0.35, Color::new(1.0, 0.45, 0.38, 0.8));
-        if alvo {
+        if alvo || boss {
             draw_rectangle_lines(x - 2.5, y - 2.5, w + 5.0, h + 5.0, 1.5, ui::OURO);
         }
         let nome = e.meta.name.as_deref().unwrap_or("?");
         let txt = if e.meta.nivel > 0 { format!("Lv {} {nome}", e.meta.nivel) } else { nome.to_string() };
-        let tam = if alvo { 17.0 } else { 14.0 };
-        let d = measure_text(&txt, None, tam as u16, 1.0);
-        let boss = e.state.flags & shared::ent_flags::BOSS != 0;
+        let tam = if boss { 18.0 } else if alvo { 17.0 } else { 14.0 };
+        let d = TextDimensions { width: crate::hud_estilo::medir_forte(&txt, tam as u16), height: tam, offset_y: tam };
+        if boss {
+            crate::telegrafico::desenha_coroa(vec2(c.x - d.width * 0.5 - 14.0, y - 10.0), 6.0);
+        }
         let cor = if boss {
             Color::new(1.0, 0.55, 0.25, 1.0)
         } else if alvo {
@@ -118,7 +127,7 @@ pub fn desenha(world: &World, vista: &Vista) {
                 Color::new(1.0, 0.95, 0.78, alfa)
             };
             let txt = if ef.critico { format!("{}!", ef.dano) } else { ef.dano.to_string() };
-            let d = measure_text(&txt, None, tam as u16, 1.0);
+            let d = TextDimensions { width: crate::hud_estilo::medir_forte(&txt, tam as u16), height: tam, offset_y: tam };
             let x = c.x - d.width * 0.5 + (ef.semente - 0.5) * 36.0;
             texto_contornado(&txt, x, c.y - sobe, tam, cor);
         }

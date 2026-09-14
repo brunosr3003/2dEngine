@@ -233,10 +233,27 @@ pub enum ClientMessage {
     ConcluirConversa { npc_eid: u64 },
     /// Auto coleta: qual o melhor spot de coleta perto de mim? Resposta:
     /// `SpotDeColeta`.
-    PedirSpotDeColeta,
+    /// AUTO COLETA: o no' vivo mais perto, dos `tipos` marcados (0 madeira,
+    /// 1..4 pedra pela cor), a ate' `raio` de `centro` (onde foi ligado).
+    /// Resposta: `NoDeColeta`.
+    PedirNoDeColeta { tipos: [bool; 5], raio: f32, centro: [f32; 2] },
+    /// Coletar o no' desta coluna. O servidor valida alcance, tipo e
+    /// esgotamento e responde com `ColetaEstado`.
+    ColetarNo { coluna: u32 },
+    /// Para a coleta em curso (auto desligado, clique em outra coisa).
+    PararColeta,
     /// Auto coleta de UM tipo (0 madeira, 1..4 pedra pela cor), procurando em
     /// volta de `perto` (a regiao escolhida no mapa). Resposta: `SpotDeColeta`.
     PedirSpotDeColetaDe { tipo: u8, perto: [f32; 2] },
+    /// Recuperar o XP perdido na morte `quando` (unix secs). Gratis ate' 3 por
+    /// dia; depois cobra ouro.
+    RecuperarXp { quando: i64 },
+    /// Salva a barra de itens configurada (MIR4). O servidor valida, guarda no
+    /// personagem e devolve `BarraDeItens`.
+    SalvarBarra { espacos: Vec<EspacoDaBarra> },
+    /// Salva as preferencias de tela do personagem (skills AUTO, filtros do
+    /// mapa, zooms). O servidor valida e guarda; nao responde.
+    SalvarPreferencias { prefs: Preferencias },
 
     // ── Forja ────────────────────────────────────────────────────────────
     /// Refina uma peca da bolsa ou equipada pelas regras de `forja`: +1..+12,
@@ -700,9 +717,19 @@ pub enum ServerMessage {
     /// Onde fica o objetivo de uma missao (`quests::destino_tipo`). `npc_eid`
     /// quando e' pra falar ou entregar.
     QuestDestino { quest_id: u16, tipo: u8, pos: [f32; 2], raio: f32, npc_eid: Option<u64> },
-    /// Melhor spot de coleta perto do jogador, e quantos corpos vivos ele tem.
-    /// `None` = nada vivo por perto.
-    SpotDeColeta { pos: Option<[f32; 2]>, densidade: u32 },
+    /// O no' que o AUTO COLETA (ou o "Ir" do mapa) deve coletar: (coluna, onde
+    /// ficar pra alcancar, centro do corpo, tipo). `None` = nada vivo no raio.
+    NoDeColeta { no: Option<(u32, [f32; 2], [f32; 2], u8)> },
+    /// Coleta do proprio jogador: `tipo` 0 madeira / 1..4 pedra, ou
+    /// `COLETA_PARADA`; intervalo do ciclo e progresso ja' andado (0..1) no
+    /// instante do envio. Vai ao comecar, a cada ciclo e ao parar.
+    /// `pausado`: a bolsa nao comporta o proximo ciclo — o no' continua
+    /// escolhido, nada foi gasto, e a coleta volta sozinha quando abrir
+    /// espaco.
+    ColetaEstado { tipo: u8, intervalo_s: f32, progresso: f32, centro: Option<[f32; 2]>, pausado: bool },
+    /// Recarga e cura restantes (s) de um grupo de pocao
+    /// (`pocoes::Grupo`). Vai ao beber e ao recusar.
+    PocaoGrupo { grupo: u8, recarga_s: f32, cura_s: f32 },
     /// A rota que o servidor calculou pro proprio jogador, pro tracejado no
     /// chao. Vai quando a rota nasce ou e' refeita; `pontos` vazio = acabou
     /// (chegou, comando manual, limpa). O cliente descarta sozinho os pontos
@@ -716,6 +743,9 @@ pub enum ServerMessage {
         recursos: Vec<RegiaoNoMapa>,
         nomes: Vec<(u16, String)>,
         rendimentos: Vec<(u8, String)>,
+        /// Chefes de campo da ilha (onde moram, nome, nivel, se estao vivos).
+        #[serde(default)]
+        chefes: Vec<crate::bosses::ChefeNoMapa>,
     },
     /// Estado das missoes que o `QuestLog` nao carrega: as ja' entregues (com o
     /// fim do cooldown, 0 = sem) e a faccao do personagem (`quests::faction_id`).
@@ -729,6 +759,150 @@ pub enum ServerMessage {
     /// Bonus de XP da Pocao de Experiencia ativo ate' `ate` (unix secs; 0 =
     /// nenhum). Vai no login e ao beber.
     BuffXp { ate: i64 },
+    /// Pocoes de Fortuna e de Sorte ativas ate' (unix secs; 0 = nenhuma). Vai
+    /// no login e ao beber.
+    BuffsDeDrop { fortuna_ate: i64, sorte_ate: i64 },
+    /// A barra de itens do personagem (login e depois de salvar). Vazia = o
+    /// cliente usa a padrao.
+    BarraDeItens { espacos: Vec<EspacoDaBarra> },
+    /// Preferencias de tela salvas do personagem. Vai no login; o cliente so'
+    /// comeca a salvar as dele depois de receber esta.
+    Preferencias { prefs: Preferencias },
+    /// Voce morreu: XP perdido nesta morte (recuperavel por 24 h).
+    Morte { xp_perdido: u64 },
+    /// Mortes que ainda da' pra recuperar e as recuperacoes gratis de hoje.
+    /// Vai no login, ao morrer e depois de recuperar.
+    Recuperaveis { mortes: Vec<MorteRecuperavelNet>, gratis_restantes: u8 },
+    /// Resultado de `RecuperarXp`: XP devolvido ou o motivo da recusa.
+    RecuperarXpResultado { ok: bool, motivo: String, xp: u64 },
+    /// Chefe carregando um golpe: a forma no chao (`centro`, virada pra `dir`)
+    /// e quanto falta pro impacto, contado de quando esta mensagem chega.
+    /// Quem estiver dentro no impacto toma — decidido pelo servidor.
+    Telegrafico { id: u32, chefe: EntityId, forma: crate::bosses::Forma, centro: [f32; 2], dir: [f32; 2], carga_s: f32 },
+    /// O golpe saiu (`impacto`) ou foi cancelado (chefe morreu).
+    TelegraficoFim { id: u32, impacto: bool },
+}
+
+/// Quantos espacos a barra de itens tem: C, 8, 9 e 0.
+pub const ESPACOS_DA_BARRA: usize = 4;
+
+/// `ColetaEstado.tipo` quando nao ha' coleta.
+pub const COLETA_PARADA: u8 = 255;
+
+/// Teto do JSON de preferencias guardado no personagem.
+pub const PREFERENCIAS_MAX_BYTES: usize = 8 * 1024;
+
+/// Preferencias de tela do personagem, guardadas no servidor
+/// (`characters.preferencias_json`): o que era so' memoria do cliente e sumia
+/// no relog. Tudo com `serde(default)`: JSON antigo, vazio ou com campo a mais
+/// continua valendo; campo `None` = "nunca escolheu", o cliente mantem o dele.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct Preferencias {
+    pub versao: u8,
+    /// Skills marcadas pra uso automatico (ids de `skills::playtest`).
+    pub skills_auto: Vec<u32>,
+    pub filtros_mapa: FiltrosDoMapa,
+    /// Raio visivel do minimapa, em unidades.
+    pub alcance_minimapa: Option<f32>,
+    pub camera_zoom: Option<f32>,
+    pub camera_pitch_ajuste: Option<f32>,
+    /// AUTO COLETA: tipos marcados (0 madeira, 1..4 pedra pela cor).
+    pub coleta_tipos: Option<[bool; 5]>,
+    /// AUTO COLETA: raio de busca a partir de onde foi ligado.
+    pub coleta_raio: Option<f32>,
+}
+
+/// Filtros do mapa grande e do minimapa. O padrao e' tudo desligado.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct FiltrosDoMapa {
+    pub mobs: bool,
+    pub bichos_ocultos: Vec<u16>,
+    /// 0 madeira, 1..4 pedra pela cor.
+    pub recursos: [bool; 5],
+    pub vila: bool,
+}
+
+impl Preferencias {
+    pub const VERSAO: u8 = 1;
+    /// Listas nao crescem sem fim: nem 12 skills nem 8 bichos chegam perto.
+    const MAX_LISTA: usize = 64;
+
+    /// Limpa o que veio de fora: skill que nao existe sai, listas sem
+    /// repeticao e com teto, numero fora da faixa (ou NaN) recortado ou
+    /// esquecido.
+    pub fn validada(mut self, skill_existe: &dyn Fn(u32) -> bool) -> Self {
+        fn faixa(v: Option<f32>, min: f32, max: f32) -> Option<f32> {
+            v.filter(|x| x.is_finite()).map(|x| x.clamp(min, max))
+        }
+        self.versao = Self::VERSAO;
+        self.skills_auto.retain(|id| skill_existe(*id));
+        self.skills_auto.sort_unstable();
+        self.skills_auto.dedup();
+        self.skills_auto.truncate(Self::MAX_LISTA);
+        self.filtros_mapa.bichos_ocultos.sort_unstable();
+        self.filtros_mapa.bichos_ocultos.dedup();
+        self.filtros_mapa.bichos_ocultos.truncate(Self::MAX_LISTA);
+        self.alcance_minimapa = faixa(self.alcance_minimapa, 10.0, 1000.0);
+        self.camera_zoom = faixa(self.camera_zoom, 0.1, 10.0);
+        self.camera_pitch_ajuste = faixa(self.camera_pitch_ajuste, -3.0, 3.0);
+        self.coleta_raio = faixa(self.coleta_raio, crate::COLETA_RAIO_AUTO_MIN, crate::COLETA_RAIO_AUTO_MAX);
+        self
+    }
+}
+
+#[cfg(test)]
+mod testes_preferencias {
+    use super::*;
+
+    #[test]
+    fn validada_tira_skill_inexistente_repeticao_e_numero_invalido() {
+        let p = Preferencias {
+            versao: 0,
+            skills_auto: vec![5, 999, 1, 5],
+            filtros_mapa: FiltrosDoMapa { mobs: true, bichos_ocultos: vec![3, 3, 1], recursos: [true; 5], vila: true },
+            alcance_minimapa: Some(5000.0),
+            camera_zoom: Some(f32::NAN),
+            camera_pitch_ajuste: Some(-9.0),
+            coleta_tipos: Some([true, false, true, false, true]),
+            coleta_raio: Some(5000.0),
+        }
+        .validada(&|id| id <= 12);
+        assert_eq!(p.coleta_raio, Some(crate::COLETA_RAIO_AUTO_MAX));
+        assert_eq!(p.coleta_tipos, Some([true, false, true, false, true]));
+        assert_eq!(p.versao, Preferencias::VERSAO);
+        assert_eq!(p.skills_auto, vec![1, 5]);
+        assert_eq!(p.filtros_mapa.bichos_ocultos, vec![1, 3]);
+        assert_eq!(p.alcance_minimapa, Some(1000.0));
+        assert_eq!(p.camera_zoom, None, "NaN e' esquecido, nao vira zero");
+        assert_eq!(p.camera_pitch_ajuste, Some(-3.0));
+    }
+
+    #[test]
+    fn postcard_ida_e_volta() {
+        let p = Preferencias { skills_auto: vec![2, 7], camera_zoom: Some(1.4), ..Default::default() };
+        let bytes = postcard::to_allocvec(&p).unwrap();
+        assert_eq!(postcard::from_bytes::<Preferencias>(&bytes).unwrap(), p);
+    }
+}
+
+/// Um espaco da barra de itens: o consumivel (0 = vazio), se usa sozinho
+/// (AUTO) e o limiar do AUTO em % (vida, mana e vigor; buff ignora).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct EspacoDaBarra {
+    pub item_id: u16,
+    pub auto: bool,
+    pub limiar: u8,
+}
+
+/// Uma morte recuperavel. `custo_gold` e' o preco se as gratis acabaram.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct MorteRecuperavelNet {
+    pub quando: i64,
+    pub xp: u64,
+    pub expira: i64,
+    pub custo_gold: u64,
 }
 
 /// Uma zona de spawn no mapa. `bichos` = (kind, chance em %), da maior chance

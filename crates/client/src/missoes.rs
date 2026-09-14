@@ -94,8 +94,11 @@ fn verbo(q: &QuestNet) -> &'static str {
 }
 
 /// O log na ordem do rastreador: o passo da HISTORIA sempre no topo.
+///
+/// As DIARIAS nao entram: tem painel proprio (icone no topo e Menu), e no
+/// canto elas empurravam a historia e a cadeia pra fora da lista.
 pub fn ordem_do_rastreador(log: &[QuestNet]) -> Vec<&QuestNet> {
-    let mut v: Vec<&QuestNet> = log.iter().collect();
+    let mut v: Vec<&QuestNet> = log.iter().filter(|q| !q.daily).collect();
     v.sort_by_key(|q| !historia::e_da_historia(q.id));
     v
 }
@@ -307,7 +310,7 @@ impl Missoes {
     /// e o link "Todas as missões".
     pub fn rastreador_rect(&self) -> Rect {
         let z = crate::hud_layout::atual();
-        let n = self.log.len().min(z.missoes_no_rastreador).max(1);
+        let n = ordem_do_rastreador(&self.log).len().min(z.missoes_no_rastreador).max(1);
         Rect::new(z.rastreador.x, z.rastreador.y, z.rastreador.w, (40.0 + 52.0 * n as f32 + 28.0) * z.s)
     }
 
@@ -405,7 +408,7 @@ impl Missoes {
         let z = crate::hud_layout::atual();
         let s = z.s;
         let r = self.rastreador_rect();
-        let n = self.log.len().min(z.missoes_no_rastreador);
+        let n = ordem_do_rastreador(&self.log).len().min(z.missoes_no_rastreador);
         let mouse = Vec2::from(mouse_position());
         let clique = is_mouse_button_pressed(MouseButton::Left);
         let mut saida = None;
@@ -565,6 +568,18 @@ mod tests {
         let cobre = |id: u16| if id == shared::constants::item_id::COPPER { 30 } else { 0 };
         assert_eq!(m.marcador(&cobre), Some("?"));
         assert_eq!(progresso(&m.log[0], &cobre), (30, 30));
+    }
+
+    #[test]
+    fn o_rastreador_nao_mostra_diarias() {
+        use shared::quests::quest_by_id;
+        let log = vec![
+            QuestNet::from_def(quest_by_id(601).unwrap(), quest_status::ACTIVE, 3),
+            QuestNet::from_def(quest_by_id(502).unwrap(), quest_status::ACTIVE, 1),
+            QuestNet::from_def(historia::def_da_historia(historia::PRIMEIRO_ID).unwrap(), quest_status::ACTIVE, 0),
+        ];
+        let ids: Vec<u16> = ordem_do_rastreador(&log).iter().map(|q| q.id).collect();
+        assert_eq!(ids, vec![historia::PRIMEIRO_ID, 502], "diaria fora, historia no topo");
     }
 
     #[test]

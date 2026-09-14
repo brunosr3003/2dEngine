@@ -37,12 +37,15 @@ const VEL_DE_TROTE: f32 = 5.0;
 
 /// Cada bicho que anda em pecas: o arquivo (`tools/voxrender/bichos.py`) e a
 /// altura na tela, em unidades de mundo.
-pub const BICHOS: [(&str, f32); 5] = [
+pub const BICHOS: [(&str, f32); 7] = [
     ("bichos/lobo_pequeno", 0.9),
     ("bichos/urso", 1.3),
     ("bichos/tigre", 0.95),
     ("bichos/owlbear", 1.5),
     ("bichos/lobo", 2.8),
+    // `tools/voxrender/caranguejos.py`: andam de lado (`Anatomia::lateral`)
+    ("bichos/caranguejo", 0.5),
+    ("bichos/caranguejo_rei", 0.85),
 ];
 
 /// O bicho deste mob, se ele for bicho. Gente (pistoleiro, mago, arqueiro)
@@ -52,16 +55,38 @@ pub fn do_mob(tag: shared::EntityTag, kind: u16, boss: bool) -> Option<(&'static
         return None;
     }
     if boss {
-        return Some(BICHOS[4]);
+        // Chefe de campo: o bicho do corpo preset dele (a escala e' do
+        // render3d). Gente e pirata nao andam neste rig.
+        use shared::bosses::Corpo;
+        return match shared::bosses::chefe(kind).map(|c| c.corpo) {
+            // Lobo: o chefe usa o lobo de CORPO INTEIRO (o detalhado), e nao o
+            // pequeno escalado — de perto os voxels do escalado ficam grossos.
+            // A escala se corrige em `fator_do_modelo_de_chefe`.
+            Some(Corpo::Bicho(7)) | Some(Corpo::Bicho(0)) | None => Some(BICHOS[4]),
+            Some(Corpo::Bicho(k)) => do_mob(tag, k, false).or(Some(BICHOS[4])),
+            Some(_) => None,
+        };
     }
     let i = match kind {
         0 | 7 => 0,
         1 => 1,
         3 => 2,
         5 => 3,
+        8 => 5,
+        9 => 6,
         _ => return None,
     };
     Some(BICHOS[i])
+}
+
+/// Quanto a escala do catalogo de chefes (`bosses::Chefe::escala`, pensada
+/// sobre o corpo do mob comum) muda quando o chefe troca pro modelo de corpo
+/// inteiro: o tamanho na tela fica o mesmo.
+pub fn fator_do_modelo_de_chefe(kind: u16) -> f32 {
+    match shared::bosses::chefe(kind).map(|c| c.corpo) {
+        Some(shared::bosses::Corpo::Bicho(0)) => BICHOS[0].1 / BICHOS[4].1,
+        _ => 1.0,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -122,6 +147,9 @@ pub struct Anatomia {
     /// De que lado (sinal de X) fica essa pata. A patada abre pra fora
     /// dela e cruza pro outro lado.
     pub lado: f32,
+    /// Caranguejo: anda DE LADO. As "patas da frente" sao as pincas e as de
+    /// tras os dois grupos de pernas (`tools/voxrender/caranguejos.py`).
+    pub lateral: bool,
 }
 
 pub struct Bicho {
@@ -376,6 +404,7 @@ pub fn peca(j: Junta, e: &Entrada, a: &Anatomia, pivo: Vec3) -> (Quat, Vec3) {
             // no golpe a cabeca da' o tranco pra tras
             (x((e.tempo * 1.6).sin() * 0.12 + e.passada.sin() * 0.05 * m.amp - 0.35 * dor), Vec3::ZERO)
         }
+        Junta::Pata { frente, esq } if a.lateral => pata_de_caranguejo(frente, esq, e, a, pivo),
         Junta::Pata { frente, esq } => {
             // o toco inclina POUCO, acompanhando o passo: quem move o pe' e'
             // a translacao. Inclinar muito volta a girar o toco no topo.
@@ -431,6 +460,47 @@ pub fn rastro(e: &Entrada, a: &Anatomia) -> Option<Rastro> {
     })
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  O CARANGUEJO
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Pernas e pincas do caranguejo.
+///
+/// Ele anda de LADO: o desenho gira o corpo 90 graus (`yaw_lateral`), e o
+/// movimento cai no -X do corpo. Por isso o pe' plantado corre no X, com a
+/// mesma identidade de nao-deslize da marcha dos quadrupedes. Os dois grupos
+/// de pernas vao em contratempo. A pinca abre e fecha devagar parada; no
+/// golpe, a do lado `a.lado` belisca pelo mesmo arco da patada, mais baixo.
+fn pata_de_caranguejo(frente: bool, esq: bool, e: &Entrada, a: &Anatomia, pivo: Vec3) -> (Quat, Vec3) {
+    let m = marcha(e.vel);
+    if !frente {
+        let meia = MEIA_VIAGEM_DO_PE * a.altura * m.acorda * m.alonga;
+        let passo = passo_da_pata(false, esq, e.passada, m.corre, meia);
+        return (Quat::IDENTITY, vec3(-passo.z, passo.y, 0.0));
+    }
+    let fase = e.tempo * 3.1 + e.semente * 0.3 + if esq { 1.3 } else { 0.0 };
+    let abre = Quat::from_rotation_x(fase.sin() * 0.12);
+    let golpeia = (pivo.x >= 0.0) == (a.lado >= 0.0);
+    let g = golpe(e.golpe);
+    if !golpeia || g.ergue <= 0.0 {
+        return (abre, Vec3::ZERO);
+    }
+    let alvo = no_arco(a, g.angulo, altura_do_arco(a) * 0.55 + g.acima * a.altura, 0.0) - pivo;
+    let belisca = Quat::from_rotation_y(a.lado * g.angulo) * Quat::from_rotation_x(-0.6);
+    (abre.slerp(belisca, g.ergue), Vec3::ZERO.lerp(alvo, g.ergue * 0.6))
+}
+
+/// Quanto o desenho gira o caranguejo pra ele andar de lado: 90 graus
+/// andando, nada parado, e volta de frente no golpe (a pinca aponta pro alvo).
+/// Suave nas duas pontas: a velocidade desenhada e o `ergue` do golpe ja' sao.
+pub fn yaw_lateral(a: &Anatomia, e: &Entrada) -> f32 {
+    if !a.lateral {
+        return 0.0;
+    }
+    let andando = (e.vel / 1.2).clamp(0.0, 1.0);
+    std::f32::consts::FRAC_PI_2 * andando * (1.0 - golpe(e.golpe).ergue)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -477,7 +547,60 @@ mod tests {
     }
 
     fn lobo() -> Anatomia {
-        Anatomia { altura: 1.0, frente: 0.55, ombro: vec3(0.12, 0.3, 0.2), lado: 1.0 }
+        Anatomia { altura: 1.0, frente: 0.55, ombro: vec3(0.12, 0.3, 0.2), lado: 1.0, lateral: false }
+    }
+
+    fn caranguejo() -> Anatomia {
+        Anatomia { altura: 0.5, frente: 0.4, ombro: vec3(0.15, 0.2, 0.2), lado: 1.0, lateral: true }
+    }
+
+    #[test]
+    fn caranguejo_anda_de_lado_sem_deslizar_o_pe() {
+        let a = caranguejo();
+        for vel in [1.0f32, 2.0] {
+            let c = ciclo(a.altura, vel);
+            for esq in [true, false] {
+                let mut antes: Option<f32> = None;
+                for k in 0..2000 {
+                    let passada = k as f32 * TAU / 1000.0;
+                    let e = Entrada { passada, vel, ..Default::default() };
+                    let (_, d) = peca(Junta::Pata { frente: false, esq }, &e, &a, vec3(0.0, 0.1, 0.0));
+                    assert_eq!(d.z, 0.0, "perna de caranguejo nao anda pra frente");
+                    // o corpo anda no -X; o pe' plantado fica no lugar do mundo
+                    let no_mundo = -(passada / TAU * c) + d.x;
+                    if d.y == 0.0 {
+                        if let Some(p) = antes {
+                            assert!((no_mundo - p).abs() < 1e-3, "vel {vel}: pe' deslizou {}", no_mundo - p);
+                        }
+                        antes = Some(no_mundo);
+                    } else {
+                        antes = None;
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn caranguejo_gira_de_lado_andando_e_volta_de_frente_no_golpe() {
+        let a = caranguejo();
+        let parado = Entrada { vel: 0.0, golpe: 99.0, ..Default::default() };
+        let andando = Entrada { vel: 2.0, golpe: 99.0, ..Default::default() };
+        let golpeando = Entrada { vel: 2.0, golpe: T_LEVANTA + T_VARRE * 0.5, ..Default::default() };
+        assert_eq!(yaw_lateral(&a, &parado), 0.0);
+        assert!((yaw_lateral(&a, &andando) - std::f32::consts::FRAC_PI_2).abs() < 1e-4);
+        assert!(yaw_lateral(&a, &golpeando) < 1e-4, "no golpe a pinca aponta pro alvo");
+        assert_eq!(yaw_lateral(&lobo(), &andando), 0.0, "lobo anda de frente");
+    }
+
+    #[test]
+    fn a_pinca_belisca_so_no_golpe() {
+        let a = caranguejo();
+        let pinca = |t: f32| peca(Junta::Pata { frente: true, esq: false }, &Entrada { golpe: t, ..Default::default() }, &a, a.ombro).1;
+        assert_eq!(pinca(99.0), Vec3::ZERO, "parada a pinca so' abre e fecha");
+        assert!(pinca(T_LEVANTA + T_VARRE * 0.5).length() > 0.05, "no golpe ela sai do lugar");
+        let outra = peca(Junta::Pata { frente: true, esq: true }, &Entrada { golpe: T_LEVANTA, ..Default::default() }, &a, vec3(-0.15, 0.2, 0.2)).1;
+        assert_eq!(outra, Vec3::ZERO, "so' uma pinca golpeia");
     }
 
     fn entrada(golpe: f32) -> Entrada {
@@ -571,5 +694,7 @@ mod tests {
             assert!(do_mob(T::Enemy, gente, false).is_none());
         }
         assert!(do_mob(T::Player, 0, false).is_none());
+        assert_eq!(do_mob(T::Enemy, 8, false).unwrap().0, "bichos/caranguejo");
+        assert_eq!(do_mob(T::Enemy, 9, false).unwrap().0, "bichos/caranguejo_rei");
     }
 }

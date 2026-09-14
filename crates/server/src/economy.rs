@@ -128,6 +128,12 @@ impl EconomyConfig {
     /// dropa (qty random entre min..=max). Determinístico via seed.
     /// Items com `active=false` são pulados (não dropam até admin reativar).
     pub fn roll_loot(&self, kind: u16, seed: u64) -> Vec<(u16, u32)> {
+        self.roll_loot_com_sorte(kind, seed, 1.0)
+    }
+
+    /// `roll_loot` com a Pocao de Sorte: `mult` multiplica a chance de cada
+    /// linha que nao e' garantida (1,0 = sem sorte).
+    pub fn roll_loot_com_sorte(&self, kind: u16, seed: u64, mult: f32) -> Vec<(u16, u32)> {
         // Match exato primeiro; senao, fallback no kind mais proximo
         // ABAIXO (level-range usa kind=level, ex: lv10 sem tabela cai
         // pra lv7 — mobs de level intermediario nao ficam sem loot).
@@ -136,7 +142,7 @@ impl EconomyConfig {
                 (0..kind).rev().find_map(|k| self.loot_tables.get(&k))
             });
         let Some(table) = table else { return Vec::new(); };
-        roll_entries(table, &self.items, seed).into_iter()
+        roll_entries(table, &self.items, seed, mult).into_iter()
             .filter(|(id,_)|self.permitido_em_mob(*id)).collect()
     }
 
@@ -149,20 +155,27 @@ impl EconomyConfig {
     /// Mesma semântica de `roll_loot` mas pra farm nodes (kind+tier).
     /// Tier acima de 4 cai pra 4; tier 0 vira 1 pra evitar lookup vazio.
     pub fn roll_farm_loot(&self, kind: &str, tier: u8, seed: u64) -> Vec<(u16, u32)> {
+        self.roll_farm_loot_com_sorte(kind, tier, seed, 1.0)
+    }
+
+    /// `roll_farm_loot` com a Pocao de Sorte (ver `roll_loot_com_sorte`).
+    pub fn roll_farm_loot_com_sorte(&self, kind: &str, tier: u8, seed: u64, mult: f32) -> Vec<(u16, u32)> {
         let t = tier.max(1).min(4);
         let key = (kind.to_string(), t);
         let Some(table) = self.farm_loot_tables.get(&key) else { return Vec::new(); };
-        roll_entries(table, &self.items, seed)
+        roll_entries(table, &self.items, seed, mult)
     }
 }
 
-fn roll_entries(table: &[LootEntry], items: &HashMap<u16, ItemDef>, seed: u64) -> Vec<(u16, u32)> {
+fn roll_entries(table: &[LootEntry], items: &HashMap<u16, ItemDef>, seed: u64, mult: f32) -> Vec<(u16, u32)> {
     let mut out = Vec::with_capacity(table.len());
     let mut s = seed;
     for entry in table {
         s = lcg(s);
         let r1 = lcg_f32(s);
-        if entry.chance < 1.0 && r1 >= entry.chance { continue; }
+        // Sorte so' mexe no que nao e' garantido; garantido continua 100%.
+        let chance = if entry.chance < 1.0 { (entry.chance * mult).min(1.0) } else { entry.chance };
+        if chance < 1.0 && r1 >= chance { continue; }
         if !items.get(&entry.item_id).map(|i| i.active).unwrap_or(true) { continue; }
         s = lcg(s);
         let r2 = lcg_f32(s);
@@ -171,6 +184,35 @@ fn roll_entries(table: &[LootEntry], items: &HashMap<u16, ItemDef>, seed: u64) -
         out.push((entry.item_id, qty));
     }
     out
+}
+
+#[cfg(test)]
+mod testes_de_sorte {
+    use super::*;
+
+    #[test]
+    fn sorte_sobe_a_chance_e_nao_mexe_na_garantida() {
+        let tabela = [
+            LootEntry { item_id: 1, qty_min: 1, qty_max: 1, chance: 1.0 },
+            LootEntry { item_id: 2, qty_min: 1, qty_max: 1, chance: 0.5 },
+        ];
+        let itens = HashMap::new();
+        let conta = |mult: f32| {
+            let (mut garantida, mut rara) = (0, 0);
+            for s in 0..20_000u64 {
+                for (id, _) in roll_entries(&tabela, &itens, lcg(s ^ 0xABCD), mult) {
+                    if id == 1 { garantida += 1 } else { rara += 1 }
+                }
+            }
+            (garantida, rara)
+        };
+        let (g1, r1) = conta(1.0);
+        let (g2, r2) = conta(shared::mult_de_sorte(0, 10));
+        assert_eq!((g1, g2), (20_000, 20_000), "garantida continua garantida");
+        let (f1, f2) = (r1 as f32 / 20_000.0, r2 as f32 / 20_000.0);
+        assert!((f1 - 0.5).abs() < 0.03, "sem sorte ~50%: {f1}");
+        assert!((f2 - 0.6).abs() < 0.03, "com sorte ~60%: {f2}");
+    }
 }
 
 /// Loot drops de um farm node (kind + tier). Retorna pares (item_id, qty).
@@ -324,7 +366,9 @@ pub fn enemy_proj_count(kind: u16) -> u32 {
 /// `kind_para_nivel`: o indice de um kind aqui diz a partir de que nivel ele
 /// pode nascer.
 pub fn kinds_comuns() -> Vec<u16> {
-    let mut k: Vec<u16> = cell().read().enemy_kinds.keys().copied().filter(|&k| k != KIND_CHEFE).collect();
+    let mut k: Vec<u16> = cell().read().enemy_kinds.keys().copied()
+        .filter(|&k| k != KIND_CHEFE && !KINDS_DE_PRAIA.contains(&k))
+        .collect();
     k.sort_unstable();
     k
 }
@@ -333,7 +377,7 @@ pub fn kinds_comuns() -> Vec<u16> {
 pub fn kinds_que_dropam(item: u16) -> Vec<u16> {
     let c = cell().read();
     let mut k: Vec<u16> = c.loot_tables.iter()
-        .filter(|(kind, t)| **kind != KIND_CHEFE && t.iter().any(|e| e.item_id == item && e.chance > 0.0))
+        .filter(|(kind, t)| **kind != KIND_CHEFE && !KINDS_DE_PRAIA.contains(kind) && t.iter().any(|e| e.item_id == item && e.chance > 0.0))
         .map(|(kind, _)| *kind)
         .collect();
     k.sort_unstable();
@@ -392,6 +436,16 @@ pub fn linhas_da_pedra() -> Vec<(u8, u16, i32, i32, f32)> {
 
 pub fn enemy_loot_drops(kind: u16, seed: u64) -> Vec<(u16, u32)> {
     cell().read().roll_loot(kind, seed)
+}
+
+/// Loot de bicho com a Pocao de Sorte de quem matou.
+pub fn enemy_loot_drops_com_sorte(kind: u16, seed: u64, mult: f32) -> Vec<(u16, u32)> {
+    cell().read().roll_loot_com_sorte(kind, seed, mult)
+}
+
+/// Coleta com a Pocao de Sorte de quem coletou.
+pub fn farm_node_loot_com_sorte(kind: &str, tier: u8, seed: u64, mult: f32) -> Vec<(u16, u32)> {
+    cell().read().roll_farm_loot_com_sorte(kind, tier, seed, mult)
 }
 
 /// Reverse-index das loot tables: pra cada item dropavel, lista as fontes
@@ -629,6 +683,25 @@ pub(crate) async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
 /// dele (700 de vida contra 50 do Grunt), e nao uma classe procedural.
 pub const KIND_CHEFE: u16 = 7;
 
+/// Bichos de PRAIA: caranguejo e caranguejo-rei. Nascem so' nas zonas de
+/// praia (`world::ZONA_DE_PRAIA_ID`), com sorteio proprio; a escada por nivel
+/// das zonas comuns (`kind_para_nivel`, `kinds_comuns`) nunca tira eles.
+pub const KINDS_DE_PRAIA: [u16; 2] = [8, 9];
+/// Um em quantos caranguejos e' rei.
+pub const UM_REI_EM: u64 = 4;
+
+/// O bicho de uma vaga de praia.
+pub fn kind_de_praia(semente: u64) -> u16 {
+    if semente % UM_REI_EM == 0 { KINDS_DE_PRAIA[1] } else { KINDS_DE_PRAIA[0] }
+}
+
+/// (kind, chance em %) de uma zona de praia, pro mapa — a mesma conta de
+/// `kind_de_praia`.
+pub fn bichos_de_praia() -> Vec<(u16, u8)> {
+    let rei = (100 / UM_REI_EM) as u8;
+    vec![(KINDS_DE_PRAIA[0], 100 - rei), (KINDS_DE_PRAIA[1], rei)]
+}
+
 #[cfg(test)]
 mod loot_tests {
     use super::*;
@@ -666,17 +739,85 @@ pub fn kind_para_nivel(nivel: u32, semente: u64) -> u16 {
         .enemy_kinds
         .keys()
         .copied()
-        .filter(|&k| k != KIND_CHEFE)
+        .filter(|&k| k != KIND_CHEFE && !KINDS_DE_PRAIA.contains(&k))
         .collect();
     // Ordem estavel: a tabela vem de um mapa, e sorteio sobre ordem de hash
     // daria um bicho diferente a cada reinicio do servidor.
     comuns.sort_unstable();
+    kind_para_nivel_em(&comuns, nivel, semente)
+}
+
+/// O sorteio de `kind_para_nivel` sobre uma lista ja' ordenada — separado pra
+/// o simulador de balanceamento sortear igual ao jogo sem o banco.
+pub(crate) fn kind_para_nivel_em(comuns: &[u16], nivel: u32, semente: u64) -> u16 {
     if comuns.is_empty() {
         return 0;
     }
     // Ate' onde a escolha vai: um bicho novo a cada tres niveis.
     let teto = ((nivel as usize / 3) + 1).min(comuns.len());
     comuns[(semente as usize) % teto]
+}
+
+/// Uma linha da tabela de mobs semeada no banco (`persistence`). Mora aqui
+/// pra o simulador de balanceamento ler os MESMOS numeros.
+pub(crate) struct KindInicial {
+    pub kind: i32,
+    pub name: &'static str,
+    pub hp: i32,
+    pub sp: f32,
+    pub dmg: i32,
+    pub cd: f32,
+    pub det: f32,
+    pub rng: f32,
+    pub kite: Option<f32>,
+    pub proj: i32,
+    pub xp: i64,
+    pub def: i32,
+    pub sz: f32,
+    pub t: [f32; 4],
+}
+
+/// Os oito mobs do jogo. A regra: quem MORDE e' bicho, quem ATIRA e' gente.
+/// Os numeros de antes ficaram (sao o que o balanceamento ja' conhece); mudou
+/// quem eles sao — e o chefe, que agora e' um lobo grande e por isso MORDE em
+/// vez de atirar cinco projeteis.
+pub(crate) const KINDS_INICIAIS: [KindInicial; 10] = [
+    KindInicial { kind: 0, name: "Lobo", hp: 120, sp: 2.0, dmg: 10, cd: 2.0, det: 9.0, rng: 1.8, kite: None, proj: 1, xp: 30, def: 0, sz: 1.0, t: [1.0, 1.0, 1.0, 1.0] },
+    KindInicial { kind: 1, name: "Urso", hp: 280, sp: 1.3, dmg: 18, cd: 2.8, det: 8.0, rng: 1.8, kite: None, proj: 1, xp: 75, def: 8, sz: 1.3, t: [1.0, 1.0, 1.0, 1.0] },
+    KindInicial { kind: 2, name: "Pistoleiro", hp: 85, sp: 2.4, dmg: 12, cd: 1.5, det: 13.0, rng: 9.0, kite: Some(5.0), proj: 1, xp: 50, def: 0, sz: 1.0, t: [1.0, 1.0, 1.0, 1.0] },
+    KindInicial { kind: 3, name: "Tigre", hp: 95, sp: 4.2, dmg: 15, cd: 1.0, det: 11.0, rng: 1.8, kite: None, proj: 1, xp: 55, def: 2, sz: 1.0, t: [1.0, 1.0, 1.0, 1.0] },
+    KindInicial { kind: 4, name: "Mago", hp: 105, sp: 1.4, dmg: 22, cd: 2.2, det: 15.0, rng: 12.0, kite: Some(8.0), proj: 1, xp: 70, def: 1, sz: 1.0, t: [1.0, 1.0, 1.0, 1.0] },
+    KindInicial { kind: 5, name: "Owlbear", hp: 460, sp: 1.5, dmg: 28, cd: 3.0, det: 8.0, rng: 1.8, kite: None, proj: 1, xp: 110, def: 4, sz: 1.5, t: [1.0, 1.0, 1.0, 1.0] },
+    KindInicial { kind: 6, name: "Arqueiro", hp: 105, sp: 2.8, dmg: 14, cd: 1.6, det: 13.0, rng: 9.0, kite: Some(7.0), proj: 1, xp: 60, def: 1, sz: 1.0, t: [1.0, 1.0, 1.0, 1.0] },
+    KindInicial { kind: 7, name: "Lobo Grande", hp: 700, sp: 1.6, dmg: 40, cd: 2.8, det: 18.0, rng: 2.6, kite: None, proj: 1, xp: 600, def: 20, sz: 2.2, t: [1.0, 1.0, 1.0, 1.0] },
+    // Os de PRAIA (`KINDS_DE_PRAIA`): so' nascem em zona de praia. O
+    // caranguejo e' mais fraco e mais lento que o lobo; o rei fica entre o
+    // lobo e o urso.
+    KindInicial { kind: 8, name: "Caranguejo", hp: 90, sp: 1.8, dmg: 8, cd: 1.8, det: 7.0, rng: 1.6, kite: None, proj: 1, xp: 25, def: 3, sz: 0.7, t: [1.0, 1.0, 1.0, 1.0] },
+    KindInicial { kind: 9, name: "Caranguejo-rei", hp: 220, sp: 1.5, dmg: 15, cd: 2.4, det: 8.0, rng: 1.9, kite: None, proj: 1, xp: 60, def: 10, sz: 1.0, t: [1.0, 1.0, 1.0, 1.0] },
+];
+
+#[cfg(test)]
+mod testes_de_praia {
+    use super::*;
+
+    #[test]
+    fn caranguejo_e_fraco_e_o_rei_fica_entre_lobo_e_urso() {
+        let (lobo, urso) = (&KINDS_INICIAIS[0], &KINDS_INICIAIS[1]);
+        let (c, rei) = (&KINDS_INICIAIS[8], &KINDS_INICIAIS[9]);
+        assert_eq!((c.kind, rei.kind), (8, 9));
+        assert!(c.hp < lobo.hp && c.dmg < lobo.dmg && c.sp < lobo.sp);
+        assert!(rei.hp > lobo.hp && rei.hp < urso.hp && rei.dmg > lobo.dmg && rei.dmg < urso.dmg);
+        assert!(c.kite.is_none() && rei.kite.is_none(), "caranguejo belisca, nao atira");
+    }
+
+    #[test]
+    fn praia_sorteia_um_rei_em_quatro_e_nunca_bicho_comum() {
+        let reis = (0..4000u64).filter(|s| kind_de_praia(*s) == 9).count();
+        assert_eq!(reis, 1000);
+        assert!((0..4000u64).all(|s| KINDS_DE_PRAIA.contains(&kind_de_praia(s))));
+        assert_eq!(bichos_de_praia(), vec![(8, 75), (9, 25)]);
+    }
 }
 
 #[cfg(test)]

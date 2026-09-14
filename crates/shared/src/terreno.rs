@@ -1635,6 +1635,49 @@ impl Gerador {
             || self.porto.is_some_and(|s| s.contem(p, Cidade::FOLGA_DO_MATO))
     }
 
+    /// `p` e' agua ligada ao OCEANO — e nao lago, baixada ou poca cercada de
+    /// terra? Devolve (aberto, celulas visitadas).
+    ///
+    /// Busca GULOSA pra fora numa grade de 2 u, andando so' por agua: a celula
+    /// mais longe do centro da ilha sai primeiro, entao mar de verdade chega na
+    /// borda em poucas centenas de passos; lago esgota o proprio contorno e
+    /// para. Nao ha' mascara da ilha inteira guardada: seriam centenas de
+    /// milhares de colunas de ruido a cada `Gerador` que o cliente cria.
+    pub fn mar_aberto(&self, p: glam::Vec2) -> (bool, usize) {
+        use std::collections::{BinaryHeap, HashSet};
+        const PASSO: f32 = 2.0;
+        const TETO: usize = 30_000;
+        let raio_un = self.raio_blocos as f32 * BLOCO;
+        let agua = |c: (i32, i32)| {
+            let (x, z) = (c.0 as f32 * PASSO, c.1 as f32 * PASSO);
+            (self.bloco_cru((x / BLOCO).round() as i32, (z / BLOCO).round() as i32) + 1) as f32 * BLOCO
+                <= Cidade::SECO
+        };
+        let ini = ((p.x / PASSO).round() as i32, (p.y / PASSO).round() as i32);
+        if !agua(ini) {
+            return (false, 0);
+        }
+        let d2 = |c: (i32, i32)| c.0 as i64 * c.0 as i64 + c.1 as i64 * c.1 as i64;
+        let mut fila = BinaryHeap::new();
+        let mut visto = HashSet::new();
+        fila.push((d2(ini), ini));
+        visto.insert(ini);
+        while let Some((_, c)) = fila.pop() {
+            if (c.0 as f32 * PASSO).hypot(c.1 as f32 * PASSO) >= raio_un {
+                return (true, visto.len());
+            }
+            if visto.len() >= TETO {
+                return (false, visto.len());
+            }
+            for v in [(c.0 + 1, c.1), (c.0 - 1, c.1), (c.0, c.1 + 1), (c.0, c.1 - 1)] {
+                if visto.insert(v) && agua(v) {
+                    fila.push((d2(v), v));
+                }
+            }
+        }
+        (false, visto.len())
+    }
+
     /// Onde o porto fica: na COSTA, longe da cidade.
     ///
     /// Adaptado do `Porto.Gerar` do zone14: 48 rumos saindo do centro da
@@ -1658,20 +1701,24 @@ impl Gerador {
         for k in 0..48 {
             let a = k as f32 / 48.0 * std::f32::consts::TAU;
             let rumo = v2(a.cos(), a.sin());
+            // TODA passagem de terra pra agua ao longo do rumo, e nao so' a
+            // primeira: saindo do centro, a primeira agua pode ser um LAGO no
+            // meio da ilha — foi assim que o porto da ilha inicial foi parar
+            // numa baixada. Quem decide qual serve e' o `mar_aberto` la' embaixo.
             let mut visto_seco = false;
-            let mut costa = None;
+            let mut costas = Vec::new();
             let mut d = 20.0;
             while d < raio_un {
                 let p = rumo * d;
                 if seco(p) {
                     visto_seco = true;
                 } else if visto_seco && (1..=6).all(|j| !seco(rumo * (d + j as f32))) {
-                    costa = Some(p);
-                    break;
+                    costas.push(p);
+                    visto_seco = false;
                 }
                 d += 1.0;
             }
-            let Some(pc) = costa else { continue };
+            for pc in costas {
             let mar_q = quarto_para(rumo);
             let mar = frente_de(mar_q);
             let centro = pc - mar * 14.0;
@@ -1722,6 +1769,13 @@ impl Gerador {
             if longe < 150.0 {
                 continue;
             }
+            // Por ultimo (e' o teste caro): a agua da ponta do cais, e um
+            // pouco alem pro calado, tem que ser OCEANO — ligada ao mar em
+            // volta da ilha, e nao lago cercado de terra.
+            let ponta = raiz + mar * comp;
+            if !self.mar_aberto(ponta).0 || !self.mar_aberto(ponta + mar * 6.0).0 {
+                continue;
+            }
             let nota = (soma2 / n - media * media) - longe.min(320.0) / 80.0;
             if melhor.is_none_or(|(m, _)| nota < m) {
                 melhor = Some((nota, SitioPorto {
@@ -1734,6 +1788,7 @@ impl Gerador {
                     larg,
                     doca_seed,
                 }));
+            }
             }
         }
         melhor.map(|(_, s)| s)
@@ -1972,7 +2027,9 @@ const MAGICA: [u8; 4] = *b"TALT";
 /// 2: a cidade aplainada entrou no gerador. Cache v1 e' relevo sem praca — o
 /// servidor andaria num chao que o cliente nao desenha.
 /// 3: plato da cidade maior, patio do porto e o pier erguido no relevo.
-const VERSAO: u16 = 3;
+/// 4: o porto so' assenta em costa de MAR ABERTO (antes caia em lago), e o
+/// patio e o pier mudaram de lugar.
+const VERSAO: u16 = 4;
 
 impl Ilha {
     pub fn gerar(semente: i32, raio_blocos: i32, bioma: Bioma, escala_altura: f32) -> Self {
@@ -2065,6 +2122,11 @@ impl Ilha {
         self.ger.porto()
     }
 
+    /// A agua em `p` da' no OCEANO (e nao num lago)? Ver `Gerador::mar_aberto`.
+    pub fn mar_aberto(&self, p: glam::Vec2) -> bool {
+        self.ger.mar_aberto(p).0
+    }
+
     /// Alguma caixa solida no retangulo satisfaz `f`?
     fn caixas_perto(&self, x0: f32, z0: f32, x1: f32, z1: f32, mut f: impl FnMut(&crate::vila::Caixa2) -> bool) -> bool {
         if self.solidos.is_empty() {
@@ -2117,6 +2179,46 @@ impl Ilha {
     /// indice velho vira tronco boiando ou parede invisivel.
     pub fn replantar(&mut self) {
         self.plantar();
+    }
+
+    /// Tira do indice de colisao a pedra ou o tronco da coluna `coluna` — o
+    /// no' que esgotou e sumiu nao barra mais ninguem (nem conta como
+    /// coletavel). Devolve o que tirou, pra `mostrar_estorvos` repor quando
+    /// ele voltar. Gancho minimo: o terreno nao sabe de esgotamento; quem
+    /// guarda isso e' o servidor. A forracao da coluna fica.
+    pub fn esconder_coluna(&mut self, coluna: u32) -> Vec<(usize, u32)> {
+        let (ix, iz) = ((coluna >> 16) as i32, (coluna & 0xffff) as i32);
+        let centro = glam::Vec2::new((ix - self.raio_blocos) as f32 * BLOCO, (iz - self.raio_blocos) as f32 * BLOCO);
+        let folga = self.raio_max_estorvo + BLOCO * 2.0;
+        let (c0x, c0z) = self.celula(centro.x - folga, centro.y - folga);
+        let (c1x, c1z) = self.celula(centro.x + folga, centro.y + folga);
+        let mut tirados = Vec::new();
+        for cz in c0z..=c1z {
+            for cx in c0x..=c1x {
+                let Some(c) = self.celula_em(cx, cz) else { continue };
+                let estorvos = &self.estorvos;
+                self.grade[c].retain(|&n| {
+                    let e = estorvos[n as usize];
+                    let sai = e.coluna == coluna && !matches!(e.tipo, TipoDeEstorvo::Forracao);
+                    if sai {
+                        tirados.push((c, n));
+                    }
+                    !sai
+                });
+            }
+        }
+        tirados
+    }
+
+    /// Repoe no indice o que `esconder_coluna` tirou.
+    pub fn mostrar_estorvos(&mut self, tirados: &[(usize, u32)]) {
+        for &(c, n) in tirados {
+            if let Some(v) = self.grade.get_mut(c) {
+                if !v.contains(&n) {
+                    v.push(n);
+                }
+            }
+        }
     }
 
     /// A cidade desta ilha. Ver `Cidade`.
@@ -3869,6 +3971,34 @@ mod testes {
     /// Toda ilha do arquipelago tem cidade: plato seco, no nivel, e sem
     /// arvore, planta ou pedra. So' o gerador — a ilha inteira custaria
     /// segundos por ilha, e a cidade e' funcao dele.
+    #[test]
+    fn o_porto_da_no_oceano() {
+        let mut falhas = Vec::new();
+        for d in &ARQUIPELAGO {
+            let t0 = std::time::Instant::now();
+            let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+            let criar = t0.elapsed();
+            let p = ger.porto().unwrap_or_else(|| panic!("{}: sem porto", d.zona));
+            let ponta = p.raiz + p.mar() * p.comp;
+            let longe = ger.cidade().map_or(0.0, |c| c.centro().distance(p.centro));
+            let mut resumo = Vec::new();
+            for extra in [0.0f32, 2.0, 6.0] {
+                let (aberto, n) = ger.mar_aberto(ponta + p.mar() * extra);
+                resumo.push((extra, aberto, n));
+            }
+            println!(
+                "PORTO {}: centro ({:.0},{:.0}) ponta ({:.0},{:.0}) {longe:.0} u da cidade | mar aberto (ponta+0/2/6): {:?} | Gerador em {criar:?}",
+                d.zona, p.centro.x, p.centro.y, ponta.x, ponta.y, resumo
+            );
+            for (extra, aberto, n) in resumo {
+                if !aberto {
+                    falhas.push(format!("{}: agua a {extra} u alem da ponta nao e' mar aberto (lago de {n} celulas)", d.zona));
+                }
+            }
+        }
+        assert!(falhas.is_empty(), "{falhas:#?}");
+    }
+
     #[test]
     fn toda_ilha_tem_cidade_plana_seca_e_sem_mato() {
         for d in &ARQUIPELAGO {

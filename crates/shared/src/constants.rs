@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 86;
+pub const PROTOCOL_VERSION: u16 = 92;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -58,6 +58,49 @@ pub fn xp_com_bonus(amount: u64, agora: i64, bonus_ate: i64) -> u64 {
 /// Ate' quando o bonus vale depois de beber uma pocao agora.
 pub fn renovar_bonus_xp(agora: i64) -> i64 {
     agora + DURACAO_BONUS_XP_S
+}
+
+/// Pocao de Fortuna: +30% do ouro e do cobre que cai de BICHO, por uma hora.
+/// Mesma regra da de XP: beber outra renova a hora cheia, nao acumula.
+pub const BONUS_FORTUNA_PCT: u64 = 30;
+/// Pocao de Sorte: +20% na chance de cada linha de drop que nao e' garantida
+/// (bicho e coleta), por uma hora.
+pub const BONUS_SORTE_PCT: u32 = 20;
+/// Pocoes de buff de drop duram uma hora.
+pub const DURACAO_BUFF_S: i64 = 3600;
+
+/// Quantidade de ouro/cobre com a Fortuna aplicada, se ativa em `agora`.
+pub fn qtd_com_fortuna(qtd: u32, agora: i64, ate: i64) -> u32 {
+    if agora < ate {
+        qtd.saturating_add(((qtd as u64 * BONUS_FORTUNA_PCT + 50) / 100) as u32)
+    } else {
+        qtd
+    }
+}
+
+/// Multiplicador da chance de drop com a Sorte (1,0 sem ela).
+pub fn mult_de_sorte(agora: i64, ate: i64) -> f32 {
+    if agora < ate { 1.0 + BONUS_SORTE_PCT as f32 / 100.0 } else { 1.0 }
+}
+
+/// Ate' quando um buff de drop vale depois de beber agora (renova, nao soma).
+pub fn renovar_buff(agora: i64) -> i64 {
+    agora + DURACAO_BUFF_S
+}
+
+#[cfg(test)]
+mod testes_de_buff {
+    use super::*;
+
+    #[test]
+    fn fortuna_e_sorte_so_valem_com_o_buff_ativo() {
+        assert_eq!(qtd_com_fortuna(100, 10, 20), 130);
+        assert_eq!(qtd_com_fortuna(100, 20, 20), 100, "expirou");
+        assert_eq!(qtd_com_fortuna(0, 10, 20), 0);
+        assert!((mult_de_sorte(10, 20) - 1.2).abs() < 1e-6);
+        assert_eq!(mult_de_sorte(30, 20), 1.0);
+        assert_eq!(renovar_buff(100), 100 + DURACAO_BUFF_S, "renova a hora cheia, sem acumular");
+    }
 }
 
 // ── Boat (Sea-of-Thieves style: vela/leme/ancora separados) ─────────────────
@@ -174,8 +217,13 @@ pub const PROJ_SPEED: f32 = 15.0;
 /// Tempo de vida de um projetil em segundos.
 pub const PROJ_TTL: f32 = 1.5;
 
-/// Cooldown entre ataques em segundos.
-pub const ATTACK_COOLDOWN: f32 = 0.25;
+/// Cooldown entre golpes CORPO A CORPO em segundos.
+///
+/// Era 0,25 (quatro golpes por segundo): o dobro do tiro, e o que fazia todo
+/// mob morrer em dois golpes. O corpo a corpo segue mais rapido que a
+/// distancia (0,55 / 0,32), mas nao o bastante pra apagar a luta. Medido em
+/// `server::balanceamento`.
+pub const ATTACK_COOLDOWN: f32 = 0.40;
 
 /// Tempo (s) sem atacar antes do combo melee resetar pra step 0 (Slash1).
 /// Mantém em sync com client `_comboResetTime` em CharacterAnimator.
@@ -512,6 +560,10 @@ pub mod item_id {
     /// missao de area — nao ha' loja que venda. Fora das faixas que a M27
     /// apaga (3..51, 68..71, 80..95, 102..268).
     pub const XP_POTION: u16             = 350;
+    /// Pocao de Fortuna (+30% de ouro e cobre de bicho por 1 h) e Pocao de
+    /// Sorte (+20% na chance de drop por 1 h). Recompensa de diaria, sem loja.
+    pub const FORTUNA_POTION: u16        = 351;
+    pub const SORTE_POTION: u16          = 352;
 
     /// Todos os materiais que existem nas quatro cores, pelo id da cinza.
     pub const MATERIAIS_COLORIDOS: [u16; 12] = [
@@ -988,7 +1040,8 @@ pub const fn item_bonus(item_id: u16) -> EquipBonus {
         EquipBonus { hp_max, mp_max, attack_damage, dex, wis, defense }
     }
     match item_id {
-        item_id::ESPADA_E_ESCUDO => b(20, 0, 12, 0, 0, 0),
+        // A linha de frente: +60 de vida (era +20) — quem segura a mordida.
+        item_id::ESPADA_E_ESCUDO => b(60, 0, 12, 0, 0, 0),
         item_id::KATANA => b(0, 0, 11, 8, 0, 0),
         item_id::PISTOLAS => b(0, 0, 10, 9, 0, 0),
         item_id::ANEL_MAGICO => b(0, 50, 9, 0, 7, 0),
@@ -1089,6 +1142,47 @@ pub const RESPAWN_DA_PEDRA: [f32; 5] = [0.0, 300.0, 420.0, 600.0, 900.0];
 /// de marcador pra madeira nao sumir do jogo enquanto isso.
 pub const COLETAS_POR_ARVORE: u32 = 8;
 pub const RESPAWN_DA_ARVORE: f32 = 90.0;
+
+// ── Coleta por NO' ─────────────────────────────────────────────────────────
+// A coleta deixou de ser passiva pelo lugar: o jogador escolhe a pedra (ou o
+// tronco), vai ate' ela e coleta ELA, ciclo a ciclo, ate' a reserva
+// (`COLETAS_POR_PEDRA` / `COLETAS_POR_ARVORE`) acabar. Reserva, respawn e
+// rendimento seguem o planejamento (docs/COLETA.md); os tres numeros abaixo
+// NAO estavam nele.
+
+/// Segundos de um ciclo de coleta numa pedra, por tier.
+/// DECISAO PROVISORIA (nao estava no planejamento): o doc so' definia o ritmo
+/// por densidade do lugar, que saiu junto com a coleta passiva.
+pub const COLETA_CICLO_PEDRA_S: [f32; 5] = [0.0, 2.5, 2.8, 3.1, 3.4];
+/// Segundos de um ciclo num tronco. DECISAO PROVISORIA.
+pub const COLETA_CICLO_ARVORE_S: f32 = 2.0;
+/// Distancia maxima da BORDA do corpo pra coletar. DECISAO PROVISORIA.
+pub const COLETA_ALCANCE_UN: f32 = 1.4;
+/// Raio de busca do AUTO COLETA a partir de onde foi ligado (config do
+/// jogador). DECISAO PROVISORIA; o padrao e' o raio da busca de spot antiga.
+pub const COLETA_RAIO_AUTO_MIN: f32 = 20.0;
+pub const COLETA_RAIO_AUTO_MAX: f32 = 100.0;
+pub const COLETA_RAIO_AUTO_PADRAO: f32 = 60.0;
+
+/// Ciclo de coleta de um no' (0 = tronco, 1..4 = pedra pela cor).
+pub fn ciclo_de_coleta_s(tier: u8) -> f32 {
+    if tier == 0 {
+        COLETA_CICLO_ARVORE_S
+    } else {
+        COLETA_CICLO_PEDRA_S[(tier as usize).min(4)]
+    }
+}
+
+/// Nome do tipo de no' pra HUD: 0 madeira, 1..4 pedra pela cor.
+pub fn nome_do_no(tier: u8) -> &'static str {
+    match tier {
+        0 => "Madeira",
+        1 => "Pedra cinza",
+        2 => "Pedra verde",
+        3 => "Pedra azul",
+        _ => "Pedra roxa",
+    }
+}
 
 /// O que uma pedra de cada tier ENTREGA, em peso por tier de material.
 ///

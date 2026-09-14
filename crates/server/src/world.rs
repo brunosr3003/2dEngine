@@ -65,6 +65,7 @@ pub struct ProjTag {
 
 mod habilidades;
 mod boss_teste;
+mod chefes;
 use habilidades::HabilidadePendente;
 
 /// Ataque basico: anuncia a animacao agora e resolve o dano no impacto.
@@ -233,6 +234,9 @@ pub struct EnemyTag {
     /// EntityId do player que tauntou (alvo forçado durante forced_aggro_until).
     /// None = sem taunt ativo.
     pub forced_aggro_target: Option<EntityId>,
+    /// Ate' quando persegue quem o golpeou (ou golpeou a matilha), mesmo fora
+    /// do alcance de visao. Ver `PROVOCACAO_S`.
+    pub provocado_ate: f32,
     /// Stats efetivos derivados do EnemyBuild (level + equip + alocados +
     /// profs + skills aprendidas) via `effective_stats()`. Cacheados no spawn
     /// — fonte da verdade pra HP_max, attack_damage, defense, etc. de combat.
@@ -472,10 +476,161 @@ pub const MOB_ZONA_RAIO_UN: f32 = 45.0;
 pub const MOB_ESPACO_UN: f32 = 7.0;
 /// Teto de mobs por zona.
 pub const MOB_POR_ZONA: u32 = 18;
+
+// ── Balanceamento corpo a corpo × distancia (docs/COMBATE.md) ─────────────
+//
+// Medido com `crate::balanceamento`: quem atirava de 5 unidades matava o lobo
+// antes de ele ver o jogador (detect 9, sem reagir a golpe) e saia com ZERO de
+// dano; quem batia de perto tomava toda mordida e, com o regen quebrado, so'
+// descia de HP ate' morrer. Estes numeros sao as alavancas.
+
+/// Mob que leva golpe de jogador persegue quem bateu por este tempo, mesmo
+/// fora do alcance de visao. Sem isto o atirador era intocavel.
+pub(crate) const PROVOCACAO_S: f32 = 6.0;
+/// Golpe num mob provoca tambem os vizinhos neste raio: matilha reage junto.
+pub(crate) const MATILHA_RAIO_UN: f32 = 16.0;
+/// Bicho que MORDE, provocado, investe mais rapido ate' o alvo.
+pub(crate) const CARGA_PROVOCADO_MULT: f32 = 2.5;
+/// O escudo do conjunto espada e escudo absorve esta fracao de todo golpe.
+pub(crate) const REDUCAO_DO_ESCUDO: f32 = 0.40;
+/// A katana devolve em vida esta fracao do dano do golpe basico.
+pub(crate) const ROUBO_DE_VIDA_KATANA: f32 = 0.12;
+/// Intervalo do tiro das pistolas (antes 0,55 do arco antigo): quem nao anda
+/// ate' o bicho paga em cadencia.
+pub(crate) const CADENCIA_DAS_PISTOLAS_S: f32 = 0.65;
+/// Intervalo do golpe basico do anel. O `shared::MAGIC_ATTACK_COOLDOWN` (0,32)
+/// segue sendo o tempo da animacao; a CADENCIA de dano e' esta.
+pub(crate) const CADENCIA_DO_ANEL_S: f32 = 0.45;
+
+/// Regen de HP por tick com RESTO acumulado. Truncar `atual + taxa*dt` pra
+/// inteiro — 0,5/s a 30 Hz sao 0,017 por tick — nunca curava nada: quem
+/// levava dano descia de HP luta apos luta ate' morrer.
+pub(crate) fn regen_de_hp(atual: i32, max: i32, resto: &mut f32, quanto: f32) -> i32 {
+    *resto += quanto.max(0.0);
+    // Folga no piso: somar 0,5/30 trezentas vezes da' 4,9999, nao 5.
+    let inteiro = (*resto + 1e-4).floor();
+    *resto = (*resto - inteiro).max(0.0);
+    (atual + inteiro as i32).min(max)
+}
 /// Teto de zonas por ilha. Vezes `MOB_POR_ZONA` da' a ordem de grandeza do
 /// mundo povoado — e o `lazy_spawn` garante que so' as perto do jogador
 /// custam alguma coisa.
 pub const MOB_ZONAS_MAX: u32 = 60;
+
+/// Zonas com id a partir daqui sao de PRAIA: sorteiam `economy::kind_de_praia`
+/// (caranguejos) em vez da escada por nivel.
+pub const ZONA_DE_PRAIA_ID: u32 = 20_000;
+/// Grade da busca de sitio de praia, em blocos.
+const PRAIA_PASSO_BLOCOS: i32 = 8;
+/// Raio do disco plano de um sitio de praia, em blocos. Menor que o dos mobs
+/// comuns: perto da agua o chao desce e o disco grande nunca fecha.
+const PRAIA_RAIO_PLANO_BLOCOS: i32 = 3;
+/// Acima disto (topo do chao, em unidades) ja' nao e' areia.
+const PRAIA_ALTURA_MAX_UN: f32 = 2.2;
+/// Ate' que distancia do sitio o OCEANO tem que aparecer.
+const PRAIA_AGUA_ATE_UN: f32 = 9.0;
+const PRAIA_ZONA_RAIO_UN: f32 = 22.0;
+const PRAIA_ZONAS_ESPACO_UN: f32 = 60.0;
+const PRAIA_POR_ZONA: u32 = 8;
+const PRAIA_ZONAS_MAX: usize = 20;
+const PRAIA_ESPACO_UN: f32 = 5.0;
+
+/// Onde caranguejo nasce: chao PLANO e BAIXO (areia) com o OCEANO a poucos
+/// passos. Oceano e' `Ilha::mar_aberto` — lago dentro da ilha nao e' praia.
+/// `fora` recusa o que nao pode ter bicho (cidade, porto).
+pub(crate) fn sitios_de_praia(
+    ilha: &shared::terreno::Ilha,
+    raio_blocos: i32,
+    fora: &dyn Fn(Vec2) -> bool,
+) -> Vec<Vec2> {
+    use shared::terreno::BLOCO;
+    let mut memo: HashMap<(i32, i32), bool> = HashMap::new();
+    let mut out = Vec::new();
+    let mut b = -raio_blocos;
+    while b < raio_blocos {
+        let mut a = -raio_blocos;
+        while a < raio_blocos {
+            let p = Vec2::new(a as f32 * BLOCO, b as f32 * BLOCO);
+            let (ix, iz) = (a + raio_blocos, b + raio_blocos);
+            a += PRAIA_PASSO_BLOCOS;
+            if ilha.agua(p.x, p.y) || ilha.altura(p.x, p.y) > PRAIA_ALTURA_MAX_UN || !fora(p) {
+                continue;
+            }
+            if !ilha.sitio_plano(ix, iz, PRAIA_RAIO_PLANO_BLOCOS) || !ilha.sem_estorvo(p, ENTITY_RADIUS) {
+                continue;
+            }
+            let mut perto_do_mar = false;
+            'dirs: for k in 0..8 {
+                let ang = k as f32 * std::f32::consts::FRAC_PI_4;
+                let dir = Vec2::new(ang.cos(), ang.sin());
+                let mut d = 3.0;
+                while d <= PRAIA_AGUA_ATE_UN {
+                    // Na grade de 2 u da busca de mar: o memo guarda o ponto
+                    // EXATO que perguntou, e nao a resposta de um vizinho.
+                    let w = na_grade_de_mar(p + dir * d);
+                    if ilha.agua(w.x, w.y) {
+                        let chave = ((w.x / 2.0) as i32, (w.y / 2.0) as i32);
+                        if *memo.entry(chave).or_insert_with(|| ilha.mar_aberto(w)) {
+                            perto_do_mar = true;
+                            break 'dirs;
+                        }
+                        break;
+                    }
+                    d += 2.0;
+                }
+            }
+            if perto_do_mar {
+                out.push(p);
+            }
+        }
+        b += PRAIA_PASSO_BLOCOS;
+    }
+    out
+}
+
+/// Ponto na grade de 2 u em que a busca de praia pergunta pelo mar.
+fn na_grade_de_mar(w: Vec2) -> Vec2 {
+    Vec2::new((w.x / 2.0).round() * 2.0, (w.y / 2.0).round() * 2.0)
+}
+
+#[cfg(test)]
+mod testes_praia {
+    use super::*;
+
+    /// Caranguejo nasce na AREIA, com OCEANO perto e longe da cidade e do
+    /// porto, nas quatro ilhas (no raio de teste, que custa segundos e nao
+    /// minutos).
+    #[test]
+    fn caranguejo_nasce_na_areia_de_frente_pro_oceano() {
+        use shared::terreno::{Cidade, Ilha, ARQUIPELAGO, ESCALA_ALTURA};
+        let mut total = 0;
+        for d in &ARQUIPELAGO {
+            let ilha = Ilha::gerar(d.semente, 800, d.bioma, ESCALA_ALTURA);
+            let (cidade, porto) = (ilha.cidade(), ilha.porto());
+            let fora = |s: Vec2| {
+                cidade.as_ref().is_none_or(|c| c.distancia(s) > Cidade::RAIO + 40.0)
+                    && porto.as_ref().is_none_or(|p| !p.contem(s, 40.0))
+            };
+            let sitios = sitios_de_praia(&ilha, 800, &fora);
+            for s in &sitios {
+                assert!(!ilha.agua(s.x, s.y), "{}: sitio na agua {s:?}", d.zona);
+                assert!(ilha.altura(s.x, s.y) <= PRAIA_ALTURA_MAX_UN, "{}: sitio alto demais {s:?}", d.zona);
+                assert!(fora(*s), "{}: sitio na cidade/porto {s:?}", d.zona);
+                let oceano = (0..8).any(|k| {
+                    let a = k as f32 * std::f32::consts::FRAC_PI_4;
+                    (2..=PRAIA_AGUA_ATE_UN as i32).any(|r| {
+                        let w = na_grade_de_mar(*s + Vec2::new(a.cos(), a.sin()) * r as f32);
+                        ilha.agua(w.x, w.y) && ilha.mar_aberto(w)
+                    })
+                });
+                assert!(oceano, "{}: sitio {s:?} sem oceano perto", d.zona);
+            }
+            println!("{}: {} sitios de praia (raio de teste 800)", d.zona, sitios.len());
+            total += sitios.len();
+        }
+        assert!(total > 0, "nenhuma praia nas quatro ilhas");
+    }
+}
 
 /// Wake radius (em tiles) ao redor do AABB da zona. Player precisa entrar
 /// nessa margem pra zona acordar e comecar a spawnar.
@@ -889,6 +1044,12 @@ pub struct Session {
     /// Fica guardado quando o jogador sai do spot: quem interrompe pra lutar
     /// volta de onde parou, em vez de recomecar do zero.
     pub coleta_progresso: f32,
+    /// No' sendo coletado agora (coleta por no'). `None` = nao coleta.
+    pub coleta_no: Option<ColetaDeNo>,
+    /// Recargas e curas das pocoes de recurso, por grupo (`shared::pocoes`).
+    pub pocoes: shared::pocoes::EstadoDePocoes,
+    /// Resto fracionario da cura de vida da pocao (HP e' inteiro).
+    pub pocao_hp_resto: f32,
     /// True enquanto a verificacao de senha esta rodando — recusa logins
     /// duplicados da mesma sessao.
     pub auth_in_flight: bool,
@@ -905,6 +1066,8 @@ pub struct Session {
     /// Apos 2s de idle continuo, regen de HP eh boostado 4x ("descansando").
     /// 0 = nao idle.
     pub idle_since: f32,
+    /// Fracao de HP de regen ainda nao aplicada (ver `regen_de_hp`).
+    pub hp_regen_resto: f32,
     /// Vetor unitário do alvo TOWARD o último atacante (pra knockback futuro).
     pub hurt_dir: Vec2,
     /// sim_time ate quando o player esta sendo empurrado. Enquanto > now,
@@ -954,6 +1117,19 @@ pub struct Session {
     /// Pocao de Experiencia: +30% de XP ate' este instante (unix secs).
     /// Persistido em `characters.xp_bonus_ate`.
     pub xp_bonus_ate: i64,
+    /// Mortes com XP recuperavel (ver `morte`). Persistido em `mortes_json`.
+    pub mortes: Vec<crate::morte::MorteRecuperavel>,
+    /// Dia UTC e recuperacoes gratis ja' usadas nele.
+    pub recuperacoes_dia: i64,
+    pub recuperacoes_usadas: u32,
+    /// Pocoes de Fortuna e de Sorte ate' este instante (unix secs).
+    /// Persistidos em `characters.fortuna_ate` / `sorte_ate`.
+    pub fortuna_ate: i64,
+    pub sorte_ate: i64,
+    /// Barra de itens configurada pelo jogador (`characters.barra_json`).
+    pub barra: Vec<shared::protocol::EspacoDaBarra>,
+    /// Preferencias de tela (`characters.preferencias_json`).
+    pub preferencias: shared::protocol::Preferencias,
     /// Progresso acumulado da conta (persistido em `characters.xp`).
     pub xp: u64,
     /// Moeda. Currency separado — não ocupa slot de inventário. Persistido
@@ -1192,6 +1368,42 @@ impl Session {
         // Pocao de Experiencia: o bonus vale pra TODO XP de personagem, e e'
         // aqui que todo XP passa.
         let amount = shared::xp_com_bonus(amount, (now_ms() / 1000) as i64, self.xp_bonus_ate);
+        self.somar_xp(amount);
+    }
+
+    /// Morreu: tira o XP da morte (sem cair de nivel), guarda como
+    /// recuperavel e avisa o cliente. So' na TRANSICAO pra caido.
+    fn morrer(&mut self, agora: i64) {
+        let mult = crate::economy::xp_multiplier();
+        let perda = crate::morte::perda_de_xp(self.xp, mult);
+        self.xp -= perda;
+        crate::morte::registrar(&mut self.mortes, agora, perda);
+        let level = shared::level_of_xp_with_mult(self.xp, mult);
+        let _ = self.handle.to_client.send(ServerMessage::ProgressUpdate { xp: self.xp, level });
+        let _ = self.handle.to_client.send(ServerMessage::Morte { xp_perdido: perda });
+        self.enviar_recuperaveis(agora);
+    }
+
+    /// Mortes recuperaveis que ainda valem, com o preco de cada uma, e as
+    /// gratis que restam hoje.
+    fn enviar_recuperaveis(&self, agora: i64) {
+        let nivel = shared::level_of_xp_with_mult(self.xp, crate::economy::xp_multiplier());
+        let mortes = crate::morte::validas(&self.mortes, agora)
+            .into_iter()
+            .map(|m| shared::protocol::MorteRecuperavelNet {
+                quando: m.quando,
+                xp: m.xp,
+                expira: m.quando + crate::morte::VALIDADE_S,
+                custo_gold: crate::morte::custo_gold(m.xp, nivel),
+            })
+            .collect();
+        let gratis = crate::morte::gratis_restantes(self.recuperacoes_dia, self.recuperacoes_usadas, agora);
+        let _ = self.handle.to_client.send(ServerMessage::Recuperaveis { mortes, gratis_restantes: gratis as u8 });
+    }
+
+    /// Soma XP SEM o bonus da pocao (a devolucao do XP da morte nao pode
+    /// render 30% a mais) e processa o level-up.
+    fn somar_xp(&mut self, amount: u64) {
         self.xp = self.xp.saturating_add(amount);
         let new_level = shared::level_of_xp_with_mult(self.xp, crate::economy::xp_multiplier());
         if new_level > self.last_level {
@@ -1268,6 +1480,8 @@ pub struct GameWorld {
     /// Zona pra onde o personagem saiu por portal: o save grava ELA, e nao a
     /// zona deste processo.
     pub zona_de_saida: HashMap<String, String>,
+    /// Chefes de campo da ilha: lugar e hora de voltar (`world/chefes.rs`).
+    pub vagas_de_chefe: Vec<chefes::VagaDeChefe>,
     /// Pontos-chave da historia nesta ilha (`historia::ponto`), resolvidos uma
     /// vez: o mirante varre a ilha inteira.
     pub pontos_historia: HashMap<u16, Option<Vec2>>,
@@ -1665,11 +1879,31 @@ enum FonteDeColeta {
 /// So' existe entrada pra corpo que alguem TOCOU. A ilha tem milhares de
 /// pedras; guardar estado das que ninguem visitou seria memoria proporcional
 /// ao tamanho do mundo em vez de ao que esta' acontecendo nele.
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone)]
 struct EstadoDaPedra {
     coletas: u32,
     /// 0.0 = viva; >0 = volta neste `sim_time_s`.
     respawn_at: f32,
+    /// O que saiu do indice de colisao da ilha quando esgotou
+    /// (`Ilha::esconder_coluna`), pra repor no respawn.
+    ocultos: Vec<(usize, u32)>,
+}
+
+/// O no' que um jogador esta' coletando agora (coleta por no').
+#[derive(Clone, Copy, Debug)]
+pub struct ColetaDeNo {
+    pub coletavel: shared::terreno::Coletavel,
+    /// Raio do corpo (pro alcance).
+    pub raio: f32,
+    /// Segundos de um ciclo.
+    pub intervalo: f32,
+    /// Quando o proximo ciclo rende (`sim_time_s`).
+    pub proximo_em: f32,
+    /// Onde o jogador estava ao comecar: andar dali para a coleta.
+    pub de: Vec2,
+    /// Pausada por bolsa cheia: a impressao da bolsa na pausa
+    /// (`coleta::impressao_da_bolsa`). Volta quando a bolsa muda.
+    pub pausa: Option<u64>,
 }
 
 /// No' de coleta posto a mao num mapa de arquivo. Nao tem mais HP: uma coleta
@@ -1711,6 +1945,7 @@ impl GameWorld {
             diretorio: None,
             salvo_aqui_em: HashMap::new(),
             zona_de_saida: HashMap::new(),
+            vagas_de_chefe: Vec::new(),
             pontos_historia: HashMap::new(),
             zona: "overworld".to_string(),
             fila: std::collections::VecDeque::new(),
@@ -1861,6 +2096,7 @@ impl GameWorld {
             diretorio: None,
             salvo_aqui_em: HashMap::new(),
             zona_de_saida: HashMap::new(),
+            vagas_de_chefe: Vec::new(),
             pontos_historia: HashMap::new(),
             zona: "overworld".to_string(),
             fila: std::collections::VecDeque::new(),
@@ -2307,7 +2543,12 @@ impl GameWorld {
                     // Sorteia um BICHO da tabela pro nivel da banda. Antes
                     // aqui se montava um build procedural (classe, equipamento,
                     // skills); mob agora e' so' o que a tabela diz.
-                    let escolhido = crate::economy::kind_para_nivel(lvl, lcg(s_lvl));
+                    // Zona de praia tem bicho proprio (caranguejos).
+                    let escolhido = if zone_id >= ZONA_DE_PRAIA_ID {
+                        crate::economy::kind_de_praia(lcg(s_lvl))
+                    } else {
+                        crate::economy::kind_para_nivel(lvl, lcg(s_lvl))
+                    };
                     pending.push(PendingSpawn {
                         zone_id, kind: lvl as u16, pos: slot.pos,
                         escolhido: Some(escolhido),
@@ -2426,6 +2667,7 @@ impl GameWorld {
             stunned_until: 0.0,
             forced_aggro_until: 0.0,
             forced_aggro_target: None,
+            provocado_ate: 0.0,
             mp_current: 0.0,
             skill_cds: std::collections::HashMap::new(),
             stats,
@@ -3406,10 +3648,81 @@ impl GameWorld {
             });
         }
 
+        // ── 3. praias ────────────────────────────────────────────────────
+        // Caranguejo nasce na AREIA de frente pro oceano, em zonas proprias
+        // (id >= ZONA_DE_PRAIA_ID) com sorteio proprio, longe da cidade, do
+        // porto e das zonas comuns.
+        let fora = |s: Vec2| {
+            cidade.as_ref().is_none_or(|c| {
+                c.distancia(s) > shared::terreno::Cidade::RAIO + MOB_LONGE_DA_CIDADE_UN
+            }) && porto.as_ref().is_none_or(|p| !p.contem(s, MOB_LONGE_DA_CIDADE_UN))
+        };
+        let mut praias = sitios_de_praia(ilha, def.raio_blocos, &fora);
+        let mut sp = def.semente as u64 ^ 0xC4A6_E705;
+        for i in (1..praias.len()).rev() {
+            sp = lcg(sp);
+            praias.swap(i, (sp % (i as u64 + 1)) as usize);
+        }
+        let mut centros_praia: Vec<Vec2> = Vec::new();
+        for s in &praias {
+            if centros_praia.len() >= PRAIA_ZONAS_MAX {
+                break;
+            }
+            if centros_praia.iter().all(|c| c.distance(*s) >= PRAIA_ZONAS_ESPACO_UN)
+                && centros.iter().all(|c| c.distance(*s) >= MOB_ZONA_RAIO_UN)
+            {
+                centros_praia.push(*s);
+            }
+        }
+        let mut zonas_praia = 0usize;
+        for (i, c) in centros_praia.iter().enumerate() {
+            let mut slots: Vec<SpawnSlot> = Vec::new();
+            for s in &praias {
+                if slots.len() as u32 >= PRAIA_POR_ZONA {
+                    break;
+                }
+                if s.distance(*c) > PRAIA_ZONA_RAIO_UN
+                    || slots.iter().any(|o: &SpawnSlot| o.pos.distance(*s) < PRAIA_ESPACO_UN)
+                {
+                    continue;
+                }
+                slots.push(SpawnSlot { pos: *s, occupant: None, respawn_at: 0.0 });
+            }
+            if slots.len() < 3 {
+                continue;
+            }
+            let t = (c.distance(centro_jogador) / raio_un).clamp(0.0, 1.0);
+            let faixa = (def.nivel.1 - def.nivel.0) as f32;
+            let lv_min = def.nivel.0 + (t * faixa * 0.8) as u32;
+            let lv_max = (lv_min + 1).min(def.nivel.1);
+            let n = slots.len() as u32;
+            zonas.push(ServerSpawnZone {
+                id: ZONA_DE_PRAIA_ID + i as u32,
+                origin: *c - Vec2::splat(PRAIA_ZONA_RAIO_UN),
+                size: Vec2::splat(PRAIA_ZONA_RAIO_UN * 2.0),
+                respawn_delay_s: 20.0,
+                quotas: Vec::new(),
+                live: Vec::new(),
+                respawn_queue: Vec::new(),
+                polygon: None,
+                level_range: Some((lv_min, lv_max, n)),
+                level_range_live: 0,
+                level_range_queue: (0..n).map(|_| 0.0_f32).collect(),
+                slots,
+                active: false,
+                last_player_near_at: -1e9,
+            });
+            zonas_praia += 1;
+        }
+
         let total: u32 = zonas.iter().map(|z| z.slots.len() as u32).sum();
         tracing::info!(
             "ilha '{}': {} sitios planos, {} zonas, {} mobs nivel {}..{} (mapfile descartado)",
             self.zona, sitios.len(), zonas.len(), total, def.nivel.0, def.nivel.1
+        );
+        tracing::info!(
+            "ilha '{}': {} sitios de praia, {} zonas de caranguejo",
+            self.zona, praias.len(), zonas_praia
         );
         self.spawn_zones = zonas;
         // As areas de boss do mapfile tem o mesmo problema de coordenada.
@@ -3449,6 +3762,8 @@ impl GameWorld {
             self.zona, n, nos
         );
         self.montar_cidade(cidade);
+        // Chefes de campo: depois da cidade, que decide as zonas seguras.
+        self.povoar_chefes();
     }
 
     /// A cidade e o porto da ilha: zonas seguras e os NPCs da vila.
@@ -4005,6 +4320,20 @@ impl GameWorld {
             s.stamina_last_sent = stats.stamina_max;
             s.xp_bonus_ate = row.xp_bonus_ate;
             let _ = s.handle.to_client.send(ServerMessage::BuffXp { ate: row.xp_bonus_ate });
+            s.mortes = crate::morte::de_json(&row.mortes_json);
+            s.recuperacoes_dia = row.recuperacoes_dia;
+            s.recuperacoes_usadas = row.recuperacoes_usadas.max(0) as u32;
+            s.fortuna_ate = row.fortuna_ate;
+            s.sorte_ate = row.sorte_ate;
+            let _ = s.handle.to_client.send(ServerMessage::BuffsDeDrop {
+                fortuna_ate: row.fortuna_ate,
+                sorte_ate: row.sorte_ate,
+            });
+            s.barra = crate::barra::de_json(&row.barra_json);
+            let _ = s.handle.to_client.send(ServerMessage::BarraDeItens { espacos: s.barra.clone() });
+            s.preferencias = crate::preferencias::de_json(&row.preferencias_json);
+            let _ = s.handle.to_client.send(ServerMessage::Preferencias { prefs: s.preferencias.clone() });
+            s.enviar_recuperaveis((now_ms() / 1000) as i64);
             s.poise_current = stats.poise_max as f32;
             s.poise_last_sent = stats.poise_max;
             // Visual: usa o salvo (escolhido na criacao). Fallback pra class
@@ -4761,6 +5090,9 @@ impl GameWorld {
                 pending_input: None,
                 logged_in: false,
                 coleta_progresso: 0.0,
+                coleta_no: None,
+                pocoes: Default::default(),
+                pocao_hp_resto: 0.0,
                 auth_in_flight: false,
                 attack_cooldown: 0.0,
                 dash_until: 0.0,
@@ -4768,6 +5100,7 @@ impl GameWorld {
                 dash_cooldown: 0.0,
                 hurt_until: 0.0,
             idle_since: 0.0,
+            hp_regen_resto: 0.0,
                 hurt_dir: Vec2::ZERO,
                 knockback_until: 0.0,
                 knockback_vel: Vec2::ZERO,
@@ -4795,6 +5128,13 @@ impl GameWorld {
                 stamina_current: shared::STAMINA_MAX as f32,
                 stamina_last_sent: shared::STAMINA_MAX,
                 xp_bonus_ate: 0,
+                mortes: Vec::new(),
+                recuperacoes_dia: 0,
+                recuperacoes_usadas: 0,
+                fortuna_ate: 0,
+                sorte_ate: 0,
+                barra: Vec::new(),
+                preferencias: Default::default(),
                 xp: 0,
                 gold: 0,
                 gold_last_sent: u64::MAX,
@@ -5167,8 +5507,14 @@ impl GameWorld {
             ClientMessage::ConcluirConversa { npc_eid } => {
                 self.handle_concluir_conversa(id, npc_eid);
             }
-            ClientMessage::PedirSpotDeColeta => {
-                self.handle_spot_de_coleta(id);
+            ClientMessage::PedirNoDeColeta { tipos, raio, centro } => {
+                self.handle_no_de_coleta(id, tipos, raio, Vec2::new(centro[0], centro[1]));
+            }
+            ClientMessage::ColetarNo { coluna } => {
+                self.handle_coletar_no(id, coluna);
+            }
+            ClientMessage::PararColeta => {
+                self.parar_coleta_de_no(id);
             }
             ClientMessage::PedirSpotDeColetaDe { tipo, perto } => {
                 self.handle_spot_de_coleta_de(id, tipo, Vec2::new(perto[0], perto[1]));
@@ -5291,6 +5637,15 @@ impl GameWorld {
             ClientMessage::RespawnAtCity => {
                 tracing::info!("[debug] RespawnAtCity recebido de sessao {:?}", id);
                 self.handle_respawn_at_city(id);
+            }
+            ClientMessage::RecuperarXp { quando } => {
+                self.handle_recuperar_xp(id, quando);
+            }
+            ClientMessage::SalvarBarra { espacos } => {
+                self.handle_salvar_barra(id, espacos);
+            }
+            ClientMessage::SalvarPreferencias { prefs } => {
+                self.handle_salvar_preferencias(id, prefs);
             }
             ClientMessage::UpdateVisual { visual } => {
                 self.handle_update_visual(id, visual);
@@ -5530,6 +5885,60 @@ impl GameWorld {
         let _ = self.ecs.remove_one::<Untargetable>(entity);
         self.save_pending = true;
         tracing::info!("{} respawnou na cidade ({}hp, pos={:?})", name, hp_max, spawn);
+    }
+
+    /// `SalvarBarra`: guarda a barra de itens do personagem (validada) e
+    /// devolve a versao que ficou.
+    fn handle_salvar_barra(&mut self, sid: SessionId, espacos: Vec<shared::protocol::EspacoDaBarra>) {
+        let Some(s) = self.sessions.get_mut(&sid) else { return };
+        s.barra = crate::barra::valida(&espacos);
+        let _ = s.handle.to_client.send(ServerMessage::BarraDeItens { espacos: s.barra.clone() });
+        self.save_pending = true;
+    }
+
+    /// `SalvarPreferencias`: guarda as preferencias de tela (validadas). Nao
+    /// responde — o cliente ja' esta' com elas; o save periodico leva pro banco.
+    fn handle_salvar_preferencias(&mut self, sid: SessionId, prefs: shared::protocol::Preferencias) {
+        let Some(s) = self.sessions.get_mut(&sid) else { return };
+        if !s.logged_in {
+            return;
+        }
+        if let Some(p) = crate::preferencias::aceita(prefs) {
+            s.preferencias = p;
+            self.save_pending = true;
+        }
+    }
+
+    /// Devolve o XP de uma morte: 3 vezes por dia de graca, depois por ouro.
+    /// Vale vivo ou morto (a tela de morte e o Menu mandam a mesma coisa).
+    fn handle_recuperar_xp(&mut self, sid: SessionId, quando: i64) {
+        let agora = (now_ms() / 1000) as i64;
+        let Some(s) = self.sessions.get_mut(&sid) else { return };
+        if !s.logged_in {
+            return;
+        }
+        let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
+        let (mut dia, mut usadas) = (s.recuperacoes_dia, s.recuperacoes_usadas);
+        match crate::morte::recuperar(&mut s.mortes, quando, agora, nivel, s.gold, &mut dia, &mut usadas) {
+            Ok((xp, custo)) => {
+                s.recuperacoes_dia = dia;
+                s.recuperacoes_usadas = usadas;
+                s.gold = s.gold.saturating_sub(custo);
+                s.somar_xp(xp);
+                let motivo = if custo == 0 {
+                    "Experiência recuperada (grátis).".to_string()
+                } else {
+                    format!("Experiência recuperada por {custo} de ouro.")
+                };
+                let _ = s.handle.to_client.send(ServerMessage::RecuperarXpResultado { ok: true, motivo, xp });
+                s.enviar_recuperaveis(agora);
+                self.save_pending = true;
+            }
+            Err(motivo) => {
+                let _ = s.handle.to_client.send(ServerMessage::RecuperarXpResultado { ok: false, motivo, xp: 0 });
+                s.enviar_recuperaveis(agora);
+            }
+        }
     }
 
     /// Cliente clicou num char na lista — valida que pertence a conta e
@@ -5976,6 +6385,9 @@ impl GameWorld {
         if self.from_mapfile && !self.boss_areas.is_empty() {
             self.tick_boss_areas();
         }
+        if !self.vagas_de_chefe.is_empty() {
+            self.tick_vagas_de_chefe();
+        }
         // Coleta automatica: na ilha sai das pedras plantadas no relevo, no
         // mapa de arquivo sai dos nos postos a mao.
         self.tick_coleta();
@@ -6117,8 +6529,8 @@ impl GameWorld {
                 if let Some(e) = session.entity {
                     if let Ok(mut h) = self.ecs.get::<&mut shared::Health>(e) {
                         if h.current < h.max && h.current > 0 {
-                            let new_hp_f = h.current as f32 + session.stats.hp_regen * regen_mult * dt;
-                            h.current = (new_hp_f as i32).min(h.max);
+                            h.current = regen_de_hp(h.current, h.max, &mut session.hp_regen_resto,
+                                session.stats.hp_regen * regen_mult * dt);
                         }
                     }
                 }
@@ -6130,6 +6542,33 @@ impl GameWorld {
                 session.stamina_current = (session.stamina_current
                     + session.stats.stamina_regen * dt)
                     .min(stam_max);
+            }
+
+            // Cura das pocoes, ao longo do tempo (`shared::pocoes`). Caido ou
+            // morto: a cura acaba (a recarga continua correndo).
+            if session.downed {
+                session.pocoes.encerrar_curas();
+            } else {
+                let ganho = session.pocoes.tick(self.sim_time_s);
+                if ganho[0] > 0.0 {
+                    if let Some(e) = session.entity {
+                        if let Ok(mut h) = self.ecs.get::<&mut shared::Health>(e) {
+                            if h.current > 0 {
+                                session.pocao_hp_resto += ganho[0] * h.max as f32;
+                                let inteiro = session.pocao_hp_resto.floor();
+                                session.pocao_hp_resto -= inteiro;
+                                h.current = (h.current + inteiro as i32).min(h.max);
+                            }
+                        }
+                    }
+                }
+                if ganho[1] > 0.0 {
+                    let max = session.stats.mp_max as f32;
+                    session.mp_current = (session.mp_current + ganho[1] * max).min(max);
+                }
+                if ganho[2] > 0.0 {
+                    session.stamina_current = (session.stamina_current + ganho[2] * stam_max).min(stam_max);
+                }
             }
             // Regen de poise: SO regenera fora de combate (>=2s sem hit).
             // Recovery rate: 10 / s (poise volta cheio em 5s).
@@ -6450,39 +6889,8 @@ impl GameWorld {
                      && has_stam;
                 if w {
                     let weapon_id = session.equipment.weapon.unwrap_or(0);
-                    let base_cd = if shared::weapon_is_melee(weapon_id) {
-                        ATTACK_COOLDOWN
-                    } else {
-                        match shared::skills::Conjunto::da_arma(weapon_id) {
-                            shared::skills::Conjunto::AnelMagico =>
-                                shared::MAGIC_ATTACK_COOLDOWN,
-                            _ => shared::BOW_ATTACK_COOLDOWN,
-                        }
-                    };
-                    // Atk speed (DES + items) divide o cooldown. Pra equilibrar:
-                    //   - Magia (Wand/Staff): scaling reduzido a 30% — DEX ajuda
-                    //     pouco no cast rate.
-                    //   - Two-handed nao-magia (GreatSword/Bow/Crossbow/Spear):
-                    //     scaling a 60% — armas pesadas/longas ganham menos.
-                    //   - 1H melee (Sword/Dagger/etc): full scaling.
-                    // Bonus = atk_speed_mult - 1; aplica fator e re-soma a 1.
-                    let raw_mult = session.stats.attack_speed_mult.max(0.5);
-                    let bonus = raw_mult - 1.0;
-                    let is_caster = matches!(
-                        shared::skills::Conjunto::da_arma(weapon_id),
-                        shared::skills::Conjunto::AnelMagico
-                    );
-                    let is_two_handed = matches!(
-                        shared::skills::Conjunto::da_arma(weapon_id),
-                        shared::skills::Conjunto::Pistolas
-                    );
-                    let scale_factor = if is_caster { 0.30 }
-                        else if is_two_handed { 0.60 }
-                        else { 1.0 };
-                    // Bloodthirst (1011) buff: +20% atk speed enquanto ativo.
-                    let bt_mult = if session.bloodthirst_until > self.sim_time_s { 1.20 } else { 1.0 };
-                    let atk_speed = (1.0 + bonus * scale_factor).max(0.5) * bt_mult;
-                    session.attack_cooldown = base_cd / atk_speed;
+                    let bloodthirst = session.bloodthirst_until > self.sim_time_s;
+                    session.attack_cooldown = cooldown_do_ataque(weapon_id, &session.stats, bloodthirst);
                     session.stamina_current =
                         (session.stamina_current - shared::ATTACK_STAMINA_COST).max(0.0);
                     attack_aim = auto_aim;
@@ -6875,10 +7283,13 @@ impl GameWorld {
                 // agua/decoracao continua visivel (so WALL bloqueia).
                 // Conditional: dist >= detect_range ja desqualifica chase,
                 // entao nao gasta o raycast nesses casos (caso comum).
-                let has_los = dist < enemy.detect_range
-                    && visada(self.ilha.as_ref(), &self.map, pos.0, *ppos);
+                // Provocado (levou golpe, ou a matilha levou) persegue sem
+                // precisar ver: o atirador nao fica de fora da briga.
+                let provocado = enemy.provocado_ate > now_sim;
+                let has_los = provocado || (dist < enemy.detect_range
+                    && visada(self.ilha.as_ref(), &self.map, pos.0, *ppos));
                 // Chase só se NÃO estiver returning home E tiver visao.
-                let can_chase = dist < enemy.detect_range && !pulling_home && has_los;
+                let can_chase = (provocado || dist < enemy.detect_range) && !pulling_home && has_los;
                 if can_chase {
                     // Aggro timer: corre durante chase, reset ao acertar attack.
                     enemy.aggro_timer += dt;
@@ -6974,7 +7385,10 @@ impl GameWorld {
                         }
                         else { Vec2::ZERO }                        // em range, parado
                     };
-                    vel.0 = move_dir * enemy.locomotor_speed;
+                    // Bicho de mordida provocado investe: sem isto o lobo
+                    // morria no caminho ate' quem atira.
+                    let carga = if provocado && enemy.kite_dist.is_none() { CARGA_PROVOCADO_MULT } else { 1.0 };
+                    vel.0 = move_dir * enemy.locomotor_speed * carga;
 
                     let attack_range = enemy.attack_range;
                     // Boss "engaja" de mais longe: tenta skills até 7 tiles
@@ -7431,6 +7845,12 @@ impl GameWorld {
             for s in self.sessions.values() {
                 if s.logged_in { let _ = s.handle.to_client.send(fx.clone()); }
             }
+        }
+
+        // Golpes telegrafados dos chefes: depois da IA (que ja' decidiu andar
+        // e bater), antes de integrar — quem carrega fica parado.
+        if !self.vagas_de_chefe.is_empty() {
+            self.tick_telegrafos_de_chefe();
         }
 
         // ── F: integrar movimento e resolver colisao ──────────────────────
@@ -8180,10 +8600,7 @@ impl GameWorld {
             // Defesa eh % redux (soulslike feel) em vez de subtracao flat.
             // Cada ponto de defense = 1.5% redux, cap 75%. Reducao por
             // breakpoints (damage_reduction_pct) soma em cima, cap final 90%.
-            let def_resist_pct = (target_defense as f32 * 0.015).clamp(0.0, 0.75);
-            let total_resist = (def_resist_pct + target_dmg_reduction_pct).min(0.90);
-            let mut dmg = ((dmg as f32) * (1.0 - total_resist)).round() as i32;
-            dmg = dmg.max(1);
+            let mut dmg = dano_mitigado(dmg, target_defense, target_dmg_reduction_pct);
 
             // Boss bloqueando (AI PvP): -75% de dano + flash de parry no
             // snapshot (feedback visual de "blocked!"). Também alimenta o
@@ -8244,6 +8661,19 @@ impl GameWorld {
                     target_net: owner_net,
                     amount: heal,
                 });
+            }
+            // Katana: o golpe basico devolve vida. E' o que segura quem corta
+            // de perto sem escudo.
+            if attacker_is_player && matches!(attack_info, AttackInfo::Melee { .. }) {
+                let katana = self.sessions.values()
+                    .find(|s| s.entity_id == attacker_id)
+                    .is_some_and(|s| s.equipment.weapon == Some(shared::item_id::KATANA));
+                if katana {
+                    self.pending_heals.push(PendingHeal {
+                        target_net: attacker_id,
+                        amount: ((dmg as f32) * ROUBO_DE_VIDA_KATANA).round().max(1.0) as i32,
+                    });
+                }
             }
 
             // ── Defesa ativa do alvo (player) ────────────────────────────────
@@ -8479,8 +8909,14 @@ impl GameWorld {
             let kb_vel = if kb_active {
                 (-hurt_dir).try_normalize().unwrap_or(Vec2::ZERO) * (kb_strength / KNOCKBACK_DURATION)
             } else { Vec2::ZERO };
+            // Stagger so' de golpe CORPO A CORPO (ou de mob). Tiro que congela o
+            // bicho a cada 0,5 s deixava quem atira de 5 unidades intocavel:
+            // o lobo nunca chegava.
+            let trava = !attacker_is_player || matches!(attack_info, AttackInfo::Melee { .. });
             if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(entity) {
-                tag.hurt_until = hurt_until_ts;
+                if trava {
+                    tag.hurt_until = hurt_until_ts;
+                }
                 tag.hurt_dir   = hurt_dir;
                 // BOSS: hyperarmor de knockback — só hits PESADOS (skills com
                 // kb >= 1.0, ex Shield Bash) empurram. O shove do auto-attack
@@ -8516,6 +8952,19 @@ impl GameWorld {
                 // Reset combo: levar dano interrompe o flow do combo.
                 s.combo_step = 0;
                 s.combo_last_attack = 0.0;
+            }
+            // Mob golpeado por jogador PROVOCA a matilha: ele e os vizinhos
+            // perseguem quem bateu, mesmo fora de visao. Chefe nao entra.
+            if attacker_is_player && self.ecs.get::<&EnemyTag>(entity).is_ok() {
+                if let Ok(centro) = self.ecs.get::<&Position>(entity).map(|p| p.0) {
+                    let ate = self.sim_time_s + PROVOCACAO_S;
+                    for (_, (p, t)) in self.ecs.query_mut::<(&Position, &mut EnemyTag)>() {
+                        if !t.is_boss && !t.returning_home && p.0.distance(centro) <= MATILHA_RAIO_UN {
+                            t.provocado_ate = t.provocado_ate.max(ate);
+                            t.ai_target = Some(attacker_id);
+                        }
+                    }
+                }
             }
             // Também marca pra snapshot deste tick (cliente lê e seta facing).
             self.hit_this_tick.insert(target_id, hurt_dir);
@@ -8630,8 +9079,29 @@ impl GameWorld {
             // Loot table por kind. Boss (7) ganha raio maior pelo volume
             // de drops; demais usam ~3 tiles pra dar respiro visual.
             let seed = lcg(self.tick as u64 ^ eid.0 as u64 ^ 0xBADA_55);
-            let drops = crate::economy::enemy_loot_drops(kind_id, seed);
-            let spread = if kind_id == 7 { 5.0 } else { 3.0 };
+            // Pocoes de quem MATOU: Sorte mexe na chance de cada linha,
+            // Fortuna na quantidade de ouro e cobre.
+            let agora_unix = (now_ms() / 1000) as i64;
+            let (fortuna_ate, sorte_ate) = kill_credits
+                .get(&eid)
+                .and_then(|a| self.sessions.values().find(|s| s.entity_id == *a))
+                .map_or((0, 0), |s| (s.fortuna_ate, s.sorte_ate));
+            let drops: Vec<(u16, u32)> = crate::economy::enemy_loot_drops_com_sorte(
+                kind_id,
+                seed,
+                shared::mult_de_sorte(agora_unix, sorte_ate),
+            )
+            .into_iter()
+            .map(|(id, q)| {
+                if id == shared::item_id::GOLD || id == shared::item_id::COPPER {
+                    (id, shared::qtd_com_fortuna(q, agora_unix, fortuna_ate))
+                } else {
+                    (id, q)
+                }
+            })
+            .collect();
+            let drops = chefes::com_loot_de_chefe(drops, kind_id, seed);
+            let spread = if kind_id == 7 || shared::bosses::e_chefe(kind_id) { 5.0 } else { 3.0 };
             self.spawn_loot_drops(pos, &drops, seed, spread, kind_id);
 
             // Creditar XP (e Fame, se mob grande) para o jogador que matou
@@ -8746,6 +9216,7 @@ impl GameWorld {
                     session.downed = true;
                     session.downed_heal_timer = shared::DOWNED_HEAL_TIME;
                     session.downed_hp = shared::DOWNED_HP_MAX;
+                    session.morrer((now_ms() / 1000) as i64);
                     tracing::info!("{} foi derrubado (dHP={})",
                                    session.name, session.downed_hp);
                     let _ = self.ecs.insert_one(entity, Untargetable);
@@ -9218,12 +9689,39 @@ impl GameWorld {
                     } else if golpe {
                         // o passo que ACABOU de sair: o contador ja' andou
                         (acao::GOLPE, (s.combo_step + shared::COMBO_STEPS - 1) % shared::COMBO_STEPS)
-                    } else if skill {
-                        (acao::SKILL, s.gesto_skill_ordem.saturating_sub(1).min(2))
+                    } else if let Some(tier) = s.coleta_no.filter(|c| c.pausa.is_none()).map(|c| c.coletavel.tier) {
+                        // Coletando (e nao pausado): o TIPO vai no byte, pra
+                        // quem esta' de fora ver machado ou a picareta da cor.
+                        return (s.entity_id, acao::monta_coleta(conjunto, em_combate, tier));
                     } else {
                         (acao::NADA, 0)
                     };
                     (s.entity_id, acao::monta(conjunto, em_combate, gesto, variante))
+                })
+                .collect()
+        };
+        // Pra onde cada jogador OLHA quando nao e' a velocidade que diz: o no'
+        // que coleta, ou o alvo enquanto golpeia/conjura.
+        let mira_de: HashMap<EntityId, Vec2> = {
+            let agora = self.sim_time_s;
+            let pos_de: HashMap<EntityId, Vec2> = self
+                .ecs
+                .query::<(&NetId, &Position)>()
+                .iter()
+                .map(|(_, (n, p))| (n.0, p.0))
+                .collect();
+            self.sessions
+                .values()
+                .filter(|s| s.logged_in)
+                .filter_map(|s| {
+                    if let Some(c) = s.coleta_no.filter(|c| c.pausa.is_none()) {
+                        return Some((s.entity_id, c.coletavel.centro));
+                    }
+                    let lutando = (s.combo_last_attack > 0.0 && agora - s.combo_last_attack < 0.8)
+                        || s.casting_until > agora
+                        || (s.gesto_skill_em > 0.0 && agora - s.gesto_skill_em < 0.8);
+                    let alvo = s.target.filter(|_| lutando)?;
+                    pos_de.get(&alvo).map(|p| (s.entity_id, *p))
                 })
                 .collect()
         };
@@ -9313,6 +9811,13 @@ impl GameWorld {
                     flags,
                 );
                 state.acao = acao_de.get(&net.0).copied().unwrap_or(0);
+                state.rumo = crate::rumo::escolhe(
+                    pos.0,
+                    mira_de.get(&net.0).copied(),
+                    etag.filter(|_| flags & shared::ent_flags::ATACANDO != 0).map(|t| t.attack_dir),
+                    vel.0,
+                    vila_tag.and_then(|t| shared::npc_yaw_de_kind(t.rumo)),
+                );
                 (meta, state)
             })
             .collect();
@@ -9617,6 +10122,13 @@ impl GameWorld {
             mp: f32,
             stamina: f32,
             xp_bonus_ate: i64,
+            mortes_json: String,
+            recuperacoes_dia: i64,
+            recuperacoes_usadas: i32,
+            fortuna_ate: i64,
+            sorte_ate: i64,
+            barra_json: String,
+            preferencias_json: String,
         }
         let mut entries: Vec<E> = Vec::new();
         for session in self.sessions.values() {
@@ -9663,6 +10175,13 @@ impl GameWorld {
                 mp: session.mp_current,
                 stamina: session.stamina_current,
                 xp_bonus_ate: session.xp_bonus_ate,
+                mortes_json: crate::morte::para_json(&session.mortes),
+                recuperacoes_dia: session.recuperacoes_dia,
+                recuperacoes_usadas: session.recuperacoes_usadas as i32,
+                fortuna_ate: session.fortuna_ate,
+                sorte_ate: session.sorte_ate,
+                barra_json: crate::barra::para_json(&session.barra),
+                preferencias_json: crate::preferencias::para_json(&session.preferencias),
             });
         }
         for e in entries {
@@ -9703,6 +10222,13 @@ impl GameWorld {
                 stamina: Some(e.stamina),
                 zona: self.zona_do_save(&e.name),
                 xp_bonus_ate: e.xp_bonus_ate,
+                mortes_json: e.mortes_json,
+                recuperacoes_dia: e.recuperacoes_dia,
+                recuperacoes_usadas: e.recuperacoes_usadas,
+                fortuna_ate: e.fortuna_ate,
+                sorte_ate: e.sorte_ate,
+                barra_json: e.barra_json,
+                preferencias_json: e.preferencias_json,
             };
             self.salvo_aqui_em.insert(e.name.clone(), self.sim_time_s);
             self.characters.insert(e.name, row.clone());
@@ -10692,7 +11218,7 @@ impl GameWorld {
                 if !tronco && !pedra {
                     return None;
                 }
-                self.spot_de_coleta(eu, 200.0, Some((tronco, pedra)))
+                self.spot_de_coleta_longe(eu, Some((tronco, pedra)))
                     .map(|(p, _)| (destino_tipo::COLETA, p, shared::COLETA_RAIO_SPOT, None))
             }
             objective_kind::GATHER => {
@@ -10701,7 +11227,7 @@ impl GameWorld {
                     shared::quests::alvo_de_coleta::ARVORE => Some((true, false)),
                     _ => None,
                 };
-                self.spot_de_coleta(eu, 200.0, fontes)
+                self.spot_de_coleta_longe(eu, fontes)
                     .map(|(p, _)| (destino_tipo::COLETA, p, shared::COLETA_RAIO_SPOT, None))
             }
             // Criar e refinar nao se faz andando: o cliente abre o painel.
@@ -10726,6 +11252,37 @@ impl GameWorld {
         self.spot_de_coleta_em(eu, eu, raio, &|tier| {
             fontes.is_none_or(|(tronco, pedra)| if tier == 0 { tronco } else { pedra })
         })
+    }
+
+    /// Spot pra MISSAO de coleta: perto primeiro, como sempre. Sem nada no raio
+    /// — pedra nasce no alto, e da praca nao ha' nenhuma a 200 — vai no corpo
+    /// aceito mais perto da ILHA INTEIRA e devolve o ponto livre do veio dele.
+    ///
+    /// Sem testar o caminho ate' la': a viagem anda por etapas e o A* de
+    /// alcance tem orcamento de rota curta, entao um veio a meio quilometro
+    /// seria recusado mesmo existindo — era o "nao sei onde fica o objetivo".
+    /// Quem confere o alcance e' a auto coleta, ao chegar.
+    fn spot_de_coleta_longe(&self, eu: Vec2, fontes: Option<(bool, bool)>) -> Option<(Vec2, usize)> {
+        use shared::terreno::TipoDeEstorvo;
+        if let Some(s) = self.spot_de_coleta(eu, 200.0, fontes) {
+            return Some(s);
+        }
+        let ilha = self.ilha.as_ref()?;
+        let aceita = |tier: u8| fontes.is_none_or(|(tronco, pedra)| if tier == 0 { tronco } else { pedra });
+        let vivos: Vec<(Vec2, u8)> = ilha.todos_os_estorvos().iter()
+            .filter_map(|e| {
+                let tier = match e.tipo {
+                    TipoDeEstorvo::Minerio(t) => t,
+                    TipoDeEstorvo::Tronco => 0,
+                    _ => return None,
+                };
+                (aceita(tier) && !self.esgotado(e.coluna)).then_some((e.centro, tier))
+            })
+            .collect();
+        let alvo = crate::quests::mais_perto(&vivos, eu)?;
+        let veio: Vec<(Vec2, u8)> = vivos.iter().copied().filter(|(c, _)| c.distance(alvo) <= 60.0).collect();
+        let (centro, n) = crate::quests::spots_ordenados(&veio, alvo, shared::COLETA_RAIO_SPOT, 1).into_iter().next()?;
+        Some((ilha.ponto_livre_perto(centro, ENTITY_RADIUS), n))
     }
 
     /// O mesmo, procurando em volta de `busca` (a regiao escolhida no mapa, que
@@ -10766,13 +11323,8 @@ impl GameWorld {
     fn handle_spot_de_coleta_de(&self, sid: SessionId, tipo: u8, perto: Vec2) {
         let Some(eu) = self.pos_do_jogador(sid) else { return };
         let busca = if perto.is_finite() && perto.distance(eu) <= 120.0 { perto } else { eu };
-        let achado = self.spot_de_coleta_em(eu, busca, 60.0, &|t| t == tipo);
-        if let Some(s) = self.sessions.get(&sid) {
-            let _ = s.handle.to_client.send(ServerMessage::SpotDeColeta {
-                pos: achado.map(|(p, _)| [p.x, p.y]),
-                densidade: achado.map_or(0, |(_, n)| n as u32),
-            });
-        }
+        let no = self.no_de_coleta_em(eu, busca, 60.0, &|t| t == tipo);
+        self.envia_no_de_coleta(sid, no);
     }
 
     /// `MapaDaIlha`: zonas de mob com os bichos e as regioes de recurso. `None`
@@ -10783,7 +11335,12 @@ impl GameWorld {
         let kinds = crate::economy::kinds_comuns();
         let zonas = self.spawn_zones.iter()
             .filter_map(|z| z.level_range.map(|(a, b, _)| {
-                crate::mapa_ilha::zona_no_mapa(z.origin + z.size * 0.5, z.size.x.max(z.size.y) * 0.5, a, b, &kinds)
+                let mut zn = crate::mapa_ilha::zona_no_mapa(z.origin + z.size * 0.5, z.size.x.max(z.size.y) * 0.5, a, b, &kinds);
+                // Praia sorteia os proprios bichos, fora da escada por nivel.
+                if z.id >= ZONA_DE_PRAIA_ID {
+                    zn.bichos = crate::economy::bichos_de_praia();
+                }
+                zn
             }))
             .collect();
         let corpos: Vec<(Vec2, u8)> = ilha.todos_os_estorvos().iter()
@@ -10794,24 +11351,14 @@ impl GameWorld {
             })
             .collect();
         let recursos = crate::mapa_ilha::regioes_de_recurso(&corpos);
-        let nomes = kinds.iter().map(|k| (*k, crate::economy::enemy_def(*k).name.clone())).collect();
+        let nomes = kinds.iter().chain(crate::economy::KINDS_DE_PRAIA.iter())
+            .map(|k| (*k, crate::economy::enemy_def(*k).name.clone())).collect();
         let mut rendimentos = crate::mapa_ilha::rendimentos_da_pedra(
             &crate::economy::linhas_da_pedra(),
             crate::economy::nome_do_item,
         );
         rendimentos.insert(0, (0, format!("{} 3–5 (100%)", crate::economy::nome_do_item(shared::item_id::WOOD_T1))));
-        Some(ServerMessage::MapaDaIlha { zonas, recursos, nomes, rendimentos })
-    }
-
-    fn handle_spot_de_coleta(&self, sid: SessionId) {
-        let Some(eu) = self.pos_do_jogador(sid) else { return };
-        let achado = self.spot_de_coleta(eu, 60.0, None);
-        if let Some(s) = self.sessions.get(&sid) {
-            let _ = s.handle.to_client.send(ServerMessage::SpotDeColeta {
-                pos: achado.map(|(p, _)| [p.x, p.y]),
-                densidade: achado.map_or(0, |(_, n)| n as u32),
-            });
-        }
+        Some(ServerMessage::MapaDaIlha { zonas, recursos, nomes, rendimentos, chefes: self.chefes_no_mapa() })
     }
 
     /// Facção da sessão -> id usado nas quests (1=Morganeers, 2=Peacemain).
@@ -11934,11 +12481,14 @@ impl GameWorld {
         // Extrai estado + identifica a acao fora do borrow mutavel do ECS.
         enum UseAction {
             Equip { new_hp_max: i32 },
-            HealHp(i32),
-            HealMp(i32),
-            HealStam(i32),
+            /// Pocao de recurso (vida/mana/vigor): cura ao longo do tempo,
+            /// com recarga por grupo (`shared::pocoes`).
+            Pocao(u16),
             /// Pocao de Experiencia: liga (ou renova) o bonus de XP.
             XpBuff,
+            /// Pocoes de Fortuna e de Sorte: ligam (ou renovam) o buff de drop.
+            FortunaBuff,
+            SorteBuff,
             /// Player tentou usar um item de barco. Server tenta spawnar
             /// um barco em agua adjacente; consome o item se sucesso.
             SpawnBoat { kind: u16, item_id: u16 },
@@ -11983,12 +12533,10 @@ impl GameWorld {
                 (player_entity, UseAction::SpawnBoat { kind: boat_kind, item_id: slot.item_id })
             } else {
                 let a = match slot.item_id {
-                    id if id == shared::item_id::HEALTH_POTION  => UseAction::HealHp(50),
-                    id if id == shared::item_id::GREATER_HEAL   => UseAction::HealHp(150),
-                    id if id == shared::item_id::MANA_POTION    => UseAction::HealMp(50),
-                    id if id == shared::item_id::GREATER_MANA   => UseAction::HealMp(100),
-                    id if id == shared::item_id::STAMINA_POTION => UseAction::HealStam(100),
+                    id if shared::pocoes::cura_de(id).is_some() => UseAction::Pocao(id),
                     id if id == shared::item_id::XP_POTION      => UseAction::XpBuff,
+                    id if id == shared::item_id::FORTUNA_POTION => UseAction::FortunaBuff,
+                    id if id == shared::item_id::SORTE_POTION   => UseAction::SorteBuff,
                     _ => return,
                 };
                 (player_entity, a)
@@ -12015,38 +12563,62 @@ impl GameWorld {
                     hp.max = new_hp_max;
                 }
             }
-            UseAction::HealHp(amount) => {
-                let healed = if let Ok(mut hp) = self.ecs.get::<&mut Health>(player_entity) {
-                    if hp.current < hp.max {
-                        hp.current = (hp.current + amount).min(hp.max);
-                        true
-                    } else { false }
-                } else { false };
-                if healed { consume_slot(&mut self.sessions); }
-            }
-            UseAction::HealMp(amount) => {
-                let mp_max = self.sessions.get(&sid).map(|s| s.stats.mp_max).unwrap_or(100);
-                let healed = if let Some(session) = self.sessions.get_mut(&sid) {
-                    if (session.mp_current as i32) < mp_max {
-                        session.mp_current = ((session.mp_current as i32 + amount).min(mp_max)) as f32;
-                        let _ = session.handle.to_client.send(
-                            ServerMessage::ManaUpdate { current: session.mp_current as i32 });
-                        true
-                    } else { false }
-                } else { false };
-                if healed { consume_slot(&mut self.sessions); }
-            }
-            UseAction::HealStam(amount) => {
-                let healed = if let Some(session) = self.sessions.get_mut(&sid) {
-                    let stam_max = session.stats.stamina_max;
-                    if (session.stamina_current as i32) < stam_max {
-                        session.stamina_current = ((session.stamina_current as i32 + amount).min(stam_max)) as f32;
-                        let _ = session.handle.to_client.send(
-                            ServerMessage::StaminaUpdate { current: session.stamina_current as i32 });
-                        true
-                    } else { false }
-                } else { false };
-                if healed { consume_slot(&mut self.sessions); }
+            UseAction::Pocao(item) => {
+                use shared::pocoes::{Grupo, Recusa};
+                let Some(cura) = shared::pocoes::cura_de(item) else { return };
+                let g = cura.grupo;
+                let agora = self.sim_time_s;
+                let (hp, hp_max) = self.ecs.get::<&Health>(player_entity).map_or((0, 1), |h| (h.current, h.max));
+                let resultado = {
+                    let Some(session) = self.sessions.get_mut(&sid) else { return };
+                    // Morto ou caido nao bebe.
+                    if session.downed || hp <= 0 { return; }
+                    let cheio = match g {
+                        Grupo::Vida => hp >= hp_max,
+                        Grupo::Mana => session.mp_current >= session.stats.mp_max as f32,
+                        Grupo::Vigor => session.stamina_current >= session.stats.stamina_max as f32,
+                    };
+                    // Grupo em recarga: recusa SEM gastar (a recarga e' sempre
+                    // maior que a cura, entao nunca ha' duas curas do grupo).
+                    let r = session.pocoes.beber(&cura, agora, cheio);
+                    if let Ok(na_hora) = r {
+                        match g {
+                            Grupo::Vida => {}
+                            Grupo::Mana => {
+                                let max = session.stats.mp_max as f32;
+                                session.mp_current = (session.mp_current + na_hora * max).min(max);
+                                let _ = session.handle.to_client.send(
+                                    ServerMessage::ManaUpdate { current: session.mp_current as i32 });
+                            }
+                            Grupo::Vigor => {
+                                let max = session.stats.stamina_max as f32;
+                                session.stamina_current = (session.stamina_current + na_hora * max).min(max);
+                                let _ = session.handle.to_client.send(
+                                    ServerMessage::StaminaUpdate { current: session.stamina_current as i32 });
+                            }
+                        }
+                    }
+                    let _ = session.handle.to_client.send(ServerMessage::PocaoGrupo {
+                        grupo: g as u8,
+                        recarga_s: session.pocoes.recarga_restante(g, agora),
+                        cura_s: session.pocoes.cura_restante(g, agora),
+                    });
+                    r
+                };
+                match resultado {
+                    Ok(na_hora) => {
+                        if g == Grupo::Vida && na_hora > 0.0 {
+                            if let Ok(mut h) = self.ecs.get::<&mut Health>(player_entity) {
+                                h.current = (h.current + (na_hora * h.max as f32).round() as i32).min(h.max);
+                            }
+                        }
+                        consume_slot(&mut self.sessions);
+                    }
+                    Err(Recusa::Recarga(s)) => {
+                        self.send_chat_to(sid, &format!("[Poção] {} em recarga: {:.1} s", g.nome(), s));
+                    }
+                    Err(Recusa::Cheio) => {}
+                }
             }
             UseAction::XpBuff => {
                 // Renova a hora cheia; nao acumula porcentagem.
@@ -12054,6 +12626,31 @@ impl GameWorld {
                 if let Some(session) = self.sessions.get_mut(&sid) {
                     session.xp_bonus_ate = shared::renovar_bonus_xp(now);
                     let _ = session.handle.to_client.send(ServerMessage::BuffXp { ate: session.xp_bonus_ate });
+                }
+                self.save_pending = true;
+                consume_slot(&mut self.sessions);
+            }
+            UseAction::FortunaBuff => {
+                // Renova a hora cheia; nao acumula porcentagem.
+                let now = (now_ms() / 1000) as i64;
+                if let Some(session) = self.sessions.get_mut(&sid) {
+                    session.fortuna_ate = shared::renovar_buff(now);
+                    let _ = session.handle.to_client.send(ServerMessage::BuffsDeDrop {
+                        fortuna_ate: session.fortuna_ate,
+                        sorte_ate: session.sorte_ate,
+                    });
+                }
+                self.save_pending = true;
+                consume_slot(&mut self.sessions);
+            }
+            UseAction::SorteBuff => {
+                let now = (now_ms() / 1000) as i64;
+                if let Some(session) = self.sessions.get_mut(&sid) {
+                    session.sorte_ate = shared::renovar_buff(now);
+                    let _ = session.handle.to_client.send(ServerMessage::BuffsDeDrop {
+                        fortuna_ate: session.fortuna_ate,
+                        sorte_ate: session.sorte_ate,
+                    });
                 }
                 self.save_pending = true;
                 consume_slot(&mut self.sessions);
@@ -12198,6 +12795,10 @@ impl GameWorld {
     /// nao do jogador), dois jogadores no mesmo spot dividem o mesmo teto sem
     /// nenhuma regra escrita a mao pra dividir. A disputa e' pelo lugar.
     fn tick_coleta(&mut self) {
+        self.tick_coleta_de_no();
+        // Na ilha a coleta e' por no' (acima): parado perto nao rende. O
+        // passivo por lugar ficou so' pros nos postos a mao de mapa de arquivo.
+        if self.farm_nodes.is_empty() { return }
         if self.sim_time_s < self.coleta_em { return }
         self.coleta_em = self.sim_time_s + Self::COLETA_PASSO_S;
 
@@ -12232,9 +12833,183 @@ impl GameWorld {
 
             match fonte {
                 FonteDeColeta::No(node_id) => self.coletar_no(sid, node_id),
-                FonteDeColeta::Plantado(c) => self.coletar_plantado(sid, c),
+                FonteDeColeta::Plantado(c) => { self.coletar_plantado(sid, c); }
             }
         }
+    }
+
+    /// Coleta por no', a cada tick: quem escolheu um no' coleta ELE, parado e
+    /// ao alcance, um ciclo por vez. Andar, cair, sair do alcance ou o no'
+    /// esgotar encerra.
+    fn tick_coleta_de_no(&mut self) {
+        let agora = self.sim_time_s;
+        let ativos: Vec<(SessionId, ColetaDeNo, Option<Vec2>, bool)> = self
+            .sessions
+            .iter()
+            .filter_map(|(&sid, s)| {
+                let c = s.coleta_no?;
+                let pos = s.entity.and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0));
+                Some((sid, c, pos, s.downed))
+            })
+            .collect();
+        for (sid, c, pos, caido) in ativos {
+            let Some(pos) = pos else {
+                self.parar_coleta_de_no(sid);
+                continue;
+            };
+            let acabou = caido
+                || pos.distance(c.de) > crate::coleta::TOLERANCIA_MOVER
+                || self.esgotado(c.coletavel.coluna)
+                || !crate::coleta::ao_alcance(pos, c.coletavel.centro, c.raio);
+            if acabou {
+                self.parar_coleta_de_no(sid);
+                continue;
+            }
+            // Pausada por bolsa cheia: so' tenta de novo quando a bolsa mudar.
+            if c.pausa.is_some() {
+                let bolsa = self.sessions.get(&sid).map_or(0, |s| crate::coleta::impressao_da_bolsa(&s.inventory));
+                if crate::coleta::continua_pausada(c.pausa, bolsa) {
+                    continue;
+                }
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    if let Some(cn) = s.coleta_no.as_mut() {
+                        cn.pausa = None;
+                        cn.proximo_em = agora + cn.intervalo;
+                        let _ = s.handle.to_client.send(ServerMessage::ColetaEstado {
+                            tipo: cn.coletavel.tier,
+                            intervalo_s: cn.intervalo,
+                            progresso: 0.0,
+                            centro: Some([cn.coletavel.centro.x, cn.coletavel.centro.y]),
+                            pausado: false,
+                        });
+                    }
+                }
+                continue;
+            }
+            if agora < c.proximo_em {
+                continue;
+            }
+            // Um ciclo rendeu. Se o no' esgotou nele, `coletar_plantado` ja'
+            // parou quem coletava e `coleta_no` ficou vazio. Se a bolsa nao
+            // comporta o que saiu, nada rendeu nem foi gasto: pausa.
+            let rendeu = self.coletar_plantado(sid, c.coletavel);
+            if !rendeu {
+                self.send_chat_to(sid, "Bolsa cheia — coleta pausada.");
+            }
+            if let Some(s) = self.sessions.get_mut(&sid) {
+                let bolsa = crate::coleta::impressao_da_bolsa(&s.inventory);
+                if let Some(cn) = s.coleta_no.as_mut() {
+                    cn.proximo_em = agora + cn.intervalo;
+                    cn.pausa = (!rendeu).then_some(bolsa);
+                    let _ = s.handle.to_client.send(ServerMessage::ColetaEstado {
+                        tipo: cn.coletavel.tier,
+                        intervalo_s: cn.intervalo,
+                        progresso: 0.0,
+                        centro: Some([cn.coletavel.centro.x, cn.coletavel.centro.y]),
+                        pausado: !rendeu,
+                    });
+                }
+            }
+        }
+    }
+
+    /// Encerra a coleta de no' (se houver) e avisa o cliente.
+    fn parar_coleta_de_no(&mut self, sid: SessionId) {
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.coleta_no = None;
+            let _ = s.handle.to_client.send(ServerMessage::ColetaEstado {
+                tipo: shared::protocol::COLETA_PARADA,
+                intervalo_s: 0.0,
+                progresso: 0.0,
+                centro: None,
+                pausado: false,
+            });
+        }
+    }
+
+    /// "Coletar este no'": clique numa pedra/tronco, ou o AUTO chegando.
+    /// Valida que existe, esta' vivo e ao alcance; comeca os ciclos.
+    fn handle_coletar_no(&mut self, sid: SessionId, coluna: u32) {
+        let Some(pos) = self.pos_do_jogador(sid) else { return };
+        let achado = self.ilha.as_ref().and_then(|ilha| {
+            let mut achados = Vec::new();
+            ilha.coletaveis_em(self.centro_da_coluna(coluna), shared::terreno::BLOCO * 3.0, &mut achados);
+            let c = achados.into_iter().find(|c| c.coluna == coluna)?;
+            let raio = ilha.estorvo_em(c.centro, 0.01).map_or(0.4, |e| e.raio);
+            Some((c, raio))
+        });
+        let Some((c, raio)) = achado.filter(|(c, _)| !self.esgotado(c.coluna)) else {
+            self.parar_coleta_de_no(sid);
+            return;
+        };
+        if !crate::coleta::ao_alcance(pos, c.centro, raio) {
+            self.send_chat_to(sid, "Coleta: chegue mais perto.");
+            self.parar_coleta_de_no(sid);
+            return;
+        }
+        let intervalo = shared::ciclo_de_coleta_s(c.tier) / self.velocidade_de_coleta(sid);
+        let agora = self.sim_time_s;
+        let Some(s) = self.sessions.get_mut(&sid) else { return };
+        if s.coleta_no.is_some_and(|x| x.coletavel.coluna == coluna) {
+            return;
+        }
+        s.coleta_no = Some(ColetaDeNo { coletavel: c, raio, intervalo, proximo_em: agora + intervalo, de: pos, pausa: None });
+        let _ = s.handle.to_client.send(ServerMessage::ColetaEstado {
+            tipo: c.tier,
+            intervalo_s: intervalo,
+            progresso: 0.0,
+            centro: Some([c.centro.x, c.centro.y]),
+            pausado: false,
+        });
+    }
+
+    /// AUTO COLETA: o no' vivo mais perto dos tipos marcados, no raio a
+    /// partir de onde foi ligado.
+    fn handle_no_de_coleta(&self, sid: SessionId, tipos: [bool; 5], raio: f32, centro: Vec2) {
+        let Some(eu) = self.pos_do_jogador(sid) else { return };
+        let raio = if raio.is_finite() {
+            raio.clamp(shared::COLETA_RAIO_AUTO_MIN, shared::COLETA_RAIO_AUTO_MAX)
+        } else {
+            shared::COLETA_RAIO_AUTO_PADRAO
+        };
+        // Centro velho ou mentira: busca em volta do jogador.
+        let busca = if centro.is_finite() && centro.distance(eu) <= raio + 40.0 { centro } else { eu };
+        let no = self.no_de_coleta_em(eu, busca, raio, &|t| crate::coleta::aceita(&tipos, t));
+        self.envia_no_de_coleta(sid, no);
+    }
+
+    fn envia_no_de_coleta(&self, sid: SessionId, no: Option<(u32, Vec2, Vec2, u8)>) {
+        if let Some(s) = self.sessions.get(&sid) {
+            let _ = s.handle.to_client.send(ServerMessage::NoDeColeta {
+                no: no.map(|(k, onde, c, t)| (k, [onde.x, onde.y], [c.x, c.y], t)),
+            });
+        }
+    }
+
+    /// No' vivo mais perto de `eu`, a ate' `raio` de `busca`, que se alcanca
+    /// andando: (coluna, onde ficar, centro, tipo).
+    fn no_de_coleta_em(&self, eu: Vec2, busca: Vec2, raio: f32, aceita: &dyn Fn(u8) -> bool) -> Option<(u32, Vec2, Vec2, u8)> {
+        let ilha = self.ilha.as_ref()?;
+        let mut achados = Vec::new();
+        ilha.coletaveis_em(busca, raio, &mut achados);
+        achados.retain(|c| !self.esgotado(c.coluna) && aceita(c.tier));
+        achados.sort_by(|a, b| a.centro.distance_squared(eu).total_cmp(&b.centro.distance_squared(eu)));
+        for c in achados.into_iter().take(8) {
+            let raio_no = ilha.estorvo_em(c.centro, 0.01).map_or(0.4, |e| e.raio);
+            let onde = ilha.ponto_livre_perto(crate::coleta::ponto_de_coleta(c.centro, raio_no, eu), ENTITY_RADIUS);
+            if !crate::coleta::ao_alcance(onde, c.centro, raio_no) {
+                continue;
+            }
+            let chega = eu.distance(onde) <= 1.0
+                || ilha
+                    .caminho(eu, onde, 8_000)
+                    .and_then(|r| r.last().copied())
+                    .is_some_and(|fim| fim.distance(onde) <= 1.0);
+            if chega {
+                return Some((c.coluna, onde, c.centro, c.tier));
+            }
+        }
+        None
     }
 
     /// De onde sai a coleta de quem esta' em `pos`, e com que densidade.
@@ -12325,7 +13100,9 @@ impl GameWorld {
     /// Cada coleta soma um no contador daquele corpo. Quando o contador chega
     /// no limite do tier, a pedra ACABA: some do mundo, para de contar pra
     /// densidade de quem esta' ali, e volta depois do respawn dela.
-    fn coletar_plantado(&mut self, sid: SessionId, c: shared::terreno::Coletavel) {
+    /// Devolve `false` quando a bolsa nao comporta o que saiu: nesse caso nada
+    /// e' entregue, a reserva do no' nao anda e quem chama pausa a coleta.
+    fn coletar_plantado(&mut self, sid: SessionId, c: shared::terreno::Coletavel) -> bool {
         let (limite, respawn_s, kind) = if c.tier == 0 {
             (shared::COLETAS_POR_ARVORE, shared::RESPAWN_DA_ARVORE, "Tree")
         } else {
@@ -12348,16 +13125,42 @@ impl GameWorld {
             // num veio de 11 verdes e 15 azuis e voltando com 100% cinza.
             shared::tier_do_rendimento(c.tier, lcg_f32(lcg(seed ^ 0x5EED_C0DE)))
         };
-        let drops = crate::economy::farm_node_loot(kind, tier_material, seed);
+        // Pocao de Sorte de quem coleta: chance de cada linha x1,2 (a garantida
+        // continua garantida). Fortuna nao vale aqui — e' ouro de BICHO.
+        let sorte_ate = self.sessions.get(&sid).map_or(0, |s| s.sorte_ate);
+        let mult = shared::mult_de_sorte((now_ms() / 1000) as i64, sorte_ate);
+        let drops = crate::economy::farm_node_loot_com_sorte(kind, tier_material, seed, mult);
+        let cabe = self.sessions.get(&sid).is_some_and(|s| {
+            crate::coleta::cabe_tudo(&s.inventory, &drops, &crate::economy::item_stack_max)
+        });
+        if !cabe {
+            return false;
+        }
         self.entregar_coleta(sid, &drops);
         self.quest_on_gather(sid, c.tier);
 
         let e = self.pedras.entry(c.coluna).or_default();
         e.coletas += 1;
-        if e.coletas < limite { return }
+        if e.coletas < limite { return true }
         e.coletas = 0;
         e.respawn_at = self.sim_time_s + respawn_s;
+        // Esgotado sai da colisao tambem: sumido nao barra quem passa. Volta
+        // junto com a pedra, no respawn.
+        let tirados = self.ilha.as_mut().map(|i| i.esconder_coluna(c.coluna)).unwrap_or_default();
+        if let Some(e) = self.pedras.get_mut(&c.coluna) {
+            e.ocultos = tirados;
+        }
         self.avisa_pedra(c.centro, ServerMessage::PedraEsgotada { coluna: c.coluna });
+        let coletando: Vec<SessionId> = self
+            .sessions
+            .iter()
+            .filter(|(_, s)| s.coleta_no.is_some_and(|x| x.coletavel.coluna == c.coluna))
+            .map(|(&k, _)| k)
+            .collect();
+        for k in coletando {
+            self.parar_coleta_de_no(k);
+        }
+        true
     }
 
     /// Devolve ao mundo as pedras cujo respawn venceu.
@@ -12371,7 +13174,11 @@ impl GameWorld {
         for coluna in voltaram {
             // Sai do mapa em vez de ficar zerada: pedra cheia e' o padrao, e
             // guardar uma entrada pra dizer isso faria o mapa so' crescer.
-            self.pedras.remove(&coluna);
+            if let Some(e) = self.pedras.remove(&coluna) {
+                if let Some(i) = self.ilha.as_mut() {
+                    i.mostrar_estorvos(&e.ocultos);
+                }
+            }
             let centro = self.centro_da_coluna(coluna);
             self.avisa_pedra(centro, ServerMessage::PedraVoltou { coluna });
         }
@@ -13055,6 +13862,13 @@ impl GameWorld {
             stamina: Some(session.stamina_current),
             zona: self.zona_do_save(&session.name),
             xp_bonus_ate: session.xp_bonus_ate,
+            mortes_json: crate::morte::para_json(&session.mortes),
+            recuperacoes_dia: session.recuperacoes_dia,
+            recuperacoes_usadas: session.recuperacoes_usadas as i32,
+            fortuna_ate: session.fortuna_ate,
+            sorte_ate: session.sorte_ate,
+            barra_json: crate::barra::para_json(&session.barra),
+            preferencias_json: crate::preferencias::para_json(&session.preferencias),
         };
         self.salvo_aqui_em.insert(session.name.clone(), self.sim_time_s);
         self.characters.insert(session.name.clone(), row.clone());
@@ -13131,7 +13945,44 @@ fn defending_poise_max(session: &Session) -> f32 {
 
 /// Calcula stats efetivos = base + pontos alocados + equip + scaling da
 /// prof da arma equipada.
-fn effective_stats(
+/// Intervalo entre ataques basicos do jogador, pela arma e pelos stats.
+///
+/// Uma funcao so' pro servidor e pro simulador de balanceamento
+/// (`crate::balanceamento`): a conta que o teste mede e' a que o jogo roda.
+///
+/// Atk speed (DES + itens) divide o cooldown, com escala por tipo: anel a
+/// 30% (DEX ajuda pouco no conjuro), pistolas a 60%, corpo a corpo cheio.
+/// Bloodthirst (1011): +20% enquanto ativo.
+pub(crate) fn cooldown_do_ataque(weapon_id: u16, stats: &shared::PlayerStats, bloodthirst: bool) -> f32 {
+    let conjunto = shared::skills::Conjunto::da_arma(weapon_id);
+    let base_cd = if shared::weapon_is_melee(weapon_id) {
+        ATTACK_COOLDOWN
+    } else {
+        match conjunto {
+            shared::skills::Conjunto::AnelMagico => CADENCIA_DO_ANEL_S,
+            _ => CADENCIA_DAS_PISTOLAS_S,
+        }
+    };
+    let bonus = stats.attack_speed_mult.max(0.5) - 1.0;
+    let scale_factor = match conjunto {
+        shared::skills::Conjunto::AnelMagico => 0.30,
+        shared::skills::Conjunto::Pistolas => 0.60,
+        _ => 1.0,
+    };
+    let bt_mult = if bloodthirst { 1.20 } else { 1.0 };
+    base_cd / ((1.0 + bonus * scale_factor).max(0.5) * bt_mult)
+}
+
+/// Dano que sobra depois da resistencia do alvo. Defesa e' % (1,5% por ponto,
+/// teto 75%), `reducao` soma por cima (teto 75%), total no maximo 90%, e o
+/// golpe nunca sai zerado.
+pub(crate) fn dano_mitigado(dmg: i32, defesa: i32, reducao: f32) -> i32 {
+    let def_resist_pct = (defesa as f32 * 0.015).clamp(0.0, 0.75);
+    let total_resist = (def_resist_pct + reducao.clamp(0.0, 0.75)).min(0.90);
+    (((dmg as f32) * (1.0 - total_resist)).round() as i32).max(1)
+}
+
+pub(crate) fn effective_stats(
     equip: &shared::Equipment,
     allocated: &[u32; shared::STAT_COUNT],
     proficiencies: &[u64; shared::PROF_COUNT],
@@ -13236,7 +14087,8 @@ fn effective_stats(
     match weapon_id {
         // pistolas: a destreza vira dano, e o disparo e' rapido
         shared::item_id::PISTOLAS => {
-            s.attack_damage += s.dex / 2;
+            // DEX/4 e nao /2: com /2 o tiro matava antes de o bicho chegar.
+            s.attack_damage += s.dex / 4;
             s.attack_speed_mult += 0.25;
         }
         // katana: corte rapido — um pouco de destreza e de forca
@@ -13245,6 +14097,10 @@ fn effective_stats(
             s.attack_speed_mult += 0.10;
         }
         _ => {}
+    }
+    // Espada e escudo segura a linha: o escudo absorve parte de todo golpe.
+    if weapon_id == shared::item_id::ESPADA_E_ESCUDO {
+        s.damage_reduction_pct += REDUCAO_DO_ESCUDO;
     }
     // O PESO da armadura (docs/COMBATE.md): leve da' dano, pesada resistencia.
     let (mult_dano, reducao) = shared::peso_da_armadura(equip.armor.unwrap_or(0));

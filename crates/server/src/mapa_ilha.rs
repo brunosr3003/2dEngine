@@ -191,7 +191,7 @@ mod testes {
             .collect();
         let nomes = kinds.iter().map(|k| (*k, format!("Bicho numero {k}"))).collect();
         let rendimentos = (0..5).map(|t| (t, "Cobre 40–120 (100%), Aço 3–6 (55%), Platina 3–6 (30%)".to_string())).collect();
-        let msg = shared::protocol::ServerMessage::MapaDaIlha { zonas, recursos, nomes, rendimentos };
+        let msg = shared::protocol::ServerMessage::MapaDaIlha { zonas, recursos, nomes, rendimentos, chefes: Vec::new() };
         let bytes = shared::protocol::encode(&msg).unwrap().len();
         println!("MapaDaIlha: {bytes} bytes");
         assert!(bytes < 48_000, "MapaDaIlha com {bytes} bytes");

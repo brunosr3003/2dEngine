@@ -485,3 +485,33 @@ código muda quando ela chega.
 1. **Área de humanoide.** Hoje o humanoide entra pela progressão de nível, como
    os bichos. Se ele tiver que aparecer só em áreas marcadas (acampamento,
    forte), é uma regra nova no sorteio.
+
+## Poses de coleta
+
+Coletando, a arma sai da mão (guardada) e a ferramenta do tipo vai nas
+**duas mãos**: machado na madeira, picareta com a cabeça na cor da pedra. A
+esquerda fica no marcador da pega, perto da ponta do cabo, e a direita 6
+voxels acima, perto da cabeça (`rig::MAOS_NA_FERRAMENTA`). As duas seguem o
+cabo o golpe inteiro por IK de dois ossos (`rig::segura_duas_maos`, a mesma
+da katana): o cabo é trazido pro alcance dos dois ombros e cada cotovelo sai
+da lei dos cossenos, aberto pro lado e pra baixo. O teste
+`coleta_segura_o_cabo_com_as_duas_maos` confere as duas mãos a ≤ 0,06 do
+cabo, sem esticar braço nem antebraço, na preparação, no impacto e no recuo.
+Um golpe dura 1,3 s (`rig::PERIODO_DA_COLETA`):
+
+- **picareta:** 0–45% sobe acima da cabeça (elevação ~2,9), 45–58% desce de
+  uma vez até abaixo do começo com o tronco inclinando 0,4 e o corpo descendo
+  1,4 voxel, quica até 66% e volta;
+- **machado:** 0–40% arma de lado (guinada −1,3, tronco torce −0,5), 40–55%
+  varre até +0,7 torcendo o tronco, recua até 63% e volta ao meio.
+
+A pose é por código, como o resto do rig; `acao` diz o tipo, então quem está
+de fora vê o mesmo gesto e a mesma ferramenta.
+
+**Impacto:** no quadro em que a fase do golpe cruza `rig::fase_do_impacto`
+sai UMA rajada na cabeça da ferramenta (`rig::cabeca_da_ferramenta`),
+`client/src/lascas.rs`: machado solta 8 lascas marrons em arco que caem em
+~0,5 s; picareta solta 4 faíscas claras e curtas (~0,2 s) e 6 pedrinhas/pó na
+cor do tier da pedra (`shared::items::tier_color_hex`), com gravidade. O pool
+é fixo (192 vagas, sem alocar por quadro) e é avançado e desenhado uma vez por
+quadro no fim de `render3d::draw_entities`.

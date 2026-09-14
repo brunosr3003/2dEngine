@@ -112,7 +112,9 @@ impl Personagens {
             let cor=ui::cor_skill(*c as u32*3+1);
             draw_rectangle(r.x,r.y,r.w,r.h,if ativo {Color::new(cor.r*0.11,cor.g*0.11,cor.b*0.11,1.0)} else {ui::FUNDO});
             draw_rectangle_lines(r.x,r.y,r.w,r.h,if ativo {2.0} else {1.0},if ativo {cor} else {ui::BORDA});
-            ui::icone(*c as u32*3+1,vec2(r.x+25.0,r.y+r.h*0.5),18.0,if disponivel {cor} else {ui::SUAVE});
+            if !crate::icones_ui::skill(*c as u32*3+1,vec2(r.x+25.0,r.y+r.h*0.5),34.0,if disponivel {1.0} else {0.35}) {
+                ui::icone(*c as u32*3+1,vec2(r.x+25.0,r.y+r.h*0.5),18.0,if disponivel {cor} else {ui::SUAVE});
+            }
             ui::texto_ajustado(c.nome(),r.x+49.0,r.y+r.h*0.5-2.0,r.w-56.0,15,if disponivel {ui::TEXTO} else {ui::SUAVE});
             ui::texto(r.x+49.0,r.y+r.h*0.5+17.0,if !disponivel {"Indisponível"} else {estilo(*c).0},11,ui::SUAVE);
             if !ocupado && disponivel && clicou(r) { self.arma=Some(c.arma());self.mensagem=None;self.giro=0.0; }
@@ -124,7 +126,9 @@ impl Personagens {
         let skills=shared::skills::playtest();
         for (i,s) in skills.iter().filter(|s|s.conjunto==conjunto).enumerate() {
             let sx=x+i as f32*lw/3.0;
-            ui::icone(s.id,vec2(sx+14.0,sy),11.0,ui::cor_skill(s.id));
+            if !crate::icones_ui::skill(s.id,vec2(sx+14.0,sy),24.0,1.0) {
+                ui::icone(s.id,vec2(sx+14.0,sy),11.0,ui::cor_skill(s.id));
+            }
             ui::texto(sx+31.0,sy+4.0,&format!("Lv {}",s.nivel_necessario()),12,ui::OURO);
             ui::texto_ajustado(&s.nome,sx,sy+24.0,lw/3.0-8.0,12,ui::TEXTO);
         }
@@ -191,7 +195,9 @@ impl Personagens {
             let cor=ui::cor_skill(conjunto as u32*3+1);
             draw_rectangle(card.x,card.y,card.w,card.h,if i==*selecionado {Color::new(0.10,0.13,0.17,1.0)} else {ui::FUNDO});
             draw_rectangle_lines(card.x,card.y,card.w,card.h,1.0,if i==*selecionado {ui::OURO} else {ui::BORDA});
-            ui::icone(conjunto as u32*3+1,vec2(card.x+27.0,card.y+37.0),18.0,cor);
+            if !crate::icones_ui::skill(conjunto as u32*3+1,vec2(card.x+27.0,card.y+37.0),34.0,1.0) {
+                ui::icone(conjunto as u32*3+1,vec2(card.x+27.0,card.y+37.0),18.0,cor);
+            }
             ui::texto_ajustado(&c.name,card.x+54.0,card.y+29.0,card.w-62.0,19,ui::TEXTO);
             ui::texto(card.x+54.0,card.y+53.0,&format!("Lv {}  ·  {}",c.level,conjunto.nome()),12,ui::SUAVE);
             if clicou(card) {*selecionado=i;self.giro=0.0;self.mensagem=None;}

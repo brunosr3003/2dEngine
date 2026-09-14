@@ -388,10 +388,24 @@ pub fn spots_ordenados(corpos: &[(glam::Vec2, u8)], eu: glam::Vec2, raio: f32, m
     saida
 }
 
+/// O corpo mais perto de `eu`. E' por onde a missao de coleta comeca quando
+/// nao ha' nada em volta: pedra nasce no alto, longe da cidade.
+pub fn mais_perto(corpos: &[(glam::Vec2, u8)], eu: glam::Vec2) -> Option<glam::Vec2> {
+    corpos.iter().map(|(c, _)| *c).min_by(|a, b| a.distance_squared(eu).total_cmp(&b.distance_squared(eu)))
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
     use quests::{quest_status::*, GIVER_MESTRE_DA_ILHA};
+
+    #[test]
+    fn mais_perto_acha_o_corpo_longe_quando_nao_ha_nada_em_volta() {
+        let v = glam::Vec2::new;
+        assert_eq!(mais_perto(&[], v(0.0, 0.0)), None);
+        let corpos = [(v(900.0, 0.0), 2), (v(-450.0, 30.0), 1), (v(0.0, 700.0), 3)];
+        assert_eq!(mais_perto(&corpos, v(0.0, 0.0)), Some(v(-450.0, 30.0)));
+    }
     use shared::construcao::Papel;
 
     fn cq(id: u16, status: u8, progress: u32) -> CharQuest {
@@ -699,7 +713,8 @@ mod testes_diarias {
         assert!(!aqui.contains(&615), "em breve oferecida");
     }
 
-    /// Missao de area paga a Pocao de Experiencia; a de conversa nao.
+    /// Missao de area paga a Pocao de Experiencia; a diaria de criar paga a de
+    /// Fortuna, a de refinar a de Sorte; a de conversa nao paga pocao.
     #[test]
     fn missao_de_area_paga_pocao_de_xp() {
         for id in [502u16, 503, 504, 601, 602, 611, 632] {
@@ -708,7 +723,10 @@ mod testes_diarias {
             assert_eq!((d.reward_item2, d.reward_item2_qty), (shared::item_id::XP_POTION, 1), "{id}");
         }
         assert_eq!(quest_by_id(501).unwrap().reward_item2, 0);
-        assert_eq!(quest_by_id(603).unwrap().reward_item2, 0);
+        let criar = quest_by_id(603).unwrap();
+        assert_eq!((criar.reward_item2, criar.reward_item2_qty), (shared::item_id::FORTUNA_POTION, 1));
+        let refinar = quest_by_id(604).unwrap();
+        assert_eq!((refinar.reward_item2, refinar.reward_item2_qty), (shared::item_id::SORTE_POTION, 1));
     }
 
     /// O bonus multiplica, renova sem acumular e expira.

@@ -265,6 +265,11 @@ pub mod acao {
     pub const NADA: u8 = 0;
     pub const GOLPE: u8 = 1;
     pub const SKILL: u8 = 2;
+    /// Coletando PEDRA com a picareta. Variante = cor da pedra - 1 (0 cinza ..
+    /// 3 roxa): e' ela que pinta a cabeca da picareta de quem esta' de fora.
+    pub const COLETA: u8 = 3;
+    /// Coletando MADEIRA com o machado (golpe de lado). Variante 0.
+    pub const COLETA_MADEIRA: u8 = 4;
     /// Quanto o gesto fica aceso depois de comecar, em segundos. Um quadro so'
     /// se perderia num snapshot pulado; o cliente toca na borda de subida ou
     /// quando a variante muda.
@@ -289,15 +294,46 @@ pub mod acao {
         a >> 6
     }
 
+    /// O byte de quem esta' coletando o tipo `tipo` (0 madeira, 1..4 pedra
+    /// pela cor).
+    pub fn monta_coleta(conjunto: u8, em_combate: bool, tipo: u8) -> u8 {
+        if tipo == 0 {
+            monta(conjunto, em_combate, COLETA_MADEIRA, 0)
+        } else {
+            monta(conjunto, em_combate, COLETA, tipo.clamp(1, 4) - 1)
+        }
+    }
+
+    /// O que o byte diz que esta' sendo coletado: 0 madeira, 1..4 pedra.
+    pub fn tipo_da_coleta(a: u8) -> Option<u8> {
+        match gesto(a) {
+            COLETA_MADEIRA => Some(0),
+            COLETA => Some(variante(a) + 1),
+            _ => None,
+        }
+    }
+
     #[cfg(test)]
     mod testes {
         use super::*;
 
         #[test]
+        fn a_coleta_leva_o_tipo_no_byte() {
+            for tipo in 0..=4u8 {
+                for c in 0..4 {
+                    let a = monta_coleta(c, true, tipo);
+                    assert_eq!(tipo_da_coleta(a), Some(tipo));
+                    assert_eq!(conjunto(a), c);
+                }
+            }
+            assert_eq!(tipo_da_coleta(monta(1, false, GOLPE, 2)), None);
+        }
+
+        #[test]
         fn o_byte_da_a_volta() {
             for c in 0..4 {
                 for combate in [false, true] {
-                    for g in [NADA, GOLPE, SKILL] {
+                    for g in [NADA, GOLPE, SKILL, COLETA, COLETA_MADEIRA] {
                         for v in 0..3 {
                             let a = monta(c, combate, g, v);
                             assert_eq!((conjunto(a), em_combate(a), gesto(a), variante(a)), (c, combate, g, v));
@@ -439,6 +475,60 @@ pub struct EntityState {
     pub flags: u8,
     /// O que o corpo esta' fazendo — ver `acao`.
     pub acao: u8,
+    /// Pra onde o corpo OLHA, quando o servidor sabe (`rumo_de_dir`): 0 = sem
+    /// rumo (o cliente segue a velocidade), 1..=255 = a volta em 255 passos.
+    ///
+    /// Sem ele quem estava de fora so' via o rumo pela velocidade: parado
+    /// coletando, atacando ou mirando, o boneco ficava olhando pro ultimo
+    /// passo. Um byte, e so' muda quando o corpo vira — nao pesa no delta.
+    pub rumo: u8,
+}
+
+/// Passos da volta no `EntityState::rumo` (0 fica pra "sem rumo").
+const RUMO_PASSOS: f32 = 255.0;
+
+/// O `rumo` de quem olha na direcao `dir` (x, z do mundo). Direcao nula = 0.
+/// Convencao do cliente: `yaw = atan2(dir.x, dir.z)`.
+pub fn rumo_de_dir(dir: Vec2) -> u8 {
+    if dir.length_squared() < 1e-6 || !dir.is_finite() {
+        return 0;
+    }
+    let yaw = dir.x.atan2(dir.y);
+    rumo_de_yaw(yaw)
+}
+
+pub fn rumo_de_yaw(yaw: f32) -> u8 {
+    let t = yaw.rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU;
+    1 + ((t * RUMO_PASSOS).round() as u32 % RUMO_PASSOS as u32) as u8
+}
+
+/// O yaw que o `rumo` guarda, se houver.
+pub fn yaw_de_rumo(rumo: u8) -> Option<f32> {
+    (rumo != 0).then(|| (rumo - 1) as f32 / RUMO_PASSOS * std::f32::consts::TAU)
+}
+
+#[cfg(test)]
+mod testes_rumo {
+    use super::*;
+
+    #[test]
+    fn o_rumo_da_a_volta_com_erro_de_menos_de_um_passo() {
+        for i in 0..720 {
+            let yaw = i as f32 / 720.0 * std::f32::consts::TAU;
+            let r = rumo_de_yaw(yaw);
+            assert_ne!(r, 0);
+            let volta = yaw_de_rumo(r).unwrap();
+            let mut d = (volta - yaw).rem_euclid(std::f32::consts::TAU);
+            if d > std::f32::consts::PI { d = std::f32::consts::TAU - d; }
+            assert!(d <= std::f32::consts::TAU / RUMO_PASSOS * 0.51, "yaw {yaw}: voltou {volta}");
+        }
+        assert_eq!(rumo_de_dir(Vec2::ZERO), 0);
+        assert_eq!(yaw_de_rumo(0), None);
+        // +Z e' yaw 0; +X e' um quarto de volta.
+        assert!(yaw_de_rumo(rumo_de_dir(Vec2::new(0.0, 1.0))).unwrap().abs() < 0.03);
+        let x = yaw_de_rumo(rumo_de_dir(Vec2::new(1.0, 0.0))).unwrap();
+        assert!((x - std::f32::consts::FRAC_PI_2).abs() < 0.03);
+    }
 }
 
 impl EntityState {
@@ -460,6 +550,7 @@ impl EntityState {
             hp: hp.max(0) as u16,
             flags,
             acao: 0,
+            rumo: 0,
         }
     }
 }

@@ -71,6 +71,7 @@ Detalhes de build em [docs/BUILD.md](docs/BUILD.md); operação de canais em
 | [PERSONAGEM](docs/PERSONAGEM.md) | rig, animação, montaria |
 | [character create](docs/character%20create.md) | what to model: parts, sizes, pivots, palette (EN) |
 | [COMBATE_POR_ALVO](docs/COMBATE_POR_ALVO.md) | combate e wire binário |
+| [BOSSES](docs/BOSSES.md) | chefes de campo, golpes telegrafados, lugar e respawn |
 | [VILA_E_PORTO](docs/VILA_E_PORTO.md) | cidade, porto, casas voxel, NPCs de porta |
 | [MISSOES](docs/MISSOES.md) | Mestre de Missões, cadeia da ilha inicial, diário (J) |
 | [HISTORIA](docs/HISTORIA.md) | a missão principal sem fim: capítulos por ilha, travas de nível, Crônicas da Tempestade |

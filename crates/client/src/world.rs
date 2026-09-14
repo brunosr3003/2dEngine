@@ -130,6 +130,16 @@ pub struct Ent {
     /// 0 no chao .. 1 no ar, suavizado: descer um degrau tira o pe' do chao
     /// por um instante, e a pose nao pode trocar num estalo.
     pub ar: f32,
+    /// Coletando: o TIPO que o fio disse (`acao::tipo_da_coleta`: 0 madeira,
+    /// 1..4 pedra pela cor). Escolhe a ferramenta e o gesto.
+    pub coleta: Option<u8>,
+    /// Segundos desde que a coleta deste tipo comecou: o relogio do gesto.
+    pub coleta_t: f32,
+    /// Fase (0..1) do golpe de coleta no quadro anterior: e' por ela que o
+    /// desenho sabe que a ferramenta ACABOU de bater (`lascas::cruzou`).
+    pub coleta_u_ant: f32,
+    /// Chefe: o golpe telegrafado carregando/batendo agora (`chefe_anim`).
+    pub carga_chefe: Option<crate::chefe_anim::Carga>,
 }
 
 impl Ent {
@@ -247,7 +257,7 @@ impl World {
         for meta in entered {
             let id = meta.id;
             // O estado real vem no mesmo pacote, logo abaixo.
-            let state = EntityState { id, pos: [0, 0], vel: [0, 0], hp: 0, flags: 0, acao: 0 };
+            let state = EntityState { id, pos: [0, 0], vel: [0, 0], hp: 0, flags: 0, acao: 0, rumo: 0 };
             // NPC de porta vem com o rumo no `kind`: nasce olhando pra fora e,
             // parado, o tick nao mexe no yaw.
             let yaw = if meta.tag == shared::EntityTag::Npc {
@@ -283,6 +293,10 @@ impl World {
                 morte: None,
                 correr: 0.0,
                 ar: 0.0,
+                coleta: None,
+                coleta_t: 0.0,
+                coleta_u_ant: 0.0,
+                carga_chefe: None,
             });
         }
         for st in states {
@@ -312,6 +326,13 @@ impl World {
                     // quem golpeia ja' esta' com a arma: nao espera sacar
                     ent.sacada = 1.0;
                 }
+                // Coletando: o tipo escolhe ferramenta e gesto; trocar de tipo
+                // (ou comecar) zera o relogio do gesto.
+                let tipo = acao::tipo_da_coleta(st.acao);
+                if tipo != ent.coleta {
+                    ent.coleta_t = 0.0;
+                }
+                ent.coleta = tipo;
             }
             // Morreu (ou caiu): conta o tempo do tombo. Quem ja' chega morto no
             // campo de visao nasce no chao, sem cair de novo na frente de todo
@@ -372,6 +393,11 @@ impl World {
             if ent.combo.map_or(false, |(_, t)| t > crate::rig::DURACAO_DO_GOLPE) {
                 ent.combo = None;
                 ent.combo_ant = None;
+            }
+            if ent.coleta.is_some() {
+                ent.coleta_t += dt;
+            } else {
+                ent.coleta_t = 0.0;
             }
             if let Some(t) = ent.ferido.as_mut() {
                 *t += dt;
@@ -512,9 +538,13 @@ impl World {
                 None if vel.length_squared() > MOVING_EPS * MOVING_EPS => Some(vel),
                 None => None,
             };
-            if let Some(dir) = olhar.filter(|d| d.length_squared() > 1e-4) {
-                // O modelo nasce olhando pro +Z do mundo.
-                let want = dir.x.atan2(dir.y);
+            // Os OUTROS olham pra onde o servidor diz (`EntityState::rumo`):
+            // parado coletando, mirando ou mordendo, a velocidade nao sabe. O
+            // proprio personagem continua na previsao local, sem atraso.
+            let rede = if ent.is_self() { None } else { shared::yaw_de_rumo(ent.state.rumo) };
+            // O modelo nasce olhando pro +Z do mundo.
+            let quer = rede.or_else(|| olhar.filter(|d| d.length_squared() > 1e-4).map(|dir| dir.x.atan2(dir.y)));
+            if let Some(want) = quer {
                 // Caminho mais curto no circulo, senao ele gira 350 graus pra
                 // virar 10.
                 let mut d = want - ent.yaw;
@@ -559,12 +589,35 @@ mod testes {
     use super::*;
     use shared::{EntityTag, PULO_DURACAO, PULO_ESPERA};
 
+    /// O OUTRO jogador olha pro rumo que veio no fio, parado, com suavizacao;
+    /// o proprio personagem ignora o rumo (previsao local).
+    #[test]
+    fn rumo_do_fio_vira_os_outros_suave_e_nao_o_proprio() {
+        let q = std::f32::consts::FRAC_PI_2;
+        let mut w = World::default();
+        for (id, flags) in [(EntityId(1), 0u8), (EntityId(2), ent_flags::SELF)] {
+            w.apply(
+                vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0, nivel: 1 }],
+                vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags, acao: 0, rumo: shared::rumo_de_yaw(q) }],
+                &[],
+            );
+        }
+        w.tick(1.0 / 60.0, &|_, _| 0.0);
+        let um_quadro = w.ents[&EntityId(1)].yaw;
+        assert!(um_quadro > 0.0 && um_quadro < q * 0.9, "vira suave, nao de estalo: {um_quadro}");
+        for _ in 0..120 {
+            w.tick(1.0 / 60.0, &|_, _| 0.0);
+        }
+        assert!((w.ents[&EntityId(1)].yaw - q).abs() < 0.05, "chegou no rumo do fio");
+        assert!(w.ents[&EntityId(2)].yaw.abs() < 1e-4, "o proprio nao segue o fio");
+    }
+
     #[test]
     fn mob_em_strafe_mira_no_alvo_durante_todo_o_golpe() {
         let mut w = World::default();
         for (id,tag,pos) in [(EntityId(1),EntityTag::Enemy,[16,16]),(EntityId(2),EntityTag::Player,[16,48])] {
             w.apply(vec![EntityMeta { id,tag,name:None,hp_max:100,faction:None,kind:2,nivel:1 }],
-                vec![EntityState { id,pos,vel:[16,0],hp:100,flags:0,acao:0 }],&[]);
+                vec![EntityState { id,pos,vel:[16,0],hp:100,flags:0,acao:0,rumo:0 }],&[]);
         }
         w.ents.get_mut(&EntityId(1)).unwrap().ataque_mob = Some((Some(EntityId(2)),0.0,0.46));
         for _ in 0..26 { w.tick(1.0 / 60.0,&|_,_|0.0); }
@@ -600,7 +653,7 @@ mod testes {
         let id = shared::EntityId(1);
         w.apply(
             vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0, nivel: 0 }],
-            vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF, acao: 0 }],
+            vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF, acao: 0, rumo: 0 }],
             &[],
         );
         w.pular_local();
@@ -614,7 +667,7 @@ mod testes {
                 | if (0.05..voo).contains(&t) { ent_flags::PULANDO } else { 0 };
             w.apply(
                 Vec::new(),
-                vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags, acao: 0 }],
+                vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags, acao: 0, rumo: 0 }],
                 &[],
             );
             w.tick(dt, &chao);
@@ -663,7 +716,7 @@ mod testes {
             pos: [(x * shared::POS_SCALE) as i16, 0],
             vel: [(vel * shared::POS_SCALE) as i8, 0],
             hp: 100,
-            flags: ent_flags::SELF, acao: 0,
+            flags: ent_flags::SELF, acao: 0, rumo: 0,
         };
         w.apply(
             vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0, nivel: 0 }],
@@ -747,7 +800,7 @@ mod testes {
         let id = shared::EntityId(1);
         w.apply(
             vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0, nivel: 0 }],
-            vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF, acao: 0 }],
+            vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF, acao: 0, rumo: 0 }],
             &[],
         );
         let chao = |_: f32, _: f32| 0.0;

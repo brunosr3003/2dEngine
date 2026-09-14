@@ -639,3 +639,40 @@ ação "igual no MIR4" (tabela da 2.5), com o botão ATACAR + F.
 - LevelWinner, MIR4 Beginner's Guide (ícone de menu no alto à direita, Auto-Play de missões): https://www.levelwinner.com/mir4-beginners-guide-tips-tricks-strategies/
 - Steam, "NEW HUD/UI FOR PC PLAYERS" (UI de celular no PC; reduzir o tamanho em Settings → Convenience): https://steamcommunity.com/app/1623660/discussions/0/3032600513512926775/
 - Magic Square pelo ícone Portal do menu (via resultado de busca): https://www.touchtapplay.com/mir4-magic-square-guide/
+
+## Estilo visual
+
+A cara da interface mora num lugar só: `crates/client/src/hud_estilo.rs`. Layout e posições continuam em `hud_layout.rs`, e o teste de não sobreposição segue valendo; o estilo só muda como cada retângulo é pintado.
+
+### Tokens
+
+| Token | Uso |
+|---|---|
+| `FUNDO` / `FUNDO_ALTO` | vidro escuro dos painéis, em gradiente de cima (alto) pra baixo |
+| `FUNDO_BAIXO` | áreas rebaixadas: trilho de barra, slot vazio, campo de texto |
+| `BORDA` / `BORDA_FORTE` | borda de 1 px quase invisível; a forte no hover e em tooltip |
+| `BRILHO` | filete claro no topo (sensação de vidro) |
+| `OURO` | raridade, chefe, valores, títulos de janela |
+| `ACENTO` | seleção, hover, foco, aba ativa |
+| `TEXTO` / `SUAVE` | texto principal e secundário |
+| `AUTO`, `VERDE`, `AZUL`, `VERMELHO` | estados |
+
+Raios: `RAIO_PEQUENO` 5, `RAIO` 9, `RAIO_GRANDE` 14. Tipografia (`tam`): título 20, subtítulo 16, corpo 14, legenda 12, mini 11. Contraste medido por teste (WCAG sobre cena de grama escura): texto ≥ 7:1, suave/ouro/acento ≥ 4,5:1.
+
+### Primitivas
+
+A macroquad não tem retângulo arredondado. `ret_gradiente` desenha **uma malha** em leque a partir do centro, com a cor interpolada por altura; `borda_arredondada` é um anel de quads entre dois contornos. Sem sobreposição de peças, cor translúcida não escurece nos cantos, e o batcher junta tudo no mesmo draw call. `sombra` são três camadas crescendo e sumindo. `traco` é linha com ponta redonda (mesma "caneta" em todo pictograma).
+
+### Componentes
+
+`painel`, `painel_destaque` (filete colorido no topo), `cartao`, `botao` (primário/secundário), `botao_redondo` (ATACAR, skills, AUTO, nível), `aba`, `chip_tecla`, `barra` (pílula com trilho, gradiente, brilho e "fantasma" do que acabou de sair), `slot` (moldura e brilho na cor da raridade), `tooltip`, `badge` (ponto vermelho pulsando), `separador`, `scroll`. Estados: `Normal`, `Sobre`, `Pressionado`, `Ativo`, `Desabilitado` (prioridade testada). Hover e pressão animam em ~120 ms por `anima`, guardado por posição do widget, sem mudar assinatura de ninguém.
+
+As telas de fora do mundo (`ui.rs`: login, servidores, personagens) usam os mesmos componentes.
+
+### Fonte
+
+Noto Sans Regular e Bold (Google), embutidas com `include_bytes!` como antes; licença em `assets/fonts/LICENSE-NotoSans.txt`. Números de dano, "+N item" e quantidade no ícone também usam a fonte da UI. Quem alinha texto mede com `medir`, `medir_forte` ou `medir_dim` — medir com a fonte padrão da macroquad e desenhar com a Noto desalinha.
+
+### Custo
+
+Um `painel` antigo eram ~22 triângulos (retângulos e linhas). O novo são ~210 (sombra 3 leques, gradiente 1 leque, borda 1 anel), em malhas pequenas que o batcher agrupa. Com 30 painéis na tela são ~6 mil triângulos por quadro no passe de UI — irrelevante até em GPU de celular, e sem textura nem render-to-texture.

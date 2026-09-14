@@ -319,3 +319,43 @@ sendo o mesmo jogo; só cabe numa sessão.
   reinício e troca de ilha. Aplica em todo XP que passa por `grant_xp`
   (kill, missão); não mexe em XP de proficiência. Só sai de recompensa de
   missão de área (ver MISSOES.md).
+
+## Poções de recurso (cura ao longo do tempo)
+
+No molde das Large/Great HP Potion da MIR4: uma parte **na hora** e o resto em
+**ticks de 1 s**, sempre em **fração do máximo** (acompanha o nível). Tabela em
+`shared::pocoes::CURAS`.
+
+| poção | id | na hora | por tick | duração | total | recarga do grupo |
+|---|---|---|---|---|---|---|
+| Vida | 2 | 4% HP | 2% | 5 s | 14% | 8 s (grupo Vida) |
+| Vida+ | 9 | 6% HP | 3% | 5 s | 21% | 8 s (grupo Vida) |
+| Mana | 8 | 5% MP | 3% | 5 s | 20% | 8 s (grupo Mana) |
+| Mana+ | 10 | 8% MP | 4,5% | 5 s | 30,5% | 8 s (grupo Mana) |
+| Vigor | 11 | — | 5% | 6 s | 30% | 15 s (grupo Vigor) |
+
+- **Recarga por grupo:** Vida bloqueia Vida+. A recarga é **sempre ≥ a
+  duração** da cura — garantido em tempo de compilação — então **não existe
+  tomar outra no meio** nem substituição. O servidor recusa o `UseItem` do grupo
+  em recarga **sem gastar** a poção e avisa ("[Poção] Vida em recarga: 5,2 s").
+- Recurso cheio: recusa sem gastar. Dano não interrompe. Caído/morto: a cura
+  acaba (a recarga continua).
+- `PocaoGrupo { grupo, recarga_s, cura_s }` vai ao beber e ao recusar; o HUD
+  mostra a sombra da recarga no botão, borda verde enquanto cura e ícones
+  "+V / +M / +E" com os segundos.
+- **AUTO da barra:** abaixo do limiar e com o grupo fora da recarga; o tier é o
+  **menor cujo total cobre o que falta pro máximo**, senão o maior que houver
+  (`pocoes::escolher`). Substitui a regra antiga "Vida+ abaixo de 35%".
+
+## Poções de buff de drop
+
+| Item | id | Efeito | Duração |
+|---|---|---|---|
+| Poção de Experiência | 350 | +30% de XP de personagem | 1 h |
+| Poção de Fortuna | 351 | +30% da quantidade de **ouro e cobre que caem de bicho** (loot de quem matou) | 1 h |
+| Poção de Sorte | 352 | chance de cada linha de drop **não garantida** × 1,2 — loot de bicho (de quem matou) e coleta (de quem coleta) | 1 h |
+
+- Beber outra com o buff ativo **renova a hora cheia**; não acumula porcentagem.
+- O fim de cada buff é absoluto e salvo no personagem (`xp_bonus_ate`, `fortuna_ate`, `sorte_ate`): vale depois de relog, reinício e troca de ilha.
+- Fortuna não vale na coleta (é ouro de bicho). Linha garantida (chance 100%) continua 100% com Sorte.
+- Nenhuma das três se compra: saem de recompensa de missão (área → Experiência; diária de criar → Fortuna; diária de refinar → Sorte).

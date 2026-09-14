@@ -16,6 +16,14 @@ pub const BASE: &[(i32,u16,i32,i32,f32)] = &[
     (7,SCALE,1,1,0.05), (7,GREATER_HEAL,1,2,0.35), (7,GREATER_MANA,1,1,0.25),
 ];
 
+/// Os caranguejos de praia (kinds 8 e 9): cobre, garra (a pinca) e, rara, a
+/// escama; o rei rende um pouco de aco. Migrados a parte, com marcador
+/// proprio — o `loot_mobs_recursos_v1` ja' rodou nos bancos que existem.
+pub const BASE_PRAIA: &[(i32,u16,i32,i32,f32)] = &[
+    (8,COPPER,3,10,1.0), (8,CLAW,1,1,0.06), (8,SCALE,1,1,0.01), (8,HEALTH_POTION,1,1,0.08),
+    (9,COPPER,12,30,1.0), (9,CLAW,1,2,0.15), (9,SCALE,1,1,0.03), (9,STEEL,1,2,0.15), (9,HEALTH_POTION,1,1,0.12),
+];
+
 /// Migra apenas a economia dos mobs, uma vez, dentro de uma transacao.
 pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     let mut tx=pool.begin().await?;
@@ -32,6 +40,18 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
         }
         sqlx::query("UPDATE economy_version SET version=version+1 WHERE id=1").execute(&mut *tx).await?;
     }
+    // Caranguejos: uma vez, so' se o kind ja' existe (o seed de `enemy_kinds`
+    // roda antes). Nao apaga nada: kind 8 e 9 nao tinham loot.
+    let praia=sqlx::query("INSERT INTO economy_migrations(name) VALUES ('loot_caranguejos_v1') ON CONFLICT DO NOTHING")
+        .execute(&mut *tx).await?.rows_affected()>0;
+    if praia {
+        for &(kind,item,min,max,chance) in BASE_PRAIA {
+            sqlx::query("INSERT INTO loot_drops(enemy_kind,item_id,qty_min,qty_max,chance) SELECT $1,$2,$3,$4,$5 WHERE EXISTS(SELECT 1 FROM enemy_kinds WHERE kind=$1)")
+                .bind(kind).bind(item as i32).bind(min).bind(max).bind(chance).execute(&mut *tx).await?;
+        }
+        sqlx::query("UPDATE economy_version SET version=version+1 WHERE id=1").execute(&mut *tx).await?;
+        tracing::info!("Loot dos caranguejos semeado");
+    }
     tx.commit().await?;
     if nova {tracing::info!("Loot dos mobs atualizado: cobre, materiais e pocoes; sem equipamentos");}
     Ok(())
@@ -40,6 +60,21 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn caranguejos_tem_cobre_garra_e_nenhum_equipamento() {
+        for kind in [8, 9] {
+            let entries:Vec<_>=BASE_PRAIA.iter().filter(|e|e.0==kind).collect();
+            assert_eq!(entries.iter().filter(|e|e.1==COPPER && e.4==1.0).count(),1);
+            assert!(entries.iter().any(|e|e.1==CLAW));
+            for e in entries {
+                assert!(shared::equip_slot_of(e.1).is_none());
+                assert!(e.2>0 && e.3>=e.2 && e.4>0.0 && e.4<=1.0);
+            }
+        }
+        // o rei rende mais que o pequeno
+        let cobre=|k:i32| BASE_PRAIA.iter().find(|e|e.0==k && e.1==COPPER).unwrap().3;
+        assert!(cobre(9)>cobre(8));
+    }
     #[test]
     fn todos_tem_cobre_poucas_pocoes_e_nenhum_equipamento() {
         for kind in 0..=7 {

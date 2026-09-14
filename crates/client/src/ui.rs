@@ -4,41 +4,48 @@
 //! linhas de uGUI — mais da metade do projeto — pra fazer menos do que isto
 //! precisa fazer. Botao, campo de texto e lista desenhados na mao cabem em
 //! duzentas linhas e nao trazem cena, prefab nem serializador junto.
+//!
+//! A cara vem do `hud_estilo`: as telas de login e de servidor usam os mesmos
+//! paineis, botoes e fonte do jogo.
 
 use macroquad::prelude::*;
 
-pub const OURO: Color = Color::new(0.83, 0.65, 0.31, 1.0);
-pub const OURO_CLARO: Color = Color::new(0.95, 0.78, 0.44, 1.0);
-const FUNDO: Color = Color::new(0.09, 0.08, 0.10, 1.0);
-const PAINEL: Color = Color::new(0.13, 0.12, 0.15, 1.0);
-const BORDA: Color = Color::new(0.25, 0.21, 0.18, 1.0);
-const TEXTO: Color = Color::new(0.87, 0.87, 0.87, 1.0);
-const APAGADO: Color = Color::new(0.45, 0.45, 0.48, 1.0);
+use crate::hud_estilo as estilo;
 
+pub const OURO: Color = estilo::OURO;
+pub const OURO_CLARO: Color = Color::new(1.0, 0.86, 0.56, 1.0);
+const FUNDO_TOPO: Color = Color::new(0.055, 0.075, 0.115, 1.0);
+const FUNDO_BASE: Color = Color::new(0.020, 0.028, 0.045, 1.0);
+const TEXTO: Color = estilo::TEXTO;
+const APAGADO: Color = estilo::SUAVE;
+
+/// Fundo das telas fora do mundo: gradiente escuro com um halo frio no alto.
 pub fn fundo() {
-    clear_background(FUNDO);
+    clear_background(FUNDO_BASE);
+    let (w, h) = (screen_width(), screen_height());
+    estilo::ret_gradiente(Rect::new(0.0, 0.0, w, h), 0.0, FUNDO_TOPO, FUNDO_BASE);
+    draw_circle(w * 0.5, -h * 0.35, h * 0.9, Color::new(0.30, 0.55, 0.85, 0.05));
 }
 
 /// Painel centralizado. Devolve o retangulo util, ja com margem.
 pub fn painel(largura: f32, altura: f32, titulo: &str) -> Rect {
     let x = (screen_width() - largura) * 0.5;
     let y = (screen_height() - altura) * 0.5;
-    draw_rectangle(x, y, largura, altura, PAINEL);
-    draw_rectangle_lines(x, y, largura, altura, 2.0, BORDA);
+    let r = Rect::new(x, y, largura, altura);
+    estilo::painel_destaque(r, OURO);
     if !titulo.is_empty() {
-        let d = measure_text(titulo, None, 26, 1.0);
-        draw_text(titulo, x + (largura - d.width) * 0.5, y + 38.0, 26.0, OURO);
+        estilo::texto_centro_forte(x + largura * 0.5, y + 38.0, titulo, 24, OURO);
+        estilo::separador(x + 24.0, y + 50.0, largura - 48.0);
     }
     Rect::new(x + 24.0, y + 60.0, largura - 48.0, altura - 84.0)
 }
 
 pub fn texto(x: f32, y: f32, s: &str, tam: u16, cor: Color) {
-    draw_text(s, x, y, tam as f32, cor);
+    estilo::texto(x, y, s, tam, cor);
 }
 
 pub fn texto_centro(cx: f32, y: f32, s: &str, tam: u16, cor: Color) {
-    let d = measure_text(s, None, tam, 1.0);
-    draw_text(s, cx - d.width * 0.5, y, tam as f32, cor);
+    estilo::texto_centro(cx, y, s, tam, cor);
 }
 
 fn dentro(r: Rect, p: Vec2) -> bool {
@@ -49,34 +56,18 @@ fn dentro(r: Rect, p: Vec2) -> bool {
 pub fn botao(r: Rect, rotulo: &str, ativo: bool) -> bool {
     let (mx, my) = mouse_position();
     let sobre = ativo && dentro(r, vec2(mx, my));
-    let fundo = if !ativo {
-        Color::new(0.16, 0.15, 0.17, 1.0)
-    } else if sobre {
-        Color::new(0.24, 0.21, 0.16, 1.0)
-    } else {
-        Color::new(0.18, 0.17, 0.19, 1.0)
-    };
-    draw_rectangle(r.x, r.y, r.w, r.h, fundo);
-    draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5, if sobre { OURO } else { BORDA });
-    let cor = if ativo { OURO_CLARO } else { APAGADO };
-    let d = measure_text(rotulo, None, 20, 1.0);
-    draw_text(
-        rotulo,
-        r.x + (r.w - d.width) * 0.5,
-        r.y + r.h * 0.5 + 7.0,
-        20.0,
-        cor,
-    );
+    let e = estilo::estado(sobre, is_mouse_button_down(MouseButton::Left), !ativo, false);
+    // O "x" de fechar e' icone, nao rotulo: botao discreto.
+    estilo::botao(r, rotulo, e, false);
     sobre && is_mouse_button_pressed(MouseButton::Left)
 }
 
-/// Campo de texto. `foco` diz quem recebe o teclado; devolve `true` se o
-/// clique pediu o foco.
 /// Campo de texto.
 ///
 /// `digitado` vem do `entrada::Teclado` e nao da fila crua da macroquad: la' a
 /// repeticao de tecla e' indistinguivel do toque, e uma tecla encostada por um
-/// instante entrava quatro vezes.
+/// instante entrava quatro vezes. `foco` diz quem recebe o teclado; devolve
+/// `true` se o clique pediu o foco.
 pub fn campo(
     r: Rect,
     rotulo: &str,
@@ -85,24 +76,22 @@ pub fn campo(
     senha: bool,
     digitado: &[char],
 ) -> bool {
-    draw_text(rotulo, r.x, r.y - 8.0, 16.0, APAGADO);
-    draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.10, 0.09, 0.11, 1.0));
-    draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5, if foco { OURO } else { BORDA });
+    estilo::texto_forte(r.x + 2.0, r.y - 8.0, rotulo, estilo::tam::LEGENDA, APAGADO);
+    let raio = estilo::RAIO_PEQUENO + 2.0;
+    estilo::ret_gradiente(r, raio, estilo::FUNDO_BAIXO, estilo::alfa(estilo::clarear(estilo::FUNDO_BAIXO, 0.05), 0.95));
+    estilo::borda_arredondada(r, raio, if foco { 1.5 } else { 1.0 }, if foco { estilo::alfa(estilo::ACENTO, 0.85) } else { estilo::BORDA_FORTE });
+    if foco {
+        estilo::borda_arredondada(Rect::new(r.x - 3.0, r.y - 3.0, r.w + 6.0, r.h + 6.0), raio + 3.0, 2.0, estilo::alfa(estilo::ACENTO, 0.18));
+    }
 
     let mostrado = if senha {
-        "*".repeat(valor.chars().count())
+        "•".repeat(valor.chars().count())
     } else {
         valor.clone()
     };
     // Cursor piscando: sem ele nao da' pra saber qual campo esta ouvindo.
-    let cursor = if foco && (get_time() * 2.0) as i32 % 2 == 0 { "_" } else { "" };
-    draw_text(
-        &format!("{mostrado}{cursor}"),
-        r.x + 10.0,
-        r.y + r.h * 0.5 + 6.0,
-        20.0,
-        TEXTO,
-    );
+    let cursor = if foco && (get_time() * 2.0) as i32 % 2 == 0 { "|" } else { "" };
+    estilo::texto(r.x + 12.0, r.y + r.h * 0.5 + 6.0, &format!("{mostrado}{cursor}"), 18, TEXTO);
 
     if foco {
         for &c in digitado {
@@ -129,43 +118,30 @@ pub fn linha(r: Rect, esquerda: &str, direita: &str, selecionada: bool) -> bool 
     let (mx, my) = mouse_position();
     let sobre = dentro(r, vec2(mx, my));
     if selecionada || sobre {
-        let c = if selecionada {
-            Color::new(0.22, 0.19, 0.14, 1.0)
-        } else {
-            Color::new(0.17, 0.16, 0.18, 1.0)
-        };
-        draw_rectangle(r.x, r.y, r.w, r.h, c);
+        estilo::cartao(r, sobre, selecionada);
     }
     if selecionada {
-        draw_rectangle(r.x, r.y, 3.0, r.h, OURO);
+        estilo::ret_arredondado(Rect::new(r.x + 4.0, r.y + 6.0, 3.0, r.h - 12.0), 1.5, estilo::ACENTO);
     }
-    draw_text(esquerda, r.x + 12.0, r.y + r.h * 0.5 + 6.0, 19.0, TEXTO);
-    let d = measure_text(direita, None, 17, 1.0);
-    draw_text(
-        direita,
-        r.x + r.w - d.width - 12.0,
-        r.y + r.h * 0.5 + 5.0,
-        17.0,
-        APAGADO,
-    );
+    estilo::texto(r.x + 14.0, r.y + r.h * 0.5 + 6.0, esquerda, 17, TEXTO);
+    let w = estilo::medir(direita, 15);
+    estilo::texto(r.x + r.w - w - 12.0, r.y + r.h * 0.5 + 5.0, direita, 15, APAGADO);
     sobre && is_mouse_button_pressed(MouseButton::Left)
 }
 
 /// Barra de lotacao. Vermelha quando cheia — o jogador decide antes de clicar.
 pub fn barra(r: Rect, fracao: f32) {
     let f = fracao.clamp(0.0, 1.0);
-    draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.10, 0.09, 0.11, 1.0));
     let cor = if f >= 1.0 {
-        Color::new(0.78, 0.33, 0.24, 1.0)
+        estilo::VERMELHO
     } else if f > 0.8 {
-        Color::new(0.85, 0.66, 0.28, 1.0)
+        estilo::OURO
     } else {
-        Color::new(0.42, 0.66, 0.38, 1.0)
+        estilo::VERDE
     };
-    draw_rectangle(r.x, r.y, r.w * f, r.h, cor);
-    draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.0, BORDA);
+    estilo::barra(r, f, 0.0, cor, None);
 }
 
 pub fn erro(cx: f32, y: f32, msg: &str) {
-    texto_centro(cx, y, msg, 18, Color::new(0.85, 0.35, 0.30, 1.0));
+    estilo::texto_centro_forte(cx, y, msg, 16, estilo::VERMELHO);
 }

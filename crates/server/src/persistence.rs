@@ -101,6 +101,18 @@ pub struct CharacterRow {
     /// Pocao de Experiencia: bonus de XP ate' este instante (unix secs; 0 =
     /// nenhum). Absoluto, entao sobrevive a relog e reinicio.
     pub xp_bonus_ate: i64,
+    /// Pocoes de Fortuna e de Sorte: buff ate' este instante (unix secs).
+    pub fortuna_ate: i64,
+    pub sorte_ate: i64,
+    /// Barra de itens configurada (`barra::para_json`). Vazio = padrao.
+    pub barra_json: String,
+    /// Mortes com XP recuperavel (`morte::MorteRecuperavel` em JSON).
+    pub mortes_json: String,
+    /// Dia UTC (`morte::dia`) e quantas recuperacoes gratis ja' saiu nele.
+    pub recuperacoes_dia: i64,
+    pub recuperacoes_usadas: i32,
+    /// Preferencias de tela (`preferencias::para_json`). Vazio = padrao.
+    pub preferencias_json: String,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -453,6 +465,23 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
         .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS xp_bonus_ate BIGINT NOT NULL DEFAULT 0")
         .execute(pool).await?;
+    // Pocoes de Fortuna e de Sorte, e a barra de itens configurada.
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS fortuna_ate BIGINT NOT NULL DEFAULT 0")
+        .execute(pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS sorte_ate BIGINT NOT NULL DEFAULT 0")
+        .execute(pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS barra_json TEXT NOT NULL DEFAULT ''")
+        .execute(pool).await?;
+    // Morte: XP recuperavel e as recuperacoes gratis do dia.
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS mortes_json TEXT NOT NULL DEFAULT ''")
+        .execute(pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS recuperacoes_dia BIGINT NOT NULL DEFAULT 0")
+        .execute(pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS recuperacoes_usadas INTEGER NOT NULL DEFAULT 0")
+        .execute(pool).await?;
+    // Preferencias de tela: skills AUTO, filtros do mapa, zooms.
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS preferencias_json TEXT NOT NULL DEFAULT ''")
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS gold BIGINT NOT NULL DEFAULT 0")
         .execute(pool).await?;
     sqlx::query(
@@ -761,6 +790,9 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         S{ id: item_id::STAMINA_POTION as i32, name:"Stamina Potion",  sell:10,  buy:Some(20),     ord:Some(4), stack:20,   slot:None, lvl:1, ic:8,  ir:7,   hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
         // So' recompensa de missao de area: sem preco de compra, venda simbolica.
         S{ id: item_id::XP_POTION as i32,      name:"Poção de Experiência", sell:1, buy:None,     ord:None,    stack:20,   slot:None, lvl:1, ic:-1, ir:-1,  hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
+        // Recompensa de diaria de oficina: sem preco de compra, venda simbolica.
+        S{ id: item_id::FORTUNA_POTION as i32, name:"Poção de Fortuna",  sell:1, buy:None,     ord:None,    stack:20,   slot:None, lvl:1, ic:-1, ir:-1,  hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::SORTE_POTION as i32,   name:"Poção de Sorte",    sell:1, buy:None,     ord:None,    stack:20,   slot:None, lvl:1, ic:-1, ir:-1,  hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
         // Armas
         // Fase F — armas tier 2 (gate de char_lvl + prof_lvl). Item lvl 10 marca o tier.
         // Fase F — armas tier 3 (char_lvl 20, sword prof 10). Item lvl 20.
@@ -922,21 +954,9 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
 
     // Enemy kinds — espelha o array hardcoded antigo. Tuple muito grande;
     // usa struct local pra clareza.
-    struct E { kind:i32,name:&'static str,hp:i32,sp:f32,dmg:i32,cd:f32,det:f32,rng:f32,kite:Option<f32>,proj:i32,xp:i64,def:i32,sz:f32,t:[f32;4] }
-    let kinds: &[E] = &[
-        // Os oito mobs do jogo. A regra: quem MORDE e' bicho, quem ATIRA e'
-        // gente. Os numeros de antes ficaram (sao o que o balanceamento ja'
-        // conhece); mudou quem eles sao — e o chefe, que agora e' um lobo
-        // grande e por isso MORDE em vez de atirar cinco projeteis.
-        E{ kind:0, name:"Lobo",        hp:50,  sp:2.0, dmg:10, cd:2.0, det:9.0,  rng:1.8,  kite:None,        proj:1, xp:30,  def:0,  sz:1.0,  t:[1.0,1.0,1.0,1.0] },
-        E{ kind:1, name:"Urso",        hp:120, sp:1.3, dmg:18, cd:2.8, det:8.0,  rng:1.8,  kite:None,        proj:1, xp:75,  def:8,  sz:1.3,  t:[1.0,1.0,1.0,1.0] },
-        E{ kind:2, name:"Pistoleiro",  hp:35,  sp:2.4, dmg:12, cd:1.5, det:13.0, rng:9.0,  kite:Some(5.0),   proj:1, xp:50,  def:0,  sz:1.0,  t:[1.0,1.0,1.0,1.0] },
-        E{ kind:3, name:"Tigre",       hp:40,  sp:4.2, dmg:15, cd:1.0, det:11.0, rng:1.8,  kite:None,        proj:1, xp:55,  def:2,  sz:1.0,  t:[1.0,1.0,1.0,1.0] },
-        E{ kind:4, name:"Mago",        hp:45,  sp:1.4, dmg:22, cd:2.2, det:15.0, rng:12.0, kite:Some(8.0),   proj:1, xp:70,  def:1,  sz:1.0,  t:[1.0,1.0,1.0,1.0] },
-        E{ kind:5, name:"Owlbear",     hp:200, sp:1.5, dmg:28, cd:3.0, det:8.0,  rng:1.8,  kite:None,        proj:1, xp:110, def:4,  sz:1.5,  t:[1.0,1.0,1.0,1.0] },
-        E{ kind:6, name:"Arqueiro",    hp:45,  sp:2.8, dmg:14, cd:1.6, det:13.0, rng:9.0,  kite:Some(7.0),   proj:1, xp:60,  def:1,  sz:1.0,  t:[1.0,1.0,1.0,1.0] },
-        E{ kind:7, name:"Lobo Grande", hp:700, sp:1.6, dmg:40, cd:2.8, det:18.0, rng:2.6,  kite:None,        proj:1, xp:600, def:20, sz:2.2,  t:[1.0,1.0,1.0,1.0] },
-    ];
+    // A tabela mora em `economy::KINDS_INICIAIS`: o simulador de balanceamento
+    // le' os mesmos numeros.
+    let kinds = &crate::economy::KINDS_INICIAIS;
     for e in kinds {
         sqlx::query(
             "INSERT INTO enemy_kinds (kind, name, hp_max, speed, attack_damage, attack_cooldown, \
@@ -949,6 +969,24 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         .bind(e.det).bind(e.rng).bind(e.kite).bind(e.proj).bind(e.xp).bind(e.def).bind(e.sz)
         .bind(e.t[0]).bind(e.t[1]).bind(e.t[2]).bind(e.t[3])
         .execute(pool).await?;
+    }
+    // balanceamento_hp_mobs_v1: os mobs comuns ganham ~2,4x de HP (o chefe
+    // fica). Com o HP antigo tudo morria em dois golpes e quem atirava matava
+    // antes de o bicho chegar — ver docs/COMBATE.md, "Balanceamento". Uma vez
+    // so', e so' em linha que AINDA tem o HP antigo do seed: ajuste de admin
+    // fica. Banco novo ja' nasce com o valor novo e o UPDATE nao acha nada.
+    sqlx::query("CREATE TABLE IF NOT EXISTS economy_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())")
+        .execute(pool).await?;
+    let hp_nova = sqlx::query("INSERT INTO economy_migrations(name) VALUES ('balanceamento_hp_mobs_v1') ON CONFLICT DO NOTHING")
+        .execute(pool).await?.rows_affected() > 0;
+    if hp_nova {
+        for (kind, velho) in [(0, 50), (1, 120), (2, 35), (3, 40), (4, 45), (5, 200), (6, 45)] {
+            let novo = crate::economy::KINDS_INICIAIS[kind as usize].hp;
+            sqlx::query("UPDATE enemy_kinds SET hp_max = $1 WHERE kind = $2 AND hp_max = $3")
+                .bind(novo).bind(kind).bind(velho)
+                .execute(pool).await?;
+        }
+        tracing::info!("balanceamento_hp_mobs_v1: HP dos mobs comuns atualizado");
     }
     // M26: os oito tipos antigos (Grunt, Tank, Ranger, Ninja, Berserker...)
     // saem do jogo. O `INSERT ... DO NOTHING` acima nao renomeia linha que ja'
@@ -1287,6 +1325,14 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         vida.into_iter().map(|(n, m, s, z)| (n, (m, s, z))).collect();
     let bonus = busca!((String, i64), "name, xp_bonus_ate");
     let bonus_map: HashMap<String, i64> = bonus.into_iter().collect();
+    let drop = busca!((String, i64, i64, String), "name, fortuna_ate, sorte_ate, barra_json");
+    let drop_map: HashMap<String, (i64, i64, String)> =
+        drop.into_iter().map(|(n, f, s, b)| (n, (f, s, b))).collect();
+    let mortes = busca!((String, String, i64, i32), "name, mortes_json, recuperacoes_dia, recuperacoes_usadas");
+    let mortes_map: HashMap<String, (String, i64, i32)> =
+        mortes.into_iter().map(|(n, m, d, u)| (n, (m, d, u))).collect();
+    let prefs = busca!((String, String), "name, preferencias_json");
+    let prefs_map: HashMap<String, String> = prefs.into_iter().collect();
 
     let mut out = HashMap::with_capacity(rows.len());
     for (name, x, y, hp, max_hp, xp, fame, aura, unspent, allocated_vec,
@@ -1333,6 +1379,10 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         let last_tut = tut_map.get(&name).cloned().flatten();
         let (mp, stamina, zona) = vida_map.get(&name).cloned().unwrap_or_default();
         let xp_bonus_ate = bonus_map.get(&name).copied().unwrap_or(0);
+        let (fortuna_ate, sorte_ate, barra_json) = drop_map.get(&name).cloned().unwrap_or_default();
+        let (mortes_json, recuperacoes_dia, recuperacoes_usadas) =
+            mortes_map.get(&name).cloned().unwrap_or_default();
+        let preferencias_json = prefs_map.get(&name).cloned().unwrap_or_default();
         out.insert(
             name.clone(),
             CharacterRow {
@@ -1363,6 +1413,13 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 stamina,
                 zona,
                 xp_bonus_ate,
+                fortuna_ate,
+                sorte_ate,
+                barra_json,
+                mortes_json,
+                recuperacoes_dia,
+                recuperacoes_usadas,
+                preferencias_json,
             },
         );
     }
@@ -1606,8 +1663,10 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                                      gold, visual_json, updated,
                                      boat_yaw, boat_sail_pos, boat_sail_angle,
                                      boat_anchor_dropped, mounted_local_x, mounted_local_y,
-                                     mp, stamina, zona, xp_bonus_ate)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+                                     mp, stamina, zona, xp_bonus_ate,
+                                     mortes_json, recuperacoes_dia, recuperacoes_usadas,
+                                     fortuna_ate, sorte_ate, barra_json, preferencias_json)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -1636,7 +1695,14 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                mp = EXCLUDED.mp,
                stamina = EXCLUDED.stamina,
                zona = COALESCE(EXCLUDED.zona, characters.zona),
-               xp_bonus_ate = EXCLUDED.xp_bonus_ate",
+               xp_bonus_ate = EXCLUDED.xp_bonus_ate,
+               mortes_json = EXCLUDED.mortes_json,
+               recuperacoes_dia = EXCLUDED.recuperacoes_dia,
+               recuperacoes_usadas = EXCLUDED.recuperacoes_usadas,
+               fortuna_ate = EXCLUDED.fortuna_ate,
+               sorte_ate = EXCLUDED.sorte_ate,
+               barra_json = EXCLUDED.barra_json,
+               preferencias_json = EXCLUDED.preferencias_json",
         )
         .bind(&row.name)
         .bind(row.pos.x)
@@ -1667,6 +1733,13 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(row.stamina)
         .bind(&row.zona)
         .bind(row.xp_bonus_ate)
+        .bind(&row.mortes_json)
+        .bind(row.recuperacoes_dia)
+        .bind(row.recuperacoes_usadas)
+        .bind(row.fortuna_ate)
+        .bind(row.sorte_ate)
+        .bind(&row.barra_json)
+        .bind(&row.preferencias_json)
         .execute(&mut *tx)
         .await?;
 
