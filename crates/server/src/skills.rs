@@ -9,6 +9,32 @@ use sqlx::{PgPool, Row};
 
 /// Cria a tabela e semeia as doze do playtest, se estiver vazia.
 pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
+    // Banco de antes do redesenho (44 colunas: name, prof, tier…): o `CREATE
+    // TABLE IF NOT EXISTS` abaixo nao faz nada com a tabela velha no lugar, e o
+    // INSERT das doze morre em "column nome does not exist" — o canal nao sobe.
+    // Aconteceu na producao. A velha vira `skills_legado` (dados e a FK do
+    // `player_skills` antigo vao junto) e a nova nasce limpa. A constraint e'
+    // renomeada tambem: `skills_pkey` e' nome de indice, e a tabela nova
+    // criaria outra com o mesmo nome.
+    let legado: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.tables
+                        WHERE table_schema = 'public' AND table_name = 'skills')
+            AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public' AND table_name = 'skills'
+                              AND column_name = 'nome')",
+    )
+    .fetch_one(pool)
+    .await?;
+    if legado {
+        let mut tx = pool.begin().await?;
+        sqlx::query("ALTER TABLE skills RENAME TO skills_legado").execute(&mut *tx).await?;
+        sqlx::query("ALTER TABLE skills_legado RENAME CONSTRAINT skills_pkey TO skills_legado_pkey")
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        tracing::warn!("skills: tabela do sistema antigo renomeada pra skills_legado");
+    }
+
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS skills (
             id            INTEGER PRIMARY KEY,
