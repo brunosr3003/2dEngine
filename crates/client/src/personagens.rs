@@ -47,6 +47,11 @@ impl Personagens {
         self.scroll=selecionado.saturating_sub(3);
     }
 
+    /// O campo de nome esta' com foco (o teclado da tela tem que estar aberto).
+    pub fn foco_no_nome(&self) -> bool {
+        self.criando && self.foco_nome && self.aguardando.is_none()
+    }
+
     pub fn falhou(&mut self, motivo: String) {
         self.aguardando=None;self.criando=true;
         self.mensagem=Some(match motivo.as_str() {

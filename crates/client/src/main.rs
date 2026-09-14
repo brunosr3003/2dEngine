@@ -9,6 +9,9 @@
 //! `Protocol.cs` com 1175 linhas espelhadas a mao.
 
 mod api;
+mod login_google;
+mod nativo;
+mod teclado_virtual;
 mod bicho;
 mod bolsa;
 mod efeitos;
@@ -117,6 +120,14 @@ struct Jogo {
     usuario: String,
     senha: String,
     foco_senha: bool,
+    /// Algum campo de login foi tocado: o teclado da tela fica aberto.
+    campo_login_ativo: bool,
+    teclado_virtual: teclado_virtual::TecladoVirtual,
+    /// "Entrar com Google" (docs/LOGIN_GOOGLE.md).
+    google: login_google::LoginGoogle,
+    /// Sessao do login com Google: vai no lugar da senha em toda conexao
+    /// (inclusive na troca de zona), ate' sair.
+    token_login: Option<String>,
     // ── personagens ──
     personagens: Vec<shared::protocol::CharacterListEntry>,
     armas: Vec<u16>,
@@ -334,6 +345,10 @@ async fn main() {
         usuario: std::env::var("MMO_USER").unwrap_or_default(),
         senha: std::env::var("MMO_PASS").unwrap_or_default(),
         foco_senha: false,
+        campo_login_ativo: false,
+        teclado_virtual: teclado_virtual::TecladoVirtual::default(),
+        google: login_google::LoginGoogle::consultando(),
+        token_login: None,
         personagens: Vec::new(),
         armas: Vec::new(),
         selecao_personagem: personagens::Personagens::default(),
@@ -470,6 +485,8 @@ impl Jogo {
         // Antes de tudo: a digitacao deste quadro. Quem desenha campo de
         // texto le' dela, e nao da fila crua da macroquad.
         self.teclado.coleta(get_time());
+        self.passo_google();
+        self.passo_teclado_virtual();
         self.receber_lista();
         self.pump_rede();
         if matches!(self.tela, Tela::Jogando) {
@@ -629,10 +646,13 @@ impl Jogo {
         match msg {
             ServerMessage::HandshakeAck { xp_multiplier, .. } => {
                 self.ficha.mult_xp = xp_multiplier;
-                self.envia(ClientMessage::Login {
-                    username: self.usuario.clone(),
-                    password: self.senha.clone(),
-                });
+                match self.token_login.clone() {
+                    Some(token) => self.envia(ClientMessage::LoginToken { token }),
+                    None => self.envia(ClientMessage::Login {
+                        username: self.usuario.clone(),
+                        password: self.senha.clone(),
+                    }),
+                }
             }
             ServerMessage::CharacterList { chars, available_weapons } => {
                 self.personagens = chars;
@@ -663,7 +683,12 @@ impl Jogo {
                 self.tela = Tela::Personagens;
             }
             ServerMessage::LoginDenied { reason } => {
-                self.tela = Tela::Erro(format!("login negado: {reason}"));
+                // Sessao do Google vencida: some, e o jogador entra de novo.
+                if self.token_login.take().is_some() {
+                    self.tela = Tela::Erro("sua sessão do Google expirou — entre de novo".into());
+                } else {
+                    self.tela = Tela::Erro(format!("login negado: {reason}"));
+                }
             }
             ServerMessage::Pong { client_time_ms, .. } => {
                 let rtt = agora_ms().saturating_sub(client_time_ms) as f32;
@@ -2025,6 +2050,7 @@ impl Jogo {
         self.lojas.fechar();
         self.voltar_ao_menu = false;
         self.personagem_atual=None;
+        self.token_login = None;
         self.selecao_personagem=personagens::Personagens::default();
         self.net = None;
         self.world = World::default();
@@ -2869,7 +2895,15 @@ impl Jogo {
 
     fn tela_login(&mut self) {
         ui::fundo();
-        let r = ui::painel(460.0, 320.0, "entrar");
+        const ALTURA: f32 = 440.0;
+        // Teclado da tela aberto: o painel sobe o bastante pro campo com foco
+        // (a senha, no pior caso) ficar acima dele.
+        let topo = (screen_height() - ALTURA) * 0.5;
+        let fundo_campo = topo + 60.0 + if self.foco_senha { 164.0 } else { 88.0 };
+        let aberto = nativo::TECLADO_NA_TELA && self.teclado_virtual.aberto();
+        ui::subir_paineis(teclado_virtual::deslocamento(aberto, screen_height(), topo, fundo_campo));
+        let r = ui::painel(460.0, ALTURA, "entrar");
+        ui::subir_paineis(0.0);
         let cx = r.x + r.w * 0.5;
         if let Some(h) = &self.host {
             ui::texto_centro(cx, r.y + 6.0, h, 15, ui::OURO);
@@ -2884,21 +2918,87 @@ impl Jogo {
         let clicou_s = ui::campo(cs, "senha", &mut senha, self.foco_senha, true, &digitado);
         self.usuario = usuario;
         self.senha = senha;
-        if clicou_u { self.foco_senha = false; }
-        if clicou_s { self.foco_senha = true; }
-        // Tab e Enter no usuario passam pra senha — teclado antes de mouse.
+        if clicou_u { self.foco_senha = false; self.campo_login_ativo = true; }
+        if clicou_s { self.foco_senha = true; self.campo_login_ativo = true; }
+        // Toque fora dos campos fecha o teclado da tela.
+        if is_mouse_button_pressed(MouseButton::Left) && !clicou_u && !clicou_s {
+            self.campo_login_ativo = false;
+        }
+        // Tab troca de campo; Enter (ou o Return do teclado do iPhone) no
+        // usuario passa pra senha — teclado antes de mouse.
         if is_key_pressed(KeyCode::Tab) {
             self.foco_senha = !self.foco_senha;
         }
+        let enter = is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter);
+        if enter && !self.foco_senha {
+            self.foco_senha = true;
+        } else {
+            let pode = !self.usuario.is_empty() && !self.senha.is_empty() && !self.google.aguardando();
+            let entrar = ui::botao(Rect::new(r.x, r.y + 196.0, r.w, 44.0), "entrar", pode)
+                || (pode && self.foco_senha && enter);
+            if entrar {
+                self.campo_login_ativo = false;
+                self.token_login = None;
+                self.conectar();
+            }
+        }
 
-        let pode = !self.usuario.is_empty() && !self.senha.is_empty();
-        let entrar = ui::botao(Rect::new(r.x, r.y + 196.0, r.w, 44.0), "entrar", pode)
-            || (pode && self.foco_senha && is_key_pressed(KeyCode::Enter));
-        if entrar {
-            self.conectar();
+        // Entrar com Google: so' aparece com o servidor configurado.
+        if self.google.disponivel() {
+            let rg = Rect::new(r.x, r.y + 252.0, r.w, 44.0);
+            if self.google.aguardando() {
+                ui::texto_centro(cx, rg.y + 16.0, &self.google.texto().unwrap_or_default(), 16, ui::OURO_CLARO);
+                if ui::botao(Rect::new(cx - 70.0, rg.y + 26.0, 140.0, 32.0), "cancelar", true) {
+                    self.google.cancelar();
+                }
+            } else {
+                ui::texto_centro(cx, r.y + 246.0, "ou", 13, ui::OURO);
+                if ui::botao(rg, "Entrar com Google", true) {
+                    self.campo_login_ativo = false;
+                    self.google.iniciar();
+                }
+                if let Some(e) = self.google.texto() {
+                    ui::erro(cx, rg.y + rg.h + 16.0, &e);
+                }
+            }
         }
         if ui::botao(Rect::new(r.x, r.y + r.h - 40.0, 140.0, 36.0), "< voltar", true) {
+            self.campo_login_ativo = false;
+            self.google.cancelar();
             self.tela = Tela::Servidores;
+        }
+    }
+
+    /// Um quadro do login com Google: abre o navegador e, quando o navegador
+    /// termina, entra com a sessao recebida.
+    fn passo_google(&mut self) {
+        match self.google.tick(get_time()) {
+            Some(login_google::Saida::AbrirUrl(url)) => {
+                if !nativo::abrir_url(&url) {
+                    self.google.falhou("Não consegui abrir o navegador.");
+                }
+            }
+            Some(login_google::Saida::Pronto { usuario, token }) => {
+                self.usuario = usuario;
+                self.senha.clear();
+                self.token_login = Some(token);
+                if matches!(self.tela, Tela::Login) {
+                    self.conectar();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Teclado da tela: aberto enquanto um campo de texto tem foco.
+    fn passo_teclado_virtual(&mut self) {
+        let precisa = match self.tela {
+            Tela::Login => self.campo_login_ativo,
+            Tela::Personagens => self.selecao_personagem.foco_no_nome(),
+            _ => false,
+        };
+        if let Some(mostrar) = self.teclado_virtual.quer(precisa) {
+            nativo::teclado_virtual(mostrar);
         }
     }
 

@@ -25,4 +25,6 @@ thiserror.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 base64 = "0.22"
 jsonwebtoken = "9"
+# PKCE S256 e hash do token de sessao do login com Google.
+sha2 = "0.10"
 image = { version = "0.25", default-features = false, features = ["png"] }

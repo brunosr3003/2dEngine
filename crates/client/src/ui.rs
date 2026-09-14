@@ -27,10 +27,21 @@ pub fn fundo() {
     draw_circle(w * 0.5, -h * 0.35, h * 0.9, Color::new(0.30, 0.55, 0.85, 0.05));
 }
 
+thread_local! {
+    /// Quanto os paineis sobem com o teclado da tela aberto (ver
+    /// `teclado_virtual::deslocamento`). Zero no desktop.
+    static SUBIDA: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
+}
+
+/// Sobe os paineis centralizados em `dy` px (0 = centro normal).
+pub fn subir_paineis(dy: f32) {
+    SUBIDA.with(|s| s.set(dy.max(0.0)));
+}
+
 /// Painel centralizado. Devolve o retangulo util, ja com margem.
 pub fn painel(largura: f32, altura: f32, titulo: &str) -> Rect {
     let x = (screen_width() - largura) * 0.5;
-    let y = (screen_height() - altura) * 0.5;
+    let y = (screen_height() - altura) * 0.5 - SUBIDA.with(|s| s.get());
     let r = Rect::new(x, y, largura, altura);
     estilo::painel_destaque(r, OURO);
     if !titulo.is_empty() {

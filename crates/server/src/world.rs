@@ -3485,6 +3485,8 @@ impl GameWorld {
             s.pending_auth_username = Some(success.username.clone());
             s.pending_auth_class = Some(success.class.clone());
             s.account_id = Some(success.account_id);
+            // Login por sessao (Google) chega sem nome: vem do banco.
+            s.name = success.username.clone();
         }
         self.send_character_list(sid, success.account_id);
         return;
@@ -5370,6 +5372,31 @@ impl GameWorld {
                         &password,
                     )
                     .await;
+                    let _ = auth_ctx.tx.send(IncomingMessage::AuthResult(id, result));
+                });
+            }
+            ClientMessage::LoginToken { token } => {
+                // Igual ao `Login`, mas pela sessao do login com Google. O nome
+                // da conta so' e' conhecido quando o banco responde
+                // (`on_auth_result` preenche `session.name`).
+                let handle = {
+                    let Some(session) = self.sessions.get_mut(&id) else { return };
+                    if session.logged_in || session.auth_in_flight {
+                        return;
+                    }
+                    session.auth_in_flight = true;
+                    session.handle.clone()
+                };
+
+                let Some(auth_ctx) = self.auth_ctx.clone() else {
+                    let _ = handle.to_client.send(ServerMessage::LoginDenied {
+                        reason: "auth nao disponivel".into(),
+                    });
+                    return;
+                };
+
+                tokio::spawn(async move {
+                    let result = crate::auth::authenticate_token(&auth_ctx.pool, &token).await;
                     let _ = auth_ctx.tx.send(IncomingMessage::AuthResult(id, result));
                 });
             }

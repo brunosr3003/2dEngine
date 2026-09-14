@@ -11,6 +11,7 @@
 mod auth;
 mod db;
 mod econ_admin;
+mod google;
 mod pixel;
 
 use anyhow::Result;
@@ -69,11 +70,18 @@ async fn main() -> Result<()> {
     tracing::info!("pixel editor: gemini_key={}",
         if pixel_state.gemini_key.is_some() { "configurada" } else { "NAO configurada" });
 
+    let google_state = google::GoogleState::from_env(pool_arc.clone());
+    tracing::info!(
+        "login com Google: {}",
+        if google_state.ligado() { "configurado" } else { "desligado (sem GOOGLE_CLIENT_ID/SECRET)" }
+    );
+
     let econ_state = econ_admin::EconState::from_env(pool_arc);
     tracing::info!("econ admin: pronto (POST /api/econ/login)");
 
     let app = Router::new()
         .nest("/api", api)
+        .nest("/api/auth/google", google::router(google_state))
         .nest("/api/pixel", pixel::router(pixel_state))
         .nest("/api/econ", econ_admin::router(econ_state))
         .fallback_service(ServeDir::new(&static_dir).append_index_html_on_directories(true))

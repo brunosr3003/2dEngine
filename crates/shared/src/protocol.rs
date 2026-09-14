@@ -260,6 +260,11 @@ pub enum ClientMessage {
     /// seguro ate' +5, do +6 em diante falhar DESTROI. Resposta:
     /// `RefinoResultado`. Vale de qualquer lugar (menu).
     Refinar { alvo: AlvoDaForja },
+
+    /// Login apos handshake com a sessao emitida pelo login com Google (o
+    /// `web` entrega ao cliente no `/api/auth/google/poll`). Mesma resposta
+    /// do `Login`. Ver docs/LOGIN_GOOGLE.md.
+    LoginToken { token: String },
 }
 
 /// Onde esta' a peca que a forja vai refinar.

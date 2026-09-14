@@ -97,3 +97,49 @@ pub async fn authenticate(
         Err(AuthError::InvalidCredentials)
     }
 }
+
+/// SHA-256 em hex. O `web` grava assim em `login_tokens` (mesma conta dos
+/// dois lados — ver `crates/web/src/google.rs`).
+pub fn hash_do_token(token: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(token.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Login pela sessao que o login com Google emitiu (docs/LOGIN_GOOGLE.md).
+///
+/// Sem argon2: o token e' aleatorio de 256 bits, conferido pelo hash, entao nao
+/// passa pela fila de login. Vale ate' vencer — o cliente reusa na troca de
+/// zona, como reusa a senha hoje.
+pub async fn authenticate_token(pool: &PgPool, token: &str) -> Result<AuthSuccess, AuthError> {
+    if !(20..=128).contains(&token.len()) {
+        return Err(AuthError::InvalidCredentials);
+    }
+    let row = sqlx::query_as::<_, (i64, String, String)>(
+        "SELECT a.id, a.username, a.class
+           FROM login_tokens t JOIN accounts a ON a.id = t.account_id
+          WHERE t.token_hash = $1 AND t.expires_at > NOW()",
+    )
+    .bind(hash_do_token(token))
+    .fetch_optional(pool)
+    .await;
+    match row {
+        Ok(Some((id, username, class))) => Ok(AuthSuccess { account_id: id, username, class }),
+        Ok(None) => Err(AuthError::InvalidCredentials),
+        // Tabela ainda nao criada (o `web` e' quem cria): nao ha' sessao valida.
+        Err(sqlx::Error::Database(e)) if e.code().as_deref() == Some("42P01") => {
+            Err(AuthError::InvalidCredentials)
+        }
+        Err(e) => Err(AuthError::Internal(format!("{e:?}"))),
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    #[test]
+    fn hash_do_token_e_sha256_hex() {
+        assert_eq!(
+            super::hash_do_token("abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+}
