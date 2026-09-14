@@ -91,23 +91,38 @@ Requer Android NDK instalado e `ANDROID_NDK_HOME` setado.
 
 ---
 
-## iOS — planejado na Fase 5
+## iOS (TestFlight)
 
-### Opção A: `cargo-mobile2`
+Sem projeto Xcode: o binário do cargo já é o app (a miniquad chama
+`UIApplicationMain`). No Mac:
 
 ```sh
-cargo install cargo-mobile2
-cargo mobile init  # gera projeto Xcode
-cargo apple run --release
+rustup target add aarch64-apple-ios   # uma vez
+scripts/build-ios.sh                  # build + .ipa + upload pro TestFlight
+scripts/build-ios.sh --skip-upload    # só o .ipa em target/ios/
 ```
 
-### Opção B: Xcode wrapper manual
+O script compila `--target aarch64-apple-ios` (deployment target 15.0), monta
+`target/ios/Payload/Tempest.app` com `assets/vox` (o único asset lido do disco;
+fontes e ícones são `include_bytes!`), gera o `Assets.car` do ícone com `actool`
+a partir de `assets/ios/AppIcon-1024.png` (`python3 tools/ios/gerar_icone.py`),
+escreve o `Info.plist` (paisagem, tela cheia, `com.brunji.tempest`, versão
+`1.1`, build = `aammddHHMM` UTC), acha o profile de App Store do bundle,
+assina com a identidade "Apple Distribution" do time e envia com `altool`.
 
-Similar ao Android Opção B — `.a` static lib buildada pelo cargo + Xcode
-project com SwiftUI bootstrap chamando `ios_main`.
+Credenciais ficam fora do repo: `~/MMORPG/.env` (`APPLE_TEAM_ID`,
+`APP_BUNDLE_ID`, `ASC_API_KEY_ID`, `ASC_API_ISSUER_ID`) e a chave em
+`~/.appstoreconnect/private_keys/`.
 
-Requer Apple Developer account ($99/ano) para distribuir. TestFlight
-para beta.
+**Assinar por SSH:** o keychain de login fica trancado numa sessão SSH e o
+`codesign` falha com `errSecInternalComponent` (o `xcodebuild -exportArchive`
+com a API key também assina localmente e falha igual). Rodando no Terminal
+do próprio Mac funciona sem nada. Por SSH, o script destranca o keychain se
+achar a senha do Mac em `$KEYCHAIN_PASSWORD` ou em `~/.tempest-keychain-pass`
+(fora do repo, `chmod 600`).
+
+No iOS o cliente usa o web de produção `mmo.brunji.com.br:80` (sem variável
+de ambiente) e abre em tela cheia com `high_dpi`.
 
 ---
 

@@ -145,6 +145,20 @@ done
 [ -n "$PROFILE" ] || { echo "ERRO: profile de App Store pra $TEAM.$BUNDLE nao encontrado"; exit 1; }
 cp "$PROFILE" "$APP/embedded.mobileprovision"
 
+# Por SSH o keychain de login fica TRANCADO ("User interaction is not
+# allowed") e o codesign falha com errSecInternalComponent. Rodando no
+# Terminal do proprio Mac (sessao grafica) nao precisa de nada. Por SSH, a
+# senha do Mac vem de $KEYCHAIN_PASSWORD ou de ~/.tempest-keychain-pass (fora
+# do repo, chmod 600).
+KC="$HOME/Library/Keychains/login.keychain-db"
+if [ -z "${KEYCHAIN_PASSWORD:-}" ] && [ -f "$HOME/.tempest-keychain-pass" ]; then
+  KEYCHAIN_PASSWORD="$(cat "$HOME/.tempest-keychain-pass")"
+fi
+if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
+  security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KC"
+  security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KC" >/dev/null
+fi
+
 IDENT="$(security find-identity -v -p codesigning | awk -v t="($TEAM)" '/Apple Distribution/ && index($0,t){print $2; exit}')"
 [ -n "$IDENT" ] || { echo "ERRO: identidade Apple Distribution do time $TEAM nao encontrada"; exit 1; }
 codesign --force --timestamp --sign "$IDENT" --entitlements "$SAIDA/entitlements.plist" "$APP"
