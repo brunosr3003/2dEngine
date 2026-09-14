@@ -444,6 +444,13 @@ fn window_conf() -> Conf {
     // Sem isto a janela se anuncia como "miniquad-application", o nome
     // generico do framework.
     conf.platform.linux_wm_class = "tempest";
+    // iPhone/iPad: tela cheia na resolucao nativa. A orientacao (paisagem)
+    // vem do Info.plist do pacote (scripts/build-ios.sh).
+    #[cfg(target_os = "ios")]
+    {
+        conf.fullscreen = true;
+        conf.high_dpi = true;
+    }
     conf
 }
 

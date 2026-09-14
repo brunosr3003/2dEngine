@@ -49,7 +49,13 @@ impl Canal {
 /// Dispara a busca. O resultado (ou o erro) chega pelo receiver.
 pub fn buscar_canais() -> Receiver<Result<Vec<Canal>, String>> {
     let (tx, rx) = mpsc::channel();
-    let endereco = std::env::var("MMO_API").unwrap_or_else(|_| "127.0.0.1:8080".into());
+    // No iPhone nao ha variavel de ambiente nem servidor local: vai direto no
+    // web de producao (docs/SERVIDORES_E_CANAIS.md).
+    #[cfg(target_os = "ios")]
+    const PADRAO: &str = "mmo.brunji.com.br:80";
+    #[cfg(not(target_os = "ios"))]
+    const PADRAO: &str = "127.0.0.1:8080";
+    let endereco = std::env::var("MMO_API").unwrap_or_else(|_| PADRAO.into());
     std::thread::spawn(move || {
         let _ = tx.send(buscar(&endereco));
     });
