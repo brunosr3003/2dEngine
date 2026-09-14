@@ -2,12 +2,12 @@
 // Rode `python3 tools/icones/gerar_icones.py` pra refazer atlas e indice.
 
 /// Lado de uma celula do atlas, em pixels.
-pub const LADO: u32 = 48;
+pub const LADO: u32 = 96;
 /// Celulas por linha do atlas.
 pub const COLUNAS: u32 = 10;
 /// Dimensoes do atlas, em pixels.
-pub const LARGURA: u32 = 480;
-pub const ALTURA: u32 = 432;
+pub const LARGURA: u32 = 960;
+pub const ALTURA: u32 = 864;
 /// (item_id, celula), ordenado por item_id.
 pub const ICONES: &[(u16, u16)] = &[
     (1, 0),

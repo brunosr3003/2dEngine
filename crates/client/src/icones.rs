@@ -1,5 +1,6 @@
-//! Icones dos itens: um por id, pixel art num atlas gerado por
-//! `tools/icones/gerar_icones.py` (ver docs/PIPELINE_ARTE.md).
+//! Icones dos itens: um por id, ilustrados (SVG rasterizado com
+//! anti-aliasing) num atlas gerado por `tools/icones/gerar_icones.py` (ver
+//! docs/PIPELINE_ARTE.md).
 //!
 //! O PNG vai DENTRO do binario (`include_bytes!`), como a fonte da HUD: nao
 //! ha' carregamento assincrono no boot nem arquivo que falte em runtime. A
@@ -26,8 +27,9 @@ fn atlas() -> Texture2D {
     ATLAS.with(|c| {
         c.get_or_init(|| {
             let t = Texture2D::from_file_with_format(PNG, Some(ImageFormat::Png));
-            // Pixel art: esticar sem borrar.
-            t.set_filter(FilterMode::Nearest);
+            // Celula grande (96) desenhada menor: filtro linear reduz liso;
+            // o nearest da pixel art antiga serrilhava a ilustracao.
+            t.set_filter(FilterMode::Linear);
             t
         })
         .clone()

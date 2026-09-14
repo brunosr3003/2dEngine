@@ -443,6 +443,46 @@ pub struct VoxCache {
     armas: HashMap<String, Vec<Mesh>>,
 }
 
+/// Bytes de `<raiz dos vox>/<rel>` (raiz = `MMO_VOX` ou `assets/vox`). Falta
+/// de arquivo LOGA: no iPhone ela era silenciosa e o personagem simplesmente
+/// nao aparecia.
+async fn ler_vox(rel: &str) -> Option<Vec<u8>> {
+    let root = std::env::var("MMO_VOX").unwrap_or_else(|_| "assets/vox".into());
+    let caminho = format!("{root}/{rel}");
+    match ler_asset(&caminho).await {
+        Ok(bytes) => Some(bytes),
+        Err(e) => {
+            eprintln!("[vox] falta {caminho}: {e}");
+            None
+        }
+    }
+}
+
+/// iOS: o `load_file` da miniquad 0.4.11 procura com
+/// `[NSBundle pathForResource:ofType:]`, que so' acha arquivo na RAIZ do bundle
+/// — "assets/vox/personagem/corpo" com barras volta nil. Nenhum `.vox` carregava
+/// no iPhone. O `.app` e' a pasta do executavel e o `build-ios.sh` copia
+/// `assets/vox` pra dentro dela, entao le' direto dali.
+#[cfg(target_os = "ios")]
+async fn ler_asset(caminho: &str) -> Result<Vec<u8>, String> {
+    let exe = std::env::current_exe().map_err(|e| format!("sem executavel: {e}"))?;
+    let pasta = exe.parent().ok_or("executavel sem pasta")?;
+    let arquivo = no_bundle(pasta, caminho);
+    std::fs::read(&arquivo).map_err(|e| format!("{} ({e})", arquivo.display()))
+}
+
+#[cfg(not(target_os = "ios"))]
+async fn ler_asset(caminho: &str) -> Result<Vec<u8>, String> {
+    macroquad::file::load_file(caminho).await.map_err(|e| format!("{e:?}"))
+}
+
+/// Caminho de um asset dentro da pasta do app. Absoluto (ex. `MMO_VOX=/x`)
+/// fica como esta'.
+pub fn no_bundle(pasta_do_app: &std::path::Path, caminho: &str) -> std::path::PathBuf {
+    let p = std::path::Path::new(caminho);
+    if p.is_absolute() { p.to_path_buf() } else { pasta_do_app.join(p) }
+}
+
 impl VoxCache {
     /// Malha ja carregada. O desenho e' sincrono, entao a carga acontece
     /// antes (`load`) e aqui so' se consulta.
@@ -455,8 +495,7 @@ impl VoxCache {
     /// `<nome>_<sufixo>`. E' a regra "o tier e' uma cor, nao um modelo" — um
     /// arquivo, varias malhas geradas no carregamento.
     pub async fn load_variantes(&mut self, name: &str, scale: f32, variantes: &[(&str, [[u8; 3]; 4])]) -> Option<()> {
-        let root = std::env::var("MMO_VOX").unwrap_or_else(|_| "assets/vox".into());
-        let bytes = macroquad::file::load_file(&format!("{root}/{name}.vox")).await.ok()?;
+        let bytes = ler_vox(&format!("{name}.vox")).await?;
         let base = parse(&bytes).ok()?.into_iter().max_by_key(|m| m.cells.iter().filter(|c| **c != 0).count())?;
         for (sufixo, cores) in variantes {
             let m = na_cor(&base, cores);
@@ -475,8 +514,7 @@ impl VoxCache {
     /// no centro da pega, apaga ele e faz a malha em volta desse ponto — e'
     /// onde a mao fecha (docs/ARTE_DO_PERSONAGEM.md, skins de arma).
     pub async fn load_arma(&mut self, name: &str, scale: f32) -> Option<usize> {
-        let root = std::env::var("MMO_VOX").unwrap_or_else(|_| "assets/vox".into());
-        let bytes = macroquad::file::load_file(&format!("{root}/personagem/{name}.vox")).await.ok()?;
+        let bytes = ler_vox(&format!("personagem/{name}.vox")).await?;
         let (m, pega) = modelo_de_arma(&bytes)?;
         let malhas = mesh_na_origem(&m, scale, pega);
         let tris = malhas.iter().map(|x| x.indices.len() / 3).sum::<usize>();
@@ -497,8 +535,7 @@ impl VoxCache {
     /// o pivo e' da peca: a pose gira em volta dele sem desmontar o corpo.
     pub async fn load_bicho(&mut self, name: &str, altura: f32) -> Option<usize> {
         use crate::bicho::{junta_de, pivo_vox, Bicho, Junta, PecaDeBicho};
-        let root = std::env::var("MMO_VOX").unwrap_or_else(|_| "assets/vox".into());
-        let bytes = macroquad::file::load_file(&format!("{root}/{name}.vox")).await.ok()?;
+        let bytes = ler_vox(&format!("{name}.vox")).await?;
         let pecas = parse_nomeado(&bytes).ok()?;
         let caixas: Vec<_> = pecas.iter().map(|(_, m)| m.bounds()).collect();
         let mut lo = [usize::MAX; 3];
@@ -573,8 +610,7 @@ impl VoxCache {
     /// nome. `None` quando o arquivo nao existe — o cliente cai no modelo
     /// inteiro de antes.
     pub async fn load_rig(&mut self, name: &str, scale: f32, pivo: impl Fn(&str) -> [f32; 3]) -> Option<usize> {
-        let root = std::env::var("MMO_VOX").unwrap_or_else(|_| "assets/vox".into());
-        let bytes = macroquad::file::load_file(&format!("{root}/{name}.vox")).await.ok()?;
+        let bytes = ler_vox(&format!("{name}.vox")).await?;
         let pecas = parse_nomeado(&bytes).ok()?;
         let mut mapa = HashMap::new();
         let mut tris = 0usize;
@@ -611,9 +647,7 @@ impl VoxCache {
 
     async fn carrega(&mut self, name: &str, escala: impl Fn(&VoxModel) -> f32) -> Option<&Vec<Mesh>> {
         if !self.meshes.contains_key(name) {
-            let root = std::env::var("MMO_VOX").unwrap_or_else(|_| "assets/vox".into());
-            let path = format!("{root}/{name}.vox");
-            let bytes = macroquad::file::load_file(&path).await.ok()?;
+            let bytes = ler_vox(&format!("{name}.vox")).await?;
             let models = parse(&bytes).ok()?;
             let m = models.into_iter().max_by_key(|m| {
                 m.cells.iter().filter(|c| **c != 0).count()
@@ -630,6 +664,25 @@ impl VoxCache {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// No iPhone o asset sai da pasta do app, com as subpastas. E o que a
+    /// previa precisa esta' em `assets/vox` e o `build-ios.sh` copia essa pasta.
+    #[test]
+    fn asset_do_ios_vem_da_pasta_do_app_com_subpastas() {
+        let app = std::path::Path::new("/private/var/containers/Bundle/Application/X/Tempest.app");
+        assert_eq!(
+            no_bundle(app, "assets/vox/personagem/corpo.vox"),
+            app.join("assets").join("vox").join("personagem").join("corpo.vox")
+        );
+        assert_eq!(no_bundle(app, "/tmp/vox/a.vox"), std::path::PathBuf::from("/tmp/vox/a.vox"));
+        let raiz = format!("{}/../../assets/vox", env!("CARGO_MANIFEST_DIR"));
+        for rig in [crate::render3d::RIG_CORPO, crate::render3d::RIG_CHAPEU] {
+            let arquivo = format!("{raiz}/{rig}.vox");
+            assert!(std::path::Path::new(&arquivo).exists(), "a previa usa {arquivo}, que nao existe");
+        }
+        let script = include_str!("../../../scripts/build-ios.sh");
+        assert!(script.contains("assets/vox"), "build-ios.sh nao copia assets/vox pro app");
+    }
 
     /// TODO modelo tem que olhar pro `+Y` do voxel, que a malha manda pro
     /// `+Z` do mundo — que e' pra onde o codigo de rotacao assume que a

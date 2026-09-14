@@ -246,7 +246,18 @@ impl Personagens {
             if let Some(antes)=self.mouse_anterior {self.giro+=(mouse.x-antes.x)*0.012;}
             self.mouse_anterior=Some(mouse);
         } else {self.mouse_anterior=None;}
-        let Some(corpo)=vox.rig(render3d::RIG_CORPO) else {return};
+        let Some(corpo)=vox.rig(render3d::RIG_CORPO) else {
+            // Sem o corpo nao ha' o que girar — mas sumir com a area inteira
+            // escondia a causa (no iPhone nenhum .vox carregava). Fundo, aviso
+            // na tela e uma linha de log.
+            static AVISOU: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !AVISOU.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                eprintln!("[previa] rig {} nao carregou — veja as linhas [vox] falta", render3d::RIG_CORPO);
+            }
+            draw_rectangle(r.x,r.y,r.w,(r.h-84.0).max(1.0),Color::new(0.026,0.041,0.063,1.0));
+            ui::texto_centro(r.x+r.w*0.5,r.y+(r.h-84.0)*0.5,"Modelo do personagem indisponível",14,ui::SUAVE);
+            return;
+        };
         let rt=self.retrato.as_ref().unwrap();
         let distancia=4.7*(0.62/(w as f32/h as f32)).max(1.0);
         let cam=Camera3D{position:vec3(0.0,1.35,distancia),target:vec3(0.0,0.88,0.0),up:Vec3::Y,

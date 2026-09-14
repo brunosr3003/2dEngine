@@ -41,6 +41,8 @@ mod telegrafico;
 mod chefe_anim;
 mod toque;
 mod gesto_camera;
+mod camera_suave;
+mod joystick;
 mod barra;
 mod preferencias;
 mod config_barra;
@@ -284,6 +286,12 @@ struct Jogo {
     toque_acao: gesto_camera::Acao,
     /// Havia dedo na tela neste quadro: o aperto simulado do mouse nao vale.
     toque_ativo: bool,
+    /// Alvos da camera (a entrada mexe neles; a camera persegue).
+    camera_suave: camera_suave::CameraSuave,
+    /// Um dedo girou a camera e ainda nao soltou: ao soltar sobra inercia.
+    girando_toque: bool,
+    /// WASD virtual na metade esquerda (so' com toque).
+    joystick: joystick::Joystick,
     rede: hud::Rede,
     ultimo_ping: f64,
     /// Marca da ultima janela de banda: instante e total de bytes.
@@ -423,6 +431,9 @@ async fn main() {
         gesto_camera: gesto_camera::GestoCamera::default(),
         toque_acao: gesto_camera::Acao::Nada,
         toque_ativo: false,
+        camera_suave: camera_suave::CameraSuave::default(),
+        girando_toque: false,
+        joystick: joystick::Joystick::default(),
         rede: hud::Rede::default(),
         ultimo_ping: 0.0,
         banda_marca: (0.0, 0),
@@ -1101,8 +1112,7 @@ impl Jogo {
     /// A cada quadro: interage com o NPC pendente ao chegar, e fecha a loja
     /// longe do vendedor. Andar no teclado desiste de ir ate' o NPC.
     fn acompanhar_loja(&mut self) {
-        let teclas = [KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D, KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right];
-        if teclas.iter().any(|k| is_key_down(*k)) {
+        if self.andando_na_mao() {
             self.interacao.cancela();
         }
         let eu = self.world.self_pos();
@@ -1616,10 +1626,9 @@ impl Jogo {
         if !self.auto_missao.ativo() {
             return;
         }
-        let teclas = [KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D, KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right];
         let morto = self.world.self_id.and_then(|id| self.world.ents.get(&id))
             .is_some_and(|e| e.state.hp == 0 || e.morte.is_some());
-        if teclas.iter().any(|k| is_key_down(*k)) || morto {
+        if self.andando_na_mao() || morto {
             self.auto_missao.parar();
             self.chat.push(if morto { "Auto missão pausada: você caiu." } else { "Auto missão pausada." }.into());
             return;
@@ -1694,8 +1703,7 @@ impl Jogo {
                 e.mira = Some((c, 0.3));
             }
         }
-        let movimento = [KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D, KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right]
-            .iter().any(|k| is_key_down(*k));
+        let movimento = self.andando_na_mao();
         self.acompanhar_coleta_manual(movimento);
         // O botao: toque CURTO liga/desliga; SEGURAR ou a engrenagem no canto
         // abrem a configuracao (sem botao direito no toque). Liga no SOLTAR, e
@@ -1819,10 +1827,9 @@ impl Jogo {
         if !self.ir_para.ativo() {
             return;
         }
-        let teclas = [KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D, KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right];
         let morto = self.world.self_id.and_then(|id| self.world.ents.get(&id))
             .is_some_and(|e| e.state.hp == 0 || e.morte.is_some());
-        if morto || teclas.iter().any(|k| is_key_down(*k)) {
+        if morto || self.andando_na_mao() {
             self.ir_para.parar();
             self.mapa.viagem.cancelar();
             return;
@@ -1892,10 +1899,9 @@ impl Jogo {
         if !self.mapa.viagem.ativa() {
             return;
         }
-        let teclas = [KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D, KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right];
         let morto = self.world.self_id.and_then(|id| self.world.ents.get(&id))
             .is_some_and(|e| e.state.hp == 0 || e.morte.is_some());
-        if morto || teclas.iter().any(|k| is_key_down(*k)) {
+        if morto || self.andando_na_mao() {
             self.mapa.viagem.cancelar();
             return;
         }
@@ -1926,7 +1932,7 @@ impl Jogo {
     }
 
     fn atualizar_auto_combate(&mut self) {
-        let movimento=[KeyCode::W,KeyCode::A,KeyCode::S,KeyCode::D,KeyCode::Up,KeyCode::Down,KeyCode::Left,KeyCode::Right].iter().any(|k|is_key_down(*k));
+        let movimento=self.andando_na_mao();
         let clique_mundo=self.clique_no_mundo() && !self.ui_pega_mouse();
         // O botao so' existe com o HUD a' mostra; a tecla Z vale sempre. Painel
         // aberto NAO desliga o AUTO (MIR4: o menu aberto nao para o combate).
@@ -1973,8 +1979,7 @@ impl Jogo {
     fn ir_ate_o_alvo(&mut self) {
         if self.habilidades.ocupada() { return; }
         let Some(alvo) = self.alvo else { return };
-        let teclas = [KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D, KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right];
-        if teclas.iter().any(|k| is_key_down(*k)) {
+        if self.andando_na_mao() {
             return;
         }
         let eu = self.world.self_id.and_then(|i| self.world.ents.get(&i));
@@ -2121,10 +2126,34 @@ impl Jogo {
                 pos: t.position,
             })
             .collect();
+        // Joystick primeiro: um dedo que COMECA na metade esquerda de baixo,
+        // fora de botao/painel, e' dele — e some da lista da camera e do
+        // clique. Painel grande aberto: sem joystick.
+        let z = hud_layout::atual();
+        let painel = self.painel_grande();
+        if painel {
+            self.joystick.soltar();
+        }
+        let so_um_dedo = toques.len() == 1;
+        let sobre_ui = self.ui_pega_mouse();
+        let pode_comecar = |p: Vec2| {
+            !painel && z.joystick.contains(p) && !z.contem(p) && !(so_um_dedo && sobre_ui)
+        };
+        self.joystick.quadro(&toques, joystick::RAIO_BASE * z.s, &pode_comecar);
+        let resto = joystick::sem_dedo(&toques, self.joystick.dedo());
         // O HUD e' conferido no ponto do dedo (a macroquad ja' levou o mouse
         // simulado pra la').
-        let sobre_hud = !toques.is_empty() && self.ui_pega_mouse();
-        self.toque_acao = self.gesto_camera.quadro(&toques, sobre_hud);
+        let sobre_hud = !resto.is_empty() && sobre_ui;
+        self.toque_acao = self.gesto_camera.quadro(&resto, sobre_hud);
+    }
+
+    /// Andar "na mao": WASD/setas ou o joystick virtual. E' o que pausa auto
+    /// missao, viagem, ir-para e a ida ate' o NPC.
+    fn andando_na_mao(&self) -> bool {
+        let teclas = [KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D, KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right]
+            .iter()
+            .any(|k| is_key_down(*k));
+        joystick::movimento_manual(teclas, &self.joystick)
     }
 
     /// Clique no MUNDO neste quadro: com dedo, so' o toque curto no soltar;
@@ -2144,12 +2173,17 @@ impl Jogo {
     }
 
     fn camera_controles(&mut self) {
-        let dt = get_frame_time();
+        let dt = get_frame_time().min(0.1);
+        // Tudo abaixo mexe no ALVO; a camera persegue no fim (camera_suave).
+        // Valor mudado por fora (preferencia carregada) vira o alvo.
+        self.camera_suave.sincroniza(self.cam_yaw, self.cam_pitch_ajuste, self.cam_zoom);
+        let mut dyaw = 0.0f32;
+        let mut dzoom = 0.0f32;
         if is_key_down(KeyCode::Q) {
-            self.cam_yaw -= 2.2 * dt;
+            dyaw -= 2.2 * dt;
         }
         if is_key_down(KeyCode::E) {
-            self.cam_yaw += 2.2 * dt;
+            dyaw += 2.2 * dt;
         }
         // R e F sairam da camera: F ataca e R fica reservado pro golpe letal
         // (MIR4). Inclinar e' o arrasto do botao do meio (ou do direito) —
@@ -2175,7 +2209,7 @@ impl Jogo {
         if is_mouse_button_down(MouseButton::Middle) || self.arrasto_virou_camera {
             let p = vec2(mx, my);
             if let Some(anterior) = self.arrasto {
-                self.cam_yaw += (p.x - anterior.x) * 0.008;
+                dyaw += (p.x - anterior.x) * 0.008;
                 // Arrastar pra baixo LEVANTA a camera. E' a leitura de quem
                 // esta' com o mundo na mao e nao com a cabeca: puxar o chao
                 // pra baixo e' olhar de mais alto.
@@ -2187,20 +2221,66 @@ impl Jogo {
         }
         // Toque: um dedo arrastando no mundo gira com a MESMA sensibilidade do
         // arrasto do mouse; a pinca aproxima/afasta na faixa da roda.
+        // O delta do dedo passa por uma media curta: no iPhone os eventos
+        // chegam em ritmo irregular, e somado cru a camera anda aos degraus.
         match self.toque_acao {
             gesto_camera::Acao::Gira(d) => {
-                self.cam_yaw += d.x * 0.008;
-                mexeu += d.y * 0.004;
+                let f = self.camera_suave.filtro.filtra(d, dt);
+                dyaw += f.x * 0.008;
+                mexeu += f.y * 0.004;
+                self.camera_suave.inercia.para();
+                self.girando_toque = true;
             }
             gesto_camera::Acao::Zoom(d) if !self.painel_grande() => {
                 // Abrir os dedos aproxima, como a roda pra cima.
-                self.cam_zoom = (self.cam_zoom - d * 0.004).clamp(render3d::ZOOM_MIN, render3d::ZOOM_MAX);
+                dzoom -= d * 0.004;
             }
-            _ => {}
+            _ => {
+                if self.girando_toque {
+                    if self.gesto_camera.ativo() {
+                        // Dedo parado na tela: a media esvazia sozinha.
+                        let f = self.camera_suave.filtro.filtra(Vec2::ZERO, dt);
+                        dyaw += f.x * 0.008;
+                        mexeu += f.y * 0.004;
+                    } else {
+                        // Soltou: sobra a inercia do arrasto.
+                        let v = self.camera_suave.filtro.velocidade();
+                        self.camera_suave.inercia.solta(vec2(v.x * 0.008, v.y * 0.004));
+                        self.camera_suave.filtro.zera();
+                        self.girando_toque = false;
+                    }
+                }
+            }
         }
-        if mexeu != 0.0 {
-            self.cam_pitch_ajuste += mexeu;
+        let embalo = self.camera_suave.inercia.passo(dt);
+        dyaw += embalo.x;
+        mexeu += embalo.y;
+        let (_, roda) = mouse_wheel();
+        // Roda em cima do mapa e' zoom do MAPA, nao da camera.
+        if roda != 0.0 && !self.mapa.pega_mouse() && !self.painel_grande() {
+            dzoom -= roda.signum() * 0.12;
         }
+
+        // ── alvos ──
+        let cs = &mut self.camera_suave;
+        cs.yaw += dyaw;
+        if cs.yaw > std::f32::consts::PI {
+            cs.yaw -= std::f32::consts::TAU;
+        } else if cs.yaw < -std::f32::consts::PI {
+            cs.yaw += std::f32::consts::TAU;
+        }
+        cs.zoom = (cs.zoom + dzoom).clamp(render3d::ZOOM_MIN, render3d::ZOOM_MAX);
+        // O ajuste do alvo ja' nasce dentro da banda do zoom do alvo, senao a
+        // mao empurra um desvio que a camera nunca alcanca.
+        let base_alvo = render3d::pitch_do_zoom(cs.zoom);
+        let piso_alvo = render3d::pitch_min_para(cs.zoom);
+        cs.ajuste = (base_alvo + cs.ajuste + mexeu).clamp(piso_alvo, render3d::PITCH_MAX) - base_alvo;
+
+        // ── a camera persegue ──
+        let (yaw, ajuste, zoom) = cs.persegue(self.cam_yaw, self.cam_pitch_ajuste, self.cam_zoom, dt);
+        self.cam_yaw = yaw;
+        self.cam_pitch_ajuste = ajuste;
+        self.cam_zoom = zoom;
         // A roda escolhe o enquadramento; o ajuste da mao vai por cima. O
         // recorte e' no fim, com a banda daquele zoom: afastar EMPURRA a
         // camera pra cima em vez de recusar o zoom — recusar seria a roda
@@ -2211,12 +2291,6 @@ impl Jogo {
         // Devolve o ajuste recortado, senao a mao acumula um desvio invisivel
         // e a camera fica surda por meia volta de roda.
         self.cam_pitch_ajuste = self.cam_pitch - base;
-        let (_, roda) = mouse_wheel();
-        // Roda em cima do mapa e' zoom do MAPA, nao da camera.
-        if roda != 0.0 && !self.mapa.pega_mouse() && !self.painel_grande() {
-            self.cam_zoom = (self.cam_zoom - roda.signum() * 0.12)
-                .clamp(render3d::ZOOM_MIN, render3d::ZOOM_MAX);
-        }
         // Mantem o angulo em [-pi, pi]: sem isso ele cresce sem limite e a
         // precisao do f32 come a suavidade depois de uns minutos girando.
         if self.cam_yaw > std::f32::consts::PI {
@@ -2224,6 +2298,7 @@ impl Jogo {
         } else if self.cam_yaw < -std::f32::consts::PI {
             self.cam_yaw += std::f32::consts::TAU;
         }
+        self.camera_suave.escreveu(self.cam_yaw, self.cam_pitch_ajuste, self.cam_zoom);
     }
 
 
@@ -2242,6 +2317,12 @@ impl Jogo {
         if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) { dir.x += 1.0; }
         if dir != Vec2::ZERO {
             dir = dir.normalize();
+        }
+        // Joystick virtual: mesma direcao de TELA do WASD, com intensidade
+        // (o servidor so' normaliza acima de 1 — empurrao leve anda devagar).
+        let joy = self.joystick.direcao();
+        if joy != Vec2::ZERO {
+            dir = joy;
         }
         // "Pra frente" e' longe da camera, nao o norte do mundo. A conta e'
         // aqui; o que sai no fio continua sendo direcao em espaco de mundo.
@@ -2563,6 +2644,8 @@ impl Jogo {
         if let Some((texto, cor)) = self.texto_da_faixa() {
             hud_layout::desenha_faixa(&z, &texto, cor);
         }
+        // Joystick virtual: so' aparece com o dedo na tela.
+        self.joystick.desenha();
         if self.coleta_hud.ativa() {
             self.coleta_hud.desenha(&z, get_time());
         }

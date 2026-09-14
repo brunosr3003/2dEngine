@@ -121,6 +121,16 @@ limpa o alvo e desliga o AUTO.
 - **Alt:** mostra a tecla de cada botão. **Alt+Enter:** tela cheia.
 - **Q / E** giram a câmera; **roda** aproxima; arrastar com o botão do meio (ou
   o direito) gira e inclina.
+- **Joystick virtual (toque):** encostar o dedo na metade **esquerda de baixo**
+  (fora de botão/painel) faz aparecer um joystick flutuante onde o dedo tocou;
+  empurrar anda como o WASD, relativo à câmera, com intensidade (empurrão leve
+  anda devagar; zona morta de 12%). Some ao soltar. Conta como andar na mão:
+  pausa auto missão, viagem, "Ir para" e a ida até o NPC; o auto combate segue
+  ligado. O dedo do joystick nunca gira a câmera nem clica no mundo — outro dedo
+  na direita continua girando, e os botões funcionam ao mesmo tempo.
+- **Câmera suave:** mouse, dedo, pinça e roda mexem num alvo e a câmera persegue
+  (aproximação exponencial, K = 18/s); o delta do dedo passa por uma média de
+  50 ms e, ao soltar, sobra uma inércia que morre em ~0,35 s.
 - **Toque (iOS):** um dedo arrastando no **mundo** gira (horizontal) e inclina
   (vertical) a câmera, com a mesma sensibilidade do mouse; **pinça** com dois
   dedos aproxima/afasta na faixa da roda. Toque curto parado é o clique normal

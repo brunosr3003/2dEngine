@@ -1,47 +1,54 @@
 #!/usr/bin/env python3
-"""Icones dos itens: pixel art procedural, um icone UNICO por item.
+"""Icones dos itens: um icone ILUSTRADO e unico por item, atlas + indice Rust.
 
-Gera:
-  assets/icones/itens.png            atlas RGBA, celulas de LADO x LADO
-  crates/client/src/icones_indice.rs tabela item_id -> celula (ordenada por id)
-
-Python puro (so' stdlib: zlib/struct). Deterministico: rodar de novo gera
-os mesmos bytes — nada de aleatorio sem semente, e o PNG sai com o mesmo zlib.
+Mesma tecnica dos icones do HUD/skills/mapa (`gerar_icones_ui.py`): cada item
+e' um SVG escrito aqui (viewBox 64), `rsvg-convert` rasteriza a 3x a celula e
+o Pillow reduz com LANCZOS em alfa PRE-MULTIPLICADO (sem franja escura na
+borda). Deterministico: mesma entrada -> mesmo PNG, byte a byte.
 
     python3 tools/icones/gerar_icones.py
 
-Estilo: silhueta por categoria, 4 tons por peca com a luz vindo de cima e da
-esquerda, contorno escuro de 1 px tirado da propria cor, sombra curta embaixo
-e a direita. A cor do TIER (cinza/verde/azul/roxo, a mesma de
-`shared::items::tier_color_hex`) entra nos materiais coloridos e na madeira e
-no couro. A moldura de raridade NAO e' assada: o cliente desenha em volta
-(`icones::icone`), porque a raridade de uma peca e' da instancia e nao do id.
+Saidas:
+  assets/icones/itens.png            atlas RGBA, celulas de LADO x LADO
+  crates/client/src/icones_indice.rs tabela item_id -> celula (ordenada por id)
+
+Estilo, igual ao HUD novo: silhueta clara por categoria, contorno escuro
+uniforme tirado da propria cor, luz de cima-esquerda (gradiente de 3 tons),
+brilho especular pequeno e sombra curta embaixo-direita. A cor do TIER
+(cinza/verde/azul/roxo, a mesma de `shared::items::tier_color_hex`) entra nos
+materiais, na madeira e no couro, com aura nos tiers altos. A moldura de
+raridade NAO e' assada: o cliente desenha em volta (`icones::icone`), porque a
+raridade de uma peca e' da instancia e nao do id.
 """
+
 import math
 import os
-import struct
-import zlib
+import subprocess
+import tempfile
 
-LADO = 48
+from PIL import Image
+
+LADO = 96
 COLUNAS = 10
-RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 TIER = {1: (191, 191, 191), 2: (95, 211, 95), 3: (85, 119, 255), 4: (170, 85, 255), 5: (255, 119, 51)}
 
-ACO = (200, 206, 216)
-ACO_ESC = (120, 128, 140)
-OURO = (236, 190, 76)
-OURO_ESC = (176, 124, 44)
-COURO = (146, 94, 54)
-COURO_ESC = (104, 64, 36)
-MADEIRA = (134, 90, 52)
-VIDRO = (206, 228, 236)
-BRANCO = (250, 250, 250)
-VERMELHO = (212, 48, 56)
-AZUL = (62, 108, 232)
-VERDE = (74, 192, 92)
-ROXO = (150, 90, 222)
-ESCURO = (40, 36, 48)
+ACO = (196, 204, 216)
+OURO = (240, 192, 70)
+COBRE = (206, 118, 66)
+COURO = (150, 96, 56)
+MADEIRA = (140, 94, 54)
+MADEIRA_CLARA = (222, 180, 120)
+VIDRO = (214, 234, 244)
+BRANCO = (255, 255, 255)
+ESCURO = (34, 30, 44)
+VERMELHO = (222, 44, 58)
+AZUL = (58, 108, 240)
+VERDE = (72, 196, 92)
+
+
+# ─────────────────────────────── cor ───────────────────────────────
 
 
 def mul(c, k):
@@ -52,510 +59,563 @@ def mix(a, b, t):
     return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
 
 
-# ─────────────────────────────── formas ───────────────────────────────
-# Toda forma e' um predicado f(x, y) no centro do pixel.
-
-def poligono(pts):
-    def f(px, py):
-        dentro = False
-        n = len(pts)
-        for i in range(n):
-            x1, y1 = pts[i]
-            x2, y2 = pts[(i + 1) % n]
-            if (y1 > py) != (y2 > py) and px < (x2 - x1) * (py - y1) / (y2 - y1) + x1:
-                dentro = not dentro
-        return dentro
-    return f
+def hx(c):
+    return "#%02x%02x%02x" % tuple(c[:3])
 
 
-def elipse(cx, cy, rx, ry=None):
-    ry = rx if ry is None else ry
-    return lambda x, y: ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1.0
+# ─────────────────────────────── geometria ───────────────────────────────
 
 
-def ret(x0, y0, x1, y1):
-    return lambda x, y: x0 <= x <= x1 and y0 <= y <= y1
+def f(v):
+    return ("%.2f" % v).rstrip("0").rstrip(".")
 
 
-def capsula(x0, y0, x1, y1, w):
-    dx, dy = x1 - x0, y1 - y0
-    l2 = dx * dx + dy * dy or 1e-9
-    r2 = (w / 2.0) ** 2
-
-    def f(x, y):
-        t = max(0.0, min(1.0, ((x - x0) * dx + (y - y0) * dy) / l2))
-        px, py = x0 + dx * t, y0 + dy * t
-        return (x - px) ** 2 + (y - py) ** 2 <= r2
-    return f
+def circ(cx, cy, r):
+    return elipse(cx, cy, r, r)
 
 
-def anel(cx, cy, rx, ry, esp):
-    fora = elipse(cx, cy, rx, ry)
-    dentro = elipse(cx, cy, max(0.5, rx - esp), max(0.5, ry - esp))
-    return lambda x, y: fora(x, y) and not dentro(x, y)
+def elipse(cx, cy, rx, ry):
+    return "M%s,%sa%s,%s 0 1,0 %s,0a%s,%s 0 1,0 %s,0Z" % (
+        f(cx - rx), f(cy), f(rx), f(ry), f(2 * rx), f(rx), f(ry), f(-2 * rx))
 
 
-def uniao(*fs):
-    return lambda x, y: any(f(x, y) for f in fs)
+def rrect(x, y, w, h, r):
+    r = min(r, w / 2, h / 2)
+    return ("M%s,%sh%sa%s,%s 0 0 1 %s,%sv%sa%s,%s 0 0 1 %s,%sh%sa%s,%s 0 0 1 %s,%sv%sa%s,%s 0 0 1 %s,%sZ"
+            % (f(x + r), f(y), f(w - 2 * r), f(r), f(r), f(r), f(r), f(h - 2 * r), f(r), f(r), f(-r), f(r),
+               f(-(w - 2 * r)), f(r), f(r), f(-r), f(-r), f(-(h - 2 * r)), f(r), f(r), f(r), f(-r)))
 
 
-def menos(a, b):
-    return lambda x, y: a(x, y) and not b(x, y)
+def poly(pts):
+    return "M" + "L".join("%s,%s" % (f(x), f(y)) for x, y in pts) + "Z"
 
 
-def e(a, b):
-    return lambda x, y: a(x, y) and b(x, y)
+def linha(*pts):
+    return "M" + "L".join("%s,%s" % (f(x), f(y)) for x, y in pts)
 
 
-def arco(pontos, w):
-    return uniao(*[capsula(*pontos[i], *pontos[i + 1], w) for i in range(len(pontos) - 1)])
-
-
-def rodar(pts, ox, oy, ang, espelho=False):
-    c, s = math.cos(ang), math.sin(ang)
-    out = []
-    for x, y in pts:
-        if espelho:
-            y = -y
-        out.append((ox + x * c - y * s, oy + x * s + y * c))
-    return out
-
-
-# ─────────────────────────────── tela ───────────────────────────────
-
-class Tela:
-    def __init__(self):
-        self.px = [[(0, 0, 0, 0)] * LADO for _ in range(LADO)]
-
-    def pontos(self, f):
-        return [(x, y) for y in range(LADO) for x in range(LADO) if f(x + 0.5, y + 0.5)]
-
-    def pinta(self, f, cor, luz=True):
-        """Preenche com 4 tons: claro em cima/esquerda, escuro embaixo/direita."""
-        pts = self.pontos(f)
-        if not pts:
-            return
-        xs = [p[0] for p in pts]
-        ys = [p[1] for p in pts]
-        x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
-        w, h = max(1, x1 - x0), max(1, y1 - y0)
-        for x, y in pts:
-            if luz:
-                u, v = (x - x0) / w, (y - y0) / h
-                q = u * 0.42 + v * 0.58
-                k = (1.22, 1.06, 0.90, 0.74)[min(3, int(q * 4))]
-            else:
-                k = 1.0
-            self.px[y][x] = mul(cor, k) + (255,)
-
-    def chapado(self, f, cor, alfa=255):
-        for x, y in self.pontos(f):
-            self.px[y][x] = tuple(cor[:3]) + (alfa,)
-
-    def aura(self, cx, cy, r, cor, forca=150):
-        """Brilho suave atras (so' onde ainda esta' vazio)."""
-        for y in range(LADO):
-            for x in range(LADO):
-                d = math.hypot(x + 0.5 - cx, y + 0.5 - cy) / r
-                if d < 1.0 and self.px[y][x][3] < 40:
-                    a = int(forca * (1.0 - d) ** 1.6)
-                    if a > self.px[y][x][3]:
-                        self.px[y][x] = tuple(cor[:3]) + (a,)
-
-    def ponto(self, x, y, cor):
-        if 0 <= x < LADO and 0 <= y < LADO:
-            self.px[y][x] = tuple(cor[:3]) + (255,)
-
-    def brilho(self, x, y, tam=1, cor=BRANCO):
-        self.ponto(x, y, cor)
-        if tam > 0:
-            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                self.ponto(x + dx, y + dy, mix(cor, (255, 255, 200), 0.3))
-
-    def acabamento(self):
-        solido = lambda x, y: 0 <= x < LADO and 0 <= y < LADO and self.px[y][x][3] >= 200
-        novos = []
-        for y in range(LADO):
-            for x in range(LADO):
-                if solido(x, y):
-                    continue
-                viz = [self.px[y + dy][x + dx] for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)) if solido(x + dx, y + dy)]
-                if viz:
-                    m = tuple(sum(c[i] for c in viz) / len(viz) for i in range(3))
-                    novos.append((x, y, mul(m, 0.26) + (255,)))
-        for x, y, c in novos:
-            self.px[y][x] = c
-        sombra = []
-        for y in range(LADO - 1):
-            for x in range(LADO - 1):
-                if solido(x, y) and not solido(x + 1, y + 1) and self.px[y + 1][x + 1][3] < 90:
-                    sombra.append((x + 1, y + 1))
-        for x, y in sombra:
-            self.px[y][x] = (0, 0, 0, 90)
-
-
-# ─────────────────────────────── desenhos ───────────────────────────────
-
-def espada_e_escudo(t):
-    t.pinta(poligono([(8, 9), (30, 9), (31, 24), (19, 41), (7, 24)]), (58, 88, 160))
-    t.pinta(poligono([(11, 12), (27, 12), (28, 23), (19, 36), (10, 23)]), (86, 122, 196))
-    t.pinta(elipse(19, 21, 3.2), OURO)
-    t.pinta(capsula(43, 5, 22, 26, 4.2), ACO)
-    t.chapado(capsula(41, 7, 24, 24, 1.0), mul(ACO, 0.7))
-    t.pinta(capsula(17, 22, 26, 31, 3.2), OURO)
-    t.pinta(capsula(21, 27, 14, 34, 3.4), COURO)
-    t.pinta(elipse(13, 35, 2.4), OURO)
-
-
-def katana(t):
+def estrela(cx, cy, ro, ri, n=5, rot=-90):
     pts = []
-    for i in range(13):
-        s = i / 12.0
-        x, y = 41 - 24 * s, 5 + 24 * s
-        off = 3.2 * math.sin(math.pi * s)
-        pts.append((x + off * 0.7, y + off * 0.7))
-    t.pinta(arco(pts, 3.6), ACO)
-    t.chapado(arco([(x - 1.0, y + 0.2) for x, y in pts[1:-1]], 0.9), BRANCO)
-    t.pinta(elipse(16, 30, 3.6), (58, 58, 70))
-    t.chapado(anel(16, 30, 3.6, 3.6, 1.0), OURO)
-    t.pinta(capsula(15, 31, 7, 39, 3.8), (126, 32, 44))
-    for k in range(3):
-        t.ponto(13 - 2 * k, 33 + 2 * k, (236, 220, 190))
-    t.pinta(elipse(6, 40, 1.8), OURO)
+    for k in range(2 * n):
+        r = ro if k % 2 == 0 else ri
+        a = math.radians(rot + k * 180.0 / n)
+        pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    return poly(pts)
 
 
-def pistola(t, ox, oy, ang, espelho):
-    cano = rodar([(0, 0), (20, 0), (20, 4), (0, 4)], ox, oy, ang, espelho)
-    corpo = rodar([(-1, -1), (8, -1), (9, 6), (-1, 6)], ox, oy, ang, espelho)
-    cabo = rodar([(1, 5), (8, 5), (4, 15), (-2, 14)], ox, oy, ang, espelho)
-    t.pinta(poligono(cabo), (112, 70, 40))
-    t.pinta(poligono(corpo), MADEIRA)
-    t.pinta(poligono(cano), ACO)
-    gat = rodar([(6, 8)], ox, oy, ang, espelho)[0]
-    t.chapado(anel(gat[0], gat[1], 2.2, 2.2, 0.9), OURO)
+def rot(pts, ox, oy, graus):
+    a = math.radians(graus)
+    c, s = math.cos(a), math.sin(a)
+    return [(ox + x * c - y * s, oy + x * s + y * c) for x, y in pts]
 
 
-def pistolas(t):
-    pistola(t, 7, 30, math.radians(-38), False)
-    pistola(t, 41, 30, math.radians(218), True)
+# ─────────────────────────────── desenho ───────────────────────────────
 
 
-def anel_magico(t):
-    t.aura(24, 19, 15, (120, 220, 255), 120)
-    t.pinta(anel(24, 29, 12, 8, 3.2), OURO)
-    t.pinta(ret(19, 19, 21, 24), OURO_ESC)
-    t.pinta(ret(27, 19, 29, 24), OURO_ESC)
-    t.pinta(elipse(24, 17, 6.2), (70, 196, 255))
-    t.pinta(poligono([(24, 12), (28, 17), (24, 22), (20, 17)]), (150, 232, 255))
-    t.brilho(21, 14, 0)
-    t.brilho(36, 9, 1, (200, 245, 255))
-    t.brilho(11, 13, 1, (200, 245, 255))
+class Svg:
+    """Camadas: aura (fundo), sombras e pecas. A sombra de toda peca vai numa
+    camada so', embaixo de tudo: sombra de peca posterior nao suja a anterior."""
+
+    def __init__(self):
+        self.defs, self.aura, self.sombras, self.corpo = [], [], [], []
+        self.n = 0
+
+    def _id(self, p):
+        self.n += 1
+        return "%s%d" % (p, self.n)
+
+    def grad(self, cor, claro=0.42, escuro=0.58):
+        i = self._id("g")
+        self.defs.append(
+            '<linearGradient id="%s" x1="0.15" y1="0" x2="0.85" y2="1">'
+            '<stop offset="0" stop-color="%s"/><stop offset="0.5" stop-color="%s"/>'
+            '<stop offset="1" stop-color="%s"/></linearGradient>'
+            % (i, hx(mix(cor, BRANCO, claro)), hx(cor), hx(mul(cor, escuro))))
+        return i
+
+    def peca(self, d, cor, contorno=2.2, sombra=True, claro=0.42, escuro=0.58):
+        if sombra:
+            self.sombras.append('<path d="%s" transform="translate(1.3,2)" fill="#000" stroke="#000" '
+                                'stroke-width="%s" stroke-linejoin="round" fill-rule="evenodd"/>' % (d, f(contorno)))
+        self.corpo.append('<path d="%s" fill="url(#%s)" stroke="%s" stroke-width="%s" stroke-linejoin="round" '
+                          'fill-rule="evenodd"/>' % (d, self.grad(cor, claro, escuro), hx(mul(cor, 0.3)), f(contorno)))
+
+    def chapado(self, d, cor, op=1.0):
+        self.corpo.append('<path d="%s" fill="%s" fill-opacity="%s" fill-rule="evenodd"/>' % (d, hx(cor), f(op)))
+
+    def traco(self, d, cor, w, contorno=True, sombra=True, op=1.0):
+        if sombra:
+            self.sombras.append('<path d="%s" transform="translate(1.3,2)" fill="none" stroke="#000" '
+                                'stroke-width="%s" stroke-linecap="round" stroke-linejoin="round"/>' % (d, f(w + 2.2)))
+        if contorno:
+            self.corpo.append('<path d="%s" fill="none" stroke="%s" stroke-width="%s" stroke-linecap="round" '
+                              'stroke-linejoin="round"/>' % (d, hx(mul(cor, 0.3)), f(w + 2.2)))
+        self.corpo.append('<path d="%s" fill="none" stroke="%s" stroke-opacity="%s" stroke-width="%s" '
+                          'stroke-linecap="round" stroke-linejoin="round"/>' % (d, hx(cor), f(op), f(w)))
+
+    def brilho(self, cx, cy, rx, ry, op=0.85, graus=-30):
+        self.corpo.append('<ellipse cx="%s" cy="%s" rx="%s" ry="%s" fill="#fff" fill-opacity="%s" '
+                          'transform="rotate(%s %s %s)"/>' % (f(cx), f(cy), f(rx), f(ry), f(op), f(graus), f(cx), f(cy)))
+
+    def faisca(self, cx, cy, r, cor=BRANCO, op=0.95):
+        self.corpo.append('<path d="%s" fill="%s" fill-opacity="%s"/>' % (estrela(cx, cy, r, r * 0.28, 4, -90), hx(cor), f(op)))
+
+    def halo(self, cx, cy, r, cor, op):
+        i = self._id("h")
+        self.defs.append('<radialGradient id="%s" cx="%s" cy="%s" r="%s" gradientUnits="userSpaceOnUse">'
+                         '<stop offset="0" stop-color="%s" stop-opacity="%s"/>'
+                         '<stop offset="1" stop-color="%s" stop-opacity="0"/></radialGradient>'
+                         % (i, f(cx), f(cy), f(r), hx(cor), f(op), hx(cor)))
+        self.aura.append('<circle cx="%s" cy="%s" r="%s" fill="url(#%s)"/>' % (f(cx), f(cy), f(r), i))
+
+    def recorte(self, d_clip, conteudo):
+        """`conteudo` (lista de elementos SVG) recortado pela forma `d_clip`."""
+        i = self._id("c")
+        self.defs.append('<clipPath id="%s"><path d="%s"/></clipPath>' % (i, d_clip))
+        self.corpo.append('<g clip-path="url(#%s)">%s</g>' % (i, "".join(conteudo)))
+
+    def texto(self):
+        return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">'
+                '<defs>%s</defs><g>%s</g><g fill-opacity="0.32" stroke-opacity="0.32">%s</g><g>%s</g></svg>'
+                % ("".join(self.defs), "".join(self.aura), "".join(self.sombras), "".join(self.corpo)))
 
 
-def manto_guerreiro(t):
-    t.pinta(poligono([(16, 8), (32, 8), (41, 41), (31, 38), (24, 42), (17, 38), (7, 41)]), (186, 40, 46))
-    t.chapado(capsula(20, 14, 15, 37, 1.4), (120, 24, 30))
-    t.chapado(capsula(28, 14, 33, 37, 1.4), (120, 24, 30))
-    t.pinta(ret(15, 6, 33, 11), OURO)
-    t.pinta(elipse(24, 9, 3.2), OURO_ESC)
-    t.pinta(elipse(24, 9, 1.8), VERMELHO)
+def aura_do_tier(s, tier, cx=32, cy=33, r=30):
+    if tier >= 3:
+        s.halo(cx, cy, r, TIER[tier], 0.42 if tier == 3 else 0.6)
 
 
-def bainha(t):
-    t.pinta(capsula(44, 4, 38, 10, 4.2), (54, 44, 44))
-    t.pinta(capsula(11, 38, 38, 10, 6.4), (132, 30, 42))
-    t.pinta(capsula(33, 15, 38, 10, 7.2), OURO)
-    t.pinta(capsula(11, 38, 15, 34, 7.2), OURO)
-    t.pinta(capsula(23, 26, 26, 23, 7.2), OURO_ESC)
-    t.brilho(35, 11, 0)
+# ─────────────────────────────── moedas e metal ───────────────────────────────
 
 
-def coldre(t):
-    t.pinta(capsula(5, 9, 43, 9, 4.2), COURO_ESC)
-    t.pinta(poligono([(22, 4), (29, 4), (30, 12), (21, 12)]), (112, 70, 40))
-    t.pinta(poligono([(15, 12), (33, 12), (35, 30), (27, 43), (20, 41), (14, 28)]), COURO)
-    t.pinta(ret(15, 10, 33, 17), COURO_ESC)
-    t.pinta(ret(22, 13, 26, 17), OURO)
-    for k in range(5):
-        t.ponto(17 + k * 4, 37 - (k % 2), (220, 190, 150))
+def moeda(s, cx, cy, r, cor, marca=True):
+    s.peca(elipse(cx, cy + r * 0.28, r, r * 0.55), mul(cor, 0.72))
+    s.peca(elipse(cx, cy, r, r * 0.55), cor, sombra=False)
+    if marca:
+        s.traco(elipse(cx, cy, r * 0.62, r * 0.33), mul(cor, 0.78), 1.4, contorno=False, sombra=False)
+    s.brilho(cx - r * 0.35, cy - r * 0.18, r * 0.28, r * 0.1, 0.8, -12)
 
 
-def manto_mago(t):
-    t.pinta(poligono([(16, 14), (32, 14), (39, 42), (9, 42)]), (50, 70, 164))
-    t.pinta(elipse(24, 12, 8.5, 7.5), (58, 80, 180))
-    t.chapado(elipse(24, 13, 4.2, 4.5), (18, 18, 36))
-    t.pinta(ret(9, 39, 39, 42), OURO)
-    t.pinta(capsula(24, 20, 24, 39, 1.6), OURO_ESC)
-    for x, y in ((15, 28), (32, 25), (20, 35), (30, 34)):
-        t.brilho(x, y, 1, (255, 236, 150))
+def ouro(s):
+    for cx, cy, r in ((22, 45, 13), (41, 44, 13), (31, 34, 13), (30, 22, 11)):
+        moeda(s, cx, cy, r, OURO)
+    s.faisca(47, 16, 6)
+    s.faisca(14, 26, 3.5)
 
 
-def armadura_leve(t):
-    t.pinta(poligono([(13, 13), (20, 9), (28, 9), (35, 13), (37, 41), (11, 41)]), (156, 102, 60))
-    t.chapado(poligono([(20, 9), (28, 9), (24, 19)]), (70, 46, 28))
-    for k in range(4):
-        y = 21 + k * 3
-        t.chapado(capsula(22, y, 26, y + 2, 1.0), (236, 214, 170))
-        t.chapado(capsula(26, y, 22, y + 2, 1.0), (236, 214, 170))
-    t.pinta(ret(11, 34, 37, 37), COURO_ESC)
-    t.pinta(ret(22, 33, 26, 38), OURO)
+def cobre(s):
+    d = circ(32, 33, 22) + rrect(26, 27, 12, 12, 2)
+    s.peca(d, COBRE, contorno=2.6)
+    s.traco(circ(32, 33, 16.5), mul(COBRE, 0.72), 1.6, contorno=False, sombra=False)
+    for a in range(0, 360, 90):
+        x, y = 32 + 12 * math.cos(math.radians(a + 45)), 33 + 12 * math.sin(math.radians(a + 45))
+        s.chapado(circ(x, y, 1.6), mul(COBRE, 0.6))
+    s.brilho(22, 20, 7, 2.6, 0.7)
 
 
-def armadura_media(t):
-    corpo = poligono([(13, 13), (20, 9), (28, 9), (35, 13), (37, 41), (11, 41)])
-    t.pinta(corpo, (150, 158, 172))
-    for x, y in t.pontos(corpo):
-        if (x + y) % 3 == 0:
-            t.ponto(x, y, mul(t.px[y][x], 0.78))
-    t.chapado(elipse(24, 11, 5, 3), (60, 60, 70))
-    t.pinta(elipse(12, 15, 6.5, 4.5), COURO)
-    t.pinta(elipse(36, 15, 6.5, 4.5), COURO)
-    t.pinta(ret(11, 35, 37, 38), COURO_ESC)
+def lingote(s, cor, brilho=True):
+    topo = poly([(10, 31), (37, 22), (55, 29), (28, 39)])
+    frente = poly([(10, 31), (28, 39), (28, 51), (10, 43)])
+    lado = poly([(28, 39), (55, 29), (55, 41), (28, 51)])
+    s.peca(frente, mul(cor, 0.78))
+    s.peca(lado, mul(cor, 0.6))
+    s.peca(topo, mix(cor, BRANCO, 0.12), sombra=False)
+    if brilho:
+        s.traco(linha((18, 30), (35, 25)), BRANCO, 1.8, contorno=False, sombra=False, op=0.7)
 
 
-def armadura_pesada(t):
-    t.pinta(ret(18, 8, 30, 14), ACO_ESC)
-    t.pinta(poligono([(14, 13), (34, 13), (33, 36), (24, 43), (15, 36)]), ACO)
-    t.pinta(elipse(11, 16, 7.5, 6.2), mul(ACO, 0.92))
-    t.pinta(elipse(37, 16, 7.5, 6.2), mul(ACO, 0.92))
-    t.chapado(capsula(24, 15, 24, 40, 1.0), BRANCO)
-    for x, y in ((17, 17), (31, 17), (17, 31), (31, 31)):
-        t.ponto(x, y, OURO)
+def darksteel(s):
+    s.halo(34, 36, 28, (120, 110, 200), 0.35)
+    lingote(s, (86, 88, 118))
+    s.traco(linha((32, 45), (38, 36), (46, 36)), (160, 150, 255), 1.4, contorno=False, sombra=False, op=0.85)
 
 
-def brinco(t):
-    for (hx, hy, gx, gy, cor) in ((15, 8, 15, 24, (70, 200, 240)), (33, 14, 33, 31, (236, 90, 170))):
-        t.chapado(anel(hx, hy, 3.2, 3.2, 1.1), OURO)
-        t.pinta(capsula(hx, hy + 3, gx, gy - 6, 1.4), OURO_ESC)
-        t.pinta(uniao(elipse(gx, gy, 4.2, 5.2), poligono([(gx - 3.4, gy - 2), (gx + 3.4, gy - 2), (gx, gy - 9)])), cor)
-        t.brilho(gx - 1, gy - 2, 0)
+def po_cintilante(s):
+    saco = "M20,26C12,34 12,52 32,54C52,52 52,34 44,26Z"
+    s.peca(saco, (196, 150, 220))
+    s.peca(rrect(22, 18, 20, 9, 4), (170, 124, 200), sombra=False)
+    s.traco(linha((21, 27), (43, 27)), (250, 212, 90), 2.2, sombra=False)
+    s.brilho(24, 36, 3.2, 7, 0.45, 15)
+    for x, y, r in ((46, 14, 6), (14, 18, 4.5), (52, 38, 3.5), (30, 9, 3)):
+        s.faisca(x, y, r, (255, 240, 200))
 
 
-def amuleto(t):
-    t.chapado(anel(24, 18, 13, 11, 1.6), OURO_ESC)
-    t.pinta(poligono([(24, 22), (33, 32), (24, 44), (15, 32)]), OURO)
-    t.pinta(poligono([(24, 25), (30, 32), (24, 40), (18, 32)]), (150, 70, 220))
-    t.brilho(22, 29, 0)
+# ─────────────────────────────── pocoes ───────────────────────────────
 
 
-def bracelete(t):
-    t.pinta(anel(24, 27, 16, 10, 4.2), OURO)
-    for k in range(7):
-        a = math.pi * (0.15 + 0.7 * k / 6.0)
-        t.ponto(int(24 - 14 * math.cos(a)), int(27 + 8 * math.sin(a)), OURO_ESC)
-    t.pinta(elipse(24, 18, 4.2), VERMELHO)
-    t.pinta(elipse(12, 22, 2.4), AZUL)
-    t.pinta(elipse(36, 22, 2.4), AZUL)
-    t.brilho(23, 16, 0)
-
-
-def cinto(t):
-    t.pinta(capsula(4, 27, 44, 27, 9), COURO)
-    for x in (34, 38, 42):
-        t.ponto(x, 27, COURO_ESC)
-    t.pinta(menos(ret(17, 19, 31, 35), ret(20, 22, 28, 32)), OURO)
-    t.pinta(capsula(22, 27, 31, 27, 1.8), ACO)
-
-
-def frasco(t, liq, forma, marca=None):
+def frasco(s, cor, forma, marca=None):
     if forma == "redondo":
-        t.pinta(ret(21, 11, 27, 22), VIDRO)
-        t.pinta(elipse(24, 30, 10.5), VIDRO)
-        t.pinta(elipse(24, 32, 8.4, 7.4), liq)
-        t.pinta(ret(20, 7, 28, 12), COURO)
+        corpo, nivel, (px, py, pw, ph) = circ(32, 40, 16), 36, (27, 15, 10, 13)
     elif forma == "grande":
-        t.pinta(ret(20, 9, 28, 21), VIDRO)
-        t.pinta(elipse(24, 31, 13.2, 12.2), VIDRO)
-        t.pinta(elipse(24, 33, 11, 10), liq)
-        t.pinta(capsula(19, 20, 29, 20, 2.4), OURO)
-        t.pinta(ret(19, 5, 29, 10), OURO_ESC)
+        corpo, nivel, (px, py, pw, ph) = circ(32, 40, 19), 33, (26, 12, 12, 12)
     elif forma == "alto":
-        t.pinta(ret(20, 8, 28, 16), VIDRO)
-        t.pinta(poligono([(15, 16), (33, 16), (34, 43), (14, 43)]), VIDRO)
-        t.pinta(poligono([(17, 22), (31, 22), (32, 41), (16, 41)]), liq)
-        t.pinta(ret(19, 4, 29, 9), COURO)
+        corpo, nivel, (px, py, pw, ph) = rrect(20, 22, 24, 36, 9), 30, (26, 12, 12, 12)
     elif forma == "quadrado":
-        t.pinta(ret(20, 8, 28, 15), VIDRO)
-        t.pinta(ret(12, 15, 36, 42), VIDRO)
-        t.pinta(ret(14, 22, 34, 40), liq)
-        t.pinta(ret(19, 4, 29, 9), COURO_ESC)
-    elif forma == "coracao":
-        t.pinta(ret(21, 8, 27, 16), VIDRO)
-        t.pinta(uniao(elipse(18, 24, 8), elipse(30, 24, 8), poligono([(10, 26), (38, 26), (24, 43)])), VIDRO)
-        t.pinta(uniao(elipse(18, 26, 6), elipse(30, 26, 6), poligono([(12, 28), (36, 28), (24, 40)])), liq)
-        t.pinta(ret(20, 4, 28, 9), COURO)
-    t.brilho(17, 26, 0)
-    t.ponto(18, 27, BRANCO)
+        corpo, nivel, (px, py, pw, ph) = rrect(15, 26, 34, 31, 7), 34, (26, 15, 12, 13)
+    else:  # coracao
+        corpo = "M32,58C16,48 10,40 10,31C10,23 16,19 22,19C27,19 30,22 32,25C34,22 37,19 42,19C48,19 54,23 54,31C54,40 48,48 32,58Z"
+        nivel, (px, py, pw, ph) = 32, (27, 11, 10, 11)
+    pesc = rrect(px, py, pw, ph, 2)
+    boca = rrect(px - 3, py - 3, pw + 6, 5, 2)
+    rolha = rrect(px + 1, py - 9, pw - 2, 8, 2.5)
+    s.peca(pesc, VIDRO, contorno=2.0, claro=0.2, escuro=0.8)
+    s.peca(corpo, VIDRO, contorno=2.4, claro=0.2, escuro=0.8)
+    liquido = s._id("l")
+    s.defs.append('<linearGradient id="%s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="%s"/>'
+                  '<stop offset="1" stop-color="%s"/></linearGradient>'
+                  % (liquido, hx(mix(cor, BRANCO, 0.22)), hx(mul(cor, 0.55))))
+    s.recorte(corpo, [
+        '<rect x="0" y="%s" width="64" height="64" fill="url(#%s)"/>' % (f(nivel), liquido),
+        '<ellipse cx="32" cy="%s" rx="22" ry="2.6" fill="%s"/>' % (f(nivel), hx(mix(cor, BRANCO, 0.45))),
+    ])
+    s.traco(corpo, mul(VIDRO, 0.32), 2.4, contorno=False, sombra=False)
+    s.peca(boca, VIDRO, contorno=1.8, sombra=False, claro=0.3, escuro=0.75)
+    s.peca(rolha, (170, 118, 70), contorno=1.8, sombra=False)
+    s.brilho(24, nivel - 2, 3, 7.5, 0.7, 18)
     if marca == "mais":
-        t.chapado(ret(23, 28, 25, 38), BRANCO)
-        t.chapado(ret(19, 32, 29, 34), BRANCO)
+        s.traco(linha((32, 38), (32, 50)), BRANCO, 3.2, sombra=False)
+        s.traco(linha((26, 44), (38, 44)), BRANCO, 3.2, sombra=False)
     elif marca == "estrela":
-        t.pinta(poligono([(24, 25), (26, 30), (31, 31), (27, 34), (28, 39), (24, 36), (20, 39), (21, 34), (17, 31), (22, 30)]), (255, 248, 190))
+        s.peca(estrela(33, 45, 8, 3.6), (255, 246, 196), contorno=1.4, sombra=False)
     elif marca == "moeda":
-        t.pinta(elipse(24, 31, 5.5), OURO)
-        t.chapado(ret(23, 27, 25, 35), OURO_ESC)
+        moeda(s, 33, 45, 8, OURO)
     elif marca == "trevo":
-        for cx, cy in ((24, 28), (20.5, 32), (27.5, 32)):
-            t.pinta(elipse(cx, cy, 3), VERDE)
-        t.chapado(capsula(24, 33, 25, 38, 1.2), mul(VERDE, 0.6))
+        for dx, dy in ((0, -4), (-4.2, 2), (4.2, 2)):
+            s.peca(circ(32 + dx, 44 + dy, 3.8), (110, 220, 120), contorno=1.2, sombra=False)
+        s.traco(linha((32, 46), (34, 52)), (80, 160, 90), 1.4, contorno=False, sombra=False)
 
 
-def moedas(t, cor, borda):
-    for cx, cy in ((16, 35), (32, 35), (24, 30), (18, 24), (30, 22)):
-        t.pinta(elipse(cx, cy, 8, 5), cor)
-        t.chapado(anel(cx, cy, 5.5, 3.2, 1.0), borda)
-    t.brilho(28, 20, 1)
+# ─────────────────────────────── madeira, peixe, barco ───────────────────────────────
 
 
-def ouro(t):
-    moedas(t, OURO, OURO_ESC)
+def madeira(s, tier):
+    casca = mix(MADEIRA, TIER[tier], 0.3)
+    miolo = mix(MADEIRA_CLARA, TIER[tier], 0.22)
+    aura_do_tier(s, tier)
+    for (x, y) in ((8, 36), (26, 42), (17, 22)):
+        s.peca(rrect(x, y, 34, 15, 7.5), casca, contorno=2.2)
+        s.traco(linha((x + 8, y + 5), (x + 26, y + 5)), mul(casca, 0.72), 1.2, contorno=False, sombra=False)
+        s.peca(elipse(x + 34, y + 7.5, 5.5, 7.5), miolo, contorno=2.0, sombra=False)
+        s.traco(elipse(x + 34, y + 7.5, 2.8, 4), mul(miolo, 0.72), 1.1, contorno=False, sombra=False)
 
 
-def cobre(t):
-    t.pinta(poligono([(8, 30), (16, 22), (24, 26), (22, 38), (10, 38)]), (178, 102, 60))
-    moedas(t, (206, 124, 72), (140, 76, 40))
+def peixe(s, k):
+    if k == 0:  # anchova: comprida, prata
+        cor, corpo = (176, 196, 212), elipse(30, 32, 21, 7.5)
+        cauda = poly([(49, 32), (60, 23), (57, 32), (60, 41)])
+    elif k == 1:  # palhaco
+        cor, corpo = (246, 122, 40), elipse(29, 32, 18, 12)
+        cauda = poly([(45, 32), (58, 22), (55, 32), (58, 42)])
+    elif k == 2:  # cirurgiao
+        cor, corpo = (52, 94, 214), "M8,32C14,18 36,14 46,26L46,38C36,50 14,46 8,32Z"
+        cauda = poly([(45, 32), (58, 21), (55, 32), (58, 43)])
+    else:  # baiacu
+        cor, corpo = (224, 190, 96), circ(30, 33, 17)
+        cauda = poly([(45, 33), (56, 26), (54, 33), (56, 40)])
+    cor_cauda = (250, 212, 60) if k == 2 else mul(cor, 0.9)
+    s.peca(cauda, cor_cauda)
+    if k == 3:
+        for a in range(0, 360, 30):
+            x0, y0 = 30 + 16 * math.cos(math.radians(a)), 33 + 16 * math.sin(math.radians(a))
+            x1, y1 = 30 + 22 * math.cos(math.radians(a)), 33 + 22 * math.sin(math.radians(a))
+            s.traco(linha((x0, y0), (x1, y1)), (240, 226, 170), 2.0)
+    s.peca(corpo, cor, contorno=2.4)
+    if k == 1:
+        s.recorte(corpo, ['<rect x="%s" y="0" width="5" height="64" fill="#fff"/>' % f(x) for x in (16, 29)])
+        s.traco(corpo, mul(cor, 0.3), 2.4, contorno=False, sombra=False)
+    s.peca(poly([(22, 24), (32, 14), (36, 25)]) if k != 3 else poly([(26, 17), (32, 10), (36, 18)]), mul(cor, 0.85), contorno=1.8, sombra=False)
+    olho = (16, 29) if k != 3 else (20, 29)
+    s.chapado(circ(*olho, 3.2), BRANCO)
+    s.chapado(circ(olho[0] - 0.6, olho[1], 1.7), ESCURO)
+    s.brilho(26, 26, 6, 1.8, 0.55, -10)
 
 
-def darksteel(t):
-    t.aura(24, 28, 20, (170, 80, 255), 110)
-    t.pinta(poligono([(8, 36), (40, 36), (34, 20), (14, 20)]), (64, 58, 82))
-    t.pinta(poligono([(14, 20), (34, 20), (32, 24), (16, 24)]), (104, 94, 130))
-    t.chapado(arco([(17, 28), (22, 25), (25, 30), (31, 27)], 1.2), (220, 130, 255))
-
-
-def po_cintilante(t):
-    t.pinta(poligono([(14, 14), (32, 14), (37, 36), (11, 36)]), (196, 160, 110))
-    t.pinta(capsula(15, 15, 31, 15, 3), COURO_ESC)
-    t.pinta(elipse(24, 38, 17, 5), (246, 196, 230))
-    for x, y in ((16, 37), (30, 36), (24, 40), (36, 31), (9, 30)):
-        t.brilho(x, y, 1, (255, 250, 255))
-
-
-def madeira(t, tier):
-    cor = TIER[tier]
-    for y, x0, x1 in ((31, 7, 37), (20, 11, 35)):
-        t.pinta(capsula(x0, y, x1, y, 10.5), MADEIRA)
-        t.pinta(elipse(x1 + 1, y, 4.5, 5.2), (208, 164, 108))
-        t.chapado(anel(x1 + 1, y, 2.6, 3.0, 0.9), (150, 104, 60))
-    t.pinta(capsula(20, 13, 22, 38, 2.6), cor)
-
-
-def couro(t, tier):
-    base = mix((176, 124, 80), TIER[tier], 0.28)
-    t.pinta(poligono([(10, 12), (18, 8), (30, 8), (38, 12), (41, 24), (36, 38), (28, 43), (20, 43), (12, 38), (7, 24)]), base)
-    t.pinta(elipse(24, 25, 9, 11), mul(base, 1.12))
-    for k in range(10):
-        a = k / 10.0 * math.tau
-        t.ponto(int(24 + 14 * math.cos(a)), int(25 + 15 * math.sin(a)), TIER[tier])
-
-
-def peixe(t, especie):
-    if especie == 0:
-        t.pinta(poligono([(36, 24), (44, 17), (44, 31)]), (140, 160, 190))
-        t.pinta(elipse(22, 24, 15, 5.5), (176, 196, 214))
-        t.chapado(capsula(10, 23, 34, 23, 1.0), (110, 130, 170))
-    elif especie == 1:
-        t.pinta(poligono([(34, 24), (43, 16), (43, 32)]), (236, 110, 40))
-        corpo = elipse(22, 24, 13, 8.5)
-        t.pinta(corpo, (242, 124, 42))
-        for x0 in (16, 26):
-            t.chapado(e(corpo, ret(x0, 0, x0 + 3, 48)), BRANCO)
-    elif especie == 2:
-        t.pinta(poligono([(34, 24), (44, 15), (44, 33)]), (246, 206, 60))
-        t.pinta(elipse(22, 24, 14, 9.5), (54, 92, 212))
-        t.chapado(arco([(12, 20), (20, 17), (30, 21)], 1.6), ESCURO)
+def barco(s, esquife):
+    casco = "M6,40L58,40C54,50 46,55 32,55C18,55 10,50 6,40Z"
+    if esquife:
+        s.traco(linha((14, 22), (46, 50)), (176, 128, 80), 2.6)
+        s.peca(poly([(42, 46), (50, 53), (46, 57), (38, 50)]), (176, 128, 80), contorno=1.6)
+        s.peca(casco, (150, 98, 58))
+        s.traco(linha((9, 44), (55, 44)), (110, 70, 40), 1.4, contorno=False, sombra=False)
+        s.peca(rrect(24, 36, 16, 5, 1.5), (188, 138, 88), contorno=1.6, sombra=False)
     else:
-        for k in range(10):
-            a = k / 10.0 * math.tau
-            cx, cy = 23 + 13 * math.cos(a), 25 + 13 * math.sin(a)
-            t.pinta(capsula(23 + 10 * math.cos(a), 25 + 10 * math.sin(a), cx, cy, 1.4), (200, 180, 100))
-        t.pinta(elipse(23, 25, 11.5), (226, 206, 118))
-        for x, y in ((19, 29), (27, 30), (23, 33)):
-            t.ponto(x, y, (150, 120, 60))
-    t.ponto(14, 22, ESCURO)
+        s.traco(linha((32, 8), (32, 42)), (120, 80, 48), 2.6)
+        s.peca("M34,10C48,16 52,28 50,38L34,38Z", (246, 240, 226), contorno=1.8)
+        s.peca("M30,14C20,20 16,30 18,38L30,38Z", (232, 226, 210), contorno=1.8)
+        s.peca(poly([(32, 8), (42, 5), (32, 2)]), VERMELHO, contorno=1.4, sombra=False)
+        s.peca(casco, (126, 84, 52))
+        s.traco(linha((9, 45), (55, 45)), (240, 200, 90), 1.6, contorno=False, sombra=False)
 
 
-def barco(t, grande):
-    if grande:
-        t.pinta(capsula(23, 6, 23, 32, 1.8), (110, 76, 44))
-        t.pinta(poligono([(24, 8), (40, 28), (24, 30)]), (240, 236, 220))
-        t.pinta(poligono([(22, 12), (10, 28), (22, 29)]), (224, 218, 200))
-        t.pinta(poligono([(24, 5), (31, 7), (24, 9)]), VERMELHO)
-        t.pinta(poligono([(5, 32), (43, 32), (37, 42), (11, 42)]), (126, 82, 46))
-    else:
-        t.pinta(capsula(8, 22, 40, 40, 1.8), (170, 130, 80))
-        t.pinta(poligono([(6, 28), (42, 28), (36, 38), (12, 38)]), (140, 92, 52))
-        t.pinta(ret(10, 29, 38, 31), (176, 124, 72))
+# ─────────────────────────────── equipamento ───────────────────────────────
 
 
-def material_colorido(t, base, tier):
+def lamina(s, pts_base, ox, oy, graus, cor=ACO):
+    s.peca(poly(rot(pts_base, ox, oy, graus)), cor, contorno=2.0)
+
+
+def espada_e_escudo(s):
+    escudo = "M14,14L40,10L46,30C44,44 34,52 27,56C20,52 10,44 8,30Z"
+    s.peca(escudo, (54, 96, 190), contorno=2.6)
+    s.traco(escudo, (232, 190, 80), 1.6, contorno=False, sombra=False)
+    s.peca(estrela(27, 31, 8, 3.5), (240, 196, 80), contorno=1.4, sombra=False)
+    # espada diagonal por cima
+    s.peca(poly(rot([(-3, 0), (3, 0), (2.5, -36), (0, -42), (-2.5, -36)], 38, 50, 38)), ACO, contorno=2.0)
+    s.peca(poly(rot([(-10, -1.8), (10, -1.8), (10, 1.8), (-10, 1.8)], 38, 50, 38)), OURO, contorno=1.8)
+    s.traco(linha(*rot([(0, 2), (0, 11)], 38, 50, 38)), (90, 58, 40), 3.6)
+    s.peca(circ(*rot([(0, 12.5)], 38, 50, 38)[0], 2.6), OURO, contorno=1.5, sombra=False)
+    s.brilho(*rot([(-0.8, -24)], 38, 50, 38)[0], 1, 8, 0.7, 38)
+
+
+def katana(s):
+    lam = "M10,54C24,40 40,22 56,8L58,10C44,26 28,44 14,58Z"
+    s.peca(lam, (220, 228, 236), contorno=2.0)
+    s.traco("M13,54C27,41 42,24 55,11", BRANCO, 1.0, contorno=False, sombra=False, op=0.8)
+    s.peca(elipse(19, 49, 6.5, 3.2), (60, 56, 70), contorno=1.8, sombra=False)
+    s.recorte("M4,64L16,52L24,58L10,64Z", [])
+    s.traco(linha((8, 60), (17, 51)), (40, 36, 52), 5.2)
+    for t in (0.2, 0.5, 0.8):
+        x, y = 8 + 9 * t, 60 - 9 * t
+        s.traco(linha((x - 1.8, y - 1.8), (x + 1.8, y + 1.8)), (214, 60, 70), 1.2, contorno=False, sombra=False)
+
+
+def pistola(s, ox, oy, graus, espelho=False):
+    sx = -1 if espelho else 1
+    cano = [(sx * -2, -3), (sx * 30, -3), (sx * 30, 3), (sx * -2, 3)]
+    cabo = [(sx * -2, -3), (sx * 6, 2), (sx * 2, 18), (sx * -8, 16), (sx * -6, 2)]
+    s.peca(poly(rot(cabo, ox, oy, graus)), (138, 86, 48), contorno=2.0)
+    s.peca(poly(rot(cano, ox, oy, graus)), (150, 156, 170), contorno=2.0)
+    s.peca(circ(*rot([(sx * 2, 6)], ox, oy, graus)[0], 2.4), OURO, contorno=1.4, sombra=False)
+
+
+def pistolas(s):
+    pistola(s, 16, 40, -35)
+    pistola(s, 48, 40, 35, espelho=True)
+
+
+def anel_magico(s):
+    s.halo(32, 22, 22, (120, 240, 160), 0.5)
+    s.peca(elipse(32, 40, 19, 13) + elipse(32, 40, 13.5, 8), OURO, contorno=2.4)
+    s.peca(poly([(24, 28), (32, 12), (40, 28), (32, 34)]), (70, 214, 130), contorno=2.0)
+    s.traco(linha((32, 12), (32, 34)), BRANCO, 1, contorno=False, sombra=False, op=0.5)
+    s.brilho(28, 22, 2, 5, 0.8, 20)
+    s.faisca(47, 14, 4.5, (200, 255, 220))
+
+
+def manto(s, cor, detalhe, gola):
+    d = "M22,10L42,10C46,24 54,44 56,56C46,52 40,58 32,54C24,58 18,52 8,56C10,44 18,24 22,10Z"
+    s.peca(d, cor, contorno=2.4)
+    s.traco("M24,14C22,30 18,44 16,52", mul(cor, 0.7), 1.4, contorno=False, sombra=False)
+    s.traco("M40,14C42,30 46,44 48,52", mul(cor, 0.7), 1.4, contorno=False, sombra=False)
+    s.traco("M32,14C32,30 32,42 32,52", mul(cor, 0.75), 1.2, contorno=False, sombra=False)
+    s.peca(gola, detalhe, contorno=1.8, sombra=False)
+
+
+def manto_guerreiro(s):
+    manto(s, (176, 38, 48), OURO, circ(32, 13, 5))
+    s.chapado(circ(32, 13, 2), (140, 30, 40))
+
+
+def manto_mago(s):
+    d = "M20,16C20,6 44,6 44,16L50,56C40,52 36,58 32,55C28,58 24,52 14,56Z"
+    s.peca(d, (58, 76, 176), contorno=2.4)
+    s.peca("M24,16C24,9 40,9 40,16L38,22L26,22Z", (40, 52, 130), contorno=1.8, sombra=False)
+    s.traco("M16,54C24,50 40,50 48,54", (240, 200, 90), 2.0, contorno=False, sombra=False)
+    s.traco(linha((32, 24), (32, 52)), (240, 200, 90), 1.6, contorno=False, sombra=False)
+    s.peca(estrela(26, 36, 4.5, 2), (255, 236, 150), contorno=1.0, sombra=False)
+    s.faisca(40, 44, 3, (255, 236, 150))
+
+
+def bainha(s):
+    d = poly(rot([(-4, -26), (4, -26), (4.5, 22), (0, 27), (-4.5, 22)], 32, 32, 40))
+    s.peca(d, (40, 34, 44), contorno=2.2)
+    for t in (-18, 2, 20):
+        s.peca(poly(rot([(-5.4, t - 2), (5.4, t - 2), (5.4, t + 2), (-5.4, t + 2)], 32, 32, 40)), OURO, contorno=1.4, sombra=False)
+    s.traco("M16,20C10,30 12,40 18,44", (206, 60, 70), 2.2)
+    s.peca(elipse(18, 46, 3, 5), (206, 60, 70), contorno=1.4)
+
+
+def coldre(s):
+    s.peca(rrect(8, 12, 48, 9, 3), (110, 72, 42), contorno=2.0)
+    s.peca(rrect(28, 11, 10, 11, 2), (206, 206, 214), contorno=1.8, sombra=False)
+    s.peca("M20,20L42,20L46,42C44,52 34,58 26,56C22,52 18,40 20,20Z", COURO, contorno=2.4)
+    s.traco("M24,26L40,26", mul(COURO, 0.6), 1.2, contorno=False, sombra=False)
+    for y in (32, 40, 48):
+        s.chapado(circ(24 + (y - 32) * 0.15, y, 1.2), (236, 214, 170))
+        s.chapado(circ(41 - (y - 32) * 0.1, y, 1.2), (236, 214, 170))
+
+
+def colete(s, cor, borda):
+    d = "M18,10L26,10C27,16 37,16 38,10L46,10L54,22L48,26L48,56L16,56L16,26L10,22Z"
+    s.peca(d, cor, contorno=2.4)
+    s.traco("M26,11C27,18 37,18 38,11", borda, 2.0, contorno=False, sombra=False)
+    return d
+
+
+def armadura_leve(s):
+    d = colete(s, (156, 104, 62), (110, 70, 40))
+    s.traco(linha((32, 20), (32, 55)), (100, 62, 36), 1.8, contorno=False, sombra=False)
+    for y in (26, 34, 42):
+        s.traco(linha((28, y), (36, y + 4)), (236, 214, 170), 1.2, contorno=False, sombra=False)
+        s.traco(linha((36, y), (28, y + 4)), (236, 214, 170), 1.2, contorno=False, sombra=False)
+    s.peca(rrect(16, 46, 32, 5, 1.5), (100, 62, 36), contorno=1.4, sombra=False)
+
+
+def armadura_media(s):
+    d = colete(s, (150, 156, 168), (98, 64, 40))
+    aneis = []
+    for y in range(18, 56, 5):
+        for x in range(14 + (y // 5) % 2 * 2, 52, 5):
+            aneis.append('<circle cx="%s" cy="%s" r="2" fill="none" stroke="#4a4f5c" stroke-width="0.9"/>' % (x, y))
+    s.recorte(d, aneis)
+    s.traco(d, (46, 48, 56), 2.4, contorno=False, sombra=False)
+    s.peca(rrect(15, 44, 34, 6, 2), (120, 78, 46), contorno=1.6, sombra=False)
+    s.peca(rrect(29, 43, 6, 8, 1.5), OURO, contorno=1.2, sombra=False)
+
+
+def armadura_pesada(s):
+    peito = "M18,18L46,18L48,40C46,50 38,56 32,57C26,56 18,50 16,40Z"
+    s.peca(elipse(14, 22, 10, 8), ACO, contorno=2.2)
+    s.peca(elipse(50, 22, 10, 8), ACO, contorno=2.2)
+    s.peca(peito, (178, 186, 200), contorno=2.6)
+    s.traco(linha((32, 20), (32, 55)), (120, 128, 142), 1.6, contorno=False, sombra=False)
+    s.traco("M20,36C26,40 38,40 44,36", (120, 128, 142), 1.4, contorno=False, sombra=False)
+    for x, y in ((21, 22), (43, 22), (22, 44), (42, 44), (14, 22), (50, 22)):
+        s.chapado(circ(x, y, 1.6), OURO)
+    s.brilho(24, 26, 3, 7, 0.6, 15)
+
+
+def joia(s, cx, cy, r, cor):
+    s.peca(poly([(cx, cy - r), (cx + r * 0.85, cy - r * 0.2), (cx, cy + r), (cx - r * 0.85, cy - r * 0.2)]), cor, contorno=1.6)
+    s.brilho(cx - r * 0.25, cy - r * 0.35, r * 0.18, r * 0.36, 0.85, 25)
+
+
+def brinco(s):
+    s.traco("M32,8C22,8 22,20 30,22", OURO, 2.6)
+    s.peca(circ(31, 24, 3.4), OURO, contorno=1.4)
+    s.traco(linha((31, 27), (31, 33)), OURO, 2.0)
+    joia(s, 31, 45, 12, (70, 206, 230))
+    s.faisca(46, 36, 3.5, (200, 244, 255))
+
+
+def amuleto(s):
+    s.traco("M14,8C16,26 24,34 32,36C40,34 48,26 50,8", OURO, 2.2)
+    for t in range(1, 8):
+        a = t / 8.0
+        x = 14 + 36 * a
+        y = 8 + 28 * math.sin(math.pi * a)
+        s.chapado(circ(x, y, 1.1), mul(OURO, 0.7))
+    s.peca(circ(32, 44, 13), OURO, contorno=2.4)
+    s.peca(circ(32, 44, 7.5), (210, 44, 60), contorno=1.8, sombra=False)
+    s.brilho(29, 41, 2.2, 3.4, 0.85, 20)
+
+
+def bracelete(s):
+    s.peca(elipse(32, 36, 24, 15) + elipse(32, 36, 17, 9), OURO, contorno=2.4)
+    for x, y, cor in ((14, 38, (220, 60, 70)), (32, 50, (70, 180, 240)), (50, 38, (80, 210, 110))):
+        s.peca(circ(x, y, 3.8), cor, contorno=1.4, sombra=False)
+        s.brilho(x - 1, y - 1.3, 0.9, 1.6, 0.8, 20)
+
+
+def cinto(s):
+    s.peca("M4,26C20,22 44,22 60,26L60,38C44,34 20,34 4,38Z", COURO, contorno=2.4)
+    for x in (12, 50):
+        s.chapado(circ(x, 32, 1.4), (236, 214, 170))
+    s.peca(rrect(22, 20, 20, 24, 4) + rrect(27, 25, 10, 14, 2), OURO, contorno=2.2)
+    s.traco(linha((32, 25), (32, 39)), (120, 124, 136), 2.2, contorno=False, sombra=False)
+    s.brilho(25, 24, 1.4, 4, 0.8, 0)
+
+
+# ─────────────────────────────── materiais coloridos ───────────────────────────────
+
+
+def material_colorido(s, base, tier):
     c = TIER[tier]
+    aura_do_tier(s, tier)
     if base == 300:  # Aco: lingote
-        t.pinta(poligono([(8, 35), (40, 35), (34, 20), (14, 20)]), mix(ACO, c, 0.22))
-        t.pinta(poligono([(14, 20), (34, 20), (32, 24), (16, 24)]), mix(BRANCO, c, 0.15))
-        t.pinta(elipse(24, 29, 3.2), c)
-    elif base == 304:  # Pedra do Coracao Negro
-        t.aura(24, 28, 19, c, 90)
-        t.pinta(uniao(elipse(18, 22, 8), elipse(30, 22, 8), poligono([(10, 24), (38, 24), (24, 42)])), (74, 22, 38))
-        t.pinta(uniao(elipse(19, 24, 4), elipse(29, 24, 4), poligono([(15, 26), (33, 26), (24, 36)])), c)
-        t.brilho(16, 19, 0)
-    elif base == 308:  # Pedra Sombra-da-Lua
-        t.aura(22, 26, 19, c, 90)
-        t.pinta(menos(elipse(22, 26, 15), elipse(30, 20, 12)), (74, 80, 108))
-        t.chapado(menos(elipse(22, 26, 15), elipse(22, 26, 13.5)), c)
-        t.brilho(36, 34, 1, mix(BRANCO, c, 0.3))
+        lingote(s, mix(ACO, c, 0.45))
+    elif base == 304:  # Coracao Negro
+        d = "M32,56C16,46 8,36 8,26C8,18 14,12 22,12C27,12 30,15 32,19C34,15 37,12 42,12C50,12 56,18 56,26C56,36 48,46 32,56Z"
+        s.peca(d, mix((58, 46, 70), c, 0.2), contorno=2.6)
+        s.traco(linha((32, 22), (28, 32), (35, 38), (31, 48)), c, 2.2, contorno=False, sombra=False)
+        s.traco(linha((20, 24), (24, 30)), c, 1.6, contorno=False, sombra=False)
+        s.brilho(20, 20, 3, 5, 0.45, 30)
+    elif base == 308:  # Sombra-da-Lua: crescente
+        d = circ(32, 32, 22) + circ(42, 26, 17)
+        s.peca("M32,10A22,22 0 1,0 54,34A17,17 0 1,1 32,10Z", mix((112, 122, 158), c, 0.45), contorno=2.6)
+        s.faisca(44, 18, 4.5, mix(BRANCO, c, 0.3))
+        s.faisca(52, 44, 3, mix(BRANCO, c, 0.3))
+        s.brilho(18, 26, 2.6, 7, 0.5, 10)
     elif base == 312:  # Quintessencia: orbe
-        t.aura(24, 24, 22, c, 140)
-        t.pinta(elipse(24, 24, 13), mix(VIDRO, c, 0.2))
-        t.pinta(elipse(24, 25, 9), c)
-        t.chapado(arco([(19, 24), (22, 20), (27, 22), (27, 27), (22, 29)], 1.4), mix(BRANCO, c, 0.4))
-        t.brilho(18, 17, 0)
-    elif base == 316:  # Berloque de Exorcismo
-        t.pinta(capsula(24, 3, 24, 13, 1.6), (214, 190, 150))
-        t.pinta(ret(15, 12, 33, 38), (238, 224, 184))
-        t.chapado(capsula(24, 16, 24, 33, 1.6), c)
-        t.chapado(capsula(19, 22, 29, 22, 1.6), c)
-        t.chapado(anel(24, 28, 4, 4, 1.2), c)
-        t.pinta(poligono([(20, 38), (28, 38), (26, 45), (22, 45)]), c)
+        s.halo(32, 33, 28, c, 0.55)
+        s.peca(circ(32, 33, 19), mix(c, BRANCO, 0.12), contorno=2.4, claro=0.6, escuro=0.45)
+        s.traco("M20,38C24,26 40,24 44,32", mix(c, BRANCO, 0.6), 2.0, contorno=False, sombra=False, op=0.8)
+        s.traco("M22,44C30,40 40,42 44,38", mix(c, BRANCO, 0.5), 1.4, contorno=False, sombra=False, op=0.6)
+        s.brilho(25, 24, 4, 2.4, 0.9, -30)
+    elif base == 316:  # Berloque de Exorcismo: talisma de papel
+        s.traco("M32,6C28,10 28,14 32,16", (200, 60, 60), 1.8)
+        s.peca(rrect(20, 14, 24, 44, 3), (238, 222, 180), contorno=2.2)
+        s.peca(rrect(23, 17, 18, 38, 2), mix((232, 214, 168), c, 0.18), contorno=0.8, sombra=False)
+        tinta = mix((190, 40, 40), c, 0.5)
+        s.traco(linha((32, 21), (32, 50)), tinta, 2.0, contorno=False, sombra=False)
+        for y in (27, 36, 45):
+            s.traco(linha((26, y), (38, y - 3)), tinta, 1.8, contorno=False, sombra=False)
+        s.chapado(circ(32, 32, 3.2), tinta)
     elif base == 320:  # Platina: pepitas
-        for cx, cy, r in ((17, 30, 8), (30, 32, 7), (24, 20, 7), (33, 21, 5)):
-            t.pinta(elipse(cx, cy, r, r * 0.8), mix((226, 230, 238), c, 0.18))
-        t.brilho(21, 17, 1, mix(BRANCO, c, 0.25))
-        t.brilho(13, 27, 0)
+        cor = mix((226, 230, 238), c, 0.3)
+        for cx, cy, r in ((22, 42, 11), (41, 43, 10), (32, 28, 10), (46, 26, 6.5)):
+            pts = [(cx + r * math.cos(math.radians(a)) * (0.8 + 0.2 * ((a // 45) % 2)),
+                    cy + r * 0.8 * math.sin(math.radians(a)) * (0.85 + 0.15 * ((a // 60) % 2))) for a in range(0, 360, 45)]
+            s.peca(poly(pts), cor, contorno=2.0)
+            s.brilho(cx - r * 0.3, cy - r * 0.3, r * 0.2, r * 0.1, 0.85)
     elif base == 324:  # Fragmento Iluminante: cristais
-        t.aura(24, 26, 21, c, 130)
-        t.pinta(poligono([(20, 42), (16, 18), (22, 4), (28, 18), (26, 42)]), mix(c, BRANCO, 0.25))
-        t.pinta(poligono([(12, 42), (8, 26), (13, 16), (18, 28), (18, 42)]), c)
-        t.pinta(poligono([(30, 42), (31, 24), (37, 14), (41, 28), (37, 42)]), mul(c, 0.9))
-        t.brilho(21, 12, 0)
+        s.halo(32, 34, 28, c, 0.5)
+        for pts, k in (([(24, 58), (18, 26), (26, 6), (34, 26), (32, 58)], 0.25),
+                       ([(14, 58), (8, 38), (14, 24), (22, 38), (22, 58)], 0.0),
+                       ([(34, 58), (36, 34), (44, 20), (52, 38), (46, 58)], -0.1)):
+            s.peca(poly(pts), mix(c, BRANCO, max(0.0, k)) if k >= 0 else mul(c, 0.92), contorno=2.0, claro=0.55, escuro=0.5)
+        s.traco(linha((26, 8), (27, 50)), BRANCO, 1.2, contorno=False, sombra=False, op=0.7)
+        s.faisca(50, 14, 4, mix(BRANCO, c, 0.2))
     elif base == 328:  # Pedra de Anima: runa
-        t.pinta(poligono([(12, 14), (24, 7), (36, 13), (39, 34), (26, 42), (10, 35)]), (122, 128, 122))
-        t.chapado(arco([(19, 16), (24, 24), (19, 32)], 2.0), c)
-        t.chapado(arco([(29, 16), (24, 24), (29, 32)], 2.0), c)
-        t.chapado(capsula(24, 13, 24, 36, 2.0), mix(c, BRANCO, 0.3))
+        s.peca(poly([(12, 18), (30, 8), (50, 14), (54, 40), (36, 56), (12, 46)]), (126, 132, 128), contorno=2.6)
+        s.halo(32, 32, 16, c, 0.55)
+        for d in (linha((32, 16), (32, 48)), linha((24, 20), (32, 30), (24, 40)), linha((40, 20), (32, 30), (40, 40))):
+            s.traco(d, mix(c, BRANCO, 0.25), 2.4, contorno=False, sombra=False)
+        s.brilho(20, 20, 3, 5, 0.35, 30)
     elif base == 332:  # Escama
-        t.pinta(uniao(elipse(24, 20, 14, 13), poligono([(11, 22), (37, 22), (24, 44)])), mix((70, 150, 150), c, 0.5))
-        t.chapado(capsula(24, 12, 24, 38, 1.4), mul(mix((70, 150, 150), c, 0.5), 0.6))
-        t.chapado(arco([(14, 22), (24, 30), (34, 22)], 1.2), mul(mix((70, 150, 150), c, 0.5), 0.7))
-        t.brilho(18, 14, 0)
-    elif base == 336:  # Garra
-        for dx in (-9, 0, 9):
-            pts = [(24 + dx - 2, 42), (24 + dx, 30), (24 + dx + 4, 18), (24 + dx + 10, 10)]
-            t.pinta(arco(pts[:3], 5.0 - abs(dx) * 0.12), (232, 222, 196))
-            t.pinta(arco(pts[2:], 3.0), c)
+        cor = mix((70, 150, 150), c, 0.5)
+        d = "M32,58C18,48 10,36 10,24C10,14 20,8 32,8C44,8 54,14 54,24C54,36 46,48 32,58Z"
+        s.peca(d, cor, contorno=2.6)
+        s.traco(linha((32, 12), (32, 52)), mul(cor, 0.62), 1.6, contorno=False, sombra=False)
+        s.traco("M14,26C22,32 42,32 50,26", mul(cor, 0.66), 1.4, contorno=False, sombra=False)
+        s.traco("M18,40C24,44 40,44 46,40", mul(cor, 0.66), 1.2, contorno=False, sombra=False)
+        s.brilho(22, 18, 5, 2.6, 0.7)
+    elif base == 336:  # Garras
+        for dx in (-13, 0, 13):
+            d = "M%s,56C%s,40 %s,24 %s,10C%s,24 %s,40 %s,56Z" % (
+                f(32 + dx - 5), f(32 + dx - 5), f(32 + dx + 2), f(32 + dx + 10),
+                f(32 + dx + 6), f(32 + dx + 5), f(32 + dx + 4))
+            s.peca(d, (232, 222, 196), contorno=2.0)
+            s.recorte(d, ['<rect x="0" y="0" width="64" height="24" fill="%s"/>' % hx(c)])
+            s.traco(d, (70, 62, 50), 2.0, contorno=False, sombra=False)
     elif base == 340:  # Chifre
         pts = []
+        for i in range(15):
+            t = i / 14.0
+            a = math.pi * (1.05 - 1.25 * t)
+            r = 22 - 12 * t
+            pts.append((30 + r * math.cos(a), 34 - r * math.sin(a) + 10 * t))
         for i in range(14):
-            s = i / 13.0
-            a = math.pi * (1.1 - 1.2 * s)
-            r = 16 - 9 * s
-            pts.append((26 + r * math.cos(a), 28 - r * math.sin(a) + 8 * s))
-        for i in range(13):
-            w = 9.0 - 6.5 * i / 12.0
-            cor = c if i % 3 == 1 else (216, 200, 170)
-            t.pinta(capsula(*pts[i], *pts[i + 1], w), cor)
-    elif base == 64:  # Couro (HIDE)
-        couro(t, tier)
+            w = 11.0 - 8.0 * i / 13.0
+            cor = c if i % 4 == 2 else (224, 206, 172)
+            s.traco(linha(pts[i], pts[i + 1]), cor, w, contorno=(i == 0), sombra=(i < 3))
+        s.traco(linha(*pts), (90, 74, 56), 0.8, contorno=False, sombra=False, op=0.6)
+    elif base == 64:  # Couro
+        cor = mix(COURO, c, 0.35)
+        d = "M20,8L44,8L50,18L58,20L52,32L58,46L46,48L40,58L24,58L18,48L6,46L12,32L6,20L14,18Z"
+        s.peca(d, cor, contorno=2.4)
+        s.traco("M18,18L46,18L50,32L46,46L18,46L14,32Z", (240, 220, 180), 1.2, contorno=False, sombra=False, op=0.8)
+        s.brilho(24, 22, 5, 2.4, 0.4)
 
 
 # ─────────────────────────────── catalogo ───────────────────────────────
@@ -566,24 +626,24 @@ MATERIAIS_COLORIDOS = [300, 304, 308, 312, 316, 320, 324, 328, 332, 336, 340, 64
 def catalogo():
     itens = {
         1: ouro,
-        2: lambda t: frasco(t, VERMELHO, "redondo"),
-        8: lambda t: frasco(t, AZUL, "redondo"),
-        9: lambda t: frasco(t, VERMELHO, "grande", "mais"),
-        10: lambda t: frasco(t, AZUL, "grande", "mais"),
-        11: lambda t: frasco(t, VERDE, "alto"),
-        350: lambda t: (t.aura(24, 30, 20, (255, 220, 90), 110), frasco(t, (250, 202, 56), "redondo", "estrela")),
-        351: lambda t: frasco(t, (244, 140, 36), "quadrado", "moeda"),
-        352: lambda t: frasco(t, (170, 110, 240), "coracao", "trevo"),
-        60: lambda t: madeira(t, 1),
-        61: lambda t: madeira(t, 2),
-        62: lambda t: madeira(t, 3),
-        63: lambda t: madeira(t, 4),
-        96: lambda t: peixe(t, 0),
-        97: lambda t: peixe(t, 1),
-        98: lambda t: peixe(t, 2),
-        99: lambda t: peixe(t, 3),
-        100: lambda t: barco(t, True),
-        101: lambda t: barco(t, False),
+        2: lambda s: frasco(s, VERMELHO, "redondo"),
+        8: lambda s: frasco(s, AZUL, "redondo"),
+        9: lambda s: (s.halo(32, 36, 30, VERMELHO, 0.35), frasco(s, VERMELHO, "grande", "mais")),
+        10: lambda s: (s.halo(32, 36, 30, AZUL, 0.35), frasco(s, AZUL, "grande", "mais")),
+        11: lambda s: frasco(s, VERDE, "alto"),
+        350: lambda s: (s.halo(32, 36, 30, (255, 220, 90), 0.45), frasco(s, (250, 202, 56), "redondo", "estrela")),
+        351: lambda s: frasco(s, (244, 140, 36), "quadrado", "moeda"),
+        352: lambda s: frasco(s, (170, 110, 240), "coracao", "trevo"),
+        60: lambda s: madeira(s, 1),
+        61: lambda s: madeira(s, 2),
+        62: lambda s: madeira(s, 3),
+        63: lambda s: madeira(s, 4),
+        96: lambda s: peixe(s, 0),
+        97: lambda s: peixe(s, 1),
+        98: lambda s: peixe(s, 2),
+        99: lambda s: peixe(s, 3),
+        100: lambda s: barco(s, True),
+        101: lambda s: barco(s, False),
         344: cobre,
         345: darksteel,
         346: po_cintilante,
@@ -605,42 +665,38 @@ def catalogo():
     }
     for base in MATERIAIS_COLORIDOS:
         for tier in range(1, 5):
-            itens[base + tier - 1] = (lambda b, tr: lambda t: material_colorido(t, b, tr))(base, tier)
+            itens[base + tier - 1] = (lambda b, tr: lambda s: material_colorido(s, b, tr))(base, tier)
     return dict(sorted(itens.items()))
 
 
-def png(caminho, largura, altura, linhas):
-    cru = b"".join(b"\x00" + bytes(l) for l in linhas)
+# ─────────────────────────────── raster e atlas ───────────────────────────────
 
-    def pedaco(tipo, dados):
-        return struct.pack(">I", len(dados)) + tipo + dados + struct.pack(">I", zlib.crc32(tipo + dados) & 0xFFFFFFFF)
 
-    dados = (b"\x89PNG\r\n\x1a\n"
-             + pedaco(b"IHDR", struct.pack(">IIBBBBB", largura, altura, 8, 6, 0, 0, 0))
-             + pedaco(b"IDAT", zlib.compress(cru, 9))
-             + pedaco(b"IEND", b""))
-    os.makedirs(os.path.dirname(caminho), exist_ok=True)
-    with open(caminho, "wb") as f:
-        f.write(dados)
+def rasteriza(svg, tmp):
+    grande = LADO * 3
+    caminho_svg = os.path.join(tmp, "i.svg")
+    caminho_png = os.path.join(tmp, "i.png")
+    with open(caminho_svg, "w") as fh:
+        fh.write(svg)
+    subprocess.run(["rsvg-convert", "-w", str(grande), "-h", str(grande), caminho_svg, "-o", caminho_png], check=True)
+    img = Image.open(caminho_png).convert("RGBA")
+    img.load()
+    return img.convert("RGBa").resize((LADO, LADO), Image.LANCZOS).convert("RGBA")
 
 
 def main():
     itens = catalogo()
-    linhas_de_celulas = (len(itens) + COLUNAS - 1) // COLUNAS
-    largura, altura = COLUNAS * LADO, linhas_de_celulas * LADO
-    atlas = [[0, 0, 0, 0] * largura for _ in range(altura)]
+    linhas = (len(itens) + COLUNAS - 1) // COLUNAS
+    largura, altura = COLUNAS * LADO, linhas * LADO
+    atlas = Image.new("RGBA", (largura, altura), (0, 0, 0, 0))
     indice = []
-    for k, (item_id, desenho) in enumerate(itens.items()):
-        t = Tela()
-        desenho(t)
-        t.acabamento()
-        cx, cy = (k % COLUNAS) * LADO, (k // COLUNAS) * LADO
-        for y in range(LADO):
-            linha = atlas[cy + y]
-            for x in range(LADO):
-                linha[(cx + x) * 4:(cx + x) * 4 + 4] = list(t.px[y][x])
-        indice.append((item_id, k))
-    png(os.path.join(RAIZ, "assets/icones/itens.png"), largura, altura, atlas)
+    with tempfile.TemporaryDirectory() as tmp:
+        for k, (item_id, desenho) in enumerate(itens.items()):
+            s = Svg()
+            desenho(s)
+            atlas.paste(rasteriza(s.texto(), tmp), ((k % COLUNAS) * LADO, (k // COLUNAS) * LADO))
+            indice.append((item_id, k))
+    atlas.save(os.path.join(RAIZ, "assets/icones/itens.png"), format="PNG", optimize=False)
     rs = [
         "// GERADO por tools/icones/gerar_icones.py — nao edite a mao.",
         "// Rode `python3 tools/icones/gerar_icones.py` pra refazer atlas e indice.",
@@ -657,8 +713,8 @@ def main():
     ]
     rs += [f"    ({i}, {k})," for i, k in indice]
     rs += ["];", ""]
-    with open(os.path.join(RAIZ, "crates/client/src/icones_indice.rs"), "w") as f:
-        f.write("\n".join(rs))
+    with open(os.path.join(RAIZ, "crates/client/src/icones_indice.rs"), "w") as fh:
+        fh.write("\n".join(rs))
     print(f"{len(indice)} icones -> assets/icones/itens.png ({largura}x{altura})")
 
 

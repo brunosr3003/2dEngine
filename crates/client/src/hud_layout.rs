@@ -39,7 +39,12 @@ pub struct Zonas {
     pub minimapa: Rect,
     /// ⤢ dentro da moldura do minimapa: abre o Mapa.
     pub mapa_icone: Rect,
+    /// Chat: logo abaixo do rastreador, a' esquerda — o canto de baixo e' do
+    /// joystick.
     pub chat: Rect,
+    /// Onde um dedo pode COMECAR o joystick virtual (metade esquerda de baixo,
+    /// ate' antes da faixa central e dos botoes AUTO). Nao e' botao: e' area.
+    pub joystick: Rect,
     /// A faixa de estado UNICA (INDO, AUTO MISSAO, AUTO COMBATE…).
     pub faixa: Rect,
     /// A barrinha "Coletando · tipo · N s", logo abaixo da faixa.
@@ -92,7 +97,8 @@ pub fn zonas(sw: f32, sh: f32) -> Zonas {
     // ── baixo: EXP, chat, cluster de combate ──
     let exp = Rect::new(0.0, sh - 6.0, sw, 6.0);
     let base = sh - 10.0 * s;
-    let chat = Rect::new(m, sh - 16.0 * s - 170.0 * s, 480.0 * s, 170.0 * s);
+    // Abaixo do rastreador: o canto inferior esquerdo ficou pro joystick.
+    let chat = Rect::new(m, rastreador.y + rastreador.h + 10.0 * s, 440.0 * s, 150.0 * s);
     let ca = vec2(sw - 110.0 * s, base - 110.0 * s);
     let ra = 60.0 * s;
     let atacar = Rect::new(ca.x - ra, ca.y - ra, ra * 2.0, ra * 2.0);
@@ -117,6 +123,11 @@ pub fn zonas(sw: f32, sh: f32) -> Zonas {
     let faixa = Rect::new(sw * 0.5 - fw * 0.5, sh - 330.0 * s, fw, 34.0 * s);
     let cw = 380.0 * s;
     let coleta = Rect::new(sw * 0.5 - cw * 0.5, faixa.y + faixa.h + 6.0 * s, cw, 30.0 * s);
+    // Joystick: do fim do chat ate' a EXP, e ate' antes do que estiver mais a'
+    // esquerda entre a faixa, a barra de coleta e o AUTO COLETA.
+    let jy = chat.y + chat.h + 16.0 * s;
+    let jfim = faixa.x.min(coleta.x).min(auto_coleta.x) - 16.0 * s;
+    let joystick = Rect::new(m, jy, (jfim - m).max(0.0), (exp.y - 8.0 * s - jy).max(0.0));
 
     Zonas {
         s,
@@ -131,6 +142,7 @@ pub fn zonas(sw: f32, sh: f32) -> Zonas {
         minimapa,
         mapa_icone,
         chat,
+        joystick,
         faixa,
         coleta,
         atacar,
@@ -156,6 +168,7 @@ impl Zonas {
             ("area", self.area),
             ("minimapa", self.minimapa),
             ("chat", self.chat),
+            ("joystick", self.joystick),
             ("faixa", self.faixa),
             ("coleta", self.coleta),
             ("atacar", self.atacar),
@@ -285,6 +298,21 @@ mod tests {
         assert!(z.mapa_icone.x >= z.minimapa.x && z.mapa_icone.y >= z.minimapa.y, "⤢ dentro do minimapa");
         assert_eq!(zonas(1920.0, 1200.0).missoes_no_rastreador, 5);
         assert_eq!(z.missoes_no_rastreador, 4);
+    }
+
+    /// O chat subiu pra baixo do rastreador e o canto inferior esquerdo e' do
+    /// joystick, com espaco pra um polegar em toda tela.
+    #[test]
+    fn chat_em_cima_e_joystick_no_canto_de_baixo() {
+        for (sw, sh) in TELAS {
+            let z = zonas(sw, sh);
+            assert!(z.chat.y >= z.rastreador.y + z.rastreador.h, "{sw}×{sh}: chat abaixo do rastreador");
+            assert!(z.joystick.y >= z.chat.y + z.chat.h, "{sw}×{sh}: joystick abaixo do chat");
+            assert!(z.joystick.x + z.joystick.w <= sw * 0.5 + 0.01, "{sw}×{sh}: joystick na metade esquerda");
+            let min = 2.0 * crate::joystick::RAIO_BASE * z.s;
+            assert!(z.joystick.w >= min && z.joystick.h >= min, "{sw}×{sh}: joystick pequeno demais {:?}", z.joystick);
+            assert!(!z.contem(z.joystick.center()), "{sw}×{sh}: meio do joystick cai num botao");
+        }
     }
 
     /// O icone das Diarias mora no topo direito, logo depois de Missoes e antes

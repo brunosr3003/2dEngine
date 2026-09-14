@@ -158,21 +158,28 @@ cabeça. Modelo novo com rosto de outra cor precisa entrar na lista dele.
 
 ## Ícones dos itens
 
-Os ícones da bolsa, loja, barra, craft e forja saem de um **atlas de pixel
-art gerado por código**, um ícone único por item (85 hoje):
+Os ícones da bolsa, loja, barra, craft e forja saem de um **atlas ilustrado
+gerado por código**, um ícone único por item (85 hoje), com a mesma técnica
+dos ícones do HUD e das skills:
 
 ```sh
 python3 tools/icones/gerar_icones.py
 ```
 
-- Python puro (só `zlib`/`struct`, sem PIL) e determinístico: rodar de novo
-  gera os mesmos bytes.
-- Saídas: `assets/icones/itens.png` (células de 48×48, 10 por linha) e
+- Cada item é um **SVG escrito em Python** (viewBox 64); `rsvg-convert`
+  rasteriza a 3× a célula e o Pillow reduz com LANCZOS em alfa
+  pré-multiplicado. Determinístico: rodar de novo gera os mesmos bytes.
+  Precisa de `rsvg-convert` (librsvg) e Pillow.
+- Saídas: `assets/icones/itens.png` (células de **96×96**, 10 por linha) e
   `crates/client/src/icones_indice.rs` (item_id → célula, ordenado). Os dois
-  vão pro git; o PNG entra no binário por `include_bytes!`.
-- Estilo: silhueta por categoria, 4 tons com luz de cima-esquerda, contorno
-  escuro tirado da própria cor e sombra curta. A cor do tier
-  (`tier_color_hex`) entra nos materiais coloridos, madeira e couro.
+  vão pro git; o PNG entra no binário por `include_bytes!` e o cliente desenha
+  reduzido com filtro **linear**.
+- Estilo, igual ao HUD novo: silhueta clara por categoria, contorno escuro
+  uniforme tirado da própria cor, gradiente de 3 tons com luz de
+  cima-esquerda, brilho especular pequeno e sombra curta. Equipamento tem
+  silhueta própria por peça; poção tem frasco por tipo com o líquido na cor;
+  a cor do tier (`tier_color_hex`) entra nos materiais, madeira e couro, com
+  aura nos tiers azul e roxo.
 - A moldura de raridade **não** é assada: raridade é da instância. O cliente
   desenha com `icones::icone(id, rect, Some(raridade), qtd)`.
 - Item novo: acrescente o desenho em `catalogo()` e rode o script. Item sem
