@@ -47,6 +47,7 @@ mod barra;
 mod preferencias;
 mod config_barra;
 mod config_coleta;
+mod config_interface;
 mod coleta_hud;
 mod lascas;
 mod morte;
@@ -175,6 +176,7 @@ struct Jogo {
     config_barra: config_barra::ConfigBarra,
     /// Tipos e raio do AUTO COLETA (botao direito no AUTO COLETA).
     config_coleta: config_coleta::ConfigColeta,
+    config_interface: config_interface::ConfigInterface,
     /// A barrinha "Coletando · tipo · N s".
     coleta_hud: coleta_hud::BarraDeColeta,
     /// Clique numa pedra/tronco: (coluna, centro, raio) — anda e coleta ao chegar.
@@ -286,6 +288,8 @@ struct Jogo {
     toque_acao: gesto_camera::Acao,
     /// Havia dedo na tela neste quadro: o aperto simulado do mouse nao vale.
     toque_ativo: bool,
+    /// `get_time` do ultimo quadro com dedo na tela.
+    ultimo_toque: f64,
     /// Alvos da camera (a entrada mexe neles; a camera persegue).
     camera_suave: camera_suave::CameraSuave,
     /// Um dedo girou a camera e ainda nao soltou: ao soltar sobra inercia.
@@ -385,6 +389,7 @@ async fn main() {
         prefs: Default::default(),
         config_barra: Default::default(),
         config_coleta: Default::default(),
+        config_interface: Default::default(),
         coleta_hud: Default::default(),
         coleta_pendente: None,
         coleta_auto_estava: false,
@@ -431,6 +436,7 @@ async fn main() {
         gesto_camera: gesto_camera::GestoCamera::default(),
         toque_acao: gesto_camera::Acao::Nada,
         toque_ativo: false,
+        ultimo_toque: f64::NEG_INFINITY,
         camera_suave: camera_suave::CameraSuave::default(),
         girando_toque: false,
         joystick: joystick::Joystick::default(),
@@ -496,6 +502,7 @@ impl Jogo {
         // Antes de tudo: a digitacao deste quadro. Quem desenha campo de
         // texto le' dela, e nao da fila crua da macroquad.
         self.teclado.coleta(get_time());
+        hud_layout::acompanhar();
         self.passo_google();
         self.passo_teclado_virtual();
         self.receber_lista();
@@ -1224,6 +1231,7 @@ impl Jogo {
             || self.morte.painel
             || self.config_barra.aberto
             || self.config_coleta.aberto
+            || self.config_interface.aberto
     }
 
     /// Morreu: nada automatico continua e os paineis fecham — a tela de morte
@@ -1266,6 +1274,7 @@ impl Jogo {
         self.morte.painel = false;
         self.config_barra.fechar();
         self.config_coleta.fechar();
+        self.config_interface.fechar();
         self.menu.fechar();
         self.voltar_ao_menu = false;
     }
@@ -1306,6 +1315,7 @@ impl Jogo {
             Item::RecuperarXp => self.morte.painel = true,
             Item::BarraItens => self.config_barra.abrir(None),
             Item::Coleta => self.config_coleta.abrir(),
+            Item::Configuracoes => self.config_interface.abrir(),
             Item::Sair => {
                 self.voltar_ao_menu = false;
                 self.sair();
@@ -1324,7 +1334,10 @@ impl Jogo {
             return true;
         }
         let do_menu = std::mem::take(&mut self.voltar_ao_menu);
-        let fechou_painel = if self.config_coleta.aberto {
+        let fechou_painel = if self.config_interface.aberto {
+            self.config_interface.fechar();
+            true
+        } else if self.config_coleta.aberto {
             self.config_coleta.fechar();
             true
         } else if self.config_barra.aberto {
@@ -1558,6 +1571,9 @@ impl Jogo {
         if let Some(r) = p.coleta_raio {
             self.auto_coleta.raio = r;
         }
+        if let Some(e) = p.escala_ui {
+            hud_layout::define_escala_ui(e);
+        }
         let atual = self.preferencias_atuais();
         self.prefs.recebeu(&atual);
     }
@@ -1577,6 +1593,7 @@ impl Jogo {
             camera_pitch_ajuste: Some(cent(self.cam_pitch_ajuste)),
             coleta_tipos: Some(self.auto_coleta.tipos),
             coleta_raio: Some(cent(self.auto_coleta.raio)),
+            escala_ui: Some(cent(hud_layout::escala_ui())),
         }
     }
 
@@ -2113,7 +2130,13 @@ impl Jogo {
     /// Le os dedos deste quadro e decide o gesto (ver `gesto_camera`).
     fn ler_toques(&mut self) {
         let brutos = touches();
-        self.toque_ativo = !brutos.is_empty() || self.gesto_camera.ativo();
+        // Um pouco depois do ultimo dedo o mouse simulado da macroquad ainda
+        // conta como toque: aperto de mouse "sozinho" nesse meio tempo e' eco
+        // do dedo, nao clique no mundo.
+        if !brutos.is_empty() {
+            self.ultimo_toque = get_time();
+        }
+        self.toque_ativo = !brutos.is_empty() || self.gesto_camera.ativo() || get_time() - self.ultimo_toque < 0.3;
         let toques: Vec<gesto_camera::ToqueNoQuadro> = brutos
             .iter()
             .map(|t| gesto_camera::ToqueNoQuadro {
@@ -2139,8 +2162,10 @@ impl Jogo {
         let pode_comecar = |p: Vec2| {
             !painel && z.joystick.contains(p) && !z.contem(p) && !(so_um_dedo && sobre_ui)
         };
+        let dono = self.joystick.dedo();
         self.joystick.quadro(&toques, joystick::RAIO_BASE * z.s, &pode_comecar);
-        let resto = joystick::sem_dedo(&toques, self.joystick.dedo());
+        // O de antes tambem sai: no quadro do soltar o joystick ja' largou o id.
+        let resto = joystick::sem_dedos(&toques, &[dono, self.joystick.dedo()]);
         // O HUD e' conferido no ponto do dedo (a macroquad ja' levou o mouse
         // simulado pra la').
         let sobre_hud = !resto.is_empty() && sobre_ui;
@@ -2661,8 +2686,14 @@ impl Jogo {
                 self.envia(pedido);
             }
         }
-        if self.craft.aberto() || self.forja.aberto() || self.config_barra.aberto || self.config_coleta.aberto {
+        if self.craft.aberto() || self.forja.aberto() || self.config_barra.aberto || self.config_coleta.aberto || self.config_interface.aberto {
             hud_layout::escurece(0.55);
+        }
+        if self.config_interface.aberto {
+            // Vale no quadro seguinte e vai pro servidor pelas preferencias.
+            if let Some(nova) = self.config_interface.desenha(hud_layout::escala_ui()) {
+                hud_layout::define_escala_ui(nova);
+            }
         }
         if self.config_coleta.aberto {
             let (mut tipos, mut raio) = (self.auto_coleta.tipos, self.auto_coleta.raio);

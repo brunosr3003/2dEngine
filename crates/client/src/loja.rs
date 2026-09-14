@@ -77,7 +77,7 @@ impl Loja {
 
     fn painel(&self) -> Rect {
         let h = 118.0 + self.itens.len().max(1) as f32 * LINHA;
-        Rect::new(24.0, screen_height() * 0.16, LARGURA, h)
+        Rect::new(crate::hud_layout::tela_segura().x + 24.0, screen_height() * 0.16, LARGURA, h)
     }
 
     /// Com o mouse em cima do painel o clique e' da loja, e nao do mundo.

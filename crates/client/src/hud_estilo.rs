@@ -34,16 +34,27 @@ fn fonte<T>(forte: bool, f: impl FnOnce(&Font) -> T) -> T {
     }
 }
 
+/// Fator do texto: a escala da interface escolhida (Menu → Sistema →
+/// Interface; 130% no celular por padrao). Todo texto e toda medida passam
+/// por aqui, entao o `tamanho` dos chamadores continua "o de 100%".
+pub fn fator_texto() -> f32 {
+    crate::hud_layout::escala_ui()
+}
+
+fn tam(tamanho: u16) -> u16 {
+    (tamanho as f32 * fator_texto()).round().clamp(1.0, 400.0) as u16
+}
+
 fn desenha_texto(forte: bool, x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
     fonte(forte, |f| {
-        draw_text_ex(s, x, y, TextParams { font: Some(f), font_size: tamanho, color: cor, ..Default::default() });
+        draw_text_ex(s, x, y, TextParams { font: Some(f), font_size: tam(tamanho), color: cor, ..Default::default() });
     });
 }
 
-pub fn medir(s: &str, tamanho: u16) -> f32 { fonte(false, |f| measure_text(s, Some(f), tamanho, 1.0).width) }
+pub fn medir(s: &str, tamanho: u16) -> f32 { fonte(false, |f| measure_text(s, Some(f), tam(tamanho), 1.0).width) }
 /// Dimensoes na fonte da UI — pra quem alinha texto com `TextDimensions`.
-pub fn medir_dim(s: &str, tamanho: u16) -> TextDimensions { fonte(false, |f| measure_text(s, Some(f), tamanho, 1.0)) }
-pub fn medir_forte(s: &str, tamanho: u16) -> f32 { fonte(true, |f| measure_text(s, Some(f), tamanho, 1.0).width) }
+pub fn medir_dim(s: &str, tamanho: u16) -> TextDimensions { fonte(false, |f| measure_text(s, Some(f), tam(tamanho), 1.0)) }
+pub fn medir_forte(s: &str, tamanho: u16) -> f32 { fonte(true, |f| measure_text(s, Some(f), tam(tamanho), 1.0).width) }
 pub fn texto(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) { desenha_texto(false, x, y, s, tamanho, cor); }
 pub fn texto_forte(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) { desenha_texto(true, x, y, s, tamanho, cor); }
 pub fn texto_centro(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) { texto(x - medir(s, tamanho) * 0.5, y, s, tamanho, cor); }

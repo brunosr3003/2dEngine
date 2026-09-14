@@ -1896,6 +1896,38 @@ fn draw_mesh_at(m: &Mesh, at: Vec3, yaw: f32) {
 ///
 /// Necessario pra mirar com o mouse: a selecao de alvo compara a distancia em
 /// PIXELS entre o cursor e cada entidade, que e' o que o jogador enxerga.
+/// Retangulo da tela (em PONTOS, origem em cima) → viewport do GL (em PIXELS,
+/// origem EMBAIXO). `escala` e' o `dpi_scale` (iPhone 2x/3x com high_dpi) e
+/// `alto_px` a altura do framebuffer em pixels. `None` se nao sobra area.
+///
+/// E' como se desenha um boneco 3D DENTRO de um painel (previa da criacao, da
+/// lista, retrato da bolsa) sem render target com profundidade: a miniquad
+/// 0.4.11 cria essa profundidade com `GL_DEPTH_COMPONENT` sem tamanho, que o
+/// OpenGL ES do iPhone recusa — o framebuffer fica incompleto e o boneco some.
+pub fn viewport_em_pixels(r: Rect, escala: f32, alto_px: f32) -> Option<(i32, i32, i32, i32)> {
+    let x = (r.x * escala).round().max(0.0);
+    let topo = (r.y * escala).round().max(0.0);
+    let base = ((r.y + r.h) * escala).round().min(alto_px);
+    let w = (r.w * escala).round();
+    let h = base - topo;
+    if w < 1.0 || h < 1.0 {
+        return None;
+    }
+    Some((x as i32, (alto_px - base) as i32, w as i32, h as i32))
+}
+
+/// O viewport de `r` na tela de verdade (sem alvo), com o dpi atual.
+pub fn viewport_na_tela(r: Rect) -> Option<(i32, i32, i32, i32)> {
+    let s = macroquad::miniquad::window::dpi_scale();
+    viewport_em_pixels(r, s, screen_height() * s)
+}
+
+/// Depois do `set_camera` 3D de um viewport: limpa so' a PROFUNDIDADE (a cor
+/// do painel ja' desenhado fica), pro boneco nao brigar com o depth do mundo.
+pub fn limpa_so_profundidade() {
+    unsafe { get_internal_gl() }.quad_context.clear(None, Some(1.0), None);
+}
+
 pub fn world_to_screen(cam: &Camera3D, p: Vec3) -> Option<Vec2> {
     let clip = cam.matrix() * p.extend(1.0);
     if clip.w <= 0.0 {

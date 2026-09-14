@@ -160,8 +160,30 @@ Os números abaixo valem para uma tela **1920×1080**. O código atual usa px
 fixos que foram pensados para ~1280 (os painéis da direita têm 194 px).
 
 ```
-escala = clamp(min(sw/1920, sh/1080), 0.70, 1.30) × escala_ui   // escala_ui: 80–120% nas Configurações
+escala = clamp(min(sw/1920, sh/1080), 0.70, 1.30) × escala_ui   // escala_ui: 80–160%, Menu → Sistema → Interface
 ```
+
+**Área segura (iPhone).** `nativo::area_segura()` lê o `safeAreaInsets` da
+janela (notch/Dynamic Island, cantos arredondados, barra do home), soma 4 pt de
+respiro com mínimo de 16 pt por lado e converte para px. `hud_layout::acompanhar()`
+relê a cada 30 quadros (girar o aparelho troca o lado do notch). O HUD inteiro é
+montado **dentro** dessa área (`zonas_com(sw, sh, margens, escala_ui)`): `sw`,
+`sh` acima são os da área segura. Painéis ancorados em canto (Menu, janela de
+missões, loja do NPC, Interface) usam `hud_layout::tela_segura()`. Fora do iOS
+as margens são zero.
+
+**Escala da interface.** `escala_ui` vai de 80% a 160% em passos de 10%.
+Padrão: **130% no celular**, 100% no PC. Vale para o HUD (`s` acima) e para
+**todo texto** (`hud_estilo::fator_texto`, aplicado em `desenha_texto` e nas
+`medir*` — os chamadores continuam passando o tamanho "de 100%"). Se a escala
+pedida não couber, `zonas_com` desce de 2 em 2% até caber (nada sobreposto,
+tudo na área segura, joystick com espaço para o polegar), sem descer abaixo da
+escala da tela × min(escala_ui, 1). O número de missões no rastreador é
+decidido pela altura "de 1080" (`sh / escala`). Fica salvo em
+`Preferencias.escala_ui` (servidor recorta para 0,8–1,6). Testes: todas as telas
+de PC e 5 aparelhos (iPhone 15 Pro/Pro Max, SE, 11, iPad Air) a 80/100/130/160%.
+Limite conhecido: painéis grandes de tamanho fixo (Bolsa, Craft, Forja) não
+crescem com a escala, só o texto dentro deles.
 
 Cada elemento tem uma **âncora** (canto ou borda), uma margem de 20 px (×
 escala) e um tamanho. **Uma função só** (`hud_layout::zonas(sw, sh, escala)`)
@@ -372,7 +394,8 @@ A coluna **"Também no HUD"** lista o outro caminho por clique além do Menu.
 | Comércio | **Loja** | balança | **painel Lojas da ilha**: lista de vendedores (nome, o que vende, distância) com **"Ir"** (auto-path `ir_para::Objetivo::Npc`, e ao chegar abre a loja). Ver 3.4 | **sim** | — | — | a fazer |
 | Comércio | Mercado | sacola | leilão entre jogadores (ECONOMIA) | — | — | — | em breve |
 | Comércio | Loja TP | gema | loja de cash, **remota** (ECONOMIA §TP) | não | — | — | em breve |
-| Sistema | **Configurações** | engrenagem | abas *Jogo* (escala da UI 80–120%, mostrar minimapa, **Economia de energia**) · *Combate* (raio do AUTO, poção automática por %) · *Gráficos/Som* · *Atalhos* (lista, e no futuro rebind) | não | — | — | a fazer |
+| Sistema | **Interface** (hoje) | engrenagem | tamanho do HUD e dos textos, 80–160% (padrão 130% no celular), muda na hora e salva no personagem — `config_interface.rs` | não | — | — | **existe** |
+| Sistema | **Configurações** (futuro) | engrenagem | abas *Jogo* (mostrar minimapa, **Economia de energia**) · *Combate* (raio do AUTO, poção automática por %) · *Gráficos/Som* · *Atalhos* (lista, e no futuro rebind) | não | — | — | a fazer |
 | Sistema | Trocar personagem | setas | volta à seleção (a mesma rotina de `sair` sem fechar o jogo) | — | — | — | a fazer |
 | Sistema | **Sair** | porta | confirmação → `sair()` (hoje é o botão "Sair" do HUD) | — | — | — | existe, mover |
 

@@ -127,7 +127,10 @@ limpa o alvo e desliga o AUTO.
   anda devagar; zona morta de 12%). Some ao soltar. Conta como andar na mão:
   pausa auto missão, viagem, "Ir para" e a ida até o NPC; o auto combate segue
   ligado. O dedo do joystick nunca gira a câmera nem clica no mundo — outro dedo
-  na direita continua girando, e os botões funcionam ao mesmo tempo.
+  na direita continua girando, e os botões funcionam ao mesmo tempo. **Soltar o
+  polegar não é clique:** no quadro do soltar o joystick já largou o id, então o
+  `main` tira da lista o dedo de antes *e* o de depois (`joystick::sem_dedos`),
+  e aperto de mouse simulado até 0,3 s depois de um toque não vale como clique.
 - **Câmera suave:** mouse, dedo, pinça e roda mexem num alvo e a câmera persegue
   (aproximação exponencial, K = 18/s); o delta do dedo passa por uma média de
   50 ms e, ao soltar, sobra uma inércia que morre em ~0,35 s.

@@ -84,7 +84,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
     ]),
     ("SISTEMA", &[
         (Item::BarraItens, "Barra", None),
-        (Item::Configuracoes, "Ajustes", Some("Em breve")),
+        (Item::Configuracoes, "Interface", None),
         (Item::TrocarPersonagem, "Trocar", Some("Em breve")),
         (Item::Sair, "Sair", None),
     ]),
@@ -136,10 +136,11 @@ impl Menu {
     }
 
     fn painel() -> Rect {
-        let (sw, sh) = (screen_width(), screen_height());
-        let w = (sw - 80.0).clamp(320.0, 1600.0);
-        let h = (sh - 80.0).clamp(320.0, 900.0);
-        Rect::new((sw - w) * 0.5, (sh - h) * 0.5, w, h)
+        // Dentro da area segura: no iPhone o notch e a barra do home cortavam.
+        let t = crate::hud_layout::tela_segura();
+        let w = (t.w - 80.0).clamp(320.0, 1600.0);
+        let h = (t.h - 80.0).clamp(320.0, 900.0);
+        Rect::new(t.x + (t.w - w) * 0.5, t.y + (t.h - h) * 0.5, w, h)
     }
 
     /// Aberto, o Menu pega a tela toda (o mundo nao recebe clique nem roda).
@@ -309,7 +310,7 @@ mod tests {
 
     #[test]
     fn todo_sistema_que_existe_abre_e_o_resto_so_avisa() {
-        let abre = [Item::Bolsa, Item::Missoes, Item::TodasMissoes, Item::Diarias, Item::Craft, Item::Forja, Item::Mapa, Item::Lojas, Item::RecuperarXp, Item::BarraItens, Item::Coleta, Item::Sair];
+        let abre = [Item::Bolsa, Item::Missoes, Item::TodasMissoes, Item::Diarias, Item::Craft, Item::Forja, Item::Mapa, Item::Lojas, Item::RecuperarXp, Item::BarraItens, Item::Coleta, Item::Configuracoes, Item::Sair];
         for (_, itens) in GRUPOS.iter() {
             for l in itens.iter() {
                 match clique_de(l) {

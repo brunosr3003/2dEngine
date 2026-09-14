@@ -7,6 +7,8 @@
 //!
 //! Os numeros sao px a 1920×1080 e multiplicam pela escala.
 use macroquad::prelude::*;
+use std::cell::Cell;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::hud_estilo as estilo;
 
@@ -17,6 +19,63 @@ pub const BASE_H: f32 = 1080.0;
 /// 0,70 (janela lado a lado) e 1,30 (monitor grande).
 pub fn escala(sw: f32, sh: f32) -> f32 {
     (sw / BASE_W).min(sh / BASE_H).clamp(0.70, 1.30)
+}
+
+// ───────────── escala escolhida e area segura (celular) ─────────────
+
+/// Faixa da escala da interface (Menu → Sistema → Interface): multiplica o
+/// HUD e todo texto que passa pelo `hud_estilo`.
+pub const ESCALA_UI_MIN: f32 = 0.8;
+pub const ESCALA_UI_MAX: f32 = 1.6;
+
+/// Celular: tela pequena e densa, o texto de 14 px some. PC fica em 100%.
+pub fn escala_ui_padrao() -> f32 {
+    if crate::nativo::TECLADO_NA_TELA { 1.3 } else { 1.0 }
+}
+
+/// Bits do f32; 0 = nunca escolheu (vale o padrao da plataforma).
+static ESCALA_UI: AtomicU32 = AtomicU32::new(0);
+/// Area segura em px: topo, esquerda, baixo, direita.
+static MARGENS: [AtomicU32; 4] = [AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0)];
+
+pub fn escala_ui() -> f32 {
+    match ESCALA_UI.load(Ordering::Relaxed) {
+        0 => escala_ui_padrao(),
+        b => f32::from_bits(b),
+    }
+}
+
+/// Em passos de 10%, dentro da faixa. Vale no quadro seguinte.
+pub fn define_escala_ui(v: f32) {
+    let v = if v.is_finite() { ((v * 10.0).round() / 10.0).clamp(ESCALA_UI_MIN, ESCALA_UI_MAX) } else { escala_ui_padrao() };
+    ESCALA_UI.store(v.to_bits(), Ordering::Relaxed);
+}
+
+pub fn margens() -> [f32; 4] {
+    MARGENS.each_ref().map(|a| f32::from_bits(a.load(Ordering::Relaxed)))
+}
+
+pub fn define_margens(m: [f32; 4]) {
+    for (a, v) in MARGENS.iter().zip(m) {
+        a.store(if v.is_finite() { v.max(0.0) } else { 0.0 }.to_bits(), Ordering::Relaxed);
+    }
+}
+
+/// Uma vez por quadro: rele' a area segura a cada 30 (girar o aparelho muda o
+/// lado do notch).
+pub fn acompanhar() {
+    thread_local!(static QUADRO: Cell<u32> = const { Cell::new(0) });
+    let n = QUADRO.with(|q| q.replace(q.get().wrapping_add(1)));
+    if n % 30 == 0 {
+        define_margens(crate::nativo::area_segura());
+    }
+}
+
+/// A tela menos a area segura: onde painel ancorado em canto deve ficar.
+pub fn tela_segura() -> Rect {
+    let [t, e, b, d] = margens();
+    let (sw, sh) = (screen_width(), screen_height());
+    Rect::new(e, t, (sw - e - d).max(64.0), (sh - t - b).max(64.0))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -63,19 +122,70 @@ pub struct Zonas {
 }
 
 /// As zonas da tela atual.
+/// Com a area segura e a escala escolhida. Chamado varias vezes por quadro:
+/// guarda a ultima resposta (o ajuste abaixo testa sobreposicao).
 pub fn atual() -> Zonas {
-    zonas(screen_width(), screen_height())
+    thread_local!(static MEMO: Cell<Option<([u32; 7], Zonas)>> = const { Cell::new(None) });
+    let (sw, sh, mg, ui) = (screen_width(), screen_height(), margens(), escala_ui());
+    let chave = [sw, sh, mg[0], mg[1], mg[2], mg[3], ui].map(f32::to_bits);
+    MEMO.with(|c| match c.get() {
+        Some((k, z)) if k == chave => z,
+        _ => {
+            let z = zonas_com(sw, sh, mg, ui);
+            c.set(Some((chave, z)));
+            z
+        }
+    })
 }
 
+/// Tela inteira, 100%: a dos testes de PC.
+#[cfg(test)]
 pub fn zonas(sw: f32, sh: f32) -> Zonas {
-    let s = escala(sw, sh);
+    zonas_com(sw, sh, [0.0; 4], 1.0)
+}
+
+/// `margens` = area segura (topo, esquerda, baixo, direita) em px; `ui` = a
+/// escala escolhida. O HUD e' montado dentro da area segura. Se a escala pedida
+/// nao couber (sobrepoe, sai da area ou o joystick fica sem polegar), desce aos
+/// poucos ate' caber — nunca abaixo da escala da tela × min(ui, 1).
+pub fn zonas_com(sw: f32, sh: f32, margens: [f32; 4], ui: f32) -> Zonas {
+    let [t, e, b, d] = margens;
+    let (w, h) = ((sw - e - d).max(64.0), (sh - t - b).max(64.0));
+    let base = escala(w, h);
+    let piso = base * ui.min(1.0);
+    let mut s = base * ui.max(0.1);
+    loop {
+        let z = monta(w, h, s);
+        if s <= piso + 1e-4 || cabe(&z, w, h) {
+            return z.desloca(vec2(e, t));
+        }
+        s = (s - 0.02).max(piso);
+    }
+}
+
+fn cruzam(a: Rect, b: Rect) -> bool {
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+}
+
+/// Tudo dentro de `w`×`h`, nada cobrindo nada e joystick com espaco pro polegar.
+pub fn cabe(z: &Zonas, w: f32, h: f32) -> bool {
+    let todos = z.todos();
+    let dentro = todos.iter().all(|(_, r)| r.x >= -0.01 && r.y >= -0.01 && r.x + r.w <= w + 0.01 && r.y + r.h <= h + 0.01);
+    let livre = (0..todos.len()).all(|i| (i + 1..todos.len()).all(|j| !cruzam(todos[i].1, todos[j].1)));
+    let polegar = 2.0 * crate::joystick::RAIO_BASE * z.s;
+    dentro && livre && z.joystick.w >= polegar && z.joystick.h >= polegar
+}
+
+fn monta(sw: f32, sh: f32, s: f32) -> Zonas {
     let m = 20.0 * s;
 
     // ── esquerda: ficha, buffs, rastreador ──
     let ficha = Rect::new(m, m, 440.0 * s, 160.0 * s);
     let buffs = Rect::new(m, ficha.y + ficha.h + 6.0 * s, 440.0 * s, 40.0 * s);
-    // 16:10 ganha uma missao; tela baixa perde.
-    let n = if sh >= 1150.0 { 5 } else if sh < 700.0 { 2 } else { 4 };
+    // 16:10 ganha uma missao; tela baixa perde. Medido na altura "de 1080"
+    // (px / escala): no celular a 130% sobra menos altura que os px sugerem.
+    let hb = sh / s;
+    let n = if hb >= 1150.0 { 5 } else if hb >= 960.0 { 4 } else if hb >= 860.0 { 3 } else { 2 };
     let rastreador = Rect::new(m, buffs.y + buffs.h + 8.0 * s, 440.0 * s, (48.0 + 56.0 * n as f32 + 28.0) * s);
 
     // ── topo direito: icones, MENU, area, minimapa ──
@@ -156,6 +266,23 @@ pub fn zonas(sw: f32, sh: f32) -> Zonas {
 }
 
 impl Zonas {
+    /// Tudo arrastado de `o` (o canto da area segura).
+    fn desloca(mut self, o: Vec2) -> Zonas {
+        let d = move |r: Rect| Rect::new(r.x + o.x, r.y + o.y, r.w, r.h);
+        for r in [
+            &mut self.ficha, &mut self.buffs, &mut self.rastreador, &mut self.alvo, &mut self.menu, &mut self.area,
+            &mut self.minimapa, &mut self.mapa_icone, &mut self.chat, &mut self.joystick, &mut self.faixa,
+            &mut self.coleta, &mut self.atacar, &mut self.auto_combate, &mut self.auto_coleta, &mut self.pocao,
+            &mut self.exp,
+        ] {
+            *r = d(*r);
+        }
+        self.icones = self.icones.map(d);
+        self.skills = self.skills.map(d);
+        self.rapidos = self.rapidos.map(d);
+        self
+    }
+
     /// Todo retangulo de nivel de cima (sem os de dentro de outro, como o ⤢ do
     /// minimapa), com nome — pro teste e pro `contem`.
     pub fn todos(&self) -> Vec<(&'static str, Rect)> {
@@ -257,8 +384,52 @@ mod tests {
         (940.0, 980.0),
     ];
 
-    fn cruzam(a: Rect, b: Rect) -> bool {
-        a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    /// Area segura ja' com o respiro do `nativo` (px, paisagem): topo,
+    /// esquerda, baixo, direita.
+    const APARELHOS: [(&str, f32, f32, [f32; 4]); 5] = [
+        ("iPhone 15 Pro", 2556.0, 1179.0, [48.0, 189.0, 75.0, 189.0]),
+        ("iPhone 15 Pro Max", 2796.0, 1290.0, [48.0, 189.0, 75.0, 189.0]),
+        ("iPhone SE", 1334.0, 750.0, [32.0, 32.0, 32.0, 32.0]),
+        ("iPhone 11", 1792.0, 828.0, [32.0, 96.0, 50.0, 96.0]),
+        ("iPad Air", 2360.0, 1640.0, [48.0, 48.0, 90.0, 48.0]),
+    ];
+
+    #[test]
+    fn toda_escala_cabe_em_todo_aparelho() {
+        let telas = TELAS.iter().map(|&(w, h)| ("PC", w, h, [0.0; 4])).chain(APARELHOS);
+        for (nome, sw, sh, mg) in telas {
+            let seguro = Rect::new(mg[1], mg[0], sw - mg[1] - mg[3], sh - mg[0] - mg[2]);
+            for ui in [ESCALA_UI_MIN, 1.0, 1.3, ESCALA_UI_MAX] {
+                let z = zonas_com(sw, sh, mg, ui);
+                let local = z.desloca(vec2(-seguro.x, -seguro.y));
+                assert!(cabe(&local, seguro.w, seguro.h), "{nome} {sw}×{sh} a {ui}: nao cabe na area segura (s {})", z.s);
+                assert!(z.s + 1e-4 >= escala(seguro.w, seguro.h) * ui.min(1.0), "{nome} a {ui}: encolheu demais");
+                assert!(!z.contem(z.joystick.center()), "{nome} a {ui}: meio do joystick cai num botao");
+            }
+        }
+    }
+
+    #[test]
+    fn celular_a_130_fica_maior_e_longe_do_notch() {
+        let (_, sw, sh, mg) = APARELHOS[0];
+        let (cem, cento_e_trinta) = (zonas_com(sw, sh, mg, 1.0), zonas_com(sw, sh, mg, 1.3));
+        assert!(cento_e_trinta.s > cem.s * 1.2, "130% cresceu so' {} → {}", cem.s, cento_e_trinta.s);
+        for z in [cem, cento_e_trinta] {
+            assert!(z.ficha.x >= mg[1] && z.ficha.y >= mg[0], "ficha no notch/canto: {:?}", z.ficha);
+            assert!(z.menu.x + z.menu.w <= sw - mg[3], "MENU no notch: {:?}", z.menu);
+            assert!(z.exp.y + z.exp.h <= sh - mg[2], "EXP na barra do home: {:?}", z.exp);
+            assert!(z.atacar.x + z.atacar.w <= sw - mg[3], "ATACAR no notch");
+        }
+    }
+
+    #[test]
+    fn escala_escolhida_fica_na_faixa() {
+        define_escala_ui(9.0);
+        assert_eq!(escala_ui(), ESCALA_UI_MAX);
+        define_escala_ui(1.26);
+        assert!((escala_ui() - 1.3).abs() < 1e-6);
+        define_escala_ui(f32::NAN);
+        assert_eq!(escala_ui(), escala_ui_padrao());
     }
 
     #[test]

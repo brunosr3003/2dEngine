@@ -43,9 +43,17 @@ mod testes {
             skills_auto: vec![1, 4],
             alcance_minimapa: Some(150.0),
             camera_zoom: Some(1.3),
+            escala_ui: Some(1.3),
             ..Default::default()
         });
         assert_eq!(de_json(&para_json(&p)), p);
+    }
+
+    #[test]
+    fn escala_da_interface_fora_da_faixa_e_recortada() {
+        assert_eq!(de_json(r#"{"escala_ui":5}"#).escala_ui, Some(1.6));
+        assert_eq!(de_json(r#"{"escala_ui":0.1}"#).escala_ui, Some(0.8));
+        assert_eq!(de_json(r#"{"skills_auto":[1]}"#).escala_ui, None, "JSON antigo: cliente fica com o padrao dele");
     }
 
     #[test]

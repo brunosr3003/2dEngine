@@ -51,6 +51,20 @@ pub fn teclado_virtual(mostrar: bool) {
     let _ = mostrar;
 }
 
+/// Area segura da tela, em px da macroquad: (topo, esquerda, baixo, direita).
+/// No iPhone em paisagem o notch/Dynamic Island come um lado, os cantos sao
+/// arredondados e a barra do home fica embaixo. Fora do iOS, zero.
+pub fn area_segura() -> [f32; 4] {
+    #[cfg(target_os = "ios")]
+    {
+        ios::area_segura()
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        [0.0; 4]
+    }
+}
+
 #[cfg(target_os = "ios")]
 mod ios {
     use std::ffi::{c_char, c_void, CString};
@@ -148,6 +162,40 @@ mod ios {
             }
         }
         None
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Default)]
+    struct Quatro(f64, f64, f64, f64);
+
+    // UIEdgeInsets e CGRect: quatro f64, volta em registrador no arm64 (HFA),
+    // entao o objc_msgSend comum serve.
+    unsafe fn msg_quatro(obj: Id, s: &str) -> Quatro {
+        let f: unsafe extern "C" fn(Id, Sel) -> Quatro = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        f(obj, sel(s))
+    }
+
+    /// `safeAreaInsets` da janela (pontos) convertido pra px da macroquad pela
+    /// razao largura-da-tela / largura-da-janela.
+    pub fn area_segura() -> [f32; 4] {
+        unsafe {
+            let app = msg(classe("UIApplication"), "sharedApplication");
+            let janelas = msg(app, "windows");
+            if janelas.is_null() || msg_n(janelas, "count") == 0 {
+                return [0.0; 4];
+            }
+            let janela = msg_i(janelas, "objectAtIndex:", 0);
+            let b = msg_quatro(janela, "bounds");
+            if b.2 <= 1.0 {
+                return [0.0; 4];
+            }
+            let i = msg_quatro(janela, "safeAreaInsets");
+            let k = macroquad::window::screen_width() as f64 / b.2;
+            // Respiro: 4 pt alem do inset e nunca menos de 16 pt — em paisagem
+            // o topo tem inset zero mas o canto arredondado corta.
+            let px = |v: f64| ((v.max(0.0) + 4.0).max(16.0) * k) as f32;
+            [px(i.0), px(i.1), px(i.2), px(i.3)]
+        }
     }
 
     pub fn teclado(mostrar: bool) {

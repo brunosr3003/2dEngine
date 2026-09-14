@@ -113,8 +113,17 @@ impl Joystick {
 
 /// A lista de toques sem o dedo do joystick — e' o que vai pro gesto da
 /// camera e pro clique no mundo.
+#[cfg(test)]
 pub fn sem_dedo(toques: &[ToqueNoQuadro], dedo: Option<u64>) -> Vec<ToqueNoQuadro> {
-    toques.iter().copied().filter(|t| Some(t.id) != dedo).collect()
+    sem_dedos(toques, &[dedo])
+}
+
+/// Igual, tirando varios. `main` passa o dedo de ANTES e o de DEPOIS do
+/// `quadro`: no quadro em que o dedo solta o joystick ja' esqueceu o id, e o
+/// `Acabou` dele caia no gesto como toque curto — clique no mundo, andar ate'
+/// onde o polegar saiu.
+pub fn sem_dedos(toques: &[ToqueNoQuadro], dedos: &[Option<u64>]) -> Vec<ToqueNoQuadro> {
+    toques.iter().copied().filter(|t| !dedos.contains(&Some(t.id))).collect()
 }
 
 /// Andar "na mao": teclado OU joystick. E' o que pausa auto missao, viagem,
@@ -188,6 +197,26 @@ mod testes {
         let mut g = crate::gesto_camera::GestoCamera::default();
         let so_joy = [t(1, Fase::Acabou, 200.0, 700.0)];
         assert_eq!(g.quadro(&sem_dedo(&so_joy, Some(1)), false), crate::gesto_camera::Acao::Nada);
+    }
+
+    /// O bug do iPhone: soltar o polegar do joystick andava ate' ali (clique).
+    #[test]
+    fn soltar_o_joystick_nao_vira_clique_no_mundo() {
+        let mut j = Joystick::default();
+        let mut g = crate::gesto_camera::GestoCamera::default();
+        let passo = |j: &mut Joystick, g: &mut crate::gesto_camera::GestoCamera, q: &[ToqueNoQuadro]| {
+            let antes = j.dedo();
+            j.quadro(q, 100.0, &area_esquerda);
+            g.quadro(&sem_dedos(q, &[antes, j.dedo()]), false)
+        };
+        use crate::gesto_camera::Acao;
+        assert_eq!(passo(&mut j, &mut g, &[t(7, Fase::Comecou, 200.0, 700.0)]), Acao::Nada);
+        assert_eq!(passo(&mut j, &mut g, &[t(7, Fase::Segurando, 260.0, 690.0)]), Acao::Nada);
+        assert_eq!(passo(&mut j, &mut g, &[t(7, Fase::Acabou, 260.0, 690.0)]), Acao::Nada, "soltar nao clica");
+        assert!(!j.ativo());
+        // Um toque curto de verdade, depois, continua sendo clique.
+        assert_eq!(passo(&mut j, &mut g, &[t(8, Fase::Comecou, 900.0, 300.0)]), Acao::Nada);
+        assert!(matches!(passo(&mut j, &mut g, &[t(8, Fase::Acabou, 900.0, 300.0)]), Acao::Clique(_)));
     }
 
     #[test]

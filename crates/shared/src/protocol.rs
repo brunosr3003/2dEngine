@@ -816,6 +816,8 @@ pub struct Preferencias {
     pub coleta_tipos: Option<[bool; 5]>,
     /// AUTO COLETA: raio de busca a partir de onde foi ligado.
     pub coleta_raio: Option<f32>,
+    /// Escala da interface (HUD e textos), 0,8 a 1,6.
+    pub escala_ui: Option<f32>,
 }
 
 /// Filtros do mapa grande e do minimapa. O padrao e' tudo desligado.
@@ -853,6 +855,7 @@ impl Preferencias {
         self.camera_zoom = faixa(self.camera_zoom, 0.1, 10.0);
         self.camera_pitch_ajuste = faixa(self.camera_pitch_ajuste, -3.0, 3.0);
         self.coleta_raio = faixa(self.coleta_raio, crate::COLETA_RAIO_AUTO_MIN, crate::COLETA_RAIO_AUTO_MAX);
+        self.escala_ui = faixa(self.escala_ui, 0.8, 1.6);
         self
     }
 }
@@ -872,8 +875,10 @@ mod testes_preferencias {
             camera_pitch_ajuste: Some(-9.0),
             coleta_tipos: Some([true, false, true, false, true]),
             coleta_raio: Some(5000.0),
+            escala_ui: Some(9.0),
         }
         .validada(&|id| id <= 12);
+        assert_eq!(p.escala_ui, Some(1.6));
         assert_eq!(p.coleta_raio, Some(crate::COLETA_RAIO_AUTO_MAX));
         assert_eq!(p.coleta_tipos, Some([true, false, true, false, true]));
         assert_eq!(p.versao, Preferencias::VERSAO);

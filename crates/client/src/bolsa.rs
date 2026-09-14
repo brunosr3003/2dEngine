@@ -96,10 +96,6 @@ pub struct Bolsa {
     /// Ultimo clique: pra reconhecer o duplo.
     clique: (f64, Option<Sel>),
     aviso: Option<(String, f64)>,
-    /// Onde o retrato do personagem e' desenhado — textura propria, com
-    /// profundidade propria: por cima do mundo, o depth do mundo esconderia
-    /// o boneco.
-    retrato: Option<RenderTarget>,
 }
 
 impl Default for Bolsa {
@@ -116,7 +112,6 @@ impl Default for Bolsa {
             sel: None,
             clique: (0.0, None),
             aviso: None,
-            retrato: None,
         }
     }
 }
@@ -484,35 +479,35 @@ impl Bolsa {
     }
 
     /// O personagem girando devagar, com a arma na mao — como o MIR4 mostra
-    /// na bolsa. Desenhado numa textura com profundidade propria.
+    /// na bolsa. Desenhado DIRETO na tela, num viewport do retrato — sem
+    /// render target com profundidade, que o iPhone recusa (ver
+    /// `render3d::viewport_em_pixels`). O depth do mundo nao esconde o boneco
+    /// porque a profundidade e' limpa antes dele.
     fn desenha_retrato(&mut self, r: Rect, vox: &VoxCache, solido: &Material) {
         if r.w < 20.0 || r.h < 20.0 {
             return;
         }
-        let (w, h) = (r.w as u32, r.h as u32);
-        let refaz = self.retrato.as_ref().map_or(true, |rt| {
-            rt.texture.width() as u32 != w || rt.texture.height() as u32 != h
-        });
-        if refaz {
-            let rt = render_target_ex(w, h, macroquad::texture::RenderTargetParams { sample_count: 1, depth: true });
-            rt.texture.set_filter(FilterMode::Linear);
-            self.retrato = Some(rt);
-        }
-        let rt = self.retrato.clone().unwrap();
-        // um degrade atras, e o chao em que ele pisa
-        draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.08, 0.07, 0.10, 1.0));
-        let Some(corpo) = vox.rig(render3d::RIG_CORPO) else { return };
+        // um fundo atras, e o chao em que ele pisa
+        draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.09, 0.08, 0.11, 1.0));
+        let Some(corpo) = vox.rig(render3d::RIG_CORPO) else {
+            ui::texto_centro(r.x + r.w * 0.5, r.y + r.h * 0.5, "vox faltando: personagem/corpo.vox", 12, APAGADO);
+            return;
+        };
+        let Some(vp) = render3d::viewport_na_tela(r) else {
+            ui::texto_centro(r.x + r.w * 0.5, r.y + r.h * 0.5, "Retrato sem espaço na tela", 12, APAGADO);
+            return;
+        };
         let cam = Camera3D {
             position: vec3(0.0, 1.15, 4.6),
             target: vec3(0.0, 0.92, 0.0),
             up: Vec3::Y,
             fovy: 30f32.to_radians(),
-            aspect: Some(w as f32 / h as f32),
-            render_target: Some(rt.clone()),
+            aspect: Some(vp.2 as f32 / vp.3 as f32),
+            viewport: Some(vp),
             ..Default::default()
         };
         set_camera(&cam);
-        clear_background(Color::new(0.09, 0.08, 0.11, 1.0));
+        render3d::limpa_so_profundidade();
         gl_use_material(solido);
         let conjunto = Conjunto::da_arma(self.equip.weapon.unwrap_or(0)) as u8;
         let entrada = crate::rig::Entrada {
@@ -529,13 +524,6 @@ impl Bolsa {
         render3d::desenha_rig(base, &pose, corpo, vox.rig(render3d::RIG_CHAPEU), vox, None);
         gl_use_default_material();
         set_default_camera();
-        draw_texture_ex(
-            &rt.texture,
-            r.x,
-            r.y,
-            WHITE,
-            DrawTextureParams { dest_size: Some(vec2(r.w, r.h)), flip_y: true, ..Default::default() },
-        );
         // a plataforma dourada do MIR4, em 2D por cima do pe'
         let (cx, cy) = (r.x + r.w * 0.5, r.y + r.h * 0.90);
         draw_ellipse_lines(cx, cy, r.w * 0.30, r.w * 0.06, 0.0, 1.5, com_alfa(ui::OURO, 0.55));

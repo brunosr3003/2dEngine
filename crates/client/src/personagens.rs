@@ -16,7 +16,6 @@ pub struct Personagens {
     aguardando: Option<(String,f64)>,
     foco_nome: bool,
     scroll: usize,
-    retrato: Option<RenderTarget>,
     giro: f32,
     mouse_anterior: Option<Vec2>,
     saida_previa: Option<RenderTarget>,
@@ -235,12 +234,19 @@ impl Personagens {
         } else {set_default_camera();}
     }
 
+    /// A previa 3D desenhada DIRETO na tela, num viewport do tamanho do
+    /// retrato — sem render target.
+    ///
+    /// Antes ela ia pra uma textura com profundidade (`render_target_ex(..,
+    /// depth: true)`). A miniquad 0.4.11 cria essa profundidade com o formato
+    /// sem tamanho `GL_DEPTH_COMPONENT` (graphics/gl.rs), que o GL de desktop
+    /// aceita e o OpenGL ES do iPhone recusa: o framebuffer fica incompleto e
+    /// a area sai vazia nas duas telas (lista e criacao). O mundo aparecia
+    /// porque desenha na tela, cuja view tem profundidade de 24 bits. Mesmo
+    /// caminho aqui, igual em todas as plataformas.
     fn desenha_retrato(&mut self, r: Rect, conjunto: Conjunto, vox: &VoxCache, solido: &Material) {
-        let w=r.w.max(1.0) as u32;let h=(r.h-84.0).max(1.0) as u32;
-        if self.retrato.as_ref().is_none_or(|t|t.texture.width() as u32!=w || t.texture.height() as u32!=h) {
-            let rt=render_target_ex(w,h,macroquad::texture::RenderTargetParams{sample_count:1,depth:true});
-            rt.texture.set_filter(FilterMode::Linear);self.retrato=Some(rt);
-        }
+        let area=Rect::new(r.x,r.y,r.w.max(1.0),(r.h-84.0).max(1.0));
+        draw_rectangle(area.x,area.y,area.w,area.h,Color::new(0.026,0.041,0.063,1.0));
         let mouse=Vec2::from(mouse_position());
         if is_mouse_button_down(MouseButton::Left) && r.contains(mouse) {
             if let Some(antes)=self.mouse_anterior {self.giro+=(mouse.x-antes.x)*0.012;}
@@ -254,15 +260,33 @@ impl Personagens {
             if !AVISOU.swap(true, std::sync::atomic::Ordering::Relaxed) {
                 eprintln!("[previa] rig {} nao carregou — veja as linhas [vox] falta", render3d::RIG_CORPO);
             }
-            draw_rectangle(r.x,r.y,r.w,(r.h-84.0).max(1.0),Color::new(0.026,0.041,0.063,1.0));
-            ui::texto_centro(r.x+r.w*0.5,r.y+(r.h-84.0)*0.5,"Modelo do personagem indisponível",14,ui::SUAVE);
+            ui::texto_centro(area.x+area.w*0.5,area.y+area.h*0.5,"Modelo do personagem indisponível",14,ui::SUAVE);
+            ui::texto_centro(area.x+area.w*0.5,area.y+area.h*0.5+18.0,"vox faltando: personagem/corpo.vox",12,ui::SUAVE);
             return;
         };
-        let rt=self.retrato.as_ref().unwrap();
-        let distancia=4.7*(0.62/(w as f32/h as f32)).max(1.0);
+        // Tela exportada (MMO_PREVIA_EXPORTAR) desenha num alvo do tamanho da
+        // tela em pontos; o resto, na tela em pixels.
+        let (escala,alto_px)=match &self.saida_previa {
+            Some(t)=>(1.0,t.texture.height()),
+            None=>{let s=macroquad::miniquad::window::dpi_scale();(s,screen_height()*s)}
+        };
+        let Some(vp)=render3d::viewport_em_pixels(area,escala,alto_px) else {
+            static AVISOU_VP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !AVISOU_VP.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                eprintln!("[previa] viewport vazio: area {area:?} escala {escala} altura {alto_px}");
+            }
+            ui::texto_centro(area.x+area.w*0.5,area.y+area.h*0.5,"Prévia sem espaço na tela",13,ui::SUAVE);
+            return;
+        };
+        let aspecto=vp.2 as f32/vp.3 as f32;
+        let distancia=4.7*(0.62/aspecto).max(1.0);
         let cam=Camera3D{position:vec3(0.0,1.35,distancia),target:vec3(0.0,0.88,0.0),up:Vec3::Y,
-            fovy:34f32.to_radians(),aspect:Some(w as f32/h as f32),render_target:Some(rt.clone()),..Default::default()};
-        set_camera(&cam);clear_background(Color::new(0.026,0.041,0.063,1.0));
+            fovy:34f32.to_radians(),aspect:Some(aspecto),viewport:Some(vp),
+            render_target:self.saida_previa.clone(),..Default::default()};
+        set_camera(&cam);
+        // O 2D do painel ja' foi pro framebuffer no `set_camera`; limpa so' a
+        // PROFUNDIDADE (a cor fica) pro personagem nao brigar com o que houver.
+        render3d::limpa_so_profundidade();
         draw_cylinder(vec3(0.0,-0.07,0.0),0.90,0.93,0.06,None,Color::new(0.09,0.12,0.16,1.0));
         for i in 0..64 {let a=i as f32*std::f32::consts::TAU/64.0;let b=(i+1) as f32*std::f32::consts::TAU/64.0;
             draw_line_3d(vec3(a.cos()*0.88,-0.008,a.sin()*0.88),vec3(b.cos()*0.88,-0.008,b.sin()*0.88),ui::OURO);}
@@ -273,7 +297,6 @@ impl Personagens {
         let base=Mat4::from_rotation_y(self.giro+0.18+(get_time() as f32*0.35).sin()*0.10);
         render3d::desenha_rig(base,&pose,corpo,vox.rig(render3d::RIG_CHAPEU),vox,None);
         gl_use_default_material();self.camera_ui();
-        draw_texture_ex(&rt.texture,r.x,r.y,WHITE,DrawTextureParams{dest_size:Some(vec2(w as f32,h as f32)),flip_y:true,..Default::default()});
     }
 }
 
@@ -340,6 +363,41 @@ pub async fn previa(vox: &VoxCache) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn viewport_da_previa_em_pixels_cai_dentro_do_retrato() {
+        // Tela 844x390 pontos (iPhone paisagem), retrato na esquerda.
+        let area=Rect::new(26.0,128.0,300.0,172.0);
+        for s in [1.0f32,2.0,3.0] {
+            let alto=390.0*s;
+            let (x,y,w,h)=render3d::viewport_em_pixels(area,s,alto).unwrap();
+            assert_eq!((x,w),((26.0*s) as i32,(300.0*s) as i32),"escala {s}");
+            assert_eq!(h,(172.0*s) as i32,"escala {s}");
+            // Origem embaixo: a base do retrato (300 pt) fica a 90 pt do chao.
+            assert_eq!(y,(90.0*s) as i32,"escala {s}");
+            assert!(y+h<=alto as i32);
+        }
+        assert!(render3d::viewport_em_pixels(Rect::new(0.0,500.0,100.0,50.0),2.0,780.0).is_none(),"fora da tela");
+        assert!(render3d::viewport_em_pixels(Rect::new(0.0,0.0,0.2,10.0),1.0,100.0).is_none(),"sem largura");
+    }
+    /// Nenhum render target com profundidade em lugar nenhum do cliente: no
+    /// iPhone ele sai vazio (ver `render3d::viewport_em_pixels`).
+    #[test]
+    fn nenhum_render_target_com_profundidade_no_cliente() {
+        let dir=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let proibido=["render_target", "_ex("].concat();
+        for e in std::fs::read_dir(&dir).unwrap() {
+            let p=e.unwrap().path();
+            if p.extension().is_some_and(|x|x=="rs") {
+                let fonte=std::fs::read_to_string(&p).unwrap();
+                for (n,l) in fonte.lines().enumerate() {
+                    let codigo=l.split("//").next().unwrap_or("");
+                    assert!(!codigo.contains(&proibido),"{}:{}: render target com profundidade volta a sumir no iOS",p.display(),n+1);
+                }
+            }
+        }
+        assert!(include_str!("personagens.rs").contains("viewport:Some(vp)"));
+        assert!(include_str!("bolsa.rs").contains("viewport: Some(vp)"));
+    }
     #[test]
     fn nome_segue_validacao_do_servidor() {
         assert_eq!(valida_nome("  Ana_23 "),Ok("Ana_23"));

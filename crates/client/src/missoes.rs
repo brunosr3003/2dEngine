@@ -289,8 +289,9 @@ impl Missoes {
     }
 
     fn painel(&self) -> Rect {
-        let h = self.altura().min(screen_height() - screen_height() * 0.16 - 16.0);
-        Rect::new(24.0, screen_height() * 0.16, LARGURA, h)
+        let t = crate::hud_layout::tela_segura();
+        let h = self.altura().min(t.y + t.h - screen_height() * 0.16 - 16.0);
+        Rect::new(t.x + 24.0, screen_height() * 0.16, LARGURA, h)
     }
 
     /// Com o mouse em cima da janela (ou do rastreador) o clique e' dela, e nao
