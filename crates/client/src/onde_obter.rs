@@ -41,6 +41,8 @@ pub enum Ir {
     AbrirMercado(u16),
     /// Menu → Aventura → Dungeons.
     AbrirDungeons,
+    /// O calendario de presenca.
+    AbrirCalendario,
 }
 
 /// Uma linha do popup.
@@ -244,6 +246,13 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
             o.ordem = (8, 0);
             o.ir = Some(Ir::AbrirDungeons);
         }
+        FonteDeItem::Calendario { dias } => {
+            o.titulo = "Calendário de presença".into();
+            let lista: Vec<String> = dias.iter().map(|d| d.to_string()).collect();
+            o.detalhe = format!("Resgate diário · dia{} {}", if dias.len() > 1 { "s" } else { "" }, lista.join(", "));
+            o.ordem = (5, 0);
+            o.ir = Some(Ir::AbrirCalendario);
+        }
     }
     o
 }
@@ -356,7 +365,7 @@ impl OndeObter {
                         Ir::Alvo(_) => "Ir",
                         Ir::AbrirCraft(_) => "Abrir",
                         Ir::AbrirMercado(_) => "Buscar",
-                        Ir::AbrirDungeons => "Abrir",
+                        Ir::AbrirDungeons | Ir::AbrirCalendario => "Abrir",
                     };
                     if crate::ui::botao(b, rotulo, visivel) && visivel && !arrastou {
                         saida = Some(ir.clone());

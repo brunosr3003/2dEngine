@@ -21,7 +21,15 @@ pub struct AutoCombate {
     manual: bool,
     ultima_pos: Option<Vec2>,
     parado_desde: f64,
+    /// Alvo que o servidor diz estar sem visada: (id, primeiro aviso, ultimo).
+    sem_visada: Option<(EntityId,f64,f64)>,
 }
+
+/// Aviso de "sem visada" seguido por este tempo: o AUTO larga o alvo. O
+/// servidor avisa 1 vez por segundo, entao o segundo aviso ja' troca.
+const TROCA_SEM_VISADA_S: f64 = 0.9;
+/// Mais que isto sem aviso novo: a sequencia recomeca.
+const SEM_VISADA_ESQUECE_S: f64 = 2.5;
 
 /// O botao AUTO COMBATE na linha de baixo do cluster (ver `hud_layout`).
 pub fn retangulo() -> Rect { crate::hud_layout::atual().auto_combate }
@@ -31,6 +39,21 @@ impl AutoCombate {
     pub fn ativo(&self) -> bool { self.centro.is_some() }
     pub fn ligar(&mut self, p: Vec2) { self.centro=Some(p); self.observado=None; self.ignorados.clear(); }
     pub fn parar(&mut self) { *self=Self::default(); }
+
+    /// O servidor avisou que o alvo `id` esta' sem visada (`ServerMessage::
+    /// SemVisada`). Com o AUTO ligado, aviso repetido larga o alvo por 10 s —
+    /// em vez de esperar os 8 s sem dano do `escolher`.
+    pub fn sem_visada(&mut self, id: EntityId, agora: f64) {
+        if !self.ativo() { self.sem_visada=None; return; }
+        match self.sem_visada {
+            Some((ant,primeiro,ultimo)) if ant==id && agora-ultimo<SEM_VISADA_ESQUECE_S => {
+                if agora-primeiro>=TROCA_SEM_VISADA_S {
+                    self.ignorados.insert(id,agora+10.0); self.observado=None; self.sem_visada=None;
+                } else { self.sem_visada=Some((id,primeiro,agora)); }
+            }
+            _ => self.sem_visada=Some((id,agora,agora)),
+        }
+    }
 
     /// O jogador esta' andando na mao neste quadro.
     pub fn andar_manual(&mut self, agora: f64) {
@@ -128,6 +151,20 @@ mod tests {
         w.ents.get_mut(&EntityId(1)).unwrap().state.flags|=shared::ent_flags::DOWNED;
         assert_eq!(a.escolher(&w,Some(EntityId(4)),10.0),None);assert!(!a.ativo());
     }
+    #[test]
+    fn sem_visada_repetida_troca_de_alvo_rapido() {
+        let w=mundo();let mut a=AutoCombate::default();a.ligar(Vec2::ZERO);
+        assert_eq!(a.escolher(&w,None,0.0),Some(EntityId(3)));
+        a.sem_visada(EntityId(3),0.1);
+        assert_eq!(a.escolher(&w,Some(EntityId(3)),0.2),Some(EntityId(3)),"um aviso so' nao troca");
+        a.sem_visada(EntityId(3),1.1);
+        assert_eq!(a.escolher(&w,Some(EntityId(3)),1.2),Some(EntityId(4)),"segundo aviso em ~1 s troca");
+        // Aviso velho nao conta: a sequencia recomeca.
+        let mut b=AutoCombate::default();b.ligar(Vec2::ZERO);b.escolher(&w,None,0.0);
+        b.sem_visada(EntityId(3),0.0);b.sem_visada(EntityId(3),5.0);
+        assert_eq!(b.escolher(&w,Some(EntityId(3)),5.1),Some(EntityId(3)));
+    }
+
     #[test]
     fn andar_nao_desliga_e_a_area_vem_junto() {
         let mut a=AutoCombate::default();a.ligar(Vec2::ZERO);

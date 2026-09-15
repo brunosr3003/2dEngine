@@ -47,6 +47,8 @@ pub enum IncomingMessage {
     CharReloadedForSelect(SessionId, Box<crate::persistence::CharacterRow>, crate::auth::AuthSuccess),
     /// Mercado global: resposta do relay/central (ver `crate::mercado`).
     Mercado(crate::mercado::Evento),
+    /// Calendario de presenca: resposta do banco (ver `crate::presenca`).
+    Presenca(crate::presenca::Evento),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -70,6 +72,7 @@ mod boss_teste;
 mod chefes;
 pub(crate) use chefes::itens_do_chefe;
 mod mercado_mundo;
+mod presenca;
 pub(crate) mod dungeon;
 use habilidades::HabilidadePendente;
 
@@ -1212,6 +1215,8 @@ pub struct Session {
     /// enquanto houver alvo vivo no alcance — sem botao, como em MMO de
     /// target. `None` = sem alvo, sem ataque.
     pub target: Option<EntityId>,
+    /// Ultimo `ServerMessage::SemVisada` mandado (sim_time_s): 1 por segundo.
+    pub sem_visada_aviso_em: f32,
     /// Rota do toque no chao, calculada pelo SERVIDOR. O seguidor tambem
     /// DESISTE de ponto inalcancavel — sem isso o boneco empurra a quina pra
     /// sempre. Ver `shared::terreno::SeguidorDeRota`.
@@ -1559,6 +1564,14 @@ pub struct Session {
     pub dungeon: shared::dungeon::DadosDungeon,
     /// Dungeons da conta (`dungeon_contas`). Carregada com o personagem.
     pub conta_dungeon: shared::dungeon::DadosConta,
+    /// Calendario de presenca da conta, montado das linhas de
+    /// `presenca_resgates` (o banco decide; isto so' mostra).
+    pub presenca: shared::presenca::DadosPresenca,
+    /// Resgate pedido ao banco e ainda sem resposta: ignora o repetido.
+    pub presenca_em_voo: bool,
+    /// Resgates ja' entregues nesta sessao (ids): nao entrega duas vezes e o
+    /// save marca `aplicado`.
+    pub presenca_aplicados: Vec<String>,
     /// Instancia de dungeon em que esta' (0 = mundo aberto).
     pub instancia: u32,
     /// Onde estava antes de entrar: volta pra ca' e e' a posicao salva
@@ -1587,6 +1600,8 @@ impl Session {
         let perda = crate::morte::perda_de_xp(self.xp, mult);
         self.xp -= perda;
         crate::morte::registrar(&mut self.mortes, agora, perda);
+        crate::telemetria::conta("morte_jogador", "", 1);
+        crate::telemetria::conta("xp_perdido", "", perda as i64);
         let level = shared::level_of_xp_with_mult(self.xp, mult);
         let _ = self.handle.to_client.send(ServerMessage::ProgressUpdate { xp: self.xp, level });
         let _ = self.handle.to_client.send(ServerMessage::Morte { xp_perdido: perda });
@@ -4517,6 +4532,15 @@ impl GameWorld {
             s.conta_dungeon = serde_json::from_str(&row.conta_dungeon_json).unwrap_or_default();
             s.instancia = 0;
             s.retorno_da_dungeon = None;
+            // Calendario de presenca: o estado vem do banco (e entrega o que
+            // ficou pendente); a janela abre sozinha no cliente se houver
+            // resgate hoje.
+            s.presenca = Default::default();
+            s.presenca_em_voo = false;
+            s.presenca_aplicados.clear();
+            if let (Some(conta), Some(ctx)) = (s.account_id, self.auth_ctx.as_ref()) {
+                crate::presenca::spawn_ao_logar(ctx.pool.clone(), ctx.tx.clone(), sid, conta, s.name.clone());
+            }
             let _ = s.handle.to_client.send(ServerMessage::Preferencias { prefs: s.preferencias.clone() });
             s.enviar_recuperaveis((now_ms() / 1000) as i64);
             s.poise_current = stats.poise_max as f32;
@@ -5262,6 +5286,7 @@ impl GameWorld {
                 handle,
                 entrada_pendente: None,
                 target: None,
+                sem_visada_aviso_em: -1e9,
                 rota: shared::terreno::SeguidorDeRota::default(),
                 pulo_ate: 0.0,
                 pulo_pronto_em: 0.0,
@@ -5397,6 +5422,9 @@ impl GameWorld {
                 pending_dungeon_raid: false,
                 dungeon: Default::default(),
                 conta_dungeon: Default::default(),
+                presenca: Default::default(),
+                presenca_em_voo: false,
+                presenca_aplicados: Vec::new(),
                 instancia: 0,
                 retorno_da_dungeon: None,
             },
@@ -5879,6 +5907,7 @@ impl GameWorld {
             | ClientMessage::MercadoEntregas
             | ClientMessage::MercadoReceber) => self.handle_mercado(id, m),
             ClientMessage::Dungeon { pedido } => self.handle_dungeon(id, pedido),
+            ClientMessage::Presenca { pedido } => self.handle_presenca(id, pedido),
         }
     }
 
@@ -5942,11 +5971,17 @@ impl GameWorld {
                 session.gold = gold.max(0) as u64;
             }
             shared::protocol::AdminAction::GiveItem { item_id, qty } => {
-                add_to_inventory(&mut session.inventory, item_id, qty as u32, None);
+                if !add_to_inventory(&mut session.inventory, item_id, qty as u32, None) {
+                    tracing::warn!("admin GiveItem {item_id}x{qty}: bolsa cheia, sobra perdida");
+                }
                 session.inventory_dirty = true;
             }
             shared::protocol::AdminAction::ClearInventory => {
-                session.inventory.clear();
+                // Zera os espacos sem tirar nenhum: a bolsa tem tamanho fixo
+                // (INVENTORY_SLOTS). `clear()` deixava ZERO espacos e todo
+                // item dado depois sumia (e premio ia pro correio).
+                session.inventory.iter_mut().for_each(|s| *s = shared::InventorySlot::default());
+                session.inventory.resize(shared::INVENTORY_SLOTS, shared::InventorySlot::default());
                 session.inventory_dirty = true;
             }
             shared::protocol::AdminAction::HealFull => {
@@ -6156,6 +6191,9 @@ impl GameWorld {
                 s.recuperacoes_usadas = usadas;
                 s.gold = s.gold.saturating_sub(custo);
                 s.somar_xp(xp);
+                crate::telemetria::conta("recuperar_xp", if custo == 0 { "gratis" } else { "pago" }, 1);
+                crate::telemetria::conta("xp_recuperado", "", xp as i64);
+                crate::telemetria::conta("ouro_ralo", "recuperar_xp", custo as i64);
                 let motivo = if custo == 0 {
                     "Experiência recuperada (grátis).".to_string()
                 } else {
@@ -7100,23 +7138,38 @@ impl GameWorld {
                 // ritmo do cooldown. `auto_aim` e' a direcao ate o alvo, e e'
                 // ela que alimenta o cone/projetil la embaixo — o pipeline de
                 // dano continua o mesmo, so' mudou quem aponta.
+                // Arma a distancia com o alvo no alcance mas o relevo barrando
+                // o arco: o ataque NAO sai (nao gasta recarga nem vigor a toa)
+                // e o cliente fica sabendo, pra trocar de alvo ou chegar perto.
+                let mut sem_visada_alvo: Option<EntityId> = None;
                 let auto_aim = session.target.and_then(|t| {
                     let me = target_pos.get(&session.entity_id)?;
                     let tp = target_pos.get(&t)?;
                     let d = *tp - *me;
                     let wid = session.equipment.weapon.unwrap_or(0);
-                    let range = if shared::weapon_is_melee(wid) {
+                    let melee = shared::weapon_is_melee(wid);
+                    let range = if melee {
                         shared::MELEE_RANGE
                     } else {
                         shared::RANGED_ATTACK_RANGE
                     };
                     let dist_sq = d.length_squared();
                     if dist_sq > 1e-6 && dist_sq <= range * range {
+                        if !melee && !visada_de_tiro(self.ilha.as_ref(), &self.map, *me, *tp) {
+                            sem_visada_alvo = Some(t);
+                            return None;
+                        }
                         Some(d.normalize())
                     } else {
                         None
                     }
                 });
+                if let Some(alvo) = sem_visada_alvo {
+                    if self.sim_time_s - session.sem_visada_aviso_em >= 1.0 {
+                        session.sem_visada_aviso_em = self.sim_time_s;
+                        let _ = session.handle.to_client.send(ServerMessage::SemVisada { alvo });
+                    }
+                }
                 let w = auto_aim.is_some()
                      && session.attack_cooldown <= 0.0
                      && has_stam;
@@ -8546,8 +8599,15 @@ impl GameWorld {
                             if sw.dir.dot(nd) < cos_half { continue; }
                         }
                     }
-                    // LOS: melee/cone nao atravessa WALL.
-                    if !visada(self.ilha.as_ref(), &self.map, sw.pos, target_hit) { continue; }
+                    // LOS: melee/cone nao atravessa WALL. Tiro com alvo (arma a
+                    // distancia) vai em arco: passa a borda de um barranco.
+                    let tiro = sw.target.is_some() && sw.max_range > shared::MELEE_RANGE + 0.01;
+                    let ve = if tiro {
+                        visada_de_tiro(self.ilha.as_ref(), &self.map, sw.pos, target_hit)
+                    } else {
+                        visada(self.ilha.as_ref(), &self.map, sw.pos, target_hit)
+                    };
+                    if !ve { continue; }
                     let hd = calc_hurt_dir(*tpos, sw.pos);
                     damage_events.push((*te, *tnet, sw.damage, sw.attacker_eid, sw.from_player, hd, sw.is_crit,
                         AttackInfo::Melee { attacker_pos: sw.pos }, sw.knockback));
@@ -9290,6 +9350,17 @@ impl GameWorld {
 
         for (e, eid, pos, kind_id) in dead_enemies {
             self.inst_do_saque = self.ecs.get::<&dungeon::Instancia>(e).map_or(0, |i| i.0);
+            {
+                let chefe = shared::bosses::e_chefe(kind_id) || self.ecs.get::<&EnemyTag>(e).is_ok_and(|t| t.is_boss);
+                let nome = crate::economy::enemy_def(kind_id).name;
+                let tipo = match (chefe, self.inst_do_saque != 0) {
+                    (true, false) => "chefe_morto",
+                    (true, true) => "chefe_dungeon_morto",
+                    (false, true) => "kill_dungeon",
+                    (false, false) => "kill",
+                };
+                crate::telemetria::conta(tipo, if nome.is_empty() { format!("kind {kind_id}") } else { nome }, 1);
+            }
             // Rastrear se era o boss
             if self.boss_entity == Some(e) {
                 self.boss_entity = None;
@@ -9645,6 +9716,7 @@ impl GameWorld {
                         // Gold é currency: vai pro contador, não ocupa inventário.
                         if ltag.item_id == shared::item_id::GOLD {
                             session.gold = session.gold.saturating_add(ltag.qty as u64);
+                            crate::telemetria::conta("ouro_fonte", "saque", ltag.qty as i64);
                             picked.push((le, leid));
                             continue 'loot_loop;
                         }
@@ -10400,6 +10472,7 @@ impl GameWorld {
             preferencias_json: String,
             dungeon_json: String,
             conta_dungeon_json: String,
+            presenca_aplicados: Vec<String>,
         }
         let mut entries: Vec<E> = Vec::new();
         for session in self.sessions.values() {
@@ -10455,7 +10528,7 @@ impl GameWorld {
                 barra_json: crate::barra::para_json(&session.barra),
                 preferencias_json: crate::preferencias::para_json(&session.preferencias),
                 dungeon_json: serde_json::to_string(&session.dungeon).unwrap_or_default(),
-                conta_dungeon_json: serde_json::to_string(&session.conta_dungeon).unwrap_or_default(),
+                conta_dungeon_json: serde_json::to_string(&session.conta_dungeon).unwrap_or_default(), presenca_aplicados: session.presenca_aplicados.clone(),
             });
         }
         for e in entries {
@@ -10505,6 +10578,7 @@ impl GameWorld {
                 preferencias_json: e.preferencias_json,
                 dungeon_json: e.dungeon_json,
                 conta_dungeon_json: e.conta_dungeon_json,
+                presenca_aplicados: e.presenca_aplicados,
             };
             self.salvo_aqui_em.insert(e.name.clone(), self.sim_time_s);
             self.characters.insert(e.name, row.clone());
@@ -10700,6 +10774,10 @@ impl GameWorld {
         }
         session.inventory_dirty = true;
         self.save_pending = true;
+        crate::telemetria::conta("craft", recipe_id, 1);
+        if selo {
+            crate::telemetria::conta("selo_craftado", "", 1);
+        }
         self.resultado_do_craft(sid, recipe_id, Ok(craft_output_id));
         self.quest_on_evento(sid, shared::quests::objective_kind::CRAFT, 1);
 
@@ -10722,6 +10800,11 @@ impl GameWorld {
             Ok(id) => (true, String::new(), id),
             Err(m) => (false, m, 0),
         };
+        if !ok {
+            // So' o comeco do motivo: "faltam: Aço 12/30" viraria uma chave
+            // por quantidade.
+            crate::telemetria::conta("craft_falha", motivo.split(':').next().unwrap_or("").trim(), 1);
+        }
         let _ = s.handle.to_client.send(ServerMessage::CraftResultado { recipe_id, ok, motivo, item_id });
     }
 
@@ -10827,8 +10910,10 @@ impl GameWorld {
             }
             let Some((feito, prox)) = crate::quests::avancar_historia(&mut s.quests) else { continue };
             s.quests_dirty = true;
+            crate::telemetria::conta("missao_historia", feito.id, 1);
             if feito.reward_gold > 0 {
                 s.gold = s.gold.saturating_add(feito.reward_gold as u64);
+                crate::telemetria::conta("ouro_fonte", "missao", feito.reward_gold as i64);
             }
             for (item, qtd) in [(feito.reward_item, feito.reward_item_qty), (feito.reward_item2, feito.reward_item2_qty)] {
                 if item != 0 && qtd > 0 {
@@ -10946,6 +11031,15 @@ impl GameWorld {
             _ => String::new(),
         };
         let tentou = matches!(res, resultado::SUBIU | resultado::FALHOU | resultado::DESTRUIU);
+        let nome_res = match res {
+            resultado::SUBIU => "subiu",
+            resultado::FALHOU => "falhou",
+            resultado::DESTRUIU => "destruiu",
+            resultado::NO_TOPO => "no_topo",
+            resultado::SEM_MATERIAL => "sem_material",
+            _ => "invalido",
+        };
+        crate::telemetria::conta("refino", if tentou { format!("{nome_res}:+{nivel}") } else { nome_res.to_string() }, 1);
         if tentou {
             match alvo {
                 AlvoDaForja::Bolsa(i) => {
@@ -11098,6 +11192,11 @@ impl GameWorld {
             ));
             if self.inst_do_saque != 0 {
                 let _ = self.ecs.insert_one(saque, dungeon::Instancia(self.inst_do_saque));
+            }
+            crate::telemetria::conta("drop", *item_id, *qty as i64);
+            if shared::item_id::todas_as_chaves().contains(item_id) {
+                let origem = if self.inst_do_saque != 0 { "dungeon" } else { "chefe" };
+                crate::telemetria::conta("chave_drop", format!("{origem}:{item_id}"), *qty as i64);
             }
             if let Some(ctx) = &self.auth_ctx {
                 let r = instance.map(|i| i.rarity).unwrap_or(0);
@@ -11825,6 +11924,7 @@ impl GameWorld {
         s.quests.retain(|c| c.quest_id != quest_id);
         if s.quests.len() != before {
             s.quests_dirty = true; // save_char reconcilia (deleta linhas ausentes)
+            crate::telemetria::conta("missao_abandonada", quest_id, 1);
             let _ = s.handle.to_client.send(ServerMessage::QuestUpdate { quest_id, progress: 0, status: 255 });
         }
     }
@@ -11861,6 +11961,8 @@ impl GameWorld {
             return; // live-track ainda não concluído
         }
         // Recompensas
+        crate::telemetria::conta("missao_entregue", quest_id, 1);
+        crate::telemetria::conta("ouro_fonte", "missao", def.reward_gold as i64);
         if def.reward_gold > 0 { s.gold = s.gold.saturating_add(def.reward_gold as u64); }
         // Segunda recompensa: a Pocao de Experiencia das missoes de area.
         if def.reward_item2 != 0 && def.reward_item2_qty > 0 {
@@ -12398,6 +12500,7 @@ impl GameWorld {
             });
             return;
         }
+        crate::telemetria::conta("ouro_fonte", "bau_do_tesouro", def.reward_gold as i64);
         if def.reward_gold > 0 { s.gold = s.gold.saturating_add(def.reward_gold as u64); }
         if def.reward_xp > 0 { s.grant_xp(def.reward_xp); }
         if def.reward_faction_points > 0 { s.faction_points = s.faction_points.saturating_add(def.reward_faction_points); }
@@ -12570,6 +12673,8 @@ impl GameWorld {
             // 2c) Cobra gold (currency)
             session.gold = session.gold.saturating_sub(price as u64);
             session.inventory_dirty = true;
+            crate::telemetria::conta("ouro_ralo", "loja", price as i64);
+            crate::telemetria::conta("loja_compra", item_id, 1);
             let _ = session.handle.to_client.send(ServerMessage::Chat {
                 from: "SHOP".into(),
                 text: format!("bought item {item_id} for {price} gold"),
@@ -12629,6 +12734,8 @@ impl GameWorld {
         }
         session.gold = session.gold.saturating_add(price as u64);
         session.inventory_dirty = true;
+        crate::telemetria::conta("ouro_fonte", "venda_npc", price as i64);
+        crate::telemetria::conta("loja_venda", slot.item_id, 1);
         let _ = session.handle.to_client.send(ServerMessage::Chat {
             from: "SHOP".into(),
             text: format!("sold item {} for {price} gold", slot.item_id),
@@ -12753,6 +12860,11 @@ impl GameWorld {
         // 6) Tudo validou — commita: inventário e gold.
         let Some(session) = self.sessions.get_mut(&sid) else { return };
         session.inventory = sim;
+        if gold_after >= session.gold {
+            crate::telemetria::conta("ouro_fonte", "troca_npc", (gold_after - session.gold) as i64);
+        } else {
+            crate::telemetria::conta("ouro_ralo", "troca_npc", (session.gold - gold_after) as i64);
+        }
         session.gold = gold_after;
         session.inventory_dirty = true;
 
@@ -12803,6 +12915,7 @@ impl GameWorld {
             // (cliente pode manter no inv pra vender/guardar).
             if !crate::economy::is_item_active(slot.item_id) { return; }
             let Some(player_entity) = session.entity else { return };
+            crate::telemetria::conta("item_usado", slot.item_id, 1);
 
             // Equipavel: swap entre inventario e slot de equip correspondente.
             if let Some(es) = shared::equip_slot_of(slot.item_id) {
@@ -13532,6 +13645,7 @@ impl GameWorld {
             .wrapping_mul(0xDEAD_BEEF)
             .wrapping_add(node_id as u64);
         let drops = crate::economy::farm_node_loot(&node_kind, node_tier, seed);
+        crate::telemetria::conta("coleta", format!("{node_kind}:T{node_tier}"), 1);
         self.entregar_coleta(sid, &drops);
         self.quest_on_gather(sid, if node_kind == "Tree" { 0 } else { 1 });
 
@@ -13555,6 +13669,7 @@ impl GameWorld {
         if let Some(s) = self.sessions.get_mut(&sid) {
             for &(item_id, qty) in drops {
                 add_to_inventory(&mut s.inventory, item_id, qty, None);
+                crate::telemetria::conta("coleta_item", item_id, qty as i64);
             }
             if !drops.is_empty() { s.inventory_dirty = true; }
         }
@@ -13566,6 +13681,11 @@ impl GameWorld {
             }
         }
         if !drops.is_empty() { self.save_pending = true; }
+    }
+
+    /// (nos de coleta, esgotados agora) — pro panoptico.
+    pub(crate) fn nos_de_coleta(&self) -> (usize, usize) {
+        (self.farm_nodes.len(), self.farm_nodes.values().filter(|n| n.respawn_at > 0.0).count())
     }
 
     /// Verifica todos os farm nodes com respawn_at expirado e os restaura.
@@ -14171,7 +14291,7 @@ impl GameWorld {
             barra_json: crate::barra::para_json(&session.barra),
             preferencias_json: crate::preferencias::para_json(&session.preferencias),
             dungeon_json: serde_json::to_string(&session.dungeon).unwrap_or_default(),
-            conta_dungeon_json: serde_json::to_string(&session.conta_dungeon).unwrap_or_default(),
+            conta_dungeon_json: serde_json::to_string(&session.conta_dungeon).unwrap_or_default(), presenca_aplicados: session.presenca_aplicados.clone(),
         };
         self.salvo_aqui_em.insert(session.name.clone(), self.sim_time_s);
         self.characters.insert(session.name.clone(), row.clone());
@@ -14541,6 +14661,21 @@ fn visada(
 ) -> bool {
     match ilha {
         Some(i) => i.visada(a, b),
+        None => map.has_line_of_sight(a, b),
+    }
+}
+
+/// Visada de TIRO (arma a distancia com alvo): o arco passa por cima da
+/// borda de um barranco que a linha reta nao passa. Fora da ilha, a parede
+/// de tile de sempre.
+fn visada_de_tiro(
+    ilha: Option<&shared::terreno::Ilha>,
+    map: &shared::world_gen::WorldMap,
+    a: Vec2,
+    b: Vec2,
+) -> bool {
+    match ilha {
+        Some(i) => i.visada_de_tiro(a, b),
         None => map.has_line_of_sight(a, b),
     }
 }

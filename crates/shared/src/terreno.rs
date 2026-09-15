@@ -4377,4 +4377,103 @@ impl Ilha {
             self.altura(p.x, p.y) <= ha + (hb - ha) * t
         })
     }
+
+    /// Visada de TIRO: ataque a distancia com alvo (`visada_de_tiro_com`).
+    pub fn visada_de_tiro(&self, a: glam::Vec2, b: glam::Vec2) -> bool {
+        visada_de_tiro_com(|x, z| self.altura(x, z), a, b)
+    }
+}
+
+/// Um tiro de `a` (atirador) chega em `b` (alvo) por cima do relevo?
+///
+/// Flecha e bala saem em ARCO, nao em linha reta de olho a olho: a borda de
+/// um barranco entre o atirador no alto e o bicho embaixo corta a linha reta
+/// (e o dano sumia sem aviso), mas nao a parabola. O arco sobe
+/// `max(1,5; 0,3·d)` no meio do caminho e o olho do atirador fica um pouco
+/// mais alto. Morro de verdade no meio continua barrando.
+pub fn visada_de_tiro_com(altura: impl Fn(f32, f32) -> f32, a: glam::Vec2, b: glam::Vec2) -> bool {
+    const OLHO_ATIRADOR: f32 = 1.6;
+    const OLHO_ALVO: f32 = 1.2;
+    let d = a.distance(b);
+    if d < 2.0 {
+        return true;
+    }
+    let ha = altura(a.x, a.y) + OLHO_ATIRADOR;
+    let hb = altura(b.x, b.y) + OLHO_ALVO;
+    let apex = (0.3 * d).max(1.5);
+    let passos = (d * 2.0).ceil() as i32;
+    (1..passos).all(|k| {
+        let t = k as f32 / passos as f32;
+        let p = a.lerp(b, t);
+        altura(p.x, p.y) <= ha + (hb - ha) * t + apex * 4.0 * t * (1.0 - t)
+    })
+}
+
+#[cfg(test)]
+mod testes_visada_de_tiro {
+    use super::visada_de_tiro_com;
+    use glam::Vec2;
+
+    /// Visada reta de olho a olho (1,2), a mesma conta de `Ilha::visada`.
+    fn reta(altura: impl Fn(f32, f32) -> f32, a: Vec2, b: Vec2) -> bool {
+        let (ha, hb) = (altura(a.x, a.y) + 1.2, altura(b.x, b.y) + 1.2);
+        let passos = (a.distance(b) * 2.0).ceil() as i32;
+        (1..passos).all(|k| {
+            let t = k as f32 / passos as f32;
+            let p = a.lerp(b, t);
+            altura(p.x, p.y) <= ha + (hb - ha) * t
+        })
+    }
+
+    #[test]
+    fn plano_passa() {
+        assert!(visada_de_tiro_com(|_, _| 3.0, Vec2::ZERO, Vec2::new(9.0, 0.0)));
+    }
+
+    #[test]
+    fn borda_entre_o_alto_e_o_baixo_passa() {
+        // Planalto de 4 u ate' x=3, chao a 0 depois: atirador 3 u atras da
+        // borda, bicho 5 u pra fora dela, embaixo.
+        let chao = |x: f32, _: f32| if x <= 3.0 { 4.0 } else { 0.0 };
+        let (a, b) = (Vec2::ZERO, Vec2::new(8.0, 0.0));
+        assert!(!reta(chao, a, b), "o caso do bug: a linha reta barra");
+        assert!(visada_de_tiro_com(chao, a, b));
+        // E de baixo pra cima tambem (bicho no alto da borda).
+        let alto = |x: f32, _: f32| if x >= 5.0 { 4.0 } else { 0.0 };
+        assert!(visada_de_tiro_com(alto, Vec2::ZERO, Vec2::new(8.0, 0.0)));
+    }
+
+    /// Na ilha gerada de verdade: o tiro ve' tudo que a visada reta via, e
+    /// libera pares que a reta barrava (os barrancos do bug).
+    #[test]
+    fn ilha_real_arco_libera_barranco_sem_perder_o_que_a_reta_via() {
+        use super::{Bioma, Ilha, BLOCO, ESCALA_ALTURA};
+        let ilha = Ilha::gerar(1234, 64, Bioma::Floresta, ESCALA_ALTURA);
+        let r = 64.0 * BLOCO * 0.8;
+        let (mut reta_ve, mut libera, mut barra) = (0u32, 0u32, 0u32);
+        let mut y = -r;
+        while y < r {
+            let mut x = -r;
+            while x < r {
+                let a = Vec2::new(x, y);
+                for k in 0..8 {
+                    let ang = k as f32 * std::f32::consts::FRAC_PI_4;
+                    let b = a + Vec2::new(ang.cos(), ang.sin()) * 8.0;
+                    let (ve_reta, ve_tiro) = (ilha.visada(a, b), ilha.visada_de_tiro(a, b));
+                    assert!(!ve_reta || ve_tiro, "tiro barrou o que a reta via: {a:?} -> {b:?}");
+                    if ve_reta { reta_ve += 1 } else if ve_tiro { libera += 1 } else { barra += 1 }
+                }
+                x += 3.0;
+            }
+            y += 3.0;
+        }
+        println!("pares a 8 u: reta ve {reta_ve}, arco libera {libera}, continua barrado {barra}");
+        assert!(libera > 0, "nenhum barranco liberado numa ilha inteira?");
+    }
+
+    #[test]
+    fn morro_alto_no_meio_barra() {
+        let morro = |x: f32, _: f32| if (4.0..=6.0).contains(&x) { 8.0 } else { 0.0 };
+        assert!(!visada_de_tiro_com(morro, Vec2::ZERO, Vec2::new(10.0, 0.0)));
+    }
 }

@@ -90,8 +90,8 @@ pub struct Zonas {
     pub missoes_no_rastreador: usize,
     /// Alvo selecionado: no alto, centrado no vao entre a ficha e a direita.
     pub alvo: Rect,
-    /// Bolsa, Missoes, Diarias, Grupo, Avisos — a' esquerda do MENU.
-    pub icones: [Rect; 5],
+    /// Bolsa, Missoes, Diarias, Grupo, Avisos, Presenca — a' esquerda do MENU.
+    pub icones: [Rect; 6],
     pub menu: Rect,
     /// Nome da zona e canal (clique abre o Mapa).
     pub area: Rect,
@@ -193,8 +193,8 @@ fn monta(sw: f32, sh: f32, s: f32) -> Zonas {
     // ── topo direito: icones, MENU, area, minimapa ──
     let menu = Rect::new(sw - m - 64.0 * s, m, 64.0 * s, 48.0 * s);
     let (icone, vao) = (48.0 * s, 8.0 * s);
-    let icones = [0usize, 1, 2, 3, 4].map(|i| {
-        Rect::new(menu.x - 16.0 * s - (5 - i) as f32 * (icone + vao) + vao, m, icone, icone)
+    let icones = [0usize, 1, 2, 3, 4, 5].map(|i| {
+        Rect::new(menu.x - 16.0 * s - (6 - i) as f32 * (icone + vao) + vao, m, icone, icone)
     });
     let area = Rect::new(sw - m - 320.0 * s, menu.y + menu.h + 12.0 * s, 320.0 * s, 56.0 * s);
     let minimapa = Rect::new(area.x, area.y + area.h + 4.0 * s, 320.0 * s, 320.0 * s);
@@ -313,7 +313,7 @@ impl Zonas {
             ("exp", self.exp),
         ];
         for (i, r) in self.icones.iter().enumerate() {
-            v.push((["icone_bolsa", "icone_missoes", "icone_diarias", "icone_grupo", "icone_avisos"][i], *r));
+            v.push((["icone_bolsa", "icone_missoes", "icone_diarias", "icone_grupo", "icone_avisos", "icone_presenca"][i], *r));
         }
         for (i, r) in self.skills.iter().enumerate() {
             v.push((["skill1", "skill2", "skill3", "skill4"][i], *r));

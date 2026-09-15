@@ -284,6 +284,8 @@ pub enum ClientMessage {
     MercadoReceber,
     /// Dungeons (docs/DUNGEONS_E_RAIDS.md): fila, sala, instancia, bau, correio.
     Dungeon { pedido: crate::dungeon::Pedido },
+    /// Calendario de presenca (docs/CALENDARIO.md): estado e resgate do dia.
+    Presenca { pedido: crate::presenca::PedidoPresenca },
 }
 
 /// Onde esta' a peca que a forja vai refinar.
@@ -813,6 +815,11 @@ pub enum ServerMessage {
     MercadoResultado { ok: bool, texto: String },
     /// Dungeons: estado da janela, pronto-check, instancia, bau e correio.
     Dungeon { aviso: crate::dungeon::Aviso },
+    /// Calendario de presenca: grade, progresso da conta e resultado do resgate.
+    Presenca { aviso: crate::presenca::AvisoPresenca },
+    /// O alvo esta' no alcance da arma a distancia, mas o relevo barra o
+    /// tiro: o ataque nao sai. No maximo 1 por segundo por jogador.
+    SemVisada { alvo: EntityId },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.
@@ -1046,6 +1053,8 @@ pub enum FonteDeItem {
     Missao { quest: u16, titulo: String, diaria: bool },
     /// Chefe de dungeon/raid: ainda nao existe ("em breve").
     DungeonRaid,
+    /// Calendario de presenca (`shared::presenca`): dias da grade do mes.
+    Calendario { dias: Vec<u8> },
 }
 
 /// Todas as fontes de um item. Vai no `ResourceSources`.

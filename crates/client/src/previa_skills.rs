@@ -87,7 +87,7 @@ pub async fn abrir(vox: &VoxCache) {
             habilidades.barra(skill.conjunto,20,126);auto.desenha();
             crate::hud::draw_atacar(&z,true);
             crate::hud::draw_rapidos(&z,crate::barra::padrao().map(|e|e.item_id),[12,5,3,1],[true,false,false,false],[Some((5.0,8.0)),None,None,None],[true,false,false,false],None,&|_|String::new());
-            crate::hud::draw_topo(&z,true,true,true);
+            crate::hud::draw_topo(&z,true,true,true,true);
             set_default_camera();
         } else {
             draw_text(&format!("{} / 12   {}",escolha + 1,skill.nome),28.0,42.0,28.0,WHITE);

@@ -23,6 +23,8 @@ pub async fn handle_connection(
 
     let (tx_out, mut rx_out) = mpsc::unbounded_channel::<ServerMessage>();
     let session_id = SessionId(peer);
+    // Banda desta conexao, pro panoptico: atomico, sem cadeado no envio.
+    let banda = crate::telemetria::abrir_banda(&peer.to_string());
     to_world.send(IncomingMessage::Connected(SessionHandle {
         id: session_id,
         to_client: tx_out.clone(),
@@ -40,6 +42,7 @@ pub async fn handle_connection(
                 // wire agora e' postcard e `from_utf8_lossy` destruiria os
                 // bytes que nao formam UTF-8 valido — o cliente travava no
                 // handshake sem erro nenhum aparecer.
+                banda.enviou(bytes.len());
                 if ws.send(Message::Binary(bytes)).await.is_err() {
                     break;
                 }
@@ -54,7 +57,7 @@ pub async fn handle_connection(
                         break;
                     }
                     Some(Ok(msg)) => match msg {
-                        Message::Binary(b) => match shared::protocol::decode::<ClientMessage>(&b) {
+                        Message::Binary(b) => match { banda.recebeu(b.len()); shared::protocol::decode::<ClientMessage>(&b) } {
                             Ok(cm) => { if to_world.send(IncomingMessage::Message(session_id, cm)).is_err() { break; } }
                             Err(e) => tracing::warn!("decode binary from {peer}: {e}"),
                         },
@@ -73,6 +76,7 @@ pub async fn handle_connection(
         }
     }
 
+    crate::telemetria::fechar_banda(&peer.to_string());
     let _ = to_world.send(IncomingMessage::Disconnected(session_id));
     tracing::info!("session {peer} closed");
     Ok(())

@@ -20,7 +20,7 @@ use sqlx::{PgPool, Row};
 /// requisicao inteira: uma coluna que virou `NUMERIC` numa migracao apagaria o
 /// painel todo em vez de uma linha dele. Painel de observabilidade que cai
 /// junto com o que observa nao serve.
-fn campo<'r, T>(r: &'r sqlx::postgres::PgRow, i: usize) -> T
+pub(crate) fn campo<'r, T>(r: &'r sqlx::postgres::PgRow, i: usize) -> T
 where
     T: sqlx::Decode<'r, sqlx::Postgres> + sqlx::Type<sqlx::Postgres> + Default,
 {

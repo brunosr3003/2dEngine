@@ -35,6 +35,7 @@ impl GameWorld {
     }
 
     fn rejeita_skill(&self, sid: SessionId, id: u32, motivo: &str) {
+        crate::telemetria::conta("skill_recusada", motivo, 1);
         if let Some(s) = self.sessions.get(&sid) {
             let _ = s.handle.to_client.send(ServerMessage::SkillRejected { skill_id: id, motivo: motivo.into() });
         }
@@ -42,6 +43,7 @@ impl GameWorld {
     }
 
     pub(super) fn handle_skill_cast(&mut self, sid: SessionId, skill_id: u32) {
+        crate::telemetria::conta("skill_pedida", skill_id, 1);
         let Some(skill) = crate::skills::skill_of(skill_id).filter(|s| (1..=12).contains(&s.id)) else {
             self.rejeita_skill(sid, skill_id, "Skill indisponível."); return;
         };
@@ -63,7 +65,8 @@ impl GameWorld {
         }
         if self.in_safe_zone(pos.0) { return Err("O alvo está na zona segura."); }
         if de.distance(pos.0) > skill.alcance_alvo() { return Err("Alvo fora do alcance."); }
-        if !visada(self.ilha.as_ref(), &self.map, de, pos.0) {
+        // Skill com alvo vai em arco, como o tiro basico (`visada_de_tiro`).
+        if !visada_de_tiro(self.ilha.as_ref(), &self.map, de, pos.0) {
             return Err("O alvo está atrás de um obstáculo.");
         }
         Ok(pos.0)
@@ -251,7 +254,14 @@ impl GameWorld {
                 if !player && !matches!(kind, EntityKind::Enemy(_)) { continue; }
                 if self.ecs.get::<&EnemyTag>(e).is_ok_and(|t| t.dead || t.returning_home || t.spawn_grace_until > self.sim_time_s) { continue; }
             }
-            if dentro_da_forma(skill, de, dir, alvo, pos.0) && visada(self.ilha.as_ref(), &self.map, de, pos.0)
+            // Circulo no alvo cai do alto (arco ate' la'); cone e linha saem
+            // rentes ao chao e o relevo barra em linha reta.
+            let de_ve = if skill.forma == Forma::Circulo {
+                visada_de_tiro(self.ilha.as_ref(), &self.map, de, pos.0)
+            } else {
+                visada(self.ilha.as_ref(), &self.map, de, pos.0)
+            };
+            if dentro_da_forma(skill, de, dir, alvo, pos.0) && de_ve
                 && (skill.forma != Forma::Circulo || visada(self.ilha.as_ref(), &self.map, alvo, pos.0)) {
                 alvos.push((net.0, pos.0));
             }

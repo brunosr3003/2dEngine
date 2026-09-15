@@ -1,155 +1,246 @@
 //! **Panoptico** — o olho de cima do Tempest.
 //!
 //! Um processo separado, so' de leitura, que junta o estado de TODOS os canais
-//! e serve uma tela onde da' pra ver o mundo inteiro de uma vez: onde esta'
-//! cada jogador, cada bicho, o que cada um esta' fazendo, e clicar pra ver
-//! tudo que o servidor sabe sobre ele.
+//! e o que os bancos sabem, e serve uma tela onde da' pra ver o jogo inteiro:
+//! o mapa ao vivo, jogadores, economia, mercado, dungeons, atividade
+//! (telemetria agregada por minuto), missoes e infraestrutura.
 //!
 //! ── Por que processo separado ────────────────────────────────────────────
 //!
 //! O jogo roda um processo por canal, e cada um simula 30 vezes por segundo
 //! dentro de um orcamento de 33 ms. Servir painel de dentro desse laco seria
 //! deixar uma aba de navegador competir com o tick. Aqui o caminho e' o
-//! contrario: cada canal PUBLICA um retrato ja' pronto a cada 200 ms, e o
-//! panoptico so' busca e junta. Painel lento nunca vira jogo lento.
+//! contrario: cada canal PUBLICA um retrato ja' pronto a cada 200 ms e grava a
+//! telemetria por minuto, e o panoptico so' busca e junta.
 //!
 //! ── Por que ele depende de `shared` ──────────────────────────────────────
 //!
 //! O mapa nao e' imagem guardada em lugar nenhum: o panoptico GERA a ilha do
-//! mesmo gerador que o jogo usa, da mesma semente, e desenha o PNG. Terreno
-//! nunca viaja pela rede, nem pro jogo nem pra ca'. Se o gerador mudar, o mapa
-//! muda junto — nao ha' como o painel mostrar uma ilha que nao existe mais.
+//! mesmo gerador que o jogo usa. E os nomes de desenho (dungeons, missoes,
+//! chaves) saem do mesmo codigo do jogo.
 //!
 //! ── Cuidado ──────────────────────────────────────────────────────────────
 //!
-//! Ele ve' conta, ouro e posicao de todo mundo. Exige token, e nao sobe sem
-//! um de pelo menos 16 caracteres.
+//! Ele ve' conta, ouro e posicao de todo mundo. Sem sessao (senha forte,
+//! cookie HttpOnly) nada passa — ver `auth`.
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 
-use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
-use axum::routing::get;
+use axum::extract::{ConnectInfo, Path, Query, Request, State};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::middleware::Next;
+use axum::response::{Html, IntoResponse, Redirect, Response};
+use axum::routing::{get, post};
+use axum::Form;
 use tokio::sync::RwLock;
 
+mod auth;
 mod economia;
 mod mapa;
+mod observa;
 
 #[derive(Clone)]
 struct Estado {
     pool: Arc<sqlx::PgPool>,
-    token: String,
-    /// Token que os processos de jogo exigem.
-    token_jogo: String,
-    /// PNG por zona, gerado uma vez. A ilha grande leva ~1 s pra desenhar; nao
-    /// da' pra refazer isso a cada F5.
+    /// Banco central (mercado global, TP). `None` = sem `DATABASE_URL_CENTRAL`.
+    central: Option<Arc<sqlx::PgPool>>,
+    auth: Arc<auth::Auth>,
+    /// Token que os processos de jogo exigem no `/estado`. Sem ele o mapa ao
+    /// vivo fica mudo, mas o resto (bancos, telemetria) funciona.
+    token_jogo: Option<String>,
+    /// Onde falar com os canais quando o `host` anunciado e' o publico
+    /// (producao: "mmo.brunji.com.br:9000" e o painel do canal em 127.0.0.1).
+    host_dos_canais: Option<String>,
+    /// PNG por zona, gerado uma vez.
     mapas: Arc<RwLock<HashMap<String, Arc<Vec<u8>>>>>,
-    http: hyper_util::client::legacy::Client<
-        hyper_util::client::legacy::connect::HttpConnector,
-        String,
-    >,
+    http: hyper_util::client::legacy::Client<hyper_util::client::legacy::connect::HttpConnector, String>,
+}
+
+fn env(nome: &str) -> Option<String> {
+    std::env::var(nome).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
-        )
+        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    let token = std::env::var("PANOPTICO_TOKEN").unwrap_or_default();
-    if token.len() < 16 {
-        anyhow::bail!(
-            "PANOPTICO_TOKEN precisa de pelo menos 16 chars — este painel mostra \
-             conta, ouro e posicao de todo mundo"
-        );
-    }
-    let token_jogo = std::env::var("MMO_ADMIN_TOKEN").unwrap_or_default();
-    if token_jogo.len() < 16 {
-        anyhow::bail!("MMO_ADMIN_TOKEN precisa de pelo menos 16 chars (o token dos canais)");
+    // PANOPTICO_TOKEN continua valendo como senha: e' o que o run-panoptico.sh
+    // antigo exporta.
+    let senha = env("PANOPTICO_SENHA").or_else(|| env("PANOPTICO_TOKEN")).unwrap_or_default();
+    let prefixo = env("PANOPTICO_PREFIXO").unwrap_or_default();
+    let cookie_seguro = env("PANOPTICO_COOKIE_SEGURO").as_deref() != Some("0");
+    let confiar_proxy = env("PANOPTICO_CONFIAR_PROXY").as_deref() == Some("1");
+    let auth = Arc::new(auth::Auth::novo(senha, &prefixo, cookie_seguro, confiar_proxy)?);
+
+    let token_jogo = env("MMO_ADMIN_TOKEN").filter(|t| t.len() >= 16);
+    if token_jogo.is_none() {
+        tracing::warn!("MMO_ADMIN_TOKEN ausente ou curto: o mapa ao vivo nao vai buscar retrato dos canais");
     }
 
-    let url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://solar:solar_dev_123@localhost:5432/mmo_dev".into());
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(4)
-        .connect(&url)
-        .await?;
+    let url = env("DATABASE_URL").unwrap_or_else(|| "postgres://solar:solar_dev_123@localhost:5432/mmo_dev".into());
+    let pool = sqlx::postgres::PgPoolOptions::new().max_connections(6).connect(&url).await?;
+    let central = match env("DATABASE_URL_CENTRAL") {
+        Some(u) => match sqlx::postgres::PgPoolOptions::new().max_connections(3).connect(&u).await {
+            Ok(p) => Some(Arc::new(p)),
+            Err(e) => {
+                tracing::warn!("banco central indisponivel ({e}): aba de mercado sem o lado central");
+                None
+            }
+        },
+        None => None,
+    };
 
     let st = Estado {
         pool: Arc::new(pool),
-        token,
+        central,
+        auth: auth.clone(),
         token_jogo,
+        host_dos_canais: env("PANOPTICO_HOST_CANAIS"),
         mapas: Arc::new(RwLock::new(HashMap::new())),
-        http: hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
-            .build_http(),
+        http: hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new()).build_http(),
     };
 
-    let app = axum::Router::new()
-        .route("/", get(pagina))
-        .route("/api/mundo", get(mundo))
-        .route("/api/mapa/:zona.png", get(mapa_png))
-        .route("/api/economia", get(economia))
-        .with_state(st);
+    let p = |c: &str| auth.caminho(c);
+    let mut app = axum::Router::new()
+        .route(&p("/"), get(pagina))
+        .route(&p("/login"), get(login_form).post(login))
+        .route(&p("/sair"), post(sair))
+        .route(&p("/api/mundo"), get(mundo))
+        .route(&p("/api/mapa/:zona"), get(mapa_png))
+        .route(&p("/api/economia"), get(economia))
+        .route(&p("/api/jogadores"), get(jogadores))
+        .route(&p("/api/mercado"), get(mercado))
+        .route(&p("/api/dungeons"), get(dungeons))
+        .route(&p("/api/atividade"), get(atividade))
+        .route(&p("/api/missoes"), get(missoes))
+        .route(&p("/api/itens"), get(itens))
+        .route(&p("/api/infra"), get(infra));
+    if !auth.prefixo.is_empty() {
+        // "/panoptico" sem barra: a pagina usa caminhos relativos e precisa da barra.
+        let destino = p("/");
+        app = app.route(&auth.prefixo, get(move || async move { Redirect::permanent(&destino) }));
+    }
+    let app = app.layer(axum::middleware::from_fn_with_state(st.clone(), porteiro)).with_state(st);
 
-    let bind = std::env::var("PANOPTICO_WEB_BIND").unwrap_or_else(|_| "127.0.0.1:8090".into());
-    let addr: std::net::SocketAddr = bind.parse()?;
-    tracing::info!("panoptico em http://{addr}/?token=...");
+    let bind = env("PANOPTICO_WEB_BIND").unwrap_or_else(|| "127.0.0.1:8090".into());
+    let addr: SocketAddr = bind.parse()?;
+    if !addr.ip().is_loopback() {
+        tracing::warn!("panoptico escutando fora do loopback ({addr}): deixe atras de proxy HTTPS");
+    }
+    tracing::info!("panoptico em http://{addr}{}", p("/"));
     let escuta = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(escuta, app).await?;
+    axum::serve(escuta, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
     Ok(())
 }
 
-fn autorizado(st: &Estado, q: &HashMap<String, String>) -> bool {
-    q.get("token").map(String::as_str) == Some(st.token.as_str())
+// ─────────────────────────────── porta ───────────────────────────────
+
+/// Nada passa sem sessao, exceto a tela de login. E toda resposta leva os
+/// cabecalhos de defesa.
+async fn porteiro(State(st): State<Estado>, req: Request, next: Next) -> Response {
+    let caminho = req.uri().path().to_string();
+    let livre = caminho == st.auth.caminho("/login") || (!st.auth.prefixo.is_empty() && caminho == st.auth.prefixo);
+    let dentro = auth::token_do_cookie(req.headers()).is_some_and(|t| st.auth.valida(&t, Instant::now()));
+    let mut resp = if livre || dentro {
+        next.run(req).await
+    } else if caminho.starts_with(&st.auth.caminho("/api/")) {
+        (StatusCode::UNAUTHORIZED, "entre primeiro").into_response()
+    } else {
+        Redirect::to(&st.auth.caminho("/login")).into_response()
+    };
+    let h = resp.headers_mut();
+    let fixos = [
+        ("x-frame-options", "DENY"),
+        ("x-content-type-options", "nosniff"),
+        ("referrer-policy", "no-referrer"),
+        (
+            "content-security-policy",
+            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'",
+        ),
+    ];
+    for (k, v) in fixos {
+        h.insert(k, HeaderValue::from_static(v));
+    }
+    let e_png = h.get(header::CONTENT_TYPE).is_some_and(|v| v.as_bytes() == b"image/png");
+    if !e_png {
+        h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    }
+    resp
 }
 
-async fn pagina(
-    State(st): State<Estado>,
-    Query(q): Query<HashMap<String, String>>,
-) -> impl IntoResponse {
-    if !autorizado(&st, &q) {
-        return (StatusCode::FORBIDDEN, "token").into_response();
-    }
-    (
-        [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        include_str!("../estatico/index.html"),
-    )
-        .into_response()
+async fn login_form(State(st): State<Estado>) -> Html<String> {
+    Html(auth::pagina_de_login(&st.auth.caminho("/login"), None))
 }
+
+async fn login(
+    State(st): State<Estado>,
+    ConnectInfo(par): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Form(f): Form<HashMap<String, String>>,
+) -> Response {
+    let ip = auth::ip_do_pedido(&headers, par, st.auth.confiar_proxy);
+    let agora = Instant::now();
+    let acao = st.auth.caminho("/login");
+    if st.auth.bloqueado(&ip, agora) {
+        tracing::warn!("panoptico: login travado para {ip}");
+        return (StatusCode::TOO_MANY_REQUESTS, Html(auth::pagina_de_login(&acao, Some("Muitas tentativas. Espere 15 minutos.")))).into_response();
+    }
+    let senha = f.get("senha").map(String::as_str).unwrap_or("");
+    if !st.auth.confere(senha) {
+        st.auth.falhou(&ip, agora);
+        tracing::warn!("panoptico: senha errada de {ip}");
+        return (StatusCode::UNAUTHORIZED, Html(auth::pagina_de_login(&acao, Some("Senha errada.")))).into_response();
+    }
+    st.auth.limpar_falhas(&ip);
+    match st.auth.nova_sessao(agora) {
+        Ok(token) => {
+            tracing::info!("panoptico: sessao aberta para {ip}");
+            ([(header::SET_COOKIE, st.auth.cookie(&token))], Redirect::to(&st.auth.caminho("/"))).into_response()
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("sem aleatoriedade: {e}")).into_response(),
+    }
+}
+
+async fn sair(State(st): State<Estado>, headers: HeaderMap) -> Response {
+    if let Some(t) = auth::token_do_cookie(&headers) {
+        st.auth.encerrar(&t);
+    }
+    ([(header::SET_COOKIE, st.auth.cookie_apagar())], Redirect::to(&st.auth.caminho("/login"))).into_response()
+}
+
+async fn pagina() -> Html<&'static str> {
+    Html(include_str!("../estatico/index.html"))
+}
+
+// ─────────────────────────────── canais ───────────────────────────────
 
 /// Onde o panoptico de um canal escuta.
 ///
 /// Convencao e nao configuracao: a porta do painel e' a do jogo mais
-/// `PANOPTICO_OFFSET` (1000 por padrao). Uma coluna a mais na tabela de canais
-/// seria mais explicita e exigiria migracao pra ganhar pouco — a porta de um
-/// canal ja' e' derivada assim em todo lugar.
+/// `PANOPTICO_OFFSET` (1000 por padrao). O host e' o anunciado, trocado por
+/// `PANOPTICO_HOST_CANAIS` quando existe (o anunciado e' o publico).
 ///
 /// `0.0.0.0` vira `127.0.0.1`: e' o endereco em que o processo ESCUTA, nao um
 /// em que se possa falar com ele.
-fn endereco_do_painel(host_do_jogo: &str) -> Option<String> {
-    let offset: u16 = std::env::var("PANOPTICO_OFFSET")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1000);
-    let (h, p) = host_do_jogo.rsplit_once(':')?;
-    let porta: u16 = p.parse().ok()?;
-    let h = if h == "0.0.0.0" || h.is_empty() { "127.0.0.1" } else { h };
+fn endereco_do_painel(host_do_jogo: &str, host_override: Option<&str>) -> Option<String> {
+    let offset: u16 = std::env::var("PANOPTICO_OFFSET").ok().and_then(|v| v.parse().ok()).unwrap_or(1000);
+    let (h, porta) = host_do_jogo.rsplit_once(':')?;
+    let porta: u16 = porta.parse().ok()?;
+    let h = match host_override {
+        Some(o) => o,
+        None if h == "0.0.0.0" || h.is_empty() => "127.0.0.1",
+        None => h,
+    };
     Some(format!("{h}:{}", porta.checked_add(offset)?))
 }
 
-/// Junta o retrato de todos os canais vivos.
-async fn mundo(
-    State(st): State<Estado>,
-    Query(q): Query<HashMap<String, String>>,
-) -> impl IntoResponse {
-    if !autorizado(&st, &q) {
-        return (StatusCode::FORBIDDEN, "token").into_response();
-    }
+/// Canais vivos com o retrato de cada um (em paralelo).
+async fn canais_com_retrato(st: &Estado) -> Vec<serde_json::Value> {
     let linhas = sqlx::query_as::<_, (String, String, i32, i32, String, f32)>(
         "SELECT id, host, players, capacity, zone, tick_p99_ms
            FROM channels
@@ -166,7 +257,7 @@ async fn mundo(
     for (id, host, jogadores, capacidade, zona, tick) in linhas {
         let st = st.clone();
         tarefas.push(tokio::spawn(async move {
-            let painel = endereco_do_painel(&host);
+            let painel = endereco_do_painel(&host, st.host_dos_canais.as_deref());
             let retrato = match &painel {
                 Some(p) => buscar_retrato(&st, p).await,
                 None => None,
@@ -180,8 +271,7 @@ async fn mundo(
                 "zona": zona,
                 "tick_ms": tick,
                 // `null` quando o canal nao respondeu: a tela mostra o canal
-                // como MUDO em vez de somir com ele. Canal que some parece
-                // canal que fechou, e a diferenca importa pra quem opera.
+                // como MUDO em vez de somir com ele.
                 "retrato": retrato,
             })
         }));
@@ -192,55 +282,35 @@ async fn mundo(
             canais.push(v);
         }
     }
-    axum::Json(serde_json::json!({ "canais": canais })).into_response()
+    canais
 }
 
-/// A economia: o que o desenho preve ao lado do que o banco mede.
-async fn economia(
-    State(st): State<Estado>,
-    Query(q): Query<HashMap<String, String>>,
-) -> impl IntoResponse {
-    if !autorizado(&st, &q) {
-        return (StatusCode::FORBIDDEN, "token").into_response();
-    }
-    // Ouro em MAO: so' quem esta' logado. O do banco inclui quem esta' fora, e
-    // a diferenca entre os dois e' informacao — ouro parado nao circula.
-    let mut ouro_online = 0u64;
-    let linhas = sqlx::query_as::<_, (String,)>(
-        "SELECT host FROM channels WHERE updated > NOW() - INTERVAL '15 seconds'",
-    )
-    .fetch_all(&*st.pool)
-    .await
-    .unwrap_or_default();
-    for (host,) in linhas {
-        if let Some(p) = endereco_do_painel(&host) {
-            if let Some(r) = buscar_retrato(&st, &p).await {
-                if let Some(js) = r.get("jogadores").and_then(|v| v.as_array()) {
-                    ouro_online += js
-                        .iter()
-                        .filter_map(|j| j.get("ouro").and_then(|v| v.as_u64()))
-                        .sum::<u64>();
+async fn mundo(State(st): State<Estado>) -> impl IntoResponse {
+    axum::Json(serde_json::json!({ "canais": canais_com_retrato(&st).await }))
+}
+
+/// Nome -> canal de quem esta' logado agora.
+async fn quem_esta_online(st: &Estado) -> HashMap<String, String> {
+    let mut online = HashMap::new();
+    for c in canais_com_retrato(st).await {
+        let canal = c.get("id").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+        if let Some(js) = c.get("retrato").and_then(|r| r.get("jogadores")).and_then(|v| v.as_array()) {
+            for j in js {
+                if let Some(n) = j.get("nome").and_then(|v| v.as_str()) {
+                    online.insert(n.to_string(), canal.clone());
                 }
             }
         }
     }
-    axum::Json(economia::levantar(&st.pool, ouro_online).await).into_response()
+    online
 }
 
 async fn buscar_retrato(st: &Estado, painel: &str) -> Option<serde_json::Value> {
     use http_body_util::BodyExt;
-    let uri = format!("http://{painel}/estado?token={}", st.token_jogo);
-    let req = hyper::Request::builder()
-        .uri(uri)
-        .body(String::new())
-        .ok()?;
-    let resp = tokio::time::timeout(
-        std::time::Duration::from_millis(800),
-        st.http.request(req),
-    )
-    .await
-    .ok()?
-    .ok()?;
+    let token = st.token_jogo.as_deref()?;
+    let uri = format!("http://{painel}/estado?token={token}");
+    let req = hyper::Request::builder().uri(uri).body(String::new()).ok()?;
+    let resp = tokio::time::timeout(std::time::Duration::from_millis(800), st.http.request(req)).await.ok()?.ok()?;
     if !resp.status().is_success() {
         return None;
     }
@@ -248,14 +318,55 @@ async fn buscar_retrato(st: &Estado, painel: &str) -> Option<serde_json::Value> 
     serde_json::from_slice(&corpo).ok()
 }
 
-async fn mapa_png(
-    State(st): State<Estado>,
-    Path(zona): Path<String>,
-    Query(q): Query<HashMap<String, String>>,
-) -> impl IntoResponse {
-    if !autorizado(&st, &q) {
-        return (StatusCode::FORBIDDEN, "token").into_response();
+// ─────────────────────────────── abas ───────────────────────────────
+
+fn horas(q: &HashMap<String, String>, padrao: i32) -> i32 {
+    q.get("horas").and_then(|v| v.parse().ok()).unwrap_or(padrao)
+}
+
+/// A economia: o que o desenho preve ao lado do que o banco mede.
+async fn economia(State(st): State<Estado>) -> impl IntoResponse {
+    // Ouro em MAO: so' quem esta' logado. O do banco inclui quem esta' fora, e
+    // a diferenca entre os dois e' informacao — ouro parado nao circula.
+    let mut ouro_online = 0u64;
+    for c in canais_com_retrato(&st).await {
+        if let Some(js) = c.get("retrato").and_then(|r| r.get("jogadores")).and_then(|v| v.as_array()) {
+            ouro_online += js.iter().filter_map(|j| j.get("ouro").and_then(|v| v.as_u64())).sum::<u64>();
+        }
     }
+    axum::Json(economia::levantar(&st.pool, ouro_online).await)
+}
+
+async fn jogadores(State(st): State<Estado>) -> impl IntoResponse {
+    let online = quem_esta_online(&st).await;
+    axum::Json(observa::jogadores(&st.pool, &online).await)
+}
+
+async fn mercado(State(st): State<Estado>) -> impl IntoResponse {
+    axum::Json(observa::mercado(&st.pool, st.central.as_deref()).await)
+}
+
+async fn dungeons(State(st): State<Estado>, Query(q): Query<HashMap<String, String>>) -> impl IntoResponse {
+    axum::Json(observa::dungeons(&st.pool, horas(&q, 168)).await)
+}
+
+async fn atividade(State(st): State<Estado>, Query(q): Query<HashMap<String, String>>) -> impl IntoResponse {
+    axum::Json(observa::atividade(&st.pool, horas(&q, 24)).await)
+}
+
+async fn missoes(State(st): State<Estado>, Query(q): Query<HashMap<String, String>>) -> impl IntoResponse {
+    axum::Json(observa::missoes(&st.pool, horas(&q, 168)).await)
+}
+
+async fn itens(State(st): State<Estado>, Query(q): Query<HashMap<String, String>>) -> impl IntoResponse {
+    axum::Json(observa::itens(&st.pool, horas(&q, 168)).await)
+}
+
+async fn infra(State(st): State<Estado>) -> impl IntoResponse {
+    axum::Json(observa::infra(&st.pool, st.central.as_deref()).await)
+}
+
+async fn mapa_png(State(st): State<Estado>, Path(zona): Path<String>) -> impl IntoResponse {
     let zona = zona.trim_end_matches(".png").to_string();
     if let Some(png) = st.mapas.read().await.get(&zona).cloned() {
         return png_resposta(png);
@@ -274,13 +385,23 @@ async fn mapa_png(
     png_resposta(png)
 }
 
-fn png_resposta(png: Arc<Vec<u8>>) -> axum::response::Response {
+fn png_resposta(png: Arc<Vec<u8>>) -> Response {
     (
-        [
-            (axum::http::header::CONTENT_TYPE, "image/png"),
-            (axum::http::header::CACHE_CONTROL, "public, max-age=86400"),
-        ],
+        [(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "private, max-age=86400")],
         png.to_vec(),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod testes {
+    use super::endereco_do_painel;
+
+    #[test]
+    fn painel_do_canal_usa_o_host_certo() {
+        assert_eq!(endereco_do_painel("0.0.0.0:9200", None).as_deref(), Some("127.0.0.1:10200"));
+        assert_eq!(endereco_do_painel("10.0.0.5:9000", None).as_deref(), Some("10.0.0.5:10000"));
+        assert_eq!(endereco_do_painel("mmo.brunji.com.br:9000", Some("127.0.0.1")).as_deref(), Some("127.0.0.1:10000"));
+        assert_eq!(endereco_do_painel("sem-porta", None), None);
+    }
 }

@@ -53,6 +53,71 @@ struct Panorama {
     jogadores: Vec<Jogador>,
     mobs: Vec<Mob>,
     estorvos: usize,
+    /// Versao do protocolo e do crate: o painel mostra canal com build velho.
+    build: Build,
+    uptime_s: u64,
+    /// Chefes de campo: vivo ou quando volta.
+    chefes: Vec<ChefeDeCampo>,
+    /// Dungeons abertas agora neste canal.
+    instancias: Vec<InstanciaAoVivo>,
+    /// Fila automatica, salas e pronto-checks.
+    mesa: MesaAoVivo,
+    /// Ultimas linhas WARN/ERROR deste processo.
+    erros: Vec<crate::telemetria::Erro>,
+}
+
+#[derive(Serialize)]
+struct Build {
+    protocolo: u16,
+    versao: &'static str,
+}
+
+#[derive(Serialize)]
+struct ChefeDeCampo {
+    kind: u16,
+    nome: String,
+    nivel: u32,
+    x: f32,
+    z: f32,
+    vivo: bool,
+    /// Segundos ate' renascer (0 = vivo).
+    renasce_em_s: f32,
+    hp: i32,
+    hp_max: i32,
+}
+
+#[derive(Serialize)]
+struct InstanciaAoVivo {
+    id: u32,
+    conteudo: u16,
+    nome: String,
+    estagio: u8,
+    andar: u8,
+    andares: u8,
+    estado: &'static str,
+    decorrido_s: f32,
+    restante_s: f32,
+    inimigos_vivos: usize,
+    wipes: u32,
+    membros: Vec<MembroAoVivo>,
+}
+
+#[derive(Serialize)]
+struct MembroAoVivo {
+    nome: String,
+    mortes: u32,
+    ajudante: bool,
+    saiu: bool,
+    abriu_bau: bool,
+}
+
+#[derive(Serialize)]
+struct MesaAoVivo {
+    /// (conteudo, estagio, segundos esperando).
+    fila: Vec<(u16, u8, f32)>,
+    /// (id, conteudo, estagio, membros, completar pela fila).
+    salas: Vec<(u32, u16, u8, usize, bool)>,
+    prontos: usize,
 }
 
 #[derive(Serialize)]
@@ -93,6 +158,22 @@ struct Jogador {
     /// a coleta e' automatica e silenciosa, e sem isto so' se enxerga o
     /// inventario crescendo.
     coleta: Option<Coleta>,
+    /// Buffs ligados: segundos que ainda faltam (0 = desligado).
+    buff_xp_s: i64,
+    buff_fortuna_s: i64,
+    buff_sorte_s: i64,
+    /// Mortes com XP ainda recuperavel e revives gratis usados hoje.
+    mortes_recuperaveis: usize,
+    recuperacoes_usadas: u32,
+    /// Preferencias que dizem como a pessoa joga.
+    skills_auto: Vec<u32>,
+    economia_auto_min: Option<u16>,
+    /// Instancia de dungeon em que esta' (0 = mundo aberto).
+    instancia: u32,
+    /// Banda desta conexao desde que entrou.
+    banda_enviados: u64,
+    banda_recebidos: u64,
+    banda_kbps: f64,
 }
 
 #[derive(Serialize)]
@@ -155,11 +236,15 @@ pub fn publicar(w: &GameWorld, ultima: &mut f32) {
         w.ilha.as_ref().map_or(0.0, |i| i.altura(p.x, p.y))
     };
 
+    let agora_unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
     let mut jogadores = Vec::with_capacity(w.sessions.len());
     for (sid, s) in &w.sessions {
         let Some(e) = s.entity else { continue };
         let (pos, vel) = corpo(w, e);
         let (hp, hp_max) = vida(w, e);
+        let banda = crate::telemetria::banda_de(&sid.0.to_string());
         jogadores.push(Jogador {
             id: s.entity_id.0,
             nome: s.name.clone(),
@@ -194,6 +279,17 @@ pub fn publicar(w: &GameWorld, ultima: &mut f32) {
                 intervalo_s: r.intervalo_s,
                 coletas_restantes: r.coletas_restantes,
             }),
+            buff_xp_s: (s.xp_bonus_ate - agora_unix).max(0),
+            buff_fortuna_s: (s.fortuna_ate - agora_unix).max(0),
+            buff_sorte_s: (s.sorte_ate - agora_unix).max(0),
+            mortes_recuperaveis: s.mortes.len(),
+            recuperacoes_usadas: s.recuperacoes_usadas,
+            skills_auto: s.preferencias.skills_auto.clone(),
+            economia_auto_min: s.preferencias.economia_auto_min,
+            instancia: s.instancia,
+            banda_enviados: banda.map_or(0, |b| b.0),
+            banda_recebidos: banda.map_or(0, |b| b.1),
+            banda_kbps: banda.map_or(0.0, |(env, rec, seg)| (env + rec) as f64 * 8.0 / 1000.0 / seg.max(1.0)),
         });
     }
 
@@ -258,8 +354,70 @@ pub fn publicar(w: &GameWorld, ultima: &mut f32) {
         });
     }
 
+    let chefes = w
+        .vagas_de_chefe
+        .iter()
+        .map(|v| {
+            let c = shared::bosses::chefe(v.kind);
+            let (hp, hp_max) = v.vivo.map_or((0, 0), |e| vida(w, e));
+            let pos = v.vivo.map_or(v.pos, |e| corpo(w, e).0);
+            ChefeDeCampo {
+                kind: v.kind,
+                nome: c.map_or_else(|| format!("kind {}", v.kind), |c| c.nome.to_string()),
+                nivel: c.map_or(0, |c| c.nivel),
+                x: pos.x,
+                z: pos.y,
+                vivo: v.vivo.is_some(),
+                renasce_em_s: if v.vivo.is_some() { 0.0 } else { (v.volta_em - w.sim_time_s).max(0.0) },
+                hp,
+                hp_max,
+            }
+        })
+        .collect();
+    let instancias = w
+        .instancias
+        .iter()
+        .map(|i| {
+            let c = shared::dungeon::conteudo(i.conteudo);
+            use crate::world::dungeon::EstadoDg;
+            InstanciaAoVivo {
+                id: i.id,
+                conteudo: i.conteudo,
+                nome: c.map_or_else(|| format!("conteudo {}", i.conteudo), |c| c.nome.to_string()),
+                estagio: i.estagio,
+                andar: i.andar,
+                andares: c.map_or(0, |c| c.andares),
+                estado: match i.estado {
+                    EstadoDg::Andando => "andando",
+                    EstadoDg::Concluida { .. } => "vencida",
+                    EstadoDg::Falhou { .. } => "falhou",
+                },
+                decorrido_s: (w.sim_time_s - i.inicio).max(0.0),
+                restante_s: (i.limite - w.sim_time_s).max(0.0),
+                inimigos_vivos: i.vivos.iter().filter(|e| vida(w, **e).0 > 0).count(),
+                wipes: i.wipes,
+                membros: i
+                    .membros
+                    .iter()
+                    .map(|m| MembroAoVivo { nome: m.nome.clone(), mortes: m.mortes, ajudante: m.ajudante, saiu: m.saiu, abriu_bau: m.abriu_bau })
+                    .collect(),
+            }
+        })
+        .collect();
+    let agora_mesa = w.sim_time_s as f64;
+    let mesa = MesaAoVivo {
+        fila: w.mesa.fila.iter().map(|f| (f.conteudo, f.estagio, (agora_mesa - f.desde).max(0.0) as f32)).collect(),
+        salas: w.mesa.salas.iter().map(|s| (s.id, s.conteudo, s.estagio, s.membros.len(), s.completar_pela_fila)).collect(),
+        prontos: w.mesa.prontos.len(),
+    };
     let def = shared::terreno::def_da_zona(&w.zona);
     let p = Panorama {
+        build: Build { protocolo: shared::PROTOCOL_VERSION, versao: env!("CARGO_PKG_VERSION") },
+        uptime_s: crate::telemetria::uptime_s(),
+        chefes,
+        instancias,
+        mesa,
+        erros: crate::telemetria::erros_recentes(),
         canal: std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into()),
         zona: w.zona.clone(),
         semente: def.map_or(0, |d| d.semente),
@@ -282,6 +440,27 @@ pub fn publicar(w: &GameWorld, ultima: &mut f32) {
         }
     };
     *PANORAMA.write() = Some(texto);
+}
+
+impl GameWorld {
+    /// O valor de agora das medidas do panoptico (`telemetria::medir`). Chamado
+    /// a cada 30 s do laco — vale sempre, com ou sem `PANOPTICO_BIND`.
+    pub fn medir_telemetria(&self) {
+        use crate::telemetria::medir;
+        let online = self.sessions.values().filter(|s| s.logged_in).count();
+        let mobs = self.ecs.query::<&EnemyTag>().iter().filter(|(_, t)| !t.dead).count();
+        let chefes_vivos = self.vagas_de_chefe.iter().filter(|v| v.vivo.is_some()).count();
+        medir("online", online as f64);
+        medir("mobs_vivos", mobs as f64);
+        medir("chefes_vivos", chefes_vivos as f64);
+        medir("instancias", self.instancias.len() as f64);
+        medir("fila_dungeon", self.mesa.fila.len() as f64);
+        medir("salas_dungeon", self.mesa.salas.len() as f64);
+        medir("ouro_online", self.sessions.values().filter(|s| s.logged_in).map(|s| s.gold as f64).sum());
+        let (nos, esgotados) = self.nos_de_coleta();
+        medir("nos_de_coleta", nos as f64);
+        medir("nos_de_coleta_esgotados", esgotados as f64);
+    }
 }
 
 fn corpo(w: &GameWorld, e: Entity) -> (glam::Vec2, glam::Vec2) {

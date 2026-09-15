@@ -20,6 +20,7 @@ glam.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
+parking_lot = "0.12"
 # Cliente HTTP magro pra falar com os canais. Sem TLS: o panoptico so' fala
 # com processos de jogo na rede interna, e TLS aqui so' traria dependencia.
 hyper = { version = "1", features = ["client", "http1"] }

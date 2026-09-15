@@ -46,9 +46,24 @@ pub struct Resumo<'a> {
     pub nome_item: &'a dyn Fn(u16) -> String,
 }
 
+/// O que rendeu enquanto o jogador estava fora: mostrado numa janela
+/// flutuante quando ele desliza pra voltar.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ResumoDaAusencia {
+    pub duracao_s: f64,
+    pub xp: u64,
+    pub ouro: u64,
+    pub niveis: u32,
+    pub mortes: u32,
+    /// Maior quantidade primeiro.
+    pub itens: Vec<(u16, u32)>,
+}
+
 #[derive(Default)]
 pub struct Economia {
     pub ativa: bool,
+    /// Janela "Enquanto você estava fora", aberta ate' o jogador fechar.
+    pub resumo: Option<ResumoDaAusencia>,
     /// `None` = nunca escolheu: vale `auto_min_padrao`.
     pub auto_min: Option<u16>,
     desde: f64,
@@ -82,6 +97,94 @@ impl Economia {
         self.arrasto = None;
         self.saiu_em = agora;
         self.ultima_atividade = agora;
+    }
+
+    /// Saida pelo deslize: sai e abre o resumo do que rendeu.
+    pub fn sair_com_resumo(&mut self, agora: f64, xp: u64, nivel: u32, ouro: u64) {
+        if !self.ativa {
+            return;
+        }
+        let mut itens = self.itens.clone();
+        itens.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        self.resumo = Some(ResumoDaAusencia {
+            duracao_s: (agora - self.desde).max(0.0),
+            xp: xp.saturating_sub(self.xp_inicio),
+            ouro: ouro.saturating_sub(self.ouro_inicio),
+            niveis: nivel.saturating_sub(self.nivel_inicio),
+            mortes: self.mortes,
+            itens,
+        });
+        self.sair(agora);
+    }
+
+    /// A janela do resumo, por cima do jogo. Fecha no botao.
+    pub fn desenha_resumo(&mut self, nome_item: &dyn Fn(u16) -> String) {
+        let Some(r) = &self.resumo else { return };
+        let f = estilo::fator_texto();
+        let seguro = crate::hud_layout::tela_segura();
+        let colunas = 4usize;
+        let lado = 64.0 * f;
+        let vao = 10.0 * f;
+        let w = (colunas as f32 * (lado + vao) - vao + 48.0 * f).max(420.0 * f).min(seguro.w - 24.0);
+        let linhas_itens = r.itens.len().div_ceil(colunas).clamp(1, 3);
+        let h = (230.0 * f + linhas_itens as f32 * (lado + 30.0 * f)).min(seguro.h - 24.0);
+        let p = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+        crate::hud_layout::escurece(0.45);
+        estilo::painel(p);
+        let x = p.x + 24.0 * f;
+        let mut y = p.y + 38.0 * f;
+        estilo::texto_forte(x, y, "Enquanto você estava fora", 20, estilo::OURO);
+        let t = formata_duracao(r.duracao_s);
+        estilo::texto(p.x + p.w - 24.0 * f - estilo::medir(&t, 14), y, &t, 14, estilo::SUAVE);
+        y += 36.0 * f;
+        let mut numeros = vec![("XP", format!("+{}", milhar(r.xp))), ("Ouro", format!("+{}", milhar(r.ouro)))];
+        if r.niveis > 0 {
+            numeros.push(("Níveis", format!("+{}", r.niveis)));
+        }
+        if r.mortes > 0 {
+            numeros.push(("Mortes", r.mortes.to_string()));
+        }
+        let cw = (p.w - 48.0 * f) / numeros.len() as f32;
+        for (i, (rot, val)) in numeros.iter().enumerate() {
+            let cx = x + cw * (i as f32 + 0.5);
+            estilo::texto_centro(cx, y, rot, 13, estilo::SUAVE);
+            estilo::texto_centro_forte(cx, y + 26.0 * f, val, 20, estilo::TEXTO);
+        }
+        y += 52.0 * f;
+        estilo::texto_forte(x, y, "ITENS", 12, estilo::SUAVE);
+        y += 12.0 * f;
+        let m = Vec2::from(mouse_position());
+        if r.itens.is_empty() {
+            estilo::texto(x, y + 24.0 * f, "Nenhum item coletado", 14, estilo::SUAVE);
+        }
+        let cabem = colunas * linhas_itens;
+        let mut dica = None;
+        for (i, (id, q)) in r.itens.iter().take(cabem).enumerate() {
+            let c = Rect::new(x + (i % colunas) as f32 * (lado + vao), y + (i / colunas) as f32 * (lado + 30.0 * f), lado, lado);
+            estilo::cartao(c, c.contains(m), false);
+            crate::icones::icone(*id, c, None, Some(*q));
+            if *q == 1 {
+                estilo::texto_centro_forte(c.x + c.w - 10.0 * f, c.y + c.h - 4.0 * f, "1", 12, estilo::TEXTO);
+            }
+            let nome = nome_item(*id);
+            estilo::texto_ajustado(&nome, c.x, c.y + c.h + 16.0 * f, lado + vao - 2.0, 11, estilo::SUAVE);
+            if c.contains(m) {
+                dica = Some((c, format!("{nome} ×{}", milhar(*q as u64))));
+            }
+        }
+        if r.itens.len() > cabem {
+            let t = format!("+ {} outros itens", r.itens.len() - cabem);
+            estilo::texto(x, p.y + p.h - 70.0 * f, &t, 13, estilo::SUAVE);
+        }
+        let ok = Rect::new(p.center().x - 90.0 * f, p.y + p.h - 58.0 * f, 180.0 * f, 44.0 * f);
+        estilo::cartao(ok, ok.contains(m), true);
+        estilo::texto_centro_forte(ok.center().x, ok.center().y + 6.0 * f, "OK", 17, estilo::OURO);
+        if let Some((c, t)) = dica {
+            estilo::tooltip(c, &t, false);
+        }
+        if is_mouse_button_pressed(MouseButton::Left) && ok.contains(m) {
+            self.resumo = None;
+        }
     }
 
     /// Entrada do jogador nao vale pro mundo: modo ligado ou acabou de sair.
@@ -356,6 +459,22 @@ mod tests {
         assert!(e.bloqueia_entrada(10.2));
         assert!(!e.bloqueia_entrada(10.5));
         assert!(!Economia::default().bloqueia_entrada(0.1), "quem nunca entrou nao bloqueia");
+    }
+
+    #[test]
+    fn deslizar_pra_sair_abre_o_resumo_da_ausencia() {
+        let mut e = Economia::default();
+        e.entrar(100.0, 1_000, 5, 50);
+        e.itens_novos(&[(7, 3), (9, 10)]);
+        e.morreu();
+        e.sair_com_resumo(100.0 + 3725.0, 4_500, 6, 180);
+        assert!(!e.ativa);
+        let r = e.resumo.clone().expect("resumo aberto");
+        assert_eq!(r, ResumoDaAusencia { duracao_s: 3725.0, xp: 3_500, ouro: 130, niveis: 1, mortes: 1, itens: vec![(9, 10), (7, 3)] });
+        // Fora do modo nao abre nada.
+        let mut fora = Economia::default();
+        fora.sair_com_resumo(10.0, 1, 1, 1);
+        assert!(fora.resumo.is_none());
     }
 
     #[test]

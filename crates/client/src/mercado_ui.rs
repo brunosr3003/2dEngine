@@ -557,6 +557,7 @@ impl Mercado {
             let motivo = match carta.motivo {
                 1 => "Dungeon · primeira vitória da semana",
                 2 => "Dungeon · primeira vitória",
+                shared::presenca::MOTIVO_CORREIO => "Calendário de presença · não coube na bolsa",
                 _ => "Dungeon · não coube na bolsa",
             };
             let x = icone.x + icone.w + 10.0 * f;

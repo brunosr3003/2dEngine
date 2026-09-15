@@ -415,6 +415,8 @@ impl GameWorld {
         }
         s.gold -= preco;
         s.dungeon.gruta.comprar();
+        crate::telemetria::conta("dungeon_entrada_comprada", "gruta", 1);
+        crate::telemetria::conta("ouro_ralo", "dungeon_entrada", preco as i64);
         self.save_pending = true;
         self.dg_texto(sid, true, format!("Entrada comprada por {preco} de ouro."));
     }
@@ -491,7 +493,9 @@ impl GameWorld {
             let entradas = s.dungeon.entradas(c.tipo);
             entradas.atualizar(c.tipo, hoje);
             let ajudante = !entradas.consumir();
+            crate::telemetria::conta("dungeon_entrada", format!("{conteudo}:{estagio}:{}", if ajudante { "ajudante" } else { "normal" }), 1);
             if dg::exige_selo(c, estagio) {
+                crate::telemetria::conta("selo_usado", format!("{conteudo}:{estagio}"), 1);
                 tirar_item(&mut s.inventory, shared::item_id::SELO_TEMPESTADE, 1);
                 s.inventory_dirty = true;
             }
@@ -759,6 +763,7 @@ impl GameWorld {
                 if todos_caidos && !self.instancias[idx].wipe_tratado {
                     self.instancias[idx].wipe_tratado = true;
                     self.instancias[idx].wipes += 1;
+                    crate::telemetria::conta("dungeon_wipe", format!("{}:{}", self.instancias[idx].conteudo, self.instancias[idx].estagio), 1);
                     tracing::info!("[dungeon] instancia {id}: wipe no andar {} (#{})", andar + 1, self.instancias[idx].wipes);
                     self.dg_povoar_andar(idx);
                     for sid in &presentes {
@@ -836,6 +841,14 @@ impl GameWorld {
         let Some(c) = dg::conteudo(conteudo) else { return };
         let tempo_s = (agora - inicio).max(0.0) as u32;
         let bonus = vitoria && dg::bonus_tempo(tempo_s, (limite - inicio).max(1.0) as u32);
+        {
+            let chave = format!("{conteudo}:{estagio}");
+            crate::telemetria::conta("dungeon_resultado", format!("{chave}:{}", if vitoria { "vitoria" } else { "tempo_esgotado" }), 1);
+            crate::telemetria::conta("dungeon_tempo_s", &chave, tempo_s as i64);
+            if bonus {
+                crate::telemetria::conta("dungeon_bonus_tempo", &chave, 1);
+            }
+        }
         if !vitoria {
             self.instancias[idx].estado = EstadoDg::Falhou { em: agora };
             let velhos = std::mem::take(&mut self.instancias[idx].vivos);
@@ -965,7 +978,12 @@ impl GameWorld {
         if bau.marcas > 0 {
             premios.push((shared::item_id::MARCAS_TEMPESTADE, bau.marcas, None));
         }
+        crate::telemetria::conta("dungeon_bau", format!("{conteudo}:{estagio}"), 1);
         for (item, qtd, inst) in premios {
+            crate::telemetria::conta("dungeon_bau_item", item, qtd as i64);
+            if shared::item_id::todas_as_chaves().contains(&item) {
+                crate::telemetria::conta("chave_drop", format!("dungeon:{item}"), qtd as i64);
+            }
             if add_to_inventory(&mut s.inventory, item, qtd, inst) {
                 itens.push((item, qtd));
             } else {
@@ -997,7 +1015,7 @@ impl GameWorld {
 
     // ─────────────────────────────── correio ───────────────────────────────
 
-    fn dg_enviar_correio(&self, sid: SessionId) {
+    pub(super) fn dg_enviar_correio(&self, sid: SessionId) {
         let Some(s) = self.sessions.get(&sid) else { return };
         let cartas = s.dungeon.correio.iter().map(|c| dg::CartaNet { id: c.id, item_id: c.item_id, qtd: c.qtd, motivo: c.motivo }).collect();
         let _ = s.handle.to_client.send(ServerMessage::Dungeon { aviso: Aviso::Correio { cartas } });

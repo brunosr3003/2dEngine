@@ -232,14 +232,48 @@ fn abrir(
     cap_canal: u32,
     unico: bool,
 ) -> std::io::Result<Child> {
-    Command::new(bin)
-        .env("MMO_REALM", realm)
+    let mut cmd = Command::new(bin);
+    cmd.env("MMO_REALM", realm)
         // O filho anuncia isso no heartbeat; e' assim que a lista de canais
         // sabe distinguir "so' tem um canal agora" de "so' vai ter um".
         .env("MMO_CANAL_UNICO", if unico { "1" } else { "0" })
         .env("MMO_CANAL", numero.to_string())
         .env("BIND_ADDR", format!("0.0.0.0:{porta}"))
         .env("MMO_HOST_PUBLICO", format!("{host_base}:{porta}"))
-        .env("MMO_CANAL_CAPACIDADE", cap_canal.to_string())
-        .spawn()
+        .env("MMO_CANAL_CAPACIDADE", cap_canal.to_string());
+    // Retrato ao vivo pro panoptico: cada canal na porta do jogo + offset, so'
+    // em loopback. Um PANOPTICO_BIND herdado igual pra todos faria os canais
+    // brigarem pela mesma porta.
+    if let Some(bind) = painel_do_canal(
+        std::env::var("PANOPTICO_NOS_CANAIS").ok().as_deref(),
+        std::env::var("PANOPTICO_OFFSET").ok().as_deref(),
+        porta,
+    ) {
+        cmd.env("PANOPTICO_BIND", bind);
+    }
+    cmd.spawn()
+}
+
+/// `PANOPTICO_BIND` de um canal: `127.0.0.1:(porta + offset)` quando
+/// `PANOPTICO_NOS_CANAIS=1`. Offset padrao 1000, o mesmo que o painel assume.
+fn painel_do_canal(ligado: Option<&str>, offset: Option<&str>, porta: u16) -> Option<String> {
+    if ligado != Some("1") {
+        return None;
+    }
+    let offset: u16 = offset.and_then(|v| v.parse().ok()).unwrap_or(1000);
+    Some(format!("127.0.0.1:{}", porta.checked_add(offset)?))
+}
+
+#[cfg(test)]
+mod testes_painel {
+    use super::painel_do_canal;
+
+    #[test]
+    fn porta_do_painel_por_canal() {
+        assert_eq!(painel_do_canal(Some("1"), None, 9000).as_deref(), Some("127.0.0.1:10000"));
+        assert_eq!(painel_do_canal(Some("1"), Some("500"), 9002).as_deref(), Some("127.0.0.1:9502"));
+        assert_eq!(painel_do_canal(None, None, 9000), None);
+        assert_eq!(painel_do_canal(Some("0"), None, 9000), None);
+        assert_eq!(painel_do_canal(Some("1"), None, 65000), None, "estouro nao abre porta errada");
+    }
 }

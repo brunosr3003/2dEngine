@@ -119,6 +119,10 @@ pub struct CharacterRow {
     /// Dungeons da CONTA (`shared::dungeon::DadosConta`): 1ª vitoria semanal e
     /// teto de Selo. Vazio = nao grava (`dungeon_contas`, por `account_id`).
     pub conta_dungeon_json: String,
+    /// Resgates de presenca ja' entregues neste personagem
+    /// (`presenca_resgates.id`): marcados `aplicado` na MESMA transacao da
+    /// bolsa (docs/CALENDARIO.md). Nao e' carregado do banco.
+    pub presenca_aplicados: Vec<String>,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -497,6 +501,8 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
             updated    TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )",
     ).execute(pool).await?;
+    // Calendario de presenca (docs/CALENDARIO.md): uma linha por resgate.
+    crate::presenca::criar_tabelas(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS preferencias_json TEXT NOT NULL DEFAULT ''")
         .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS gold BIGINT NOT NULL DEFAULT 0")
@@ -654,6 +660,15 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     if dungeon_v1 > 0 {
         sqlx::query("UPDATE items SET vinculado = TRUE WHERE id = ANY($1)")
             .bind(vec![shared::item_id::MARCAS_TEMPESTADE as i32, shared::item_id::SELO_TEMPESTADE as i32])
+            .execute(pool).await?;
+    }
+    // Premio de presenca e' vinculado (docs/CALENDARIO.md): Fortuna e Sorte so'
+    // saem de recompensa (diaria e calendario) e nao vao ao mercado.
+    let presenca_v1 = sqlx::query("INSERT INTO migracoes_de_dados (nome) VALUES ('presenca_vinculados_v1') ON CONFLICT DO NOTHING")
+        .execute(pool).await?.rows_affected();
+    if presenca_v1 > 0 {
+        sqlx::query("UPDATE items SET vinculado = TRUE WHERE id = ANY($1)")
+            .bind(vec![shared::item_id::FORTUNA_POTION as i32, shared::item_id::SORTE_POTION as i32])
             .execute(pool).await?;
     }
     // Override de item_level no drop por enemy_kind (era hardcoded em
@@ -1490,6 +1505,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 preferencias_json,
                 dungeon_json,
                 conta_dungeon_json,
+                presenca_aplicados: Vec::new(),
             },
         );
     }
@@ -1696,13 +1712,20 @@ pub fn spawn_writer(pool: PgPool) -> mpsc::UnboundedSender<SaveBatch> {
                 Some(velho) => juntar_atrasado(velho, batch),
                 None => batch,
             };
+            let t0 = std::time::Instant::now();
             match write_batch(&pool, &batch).await {
                 Ok(()) => {
+                    crate::telemetria::conta("save", "ok", 1);
+                    crate::telemetria::conta("save_ms", "", t0.elapsed().as_millis() as i64);
+                    crate::telemetria::conta("save_linhas", "", batch.rows.len() as i64);
+                    crate::telemetria::conta("save_mercado", "", batch.mercado.len() as i64);
                     if !batch.mercado.is_empty() {
                         crate::mercado::acordar_relay();
                     }
                 }
                 Err(e) => {
+                    crate::telemetria::conta("save", "falha", 1);
+                    crate::telemetria::conta("save_atrasado_mercado", "", batch.mercado.len() as i64);
                     tracing::warn!("persist write failed: {e:?}");
                     atrasado = Some(batch);
                 }
@@ -1883,6 +1906,10 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             .execute(&mut *tx)
             .await?;
         }
+        // Presenca: o premio entrou na bolsa acima; o resgate vira `aplicado`
+        // na mesma transacao (docs/CALENDARIO.md). Queda antes daqui deixa a
+        // linha pendente e o proximo login entrega de novo, uma vez.
+        crate::presenca::marcar_aplicados(&mut tx, &row.presenca_aplicados).await?;
 
         // Inventario: delete-all + insert-rows pra ser simples. O FK cascade
         // ja garante que deletar a linha do character limpa a inventory.

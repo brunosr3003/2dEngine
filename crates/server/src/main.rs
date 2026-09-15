@@ -27,12 +27,14 @@ mod panoptico;
 mod morte;
 mod barra;
 mod preferencias;
+mod presenca;
 mod persistence;
 mod quests;
 mod recipes;
 mod rumo;
 mod session;
 mod skills;
+mod telemetria;
 mod tick;
 mod world;
 
@@ -43,12 +45,19 @@ use tokio::sync::{mpsc, oneshot};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,server=debug".into()),
-        )
-        .init();
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+        // WARN e ERROR tambem vao pro panoptico (`telemetria::CamadaDeErros`).
+        tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "info,server=debug".into()),
+            )
+            .with(tracing_subscriber::fmt::layer())
+            .with(telemetria::CamadaDeErros)
+            .init();
+    }
 
     let addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:9000".to_string());
     let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
@@ -57,6 +66,10 @@ async fn main() -> Result<()> {
 
     // Abre Postgres, carrega personagens existentes, sobe task de escrita.
     let pool = persistence::open_pool(&database_url).await?;
+    // Telemetria agregada por minuto pro panoptico. Tabelas antes de tudo:
+    // o que acontecer no boot ja' conta.
+    telemetria::init(&pool).await?;
+    telemetria::spawn(pool.clone());
     // Schema de quests ANTES do load_all (cria character_quests + coluna
     // faction_points em characters, que o load_all lê por personagem).
     quests::init(&pool).await?;

@@ -1,122 +1,152 @@
-# Panóptico — observabilidade do mundo
+# Panóptico — observabilidade do jogo
 
-Um painel que mostra o jogo inteiro de cima: onde está cada jogador, cada
-bicho, o que cada um está fazendo, e tudo que o servidor sabe sobre eles.
+Um painel que mostra o jogo inteiro de cima: o mapa ao vivo de cada canal, e
+tudo que os bancos e a telemetria sabem sobre jogadores, economia, mercado,
+dungeons, missões e infraestrutura.
 
 ```
-crates/panoptico          o painel (axum + uma página, sem framework)
-crates/server/panoptico.rs o retrato que cada canal publica
-scripts/run-panoptico.sh  como subir
+crates/panoptico               o painel (axum + uma página, sem framework)
+  src/auth.rs                  senha, sessão em cookie, freio de tentativas
+  src/observa.rs               jogadores, mercado, dungeons, atividade, missões, itens, infra
+  src/economia.rs              previsão (shared::forja) × medição
+crates/server/src/panoptico.rs o retrato ao vivo que cada canal publica
+crates/server/src/telemetria.rs contadores, medidas e erros agregados por minuto
+scripts/run-panoptico.sh       como subir local
 ```
 
-## Como o estado chega lá
+## De onde vem cada coisa
 
-O jogo roda um processo por canal, cada um simulando 30 vezes por segundo
-dentro de 33 ms. Servir painel de dentro desse laço seria deixar uma aba de
-navegador competir com o tick.
+| fonte | o que é | custo pro jogo |
+|---|---|---|
+| **retrato** (`/estado` do canal, 5×/s) | posição, vida, estado de cada jogador e mob; chefes de campo (vivo/renasce); dungeons abertas; fila e salas; buffs, mortes a recuperar, preferências e banda de cada conexão; build, uptime, últimos avisos | serializa a cada 200 ms fora do cadeado; só com `PANOPTICO_BIND` |
+| **telemetria** (`telemetria`, por minuto) | contadores `(tipo, chave)` que o mundo soma no ponto em que a coisa acontece | uma soma num mapa com cadeado curto; uma task grava por minuto |
+| **medidas** (`telemetria_medidas`, por minuto) | o valor de agora: online, mobs vivos, chefes vivos, instâncias, fila, ouro online, nós de coleta, p99 do tick | a cada 30 s |
+| **erros** (`telemetria_erros`) | toda linha WARN/ERROR do log do canal | camada do `tracing` |
+| **banco do realm** | contas, personagens, missões, dungeons (`dungeon_json`, `dungeon_contas`), itens, migrações, heartbeat de canais, saídas e cartas do mercado | consultas do painel, nunca do jogo |
+| **banco central** | anúncios, vendas, cartas, operações, razão da TP | idem |
 
-Então o caminho é o contrário: o tick **publica** um retrato já serializado
-num `RwLock` a cada 200 ms, e quem atende a requisição só clona um ponteiro.
-Painel lento, dez abas abertas ou cliente travado nunca viram jogo lento.
+Retenção: telemetria e medidas 30 dias, erros 7 dias (limpeza de hora em hora
+pela própria task). Gravação que falha devolve os contadores pro mapa: um
+minuto de banco fora não apaga o minuto.
 
-Cinco retratos por segundo e não trinta: o olho lê a cinco, e serializar mil
-entidades trinta vezes por segundo seria trabalho jogado fora.
+### Contadores de telemetria
 
-O painel busca todos os canais **em paralelo**. Em série, onze canais com um
-lento no meio dariam um painel no ritmo do pior deles. Canal que não responde
-aparece como **mudo**, não some — canal que some parece canal que fechou, e a
-diferença importa pra quem opera.
+| tipo | chave | onde |
+|---|---|---|
+| `kill`, `chefe_morto`, `kill_dungeon`, `chefe_dungeon_morto` | nome do bicho | morte de inimigo |
+| `drop` | item | saque spawnado |
+| `chave_drop` | `chefe:item` / `dungeon:item` | chave de craft que caiu |
+| `morte_jogador`, `xp_perdido` | — | `Session::morrer` |
+| `recuperar_xp` (grátis/pago), `xp_recuperado` | — | recuperar XP |
+| `ouro_fonte` | saque, missão, venda npc, troca npc, baú do tesouro, mercado carta | toda entrada de ouro |
+| `ouro_ralo` | loja, troca npc, recuperar xp, mercado compra, dungeon entrada | toda saída de ouro |
+| `skill_pedida` (id), `skill_recusada` (motivo) | | habilidades |
+| `item_usado` | item | usar item |
+| `coleta` | `Rock:T2` etc. | nó coletado |
+| `coleta_item` | item | o que a coleta deu |
+| `craft` (receita), `craft_falha` (motivo), `selo_craftado` | | craft |
+| `refino` | `subiu:+7`, `destruiu:+8`, `sem_material` | forja |
+| `loja_compra`, `loja_venda` | item | lojas de NPC |
+| `mercado` | anunciar, comprar, carta aplicada | lado do canal |
+| `missao_entregue`, `missao_historia`, `missao_abandonada` | id | missões |
+| `dungeon_entrada` | `conteudo:estagio:normal|ajudante` | início da instância |
+| `dungeon_resultado` | `conteudo:estagio:vitoria|tempo_esgotado` | fim |
+| `dungeon_wipe`, `dungeon_tempo_s`, `dungeon_bonus_tempo`, `dungeon_bau` | `conteudo:estagio` | |
+| `dungeon_bau_item` | item | o que o baú deu |
+| `dungeon_entrada_comprada`, `selo_usado` | | |
+| `save` (ok/falha), `save_ms`, `save_linhas`, `save_mercado`, `save_atrasado_mercado` | | writer de persistência |
+| `conexao` (aberta/fechada), `banda` (enviados/recebidos bytes) | | sessão WebSocket |
+| `log` (warn/error) | | camada de log |
 
-## O mapa
+Não medido ainda: latência por jogador (o servidor não sabe o RTT — o ping é
+do cliente) e o uso do "Onde obter"/"Ir" (é só cliente; medir exige mensagem
+nova no protocolo).
 
-Não existe imagem guardada em lugar nenhum. O panóptico gera a ilha do mesmo
-`shared::terreno`, da mesma semente, e desenha o PNG (~2,5 MB, ~5 s, cacheado
-por zona). Se o gerador mudar, o mapa muda junto — não há versão velha pra
-desincronizar.
+## As abas
 
-A cor é o material da superfície, mais duas coisas que só fazem sentido visto
-de cima: sombra de encosta (relevo de cima não se vê por cor, se vê por luz) e
-curva de nível a cada oito blocos, discreta.
+* **mundo** — canais à esquerda com carga de tick; mapa arrastável com zoom no
+  ponteiro (`F` enquadra); jogador azul (roxo dentro de dungeon), mob vermelho,
+  chefe amarelo, chefe de campo morto é um × com o tempo pra voltar. Anel
+  vermelho em quem está abaixo de 35% de vida. Sem ninguém selecionado, a
+  coluna da direita mostra o canal: build, uptime, chefes, dungeons abertas,
+  fila e últimos avisos.
+* **jogadores** — contas (Google, novas), online, ativos 24 h/7 d, por zona, e
+  a lista de personagens: nível, ouro, visto, capítulo da história, dungeon
+  (vitórias, estágio, entradas, correio), buffs, mortes a recuperar, auto.
+* **economia** — fluxo de ouro (fontes × ralos por hora, saldo), estoque de
+  chaves e itens especiais, chaves que caíram por origem, materiais por cor,
+  peças por raridade, e o que já existia: moeda, progressão, curva de demanda,
+  escadas, curva de loot, drops medidos, itens no mundo.
+* **mercado** — anúncios ativos (item e TP), vendas e taxa queimada, preço
+  médio/mediana por item, vendas por hora, últimas vendas, entregas
+  pendentes, operações e recusadas, razão da TP (saldos, motivos, movimentos),
+  e o lado do realm (saídas pendentes, cartas aplicadas).
+* **dungeons** — ao vivo (instâncias, fila, salas) e na janela: por conteúdo e
+  estágio, entradas, ajudantes, vitórias, tempo esgotado, taxa, duração média,
+  wipes, bônus, baús, vitórias de sempre, personagens liberados; o que os baús
+  deram; correio pendente; Selos e primeiras vitórias da semana.
+* **atividade** — todos os contadores agrupados (combate, habilidades, ouro,
+  drops, coleta, craft e forja, lojas, mercado, missões, dungeons, rede e
+  saves), com nomes resolvidos e gráfico por hora. Janela de 1 h a 30 dias.
+* **missões** — onde a história de cada um parou, por capítulo; por missão,
+  ativas, prontas, entregues e abandonadas.
+* **infra** — heartbeat dos canais, processos ao vivo (build, uptime, avisos),
+  medidas das últimas 24 h, saves e rede, erros recentes, migrações aplicadas,
+  tamanho dos bancos.
 
 ## Segurança
 
 Ele vê conta, ouro e posição de todo mundo.
 
-* **Fechado por padrão.** Sem `PANOPTICO_BIND`, o processo de jogo não abre
-  porta nenhuma a mais.
-* **Token obrigatório.** Nem o canal nem o painel sobem com token de menos de
-  16 caracteres.
-* **Só leitura.** Não existe rota que escreva; o módulo não tem `&mut
-  GameWorld` em lugar nenhum.
-* **Nunca em endereço público.** `PANOPTICO_WEB_BIND` fica em `127.0.0.1` e
-  acesso remoto é por túnel: `ssh -L 8090:127.0.0.1:8090 zone13`.
+* **Sessão obrigatória.** Nada passa sem login, exceto a própria tela de
+  login. API sem sessão responde 401; página redireciona.
+* **Senha** em `PANOPTICO_SENHA` (16+ caracteres; o processo não sobe com
+  menos), comparada em tempo constante.
+* **Cookie** aleatório de 256 bits, `HttpOnly`, `SameSite=Strict`, `Secure`
+  (desligável com `PANOPTICO_COOKIE_SEGURO=0` só pra teste local em http), no
+  caminho do prefixo, 12 h. Nada de token na URL.
+* **Freio**: 5 senhas erradas em 15 min travam o IP (429). Atrás de proxy o IP
+  vem de `X-Real-IP`/`X-Forwarded-For` só com `PANOPTICO_CONFIAR_PROXY=1`.
+* **Cabeçalhos**: CSP só do próprio host, `X-Frame-Options: DENY`,
+  `nosniff`, `no-referrer`, `no-store` nas respostas.
+* **Só leitura.** Não existe rota que escreva no jogo.
+* **Escuta em loopback.** Acesso remoto é pelo nginx com HTTPS (ou túnel SSH).
+* O `/estado` do canal continua exigindo `MMO_ADMIN_TOKEN` e escuta só em
+  127.0.0.1 (`PANOPTICO_BIND`).
 
-## Subir
+## Variáveis
+
+| variável | painel | exemplo |
+|---|---|---|
+| `PANOPTICO_SENHA` | obrigatória (16+) | — |
+| `PANOPTICO_WEB_BIND` | onde escuta | `127.0.0.1:18095` |
+| `PANOPTICO_PREFIXO` | caminho atrás do proxy | `/panoptico` |
+| `PANOPTICO_COOKIE_SEGURO` | `0` só em http local | (omitir em produção) |
+| `PANOPTICO_CONFIAR_PROXY` | `1` atrás do nginx | `1` |
+| `DATABASE_URL` | banco do realm | |
+| `DATABASE_URL_CENTRAL` | banco central (opcional) | |
+| `MMO_ADMIN_TOKEN` | token do `/estado` dos canais (opcional: sem ele o mapa fica mudo) | |
+| `PANOPTICO_HOST_CANAIS` | host pra falar com os canais quando o anunciado é público | `127.0.0.1` |
+| `PANOPTICO_OFFSET` | porta do painel do canal = porta do jogo + offset | `1000` |
+
+No canal: `PANOPTICO_BIND=127.0.0.1:<porta do jogo + 1000>` e
+`MMO_ADMIN_TOKEN` pro retrato ao vivo; `TELEMETRIA_FLUSH_S` (60) muda o passo
+da gravação. A telemetria grava sempre, com ou sem `PANOPTICO_BIND`.
+
+## Subir local
 
 ```bash
-# cada canal, com a porta do painel = porta do jogo + PANOPTICO_OFFSET (1000)
 MMO_ZONA=ilha_inicial BIND_ADDR=0.0.0.0:9200 \
 PANOPTICO_BIND=127.0.0.1:10200 MMO_ADMIN_TOKEN=<32 chars> \
   ./target/release/server
 
-# o painel
-MMO_ADMIN_TOKEN=<o mesmo> PANOPTICO_TOKEN=<outro> ./scripts/run-panoptico.sh
+MMO_ADMIN_TOKEN=<o mesmo> PANOPTICO_SENHA=<16+ chars> ./scripts/run-panoptico.sh
 ```
-
-## A tela
-
-Canais à esquerda com carga de tick, mapa arrastável com zoom no ponteiro
-(`F` enquadra a ilha), inspeção à direita.
-
-Jogador é azul com nome, mob é vermelho, chefe é amarelo, cadáver é cinza.
-**Anel vermelho em quem está abaixo de 35% de vida**: é a informação que
-decide se alguém precisa de atenção agora, e ela não pode exigir um clique.
-
-Linha tracejada é rota de jogador; linha vermelha é mob perseguindo.
-
-## A aba de economia
-
-Duas colunas lado a lado de propósito: **o que o desenho prevê** e **o que o
-banco mede**. Painel só com a previsão é a planilha de novo; painel só com a
-medição não diz se o número é alto ou baixo.
-
-O que é previsão sai de `shared::forja` — a mesma função que o jogo usa pra
-refinar. Nada é recalculado com fórmula própria aqui: painel com a sua versão
-da regra vira uma segunda regra, e as duas divergem.
-
-| seção | o que é | de onde vem |
-|---|---|---|
-| moeda | ouro no mundo, mediana, p90, maior fortuna, ouro em mãos | `characters` + retratos dos canais |
-| progressão | personagens por nível | `characters.xp` |
-| escada do refino | peças, tentativas, darksteel e horas por nível e grau | `shared::forja::escada` |
-| curva de loot | valor esperado por morte, por bicho | `loot_drops` × `items` |
-| drops medidos | o que de fato caiu nos últimos 7 dias | `item_drops_log` |
-| itens no mundo | estoque por item, mochila e baú somados | `inventory` + `vault` |
-
-**Ouro em mãos contra ouro no mundo.** O primeiro é de quem está logado; o
-segundo inclui quem está fora. A diferença é ouro parado — ele não circula,
-mas volta a circular quando o dono voltar, e é o tamanho dessa volta que
-importa saber antes que ela aconteça.
-
-**A escada mostra onde o jogo muda de natureza.** Até o +5 a falha só come
-material e a peça sempre chega: o custo é tempo. Do +6 em diante cada
-tentativa arrisca a peça, e a coluna de *peças* descola — 1, depois 3,3,
-depois 17, depois 111. É a mesma tabela que decidiu a colônia offline existir:
-Raro +7 são 1,51 milhão de darksteel, ou **106 horas** de mineração ativa.
-
-`DARKSTEEL_POR_HORA` mora em `shared::forja` e não só no `ECONOMIA.md` porque
-o painel calcula tempo a partir dele — número de desenho que mora em dois
-lugares vira dois desenhos diferentes.
 
 ## Um aviso que o painel já se deu
 
 A primeira versão desenhava uma linha pra todo mob com `ai_target`, e a tela
-mostrou 54 bichos "caçando" um jogador a 124 unidades com detecção de 9.
-
-A IA estava certa: `ai_target` é só o cache do jogador mais próximo — a IA
-guarda o mais perto pra não varrer todos os jogadores por tick, e a
-perseguição é barrada por `detect_range`. Quem mentia era o painel.
-
-Hoje ele separa `alvo` (cache) de `perseguindo` (indo atrás de verdade), e só
-o segundo vira linha. **Painel que mente é pior que painel nenhum**, porque a
-confiança que ele dá é real e a informação não.
+mostrou 54 bichos "caçando" um jogador a 124 unidades com detecção de 9. A IA
+estava certa: `ai_target` é só o cache do jogador mais próximo. Hoje o retrato
+separa `alvo` (cache) de `perseguindo` (indo atrás de verdade), e só o segundo
+vira linha. **Painel que mente é pior que painel nenhum.**

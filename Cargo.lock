@@ -1436,6 +1436,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "parking_lot",
  "png 0.17.16",
  "serde",
  "serde_json",

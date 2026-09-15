@@ -118,6 +118,8 @@ pub enum Topo {
     Diarias,
     Grupo,
     Avisos,
+    /// Calendario de presenca.
+    Presenca,
     Menu,
 }
 
@@ -134,7 +136,7 @@ pub fn selo(r: Rect) {
 pub fn pictograma(i: usize, c: Vec2, s: f32, cor: Color) {
     // Arte do atlas (tools/icones/gerar_icones_ui.py); o vetor abaixo so' se
     // faltar o icone.
-    const NOMES: [&str; 6] = ["bolsa", "missoes", "grupo", "avisos", "menu", "diarias"];
+    const NOMES: [&str; 7] = ["bolsa", "missoes", "grupo", "avisos", "menu", "diarias", "presenca"];
     if NOMES.get(i).is_some_and(|n| crate::icones_ui::ui(n, c, s * 2.3, cor)) {
         return;
     }
@@ -166,6 +168,15 @@ pub fn pictograma(i: usize, c: Vec2, s: f32, cor: Color) {
             linha(c + vec2(-s * 0.8, s * 0.55), c + vec2(s * 0.8, s * 0.55));
             draw_circle(c.x, c.y + s * 0.8, s * 0.14, cor);
         }
+        6 => {
+            // Presenca: caixa de presente com laco.
+            let caixa = Rect::new(c.x - s * 0.75, c.y - s * 0.2, s * 1.5, s * 1.0);
+            estilo::borda_arredondada(caixa, s * 0.14, esp, cor);
+            linha(vec2(c.x - s * 0.85, c.y - s * 0.2), vec2(c.x + s * 0.85, c.y - s * 0.2));
+            linha(vec2(c.x, c.y - s * 0.2), vec2(c.x, c.y + s * 0.8));
+            linha(vec2(c.x, c.y - s * 0.2), vec2(c.x - s * 0.45, c.y - s * 0.7));
+            linha(vec2(c.x, c.y - s * 0.2), vec2(c.x + s * 0.45, c.y - s * 0.7));
+        }
         5 => {
             // Calendario com visto: o que se faz todo dia.
             estilo::borda_arredondada(Rect::new(c.x - s * 0.8, c.y - s * 0.6, s * 1.6, s * 1.4), s * 0.22, esp, cor);
@@ -190,20 +201,20 @@ fn dica(r: Rect, texto: &str) {
 
 /// Icones Bolsa/Missoes/Diarias/Grupo/Avisos e o botao ≡ MENU. So' clique:
 /// nenhum deles tem tecla (docs/HUD.md 2.5).
-pub fn draw_topo(z: &Zonas, selo_missoes: bool, selo_diarias: bool, selo_menu: bool) -> Option<Topo> {
+pub fn draw_topo(z: &Zonas, selo_missoes: bool, selo_diarias: bool, selo_presenca: bool, selo_menu: bool) -> Option<Topo> {
     let m = mouse();
     let clique = is_mouse_button_pressed(MouseButton::Left);
     let mut saida = None;
-    let nomes = ["Bolsa", "Missões", "Diárias", "Grupo", "Avisos"];
-    let alvos = [Topo::Bolsa, Topo::Missoes, Topo::Diarias, Topo::Grupo, Topo::Avisos];
+    let nomes = ["Bolsa", "Missões", "Diárias", "Grupo", "Avisos", "Presença"];
+    let alvos = [Topo::Bolsa, Topo::Missoes, Topo::Diarias, Topo::Grupo, Topo::Avisos, Topo::Presenca];
     // Qual pictograma cada icone usa (o 4 e' o do MENU).
-    let pictos = [0usize, 1, 5, 2, 3];
+    let pictos = [0usize, 1, 5, 2, 3, 6];
     let mut tooltip = None;
     for (i, r) in z.icones.iter().enumerate() {
         let sobre = r.contains(m);
         estilo::cartao(*r, sobre, false);
         pictograma(pictos[i], r.center(), r.w * 0.30, if sobre { estilo::ACENTO } else { estilo::TEXTO });
-        if (i == 1 && selo_missoes) || (i == 2 && selo_diarias) {
+        if (i == 1 && selo_missoes) || (i == 2 && selo_diarias) || (i == 5 && selo_presenca) {
             selo(*r);
         }
         if sobre {

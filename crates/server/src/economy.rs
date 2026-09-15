@@ -532,6 +532,10 @@ pub fn fontes_de_itens(cfg: &EconomyConfig, o: &OutrasFontes) -> Vec<shared::pro
     for id in shared::item_id::todas_as_chaves() {
         junta(&mut por_item, cfg, id, FonteDeItem::DungeonRaid);
     }
+    // Calendario de presenca (docs/CALENDARIO.md): os dias em que o item sai.
+    for (id, dias) in shared::presenca::itens_com_dias(shared::presenca::EVENTOS) {
+        junta(&mut por_item, cfg, id, FonteDeItem::Calendario { dias });
+    }
     let mut out: Vec<ItemResourceSources> = por_item
         .into_iter()
         .map(|(item_id, mut sources)| {

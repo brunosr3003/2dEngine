@@ -26,6 +26,8 @@ pub enum Item {
     Encantar,
     Mapa,
     Aventuras,
+    /// Calendario de presenca.
+    Presenca,
     Grupo,
     Amigos,
     Correio,
@@ -67,6 +69,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
     ("AVENTURA", &[
         (Item::Mapa, "Mapa", None),
         (Item::Aventuras, "Dungeons", None),
+        (Item::Presenca, "Presença", None),
         (Item::RecuperarXp, "Recuperar XP", None),
     ]),
     ("SOCIAL", &[
@@ -270,6 +273,7 @@ fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
         Item::Encantar => "encantar",
         Item::Mapa => "mapa",
         Item::Aventuras => "aventuras",
+        Item::Presenca => "presenca",
         Item::Grupo => "grupo",
         Item::Amigos => "amigos",
         Item::Correio => "correio",
@@ -310,7 +314,7 @@ mod tests {
 
     #[test]
     fn todo_sistema_que_existe_abre_e_o_resto_so_avisa() {
-        let abre = [Item::Bolsa, Item::Missoes, Item::TodasMissoes, Item::Diarias, Item::Craft, Item::Forja, Item::Mapa, Item::Lojas, Item::Mercado, Item::Aventuras, Item::RecuperarXp, Item::BarraItens, Item::Coleta, Item::Configuracoes, Item::Sair];
+        let abre = [Item::Bolsa, Item::Missoes, Item::TodasMissoes, Item::Diarias, Item::Craft, Item::Forja, Item::Mapa, Item::Lojas, Item::Mercado, Item::Aventuras, Item::Presenca, Item::RecuperarXp, Item::BarraItens, Item::Coleta, Item::Configuracoes, Item::Sair];
         for (_, itens) in GRUPOS.iter() {
             for l in itens.iter() {
                 match clique_de(l) {

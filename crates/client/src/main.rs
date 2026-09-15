@@ -51,6 +51,7 @@ mod config_barra;
 mod config_coleta;
 mod config_interface;
 mod economia;
+mod presenca_ui;
 mod onde_obter;
 mod coleta_hud;
 mod lascas;
@@ -242,6 +243,8 @@ struct Jogo {
     faccao_qid: u8,
     /// Ultima vez que o "ir ate' o alvo" pediu rota.
     ultima_aproximacao: f64,
+    /// Ultimo `ServerMessage::SemVisada`: (alvo, quando).
+    sem_visada: Option<(shared::EntityId, f64)>,
     input_seq: u32,
     ultimo_input: f64,
     tick: u32,
@@ -310,6 +313,8 @@ struct Jogo {
     chat: Vec<String>,
     /// Modo economia de energia (`economia.rs`).
     economia: economia::Economia,
+    /// Calendario de presenca (`presenca_ui.rs`).
+    presenca: presenca_ui::PresencaUi,
     /// Dungeons: janela, fila, pronto-check, instancia e resultado.
     dungeon: dungeon_ui::DungeonUi,
     /// "Onde obter" (`onde_obter.rs`).
@@ -434,6 +439,7 @@ async fn main() {
         quest_entregues: std::collections::HashMap::new(),
         faccao_qid: 0,
         ultima_aproximacao: 0.0,
+        sem_visada: None,
         input_seq: 0,
         ultimo_input: 0.0,
         tick: 0,
@@ -461,6 +467,7 @@ async fn main() {
         info: hud::Info::default(),
         chat: Vec::new(),
         economia: economia::Economia::default(),
+        presenca: presenca_ui::PresencaUi::default(),
         dungeon: dungeon_ui::DungeonUi::default(),
         onde_obter: onde_obter::OndeObter::default(),
         tela_acesa: false,
@@ -758,6 +765,11 @@ impl Jogo {
                     self.tela = Tela::Erro(format!("login negado: {reason}"));
                 }
             }
+            ServerMessage::SemVisada { alvo } => {
+                let agora = get_time();
+                self.sem_visada = Some((alvo, agora));
+                self.auto_combate.sem_visada(alvo, agora);
+            }
             ServerMessage::Pong { client_time_ms, .. } => {
                 let rtt = agora_ms().saturating_sub(client_time_ms) as f32;
                 // Media movel: o numero cru pula demais pra ser lido de
@@ -862,6 +874,14 @@ impl Jogo {
             ServerMessage::MercadoLista { anuncios, pagina, tem_mais } => self.mercado.lista(anuncios, pagina, tem_mais),
             ServerMessage::MercadoMeus { anuncios, historico, tp } => self.mercado.meus(anuncios, historico, tp),
             ServerMessage::MercadoEntregas { cartas, tp } => self.mercado.entregas(cartas, tp),
+            ServerMessage::Presenca { aviso } => {
+                if let Some(t) = self.presenca.receber(aviso, &self.bolsa.nomes) {
+                    self.chat.push(t);
+                    if self.chat.len() > 8 {
+                        self.chat.remove(0);
+                    }
+                }
+            }
             ServerMessage::Dungeon { aviso } => {
                 if let shared::dungeon::Aviso::Correio { cartas } = &aviso {
                     self.mercado.correio = cartas.clone();
@@ -1316,6 +1336,7 @@ impl Jogo {
             || self.config_interface.aberto
             || self.onde_obter.aberto()
             || self.dungeon.aberto
+            || self.presenca.aberto
     }
 
     /// Morreu: nada automatico continua e os paineis fecham — a tela de morte
@@ -1386,12 +1407,13 @@ impl Jogo {
             nome_item: &nome_item,
         };
         if self.economia.desenha(&resumo, agora) {
-            self.economia.sair(agora);
+            // Deslizou: volta e mostra o que rendeu enquanto estava fora.
+            self.economia.sair_com_resumo(agora, self.ficha.xp, nivel, self.bolsa.ouro);
         }
     }
 
     fn ui_pega_mouse(&self) -> bool {
-        if self.economia.bloqueia_entrada(get_time()) {
+        if self.economia.bloqueia_entrada(get_time()) || self.economia.resumo.is_some() {
             return true;
         }
         if self.painel_grande() || self.morte.pega_mouse() {
@@ -1420,6 +1442,7 @@ impl Jogo {
         self.lojas.fechar();
         self.mercado.fechar();
         self.dungeon.fechar();
+        self.presenca.fechar();
         self.morte.painel = false;
         self.config_barra.fechar();
         self.config_coleta.fechar();
@@ -1439,6 +1462,11 @@ impl Jogo {
                 self.iniciar_ir_para(alvo);
             }
             onde_obter::Ir::AbrirCraft(receita) => self.craft.abrir_receita(receita),
+            onde_obter::Ir::AbrirCalendario => {
+                for pedido in self.presenca.abrir() {
+                    self.envia(pedido);
+                }
+            }
             onde_obter::Ir::AbrirDungeons => {
                 for pedido in self.dungeon.abrir() {
                     self.envia(pedido);
@@ -1486,6 +1514,11 @@ impl Jogo {
                 self.chat.push("Mapa: só nas ilhas.".into());
             }
             Item::Lojas => self.lojas.abrir(),
+            Item::Presenca => {
+                for pedido in self.presenca.abrir() {
+                    self.envia(pedido);
+                }
+            }
             Item::Aventuras => {
                 for pedido in self.dungeon.abrir() {
                     self.envia(pedido);
@@ -1610,6 +1643,10 @@ impl Jogo {
         let eu = self.world.self_pos();
         if let Some(a) = self.habilidades.aviso_ativo() {
             return Some((a.to_string(), hud_estilo::OURO));
+        }
+        if self.sem_visada.is_some_and(|(id, t)| Some(id) == self.alvo && get_time() - t < 1.6) {
+            let t = if self.auto_combate.ativo() { "Sem visada · trocando de alvo" } else { "Sem visada · aproximando" };
+            return Some((t.to_string(), hud_estilo::OURO));
         }
         if let Some(t) = self.ir_para.faixa(eu) {
             return Some((t, hud_estilo::AUTO));
@@ -2199,15 +2236,19 @@ impl Jogo {
             .unwrap_or(shared::skills::Conjunto::EspadaEscudo);
         let alcance = if conjunto.a_distancia() { shared::RANGED_ATTACK_RANGE } else { shared::MELEE_RANGE };
         let (a, b) = (eu.render_pos, ele.render_pos);
-        if a.distance(b) <= alcance * 0.9 {
+        let agora = get_time();
+        // O servidor disse que o relevo barra o tiro: chega perto pelo
+        // caminho (o servidor faz a rota) ate' a visada voltar.
+        let sem_visada = self.sem_visada.is_some_and(|(id, t)| id == alvo && agora - t < 1.6);
+        if a.distance(b) <= alcance * 0.9 && (!sem_visada || a.distance(b) <= 2.5) {
             return;
         }
-        let agora = get_time();
         if agora - self.ultima_aproximacao < 0.35 {
             return;
         }
         self.ultima_aproximacao = agora;
-        let destino = b + (a - b).normalize_or_zero() * (alcance * 0.6);
+        let perto = if sem_visada { 2.0 } else { alcance * 0.6 };
+        let destino = b + (a - b).normalize_or_zero() * perto;
         self.envia(ClientMessage::MoverPara { x: destino.x, z: destino.y });
     }
 
@@ -2839,7 +2880,14 @@ impl Jogo {
             }
             let selo = self.selo_missoes();
             let selo_diarias = self.selo_diarias();
-            match hud::draw_topo(&z, selo, selo_diarias, selo || selo_diarias) {
+            let selo_presenca = self.presenca.tem_resgate();
+            match hud::draw_topo(&z, selo, selo_diarias, selo_presenca, selo || selo_diarias || selo_presenca) {
+                Some(hud::Topo::Presenca) => {
+                    self.fecha_paineis();
+                    for pedido in self.presenca.abrir() {
+                        self.envia(pedido);
+                    }
+                }
                 Some(hud::Topo::Bolsa) => {
                     self.fecha_paineis();
                     self.bolsa.abrir();
@@ -3112,6 +3160,20 @@ impl Jogo {
             for pedido in self.dungeon.desenha(&ctx, get_time()) {
                 self.envia(pedido);
             }
+        }
+        // Calendario de presenca (icone do topo, Menu, ou sozinho no login).
+        {
+            let agora_unix = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs() as i64);
+            for pedido in self.presenca.desenha(&self.bolsa.nomes, agora_unix) {
+                self.envia(pedido);
+            }
+        }
+        // Voltou do modo economia: "Enquanto você estava fora", ate' fechar.
+        {
+            let bolsa = &self.bolsa;
+            self.economia.desenha_resumo(&|id| bolsa.nome(id));
         }
         // Dentro da dungeon a derrota e' o "Reviver em N s" dela, sem cidade.
         if !self.dungeon.na_instancia() {

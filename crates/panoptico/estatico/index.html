@@ -1,11 +1,13 @@
 <!doctype html>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Panóptico — Tempest</title>
 <style>
   :root {
     --fundo: #0d1014; --painel: #151a21; --linha: #232b35;
     --texto: #d8e0ea; --fraco: #7c8ba0; --ouro: #d9b45a;
     --jogador: #4ea3ff; --mob: #e06a5a; --chefe: #f0c419; --morto: #5a6472;
+    --bom: #57c26a; --ruim: #e06a5a;
   }
   * { box-sizing: border-box; }
   body {
@@ -14,59 +16,43 @@
     height: 100vh; display: grid; grid-template-columns: 260px 1fr 340px;
   }
   aside, section { overflow-y: auto; height: 100vh; }
-  /* Barra de rolagem VISIVEL. A do sistema, num painel escuro, some: a
-     coluna rola mas nao parece que rola, e o que esta' embaixo da dobra
-     deixa de existir pra quem esta' olhando. Painel de operacao nao pode
-     esconder informacao por estetica. */
-  aside, section, #economia {
-    scrollbar-width: thin;
-    scrollbar-color: #3d4a5a var(--painel);
-  }
-  aside::-webkit-scrollbar,
-  section::-webkit-scrollbar,
-  #economia::-webkit-scrollbar { width: 10px; }
-  aside::-webkit-scrollbar-track,
-  section::-webkit-scrollbar-track,
-  #economia::-webkit-scrollbar-track {
+  /* Barra de rolagem VISIVEL: painel de operacao nao pode esconder o que esta'
+     embaixo da dobra por estetica. */
+  aside, section, .aba-painel { scrollbar-width: thin; scrollbar-color: #3d4a5a var(--painel); }
+  aside::-webkit-scrollbar, section::-webkit-scrollbar, .aba-painel::-webkit-scrollbar { width: 10px; }
+  aside::-webkit-scrollbar-track, section::-webkit-scrollbar-track, .aba-painel::-webkit-scrollbar-track {
     background: #0d1014; border-left: 1px solid var(--linha);
   }
-  aside::-webkit-scrollbar-thumb,
-  section::-webkit-scrollbar-thumb,
-  #economia::-webkit-scrollbar-thumb {
+  aside::-webkit-scrollbar-thumb, section::-webkit-scrollbar-thumb, .aba-painel::-webkit-scrollbar-thumb {
     background: #3d4a5a; border-radius: 5px; border: 2px solid #0d1014;
   }
-  aside::-webkit-scrollbar-thumb:hover,
-  section::-webkit-scrollbar-thumb:hover,
-  #economia::-webkit-scrollbar-thumb:hover { background: #55667c; }
   aside { background: var(--painel); border-right: 1px solid var(--linha); }
   section { background: var(--painel); border-left: 1px solid var(--linha); }
   main { position: relative; overflow: hidden; }
   h2 {
     font-size: 11px; text-transform: uppercase; letter-spacing: .12em;
-    color: var(--fraco); margin: 0; padding: 12px 12px 6px;
+    color: var(--fraco); margin: 0; padding: 14px 14px 6px;
   }
-  .canal {
-    padding: 8px 12px; border-bottom: 1px solid var(--linha); cursor: pointer;
-  }
+  h3 { font-size: 12px; margin: 10px 14px 2px; color: var(--texto); font-weight: 600; }
+  .canal { padding: 8px 12px; border-bottom: 1px solid var(--linha); cursor: pointer; }
   .canal:hover { background: #1b222b; }
   .canal.ativo { background: #1e2a38; box-shadow: inset 3px 0 0 var(--jogador); }
   .canal .id { font-weight: 700; }
   .canal .sub { color: var(--fraco); font-size: 11px; }
-  .mudo { color: var(--mob); }
-  /* So' o MAPA e' absoluto. A regra era `canvas` e pegava o grafico da
-     economia junto, jogando ele pro topo da pagina por cima dos cartoes. */
+  .mudo, .ruim { color: var(--ruim); }
+  .bom { color: var(--bom); }
   #tela { position: absolute; inset: 0; cursor: crosshair; }
-  #curva { display: block; }
   #hud {
     position: absolute; left: 10px; top: 10px; z-index: 2;
     background: rgba(13,16,20,.82); border: 1px solid var(--linha);
     padding: 6px 10px; border-radius: 4px; pointer-events: none;
     white-space: pre; font-size: 11px; color: var(--fraco);
   }
-  #busca {
-    width: 100%; background: #0d1014; border: 1px solid var(--linha);
+  input.campo, select.campo {
+    background: #0d1014; border: 1px solid var(--linha);
     color: var(--texto); padding: 6px 8px; font: inherit; border-radius: 3px;
   }
+  #busca { width: 100%; }
   .lista { padding: 0 12px 12px; }
   .item {
     display: flex; justify-content: space-between; gap: 8px; padding: 3px 0;
@@ -76,62 +62,69 @@
   .item .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .item .v { color: var(--fraco); flex: none; }
   dl { margin: 0; padding: 0 12px 16px; }
-  dt {
-    color: var(--fraco); font-size: 11px; text-transform: uppercase;
-    letter-spacing: .08em; margin-top: 10px;
-  }
+  dt { color: var(--fraco); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; margin-top: 10px; }
   dd { margin: 2px 0 0; }
   .barra { height: 6px; background: #222a34; border-radius: 3px; overflow: hidden; }
   .barra > i { display: block; height: 100%; }
-  .tag {
-    display: inline-block; padding: 1px 6px; border-radius: 3px;
-    background: #232d3a; color: var(--fraco); font-size: 11px;
-  }
-  .vazio { padding: 12px; color: var(--fraco); }
-  #abas { display: flex; border-bottom: 1px solid var(--linha); }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; background: #232d3a; color: var(--fraco); font-size: 11px; }
+  .vazio { padding: 12px 14px; color: var(--fraco); }
+  #abas { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--linha); }
   .aba {
-    flex: 1; background: none; border: 0; color: var(--fraco); font: inherit;
-    padding: 10px 0; cursor: pointer; border-bottom: 2px solid transparent;
+    flex: 1 0 33%; background: none; border: 0; color: var(--fraco); font: inherit;
+    padding: 8px 0; cursor: pointer; border-bottom: 2px solid transparent;
   }
   .aba.ativa { color: var(--texto); border-bottom-color: var(--jogador); }
-  /* Aba FECHADA tambem responde ao mouse. Sem isso a que nao esta' aberta
-     nao parece clicavel, e o painel le' como se tivesse uma aba so'. */
   .aba:hover { color: var(--texto); background: #1b222b; }
-  .aba.ativa:hover { background: transparent; }
-  #economia { grid-column: 2 / 4; overflow-y: auto; height: 100vh; padding: 0 0 40px; }
+  .aba-painel { grid-column: 2 / 4; overflow-y: auto; height: 100vh; padding: 0 0 40px; }
+  .barra-topo { display: flex; gap: 10px; align-items: center; padding: 10px 14px 0; flex-wrap: wrap; color: var(--fraco); }
   .cartoes { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 14px; }
-  .cartao {
-    background: var(--painel); border: 1px solid var(--linha); border-radius: 5px;
-    padding: 10px 14px; min-width: 150px;
-  }
+  .cartao { background: var(--painel); border: 1px solid var(--linha); border-radius: 5px; padding: 10px 14px; min-width: 150px; }
   .cartao .rot { color: var(--fraco); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
   .cartao .num { font-size: 21px; margin-top: 3px; }
   .cartao .pe { color: var(--fraco); font-size: 11px; }
+  .tabela { overflow-x: auto; }
   table { border-collapse: collapse; width: calc(100% - 28px); margin: 8px 14px; font-size: 12px; }
-  th, td { text-align: right; padding: 3px 8px; border-bottom: 1px solid #1a2028; }
+  th, td { text-align: right; padding: 3px 8px; border-bottom: 1px solid #1a2028; vertical-align: top; }
   th { color: var(--fraco); font-weight: 400; text-transform: uppercase; font-size: 10px; letter-spacing: .08em; }
   td:first-child, th:first-child { text-align: left; }
+  td.esq, th.esq { text-align: left; }
   .aposta { color: var(--mob); }
-  .barra-h { background: #2a3440; height: 9px; border-radius: 2px; }
+  .barra-h { background: #2a3440; height: 9px; border-radius: 2px; min-width: 60px; }
   .barra-h > i { display: block; height: 100%; background: var(--jogador); border-radius: 2px; }
-  .nota { color: var(--fraco); font-size: 11px; padding: 2px 14px 10px; max-width: 720px; line-height: 1.5; }
+  .nota { color: var(--fraco); font-size: 11px; padding: 2px 14px 10px; max-width: 760px; line-height: 1.5; }
   label.f { display: block; padding: 2px 12px; color: var(--fraco); cursor: pointer; }
   label.f:hover { color: var(--texto); background: #1b222b; }
+  .grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 0 10px; }
+  canvas.grafico { display: block; margin: 4px 14px; }
+  .legenda { padding: 0 14px; font-size: 11px; color: var(--fraco); }
+  .legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px -1px 10px; }
+  button.acao { background: #1e2a38; color: var(--texto); border: 1px solid #3d4a5a; padding: 5px 10px; font: inherit; border-radius: 3px; cursor: pointer; }
+  button.acao:hover { background: #26364a; }
+  pre.msg { white-space: pre-wrap; word-break: break-word; margin: 0; text-align: left; font: inherit; }
 </style>
 
 <aside>
   <div id="abas">
-    <button class="aba ativa" data-aba="mundo">mundo</button><button class="aba" data-aba="economia">economia</button>
+    <button class="aba ativa" data-aba="mundo">mundo</button>
+    <button class="aba" data-aba="jogadores">jogadores</button>
+    <button class="aba" data-aba="economia">economia</button>
+    <button class="aba" data-aba="mercado">mercado</button>
+    <button class="aba" data-aba="dungeons">dungeons</button>
+    <button class="aba" data-aba="atividade">atividade</button>
+    <button class="aba" data-aba="missoes">missões</button>
+    <button class="aba" data-aba="infra">infra</button>
+    <form method="post" action="sair" style="flex:1 0 33%;margin:0"><button class="aba" style="width:100%">sair</button></form>
   </div>
   <h2>Canais</h2>
   <div id="canais"></div>
-  <h2>Filtros</h2>
+  <h2>Filtros do mapa</h2>
   <label class="f"><input type="checkbox" id="fJog" checked> jogadores</label>
   <label class="f"><input type="checkbox" id="fMob" checked> mobs</label>
   <label class="f"><input type="checkbox" id="fMortos"> incluir mortos</label>
   <label class="f"><input type="checkbox" id="fRotas" checked> rotas e alvos</label>
+  <label class="f"><input type="checkbox" id="fChefes" checked> chefes de campo</label>
   <h2>Busca</h2>
-  <div class="lista"><input id="busca" placeholder="nome, id, nível…"></div>
+  <div class="lista"><input id="busca" class="campo" placeholder="nome, id, nível…"></div>
   <div class="lista" id="achados"></div>
 </aside>
 
@@ -140,7 +133,27 @@
   <div id="hud"></div>
 </main>
 
-<div id="economia" hidden>
+<section>
+  <h2>Inspeção</h2>
+  <div id="detalhe" class="vazio">Clique em alguém no mapa.</div>
+</section>
+
+<!-- ─────────────────────────── jogadores ─────────────────────────── -->
+<div class="aba-painel" id="aba-jogadores" hidden>
+  <h2>Jogadores</h2>
+  <div class="cartoes" id="jog-cartoes"></div>
+  <h2>Por zona</h2>
+  <div class="tabela" id="jog-zonas"></div>
+  <h2>Personagens</h2>
+  <div class="barra-topo">
+    <input id="jog-filtro" class="campo" placeholder="filtrar por nome, conta, zona…" style="min-width:260px">
+    <label><input type="checkbox" id="jog-so-online"> só online</label>
+  </div>
+  <div class="tabela" id="jog-lista"></div>
+</div>
+
+<!-- ─────────────────────────── economia ─────────────────────────── -->
+<div class="aba-painel" id="aba-economia" hidden>
   <h2>Moeda</h2>
   <div class="cartoes" id="moeda"></div>
   <p class="nota">
@@ -148,107 +161,249 @@
     fora. A diferença entre os dois é ouro parado — ele não circula, mas volta
     a circular quando o dono voltar.
   </p>
+  <h2>Fluxo de ouro (24 h, telemetria)</h2>
+  <div class="cartoes" id="eco-fluxo-cartoes"></div>
+  <canvas id="eco-fluxo" class="grafico" height="170"></canvas>
+  <div class="legenda" id="eco-fluxo-legenda"></div>
+  <div class="grade"><div id="eco-fontes"></div><div id="eco-ralos"></div></div>
+
+  <h2>Chaves de craft e itens especiais</h2>
+  <div class="grade"><div id="eco-chaves"></div><div id="eco-especiais"></div></div>
+  <h3>Chaves que caíram (7 dias)</h3>
+  <div id="eco-chaves-drop"></div>
+  <h2>Materiais por cor (estoque)</h2>
+  <div id="eco-materiais"></div>
+  <h2>Peças por raridade (bolsa, baú e equipado)</h2>
+  <div id="eco-raridade"></div>
 
   <h2>Progressão</h2>
   <div id="niveis"></div>
-
   <h2>Curva de demanda</h2>
   <p class="nota">
-    O caminho inteiro, degrau a degrau, com cada peça levada ao <b>+7</b> — o
-    primeiro degrau de aposta que ainda cabe numa vida. Sem refino a curva é só
-    potência de dois, o que é verdade e não é a conta: ninguém para no +0.
-    <br>
-    A coluna que importa é <b>a mais</b>: o acumulado sozinho engana, porque a
-    pessoa se acostuma com ele. O que decide se o jogador continua ou para é
+    O caminho inteiro, degrau a degrau, com cada peça levada ao <b>+7</b>. A
+    coluna que importa é <b>a mais</b>: o que decide se o jogador continua é
     quanto o <i>próximo</i> passo cobra sobre o que ele acabou de pagar.
   </p>
   <canvas id="curva" height="220"></canvas>
   <div id="demanda"></div>
-
   <h2>A escada dos degraus</h2>
-  <p class="nota">
-    Grau × tier: <b>cada passo dobra</b>. Uma Rara IV são 2.048 Comuns I, uma
-    Lendária IV são 524.288 — dezenove dobras.
-    <br>
-    E as duas escadas se <b>multiplicam</b>: o refino come peças
-    <i>daquele degrau</i>, e cada uma delas já custou a escada inteira pra
-    existir. Uma Rara IV destruída no +6 não foi "uma peça", foram 2.048
-    Comuns I. Ler as duas separadas é o que faz um número parecer aceitável.
-  </p>
   <div id="degraus"></div>
-
   <h2>A escada do refino</h2>
-  <p class="nota">
-    Previsão, não medição: sai da mesma <code>forja</code> que o jogo usa pra
-    refinar. Até o <b>+5</b> a falha só come material e a peça sempre chega;
-    do <b>+6</b> em diante cada tentativa arrisca a peça, e o custo deixa de
-    ser tempo e vira aposta — é onde a coluna de <b>peças</b> descola.
-    Horas são de mineração ativa.
-  </p>
   <div id="escadas"></div>
-
   <h2>Curva de loot configurada</h2>
-  <p class="nota">
-    Valor esperado por morte: chance × quantidade média × preço de venda,
-    somado sobre a tabela de drop do bicho. É o que foi <i>configurado</i>;
-    o que de fato caiu está na seção seguinte.
-  </p>
   <div id="loot"></div>
-
   <h2>Drops medidos (7 dias)</h2>
   <div id="drops"></div>
-
   <h2>Itens no mundo</h2>
-  <p class="nota">Mochila e baú somados, por item.</p>
   <div id="itens"></div>
 </div>
 
-<section>
-  <h2>Inspeção</h2>
-  <div id="detalhe" class="vazio">Clique em alguém no mapa.</div>
-</section>
+<!-- ─────────────────────────── mercado ─────────────────────────── -->
+<div class="aba-painel" id="aba-mercado" hidden>
+  <h2>Mercado global</h2>
+  <div class="cartoes" id="mer-cartoes"></div>
+  <p class="nota" id="mer-aviso"></p>
+  <h2>Vendas por hora (48 h)</h2>
+  <canvas id="mer-grafico" class="grafico" height="160"></canvas>
+  <div class="legenda" id="mer-legenda"></div>
+  <h2>Preço por item (7 dias)</h2>
+  <div class="tabela" id="mer-precos"></div>
+  <div class="grade">
+    <div><h2>Anunciado agora</h2><div id="mer-anunciados"></div></div>
+    <div><h2>Últimas vendas</h2><div id="mer-ultimas"></div></div>
+  </div>
+  <div class="grade">
+    <div><h2>Entregas (cartas)</h2><div id="mer-cartas"></div></div>
+    <div><h2>Operações 24 h</h2><div id="mer-ops"></div></div>
+  </div>
+  <h2>Operações recusadas</h2>
+  <div class="tabela" id="mer-recusadas"></div>
+  <h2>TP (razão central)</h2>
+  <div class="grade">
+    <div><h3>Maiores saldos</h3><div id="mer-tp-maiores"></div></div>
+    <div><h3>Movimento por motivo (7 dias)</h3><div id="mer-tp-motivos"></div></div>
+  </div>
+  <h3>Últimos movimentos</h3>
+  <div class="tabela" id="mer-tp-movs"></div>
+</div>
+
+<!-- ─────────────────────────── dungeons ─────────────────────────── -->
+<div class="aba-painel" id="aba-dungeons" hidden>
+  <div class="barra-topo">janela <select id="dg-horas" class="campo">
+    <option value="24">24 h</option><option value="168" selected>7 dias</option><option value="720">30 dias</option></select></div>
+  <h2>Ao vivo</h2>
+  <div class="cartoes" id="dg-vivo-cartoes"></div>
+  <h3>Instâncias abertas</h3>
+  <div class="tabela" id="dg-instancias"></div>
+  <div class="grade">
+    <div><h3>Fila automática</h3><div id="dg-fila"></div></div>
+    <div><h3>Salas</h3><div id="dg-salas"></div></div>
+  </div>
+  <h2>Resumo da janela</h2>
+  <div class="cartoes" id="dg-cartoes"></div>
+  <h2>Por conteúdo e estágio</h2>
+  <div class="tabela" id="dg-catalogo"></div>
+  <h2>O que os baús deram</h2>
+  <div id="dg-bau"></div>
+</div>
+
+<!-- ─────────────────────────── atividade ─────────────────────────── -->
+<div class="aba-painel" id="aba-atividade" hidden>
+  <div class="barra-topo">janela <select id="at-horas" class="campo">
+    <option value="1">1 h</option><option value="6">6 h</option><option value="24" selected>24 h</option>
+    <option value="168">7 dias</option><option value="720">30 dias</option></select>
+    <span id="at-aviso"></span></div>
+  <h2>Por hora</h2>
+  <canvas id="at-grafico" class="grafico" height="180"></canvas>
+  <div class="legenda" id="at-legenda"></div>
+  <div id="at-grupos"></div>
+</div>
+
+<!-- ─────────────────────────── missoes ─────────────────────────── -->
+<div class="aba-painel" id="aba-missoes" hidden>
+  <div class="barra-topo">janela <select id="mi-horas" class="campo">
+    <option value="24">24 h</option><option value="168" selected>7 dias</option><option value="720">30 dias</option></select></div>
+  <h2>História: onde cada um parou</h2>
+  <div id="mi-capitulos"></div>
+  <div id="mi-grupos"></div>
+</div>
+
+<!-- ─────────────────────────── infra ─────────────────────────── -->
+<div class="aba-painel" id="aba-infra" hidden>
+  <h2>Canais (heartbeat)</h2>
+  <div class="tabela" id="in-canais"></div>
+  <h2>Processos ao vivo</h2>
+  <div class="tabela" id="in-processos"></div>
+  <h2>Medidas (24 h, média de 5 min)</h2>
+  <div id="in-medidas"></div>
+  <div class="grade">
+    <div><h2>Rede e saves (24 h)</h2><div id="in-rede"></div></div>
+    <div><h2>Erros por canal (24 h)</h2><div id="in-erros-24h"></div></div>
+  </div>
+  <h2>Erros e avisos recentes</h2>
+  <div class="tabela" id="in-erros"></div>
+  <div class="grade">
+    <div><h2>Migrações aplicadas</h2><div id="in-migracoes"></div></div>
+    <div><h2>Bancos</h2><div id="in-bancos"></div></div>
+  </div>
+</div>
 
 <script>
 // ── O painel inteiro, sem framework ──────────────────────────────────────
-// Ele desenha algumas centenas de pontos por quadro sobre um PNG. Uma
-// biblioteca de componentes aqui custaria mais bytes que o mapa.
+// Caminhos RELATIVOS: o painel pode morar em /panoptico/ atras do nginx.
+// Nada de token na URL: a sessao e' um cookie HttpOnly.
 
-const token = new URLSearchParams(location.search).get('token') || '';
+const BASE = location.pathname.replace(/[^/]*$/, '');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function api(caminho) {
+  try {
+    const r = await fetch(BASE + caminho, { credentials: 'same-origin', cache: 'no-store' });
+    if (r.status === 401) { location.href = BASE + 'login'; return null; }
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
 const tela = document.getElementById('tela');
 const ctx = tela.getContext('2d');
-
 let mundo = { canais: [] };
 let canalAtivo = null;
 let selecionado = null;      // {tipo, id}
 const mapas = {};            // zona -> Image
-
-// Camera do PAINEL, em unidades de MUNDO. O mapa e' desenhado em coordenada
-// de mundo e a camera so' translada e escala: assim o ponto de uma entidade
-// e' a posicao dela, sem conversao em lugar nenhum.
-let cam = { x: 0, z: 0, escala: 0 };   // 0 = ainda nao enquadrou
+let cam = { x: 0, z: 0, escala: 0 };
 let arrasto = null;
 
 // ── laco ────────────────────────────────────────────────────────────────
 async function puxar() {
-  try {
-    const r = await fetch('/api/mundo?token=' + encodeURIComponent(token));
-    if (r.ok) {
-      mundo = await r.json();
-      if (!canalAtivo && mundo.canais.length) canalAtivo = mundo.canais[0].id;
-      desenhaCanais();
-    }
-  } catch (e) { /* painel offline nao pode derrubar o painel */ }
+  const d = await api('api/mundo');
+  if (d) {
+    mundo = d;
+    if (!canalAtivo && mundo.canais.length) canalAtivo = mundo.canais[0].id;
+    desenhaCanais();
+    if (abaAtual === 'dungeons') desenhaDungeonsAoVivo();
+    if (abaAtual === 'infra') desenhaProcessos();
+  }
   setTimeout(puxar, 500);
 }
 puxar();
 
-function ativo() {
-  return mundo.canais.find(c => c.id === canalAtivo) || null;
+function ativo() { return mundo.canais.find(c => c.id === canalAtivo) || null; }
+function retrato() { const c = ativo(); return c && c.retrato ? c.retrato : null; }
+
+const num = n => n === null || n === undefined ? '—' : Number(n).toLocaleString('pt-BR');
+const curto = n => {
+  const a = Math.abs(n);
+  if (a >= 1e12) return (n / 1e12).toFixed(1) + ' tri';
+  if (a >= 1e9) return (n / 1e9).toFixed(1) + ' bi';
+  if (a >= 1e6) return (n / 1e6).toFixed(1) + ' mi';
+  if (a >= 1e3) return (n / 1e3).toFixed(1) + ' mil';
+  return Number(n).toFixed(a < 10 ? 1 : 0);
+};
+const horas = h => h < 1 ? (h * 60).toFixed(0) + ' min'
+  : h < 48 ? h.toFixed(1) + ' h'
+  : h < 24 * 365 ? (h / 24).toFixed(0) + ' dias'
+  : (h / 24 / 365).toFixed(0) + ' anos';
+const dur = s => s < 60 ? Math.round(s) + ' s' : s < 3600 ? Math.floor(s / 60) + ' min ' + Math.round(s % 60) + ' s'
+  : s < 86400 ? Math.floor(s / 3600) + ' h ' + Math.floor(s % 3600 / 60) + ' min' : Math.floor(s / 86400) + ' d ' + Math.floor(s % 86400 / 3600) + ' h';
+const ha = unix => unix ? dur(Math.max(0, Date.now() / 1000 - unix)) + ' atrás' : '—';
+const hora = unix => new Date(unix * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const bytes = b => b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' GB' : b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : b >= 1024 ? (b / 1024).toFixed(1) + ' KB' : b + ' B';
+const pct = f => (f * 100).toFixed(0) + '%';
+
+function tabela(cols, linhas, alinharEsq = []) {
+  if (!linhas.length) return '<div class="vazio">nada ainda</div>';
+  const cl = i => alinharEsq.includes(i) ? ' class="esq"' : '';
+  return `<div class="tabela"><table><tr>${cols.map((c, i) => `<th${cl(i)}>${c}</th>`).join('')}</tr>` +
+    linhas.map(l => `<tr>${l.map((c, i) => `<td${cl(i)}>${c}</td>`).join('')}</tr>`).join('') + '</table></div>';
 }
-function retrato() {
-  const c = ativo();
-  return c && c.retrato ? c.retrato : null;
+function cartoes(el, lista) {
+  document.getElementById(el).innerHTML = lista.map(([r, n, p]) =>
+    `<div class="cartao"><div class="rot">${esc(r)}</div><div class="num">${n}</div><div class="pe">${p || ''}</div></div>`).join('');
 }
+function barraH(v, max, cor) {
+  const w = max > 0 ? Math.max(0, Math.min(1, v / max)) * 100 : 0;
+  return `<div class="barra-h"><i style="width:${w.toFixed(1)}%${cor ? ';background:' + cor : ''}"></i></div>`;
+}
+
+/// Grafico de linhas no tempo. `series`: [{nome, cor, pontos: [[unix, valor]]}].
+function grafico(id, series, legendaId) {
+  const c = document.getElementById(id); if (!c) return;
+  const g = c.getContext('2d');
+  const larg = Math.max(300, c.parentElement.clientWidth - 28);
+  const alt = c.height / (devicePixelRatio || 1) > 10 ? parseInt(c.getAttribute('height')) : 170;
+  const dpr = devicePixelRatio || 1;
+  c.width = larg * dpr; c.height = alt * dpr; c.style.width = larg + 'px'; c.style.height = alt + 'px';
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, larg, alt);
+  const todos = series.flatMap(s => s.pontos);
+  if (!todos.length) { g.fillStyle = '#7c8ba0'; g.font = '12px ui-monospace, monospace'; g.fillText('sem dados na janela', 40, alt / 2); if (legendaId) document.getElementById(legendaId).innerHTML = ''; return; }
+  const t0 = Math.min(...todos.map(p => p[0])), t1 = Math.max(...todos.map(p => p[0])) || t0 + 1;
+  const vmax = Math.max(1, ...todos.map(p => p[1]));
+  const x = t => 48 + (t1 > t0 ? (t - t0) / (t1 - t0) : 0.5) * (larg - 64);
+  const y = v => alt - 22 - v / vmax * (alt - 34);
+  g.strokeStyle = '#232b35'; g.fillStyle = '#7c8ba0'; g.font = '10px ui-monospace, monospace'; g.textAlign = 'right';
+  for (let k = 0; k <= 4; k++) {
+    const v = vmax * k / 4, yy = y(v);
+    g.beginPath(); g.moveTo(48, yy); g.lineTo(larg - 16, yy); g.stroke();
+    g.fillText(curto(v), 44, yy + 3);
+  }
+  g.textAlign = 'center';
+  for (let k = 0; k <= 4; k++) {
+    const t = t0 + (t1 - t0) * k / 4;
+    g.fillText(new Date(t * 1000).toLocaleString('pt-BR', { day: '2-digit', hour: '2-digit', minute: '2-digit' }), x(t), alt - 6);
+  }
+  for (const s of series) {
+    if (!s.pontos.length) continue;
+    g.strokeStyle = s.cor; g.lineWidth = 2; g.beginPath();
+    s.pontos.forEach((p, i) => i ? g.lineTo(x(p[0]), y(p[1])) : g.moveTo(x(p[0]), y(p[1])));
+    g.stroke();
+    if (s.pontos.length === 1) { g.fillStyle = s.cor; g.beginPath(); g.arc(x(s.pontos[0][0]), y(s.pontos[0][1]), 3, 0, 6.3); g.fill(); }
+  }
+  if (legendaId) document.getElementById(legendaId).innerHTML =
+    series.map(s => `<i style="background:${s.cor}"></i>${esc(s.nome)}`).join('');
+}
+const CORES = ['#4ea3ff', '#e06a5a', '#d9b45a', '#57c26a', '#b07cff', '#4fd1c5', '#f08bb0', '#9aa7b8'];
 
 // ── canais ──────────────────────────────────────────────────────────────
 function desenhaCanais() {
@@ -259,55 +414,41 @@ function desenhaCanais() {
     const d = document.createElement('div');
     d.className = 'canal' + (c.id === canalAtivo ? ' ativo' : '');
     const carga = (c.tick_ms / 33.33 * 100).toFixed(0);
-    d.innerHTML = `<div class="id">${c.id}</div>
-      <div class="sub">${c.zona} · ${c.jogadores_db} jog · tick ${c.tick_ms.toFixed(2)}ms (${carga}%)</div>
+    d.innerHTML = `<div class="id">${esc(c.id)}</div>
+      <div class="sub">${esc(c.zona)} · ${c.jogadores_db}/${c.capacidade} jog · tick ${c.tick_ms.toFixed(2)}ms (${carga}%)</div>
       <div class="sub">${r
-        ? `${r.jogadores.length} jog · ${r.mobs.length} mobs${r.imortal ? ' · <span class="tag">imortal</span>' : ''}`
+        ? `${r.jogadores.length} jog · ${r.mobs.length} mobs · ${(r.instancias || []).length} dungeons${r.build ? ' · p' + r.build.protocolo : ''}${r.imortal ? ' · <span class="tag">imortal</span>' : ''}`
         : '<span class="mudo">sem retrato — canal mudo</span>'}</div>`;
-    d.onclick = () => { canalAtivo = c.id; selecionado = null; enquadra(); desenhaCanais(); };
+    d.onclick = () => { canalAtivo = c.id; selecionado = null; enquadra(); desenhaCanais(); mostraAba('mundo'); };
     el.appendChild(d);
   }
+  if (!mundo.canais.length) el.innerHTML = '<div class="vazio">nenhum canal batendo</div>';
 }
 
-// Enquadra a ilha inteira. E' a primeira vista que um painel de observacao
-// deve dar: onde esta' todo mundo, e so' depois quem e' cada um.
 function enquadra() {
   const r = retrato();
   if (!r) return;
   cam.x = 0; cam.z = 0;
-  // `raio_blocos` esta' em COLUNAS; o bloco tem 0,5 unidade. Confundir os
-  // dois enquadrava o dobro da ilha, com ela minuscula no meio do vazio.
   const meia = r.raio_blocos * 0.5;
-  const cabe = Math.min(tela.width, tela.height) / (meia * 2);
-  cam.escala = cabe * 0.95;
+  cam.escala = Math.min(tela.width, tela.height) / (meia * 2) * 0.95;
 }
 addEventListener('keydown', e => {
-  if (e.key === 'f' || e.key === 'F') enquadra();
+  if (abaAtual === 'mundo' && document.activeElement.tagName !== 'INPUT' && (e.key === 'f' || e.key === 'F')) enquadra();
 });
 
 // ── mapa ────────────────────────────────────────────────────────────────
 function imagemDaZona(zona) {
   if (mapas[zona]) return mapas[zona];
   const img = new Image();
-  img.src = '/api/mapa/' + encodeURIComponent(zona) + '.png?token=' + encodeURIComponent(token);
+  img.src = BASE + 'api/mapa/' + encodeURIComponent(zona) + '.png';
   mapas[zona] = img;
   return img;
 }
-
-function paraTela(x, z) {
-  return [
-    tela.width / 2 + (x - cam.x) * cam.escala,
-    tela.height / 2 + (z - cam.z) * cam.escala,
-  ];
-}
-function paraMundo(px, pz) {
-  return [
-    (px - tela.width / 2) / cam.escala + cam.x,
-    (pz - tela.height / 2) / cam.escala + cam.z,
-  ];
-}
+function paraTela(x, z) { return [tela.width / 2 + (x - cam.x) * cam.escala, tela.height / 2 + (z - cam.z) * cam.escala]; }
+function paraMundo(px, pz) { return [(px - tela.width / 2) / cam.escala + cam.x, (pz - tela.height / 2) / cam.escala + cam.z]; }
 
 function quadro() {
+  if (abaAtual !== 'mundo') return requestAnimationFrame(quadro);
   const dpr = devicePixelRatio || 1;
   const cx = tela.parentElement.clientWidth, cy = tela.parentElement.clientHeight;
   if (tela.width !== cx * dpr || tela.height !== cy * dpr) {
@@ -316,15 +457,12 @@ function quadro() {
   }
   ctx.fillStyle = '#0d1014';
   ctx.fillRect(0, 0, tela.width, tela.height);
-
   const r = retrato();
   if (!r) {
     document.getElementById('hud').textContent = 'canal sem retrato';
     return requestAnimationFrame(quadro);
   }
   if (!cam.escala) enquadra();
-
-  // O PNG cobre o mundo de -raio*BLOCO a +raio*BLOCO. BLOCO = 0,5.
   const meio = r.raio_blocos * 0.5;
   const img = imagemDaZona(r.zona);
   if (img.complete && img.naturalWidth) {
@@ -333,14 +471,11 @@ function quadro() {
     ctx.imageSmoothingEnabled = cam.escala < 1;
     ctx.drawImage(img, x0, y0, lado, lado);
   }
-
   const verJog = document.getElementById('fJog').checked;
   const verMob = document.getElementById('fMob').checked;
   const verMortos = document.getElementById('fMortos').checked;
   const verRotas = document.getElementById('fRotas').checked;
-
-  // Linhas primeiro: alvo e destino ficam ATRAS dos pontos, senao a linha
-  // corta o ponto e o olho perde quem e' quem.
+  const verChefes = document.getElementById('fChefes').checked;
   if (verRotas) {
     ctx.lineWidth = 1;
     const porId = new Map();
@@ -349,9 +484,6 @@ function quadro() {
     ctx.strokeStyle = 'rgba(224,106,90,.45)';
     ctx.beginPath();
     for (const m of r.mobs) {
-      // So' quem esta' PERSEGUINDO vira linha. Todo mob tem o jogador mais
-      // proximo em cache; desenhar isso ligaria a ilha inteira ao jogador e
-      // a tela diria "todo mundo vindo atras de voce", que e' falso.
       if (!m.perseguindo || (m.estado === 'morto' && !verMortos)) continue;
       const a = porId.get(m.alvo); if (!a) continue;
       const p = paraTela(m.x, m.z), q = paraTela(a.x, a.z);
@@ -369,21 +501,25 @@ function quadro() {
     ctx.stroke();
     ctx.setLineDash([]);
   }
-
+  // Chefe de campo MORTO: cruz no lugar onde volta, com o tempo.
+  if (verChefes) for (const c of (r.chefes || [])) {
+    if (c.vivo) continue;
+    const [x, y] = paraTela(c.x, c.z);
+    ctx.strokeStyle = '#f0c419'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x + 5, y - 5); ctx.lineTo(x - 5, y + 5); ctx.stroke();
+    if (cam.escala > 0.35) { ctx.fillStyle = 'rgba(240,196,25,.9)'; ctx.font = (10 * dpr) + 'px ui-monospace, monospace'; ctx.fillText(`${c.nome} · ${dur(c.renasce_em_s)}`, x + 8, y + 4); }
+  }
   if (verMob) for (const m of r.mobs) {
     if (m.estado === 'morto' && !verMortos) continue;
-    ponto(m, m.chefe ? 5 : 2.6,
-      m.estado === 'morto' ? 'var(--morto)' : m.chefe ? '#f0c419' : '#e06a5a');
+    ponto(m, m.chefe ? 5 : 2.6, m.estado === 'morto' ? '#5a6472' : m.chefe ? '#f0c419' : '#e06a5a');
   }
-  if (verJog) for (const j of r.jogadores) ponto(j, 5, '#4ea3ff', j.nome);
-
+  if (verJog) for (const j of r.jogadores) ponto(j, 5, j.instancia ? '#b07cff' : '#4ea3ff', j.nome);
   const vivos = r.mobs.filter(m => m.estado !== 'morto').length;
   document.getElementById('hud').textContent =
-    `${r.zona} · canal ${r.canal}\n` +
-    `${r.jogadores.length} jogadores · ${vivos} mobs vivos (${r.mobs.length - vivos} cadáveres)\n` +
+    `${r.zona} · canal ${r.canal} · protocolo ${r.build ? r.build.protocolo : '?'} · no ar ${r.uptime_s !== undefined ? dur(r.uptime_s) : '?'}\n` +
+    `${r.jogadores.length} jogadores · ${vivos} mobs vivos (${r.mobs.length - vivos} cadáveres) · ${(r.instancias || []).length} dungeons\n` +
     `tick ${r.tick} · ${r.tempo_s.toFixed(0)}s · ${r.estorvos} troncos/matacões\n` +
-    `zoom ${cam.escala.toFixed(2)} · ${cam.x.toFixed(0)}, ${cam.z.toFixed(0)} · F enquadra`;
-
+    `zoom ${cam.escala.toFixed(2)} · ${cam.x.toFixed(0)}, ${cam.z.toFixed(0)} · F enquadra · roxo = dentro de dungeon`;
   requestAnimationFrame(quadro);
 }
 
@@ -393,14 +529,10 @@ function ponto(e, raio, cor, rotulo) {
   const sel = selecionado && selecionado.id === e.id;
   ctx.beginPath();
   ctx.arc(x, y, raio * (sel ? 1.8 : 1), 0, 6.284);
-  ctx.fillStyle = cor.startsWith('var') ? getComputedStyle(document.body).getPropertyValue(cor.slice(4, -1)) : cor;
+  ctx.fillStyle = cor;
   ctx.fill();
-  if (sel) {
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(x, y, raio * 3, 0, 6.284); ctx.stroke();
-  }
-  // Vida baixa vira anel vermelho: e' a informacao que decide se alguem
-  // precisa de atencao AGORA, e ela nao pode exigir um clique.
+  if (sel) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, raio * 3, 0, 6.284); ctx.stroke(); }
+  // Vida baixa vira anel vermelho: decide se alguem precisa de atencao AGORA.
   if (e.hp_max > 0 && e.hp > 0 && e.hp / e.hp_max < 0.35) {
     ctx.strokeStyle = '#ff5252'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(x, y, raio + 2.5, 0, 6.284); ctx.stroke();
@@ -415,26 +547,19 @@ requestAnimationFrame(quadro);
 
 // ── interacao ───────────────────────────────────────────────────────────
 tela.addEventListener('mousedown', e => { arrasto = { x: e.clientX, y: e.clientY, moveu: false }; });
-addEventListener('mouseup', e => {
-  if (arrasto && !arrasto.moveu) clique(e);
-  arrasto = null;
-});
+addEventListener('mouseup', e => { if (arrasto && !arrasto.moveu && e.target === tela) clique(e); arrasto = null; });
 addEventListener('mousemove', e => {
   if (!arrasto) return;
-  const dx = e.movementX, dy = e.movementY;
   if (Math.abs(e.clientX - arrasto.x) + Math.abs(e.clientY - arrasto.y) > 3) arrasto.moveu = true;
-  cam.x -= dx * (devicePixelRatio || 1) / cam.escala;
-  cam.z -= dy * (devicePixelRatio || 1) / cam.escala;
+  cam.x -= e.movementX * (devicePixelRatio || 1) / cam.escala;
+  cam.z -= e.movementY * (devicePixelRatio || 1) / cam.escala;
 });
 tela.addEventListener('wheel', e => {
   e.preventDefault();
   const r = tela.getBoundingClientRect();
-  const [mx, mz] = paraMundo((e.clientX - r.left) * (devicePixelRatio || 1),
-                             (e.clientY - r.top) * (devicePixelRatio || 1));
+  const [mx, mz] = paraMundo((e.clientX - r.left) * (devicePixelRatio || 1), (e.clientY - r.top) * (devicePixelRatio || 1));
   const antes = cam.escala;
   cam.escala = Math.min(14, Math.max(0.08, cam.escala * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
-  // Zoom no PONTEIRO e nao no centro: quem esta' olhando um bosque nao quer
-  // que aproximar leve a vista pra outro lugar.
   const k = 1 - antes / cam.escala;
   cam.x += (mx - cam.x) * k;
   cam.z += (mz - cam.z) * k;
@@ -443,9 +568,8 @@ tela.addEventListener('wheel', e => {
 function clique(ev) {
   const r = retrato(); if (!r) return;
   const b = tela.getBoundingClientRect();
-  const [mx, mz] = paraMundo((ev.clientX - b.left) * (devicePixelRatio || 1),
-                             (ev.clientY - b.top) * (devicePixelRatio || 1));
-  const alcance = 14 / cam.escala;   // 14 pixels, em unidades de mundo
+  const [mx, mz] = paraMundo((ev.clientX - b.left) * (devicePixelRatio || 1), (ev.clientY - b.top) * (devicePixelRatio || 1));
+  const alcance = 14 / cam.escala;
   let melhor = null, dist = alcance * alcance;
   const olha = (lista, tipo) => {
     for (const e of lista) {
@@ -466,130 +590,208 @@ function achaSelecionado() {
   const e = lista.find(x => x.id === selecionado.id);
   return e ? { e, tipo: selecionado.tipo } : null;
 }
-
 function barra(v, max, cor) {
   const p = max > 0 ? Math.max(0, Math.min(1, v / max)) * 100 : 0;
   return `<div class="barra"><i style="width:${p}%;background:${cor}"></i></div>
           <div style="color:var(--fraco);font-size:11px">${v} / ${max}</div>`;
 }
 
+/// Sem ninguem selecionado, a coluna mostra o CANAL: chefes, dungeons e erros.
+function painelDoCanal(r) {
+  const c = ativo();
+  const linhas = [];
+  const campo = (k, v) => linhas.push(`<dt>${k}</dt><dd>${v}</dd>`);
+  campo('canal', `<b>${esc(c.id)}</b> <span class="tag">${esc(r.zona)}</span>`);
+  if (r.build) campo('build', `protocolo ${r.build.protocolo} · v${esc(r.build.versao)} · no ar há ${dur(r.uptime_s)}`);
+  const chefes = r.chefes || [];
+  campo('chefes de campo', chefes.length ? chefes.map(h => h.vivo
+    ? `<div>${esc(h.nome)} <span class="tag">nv ${h.nivel}</span> ${barra(h.hp, h.hp_max, '#f0c419')}</div>`
+    : `<div class="item" onclick="irPara(null, ${h.x}, ${h.z})"><span class="n">${esc(h.nome)}</span><span class="v">volta em ${dur(h.renasce_em_s)}</span></div>`).join('') : '—');
+  const inst = r.instancias || [];
+  campo('dungeons abertas', inst.length ? inst.map(i =>
+    `<div>${esc(i.nome)} · E${i.estagio} · andar ${i.andar + 1}/${i.andares + 1} · ${esc(i.estado)} · ${dur(i.restante_s)} restantes · ${i.inimigos_vivos} inimigos · ${i.wipes} wipes<br>` +
+    `<span style="color:var(--fraco)">${i.membros.map(m => esc(m.nome) + (m.saiu ? ' (saiu)' : '') + (m.mortes ? ` ☠${m.mortes}` : '')).join(', ')}</span></div>`).join('') : '—');
+  const mesa = r.mesa || { fila: [], salas: [], prontos: 0 };
+  campo('fila e salas', `${mesa.fila.length} na fila · ${mesa.salas.length} salas · ${mesa.prontos} pronto-checks`);
+  const erros = (r.erros || []).slice(-12).reverse();
+  campo('últimos avisos', erros.length ? erros.map(e =>
+    `<div><span class="${e.nivel === 'error' ? 'ruim' : 'tag'}">${e.nivel}</span> <span style="color:var(--fraco)">${hora(e.quando)}</span><pre class="msg">${esc(e.msg)}</pre></div>`).join('') : 'nenhum');
+  return '<dl>' + linhas.join('') + '</dl>';
+}
+
 function desenhaDetalhe() {
   const el = document.getElementById('detalhe');
   const achado = achaSelecionado();
   if (!achado) {
-    el.className = 'vazio';
-    el.textContent = 'Clique em alguém no mapa.';
+    const r = retrato();
+    if (r) { el.className = ''; el.innerHTML = painelDoCanal(r); }
+    else { el.className = 'vazio'; el.textContent = 'Clique em alguém no mapa.'; }
     return;
   }
   el.className = '';
   const { e, tipo } = achado;
   const linhas = [];
   const campo = (k, v) => linhas.push(`<dt>${k}</dt><dd>${v}</dd>`);
-
-  campo('nome', `<b>${e.nome}</b> <span class="tag">${tipo}</span> <span class="tag">#${e.id}</span>`);
-  campo('estado', `<span class="tag">${e.estado}</span>`);
+  campo('nome', `<b>${esc(e.nome)}</b> <span class="tag">${tipo}</span> <span class="tag">#${e.id}</span> <a href="#" onclick="selecionado=null;desenhaDetalhe();return false">canal</a>`);
+  campo('estado', `<span class="tag">${esc(e.estado)}</span>`);
   campo('nível', e.nivel);
   campo('vida', barra(e.hp, e.hp_max, '#57c26a'));
   if (tipo === 'jogador') {
     campo('mana', barra(e.mp, e.mp_max, '#4ea3ff'));
     campo('vigor', barra(e.stamina, e.stamina_max, '#d9b45a'));
-    campo('conta', e.conta ?? '—');
-    campo('sessão', e.sessao);
-    campo('xp / ouro', `${e.xp} xp · <span style="color:var(--ouro)">${e.ouro} ouro</span>`);
+    campo('conta / sessão', `${e.conta ?? '—'} · ${esc(e.sessao)}`);
+    campo('xp / ouro', `${num(e.xp)} xp · <span style="color:var(--ouro)">${num(e.ouro)} ouro</span>`);
     campo('dano / defesa', `${e.dano} / ${e.defesa}`);
     campo('arma', e.arma ?? '—');
+    if (e.instancia !== undefined) campo('dungeon', e.instancia ? `instância #${e.instancia}` : 'mundo aberto');
+    const buffs = [['XP', e.buff_xp_s], ['Fortuna', e.buff_fortuna_s], ['Sorte', e.buff_sorte_s]].filter(b => b[1] > 0);
+    if (e.buff_xp_s !== undefined) campo('buffs', buffs.length ? buffs.map(b => `<span class="tag">${b[0]} ${dur(b[1])}</span>`).join(' ') : '—');
+    if (e.mortes_recuperaveis !== undefined) campo('mortes', `${e.mortes_recuperaveis} com XP a recuperar · ${e.recuperacoes_usadas} revives grátis usados`);
+    if (e.skills_auto) campo('auto', `skills ${e.skills_auto.length ? e.skills_auto.join(', ') : '—'} · economia ${e.economia_auto_min ? e.economia_auto_min + ' min' : 'desligada'}`);
+    if (e.banda_enviados !== undefined) campo('banda', `${bytes(e.banda_enviados)} ↓ · ${bytes(e.banda_recebidos)} ↑ · ${e.banda_kbps.toFixed(1)} kbps`);
     campo('rota', e.rota ? `${e.rota} pontos → ${e.destino[0].toFixed(1)}, ${e.destino[1].toFixed(1)}` : '—');
-    // A coleta e' automatica e silenciosa: sem isto, so' se enxerga o
-    // inventario crescendo e nao POR QUE ele cresce nesse ritmo.
     if (e.coleta) {
       const c = e.coleta;
-      campo('coleta', `<b>${c.intervalo_s > 999 ? '—' : c.intervalo_s.toFixed(1) + 's'}</b> agora · ` +
-                      `${c.sustentado_s.toFixed(1)}s em regime · <span class="tag">T${c.tier}</span>`);
-      campo('spot', `densidade ${c.densidade.toFixed(2)} ` +
-                    `(pedra ${c.pedra.toFixed(2)} + madeira ${c.madeira.toFixed(0)})`);
-      campo('reserva', barra(Math.round(c.reserva * 100), 100, '#d9b45a'));
+      campo('coleta', `<b>${c.intervalo_s > 999 ? '—' : c.intervalo_s.toFixed(1) + 's'}</b> por coleta · densidade ${c.densidade.toFixed(2)}`);
+      campo('spot', `pedras ${c.pedras.slice(1).join('/')} · troncos ${c.troncos} · ${c.coletas_restantes} coletas restantes`);
     } else {
       campo('coleta', 'lugar sem recurso');
     }
   } else {
-    campo('espécie', `${e.nome} <span class="tag">kind ${e.kind}</span>${e.chefe ? ' <span class="tag" style="color:var(--chefe)">CHEFE</span>' : ''}`);
+    campo('espécie', `${esc(e.nome)} <span class="tag">kind ${e.kind}</span>${e.chefe ? ' <span class="tag" style="color:var(--chefe)">CHEFE</span>' : ''}`);
     campo('dano / defesa', `${e.dano} / ${e.defesa}`);
     campo('alcance / detecção', `${e.alcance.toFixed(1)} / ${e.deteccao.toFixed(1)}`);
     campo('casa', `${e.casa[0].toFixed(0)}, ${e.casa[1].toFixed(0)} · coleira ${e.coleira.toFixed(0)}`);
     campo('xp que dá', e.xp);
+    campo('perseguindo', e.perseguindo ? 'sim' : 'não — alvo só em cache');
   }
-  if (tipo === 'mob') campo('perseguindo', e.perseguindo ? 'sim' : 'não — alvo só em cache');
   campo('alvo', e.alvo != null ? `#${e.alvo} <a href="#" onclick="irPara(${e.alvo});return false">ver</a>` : '—');
   campo('posição', `${e.x.toFixed(2)}, ${e.z.toFixed(2)} · altura ${e.y.toFixed(2)}`);
   campo('velocidade', `${Math.hypot(e.vx, e.vz).toFixed(2)} u/s`);
   el.innerHTML = '<dl>' + linhas.join('') + '</dl>';
 }
-setInterval(desenhaDetalhe, 500);
+setInterval(() => { if (abaAtual === 'mundo') desenhaDetalhe(); }, 500);
 
-window.irPara = (id) => {
+window.irPara = (id, x, z) => {
   const r = retrato(); if (!r) return;
-  const e = [...r.jogadores, ...r.mobs].find(x => x.id === id);
+  if (id === null) { cam.x = x; cam.z = z; return; }
+  const e = [...r.jogadores, ...r.mobs].find(q => q.id === id);
   if (!e) return;
   selecionado = { tipo: r.jogadores.includes(e) ? 'jogador' : 'mob', id };
   cam.x = e.x; cam.z = e.z;
+  mostraAba('mundo');
   desenhaDetalhe();
 };
 
 // ── abas ───────────────────────────────────────────────────────────────
-let economia = null;
-function mostraAba(nome) {
-  document.querySelectorAll('.aba').forEach(x => x.classList.toggle('ativa', x.dataset.aba === nome));
-  const eco = nome === 'economia';
-  document.querySelector('main').hidden = eco;
-  document.querySelector('section').hidden = eco;
-  document.getElementById('economia').hidden = !eco;
-  // A aba vai pra URL: painel de operacao se manda por link, e "abre o
-  // panoptico e clica em economia" nao e' link.
-  if (location.hash.slice(1) !== nome) history.replaceState(null, '', '#' + nome);
-  if (eco) puxaEconomia();
-}
-document.querySelectorAll('.aba').forEach(b => {
-  b.onclick = () => mostraAba(b.dataset.aba);
-});
-addEventListener('hashchange', () => mostraAba(location.hash.slice(1) || 'mundo'));
-if (location.hash.slice(1) === 'economia') mostraAba('economia');
-
-async function puxaEconomia() {
-  const r = await fetch('/api/economia?token=' + encodeURIComponent(token));
-  if (!r.ok) return;
-  economia = await r.json();
-  desenhaEconomia();
-}
-// A economia anda em minutos, nao em quadros: puxar de meio em meio segundo
-// como o mapa seria varrer o banco inteiro pra ver o mesmo numero.
-setInterval(() => { if (!document.getElementById('economia').hidden) puxaEconomia(); }, 20000);
-
-const num = n => n === null || n === undefined ? '—' : n.toLocaleString('pt-BR');
-const curto = n => {
-  const a = Math.abs(n);
-  if (a >= 1e12) return (n / 1e12).toFixed(1) + ' tri';
-  if (a >= 1e9) return (n / 1e9).toFixed(1) + ' bi';
-  if (a >= 1e6) return (n / 1e6).toFixed(1) + ' mi';
-  if (a >= 1e3) return (n / 1e3).toFixed(1) + ' mil';
-  return n.toFixed(a < 10 ? 1 : 0);
+let abaAtual = 'mundo';
+const PUXA = {
+  jogadores: puxaJogadores, economia: puxaEconomia, mercado: puxaMercado, dungeons: puxaDungeons,
+  atividade: puxaAtividade, missoes: puxaMissoes, infra: puxaInfra,
 };
-const horas = h => h < 1 ? (h * 60).toFixed(0) + ' min'
-  : h < 48 ? h.toFixed(1) + ' h'
-  : h < 24 * 365 ? (h / 24).toFixed(0) + ' dias'
-  : (h / 24 / 365).toFixed(0) + ' anos';
+function mostraAba(nome) {
+  if (nome !== 'mundo' && !PUXA[nome]) nome = 'mundo';
+  abaAtual = nome;
+  document.querySelectorAll('.aba[data-aba]').forEach(x => x.classList.toggle('ativa', x.dataset.aba === nome));
+  const mapa = nome === 'mundo';
+  document.querySelector('main').hidden = !mapa;
+  document.querySelector('section').hidden = !mapa;
+  document.querySelectorAll('.aba-painel').forEach(p => { p.hidden = p.id !== 'aba-' + nome; });
+  if (location.hash.slice(1) !== nome) history.replaceState(null, '', '#' + nome);
+  if (PUXA[nome]) PUXA[nome]();
+}
+document.querySelectorAll('.aba[data-aba]').forEach(b => { b.onclick = () => mostraAba(b.dataset.aba); });
+addEventListener('hashchange', () => mostraAba(location.hash.slice(1) || 'mundo'));
+// O banco anda em minutos, nao em quadros: 20 s basta.
+setInterval(() => { if (PUXA[abaAtual]) PUXA[abaAtual](); }, 20000);
 
-function tabela(cols, linhas) {
-  return `<table><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>` +
-    linhas.map(l => `<tr>${l.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') +
-    '</table>';
+// ── jogadores ─────────────────────────────────────────────────────────
+let jogadores = null;
+async function puxaJogadores() {
+  const d = await api('api/jogadores'); if (!d) return;
+  jogadores = d; desenhaJogadores();
+}
+document.getElementById('jog-filtro').addEventListener('input', () => desenhaJogadores());
+document.getElementById('jog-so-online').addEventListener('change', () => desenhaJogadores());
+function desenhaJogadores() {
+  const d = jogadores; if (!d) return;
+  const r = d.resumo;
+  cartoes('jog-cartoes', [
+    ['contas', num(r.contas), `${num(r.google)} com Google · ${num(r.contas_7d)} novas em 7 dias`],
+    ['personagens', num(r.personagens), `multiplicador de XP ${r.multiplicador_xp}`],
+    ['online agora', num(r.online), ''],
+    ['ativos 24 h', num(r.ativos_24h), `${num(r.ativos_7d)} em 7 dias`],
+    ['buffs ligados', num(r.buffs_ativos), 'XP, Fortuna ou Sorte'],
+    ['mortes a recuperar', num(r.mortes_pendentes), num(r.xp_a_recuperar) + ' xp parado'],
+    ['economia automática', num(r.economia_auto), 'personagens com entrada sozinha'],
+  ]);
+  const maxZ = Math.max(1, ...d.por_zona.map(z => z[1]));
+  document.getElementById('jog-zonas').innerHTML = tabela(['zona', 'personagens', 'online', ''],
+    d.por_zona.map(([z, t, o]) => [esc(z), num(t), num(o), barraH(t, maxZ)]));
+  const q = document.getElementById('jog-filtro').value.trim().toLowerCase();
+  const soOnline = document.getElementById('jog-so-online').checked;
+  const lista = d.lista.filter(j => (!soOnline || j.online) &&
+    (!q || [j.nome, j.usuario, j.zona, String(j.conta)].some(s => String(s).toLowerCase().includes(q))));
+  document.getElementById('jog-lista').innerHTML = tabela(
+    ['personagem', 'conta', 'nível', 'ouro', 'zona', 'visto', 'história', 'dungeon', 'buffs', 'mortes', 'auto'],
+    lista.slice(0, 500).map(j => {
+      const buffs = [['XP', j.buff_xp_s], ['For', j.buff_fortuna_s], ['Sor', j.buff_sorte_s]].filter(b => b[1] > 0).map(b => `${b[0]} ${dur(b[1])}`).join(' · ');
+      const h = j.historia;
+      return [
+        `${j.online ? '<span class="bom">●</span> ' : ''}<b>${esc(j.nome)}</b>${j.online ? ` <span class="tag">${esc(j.online)}</span>` : ''}`,
+        `${esc(j.usuario || '—')} <span style="color:var(--fraco)">#${j.conta}</span>`,
+        j.nivel, num(j.ouro), esc(j.zona || '—'), j.online ? 'agora' : ha(j.visto),
+        h ? `${esc(h.titulo)}${h.pronta ? ' <span class="tag">pronta</span>' : ''}<div class="pe" style="color:var(--fraco)">${esc(h.capitulo || '')} · ${h.concluidas} feitas</div>` : '—',
+        `${j.dungeon.vitorias} vitórias · E${j.dungeon.maior_estagio}<div style="color:var(--fraco)">gruta ${j.dungeon.gruta_saldo} (+${j.dungeon.gruta_compradas_hoje}) · porão ${j.dungeon.porao_saldo} · correio ${j.dungeon.correio}</div>`,
+        buffs || '—',
+        j.mortes ? `${j.mortes} · ${num(j.xp_a_recuperar)} xp` : '—',
+        `skills ${j.skills_auto.length}${j.economia_auto_min ? ' · eco ' + j.economia_auto_min + 'min' : ''}`,
+      ];
+    }), [0, 1, 4, 6, 7, 8, 9, 10]);
 }
 
-/// A curva em escala LOG.
-///
-/// Linear nao serve: o ultimo degrau custa meio milhao de vezes o primeiro, e
-/// num grafico linear os dezoito primeiros viram uma linha rente ao chao. Em
-/// log, dobrar vira sempre a mesma altura — e o que salta aos olhos passa a
-/// ser onde a curva DEIXA de dobrar, que e' onde o refino entra.
+// ── economia ──────────────────────────────────────────────────────────
+let economia = null;
+async function puxaEconomia() {
+  const [e, at, it] = await Promise.all([api('api/economia'), api('api/atividade?horas=24'), api('api/itens?horas=168')]);
+  if (e) { economia = e; desenhaEconomia(); }
+  if (at) desenhaFluxo(at);
+  if (it) desenhaItens(it);
+}
+function desenhaFluxo(at) {
+  const soma = (tipo) => at.totais.filter(t => t.tipo === tipo);
+  const fontes = soma('ouro_fonte').sort((a, b) => b.valor - a.valor);
+  const ralos = soma('ouro_ralo').sort((a, b) => b.valor - a.valor);
+  const tf = fontes.reduce((s, t) => s + t.valor, 0), tr = ralos.reduce((s, t) => s + t.valor, 0);
+  const taxa = at.totais.filter(t => t.tipo === 'mercado').length;
+  cartoes('eco-fluxo-cartoes', [
+    ['entrou (24 h)', num(tf), 'saque, venda a NPC, missões, mercado'],
+    ['saiu (24 h)', num(tr), 'lojas, recuperar XP, entradas, mercado'],
+    ['saldo', `<span class="${tf - tr > 0 ? 'ruim' : 'bom'}">${num(tf - tr)}</span>`, tf - tr > 0 ? 'o mundo ficou mais rico' : 'o mundo ficou mais pobre'],
+  ]);
+  grafico('eco-fluxo', [
+    { nome: 'entrou', cor: '#57c26a', pontos: at.series.ouro_fonte || [] },
+    { nome: 'saiu', cor: '#e06a5a', pontos: at.series.ouro_ralo || [] },
+  ], 'eco-fluxo-legenda');
+  const tab = (lista, titulo) => `<h3>${titulo}</h3>` + tabela(['origem', 'ouro', ''], lista.map(t => [esc(t.rotulo), num(t.valor), barraH(t.valor, Math.max(1, lista[0] ? lista[0].valor : 1), titulo === 'Fontes' ? '#57c26a' : '#e06a5a')]));
+  document.getElementById('eco-fontes').innerHTML = tab(fontes, 'Fontes');
+  document.getElementById('eco-ralos').innerHTML = tab(ralos, 'Ralos');
+  if (!at.ligada) document.getElementById('eco-fluxo-cartoes').insertAdjacentHTML('beforeend', '<div class="cartao"><div class="rot">telemetria</div><div class="num ruim">desligada</div><div class="pe">o canal ainda roda sem o binário novo</div></div>');
+}
+function desenhaItens(it) {
+  document.getElementById('eco-chaves').innerHTML = '<h3>Chaves (estoque)</h3>' +
+    tabela(['chave', 'quantidade', 'donos'], it.chaves.filter(c => c.qtd > 0).map(c => [esc(c.nome), num(c.qtd), num(c.donos)]));
+  document.getElementById('eco-especiais').innerHTML = '<h3>Especiais (estoque)</h3>' +
+    tabela(['item', 'quantidade', 'donos'], it.especiais.map(c => [esc(c.nome), num(c.qtd), num(c.donos)]));
+  document.getElementById('eco-chaves-drop').innerHTML = tabela(['origem', 'chave', 'caíram'],
+    it.chaves_drop.sort((a, b) => b[2] - a[2]).map(([o, n, v]) => [esc(o), esc(n), num(v)]));
+  document.getElementById('eco-materiais').innerHTML = tabela(['material', 'cinza', 'verde', 'azul', 'roxo'],
+    it.materiais.map(m => [esc(m.nome), ...m.cores.map(num)]));
+  const nomeRar = { '0': 'comum', '1': 'fino', '2': 'raro', '3': 'épico', '4': 'lendário' };
+  document.getElementById('eco-raridade').innerHTML = tabela(['raridade', 'peças', 'vinculadas'],
+    it.raridade.map(([r, q, v]) => [esc(nomeRar[r] || r), num(q), num(v)]));
+}
+
 function desenhaCurva(passos) {
   const c = document.getElementById('curva');
   const g = c.getContext('2d');
@@ -598,15 +800,12 @@ function desenhaCurva(passos) {
   c.width = larg * dpr; c.height = 220 * dpr;
   c.style.width = larg + 'px'; c.style.height = '220px';
   c.style.margin = '4px 14px';
-  g.scale(dpr, dpr);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, larg, 220);
-
   const vals = passos.map(p => Math.max(1, p.total));
   const lo = Math.log10(vals[0]), hi = Math.log10(vals[vals.length - 1]);
   const x = i => 34 + i * (larg - 50) / (passos.length - 1);
   const y = v => 196 - (Math.log10(v) - lo) / (hi - lo) * 176;
-
-  // Linhas de decada, que em log ficam igualmente espacadas.
   g.strokeStyle = '#232b35'; g.fillStyle = '#7c8ba0';
   g.font = '10px ui-monospace, monospace'; g.textAlign = 'right';
   for (let e = Math.ceil(lo); e <= hi; e++) {
@@ -614,118 +813,280 @@ function desenhaCurva(passos) {
     g.beginPath(); g.moveTo(34, yy); g.lineTo(larg - 16, yy); g.stroke();
     g.fillText('1e' + e, 30, yy + 3);
   }
-
-  // Barras: o custo DO PASSO. É a leitura que interessa.
   g.fillStyle = '#2c4a6b';
   for (let i = 0; i < passos.length; i++) {
     const v = Math.max(1, passos[i].passo);
     const yy = y(v);
     g.fillRect(x(i) - 6, yy, 12, 196 - yy);
   }
-  // Linha: o acumulado.
   g.strokeStyle = '#d9b45a'; g.lineWidth = 2; g.beginPath();
   passos.forEach((p, i) => i ? g.lineTo(x(i), y(p.total)) : g.moveTo(x(i), y(p.total)));
   g.stroke();
-
-  // Marca a virada de cor: e' onde o jogador sente o degrau.
   g.textAlign = 'center'; g.fillStyle = '#7c8ba0';
-  passos.forEach((p, i) => {
-    if (p.para.endsWith(' I')) g.fillText(p.para.split(' ')[0].slice(0, 4), x(i), 212);
-  });
+  passos.forEach((p, i) => { if (p.para.endsWith(' I')) g.fillText(p.para.split(' ')[0].slice(0, 4), x(i), 212); });
 }
 
 function desenhaEconomia() {
   const d = economia; if (!d) return;
   const j = d.jogadores;
-
   const parado = j.ouro_total - d.ouro_online;
-  document.getElementById('moeda').innerHTML = [
+  cartoes('moeda', [
     ['personagens', num(j.total), ''],
     ['ouro no mundo', num(j.ouro_total), ''],
     ['em mãos agora', num(d.ouro_online), parado > 0 ? num(parado) + ' parado' : ''],
     ['mediana', num(j.ouro_mediano), 'p90 ' + num(j.ouro_p90)],
-    ['maior fortuna', num(j.ouro_maior), j.maiores[0] ? j.maiores[0][0] : ''],
+    ['maior fortuna', num(j.ouro_maior), j.maiores[0] ? esc(j.maiores[0][0]) : ''],
     ['darksteel por hora', num(d.darksteel_por_hora), 'mineração ativa'],
-  ].map(([r, n, p]) =>
-    `<div class="cartao"><div class="rot">${r}</div><div class="num">${n}</div>
-     <div class="pe">${p}</div></div>`).join('');
-
+  ]);
   const maxN = Math.max(1, ...j.por_nivel.map(x => x[1]));
-  document.getElementById('niveis').innerHTML = tabela(
-    ['nível', 'personagens', ''],
-    j.por_nivel.map(([nv, q]) => [
-      'n' + nv, num(q),
-      `<div class="barra-h"><i style="width:${(q / maxN * 100).toFixed(1)}%"></i></div>`,
-    ]));
-
-  // ── curva de demanda ──
+  document.getElementById('niveis').innerHTML = tabela(['nível', 'personagens', ''],
+    j.por_nivel.map(([nv, q]) => ['n' + nv, num(q), barraH(q, maxN)]));
   document.getElementById('demanda').innerHTML = tabela(
     ['passo', 'total (peças de base)', 'a mais', 'vezes o anterior', 'mineração'],
-    d.demanda.map(p => [
-      `<b>${p.para}</b> <span style="color:var(--fraco)">← ${p.de}</span>`,
-      curto(p.total), curto(p.passo),
-      p.vezes ? p.vezes.toFixed(2) + '×' : '—',
-      horas(p.horas),
-    ]));
+    d.demanda.map(p => [`<b>${esc(p.para)}</b> <span style="color:var(--fraco)">← ${esc(p.de)}</span>`,
+      curto(p.total), curto(p.passo), p.vezes ? p.vezes.toFixed(2) + '×' : '—', horas(p.horas)]));
   desenhaCurva(d.demanda);
-
-  // ── degraus: grau x tier, com o refino multiplicado por cima ──
   const cabec = ['degrau', 'peças de base'];
   for (const alvo of d.alvos) cabec.push(alvo === 0 ? 'sem refino' : '+' + alvo);
-  document.getElementById('degraus').innerHTML = tabela(
-    cabec,
+  document.getElementById('degraus').innerHTML = tabela(cabec,
     d.degraus.map(g => {
-      const l = [
-        `<b>${g.nome}</b>`,
-        curto(g.base),
-      ];
-      for (const [pecas, , h] of g.por_alvo) {
-        // As duas moedas do custo, juntas: PEÇAS é o grind de drop, HORAS é a
-        // mineração que paga o darksteel. Uma sozinha não conta a história —
-        // o mesmo item pode ser barato em minério e impossível em peça.
-        l.push(`${curto(pecas)}<div class="pe">${h > 0 ? horas(h) : '—'}</div>`);
-      }
+      const l = [`<b>${esc(g.nome)}</b>`, curto(g.base)];
+      for (const [pecas, , h] of g.por_alvo) l.push(`${curto(pecas)}<div class="pe">${h > 0 ? horas(h) : '—'}</div>`);
       return l;
     }));
-
   document.getElementById('escadas').innerHTML = d.escadas.map(e => {
-    const linhas = e.degraus.filter(g => g.alvo >= 3).map(g => {
-      const aposta = g.alvo > d.refino_seguro;
-      return [
-        `<span class="${aposta ? 'aposta' : ''}">+${g.alvo}</span>`,
-        d.chances[g.alvo] + '%',
-        g.pecas < 1.001 ? '1' : curto(g.pecas),
-        curto(g.tentativas),
-        curto(g.darksteel),
-        horas(g.horas),
-      ];
-    });
-    return `<h2 style="padding-top:14px">${e.grau}
-      <span style="color:var(--fraco);text-transform:none;letter-spacing:0">
-        · ${num(e.tentativa[0])} darksteel + ${num(e.tentativa[1])} cobre por tentativa</span></h2>` +
+    const linhas = e.degraus.filter(g => g.alvo >= 3).map(g => [
+      `<span class="${g.alvo > d.refino_seguro ? 'aposta' : ''}">+${g.alvo}</span>`,
+      d.chances[g.alvo] + '%', g.pecas < 1.001 ? '1' : curto(g.pecas), curto(g.tentativas), curto(g.darksteel), horas(g.horas)]);
+    return `<h3>${esc(e.grau)} <span style="color:var(--fraco);font-weight:400">· ${num(e.tentativa[0])} darksteel + ${num(e.tentativa[1])} cobre por tentativa</span></h3>` +
       tabela(['nível', 'chance', 'peças', 'tentativas', 'darksteel', 'mineração'], linhas);
   }).join('');
-
   const maxOuro = Math.max(1, ...d.tabela_de_loot.map(b => b.ouro_por_morte));
-  document.getElementById('loot').innerHTML = tabela(
-    ['bicho', 'xp', 'itens na tabela', 'ouro/morte', ''],
-    d.tabela_de_loot.map(b => [
-      b.nome, num(b.xp), b.itens, b.ouro_por_morte.toFixed(1),
-      `<div class="barra-h"><i style="width:${(b.ouro_por_morte / maxOuro * 100).toFixed(1)}%;background:var(--ouro)"></i></div>`,
-    ]));
+  document.getElementById('loot').innerHTML = tabela(['bicho', 'xp', 'itens na tabela', 'ouro/morte', ''],
+    d.tabela_de_loot.map(b => [esc(b.nome), num(b.xp), b.itens, b.ouro_por_morte.toFixed(1), barraH(b.ouro_por_morte, maxOuro, 'var(--ouro)')]));
+  document.getElementById('drops').innerHTML = tabela(['item', 'vezes', 'quantidade', 'por hora'],
+    d.drops.map(x => [esc(x.nome), num(x.vezes), num(x.quantidade), x.por_hora.toFixed(2)]));
+  document.getElementById('itens').innerHTML = tabela(['item', 'quantidade', 'donos', 'venda', 'valor parado'],
+    d.itens.map(x => [esc(x.nome), num(x.quantidade), num(x.donos), num(x.preco_venda), num(x.quantidade * x.preco_venda)]));
+}
 
-  document.getElementById('drops').innerHTML = d.drops.length
-    ? tabela(['item', 'vezes', 'quantidade', 'por hora'],
-        d.drops.map(x => [x.nome, num(x.vezes), num(x.quantidade), x.por_hora.toFixed(2)]))
-    : '<div class="vazio">nada caiu nos últimos 7 dias</div>';
+// ── mercado ───────────────────────────────────────────────────────────
+async function puxaMercado() {
+  const d = await api('api/mercado'); if (!d) return;
+  const rl = d.realm;
+  document.getElementById('mer-aviso').textContent = d.ligado ? '' :
+    'Banco central não configurado neste painel (DATABASE_URL_CENTRAL): só o lado do realm aparece.';
+  const at = (tipo) => (d.ativos || []).find(a => a.tipo === tipo) || { anuncios: 0, qtd: 0, valor: 0 };
+  const lista = [
+    ['saídas pendentes (realm)', num(rl.saidas_pendentes), rl.saidas_pendentes ? 'mais velha há ' + dur(rl.saida_mais_velha_s) : `${num(rl.saidas_24h)} enviadas em 24 h`],
+    ['cartas aplicadas 24 h', num(rl.cartas_aplicadas_24h), `${num(rl.cartas_sem_aviso)} sem aviso ao jogador`],
+  ];
+  if (d.ligado) lista.unshift(
+    ['anúncios de item', num(at(0).anuncios), `${num(at(0).qtd)} un · ${num(at(0).valor)} gold`],
+    ['anúncios de TP', num(at(1).anuncios), `${num(at(1).qtd)} TP · ${num(at(1).valor)} gold`],
+    ['vendas 24 h', num(d.vendas_24h.vendas), `${num(d.vendas_24h.bruto)} gold brutos`],
+    ['taxa queimada 24 h', num(d.vendas_24h.taxa), `${num(d.vendas_total.taxa)} desde sempre`],
+    ['entregas pendentes', num(d.cartas.pendentes), d.cartas.pendentes ? `${num(d.cartas.gold_pendente)} gold · mais velha há ${dur(d.cartas.mais_velha_s)}` : `${num(d.cartas.entregues_24h)} entregues em 24 h`],
+    ['TP em circulação', num(d.tp.em_circulacao), `${num(d.tp.contas_com_saldo)} contas com saldo`],
+  );
+  cartoes('mer-cartoes', lista);
+  if (!d.ligado) return;
+  grafico('mer-grafico', [
+    { nome: 'gold bruto', cor: '#d9b45a', pontos: d.por_hora.map(h => [h[0], h[2]]) },
+    { nome: 'taxa queimada', cor: '#e06a5a', pontos: d.por_hora.map(h => [h[0], h[3]]) },
+  ], 'mer-legenda');
+  document.getElementById('mer-precos').innerHTML = tabela(['item', 'tipo', 'vendas', 'qtd', 'média', 'mediana', 'mín', 'máx', 'taxa'],
+    d.precos_7d.map(p => [esc(p.nome), p.tipo === 1 ? 'TP' : 'item', num(p.vendas), num(p.qtd), num(Math.round(p.media)), num(Math.round(p.mediana)), num(p.min), num(p.max), num(p.taxa)]));
+  document.getElementById('mer-anunciados').innerHTML = tabela(['item', 'anúncios', 'qtd', 'menor preço', 'preço médio'],
+    d.anunciados.map(a => [esc(a[0]), num(a[1]), num(a[2]), num(a[3]), num(Math.round(a[4]))]));
+  document.getElementById('mer-ultimas').innerHTML = tabela(['item', 'qtd', 'preço', 'taxa', 'vendedor → comprador', 'quando'],
+    d.ultimas.map(u => [esc(u[0]), num(u[1]), num(u[2]), num(u[4]), `${esc(u[5])} → ${esc(u[6])}`, ha(u[7])]), [0, 4]);
+  document.getElementById('mer-cartas').innerHTML = tabela(['motivo', 'pendentes'], d.cartas_por_motivo.map(m => [esc(m[0]), num(m[1])]));
+  document.getElementById('mer-ops').innerHTML = tabela(['operação', 'resultado', 'quantas'],
+    d.operacoes_24h.map(o => [esc(o[0]), o[1] ? '<span class="bom">ok</span>' : '<span class="ruim">recusada</span>', num(o[2])]));
+  document.getElementById('mer-recusadas').innerHTML = tabela(['operação', 'realm', 'motivo', 'quando'],
+    d.recusadas.map(o => [esc(o[0]), esc(o[1]), `<pre class="msg">${esc(o[2])}</pre>`, ha(o[3])]), [2]);
+  document.getElementById('mer-tp-maiores').innerHTML = tabela(['conta', 'saldo'], d.tp_maiores.map(t => [esc(t[0]), num(t[1])]));
+  document.getElementById('mer-tp-motivos').innerHTML = tabela(['motivo', 'movimentos', 'soma'], d.tp_motivos_7d.map(t => [esc(t[0]), num(t[1]), num(t[2])]));
+  document.getElementById('mer-tp-movs').innerHTML = tabela(['conta', 'delta', 'saldo depois', 'motivo', 'quando'],
+    d.tp_movimentos.map(t => [esc(t[0]), `<span class="${t[1] >= 0 ? 'bom' : 'ruim'}">${t[1] >= 0 ? '+' : ''}${num(t[1])}</span>`, num(t[2]), esc(t[3]), ha(t[4])]), [3]);
+}
 
-  document.getElementById('itens').innerHTML = d.itens.length
-    ? tabela(['item', 'quantidade', 'donos', 'venda', 'valor parado'],
-        d.itens.map(x => [
-          x.nome, num(x.quantidade), num(x.donos), num(x.preco_venda),
-          num(x.quantidade * x.preco_venda),
-        ]))
-    : '<div class="vazio">nenhum item no mundo</div>';
+// ── dungeons ──────────────────────────────────────────────────────────
+let dungeons = null;
+document.getElementById('dg-horas').addEventListener('change', () => puxaDungeons());
+async function puxaDungeons() {
+  const h = document.getElementById('dg-horas').value;
+  const d = await api('api/dungeons?horas=' + h); if (!d) return;
+  dungeons = d; desenhaDungeons(); desenhaDungeonsAoVivo();
+}
+const nomeConteudo = id => { const c = dungeons && dungeons.catalogo.find(x => x.id === id); return c ? c.nome : 'conteúdo ' + id; };
+function desenhaDungeonsAoVivo() {
+  const insts = [], fila = [], salas = [];
+  let prontos = 0;
+  for (const c of mundo.canais) {
+    const r = c.retrato; if (!r) continue;
+    for (const i of (r.instancias || [])) insts.push({ canal: c.id, ...i });
+    if (r.mesa) { r.mesa.fila.forEach(f => fila.push([c.id, ...f])); r.mesa.salas.forEach(s => salas.push([c.id, ...s])); prontos += r.mesa.prontos; }
+  }
+  cartoes('dg-vivo-cartoes', [
+    ['instâncias abertas', num(insts.length), `${num(insts.reduce((s, i) => s + i.membros.filter(m => !m.saiu).length, 0))} jogadores dentro`],
+    ['na fila', num(fila.length), fila.length ? 'maior espera ' + dur(Math.max(...fila.map(f => f[3]))) : ''],
+    ['salas', num(salas.length), `${num(prontos)} pronto-checks`],
+  ]);
+  document.getElementById('dg-instancias').innerHTML = tabela(['canal', 'dungeon', 'estágio', 'andar', 'estado', 'decorrido', 'restante', 'inimigos', 'wipes', 'membros'],
+    insts.map(i => [esc(i.canal), esc(i.nome), i.estagio, `${i.andar + 1}/${i.andares + 1}`, esc(i.estado), dur(i.decorrido_s), dur(i.restante_s), i.inimigos_vivos, i.wipes,
+      i.membros.map(m => `${esc(m.nome)}${m.ajudante ? ' (ajudante)' : ''}${m.saiu ? ' (saiu)' : ''}${m.mortes ? ' ☠' + m.mortes : ''}${m.abriu_bau ? ' 🎁' : ''}`).join(', ')]), [0, 1, 4, 9]);
+  document.getElementById('dg-fila').innerHTML = tabela(['canal', 'dungeon', 'estágio', 'esperando'], fila.map(f => [esc(f[0]), esc(nomeConteudo(f[1])), f[2], dur(f[3])]));
+  document.getElementById('dg-salas').innerHTML = tabela(['canal', 'sala', 'dungeon', 'estágio', 'membros', 'completa pela fila'],
+    salas.map(s => [esc(s[0]), '#' + s[1], esc(nomeConteudo(s[2])), s[3], s[4], s[5] ? 'sim' : 'não']));
+}
+function desenhaDungeons() {
+  const d = dungeons; if (!d) return;
+  const tot = d.catalogo.flatMap(c => c.estagios).reduce((a, e) => ({
+    entradas: a.entradas + e.entradas, vitorias: a.vitorias + e.vitorias, falhas: a.falhas + e.tempo_esgotado, wipes: a.wipes + e.wipes, selos: a.selos + e.selos,
+  }), { entradas: 0, vitorias: 0, falhas: 0, wipes: 0, selos: 0 });
+  cartoes('dg-cartoes', [
+    ['entradas', num(tot.entradas), `${num(d.entradas_compradas)} compradas com gold`],
+    ['vitórias', num(tot.vitorias), tot.vitorias + tot.falhas ? pct(tot.vitorias / (tot.vitorias + tot.falhas)) + ' das terminadas' : ''],
+    ['tempo esgotado', num(tot.falhas), ''],
+    ['wipes', num(tot.wipes), ''],
+    ['chefes / mobs mortos', `${num(d.chefes_mortos)} / ${num(d.mobs_mortos)}`, ''],
+    ['selos', num(tot.selos), `${num(d.contas.selos_na_semana)} craftados nesta semana`],
+    ['correio pendente', num(d.personagens.correio_pendente), `${num(d.personagens.correio_bolsa_cheia)} bolsa cheia · ${num(d.personagens.correio_primeira_semanal + d.personagens.correio_primeira_de_todas)} 1ª vitória`],
+    ['primeiras vitórias na semana', num(d.contas.primeiras_vitorias_na_semana), `${num(d.contas.com_dados)} contas`],
+  ]);
+  const linhas = [];
+  for (const c of d.catalogo) {
+    for (const e of c.estagios) {
+      if (c.tipo === 'Porao' && e.estagio > 1) continue;
+      linhas.push([
+        e.estagio === 1 ? `<b>${esc(c.nome)}</b><div style="color:var(--fraco)">${esc(c.tipo)} · ${esc(c.zona)} · nv ${c.nivel_min} · até ${c.grupo_max} · ${dur(c.limite_s)}${c.disponivel ? '' : ' · 🔒'}</div>` : '',
+        e.estagio, num(e.entradas), num(e.ajudantes), num(e.vitorias), num(e.tempo_esgotado),
+        e.vitorias + e.tempo_esgotado ? pct(e.taxa_vitoria) : '—', e.duracao_media_s ? dur(e.duracao_media_s) : '—',
+        num(e.wipes), num(e.bonus), num(e.baus), num(e.vitorias_sempre), num(e.personagens_liberados),
+      ]);
+    }
+  }
+  document.getElementById('dg-catalogo').innerHTML = tabela(
+    ['conteúdo', 'estágio', 'entradas', 'ajudantes', 'vitórias', 'tempo esgotado', 'taxa', 'duração média', 'wipes', 'bônus tempo', 'baús', 'vitórias (sempre)', 'liberados'], linhas, [0]);
+  const maxB = Math.max(1, ...d.bau_itens.map(b => b[2]));
+  document.getElementById('dg-bau').innerHTML = tabela(['item', 'quantidade', ''], d.bau_itens.map(b => [esc(b[1]), num(b[2]), barraH(b[2], maxB, 'var(--ouro)')]));
+}
+
+// ── atividade ─────────────────────────────────────────────────────────
+const GRUPOS_ATIV = [
+  ['Combate', ['kill', 'chefe_morto', 'kill_dungeon', 'chefe_dungeon_morto', 'morte_jogador', 'xp_perdido', 'recuperar_xp', 'xp_recuperado']],
+  ['Habilidades e itens', ['skill_pedida', 'skill_recusada', 'item_usado']],
+  ['Ouro: fontes e ralos', ['ouro_fonte', 'ouro_ralo']],
+  ['Drops', ['drop', 'chave_drop']],
+  ['Coleta', ['coleta', 'coleta_item']],
+  ['Craft e forja', ['craft', 'craft_falha', 'refino', 'selo_craftado']],
+  ['Lojas de NPC', ['loja_compra', 'loja_venda']],
+  ['Mercado (lado do canal)', ['mercado']],
+  ['Missões', ['missao_entregue', 'missao_historia', 'missao_abandonada']],
+  ['Dungeons', ['dungeon_entrada', 'dungeon_resultado', 'dungeon_wipe', 'dungeon_tempo_s', 'dungeon_bonus_tempo', 'dungeon_bau', 'dungeon_bau_item', 'dungeon_entrada_comprada', 'selo_usado']],
+  ['Rede, saves e log', ['conexao', 'banda', 'save', 'save_ms', 'save_linhas', 'save_mercado', 'save_atrasado_mercado', 'log']],
+];
+const NOME_TIPO = {
+  kill: 'bichos mortos', chefe_morto: 'chefes de campo mortos', kill_dungeon: 'mobs de dungeon mortos', chefe_dungeon_morto: 'chefes de dungeon mortos',
+  morte_jogador: 'mortes de jogador', xp_perdido: 'XP perdido em morte', recuperar_xp: 'recuperações de XP', xp_recuperado: 'XP recuperado',
+  skill_pedida: 'skills pedidas', skill_recusada: 'skills recusadas (motivo)', item_usado: 'itens usados', ouro_fonte: 'ouro que entrou', ouro_ralo: 'ouro que saiu',
+  drop: 'itens que caíram', chave_drop: 'chaves de craft que caíram', coleta: 'coletas por nó', coleta_item: 'itens coletados', craft: 'crafts feitos',
+  craft_falha: 'crafts recusados (motivo)', refino: 'refinos (resultado:nível)', selo_craftado: 'Selos craftados', loja_compra: 'compras em loja', loja_venda: 'vendas a NPC',
+  mercado: 'operações do mercado', missao_entregue: 'missões entregues', missao_historia: 'capítulos de história', missao_abandonada: 'missões abandonadas',
+  dungeon_entrada: 'entradas', dungeon_resultado: 'resultados', dungeon_wipe: 'wipes', dungeon_tempo_s: 'segundos jogados', dungeon_bonus_tempo: 'bônus de tempo',
+  dungeon_bau: 'baús abertos', dungeon_bau_item: 'itens de baú', dungeon_entrada_comprada: 'entradas compradas', selo_usado: 'Selos usados',
+  conexao: 'conexões', banda: 'banda (bytes)', save: 'saves', save_ms: 'tempo de save (ms somados)', save_linhas: 'personagens salvos', save_mercado: 'registros do mercado salvos',
+  save_atrasado_mercado: 'registros do mercado atrasados', log: 'linhas de aviso/erro',
+};
+document.getElementById('at-horas').addEventListener('change', () => puxaAtividade());
+async function puxaAtividade() {
+  const h = document.getElementById('at-horas').value;
+  const d = await api('api/atividade?horas=' + h); if (!d) return;
+  document.getElementById('at-aviso').innerHTML = d.ligada ? '' : '<span class="ruim">telemetria ainda não existe neste banco: os canais precisam do binário novo</span>';
+  const principais = ['kill', 'morte_jogador', 'coleta', 'craft', 'dungeon_entrada', 'missao_entregue'];
+  grafico('at-grafico', principais.map((t, i) => ({ nome: NOME_TIPO[t] || t, cor: CORES[i], pontos: d.series[t] || [] })), 'at-legenda');
+  const porTipo = {};
+  for (const t of d.totais) (porTipo[t.tipo] = porTipo[t.tipo] || []).push(t);
+  const conhecidos = new Set(GRUPOS_ATIV.flatMap(g => g[1]));
+  const grupos = [...GRUPOS_ATIV, ['Outros', Object.keys(porTipo).filter(t => !conhecidos.has(t))]];
+  document.getElementById('at-grupos').innerHTML = grupos.map(([titulo, tipos]) => {
+    const blocos = tipos.filter(t => porTipo[t]).map(t => {
+      const l = porTipo[t].sort((a, b) => b.valor - a.valor);
+      const total = l.reduce((s, x) => s + x.valor, 0);
+      const max = Math.max(1, l[0].valor);
+      const valor = t === 'banda' ? bytes : num;
+      return `<div><h3>${esc(NOME_TIPO[t] || t)} <span style="color:var(--fraco);font-weight:400">· ${valor(total)}</span></h3>` +
+        tabela(['', 'total', ''], l.slice(0, 40).map(x => [esc(x.rotulo), valor(x.valor), barraH(x.valor, max)])) + '</div>';
+    }).join('');
+    return blocos ? `<h2>${titulo}</h2><div class="grade">${blocos}</div>` : '';
+  }).join('') || '<div class="vazio">nada registrado na janela</div>';
+}
+
+// ── missoes ───────────────────────────────────────────────────────────
+document.getElementById('mi-horas').addEventListener('change', () => puxaMissoes());
+async function puxaMissoes() {
+  const h = document.getElementById('mi-horas').value;
+  const d = await api('api/missoes?horas=' + h); if (!d) return;
+  const maxC = Math.max(1, ...d.historia_por_capitulo.map(c => c[1]));
+  document.getElementById('mi-capitulos').innerHTML = tabela(['capítulo', 'personagens', ''], d.historia_por_capitulo.map(([c, n]) => [esc(c), num(n), barraH(n, maxC)]));
+  const cats = {};
+  for (const m of d.lista) (cats[m.categoria] = cats[m.categoria] || []).push(m);
+  document.getElementById('mi-grupos').innerHTML = Object.entries(cats).map(([cat, l]) =>
+    `<h2>${esc(cat)}</h2>` + tabela(['missão', 'ativas', 'prontas', 'entregues (sempre)', 'entregues (janela)', 'abandonadas (janela)'],
+      l.map(m => [`<b>${esc(m.titulo)}</b> <span style="color:var(--fraco)">#${m.id}${m.capitulo ? ' · ' + esc(m.capitulo) : ''}</span>`,
+        num(m.ativas), num(m.prontas), num(m.entregues_sempre), num(m.entregues_janela), num(m.abandonadas_janela)]))).join('');
+}
+
+// ── infra ─────────────────────────────────────────────────────────────
+async function puxaInfra() {
+  const d = await api('api/infra'); if (!d) return;
+  document.getElementById('in-canais').innerHTML = tabela(['canal', 'host', 'zona', 'jogadores', 'tick p99', 'batimento', 'estado'],
+    d.canais.map(c => [esc(c.id), esc(c.host), esc(c.zona), `${c.jogadores}/${c.capacidade}`, c.tick_p99_ms.toFixed(2) + ' ms',
+      'há ' + dur(c.idade_s), c.vivo ? '<span class="bom">vivo</span>' : '<span class="ruim">parado</span>']));
+  desenhaProcessos();
+  const med = d.medidas || {};
+  const nomes = Object.keys(med);
+  const porMedida = {};
+  for (const n of nomes) { const m = n.split(' · ')[1] || n; (porMedida[m] = porMedida[m] || []).push(n); }
+  document.getElementById('in-medidas').innerHTML = Object.keys(porMedida).length
+    ? '<div class="grade">' + Object.keys(porMedida).map(m => `<div><h3>${esc(m.replace(/_/g, ' '))}</h3><canvas id="med-${esc(m)}" class="grafico" height="120"></canvas><div class="legenda" id="leg-${esc(m)}"></div></div>`).join('') + '</div>'
+    : `<div class="vazio">${d.telemetria_ligada ? 'sem medidas nas últimas 24 h' : 'telemetria ainda não existe neste banco: os canais precisam do binário novo'}</div>`;
+  for (const [m, series] of Object.entries(porMedida)) {
+    grafico('med-' + m, series.map((s, i) => ({ nome: s.split(' · ')[0], cor: CORES[i % CORES.length], pontos: med[s] })), 'leg-' + m);
+  }
+  const rede = d.rede_e_saves_24h || {};
+  const saves = (rede['save:ok'] || 0), falhas = (rede['save:falha'] || 0);
+  document.getElementById('in-rede').innerHTML = tabela(['', 'valor'], [
+    ['saves ok / falhos', `${num(saves)} / <span class="${falhas ? 'ruim' : ''}">${num(falhas)}</span>`],
+    ['tempo médio de save', saves ? (rede['save_ms'] / saves).toFixed(1) + ' ms' : '—'],
+    ['personagens salvos', num(rede['save_linhas'] || 0)],
+    ['registros do mercado salvos / atrasados', `${num(rede['save_mercado'] || 0)} / ${num(rede['save_atrasado_mercado'] || 0)}`],
+    ['conexões abertas / fechadas', `${num(rede['conexao:aberta'] || 0)} / ${num(rede['conexao:fechada'] || 0)}`],
+    ['banda enviada / recebida', `${bytes(rede['banda:enviados_bytes'] || 0)} / ${bytes(rede['banda:recebidos_bytes'] || 0)}`],
+    ['avisos / erros no log', `${num(rede['log:warn'] || 0)} / ${num(rede['log:error'] || 0)}`],
+    ['painel', `protocolo ${d.painel.protocolo} · v${esc(d.painel.versao)}`],
+    ['economy_version / recipes_version', `${d.economy_version} / ${d.recipes_version}`],
+  ]);
+  document.getElementById('in-erros-24h').innerHTML = tabela(['canal', 'nível', 'linhas'], d.erros_24h.map(e => [esc(e[0]), esc(e[1]), num(e[2])]));
+  document.getElementById('in-erros').innerHTML = tabela(['quando', 'canal', 'nível', 'origem', 'mensagem'],
+    d.erros.map(e => [hora(e[0]), esc(e[1]), `<span class="${e[2] === 'error' ? 'ruim' : ''}">${esc(e[2])}</span>`, esc(e[3]), `<pre class="msg">${esc(e[4])}</pre>`]), [0, 1, 3, 4]);
+  document.getElementById('in-migracoes').innerHTML = tabela(['migração', 'quando'], d.migracoes.map(m => [esc(m[0]), hora(m[1])]));
+  const banco = (b, t) => b ? `<h3>${t}: ${esc(b.banco)} · ${bytes(b.bytes)}</h3>` + tabela(['tabela', 'tamanho'], b.tabelas.map(x => [esc(x[0]), bytes(x[1])])) : `<h3>${t}: não configurado</h3>`;
+  document.getElementById('in-bancos').innerHTML = banco(d.realm_db, 'realm') + banco(d.central_db, 'central');
+}
+function desenhaProcessos() {
+  document.getElementById('in-processos').innerHTML = tabela(['canal', 'build', 'no ar', 'jogadores', 'mobs', 'dungeons', 'fila', 'chefes vivos', 'avisos recentes'],
+    mundo.canais.map(c => {
+      const r = c.retrato;
+      if (!r) return [esc(c.id), '<span class="mudo">sem retrato</span>', '—', c.jogadores_db, '—', '—', '—', '—', '—'];
+      const erros = (r.erros || []);
+      return [esc(c.id), r.build ? `p${r.build.protocolo} · v${esc(r.build.versao)}` : 'antigo', r.uptime_s !== undefined ? dur(r.uptime_s) : '—',
+        r.jogadores.length, r.mobs.filter(m => m.estado !== 'morto').length, (r.instancias || []).length, r.mesa ? r.mesa.fila.length : '—',
+        r.chefes ? `${r.chefes.filter(h => h.vivo).length}/${r.chefes.length}` : '—',
+        erros.length ? `${erros.filter(e => e.nivel === 'error').length} erros · ${erros.filter(e => e.nivel === 'warn').length} avisos` : '0'];
+    }));
 }
 
 // ── busca ───────────────────────────────────────────────────────────────
@@ -736,20 +1097,16 @@ function busca() {
   const el = document.getElementById('achados');
   const r = retrato();
   if (!r) { el.innerHTML = ''; return; }
-  const todos = [
-    ...r.jogadores.map(j => ({ ...j, tipo: 'jogador' })),
-    ...r.mobs.map(m => ({ ...m, tipo: 'mob' })),
-  ];
+  const todos = [...r.jogadores.map(j => ({ ...j, tipo: 'jogador' })), ...r.mobs.map(m => ({ ...m, tipo: 'mob' }))];
   const bate = q
-    ? todos.filter(e =>
-        e.nome.toLowerCase().includes(q) ||
-        String(e.id) === q ||
-        String(e.nivel) === q)
+    ? todos.filter(e => e.nome.toLowerCase().includes(q) || String(e.id) === q || String(e.nivel) === q)
     : r.jogadores.map(j => ({ ...j, tipo: 'jogador' }));
   el.innerHTML = bate.slice(0, 60).map(e =>
     `<div class="item" onclick="irPara(${e.id})">
-       <span class="n" style="color:${e.tipo === 'jogador' ? 'var(--jogador)' : 'var(--mob)'}">${e.nome}</span>
-       <span class="v">n${e.nivel} · ${e.estado}</span>
+       <span class="n" style="color:${e.tipo === 'jogador' ? 'var(--jogador)' : 'var(--mob)'}">${esc(e.nome)}</span>
+       <span class="v">n${e.nivel} · ${esc(e.estado)}</span>
      </div>`).join('') || '<div class="vazio">nada</div>';
 }
+
+mostraAba(location.hash.slice(1) || 'mundo');
 </script>

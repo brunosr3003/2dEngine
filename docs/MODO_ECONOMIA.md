@@ -36,3 +36,8 @@ bolsa.
 Só **deslizando** o trilho de baixo até o fim. Toque no preto não anda, não
 mira e não desliga o auto; o dedo que deslizou ainda fica bloqueado por 0,4 s
 depois de sair.
+
+Ao destravar abre a janela flutuante **"Enquanto você estava fora"**: tempo
+ausente, XP, ouro, níveis, mortes e cada item que entrou na bolsa (ícone,
+quantidade e nome, o mais numeroso primeiro). Fica aberta até tocar em **OK**;
+enquanto aberta, o toque não chega ao mundo.
