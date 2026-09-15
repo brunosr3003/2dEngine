@@ -481,7 +481,10 @@ impl LojaTp {
 
         // ── confirmacao ──
         if let Some(conf) = self.confirma {
-            if let Some(msg) = self.modal(conf, p, &estado, vox, solido, k, m, clicou, agora) {
+            // So' vale clique de quando o modal JA' estava aberto: o toque no
+            // COMPRAR que abriu a janela cai fora dela e a fechava no mesmo
+            // quadro (no iPhone o dialogo "abria e fechava").
+            if let Some(msg) = self.modal(conf, p, &estado, vox, solido, k, m, clicou && modal, agora) {
                 saida.push(msg);
             }
         }
