@@ -20,6 +20,7 @@ pub mod mercado;
 pub mod bosses;
 pub mod receitas;
 pub mod chaves;
+pub mod dungeon;
 pub mod terreno;
 pub mod construcao;
 pub mod vila;

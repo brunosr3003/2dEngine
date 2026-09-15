@@ -351,7 +351,7 @@ teclas de ação desta tabela.
 │  Brunji   Lv 12  │ OFICINA                                                                  │
 │  PODER 12.345    │  [Craft]  [Forja]  [Encantar🔒]                                          │
 │  Katana          │ AVENTURA                                                                 │
-│                  │  [Mapa]  [Dungeons e Raids🔒]                                            │
+│                  │  [Mapa]  [Dungeons e Raids  ]                                            │
 │  Cobre    1.240  │ SOCIAL                                                                   │
 │  Madeira    380  │  [Grupo]  [Amigos🔒]  [Correio🔒]  [Clã🔒]                               │
 │  (materiais)     │ COMÉRCIO                                                                 │
@@ -388,7 +388,7 @@ A coluna **"Também no HUD"** lista o outro caminho por clique além do Menu.
 | Oficina | **Forja** | chama sobre lâmina | painel **Forja**: abas *Refino* (+1…+12, chance, custo, faixa segura até +5; `RefineItem`) · *Combinar* (2 iguais → próximo tier) · *Encantar* 🔒 | **não, de qualquer lugar** | — | só Menu (ícone temporário no HUD até o Menu existir); botão "Refinar" no cartão da peça na Bolsa | **outro agente fazendo agora** |
 | Oficina | Encantar | runa | painel Forja, aba Encantar | — | — | — | em breve |
 | Aventura | **Mapa** | bússola | painel **Mapa** (o mapa grande de hoje, com filtros e "Ir para") | não | — | nome da zona (F); ⤢ do minimapa (G) | existe, migrar |
-| Aventura | Dungeons e Raids | portal | painel **Aventuras** (DUNGEONS §9 "Telas no cliente": abas Porão / Gruta / Caçada / Chefes) | não para entrar na fila; a arena física vem na F4 | entrada nova liberada; primeira vitória da semana disponível | faixa de fila no rastreador (B) | em breve |
+| Aventura | Dungeons e Raids | portal | painel **Aventuras** (DUNGEONS §9 "Telas no cliente": abas Porão / Gruta / Caçada / Chefes) | não para entrar na fila; a arena física vem na F4 | entrada nova liberada; primeira vitória da semana disponível | faixa de fila no rastreador (B) | **existe** (F1/F2: Porão e Gruta; Caçada em breve) |
 | Social | **Grupo** | três cabeças | painel Grupo: membros, convidar por nome (`PartyInvite` existe), sair | não | convite recebido | ícone 👥 (D); título da aba Grupo (B2) | a fazer (cliente) |
 | Social | Amigos · Correio · Clã | aperto de mão · envelope · estandarte | painéis próprios | — | carta nova (Correio: é por onde chega o baú de raid) | — | em breve |
 | Comércio | **Loja** | balança | **painel Lojas da ilha**: lista de vendedores (nome, o que vende, distância) com **"Ir"** (auto-path `ir_para::Objetivo::Npc`, e ao chegar abre a loja). Ver 3.4 | **sim** | — | — | a fazer |

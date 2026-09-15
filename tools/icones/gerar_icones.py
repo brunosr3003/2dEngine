@@ -634,6 +634,9 @@ def catalogo():
         350: lambda s: (s.halo(32, 36, 30, (255, 220, 90), 0.45), frasco(s, (250, 202, 56), "redondo", "estrela")),
         351: lambda s: frasco(s, (244, 140, 36), "quadrado", "moeda"),
         352: lambda s: frasco(s, (170, 110, 240), "coracao", "trevo"),
+        # Dungeons: Marcas da Tempestade (moeda de raio) e Selo da Tempestade.
+        357: lambda s: (s.halo(32, 34, 26, (120, 180, 255), 0.35), moeda(s, 32, 34, 20, (96, 150, 230))),
+        358: lambda s: (s.halo(32, 32, 30, (170, 120, 255), 0.5), moeda(s, 32, 32, 22, (140, 96, 220)), s.faisca(44, 18, 6, (230, 210, 255))),
         60: lambda s: madeira(s, 1),
         61: lambda s: madeira(s, 2),
         62: lambda s: madeira(s, 3),

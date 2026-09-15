@@ -22,6 +22,7 @@ mod loot_mobs;
 mod mapa_ilha;
 mod mercado;
 mod mercado_razao;
+mod mesa;
 mod panoptico;
 mod morte;
 mod barra;

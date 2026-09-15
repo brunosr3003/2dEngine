@@ -66,7 +66,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
     ]),
     ("AVENTURA", &[
         (Item::Mapa, "Mapa", None),
-        (Item::Aventuras, "Dungeons", Some("Em breve")),
+        (Item::Aventuras, "Dungeons", None),
         (Item::RecuperarXp, "Recuperar XP", None),
     ]),
     ("SOCIAL", &[
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn todo_sistema_que_existe_abre_e_o_resto_so_avisa() {
-        let abre = [Item::Bolsa, Item::Missoes, Item::TodasMissoes, Item::Diarias, Item::Craft, Item::Forja, Item::Mapa, Item::Lojas, Item::Mercado, Item::RecuperarXp, Item::BarraItens, Item::Coleta, Item::Configuracoes, Item::Sair];
+        let abre = [Item::Bolsa, Item::Missoes, Item::TodasMissoes, Item::Diarias, Item::Craft, Item::Forja, Item::Mapa, Item::Lojas, Item::Mercado, Item::Aventuras, Item::RecuperarXp, Item::BarraItens, Item::Coleta, Item::Configuracoes, Item::Sair];
         for (_, itens) in GRUPOS.iter() {
             for l in itens.iter() {
                 match clique_de(l) {

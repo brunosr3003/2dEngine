@@ -196,6 +196,9 @@ pub struct ItemInstance {
     /// Aplicado em ordem: socketed_gems[0] vai pro 1° socket, etc.
     #[serde(default)]
     pub socketed_gems: [u16; 3],
+    /// Vinculada ao personagem: nao entra no mercado (peca de bau de dungeon).
+    #[serde(default)]
+    pub vinculado: bool,
 }
 
 fn default_ilvl() -> u16 { 1 }
@@ -401,6 +404,7 @@ impl ItemInstance {
             affixes: [AffixSlot::default(); MAX_AFFIXES],
             sockets: sockets_for_tier(tier),
             socketed_gems: [0; 3],
+            vinculado: false,
         };
         // Affixes por tier: T1=0, T2=1, T3=2 (1pre+1suf), T4=3 (2pre+1suf),
         // T5=4 (2pre+2suf).

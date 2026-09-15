@@ -39,6 +39,8 @@ pub enum Ir {
     Alvo(Alvo),
     AbrirCraft(u16),
     AbrirMercado(u16),
+    /// Menu → Aventura → Dungeons.
+    AbrirDungeons,
 }
 
 /// Uma linha do popup.
@@ -237,10 +239,10 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
             o.sem_ir = Some("Missão".into());
         }
         FonteDeItem::DungeonRaid => {
-            o.titulo = "Chefe de dungeon ou raid".into();
-            o.detalhe = "Chance maior que a do chefe do mundo".into();
+            o.titulo = "Chefe de dungeon (Gruta)".into();
+            o.detalhe = "15/10/6/3/1% por faixa · Caçada em breve".into();
             o.ordem = (8, 0);
-            o.sem_ir = Some("Em breve".into());
+            o.ir = Some(Ir::AbrirDungeons);
         }
     }
     o
@@ -354,6 +356,7 @@ impl OndeObter {
                         Ir::Alvo(_) => "Ir",
                         Ir::AbrirCraft(_) => "Abrir",
                         Ir::AbrirMercado(_) => "Buscar",
+                        Ir::AbrirDungeons => "Abrir",
                     };
                     if crate::ui::botao(b, rotulo, visivel) && visivel && !arrastou {
                         saida = Some(ir.clone());
@@ -514,12 +517,12 @@ mod tests {
         let titulos: Vec<&str> = v.iter().map(|o| o.titulo.as_str()).collect();
         assert_eq!(
             titulos,
-            vec!["Coletar: Pedra verde", "Comprar: Alquimista Ana", "Criar: Katana", "Mercado", "Recompensa: Pedreira", "Chefe de dungeon ou raid"]
+            vec!["Coletar: Pedra verde", "Comprar: Alquimista Ana", "Criar: Katana", "Mercado", "Recompensa: Pedreira", "Chefe de dungeon (Gruta)"]
         );
         assert_eq!(alvo(&v[1]).objetivo, Objetivo::Npc);
         assert_eq!(v[2].ir, Some(Ir::AbrirCraft(1000)));
         assert_eq!(v[3].ir, Some(Ir::AbrirMercado(2)));
-        assert_eq!(v[5].sem_ir.as_deref(), Some("Em breve"));
+        assert_eq!(v[5].ir, Some(Ir::AbrirDungeons), "a chave abre a janela das dungeons");
     }
 
     #[test]

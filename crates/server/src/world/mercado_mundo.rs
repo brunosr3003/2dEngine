@@ -138,7 +138,8 @@ impl GameWorld {
             responde(&quem.to_client, false, Recusa::Quantidade.texto());
             return;
         };
-        let vinculado = crate::economy::item_vinculado(slot.item_id);
+        // Peca de bau de dungeon vem vinculada na propria instancia.
+        let vinculado = crate::economy::item_vinculado(slot.item_id) || slot.instance.is_some_and(|i| i.vinculado);
         if let Err(r) = regras::pode_anunciar(quem.nivel, vinculado, slot.qty, qtd, preco_unit) {
             responde(&quem.to_client, false, r.texto());
             return;

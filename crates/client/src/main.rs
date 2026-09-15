@@ -24,6 +24,7 @@ mod hud_estilo;
 mod icones;
 mod icones_ui;
 mod lojas;
+mod dungeon_ui;
 mod mercado_ui;
 mod menu;
 mod auto_combate;
@@ -309,6 +310,8 @@ struct Jogo {
     chat: Vec<String>,
     /// Modo economia de energia (`economia.rs`).
     economia: economia::Economia,
+    /// Dungeons: janela, fila, pronto-check, instancia e resultado.
+    dungeon: dungeon_ui::DungeonUi,
     /// "Onde obter" (`onde_obter.rs`).
     onde_obter: onde_obter::OndeObter,
     /// Ultimo pedido de tela acesa mandado ao sistema.
@@ -458,6 +461,7 @@ async fn main() {
         info: hud::Info::default(),
         chat: Vec::new(),
         economia: economia::Economia::default(),
+        dungeon: dungeon_ui::DungeonUi::default(),
         onde_obter: onde_obter::OndeObter::default(),
         tela_acesa: false,
     };
@@ -858,6 +862,20 @@ impl Jogo {
             ServerMessage::MercadoLista { anuncios, pagina, tem_mais } => self.mercado.lista(anuncios, pagina, tem_mais),
             ServerMessage::MercadoMeus { anuncios, historico, tp } => self.mercado.meus(anuncios, historico, tp),
             ServerMessage::MercadoEntregas { cartas, tp } => self.mercado.entregas(cartas, tp),
+            ServerMessage::Dungeon { aviso } => {
+                if let shared::dungeon::Aviso::Correio { cartas } = &aviso {
+                    self.mercado.correio = cartas.clone();
+                }
+                if let Some(t) = dungeon_ui::DungeonUi::texto_pro_chat(&aviso) {
+                    self.chat.push(t);
+                    if self.chat.len() > 8 {
+                        self.chat.remove(0);
+                    }
+                }
+                for pedido in self.dungeon.aviso(aviso, get_time()) {
+                    self.envia(pedido);
+                }
+            }
             ServerMessage::MercadoResultado { ok, texto } => {
                 // Venda fechada chega com o painel fechado: o chat avisa.
                 self.chat.push(format!("Mercado: {texto}"));
@@ -1297,6 +1315,7 @@ impl Jogo {
             || self.config_coleta.aberto
             || self.config_interface.aberto
             || self.onde_obter.aberto()
+            || self.dungeon.aberto
     }
 
     /// Morreu: nada automatico continua e os paineis fecham — a tela de morte
@@ -1387,6 +1406,7 @@ impl Jogo {
             || self.missoes.pega_mouse()
             || self.habilidades.pega_mouse()
             || self.dialogo.pega_mouse()
+            || self.dungeon.pega_mouse()
     }
 
     /// Fecha os paineis grandes: so' um por vez (docs/HUD.md 4.2).
@@ -1399,6 +1419,7 @@ impl Jogo {
         self.diarias.fechar();
         self.lojas.fechar();
         self.mercado.fechar();
+        self.dungeon.fechar();
         self.morte.painel = false;
         self.config_barra.fechar();
         self.config_coleta.fechar();
@@ -1418,6 +1439,11 @@ impl Jogo {
                 self.iniciar_ir_para(alvo);
             }
             onde_obter::Ir::AbrirCraft(receita) => self.craft.abrir_receita(receita),
+            onde_obter::Ir::AbrirDungeons => {
+                for pedido in self.dungeon.abrir() {
+                    self.envia(pedido);
+                }
+            }
             onde_obter::Ir::AbrirMercado(item) => {
                 let nome = self.bolsa.nome(item);
                 for pedido in self.mercado.abrir_buscando(&nome) {
@@ -1460,6 +1486,11 @@ impl Jogo {
                 self.chat.push("Mapa: só nas ilhas.".into());
             }
             Item::Lojas => self.lojas.abrir(),
+            Item::Aventuras => {
+                for pedido in self.dungeon.abrir() {
+                    self.envia(pedido);
+                }
+            }
             Item::Mercado => {
                 for pedido in self.mercado.abrir() {
                     self.envia(pedido);
@@ -2700,9 +2731,6 @@ impl Jogo {
                 self.mapa.abrir();
             }
             self.mapa.desenha_mini(&self.world);
-            if hud::draw_botao_economia(&z) {
-                self.entrar_economia();
-            }
             if let Some((hp, hp_max, _, nome)) = eu.clone() {
                 let st = self.bolsa.stats.as_ref();
                 let (hp_max, mp_max, vigor_max, poder) =
@@ -2829,6 +2857,10 @@ impl Jogo {
                 }
                 None => {}
             }
+        }
+        // A bateria do modo economia fica SEMPRE na tela, com ou sem painel.
+        if hud::draw_botao_economia(&z) {
+            self.entrar_economia();
         }
         if let Some((texto, cor)) = self.texto_da_faixa() {
             hud_layout::desenha_faixa(&z, &texto, cor);
@@ -3073,8 +3105,19 @@ impl Jogo {
         let agora_unix = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs() as i64);
-        if let Some(pedido) = self.morte.desenha(self.bolsa.ouro, agora_unix) {
-            self.envia(pedido);
+        // Dungeons: HUD da instancia, fila, janela, resultado e pronto-check.
+        {
+            let eu = self.personagem_atual.clone().unwrap_or_default();
+            let ctx = dungeon_ui::Contexto { nomes: &self.bolsa.nomes, ouro: self.bolsa.ouro, eu: &eu };
+            for pedido in self.dungeon.desenha(&ctx, get_time()) {
+                self.envia(pedido);
+            }
+        }
+        // Dentro da dungeon a derrota e' o "Reviver em N s" dela, sem cidade.
+        if !self.dungeon.na_instancia() {
+            if let Some(pedido) = self.morte.desenha(self.bolsa.ouro, agora_unix) {
+                self.envia(pedido);
+            }
         }
     }
 

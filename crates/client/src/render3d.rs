@@ -1118,6 +1118,22 @@ pub fn rig_do_npc(papel: u8, id: u64) -> &'static str {
     }
 }
 
+/// O bau da dungeon: madeira, faixas de ouro e um anel que pulsa no chao.
+fn desenha_bau(p: Vec3) {
+    let t = get_time() as f32;
+    let madeira = Color::from_rgba(122, 78, 40, 255);
+    let escura = Color::from_rgba(86, 52, 26, 255);
+    let ouro = Color::from_rgba(236, 190, 84, 255);
+    draw_cube(p + vec3(0.0, 0.38, 0.0), vec3(1.2, 0.76, 0.8), None, madeira);
+    draw_cube(p + vec3(0.0, 0.86, 0.0), vec3(1.26, 0.24, 0.86), None, escura);
+    for dx in [-0.42, 0.42] {
+        draw_cube(p + vec3(dx, 0.5, 0.0), vec3(0.1, 0.98, 0.84), None, ouro);
+    }
+    draw_cube(p + vec3(0.0, 0.66, 0.42), vec3(0.18, 0.22, 0.06), None, ouro);
+    let a = 0.55 + 0.35 * (t * 3.0).sin();
+    draw_ring(p, 0.95 + 0.08 * (t * 3.0).sin(), Color::new(0.95, 0.78, 0.35, a));
+}
+
 /// Escala de desenho do chefe de campo (1 pra quem nao e' chefe).
 pub(crate) fn escala_de_chefe(e: &crate::world::Ent) -> f32 {
     if e.meta.tag == shared::EntityTag::Enemy && e.state.flags & shared::ent_flags::BOSS != 0 {
@@ -1184,6 +1200,11 @@ pub fn draw_entities(
         // NPC da vila: o rig do OFICIO dele. Sem o arquivo, cai no corpo de
         // gente abaixo, como antes.
         if e.meta.tag == shared::EntityTag::Npc {
+            // Bau de conclusao da dungeon: caixa com tampa e fecho, pulsando.
+            if shared::npc_papel_de_kind(e.meta.kind) == shared::dungeon::PAPEL_BAU {
+                desenha_bau(p);
+                continue;
+            }
             let nome = rig_do_npc(shared::npc_papel_de_kind(e.meta.kind), e.meta.id.0 as u64);
             if let Some(corpo) = vox.rig(nome) {
                 brilhos.extend(desenha_personagem(e, corpo, None, vox, vista, false));

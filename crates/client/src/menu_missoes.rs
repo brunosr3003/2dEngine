@@ -482,7 +482,7 @@ mod tests {
     fn diaria_em_breve_bloqueia_e_o_reset_conta_ate_a_meia_noite() {
         let vazio = HashMap::new();
         let c = ctx(&[], &vazio, 50, Some("ilha_inicial"));
-        assert_eq!(estado(quest_by_id(606).unwrap(), &c), Estado::Bloqueada(vec!["Em breve".into()]));
+        assert_eq!(estado(quest_by_id(607).unwrap(), &c), Estado::Bloqueada(vec!["Em breve".into()]));
         assert_eq!(estado(quest_by_id(601).unwrap(), &c), Estado::Disponivel);
         assert_eq!(reset_em(86_400 * 10 + 3_600 * 19 + 60 * 53), "4h 07min");
     }

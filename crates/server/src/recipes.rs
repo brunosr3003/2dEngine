@@ -188,7 +188,9 @@ async fn seed_from_constants(pool: &PgPool) -> anyhow::Result<()> {
 /// `ON CONFLICT DO NOTHING` — so' entra id novo; ajuste feito no banco fica.
 async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
     let mut novas = 0u64;
-    for r in shared::receitas::receitas_de_equipamento() {
+    let mut todas = shared::receitas::receitas_de_equipamento();
+    todas.push(shared::receitas::receita_do_selo());
+    for r in todas {
         novas += sqlx::query(
             "INSERT INTO craft_recipes (id, name, category, tier, inputs, \
                 output_item_id, output_qty, output_item_level, roll_instance, nivel_min) \

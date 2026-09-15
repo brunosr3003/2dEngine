@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 96;
+pub const PROTOCOL_VERSION: u16 = 97;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -564,6 +564,11 @@ pub mod item_id {
     /// Sorte (+20% na chance de drop por 1 h). Recompensa de diaria, sem loja.
     pub const FORTUNA_POTION: u16        = 351;
     pub const SORTE_POTION: u16          = 352;
+    /// Marcas da Tempestade: toda conclusao de dungeon da' (vinculadas).
+    /// Moeda do Selo e, depois, do Mestre das Mares (docs/DUNGEONS_E_RAIDS.md).
+    pub const MARCAS_TEMPESTADE: u16     = 357;
+    /// Selo da Tempestade: entrada do estagio 5 de conteudo 60+. So' craft.
+    pub const SELO_TEMPESTADE: u16       = 358;
 
     /// As quatro CHAVES de craft (uma por receita), pelo id da cinza. So'
     /// caem de chefe e de dungeon/raid (`shared::chaves`).

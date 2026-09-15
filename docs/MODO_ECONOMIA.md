@@ -5,7 +5,8 @@ sem gastar bateria. Código: `crates/client/src/economia.rs`.
 
 ## Como liga
 
-- **Bateria** no canto esquerdo da moldura do minimapa.
+- **Bateria** no canto inferior esquerdo da tela, sempre visível (com ou sem
+  painel aberto). O joystick termina acima dela.
 - **Menu → Sistema → Interface → Ativar agora.**
 - **Sozinho**: sem tocar na tela por N minutos (Interface: Nunca, 3, 5 ou
   10 min). Padrão: 5 min no celular, nunca no PC. Fica salvo nas

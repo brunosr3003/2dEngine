@@ -113,6 +113,12 @@ pub struct CharacterRow {
     pub recuperacoes_usadas: i32,
     /// Preferencias de tela (`preferencias::para_json`). Vazio = padrao.
     pub preferencias_json: String,
+    /// Dungeons do personagem (`shared::dungeon::DadosDungeon`): entradas,
+    /// estagios liberados, baus abertos, correio. Vai no MESMO save da bolsa.
+    pub dungeon_json: String,
+    /// Dungeons da CONTA (`shared::dungeon::DadosConta`): 1ª vitoria semanal e
+    /// teto de Selo. Vazio = nao grava (`dungeon_contas`, por `account_id`).
+    pub conta_dungeon_json: String,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -480,6 +486,17 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS recuperacoes_usadas INTEGER NOT NULL DEFAULT 0")
         .execute(pool).await?;
     // Preferencias de tela: skills AUTO, filtros do mapa, zooms.
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS dungeon_json TEXT NOT NULL DEFAULT ''")
+        .execute(pool).await?;
+    // Dungeons da conta (docs/DUNGEONS_E_RAIDS.md): o que vale pra qualquer
+    // personagem dela. Gravada na mesma transacao do save do personagem.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS dungeon_contas (
+            account_id BIGINT PRIMARY KEY,
+            dados_json TEXT NOT NULL DEFAULT '',
+            updated    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )",
+    ).execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS preferencias_json TEXT NOT NULL DEFAULT ''")
         .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS gold BIGINT NOT NULL DEFAULT 0")
@@ -628,6 +645,15 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     if marcou > 0 {
         sqlx::query("UPDATE items SET vinculado = TRUE WHERE id = $1")
             .bind(shared::item_id::XP_POTION as i32)
+            .execute(pool).await?;
+    }
+    // Marcas e Selo da Tempestade nascem vinculados (docs/DUNGEONS_E_RAIDS.md).
+    // Roda depois do seed dos itens; a linha que ainda nao existe entra la'.
+    let dungeon_v1 = sqlx::query("INSERT INTO migracoes_de_dados (nome) VALUES ('dungeon_vinculados_v1') ON CONFLICT DO NOTHING")
+        .execute(pool).await?.rows_affected();
+    if dungeon_v1 > 0 {
+        sqlx::query("UPDATE items SET vinculado = TRUE WHERE id = ANY($1)")
+            .bind(vec![shared::item_id::MARCAS_TEMPESTADE as i32, shared::item_id::SELO_TEMPESTADE as i32])
             .execute(pool).await?;
     }
     // Override de item_level no drop por enemy_kind (era hardcoded em
@@ -900,6 +926,9 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         S{ id: item_id::COPPER as i32,                            name:"Cobre",                           sell:1, buy:None, ord:None, stack:999999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::DARKSTEEL as i32,                         name:"Darksteel",                       sell:4, buy:None, ord:None, stack:999999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::GLITTERING_POWDER as i32,                 name:"Pó Cintilante",                   sell:60, buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        // Dungeons: Marcas (conclusao) e Selo (entrada do topo). Vinculados.
+        S{ id: item_id::MARCAS_TEMPESTADE as i32,                 name:"Marcas da Tempestade",            sell:1, buy:None, ord:None, stack:3000, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::SELO_TEMPESTADE as i32,                   name:"Selo da Tempestade",              sell:1, buy:None, ord:None, stack:20, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
         // Chaves lendarias (cor 5): so' chefe/raid de nivel 80+ (`shared::chaves`).
         S{ id: item_id::SCALE_LENDARIA as i32,                    name:"Escama Lendária",                 sell:10240, buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::CLAW_LENDARIA as i32,                     name:"Garra Lendária",                  sell:10240, buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
@@ -1250,6 +1279,9 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             OR item_id BETWEEN 68 AND 71 OR item_id BETWEEN 80 AND 95 OR item_id BETWEEN 102 AND 268)";
         let na_coluna = |sql: &str, col: &str| sql.replace("item_id", col);
         let mut feitos = 0u64;
+        // Banco novo: `craft_recipes` so' nasce no `recipes::init`, depois
+        // daqui. Sem esta guarda o servidor nao subia num banco vazio.
+        let tem_receitas: bool = sqlx::query_scalar("SELECT to_regclass('craft_recipes') IS NOT NULL").fetch_one(pool).await?;
         for sql in [
             format!("UPDATE equipment SET item_id = {PRA_NOVO} WHERE {TEM_NOVO}"),
             format!("UPDATE inventory SET item_id = {PRA_NOVO} WHERE {TEM_NOVO}"),
@@ -1279,6 +1311,9 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                 na_coluna(PRA_NOVO, "build_weapon"), na_coluna(TEM_NOVO, "build_weapon")),
             format!("DELETE FROM items WHERE {}", na_coluna(SO_VELHO, "id")),
         ] {
+            if !tem_receitas && sql.contains("craft_recipes") {
+                continue;
+            }
             feitos += sqlx::query(&sql).execute(pool).await?.rows_affected();
         }
         if feitos > 0 {
@@ -1348,6 +1383,18 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
     let drop_map: HashMap<String, (i64, i64, String)> =
         drop.into_iter().map(|(n, f, s, b)| (n, (f, s, b))).collect();
     let mortes = busca!((String, String, i64, i32), "name, mortes_json, recuperacoes_dia, recuperacoes_usadas");
+    let dungeon = busca!((String, String), "name, dungeon_json");
+    let dungeon_map: HashMap<String, String> = dungeon.into_iter().collect();
+    // Dados da conta: por account_id, fora do `busca!` (e' outra tabela).
+    let conta_map: HashMap<String, String> = {
+        let sql = format!(
+            "SELECT c.name, COALESCE(d.dados_json, '') FROM characters c LEFT JOIN dungeon_contas d ON d.account_id = c.account_id{}",
+            if so.is_some() { " WHERE c.name = $1" } else { "" }
+        );
+        let mut q = sqlx::query_as::<_, (String, String)>(&sql);
+        if let Some(n) = so { q = q.bind(n); }
+        q.fetch_all(pool).await?.into_iter().collect()
+    };
     let mortes_map: HashMap<String, (String, i64, i32)> =
         mortes.into_iter().map(|(n, m, d, u)| (n, (m, d, u))).collect();
     let prefs = busca!((String, String), "name, preferencias_json");
@@ -1402,6 +1449,8 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         let (mortes_json, recuperacoes_dia, recuperacoes_usadas) =
             mortes_map.get(&name).cloned().unwrap_or_default();
         let preferencias_json = prefs_map.get(&name).cloned().unwrap_or_default();
+        let dungeon_json = dungeon_map.get(&name).cloned().unwrap_or_default();
+        let conta_dungeon_json = conta_map.get(&name).cloned().unwrap_or_default();
         out.insert(
             name.clone(),
             CharacterRow {
@@ -1439,6 +1488,8 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 recuperacoes_dia,
                 recuperacoes_usadas,
                 preferencias_json,
+                dungeon_json,
+                conta_dungeon_json,
             },
         );
     }
@@ -1741,8 +1792,8 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                                      boat_anchor_dropped, mounted_local_x, mounted_local_y,
                                      mp, stamina, zona, xp_bonus_ate,
                                      mortes_json, recuperacoes_dia, recuperacoes_usadas,
-                                     fortuna_ate, sorte_ate, barra_json, preferencias_json)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
+                                     fortuna_ate, sorte_ate, barra_json, preferencias_json, dungeon_json)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -1778,7 +1829,8 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                fortuna_ate = EXCLUDED.fortuna_ate,
                sorte_ate = EXCLUDED.sorte_ate,
                barra_json = EXCLUDED.barra_json,
-               preferencias_json = EXCLUDED.preferencias_json",
+               preferencias_json = EXCLUDED.preferencias_json,
+               dungeon_json = EXCLUDED.dungeon_json",
         )
         .bind(&row.name)
         .bind(row.pos.x)
@@ -1816,8 +1868,21 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(row.sorte_ate)
         .bind(&row.barra_json)
         .bind(&row.preferencias_json)
+        .bind(&row.dungeon_json)
         .execute(&mut *tx)
         .await?;
+        // A conta vai junto: bau aberto num personagem e a 1ª vitoria semanal
+        // da conta nunca se separam.
+        if let (Some(conta), false) = (row.account_id, row.conta_dungeon_json.is_empty()) {
+            sqlx::query(
+                "INSERT INTO dungeon_contas (account_id, dados_json, updated) VALUES ($1, $2, NOW())
+                 ON CONFLICT (account_id) DO UPDATE SET dados_json = EXCLUDED.dados_json, updated = NOW()",
+            )
+            .bind(conta)
+            .bind(&row.conta_dungeon_json)
+            .execute(&mut *tx)
+            .await?;
+        }
 
         // Inventario: delete-all + insert-rows pra ser simples. O FK cascade
         // ja garante que deletar a linha do character limpa a inventory.

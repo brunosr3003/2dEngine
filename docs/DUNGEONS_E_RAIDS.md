@@ -26,6 +26,46 @@ Decididas pelo usuário. Valem sobre qualquer trecho abaixo que diga outra coisa
 
 Pesquisa detalhada do MIR4: [PESQUISA_DUNGEONS_MIR4.md](PESQUISA_DUNGEONS_MIR4.md).
 
+## Implementado (F1 + F2, set/2026)
+
+**Onde a instancia roda.** Numa FASE do proprio canal, e nao num processo
+proprio: tudo o que esta' na instancia (jogadores, mobs, chefe, bau, saque)
+leva o componente `Instancia(id)`, e o canal filtra por ele no AOI, na IA dos
+mobs, nos golpes, nos telegrafados, no alvo e na coleta do saque. A arena sao
+4 sitios planos da propria ilha, longe da cidade, do porto e dos chefes de
+campo (um por andar); duas instancias usam a mesma arena sem se ver. Nada novo
+trafega (o terreno continua da semente). Codigo: `server/src/world/dungeon.rs`.
+Consequencia: a fila e as salas juntam quem esta' no **mesmo canal**. A `mesa`
+(`server/src/mesa.rs`) ja' e' so' regra, com chaves e eventos — a F5 troca a
+implementacao por um servico entre canais/realms sem mexer na instancia.
+
+| decisao | como ficou |
+|---|---|
+| Porão e Gruta | 3 Porões (6, 14, 22) e 5 Grutas (10–50), catálogo em `shared::dungeon::CONTEUDOS`. Cemitério de Navios (60) e a Caçada aparecem com cadeado |
+| Andares | Porão: 2 andares + chefe. Gruta: 3 andares (o 2º com semi-chefe, ×4 vida) + chefe do catálogo de chefes no nível do estágio (golpes telegrafados). Andar limpo → todo mundo vai pro próximo sítio |
+| Estágios | 5, +2 níveis cada, poder 80/85/95/105/115% de `poder_referencia` ⚠️ (calibrado: sem ponto nenhum, com a arma inicial, passa no estágio 1). Vencer libera o próximo; o 5 de conteúdo 60+ gasta um Selo |
+| Grupo | Fila automática (fecha com 5, ou com o mínimo 3/4 depois de 5 min) + salas (Criar/Procurar/Entrar, líder começa, sala cheia começa sozinha, "completar pela fila" depois de 1 min, sala parada 10 min fecha). Pronto-check de 20 s; recusa devolve quem aceitou ao topo. Nomes `Nome@REALM` |
+| Morte | Sem perda de XP. Espera 10 s, +10 s por morte (`Reviver`; "Levantar"/"Reviver na cidade" viram o Reviver dela). Revive com vida cheia no andar atual. Wipe: o andar recomeça inteiro, sem limite; o relógio não para |
+| Tempo | Esgotou: estágio falho, sem baú, entrada gasta; todos voltam em 8 s |
+| Baú | Físico no chão onde o chefe caiu (NPC com papel `PAPEL_BAU`, o cliente desenha uma caixa); toque abre só pra quem estava lá; abre sozinho em 60 s; instância fecha em 75 s. Rolagem: cobre, darksteel, pó, material na cor da faixa, peça (tabela da seção 8, teto duro de grau, **vinculada** na instância) e chave (`Fonte::Dungeon`); Ajudante sem peça nem chave. Bônus de tempo (≤ 60% do limite): +50% Marcas e 1 material extra |
+| Idempotência | O id do baú vai em `characters.dungeon_json` no MESMO save da bolsa: reiniciar não reabre |
+| 1ª vitória | Semanal por CONTA (`dungeon_contas`): peça garantida uma linha acima, no correio. De todas (por personagem): peça + 1 chave da cor, no correio |
+| Correio | Local do realm (`dungeon_json.correio`), mostrado na aba **Entregas** do Mercado, com "Receber" por carta. Não depende do banco central |
+| Entradas | Gruta 2/dia (acumula 4), compra 2/dia com ouro (×1, ×3); Porão com recompensa 3/dia. Reset 04:00 de Brasília, semana na quarta. Nunca TP |
+| Selo | Receita 1900 (120 Marcas + 5.000 darksteel + 3 pó, nível 60) com teto de 2 por semana por conta no servidor |
+| Diárias | "Porão do dia" (6x6) conta a vitória em qualquer dungeon |
+| Telas | Menu → Aventura → Dungeons (lista, estágios com cadeado e motivo, entradas, fila, salas), faixa "PROCURANDO GRUPO", pronto-check, HUD da instância (relógio, andar, inimigos, porta Sair), "VOCÊ CAIU / Reviver em N s", resultado com o baú. Onde obter das chaves abre a janela |
+
+**Ficou para depois:** mesa entre canais/realms (F5), papéis e composição
+T/S/D, voto de expulsão, backfill e penalidade de abandono, descoberta por
+missão e entrada física (F4), Mestre das Marés (loja de Marcas), baú de andar,
+ajuste de nível para baixo, enrage, raid (F3), tabelas de loot editáveis no
+banco (hoje o baú é código, com o teto duro).
+
+**Teste com bots:** `server/src/bin/dungeonbot.rs` (ver o cabeçalho). Variáveis
+SÓ de teste no servidor: `MMO_DUNGEON_TESTE_VIDA`, `MMO_DUNGEON_TESTE_DANO`,
+`MMO_DUNGEON_TESTE_LIMITE_S`.
+
 ## 1. O que o MIR4 faz (pesquisado)
 
 Fontes no fim do documento. Onde as fontes divergem ou não dizem, está marcado

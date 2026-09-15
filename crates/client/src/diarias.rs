@@ -231,9 +231,11 @@ mod tests {
         assert_eq!(botao_de(&e), Some("Ir aceitar"));
         assert_eq!(clique_da_diaria(d601, &e, 1_000), Clique::IrAoGiver(601), "aceitar e' com o Mestre");
 
-        let d606 = quest_by_id(606).unwrap();
-        assert_eq!(estado_da_diaria(d606, &c), Estado::Bloqueada(vec!["Em breve".into()]));
-        assert_eq!(botao_de(&estado_da_diaria(d606, &c)), None);
+        // A Cacada (raid) ainda nao existe; a dungeon (606) ja' conta.
+        let d607 = quest_by_id(607).unwrap();
+        assert_eq!(estado_da_diaria(d607, &c), Estado::Bloqueada(vec!["Em breve".into()]));
+        assert_eq!(botao_de(&estado_da_diaria(d607, &c)), None);
+        assert_eq!(estado_da_diaria(quest_by_id(606).unwrap(), &c), Estado::Disponivel);
 
         let mut entregues = HashMap::new();
         entregues.insert(601, 50_000);

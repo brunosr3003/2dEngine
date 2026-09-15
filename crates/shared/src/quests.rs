@@ -516,7 +516,7 @@ pub const QUESTS: &[QuestDef] = &[
     diaria(603, "Mãos à obra", "Crie 1 equipamento no Craft (botão do HUD).", objective_kind::CRAFT, 0, 1, 120, 120, item_id::MANA_POTION, 2, 1, false, false),
     diaria(604, "Forja quente", "Tente refinar 1 vez uma peça na Forja (botão do HUD ou o Ferreiro).", objective_kind::REFINE, 0, 1, 120, 120, item_id::MANA_POTION, 2, 1, false, false),
     diaria(605, "Encanto do dia", "Encante uma peça.", objective_kind::ENCHANT, 0, 1, 150, 150, 0, 0, 1, false, true),
-    diaria(606, "Porão do dia", "Conclua o Porão.", objective_kind::DUNGEON, 0, 1, 250, 250, 0, 0, 10, false, true),
+    diaria(606, "Porão do dia", "Conclua uma dungeon (Porão ou Gruta).", objective_kind::DUNGEON, 0, 1, 250, 250, 0, 0, 10, false, false),
     diaria(607, "Caçada do dia", "Derrote o chefe da Caçada.", objective_kind::RAID, 0, 1, 400, 400, 0, 0, 10, false, true),
     // --- Geleira (ilha_gelo, 15-30) ---
     diaria(611, "Pedreira do dia", "Quebre 25 pedras em qualquer veio da ilha.", objective_kind::GATHER, alvo_de_coleta::PEDRA, 25, 450, 600, item_id::GREATER_HEAL, 3, 15, true, false),
@@ -524,7 +524,7 @@ pub const QUESTS: &[QuestDef] = &[
     diaria(613, "Mãos à obra", "Crie 1 equipamento no Craft (botão do HUD).", objective_kind::CRAFT, 0, 1, 360, 480, item_id::GREATER_MANA, 2, 15, false, false),
     diaria(614, "Forja quente", "Tente refinar 1 vez uma peça na Forja (botão do HUD ou o Ferreiro).", objective_kind::REFINE, 0, 1, 360, 480, item_id::GREATER_MANA, 2, 15, false, false),
     diaria(615, "Encanto do dia", "Encante uma peça.", objective_kind::ENCHANT, 0, 1, 450, 600, 0, 0, 15, false, true),
-    diaria(616, "Porão do dia", "Conclua o Porão.", objective_kind::DUNGEON, 0, 1, 750, 1_000, 0, 0, 15, false, true),
+    diaria(616, "Porão do dia", "Conclua uma dungeon (Porão ou Gruta).", objective_kind::DUNGEON, 0, 1, 750, 1_000, 0, 0, 15, false, false),
     diaria(617, "Caçada do dia", "Derrote o chefe da Caçada.", objective_kind::RAID, 0, 1, 1_200, 1_600, 0, 0, 15, false, true),
     // --- Ermo (ilha_deserto, 28-42) ---
     diaria(621, "Pedreira do dia", "Quebre 30 pedras em qualquer veio da ilha.", objective_kind::GATHER, alvo_de_coleta::PEDRA, 30, 750, 1_200, item_id::GREATER_HEAL, 4, 28, true, false),
@@ -532,7 +532,7 @@ pub const QUESTS: &[QuestDef] = &[
     diaria(623, "Mãos à obra", "Crie 1 equipamento no Craft (botão do HUD).", objective_kind::CRAFT, 0, 1, 600, 960, item_id::GREATER_MANA, 3, 28, false, false),
     diaria(624, "Forja quente", "Tente refinar 1 vez uma peça na Forja (botão do HUD ou o Ferreiro).", objective_kind::REFINE, 0, 1, 600, 960, item_id::GREATER_MANA, 3, 28, false, false),
     diaria(625, "Encanto do dia", "Encante uma peça.", objective_kind::ENCHANT, 0, 1, 750, 1_200, 0, 0, 28, false, true),
-    diaria(626, "Porão do dia", "Conclua o Porão.", objective_kind::DUNGEON, 0, 1, 1_250, 2_000, 0, 0, 28, false, true),
+    diaria(626, "Porão do dia", "Conclua uma dungeon (Porão ou Gruta).", objective_kind::DUNGEON, 0, 1, 1_250, 2_000, 0, 0, 28, false, false),
     diaria(627, "Caçada do dia", "Derrote o chefe da Caçada.", objective_kind::RAID, 0, 1, 2_000, 3_200, 0, 0, 30, false, true),
     // --- Planalto (ilha_planalto, 40-60) ---
     diaria(631, "Pedreira do dia", "Quebre 35 pedras em qualquer veio da ilha.", objective_kind::GATHER, alvo_de_coleta::PEDRA, 35, 1_200, 2_400, item_id::GREATER_HEAL, 5, 40, true, false),
@@ -540,7 +540,7 @@ pub const QUESTS: &[QuestDef] = &[
     diaria(633, "Mãos à obra", "Crie 1 equipamento no Craft (botão do HUD).", objective_kind::CRAFT, 0, 1, 960, 1_920, item_id::GREATER_MANA, 4, 40, false, false),
     diaria(634, "Forja quente", "Tente refinar 1 vez uma peça na Forja (botão do HUD ou o Ferreiro).", objective_kind::REFINE, 0, 1, 960, 1_920, item_id::GREATER_MANA, 4, 40, false, false),
     diaria(635, "Encanto do dia", "Encante uma peça.", objective_kind::ENCHANT, 0, 1, 1_200, 2_400, 0, 0, 40, false, true),
-    diaria(636, "Porão do dia", "Conclua o Porão.", objective_kind::DUNGEON, 0, 1, 2_000, 4_000, 0, 0, 40, false, true),
+    diaria(636, "Porão do dia", "Conclua uma dungeon (Porão ou Gruta).", objective_kind::DUNGEON, 0, 1, 2_000, 4_000, 0, 0, 40, false, false),
     diaria(637, "Caçada do dia", "Derrote o chefe da Caçada.", objective_kind::RAID, 0, 1, 3_200, 6_400, 0, 0, 40, false, true),
 
     // ===================== BOARD (quadro da cidade) — DIÁRIAS =====================

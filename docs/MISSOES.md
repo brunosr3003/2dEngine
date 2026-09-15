@@ -96,7 +96,7 @@ Geleira, 621–627 Ermo, 631–637 Planalto), na escala da faixa da ilha:
 | Mãos à obra | criar 1 equipamento | `CRAFT` — craft com sucesso | abre o painel de Craft |
 | Forja quente | tentar refinar 1 vez | `REFINE` — tentativa, suba ou não | abre a Forja |
 | Encanto do dia | encantar | `ENCHANT` | **Em breve** (cadeado) |
-| Porão do dia | concluir o Porão | `DUNGEON` | **Em breve** (cadeado) |
+| Porão do dia | concluir uma dungeon (Porão ou Gruta) | `DUNGEON` | conta na vitória (docs/DUNGEONS_E_RAIDS.md) |
 | Caçada do dia | derrotar o chefe da Caçada | `RAID` | **Em breve** (cadeado) |
 
 - **Reset:** meia-noite UTC. Entregue, a diária volta no dia seguinte. Aceita e

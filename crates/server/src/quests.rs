@@ -705,7 +705,8 @@ mod testes_diarias {
     /// Em breve nao se aceita; a diaria de outra ilha nao e' oferecida aqui.
     #[test]
     fn em_breve_nao_aceita_e_cada_ilha_oferece_as_suas() {
-        assert!(!pode_aceitar(quest_by_id(606).unwrap(), 99, 0, &[], 0));
+        // A Cacada (607) ainda nao existe; a dungeon (606) ja' conta.
+        assert!(!pode_aceitar(quest_by_id(607).unwrap(), 99, 0, &[], 0));
         let src = shared::quests::quest_source::NPC;
         let aqui: Vec<u16> = offerable(src, shared::quests::GIVER_MESTRE_DA_ILHA, 60, 0, &[], 0, "ilha_gelo").iter().map(|d| d.id).collect();
         assert!(aqui.contains(&611) && aqui.contains(&612));

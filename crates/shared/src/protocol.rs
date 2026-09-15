@@ -282,6 +282,8 @@ pub enum ClientMessage {
     MercadoEntregas,
     /// Recebe as entregas que couberem na bolsa.
     MercadoReceber,
+    /// Dungeons (docs/DUNGEONS_E_RAIDS.md): fila, sala, instancia, bau, correio.
+    Dungeon { pedido: crate::dungeon::Pedido },
 }
 
 /// Onde esta' a peca que a forja vai refinar.
@@ -809,6 +811,8 @@ pub enum ServerMessage {
     MercadoEntregas { cartas: Vec<crate::mercado::CartaNet>, tp: u64 },
     /// Mercado: resposta de um pedido (ou aviso de venda/compra fechada).
     MercadoResultado { ok: bool, texto: String },
+    /// Dungeons: estado da janela, pronto-check, instancia, bau e correio.
+    Dungeon { aviso: crate::dungeon::Aviso },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.

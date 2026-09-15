@@ -123,6 +123,32 @@ pub fn receitas_de_equipamento() -> Vec<CraftRecipeNet> {
     v
 }
 
+/// Id da receita do Selo da Tempestade.
+pub const RECEITA_SELO: u16 = 1900;
+
+/// Selo da Tempestade: entrada do estagio 5 de conteudo 60+ ⚠️. Marcas,
+/// darksteel e po — o ralo de material do topo. Teto de 2 por semana POR
+/// CONTA, conferido no servidor (`shared::dungeon::SELOS_POR_SEMANA`).
+pub fn receita_do_selo() -> CraftRecipeNet {
+    CraftRecipeNet {
+        id: RECEITA_SELO,
+        name: "Selo da Tempestade".into(),
+        category: categoria::MATERIAL,
+        station: 0,
+        tier: 4,
+        inputs: vec![
+            [item_id::MARCAS_TEMPESTADE as u32, 120],
+            [item_id::DARKSTEEL as u32, 5_000],
+            [item_id::GLITTERING_POWDER as u32, 3],
+        ],
+        output_item_id: item_id::SELO_TEMPESTADE,
+        output_qty: 1,
+        output_item_level: 0,
+        roll_instance: false,
+        nivel_min: 60,
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;

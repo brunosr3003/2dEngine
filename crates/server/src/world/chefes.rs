@@ -232,6 +232,12 @@ impl GameWorld {
     }
 
     fn nascer_chefe(&mut self, kind: u16, pos: Vec2) -> Option<Entity> {
+        let nivel = cat::chefe(kind)?.nivel;
+        self.nascer_chefe_nivel(kind, pos, nivel)
+    }
+
+    /// O chefe do catalogo num nivel pedido (a dungeon usa o nivel do estagio).
+    pub(super) fn nascer_chefe_nivel(&mut self, kind: u16, pos: Vec2, nivel: u32) -> Option<Entity> {
         let c = cat::chefe(kind)?;
         // Stats de comportamento (alcance, tiro, recuo) do mob preset do corpo;
         // os numeros de chefe por cima.
@@ -240,17 +246,17 @@ impl GameWorld {
             cat::Corpo::Pirata => 0,
         };
         let (mut tag, mut health) = self.build_enemy_tag(base, pos, 28.0, pos);
-        let hp = cat::vida(c.nivel);
+        let hp = cat::vida(nivel);
         health.max = hp;
         health.current = hp;
         tag.stats.hp_max = hp;
-        tag.stats.attack_damage = cat::dano(c.nivel);
-        tag.stats.defense = c.nivel as i32 / 2;
-        tag.level = c.nivel;
+        tag.stats.attack_damage = cat::dano(nivel);
+        tag.stats.defense = nivel as i32 / 2;
+        tag.level = nivel;
         tag.is_boss = true;
         tag.boss_name = Some(c.nome.to_string());
         tag.detect_range = 14.0;
-        tag.xp_reward = cat::xp(c.nivel);
+        tag.xp_reward = cat::xp(nivel);
         tag.size_scale = c.escala;
         tag.attack_range = tag.attack_range.max(2.4);
         // Golpe comum nao se esquiva: cadencia de chefe, nao a do bicho.
@@ -303,14 +309,15 @@ impl GameWorld {
     pub(super) fn tick_telegrafos_de_chefe(&mut self) {
         let agora = self.sim_time_s;
         let tick = self.tick;
-        let jogadores: Vec<(EntityId, Vec2)> = self
+        // (id, posicao, instancia): o chefe de uma dungeon so' mira e acerta
+        // quem esta' na MESMA instancia (0 = mundo aberto).
+        let jogadores: Vec<(EntityId, Vec2, u32)> = self
             .ecs
-            .query::<(&NetId, &Position, &PlayerTag, &Health)>()
+            .query::<(&NetId, &Position, &PlayerTag, &Health, Option<&super::dungeon::Instancia>)>()
             .iter()
-            .filter(|(_, (_, _, _, hp))| hp.current > 0)
-            .map(|(_, (n, p, _, _))| (n.0, p.0))
+            .filter(|(_, (_, _, _, hp, _))| hp.current > 0)
+            .map(|(_, (n, p, _, _, i))| (n.0, p.0, i.map_or(0, |i| i.0)))
             .collect();
-        let posicoes: Vec<Vec2> = jogadores.iter().map(|j| j.1).collect();
         // Vida maxima e resistencia de quem pode tomar: o telegrafado tira
         // FRACAO DA VIDA (`cat::dano_telegrafado`), nao um numero fixo.
         let defesas: HashMap<EntityId, (i32, i32, f32)> = self
@@ -318,20 +325,24 @@ impl GameWorld {
             .values()
             .map(|s| (s.entity_id, (s.stats.hp_max, s.stats.defense, s.stats.damage_reduction_pct)))
             .collect();
-        let mut avisos: Vec<(Vec2, f32, ServerMessage)> = Vec::new();
+        let mut avisos: Vec<(Vec2, f32, ServerMessage, u32)> = Vec::new();
         let mut golpes: Vec<(EntityId, i32, EntityId, Vec2, f32)> = Vec::new();
-        for (_, (net, pos, vel, tag, hp, ch)) in self.ecs.query_mut::<(
+        for (_, (net, pos, vel, tag, hp, ch, inst)) in self.ecs.query_mut::<(
             &NetId,
             &Position,
             &mut Velocity,
             &mut EnemyTag,
             &Health,
             &mut ChefeVivo,
+            Option<&super::dungeon::Instancia>,
         )>() {
             let Some(def) = cat::chefe(ch.kind) else { continue };
+            let inst = inst.map_or(0, |i| i.0);
+            let meus: Vec<usize> = (0..jogadores.len()).filter(|&i| jogadores[i].2 == inst).collect();
+            let posicoes: Vec<Vec2> = meus.iter().map(|&i| jogadores[i].1).collect();
             if tag.dead || hp.current <= 0 {
                 if let Some(c) = ch.carga.take() {
-                    avisos.push((c.centro, 0.0, ServerMessage::TelegraficoFim { id: c.id, impacto: false }));
+                    avisos.push((c.centro, 0.0, ServerMessage::TelegraficoFim { id: c.id, impacto: false }, inst));
                 }
                 continue;
             }
@@ -344,7 +355,7 @@ impl GameWorld {
                 if agora >= c.impacto_em {
                     let h = &def.habilidades[c.hab];
                     for i in cat::atingidos(&h.forma, c.centro, c.dir, &posicoes) {
-                        let alvo = jogadores[i].0;
+                        let alvo = jogadores[meus[i]].0;
                         let (hp_max, defesa, reducao) = defesas.get(&alvo).copied().unwrap_or((100, 0, 0.0));
                         let resist = cat::resistencia(defesa, reducao);
                         let quer = cat::dano_telegrafado(h, fase, hp_max, resist);
@@ -353,7 +364,7 @@ impl GameWorld {
                         let bruto = (quer as f32 / (1.0 - resist).max(0.1)).ceil() as i32;
                         golpes.push((alvo, bruto, net.0, c.centro, h.empurra));
                     }
-                    avisos.push((c.centro, h.forma.alcance(), ServerMessage::TelegraficoFim { id: c.id, impacto: true }));
+                    avisos.push((c.centro, h.forma.alcance(), ServerMessage::TelegraficoFim { id: c.id, impacto: true }, inst));
                     ch.carga = None;
                     ch.prontas_em[c.hab] = agora + cat::recarga(h, fase);
                     ch.livre_em = agora + cat::PAUSA_ENTRE_GOLPES;
@@ -364,7 +375,7 @@ impl GameWorld {
             if agora < ch.livre_em || tag.returning_home {
                 continue;
             }
-            let Some(alvo) = tag.ai_target.and_then(|id| jogadores.iter().find(|j| j.0 == id)).map(|j| j.1) else {
+            let Some(alvo) = tag.ai_target.and_then(|id| jogadores.iter().find(|j| j.0 == id && j.2 == inst)).map(|j| j.1) else {
                 continue;
             };
             let dist = alvo.distance(pos.0);
@@ -388,6 +399,7 @@ impl GameWorld {
                     dir: [dir.x, dir.y],
                     carga_s: carga,
                 },
+                inst,
             ));
         }
         for (alvo, dano, chefe, centro, empurra) in golpes {
@@ -406,15 +418,15 @@ impl GameWorld {
             return;
         }
         // Quem ve': jogador perto do centro do golpe (AOI mais o tamanho da forma).
-        let ouvintes: Vec<(SessionId, Vec2)> = self
+        let ouvintes: Vec<(SessionId, Vec2, u32)> = self
             .sessions
             .iter()
             .filter(|(_, s)| s.logged_in)
-            .filter_map(|(sid, s)| s.entity.and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| (*sid, p.0))))
+            .filter_map(|(sid, s)| s.entity.and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| (*sid, p.0, s.instancia))))
             .collect();
-        for (centro, alcance, msg) in avisos {
-            for (sid, p) in &ouvintes {
-                if p.distance(centro) <= AOI_RADIUS * 1.5 + alcance {
+        for (centro, alcance, msg, inst) in avisos {
+            for (sid, p, inst_ouvinte) in &ouvintes {
+                if *inst_ouvinte == inst && p.distance(centro) <= AOI_RADIUS * 1.5 + alcance {
                     if let Some(s) = self.sessions.get(sid) {
                         let _ = s.handle.to_client.send(msg.clone());
                     }

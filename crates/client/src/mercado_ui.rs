@@ -79,6 +79,8 @@ pub struct Mercado {
     aviso: Option<(String, bool, f64)>,
     /// Primeira linha visivel da lista da aba.
     rolagem: usize,
+    /// Correio das dungeons (1ª vitoria, bolsa cheia): mora nas Entregas.
+    pub correio: Vec<shared::dungeon::CartaNet>,
 }
 
 fn filtro_tp() -> FiltroNet {
@@ -93,6 +95,7 @@ impl Mercado {
         self.compra = None;
         let mut v = self.pedidos_da_aba();
         v.push(ClientMessage::MercadoEntregas);
+        v.push(ClientMessage::Dungeon { pedido: shared::dungeon::Pedido::Correio });
         v
     }
 
@@ -129,7 +132,7 @@ impl Mercado {
         match self.aba {
             Aba::Comprar => vec![self.buscar()],
             Aba::Vender | Aba::Meus => vec![ClientMessage::MercadoMeus],
-            Aba::Entregas => vec![ClientMessage::MercadoEntregas],
+            Aba::Entregas => vec![ClientMessage::MercadoEntregas, ClientMessage::Dungeon { pedido: shared::dungeon::Pedido::Correio }],
             Aba::Tp => {
                 self.ultima_busca_tp = true;
                 vec![ClientMessage::MercadoBuscar { filtro: filtro_tp() }, ClientMessage::MercadoMeus]
@@ -216,7 +219,7 @@ impl Mercado {
             let r = Rect::new(p.x + 18.0 * f + i as f32 * tw, ty, tw - 4.0 * f, 40.0 * f);
             let sobre = livre && r.contains(m);
             estilo::aba(r, rotulo, self.aba == *aba, sobre);
-            if *aba == Aba::Entregas && !self.cartas.is_empty() {
+            if *aba == Aba::Entregas && (!self.cartas.is_empty() || !self.correio.is_empty()) {
                 estilo::badge(r);
             }
             if sobre && clicou {
@@ -542,7 +545,33 @@ impl Mercado {
             saida.push(ClientMessage::MercadoReceber);
         }
         let alt = 54.0 * f;
-        let lista = Rect::new(a.x, a.y + 46.0 * f, a.w, a.h - 46.0 * f - 46.0 * f);
+        // Correio das dungeons primeiro: recompensa de 1ª vitoria e o que nao
+        // coube na bolsa. Uma caixa so' com as entregas do mercado.
+        let mut topo = a.y + 46.0 * f;
+        for carta in self.correio.iter().take(3) {
+            let r = Rect::new(a.x, topo, a.w, alt - 6.0 * f);
+            estilo::cartao(r, false, true);
+            let icone = Rect::new(r.x + 6.0 * f, r.y + 4.0 * f, r.h - 8.0 * f, r.h - 8.0 * f);
+            crate::icones::icone(carta.item_id, icone, None, None);
+            let nome = c.nomes.get(&carta.item_id).cloned().unwrap_or_else(|| format!("Item {}", carta.item_id));
+            let motivo = match carta.motivo {
+                1 => "Dungeon · primeira vitória da semana",
+                2 => "Dungeon · primeira vitória",
+                _ => "Dungeon · não coube na bolsa",
+            };
+            let x = icone.x + icone.w + 10.0 * f;
+            estilo::texto_ajustado(&format!("{nome} ×{}", milhar(carta.qtd as u64)), x, r.y + 22.0 * f, r.w * 0.5, 16, estilo::TEXTO);
+            estilo::texto_ajustado(motivo, x, r.y + 40.0 * f, r.w * 0.5, 12, estilo::SUAVE);
+            if botao(Rect::new(r.x + r.w - 130.0 * f, r.y + 8.0 * f, 120.0 * f, r.h - 16.0 * f), "Receber", livre, true) {
+                saida.push(ClientMessage::Dungeon { pedido: shared::dungeon::Pedido::CorreioRetirar { id: carta.id } });
+            }
+            topo += alt;
+        }
+        if self.correio.len() > 3 {
+            estilo::texto(a.x, topo + 14.0 * f, &format!("+ {} recompensas de dungeon", self.correio.len() - 3), 13, estilo::SUAVE);
+            topo += 22.0 * f;
+        }
+        let lista = Rect::new(a.x, topo, a.w, (a.y + a.h - 46.0 * f - topo).max(alt));
         let cabem = ((lista.h / alt).floor() as usize).max(1);
         self.rolagem = self.rolagem.min(self.cartas.len().saturating_sub(cabem));
         if self.cartas.is_empty() {
@@ -754,7 +783,7 @@ mod tests {
     fn trocar_de_aba_pede_o_que_ela_mostra() {
         let mut m = Mercado::default();
         m.abrir();
-        assert!(matches!(m.trocar_aba(Aba::Entregas)[..], [ClientMessage::MercadoEntregas]));
+        assert!(matches!(m.trocar_aba(Aba::Entregas)[..], [ClientMessage::MercadoEntregas, ClientMessage::Dungeon { .. }]));
         assert!(m.trocar_aba(Aba::Entregas).is_empty(), "a mesma aba nao pede de novo");
         assert_eq!(m.trocar_aba(Aba::Tp).len(), 2);
     }

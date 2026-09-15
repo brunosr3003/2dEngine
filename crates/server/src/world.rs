@@ -70,6 +70,7 @@ mod boss_teste;
 mod chefes;
 pub(crate) use chefes::itens_do_chefe;
 mod mercado_mundo;
+pub(crate) mod dungeon;
 use habilidades::HabilidadePendente;
 
 /// Ataque basico: anuncia a animacao agora e resolve o dano no impacto.
@@ -1554,6 +1555,15 @@ pub struct Session {
     /// Modo RAID escolhido pelo client (SelectDungeonMode antes do select).
     /// true → run só de boss, sem waves. Só relevante em DUNGEON_MODE.
     pub pending_dungeon_raid: bool,
+    /// Dungeons do personagem (`characters.dungeon_json`).
+    pub dungeon: shared::dungeon::DadosDungeon,
+    /// Dungeons da conta (`dungeon_contas`). Carregada com o personagem.
+    pub conta_dungeon: shared::dungeon::DadosConta,
+    /// Instancia de dungeon em que esta' (0 = mundo aberto).
+    pub instancia: u32,
+    /// Onde estava antes de entrar: volta pra ca' e e' a posicao salva
+    /// enquanto estiver dentro (queda no meio nao prende ninguem na arena).
+    pub retorno_da_dungeon: Option<Vec2>,
 }
 
 impl Session {
@@ -1708,6 +1718,13 @@ pub struct GameWorld {
     auth_ctx: Option<AuthCtx>,
     /// Mercado: registros esperando o save do personagem (`SaveBatch`).
     mercado_registros: Vec<crate::mercado::Registro>,
+    /// Dungeons (docs/DUNGEONS_E_RAIDS.md): fila/salas, instancias e a arena.
+    pub mesa: crate::mesa::Mesa,
+    pub instancias: Vec<dungeon::InstanciaDg>,
+    pub prox_instancia: u32,
+    pub arena_dg: Vec<Vec2>,
+    /// Instancia do mob que esta' soltando saque agora (0 = mundo).
+    pub inst_do_saque: u32,
     /// Cartas ja' aplicadas neste processo (antes do save confirmar).
     mercado_cartas_vistas: std::collections::HashSet<String>,
     /// Ultimo pedido ao mercado por sessao: segura spam no banco central.
@@ -2164,6 +2181,11 @@ impl GameWorld {
             characters,
             auth_ctx: None,
             mercado_registros: Vec::new(),
+            mesa: Default::default(),
+            instancias: Vec::new(),
+            prox_instancia: 0,
+            arena_dg: Vec::new(),
+            inst_do_saque: 0,
             mercado_cartas_vistas: std::collections::HashSet::new(),
             mercado_pedido_em: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -2318,6 +2340,11 @@ impl GameWorld {
             characters,
             auth_ctx: None,
             mercado_registros: Vec::new(),
+            mesa: Default::default(),
+            instancias: Vec::new(),
+            prox_instancia: 0,
+            arena_dg: Vec::new(),
+            inst_do_saque: 0,
             mercado_cartas_vistas: std::collections::HashSet::new(),
             mercado_pedido_em: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -4486,6 +4513,10 @@ impl GameWorld {
             s.barra = crate::barra::de_json(&row.barra_json);
             let _ = s.handle.to_client.send(ServerMessage::BarraDeItens { espacos: s.barra.clone() });
             s.preferencias = crate::preferencias::de_json(&row.preferencias_json);
+            s.dungeon = serde_json::from_str(&row.dungeon_json).unwrap_or_default();
+            s.conta_dungeon = serde_json::from_str(&row.conta_dungeon_json).unwrap_or_default();
+            s.instancia = 0;
+            s.retorno_da_dungeon = None;
             let _ = s.handle.to_client.send(ServerMessage::Preferencias { prefs: s.preferencias.clone() });
             s.enviar_recuperaveis((now_ms() / 1000) as i64);
             s.poise_current = stats.poise_max as f32;
@@ -5364,11 +5395,16 @@ impl GameWorld {
                 tutorial_slot: None,
                 dungeon_slot: None,
                 pending_dungeon_raid: false,
+                dungeon: Default::default(),
+                conta_dungeon: Default::default(),
+                instancia: 0,
+                retorno_da_dungeon: None,
             },
         );
     }
 
     pub fn on_disconnect(&mut self, id: SessionId) {
+        self.dg_desconectou(id);
         if let Some(s) = self.sessions.remove(&id) {
             // Tutorial: libera a lane pra outro player poder usar.
             if let Some(idx) = s.tutorial_slot {
@@ -5473,12 +5509,14 @@ impl GameWorld {
             ClientMessage::SetTarget { target } => {
                 // So' se mira quem da' pra atacar: bicho ou gente. O saquinho de
                 // saque virava alvo e o boneco ficava batendo nele.
+                let minha_inst = self.sessions.get(&id).map_or(0, |s| s.instancia);
                 let atacavel = target.filter(|t| {
                     self.ecs
-                        .query::<(&NetId, &EntityKind, Option<&Health>)>()
+                        .query::<(&NetId, &EntityKind, Option<&Health>, Option<&dungeon::Instancia>)>()
                         .iter()
-                        .any(|(_, (n, k, hp))| {
+                        .any(|(_, (n, k, hp, inst))| {
                             n.0 == *t
+                                && inst.map_or(0, |i| i.0) == minha_inst
                                 && matches!(k, EntityKind::Enemy(_) | EntityKind::Player)
                                 // morto fica na tela como corpo, mas nao e' alvo
                                 && hp.map_or(true, |h| h.current > 0)
@@ -5840,6 +5878,7 @@ impl GameWorld {
             | ClientMessage::MercadoCancelar { .. }
             | ClientMessage::MercadoEntregas
             | ClientMessage::MercadoReceber) => self.handle_mercado(id, m),
+            ClientMessage::Dungeon { pedido } => self.handle_dungeon(id, pedido),
         }
     }
 
@@ -6020,6 +6059,11 @@ impl GameWorld {
     /// Player downed escolheu respawnar direto na cidade — pula o timer de
     /// stand-up. HP restaurado pra max, posicao = spawn_tile, downed limpa.
     fn handle_respawn_at_city(&mut self, sid: SessionId) {
+        // Na dungeon nao ha' cidade: e' o "Reviver" dela.
+        if self.sessions.get(&sid).is_some_and(|s| s.instancia != 0) {
+            self.dg_reviver(sid);
+            return;
+        }
         let (entity, hp_max, name, faction, dungeon_slot) = {
             let Some(session) = self.sessions.get_mut(&sid) else {
                 tracing::warn!("RespawnAtCity ignorado: sessao {:?} nao existe", sid);
@@ -6504,6 +6548,7 @@ impl GameWorld {
 
     pub fn step(&mut self, dt: f32) {
         self.tick = self.tick.wrapping_add(1);
+        self.tick_dungeons();
 
         // Detecta hot-reload da economy (admin editou via web) e re-emite
         // ItemsConfig pra todos os clientes logados — assim nomes/icones
@@ -7303,21 +7348,23 @@ impl GameWorld {
         // inimigos terrestres nao alcancam — sumem do radar pra evitar AI presa.
         // Indice por id pra IA ler a posicao do alvo em O(1) todo tick.
         let player_pos_by_id: HashMap<EntityId, Vec2>;
-        let player_positions: Vec<(EntityId, Vec2)> = self
+        let player_positions: Vec<(EntityId, Vec2, u32)> = self
             .ecs
-            .query::<(&NetId, &Position, &EntityKind)>()
+            .query::<(&NetId, &Position, &EntityKind, Option<&dungeon::Instancia>)>()
             .iter()
-            .filter_map(|(e, (net, pos, kind))| {
+            .filter_map(|(e, (net, pos, kind, inst))| {
                 if matches!(kind, EntityKind::Player)
                     && !untargetable.contains(&e)
                     && !self.in_safe_zone(pos.0)
                     && self.ecs.get::<&Mounted>(e).is_err()
                 {
-                    Some((net.0, pos.0))
+                    Some((net.0, pos.0, inst.map_or(0, |i| i.0)))
                 } else { None }
             })
             .collect();
-        player_pos_by_id = player_positions.iter().copied().collect();
+        player_pos_by_id = player_positions.iter().map(|p| (p.0, p.1)).collect();
+        // Mob so' enxerga jogador da MESMA instancia (0 = mundo aberto).
+        let inst_do_jogador: HashMap<EntityId, u32> = player_positions.iter().map(|p| (p.0, p.2)).collect();
 
         // ── C: IA dos inimigos ────────────────────────────────────────────────
         struct SpawnProj { owner_id: EntityId, from_player: bool, pos: Vec2, dir: Vec2, damage: i32, is_crit: bool, kind: u8 }
@@ -7336,9 +7383,10 @@ impl GameWorld {
             .filter(|g| !g.from_player && g.impact_at >= now_sim)
             .map(|g| (g.attacker_eid, g.target))
             .chain(self.pending_shots.iter().filter(|p| !p.from_player).map(|p| (p.owner_id, p.target))).collect();
-        for (_, (net, pos, vel, enemy, kind)) in
-            self.ecs.query_mut::<(&NetId, &Position, &mut Velocity, &mut EnemyTag, &EntityKind)>()
+        for (_, (net, pos, vel, enemy, kind, inst_mob)) in
+            self.ecs.query_mut::<(&NetId, &Position, &mut Velocity, &mut EnemyTag, &EntityKind, Option<&dungeon::Instancia>)>()
         {
+            let inst_mob = inst_mob.map_or(0, |i| i.0);
             let kind_id = match kind {
                 EntityKind::Enemy(k) => *k,
                 _ => 0,
@@ -7415,21 +7463,23 @@ impl GameWorld {
             };
             if decide || enemy.ai_target.is_none() || forcado.is_some() {
                 enemy.ai_target = forcado
-                    .filter(|t| player_pos_by_id.contains_key(t))
+                    .filter(|t| inst_do_jogador.get(t) == Some(&inst_mob))
                     .or_else(|| {
                         player_positions
                             .iter()
+                            .filter(|p| p.2 == inst_mob)
                             .min_by(|a, b| {
                                 a.1.distance_squared(pos.0)
                                     .partial_cmp(&b.1.distance_squared(pos.0))
                                     .unwrap()
                             })
-                            .map(|(eid, _)| *eid)
+                            .map(|(eid, _, _)| *eid)
                     });
             }
             // Alvo que desconectou ou morreu sai do cache na hora.
             let nearest: Option<(EntityId, Vec2)> = enemy
                 .ai_target
+                .filter(|eid| inst_do_jogador.get(eid) == Some(&inst_mob))
                 .and_then(|eid| player_pos_by_id.get(&eid).map(|p| (eid, *p)));
             if nearest.is_none() {
                 enemy.ai_target = None;
@@ -8076,11 +8126,15 @@ impl GameWorld {
             })
             .collect();
         let mut corpos: Vec<(Entity, Vec2, f32)> = Vec::new();
-        for (e, (pos, vel, _)) in self
+        // Instancia de dungeon de cada corpo (0 = mundo): corpos de fases
+        // diferentes nao se empurram nem se bloqueiam.
+        let mut inst_do_corpo: Vec<u32> = Vec::new();
+        for (e, (pos, vel, _, inst)) in self
             .ecs
-            .query::<(&Position, &Velocity, &shared::Solido)>()
+            .query::<(&Position, &Velocity, &shared::Solido, Option<&dungeon::Instancia>)>()
             .iter()
         {
+            inst_do_corpo.push(inst.map_or(0, |i| i.0));
             let mobilidade = if self.ecs.get::<&PlayerTag>(e).is_ok() { 0.0 } else { 1.0 };
             let degrau = self
                 .ecs
@@ -8101,7 +8155,7 @@ impl GameWorld {
         }
         let mut circulos: Vec<(Vec2, f32, f32)> =
             corpos.iter().map(|(_, p, m)| (*p, ENTITY_RADIUS, *m)).collect();
-        shared::physics::separar(&mut circulos);
+        separar_por_instancia(&mut circulos, &inst_do_corpo, |_| true);
 
         // ── SEGUNDA PASSADA: JOGADOR CONTRA JOGADOR ──
         //
@@ -8129,7 +8183,8 @@ impl GameWorld {
                 .iter()
                 .map(|&i| (circulos[i].0, ENTITY_RADIUS, 1.0))
                 .collect();
-            shared::physics::separar(&mut entre_eles);
+            let inst_deles: Vec<u32> = so_jogadores.iter().map(|&i| inst_do_corpo[i]).collect();
+            separar_por_instancia(&mut entre_eles, &inst_deles, |_| true);
             for (k, &i) in so_jogadores.iter().enumerate() {
                 circulos[i].0 = entre_eles[k].0;
             }
@@ -8771,7 +8826,12 @@ impl GameWorld {
         self.attacker_this_tick.clear();
         // Dano causado por ENEMIES neste tick — lifesteal do boss (25%).
         let mut enemy_dealt: HashMap<EntityId, i32> = HashMap::new();
+        let inst_dos_golpes = self.dg_instancias_por_eid();
         for (entity, target_id, dmg, attacker_id, attacker_is_player, hurt_dir, is_crit, attack_info, kb_strength) in damage_events {
+            // Golpe entre instancias diferentes (ou mundo x instancia) nao existe.
+            if inst_dos_golpes.get(&attacker_id).copied().unwrap_or(0) != inst_dos_golpes.get(&target_id).copied().unwrap_or(0) {
+                continue;
+            }
             // Resistencia do alvo reduz dano recebido (min 1).
             let (target_defense, target_dmg_reduction_pct) = {
                 let mut d = 0i32;
@@ -9229,6 +9289,7 @@ impl GameWorld {
             .collect();
 
         for (e, eid, pos, kind_id) in dead_enemies {
+            self.inst_do_saque = self.ecs.get::<&dungeon::Instancia>(e).map_or(0, |i| i.0);
             // Rastrear se era o boss
             if self.boss_entity == Some(e) {
                 self.boss_entity = None;
@@ -9295,6 +9356,7 @@ impl GameWorld {
             let drops = chefes::com_loot_de_chefe(drops, kind_id, seed);
             let spread = if kind_id == 7 || shared::bosses::e_chefe(kind_id) { 5.0 } else { 3.0 };
             self.spawn_loot_drops(pos, &drops, seed, spread, kind_id);
+            self.inst_do_saque = 0;
 
             // Creditar XP (e Fame, se mob grande) para o jogador que matou
             if let Some(attacker_eid) = kill_credits.get(&eid).copied() {
@@ -9402,19 +9464,28 @@ impl GameWorld {
                 if hp.current <= 0 { Some((e, net.0)) } else { None }
             })
             .collect();
+        let mut mortes_na_dungeon: Vec<(u32, String)> = Vec::new();
         for (entity, eid) in hp_zero {
             for session in self.sessions.values_mut() {
                 if session.entity_id == eid && !session.downed {
                     session.downed = true;
                     session.downed_heal_timer = shared::DOWNED_HEAL_TIME;
                     session.downed_hp = shared::DOWNED_HP_MAX;
-                    session.morrer((now_ms() / 1000) as i64);
+                    if session.instancia != 0 {
+                        // Dentro da dungeon: sem XP perdido nem reparo.
+                        mortes_na_dungeon.push((session.instancia, session.name.clone()));
+                    } else {
+                        session.morrer((now_ms() / 1000) as i64);
+                    }
                     tracing::info!("{} foi derrubado (dHP={})",
                                    session.name, session.downed_hp);
                     let _ = self.ecs.insert_one(entity, Untargetable);
                     break;
                 }
             }
+        }
+        for (inst, nome) in mortes_na_dungeon {
+            self.dg_morreu(inst, &nome);
         }
         // Transfere fame + aura por kill de player ANTES do despawn.
         // Fame: +20 + 50% da vitima; vitima perde 30%.
@@ -9536,11 +9607,11 @@ impl GameWorld {
             })
             .collect();
 
-        let loots: Vec<(Entity, EntityId, Vec2, LootTag)> = self
+        let loots: Vec<(Entity, EntityId, Vec2, LootTag, u32)> = self
             .ecs
-            .query::<(&NetId, &Position, &LootTag)>()
+            .query::<(&NetId, &Position, &LootTag, Option<&dungeon::Instancia>)>()
             .iter()
-            .map(|(e, (net, pos, l))| (e, net.0, pos.0, *l))
+            .map(|(e, (net, pos, l, i))| (e, net.0, pos.0, *l, i.map_or(0, |i| i.0)))
             .collect();
 
         let pick_r_sq = shared::PICKUP_RADIUS * shared::PICKUP_RADIUS;
@@ -9548,10 +9619,11 @@ impl GameWorld {
         let mut picked: Vec<(Entity, EntityId)> = Vec::new();
         // (player_entity, new_hp_max) — para ajustar Health.max apos equipar.
         let mut hp_max_updates: Vec<(Entity, i32)> = Vec::new();
-        'loot_loop: for (le, leid, lpos, ltag) in loots {
+        'loot_loop: for (le, leid, lpos, ltag, linst) in loots {
             // Janela de "ver o drop" antes do auto-pickup.
             if now - ltag.spawn_at < shared::LOOT_PICKUP_DELAY_S { continue; }
             for (sid, ppos) in &pickup_players {
+                if self.sessions.get(sid).map_or(0, |s| s.instancia) != linst { continue; }
                 if ppos.distance_squared(lpos) < pick_r_sq {
                     if let Some(session) = self.sessions.get_mut(sid) {
                         // Se for equipavel e o slot esta vazio, equipa direto.
@@ -10035,6 +10107,8 @@ impl GameWorld {
         }
 
         let radius_sq = AOI_RADIUS * AOI_RADIUS;
+        // Instancia de dungeon: so' se ve quem esta' na MESMA (0 = mundo).
+        let inst_de = self.dg_instancias_por_eid();
         // Reaproveitado entre sessoes: com 200 jogadores isto seria 200
         // alocacoes por tick.
         let mut candidatos: Vec<(f32, usize)> = Vec::with_capacity(256);
@@ -10059,6 +10133,9 @@ impl GameWorld {
                 for dx in -1..=1 {
                     let Some(idxs) = grid.get(&(ccx + dx, ccy + dy)) else { continue };
                     for &i in idxs {
+                        if inst_de.get(&all[i].1.id).copied().unwrap_or(0) != session.instancia {
+                            continue;
+                        }
                         let d2 = all[i].1.pos_f32().distance_squared(center);
                         if d2 <= radius_sq {
                             candidatos.push((d2, i));
@@ -10321,6 +10398,8 @@ impl GameWorld {
             sorte_ate: i64,
             barra_json: String,
             preferencias_json: String,
+            dungeon_json: String,
+            conta_dungeon_json: String,
         }
         let mut entries: Vec<E> = Vec::new();
         for session in self.sessions.values() {
@@ -10341,7 +10420,8 @@ impl GameWorld {
                 }), Some(lp))
             } else {
                 let p = match self.ecs.get::<&Position>(e) { Ok(p) => p.0, Err(_) => continue };
-                (p, None, None)
+                // Dentro da dungeon a posicao salva e' a de antes de entrar.
+                (session.retorno_da_dungeon.filter(|_| session.instancia != 0).unwrap_or(p), None, None)
             };
             let hp = match self.ecs.get::<&Health>(e) { Ok(h) => *h, Err(_) => continue };
             entries.push(E {
@@ -10374,6 +10454,8 @@ impl GameWorld {
                 sorte_ate: session.sorte_ate,
                 barra_json: crate::barra::para_json(&session.barra),
                 preferencias_json: crate::preferencias::para_json(&session.preferencias),
+                dungeon_json: serde_json::to_string(&session.dungeon).unwrap_or_default(),
+                conta_dungeon_json: serde_json::to_string(&session.conta_dungeon).unwrap_or_default(),
             });
         }
         for e in entries {
@@ -10421,6 +10503,8 @@ impl GameWorld {
                 sorte_ate: e.sorte_ate,
                 barra_json: e.barra_json,
                 preferencias_json: e.preferencias_json,
+                dungeon_json: e.dungeon_json,
+                conta_dungeon_json: e.conta_dungeon_json,
             };
             self.salvo_aqui_em.insert(e.name.clone(), self.sim_time_s);
             self.characters.insert(e.name, row.clone());
@@ -10591,6 +10675,16 @@ impl GameWorld {
             self.resultado_do_craft(sid, recipe_id, Err(motivo));
             return;
         }
+        // Selo da Tempestade: teto semanal POR CONTA (docs/DUNGEONS_E_RAIDS.md).
+        let selo = recipe.output_item_id == shared::item_id::SELO_TEMPESTADE;
+        if selo {
+            session.conta_dungeon.virar(shared::dungeon::semana((now_ms() / 1000) as i64));
+            if !session.conta_dungeon.pode_craftar_selo() {
+                let motivo = format!("teto da semana: {} Selos por conta", shared::dungeon::SELOS_POR_SEMANA);
+                self.resultado_do_craft(sid, recipe_id, Err(motivo));
+                return;
+            }
+        }
         let inst = if recipe.roll_instance {
             let tpl = crate::economy::item_template_of(recipe.output_item_id);
             shared::ItemInstance::roll_with_template(tpl, recipe.output_item_level, || fastrand::f32())
@@ -10600,6 +10694,9 @@ impl GameWorld {
         if crate::craft::aplicar(&mut session.inventory, &recipe, inst).is_none() {
             self.resultado_do_craft(sid, recipe_id, Err("bolsa cheia".into()));
             return;
+        }
+        if selo {
+            session.conta_dungeon.selos += 1;
         }
         session.inventory_dirty = true;
         self.save_pending = true;
@@ -10992,13 +11089,16 @@ impl GameWorld {
                 item_lvl,
                 || fastrand::f32(),
             );
-            self.ecs.spawn((
+            let saque = self.ecs.spawn((
                 NetId(loot_id),
                 Position(pos + offset),
                 Velocity(Vec2::ZERO),
                 EntityKind::Loot(*item_id),
                 LootTag { item_id: *item_id, qty: *qty, instance, spawn_at: now },
             ));
+            if self.inst_do_saque != 0 {
+                let _ = self.ecs.insert_one(saque, dungeon::Instancia(self.inst_do_saque));
+            }
             if let Some(ctx) = &self.auth_ctx {
                 let r = instance.map(|i| i.rarity).unwrap_or(0);
                 let rf = instance.map(|i| i.refinement).unwrap_or(0);
@@ -11121,6 +11221,10 @@ impl GameWorld {
     /// Processa pedido do cliente pra sair do Downed State. So aceito
     /// quando o timer de readiness ja zerou.
     fn handle_stand_up(&mut self, sid: SessionId) {
+        if self.sessions.get(&sid).is_some_and(|s| s.instancia != 0) {
+            self.dg_reviver(sid);
+            return;
+        }
         let Some(session) = self.sessions.get_mut(&sid) else { return };
         if !session.logged_in { return; }
         if !session.downed { return; }
@@ -12121,6 +12225,10 @@ impl GameWorld {
     }
 
     fn handle_interact(&mut self, sid: SessionId, clicked_eid: Option<u64>) {
+        // Bau de conclusao da dungeon: o toque abre (so' pra quem estava la').
+        if let Some(eid) = clicked_eid {
+            if self.dg_abrir_bau(sid, EntityId(eid as u32)) { return; }
+        }
         let Some(session) = self.sessions.get(&sid) else { return };
         if !session.logged_in { return; }
         // Se ja esta carregando alguem: larga.
@@ -14017,7 +14125,8 @@ impl GameWorld {
             (bp, Some(pb), Some(local_pos))
         } else {
             let p = self.ecs.get::<&Position>(e).ok()?.0;
-            (p, None, None)
+            // Caiu dentro da dungeon: volta pra onde estava antes de entrar.
+            (session.retorno_da_dungeon.filter(|_| session.instancia != 0).unwrap_or(p), None, None)
         };
         // Tutorial/dungeon: NÃO persiste a pos/barco da lane — senão ao reconectar
         // no mundo o player cairia dentro da instância. Mantém a pos do mundo já
@@ -14061,6 +14170,8 @@ impl GameWorld {
             sorte_ate: session.sorte_ate,
             barra_json: crate::barra::para_json(&session.barra),
             preferencias_json: crate::preferencias::para_json(&session.preferencias),
+            dungeon_json: serde_json::to_string(&session.dungeon).unwrap_or_default(),
+            conta_dungeon_json: serde_json::to_string(&session.conta_dungeon).unwrap_or_default(),
         };
         self.salvo_aqui_em.insert(session.name.clone(), self.sim_time_s);
         self.characters.insert(session.name.clone(), row.clone());
@@ -14168,6 +14279,46 @@ pub(crate) fn cooldown_do_ataque(weapon_id: u16, stats: &shared::PlayerStats, bl
 /// Dano que sobra depois da resistencia do alvo. Defesa e' % (1,5% por ponto,
 /// teto 75%), `reducao` soma por cima (teto 75%), total no maximo 90%, e o
 /// golpe nunca sai zerado.
+/// `shared::physics::separar`, mas so' entre corpos da MESMA instancia de
+/// dungeon (0 = mundo aberto). Duas instancias usam a mesma arena: sem isto um
+/// grupo empurrava e bloqueava o outro, que nem enxerga.
+pub(crate) fn separar_por_instancia(circulos: &mut [(Vec2, f32, f32)], inst: &[u32], _filtro: impl Fn(u32) -> bool) {
+    let mut grupos: Vec<u32> = inst.to_vec();
+    grupos.sort_unstable();
+    grupos.dedup();
+    if grupos.len() <= 1 {
+        shared::physics::separar(circulos);
+        return;
+    }
+    for g in grupos {
+        let idx: Vec<usize> = (0..circulos.len()).filter(|&i| inst[i] == g).collect();
+        if idx.len() < 2 {
+            continue;
+        }
+        let mut parte: Vec<(Vec2, f32, f32)> = idx.iter().map(|&i| circulos[i]).collect();
+        shared::physics::separar(&mut parte);
+        for (k, &i) in idx.iter().enumerate() {
+            circulos[i] = parte[k];
+        }
+    }
+}
+
+#[cfg(test)]
+mod testes_colisao_de_instancia {
+    use super::*;
+
+    #[test]
+    fn corpos_de_instancias_diferentes_nao_se_empurram() {
+        let mut c = vec![(Vec2::ZERO, 0.4, 1.0), (Vec2::new(0.1, 0.0), 0.4, 1.0), (Vec2::new(0.05, 0.0), 0.4, 1.0)];
+        let antes: Vec<Vec2> = c.iter().map(|x| x.0).collect();
+        separar_por_instancia(&mut c, &[1, 2, 0], |_| true);
+        assert_eq!(c.iter().map(|x| x.0).collect::<Vec<_>>(), antes, "cada um sozinho na sua fase: ninguem mexe");
+        let mut d = vec![(Vec2::ZERO, 0.4, 1.0), (Vec2::new(0.1, 0.0), 0.4, 1.0)];
+        separar_por_instancia(&mut d, &[3, 3], |_| true);
+        assert!(d[0].0.distance(d[1].0) > 0.1, "mesma instancia: separa");
+    }
+}
+
 pub(crate) fn dano_mitigado(dmg: i32, defesa: i32, reducao: f32) -> i32 {
     let def_resist_pct = (defesa as f32 * 0.015).clamp(0.0, 0.75);
     let total_resist = (def_resist_pct + reducao.clamp(0.0, 0.75)).min(0.90);

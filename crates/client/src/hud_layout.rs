@@ -98,7 +98,7 @@ pub struct Zonas {
     pub minimapa: Rect,
     /// ⤢ dentro da moldura do minimapa: abre o Mapa.
     pub mapa_icone: Rect,
-    /// Bateria no canto esquerdo da moldura do minimapa: modo economia.
+    /// Bateria do modo economia: canto inferior esquerdo, sempre visivel.
     pub economia: Rect,
     /// Chat: logo abaixo do rastreador, a' esquerda — o canto de baixo e' do
     /// joystick.
@@ -199,7 +199,6 @@ fn monta(sw: f32, sh: f32, s: f32) -> Zonas {
     let area = Rect::new(sw - m - 320.0 * s, menu.y + menu.h + 12.0 * s, 320.0 * s, 56.0 * s);
     let minimapa = Rect::new(area.x, area.y + area.h + 4.0 * s, 320.0 * s, 320.0 * s);
     let mapa_icone = Rect::new(minimapa.x + minimapa.w - 32.0 * s, minimapa.y + 6.0 * s, 26.0 * s, 26.0 * s);
-    let economia = Rect::new(minimapa.x + 6.0 * s, minimapa.y + 6.0 * s, 26.0 * s, 26.0 * s);
 
     // ── alvo: centrado no vao que sobra no alto ──
     let esq = ficha.x + ficha.w + 16.0 * s;
@@ -240,7 +239,11 @@ fn monta(sw: f32, sh: f32, s: f32) -> Zonas {
     // esquerda entre a faixa, a barra de coleta e o AUTO COLETA.
     let jy = chat.y + chat.h + 16.0 * s;
     let jfim = faixa.x.min(coleta.x).min(auto_coleta.x) - 16.0 * s;
-    let joystick = Rect::new(m, jy, (jfim - m).max(0.0), (exp.y - 8.0 * s - jy).max(0.0));
+    // Bateria do modo economia: canto de baixo a' esquerda, sempre na tela. O
+    // joystick termina acima dela.
+    let lado_eco = 48.0 * s;
+    let economia = Rect::new(m, exp.y - 8.0 * s - lado_eco, lado_eco, lado_eco);
+    let joystick = Rect::new(m, jy, (jfim - m).max(0.0), (economia.y - 8.0 * s - jy).max(0.0));
 
     Zonas {
         s,
@@ -300,6 +303,7 @@ impl Zonas {
             ("minimapa", self.minimapa),
             ("chat", self.chat),
             ("joystick", self.joystick),
+            ("economia", self.economia),
             ("faixa", self.faixa),
             ("coleta", self.coleta),
             ("atacar", self.atacar),
@@ -324,7 +328,7 @@ impl Zonas {
     /// alvo e a EXP so' mostram; o rastreador e o chat entram pelo modulo
     /// deles (tamanho varia).
     pub fn contem(&self, p: Vec2) -> bool {
-        [self.ficha, self.menu, self.area, self.minimapa, self.atacar, self.auto_combate, self.auto_coleta, self.pocao]
+        [self.ficha, self.menu, self.area, self.minimapa, self.atacar, self.auto_combate, self.auto_coleta, self.pocao, self.economia]
             .iter()
             .chain(self.icones.iter())
             .chain(self.skills.iter())

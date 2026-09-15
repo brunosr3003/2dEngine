@@ -36,7 +36,7 @@ economia (`ServerMessage::ResourceSources`, protocolo 96). Só o que existe:
 | **Vendedor** | lojas que existem num NPC da vila (hoje a do Alquimista) | NPC, preço |
 | **Craft** | receitas (`craft_recipes`) pelo item que sai | receita, nível mínimo |
 | **Missão** | recompensas de `QUESTS` (item 1 e 2) | título, se é diária |
-| **Dungeon/raid** | chaves de craft (Escama/Garra/Chifre/Couro) | "Em breve", com cadeado |
+| **Dungeon** | chaves de craft (Escama/Garra/Chifre/Couro) | **Abrir**: a janela das Dungeons (Menu → Aventura → Dungeons). A Caçada (raid) segue em breve |
 | **Mercado** | o cliente acrescenta para todo item **não vinculado** | abre o Mercado buscando o nome |
 
 ## O que o "Ir" faz
@@ -49,7 +49,8 @@ economia (`ServerMessage::ResourceSources`, protocolo 96). Só o que existe:
 | Vendedor | vai até o NPC e fala com ele (a loja abre) |
 | Craft | abre o Craft na receita |
 | Mercado | abre o Mercado na aba Comprar, buscando o item |
-| Missão, dungeon/raid | sem Ir |
+| Missão | sem Ir |
+| Dungeon | abre a janela das Dungeons |
 
 O Ir fecha os painéis, desliga o que brigaria pela rota (como o mapa) e diz no
 chat "Indo: …"; a faixa do HUD mostra "INDO · … · N m".
@@ -77,7 +78,7 @@ opções do seu nível.
 4. Bicho acima do nível, chefe muito acima.
 5. Mercado.
 6. Missão.
-7. Dungeon/raid (em breve).
+7. Dungeon (abre a janela; raid em breve).
 
 ## Fora do escopo por enquanto
 
@@ -90,4 +91,4 @@ opções do seu nível.
 - **Ir para outra ilha**: só quando existir viagem livre entre ilhas.
 - **Barra do HUD**: o toque longo no espaço já abre o configurador (onde há a
   lupa); uma segunda ação no mesmo gesto brigaria com o arrasto do AUTO.
-- Dungeon/raid entra quando existir.
+- A Caçada (raid) entra quando existir.
