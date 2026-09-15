@@ -19,6 +19,10 @@ Decididas pelo usuário. Valem sobre qualquer trecho abaixo que diga outra coisa
 | 6 | **Craft** | Nível mínimo: verde 20, azul 40, épico 60 (implementado) |
 | 7 | **Interface** | Nada abre por tecla: tudo pelo HUD e pelo Menu |
 | 8 | **Auto combate** | **Nunca desvia** de golpe telegrafado. É intencional: o desvio é do jogador, e nada neste doc propõe desvio automático |
+| 9 | **Estágios** | **5 por conteúdo**, +2 níveis de mínimo por estágio (seção 4) |
+| 10 | **Selo da Tempestade** | Receita de craft (Marcas + darksteel + Pó Cintilante) e teto de **2 por semana por conta**, como na seção 8 |
+| 11 | **Correio** | **Junto com as Entregas do Mercado**: uma caixa só (Menu → Comércio → Mercado → Entregas) para recompensa de dungeon, 1ª vitória, bolsa cheia e mercado |
+| 12 | **Wipe** | **Sem limite de wipes.** Só o relógio encerra o estágio |
 
 Pesquisa detalhada do MIR4: [PESQUISA_DUNGEONS_MIR4.md](PESQUISA_DUNGEONS_MIR4.md).
 
@@ -137,13 +141,13 @@ tem estágios.
   no andar 3 não zera o dia inteiro.
 - Grupo de 5: **1 tanque, 1 suporte, 3 dano**. Aceita 3–4 nos estágios 1–2,
   com vida dos inimigos escalada (seção 4).
-- **Estágios 1–5** ⚠️ (seção 4): a mesma arena, com mobs e chefe de nível maior.
+- **Estágios 1–5** (seção 4): a mesma arena, com mobs e chefe de nível maior.
 
 ### Raid (Caçada)
 
 - **Um chefe**, com fases. Adds entre as fases.
 - 10 jogadores: **2 tanques, 2–3 suportes, 5–6 dano**. Mínimo 6 nos estágios 1–2.
-- **Estágios 1–5** ⚠️, como a Gruta.
+- **Estágios 1–5**, como a Gruta.
 - **Baú por contribuição** a cada vitória, mais o **baú de primeira vitória
   semanal** por chefe e estágio, **por conta**. Esse segundo é o grande: é nele que moram
   as chances de Épico.
@@ -388,7 +392,7 @@ COMMIT;
   **não têm transação comum**, então a idempotência faz esse papel.
 - **Bolsa cheia → Correio.** Na mesma transação, o que não cabe na bolsa vira
   linha em `correio` (seção 9) em vez de falhar ou ficar esperando. O jogador
-  retira pelo Menu → Social → Correio. A **1ª vitória vai sempre para o
+  retira na aba **Entregas** do Mercado (a mesma caixa das entregas do mercado). A **1ª vitória vai sempre para o
   Correio**, como no MIR4, com o aviso "Recompensa de primeira vitória no
   Correio".
 - **O coletor roda dentro do processo do realm** (uma task no canal 1 ou no
@@ -581,7 +585,7 @@ leitura é o telegráfico que o servidor manda.
 | **morrer** | **Sem perda de XP, sem reparo, sem perda de item.** A regra do mundo aberto (10% de XP recuperável) **não vale** dentro da instância |
 | **ressurreição** | Botão "Reviver" com espera **crescente por jogador, na instância**: 10 s na 1ª morte, 20 s na 2ª, 30 s na 3ª… (+10 s por morte), como o Hell Raid. Renasce no **ponto de retorno do andar atual** com vida e mana cheias ⚠️. Durante a espera, a câmera segue o grupo |
 | **ressuscitar aliado** | não existe por ora (não há skill); se o anel ganhar uma, ela pula a espera |
-| **wipe** (todos mortos ao mesmo tempo) | Os inimigos **do andar atual** voltam com vida cheia, chefe inclusive. O grupo renasce no início do andar atual, cada um depois da sua espera. **Andares já limpos e cartas já gravadas valem** (como o Path of Fiery Battle guarda o estágio). O relógio **não para** |
+| **wipe** (todos mortos ao mesmo tempo) | Os inimigos **do andar atual** voltam com vida cheia, chefe inclusive. O grupo renasce no início do andar atual, cada um depois da sua espera. **Andares já limpos e cartas já gravadas valem** (como o Path of Fiery Battle guarda o estágio). O relógio **não para**. **Não há limite de wipes**: só o relógio encerra o estágio |
 | **tempo esgotado** | O estágio conta como **falho**: sem baú de conclusão e sem liberar o próximo estágio; a entrada fica consumida. Baús de andar e cartas já gravadas valem |
 | **sair pela porta** | igual a abandono (seção 6); o que já caiu é seu |
 
@@ -769,7 +773,7 @@ direta.
 | **Chefe de campo** | `boss_areas` + `KIND_CHEFE` ganham nome, nível e tabela de baú por área. A Maré Sangrenta é um estado da área |
 | **Arena da instância** | A lane atual é **tile map legado** (`map.set`, `DUNGEON_ORIGIN = (11000, 200)`), e o mundo é voxel (`shared::terreno`). A arena nova sai de um **gerador de ilhotas-arena** no `shared` (semente por conteúdo), com as mesmas regras de colisão. O terreno continua sem trafegar |
 | **Economia / loot** | Tabelas `conteudo_loot` no banco, editáveis pelo admin como `loot_mobs`, com teto duro por faixa **no código** (Épico < 60 é recusado no seed e no admin) |
-| **Correio** (Menu → Social → Correio, hoje com cadeado) | Destino da recompensa que não coube na bolsa e de toda 1ª vitória. Linhas no banco do realm, retirada com toque. Pode dividir a tela com as "Entregas" do Mercado (MERCADO) ⚠️ |
+| **Correio = Entregas do Mercado** (Menu → Comércio → Mercado → Entregas) | Destino da recompensa que não coube na bolsa e de toda 1ª vitória. Uma caixa só com as entregas do mercado; retirada com toque |
 | **Panóptico** | Aba **Instâncias**: filas por papel, tempo de fila p50/p90, instâncias vivas, wipe rate por chefe, cartas pendentes e rejeitadas, rendimento/hora |
 
 ### Persistência
@@ -872,7 +876,7 @@ antes do handoff (como na troca de zona).
    vitória! (no Correio)".
 8. **Mestre das Marés**: loja de Marcas.
 9. **Diário** (Menu → Progresso): aba "Semana" com primeiras vitórias e entradas.
-10. **Correio** (Menu → Social → Correio): retirar recompensas.
+10. **Entregas** (Menu → Comércio → Mercado → Entregas): retirar recompensas de dungeon e do mercado, na mesma lista.
 
 ## 10. O que já existe (estado do código, só leitura)
 
