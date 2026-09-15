@@ -19,6 +19,8 @@ pub struct ConfigBarra {
     selecionado: Option<u16>,
     /// Espaco escolhido, esperando um item.
     pub espaco_alvo: Option<usize>,
+    /// A lupa de um item pediu o "Onde obter" (main abre o popup).
+    pub onde_obter: Option<u16>,
 }
 
 /// Consumiveis da bolsa que cabem na barra, sem repetir, com a quantidade.
@@ -37,7 +39,7 @@ pub fn consumiveis(slots: &[InventorySlot]) -> Vec<(u16, u32)> {
 impl ConfigBarra {
     /// `espaco`: ja' abre com esse espaco escolhido (clique num vazio).
     pub fn abrir(&mut self, espaco: Option<usize>) {
-        *self = Self { aberto: true, selecionado: None, espaco_alvo: espaco };
+        *self = Self { aberto: true, selecionado: None, espaco_alvo: espaco, onde_obter: None };
     }
 
     pub fn fechar(&mut self) {
@@ -124,6 +126,10 @@ impl ConfigBarra {
                 continue;
             }
             estilo::texto(tx, linha.y + 26.0, &nome(esp.item_id), 15, estilo::TEXTO);
+            // Lupa: onde conseguir mais desse consumivel.
+            if crate::onde_obter::botao(Rect::new(linha.x + linha.w - 44.0, linha.y + 44.0, 34.0, 34.0)) {
+                self.onde_obter = Some(esp.item_id);
+            }
             let cat = barra::categoria(esp.item_id);
             // AUTO liga/desliga.
             let b_auto = Rect::new(tx, linha.y + 38.0, 118.0, 26.0);
@@ -183,9 +189,12 @@ impl ConfigBarra {
             }
             crate::bolsa::icone_do_item(Rect::new(r.x + 4.0, r.y + 4.0, 36.0, 36.0), *id, 1.0);
             estilo::texto(r.x + 48.0, r.y + 27.0, &nome(*id), 14, estilo::TEXTO);
+            let lupa = Rect::new(r.x + r.w - 40.0, r.y + 5.0, 34.0, 34.0);
             let t = format!("×{q}");
-            estilo::texto(r.x + r.w - estilo::medir(&t, 13) - 10.0, r.y + 27.0, &t, 13, estilo::SUAVE);
-            if clique && r.contains(m) {
+            estilo::texto(lupa.x - estilo::medir(&t, 13) - 8.0, r.y + 27.0, &t, 13, estilo::SUAVE);
+            if crate::onde_obter::botao(lupa) {
+                self.onde_obter = Some(*id);
+            } else if clique && r.contains(m) {
                 mudou |= self.escolhe_item(barra, *id);
             }
         }

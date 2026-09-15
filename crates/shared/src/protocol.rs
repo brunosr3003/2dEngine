@@ -1029,10 +1029,11 @@ pub struct CraftRecipeNet {
 pub enum FonteDeItem {
     /// Coleta. `tipo` 0 = madeira, 1..4 = pedra pela cor. `chance` por coleta.
     Coleta { tipo: u8, chance: f32, qty_min: u32, qty_max: u32 },
-    /// Bicho comum (zona de spawn). `chance` por morte.
-    Mob { kind: u16, nome: String, chance: f32, qty_min: u32, qty_max: u32 },
-    /// Chefe que nasce no mundo aberto.
-    ChefeDoMundo { kind: u16, nome: String, nivel: u16, chance: f32 },
+    /// Bicho comum (zona de spawn). `chance` por morte. `ilhas` = indices de
+    /// `terreno::ARQUIPELAGO` onde ele nasce com chance boa.
+    Mob { kind: u16, nome: String, chance: f32, qty_min: u32, qty_max: u32, ilhas: Vec<u8> },
+    /// Chefe que nasce no mundo aberto. `ilha` = indice de `ARQUIPELAGO`.
+    ChefeDoMundo { kind: u16, nome: String, nivel: u16, chance: f32, ilha: u8 },
     /// Vendedor da vila (`loja` = id da loja do NPC).
     Vendedor { loja: u32, nome: String, preco: u32 },
     /// Sai de uma receita de craft.

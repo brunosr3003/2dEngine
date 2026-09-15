@@ -51,6 +51,8 @@ struct Compra {
 #[derive(Default)]
 pub struct Mercado {
     pub aberto: bool,
+    /// A lupa de um item pediu o "Onde obter" (main abre o popup).
+    pub onde_obter: Option<u16>,
     /// Itens vinculados (`ItemsConfig`): nao aparecem pra vender.
     pub vinculados: HashSet<u16>,
     aba: Aba,
@@ -294,11 +296,19 @@ impl Mercado {
         let cabem = ((lista.h / alt).floor() as usize).max(1);
         self.rolagem = self.rolagem.min(self.lista.len().saturating_sub(cabem));
         let mut comprar = None;
+        let mut onde = None;
         for (i, an) in self.lista.iter().enumerate().skip(self.rolagem).take(cabem) {
             let r = Rect::new(lista.x, lista.y + (i - self.rolagem) as f32 * alt, lista.w, alt - 6.0 * f);
             if linha_de_anuncio(r, an, c, f, livre, if an.meu { "Seu" } else { "Comprar" }, !an.meu) {
                 comprar = Some(an.clone());
             }
+            // Tocar no icone do item: "Onde obter" (TP nao tem).
+            if an.tipo == regras::TIPO_ITEM && livre && crate::onde_obter::lupa_no_icone(icone_do_anuncio(r, f)) {
+                onde = Some(an.item_id);
+            }
+        }
+        if onde.is_some() {
+            self.onde_obter = onde;
         }
         if let Some(an) = comprar {
             self.compra = Some(Compra { anuncio: an, qtd: 1 });
@@ -454,7 +464,10 @@ impl Mercado {
             return;
         };
         let nome = c.nomes.get(&slot.item_id).cloned().unwrap_or_else(|| format!("Item {}", slot.item_id));
-        estilo::texto_ajustado(&nome, x, y + 8.0 * f, w, 18, estilo::TEXTO);
+        estilo::texto_ajustado(&nome, x, y + 8.0 * f, w - 48.0 * f, 18, estilo::TEXTO);
+        if livre && crate::onde_obter::botao(Rect::new(x + w - 40.0 * f, y - 14.0 * f, 40.0 * f, 34.0 * f)) {
+            self.onde_obter = Some(slot.item_id);
+        }
         y += 44.0 * f;
         seletor(Rect::new(x, y, w, 42.0 * f), "Quantidade", &mut self.venda_qtd, 1, slot.qty.max(1) as u64, false, f);
         y += 66.0 * f;
@@ -636,10 +649,15 @@ fn nome_do_anuncio(an: &AnuncioNet, c: &Contexto) -> String {
     }
 }
 
+/// O quadrado do icone numa linha de anuncio.
+fn icone_do_anuncio(r: Rect, f: f32) -> Rect {
+    Rect::new(r.x + 6.0 * f, r.y + 4.0 * f, r.h - 8.0 * f, r.h - 8.0 * f)
+}
+
 /// Uma linha de anuncio com botao a' direita. `true` no clique do botao.
 fn linha_de_anuncio(r: Rect, an: &AnuncioNet, c: &Contexto, f: f32, livre: bool, rotulo: &str, ativo: bool) -> bool {
     estilo::cartao(r, false, an.meu);
-    let icone = Rect::new(r.x + 6.0 * f, r.y + 4.0 * f, r.h - 8.0 * f, r.h - 8.0 * f);
+    let icone = icone_do_anuncio(r, f);
     let x = if an.tipo == regras::TIPO_TP {
         estilo::texto_centro_forte(icone.center().x, icone.center().y + 6.0 * f, "TP", 18, estilo::OURO);
         icone.x + icone.w + 10.0 * f

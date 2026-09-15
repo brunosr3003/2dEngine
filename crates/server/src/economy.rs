@@ -451,8 +451,10 @@ pub fn farm_node_loot_com_sorte(kind: &str, tier: u8, seed: u64, mult: f32) -> V
 pub struct OutrasFontes<'a> {
     /// Kinds de bicho comum (zonas de spawn e praia).
     pub mobs: &'a [u16],
-    /// (kind, nome, nivel, itens com chance) dos chefes do mundo.
-    pub chefes: Vec<(u16, String, u16, Vec<(u16, f32)>)>,
+    /// Ilhas (indice de `ARQUIPELAGO`) onde cada bicho nasce.
+    pub ilhas_do_bicho: HashMap<u16, Vec<u8>>,
+    /// (kind, nome, nivel, ilha, itens com chance) dos chefes do mundo.
+    pub chefes: Vec<(u16, String, u16, u8, Vec<(u16, f32)>)>,
     /// Lojas que existem de verdade num NPC da vila.
     pub lojas_da_vila: &'a [u32],
     pub receitas: &'a [shared::protocol::CraftRecipeNet],
@@ -477,7 +479,8 @@ pub fn fontes_de_itens(cfg: &EconomyConfig, o: &OutrasFontes) -> Vec<shared::pro
         let Some(tabela) = cfg.loot_tables.get(&kind) else { continue };
         let nome = cfg.enemy_kinds.get(&kind).map(|e| e.name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| format!("Bicho {kind}"));
         for e in tabela.iter().filter(|e| e.chance > 0.0 && cfg.permitido_em_mob(e.item_id)) {
-            junta(&mut por_item, cfg, e.item_id, FonteDeItem::Mob { kind, nome: nome.clone(), chance: e.chance, qty_min: e.qty_min, qty_max: e.qty_max });
+            let ilhas = o.ilhas_do_bicho.get(&kind).cloned().unwrap_or_default();
+            junta(&mut por_item, cfg, e.item_id, FonteDeItem::Mob { kind, nome: nome.clone(), chance: e.chance, qty_min: e.qty_min, qty_max: e.qty_max, ilhas });
         }
     }
     if let Some(tabela) = cfg.farm_loot_tables.get(&("Tree".to_string(), 1)) {
@@ -505,9 +508,9 @@ pub fn fontes_de_itens(cfg: &EconomyConfig, o: &OutrasFontes) -> Vec<shared::pro
             }
         }
     }
-    for (kind, nome, nivel, itens) in &o.chefes {
+    for (kind, nome, nivel, ilha, itens) in &o.chefes {
         for &(id, chance) in itens.iter().filter(|x| x.1 > 0.0) {
-            junta(&mut por_item, cfg, id, FonteDeItem::ChefeDoMundo { kind: *kind, nome: nome.clone(), nivel: *nivel, chance });
+            junta(&mut por_item, cfg, id, FonteDeItem::ChefeDoMundo { kind: *kind, nome: nome.clone(), nivel: *nivel, chance, ilha: *ilha });
         }
     }
     for &loja in o.lojas_da_vila {
@@ -581,16 +584,17 @@ mod testes_onde_obter {
         v.iter().find(|e| e.item_id == id).map(|e| e.sources.clone()).unwrap_or_default()
     }
 
-    fn outras<'a>(chefes: Vec<(u16, String, u16, Vec<(u16, f32)>)>) -> OutrasFontes<'a> {
-        OutrasFontes { mobs: &[0], chefes, lojas_da_vila: &[3], receitas: &[], missoes: &[] }
+    fn outras<'a>(chefes: Vec<(u16, String, u16, u8, Vec<(u16, f32)>)>) -> OutrasFontes<'a> {
+        let ilhas_do_bicho = HashMap::from([(0u16, vec![0u8, 1])]);
+        OutrasFontes { mobs: &[0], ilhas_do_bicho, chefes, lojas_da_vila: &[3], receitas: &[], missoes: &[] }
     }
 
     #[test]
     fn junta_mob_coleta_vendedor_e_chefe() {
         let c = cfg();
-        let f = fontes_de_itens(&c, &outras(vec![(10, "Lobo Alfa".into(), 8, vec![(na_cor(SCALE, 1), 0.0125)])]));
+        let f = fontes_de_itens(&c, &outras(vec![(10, "Lobo Alfa".into(), 8, 0, vec![(na_cor(SCALE, 1), 0.0125)])]));
         let pocao = de(&f, HEALTH_POTION);
-        assert!(pocao.iter().any(|x| matches!(x, FonteDeItem::Mob { kind: 0, .. })));
+        assert!(pocao.iter().any(|x| matches!(x, FonteDeItem::Mob { kind: 0, ilhas, .. } if *ilhas == vec![0, 1])));
         assert!(pocao.iter().any(|x| matches!(x, FonteDeItem::Vendedor { loja: 3, preco: 10, .. })));
         assert_eq!(de(&f, WOOD_T1), vec![FonteDeItem::Coleta { tipo: 0, chance: 1.0, qty_min: 3, qty_max: 5 }]);
         // Aco cinza: toda pedra da' cinza (cinza 100%, verde 80%...).
@@ -606,9 +610,9 @@ mod testes_onde_obter {
     #[test]
     fn chave_so_de_chefe_e_dungeon() {
         let c = cfg();
-        let f = fontes_de_itens(&c, &outras(vec![(10, "Lobo Alfa".into(), 8, vec![(na_cor(SCALE, 1), 0.0125)])]));
+        let f = fontes_de_itens(&c, &outras(vec![(10, "Lobo Alfa".into(), 8, 2, vec![(na_cor(SCALE, 1), 0.0125)])]));
         let escama = de(&f, na_cor(SCALE, 1));
-        assert!(escama.iter().any(|x| matches!(x, FonteDeItem::ChefeDoMundo { kind: 10, .. })));
+        assert!(escama.iter().any(|x| matches!(x, FonteDeItem::ChefeDoMundo { kind: 10, ilha: 2, .. })));
         assert!(escama.contains(&FonteDeItem::DungeonRaid));
         assert!(escama.iter().all(|x| !matches!(x, FonteDeItem::Mob { .. } | FonteDeItem::Coleta { .. })));
     }

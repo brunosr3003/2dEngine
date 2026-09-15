@@ -2870,7 +2870,8 @@ impl Jogo {
                 self.auto_coleta.raio = raio;
             }
         }
-        if self.config_barra.aberto {
+        // Com o "Onde obter" aberto por cima, o configurador fica parado.
+        if self.config_barra.aberto && !self.onde_obter.aberto() {
             let bolsa = &self.bolsa;
             if self.config_barra.desenha(&mut self.barra, &bolsa.slots, &|id| bolsa.nome(id)) {
                 self.salvar_barra();
@@ -3010,6 +3011,8 @@ impl Jogo {
             self.bolsa.onde_obter.take(),
             self.missoes.onde_obter.take(),
             self.diarias.onde_obter.take(),
+            self.mercado.onde_obter.take(),
+            self.config_barra.onde_obter.take(),
         ];
         if let Some(id) = pedido_onde.into_iter().flatten().next() {
             self.onde_obter.abrir(id);
@@ -3024,6 +3027,7 @@ impl Jogo {
                     eu: self.world.self_pos(),
                     nivel,
                     vinculado: self.mercado.vinculados.contains(&item),
+                    ilha_atual: onde_obter::ilha_da_zona(&self.info.zona),
                 };
                 onde_obter::opcoes(item, self.onde_obter.fontes_de(item), &c)
             };

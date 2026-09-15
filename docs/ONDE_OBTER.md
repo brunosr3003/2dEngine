@@ -17,6 +17,8 @@ Código: `crates/client/src/onde_obter.rs` (lógica pura + popup),
 | Bolsa | cartão de qualquer item (menos ouro) |
 | Diário de missões | objetivo de juntar/entregar item ainda não cumprido |
 | Diárias | diária de juntar item |
+| Mercado | ícone de cada anúncio de item (toque no ícone; TP não tem) e o item escolhido na aba Vender |
+| Barra de itens | configurador (Menu → Sistema → Barra): cada consumível da lista e cada espaço preenchido |
 
 Com o popup aberto, os painéis de baixo ficam parados (não desenham), para o
 toque no popup não cair num botão deles. O X volta ao painel.
@@ -29,8 +31,8 @@ economia (`ServerMessage::ResourceSources`, protocolo 96). Só o que existe:
 | Fonte | Tirada de | Mostra |
 |---|---|---|
 | **Coleta** | `farm_node_drops`: árvore (linha 1) e pedra. A tabela da pedra é por cor do **material**; a pedra de cada cor entrega as cores na proporção de `RENDIMENTO_DA_PEDRA`, então a fonte é a pedra, com a chance já multiplicada | tipo de nó, quantidade, chance por coleta |
-| **Bicho** | `loot_drops` dos kinds comuns e de praia (sem chefes, sem equipamento) | nome, nível da zona, chance por morte |
-| **Chefe do mundo** | `itens_do_chefe` (o mesmo que `loot_de_chefe` rola; teste garante) | nome, nível, chance |
+| **Bicho** | `loot_drops` dos kinds comuns e de praia (sem chefes, sem equipamento) | nome, nível da zona, chance por morte e as **ilhas** onde nasce |
+| **Chefe do mundo** | `itens_do_chefe` (o mesmo que `loot_de_chefe` rola; teste garante) | nome, nível, chance e a **ilha** |
 | **Vendedor** | lojas que existem num NPC da vila (hoje a do Alquimista) | NPC, preço |
 | **Craft** | receitas (`craft_recipes`) pelo item que sai | receita, nível mínimo |
 | **Missão** | recompensas de `QUESTS` (item 1 e 2) | título, se é diária |
@@ -50,8 +52,19 @@ economia (`ServerMessage::ResourceSources`, protocolo 96). Só o que existe:
 | Missão, dungeon/raid | sem Ir |
 
 O Ir fecha os painéis, desliga o que brigaria pela rota (como o mapa) e diz no
-chat "Indo: …"; a faixa do HUD mostra "INDO · … · N m". Fonte que não existe na
-ilha atual aparece sem Ir ("Não há nesta ilha", "Em outra ilha").
+chat "Indo: …"; a faixa do HUD mostra "INDO · … · N m".
+
+## Outra ilha
+
+Bicho e chefe trazem **em que ilha** existem (`ilhas_dos_bichos` e a zona do
+chefe em `world/chefes.rs`). O bicho conta nas ilhas cuja faixa de nível o
+sorteia com chance ≥ 15% (mesma conta do spawn, `quests::chance_do_kind`);
+caranguejo, em toda ilha. Se a fonte não está na ilha atual, a linha diz
+"Ilha: Geleira" (ou "Ilhas: Ermo, Planalto") e fica **sem Ir**, com "Outra
+ilha": viajar entre ilhas só existe pela história, no Capitão do Porto.
+Coleta e vendedor não precisam: toda ilha tem árvore (o deserto, rala), as
+quatro cores de pedra (a cor sai da altura relativa ao pico) e o Alquimista
+na vila.
 
 Zona com nível mínimo acima do seu nível + 5 aparece em vermelho, depois das
 opções do seu nível.
@@ -68,7 +81,13 @@ opções do seu nível.
 
 ## Fora do escopo por enquanto
 
-- Fonte em outra ilha não diz qual ilha (o cliente só conhece o mapa da ilha
-  atual).
-- Loja de facção e peixe da pesca não entram.
+- **Loja de facção**: o NPC de facção vem do mapfile legado e o cliente não
+  trata `FactionShopOpen` nem manda `FactionShopBuy` — o jogador não tem como
+  comprar nela. Entra quando a loja voltar ao cliente.
+- **Pesca**: o servidor ainda sabe pescar (`FishingCast`), mas o cliente nunca
+  manda o pedido; peixe não tem de onde sair para o jogador. Entra junto da
+  pesca no cliente.
+- **Ir para outra ilha**: só quando existir viagem livre entre ilhas.
+- **Barra do HUD**: o toque longo no espaço já abre o configurador (onde há a
+  lupa); uma segunda ação no mesmo gesto brigaria com o arrasto do AUTO.
 - Dungeon/raid entra quando existir.

@@ -132,12 +132,14 @@ pub fn itens_do_chefe(kind: u16) -> Vec<(u16, f32)> {
 /// O "Onde obter" do cache atual (docs/ONDE_OBTER.md). Tudo que trava a
 /// economia de novo (`kinds_comuns`) e' pego antes da leitura.
 pub fn onde_obter_snapshot() -> Vec<shared::protocol::ItemResourceSources> {
-    let mut mobs = crate::economy::kinds_comuns();
+    let comuns = crate::economy::kinds_comuns();
+    let ilhas_do_bicho = ilhas_dos_bichos(&comuns, &crate::economy::KINDS_DE_PRAIA);
+    let mut mobs = comuns;
     mobs.retain(|k| !cat::e_chefe(*k));
     mobs.extend(crate::economy::KINDS_DE_PRAIA);
     let chefes = cat::CHEFES
         .iter()
-        .map(|c| (c.kind, c.nome.to_string(), c.nivel.min(u16::MAX as u32) as u16, itens_do_chefe(c.kind)))
+        .map(|c| (c.kind, c.nome.to_string(), c.nivel.min(u16::MAX as u32) as u16, ilha_da_zona(c.zona), itens_do_chefe(c.kind)))
         .collect();
     let receitas = crate::recipes::all();
     crate::economy::com_config(|cfg| {
@@ -145,6 +147,7 @@ pub fn onde_obter_snapshot() -> Vec<shared::protocol::ItemResourceSources> {
             cfg,
             &crate::economy::OutrasFontes {
                 mobs: &mobs,
+                ilhas_do_bicho,
                 chefes,
                 lojas_da_vila: &[shared::vila::LOJA_DE_POCOES],
                 receitas: &receitas,
@@ -152,6 +155,34 @@ pub fn onde_obter_snapshot() -> Vec<shared::protocol::ItemResourceSources> {
             },
         )
     })
+}
+
+/// Indice da ilha de `zona` em `ARQUIPELAGO` (0 se desconhecida).
+fn ilha_da_zona(zona: &str) -> u8 {
+    shared::terreno::ARQUIPELAGO.iter().position(|d| d.zona == zona).unwrap_or(0) as u8
+}
+
+/// Em que ilhas cada bicho nasce, pro "Onde obter" dizer o nome. Mesma conta
+/// do spawn (`quests::chance_do_kind` sobre a faixa de nivel da ilha): conta a
+/// ilha em que ele sai com chance boa (>= 15%); se nao houver nenhuma, toda
+/// ilha em que ele sai. Caranguejo nasce na praia de toda ilha.
+pub fn ilhas_dos_bichos(comuns: &[u16], praia: &[u16]) -> std::collections::HashMap<u16, Vec<u8>> {
+    let ilhas = &shared::terreno::ARQUIPELAGO;
+    let mut m = std::collections::HashMap::new();
+    for &k in comuns {
+        let chances: Vec<(u8, f32)> = ilhas
+            .iter()
+            .enumerate()
+            .map(|(i, d)| (i as u8, crate::quests::chance_do_kind(comuns, k, d.nivel.0, d.nivel.1)))
+            .collect();
+        let boas: Vec<u8> = chances.iter().filter(|c| c.1 >= 0.15).map(|c| c.0).collect();
+        let v = if boas.is_empty() { chances.iter().filter(|c| c.1 > 0.0).map(|c| c.0).collect() } else { boas };
+        m.insert(k, v);
+    }
+    for &k in praia {
+        m.insert(k, (0..ilhas.len() as u8).collect());
+    }
+    m
 }
 
 /// Os drops da morte com o do chefe junto (mob comum passa igual).
@@ -482,6 +513,22 @@ mod testes {
             }
         }
         assert!(itens_do_chefe(0).is_empty());
+    }
+
+    #[test]
+    fn ilhas_dos_bichos_seguem_a_faixa_de_nivel() {
+        // Bosque 1–15, Geleira 15–30, Ermo 28–42, Planalto 40–60.
+        let comuns: Vec<u16> = (0..=9).filter(|k| *k != 7 && *k != 8 && *k != 9).collect();
+        let m = ilhas_dos_bichos(&comuns, &[8, 9]);
+        assert!(m[&0].contains(&0), "lobo nasce no Bosque");
+        let ultimo = *comuns.last().unwrap();
+        assert!(!m[&ultimo].contains(&0), "o bicho mais forte nao nasce no Bosque");
+        assert!(!m[&ultimo].is_empty());
+        assert_eq!(m[&8], vec![0, 1, 2, 3], "caranguejo em toda praia");
+        assert_eq!(ilha_da_zona("ilha_gelo"), 1);
+        for c in cat::CHEFES {
+            assert_eq!(shared::terreno::ARQUIPELAGO[ilha_da_zona(c.zona) as usize].zona, c.zona);
+        }
     }
 
     fn todas_as_chaves_da_cor(cor: u8) -> Vec<u16> {
