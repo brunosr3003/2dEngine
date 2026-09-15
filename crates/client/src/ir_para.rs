@@ -24,6 +24,8 @@ pub enum Objetivo {
     Coleta(u8),
     /// Um NPC: fala com ele ao chegar.
     Npc,
+    /// So' chegar la' (chefe muito acima do nivel: nada liga sozinho).
+    Lugar,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -86,6 +88,7 @@ impl IrPara {
                 Objetivo::Combate => Acao::LigarCombate(a.pos),
                 Objetivo::Coleta(t) => Acao::LigarColeta(t, a.pos),
                 Objetivo::Npc => Acao::FalarPerto(a.pos),
+                Objetivo::Lugar => Acao::Aviso(format!("Chegou: {}.", a.rotulo)),
             };
             self.parar();
             return Some(acao);
@@ -167,6 +170,15 @@ mod tests {
             }
         }
         assert!(aviso.is_some(), "nao desistiu");
+        assert!(!ir.ativo());
+    }
+
+    #[test]
+    fn lugar_so_chega_e_avisa() {
+        let mut ir = IrPara::default();
+        ir.iniciar(alvo(Objetivo::Lugar, vec2(40.0, 0.0), 6.0), 0.0);
+        assert_eq!(ir.passo(Vec2::ZERO, 0.0, false), Some(Acao::Viajar(vec2(40.0, 0.0))));
+        assert_eq!(ir.passo(vec2(36.0, 0.0), 2.0, false), Some(Acao::Aviso("Chegou: x.".into())));
         assert!(!ir.ativo());
     }
 

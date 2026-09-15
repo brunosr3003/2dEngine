@@ -94,6 +94,15 @@ impl Mercado {
         v
     }
 
+    /// Abre na aba Comprar ja' buscando `texto` (o "Buscar" do Onde obter).
+    pub fn abrir_buscando(&mut self, texto: &str) -> Vec<ClientMessage> {
+        self.busca = texto.to_string();
+        self.categoria = Categoria::Todas as u8;
+        self.pagina = 0;
+        self.rolagem = 0;
+        self.abrir()
+    }
+
     pub fn fechar(&mut self) {
         self.aberto = false;
         self.foco_busca = false;

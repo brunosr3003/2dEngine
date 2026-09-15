@@ -55,6 +55,8 @@ pub struct Craft {
     rolagem: f32,
     /// (texto, deu certo, quando).
     aviso: Option<(String, bool, f64)>,
+    /// Lupa tocada num ingrediente: o item pro "Onde obter".
+    pub onde_obter: Option<u16>,
 }
 
 impl Craft {
@@ -72,6 +74,18 @@ impl Craft {
 
     pub fn aberto(&self) -> bool {
         self.aberto
+    }
+
+    /// Abre direto numa receita (o "Abrir" do Onde obter).
+    pub fn abrir_receita(&mut self, id: u16) {
+        self.aberto = true;
+        if let Some(r) = self.receitas.iter().find(|r| r.id == id) {
+            if let Some(i) = ABAS.iter().position(|c| *c == r.category) {
+                self.aba = i;
+            }
+            self.sel = Some(id);
+            self.rolagem = 0.0;
+        }
     }
 
     pub fn define_receitas(&mut self, v: Vec<CraftRecipeNet>) {
@@ -179,10 +193,14 @@ impl Craft {
             for (i, (id, t, q)) in ingredientes(r, slots).into_iter().enumerate() {
                 let y = d.y + 102.0 + i as f32 * 36.0;
                 crate::bolsa::icone_do_item(Rect::new(d.x + 6.0, y, 30.0, 30.0), id, 1.0);
-                estilo::texto_ajustado(&nome(id), d.x + 44.0, y + 20.0, d.w - 170.0, 15, estilo::TEXTO);
+                estilo::texto_ajustado(&nome(id), d.x + 44.0, y + 20.0, d.w - 210.0, 15, estilo::TEXTO);
                 let txt = format!("{t}/{q}");
                 let cor = if t >= q { VERDE } else { VERMELHO };
-                estilo::texto(d.x + d.w - estilo::medir(&txt, 15) - 8.0, y + 20.0, &txt, 15, cor);
+                estilo::texto(d.x + d.w - estilo::medir(&txt, 15) - 50.0, y + 20.0, &txt, 15, cor);
+                // Onde obter: a lupa de cada ingrediente.
+                if crate::onde_obter::botao(Rect::new(d.x + d.w - 40.0, y - 1.0, 34.0, 32.0)) {
+                    self.onde_obter = Some(id);
+                }
             }
             let m = motivo(r, slots, nivel);
             let b = Rect::new(d.x + d.w - 160.0, d.y + d.h - 48.0, 150.0, 38.0);
@@ -224,6 +242,16 @@ mod tests {
         assert_eq!(motivo(&epico, &tudo, 10).as_deref(), Some("Requer nível 60"));
         let ing = ingredientes(&r, &falta);
         assert_eq!(ing[0], (r.inputs[0][0] as u16, 0, 1));
+    }
+
+    #[test]
+    fn abrir_receita_vai_pra_aba_e_seleciona() {
+        let mut c = Craft::default();
+        c.define_receitas(shared::receitas::receitas_de_equipamento());
+        let brinco = c.receitas.iter().find(|r| r.category == categoria::ACESSORIO).unwrap().id;
+        c.abrir_receita(brinco);
+        assert!(c.aberto());
+        assert_eq!((ABAS[c.aba], c.sel), (categoria::ACESSORIO, Some(brinco)));
     }
 
     #[test]

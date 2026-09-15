@@ -75,7 +75,7 @@ pub fn loot_de_chefe(kind: u16, seed: u64) -> Vec<(u16, u32)> {
     use shared::item_id::*;
     let Some(c) = cat::chefe(kind) else { return Vec::new() };
     let n = c.nivel;
-    let cor: u8 = match n { 0..=14 => 1, 15..=29 => 2, _ => 3 };
+    let cor = cor_da_faixa(n);
     let mut s = seed ^ 0xB055_C0DE_u64;
     let mut rnd = || {
         s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
@@ -100,6 +100,58 @@ pub fn loot_de_chefe(kind: u16, seed: u64) -> Vec<(u16, u32)> {
         v.push((chave, 1));
     }
     v
+}
+
+/// Cor do material bom do chefe pelo nivel dele.
+fn cor_da_faixa(nivel: u32) -> u8 {
+    match nivel { 0..=14 => 1, 15..=29 => 2, _ => 3 }
+}
+
+/// Tudo que `loot_de_chefe` pode dar, com a chance de cada um — pro "Onde
+/// obter" (docs/ONDE_OBTER.md). Tem que andar junto com `loot_de_chefe`
+/// (teste `itens_do_chefe_cobre_o_loot`).
+pub fn itens_do_chefe(kind: u16) -> Vec<(u16, f32)> {
+    use shared::item_id::*;
+    let Some(c) = cat::chefe(kind) else { return Vec::new() };
+    let cor = cor_da_faixa(c.nivel);
+    let chave = shared::chaves::faixa(c.nivel);
+    let mut v = vec![
+        (COPPER, 1.0),
+        (DARKSTEEL, 1.0),
+        (na_cor(STEEL, cor), 1.0),
+        (GREATER_HEAL, 1.0),
+        (na_cor(PLATINUM, cor), 0.6),
+        (GLITTERING_POWDER, 0.25),
+    ];
+    for base in CHAVES {
+        v.push((chave_na_cor(base, chave.cor), chave.chance_mundo / 4.0));
+    }
+    v
+}
+
+/// O "Onde obter" do cache atual (docs/ONDE_OBTER.md). Tudo que trava a
+/// economia de novo (`kinds_comuns`) e' pego antes da leitura.
+pub fn onde_obter_snapshot() -> Vec<shared::protocol::ItemResourceSources> {
+    let mut mobs = crate::economy::kinds_comuns();
+    mobs.retain(|k| !cat::e_chefe(*k));
+    mobs.extend(crate::economy::KINDS_DE_PRAIA);
+    let chefes = cat::CHEFES
+        .iter()
+        .map(|c| (c.kind, c.nome.to_string(), c.nivel.min(u16::MAX as u32) as u16, itens_do_chefe(c.kind)))
+        .collect();
+    let receitas = crate::recipes::all();
+    crate::economy::com_config(|cfg| {
+        crate::economy::fontes_de_itens(
+            cfg,
+            &crate::economy::OutrasFontes {
+                mobs: &mobs,
+                chefes,
+                lojas_da_vila: &[shared::vila::LOJA_DE_POCOES],
+                receitas: &receitas,
+                missoes: shared::quests::QUESTS,
+            },
+        )
+    })
 }
 
 /// Os drops da morte com o do chefe junto (mob comum passa igual).
@@ -417,6 +469,19 @@ mod testes {
             let taxa = caiu as f32 / N as f32;
             assert!((taxa - esperado).abs() < 0.006, "chefe {kind} (nv {nivel}): {taxa}, tabela {esperado}");
         }
+    }
+
+    #[test]
+    fn itens_do_chefe_cobre_o_loot() {
+        for c in cat::CHEFES.iter() {
+            let lista: Vec<u16> = itens_do_chefe(c.kind).iter().map(|x| x.0).collect();
+            for seed in 0..3_000u64 {
+                for (id, _) in loot_de_chefe(c.kind, seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)) {
+                    assert!(lista.contains(&id), "chefe {}: {id} cai e nao aparece no Onde obter", c.kind);
+                }
+            }
+        }
+        assert!(itens_do_chefe(0).is_empty());
     }
 
     fn todas_as_chaves_da_cor(cor: u8) -> Vec<u16> {

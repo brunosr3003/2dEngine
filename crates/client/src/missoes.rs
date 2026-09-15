@@ -45,6 +45,8 @@ pub fn na_bolsa(slots: &[shared::InventorySlot], id: u16) -> u32 {
 pub struct Missoes {
     /// Ativas e prontas, como o servidor mandou.
     pub log: Vec<QuestNet>,
+    /// Lupa num objetivo de juntar item: o item pro "Onde obter".
+    pub onde_obter: Option<u16>,
     /// O que o NPC da janela oferece agora.
     oferta: Vec<QuestNet>,
     /// Cabecalho: nome do NPC, ou "Diario de missoes".
@@ -388,6 +390,12 @@ impl Missoes {
             }
             if !com_o_mestre && crate::ui::botao(Rect::new(bx - 92.0, y + 4.0, 92.0, 26.0), "Ir", true) {
                 ir = Some(q.id);
+            }
+            if coleta(q) && q.obj_target != 0 && !ok {
+                let lx = if com_o_mestre { bx - 40.0 } else { bx - 92.0 - 40.0 };
+                if crate::onde_obter::botao(Rect::new(lx, y + 2.0, 34.0, 30.0)) {
+                    self.onde_obter = Some(q.obj_target);
+                }
             }
             // A historia nao se abandona.
             if !historia::e_da_historia(q.id) && crate::ui::botao(Rect::new(bx - 92.0, y + 34.0, 92.0, 24.0), "Abandonar", true) {

@@ -68,6 +68,7 @@ pub struct ProjTag {
 mod habilidades;
 mod boss_teste;
 mod chefes;
+pub(crate) use chefes::itens_do_chefe;
 mod mercado_mundo;
 use habilidades::HabilidadePendente;
 
@@ -4582,7 +4583,7 @@ impl GameWorld {
         // Reverse-index das loot tables — cliente usa pra mostrar "como obter"
         // ao clicar num material faltante na UI de crafting.
         let _ = handle.to_client.send(ServerMessage::ResourceSources {
-            items: crate::economy::resource_sources_snapshot(),
+            items: chefes::onde_obter_snapshot(),
         });
         // Quests ativas + pontos de facção + givers disponíveis (indicador "!").
         self.send_quest_log(sid);
@@ -6512,7 +6513,7 @@ impl GameWorld {
             self.last_econ_version = v;
             let cfg = crate::economy::items_config();
             let skills_cfg = crate::skills::all_skills();
-            let res_src = crate::economy::resource_sources_snapshot();
+            let res_src = chefes::onde_obter_snapshot();
             for s in self.sessions.values() {
                 if !s.logged_in { continue; }
                 let _ = s.handle.to_client.send(ServerMessage::ItemsConfig {

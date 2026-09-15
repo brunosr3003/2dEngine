@@ -619,6 +619,17 @@ impl Mapa {
             .collect()
     }
 
+    /// Os vendedores com o id da loja: (loja, nome, posicao). E' como o "Onde
+    /// obter" acha o NPC de um `FonteDeItem::Vendedor`.
+    pub fn lojas_com_id(&self) -> Vec<(u32, String, Vec2)> {
+        let Some(g) = &self.ger else { return Vec::new() };
+        g.vila()
+            .npcs
+            .iter()
+            .filter_map(|n| n.loja.map(|l| (l, n.nome.to_string(), vec2(n.pos.x, n.pos.y))))
+            .collect()
+    }
+
     /// Zona (ilha) deste mapa.
     pub fn zona(&self) -> Option<&'static str> {
         self.def.map(|d| d.zona)

@@ -543,10 +543,8 @@ pub enum ServerMessage {
     /// substitui o hardcoded client-side. Admin pode mudar custos/inputs/
     /// outputs via DB — ideal pra eventos com receitas especiais.
     CraftRecipes { recipes: Vec<CraftRecipeNet> },
-    /// Reverse-index de loot tables — pra cada item, quais mobs/farm nodes
-    /// dropam ele. Usado pela UI de crafting pra mostrar "como conseguir"
-    /// quando jogador clica num material que falta. Enviado no login + apos
-    /// hot-reload da economy. Campo nomeado `resource_sources` (nao `items`)
+    /// "Onde obter": pra cada item, de onde ele sai (`FonteDeItem`). Enviado
+    /// no login + apos hot-reload da economy. Campo nomeado `resource_sources` (nao `items`)
     /// pra evitar colisao no deserializer compartilhado do cliente.
     ResourceSources {
         #[serde(rename = "resource_sources")]
@@ -1023,26 +1021,33 @@ pub struct CraftRecipeNet {
     pub nivel_min:         u16,
 }
 
-/// Origem de um recurso — mob drop ou farm node (gather). Usado pelo
-/// painel de crafting pra mostrar "como obter" um material. `kind`:
-///   0 = mob drop (caçar/matar)
-///   1 = farm node / gather (Tree, Rock, Flower etc por tier)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResourceSource {
-    pub kind:    u8,
-    pub name:    String,
-    pub qty_min: u32,
-    pub qty_max: u32,
-    /// Probabilidade [0.0..1.0] por kill/coleta.
-    pub chance:  f32,
+/// De onde sai um item: o "Onde obter" (docs/ONDE_OBTER.md). Montado no
+/// servidor a partir das tabelas de loot, de coleta, das lojas da vila, das
+/// receitas e das recompensas de missao — so' o que existe de verdade. O
+/// Mercado nao vem aqui: o cliente mostra pra todo item nao vinculado.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum FonteDeItem {
+    /// Coleta. `tipo` 0 = madeira, 1..4 = pedra pela cor. `chance` por coleta.
+    Coleta { tipo: u8, chance: f32, qty_min: u32, qty_max: u32 },
+    /// Bicho comum (zona de spawn). `chance` por morte.
+    Mob { kind: u16, nome: String, chance: f32, qty_min: u32, qty_max: u32 },
+    /// Chefe que nasce no mundo aberto.
+    ChefeDoMundo { kind: u16, nome: String, nivel: u16, chance: f32 },
+    /// Vendedor da vila (`loja` = id da loja do NPC).
+    Vendedor { loja: u32, nome: String, preco: u32 },
+    /// Sai de uma receita de craft.
+    Craft { receita: u16, nome: String, nivel_min: u16 },
+    /// Recompensa de missao.
+    Missao { quest: u16, titulo: String, diaria: bool },
+    /// Chefe de dungeon/raid: ainda nao existe ("em breve").
+    DungeonRaid,
 }
 
-/// Conjunto de fontes que produzem um item específico. Reverse-index das
-/// loot tables, computado server-side e enviado no `ResourceSources`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Todas as fontes de um item. Vai no `ResourceSources`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ItemResourceSources {
     pub item_id: u16,
-    pub sources: Vec<ResourceSource>,
+    pub sources: Vec<FonteDeItem>,
 }
 
 /// Entry da lista de personagens enviada apos login. Cliente renderiza

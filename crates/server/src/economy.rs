@@ -447,51 +447,181 @@ pub fn farm_node_loot_com_sorte(kind: &str, tier: u8, seed: u64, mult: f32) -> V
     cell().read().roll_farm_loot_com_sorte(kind, tier, seed, mult)
 }
 
-/// Reverse-index das loot tables: pra cada item dropavel, lista as fontes
-/// (mobs + farm nodes) com chance/quantidade. Usado pelo cliente na UI de
-/// crafting pra mostrar "como conseguir esse material". Recomputa do
-/// snapshot atual do economy cache.
-pub fn resource_sources_snapshot() -> Vec<shared::protocol::ItemResourceSources> {
-    use shared::protocol::{ItemResourceSources, ResourceSource};
-    let cfg = cell().read();
-    let mut by_item: HashMap<u16, Vec<ResourceSource>> = HashMap::new();
-    for (&kind, table) in &cfg.loot_tables {
-        let mob_name = cfg.enemy_kinds.get(&kind)
-            .map(|e| e.name.clone())
-            .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| format!("Mob #{kind}"));
-        for entry in table {
-            if !cfg.permitido_em_mob(entry.item_id) { continue; }
-            by_item.entry(entry.item_id).or_default().push(ResourceSource {
-                kind:    0,
-                name:    mob_name.clone(),
-                qty_min: entry.qty_min,
-                qty_max: entry.qty_max,
-                chance:  entry.chance,
-            });
+/// O que o "Onde obter" usa e nao mora no `EconomyConfig`.
+pub struct OutrasFontes<'a> {
+    /// Kinds de bicho comum (zonas de spawn e praia).
+    pub mobs: &'a [u16],
+    /// (kind, nome, nivel, itens com chance) dos chefes do mundo.
+    pub chefes: Vec<(u16, String, u16, Vec<(u16, f32)>)>,
+    /// Lojas que existem de verdade num NPC da vila.
+    pub lojas_da_vila: &'a [u32],
+    pub receitas: &'a [shared::protocol::CraftRecipeNet],
+    pub missoes: &'a [shared::quests::QuestDef],
+}
+
+/// "Onde obter" (docs/ONDE_OBTER.md): pra cada item, de onde ele sai. Pura:
+/// o snapshot passa o cache da economia e o resto.
+///
+/// Coleta: a tabela da PEDRA e' por cor do MATERIAL; a pedra de cor `p`
+/// entrega cada cor na proporcao de `RENDIMENTO_DA_PEDRA`, entao a fonte e'
+/// a pedra (com a chance ja' multiplicada). Arvore rola sempre a linha 1.
+pub fn fontes_de_itens(cfg: &EconomyConfig, o: &OutrasFontes) -> Vec<shared::protocol::ItemResourceSources> {
+    use shared::protocol::{FonteDeItem, ItemResourceSources};
+    fn junta(m: &mut HashMap<u16, Vec<FonteDeItem>>, cfg: &EconomyConfig, id: u16, f: FonteDeItem) {
+        if id != 0 && cfg.items.get(&id).is_none_or(|i| i.active) {
+            m.entry(id).or_default().push(f);
         }
     }
-    for ((node_kind, tier), table) in &cfg.farm_loot_tables {
-        let name = format!("{node_kind} T{tier}");
-        for entry in table {
-            if !cfg.items.get(&entry.item_id).map(|i| i.active).unwrap_or(true) { continue; }
-            by_item.entry(entry.item_id).or_default().push(ResourceSource {
-                kind:    1,
-                name:    name.clone(),
-                qty_min: entry.qty_min,
-                qty_max: entry.qty_max,
-                chance:  entry.chance,
-            });
+    let mut por_item: HashMap<u16, Vec<FonteDeItem>> = HashMap::new();
+    for &kind in o.mobs {
+        let Some(tabela) = cfg.loot_tables.get(&kind) else { continue };
+        let nome = cfg.enemy_kinds.get(&kind).map(|e| e.name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| format!("Bicho {kind}"));
+        for e in tabela.iter().filter(|e| e.chance > 0.0 && cfg.permitido_em_mob(e.item_id)) {
+            junta(&mut por_item, cfg, e.item_id, FonteDeItem::Mob { kind, nome: nome.clone(), chance: e.chance, qty_min: e.qty_min, qty_max: e.qty_max });
         }
     }
-    let mut out: Vec<ItemResourceSources> = by_item.into_iter()
+    if let Some(tabela) = cfg.farm_loot_tables.get(&("Tree".to_string(), 1)) {
+        for e in tabela.iter().filter(|e| e.chance > 0.0) {
+            junta(&mut por_item, cfg, e.item_id, FonteDeItem::Coleta { tipo: 0, chance: e.chance, qty_min: e.qty_min, qty_max: e.qty_max });
+        }
+    }
+    for pedra in 1..=4u8 {
+        for cor in 1..=4u8 {
+            let peso = shared::RENDIMENTO_DA_PEDRA[pedra as usize][cor as usize - 1];
+            if peso == 0 {
+                continue;
+            }
+            let Some(tabela) = cfg.farm_loot_tables.get(&("Rock".to_string(), cor)) else { continue };
+            for e in tabela.iter().filter(|e| e.chance > 0.0) {
+                let chance = e.chance * peso as f32 / 100.0;
+                let ja = por_item.get_mut(&e.item_id).and_then(|v| {
+                    v.iter_mut().find(|f| matches!(f, FonteDeItem::Coleta { tipo, .. } if *tipo == pedra))
+                });
+                match ja {
+                    // Item sem cor (cobre) sai em toda linha: soma na mesma pedra.
+                    Some(FonteDeItem::Coleta { chance: c, .. }) => *c = (*c + chance).min(1.0),
+                    _ => junta(&mut por_item, cfg, e.item_id, FonteDeItem::Coleta { tipo: pedra, chance, qty_min: e.qty_min, qty_max: e.qty_max }),
+                }
+            }
+        }
+    }
+    for (kind, nome, nivel, itens) in &o.chefes {
+        for &(id, chance) in itens.iter().filter(|x| x.1 > 0.0) {
+            junta(&mut por_item, cfg, id, FonteDeItem::ChefeDoMundo { kind: *kind, nome: nome.clone(), nivel: *nivel, chance });
+        }
+    }
+    for &loja in o.lojas_da_vila {
+        let Some(shop) = cfg.vendor_shops.get(&loja) else { continue };
+        for (id, preco) in cfg.shop_listing_for(loja) {
+            junta(&mut por_item, cfg, id, FonteDeItem::Vendedor { loja, nome: shop.name.clone(), preco });
+        }
+    }
+    for r in o.receitas {
+        junta(&mut por_item, cfg, r.output_item_id, FonteDeItem::Craft { receita: r.id, nome: r.name.clone(), nivel_min: r.nivel_min });
+    }
+    for q in o.missoes {
+        for id in [q.reward_item, q.reward_item2] {
+            if id != 0 {
+                junta(&mut por_item, cfg, id, FonteDeItem::Missao { quest: q.id, titulo: q.title.to_string(), diaria: q.daily });
+            }
+        }
+    }
+    for id in shared::item_id::todas_as_chaves() {
+        junta(&mut por_item, cfg, id, FonteDeItem::DungeonRaid);
+    }
+    let mut out: Vec<ItemResourceSources> = por_item
+        .into_iter()
         .map(|(item_id, mut sources)| {
-            sources.sort_by(|a, b| b.chance.partial_cmp(&a.chance).unwrap_or(std::cmp::Ordering::Equal));
+            sources.dedup();
             ItemResourceSources { item_id, sources }
         })
         .collect();
     out.sort_by_key(|e| e.item_id);
     out
+}
+
+/// Le o cache da economia (pro "Onde obter" montar fora deste modulo, que
+/// tambem entra nos binarios de auditoria sem o `world`).
+pub fn com_config<R>(f: impl FnOnce(&EconomyConfig) -> R) -> R {
+    f(&cell().read())
+}
+
+#[cfg(test)]
+mod testes_onde_obter {
+    use super::*;
+    use shared::item_id::*;
+    use shared::protocol::FonteDeItem;
+
+    fn item(id: u16, vinc: bool) -> ItemDef {
+        ItemDef {
+            id, name: format!("i{id}"), sell_price: 1, buy_price: Some(10), shop_order: None, stack_max: 99,
+            equip_slot: None, item_level: 1, icon_col: 0, icon_row: 0, icon_path: None, active: true,
+            vinculado: vinc, template: Default::default(),
+        }
+    }
+
+    fn cfg() -> EconomyConfig {
+        let mut c = EconomyConfig::default();
+        for id in [COPPER, na_cor(STEEL, 1), na_cor(STEEL, 2), HEALTH_POTION, WOOD_T1, na_cor(SCALE, 1)] {
+            c.items.insert(id, item(id, false));
+        }
+        c.enemy_kinds.insert(0, EnemyKindDef { kind: 0, name: "Lobo".into(), ..Default::default() });
+        c.loot_tables.insert(0, vec![
+            LootEntry { item_id: COPPER, qty_min: 4, qty_max: 14, chance: 1.0 },
+            LootEntry { item_id: HEALTH_POTION, qty_min: 1, qty_max: 1, chance: 0.08 },
+        ]);
+        c.farm_loot_tables.insert(("Tree".into(), 1), vec![LootEntry { item_id: WOOD_T1, qty_min: 3, qty_max: 5, chance: 1.0 }]);
+        c.farm_loot_tables.insert(("Rock".into(), 1), vec![LootEntry { item_id: na_cor(STEEL, 1), qty_min: 3, qty_max: 6, chance: 0.5 }]);
+        c.farm_loot_tables.insert(("Rock".into(), 2), vec![LootEntry { item_id: na_cor(STEEL, 2), qty_min: 3, qty_max: 6, chance: 0.5 }]);
+        c.vendor_shops.insert(3, VendorShop { shop_id: 3, name: "Alquimista".into(), items: vec![HEALTH_POTION] });
+        c
+    }
+
+    fn de(v: &[shared::protocol::ItemResourceSources], id: u16) -> Vec<FonteDeItem> {
+        v.iter().find(|e| e.item_id == id).map(|e| e.sources.clone()).unwrap_or_default()
+    }
+
+    fn outras<'a>(chefes: Vec<(u16, String, u16, Vec<(u16, f32)>)>) -> OutrasFontes<'a> {
+        OutrasFontes { mobs: &[0], chefes, lojas_da_vila: &[3], receitas: &[], missoes: &[] }
+    }
+
+    #[test]
+    fn junta_mob_coleta_vendedor_e_chefe() {
+        let c = cfg();
+        let f = fontes_de_itens(&c, &outras(vec![(10, "Lobo Alfa".into(), 8, vec![(na_cor(SCALE, 1), 0.0125)])]));
+        let pocao = de(&f, HEALTH_POTION);
+        assert!(pocao.iter().any(|x| matches!(x, FonteDeItem::Mob { kind: 0, .. })));
+        assert!(pocao.iter().any(|x| matches!(x, FonteDeItem::Vendedor { loja: 3, preco: 10, .. })));
+        assert_eq!(de(&f, WOOD_T1), vec![FonteDeItem::Coleta { tipo: 0, chance: 1.0, qty_min: 3, qty_max: 5 }]);
+        // Aco cinza: toda pedra da' cinza (cinza 100%, verde 80%...).
+        let aco = de(&f, na_cor(STEEL, 1));
+        let tipos: Vec<u8> = aco.iter().filter_map(|x| match x { FonteDeItem::Coleta { tipo, .. } => Some(*tipo), _ => None }).collect();
+        assert_eq!(tipos, vec![1, 2, 3, 4]);
+        // Aco verde: nao sai da pedra cinza.
+        let verde = de(&f, na_cor(STEEL, 2));
+        assert!(verde.iter().all(|x| !matches!(x, FonteDeItem::Coleta { tipo: 1, .. })));
+        assert!(verde.iter().any(|x| matches!(x, FonteDeItem::Coleta { tipo: 2, chance, .. } if (*chance - 0.1).abs() < 1e-4)));
+    }
+
+    #[test]
+    fn chave_so_de_chefe_e_dungeon() {
+        let c = cfg();
+        let f = fontes_de_itens(&c, &outras(vec![(10, "Lobo Alfa".into(), 8, vec![(na_cor(SCALE, 1), 0.0125)])]));
+        let escama = de(&f, na_cor(SCALE, 1));
+        assert!(escama.iter().any(|x| matches!(x, FonteDeItem::ChefeDoMundo { kind: 10, .. })));
+        assert!(escama.contains(&FonteDeItem::DungeonRaid));
+        assert!(escama.iter().all(|x| !matches!(x, FonteDeItem::Mob { .. } | FonteDeItem::Coleta { .. })));
+    }
+
+    #[test]
+    fn loja_fora_da_vila_e_item_inativo_ficam_de_fora() {
+        let mut c = cfg();
+        c.vendor_shops.insert(1, VendorShop { shop_id: 1, name: "Legado".into(), items: vec![na_cor(STEEL, 1)] });
+        c.items.get_mut(&WOOD_T1).unwrap().active = false;
+        let f = fontes_de_itens(&c, &outras(Vec::new()));
+        assert!(de(&f, na_cor(STEEL, 1)).iter().all(|x| !matches!(x, FonteDeItem::Vendedor { .. })));
+        assert!(de(&f, WOOD_T1).is_empty());
+    }
 }
 
 /// Template de stat ranges do item (carregado do DB). Retorna default

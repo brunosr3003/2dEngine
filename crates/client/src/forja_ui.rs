@@ -89,6 +89,8 @@ pub struct Forja {
     sel: Option<AlvoDaForja>,
     /// (resultado, texto, cor, quando) — pisca o painel.
     aviso: Option<(u8, String, Color, f64)>,
+    /// Lupa tocada num material: o item pro "Onde obter".
+    pub onde_obter: Option<u16>,
 }
 
 impl Forja {
@@ -202,6 +204,12 @@ impl Forja {
                 let (ds, cu) = (tem(slots, item_id::DARKSTEEL), tem(slots, item_id::COPPER));
                 estilo::texto(d.x, y + 62.0, &format!("Darksteel {ds}/{}", i.darksteel), 15, if ds >= i.darksteel { VERDE } else { VERMELHO });
                 estilo::texto(d.x, y + 84.0, &format!("Cobre {cu}/{}", i.cobre), 15, if cu >= i.cobre { VERDE } else { VERMELHO });
+                if crate::onde_obter::botao(Rect::new(d.x + d.w - 36.0, y + 44.0, 34.0, 22.0)) {
+                    self.onde_obter = Some(item_id::DARKSTEEL);
+                }
+                if crate::onde_obter::botao(Rect::new(d.x + d.w - 36.0, y + 68.0, 34.0, 22.0)) {
+                    self.onde_obter = Some(item_id::COPPER);
+                }
                 if i.risco {
                     estilo::texto(d.x, y + 116.0, "⚠ Se falhar, a peça é DESTRUÍDA.", 15, VERMELHO);
                 } else {

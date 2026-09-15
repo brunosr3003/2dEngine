@@ -96,6 +96,8 @@ pub struct Bolsa {
     /// Ultimo clique: pra reconhecer o duplo.
     clique: (f64, Option<Sel>),
     aviso: Option<(String, f64)>,
+    /// Lupa tocada no cartao do item: o item pro "Onde obter".
+    pub onde_obter: Option<u16>,
 }
 
 impl Default for Bolsa {
@@ -112,6 +114,7 @@ impl Default for Bolsa {
             sel: None,
             clique: (0.0, None),
             aviso: None,
+            onde_obter: None,
         }
     }
 }
@@ -606,6 +609,9 @@ impl Bolsa {
         let nome = self.nome(peca.id);
         let titulo = if peca.refino() > 0 { format!("+{} {nome}", peca.refino()) } else { nome };
         ui::texto(tx, r.y + 40.0, &titulo, 22, cor);
+        if !matches!(tipo(peca.id), Tipo::Ouro) && crate::onde_obter::botao(Rect::new(r.x + r.w - 52.0, r.y + 14.0, 38.0, 38.0)) {
+            self.onde_obter = Some(peca.id);
+        }
         let t = tipo(peca.id);
         let classe = match t {
             Tipo::Arma(c) => format!("Arma · {}", c.nome()),

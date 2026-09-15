@@ -84,6 +84,8 @@ pub fn recompensa(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
 pub struct Diarias {
     pub aberto: bool,
     rolagem: f32,
+    /// Lupa numa diaria de juntar item: o item pro "Onde obter".
+    pub onde_obter: Option<u16>,
 }
 
 impl Diarias {
@@ -162,6 +164,11 @@ impl Diarias {
             estilo::texto_ajustado(d.title, linha.x + 44.0, linha.y + 22.0, largura_texto, 16, if apagada { estilo::SUAVE } else { estilo::TEXTO });
             estilo::texto_ajustado(&rotulo, linha.x + 44.0, linha.y + 42.0, largura_texto, 13, cor);
             estilo::texto_ajustado(&recompensa(d, nomes), linha.x + 44.0, linha.y + 62.0, largura_texto, 13, estilo::OURO);
+            if d.obj_kind == shared::quests::objective_kind::COLLECT && d.obj_target != 0 && !apagada {
+                if crate::onde_obter::botao(Rect::new(linha.x + linha.w - 164.0, linha.y + 20.0, 36.0, 34.0)) {
+                    self.onde_obter = Some(d.obj_target);
+                }
+            }
             if let Some(t) = botao_de(&e) {
                 let b = Rect::new(linha.x + linha.w - 122.0, linha.y + 22.0, 110.0, 30.0);
                 if crate::ui::botao(b, t, true) {

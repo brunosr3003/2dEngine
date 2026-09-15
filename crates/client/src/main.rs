@@ -50,6 +50,7 @@ mod config_barra;
 mod config_coleta;
 mod config_interface;
 mod economia;
+mod onde_obter;
 mod coleta_hud;
 mod lascas;
 mod morte;
@@ -308,6 +309,8 @@ struct Jogo {
     chat: Vec<String>,
     /// Modo economia de energia (`economia.rs`).
     economia: economia::Economia,
+    /// "Onde obter" (`onde_obter.rs`).
+    onde_obter: onde_obter::OndeObter,
     /// Ultimo pedido de tela acesa mandado ao sistema.
     tela_acesa: bool,
 }
@@ -455,6 +458,7 @@ async fn main() {
         info: hud::Info::default(),
         chat: Vec::new(),
         economia: economia::Economia::default(),
+        onde_obter: onde_obter::OndeObter::default(),
         tela_acesa: false,
     };
     // `MMO_HOST` explicito pula a escolha — e' o caminho do run-client.sh e dos
@@ -846,6 +850,7 @@ impl Jogo {
                 self.economia.itens_novos(&entrou);
                 self.bolsa.slots = slots;
             }
+            ServerMessage::ResourceSources { items } => self.onde_obter.define(items),
             ServerMessage::ItemsConfig { items } => {
                 self.mercado.vinculados = items.iter().filter(|i| i.vinculado).map(|i| i.id).collect();
                 self.bolsa.nomes = items.into_iter().map(|i| (i.id, i.name)).collect();
@@ -1291,6 +1296,7 @@ impl Jogo {
             || self.config_barra.aberto
             || self.config_coleta.aberto
             || self.config_interface.aberto
+            || self.onde_obter.aberto()
     }
 
     /// Morreu: nada automatico continua e os paineis fecham — a tela de morte
@@ -1398,7 +1404,27 @@ impl Jogo {
         self.config_coleta.fechar();
         self.config_interface.fechar();
         self.menu.fechar();
+        self.onde_obter.fechar();
         self.voltar_ao_menu = false;
+    }
+
+    /// O "Ir" do Onde obter: fecha os paineis e faz o que a fonte pede.
+    fn executar_onde_obter(&mut self, ir: onde_obter::Ir) {
+        self.fecha_paineis();
+        self.missoes.fecha();
+        match ir {
+            onde_obter::Ir::Alvo(alvo) => {
+                self.chat.push(format!("Indo: {}", alvo.rotulo));
+                self.iniciar_ir_para(alvo);
+            }
+            onde_obter::Ir::AbrirCraft(receita) => self.craft.abrir_receita(receita),
+            onde_obter::Ir::AbrirMercado(item) => {
+                let nome = self.bolsa.nome(item);
+                for pedido in self.mercado.abrir_buscando(&nome) {
+                    self.envia(pedido);
+                }
+            }
+        }
     }
 
     /// Icone 📜 ou titulo do rastreador: abre (ou fecha) o diario.
@@ -2850,18 +2876,21 @@ impl Jogo {
                 self.salvar_barra();
             }
         }
-        if self.craft.aberto() {
+        // Com o "Onde obter" aberto os paineis de baixo nao desenham: o toque
+        // no popup nao pode cair num botao deles.
+        let onde = self.onde_obter.aberto();
+        if self.craft.aberto() && !onde {
             let nivel = self.ficha.nivel.max(1);
             if let Some(m) = self.craft.desenha(&self.bolsa.slots, &self.bolsa.nomes, nivel, get_time()) {
                 self.envia(m);
             }
         }
-        if self.forja.aberto() {
+        if self.forja.aberto() && !onde {
             if let Some(m) = self.forja.desenha(&self.bolsa.slots, &self.bolsa.equip, &self.bolsa.nomes, get_time()) {
                 self.envia(m);
             }
         }
-        if self.missoes.aberta {
+        if self.missoes.aberta && !onde {
             let slots = &self.bolsa.slots;
             let pedidos = self.missoes.desenha(&self.bolsa.nomes, &|id| missoes::na_bolsa(slots, id));
             for pedido in pedidos {
@@ -2871,7 +2900,7 @@ impl Jogo {
         if let Some(id) = self.missoes.ir.take() {
             self.iniciar_auto_missao(id);
         }
-        if self.menu_missoes.aberto {
+        if self.menu_missoes.aberto && !onde {
             hud_layout::escurece(0.55);
             let agora_unix = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -2894,7 +2923,7 @@ impl Jogo {
                 self.clique_menu_missoes(c);
             }
         }
-        if self.diarias.aberto {
+        if self.diarias.aberto && !onde {
             hud_layout::escurece(0.55);
             let agora_unix = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -2950,10 +2979,11 @@ impl Jogo {
             None => {}
         }
         // A bolsa por cima do mundo.
-        if let Some(pedido) = self.bolsa.desenha(&self.vox, &self.solido) {
+        let pedido_da_bolsa = if onde { None } else { self.bolsa.desenha(&self.vox, &self.solido) };
+        if let Some(pedido) = pedido_da_bolsa {
             self.envia(pedido);
         }
-        if self.mercado.aberto {
+        if self.mercado.aberto && !onde {
             let ctx = mercado_ui::Contexto {
                 slots: &self.bolsa.slots,
                 nomes: &self.bolsa.nomes,
@@ -2971,6 +3001,35 @@ impl Jogo {
             if let Some((nome, pos)) = self.lojas.desenha(&lista, self.world.self_pos()) {
                 self.voltar_ao_menu = false;
                 self.iniciar_ir_para(ir_para::Alvo { objetivo: ir_para::Objetivo::Npc, pos, raio: 0.0, rotulo: nome });
+            }
+        }
+        // "Onde obter": a lupa de algum painel pediu; o popup vai por cima.
+        let pedido_onde = [
+            self.craft.onde_obter.take(),
+            self.forja.onde_obter.take(),
+            self.bolsa.onde_obter.take(),
+            self.missoes.onde_obter.take(),
+            self.diarias.onde_obter.take(),
+        ];
+        if let Some(id) = pedido_onde.into_iter().flatten().next() {
+            self.onde_obter.abrir(id);
+        }
+        if let Some(item) = self.onde_obter.item {
+            let lojas = self.mapa.lojas_com_id();
+            let nivel = self.ficha.nivel.max(self.bolsa.nivel).max(1);
+            let ops = {
+                let c = onde_obter::Onde {
+                    info: self.mapa.info.as_ref(),
+                    lojas: &lojas,
+                    eu: self.world.self_pos(),
+                    nivel,
+                    vinculado: self.mercado.vinculados.contains(&item),
+                };
+                onde_obter::opcoes(item, self.onde_obter.fontes_de(item), &c)
+            };
+            let nome = self.bolsa.nome(item);
+            if let Some(ir) = self.onde_obter.desenha(&nome, &ops) {
+                self.executar_onde_obter(ir);
             }
         }
         // O Menu por cima de tudo.
