@@ -135,6 +135,7 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::Message(id, m)) => world.on_message(id, m),
                 Ok(IncomingMessage::Mercado(ev)) => world.on_mercado(ev),
                 Ok(IncomingMessage::Presenca(ev)) => world.on_presenca(ev),
+                Ok(IncomingMessage::Loja(ev)) => world.on_loja(ev),
                 Ok(IncomingMessage::AuthResult(id, r)) => world.on_auth_result(id, r),
                 Ok(IncomingMessage::CharCreated(id, row, success)) => {
                     world.on_char_created(id, *row, success);
@@ -162,6 +163,7 @@ pub async fn run_world_loop(
                 }
                 Ok(IncomingMessage::Mercado(ev)) => world.on_mercado(ev),
                 Ok(IncomingMessage::Presenca(ev)) => world.on_presenca(ev),
+                Ok(IncomingMessage::Loja(ev)) => world.on_loja(ev),
                 Ok(_) => {} // outros variantes nao devem chegar aqui
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => break,
@@ -213,6 +215,7 @@ pub async fn run_world_loop(
             let p99 = ordenado[JANELA_TICK * 99 / 100];
             saude.set_p99_us(p99);
             crate::telemetria::medir("tick_p99_ms", p99 as f64 / 1000.0);
+            crate::telemetria::medir("montados", world.montados() as f64);
             let carga = p99 as f32 / (TICK_DT * 1_000_000.0);
             if carga >= 0.75 {
                 tracing::warn!(

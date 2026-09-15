@@ -109,6 +109,7 @@
     <button class="aba" data-aba="jogadores">jogadores</button>
     <button class="aba" data-aba="economia">economia</button>
     <button class="aba" data-aba="mercado">mercado</button>
+    <button class="aba" data-aba="loja">loja</button>
     <button class="aba" data-aba="dungeons">dungeons</button>
     <button class="aba" data-aba="atividade">atividade</button>
     <button class="aba" data-aba="missoes">missões</button>
@@ -228,6 +229,24 @@
 </div>
 
 <!-- ─────────────────────────── dungeons ─────────────────────────── -->
+<!-- ─────────────────────────── loja ─────────────────────────── -->
+<div class="aba-painel" id="aba-loja" hidden>
+  <h2>Loja de cash</h2>
+  <div class="cartoes" id="loja-cartoes"></div>
+  <p class="nota" id="loja-aviso"></p>
+  <h2>Receita e itens por hora (48 h)</h2>
+  <canvas id="loja-grafico" class="grafico" height="160"></canvas>
+  <div class="legenda" id="loja-legenda"></div>
+  <div class="grade">
+    <div><h2>Itens mais comprados</h2><div id="loja-itens"></div></div>
+    <div><h2>Pacotes de TP</h2><div id="loja-pacotes"></div></div>
+  </div>
+  <h2>Pedidos por status (30 dias)</h2>
+  <div id="loja-status"></div>
+  <h2>Últimos pedidos</h2>
+  <div id="loja-ultimos"></div>
+</div>
+
 <div class="aba-painel" id="aba-dungeons" hidden>
   <div class="barra-topo">janela <select id="dg-horas" class="campo">
     <option value="24">24 h</option><option value="168" selected>7 dias</option><option value="720">30 dias</option></select></div>
@@ -686,7 +705,7 @@ window.irPara = (id, x, z) => {
 // ── abas ───────────────────────────────────────────────────────────────
 let abaAtual = 'mundo';
 const PUXA = {
-  jogadores: puxaJogadores, economia: puxaEconomia, mercado: puxaMercado, dungeons: puxaDungeons,
+  jogadores: puxaJogadores, economia: puxaEconomia, mercado: puxaMercado, loja: puxaLoja, dungeons: puxaDungeons,
   atividade: puxaAtividade, missoes: puxaMissoes, infra: puxaInfra,
 };
 function mostraAba(nome) {
@@ -910,6 +929,34 @@ async function puxaMercado() {
   document.getElementById('mer-tp-motivos').innerHTML = tabela(['motivo', 'movimentos', 'soma'], d.tp_motivos_7d.map(t => [esc(t[0]), num(t[1]), num(t[2])]));
   document.getElementById('mer-tp-movs').innerHTML = tabela(['conta', 'delta', 'saldo depois', 'motivo', 'quando'],
     d.tp_movimentos.map(t => [esc(t[0]), `<span class="${t[1] >= 0 ? 'bom' : 'ruim'}">${t[1] >= 0 ? '+' : ''}${num(t[1])}</span>`, num(t[2]), esc(t[3]), ha(t[4])]), [3]);
+}
+
+// ── loja ──────────────────────────────────────────────────────────────
+const reais = c => 'R$ ' + (c / 100).toFixed(2).replace('.', ',');
+async function puxaLoja() {
+  const d = await api('api/loja'); if (!d) return;
+  document.getElementById('loja-aviso').textContent = d.ligado
+    ? 'Enquanto o pagamento for SIMULADO, a receita é de mentira: nada foi cobrado.'
+    : 'Banco central não configurado neste painel (DATABASE_URL_CENTRAL).';
+  const lista = [['montados agora', num(Math.round(d.montados || 0)), 'jogadores em montaria']];
+  if (d.ligado) lista.unshift(
+    ['receita 24 h', reais(d.receita_24h_centavos), `${reais(d.receita_total_centavos)} desde sempre`],
+    ['pacotes de TP creditados', num(d.pedidos_tp_creditados), 'pedidos'],
+    ['TP vendida', num(d.tp_vendida), 'creditada por compra'],
+    ['TP gasta na loja', num(d.tp_gasta), 'montarias e skins'],
+  );
+  cartoes('loja-cartoes', lista);
+  if (!d.ligado) return;
+  grafico('loja-grafico', [
+    { nome: 'receita (R$)', cor: '#d9b45a', pontos: d.por_hora.map(h => [h[0], h[1] / 100]) },
+    { nome: 'itens entregues', cor: '#6ab0e0', pontos: d.por_hora.map(h => [h[0], h[2]]) },
+  ], 'loja-legenda');
+  document.getElementById('loja-itens').innerHTML = tabela(['item', 'vendidos'], d.itens.map(i => [esc(i[0]), num(i[1])]), [0]);
+  document.getElementById('loja-pacotes').innerHTML = tabela(['pacote', 'vendas', 'receita'], d.pacotes.map(p => [esc(p[0]), num(p[1]), reais(p[2])]), [0]);
+  document.getElementById('loja-status').innerHTML = tabela(['tipo', 'status', 'pedidos', 'valor'],
+    d.status.map(s => [esc(s[0]), esc(s[1]), num(s[2]), s[0] === 'tp' ? reais(s[3]) : num(s[3]) + ' TP']));
+  document.getElementById('loja-ultimos').innerHTML = tabela(['conta', 'produto', 'valor', 'status', 'provedor', 'quando'],
+    d.ultimos.map(u => [esc(u[0]), esc(u[1]), u[3] === 'TP' ? num(u[2]) + ' TP' : reais(u[2]), esc(u[4]), esc(u[5]), ha(u[6])]), [0, 1]);
 }
 
 // ── dungeons ──────────────────────────────────────────────────────────

@@ -52,6 +52,8 @@ mod config_coleta;
 mod config_interface;
 mod economia;
 mod presenca_ui;
+mod loja_tp;
+mod montarias_ui;
 mod onde_obter;
 mod coleta_hud;
 mod lascas;
@@ -315,6 +317,14 @@ struct Jogo {
     economia: economia::Economia,
     /// Calendario de presenca (`presenca_ui.rs`).
     presenca: presenca_ui::PresencaUi,
+    /// Loja de cash (`loja_tp.rs`).
+    loja_tp: loja_tp::LojaTp,
+    /// Janela de montarias (`montarias_ui.rs`).
+    montarias: montarias_ui::MontariasUi,
+    /// Skin de montaria escolhida (preferencias; o servidor valida a posse).
+    montaria_skin: Option<u16>,
+    /// Ultimo pedido de montar automatico (viagem): nao repete em rajada.
+    montar_auto_em: f64,
     /// Dungeons: janela, fila, pronto-check, instancia e resultado.
     dungeon: dungeon_ui::DungeonUi,
     /// "Onde obter" (`onde_obter.rs`).
@@ -468,6 +478,10 @@ async fn main() {
         chat: Vec::new(),
         economia: economia::Economia::default(),
         presenca: presenca_ui::PresencaUi::default(),
+        loja_tp: loja_tp::LojaTp::default(),
+        montarias: montarias_ui::MontariasUi::default(),
+        montaria_skin: None,
+        montar_auto_em: -99.0,
         dungeon: dungeon_ui::DungeonUi::default(),
         onde_obter: onde_obter::OndeObter::default(),
         tela_acesa: false,
@@ -876,6 +890,15 @@ impl Jogo {
             ServerMessage::MercadoEntregas { cartas, tp } => self.mercado.entregas(cartas, tp),
             ServerMessage::Presenca { aviso } => {
                 if let Some(t) = self.presenca.receber(aviso, &self.bolsa.nomes) {
+                    self.chat.push(t);
+                    if self.chat.len() > 8 {
+                        self.chat.remove(0);
+                    }
+                }
+            }
+            ServerMessage::Loja { aviso } => {
+                self.montarias.receber(&aviso, get_time());
+                if let Some(t) = self.loja_tp.receber(aviso) {
                     self.chat.push(t);
                     if self.chat.len() > 8 {
                         self.chat.remove(0);
@@ -1337,6 +1360,8 @@ impl Jogo {
             || self.onde_obter.aberto()
             || self.dungeon.aberto
             || self.presenca.aberto
+            || self.loja_tp.aberto
+            || self.montarias.aberto
     }
 
     /// Morreu: nada automatico continua e os paineis fecham — a tela de morte
@@ -1431,6 +1456,40 @@ impl Jogo {
             || self.dungeon.pega_mouse()
     }
 
+    /// O proprio personagem esta' montado (flag do servidor)?
+    fn eu_montado(&self) -> bool {
+        self.world
+            .self_id
+            .and_then(|id| self.world.ents.get(&id))
+            .is_some_and(|e| e.state.flags & shared::ent_flags::MONTADO != 0)
+    }
+
+    /// Botao do HUD e "Montar" da janela: monta, desmonta ou cancela.
+    fn alternar_montaria(&mut self) {
+        use shared::loja::PedidoLoja;
+        if self.eu_montado() || self.montarias.montando(get_time()) {
+            self.envia(ClientMessage::Loja { pedido: PedidoLoja::Desmontar });
+            return;
+        }
+        if !self.montarias.tem_montaria() {
+            self.chat.push("Montaria: você ainda não tem. Onde obter: Menu → Comércio → Loja.".into());
+            return;
+        }
+        self.envia(ClientMessage::Loja { pedido: PedidoLoja::Montar });
+    }
+
+    /// Viagem automatica (mapa, Ir para, auto missao): sobe na montaria se
+    /// tiver e estiver a pe'. O servidor recusa em combate; o intervalo evita
+    /// pedir de novo a cada trecho da rota.
+    fn montar_pra_viajar(&mut self) {
+        let agora = get_time();
+        if !self.montarias.tem_montaria() || self.eu_montado() || self.montarias.montando(agora) || agora - self.montar_auto_em < 6.0 {
+            return;
+        }
+        self.montar_auto_em = agora;
+        self.envia(ClientMessage::Loja { pedido: shared::loja::PedidoLoja::Montar });
+    }
+
     /// Fecha os paineis grandes: so' um por vez (docs/HUD.md 4.2).
     fn fecha_paineis(&mut self) {
         self.bolsa.fecha();
@@ -1443,6 +1502,8 @@ impl Jogo {
         self.mercado.fechar();
         self.dungeon.fechar();
         self.presenca.fechar();
+        self.loja_tp.fechar();
+        self.montarias.fechar();
         self.morte.painel = false;
         self.config_barra.fechar();
         self.config_coleta.fechar();
@@ -1516,6 +1577,16 @@ impl Jogo {
             Item::Lojas => self.lojas.abrir(),
             Item::Presenca => {
                 for pedido in self.presenca.abrir() {
+                    self.envia(pedido);
+                }
+            }
+            Item::LojaTp => {
+                for pedido in self.loja_tp.abrir() {
+                    self.envia(pedido);
+                }
+            }
+            Item::Montaria => {
+                for pedido in self.montarias.abrir() {
                     self.envia(pedido);
                 }
             }
@@ -1801,6 +1872,9 @@ impl Jogo {
         if let Some(m) = p.economia_auto_min {
             self.economia.auto_min = Some(m);
         }
+        if p.montaria_skin.is_some() {
+            self.montaria_skin = p.montaria_skin;
+        }
         let atual = self.preferencias_atuais();
         self.prefs.recebeu(&atual);
     }
@@ -1822,6 +1896,7 @@ impl Jogo {
             coleta_raio: Some(cent(self.auto_coleta.raio)),
             escala_ui: Some(cent(hud_layout::escala_ui())),
             economia_auto_min: self.economia.auto_min,
+            montaria_skin: self.montaria_skin,
         }
     }
 
@@ -1902,6 +1977,7 @@ impl Jogo {
                     if self.alvo.take().is_some() {
                         self.envia(ClientMessage::SetTarget { target: None });
                     }
+                    self.montar_pra_viajar();
                     self.mapa.viagem.iniciar(p, agora);
                 }
                 auto_missao::Acao::Interagir(npc, pos) => {
@@ -2045,6 +2121,7 @@ impl Jogo {
         if self.alvo.take().is_some() {
             self.envia(ClientMessage::SetTarget { target: None });
         }
+        self.montar_pra_viajar();
         self.mapa.viagem.iniciar(destino, get_time());
     }
 
@@ -2064,6 +2141,7 @@ impl Jogo {
         if self.alvo.take().is_some() {
             self.envia(ClientMessage::SetTarget { target: None });
         }
+        self.montar_pra_viajar();
         self.ir_para.iniciar(alvo, get_time());
     }
 
@@ -2159,7 +2237,13 @@ impl Jogo {
         match passo {
             mapa::Passo::Enviar(p) => self.envia(ClientMessage::MoverPara { x: p.x, z: p.y }),
             mapa::Passo::Desistiu => self.chat.push("viagem: caminho bloqueado".into()),
-            mapa::Passo::Chegou | mapa::Passo::Nada => {}
+            // Viagem pelo mapa chegou (e nada automatico segue): desce.
+            mapa::Passo::Chegou => {
+                if self.eu_montado() && self.auto_missao.etapa().is_none() && !self.ir_para.ativo() && !self.auto_coleta.ativo() {
+                    self.envia(ClientMessage::Loja { pedido: shared::loja::PedidoLoja::Desmontar });
+                }
+            }
+            mapa::Passo::Nada => {}
         }
     }
 
@@ -2906,6 +2990,17 @@ impl Jogo {
                 None => {}
             }
         }
+        // Montaria: ao lado da bateria, sempre na tela.
+        {
+            let montado = self.eu_montado();
+            if montado {
+                self.montarias.montou();
+            }
+            let progresso = self.montarias.progresso(get_time());
+            if hud::draw_botao_montaria(&z, montado, progresso, self.montarias.tem_montaria()) {
+                self.alternar_montaria();
+            }
+        }
         // A bateria do modo economia fica SEMPRE na tela, com ou sem painel.
         if hud::draw_botao_economia(&z) {
             self.entrar_economia();
@@ -3169,6 +3264,24 @@ impl Jogo {
             for pedido in self.presenca.desenha(&self.bolsa.nomes, agora_unix) {
                 self.envia(pedido);
             }
+        }
+        // Loja de cash e janela de montarias (Menu).
+        for pedido in self.loja_tp.desenha() {
+            self.envia(pedido);
+        }
+        match self.montarias.desenha(self.montaria_skin) {
+            Some(montarias_ui::Acao::Escolher(skin)) => self.montaria_skin = Some(skin),
+            Some(montarias_ui::Acao::AbrirLoja) => {
+                self.montarias.fechar();
+                for pedido in self.loja_tp.abrir() {
+                    self.envia(pedido);
+                }
+            }
+            Some(montarias_ui::Acao::Montar) => {
+                self.montarias.fechar();
+                self.alternar_montaria();
+            }
+            None => {}
         }
         // Voltou do modo economia: "Enquanto você estava fora", ate' fechar.
         {

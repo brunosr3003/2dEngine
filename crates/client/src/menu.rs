@@ -52,7 +52,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
         (Item::Bolsa, "Bolsa", None),
         (Item::Ficha, "Ficha", Some("Em breve")),
         (Item::Habilidades, "Habilidades", Some("Em breve")),
-        (Item::Montaria, "Montaria", Some("Em breve")),
+        (Item::Montaria, "Montaria", None),
     ]),
     ("PROGRESSO", &[
         (Item::Missoes, "Missões", None),
@@ -81,7 +81,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
     // "Loja" do Menu e' a loja de CASH (Tempest Points), que ainda nao existe.
     // Vendedor NPC nunca vende de longe: "Vendedores" so' leva ate' ele.
     ("COMÉRCIO", &[
-        (Item::LojaTp, "Loja", Some("Em breve — loja de Tempest Points (TP)")),
+        (Item::LojaTp, "Loja", None),
         (Item::Lojas, "Vendedores", None),
         (Item::Mercado, "Mercado", None),
     ]),
@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn todo_sistema_que_existe_abre_e_o_resto_so_avisa() {
-        let abre = [Item::Bolsa, Item::Missoes, Item::TodasMissoes, Item::Diarias, Item::Craft, Item::Forja, Item::Mapa, Item::Lojas, Item::Mercado, Item::Aventuras, Item::Presenca, Item::RecuperarXp, Item::BarraItens, Item::Coleta, Item::Configuracoes, Item::Sair];
+        let abre = [Item::Bolsa, Item::Missoes, Item::TodasMissoes, Item::Diarias, Item::Craft, Item::Forja, Item::Mapa, Item::Lojas, Item::Mercado, Item::Aventuras, Item::Presenca, Item::LojaTp, Item::Montaria, Item::RecuperarXp, Item::BarraItens, Item::Coleta, Item::Configuracoes, Item::Sair];
         for (_, itens) in GRUPOS.iter() {
             for l in itens.iter() {
                 match clique_de(l) {
@@ -326,10 +326,10 @@ mod tests {
                 }
             }
         }
-        // "Loja" e' a de cash (TP), travada; vendedor NPC so' com "Ir".
+        // "Loja" e' a de cash (TP); vendedor NPC so' com "Ir".
         let loja = GRUPOS.iter().flat_map(|(_, it)| it.iter()).find(|l| l.1 == "Loja").expect("sem Loja");
         assert_eq!(loja.0, Item::LojaTp);
-        assert!(matches!(clique_de(loja), Clique::Aviso(t) if t.contains("TP")));
+        assert_eq!(clique_de(loja), Clique::Abrir(Item::LojaTp));
         for i in abre {
             assert!(GRUPOS.iter().any(|(_, it)| it.iter().any(|l| l.0 == i)), "{i:?} fora do menu");
         }

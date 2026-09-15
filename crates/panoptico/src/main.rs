@@ -115,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
         .route(&p("/api/economia"), get(economia))
         .route(&p("/api/jogadores"), get(jogadores))
         .route(&p("/api/mercado"), get(mercado))
+        .route(&p("/api/loja"), get(loja))
         .route(&p("/api/dungeons"), get(dungeons))
         .route(&p("/api/atividade"), get(atividade))
         .route(&p("/api/missoes"), get(missoes))
@@ -344,6 +345,10 @@ async fn jogadores(State(st): State<Estado>) -> impl IntoResponse {
 
 async fn mercado(State(st): State<Estado>) -> impl IntoResponse {
     axum::Json(observa::mercado(&st.pool, st.central.as_deref()).await)
+}
+
+async fn loja(State(st): State<Estado>) -> impl IntoResponse {
+    axum::Json(observa::loja(&st.pool, st.central.as_deref()).await)
 }
 
 async fn dungeons(State(st): State<Estado>, Query(q): Query<HashMap<String, String>>) -> impl IntoResponse {

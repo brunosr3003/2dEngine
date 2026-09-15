@@ -18,6 +18,7 @@ mod canais;
 mod coleta;
 mod craft;
 mod economy;
+mod loja;
 mod loot_mobs;
 mod mapa_ilha;
 mod mercado;
@@ -82,6 +83,10 @@ async fn main() -> Result<()> {
     // Mercado global: tabelas do realm e, com DATABASE_URL_CENTRAL, o banco
     // central. Sem ele o mercado fica desligado e o jogo segue.
     mercado::init(&pool).await?;
+    // Loja de cash: pedidos e posses no mesmo banco central.
+    if let Some(central) = mercado::central() {
+        loja::criar_tabelas(&central).await?;
+    }
     let populacao = canais::Populacao::default();
     let saude = canais::Saude::default();
     let diretorio = canais::Diretorio::default();

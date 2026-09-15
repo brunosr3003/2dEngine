@@ -150,3 +150,14 @@ mostrou 54 bichos "caçando" um jogador a 124 unidades com detecção de 9. A IA
 estava certa: `ai_target` é só o cache do jogador mais próximo. Hoje o retrato
 separa `alvo` (cache) de `perseguindo` (indo atrás de verdade), e só o segundo
 vira linha. **Painel que mente é pior que painel nenhum.**
+
+## Aba loja
+
+Lê o banco central (`loja_pedidos`, `loja_posses`, `tp_razao`) e a
+telemetria do realm: receita de pacotes de TP (simulada enquanto
+`PAGAMENTO_SIMULADO` estiver ligado — não é dinheiro recebido), TP vendida e
+TP gasta na loja, pedidos por tipo e status (30 dias), itens mais comprados,
+pacotes vendidos, receita e itens por hora (48 h), últimos pedidos e
+**montados agora** (medida `montados` que o canal grava junto do tick p99).
+Contadores novos da telemetria: `loja_pedido`, `loja_receita_centavos`,
+`loja_tp_vendida`, `loja_item`, `loja_tp_gasta`, `montaria`.

@@ -213,3 +213,12 @@ A TP mora na CONTA (global) e o gold no PERSONAGEM (banco do realm). Por isso:
 - Nível mínimo (ou progresso de main quest) pra abrir a colônia — é a defesa
   secundária contra alt descartável, caso o vínculo não baste.
 - Se a colônia tem melhorias (mais taxa, mais teto) e o que elas custam.
+
+## Loja de cash (implementado)
+
+A primeira vitrine da TP é a loja de cash (docs/LOJA.md): pacotes de TP por
+dinheiro (pagamento simulado por enquanto), e montarias e skins de montaria
+compradas com TP. Montaria só dá mobilidade, igual para todas
+(docs/MONTARIAS.md): a regra "TP não compra combate" continua valendo. Tudo
+passa pelo mesmo livro-caixa central (`tp_razao`) do mercado, com referência
+única por pedido.

@@ -938,3 +938,108 @@ mod testes {
         assert!(d.contains("estágio 2") && d.ends_with("tempo esgotado"), "{d}");
     }
 }
+
+/// Loja de cash (docs/LOJA.md): receita dos pacotes de TP (simulada enquanto
+/// o pagamento for simulado), TP vendida e gasta, pedidos por status, itens
+/// mais comprados, ultimos pedidos e jogadores montados agora.
+pub async fn loja(realm: &PgPool, central: Option<&PgPool>) -> Value {
+    let montados = uma(
+        realm,
+        "SELECT COALESCE(SUM(valor), 0)::float8 FROM telemetria_medidas
+          WHERE nome = 'montados' AND minuto = (SELECT MAX(minuto) FROM telemetria_medidas WHERE nome = 'montados')",
+    )
+    .await
+    .map_or(0.0, |r| campo::<f64>(&r, 0));
+    let Some(c) = central else {
+        return json!({ "ligado": false, "montados": montados });
+    };
+    let nome = |cod: &str| shared::loja::Produto::de_codigo(cod).map_or(cod.to_string(), |p| p.nome());
+    let receita = uma(
+        c,
+        "SELECT COALESCE(SUM(valor) FILTER (WHERE atualizado_em > NOW() - INTERVAL '24 hours'), 0)::bigint,
+                COALESCE(SUM(valor), 0)::bigint, COUNT(*)::bigint
+           FROM loja_pedidos WHERE tipo = 'tp' AND status = 'creditado'",
+    )
+    .await;
+    let tp = uma(
+        c,
+        "SELECT COALESCE(SUM(delta) FILTER (WHERE motivo = 'loja:tp'), 0)::bigint,
+                COALESCE(-SUM(delta) FILTER (WHERE motivo LIKE 'loja:item:%'), 0)::bigint
+           FROM tp_razao",
+    )
+    .await;
+    let status: Vec<Value> = linhas(
+        c,
+        "SELECT tipo, status, COUNT(*)::bigint, COALESCE(SUM(valor), 0)::bigint FROM loja_pedidos
+          WHERE criado_em > NOW() - INTERVAL '30 days' GROUP BY 1, 2 ORDER BY 1, 2",
+    )
+    .await
+    .iter()
+    .map(|r| json!([campo::<String>(r, 0), campo::<String>(r, 1), campo::<i64>(r, 2), campo::<i64>(r, 3)]))
+    .collect();
+    let itens: Vec<Value> = linhas(
+        c,
+        "SELECT produto, COUNT(*)::bigint FROM loja_posses WHERE pedido NOT LIKE '%#padrao'
+          GROUP BY 1 ORDER BY 2 DESC LIMIT 20",
+    )
+    .await
+    .iter()
+    .map(|r| json!([nome(&campo::<String>(r, 0)), campo::<i64>(r, 1)]))
+    .collect();
+    let pacotes: Vec<Value> = linhas(
+        c,
+        "SELECT produto, COUNT(*)::bigint, COALESCE(SUM(valor), 0)::bigint FROM loja_pedidos
+          WHERE tipo = 'tp' AND status = 'creditado' GROUP BY 1 ORDER BY 2 DESC",
+    )
+    .await
+    .iter()
+    .map(|r| json!([nome(&campo::<String>(r, 0)), campo::<i64>(r, 1), campo::<i64>(r, 2)]))
+    .collect();
+    let por_hora: Vec<Value> = linhas(
+        c,
+        "SELECT EXTRACT(EPOCH FROM date_trunc('hour', atualizado_em))::bigint,
+                COALESCE(SUM(valor) FILTER (WHERE tipo = 'tp'), 0)::bigint,
+                COUNT(*) FILTER (WHERE tipo = 'item')::bigint
+           FROM loja_pedidos
+          WHERE atualizado_em > NOW() - INTERVAL '48 hours' AND status IN ('creditado', 'entregue')
+          GROUP BY 1 ORDER BY 1",
+    )
+    .await
+    .iter()
+    .map(|r| json!([campo::<i64>(r, 0), campo::<i64>(r, 1), campo::<i64>(r, 2)]))
+    .collect();
+    let ultimos: Vec<Value> = linhas(
+        c,
+        "SELECT conta, produto, valor, moeda, status, provedor, EXTRACT(EPOCH FROM criado_em)::bigint
+           FROM loja_pedidos ORDER BY criado_em DESC LIMIT 30",
+    )
+    .await
+    .iter()
+    .map(|r| {
+        json!([
+            campo::<String>(r, 0),
+            nome(&campo::<String>(r, 1)),
+            campo::<i64>(r, 2),
+            campo::<String>(r, 3),
+            campo::<String>(r, 4),
+            campo::<String>(r, 5),
+            campo::<i64>(r, 6)
+        ])
+    })
+    .collect();
+    json!({
+        "ligado": true,
+        "montados": montados,
+        "receita_24h_centavos": receita.as_ref().map_or(0, |r| campo::<i64>(r, 0)),
+        "receita_total_centavos": receita.as_ref().map_or(0, |r| campo::<i64>(r, 1)),
+        "pedidos_tp_creditados": receita.as_ref().map_or(0, |r| campo::<i64>(r, 2)),
+        "tp_vendida": tp.as_ref().map_or(0, |r| campo::<i64>(r, 0)),
+        "tp_gasta": tp.as_ref().map_or(0, |r| campo::<i64>(r, 1)),
+        "status": status,
+        "itens": itens,
+        "pacotes": pacotes,
+        "por_hora": por_hora,
+        "ultimos": ultimos,
+    })
+}
+

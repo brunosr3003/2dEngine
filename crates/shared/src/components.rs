@@ -358,6 +358,9 @@ pub mod ent_flags {
     /// (um quadro so' se perderia num snapshot pulado); o cliente toca a
     /// animacao na borda de subida.
     pub const ATACANDO: u8 = 1 << 5;
+    /// Montado (docs/MONTARIAS.md). A skin vai no `EntityMeta::kind` do
+    /// jogador.
+    pub const MONTADO: u8 = 1 << 6;
 }
 
 /// Precisao da posicao no wire: 1/16 de tile.

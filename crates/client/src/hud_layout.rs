@@ -100,6 +100,8 @@ pub struct Zonas {
     pub mapa_icone: Rect,
     /// Bateria do modo economia: canto inferior esquerdo, sempre visivel.
     pub economia: Rect,
+    /// Montar/desmontar: ao lado da bateria, sempre visivel.
+    pub montaria: Rect,
     /// Chat: logo abaixo do rastreador, a' esquerda — o canto de baixo e' do
     /// joystick.
     pub chat: Rect,
@@ -243,6 +245,7 @@ fn monta(sw: f32, sh: f32, s: f32) -> Zonas {
     // joystick termina acima dela.
     let lado_eco = 48.0 * s;
     let economia = Rect::new(m, exp.y - 8.0 * s - lado_eco, lado_eco, lado_eco);
+    let montaria = Rect::new(economia.x + economia.w + 10.0 * s, economia.y, lado_eco, lado_eco);
     let joystick = Rect::new(m, jy, (jfim - m).max(0.0), (economia.y - 8.0 * s - jy).max(0.0));
 
     Zonas {
@@ -258,6 +261,7 @@ fn monta(sw: f32, sh: f32, s: f32) -> Zonas {
         minimapa,
         mapa_icone,
         economia,
+        montaria,
         chat,
         joystick,
         faixa,
@@ -278,7 +282,7 @@ impl Zonas {
         let d = move |r: Rect| Rect::new(r.x + o.x, r.y + o.y, r.w, r.h);
         for r in [
             &mut self.ficha, &mut self.buffs, &mut self.rastreador, &mut self.alvo, &mut self.menu, &mut self.area,
-            &mut self.minimapa, &mut self.mapa_icone, &mut self.economia, &mut self.chat, &mut self.joystick, &mut self.faixa,
+            &mut self.minimapa, &mut self.mapa_icone, &mut self.economia, &mut self.montaria, &mut self.chat, &mut self.joystick, &mut self.faixa,
             &mut self.coleta, &mut self.atacar, &mut self.auto_combate, &mut self.auto_coleta, &mut self.pocao,
             &mut self.exp,
         ] {
@@ -304,6 +308,7 @@ impl Zonas {
             ("chat", self.chat),
             ("joystick", self.joystick),
             ("economia", self.economia),
+            ("montaria", self.montaria),
             ("faixa", self.faixa),
             ("coleta", self.coleta),
             ("atacar", self.atacar),
@@ -328,7 +333,7 @@ impl Zonas {
     /// alvo e a EXP so' mostram; o rastreador e o chat entram pelo modulo
     /// deles (tamanho varia).
     pub fn contem(&self, p: Vec2) -> bool {
-        [self.ficha, self.menu, self.area, self.minimapa, self.atacar, self.auto_combate, self.auto_coleta, self.pocao, self.economia]
+        [self.ficha, self.menu, self.area, self.minimapa, self.atacar, self.auto_combate, self.auto_coleta, self.pocao, self.economia, self.montaria]
             .iter()
             .chain(self.icones.iter())
             .chain(self.skills.iter())

@@ -256,6 +256,12 @@ impl World {
     ) {
         for meta in entered {
             let id = meta.id;
+            // Ja' conhecida: a meta veio de novo porque mudou (skin de
+            // montaria). So' troca a meta; o resto do corpo fica.
+            if let Some(e) = self.ents.get_mut(&id) {
+                e.meta = meta;
+                continue;
+            }
             // O estado real vem no mesmo pacote, logo abaixo.
             let state = EntityState { id, pos: [0, 0], vel: [0, 0], hp: 0, flags: 0, acao: 0, rumo: 0 };
             // NPC de porta vem com o rumo no `kind`: nasce olhando pra fora e,

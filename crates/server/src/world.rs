@@ -49,6 +49,8 @@ pub enum IncomingMessage {
     Mercado(crate::mercado::Evento),
     /// Calendario de presenca: resposta do banco (ver `crate::presenca`).
     Presenca(crate::presenca::Evento),
+    /// Loja de cash: posses da conta vindas do central (ver `crate::loja`).
+    Loja(crate::loja::Evento),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -73,6 +75,7 @@ mod chefes;
 pub(crate) use chefes::itens_do_chefe;
 mod mercado_mundo;
 mod presenca;
+mod loja_mundo;
 pub(crate) mod dungeon;
 use habilidades::HabilidadePendente;
 
@@ -1577,6 +1580,18 @@ pub struct Session {
     /// Onde estava antes de entrar: volta pra ca' e e' a posicao salva
     /// enquanto estiver dentro (queda no meio nao prende ninguem na arena).
     pub retorno_da_dungeon: Option<Vec2>,
+    /// Montarias e skins da CONTA (banco central, `crate::loja`).
+    pub loja_posses: shared::loja::Posses,
+    /// As posses ja' chegaram do central nesta sessao.
+    pub loja_carregada: bool,
+    /// Montado agora (docs/MONTARIAS.md).
+    pub montado: bool,
+    /// Subindo na montaria: termina neste sim_time_s (0 = nao).
+    pub montando_ate: f32,
+    /// Quando montou (sim_time_s): golpe/pancada depois disto desmonta.
+    pub montado_em: f32,
+    /// Skin que os outros veem (`EntityMeta::kind`), ja' validada.
+    pub montaria_skin_vista: Option<u16>,
 }
 
 impl Session {
@@ -1744,6 +1759,8 @@ pub struct GameWorld {
     mercado_cartas_vistas: std::collections::HashSet<String>,
     /// Ultimo pedido ao mercado por sessao: segura spam no banco central.
     mercado_pedido_em: HashMap<SessionId, f32>,
+    /// Ultimo pedido de compra na loja, por sessao (anti clique duplo).
+    loja_pedido_em: HashMap<SessionId, f32>,
     /// Timer em segundos desde a ultima tentativa de respawn de inimigo.
     enemy_spawn_timer: f32,
     /// Entidade atual do boss (None se morto/nao spawnado ainda).
@@ -2203,6 +2220,7 @@ impl GameWorld {
             inst_do_saque: 0,
             mercado_cartas_vistas: std::collections::HashSet::new(),
             mercado_pedido_em: HashMap::new(),
+            loja_pedido_em: HashMap::new(),
             enemy_spawn_timer: 0.0,
             boss_entity: None,
             boss_respawn_timer: f32::INFINITY, // desabilita boss
@@ -2362,6 +2380,7 @@ impl GameWorld {
             inst_do_saque: 0,
             mercado_cartas_vistas: std::collections::HashSet::new(),
             mercado_pedido_em: HashMap::new(),
+            loja_pedido_em: HashMap::new(),
             enemy_spawn_timer: 0.0,
             boss_entity: None,
             boss_respawn_timer: f32::INFINITY,
@@ -4538,6 +4557,10 @@ impl GameWorld {
             s.presenca = Default::default();
             s.presenca_em_voo = false;
             s.presenca_aplicados.clear();
+            // Montaria: comeca a pe'; as posses vem do central logo abaixo.
+            s.montado = false;
+            s.montando_ate = 0.0;
+            s.loja_carregada = false;
             if let (Some(conta), Some(ctx)) = (s.account_id, self.auth_ctx.as_ref()) {
                 crate::presenca::spawn_ao_logar(ctx.pool.clone(), ctx.tx.clone(), sid, conta, s.name.clone());
             }
@@ -4550,6 +4573,7 @@ impl GameWorld {
             s.visual = saved_visual.clone()
                 .unwrap_or_else(|| shared::VisualConfig::for_class(&success.class));
         }
+        self.loja_ao_logar(sid);
         tracing::info!(
             "login ok: {} (acc {}, xp {}) -> {:?} / {:?}",
             success.username, success.account_id, saved_xp, pid, entity_id
@@ -5427,6 +5451,12 @@ impl GameWorld {
                 presenca_aplicados: Vec::new(),
                 instancia: 0,
                 retorno_da_dungeon: None,
+                loja_posses: Default::default(),
+                loja_carregada: false,
+                montado: false,
+                montando_ate: 0.0,
+                montado_em: 0.0,
+                montaria_skin_vista: None,
             },
         );
     }
@@ -5908,6 +5938,7 @@ impl GameWorld {
             | ClientMessage::MercadoReceber) => self.handle_mercado(id, m),
             ClientMessage::Dungeon { pedido } => self.handle_dungeon(id, pedido),
             ClientMessage::Presenca { pedido } => self.handle_presenca(id, pedido),
+            ClientMessage::Loja { pedido } => self.handle_loja(id, pedido),
         }
     }
 
@@ -6173,6 +6204,8 @@ impl GameWorld {
             s.preferencias = p;
             self.save_pending = true;
         }
+        // A skin de montaria escolhida pode ter mudado o que os outros veem.
+        self.atualizar_skin_vista(sid);
     }
 
     /// Devolve o XP de uma morte: 3 vezes por dia de graca, depois por ouro.
@@ -7208,7 +7241,8 @@ impl GameWorld {
             } else if session.defending {
                 PLAYER_SPEED * shared::MOVE_SPEED_DEFENDING_MULT * spd_scale
             } else {
-                PLAYER_SPEED * spd_scale * sprint_mult
+                // Montado: so' mobilidade (docs/MONTARIAS.md), sem sprint por cima.
+                shared::loja::velocidade_de_andar(PLAYER_SPEED * spd_scale, session.montado, sprint_mult)
             };
 
             // Dash: tap-button (Space/Shift). Impulso linear na direcao do
@@ -7958,6 +7992,7 @@ impl GameWorld {
         }
 
         self.avancar_habilidades(dt);
+        self.avancar_montarias();
 
         // ── E: spawnar projeteis ──────────────────────────────────────────────
         // Drena pending shots cujo release_tick chegou; injeta como spawns regulares.
@@ -9999,6 +10034,13 @@ impl GameWorld {
         // O que cada jogador esta' fazendo (`shared::acao`): o conjunto na
         // mao, se a arma esta' SACADA, e o gesto do momento com a variante.
         // O nivel de cada personagem, pra placa em cima da cabeca.
+        // Montaria de cada jogador: montado (flag) e a skin (meta.kind).
+        let montaria_de: HashMap<EntityId, (bool, u16)> = self
+            .sessions
+            .values()
+            .filter(|s| s.logged_in)
+            .map(|s| (s.entity_id, (s.montado, s.montaria_skin_vista.unwrap_or(0))))
+            .collect();
         let nivel_de: HashMap<EntityId, u16> = self
             .sessions
             .values()
@@ -10113,6 +10155,9 @@ impl GameWorld {
                 if no_ar_agora.contains(&net.0) {
                     flags |= shared::ent_flags::PULANDO;
                 }
+                if montaria_de.get(&net.0).is_some_and(|m| m.0) {
+                    flags |= shared::ent_flags::MONTADO;
+                }
                 let meta = EntityMeta {
                     id: net.0,
                     tag,
@@ -10136,6 +10181,8 @@ impl GameWorld {
                         EntityKind::Projectile => projtag.map_or(0, |p| p.kind as u16),
                         // NPC: o rumo pra onde olha (a porta, o mar).
                         EntityKind::Npc(_) => vila_tag.map_or(0, |t| t.rumo),
+                        // Jogador: a skin de montaria (0 = nenhuma).
+                        EntityKind::Player => montaria_de.get(&net.0).map_or(0, |m| m.1),
                         _ => 0,
                     },
                 };

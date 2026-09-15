@@ -1369,6 +1369,22 @@ fn desenha_personagem(
         },
     };
     let mut entrada = entrada;
+    // Montado (docs/MONTARIAS.md): o bicho da skin por baixo e o cavaleiro
+    // sentado na sela, sem passada propria.
+    let montaria = if e.meta.tag == shared::EntityTag::Player && e.state.flags & shared::ent_flags::MONTADO != 0 && e.morte.is_none() {
+        shared::loja::skin(e.meta.kind)
+            .and_then(|s| shared::loja::montaria(s.montaria).map(|m| (m, s)))
+            .and_then(|(m, s)| vox.bicho(m.bicho).map(|b| (m, s, b)))
+    } else {
+        None
+    };
+    if montaria.is_some() {
+        entrada.andar = 0.0;
+        entrada.correr = 0.0;
+        entrada.ar = 0.0;
+        entrada.degrau = [0.0; 2];
+        entrada.combate.coleta = None;
+    }
     let humanoide = rig_do_humanoide(e).is_some();
     if humanoide {
         entrada.combate.conjunto = if shared::bosses::kind_do_corpo(e.meta.kind) == 4 { 3 } else { 2 };
@@ -1405,6 +1421,9 @@ fn desenha_personagem(
         entrada.combate.ferido = None;
     }
     let mut pose = crate::rig::pose(&entrada);
+    if montaria.is_some() {
+        crate::rig::aplica_montado(&mut pose, entrada.tempo);
+    }
     if e.skill.is_some_and(|(id, _, _)| id == 9) { pose.na_mao = false; }
     if humanoide && e.meta.kind == 6 { crate::rig::aplica_arqueiro(&mut pose, entrada.combate.golpe.map(|(_, t)| t)); }
     e.molas.segue(&mut pose, get_frame_time());
@@ -1430,7 +1449,15 @@ fn desenha_personagem(
     if chefe {
         crate::chefe_anim::poeira_da_queda(e.morte, get_frame_time(), p, 1.95 * esc, e.meta.kind);
     }
-    let base = Mat4::from_translation(p + vec3(0.0, sobe, 0.0) + desloca)
+    let sela = match montaria {
+        Some((m, s, b)) => {
+            desenha_montaria(e, m, s, b, p);
+            let frente = vec3(e.yaw.sin(), 0.0, e.yaw.cos());
+            Vec3::Y * (m.sela - crate::rig::altura_do_quadril(VOXEL)) + frente * m.sela_frente
+        }
+        None => Vec3::ZERO,
+    };
+    let base = Mat4::from_translation(p + vec3(0.0, sobe, 0.0) + desloca + sela)
         * Mat4::from_scale(Vec3::splat(esc))
         * Mat4::from_rotation_y(e.yaw + giro)
         * Mat4::from_rotation_x(-cai + inclina)
@@ -1803,6 +1830,53 @@ fn desenha_bicho(
         }
     }
     crate::bicho::rastro(&entrada, &b.anat).map(|r| (patas, r))
+}
+
+/// A montaria por baixo do cavaleiro: o bicho em pecas na escala da montaria,
+/// puxado pra cor da skin, com a passada na velocidade de quem monta.
+fn desenha_montaria(
+    e: &crate::world::Ent,
+    m: &shared::loja::Montaria,
+    s: &shared::loja::Skin,
+    b: &crate::bicho::Bicho,
+    p: Vec3,
+) {
+    let tempo = get_time() as f32;
+    let vel = e.andar * shared::PLAYER_SPEED * shared::loja::VEL_MONTADO;
+    // Passada pelo relogio: a do cavaleiro anda no ritmo da perna de gente.
+    let ciclo = crate::bicho::ciclo(b.anat.altura * m.escala, vel.max(0.1)).max(0.05);
+    let entrada = crate::bicho::Entrada {
+        passada: tempo * vel / ciclo * std::f32::consts::TAU,
+        vel,
+        tempo,
+        golpe: 99.0,
+        semente: e.meta.id.0 as f32,
+        ferido: None,
+        recuo: Vec3::ZERO,
+    };
+    let c = crate::bicho::corpo(&entrada, &b.anat);
+    let chao = Mat4::from_translation(p)
+        * Mat4::from_scale(Vec3::splat(m.escala))
+        * Mat4::from_rotation_y(e.yaw + crate::bicho::yaw_lateral(&b.anat, &entrada));
+    let patas = chao * Mat4::from_translation(vec3(0.0, c.sobe, 0.0));
+    let tronco = patas
+        * Mat4::from_translation(vec3(c.lado, c.sobe_tronco, c.avanca))
+        * Mat4::from_rotation_y(c.torce)
+        * Mat4::from_rotation_x(c.pitch);
+    let tinta = (s.forca > 0.0).then(|| {
+        ([s.tinta[0] as f32 / 255.0, s.tinta[1] as f32 / 255.0, s.tinta[2] as f32 / 255.0], s.forca)
+    });
+    for peca in &b.pecas {
+        let (giro, desloca) = crate::bicho::peca(peca.junta, &entrada, &b.anat, peca.pivo);
+        let base = if matches!(peca.junta, crate::bicho::Junta::Pata { .. }) { patas } else { tronco };
+        let mat = base
+            * Mat4::from_translation(peca.pivo + desloca)
+            * Mat4::from_quat(giro)
+            * Mat4::from_translation(-peca.pivo);
+        for malha in &peca.malhas {
+            draw_mesh_mat_tinta(malha, &mat, tinta);
+        }
+    }
 }
 
 /// O rastro das garras: tres riscos finos acompanhando o arco, por cima de um

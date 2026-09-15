@@ -256,6 +256,37 @@ pub fn draw_botao_economia(z: &Zonas) -> bool {
     sobre && is_mouse_button_pressed(MouseButton::Left)
 }
 
+/// Montar/desmontar, ao lado da bateria. `progresso` 0..1 enquanto sobe;
+/// sem montaria o icone fica apagado (o toque avisa onde obter). `true` no
+/// clique.
+pub fn draw_botao_montaria(z: &Zonas, montado: bool, progresso: Option<f32>, tem: bool) -> bool {
+    let r = z.montaria;
+    let m = mouse();
+    let sobre = r.contains(m);
+    estilo::cartao(r, sobre, montado);
+    let cor = if !tem {
+        estilo::alfa(estilo::TEXTO, 0.4)
+    } else if montado || sobre {
+        estilo::OURO
+    } else {
+        estilo::TEXTO
+    };
+    // Ferradura: arco aberto pra baixo com dois cravos.
+    let c = r.center() + vec2(0.0, -r.h * 0.02);
+    let s = r.w * 0.24;
+    let esp = (r.w * 0.07).max(2.0);
+    estilo::arco(c, s, PI * 0.75, 0.75, esp, cor);
+    draw_circle(c.x - s * 0.7, c.y - s * 0.2, esp * 0.45, cor);
+    draw_circle(c.x + s * 0.7, c.y - s * 0.2, esp * 0.45, cor);
+    if let Some(u) = progresso {
+        estilo::arco(r.center(), r.w * 0.44, -PI * 0.5, u, 3.0, estilo::ACENTO);
+    }
+    if sobre {
+        dica(r, if montado { "Desmontar" } else { "Montar" });
+    }
+    sobre && is_mouse_button_pressed(MouseButton::Left)
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  CLUSTER DE COMBATE — o botao grande, a pocao e os slots rapidos
 // ═══════════════════════════════════════════════════════════════════════

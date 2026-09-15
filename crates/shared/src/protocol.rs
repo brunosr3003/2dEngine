@@ -286,6 +286,8 @@ pub enum ClientMessage {
     Dungeon { pedido: crate::dungeon::Pedido },
     /// Calendario de presenca (docs/CALENDARIO.md): estado e resgate do dia.
     Presenca { pedido: crate::presenca::PedidoPresenca },
+    /// Loja de cash e montarias (docs/LOJA.md).
+    Loja { pedido: crate::loja::PedidoLoja },
 }
 
 /// Onde esta' a peca que a forja vai refinar.
@@ -817,6 +819,8 @@ pub enum ServerMessage {
     Dungeon { aviso: crate::dungeon::Aviso },
     /// Calendario de presenca: grade, progresso da conta e resultado do resgate.
     Presenca { aviso: crate::presenca::AvisoPresenca },
+    /// Loja de cash e montarias: estado, resultado de compra, montando.
+    Loja { aviso: crate::loja::AvisoLoja },
     /// O alvo esta' no alcance da arma a distancia, mas o relevo barra o
     /// tiro: o ataque nao sai. No maximo 1 por segundo por jogador.
     SemVisada { alvo: EntityId },
@@ -855,6 +859,9 @@ pub struct Preferencias {
     /// Modo economia de energia: entra sozinho depois de N minutos sem tocar
     /// na tela (0 = nunca).
     pub economia_auto_min: Option<u16>,
+    /// Skin de montaria escolhida (`loja::SKINS`). O servidor so' aceita a
+    /// que a conta possui (`Posses::skin_para_montar`).
+    pub montaria_skin: Option<u16>,
 }
 
 /// Filtros do mapa grande e do minimapa. O padrao e' tudo desligado.
@@ -915,6 +922,7 @@ mod testes_preferencias {
             coleta_raio: Some(5000.0),
             escala_ui: Some(9.0),
             economia_auto_min: Some(500),
+            montaria_skin: Some(102),
         }
         .validada(&|id| id <= 12);
         assert_eq!(p.escala_ui, Some(1.6));
