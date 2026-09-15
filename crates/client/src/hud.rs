@@ -231,6 +231,20 @@ pub fn draw_topo(z: &Zonas, selo_missoes: bool, selo_diarias: bool, selo_menu: b
     saida
 }
 
+/// A bateria na moldura do minimapa: liga o modo economia. `true` no clique.
+pub fn draw_botao_economia(z: &Zonas) -> bool {
+    let r = z.economia;
+    let m = mouse();
+    let sobre = r.contains(m);
+    estilo::ret_arredondado(r, estilo::RAIO_PEQUENO, estilo::FUNDO_ALTO);
+    estilo::borda_arredondada(r, estilo::RAIO_PEQUENO, 1.0, if sobre { estilo::alfa(estilo::ACENTO, 0.7) } else { estilo::BORDA_FORTE });
+    crate::economia::bateria(r.center() - vec2(1.0, 0.0), r.w * 0.26, if sobre { estilo::OURO } else { Color::new(0.45, 0.85, 0.52, 1.0) });
+    if sobre {
+        dica(r, "Economia de energia");
+    }
+    sobre && is_mouse_button_pressed(MouseButton::Left)
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  CLUSTER DE COMBATE — o botao grande, a pocao e os slots rapidos
 // ═══════════════════════════════════════════════════════════════════════

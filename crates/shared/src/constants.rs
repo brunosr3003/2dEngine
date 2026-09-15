@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 93;
+pub const PROTOCOL_VERSION: u16 = 95;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -564,6 +564,34 @@ pub mod item_id {
     /// Sorte (+20% na chance de drop por 1 h). Recompensa de diaria, sem loja.
     pub const FORTUNA_POTION: u16        = 351;
     pub const SORTE_POTION: u16          = 352;
+
+    /// As quatro CHAVES de craft (uma por receita), pelo id da cinza. So'
+    /// caem de chefe e de dungeon/raid (`shared::chaves`).
+    pub const CHAVES: [u16; 4] = [SCALE, CLAW, HORN, HIDE];
+    /// A cor 5 (lendaria) das chaves. Ficou fora da faixa contigua de
+    /// `na_cor`: o id seguinte ao roxo ja' e' o proximo material.
+    pub const SCALE_LENDARIA: u16        = 353;
+    pub const CLAW_LENDARIA: u16         = 354;
+    pub const HORN_LENDARIA: u16         = 355;
+    pub const HIDE_LENDARIA: u16         = 356;
+
+    /// A chave na cor pedida, 1 cinza .. 4 roxa, 5 lendaria.
+    pub const fn chave_na_cor(base: u16, cor: u8) -> u16 {
+        if cor < 5 {
+            return na_cor(base, cor);
+        }
+        match base {
+            SCALE => SCALE_LENDARIA,
+            CLAW => CLAW_LENDARIA,
+            HORN => HORN_LENDARIA,
+            _ => HIDE_LENDARIA,
+        }
+    }
+
+    /// Toda chave, de toda cor.
+    pub fn todas_as_chaves() -> Vec<u16> {
+        CHAVES.iter().flat_map(|&b| (1..=5).map(move |cor| chave_na_cor(b, cor))).collect()
+    }
 
     /// Todos os materiais que existem nas quatro cores, pelo id da cinza.
     pub const MATERIAIS_COLORIDOS: [u16; 12] = [

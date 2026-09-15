@@ -107,6 +107,9 @@ mod testes {
                 v.push(i::na_cor(base, cor));
             }
         }
+        v.extend(i::todas_as_chaves());
+        v.sort_unstable();
+        v.dedup();
         v
     }
 

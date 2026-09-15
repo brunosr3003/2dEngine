@@ -24,6 +24,7 @@ mod hud_estilo;
 mod icones;
 mod icones_ui;
 mod lojas;
+mod mercado_ui;
 mod menu;
 mod auto_combate;
 mod loja;
@@ -48,6 +49,7 @@ mod preferencias;
 mod config_barra;
 mod config_coleta;
 mod config_interface;
+mod economia;
 mod coleta_hud;
 mod lascas;
 mod morte;
@@ -224,6 +226,8 @@ struct Jogo {
     menu: menu::Menu,
     /// Menu → Comercio: os vendedores da ilha com "Ir".
     lojas: lojas::Lojas,
+    /// Menu → Comércio → Mercado (docs/MERCADO.md).
+    mercado: mercado_ui::Mercado,
     /// O painel aberto veio do Menu: Esc volta pra ele em vez de pro jogo.
     voltar_ao_menu: bool,
     /// Neste quadro o Esc fechou alguma coisa — nao cancela alvo nem AUTO.
@@ -302,6 +306,10 @@ struct Jogo {
     banda_marca: (f64, u64),
     info: hud::Info,
     chat: Vec<String>,
+    /// Modo economia de energia (`economia.rs`).
+    economia: economia::Economia,
+    /// Ultimo pedido de tela acesa mandado ao sistema.
+    tela_acesa: bool,
 }
 
 #[macroquad::main(window_conf)]
@@ -413,6 +421,7 @@ async fn main() {
         diarias: diarias::Diarias::default(),
         menu: menu::Menu::default(),
         lojas: lojas::Lojas::default(),
+        mercado: mercado_ui::Mercado::default(),
         voltar_ao_menu: false,
         esc_consumido: false,
         tela_cheia: false,
@@ -445,6 +454,8 @@ async fn main() {
         banda_marca: (0.0, 0),
         info: hud::Info::default(),
         chat: Vec::new(),
+        economia: economia::Economia::default(),
+        tela_acesa: false,
     };
     // `MMO_HOST` explicito pula a escolha — e' o caminho do run-client.sh e dos
     // testes de carga.
@@ -455,6 +466,8 @@ async fn main() {
     loop {
         jogo.passo();
         jogo.desenhar();
+        // Modo economia: o quadro cai pra `economia::FPS`.
+        jogo.economia.segurar_quadro();
         next_frame().await;
     }
 }
@@ -507,6 +520,15 @@ impl Jogo {
         self.passo_teclado_virtual();
         self.receber_lista();
         self.pump_rede();
+        // Jogando, a tela nao apaga sozinha: o automatico segue sem toque.
+        let quer_acesa = matches!(self.tela, Tela::Jogando);
+        if quer_acesa != self.tela_acesa {
+            nativo::manter_tela_acesa(quer_acesa);
+            self.tela_acesa = quer_acesa;
+        }
+        if !quer_acesa && self.economia.ativa {
+            self.economia.sair(get_time());
+        }
         if matches!(self.tela, Tela::Jogando) {
             self.habilidades.acompanhar_alvos(&mut self.world);
             {
@@ -522,19 +544,31 @@ impl Jogo {
             // quadro.
             self.mapa.acompanhar();
             self.construcoes.acompanhar();
+            // Modo economia: parado tempo demais entra sozinho; ligado (ou
+            // acabando de sair), nenhum toque chega ao mundo — so' o deslize.
+            let agora = get_time();
+            if self.economia.parado_demais(agora, economia::houve_entrada()) {
+                self.entrar_economia();
+            }
+            let eco = self.economia.bloqueia_entrada(agora);
+            let eco_ativa = self.economia.ativa;
             let ui_pega = self.ui_pega_mouse();
             // Mapa e minimapa so' recebem clique quando estao a' mostra.
-            if self.mapa.aberto || !self.painel_grande() {
+            if !eco && (self.mapa.aberto || !self.painel_grande()) {
                 match self.mapa.entrada(self.world.self_pos()) {
                     Some(mapa::Entrada::Viajar(destino)) => self.iniciar_viagem(destino),
                     Some(mapa::Entrada::Ir(alvo)) => self.iniciar_ir_para(alvo),
                     None => {}
                 }
             }
-            self.esc_consumido = is_key_pressed(KeyCode::Escape) && self.esc();
+            self.esc_consumido = !eco && is_key_pressed(KeyCode::Escape) && self.esc();
             // Toques antes de qualquer clique: com dedo, o clique no mundo sai
             // no SOLTAR (ver `gesto_camera`).
-            self.ler_toques();
+            if eco {
+                self.toque_acao = gesto_camera::Acao::Nada;
+            } else {
+                self.ler_toques();
+            }
             if !ui_pega {
                 self.atualizar_alvo();
             }
@@ -542,7 +576,9 @@ impl Jogo {
             if self.voltar_ao_menu && !self.painel_grande() && !self.missoes.aberta {
                 self.voltar_ao_menu = false;
             }
-            self.teclas_de_acao();
+            if !eco {
+                self.teclas_de_acao();
+            }
             self.acompanhar_loja();
             self.atualizar_auto_combate();
             self.usar_habilidade();
@@ -568,11 +604,14 @@ impl Jogo {
             self.correndo_auto = self.corrida.atualiza(self.world.self_pos(), automatico, get_frame_time());
             self.atualizar_auto_coleta();
             self.conduzir_auto_missao();
-            self.camera_controles();
+            if !eco {
+                self.camera_controles();
+            }
             self.enviar_input();
             self.sincroniza_preferencias();
             self.medir_rede();
-            if let Some(t) = &mut self.terreno {
+            // Com o modo economia ligado nada e' desenhado: malha nova espera.
+            if let Some(t) = self.terreno.as_mut().filter(|_| !eco_ativa) {
                 let centro = self.world.self_pos().unwrap_or(Vec2::ZERO);
                 // Raio 4 cobre 128 unidades — mais que a camera alcanca. O
                 // orcamento de 3 por quadro existe pra o mundo aparecer em
@@ -607,6 +646,9 @@ impl Jogo {
         self.world = World::default();
         self.ganhos = ganhos::Ganhos::default();
         self.habilidades = habilidades::Habilidades::default();
+        if self.economia.ativa {
+            self.economia.sair(get_time());
+        }
         self.auto_combate.parar();
         self.loja.fecha();
         self.interacao.cancela();
@@ -800,11 +842,26 @@ impl Jogo {
             // cada mudanca; aqui so' se guarda.
             ServerMessage::InventoryUpdate { slots } => {
                 // O que ENTROU sobe do personagem (coleta, loot, compra).
-                self.ganhos.bolsa_nova(&slots);
+                let entrou = self.ganhos.bolsa_nova(&slots);
+                self.economia.itens_novos(&entrou);
                 self.bolsa.slots = slots;
             }
             ServerMessage::ItemsConfig { items } => {
+                self.mercado.vinculados = items.iter().filter(|i| i.vinculado).map(|i| i.id).collect();
                 self.bolsa.nomes = items.into_iter().map(|i| (i.id, i.name)).collect();
+            }
+            ServerMessage::MercadoLista { anuncios, pagina, tem_mais } => self.mercado.lista(anuncios, pagina, tem_mais),
+            ServerMessage::MercadoMeus { anuncios, historico, tp } => self.mercado.meus(anuncios, historico, tp),
+            ServerMessage::MercadoEntregas { cartas, tp } => self.mercado.entregas(cartas, tp),
+            ServerMessage::MercadoResultado { ok, texto } => {
+                // Venda fechada chega com o painel fechado: o chat avisa.
+                self.chat.push(format!("Mercado: {texto}"));
+                if self.chat.len() > 8 {
+                    self.chat.remove(0);
+                }
+                for pedido in self.mercado.resultado(ok, texto, get_time()) {
+                    self.envia(pedido);
+                }
             }
             ServerMessage::StatsUpdate { stats, equipment } => {
                 self.bolsa.stats = Some(stats);
@@ -838,6 +895,7 @@ impl Jogo {
             ServerMessage::Morte { xp_perdido } => {
                 self.parar_tudo_ao_morrer();
                 self.morte.morreu(xp_perdido);
+                self.economia.morreu();
             }
             ServerMessage::DownedUpdate { active, .. } => {
                 if active && !self.morte.morto {
@@ -1228,6 +1286,7 @@ impl Jogo {
             || self.menu_missoes.aberto
             || self.diarias.aberto
             || self.lojas.aberto
+            || self.mercado.aberto
             || self.morte.painel
             || self.config_barra.aberto
             || self.config_coleta.aberto
@@ -1247,7 +1306,69 @@ impl Jogo {
     /// O mouse esta' sobre a interface (o mundo nao recebe o clique)? Uma
     /// pergunta so', no lugar da condicao de onze termos que crescia a cada
     /// painel novo.
+    fn entrar_economia(&mut self) {
+        let nivel = match self.world.self_id.and_then(|id| self.world.ents.get(&id)) {
+            Some(e) if self.ficha.nivel == 0 => e.meta.nivel as u32,
+            _ => self.ficha.nivel,
+        };
+        self.economia.entrar(get_time(), self.ficha.xp, nivel, self.bolsa.ouro);
+    }
+
+    /// O que o personagem esta' fazendo, pro resumo da tela preta.
+    fn estado_da_economia(&self) -> (&'static str, Color) {
+        let verde = Color::new(0.45, 0.85, 0.52, 1.0);
+        if self.net.is_none() {
+            ("SEM CONEXÃO", Color::new(0.92, 0.30, 0.30, 1.0))
+        } else if self.morte.morto {
+            ("MORTO", Color::new(0.92, 0.30, 0.30, 1.0))
+        } else if self.dialogo.aberto {
+            ("AGUARDANDO VOCÊ", hud_estilo::OURO)
+        } else if self.auto_combate.ativo() {
+            ("AUTO COMBATE", verde)
+        } else if self.auto_coleta.ativo() {
+            ("AUTO COLETA", verde)
+        } else if self.auto_missao.etapa().is_some() {
+            ("AUTO MISSÃO", verde)
+        } else {
+            ("PARADO", Color::new(0.55, 0.56, 0.60, 1.0))
+        }
+    }
+
+    fn desenhar_economia(&mut self) {
+        let agora = get_time();
+        let eu = self.world.self_id.and_then(|id| self.world.ents.get(&id));
+        let (hp, hp_max, nivel_ent, nome) = eu
+            .map(|e| (e.state.hp as i32, e.meta.hp_max as i32, e.meta.nivel as u32, e.meta.name.clone().unwrap_or_default()))
+            .unwrap_or_default();
+        let nivel = if self.ficha.nivel == 0 { nivel_ent } else { self.ficha.nivel };
+        let hp_max = self.bolsa.stats.as_ref().map_or(hp_max, |s| s.hp_max);
+        let mult = if self.ficha.mult_xp > 0 { self.ficha.mult_xp } else { shared::DEFAULT_XP_MULTIPLIER };
+        let (base, prox) = (shared::xp_for_level_with_mult(nivel, mult), shared::xp_for_level_with_mult(nivel + 1, mult));
+        let exp = if prox > base { self.ficha.xp.saturating_sub(base) as f32 / (prox - base) as f32 } else { 0.0 };
+        let estado = self.estado_da_economia();
+        let bolsa = &self.bolsa;
+        let nome_item = |id: u16| bolsa.nome(id);
+        let resumo = economia::Resumo {
+            nome: &nome,
+            nivel,
+            hp,
+            hp_max,
+            exp,
+            xp: self.ficha.xp,
+            ouro: bolsa.ouro,
+            estado,
+            ping_ms: self.rede.ms,
+            nome_item: &nome_item,
+        };
+        if self.economia.desenha(&resumo, agora) {
+            self.economia.sair(agora);
+        }
+    }
+
     fn ui_pega_mouse(&self) -> bool {
+        if self.economia.bloqueia_entrada(get_time()) {
+            return true;
+        }
         if self.painel_grande() || self.morte.pega_mouse() {
             return true;
         }
@@ -1271,6 +1392,7 @@ impl Jogo {
         self.menu_missoes.aberto = false;
         self.diarias.fechar();
         self.lojas.fechar();
+        self.mercado.fechar();
         self.morte.painel = false;
         self.config_barra.fechar();
         self.config_coleta.fechar();
@@ -1312,6 +1434,11 @@ impl Jogo {
                 self.chat.push("Mapa: só nas ilhas.".into());
             }
             Item::Lojas => self.lojas.abrir(),
+            Item::Mercado => {
+                for pedido in self.mercado.abrir() {
+                    self.envia(pedido);
+                }
+            }
             Item::RecuperarXp => self.morte.painel = true,
             Item::BarraItens => self.config_barra.abrir(None),
             Item::Coleta => self.config_coleta.abrir(),
@@ -1351,6 +1478,9 @@ impl Jogo {
             true
         } else if self.morte.painel {
             self.morte.painel = false;
+            true
+        } else if self.mercado.aberto {
+            self.mercado.fechar();
             true
         } else if self.lojas.aberto {
             self.lojas.fechar();
@@ -1574,6 +1704,9 @@ impl Jogo {
         if let Some(e) = p.escala_ui {
             hud_layout::define_escala_ui(e);
         }
+        if let Some(m) = p.economia_auto_min {
+            self.economia.auto_min = Some(m);
+        }
         let atual = self.preferencias_atuais();
         self.prefs.recebeu(&atual);
     }
@@ -1594,6 +1727,7 @@ impl Jogo {
             coleta_tipos: Some(self.auto_coleta.tipos),
             coleta_raio: Some(cent(self.auto_coleta.raio)),
             escala_ui: Some(cent(hud_layout::escala_ui())),
+            economia_auto_min: self.economia.auto_min,
         }
     }
 
@@ -2391,6 +2525,7 @@ impl Jogo {
     // ────────────────────────────── desenho ──────────────────────────────
     fn desenhar(&mut self) {
         match &self.tela {
+            Tela::Jogando if self.economia.ativa => self.desenhar_economia(),
             Tela::Jogando => self.desenhar_mundo(),
             Tela::Servidores => self.tela_servidores(),
             Tela::Login => self.tela_login(),
@@ -2539,6 +2674,9 @@ impl Jogo {
                 self.mapa.abrir();
             }
             self.mapa.desenha_mini(&self.world);
+            if hud::draw_botao_economia(&z) {
+                self.entrar_economia();
+            }
             if let Some((hp, hp_max, _, nome)) = eu.clone() {
                 let st = self.bolsa.stats.as_ref();
                 let (hp_max, mp_max, vigor_max, poder) =
@@ -2691,8 +2829,11 @@ impl Jogo {
         }
         if self.config_interface.aberto {
             // Vale no quadro seguinte e vai pro servidor pelas preferencias.
-            if let Some(nova) = self.config_interface.desenha(hud_layout::escala_ui()) {
-                hud_layout::define_escala_ui(nova);
+            match self.config_interface.desenha(hud_layout::escala_ui(), self.economia.auto_min()) {
+                Some(config_interface::Mudanca::Escala(nova)) => hud_layout::define_escala_ui(nova),
+                Some(config_interface::Mudanca::EconomiaAuto(min)) => self.economia.auto_min = Some(min),
+                Some(config_interface::Mudanca::EconomiaAgora) => self.entrar_economia(),
+                None => {}
             }
         }
         if self.config_coleta.aberto {
@@ -2811,6 +2952,19 @@ impl Jogo {
         // A bolsa por cima do mundo.
         if let Some(pedido) = self.bolsa.desenha(&self.vox, &self.solido) {
             self.envia(pedido);
+        }
+        if self.mercado.aberto {
+            let ctx = mercado_ui::Contexto {
+                slots: &self.bolsa.slots,
+                nomes: &self.bolsa.nomes,
+                ouro: self.bolsa.ouro,
+                nivel: self.ficha.nivel.max(self.bolsa.nivel),
+                digitado: self.teclado.digitado(),
+            };
+            let pedidos = self.mercado.desenha(&ctx, get_time());
+            for pedido in pedidos {
+                self.envia(pedido);
+            }
         }
         if self.lojas.aberto {
             let lista = self.mapa.lojas();
@@ -3109,6 +3263,7 @@ impl Jogo {
         let precisa = match self.tela {
             Tela::Login => self.campo_login_ativo,
             Tela::Personagens => self.selecao_personagem.foco_no_nome(),
+            Tela::Jogando => self.mercado.foco_na_busca(),
             _ => false,
         };
         if let Some(mostrar) = self.teclado_virtual.quer(precisa) {

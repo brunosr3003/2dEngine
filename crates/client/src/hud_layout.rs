@@ -98,6 +98,8 @@ pub struct Zonas {
     pub minimapa: Rect,
     /// ⤢ dentro da moldura do minimapa: abre o Mapa.
     pub mapa_icone: Rect,
+    /// Bateria no canto esquerdo da moldura do minimapa: modo economia.
+    pub economia: Rect,
     /// Chat: logo abaixo do rastreador, a' esquerda — o canto de baixo e' do
     /// joystick.
     pub chat: Rect,
@@ -197,6 +199,7 @@ fn monta(sw: f32, sh: f32, s: f32) -> Zonas {
     let area = Rect::new(sw - m - 320.0 * s, menu.y + menu.h + 12.0 * s, 320.0 * s, 56.0 * s);
     let minimapa = Rect::new(area.x, area.y + area.h + 4.0 * s, 320.0 * s, 320.0 * s);
     let mapa_icone = Rect::new(minimapa.x + minimapa.w - 32.0 * s, minimapa.y + 6.0 * s, 26.0 * s, 26.0 * s);
+    let economia = Rect::new(minimapa.x + 6.0 * s, minimapa.y + 6.0 * s, 26.0 * s, 26.0 * s);
 
     // ── alvo: centrado no vao que sobra no alto ──
     let esq = ficha.x + ficha.w + 16.0 * s;
@@ -251,6 +254,7 @@ fn monta(sw: f32, sh: f32, s: f32) -> Zonas {
         area,
         minimapa,
         mapa_icone,
+        economia,
         chat,
         joystick,
         faixa,
@@ -271,7 +275,7 @@ impl Zonas {
         let d = move |r: Rect| Rect::new(r.x + o.x, r.y + o.y, r.w, r.h);
         for r in [
             &mut self.ficha, &mut self.buffs, &mut self.rastreador, &mut self.alvo, &mut self.menu, &mut self.area,
-            &mut self.minimapa, &mut self.mapa_icone, &mut self.chat, &mut self.joystick, &mut self.faixa,
+            &mut self.minimapa, &mut self.mapa_icone, &mut self.economia, &mut self.chat, &mut self.joystick, &mut self.faixa,
             &mut self.coleta, &mut self.atacar, &mut self.auto_combate, &mut self.auto_coleta, &mut self.pocao,
             &mut self.exp,
         ] {

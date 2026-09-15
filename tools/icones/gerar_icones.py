@@ -666,6 +666,9 @@ def catalogo():
     for base in MATERIAIS_COLORIDOS:
         for tier in range(1, 5):
             itens[base + tier - 1] = (lambda b, tr: lambda s: material_colorido(s, b, tr))(base, tier)
+    # Chaves lendarias (cor 5): ids proprios, 353..356 (`item_id::*_LENDARIA`).
+    for k, base in enumerate([332, 336, 340, 64]):
+        itens[353 + k] = (lambda b: lambda s: material_colorido(s, b, 5))(base)
     return dict(sorted(itens.items()))
 
 

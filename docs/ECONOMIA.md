@@ -178,7 +178,10 @@ que a pedra de refino custa na loja é o teto do que vale a pedra farmada.**
 
 A TP mora na CONTA (global) e o gold no PERSONAGEM (banco do realm). Por isso:
 
-- **A troca TP↔gold é por realm** — o gold de um realm só existe no banco dele.
+- **O mercado é GLOBAL** (decidido em 15/09/2026, ver `docs/MERCADO.md`): um
+  só pra todos os realms, inclusive a troca TP↔gold. O gold continua morando
+  no banco do realm; ele atravessa por **custódia no banco central** e volta
+  por **cartas** com id único, aplicadas uma vez só.
 - **Cadastro de conta único e livro-caixa central**, fora dos `DATABASE_URL`
   dos realms (hoje a tabela `accounts` mora dentro de cada realm; isso muda).
   Como é dinheiro de verdade, cada movimento de TP é uma linha de razão (quem,
@@ -188,16 +191,20 @@ A TP mora na CONTA (global) e o gold no PERSONAGEM (banco do realm). Por isso:
   só então a TP é creditada a ele. Dois bancos diferentes não têm transação
   comum — a custódia é o que garante que TP nunca some nem duplica no meio.
 
-### Pra depois
+### Decidido em 15/09/2026 (implementado, `docs/MERCADO.md`)
 
-- **A taxa da troca TP↔gold** — cobrada em gold (mais um ralo de gold) ou em TP
-  (queima TP)? E quanto.
+- **Taxa de 5%** no mercado de itens **e** na troca TP↔gold, em gold,
+  descontada do vendedor e queimada.
+- **Vende tudo que não é vinculado** (coluna `items.vinculado`). Na prática o
+  "vinculado é o padrão" de cima virou decisão por item: o que não pode ir ao
+  mercado é marcado vinculado.
+- **Portão pra vender: nível 20.**
+
+### Pra depois
 - **A loja de cash vende gold direto?** Recomendo que não: gold criado pela
   loja é torneira comprada — inflação e pay-to-win ao mesmo tempo. Gold só
   pela troca entre jogadores.
-- **A taxa do mercado de itens.**
-- **Portão pra vender** (nível, progresso de história) contra conta
-  descartável.
+- **Portão por progresso de história**, além do nível.
 - A TP um dia entra por outro caminho além da compra (evento, conquista)?
 
 ## O que falta decidir

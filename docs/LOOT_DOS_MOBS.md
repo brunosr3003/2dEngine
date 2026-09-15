@@ -9,16 +9,36 @@ coloridos desta tabela vêm na cor cinza. Este é o balanceamento inicial.
 
 | Mob | Cobre (100%) | Materiais (quantidade; chance) | Poções (quantidade; chance) |
 |---|---:|---|---|
-| Lobo | 4–14 | Couro (1; 4%), Garra (1; 2%) | Vida (1; 8%), Mana (1; 4%) |
-| Urso | 15–40 | Aço (1–3; 25%), Couro (1; 4%) | Vida (1; 12%) |
+| Lobo | 4–14 | — | Vida (1; 8%), Mana (1; 4%) |
+| Urso | 15–40 | Aço (1–3; 25%) | Vida (1; 12%) |
 | Pistoleiro | 10–28 | Aço (1–3; 25%), Pedra Sombra-da-Lua (1–2; 12%) | Vigor (1; 8%) |
-| Tigre | 8–22 | Quintessência (1–2; 20%), Garra (1; 3%) | Mana (1; 8%) |
+| Tigre | 8–22 | Quintessência (1–2; 20%) | Mana (1; 8%) |
 | Mago | 15–35 | Pedra do Coração Negro (1–2; 20%), Pedra de Ânima (1–2; 20%) | Mana (1; 12%) |
-| Owlbear | 25–60 | Platina (1–3; 25%), Berloque de Exorcismo (1–2; 15%), Chifre (1; 3%) | Vida maior (1; 10%) |
+| Owlbear | 25–60 | Platina (1–3; 25%), Berloque de Exorcismo (1–2; 15%) | Vida maior (1; 10%) |
 | Arqueiro | 10–28 | Fragmento Iluminante (1–2; 20%), Aço (1–2; 20%) | Vigor (1; 8%) |
-| Chefe / Lobo Grande | 200–500 | Darksteel (5–12; 50%), Pó Cintilante (1; 5%), Escama (1; 5%) | Vida maior (1–2; 35%), Mana maior (1; 25%) |
-| Caranguejo | 3–10 | Garra (1; 6%), Escama (1; 1%) | Vida (1; 8%) |
-| Caranguejo-rei | 12–30 | Garra (1–2; 15%), Aço (1–2; 15%), Escama (1; 3%) | Vida (1; 12%) |
+| Chefe / Lobo Grande | 200–500 | Darksteel (5–12; 50%), Pó Cintilante (1; 5%) | Vida maior (1–2; 35%), Mana maior (1; 25%) |
+| Caranguejo | 3–10 | — | Vida (1; 8%) |
+| Caranguejo-rei | 12–30 | Aço (1–2; 15%) | Vida (1; 12%) |
+
+## Chaves de craft: só chefe
+
+Escama, Garra, Chifre e Couro (a chave de cada receita) **não caem de mob
+comum nem da pedra**. Saem só de chefe, na cor da faixa do **conteúdo** e com
+chance que cai conforme a faixa sobe (`shared::chaves`). O chefe que nasce no
+mundo aberto rende bem menos que o chefe de dungeon/raid:
+
+| nível do chefe | cor | dungeon / raid | chefe do mundo |
+|---|---|---:|---:|
+| 1–19 | cinza | 15% | 5% |
+| 20–39 | verde | 10% | 3% |
+| 40–59 | azul | 6% | 2% |
+| 60–79 | épica | 3% | 1% |
+| 80+ | lendária | 1% | 0,3% |
+
+Cai uma das quatro, sorteada. A chave lendária existe (ids 353–356) mas ainda
+não tem de onde cair: nenhum chefe passa do 60 e dungeon/raid não existem.
+Missão pode dar chave de recompensa (é de propósito). Bancos antigos perdem as
+linhas de chave pela migração `chaves_so_de_chefe_v1`.
 
 Os caranguejos (kinds 8 e 9) só nascem nas **zonas de praia**: chão plano e
 baixo de areia com o oceano a poucos passos, fora da cidade e do porto

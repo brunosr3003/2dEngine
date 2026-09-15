@@ -20,6 +20,8 @@ mod craft;
 mod economy;
 mod loot_mobs;
 mod mapa_ilha;
+mod mercado;
+mod mercado_razao;
 mod panoptico;
 mod morte;
 mod barra;
@@ -63,6 +65,9 @@ async fn main() -> Result<()> {
 
     // Canal: este processo se anuncia e bate o coracao. Ver `canais`.
     canais::init(&pool).await?;
+    // Mercado global: tabelas do realm e, com DATABASE_URL_CENTRAL, o banco
+    // central. Sem ele o mercado fica desligado e o jogo segue.
+    mercado::init(&pool).await?;
     let populacao = canais::Populacao::default();
     let saude = canais::Saude::default();
     let diretorio = canais::Diretorio::default();

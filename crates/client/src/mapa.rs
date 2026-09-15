@@ -923,6 +923,10 @@ impl Mapa {
         if !r.contains(m) {
             return None;
         }
+        // A bateria (modo economia) e' do HUD: nao viaja.
+        if crate::hud_layout::atual().economia.contains(m) {
+            return None;
+        }
         // O ⤢ da moldura abre o mapa grande em vez de viajar.
         if crate::hud_layout::atual().mapa_icone.contains(m) {
             if is_mouse_button_pressed(MouseButton::Left) {

@@ -93,6 +93,12 @@ pub fn loot_de_chefe(kind: u16, seed: u64) -> Vec<(u16, u32)> {
     if rnd() < 0.25 {
         v.push((GLITTERING_POWDER, 1));
     }
+    // A chave de craft: so' chefe da, na cor da faixa do chefe e com chance
+    // que cai conforme o nivel sobe. Chefe do mundo rende menos que o de
+    // dungeon/raid.
+    if let Some(chave) = shared::chaves::rolar(n, shared::chaves::Fonte::ChefeDoMundo, 1.0, rnd(), rnd()) {
+        v.push((chave, 1));
+    }
     v
 }
 
@@ -389,5 +395,31 @@ mod testes {
         assert!(alto.iter().any(|(id, _)| *id == na_cor(STEEL, 3)));
         assert!(loot_de_chefe(0, 7).is_empty(), "mob comum nao ganha loot de chefe");
         assert_eq!(com_loot_de_chefe(vec![(COPPER, 5)], 0, 1), vec![(COPPER, 5)]);
+    }
+
+    #[test]
+    fn chefe_da_chave_na_cor_da_faixa_e_rara() {
+        let chaves = todas_as_chaves_da_cor;
+        for (kind, cor) in [(10u16, 1u8), (13, 2), (17, 3), (18, 4)] {
+            const N: u64 = 20_000;
+            let mut caiu = 0;
+            for seed in 0..N {
+                for (id, q) in loot_de_chefe(kind, seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)) {
+                    if shared::item_id::todas_as_chaves().contains(&id) {
+                        assert!(chaves(cor).contains(&id), "chefe {kind}: chave {id} fora da cor {cor}");
+                        assert_eq!(q, 1);
+                        caiu += 1;
+                    }
+                }
+            }
+            let nivel = cat::chefe(kind).unwrap().nivel;
+            let esperado = shared::chaves::faixa(nivel).chance_mundo;
+            let taxa = caiu as f32 / N as f32;
+            assert!((taxa - esperado).abs() < 0.006, "chefe {kind} (nv {nivel}): {taxa}, tabela {esperado}");
+        }
+    }
+
+    fn todas_as_chaves_da_cor(cor: u8) -> Vec<u16> {
+        shared::item_id::CHAVES.iter().map(|&b| shared::item_id::chave_na_cor(b, cor)).collect()
     }
 }

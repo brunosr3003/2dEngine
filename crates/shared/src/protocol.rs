@@ -265,6 +265,23 @@ pub enum ClientMessage {
     /// `web` entrega ao cliente no `/api/auth/google/poll`). Mesma resposta
     /// do `Login`. Ver docs/LOGIN_GOOGLE.md.
     LoginToken { token: String },
+    /// Mercado global (docs/MERCADO.md): busca anuncios ativos.
+    MercadoBuscar { filtro: crate::mercado::FiltroNet },
+    /// Meus anuncios ativos, historico e saldo de TP.
+    MercadoMeus,
+    /// Anuncia `qtd` do slot da bolsa a `preco_unit` gold cada. O item sai da
+    /// bolsa na hora e fica em custodia no mercado.
+    MercadoAnunciar { inv_slot: u16, qtd: u32, preco_unit: u64 },
+    /// Anuncia TP da conta a `preco_unit` gold cada (TP em custodia).
+    MercadoAnunciarTp { qtd: u64, preco_unit: u64 },
+    /// Compra `qtd` de um anuncio (item ou TP) ao preco que o cliente viu.
+    MercadoComprar { anuncio: String, qtd: u64, preco_unit: u64 },
+    /// Cancela um anuncio proprio: o que sobrou volta por entrega.
+    MercadoCancelar { anuncio: String },
+    /// Entregas esperando e saldo de TP.
+    MercadoEntregas,
+    /// Recebe as entregas que couberem na bolsa.
+    MercadoReceber,
 }
 
 /// Onde esta' a peca que a forja vai refinar.
@@ -786,6 +803,14 @@ pub enum ServerMessage {
     Telegrafico { id: u32, chefe: EntityId, forma: crate::bosses::Forma, centro: [f32; 2], dir: [f32; 2], carga_s: f32 },
     /// O golpe saiu (`impacto`) ou foi cancelado (chefe morreu).
     TelegraficoFim { id: u32, impacto: bool },
+    /// Mercado: uma pagina da busca.
+    MercadoLista { anuncios: Vec<crate::mercado::AnuncioNet>, pagina: u16, tem_mais: bool },
+    /// Mercado: meus anuncios ativos, historico e TP da conta.
+    MercadoMeus { anuncios: Vec<crate::mercado::AnuncioNet>, historico: Vec<crate::mercado::VendaNet>, tp: u64 },
+    /// Mercado: entregas esperando e TP da conta.
+    MercadoEntregas { cartas: Vec<crate::mercado::CartaNet>, tp: u64 },
+    /// Mercado: resposta de um pedido (ou aviso de venda/compra fechada).
+    MercadoResultado { ok: bool, texto: String },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.
@@ -818,6 +843,9 @@ pub struct Preferencias {
     pub coleta_raio: Option<f32>,
     /// Escala da interface (HUD e textos), 0,8 a 1,6.
     pub escala_ui: Option<f32>,
+    /// Modo economia de energia: entra sozinho depois de N minutos sem tocar
+    /// na tela (0 = nunca).
+    pub economia_auto_min: Option<u16>,
 }
 
 /// Filtros do mapa grande e do minimapa. O padrao e' tudo desligado.
@@ -856,6 +884,7 @@ impl Preferencias {
         self.camera_pitch_ajuste = faixa(self.camera_pitch_ajuste, -3.0, 3.0);
         self.coleta_raio = faixa(self.coleta_raio, crate::COLETA_RAIO_AUTO_MIN, crate::COLETA_RAIO_AUTO_MAX);
         self.escala_ui = faixa(self.escala_ui, 0.8, 1.6);
+        self.economia_auto_min = self.economia_auto_min.map(|m| m.min(60));
         self
     }
 }
@@ -876,9 +905,11 @@ mod testes_preferencias {
             coleta_tipos: Some([true, false, true, false, true]),
             coleta_raio: Some(5000.0),
             escala_ui: Some(9.0),
+            economia_auto_min: Some(500),
         }
         .validada(&|id| id <= 12);
         assert_eq!(p.escala_ui, Some(1.6));
+        assert_eq!(p.economia_auto_min, Some(60));
         assert_eq!(p.coleta_raio, Some(crate::COLETA_RAIO_AUTO_MAX));
         assert_eq!(p.coleta_tipos, Some([true, false, true, false, true]));
         assert_eq!(p.versao, Preferencias::VERSAO);
@@ -1065,6 +1096,9 @@ pub struct ItemConfigEntry {
     /// Se false, server bloqueia equip/use. Client pode greyscale o ícone.
     #[serde(default = "default_true")]
     pub active:     bool,
+    /// Vinculado: nao entra no mercado (docs/MERCADO.md).
+    #[serde(default)]
+    pub vinculado:  bool,
 }
 
 fn default_true() -> bool { true }

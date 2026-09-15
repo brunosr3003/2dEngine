@@ -14,6 +14,12 @@ então ela não pode morar no banco de nenhum. Exige um cadastro de conta único
 e um livro-caixa central, fora dos `DATABASE_URL` dos realms. Ver
 `docs/ECONOMIA.md`, seção TP.
 
+**O mercado também é global** (um só pra todos os realms). Ele mora no banco
+CENTRAL (`DATABASE_URL_CENTRAL`, junto do livro da TP): o item ou o gold sai do
+banco do realm em custódia e volta por cartas idempotentes. Não é consulta
+atravessando realms — cada realm só escreve na própria saída e lê as próprias
+cartas. Ver `docs/MERCADO.md`.
+
 Tem lotação global: `MMO_REALM_CAPACIDADE`, hoje **1500**. Batido o teto, o
 supervisor para de abrir canal e quem chega espera na fila. De onde sai esse
 número, ver abaixo.

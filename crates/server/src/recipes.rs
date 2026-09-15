@@ -211,6 +211,20 @@ async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
     if novas > 0 {
         tracing::info!("[recipes] {novas} receitas de equipamento semeadas");
     }
+    // Nivel minimo alinhado com as faixas da chave (verde 15->20, azul
+    // 30->40). So' mexe em quem ainda esta' no valor antigo: ajuste manual fica.
+    let mut ajustadas = 0u64;
+    for (faixa, antigo) in [(1i32, 15i16), (2, 30)] {
+        let novo = shared::receitas::FAIXAS[faixa as usize].nivel_min as i16;
+        let de = shared::receitas::PRIMEIRO_ID as i32 + faixa * 100;
+        ajustadas += sqlx::query("UPDATE craft_recipes SET nivel_min = $1 WHERE id BETWEEN $2 AND $3 AND nivel_min = $4")
+            .bind(novo).bind(de).bind(de + 99).bind(antigo)
+            .execute(pool).await?
+            .rows_affected();
+    }
+    if ajustadas > 0 {
+        tracing::info!("[recipes] {ajustadas} receitas com nivel minimo novo (verde 20, azul 40)");
+    }
     Ok(())
 }
 

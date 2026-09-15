@@ -41,10 +41,16 @@ cair mais que o que ela pede em 100, senão o gargalo muda de lugar sozinho:
 | Platina | 3–6 | 30% |
 | os seis de 100 | 2–4 | 12% cada |
 | Pó Cintilante | 1 | 3% |
-| Escama / Garra / Chifre / Couro | 1 | 1% cada |
 
-A chave a 1% é o regulador real: material sobra, chave falta, e é ela que
-decide quantos itens o mundo produz por hora.
+**A chave não cai da pedra nem de mob.** Escama, Garra, Chifre e Couro saem
+só de chefe, na cor da faixa do conteúdo, com a chance caindo conforme sobe —
+chefe de dungeon/raid 15% cinza (até 19), 10% verde (20–39), 6% azul (40–59),
+3% épica (60–79), 1% lendária (80+); chefe do mundo bem menos (5/3/2/1/0,3%).
+Ver [Loot dos mobs](LOOT_DOS_MOBS.md). O nível mínimo do craft segue as mesmas
+faixas (verde 20, azul 40, épico 60). Continua sendo o regulador real: material
+sobra, chave falta, e é ela que decide quantos itens o mundo produz por hora.
+A chave é a exceção à regra do roxo abaixo: a chave
+épica cai (rara) de conteúdo 60+.
 
 ## A cor do material: sobe por síntese, não por drop
 
@@ -99,8 +105,8 @@ e vira **matéria-prima de progressão**.
   | cor | grau que sai | nível mín. | chave | principal | cada secundário | darksteel | cobre |
   |---|---|---|---|---|---|---|---|
   | cinza | Comum | 1 | 1 | 30 | 10 | 200 | 300 |
-  | verde | Fino | 15 | 1 | 90 | 30 | 1.500 | 2.000 |
-  | azul | Raro | 30 | 1 | 300 | 100 | 8.000 | 10.000 |
+  | verde | Fino | 20 | 1 | 90 | 30 | 1.500 | 2.000 |
+  | azul | Raro | 40 | 1 | 300 | 100 | 8.000 | 10.000 |
   | roxo | Épico | 60 | 1 | 300 | 100 | 60.000 | 50.000 |
 
   O grau sai da cor (o nível da instância rolada cai no tier certo) e o nível

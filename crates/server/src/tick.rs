@@ -79,6 +79,8 @@ pub async fn run_world_loop(
         let porto = world.porto();
         world.povoar_ilha(porto);
     }
+    // Mercado global: liga a saida do realm ao banco central (docs/MERCADO.md).
+    crate::mercado::spawn_relay(auth_pool.clone(), auth_tx.clone());
     world.set_auth_ctx(AuthCtx {
         pool: auth_pool,
         tx: auth_tx,
@@ -106,8 +108,9 @@ pub async fn run_world_loop(
         if shutdown.try_recv().is_ok() {
             tracing::info!("shutdown signal received — saving all characters...");
             let rows = world.collect_character_rows();
-            if !rows.is_empty() {
-                let _ = save_tx.send(SaveBatch { rows });
+            let mercado = world.tomar_registros_mercado(&rows);
+            if !rows.is_empty() || !mercado.is_empty() {
+                let _ = save_tx.send(SaveBatch { rows, mercado });
             }
             // Aguarda o writer consumir o batch (drena o canal).
             drop(save_tx);
@@ -123,11 +126,14 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::Disconnected(id)) => {
                     // Persiste o personagem antes de descartar a sessao.
                     if let Some(row) = world.take_character_for_disconnect(&id) {
-                        let _ = save_tx.send(SaveBatch { rows: vec![row] });
+                        let rows = vec![row];
+                        let mercado = world.tomar_registros_mercado(&rows);
+                        let _ = save_tx.send(SaveBatch { rows, mercado });
                     }
                     world.on_disconnect(id);
                 }
                 Ok(IncomingMessage::Message(id, m)) => world.on_message(id, m),
+                Ok(IncomingMessage::Mercado(ev)) => world.on_mercado(ev),
                 Ok(IncomingMessage::AuthResult(id, r)) => world.on_auth_result(id, r),
                 Ok(IncomingMessage::CharCreated(id, row, success)) => {
                     world.on_char_created(id, *row, success);
@@ -153,6 +159,7 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::CharReloadedForSelect(id, row, success)) => {
                     world.on_char_reloaded_for_select(id, *row, success);
                 }
+                Ok(IncomingMessage::Mercado(ev)) => world.on_mercado(ev),
                 Ok(_) => {} // outros variantes nao devem chegar aqui
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => break,
@@ -180,8 +187,9 @@ pub async fn run_world_loop(
         let should_save = world.save_pending || (save_counter % SAVE_INTERVAL_TICKS == 0);
         if should_save {
             let rows = world.collect_character_rows();
-            if !rows.is_empty() {
-                let _ = save_tx.send(SaveBatch { rows });
+            let mercado = world.tomar_registros_mercado(&rows);
+            if !rows.is_empty() || !mercado.is_empty() {
+                let _ = save_tx.send(SaveBatch { rows, mercado });
             }
             world.save_pending = false;
         }

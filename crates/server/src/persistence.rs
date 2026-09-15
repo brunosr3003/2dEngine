@@ -613,8 +613,22 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
         "ADD COLUMN IF NOT EXISTS wis_max INTEGER NOT NULL DEFAULT 0",
         // Inativo: server não dropa, não equipa, não usa. Pode vender/guardar.
         "ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE",
+        // Vinculado: fora do mercado global (docs/MERCADO.md).
+        "ADD COLUMN IF NOT EXISTS vinculado BOOLEAN NOT NULL DEFAULT FALSE",
     ] {
         sqlx::query(&format!("ALTER TABLE items {col}")).execute(pool).await?;
+    }
+    // Recompensa de missao nasce vinculada (a Pocao de XP das missoes de area).
+    // Uma vez so': depois disso quem manda e' a coluna.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS migracoes_de_dados (nome TEXT PRIMARY KEY, feita TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    ).execute(pool).await?;
+    let marcou = sqlx::query("INSERT INTO migracoes_de_dados (nome) VALUES ('mercado_vinculados_v1') ON CONFLICT DO NOTHING")
+        .execute(pool).await?.rows_affected();
+    if marcou > 0 {
+        sqlx::query("UPDATE items SET vinculado = TRUE WHERE id = $1")
+            .bind(shared::item_id::XP_POTION as i32)
+            .execute(pool).await?;
     }
     // Override de item_level no drop por enemy_kind (era hardcoded em
     // world.rs::spawn_loot_drops). NULL = usa items.item_level como fallback.
@@ -886,6 +900,11 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         S{ id: item_id::COPPER as i32,                            name:"Cobre",                           sell:1, buy:None, ord:None, stack:999999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::DARKSTEEL as i32,                         name:"Darksteel",                       sell:4, buy:None, ord:None, stack:999999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::GLITTERING_POWDER as i32,                 name:"Pó Cintilante",                   sell:60, buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        // Chaves lendarias (cor 5): so' chefe/raid de nivel 80+ (`shared::chaves`).
+        S{ id: item_id::SCALE_LENDARIA as i32,                    name:"Escama Lendária",                 sell:10240, buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::CLAW_LENDARIA as i32,                     name:"Garra Lendária",                  sell:10240, buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::HORN_LENDARIA as i32,                     name:"Chifre Lendário",                 sell:10240, buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S{ id: item_id::HIDE_LENDARIA as i32,                     name:"Couro Lendário",                  sell:10240, buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
 
         // Peixes (drop da pesca) — stackáveis, sem slot. icon_path setado
         // explicitamente abaixo pros sprites de Fish/ (ic/ir são sentinela -1
@@ -1580,6 +1599,9 @@ async fn load_inventory(pool: &PgPool, char_name: &str) -> Result<Vec<shared::In
 #[derive(Debug)]
 pub struct SaveBatch {
     pub rows: Vec<CharacterRow>,
+    /// Registros do mercado desses personagens, gravados na MESMA transacao
+    /// (docs/MERCADO.md): o item sai da bolsa e entra na saida juntos.
+    pub mercado: Vec<crate::mercado::Registro>,
 }
 
 /// Log fire-and-forget de um drop (usado pro relatório no admin). Erro só
@@ -1614,9 +1636,25 @@ pub fn log_drop(
 pub fn spawn_writer(pool: PgPool) -> mpsc::UnboundedSender<SaveBatch> {
     let (tx, mut rx) = mpsc::unbounded_channel::<SaveBatch>();
     tokio::spawn(async move {
+        // Save que falhou vai INTEIRO no proximo: as linhas dos personagens E
+        // os registros do mercado. So' o registro sem a linha gravaria a
+        // saida no mercado com o item ainda na bolsa do banco — duplicado.
+        let mut atrasado: Option<SaveBatch> = None;
         while let Some(batch) = rx.recv().await {
-            if let Err(e) = write_batch(&pool, &batch).await {
-                tracing::warn!("persist write failed: {e:?}");
+            let batch = match atrasado.take() {
+                Some(velho) => juntar_atrasado(velho, batch),
+                None => batch,
+            };
+            match write_batch(&pool, &batch).await {
+                Ok(()) => {
+                    if !batch.mercado.is_empty() {
+                        crate::mercado::acordar_relay();
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("persist write failed: {e:?}");
+                    atrasado = Some(batch);
+                }
             }
         }
         tracing::debug!("persist writer task exiting");
@@ -1624,8 +1662,46 @@ pub fn spawn_writer(pool: PgPool) -> mpsc::UnboundedSender<SaveBatch> {
     tx
 }
 
+/// Um save que falhou junto do seguinte. A linha e' uma FOTO inteira do
+/// personagem: a mais nova vence a velha do mesmo nome (ja' contem o que a
+/// velha tinha, inclusive o item que saiu pro mercado). Personagem que so'
+/// estava no velho vai com a foto velha — ela e' a que casa com os registros
+/// dele. Registros: os velhos antes dos novos, todos (o banco ignora repetido
+/// por id).
+fn juntar_atrasado(velho: SaveBatch, novo: SaveBatch) -> SaveBatch {
+    let rows = juntar_fotos(velho.rows, novo.rows, |r| r.name.as_str());
+    let mut mercado = velho.mercado;
+    mercado.extend(novo.mercado);
+    SaveBatch { rows, mercado }
+}
+
+/// As fotos velhas cujo nome nao aparece nas novas, depois todas as novas.
+fn juntar_fotos<T>(velhas: Vec<T>, novas: Vec<T>, nome: impl Fn(&T) -> &str) -> Vec<T> {
+    let mut v: Vec<T> = velhas.into_iter().filter(|a| !novas.iter().any(|b| nome(b) == nome(a))).collect();
+    v.extend(novas);
+    v
+}
+
+#[cfg(test)]
+mod testes_save_atrasado {
+    use super::juntar_fotos;
+
+    #[test]
+    fn foto_nova_vence_e_quem_so_estava_no_velho_nao_se_perde() {
+        let velhas = vec![("ana", 1), ("bia", 1)];
+        let novas = vec![("bia", 2), ("caio", 2)];
+        let j = juntar_fotos(velhas, novas, |r| r.0);
+        assert_eq!(j, vec![("ana", 1), ("bia", 2), ("caio", 2)]);
+    }
+
+    #[test]
+    fn sem_novas_fica_tudo_do_velho() {
+        assert_eq!(juntar_fotos(vec![("ana", 1)], Vec::new(), |r| r.0), vec![("ana", 1)]);
+    }
+}
+
 async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
-    if batch.rows.is_empty() {
+    if batch.rows.is_empty() && batch.mercado.is_empty() {
         return Ok(());
     }
     let mut tx = pool.begin().await?;
@@ -1827,6 +1903,7 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         // Player skills: delete-all + insert-rows. Cascade do FK em
         // Skill aprendida nao existe mais: a arma na mao da' as tres.
     }
+    crate::mercado::gravar_registros(&mut tx, &batch.mercado).await?;
     tx.commit().await?;
     // Quests + pontos de facção (fora da tx; reconcilia character_quests).
     for row in &batch.rows {

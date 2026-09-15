@@ -35,6 +35,8 @@ pub struct ItemDef {
     pub icon_path:  Option<String>,
     /// Inativo: server não dropa, não equipa, não usa. Pode vender/guardar.
     pub active:     bool,
+    /// Vinculado: nao entra no mercado global (docs/MERCADO.md).
+    pub vinculado:  bool,
     /// Template de stat ranges. Usado por ItemInstance::roll_with_template
     /// no drop pra rolar stats aleatórios.
     pub template:   ItemTemplate,
@@ -401,8 +403,9 @@ pub fn coleta_fornece(item: u16) -> (bool, bool) {
 pub fn linhas_da_pedra() -> Vec<(u8, u16, i32, i32, f32)> {
     use shared::item_id::*;
     // A taxa segue o CUSTO: o que a receita pede em 300 cai mais que o que ela
-    // pede em 100. As chaves sao 1 por item craftado: caem raro.
-    const COLORIDOS: [(u16, i32, i32, f32); 12] = [
+    // pede em 100. As CHAVES (Escama, Garra, Chifre, Couro) nao estao aqui:
+    // so' caem de chefe e de dungeon/raid (`shared::chaves`).
+    const COLORIDOS: [(u16, i32, i32, f32); 8] = [
         (STEEL, 3, 6, 0.55),
         (PLATINUM, 3, 6, 0.30),
         (DARK_HEART_STONE, 2, 4, 0.12),
@@ -411,10 +414,6 @@ pub fn linhas_da_pedra() -> Vec<(u8, u16, i32, i32, f32)> {
         (EXORCISM_BAUBLE, 2, 4, 0.12),
         (ILLUMINATING_FRAGMENT, 2, 4, 0.12),
         (ANIMA_STONE, 2, 4, 0.12),
-        (SCALE, 1, 1, 0.010),
-        (CLAW, 1, 1, 0.010),
-        (HORN, 1, 1, 0.010),
-        (HIDE, 1, 1, 0.010),
     ];
     // Sem cor: caem igual em qualquer pedra.
     const INCOLORES: [(u16, i32, i32, f32); 3] = [
@@ -520,9 +519,27 @@ pub fn items_config() -> Vec<shared::protocol::ItemConfigEntry> {
         icon_row:   i.icon_row,
         equip_slot: i.equip_slot.clone(),
         active:     i.active,
+        vinculado:  i.vinculado,
     }).collect();
     out.sort_by_key(|e| e.id);
     out
+}
+
+/// Item vinculado (fora do mercado). Desconhecido conta como vinculado: o
+/// mercado nunca vende o que o jogo nao conhece.
+pub fn item_vinculado(id: u16) -> bool {
+    cell().read().items.get(&id).is_none_or(|i| i.vinculado)
+}
+
+/// Nome do item (vazio se desconhecido).
+pub fn item_nome(id: u16) -> String {
+    cell().read().items.get(&id).map(|i| i.name.clone()).unwrap_or_default()
+}
+
+/// Equipavel (tem slot de equipamento)?
+pub fn item_equipavel(id: u16) -> bool {
+    shared::equip_slot_of(id).is_some()
+        || cell().read().items.get(&id).is_some_and(|i| i.equip_slot.as_deref().is_some_and(|s| !s.is_empty()))
 }
 
 /// True se o item está ativo (default true). Usado pra bloquear equip/use
@@ -552,14 +569,14 @@ pub(crate) async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
         id: i32, name: String, sell_price: i32, buy_price: Option<i32>,
         shop_order: Option<i32>, stack_max: i32,
         equip_slot: Option<String>, item_level: i32, icon_col: i32, icon_row: i32,
-        icon_path: Option<String>, active: bool,
+        icon_path: Option<String>, active: bool, vinculado: bool,
         hp_min: i32, hp_max: i32, mp_min: i32, mp_max: i32,
         atk_min: i32, atk_max: i32, def_min: i32, def_max: i32,
         dex_min: i32, dex_max: i32, wis_min: i32, wis_max: i32,
     }
     let item_rows: Vec<ItemRow> = sqlx::query_as(
         "SELECT id, name, sell_price, buy_price, shop_order, stack_max, \
-                equip_slot, item_level, icon_col, icon_row, icon_path, active, \
+                equip_slot, item_level, icon_col, icon_row, icon_path, active, vinculado, \
                 hp_min, hp_max, mp_min, mp_max, atk_min, atk_max, \
                 def_min, def_max, dex_min, dex_max, wis_min, wis_max \
          FROM items"
@@ -584,6 +601,7 @@ pub(crate) async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
             icon_row:   r.icon_row,
             icon_path:  r.icon_path,
             active:     r.active,
+            vinculado:  r.vinculado,
             template: ItemTemplate {
                 hp_max:        StatRange::new(r.hp_min, r.hp_max),
                 mp_max:        StatRange::new(r.mp_min, r.mp_max),
@@ -707,7 +725,7 @@ mod loot_tests {
     use super::*;
     fn item(id:u16,slot:Option<&str>,active:bool)->ItemDef {
         ItemDef{id,name:format!("Item {id}"),sell_price:1,buy_price:None,shop_order:None,stack_max:999,
-            equip_slot:slot.map(str::to_owned),item_level:1,icon_col:0,icon_row:0,icon_path:None,active,template:Default::default()}
+            equip_slot:slot.map(str::to_owned),item_level:1,icon_col:0,icon_row:0,icon_path:None,active,vinculado:false,template:Default::default()}
     }
     #[test]
     fn tabela_legada_nao_volta_a_dropar_equipamento_nem_item_desconhecido() {
@@ -864,7 +882,6 @@ mod testes_da_pedra {
             for (nome, base, esperado, tol) in [
                 ("Aço", STEEL, 0.55, 0.015), ("Platina", PLATINUM, 0.30, 0.015),
                 ("Coração Negro", DARK_HEART_STONE, 0.12, 0.01), ("Ânima", ANIMA_STONE, 0.12, 0.01),
-                ("Escama", SCALE, 0.01, 0.003), ("Couro", HIDE, 0.01, 0.003),
             ] {
                 let t = taxa(soma(base));
                 assert!((t - esperado).abs() < tol, "pedra {pedra}: {nome} a {t:.3}, doc diz {esperado}");
@@ -881,8 +898,11 @@ mod testes_da_pedra {
             for base in MATERIAIS_COLORIDOS {
                 assert!(vezes.get(&na_cor(base, 4)).is_none(), "pedra {pedra}: material roxo caiu ({base})");
             }
+            for chave in todas_as_chaves() {
+                assert!(vezes.get(&chave).is_none(), "pedra {pedra}: chave {chave} caiu (so' chefe da)");
+            }
             println!(
-                "pedra {pedra}: aço {:.1}% (cinza {:.0}/verde {:.0}/azul {:.0}), platina {:.1}%, darksteel {:.1}%, pó {:.2}%, chave escama {:.2}%",
+                "pedra {pedra}: aço {:.1}% (cinza {:.0}/verde {:.0}/azul {:.0}), platina {:.1}%, darksteel {:.1}%, pó {:.2}%",
                 taxa(aco) * 100.0,
                 vezes.get(&na_cor(STEEL, 1)).copied().unwrap_or(0) as f32 / aco as f32 * 100.0,
                 vezes.get(&na_cor(STEEL, 2)).copied().unwrap_or(0) as f32 / aco as f32 * 100.0,
@@ -890,16 +910,15 @@ mod testes_da_pedra {
                 taxa(soma(PLATINUM)) * 100.0,
                 taxa(vezes.get(&DARKSTEEL).copied().unwrap_or(0)) * 100.0,
                 taxa(vezes.get(&GLITTERING_POWDER).copied().unwrap_or(0)) * 100.0,
-                taxa(soma(SCALE)) * 100.0,
             );
         }
     }
 
-    /// Doze materiais coloridos + tres sem cor, nas quatro linhas de tier.
+    /// Oito materiais coloridos + tres sem cor, nas quatro linhas de tier.
     #[test]
     fn a_tabela_da_pedra_tem_as_quatro_cores() {
         let l = linhas_da_pedra();
-        assert_eq!(l.len(), 4 * 15);
+        assert_eq!(l.len(), 4 * 11);
         for t in 1..=4u8 {
             assert!(l.iter().any(|&(tt, id, ..)| tt == t && id == na_cor(STEEL, t)));
             assert_eq!(l.iter().filter(|&&(tt, id, ..)| tt == t && id == COPPER).count(), 1);

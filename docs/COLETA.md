@@ -208,7 +208,6 @@ de pedra):
 | Platina | 3–6 | 30% | a sorteada |
 | Coração Negro, Sombra-da-Lua, Quintessência, Berloque, Fragmento, Ânima | 2–4 | 12% cada | a sorteada |
 | Pó Cintilante | 1 | 3% | — |
-| Escama, Garra, Chifre, Couro (chaves) | 1 | 1% cada | a sorteada |
 
 A cor sorteada segue a tabela da pedra acima (a verde dá 80% cinza / 20%
 verde, a roxa 55/27/18 e **nunca roxo**). O banco já tem essas linhas; a

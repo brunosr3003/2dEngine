@@ -9,8 +9,9 @@
 //! (ver `docs/ITENS.md`, "O numero que decide se copiamos os valores"). Aqui
 //! elas cabem numa sessao de play test na faixa de cada ilha.
 //!
-//! O GRAU que sai e' a cor do material, e cada cor tem nivel minimo — Epico
-//! so' a partir do 60 (docs/DUNGEONS_E_RAIDS.md). O servidor semeia estas
+//! O GRAU que sai e' a cor do material, e cada cor tem nivel minimo — as
+//! mesmas faixas da chave (`shared::chaves`): verde 20, azul 40, Epico so' a
+//! partir do 60 (docs/DUNGEONS_E_RAIDS.md). O servidor semeia estas
 //! receitas no banco (`craft_recipes`, ids 1000+) sem apagar ajuste manual.
 
 use crate::constants::item_id;
@@ -61,8 +62,8 @@ pub struct Faixa {
 
 pub const FAIXAS: [Faixa; 4] = [
     Faixa { cor: 1, grau: Grau::Comum, nivel_min: 1, item_level: 5, principal: 30, secundario: 10, darksteel: 200, cobre: 300 },
-    Faixa { cor: 2, grau: Grau::Fino, nivel_min: 15, item_level: 18, principal: 90, secundario: 30, darksteel: 1_500, cobre: 2_000 },
-    Faixa { cor: 3, grau: Grau::Raro, nivel_min: 30, item_level: 35, principal: 300, secundario: 100, darksteel: 8_000, cobre: 10_000 },
+    Faixa { cor: 2, grau: Grau::Fino, nivel_min: 20, item_level: 18, principal: 90, secundario: 30, darksteel: 1_500, cobre: 2_000 },
+    Faixa { cor: 3, grau: Grau::Raro, nivel_min: 40, item_level: 35, principal: 300, secundario: 100, darksteel: 8_000, cobre: 10_000 },
     Faixa { cor: 4, grau: Grau::Epico, nivel_min: 60, item_level: 60, principal: 300, secundario: 100, darksteel: 60_000, cobre: 50_000 },
 ];
 

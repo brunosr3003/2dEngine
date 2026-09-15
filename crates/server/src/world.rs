@@ -45,6 +45,8 @@ pub enum IncomingMessage {
     /// processo — char novo criado no :9000 e selecionado no :9001 de tutorial).
     /// Recarregado do DB; world insere no cache e spawna direto.
     CharReloadedForSelect(SessionId, Box<crate::persistence::CharacterRow>, crate::auth::AuthSuccess),
+    /// Mercado global: resposta do relay/central (ver `crate::mercado`).
+    Mercado(crate::mercado::Evento),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -66,6 +68,7 @@ pub struct ProjTag {
 mod habilidades;
 mod boss_teste;
 mod chefes;
+mod mercado_mundo;
 use habilidades::HabilidadePendente;
 
 /// Ataque basico: anuncia a animacao agora e resolve o dano no impacto.
@@ -1702,6 +1705,12 @@ pub struct GameWorld {
     /// Contexto de auth: pool Postgres + canal pra mandar AuthResult.
     /// None = auth desabilitado (compat/testing).
     auth_ctx: Option<AuthCtx>,
+    /// Mercado: registros esperando o save do personagem (`SaveBatch`).
+    mercado_registros: Vec<crate::mercado::Registro>,
+    /// Cartas ja' aplicadas neste processo (antes do save confirmar).
+    mercado_cartas_vistas: std::collections::HashSet<String>,
+    /// Ultimo pedido ao mercado por sessao: segura spam no banco central.
+    mercado_pedido_em: HashMap<SessionId, f32>,
     /// Timer em segundos desde a ultima tentativa de respawn de inimigo.
     enemy_spawn_timer: f32,
     /// Entidade atual do boss (None se morto/nao spawnado ainda).
@@ -2153,6 +2162,9 @@ impl GameWorld {
             next_player_id: 1,
             characters,
             auth_ctx: None,
+            mercado_registros: Vec::new(),
+            mercado_cartas_vistas: std::collections::HashSet::new(),
+            mercado_pedido_em: HashMap::new(),
             enemy_spawn_timer: 0.0,
             boss_entity: None,
             boss_respawn_timer: f32::INFINITY, // desabilita boss
@@ -2304,6 +2316,9 @@ impl GameWorld {
             next_player_id: 1,
             characters,
             auth_ctx: None,
+            mercado_registros: Vec::new(),
+            mercado_cartas_vistas: std::collections::HashSet::new(),
+            mercado_pedido_em: HashMap::new(),
             enemy_spawn_timer: 0.0,
             boss_entity: None,
             boss_respawn_timer: f32::INFINITY,
@@ -5816,6 +5831,14 @@ impl GameWorld {
             ClientMessage::AdminCommand { secret, target_char, action } => {
                 self.handle_admin_command(id, secret, target_char, action);
             }
+            m @ (ClientMessage::MercadoBuscar { .. }
+            | ClientMessage::MercadoMeus
+            | ClientMessage::MercadoAnunciar { .. }
+            | ClientMessage::MercadoAnunciarTp { .. }
+            | ClientMessage::MercadoComprar { .. }
+            | ClientMessage::MercadoCancelar { .. }
+            | ClientMessage::MercadoEntregas
+            | ClientMessage::MercadoReceber) => self.handle_mercado(id, m),
         }
     }
 

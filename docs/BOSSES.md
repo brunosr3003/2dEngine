@@ -39,7 +39,7 @@ estao no catalogo.
 | Respawn | 600 + 10 × nivel s (Bosque ~11–12 min, Planalto ~20 min) |
 | Fase 2 | vida ≤ 50%: golpe de fase 2 liberado, carga ×0,85, recarga ×0,75 |
 | Pausa | 2,2 s depois de cada impacto antes do proximo telegrafado |
-| Loot extra | cobre 200+25×nv, darksteel 20+4×nv, aço na cor da faixa, 60% platina, 25% po cintilante, 2 pocoes de vida maiores — sem equipamento |
+| Loot extra | cobre 200+25×nv, darksteel 20+4×nv, aço na cor da faixa, 60% platina, 25% po cintilante, 2 pocoes de vida maiores, **chave de craft** na cor da faixa do chefe, com a chance de chefe do mundo (5% cinza ate' nv 19, 3% verde 20–39, 2% azul 40–59, 1% epica 60–79, 0,3% lendaria 80+; `shared::chaves`) — sem equipamento |
 
 Cor da faixa: ate' nv 14 cinza, 15–29 verde, 30+ azul (roxo so' por sintese).
 

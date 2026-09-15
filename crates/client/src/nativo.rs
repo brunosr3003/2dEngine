@@ -51,6 +51,15 @@ pub fn teclado_virtual(mostrar: bool) {
     let _ = mostrar;
 }
 
+/// Tela sempre acesa enquanto joga: no automatico ninguem toca e o iPhone
+/// apagaria a tela (e pausaria o app). No desktop nao faz nada.
+pub fn manter_tela_acesa(sim: bool) {
+    #[cfg(target_os = "ios")]
+    ios::manter_tela_acesa(sim);
+    #[cfg(not(target_os = "ios"))]
+    let _ = sim;
+}
+
 /// Area segura da tela, em px da macroquad: (topo, esquerda, baixo, direita).
 /// No iPhone em paisagem o notch/Dynamic Island come um lado, os cantos sao
 /// arredondados e a barra do home fica embaixo. Fora do iOS, zero.
@@ -195,6 +204,15 @@ mod ios {
             // o topo tem inset zero mas o canto arredondado corta.
             let px = |v: f64| ((v.max(0.0) + 4.0).max(16.0) * k) as f32;
             [px(i.0), px(i.1), px(i.2), px(i.3)]
+        }
+    }
+
+    /// `UIApplication.sharedApplication.idleTimerDisabled = sim`.
+    pub fn manter_tela_acesa(sim: bool) {
+        unsafe {
+            let app = msg(classe("UIApplication"), "sharedApplication");
+            let f: unsafe extern "C" fn(Id, Sel, bool) = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+            f(app, sel("setIdleTimerDisabled:"), sim);
         }
     }
 
