@@ -100,7 +100,7 @@ Ele vê conta, ouro e posição de todo mundo.
 
 * **Sessão obrigatória.** Nada passa sem login, exceto a própria tela de
   login. API sem sessão responde 401; página redireciona.
-* **Senha** em `PANOPTICO_SENHA` (16+ caracteres; o processo não sobe com
+* **Senha** em `PANOPTICO_SENHA` (8+ caracteres; o processo não sobe com
   menos), comparada em tempo constante.
 * **Cookie** aleatório de 256 bits, `HttpOnly`, `SameSite=Strict`, `Secure`
   (desligável com `PANOPTICO_COOKIE_SEGURO=0` só pra teste local em http), no
@@ -118,7 +118,7 @@ Ele vê conta, ouro e posição de todo mundo.
 
 | variável | painel | exemplo |
 |---|---|---|
-| `PANOPTICO_SENHA` | obrigatória (16+) | — |
+| `PANOPTICO_SENHA` | obrigatória (8+) | — |
 | `PANOPTICO_WEB_BIND` | onde escuta | `127.0.0.1:18095` |
 | `PANOPTICO_PREFIXO` | caminho atrás do proxy | `/panoptico` |
 | `PANOPTICO_COOKIE_SEGURO` | `0` só em http local | (omitir em produção) |
@@ -140,7 +140,7 @@ MMO_ZONA=ilha_inicial BIND_ADDR=0.0.0.0:9200 \
 PANOPTICO_BIND=127.0.0.1:10200 MMO_ADMIN_TOKEN=<32 chars> \
   ./target/release/server
 
-MMO_ADMIN_TOKEN=<o mesmo> PANOPTICO_SENHA=<16+ chars> ./scripts/run-panoptico.sh
+MMO_ADMIN_TOKEN=<o mesmo> PANOPTICO_SENHA=<8+ chars> ./scripts/run-panoptico.sh
 ```
 
 ## Um aviso que o painel já se deu

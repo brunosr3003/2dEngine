@@ -48,9 +48,11 @@ pub fn normaliza_prefixo(p: &str) -> String {
 
 impl Auth {
     pub fn novo(senha: String, prefixo: &str, seguro: bool, confiar_proxy: bool) -> anyhow::Result<Auth> {
-        if senha.chars().count() < 16 {
+        // Minimo 8 (escolha do dono): o freio de tentativas por IP e' o que
+        // segura forca bruta pela internet.
+        if senha.chars().count() < 8 {
             anyhow::bail!(
-                "PANOPTICO_SENHA precisa de pelo menos 16 caracteres — este painel mostra conta, ouro e posicao de todo mundo"
+                "PANOPTICO_SENHA precisa de pelo menos 8 caracteres — este painel mostra conta, ouro e posicao de todo mundo"
             );
         }
         // Falha cedo se nao ha' fonte de aleatoriedade: sessao previsivel e'
