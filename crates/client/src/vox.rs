@@ -1049,3 +1049,4 @@ mod testes_orientacao {
         assert_eq!(crate::render3d::PAPEL_MISSOES, shared::construcao::Papel::Alquimista as u8 + 1);
     }
 }
+

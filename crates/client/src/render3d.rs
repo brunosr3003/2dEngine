@@ -1841,8 +1841,78 @@ fn desenha_montaria(
     b: &crate::bicho::Bicho,
     p: Vec3,
 ) {
-    let tempo = get_time() as f32;
     let vel = e.andar * shared::PLAYER_SPEED * shared::loja::VEL_MONTADO;
+    desenha_bicho_montaria(b, m, s, p, e.yaw, vel, get_time() as f32, e.meta.id.0 as f32);
+}
+
+/// A montaria parada num palco, girando em `yaw`: a vitrine da Loja.
+/// Desenhada DIRETO na tela num viewport (sem render target com
+/// profundidade, que o iPhone recusa — ver `viewport_em_pixels`). `false` =
+/// sem modelo ou sem espaco.
+pub fn vitrine_montaria(vox: &crate::vox::VoxCache, skin_id: u16, r: Rect, yaw: f32, solido: &Material) -> bool {
+    let Some(s) = shared::loja::skin(skin_id) else { return false };
+    let Some(m) = shared::loja::montaria(s.montaria) else { return false };
+    let Some(b) = vox.bicho(m.bicho) else { return false };
+    if r.w < 8.0 || r.h < 8.0 {
+        return false;
+    }
+    let Some(vp) = viewport_na_tela(r) else { return false };
+    let cam = camera_da_vitrine(b, m, vp);
+    set_camera(&cam);
+    limpa_so_profundidade();
+    macroquad::material::gl_use_material(solido);
+    desenha_bicho_montaria(b, m, s, Vec3::ZERO, yaw, 0.0, get_time() as f32, 7.0);
+    macroquad::material::gl_use_default_material();
+    set_default_camera();
+    true
+}
+
+/// A camera da vitrine: tres-quartos de cima, como a do jogo, enquadrando o
+/// maior lado do bicho com folga.
+fn camera_da_vitrine(b: &crate::bicho::Bicho, m: &shared::loja::Montaria, vp: (i32, i32, i32, i32)) -> Camera3D {
+    let h = (b.anat.altura * m.escala).max(0.4);
+    let comprido = (b.anat.frente.abs() * m.escala * 2.0).max(h);
+    let aspecto = vp.2 as f32 / vp.3.max(1) as f32;
+    let tamanho = h.max(comprido / aspecto.max(0.6));
+    Camera3D {
+        position: vec3(0.0, h * 1.25, tamanho * 2.3),
+        target: vec3(0.0, h * 0.45, 0.0),
+        up: Vec3::Y,
+        fovy: 30f32.to_radians(),
+        aspect: Some(aspecto),
+        viewport: Some(vp),
+        ..Default::default()
+    }
+}
+
+/// Onde o CHAO sob a montaria (origem) cai na tela, dentro de `r`: e' ali
+/// que a Loja poe o pedestal, pra montaria pisar nele.
+pub fn vitrine_chao(vox: &crate::vox::VoxCache, skin_id: u16, r: Rect) -> Option<Vec2> {
+    let s = shared::loja::skin(skin_id)?;
+    let m = shared::loja::montaria(s.montaria)?;
+    let b = vox.bicho(m.bicho)?;
+    let vp = viewport_na_tela(r)?;
+    let cam = camera_da_vitrine(b, m, vp);
+    let clip = cam.matrix() * Vec3::ZERO.extend(1.0);
+    if clip.w <= 0.0 {
+        return None;
+    }
+    let ndc = clip.truncate() / clip.w;
+    Some(vec2(r.x + (ndc.x * 0.5 + 0.5) * r.w, r.y + (1.0 - (ndc.y * 0.5 + 0.5)) * r.h))
+}
+
+/// O bicho da montaria com a skin: o do cavaleiro no mundo e o da vitrine.
+#[allow(clippy::too_many_arguments)]
+pub fn desenha_bicho_montaria(
+    b: &crate::bicho::Bicho,
+    m: &shared::loja::Montaria,
+    s: &shared::loja::Skin,
+    p: Vec3,
+    yaw: f32,
+    vel: f32,
+    tempo: f32,
+    semente: f32,
+) {
     // Passada pelo relogio: a do cavaleiro anda no ritmo da perna de gente.
     let ciclo = crate::bicho::ciclo(b.anat.altura * m.escala, vel.max(0.1)).max(0.05);
     let entrada = crate::bicho::Entrada {
@@ -1850,14 +1920,14 @@ fn desenha_montaria(
         vel,
         tempo,
         golpe: 99.0,
-        semente: e.meta.id.0 as f32,
+        semente,
         ferido: None,
         recuo: Vec3::ZERO,
     };
     let c = crate::bicho::corpo(&entrada, &b.anat);
     let chao = Mat4::from_translation(p)
         * Mat4::from_scale(Vec3::splat(m.escala))
-        * Mat4::from_rotation_y(e.yaw + crate::bicho::yaw_lateral(&b.anat, &entrada));
+        * Mat4::from_rotation_y(yaw + crate::bicho::yaw_lateral(&b.anat, &entrada));
     let patas = chao * Mat4::from_translation(vec3(0.0, c.sobe, 0.0));
     let tronco = patas
         * Mat4::from_translation(vec3(c.lado, c.sobe_tronco, c.avanca))

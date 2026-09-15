@@ -1,12 +1,11 @@
 //! As CRIATURAS em pecas: a marcha e a patada.
 //!
-//! Porta do zone14 (`ModeloVoxel.PassoDaPata`, `GiroDaJunta`, `DoGolpe`). As
-//! patas destes bichos sao TOCOS SOLTOS — o estilo, ver
-//! docs/PIPELINE_ARTE.md —, e perna solta se anima por TRANSLACAO: girar o
-//! toco no proprio topo move o pe' uns 4% da altura enquanto o corpo cruza
-//! metros de chao, e a caminhada le' como deslizar no gelo. O pe' faz um D:
-//! reto pra tras enquanto esta' plantado, na velocidade em que o chao passa,
-//! e volta pela frente levantando.
+//! Porta do zone14 (`ModeloVoxel.PassoDaPata`, `GiroDaJunta`, `DoGolpe`). No
+//! zone14 as patas eram tocos soltos; aqui cada pata vem com PERNA (coxa,
+//! joelho, canela — `tools/voxrender/bichos.py`) pendurada no quadril/ombro.
+//! O pe' continua fazendo o D — reto pra tras enquanto esta' plantado, na
+//! velocidade em que o chao passa, e volta pela frente levantando —, mas pelo
+//! ANGULO da perna em volta do quadril (`peca`), sem descolar do corpo.
 //!
 //! Nao deslizar e' identidade, nao sorte:
 //!
@@ -406,22 +405,26 @@ pub fn peca(j: Junta, e: &Entrada, a: &Anatomia, pivo: Vec3) -> (Quat, Vec3) {
         }
         Junta::Pata { frente, esq } if a.lateral => pata_de_caranguejo(frente, esq, e, a, pivo),
         Junta::Pata { frente, esq } => {
-            // o toco inclina POUCO, acompanhando o passo: quem move o pe' e'
-            // a translacao. Inclinar muito volta a girar o toco no topo.
-            let fase = e.passada + atraso_da_pata(frente, esq, m.corre) * TAU;
-            let giro = x(fase.sin() * 0.20 * m.acorda);
+            // A peca e' a PERNA inteira (coxa, canela e pata, gerada em
+            // `tools/voxrender/bichos.py`) pendurada no quadril/ombro, que e'
+            // o pivo. O pe' segue o mesmo D de antes, mas pelo ANGULO da perna
+            // em volta do quadril: transladar a perna inteira descolaria o
+            // quadril do corpo. So' a subida do pe' na volta translada.
             let meia = MEIA_VIAGEM_DO_PE * a.altura * m.acorda * m.alonga;
             let passo = passo_da_pata(frente, esq, e.passada, m.corre, meia);
+            let perna = pivo.y.max(0.05 * a.altura);
+            let giro = x((passo.z / perna).atan());
+            let sobe = vec3(0.0, passo.y, 0.0);
             // a patada e' da pata do lado `a.lado`, a da frente
             let golpeia = frente && (pivo.x >= 0.0) == (a.lado >= 0.0);
             let g = golpe(e.golpe);
             if !golpeia || g.ergue <= 0.0 {
-                return (giro, passo);
+                return (giro, sobe);
             }
-            let alvo = no_arco(a, g.angulo, altura_do_arco(a) + g.acima * a.altura, 0.0) - pivo;
-            // no arco a sola vira pra frente e aponta pra onde o tapa vai
-            let no_tapa = Quat::from_rotation_y(a.lado * g.angulo) * x(-1.2);
-            (giro.slerp(no_tapa, g.ergue), passo.lerp(alvo, g.ergue))
+            // No tapa a perna APONTA do ombro pro ponto do arco.
+            let alvo = no_arco(a, g.angulo, altura_do_arco(a) + g.acima * a.altura, 0.0);
+            let aponta = Quat::from_rotation_arc(Vec3::NEG_Y, (alvo - pivo).try_normalize().unwrap_or(Vec3::NEG_Y));
+            (giro.slerp(aponta, g.ergue), sobe.lerp(Vec3::ZERO, g.ergue))
         }
     }
 }
@@ -607,10 +610,18 @@ mod tests {
         Entrada { passada: 1.3, vel: 0.0, tempo: 4.0, golpe, semente: 7.0, ..Default::default() }
     }
 
+    /// O PE' da perna que golpeia: a perna pende do ombro (o pivo) ate' o
+    /// chao, gira em volta dele e translada so' a subida.
     fn pata_que_golpeia(t: f32) -> Vec3 {
         let a = lobo();
-        let (_, d) = peca(Junta::Pata { frente: true, esq: false }, &entrada(t), &a, a.ombro);
-        a.ombro + d
+        let (giro, d) = peca(Junta::Pata { frente: true, esq: false }, &entrada(t), &a, a.ombro);
+        a.ombro + giro * vec3(0.0, -a.ombro.y, 0.0) + d
+    }
+
+    /// O pe' parado, embaixo do ombro.
+    fn pe_parado() -> Vec3 {
+        let a = lobo();
+        vec3(a.ombro.x, 0.0, a.ombro.z)
     }
 
     #[test]
@@ -624,12 +635,16 @@ mod tests {
         }
     }
 
+    // Com PERNA de verdade (bichos.py) a patada nao leva o pe' ate' a
+    // cabeca: a perna, presa no ombro, APONTA pro arco. As medidas passam a
+    // ser relativas ao ombro.
     #[test]
-    fn a_pata_sobe_ate_a_cabeca() {
+    fn a_pata_sobe_acima_do_ombro_e_vai_pra_fora() {
+        let a = lobo();
         let no_alto = pata_que_golpeia(T_LEVANTA);
-        assert!(no_alto.y >= 0.85, "pata so' chegou a {}", no_alto.y);
+        assert!(no_alto.y > a.ombro.y, "pe' so' chegou a {} (ombro {})", no_alto.y, a.ombro.y);
         // e vai pra FORA, pro lado dela, antes de cruzar
-        assert!(no_alto.x > 0.3, "{no_alto:?}");
+        assert!(no_alto.x > a.ombro.x, "{no_alto:?}");
     }
 
     #[test]
@@ -640,10 +655,11 @@ mod tests {
         let alturas: Vec<f32> = (0..=40)
             .map(|k| pata_que_golpeia(T_LEVANTA + T_VARRE * k as f32 / 40.0).y)
             .collect();
-        let (lo, hi) = alturas.iter().fold((f32::MAX, f32::MIN), |(l, h), y| (l.min(*y), h.max(*y)));
-        assert!(lo >= 0.85 && hi - lo <= 0.13, "{lo}..{hi}");
+        let a = lobo();
+        let lo = alturas.iter().fold(f32::MAX, |l, y| l.min(*y));
+        assert!(lo > a.ombro.y * 0.9, "a perna caiu na varrida: {lo}");
         // cruza de um lado ao outro da cara
-        assert!(pata_que_golpeia(T_LEVANTA + T_VARRE - 1e-4).x < -0.3);
+        assert!(pata_que_golpeia(T_LEVANTA + T_VARRE - 1e-4).x < a.ombro.x - 0.05);
     }
 
     #[test]
@@ -660,7 +676,7 @@ mod tests {
             antes = agora;
         }
         // e termina no lugar
-        assert_eq!(pata_que_golpeia(DURACAO_DO_GOLPE + 0.01), a.ombro);
+        assert!(pata_que_golpeia(DURACAO_DO_GOLPE + 0.01).distance(pe_parado()) < 1e-4);
         assert_eq!(golpe(DURACAO_DO_GOLPE + 0.01), Golpe::default());
     }
 
@@ -671,7 +687,7 @@ mod tests {
         let outra = vec3(-0.12, 0.3, 0.2);
         let (_, d) = peca(Junta::Pata { frente: true, esq: true }, &entrada(t), &a, outra);
         assert_eq!(d, Vec3::ZERO);
-        assert!(pata_que_golpeia(t).distance(a.ombro) > 0.4);
+        assert!(pata_que_golpeia(t).distance(pe_parado()) > a.ombro.y * 0.8);
     }
 
     #[test]

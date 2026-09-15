@@ -218,3 +218,15 @@ python3 tools/icones/gerar_icones_ui.py
   `USADOS_UI`/`USADOS_MAPA` (`icones_ui.rs`). Os testes conferem que todo nome
   usado existe, que as células cabem no atlas e que nenhum ícone saiu vazio ou
   igual a outro.
+
+
+## Pernas dos bichos (set/2026)
+
+A arte do Sea of Cubes tinha a pata solta sob o tronco. `tools/voxrender/bichos.py`
+agora cresce, em resolucao cheia e ANTES da reducao (entra no mesmo orcamento de
+faces), uma perna afunilada em cada pata — canela na cor da pata, joelho um pouco
+mais grosso, coxa no pelo do corpo, entrando na barriga. A perna vai na peca da
+pata, entao o pivo (topo da caixa) vira o quadril e `bicho::peca` anima o passo
+como angulo em volta dele. Owlbear ja' encostava e fica igual; caranguejo mantem o
+estilo proprio. Triangulos no cliente (antes → depois): lobo_pequeno 1360→1510,
+urso 1476→1762, tigre 1334→1510, owlbear 2026→2086, lobo (chefe) 4054→6458.

@@ -55,6 +55,47 @@ pub fn medir(s: &str, tamanho: u16) -> f32 { fonte(false, |f| measure_text(s, So
 /// Dimensoes na fonte da UI — pra quem alinha texto com `TextDimensions`.
 pub fn medir_dim(s: &str, tamanho: u16) -> TextDimensions { fonte(false, |f| measure_text(s, Some(f), tam(tamanho), 1.0)) }
 pub fn medir_forte(s: &str, tamanho: u16) -> f32 { fonte(true, |f| measure_text(s, Some(f), tam(tamanho), 1.0).width) }
+
+// ─────────────────────────────── moedas ───────────────────────────────
+
+/// O cristal da Tempestade (TP), centrado em `c`. O MESMO desenho em todo
+/// lugar que mostra TP: loja, mercado, confirmacoes.
+pub fn icone_tp(c: Vec2, lado: f32) {
+    if !crate::icones_ui::loja("tp", c, lado, 1.0) {
+        draw_poly(c.x, c.y, 6, lado * 0.42, 30.0, AZUL);
+    }
+}
+
+/// A moeda de ouro, centrada em `c`.
+pub fn icone_ouro(c: Vec2, lado: f32) {
+    if !crate::icones_ui::loja("ouro", c, lado, 1.0) {
+        draw_circle(c.x, c.y, lado * 0.4, OURO);
+    }
+}
+
+fn moeda_texto(tp: bool, x: f32, y: f32, s: &str, tamanho: u16, cor: Color, forte: bool) -> f32 {
+    let px = tam(tamanho) as f32;
+    let lado = px * 1.25;
+    let c = vec2(x + lado * 0.5, y - px * 0.34);
+    if tp { icone_tp(c, lado) } else { icone_ouro(c, lado) }
+    let tx = x + lado + px * 0.2;
+    if forte { texto_forte(tx, y, s, tamanho, cor) } else { texto(tx, y, s, tamanho, cor) }
+    tx - x + if forte { medir_forte(s, tamanho) } else { medir(s, tamanho) }
+}
+
+fn largura_moeda(s: &str, tamanho: u16, forte: bool) -> f32 {
+    let px = tam(tamanho) as f32;
+    px * 1.45 + if forte { medir_forte(s, tamanho) } else { medir(s, tamanho) }
+}
+
+/// Icone do TP + texto na linha de base `y`. Devolve a largura desenhada.
+pub fn tp_texto(x: f32, y: f32, s: &str, tamanho: u16, cor: Color, forte: bool) -> f32 { moeda_texto(true, x, y, s, tamanho, cor, forte) }
+pub fn largura_tp_texto(s: &str, tamanho: u16, forte: bool) -> f32 { largura_moeda(s, tamanho, forte) }
+/// Icone do TP + quantidade formatada ("1.250"), em negrito.
+pub fn valor_tp(x: f32, y: f32, qtd: u64, tamanho: u16, cor: Color) -> f32 { tp_texto(x, y, &crate::economia::milhar(qtd), tamanho, cor, true) }
+/// Icone do ouro + texto na linha de base `y`. Devolve a largura desenhada.
+pub fn ouro_texto(x: f32, y: f32, s: &str, tamanho: u16, cor: Color, forte: bool) -> f32 { moeda_texto(false, x, y, s, tamanho, cor, forte) }
+pub fn largura_ouro_texto(s: &str, tamanho: u16, forte: bool) -> f32 { largura_moeda(s, tamanho, forte) }
 pub fn texto(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) { desenha_texto(false, x, y, s, tamanho, cor); }
 pub fn texto_forte(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) { desenha_texto(true, x, y, s, tamanho, cor); }
 pub fn texto_centro(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) { texto(x - medir(s, tamanho) * 0.5, y, s, tamanho, cor); }

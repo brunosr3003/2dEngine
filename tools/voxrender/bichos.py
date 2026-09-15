@@ -19,7 +19,8 @@ pescoco num arquivo so', e as duas soltas ja' estao aqui.
 
 Uso:  python3 tools/voxrender/bichos.py
 """
-import os, sys
+import math, os, sys
+from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from voxrender import parse_vox  # noqa: E402
 from voxsimplify import reduzir  # noqa: E402
@@ -63,7 +64,71 @@ def carrega(prefixo):
         m = max(parse_vox(caminho), key=lambda x: len(x.voxels))
         pecas.append((nome, m))
         paleta = paleta or m.palette
+    pernas(pecas)
     return pecas, paleta
+
+
+def _cor_comum(voxels, filtro):
+    c = Counter(v for k, v in voxels.items() if filtro(k))
+    return c.most_common(1)[0][0] if c else None
+
+
+def pernas(pecas):
+    """PERNAS de verdade: a arte do Sea of Cubes tem a pata solta embaixo do
+    tronco. Aqui cada pata ganha, em resolucao cheia (antes da reducao, pra
+    entrar no mesmo orcamento), uma perna afunilada que sobe da pata ate'
+    dentro da barriga: canela fina na cor da pata, joelho um pouco mais grosso
+    e coxa larga no pelo do corpo. Ela vai NA PECA da pata, entao o pivo da
+    peca (topo da caixa, `bicho::pivo_vox`) vira o quadril/ombro e a perna
+    inteira balanca pendurada no corpo (`bicho::peca`).
+
+    A perna sai do ponto da barriga mais perto da pata (a pata costuma ser
+    mais larga que o tronco) e desce inclinada ate' o centro da pata. Pata
+    que ja' encosta no corpo (owlbear) fica como esta'.
+    """
+    tronco = dict(pecas).get("tronco")
+    if tronco is None or not tronco.voxels:
+        return
+    tv = tronco.voxels
+    tlo = [min(k[i] for k in tv) for i in range(3)]
+    thi = [max(k[i] for k in tv) for i in range(3)]
+    barriga = {}
+    for (x, y, z) in tv:
+        if z < barriga.get((x, y), 1 << 30):
+            barriga[(x, y)] = z
+    for nome, m in pecas:
+        if not nome.startswith("pata") or not m.voxels:
+            continue
+        pv = m.voxels
+        plo = [min(k[i] for k in pv) for i in range(3)]
+        phi = [max(k[i] for k in pv) for i in range(3)]
+        largura = min(phi[0] - plo[0] + 1, phi[1] - plo[1] + 1)
+        rb = max(2.0, largura * 0.22)   # canela
+        rt = max(rb, largura * 0.34)    # coxa
+        px, py = (plo[0] + phi[0]) / 2.0, (plo[1] + phi[1]) / 2.0
+        hx = min(max(px, tlo[0] + rt * 1.2), thi[0] - rt * 1.2)
+        hy = min(max(py, tlo[1] + rt * 1.2), thi[1] - rt * 1.2)
+        sob = [z for (x, y), z in barriga.items() if abs(x - hx) <= rt and abs(y - hy) <= rt]
+        if not sob:
+            continue
+        topo = max(sob) + 2          # entra na barriga: sem fresta ao balancar
+        base = phi[2] - 2            # e na pata
+        if max(sob) <= phi[2] + 1:
+            continue                  # ja' encosta
+        pelo = _cor_comum(tv, lambda k: abs(k[0] - hx) <= rt and abs(k[1] - hy) <= rt and k[2] <= barriga.get((k[0], k[1]), -99) + 3)
+        casco = _cor_comum(pv, lambda k: k[2] >= phi[2] - 2)
+        pelo = pelo or casco
+        for z in range(base, topo + 1):
+            t = (z - base) / float(max(1, topo - base))
+            cx, cy = px + (hx - px) * t, py + (hy - py) * t
+            r = rb + (rt - rb) * t * t
+            r *= 1.0 + 0.14 * math.exp(-((t - 0.38) / 0.1) ** 2)   # joelho
+            cor = pelo if t > 0.42 else casco
+            for x in range(int(cx - r) - 1, int(cx + r) + 2):
+                for y in range(int(cy - r) - 1, int(cy + r) + 2):
+                    dx, dy = abs(x + 0.5 - cx) / r, abs(y + 0.5 - cy) / r
+                    if dx ** 2.6 + dy ** 2.6 <= 1.0:
+                        pv.setdefault((x, y, z), cor)
 
 
 def monta(saida, prefixo, orcamento):

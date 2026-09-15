@@ -331,6 +331,98 @@ SKILLS = {
     12: ("arcano", [("S", circ(32, 32, 24), 2.5), ("F", poly([(37, 5), (18, 35), (30, 35), (24, 59), (47, 25), (35, 25), (41, 5)]))]),
 }
 
+# ─────────────────────────────── loja (colorido) ───────────────────────────────
+# A moeda premium (TP), a arte dos pacotes e a moeda de ouro: desenho
+# COLORIDO (nao se tinge), celula de 128 pra ficar nitido de 16 a 128 px.
+# Reusado em todo lugar que mostra TP (`hud_estilo::tp_texto`).
+
+HUD["paleta"] = [("F", "M32,9C17,9 8,20 8,33C8,46 18,55 29,55C34,55 36,51 34,47.5C32,44 34,41 38,41H45C51.5,41 56,36.5 56,29C56,17.5 45,9 32,9Z"),
+                 ("D", circ(20, 31, 4.2)), ("D", circ(27, 20, 4.2)), ("D", circ(39.5, 18.5, 4.2)), ("D", circ(48, 28, 4.2))]
+
+# Facetas do cristal da tempestade, em volta do centro (32,33).
+FACETAS = [
+    ([(32, 4), (15, 19), (32, 33)], "#e6f9ff"),
+    ([(32, 4), (49, 19), (32, 33)], "#9fd6ff"),
+    ([(49, 19), (46, 45), (32, 33)], "#6166e8"),
+    ([(46, 45), (32, 60), (32, 33)], "#3b2c9e"),
+    ([(32, 60), (18, 45), (32, 33)], "#7080f2"),
+    ([(18, 45), (15, 19), (32, 33)], "#b5e8ff"),
+]
+CONTORNO_CRISTAL = poly([(32, 4), (49, 19), (46, 45), (32, 60), (18, 45), (15, 19)])
+RAIO_TP = "M36,13L24.5,35H32L27.5,52L41,28.5H33.5L38.5,13Z"
+
+
+def cristal(tx, ty, esc=1.0, rot=0.0, raio=True):
+    p = ['<g transform="translate(%s,%s) rotate(%s) scale(%s) translate(-32,-33)">' % (f(tx), f(ty), f(rot), f(esc))]
+    p.append('<path d="%s" fill="#000" fill-opacity="0.45" transform="translate(1.6,2.6)"/>' % CONTORNO_CRISTAL)
+    for pts, cor in FACETAS:
+        p.append('<path d="%s" fill="%s"/>' % (poly(pts), cor))
+    p.append('<path d="M32,4L15,19L22,23L32,10.5Z" fill="#ffffff" fill-opacity="0.6"/>')
+    if raio:
+        p.append('<path d="%s" fill="url(#raio)" stroke="#5a2e00" stroke-width="1.7" stroke-linejoin="round"/>' % RAIO_TP)
+    p.append('<path d="%s" fill="none" stroke="#150d3a" stroke-width="2.7" stroke-linejoin="round"/>' % CONTORNO_CRISTAL)
+    p.append('</g>')
+    return "".join(p)
+
+
+def faisca(cx, cy, r, op=0.95):
+    return '<path d="%s" fill="#ffffff" fill-opacity="%s"/>' % (estrela(cx, cy, r, r * 0.26, 4), f(op))
+
+
+def halo(cx, cy, r, op=0.8, ouro=False):
+    return '<circle cx="%s" cy="%s" r="%s" fill="url(#%s)" fill-opacity="%s"/>' % (f(cx), f(cy), f(r), "halo_ouro" if ouro else "halo", f(op))
+
+
+def bau_de_tp():
+    madeira = 'fill="url(#madeira)" stroke="#2a1405" stroke-width="2.2" stroke-linejoin="round"'
+    return (halo(32, 34, 32, 1.0, ouro=True) +
+            '<path d="M10,33L15,17H49L54,33Z" %s/>' % madeira +
+            '<path d="M15,17H49" stroke="#ffd36a" stroke-width="2.4"/>' +
+            cristal(21, 28, 0.40, -22) + cristal(43, 27, 0.42, 18) + cristal(32, 22, 0.55) +
+            '<rect x="8" y="33" width="48" height="23" rx="4" %s/>' % madeira +
+            '<rect x="13" y="33" width="5" height="23" fill="url(#ouro)" stroke="#6b3f05" stroke-width="1"/>' +
+            '<rect x="46" y="33" width="5" height="23" fill="url(#ouro)" stroke="#6b3f05" stroke-width="1"/>' +
+            '<rect x="27.5" y="38" width="9" height="11" rx="2.5" fill="url(#ouro)" stroke="#6b3f05" stroke-width="1.2"/>' +
+            '<circle cx="32" cy="43" r="1.6" fill="#3a2006"/>' +
+            '<rect x="8" y="33" width="48" height="3" fill="#ffe7a0" fill-opacity="0.35"/>' +
+            faisca(55, 9, 5) + faisca(8, 14, 3.6) + faisca(58, 30, 2.8))
+
+
+LOJA = {
+    "tp": halo(32, 33, 31, 0.9) + cristal(32, 33, 0.92) + faisca(53, 11, 5.2) + faisca(11, 50, 3.6),
+    "tp_1": halo(32, 36, 26, 0.7) + cristal(32, 36, 0.62) + faisca(47, 15, 4),
+    "tp_2": (halo(32, 36, 30, 0.85) + cristal(19, 42, 0.45, -18, False) + cristal(45, 42, 0.45, 18, False) +
+             cristal(32, 34, 0.64) + faisca(52, 12, 4.6) + faisca(10, 21, 3)),
+    "tp_3": (halo(32, 34, 31, 0.95) + '<ellipse cx="32" cy="53" rx="27" ry="8" fill="url(#monte)"/>' +
+             cristal(13, 47, 0.36, -26, False) + cristal(51, 47, 0.36, 24, False) +
+             cristal(22, 42, 0.46, -12, False) + cristal(42, 42, 0.46, 12, False) +
+             cristal(32, 33, 0.66) + faisca(54, 11, 5) + faisca(9, 17, 3.4) + faisca(33, 5, 2.6)),
+    "tp_4": bau_de_tp(),
+    "ouro": ('<circle cx="33.5" cy="34.5" r="25" fill="#000" fill-opacity="0.35"/>'
+             '<circle cx="32" cy="32" r="25" fill="url(#ouro)" stroke="#6b3f05" stroke-width="2.6"/>'
+             '<circle cx="32" cy="32" r="19" fill="none" stroke="#fff1bf" stroke-opacity="0.7" stroke-width="1.8"/>'
+             '<path d="%s" fill="#fff0b0" fill-opacity="0.95" stroke="#9a5d0a" stroke-width="1.2" stroke-linejoin="round"/>'
+             '<ellipse cx="24" cy="20" rx="9" ry="4.5" fill="#ffffff" fill-opacity="0.45" transform="rotate(-30 24 20)"/>'
+             % estrela(32, 32.5, 11, 4.6, 5)),
+}
+
+
+def svg_cor(corpo):
+    return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><defs>'
+            '<radialGradient id="halo"><stop offset="0" stop-color="#9ae6ff" stop-opacity="0.8"/>'
+            '<stop offset="0.5" stop-color="#7d6bff" stop-opacity="0.28"/><stop offset="1" stop-color="#7d6bff" stop-opacity="0"/></radialGradient>'
+            '<radialGradient id="halo_ouro"><stop offset="0" stop-color="#ffe492" stop-opacity="0.85"/>'
+            '<stop offset="0.5" stop-color="#ff9f35" stop-opacity="0.28"/><stop offset="1" stop-color="#ff9f35" stop-opacity="0"/></radialGradient>'
+            '<radialGradient id="monte"><stop offset="0" stop-color="#a596ff" stop-opacity="0.75"/><stop offset="1" stop-color="#4a3cc0" stop-opacity="0"/></radialGradient>'
+            '<linearGradient id="raio" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffbe2"/>'
+            '<stop offset="0.5" stop-color="#ffc53d"/><stop offset="1" stop-color="#ff8a1a"/></linearGradient>'
+            '<linearGradient id="ouro" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff2ad"/>'
+            '<stop offset="0.55" stop-color="#f2b53b"/><stop offset="1" stop-color="#b8720f"/></linearGradient>'
+            '<linearGradient id="madeira" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a06a34"/>'
+            '<stop offset="1" stop-color="#5a3313"/></linearGradient>'
+            '</defs>%s</svg>') % corpo
+
+
 # ─────────────────────────────── SVG ───────────────────────────────
 
 
@@ -423,10 +515,12 @@ def main():
         i_hud, w_hud, h_hud = monta(hud, 64, 8, "hud.png", tmp, svg_mono)
         i_mapa, w_mapa, h_mapa = monta(mapa, 48, 8, "mapa.png", tmp, svg_mono)
         i_sk, w_sk, h_sk = monta(skills, 96, 6, "skills.png", tmp, lambda d: svg_skill(d[0], d[1]))
+        loja = sorted(LOJA.items())
+        i_loja, w_loja, h_loja = monta(loja, 128, 4, "loja.png", tmp, svg_cor)
 
     out = ["// GERADO por tools/icones/gerar_icones_ui.py — nao edite a mao.",
            "// Rode `python3 tools/icones/gerar_icones_ui.py` pra refazer atlas e indice.", ""]
-    for nome, lado, colunas, w, h in (("UI", 64, 8, w_hud, h_hud), ("MAPA", 48, 8, w_mapa, h_mapa), ("SKILLS", 96, 6, w_sk, h_sk)):
+    for nome, lado, colunas, w, h in (("UI", 64, 8, w_hud, h_hud), ("MAPA", 48, 8, w_mapa, h_mapa), ("SKILLS", 96, 6, w_sk, h_sk), ("LOJA", 128, 4, w_loja, h_loja)):
         out += ["pub const LADO_%s: u32 = %d;" % (nome, lado),
                 "pub const COLUNAS_%s: u32 = %d;" % (nome, colunas),
                 "pub const LARGURA_%s: u32 = %d;" % (nome, w),
@@ -438,10 +532,12 @@ def main():
     out += ['    ("%s", %d),' % e for e in i_mapa]
     out += ["];", "", "/// (id da skill, celula), ordenado por id.", "pub const SKILLS: &[(u32, u16)] = &["]
     out += ["    (%d, %d)," % e for e in i_sk]
+    out += ["];", "", "/// (nome, celula), ordenado por nome. Arte colorida da loja (TP, pacotes, ouro).", "pub const LOJA: &[(&str, u16)] = &["]
+    out += ['    ("%s", %d),' % e for e in i_loja]
     out += ["];", ""]
     with open(INDICE, "w") as fh:
         fh.write("\n".join(out))
-    print("hud %d, mapa %d, skills %d icones" % (len(hud), len(mapa), len(skills)))
+    print("hud %d, mapa %d, skills %d, loja %d icones" % (len(hud), len(mapa), len(skills), len(loja)))
 
 
 if __name__ == "__main__":

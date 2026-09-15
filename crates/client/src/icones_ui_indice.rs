@@ -16,6 +16,11 @@ pub const COLUNAS_SKILLS: u32 = 6;
 pub const LARGURA_SKILLS: u32 = 576;
 pub const ALTURA_SKILLS: u32 = 192;
 
+pub const LADO_LOJA: u32 = 128;
+pub const COLUNAS_LOJA: u32 = 4;
+pub const LARGURA_LOJA: u32 = 512;
+pub const ALTURA_LOJA: u32 = 256;
+
 /// (nome, celula), ordenado por nome.
 pub const UI: &[(&str, u16)] = &[
     ("amigos", 0),
@@ -50,11 +55,12 @@ pub const UI: &[(&str, u16)] = &[
     ("mercado", 29),
     ("missoes", 30),
     ("montaria", 31),
-    ("recuperar_xp", 32),
-    ("sair", 33),
-    ("todas_missoes", 34),
-    ("trocar_personagem", 35),
-    ("voltar", 36),
+    ("paleta", 32),
+    ("recuperar_xp", 33),
+    ("sair", 34),
+    ("todas_missoes", 35),
+    ("trocar_personagem", 36),
+    ("voltar", 37),
 ];
 
 /// (nome, celula), ordenado por nome.
@@ -91,4 +97,14 @@ pub const SKILLS: &[(u32, u16)] = &[
     (10, 9),
     (11, 10),
     (12, 11),
+];
+
+/// (nome, celula), ordenado por nome. Arte colorida da loja (TP, pacotes, ouro).
+pub const LOJA: &[(&str, u16)] = &[
+    ("ouro", 0),
+    ("tp", 1),
+    ("tp_1", 2),
+    ("tp_2", 3),
+    ("tp_3", 4),
+    ("tp_4", 5),
 ];

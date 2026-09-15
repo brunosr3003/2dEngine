@@ -18,6 +18,11 @@ mod indice;
 const PNG_UI: &[u8] = include_bytes!("../../../assets/icones/hud.png");
 const PNG_MAPA: &[u8] = include_bytes!("../../../assets/icones/mapa.png");
 const PNG_SKILLS: &[u8] = include_bytes!("../../../assets/icones/skills.png");
+const PNG_LOJA: &[u8] = include_bytes!("../../../assets/icones/loja.png");
+
+/// Arte colorida da loja: a moeda TP (`tp`), os pacotes (`tp_1`..`tp_4`) e o
+/// ouro. Nao se tinge.
+pub const USADOS_LOJA: &[&str] = &["ouro", "tp", "tp_1", "tp_2", "tp_3", "tp_4"];
 
 /// Todo nome de icone do HUD/menu que o codigo pede. O teste confere que cada
 /// um existe no atlas: renomear no gerador sem mexer aqui quebra o teste, nao
@@ -27,7 +32,7 @@ pub const USADOS_UI: &[&str] = &[
     "configuracoes", "cadeado", "atacar", "auto_combate", "auto_coleta", "coleta", "mais", "voltar",
     "fechar", "coroa", "ficha", "habilidades", "montaria", "recuperar_xp", "conquistas", "craft",
     "forja", "encantar", "mapa", "aventuras", "correio", "clan", "lojas", "mercado", "loja_tp",
-    "barra_itens", "trocar_personagem", "sair",
+    "barra_itens", "trocar_personagem", "sair", "paleta",
 ];
 
 /// Todo nome de marcador do mapa que o codigo pede.
@@ -37,7 +42,7 @@ pub const USADOS_MAPA: &[&str] = &[
 ];
 
 thread_local! {
-    static TEX: OnceCell<[Texture2D; 3]> = const { OnceCell::new() };
+    static TEX: OnceCell<[Texture2D; 4]> = const { OnceCell::new() };
 }
 
 fn carrega(png: &[u8]) -> Texture2D {
@@ -47,7 +52,7 @@ fn carrega(png: &[u8]) -> Texture2D {
 }
 
 fn textura(i: usize) -> Texture2D {
-    TEX.with(|c| c.get_or_init(|| [carrega(PNG_UI), carrega(PNG_MAPA), carrega(PNG_SKILLS)])[i].clone())
+    TEX.with(|c| c.get_or_init(|| [carrega(PNG_UI), carrega(PNG_MAPA), carrega(PNG_SKILLS), carrega(PNG_LOJA)])[i].clone())
 }
 
 fn celula(n: u16, lado: u32, colunas: u32) -> Rect {
@@ -71,6 +76,20 @@ pub fn celula_mapa(nome: &str) -> Option<Rect> {
 pub fn celula_skill(id: u32) -> Option<Rect> {
     let k = indice::SKILLS.binary_search_by_key(&id, |e| e.0).ok()?;
     Some(celula(indice::SKILLS[k].1, indice::LADO_SKILLS, indice::COLUNAS_SKILLS))
+}
+
+/// Celula da arte da loja no atlas, em pixels.
+pub fn celula_loja(nome: &str) -> Option<Rect> {
+    let k = indice::LOJA.binary_search_by(|e| e.0.cmp(nome)).ok()?;
+    Some(celula(indice::LOJA[k].1, indice::LADO_LOJA, indice::COLUNAS_LOJA))
+}
+
+/// Arte colorida da loja centrada em `c` (moeda TP, pacotes, ouro), com
+/// `alfa`. `false` = nome sem arte.
+pub fn loja(nome: &str, c: Vec2, lado: f32, alfa: f32) -> bool {
+    let Some(f) = celula_loja(nome) else { return false };
+    desenha(3, f, c, lado, Color::new(1.0, 1.0, 1.0, alfa), 0.0);
+    true
 }
 
 fn desenha(tex: usize, fonte: Rect, c: Vec2, lado: f32, cor: Color, rotacao: f32) {
@@ -143,6 +162,9 @@ mod tests {
         for id in 1..=12 {
             assert!(celula_skill(id).is_some(), "skill {id} sem icone");
         }
+        for n in USADOS_LOJA {
+            assert!(celula_loja(n).is_some(), "arte da loja '{n}' nao existe no atlas");
+        }
         for k in 0..10 {
             assert!(celula_mapa(nome_do_bicho(k)).is_some(), "bicho {k} sem marcador");
         }
@@ -153,6 +175,7 @@ mod tests {
         assert!(indice::UI.windows(2).all(|w| w[0].0 < w[1].0));
         assert!(indice::MAPA.windows(2).all(|w| w[0].0 < w[1].0));
         assert!(indice::SKILLS.windows(2).all(|w| w[0].0 < w[1].0));
+        assert!(indice::LOJA.windows(2).all(|w| w[0].0 < w[1].0));
         let dentro = |r: Rect, w: u32, h: u32| r.x >= 0.0 && r.y >= 0.0 && r.x + r.w <= w as f32 && r.y + r.h <= h as f32;
         for e in indice::UI {
             assert!(dentro(celula(e.1, indice::LADO_UI, indice::COLUNAS_UI), indice::LARGURA_UI, indice::ALTURA_UI));
@@ -198,5 +221,7 @@ mod tests {
         cheias_e_distintas(PNG_MAPA, &mapa, indice::LADO_MAPA, indice::COLUNAS_MAPA, indice::LARGURA_MAPA);
         let sk: Vec<u16> = indice::SKILLS.iter().map(|e| e.1).collect();
         cheias_e_distintas(PNG_SKILLS, &sk, indice::LADO_SKILLS, indice::COLUNAS_SKILLS, indice::LARGURA_SKILLS);
+        let loja: Vec<u16> = indice::LOJA.iter().map(|e| e.1).collect();
+        cheias_e_distintas(PNG_LOJA, &loja, indice::LADO_LOJA, indice::COLUNAS_LOJA, indice::LARGURA_LOJA);
     }
 }

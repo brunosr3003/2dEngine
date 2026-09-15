@@ -372,6 +372,10 @@ async fn main() {
         previa_skills::abrir(&vox).await;
         return;
     }
+    if std::env::var("MMO_PREVIA_LOJA").is_ok() {
+        loja_tp::previa(&vox).await;
+        return;
+    }
     if std::env::var("MMO_PREVIA_PERSONAGENS").is_ok() {
         personagens::previa(&vox).await;
         return;
@@ -3266,7 +3270,7 @@ impl Jogo {
             }
         }
         // Loja de cash e janela de montarias (Menu).
-        for pedido in self.loja_tp.desenha() {
+        for pedido in self.loja_tp.desenha(&self.vox, &self.solido) {
             self.envia(pedido);
         }
         match self.montarias.desenha(self.montaria_skin) {

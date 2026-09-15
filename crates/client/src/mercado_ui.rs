@@ -201,9 +201,14 @@ impl Mercado {
         let p = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
         estilo::painel(p);
         estilo::texto(p.x + 18.0 * f, p.y + 34.0 * f, "Mercado", 22, estilo::OURO);
-        let bolso = format!("Gold {}   ·   TP {}", milhar(c.ouro), self.tp.map_or("—".to_string(), milhar));
         let fechar = Rect::new(p.x + p.w - 48.0 * f, p.y + 10.0 * f, 38.0 * f, 34.0 * f);
-        estilo::texto(fechar.x - 16.0 * f - estilo::medir(&bolso, 15), p.y + 32.0 * f, &bolso, 15, estilo::TEXTO);
+        // Saldo: moeda de ouro e cristal de TP, os mesmos icones da Loja.
+        let txt_tp = self.tp.map_or("—".to_string(), milhar);
+        let txt_ouro = milhar(c.ouro);
+        let x_tp = fechar.x - 16.0 * f - estilo::largura_tp_texto(&txt_tp, 15, true);
+        estilo::tp_texto(x_tp, p.y + 32.0 * f, &txt_tp, 15, estilo::TEXTO, true);
+        let x_ouro = x_tp - 22.0 * f - estilo::largura_ouro_texto(&txt_ouro, 15, true);
+        estilo::ouro_texto(x_ouro, p.y + 32.0 * f, &txt_ouro, 15, estilo::OURO, true);
         if crate::ui::botao(fechar, "x", true) {
             self.fechar();
             return saida;
@@ -367,10 +372,12 @@ impl Mercado {
         let tp = an.tipo == regras::TIPO_TP;
         estilo::texto_forte(r.x + 18.0 * f, r.y + 34.0 * f, "Confirmar compra", 18, estilo::OURO);
         let mut y = r.y + 52.0 * f;
-        if !tp {
+        if tp {
+            estilo::icone_tp(vec2(r.x + 42.0 * f, y + 24.0 * f), 50.0 * f);
+        } else {
             crate::icones::icone(an.item_id, Rect::new(r.x + 18.0 * f, y, 48.0 * f, 48.0 * f), an.instancia.map(|i| i.rarity), None);
         }
-        let xn = if tp { r.x + 18.0 * f } else { r.x + 76.0 * f };
+        let xn = r.x + 76.0 * f;
         estilo::texto_ajustado(&nome_do_anuncio(an, c), xn, y + 22.0 * f, r.x + r.w - xn - 18.0 * f, 16, estilo::TEXTO);
         estilo::texto(xn, y + 42.0 * f, &format!("{} gold cada · {} à venda", milhar(an.preco_unit), milhar(an.qtd)), 13, estilo::SUAVE);
         y += 88.0 * f;
@@ -625,7 +632,9 @@ impl Mercado {
         estilo::painel(dir);
         let (x, w) = (dir.x + 16.0 * f, dir.w - 32.0 * f);
         let saldo = self.tp.unwrap_or(0);
-        estilo::texto_forte(x, dir.y + 32.0 * f, &format!("Seus TP: {}", milhar(saldo)), 18, estilo::OURO);
+        let rotulo = "Seus TP";
+        estilo::texto_forte(x, dir.y + 32.0 * f, rotulo, 18, estilo::SUAVE);
+        estilo::valor_tp(x + estilo::medir_forte(rotulo, 18) + 10.0 * f, dir.y + 32.0 * f, saldo, 18, estilo::OURO);
         estilo::texto_ajustado("TP é da conta e vale em todos os servidores.", x, dir.y + 54.0 * f, w, 12, estilo::SUAVE);
         let mut y = dir.y + 92.0 * f;
         if c.nivel < regras::NIVEL_PARA_VENDER {
@@ -689,7 +698,7 @@ fn linha_de_anuncio(r: Rect, an: &AnuncioNet, c: &Contexto, f: f32, livre: bool,
     estilo::cartao(r, false, an.meu);
     let icone = icone_do_anuncio(r, f);
     let x = if an.tipo == regras::TIPO_TP {
-        estilo::texto_centro_forte(icone.center().x, icone.center().y + 6.0 * f, "TP", 18, estilo::OURO);
+        estilo::icone_tp(icone.center(), icone.w.min(icone.h) * 0.95);
         icone.x + icone.w + 10.0 * f
     } else {
         crate::icones::icone(an.item_id, icone, an.instancia.map(|i| i.rarity), None);
