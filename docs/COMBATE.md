@@ -115,7 +115,9 @@ cargo test -p server --bin server balanceamento -- --nocapture
 
 ### Metas (asserts em `metas_de_balanceamento`)
 
-Níveis 1, 5 e 10, AUTO, sem poção:
+Níveis 1, 5 e 10, AUTO, sem poção (no nível 1 só valem a primeira, a segunda
+e a última — lá a matilha curta do início é de propósito, ver "Início do
+jogo"):
 
 - Todo conjunto limpa 10 mobs vivo.
 - HP mínimo ≥ 25% com espada e escudo e ≥ 15% com os outros.
@@ -167,3 +169,97 @@ Razão de dano corpo a corpo × distância: 1,14 (nível 1), 1,46 (nível 5) e
 **Ainda frágil:** as pistolas no nível 10 terminam com 17% (sem cura própria),
 e a razão do nível 5 está no limite do assert. O próximo ajuste natural é uma
 skill de fuga ou cura pras pistolas, não mais dano.
+
+## Início do jogo
+
+Queixa (jogando a produção no iPhone): "morrer numa quest nível 1 é meio
+dureza".
+
+**Como se mede.** `balanceamento::jornada` joga o começo como ele é jogado:
+personagem recém-criado (só a arma do conjunto, zero ponto distribuído,
+nenhuma skill em AUTO — o padrão de quem nunca mexeu), fazendo em ordem 700,
+701, 501, 702 (5 lobos), 502 (6 lobos), 703, 503, a trava de nível 3 da 504,
+504 (3 ursos), 704 (nível 5), 705–707 e 708 (4 ursos). Contagens, alvos, XP e
+poções saem das `QuestDef` de verdade. Cada caçada vai pra zona que a auto
+missão escolhe (`quests::zona_do_bicho`) sobre as zonas REAIS do Bosque
+(`world::zonas_comuns_da_ilha`, a mesma conta do `povoar_ilha`), chegando pela
+borda vinda da cidade. A vida passa de um passo pro outro (ida e volta da
+cidade regeneram andando), a XP sobe com abate e recompensa, e a poção é a da
+barra padrão (AUTO abaixo de 60%) com o que as missões deram. Simplifica: a
+503 vira 10 abates, 705–707 só dão XP, a Poção de Experiência fica na bolsa.
+Roda em ~0,4 s.
+
+```sh
+cargo test -p server --bin server metas_do_inicio -- --nocapture
+```
+
+### Antes
+
+| Conjunto | Mortes até a 708 (sem poção / com) | 702: HP mínimo | 702: bichos em cima |
+|---|---:|---:|---:|
+| Espada e escudo | 11 / 10 | 17% | 6 |
+| Katana | 7 / 7 | 47% | 6 |
+| Pistolas | 34 / 32 | morre 2× | 5 |
+| Anel | 32 / 30 | morre 2× | 5 |
+
+**Causa, em números:**
+
+1. **Não existe zona de nível 1 perto da cidade.** Mob só nasce a mais de 68
+   da cidade, e o nível sobe com a distância: a zona mais perto do Bosque é
+   **2–4**. Nos níveis 3 e 4 metade dos bichos é urso (280 de vida, 18 de
+   dano, defesa 8), contra um personagem de 100 de vida, sem ponto e com regen
+   de 0,5/s.
+2. **Um golpe acordava a zona.** Vagas a 7 de distância, matilha provocada num
+   raio de 16 e visão de 9: bater num lobo trazia 5–6 bichos, investindo a
+   2,5×. Quem atira morria primeiro (50–67 de dano por abate).
+3. **O AUTO emenda um bicho no outro.** Sem descanso, 0,5/s de regen não
+   devolvia o que a luta tirava, e a subida pro nível 5 (15 000 de XP, ~20 min)
+   terminava em morte por atrito.
+
+### Metas (asserts em `metas_do_inicio`)
+
+Os quatro conjuntos, sem poção e com as poções das missões:
+
+- Ninguém cai até o nível 5 e os ursos da 708.
+- HP mínimo de cada caçada ≥ 35% sem poção e ≥ 50% com.
+- Nas duas primeiras caçadas (702 e 502), no máximo 2 bichos em cima.
+- Caçada de missão em até 10 min; o nível 5 em até 3 h.
+
+E as metas antigas continuam: níveis 5 e 10 inteiras, nível 1 vivo, HP mínimo
+e ritmo ±20%; chefes sem mudança.
+
+### O que mudou
+
+Tudo em `world::CURVA_DO_INICIO`, pelo **nível do mob** (a faixa da zona onde
+ele nasceu, `EnemyTag::nivel_da_faixa`). Nível 5 em diante, e mob fora de zona
+de faixa (chefes, eventos), com os números cheios.
+
+| Nível do mob | 1 | 2 | 3 | 4 | 5+ |
+|---|---:|---:|---:|---:|---:|
+| Raio da matilha | 6 | 6 | 6 | 8 | 16 |
+| Carga do provocado | 2,0× | 2,0× | 2,0× | 2,2× | 2,5× |
+| Visão (fração da tabela) | 70% | 70% | 70% | 80% | 100% |
+| Vida e dano (fração da tabela) | 60% | 65% | 70% | 80% | 100% |
+
+**Fôlego de iniciante:** até o nível 5 do personagem, 3 s sem levar dano, 2%
+da vida máxima volta por segundo (além do regen normal).
+
+Nada muda no banco: `enemy_kinds` fica como está (a fração é aplicada no
+spawn), e as missões mantêm as contagens. Com fôlego de 3%/s ou a curva cobrindo o
+nível 5, o nível 5 do simulador antigo passava do limite de 1,5× corpo a
+corpo × distância (o Anel cura menos e mata mais rápido); 2%/s até o nível 5 e
+curva até o 4 passam as duas.
+
+### Depois
+
+| Conjunto | Mortes (sem poção / com) | 702: HP mínimo / bichos | Pior caçada (HP mínimo, sem poção) |
+|---|---:|---:|---|
+| Espada e escudo | 0 / 0 | 89% / 2 | nível 5: 47% |
+| Katana | 0 / 0 | 86% / 2 | nível 5: 52% |
+| Pistolas | 0 / 0 | 86% / 1 | nível 5: 69% |
+| Anel | 0 / 0 | 86% / 1 | nível 5: 37% |
+
+Cada caçada de missão leva 70–130 s; o nível 5 sai em 19–21 min. Metas antigas
+no nível 5: dano por mob e s/abate iguais, razão 1,46×; HP mínimo subiu
+(espada 47→71%, katana 43→47%, pistolas 59→73%, anel 69→73%) pelo fôlego.
+Nível 10 idêntico.

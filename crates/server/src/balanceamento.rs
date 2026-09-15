@@ -90,9 +90,15 @@ impl Resultado {
 
 struct Mob {
     def: &'static KindInicial,
+    /// Nivel em que nasceu (a faixa da zona): decide a curva de iniciante.
+    nivel: u32,
     casa: Vec2,
     pos: Vec2,
     hp: i32,
+    hp_max: i32,
+    dano: i32,
+    /// Alcance de visao no nivel (`world::deteccao_do_nivel`).
+    det: f32,
     vivo: bool,
     volta_em: f32,
     cd: f32,
@@ -101,6 +107,16 @@ struct Mob {
     hurt_ate: f32,
     preso_ate: f32,
     provocado_ate: f32,
+}
+
+impl Mob {
+    fn novo(def: &'static KindInicial, casa: Vec2, nivel: u32) -> Mob {
+        let (hp, dano) = crate::world::vida_e_dano_do_mob(def.hp, def.dmg, nivel);
+        Mob {
+            def, nivel, casa, pos: casa, hp, hp_max: hp, dano, det: crate::world::deteccao_do_nivel(def.det, nivel), vivo: true, volta_em: 0.0, cd: 0.0,
+            aggro_timer: 0.0, voltando: false, hurt_ate: 0.0, preso_ate: 0.0, provocado_ate: 0.0,
+        }
+    }
 }
 
 /// Vagas de uma zona: 18 no raio de 45, espalhadas.
@@ -116,35 +132,130 @@ fn vagas() -> Vec<Vec2> {
         .collect()
 }
 
+/// Pocoes de vida do jogador na luta.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Pocoes {
+    Nenhuma,
+    /// Sem fim, bebe abaixo de 50% (as metas por nivel).
+    Infinitas,
+    /// A barra do cliente (`barra::padrao`): AUTO abaixo do limiar, enquanto
+    /// houver na bolsa.
+    Bolsa { qtd: u32, limiar: f32 },
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Parada {
+    Abates(u32),
+    DoKind(u16, u32),
+    Xp(u64),
+}
+
+struct Luta<'a> {
+    conjunto: Conjunto,
+    /// Nivel do personagem (o folego de iniciante depende dele).
+    nivel: u32,
+    stats: &'a shared::PlayerStats,
+    skills: &'a [shared::skills::Skill],
+    mobs: Vec<Mob>,
+    /// Zona de verdade: o respawn sorteia nivel e bicho de novo nesta faixa.
+    /// `None` = volta o mesmo bicho.
+    sorteio: Option<(u32, u32)>,
+    /// Onde o AUTO foi ligado.
+    centro: Vec2,
+    /// Onde o jogador aparece (a borda da zona, vindo da cidade).
+    inicio: Vec2,
+    /// Ate' aqui ele anda sem escolher alvo (a auto missao chegando).
+    chegada: Vec2,
+    parada: Parada,
+    limite_s: f32,
+}
+
+#[derive(Debug, Default)]
+struct Saida {
+    t: f32,
+    abates: u32,
+    do_alvo: u32,
+    xp: u64,
+    t1: Option<f32>,
+    t10: Option<f32>,
+    dano_recebido: i32,
+    max_agressores: usize,
+    vivo: bool,
+    hp_min: f32,
+    em_luta: f32,
+    pocoes: u32,
+}
+
+fn abateu(m: &mut Mob, t: f32, s: &mut Saida, alvo: Option<u16>) {
+    m.vivo = false;
+    m.volta_em = t + RESPAWN_S;
+    s.abates += 1;
+    s.xp += m.def.xp as u64;
+    if alvo.is_none_or(|k| k == m.def.kind as u16) {
+        s.do_alvo += 1;
+    }
+    if s.abates == 1 { s.t1 = Some(t); }
+    if s.abates == 10 { s.t10 = Some(t); }
+}
+
 pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado {
     let arma = arma_do(conjunto);
     let mut equip = shared::Equipment::default();
     equip.weapon = Some(arma);
     let stats = effective_stats(&equip, &[0; shared::STAT_COUNT], &[0; shared::PROF_COUNT], 0);
-    let a_distancia = conjunto.a_distancia();
-    let alcance = if a_distancia { shared::RANGED_ATTACK_RANGE } else { shared::MELEE_RANGE };
-    let cd_base = cooldown_do_ataque(arma, &stats, false);
-
+    let skills: Vec<shared::skills::Skill> = shared::skills::playtest()
+        .into_iter()
+        .filter(|s| s.conjunto == conjunto && s.destravada(nivel))
+        .collect();
     let comuns: Vec<u16> = (0..7).collect();
-    let mut mobs: Vec<Mob> = vagas()
+    let mobs: Vec<Mob> = vagas()
         .into_iter()
         .enumerate()
         .map(|(i, v)| {
             let lv = nivel + (i as u32 % 3);
             let k = kind_para_nivel_em(&comuns, lv, (i as u64).wrapping_mul(2_654_435_761) >> 7);
-            let def = &KINDS_INICIAIS[k as usize];
-            Mob {
-                def, casa: v, pos: v, hp: def.hp, vivo: true, volta_em: 0.0, cd: 0.0,
-                aggro_timer: 0.0, voltando: false, hurt_ate: 0.0, preso_ate: 0.0, provocado_ate: 0.0,
-            }
+            Mob::novo(&KINDS_INICIAIS[k as usize], v, lv)
         })
         .collect();
+    let mut hp = stats.hp_max;
+    let mut pocoes = if pocao { Pocoes::Infinitas } else { Pocoes::Nenhuma };
+    let s = lutar(
+        Luta {
+            conjunto, nivel, stats: &stats, skills: &skills, mobs, sorteio: None, centro: Vec2::ZERO,
+            inicio: Vec2::ZERO, chegada: Vec2::ZERO, parada: Parada::Abates(10), limite_s: LIMITE_S,
+        },
+        &mut hp,
+        &mut pocoes,
+    );
+    Resultado {
+        conjunto, nivel, pocao, hp_max: stats.hp_max, mortos: s.abates, t1: s.t1, t10: s.t10,
+        dano_recebido: s.dano_recebido, max_agressores: s.max_agressores, vivo: s.vivo, hp_min: s.hp_min,
+        em_luta: s.em_luta,
+    }
+}
+
+/// O jogador com AUTO COMBATE numa zona ate' a `parada`, o limite de tempo ou
+/// cair. `hp` entra e sai (a vida passa de uma luta pra outra).
+fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
+    let Luta { conjunto, nivel, stats, skills, mut mobs, sorteio, centro, inicio, chegada, parada, limite_s } = l;
+    let mut ultimo_dano = -1e9f32;
+    let arma = arma_do(conjunto);
+    let a_distancia = conjunto.a_distancia();
+    let alcance = if a_distancia { shared::RANGED_ATTACK_RANGE } else { shared::MELEE_RANGE };
+    let cd_base = cooldown_do_ataque(arma, stats, false);
+    let comuns: Vec<u16> = (0..7).collect();
+    let alvo_kind = match parada { Parada::DoKind(k, _) => Some(k), _ => None };
+    let feito = |s: &Saida| match parada {
+        Parada::Abates(n) => s.abates >= n,
+        Parada::DoKind(_, n) => s.do_alvo >= n,
+        Parada::Xp(x) => s.xp >= x,
+    };
+    let mut respawns = 0u64;
 
     let hp_max = stats.hp_max;
-    let mut hp = hp_max;
     let mut regen_resto = 0.0f32;
-    let mut eu = Vec2::ZERO;
-    let centro = Vec2::ZERO;
+    let mut eu = inicio;
+    let mut chegou = inicio.distance(chegada) < 0.1;
     let mut cd = 0.0f32;
     let mut combo = 0usize;
     let mut alvo: Option<usize> = None;
@@ -154,31 +265,37 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
     let mut pocoes = shared::pocoes::EstadoDePocoes::default();
     let mut pocao_resto = 0.0f32;
     let mut parado_desde = 0.0f32;
-    // Skills em AUTO (regra do cliente).
-    let skills: Vec<shared::skills::Skill> = shared::skills::playtest()
-        .into_iter()
-        .filter(|s| s.conjunto == conjunto && s.destravada(nivel))
-        .collect();
     let mut pronta_em: Vec<f32> = vec![0.0; skills.len()];
     let mut mp = stats.mp_max as f32;
     let mut ocupado_ate = 0.0f32;
     let mut ultimo_auto = 0u32;
     let mut muralha_ate = 0.0f32;
     let mut efeitos: Vec<(f32, usize, Option<usize>)> = Vec::new();
-    let mut r = Resultado {
-        conjunto, nivel, pocao, hp_max, mortos: 0, t1: None, t10: None, dano_recebido: 0,
-        max_agressores: 0, vivo: true, hp_min: 1.0, em_luta: 0.0,
-    };
+    let mut r = Saida { vivo: true, hp_min: *hp as f32 / hp_max as f32, ..Default::default() };
     let mut t = 0.0f32;
-    while t < LIMITE_S && r.mortos < 10 {
+    while t < limite_s && !feito(&r) {
         t += DT;
         if cd > 0.0 { cd -= DT; }
+
+        // ── jogador: chegando na zona ──
+        let antes = eu;
+        if !chegou {
+            let falta = chegada - eu;
+            let passo = shared::PLAYER_SPEED * DT;
+            if falta.length() <= passo {
+                eu = chegada;
+                chegou = true;
+            } else {
+                eu += falta.normalize_or_zero() * passo;
+            }
+            parado_desde = t;
+        }
 
         // ── jogador: AUTO COMBATE ──
         if alvo.is_some_and(|a| !mobs[a].vivo) {
             alvo = None;
         }
-        if alvo.is_none() {
+        if chegou && alvo.is_none() {
             alvo = mobs
                 .iter()
                 .enumerate()
@@ -186,14 +303,13 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
                 .min_by(|a, b| a.1.pos.distance(eu).total_cmp(&b.1.pos.distance(eu)))
                 .map(|(i, _)| i);
         }
-        let antes = eu;
         if alvo.is_some() {
             r.em_luta += DT;
         }
         mp = (mp + shared::MP_REGEN_PER_SEC * DT).min(stats.mp_max as f32);
         if t >= ocupado_ate {
             let dist_alvo = alvo.map(|a| mobs[a].pos.distance(eu));
-            let vida_baixa = (hp as f32) < hp_max as f32 * 0.85;
+            let vida_baixa = (*hp as f32) < hp_max as f32 * 0.85;
             let escolhida = skills
                 .iter()
                 .enumerate()
@@ -250,17 +366,19 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
             if !mobs[a].vivo || mobs[a].pos.distance(eu) > alcance + shared::HIT_TARGET_RADIUS * mobs[a].def.sz {
                 continue;
             }
-            // Provoca o golpeado e a matilha em volta (world: MATILHA_RAIO_UN).
+            // Provoca o golpeado e a matilha em volta (world: raio da matilha
+            // pelo nivel do golpeado).
             let centro_do_golpe = mobs[a].pos;
+            let raio_matilha = crate::world::matilha_raio_do_nivel(mobs[a].nivel);
             for o in mobs.iter_mut() {
-                if o.vivo && !o.voltando && o.pos.distance(centro_do_golpe) <= crate::world::MATILHA_RAIO_UN {
+                if o.vivo && !o.voltando && o.pos.distance(centro_do_golpe) <= raio_matilha {
                     o.provocado_ate = o.provocado_ate.max(t + crate::world::PROVOCACAO_S);
                 }
             }
             let m = &mut mobs[a];
             let dmg = dano_mitigado(stats.attack_damage, m.def.def, 0.0);
             if conjunto == Conjunto::Katana {
-                hp = (hp + ((dmg as f32) * crate::world::ROUBO_DE_VIDA_KATANA).round().max(1.0) as i32).min(hp_max);
+                *hp = (*hp + ((dmg as f32) * crate::world::ROUBO_DE_VIDA_KATANA).round().max(1.0) as i32).min(hp_max);
             }
             m.hp -= dmg;
             if !a_distancia {
@@ -270,11 +388,7 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
                 m.pos += fora * kb;
             }
             if m.hp <= 0 {
-                m.vivo = false;
-                m.volta_em = t + RESPAWN_S;
-                r.mortos += 1;
-                if r.mortos == 1 { r.t1 = Some(t); }
-                if r.mortos == 10 { r.t10 = Some(t); }
+                abateu(m, t, &mut r, alvo_kind);
             }
         }
 
@@ -285,7 +399,7 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
             let (_, si, alvo_da_skill) = efeitos.swap_remove(i);
             let s = &skills[si];
             if s.cura > 0 {
-                hp = (hp + s.cura).min(hp_max);
+                *hp = (*hp + s.cura).min(hp_max);
             }
             if s.dano == 0 && s.cura == 0 {
                 muralha_ate = t + s.duracao_efeito();
@@ -293,21 +407,18 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
             if s.dano > 0 {
                 let Some(a) = alvo_da_skill.filter(|a| mobs[*a].vivo) else { continue };
                 let centro_da_skill = mobs[a].pos;
+                let raio_matilha = crate::world::matilha_raio_do_nivel(mobs[a].nivel);
                 let raio = s.raio.max(0.01);
                 for o in mobs.iter_mut() {
                     if !o.vivo { continue; }
                     let d = o.pos.distance(centro_da_skill);
-                    if d <= crate::world::MATILHA_RAIO_UN && !o.voltando {
+                    if d <= raio_matilha && !o.voltando {
                         o.provocado_ate = o.provocado_ate.max(t + crate::world::PROVOCACAO_S);
                     }
                     if d <= raio {
                         o.hp -= dano_mitigado(s.dano, o.def.def, 0.0);
                         if o.hp <= 0 {
-                            o.vivo = false;
-                            o.volta_em = t + RESPAWN_S;
-                            r.mortos += 1;
-                            if r.mortos == 1 { r.t1 = Some(t); }
-                            if r.mortos == 10 { r.t10 = Some(t); }
+                            abateu(o, t, &mut r, alvo_kind);
                         }
                     }
                 }
@@ -319,8 +430,16 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
         for (idx, m) in mobs.iter_mut().enumerate() {
             if !m.vivo {
                 if t >= m.volta_em {
-                    *m = Mob { hp: m.def.hp, vivo: true, pos: m.casa, cd: 0.0, aggro_timer: 0.0, voltando: false,
-                               hurt_ate: 0.0, preso_ate: 0.0, provocado_ate: 0.0, ..*m };
+                    *m = match sorteio {
+                        Some((lv_min, lv_max)) => {
+                            respawns += 1;
+                            let s = (idx as u64 + 1).wrapping_mul(0x9E37_79B9).wrapping_add(respawns.wrapping_mul(2_654_435_761));
+                            let lv = lv_min + (s % (lv_max - lv_min + 1) as u64) as u32;
+                            let k = kind_para_nivel_em(&comuns, lv, s >> 7);
+                            Mob::novo(&KINDS_INICIAIS[k as usize], m.casa, lv)
+                        }
+                        None => Mob::novo(m.def, m.casa, m.nivel),
+                    };
                 }
                 continue;
             }
@@ -332,7 +451,7 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
             if m.voltando {
                 if casa <= LEASH * 0.5 {
                     m.voltando = false;
-                    m.hp = m.def.hp;
+                    m.hp = m.hp_max;
                 } else {
                     m.pos += (m.casa - m.pos).normalize_or_zero() * m.def.sp * 1.5 * DT;
                     continue;
@@ -343,7 +462,7 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
             }
             let d = m.pos.distance(eu);
             let provocado = m.provocado_ate > t;
-            let persegue = provocado || d < m.def.det;
+            let persegue = provocado || d < m.det;
             if persegue {
                 agressores += 1;
                 m.aggro_timer += DT;
@@ -359,7 +478,7 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
                     let stand = (m.def.rng - 0.3).max(0.8);
                     if d > stand + 0.3 { para_eu } else if d < stand - 0.3 { -para_eu } else { Vec2::ZERO }
                 };
-                let carga = if provocado && m.def.kite.is_none() { crate::world::CARGA_PROVOCADO_MULT } else { 1.0 };
+                let carga = if provocado && m.def.kite.is_none() { crate::world::carga_do_nivel(m.nivel) } else { 1.0 };
                 m.pos += dir * m.def.sp * carga * DT;
                 if d < m.def.rng && m.cd <= 0.0 {
                     m.cd = m.def.cd;
@@ -393,41 +512,275 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
             if m.def.kite.is_none() && m.pos.distance(eu) > m.def.rng + shared::HIT_TARGET_RADIUS {
                 continue;
             }
-            let mut dmg = dano_mitigado(m.def.dmg, stats.defense, stats.damage_reduction_pct);
+            let mut dmg = dano_mitigado(m.dano, stats.defense, stats.damage_reduction_pct);
             if muralha_ate > t {
                 dmg = ((dmg as f32) * 0.5).round().max(1.0) as i32;
             }
-            hp -= dmg;
+            *hp -= dmg;
             r.dano_recebido += dmg;
+            ultimo_dano = t;
         }
 
         // Pocao de vida como no servidor (`shared::pocoes`): parte na hora,
         // o resto em ticks, e a recarga do grupo segura a proxima.
-        if pocao && hp > 0 {
-            if hp < hp_max / 2 {
+        if *hp > 0 {
+            let beber = match *bolsa {
+                Pocoes::Nenhuma => false,
+                Pocoes::Infinitas => *hp < hp_max / 2,
+                Pocoes::Bolsa { qtd, limiar } => qtd > 0 && (*hp as f32) < hp_max as f32 * limiar,
+            };
+            if beber {
                 if let Some(c) = shared::pocoes::cura_de(shared::item_id::HEALTH_POTION) {
                     if let Ok(na_hora) = pocoes.beber(&c, t, false) {
                         pocao_resto += na_hora * hp_max as f32;
+                        r.pocoes += 1;
+                        if let Pocoes::Bolsa { qtd, .. } = bolsa {
+                            *qtd -= 1;
+                        }
                     }
                 }
             }
-            pocao_resto += pocoes.tick(t)[0] * hp_max as f32;
-            let inteiro = pocao_resto.floor();
-            pocao_resto -= inteiro;
-            hp = (hp + inteiro as i32).min(hp_max);
+            if *bolsa != Pocoes::Nenhuma {
+                pocao_resto += pocoes.tick(t)[0] * hp_max as f32;
+                let inteiro = pocao_resto.floor();
+                pocao_resto -= inteiro;
+                *hp = (*hp + inteiro as i32).min(hp_max);
+            }
         }
-        if hp > 0 && hp < hp_max {
+        if *hp > 0 && *hp < hp_max {
             let parado = t - parado_desde > 2.0;
-            hp = crate::world::regen_de_hp(hp, hp_max, &mut regen_resto,
-                stats.hp_regen * if parado { 4.0 } else { 1.0 } * DT);
+            let folego = crate::world::folego_de_iniciante(nivel, hp_max, t - ultimo_dano);
+            *hp = crate::world::regen_de_hp(*hp, hp_max, &mut regen_resto,
+                (stats.hp_regen * if parado { 4.0 } else { 1.0 } + folego) * DT);
         }
-        r.hp_min = r.hp_min.min(hp as f32 / hp_max as f32);
-        if hp <= 0 {
+        r.hp_min = r.hp_min.min(*hp as f32 / hp_max as f32);
+        if *hp <= 0 {
             r.vivo = false;
             break;
         }
     }
+    r.t = t;
     r
+}
+
+// ──────────────────────── personagem novo ────────────────────────
+//
+// O comeco do jogo como ele e' jogado (docs/COMBATE.md, "Início do jogo"):
+// personagem recem-criado (so' a arma do conjunto, zero ponto distribuido,
+// nenhuma skill em AUTO — o padrao de quem nunca mexeu), fazendo em ordem a
+// historia do capitulo I e as missoes do Mestre ate' o nivel 5 e os ursos
+// da 708. Cada caçada vai pra zona que a auto missao escolheria
+// (`quests::zona_do_bicho`) nas zonas REAIS do Bosque (`zonas_comuns_da_ilha`
+// sobre a ilha gerada), chegando pela borda vinda da cidade. A vida passa de
+// um passo pro outro (a ida e a volta da cidade regeneram andando); a XP
+// sobe com abate e recompensa. Pocao: so' as que as missoes deram, pela
+// barra padrao (AUTO abaixo de 60%).
+//
+// Simplifica: a missao de cobre (503) vira `ABATES_DO_COBRE` abates de
+// qualquer bicho; as de coleta/criacao (705–707) so' dao a XP; a Pocao de
+// Experiencia fica na bolsa (sem ela a subida e' mais lenta, nunca mais facil).
+
+/// Abates que a 503 (30 de cobre do bicho) custa, arredondado pra cima.
+const ABATES_DO_COBRE: u32 = 10;
+/// Uma caçada que passa disto sem terminar conta como travada.
+const LIMITE_DA_CACADA_S: f32 = 1_200.0;
+const LIMITE_DO_NIVEL_S: f32 = 4.0 * 3_600.0;
+
+#[derive(Debug, Clone, Copy)]
+enum Objetivo {
+    Falar,
+    Cacar(Option<u16>, u32),
+    Nivel(u32),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Etapa {
+    pub nome: String,
+    pub nivel: u32,
+    pub zona: Option<(u32, u32)>,
+    pub tempo: f32,
+    pub mortes: u32,
+    pub hp_min: f32,
+    pub agressores: usize,
+    pub pocoes: u32,
+    pub dano_por_abate: f32,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Jornada {
+    pub conjunto: Conjunto,
+    pub com_pocoes: bool,
+    pub etapas: Vec<Etapa>,
+}
+
+impl Jornada {
+    pub fn mortes(&self) -> u32 {
+        self.etapas.iter().map(|e| e.mortes).sum()
+    }
+}
+
+impl Etapa {
+    pub fn linha(&self) -> String {
+        let zona = self.zona.map_or("   —   ".into(), |(a, b)| format!("zona {a}–{b}"));
+        format!(
+            "  {:<28} nv{:<2} {} | {:>6.0}s | mortes {} | HP min {:>3.0}% | agressores {:>2} | dano/abate {:>4.1} | poções {:>2}",
+            self.nome, self.nivel, zona, self.tempo, self.mortes, self.hp_min * 100.0, self.agressores,
+            self.dano_por_abate, self.pocoes,
+        )
+    }
+}
+
+fn quest(id: u16) -> &'static shared::quests::QuestDef {
+    shared::quests::QUESTS.iter().chain(shared::historia::PASSOS.iter()).find(|q| q.id == id).expect("quest")
+}
+
+/// Passo da jornada a partir da quest de verdade (contagem, alvo, XP, pocao).
+fn passo_da_quest(id: u16) -> (String, Objetivo, u64, u32) {
+    use shared::quests::objective_kind as ok;
+    let q = quest(id);
+    let pocoes = [(q.reward_item, q.reward_item_qty), (q.reward_item2, q.reward_item2_qty)]
+        .iter()
+        .filter(|(i, _)| *i == shared::item_id::HEALTH_POTION)
+        .map(|(_, n)| *n as u32)
+        .sum();
+    let obj = match q.obj_kind {
+        ok::KILL => Objetivo::Cacar((q.obj_target > 0).then(|| q.obj_target - 1), q.obj_count),
+        ok::NIVEL => Objetivo::Nivel(q.obj_count),
+        ok::COLLECT if q.obj_target == shared::item_id::COPPER => Objetivo::Cacar(None, ABATES_DO_COBRE),
+        _ => Objetivo::Falar,
+    };
+    let nome = format!("{} {}", q.id, q.title);
+    (nome, obj, q.reward_xp, pocoes)
+}
+
+/// A ordem do comeco: historia e Mestre intercalados como o rastreador
+/// oferece, com a trava de nivel da 504.
+pub(crate) const JORNADA: &[u16] = &[700, 701, 501, 702, 502, 703, 503, 504, 704, 705, 706, 707, 708];
+
+/// O Bosque de verdade: centro da cidade e as zonas comuns.
+fn bosque() -> &'static (Vec2, crate::world::ZonasComuns) {
+    static B: std::sync::OnceLock<(Vec2, crate::world::ZonasComuns)> = std::sync::OnceLock::new();
+    B.get_or_init(|| {
+        let def = shared::terreno::def_da_zona("ilha_inicial").expect("ilha inicial");
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/ilhas");
+        let ilha = shared::terreno::Ilha::carregar_ou_gerar(dir, def.semente, def.raio_blocos, def.bioma, shared::terreno::ESCALA_ALTURA);
+        let cidade = ilha.cidade().map_or(Vec2::ZERO, |c| c.centro());
+        let zonas = crate::world::zonas_comuns_da_ilha(&ilha, def, cidade);
+        (cidade, zonas)
+    })
+}
+
+pub(crate) fn jornada(conjunto: Conjunto, com_pocoes: bool) -> Jornada {
+    let (cidade, zonas) = bosque();
+    let tuplas: Vec<(Vec2, u32, u32)> = zonas.zonas.iter().map(|z| (z.centro, z.lv_min, z.lv_max)).collect();
+    let comuns: Vec<u16> = (0..7).collect();
+    let mut equip = shared::Equipment::default();
+    equip.weapon = Some(arma_do(conjunto));
+    let mult = crate::economy::xp_multiplier();
+    let mut xp = 0u64;
+    let mut hp = effective_stats(&equip, &[0; shared::STAT_COUNT], &[0; shared::PROF_COUNT], 0).hp_max;
+    let mut bolsa = Pocoes::Bolsa { qtd: 0, limiar: 0.60 };
+    let mut j = Jornada { conjunto, com_pocoes, etapas: Vec::new() };
+
+    let mut fila: Vec<(String, Objetivo, u64, u32)> = Vec::new();
+    for id in JORNADA {
+        let q = quest(*id);
+        if q.min_level > 1 {
+            fila.push((format!("(nivel {} pra {})", q.min_level, q.id), Objetivo::Nivel(q.min_level as u32), 0, 0));
+        }
+        fila.push(passo_da_quest(*id));
+    }
+    for (seq, (nome, obj, xp_da_quest, pocoes_da_quest)) in fila.into_iter().enumerate() {
+        let nivel = shared::level_of_xp_with_mult(xp, mult);
+        let stats = effective_stats(&equip, &[0; shared::STAT_COUNT], &[0; shared::PROF_COUNT], xp);
+        let (alvos, parada, limite) = match obj {
+            Objetivo::Falar => {
+                xp += xp_da_quest;
+                if com_pocoes {
+                    if let Pocoes::Bolsa { qtd, .. } = &mut bolsa { *qtd += pocoes_da_quest; }
+                }
+                continue;
+            }
+            Objetivo::Cacar(k, n) => (k.map(|k| vec![k]).unwrap_or_default(), k.map_or(Parada::Abates(n), |k| Parada::DoKind(k, n)), LIMITE_DA_CACADA_S),
+            Objetivo::Nivel(n) => {
+                let falta = shared::xp_for_level_with_mult(n, mult).saturating_sub(xp);
+                if falta == 0 {
+                    continue;
+                }
+                (Vec::new(), Parada::Xp(falta), LIMITE_DO_NIVEL_S)
+            }
+        };
+        let Some(centro) = crate::quests::zona_do_bicho(&tuplas, &comuns, &alvos, *cidade, nivel) else {
+            panic!("{nome}: nenhuma zona");
+        };
+        let z = zonas.zonas.iter().find(|z| z.centro == centro).expect("zona");
+        // Ida da cidade: regenera andando.
+        let ida = centro.distance(*cidade) / shared::PLAYER_SPEED;
+        let mut resto = 0.0;
+        hp = crate::world::regen_de_hp(hp, stats.hp_max, &mut resto, stats.hp_regen * ida);
+        let vindo = (*cidade - centro).normalize_or_zero();
+        let mut e = Etapa {
+            nome, nivel, zona: Some((z.lv_min, z.lv_max)), tempo: ida * 2.0, mortes: 0, hp_min: 1.0,
+            agressores: 0, pocoes: 0, dano_por_abate: 0.0,
+        };
+        let (mut feito, mut abates, mut dano) = (0u64, 0u32, 0i32);
+        let total = match parada { Parada::Abates(n) | Parada::DoKind(_, n) => n as u64, Parada::Xp(x) => x };
+        let mut tentativa = 0u64;
+        while feito < total && tentativa < 6 {
+            let mobs: Vec<Mob> = z.slots.iter().enumerate().map(|(i, p)| {
+                let s = ((seq as u64) << 32 | (tentativa << 16) | i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 11;
+                let lv = z.lv_min + (s % (z.lv_max - z.lv_min + 1) as u64) as u32;
+                let k = kind_para_nivel_em(&comuns, lv, s >> 7);
+                Mob::novo(&KINDS_INICIAIS[k as usize], *p, lv)
+            }).collect();
+            let falta = total - feito;
+            let parada = match parada {
+                Parada::Abates(_) => Parada::Abates(falta as u32),
+                Parada::DoKind(k, _) => Parada::DoKind(k, falta as u32),
+                Parada::Xp(_) => Parada::Xp(falta),
+            };
+            let skills: Vec<shared::skills::Skill> = Vec::new();
+            let s = lutar(
+                Luta {
+                    conjunto, nivel, stats: &stats, skills: &skills, mobs, sorteio: Some((z.lv_min, z.lv_max)), centro,
+                    inicio: centro + vindo * crate::world::MOB_ZONA_RAIO_UN,
+                    chegada: centro + vindo * crate::world::MOB_ZONA_RAIO_UN * 0.5,
+                    parada, limite_s: limite,
+                },
+                &mut hp,
+                &mut bolsa,
+            );
+            xp += s.xp;
+            abates += s.abates;
+            dano += s.dano_recebido;
+            feito += match parada { Parada::Abates(_) => s.abates as u64, Parada::DoKind(..) => s.do_alvo as u64, Parada::Xp(_) => s.xp };
+            e.tempo += s.t;
+            e.hp_min = e.hp_min.min(s.hp_min.max(0.0));
+            e.agressores = e.agressores.max(s.max_agressores);
+            e.pocoes += s.pocoes;
+            if !s.vivo {
+                // Caiu: renasce na cidade cheio e volta.
+                e.mortes += 1;
+                hp = stats.hp_max;
+                e.tempo += ida * 2.0;
+            } else if s.t >= limite {
+                break;
+            }
+            tentativa += 1;
+        }
+        e.dano_por_abate = dano as f32 / abates.max(1) as f32;
+        if feito < total {
+            e.nome.push_str(" (TRAVOU)");
+            e.mortes = e.mortes.max(1);
+        }
+        xp += xp_da_quest;
+        if com_pocoes {
+            if let Pocoes::Bolsa { qtd, .. } = &mut bolsa { *qtd += pocoes_da_quest; }
+        }
+        e.nivel = shared::level_of_xp_with_mult(xp, mult);
+        j.etapas.push(e);
+    }
+    j
 }
 
 // ─────────────────────────── chefes ───────────────────────────
@@ -871,23 +1224,25 @@ mod testes {
     ///   3. dano por mob do corpo a corpo (media dos dois) no maximo 1,5x o de
     ///      quem luta a distancia (media dos dois) — a meta e' ~1,4;
     ///   4. tempo de luta por abate de cada conjunto a +-20% da media do nivel.
-    #[test]
-    fn metas_de_balanceamento() {
-        let t0 = std::time::Instant::now();
-        println!();
+    ///
+    /// No nivel 1 so' valem 1 e 4: la' a matilha curta da curva de iniciante
+    /// (`world::CURVA_DO_INICIO`) e' de proposito, e quem manda sao as metas
+    /// do inicio (`metas_do_inicio`).
+    fn falhas_das_metas(imprime: bool) -> Vec<String> {
+        let mut falhas = Vec::new();
         for nivel in [1, 5, 10] {
             let rs: Vec<Resultado> = CONJUNTOS.iter().map(|c| simular(*c, nivel, false)).collect();
             for r in &rs {
-                println!("{}", r.linha());
-            }
-            for r in &rs {
+                if imprime { println!("{}", r.linha()); }
                 let piso = if r.conjunto == Conjunto::EspadaEscudo { 0.25 } else { 0.15 };
-                assert!(r.vivo && r.mortos >= 10, "nv{nivel} {:?}: nao limpou 10 mobs vivo", r.conjunto);
-                assert!(r.hp_min >= piso, "nv{nivel} {:?}: HP minimo {:.0}% abaixo de {:.0}%",
-                    r.conjunto, r.hp_min * 100.0, piso * 100.0);
-                if r.conjunto.a_distancia() {
-                    assert!(r.dano_por_mob() >= 3.0, "nv{nivel} {:?}: quem atira saiu sem apanhar ({:.1}/mob)",
-                        r.conjunto, r.dano_por_mob());
+                if !(r.vivo && r.mortos >= 10) {
+                    falhas.push(format!("nv{nivel} {:?}: nao limpou 10 mobs vivo", r.conjunto));
+                }
+                if r.hp_min < piso {
+                    falhas.push(format!("nv{nivel} {:?}: HP minimo {:.0}% abaixo de {:.0}%", r.conjunto, r.hp_min * 100.0, piso * 100.0));
+                }
+                if nivel > 1 && r.conjunto.a_distancia() && r.dano_por_mob() < 3.0 {
+                    falhas.push(format!("nv{nivel} {:?}: quem atira saiu sem apanhar ({:.1}/mob)", r.conjunto, r.dano_por_mob()));
                 }
             }
             let media = |f: &dyn Fn(&Resultado) -> bool| {
@@ -896,16 +1251,78 @@ mod testes {
             };
             let perto = media(&|r| !r.conjunto.a_distancia());
             let longe = media(&|r| r.conjunto.a_distancia());
-            println!("nv{nivel}: dano/mob corpo a corpo {perto:.1} x distancia {longe:.1} = {:.2}x", perto / longe);
-            assert!(perto <= longe * 1.5, "nv{nivel}: corpo a corpo apanha {:.2}x o de quem atira", perto / longe);
+            if imprime { println!("nv{nivel}: dano/mob corpo a corpo {perto:.1} x distancia {longe:.1} = {:.2}x", perto / longe); }
+            if nivel > 1 && perto > longe * 1.5 {
+                falhas.push(format!("nv{nivel}: corpo a corpo apanha {:.2}x o de quem atira", perto / longe));
+            }
             let ttk = rs.iter().map(|r| r.por_abate()).sum::<f32>() / rs.len() as f32;
             for r in &rs {
                 let desvio = r.por_abate() / ttk - 1.0;
-                assert!(desvio.abs() <= 0.20, "nv{nivel} {:?}: {:.2}s/abate, {:+.0}% da media {ttk:.2}s",
-                    r.conjunto, r.por_abate(), desvio * 100.0);
+                if desvio.abs() > 0.20 {
+                    falhas.push(format!("nv{nivel} {:?}: {:.2}s/abate, {:+.0}% da media {ttk:.2}s", r.conjunto, r.por_abate(), desvio * 100.0));
+                }
             }
         }
+        falhas
+    }
+
+    #[test]
+    fn metas_de_balanceamento() {
+        let t0 = std::time::Instant::now();
+        println!();
+        let falhas = falhas_das_metas(true);
         println!("simulado em {:?}", t0.elapsed());
+        assert!(falhas.is_empty(), "{} metas quebradas:\n{}", falhas.len(), falhas.join("\n"));
+    }
+
+    /// Metas do INICIO DO JOGO (docs/COMBATE.md, "Início do jogo"): o
+    /// personagem recem-criado fazendo o capitulo I e as missoes do Mestre
+    /// (`jornada`), AUTO, cada conjunto, sem pocao e com as que as missoes dao:
+    ///
+    ///   1. ninguem cai ate' o nivel 5 e os ursos da 708;
+    ///   2. HP minimo de cada caçada >= 35% sem pocao, >= 50% com;
+    ///   3. nas duas primeiras caçadas (702 e 502) no maximo 2 bichos em cima;
+    ///   4. cada caçada de missao em ate' 10 min, e o nivel 5 em ate' 3 h.
+    fn falhas_do_inicio(imprime: bool) -> Vec<String> {
+        let mut falhas: Vec<String> = Vec::new();
+        for com in [false, true] {
+            for c in CONJUNTOS {
+                let j = jornada(c, com);
+                if imprime {
+                    println!("{c:?} {} — mortes {}", if com { "com poções das missões" } else { "sem poção" }, j.mortes());
+                    for e in &j.etapas {
+                        println!("{}", e.linha());
+                    }
+                }
+                let piso = if com { 0.50 } else { 0.35 };
+                for (i, e) in j.etapas.iter().enumerate() {
+                    let quem = format!("{c:?} {} {}", if com { "poção" } else { "seco" }, e.nome);
+                    if e.mortes > 0 {
+                        falhas.push(format!("{quem}: {} morte(s)", e.mortes));
+                    }
+                    if e.hp_min < piso {
+                        falhas.push(format!("{quem}: HP minimo {:.0}% < {:.0}%", e.hp_min * 100.0, piso * 100.0));
+                    }
+                    if i < 2 && e.agressores > 2 {
+                        falhas.push(format!("{quem}: {} bichos em cima", e.agressores));
+                    }
+                    let teto = if e.nome.starts_with("704") || e.nome.starts_with("(nivel") { 3.0 * 3_600.0 } else { 600.0 };
+                    if e.tempo > teto {
+                        falhas.push(format!("{quem}: {:.0}s", e.tempo));
+                    }
+                }
+            }
+        }
+        falhas
+    }
+
+    #[test]
+    fn metas_do_inicio() {
+        let t0 = std::time::Instant::now();
+        println!();
+        let falhas = falhas_do_inicio(true);
+        println!("inicio simulado em {:?}", t0.elapsed());
+        assert!(falhas.is_empty(), "{} metas do inicio quebradas:\n{}", falhas.len(), falhas.join("\n"));
     }
 
     /// Com pocao ninguem fica pior do que sem.

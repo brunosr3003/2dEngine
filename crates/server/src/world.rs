@@ -237,6 +237,10 @@ pub struct EnemyTag {
     /// Ate' quando persegue quem o golpeou (ou golpeou a matilha), mesmo fora
     /// do alcance de visao. Ver `PROVOCACAO_S`.
     pub provocado_ate: f32,
+    /// Nivel da faixa da zona em que nasceu: decide a curva de iniciante
+    /// (`matilha_raio_do_nivel`, `carga_do_nivel`). Fora de zona de faixa,
+    /// `NIVEL_FIM_DO_INICIO` (os numeros cheios).
+    pub nivel_da_faixa: u32,
     /// Stats efetivos derivados do EnemyBuild (level + equip + alocados +
     /// profs + skills aprendidas) via `effective_stats()`. Cacheados no spawn
     /// — fonte da verdade pra HP_max, attack_damage, defense, etc. de combat.
@@ -491,6 +495,88 @@ pub(crate) const PROVOCACAO_S: f32 = 6.0;
 pub(crate) const MATILHA_RAIO_UN: f32 = 16.0;
 /// Bicho que MORDE, provocado, investe mais rapido ate' o alvo.
 pub(crate) const CARGA_PROVOCADO_MULT: f32 = 2.5;
+// ── Inicio do jogo (docs/COMBATE.md, "Início do jogo") ────────────────────
+//
+// Curva de iniciante pelo NIVEL DO MOB (o da faixa da zona onde ele nasceu):
+// abaixo de `NIVEL_FIM_DO_INICIO` a matilha puxa menos, a carga e' mais
+// mansa e o bicho tem menos vida e dano; dali pra cima vale o numero cheio.
+// Tudo o que muda o comeco do jogo esta' aqui.
+
+/// A partir deste nivel de mob, os numeros cheios.
+pub(crate) const NIVEL_FIM_DO_INICIO: u32 = 5;
+
+/// Os numeros da curva. Cada tabela e' dos niveis de mob 1 a 4; do 5 em
+/// diante vale o numero cheio (`MATILHA_RAIO_UN`, `CARGA_PROVOCADO_MULT`, a
+/// tabela `enemy_kinds`). Medido com `balanceamento::jornada`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct CurvaDoInicio {
+    /// Raio da matilha que um golpe provoca.
+    pub matilha: [f32; 4],
+    /// Carga do bicho de mordida provocado.
+    pub carga: [f32; 4],
+    /// Alcance de visao, fracao do da tabela. Com 9 de visao e vagas a 7,
+    /// quem batia num lobo acordava o vizinho.
+    pub deteccao: [f32; 4],
+    /// Dano, fracao do da tabela.
+    pub dano: [f32; 4],
+    /// Vida, fracao da tabela.
+    pub vida: [f32; 4],
+    /// Folego de iniciante: sem levar dano ha' `folego_apos_s`, esta fracao
+    /// da vida maxima volta por segundo. O AUTO emenda um bicho no outro e o
+    /// regen base (0,5/s) nao devolvia o que a luta tirou.
+    pub folego_por_s: f32,
+    pub folego_apos_s: f32,
+    /// Ate' este nivel do PERSONAGEM vale o folego.
+    pub folego_ate_nivel: u32,
+}
+
+pub(crate) const CURVA_DO_INICIO: CurvaDoInicio = CurvaDoInicio {
+    matilha: [6.0, 6.0, 6.0, 8.0],
+    carga: [2.0, 2.0, 2.0, 2.2],
+    deteccao: [0.70, 0.70, 0.70, 0.80],
+    dano: [0.60, 0.65, 0.70, 0.80],
+    vida: [0.60, 0.65, 0.70, 0.80],
+    folego_por_s: 0.02,
+    folego_apos_s: 3.0,
+    folego_ate_nivel: 5,
+};
+
+fn do_inicio(tabela: [f32; 4], nivel: u32, cheio: f32) -> f32 {
+    if (1..NIVEL_FIM_DO_INICIO).contains(&nivel) { tabela[nivel as usize - 1] } else { cheio }
+}
+
+/// Vida extra por segundo do folego de iniciante.
+pub(crate) fn folego_de_iniciante(nivel_do_personagem: u32, hp_max: i32, desde_o_dano_s: f32) -> f32 {
+    let c = CURVA_DO_INICIO;
+    if nivel_do_personagem <= c.folego_ate_nivel && desde_o_dano_s >= c.folego_apos_s {
+        hp_max as f32 * c.folego_por_s
+    } else {
+        0.0
+    }
+}
+
+/// Raio da matilha pra um golpe num mob deste nivel.
+pub(crate) fn matilha_raio_do_nivel(nivel: u32) -> f32 {
+    do_inicio(CURVA_DO_INICIO.matilha, nivel, MATILHA_RAIO_UN)
+}
+
+/// Multiplicador da carga do bicho de mordida provocado, por nivel.
+pub(crate) fn carga_do_nivel(nivel: u32) -> f32 {
+    do_inicio(CURVA_DO_INICIO.carga, nivel, CARGA_PROVOCADO_MULT)
+}
+
+/// Alcance de visao de um mob da tabela no nivel em que nasceu.
+pub(crate) fn deteccao_do_nivel(detect_range: f32, nivel: u32) -> f32 {
+    detect_range * do_inicio(CURVA_DO_INICIO.deteccao, nivel, 1.0)
+}
+
+/// Vida e dano de um mob da tabela (`enemy_kinds`) no nivel em que nasceu.
+pub(crate) fn vida_e_dano_do_mob(hp: i32, dano: i32, nivel: u32) -> (i32, i32) {
+    let c = CURVA_DO_INICIO;
+    let (v, d) = (do_inicio(c.vida, nivel, 1.0), do_inicio(c.dano, nivel, 1.0));
+    (((hp as f32) * v).round().max(1.0) as i32, ((dano as f32) * d).round().max(1.0) as i32)
+}
+
 /// O escudo do conjunto espada e escudo absorve esta fracao de todo golpe.
 pub(crate) const REDUCAO_DO_ESCUDO: f32 = 0.40;
 /// A katana devolve em vida esta fracao do dano do golpe basico.
@@ -591,6 +677,115 @@ pub(crate) fn sitios_de_praia(
 /// Ponto na grade de 2 u em que a busca de praia pergunta pelo mar.
 fn na_grade_de_mar(w: Vec2) -> Vec2 {
     Vec2::new((w.x / 2.0).round() * 2.0, (w.y / 2.0).round() * 2.0)
+}
+
+/// Mob nao nasce na cidade nem colado nela. Os slots SAO sitios, entao tirar
+/// o sitio tira a zona e o slot juntos; a folga cobre o raio em que o bicho
+/// vaga antes do leash puxar de volta.
+const MOB_LONGE_DA_CIDADE_UN: f32 = 40.0;
+
+/// Uma zona comum de mob, antes de virar `ServerSpawnZone`.
+pub(crate) struct ZonaComum {
+    /// Posicao do centro na lista de centros (o id da zona sai daqui).
+    pub indice: usize,
+    pub centro: Vec2,
+    pub lv_min: u32,
+    pub lv_max: u32,
+    pub slots: Vec<Vec2>,
+}
+
+pub(crate) struct ZonasComuns {
+    /// Sitios planos achados (fora da cidade e do porto).
+    pub sitios: usize,
+    /// Todos os centros escolhidos, inclusive os que ficaram sem vagas.
+    pub centros: Vec<Vec2>,
+    pub zonas: Vec<ZonaComum>,
+}
+
+/// Onde nascem os mobs comuns de uma ilha e de que nivel: a parte pura do
+/// `povoar_ilha` (sitios planos, centros espacados, nivel pela distancia do
+/// desembarque, vagas). O simulador de balanceamento usa a mesma conta.
+pub(crate) fn zonas_comuns_da_ilha(
+    ilha: &shared::terreno::Ilha,
+    def: &shared::terreno::DefIlha,
+    centro_jogador: Vec2,
+) -> ZonasComuns {
+    use shared::terreno::BLOCO;
+    let raio_un = def.raio_blocos as f32 * BLOCO;
+    let cidade = ilha.cidade();
+    let porto = ilha.porto();
+
+    // ── 1. sitios ────────────────────────────────────────────────────
+    // Grade grossa: testar coluna a coluna seriam dez milhoes de discos.
+    // 12 blocos (6 unidades) e' mais fino que a menor clareira util.
+    let passo = 12i32;
+    let raio_mob = (MOB_RAIO_SITIO_UN / BLOCO) as i32;
+    let mut sitios: Vec<Vec2> = Vec::new();
+    let mut b = -def.raio_blocos;
+    while b < def.raio_blocos {
+        let mut a = -def.raio_blocos;
+        while a < def.raio_blocos {
+            let (ix, iz) = (a + def.raio_blocos, b + def.raio_blocos);
+            if ilha.sitio_plano(ix, iz, raio_mob) {
+                sitios.push(Vec2::new(a as f32 * BLOCO, b as f32 * BLOCO));
+            }
+            a += passo;
+        }
+        b += passo;
+    }
+    if let Some(c) = cidade {
+        sitios.retain(|s| c.distancia(*s) > shared::terreno::Cidade::RAIO + MOB_LONGE_DA_CIDADE_UN);
+    }
+    if let Some(p) = porto {
+        sitios.retain(|s| !p.contem(*s, MOB_LONGE_DA_CIDADE_UN));
+    }
+    let mut r = ZonasComuns { sitios: sitios.len(), centros: Vec::new(), zonas: Vec::new() };
+
+    // ── 2. zonas ─────────────────────────────────────────────────────
+    // Centros espacados: sem isso as zonas se sobrepoem e a mesma
+    // clareira recebe tres hordas.
+    let mut semente = def.semente as u64 ^ 0x5A17_E5;
+    // Embaralha os sitios pra escolha nao virar varredura de cima pra
+    // baixo, que agruparia tudo no norte da ilha.
+    for i in (1..sitios.len()).rev() {
+        semente = lcg(semente);
+        sitios.swap(i, (semente % (i as u64 + 1)) as usize);
+    }
+    for s in &sitios {
+        if r.centros.len() as u32 >= MOB_ZONAS_MAX {
+            break;
+        }
+        if r.centros.iter().all(|c| c.distance(*s) >= MOB_ZONA_ESPACO_UN) {
+            r.centros.push(*s);
+        }
+    }
+    for (i, c) in r.centros.iter().enumerate() {
+        // Nivel pela distancia do desembarque: perto e' o minimo da ilha,
+        // a ponta mais longe e' o maximo. E' a progressao inteira, e ela
+        // sai do relevo em vez de uma lista escrita a mao.
+        let t = (c.distance(centro_jogador) / raio_un).clamp(0.0, 1.0);
+        let faixa = (def.nivel.1 - def.nivel.0) as f32;
+        let lv_min = def.nivel.0 + (t * faixa * 0.8) as u32;
+        let lv_max = (lv_min + 2 + (t * faixa * 0.2) as u32).min(def.nivel.1);
+
+        // Slots: os sitios dentro do raio da zona, cada um ja' validado
+        // como plano. Nenhum mob nasce em ladeira porque nenhum SLOT esta'
+        // em ladeira.
+        let mut slots: Vec<Vec2> = Vec::new();
+        for s in &sitios {
+            if slots.len() as u32 >= MOB_POR_ZONA {
+                break;
+            }
+            if s.distance(*c) > MOB_ZONA_RAIO_UN || slots.iter().any(|o| o.distance(*s) < MOB_ESPACO_UN) {
+                continue;
+            }
+            slots.push(*s);
+        }
+        if slots.len() >= 3 {
+            r.zonas.push(ZonaComum { indice: i, centro: *c, lv_min, lv_max, slots });
+        }
+    }
+    r
 }
 
 #[cfg(test)]
@@ -2668,6 +2863,7 @@ impl GameWorld {
             forced_aggro_until: 0.0,
             forced_aggro_target: None,
             provocado_ate: 0.0,
+            nivel_da_faixa: NIVEL_FIM_DO_INICIO,
             mp_current: 0.0,
             skill_cds: std::collections::HashMap::new(),
             stats,
@@ -2723,27 +2919,37 @@ impl GameWorld {
         pos: Vec2,
         kind_def: u16,
         zone_id: u32,
-        _nivel: u16,
+        nivel: u16,
     ) -> EntityId {
         let pos = self.chao_livre(pos);
         let tag_kind = kind_def;
-        let (spawn_anchor, leash_max) = if let Some(zone) = self.spawn_zones.iter().find(|z| z.id == zone_id) {
+        let (spawn_anchor, leash_max, de_faixa) = if let Some(zone) = self.spawn_zones.iter().find(|z| z.id == zone_id) {
             if zone.level_range.is_some() {
                 // Zonas level-range nascem em PACKS. Ancora cada mob no PROPRIO
                 // spawn com leash curto pra o pack ficar "camped" (nao se
                 // dissolver pela ilha nem migrar pra cidade — o anchor fica
                 // dentro da banda). Chase curto + volta pro pack.
-                (pos, 12.0)
+                (pos, 12.0, true)
             } else {
                 // Legacy quotas: roam a zona inteira (anchor no centro do AABB).
                 let center = zone.origin + zone.size * 0.5;
                 let r = zone.size.x.max(zone.size.y) * 0.6;
-                (center, r)
+                (center, r, false)
             }
         } else {
-            (pos, 6.0)
+            (pos, 6.0, false)
         };
-        let (tag, health) = self.build_enemy_tag(kind_def, spawn_anchor, leash_max, pos);
+        let (mut tag, mut health) = self.build_enemy_tag(kind_def, spawn_anchor, leash_max, pos);
+        // Zona de faixa: o nivel sorteado decide a curva de iniciante (vida,
+        // dano, matilha, carga). Nivel 6+ sai com os numeros da tabela.
+        if de_faixa {
+            tag.nivel_da_faixa = nivel as u32;
+            tag.detect_range = deteccao_do_nivel(tag.detect_range, nivel as u32);
+            let (hp, dano) = vida_e_dano_do_mob(health.max, tag.stats.attack_damage, nivel as u32);
+            tag.stats.hp_max = hp;
+            tag.stats.attack_damage = dano;
+            health = Health { current: hp, max: hp };
+        }
         let hp_max = health.max;
         let class_str = crate::economy::enemy_def(kind_def).name.clone();
         let level = 1u32;
@@ -3547,90 +3753,20 @@ impl GameWorld {
         let cidade = ilha.cidade();
         let porto = ilha.porto();
 
-        // ── 1. sitios ────────────────────────────────────────────────────
-        // Grade grossa: testar coluna a coluna seriam dez milhoes de discos.
-        // 12 blocos (6 unidades) e' mais fino que a menor clareira util.
-        let passo = 12i32;
-        let raio_mob = (MOB_RAIO_SITIO_UN / BLOCO) as i32;
-        let mut sitios: Vec<Vec2> = Vec::new();
-        let mut b = -def.raio_blocos;
-        while b < def.raio_blocos {
-            let mut a = -def.raio_blocos;
-            while a < def.raio_blocos {
-                let (ix, iz) = (a + def.raio_blocos, b + def.raio_blocos);
-                if ilha.sitio_plano(ix, iz, raio_mob) {
-                    sitios.push(Vec2::new(a as f32 * BLOCO, b as f32 * BLOCO));
-                }
-                a += passo;
-            }
-            b += passo;
-        }
-        // Mob nao nasce na cidade nem colado nela. Os slots SAO sitios, entao
-        // tirar o sitio tira a zona e o slot juntos; a folga cobre o raio em
-        // que o bicho vaga antes do leash puxar de volta.
-        const MOB_LONGE_DA_CIDADE_UN: f32 = 40.0;
-        if let Some(c) = cidade {
-            sitios.retain(|s| {
-                c.distancia(*s) > shared::terreno::Cidade::RAIO + MOB_LONGE_DA_CIDADE_UN
-            });
-        }
-        if let Some(p) = porto {
-            sitios.retain(|s| !p.contem(*s, MOB_LONGE_DA_CIDADE_UN));
-        }
-        if sitios.is_empty() {
+        let comuns = zonas_comuns_da_ilha(ilha, def, centro_jogador);
+        if comuns.sitios == 0 {
             tracing::warn!("ilha '{}' sem sitio plano — spawn do mapfile mantido", self.zona);
             return;
         }
-
-        // ── 2. zonas ─────────────────────────────────────────────────────
-        // Centros espacados: sem isso as zonas se sobrepoem e a mesma
-        // clareira recebe tres hordas.
-        let mut centros: Vec<Vec2> = Vec::new();
-        let mut semente = def.semente as u64 ^ 0x5A17_E5;
-        // Embaralha os sitios pra escolha nao virar varredura de cima pra
-        // baixo, que agruparia tudo no norte da ilha.
-        for i in (1..sitios.len()).rev() {
-            semente = lcg(semente);
-            sitios.swap(i, (semente % (i as u64 + 1)) as usize);
-        }
-        for s in &sitios {
-            if centros.len() as u32 >= MOB_ZONAS_MAX {
-                break;
-            }
-            if centros.iter().all(|c| c.distance(*s) >= MOB_ZONA_ESPACO_UN) {
-                centros.push(*s);
-            }
-        }
+        let centros = &comuns.centros;
 
         let mut zonas: Vec<ServerSpawnZone> = Vec::new();
-        for (i, c) in centros.iter().enumerate() {
-            // Nivel pela distancia do desembarque: perto e' o minimo da ilha,
-            // a ponta mais longe e' o maximo. E' a progressao inteira, e ela
-            // sai do relevo em vez de uma lista escrita a mao.
-            let t = (c.distance(centro_jogador) / raio_un).clamp(0.0, 1.0);
-            let faixa = (def.nivel.1 - def.nivel.0) as f32;
-            let lv_min = def.nivel.0 + (t * faixa * 0.8) as u32;
-            let lv_max = (lv_min + 2 + (t * faixa * 0.2) as u32).min(def.nivel.1);
-
-            // Slots: os sitios dentro do raio da zona, cada um ja' validado
-            // como plano. Nenhum mob nasce em ladeira porque nenhum SLOT esta'
-            // em ladeira.
-            let mut slots: Vec<SpawnSlot> = Vec::new();
-            for s in &sitios {
-                if slots.len() as u32 >= MOB_POR_ZONA {
-                    break;
-                }
-                if s.distance(*c) > MOB_ZONA_RAIO_UN {
-                    continue;
-                }
-                if slots.iter().any(|o: &SpawnSlot| o.pos.distance(*s) < MOB_ESPACO_UN) {
-                    continue;
-                }
-                slots.push(SpawnSlot { pos: *s, occupant: None, respawn_at: 0.0 });
-            }
-            if slots.len() < 3 {
-                continue;
-            }
+        for z in &comuns.zonas {
+            let (i, lv_min, lv_max) = (z.indice, z.lv_min, z.lv_max);
+            let slots: Vec<SpawnSlot> = z.slots.iter()
+                .map(|p| SpawnSlot { pos: *p, occupant: None, respawn_at: 0.0 })
+                .collect();
+            let c = &z.centro;
             let n = slots.len() as u32;
             zonas.push(ServerSpawnZone {
                 id: 10_000 + i as u32,
@@ -3720,7 +3856,7 @@ impl GameWorld {
         let total: u32 = zonas.iter().map(|z| z.slots.len() as u32).sum();
         tracing::info!(
             "ilha '{}': {} sitios planos, {} zonas, {} mobs nivel {}..{} (mapfile descartado)",
-            self.zona, sitios.len(), zonas.len(), total, def.nivel.0, def.nivel.1
+            self.zona, comuns.sitios, zonas.len(), total, def.nivel.0, def.nivel.1
         );
         tracing::info!(
             "ilha '{}': {} sitios de praia, {} zonas de caranguejo",
@@ -6556,8 +6692,9 @@ impl GameWorld {
                 if let Some(e) = session.entity {
                     if let Ok(mut h) = self.ecs.get::<&mut shared::Health>(e) {
                         if h.current < h.max && h.current > 0 {
+                            let folego = folego_de_iniciante(session.last_level, h.max, now_s - session.last_combat_at_s);
                             h.current = regen_de_hp(h.current, h.max, &mut session.hp_regen_resto,
-                                session.stats.hp_regen * regen_mult * dt);
+                                (session.stats.hp_regen * regen_mult + folego) * dt);
                         }
                     }
                 }
@@ -7414,7 +7551,7 @@ impl GameWorld {
                     };
                     // Bicho de mordida provocado investe: sem isto o lobo
                     // morria no caminho ate' quem atira.
-                    let carga = if provocado && enemy.kite_dist.is_none() { CARGA_PROVOCADO_MULT } else { 1.0 };
+                    let carga = if provocado && enemy.kite_dist.is_none() { carga_do_nivel(enemy.nivel_da_faixa) } else { 1.0 };
                     vel.0 = move_dir * enemy.locomotor_speed * carga;
 
                     let attack_range = enemy.attack_range;
@@ -8983,10 +9120,14 @@ impl GameWorld {
             // Mob golpeado por jogador PROVOCA a matilha: ele e os vizinhos
             // perseguem quem bateu, mesmo fora de visao. Chefe nao entra.
             if attacker_is_player && self.ecs.get::<&EnemyTag>(entity).is_ok() {
+                // Raio pelo nivel do golpeado: matilha de iniciante puxa menos.
+                let raio = self.ecs.get::<&EnemyTag>(entity)
+                    .map(|t| matilha_raio_do_nivel(t.nivel_da_faixa))
+                    .unwrap_or(MATILHA_RAIO_UN);
                 if let Ok(centro) = self.ecs.get::<&Position>(entity).map(|p| p.0) {
                     let ate = self.sim_time_s + PROVOCACAO_S;
                     for (_, (p, t)) in self.ecs.query_mut::<(&Position, &mut EnemyTag)>() {
-                        if !t.is_boss && !t.returning_home && p.0.distance(centro) <= MATILHA_RAIO_UN {
+                        if !t.is_boss && !t.returning_home && p.0.distance(centro) <= raio {
                             t.provocado_ate = t.provocado_ate.max(ate);
                             t.ai_target = Some(attacker_id);
                         }
