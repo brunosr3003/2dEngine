@@ -227,6 +227,13 @@ fn monta(sw: f32, sh: f32, s: f32) -> Zonas {
         let c = ca + d * s;
         Rect::new(c.x - rs, c.y - rs, rs * 2.0, rs * 2.0)
     });
+    // PULO: botao de ACAO, no arco junto das skills — o celular nao tem tecla
+    // de espaco. Fica acima da skill 2, longe o bastante das outras pra nao
+    // encostar (o teste de sobreposicao cobre isso).
+    let pulo = {
+        let c = ca + vec2(-150.0, -212.0) * s;
+        Rect::new(c.x - rs, c.y - rs, rs * 2.0, rs * 2.0)
+    };
     // Linha de baixo, a' esquerda do arco: [COLETA][COMBATE][C][8][9][0].
     let direita = sw - 312.0 * s;
     let yb = base - 14.0 * s;
@@ -249,10 +256,6 @@ fn monta(sw: f32, sh: f32, s: f32) -> Zonas {
     let lado_eco = 48.0 * s;
     let economia = Rect::new(m, exp.y - 8.0 * s - lado_eco, lado_eco, lado_eco);
     let montaria = Rect::new(economia.x + economia.w + 10.0 * s, economia.y, lado_eco, lado_eco);
-    // PULO: no celular nao ha' tecla, e sem botao ninguem pula. Fica na
-    // fileira de baixo a' esquerda, ao lado da montaria — perto do polegar
-    // que ja' segura o joystick. O lado direito ja' esta' cheio.
-    let pulo = Rect::new(montaria.x + montaria.w + 10.0 * s, montaria.y, lado_eco, lado_eco);
     let joystick = Rect::new(m, jy, (jfim - m).max(0.0), (economia.y - 8.0 * s - jy).max(0.0));
 
     Zonas {

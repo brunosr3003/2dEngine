@@ -2627,6 +2627,30 @@ impl Ilha {
         // jogador o passo e' ~0,13 de unidade contra blocos de 0,5, entao
         // sobra folga de quase quatro vezes — se um dia houver corrida ou
         // arranco, isto vira varredura.
+        // ── VARREDURA: passo grande vira varios pequenos ──
+        //
+        // O comentario acima previa isto. MONTADO o passo cresce 1,5x, e o
+        // corpo travava perto de quina e tronco: as cinco alternativas da
+        // tangente sao medidas pelo COMPRIMENTO do passo, entao quanto maior
+        // o passo mais facil TODAS serem reprovadas — e o corpo para de vez.
+        // A pe' o passo e' curto e cabe; montado, nao. Dividir em pedacos de
+        // no maximo `PASSO_MAX` reusa toda a logica abaixo com o passo curto
+        // de sempre.
+        const PASSO_MAX: f32 = 0.15;
+        let anda = (vel * dt).length();
+        if anda > PASSO_MAX {
+            let n = (anda / PASSO_MAX).ceil().min(8.0);
+            let mut p = pos;
+            for _ in 0..n as u32 {
+                let novo = self.mover_com_degrau(p, vel, dt / n, raio, degrau);
+                // Parou de vez: insistir nos pedacos seguintes so' gasta.
+                if novo.distance_squared(p) <= 1e-9 {
+                    return p;
+                }
+                p = novo;
+            }
+            return p;
+        }
         let v = vel * dt;
         let mut p = pos;
         // ── TRONCO: desliza pela TANGENTE, nao pelos eixos ──
@@ -3689,7 +3713,13 @@ mod testes {
         // e um passo de 0,4 poe a borda dentro da primeira coluna do muro.
         let de = glam::Vec2::new(-0.8, 0.0);
         let p = i.mover_e_deslizar(de, glam::Vec2::new(4.0, 4.0), 0.1, 0.35);
-        assert!((p.x - de.x).abs() < 0.001, "X devia ter barrado, foi pra {}", p.x);
+        // O passo de 0,4 nao e' mais recusado inteiro: a VARREDURA parte ele
+        // em pedacos e o corpo encosta no muro em vez de parar a meia unidade
+        // dele. O que este teste guarda e' o invariante, nao a imobilidade: a
+        // borda da frente (raio 0,35) nao entra na primeira coluna, que
+        // comeca em x = 0.
+        assert!(p.x + 0.35 <= 0.001, "entrou no muro: borda da frente em {}", p.x + 0.35);
+        assert!(p.x >= de.x - 0.001, "andou pra tras: {} < {}", p.x, de.x);
         assert!(p.y > de.y + 0.3, "Z devia ter passado, foi pra {}", p.y);
     }
 
@@ -3745,7 +3775,11 @@ mod testes {
         // bem fora da ilha e' mar aberto: nao anda pra la'
         let de = glam::Vec2::new(0.0, 0.0);
         let longe = i.mover_e_deslizar(de, glam::Vec2::new(9999.0, 0.0), 1.0, 0.35);
-        assert_eq!(longe.x, de.x);
+        // Com a varredura o passo absurdo anda ate' a BEIRA e para; antes ele
+        // era recusado inteiro e o corpo nem saia do lugar. O invariante e'
+        // nao pisar na agua, e nao ficar imovel.
+        assert!(!i.agua(longe.x, longe.y), "parou dentro da agua, em {longe:?}");
+        assert!(longe.x < 9000.0, "atravessou o mar inteiro, ate' {}", longe.x);
     }
 
     /// A rota tem que existir, chegar perto e — o que mais importa — so'

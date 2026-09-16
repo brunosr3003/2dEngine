@@ -641,6 +641,12 @@ impl Jogo {
                 // A coleta ANDA pro spot pela viagem: corre indo, nao parada nele.
                 && !(self.auto_coleta.ativo() && !self.mapa.viagem.ativa());
             self.correndo_auto = self.corrida.atualiza(self.world.self_pos(), automatico, get_frame_time());
+            // Indo sozinho, a montaria entra igual a corrida: quem viaja no
+            // automatico nao tem mao no teclado pra montar. O servidor recusa
+            // em combate, e `montar_pra_viajar` tem o proprio intervalo.
+            if automatico {
+                self.montar_pra_viajar();
+            }
             self.atualizar_auto_coleta();
             self.conduzir_auto_missao();
             if !eco {
