@@ -34,6 +34,11 @@ pub const ID_MARCO: u16 = 699;
 pub const STATUS_MARCO: u8 = 3;
 /// Primeiro id dos passos escritos (seguidos, um por passo).
 pub const PRIMEIRO_ID: u16 = 700;
+/// O passo que manda criar a primeira peca. O ANTERIOR e' quem entrega a chave
+/// que torna isso possivel — toda receita de equipamento comeca com uma chave,
+/// e chave so' cai de chefe. Os dois andam juntos: ver o teste
+/// `a_chave_vem_no_passo_antes_do_craft`.
+pub const PASSO_DO_CRAFT: u16 = 707;
 /// Primeiro id das cronicas. Ate' `u16::MAX` sao 55.536 passos de epilogo —
 /// mais de nove mil capitulos.
 pub const PRIMEIRO_ID_DO_EPILOGO: u16 = 10_000;
@@ -721,6 +726,25 @@ mod testes {
                 }
             }
         }
+    }
+
+    /// A chave mora no passo ANTERIOR ao craft. Se alguem tirar a chave dali,
+    /// ou renumerar a historia, o passo de criar volta a pedir algo que o
+    /// jogador nao tem como fazer — e isso nao aparece em lugar nenhum ate'
+    /// alguem travar no meio do capitulo I. Este teste cai primeiro.
+    #[test]
+    fn a_chave_vem_no_passo_antes_do_craft() {
+        let craft = def_da_historia(PASSO_DO_CRAFT).unwrap();
+        assert_eq!(craft.obj_kind, objective_kind::CRAFT, "{PASSO_DO_CRAFT} deixou de ser o passo de criar");
+        let chave = def_da_historia(PASSO_DO_CRAFT - 1).unwrap();
+        assert_eq!(chave.obj_kind, objective_kind::TALK, "o passo da chave deixou de ser conversa");
+        assert_eq!(chave.obj_target, Papel::Ferreiro as u16, "a chave saiu do Ferreiro");
+        let chaves = crate::item_id::todas_as_chaves();
+        assert!(
+            chaves.contains(&chave.reward_item) || chaves.contains(&chave.reward_item2),
+            "o passo {} parou de entregar chave: o craft do {PASSO_DO_CRAFT} fica impossivel",
+            chave.id
+        );
     }
 
     /// Cronicas: estaveis (mesmo id, mesma referencia e mesmo texto),
