@@ -398,20 +398,24 @@ fn cor_de_terra(bioma: Bioma, h: f32, pico: f32) -> [f32; 3] {
     if h < 0.8 {
         return [0.80, 0.74, 0.52]; // praia
     }
-    let base = match bioma {
-        Bioma::Floresta => [0.36, 0.55, 0.27],
-        Bioma::Gelo => [0.78, 0.84, 0.88],
-        Bioma::Deserto => [0.80, 0.66, 0.42],
-        Bioma::Montanha => [0.45, 0.52, 0.36],
+    // Duas cores por bioma, do vale ao alto. Antes era UMA cor chapada pra tudo
+    // abaixo de 45% do pico — ou seja, quase a ilha inteira saia do mesmo verde
+    // e o minimapa virava uma mancha. Agora a altura se le' na cor, nao so' no
+    // sombreado.
+    let (vale, alto) = match bioma {
+        Bioma::Floresta => ([0.22, 0.42, 0.20], [0.52, 0.64, 0.33]),
+        Bioma::Gelo => ([0.62, 0.72, 0.80], [0.88, 0.92, 0.95]),
+        Bioma::Deserto => ([0.72, 0.56, 0.32], [0.89, 0.78, 0.55]),
+        Bioma::Montanha => ([0.33, 0.42, 0.28], [0.58, 0.62, 0.45]),
     };
     let (rocha, neve) = ([0.50, 0.48, 0.45], [0.93, 0.95, 0.97]);
     let t = (h / pico).clamp(0.0, 1.0);
     if t > 0.75 {
         misturar(rocha, neve, (t - 0.75) / 0.25)
     } else if t > 0.45 {
-        misturar(base, rocha, (t - 0.45) / 0.30)
+        misturar(misturar(vale, alto, 1.0), rocha, (t - 0.45) / 0.30)
     } else {
-        base
+        misturar(vale, alto, t / 0.45)
     }
 }
 
@@ -485,10 +489,16 @@ fn gerar_imagem(def: &'static DefIlha) -> Vec<u8> {
                 cor_da_agua(h)
             } else {
                 // Luz de noroeste: o vizinho de cima-esquerda mais baixo
-                // clareia, mais alto sombreia. E' o que faz o relevo ler.
+                // clareia, mais alto sombreia. E' o que faz o relevo ler — por
+                // isso bate mais forte do que batia (era 0,18 e quase nao
+                // aparecia).
                 let viz = hs[j.saturating_sub(1) * LADO + i.saturating_sub(1)];
-                let luz = (1.0 + (h - viz) * 0.18).clamp(0.72, 1.22);
-                cor_de_terra(def.bioma, h, pico).map(|v| v * luz)
+                let luz = (1.0 + (h - viz) * 0.42).clamp(0.55, 1.45);
+                let cor = cor_de_terra(def.bioma, h, pico).map(|v| v * luz);
+                // Contorno de costa: a primeira faixa acima do mar escurece, pra
+                // a ilha ter silhueta em vez de desbotar na agua.
+                let costa = ((h - NIVEL_DO_MAR) / 0.6).clamp(0.0, 1.0);
+                misturar([0.16, 0.26, 0.30], cor, costa)
             };
             let k = (j * LADO + i) * 4;
             for (n, v) in c.iter().enumerate() {
@@ -515,9 +525,6 @@ const COR_MOB: Color = Color::new(0.95, 0.30, 0.25, 1.0);
 const COR_NPC: Color = Color::new(1.0, 0.85, 0.25, 1.0);
 const COR_GENTE: Color = Color::new(0.45, 0.75, 1.0, 1.0);
 const COR_AGUA: Color = Color::new(0.07, 0.20, 0.36, 1.0);
-/// A moldura do disco. OPACA de proposito: e' ela que come os cantos do
-/// minimapa redondo, e cor translucida deixaria o mapa vazar por baixo.
-const COR_MOLDURA: Color = Color::new(0.045, 0.058, 0.085, 1.0);
 
 pub struct Mapa {
     def: Option<&'static DefIlha>,
@@ -982,43 +989,23 @@ impl Mapa {
         if !self.tem_ilha() {
             return;
         }
-        let r = Self::mini_rect();
-        estilo::sombra(r, estilo::RAIO_GRANDE, 1.0);
-        estilo::ret_gradiente(r, estilo::RAIO_GRANDE, estilo::FUNDO_ALTO, estilo::FUNDO_BAIXO);
-        let dentro = Rect::new(r.x + 4.0, r.y + 4.0, r.w - 8.0, r.h - 8.0);
+        let dentro = Self::mini_rect();
         let c = dentro.center();
-        let rad = dentro.w * 0.5;
-        // O mapa e' um DISCO: a agua e o mundo entram quadrados e a `moldura`,
-        // no fim, come os cantos. Por isso ela e' a ultima coisa desenhada.
+        // SEM CAIXA: o disco flutua sobre o mundo, como no MIR4. A margem que
+        // sobra dentro do retangulo do layout e' onde moram a rosa dos ventos e
+        // as coordenadas — assim nada precisa vazar pra fora do que o
+        // `hud_layout` reservou.
+        let rad = dentro.w * 0.5 - MARGEM_DO_DISCO;
         draw_circle(c.x, c.y, rad, COR_AGUA);
         let Some(eu) = world.self_pos() else {
-            self.moldura(r, dentro, None);
+            self.moldura(dentro, None);
             return;
         };
         let raio = self.raio();
         let alcance = self.alcance_mini;
         let escala = dentro.w * 0.5 / alcance;
         match &self.tex {
-            Some(tex) => {
-                // Janela do minimapa recortada pela borda da imagem: fonte fora
-                // da textura repetiria a ilha do outro lado.
-                let px = LADO as f32 / (2.0 * raio);
-                let (u0, v0) = ((eu.x - alcance).max(-raio), (eu.y - alcance).max(-raio));
-                let (u1, v1) = ((eu.x + alcance).min(raio), (eu.y + alcance).min(raio));
-                if u1 > u0 && v1 > v0 {
-                    draw_texture_ex(
-                        tex,
-                        c.x + (u0 - eu.x) * escala,
-                        c.y + (v0 - eu.y) * escala,
-                        WHITE,
-                        DrawTextureParams {
-                            dest_size: Some(vec2((u1 - u0) * escala, (v1 - v0) * escala)),
-                            source: Some(Rect::new((u0 + raio) * px, (v0 + raio) * px, (u1 - u0) * px, (v1 - v0) * px)),
-                            ..Default::default()
-                        },
-                    );
-                }
-            }
+            Some(tex) => disco_do_mapa(tex, c, rad, eu, alcance, raio),
             None => estilo::texto_centro(c.x, c.y + 30.0, "carregando mapa…", 12, estilo::SUAVE),
         }
         let ponto = |p: Vec2| c + (p - eu) * escala;
@@ -1102,29 +1089,33 @@ impl Mapa {
         }
         let yaw = world.self_id.and_then(|id| world.ents.get(&id)).map_or(0.0, |e| e.yaw);
         seta(c, yaw, 7.0, estilo::TEXTO);
-        self.moldura(r, dentro, Some(eu));
+        self.moldura(dentro, Some(eu));
     }
 
     /// Tudo que vai POR CIMA do disco: a mascara que come os cantos, o anel, a
     /// rosa dos ventos, as coordenadas e os dois botoes — ⤢ abre o Mapa, o
     /// outro muda o tamanho do minimapa.
-    fn moldura(&self, r: Rect, dentro: Rect, eu: Option<Vec2>) {
-        let (c, rad) = (dentro.center(), dentro.w * 0.5);
-        mascara_redonda(dentro, rad, COR_MOLDURA);
-        estilo::arco(c, rad, 0.0, 1.0, 2.0, estilo::alfa(estilo::OURO, 0.55));
-        estilo::arco(c, rad - 3.0, 0.0, 1.0, 1.0, estilo::alfa(estilo::BRILHO, 0.6));
-        estilo::borda_arredondada(r, estilo::RAIO_GRANDE, 1.0, estilo::BORDA_FORTE);
+    fn moldura(&self, dentro: Rect, eu: Option<Vec2>) {
+        let (c, rad) = (dentro.center(), dentro.w * 0.5 - MARGEM_DO_DISCO);
+        // Halo curto no lugar da caixa: descola o disco do cenario sem desenhar
+        // painel nenhum.
+        for i in 0..4 {
+            let k = i as f32;
+            draw_circle_lines(c.x, c.y, rad + 1.5 + k * 1.7, 2.0, Color::new(0.0, 0.0, 0.0, 0.18 - k * 0.04));
+        }
+        estilo::arco(c, rad, 0.0, 1.0, 2.5, estilo::alfa(estilo::OURO, 0.75));
+        estilo::arco(c, rad - 3.0, 0.0, 1.0, 1.0, estilo::alfa(estilo::BRILHO, 0.5));
         rosa_dos_ventos(c, rad);
         if let Some(eu) = eu {
             let t = format!("{:.0}, {:.0}", eu.x, eu.y);
             let w = estilo::medir(&t, 12) + 18.0;
-            // Canto de baixo a' esquerda, na area escura da mascara. No meio da
-            // base ela cobria o "S" da rosa dos ventos — o disco encosta na
-            // borda no meio de cada lado, entao so' os cantos sobram livres.
-            let caixa = Rect::new(dentro.x + 6.0, dentro.y + dentro.h - 25.0, w, 19.0);
+            // Encostada na base do anel, centrada. No canto ela ficava orfa,
+            // solta num vazio sem relacao com o disco; o "S" da bussola saiu
+            // justamente pra ela morar aqui sem cobrir letra nenhuma.
+            let caixa = Rect::new(c.x - w * 0.5, c.y + rad + 1.0, w, 18.0);
             estilo::ret_arredondado(caixa, caixa.h * 0.5, estilo::FUNDO);
             estilo::borda_arredondada(caixa, caixa.h * 0.5, 1.0, estilo::alfa(estilo::OURO, 0.30));
-            estilo::texto_centro(caixa.center().x, caixa.y + 14.0, &t, 12, estilo::TEXTO);
+            estilo::texto_centro(caixa.center().x, caixa.y + 13.0, &t, 12, estilo::TEXTO);
         }
         let m = Vec2::from(mouse_position());
         let ic = crate::hud_layout::atual().mapa_icone;
@@ -1292,37 +1283,58 @@ impl Mapa {
 
 /// Seta do jogador. O modelo olha pra `(sin yaw, cos yaw)` em (x, z), e z
 /// cresce pra baixo no mapa.
-/// O retangulo MENOS o circulo: e' isso que faz o minimapa parecer redondo.
-/// Pra cada passo do circulo o ponto de fora e' onde aquele raio encosta na
-/// borda do retangulo, entao a mascara cobre os cantos e nada transborda o
-/// painel (um anel de raio fixo vazaria por cima do que esta' ao lado).
-fn mascara_redonda(r: Rect, rad: f32, cor: Color) {
-    const N: usize = 72;
-    let c = r.center();
-    let meia = vec2(r.w * 0.5, r.h * 0.5);
-    let na_borda = |a: f32| {
-        let d = vec2(a.cos(), a.sin());
-        c + d * (meia.x / d.x.abs()).min(meia.y / d.y.abs())
-    };
-    let no_disco = |a: f32| c + vec2(a.cos(), a.sin()) * rad;
+/// Folga entre a borda do retangulo do layout e o disco: e' nela que cabem a
+/// rosa dos ventos e a pilula de coordenadas, sem vazar do que o `hud_layout`
+/// reservou nem invadir o mapa.
+/// 20 e' medido, nao escolhido: a pilula tem 18 de altura e nasce 1 abaixo do
+/// disco, entao a borda de baixo dela cai em `rad + 19` — 1 px dentro. As
+/// letras da bussola vao ate' `rad + 14`, tambem dentro. Com 15 a pilula
+/// furava o retangulo do layout em 4 px.
+const MARGEM_DO_DISCO: f32 = 20.0;
+
+/// O mapa RECORTADO EM DISCO, por leque de triangulos com UV propria.
+///
+/// E' o que permite o minimapa nao ter caixa. Sem malha, o unico jeito de
+/// fingir um circulo e' pintar os cantos por cima — e pintar por cima exige uma
+/// moldura opaca, que era exatamente o que deixava o minimapa caixudo.
+///
+/// Fora do quadro da ilha a UV passa de [0,1] e a textura grampeia na borda,
+/// que ali ja' e' agua: o resultado sai certo sem tratamento especial.
+fn disco_do_mapa(tex: &Texture2D, c: Vec2, rad: f32, eu: Vec2, alcance: f32, raio: f32) {
+    const N: usize = 96;
+    let uv = |p: Vec2| vec2((p.x + raio) / (2.0 * raio), (p.y + raio) / (2.0 * raio));
+    let branco = [255u8, 255, 255, 255];
+    let mut vertices = Vec::with_capacity(N + 1);
+    vertices.push(Vertex { position: vec3(c.x, c.y, 0.0), uv: uv(eu), color: branco, normal: Vec4::ZERO });
     for i in 0..N {
-        let volta = std::f32::consts::TAU;
-        let (a0, a1) = (i as f32 / N as f32 * volta, (i + 1) as f32 / N as f32 * volta);
-        let (i0, i1, o0, o1) = (no_disco(a0), no_disco(a1), na_borda(a0), na_borda(a1));
-        draw_triangle(i0, i1, o1, cor);
-        draw_triangle(i0, o1, o0, cor);
+        let a = i as f32 / N as f32 * std::f32::consts::TAU;
+        let d = vec2(a.cos(), a.sin());
+        vertices.push(Vertex {
+            position: vec3(c.x + d.x * rad, c.y + d.y * rad, 0.0),
+            uv: uv(eu + d * alcance),
+            color: branco,
+            normal: Vec4::ZERO,
+        });
     }
+    let mut indices = Vec::with_capacity(N * 3);
+    for i in 0..N {
+        indices.extend_from_slice(&[0, 1 + i as u16, 1 + ((i + 1) % N) as u16]);
+    }
+    draw_mesh(&Mesh { vertices, indices, texture: Some(tex.clone()) });
 }
 
 /// N/L/S/O em volta do disco. O norte e' o unico dourado: e' o que se procura.
 fn rosa_dos_ventos(c: Vec2, rad: f32) {
-    for (i, nome) in ["N", "L", "S", "O"].iter().enumerate() {
+    // Sem "S": o sul e' onde mora a pilula de coordenadas, encostada no anel.
+    for (i, nome) in [(0usize, "N"), (1, "L"), (3, "O")] {
         let a = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::FRAC_PI_2;
         let d = vec2(a.cos(), a.sin());
         let cor = if i == 0 { estilo::OURO } else { estilo::SUAVE };
-        let (t0, t1) = (c + d * (rad - 4.0), c + d * rad);
+        // FORA do disco: dentro dele as letras ficavam por cima do terreno, que
+        // e' o que a margem existe pra evitar.
+        let (t0, t1) = (c + d * rad, c + d * (rad + 4.0));
         draw_line(t0.x, t0.y, t1.x, t1.y, 1.5, estilo::alfa(cor, 0.75));
-        let p = c + d * (rad - 13.0);
+        let p = c + d * (rad + 10.0);
         estilo::texto_centro(p.x, p.y + 4.0, nome, 11, cor);
     }
 }
