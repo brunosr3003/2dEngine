@@ -5,7 +5,7 @@
 > Tempest no meio, plano de fases no fim. Números marcados com ⚠️ são pontos de
 > partida, não medições: afinam no playtest.
 
-## Decisões (atualizado 2026-09-15)
+## Decisões (atualizado 2026-09-16)
 
 Decididas pelo usuário. Valem sobre qualquer trecho abaixo que diga outra coisa.
 
@@ -23,6 +23,7 @@ Decididas pelo usuário. Valem sobre qualquer trecho abaixo que diga outra coisa
 | 10 | **Selo da Tempestade** | Receita de craft (Marcas + darksteel + Pó Cintilante) e teto de **2 por semana por conta**, como na seção 8 |
 | 11 | **Correio** | **Junto com as Entregas do Mercado**: uma caixa só (Menu → Comércio → Mercado → Entregas) para recompensa de dungeon, 1ª vitória, bolsa cheia e mercado |
 | 12 | **Wipe** | **Sem limite de wipes.** Só o relógio encerra o estágio |
+| 13 | **Entrada** | **Sem entrada física no mundo.** Nada de arco para tocar no mapa, marcador ou marca de "descoberto": a **janela de Aventuras** é o único caminho. A descoberta por missão é a quest **510** da cadeia do Mestre, que já existe e fecha ao vencer uma dungeon. Isto NÃO cancela a arena voxel da F4 (onde a luta acontece) — são coisas separadas, e a versão anterior deste doc as descrevia juntas |
 
 Pesquisa detalhada do MIR4: [PESQUISA_DUNGEONS_MIR4.md](PESQUISA_DUNGEONS_MIR4.md).
 
@@ -57,10 +58,15 @@ implementacao por um servico entre canais/realms sem mexer na instancia.
 | Telas | Menu → Aventura → Dungeons (lista, estágios com cadeado e motivo, entradas, fila, salas), faixa "PROCURANDO GRUPO", pronto-check, HUD da instância (relógio, andar, inimigos, porta Sair), "VOCÊ CAIU / Reviver em N s", resultado com o baú. Onde obter das chaves abre a janela |
 
 **Ficou para depois:** mesa entre canais/realms (F5), papéis e composição
-T/S/D, voto de expulsão, backfill e penalidade de abandono, descoberta por
-missão e entrada física (F4), Mestre das Marés (loja de Marcas), baú de andar,
-ajuste de nível para baixo, enrage, raid (F3), tabelas de loot editáveis no
-banco (hoje o baú é código, com o teto duro).
+T/S/D, voto de expulsão, backfill e penalidade de abandono, Mestre das Marés
+(loja de Marcas), baú de andar, ajuste de nível para baixo, enrage, raid (F3),
+tabelas de loot editáveis no banco (hoje o baú é código, com o teto duro).
+
+**Descartado — decisão do dono (16/09/2026): não haverá entrada física.** Nada
+de arco no mapa para tocar, marcador de entrada nem marca de "descoberto". A
+entrada é pela janela de Aventuras, como já é hoje, e a descoberta por missão
+é a quest **510** da cadeia do Mestre, que existe e funciona. Isto não cancela
+a arena voxel da F4 (onde a luta acontece): são coisas separadas.
 
 **Teste com bots:** `server/src/bin/dungeonbot.rs` (ver o cabeçalho). Variáveis
 SÓ de teste no servidor: `MMO_DUNGEON_TESTE_VIDA`, `MMO_DUNGEON_TESTE_DANO`,
@@ -239,27 +245,25 @@ O número entre parênteses é o nível mínimo do **estágio 1**.
 Três portas, **todas** necessárias. Nenhuma sozinha abre.
 
 1. **Nível** mínimo da tabela.
-2. **Descoberta por missão.** Uma missão curta da cadeia da ilha, por exemplo
-   *"Rumores na Taberna: o Escorpião-Colosso"*, leva o jogador até a
-   **entrada física** no mapa (auto missão + viagem do mapa, que já existem).
-   Tocar a entrada marca o conteúdo como descoberto. Depois disso, a fila abre
-   de qualquer lugar.
+2. **Descoberta por missão.** A quest **510 · "O que há sob o naufrágio"**, da
+   cadeia do Mestre (nível 6, depois da 509), apresenta a dungeon — que
+   nenhuma missão do início mencionava — e fecha ao concluir uma, pelo
+   objetivo `DUNGEON`. A entrada é pela **janela de Aventuras**; a fila abre de
+   qualquer lugar.
 
-   **Hoje este portão NÃO existe** (segue na lista de adiados, F4): não há
-   entrada física nem marca de descoberto, e a fila abre direto pela janela de
-   Aventuras. O que existe é a quest **510 · "O que há sob o naufrágio"**, da
-   cadeia do Mestre (nível 6, depois da 509): ela *apresenta* a dungeon — que
-   nenhuma missão do início mencionava — e fecha ao concluir uma, pelo objetivo
-   `DUNGEON`. Não marca descoberta, não usa entrada física e não substitui o
-   portão; é a metade narrativa dele, entregue antes. Quando a F4 chegar, a 510
-   é a candidata natural a virar a missão de descoberta de verdade.
+   **Não existe entrada física, e isso é decisão, não pendência** (dono,
+   16/09/2026). A versão anterior deste documento descrevia um arco no mapa
+   que, ao ser tocado, marcava o conteúdo como "descoberto" — isso foi
+   descartado. Quem mexer aqui no futuro: não reintroduza o arco achando que
+   está completando algo que ficou pela metade.
 
-   O objetivo `DUNGEON` **funciona** desde antes disso: `dg_terminar` chama
-   `quest_on_evento` com ele, por membro presente e só na vitória. O comentário
-   do `objective_kind` dizia "ainda nao existe" e estava errado — hoje há teste
-   cobrindo (`vitoria_de_dungeon_fecha_as_missoes_de_dungeon`). O `RAID` é que
-   de fato não existe: não há conteúdo de raid no catálogo, e nada avança o
-   tipo.
+   O objetivo `DUNGEON` **funciona**, e agora está verificado em execução, não
+   só por leitura: `dg_terminar` chama `quest_on_evento` com ele, por membro
+   presente e só na vitória. Medido com o `dungeonbot` num Porão vencido em
+   83 s — a 510 e a diária 606 passaram de aceitas a prontas sozinhas. Há teste
+   cobrindo a camada de quest (`vitoria_de_dungeon_fecha_as_missoes_de_dungeon`).
+   O `RAID` é que de fato não existe: não há conteúdo de raid no catálogo, e
+   nada avança o tipo.
 3. **Vitória anterior** (só para a raid): vencer a Gruta da mesma ilha no
    estágio 1 pelo menos uma vez.
 
@@ -822,10 +826,10 @@ direta.
 | sistema | o que muda |
 |---|---|
 | **Missões** (MISSOES) | Objetivo novo `CONTEUDO_CONCLUIR { conteudo_id, estagio_min }` (0 = qualquer). **Contratos do dia** no Mestre de Missões: "conclua 1 Gruta", "vença 1 Caçada", "ajude 1 grupo como Ajudante" → Marcas + ouro. Missões de **descoberta** por conteúdo na cadeia de cada ilha |
-| **Auto missão / auto path** | `QuestDestino` de CONTEUDO_CONCLUIR responde a **entrada física** se ainda não foi descoberta, ou o próprio botão da fila (tipo `FILA`) se já foi. Viagem do mapa leva até a entrada e abre a janela de fila |
+| **Auto missão / auto path** | `QuestDestino` de CONTEUDO_CONCLUIR responde o botão da fila (tipo `FILA`). Não há destino no mundo para caminhar: a entrada física foi descartada (ver o portão 2) |
 | **Mapa** | Marcador por entrada: ícone de portal de maré (Gruta), caveira (Caçada), cinza = não descoberto, com cadeado e motivo = sem nível/poder. Chefe de campo vivo aparece durante a Maré Sangrenta |
 | **Vila / NPC** | Papel novo `Mares` (**Mestre das Marés**) no anel de ofícios: loja de Marcas, lista de conteúdos, entrar na fila. É NPC de porta, como os outros (VILA_E_PORTO) |
-| **Entrada física** | Estrutura de `shared::construcao` (arco de pedra + tocha) posta pelo gerador da ilha, **da semente**, como a cidade e o porto. Nada viaja no fio |
+| **Entrada física** | ~~Arco de pedra posto pelo gerador da ilha~~ — **descartada por decisão do dono (16/09/2026)**. A entrada é pela janela de Aventuras |
 | **Chefe de campo** | `boss_areas` + `KIND_CHEFE` ganham nome, nível e tabela de baú por área. A Maré Sangrenta é um estado da área |
 | **Arena da instância** | A lane atual é **tile map legado** (`map.set`, `DUNGEON_ORIGIN = (11000, 200)`), e o mundo é voxel (`shared::terreno`). A arena nova sai de um **gerador de ilhotas-arena** no `shared` (semente por conteúdo), com as mesmas regras de colisão. O terreno continua sem trafegar |
 | **Economia / loot** | Tabelas `conteudo_loot` no banco, editáveis pelo admin como `loot_mobs`, com teto duro por faixa **no código** (Épico < 60 é recusado no seed e no admin) |
@@ -972,7 +976,7 @@ dias, M ≈ 1 semana, G ≈ 2–3 semanas.
 | **F1 · Gruta local com fila e salas** | `mesa` mínima (1 realm, memória, sem banco): fila automática e lista de salas por conteúdo e estágio, composição 1T/1S/3D com relaxamento, pronto-check. Morte sem perda com ressurreição crescente e wipe no andar. `DUNGEON_MODE` vira lane **de grupo** (até 5), com andares e chefe. Grupo sai do processo e vai para a `mesa` | 5 bots em canais diferentes do mesmo realm entram na fila, formam grupo, entram na mesma lane, matam o chefe e voltam ao canal certo | M |
 | **F2 · recompensa, entradas e persistência** | Tabelas do realm (entradas, reserva, progresso por estágio, correio) e lockout por conta. Estágios 1–5, bônus por tempo, baú no chão. Baú com a tabela da seção 8, teto duro de grau por faixa, Marcas, Mestre das Marés, telas Aventuras/Fila/Resultado. Missões de contrato e de descoberta | bot faz 2 Grutas, a 3ª é recusada; 80 mil baús simulados (padrão do `audit_mob_loot`) nunca dão Épico < 60; reiniciar não duplica baú | M |
 | **F3 · Caçada (raid)** | Lane de 10, vocabulário de telegráficos, fases, enrage, ameaça do tanque, contribuição por papel, voto de expulsão, backfill, penalidade de abandono. Primeiro chefe: **Mãe-da-Nevasca** (25) | 10 bots com papéis; grupo sem suporte dá wipe no estágio 4 e passa no 1; janela do telegráfico aprovada no iPhone; o placar dá MVP para tanque e suporte; p99 do tick < 30% com 4 raids no processo | G |
-| **F4 · arena voxel** | Gerador de ilhotas-arena no `shared`, entrada física na ilha, marcador no mapa, auto path até a entrada. Aposenta a lane em tile map | a mesma run da F1 numa arena gerada da semente; o cliente não recebe terreno | M |
+| **F4 · arena voxel** | Gerador de ilhotas-arena no `shared`. Aposenta a lane em tile map. (Entrada física, marcador no mapa e auto path até a entrada saíram do escopo: decisão do dono, 16/09/2026) | a mesma run da F1 numa arena gerada da semente; o cliente não recebe terreno | M |
 | **F5 · entre realms** | Conta global + `tempest_central`. Passe assinado, supervisor de instâncias, cartas + coletor idempotente, trava `em_instancia`, reconexão, estorno por queda | 2 realms (SA01/SA02) em bancos separados formam uma raid. Matar a instância no meio: entradas devolvidas, cartas de chefe morto aplicadas **uma vez**. Matar o coletor entre a transação e a confirmação: sem duplicação | G |
 | **F6 · Chefe de campo e Chefe de mundo** | Maré Sangrenta nas 4 ilhas (nomeado → semi-chefe → chefe). Leviatã semanal em fragmentos ≤ 150 misturando realms | 300 bots de 2 realms: 2 fragmentos, tick ok, baú por limiar de contribuição | M |
 | **F7 · topo e temporada** | Estágio 5 com Selo craftado, conteúdo 60+ (depende das ilhas novas), Variante de Temporada | — | M cada |
