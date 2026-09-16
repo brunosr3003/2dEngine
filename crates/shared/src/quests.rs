@@ -505,6 +505,36 @@ pub const QUESTS: &[QuestDef] = &[
         reward_gold: 250, reward_xp: 300, reward_item: item_id::GREATER_HEAL, reward_item_qty: 2,
         requires: 504, ..mestre() },
 
+    // ===== A oficina do Mestre (506-509) — de onde vem cada material =====
+    // A historia manda "crie sua primeira peca" e nunca diz ONDE se acha o que
+    // a receita pede. Uma peca cinza custa 1 chave + 30 aco + 10 quintessencia
+    // + 10 berloque + 200 darksteel + 300 cobre, e o inicio so' apresentava
+    // pedra e cobre. Esta cadeia apresenta o resto, cada quest com uma fonte.
+    QuestDef { id: 506, title: "Lenha para o cais",
+        desc: "O cais perdeu meio píer na tempestade e o Capitão precisa de madeira. Derrube 8 árvores — é o único lugar de onde sai madeira, e ninguém tinha te dito.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::ARVORE, obj_count: 8,
+        reward_gold: 200, reward_xp: 350, reward_item: item_id::HEALTH_POTION, reward_item_qty: 3,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        requires: 505, ..mestre() },
+    QuestDef { id: 507, title: "O que a pedra guarda",
+        desc: "Dentro da pedra há um metal escuro que não enferruja: Darksteel. Toda peça pede 200 dele. Traga 20 para o Ferreiro ver a qualidade do veio daqui.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::DARKSTEEL, obj_count: 20,
+        reward_gold: 260, reward_xp: 450, reward_item: item_id::STEEL, reward_item_qty: 10,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        requires: 506, ..mestre() },
+    QuestDef { id: 508, title: "Quintessência",
+        desc: "A pedra dá quintessência a conta-gotas; tigre dá bem mais. Traga 6 — sem ela nenhuma armadura fecha.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::QUINTESSENCE, obj_count: 6,
+        reward_gold: 320, reward_xp: 600, reward_item: item_id::STEEL, reward_item_qty: 12,
+        reward_item2: item_id::GREATER_HEAL, reward_item2_qty: 2,
+        requires: 507, min_level: 8, ..mestre() },
+    QuestDef { id: 509, title: "O berloque do owlbear",
+        desc: "Falta a última peça da receita: o berloque, que os owlbears carregam preso ao pelo. Traga 6 e o Mestre abre o baú da vila para você.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::EXORCISM_BAUBLE, obj_count: 6,
+        reward_gold: 400, reward_xp: 900, reward_item: item_id::HIDE, reward_item_qty: 1,
+        reward_item2: item_id::STEEL, reward_item2_qty: 15,
+        requires: 508, min_level: 12, ..mestre() },
+
     // ===================== DIARIAS do Mestre (6xx) — uma serie por ilha =====================
     // Mesmas sete tarefas em cada ilha, na escala da faixa dela (nivel de
     // entrada da ilha, contagem e paga crescendo): quebrar pedras e cacar

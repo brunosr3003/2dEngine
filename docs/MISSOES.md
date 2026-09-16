@@ -17,6 +17,19 @@ Giver `GIVER_MESTRE_DA_ILHA` (121). Cada uma só aparece depois da anterior
 | 503 | Cobre pra forja | juntar 30 de Cobre | 120 ouro, 150 XP, 3 poções de mana |
 | 504 | Ursos na mata | derrotar 3 ursos (nível 3) | 160 ouro, 220 XP, 3 poções de vida |
 | 505 | Visite o Porto | falar com o Capitão do Porto | 250 ouro, 300 XP, 2 poções de vida maiores |
+| 506 | Lenha para o cais | derrubar 8 árvores | 200 ouro, 350 XP, 3 poções de vida, 1 Poção de Experiência |
+| 507 | O que a pedra guarda | juntar 20 de Darksteel | 260 ouro, 450 XP, 10 de Aço, 1 Poção de Experiência |
+| 508 | Quintessência | juntar 6 de Quintessência (nível 8) | 320 ouro, 600 XP, 12 de Aço, 2 poções de vida maiores |
+| 509 | O berloque do owlbear | juntar 6 de Berloque de Exorcismo (nível 12) | 400 ouro, 900 XP, **1 Couro** (chave de armadura), 15 de Aço |
+
+**Por que a cadeia vai até 509 — "a oficina do Mestre".** Uma peça cinza custa
+1 chave + 30 de Aço + 10 de Quintessência + 10 de Berloque + 200 de Darksteel
++ 300 de Cobre, e o início só apresentava pedra e cobre: o jogador recebia
+"crie seu primeiro equipamento" sem nunca ter sido informado de onde sai o
+resto. Cada uma das quatro novas apresenta uma fonte — árvore (a única madeira
+do jogo), Darksteel da pedra, Quintessência do tigre, Berloque do owlbear — e
+a última paga em chave, que é o único desses itens que não se farma na ilha
+(só cai de chefe, ver [LOOT_DOS_MOBS.md](LOOT_DOS_MOBS.md)).
 
 ## Regras (todas no servidor)
 

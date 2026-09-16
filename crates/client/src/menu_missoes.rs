@@ -436,7 +436,12 @@ mod tests {
     #[test]
     fn o_menu_lista_a_cadeia_em_ordem_e_esconde_as_legadas() {
         let bosque: Vec<u16> = todas().iter().filter(|d| zona_da_missao(d.id) == Some("ilha_inicial")).map(|d| d.id).collect();
-        assert_eq!(&bosque[..], &[501, 502, 503, 504, 505], "so' a cadeia, em ordem");
+        // 501-505 e' a cadeia original; 506-509 e' a oficina do Mestre, que
+        // apresenta madeira, darksteel, quintessencia e berloque — as fontes
+        // que a receita cinza pede e que o inicio nunca mostrava. A lista fica
+        // literal de proposito: e' ela que pega um id legado caindo por engano
+        // na faixa da ilha.
+        assert_eq!(&bosque[..], &[501, 502, 503, 504, 505, 506, 507, 508, 509], "so' a cadeia, em ordem");
         assert!(todas().iter().all(|d| !d.daily), "diaria no menu de todas: tem painel proprio");
         assert!(todas().iter().all(|d| zona_da_missao(d.id).is_some()), "legada no menu");
     }

@@ -125,6 +125,23 @@ const fn falar(id: u16, title: &'static str, desc: &'static str, papel: Papel, g
     }
 }
 
+/// Conversa que entrega DOIS itens. Existe por causa da chave: a faixa cinza
+/// pede 1 chave + 30 + 10 + 10 + 200 darksteel + 300 cobre, e a chave e' o
+/// UNICO desses que nao se farma na ilha (so' cai de chefe). Sem entregar a
+/// chave em algum passo, o "crie seu primeiro equipamento" era um pedido
+/// impossivel — ver docs/HISTORIA.md.
+#[allow(clippy::too_many_arguments)]
+const fn falar_com_dois(
+    id: u16, title: &'static str, desc: &'static str, papel: Papel, gold: u32, xp: u64,
+    item: u16, qtd: u16, item2: u16, qtd2: u16,
+) -> QuestDef {
+    QuestDef {
+        reward_item2: item2,
+        reward_item2_qty: qtd2,
+        ..falar(id, title, desc, papel, gold, xp, item, qtd)
+    }
+}
+
 const fn ir(id: u16, title: &'static str, desc: &'static str, p: u16, gold: u32, xp: u64) -> QuestDef {
     QuestDef { obj_kind: objective_kind::LUGAR, obj_target: p, obj_count: 1, ..base(id, title, desc, gold, xp) }
 }
@@ -189,12 +206,12 @@ pub const PASSOS: &[QuestDef] = &[
     // ═════════════ I · O Farol do Bosque (Bosque, 1–15) ═════════════
     falar(700, "Desperte na praça", "Você acordou na praia na noite em que o farol do Bosque apagou. Procure o Mestre de Missões, perto do poço da praça.", Papel::Missoes, 20, 40, item_id::HEALTH_POTION, 3),
     falar(701, "Um gole de coragem", "O Mestre quer você de pé. Fale com o Alquimista, na loja de toldo verde.", Papel::Alquimista, 20, 50, item_id::HEALTH_POTION, 3),
-    cacar(702, "A trilha dos lobos", "Os lobos enlouqueceram desde que o farol apagou. Derrote 5 lobos fora da cidade.", alvo_de_mob(mob_kind::LOBO), 5, 60, 120, item_id::HEALTH_POTION),
+    cacar(702, "A trilha dos lobos", "Os lobos enlouqueceram desde que o farol apagou: descem à trilha de dia, coisa que nunca fizeram. Derrote 5 fora da cidade — bicho caído larga cobre, e cobre é metade de qualquer forja.", alvo_de_mob(mob_kind::LOBO), 5, 60, 120, item_id::HEALTH_POTION),
     falar(703, "Mãos firmes", "Você sobreviveu aos lobos. O Treinador da praça quer ver do que é capaz.", Papel::Treinador, 40, 120, item_id::MANA_POTION, 2),
     nivel(704, "Alcance o nível 5", 5),
-    coletar(705, "Pedra que canta", "As pedras da ilha zumbem com o trovão. Quebre 10 pedras em qualquer veio.", 10, 80, 250, item_id::STEEL, 6),
-    falar(706, "O metal da tempestade", "Leve o que ouviu nas pedras ao Ferreiro. Ele sabe o que o metal carrega.", Papel::Ferreiro, 60, 250, item_id::COPPER, 200),
-    criar(707, "Sua primeira peça", "Com o metal na mão, crie seu primeiro equipamento no Craft.", 100, 300),
+    coletar(705, "Pedra que canta", "As pedras da ilha zumbem com o trovão. Quebre 10 pedras em qualquer veio — é da pedra que saem o Aço e o Darksteel de toda peça.", 10, 80, 250, item_id::STEEL, 6),
+    falar_com_dois(706, "O metal da tempestade", "Leve o que ouviu nas pedras ao Ferreiro. Ele sabe o que o metal carrega — e guarda um couro que só serve para quem vai forjar.", Papel::Ferreiro, 60, 250, item_id::COPPER, 200, item_id::HIDE, 1),
+    criar(707, "Sua primeira peça", "O couro do Ferreiro abre a forja uma vez. Junte o resto quebrando pedra — Aço, Darksteel, Quintessência — e crie sua primeira peça no Craft.", 100, 300),
     cacar(708, "Ursos na encosta", "Os ursos desceram das encostas atrás do cheiro de trovão. Derrote 4 ursos.", alvo_de_mob(mob_kind::URSO), 4, 120, 400, item_id::HEALTH_POTION),
     ir(709, "O mirante do Bosque", "Suba ao ponto mais alto da ilha. De lá se vê o olho da tempestade — e o farol apagado.", ponto::MIRANTE, 150, 500),
     nivel(710, "Alcance o nível 10", 10),
@@ -202,7 +219,7 @@ pub const PASSOS: &[QuestDef] = &[
     cacar(712, "Os pistoleiros de Morgan", "Pistoleiros dos Morganeers rondam a mata atrás das pedras do farol. Derrote 6 deles.", alvo_de_mob(mob_kind::PISTOLEIRO), 6, 200, 800, item_id::GREATER_HEAL),
     ir(713, "A estrada do porto", "Os Peacemain guardam o porto. Siga pela estrada até o pátio do cais.", ponto::PORTO, 150, 700),
     falar(714, "O Capitão do Porto", "O Capitão sabe por que os faróis apagam. Fale com ele no porto.", Papel::Estaleiro, 200, 900, item_id::GREATER_HEAL, 2),
-    cacar(715, "Garras no caminho do cais", "Tigres cercam a estrada dos carregadores. Derrote 5 tigres.", alvo_de_mob(mob_kind::TIGRE), 5, 250, 1_100, item_id::GREATER_HEAL),
+    cacar(715, "Garras no caminho do cais", "Tigres cercam a estrada dos carregadores e ninguém passa com carga. Derrote 5 — deles se tira a Quintessência, que toda armadura pede e a pedra dá a conta-gotas.", alvo_de_mob(mob_kind::TIGRE), 5, 250, 1_100, item_id::GREATER_HEAL),
     ir(716, "O cais ao amanhecer", "Vá até a ponta do cais: o Capitão prometeu mostrar a rota das ilhas.", ponto::CAIS, 200, 1_000),
     nivel(717, "Alcance o nível 15", 15),
     viajar(718, "Rumo à Geleira", "O farol da Geleira ainda brilha, mas por pouco. Peça ao Capitão do Porto um lugar no barco.", 1, 400, 1_500),
@@ -448,7 +465,9 @@ pub fn falas(id: u16, m: u8) -> Option<Vec<&'static str>> {
         706 => &[
             "Pedra que canta? Deixe eu ouvir… É trovão preso no metal.",
             "Esse metal é o que endurece os bichos. E também faz boa armadura.",
-            "Tome cobre para a forja. Crie algo que aguente o que vem por aí.",
+            "Toda peça pede um couro curtido para segurar o metal. Tome o meu — é o último, e some depois de uma forja.",
+            "Outro só arrancando de um chefe. O resto você tira da pedra: aço, darksteel, quintessência.",
+            "Tome o cobre também. Vá ao Craft e faça algo que aguente o que vem por aí.",
         ],
         714 => &[
             "Então você viu o farol apagado do mirante. Eu vi também.",

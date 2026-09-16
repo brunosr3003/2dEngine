@@ -53,6 +53,18 @@ Poção de Experiência nas missões de área (caça e pedra), material na cor d
 faixa (aço cinza no Bosque, verde na Geleira e no Ermo, azul no Planalto).
 Nada de equipamento.
 
+**Exceção deliberada: o passo 706 entrega uma chave.** "O metal da tempestade"
+dá, além do cobre, 1 Couro cinza. A regra acima continua valendo — chave é
+material de craft, não equipamento —, mas o registro importa porque é ela que
+torna possível o passo seguinte: o 707 manda criar a primeira peça, e **toda**
+receita de equipamento começa com uma chave (`receitas.rs`), que na ilha só cai
+de chefe, a 5%. Sem essa entrega, o 707 pedia por volta do nível 5 algo que o
+jogador não tinha como fazer. Quem for mexer nas recompensas do 706 precisa
+saber que está mexendo no destravamento do craft, não num brinde.
+
+De onde vem o resto da receita, o jogador aprende na oficina do Mestre
+(quests 506-509, ver [MISSOES.md](MISSOES.md)).
+
 ## Crônicas da Tempestade (epílogo procedural)
 
 Depois do passo 768, o índice continua para sempre. Cada crônica tem seis
