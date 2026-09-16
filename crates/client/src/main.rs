@@ -331,6 +331,10 @@ struct Jogo {
     onde_obter: onde_obter::OndeObter,
     /// Ultimo pedido de tela acesa mandado ao sistema.
     tela_acesa: bool,
+    /// Botao de PULO do HUD (o celular nao tem tecla de espaco): tocou neste
+    /// quadro e esta' segurando.
+    pulo_toque: bool,
+    pulo_segurando: bool,
 }
 
 #[macroquad::main(window_conf)]
@@ -489,6 +493,8 @@ async fn main() {
         dungeon: dungeon_ui::DungeonUi::default(),
         onde_obter: onde_obter::OndeObter::default(),
         tela_acesa: false,
+        pulo_toque: false,
+        pulo_segurando: false,
     };
     // `MMO_HOST` explicito pula a escolha — e' o caminho do run-client.sh e dos
     // testes de carga.
@@ -2698,13 +2704,14 @@ impl Jogo {
             buttons |= shared::protocol::buttons::SPRINT;
         }
         // O servidor detecta a BORDA de subida; aqui basta mandar o estado.
-        if is_key_down(KeyCode::Space) {
+        if is_key_down(KeyCode::Space) || self.pulo_segurando {
             buttons |= shared::protocol::buttons::PULO;
         }
         // O arco comeca no quadro da tecla, sem esperar a ida e volta. So' a
         // ANIMACAO: quem decide se o degrau de dois blocos foi vencido e' o
         // servidor, e ele responde antes de o arco chegar ao topo.
-        if is_key_pressed(KeyCode::Space) {
+        let tocou_pulo = std::mem::take(&mut self.pulo_toque);
+        if is_key_pressed(KeyCode::Space) || tocou_pulo {
             self.world.pular_local();
         }
         self.input_seq += 1;
@@ -3015,6 +3022,13 @@ impl Jogo {
             if hud::draw_botao_montaria(&z, montado, progresso, self.montarias.tem_montaria()) {
                 self.alternar_montaria();
             }
+        }
+        // Pulo: sem tecla no celular, o botao e' o unico jeito de pular.
+        {
+            let no_ar = self.world.self_id.and_then(|id| self.world.ents.get(&id)).is_some_and(|e| e.pulo_local > 0.0 || e.voando);
+            let (tocou, segurando) = hud::draw_pulo(&z, no_ar);
+            self.pulo_toque |= tocou;
+            self.pulo_segurando = segurando;
         }
         // A bateria do modo economia fica SEMPRE na tela, com ou sem painel.
         if hud::draw_botao_economia(&z) {

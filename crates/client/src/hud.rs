@@ -242,6 +242,27 @@ pub fn draw_topo(z: &Zonas, selo_missoes: bool, selo_diarias: bool, selo_presenc
     saida
 }
 
+/// O botao de PULO, ao lado da montaria. Devolve `(tocou, segurando)`: o
+/// toque dispara a animacao local e o segurar manda o bit pro servidor — o
+/// mesmo que a tecla de espaco faz no PC, que no celular nao existe.
+pub fn draw_pulo(z: &Zonas, no_ar: bool) -> (bool, bool) {
+    let r = z.pulo;
+    let m = mouse();
+    let sobre = r.contains(m);
+    let segurando = sobre && is_mouse_button_down(MouseButton::Left);
+    estilo::cartao(r, sobre, no_ar);
+    let c = r.center();
+    let cor = if no_ar { estilo::OURO } else { Color::new(0.62, 0.78, 0.95, 1.0) };
+    // Seta pra cima com uma base: le' como "pular" sem precisar de texto.
+    let s = r.w * 0.22;
+    estilo::traco(c + vec2(0.0, s * 0.9), c - vec2(0.0, s * 0.9), 2.4, cor);
+    estilo::traco(c - vec2(0.0, s * 0.9), c + vec2(-s * 0.7, s * 0.1), 2.4, cor);
+    estilo::traco(c - vec2(0.0, s * 0.9), c + vec2(s * 0.7, s * 0.1), 2.4, cor);
+    estilo::traco(c + vec2(-s * 0.8, s * 1.2), c + vec2(s * 0.8, s * 1.2), 2.2, estilo::alfa(cor, 0.7));
+    layout::chip(r, "␣");
+    (sobre && is_mouse_button_pressed(MouseButton::Left), segurando)
+}
+
 /// A bateria no canto inferior esquerdo, sempre na tela: liga o modo
 /// economia. `true` no clique.
 pub fn draw_botao_economia(z: &Zonas) -> bool {

@@ -194,11 +194,18 @@ fn anda_a_fase(ent: &mut Ent, andou: f32, dt: f32) {
     ent.andar += (alvo_andar - ent.andar) * k;
     ent.correr += (alvo_correr - ent.correr) * k;
     let boss = ent.state.flags & ent_flags::BOSS != 0;
-    let passada = match crate::bicho::do_mob(ent.meta.tag, ent.meta.kind, boss) {
-        // bicho: o ciclo casa com a viagem do pe' (ver `bicho`), senao a
-        // pata patina no chao
-        Some((_, altura)) => crate::bicho::ciclo(altura, ent.andar * shared::PLAYER_SPEED),
-        None => passada_de_gente(ent.correr),
+    // Montado, quem anda e' o BICHO: a fase acumula com o ciclo dele, igual
+    // a' de um mob. Antes acumulava com a passada de gente e o desenho
+    // convertia por uma razao — e o pe' da montaria nunca casava com o chao.
+    let montado = ent.state.flags & ent_flags::MONTADO != 0;
+    let passada = match crate::bicho::da_montaria(ent.meta.tag, ent.meta.kind, montado) {
+        Some((_, altura)) => crate::bicho::ciclo(altura, vel),
+        None => match crate::bicho::do_mob(ent.meta.tag, ent.meta.kind, boss) {
+            // bicho: o ciclo casa com a viagem do pe' (ver `bicho`), senao a
+            // pata patina no chao
+            Some((_, altura)) => crate::bicho::ciclo(altura, ent.andar * shared::PLAYER_SPEED),
+            None => passada_de_gente(ent.correr),
+        },
     };
     ent.fase = (ent.fase + andou / passada * std::f32::consts::TAU) % (std::f32::consts::TAU * 64.0);
 }

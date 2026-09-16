@@ -1846,15 +1846,10 @@ fn desenha_montaria(
     // GENTE; o bicho tem passada de outro tamanho. Converter pela razao entre
     // as duas poe a pata no chao que passa: sem isso ela patina (o passo do
     // tigre corria no ritmo da perna de quem monta).
-    // A MARCHA (o quanto cada pata viaja) e' escolhida com a velocidade
-    // limitada: montado o bicho corre a 1,5x a pessoa, e na marcha de corrida
-    // o toco solto voa longe do corpo e vira peca espalhada. Com o teto, ele
-    // da' passos mais curtos e mais frequentes — a FASE continua vindo da
-    // distancia real, entao o pe' nao patina.
-    let vel_marcha = vel.min(shared::PLAYER_SPEED);
-    let ciclo = crate::bicho::ciclo(b.anat.altura * m.escala, vel_marcha.max(0.1)).max(0.05);
-    let passada = e.fase * crate::world::passada_de_gente(e.correr) / ciclo;
-    desenha_bicho_montaria(b, m, s, p, e.yaw, vel_marcha, passada, get_time() as f32, e.meta.id.0 as f32);
+    // Igual ao mob: a fase JA' acumulou com o ciclo deste bicho
+    // (`world::anda_a_fase` via `bicho::da_montaria`) e a marcha sai da
+    // velocidade real. Sem conversao e sem teto no meio do caminho.
+    desenha_bicho_montaria(b, m, s, p, e.yaw, vel, e.fase, get_time() as f32, e.meta.id.0 as f32);
 }
 
 /// A montaria parada num palco, girando em `yaw`: a vitrine da Loja.

@@ -50,6 +50,22 @@ pub const BICHOS: [(&str, f32); 7] = [
 
 /// O bicho deste mob, se ele for bicho. Gente (pistoleiro, mago, arqueiro)
 /// fica de fora: ela anda no rig do personagem, nao neste.
+/// O bicho da MONTARIA deste jogador, com a altura ja' na escala dela.
+///
+/// Existe pra montaria andar pelo MESMO caminho do mob: a fase da passada
+/// acumula com o ciclo do bicho (`anda_a_fase`) e a marcha sai da velocidade
+/// real, sem conversao no meio. O `kind` de quem esta' montado carrega a
+/// skin (`render3d`), e a skin diz qual montaria e' .
+pub fn da_montaria(tag: shared::EntityTag, kind: u16, montado: bool) -> Option<(&'static str, f32)> {
+    if tag != shared::EntityTag::Player || !montado {
+        return None;
+    }
+    let skin = shared::loja::skin(kind)?;
+    let m = shared::loja::montaria(skin.montaria)?;
+    let (nome, altura) = BICHOS.iter().copied().find(|(n, _)| *n == m.bicho)?;
+    Some((nome, altura * m.escala))
+}
+
 pub fn do_mob(tag: shared::EntityTag, kind: u16, boss: bool) -> Option<(&'static str, f32)> {
     if tag != shared::EntityTag::Enemy {
         return None;
