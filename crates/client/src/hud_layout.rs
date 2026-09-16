@@ -227,13 +227,10 @@ fn monta(sw: f32, sh: f32, s: f32) -> Zonas {
         let c = ca + d * s;
         Rect::new(c.x - rs, c.y - rs, rs * 2.0, rs * 2.0)
     });
-    // PULO: botao de ACAO, no arco junto das skills — o celular nao tem tecla
-    // de espaco. Fica acima da skill 2, longe o bastante das outras pra nao
-    // encostar (o teste de sobreposicao cobre isso).
-    let pulo = {
-        let c = ca + vec2(-150.0, -212.0) * s;
-        Rect::new(c.x - rs, c.y - rs, rs * 2.0, rs * 2.0)
-    };
+    // PULO: e' o QUARTO slot do arco, que estava reservado e so' desenhava um
+    // disco cinza sem funcao. O celular nao tem tecla de espaco, e este e' o
+    // lugar que o polegar ja' procura.
+    let pulo = skills[3];
     // Linha de baixo, a' esquerda do arco: [COLETA][COMBATE][C][8][9][0].
     let direita = sw - 312.0 * s;
     let yb = base - 14.0 * s;
@@ -320,7 +317,6 @@ impl Zonas {
             ("joystick", self.joystick),
             ("economia", self.economia),
             ("montaria", self.montaria),
-            ("pulo", self.pulo),
             ("faixa", self.faixa),
             ("coleta", self.coleta),
             ("atacar", self.atacar),

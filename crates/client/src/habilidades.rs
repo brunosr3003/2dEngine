@@ -108,7 +108,9 @@ impl Habilidades {
 
     pub fn pega_mouse(&self) -> bool {
         let (x, y) = mouse_position();
-        self.arrasto.inicio.is_some() || (0..3).any(|i| retangulo(i).contains(vec2(x, y)))
+        // 0..4: o quarto e' o botao de PULO, e tocar nele tambem nao pode
+        // virar clique no mundo.
+        self.arrasto.inicio.is_some() || (0..4).any(|i| retangulo(i).contains(vec2(x, y)))
     }
 
     pub fn pedido(&mut self, contexto: Contexto) -> Option<u32> {
@@ -195,11 +197,8 @@ impl Habilidades {
 
     pub fn barra(&self, conjunto: Conjunto, nivel: u32, mp: i32) {
         let agora = get_time();
-        // O slot 4: reservado, cinza, ate' existir a quarta skill.
-        let r4 = retangulo(3);
-        let c4 = r4.center();
-        estilo::botao_redondo(c4, r4.w * 0.5, estilo::SUAVE, estilo::Estado::Desabilitado, false);
-        crate::hud_layout::chip(r4, "4");
+        // O slot 4 e' o PULO (`hud::draw_pulo`): era um disco cinza sem
+        // funcao, e no celular nao ha' tecla de espaco pra pular.
         for i in 0..3 {
             let r = retangulo(i);
             let skill = self.catalogo.iter().find(|s| s.conjunto == conjunto && s.ordem as usize == i + 1);

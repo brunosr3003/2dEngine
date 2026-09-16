@@ -56,11 +56,12 @@ pub const UI: &[(&str, u16)] = &[
     ("missoes", 30),
     ("montaria", 31),
     ("paleta", 32),
-    ("recuperar_xp", 33),
-    ("sair", 34),
-    ("todas_missoes", 35),
-    ("trocar_personagem", 36),
-    ("voltar", 37),
+    ("pulo", 33),
+    ("recuperar_xp", 34),
+    ("sair", 35),
+    ("todas_missoes", 36),
+    ("trocar_personagem", 37),
+    ("voltar", 38),
 ];
 
 /// (nome, celula), ordenado por nome.

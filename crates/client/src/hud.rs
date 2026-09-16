@@ -250,16 +250,21 @@ pub fn draw_pulo(z: &Zonas, no_ar: bool) -> (bool, bool) {
     let m = mouse();
     let sobre = r.contains(m);
     let segurando = sobre && is_mouse_button_down(MouseButton::Left);
-    estilo::cartao(r, sobre, no_ar);
     let c = r.center();
-    let cor = if no_ar { estilo::OURO } else { Color::new(0.62, 0.78, 0.95, 1.0) };
-    // Seta pra cima com uma base: le' como "pular" sem precisar de texto.
-    let s = r.w * 0.22;
-    estilo::traco(c + vec2(0.0, s * 0.9), c - vec2(0.0, s * 0.9), 2.4, cor);
-    estilo::traco(c - vec2(0.0, s * 0.9), c + vec2(-s * 0.7, s * 0.1), 2.4, cor);
-    estilo::traco(c - vec2(0.0, s * 0.9), c + vec2(s * 0.7, s * 0.1), 2.4, cor);
-    estilo::traco(c + vec2(-s * 0.8, s * 1.2), c + vec2(s * 0.8, s * 1.2), 2.2, estilo::alfa(cor, 0.7));
-    layout::chip(r, "␣");
+    let raio = r.w * 0.5;
+    // Mesmo disco das skills: ele E' o quarto slot do arco.
+    let cor = if no_ar { estilo::OURO } else { Color::new(0.62, 0.80, 0.98, 1.0) };
+    let e = estilo::estado(sobre, is_mouse_button_down(MouseButton::Left), false, no_ar);
+    estilo::botao_redondo(c, raio, cor, e, no_ar);
+    if !crate::icones_ui::ui("pulo", c, raio * 1.35, cor) {
+        // Sem a arte no atlas: seta pra cima com o chao embaixo.
+        let s = raio * 0.42;
+        estilo::traco(c + vec2(0.0, s * 0.9), c - vec2(0.0, s * 0.9), 2.6, cor);
+        estilo::traco(c - vec2(0.0, s * 0.9), c + vec2(-s * 0.7, s * 0.1), 2.6, cor);
+        estilo::traco(c - vec2(0.0, s * 0.9), c + vec2(s * 0.7, s * 0.1), 2.6, cor);
+        estilo::traco(c + vec2(-s * 0.8, s * 1.25), c + vec2(s * 0.8, s * 1.25), 2.2, estilo::alfa(cor, 0.7));
+    }
+    layout::chip(r, "4");
     (sobre && is_mouse_button_pressed(MouseButton::Left), segurando)
 }
 

@@ -238,7 +238,7 @@ impl Bioma {
                 colina: (8.0, 15.0),
                 serra: (12.0, 30.0),
                 corte: [0.42, 0.52, 0.66, 0.78],
-                terraco_blocos: 4,
+                terraco_blocos: 3,
                 terraco_forca: 0.92,
             },
             // Gelo e' chapada com pico seco: muita planicie, e quando sobe,
@@ -248,7 +248,7 @@ impl Bioma {
                 colina: (7.0, 12.0),
                 serra: (12.0, 24.0),
                 corte: [0.50, 0.58, 0.70, 0.80],
-                terraco_blocos: 4,
+                terraco_blocos: 3,
                 terraco_forca: 0.94,
             },
             // Duna: amplitude baixa, quase nunca serra e SEM terraco —
@@ -267,16 +267,16 @@ impl Bioma {
             // virar patamar de andar, que e' o que separa planalto de morro.
             Bioma::Montanha => PerfilDeRelevo {
                 planicie: (8.0, 5.0),
-                colina: (14.0, 18.0),
-                serra: (18.0, 40.0),
+                colina: (14.0, 14.0),
+                serra: (18.0, 26.0),
                 // A serra domina, mas nao sozinha: com o corte em 0,18 quase
                 // metade da terra colapsava num nivel so' e a ilha virava uma
                 // mesa — 46% das colunas na mesma faixa de altura.
-                corte: [0.28, 0.38, 0.52, 0.64],
+                corte: [0.34, 0.46, 0.62, 0.74],
                 // Degrau grande e' o que separa PLANALTO de morro, mas a
                 // forca fica abaixo do gelo: 0,95 com degrau de 6 nivelava
                 // tudo.
-                terraco_blocos: 4,
+                terraco_blocos: 3,
                 terraco_forca: 0.85,
             },
         }
@@ -1168,15 +1168,14 @@ pub const MINERIO_LIMIAR: f32 = 0.42;
 /// pico, melhor o minerio — e a pedra roxa fica no ponto mais alto da ilha,
 /// que e' o unico jeito de o topo da montanha ser um destino.
 ///
-/// As faixas caem ENTRE os patamares do relevo (o terraco sobe de 2 em 2
-/// unidades), nunca em cima de um: faixa cortando um patamar ao meio poria
-/// pedra de duas cores no mesmo cume. Medido na ilha inicial com a regra de
-/// cume + chao limpo, estas faixas dao 226 cinza, 105 verde, 50 azul e 25
-/// roxo — cada cor com metade da anterior, e a roxa so' nos picos de 30 u
-/// pra cima.
+/// As faixas caem ENTRE os patamares do relevo, nunca em cima de um: faixa
+/// cortando um patamar ao meio poria pedra de duas cores no mesmo cume. O
+/// corte do roxo subiu pra 0,82 quando o terraco desceu de 4 pra 3 blocos
+/// (degrau de 4 e' parede que nem pulando vence): com 0,78 o topo engolia a
+/// faixa azul e a escada de raridade invertia.
 pub fn tier_de_minerio(altura: f32, pico: f32) -> u8 {
     let t = altura / pico.max(1.0);
-    if t < 0.57 { 1 } else if t < 0.73 { 2 } else if t < 0.78 { 3 } else { 4 }
+    if t < 0.57 { 1 } else if t < 0.73 { 2 } else if t < 0.82 { 3 } else { 4 }
 }
 
 /// A pedra de minerio desta coluna, se houver.
@@ -2029,7 +2028,7 @@ const MAGICA: [u8; 4] = *b"TALT";
 /// 3: plato da cidade maior, patio do porto e o pier erguido no relevo.
 /// 4: o porto so' assenta em costa de MAR ABERTO (antes caia em lago), e o
 /// patio e o pier mudaram de lugar.
-const VERSAO: u16 = 4;
+const VERSAO: u16 = 5;
 
 impl Ilha {
     pub fn gerar(semente: i32, raio_blocos: i32, bioma: Bioma, escala_altura: f32) -> Self {
