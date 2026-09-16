@@ -362,6 +362,18 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS allocated_points INTEGER[] NOT NULL DEFAULT '{0,0,0,0,0,0}'")
         .execute(pool)
         .await?;
+    // Pontos de SKILL. Estavam faltando aqui: o codigo le' e grava as duas
+    // (`load_all`, o upsert do save e o `world`), mas nenhuma migracao as
+    // criava. Banco que veio evoluindo tem as colunas e nao reclama; banco
+    // NOVO subia ate' o fim do seed e morria em "column skill_points_earned
+    // does not exist" — ou seja, criar um realm do zero estava quebrado, e so'
+    // aparecia pra quem tentasse.
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS skill_points_earned INTEGER NOT NULL DEFAULT 0")
+        .execute(pool)
+        .await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS skill_points_spent INTEGER NOT NULL DEFAULT 0")
+        .execute(pool)
+        .await?;
 
     // Boat state — quando player desconecta montado, salvamos o tipo do
     // barco + pos + direcao. Re-spawn no login. NULL = nao tava montado.
