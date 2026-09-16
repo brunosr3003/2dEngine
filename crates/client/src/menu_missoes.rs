@@ -438,10 +438,11 @@ mod tests {
         let bosque: Vec<u16> = todas().iter().filter(|d| zona_da_missao(d.id) == Some("ilha_inicial")).map(|d| d.id).collect();
         // 501-505 e' a cadeia original; 506-509 e' a oficina do Mestre, que
         // apresenta madeira, darksteel, quintessencia e berloque — as fontes
-        // que a receita cinza pede e que o inicio nunca mostrava. A lista fica
-        // literal de proposito: e' ela que pega um id legado caindo por engano
-        // na faixa da ilha.
-        assert_eq!(&bosque[..], &[501, 502, 503, 504, 505, 506, 507, 508, 509], "so' a cadeia, em ordem");
+        // que a receita cinza pede e que o inicio nunca mostrava; 510 leva a
+        // primeira dungeon, que era o unico lugar do inicio que ninguem
+        // apresentava. A lista fica literal de proposito: e' ela que pega um id
+        // legado caindo por engano na faixa da ilha.
+        assert_eq!(&bosque[..], &[501, 502, 503, 504, 505, 506, 507, 508, 509, 510], "so' a cadeia, em ordem");
         assert!(todas().iter().all(|d| !d.daily), "diaria no menu de todas: tem painel proprio");
         assert!(todas().iter().all(|d| zona_da_missao(d.id).is_some()), "legada no menu");
     }

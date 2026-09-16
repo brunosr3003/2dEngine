@@ -21,6 +21,7 @@ Giver `GIVER_MESTRE_DA_ILHA` (121). Cada uma só aparece depois da anterior
 | 507 | O que a pedra guarda | juntar 20 de Darksteel | 260 ouro, 450 XP, 10 de Aço, 1 Poção de Experiência |
 | 508 | Quintessência | juntar 6 de Quintessência (nível 8) | 320 ouro, 600 XP, 12 de Aço, 2 poções de vida maiores |
 | 509 | O berloque do owlbear | juntar 6 de Berloque de Exorcismo (nível 12) | 400 ouro, 900 XP, **1 Couro** (chave de armadura), 15 de Aço |
+| 510 | O que há sob o naufrágio | concluir uma dungeon (nível 6) | 500 ouro, 1.200 XP, 3 poções de vida maiores, 20 de Aço |
 
 **Por que a cadeia vai até 509 — "a oficina do Mestre".** Uma peça cinza custa
 1 chave + 30 de Aço + 10 de Quintessência + 10 de Berloque + 200 de Darksteel

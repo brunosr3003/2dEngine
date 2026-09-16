@@ -244,6 +244,22 @@ Três portas, **todas** necessárias. Nenhuma sozinha abre.
    **entrada física** no mapa (auto missão + viagem do mapa, que já existem).
    Tocar a entrada marca o conteúdo como descoberto. Depois disso, a fila abre
    de qualquer lugar.
+
+   **Hoje este portão NÃO existe** (segue na lista de adiados, F4): não há
+   entrada física nem marca de descoberto, e a fila abre direto pela janela de
+   Aventuras. O que existe é a quest **510 · "O que há sob o naufrágio"**, da
+   cadeia do Mestre (nível 6, depois da 509): ela *apresenta* a dungeon — que
+   nenhuma missão do início mencionava — e fecha ao concluir uma, pelo objetivo
+   `DUNGEON`. Não marca descoberta, não usa entrada física e não substitui o
+   portão; é a metade narrativa dele, entregue antes. Quando a F4 chegar, a 510
+   é a candidata natural a virar a missão de descoberta de verdade.
+
+   O objetivo `DUNGEON` **funciona** desde antes disso: `dg_terminar` chama
+   `quest_on_evento` com ele, por membro presente e só na vitória. O comentário
+   do `objective_kind` dizia "ainda nao existe" e estava errado — hoje há teste
+   cobrindo (`vitoria_de_dungeon_fecha_as_missoes_de_dungeon`). O `RAID` é que
+   de fato não existe: não há conteúdo de raid no catálogo, e nada avança o
+   tipo.
 3. **Vitória anterior** (só para a raid): vencer a Gruta da mesma ilha no
    estágio 1 pelo menos uma vez.
 

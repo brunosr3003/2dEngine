@@ -68,9 +68,12 @@ pub mod objective_kind {
     pub const REFINE: u8 = 10;
     /// Encantar (sistema ainda nao existe: missao `em_breve`).
     pub const ENCHANT: u8 = 11;
-    /// Concluir dungeon (ainda nao existe: `em_breve`).
+    /// Concluir dungeon. FUNCIONA: `dg_terminar` chama `quest_on_evento` com
+    /// este tipo, por membro presente, so' no caminho de vitoria.
     pub const DUNGEON: u8 = 12;
-    /// Derrotar chefe de raid (ainda nao existe: `em_breve`).
+    /// Derrotar chefe de raid. Este sim ainda nao existe: nao ha' conteudo de
+    /// raid no catalogo (so' Porao e Gruta), e nada avanca este tipo — por isso
+    /// a Cacada (607) fica `em_breve`.
     pub const RAID: u8 = 13;
     /// Ir a um PONTO-CHAVE da ilha (`historia::ponto`, em `obj_target`). A
     /// posicao sai do relevo e da vila da ilha em que se esta' — o servidor
@@ -534,6 +537,12 @@ pub const QUESTS: &[QuestDef] = &[
         reward_gold: 400, reward_xp: 900, reward_item: item_id::HIDE, reward_item_qty: 1,
         reward_item2: item_id::STEEL, reward_item2_qty: 15,
         requires: 508, min_level: 12, ..mestre() },
+    QuestDef { id: 510, title: "O que há sob o naufrágio",
+        desc: "O Porão do Naufrágio guarda o que a maré não levou, e quem manda lá dentro cai com a chave no bolso: chefe de dungeon larga chave três vezes mais que chefe de campo. Entre e limpe uma — sozinho já dá.",
+        obj_kind: objective_kind::DUNGEON, obj_target: 0, obj_count: 1,
+        reward_gold: 500, reward_xp: 1_200, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
+        reward_item2: item_id::STEEL, reward_item2_qty: 20,
+        requires: 509, min_level: 6, ..mestre() },
 
     // ===================== DIARIAS do Mestre (6xx) — uma serie por ilha =====================
     // Mesmas sete tarefas em cada ilha, na escala da faixa dela (nivel de

@@ -702,10 +702,38 @@ mod testes_diarias {
         assert!(pode_aceitar(d601, 1, 0, &q, fim));
     }
 
+    /// Vencer dungeon avanca e FECHA as missoes de dungeon — e so' elas.
+    ///
+    /// O gancho mora em `world/dungeon.rs` (`dg_terminar` chama
+    /// `quest_on_evento` com DUNGEON, por membro, so' na vitoria). Nada
+    /// guardava isso: apagar aquela linha deixava a diaria 606 e a 510 do
+    /// Mestre impossiveis de concluir, em silencio. Este teste cobre o lado
+    /// desta camada — que o tipo casa e fecha.
+    #[test]
+    fn vitoria_de_dungeon_fecha_as_missoes_de_dungeon() {
+        use shared::quests::objective_kind as ok;
+        let ativa = |id: u16| CharQuest { quest_id: id, status: quest_status::ACTIVE, progress: 0, cooldown_until: 0 };
+        // 606 e' a diaria "Porao do dia"; 510, a do Mestre que apresenta a dungeon.
+        for id in [606u16, 510] {
+            let d = quest_by_id(id).unwrap();
+            assert_eq!(d.obj_kind, ok::DUNGEON, "{id} deixou de ser de dungeon");
+            let mut q = vec![ativa(id)];
+            let mudou = avancar_evento(&mut q, ok::DUNGEON, &|_| true, 1);
+            assert_eq!(mudou.len(), 1, "{id}: vitoria nao avancou");
+            assert_eq!(q[0].status, quest_status::READY, "{id}: avancou mas nao fechou");
+        }
+        // Tipo errado nao mexe: raid e craft nao fecham missao de dungeon.
+        let mut q = vec![ativa(606)];
+        assert!(avancar_evento(&mut q, ok::RAID, &|_| true, 1).is_empty(), "raid fechou dungeon");
+        assert!(avancar_evento(&mut q, ok::CRAFT, &|_| true, 1).is_empty(), "craft fechou dungeon");
+        assert_eq!(q[0].status, quest_status::ACTIVE);
+    }
+
     /// Em breve nao se aceita; a diaria de outra ilha nao e' oferecida aqui.
     #[test]
     fn em_breve_nao_aceita_e_cada_ilha_oferece_as_suas() {
-        // A Cacada (607) ainda nao existe; a dungeon (606) ja' conta.
+        // A Cacada (607) e' RAID e nao existe; a dungeon (606) conta de
+        // verdade — coberto em `vitoria_de_dungeon_fecha_as_missoes_de_dungeon`.
         assert!(!pode_aceitar(quest_by_id(607).unwrap(), 99, 0, &[], 0));
         let src = shared::quests::quest_source::NPC;
         let aqui: Vec<u16> = offerable(src, shared::quests::GIVER_MESTRE_DA_ILHA, 60, 0, &[], 0, "ilha_gelo").iter().map(|d| d.id).collect();
