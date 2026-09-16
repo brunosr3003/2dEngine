@@ -515,6 +515,9 @@ const COR_MOB: Color = Color::new(0.95, 0.30, 0.25, 1.0);
 const COR_NPC: Color = Color::new(1.0, 0.85, 0.25, 1.0);
 const COR_GENTE: Color = Color::new(0.45, 0.75, 1.0, 1.0);
 const COR_AGUA: Color = Color::new(0.07, 0.20, 0.36, 1.0);
+/// A moldura do disco. OPACA de proposito: e' ela que come os cantos do
+/// minimapa redondo, e cor translucida deixaria o mapa vazar por baixo.
+const COR_MOLDURA: Color = Color::new(0.045, 0.058, 0.085, 1.0);
 
 pub struct Mapa {
     def: Option<&'static DefIlha>,
@@ -894,6 +897,13 @@ impl Mapa {
         Rect::new(((screen_width() - total) * 0.5).max(8.0), (screen_height() - lado) * 0.5 + 12.0, lado, lado)
     }
 
+    /// O botao de TAMANHO do minimapa, ao lado do ⤢ e dentro da moldura. Mora
+    /// aqui e nao no `hud_layout` porque so' o minimapa o usa.
+    fn expandir_rect() -> Rect {
+        let ic = crate::hud_layout::atual().mapa_icone;
+        Rect::new(ic.x - ic.w - 6.0, ic.y, ic.w, ic.h)
+    }
+
     fn fechar_rect(r: Rect) -> Rect {
         Rect::new(r.x + r.w - 26.0, r.y - 32.0, 26.0, 26.0)
     }
@@ -941,6 +951,14 @@ impl Mapa {
             }
             return None;
         }
+        // O botao de tamanho. Quem guarda a escolha e' o `main`, que le o
+        // `hud_layout` todo quadro pras preferencias do personagem.
+        if Self::expandir_rect().contains(m) {
+            if is_mouse_button_pressed(MouseButton::Left) {
+                crate::hud_layout::define_minimapa_expandido(!crate::hud_layout::minimapa_expandido());
+            }
+            return None;
+        }
         let (_, roda) = mouse_wheel();
         if roda != 0.0 {
             let f = if roda > 0.0 { 0.8 } else { 1.25 };
@@ -948,7 +966,14 @@ impl Mapa {
         }
         if is_mouse_button_pressed(MouseButton::Left) {
             let eu = eu?;
-            return Some(Entrada::Viajar(eu + (m - r.center()) / (r.w * 0.5) * self.alcance_mini));
+            // O mapa e' um disco: canto do painel e' moldura, nao viaja. E a
+            // conta usa o raio DESENHADO (o painel tem 4 px de sobra de cada
+            // lado), senao o clique cai a alguns metros de onde se apontou.
+            let (c, rad) = (r.center(), (r.w - 8.0) * 0.5);
+            if m.distance(c) > rad {
+                return None;
+            }
+            return Some(Entrada::Viajar(eu + (m - c) / rad * self.alcance_mini));
         }
         None
     }
@@ -958,38 +983,21 @@ impl Mapa {
             return;
         }
         let r = Self::mini_rect();
-        estilo::painel(r);
+        estilo::sombra(r, estilo::RAIO_GRANDE, 1.0);
+        estilo::ret_gradiente(r, estilo::RAIO_GRANDE, estilo::FUNDO_ALTO, estilo::FUNDO_BAIXO);
         let dentro = Rect::new(r.x + 4.0, r.y + 4.0, r.w - 8.0, r.h - 8.0);
-        draw_rectangle(dentro.x, dentro.y, dentro.w, dentro.h, COR_AGUA);
-        let Some(eu) = world.self_pos() else { return };
-        // Desenha por cima de tudo no fim: a moldura do ⤢ e as coordenadas.
-        struct Moldura(Rect, Vec2);
-        impl Drop for Moldura {
-            fn drop(&mut self) {
-                let (r, eu) = (self.0, self.1);
-                let ic = crate::hud_layout::atual().mapa_icone;
-                let sobre = ic.contains(Vec2::from(mouse_position()));
-                estilo::ret_arredondado(ic, estilo::RAIO_PEQUENO, estilo::FUNDO_ALTO);
-                estilo::borda_arredondada(ic, estilo::RAIO_PEQUENO, 1.0, if sobre { estilo::alfa(estilo::ACENTO, 0.7) } else { estilo::BORDA_FORTE });
-                let cor = if sobre { estilo::OURO } else { estilo::TEXTO };
-                let (a, b, d) = (vec2(ic.x + 5.0, ic.y + 5.0), vec2(ic.x + ic.w - 5.0, ic.y + ic.h - 5.0), ic.w * 0.28);
-                draw_line(a.x, a.y, b.x, b.y, 1.5, cor);
-                draw_line(a.x, a.y, a.x + d, a.y, 1.5, cor);
-                draw_line(a.x, a.y, a.x, a.y + d, 1.5, cor);
-                draw_line(b.x, b.y, b.x - d, b.y, 1.5, cor);
-                draw_line(b.x, b.y, b.x, b.y - d, 1.5, cor);
-                let t = format!("{:.0}, {:.0}", eu.x, eu.y);
-                let w = estilo::medir(&t, 12) + 14.0;
-                let caixa = Rect::new(r.center().x - w * 0.5, r.y + r.h - 22.0, w, 18.0);
-                draw_rectangle(caixa.x, caixa.y, caixa.w, caixa.h, estilo::FUNDO);
-                estilo::texto_centro(caixa.center().x, caixa.y + 13.0, &t, 12, estilo::TEXTO);
-            }
-        }
-        let _moldura = Moldura(r, eu);
+        let c = dentro.center();
+        let rad = dentro.w * 0.5;
+        // O mapa e' um DISCO: a agua e o mundo entram quadrados e a `moldura`,
+        // no fim, come os cantos. Por isso ela e' a ultima coisa desenhada.
+        draw_circle(c.x, c.y, rad, COR_AGUA);
+        let Some(eu) = world.self_pos() else {
+            self.moldura(r, dentro, None);
+            return;
+        };
         let raio = self.raio();
         let alcance = self.alcance_mini;
         let escala = dentro.w * 0.5 / alcance;
-        let c = dentro.center();
         match &self.tex {
             Some(tex) => {
                 // Janela do minimapa recortada pela borda da imagem: fonte fora
@@ -1085,16 +1093,54 @@ impl Mapa {
         tracejado(&rota, 4.0, 3.0, 2.0, estilo::AUTO, Some(dentro));
         if let Some(d) = self.viagem.destino() {
             let q = ponto(d);
-            // Fora do minimapa, o destino fica preso na borda, na direcao dele.
-            let preso = vec2(
-                q.x.clamp(dentro.x + 5.0, dentro.x + dentro.w - 5.0),
-                q.y.clamp(dentro.y + 5.0, dentro.y + dentro.h - 5.0),
-            );
+            // Fora do disco, o destino fica preso na BORDA REDONDA, na direcao
+            // dele. Preso no quadrado, ele parava nos cantos — que agora sao
+            // moldura, e o jogador nao veria mais a marca.
+            let fora = q - c;
+            let preso = if fora.length() > rad - 5.0 { c + fora.normalize_or_zero() * (rad - 5.0) } else { q };
             marca_destino(preso, 5.0);
         }
         let yaw = world.self_id.and_then(|id| world.ents.get(&id)).map_or(0.0, |e| e.yaw);
         seta(c, yaw, 7.0, estilo::TEXTO);
-        estilo::texto_centro(c.x, r.y + 16.0, "N", 12, estilo::SUAVE);
+        self.moldura(r, dentro, Some(eu));
+    }
+
+    /// Tudo que vai POR CIMA do disco: a mascara que come os cantos, o anel, a
+    /// rosa dos ventos, as coordenadas e os dois botoes — ⤢ abre o Mapa, o
+    /// outro muda o tamanho do minimapa.
+    fn moldura(&self, r: Rect, dentro: Rect, eu: Option<Vec2>) {
+        let (c, rad) = (dentro.center(), dentro.w * 0.5);
+        mascara_redonda(dentro, rad, COR_MOLDURA);
+        estilo::arco(c, rad, 0.0, 1.0, 2.0, estilo::alfa(estilo::OURO, 0.55));
+        estilo::arco(c, rad - 3.0, 0.0, 1.0, 1.0, estilo::alfa(estilo::BRILHO, 0.6));
+        estilo::borda_arredondada(r, estilo::RAIO_GRANDE, 1.0, estilo::BORDA_FORTE);
+        rosa_dos_ventos(c, rad);
+        if let Some(eu) = eu {
+            let t = format!("{:.0}, {:.0}", eu.x, eu.y);
+            let w = estilo::medir(&t, 12) + 18.0;
+            // Canto de baixo a' esquerda, na area escura da mascara. No meio da
+            // base ela cobria o "S" da rosa dos ventos — o disco encosta na
+            // borda no meio de cada lado, entao so' os cantos sobram livres.
+            let caixa = Rect::new(dentro.x + 6.0, dentro.y + dentro.h - 25.0, w, 19.0);
+            estilo::ret_arredondado(caixa, caixa.h * 0.5, estilo::FUNDO);
+            estilo::borda_arredondada(caixa, caixa.h * 0.5, 1.0, estilo::alfa(estilo::OURO, 0.30));
+            estilo::texto_centro(caixa.center().x, caixa.y + 14.0, &t, 12, estilo::TEXTO);
+        }
+        let m = Vec2::from(mouse_position());
+        let ic = crate::hud_layout::atual().mapa_icone;
+        let sobre = ic.contains(m);
+        botao_da_moldura(ic, sobre);
+        let cor = if sobre { estilo::OURO } else { estilo::TEXTO };
+        let (a, b, d) = (vec2(ic.x + 5.0, ic.y + 5.0), vec2(ic.x + ic.w - 5.0, ic.y + ic.h - 5.0), ic.w * 0.28);
+        draw_line(a.x, a.y, b.x, b.y, 1.5, cor);
+        draw_line(a.x, a.y, a.x + d, a.y, 1.5, cor);
+        draw_line(a.x, a.y, a.x, a.y + d, 1.5, cor);
+        draw_line(b.x, b.y, b.x - d, b.y, 1.5, cor);
+        draw_line(b.x, b.y, b.x, b.y - d, 1.5, cor);
+        let ex = Self::expandir_rect();
+        let sobre_ex = ex.contains(m);
+        botao_da_moldura(ex, sobre_ex);
+        glifo_tamanho(ex, crate::hud_layout::minimapa_expandido(), if sobre_ex { estilo::OURO } else { estilo::TEXTO });
     }
 
     /// O mapa grande (M) com o painel lateral. Devolve o "Ir" clicado no
@@ -1246,6 +1292,59 @@ impl Mapa {
 
 /// Seta do jogador. O modelo olha pra `(sin yaw, cos yaw)` em (x, z), e z
 /// cresce pra baixo no mapa.
+/// O retangulo MENOS o circulo: e' isso que faz o minimapa parecer redondo.
+/// Pra cada passo do circulo o ponto de fora e' onde aquele raio encosta na
+/// borda do retangulo, entao a mascara cobre os cantos e nada transborda o
+/// painel (um anel de raio fixo vazaria por cima do que esta' ao lado).
+fn mascara_redonda(r: Rect, rad: f32, cor: Color) {
+    const N: usize = 72;
+    let c = r.center();
+    let meia = vec2(r.w * 0.5, r.h * 0.5);
+    let na_borda = |a: f32| {
+        let d = vec2(a.cos(), a.sin());
+        c + d * (meia.x / d.x.abs()).min(meia.y / d.y.abs())
+    };
+    let no_disco = |a: f32| c + vec2(a.cos(), a.sin()) * rad;
+    for i in 0..N {
+        let volta = std::f32::consts::TAU;
+        let (a0, a1) = (i as f32 / N as f32 * volta, (i + 1) as f32 / N as f32 * volta);
+        let (i0, i1, o0, o1) = (no_disco(a0), no_disco(a1), na_borda(a0), na_borda(a1));
+        draw_triangle(i0, i1, o1, cor);
+        draw_triangle(i0, o1, o0, cor);
+    }
+}
+
+/// N/L/S/O em volta do disco. O norte e' o unico dourado: e' o que se procura.
+fn rosa_dos_ventos(c: Vec2, rad: f32) {
+    for (i, nome) in ["N", "L", "S", "O"].iter().enumerate() {
+        let a = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::FRAC_PI_2;
+        let d = vec2(a.cos(), a.sin());
+        let cor = if i == 0 { estilo::OURO } else { estilo::SUAVE };
+        let (t0, t1) = (c + d * (rad - 4.0), c + d * rad);
+        draw_line(t0.x, t0.y, t1.x, t1.y, 1.5, estilo::alfa(cor, 0.75));
+        let p = c + d * (rad - 13.0);
+        estilo::texto_centro(p.x, p.y + 4.0, nome, 11, cor);
+    }
+}
+
+fn botao_da_moldura(r: Rect, sobre: bool) {
+    estilo::ret_arredondado(r, estilo::RAIO_PEQUENO, estilo::FUNDO_ALTO);
+    estilo::borda_arredondada(r, estilo::RAIO_PEQUENO, 1.0, if sobre { estilo::alfa(estilo::ACENTO, 0.7) } else { estilo::BORDA_FORTE });
+}
+
+/// Duas setas: afastando-se (crescer) ou aproximando-se (encolher). De
+/// proposito NAO parece o ⤢ do lado, que faz outra coisa — abre o Mapa.
+fn glifo_tamanho(r: Rect, grande: bool, cor: Color) {
+    let c = r.center();
+    let (w, h) = (r.w * 0.20, r.h * 0.17);
+    let vao = if grande { r.h * 0.10 } else { r.h * 0.20 };
+    for lado in [-1.0f32, 1.0] {
+        let base = c + vec2(0.0, lado * vao);
+        let ponta = base + vec2(0.0, if grande { -lado } else { lado } * h);
+        draw_triangle(ponta, base + vec2(-w, 0.0), base + vec2(w, 0.0), cor);
+    }
+}
+
 fn seta(c: Vec2, yaw: f32, s: f32, cor: Color) {
     // A seta do atlas aponta pra cima; girar `PI - yaw` leva o "cima" pra
     // `(sin yaw, cos yaw)` na tela (y pra baixo).

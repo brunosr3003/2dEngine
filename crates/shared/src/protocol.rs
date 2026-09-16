@@ -862,6 +862,9 @@ pub struct Preferencias {
     /// Skin de montaria escolhida (`loja::SKINS`). O servidor so' aceita a
     /// que a conta possui (`Posses::skin_para_montar`).
     pub montaria_skin: Option<u16>,
+    /// Minimapa grande: ve' mais mundo de uma vez. O tamanho de verdade quem
+    /// decide e' o `hud_layout`, pelo espaco que sobra na tela.
+    pub minimapa_expandido: Option<bool>,
 }
 
 /// Filtros do mapa grande e do minimapa. O padrao e' tudo desligado.
@@ -923,6 +926,7 @@ mod testes_preferencias {
             escala_ui: Some(9.0),
             economia_auto_min: Some(500),
             montaria_skin: Some(102),
+            minimapa_expandido: Some(true),
         }
         .validada(&|id| id <= 12);
         assert_eq!(p.escala_ui, Some(1.6));

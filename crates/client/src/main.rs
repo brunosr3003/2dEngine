@@ -1937,6 +1937,9 @@ impl Jogo {
         if p.montaria_skin.is_some() {
             self.montaria_skin = p.montaria_skin;
         }
+        if let Some(v) = p.minimapa_expandido {
+            hud_layout::define_minimapa_expandido(v);
+        }
         let atual = self.preferencias_atuais();
         self.prefs.recebeu(&atual);
     }
@@ -1959,6 +1962,7 @@ impl Jogo {
             escala_ui: Some(cent(hud_layout::escala_ui())),
             economia_auto_min: self.economia.auto_min,
             montaria_skin: self.montaria_skin,
+            minimapa_expandido: Some(hud_layout::minimapa_expandido()),
         }
     }
 

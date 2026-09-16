@@ -37,6 +37,8 @@ pub fn escala_ui_padrao() -> f32 {
 static ESCALA_UI: AtomicU32 = AtomicU32::new(0);
 /// Area segura em px: topo, esquerda, baixo, direita.
 static MARGENS: [AtomicU32; 4] = [AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0)];
+/// Minimapa grande (0 = compacto). Entra na chave do memo do `atual`.
+static MINIMAPA_GRANDE: AtomicU32 = AtomicU32::new(0);
 
 pub fn escala_ui() -> f32 {
     match ESCALA_UI.load(Ordering::Relaxed) {
@@ -59,6 +61,16 @@ pub fn define_margens(m: [f32; 4]) {
     for (a, v) in MARGENS.iter().zip(m) {
         a.store(if v.is_finite() { v.max(0.0) } else { 0.0 }.to_bits(), Ordering::Relaxed);
     }
+}
+
+/// O minimapa esta' grande? Quem escolhe e' o jogador, no botao da moldura, e
+/// a escolha vai pras preferencias do personagem.
+pub fn minimapa_expandido() -> bool {
+    MINIMAPA_GRANDE.load(Ordering::Relaxed) != 0
+}
+
+pub fn define_minimapa_expandido(v: bool) {
+    MINIMAPA_GRANDE.store(v as u32, Ordering::Relaxed);
 }
 
 /// Uma vez por quadro: rele' a area segura a cada 30 (girar o aparelho muda o
@@ -131,14 +143,17 @@ pub struct Zonas {
 /// Com a area segura e a escala escolhida. Chamado varias vezes por quadro:
 /// guarda a ultima resposta (o ajuste abaixo testa sobreposicao).
 pub fn atual() -> Zonas {
-    thread_local!(static MEMO: Cell<Option<([u32; 7], Zonas)>> = const { Cell::new(None) });
+    thread_local!(static MEMO: Cell<Option<([u32; 8], Zonas)>> = const { Cell::new(None) });
     let (sw, sh) = crate::render3d::tela();
     let (mg, ui) = (margens(), escala_ui());
-    let chave = [sw, sh, mg[0], mg[1], mg[2], mg[3], ui].map(f32::to_bits);
+    let grande = minimapa_expandido();
+    let mut chave = [0u32; 8];
+    chave[..7].copy_from_slice(&[sw, sh, mg[0], mg[1], mg[2], mg[3], ui].map(f32::to_bits));
+    chave[7] = grande as u32;
     MEMO.with(|c| match c.get() {
         Some((k, z)) if k == chave => z,
         _ => {
-            let z = zonas_com(sw, sh, mg, ui);
+            let z = zonas_com(sw, sh, mg, ui, grande);
             c.set(Some((chave, z)));
             z
         }
@@ -148,21 +163,27 @@ pub fn atual() -> Zonas {
 /// Tela inteira, 100%: a dos testes de PC.
 #[cfg(test)]
 pub fn zonas(sw: f32, sh: f32) -> Zonas {
-    zonas_com(sw, sh, [0.0; 4], 1.0)
+    zonas_com(sw, sh, [0.0; 4], 1.0, false)
+}
+
+/// A mesma tela com o minimapa grande: o que vale pequeno tem que valer grande.
+#[cfg(test)]
+pub fn zonas_grandes(sw: f32, sh: f32) -> Zonas {
+    zonas_com(sw, sh, [0.0; 4], 1.0, true)
 }
 
 /// `margens` = area segura (topo, esquerda, baixo, direita) em px; `ui` = a
 /// escala escolhida. O HUD e' montado dentro da area segura. Se a escala pedida
 /// nao couber (sobrepoe, sai da area ou o joystick fica sem polegar), desce aos
 /// poucos ate' caber — nunca abaixo da escala da tela × min(ui, 1).
-pub fn zonas_com(sw: f32, sh: f32, margens: [f32; 4], ui: f32) -> Zonas {
+pub fn zonas_com(sw: f32, sh: f32, margens: [f32; 4], ui: f32, minimapa_grande: bool) -> Zonas {
     let [t, e, b, d] = margens;
     let (w, h) = ((sw - e - d).max(64.0), (sh - t - b).max(64.0));
     let base = escala(w, h);
     let piso = base * ui.min(1.0);
     let mut s = base * ui.max(0.1);
     loop {
-        let z = monta(w, h, s);
+        let z = monta(w, h, s, minimapa_grande);
         if s <= piso + 1e-4 || cabe(&z, w, h) {
             return z.desloca(vec2(e, t));
         }
@@ -183,7 +204,7 @@ pub fn cabe(z: &Zonas, w: f32, h: f32) -> bool {
     dentro && livre && z.joystick.w >= polegar && z.joystick.h >= polegar
 }
 
-fn monta(sw: f32, sh: f32, s: f32) -> Zonas {
+fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
     let m = 20.0 * s;
 
     // ── esquerda: ficha, buffs, rastreador ──
@@ -254,6 +275,20 @@ fn monta(sw: f32, sh: f32, s: f32) -> Zonas {
     let economia = Rect::new(m, exp.y - 8.0 * s - lado_eco, lado_eco, lado_eco);
     let montaria = Rect::new(economia.x + economia.w + 10.0 * s, economia.y, lado_eco, lado_eco);
     let joystick = Rect::new(m, jy, (jfim - m).max(0.0), (economia.y - 8.0 * s - jy).max(0.0));
+
+    // Minimapa grande: cresce pra baixo, preso a' direita, e PARA antes do arco
+    // de skills. O limite nao e' enfeite: sem ele o minimapa cruzaria o arco,
+    // `cabe` diria que nao cabe e o laco do `zonas_com` encolheria o HUD
+    // INTEIRO pra caber — o jogador pede um minimapa maior e recebe uma
+    // interface menor.
+    let (minimapa, mapa_icone) = if minimapa_grande {
+        let teto = skills.iter().map(|r| r.y).fold(atacar.y, f32::min) - 12.0 * s;
+        let lado = (520.0 * s).min(teto - minimapa.y).max(minimapa.w);
+        let r = Rect::new(sw - m - lado, minimapa.y, lado, lado);
+        (r, Rect::new(r.x + r.w - 32.0 * s, r.y + 6.0 * s, 26.0 * s, 26.0 * s))
+    } else {
+        (minimapa, mapa_icone)
+    };
 
     Zonas {
         s,
@@ -422,11 +457,13 @@ mod tests {
         for (nome, sw, sh, mg) in telas {
             let seguro = Rect::new(mg[1], mg[0], sw - mg[1] - mg[3], sh - mg[0] - mg[2]);
             for ui in [ESCALA_UI_MIN, 1.0, 1.3, ESCALA_UI_MAX] {
-                let z = zonas_com(sw, sh, mg, ui);
-                let local = z.desloca(vec2(-seguro.x, -seguro.y));
-                assert!(cabe(&local, seguro.w, seguro.h), "{nome} {sw}×{sh} a {ui}: nao cabe na area segura (s {})", z.s);
-                assert!(z.s + 1e-4 >= escala(seguro.w, seguro.h) * ui.min(1.0), "{nome} a {ui}: encolheu demais");
-                assert!(!z.contem(z.joystick.center()), "{nome} a {ui}: meio do joystick cai num botao");
+                for grande in [false, true] {
+                    let z = zonas_com(sw, sh, mg, ui, grande);
+                    let local = z.desloca(vec2(-seguro.x, -seguro.y));
+                    assert!(cabe(&local, seguro.w, seguro.h), "{nome} {sw}×{sh} a {ui} (grande {grande}): nao cabe na area segura (s {})", z.s);
+                    assert!(z.s + 1e-4 >= escala(seguro.w, seguro.h) * ui.min(1.0), "{nome} a {ui} (grande {grande}): encolheu demais");
+                    assert!(!z.contem(z.joystick.center()), "{nome} a {ui} (grande {grande}): meio do joystick cai num botao");
+                }
             }
         }
     }
@@ -434,7 +471,7 @@ mod tests {
     #[test]
     fn celular_a_130_fica_maior_e_longe_do_notch() {
         let (_, sw, sh, mg) = APARELHOS[0];
-        let (cem, cento_e_trinta) = (zonas_com(sw, sh, mg, 1.0), zonas_com(sw, sh, mg, 1.3));
+        let (cem, cento_e_trinta) = (zonas_com(sw, sh, mg, 1.0, false), zonas_com(sw, sh, mg, 1.3, false));
         assert!(cento_e_trinta.s > cem.s * 1.2, "130% cresceu so' {} → {}", cem.s, cento_e_trinta.s);
         for z in [cem, cento_e_trinta] {
             assert!(z.ficha.x >= mg[1] && z.ficha.y >= mg[0], "ficha no notch/canto: {:?}", z.ficha);
@@ -505,6 +542,27 @@ mod tests {
             let min = 2.0 * crate::joystick::RAIO_BASE * z.s;
             assert!(z.joystick.w >= min && z.joystick.h >= min, "{sw}×{sh}: joystick pequeno demais {:?}", z.joystick);
             assert!(!z.contem(z.joystick.center()), "{sw}×{sh}: meio do joystick cai num botao");
+        }
+    }
+
+    /// Expandir o minimapa cresce o minimapa — e mais nada. Em especial nao
+    /// pode encolher o resto do HUD (seria o laco do `zonas_com` "resolvendo"
+    /// uma sobreposicao com o arco de skills).
+    #[test]
+    fn minimapa_grande_cresce_sem_encolher_o_hud() {
+        for (sw, sh) in TELAS {
+            let (pequeno, grande) = (zonas(sw, sh), zonas_grandes(sw, sh));
+            assert_eq!(grande.s, pequeno.s, "{sw}×{sh}: expandir o minimapa encolheu o HUD inteiro");
+            assert!(grande.minimapa.w >= pequeno.minimapa.w, "{sw}×{sh}: o expandido nao cresceu");
+            assert!(grande.minimapa.w == grande.minimapa.h, "{sw}×{sh}: minimapa deixou de ser quadrado");
+            assert!(grande.mapa_icone.x >= grande.minimapa.x && grande.mapa_icone.y >= grande.minimapa.y, "⤢ fora do minimapa");
+            let todos = grande.todos();
+            for i in 0..todos.len() {
+                for j in i + 1..todos.len() {
+                    let ((na, a), (nb, b)) = (todos[i], todos[j]);
+                    assert!(!cruzam(a, b), "{sw}×{sh} com minimapa grande: {na} {a:?} cobre {nb} {b:?}");
+                }
+            }
         }
     }
 
