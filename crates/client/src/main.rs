@@ -51,6 +51,7 @@ mod config_barra;
 mod config_coleta;
 mod config_interface;
 mod economia;
+mod confirmar;
 mod presenca_ui;
 mod loja_tp;
 mod montarias_ui;
@@ -335,6 +336,8 @@ struct Jogo {
     /// quadro e esta' segurando.
     pulo_toque: bool,
     pulo_segurando: bool,
+    /// Uso de pocao de efeito esperando "tem certeza?" (`confirmar.rs`).
+    confirmar: Option<confirmar::Pendente>,
 }
 
 #[macroquad::main(window_conf)]
@@ -495,6 +498,7 @@ async fn main() {
         tela_acesa: false,
         pulo_toque: false,
         pulo_segurando: false,
+        confirmar: None,
     };
     // `MMO_HOST` explicito pula a escolha — e' o caminho do run-client.sh e dos
     // testes de carga.
@@ -1465,6 +1469,9 @@ impl Jogo {
     /// `gesto_camera` le' isso uma vez so', no encosto, aquele arrasto nunca
     /// virava giro. Ficava so' a pinca, que nem consulta o HUD.
     fn ui_pega_em(&self, m: Vec2) -> bool {
+        if self.confirmar.is_some() {
+            return true;
+        }
         if self.economia.bloqueia_entrada(get_time()) || self.economia.resumo.is_some() {
             return true;
         }
@@ -1854,7 +1861,36 @@ impl Jogo {
         self.usar_espaco(i, false);
     }
 
+    /// Segundos que ainda restam do efeito DESTE item, se ele for pocao de
+    /// buff e o efeito estiver no ar. `None` = nao e' buff, ou ja' acabou.
+    fn buff_ativo_de(&self, item_id: u16) -> Option<i64> {
+        let agora = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        let ate = match barra::categoria(item_id)? {
+            barra::Categoria::Experiencia => self.bonus_xp_ate,
+            barra::Categoria::Fortuna => self.bonus_fortuna_ate,
+            barra::Categoria::Sorte => self.bonus_sorte_ate,
+            _ => return None,
+        };
+        (ate > agora).then_some(ate - agora)
+    }
+
+    /// Uso PELA MAO (slot da barra): buff ja' ativo pergunta antes, porque o
+    /// servidor renova a hora cheia e o tempo que resta se perde.
     fn usar_espaco(&mut self, i: usize, forte: bool) {
+        if let Some(esp) = self.barra.espacos.get(i).copied() {
+            if esp.item_id != 0 && self.buff_ativo_de(esp.item_id).is_some() {
+                self.confirmar = Some(confirmar::Pendente::Barra { i, forte, item: esp.item_id });
+                return;
+            }
+        }
+        self.usar_espaco_sem_perguntar(i, forte);
+    }
+
+    /// O uso de verdade. O AUTO da barra entra por aqui: ele ja' pula buff
+    /// ativo sozinho, e janela nenhuma pode aparecer sem o jogador pedir.
+    fn usar_espaco_sem_perguntar(&mut self, i: usize, forte: bool) {
         let Some(esp) = self.barra.espacos.get(i).copied() else { return };
         if esp.item_id == 0 {
             self.fecha_paineis();
@@ -1963,7 +1999,7 @@ impl Jogo {
         };
         let qtd = self.qtd_rapidos();
         if let Some((i, forte)) = self.barra.decide(&estado, &qtd, &self.bolsa.slots, get_time()) {
-            self.usar_espaco(i, forte);
+            self.usar_espaco_sem_perguntar(i, forte);
         }
     }
 
@@ -3192,7 +3228,22 @@ impl Jogo {
         // A bolsa por cima do mundo.
         let pedido_da_bolsa = if onde { None } else { self.bolsa.desenha(&self.vox, &self.solido) };
         if let Some(pedido) = pedido_da_bolsa {
-            self.envia(pedido);
+            // Pocao de efeito ja' ativa: pergunta antes de jogar fora o tempo
+            // que resta (o servidor renova a hora cheia, nao soma).
+            let buff = match &pedido {
+                ClientMessage::UseItem { slot } => self
+                    .bolsa
+                    .slots
+                    .get(*slot as usize)
+                    .map(|s| s.item_id)
+                    .filter(|id| self.buff_ativo_de(*id).is_some())
+                    .map(|item| (*slot, item)),
+                _ => None,
+            };
+            match buff {
+                Some((slot, item)) => self.confirmar = Some(confirmar::Pendente::Bolsa { slot, item }),
+                None => self.envia(pedido),
+            }
         }
         if self.mercado.aberto && !onde {
             let ctx = mercado_ui::Contexto {
@@ -3317,6 +3368,22 @@ impl Jogo {
                 self.alternar_montaria();
             }
             None => {}
+        }
+        // "Tem certeza?" do buff ja' ativo, por cima de tudo.
+        if let Some(p) = self.confirmar {
+            let nome = self.bolsa.nome(p.item());
+            let resta = self.buff_ativo_de(p.item()).unwrap_or(0);
+            match confirmar::desenha(p, &nome, resta) {
+                Some(true) => {
+                    self.confirmar = None;
+                    match p {
+                        confirmar::Pendente::Bolsa { slot, .. } => self.envia(ClientMessage::UseItem { slot }),
+                        confirmar::Pendente::Barra { i, forte, .. } => self.usar_espaco_sem_perguntar(i, forte),
+                    }
+                }
+                Some(false) => self.confirmar = None,
+                None => {}
+            }
         }
         // Voltou do modo economia: "Enquanto você estava fora", ate' fechar.
         {
