@@ -171,6 +171,26 @@ pub struct Skill {
 pub const DESTRAVA_EM: [u32; 3] = [1, 5, 10];
 pub const RECUPERACAO_S: f32 = 0.36;
 
+/// O `dano` de cada skill do catalogo e' peso relativo, e este e' o meio da
+/// escala: uma skill de `dano` 30 rende o ganho cheio da forma dela.
+pub const DANO_DE_REFERENCIA: f32 = 30.0;
+/// Quanto a skill rende contra o ataque basico que ela desliga. Alvo unico
+/// precisa render bem mais, porque acerta um so'; area rende menos POR ALVO,
+/// porque o lucro dela e' acertar varios.
+pub const GANHO_ALVO_UNICO: f32 = 1.35;
+pub const GANHO_EM_AREA: f32 = 0.70;
+/// Teto do quanto uma skill pode render sobre o basico que desliga. Nenhuma
+/// pode decidir a luta sozinha: sem o teto o Vento Cortante (dano 45, alvo
+/// unico) rendia 2,4x, e o simulador mostrava a katana matando chefe em ~50s —
+/// abaixo do minimo de 60s das metas — e vencendo ATE' PARADA, sem esquivar
+/// telegrafico nenhum.
+///
+/// ATENCAO: neste valor as DUAS skills de projetil (Tiro Certeiro e Vento
+/// Cortante) batem no teto, entao quem manda no dano de alvo unico e' ele, e
+/// nao o `GANHO_ALVO_UNICO` — medido na grade: trocar o ganho de 1,15 pra 1,35
+/// nao muda uma linha do resultado.
+pub const TETO_DO_GANHO: f32 = 1.05;
+
 impl Skill {
     /// Skills ofensivas exigem uma entidade selecionada; suporte usa o conjurador.
     pub fn alcance_alvo(&self) -> f32 {
@@ -191,6 +211,39 @@ impl Skill {
     }
 
     pub fn duracao_efeito(&self) -> f32 { if self.id == 3 { 5.0 } else { 0.65 } }
+
+    /// Dano final da skill, em cima do ataque de quem conjura.
+    ///
+    /// Conjurar DESLIGA o ataque basico (o servidor zera `frame.buttons`
+    /// enquanto dura o `casting_until`), entao o que a skill precisa vencer nao
+    /// e' um numero fixo: e' o dano que o basico daria na janela travada. A
+    /// janela vale `impacto_em() + RECUPERACAO_S` e o basico rende `atk / cd`,
+    /// dai a conta ser "basico deslocado × ganho".
+    ///
+    /// Antes o dano era o `dano` do catalogo, cru. No nivel 80 o Tiro Certeiro
+    /// entregava 28 onde o basico entregaria 400 na MESMA janela: apertar a
+    /// skill era perder dano. Um coeficiente fixo tambem nao resolveria, porque
+    /// a cadencia do basico melhora com o nivel e a divida cresce junto — por
+    /// isso a cadencia entra na conta, e nao so' o ataque.
+    ///
+    /// O `dano` do catalogo passa a ser PESO RELATIVO entre as doze, que e'
+    /// como ele ja' estava ajustado a mao.
+    pub fn dano_efetivo(&self, atk: i32, cd_basico: f32) -> i32 {
+        if self.dano <= 0 {
+            return 0;
+        }
+        let janela = self.impacto_em() + RECUPERACAO_S;
+        let deslocado = janela * atk.max(1) as f32 / cd_basico.max(0.05);
+        let ganho = if self.forma == Forma::Projetil { GANHO_ALVO_UNICO } else { GANHO_EM_AREA };
+        let mult = (ganho * (self.dano as f32 / DANO_DE_REFERENCIA)).min(TETO_DO_GANHO);
+        (deslocado * mult).round().max(1.0) as i32
+    }
+
+    /// So' pro teste: o dano de basico que o cast joga fora. O simulador NAO
+    /// usa esta funcao — ele chama `dano_efetivo`, que ja' embute a janela.
+    pub fn basico_deslocado(&self, atk: i32, cd_basico: f32) -> f32 {
+        (self.impacto_em() + RECUPERACAO_S) * atk.max(1) as f32 / cd_basico.max(0.05)
+    }
 
     pub fn descricao(&self) -> &'static str {
         match self.id {
@@ -274,6 +327,53 @@ mod testes {
         }
         let mut invalida = todas[0].clone();
         for ordem in [0, 4, 255] { invalida.ordem = ordem; assert!(!invalida.destravada(100)); }
+    }
+
+    /// A regra que faltava no jogo: apertar uma skill tem que render MAIS que o
+    /// ataque basico que ela desliga enquanto conjura. Sem isto o dano de skill
+    /// era numero fixo do catalogo e, no nivel alto, toda skill do pistoleiro
+    /// virava prejuizo — o jogador era punido por usar a propria habilidade.
+    ///
+    /// A faixa de ataque/cadencia e' larga de proposito: a conta nao pode valer
+    /// so' num nivel. Como `dano_efetivo` e `basico_deslocado` sao os dois
+    /// lineares em `atk` e em `1/cd`, a razao entre eles nao depende de nenhum
+    /// dos dois — e' isso que faz a garantia valer do nivel 1 ao fim do jogo.
+    #[test]
+    fn toda_skill_ofensiva_rende_mais_que_o_basico_que_desliga() {
+        for atk in [20, 75, 136, 200, 400] {
+            for cd in [0.65f32, 0.53, 0.43, 0.35, 0.25] {
+                for s in playtest().iter().filter(|s| s.dano > 0) {
+                    let deslocado = s.basico_deslocado(atk, cd);
+                    let rende = s.dano_efetivo(atk, cd) as f32;
+                    // Area rende menos por alvo, e o lucro dela e' acertar
+                    // varios: tres e' uma matilha modesta.
+                    let alvos = if s.forma == Forma::Projetil { 1.0 } else { 3.0 };
+                    assert!(
+                        rende * alvos > deslocado,
+                        "{} com atk {atk} e cd {cd}: rende {rende:.0} em {alvos:.0} alvo(s) e joga fora {deslocado:.0} de basico",
+                        s.nome
+                    );
+                }
+            }
+        }
+    }
+
+    /// O dano de skill tem que ANDAR com o ataque de quem conjura. Se algum dia
+    /// voltar a ser o numero cru do catalogo, este teste cai primeiro.
+    #[test]
+    fn dano_de_skill_escala_com_o_ataque_de_quem_conjura() {
+        for s in playtest().iter().filter(|s| s.dano > 0) {
+            let (fraco, forte) = (s.dano_efetivo(50, 0.5), s.dano_efetivo(200, 0.5));
+            assert!(forte >= fraco * 3, "{}: de {fraco} pra {forte} nao acompanhou o ataque", s.nome);
+        }
+    }
+
+    /// Cura e Muralha nao tem dano: a conta nova nao pode inventar um.
+    #[test]
+    fn skill_sem_dano_continua_sem_dano() {
+        for s in playtest().iter().filter(|s| s.dano == 0) {
+            assert_eq!(s.dano_efetivo(200, 0.35), 0, "{} ganhou dano do nada", s.nome);
+        }
     }
 }
 

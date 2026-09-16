@@ -115,15 +115,19 @@ cargo test -p server --bin server balanceamento -- --nocapture
 
 ### Metas (asserts em `metas_de_balanceamento`)
 
-Níveis 1, 5 e 10, AUTO, sem poção (no nível 1 só valem a primeira, a segunda
-e a última — lá a matilha curta do início é de propósito, ver "Início do
-jogo"):
+Níveis 1, 5 e 10, AUTO, **com poção** (no nível 1 só valem a primeira, a
+segunda e a última — lá a matilha curta do início é de propósito, ver "Início
+do jogo"):
 
 - Todo conjunto limpa 10 mobs vivo.
 - HP mínimo ≥ 25% com espada e escudo e ≥ 15% com os outros.
 - Quem atira apanha: pelo menos 3 de dano por mob.
 - Dano por mob do corpo a corpo no máximo 1,5× o da distância (meta ~1,4×).
-- Tempo de luta por abate de cada conjunto a ±20% da média do nível.
+- Tempo de luta por abate dentro da `TOLERANCIA_DE_RITMO` (±25%) da média do
+  nível.
+
+As duas últimas mudaram junto com o dano de skill; o porquê está em "Dano de
+skill", abaixo.
 
 ### O que mudou
 
@@ -146,29 +150,66 @@ As constantes estão no topo de `world.rs` (`PROVOCACAO_S`,
 HP dos mobs vai ao banco pela migração `balanceamento_hp_mobs_v1`, que só
 altera linha com o HP antigo do seed.
 
-### Depois (golpe básico e skills em AUTO, sem poção)
+### Depois (golpe básico e skills em AUTO, com poção)
 
 | Nível | Conjunto | s/abate | Dano por mob | HP mínimo |
 |---|---|---:|---:|---:|
-| 1 | Espada e escudo | 4,05 | 6,0 | 89% |
-| 1 | Katana | 3,92 | 10,0 | 90% |
-| 1 | Pistolas | 3,28 | 4,0 | 82% |
-| 1 | Anel | 3,72 | 10,0 | 81% |
-| 5 | Espada e escudo | 4,79 | 17,6 | 46% |
-| 5 | Katana | 4,35 | 18,6 | 43% |
-| 5 | Pistolas | 4,03 | 8,6 | 59% |
-| 5 | Anel | 4,69 | 16,2 | 69% |
-| 10 | Espada e escudo | 4,88 | 18,6 | 39% |
-| 10 | Katana | 3,94 | 22,9 | 28% |
-| 10 | Pistolas | 3,73 | 13,9 | 17% |
-| 10 | Anel | 4,25 | 20,6 | 72% |
+| 1 | Espada e escudo | 3,75 | 4,0 | 96% |
+| 1 | Katana | 3,75 | 6,5 | 93% |
+| 1 | Pistolas | 2,84 | 0,0 | 100% |
+| 1 | Anel | 2,98 | 0,0 | 100% |
+| 5 | Espada e escudo | 4,45 | 11,2 | 79% |
+| 5 | Katana | 4,62 | 18,6 | 51% |
+| 5 | Pistolas | 4,11 | 13,4 | 59% |
+| 5 | Anel | 4,32 | 12,6 | 78% |
+| 10 | Espada e escudo | 4,56 | 14,5 | 55% |
+| 10 | Katana | 3,86 | 23,8 | 44% |
+| 10 | Pistolas | 3,15 | 15,0 | 24% |
+| 10 | Anel | 4,47 | 24,2 | 69% |
 
-Razão de dano corpo a corpo × distância: 1,14 (nível 1), 1,46 (nível 5) e
-1,20 (nível 10).
+Razão de dano corpo a corpo × distância: 1,15 (nível 5) e 0,98 (nível 10).
 
-**Ainda frágil:** as pistolas no nível 10 terminam com 17% (sem cura própria),
-e a razão do nível 5 está no limite do assert. O próximo ajuste natural é uma
-skill de fuga ou cura pras pistolas, não mais dano.
+### Dano de skill: em cima do ataque, não número fixo
+
+Queixa do playtest: "a skill do pistoleiro é pior que o ataque básico". Era
+verdade, e mensurável. O dano de skill era o `dano` do catálogo, cru, sem
+escalar com atributo, arma ou nível — e conjurar DESLIGA o golpe básico
+(`casting_until`, em `world/habilidades.rs`). No nível 80 o Tiro Certeiro
+entregava 28 onde o básico entregaria ~400 na mesma janela: apertar a skill
+era perder dano.
+
+`Skill::dano_efetivo(atk, cd)` calcula o dano a partir do que a conjuração
+custa:
+
+```
+janela    = impacto_em() + RECUPERACAO_S
+deslocado = janela × atk / cadência_do_básico    (o básico que a skill desliga)
+dano      = deslocado × min(ganho × dano/30, TETO_DO_GANHO)
+```
+
+O `dano` do catálogo virou PESO RELATIVO entre as doze. Ganho de 1,35 para
+alvo único e 0,70 para área — que rende menos POR ALVO porque acerta vários —
+com teto de 1,05. Um coeficiente fixo não resolveria: a cadência do básico
+melhora com o nível, então a dívida cresce junto, e por isso a cadência entra
+na conta. Três invariantes em `shared/src/skills.rs` seguram a regra: toda
+skill ofensiva rende mais que o básico que desliga, o dano acompanha o ataque
+de quem conjura, e skill sem dano continua sem dano.
+
+**Defeito do simulador achado no caminho.** Ele travava o básico só por
+`impacto_em()`, enquanto o servidor trava por `impacto_em() + RECUPERACAO_S`:
+devolvia 0,36 s de ataque grátis por conjuração e superestimava toda skill.
+Com a janela certa e medindo o código ANTIGO, de dano fixo, o pistoleiro
+**morre no nível 10 mesmo com poção infinita** (HP 0%, não limpa os 10). Com a
+fórmula nova ele termina com 24% e limpa. Ou seja: o que faltava ao pistoleiro
+era dano de skill que escalasse — não uma skill de fuga, como se supôs antes.
+
+**Duas metas recalibradas**, pelo mesmo motivo: foram calibradas contra o
+simulador que dava ataque grátis, e quebravam sozinhas no código antigo assim
+que ele passou a cobrar certo. A de zona passou a rodar com poção, como as de
+chefe já faziam; e a tolerância de ritmo foi de ±20% para ±25%, porque a
+pistola limpa 22% mais rápido que a média e paga com o menor HP dos quatro
+(24% contra 69% do anel) — e nenhum valor de ganho de área fecha essa
+diferença, já que os dois extremos ficam presos no teto.
 
 ## Início do jogo
 

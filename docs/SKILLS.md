@@ -22,9 +22,16 @@ iniciais do playtest. Não há pontos para comprar skills, ranks ou passivas.
 | Anel mágico | 5 | Aura | Cura o personagem e aliados ao seu redor | 26 | 18 s |
 | Anel mágico | 10 | Julgamento | Impacto mágico no alvo e inimigos próximos | 30 | 14 s |
 
-Valores de mana, dano, cura, área e recarga são iniciais e continuam editáveis
-no banco. `shared::skills::playtest()` é a origem do cadastro inicial;
+Valores de mana, cura, área e recarga são iniciais e continuam editáveis no
+banco. `shared::skills::playtest()` é a origem do cadastro inicial;
 `DESTRAVA_EM` define os níveis e `Skill::impacto_em()` define o tempo do gesto.
+
+O campo `dano` **não é o dano final**: é o PESO RELATIVO da skill entre as
+doze. O dano que sai no golpe vem de `Skill::dano_efetivo(atk, cd)`, calculado
+em cima do ataque de quem conjura e do básico que a conjuração desliga — ver
+"Dano de skill" em [COMBATE.md](COMBATE.md). Mexer no `dano` do catálogo
+continua valendo para dizer que uma skill é mais forte que a outra; só não
+define mais quanto ela tira.
 
 ## Uso
 
@@ -46,7 +53,11 @@ os aliados próximos. Não há mira no chão ou direção escolhida pelo cursor.
 
 O servidor valida arma, nível, mana, recarga e estado do personagem. Uma skill
 aceita cobra mana uma vez, inicia a recarga e envia o início da animação.
-Ataques básicos ficam suspensos durante o gesto.
+
+Ataques básicos ficam suspensos durante o gesto, por `impacto_em() +
+RECUPERACAO_S` (`casting_until`). Essa janela não é só detalhe de animação: é
+o CUSTO da skill, e é sobre ela que `dano_efetivo` calcula o dano — uma skill
+precisa render mais do que o básico renderia no tempo em que ficou desligado.
 
 Dano, cura e proteção só são aplicados no impacto. Vento Cortante e Tiro
 Certeiro atingem a entidade selecionada, com rastro e efeito de impacto

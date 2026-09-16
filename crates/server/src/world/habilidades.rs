@@ -219,15 +219,25 @@ impl GameWorld {
             self.pending_heals.push(PendingHeal { target_net: dono, amount: skill.cura });
             return;
         }
+        // O dano sai do ataque de quem conjurou, pela mesma `session.stats` que
+        // alimenta o golpe basico — ver `Skill::dano_efetivo` pro porque.
+        let (atk, cd) = self
+            .sessions
+            .values()
+            .find(|s| s.entity_id == dono)
+            .map_or((shared::base_player_stats().attack_damage, 0.65), |s| {
+                (s.stats.attack_damage, super::cooldown_do_ataque(s.equipment.weapon.unwrap_or(0), &s.stats, false))
+            });
+        let dano = skill.dano_efetivo(atk, cd);
         if skill.forma == Forma::Projetil {
             // Disparo target: outro mob cruzando a linha nao troca o destinatario.
-            self.pending_skill_hits.push(PendingSkillHit { target_net: alvo_eid, damage: skill.dano,
+            self.pending_skill_hits.push(PendingSkillHit { target_net: alvo_eid, damage: dano,
                 attacker_net: dono, hurt_dir: -dir, is_crit: false, from_player: true, knockback: 0.0 });
             return;
         }
         for (net, pos) in self.alvos_da_habilidade(dono, de, dir, alvo, skill) {
             if skill.dano > 0 {
-                self.pending_skill_hits.push(PendingSkillHit { target_net: net, damage: skill.dano,
+                self.pending_skill_hits.push(PendingSkillHit { target_net: net, damage: dano,
                     attacker_net: dono, hurt_dir: (de - pos).normalize_or_zero(), is_crit: false,
                     from_player: true, knockback: if skill.id == 1 { 0.7 } else { 0.0 } });
             }
@@ -300,6 +310,9 @@ mod testes {
         s.equipment.weapon = Some(skill.conjunto.arma());
         s.mp_current = 100.0;
         s.stats.mp_max = 100;
+        // Sem ataque nenhum a conta de `dano_efetivo` cai no piso e o mundo de
+        // teste deixa de parecer com o jogo: um conjurador tem ataque.
+        s.stats.attack_damage = 60;
         let dono = s.entity_id;
         let e = w.ecs.spawn((NetId(dono), Position(Vec2::splat(10.0)), Velocity(Vec2::ZERO),
             EntityKind::Player, Health { current: 25, max: 100 }));
@@ -330,7 +343,18 @@ mod testes {
             match skill.id {
                 3 => assert!(w.sessions[&sid].muralha_ate > w.sim_time_s),
                 10 | 11 => assert!(w.pending_heals.iter().any(|h| h.target_net == dono && h.amount == skill.cura)),
-                _ => assert!(w.pending_skill_hits.iter().any(|h| h.target_net == EntityId(999) && h.damage == skill.dano), "{} sem alvo", skill.nome),
+                _ => {
+                    let s = &w.sessions[&sid];
+                    let esperado = skill.dano_efetivo(
+                        s.stats.attack_damage,
+                        crate::world::cooldown_do_ataque(s.equipment.weapon.unwrap_or(0), &s.stats, false),
+                    );
+                    // Aqui so' se cobra que o servidor use a formula. Que a
+                    // skill VENCA o basico que ela desliga e' outra garantia, e
+                    // mora no `shared` — comparar com `skill.dano` nao serve:
+                    // skill de area rende menos por alvo de proposito.
+                    assert!(w.pending_skill_hits.iter().any(|h| h.target_net == EntityId(999) && h.damage == esperado), "{} sem alvo", skill.nome);
+                }
             }
             let quantidade = w.pending_skill_hits.len() + w.pending_heals.len();
             w.sim_time_s += 1.0;
