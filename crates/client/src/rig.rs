@@ -337,10 +337,10 @@ pub fn aplica_montado(p: &mut Pose, tempo: f32) {
     // A coxa ABRE muito (≈49°) antes de ir pra frente: com pouca abertura a
     // perna sobe POR CIMA do lombo e entra no corpo do bicho. Menos `frente`
     // deixa a coxa deitada no flanco, e o joelho dobra menos junto.
-    p.rot[COXA_D] = abre(1.0, 0.85) * frente(0.95);
-    p.rot[COXA_E] = abre(-1.0, 0.85) * frente(0.95);
-    p.rot[CANELA_D] = dobra_pra_tras(1.15);
-    p.rot[CANELA_E] = dobra_pra_tras(1.15);
+    p.rot[COXA_D] = abre(1.0, 1.15) * frente(0.6);
+    p.rot[COXA_E] = abre(-1.0, 1.15) * frente(0.6);
+    p.rot[CANELA_D] = dobra_pra_tras(1.3);
+    p.rot[CANELA_E] = dobra_pra_tras(1.3);
     p.rot[BRACO_D] = frente(0.7 + 0.04 * s);
     p.rot[BRACO_E] = frente(0.7 + 0.04 * s);
     p.rot[ANTEBRACO_D] = frente(0.6);

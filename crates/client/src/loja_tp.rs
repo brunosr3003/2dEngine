@@ -976,6 +976,18 @@ pub async fn previa(vox: &VoxCache) {
             crate::hud_layout::define_margens([v[0], v[1], v[2], v[3]]);
         }
     }
+    // Captura em TEXTURA, nao na tela: `get_screen_data` le' o buffer da
+    // FRENTE, e sem tela (Xvfb + llvmpipe) ele nunca e' resolvido — a imagem
+    // saia branca e do tamanho da janela, nao do pedido. Com alvo, o tamanho
+    // e' o do alvo e o conteudo existe sempre.
+    let (lw, lh) = tam_da_previa();
+    let rt = macroquad::texture::render_target_ex(
+        lw,
+        lh,
+        macroquad::texture::RenderTargetParams { depth: true, sample_count: 1 },
+    );
+    rt.texture.set_filter(FilterMode::Linear);
+    crate::render3d::define_alvo(Some(rt.clone()));
     let solido = crate::render3d::material_solido();
     let mut loja = LojaTp::default();
     let _ = loja.abrir();
@@ -992,7 +1004,7 @@ pub async fn previa(vox: &VoxCache) {
     };
     loja.receber(AvisoLoja::Estado(estado.clone()));
     let cenas: [&str; 8] = ["1-montarias", "2-montaria-possuida", "3-skins", "4-tempest-points", "5-confirma-montaria", "6-confirma-tp", "7-compra-concluida", "8-mundo"];
-    let (sw, sh) = (screen_width() as u32, screen_height() as u32);
+    let (sw, sh) = (lw, lh);
     for (n, cena) in cenas.iter().enumerate() {
         if n == 7 {
             previa_mundo(vox, &solido, &format!("{saida}/{sw}x{sh}")).await;
@@ -1016,19 +1028,17 @@ pub async fn previa(vox: &VoxCache) {
             }
         }
         for quadro in 0..48 {
+            crate::render3d::camera_padrao();
             clear_background(Color::new(0.10, 0.14, 0.12, 1.0));
             // Um "mundo" atras, pra ver o escurecido do painel.
+            let (lsw, lsh) = crate::render3d::tela();
             for i in 0..14 {
-                let x = (i as f32 * 0.137).fract() * screen_width();
-                draw_circle(x, screen_height() * (0.3 + 0.5 * ((i as f32 * 0.71).fract())), 60.0 + i as f32 * 6.0, Color::new(0.20, 0.32, 0.22, 1.0));
+                let x = (i as f32 * 0.137).fract() * lsw;
+                draw_circle(x, lsh * (0.3 + 0.5 * ((i as f32 * 0.71).fract())), 60.0 + i as f32 * 6.0, Color::new(0.20, 0.32, 0.22, 1.0));
             }
             let _ = loja.desenha(vox, &solido);
-            let alvo = if n == 6 { 22 } else { 46 };
-            if quadro == alvo {
-                unsafe { get_internal_gl().flush() };
-                let img = get_screen_data();
-                let caminho = format!("{saida}/{sw}x{sh}-{cena}.png");
-                img.export_png(&caminho);
+            if quadro == if n == 6 { 22 } else { 46 } {
+                salva_alvo(&rt, &format!("{saida}/{sw}x{sh}-{cena}.png"));
             }
             next_frame().await;
         }
@@ -1068,14 +1078,16 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
                 e.andar = if anda { 1.0 } else { 0.0 };
                 e.fase = fase;
             }
+            crate::render3d::camera_padrao();
             clear_background(Color::new(0.08, 0.10, 0.12, 1.0));
-            let (sw, sh) = (screen_width(), screen_height());
+            let (sw, sh) = crate::render3d::tela();
             let esquerda = Rect::new(0.0, 0.0, sw * 0.70, sh);
             let mut vista = crate::render3d::Vista::nova(vec2(0.0, 1.0), 0.0, 0.4, 0.8, 0.0, &|_, _| 0.0);
             vista.cam.position = vec3(0.4, 6.5, -17.0);
             vista.cam.target = vec3(0.4, 1.0, 0.0);
             vista.cam.viewport = crate::render3d::viewport_na_tela(esquerda);
             vista.cam.aspect = Some(esquerda.w / esquerda.h);
+            vista.cam.render_target = crate::render3d::alvo();
             set_camera(&vista.cam);
             crate::render3d::limpa_so_profundidade();
             draw_plane(vec3(0.0, 0.0, 0.0), vec2(30.0, 30.0), None, Color::new(0.20, 0.24, 0.22, 1.0));
@@ -1083,7 +1095,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
             solido.set_uniform("Recorte", Vec3::ZERO);
             crate::render3d::draw_entities(&mut mundo, vox, None, &vista);
             macroquad::material::gl_use_default_material();
-            set_default_camera();
+            crate::render3d::camera_padrao();
             let direita = Rect::new(sw * 0.72, sh * 0.2, sw * 0.26, sh * 0.55);
             draw_rectangle(direita.x, direita.y, direita.w, direita.h, Color::new(0.16, 0.11, 0.30, 1.0));
             if let Some(c) = crate::render3d::vitrine_chao(vox, 201, direita) {
@@ -1093,12 +1105,85 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
             estilo::texto(16.0, 30.0, &format!("MUNDO · {nome} · lobo, urso, tigre, owlbear, chefe Lobo Alfa, cavaleiro no tigre"), 15, WHITE);
             estilo::texto(direita.x, direita.y - 10.0, "VITRINE", 15, WHITE);
             if quadro == 28 {
-                unsafe { get_internal_gl().flush() };
-                get_screen_data().export_png(&format!("{prefixo}-mundo-{nome}.png"));
+                if let Some(rt) = crate::render3d::alvo() {
+                    salva_alvo(&rt, &format!("{prefixo}-mundo-{nome}.png"));
+                }
             }
             next_frame().await;
         }
     }
+    previa_montado(vox, solido, &mut mundo, prefixo).await;
+}
+
+/// O CAVALEIRO de perto: e' a pose que esta' em ajuste. De lado e de tras,
+/// parado e andando, com a camera colada — no plano geral ele sai pequeno
+/// demais pra julgar se a perna entra no bicho.
+async fn previa_montado(
+    vox: &VoxCache,
+    solido: &Material,
+    mundo: &mut crate::world::World,
+    prefixo: &str,
+) {
+    // (nome, angulo da camera em volta do cavaleiro, andando)
+    let tomadas: [(&str, f32, bool); 4] = [
+        ("lado", 0.0, false),
+        ("lado-andando", 0.0, true),
+        ("tras", std::f32::consts::FRAC_PI_2, false),
+        ("tras-andando", std::f32::consts::FRAC_PI_2, true),
+    ];
+    let foco = vec2(-2.5, -4.2);
+    for (nome, ang, anda) in tomadas {
+        for quadro in 0..30 {
+            mundo.tick(get_frame_time(), &|_, _| 0.0);
+            for e in mundo.ents.values_mut() {
+                e.yaw = std::f32::consts::FRAC_PI_2;
+                e.andar = if anda { 1.0 } else { 0.0 };
+            }
+            crate::render3d::camera_padrao();
+            clear_background(Color::new(0.08, 0.10, 0.12, 1.0));
+            let (sw, sh) = crate::render3d::tela();
+            let tudo = Rect::new(0.0, 0.0, sw, sh);
+            let mut vista = crate::render3d::Vista::nova(foco, 0.0, 0.4, 0.8, 0.0, &|_, _| 0.0);
+            vista.cam.position = vec3(foco.x + 4.2 * ang.cos(), 2.1, foco.y + 4.2 * ang.sin());
+            vista.cam.target = vec3(foco.x, 1.25, foco.y);
+            vista.cam.viewport = crate::render3d::viewport_na_tela(tudo);
+            vista.cam.aspect = Some(sw / sh);
+            vista.cam.render_target = crate::render3d::alvo();
+            set_camera(&vista.cam);
+            crate::render3d::limpa_so_profundidade();
+            draw_plane(vec3(0.0, 0.0, 0.0), vec2(30.0, 30.0), None, Color::new(0.20, 0.24, 0.22, 1.0));
+            macroquad::material::gl_use_material(solido);
+            solido.set_uniform("Recorte", Vec3::ZERO);
+            crate::render3d::draw_entities(mundo, vox, None, &vista);
+            macroquad::material::gl_use_default_material();
+            crate::render3d::camera_padrao();
+            estilo::texto(16.0, 30.0, &format!("MONTADO · {nome} · cavaleiro no tigre"), 15, WHITE);
+            if quadro == 28 {
+                if let Some(rt) = crate::render3d::alvo() {
+                    salva_alvo(&rt, &format!("{prefixo}-montado-{nome}.png"));
+                }
+            }
+            next_frame().await;
+        }
+    }
+}
+
+/// Tamanho da captura: `MMO_PREVIA_TAM="LxA"`, padrao o do iPhone deitado.
+fn tam_da_previa() -> (u32, u32) {
+    std::env::var("MMO_PREVIA_TAM")
+        .ok()
+        .and_then(|s| {
+            let (a, b) = s.split_once('x')?;
+            Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+        })
+        .unwrap_or((2532, 1170))
+}
+
+/// Salva o alvo em PNG. `get_texture_data` ja' devolve de cima pra baixo:
+/// virar de novo sairia de cabeca pra baixo (ja' aconteceu).
+fn salva_alvo(rt: &macroquad::texture::RenderTarget, caminho: &str) {
+    unsafe { get_internal_gl().flush() };
+    rt.texture.get_texture_data().export_png(caminho);
 }
 
 #[cfg(test)]

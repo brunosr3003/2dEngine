@@ -1863,7 +1863,7 @@ pub fn vitrine_montaria(vox: &crate::vox::VoxCache, skin_id: u16, r: Rect, yaw: 
     macroquad::material::gl_use_material(solido);
     desenha_bicho_montaria(b, m, s, Vec3::ZERO, yaw, 0.0, get_time() as f32, 7.0);
     macroquad::material::gl_use_default_material();
-    set_default_camera();
+    camera_padrao();
     true
 }
 
@@ -1881,6 +1881,7 @@ fn camera_da_vitrine(b: &crate::bicho::Bicho, m: &shared::loja::Montaria, vp: (i
         fovy: 30f32.to_radians(),
         aspect: Some(aspecto),
         viewport: Some(vp),
+        render_target: alvo(),
         ..Default::default()
     }
 }
@@ -2081,8 +2082,57 @@ pub fn viewport_em_pixels(r: Rect, escala: f32, alto_px: f32) -> Option<(i32, i3
     Some((x as i32, (alto_px - base) as i32, w as i32, h as i32))
 }
 
-/// O viewport de `r` na tela de verdade (sem alvo), com o dpi atual.
+// ─────────────────────────── alvo de captura ───────────────────────────
+//
+// So' a PREVIA usa: desenhar numa textura em vez da tela. `get_screen_data`
+// le' o buffer da FRENTE, e sem tela (Xvfb + llvmpipe) ele nunca e'
+// resolvido — a captura saia branca e do tamanho da janela, nao do pedido.
+// Com alvo, o tamanho da imagem e' o do alvo e o conteudo existe sempre.
+// No jogo o alvo e' `None` e nada muda.
+
+thread_local! {
+    static ALVO: std::cell::RefCell<Option<RenderTarget>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Liga (ou desliga) a captura em textura. So' a previa chama.
+pub fn define_alvo(rt: Option<RenderTarget>) {
+    ALVO.with(|c| *c.borrow_mut() = rt);
+}
+
+pub fn alvo() -> Option<RenderTarget> {
+    ALVO.with(|c| c.borrow().clone())
+}
+
+/// O tamanho LOGICO de desenho: o do alvo quando ha' captura, senao a tela.
+/// Todo layout que se ancora em canto passa por aqui.
+pub fn tela() -> (f32, f32) {
+    match alvo() {
+        Some(rt) => (rt.texture.width(), rt.texture.height()),
+        None => (screen_width(), screen_height()),
+    }
+}
+
+/// O `set_default_camera` que respeita o alvo: volta pro 2D da tela ou do
+/// alvo. Sem isto, cada `set_default_camera` no meio do desenho jogaria o
+/// resto do quadro na tela e a captura sairia pela metade.
+pub fn camera_padrao() {
+    match alvo() {
+        Some(rt) => {
+            let (w, h) = (rt.texture.width(), rt.texture.height());
+            let mut c = Camera2D::from_display_rect(Rect::new(0.0, 0.0, w, h));
+            c.render_target = Some(rt);
+            set_camera(&c);
+        }
+        None => set_default_camera(),
+    }
+}
+
+/// O viewport de `r` na tela (ou no alvo de captura), com o dpi atual.
 pub fn viewport_na_tela(r: Rect) -> Option<(i32, i32, i32, i32)> {
+    if let Some(rt) = alvo() {
+        // No alvo nao ha' dpi: a textura ja' esta' em pixels.
+        return viewport_em_pixels(r, 1.0, rt.texture.height());
+    }
     let s = macroquad::miniquad::window::dpi_scale();
     viewport_em_pixels(r, s, screen_height() * s)
 }

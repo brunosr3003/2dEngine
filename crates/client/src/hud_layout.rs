@@ -74,7 +74,7 @@ pub fn acompanhar() {
 /// A tela menos a area segura: onde painel ancorado em canto deve ficar.
 pub fn tela_segura() -> Rect {
     let [t, e, b, d] = margens();
-    let (sw, sh) = (screen_width(), screen_height());
+    let (sw, sh) = crate::render3d::tela();
     Rect::new(e, t, (sw - e - d).max(64.0), (sh - t - b).max(64.0))
 }
 
@@ -130,7 +130,8 @@ pub struct Zonas {
 /// guarda a ultima resposta (o ajuste abaixo testa sobreposicao).
 pub fn atual() -> Zonas {
     thread_local!(static MEMO: Cell<Option<([u32; 7], Zonas)>> = const { Cell::new(None) });
-    let (sw, sh, mg, ui) = (screen_width(), screen_height(), margens(), escala_ui());
+    let (sw, sh) = crate::render3d::tela();
+    let (mg, ui) = (margens(), escala_ui());
     let chave = [sw, sh, mg[0], mg[1], mg[2], mg[3], ui].map(f32::to_bits);
     MEMO.with(|c| match c.get() {
         Some((k, z)) if k == chave => z,
@@ -378,7 +379,8 @@ pub fn desenha_faixa(z: &Zonas, texto: &str, cor: Color) {
 
 /// Mundo escurecido atras de painel grande (Menu, Bolsa, Mapa, Craft…).
 pub fn escurece(alfa: f32) {
-    draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, alfa));
+    let (sw, sh) = crate::render3d::tela();
+    draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, alfa));
 }
 
 #[cfg(test)]
