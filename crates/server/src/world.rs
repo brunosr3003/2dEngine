@@ -9856,7 +9856,29 @@ impl GameWorld {
         }
     }
 
+    /// Este tick manda estado? O mundo simula a 30 Hz; `MMO_SNAPSHOT_HZ` diz
+    /// a que ritmo ele SAI (5..30, padrao 30). Lido uma vez: roda todo tick.
+    fn manda_estado_neste_tick(&self) -> bool {
+        static DIVISOR: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+        let d = *DIVISOR.get_or_init(|| {
+            let hz = std::env::var("MMO_SNAPSHOT_HZ")
+                .ok()
+                .and_then(|v| v.parse::<u32>().ok())
+                .unwrap_or(shared::TICK_RATE_HZ)
+                .clamp(5, shared::TICK_RATE_HZ);
+            (shared::TICK_RATE_HZ / hz).max(1)
+        });
+        d <= 1 || self.tick % d == 0
+    }
+
     pub fn send_snapshots(&mut self) {
+        // O mundo SIMULA a 30 Hz, mas o estado nao precisa SAIR a 30 Hz: o
+        // cliente interpola entre snapshots. `MMO_SNAPSHOT_HZ` corta o upload
+        // na mesma proporcao (10 Hz = um terco do trafego), o que importa
+        // quando o servidor roda atras de um link domestico.
+        if !self.manda_estado_neste_tick() {
+            return;
+        }
         self.enviar_rotas();
         // Coleta attack_pending dos inimigos e zera pra mandar 1 vez só.
         // Junto vai a direção do golpe (attack_dir) — cliente seta facing
