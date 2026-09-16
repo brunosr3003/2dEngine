@@ -170,6 +170,13 @@ pub struct World {
 const PASSADA_ANDANDO: f32 = 2.2;
 const PASSADA_CORRENDO: f32 = 3.0;
 
+/// Quanto uma PESSOA anda num ciclo inteiro de passada (u), entre o passo e
+/// a corrida. E' o divisor de `Ent::fase`, e quem monta precisa dele pra
+/// converter a propria fase na do bicho, que tem passada de outro tamanho.
+pub fn passada_de_gente(correr: f32) -> f32 {
+    PASSADA_ANDANDO + (PASSADA_CORRENDO - PASSADA_ANDANDO) * correr
+}
+
 /// Avanca a fase do passo pela distancia que o corpo DESENHADO andou, e
 /// suaviza "andando" e "correndo" a partir da velocidade que sai dela.
 ///
@@ -191,7 +198,7 @@ fn anda_a_fase(ent: &mut Ent, andou: f32, dt: f32) {
         // bicho: o ciclo casa com a viagem do pe' (ver `bicho`), senao a
         // pata patina no chao
         Some((_, altura)) => crate::bicho::ciclo(altura, ent.andar * shared::PLAYER_SPEED),
-        None => PASSADA_ANDANDO + (PASSADA_CORRENDO - PASSADA_ANDANDO) * ent.correr,
+        None => passada_de_gente(ent.correr),
     };
     ent.fase = (ent.fase + andou / passada * std::f32::consts::TAU) % (std::f32::consts::TAU * 64.0);
 }

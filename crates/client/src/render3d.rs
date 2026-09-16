@@ -1842,7 +1842,19 @@ fn desenha_montaria(
     p: Vec3,
 ) {
     let vel = e.andar * shared::PLAYER_SPEED * shared::loja::VEL_MONTADO;
-    desenha_bicho_montaria(b, m, s, p, e.yaw, vel, get_time() as f32, e.meta.id.0 as f32);
+    // A fase do cavaleiro anda com a DISTANCIA, mas dividida pela passada de
+    // GENTE; o bicho tem passada de outro tamanho. Converter pela razao entre
+    // as duas poe a pata no chao que passa: sem isso ela patina (o passo do
+    // tigre corria no ritmo da perna de quem monta).
+    // A MARCHA (o quanto cada pata viaja) e' escolhida com a velocidade
+    // limitada: montado o bicho corre a 1,5x a pessoa, e na marcha de corrida
+    // o toco solto voa longe do corpo e vira peca espalhada. Com o teto, ele
+    // da' passos mais curtos e mais frequentes — a FASE continua vindo da
+    // distancia real, entao o pe' nao patina.
+    let vel_marcha = vel.min(shared::PLAYER_SPEED);
+    let ciclo = crate::bicho::ciclo(b.anat.altura * m.escala, vel_marcha.max(0.1)).max(0.05);
+    let passada = e.fase * crate::world::passada_de_gente(e.correr) / ciclo;
+    desenha_bicho_montaria(b, m, s, p, e.yaw, vel_marcha, passada, get_time() as f32, e.meta.id.0 as f32);
 }
 
 /// A montaria parada num palco, girando em `yaw`: a vitrine da Loja.
@@ -1861,7 +1873,8 @@ pub fn vitrine_montaria(vox: &crate::vox::VoxCache, skin_id: u16, r: Rect, yaw: 
     set_camera(&cam);
     limpa_so_profundidade();
     macroquad::material::gl_use_material(solido);
-    desenha_bicho_montaria(b, m, s, Vec3::ZERO, yaw, 0.0, get_time() as f32, 7.0);
+    // Vitrine: a montaria esta' PARADA no palco (so' gira em `yaw`).
+    desenha_bicho_montaria(b, m, s, Vec3::ZERO, yaw, 0.0, 0.0, get_time() as f32, 7.0);
     macroquad::material::gl_use_default_material();
     camera_padrao();
     true
@@ -1911,13 +1924,16 @@ pub fn desenha_bicho_montaria(
     p: Vec3,
     yaw: f32,
     vel: f32,
+    // Fase da passada, em radianos. Anda com a DISTANCIA percorrida (como
+    // `world::anda_a_fase` faz pro bicho do mundo): multiplicar o relogio
+    // pela velocidade tratava milhares de segundos como distancia, e a
+    // montaria trotava muito mais rapido do que andava.
+    passada: f32,
     tempo: f32,
     semente: f32,
 ) {
-    // Passada pelo relogio: a do cavaleiro anda no ritmo da perna de gente.
-    let ciclo = crate::bicho::ciclo(b.anat.altura * m.escala, vel.max(0.1)).max(0.05);
     let entrada = crate::bicho::Entrada {
-        passada: tempo * vel / ciclo * std::f32::consts::TAU,
+        passada,
         vel,
         tempo,
         golpe: 99.0,

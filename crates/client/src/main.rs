@@ -1442,13 +1442,23 @@ impl Jogo {
     }
 
     fn ui_pega_mouse(&self) -> bool {
+        self.ui_pega_em(Vec2::from(mouse_position()))
+    }
+
+    /// O HUD pega o toque NESTE ponto?
+    ///
+    /// Existe separado de `ui_pega_mouse` por causa do dedo: no iPhone o mouse
+    /// simulado fica onde foi o toque ANTERIOR, entao um toque no mundo logo
+    /// depois de encostar num botao nascia marcado como "no HUD" — e, como o
+    /// `gesto_camera` le' isso uma vez so', no encosto, aquele arrasto nunca
+    /// virava giro. Ficava so' a pinca, que nem consulta o HUD.
+    fn ui_pega_em(&self, m: Vec2) -> bool {
         if self.economia.bloqueia_entrada(get_time()) || self.economia.resumo.is_some() {
             return true;
         }
         if self.painel_grande() || self.morte.pega_mouse() {
             return true;
         }
-        let m = Vec2::from(mouse_position());
         let z = hud_layout::atual();
         z.contem(m)
             || z.chat.contains(m)
@@ -2486,9 +2496,10 @@ impl Jogo {
         self.joystick.quadro(&toques, joystick::RAIO_BASE * z.s, &pode_comecar);
         // O de antes tambem sai: no quadro do soltar o joystick ja' largou o id.
         let resto = joystick::sem_dedos(&toques, &[dono, self.joystick.dedo()]);
-        // O HUD e' conferido no ponto do dedo (a macroquad ja' levou o mouse
-        // simulado pra la').
-        let sobre_hud = !resto.is_empty() && sobre_ui;
+        // O HUD e' conferido no ponto do DEDO, nao no do mouse simulado: ele
+        // fica onde foi o toque anterior, e um giro que comecasse logo depois
+        // de tocar num botao nascia morto (ver `ui_pega_em`).
+        let sobre_hud = resto.first().is_some_and(|t| self.ui_pega_em(t.pos));
         self.toque_acao = self.gesto_camera.quadro(&resto, sobre_hud);
     }
 
