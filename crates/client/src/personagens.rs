@@ -139,7 +139,7 @@ impl Personagens {
         let ny=sy+58.0;
         ui::texto(x,ny,"02  NOME",13,ui::OURO);
         let campo=Rect::new(x,ny+12.0,lw,42.0);
-        if !ocupado && is_mouse_button_pressed(MouseButton::Left) {self.foco_nome=campo.contains(Vec2::from(mouse_position()));}
+        if !ocupado { if let Some(p)=apertou_em() {self.foco_nome=campo.contains(p);} }
         if !ocupado && self.foco_nome {
             for &c in digitado {
                 if c as u32==8 {self.nome.pop();} else if !c.is_control() && self.nome.chars().count()<24 {self.nome.push(c);}
@@ -309,7 +309,23 @@ fn estilo(c: Conjunto) -> (&'static str,&'static str) {
         Conjunto::AnelMagico=>("Magia e suporte","Restaure sua vida, cure aliados próximos e invoque um impacto mágico sobre o alvo."),
     }
 }
-fn clicou(r: Rect) -> bool {is_mouse_button_pressed(MouseButton::Left) && r.contains(Vec2::from(mouse_position()))}
+/// Onde o dedo (ou o mouse) apertou NESTE quadro.
+///
+/// No iPhone o "mouse" e' simulado a partir do toque, e no quadro em que o dedo
+/// encosta ele ainda aponta pro toque ANTERIOR. Testar o clique contra ele
+/// errava o alvo: o toque no campo de nome nao dava foco, o nome ficava vazio,
+/// e com nome vazio o "Criar personagem" ficava desabilitado pra sempre — o
+/// botao parecia quebrado. E' o mesmo defeito que ja' tinha sido corrigido no
+/// HUD (ver `ui_pega_em` em main.rs), so' que esta tela desenha antes dele e
+/// ficou de fora. Por isso o toque real vem primeiro; sem dedo, o mouse de
+/// sempre (PC igual).
+fn apertou_em() -> Option<Vec2> {
+    if let Some(t)=touches().into_iter().find(|t| t.phase==TouchPhase::Started) {
+        return Some(t.position);
+    }
+    is_mouse_button_pressed(MouseButton::Left).then(|| Vec2::from(mouse_position()))
+}
+fn clicou(r: Rect) -> bool {apertou_em().is_some_and(|p| r.contains(p))}
 fn botao(r: Rect,t: &str,ativo: bool,destaque: bool) -> bool {
     let sobre=ativo && r.contains(Vec2::from(mouse_position()));
     draw_rectangle(r.x,r.y,r.w,r.h,if destaque && ativo {Color::new(0.24,0.21,0.14,1.0)} else {ui::FUNDO});
