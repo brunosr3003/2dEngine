@@ -87,6 +87,12 @@ const _: () = {
     }
 };
 
+/// Pocao de recurso na loja do NPC se paga com COBRE, nao com ouro (pedido do
+/// dono, 17/09/2026). O preco e' o mesmo numero de `items.buy_price`.
+pub fn compra_com_cobre(item_id: u16) -> bool {
+    cura_de(item_id).is_some()
+}
+
 pub fn cura_de(item_id: u16) -> Option<Cura> {
     CURAS.iter().find(|(id, _)| *id == item_id).map(|(_, c)| *c)
 }
@@ -181,6 +187,18 @@ impl EstadoDePocoes {
 
 #[cfg(test)]
 mod testes {
+
+    /// Pocao de vida, mana e vigor da loja do NPC custa cobre; equipamento, ouro.
+    #[test]
+    fn pocao_se_compra_com_cobre() {
+        use crate::constants::item_id;
+        for id in [item_id::HEALTH_POTION, item_id::MANA_POTION, item_id::GREATER_HEAL] {
+            assert!(compra_com_cobre(id), "{id} deveria custar cobre");
+        }
+        assert!(!compra_com_cobre(401), "katana continua em ouro");
+        assert!(!compra_com_cobre(item_id::COPPER));
+    }
+
     use super::*;
 
     #[test]

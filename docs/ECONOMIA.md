@@ -137,7 +137,10 @@ dinheiro se encontram é a troca TP↔gold — e ela não cria nada, só move.
 - **TP compra na loja de cash**: montaria, skins de armadura e de arma, pets,
   livros de habilidade de pet e de montaria, e pedras de refino. As skins
   ficam presas ao personagem (ver `docs/PERSONAGEM.md`).
-- **Gold é gasto** em refino, upgrade, poção, item e na taxa do mercado.
+- **Gold é gasto** em refino, upgrade, item e na taxa do mercado.
+- **Poção de vida, mana e vigor se compra com cobre** na loja do NPC (decisão do
+  dono, 17/09/2026): o mesmo número de `items.buy_price`, pago com o Cobre da
+  bolsa (`shared::pocoes::compra_com_cobre`). Equipamento continua em gold.
 - **TP se vende no mercado por gold.** É assim que quem paga consegue gold, e
   quem não paga consegue TP. **Todo o resto do mercado é em gold: o gold é a
   moeda principal do jogo.**

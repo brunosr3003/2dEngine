@@ -12730,11 +12730,17 @@ impl GameWorld {
         let new_hp_max: Option<i32> = {
             let Some(session) = self.sessions.get_mut(&sid) else { return };
 
-            // 2a) Verifica gold (currency, não item)
-            if session.gold < price as u64 {
+            // 2a) Tem com que pagar? Pocao e' em COBRE (item na bolsa); o
+            // resto, em ouro (moeda).
+            let com_cobre = shared::pocoes::compra_com_cobre(item_id);
+            let cobre: u64 = session.inventory.iter()
+                .filter(|sl| sl.item_id == shared::item_id::COPPER && sl.instance.is_none())
+                .map(|sl| sl.qty as u64).sum();
+            let (tem, moeda) = if com_cobre { (cobre, "cobre") } else { (session.gold, "ouro") };
+            if tem < price as u64 {
                 let _ = session.handle.to_client.send(ServerMessage::Chat {
                     from: "SHOP".into(),
-                    text: format!("need {price} gold"),
+                    text: format!("Faltam {} de {moeda} ({price} por unidade).", price as u64 - tem),
                 });
                 return;
             }
@@ -12765,14 +12771,19 @@ impl GameWorld {
                 return;
             }
 
-            // 2c) Cobra gold (currency)
-            session.gold = session.gold.saturating_sub(price as u64);
+            // 2c) Cobra: cobre sai da bolsa, ouro da moeda.
+            if com_cobre {
+                crate::craft::consumir(&mut session.inventory, shared::item_id::COPPER, price);
+                crate::telemetria::conta("cobre_ralo", "loja", price as i64);
+            } else {
+                session.gold = session.gold.saturating_sub(price as u64);
+                crate::telemetria::conta("ouro_ralo", "loja", price as i64);
+            }
             session.inventory_dirty = true;
-            crate::telemetria::conta("ouro_ralo", "loja", price as i64);
             crate::telemetria::conta("loja_compra", item_id, 1);
             let _ = session.handle.to_client.send(ServerMessage::Chat {
                 from: "SHOP".into(),
-                text: format!("bought item {item_id} for {price} gold"),
+                text: format!("Comprado por {price} de {moeda}."),
             });
             new_max
         };

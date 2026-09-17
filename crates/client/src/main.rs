@@ -3329,7 +3329,10 @@ impl Jogo {
                 .and_then(|id| self.world.ents.get(&id))
                 .and_then(|e| e.meta.name.clone())
                 .unwrap_or_else(|| "Loja".into());
-            for pedido in self.loja.desenha(&self.bolsa.nomes, self.bolsa.ouro, &nome) {
+            let cobre: u64 = self.bolsa.slots.iter()
+                .filter(|s| s.item_id == shared::item_id::COPPER && s.instance.is_none())
+                .map(|s| s.qty as u64).sum();
+            for pedido in self.loja.desenha(&self.bolsa.nomes, self.bolsa.ouro, cobre, &nome) {
                 self.envia(pedido);
             }
         }

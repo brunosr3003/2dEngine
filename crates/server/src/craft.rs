@@ -14,7 +14,7 @@ pub fn tem(inv: &[InventorySlot], id: u16) -> u32 {
     inv.iter().filter(|s| s.item_id == id && s.instance.is_none() && s.qty > 0).map(|s| s.qty).sum()
 }
 
-fn consumir(inv: &mut [InventorySlot], id: u16, mut qty: u32) {
+pub(crate) fn consumir(inv: &mut [InventorySlot], id: u16, mut qty: u32) {
     for s in inv.iter_mut() {
         if qty == 0 {
             break;
