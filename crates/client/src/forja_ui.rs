@@ -98,6 +98,12 @@ impl Forja {
         self.aberto = true;
     }
 
+    /// Abre com a peca `alvo` ja' escolhida (o "Refinar" do cartao da bolsa).
+    pub fn abrir_em(&mut self, alvo: shared::protocol::AlvoDaForja) {
+        self.sel = Some(alvo);
+        self.aberto = true;
+    }
+
     pub fn fechar(&mut self) {
         self.aberto = false;
     }

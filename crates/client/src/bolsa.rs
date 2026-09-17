@@ -98,6 +98,8 @@ pub struct Bolsa {
     aviso: Option<(String, f64)>,
     /// Lupa tocada no cartao do item: o item pro "Onde obter".
     pub onde_obter: Option<u16>,
+    /// "Refinar +N" tocado no cartao: a peca pra Forja abrir ja' escolhida.
+    pub refinar: Option<shared::protocol::AlvoDaForja>,
 }
 
 impl Default for Bolsa {
@@ -115,6 +117,7 @@ impl Default for Bolsa {
             clique: (0.0, None),
             aviso: None,
             onde_obter: None,
+            refinar: None,
         }
     }
 }
@@ -678,7 +681,6 @@ impl Bolsa {
 
         // acoes
         let by = r.y + r.h - 50.0;
-        let bw = (r.w - 48.0) * 0.5;
         let principal = match sel {
             Sel::Equip(s) => Some(("Desequipar", Acao::Desequipar(s))),
             Sel::Inv(i) => match t {
@@ -688,12 +690,32 @@ impl Bolsa {
             },
         };
         let mut acao = None;
+        // Uma fileira so': [acao principal] [Refinar +N] [Fechar]. No celular
+        // o cartao e' baixo e uma segunda fileira cobriria os atributos.
+        // Refinar so' em peca com atributos rolados, e leva pra Forja com ela
+        // ja' escolhida.
+        let bw3 = (r.w - 32.0 - 16.0) / 3.0;
+        let coluna = |k: f32| Rect::new(r.x + 16.0 + k * (bw3 + 8.0), by, bw3, 36.0);
         if let Some((rot, a)) = principal {
-            if ui::botao(Rect::new(r.x + 16.0, by, bw, 36.0), rot, true) {
+            if ui::botao(coluna(0.0), rot, true) {
                 acao = Some(a);
             }
         }
-        if ui::botao(Rect::new(r.x + r.w - 16.0 - bw, by, bw, 36.0), "Fechar", true) {
+        if let Some(i) = peca.inst {
+            let (rot, pode) = if i.refinement >= shared::forja::REFINO_MAX {
+                ("Refino máx.".to_string(), false)
+            } else {
+                (format!("Refinar +{}", i.refinement + 1), true)
+            };
+            if ui::botao(coluna(1.0), &rot, pode) {
+                self.refinar = Some(match sel {
+                    Sel::Inv(i) => shared::protocol::AlvoDaForja::Bolsa(i as u16),
+                    Sel::Equip(s) => shared::protocol::AlvoDaForja::Equipado(s),
+                });
+                self.sel = None;
+            }
+        }
+        if ui::botao(coluna(2.0), "Fechar", true) {
             self.sel = None;
         }
         acao

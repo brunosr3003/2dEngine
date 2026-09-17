@@ -3400,6 +3400,10 @@ impl Jogo {
         }
         // A bolsa por cima do mundo.
         let pedido_da_bolsa = if onde { None } else { self.bolsa.desenha(&self.vox, &self.solido) };
+        if let Some(alvo) = self.bolsa.refinar.take() {
+            self.fecha_paineis();
+            self.forja.abrir_em(alvo);
+        }
         if let Some(pedido) = pedido_da_bolsa {
             // Pocao de efeito ja' ativa: pergunta antes de jogar fora o tempo
             // que resta (o servidor renova a hora cheia, nao soma).
