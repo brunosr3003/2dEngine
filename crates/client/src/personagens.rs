@@ -6,6 +6,24 @@ use crate::{hud_estilo as ui, render3d, vox::VoxCache};
 
 pub enum Acao { Enviar(ClientMessage), Voltar }
 
+/// A ilha de verdade atras da tela de personagens.
+struct Fundo {
+    terreno: crate::terreno::Terreno,
+    casas: crate::construcoes::Construcoes,
+    /// Centro da cidade: com casas o fundo le' como um LUGAR, nao so' morro.
+    centro: Vec2,
+}
+
+impl Fundo {
+    fn novo() -> Option<Self> {
+        let def=shared::terreno::def_da_zona("ilha_inicial")?;
+        let ger=shared::terreno::Gerador::novo(def.semente,def.raio_blocos,def.bioma,shared::terreno::ESCALA_ALTURA);
+        // O Vec2 do shared e' de outra versao do glam.
+        let centro=ger.cidade().map(|c|{let p=c.centro();vec2(p.x,p.y)}).unwrap_or(Vec2::ZERO);
+        Some(Self{terreno:crate::terreno::Terreno::novo(def),casas:crate::construcoes::Construcoes::para(Some(def)),centro})
+    }
+}
+
 #[derive(Default)]
 pub struct Personagens {
     pub criando: bool,
@@ -19,6 +37,8 @@ pub struct Personagens {
     giro: f32,
     mouse_anterior: Option<Vec2>,
     saida_previa: Option<RenderTarget>,
+    fundo: Option<Fundo>,
+    fundo_tentado: bool,
 }
 
 pub fn valida_nome(nome: &str) -> Result<&str,&'static str> {
@@ -71,7 +91,18 @@ impl Personagens {
         digitado: &[char], vox: &VoxCache, solido: &Material) -> Option<Acao> {
         let w=screen_width();let h=screen_height();
         self.camera_ui();
-        clear_background(Color::new(0.026,0.041,0.063,1.0));
+        if self.saida_previa.is_none() {
+            // Mesmo ceu do jogo: o que sobrar de vao no horizonte le' como ceu,
+            // e nao como buraco escuro na malha.
+            render3d::clear();
+            self.desenha_mundo(solido);
+            self.camera_ui();
+            // Veu em degrade: escuro em cima, atras do titulo, mais leve embaixo
+            // pra ilha aparecer. A ilha e' cenario; o que se le' e' a interface.
+            ui::ret_gradiente(Rect::new(0.0,0.0,w,h),1.0,Color::new(0.012,0.018,0.030,0.80),Color::new(0.012,0.018,0.030,0.40));
+        } else {
+            clear_background(Color::new(0.026,0.041,0.063,1.0));
+        }
         for i in 0..20 {
             let x=(i as f32*157.3+get_time() as f32*(3.0+(i%3) as f32))%w;
             let y=(i as f32*89.7)%h;
@@ -227,6 +258,47 @@ impl Personagens {
         None
     }
 
+    /// A ilha de verdade atras da interface, girando devagar em volta da cidade.
+    ///
+    /// Na TELA, nao num render target: no iPhone area 3D em render target
+    /// saia vazia (sem profundidade). O retrato do boneco vem depois e limpa
+    /// so' a profundidade, entao fica por cima sem brigar com o chao. So' e'
+    /// chamado fora do modo de exportacao, que e' render target.
+    fn desenha_mundo(&mut self, solido: &Material) {
+        if !self.fundo_tentado {
+            self.fundo_tentado=true;
+            self.fundo=Fundo::novo();
+        }
+        let Some(f)=self.fundo.as_mut() else { return };
+        let t=get_time() as f32;
+        // A vila e' assada numa thread; sem recolher aqui as malhas nunca ficam
+        // prontas e nenhuma casa aparece (o jogo faz isso todo quadro, em main).
+        f.casas.acompanhar();
+        // O chao chega aos poucos, como no jogo: orcamento por quadro. Raio 11
+        // (176 unidades) cobre o que esta camera enxerga.
+        f.terreno.atualiza(f.centro,11,4);
+        let giro=t*0.04;
+        let chao=f.terreno.altura(f.centro.x,f.centro.y);
+        // ~33 graus e LONGE da vila. Perto demais, a casa no caminho da orbita
+        // entrava no quadro como um telhado gigante cortado atras do boneco; de
+        // mais longe as casas ficam do tamanho de cenario.
+        let cam=Camera3D{
+            position:vec3(f.centro.x+giro.sin()*70.0,chao+46.0,f.centro.y+giro.cos()*70.0),
+            target:vec3(f.centro.x,chao+3.0,f.centro.y),
+            up:Vec3::Y,
+            fovy:45f32.to_radians(),
+            ..Default::default()
+        };
+        set_camera(&cam);
+        gl_use_material(solido);
+        solido.set_uniform("Recorte",Vec3::ZERO);
+        solido.set_uniform("RecorteZ",0.0f32);
+        f.terreno.desenha(&cam);
+        f.casas.desenha(&cam,None);
+        crate::agua::desenha(&f.terreno,&cam,t);
+        gl_use_default_material();
+    }
+
     fn camera_ui(&self) {
         if let Some(rt)=&self.saida_previa {
             let mut c=Camera2D::from_display_rect(Rect::new(0.0,0.0,screen_width(),screen_height()));
@@ -246,7 +318,10 @@ impl Personagens {
     /// caminho aqui, igual em todas as plataformas.
     fn desenha_retrato(&mut self, r: Rect, conjunto: Conjunto, vox: &VoxCache, solido: &Material) {
         let area=Rect::new(r.x,r.y,r.w.max(1.0),(r.h-84.0).max(1.0));
-        draw_rectangle(area.x,area.y,area.w,area.h,Color::new(0.026,0.041,0.063,1.0));
+        // Com a ilha atras, o retrato e' translucido: o boneco aparece de pe'
+        // na frente do mundo. Na exportacao nao ha' mundo, entao fica opaco.
+        let opaco=if self.saida_previa.is_none() {0.22} else {1.0};
+        draw_rectangle(area.x,area.y,area.w,area.h,Color::new(0.026,0.041,0.063,opaco));
         let mouse=Vec2::from(mouse_position());
         if is_mouse_button_down(MouseButton::Left) && r.contains(mouse) {
             if let Some(antes)=self.mouse_anterior {self.giro+=(mouse.x-antes.x)*0.012;}
