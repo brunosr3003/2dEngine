@@ -75,7 +75,12 @@ pub struct DungeonUi {
     inst: Option<Inst>,
     resultado: Option<Resultado>,
     aviso: Option<(String, bool, f64)>,
+    /// AUTO DUNGEON ligado (a linha de missao abaixo da faixa).
+    pub auto: bool,
 }
+
+/// Altura da linha de missao da instancia (antes do fator de texto).
+const MISSAO_H: f32 = 40.0;
 
 fn mmss(s: u32) -> String {
     format!("{:02}:{:02}", s / 60, s % 60)
@@ -116,6 +121,22 @@ impl DungeonUi {
         self.inst.is_some()
     }
 
+    /// O que o AUTO DUNGEON precisa saber da instancia (sem o bau, que vem do
+    /// mundo).
+    pub fn estado_auto(&self, agora: f64) -> Option<crate::auto_dungeon::Estado> {
+        let i = self.inst.as_ref()?;
+        let caido = i.reviver_em_s.is_some();
+        let reviver_pronto = i.reviver_em_s.is_some_and(|s| agora - i.recebido >= s as f64);
+        let r = self.resultado.as_ref();
+        Some(crate::auto_dungeon::Estado {
+            caido,
+            reviver_pronto,
+            vitoria: i.concluida || r.is_some_and(|r| r.vitoria),
+            bau_aberto: r.is_some_and(|r| r.bau.is_some()),
+            bau: None,
+        })
+    }
+
     /// Janela, pronto-check ou resultado na frente: o clique nao e' do mundo.
     pub fn pega_mouse(&self) -> bool {
         if self.aberto || self.pronto.is_some() || self.resultado.as_ref().is_some_and(|r| !r.fechado) {
@@ -124,7 +145,7 @@ impl DungeonUi {
         let m = Vec2::from(mouse_position());
         let caido = self.inst.as_ref().is_some_and(|i| i.reviver_em_s.is_some());
         let (faixa, porta, reviver) = Self::rects_da_instancia();
-        self.inst.is_some() && (faixa.contains(m) || porta.contains(m) || (caido && reviver.contains(m)))
+        self.inst.is_some() && (faixa.contains(m) || porta.contains(m) || Self::missao_rect().contains(m) || (caido && reviver.contains(m)))
     }
 
     /// O que o servidor mandou. Devolve pedidos de volta (raro).
@@ -170,6 +191,7 @@ impl DungeonUi {
                 }
             }
             Aviso::Saiu => {
+                self.auto = false;
                 self.inst = None;
                 self.resultado = None;
                 return vec![pedir(Pedido::Estado)];
@@ -465,13 +487,21 @@ impl DungeonUi {
 
     // ─────────────────────────────── instancia ───────────────────────────────
 
+    /// A linha de missao "Completar ..." entre a faixa e a porta. Tocar liga
+    /// e desliga o AUTO DUNGEON.
+    fn missao_rect() -> Rect {
+        let f = estilo::fator_texto();
+        let (faixa, _, _) = Self::rects_da_instancia();
+        Rect::new(faixa.x, faixa.y + faixa.h + 6.0 * f, faixa.w, MISSAO_H * f)
+    }
+
     /// (faixa do alto, porta de sair, botao de reviver).
     fn rects_da_instancia() -> (Rect, Rect, Rect) {
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
         let w = (540.0 * f).min(seguro.w - 32.0);
         let faixa = Rect::new(seguro.center().x - w * 0.5, seguro.y + 104.0 * f, w, 56.0 * f);
-        let porta = Rect::new(faixa.center().x - 60.0 * f, faixa.y + faixa.h + 6.0 * f, 120.0 * f, 34.0 * f);
+        let porta = Rect::new(faixa.center().x - 60.0 * f, faixa.y + faixa.h + 6.0 * f + MISSAO_H * f + 6.0 * f, 120.0 * f, 34.0 * f);
         let reviver = Rect::new(seguro.center().x - 130.0 * f, seguro.center().y + 20.0 * f, 260.0 * f, 48.0 * f);
         (faixa, porta, reviver)
     }
@@ -492,6 +522,23 @@ impl DungeonUi {
         };
         let cor = if !i.concluida && restante < 60 { estilo::VERMELHO } else { estilo::TEXTO };
         estilo::texto_ajustado(&linha, faixa.x + 12.0 * f, faixa.y + 44.0 * f, faixa.w - 24.0 * f, 13, cor);
+        // ── a missao: completar a dungeon no automatico ──
+        let missao = Self::missao_rect();
+        let sobre = missao.contains(Vec2::from(mouse_position()));
+        let cor = if self.auto { estilo::AUTO } else { estilo::OURO };
+        estilo::painel(missao);
+        draw_rectangle(missao.x, missao.y, missao.w, missao.h, Color::new(cor.r, cor.g, cor.b, if sobre { 0.16 } else { 0.08 }));
+        let c = vec2(missao.x + 16.0 * f, missao.center().y);
+        draw_poly(c.x, c.y, 4, 6.0 * f, 0.0, cor);
+        let feito = if i.andares == 0 { 0.0 } else { (i.andar.min(i.andares) as f32 + if i.concluida { 1.0 } else { 0.0 }) / (i.andares + 1) as f32 };
+        let rotulo = if self.auto { "› AUTO" } else { "Toque: AUTO" };
+        let rw = estilo::medir(rotulo, 13) + 16.0 * f;
+        estilo::texto_ajustado(&format!("Completar {}", nome_do_conteudo(i.conteudo)), missao.x + 30.0 * f, missao.y + missao.h * 0.5 + 5.0 * f, missao.w - rw - 44.0 * f, 14, estilo::TEXTO);
+        estilo::texto(missao.x + missao.w - rw, missao.y + missao.h * 0.5 + 5.0 * f, rotulo, 13, cor);
+        draw_rectangle(missao.x + 2.0, missao.y + missao.h - 3.0 * f, (missao.w - 4.0) * feito, 2.0 * f, cor);
+        if sobre && is_mouse_button_pressed(MouseButton::Left) {
+            self.auto = !self.auto;
+        }
         if botao(porta, "Sair", true, false) {
             saida.push(pedir(Pedido::Sair));
         }

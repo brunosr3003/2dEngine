@@ -35,6 +35,11 @@ mod forja_ui;
 mod ganhos;
 mod missoes;
 mod auto_missao;
+mod auto_dungeon;
+
+/// Pedacos de terreno em volta do jogador que precisam existir pra tela de
+/// carregando sair (3 = 7x7, mais que a camera enxerga de perto).
+const RAIO_DO_CARREGANDO: i32 = 3;
 mod auto_coleta;
 mod dialogo;
 mod construcoes;
@@ -196,6 +201,11 @@ struct Jogo {
     missoes: missoes::Missoes,
     /// Clicou numa missao do rastreador: o personagem vai sozinho.
     auto_missao: auto_missao::AutoMissao,
+    /// AUTO DUNGEON: ultimo pedido mandado e quando o bau abriu.
+    auto_dungeon_envio: f64,
+    /// Tela de carregando: desde quando (entrou no mundo ou foi teleportado).
+    carregando_desde: Option<f64>,
+    auto_dungeon_bau_em: Option<f64>,
     /// X: fica coletando no melhor spot perto.
     auto_coleta: auto_coleta::AutoColeta,
     /// Toque longo no AUTO COLETA e na barra de itens: o que no PC e' o botao
@@ -438,6 +448,9 @@ async fn main() {
         coleta_auto_estava: false,
         missoes: missoes::Missoes::default(),
         auto_missao: auto_missao::AutoMissao::default(),
+        auto_dungeon_envio: 0.0,
+        carregando_desde: None,
+        auto_dungeon_bau_em: None,
         auto_coleta: auto_coleta::AutoColeta::default(),
         toque_coleta: toque::ToqueLongo::default(),
         toque_barra: toque::ToqueLongo::default(),
@@ -627,6 +640,7 @@ impl Jogo {
                 self.teclas_de_acao();
             }
             self.acompanhar_loja();
+            self.conduzir_auto_dungeon();
             self.atualizar_auto_combate();
             self.usar_habilidade();
             self.auto_da_barra();
@@ -664,13 +678,19 @@ impl Jogo {
             self.sincroniza_preferencias();
             self.medir_rede();
             // Com o modo economia ligado nada e' desenhado: malha nova espera.
+            if std::mem::take(&mut self.world.salto_do_eu) {
+                self.comecar_carregando();
+            }
+            let carregando = self.carregando_desde.is_some();
             if let Some(t) = self.terreno.as_mut().filter(|_| !eco_ativa) {
                 let centro = self.world.self_pos().unwrap_or(Vec2::ZERO);
                 // Raio 4 cobre 128 unidades — mais que a camera alcanca. O
                 // orcamento de 3 por quadro existe pra o mundo aparecer em
-                // duas piscadas em vez de travar meio segundo.
-                t.atualiza(centro, 5, 4);
+                // duas piscadas em vez de travar meio segundo. Atras da tela
+                // de carregando ninguem ve' a trava: gera muito mais.
+                t.atualiza(centro, 5, if carregando { 40 } else { 4 });
             }
+            self.acompanhar_carregando();
         }
     }
 
@@ -822,7 +842,16 @@ impl Jogo {
             ServerMessage::FilaDeEntrada { posicao, total } => {
                 self.tela = Tela::Fila { posicao, total };
             }
-            ServerMessage::LoginOk { .. } => self.tela = Tela::Jogando,
+            ServerMessage::LoginOk { .. } => {
+                self.tela = Tela::Jogando;
+                self.comecar_carregando();
+                // Caminho do teste automatizado (como o `MMO_CHAR`): entra
+                // sozinho na dungeon pedida e liga o AUTO DUNGEON la' dentro.
+                if let Some(c) = std::env::var("MMO_TESTE_DUNGEON").ok().and_then(|v| v.parse::<u16>().ok()) {
+                    self.envia(ClientMessage::Dungeon { pedido: shared::dungeon::Pedido::EntrarSolo { conteudo: c } });
+                    self.dungeon.auto = true;
+                }
+            }
             // Pedra de minerio: a pedra nasce da semente dos dois lados, entao
             // o que o servidor manda e' so' QUAL sumiu. Sem isso o veio
             // limpo continuaria brilhando e o jogador nao teria como saber
@@ -1482,7 +1511,51 @@ impl Jogo {
     /// depois de encostar num botao nascia marcado como "no HUD" — e, como o
     /// `gesto_camera` le' isso uma vez so', no encosto, aquele arrasto nunca
     /// virava giro. Ficava so' a pinca, que nem consulta o HUD.
+    /// Entrou no mundo ou foi teleportado: a tela de carregando cobre ate' o
+    /// chao em volta existir. Sem ela o boneco aparecia no ar, caindo num
+    /// buraco de ceu enquanto o terreno nascia aos poucos.
+    fn comecar_carregando(&mut self) {
+        if self.carregando_desde.is_none() {
+            println!("[carregando] comecou em {:?}", self.world.self_pos());
+        }
+        self.carregando_desde = Some(get_time());
+        self.cam_altura = f32::MIN;
+    }
+
+    /// Quanto do chao em volta ja' existe (0..1), pra barra.
+    fn progresso_do_carregando(&self) -> f32 {
+        let Some(eu) = self.world.self_pos() else { return 0.0 };
+        let (feitos, total) = self.terreno.as_ref().map_or((1, 1), |t| t.prontos_em(eu, RAIO_DO_CARREGANDO));
+        let vila = if self.construcoes.prontas() { 1.0 } else { 0.0 };
+        (feitos as f32 / total.max(1) as f32) * 0.85 + vila * 0.15
+    }
+
+    fn acompanhar_carregando(&mut self) {
+        let Some(desde) = self.carregando_desde else { return };
+        let passou = get_time() - desde;
+        let pronto = self.world.self_pos().is_some() && self.progresso_do_carregando() >= 1.0;
+        // Minimo curto pra nao piscar; teto pra nunca prender o jogador.
+        if (pronto && passou >= 0.35) || passou >= 10.0 {
+            println!("[carregando] acabou em {passou:.2} s ({})", if pronto { "chao pronto" } else { "teto de 10 s" });
+            self.carregando_desde = None;
+            self.cam_altura = f32::MIN;
+        }
+    }
+
+    fn desenhar_carregando(&self) {
+        ui::fundo();
+        let (w, h) = (screen_width(), screen_height());
+        let c = vec2(w * 0.5, h * 0.5);
+        ui::texto_centro(c.x, c.y - 18.0, "Carregando…", 26, ui::OURO);
+        let bw = (w * 0.4).clamp(220.0, 420.0);
+        let barra = Rect::new(c.x - bw * 0.5, c.y + 6.0, bw, 8.0);
+        ui::barra(barra, self.progresso_do_carregando());
+    }
+
     fn ui_pega_em(&self, m: Vec2) -> bool {
+        if self.carregando_desde.is_some() {
+            return true;
+        }
         if self.confirmar.is_some() {
             return true;
         }
@@ -2344,6 +2417,77 @@ impl Jogo {
         self.envia(ClientMessage::SkillCast { skill_id: id });
     }
 
+    /// AUTO DUNGEON (`auto_dungeon`): revive, luta, abre o bau e sai.
+    fn conduzir_auto_dungeon(&mut self) {
+        use auto_dungeon::Passo;
+        let agora = get_time();
+        if !self.dungeon.auto {
+            self.auto_dungeon_bau_em = None;
+            return;
+        }
+        // Fora da instancia so' espera: sair dela (`Aviso::Saiu`) ja' desliga.
+        let (Some(mut estado), Some(eu)) = (self.dungeon.estado_auto(agora), self.world.self_pos()) else {
+            return;
+        };
+        let bau = self.world.ents.iter()
+            .find(|(_, e)| e.meta.tag == shared::EntityTag::Npc && shared::npc_papel_de_kind(e.meta.kind) == shared::dungeon::PAPEL_BAU)
+            .map(|(id, e)| (*id, e.render_pos));
+        estado.bau = bau.map(|b| b.1);
+        if estado.bau_aberto && self.auto_dungeon_bau_em.is_none() {
+            self.auto_dungeon_bau_em = Some(agora);
+        }
+        let passo = auto_dungeon::decide(estado, eu, self.auto_dungeon_bau_em.map(|t| agora - t));
+        // Pedido pro servidor no maximo 1 por segundo; o combate e' por quadro.
+        let pode_enviar = agora - self.auto_dungeon_envio >= 1.0;
+        match passo {
+            Passo::Esperar => {}
+            Passo::Reviver if pode_enviar => {
+                self.auto_dungeon_envio = agora;
+                self.envia(ClientMessage::Dungeon { pedido: shared::dungeon::Pedido::Reviver });
+            }
+            Passo::Lutar => {
+                // O auto combate de sempre, com a area indo junto: a arena e'
+                // maior que o raio dele.
+                if !self.auto_combate.ativo() {
+                    self.mapa.viagem.cancelar();
+                    self.auto_coleta.parar();
+                    self.auto_missao.parar();
+                    self.ir_para.parar();
+                    self.auto_combate.ligar(eu);
+                }
+                self.auto_combate.centro = Some(eu);
+                // Nenhum no alcance do auto combate: anda ate' o mais perto.
+                if self.alvo.is_none() && pode_enviar {
+                    let perto = self.world.ents.values()
+                        .filter(|e| e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none())
+                        .map(|e| e.render_pos)
+                        .min_by(|a, b| a.distance_squared(eu).total_cmp(&b.distance_squared(eu)));
+                    if let Some(p) = perto {
+                        self.auto_dungeon_envio = agora;
+                        self.envia(ClientMessage::MoverPara { x: p.x, z: p.y });
+                    }
+                }
+            }
+            Passo::IrAoBau { perto } if pode_enviar => {
+                self.auto_combate.parar();
+                self.auto_dungeon_envio = agora;
+                if let Some((id, p)) = bau {
+                    if perto {
+                        self.envia(ClientMessage::Interact { target_eid: Some(id.0 as u64) });
+                    } else {
+                        self.envia(ClientMessage::MoverPara { x: p.x, z: p.y });
+                    }
+                }
+            }
+            Passo::Sair if pode_enviar => {
+                self.auto_dungeon_envio = agora;
+                self.dungeon.auto = false;
+                self.envia(ClientMessage::Dungeon { pedido: shared::dungeon::Pedido::Sair });
+            }
+            _ => {}
+        }
+    }
+
     fn atualizar_auto_combate(&mut self) {
         let movimento=self.andando_na_mao();
         let clique_mundo=self.clique_no_mundo() && !self.ui_pega_mouse();
@@ -2353,6 +2497,8 @@ impl Jogo {
         let esc=is_key_pressed(KeyCode::Escape) && !self.esc_consumido;
         if self.auto_combate.ativo() && (esc || alterna) {
             self.auto_combate.parar();
+            // Desligar o combate na mao desliga tambem o AUTO DUNGEON, que o religaria.
+            self.dungeon.auto = false;
             // Desligar o combate a mao desliga a auto missao que dependia dele.
             if alterna || esc {
                 self.auto_missao.parar();
@@ -2794,7 +2940,12 @@ impl Jogo {
     fn desenhar(&mut self) {
         match &self.tela {
             Tela::Jogando if self.economia.ativa => self.desenhar_economia(),
-            Tela::Jogando => self.desenhar_mundo(),
+            Tela::Jogando => {
+                self.desenhar_mundo();
+                if self.carregando_desde.is_some() {
+                    self.desenhar_carregando();
+                }
+            }
             Tela::Servidores => self.tela_servidores(),
             Tela::Login => self.tela_login(),
             Tela::Personagens => self.tela_personagens(),

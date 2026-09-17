@@ -24,6 +24,9 @@ fn mq(v: ::glam::Vec2) -> Vec2 {
 /// tranco; menor = mais macio e mais atrasado. 18 da ~90% do caminho em 130ms,
 /// que cobre o intervalo de 33ms entre snapshots com folga.
 const SMOOTH_K: f32 = 18.0;
+/// Acima disto, entre dois ticks, a posicao nova e' teleporte e nao passo.
+/// Montado a toda (7,5 u/s) com um segundo de engasgo de rede da' 7,5.
+pub const SALTO_DE_TELEPORTE: f32 = 15.0;
 /// Abaixo disto a entidade e' considerada parada.
 const MOVING_EPS: f32 = 0.05;
 /// Velocidade de SUBIR DEGRAU, em unidades por segundo.
@@ -160,6 +163,9 @@ pub struct World {
     /// Ordem estavel de desenho (y crescente) recalculada por quadro.
     order: Vec<EntityId>,
     pub self_id: Option<EntityId>,
+    /// O proprio jogador foi TELEPORTADO neste tick (renascer, dungeon, troca
+    /// de area): o `main` mostra o carregando. Quem le' zera.
+    pub salto_do_eu: bool,
 }
 
 /// Distancia, em unidades, de um ciclo inteiro de passo (dois passos).
@@ -325,6 +331,18 @@ impl World {
             // desliza do canto do mundo ate o lugar dela.
             if ent.state.pos == [0, 0] {
                 ent.render_pos = mq(st.pos_f32());
+            } else if mq(st.pos_f32()).distance(ent.render_pos) > SALTO_DE_TELEPORTE {
+                // Longe demais pra ser andar: e' teleporte. Vai direto e no
+                // CHAO — deslizando, o boneco atravessava o mapa voando e caia
+                // do alto de onde estava.
+                ent.render_pos = mq(st.pos_f32());
+                ent.render_y = f32::MIN;
+                ent.voando = false;
+                ent.vel_y = 0.0;
+                ent.rastro.clear();
+                if st.flags & ent_flags::SELF != 0 {
+                    self.salto_do_eu = true;
+                }
             }
             if st.flags & ent_flags::SELF != 0 {
                 self.self_id = Some(st.id);
@@ -630,6 +648,38 @@ mod testes {
         }
         assert!((w.ents[&EntityId(1)].yaw - q).abs() < 0.05, "chegou no rumo do fio");
         assert!(w.ents[&EntityId(2)].yaw.abs() < 1e-4, "o proprio nao segue o fio");
+    }
+
+    /// Teleporte (renascer, dungeon, troca de area) vai DIRETO e no chao, e o
+    /// do proprio jogador avisa o carregando. Passo normal continua suave.
+    #[test]
+    fn teleporte_nao_desliza_e_avisa_o_carregando() {
+        let mut w = World::default();
+        let id = EntityId(7);
+        let estado = |x: f32| {
+            let mut st = EntityState::quantize(id, ::glam::Vec2::new(x, 0.0), ::glam::Vec2::ZERO, 100, 0);
+            st.flags = ent_flags::SELF;
+            st
+        };
+        w.apply(vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0, nivel: 1 }], vec![estado(1.0)], &[]);
+        for _ in 0..30 {
+            w.tick(1.0 / 60.0, &|_, _| 0.0);
+        }
+        assert!(!std::mem::take(&mut w.salto_do_eu), "entrar no mundo nao e' teleporte");
+        // Um passo: suave.
+        w.apply(vec![], vec![estado(2.0)], &[]);
+        w.tick(1.0 / 60.0, &|_, _| 0.0);
+        assert!(w.ents[&id].render_pos.x < 1.9 && !w.salto_do_eu, "passo curto desliza");
+        // Teleporte: direto, no chao do lugar novo.
+        for _ in 0..60 {
+            w.tick(1.0 / 60.0, &|_, _| 0.0);
+        }
+        w.apply(vec![], vec![estado(300.0)], &[]);
+        assert!(w.salto_do_eu, "teleporte do proprio avisa o carregando");
+        w.tick(1.0 / 60.0, &|_, _| 12.0);
+        let e = &w.ents[&id];
+        assert!((e.render_pos.x - 300.0).abs() < 0.1, "foi direto: {:?}", e.render_pos);
+        assert!((e.render_y - 12.0).abs() < 0.01 && !e.voando, "no chao, sem cair: {}", e.render_y);
     }
 
     #[test]

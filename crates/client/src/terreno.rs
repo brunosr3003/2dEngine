@@ -310,6 +310,19 @@ impl Terreno {
         }
     }
 
+    /// Quantos pedacos em volta de `centro` (ate' `raio`) ja' existem, e de
+    /// quantos. E' o que a tela de carregando espera.
+    pub fn prontos_em(&self, centro: Vec2, raio: i32) -> (usize, usize) {
+        let (ccx, ccz) = self.pedaco_de(centro);
+        let mut feitos = 0;
+        for dz in -raio..=raio {
+            for dx in -raio..=raio {
+                feitos += self.pedacos.contains_key(&(ccx + dx, ccz + dz)) as usize;
+            }
+        }
+        (feitos, ((2 * raio + 1) * (2 * raio + 1)) as usize)
+    }
+
     /// Desenha so' o que a camera alcanca.
     ///
     /// O raio de geracao existe pra o mundo ja' estar pronto quando o jogador

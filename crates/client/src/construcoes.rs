@@ -121,6 +121,11 @@ impl Construcoes {
         Self { rx: Some(rx), prontas: Vec::new() }
     }
 
+    /// A vila ja' foi assada (ou nao ha' vila).
+    pub fn prontas(&self) -> bool {
+        self.rx.is_none() || !self.prontas.is_empty()
+    }
+
     pub fn acompanhar(&mut self) {
         let Some(rx) = &self.rx else { return };
         let Ok(assadas) = rx.try_recv() else { return };
