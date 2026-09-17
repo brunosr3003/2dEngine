@@ -5005,6 +5005,18 @@ impl GameWorld {
     /// Mantém a população de peixes perto dos players, move (wander + atração
     /// leve pela boia), e detecta a fisgada (peixe encosta na boia → FishingBite).
     fn tick_fish(&mut self, dt: f32) {
+        // Desligado a pedido do dono (17/09/2026): o peixe nasce pelo mapa de
+        // TILES antigo, que nao sabe onde fica a agua da ilha, e saia andando
+        // em terra como cubo cinza (o cliente nao tem modelo de peixe). Volta
+        // quando a pesca for refeita sobre o relevo. Os que ja' existem somem.
+        if !PEIXES_LIGADOS {
+            let peixes: Vec<(Entity, EntityId)> = self.ecs.query::<(&NetId, &FishTag)>().iter().map(|(e, (n, _))| (e, n.0)).collect();
+            for (e, eid) in peixes {
+                let _ = self.ecs.despawn(e);
+                self.removed_this_tick.push(eid);
+            }
+            return;
+        }
         // Centros = posições dos players logados (âncora pra spawn/cull).
         let mut centers: Vec<Vec2> = Vec::new();
         for s in self.sessions.values() {
@@ -15173,3 +15185,6 @@ mod impacto_tests {
         }
     }
 }
+
+/// Peixes do oceano (`tick_fish`). Desligados: ver o comentario la'.
+const PEIXES_LIGADOS: bool = false;
