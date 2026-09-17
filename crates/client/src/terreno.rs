@@ -23,6 +23,8 @@ use std::collections::HashMap;
 use macroquad::models::{Mesh, Vertex};
 use macroquad::prelude::*;
 
+use crate::gpu_estatica::MalhaEstatica;
+
 use shared::terreno::{
     material_de_profundidade, material_variado, tom_da_mancha, Arvore, Bioma, DefIlha, Gerador, Material,
     Planta, BLOCO, NIVEL_DO_MAR,
@@ -68,10 +70,11 @@ const MAX_QUADS: usize = 800;
 const BLOCO_DO_MAR: i32 = (NIVEL_DO_MAR / BLOCO) as i32 - 1;
 
 struct Pedaco {
-    malhas: Vec<Mesh>,
+    /// Na GPU a partir do primeiro desenho (`gpu_estatica`).
+    malhas: Vec<MalhaEstatica>,
     /// A superficie do mar deste pedaco (`agua::malhas_do_pedaco`), com
     /// material proprio. Vazia em pedaco todo terra.
-    agua: Vec<Mesh>,
+    agua: Vec<MalhaEstatica>,
 }
 
 /// O pedaco `(cx, cz)` cai no cone da camera? O mesmo teste pro chao e pro
@@ -315,31 +318,33 @@ impl Terreno {
     /// derruba tres quartos das chamadas sem mudar um pixel.
     ///
     /// Devolve quantos pedacos foram desenhados, pro HUD.
-    pub fn desenha(&self, cam: &Camera3D) -> usize {
-        let mut desenhados = 0;
-        for ((cx, cz), p) in &self.pedacos {
-            if !pedaco_visivel(cam, *cx, *cz) {
-                continue;
-            }
-            desenhados += 1;
-            for m in &p.malhas {
-                draw_mesh(m);
-            }
-        }
-        desenhados
+    ///
+    /// `recorte`/`recorte_z`: o furo que deixa ver o jogador (ver
+    /// `render3d::recorte_do_jogador`); zero desliga.
+    pub fn desenha(&self, cam: &Camera3D, recorte: Vec3, recorte_z: f32) -> usize {
+        let visiveis: Vec<&Pedaco> = self
+            .pedacos
+            .iter()
+            .filter(|((cx, cz), _)| pedaco_visivel(cam, *cx, *cz))
+            .map(|(_, p)| p)
+            .collect();
+        crate::gpu_estatica::desenha(
+            crate::gpu_estatica::Programa::Solido { recorte, recorte_z },
+            visiveis.iter().flat_map(|p| p.malhas.iter()),
+        );
+        visiveis.len()
     }
 
     /// A superficie do mar dos pedacos visiveis. Quem chama ja' pos o
     /// material da agua (ver `agua::desenha`).
-    pub fn desenha_agua(&self, cam: &Camera3D) {
-        for ((cx, cz), p) in &self.pedacos {
-            if p.agua.is_empty() || !pedaco_visivel(cam, *cx, *cz) {
-                continue;
-            }
-            for m in &p.agua {
-                draw_mesh(m);
-            }
-        }
+    pub fn desenha_agua(&self, cam: &Camera3D, tempo: f32, ondas: f32) {
+        crate::gpu_estatica::desenha(
+            crate::gpu_estatica::Programa::Agua { tempo, ondas },
+            self.pedacos
+                .iter()
+                .filter(|((cx, cz), p)| !p.agua.is_empty() && pedaco_visivel(cam, *cx, *cz))
+                .flat_map(|(_, p)| p.agua.iter()),
+        );
     }
 
     /// Onde o raio da tela encosta no chao.
@@ -758,7 +763,10 @@ impl Terreno {
         if !verts.is_empty() {
             malhas.push(Mesh { vertices: verts, indices: idx, texture: None });
         }
-        Pedaco { malhas, agua: crate::agua::malhas_do_pedaco(&self.ger, cx, cz) }
+        Pedaco {
+            malhas: malhas.into_iter().map(MalhaEstatica::nova).collect(),
+            agua: crate::agua::malhas_do_pedaco(&self.ger, cx, cz).into_iter().map(MalhaEstatica::nova).collect(),
+        }
     }
 
     /// Cor de uma face, ja' com a luz do lado aplicada.
@@ -954,7 +962,7 @@ mod testes {
             for (cx, cz) in [(0, 0), (3, 2), (-5, 4), (12, -8), (-20, -20), (30, 10)] {
                 let p = t.constroi(cx, cz);
                 total += p.malhas.len();
-                for m in &p.malhas {
+                for m in p.malhas.iter().map(|m| m.cpu().unwrap()) {
                     pior_i = pior_i.max(m.indices.len());
                     pior_v = pior_v.max(m.vertices.len());
                 }
@@ -992,7 +1000,7 @@ mod testes_orientacao {
 
         for (cx, cz) in [(0, 0), (3, 2), (-5, 4), (12, -8)] {
             let p = t.constroi_com(cx, cz, false);
-            for malha in &p.malhas {
+            for malha in p.malhas.iter().map(|m| m.cpu().unwrap()) {
                 for tri in malha.indices.chunks(3) {
                     let [a, b, c] = [
                         malha.vertices[tri[0] as usize].position,
@@ -1058,7 +1066,7 @@ mod testes_alinhamento {
         let mut conferidos = 0;
         for (cx, cz) in [(0, 0), (3, 2), (-5, 4)] {
             let p = t.constroi_com(cx, cz, false);
-            for malha in &p.malhas {
+            for malha in p.malhas.iter().map(|m| m.cpu().unwrap()) {
                 for tri in malha.indices.chunks(3) {
                     let v: Vec<Vec3> = tri
                         .iter()

@@ -97,9 +97,9 @@ impl Personagens {
             render3d::clear();
             self.desenha_mundo(solido);
             self.camera_ui();
-            // Veu em degrade: escuro em cima, atras do titulo, mais leve embaixo
-            // pra ilha aparecer. A ilha e' cenario; o que se le' e' a interface.
-            ui::ret_gradiente(Rect::new(0.0,0.0,w,h),1.0,Color::new(0.012,0.018,0.030,0.80),Color::new(0.012,0.018,0.030,0.40));
+            // So' uma faixa atras do titulo: veu na tela inteira apagava a ilha
+            // (so' aparecia desde que o mundo passou a sair antes do 2D).
+            ui::ret_gradiente(Rect::new(0.0,0.0,w,(h*0.22).max(120.0)),1.0,Color::new(0.012,0.018,0.030,0.70),Color::new(0.012,0.018,0.030,0.0));
         } else {
             clear_background(Color::new(0.026,0.041,0.063,1.0));
         }
@@ -344,8 +344,8 @@ impl Personagens {
         gl_use_material(solido);
         solido.set_uniform("Recorte",Vec3::ZERO);
         solido.set_uniform("RecorteZ",0.0f32);
-        f.terreno.desenha(&cam);
-        f.casas.desenha(&cam,None);
+        f.terreno.desenha(&cam,Vec3::ZERO,0.0);
+        f.casas.desenha(&cam,None,Vec3::ZERO,0.0);
         crate::agua::desenha(&f.terreno,&cam,t);
         gl_use_default_material();
     }

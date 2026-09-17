@@ -9,6 +9,7 @@
 //! `Protocol.cs` com 1175 linhas espelhadas a mao.
 
 mod api;
+mod gpu_estatica;
 mod login_google;
 mod nativo;
 mod teclado_virtual;
@@ -383,7 +384,9 @@ async fn main() {
         loja_tp::previa(&vox).await;
         return;
     }
-    if std::env::var("MMO_PREVIA_PERSONAGENS").is_ok() {
+    // `option_env!` tambem: no celular nao ha' variavel de ambiente, e o APK
+    // de medir desempenho e' compilado com ela ligada.
+    if std::env::var("MMO_PREVIA_PERSONAGENS").is_ok() || option_env!("MMO_PREVIA_PERSONAGENS").is_some() {
         personagens::previa(&vox).await;
         return;
     }
@@ -2853,11 +2856,11 @@ impl Jogo {
         self.solido.set_uniform("RecorteZ", corte_z);
         match &self.terreno {
             Some(t) => {
-                self.pedacos_desenhados = t.desenha(&vista.cam);
+                self.pedacos_desenhados = t.desenha(&vista.cam, recorte, corte_z);
                 // Casas no mesmo passe: descarte de face e recorte da camera
                 // valem pra elas como valem pra arvore.
                 let jogador = self.world.self_pos().map(|p| vec3(p.x, t.altura(p.x, p.y), p.y));
-                self.construcoes.desenha(&vista.cam, jogador);
+                self.construcoes.desenha(&vista.cam, jogador, recorte, corte_z);
                 // Pra onde esta' indo: tracejado rente ao chao, no mesmo passe.
                 if let Some(eu) = self.world.self_pos() {
                     let altura = |x: f32, z: f32| t.altura(x, z);

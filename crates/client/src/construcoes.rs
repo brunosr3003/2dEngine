@@ -13,6 +13,8 @@
 use std::sync::mpsc::{channel, Receiver};
 
 use macroquad::prelude::*;
+
+use crate::gpu_estatica::MalhaEstatica;
 use shared::construcao::{rot_q, BlocoCasa, Construcao, Tipo, TipoCasa};
 use shared::terreno::{DefIlha, Gerador, ESCALA_ALTURA};
 
@@ -47,8 +49,10 @@ pub struct Assada {
 }
 
 struct Pronta {
-    malhas: Vec<Mesh>,
-    teto: Vec<Mesh>,
+    /// Na GPU a partir do primeiro desenho (`gpu_estatica`).
+    malhas: Vec<MalhaEstatica>,
+    /// Tambem na GPU, mas com a copia da CPU: a transicao de sumir recopia.
+    teto: Vec<MalhaEstatica>,
     interior: Option<(Vec2, Vec2, f32)>,
     min: Vec3,
     max: Vec3,
@@ -72,12 +76,12 @@ pub fn avanca_teto(p: f32, dentro: bool, dt: f32) -> f32 {
 
 /// O teto no meio da transicao: copia subida e desbotada. So' existe durante
 /// os 0,3 s — fora deles o teto assado e' desenhado como esta'.
-fn desenha_teto_em_transicao(teto: &[Mesh], p: f32) {
+fn desenha_teto_em_transicao(teto: &[MalhaEstatica], p: f32) {
     // Suave nas duas pontas: comeca e termina devagar.
     let t = p * p * (3.0 - 2.0 * p);
     let subida = SUBIDA_DO_TETO * t;
     let alfa = ((1.0 - t) * 255.0) as u8;
-    for m in teto {
+    for m in teto.iter().filter_map(|m| m.cpu()) {
         let vertices = m
             .vertices
             .iter()
@@ -125,8 +129,8 @@ impl Construcoes {
             .map(|a| {
                 let malha = |(vertices, indices)| Mesh { vertices, indices, texture: None };
                 Pronta {
-                    malhas: a.partes.into_iter().map(malha).collect(),
-                    teto: a.teto.into_iter().map(malha).collect(),
+                    malhas: a.partes.into_iter().map(|p| MalhaEstatica::nova(malha(p))).collect(),
+                    teto: a.teto.into_iter().map(|p| MalhaEstatica::mantendo_cpu(malha(p))).collect(),
                     interior: a.interior,
                     min: a.min,
                     max: a.max,
@@ -142,7 +146,8 @@ impl Construcoes {
     ///
     /// `jogador` e' a posicao do personagem: a construcao em que ele esta'
     /// DENTRO e' desenhada sem o teto.
-    pub fn desenha(&self, cam: &Camera3D, jogador: Option<Vec3>) -> usize {
+    /// `recorte`/`recorte_z`: o furo do jogador, como no terreno.
+    pub fn desenha(&self, cam: &Camera3D, jogador: Option<Vec3>, recorte: Vec3, recorte_z: f32) -> usize {
         let olho = cam.position;
         let frente = (cam.target - cam.position).normalize();
         let abertura = cam.fovy * 0.5 + 0.55;
@@ -150,6 +155,8 @@ impl Construcoes {
         // teleporte: no maximo um decimo de segundo por quadro.
         let dt = get_frame_time().min(0.1);
         let mut n = 0;
+        let mut fixas: Vec<&MalhaEstatica> = Vec::new();
+        let mut em_transicao: Vec<(&Vec<MalhaEstatica>, f32)> = Vec::new();
         for p in &self.prontas {
             // Antes do corte: a transicao anda mesmo com a casa fora da tela.
             let sumido = avanca_teto(p.teto_sumido.get(), esta_dentro(p.interior, jogador), dt);
@@ -168,17 +175,19 @@ impl Construcoes {
                 }
             }
             n += 1;
-            for m in &p.malhas {
-                draw_mesh(m);
-            }
+            fixas.extend(p.malhas.iter());
             let sumido = p.teto_sumido.get();
             if sumido <= 0.0 {
-                for m in &p.teto {
-                    draw_mesh(m);
-                }
+                fixas.extend(p.teto.iter());
             } else if sumido < 1.0 {
-                desenha_teto_em_transicao(&p.teto, sumido);
+                em_transicao.push((&p.teto, sumido));
             }
+        }
+        crate::gpu_estatica::desenha(crate::gpu_estatica::Programa::Solido { recorte, recorte_z }, fixas);
+        // O teto sumindo e' recopiado todo quadro: esse fica no lote da
+        // macroquad (so' existe por 0,3 s).
+        for (teto, sumido) in em_transicao {
+            desenha_teto_em_transicao(teto, sumido);
         }
         n
     }

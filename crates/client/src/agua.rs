@@ -219,7 +219,7 @@ fn horizonte(centro: Vec2) -> Vec<Mesh> {
     malhas
 }
 
-const VERTICE: &str = r#"#version 100
+pub(crate) const VERTICE: &str = r#"#version 100
 attribute vec3 position;
 attribute vec2 texcoord;
 attribute vec4 color0;
@@ -251,7 +251,7 @@ void main() {
 // fragmento (GLES2 deixa opcional) e recusaria compilar. Usa `highp` quando o
 // driver oferece; senao cai pra `mediump` — as manchas de brilho ficam menos
 // finas longe da origem, mas o shader compila.
-const FRAGMENTO: &str = r#"#version 100
+pub(crate) const FRAGMENTO: &str = r#"#version 100
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 #else
@@ -277,58 +277,45 @@ void main() {
 }"#;
 
 thread_local! {
-    static MATERIAL: RefCell<Option<Material>> = const { RefCell::new(None) };
-    static HORIZONTE: RefCell<Option<((i32, i32), Vec<Mesh>)>> = const { RefCell::new(None) };
+    static HORIZONTE: RefCell<Option<((i32, i32), Vec<crate::gpu_estatica::MalhaEstatica>)>> = const { RefCell::new(None) };
 }
 
-fn material() -> Material {
+/// Estado de pipeline do mar (sem descarte de face: a onda vira o quad).
+/// Compartilhado com o desenho direto na GPU (`gpu_estatica`).
+pub(crate) fn params_agua() -> PipelineParams {
     use macroquad::miniquad::graphics::{BlendFactor, BlendState, BlendValue, Comparison, CullFace, Equation};
-    load_material(
-        ShaderSource::Glsl { vertex: VERTICE, fragment: FRAGMENTO },
-        MaterialParams {
-            uniforms: vec![
-                UniformDesc::new("Tempo", UniformType::Float1),
-                UniformDesc::new("Ondas", UniformType::Float1),
-            ],
-            pipeline_params: PipelineParams {
-                cull_face: CullFace::Nothing,
-                depth_test: Comparison::LessOrEqual,
-                depth_write: true,
-                color_blend: Some(BlendState::new(
-                    Equation::Add,
-                    BlendFactor::Value(BlendValue::SourceAlpha),
-                    BlendFactor::OneMinusValue(BlendValue::SourceAlpha),
-                )),
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-    )
-    .expect("shader da agua")
+    PipelineParams {
+        cull_face: CullFace::Nothing,
+        depth_test: Comparison::LessOrEqual,
+        depth_write: true,
+        color_blend: Some(BlendState::new(
+            Equation::Add,
+            BlendFactor::Value(BlendValue::SourceAlpha),
+            BlendFactor::OneMinusValue(BlendValue::SourceAlpha),
+        )),
+        ..Default::default()
+    }
 }
+
 
 /// Desenha o mar (horizonte e superficie dos pedacos visiveis). Troca o
 /// material: quem chama volta o dele depois.
 pub fn desenha(t: &Terreno, cam: &Camera3D, tempo: f32) {
-    let m = MATERIAL.with(|c| c.borrow_mut().get_or_insert_with(material).clone());
-    m.set_uniform("Tempo", tempo);
-    m.set_uniform("Ondas", if ONDAS { 1.0f32 } else { 0.0 });
-    gl_use_material(&m);
+    use crate::gpu_estatica::{desenha as desenha_na_gpu, MalhaEstatica, Programa};
+    let ondas = if ONDAS { 1.0f32 } else { 0.0 };
     // O anel acompanha o alvo da camera, refeito so' quando ele anda 32 u.
     let chave = ((cam.target.x / 32.0).round() as i32, (cam.target.z / 32.0).round() as i32);
     HORIZONTE.with(|h| {
         let mut h = h.borrow_mut();
         if h.as_ref().is_none_or(|(k, _)| *k != chave) {
             let centro = vec2(chave.0 as f32 * 32.0, chave.1 as f32 * 32.0);
-            *h = Some((chave, horizonte(centro)));
+            *h = Some((chave, horizonte(centro).into_iter().map(MalhaEstatica::nova).collect()));
         }
         if let Some((_, malhas)) = h.as_ref() {
-            for malha in malhas {
-                draw_mesh(malha);
-            }
+            desenha_na_gpu(Programa::Agua { tempo, ondas }, malhas);
         }
     });
-    t.desenha_agua(cam);
+    t.desenha_agua(cam, tempo, ondas);
 }
 
 #[cfg(test)]

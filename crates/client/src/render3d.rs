@@ -817,8 +817,7 @@ fn world_to_screen_com(m: &Mat4, p: Vec3, tela: Vec2) -> Option<Vec3> {
 ///
 /// O shader e' o mesmo da macroquad. Ele esta' copiado aqui porque o modulo
 /// dela e' privado; se um dia ela expuser, isto vira um `use`.
-pub fn material_solido() -> Material {
-    const VERTICE: &str = r#"#version 100
+pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
     attribute vec3 position;
     attribute vec2 texcoord;
     attribute vec4 color0;
@@ -832,10 +831,14 @@ pub fn material_solido() -> Material {
 
     uniform mat4 Model;
     uniform mat4 Projection;
+    // Clarao do golpe / corpo escurecido: puxa o rgb pra `Tinta.rgb` na
+    // fracao `Tinta.a` (zero = cor do voxel). Antes era recopia na CPU.
+    uniform vec4 Tinta;
 
     void main() {
         gl_Position = Projection * Model * vec4(position, 1);
         color = color0 / 255.0;
+        color.rgb = mix(color.rgb, Tinta.rgb, Tinta.a);
         uv = texcoord;
         recortavel = normal.x;
     }"#;
@@ -847,7 +850,7 @@ pub fn material_solido() -> Material {
     //   Recorte.z   raio do furo, em pixels. Zero desliga.
     //   RecorteZ    profundidade de janela a partir da qual um fragmento
     //               conta como "na frente do jogador"
-    const FRAGMENTO: &str = r#"#version 100
+pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
     varying lowp vec4 color;
     varying lowp vec2 uv;
     varying lowp float recortavel;
@@ -883,14 +886,11 @@ pub fn material_solido() -> Material {
         gl_FragColor = color * texture2D(Texture, uv);
     }"#;
 
-    load_material(
-        ShaderSource::Glsl { vertex: VERTICE, fragment: FRAGMENTO },
-        MaterialParams {
-            uniforms: vec![
-                UniformDesc::new("Recorte", UniformType::Float3),
-                UniformDesc::new("RecorteZ", UniformType::Float1),
-            ],
-            pipeline_params: PipelineParams {
+/// Estado de pipeline do mundo: descarte de face de costas, profundidade e
+/// alfa. Um lugar so': o material da macroquad e o desenho direto na GPU
+/// (`gpu_estatica`) montam o pipeline daqui.
+pub(crate) fn params_solido() -> PipelineParams {
+    PipelineParams {
                 cull_face: miniquad::graphics::CullFace::Back,
                 depth_test: miniquad::graphics::Comparison::LessOrEqual,
                 depth_write: true,
@@ -904,7 +904,19 @@ pub fn material_solido() -> Material {
                     ),
                 )),
                 ..Default::default()
-            },
+            }
+}
+
+pub fn material_solido() -> Material {
+    load_material(
+        ShaderSource::Glsl { vertex: SOLIDO_VERTICE, fragment: SOLIDO_FRAGMENTO },
+        MaterialParams {
+            uniforms: vec![
+                UniformDesc::new("Recorte", UniformType::Float3),
+                UniformDesc::new("RecorteZ", UniformType::Float1),
+                UniformDesc::new("Tinta", UniformType::Float4),
+            ],
+            pipeline_params: params_solido(),
             ..Default::default()
         },
     )
@@ -2018,55 +2030,19 @@ fn draw_mesh_mat(m: &Mesh, mat: &Mat4) {
 /// A mesma coisa, puxando a cor de cada vertice pra `tinta` na fracao pedida
 /// — e' o clarao do golpe.
 fn draw_mesh_mat_tinta(m: &Mesh, mat: &Mat4, tinta: Option<([f32; 3], f32)>) {
-    let pinta = |c: [u8; 4]| -> [u8; 4] {
-        match tinta {
-            None => c,
-            Some((t, k)) => {
-                let f = |a: u8, b: f32| (a as f32 + (b * 255.0 - a as f32) * k).clamp(0.0, 255.0) as u8;
-                [f(c[0], t[0]), f(c[1], t[1]), f(c[2], t[2]), c[3]]
-            }
-        }
-    };
-    let moved = Mesh {
-        vertices: m
-            .vertices
-            .iter()
-            .map(|v| Vertex { position: mat.transform_point3(v.position), color: pinta(v.color), ..*v })
-            .collect(),
-        indices: m.indices.clone(),
-        texture: None,
-    };
-    draw_mesh(&moved);
+    // Na GPU: a malha do voxel sobe uma vez e a matriz e a tinta vao por
+    // uniforme. Recopiar os vertices todo quadro era o que pesava com bicho
+    // em volta (ver `gpu_estatica`).
+    let tinta = tinta.map_or([0.0; 4], |(c, k)| [c[0], c[1], c[2], k]);
+    crate::gpu_estatica::desenha_voxel(m, *mat, tinta);
 }
 
-/// Desenha uma malha girada em Y e deslocada.
-///
-/// A macroquad nao tem transform por malha, entao a matriz e' aplicada nos
-/// vertices na CPU. Cabe porque os modelos sao pequenos depois do greedy
-/// meshing (o player tem 356 triangulos); se o bestiario crescer, o caminho e'
-/// um shader com uniform de modelo.
+/// Desenha uma malha girada em Y e deslocada — com a matriz de modelo no
+/// shader (`gpu_estatica::desenha_voxel`), sem recopiar vertice.
 fn draw_mesh_at(m: &Mesh, at: Vec3, yaw: f32) {
-    let (sin, cos) = yaw.sin_cos();
-    let moved = Mesh {
-        vertices: m
-            .vertices
-            .iter()
-            .map(|v| {
-                let q = v.position;
-                Vertex {
-                    position: vec3(
-                        q.x * cos + q.z * sin + at.x,
-                        q.y + at.y,
-                        -q.x * sin + q.z * cos + at.z,
-                    ),
-                    ..*v
-                }
-            })
-            .collect(),
-        indices: m.indices.clone(),
-        texture: None,
-    };
-    draw_mesh(&moved);
+    // Mesma conta de antes (y pra cima, giro em Y), como matriz.
+    let mat = Mat4::from_translation(at) * Mat4::from_rotation_y(yaw);
+    crate::gpu_estatica::desenha_voxel(m, mat, [0.0; 4]);
 }
 
 /// Projeta um ponto do mundo pra pixel de tela.
