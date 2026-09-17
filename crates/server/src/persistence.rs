@@ -879,21 +879,21 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // === O equipamento (docs/COMBATE.md): um id por peca; grau e refino
         // moram na instancia. As faixas de stat sao as do template
         // (`items::item_template`). ===
-        S{ id: item_id::ESPADA_E_ESCUDO as i32,    name:"Espada e Escudo",    sell:60, buy:Some(240), ord:Some(20), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(10,30), mp:(0,0),   atk:(8,16), def:(0,0),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::KATANA as i32,             name:"Katana",             sell:60, buy:Some(240), ord:Some(21), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(8,15), def:(0,0),  dex:(5,12), wis:(0,0) },
-        S{ id: item_id::PISTOLAS as i32,           name:"Duas Pistolas",      sell:60, buy:Some(240), ord:Some(22), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(7,14), def:(0,0),  dex:(6,13), wis:(0,0) },
-        S{ id: item_id::ANEL_MAGICO as i32,        name:"Anel Mágico",        sell:60, buy:Some(240), ord:Some(23), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(30,70), atk:(6,13), def:(0,0),  dex:(0,0),  wis:(4,10) },
-        S{ id: item_id::MANTO_DO_GUERREIRO as i32, name:"Manto do Guerreiro", sell:40, buy:Some(160), ord:Some(24), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(20,50), mp:(0,0),   atk:(0,0),  def:(3,8),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::BAINHA as i32,             name:"Bainha",             sell:40, buy:Some(160), ord:Some(25), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(1,4),  def:(0,0),  dex:(3,8),  wis:(0,0) },
-        S{ id: item_id::COLDRE as i32,             name:"Coldre",             sell:40, buy:Some(160), ord:Some(26), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(2,5),  def:(0,0),  dex:(3,7),  wis:(0,0) },
-        S{ id: item_id::MANTO_DO_MAGO as i32,      name:"Manto do Mago",      sell:40, buy:Some(160), ord:Some(27), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(25,60), atk:(0,0),  def:(0,0),  dex:(0,0),  wis:(3,8) },
-        S{ id: item_id::ARMADURA_LEVE as i32,      name:"Armadura Leve",      sell:50, buy:Some(200), ord:Some(28), stack:1, slot:Some("Armor"),    lvl:1, ic:-1, ir:-1, hp:(15,35), mp:(0,0),   atk:(0,0),  def:(1,4),  dex:(2,6),  wis:(0,0) },
-        S{ id: item_id::ARMADURA_MEDIA as i32,     name:"Armadura Média",     sell:70, buy:Some(280), ord:Some(29), stack:1, slot:Some("Armor"),    lvl:1, ic:-1, ir:-1, hp:(30,60), mp:(0,0),   atk:(0,0),  def:(4,9),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::ARMADURA_PESADA as i32,    name:"Armadura Pesada",    sell:90, buy:Some(360), ord:Some(30), stack:1, slot:Some("Armor"),    lvl:1, ic:-1, ir:-1, hp:(60,120),mp:(0,0),   atk:(0,0),  def:(8,16), dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::BRINCO as i32,             name:"Brinco",             sell:35, buy:Some(140), ord:Some(31), stack:1, slot:Some("Earring"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(1,4),  def:(0,0),  dex:(2,6),  wis:(0,0) },
-        S{ id: item_id::AMULETO as i32,            name:"Amuleto",            sell:35, buy:Some(140), ord:Some(32), stack:1, slot:Some("Necklace"), lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(20,50), atk:(0,0),  def:(0,0),  dex:(0,0),  wis:(2,6) },
-        S{ id: item_id::BRACELETE as i32,          name:"Bracelete",          sell:35, buy:Some(140), ord:Some(33), stack:1, slot:Some("Bracelet"), lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(2,5),  def:(1,3),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::CINTO as i32,              name:"Cinto",              sell:35, buy:Some(140), ord:Some(34), stack:1, slot:Some("Belt"),     lvl:1, ic:-1, ir:-1, hp:(20,45), mp:(0,0),   atk:(0,0),  def:(1,3),  dex:(0,0),  wis:(0,0) },
+        S{ id: item_id::ESPADA_E_ESCUDO as i32,    name:"Espada e Escudo",    sell:60, buy:Some(960), ord:Some(20), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(10,30), mp:(0,0),   atk:(8,16), def:(0,0),  dex:(0,0),  wis:(0,0) },
+        S{ id: item_id::KATANA as i32,             name:"Katana",             sell:60, buy:Some(960), ord:Some(21), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(8,15), def:(0,0),  dex:(5,12), wis:(0,0) },
+        S{ id: item_id::PISTOLAS as i32,           name:"Duas Pistolas",      sell:60, buy:Some(960), ord:Some(22), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(7,14), def:(0,0),  dex:(6,13), wis:(0,0) },
+        S{ id: item_id::ANEL_MAGICO as i32,        name:"Anel Mágico",        sell:60, buy:Some(960), ord:Some(23), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(30,70), atk:(6,13), def:(0,0),  dex:(0,0),  wis:(4,10) },
+        S{ id: item_id::MANTO_DO_GUERREIRO as i32, name:"Manto do Guerreiro", sell:40, buy:Some(640), ord:Some(24), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(20,50), mp:(0,0),   atk:(0,0),  def:(3,8),  dex:(0,0),  wis:(0,0) },
+        S{ id: item_id::BAINHA as i32,             name:"Bainha",             sell:40, buy:Some(640), ord:Some(25), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(1,4),  def:(0,0),  dex:(3,8),  wis:(0,0) },
+        S{ id: item_id::COLDRE as i32,             name:"Coldre",             sell:40, buy:Some(640), ord:Some(26), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(2,5),  def:(0,0),  dex:(3,7),  wis:(0,0) },
+        S{ id: item_id::MANTO_DO_MAGO as i32,      name:"Manto do Mago",      sell:40, buy:Some(640), ord:Some(27), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(25,60), atk:(0,0),  def:(0,0),  dex:(0,0),  wis:(3,8) },
+        S{ id: item_id::ARMADURA_LEVE as i32,      name:"Armadura Leve",      sell:50, buy:Some(800), ord:Some(28), stack:1, slot:Some("Armor"),    lvl:1, ic:-1, ir:-1, hp:(15,35), mp:(0,0),   atk:(0,0),  def:(1,4),  dex:(2,6),  wis:(0,0) },
+        S{ id: item_id::ARMADURA_MEDIA as i32,     name:"Armadura Média",     sell:70, buy:Some(1120), ord:Some(29), stack:1, slot:Some("Armor"),    lvl:1, ic:-1, ir:-1, hp:(30,60), mp:(0,0),   atk:(0,0),  def:(4,9),  dex:(0,0),  wis:(0,0) },
+        S{ id: item_id::ARMADURA_PESADA as i32,    name:"Armadura Pesada",    sell:90, buy:Some(1440), ord:Some(30), stack:1, slot:Some("Armor"),    lvl:1, ic:-1, ir:-1, hp:(60,120),mp:(0,0),   atk:(0,0),  def:(8,16), dex:(0,0),  wis:(0,0) },
+        S{ id: item_id::BRINCO as i32,             name:"Brinco",             sell:35, buy:Some(560), ord:Some(31), stack:1, slot:Some("Earring"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(1,4),  def:(0,0),  dex:(2,6),  wis:(0,0) },
+        S{ id: item_id::AMULETO as i32,            name:"Amuleto",            sell:35, buy:Some(560), ord:Some(32), stack:1, slot:Some("Necklace"), lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(20,50), atk:(0,0),  def:(0,0),  dex:(0,0),  wis:(2,6) },
+        S{ id: item_id::BRACELETE as i32,          name:"Bracelete",          sell:35, buy:Some(560), ord:Some(33), stack:1, slot:Some("Bracelet"), lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(2,5),  def:(1,3),  dex:(0,0),  wis:(0,0) },
+        S{ id: item_id::CINTO as i32,              name:"Cinto",              sell:35, buy:Some(560), ord:Some(34), stack:1, slot:Some("Belt"),     lvl:1, ic:-1, ir:-1, hp:(20,45), mp:(0,0),   atk:(0,0),  def:(1,3),  dex:(0,0),  wis:(0,0) },
         S{ id: item_id::WOOD_T1 as i32,        name:"Madeira T1",   sell:2,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::WOOD_T2 as i32,        name:"Madeira T2",   sell:6,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
         S{ id: item_id::WOOD_T3 as i32,        name:"Madeira T3",   sell:18,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
@@ -1230,19 +1230,17 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             ("Flower", 2, item_id::LEATHER_T2, 4, 6, 1.0),
             ("Flower", 3, item_id::LEATHER_T3, 5, 7, 1.0),
             ("Flower", 4, item_id::LEATHER_T4, 6, 8, 1.0),
-            // Gold side-drop por tier (chance = 0.10 * tier; qty = 1 + tier*2)
-            ("Tree",   1, item_id::GOLD,       3, 3, 0.10),
-            ("Tree",   2, item_id::GOLD,       5, 5, 0.20),
-            ("Tree",   3, item_id::GOLD,       7, 7, 0.30),
-            ("Tree",   4, item_id::GOLD,       9, 9, 0.40),
-            ("Rock",   1, item_id::GOLD,       3, 3, 0.10),
-            ("Rock",   2, item_id::GOLD,       5, 5, 0.20),
-            ("Rock",   3, item_id::GOLD,       7, 7, 0.30),
-            ("Rock",   4, item_id::GOLD,       9, 9, 0.40),
-            ("Flower", 1, item_id::GOLD,       3, 3, 0.10),
-            ("Flower", 2, item_id::GOLD,       5, 5, 0.20),
-            ("Flower", 3, item_id::GOLD,       7, 7, 0.30),
-            ("Flower", 4, item_id::GOLD,       9, 9, 0.40),
+            // Coleta nao da OURO: ele ficou raro (chefe, dungeon, mercado,
+            // venda ao NPC, calendario). A moeda que sai do chao e' o COBRE —
+            // a pedra ja' dava, a arvore e a flor passam a dar (docs/ECONOMIA.md).
+            ("Tree",   1, item_id::COPPER,     8, 16, 1.0),
+            ("Tree",   2, item_id::COPPER,    12, 24, 1.0),
+            ("Tree",   3, item_id::COPPER,    16, 32, 1.0),
+            ("Tree",   4, item_id::COPPER,    20, 40, 1.0),
+            ("Flower", 1, item_id::COPPER,     8, 16, 1.0),
+            ("Flower", 2, item_id::COPPER,    12, 24, 1.0),
+            ("Flower", 3, item_id::COPPER,    16, 32, 1.0),
+            ("Flower", 4, item_id::COPPER,    20, 40, 1.0),
         ];
         for (kind, tier, item, qmin, qmax, chance) in farm_drops {
             sqlx::query(
@@ -1345,6 +1343,38 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         }
         if feitos > 0 {
             tracing::info!("M27: {feitos} linhas migradas pro equipamento novo");
+        }
+    }
+
+    // M28: o COBRE virou a moeda do dia a dia e o OURO ficou raro
+    // (docs/ECONOMIA.md, decisao do dono de 17/09/2026).
+    //
+    //   * a loja do NPC cobra em cobre, entao o preco de equipamento sobe 4x:
+    //     na escala do ouro ele custava menos que uma pedra rende de cobre;
+    //   * coleta nao da mais ouro (pedra, arvore e flor) — arvore e flor
+    //     passam a dar cobre, que e' o que elas rendiam de moeda;
+    //   * o ouro passa a vir de chefe, bau de dungeon, mercado, venda ao NPC e
+    //     calendario (esses tres ultimos ja' eram).
+    //
+    // Idempotente: marcado em `economy_migrations`.
+    {
+        let nova = sqlx::query("INSERT INTO economy_migrations(name) VALUES ('cobre_e_a_moeda_v1') ON CONFLICT DO NOTHING")
+            .execute(pool).await?.rows_affected() > 0;
+        if nova {
+            sqlx::query("UPDATE items SET buy_price = buy_price * 4 WHERE buy_price IS NOT NULL AND id BETWEEN 400 AND 499")
+                .execute(pool).await?;
+            sqlx::query("DELETE FROM farm_node_drops WHERE item_id = $1").bind(item_id::GOLD as i32)
+                .execute(pool).await?;
+            for (kind, tier, qmin, qmax) in [("Tree", 1, 8, 16), ("Tree", 2, 12, 24), ("Tree", 3, 16, 32), ("Tree", 4, 20, 40),
+                                             ("Flower", 1, 8, 16), ("Flower", 2, 12, 24), ("Flower", 3, 16, 32), ("Flower", 4, 20, 40)] {
+                sqlx::query(
+                    "INSERT INTO farm_node_drops (kind, tier, item_id, qty_min, qty_max, chance) VALUES ($1,$2,$3,$4,$5,1.0) \
+                     ON CONFLICT DO NOTHING",
+                )
+                .bind(kind).bind(tier).bind(item_id::COPPER as i32).bind(qmin).bind(qmax)
+                .execute(pool).await?;
+            }
+            tracing::info!("M28: cobre e' a moeda — loja 4x, coleta sem ouro, arvore e flor com cobre");
         }
     }
 

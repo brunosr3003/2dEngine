@@ -582,6 +582,9 @@ pub fn rolar_bau(c: &Conteudo, estagio: u8, ajudante: bool, bonus: bool, rng: &m
         }
         itens.push(Premio { item_id: item_id::GLITTERING_POWDER, qtd: po, peca: None });
     }
+    // OURO do bau: com as marcas, e' o que faz a dungeon valer ouro (o resto
+    // da economia corre em cobre — docs/ECONOMIA.md).
+    itens.push(Premio { item_id: crate::item_id::GOLD, qtd: ouro_do_bau(c.tipo, nivel, ajudante), peca: None });
     itens.push(rolar_material(nivel, rng, porao));
     if bonus {
         itens.push(rolar_material(nivel, rng, porao));
@@ -597,6 +600,18 @@ pub fn rolar_bau(c: &Conteudo, estagio: u8, ajudante: bool, bonus: bool, rng: &m
         }
     }
     Bau { itens, marcas: marcas(c.tipo, ajudante, bonus) }
+}
+
+/// Ouro do bau de conclusao: pela faixa do estagio e pelo tipo. Ajudante (quem
+/// ja' venceu esta semana) leva menos, como nas marcas.
+pub fn ouro_do_bau(tipo: Tipo, nivel: u32, ajudante: bool) -> u32 {
+    let base = match tipo {
+        Tipo::Porao => 150,
+        Tipo::Gruta => 400,
+        _ => 600,
+    };
+    let bruto = base + nivel * 25;
+    if ajudante { bruto * 6 / 10 } else { bruto }
 }
 
 /// Peca garantida da 1ª vitoria (semanal ou de todas): rolada uma linha

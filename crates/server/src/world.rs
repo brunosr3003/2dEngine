@@ -10936,6 +10936,26 @@ impl GameWorld {
         v
     }
 
+    /// Paga `qtd` de COBRE (a moeda do dia a dia) na bolsa. Bolsa cheia manda
+    /// pras Entregas, como o bau da dungeon faz — recompensa nao se perde.
+    fn pagar_em_cobre(s: &mut Session, qtd: u32, fonte: &str) {
+        if qtd == 0 {
+            return;
+        }
+        let entrou = add_to_inventory(&mut s.inventory, shared::item_id::COPPER, qtd, None);
+        if entrou {
+            s.inventory_dirty = true;
+        } else {
+            let quando = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+            s.dungeon.postar(shared::item_id::COPPER, qtd, None, 2, quando);
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "SYS".into(),
+                text: format!("Bolsa cheia: {qtd} de cobre foi pras Entregas."),
+            });
+        }
+        crate::telemetria::conta("cobre_fonte", fonte, qtd as i64);
+    }
+
     /// A historia (`shared::historia`), a cada tick: da' o primeiro passo a
     /// quem nao tem, acompanha trava de nivel, viagem e ponto-chave, e passa
     /// pro proximo passo assim que um fica pronto — com a recompensa na hora.
@@ -11003,9 +11023,8 @@ impl GameWorld {
             let Some((feito, prox)) = crate::quests::avancar_historia(&mut s.quests) else { continue };
             s.quests_dirty = true;
             crate::telemetria::conta("missao_historia", feito.id, 1);
-            if feito.reward_gold > 0 {
-                s.gold = s.gold.saturating_add(feito.reward_gold as u64);
-                crate::telemetria::conta("ouro_fonte", "missao", feito.reward_gold as i64);
+            if feito.reward_cobre > 0 {
+                Self::pagar_em_cobre(s, feito.reward_cobre, "missao");
             }
             for (item, qtd) in [(feito.reward_item, feito.reward_item_qty), (feito.reward_item2, feito.reward_item2_qty)] {
                 if item != 0 && qtd > 0 {
@@ -12057,8 +12076,7 @@ impl GameWorld {
         }
         // Recompensas
         crate::telemetria::conta("missao_entregue", quest_id, 1);
-        crate::telemetria::conta("ouro_fonte", "missao", def.reward_gold as i64);
-        if def.reward_gold > 0 { s.gold = s.gold.saturating_add(def.reward_gold as u64); }
+        if def.reward_cobre > 0 { Self::pagar_em_cobre(s, def.reward_cobre, "missao"); }
         // Segunda recompensa: a Pocao de Experiencia das missoes de area.
         if def.reward_item2 != 0 && def.reward_item2_qty > 0 {
             add_to_inventory(&mut s.inventory, def.reward_item2, def.reward_item2_qty as u32, None);
@@ -12595,8 +12613,7 @@ impl GameWorld {
             });
             return;
         }
-        crate::telemetria::conta("ouro_fonte", "bau_do_tesouro", def.reward_gold as i64);
-        if def.reward_gold > 0 { s.gold = s.gold.saturating_add(def.reward_gold as u64); }
+        if def.reward_cobre > 0 { Self::pagar_em_cobre(s, def.reward_cobre, "bau_do_tesouro"); }
         if def.reward_xp > 0 { s.grant_xp(def.reward_xp); }
         if def.reward_faction_points > 0 { s.faction_points = s.faction_points.saturating_add(def.reward_faction_points); }
         if def.reward_item != 0 && def.reward_item_qty > 0 {
@@ -12730,13 +12747,13 @@ impl GameWorld {
         let new_hp_max: Option<i32> = {
             let Some(session) = self.sessions.get_mut(&sid) else { return };
 
-            // 2a) Tem com que pagar? Pocao e' em COBRE (item na bolsa); o
-            // resto, em ouro (moeda).
-            let com_cobre = shared::pocoes::compra_com_cobre(item_id);
+            // 2a) A loja do NPC cobra em COBRE, a moeda do dia a dia
+            // (docs/ECONOMIA.md). O ouro ficou pras coisas raras.
+            let com_cobre = true;
             let cobre: u64 = session.inventory.iter()
                 .filter(|sl| sl.item_id == shared::item_id::COPPER && sl.instance.is_none())
                 .map(|sl| sl.qty as u64).sum();
-            let (tem, moeda) = if com_cobre { (cobre, "cobre") } else { (session.gold, "ouro") };
+            let (tem, moeda) = (cobre, "cobre");
             if tem < price as u64 {
                 let _ = session.handle.to_client.send(ServerMessage::Chat {
                     from: "SHOP".into(),

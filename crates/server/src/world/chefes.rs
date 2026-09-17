@@ -82,6 +82,10 @@ pub fn loot_de_chefe(kind: u16, seed: u64) -> Vec<(u16, u32)> {
         ((s >> 33) as f32) / (1u64 << 31) as f32
     };
     let mut v = vec![
+        // OURO: chefe e' uma das poucas fontes (docs/ECONOMIA.md). Cobre e' a
+        // moeda do dia a dia e cai de tudo; ouro so' aqui, na dungeon, no
+        // mercado, na venda ao NPC e no calendario.
+        (GOLD, 120 + n * 20 + (rnd() * 60.0) as u32),
         (COPPER, 200 + n * 25 + (rnd() * 150.0) as u32),
         (DARKSTEEL, 20 + n * 4),
         (na_cor(STEEL, cor), 3 + n / 6),
@@ -116,6 +120,8 @@ pub fn itens_do_chefe(kind: u16) -> Vec<(u16, f32)> {
     let cor = cor_da_faixa(c.nivel);
     let chave = shared::chaves::faixa(c.nivel);
     let mut v = vec![
+        // OURO: chefe e' uma das poucas fontes (docs/ECONOMIA.md).
+        (GOLD, 1.0),
         (COPPER, 1.0),
         (DARKSTEEL, 1.0),
         (na_cor(STEEL, cor), 1.0),

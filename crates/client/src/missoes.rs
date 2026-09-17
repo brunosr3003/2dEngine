@@ -138,8 +138,8 @@ pub fn fracao_da_trava(alvo: u32, nivel: u32, fracao_xp: f32) -> f32 {
 
 pub fn recompensa(q: &QuestNet, nomes: &HashMap<u16, String>) -> String {
     let mut partes = Vec::new();
-    if q.reward_gold > 0 {
-        partes.push(format!("{} ouro", q.reward_gold));
+    if q.reward_cobre > 0 {
+        partes.push(format!("{} cobre", q.reward_cobre));
     }
     if q.reward_xp > 0 {
         partes.push(format!("{} XP", q.reward_xp));

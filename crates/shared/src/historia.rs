@@ -110,7 +110,7 @@ const fn base(id: u16, title: &'static str, desc: &'static str, gold: u32, xp: u
         id,
         title,
         desc,
-        reward_gold: gold,
+        reward_cobre: gold,
         reward_xp: xp,
         source: quest_source::HISTORIA,
         giver: GIVER_HISTORIA,

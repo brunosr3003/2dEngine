@@ -106,9 +106,9 @@ impl Loja {
         for (i, item) in self.itens.iter().enumerate() {
             let r = Rect::new(p.x + 10.0, p.y + 52.0 + i as f32 * LINHA, p.w - 20.0, LINHA - 6.0);
             let sobre = r.contains(mouse);
-            // Pocao se paga com cobre (`shared::pocoes::compra_com_cobre`).
-            let com_cobre = shared::pocoes::compra_com_cobre(item.item_id);
-            let pode = if com_cobre { cobre } else { ouro } >= item.price as u64;
+            // A loja do NPC cobra em COBRE (docs/ECONOMIA.md); o ouro ficou
+            // pras coisas raras.
+            let pode = cobre >= item.price as u64;
             if sobre {
                 draw_rectangle(r.x, r.y, r.w, r.h, Color::new(1.0, 1.0, 1.0, 0.06));
                 draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.0, estilo::BORDA);
@@ -116,9 +116,8 @@ impl Loja {
             crate::bolsa::icone_do_item(Rect::new(r.x + 4.0, r.y + 3.0, 40.0, 40.0), item.item_id, 1.0);
             let nome = nomes.get(&item.item_id).cloned().unwrap_or_else(|| format!("item {}", item.item_id));
             estilo::texto_ajustado(&nome, r.x + 54.0, r.y + 29.0, r.w - 150.0, 17, estilo::TEXTO);
-            let preco = format!("{} {}", crate::bolsa::milhar(item.price as u64), if com_cobre { "cobre" } else { "ouro" });
-            let cor_moeda = if com_cobre { Color::new(0.85, 0.55, 0.32, 1.0) } else { estilo::OURO };
-            let cor = if pode { cor_moeda } else { Color::new(0.88, 0.38, 0.32, 1.0) };
+            let preco = format!("{} cobre", crate::bolsa::milhar(item.price as u64));
+            let cor = if pode { Color::new(0.85, 0.55, 0.32, 1.0) } else { Color::new(0.88, 0.38, 0.32, 1.0) };
             estilo::texto(r.x + r.w - 10.0 - estilo::medir(&preco, 16), r.y + 29.0, &preco, 16, cor);
             if sobre && clique {
                 let qtd = if is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) { LOTE } else { 1 };
@@ -127,7 +126,7 @@ impl Loja {
         }
         let rodape = p.y + p.h - 40.0;
         draw_line(p.x + 12.0, rodape, p.x + p.w - 12.0, rodape, 1.0, estilo::BORDA);
-        estilo::texto(p.x + 16.0, rodape + 24.0, &format!("Ouro {}  ·  Cobre {}", crate::bolsa::milhar(ouro), crate::bolsa::milhar(cobre)), 15, estilo::OURO);
+        estilo::texto(p.x + 16.0, rodape + 24.0, &format!("Cobre {}  ·  Ouro {}", crate::bolsa::milhar(cobre), crate::bolsa::milhar(ouro)), 15, estilo::OURO);
         let dica = "clique: 1  ·  Shift: 5";
         estilo::texto(p.x + p.w - 16.0 - estilo::medir(dica, 14), rodape + 23.0, dica, 14, estilo::SUAVE);
         if let Some((msg, quando)) = &self.aviso {

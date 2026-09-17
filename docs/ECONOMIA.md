@@ -137,10 +137,31 @@ dinheiro se encontram é a troca TP↔gold — e ela não cria nada, só move.
 - **TP compra na loja de cash**: montaria, skins de armadura e de arma, pets,
   livros de habilidade de pet e de montaria, e pedras de refino. As skins
   ficam presas ao personagem (ver `docs/PERSONAGEM.md`).
-- **Gold é gasto** em refino, upgrade, item e na taxa do mercado.
-- **Poção de vida, mana e vigor se compra com cobre** na loja do NPC (decisão do
-  dono, 17/09/2026): o mesmo número de `items.buy_price`, pago com o Cobre da
-  bolsa (`shared::pocoes::compra_com_cobre`). Equipamento continua em gold.
+- **Gold é gasto** na entrada extra de dungeon e na taxa do mercado.
+
+## Cobre é a moeda, ouro é raro (decisão do dono, 17/09/2026)
+
+Havia quatro moedas convivendo (ouro, cobre, Marcas e TP) e **bicho não dava
+ouro nenhum**: quem caçava só ganhava material. O cobre já era o que mais caía
+e o que mais se gastava, então ele virou o dinheiro do dia a dia e o ouro
+ficou raro.
+
+| | de onde vem | no que se gasta |
+|---|---|---|
+| **Cobre** | bicho (4–14 no lobo, 15–40 no urso, 200–500 no chefe), pedra (40–120), árvore e flor (8–40), missão, diária | loja do NPC (tudo), craft, refino |
+| **Ouro** | chefe do mundo, baú de dungeon, venda ao NPC, mercado, calendário de presença | entrada extra de dungeon, taxa do mercado |
+| **Marcas da Tempestade** | dungeon | loja de Marcas |
+| **TP** | dinheiro de verdade ou mercado | loja de cash |
+
+Ajustes que vieram junto (`M28` em `persistence.rs`):
+
+- **Preço de equipamento na loja ×4**: na escala do ouro, uma arma custava 240
+  — menos do que uma pedra rende de cobre.
+- **Coleta não dá mais ouro**; árvore e flor passam a dar cobre.
+- **Missão paga cobre** (`QuestDef::reward_cobre`). Bolsa cheia manda pras
+  Entregas, como o baú da dungeon.
+- O ouro que o jogador já tinha continua valendo: ele serve para os ralos de
+  ouro, que ficaram os raros.
 - **TP se vende no mercado por gold.** É assim que quem paga consegue gold, e
   quem não paga consegue TP. **Todo o resto do mercado é em gold: o gold é a
   moeda principal do jogo.**

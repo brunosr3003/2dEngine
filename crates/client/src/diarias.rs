@@ -58,11 +58,11 @@ pub fn tem_pendente(c: &Contexto) -> bool {
     da_ilha(c.zona).iter().any(|d| matches!(estado_da_diaria(d, c), Estado::Disponivel | Estado::Pronta))
 }
 
-/// "80 ouro · 120 XP · 1× Poção de Experiência".
+/// "80 cobre · 120 XP · 1× Poção de Experiência".
 pub fn recompensa(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
     let mut partes = Vec::new();
-    if d.reward_gold > 0 {
-        partes.push(format!("{} ouro", d.reward_gold));
+    if d.reward_cobre > 0 {
+        partes.push(format!("{} cobre", d.reward_cobre));
     }
     if d.reward_xp > 0 {
         partes.push(format!("{} XP", d.reward_xp));
@@ -274,14 +274,14 @@ mod tests {
     }
 
     #[test]
-    fn recompensa_lista_ouro_xp_e_itens() {
+    fn recompensa_lista_cobre_xp_e_itens() {
         let d = quest_by_id(601).unwrap();
         let mut nomes = HashMap::new();
         nomes.insert(d.reward_item2, "Poção de Experiência".to_string());
         nomes.insert(d.reward_item, "Item".to_string());
         let r = recompensa(d, &nomes);
-        if d.reward_gold > 0 {
-            assert!(r.contains("ouro"), "{r}");
+        if d.reward_cobre > 0 {
+            assert!(r.contains("cobre"), "{r}");
         }
         if d.reward_item2 != 0 {
             assert!(r.contains("Poção de Experiência"), "{r}");
