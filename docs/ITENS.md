@@ -46,6 +46,19 @@ vai ficar, não para a que vai virar material.
 
 ## Refino +1 a +12
 
+### Quanto cada nível dá (decisão de 17/09/2026)
+
+Cada nível soma **+8% dos atributos da peça** e uma **parte fixa** na escala do
+nível do item (`shared::items::refino_fixo`: 1 no item nível 5, 4 no 18, 7 no
+35, 12 no 60). Vida e mana ganham o dobro da parte fixa; ataque e defesa, ela;
+destreza e sabedoria, só a percentual. A parte fixa só entra em atributo que a
+peça tem: refinar não cria atributo.
+
+Antes era só +5%, e numa peça cinza (vida 13, defesa 1) o +1 arredondava pra
+nada e o +4 dava +3 de poder. Hoje a mesma armadura +4 vai a vida 25, defesa 5
+e destreza 3 (teste `cada_nivel_de_refino_aumenta_a_peca`). A Forja mostra o
+poder da peça antes e depois do próximo nível.
+
 **Estes números são os do MIR4.** Vieram da [MIR4 Wiki, revisão 4392, de 5 de
 fevereiro de 2022](https://www.mir4.wiki/wiki/Enhancing) — a era do jogo base,
 que é exatamente o recorte pedido. A wiki está fora do ar hoje (HTTP 500 na

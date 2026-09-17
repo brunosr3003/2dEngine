@@ -240,9 +240,14 @@ pub(crate) fn poder(s: &PlayerStats) -> i32 {
 }
 
 fn poder_da_peca(p: &Peca) -> i32 {
-    let Some(i) = p.inst else { return 0 };
-    let base = i.attack_damage * 10 + i.defense * 8 + i.hp_max + i.mp_max / 2 + (i.dex + i.wis) * 5;
-    (base as f32 * (1.0 + 0.04 * i.refinement as f32)).round() as i32
+    p.inst.map_or(0, |i| poder_da_instancia(&i))
+}
+
+/// O poder que uma peca soma, com o refino — a MESMA conta do servidor
+/// (`ItemInstance::effective_bonus`) passada pela formula do `poder`.
+pub(crate) fn poder_da_instancia(i: &shared::items::ItemInstance) -> i32 {
+    let b = i.effective_bonus();
+    b.attack_damage * 10 + b.defense * 8 + b.hp_max + b.mp_max / 2 + (b.dex + b.wis) * 5
 }
 
 struct Tela {

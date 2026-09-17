@@ -204,6 +204,15 @@ impl Forja {
             let y = d.y + 100.0;
             let agora_prox = if i.no_topo { format!("+{} (no topo)", i.nivel) } else { format!("+{}  →  +{}", i.nivel, i.nivel + 1) };
             estilo::texto(d.x, y, &agora_prox, 26, estilo::OURO);
+            // Quanto de poder o proximo nivel da': sem isto o refino parecia
+            // nao fazer nada.
+            if !i.no_topo {
+                let mut prox = *inst;
+                prox.refinement += 1;
+                let (a, b) = (crate::bolsa::poder_da_instancia(inst), crate::bolsa::poder_da_instancia(&prox));
+                let t = format!("Poder {a} → {b}  (+{})", b - a);
+                estilo::texto(d.x + d.w - estilo::medir(&t, 15), y - 2.0, &t, 15, VERDE);
+            }
             if !i.no_topo {
                 let cor = if i.chance >= 80 { VERDE } else if i.chance >= 30 { AMARELO } else { VERMELHO };
                 estilo::texto(d.x, y + 34.0, &format!("Chance: {}%", i.chance), 17, cor);

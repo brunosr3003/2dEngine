@@ -8,7 +8,8 @@
 //!    usa stats base (compat com itens antigos pre-Fase A).
 //!
 //! Stats finais = base do item_id + rolls da instance × multiplier de
-//! rarity × (1 + refinement × REFINE_BOOST_PER_LEVEL).
+//! rarity × (1 + refinement × REFINE_BOOST_PER_LEVEL), mais a parte fixa do
+//! refino por nivel (`refino_fixo`).
 //!
 //! Sincronizar: ItemInstance é serializada como JSONB na coluna
 //! `inventory.instance_data` e replicada via wire pro cliente em
@@ -244,7 +245,21 @@ impl AffixSlot {
 }
 
 pub const MAX_REFINE: u8 = 15;
-pub const REFINE_BOOST_PER_LEVEL: f32 = 0.05; // +5% por nível
+/// Parte percentual do refino: +8% dos atributos da peca por nivel.
+///
+/// Era +5% e SO' isso: numa peca cinza (vida 13, defesa 1) o +1 arredondava
+/// pra nada e o +4 dava +3 de poder em 767 — o dono refinou ate' +4 e nao viu
+/// mudar. Agora ha' tambem a parte FIXA (`refino_fixo`), que e' o que pesa no
+/// comeco; a percentual e' o que pesa em peca boa.
+pub const REFINE_BOOST_PER_LEVEL: f32 = 0.08;
+
+/// Parte fixa do refino, por nivel, na escala do nivel do item: 1 no item
+/// nivel 5, 4 no 18, 7 no 35, 12 no 60. Vida e mana ganham o dobro disso;
+/// ataque e defesa, isso; destreza e sabedoria so' a parte percentual. So'
+/// entra em atributo que a peca TEM — refinar nao cria atributo.
+pub fn refino_fixo(item_level: u16) -> i32 {
+    ((item_level as i32 + 4) / 5).max(1)
+}
 
 // ── Fase B: Affix system ────────────────────────────────────────────────
 // Cada item Magic+ tem affixes que adicionam stats extras além dos rolls
@@ -425,7 +440,7 @@ impl ItemInstance {
         Some(inst)
     }
 
-    /// Multiplier de refinamento (1.0 + refinement × 0.05).
+    /// Multiplier de refinamento (1.0 + refinement × `REFINE_BOOST_PER_LEVEL`).
     pub fn refine_mult(&self) -> f32 {
         1.0 + (self.refinement as f32) * REFINE_BOOST_PER_LEVEL
     }
@@ -435,13 +450,16 @@ impl ItemInstance {
     /// (Crit/AtkSpd/MoveSpd/HpRegen) saem em `effective_pct_bonus`.
     pub fn effective_bonus(&self) -> crate::constants::EquipBonus {
         let m = self.refine_mult();
+        let (r, u) = (self.refinement as i32, refino_fixo(self.item_level));
+        // Percentual sobre o rolado + fixo por nivel, so' se a peca tem o atributo.
+        let com = |v: i32, fixo: i32| if v == 0 { 0 } else { (v as f32 * m).round() as i32 + fixo * r };
         let mut b = crate::constants::EquipBonus {
-            hp_max:        (self.hp_max as f32 * m).round() as i32,
-            mp_max:        (self.mp_max as f32 * m).round() as i32,
-            attack_damage: (self.attack_damage as f32 * m).round() as i32,
-            dex:           (self.dex as f32 * m).round() as i32,
-            wis:           (self.wis as f32 * m).round() as i32,
-            defense:       (self.defense as f32 * m).round() as i32,
+            hp_max:        com(self.hp_max, 2 * u),
+            mp_max:        com(self.mp_max, 2 * u),
+            attack_damage: com(self.attack_damage, u),
+            dex:           com(self.dex, 0),
+            wis:           com(self.wis, 0),
+            defense:       com(self.defense, u),
         };
         // Affixes flat também recebem refinement.
         for a in &self.affixes {
@@ -514,5 +532,40 @@ pub fn sockets_for_tier(tier: u8) -> u8 {
         3 => 1,
         4 => 2,
         _ => 3,
+    }
+}
+
+#[cfg(test)]
+mod testes_do_refino {
+    use super::*;
+
+    /// Cada nivel de refino MUDA a peca, ate' a cinza do comeco: o +1 nao
+    /// pode arredondar pra nada (era o caso com so' +5%).
+    #[test]
+    fn cada_nivel_de_refino_aumenta_a_peca() {
+        let mut armadura = ItemInstance::roll_for(crate::constants::item_id::ARMADURA_LEVE, 5, || 0.5).unwrap();
+        armadura.hp_max = 13;
+        armadura.mp_max = 0;
+        armadura.attack_damage = 0;
+        armadura.dex = 2;
+        armadura.wis = 0;
+        armadura.defense = 1;
+        armadura.item_level = 5;
+        for a in armadura.affixes.iter_mut() {
+            *a = AffixSlot::default();
+        }
+        let soma = |b: &crate::constants::EquipBonus| b.hp_max + b.mp_max + b.attack_damage * 10 + b.defense * 8 + (b.dex + b.wis) * 5;
+        armadura.refinement = 0;
+        let mut antes = soma(&armadura.effective_bonus());
+        for nivel in 1..=crate::forja::REFINO_MAX {
+            armadura.refinement = nivel;
+            let b = armadura.effective_bonus();
+            assert!(soma(&b) > antes, "+{nivel} nao mudou a peca");
+            assert_eq!((b.attack_damage, b.mp_max, b.wis), (0, 0, 0), "refino criou atributo que a peca nao tem");
+            antes = soma(&b);
+        }
+        armadura.refinement = 4;
+        let b = armadura.effective_bonus();
+        assert_eq!((b.hp_max, b.defense, b.dex), (25, 5, 3), "a armadura cinza +4 do dono");
     }
 }
