@@ -7019,7 +7019,18 @@ impl GameWorld {
                     // A pergunta e' feita ao proprio mover: "pular me faria
                     // andar mais que andar?". Qualquer outra formulacao ja'
                     // discordou dele e deixou o corpo empurrando a quina.
-                    let passo = dir.normalize_or_zero() * shared::PLAYER_SPEED;
+                    //
+                    // Na velocidade de VERDADE: montado anda 1,5x, e perguntar
+                    // com a velocidade a pe' respondia "nao precisa" encostado
+                    // num degrau que o passo montado nao vence — o boneco
+                    // ficava empurrando o paredao sem pular (medido com
+                    // `terreno --simula`: a pe' chegava, montado nunca).
+                    let velocidade = shared::loja::velocidade_de_andar(
+                        shared::PLAYER_SPEED * session.stats.speed_mult.max(0.1),
+                        session.montado,
+                        1.0,
+                    );
+                    let passo = dir.normalize_or_zero() * velocidade;
                     if ilha.precisa_pular(aqui, passo, dt, ENTITY_RADIUS)
                         && self.sim_time_s >= session.pulo_pronto_em
                         && !session.downed

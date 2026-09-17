@@ -19,6 +19,14 @@ fn main() {
         varre();
         return;
     }
+    if args.iter().any(|a| a == "--simula") {
+        simula(&args);
+        return;
+    }
+    if args.iter().any(|a| a == "--alcance") {
+        alcance(&args);
+        return;
+    }
     if args.iter().any(|a| a == "--pedaco") {
         pedaco();
         return;
@@ -113,6 +121,132 @@ fn varre() {
                 e.pct_plana(), e.pct_andavel(), e.pct_parede(),
                 e.sitio_mob * 100.0, e.sitio_chefe * 100.0);
         }
+    }
+}
+
+/// Da' pra CHEGAR a pe' (andando e pulando, o mesmo A* do servidor) em cada
+/// regiao de recurso da ilha inicial, saindo da cidade? E a rota curta do
+/// servidor (orcamento de 6.000 nos, alcance 220) a partir de `--de x,z`
+/// ate' a regiao de pedra roxa mais perto.
+///
+/// ```sh
+/// cargo run --release --bin terreno -- --alcance --de 44,-39
+/// ```
+fn alcance(args: &[String]) {
+    use shared::terreno::TipoDeEstorvo;
+    let d = &ARQUIPELAGO[0];
+    let ilha = Ilha::gerar(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+    let cidade = ilha.cidade().map(|c| c.centro()).unwrap_or(glam::Vec2::ZERO);
+    let corpos: Vec<(glam::Vec2, u8)> = ilha.todos_os_estorvos().iter()
+        .filter_map(|e| match e.tipo {
+            TipoDeEstorvo::Tronco => Some((e.centro, 0)),
+            TipoDeEstorvo::Minerio(t) => Some((e.centro, t)),
+            TipoDeEstorvo::Forracao => None,
+        })
+        .collect();
+    // Mesmo agrupamento do `mapa_ilha::regioes_de_recurso` (o bin nao enxerga
+    // o crate do servidor): celula de 48 un por tipo, centro medio.
+    struct Regiao { tipo: u8, centro: [f32; 2], raio: f32, contagem: usize }
+    let mut grupos: std::collections::HashMap<(i32, i32, u8), Vec<glam::Vec2>> = Default::default();
+    for (p, t) in &corpos {
+        grupos.entry(((p.x / 48.0).floor() as i32, (p.y / 48.0).floor() as i32, *t)).or_default().push(*p);
+    }
+    let regioes: Vec<Regiao> = grupos.into_iter().filter(|(_, ps)| ps.len() >= 3).map(|((_, _, tipo), ps)| {
+        let c = ps.iter().fold(glam::Vec2::ZERO, |a, b| a + *b) / ps.len() as f32;
+        let raio = ps.iter().map(|p| p.distance(c)).fold(0.0f32, f32::max).max(4.0);
+        Regiao { tipo, centro: [c.x, c.y], raio, contagem: ps.len() }
+    }).collect();
+    let chega = |de: glam::Vec2, para: glam::Vec2, orc: usize| -> f32 {
+        ilha.caminho(de, para, orc).and_then(|r| r.last().copied()).map_or(f32::MAX, |f| f.distance(para))
+    };
+    let (mut ok, mut longe) = (0, Vec::new());
+    for r in &regioes {
+        let c = glam::Vec2::new(r.centro[0], r.centro[1]);
+        let falta = chega(cidade, c, 2_000_000);
+        if falta <= r.raio + 8.0 { ok += 1 } else { longe.push((r.tipo, c, falta, r.contagem)) }
+    }
+    println!("{}: {} regioes, {} alcancaveis da cidade", d.zona, regioes.len(), ok);
+    for (t, c, falta, n) in &longe {
+        println!("  INALCANCAVEL tipo {t} em {:.0},{:.0} ({n} corpos): rota para a {:.0} un", c.x, c.y, falta);
+    }
+    if let Some(i) = args.iter().position(|a| a == "--de") {
+        let v: Vec<f32> = args[i + 1].split(',').filter_map(|x| x.parse().ok()).collect();
+        let de = glam::Vec2::new(v[0], v[1]);
+        let mut roxas: Vec<_> = regioes.iter().filter(|r| r.tipo == 4).map(|r| glam::Vec2::new(r.centro[0], r.centro[1])).collect();
+        roxas.sort_by(|a, b| a.distance(de).total_cmp(&b.distance(de)));
+        for c in roxas.iter().take(3) {
+            println!("de {:.0},{:.0} ate' roxa {:.0},{:.0} ({:.0} un): orcamento 6000 para a {:.0}, ilimitado para a {:.0}",
+                de.x, de.y, c.x, c.y, de.distance(*c), chega(de, *c, 6_000), chega(de, *c, 2_000_000));
+        }
+        println!("altura em {:.0},{:.0}: {:.1}", de.x, de.y, ilha.altura(de.x, de.y));
+    }
+}
+
+/// Anda de `--de x,z` ate' `--para x,z` como o SERVIDOR anda: rota com o
+/// orcamento dele, pulo automatico com a altura do pulo em cada instante,
+/// rota refeita quando o seguidor trava, a pe' e montado.
+///
+/// ```sh
+/// cargo run --release --bin terreno -- --simula --de 44,-39 --para 57,93
+/// ```
+fn simula(args: &[String]) {
+    use shared::terreno::{SeguidorDeRota, DEGRAU_BLOCOS, PULO_BLOCOS};
+    let ponto = |nome: &str| -> glam::Vec2 {
+        let i = args.iter().position(|a| a == nome).expect(nome);
+        let v: Vec<f32> = args[i + 1].split(',').filter_map(|x| x.parse().ok()).collect();
+        glam::Vec2::new(v[0], v[1])
+    };
+    let (de, para) = (ponto("--de"), ponto("--para"));
+    let d = &ARQUIPELAGO[0];
+    let ilha = Ilha::gerar(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+    for montado in [false, true] {
+        let dt = 1.0f32 / 30.0;
+        let vel = shared::loja::velocidade_de_andar(shared::PLAYER_SPEED, montado, 1.0);
+        let r = shared::ENTITY_RADIUS;
+        let mut seg = SeguidorDeRota::nova(Vec::new(), para);
+        let mut p = de;
+        let (mut agora, mut pulo_ate, mut pronto, mut ultima_rota) = (0.0f32, -1.0f32, 0.0f32, -1.0f32);
+        let (mut pulos, mut rotas) = (0, 0);
+        let mut preso_desde = (p, 0.0f32);
+        while agora < 90.0 {
+            if p.distance(para) < 2.0 {
+                break;
+            }
+            // Rota: sem rota ou travada, pede de novo (intervalo do servidor).
+            if (seg.vazia() || seg.travado()) && agora - ultima_rota >= 0.2 {
+                ultima_rota = agora;
+                rotas += 1;
+                seg = match ilha.caminho(p, para, 6_000) {
+                    Some(rt) => SeguidorDeRota::nova(rt, para),
+                    None => SeguidorDeRota::nova(Vec::new(), para),
+                };
+            }
+            let dir = seg.direcao(p).unwrap_or(glam::Vec2::ZERO);
+            if dir.length_squared() > 0.01
+                && ilha.precisa_pular(p, dir.normalize_or_zero() * vel, dt, r)
+                && agora >= pronto
+            {
+                pulo_ate = agora + shared::PULO_DURACAO;
+                pronto = pulo_ate + shared::PULO_ESPERA;
+                pulos += 1;
+            }
+            let degrau = if agora < pulo_ate {
+                let t = shared::PULO_DURACAO - (pulo_ate - agora);
+                ((shared::altura_do_pulo(t) / BLOCO).floor() as i32).clamp(DEGRAU_BLOCOS, PULO_BLOCOS)
+            } else {
+                DEGRAU_BLOCOS
+            };
+            p = ilha.mover_com_degrau(p, dir * vel, dt, r, degrau);
+            if p.distance(preso_desde.0) > 1.0 {
+                preso_desde = (p, agora);
+            }
+            agora += dt;
+        }
+        println!(
+            "{}: parou a {:.1} do destino em {:.0},{:.0} (altura {:.1}) depois de {:.1}s, {pulos} pulos, {rotas} rotas; parado desde {:.1}s",
+            if montado { "montado" } else { "a pe'  " },
+            p.distance(para), p.x, p.y, ilha.altura(p.x, p.y), agora, preso_desde.1
+        );
     }
 }
 

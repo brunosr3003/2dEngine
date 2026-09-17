@@ -3870,6 +3870,49 @@ mod testes {
     }
 
 
+    /// Montado tambem sobe barranco pulando.
+    ///
+    /// Caso real (17/09/2026): montado, "Ir" ate' a regiao de pedra roxa, o
+    /// boneco ficou empurrando um paredao em (44, -39) sem nunca pular. O
+    /// servidor perguntava `precisa_pular` com a velocidade A PE' (5), e o
+    /// passo montado (7,5) e' outro: a resposta era "nao precisa". A pe' o
+    /// mesmo trajeto chega. Aqui a caminhada e' a do servidor: pulo com a
+    /// altura de cada instante e rota refeita quando o seguidor trava.
+    #[test]
+    fn montado_pula_o_paredao_da_trilha_da_pedra_roxa() {
+        let d = &ARQUIPELAGO[0];
+        let i = Ilha::gerar(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+        let (de, para) = (glam::Vec2::new(43.95196, -39.21062), glam::Vec2::new(57.0, 93.0));
+        for montado in [false, true] {
+            let vel = crate::loja::velocidade_de_andar(crate::constants::PLAYER_SPEED, montado, 1.0);
+            let dt = 1.0f32 / 30.0;
+            let mut seg = SeguidorDeRota::nova(Vec::new(), para);
+            let mut p = de;
+            let (mut agora, mut pulo_ate, mut pronto, mut ultima_rota) = (0.0f32, -1.0f32, 0.0f32, -1.0f32);
+            while agora < 60.0 && p.distance(para) >= 2.5 {
+                if (seg.vazia() || seg.travado()) && agora - ultima_rota >= 0.2 {
+                    ultima_rota = agora;
+                    seg = SeguidorDeRota::nova(i.caminho(p, para, 6_000).unwrap_or_default(), para);
+                }
+                let dir = seg.direcao(p).unwrap_or(glam::Vec2::ZERO);
+                // Como o servidor: a pergunta vai com a velocidade de verdade.
+                if dir.length_squared() > 0.01 && i.precisa_pular(p, dir.normalize_or_zero() * vel, dt, 0.35) && agora >= pronto {
+                    pulo_ate = agora + crate::constants::PULO_DURACAO;
+                    pronto = pulo_ate + crate::constants::PULO_ESPERA;
+                }
+                let degrau = if agora < pulo_ate {
+                    let t = crate::constants::PULO_DURACAO - (pulo_ate - agora);
+                    ((crate::constants::altura_do_pulo(t) / BLOCO).floor() as i32).clamp(DEGRAU_BLOCOS, PULO_BLOCOS)
+                } else {
+                    DEGRAU_BLOCOS
+                };
+                p = i.mover_com_degrau(p, dir * vel, dt, 0.35, degrau);
+                agora += dt;
+            }
+            assert!(p.distance(para) < 2.5, "montado={montado}: parou em {p:?}, a {:.0} do destino", p.distance(para));
+        }
+    }
+
     #[test]
     fn dbg_caso() {
         let d = &ARQUIPELAGO[0];
