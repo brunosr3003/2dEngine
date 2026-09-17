@@ -854,6 +854,8 @@ pub struct Preferencias {
     pub coleta_tipos: Option<[bool; 5]>,
     /// AUTO COLETA: raio de busca a partir de onde foi ligado.
     pub coleta_raio: Option<f32>,
+    /// AUTO COLETA: apanhou de bicho, mata e volta a coletar.
+    pub coleta_defender: Option<bool>,
     /// Escala da interface (HUD e textos), 0,8 a 1,6.
     pub escala_ui: Option<f32>,
     /// Modo economia de energia: entra sozinho depois de N minutos sem tocar
@@ -930,6 +932,7 @@ mod testes_preferencias {
             montaria_skin: Some(102),
             minimapa_expandido: Some(true),
             minimapa_oculto: Some(true),
+            coleta_defender: Some(false),
         }
         .validada(&|id| id <= 12);
         assert_eq!(p.escala_ui, Some(1.6));

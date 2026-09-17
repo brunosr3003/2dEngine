@@ -58,6 +58,9 @@ pub struct AutoColeta {
     /// O servidor pausou por bolsa cheia: fica no no' e espera abrir espaco
     /// (quem retoma e' o servidor, quando a bolsa muda).
     bolsa_cheia: bool,
+    /// Configuracao: apanhou de bicho coletando, larga o no', mata o bicho e
+    /// volta a coletar. Salva nas preferencias; ligado por padrao.
+    pub defender: bool,
 }
 
 impl Default for AutoColeta {
@@ -74,6 +77,7 @@ impl Default for AutoColeta {
             confirmou: false,
             falhas: 0,
             bolsa_cheia: false,
+            defender: true,
         }
     }
 }
@@ -131,6 +135,15 @@ impl AutoColeta {
         self.desde = f64::MIN;
         self.confirmou = false;
         self.falhas = 0;
+    }
+
+    /// Volta a procurar no' do zero, mantendo onde foi ligado, a missao e o
+    /// filtro. Depois de largar o no' pra se defender.
+    pub fn retomar(&mut self) {
+        self.etapa = Etapa::Procurar;
+        self.alvo = None;
+        self.desde = f64::MIN;
+        self.confirmou = false;
     }
 
     /// Tipos que valem agora: os da missao, se houver.

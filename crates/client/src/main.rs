@@ -205,6 +205,10 @@ struct Jogo {
     auto_dungeon_envio: f64,
     /// Tela de carregando: desde quando (entrou no mundo ou foi teleportado).
     carregando_desde: Option<f64>,
+    /// Ultimo bicho que me acertou, e quando.
+    agressor: Option<(shared::EntityId, f64)>,
+    /// A auto coleta largou o no' pra matar este bicho.
+    defesa_da_coleta: Option<shared::EntityId>,
     auto_dungeon_bau_em: Option<f64>,
     /// X: fica coletando no melhor spot perto.
     auto_coleta: auto_coleta::AutoColeta,
@@ -450,6 +454,8 @@ async fn main() {
         auto_missao: auto_missao::AutoMissao::default(),
         auto_dungeon_envio: 0.0,
         carregando_desde: None,
+        agressor: None,
+        defesa_da_coleta: None,
         auto_dungeon_bau_em: None,
         auto_coleta: auto_coleta::AutoColeta::default(),
         toque_coleta: toque::ToqueLongo::default(),
@@ -918,6 +924,13 @@ impl Jogo {
                 self.world
                     .apply(snapshot.entered, snapshot.states, &snapshot.removed);
                 self.world.acertos(&snapshot.acertos);
+                // Quem me bateu (bicho): a defesa da auto coleta revida.
+                let eu = self.world.self_id;
+                if let Some(a) = snapshot.acertos.iter().rev().find(|a| Some(a.alvo) == eu
+                    && self.world.ents.get(&a.atacante).is_some_and(|e| e.meta.tag == shared::EntityTag::Enemy))
+                {
+                    self.agressor = Some((a.atacante, get_time()));
+                }
             }
             ServerMessage::Chat { from, text } => {
                 self.chat.push(format!("{from}: {text}"));
@@ -2015,6 +2028,9 @@ impl Jogo {
         if let Some(r) = p.coleta_raio {
             self.auto_coleta.raio = r;
         }
+        if let Some(d) = p.coleta_defender {
+            self.auto_coleta.defender = d;
+        }
         if let Some(e) = p.escala_ui {
             hud_layout::define_escala_ui(e);
         }
@@ -2049,6 +2065,7 @@ impl Jogo {
             camera_pitch_ajuste: Some(cent(self.cam_pitch_ajuste)),
             coleta_tipos: Some(self.auto_coleta.tipos),
             coleta_raio: Some(cent(self.auto_coleta.raio)),
+            coleta_defender: Some(self.auto_coleta.defender),
             escala_ui: Some(cent(hud_layout::escala_ui())),
             economia_auto_min: self.economia.auto_min,
             montaria_skin: self.montaria_skin,
@@ -2168,6 +2185,49 @@ impl Jogo {
 
     /// X (ou o botao): auto coleta. Teclado, Esc ou Z desligam. Tambem conduz
     /// a coleta manual (clique numa pedra/tronco) e vira o boneco pro no'.
+    /// Apanhou de bicho coletando (e a opcao esta' ligada): larga o no', mata
+    /// o bicho e volta a coletar. Devolve `true` enquanto esta' defendendo — a
+    /// coleta espera.
+    fn defender_a_coleta(&mut self, agora: f64) -> bool {
+        const LEMBRA_S: f64 = 3.0;
+        let vivo = |w: &world::World, id: shared::EntityId| {
+            w.ents.get(&id).is_some_and(|e| e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none())
+        };
+        if !self.auto_coleta.defender {
+            self.defesa_da_coleta = None;
+            return false;
+        }
+        if self.defesa_da_coleta.is_none() {
+            let Some((id, quando)) = self.agressor else { return false };
+            if agora - quando > LEMBRA_S || !vivo(&self.world, id) {
+                return false;
+            }
+            self.defesa_da_coleta = Some(id);
+            self.mapa.viagem.cancelar();
+            self.envia(ClientMessage::PararColeta);
+            self.chat.push("Auto coleta: atacado, revidando.".into());
+        }
+        let Some(id) = self.defesa_da_coleta else { return false };
+        if vivo(&self.world, id) {
+            if self.alvo != Some(id) {
+                self.alvo = Some(id);
+                self.envia(ClientMessage::SetTarget { target: Some(id) });
+            }
+            return true;
+        }
+        // Morreu (ou sumiu): outro bicho ainda batendo vira o proximo; senao,
+        // volta pro no'.
+        self.defesa_da_coleta = None;
+        self.alvo = None;
+        self.envia(ClientMessage::SetTarget { target: None });
+        if self.agressor.is_some_and(|(a, q)| a != id && agora - q <= LEMBRA_S && vivo(&self.world, a)) {
+            return self.defender_a_coleta(agora);
+        }
+        self.agressor = None;
+        self.auto_coleta.retomar();
+        false
+    }
+
     fn atualizar_auto_coleta(&mut self) {
         let agora = get_time();
         // Desligou (aqui ou em qualquer outro lugar): a coleta em curso para.
@@ -2229,9 +2289,13 @@ impl Jogo {
             }
         }
         if !self.auto_coleta.ativo() {
+            self.defesa_da_coleta = None;
             return;
         }
         let Some(eu) = self.world.self_pos() else { return };
+        if self.defender_a_coleta(agora) {
+            return;
+        }
         match self.auto_coleta.passo(eu, agora, self.mapa.viagem.ativa()) {
             auto_coleta::Acao::PedirNo { tipos, raio, centro } => {
                 self.envia(ClientMessage::PedirNoDeColeta { tipos, raio, centro: [centro.x, centro.y] });
@@ -3282,11 +3346,12 @@ impl Jogo {
             }
         }
         if self.config_coleta.aberto {
-            let (mut tipos, mut raio) = (self.auto_coleta.tipos, self.auto_coleta.raio);
-            if self.config_coleta.desenha(&mut tipos, &mut raio) {
+            let (mut tipos, mut raio, mut defender) = (self.auto_coleta.tipos, self.auto_coleta.raio, self.auto_coleta.defender);
+            if self.config_coleta.desenha(&mut tipos, &mut raio, &mut defender) {
                 // Vai pro servidor pelas preferencias (sincronia a cada quadro).
                 self.auto_coleta.tipos = tipos;
                 self.auto_coleta.raio = raio;
+                self.auto_coleta.defender = defender;
             }
         }
         // Com o "Onde obter" aberto por cima, o configurador fica parado.

@@ -42,9 +42,9 @@ impl ConfigColeta {
     }
 
     /// Desenha e trata o clique. Devolve se a configuracao mudou.
-    pub fn desenha(&mut self, tipos: &mut [bool; 5], raio: &mut f32) -> bool {
+    pub fn desenha(&mut self, tipos: &mut [bool; 5], raio: &mut f32, defender: &mut bool) -> bool {
         let (sw, sh) = (screen_width(), screen_height());
-        let r = Rect::new(sw * 0.5 - 200.0, sh * 0.5 - 170.0, 400.0, 340.0);
+        let r = Rect::new(sw * 0.5 - 200.0, sh * 0.5 - 190.0, 400.0, 380.0);
         estilo::painel(r);
         estilo::texto(r.x + 18.0, r.y + 32.0, "Auto coleta", 20, estilo::OURO);
         let fechar = Rect::new(r.x + r.w - 38.0, r.y + 10.0, 28.0, 28.0);
@@ -86,6 +86,18 @@ impl ConfigColeta {
                     mudou = true;
                 }
             }
+        }
+        // Defender: apanhou coletando, mata o bicho e volta a coletar.
+        let linha = Rect::new(r.x + 18.0, y + 16.0, r.w - 36.0, 28.0);
+        let caixa = Rect::new(linha.x, linha.y + 4.0, 20.0, 20.0);
+        draw_rectangle_lines(caixa.x, caixa.y, caixa.w, caixa.h, 2.0, estilo::OURO);
+        if *defender {
+            draw_rectangle(caixa.x + 4.0, caixa.y + 4.0, caixa.w - 8.0, caixa.h - 8.0, estilo::AUTO);
+        }
+        estilo::texto(linha.x + 32.0, linha.y + 20.0, "Defender-se: atacado, mata o bicho e volta", 15, estilo::TEXTO);
+        if clicou && linha.contains(m) {
+            *defender = !*defender;
+            mudou = true;
         }
         estilo::texto(r.x + 18.0, r.y + r.h - 18.0, "Procura a partir de onde o AUTO foi ligado.", 12, estilo::SUAVE);
         mudou
