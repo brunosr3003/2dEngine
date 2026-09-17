@@ -10991,7 +10991,9 @@ impl GameWorld {
                 }
             }
             if feito.reward_xp > 0 {
-                s.grant_xp(feito.reward_xp);
+                // A XP da historia e' escrita na curva padrao (e' ela que leva o
+                // nivel do capitulo I): acompanha o multiplicador do servidor.
+                s.grant_xp(feito.reward_xp.saturating_mul(xpmult) / shared::constants::DEFAULT_XP_MULTIPLIER);
             }
             let _ = s.handle.to_client.send(ServerMessage::QuestUpdate {
                 quest_id: feito.id, progress: feito.obj_count, status: quest_status::TURNED_IN,
@@ -11696,6 +11698,7 @@ impl GameWorld {
             }
             // Criar e refinar nao se faz andando: o cliente abre o painel.
             objective_kind::CRAFT => Some((destino_tipo::PAINEL_CRAFT, eu, 0.0, None)),
+            objective_kind::DUNGEON => Some((destino_tipo::PAINEL_DUNGEON, eu, def.obj_target as f32, None)),
             objective_kind::REFINE => Some((destino_tipo::PAINEL_FORJA, eu, 0.0, None)),
             _ => None,
         }

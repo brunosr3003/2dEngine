@@ -99,6 +99,14 @@ impl DungeonUi {
         vec![pedir(Pedido::Estado)]
     }
 
+    /// Abre ja' com a dungeon `conteudo` escolhida (0 = a de sempre).
+    pub fn abrir_em(&mut self, conteudo: u16) -> Vec<ClientMessage> {
+        if conteudo != 0 {
+            self.sel = conteudo;
+        }
+        self.abrir()
+    }
+
     pub fn fechar(&mut self) {
         self.aberto = false;
         self.salas = None;

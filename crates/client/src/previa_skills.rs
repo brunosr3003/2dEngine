@@ -15,6 +15,9 @@ pub async fn abrir(vox: &VoxCache) {
         estados.push(shared::EntityState::quantize(shared::EntityId(id),::glam::Vec2::new(p.x,p.y),::glam::Vec2::ZERO,100,0));
     }
     mundo.apply(metas,estados,&[]);
+    mundo.self_id=Some(shared::EntityId(1));
+    // Minimapa da ilha de verdade na previa do HUD; o ultimo quadro sai com ele fechado.
+    let mut mapa=crate::mapa::Mapa::para(shared::terreno::def_da_zona("ilha_inicial"));
     let solido = render3d::material_solido();
     let luz = habilidades_vfx::material();
     let mut tempo = 0.0f32;
@@ -88,6 +91,9 @@ pub async fn abrir(vox: &VoxCache) {
             crate::hud::draw_atacar(&z,true);
             crate::hud::draw_rapidos(&z,crate::barra::padrao().map(|e|e.item_id),[12,5,3,1],[true,false,false,false],[Some((5.0,8.0)),None,None,None],[true,false,false,false],None,&|_|String::new());
             crate::hud::draw_topo(&z,true,true,true,true);
+            mapa.acompanhar();
+            crate::hud_layout::define_minimapa_oculto(automatico && escolha==11);
+            mapa.desenha_mini(&mundo);
             set_default_camera();
         } else {
             draw_text(&format!("{} / 12   {}",escolha + 1,skill.nome),28.0,42.0,28.0,WHITE);

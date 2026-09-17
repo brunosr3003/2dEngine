@@ -1124,7 +1124,17 @@ impl Jogo {
                 use shared::quests::destino_tipo;
                 // Criar e refinar nao se faz andando: abre o painel e a auto
                 // missao para (quem cria e' o jogador).
-                if tipo == destino_tipo::PAINEL_CRAFT || tipo == destino_tipo::PAINEL_FORJA {
+                if tipo == destino_tipo::PAINEL_DUNGEON {
+                    // Vencer dungeon nao se faz andando: abre o painel na dungeon
+                    // do passo (o id vem no `raio`).
+                    if self.auto_missao.quest == Some(quest_id) {
+                        self.auto_missao.parar();
+                        self.fecha_paineis();
+                        for pedido in self.dungeon.abrir_em(raio as u16) {
+                            self.envia(pedido);
+                        }
+                    }
+                } else if tipo == destino_tipo::PAINEL_CRAFT || tipo == destino_tipo::PAINEL_FORJA {
                     if self.auto_missao.quest == Some(quest_id) {
                         self.auto_missao.parar();
                         if tipo == destino_tipo::PAINEL_CRAFT {
@@ -1941,6 +1951,9 @@ impl Jogo {
         if let Some(v) = p.minimapa_expandido {
             hud_layout::define_minimapa_expandido(v);
         }
+        if let Some(v) = p.minimapa_oculto {
+            hud_layout::define_minimapa_oculto(v);
+        }
         let atual = self.preferencias_atuais();
         self.prefs.recebeu(&atual);
     }
@@ -1964,6 +1977,7 @@ impl Jogo {
             economia_auto_min: self.economia.auto_min,
             montaria_skin: self.montaria_skin,
             minimapa_expandido: Some(hud_layout::minimapa_expandido()),
+            minimapa_oculto: Some(hud_layout::minimapa_oculto()),
         }
     }
 

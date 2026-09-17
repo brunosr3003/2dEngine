@@ -24,7 +24,7 @@ olho da tempestade. Daí em diante começam as **Crônicas da Tempestade**.
 
 | Capítulo | Ilha | Ids | Passos | Travas |
 |---|---|---|---|---|
-| I · O Farol do Bosque | Bosque (1–15) | 700–718 | 19 | 5, 10, 15 |
+| I · O Farol do Bosque | Bosque (1–15) | 700–718 | 19 | nenhuma (ver abaixo) |
 | II · O Farol Congelado | Geleira (15–30) | 719–736 | 18 | 20, 25, 30 |
 | III · Areias que Gritam | Ermo (28–42) | 737–751 | 15 | 35, 40 |
 | IV · O Coração da Tempestade | Planalto (40–60) | 752–768 | 17 | 45, 50, 55, 60 |
@@ -42,6 +42,9 @@ Cada passo leva a um ponto-chave:
 - **Caçar** o bicho da vez (lobo, urso, pistoleiro, tigre, owlbear, arqueiro,
   mago ou qualquer um), **quebrar pedra**, **criar** e **refinar** uma peça —
   os mesmos objetivos das missões do Mestre.
+- **Vencer uma dungeon** (`objective_kind::DUNGEON`, alvo = id do conteúdo):
+  só a vitória DAQUELA dungeon conta. Tocar no passo abre o painel de Dungeons
+  já nela. No capítulo I: Porão do Naufrágio (710) e Adega do Contrabandista (717).
 - **Trava de nível** (`objective_kind::NIVEL`): fica no rastreador com a barra
   de XP até o nível e conclui sozinha no level-up.
 - **Viagem** (`objective_kind::VIAGEM`): falar com o Capitão do Porto embarca
@@ -62,8 +65,30 @@ de chefe, a 5%. Sem essa entrega, o 707 pedia por volta do nível 5 algo que o
 jogador não tinha como fazer. Quem for mexer nas recompensas do 706 precisa
 saber que está mexendo no destravamento do craft, não num brinde.
 
-De onde vem o resto da receita, o jogador aprende na oficina do Mestre
-(quests 506-509, ver [MISSOES.md](MISSOES.md)).
+## O capítulo I carrega o jogador (decisão de 17/09/2026)
+
+O dono pediu que o início "leve a um ponto aceitável: todos os itens podendo
+farmar, fazer dungeon". A primeira versão só reescreveu textos e a sequência
+continuou com uma trava "Alcance o nível 5" no passo 704. Com a curva padrão
+(nível 5 = 15.000 XP) e lobo dando 32, isso eram ~450 lobos.
+
+Agora, no capítulo I:
+
+- **Não há trava de nível.** As três viraram conteúdo: 704 derrubar árvores
+  (apresenta a madeira), 710 Porão do Naufrágio, 717 Adega do Contrabandista.
+- **A XP dos passos leva o nível**, sem contar bicho: nível 6 antes do Porão
+  (pede 6), 14 antes da Adega (pede 14) e 15 ao embarcar pra Geleira. A XP é
+  escrita na curva padrão e o servidor aplica o `xp_multiplier` por cima.
+- **Os passos antes do craft entregam a receita inteira** da primeira
+  armadura cinza: Berloque ×10 (702), Quintessência ×10 (703), Darksteel ×200
+  (704), Aço ×30 (705), Cobre ×300 e Couro (706).
+
+Os dois contratos são testes em `historia.rs`:
+`capitulo_um_carrega_o_nivel_das_dungeons` e `o_inicio_entrega_a_primeira_armadura`.
+Os capítulos II a IV ainda têm travas e XP antiga.
+
+De onde vem cada material para farmar depois, o jogador aprende na oficina do
+Mestre (quests 506-509, ver [MISSOES.md](MISSOES.md)).
 
 ## Crônicas da Tempestade (epílogo procedural)
 

@@ -865,6 +865,8 @@ pub struct Preferencias {
     /// Minimapa grande: ve' mais mundo de uma vez. O tamanho de verdade quem
     /// decide e' o `hud_layout`, pelo espaco que sobra na tela.
     pub minimapa_expandido: Option<bool>,
+    /// Minimapa fechado: so' o botao de reabrir fica na tela.
+    pub minimapa_oculto: Option<bool>,
 }
 
 /// Filtros do mapa grande e do minimapa. O padrao e' tudo desligado.
@@ -927,6 +929,7 @@ mod testes_preferencias {
             economia_auto_min: Some(500),
             montaria_skin: Some(102),
             minimapa_expandido: Some(true),
+            minimapa_oculto: Some(true),
         }
         .validada(&|id| id <= 12);
         assert_eq!(p.escala_ui, Some(1.6));

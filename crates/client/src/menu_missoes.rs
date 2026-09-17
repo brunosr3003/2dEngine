@@ -447,8 +447,8 @@ mod tests {
         assert!(todas().iter().all(|d| zona_da_missao(d.id).is_some()), "legada no menu");
     }
 
-    /// Historia: antes do atual concluido, o atual em andamento, o futuro com a
-    /// trava de nivel e o passo anterior como motivo; o menu mostra os
+    /// Historia: antes do atual concluido, o atual em andamento, o futuro com o
+    /// passo anterior como motivo (e sem trava de nivel no capitulo I); o menu mostra os
     /// capitulos escritos e so' as cronicas perto do atual.
     #[test]
     fn historia_no_menu_concluida_atual_e_futura() {
@@ -460,7 +460,8 @@ mod tests {
         assert_eq!(estado_da_historia(atual, &c), Estado::EmAndamento { feito: 3, total: 10 });
         match estado_da_historia(historia::def_da_historia(712).unwrap(), &c) {
             Estado::Bloqueada(m) => {
-                assert!(m.contains(&"Requer nível 10".to_string()), "{m:?}");
+                // Capitulo I sem trava de nivel: a historia carrega o nivel.
+                assert!(!m.iter().any(|s| s.starts_with("Requer nível")), "{m:?}");
                 assert!(m.iter().any(|s| s.starts_with("Conclua: ")), "{m:?}");
             }
             outro => panic!("{outro:?}"),

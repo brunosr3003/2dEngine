@@ -141,9 +141,11 @@ limpa o alvo e desliga o AUTO.
   o clique. Começar o gesto em cima de botão ou painel do HUD não mexe na câmera.
 - **LMB:** seleciona alvo ou anda até o chão clicado; ataque básico automático.
 - **Mapa** (nome da zona, ⤢ do minimapa ou Menu; Esc, X ou clique fora
-  fecham). O minimapa é um **disco** no canto superior direito; a roda sobre ele
-  muda o zoom e o botão ao lado do ⤢ alterna entre **compacto e expandido** (a
-  escolha fica guardada no personagem). Clicar num ponto de terra do mapa, ou
+  fecham). O minimapa é um **disco** no canto superior direito; os botões **−** e
+  **+** nos cantos de baixo (ou a roda sobre ele) mudam o zoom, o botão ao lado
+  do ⤢ alterna entre **compacto e expandido** e o **×** do canto de cima
+  **fecha** o minimapa — fica um botão redondo no lugar, que reabre. Tamanho,
+  zoom e aberto/fechado ficam guardados no personagem. Clicar num ponto de terra do mapa, ou
   **dentro do disco** do minimapa, **viaja** até lá: desliga o
   auto combate, solta o alvo e anda sozinho por etapas de até 160 m. Andar no
   teclado, clicar no mundo, ligar o auto combate ou abrir a loja cancelam.

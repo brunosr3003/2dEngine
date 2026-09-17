@@ -905,7 +905,8 @@ impl GameWorld {
                     s.dungeon.postar(shared::item_id::chave_na_cor(base, cor), 1, None, 2, quando);
                 }
             }
-            self.quest_on_evento(sid, shared::quests::objective_kind::DUNGEON, 1);
+            // Alvo 0 = qualquer dungeon (diarias, 510); a historia nomeia a dela.
+            self.quest_on_evento_se(sid, shared::quests::objective_kind::DUNGEON, 1, &|d| d.obj_target == 0 || d.obj_target == conteudo);
             self.dg_avisar(sid, Aviso::Resultado { conteudo, estagio, vitoria: true, tempo_s, bonus_tempo: bonus, primeira_vitoria: primeira });
             if primeira {
                 self.dg_texto(sid, true, "Primeira vitória! A recompensa está nas Entregas.");

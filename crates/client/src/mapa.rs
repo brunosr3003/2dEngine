@@ -579,7 +579,7 @@ impl Mapa {
     }
 
     pub fn define_alcance_minimapa(&mut self, a: f32) {
-        self.alcance_mini = a.clamp(30.0, 400.0);
+        self.alcance_mini = a.clamp(ALCANCE_MIN, ALCANCE_MAX);
     }
 
     /// Mapa da ilha `def`. Zona sem ilha (mapa de tiles antigo) fica vazio e
@@ -911,14 +911,48 @@ impl Mapa {
         Rect::new(ic.x - ic.w - 6.0, ic.y, ic.w, ic.h)
     }
 
+    /// Os botoes dos CANTOS do minimapa, fora do disco: fechar em cima a'
+    /// esquerda, − e + embaixo. Mesmo tamanho e recuo do ⤢.
+    fn canto_do_minimapa(direita: bool, baixo: bool) -> Rect {
+        let (r, ic) = (Self::mini_rect(), crate::hud_layout::atual().mapa_icone);
+        let recuo = ic.y - r.y;
+        let x = if direita { r.x + r.w - ic.w - recuo } else { r.x + recuo };
+        let y = if baixo { r.y + r.h - ic.h - recuo } else { ic.y };
+        Rect::new(x, y, ic.w, ic.h)
+    }
+
+    fn ocultar_rect() -> Rect {
+        Self::canto_do_minimapa(false, false)
+    }
+
+    fn zoom_menos_rect() -> Rect {
+        Self::canto_do_minimapa(false, true)
+    }
+
+    fn zoom_mais_rect() -> Rect {
+        Self::canto_do_minimapa(true, true)
+    }
+
+    /// Minimapa fechado: o botao que sobra, no lugar do ⤢.
+    fn reabrir_rect() -> Rect {
+        crate::hud_layout::atual().minimapa_reabrir()
+    }
+
+    /// Aproxima (`perto`) ou afasta o minimapa um passo, o mesmo da roda.
+    fn zoom_minimapa(&mut self, perto: bool) {
+        let f = if perto { 0.8 } else { 1.25 };
+        self.alcance_mini = (self.alcance_mini * f).clamp(ALCANCE_MIN, ALCANCE_MAX);
+    }
+
     fn fechar_rect(r: Rect) -> Rect {
         Rect::new(r.x + r.w - 26.0, r.y - 32.0, 26.0, 26.0)
     }
 
     /// O clique e a roda sao do mapa (e nao do mundo nem da camera)?
     pub fn pega_mouse(&self) -> bool {
-        self.tem_ilha()
-            && (self.aberto || Self::mini_rect().contains(Vec2::from(mouse_position())))
+        let m = Vec2::from(mouse_position());
+        let mini = if crate::hud_layout::minimapa_oculto() { Self::reabrir_rect() } else { Self::mini_rect() };
+        self.tem_ilha() && (self.aberto || mini.contains(m))
     }
 
     /// Roda e clique. Devolve o que o clique pede: viajar a um ponto, ou ir a
@@ -947,46 +981,76 @@ impl Mapa {
             }
             return None;
         }
+        // Toque: o ponto do DEDO no quadro em que encosta. O mouse simulado
+        // ainda aponta pro toque anterior (o mesmo defeito do botao de criar
+        // personagem), e o botao errava.
+        let aperto = apertou_em();
+        if crate::hud_layout::minimapa_oculto() {
+            if aperto.is_some_and(|p| Self::reabrir_rect().contains(p)) {
+                crate::hud_layout::define_minimapa_oculto(false);
+            }
+            return None;
+        }
         let r = Self::mini_rect();
-        if !r.contains(m) {
-            return None;
-        }
-        // O ⤢ da moldura abre o mapa grande em vez de viajar.
-        if crate::hud_layout::atual().mapa_icone.contains(m) {
-            if is_mouse_button_pressed(MouseButton::Left) {
+        // Botoes: o ⤢ abre o Mapa, o de tamanho alterna compacto/expandido
+        // (quem guarda e' o `main`, pelas preferencias), − e + dao zoom e o
+        // do canto de cima fecha.
+        if let Some(p) = aperto.filter(|p| r.contains(*p)) {
+            if crate::hud_layout::atual().mapa_icone.contains(p) {
                 self.aberto = true;
-            }
-            return None;
-        }
-        // O botao de tamanho. Quem guarda a escolha e' o `main`, que le o
-        // `hud_layout` todo quadro pras preferencias do personagem.
-        if Self::expandir_rect().contains(m) {
-            if is_mouse_button_pressed(MouseButton::Left) {
-                crate::hud_layout::define_minimapa_expandido(!crate::hud_layout::minimapa_expandido());
-            }
-            return None;
-        }
-        let (_, roda) = mouse_wheel();
-        if roda != 0.0 {
-            let f = if roda > 0.0 { 0.8 } else { 1.25 };
-            self.alcance_mini = (self.alcance_mini * f).clamp(30.0, 400.0);
-        }
-        if is_mouse_button_pressed(MouseButton::Left) {
-            let eu = eu?;
-            // O mapa e' um disco: canto do painel e' moldura, nao viaja. E a
-            // conta usa o raio DESENHADO (o painel tem 4 px de sobra de cada
-            // lado), senao o clique cai a alguns metros de onde se apontou.
-            let (c, rad) = (r.center(), (r.w - 8.0) * 0.5);
-            if m.distance(c) > rad {
                 return None;
             }
-            return Some(Entrada::Viajar(eu + (m - c) / rad * self.alcance_mini));
+            if Self::expandir_rect().contains(p) {
+                crate::hud_layout::define_minimapa_expandido(!crate::hud_layout::minimapa_expandido());
+                return None;
+            }
+            if Self::ocultar_rect().contains(p) {
+                crate::hud_layout::define_minimapa_oculto(true);
+                return None;
+            }
+            if Self::zoom_mais_rect().contains(p) {
+                self.zoom_minimapa(true);
+                return None;
+            }
+            if Self::zoom_menos_rect().contains(p) {
+                self.zoom_minimapa(false);
+                return None;
+            }
+        }
+        if r.contains(m) {
+            let (_, roda) = mouse_wheel();
+            if roda != 0.0 {
+                self.zoom_minimapa(roda > 0.0);
+            }
+        }
+        if let Some(p) = aperto.filter(|p| r.contains(*p)) {
+            let eu = eu?;
+            // O mapa e' um disco: canto do painel e' moldura, nao viaja. E a
+            // conta usa o raio DESENHADO, senao o clique cai a alguns metros
+            // de onde se apontou.
+            let (c, rad) = (r.center(), r.w * 0.5 - MARGEM_DO_DISCO);
+            if p.distance(c) > rad {
+                return None;
+            }
+            return Some(Entrada::Viajar(eu + (p - c) / rad * self.alcance_mini));
         }
         None
     }
 
     pub fn desenha_mini(&self, world: &World) {
         if !self.tem_ilha() {
+            return;
+        }
+        if crate::hud_layout::minimapa_oculto() {
+            let b = Self::reabrir_rect();
+            let sobre = b.contains(Vec2::from(mouse_position()));
+            let (c, raio) = (b.center(), b.w * 0.5);
+            draw_circle(c.x, c.y, raio, estilo::FUNDO_ALTO);
+            draw_circle_lines(c.x, c.y, raio, 2.0, estilo::alfa(estilo::OURO, if sobre { 1.0 } else { 0.75 }));
+            let cor = if sobre { estilo::OURO } else { estilo::TEXTO };
+            if !crate::icones_ui::mapa("mapa", c, b.w * 0.56, cor, 0.0) {
+                glifo_minimapa(b, cor);
+            }
             return;
         }
         let dentro = Self::mini_rect();
@@ -1132,6 +1196,29 @@ impl Mapa {
         let sobre_ex = ex.contains(m);
         botao_da_moldura(ex, sobre_ex);
         glifo_tamanho(ex, crate::hud_layout::minimapa_expandido(), if sobre_ex { estilo::OURO } else { estilo::TEXTO });
+        let apagado = estilo::alfa(estilo::TEXTO, 0.35);
+        for (r, glifo, ativo) in [
+            (Self::ocultar_rect(), '×', true),
+            (Self::zoom_menos_rect(), '−', self.alcance_mini < ALCANCE_MAX),
+            (Self::zoom_mais_rect(), '+', self.alcance_mini > ALCANCE_MIN),
+        ] {
+            let sobre = ativo && r.contains(m);
+            botao_da_moldura(r, sobre);
+            let cor = if !ativo { apagado } else if sobre { estilo::OURO } else { estilo::TEXTO };
+            let (c, d) = (r.center(), r.w * 0.24);
+            match glifo {
+                '×' => {
+                    draw_line(c.x - d, c.y - d, c.x + d, c.y + d, 1.8, cor);
+                    draw_line(c.x - d, c.y + d, c.x + d, c.y - d, 1.8, cor);
+                }
+                _ => {
+                    draw_line(c.x - d * 1.2, c.y, c.x + d * 1.2, c.y, 2.0, cor);
+                    if glifo == '+' {
+                        draw_line(c.x, c.y - d * 1.2, c.x, c.y + d * 1.2, 2.0, cor);
+                    }
+                }
+            }
+        }
     }
 
     /// O mapa grande (M) com o painel lateral. Devolve o "Ir" clicado no
@@ -1337,6 +1424,27 @@ fn rosa_dos_ventos(c: Vec2, rad: f32) {
         let p = c + d * (rad + 10.0);
         estilo::texto_centro(p.x, p.y + 4.0, nome, 11, cor);
     }
+}
+
+/// Faixa do zoom do minimapa (raio visivel, em unidades).
+const ALCANCE_MIN: f32 = 30.0;
+const ALCANCE_MAX: f32 = 400.0;
+
+/// Onde o dedo (ou o mouse) apertou NESTE quadro. Igual ao da tela de
+/// personagens: o mouse simulado da macroquad fica no toque ANTERIOR.
+fn apertou_em() -> Option<Vec2> {
+    if let Some(t) = touches().into_iter().find(|t| t.phase == TouchPhase::Started) {
+        return Some(t.position);
+    }
+    is_mouse_button_pressed(MouseButton::Left).then(|| Vec2::from(mouse_position()))
+}
+
+/// Minimapa fechado: um disco com a seta do jogador, pra ler "minimapa".
+fn glifo_minimapa(r: Rect, cor: Color) {
+    let c = r.center();
+    draw_circle_lines(c.x, c.y, r.w * 0.32, 1.6, cor);
+    let s = r.w * 0.14;
+    draw_triangle(c + vec2(0.0, -s), c + vec2(-s * 0.7, s * 0.7), c + vec2(s * 0.7, s * 0.7), cor);
 }
 
 fn botao_da_moldura(r: Rect, sobre: bool) {

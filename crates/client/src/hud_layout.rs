@@ -39,6 +39,7 @@ static ESCALA_UI: AtomicU32 = AtomicU32::new(0);
 static MARGENS: [AtomicU32; 4] = [AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0)];
 /// Minimapa grande (0 = compacto). Entra na chave do memo do `atual`.
 static MINIMAPA_GRANDE: AtomicU32 = AtomicU32::new(0);
+static MINIMAPA_OCULTO: AtomicU32 = AtomicU32::new(0);
 
 pub fn escala_ui() -> f32 {
     match ESCALA_UI.load(Ordering::Relaxed) {
@@ -71,6 +72,16 @@ pub fn minimapa_expandido() -> bool {
 
 pub fn define_minimapa_expandido(v: bool) {
     MINIMAPA_GRANDE.store(v as u32, Ordering::Relaxed);
+}
+
+/// O minimapa esta' fechado? Fica so' o botao redondo no canto dele (o do ⤢),
+/// que reabre. Vai pras preferencias como o tamanho.
+pub fn minimapa_oculto() -> bool {
+    MINIMAPA_OCULTO.load(Ordering::Relaxed) != 0
+}
+
+pub fn define_minimapa_oculto(v: bool) {
+    MINIMAPA_OCULTO.store(v as u32, Ordering::Relaxed);
 }
 
 /// Uma vez por quadro: rele' a area segura a cada 30 (girar o aparelho muda o
@@ -376,13 +387,23 @@ impl Zonas {
     /// alvo e a EXP so' mostram; o rastreador e o chat entram pelo modulo
     /// deles (tamanho varia).
     pub fn contem(&self, p: Vec2) -> bool {
-        [self.ficha, self.menu, self.area, self.minimapa, self.atacar, self.auto_combate, self.auto_coleta, self.pocao, self.economia, self.montaria, self.pulo]
+        // Minimapa fechado: so' o botao de reabrir pega o toque, o resto do
+        // canto volta a ser mundo.
+        let minimapa = if minimapa_oculto() { self.minimapa_reabrir() } else { self.minimapa };
+        [self.ficha, self.menu, self.area, minimapa, self.atacar, self.auto_combate, self.auto_coleta, self.pocao, self.economia, self.montaria, self.pulo]
             .iter()
             .chain(self.icones.iter())
             .chain(self.skills.iter())
             .chain(self.rapidos.iter())
             .any(|r| r.contains(p))
             || self.alvo_fechar().contains(p)
+    }
+
+    /// Minimapa fechado: o botao redondo que reabre, no canto de cima a'
+    /// direita de onde ele fica. Grande o bastante pro dedo.
+    pub fn minimapa_reabrir(&self) -> Rect {
+        let lado = 46.0 * self.s;
+        Rect::new(self.minimapa.x + self.minimapa.w - lado - 4.0 * self.s, self.minimapa.y + 4.0 * self.s, lado, lado)
     }
 
     /// O X pequeno do alvo (limpa a selecao).

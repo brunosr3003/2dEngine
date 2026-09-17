@@ -160,6 +160,9 @@ pub mod destino_tipo {
     pub const LUGAR: u8 = 7;
     /// Trava de nivel da historia: nao ha' pra onde ir.
     pub const TRAVA: u8 = 8;
+    /// Objetivo e' vencer uma dungeon: abre o painel de Dungeon, nao anda.
+    /// `raio` leva o id do conteudo (0 = qualquer).
+    pub const PAINEL_DUNGEON: u8 = 9;
 }
 
 /// Em que ponto da missao a fala acontece.

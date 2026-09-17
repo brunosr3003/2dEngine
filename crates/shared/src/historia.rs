@@ -182,6 +182,43 @@ const fn coletar(id: u16, title: &'static str, desc: &'static str, n: u32, gold:
     }
 }
 
+/// Cacar com recompensa escolhida (em vez da pocao + Pocao de Experiencia).
+#[allow(clippy::too_many_arguments)]
+const fn cacar_com(id: u16, title: &'static str, desc: &'static str, alvo: u16, n: u32, gold: u32, xp: u64, item: u16, qtd: u16, item2: u16, qtd2: u16) -> QuestDef {
+    QuestDef {
+        reward_item: item,
+        reward_item_qty: qtd,
+        reward_item2: item2,
+        reward_item2_qty: qtd2,
+        ..cacar(id, title, desc, alvo, n, gold, xp, 0)
+    }
+}
+
+/// Coletar (pedra OU arvore, `alvo_de_coleta`) com recompensa escolhida.
+#[allow(clippy::too_many_arguments)]
+const fn coletar_com(id: u16, title: &'static str, desc: &'static str, alvo: u16, n: u32, gold: u32, xp: u64, item: u16, qtd: u16, item2: u16, qtd2: u16) -> QuestDef {
+    QuestDef {
+        obj_target: alvo,
+        reward_item2: item2,
+        reward_item2_qty: qtd2,
+        ..coletar(id, title, desc, n, gold, xp, item, qtd)
+    }
+}
+
+/// Vencer a dungeon `conteudo` (`shared::dungeon::CONTEUDOS`). O servidor so'
+/// conta a vitoria DAQUELA dungeon; o toque no rastreador abre o painel.
+#[allow(clippy::too_many_arguments)]
+const fn dungeon(id: u16, title: &'static str, desc: &'static str, conteudo: u16, gold: u32, xp: u64, item: u16, qtd: u16) -> QuestDef {
+    QuestDef {
+        obj_kind: objective_kind::DUNGEON,
+        obj_target: conteudo,
+        obj_count: 1,
+        reward_item: item,
+        reward_item_qty: qtd,
+        ..base(id, title, desc, gold, xp)
+    }
+}
+
 const fn criar(id: u16, title: &'static str, desc: &'static str, gold: u32, xp: u64) -> QuestDef {
     QuestDef { obj_kind: objective_kind::CRAFT, obj_target: 0, obj_count: 1, ..base(id, title, desc, gold, xp) }
 }
@@ -209,24 +246,30 @@ const AZUL: u16 = item_id::na_cor(item_id::STEEL, 3);
 /// Os passos escritos, em ordem. Ids seguidos a partir de `PRIMEIRO_ID`.
 pub const PASSOS: &[QuestDef] = &[
     // ═════════════ I · O Farol do Bosque (Bosque, 1–15) ═════════════
-    falar(700, "Desperte na praça", "Você acordou na praia na noite em que o farol do Bosque apagou. Procure o Mestre de Missões, perto do poço da praça.", Papel::Missoes, 20, 40, item_id::HEALTH_POTION, 3),
-    falar(701, "Um gole de coragem", "O Mestre quer você de pé. Fale com o Alquimista, na loja de toldo verde.", Papel::Alquimista, 20, 50, item_id::HEALTH_POTION, 3),
-    cacar(702, "A trilha dos lobos", "Os lobos enlouqueceram desde que o farol apagou: descem à trilha de dia, coisa que nunca fizeram. Derrote 5 fora da cidade — bicho caído larga cobre, e cobre é metade de qualquer forja.", alvo_de_mob(mob_kind::LOBO), 5, 60, 120, item_id::HEALTH_POTION),
-    falar(703, "Mãos firmes", "Você sobreviveu aos lobos. O Treinador da praça quer ver do que é capaz.", Papel::Treinador, 40, 120, item_id::MANA_POTION, 2),
-    nivel(704, "Alcance o nível 5", 5),
-    coletar(705, "Pedra que canta", "As pedras da ilha zumbem com o trovão. Quebre 10 pedras em qualquer veio — é da pedra que saem o Aço e o Darksteel de toda peça.", 10, 80, 250, item_id::STEEL, 6),
-    falar_com_dois(706, "O metal da tempestade", "Leve o que ouviu nas pedras ao Ferreiro. Ele sabe o que o metal carrega — e guarda um couro que só serve para quem vai forjar.", Papel::Ferreiro, 60, 250, item_id::COPPER, 200, item_id::HIDE, 1),
-    criar(707, "Sua primeira peça", "O couro do Ferreiro abre a forja uma vez. Junte o resto quebrando pedra — Aço, Darksteel, Quintessência — e crie sua primeira peça no Craft.", 100, 300),
-    cacar(708, "Ursos na encosta", "Os ursos desceram das encostas atrás do cheiro de trovão. Derrote 4 ursos.", alvo_de_mob(mob_kind::URSO), 4, 120, 400, item_id::HEALTH_POTION),
-    ir(709, "O mirante do Bosque", "Suba ao ponto mais alto da ilha. De lá se vê o olho da tempestade — e o farol apagado.", ponto::MIRANTE, 150, 500),
-    nivel(710, "Alcance o nível 10", 10),
-    refinar(711, "Fogo na forja", "Peça fraca não aguenta a tempestade. Tente refinar uma peça na Forja.", 1, 150, 600),
-    cacar(712, "Os pistoleiros de Morgan", "Pistoleiros dos Morganeers rondam a mata atrás das pedras do farol. Derrote 6 deles.", alvo_de_mob(mob_kind::PISTOLEIRO), 6, 200, 800, item_id::GREATER_HEAL),
-    ir(713, "A estrada do porto", "Os Peacemain guardam o porto. Siga pela estrada até o pátio do cais.", ponto::PORTO, 150, 700),
-    falar(714, "O Capitão do Porto", "O Capitão sabe por que os faróis apagam. Fale com ele no porto.", Papel::Estaleiro, 200, 900, item_id::GREATER_HEAL, 2),
-    cacar(715, "Garras no caminho do cais", "Tigres cercam a estrada dos carregadores e ninguém passa com carga. Derrote 5 — deles se tira a Quintessência, que toda armadura pede e a pedra dá a conta-gotas.", alvo_de_mob(mob_kind::TIGRE), 5, 250, 1_100, item_id::GREATER_HEAL),
-    ir(716, "O cais ao amanhecer", "Vá até a ponta do cais: o Capitão prometeu mostrar a rota das ilhas.", ponto::CAIS, 200, 1_000),
-    nivel(717, "Alcance o nível 15", 15),
+    // XP: a historia CARREGA o nivel do capitulo I (lobo da' 32 de XP e o
+    // nivel 5 pede 15.000 — trava de nivel aqui era 450 lobos). Chega ao 6
+    // antes do Porao, ao 14 antes da Adega e ao 15 no barco. E os passos ate'
+    // o craft entregam a receita INTEIRA da primeira armadura cinza. Os dois
+    // contratos sao testes: `capitulo_um_carrega_o_nivel_das_dungeons` e
+    // `o_inicio_entrega_a_primeira_armadura`.
+    falar(700, "Desperte na praça", "Você acordou na praia na noite em que o farol do Bosque apagou. Procure o Mestre de Missões, perto do poço da praça.", Papel::Missoes, 20, 500, item_id::HEALTH_POTION, 5),
+    falar(701, "Um gole de coragem", "O Mestre quer você de pé. Fale com o Alquimista, na loja de toldo verde: sem poção, a mata engole qualquer um.", Papel::Alquimista, 20, 1_000, item_id::HEALTH_POTION, 5),
+    cacar_com(702, "A trilha dos lobos", "Os lobos enlouqueceram desde que o farol apagou: descem à trilha de dia, coisa que nunca fizeram. Derrote 5 fora da cidade. Os caçadores juntaram berloques que os bichos arrancaram das carroças — são seus.", alvo_de_mob(mob_kind::LOBO), 5, 60, 1_000, item_id::EXORCISM_BAUBLE, 10, item_id::HEALTH_POTION, 5),
+    falar(703, "Mãos firmes", "Você sobreviveu aos lobos. O Treinador da praça quer ver do que é capaz — e guarda quintessência para quem aguenta o tranco.", Papel::Treinador, 40, 2_500, item_id::QUINTESSENCE, 10),
+    coletar_com(704, "Lenha para a forja", "A forja da vila come madeira dia e noite. Derrube 8 árvores — é da árvore que sai toda a madeira da ilha. O Ferreiro paga em Darksteel, o metal escuro que toda peça pede.", alvo_de_coleta::ARVORE, 8, 60, 2_000, item_id::DARKSTEEL, 200, item_id::XP_POTION, 1),
+    coletar_com(705, "Pedra que canta", "As pedras da ilha zumbem com o trovão. Quebre 10 pedras em qualquer veio — é da pedra que saem o Aço e o Darksteel de toda peça. A mineradora completa o seu Aço.", alvo_de_coleta::PEDRA, 10, 80, 4_000, item_id::STEEL, 30, item_id::XP_POTION, 1),
+    falar_com_dois(706, "O metal da tempestade", "Leve o que ouviu nas pedras ao Ferreiro. Ele sabe o que o metal carrega — e guarda o couro e o cobre que faltam para quem vai forjar.", Papel::Ferreiro, 60, 4_000, item_id::COPPER, 300, item_id::HIDE, 1),
+    criar(707, "Sua primeira peça", "Você tem tudo o que a Armadura pede: o couro do Ferreiro, Aço, Quintessência, Berloque, Darksteel e cobre. Abra o Craft e crie sua primeira armadura. Depois disso, tudo isso se farma: pedra, árvore, bicho e chefe.", 100, 6_000),
+    cacar(708, "Ursos na encosta", "Os ursos desceram das encostas atrás do cheiro de trovão. Derrote 4 ursos.", alvo_de_mob(mob_kind::URSO), 4, 120, 6_500, item_id::HEALTH_POTION),
+    ir(709, "O mirante do Bosque", "Suba ao ponto mais alto da ilha. De lá se vê o olho da tempestade — e, lá embaixo, o casco do naufrágio encalhado.", ponto::MIRANTE, 150, 8_500),
+    dungeon(710, "O porão do naufrágio", "Do mirante você viu o casco. Os Morganeers fizeram do porão um esconderijo, e quem manda lá dentro carrega chave no bolso — chefe de dungeon larga chave bem mais que chefe de campo. Toque no passo (ou em Dungeons, no Menu) e limpe o Porão do Naufrágio. Sozinho dá.", 1, 300, 19_000, item_id::GREATER_HEAL, 5),
+    refinar(711, "Fogo na forja", "Peça fraca não aguenta a tempestade. Tente refinar uma peça na Forja.", 1, 150, 20_000),
+    cacar(712, "Os pistoleiros de Morgan", "Pistoleiros dos Morganeers rondam a mata atrás das pedras do farol. Derrote 6 deles.", alvo_de_mob(mob_kind::PISTOLEIRO), 6, 200, 30_000, item_id::GREATER_HEAL),
+    ir(713, "A estrada do porto", "Os Peacemain guardam o porto. Siga pela estrada até o pátio do cais.", ponto::PORTO, 150, 37_500),
+    falar(714, "O Capitão do Porto", "O Capitão sabe por que os faróis apagam. Fale com ele no porto.", Papel::Estaleiro, 200, 57_500, item_id::GREATER_HEAL, 3),
+    cacar(715, "Garras no caminho do cais", "Tigres cercam a estrada dos carregadores e ninguém passa com carga. Derrote 5 — deles se tira a Quintessência, que toda armadura pede e a pedra dá a conta-gotas.", alvo_de_mob(mob_kind::TIGRE), 5, 250, 90_000, item_id::GREATER_HEAL),
+    ir(716, "O cais ao amanhecer", "Vá até a ponta do cais: o Capitão prometeu mostrar a rota das ilhas.", ponto::CAIS, 200, 120_000),
+    dungeon(717, "A adega do contrabandista", "Antes de zarpar, o Capitão quer o porto limpo: os contrabandistas de Morgan guardam pedra do farol numa adega sob o cais. Toque no passo (ou em Dungeons, no Menu) e limpe a Adega do Contrabandista.", 2, 500, 97_500, item_id::GREATER_HEAL, 5),
     viajar(718, "Rumo à Geleira", "O farol da Geleira ainda brilha, mas por pouco. Peça ao Capitão do Porto um lugar no barco.", 1, 400, 1_500),
     // ═════════════ II · O Farol Congelado (Geleira, 15–30) ═════════════
     falar(719, "Frio de rachar os ossos", "Você desembarcou na Geleira. Apresente-se ao Mestre de Missões da praça.", Papel::Missoes, 200, 1_200, item_id::GREATER_HEAL, 2),
@@ -464,15 +507,15 @@ pub fn falas(id: u16, m: u8) -> Option<Vec<&'static str>> {
         ],
         703 => &[
             "Ouvi falar dos lobos. Nada mal para quem chegou boiando.",
-            "Guarde isto: a tempestade deixa os bichos mais fortes a cada dia.",
-            "Fique mais forte que eles. Volte quando tiver mais experiência.",
+            "Guarde isto: quintessência. Armadura nenhuma fecha sem ela.",
+            "A forja precisa de lenha e o Ferreiro paga bem por ela. Vá derrubar umas árvores.",
         ],
         706 => &[
             "Pedra que canta? Deixe eu ouvir… É trovão preso no metal.",
             "Esse metal é o que endurece os bichos. E também faz boa armadura.",
             "Toda peça pede um couro curtido para segurar o metal. Tome o meu — é o último, e some depois de uma forja.",
-            "Outro só arrancando de um chefe. O resto você tira da pedra: aço, darksteel, quintessência.",
-            "Tome o cobre também. Vá ao Craft e faça algo que aguente o que vem por aí.",
+            "Outro só arrancando de chefe: o do Porão do Naufrágio carrega chave no bolso.",
+            "Tome o cobre também. Com o que você juntou, já dá uma armadura. Vá ao Craft.",
         ],
         714 => &[
             "Então você viu o farol apagado do mirante. Eu vi também.",
@@ -725,6 +768,60 @@ mod testes {
                     _ => {}
                 }
             }
+        }
+    }
+
+    /// O capitulo I leva o nivel sozinho: so' a XP dos passos (sem contar
+    /// bicho) ja' passa o nivel minimo de cada dungeon ANTES do passo dela, e
+    /// o 15 da Geleira antes do barco. Trava de nivel no capitulo I nao ha':
+    /// era ela que parava o jogador no 704 pedindo ~450 lobos.
+    #[test]
+    fn capitulo_um_carrega_o_nivel_das_dungeons() {
+        let mult = crate::constants::DEFAULT_XP_MULTIPLIER;
+        let cap = CAPITULOS[0];
+        let zona = ARQUIPELAGO[cap.ilha].zona;
+        let mut xp = 0u64;
+        let mut dungeons = 0;
+        for id in cap.primeiro..=cap.ultimo {
+            let d = def_da_historia(id).unwrap();
+            assert_ne!(d.obj_kind, objective_kind::NIVEL, "{id}: trava de nivel no capitulo I");
+            let nivel = crate::constants::level_of_xp_with_mult(xp, mult);
+            if d.obj_kind == objective_kind::DUNGEON {
+                let c = crate::dungeon::conteudo(d.obj_target).unwrap_or_else(|| panic!("{id}: dungeon {} nao existe", d.obj_target));
+                assert!(c.disponivel && c.zona == zona, "{id}: {} nao esta' aberta em {zona}", c.nome);
+                assert!(nivel >= c.nivel_min, "{id}: chega no nivel {nivel}, {} pede {}", c.nome, c.nivel_min);
+                dungeons += 1;
+            }
+            if d.obj_kind == objective_kind::VIAGEM {
+                let destino = &ARQUIPELAGO[d.obj_target as usize];
+                assert!(nivel >= destino.nivel.0, "{id}: embarca no nivel {nivel}, {} comeca no {}", destino.nome, destino.nivel.0);
+            }
+            xp += d.reward_xp;
+        }
+        assert!(dungeons >= 2, "o capitulo I tem que levar a dungeon");
+    }
+
+    /// Os passos ANTES do craft entregam a receita inteira da primeira
+    /// armadura cinza: sem isso o "crie sua primeira peca" pede farm que a
+    /// historia nunca apresentou.
+    #[test]
+    fn o_inicio_entrega_a_primeira_armadura() {
+        let receita = crate::receitas::receitas_de_equipamento()
+            .into_iter()
+            .find(|r| r.tier == 1 && r.category == crate::receitas::categoria::ARMADURA)
+            .unwrap();
+        let mut ganho: HashMap<u32, u32> = HashMap::new();
+        for id in PRIMEIRO_ID..PASSO_DO_CRAFT {
+            let d = def_da_historia(id).unwrap();
+            for (item, qtd) in [(d.reward_item, d.reward_item_qty), (d.reward_item2, d.reward_item2_qty)] {
+                if item != 0 {
+                    *ganho.entry(item as u32).or_default() += qtd as u32;
+                }
+            }
+        }
+        for [item, qtd] in receita.inputs {
+            let tem = ganho.get(&item).copied().unwrap_or(0);
+            assert!(tem >= qtd, "{}: a historia da' {tem} de {item}, a receita pede {qtd}", receita.name);
         }
     }
 
