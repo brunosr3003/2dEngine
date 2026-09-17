@@ -17,3 +17,29 @@ macroquad = "0.4"
 tungstenite = "0.24"
 anyhow.workspace = true
 glam.workspace = true
+
+# APK pelo `cargo quad-apk` (scripts/build-android.sh). Os `.vox` sao lidos em
+# runtime do AssetManager: a pasta `assets/` da raiz vira a raiz dos assets do
+# APK, por isso o `vox.rs` tira o prefixo "assets/" no Android.
+[package.metadata.android]
+package_name = "com.brunji.tempest"
+label = "Tempest"
+android_version = 34
+target_sdk_version = 34
+min_sdk_version = 24
+# arm64 = celular de verdade; x86_64 = emulador do PC.
+build_targets = ["aarch64-linux-android", "x86_64-linux-android"]
+assets = "../../assets"
+res = "android/res"
+icon = "@mipmap/ic_launcher"
+fullscreen = true
+opengles_version_major = 3
+opengles_version_minor = 0
+
+[package.metadata.android.activity_attributes]
+"android:screenOrientation" = "landscape"
+# Android 12+ recusa instalar activity com intent-filter sem isto.
+"android:exported" = "true"
+
+[[package.metadata.android.permission]]
+name = "android.permission.INTERNET"

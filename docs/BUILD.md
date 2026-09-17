@@ -64,32 +64,37 @@ python3 -m http.server 8080 --directory web
 
 ---
 
-## Android — planejado na Fase 5
+## Android (APK)
 
-### Opção A: `cargo-apk` (simples)
+Roda neste PC, sem root: JDK 17 em `~/opt/jdk-17`, SDK em `~/Android/Sdk`
+(NDK 25.2, plataforma 34) e o AVD `tempest` (Pixel 6, x86_64, GPU do host).
 
-```sh
-cargo install cargo-apk
-cargo apk run -p client --target aarch64-linux-android
+```bash
+scripts/android-sdk-setup.sh           # uma vez: JDK + SDK + NDK + emulador + AVD (~6 GB)
+scripts/run-android-emulator.sh --instalar   # sobe o emulador ao lado do terminal e abre o app
+scripts/build-android.sh --abrir       # build + install + abre no aparelho/emulador conectado
 ```
 
-Requer Android NDK instalado e `ANDROID_NDK_HOME` setado.
+O APK sai em `target/android-artifacts/release/apk/client.apk`, com arm64
+(celular) e x86_64 (emulador), assinado com a chave de debug. Config em
+`[package.metadata.android]` do `crates/client/Cargo.toml`: pacote
+`com.brunji.tempest`, paisagem, permissão de internet, ícone em
+`crates/client/android/res`, e a pasta `assets/` da raiz como assets do APK.
 
-### Opção B: projeto Gradle + NativeActivity (produção)
+Armadilhas já resolvidas (ver comentários nos scripts):
 
-- Criar módulo Android Gradle com `app/build.gradle`.
-- `app/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/libclient.so` —
-  artefato do `cargo build --target aarch64-linux-android`.
-- `AndroidManifest.xml` com NativeActivity pointing to `android_main`.
-- Mais trabalho, mas permite UI nativa (splash, login, configurações) +
-  Google Play.
+- `cargo-quad-apk` 0.1.4 do crates.io embute o Cargo 1.61 e recusa o
+  workspace (`version.workspace`). O script instala a revisão fixada do GitHub.
+- O quad-apk carrega `lib<fim do package_name>.so` (`libtempest.so`), mas
+  gera `libclient.so`. O script renomeia dentro do APK mantendo a compressão
+  de cada entrada (`resources.arsc` tem que ficar sem compressão) e assina de novo.
+- Android 12+ exige `android:exported` na activity.
+- `.vox` no Android vêm do AssetManager, cuja raiz já é `assets/`: o `vox.rs`
+  tira esse prefixo.
 
-**Pendências:**
-- Adicionar `[lib] crate-type = ["cdylib"]` ao `crates/client`.
-- `android_main` entry point no `client`.
-- Input de touch no `engine::input` (`WindowEvent::Touch`).
-
----
+No celular o cliente vai direto no web de produção (`api.rs`), igual ao iOS.
+Ainda falta no Android: abrir URL (login Google), tela sempre acesa e área
+segura (`nativo.rs`), e assinatura de release pra Play Store.
 
 ## iOS (TestFlight)
 

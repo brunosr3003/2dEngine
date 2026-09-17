@@ -471,7 +471,15 @@ async fn ler_asset(caminho: &str) -> Result<Vec<u8>, String> {
     std::fs::read(&arquivo).map_err(|e| format!("{} ({e})", arquivo.display()))
 }
 
-#[cfg(not(target_os = "ios"))]
+/// Android: o `load_file` le' do AssetManager do APK, cuja raiz JA' E' a pasta
+/// `assets/` do repo (`assets = "../../assets"` no Cargo.toml do cliente).
+#[cfg(target_os = "android")]
+async fn ler_asset(caminho: &str) -> Result<Vec<u8>, String> {
+    let no_apk = caminho.strip_prefix("assets/").unwrap_or(caminho);
+    macroquad::file::load_file(no_apk).await.map_err(|e| format!("{no_apk}: {e:?}"))
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 async fn ler_asset(caminho: &str) -> Result<Vec<u8>, String> {
     macroquad::file::load_file(caminho).await.map_err(|e| format!("{e:?}"))
 }
