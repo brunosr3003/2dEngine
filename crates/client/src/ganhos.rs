@@ -54,7 +54,11 @@ impl Ganhos {
         entrou.sort_unstable();
         self.anterior = Some(agora);
         for &(id, q) in &entrou {
-            match self.linhas.iter_mut().find(|(i, _, t)| *i == id && *t < JUNTA_S) {
+            match self
+                .linhas
+                .iter_mut()
+                .find(|(i, _, t)| *i == id && *t < JUNTA_S)
+            {
                 Some(l) => l.1 += q,
                 None => self.linhas.push((id, q, 0.0)),
             }
@@ -74,7 +78,9 @@ impl Ganhos {
     /// Desenha em 2D por cima do mundo, subindo da cabeca de `pe`.
     pub fn desenha(&mut self, cam: &Camera3D, pe: Vec3, nome: impl Fn(u16) -> String) {
         self.avanca(get_frame_time().min(0.1));
-        let Some(c) = world_to_screen(cam, pe + vec3(0.0, 2.3, 0.0)) else { return };
+        let Some(c) = world_to_screen(cam, pe + vec3(0.0, 2.3, 0.0)) else {
+            return;
+        };
         for (k, (id, q, t)) in self.linhas.iter().rev().enumerate() {
             let u = t / VIDA;
             let alfa = if u < 0.7 { 1.0 } else { 1.0 - (u - 0.7) / 0.3 };
@@ -87,7 +93,13 @@ impl Ganhos {
             for (dx, dy) in [(-1.5, 0.0), (1.5, 0.0), (0.0, -1.5), (0.0, 1.5)] {
                 crate::hud_estilo::texto_forte(x + dx, y + dy, &txt, tam as u16, sombra);
             }
-            crate::hud_estilo::texto_forte(x, y, &txt, tam as u16, Color::new(0.62, 1.0, 0.55, alfa));
+            crate::hud_estilo::texto_forte(
+                x,
+                y,
+                &txt,
+                tam as u16,
+                Color::new(0.62, 1.0, 0.55, alfa),
+            );
         }
     }
 }
@@ -98,13 +110,20 @@ mod tests {
     use shared::InventorySlot;
 
     fn slot(id: u16, qty: u32) -> InventorySlot {
-        InventorySlot { item_id: id, qty, instance: None }
+        InventorySlot {
+            item_id: id,
+            qty,
+            instance: None,
+        }
     }
 
     #[test]
     fn so_o_que_entra_depois_do_login_aparece() {
         let mut g = Ganhos::default();
-        assert!(g.bolsa_nova(&[slot(344, 500), slot(300, 3)]).is_empty(), "login nao e' ganho");
+        assert!(
+            g.bolsa_nova(&[slot(344, 500), slot(300, 3)]).is_empty(),
+            "login nao e' ganho"
+        );
         let entrou = g.bolsa_nova(&[slot(344, 557), slot(300, 3), slot(301, 4)]);
         assert_eq!(entrou, vec![(300 + 1, 4), (344, 57)]);
         // Gastar/vender nao aparece como ganho.

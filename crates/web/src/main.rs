@@ -43,9 +43,8 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-        "postgres://solar:solar_dev_123@localhost:5432/mmo_dev".to_string()
-    });
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://solar:solar_dev_123@localhost:5432/mmo_dev".to_string());
     let bind_addr: SocketAddr = std::env::var("WEB_BIND")
         .unwrap_or_else(|_| "0.0.0.0:8080".to_string())
         .parse()?;
@@ -56,7 +55,9 @@ async fn main() -> Result<()> {
     let pool = db::open_pool(&database_url).await?;
     tracing::info!("db ok");
 
-    let state = AppState { pool: Arc::new(pool) };
+    let state = AppState {
+        pool: Arc::new(pool),
+    };
     let pool_arc = state.pool.clone();
 
     let api = Router::new()
@@ -67,13 +68,23 @@ async fn main() -> Result<()> {
         .with_state(state);
 
     let pixel_state = pixel::PixelState::from_env();
-    tracing::info!("pixel editor: gemini_key={}",
-        if pixel_state.gemini_key.is_some() { "configurada" } else { "NAO configurada" });
+    tracing::info!(
+        "pixel editor: gemini_key={}",
+        if pixel_state.gemini_key.is_some() {
+            "configurada"
+        } else {
+            "NAO configurada"
+        }
+    );
 
     let google_state = google::GoogleState::from_env(pool_arc.clone());
     tracing::info!(
         "login com Google: {}",
-        if google_state.ligado() { "configurado" } else { "desligado (sem GOOGLE_CLIENT_ID/SECRET)" }
+        if google_state.ligado() {
+            "configurado"
+        } else {
+            "desligado (sem GOOGLE_CLIENT_ID/SECRET)"
+        }
     );
 
     let econ_state = econ_admin::EconState::from_env(pool_arc);
@@ -89,7 +100,10 @@ async fn main() -> Result<()> {
         .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
-    tracing::info!("web listening on http://{bind_addr} (static: {})", static_dir.display());
+    tracing::info!(
+        "web listening on http://{bind_addr} (static: {})",
+        static_dir.display()
+    );
     axum::serve(listener, app).await?;
     Ok(())
 }
@@ -144,7 +158,13 @@ async fn register(
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, format!("hash: {e}")))?;
 
     match db::insert_account(&s.pool, username, &email, &hash, "none").await {
-        Ok(id) => Ok((StatusCode::CREATED, Json(RegisterRes { id, username: username.into() }))),
+        Ok(id) => Ok((
+            StatusCode::CREATED,
+            Json(RegisterRes {
+                id,
+                username: username.into(),
+            }),
+        )),
         Err(db::InsertError::Duplicate(field)) => {
             Err(err(StatusCode::CONFLICT, format!("{field} ja existe")))
         }
@@ -178,12 +198,14 @@ async fn login(
             err(StatusCode::INTERNAL_SERVER_ERROR, "erro interno")
         })?;
     let row = row.ok_or_else(|| err(StatusCode::UNAUTHORIZED, "credenciais invalidas"))?;
-    let ok = auth::verify_password(&row.password_hash, &req.password)
-        .unwrap_or(false);
+    let ok = auth::verify_password(&row.password_hash, &req.password).unwrap_or(false);
     if !ok {
         return Err(err(StatusCode::UNAUTHORIZED, "credenciais invalidas"));
     }
-    Ok(Json(LoginRes { id: row.id, username: row.username }))
+    Ok(Json(LoginRes {
+        id: row.id,
+        username: row.username,
+    }))
 }
 
 // ── version endpoint ──────────────────────────────────────────────────────
@@ -204,10 +226,10 @@ struct VersionRes {
 
 #[derive(Debug, Serialize)]
 struct VersionDownloads {
-    win:            String,
-    mac:            String,
-    linux:          String,
-    android:        String,
+    win: String,
+    mac: String,
+    linux: String,
+    android: String,
     ios_testflight: String,
 }
 
@@ -216,17 +238,18 @@ async fn version() -> Json<VersionRes> {
         .unwrap_or_else(|_| "https://mmo.brunji.com.br/downloads".to_string());
     // Mobile distribuido via stores — auto-update e gerenciado pelo Play
     // Store / TestFlight, cliente so abre o URL.
-    let android = std::env::var("ANDROID_URL")
-        .unwrap_or_else(|_| "https://play.google.com/store/apps/details?id=com.brunji.tempest".to_string());
+    let android = std::env::var("ANDROID_URL").unwrap_or_else(|_| {
+        "https://play.google.com/store/apps/details?id=com.brunji.tempest".to_string()
+    });
     let testflight = std::env::var("TESTFLIGHT_URL")
         .unwrap_or_else(|_| "https://mmo.brunji.com.br/downloads/ios-testflight.html".to_string());
     Json(VersionRes {
         protocol_version: shared::PROTOCOL_VERSION,
-        client_version:   env!("CARGO_PKG_VERSION").to_string(),
+        client_version: env!("CARGO_PKG_VERSION").to_string(),
         downloads: VersionDownloads {
-            win:            format!("{base}/MMORPG-Windows.zip"),
-            mac:            format!("{base}/MMORPG-Mac.zip"),
-            linux:          format!("{base}/MMORPG-Linux.zip"),
+            win: format!("{base}/MMORPG-Windows.zip"),
+            mac: format!("{base}/MMORPG-Mac.zip"),
+            linux: format!("{base}/MMORPG-Linux.zip"),
             android,
             ios_testflight: testflight,
         },
@@ -240,7 +263,6 @@ impl IntoResponse for RegisterRes {
         Json(self).into_response()
     }
 }
-
 
 /// Lista de canais vivos, do mais vazio pro mais cheio.
 ///
@@ -260,25 +282,27 @@ async fn channels(State(st): State<AppState>) -> impl IntoResponse {
 
     let lista: Vec<serde_json::Value> = rows
         .into_iter()
-        .map(|(id, host, players, capacity, map_name, zone, single, tick_ms)| {
-            serde_json::json!({
-                "id": id,
-                "host": host,
-                "players": players,
-                "capacity": capacity,
-                "map": map_name,
-                "zone": zone,
-                "full": capacity > 0 && players >= capacity,
-                // Instancia unica: nao vai abrir outro canal, quem chega cheio
-                // entra na fila. O cliente diz isso na tela.
-                "single": single,
-                // Saude, nao lotacao: p99 do trabalho por tick e quanto isso
-                // consome do orcamento de 33ms. Canal pode estar com meia
-                // lotacao e ja' sem folga.
-                "tick_ms": ((tick_ms as f64) * 100.0).round() / 100.0,
-                "tick_load": ((tick_ms as f64) / 33.33 * 10000.0).round() / 100.0,
-            })
-        })
+        .map(
+            |(id, host, players, capacity, map_name, zone, single, tick_ms)| {
+                serde_json::json!({
+                    "id": id,
+                    "host": host,
+                    "players": players,
+                    "capacity": capacity,
+                    "map": map_name,
+                    "zone": zone,
+                    "full": capacity > 0 && players >= capacity,
+                    // Instancia unica: nao vai abrir outro canal, quem chega cheio
+                    // entra na fila. O cliente diz isso na tela.
+                    "single": single,
+                    // Saude, nao lotacao: p99 do trabalho por tick e quanto isso
+                    // consome do orcamento de 33ms. Canal pode estar com meia
+                    // lotacao e ja' sem folga.
+                    "tick_ms": ((tick_ms as f64) * 100.0).round() / 100.0,
+                    "tick_load": ((tick_ms as f64) / 33.33 * 10000.0).round() / 100.0,
+                })
+            },
+        )
         .collect();
     axum::Json(serde_json::json!({ "channels": lista }))
 }

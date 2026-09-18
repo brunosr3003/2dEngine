@@ -18,9 +18,9 @@
 use std::cell::{Cell, Ref, RefCell};
 
 use macroquad::miniquad::{
-    self, Bindings, BufferId, BufferLayout, BufferSource, BufferType, BufferUsage, PassAction, Pipeline,
-    RenderingBackend, ShaderMeta, ShaderSource, TextureId, UniformBlockLayout, UniformDesc, UniformType,
-    UniformsSource, VertexAttribute, VertexFormat,
+    self, Bindings, BufferId, BufferLayout, BufferSource, BufferType, BufferUsage, PassAction,
+    Pipeline, RenderingBackend, ShaderMeta, ShaderSource, TextureId, UniformBlockLayout,
+    UniformDesc, UniformType, UniformsSource, VertexAttribute, VertexFormat,
 };
 use macroquad::prelude::{Mat4, Mesh, Vec3};
 use macroquad::window::get_internal_gl;
@@ -36,12 +36,20 @@ pub struct MalhaEstatica {
 
 impl MalhaEstatica {
     pub fn nova(m: Mesh) -> Self {
-        Self { cpu: RefCell::new(Some(m)), manter_cpu: false, gpu: Cell::new(None) }
+        Self {
+            cpu: RefCell::new(Some(m)),
+            manter_cpu: false,
+            gpu: Cell::new(None),
+        }
     }
 
     /// Guarda a copia da CPU mesmo depois de subir.
     pub fn mantendo_cpu(m: Mesh) -> Self {
-        Self { cpu: RefCell::new(Some(m)), manter_cpu: true, gpu: Cell::new(None) }
+        Self {
+            cpu: RefCell::new(Some(m)),
+            manter_cpu: true,
+            gpu: Cell::new(None),
+        }
     }
 
     /// Os vertices, enquanto ainda estao na CPU (sempre, em teste e com
@@ -60,8 +68,16 @@ impl MalhaEstatica {
             if m.indices.is_empty() {
                 return None;
             }
-            let vb = ctx.new_buffer(BufferType::VertexBuffer, BufferUsage::Immutable, BufferSource::slice(&m.vertices));
-            let ib = ctx.new_buffer(BufferType::IndexBuffer, BufferUsage::Immutable, BufferSource::slice(&m.indices));
+            let vb = ctx.new_buffer(
+                BufferType::VertexBuffer,
+                BufferUsage::Immutable,
+                BufferSource::slice(&m.vertices),
+            );
+            let ib = ctx.new_buffer(
+                BufferType::IndexBuffer,
+                BufferUsage::Immutable,
+                BufferSource::slice(&m.indices),
+            );
             (vb, ib, m.indices.len() as i32)
         };
         self.gpu.set(Some(g));
@@ -139,31 +155,63 @@ fn atributos() -> [VertexAttribute; 4] {
 
 fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
     let meta = |extras: &[(&str, UniformType)]| {
-        let mut uniforms = vec![UniformDesc::new("Projection", UniformType::Mat4), UniformDesc::new("Model", UniformType::Mat4)];
+        let mut uniforms = vec![
+            UniformDesc::new("Projection", UniformType::Mat4),
+            UniformDesc::new("Model", UniformType::Mat4),
+        ];
         uniforms.extend(extras.iter().map(|(n, t)| UniformDesc::new(n, *t)));
-        ShaderMeta { images: vec!["Texture".to_string()], uniforms: UniformBlockLayout { uniforms } }
+        ShaderMeta {
+            images: vec!["Texture".to_string()],
+            uniforms: UniformBlockLayout { uniforms },
+        }
     };
     let solido = ctx
         .new_shader(
-            ShaderSource::Glsl { vertex: crate::render3d::SOLIDO_VERTICE, fragment: crate::render3d::SOLIDO_FRAGMENTO },
-            meta(&[("Recorte", UniformType::Float3), ("RecorteZ", UniformType::Float1), ("Tinta", UniformType::Float4)]),
+            ShaderSource::Glsl {
+                vertex: crate::render3d::SOLIDO_VERTICE,
+                fragment: crate::render3d::SOLIDO_FRAGMENTO,
+            },
+            meta(&[
+                ("Recorte", UniformType::Float3),
+                ("RecorteZ", UniformType::Float1),
+                ("Tinta", UniformType::Float4),
+            ]),
         )
         .expect("shader do mundo (gpu)");
     let agua = ctx
         .new_shader(
-            ShaderSource::Glsl { vertex: crate::agua::VERTICE, fragment: crate::agua::FRAGMENTO },
-            meta(&[("Tempo", UniformType::Float1), ("Ondas", UniformType::Float1)]),
+            ShaderSource::Glsl {
+                vertex: crate::agua::VERTICE,
+                fragment: crate::agua::FRAGMENTO,
+            },
+            meta(&[
+                ("Tempo", UniformType::Float1),
+                ("Ondas", UniformType::Float1),
+            ]),
         )
         .expect("shader da agua (gpu)");
     Programas {
-        solido: ctx.new_pipeline(&[BufferLayout::default()], &atributos(), solido, crate::render3d::params_solido()),
-        agua: ctx.new_pipeline(&[BufferLayout::default()], &atributos(), agua, crate::agua::params_agua()),
+        solido: ctx.new_pipeline(
+            &[BufferLayout::default()],
+            &atributos(),
+            solido,
+            crate::render3d::params_solido(),
+        ),
+        agua: ctx.new_pipeline(
+            &[BufferLayout::default()],
+            &atributos(),
+            agua,
+            crate::agua::params_agua(),
+        ),
         branco: ctx.new_texture_from_rgba8(1, 1, &[255, 255, 255, 255]),
     }
 }
 
 /// Desenha as malhas com a camera atual da macroquad. Devolve quantas foram.
-pub fn desenha<'a>(programa: Programa, malhas: impl IntoIterator<Item = &'a MalhaEstatica>) -> usize {
+pub fn desenha<'a>(
+    programa: Programa,
+    malhas: impl IntoIterator<Item = &'a MalhaEstatica>,
+) -> usize {
     let mut gl = unsafe { get_internal_gl() };
     // O lote pendente sai antes: o que foi pedido antes aparece antes.
     gl.flush();
@@ -174,7 +222,8 @@ pub fn desenha<'a>(programa: Programa, malhas: impl IntoIterator<Item = &'a Malh
     PROGRAMAS.with(|p| {
         let mut p = p.borrow_mut();
         let p = p.get_or_insert_with(|| cria(ctx));
-        let prontas: Vec<(BufferId, BufferId, i32)> = malhas.into_iter().filter_map(|m| m.subir(ctx)).collect();
+        let prontas: Vec<(BufferId, BufferId, i32)> =
+            malhas.into_iter().filter_map(|m| m.subir(ctx)).collect();
         if prontas.is_empty() {
             return 0;
         }
@@ -182,15 +231,30 @@ pub fn desenha<'a>(programa: Programa, malhas: impl IntoIterator<Item = &'a Malh
         match programa {
             Programa::Solido { recorte, recorte_z } => {
                 ctx.apply_pipeline(&p.solido);
-                ctx.apply_uniforms(UniformsSource::table(&UniformesSolido { projection, model: Mat4::IDENTITY, recorte, recorte_z, tinta: [0.0; 4] }));
+                ctx.apply_uniforms(UniformsSource::table(&UniformesSolido {
+                    projection,
+                    model: Mat4::IDENTITY,
+                    recorte,
+                    recorte_z,
+                    tinta: [0.0; 4],
+                }));
             }
             Programa::Agua { tempo, ondas } => {
                 ctx.apply_pipeline(&p.agua);
-                ctx.apply_uniforms(UniformsSource::table(&UniformesAgua { projection, model: Mat4::IDENTITY, tempo, ondas }));
+                ctx.apply_uniforms(UniformsSource::table(&UniformesAgua {
+                    projection,
+                    model: Mat4::IDENTITY,
+                    tempo,
+                    ondas,
+                }));
             }
         }
         for &(vb, ib, n) in &prontas {
-            ctx.apply_bindings(&Bindings { vertex_buffers: vec![vb], index_buffer: ib, images: vec![p.branco] });
+            ctx.apply_bindings(&Bindings {
+                vertex_buffers: vec![vb],
+                index_buffer: ib,
+                images: vec![p.branco],
+            });
             ctx.draw(0, n, 1);
         }
         ctx.end_render_pass();
@@ -201,13 +265,22 @@ pub fn desenha<'a>(programa: Programa, malhas: impl IntoIterator<Item = &'a Malh
 /// O viewport da camera atual, ou `None` se ela nao tem um: a macroquad
 /// devolve a tela em pontos quando nao ha', e isso nao e' pixel.
 fn viewport_da_camera(v: (i32, i32, i32, i32)) -> Option<(i32, i32, i32, i32)> {
-    let tela = (0, 0, macroquad::window::screen_width() as i32, macroquad::window::screen_height() as i32);
+    let tela = (
+        0,
+        0,
+        macroquad::window::screen_width() as i32,
+        macroquad::window::screen_height() as i32,
+    );
     (v != tela).then_some(v)
 }
 
 /// Comeca o passe onde a macroquad desenharia (tela ou render target), no
 /// viewport da camera — o retrato do personagem usa um.
-fn abre_passe(ctx: &mut dyn RenderingBackend, passe: Option<miniquad::RenderPass>, viewport: Option<(i32, i32, i32, i32)>) {
+fn abre_passe(
+    ctx: &mut dyn RenderingBackend,
+    passe: Option<miniquad::RenderPass>,
+    viewport: Option<(i32, i32, i32, i32)>,
+) {
     let (w, h) = match passe {
         Some(rp) => ctx.texture_size(ctx.render_pass_texture(rp)),
         None => {
@@ -237,11 +310,23 @@ pub fn desenha_voxel(m: &Mesh, modelo: Mat4, tinta: [f32; 4]) {
     let passe = gl.quad_gl.get_active_render_pass();
     let viewport = viewport_da_camera(gl.quad_gl.get_viewport());
     let ctx = gl.quad_context;
-    let chave = (m.vertices.as_ptr() as usize, m.vertices.len(), m.indices.len());
+    let chave = (
+        m.vertices.as_ptr() as usize,
+        m.vertices.len(),
+        m.indices.len(),
+    );
     let (vb, ib, n) = VOXEL.with(|c| {
         *c.borrow_mut().entry(chave).or_insert_with(|| {
-            let vb = ctx.new_buffer(BufferType::VertexBuffer, BufferUsage::Immutable, BufferSource::slice(&m.vertices));
-            let ib = ctx.new_buffer(BufferType::IndexBuffer, BufferUsage::Immutable, BufferSource::slice(&m.indices));
+            let vb = ctx.new_buffer(
+                BufferType::VertexBuffer,
+                BufferUsage::Immutable,
+                BufferSource::slice(&m.vertices),
+            );
+            let ib = ctx.new_buffer(
+                BufferType::IndexBuffer,
+                BufferUsage::Immutable,
+                BufferSource::slice(&m.indices),
+            );
             (vb, ib, m.indices.len() as i32)
         })
     });
@@ -257,7 +342,11 @@ pub fn desenha_voxel(m: &Mesh, modelo: Mat4, tinta: [f32; 4]) {
             recorte_z: 0.0,
             tinta,
         }));
-        ctx.apply_bindings(&Bindings { vertex_buffers: vec![vb], index_buffer: ib, images: vec![p.branco] });
+        ctx.apply_bindings(&Bindings {
+            vertex_buffers: vec![vb],
+            index_buffer: ib,
+            images: vec![p.branco],
+        });
         ctx.draw(0, n, 1);
         ctx.end_render_pass();
     });

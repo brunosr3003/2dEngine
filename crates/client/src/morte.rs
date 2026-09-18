@@ -77,7 +77,10 @@ impl Morte {
     pub fn botoes_da_tela(sw: f32, sh: f32) -> (Rect, Rect) {
         let (w, h) = (240.0, 44.0);
         let y = sh * 0.5 + 40.0;
-        (Rect::new(sw * 0.5 - w - 8.0, y, w, h), Rect::new(sw * 0.5 + 8.0, y, w, h))
+        (
+            Rect::new(sw * 0.5 - w - 8.0, y, w, h),
+            Rect::new(sw * 0.5 + 8.0, y, w, h),
+        )
     }
 
     /// Desenha o que estiver aberto e devolve o pedido do clique.
@@ -99,13 +102,22 @@ impl Morte {
         estilo::painel(caixa);
         estilo::texto_centro(sw * 0.5, caixa.y + 44.0, "VOCÊ FOI DERROTADO", 30, VERMELHO);
         let linha = if self.xp_perdido > 0 {
-            format!("Experiência perdida: {} (recuperável por 24 h)", milhar(self.xp_perdido))
+            format!(
+                "Experiência perdida: {} (recuperável por 24 h)",
+                milhar(self.xp_perdido)
+            )
         } else {
             "Nenhuma experiência a recuperar desta morte.".to_string()
         };
         estilo::texto_centro(sw * 0.5, caixa.y + 80.0, &linha, 16, estilo::TEXTO);
         if let Some((t, ok)) = &self.aviso {
-            estilo::texto_centro(sw * 0.5, caixa.y + 106.0, t, 14, if *ok { estilo::AUTO } else { VERMELHO });
+            estilo::texto_centro(
+                sw * 0.5,
+                caixa.y + 106.0,
+                t,
+                14,
+                if *ok { estilo::AUTO } else { VERMELHO },
+            );
         }
         let (reviver, recuperar) = Self::botoes_da_tela(sw, sh);
         let mut pedido = None;
@@ -125,9 +137,20 @@ impl Morte {
         let (sw, sh) = (screen_width(), screen_height());
         draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.45));
         let linhas = self.mortes.len().max(1) as f32;
-        let caixa = Rect::new(sw * 0.5 - 300.0, sh * 0.5 - 60.0 - linhas * 24.0, 600.0, 140.0 + linhas * 48.0);
+        let caixa = Rect::new(
+            sw * 0.5 - 300.0,
+            sh * 0.5 - 60.0 - linhas * 24.0,
+            600.0,
+            140.0 + linhas * 48.0,
+        );
         estilo::painel(caixa);
-        estilo::texto(caixa.x + 20.0, caixa.y + 34.0, "RECUPERAR EXPERIÊNCIA", 22, estilo::OURO);
+        estilo::texto(
+            caixa.x + 20.0,
+            caixa.y + 34.0,
+            "RECUPERAR EXPERIÊNCIA",
+            22,
+            estilo::OURO,
+        );
         let gratis = format!("Grátis hoje: {}/3 · depois custa ouro", self.gratis);
         estilo::texto(caixa.x + 20.0, caixa.y + 58.0, &gratis, 14, estilo::SUAVE);
         let fechar = Rect::new(caixa.x + caixa.w - 40.0, caixa.y + 12.0, 28.0, 28.0);
@@ -136,7 +159,13 @@ impl Morte {
         }
         let mut pedido = None;
         if self.mortes.is_empty() {
-            estilo::texto(caixa.x + 20.0, caixa.y + 104.0, "Nenhuma morte para recuperar.", 16, estilo::TEXTO);
+            estilo::texto(
+                caixa.x + 20.0,
+                caixa.y + 104.0,
+                "Nenhuma morte para recuperar.",
+                16,
+                estilo::TEXTO,
+            );
         }
         let mut ordem = self.mortes.clone();
         ordem.sort_by_key(|m| std::cmp::Reverse(m.quando));
@@ -152,7 +181,13 @@ impl Morte {
             }
         }
         if let Some((t, ok)) = &self.aviso {
-            estilo::texto(caixa.x + 20.0, caixa.y + caixa.h - 16.0, t, 14, if *ok { estilo::AUTO } else { VERMELHO });
+            estilo::texto(
+                caixa.x + 20.0,
+                caixa.y + caixa.h - 16.0,
+                t,
+                14,
+                if *ok { estilo::AUTO } else { VERMELHO },
+            );
         }
         pedido
     }
@@ -161,10 +196,22 @@ impl Morte {
 /// Botao simples no estilo do HUD. Devolve `true` no clique.
 fn botao(r: Rect, texto: &str, ativo: bool) -> bool {
     let sobre = r.contains(Vec2::from(mouse_position()));
-    let cor = if !ativo { estilo::SUAVE } else if sobre { estilo::OURO } else { estilo::BORDA };
+    let cor = if !ativo {
+        estilo::SUAVE
+    } else if sobre {
+        estilo::OURO
+    } else {
+        estilo::BORDA
+    };
     draw_rectangle(r.x, r.y, r.w, r.h, estilo::FUNDO);
     draw_rectangle_lines(r.x, r.y, r.w, r.h, 2.0, cor);
-    estilo::texto_centro(r.x + r.w * 0.5, r.y + r.h * 0.5 + 6.0, texto, 16, if ativo { estilo::TEXTO } else { estilo::SUAVE });
+    estilo::texto_centro(
+        r.x + r.w * 0.5,
+        r.y + r.h * 0.5 + 6.0,
+        texto,
+        16,
+        if ativo { estilo::TEXTO } else { estilo::SUAVE },
+    );
     ativo && sobre && is_mouse_button_pressed(MouseButton::Left)
 }
 
@@ -186,7 +233,12 @@ mod testes {
     use super::*;
 
     fn m(quando: i64, xp: u64, custo: u64) -> MorteRecuperavelNet {
-        MorteRecuperavelNet { quando, xp, expira: quando + 86_400, custo_gold: custo }
+        MorteRecuperavelNet {
+            quando,
+            xp,
+            expira: quando + 86_400,
+            custo_gold: custo,
+        }
     }
 
     #[test]
@@ -209,8 +261,14 @@ mod testes {
         let mut t = Morte::default();
         t.recuperaveis(vec![m(10, 50, 900), m(30, 70, 1200), m(20, 60, 1000)], 2);
         assert_eq!(t.ultima().map(|x| x.quando), Some(30));
-        assert_eq!(Morte::rotulo_recuperar(&m(1, 1, 1200), 2), "Recuperar XP (grátis 2/3)");
-        assert_eq!(Morte::rotulo_recuperar(&m(1, 1, 1200), 0), "Recuperar XP · 1.200 ouro");
+        assert_eq!(
+            Morte::rotulo_recuperar(&m(1, 1, 1200), 2),
+            "Recuperar XP (grátis 2/3)"
+        );
+        assert_eq!(
+            Morte::rotulo_recuperar(&m(1, 1, 1200), 0),
+            "Recuperar XP · 1.200 ouro"
+        );
         assert_eq!(milhar(1234567), "1.234.567");
         assert_eq!(milhar(999), "999");
     }

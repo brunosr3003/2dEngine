@@ -20,7 +20,15 @@ pub struct BarraDeColeta {
 }
 
 impl BarraDeColeta {
-    pub fn recebe(&mut self, tipo: u8, intervalo_s: f32, progresso: f32, centro: Option<[f32; 2]>, pausado: bool, agora: f64) {
+    pub fn recebe(
+        &mut self,
+        tipo: u8,
+        intervalo_s: f32,
+        progresso: f32,
+        centro: Option<[f32; 2]>,
+        pausado: bool,
+        agora: f64,
+    ) {
         if tipo == shared::protocol::COLETA_PARADA || intervalo_s <= 0.0 {
             *self = Self::default();
             return;
@@ -57,15 +65,50 @@ impl BarraDeColeta {
         let r = z.coleta;
         estilo::painel(r);
         let dentro = Rect::new(r.x + 6.0, r.y + r.h - 9.0, r.w - 12.0, 5.0);
-        draw_rectangle(dentro.x, dentro.y, dentro.w, dentro.h, Color::new(0.0, 0.0, 0.0, 0.6));
-        draw_rectangle(dentro.x, dentro.y, dentro.w * self.progresso(agora), dentro.h, estilo::AUTO);
+        draw_rectangle(
+            dentro.x,
+            dentro.y,
+            dentro.w,
+            dentro.h,
+            Color::new(0.0, 0.0, 0.0, 0.6),
+        );
+        draw_rectangle(
+            dentro.x,
+            dentro.y,
+            dentro.w * self.progresso(agora),
+            dentro.h,
+            estilo::AUTO,
+        );
         if self.pausado {
-            draw_rectangle(dentro.x, dentro.y, dentro.w, dentro.h, Color::new(0.85, 0.30, 0.25, 0.9));
-            estilo::texto_centro(r.center().x, r.y + r.h * 0.5 + 1.0, "Bolsa cheia — coleta pausada", 13, estilo::TEXTO);
+            draw_rectangle(
+                dentro.x,
+                dentro.y,
+                dentro.w,
+                dentro.h,
+                Color::new(0.85, 0.30, 0.25, 0.9),
+            );
+            estilo::texto_centro(
+                r.center().x,
+                r.y + r.h * 0.5 + 1.0,
+                "Bolsa cheia — coleta pausada",
+                13,
+                estilo::TEXTO,
+            );
             return;
         }
-        let texto = format!("Coletando · {} · {:.1} s", shared::nome_do_no(tipo), self.restante_s(agora)).replace('.', ",");
-        estilo::texto_centro(r.center().x, r.y + r.h * 0.5 + 1.0, &texto, 13, estilo::TEXTO);
+        let texto = format!(
+            "Coletando · {} · {:.1} s",
+            shared::nome_do_no(tipo),
+            self.restante_s(agora)
+        )
+        .replace('.', ",");
+        estilo::texto_centro(
+            r.center().x,
+            r.y + r.h * 0.5 + 1.0,
+            &texto,
+            13,
+            estilo::TEXTO,
+        );
     }
 }
 
@@ -82,7 +125,11 @@ mod tests {
         assert_eq!(b.centro, Some(vec2(4.0, 5.0)));
         assert!((b.progresso(11.0) - 0.5).abs() < 1e-5);
         assert!((b.restante_s(11.0) - 1.0).abs() < 1e-5);
-        assert_eq!(b.progresso(99.0), 1.0, "nao passa de cheio antes do proximo aviso");
+        assert_eq!(
+            b.progresso(99.0),
+            1.0,
+            "nao passa de cheio antes do proximo aviso"
+        );
         // Bolsa cheia: continua ativa, parada.
         b.recebe(3, 2.0, 0.0, Some([4.0, 5.0]), true, 12.0);
         assert!(b.ativa() && b.pausado);
@@ -98,8 +145,22 @@ mod tests {
         use shared::components::acao;
         use shared::{EntityId, EntityMeta, EntityState, EntityTag};
         let mut w = crate::world::World::default();
-        let meta = EntityMeta { id: EntityId(1), tag: EntityTag::Player, name: None, hp_max: 10, faction: None, kind: 0, nivel: 1 };
-        let mut st = EntityState::quantize(EntityId(1), ::glam::Vec2::new(1.0, 1.0), ::glam::Vec2::ZERO, 10, 0);
+        let meta = EntityMeta {
+            id: EntityId(1),
+            tag: EntityTag::Player,
+            name: None,
+            hp_max: 10,
+            faction: None,
+            kind: 0,
+            nivel: 1,
+        };
+        let mut st = EntityState::quantize(
+            EntityId(1),
+            ::glam::Vec2::new(1.0, 1.0),
+            ::glam::Vec2::ZERO,
+            10,
+            0,
+        );
         st.acao = acao::monta_coleta(0, false, 3);
         w.apply(vec![meta.clone()], vec![st], &[]);
         for _ in 0..60 {
@@ -107,7 +168,11 @@ mod tests {
         }
         let e = &w.ents[&EntityId(1)];
         assert_eq!(e.coleta, Some(3));
-        assert!((e.coleta_t - 2.0).abs() < 0.05, "relogio do gesto: {}", e.coleta_t);
+        assert!(
+            (e.coleta_t - 2.0).abs() < 0.05,
+            "relogio do gesto: {}",
+            e.coleta_t
+        );
         assert_eq!(crate::rig::ferramenta_de(e.coleta.unwrap()), "picareta_3");
         // Troca pra madeira: zera o relogio e pega o machado.
         st.acao = acao::monta_coleta(0, false, 0);

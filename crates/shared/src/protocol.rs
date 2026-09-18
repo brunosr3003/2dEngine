@@ -25,7 +25,9 @@ pub enum ClientMessage {
     /// A partir daqui o ataque basico e' AUTOMATICO: enquanto o alvo estiver
     /// vivo e no alcance da arma, o servidor bate sozinho no ritmo do
     /// cooldown. O cliente nao manda mais botao de ataque nem mira.
-    SetTarget { target: Option<EntityId> },
+    SetTarget {
+        target: Option<EntityId>,
+    },
     /// Login apos handshake.
     Login {
         username: String,
@@ -38,29 +40,50 @@ pub enum ClientMessage {
     Chat {
         text: String,
     },
-    Ping { client_time_ms: u64 },
+    Ping {
+        client_time_ms: u64,
+    },
     /// Toque no chao: "ande ate' aqui".
     ///
     /// O cliente manda um DESTINO, nunca um caminho — quem decide por onde
     /// da' pra passar e' quem tem o relevo. E' um destino que ele ja' poderia
     /// alcancar andando, entao nao concede nada que o joystick nao conceda.
-    MoverPara { x: f32, z: f32 },
-    UseItem { slot: u16 },
+    MoverPara {
+        x: f32,
+        z: f32,
+    },
+    UseItem {
+        slot: u16,
+    },
     /// Interagir. `target_eid` Some = entidade clicada específica (NPC/baú);
     /// None = pega o NPC mais próximo (tecla de interação / toggle).
     Interact {
         #[serde(default)]
         target_eid: Option<u64>,
     },
-    ShopBuy { slot_idx: u8 },
-    ShopSell { inv_slot: u16 },
+    ShopBuy {
+        slot_idx: u8,
+    },
+    ShopSell {
+        inv_slot: u16,
+    },
     /// Trade atômico — todas as compras E vendas executadas juntas, ou
     /// nada. Cliente preview-only; servidor valida tudo de novo.
-    ShopTrade { buying: Vec<TradeBuyEntry>, selling: Vec<TradeSellEntry> },
-    VaultDeposit { inv_slot: u16 },
-    VaultWithdraw { vault_slot: u16 },
+    ShopTrade {
+        buying: Vec<TradeBuyEntry>,
+        selling: Vec<TradeSellEntry>,
+    },
+    VaultDeposit {
+        inv_slot: u16,
+    },
+    VaultWithdraw {
+        vault_slot: u16,
+    },
     VaultClose,
-    InventorySwap { a: InvSpot, b: InvSpot },
+    InventorySwap {
+        a: InvSpot,
+        b: InvSpot,
+    },
     /// Sort + merge stacks no inventario do player. Server agrupa stacks por
     /// item_id (respeitando stack_max), ordena ascendente, mantem itens com
     /// instance (rolls/refinamento) separados ao final.
@@ -70,15 +93,21 @@ pub enum ClientMessage {
     /// Crafta uma receita (`id` na CRAFT_RECIPES table). Server valida inputs,
     /// consome, gera output (com ItemInstance se equipavel). Falha silenciosa
     /// se faltam materiais ou inv cheio.
-    Craft { recipe_id: u16 },
+    Craft {
+        recipe_id: u16,
+    },
     StandUp,
     TeleportToVendor,
-    PartyInvite { target_name: String },
+    PartyInvite {
+        target_name: String,
+    },
     PartyAccept,
     PartyDecline,
     PartyLeave,
     /// Aloca 1 ponto de atributo. `stat` indice em [0=FOR,1=DES,2=INT,3=VIT,4=SPD].
-    AllocStatPoint { stat: u8 },
+    AllocStatPoint {
+        stat: u8,
+    },
     /// Usa uma das tres skills da arma equipada. O servidor valida o nivel
     /// do personagem, mana, recarga, estado de combate e alcance. Ataques usam
     /// a entidade selecionada por SetTarget; suporte usa o proprio personagem.
@@ -90,11 +119,15 @@ pub enum ClientMessage {
     ResetStats,
     /// Refina uma peca da BOLSA. Mesmo que `Refinar { alvo: Bolsa(slot) }` —
     /// regras de `forja` e resposta `RefinoResultado`.
-    RefineItem { slot: u16 },
+    RefineItem {
+        slot: u16,
+    },
     /// Pede pra subir num barco. Server valida proximidade (player em
     /// tile adjacente ao barco) e parenta o player (Mounted) com
     /// local_pos no ponto de entrada do deck.
-    BoardBoat { boat_eid: EntityId },
+    BoardBoat {
+        boat_eid: EntityId,
+    },
     /// Desce do barco atual. Server faz BFS pequeno procurando tile
     /// walkable adjacente ao barco — falha se barco em alto-mar.
     /// Mantém o nome `DismountBoat` por compat com clientes antigos —
@@ -106,14 +139,19 @@ pub enum ClientMessage {
     /// Pega uma estação do barco onde o player está. Player precisa
     /// estar dentro da interaction zone da estação (helm/sail/anchor).
     /// Falha silenciosamente se ocupada ou fora de zona.
-    GrabStation { station: u8 },
+    GrabStation {
+        station: u8,
+    },
     /// Solta a estação atual (se tiver alguma). Idempotente.
     ReleaseStation,
     /// Ajusta a vela do barco onde o player tem a estação SAIL.
     /// `delta_position`: -1 baixa 1 nivel, +1 sobe 1 nivel
     /// (clamp em [0..2]).
     /// `delta_angle`: rad a adicionar ao angulo da vela (clamp -PI/2..PI/2).
-    SailAdjust { delta_position: i8, delta_angle: f32 },
+    SailAdjust {
+        delta_position: i8,
+        delta_angle: f32,
+    },
     /// Toggle da ancora. Player precisa ter station ANCHOR. Inicia
     /// animacao de drop (se up) ou raise (se down). Anim leva
     /// BOAT_ANCHOR_ANIM_TIME segundos.
@@ -121,25 +159,37 @@ pub enum ClientMessage {
     /// Ajusta angulo da roda do leme. Delta em rad — server soma e
     /// clampa em [-BOAT_MAX_RUDDER_ANGLE, +]. rudder_angle PERSISTE
     /// quando o player solta a estacao HELM (igual barco real).
-    HelmAdjust { delta_angle: f32 },
+    HelmAdjust {
+        delta_angle: f32,
+    },
     /// Ajusta o angulo de mira do canhao do slot `slot`. Player precisa
     /// ter station CANNON_BASE+slot. Angle: -CANNON_AIM_MAX_RAD a +.
     /// Server clampa e persiste.
-    CannonAim { slot: u8, angle: f32 },
+    CannonAim {
+        slot: u8,
+        angle: f32,
+    },
     /// Dispara o canhao. `power` 0..1 — controla range e altura do arco.
     /// Spawn de CannonBombTag; explosao AoE no impacto.
-    CannonFire { slot: u8, power: f32 },
+    CannonFire {
+        slot: u8,
+        power: f32,
+    },
     /// Toggle do PK Mode (player vs player opt-in). Quando ON, o player
     /// pode dar/levar dano de outros players com pk_mode ON tambem.
     /// Futuro: zonas PvP forcam ON; faccoes diferentes ignoram flag.
-    TogglePkMode { on: bool },
+    TogglePkMode {
+        on: bool,
+    },
     /// Teletransporta o player para o spawn do mapa. Usar como escape em
     /// caso de bug de colisão (player preso em wall, fora do mapa, etc.).
     /// Permitido em qualquer estado — se montado em barco, desmonta antes.
     ResetPosition,
     /// Joga o item do slot do inventario no chao perto do player. Server
     /// valida slot ocupado, decrementa qty (ou zera) e spawna LootTag.
-    DropItem { slot: u16 },
+    DropItem {
+        slot: u16,
+    },
     RequestDisconnect,
     /// Cria novo personagem para a conta (multi-char). Aparece como nova
     /// entry na CharacterList apos sucesso. Server valida nome unico.
@@ -180,20 +230,31 @@ pub enum ClientMessage {
     },
     /// Aceita uma quest oferecida (board/npc/facção mais próximo já validou
     /// proximidade no Interact). Server valida level/facção/cooldown/slot.
-    AcceptQuest { quest_id: u16 },
+    AcceptQuest {
+        quest_id: u16,
+    },
     /// Abandona uma quest ativa (libera o slot; repetível volta ao cooldown).
-    AbandonQuest { quest_id: u16 },
+    AbandonQuest {
+        quest_id: u16,
+    },
     /// Entrega/conclui uma quest cujo objetivo está cumprido (status READY).
     /// Server reconfere, consome itens (Collect/Deliver) e concede recompensa.
-    TurnInQuest { quest_id: u16 },
+    TurnInQuest {
+        quest_id: u16,
+    },
     /// Pede a lista de quests oferecidas por um giver. Usado pelo QUADRO da
     /// cidade (objeto de cena, não-entidade): source=BOARD(0), giver=0. NPCs e
     /// facção são entidades-servidor e ofertam via Interact (handle_interact).
-    RequestQuestOffer { source: u8, giver: u16 },
+    RequestQuestOffer {
+        source: u8,
+        giver: u16,
+    },
     /// Compra um item na loja de facção (gasta pontos de facção). Server valida
     /// proximidade do NPC de facção da MESMA facção, pontos suficientes, e
     /// concede o item.
-    FactionShopBuy { item_id: u16 },
+    FactionShopBuy {
+        item_id: u16,
+    },
 
     // ── Pesca ────────────────────────────────────────────────────────────
     /// Boia caiu na água em `pos`. Server valida vara equipada + que `pos` é
@@ -207,7 +268,9 @@ pub enum ClientMessage {
     /// server remove o peixe do mundo e concede o item no inventário.
     /// `success=false` → peixe é solto (volta a nadar). Idempotente se não há
     /// peixe fisgado.
-    FishingReel { success: bool },
+    FishingReel {
+        success: bool,
+    },
     /// Cancela a pesca atual (player se moveu/desistiu antes da fisgada). Solta
     /// o peixe fisgado se houver e limpa a boia. Idempotente.
     FishingCancel,
@@ -223,71 +286,121 @@ pub enum ClientMessage {
     /// Escolhe o modo da dungeon ANTES do SelectCharacter (processo :9002).
     /// raid=true → RAID BOSS: sem waves/mobs, spawn perto da arena, só o boss.
     /// Ignorado fora de DUNGEON_MODE.
-    SelectDungeonMode { raid: bool },
+    SelectDungeonMode {
+        raid: bool,
+    },
 
     // ── Auto missao / auto coleta ────────────────────────────────────────
     /// Onde fica o objetivo desta missao ativa? Resposta: `QuestDestino`.
-    QuestDestino { quest_id: u16 },
+    QuestDestino {
+        quest_id: u16,
+    },
     /// Terminou o dialogo de uma missao "fale com" com este NPC. O servidor
     /// confere a distancia e marca a conversa — nao e' mais no clique.
-    ConcluirConversa { npc_eid: u64 },
+    ConcluirConversa {
+        npc_eid: u64,
+    },
     /// Auto coleta: qual o melhor spot de coleta perto de mim? Resposta:
     /// `SpotDeColeta`.
     /// AUTO COLETA: o no' vivo mais perto, dos `tipos` marcados (0 madeira,
     /// 1..4 pedra pela cor), a ate' `raio` de `centro` (onde foi ligado).
     /// Resposta: `NoDeColeta`.
-    PedirNoDeColeta { tipos: [bool; 5], raio: f32, centro: [f32; 2] },
+    PedirNoDeColeta {
+        tipos: [bool; 5],
+        raio: f32,
+        centro: [f32; 2],
+    },
     /// Coletar o no' desta coluna. O servidor valida alcance, tipo e
     /// esgotamento e responde com `ColetaEstado`.
-    ColetarNo { coluna: u32 },
+    ColetarNo {
+        coluna: u32,
+    },
     /// Para a coleta em curso (auto desligado, clique em outra coisa).
     PararColeta,
     /// Auto coleta de UM tipo (0 madeira, 1..4 pedra pela cor), procurando em
     /// volta de `perto` (a regiao escolhida no mapa). Resposta: `SpotDeColeta`.
-    PedirSpotDeColetaDe { tipo: u8, perto: [f32; 2] },
+    PedirSpotDeColetaDe {
+        tipo: u8,
+        perto: [f32; 2],
+    },
     /// Recuperar o XP perdido na morte `quando` (unix secs). Gratis ate' 3 por
     /// dia; depois cobra ouro.
-    RecuperarXp { quando: i64 },
+    RecuperarXp {
+        quando: i64,
+    },
     /// Salva a barra de itens configurada (MIR4). O servidor valida, guarda no
     /// personagem e devolve `BarraDeItens`.
-    SalvarBarra { espacos: Vec<EspacoDaBarra> },
+    SalvarBarra {
+        espacos: Vec<EspacoDaBarra>,
+    },
     /// Salva as preferencias de tela do personagem (skills AUTO, filtros do
     /// mapa, zooms). O servidor valida e guarda; nao responde.
-    SalvarPreferencias { prefs: Preferencias },
+    SalvarPreferencias {
+        prefs: Preferencias,
+    },
 
     // ── Forja ────────────────────────────────────────────────────────────
     /// Refina uma peca da bolsa ou equipada pelas regras de `forja`: +1..+12,
     /// seguro ate' +5, do +6 em diante falhar DESTROI. Resposta:
     /// `RefinoResultado`. Vale de qualquer lugar (menu).
-    Refinar { alvo: AlvoDaForja },
+    Refinar {
+        alvo: AlvoDaForja,
+    },
 
     /// Login apos handshake com a sessao emitida pelo login com Google (o
     /// `web` entrega ao cliente no `/api/auth/google/poll`). Mesma resposta
     /// do `Login`. Ver docs/LOGIN_GOOGLE.md.
-    LoginToken { token: String },
+    LoginToken {
+        token: String,
+    },
     /// Mercado global (docs/MERCADO.md): busca anuncios ativos.
-    MercadoBuscar { filtro: crate::mercado::FiltroNet },
+    MercadoBuscar {
+        filtro: crate::mercado::FiltroNet,
+    },
     /// Meus anuncios ativos, historico e saldo de TP.
     MercadoMeus,
     /// Anuncia `qtd` do slot da bolsa a `preco_unit` gold cada. O item sai da
     /// bolsa na hora e fica em custodia no mercado.
-    MercadoAnunciar { inv_slot: u16, qtd: u32, preco_unit: u64 },
+    MercadoAnunciar {
+        inv_slot: u16,
+        qtd: u32,
+        preco_unit: u64,
+    },
     /// Anuncia TP da conta a `preco_unit` gold cada (TP em custodia).
-    MercadoAnunciarTp { qtd: u64, preco_unit: u64 },
+    MercadoAnunciarTp {
+        qtd: u64,
+        preco_unit: u64,
+    },
     /// Compra `qtd` de um anuncio (item ou TP) ao preco que o cliente viu.
-    MercadoComprar { anuncio: String, qtd: u64, preco_unit: u64 },
+    MercadoComprar {
+        anuncio: String,
+        qtd: u64,
+        preco_unit: u64,
+    },
     /// Cancela um anuncio proprio: o que sobrou volta por entrega.
-    MercadoCancelar { anuncio: String },
+    MercadoCancelar {
+        anuncio: String,
+    },
     /// Entregas esperando e saldo de TP.
     MercadoEntregas,
     /// Recebe as entregas que couberem na bolsa.
     MercadoReceber,
     /// Dungeons (docs/DUNGEONS_E_RAIDS.md): fila, sala, instancia, bau, correio.
-    Dungeon { pedido: crate::dungeon::Pedido },
+    Dungeon {
+        pedido: crate::dungeon::Pedido,
+    },
     /// Calendario de presenca (docs/CALENDARIO.md): estado e resgate do dia.
-    Presenca { pedido: crate::presenca::PedidoPresenca },
+    Presenca {
+        pedido: crate::presenca::PedidoPresenca,
+    },
     /// Loja de cash e montarias (docs/LOJA.md).
-    Loja { pedido: crate::loja::PedidoLoja },
+    Loja {
+        pedido: crate::loja::PedidoLoja,
+    },
+    /// Extensao opcional, anexada para preservar os indices postcard existentes.
+    Social {
+        pedido: crate::social::Pedido,
+    },
 }
 
 /// Onde esta' a peca que a forja vai refinar.
@@ -329,9 +442,20 @@ mod admin_tests {
 
     #[test]
     fn admin_command_roundtrip_postcard() {
-        for action in [AdminAction::HealFull, AdminAction::SetLevel { level: 10 },
-            AdminAction::SpawnTestBoss { x: 74.5, z: -138.0, hp: 50_000 }] {
-            let msg = ClientMessage::AdminCommand { secret: "test-only".into(), target_char: None, action };
+        for action in [
+            AdminAction::HealFull,
+            AdminAction::SetLevel { level: 10 },
+            AdminAction::SpawnTestBoss {
+                x: 74.5,
+                z: -138.0,
+                hp: 50_000,
+            },
+        ] {
+            let msg = ClientMessage::AdminCommand {
+                secret: "test-only".into(),
+                target_char: None,
+                action,
+            };
             let bytes = encode(&msg).unwrap();
             let decoded: ClientMessage = decode(&bytes).unwrap();
             assert_eq!(encode(&decoded).unwrap(), bytes);
@@ -359,17 +483,17 @@ pub struct InputFrame {
 }
 
 pub mod buttons {
-    pub const PRIMARY:   u32 = 1 << 0;
+    pub const PRIMARY: u32 = 1 << 0;
     pub const SECONDARY: u32 = 1 << 1;
-    pub const INTERACT:  u32 = 1 << 2;
-    pub const DASH:      u32 = 1 << 3;
+    pub const INTERACT: u32 = 1 << 2;
+    pub const DASH: u32 = 1 << 3;
     /// Shift held = sprint (multiplica speed por SPRINT_SPEED_MULT enquanto
     /// drena stamina). Ignorado se stamina<=0 ou defendendo.
-    pub const SPRINT:    u32 = 1 << 4;
+    pub const SPRINT: u32 = 1 << 4;
     /// Pulo. Vale por SUBIDA, nao por altura: o que ele muda e' o degrau
     /// maximo que o corpo aceita — de um bloco pra dois. O arco vertical e'
     /// so' o cliente contando o que o servidor ja' decidiu.
-    pub const PULO:      u32 = 1 << 5;
+    pub const PULO: u32 = 1 << 5;
 }
 
 /// Servidor -> Cliente.
@@ -486,56 +610,92 @@ pub enum ServerMessage {
         stats: crate::PlayerStats,
         equipment: crate::Equipment,
     },
-    ManaUpdate { current: i32 },
-    StaminaUpdate { current: i32 },
+    ManaUpdate {
+        current: i32,
+    },
+    StaminaUpdate {
+        current: i32,
+    },
     /// Poise atual do player (0..stats.poise_max). Server envia quando o
     /// inteiro muda (poise inteiro, nao fracionado). Cliente atualiza barra.
-    PoiseUpdate { current: i32 },
+    PoiseUpdate {
+        current: i32,
+    },
     ShopOpen {
-        items:        Vec<ShopItem>,
-        sell_prices:  Vec<SellPrice>,
+        items: Vec<ShopItem>,
+        sell_prices: Vec<SellPrice>,
         /// Identificador opaco do vendor (NPC). Usado pelo cliente como
         /// chave pra cache visual (nome, retrato, reputação no futuro).
-        vendor_id:    u32,
+        vendor_id: u32,
         /// Multiplicador aplicado em compras (preço final = preço * mult).
         /// Default 1.0 — futuro: depende da relação com vendor.
-        buy_mult:     f32,
+        buy_mult: f32,
         /// Multiplicador aplicado em vendas. Default 1.0.
-        sell_mult:    f32,
+        sell_mult: f32,
     },
     ShopClose,
-    ShopTradeResult { ok: bool, reason: String },
-    VaultOpen { slots: Vec<crate::InventorySlot> },
-    VaultUpdate { slots: Vec<crate::InventorySlot> },
+    ShopTradeResult {
+        ok: bool,
+        reason: String,
+    },
+    VaultOpen {
+        slots: Vec<crate::InventorySlot>,
+    },
+    VaultUpdate {
+        slots: Vec<crate::InventorySlot>,
+    },
     VaultClose,
     /// Sinaliza ao cliente abrir o painel do ferreiro (refinar + socket gem).
     /// Sem payload — cliente apenas mostra a UI.
     BlacksmithOpen,
     BlacksmithClose,
-    DownedUpdate { active: bool, dhp: i32, dhp_max: i32, timer_s: f32 },
-    FameUpdate { fame: u64 },
-    AuraUpdate { aura: u64 },
+    DownedUpdate {
+        active: bool,
+        dhp: i32,
+        dhp_max: i32,
+        timer_s: f32,
+    },
+    FameUpdate {
+        fame: u64,
+    },
+    AuraUpdate {
+        aura: u64,
+    },
     /// Currency separado do inventário. Enviado no login e após cada
     /// transação que muda gold (loot, shop buy/sell, refining, trade).
-    GoldUpdate { gold: u64 },
+    GoldUpdate {
+        gold: u64,
+    },
 
     // ── Farm Nodes ──────────────────────────────────────────────────────────
     /// Enviado após login com a lista completa de farm nodes do mapa. Cliente
     /// usa para associar IDs aos GameObjects locais por posição.
-    FarmNodesConfig { nodes: Vec<FarmNodeInfo> },
+    FarmNodesConfig {
+        nodes: Vec<FarmNodeInfo>,
+    },
     /// Node coletado — desaparece até respawn. Broadcast pra players na AOI.
-    FarmNodeDepleted { node_id: u32 },
+    FarmNodeDepleted {
+        node_id: u32,
+    },
     /// Pedras de minerio ESGOTADAS no momento do login, por chave de coluna.
     ///
     /// A pedra em si nunca viaja: os dois lados a geram da mesma semente. O
     /// que viaja e' so' a excecao — quais sumiram —, e ela e' curta porque
     /// pedra esgotada e' minoria por construcao.
-    PedrasEsgotadas { colunas: Vec<u32> },
+    PedrasEsgotadas {
+        colunas: Vec<u32>,
+    },
     /// Uma pedra acabou de esgotar (ou de voltar). Broadcast na AOI.
-    PedraEsgotada { coluna: u32 },
-    PedraVoltou { coluna: u32 },
+    PedraEsgotada {
+        coluna: u32,
+    },
+    PedraVoltou {
+        coluna: u32,
+    },
     /// Node respawnado — pode ser coletado novamente.
-    FarmNodeRespawned { node_id: u32 },
+    FarmNodeRespawned {
+        node_id: u32,
+    },
     /// XP de proficiencia por CONJUNTO de arma. Coleta e artesanato nao tem.
     ProficienciesUpdate {
         #[serde(rename = "proficiency_xp")]
@@ -544,11 +704,15 @@ pub enum ServerMessage {
     /// Catálogo de skills carregado do DB. Enviado uma vez no login + após
     /// hot-reload (admin bumpou economy_version). Cliente cacheia em
     /// `SkillsConfigCache` pra UI consultar nome/icon/descrição.
-    SkillsConfig { skills: Vec<crate::skills::Skill> },
+    SkillsConfig {
+        skills: Vec<crate::skills::Skill>,
+    },
     /// Catalogo de receitas de crafting carregado do DB. Enviado no login,
     /// substitui o hardcoded client-side. Admin pode mudar custos/inputs/
     /// outputs via DB — ideal pra eventos com receitas especiais.
-    CraftRecipes { recipes: Vec<CraftRecipeNet> },
+    CraftRecipes {
+        recipes: Vec<CraftRecipeNet>,
+    },
     /// "Onde obter": pra cada item, de onde ele sai (`FonteDeItem`). Enviado
     /// no login + apos hot-reload da economy. Campo nomeado `resource_sources` (nao `items`)
     /// pra evitar colisao no deserializer compartilhado do cliente.
@@ -611,8 +775,12 @@ pub enum ServerMessage {
         target_eid: crate::EntityId,
         kind: u8,
     },
-    PartyInviteReceived { from: String },
-    PartyUpdate { members: Vec<String> },
+    PartyInviteReceived {
+        from: String,
+    },
+    PartyUpdate {
+        members: Vec<String>,
+    },
     /// Pontos de atributo disponiveis + ja alocados em cada stat.
     /// `allocated[i]` = pontos no stat com indice `i` (0=FOR..4=SPD, ver `crate::stat_idx`).
     StatPointsUpdate {
@@ -633,8 +801,8 @@ pub enum ServerMessage {
     /// Resposta ao Interact com um quest giver (quadro/NPC/facção): lista de
     /// quests DISPONÍVEIS pra aceitar dali (já filtradas por level/facção/cooldown).
     QuestOffer {
-        giver_source: u8,  // quests::quest_source
-        giver_id: u16,     // shop_id do NPC, 0 (board) ou faction_id
+        giver_source: u8, // quests::quest_source
+        giver_id: u16,    // shop_id do NPC, 0 (board) ou faction_id
         #[serde(default)]
         giver_name: String, // nome do NPC pro cabeçalho do diálogo ("" = board)
         quests: Vec<crate::quests::QuestNet>,
@@ -649,7 +817,7 @@ pub enum ServerMessage {
     QuestUpdate {
         quest_id: u16,
         progress: u32,
-        status: u8,        // quests::quest_status
+        status: u8, // quests::quest_status
     },
     /// Pontos de facção atuais do player (atualiza HUD).
     FactionPoints {
@@ -727,8 +895,14 @@ pub enum ServerMessage {
         world_path: String,
     },
     /// Recargas autoritativas em segundos restantes e trava da animacao.
-    SkillsState { cooldowns: Vec<(u32, f32)>, busy_s: f32 },
-    SkillRejected { skill_id: u32, motivo: String },
+    SkillsState {
+        cooldowns: Vec<(u32, f32)>,
+        busy_s: f32,
+    },
+    SkillRejected {
+        skill_id: u32,
+        motivo: String,
+    },
     /// Momento em que a skill realmente produz seu efeito.
     SkillImpactFx {
         skill_id: u32,
@@ -739,28 +913,54 @@ pub enum ServerMessage {
         target_pos: glam::Vec2,
     },
     /// Alvo e tempo do ataque de um mob; locomocao nao determina sua mira.
-    MobAttackFx { attacker: EntityId, target: Option<EntityId>, dir: [f32; 2], impact_s: f32 },
+    MobAttackFx {
+        attacker: EntityId,
+        target: Option<EntityId>,
+        dir: [f32; 2],
+        impact_s: f32,
+    },
     /// Onde fica o objetivo de uma missao (`quests::destino_tipo`). `npc_eid`
     /// quando e' pra falar ou entregar.
-    QuestDestino { quest_id: u16, tipo: u8, pos: [f32; 2], raio: f32, npc_eid: Option<u64> },
+    QuestDestino {
+        quest_id: u16,
+        tipo: u8,
+        pos: [f32; 2],
+        raio: f32,
+        npc_eid: Option<u64>,
+    },
     /// O no' que o AUTO COLETA (ou o "Ir" do mapa) deve coletar: (coluna, onde
     /// ficar pra alcancar, centro do corpo, tipo). `None` = nada vivo no raio.
-    NoDeColeta { no: Option<(u32, [f32; 2], [f32; 2], u8)> },
+    NoDeColeta {
+        no: Option<(u32, [f32; 2], [f32; 2], u8)>,
+    },
     /// Coleta do proprio jogador: `tipo` 0 madeira / 1..4 pedra, ou
     /// `COLETA_PARADA`; intervalo do ciclo e progresso ja' andado (0..1) no
     /// instante do envio. Vai ao comecar, a cada ciclo e ao parar.
     /// `pausado`: a bolsa nao comporta o proximo ciclo — o no' continua
     /// escolhido, nada foi gasto, e a coleta volta sozinha quando abrir
     /// espaco.
-    ColetaEstado { tipo: u8, intervalo_s: f32, progresso: f32, centro: Option<[f32; 2]>, pausado: bool },
+    ColetaEstado {
+        tipo: u8,
+        intervalo_s: f32,
+        progresso: f32,
+        centro: Option<[f32; 2]>,
+        pausado: bool,
+    },
     /// Recarga e cura restantes (s) de um grupo de pocao
     /// (`pocoes::Grupo`). Vai ao beber e ao recusar.
-    PocaoGrupo { grupo: u8, recarga_s: f32, cura_s: f32 },
+    PocaoGrupo {
+        grupo: u8,
+        recarga_s: f32,
+        cura_s: f32,
+    },
     /// A rota que o servidor calculou pro proprio jogador, pro tracejado no
     /// chao. Vai quando a rota nasce ou e' refeita; `pontos` vazio = acabou
     /// (chegou, comando manual, limpa). O cliente descarta sozinho os pontos
     /// ja' alcancados.
-    Rota { pontos: Vec<[f32; 2]>, destino: [f32; 2] },
+    Rota {
+        pontos: Vec<[f32; 2]>,
+        destino: [f32; 2],
+    },
     /// O que o mapa mostra da ilha: zonas de mob (com os bichos e a chance de
     /// cada um) e regioes de recurso. Vai uma vez, logo depois do `MapChange`.
     /// `nomes` = (kind, nome) dos bichos; `rendimentos` = (tipo, o que rende).
@@ -776,54 +976,120 @@ pub enum ServerMessage {
     /// Estado das missoes que o `QuestLog` nao carrega: as ja' entregues (com o
     /// fim do cooldown, 0 = sem) e a faccao do personagem (`quests::faction_id`).
     /// Pro menu de todas as missoes calcular bloqueio sem perguntar.
-    QuestEstado { entregues: Vec<(u16, i64)>, faccao: u8 },
+    QuestEstado {
+        entregues: Vec<(u16, i64)>,
+        faccao: u8,
+    },
     /// Resultado de um `Craft`: criou `item_id`, ou o motivo da recusa.
-    CraftResultado { recipe_id: u16, ok: bool, motivo: String, item_id: u16 },
+    CraftResultado {
+        recipe_id: u16,
+        ok: bool,
+        motivo: String,
+        item_id: u16,
+    },
     /// Resultado de `Refinar` (`forja::resultado`), com o nivel da peca agora
     /// (0 se destruida) e o motivo quando nem tentou.
-    RefinoResultado { resultado: u8, nivel: u8, item_id: u16, motivo: String },
+    RefinoResultado {
+        resultado: u8,
+        nivel: u8,
+        item_id: u16,
+        motivo: String,
+    },
     /// Bonus de XP da Pocao de Experiencia ativo ate' `ate` (unix secs; 0 =
     /// nenhum). Vai no login e ao beber.
-    BuffXp { ate: i64 },
+    BuffXp {
+        ate: i64,
+    },
     /// Pocoes de Fortuna e de Sorte ativas ate' (unix secs; 0 = nenhuma). Vai
     /// no login e ao beber.
-    BuffsDeDrop { fortuna_ate: i64, sorte_ate: i64 },
+    BuffsDeDrop {
+        fortuna_ate: i64,
+        sorte_ate: i64,
+    },
     /// A barra de itens do personagem (login e depois de salvar). Vazia = o
     /// cliente usa a padrao.
-    BarraDeItens { espacos: Vec<EspacoDaBarra> },
+    BarraDeItens {
+        espacos: Vec<EspacoDaBarra>,
+    },
     /// Preferencias de tela salvas do personagem. Vai no login; o cliente so'
     /// comeca a salvar as dele depois de receber esta.
-    Preferencias { prefs: Preferencias },
+    Preferencias {
+        prefs: Preferencias,
+    },
     /// Voce morreu: XP perdido nesta morte (recuperavel por 24 h).
-    Morte { xp_perdido: u64 },
+    Morte {
+        xp_perdido: u64,
+    },
     /// Mortes que ainda da' pra recuperar e as recuperacoes gratis de hoje.
     /// Vai no login, ao morrer e depois de recuperar.
-    Recuperaveis { mortes: Vec<MorteRecuperavelNet>, gratis_restantes: u8 },
+    Recuperaveis {
+        mortes: Vec<MorteRecuperavelNet>,
+        gratis_restantes: u8,
+    },
     /// Resultado de `RecuperarXp`: XP devolvido ou o motivo da recusa.
-    RecuperarXpResultado { ok: bool, motivo: String, xp: u64 },
+    RecuperarXpResultado {
+        ok: bool,
+        motivo: String,
+        xp: u64,
+    },
     /// Chefe carregando um golpe: a forma no chao (`centro`, virada pra `dir`)
     /// e quanto falta pro impacto, contado de quando esta mensagem chega.
     /// Quem estiver dentro no impacto toma — decidido pelo servidor.
-    Telegrafico { id: u32, chefe: EntityId, forma: crate::bosses::Forma, centro: [f32; 2], dir: [f32; 2], carga_s: f32 },
+    Telegrafico {
+        id: u32,
+        chefe: EntityId,
+        forma: crate::bosses::Forma,
+        centro: [f32; 2],
+        dir: [f32; 2],
+        carga_s: f32,
+    },
     /// O golpe saiu (`impacto`) ou foi cancelado (chefe morreu).
-    TelegraficoFim { id: u32, impacto: bool },
+    TelegraficoFim {
+        id: u32,
+        impacto: bool,
+    },
     /// Mercado: uma pagina da busca.
-    MercadoLista { anuncios: Vec<crate::mercado::AnuncioNet>, pagina: u16, tem_mais: bool },
+    MercadoLista {
+        anuncios: Vec<crate::mercado::AnuncioNet>,
+        pagina: u16,
+        tem_mais: bool,
+    },
     /// Mercado: meus anuncios ativos, historico e TP da conta.
-    MercadoMeus { anuncios: Vec<crate::mercado::AnuncioNet>, historico: Vec<crate::mercado::VendaNet>, tp: u64 },
+    MercadoMeus {
+        anuncios: Vec<crate::mercado::AnuncioNet>,
+        historico: Vec<crate::mercado::VendaNet>,
+        tp: u64,
+    },
     /// Mercado: entregas esperando e TP da conta.
-    MercadoEntregas { cartas: Vec<crate::mercado::CartaNet>, tp: u64 },
+    MercadoEntregas {
+        cartas: Vec<crate::mercado::CartaNet>,
+        tp: u64,
+    },
     /// Mercado: resposta de um pedido (ou aviso de venda/compra fechada).
-    MercadoResultado { ok: bool, texto: String },
+    MercadoResultado {
+        ok: bool,
+        texto: String,
+    },
     /// Dungeons: estado da janela, pronto-check, instancia, bau e correio.
-    Dungeon { aviso: crate::dungeon::Aviso },
+    Dungeon {
+        aviso: crate::dungeon::Aviso,
+    },
     /// Calendario de presenca: grade, progresso da conta e resultado do resgate.
-    Presenca { aviso: crate::presenca::AvisoPresenca },
+    Presenca {
+        aviso: crate::presenca::AvisoPresenca,
+    },
     /// Loja de cash e montarias: estado, resultado de compra, montando.
-    Loja { aviso: crate::loja::AvisoLoja },
+    Loja {
+        aviso: crate::loja::AvisoLoja,
+    },
     /// O alvo esta' no alcance da arma a distancia, mas o relevo barra o
     /// tiro: o ataque nao sai. No maximo 1 por segundo por jogador.
-    SemVisada { alvo: EntityId },
+    SemVisada {
+        alvo: EntityId,
+    },
+    Social {
+        aviso: crate::social::Aviso,
+    },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.
@@ -905,7 +1171,11 @@ impl Preferencias {
         self.alcance_minimapa = faixa(self.alcance_minimapa, 10.0, 1000.0);
         self.camera_zoom = faixa(self.camera_zoom, 0.1, 10.0);
         self.camera_pitch_ajuste = faixa(self.camera_pitch_ajuste, -3.0, 3.0);
-        self.coleta_raio = faixa(self.coleta_raio, crate::COLETA_RAIO_AUTO_MIN, crate::COLETA_RAIO_AUTO_MAX);
+        self.coleta_raio = faixa(
+            self.coleta_raio,
+            crate::COLETA_RAIO_AUTO_MIN,
+            crate::COLETA_RAIO_AUTO_MAX,
+        );
         self.escala_ui = faixa(self.escala_ui, 0.8, 1.6);
         self.economia_auto_min = self.economia_auto_min.map(|m| m.min(60));
         self
@@ -921,7 +1191,12 @@ mod testes_preferencias {
         let p = Preferencias {
             versao: 0,
             skills_auto: vec![5, 999, 1, 5],
-            filtros_mapa: FiltrosDoMapa { mobs: true, bichos_ocultos: vec![3, 3, 1], recursos: [true; 5], vila: true },
+            filtros_mapa: FiltrosDoMapa {
+                mobs: true,
+                bichos_ocultos: vec![3, 3, 1],
+                recursos: [true; 5],
+                vila: true,
+            },
             alcance_minimapa: Some(5000.0),
             camera_zoom: Some(f32::NAN),
             camera_pitch_ajuste: Some(-9.0),
@@ -949,7 +1224,11 @@ mod testes_preferencias {
 
     #[test]
     fn postcard_ida_e_volta() {
-        let p = Preferencias { skills_auto: vec![2, 7], camera_zoom: Some(1.4), ..Default::default() };
+        let p = Preferencias {
+            skills_auto: vec![2, 7],
+            camera_zoom: Some(1.4),
+            ..Default::default()
+        };
         let bytes = postcard::to_allocvec(&p).unwrap();
         assert_eq!(postcard::from_bytes::<Preferencias>(&bytes).unwrap(), p);
     }
@@ -1012,14 +1291,14 @@ pub struct ShopItem {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SellPrice {
     pub item_id: u16,
-    pub price:   u32,
+    pub price: u32,
 }
 
 /// Entrada do basket de compras dentro de um ShopTrade.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct TradeBuyEntry {
     pub shop_slot: u8,
-    pub qty:       u32,
+    pub qty: u32,
 }
 
 /// Receita de crafting enviada do server pro client. Espelho do
@@ -1028,26 +1307,26 @@ pub struct TradeBuyEntry {
 /// permitindo admin mudar receitas sem rebuild do client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CraftRecipeNet {
-    pub id:                u16,
-    pub name:              String,
+    pub id: u16,
+    pub name: String,
     /// 0=Other, 1=Weapon, 2=Armor, 3=Material/resource. UI filtra por tab.
-    pub category:          u8,
+    pub category: u8,
     /// Estação de craft (shared::craft_station): 0=Forja 1=Ateliê 2=Smelter
     /// 3=Marcenaria. UI filtra pela estação que o player abriu. serde(default)
     /// pra compat com mensagens antigas sem o campo.
     #[serde(default)]
-    pub station:           u8,
+    pub station: u8,
     /// 1-4. UI exibe badge colorido.
-    pub tier:              u8,
+    pub tier: u8,
     /// (item_id, qty) pares de inputs (max 4 entradas).
-    pub inputs:            Vec<[u32; 2]>,
-    pub output_item_id:    u16,
-    pub output_qty:        u32,
+    pub inputs: Vec<[u32; 2]>,
+    pub output_item_id: u16,
+    pub output_qty: u32,
     pub output_item_level: u16,
-    pub roll_instance:     bool,
+    pub roll_instance: bool,
     /// Nivel de personagem pra criar. 1 = qualquer um.
     #[serde(default)]
-    pub nivel_min:         u16,
+    pub nivel_min: u16,
 }
 
 /// De onde sai um item: o "Onde obter" (docs/ONDE_OBTER.md). Montado no
@@ -1057,18 +1336,44 @@ pub struct CraftRecipeNet {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum FonteDeItem {
     /// Coleta. `tipo` 0 = madeira, 1..4 = pedra pela cor. `chance` por coleta.
-    Coleta { tipo: u8, chance: f32, qty_min: u32, qty_max: u32 },
+    Coleta {
+        tipo: u8,
+        chance: f32,
+        qty_min: u32,
+        qty_max: u32,
+    },
     /// Bicho comum (zona de spawn). `chance` por morte. `ilhas` = indices de
     /// `terreno::ARQUIPELAGO` onde ele nasce com chance boa.
-    Mob { kind: u16, nome: String, chance: f32, qty_min: u32, qty_max: u32, ilhas: Vec<u8> },
+    Mob {
+        kind: u16,
+        nome: String,
+        chance: f32,
+        qty_min: u32,
+        qty_max: u32,
+        ilhas: Vec<u8>,
+    },
     /// Chefe que nasce no mundo aberto. `ilha` = indice de `ARQUIPELAGO`.
-    ChefeDoMundo { kind: u16, nome: String, nivel: u16, chance: f32, ilha: u8 },
+    ChefeDoMundo {
+        kind: u16,
+        nome: String,
+        nivel: u16,
+        chance: f32,
+        ilha: u8,
+    },
     /// Vendedor da vila (`loja` = id da loja do NPC).
     Vendedor { loja: u32, nome: String, preco: u32 },
     /// Sai de uma receita de craft.
-    Craft { receita: u16, nome: String, nivel_min: u16 },
+    Craft {
+        receita: u16,
+        nome: String,
+        nivel_min: u16,
+    },
     /// Recompensa de missao.
-    Missao { quest: u16, titulo: String, diaria: bool },
+    Missao {
+        quest: u16,
+        titulo: String,
+        diaria: bool,
+    },
     /// Chefe de dungeon/raid: ainda nao existe ("em breve").
     DungeonRaid,
     /// Calendario de presenca (`shared::presenca`): dias da grade do mes.
@@ -1100,22 +1405,22 @@ pub struct CharacterListEntry {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct TradeSellEntry {
     pub inv_slot: u16,
-    pub qty:      u32,
+    pub qty: u32,
 }
 
 /// Retângulo de zona segura enviado ao cliente pra renderização.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SafeZoneRect {
-    pub x:      f32,
-    pub y:      f32,
-    pub width:  f32,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
     pub height: f32,
 }
 
 /// Resultado de um ShopTrade — sucesso ou erro com motivo amigável.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShopTradeResult {
-    pub ok:     bool,
+    pub ok: bool,
     pub reason: String,
 }
 
@@ -1124,28 +1429,30 @@ pub struct ShopTradeResult {
 /// sobre icon_col/icon_row.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemConfigEntry {
-    pub id:         u16,
-    pub name:       String,
-    pub icon_path:  Option<String>,
-    pub icon_col:   i32,
-    pub icon_row:   i32,
+    pub id: u16,
+    pub name: String,
+    pub icon_path: Option<String>,
+    pub icon_col: i32,
+    pub icon_row: i32,
     pub equip_slot: Option<String>,
     /// Se false, server bloqueia equip/use. Client pode greyscale o ícone.
     #[serde(default = "default_true")]
-    pub active:     bool,
+    pub active: bool,
     /// Vinculado: nao entra no mercado (docs/MERCADO.md).
     #[serde(default)]
-    pub vinculado:  bool,
+    pub vinculado: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 /// Descritor de um farm node carregado do mapa. Enviado no FarmNodesConfig.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FarmNodeInfo {
-    pub id:   u32,
-    pub x:    f32,
-    pub y:    f32,
+    pub id: u32,
+    pub x: f32,
+    pub y: f32,
     pub kind: String,
     pub tier: u8,
 }
@@ -1187,7 +1494,9 @@ pub struct Acerto {
     pub atacante: EntityId,
 }
 
-fn default_xp_mult() -> u64 { crate::constants::DEFAULT_XP_MULTIPLIER }
+fn default_xp_mult() -> u64 {
+    crate::constants::DEFAULT_XP_MULTIPLIER
+}
 
 /// Codificacao do wire.
 ///

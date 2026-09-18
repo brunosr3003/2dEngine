@@ -27,10 +27,14 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     .await?;
     if legado {
         let mut tx = pool.begin().await?;
-        sqlx::query("ALTER TABLE skills RENAME TO skills_legado").execute(&mut *tx).await?;
-        sqlx::query("ALTER TABLE skills_legado RENAME CONSTRAINT skills_pkey TO skills_legado_pkey")
+        sqlx::query("ALTER TABLE skills RENAME TO skills_legado")
             .execute(&mut *tx)
             .await?;
+        sqlx::query(
+            "ALTER TABLE skills_legado RENAME CONSTRAINT skills_pkey TO skills_legado_pkey",
+        )
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         tracing::warn!("skills: tabela do sistema antigo renomeada pra skills_legado");
     }
@@ -72,8 +76,18 @@ async fn semear(pool: &PgPool) -> anyhow::Result<()> {
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
              ON CONFLICT (id) DO NOTHING",
         )
-        .bind(l.id as i32).bind(l.nome).bind(l.conjunto.chave()).bind(l.ordem as i16).bind(l.forma.chave()).bind(l.custo_mp)
-        .bind(l.espera_s).bind(l.conjuracao_s).bind(l.dano).bind(l.cura).bind(l.alcance).bind(l.raio)
+        .bind(l.id as i32)
+        .bind(l.nome)
+        .bind(l.conjunto.chave())
+        .bind(l.ordem as i16)
+        .bind(l.forma.chave())
+        .bind(l.custo_mp)
+        .bind(l.espera_s)
+        .bind(l.conjuracao_s)
+        .bind(l.dano)
+        .bind(l.cura)
+        .bind(l.alcance)
+        .bind(l.raio)
         .execute(pool)
         .await?;
     }
@@ -96,7 +110,12 @@ pub fn skill_of(id: u32) -> Option<Skill> {
 
 /// As tres de um conjunto, na ordem.
 pub fn do_conjunto(c: Conjunto) -> Vec<Skill> {
-    let mut v: Vec<Skill> = CATALOGO.read().iter().filter(|s| s.conjunto == c).cloned().collect();
+    let mut v: Vec<Skill> = CATALOGO
+        .read()
+        .iter()
+        .filter(|s| s.conjunto == c)
+        .cloned()
+        .collect();
     v.sort_by_key(|s| s.ordem);
     v
 }

@@ -26,16 +26,28 @@ async fn main() -> Result<()> {
         Some(personagem) => (conta_do_personagem(personagem).await?, &args[1..]),
         None => bail!("uso: creditar_tp <personagem> <qtd> [motivo]  |  creditar_tp --conta REALM:ID <qtd> [motivo]"),
     };
-    let qtd: u64 = resto.first().context("faltou a quantidade")?.parse().context("quantidade invalida")?;
+    let qtd: u64 = resto
+        .first()
+        .context("faltou a quantidade")?
+        .parse()
+        .context("quantidade invalida")?;
     if qtd == 0 {
         bail!("quantidade precisa ser maior que zero");
     }
-    let motivo = resto.get(1).cloned().unwrap_or_else(|| "TP de teste (admin)".into());
+    let motivo = resto
+        .get(1)
+        .cloned()
+        .unwrap_or_else(|| "TP de teste (admin)".into());
     let url = std::env::var("DATABASE_URL_CENTRAL").context("DATABASE_URL_CENTRAL nao setada")?;
-    let central = PgPoolOptions::new().max_connections(2).connect(&url).await?;
+    let central = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&url)
+        .await?;
     mercado_razao::criar_tabela(&central).await?;
     match mercado_razao::creditar(&central, &conta, qtd, &motivo, None).await? {
-        mercado_razao::Movimento::Feito { saldo } => println!("✓ +{qtd} TP em {conta} — saldo agora {saldo}"),
+        mercado_razao::Movimento::Feito { saldo } => {
+            println!("✓ +{qtd} TP em {conta} — saldo agora {saldo}")
+        }
         outro => println!("nada mudou: {outro:?}"),
     }
     Ok(())
@@ -44,11 +56,15 @@ async fn main() -> Result<()> {
 async fn conta_do_personagem(nome: &str) -> Result<String> {
     let url = std::env::var("DATABASE_URL").context("DATABASE_URL (banco do realm) nao setada")?;
     let realm = std::env::var("MMO_REALM").unwrap_or_else(|_| "SA01".into());
-    let pool = PgPoolOptions::new().max_connections(1).connect(&url).await?;
-    let conta: Option<Option<i64>> = sqlx::query_scalar("SELECT account_id FROM characters WHERE name = $1")
-        .bind(nome)
-        .fetch_optional(&pool)
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&url)
         .await?;
+    let conta: Option<Option<i64>> =
+        sqlx::query_scalar("SELECT account_id FROM characters WHERE name = $1")
+            .bind(nome)
+            .fetch_optional(&pool)
+            .await?;
     // Mesma chave que o servidor usa (`mercado::conta_global`).
     match conta {
         None => bail!("personagem '{nome}' nao existe neste realm"),

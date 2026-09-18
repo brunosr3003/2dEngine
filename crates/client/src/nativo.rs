@@ -22,11 +22,20 @@ pub fn abrir_url(url: &str) -> bool {
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd").args(["/C", "start", "", url]).spawn().is_ok()
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .spawn()
+            .is_ok()
     }
-    #[cfg(all(unix, not(any(target_os = "ios", target_os = "macos", target_os = "android"))))]
+    #[cfg(all(
+        unix,
+        not(any(target_os = "ios", target_os = "macos", target_os = "android"))
+    ))]
     {
-        std::process::Command::new("xdg-open").arg(url).spawn().is_ok()
+        std::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .is_ok()
     }
     // Android e web: ainda nao.
     #[cfg(not(any(unix, windows)))]
@@ -104,27 +113,32 @@ mod ios {
 
     // arm64: objc_msgSend chamado com a assinatura exata de cada uso.
     unsafe fn msg(obj: Id, s: &str) -> Id {
-        let f: unsafe extern "C" fn(Id, Sel) -> Id = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let f: unsafe extern "C" fn(Id, Sel) -> Id =
+            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         f(obj, sel(s))
     }
 
     unsafe fn msg_id(obj: Id, s: &str, a: Id) -> Id {
-        let f: unsafe extern "C" fn(Id, Sel, Id) -> Id = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let f: unsafe extern "C" fn(Id, Sel, Id) -> Id =
+            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         f(obj, sel(s), a)
     }
 
     unsafe fn msg_bool(obj: Id, s: &str, a: Id) -> bool {
-        let f: unsafe extern "C" fn(Id, Sel, Id) -> bool = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let f: unsafe extern "C" fn(Id, Sel, Id) -> bool =
+            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         f(obj, sel(s), a)
     }
 
     unsafe fn msg_n(obj: Id, s: &str) -> u64 {
-        let f: unsafe extern "C" fn(Id, Sel) -> u64 = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let f: unsafe extern "C" fn(Id, Sel) -> u64 =
+            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         f(obj, sel(s))
     }
 
     unsafe fn msg_i(obj: Id, s: &str, i: u64) -> Id {
-        let f: unsafe extern "C" fn(Id, Sel, u64) -> Id = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let f: unsafe extern "C" fn(Id, Sel, u64) -> Id =
+            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         f(obj, sel(s), i)
     }
 
@@ -145,7 +159,13 @@ mod ios {
             let opcoes = msg(classe("NSDictionary"), "dictionary");
             let f: unsafe extern "C" fn(Id, Sel, Id, Id, *mut c_void) =
                 std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
-            f(app, sel("openURL:options:completionHandler:"), nsurl, opcoes, std::ptr::null_mut());
+            f(
+                app,
+                sel("openURL:options:completionHandler:"),
+                nsurl,
+                opcoes,
+                std::ptr::null_mut(),
+            );
             true
         }
     }
@@ -180,7 +200,8 @@ mod ios {
     // UIEdgeInsets e CGRect: quatro f64, volta em registrador no arm64 (HFA),
     // entao o objc_msgSend comum serve.
     unsafe fn msg_quatro(obj: Id, s: &str) -> Quatro {
-        let f: unsafe extern "C" fn(Id, Sel) -> Quatro = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let f: unsafe extern "C" fn(Id, Sel) -> Quatro =
+            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         f(obj, sel(s))
     }
 
@@ -211,7 +232,8 @@ mod ios {
     pub fn manter_tela_acesa(sim: bool) {
         unsafe {
             let app = msg(classe("UIApplication"), "sharedApplication");
-            let f: unsafe extern "C" fn(Id, Sel, bool) = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+            let f: unsafe extern "C" fn(Id, Sel, bool) =
+                std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
             f(app, sel("setIdleTimerDisabled:"), sim);
         }
     }
@@ -219,7 +241,14 @@ mod ios {
     pub fn teclado(mostrar: bool) {
         unsafe {
             if let Some(campo) = campo_escondido() {
-                msg(campo, if mostrar { "becomeFirstResponder" } else { "resignFirstResponder" });
+                msg(
+                    campo,
+                    if mostrar {
+                        "becomeFirstResponder"
+                    } else {
+                        "resignFirstResponder"
+                    },
+                );
             }
         }
     }

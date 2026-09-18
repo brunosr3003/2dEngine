@@ -19,8 +19,10 @@ const LINHA: f32 = 84.0;
 /// As diarias da ilha `zona`, em ordem de id. Fora de ilha, nenhuma.
 pub fn da_ilha(zona: Option<&str>) -> Vec<&'static QuestDef> {
     let Some(z) = zona else { return Vec::new() };
-    let mut v: Vec<&'static QuestDef> =
-        QUESTS.iter().filter(|d| d.daily && zona_da_missao(d.id) == Some(z)).collect();
+    let mut v: Vec<&'static QuestDef> = QUESTS
+        .iter()
+        .filter(|d| d.daily && zona_da_missao(d.id) == Some(z))
+        .collect();
     v.sort_by_key(|d| d.id);
     v
 }
@@ -48,14 +50,20 @@ pub fn botao_de(e: &Estado) -> Option<&'static str> {
 /// O clique numa diaria. Concluida avisa quando volta.
 pub fn clique_da_diaria(d: &QuestDef, e: &Estado, agora_unix: i64) -> Clique {
     match e {
-        Estado::Concluida => Clique::Aviso(format!("\"{}\" concluída hoje · reset em {}.", d.title, reset_em(agora_unix))),
+        Estado::Concluida => Clique::Aviso(format!(
+            "\"{}\" concluída hoje · reset em {}.",
+            d.title,
+            reset_em(agora_unix)
+        )),
         _ => clique_de(d, e),
     }
 }
 
 /// Alguma diaria pra aceitar ou entregar agora: ponto vermelho.
 pub fn tem_pendente(c: &Contexto) -> bool {
-    da_ilha(c.zona).iter().any(|d| matches!(estado_da_diaria(d, c), Estado::Disponivel | Estado::Pronta))
+    da_ilha(c.zona)
+        .iter()
+        .any(|d| matches!(estado_da_diaria(d, c), Estado::Disponivel | Estado::Pronta))
 }
 
 /// "80 cobre · 120 XP · 1× Poção de Experiência".
@@ -67,9 +75,15 @@ pub fn recompensa(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
     if d.reward_xp > 0 {
         partes.push(format!("{} XP", d.reward_xp));
     }
-    for (id, qtd) in [(d.reward_item, d.reward_item_qty), (d.reward_item2, d.reward_item2_qty)] {
+    for (id, qtd) in [
+        (d.reward_item, d.reward_item_qty),
+        (d.reward_item2, d.reward_item2_qty),
+    ] {
         if id != 0 && qtd > 0 {
-            let nome = nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"));
+            let nome = nomes
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| format!("item {id}"));
             partes.push(format!("{qtd}× {nome}"));
         }
     }
@@ -101,7 +115,12 @@ impl Diarias {
     fn painel() -> Rect {
         let w = LARGURA.min(screen_width() - 24.0);
         let h = (screen_height() - 140.0).clamp(260.0, 720.0);
-        Rect::new((screen_width() - w) * 0.5, (screen_height() - h) * 0.5, w, h)
+        Rect::new(
+            (screen_width() - w) * 0.5,
+            (screen_height() - h) * 0.5,
+            w,
+            h,
+        )
     }
 
     /// Desenha o painel e devolve o clique do quadro.
@@ -112,9 +131,22 @@ impl Diarias {
         let p = Self::painel();
         estilo::painel(p);
         estilo::texto(p.x + 18.0, p.y + 32.0, "Diárias", 22, estilo::OURO);
-        let ilha = c.zona.and_then(shared::terreno::def_da_zona).map_or("—", |d| d.nome);
-        estilo::texto(p.x + 18.0, p.y + 54.0, &format!("{ilha} · reset em {}", reset_em(c.agora_unix)), 14, estilo::SUAVE);
-        if crate::ui::botao(Rect::new(p.x + p.w - 44.0, p.y + 10.0, 32.0, 28.0), "x", true) {
+        let ilha = c
+            .zona
+            .and_then(shared::terreno::def_da_zona)
+            .map_or("—", |d| d.nome);
+        estilo::texto(
+            p.x + 18.0,
+            p.y + 54.0,
+            &format!("{ilha} · reset em {}", reset_em(c.agora_unix)),
+            14,
+            estilo::SUAVE,
+        );
+        if crate::ui::botao(
+            Rect::new(p.x + p.w - 44.0, p.y + 10.0, 32.0, 28.0),
+            "x",
+            true,
+        ) {
             self.aberto = false;
             return None;
         }
@@ -124,26 +156,46 @@ impl Diarias {
         let total = lista.len() as f32 * LINHA;
         if area.contains(mouse) {
             let (_, roda) = mouse_wheel();
-            self.rolagem = (self.rolagem - roda.signum() * LINHA).clamp(0.0, (total - area.h).max(0.0));
+            self.rolagem =
+                (self.rolagem - roda.signum() * LINHA).clamp(0.0, (total - area.h).max(0.0));
         }
         if lista.is_empty() {
-            estilo::texto(area.x + 8.0, area.y + 22.0, "Nenhuma diária nesta ilha.", 15, estilo::SUAVE);
+            estilo::texto(
+                area.x + 8.0,
+                area.y + 22.0,
+                "Nenhuma diária nesta ilha.",
+                15,
+                estilo::SUAVE,
+            );
         }
         let clicou = is_mouse_button_pressed(MouseButton::Left);
         let mut saida = None;
         let mut dica: Option<Vec<String>> = None;
         for (i, d) in lista.iter().enumerate() {
-            let linha = Rect::new(area.x, area.y - self.rolagem + i as f32 * LINHA, area.w, LINHA - 6.0);
+            let linha = Rect::new(
+                area.x,
+                area.y - self.rolagem + i as f32 * LINHA,
+                area.w,
+                LINHA - 6.0,
+            );
             if linha.y + linha.h < area.y || linha.y > area.y + area.h {
                 continue;
             }
             let e = estado_da_diaria(d, c);
             let sobre = linha.contains(mouse) && area.contains(mouse);
-            draw_rectangle(linha.x, linha.y, linha.w, linha.h, Color::new(1.0, 1.0, 1.0, if sobre { 0.08 } else { 0.03 }));
+            draw_rectangle(
+                linha.x,
+                linha.y,
+                linha.w,
+                linha.h,
+                Color::new(1.0, 1.0, 1.0, if sobre { 0.08 } else { 0.03 }),
+            );
             let vermelho = Color::new(0.85, 0.45, 0.40, 1.0);
             let (rotulo, cor) = match &e {
                 Estado::Disponivel => ("Disponível".to_string(), Color::new(1.0, 0.84, 0.2, 1.0)),
-                Estado::EmAndamento { feito, total } => (format!("Em andamento · {feito}/{total}"), estilo::TEXTO),
+                Estado::EmAndamento { feito, total } => {
+                    (format!("Em andamento · {feito}/{total}"), estilo::TEXTO)
+                }
                 Estado::Pronta => ("Pronta pra entregar".to_string(), estilo::AUTO),
                 Estado::Concluida => ("Concluída hoje".to_string(), estilo::SUAVE),
                 Estado::Bloqueada(m) => (m.first().cloned().unwrap_or_default(), vermelho),
@@ -152,20 +204,71 @@ impl Diarias {
             match &e {
                 Estado::Bloqueada(_) => cadeado(icone, 9.0, vermelho),
                 Estado::Concluida => {
-                    draw_line(icone.x - 7.0, icone.y, icone.x - 2.0, icone.y + 6.0, 3.0, estilo::SUAVE);
-                    draw_line(icone.x - 2.0, icone.y + 6.0, icone.x + 8.0, icone.y - 7.0, 3.0, estilo::SUAVE);
+                    draw_line(
+                        icone.x - 7.0,
+                        icone.y,
+                        icone.x - 2.0,
+                        icone.y + 6.0,
+                        3.0,
+                        estilo::SUAVE,
+                    );
+                    draw_line(
+                        icone.x - 2.0,
+                        icone.y + 6.0,
+                        icone.x + 8.0,
+                        icone.y - 7.0,
+                        3.0,
+                        estilo::SUAVE,
+                    );
                 }
-                Estado::Pronta => estilo::texto_centro(icone.x, icone.y + 10.0, "?", 26, estilo::AUTO),
+                Estado::Pronta => {
+                    estilo::texto_centro(icone.x, icone.y + 10.0, "?", 26, estilo::AUTO)
+                }
                 Estado::Disponivel => estilo::texto_centro(icone.x, icone.y + 10.0, "!", 26, cor),
-                Estado::EmAndamento { .. } => draw_circle_lines(icone.x, icone.y, 8.0, 2.0, estilo::TEXTO),
+                Estado::EmAndamento { .. } => {
+                    draw_circle_lines(icone.x, icone.y, 8.0, 2.0, estilo::TEXTO)
+                }
             }
             let apagada = matches!(e, Estado::Bloqueada(_) | Estado::Concluida);
             let largura_texto = linha.w - 170.0;
-            estilo::texto_ajustado(d.title, linha.x + 44.0, linha.y + 22.0, largura_texto, 16, if apagada { estilo::SUAVE } else { estilo::TEXTO });
-            estilo::texto_ajustado(&rotulo, linha.x + 44.0, linha.y + 42.0, largura_texto, 13, cor);
-            estilo::texto_ajustado(&recompensa(d, nomes), linha.x + 44.0, linha.y + 62.0, largura_texto, 13, estilo::OURO);
-            if d.obj_kind == shared::quests::objective_kind::COLLECT && d.obj_target != 0 && !apagada {
-                if crate::onde_obter::botao(Rect::new(linha.x + linha.w - 164.0, linha.y + 20.0, 36.0, 34.0)) {
+            estilo::texto_ajustado(
+                d.title,
+                linha.x + 44.0,
+                linha.y + 22.0,
+                largura_texto,
+                16,
+                if apagada {
+                    estilo::SUAVE
+                } else {
+                    estilo::TEXTO
+                },
+            );
+            estilo::texto_ajustado(
+                &rotulo,
+                linha.x + 44.0,
+                linha.y + 42.0,
+                largura_texto,
+                13,
+                cor,
+            );
+            estilo::texto_ajustado(
+                &recompensa(d, nomes),
+                linha.x + 44.0,
+                linha.y + 62.0,
+                largura_texto,
+                13,
+                estilo::OURO,
+            );
+            if d.obj_kind == shared::quests::objective_kind::COLLECT
+                && d.obj_target != 0
+                && !apagada
+            {
+                if crate::onde_obter::botao(Rect::new(
+                    linha.x + linha.w - 164.0,
+                    linha.y + 20.0,
+                    36.0,
+                    34.0,
+                )) {
                     self.onde_obter = Some(d.obj_target);
                 }
             }
@@ -184,12 +287,20 @@ impl Diarias {
             }
         }
         if let Some(m) = dica {
-            let w = m.iter().map(|s| estilo::medir(s, 14)).fold(160.0f32, f32::max) + 24.0;
+            let w = m
+                .iter()
+                .map(|s| estilo::medir(s, 14))
+                .fold(160.0f32, f32::max)
+                + 24.0;
             let h = 30.0 + m.len() as f32 * 20.0;
             let x = (mouse.x + 16.0).min(screen_width() - w - 8.0);
             let y = (mouse.y + 12.0).min(screen_height() - h - 8.0);
             estilo::painel(Rect::new(x, y, w, h));
-            cadeado(vec2(x + 16.0, y + 17.0), 7.0, Color::new(0.85, 0.45, 0.40, 1.0));
+            cadeado(
+                vec2(x + 16.0, y + 17.0),
+                7.0,
+                Color::new(0.85, 0.45, 0.40, 1.0),
+            );
             estilo::texto(x + 30.0, y + 22.0, "Pré-requisitos", 14, estilo::OURO);
             for (i, s) in m.iter().enumerate() {
                 estilo::texto(x + 12.0, y + 42.0 + i as f32 * 20.0, s, 14, estilo::TEXTO);
@@ -208,8 +319,20 @@ mod tests {
         0
     }
 
-    fn ctx<'a>(log: &'a [QuestNet], entregues: &'a HashMap<u16, i64>, zona: Option<&'a str>) -> Contexto<'a> {
-        Contexto { log, entregues, nivel: 50, faccao: faction_id::PEACEMAIN, zona, agora_unix: 1_000, tem: &nada }
+    fn ctx<'a>(
+        log: &'a [QuestNet],
+        entregues: &'a HashMap<u16, i64>,
+        zona: Option<&'a str>,
+    ) -> Contexto<'a> {
+        Contexto {
+            log,
+            entregues,
+            nivel: 50,
+            faccao: faction_id::PEACEMAIN,
+            zona,
+            agora_unix: 1_000,
+            tem: &nada,
+        }
     }
 
     #[test]
@@ -218,7 +341,12 @@ mod tests {
         assert_eq!(ids, vec![601, 602, 603, 604, 605, 606, 607]);
         assert!(da_ilha(None).is_empty(), "fora de ilha nao ha' diaria");
         let gelo = da_ilha(Some("ilha_gelo"));
-        assert!(!gelo.is_empty() && gelo.iter().all(|d| d.daily && zona_da_missao(d.id) == Some("ilha_gelo")));
+        assert!(
+            !gelo.is_empty()
+                && gelo
+                    .iter()
+                    .all(|d| d.daily && zona_da_missao(d.id) == Some("ilha_gelo"))
+        );
     }
 
     #[test]
@@ -229,21 +357,37 @@ mod tests {
         let e = estado_da_diaria(d601, &c);
         assert_eq!(e, Estado::Disponivel);
         assert_eq!(botao_de(&e), Some("Ir aceitar"));
-        assert_eq!(clique_da_diaria(d601, &e, 1_000), Clique::IrAoGiver(601), "aceitar e' com o Mestre");
+        assert_eq!(
+            clique_da_diaria(d601, &e, 1_000),
+            Clique::IrAoGiver(601),
+            "aceitar e' com o Mestre"
+        );
 
         // A Cacada (raid) ainda nao existe; a dungeon (606) ja' conta.
         let d607 = quest_by_id(607).unwrap();
-        assert_eq!(estado_da_diaria(d607, &c), Estado::Bloqueada(vec!["Em breve".into()]));
+        assert_eq!(
+            estado_da_diaria(d607, &c),
+            Estado::Bloqueada(vec!["Em breve".into()])
+        );
         assert_eq!(botao_de(&estado_da_diaria(d607, &c)), None);
-        assert_eq!(estado_da_diaria(quest_by_id(606).unwrap(), &c), Estado::Disponivel);
+        assert_eq!(
+            estado_da_diaria(quest_by_id(606).unwrap(), &c),
+            Estado::Disponivel
+        );
 
         let mut entregues = HashMap::new();
         entregues.insert(601, 50_000);
         let c = ctx(&[], &entregues, Some("ilha_inicial"));
         let e = estado_da_diaria(d601, &c);
-        assert_eq!(e, Estado::Concluida, "entregue antes do reset: concluida hoje");
+        assert_eq!(
+            e,
+            Estado::Concluida,
+            "entregue antes do reset: concluida hoje"
+        );
         assert_eq!(botao_de(&e), None);
-        assert!(matches!(clique_da_diaria(d601, &e, 1_000), Clique::Aviso(t) if t.contains("reset")));
+        assert!(
+            matches!(clique_da_diaria(d601, &e, 1_000), Clique::Aviso(t) if t.contains("reset"))
+        );
 
         let d602 = quest_by_id(602).unwrap();
         let mut q = QuestNet::from_def(d602, quest_status::ACTIVE, 4);
@@ -259,7 +403,11 @@ mod tests {
         let e = estado_da_diaria(d602, &c);
         assert_eq!(e, Estado::Pronta);
         assert_eq!(botao_de(&e), Some("Ir entregar"));
-        assert_eq!(clique_da_diaria(d602, &e, 1_000), Clique::AutoMissao(602), "a auto missao volta ao Mestre");
+        assert_eq!(
+            clique_da_diaria(d602, &e, 1_000),
+            Clique::AutoMissao(602),
+            "a auto missao volta ao Mestre"
+        );
     }
 
     #[test]
@@ -267,8 +415,11 @@ mod tests {
         let vazio = HashMap::new();
         assert!(tem_pendente(&ctx(&[], &vazio, Some("ilha_inicial"))));
         // Tudo que existe entregue hoje; as "em breve" continuam trancadas.
-        let entregues: HashMap<u16, i64> =
-            da_ilha(Some("ilha_inicial")).iter().filter(|d| !d.em_breve).map(|d| (d.id, 50_000)).collect();
+        let entregues: HashMap<u16, i64> = da_ilha(Some("ilha_inicial"))
+            .iter()
+            .filter(|d| !d.em_breve)
+            .map(|d| (d.id, 50_000))
+            .collect();
         assert!(!tem_pendente(&ctx(&[], &entregues, Some("ilha_inicial"))));
         assert!(!tem_pendente(&ctx(&[], &vazio, None)));
     }

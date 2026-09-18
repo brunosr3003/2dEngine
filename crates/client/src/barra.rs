@@ -96,26 +96,43 @@ impl Categoria {
 
 /// Um espaco com o item e o limiar padrao dele, AUTO desligado.
 pub fn espaco(id: u16, auto: bool) -> EspacoDaBarra {
-    EspacoDaBarra { item_id: id, auto, limiar: categoria(id).and_then(|c| c.limiar_padrao()).unwrap_or(0) }
+    EspacoDaBarra {
+        item_id: id,
+        auto,
+        limiar: categoria(id).and_then(|c| c.limiar_padrao()).unwrap_or(0),
+    }
 }
 
 /// A barra de quem nunca configurou: vida com AUTO (como no MIR4), mana, vigor
 /// e experiencia manuais.
 pub fn padrao() -> [EspacoDaBarra; ESPACOS] {
-    [espaco(it::HEALTH_POTION, true), espaco(it::MANA_POTION, false), espaco(it::STAMINA_POTION, false), espaco(it::XP_POTION, false)]
+    [
+        espaco(it::HEALTH_POTION, true),
+        espaco(it::MANA_POTION, false),
+        espaco(it::STAMINA_POTION, false),
+        espaco(it::XP_POTION, false),
+    ]
 }
 
 /// Quanto a bolsa tem do consumivel do espaco (a familia inteira).
 pub fn quantidade(slots: &[InventorySlot], id: u16) -> u32 {
     let Some(c) = categoria(id) else { return 0 };
-    slots.iter().filter(|s| c.familia().contains(&s.item_id) && s.instance.is_none()).map(|s| s.qty).sum()
+    slots
+        .iter()
+        .filter(|s| c.familia().contains(&s.item_id) && s.instance.is_none())
+        .map(|s| s.qty)
+        .sum()
 }
 
 /// O slot da bolsa pra usar. `forte`: a maior da familia primeiro; senao o
 /// item escolhido e, sem ele, qualquer outro da familia.
 pub fn slot_para_usar(slots: &[InventorySlot], id: u16, forte: bool) -> Option<usize> {
     let c = categoria(id)?;
-    let tem = |x: u16| slots.iter().position(|s| s.item_id == x && s.qty > 0 && s.instance.is_none());
+    let tem = |x: u16| {
+        slots
+            .iter()
+            .position(|s| s.item_id == x && s.qty > 0 && s.instance.is_none())
+    };
     if forte {
         if let Some(i) = c.familia().last().and_then(|&maior| tem(maior)) {
             return Some(i);
@@ -175,7 +192,9 @@ impl Barra {
         if resta <= 0.0 {
             return None;
         }
-        let total = shared::pocoes::cura_de(e.item_id).map_or(resta, |c| c.recarga_s as f32).max(resta);
+        let total = shared::pocoes::cura_de(e.item_id)
+            .map_or(resta, |c| c.recarga_s as f32)
+            .max(resta);
         Some((resta, total))
     }
 
@@ -235,7 +254,14 @@ impl Barra {
     }
 
     /// O mouse deste quadro sobre os botoes. Devolve o gesto concluido.
-    pub fn entrada(&mut self, rects: &[Rect; ESPACOS], mouse: Vec2, apertou: bool, segurando: bool, soltou: bool) -> Option<Gesto> {
+    pub fn entrada(
+        &mut self,
+        rects: &[Rect; ESPACOS],
+        mouse: Vec2,
+        apertou: bool,
+        segurando: bool,
+        soltou: bool,
+    ) -> Option<Gesto> {
         if apertou && self.arrasto.inicio.is_none() {
             if let Some(i) = rects.iter().position(|r| r.contains(mouse)) {
                 self.arrasto.pressiona(i as u32, mouse);
@@ -267,13 +293,15 @@ impl Barra {
     pub fn aplica(&mut self, gesto: Gesto) -> (Option<usize>, bool) {
         match gesto {
             Gesto::Usar(i) => (Some(i as usize), false),
-            Gesto::Auto(i, ligar) => match self.espacos.get_mut(i as usize).filter(|e| e.item_id != 0) {
-                Some(e) if e.auto != ligar => {
-                    e.auto = ligar;
-                    (None, true)
+            Gesto::Auto(i, ligar) => {
+                match self.espacos.get_mut(i as usize).filter(|e| e.item_id != 0) {
+                    Some(e) if e.auto != ligar => {
+                        e.auto = ligar;
+                        (None, true)
+                    }
+                    _ => (None, false),
                 }
-                _ => (None, false),
-            },
+            }
         }
     }
 
@@ -285,7 +313,13 @@ impl Barra {
     /// o MENOR cujo total cobre o que falta pro maximo; nenhum cobre, o maior
     /// que houver (`shared::pocoes::escolher`). `forte` = usar o maior da
     /// familia.
-    pub fn decide(&mut self, e: &Estado, qtd: &[u32; ESPACOS], slots: &[InventorySlot], agora: f64) -> Option<(usize, bool)> {
+    pub fn decide(
+        &mut self,
+        e: &Estado,
+        qtd: &[u32; ESPACOS],
+        slots: &[InventorySlot],
+        agora: f64,
+    ) -> Option<(usize, bool)> {
         if !e.vivo {
             return None;
         }
@@ -294,8 +328,12 @@ impl Barra {
             if !esp.auto || qtd[i] == 0 {
                 continue;
             }
-            let Some(c) = categoria(esp.item_id) else { continue };
-            if c.grupo().is_some_and(|g| agora < self.recarga_ate[g as usize]) {
+            let Some(c) = categoria(esp.item_id) else {
+                continue;
+            };
+            if c.grupo()
+                .is_some_and(|g| agora < self.recarga_ate[g as usize])
+            {
                 continue;
             }
             let limiar = esp.limiar as f32 / 100.0;
@@ -316,11 +354,21 @@ impl Barra {
                 let familia: Vec<(u16, u32)> = c
                     .familia()
                     .iter()
-                    .map(|&id| (id, slots.iter().filter(|s| s.item_id == id && s.instance.is_none()).map(|s| s.qty).sum()))
+                    .map(|&id| {
+                        (
+                            id,
+                            slots
+                                .iter()
+                                .filter(|s| s.item_id == id && s.instance.is_none())
+                                .map(|s| s.qty)
+                                .sum(),
+                        )
+                    })
                     .collect();
                 let forte = c.grupo().is_some()
                     && c.familia().len() > 1
-                    && shared::pocoes::escolher(&familia, 1.0 - fracao) == c.familia().last().copied();
+                    && shared::pocoes::escolher(&familia, 1.0 - fracao)
+                        == c.familia().last().copied();
                 return Some((i, forte));
             }
         }
@@ -334,29 +382,55 @@ mod tests {
     use macroquad::prelude::vec2;
 
     fn cheio() -> Estado {
-        Estado { vivo: true, hp: 1.0, mp: 1.0, vigor: 1.0, xp_ativo: true, fortuna_ativo: true, sorte_ativo: true }
+        Estado {
+            vivo: true,
+            hp: 1.0,
+            mp: 1.0,
+            vigor: 1.0,
+            xp_ativo: true,
+            fortuna_ativo: true,
+            sorte_ativo: true,
+        }
     }
 
     fn slot(id: u16, qty: u32) -> InventorySlot {
-        InventorySlot { item_id: id, qty, instance: None }
+        InventorySlot {
+            item_id: id,
+            qty,
+            instance: None,
+        }
     }
 
     #[test]
     fn clique_usa_e_arrastar_pra_cima_liga_o_auto_do_espaco() {
-        let rects = [Rect::new(0.0, 100.0, 60.0, 60.0), Rect::new(70.0, 100.0, 40.0, 40.0),
-                     Rect::new(120.0, 100.0, 40.0, 40.0), Rect::new(170.0, 100.0, 40.0, 40.0)];
+        let rects = [
+            Rect::new(0.0, 100.0, 60.0, 60.0),
+            Rect::new(70.0, 100.0, 40.0, 40.0),
+            Rect::new(120.0, 100.0, 40.0, 40.0),
+            Rect::new(170.0, 100.0, 40.0, 40.0),
+        ];
         let mut b = Barra::default();
         b.entrada(&rects, vec2(90.0, 120.0), true, true, false);
-        let g = b.entrada(&rects, vec2(90.0, 120.0), false, false, true).unwrap();
+        let g = b
+            .entrada(&rects, vec2(90.0, 120.0), false, false, true)
+            .unwrap();
         assert_eq!(b.aplica(g), (Some(1), false), "clique curto usa");
         b.entrada(&rects, vec2(90.0, 120.0), true, true, false);
         b.entrada(&rects, vec2(90.0, 70.0), false, true, false);
         assert!(b.arrastando().is_some());
-        let g = b.entrada(&rects, vec2(90.0, 60.0), false, false, true).unwrap();
-        assert_eq!(b.aplica(g), (None, true), "arrastar pra cima muda a configuracao");
+        let g = b
+            .entrada(&rects, vec2(90.0, 60.0), false, false, true)
+            .unwrap();
+        assert_eq!(
+            b.aplica(g),
+            (None, true),
+            "arrastar pra cima muda a configuracao"
+        );
         assert!(b.espacos[1].auto);
         b.entrada(&rects, vec2(90.0, 120.0), true, true, false);
-        let g = b.entrada(&rects, vec2(90.0, 170.0), false, false, true).unwrap();
+        let g = b
+            .entrada(&rects, vec2(90.0, 170.0), false, false, true)
+            .unwrap();
         b.aplica(g);
         assert!(!b.espacos[1].auto, "pra baixo desliga");
         // Espaco vazio nao liga AUTO.
@@ -377,16 +451,25 @@ mod tests {
         // O servidor confirmou: grupo em recarga por 8 s, nada sai antes.
         b.pocao_grupo(0, 8.0, 5.0, 10.0);
         assert!(b.curando(0, 12.0));
-        assert!(b.recarga(0, 12.0).is_some_and(|(r, t)| (r - 6.0).abs() < 1e-3 && t == 8.0));
+        assert!(b
+            .recarga(0, 12.0)
+            .is_some_and(|(r, t)| (r - 6.0).abs() < 1e-3 && t == 8.0));
         assert_eq!(b.decide(&e, &qtd, &slots, 12.0), None, "recarga do grupo");
         assert_eq!(b.decide(&e, &qtd, &slots, 17.9), None, "ainda na recarga");
-        assert_eq!(b.decide(&e, &qtd, &slots, 18.1), Some((0, true)), "fim da recarga libera");
+        assert_eq!(
+            b.decide(&e, &qtd, &slots, 18.1),
+            Some((0, true)),
+            "fim da recarga libera"
+        );
         // Falta pouco (10%) com limiar 95: a menor que cobre, a comum.
         b.ajustar_limiar(0, 35);
         e.hp = 0.9;
         assert_eq!(b.decide(&e, &qtd, &slots, 30.0), Some((0, false)));
         // Sem a comum na bolsa, a que houver.
-        assert_eq!(b.decide(&e, &qtd, &[slot(it::GREATER_HEAL, 2)], 40.0), Some((0, true)));
+        assert_eq!(
+            b.decide(&e, &qtd, &[slot(it::GREATER_HEAL, 2)], 40.0),
+            Some((0, true))
+        );
     }
 
     #[test]
@@ -394,11 +477,19 @@ mod tests {
         let mut b = Barra::default();
         let mut e = cheio();
         e.mp = 0.1;
-        assert_eq!(b.decide(&e, &[5; ESPACOS], &[], 10.0), None, "mana comeca manual");
+        assert_eq!(
+            b.decide(&e, &[5; ESPACOS], &[], 10.0),
+            None,
+            "mana comeca manual"
+        );
         b.alterna_auto(1);
         assert_eq!(b.decide(&e, &[5, 0, 5, 5], &[], 10.0), None, "sem pocao");
         e.vivo = false;
-        assert_eq!(b.decide(&e, &[5; ESPACOS], &[], 10.0), None, "morto nao bebe");
+        assert_eq!(
+            b.decide(&e, &[5; ESPACOS], &[], 10.0),
+            None,
+            "morto nao bebe"
+        );
         e.vivo = true;
         assert_eq!(b.decide(&e, &[5; ESPACOS], &[], 10.0), Some((1, false)));
         // Sorte no espaco 3: so' sem o buff, e com espera longa.
@@ -413,12 +504,24 @@ mod tests {
 
     #[test]
     fn familia_soma_e_escolhe_o_slot_certo() {
-        let slots = vec![slot(it::GREATER_HEAL, 2), slot(it::STEEL, 9), slot(it::HEALTH_POTION, 3)];
+        let slots = vec![
+            slot(it::GREATER_HEAL, 2),
+            slot(it::STEEL, 9),
+            slot(it::HEALTH_POTION, 3),
+        ];
         assert_eq!(quantidade(&slots, it::HEALTH_POTION), 5);
         assert_eq!(slot_para_usar(&slots, it::HEALTH_POTION, false), Some(2));
-        assert_eq!(slot_para_usar(&slots, it::HEALTH_POTION, true), Some(0), "forte usa a Vida+");
+        assert_eq!(
+            slot_para_usar(&slots, it::HEALTH_POTION, true),
+            Some(0),
+            "forte usa a Vida+"
+        );
         let so_forte = vec![slot(it::GREATER_HEAL, 1)];
-        assert_eq!(slot_para_usar(&so_forte, it::HEALTH_POTION, false), Some(0), "sem a comum usa a da familia");
+        assert_eq!(
+            slot_para_usar(&so_forte, it::HEALTH_POTION, false),
+            Some(0),
+            "sem a comum usa a da familia"
+        );
         assert_eq!(slot_para_usar(&slots, it::STEEL, false), None);
     }
 

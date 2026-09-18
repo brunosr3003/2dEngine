@@ -111,7 +111,10 @@ pub fn proxima_meia_noite(agora: i64) -> i64 {
 
 /// Missao "de area": matar ou juntar numa zona. Ela paga Pocao de Experiencia.
 pub fn e_de_area(d: &QuestDef) -> bool {
-    matches!(d.obj_kind, objective_kind::KILL | objective_kind::GATHER | objective_kind::COLLECT)
+    matches!(
+        d.obj_kind,
+        objective_kind::KILL | objective_kind::GATHER | objective_kind::COLLECT
+    )
 }
 
 /// Quem da' as missoes da ilha: o Mestre de Missoes da praca
@@ -243,7 +246,9 @@ pub fn falas(quest_id: u16, m: u8) -> Vec<&'static str> {
         return escritas.to_vec();
     }
     match m {
-        momento::OFERTA => vec![quest_by_id(quest_id).map_or("Tenho uma tarefa pra você.", |d| d.desc)],
+        momento::OFERTA => {
+            vec![quest_by_id(quest_id).map_or("Tenho uma tarefa pra você.", |d| d.desc)]
+        }
         momento::CONVERSA => vec!["Ah, você veio. Obrigado por passar aqui."],
         _ => vec!["Bom trabalho. Aqui está sua recompensa."],
     }
@@ -271,29 +276,44 @@ pub mod mob_kind {
 /// entra pela historia ("fale com o Mestre").
 pub const PAPEIS_DE_CONVERSA: &[crate::construcao::Papel] = {
     use crate::construcao::Papel::*;
-    &[Alquimista, Estaleiro, Ferreiro, Armaduras, Taberna, Alfaiate, Treinador, Identificador, Deposito, Cartografo, Missoes]
+    &[
+        Alquimista,
+        Estaleiro,
+        Ferreiro,
+        Armaduras,
+        Taberna,
+        Alfaiate,
+        Treinador,
+        Identificador,
+        Deposito,
+        Cartografo,
+        Missoes,
+    ]
 };
 
 /// Papel (como `obj_target` de TALK) do NPC da vila com este nome.
 pub fn papel_de_conversa(nome: &str) -> Option<u16> {
-    PAPEIS_DE_CONVERSA.iter().find(|p| p.nome() == nome).map(|p| *p as u16)
+    PAPEIS_DE_CONVERSA
+        .iter()
+        .find(|p| p.nome() == nome)
+        .map(|p| *p as u16)
 }
 
 /// Status de uma quest por personagem.
 pub mod quest_status {
-    pub const ACTIVE: u8 = 0;     // aceita, em progresso
-    pub const READY: u8 = 1;      // objetivo cumprido, falta entregar (turn-in)
-    pub const TURNED_IN: u8 = 2;  // concluída (repetível volta a poder aceitar após cooldown)
+    pub const ACTIVE: u8 = 0; // aceita, em progresso
+    pub const READY: u8 = 1; // objetivo cumprido, falta entregar (turn-in)
+    pub const TURNED_IN: u8 = 2; // concluída (repetível volta a poder aceitar após cooldown)
 }
 
 /// Definição estática de uma quest. Achatada de propósito (DB/wire/C#).
 #[derive(Debug, Clone, Copy)]
 pub struct QuestDef {
     pub id: u16,
-    pub source: u8,   // quest_source
+    pub source: u8, // quest_source
     /// Quem dá a quest: shop_id do NPC (NPC), 0 (BOARD), ou faction_id (FACTION).
     pub giver: u16,
-    pub faction: u8,  // faction_id (gating + recompensa de pontos)
+    pub faction: u8, // faction_id (gating + recompensa de pontos)
     pub title: &'static str,
     pub desc: &'static str,
     // --- objetivo ---
@@ -401,7 +421,10 @@ impl QuestNet {
 
 /// Lookup por id.
 pub fn quest_by_id(id: u16) -> Option<&'static QuestDef> {
-    QUESTS.iter().find(|q| q.id == id).or_else(|| crate::historia::def_da_historia(id))
+    QUESTS
+        .iter()
+        .find(|q| q.id == id)
+        .or_else(|| crate::historia::def_da_historia(id))
 }
 
 /// Uma `QuestDef` zerada, pra quem monta definicoes fora deste arquivo (a
@@ -413,31 +436,50 @@ pub const fn quest_vazia() -> QuestDef {
 /// Loja de facção: (item_id, custo em PONTOS DE FACÇÃO). Mesma oferta pras duas
 /// facções por ora (recompensas premium compradas com pontos das quests PvP).
 pub const FACTION_SHOP: &[(u16, u32)] = &[
-    (item_id::GREATER_HEAL,   15),
-    (item_id::GREATER_MANA,   15),
-    (item_id::GLITTERING_POWDER,            40),
-    (item_id::ARMADURA_PESADA,    90),
+    (item_id::GREATER_HEAL, 15),
+    (item_id::GREATER_MANA, 15),
+    (item_id::GLITTERING_POWDER, 40),
+    (item_id::ARMADURA_PESADA, 90),
     (item_id::ESPADA_E_ESCUDO, 140),
-    (item_id::PISTOLAS,  140),
+    (item_id::PISTOLAS, 140),
 ];
 
 /// Preço em pontos de um item na loja de facção, ou None se não vendido.
 pub fn faction_shop_price(item_id: u16) -> Option<u32> {
-    FACTION_SHOP.iter().find(|(id, _)| *id == item_id).map(|(_, p)| *p)
+    FACTION_SHOP
+        .iter()
+        .find(|(id, _)| *id == item_id)
+        .map(|(_, p)| *p)
 }
 
 // Helper de construção (mantém os literais legíveis sem repetir todo campo).
 const fn q() -> QuestDef {
     QuestDef {
-        id: 0, source: quest_source::BOARD, giver: 0, faction: faction_id::NONE,
-        title: "", desc: "",
-        obj_kind: objective_kind::COLLECT, obj_target: 0, obj_count: 1,
-        obj_x: 0.0, obj_y: 0.0, obj_radius: 0.0,
-        reward_cobre: 0, reward_xp: 0, reward_item: 0, reward_item_qty: 0,
+        id: 0,
+        source: quest_source::BOARD,
+        giver: 0,
+        faction: faction_id::NONE,
+        title: "",
+        desc: "",
+        obj_kind: objective_kind::COLLECT,
+        obj_target: 0,
+        obj_count: 1,
+        obj_x: 0.0,
+        obj_y: 0.0,
+        obj_radius: 0.0,
+        reward_cobre: 0,
+        reward_xp: 0,
+        reward_item: 0,
+        reward_item_qty: 0,
         reward_faction_points: 0,
-        min_level: 1, repeatable: false, daily: false, cooldown_secs: 0,
+        min_level: 1,
+        repeatable: false,
+        daily: false,
+        cooldown_secs: 0,
         requires: 0,
-        em_breve: false, reward_item2: 0, reward_item2_qty: 0,
+        em_breve: false,
+        reward_item2: 0,
+        reward_item2_qty: 0,
     }
 }
 
@@ -445,14 +487,31 @@ const fn q() -> QuestDef {
 /// area pagam tambem 1 Pocao de Experiencia.
 #[allow(clippy::too_many_arguments)]
 const fn diaria(
-    id: u16, title: &'static str, desc: &'static str,
-    obj_kind: u8, obj_target: u16, obj_count: u32,
-    reward_cobre: u32, reward_xp: u64, reward_item: u16, reward_item_qty: u16,
-    min_level: u32, area: bool, em_breve: bool,
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    obj_kind: u8,
+    obj_target: u16,
+    obj_count: u32,
+    reward_cobre: u32,
+    reward_xp: u64,
+    reward_item: u16,
+    reward_item_qty: u16,
+    min_level: u32,
+    area: bool,
+    em_breve: bool,
 ) -> QuestDef {
     QuestDef {
-        id, title, desc, obj_kind, obj_target, obj_count,
-        reward_cobre, reward_xp, reward_item, reward_item_qty,
+        id,
+        title,
+        desc,
+        obj_kind,
+        obj_target,
+        obj_count,
+        reward_cobre,
+        reward_xp,
+        reward_item,
+        reward_item_qty,
         // As de oficina pagam as pocoes de drop: criar da' Fortuna, refinar
         // da' Sorte. As de area continuam com a de Experiencia.
         reward_item2: if area {
@@ -464,15 +523,29 @@ const fn diaria(
         } else {
             0
         },
-        reward_item2_qty: if area || obj_kind == objective_kind::CRAFT || obj_kind == objective_kind::REFINE { 1 } else { 0 },
-        min_level, repeatable: true, daily: true, em_breve,
+        reward_item2_qty: if area
+            || obj_kind == objective_kind::CRAFT
+            || obj_kind == objective_kind::REFINE
+        {
+            1
+        } else {
+            0
+        },
+        min_level,
+        repeatable: true,
+        daily: true,
+        em_breve,
         ..mestre()
     }
 }
 
 // Atalho pro Mestre de Missoes da ilha inicial.
 const fn mestre() -> QuestDef {
-    QuestDef { source: quest_source::NPC, giver: GIVER_MESTRE_DA_ILHA, ..q() }
+    QuestDef {
+        source: quest_source::NPC,
+        giver: GIVER_MESTRE_DA_ILHA,
+        ..q()
+    }
 }
 
 use crate::constants::item_id;
@@ -875,11 +948,15 @@ pub const QUESTS: &[QuestDef] = &[
 /// convocar barco → ir à vela → ir ao leme → navegar.
 pub const TUTORIAL_CHAIN: &[u16] = &[900, 901, 902, 903, 904, 905, 906, 907, 908];
 /// Primeira quest da cadeia (concedida no spawn do tutorial).
-pub fn tutorial_first() -> u16 { TUTORIAL_CHAIN[0] }
+pub fn tutorial_first() -> u16 {
+    TUTORIAL_CHAIN[0]
+}
 /// Próxima quest após `id` na cadeia (None se foi a última).
 pub fn tutorial_next(id: u16) -> Option<u16> {
     let i = TUTORIAL_CHAIN.iter().position(|&q| q == id)?;
     TUTORIAL_CHAIN.get(i + 1).copied()
 }
 /// `id` faz parte da cadeia de tutorial?
-pub fn is_tutorial_quest(id: u16) -> bool { TUTORIAL_CHAIN.contains(&id) }
+pub fn is_tutorial_quest(id: u16) -> bool {
+    TUTORIAL_CHAIN.contains(&id)
+}

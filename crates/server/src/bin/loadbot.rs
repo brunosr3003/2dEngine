@@ -102,7 +102,11 @@ async fn main() {
             inicio.elapsed().as_secs(),
             dentro,
             (b - ultimo_bytes) as f64 / 1024.0,
-            if dentro > 0 { (b - ultimo_bytes) as f64 / 1024.0 / dentro as f64 } else { 0.0 }
+            if dentro > 0 {
+                (b - ultimo_bytes) as f64 / 1024.0 / dentro as f64
+            } else {
+                0.0
+            }
         );
         ultimo_bytes = b;
     }
@@ -115,14 +119,29 @@ async fn main() {
     let b = stats.bytes_in.load(Ordering::Relaxed);
     let snaps = stats.snapshots.load(Ordering::Relaxed).max(1);
     println!("\n── resultado ──────────────────────────────────────────");
-    println!("conectados      {}", stats.conectados.load(Ordering::Relaxed));
+    println!(
+        "conectados      {}",
+        stats.conectados.load(Ordering::Relaxed)
+    );
     println!("entraram        {dentro}");
     println!("falhas          {}", stats.falhas.load(Ordering::Relaxed));
     println!("bytes recebidos {:.1} MB", b as f64 / 1024.0 / 1024.0);
-    println!("por jogador     {:.1} KB/s", b as f64 / 1024.0 / secs as f64 / dentro as f64);
-    println!("snapshots       {snaps}  ({:.1}/s por jogador)", snaps as f64 / secs as f64 / dentro as f64);
-    println!("estados/snap    {:.1}", stats.states.load(Ordering::Relaxed) as f64 / snaps as f64);
-    println!("metas/snap      {:.2}", stats.entered.load(Ordering::Relaxed) as f64 / snaps as f64);
+    println!(
+        "por jogador     {:.1} KB/s",
+        b as f64 / 1024.0 / secs as f64 / dentro as f64
+    );
+    println!(
+        "snapshots       {snaps}  ({:.1}/s por jogador)",
+        snaps as f64 / secs as f64 / dentro as f64
+    );
+    println!(
+        "estados/snap    {:.1}",
+        stats.states.load(Ordering::Relaxed) as f64 / snaps as f64
+    );
+    println!(
+        "metas/snap      {:.2}",
+        stats.entered.load(Ordering::Relaxed) as f64 / snaps as f64
+    );
 }
 
 async fn bot(

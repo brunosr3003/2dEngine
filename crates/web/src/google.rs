@@ -74,7 +74,10 @@ impl GoogleState {
         Self {
             cfg,
             pool,
-            http: reqwest::Client::builder().timeout(Duration::from_secs(10)).build().unwrap_or_default(),
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build()
+                .unwrap_or_default(),
             pendentes: Arc::default(),
             limite: Arc::default(),
             jwks: Arc::default(),
@@ -128,16 +131,32 @@ pub struct Pendentes {
 
 impl Pendentes {
     fn limpa(&mut self, agora: Instant) {
-        self.mapa.retain(|_, p| agora.duration_since(p.criado) < VALIDADE_STATE);
+        self.mapa
+            .retain(|_, p| agora.duration_since(p.criado) < VALIDADE_STATE);
     }
 
     /// Guarda um pedido novo. `None` se ha' pendentes demais.
-    pub fn novo(&mut self, state: String, verifier: String, nonce: String, agora: Instant) -> Option<()> {
+    pub fn novo(
+        &mut self,
+        state: String,
+        verifier: String,
+        nonce: String,
+        agora: Instant,
+    ) -> Option<()> {
         self.limpa(agora);
         if self.mapa.len() >= MAX_PENDENTES {
             return None;
         }
-        self.mapa.insert(state, Pendente { verifier, nonce, criado: agora, usado: false, resultado: Resultado::Pendente });
+        self.mapa.insert(
+            state,
+            Pendente {
+                verifier,
+                nonce,
+                criado: agora,
+                usado: false,
+                resultado: Resultado::Pendente,
+            },
+        );
         Some(())
     }
 
@@ -181,14 +200,19 @@ pub fn desafio_pkce(verifier: &str) -> String {
 
 /// Mesmo hash que `server::auth::hash_do_token` confere.
 pub fn hash_do_token(token: &str) -> String {
-    Sha256::digest(token.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(token.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 fn codifica(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => out.push(b as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(b as char)
+            }
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
@@ -196,7 +220,11 @@ fn codifica(s: &str) -> String {
 }
 
 fn formulario(pares: &[(&str, &str)]) -> String {
-    pares.iter().map(|(k, v)| format!("{}={}", codifica(k), codifica(v))).collect::<Vec<_>>().join("&")
+    pares
+        .iter()
+        .map(|(k, v)| format!("{}={}", codifica(k), codifica(v)))
+        .collect::<Vec<_>>()
+        .join("&")
 }
 
 // ── id_token ─────────────────────────────────────────────────────────────
@@ -239,21 +267,33 @@ pub enum ErroToken {
 
 /// Assinatura (RS256 com a chave do JWKS), `aud`, `iss`, `exp`, `nonce` e
 /// `email_verified`.
-pub fn valida_id_token(token: &str, chaves: &[Jwk], client_id: &str, nonce: &str) -> Result<Identidade, ErroToken> {
+pub fn valida_id_token(
+    token: &str,
+    chaves: &[Jwk],
+    client_id: &str,
+    nonce: &str,
+) -> Result<Identidade, ErroToken> {
     use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
     let cab = decode_header(token).map_err(|e| ErroToken::Invalido(format!("cabecalho: {e}")))?;
     if cab.alg != Algorithm::RS256 {
         return Err(ErroToken::Invalido("alg".into()));
     }
-    let kid = cab.kid.ok_or_else(|| ErroToken::Invalido("sem kid".into()))?;
-    let jwk = chaves.iter().find(|k| k.kid == kid).ok_or(ErroToken::ChaveDesconhecida)?;
-    let chave = DecodingKey::from_rsa_components(&jwk.n, &jwk.e).map_err(|e| ErroToken::Invalido(format!("jwk: {e}")))?;
+    let kid = cab
+        .kid
+        .ok_or_else(|| ErroToken::Invalido("sem kid".into()))?;
+    let jwk = chaves
+        .iter()
+        .find(|k| k.kid == kid)
+        .ok_or(ErroToken::ChaveDesconhecida)?;
+    let chave = DecodingKey::from_rsa_components(&jwk.n, &jwk.e)
+        .map_err(|e| ErroToken::Invalido(format!("jwk: {e}")))?;
     let mut v = Validation::new(Algorithm::RS256);
     v.set_audience(&[client_id]);
     v.set_issuer(&["accounts.google.com", "https://accounts.google.com"]);
     v.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
     v.leeway = 60;
-    let dados = decode::<Claims>(token, &chave, &v).map_err(|e| ErroToken::Invalido(format!("{e}")))?;
+    let dados =
+        decode::<Claims>(token, &chave, &v).map_err(|e| ErroToken::Invalido(format!("{e}")))?;
     let c = dados.claims;
     if c.nonce.as_deref() != Some(nonce) {
         return Err(ErroToken::Invalido("nonce".into()));
@@ -269,7 +309,11 @@ pub fn valida_id_token(token: &str, chaves: &[Jwk], client_id: &str, nonce: &str
     if c.sub.is_empty() {
         return Err(ErroToken::Invalido("sub vazio".into()));
     }
-    Ok(Identidade { sub: c.sub, email: c.email, nome: c.name })
+    Ok(Identidade {
+        sub: c.sub,
+        email: c.email,
+        nome: c.name,
+    })
 }
 
 impl GoogleState {
@@ -298,10 +342,17 @@ impl GoogleState {
         Ok(jwks.keys)
     }
 
-    async fn valida(&self, token: &str, client_id: &str, nonce: &str) -> Result<Identidade, String> {
+    async fn valida(
+        &self,
+        token: &str,
+        client_id: &str,
+        nonce: &str,
+    ) -> Result<Identidade, String> {
         match valida_id_token(token, &self.chaves(false).await?, client_id, nonce) {
-            Err(ErroToken::ChaveDesconhecida) => valida_id_token(token, &self.chaves(true).await?, client_id, nonce)
-                .map_err(|e| format!("{e:?}")),
+            Err(ErroToken::ChaveDesconhecida) => {
+                valida_id_token(token, &self.chaves(true).await?, client_id, nonce)
+                    .map_err(|e| format!("{e:?}"))
+            }
             r => r.map_err(|e| format!("{e:?}")),
         }
     }
@@ -317,9 +368,16 @@ impl GoogleState {
 }
 
 fn ip_de(headers: &HeaderMap) -> String {
-    let h = |k: &str| headers.get(k).and_then(|v| v.to_str().ok()).map(str::to_string);
+    let h = |k: &str| {
+        headers
+            .get(k)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+    };
     h("x-real-ip")
-        .or_else(|| h("x-forwarded-for").and_then(|v| v.split(',').next().map(|s| s.trim().to_string())))
+        .or_else(|| {
+            h("x-forwarded-for").and_then(|v| v.split(',').next().map(|s| s.trim().to_string()))
+        })
         .unwrap_or_else(|| "local".into())
 }
 
@@ -331,17 +389,35 @@ async fn config(State(st): State<GoogleState>) -> impl IntoResponse {
 
 async fn start(State(st): State<GoogleState>, headers: HeaderMap) -> Response {
     let Some(cfg) = st.cfg.clone() else {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "login com Google não configurado" }))).into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "login com Google não configurado" })),
+        )
+            .into_response();
     };
     if !st.pode_iniciar(&ip_de(&headers)) {
-        return (StatusCode::TOO_MANY_REQUESTS, Json(json!({ "error": "muitas tentativas, espere um minuto" }))).into_response();
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({ "error": "muitas tentativas, espere um minuto" })),
+        )
+            .into_response();
     }
     let state = aleatorio(24);
     let verifier = aleatorio(32);
     let nonce = aleatorio(16);
     let desafio = desafio_pkce(&verifier);
-    if st.pendentes.lock().unwrap().novo(state.clone(), verifier, nonce.clone(), Instant::now()).is_none() {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "servidor ocupado, tente de novo" }))).into_response();
+    if st
+        .pendentes
+        .lock()
+        .unwrap()
+        .novo(state.clone(), verifier, nonce.clone(), Instant::now())
+        .is_none()
+    {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "servidor ocupado, tente de novo" })),
+        )
+            .into_response();
     }
     let url = format!(
         "{URL_AUTORIZACAO}?{}",
@@ -366,7 +442,11 @@ struct TokenRes {
 }
 
 fn pagina(ok: bool, msg: &str) -> Html<String> {
-    let (titulo, cor) = if ok { ("Login concluído", "#e8c170") } else { ("Não deu certo", "#e86a6a") };
+    let (titulo, cor) = if ok {
+        ("Login concluído", "#e8c170")
+    } else {
+        ("Não deu certo", "#e86a6a")
+    };
     Html(format!(
         "<!doctype html><html lang=pt-BR><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>\
          <title>Tempest</title><body style='margin:0;min-height:100vh;display:grid;place-items:center;\
@@ -375,23 +455,52 @@ fn pagina(ok: bool, msg: &str) -> Html<String> {
     ))
 }
 
-async fn callback(State(st): State<GoogleState>, Query(q): Query<HashMap<String, String>>) -> Response {
+async fn callback(
+    State(st): State<GoogleState>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
     let Some(cfg) = st.cfg.clone() else {
-        return (StatusCode::NOT_FOUND, pagina(false, "Login com Google não está configurado.")).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            pagina(false, "Login com Google não está configurado."),
+        )
+            .into_response();
     };
     let Some(state) = q.get("state").cloned() else {
         return (StatusCode::BAD_REQUEST, pagina(false, "Pedido inválido.")).into_response();
     };
-    let Some((verifier, nonce)) = st.pendentes.lock().unwrap().para_callback(&state, Instant::now()) else {
-        return (StatusCode::BAD_REQUEST, pagina(false, "Este pedido expirou ou já foi usado. Tente de novo pelo jogo.")).into_response();
+    let Some((verifier, nonce)) = st
+        .pendentes
+        .lock()
+        .unwrap()
+        .para_callback(&state, Instant::now())
+    else {
+        return (
+            StatusCode::BAD_REQUEST,
+            pagina(
+                false,
+                "Este pedido expirou ou já foi usado. Tente de novo pelo jogo.",
+            ),
+        )
+            .into_response();
     };
     let falha = |publico: &str, detalhe: String| {
         tracing::warn!("login google falhou: {detalhe}");
-        st.pendentes.lock().unwrap().conclui(&state, Resultado::Erro(publico.into()));
-        (StatusCode::BAD_REQUEST, pagina(false, &format!("{publico} Volte ao jogo e tente de novo."))).into_response()
+        st.pendentes
+            .lock()
+            .unwrap()
+            .conclui(&state, Resultado::Erro(publico.into()));
+        (
+            StatusCode::BAD_REQUEST,
+            pagina(false, &format!("{publico} Volte ao jogo e tente de novo.")),
+        )
+            .into_response()
     };
     if q.contains_key("error") {
-        return falha("Login cancelado no Google.", format!("google error={:?}", q.get("error")));
+        return falha(
+            "Login cancelado no Google.",
+            format!("google error={:?}", q.get("error")),
+        );
     }
     let Some(code) = q.get("code") else {
         return falha("Resposta do Google sem código.", "sem code".into());
@@ -414,7 +523,11 @@ async fn callback(State(st): State<GoogleState>, Query(q): Query<HashMap<String,
         .await;
     let resposta = match troca {
         Ok(r) if r.status().is_success() => r.json::<TokenRes>().await.map_err(|e| e.to_string()),
-        Ok(r) => Err(format!("token endpoint {}: {}", r.status(), r.text().await.unwrap_or_default())),
+        Ok(r) => Err(format!(
+            "token endpoint {}: {}",
+            r.status(),
+            r.text().await.unwrap_or_default()
+        )),
         Err(e) => Err(e.to_string()),
     };
     let id_token = match resposta {
@@ -422,33 +535,57 @@ async fn callback(State(st): State<GoogleState>, Query(q): Query<HashMap<String,
         Ok(_) => return falha("O Google não confirmou o login.", "sem id_token".into()),
         Err(e) => return falha("O Google não confirmou o login.", e),
     };
-    let ident = match st.valida(&id_token, &cfg.client_id, &nonce).await {
-        Ok(i) => i,
-        Err(e) => return falha("Não foi possível confirmar sua conta Google (o e-mail precisa estar verificado).", e),
-    };
-    let (account_id, username) =
-        match db::conta_google(&st.pool, &ident.sub, ident.email.as_deref(), ident.nome.as_deref()).await {
-            Ok(c) => c,
-            Err(e) => return falha("Erro interno ao abrir sua conta.", format!("{e:?}")),
+    let ident =
+        match st.valida(&id_token, &cfg.client_id, &nonce).await {
+            Ok(i) => i,
+            Err(e) => return falha(
+                "Não foi possível confirmar sua conta Google (o e-mail precisa estar verificado).",
+                e,
+            ),
         };
+    let (account_id, username) = match db::conta_google(
+        &st.pool,
+        &ident.sub,
+        ident.email.as_deref(),
+        ident.nome.as_deref(),
+    )
+    .await
+    {
+        Ok(c) => c,
+        Err(e) => return falha("Erro interno ao abrir sua conta.", format!("{e:?}")),
+    };
     let token = aleatorio(32);
-    if let Err(e) = db::grava_token_de_login(&st.pool, account_id, &hash_do_token(&token), VALIDADE_SESSAO_HORAS).await {
+    if let Err(e) = db::grava_token_de_login(
+        &st.pool,
+        account_id,
+        &hash_do_token(&token),
+        VALIDADE_SESSAO_HORAS,
+    )
+    .await
+    {
         return falha("Erro interno ao abrir sua conta.", format!("{e:?}"));
     }
     tracing::info!("login google ok: conta {account_id} ({username})");
-    st.pendentes.lock().unwrap().conclui(&state, Resultado::Ok { username, token });
+    st.pendentes
+        .lock()
+        .unwrap()
+        .conclui(&state, Resultado::Ok { username, token });
     pagina(true, "Pode fechar esta página e voltar ao jogo.").into_response()
 }
 
 async fn poll(State(st): State<GoogleState>, Query(q): Query<HashMap<String, String>>) -> Response {
     let state = q.get("state").map(String::as_str).unwrap_or_default();
     match st.pendentes.lock().unwrap().consulta(state, Instant::now()) {
-        Consulta::Desconhecido => (StatusCode::NOT_FOUND, Json(json!({ "status": "expirado" }))).into_response(),
+        Consulta::Desconhecido => {
+            (StatusCode::NOT_FOUND, Json(json!({ "status": "expirado" }))).into_response()
+        }
         Consulta::Pendente => Json(json!({ "status": "pendente" })).into_response(),
         Consulta::Final(Resultado::Ok { username, token }) => {
             Json(json!({ "status": "ok", "username": username, "token": token })).into_response()
         }
-        Consulta::Final(Resultado::Erro(e)) => Json(json!({ "status": "erro", "error": e })).into_response(),
+        Consulta::Final(Resultado::Erro(e)) => {
+            Json(json!({ "status": "erro", "error": e })).into_response()
+        }
         Consulta::Final(Resultado::Pendente) => unreachable!(),
     }
 }
@@ -491,11 +628,18 @@ Hx2PooAsxPNlnATcYqGFpDo=
     const CLIENTE: &str = "123.apps.googleusercontent.com";
 
     fn jwks() -> Vec<Jwk> {
-        vec![Jwk { kid: "k1".into(), n: MODULO_TESTE.into(), e: "AQAB".into() }]
+        vec![Jwk {
+            kid: "k1".into(),
+            n: MODULO_TESTE.into(),
+            e: "AQAB".into(),
+        }]
     }
 
     fn agora() -> i64 {
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
     }
 
     fn token(mudar: impl FnOnce(&mut serde_json::Value)) -> String {
@@ -513,7 +657,12 @@ Hx2PooAsxPNlnATcYqGFpDo=
         mudar(&mut claims);
         let mut cab = Header::new(jsonwebtoken::Algorithm::RS256);
         cab.kid = Some("k1".into());
-        encode(&cab, &claims, &EncodingKey::from_rsa_pem(CHAVE_TESTE.as_bytes()).unwrap()).unwrap()
+        encode(
+            &cab,
+            &claims,
+            &EncodingKey::from_rsa_pem(CHAVE_TESTE.as_bytes()).unwrap(),
+        )
+        .unwrap()
     }
 
     fn valida(t: &str) -> Result<Identidade, ErroToken> {
@@ -537,14 +686,57 @@ Hx2PooAsxPNlnATcYqGFpDo=
     #[test]
     fn id_token_recusado_quando_nao_bate() {
         let erro = |mudar: fn(&mut serde_json::Value)| valida(&token(mudar)).unwrap_err();
-        assert!(matches!(erro(|c| c["aud"] = json!("outro-app")), ErroToken::Invalido(_)), "aud");
-        assert!(matches!(erro(|c| c["iss"] = json!("https://evil.example")), ErroToken::Invalido(_)), "iss");
-        assert!(matches!(erro(|c| c["exp"] = json!(agora() - 3600)), ErroToken::Invalido(_)), "exp");
-        assert!(matches!(erro(|c| c["email_verified"] = json!(false)), ErroToken::Invalido(_)), "email_verified");
-        assert!(matches!(erro(|c| { c.as_object_mut().unwrap().remove("email_verified"); }), ErroToken::Invalido(_)));
-        assert!(matches!(erro(|c| c["nonce"] = json!("outro")), ErroToken::Invalido(_)), "nonce");
+        assert!(
+            matches!(
+                erro(|c| c["aud"] = json!("outro-app")),
+                ErroToken::Invalido(_)
+            ),
+            "aud"
+        );
+        assert!(
+            matches!(
+                erro(|c| c["iss"] = json!("https://evil.example")),
+                ErroToken::Invalido(_)
+            ),
+            "iss"
+        );
+        assert!(
+            matches!(
+                erro(|c| c["exp"] = json!(agora() - 3600)),
+                ErroToken::Invalido(_)
+            ),
+            "exp"
+        );
+        assert!(
+            matches!(
+                erro(|c| c["email_verified"] = json!(false)),
+                ErroToken::Invalido(_)
+            ),
+            "email_verified"
+        );
+        assert!(matches!(
+            erro(|c| {
+                c.as_object_mut().unwrap().remove("email_verified");
+            }),
+            ErroToken::Invalido(_)
+        ));
+        assert!(
+            matches!(
+                erro(|c| c["nonce"] = json!("outro")),
+                ErroToken::Invalido(_)
+            ),
+            "nonce"
+        );
         // Chave que nao esta' no JWKS.
-        let outro_kid = valida_id_token(&token(|_| {}), &[Jwk { kid: "k2".into(), ..jwks()[0].clone() }], CLIENTE, "n1");
+        let outro_kid = valida_id_token(
+            &token(|_| {}),
+            &[Jwk {
+                kid: "k2".into(),
+                ..jwks()[0].clone()
+            }],
+            CLIENTE,
+            "n1",
+        );
         assert_eq!(outro_kid, Err(ErroToken::ChaveDesconhecida));
         // Assinatura adulterada.
         let t = token(|_| {});
@@ -565,12 +757,23 @@ Hx2PooAsxPNlnATcYqGFpDo=
         assert_eq!(p.consulta("nao-existe", t0), Consulta::Desconhecido);
 
         assert_eq!(p.para_callback("s1", t0), Some(("v1".into(), "n1".into())));
-        assert_eq!(p.para_callback("s1", t0), None, "callback repetido nao reusa o verifier");
+        assert_eq!(
+            p.para_callback("s1", t0),
+            None,
+            "callback repetido nao reusa o verifier"
+        );
 
-        let ok = Resultado::Ok { username: "Fulano".into(), token: "tok".into() };
+        let ok = Resultado::Ok {
+            username: "Fulano".into(),
+            token: "tok".into(),
+        };
         p.conclui("s1", ok.clone());
         assert_eq!(p.consulta("s1", t0), Consulta::Final(ok));
-        assert_eq!(p.consulta("s1", t0), Consulta::Desconhecido, "sessao sai uma vez so'");
+        assert_eq!(
+            p.consulta("s1", t0),
+            Consulta::Desconhecido,
+            "sessao sai uma vez so'"
+        );
 
         p.novo("s2".into(), "v2".into(), "n2".into(), t0).unwrap();
         let depois = t0 + VALIDADE_STATE + Duration::from_secs(1);
@@ -586,10 +789,18 @@ Hx2PooAsxPNlnATcYqGFpDo=
             "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
         );
         // Igual ao `server::auth::hash_do_token`.
-        assert_eq!(hash_do_token("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-        assert_eq!(formulario(&[("scope", "openid email"), ("r", "https://a/b?c")]), "scope=openid%20email&r=https%3A%2F%2Fa%2Fb%3Fc");
+        assert_eq!(
+            hash_do_token("abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(
+            formulario(&[("scope", "openid email"), ("r", "https://a/b?c")]),
+            "scope=openid%20email&r=https%3A%2F%2Fa%2Fb%3Fc"
+        );
         let s = aleatorio(32);
         assert_eq!(s.len(), 43);
-        assert!(s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+        assert!(s
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
     }
 }

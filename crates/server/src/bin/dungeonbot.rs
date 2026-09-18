@@ -45,13 +45,26 @@ struct Relato {
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
     let arg = |nome: &str, padrao: &str| -> String {
-        args.iter().position(|a| a == nome).and_then(|i| args.get(i + 1)).cloned().unwrap_or_else(|| padrao.to_string())
+        args.iter()
+            .position(|a| a == nome)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+            .unwrap_or_else(|| padrao.to_string())
     };
     // `--hash SENHA`: imprime o argon2 pra criar as contas de teste no banco.
-    if let Some(senha) = args.iter().position(|a| a == "--hash").and_then(|i| args.get(i + 1)) {
+    if let Some(senha) = args
+        .iter()
+        .position(|a| a == "--hash")
+        .and_then(|i| args.get(i + 1))
+    {
         use argon2::password_hash::{PasswordHasher, SaltString};
         let sal = SaltString::from_b64("ZHVuZ2VvbmJvdHRlc3RlMTIz").expect("sal");
-        println!("{}", argon2::Argon2::default().hash_password(senha.as_bytes(), &sal).expect("hash"));
+        println!(
+            "{}",
+            argon2::Argon2::default()
+                .hash_password(senha.as_bytes(), &sal)
+                .expect("hash")
+        );
         return;
     }
     let host = arg("--host", "127.0.0.1:9300");
@@ -63,16 +76,31 @@ async fn main() {
     let nivel: u32 = arg("--nivel", "16").parse().expect("--nivel");
     let secs: u64 = arg("--secs", "900").parse().expect("--secs");
     // Conteudo: 10 = Toca dos Lobos-do-Mar (Gruta, fila), 1 = Porao (solo).
-    let conteudo: u16 = arg("--conteudo", if cenario == "porao" { "1" } else { "10" }).parse().expect("--conteudo");
+    let conteudo: u16 = arg("--conteudo", if cenario == "porao" { "1" } else { "10" })
+        .parse()
+        .expect("--conteudo");
     let relatos = Arc::new(Mutex::new(Vec::<Relato>::new()));
     let mut tarefas = Vec::new();
     for i in 0..n {
-        let (host, senha, segredo, cenario, relatos) = (host.clone(), senha.clone(), segredo.clone(), cenario.clone(), relatos.clone());
+        let (host, senha, segredo, cenario, relatos) = (
+            host.clone(),
+            senha.clone(),
+            segredo.clone(),
+            cenario.clone(),
+            relatos.clone(),
+        );
         let conteudo = conteudo;
         let user = format!("bot{}", i + offset);
         tarefas.push(tokio::spawn(async move {
-            let mut r = Relato { bot: user.clone(), ..Default::default() };
-            if let Err(e) = bot(&host, &user, &senha, &segredo, &cenario, conteudo, nivel, secs, i, &mut r).await {
+            let mut r = Relato {
+                bot: user.clone(),
+                ..Default::default()
+            };
+            if let Err(e) = bot(
+                &host, &user, &senha, &segredo, &cenario, conteudo, nivel, secs, i, &mut r,
+            )
+            .await
+            {
                 r.textos.push(format!("ERRO: {e}"));
             }
             relatos.lock().unwrap().push(r);
@@ -104,10 +132,27 @@ struct Ent {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn bot(host: &str, user: &str, senha: &str, segredo: &str, cenario: &str, conteudo: u16, nivel: u32, secs: u64, indice: usize, r: &mut Relato) -> anyhow::Result<()> {
+async fn bot(
+    host: &str,
+    user: &str,
+    senha: &str,
+    segredo: &str,
+    cenario: &str,
+    conteudo: u16,
+    nivel: u32,
+    secs: u64,
+    indice: usize,
+    r: &mut Relato,
+) -> anyhow::Result<()> {
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{host}")).await?;
-    let envia = |m: ClientMessage| -> anyhow::Result<Message> { Ok(Message::Binary(shared::protocol::encode(&m)?)) };
-    ws.send(envia(ClientMessage::Handshake { protocol_version: shared::PROTOCOL_VERSION, client_version: "dungeonbot".into() })?).await?;
+    let envia = |m: ClientMessage| -> anyhow::Result<Message> {
+        Ok(Message::Binary(shared::protocol::encode(&m)?))
+    };
+    ws.send(envia(ClientMessage::Handshake {
+        protocol_version: shared::PROTOCOL_VERSION,
+        client_version: "dungeonbot".into(),
+    })?)
+    .await?;
 
     let fim = Instant::now() + Duration::from_secs(secs);
     let mut ents: HashMap<EntityId, Ent> = HashMap::new();

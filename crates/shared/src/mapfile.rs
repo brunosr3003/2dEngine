@@ -14,7 +14,10 @@ pub enum MapEntity {
     /// Spawn de inimigo com kind (ver `ENEMY_KINDS`).
     Enemy { kind: u16 },
     /// Portal para outro mapa. `target_map` e o nome do arquivo (sem extensao).
-    Portal { target_map: String, target_spawn: [f32; 2] },
+    Portal {
+        target_map: String,
+        target_spawn: [f32; 2],
+    },
     /// NPC vendedor.
     Npc { name: String },
     /// Vault / bau persistente (NPC especial no nexus).
@@ -64,34 +67,26 @@ pub enum MapEntity {
     /// Zona segura: dentro dela combate é desabilitado (sem dano dado nem
     /// recebido), enemies dropam aggro de quem entra. `pos` (do placement) é
     /// o canto inferior-esquerdo; `size` é a extensão em tiles.
-    SafeZone {
-        size: [f32; 2],
-    },
+    SafeZone { size: [f32; 2] },
     /// Vendedor com loja própria. `shop_id` referencia uma row em
     /// `vendor_shops` no DB. `skin` é o índice do preset visual.
     Vendor {
-        name:    String,
+        name: String,
         shop_id: u32,
-        skin:    u8,
+        skin: u8,
     },
     /// NPC ambiental que anda por uma rota pré-definida. `route_id` referencia
     /// uma `NpcRoute` no MAPA (definida via NpcRoute entity). `skin` é o preset.
     WanderNpc {
-        name:     String,
-        route_id: u32,
-        skin:     u8,
-    },
-    /// Ferreiro — refina itens e encrava gemas em sockets. `skin` é o preset.
-    Blacksmith {
         name: String,
+        route_id: u32,
         skin: u8,
     },
+    /// Ferreiro — refina itens e encrava gemas em sockets. `skin` é o preset.
+    Blacksmith { name: String, skin: u8 },
     /// Definição de uma rota nomeada — lista ordenada de waypoints absolutos
     /// (em coords de tile). NPCs com WanderNpc { route_id } seguem em loop.
-    NpcRoute {
-        id:        u32,
-        waypoints: Vec<[f32; 2]>,
-    },
+    NpcRoute { id: u32, waypoints: Vec<[f32; 2]> },
     /// Nó de recurso coletável (farming). Servidor gerencia HP, drops e respawn.
     /// `respawn_seconds`: override do default `FARM_NODE_RESPAWN_S` por tipo/tier.
     FarmNode {
@@ -161,7 +156,9 @@ impl MapFile {
     }
 
     pub fn set(&mut self, x: i32, y: i32, id: u16) {
-        if x < 0 || y < 0 || x >= self.width as i32 || y >= self.height as i32 { return; }
+        if x < 0 || y < 0 || x >= self.width as i32 || y >= self.height as i32 {
+            return;
+        }
         self.tiles[(y as u32 * self.width + x as u32) as usize] = id;
     }
 

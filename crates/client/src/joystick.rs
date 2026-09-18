@@ -46,7 +46,12 @@ impl Joystick {
 
     /// Um quadro: prende um dedo que COMECOU dentro da `area` (e fora do HUD —
     /// quem decide e' `pode_comecar`), acompanha ate' ele sair.
-    pub fn quadro(&mut self, toques: &[ToqueNoQuadro], raio: f32, pode_comecar: &dyn Fn(Vec2) -> bool) {
+    pub fn quadro(
+        &mut self,
+        toques: &[ToqueNoQuadro],
+        raio: f32,
+        pode_comecar: &dyn Fn(Vec2) -> bool,
+    ) {
         self.raio = raio.max(1.0);
         if let Some(id) = self.dedo {
             match toques.iter().find(|t| t.id == id) {
@@ -56,7 +61,10 @@ impl Joystick {
             }
             return;
         }
-        if let Some(t) = toques.iter().find(|t| t.fase == Fase::Comecou && pode_comecar(t.pos)) {
+        if let Some(t) = toques
+            .iter()
+            .find(|t| t.fase == Fase::Comecou && pode_comecar(t.pos))
+        {
             self.dedo = Some(t.id);
             self.base = t.pos;
             self.ponta = t.pos;
@@ -127,7 +135,12 @@ impl Joystick {
         draw_circle(m.x, m.y, rm + 3.0, estilo::alfa(estilo::AUTO, 0.25));
         draw_circle(m.x, m.y, rm, estilo::alfa(estilo::FUNDO_ALTO, 0.9));
         draw_circle_lines(m.x, m.y, rm, 2.0, estilo::alfa(estilo::AUTO, 0.8));
-        draw_circle(m.x - rm * 0.25, m.y - rm * 0.3, rm * 0.35, Color::new(1.0, 1.0, 1.0, 0.10));
+        draw_circle(
+            m.x - rm * 0.25,
+            m.y - rm * 0.3,
+            rm * 0.35,
+            Color::new(1.0, 1.0, 1.0, 0.10),
+        );
     }
 }
 
@@ -143,7 +156,11 @@ pub fn sem_dedo(toques: &[ToqueNoQuadro], dedo: Option<u64>) -> Vec<ToqueNoQuadr
 /// `Acabou` dele caia no gesto como toque curto — clique no mundo, andar ate'
 /// onde o polegar saiu.
 pub fn sem_dedos(toques: &[ToqueNoQuadro], dedos: &[Option<u64>]) -> Vec<ToqueNoQuadro> {
-    toques.iter().copied().filter(|t| !dedos.contains(&Some(t.id))).collect()
+    toques
+        .iter()
+        .copied()
+        .filter(|t| !dedos.contains(&Some(t.id)))
+        .collect()
 }
 
 /// Andar "na mao": teclado OU joystick. E' o que pausa auto missao, viagem,
@@ -157,7 +174,11 @@ mod testes {
     use super::*;
 
     fn t(id: u64, fase: Fase, x: f32, y: f32) -> ToqueNoQuadro {
-        ToqueNoQuadro { id, fase, pos: vec2(x, y) }
+        ToqueNoQuadro {
+            id,
+            fase,
+            pos: vec2(x, y),
+        }
     }
 
     fn area_esquerda(p: Vec2) -> bool {
@@ -183,32 +204,63 @@ mod testes {
     fn zona_morta_e_limite_do_raio() {
         let mut j = Joystick::default();
         j.quadro(&[t(1, Fase::Comecou, 200.0, 700.0)], 100.0, &area_esquerda);
-        j.quadro(&[t(1, Fase::Segurando, 208.0, 700.0)], 100.0, &area_esquerda);
+        j.quadro(
+            &[t(1, Fase::Segurando, 208.0, 700.0)],
+            100.0,
+            &area_esquerda,
+        );
         assert_eq!(j.direcao(), Vec2::ZERO, "8% do raio e' zona morta");
-        j.quadro(&[t(1, Fase::Segurando, 450.0, 700.0)], 100.0, &area_esquerda);
+        j.quadro(
+            &[t(1, Fase::Segurando, 450.0, 700.0)],
+            100.0,
+            &area_esquerda,
+        );
         let d = j.direcao();
-        assert!((d.length() - 1.0).abs() < 1e-4 && d.x > 0.99, "alem do raio: intensidade 1 pra direita: {d}");
-        assert!((j.manipulo() - vec2(300.0, 700.0)).length() < 1e-3, "manipulo preso ao raio");
-        j.quadro(&[t(1, Fase::Segurando, 200.0, 680.0)], 100.0, &area_esquerda);
+        assert!(
+            (d.length() - 1.0).abs() < 1e-4 && d.x > 0.99,
+            "alem do raio: intensidade 1 pra direita: {d}"
+        );
+        assert!(
+            (j.manipulo() - vec2(300.0, 700.0)).length() < 1e-3,
+            "manipulo preso ao raio"
+        );
+        j.quadro(
+            &[t(1, Fase::Segurando, 200.0, 680.0)],
+            100.0,
+            &area_esquerda,
+        );
         let d = j.direcao();
-        assert!(d.y < 0.0 && (d.length() - INTENSIDADE_MINIMA).abs() < 1e-4, "empurrao leve pra cima: {d}");
+        assert!(
+            d.y < 0.0 && (d.length() - INTENSIDADE_MINIMA).abs() < 1e-4,
+            "empurrao leve pra cima: {d}"
+        );
     }
 
     #[test]
     fn direcao_de_tela_vira_mundo_como_o_wasd() {
         let mut j = Joystick::default();
         j.quadro(&[t(1, Fase::Comecou, 200.0, 700.0)], 100.0, &area_esquerda);
-        j.quadro(&[t(1, Fase::Segurando, 200.0, 500.0)], 100.0, &area_esquerda);
+        j.quadro(
+            &[t(1, Fase::Segurando, 200.0, 500.0)],
+            100.0,
+            &area_esquerda,
+        );
         // Pra cima na tela = W.
         let w = crate::render3d::input_para_mundo(vec2(0.0, -1.0), 0.7);
         let joy = crate::render3d::input_para_mundo(j.direcao(), 0.7);
-        assert!((w - joy).length() < 1e-4, "joystick pra cima = W: {w} vs {joy}");
+        assert!(
+            (w - joy).length() < 1e-4,
+            "joystick pra cima = W: {w} vs {joy}"
+        );
     }
 
     #[test]
     fn dedo_do_joystick_nao_vai_pra_camera_nem_clique() {
         let mut j = Joystick::default();
-        let quadro = [t(1, Fase::Comecou, 200.0, 700.0), t(2, Fase::Comecou, 900.0, 300.0)];
+        let quadro = [
+            t(1, Fase::Comecou, 200.0, 700.0),
+            t(2, Fase::Comecou, 900.0, 300.0),
+        ];
         j.quadro(&quadro, 100.0, &area_esquerda);
         let resto = sem_dedo(&quadro, j.dedo());
         assert_eq!(resto.len(), 1);
@@ -216,7 +268,10 @@ mod testes {
         // Com so' o joystick, o gesto nao recebe nada: nada de clique no soltar.
         let mut g = crate::gesto_camera::GestoCamera::default();
         let so_joy = [t(1, Fase::Acabou, 200.0, 700.0)];
-        assert_eq!(g.quadro(&sem_dedo(&so_joy, Some(1)), false), crate::gesto_camera::Acao::Nada);
+        assert_eq!(
+            g.quadro(&sem_dedo(&so_joy, Some(1)), false),
+            crate::gesto_camera::Acao::Nada
+        );
     }
 
     /// O bug do iPhone: soltar o polegar do joystick andava ate' ali (clique).
@@ -224,19 +279,36 @@ mod testes {
     fn soltar_o_joystick_nao_vira_clique_no_mundo() {
         let mut j = Joystick::default();
         let mut g = crate::gesto_camera::GestoCamera::default();
-        let passo = |j: &mut Joystick, g: &mut crate::gesto_camera::GestoCamera, q: &[ToqueNoQuadro]| {
-            let antes = j.dedo();
-            j.quadro(q, 100.0, &area_esquerda);
-            g.quadro(&sem_dedos(q, &[antes, j.dedo()]), false)
-        };
+        let passo =
+            |j: &mut Joystick, g: &mut crate::gesto_camera::GestoCamera, q: &[ToqueNoQuadro]| {
+                let antes = j.dedo();
+                j.quadro(q, 100.0, &area_esquerda);
+                g.quadro(&sem_dedos(q, &[antes, j.dedo()]), false)
+            };
         use crate::gesto_camera::Acao;
-        assert_eq!(passo(&mut j, &mut g, &[t(7, Fase::Comecou, 200.0, 700.0)]), Acao::Nada);
-        assert_eq!(passo(&mut j, &mut g, &[t(7, Fase::Segurando, 260.0, 690.0)]), Acao::Nada);
-        assert_eq!(passo(&mut j, &mut g, &[t(7, Fase::Acabou, 260.0, 690.0)]), Acao::Nada, "soltar nao clica");
+        assert_eq!(
+            passo(&mut j, &mut g, &[t(7, Fase::Comecou, 200.0, 700.0)]),
+            Acao::Nada
+        );
+        assert_eq!(
+            passo(&mut j, &mut g, &[t(7, Fase::Segurando, 260.0, 690.0)]),
+            Acao::Nada
+        );
+        assert_eq!(
+            passo(&mut j, &mut g, &[t(7, Fase::Acabou, 260.0, 690.0)]),
+            Acao::Nada,
+            "soltar nao clica"
+        );
         assert!(!j.ativo());
         // Um toque curto de verdade, depois, continua sendo clique.
-        assert_eq!(passo(&mut j, &mut g, &[t(8, Fase::Comecou, 900.0, 300.0)]), Acao::Nada);
-        assert!(matches!(passo(&mut j, &mut g, &[t(8, Fase::Acabou, 900.0, 300.0)]), Acao::Clique(_)));
+        assert_eq!(
+            passo(&mut j, &mut g, &[t(8, Fase::Comecou, 900.0, 300.0)]),
+            Acao::Nada
+        );
+        assert!(matches!(
+            passo(&mut j, &mut g, &[t(8, Fase::Acabou, 900.0, 300.0)]),
+            Acao::Clique(_)
+        ));
     }
 
     #[test]
@@ -245,8 +317,15 @@ mod testes {
         assert!(!movimento_manual(false, &j));
         assert!(movimento_manual(true, &j), "teclado continua valendo");
         j.quadro(&[t(1, Fase::Comecou, 200.0, 700.0)], 100.0, &area_esquerda);
-        assert!(!movimento_manual(false, &j), "encostar sem empurrar nao pausa a auto missao");
-        j.quadro(&[t(1, Fase::Segurando, 260.0, 700.0)], 100.0, &area_esquerda);
+        assert!(
+            !movimento_manual(false, &j),
+            "encostar sem empurrar nao pausa a auto missao"
+        );
+        j.quadro(
+            &[t(1, Fase::Segurando, 260.0, 700.0)],
+            100.0,
+            &area_esquerda,
+        );
         assert!(movimento_manual(false, &j), "empurrar pausa como WASD");
     }
 }

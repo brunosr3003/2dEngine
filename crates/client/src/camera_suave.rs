@@ -125,7 +125,9 @@ impl CameraSuave {
     pub fn sincroniza(&mut self, yaw: f32, ajuste: f32, zoom: f32) {
         let mudou = match self.escrito {
             None => true,
-            Some((y, a, z)) => (y - yaw).abs() > 1e-4 || (a - ajuste).abs() > 1e-4 || (z - zoom).abs() > 1e-4,
+            Some((y, a, z)) => {
+                (y - yaw).abs() > 1e-4 || (a - ajuste).abs() > 1e-4 || (z - zoom).abs() > 1e-4
+            }
         };
         if mudou {
             self.yaw = yaw;
@@ -174,7 +176,10 @@ mod testes {
             a = suaviza(a, 1.0, 0.1 / 6.0, K_CAMERA);
         }
         let b = suaviza(0.0, 1.0, 0.1, K_CAMERA);
-        assert!((a - b).abs() < 1e-4, "depende da taxa de quadros: {a} vs {b}");
+        assert!(
+            (a - b).abs() < 1e-4,
+            "depende da taxa de quadros: {a} vs {b}"
+        );
         // Resposta rapida no PC: 0,15 s ja' andou ~93%.
         assert!(suaviza(0.0, 1.0, 0.15, K_CAMERA) > 0.9);
     }
@@ -185,7 +190,10 @@ mod testes {
         let d = diferenca_angular(pi - 0.1, -pi + 0.1);
         assert!((d - 0.2).abs() < 1e-4, "cruzar o -pi/pi: {d}");
         let v = suaviza_angulo(pi - 0.1, -pi + 0.1, 1.0, K_CAMERA);
-        assert!((diferenca_angular(v, -pi + 0.1)).abs() < 1e-3, "chegou pelo lado curto");
+        assert!(
+            (diferenca_angular(v, -pi + 0.1)).abs() < 1e-3,
+            "chegou pelo lado curto"
+        );
     }
 
     #[test]
@@ -193,9 +201,16 @@ mod testes {
         let mut f = FiltroDelta::default();
         let dt = 1.0 / 60.0;
         // Dedo a 600 px/s, mas os eventos chegam: 20 px, 0, 0, 30 px...
-        let brutos = [10.0, 0.0, 20.0, 0.0, 10.0, 0.0, 20.0, 0.0, 10.0, 0.0, 20.0, 0.0];
-        let saidas: Vec<f32> = brutos.iter().map(|d| f.filtra(vec2(*d, 0.0), dt).x).collect();
-        let (mn, mx) = saidas[4..].iter().fold((f32::MAX, f32::MIN), |(a, b), v| (a.min(*v), b.max(*v)));
+        let brutos = [
+            10.0, 0.0, 20.0, 0.0, 10.0, 0.0, 20.0, 0.0, 10.0, 0.0, 20.0, 0.0,
+        ];
+        let saidas: Vec<f32> = brutos
+            .iter()
+            .map(|d| f.filtra(vec2(*d, 0.0), dt).x)
+            .collect();
+        let (mn, mx) = saidas[4..]
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(a, b), v| (a.min(*v), b.max(*v)));
         assert!(mx - mn < 20.0 * 0.5, "degrau nao foi suavizado: {saidas:?}");
         assert!(saidas.iter().all(|v| *v >= 0.0));
     }
@@ -211,7 +226,10 @@ mod testes {
             t += 1.0 / 60.0;
         }
         assert!(t <= 0.5, "inercia durou {t} s");
-        assert!(total > 0.0 && total < 2.0 * TAU_INERCIA_S * 1.1, "deslizou {total}");
+        assert!(
+            total > 0.0 && total < 2.0 * TAU_INERCIA_S * 1.1,
+            "deslizou {total}"
+        );
     }
 
     #[test]

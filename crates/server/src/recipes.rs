@@ -15,7 +15,8 @@ use std::sync::OnceLock;
 static CELL: OnceLock<Arc<RwLock<Vec<CraftRecipeNet>>>> = OnceLock::new();
 
 fn cell() -> Arc<RwLock<Vec<CraftRecipeNet>>> {
-    CELL.get_or_init(|| Arc::new(RwLock::new(Vec::new()))).clone()
+    CELL.get_or_init(|| Arc::new(RwLock::new(Vec::new())))
+        .clone()
 }
 
 /// Versao corrente em cache — comparada ao `recipes_version` do DB pra detectar
@@ -24,10 +25,11 @@ static VERSION: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new
 
 /// Sentinela atomica setada quando reload aplicou mudancas. World tick ve,
 /// faz broadcast pros clientes, e limpa.
-static NEEDS_BROADCAST: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static NEEDS_BROADCAST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-pub fn version() -> i64 { VERSION.load(std::sync::atomic::Ordering::Relaxed) }
+pub fn version() -> i64 {
+    VERSION.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 pub fn take_broadcast_flag() -> bool {
     NEEDS_BROADCAST.swap(false, std::sync::atomic::Ordering::Relaxed)
@@ -47,19 +49,27 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
             output_item_level   INT NOT NULL DEFAULT 0,
             roll_instance       BOOLEAN NOT NULL DEFAULT FALSE,
             active              BOOLEAN NOT NULL DEFAULT TRUE
-        )"
-    ).execute(pool).await?;
+        )",
+    )
+    .execute(pool)
+    .await?;
     // Tabela versao — admin bumpa pra forcar hot-reload sem restart.
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS recipes_version (
             id      INT PRIMARY KEY DEFAULT 1,
             version BIGINT NOT NULL DEFAULT 1
-        )"
-    ).execute(pool).await?;
+        )",
+    )
+    .execute(pool)
+    .await?;
     sqlx::query("INSERT INTO recipes_version (id, version) VALUES (1, 1) ON CONFLICT DO NOTHING")
-        .execute(pool).await?;
-    sqlx::query("ALTER TABLE craft_recipes ADD COLUMN IF NOT EXISTS nivel_min SMALLINT NOT NULL DEFAULT 1")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
+    sqlx::query(
+        "ALTER TABLE craft_recipes ADD COLUMN IF NOT EXISTS nivel_min SMALLINT NOT NULL DEFAULT 1",
+    )
+    .execute(pool)
+    .await?;
     seed_equipamento(pool).await?;
 
     // Seed IDEMPOTENTE: roda sempre. `seed_from_constants` usa
@@ -69,13 +79,19 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     // receitas novas de fora até limpar a tabela.
     seed_from_constants(pool).await?;
     let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM craft_recipes")
-        .fetch_one(pool).await?;
-    tracing::info!("[recipes] seed idempotente ok ({} defs estáticas, {} no DB)",
-        shared::CRAFT_RECIPES.len(), count.0);
+        .fetch_one(pool)
+        .await?;
+    tracing::info!(
+        "[recipes] seed idempotente ok ({} defs estáticas, {} no DB)",
+        shared::CRAFT_RECIPES.len(),
+        count.0
+    );
 
     reload(pool).await?;
     let v: i64 = sqlx::query_scalar("SELECT version FROM recipes_version WHERE id = 1")
-        .fetch_one(pool).await.unwrap_or(1);
+        .fetch_one(pool)
+        .await
+        .unwrap_or(1);
     VERSION.store(v, std::sync::atomic::Ordering::Relaxed);
     Ok(())
 }
@@ -84,8 +100,11 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
 /// recarregou (caller deve broadcast `CraftRecipes` pra todos).
 pub async fn try_hot_reload(pool: &PgPool) -> anyhow::Result<bool> {
     let v: i64 = sqlx::query_scalar("SELECT version FROM recipes_version WHERE id = 1")
-        .fetch_one(pool).await?;
-    if v == VERSION.load(std::sync::atomic::Ordering::Relaxed) { return Ok(false); }
+        .fetch_one(pool)
+        .await?;
+    if v == VERSION.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(false);
+    }
     reload(pool).await?;
     VERSION.store(v, std::sync::atomic::Ordering::Relaxed);
     NEEDS_BROADCAST.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -117,20 +136,19 @@ pub async fn reload(pool: &PgPool) -> anyhow::Result<()> {
 
     let mut recipes: Vec<CraftRecipeNet> = Vec::with_capacity(rows.len());
     for (id, name, cat, tier, inputs_json, oid, oqty, olvl, roll, nivel_min) in rows {
-        let inputs: Vec<[u32; 2]> = serde_json::from_value(inputs_json)
-            .unwrap_or_default();
+        let inputs: Vec<[u32; 2]> = serde_json::from_value(inputs_json).unwrap_or_default();
         recipes.push(CraftRecipeNet {
-            id:                id as u16,
+            id: id as u16,
             name,
-            category:          cat.max(0) as u8,
-            station:           shared::craft_station_of(oid as u16),
-            tier:              tier.max(1) as u8,
+            category: cat.max(0) as u8,
+            station: shared::craft_station_of(oid as u16),
+            tier: tier.max(1) as u8,
             inputs,
-            output_item_id:    oid as u16,
-            output_qty:        oqty.max(1) as u32,
+            output_item_id: oid as u16,
+            output_qty: oqty.max(1) as u32,
             output_item_level: olvl.max(0) as u16,
-            roll_instance:     roll,
-            nivel_min:         nivel_min.max(1) as u16,
+            roll_instance: roll,
+            nivel_min: nivel_min.max(1) as u16,
         });
     }
     *cell().write() = recipes;
@@ -148,9 +166,7 @@ async fn seed_from_constants(pool: &PgPool) -> anyhow::Result<()> {
             // Weapons (Sword/Bow/Axe/Spear/Dagger/Staff/Wand)
             3 | 6 | 12 | 14 | 15 | 25 | 26 => 1,
             // Armor (chest/helm/legs/boots/gloves)
-            4 | 7 | 16 | 17 | 18
-            | 31 | 32 | 33 | 34 | 35 | 36
-            | 37 | 38 | 39 | 40 | 41 | 42
+            4 | 7 | 16 | 17 | 18 | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42
             | 43 | 44 => 2,
             // Boats (naval) — barcos consumiveis.
             100..=109 => 4,
@@ -159,8 +175,16 @@ async fn seed_from_constants(pool: &PgPool) -> anyhow::Result<()> {
         let tier: i16 = derive_tier(r.output_item_id, r.output_item_level) as i16;
 
         // Inputs validos (item_id != 0).
-        let inputs_pairs: Vec<[u32; 2]> = r.inputs.iter()
-            .filter_map(|&(id, qty)| if id == 0 { None } else { Some([id as u32, qty as u32]) })
+        let inputs_pairs: Vec<[u32; 2]> = r
+            .inputs
+            .iter()
+            .filter_map(|&(id, qty)| {
+                if id == 0 {
+                    None
+                } else {
+                    Some([id as u32, qty as u32])
+                }
+            })
             .collect();
         let inputs_json = serde_json::to_value(&inputs_pairs)?;
 
@@ -168,7 +192,7 @@ async fn seed_from_constants(pool: &PgPool) -> anyhow::Result<()> {
             "INSERT INTO craft_recipes (id, name, category, tier, inputs, \
                 output_item_id, output_qty, output_item_level, roll_instance) \
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) \
-             ON CONFLICT (id) DO NOTHING"
+             ON CONFLICT (id) DO NOTHING",
         )
         .bind(r.id as i32)
         .bind(r.name)
@@ -179,7 +203,8 @@ async fn seed_from_constants(pool: &PgPool) -> anyhow::Result<()> {
         .bind(r.output_qty as i32)
         .bind(r.output_item_level as i32)
         .bind(r.roll_instance)
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     }
     Ok(())
 }
@@ -195,7 +220,7 @@ async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
             "INSERT INTO craft_recipes (id, name, category, tier, inputs, \
                 output_item_id, output_qty, output_item_level, roll_instance, nivel_min) \
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) \
-             ON CONFLICT (id) DO NOTHING"
+             ON CONFLICT (id) DO NOTHING",
         )
         .bind(r.id as i32)
         .bind(&r.name)
@@ -207,7 +232,8 @@ async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
         .bind(r.output_item_level as i32)
         .bind(r.roll_instance)
         .bind(r.nivel_min as i16)
-        .execute(pool).await?
+        .execute(pool)
+        .await?
         .rows_affected();
     }
     if novas > 0 {
@@ -219,10 +245,16 @@ async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
     for (faixa, antigo) in [(1i32, 15i16), (2, 30)] {
         let novo = shared::receitas::FAIXAS[faixa as usize].nivel_min as i16;
         let de = shared::receitas::PRIMEIRO_ID as i32 + faixa * 100;
-        ajustadas += sqlx::query("UPDATE craft_recipes SET nivel_min = $1 WHERE id BETWEEN $2 AND $3 AND nivel_min = $4")
-            .bind(novo).bind(de).bind(de + 99).bind(antigo)
-            .execute(pool).await?
-            .rows_affected();
+        ajustadas += sqlx::query(
+            "UPDATE craft_recipes SET nivel_min = $1 WHERE id BETWEEN $2 AND $3 AND nivel_min = $4",
+        )
+        .bind(novo)
+        .bind(de)
+        .bind(de + 99)
+        .bind(antigo)
+        .execute(pool)
+        .await?
+        .rows_affected();
     }
     if ajustadas > 0 {
         tracing::info!("[recipes] {ajustadas} receitas com nivel minimo novo (verde 20, azul 40)");
@@ -234,10 +266,15 @@ fn derive_tier(item_id: u16, item_level: u16) -> u8 {
     if item_id >= 60 && item_id <= 71 {
         return ((item_id - 60) % 4 + 1) as u8;
     }
-    if item_level <= 10 { 1 }
-    else if item_level <= 30 { 2 }
-    else if item_level <= 60 { 3 }
-    else { 4 }
+    if item_level <= 10 {
+        1
+    } else if item_level <= 30 {
+        2
+    } else if item_level <= 60 {
+        3
+    } else {
+        4
+    }
 }
 
 /// Acessor pra cache. Cada call faz copy — uso esporadico (login + craft).

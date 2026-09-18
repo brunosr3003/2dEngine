@@ -38,7 +38,9 @@ fn atlas() -> Texture2D {
 
 /// A celula do item no atlas, em pixels. `None` = item sem icone no atlas.
 pub fn celula(item_id: u16) -> Option<Rect> {
-    let k = indice::ICONES.binary_search_by_key(&item_id, |e| e.0).ok()?;
+    let k = indice::ICONES
+        .binary_search_by_key(&item_id, |e| e.0)
+        .ok()?;
     let n = indice::ICONES[k].1 as u32;
     let lado = indice::LADO as f32;
     Some(Rect::new(
@@ -52,7 +54,9 @@ pub fn celula(item_id: u16) -> Option<Rect> {
 /// Desenha o icone do atlas centrado e quadrado dentro de `r`. Devolve
 /// `false` se o item nao tem icone (quem chamou desenha o substituto).
 pub fn desenha(item_id: u16, r: Rect, alfa: f32) -> bool {
-    let Some(fonte) = celula(item_id) else { return false };
+    let Some(fonte) = celula(item_id) else {
+        return false;
+    };
     let lado = r.w.min(r.h);
     let destino = vec2(lado, lado);
     let x = r.x + (r.w - lado) * 0.5;
@@ -62,7 +66,11 @@ pub fn desenha(item_id: u16, r: Rect, alfa: f32) -> bool {
         x,
         y,
         Color::new(1.0, 1.0, 1.0, alfa),
-        DrawTextureParams { dest_size: Some(destino), source: Some(fonte), ..Default::default() },
+        DrawTextureParams {
+            dest_size: Some(destino),
+            source: Some(fonte),
+            ..Default::default()
+        },
     );
     true
 }
@@ -78,7 +86,11 @@ pub fn icone(item_id: u16, r: Rect, raridade: Option<u8>, quantidade: Option<u32
         draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5, cor);
     }
     let pad = r.w.min(r.h) * 0.06;
-    desenha(item_id, Rect::new(r.x + pad, r.y + pad, r.w - pad * 2.0, r.h - pad * 2.0), 1.0);
+    desenha(
+        item_id,
+        Rect::new(r.x + pad, r.y + pad, r.w - pad * 2.0, r.h - pad * 2.0),
+        1.0,
+    );
     if let Some(q) = quantidade.filter(|q| *q > 1) {
         let t = q.to_string();
         let tam = (r.w * 0.26).clamp(10.0, 16.0) as u16;
@@ -96,10 +108,28 @@ mod testes {
     /// Todo item que o jogo conhece (seed de itens do servidor).
     fn conhecidos() -> Vec<u16> {
         let mut v = vec![
-            i::GOLD, i::HEALTH_POTION, i::MANA_POTION, i::GREATER_HEAL, i::GREATER_MANA, i::STAMINA_POTION,
-            i::XP_POTION, i::FORTUNA_POTION, i::SORTE_POTION, i::WOOD_T1, i::WOOD_T2, i::WOOD_T3, i::WOOD_T4,
-            i::FISH_ANCHOVY, i::FISH_CLOWNFISH, i::FISH_SURGEONFISH, i::FISH_PUFFERFISH,
-            i::BOAT_ESQUIFE, i::BOAT_LYLIAN_LEUTARD, i::COPPER, i::DARKSTEEL, i::GLITTERING_POWDER,
+            i::GOLD,
+            i::HEALTH_POTION,
+            i::MANA_POTION,
+            i::GREATER_HEAL,
+            i::GREATER_MANA,
+            i::STAMINA_POTION,
+            i::XP_POTION,
+            i::FORTUNA_POTION,
+            i::SORTE_POTION,
+            i::WOOD_T1,
+            i::WOOD_T2,
+            i::WOOD_T3,
+            i::WOOD_T4,
+            i::FISH_ANCHOVY,
+            i::FISH_CLOWNFISH,
+            i::FISH_SURGEONFISH,
+            i::FISH_PUFFERFISH,
+            i::BOAT_ESQUIFE,
+            i::BOAT_LYLIAN_LEUTARD,
+            i::COPPER,
+            i::DARKSTEEL,
+            i::GLITTERING_POWDER,
         ];
         v.extend(i::ESPADA_E_ESCUDO..=i::CINTO);
         for base in i::MATERIAIS_COLORIDOS {
@@ -121,11 +151,17 @@ mod testes {
     #[test]
     fn todo_item_conhecido_tem_icone_dentro_do_atlas() {
         let img = atlas_cpu();
-        assert_eq!((img.width as u32, img.height as u32), (indice::LARGURA, indice::ALTURA));
+        assert_eq!(
+            (img.width as u32, img.height as u32),
+            (indice::LARGURA, indice::ALTURA)
+        );
         for id in conhecidos() {
             let c = celula(id).unwrap_or_else(|| panic!("item {id} sem icone"));
             assert!(c.x >= 0.0 && c.y >= 0.0, "{id}");
-            assert!(c.x + c.w <= img.width as f32 && c.y + c.h <= img.height as f32, "{id} fora do atlas");
+            assert!(
+                c.x + c.w <= img.width as f32 && c.y + c.h <= img.height as f32,
+                "{id} fora do atlas"
+            );
         }
         assert!(celula(u16::MAX).is_none());
     }
@@ -133,7 +169,10 @@ mod testes {
     #[test]
     fn indice_ordenado_e_sem_celula_repetida() {
         let ids: Vec<u16> = indice::ICONES.iter().map(|e| e.0).collect();
-        assert!(ids.windows(2).all(|w| w[0] < w[1]), "indice precisa estar ordenado pra busca binaria");
+        assert!(
+            ids.windows(2).all(|w| w[0] < w[1]),
+            "indice precisa estar ordenado pra busca binaria"
+        );
         let celulas: HashSet<u16> = indice::ICONES.iter().map(|e| e.1).collect();
         assert_eq!(celulas.len(), indice::ICONES.len());
     }
@@ -157,7 +196,10 @@ mod testes {
                     }
                 }
             }
-            assert!(opacos > lado * lado / 10, "icone de {id} quase vazio ({opacos} px)");
+            assert!(
+                opacos > lado * lado / 10,
+                "icone de {id} quase vazio ({opacos} px)"
+            );
             assert!(vistos.insert(px), "icone de {id} igual a outro");
         }
     }

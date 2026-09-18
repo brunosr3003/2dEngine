@@ -27,7 +27,11 @@ const DESLIZE_VALE: f32 = 0.85;
 /// No celular o padrao e' entrar sozinho depois de 5 min parado; no PC, nunca
 /// (a janela preta no meio do teste so' atrapalha).
 pub fn auto_min_padrao() -> u16 {
-    if crate::nativo::TECLADO_NA_TELA { 5 } else { 0 }
+    if crate::nativo::TECLADO_NA_TELA {
+        5
+    } else {
+        0
+    }
 }
 
 /// O que o resumo mostra. Montado pelo `Jogo` a cada quadro.
@@ -89,7 +93,15 @@ impl Economia {
         if self.ativa {
             return;
         }
-        *self = Economia { ativa: true, auto_min: self.auto_min, desde: agora, xp_inicio: xp, nivel_inicio: nivel, ouro_inicio: ouro, ..Default::default() };
+        *self = Economia {
+            ativa: true,
+            auto_min: self.auto_min,
+            desde: agora,
+            xp_inicio: xp,
+            nivel_inicio: nivel,
+            ouro_inicio: ouro,
+            ..Default::default()
+        };
     }
 
     pub fn sair(&mut self, agora: f64) {
@@ -125,19 +137,35 @@ impl Economia {
         let colunas = 4usize;
         let lado = 64.0 * f;
         let vao = 10.0 * f;
-        let w = (colunas as f32 * (lado + vao) - vao + 48.0 * f).max(420.0 * f).min(seguro.w - 24.0);
+        let w = (colunas as f32 * (lado + vao) - vao + 48.0 * f)
+            .max(420.0 * f)
+            .min(seguro.w - 24.0);
         let linhas_itens = r.itens.len().div_ceil(colunas).clamp(1, 3);
         let h = (230.0 * f + linhas_itens as f32 * (lado + 30.0 * f)).min(seguro.h - 24.0);
-        let p = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+        let p = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.center().y - h * 0.5,
+            w,
+            h,
+        );
         crate::hud_layout::escurece(0.45);
         estilo::painel(p);
         let x = p.x + 24.0 * f;
         let mut y = p.y + 38.0 * f;
         estilo::texto_forte(x, y, "Enquanto você estava fora", 20, estilo::OURO);
         let t = formata_duracao(r.duracao_s);
-        estilo::texto(p.x + p.w - 24.0 * f - estilo::medir(&t, 14), y, &t, 14, estilo::SUAVE);
+        estilo::texto(
+            p.x + p.w - 24.0 * f - estilo::medir(&t, 14),
+            y,
+            &t,
+            14,
+            estilo::SUAVE,
+        );
         y += 36.0 * f;
-        let mut numeros = vec![("XP", format!("+{}", milhar(r.xp))), ("Ouro", format!("+{}", milhar(r.ouro)))];
+        let mut numeros = vec![
+            ("XP", format!("+{}", milhar(r.xp))),
+            ("Ouro", format!("+{}", milhar(r.ouro))),
+        ];
         if r.niveis > 0 {
             numeros.push(("Níveis", format!("+{}", r.niveis)));
         }
@@ -160,14 +188,32 @@ impl Economia {
         let cabem = colunas * linhas_itens;
         let mut dica = None;
         for (i, (id, q)) in r.itens.iter().take(cabem).enumerate() {
-            let c = Rect::new(x + (i % colunas) as f32 * (lado + vao), y + (i / colunas) as f32 * (lado + 30.0 * f), lado, lado);
+            let c = Rect::new(
+                x + (i % colunas) as f32 * (lado + vao),
+                y + (i / colunas) as f32 * (lado + 30.0 * f),
+                lado,
+                lado,
+            );
             estilo::cartao(c, c.contains(m), false);
             crate::icones::icone(*id, c, None, Some(*q));
             if *q == 1 {
-                estilo::texto_centro_forte(c.x + c.w - 10.0 * f, c.y + c.h - 4.0 * f, "1", 12, estilo::TEXTO);
+                estilo::texto_centro_forte(
+                    c.x + c.w - 10.0 * f,
+                    c.y + c.h - 4.0 * f,
+                    "1",
+                    12,
+                    estilo::TEXTO,
+                );
             }
             let nome = nome_item(*id);
-            estilo::texto_ajustado(&nome, c.x, c.y + c.h + 16.0 * f, lado + vao - 2.0, 11, estilo::SUAVE);
+            estilo::texto_ajustado(
+                &nome,
+                c.x,
+                c.y + c.h + 16.0 * f,
+                lado + vao - 2.0,
+                11,
+                estilo::SUAVE,
+            );
             if c.contains(m) {
                 dica = Some((c, format!("{nome} ×{}", milhar(*q as u64))));
             }
@@ -176,9 +222,20 @@ impl Economia {
             let t = format!("+ {} outros itens", r.itens.len() - cabem);
             estilo::texto(x, p.y + p.h - 70.0 * f, &t, 13, estilo::SUAVE);
         }
-        let ok = Rect::new(p.center().x - 90.0 * f, p.y + p.h - 58.0 * f, 180.0 * f, 44.0 * f);
+        let ok = Rect::new(
+            p.center().x - 90.0 * f,
+            p.y + p.h - 58.0 * f,
+            180.0 * f,
+            44.0 * f,
+        );
         estilo::cartao(ok, ok.contains(m), true);
-        estilo::texto_centro_forte(ok.center().x, ok.center().y + 6.0 * f, "OK", 17, estilo::OURO);
+        estilo::texto_centro_forte(
+            ok.center().x,
+            ok.center().y + 6.0 * f,
+            "OK",
+            17,
+            estilo::OURO,
+        );
         if let Some((c, t)) = dica {
             estilo::tooltip(c, &t, false);
         }
@@ -249,7 +306,11 @@ impl Economia {
         let suave = Color::new(0.55, 0.56, 0.60, 1.0);
         let texto = Color::new(0.80, 0.80, 0.83, 1.0);
 
-        bateria(vec2(x + 14.0 * f, y - 5.0 * f), 11.0 * f, Color::new(0.35, 0.78, 0.45, 1.0));
+        bateria(
+            vec2(x + 14.0 * f, y - 5.0 * f),
+            11.0 * f,
+            Color::new(0.35, 0.78, 0.45, 1.0),
+        );
         estilo::texto_forte(x + 34.0 * f, y, "MODO ECONOMIA DE ENERGIA", 13, suave);
         let tempo = formata_duracao(agora - self.desde);
         estilo::texto(x + w - estilo::medir(&tempo, 13), y, &tempo, 13, suave);
@@ -257,24 +318,48 @@ impl Economia {
 
         estilo::texto_forte(x, y, &format!("Nv {}  {}", r.nivel, r.nome), 22, texto);
         let (estado, cor) = r.estado;
-        estilo::texto_forte(x + w - estilo::medir_forte(estado, 15), y, estado, 15, estilo::alfa(cor, 0.9));
+        estilo::texto_forte(
+            x + w - estilo::medir_forte(estado, 15),
+            y,
+            estado,
+            15,
+            estilo::alfa(cor, 0.9),
+        );
         y += 16.0 * f;
-        let hp = if r.hp_max > 0 { r.hp as f32 / r.hp_max as f32 } else { 0.0 };
-        barra(Rect::new(x, y, w, 8.0 * f), hp, Color::new(0.72, 0.22, 0.22, 1.0));
+        let hp = if r.hp_max > 0 {
+            r.hp as f32 / r.hp_max as f32
+        } else {
+            0.0
+        };
+        barra(
+            Rect::new(x, y, w, 8.0 * f),
+            hp,
+            Color::new(0.72, 0.22, 0.22, 1.0),
+        );
         y += 22.0 * f;
         estilo::texto(x, y, &format!("HP {}/{}", r.hp.max(0), r.hp_max), 12, suave);
         let exp = format!("EXP {:.2}%", (r.exp * 100.0).clamp(0.0, 100.0));
         estilo::texto(x + w - estilo::medir(&exp, 12), y, &exp, 12, suave);
         y += 8.0 * f;
-        barra(Rect::new(x, y, w, 5.0 * f), r.exp, Color::new(0.78, 0.64, 0.30, 1.0));
+        barra(
+            Rect::new(x, y, w, 5.0 * f),
+            r.exp,
+            Color::new(0.78, 0.64, 0.30, 1.0),
+        );
         y += 40.0 * f;
 
         estilo::texto_forte(x, y, "DESDE QUE LIGOU", 12, suave);
         y += 26.0 * f;
         let niveis = r.nivel.saturating_sub(self.nivel_inicio);
         let mut linhas = vec![
-            ("XP", format!("+{}", milhar(r.xp.saturating_sub(self.xp_inicio)))),
-            ("Ouro", format!("+{}", milhar(r.ouro.saturating_sub(self.ouro_inicio)))),
+            (
+                "XP",
+                format!("+{}", milhar(r.xp.saturating_sub(self.xp_inicio))),
+            ),
+            (
+                "Ouro",
+                format!("+{}", milhar(r.ouro.saturating_sub(self.ouro_inicio))),
+            ),
         ];
         if niveis > 0 {
             linhas.push(("Níveis", format!("+{niveis}")));
@@ -289,7 +374,13 @@ impl Economia {
         let y0 = y;
         for (rot, val) in &linhas {
             estilo::texto(xe, y, rot, 15, suave);
-            estilo::texto_forte(xe + w * 0.36 - estilo::medir_forte(val, 15), y, val, 15, texto);
+            estilo::texto_forte(
+                xe + w * 0.36 - estilo::medir_forte(val, 15),
+                y,
+                val,
+                15,
+                texto,
+            );
             y += 24.0 * f;
         }
         let cabem = (((seguro.y + seguro.h - 150.0 * f) - y0) / (22.0 * f)).max(1.0) as usize;
@@ -303,16 +394,34 @@ impl Economia {
                 break;
             }
             let qtd = format!("×{}", milhar(*q as u64));
-            estilo::texto_ajustado(&(r.nome_item)(*id), xd, yd, cw - estilo::medir_forte(&qtd, 14) - 12.0 * f, 14, texto);
+            estilo::texto_ajustado(
+                &(r.nome_item)(*id),
+                xd,
+                yd,
+                cw - estilo::medir_forte(&qtd, 14) - 12.0 * f,
+                14,
+                texto,
+            );
             estilo::texto_forte(xd + cw - estilo::medir_forte(&qtd, 14), yd, &qtd, 14, texto);
             yd += 22.0 * f;
         }
         if r.ping_ms > 0.0 {
             let p = format!("{:.0} ms", r.ping_ms);
-            estilo::texto(seguro.x + seguro.w - estilo::medir(&p, 11) - 8.0 * f, seguro.y + seguro.h - 8.0 * f, &p, 11, estilo::alfa(suave, 0.6));
+            estilo::texto(
+                seguro.x + seguro.w - estilo::medir(&p, 11) - 8.0 * f,
+                seguro.y + seguro.h - 8.0 * f,
+                &p,
+                11,
+                estilo::alfa(suave, 0.6),
+            );
         }
 
-        self.deslize(Rect::new(sw * 0.5 - (210.0 * f).min(sw * 0.5 - 24.0), (seguro.y + seguro.h - 90.0 * f).min(sh - 70.0 * f), (420.0 * f).min(sw - 48.0), 58.0 * f))
+        self.deslize(Rect::new(
+            sw * 0.5 - (210.0 * f).min(sw * 0.5 - 24.0),
+            (seguro.y + seguro.h - 90.0 * f).min(sh - 70.0 * f),
+            (420.0 * f).min(sw - 48.0),
+            58.0 * f,
+        ))
     }
 
     /// O trilho "deslize para voltar". Dedo ou mouse.
@@ -324,7 +433,9 @@ impl Economia {
             self.arrasto = Some(m.x);
         }
         let progresso = match self.arrasto {
-            Some(x0) if is_mouse_button_down(MouseButton::Left) => ((m.x - x0) / curso).clamp(0.0, 1.0),
+            Some(x0) if is_mouse_button_down(MouseButton::Left) => {
+                ((m.x - x0) / curso).clamp(0.0, 1.0)
+            }
             _ => 0.0,
         };
         let soltou = self.arrasto.is_some() && !is_mouse_button_down(MouseButton::Left);
@@ -339,17 +450,40 @@ impl Economia {
         estilo::ret_arredondado(trilho, raio, Color::new(0.07, 0.07, 0.08, 1.0));
         estilo::borda_arredondada(trilho, raio, 1.0, Color::new(0.22, 0.22, 0.25, 1.0));
         if progresso > 0.0 {
-            estilo::ret_arredondado(Rect::new(trilho.x, trilho.y, bola + 8.0 + curso * progresso, trilho.h), raio, Color::new(0.14, 0.26, 0.17, 1.0));
+            estilo::ret_arredondado(
+                Rect::new(trilho.x, trilho.y, bola + 8.0 + curso * progresso, trilho.h),
+                raio,
+                Color::new(0.14, 0.26, 0.17, 1.0),
+            );
         }
-        let c = vec2(trilho.x + 4.0 + bola * 0.5 + curso * progresso, trilho.center().y);
+        let c = vec2(
+            trilho.x + 4.0 + bola * 0.5 + curso * progresso,
+            trilho.center().y,
+        );
         draw_circle(c.x, c.y, bola * 0.5, Color::new(0.30, 0.62, 0.38, 1.0));
         for k in 0..3 {
             let dx = (k as f32 - 1.0) * bola * 0.14;
-            estilo::traco(vec2(c.x + dx - bola * 0.06, c.y - bola * 0.14), vec2(c.x + dx + bola * 0.06, c.y), 2.0, BLACK);
-            estilo::traco(vec2(c.x + dx + bola * 0.06, c.y), vec2(c.x + dx - bola * 0.06, c.y + bola * 0.14), 2.0, BLACK);
+            estilo::traco(
+                vec2(c.x + dx - bola * 0.06, c.y - bola * 0.14),
+                vec2(c.x + dx + bola * 0.06, c.y),
+                2.0,
+                BLACK,
+            );
+            estilo::traco(
+                vec2(c.x + dx + bola * 0.06, c.y),
+                vec2(c.x + dx - bola * 0.06, c.y + bola * 0.14),
+                2.0,
+                BLACK,
+            );
         }
         let rotulo = "Deslize para voltar";
-        estilo::texto_centro(trilho.center().x + bola * 0.4, trilho.center().y + 6.0, rotulo, 15, Color::new(0.55, 0.56, 0.60, 1.0 - progresso));
+        estilo::texto_centro(
+            trilho.center().x + bola * 0.4,
+            trilho.center().y + 6.0,
+            rotulo,
+            15,
+            Color::new(0.55, 0.56, 0.60, 1.0 - progresso),
+        );
         false
     }
 }
@@ -382,16 +516,32 @@ pub fn bateria(c: Vec2, s: f32, cor: Color) {
     let corpo = Rect::new(c.x - s, c.y - s * 0.55, s * 1.8, s * 1.1);
     let esp = (s * 0.15).max(1.2);
     estilo::borda_arredondada(corpo, s * 0.2, esp, cor);
-    draw_rectangle(corpo.x + corpo.w + esp * 0.3, c.y - s * 0.25, s * 0.22, s * 0.5, cor);
+    draw_rectangle(
+        corpo.x + corpo.w + esp * 0.3,
+        c.y - s * 0.25,
+        s * 0.22,
+        s * 0.5,
+        cor,
+    );
     let dentro = s * 0.22;
-    draw_rectangle(corpo.x + dentro, corpo.y + dentro, (corpo.w - 2.0 * dentro) * 0.6, corpo.h - 2.0 * dentro, cor);
+    draw_rectangle(
+        corpo.x + dentro,
+        corpo.y + dentro,
+        (corpo.w - 2.0 * dentro) * 0.6,
+        corpo.h - 2.0 * dentro,
+        cor,
+    );
 }
 
 /// "1h 02m" ou "12m 05s".
 pub fn formata_duracao(s: f64) -> String {
     let s = s.max(0.0) as u64;
     let (h, m, seg) = (s / 3600, s / 60 % 60, s % 60);
-    if h > 0 { format!("{h}h {m:02}m") } else { format!("{m}m {seg:02}s") }
+    if h > 0 {
+        format!("{h}h {m:02}m")
+    } else {
+        format!("{m}m {seg:02}s")
+    }
 }
 
 /// 1234567 -> "1.234.567".
@@ -413,7 +563,10 @@ mod tests {
 
     #[test]
     fn so_entra_sozinho_depois_do_tempo_parado() {
-        let mut e = Economia { auto_min: Some(3), ..Default::default() };
+        let mut e = Economia {
+            auto_min: Some(3),
+            ..Default::default()
+        };
         assert!(!e.parado_demais(10.0, false), "o primeiro quadro so' marca");
         assert!(!e.parado_demais(10.0 + 179.0, false));
         assert!(e.parado_demais(10.0 + 180.0, false));
@@ -423,7 +576,10 @@ mod tests {
 
     #[test]
     fn nunca_quando_desligado() {
-        let mut e = Economia { auto_min: Some(0), ..Default::default() };
+        let mut e = Economia {
+            auto_min: Some(0),
+            ..Default::default()
+        };
         e.parado_demais(1.0, false);
         assert!(!e.parado_demais(1.0e6, false));
     }
@@ -458,7 +614,10 @@ mod tests {
         e.sair(10.0);
         assert!(e.bloqueia_entrada(10.2));
         assert!(!e.bloqueia_entrada(10.5));
-        assert!(!Economia::default().bloqueia_entrada(0.1), "quem nunca entrou nao bloqueia");
+        assert!(
+            !Economia::default().bloqueia_entrada(0.1),
+            "quem nunca entrou nao bloqueia"
+        );
     }
 
     #[test]
@@ -470,7 +629,17 @@ mod tests {
         e.sair_com_resumo(100.0 + 3725.0, 4_500, 6, 180);
         assert!(!e.ativa);
         let r = e.resumo.clone().expect("resumo aberto");
-        assert_eq!(r, ResumoDaAusencia { duracao_s: 3725.0, xp: 3_500, ouro: 130, niveis: 1, mortes: 1, itens: vec![(9, 10), (7, 3)] });
+        assert_eq!(
+            r,
+            ResumoDaAusencia {
+                duracao_s: 3725.0,
+                xp: 3_500,
+                ouro: 130,
+                niveis: 1,
+                mortes: 1,
+                itens: vec![(9, 10), (7, 3)]
+            }
+        );
         // Fora do modo nao abre nada.
         let mut fora = Economia::default();
         fora.sair_com_resumo(10.0, 1, 1, 1);

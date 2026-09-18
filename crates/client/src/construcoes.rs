@@ -71,7 +71,11 @@ const SUBIDA_DO_TETO: f32 = 3.0;
 /// (0) no ritmo de `DURACAO_DO_TETO`, sem pular.
 pub fn avanca_teto(p: f32, dentro: bool, dt: f32) -> f32 {
     let passo = dt.max(0.0) / DURACAO_DO_TETO;
-    if dentro { (p + passo).min(1.0) } else { (p - passo).max(0.0) }
+    if dentro {
+        (p + passo).min(1.0)
+    } else {
+        (p - passo).max(0.0)
+    }
 }
 
 /// O teto no meio da transicao: copia subida e desbotada. So' existe durante
@@ -92,13 +96,19 @@ fn desenha_teto_em_transicao(teto: &[MalhaEstatica], p: f32) {
                 v
             })
             .collect();
-        draw_mesh(&Mesh { vertices, indices: m.indices.clone(), texture: None });
+        draw_mesh(&Mesh {
+            vertices,
+            indices: m.indices.clone(),
+            texture: None,
+        });
     }
 }
 
 /// O jogador esta' DENTRO deste miolo (e nao em cima do telhado)?
 pub fn esta_dentro(interior: Option<(Vec2, Vec2, f32)>, jogador: Option<Vec3>) -> bool {
-    let (Some((mn, mx, piso)), Some(j)) = (interior, jogador) else { return false };
+    let (Some((mn, mx, piso)), Some(j)) = (interior, jogador) else {
+        return false;
+    };
     j.x > mn.x && j.x < mx.x && j.z > mn.y && j.z < mx.y && j.y < piso + ALTURA_DO_TETO
 }
 
@@ -113,12 +123,17 @@ impl Construcoes {
     /// Comeca a assar a vila da ilha `def` numa thread. A `Mesh` so' e'
     /// montada no thread principal, em `acompanhar`.
     pub fn para(def: Option<&'static DefIlha>) -> Self {
-        let Some(def) = def else { return Self::default() };
+        let Some(def) = def else {
+            return Self::default();
+        };
         let (tx, rx) = channel();
         std::thread::spawn(move || {
             let _ = tx.send(assar_vila(def));
         });
-        Self { rx: Some(rx), prontas: Vec::new() }
+        Self {
+            rx: Some(rx),
+            prontas: Vec::new(),
+        }
     }
 
     /// A vila ja' foi assada (ou nao ha' vila).
@@ -132,10 +147,22 @@ impl Construcoes {
         self.prontas = assadas
             .into_iter()
             .map(|a| {
-                let malha = |(vertices, indices)| Mesh { vertices, indices, texture: None };
+                let malha = |(vertices, indices)| Mesh {
+                    vertices,
+                    indices,
+                    texture: None,
+                };
                 Pronta {
-                    malhas: a.partes.into_iter().map(|p| MalhaEstatica::nova(malha(p))).collect(),
-                    teto: a.teto.into_iter().map(|p| MalhaEstatica::mantendo_cpu(malha(p))).collect(),
+                    malhas: a
+                        .partes
+                        .into_iter()
+                        .map(|p| MalhaEstatica::nova(malha(p)))
+                        .collect(),
+                    teto: a
+                        .teto
+                        .into_iter()
+                        .map(|p| MalhaEstatica::mantendo_cpu(malha(p)))
+                        .collect(),
                     interior: a.interior,
                     min: a.min,
                     max: a.max,
@@ -152,7 +179,13 @@ impl Construcoes {
     /// `jogador` e' a posicao do personagem: a construcao em que ele esta'
     /// DENTRO e' desenhada sem o teto.
     /// `recorte`/`recorte_z`: o furo do jogador, como no terreno.
-    pub fn desenha(&self, cam: &Camera3D, jogador: Option<Vec3>, recorte: Vec3, recorte_z: f32) -> usize {
+    pub fn desenha(
+        &self,
+        cam: &Camera3D,
+        jogador: Option<Vec3>,
+        recorte: Vec3,
+        recorte_z: f32,
+    ) -> usize {
         let olho = cam.position;
         let frente = (cam.target - cam.position).normalize();
         let abertura = cam.fovy * 0.5 + 0.55;
@@ -188,7 +221,10 @@ impl Construcoes {
                 em_transicao.push((&p.teto, sumido));
             }
         }
-        crate::gpu_estatica::desenha(crate::gpu_estatica::Programa::Solido { recorte, recorte_z }, fixas);
+        crate::gpu_estatica::desenha(
+            crate::gpu_estatica::Programa::Solido { recorte, recorte_z },
+            fixas,
+        );
         // O teto sumindo e' recopiado todo quadro: esse fica no lote da
         // macroquad (so' existe por 0,3 s).
         for (teto, sumido) in em_transicao {
@@ -207,7 +243,11 @@ pub fn assar_vila(def: &DefIlha) -> Vec<Assada> {
     for p in &vila.predios {
         saida.push(assar(&p.construcao(), p.pos, p.yaw_q, p.chao));
     }
-    let props = vila.props.iter().map(|p| assar(&p.construcao(), p.pos, p.yaw_q, p.pos.y)).collect();
+    let props = vila
+        .props
+        .iter()
+        .map(|p| assar(&p.construcao(), p.pos, p.yaw_q, p.pos.y))
+        .collect();
     saida.extend(juntar_por_regiao(props, 12.0));
     saida
 }
@@ -225,7 +265,10 @@ fn juntar_por_regiao(assadas: Vec<Assada>, lado: f32) -> Vec<Assada> {
             continue;
         }
         let c = (a.min + a.max) * 0.5;
-        grupos.entry(((c.x / lado).floor() as i32, (c.z / lado).floor() as i32)).or_default().push(a);
+        grupos
+            .entry(((c.x / lado).floor() as i32, (c.z / lado).floor() as i32))
+            .or_default()
+            .push(a);
     }
     grupos
         .into_values()
@@ -287,7 +330,11 @@ pub fn assar(c: &Construcao, pos: ::glam::Vec3, yaw_q: u8, chao: f32) -> Assada 
         let (lz, hz) = ((v.z0 + 2) as f32 * e, (v.z0 + v.nz - 2) as f32 * e);
         let a = c.local_para_mundo(pos, yaw_q, ::glam::Vec3::new(lx, 0.0, lz));
         let b = c.local_para_mundo(pos, yaw_q, ::glam::Vec3::new(hx, 0.0, hz));
-        (vec2(a.x.min(b.x), a.z.min(b.z)), vec2(a.x.max(b.x), a.z.max(b.z)), chao)
+        (
+            vec2(a.x.min(b.x), a.z.min(b.z)),
+            vec2(a.x.max(b.x), a.z.max(b.z)),
+            chao,
+        )
     });
     let mut s = Saida {
         a: Assada {
@@ -321,7 +368,8 @@ pub fn assar(c: &Construcao, pos: ::glam::Vec3, yaw_q: u8, chao: f32) -> Assada 
                     // — furada — por dentro. Com o teto a mostra, a tampa fica
                     // entre dois blocos e ninguem ve'.
                     let tampa = n[1] == 1 && !alto(p[1]) && alto(p[1] + 1);
-                    let visivel = b != 0 && (tampa || v.get(p[0] + n[0], p[1] + n[1], p[2] + n[2]) == 0);
+                    let visivel =
+                        b != 0 && (tampa || v.get(p[0] + n[0], p[1] + n[1], p[2] + n[2]) == 0);
                     mascara[iv * nu + iu] = visivel.then(|| {
                         // A oclusao olharia o bloco de cima (que e' teto) e a
                         // tampa sairia preta: corte limpo e' luz cheia.
@@ -369,7 +417,16 @@ pub fn assar(c: &Construcao, pos: ::glam::Vec3, yaw_q: u8, chao: f32) -> Assada 
                     p[eixo] = lo[eixo] + camada;
                     p[eu] = lo[eu] + iu as i32;
                     p[ev] = lo[ev] + iv as i32;
-                    let q = Quad { p, n, eu, ev, w: w as i32, h: h as i32, bloco: celula.0, ao: celula.1 };
+                    let q = Quad {
+                        p,
+                        n,
+                        eu,
+                        ev,
+                        w: w as i32,
+                        h: h as i32,
+                        bloco: celula.0,
+                        ao: celula.1,
+                    };
                     s.emite(c, pos, yaw_q, chao, q, celula.2);
                     iu += w;
                 }
@@ -404,7 +461,15 @@ struct Saida {
 }
 
 impl Saida {
-    fn emite(&mut self, c: &Construcao, pos: ::glam::Vec3, yaw_q: u8, chao: f32, q: Quad, teto: bool) {
+    fn emite(
+        &mut self,
+        c: &Construcao,
+        pos: ::glam::Vec3,
+        yaw_q: u8,
+        chao: f32,
+        q: Quad,
+        teto: bool,
+    ) {
         let (buf, fechadas) = if teto {
             (&mut self.cima, &mut self.a.teto)
         } else {
@@ -456,21 +521,45 @@ impl Saida {
         let bloco = BlocoCasa::de_u8(q.bloco).unwrap_or(BlocoCasa::Ar);
         let [r, g, b] = bloco.rgb();
         let topo = pontos.iter().map(|(p, _)| p.y).fold(f32::MIN, f32::max);
-        let marca = if topo - chao >= ALTURA_QUE_ESCONDE { 1.0 } else { 0.0 };
-        let buf = if teto { &mut self.cima } else { &mut self.baixo };
+        let marca = if topo - chao >= ALTURA_QUE_ESCONDE {
+            1.0
+        } else {
+            0.0
+        };
+        let buf = if teto {
+            &mut self.cima
+        } else {
+            &mut self.baixo
+        };
         let inicio = buf.0.len() as u16;
         for (p, oc) in pontos {
-            let k = if bloco.brilha() { 1.0 } else { luz * (oc as f32 / 255.0) };
+            let k = if bloco.brilha() {
+                1.0
+            } else {
+                luz * (oc as f32 / 255.0)
+            };
             self.a.min = self.a.min.min(p);
             self.a.max = self.a.max.max(p);
             buf.0.push(Vertex {
                 position: p,
                 uv: vec2(0.0, 0.0),
-                color: [(r as f32 * k) as u8, (g as f32 * k) as u8, (b as f32 * k) as u8, 255],
+                color: [
+                    (r as f32 * k) as u8,
+                    (g as f32 * k) as u8,
+                    (b as f32 * k) as u8,
+                    255,
+                ],
                 normal: Vec4::new(marca, 0.0, 0.0, 0.0),
             });
         }
-        buf.1.extend_from_slice(&[inicio, inicio + 1, inicio + 2, inicio, inicio + 2, inicio + 3]);
+        buf.1.extend_from_slice(&[
+            inicio,
+            inicio + 1,
+            inicio + 2,
+            inicio,
+            inicio + 2,
+            inicio + 3,
+        ]);
     }
 }
 
@@ -502,7 +591,12 @@ mod tests {
     fn quads(a: &Assada) -> impl Iterator<Item = [Vec3; 4]> + '_ {
         a.partes.iter().chain(a.teto.iter()).flat_map(|(v, i)| {
             i.chunks(6).map(move |q| {
-                [v[q[0] as usize].position, v[q[1] as usize].position, v[q[2] as usize].position, v[q[5] as usize].position]
+                [
+                    v[q[0] as usize].position,
+                    v[q[1] as usize].position,
+                    v[q[2] as usize].position,
+                    v[q[5] as usize].position,
+                ]
             })
         })
     }
@@ -512,13 +606,21 @@ mod tests {
         let mn = q.iter().fold(Vec3::splat(f32::MAX), |m, p| m.min(*p));
         let mx = q.iter().fold(Vec3::splat(f32::MIN), |m, p| m.max(*p));
         let ext = mx - mn;
-        let eixo = if ext.x < 1e-4 { 0 } else if ext.y < 1e-4 { 1 } else { 2 };
+        let eixo = if ext.x < 1e-4 {
+            0
+        } else if ext.y < 1e-4 {
+            1
+        } else {
+            2
+        };
         let (da, db) = (a[eixo] - mn[eixo], b[eixo] - mn[eixo]);
         if da * db > 0.0 || (da - db).abs() < 1e-6 {
             return false;
         }
         let p = a + (b - a) * (da / (da - db));
-        (0..3).filter(|k| *k != eixo).all(|k| p[k] > mn[k] + 1e-3 && p[k] < mx[k] - 1e-3)
+        (0..3)
+            .filter(|k| *k != eixo)
+            .all(|k| p[k] > mn[k] + 1e-3 && p[k] < mx[k] - 1e-3)
     }
 
     /// Onde a malha deixa passar e onde a colisao do SERVIDOR deixa passar tem
@@ -529,7 +631,12 @@ mod tests {
         let d = &ARQUIPELAGO[0];
         let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
         let mut casas = 0;
-        for p in ger.vila().predios.iter().filter(|p| p.tipo != TipoCasa::Doca) {
+        for p in ger
+            .vila()
+            .predios
+            .iter()
+            .filter(|p| p.tipo != TipoCasa::Doca)
+        {
             let c = p.construcao();
             let Some(px) = c.porta_local() else { continue };
             let a = assar(&c, p.pos, p.yaw_q, p.chao);
@@ -550,9 +657,18 @@ mod tests {
             for k in 0..=24 {
                 let q = fora.lerp(dentro, k as f32 / 24.0);
                 let barra = caixas.iter().any(|(mn, mx)| {
-                    q.x > mn.x + 1e-3 && q.x < mx.x - 1e-3 && q.y > mn.y && q.y < mx.y && q.z > mn.z + 1e-3 && q.z < mx.z - 1e-3
+                    q.x > mn.x + 1e-3
+                        && q.x < mx.x - 1e-3
+                        && q.y > mn.y
+                        && q.y < mx.y
+                        && q.z > mn.z + 1e-3
+                        && q.z < mx.z - 1e-3
                 });
-                assert!(!barra, "{:?}/{:?}: a colisao fecha a porta que a malha abre", p.tipo, p.papel);
+                assert!(
+                    !barra,
+                    "{:?}/{:?}: a colisao fecha a porta que a malha abre",
+                    p.tipo, p.papel
+                );
             }
             // Controle: na coluna do canto da fachada ha' parede — sem isto o
             // teste passaria com uma malha vazia.
@@ -566,7 +682,10 @@ mod tests {
             casas += 1;
         }
         println!("{casas} portas conferidas");
-        assert!(casas >= 5, "so' {casas} predios com porta na cidade inicial");
+        assert!(
+            casas >= 5,
+            "so' {casas} predios com porta na cidade inicial"
+        );
     }
 
     /// Nenhuma malha da vila passa do teto de indice, em nenhuma ilha.
@@ -579,7 +698,12 @@ mod tests {
             let (mut malhas, mut verts, mut quads) = (0, 0, 0);
             for a in &assadas {
                 for (v, i) in a.partes.iter().chain(a.teto.iter()) {
-                    assert!(i.len() <= MAX_QUADS * 6, "{}: malha com {} indices", d.zona, i.len());
+                    assert!(
+                        i.len() <= MAX_QUADS * 6,
+                        "{}: malha com {} indices",
+                        d.zona,
+                        i.len()
+                    );
                     assert!(v.len() <= MAX_QUADS * 4);
                     malhas += 1;
                     verts += v.len();
@@ -601,11 +725,28 @@ mod tests {
     fn a_casa_assenta_no_chao() {
         let d = &ARQUIPELAGO[0];
         let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
-        for p in ger.vila().predios.iter().filter(|p| p.tipo != TipoCasa::Doca) {
+        for p in ger
+            .vila()
+            .predios
+            .iter()
+            .filter(|p| p.tipo != TipoCasa::Doca)
+        {
             let a = assar(&p.construcao(), p.pos, p.yaw_q, p.chao);
-            assert!((a.min.y - p.pos.y).abs() < 0.01, "{:?}: base {} != origem {}", p.papel, a.min.y, p.pos.y);
+            assert!(
+                (a.min.y - p.pos.y).abs() < 0.01,
+                "{:?}: base {} != origem {}",
+                p.papel,
+                a.min.y,
+                p.pos.y
+            );
             let solo = ger.altura(p.pos.x, p.pos.z);
-            assert!((p.chao - solo).abs() < 0.01, "{:?}: piso {} fora do chao {}", p.papel, p.chao, solo);
+            assert!(
+                (p.chao - solo).abs() < 0.01,
+                "{:?}: piso {} fora do chao {}",
+                p.papel,
+                p.chao,
+                solo
+            );
         }
     }
 
@@ -617,38 +758,69 @@ mod tests {
         let d = &ARQUIPELAGO[0];
         let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
         let mut casas = 0;
-        for p in ger.vila().predios.iter().filter(|p| p.tipo != TipoCasa::Doca) {
+        for p in ger
+            .vila()
+            .predios
+            .iter()
+            .filter(|p| p.tipo != TipoCasa::Doca)
+        {
             let c = p.construcao();
             let a = assar(&c, p.pos, p.yaw_q, p.chao);
             assert!(!a.teto.is_empty(), "{:?}: casa sem teto separado", p.papel);
             for (v, _) in &a.teto {
-                assert!(v.iter().all(|x| x.position.y >= p.chao + ALTURA_DO_TETO - 1e-3),
-                    "{:?}: face de teto abaixo da altura do teto", p.papel);
+                assert!(
+                    v.iter()
+                        .all(|x| x.position.y >= p.chao + ALTURA_DO_TETO - 1e-3),
+                    "{:?}: face de teto abaixo da altura do teto",
+                    p.papel
+                );
             }
             // A parede cortada tem TAMPA: quad horizontal na malha de baixo, na
             // primeira camada de teto. Sem ela a parede parece furada.
             let e = c.escala;
-            let k = (0..c.v.ny).map(|y| c.v.y0 + y).find(|y| p.pos.y + *y as f32 * e >= p.chao + ALTURA_DO_TETO)
+            let k = (0..c.v.ny)
+                .map(|y| c.v.y0 + y)
+                .find(|y| p.pos.y + *y as f32 * e >= p.chao + ALTURA_DO_TETO)
                 .expect("casa sem camada de teto");
             let y_corte = p.pos.y + k as f32 * e;
-            let tampas = quads(&Assada { partes: a.partes.iter().cloned().collect(), teto: Vec::new(), interior: None, min: a.min, max: a.max })
-                .filter(|q| q.iter().all(|v| (v.y - y_corte).abs() < 1e-3))
-                .count();
+            let tampas = quads(&Assada {
+                partes: a.partes.iter().cloned().collect(),
+                teto: Vec::new(),
+                interior: None,
+                min: a.min,
+                max: a.max,
+            })
+            .filter(|q| q.iter().all(|v| (v.y - y_corte).abs() < 1e-3))
+            .count();
             assert!(tampas > 0, "{:?}: parede cortada sem tampa", p.papel);
             let (mn, mx, _) = a.interior.expect("casa sem miolo");
             let meio = vec3((mn.x + mx.x) * 0.5, p.chao, (mn.y + mx.y) * 0.5);
-            assert!(esta_dentro(a.interior, Some(meio)), "{:?}: o meio da casa nao conta como dentro", p.papel);
-            assert!(!esta_dentro(a.interior, Some(meio + vec3(0.0, 4.0, 0.0))), "{:?}: em cima do telhado nao e' dentro", p.papel);
+            assert!(
+                esta_dentro(a.interior, Some(meio)),
+                "{:?}: o meio da casa nao conta como dentro",
+                p.papel
+            );
+            assert!(
+                !esta_dentro(a.interior, Some(meio + vec3(0.0, 4.0, 0.0))),
+                "{:?}: em cima do telhado nao e' dentro",
+                p.papel
+            );
             if let Some(px) = c.porta_local() {
                 let m = c.local_para_mundo(p.pos, p.yaw_q, ::glam::Vec3::new(px, 0.0, -1.0));
-                assert!(!esta_dentro(a.interior, Some(vec3(m.x, p.chao, m.z))), "{:?}: fora da porta conta como dentro", p.papel);
+                assert!(
+                    !esta_dentro(a.interior, Some(vec3(m.x, p.chao, m.z))),
+                    "{:?}: fora da porta conta como dentro",
+                    p.papel
+                );
             }
             casas += 1;
         }
         assert!(casas >= 5);
         // Cais e prop nao tem dentro.
         let prop = &ger.vila().props[0];
-        assert!(assar(&prop.construcao(), prop.pos, prop.yaw_q, prop.pos.y).interior.is_none());
+        assert!(assar(&prop.construcao(), prop.pos, prop.yaw_q, prop.pos.y)
+            .interior
+            .is_none());
     }
 
     /// O teto nao some nem volta de uma vez: anda ate' 1 entrando, volta a 0
@@ -666,7 +838,10 @@ mod tests {
             assert!(quadros < 1000);
         }
         let esperado = (DURACAO_DO_TETO / dt).ceil() as i32;
-        assert!((quadros - esperado).abs() <= 1, "entrar levou {quadros} quadros, esperado ~{esperado}");
+        assert!(
+            (quadros - esperado).abs() <= 1,
+            "entrar levou {quadros} quadros, esperado ~{esperado}"
+        );
         // Sai no meio da volta: inverte sem salto.
         for _ in 0..5 {
             p = avanca_teto(p, false, dt);
@@ -674,7 +849,10 @@ mod tests {
         assert!(p > 0.0 && p < 1.0);
         let meio = p;
         p = avanca_teto(p, true, dt);
-        assert!((p - meio).abs() <= dt / DURACAO_DO_TETO + 1e-5, "inverter pulou");
+        assert!(
+            (p - meio).abs() <= dt / DURACAO_DO_TETO + 1e-5,
+            "inverter pulou"
+        );
         while p > 0.0 {
             p = avanca_teto(p, false, dt);
         }
@@ -692,13 +870,25 @@ mod tests {
         let kind = ((yaw / std::f32::consts::TAU * 256.0).round() as u16 % 256) + 1;
         let esperado = shared::npc_yaw_de_kind(kind).unwrap();
         let mut w = crate::world::World::default();
-        let meta = EntityMeta { id: EntityId(7), tag: EntityTag::Npc, name: None, hp_max: 1, faction: None, kind, nivel: 1 };
-        let estado = EntityState::quantize(EntityId(7), ::glam::Vec2::ZERO, ::glam::Vec2::ZERO, 1, 0);
+        let meta = EntityMeta {
+            id: EntityId(7),
+            tag: EntityTag::Npc,
+            name: None,
+            hp_max: 1,
+            faction: None,
+            kind,
+            nivel: 1,
+        };
+        let estado =
+            EntityState::quantize(EntityId(7), ::glam::Vec2::ZERO, ::glam::Vec2::ZERO, 1, 0);
         w.apply(vec![meta], vec![estado], &[]);
         assert!((w.ents[&EntityId(7)].yaw - esperado).abs() < 1e-4);
         for _ in 0..30 {
             w.tick(1.0 / 30.0, &|_, _| 0.0);
         }
-        assert!((w.ents[&EntityId(7)].yaw - esperado).abs() < 1e-4, "parado virou");
+        assert!(
+            (w.ents[&EntityId(7)].yaw - esperado).abs() < 1e-4,
+            "parado virou"
+        );
     }
 }

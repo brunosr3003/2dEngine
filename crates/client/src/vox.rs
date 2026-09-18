@@ -18,8 +18,8 @@
 
 use std::collections::HashMap;
 
-use macroquad::prelude::*;
 use macroquad::models::{Mesh, Vertex};
+use macroquad::prelude::*;
 
 /// Um modelo cru, do jeito que estava no arquivo.
 pub struct VoxModel {
@@ -183,7 +183,14 @@ pub fn parse_nomeado(data: &[u8]) -> Result<Vec<(String, VoxModel)>, String> {
                     cells[x + y * size[0] + z * size[0] * size[1]] = c;
                 }
             }
-            (nome, VoxModel { size, cells, palette })
+            (
+                nome,
+                VoxModel {
+                    size,
+                    cells,
+                    palette,
+                },
+            )
         })
         .collect())
 }
@@ -194,7 +201,11 @@ pub fn na_cor(base: &VoxModel, cores: &[[u8; 3]; 4]) -> VoxModel {
     for (k, c) in cores.iter().enumerate() {
         palette[241 + k] = [c[0], c[1], c[2], 255];
     }
-    VoxModel { size: base.size, cells: base.cells.clone(), palette }
+    VoxModel {
+        size: base.size,
+        cells: base.cells.clone(),
+        palette,
+    }
 }
 
 fn default_palette() -> [[u8; 4]; 256] {
@@ -253,28 +264,26 @@ fn malha(model: &VoxModel, scale: f32, origem: [f32; 3]) -> Vec<Mesh> {
     let mut verts: Vec<Vertex> = Vec::new();
     let mut idx: Vec<u16> = Vec::new();
 
-    let mut push_quad = |verts: &mut Vec<Vertex>,
-                         idx: &mut Vec<u16>,
-                         corners: [[f32; 3]; 4],
-                         color: [u8; 4]| {
-        let b = verts.len() as u16;
-        for c in corners {
-            verts.push(Vertex {
-                // voxel (x, y, z) -> mundo (-x, z, y). ROTACAO, nao espelho:
-                // trocar so' dois eixos, como era antes, e' reflexo — e tudo
-                // que o modelo tinha na mao direita aparecia na esquerda.
-                position: vec3(
-                    (cx - c[0]) * scale,
-                    (c[2] - base) * scale,
-                    (c[1] - cy) * scale,
-                ),
-                uv: vec2(0.0, 0.0),
-                color,
-                normal: Vec4::ZERO,
-            });
-        }
-        idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
-    };
+    let mut push_quad =
+        |verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, corners: [[f32; 3]; 4], color: [u8; 4]| {
+            let b = verts.len() as u16;
+            for c in corners {
+                verts.push(Vertex {
+                    // voxel (x, y, z) -> mundo (-x, z, y). ROTACAO, nao espelho:
+                    // trocar so' dois eixos, como era antes, e' reflexo — e tudo
+                    // que o modelo tinha na mao direita aparecia na esquerda.
+                    position: vec3(
+                        (cx - c[0]) * scale,
+                        (c[2] - base) * scale,
+                        (c[1] - cy) * scale,
+                    ),
+                    uv: vec2(0.0, 0.0),
+                    color,
+                    normal: Vec4::ZERO,
+                });
+            }
+            idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
+        };
 
     for axis in 0..3usize {
         let u = (axis + 1) % 3;
@@ -354,12 +363,7 @@ fn malha(model: &VoxModel, scale: f32, origem: [f32; 3]) -> Vec<Mesh> {
                         c[v] = (j + dj) as f32;
                         c
                     };
-                    let mut quad = [
-                        corner(0, 0),
-                        corner(w, 0),
-                        corner(w, h),
-                        corner(0, h),
-                    ];
+                    let mut quad = [corner(0, 0), corner(w, 0), corner(w, h), corner(0, h)];
                     // A ORDEM dos cantos decide o que a placa de video
                     // considera frente. Com o descarte de face de costas
                     // ligado, malha enrolada ao contrario nao mostra um erro
@@ -381,8 +385,8 @@ fn malha(model: &VoxModel, scale: f32, origem: [f32; 3]) -> Vec<Mesh> {
                     let mut n = [0f32; 3];
                     n[axis] = if positive { 1.0 } else { -1.0 };
                     let n = mundo(n);
-                    let geom = (mundo(quad[1]) - mundo(quad[0]))
-                        .cross(mundo(quad[2]) - mundo(quad[0]));
+                    let geom =
+                        (mundo(quad[1]) - mundo(quad[0])).cross(mundo(quad[2]) - mundo(quad[0]));
                     if geom.dot(n) < 0.0 {
                         quad.swap(1, 3);
                     }
@@ -413,7 +417,11 @@ fn malha(model: &VoxModel, scale: f32, origem: [f32; 3]) -> Vec<Mesh> {
     }
 
     if !verts.is_empty() {
-        out.push(Mesh { vertices: verts, indices: idx, texture: None });
+        out.push(Mesh {
+            vertices: verts,
+            indices: idx,
+            texture: None,
+        });
     }
     out
 }
@@ -422,7 +430,10 @@ fn malha(model: &VoxModel, scale: f32, origem: [f32; 3]) -> Vec<Mesh> {
 /// `None` se o arquivo nao tem marcador — arma sem pega nao tem onde a mao
 /// fechar, e desenhar em volta de um canto qualquer poria a espada no ombro.
 pub fn modelo_de_arma(bytes: &[u8]) -> Option<(VoxModel, [f32; 3])> {
-    let mut m = parse(bytes).ok()?.into_iter().max_by_key(|m| m.cells.iter().filter(|c| **c != 0).count())?;
+    let mut m = parse(bytes)
+        .ok()?
+        .into_iter()
+        .max_by_key(|m| m.cells.iter().filter(|c| **c != 0).count())?;
     let i = m.cells.iter().position(|c| *c == 255)?;
     m.cells[i] = 0;
     let [sx, sy, _] = m.size;
@@ -476,19 +487,27 @@ async fn ler_asset(caminho: &str) -> Result<Vec<u8>, String> {
 #[cfg(target_os = "android")]
 async fn ler_asset(caminho: &str) -> Result<Vec<u8>, String> {
     let no_apk = caminho.strip_prefix("assets/").unwrap_or(caminho);
-    macroquad::file::load_file(no_apk).await.map_err(|e| format!("{no_apk}: {e:?}"))
+    macroquad::file::load_file(no_apk)
+        .await
+        .map_err(|e| format!("{no_apk}: {e:?}"))
 }
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 async fn ler_asset(caminho: &str) -> Result<Vec<u8>, String> {
-    macroquad::file::load_file(caminho).await.map_err(|e| format!("{e:?}"))
+    macroquad::file::load_file(caminho)
+        .await
+        .map_err(|e| format!("{e:?}"))
 }
 
 /// Caminho de um asset dentro da pasta do app. Absoluto (ex. `MMO_VOX=/x`)
 /// fica como esta'.
 pub fn no_bundle(pasta_do_app: &std::path::Path, caminho: &str) -> std::path::PathBuf {
     let p = std::path::Path::new(caminho);
-    if p.is_absolute() { p.to_path_buf() } else { pasta_do_app.join(p) }
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        pasta_do_app.join(p)
+    }
 }
 
 impl VoxCache {
@@ -502,12 +521,21 @@ impl VoxCache {
     /// indices reservados do tier (241-244, docs/character create.md) e vira
     /// `<nome>_<sufixo>`. E' a regra "o tier e' uma cor, nao um modelo" — um
     /// arquivo, varias malhas geradas no carregamento.
-    pub async fn load_variantes(&mut self, name: &str, scale: f32, variantes: &[(&str, [[u8; 3]; 4])]) -> Option<()> {
+    pub async fn load_variantes(
+        &mut self,
+        name: &str,
+        scale: f32,
+        variantes: &[(&str, [[u8; 3]; 4])],
+    ) -> Option<()> {
         let bytes = ler_vox(&format!("{name}.vox")).await?;
-        let base = parse(&bytes).ok()?.into_iter().max_by_key(|m| m.cells.iter().filter(|c| **c != 0).count())?;
+        let base = parse(&bytes)
+            .ok()?
+            .into_iter()
+            .max_by_key(|m| m.cells.iter().filter(|c| **c != 0).count())?;
         for (sufixo, cores) in variantes {
             let m = na_cor(&base, cores);
-            self.meshes.insert(format!("{name}_{sufixo}"), mesh(&m, scale));
+            self.meshes
+                .insert(format!("{name}_{sufixo}"), mesh(&m, scale));
         }
         println!("[vox] {name}: {} cores", variantes.len());
         Some(())
@@ -568,7 +596,11 @@ impl VoxCache {
         ];
         // mesma troca de eixos da `malha`: voxel (x, y, z) -> mundo (-x, z, y)
         let no_mundo = |p: [f32; 3]| {
-            vec3((origem[0] - p[0]) * escala, (p[2] - origem[2]) * escala, (p[1] - origem[1]) * escala)
+            vec3(
+                (origem[0] - p[0]) * escala,
+                (p[2] - origem[2]) * escala,
+                (p[1] - origem[1]) * escala,
+            )
         };
         // A cabeca gira no pivo do PESCOCO quando ha' um: com pivos proprios,
         // o mesmo angulo nos dois abria uma fresta entre eles.
@@ -580,21 +612,33 @@ impl VoxCache {
         let mut out = Vec::new();
         let mut tris = 0usize;
         for ((nome, m), (l, h)) in pecas.iter().zip(&caixas) {
-            let Some(junta) = junta_de(nome) else { continue };
+            let Some(junta) = junta_de(nome) else {
+                continue;
+            };
             let pv = match (junta, pescoco) {
                 (Junta::Cabeca, Some(p)) => p,
                 _ => pivo_vox(junta, *l, *h),
             };
             let malhas = mesh_na_origem(m, escala, origem);
             tris += malhas.iter().map(|x| x.indices.len() / 3).sum::<usize>();
-            out.push(PecaDeBicho { junta, pivo: no_mundo(pv), malhas });
+            out.push(PecaDeBicho {
+                junta,
+                pivo: no_mundo(pv),
+                malhas,
+            });
         }
         // A patada precisa do focinho (ate' onde o arco passa) e do ombro da
         // pata que golpeia (de onde ele parte).
         let frente = (hi[1] + 1) as f32 - origem[1];
         let ombro = out
             .iter()
-            .find(|p| p.junta == Junta::Pata { frente: true, esq: false })
+            .find(|p| {
+                p.junta
+                    == Junta::Pata {
+                        frente: true,
+                        esq: false,
+                    }
+            })
             .map_or(vec3(0.0, altura * 0.3, 0.0), |p| p.pivo);
         let anat = crate::bicho::Anatomia {
             altura,
@@ -605,7 +649,8 @@ impl VoxCache {
         };
         let n = out.len();
         println!("[vox] {name}: {n} pecas, {tris} triangulos");
-        self.bichos.insert(name.to_string(), Bicho { anat, pecas: out });
+        self.bichos
+            .insert(name.to_string(), Bicho { anat, pecas: out });
         Some(n)
     }
 
@@ -617,7 +662,12 @@ impl VoxCache {
     /// peca vira malha em volta do proprio pivo, que `pivo` responde pelo
     /// nome. `None` quando o arquivo nao existe — o cliente cai no modelo
     /// inteiro de antes.
-    pub async fn load_rig(&mut self, name: &str, scale: f32, pivo: impl Fn(&str) -> [f32; 3]) -> Option<usize> {
+    pub async fn load_rig(
+        &mut self,
+        name: &str,
+        scale: f32,
+        pivo: impl Fn(&str) -> [f32; 3],
+    ) -> Option<usize> {
         let bytes = ler_vox(&format!("{name}.vox")).await?;
         let pecas = parse_nomeado(&bytes).ok()?;
         let mut mapa = HashMap::new();
@@ -653,13 +703,17 @@ impl VoxCache {
         .await
     }
 
-    async fn carrega(&mut self, name: &str, escala: impl Fn(&VoxModel) -> f32) -> Option<&Vec<Mesh>> {
+    async fn carrega(
+        &mut self,
+        name: &str,
+        escala: impl Fn(&VoxModel) -> f32,
+    ) -> Option<&Vec<Mesh>> {
         if !self.meshes.contains_key(name) {
             let bytes = ler_vox(&format!("{name}.vox")).await?;
             let models = parse(&bytes).ok()?;
-            let m = models.into_iter().max_by_key(|m| {
-                m.cells.iter().filter(|c| **c != 0).count()
-            })?;
+            let m = models
+                .into_iter()
+                .max_by_key(|m| m.cells.iter().filter(|c| **c != 0).count())?;
             let meshes = mesh(&m, escala(&m));
             let tris: usize = meshes.iter().map(|x| x.indices.len() / 3).sum();
             println!("[vox] {name}: {} malha(s), {tris} triangulos", meshes.len());
@@ -680,16 +734,28 @@ mod testes {
         let app = std::path::Path::new("/private/var/containers/Bundle/Application/X/Tempest.app");
         assert_eq!(
             no_bundle(app, "assets/vox/personagem/corpo.vox"),
-            app.join("assets").join("vox").join("personagem").join("corpo.vox")
+            app.join("assets")
+                .join("vox")
+                .join("personagem")
+                .join("corpo.vox")
         );
-        assert_eq!(no_bundle(app, "/tmp/vox/a.vox"), std::path::PathBuf::from("/tmp/vox/a.vox"));
+        assert_eq!(
+            no_bundle(app, "/tmp/vox/a.vox"),
+            std::path::PathBuf::from("/tmp/vox/a.vox")
+        );
         let raiz = format!("{}/../../assets/vox", env!("CARGO_MANIFEST_DIR"));
         for rig in [crate::render3d::RIG_CORPO, crate::render3d::RIG_CHAPEU] {
             let arquivo = format!("{raiz}/{rig}.vox");
-            assert!(std::path::Path::new(&arquivo).exists(), "a previa usa {arquivo}, que nao existe");
+            assert!(
+                std::path::Path::new(&arquivo).exists(),
+                "a previa usa {arquivo}, que nao existe"
+            );
         }
         let script = include_str!("../../../scripts/build-ios.sh");
-        assert!(script.contains("assets/vox"), "build-ios.sh nao copia assets/vox pro app");
+        assert!(
+            script.contains("assets/vox"),
+            "build-ios.sh nao copia assets/vox pro app"
+        );
     }
 
     /// TODO modelo tem que olhar pro `+Y` do voxel, que a malha manda pro
@@ -730,8 +796,7 @@ mod testes {
                 Detalhe::Azul => c[2] > 180 && c[0] < 80,
                 Detalhe::Branco => c[0] > 240 && c[1] > 240 && c[2] > 240,
             };
-            let ocupado: Vec<usize> =
-                (0..m.cells.len()).filter(|&i| m.cells[i] != 0).collect();
+            let ocupado: Vec<usize> = (0..m.cells.len()).filter(|&i| m.cells[i] != 0).collect();
             // So' a cabeca: o terco de cima do que esta' OCUPADO, e nao da
             // caixa. A caixa do lobo e' 128 de lado com o bicho ocupando uma
             // parte dela; medir pela caixa poe o corte no lugar errado.
@@ -828,15 +893,22 @@ mod testes_orientacao {
                 (volume - cheios).abs() < 0.5,
                 "{arquivo}: volume {volume:.0} contra {cheios:.0} voxels — \
                  {} ",
-                if volume < 0.0 { "malha pelo avesso" } else { "malha com buraco" }
+                if volume < 0.0 {
+                    "malha pelo avesso"
+                } else {
+                    "malha com buraco"
+                }
             );
             println!("{arquivo}: {tris} triangulos, volume {volume:.0} = {cheios:.0} voxels");
         }
     }
 
     fn arquivo(rel: &str) -> Vec<u8> {
-        std::fs::read(format!("{}/../../assets/vox/{rel}", env!("CARGO_MANIFEST_DIR")))
-            .unwrap_or_else(|e| panic!("{rel}: {e}"))
+        std::fs::read(format!(
+            "{}/../../assets/vox/{rel}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap_or_else(|e| panic!("{rel}: {e}"))
     }
 
     /// O corpo do personagem chega com as dez pecas, pelo NOME — e' o nome
@@ -844,16 +916,30 @@ mod testes_orientacao {
     #[test]
     fn o_corpo_chega_com_as_dez_pecas_nomeadas() {
         let pecas = parse_nomeado(&arquivo("personagem/corpo.vox")).unwrap();
-        let nomes: std::collections::HashSet<&str> = pecas.iter().map(|(n, _)| n.as_str()).collect();
-        for n in ["cabeca", "torso", "braco_d", "antebraco_d", "braco_e", "antebraco_e",
-                  "coxa_d", "canela_d", "coxa_e", "canela_e"] {
+        let nomes: std::collections::HashSet<&str> =
+            pecas.iter().map(|(n, _)| n.as_str()).collect();
+        for n in [
+            "cabeca",
+            "torso",
+            "braco_d",
+            "antebraco_d",
+            "braco_e",
+            "antebraco_e",
+            "coxa_d",
+            "canela_d",
+            "coxa_e",
+            "canela_e",
+        ] {
             assert!(nomes.contains(n), "falta a peca {n}; vieram {nomes:?}");
         }
         for (n, m) in &pecas {
             assert!(m.cells.iter().any(|c| *c != 0), "peca {n} vazia");
         }
         let chapeu = parse_nomeado(&arquivo("personagem/cabelo_01.vox")).unwrap();
-        assert!(chapeu.iter().any(|(n, _)| n == "cabelo"), "o chapeu nao se chama `cabelo`");
+        assert!(
+            chapeu.iter().any(|(n, _)| n == "cabelo"),
+            "o chapeu nao se chama `cabelo`"
+        );
     }
 
     /// A malha e' ROTACAO, nao espelho: o que esta' no X maior do voxel (a
@@ -865,17 +951,28 @@ mod testes_orientacao {
         let mut palette = default_palette();
         palette[1] = [255, 0, 0, 255];
         palette[2] = [0, 0, 255, 255];
-        let m = VoxModel { size: [3, 1, 1], cells: vec![1, 0, 2], palette };
+        let m = VoxModel {
+            size: [3, 1, 1],
+            cells: vec![1, 0, 2],
+            palette,
+        };
         let malhas = mesh(&m, 1.0);
         let media = |azul: bool| -> f32 {
-            let xs: Vec<f32> = malhas.iter().flat_map(|mm| mm.vertices.iter())
+            let xs: Vec<f32> = malhas
+                .iter()
+                .flat_map(|mm| mm.vertices.iter())
                 .filter(|v| (v.color[2] > v.color[0]) == azul)
-                .map(|v| v.position.x).collect();
+                .map(|v| v.position.x)
+                .collect();
             xs.iter().sum::<f32>() / xs.len() as f32
         };
         // O azul esta' no X MAIOR do voxel.
-        assert!(media(true) < 0.0 && media(false) > 0.0,
-            "azul em {:.2}, vermelho em {:.2}", media(true), media(false));
+        assert!(
+            media(true) < 0.0 && media(false) > 0.0,
+            "azul em {:.2}, vermelho em {:.2}",
+            media(true),
+            media(false)
+        );
     }
 
     /// Toda malha de modelo do jogo tem que estar INTEIRA: índice dentro dos
@@ -884,32 +981,65 @@ mod testes_orientacao {
     /// emaranhado de fiapos quebra pelo menos uma dessas três.
     #[test]
     fn toda_malha_de_bicho_e_de_gente_esta_inteira() {
-        let nomes = ["player", "pistoleiro", "mago", "arqueiro",
-                     "lobo_pequeno", "urso", "tigre", "owlbear", "lobo"];
+        let nomes = [
+            "player",
+            "pistoleiro",
+            "mago",
+            "arqueiro",
+            "lobo_pequeno",
+            "urso",
+            "tigre",
+            "owlbear",
+            "lobo",
+        ];
         for nome in nomes {
             let modelos = parse(&arquivo(&format!("{nome}.vox"))).unwrap();
-            let m = modelos.into_iter().max_by_key(|m| m.cells.iter().filter(|c| **c != 0).count()).unwrap();
+            let m = modelos
+                .into_iter()
+                .max_by_key(|m| m.cells.iter().filter(|c| **c != 0).count())
+                .unwrap();
             let diag = ((m.size[0].pow(2) + m.size[1].pow(2) + m.size[2].pow(2)) as f32).sqrt();
             let malhas = mesh(&m, 1.0);
             let mut volume = 0.0f64;
             for (k, mm) in malhas.iter().enumerate() {
                 let n = mm.vertices.len();
-                assert!(mm.indices.len() % 3 == 0, "{nome} malha {k}: indices nao fecham triangulo");
-                assert!(mm.indices.len() <= 5_000, "{nome} malha {k}: {} indices, acima do lote", mm.indices.len());
+                assert!(
+                    mm.indices.len() % 3 == 0,
+                    "{nome} malha {k}: indices nao fecham triangulo"
+                );
+                assert!(
+                    mm.indices.len() <= 5_000,
+                    "{nome} malha {k}: {} indices, acima do lote",
+                    mm.indices.len()
+                );
                 for t in mm.indices.chunks(3) {
                     for &i in t {
-                        assert!((i as usize) < n, "{nome} malha {k}: indice {i} fora de {n} vertices");
+                        assert!(
+                            (i as usize) < n,
+                            "{nome} malha {k}: indice {i} fora de {n} vertices"
+                        );
                     }
-                    let (a, b, c) = (mm.vertices[t[0] as usize].position, mm.vertices[t[1] as usize].position,
-                                     mm.vertices[t[2] as usize].position);
+                    let (a, b, c) = (
+                        mm.vertices[t[0] as usize].position,
+                        mm.vertices[t[1] as usize].position,
+                        mm.vertices[t[2] as usize].position,
+                    );
                     for (p, q) in [(a, b), (b, c), (c, a)] {
-                        assert!(p.distance(q) <= diag + 0.01, "{nome} malha {k}: aresta de {:.1} num modelo de {:.1}", p.distance(q), diag);
+                        assert!(
+                            p.distance(q) <= diag + 0.01,
+                            "{nome} malha {k}: aresta de {:.1} num modelo de {:.1}",
+                            p.distance(q),
+                            diag
+                        );
                     }
                     volume += (a.dot(b.cross(c)) / 6.0) as f64;
                 }
             }
             println!("{nome:13} {} malhas, volume {volume:.0}", malhas.len());
-            assert!(volume > 0.0, "{nome}: volume {volume:.1} — malha pelo avesso");
+            assert!(
+                volume > 0.0,
+                "{nome}: volume {volume:.1} — malha pelo avesso"
+            );
         }
     }
 
@@ -927,14 +1057,24 @@ mod testes_orientacao {
                 if n.is_empty() {
                     continue;
                 }
-                assert!(crate::bicho::junta_de(n).is_some(), "{nome}: peca {n} sem junta");
+                assert!(
+                    crate::bicho::junta_de(n).is_some(),
+                    "{nome}: peca {n} sem junta"
+                );
                 for mm in mesh_na_origem(m, 1.0, [0.0; 3]) {
-                    assert!(mm.indices.len() <= 5_000, "{nome}/{n}: {} indices", mm.indices.len());
+                    assert!(
+                        mm.indices.len() <= 5_000,
+                        "{nome}/{n}: {} indices",
+                        mm.indices.len()
+                    );
                     tris += mm.indices.len() / 3;
                 }
             }
             println!("{nome}: {tris} triangulos");
-            assert!(tris > 100 && tris <= 3_000, "{nome}: {tris} triangulos — mob comum e' leve");
+            assert!(
+                tris > 100 && tris <= 3_000,
+                "{nome}: {tris} triangulos — mob comum e' leve"
+            );
         }
     }
 
@@ -942,12 +1082,19 @@ mod testes_orientacao {
     /// a cor da malha — e' isso que pinta o saque pela raridade.
     #[test]
     fn o_saquinho_muda_de_cor_pela_faixa_do_tier() {
-        let m = parse(&arquivo("saque.vox")).unwrap().into_iter().next().unwrap();
+        let m = parse(&arquivo("saque.vox"))
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         let usa = |k: u8| m.cells.iter().any(|c| *c == k);
         assert!((241..=244).any(usa), "o saquinho nao tem faixa de tier");
         let cor = |cores: [[u8; 3]; 4]| -> std::collections::HashSet<[u8; 3]> {
-            mesh(&na_cor(&m, &cores), 1.0).iter().flat_map(|mm| mm.vertices.iter())
-                .map(|v| [v.color[0], v.color[1], v.color[2]]).collect()
+            mesh(&na_cor(&m, &cores), 1.0)
+                .iter()
+                .flat_map(|mm| mm.vertices.iter())
+                .map(|v| [v.color[0], v.color[1], v.color[2]])
+                .collect()
         };
         let verde = cor([[96, 226, 138]; 4]);
         let roxo = cor([[186, 112, 246]; 4]);
@@ -960,10 +1107,19 @@ mod testes_orientacao {
             let caminho = format!("{}/../../assets/vox/{nome}.vox", env!("CARGO_MANIFEST_DIR"));
             let dados = std::fs::read(&caminho).unwrap_or_else(|_| panic!("falta {caminho}"));
             let pecas = parse_nomeado(&dados).unwrap();
-            let juntas: Vec<_> = pecas.iter().filter_map(|(n, _)| crate::bicho::junta_de(n)).collect();
+            let juntas: Vec<_> = pecas
+                .iter()
+                .filter_map(|(n, _)| crate::bicho::junta_de(n))
+                .collect();
             assert_eq!(juntas.len(), pecas.len(), "{nome}: peca sem junta");
-            assert!(juntas.contains(&crate::bicho::Junta::Tronco), "{nome}: sem tronco");
-            let patas = juntas.iter().filter(|j| matches!(j, crate::bicho::Junta::Pata { .. })).count();
+            assert!(
+                juntas.contains(&crate::bicho::Junta::Tronco),
+                "{nome}: sem tronco"
+            );
+            let patas = juntas
+                .iter()
+                .filter(|j| matches!(j, crate::bicho::Junta::Pata { .. }))
+                .count();
             assert_eq!(patas, 4, "{nome}");
         }
     }
@@ -973,27 +1129,41 @@ mod testes_orientacao {
     #[test]
     fn as_ferramentas_tem_pega_e_cabem_no_lote() {
         let tris = |nome: &str| -> usize {
-            let caminho = format!("{}/../../assets/vox/personagem/{nome}.vox", env!("CARGO_MANIFEST_DIR"));
+            let caminho = format!(
+                "{}/../../assets/vox/personagem/{nome}.vox",
+                env!("CARGO_MANIFEST_DIR")
+            );
             let dados = std::fs::read(&caminho).unwrap_or_else(|_| panic!("falta {caminho}"));
-            let (m, pega) = modelo_de_arma(&dados).unwrap_or_else(|| panic!("{nome}: sem marcador na pega"));
+            let (m, pega) =
+                modelo_de_arma(&dados).unwrap_or_else(|| panic!("{nome}: sem marcador na pega"));
             assert!(pega.iter().all(|v| *v > 0.0), "{nome}: pega fora da tela");
             let malhas = mesh_na_origem(&m, 0.04, pega);
-            assert!(malhas.iter().all(|x| x.indices.len() <= 5000), "{nome}: malha fora do lote");
+            assert!(
+                malhas.iter().all(|x| x.indices.len() <= 5000),
+                "{nome}: malha fora do lote"
+            );
             malhas.iter().map(|x| x.indices.len() / 3).sum()
         };
         let espada = tris("espada");
         for nome in crate::rig::FERRAMENTAS {
             let t = tris(nome);
-            assert!(t > 0 && t <= espada * 2, "{nome}: {t} triangulos (espada {espada})");
+            assert!(
+                t > 0 && t <= espada * 2,
+                "{nome}: {t} triangulos (espada {espada})"
+            );
         }
     }
 
     #[test]
     fn a_espada_e_o_escudo_tem_a_pega_marcada() {
         for nome in ["espada", "escudo"] {
-            let caminho = format!("{}/../../assets/vox/personagem/{nome}.vox", env!("CARGO_MANIFEST_DIR"));
+            let caminho = format!(
+                "{}/../../assets/vox/personagem/{nome}.vox",
+                env!("CARGO_MANIFEST_DIR")
+            );
             let dados = std::fs::read(&caminho).unwrap_or_else(|_| panic!("falta {caminho}"));
-            let (m, pega) = modelo_de_arma(&dados).unwrap_or_else(|| panic!("{nome}: sem marcador na pega"));
+            let (m, pega) =
+                modelo_de_arma(&dados).unwrap_or_else(|| panic!("{nome}: sem marcador na pega"));
             assert!(m.cells.iter().all(|c| *c != 255), "{nome}: sobrou marcador");
             assert!(pega.iter().all(|v| *v > 0.0));
         }
@@ -1005,27 +1175,43 @@ mod testes_orientacao {
     #[test]
     fn todo_npc_tem_as_dez_pecas_e_cabe_no_lote() {
         let tris = |rel: &str| -> usize {
-            parse_nomeado(&arquivo(&format!("{rel}.vox"))).unwrap().iter()
+            parse_nomeado(&arquivo(&format!("{rel}.vox")))
+                .unwrap()
+                .iter()
                 .filter(|(n, _)| !n.is_empty())
                 .flat_map(|(_, m)| mesh_na_origem(m, 1.0, [0.0; 3]))
                 .map(|m| m.indices.len() / 3)
                 .sum()
         };
         let base = tris("humanoides/mago");
-        let corpo: Vec<&str> = crate::rig::PECAS.iter().map(|p| p.0).filter(|n| *n != "cabelo").collect();
+        let corpo: Vec<&str> = crate::rig::PECAS
+            .iter()
+            .map(|p| p.0)
+            .filter(|n| *n != "cabelo")
+            .collect();
         for nome in crate::render3d::MODELOS_DE_NPC {
             let pecas = parse_nomeado(&arquivo(&format!("{nome}.vox"))).unwrap();
             for p in &corpo {
-                assert!(pecas.iter().any(|(n, _)| n == p), "{nome}: falta a peca {p}");
+                assert!(
+                    pecas.iter().any(|(n, _)| n == p),
+                    "{nome}: falta a peca {p}"
+                );
             }
             for (peca, m) in &pecas {
                 for mm in mesh_na_origem(m, 1.0, [0.0; 3]) {
-                    assert!(mm.indices.len() <= 5_000, "{nome}/{peca}: {} indices", mm.indices.len());
+                    assert!(
+                        mm.indices.len() <= 5_000,
+                        "{nome}/{peca}: {} indices",
+                        mm.indices.len()
+                    );
                 }
             }
             let t = tris(nome);
             println!("{nome:22} {t} triangulos (mago {base})");
-            assert!(t <= base * 3, "{nome}: {t} triangulos, mais que o triplo do mago ({base})");
+            assert!(
+                t <= base * 3,
+                "{nome}: {t} triangulos, mais que o triplo do mago ({base})"
+            );
         }
     }
 
@@ -1036,17 +1222,31 @@ mod testes_orientacao {
         for papel in (0u8..=40).chain([127, 255]) {
             for id in [0u64, 1, 2, 7] {
                 let nome = crate::render3d::rig_do_npc(papel, id);
-                assert!(crate::render3d::MODELOS_DE_NPC.contains(&nome), "papel {papel}: {nome} fora da lista");
+                assert!(
+                    crate::render3d::MODELOS_DE_NPC.contains(&nome),
+                    "papel {papel}: {nome} fora da lista"
+                );
                 let _ = arquivo(&format!("{nome}.vox"));
             }
         }
         use shared::construcao::Papel;
-        assert_eq!(crate::render3d::rig_do_npc(Papel::Alquimista as u8, 0), "npcs/alquimista");
-        assert_eq!(crate::render3d::rig_do_npc(Papel::Estaleiro as u8, 0), "npcs/capitao");
-        assert_eq!(crate::render3d::rig_do_npc(crate::render3d::PAPEL_MISSOES, 0), "npcs/mestre_missoes");
+        assert_eq!(
+            crate::render3d::rig_do_npc(Papel::Alquimista as u8, 0),
+            "npcs/alquimista"
+        );
+        assert_eq!(
+            crate::render3d::rig_do_npc(Papel::Estaleiro as u8, 0),
+            "npcs/capitao"
+        );
+        assert_eq!(
+            crate::render3d::rig_do_npc(crate::render3d::PAPEL_MISSOES, 0),
+            "npcs/mestre_missoes"
+        );
         // Morador varia pelo id.
         let casa = Papel::Casa as u8;
-        let variados: std::collections::HashSet<_> = (0..3).map(|id| crate::render3d::rig_do_npc(casa, id)).collect();
+        let variados: std::collections::HashSet<_> = (0..3)
+            .map(|id| crate::render3d::rig_do_npc(casa, id))
+            .collect();
         assert_eq!(variados.len(), 3);
     }
 
@@ -1054,7 +1254,9 @@ mod testes_orientacao {
     /// `Papel::Missoes` entra no enum.
     #[test]
     fn o_papel_de_missoes_e_o_seguinte() {
-        assert_eq!(crate::render3d::PAPEL_MISSOES, shared::construcao::Papel::Alquimista as u8 + 1);
+        assert_eq!(
+            crate::render3d::PAPEL_MISSOES,
+            shared::construcao::Papel::Alquimista as u8 + 1
+        );
     }
 }
-

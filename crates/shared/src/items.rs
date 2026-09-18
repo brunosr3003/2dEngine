@@ -31,11 +31,11 @@ use serde::{Deserialize, Serialize};
 /// Tier (1–5) a partir do item level.
 pub fn tier_from_ilvl(item_level: u16) -> u8 {
     match item_level {
-        0..=10  => 1,
+        0..=10 => 1,
         11..=25 => 2,
         26..=45 => 3,
         46..=70 => 4,
-        _       => 5,
+        _ => 5,
     }
 }
 
@@ -92,13 +92,21 @@ pub struct StatRange {
 }
 
 impl StatRange {
-    pub const fn new(min: i32, max: i32) -> Self { Self { min, max } }
-    pub const fn zero() -> Self { Self { min: 0, max: 0 } }
-    pub fn is_zero(&self) -> bool { self.min == 0 && self.max == 0 }
+    pub const fn new(min: i32, max: i32) -> Self {
+        Self { min, max }
+    }
+    pub const fn zero() -> Self {
+        Self { min: 0, max: 0 }
+    }
+    pub fn is_zero(&self) -> bool {
+        self.min == 0 && self.max == 0
+    }
 
     /// Roll dentro do range. Retorna inteiro arredondado.
     pub fn roll(&self, r: f32, rarity_mult: f32) -> i32 {
-        if self.is_zero() { return 0; }
+        if self.is_zero() {
+            return 0;
+        }
         let lo = self.min as f32;
         let hi = self.max as f32;
         let raw = lo + r * (hi - lo); // [min, max)
@@ -111,19 +119,22 @@ impl StatRange {
 /// instances no drop.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ItemTemplate {
-    pub hp_max:        StatRange,
-    pub mp_max:        StatRange,
+    pub hp_max: StatRange,
+    pub mp_max: StatRange,
     pub attack_damage: StatRange,
-    pub dex:           StatRange,
-    pub wis:           StatRange,
-    pub defense:       StatRange,
+    pub dex: StatRange,
+    pub wis: StatRange,
+    pub defense: StatRange,
 }
 
 impl ItemTemplate {
     pub fn has_any_range(&self) -> bool {
-        !(self.hp_max.is_zero() && self.mp_max.is_zero()
-            && self.attack_damage.is_zero() && self.dex.is_zero()
-            && self.wis.is_zero() && self.defense.is_zero())
+        !(self.hp_max.is_zero()
+            && self.mp_max.is_zero()
+            && self.attack_damage.is_zero()
+            && self.dex.is_zero()
+            && self.wis.is_zero()
+            && self.defense.is_zero())
     }
 }
 
@@ -134,25 +145,87 @@ pub fn item_template(item_id: u16) -> ItemTemplate {
     let r = StatRange::new;
     match item_id {
         // === a arma: o conjunto ===
-        ESPADA_E_ESCUDO => ItemTemplate { attack_damage: r(8, 16), hp_max: r(10, 30), ..Default::default() },
-        KATANA => ItemTemplate { attack_damage: r(8, 15), dex: r(5, 12), ..Default::default() },
-        PISTOLAS => ItemTemplate { attack_damage: r(7, 14), dex: r(6, 13), ..Default::default() },
-        ANEL_MAGICO => ItemTemplate { attack_damage: r(6, 13), mp_max: r(30, 70), wis: r(4, 10), ..Default::default() },
+        ESPADA_E_ESCUDO => ItemTemplate {
+            attack_damage: r(8, 16),
+            hp_max: r(10, 30),
+            ..Default::default()
+        },
+        KATANA => ItemTemplate {
+            attack_damage: r(8, 15),
+            dex: r(5, 12),
+            ..Default::default()
+        },
+        PISTOLAS => ItemTemplate {
+            attack_damage: r(7, 14),
+            dex: r(6, 13),
+            ..Default::default()
+        },
+        ANEL_MAGICO => ItemTemplate {
+            attack_damage: r(6, 13),
+            mp_max: r(30, 70),
+            wis: r(4, 10),
+            ..Default::default()
+        },
         // === a secundaria de cada conjunto ===
-        MANTO_DO_GUERREIRO => ItemTemplate { hp_max: r(20, 50), defense: r(3, 8), ..Default::default() },
-        BAINHA => ItemTemplate { attack_damage: r(1, 4), dex: r(3, 8), ..Default::default() },
-        COLDRE => ItemTemplate { attack_damage: r(2, 5), dex: r(3, 7), ..Default::default() },
-        MANTO_DO_MAGO => ItemTemplate { mp_max: r(25, 60), wis: r(3, 8), ..Default::default() },
+        MANTO_DO_GUERREIRO => ItemTemplate {
+            hp_max: r(20, 50),
+            defense: r(3, 8),
+            ..Default::default()
+        },
+        BAINHA => ItemTemplate {
+            attack_damage: r(1, 4),
+            dex: r(3, 8),
+            ..Default::default()
+        },
+        COLDRE => ItemTemplate {
+            attack_damage: r(2, 5),
+            dex: r(3, 7),
+            ..Default::default()
+        },
+        MANTO_DO_MAGO => ItemTemplate {
+            mp_max: r(25, 60),
+            wis: r(3, 8),
+            ..Default::default()
+        },
         // === armadura: o peso e' a escolha (o dano/resistencia do peso sai de
         // `peso_da_armadura`, aqui e' so' o que ela rola) ===
-        ARMADURA_LEVE => ItemTemplate { hp_max: r(15, 35), defense: r(1, 4), dex: r(2, 6), ..Default::default() },
-        ARMADURA_MEDIA => ItemTemplate { hp_max: r(30, 60), defense: r(4, 9), ..Default::default() },
-        ARMADURA_PESADA => ItemTemplate { hp_max: r(60, 120), defense: r(8, 16), ..Default::default() },
+        ARMADURA_LEVE => ItemTemplate {
+            hp_max: r(15, 35),
+            defense: r(1, 4),
+            dex: r(2, 6),
+            ..Default::default()
+        },
+        ARMADURA_MEDIA => ItemTemplate {
+            hp_max: r(30, 60),
+            defense: r(4, 9),
+            ..Default::default()
+        },
+        ARMADURA_PESADA => ItemTemplate {
+            hp_max: r(60, 120),
+            defense: r(8, 16),
+            ..Default::default()
+        },
         // === acessorios: iguais pra todo mundo ===
-        BRINCO => ItemTemplate { attack_damage: r(1, 4), dex: r(2, 6), ..Default::default() },
-        AMULETO => ItemTemplate { mp_max: r(20, 50), wis: r(2, 6), ..Default::default() },
-        BRACELETE => ItemTemplate { attack_damage: r(2, 5), defense: r(1, 3), ..Default::default() },
-        CINTO => ItemTemplate { hp_max: r(20, 45), defense: r(1, 3), ..Default::default() },
+        BRINCO => ItemTemplate {
+            attack_damage: r(1, 4),
+            dex: r(2, 6),
+            ..Default::default()
+        },
+        AMULETO => ItemTemplate {
+            mp_max: r(20, 50),
+            wis: r(2, 6),
+            ..Default::default()
+        },
+        BRACELETE => ItemTemplate {
+            attack_damage: r(2, 5),
+            defense: r(1, 3),
+            ..Default::default()
+        },
+        CINTO => ItemTemplate {
+            hp_max: r(20, 45),
+            defense: r(1, 3),
+            ..Default::default()
+        },
         _ => ItemTemplate::default(),
     }
 }
@@ -171,7 +244,7 @@ pub const MAX_AFFIXES: usize = 4;
 pub struct ItemInstance {
     /// TIER do item (1–5). Nome `rarity` mantido por compat de wire/DB; o
     /// sistema de raridade aleatória virou tier (ver `tier_from_ilvl`).
-    pub rarity:     u8,
+    pub rarity: u8,
     pub refinement: u8,
     /// Item Level — vem do enemy que dropou. Escala stats no roll
     /// (Fase C). Default 1 pra drops antigos.
@@ -179,13 +252,13 @@ pub struct ItemInstance {
     pub item_level: u16,
     /// Level mínimo do player pra equipar. None = sem requirement.
     #[serde(default)]
-    pub level_req:  Option<u16>,
-    pub hp_max:        i32,
-    pub mp_max:        i32,
+    pub level_req: Option<u16>,
+    pub hp_max: i32,
+    pub mp_max: i32,
     pub attack_damage: i32,
-    pub dex:           i32,
-    pub wis:           i32,
-    pub defense:       i32,
+    pub dex: i32,
+    pub wis: i32,
+    pub defense: i32,
     /// Affixes (Fase B). Magic=1, Rare=2, Epic=3, Legendary=4. Posicoes
     /// vazias têm name_id=0.
     #[serde(default)]
@@ -202,17 +275,19 @@ pub struct ItemInstance {
     pub vinculado: bool,
 }
 
-fn default_ilvl() -> u16 { 1 }
+fn default_ilvl() -> u16 {
+    1
+}
 
 /// Slot de affix — name_id=0 = vazio.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct AffixSlot {
-    pub name_id:    u16,  // 0 = vazio
-    pub stat:       u8,   // AffixStat as u8
-    pub tier:       u8,
-    pub value:      i32,
-    pub value_pct:  f32,
-    pub is_prefix:  bool,
+    pub name_id: u16, // 0 = vazio
+    pub stat: u8,     // AffixStat as u8
+    pub tier: u8,
+    pub value: i32,
+    pub value_pct: f32,
+    pub is_prefix: bool,
 }
 
 impl AffixSlot {
@@ -226,7 +301,9 @@ impl AffixSlot {
             is_prefix: a.is_prefix,
         }
     }
-    pub fn is_empty(&self) -> bool { self.name_id == 0 }
+    pub fn is_empty(&self) -> bool {
+        self.name_id == 0
+    }
 
     pub fn stat(&self) -> AffixStat {
         match self.stat {
@@ -270,7 +347,12 @@ pub fn refino_fixo(item_level: u16) -> i32 {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AffixStat {
-    Hp = 0, Mp = 1, Attack = 2, Defense = 3, Dex = 4, Wis = 5,
+    Hp = 0,
+    Mp = 1,
+    Attack = 2,
+    Defense = 3,
+    Dex = 4,
+    Wis = 5,
     /// % crit_chance flat add (ex: +0.02 = +2%).
     CritChance = 6,
     /// % attack_speed_mult flat add (ex: +0.10 = +10% atk speed).
@@ -284,9 +366,9 @@ pub enum AffixStat {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Affix {
     pub stat: AffixStat,
-    pub value: i32,        // pra stats inteiros (Hp/Mp/Atk/Def/Dex/Wis)
-    pub value_pct: f32,    // pra % stats (Crit/AtkSpd/MoveSpd/HpRegen)
-    pub tier: u8,          // 1..3 (T1=fraco, T3=forte)
+    pub value: i32,     // pra stats inteiros (Hp/Mp/Atk/Def/Dex/Wis)
+    pub value_pct: f32, // pra % stats (Crit/AtkSpd/MoveSpd/HpRegen)
+    pub tier: u8,       // 1..3 (T1=fraco, T3=forte)
     pub is_prefix: bool,
     /// Index na affix table — usado pra recuperar o nome em runtime.
     pub name_id: u16,
@@ -295,59 +377,179 @@ pub struct Affix {
 /// Tabela de affix. Cada entrada define um possível roll. ranges são
 /// (min, max) por tier (T1/T2/T3). Affixes ID < 1000 são prefixes.
 pub struct AffixDef {
-    pub name_id:   u16,
-    pub display:   &'static str,
-    pub stat:      AffixStat,
+    pub name_id: u16,
+    pub display: &'static str,
+    pub stat: AffixStat,
     pub is_prefix: bool,
     /// Range (min, max) por tier (T1, T2, T3).
-    pub tiers:     [(i32, i32); 3],
+    pub tiers: [(i32, i32); 3],
     /// Se for % stat, multiplicador pra dividir os tiers (caso seja x0.001 etc).
-    pub pct_div:   f32,
+    pub pct_div: f32,
 }
 
 pub const AFFIX_TABLE: &[AffixDef] = &[
     // ── Prefixes (name_id 1..999) ──
-    AffixDef { name_id: 1,  display: "Forte",     stat: AffixStat::Attack,  is_prefix: true,
-               tiers: [(2,5), (5,10), (10,18)],   pct_div: 0.0 },
-    AffixDef { name_id: 2,  display: "Brutal",    stat: AffixStat::Attack,  is_prefix: true,
-               tiers: [(8,15), (15,25), (25,40)], pct_div: 0.0 },
-    AffixDef { name_id: 3,  display: "Resistente",stat: AffixStat::Hp,      is_prefix: true,
-               tiers: [(10,25), (25,50), (50,90)],pct_div: 0.0 },
-    AffixDef { name_id: 4,  display: "Fortificado",stat: AffixStat::Defense,is_prefix: true,
-               tiers: [(2,5), (5,10), (10,18)],   pct_div: 0.0 },
-    AffixDef { name_id: 5,  display: "Mágico",    stat: AffixStat::Mp,      is_prefix: true,
-               tiers: [(15,30), (30,60), (60,110)], pct_div: 0.0 },
-    AffixDef { name_id: 6,  display: "Ágil",      stat: AffixStat::Dex,     is_prefix: true,
-               tiers: [(2,5), (5,9), (9,15)],     pct_div: 0.0 },
-    AffixDef { name_id: 7,  display: "Sábio",     stat: AffixStat::Wis,     is_prefix: true,
-               tiers: [(2,5), (5,9), (9,15)],     pct_div: 0.0 },
-    AffixDef { name_id: 8,  display: "Implacável",stat: AffixStat::AttackSpeed, is_prefix: true,
-               tiers: [(3,7), (7,12), (12,20)],   pct_div: 100.0 }, // %
-    AffixDef { name_id: 9,  display: "Crítico",   stat: AffixStat::CritChance,  is_prefix: true,
-               tiers: [(2,5), (5,8), (8,15)],     pct_div: 100.0 }, // %
-    AffixDef { name_id: 10, display: "Veloz",     stat: AffixStat::MoveSpeed,   is_prefix: true,
-               tiers: [(2,5), (5,8), (8,12)],     pct_div: 100.0 }, // %
+    AffixDef {
+        name_id: 1,
+        display: "Forte",
+        stat: AffixStat::Attack,
+        is_prefix: true,
+        tiers: [(2, 5), (5, 10), (10, 18)],
+        pct_div: 0.0,
+    },
+    AffixDef {
+        name_id: 2,
+        display: "Brutal",
+        stat: AffixStat::Attack,
+        is_prefix: true,
+        tiers: [(8, 15), (15, 25), (25, 40)],
+        pct_div: 0.0,
+    },
+    AffixDef {
+        name_id: 3,
+        display: "Resistente",
+        stat: AffixStat::Hp,
+        is_prefix: true,
+        tiers: [(10, 25), (25, 50), (50, 90)],
+        pct_div: 0.0,
+    },
+    AffixDef {
+        name_id: 4,
+        display: "Fortificado",
+        stat: AffixStat::Defense,
+        is_prefix: true,
+        tiers: [(2, 5), (5, 10), (10, 18)],
+        pct_div: 0.0,
+    },
+    AffixDef {
+        name_id: 5,
+        display: "Mágico",
+        stat: AffixStat::Mp,
+        is_prefix: true,
+        tiers: [(15, 30), (30, 60), (60, 110)],
+        pct_div: 0.0,
+    },
+    AffixDef {
+        name_id: 6,
+        display: "Ágil",
+        stat: AffixStat::Dex,
+        is_prefix: true,
+        tiers: [(2, 5), (5, 9), (9, 15)],
+        pct_div: 0.0,
+    },
+    AffixDef {
+        name_id: 7,
+        display: "Sábio",
+        stat: AffixStat::Wis,
+        is_prefix: true,
+        tiers: [(2, 5), (5, 9), (9, 15)],
+        pct_div: 0.0,
+    },
+    AffixDef {
+        name_id: 8,
+        display: "Implacável",
+        stat: AffixStat::AttackSpeed,
+        is_prefix: true,
+        tiers: [(3, 7), (7, 12), (12, 20)],
+        pct_div: 100.0,
+    }, // %
+    AffixDef {
+        name_id: 9,
+        display: "Crítico",
+        stat: AffixStat::CritChance,
+        is_prefix: true,
+        tiers: [(2, 5), (5, 8), (8, 15)],
+        pct_div: 100.0,
+    }, // %
+    AffixDef {
+        name_id: 10,
+        display: "Veloz",
+        stat: AffixStat::MoveSpeed,
+        is_prefix: true,
+        tiers: [(2, 5), (5, 8), (8, 12)],
+        pct_div: 100.0,
+    }, // %
     // ── Suffixes (name_id 1000..1999) ──
-    AffixDef { name_id: 1001, display: "do Urso",     stat: AffixStat::Hp,      is_prefix: false,
-               tiers: [(15,30), (30,60), (60,100)], pct_div: 0.0 },
-    AffixDef { name_id: 1002, display: "do Touro",    stat: AffixStat::Attack,  is_prefix: false,
-               tiers: [(3,7), (7,13), (13,22)],   pct_div: 0.0 },
-    AffixDef { name_id: 1003, display: "da Tartaruga",stat: AffixStat::Defense, is_prefix: false,
-               tiers: [(3,6), (6,11), (11,18)],   pct_div: 0.0 },
-    AffixDef { name_id: 1004, display: "do Lince",    stat: AffixStat::Dex,     is_prefix: false,
-               tiers: [(3,7), (7,11), (11,17)],   pct_div: 0.0 },
-    AffixDef { name_id: 1005, display: "do Mago",     stat: AffixStat::Wis,     is_prefix: false,
-               tiers: [(3,7), (7,11), (11,17)],   pct_div: 0.0 },
-    AffixDef { name_id: 1006, display: "do Vento",    stat: AffixStat::MoveSpeed,is_prefix: false,
-               tiers: [(2,5), (5,8), (8,12)],     pct_div: 100.0 },
-    AffixDef { name_id: 1007, display: "da Fúria",    stat: AffixStat::AttackSpeed, is_prefix: false,
-               tiers: [(3,7), (7,12), (12,20)],   pct_div: 100.0 },
-    AffixDef { name_id: 1008, display: "do Assassino",stat: AffixStat::CritChance, is_prefix: false,
-               tiers: [(2,5), (5,8), (8,15)],     pct_div: 100.0 },
-    AffixDef { name_id: 1009, display: "do Manancial",stat: AffixStat::Mp,      is_prefix: false,
-               tiers: [(15,40), (40,80), (80,140)],pct_div: 0.0 },
-    AffixDef { name_id: 1010, display: "da Regeneração",stat: AffixStat::HpRegen, is_prefix: false,
-               tiers: [(1,3), (3,5), (5,9)],      pct_div: 10.0 }, // 0.1/0.3/0.5/0.9 hp/s
+    AffixDef {
+        name_id: 1001,
+        display: "do Urso",
+        stat: AffixStat::Hp,
+        is_prefix: false,
+        tiers: [(15, 30), (30, 60), (60, 100)],
+        pct_div: 0.0,
+    },
+    AffixDef {
+        name_id: 1002,
+        display: "do Touro",
+        stat: AffixStat::Attack,
+        is_prefix: false,
+        tiers: [(3, 7), (7, 13), (13, 22)],
+        pct_div: 0.0,
+    },
+    AffixDef {
+        name_id: 1003,
+        display: "da Tartaruga",
+        stat: AffixStat::Defense,
+        is_prefix: false,
+        tiers: [(3, 6), (6, 11), (11, 18)],
+        pct_div: 0.0,
+    },
+    AffixDef {
+        name_id: 1004,
+        display: "do Lince",
+        stat: AffixStat::Dex,
+        is_prefix: false,
+        tiers: [(3, 7), (7, 11), (11, 17)],
+        pct_div: 0.0,
+    },
+    AffixDef {
+        name_id: 1005,
+        display: "do Mago",
+        stat: AffixStat::Wis,
+        is_prefix: false,
+        tiers: [(3, 7), (7, 11), (11, 17)],
+        pct_div: 0.0,
+    },
+    AffixDef {
+        name_id: 1006,
+        display: "do Vento",
+        stat: AffixStat::MoveSpeed,
+        is_prefix: false,
+        tiers: [(2, 5), (5, 8), (8, 12)],
+        pct_div: 100.0,
+    },
+    AffixDef {
+        name_id: 1007,
+        display: "da Fúria",
+        stat: AffixStat::AttackSpeed,
+        is_prefix: false,
+        tiers: [(3, 7), (7, 12), (12, 20)],
+        pct_div: 100.0,
+    },
+    AffixDef {
+        name_id: 1008,
+        display: "do Assassino",
+        stat: AffixStat::CritChance,
+        is_prefix: false,
+        tiers: [(2, 5), (5, 8), (8, 15)],
+        pct_div: 100.0,
+    },
+    AffixDef {
+        name_id: 1009,
+        display: "do Manancial",
+        stat: AffixStat::Mp,
+        is_prefix: false,
+        tiers: [(15, 40), (40, 80), (80, 140)],
+        pct_div: 0.0,
+    },
+    AffixDef {
+        name_id: 1010,
+        display: "da Regeneração",
+        stat: AffixStat::HpRegen,
+        is_prefix: false,
+        tiers: [(1, 3), (3, 5), (5, 9)],
+        pct_div: 10.0,
+    }, // 0.1/0.3/0.5/0.9 hp/s
 ];
 
 pub fn affix_def(name_id: u16) -> Option<&'static AffixDef> {
@@ -356,15 +558,38 @@ pub fn affix_def(name_id: u16) -> Option<&'static AffixDef> {
 
 impl Affix {
     pub fn roll<F: FnMut() -> f32>(rng: &mut F, is_prefix: bool, item_tier: u8) -> Option<Self> {
-        let pool: Vec<&AffixDef> = AFFIX_TABLE.iter().filter(|a| a.is_prefix == is_prefix).collect();
-        if pool.is_empty() { return None; }
+        let pool: Vec<&AffixDef> = AFFIX_TABLE
+            .iter()
+            .filter(|a| a.is_prefix == is_prefix)
+            .collect();
+        if pool.is_empty() {
+            return None;
+        }
         let pick = &pool[(rng() * pool.len() as f32) as usize];
         // Força do affix (T1 fraco → T3 forte) ponderada pelo tier do item.
         let tier_idx = match item_tier {
             1 | 2 => 0,
-            3     => if rng() < 0.5 { 0 } else { 1 },
-            4     => if rng() < 0.6 { 1 } else { 2 },
-            _     => if rng() < 0.3 { 1 } else { 2 },
+            3 => {
+                if rng() < 0.5 {
+                    0
+                } else {
+                    1
+                }
+            }
+            4 => {
+                if rng() < 0.6 {
+                    1
+                } else {
+                    2
+                }
+            }
+            _ => {
+                if rng() < 0.3 {
+                    1
+                } else {
+                    2
+                }
+            }
         };
         let (lo, hi) = pick.tiers[tier_idx];
         let raw = lo as f32 + rng() * (hi - lo) as f32;
@@ -401,21 +626,31 @@ impl ItemInstance {
     /// Roll uma instance usando um template já obtido (do DB cache no server).
     /// `item_level` define o nível (boss=alto, mob comum=baixo). None se
     /// o template não tem nenhum range (item não-equipável).
-    pub fn roll_with_template<F: FnMut() -> f32>(tpl: ItemTemplate, item_level: u16, mut rng: F) -> Option<Self> {
-        if !tpl.has_any_range() { return None; }
+    pub fn roll_with_template<F: FnMut() -> f32>(
+        tpl: ItemTemplate,
+        item_level: u16,
+        mut rng: F,
+    ) -> Option<Self> {
+        if !tpl.has_any_range() {
+            return None;
+        }
         let tier = tier_from_ilvl(item_level);
         let mult = tier_stat_mult(tier) * ilvl_scale(item_level);
         let mut inst = ItemInstance {
-            rarity:     tier, // campo `rarity` guarda o TIER (1–5)
+            rarity: tier, // campo `rarity` guarda o TIER (1–5)
             refinement: 0,
             item_level,
-            level_req:  if item_level > 5 { Some(item_level / 2) } else { None },
-            hp_max:        tpl.hp_max.roll(rng(), mult),
-            mp_max:        tpl.mp_max.roll(rng(), mult),
+            level_req: if item_level > 5 {
+                Some(item_level / 2)
+            } else {
+                None
+            },
+            hp_max: tpl.hp_max.roll(rng(), mult),
+            mp_max: tpl.mp_max.roll(rng(), mult),
             attack_damage: tpl.attack_damage.roll(rng(), mult),
-            dex:           tpl.dex.roll(rng(), mult),
-            wis:           tpl.wis.roll(rng(), mult),
-            defense:       tpl.defense.roll(rng(), mult),
+            dex: tpl.dex.roll(rng(), mult),
+            wis: tpl.wis.roll(rng(), mult),
+            defense: tpl.defense.roll(rng(), mult),
             affixes: [AffixSlot::default(); MAX_AFFIXES],
             sockets: sockets_for_tier(tier),
             socketed_gems: [0; 3],
@@ -452,26 +687,34 @@ impl ItemInstance {
         let m = self.refine_mult();
         let (r, u) = (self.refinement as i32, refino_fixo(self.item_level));
         // Percentual sobre o rolado + fixo por nivel, so' se a peca tem o atributo.
-        let com = |v: i32, fixo: i32| if v == 0 { 0 } else { (v as f32 * m).round() as i32 + fixo * r };
+        let com = |v: i32, fixo: i32| {
+            if v == 0 {
+                0
+            } else {
+                (v as f32 * m).round() as i32 + fixo * r
+            }
+        };
         let mut b = crate::constants::EquipBonus {
-            hp_max:        com(self.hp_max, 2 * u),
-            mp_max:        com(self.mp_max, 2 * u),
+            hp_max: com(self.hp_max, 2 * u),
+            mp_max: com(self.mp_max, 2 * u),
             attack_damage: com(self.attack_damage, u),
-            dex:           com(self.dex, 0),
-            wis:           com(self.wis, 0),
-            defense:       com(self.defense, u),
+            dex: com(self.dex, 0),
+            wis: com(self.wis, 0),
+            defense: com(self.defense, u),
         };
         // Affixes flat também recebem refinement.
         for a in &self.affixes {
-            if a.is_empty() { continue; }
+            if a.is_empty() {
+                continue;
+            }
             let v = (a.value as f32 * m).round() as i32;
             match a.stat() {
-                AffixStat::Hp       => b.hp_max += v,
-                AffixStat::Mp       => b.mp_max += v,
-                AffixStat::Attack   => b.attack_damage += v,
-                AffixStat::Defense  => b.defense += v,
-                AffixStat::Dex      => b.dex += v,
-                AffixStat::Wis      => b.wis += v,
+                AffixStat::Hp => b.hp_max += v,
+                AffixStat::Mp => b.mp_max += v,
+                AffixStat::Attack => b.attack_damage += v,
+                AffixStat::Defense => b.defense += v,
+                AffixStat::Dex => b.dex += v,
+                AffixStat::Wis => b.wis += v,
                 _ => {}
             }
         }
@@ -482,15 +725,19 @@ impl ItemInstance {
     /// fixos como rolaram). Retorna tuple
     /// (crit_chance, atk_speed, move_speed, hp_regen).
     pub fn effective_pct_bonus(&self) -> (f32, f32, f32, f32) {
-        let mut crit = 0.0; let mut atks = 0.0;
-        let mut mov  = 0.0; let mut hpr  = 0.0;
+        let mut crit = 0.0;
+        let mut atks = 0.0;
+        let mut mov = 0.0;
+        let mut hpr = 0.0;
         for a in &self.affixes {
-            if a.is_empty() { continue; }
+            if a.is_empty() {
+                continue;
+            }
             match a.stat() {
-                AffixStat::CritChance  => crit += a.value_pct,
+                AffixStat::CritChance => crit += a.value_pct,
                 AffixStat::AttackSpeed => atks += a.value_pct,
-                AffixStat::MoveSpeed   => mov  += a.value_pct,
-                AffixStat::HpRegen     => hpr  += a.value_pct,
+                AffixStat::MoveSpeed => mov += a.value_pct,
+                AffixStat::HpRegen => hpr += a.value_pct,
                 _ => {}
             }
         }
@@ -515,15 +762,9 @@ pub fn ilvl_scale(item_level: u16) -> f32 {
 // `set_bonus(set_id, n)`. Não-stackable: cada peça única (anel + amuleto
 // contam como 2 peças se ambos do set).
 
-
-
-
-
-
 // ── Fase D: Sockets/Gems ────────────────────────────────────────────────
 // Gems têm um stat fixo. Inserir gema num socket adiciona o stat.
 // Socket count vem do template do item (tier rarity define max sockets).
-
 
 /// Quantos sockets um item tem baseado no tier: T1/T2=0, T3=1, T4=2, T5=3.
 pub fn sockets_for_tier(tier: u8) -> u8 {
@@ -543,7 +784,8 @@ mod testes_do_refino {
     /// pode arredondar pra nada (era o caso com so' +5%).
     #[test]
     fn cada_nivel_de_refino_aumenta_a_peca() {
-        let mut armadura = ItemInstance::roll_for(crate::constants::item_id::ARMADURA_LEVE, 5, || 0.5).unwrap();
+        let mut armadura =
+            ItemInstance::roll_for(crate::constants::item_id::ARMADURA_LEVE, 5, || 0.5).unwrap();
         armadura.hp_max = 13;
         armadura.mp_max = 0;
         armadura.attack_damage = 0;
@@ -554,18 +796,28 @@ mod testes_do_refino {
         for a in armadura.affixes.iter_mut() {
             *a = AffixSlot::default();
         }
-        let soma = |b: &crate::constants::EquipBonus| b.hp_max + b.mp_max + b.attack_damage * 10 + b.defense * 8 + (b.dex + b.wis) * 5;
+        let soma = |b: &crate::constants::EquipBonus| {
+            b.hp_max + b.mp_max + b.attack_damage * 10 + b.defense * 8 + (b.dex + b.wis) * 5
+        };
         armadura.refinement = 0;
         let mut antes = soma(&armadura.effective_bonus());
         for nivel in 1..=crate::forja::REFINO_MAX {
             armadura.refinement = nivel;
             let b = armadura.effective_bonus();
             assert!(soma(&b) > antes, "+{nivel} nao mudou a peca");
-            assert_eq!((b.attack_damage, b.mp_max, b.wis), (0, 0, 0), "refino criou atributo que a peca nao tem");
+            assert_eq!(
+                (b.attack_damage, b.mp_max, b.wis),
+                (0, 0, 0),
+                "refino criou atributo que a peca nao tem"
+            );
             antes = soma(&b);
         }
         armadura.refinement = 4;
         let b = armadura.effective_bonus();
-        assert_eq!((b.hp_max, b.defense, b.dex), (25, 5, 3), "a armadura cinza +4 do dono");
+        assert_eq!(
+            (b.hp_max, b.defense, b.dex),
+            (25, 5, 3),
+            "a armadura cinza +4 do dono"
+        );
     }
 }

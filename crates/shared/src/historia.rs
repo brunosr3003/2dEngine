@@ -23,7 +23,9 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::constants::item_id;
 use crate::construcao::Papel;
-use crate::quests::{alvo_de_coleta, alvo_de_mob, mob_kind, momento, objective_kind, quest_source, QuestDef};
+use crate::quests::{
+    alvo_de_coleta, alvo_de_mob, mob_kind, momento, objective_kind, quest_source, QuestDef,
+};
 
 /// Giver das missoes da historia. Nao e' NPC nenhum: fora de toda faixa de
 /// giver real, pra ninguem oferecer.
@@ -97,10 +99,30 @@ pub struct Capitulo {
 }
 
 pub const CAPITULOS: &[Capitulo] = &[
-    Capitulo { nome: "I · O Farol do Bosque", ilha: 0, primeiro: 700, ultimo: 718 },
-    Capitulo { nome: "II · O Farol Congelado", ilha: 1, primeiro: 719, ultimo: 736 },
-    Capitulo { nome: "III · Areias que Gritam", ilha: 2, primeiro: 737, ultimo: 751 },
-    Capitulo { nome: "IV · O Coração da Tempestade", ilha: 3, primeiro: 752, ultimo: 768 },
+    Capitulo {
+        nome: "I · O Farol do Bosque",
+        ilha: 0,
+        primeiro: 700,
+        ultimo: 718,
+    },
+    Capitulo {
+        nome: "II · O Farol Congelado",
+        ilha: 1,
+        primeiro: 719,
+        ultimo: 736,
+    },
+    Capitulo {
+        nome: "III · Areias que Gritam",
+        ilha: 2,
+        primeiro: 737,
+        ultimo: 751,
+    },
+    Capitulo {
+        nome: "IV · O Coração da Tempestade",
+        ilha: 3,
+        primeiro: 752,
+        ultimo: 768,
+    },
 ];
 
 // ─────────────────────────── construtores ───────────────────────────
@@ -119,7 +141,16 @@ const fn base(id: u16, title: &'static str, desc: &'static str, gold: u32, xp: u
 }
 
 #[allow(clippy::too_many_arguments)]
-const fn falar(id: u16, title: &'static str, desc: &'static str, papel: Papel, gold: u32, xp: u64, item: u16, qtd: u16) -> QuestDef {
+const fn falar(
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    papel: Papel,
+    gold: u32,
+    xp: u64,
+    item: u16,
+    qtd: u16,
+) -> QuestDef {
     QuestDef {
         obj_kind: objective_kind::TALK,
         obj_target: papel as u16,
@@ -137,8 +168,16 @@ const fn falar(id: u16, title: &'static str, desc: &'static str, papel: Papel, g
 /// impossivel — ver docs/HISTORIA.md.
 #[allow(clippy::too_many_arguments)]
 const fn falar_com_dois(
-    id: u16, title: &'static str, desc: &'static str, papel: Papel, gold: u32, xp: u64,
-    item: u16, qtd: u16, item2: u16, qtd2: u16,
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    papel: Papel,
+    gold: u32,
+    xp: u64,
+    item: u16,
+    qtd: u16,
+    item2: u16,
+    qtd2: u16,
 ) -> QuestDef {
     QuestDef {
         reward_item2: item2,
@@ -147,13 +186,34 @@ const fn falar_com_dois(
     }
 }
 
-const fn ir(id: u16, title: &'static str, desc: &'static str, p: u16, gold: u32, xp: u64) -> QuestDef {
-    QuestDef { obj_kind: objective_kind::LUGAR, obj_target: p, obj_count: 1, ..base(id, title, desc, gold, xp) }
+const fn ir(
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    p: u16,
+    gold: u32,
+    xp: u64,
+) -> QuestDef {
+    QuestDef {
+        obj_kind: objective_kind::LUGAR,
+        obj_target: p,
+        obj_count: 1,
+        ..base(id, title, desc, gold, xp)
+    }
 }
 
 /// Caca: missao de area, paga Pocao de Experiencia.
 #[allow(clippy::too_many_arguments)]
-const fn cacar(id: u16, title: &'static str, desc: &'static str, alvo: u16, n: u32, gold: u32, xp: u64, pocao: u16) -> QuestDef {
+const fn cacar(
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    alvo: u16,
+    n: u32,
+    gold: u32,
+    xp: u64,
+    pocao: u16,
+) -> QuestDef {
     QuestDef {
         obj_kind: objective_kind::KILL,
         obj_target: alvo,
@@ -169,7 +229,16 @@ const fn cacar(id: u16, title: &'static str, desc: &'static str, alvo: u16, n: u
 /// Quebrar pedra: missao de area, paga material da cor da faixa e Pocao de
 /// Experiencia.
 #[allow(clippy::too_many_arguments)]
-const fn coletar(id: u16, title: &'static str, desc: &'static str, n: u32, gold: u32, xp: u64, material: u16, qtd: u16) -> QuestDef {
+const fn coletar(
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    n: u32,
+    gold: u32,
+    xp: u64,
+    material: u16,
+    qtd: u16,
+) -> QuestDef {
     QuestDef {
         obj_kind: objective_kind::GATHER,
         obj_target: alvo_de_coleta::PEDRA,
@@ -184,7 +253,19 @@ const fn coletar(id: u16, title: &'static str, desc: &'static str, n: u32, gold:
 
 /// Cacar com recompensa escolhida (em vez da pocao + Pocao de Experiencia).
 #[allow(clippy::too_many_arguments)]
-const fn cacar_com(id: u16, title: &'static str, desc: &'static str, alvo: u16, n: u32, gold: u32, xp: u64, item: u16, qtd: u16, item2: u16, qtd2: u16) -> QuestDef {
+const fn cacar_com(
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    alvo: u16,
+    n: u32,
+    gold: u32,
+    xp: u64,
+    item: u16,
+    qtd: u16,
+    item2: u16,
+    qtd2: u16,
+) -> QuestDef {
     QuestDef {
         reward_item: item,
         reward_item_qty: qtd,
@@ -196,7 +277,19 @@ const fn cacar_com(id: u16, title: &'static str, desc: &'static str, alvo: u16, 
 
 /// Coletar (pedra OU arvore, `alvo_de_coleta`) com recompensa escolhida.
 #[allow(clippy::too_many_arguments)]
-const fn coletar_com(id: u16, title: &'static str, desc: &'static str, alvo: u16, n: u32, gold: u32, xp: u64, item: u16, qtd: u16, item2: u16, qtd2: u16) -> QuestDef {
+const fn coletar_com(
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    alvo: u16,
+    n: u32,
+    gold: u32,
+    xp: u64,
+    item: u16,
+    qtd: u16,
+    item2: u16,
+    qtd2: u16,
+) -> QuestDef {
     QuestDef {
         obj_target: alvo,
         reward_item2: item2,
@@ -208,7 +301,16 @@ const fn coletar_com(id: u16, title: &'static str, desc: &'static str, alvo: u16
 /// Vencer a dungeon `conteudo` (`shared::dungeon::CONTEUDOS`). O servidor so'
 /// conta a vitoria DAQUELA dungeon; o toque no rastreador abre o painel.
 #[allow(clippy::too_many_arguments)]
-const fn dungeon(id: u16, title: &'static str, desc: &'static str, conteudo: u16, gold: u32, xp: u64, item: u16, qtd: u16) -> QuestDef {
+const fn dungeon(
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    conteudo: u16,
+    gold: u32,
+    xp: u64,
+    item: u16,
+    qtd: u16,
+) -> QuestDef {
     QuestDef {
         obj_kind: objective_kind::DUNGEON,
         obj_target: conteudo,
@@ -220,11 +322,28 @@ const fn dungeon(id: u16, title: &'static str, desc: &'static str, conteudo: u16
 }
 
 const fn criar(id: u16, title: &'static str, desc: &'static str, gold: u32, xp: u64) -> QuestDef {
-    QuestDef { obj_kind: objective_kind::CRAFT, obj_target: 0, obj_count: 1, ..base(id, title, desc, gold, xp) }
+    QuestDef {
+        obj_kind: objective_kind::CRAFT,
+        obj_target: 0,
+        obj_count: 1,
+        ..base(id, title, desc, gold, xp)
+    }
 }
 
-const fn refinar(id: u16, title: &'static str, desc: &'static str, vezes: u32, gold: u32, xp: u64) -> QuestDef {
-    QuestDef { obj_kind: objective_kind::REFINE, obj_target: 0, obj_count: vezes, ..base(id, title, desc, gold, xp) }
+const fn refinar(
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    vezes: u32,
+    gold: u32,
+    xp: u64,
+) -> QuestDef {
+    QuestDef {
+        obj_kind: objective_kind::REFINE,
+        obj_target: 0,
+        obj_count: vezes,
+        ..base(id, title, desc, gold, xp)
+    }
 }
 
 const fn nivel(id: u16, title: &'static str, n: u32) -> QuestDef {
@@ -236,8 +355,20 @@ const fn nivel(id: u16, title: &'static str, n: u32) -> QuestDef {
     }
 }
 
-const fn viajar(id: u16, title: &'static str, desc: &'static str, ilha: u16, gold: u32, xp: u64) -> QuestDef {
-    QuestDef { obj_kind: objective_kind::VIAGEM, obj_target: ilha, obj_count: 1, ..base(id, title, desc, gold, xp) }
+const fn viajar(
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    ilha: u16,
+    gold: u32,
+    xp: u64,
+) -> QuestDef {
+    QuestDef {
+        obj_kind: objective_kind::VIAGEM,
+        obj_target: ilha,
+        obj_count: 1,
+        ..base(id, title, desc, gold, xp)
+    }
 }
 
 const VERDE: u16 = item_id::na_cor(item_id::STEEL, 2);
@@ -368,7 +499,10 @@ pub fn def_da_historia(id: u16) -> Option<&'static QuestDef> {
         return PASSOS.get(i as usize);
     }
     static CACHE: OnceLock<Mutex<HashMap<u16, &'static QuestDef>>> = OnceLock::new();
-    let mut cache = CACHE.get_or_init(|| Mutex::new(HashMap::new())).lock().ok()?;
+    let mut cache = CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .ok()?;
     if let Some(d) = cache.get(&id) {
         return Some(d);
     }
@@ -379,7 +513,9 @@ pub fn def_da_historia(id: u16) -> Option<&'static QuestDef> {
 
 /// O capitulo escrito do passo `id`, se for um.
 pub fn capitulo_escrito(id: u16) -> Option<&'static Capitulo> {
-    CAPITULOS.iter().find(|c| (c.primeiro..=c.ultimo).contains(&id))
+    CAPITULOS
+        .iter()
+        .find(|c| (c.primeiro..=c.ultimo).contains(&id))
 }
 
 /// Nome do capitulo do passo de indice `i` ("I · O Farol do Bosque",
@@ -398,7 +534,9 @@ pub fn numero_da_cronica(i: u32) -> u32 {
 
 /// Em que ilha o passo `id` acontece. Cronica: em qualquer uma (`None`).
 pub fn zona_do_passo(id: u16) -> Option<&'static str> {
-    capitulo_escrito(id).and_then(|c| crate::terreno::ARQUIPELAGO.get(c.ilha)).map(|d| d.zona)
+    capitulo_escrito(id)
+        .and_then(|c| crate::terreno::ARQUIPELAGO.get(c.ilha))
+        .map(|d| d.zona)
 }
 
 // ─────────────────────────── epilogo ───────────────────────────
@@ -425,7 +563,12 @@ fn cronica(k: u32) -> Option<QuestDef> {
     let escolhe = |v: &[&'static str]| v[(c as usize) % v.len()];
     let def = match j {
         0 => {
-            let t = escolhe(&["A caçada sem fim", "Feras da maré alta", "O rastro do trovão", "Sombras na mata"]);
+            let t = escolhe(&[
+                "A caçada sem fim",
+                "Feras da maré alta",
+                "O rastro do trovão",
+                "Sombras na mata",
+            ]);
             let q = 40 + 5 * (c % 12);
             QuestDef {
                 title: leak(format!("Crônica {n} · {t}")),
@@ -434,11 +577,17 @@ fn cronica(k: u32) -> Option<QuestDef> {
             }
         }
         1 => {
-            let t = escolhe(&["Pedras que cantam", "O veio da tormenta", "Minério do relâmpago"]);
+            let t = escolhe(&[
+                "Pedras que cantam",
+                "O veio da tormenta",
+                "Minério do relâmpago",
+            ]);
             let q = 30 + 2 * (c % 15);
             QuestDef {
                 title: leak(format!("Crônica {n} · {t}")),
-                desc: leak(format!("Os faróis bebem pedra de trovão. Quebre {q} pedras em qualquer veio.")),
+                desc: leak(format!(
+                    "Os faróis bebem pedra de trovão. Quebre {q} pedras em qualquer veio."
+                )),
                 ..coletar(id, "", "", q, gold, xp, AZUL, 4 + (c % 4) as u16)
             }
         }
@@ -461,20 +610,40 @@ fn cronica(k: u32) -> Option<QuestDef> {
         }
         4 => {
             let (p, t, d) = match c % 3 {
-                0 => (ponto::MIRANTE, "Vigia do mirante", "Suba ao mirante da ilha em que estiver e confira se o farol ainda brilha."),
-                1 => (ponto::COSTA, "A costa distante", "Barcos estranhos rondam a costa mais distante da ilha. Vá ver."),
-                _ => (ponto::CAIS, "Sinais no cais", "O Capitão acendeu um sinal na ponta do cais. Vá até lá."),
+                0 => (
+                    ponto::MIRANTE,
+                    "Vigia do mirante",
+                    "Suba ao mirante da ilha em que estiver e confira se o farol ainda brilha.",
+                ),
+                1 => (
+                    ponto::COSTA,
+                    "A costa distante",
+                    "Barcos estranhos rondam a costa mais distante da ilha. Vá ver.",
+                ),
+                _ => (
+                    ponto::CAIS,
+                    "Sinais no cais",
+                    "O Capitão acendeu um sinal na ponta do cais. Vá até lá.",
+                ),
             };
-            QuestDef { title: leak(format!("Crônica {n} · {t}")), ..ir(id, "", d, p, gold, xp) }
+            QuestDef {
+                title: leak(format!("Crônica {n} · {t}")),
+                ..ir(id, "", d, p, gold, xp)
+            }
         }
         _ => {
             if trava <= crate::constants::CHAR_LEVEL_CAP as u64 {
-                QuestDef { title: leak(format!("Crônica {n} · Alcance o nível {trava}")), ..nivel(id, "", trava as u32) }
+                QuestDef {
+                    title: leak(format!("Crônica {n} · Alcance o nível {trava}")),
+                    ..nivel(id, "", trava as u32)
+                }
             } else {
                 let q = 60;
                 QuestDef {
                     title: leak(format!("Crônica {n} · Guardião da Tempestade")),
-                    desc: leak(format!("No teto do poder, a guarda nunca acaba. Derrote {q} inimigos.")),
+                    desc: leak(format!(
+                        "No teto do poder, a guarda nunca acaba. Derrote {q} inimigos."
+                    )),
                     ..cacar(id, "", "", 0, q, gold, xp, item_id::GREATER_HEAL)
                 }
             }
@@ -646,7 +815,10 @@ pub fn ponto_da_historia(
             for gz in -passos..=passos {
                 for gx in -passos..=passos {
                     let q = Vec2::new(gx as f32, gz as f32) * (lado / passos as f32);
-                    if q.length() > lado || q.distance(c) < crate::terreno::Cidade::RAIO + 30.0 || agua(q.x, q.y) {
+                    if q.length() > lado
+                        || q.distance(c) < crate::terreno::Cidade::RAIO + 30.0
+                        || agua(q.x, q.y)
+                    {
                         continue;
                     }
                     let h = altura(q.x, q.y);
@@ -696,11 +868,22 @@ mod testes {
         for (i, d) in PASSOS.iter().enumerate() {
             assert_eq!(d.id, PRIMEIRO_ID + i as u16, "passo {i} fora de ordem");
             assert_eq!(d.source, quest_source::HISTORIA);
-            assert!(crate::quests::QUESTS.iter().all(|q| q.id != d.id), "{} colide com uma missao", d.id);
+            assert!(
+                crate::quests::QUESTS.iter().all(|q| q.id != d.id),
+                "{} colide com uma missao",
+                d.id
+            );
             assert!(capitulo_escrito(d.id).is_some(), "{} sem capitulo", d.id);
-            assert!(!d.title.is_empty() && !d.desc.is_empty(), "{} sem texto", d.id);
+            assert!(
+                !d.title.is_empty() && !d.desc.is_empty(),
+                "{} sem texto",
+                d.id
+            );
         }
-        assert_eq!(CAPITULOS.last().unwrap().ultimo as u32 + 1, PRIMEIRO_ID as u32 + total_escritos());
+        assert_eq!(
+            CAPITULOS.last().unwrap().ultimo as u32 + 1,
+            PRIMEIRO_ID as u32 + total_escritos()
+        );
         for c in CAPITULOS {
             let n = c.ultimo - c.primeiro + 1;
             assert!((12..=20).contains(&n), "{}: {n} passos", c.nome);
@@ -718,7 +901,13 @@ mod testes {
                 assert!(d.obj_count > ultima, "{}: trava fora de ordem", d.id);
                 ultima = d.obj_count;
                 let ilha = &ARQUIPELAGO[capitulo_escrito(d.id).unwrap().ilha];
-                assert!(d.obj_count <= ilha.nivel.1 + 5 && d.obj_count >= ilha.nivel.0, "{}: nivel {} fora da ilha {:?}", d.id, d.obj_count, ilha.nivel);
+                assert!(
+                    d.obj_count <= ilha.nivel.1 + 5 && d.obj_count >= ilha.nivel.0,
+                    "{}: nivel {} fora da ilha {:?}",
+                    d.id,
+                    d.obj_count,
+                    ilha.nivel
+                );
             }
             if d.obj_kind == objective_kind::VIAGEM {
                 let c = capitulo_escrito(d.id).unwrap();
@@ -746,23 +935,44 @@ mod testes {
                 let d = def_da_historia(id).unwrap();
                 match d.obj_kind {
                     objective_kind::TALK => {
-                        assert!(papeis.contains(&d.obj_target), "{id}: NPC {} nao existe na vila de {}", d.obj_target, def.zona);
+                        assert!(
+                            papeis.contains(&d.obj_target),
+                            "{id}: NPC {} nao existe na vila de {}",
+                            d.obj_target,
+                            def.zona
+                        );
                         let f = falas(id, momento::CONVERSA).unwrap();
-                        assert!(!f.is_empty() && f[0] != d.desc, "{id}: conversa sem falas escritas");
+                        assert!(
+                            !f.is_empty() && f[0] != d.desc,
+                            "{id}: conversa sem falas escritas"
+                        );
                     }
                     objective_kind::VIAGEM => {
-                        assert!(papeis.contains(&(Papel::Estaleiro as u16)), "{id}: sem Capitao do Porto");
+                        assert!(
+                            papeis.contains(&(Papel::Estaleiro as u16)),
+                            "{id}: sem Capitao do Porto"
+                        );
                     }
                     objective_kind::KILL if d.obj_target != 0 => {
                         let kind = d.obj_target - 1;
-                        assert!((kind as u32) < def.nivel.1 / 3 + 1, "{id}: kind {kind} nao nasce ate' o nivel {}", def.nivel.1);
+                        assert!(
+                            (kind as u32) < def.nivel.1 / 3 + 1,
+                            "{id}: kind {kind} nao nasce ate' o nivel {}",
+                            def.nivel.1
+                        );
                     }
                     objective_kind::LUGAR => {
                         let q = *pontos.entry(d.obj_target).or_insert_with(|| {
                             ponto_da_historia(d.obj_target, cidade, porto, raio, &altura, &agua)
-                                .unwrap_or_else(|| panic!("{id}: {} sem posicao", ponto::nome(d.obj_target)))
+                                .unwrap_or_else(|| {
+                                    panic!("{id}: {} sem posicao", ponto::nome(d.obj_target))
+                                })
                         });
-                        assert!(!agua(q.x, q.y), "{id}: {} na agua em {q:?}", ponto::nome(d.obj_target));
+                        assert!(
+                            !agua(q.x, q.y),
+                            "{id}: {} na agua em {q:?}",
+                            ponto::nome(d.obj_target)
+                        );
                         println!("{}: {} em {q:?}", def.zona, ponto::nome(d.obj_target));
                     }
                     _ => {}
@@ -784,17 +994,36 @@ mod testes {
         let mut dungeons = 0;
         for id in cap.primeiro..=cap.ultimo {
             let d = def_da_historia(id).unwrap();
-            assert_ne!(d.obj_kind, objective_kind::NIVEL, "{id}: trava de nivel no capitulo I");
+            assert_ne!(
+                d.obj_kind,
+                objective_kind::NIVEL,
+                "{id}: trava de nivel no capitulo I"
+            );
             let nivel = crate::constants::level_of_xp_with_mult(xp, mult);
             if d.obj_kind == objective_kind::DUNGEON {
-                let c = crate::dungeon::conteudo(d.obj_target).unwrap_or_else(|| panic!("{id}: dungeon {} nao existe", d.obj_target));
-                assert!(c.disponivel && c.zona == zona, "{id}: {} nao esta' aberta em {zona}", c.nome);
-                assert!(nivel >= c.nivel_min, "{id}: chega no nivel {nivel}, {} pede {}", c.nome, c.nivel_min);
+                let c = crate::dungeon::conteudo(d.obj_target)
+                    .unwrap_or_else(|| panic!("{id}: dungeon {} nao existe", d.obj_target));
+                assert!(
+                    c.disponivel && c.zona == zona,
+                    "{id}: {} nao esta' aberta em {zona}",
+                    c.nome
+                );
+                assert!(
+                    nivel >= c.nivel_min,
+                    "{id}: chega no nivel {nivel}, {} pede {}",
+                    c.nome,
+                    c.nivel_min
+                );
                 dungeons += 1;
             }
             if d.obj_kind == objective_kind::VIAGEM {
                 let destino = &ARQUIPELAGO[d.obj_target as usize];
-                assert!(nivel >= destino.nivel.0, "{id}: embarca no nivel {nivel}, {} comeca no {}", destino.nome, destino.nivel.0);
+                assert!(
+                    nivel >= destino.nivel.0,
+                    "{id}: embarca no nivel {nivel}, {} comeca no {}",
+                    destino.nome,
+                    destino.nivel.0
+                );
             }
             xp += d.reward_xp;
         }
@@ -813,7 +1042,10 @@ mod testes {
         let mut ganho: HashMap<u32, u32> = HashMap::new();
         for id in PRIMEIRO_ID..PASSO_DO_CRAFT {
             let d = def_da_historia(id).unwrap();
-            for (item, qtd) in [(d.reward_item, d.reward_item_qty), (d.reward_item2, d.reward_item2_qty)] {
+            for (item, qtd) in [
+                (d.reward_item, d.reward_item_qty),
+                (d.reward_item2, d.reward_item2_qty),
+            ] {
                 if item != 0 {
                     *ganho.entry(item as u32).or_default() += qtd as u32;
                 }
@@ -821,7 +1053,11 @@ mod testes {
         }
         for [item, qtd] in receita.inputs {
             let tem = ganho.get(&item).copied().unwrap_or(0);
-            assert!(tem >= qtd, "{}: a historia da' {tem} de {item}, a receita pede {qtd}", receita.name);
+            assert!(
+                tem >= qtd,
+                "{}: a historia da' {tem} de {item}, a receita pede {qtd}",
+                receita.name
+            );
         }
     }
 
@@ -832,10 +1068,22 @@ mod testes {
     #[test]
     fn a_chave_vem_no_passo_antes_do_craft() {
         let craft = def_da_historia(PASSO_DO_CRAFT).unwrap();
-        assert_eq!(craft.obj_kind, objective_kind::CRAFT, "{PASSO_DO_CRAFT} deixou de ser o passo de criar");
+        assert_eq!(
+            craft.obj_kind,
+            objective_kind::CRAFT,
+            "{PASSO_DO_CRAFT} deixou de ser o passo de criar"
+        );
         let chave = def_da_historia(PASSO_DO_CRAFT - 1).unwrap();
-        assert_eq!(chave.obj_kind, objective_kind::TALK, "o passo da chave deixou de ser conversa");
-        assert_eq!(chave.obj_target, Papel::Ferreiro as u16, "a chave saiu do Ferreiro");
+        assert_eq!(
+            chave.obj_kind,
+            objective_kind::TALK,
+            "o passo da chave deixou de ser conversa"
+        );
+        assert_eq!(
+            chave.obj_target,
+            Papel::Ferreiro as u16,
+            "a chave saiu do Ferreiro"
+        );
         let chaves = crate::item_id::todas_as_chaves();
         assert!(
             chaves.contains(&chave.reward_item) || chaves.contains(&chave.reward_item2),
@@ -864,17 +1112,29 @@ mod testes {
         for k in 0..600 {
             let d = cronica(k).unwrap();
             if d.obj_kind == objective_kind::NIVEL {
-                assert!(d.obj_count <= crate::constants::CHAR_LEVEL_CAP, "trava {} acima do teto", d.obj_count);
+                assert!(
+                    d.obj_count <= crate::constants::CHAR_LEVEL_CAP,
+                    "trava {} acima do teto",
+                    d.obj_count
+                );
                 assert_eq!(k % PASSOS_POR_CRONICA, PASSOS_POR_CRONICA - 1);
             }
         }
         // A primeira trava do epilogo vem depois da ultima escrita.
-        let ultima_escrita = PASSOS.iter().filter(|d| d.obj_kind == objective_kind::NIVEL).map(|d| d.obj_count).max().unwrap();
+        let ultima_escrita = PASSOS
+            .iter()
+            .filter(|d| d.obj_kind == objective_kind::NIVEL)
+            .map(|d| d.obj_count)
+            .max()
+            .unwrap();
         assert!(cronica(PASSOS_POR_CRONICA - 1).unwrap().obj_count > ultima_escrita);
         assert_eq!(nome_do_capitulo(0), CAPITULOS[0].nome);
         assert!(nome_do_capitulo(n + 7).contains("· 2"));
         // Missoes de area pagam Pocao de Experiencia.
         assert_eq!(cronica(0).unwrap().reward_item2, item_id::XP_POTION);
-        assert_eq!(crate::quests::quest_by_id(PRIMEIRO_ID).unwrap().title, PASSOS[0].title);
+        assert_eq!(
+            crate::quests::quest_by_id(PRIMEIRO_ID).unwrap().title,
+            PASSOS[0].title
+        );
     }
 }

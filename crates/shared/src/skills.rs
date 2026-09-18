@@ -136,9 +136,15 @@ impl Forma {
     }
 
     pub fn de_chave(s: &str) -> Option<Forma> {
-        [Self::EmSi, Self::Projetil, Self::Cone, Self::Circulo, Self::Linha]
-            .into_iter()
-            .find(|f| f.chave() == s)
+        [
+            Self::EmSi,
+            Self::Projetil,
+            Self::Cone,
+            Self::Circulo,
+            Self::Linha,
+        ]
+        .into_iter()
+        .find(|f| f.chave() == s)
     }
 }
 
@@ -194,23 +200,47 @@ pub const TETO_DO_GANHO: f32 = 1.05;
 impl Skill {
     /// Skills ofensivas exigem uma entidade selecionada; suporte usa o conjurador.
     pub fn alcance_alvo(&self) -> f32 {
-        if self.alcance > 0.0 { self.alcance } else { self.raio }
+        if self.alcance > 0.0 {
+            self.alcance
+        } else {
+            self.raio
+        }
     }
 
     pub fn nivel_necessario(&self) -> u32 {
-        DESTRAVA_EM.get(self.ordem.wrapping_sub(1) as usize).copied().unwrap_or(u32::MAX)
+        DESTRAVA_EM
+            .get(self.ordem.wrapping_sub(1) as usize)
+            .copied()
+            .unwrap_or(u32::MAX)
     }
 
     /// Inicio do efeito depois da antecipacao e da conjuracao, em segundos.
     pub fn impacto_em(&self) -> f32 {
-        self.conjuracao_s.max(0.0) + match self.id {
-            1 => 0.52, 2 => 0.48, 3 => 0.42, 4 => 0.42, 5 => 0.64,
-            6 => 0.38, 7 => 0.34, 8 => 0.46, 9 => 0.48, 10 => 0.55,
-            11 => 0.35, 12 => 0.38, _ => crate::PLAYER_ATTACK_IMPACT_S,
-        }
+        self.conjuracao_s.max(0.0)
+            + match self.id {
+                1 => 0.52,
+                2 => 0.48,
+                3 => 0.42,
+                4 => 0.42,
+                5 => 0.64,
+                6 => 0.38,
+                7 => 0.34,
+                8 => 0.46,
+                9 => 0.48,
+                10 => 0.55,
+                11 => 0.35,
+                12 => 0.38,
+                _ => crate::PLAYER_ATTACK_IMPACT_S,
+            }
     }
 
-    pub fn duracao_efeito(&self) -> f32 { if self.id == 3 { 5.0 } else { 0.65 } }
+    pub fn duracao_efeito(&self) -> f32 {
+        if self.id == 3 {
+            5.0
+        } else {
+            0.65
+        }
+    }
 
     /// Dano final da skill, em cima do ataque de quem conjura.
     ///
@@ -234,7 +264,11 @@ impl Skill {
         }
         let janela = self.impacto_em() + RECUPERACAO_S;
         let deslocado = janela * atk.max(1) as f32 / cd_basico.max(0.05);
-        let ganho = if self.forma == Forma::Projetil { GANHO_ALVO_UNICO } else { GANHO_EM_AREA };
+        let ganho = if self.forma == Forma::Projetil {
+            GANHO_ALVO_UNICO
+        } else {
+            GANHO_EM_AREA
+        };
         let mult = (ganho * (self.dano as f32 / DANO_DE_REFERENCIA)).min(TETO_DO_GANHO);
         (deslocado * mult).round().max(1.0) as i32
     }
@@ -305,7 +339,13 @@ mod testes {
         for c in Conjunto::TODOS {
             assert_eq!(Conjunto::de_chave(c.chave()), Some(c));
         }
-        for f in [Forma::EmSi, Forma::Projetil, Forma::Cone, Forma::Circulo, Forma::Linha] {
+        for f in [
+            Forma::EmSi,
+            Forma::Projetil,
+            Forma::Cone,
+            Forma::Circulo,
+            Forma::Linha,
+        ] {
             assert_eq!(Forma::de_chave(f.chave()), Some(f));
         }
     }
@@ -326,7 +366,10 @@ mod testes {
             }
         }
         let mut invalida = todas[0].clone();
-        for ordem in [0, 4, 255] { invalida.ordem = ordem; assert!(!invalida.destravada(100)); }
+        for ordem in [0, 4, 255] {
+            invalida.ordem = ordem;
+            assert!(!invalida.destravada(100));
+        }
     }
 
     /// A regra que faltava no jogo: apertar uma skill tem que render MAIS que o
@@ -364,7 +407,11 @@ mod testes {
     fn dano_de_skill_escala_com_o_ataque_de_quem_conjura() {
         for s in playtest().iter().filter(|s| s.dano > 0) {
             let (fraco, forte) = (s.dano_efetivo(50, 0.5), s.dano_efetivo(200, 0.5));
-            assert!(forte >= fraco * 3, "{}: de {fraco} pra {forte} nao acompanhou o ataque", s.nome);
+            assert!(
+                forte >= fraco * 3,
+                "{}: de {fraco} pra {forte} nao acompanhou o ataque",
+                s.nome
+            );
         }
     }
 
@@ -372,7 +419,12 @@ mod testes {
     #[test]
     fn skill_sem_dano_continua_sem_dano() {
         for s in playtest().iter().filter(|s| s.dano == 0) {
-            assert_eq!(s.dano_efetivo(200, 0.35), 0, "{} ganhou dano do nada", s.nome);
+            assert_eq!(
+                s.dano_efetivo(200, 0.35),
+                0,
+                "{} ganhou dano do nada",
+                s.nome
+            );
         }
     }
 }
@@ -381,25 +433,149 @@ mod testes {
 pub fn playtest() -> Vec<Skill> {
     let linhas: [(u32, &str, &str, u8, &str, i32, f32, f32, i32, i32, f32, f32); 12] = [
         // ── espada e escudo: segurar a linha ──
-        (1, "Investida",   "espada_escudo", 1, "linha",   10, 8.0,  0.0, 25,  0, 6.0, 1.0),
-        (2, "Golpe Largo", "espada_escudo", 2, "cone",    15, 6.0,  0.0, 35,  0, 3.5, 0.0),
-        (3, "Muralha",     "espada_escudo", 3, "em_si",   25, 20.0, 0.0,  0,  0, 0.0, 0.0),
+        (
+            1,
+            "Investida",
+            "espada_escudo",
+            1,
+            "linha",
+            10,
+            8.0,
+            0.0,
+            25,
+            0,
+            6.0,
+            1.0,
+        ),
+        (
+            2,
+            "Golpe Largo",
+            "espada_escudo",
+            2,
+            "cone",
+            15,
+            6.0,
+            0.0,
+            35,
+            0,
+            3.5,
+            0.0,
+        ),
+        (
+            3,
+            "Muralha",
+            "espada_escudo",
+            3,
+            "em_si",
+            25,
+            20.0,
+            0.0,
+            0,
+            0,
+            0.0,
+            0.0,
+        ),
         // ── katana: corte rapido ──
-        (4, "Saque",       "katana", 1, "linha",    8, 6.0,  0.0, 30,  0, 4.0, 0.8),
-        (5, "Dança",       "katana", 2, "circulo", 18, 10.0, 0.0, 28,  0, 0.0, 2.5),
-        (6, "Vento Cortante","katana",3,"projetil",22, 12.0, 0.3, 45,  0, 9.0, 0.0),
+        (
+            4, "Saque", "katana", 1, "linha", 8, 6.0, 0.0, 30, 0, 4.0, 0.8,
+        ),
+        (
+            5, "Dança", "katana", 2, "circulo", 18, 10.0, 0.0, 28, 0, 0.0, 2.5,
+        ),
+        (
+            6,
+            "Vento Cortante",
+            "katana",
+            3,
+            "projetil",
+            22,
+            12.0,
+            0.3,
+            45,
+            0,
+            9.0,
+            0.0,
+        ),
         // ── duas pistolas: distancia ──
-        (7, "Tiro Certeiro","pistolas", 1, "projetil", 8, 4.0,  0.0, 28, 0, 11.0, 0.0),
-        (8, "Rajada",       "pistolas", 2, "cone",    16, 9.0,  0.0, 20, 0,  6.0, 0.0),
-        (9, "Barril",       "pistolas", 3, "circulo", 24, 16.0, 0.4, 50, 0,  8.0, 3.0),
+        (
+            7,
+            "Tiro Certeiro",
+            "pistolas",
+            1,
+            "projetil",
+            8,
+            4.0,
+            0.0,
+            28,
+            0,
+            11.0,
+            0.0,
+        ),
+        (
+            8, "Rajada", "pistolas", 2, "cone", 16, 9.0, 0.0, 20, 0, 6.0, 0.0,
+        ),
+        (
+            9, "Barril", "pistolas", 3, "circulo", 24, 16.0, 0.4, 50, 0, 8.0, 3.0,
+        ),
         // ── anel magico: cura e magia ──
-        (10, "Bênção",     "anel_magico", 1, "em_si",   14, 10.0, 0.0,  0, 40, 0.0, 0.0),
-        (11, "Aura",       "anel_magico", 2, "circulo", 26, 18.0, 0.5,  0, 30, 7.0, 4.0),
-        (12, "Julgamento", "anel_magico", 3, "circulo", 30, 14.0, 0.6, 55,  0, 9.0, 3.0),
+        (
+            10,
+            "Bênção",
+            "anel_magico",
+            1,
+            "em_si",
+            14,
+            10.0,
+            0.0,
+            0,
+            40,
+            0.0,
+            0.0,
+        ),
+        (
+            11,
+            "Aura",
+            "anel_magico",
+            2,
+            "circulo",
+            26,
+            18.0,
+            0.5,
+            0,
+            30,
+            7.0,
+            4.0,
+        ),
+        (
+            12,
+            "Julgamento",
+            "anel_magico",
+            3,
+            "circulo",
+            30,
+            14.0,
+            0.6,
+            55,
+            0,
+            9.0,
+            3.0,
+        ),
     ];
-    linhas.into_iter().map(|l| Skill {
-        id: l.0, nome: l.1.into(), conjunto: Conjunto::de_chave(l.2).unwrap(),
-        ordem: l.3, forma: Forma::de_chave(l.4).unwrap(), custo_mp: l.5,
-        espera_s: l.6, conjuracao_s: l.7, dano: l.8, cura: l.9, alcance: l.10, raio: l.11,
-    }).collect()
+    linhas
+        .into_iter()
+        .map(|l| Skill {
+            id: l.0,
+            nome: l.1.into(),
+            conjunto: Conjunto::de_chave(l.2).unwrap(),
+            ordem: l.3,
+            forma: Forma::de_chave(l.4).unwrap(),
+            custo_mp: l.5,
+            espera_s: l.6,
+            conjuracao_s: l.7,
+            dano: l.8,
+            cura: l.9,
+            alcance: l.10,
+            raio: l.11,
+        })
+        .collect()
 }

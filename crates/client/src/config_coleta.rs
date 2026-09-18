@@ -48,7 +48,13 @@ impl ConfigColeta {
         estilo::painel(r);
         estilo::texto(r.x + 18.0, r.y + 32.0, "Auto coleta", 20, estilo::OURO);
         let fechar = Rect::new(r.x + r.w - 38.0, r.y + 10.0, 28.0, 28.0);
-        estilo::texto_centro(fechar.center().x, fechar.center().y + 7.0, "X", 18, estilo::TEXTO);
+        estilo::texto_centro(
+            fechar.center().x,
+            fechar.center().y + 7.0,
+            "X",
+            18,
+            estilo::TEXTO,
+        );
         let m = Vec2::from(mouse_position());
         let clicou = is_mouse_button_pressed(MouseButton::Left);
         if clicou && fechar.contains(m) {
@@ -62,9 +68,21 @@ impl ConfigColeta {
             let caixa = Rect::new(linha.x, linha.y + 4.0, 20.0, 20.0);
             draw_rectangle_lines(caixa.x, caixa.y, caixa.w, caixa.h, 2.0, estilo::OURO);
             if tipos[i] {
-                draw_rectangle(caixa.x + 4.0, caixa.y + 4.0, caixa.w - 8.0, caixa.h - 8.0, estilo::AUTO);
+                draw_rectangle(
+                    caixa.x + 4.0,
+                    caixa.y + 4.0,
+                    caixa.w - 8.0,
+                    caixa.h - 8.0,
+                    estilo::AUTO,
+                );
             }
-            estilo::texto(linha.x + 32.0, linha.y + 20.0, shared::nome_do_no(i as u8), 15, estilo::TEXTO);
+            estilo::texto(
+                linha.x + 32.0,
+                linha.y + 20.0,
+                shared::nome_do_no(i as u8),
+                15,
+                estilo::TEXTO,
+            );
             if clicou && linha.contains(m) && alterna_tipo(tipos, i) {
                 mudou = true;
             }
@@ -77,7 +95,13 @@ impl ConfigColeta {
             estilo::painel(b);
             estilo::texto_centro(b.center().x, b.center().y + 7.0, t, 18, estilo::OURO);
         }
-        estilo::texto_centro(r.x + 235.0, y, &format!("{:.0} m", *raio), 16, estilo::TEXTO);
+        estilo::texto_centro(
+            r.x + 235.0,
+            y,
+            &format!("{:.0} m", *raio),
+            16,
+            estilo::TEXTO,
+        );
         for (b, passos) in [(menos, -1), (mais, 1)] {
             if clicou && b.contains(m) {
                 let novo = ajusta_raio(*raio, passos);
@@ -92,14 +116,32 @@ impl ConfigColeta {
         let caixa = Rect::new(linha.x, linha.y + 4.0, 20.0, 20.0);
         draw_rectangle_lines(caixa.x, caixa.y, caixa.w, caixa.h, 2.0, estilo::OURO);
         if *defender {
-            draw_rectangle(caixa.x + 4.0, caixa.y + 4.0, caixa.w - 8.0, caixa.h - 8.0, estilo::AUTO);
+            draw_rectangle(
+                caixa.x + 4.0,
+                caixa.y + 4.0,
+                caixa.w - 8.0,
+                caixa.h - 8.0,
+                estilo::AUTO,
+            );
         }
-        estilo::texto(linha.x + 32.0, linha.y + 20.0, "Defender-se: atacado, mata o bicho e volta", 15, estilo::TEXTO);
+        estilo::texto(
+            linha.x + 32.0,
+            linha.y + 20.0,
+            "Defender-se: atacado, mata o bicho e volta",
+            15,
+            estilo::TEXTO,
+        );
         if clicou && linha.contains(m) {
             *defender = !*defender;
             mudou = true;
         }
-        estilo::texto(r.x + 18.0, r.y + r.h - 18.0, "Procura a partir de onde o AUTO foi ligado.", 12, estilo::SUAVE);
+        estilo::texto(
+            r.x + 18.0,
+            r.y + r.h - 18.0,
+            "Procura a partir de onde o AUTO foi ligado.",
+            12,
+            estilo::SUAVE,
+        );
         mudou
     }
 }

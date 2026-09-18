@@ -86,10 +86,16 @@ mod tests {
         assert!(anda(&mut c, &mut x, 120, true));
         // Quina de 0,2 s: continua contando.
         fica(&mut c, x, 12);
-        assert!(anda(&mut c, &mut x, 2, true), "tropeco curto zerou a corrida");
+        assert!(
+            anda(&mut c, &mut x, 2, true),
+            "tropeco curto zerou a corrida"
+        );
         // Parou de verdade (chegou): zera.
         assert!(!fica(&mut c, x, 30));
-        assert!(!anda(&mut c, &mut x, 60, true), "voltou correndo sem esperar");
+        assert!(
+            !anda(&mut c, &mut x, 60, true),
+            "voltou correndo sem esperar"
+        );
     }
 
     #[test]

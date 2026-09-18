@@ -123,6 +123,7 @@ pub struct CharacterRow {
     /// (`presenca_resgates.id`): marcados `aplicado` na MESMA transacao da
     /// bolsa (docs/CALENDARIO.md). Nao e' carregado do banco.
     pub presenca_aplicados: Vec<String>,
+    pub correio_recibos: Vec<crate::correio_admin::Recibo>,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -142,7 +143,9 @@ async fn create_tables(pool: &PgPool) -> Result<()> {
             password_hash  TEXT NOT NULL,
             created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS characters (
             name     TEXT PRIMARY KEY,
@@ -152,7 +155,9 @@ async fn create_tables(pool: &PgPool) -> Result<()> {
             max_hp   INTEGER NOT NULL,
             updated  BIGINT NOT NULL
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS proficiencies (
             character_name TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE,
@@ -160,7 +165,9 @@ async fn create_tables(pool: &PgPool) -> Result<()> {
             xp             BIGINT  NOT NULL DEFAULT 0,
             PRIMARY KEY (character_name, prof_kind)
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS inventory (
             character_name TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE,
@@ -169,7 +176,9 @@ async fn create_tables(pool: &PgPool) -> Result<()> {
             qty            INTEGER NOT NULL,
             PRIMARY KEY (character_name, slot)
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS equipment (
             character_name TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE,
@@ -177,7 +186,9 @@ async fn create_tables(pool: &PgPool) -> Result<()> {
             item_id        INTEGER NOT NULL,
             PRIMARY KEY (character_name, slot)
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS vault (
             character_name TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE,
@@ -186,7 +197,9 @@ async fn create_tables(pool: &PgPool) -> Result<()> {
             qty            INTEGER NOT NULL,
             PRIMARY KEY (character_name, slot)
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS economy_version (
             id          SMALLINT PRIMARY KEY DEFAULT 1,
@@ -194,7 +207,9 @@ async fn create_tables(pool: &PgPool) -> Result<()> {
             updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             CHECK (id = 1)
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS items (
             id          INTEGER PRIMARY KEY,
@@ -204,7 +219,9 @@ async fn create_tables(pool: &PgPool) -> Result<()> {
             shop_order  INTEGER,
             stack_max   INTEGER NOT NULL DEFAULT 1
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS enemy_kinds (
             kind             INTEGER PRIMARY KEY,
@@ -225,7 +242,9 @@ async fn create_tables(pool: &PgPool) -> Result<()> {
             tint_b           REAL    NOT NULL DEFAULT 1.0,
             tint_a           REAL    NOT NULL DEFAULT 1.0
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS loot_drops (
             id          SERIAL PRIMARY KEY,
@@ -235,7 +254,9 @@ async fn create_tables(pool: &PgPool) -> Result<()> {
             qty_max     INTEGER NOT NULL,
             chance      REAL    NOT NULL DEFAULT 1.0
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS item_drops_log (
             id          BIGSERIAL PRIMARY KEY,
@@ -247,7 +268,9 @@ async fn create_tables(pool: &PgPool) -> Result<()> {
             item_level  INTEGER     NOT NULL DEFAULT 1,
             refinement  SMALLINT    NOT NULL DEFAULT 0
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS farm_node_drops (
             id       SERIAL PRIMARY KEY,
@@ -258,13 +281,17 @@ async fn create_tables(pool: &PgPool) -> Result<()> {
             qty_max  INTEGER NOT NULL,
             chance   REAL    NOT NULL DEFAULT 1.0
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS vendor_shops (
             shop_id  INTEGER PRIMARY KEY,
             name     TEXT NOT NULL
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS vendor_shop_items (
             shop_id     INTEGER NOT NULL REFERENCES vendor_shops(shop_id) ON DELETE CASCADE,
@@ -272,7 +299,9 @@ async fn create_tables(pool: &PgPool) -> Result<()> {
             sort_order  INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (shop_id, item_id)
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -299,9 +328,13 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     // juntos, 3 no ar e 8 parados em `pg_advisory_lock` por minutos.
     // Com um canal so' isso nunca aparece; ninguem espera na fila.
     let mut trava = pool.acquire().await?;
-    sqlx::query("SELECT pg_advisory_lock(728431)").execute(&mut *trava).await?;
+    sqlx::query("SELECT pg_advisory_lock(728431)")
+        .execute(&mut *trava)
+        .await?;
     let r = init_schema_travado(&pool).await;
-    let _ = sqlx::query("SELECT pg_advisory_unlock(728431)").execute(&mut *trava).await;
+    let _ = sqlx::query("SELECT pg_advisory_unlock(728431)")
+        .execute(&mut *trava)
+        .await;
     drop(trava);
     r?;
 
@@ -356,9 +389,11 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
     // Pontos de atributo: unspent counter + array de 6 alocados.
-    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS unspent_points INTEGER NOT NULL DEFAULT 0")
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS unspent_points INTEGER NOT NULL DEFAULT 0",
+    )
+    .execute(pool)
+    .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS allocated_points INTEGER[] NOT NULL DEFAULT '{0,0,0,0,0,0}'")
         .execute(pool)
         .await?;
@@ -378,72 +413,95 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     // Boat state — quando player desconecta montado, salvamos o tipo do
     // barco + pos + direcao. Re-spawn no login. NULL = nao tava montado.
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_kind SMALLINT NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_x REAL NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_y REAL NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_dir SMALLINT NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     // Boat 2.5D: estado completo (yaw float, sail/anchor) + posicao do
     // player no deck local. Tudo NULL pra rows legacy (load fall-back).
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_yaw REAL NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_sail_pos SMALLINT NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_sail_angle REAL NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS boat_anchor_dropped BOOLEAN NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS mounted_local_x REAL NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS mounted_local_y REAL NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     // Character creation: account_id liga char a conta (1:1, UNIQUE).
     // visual_json armazena VisualConfig serializado (skin/race/outfit/hair/color).
     // starting_weapon = item_id escolhido na criacao (informativo; weapon ja
     // ta em inventory+equipment do save).
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS account_id BIGINT NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS visual_json TEXT NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS starting_weapon SMALLINT NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     // Backfill account_id pra chars antigos (linka pelo username = char name).
     sqlx::query(
         "UPDATE characters c SET account_id = a.id
          FROM accounts a
-         WHERE c.account_id IS NULL AND a.username = c.name"
-    ).execute(pool).await?;
+         WHERE c.account_id IS NULL AND a.username = c.name",
+    )
+    .execute(pool)
+    .await?;
     // Indice nao-unico em account_id pra lookup rapido de chars por conta.
     // (Multi-char per account: removida constraint UNIQUE de versao anterior.)
     sqlx::query("DROP INDEX IF EXISTS idx_characters_account_unique")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_characters_account ON characters(account_id)")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     // Migration M6: design atual tem 6 stats (FOR/DES/INT/VIT/SPD/RES). Linhas
     // antigas com 5 elementos ganham um 0 no slot RES, preservando pontos ja
     // alocados. Idempotente — arrays de 6 nao sao tocados.
     sqlx::query(
         "UPDATE characters
          SET allocated_points = allocated_points || ARRAY[0]::INTEGER[]
-         WHERE array_length(allocated_points, 1) = 5"
-    ).execute(pool).await?;
+         WHERE array_length(allocated_points, 1) = 5",
+    )
+    .execute(pool)
+    .await?;
 
     // Migration M7: escudo (item_id=7) sai do slot 'armor' e vai pra 'offhand'.
     // Idempotente: se ja moveu, UPDATE nao acha mais nada.
     sqlx::query(
         "UPDATE equipment SET slot = 'offhand'
-         WHERE slot = 'armor' AND item_id = 7"
-    ).execute(pool).await?;
+         WHERE slot = 'armor' AND item_id = 7",
+    )
+    .execute(pool)
+    .await?;
 
     // Migration M8: deixa escudo comprável no shop. So aplica se o DB ja
     // tinha shield com buy_price=NULL (preserva tweaks manuais que o user
     // fez via SQL).
     sqlx::query(
         "UPDATE items SET buy_price = 50, shop_order = 9
-         WHERE id = 7 AND buy_price IS NULL AND shop_order IS NULL"
-    ).execute(pool).await?;
+         WHERE id = 7 AND buy_price IS NULL AND shop_order IS NULL",
+    )
+    .execute(pool)
+    .await?;
 
     // Migration M9: garante que o Mercador (shop_id=1, vendor Klaus no mapa)
     // venda escudo. ON CONFLICT DO NOTHING pra ser idempotente em DBs onde
@@ -455,10 +513,10 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
         "INSERT INTO vendor_shop_items (shop_id, item_id, sort_order)
          SELECT 1, 7, 9
          WHERE EXISTS (SELECT 1 FROM vendor_shops WHERE shop_id = 1)
-         ON CONFLICT DO NOTHING"
-    ).execute(pool).await?;
-
-
+         ON CONFLICT DO NOTHING",
+    )
+    .execute(pool)
+    .await?;
 
     // Migration M10: chars com shield (item_id=7) no offhand E weapon two-handed
     // (great_sword=13, bow=14, staff=6, wand=15) ficaram com combo invalido —
@@ -472,38 +530,61 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
              WHERE w.character_name = e.character_name
                AND w.slot = 'weapon'
                AND w.item_id IN (13, 14, 6, 15)
-         )"
-    ).execute(pool).await?;
+         )",
+    )
+    .execute(pool)
+    .await?;
 
     // Migration M11: gold vira moeda (não-item). Coluna `characters.gold` +
     // backfill somando todo item_id=1 de inventory + vault, depois apaga as
     // rows. Idempotente: se rodar de novo, sum() vira 0 (nada pra somar).
     // Estado que sumia no reinicio: mana, stamina e a zona da posicao.
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS mp REAL NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS stamina REAL NULL")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS zona TEXT NULL")
-        .execute(pool).await?;
-    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS xp_bonus_ate BIGINT NOT NULL DEFAULT 0")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS xp_bonus_ate BIGINT NOT NULL DEFAULT 0",
+    )
+    .execute(pool)
+    .await?;
     // Pocoes de Fortuna e de Sorte, e a barra de itens configurada.
-    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS fortuna_ate BIGINT NOT NULL DEFAULT 0")
-        .execute(pool).await?;
-    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS sorte_ate BIGINT NOT NULL DEFAULT 0")
-        .execute(pool).await?;
-    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS barra_json TEXT NOT NULL DEFAULT ''")
-        .execute(pool).await?;
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS fortuna_ate BIGINT NOT NULL DEFAULT 0",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS sorte_ate BIGINT NOT NULL DEFAULT 0",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS barra_json TEXT NOT NULL DEFAULT ''",
+    )
+    .execute(pool)
+    .await?;
     // Morte: XP recuperavel e as recuperacoes gratis do dia.
-    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS mortes_json TEXT NOT NULL DEFAULT ''")
-        .execute(pool).await?;
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS mortes_json TEXT NOT NULL DEFAULT ''",
+    )
+    .execute(pool)
+    .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS recuperacoes_dia BIGINT NOT NULL DEFAULT 0")
         .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS recuperacoes_usadas INTEGER NOT NULL DEFAULT 0")
         .execute(pool).await?;
     // Preferencias de tela: skills AUTO, filtros do mapa, zooms.
-    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS dungeon_json TEXT NOT NULL DEFAULT ''")
-        .execute(pool).await?;
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS dungeon_json TEXT NOT NULL DEFAULT ''",
+    )
+    .execute(pool)
+    .await?;
     // Dungeons da conta (docs/DUNGEONS_E_RAIDS.md): o que vale pra qualquer
     // personagem dela. Gravada na mesma transacao do save do personagem.
     sqlx::query(
@@ -512,13 +593,16 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
             dados_json TEXT NOT NULL DEFAULT '',
             updated    TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     // Calendario de presenca (docs/CALENDARIO.md): uma linha por resgate.
     crate::presenca::criar_tabelas(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS preferencias_json TEXT NOT NULL DEFAULT ''")
         .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS gold BIGINT NOT NULL DEFAULT 0")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query(
         "UPDATE characters c SET gold = c.gold + COALESCE((
             SELECT SUM(qty)::BIGINT FROM inventory i
@@ -526,10 +610,16 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
         ), 0) + COALESCE((
             SELECT SUM(qty)::BIGINT FROM vault v
             WHERE v.character_name = c.name AND v.item_id = 1
-        ), 0)"
-    ).execute(pool).await?;
-    sqlx::query("DELETE FROM inventory WHERE item_id = 1").execute(pool).await?;
-    sqlx::query("DELETE FROM vault     WHERE item_id = 1").execute(pool).await?;
+        ), 0)",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query("DELETE FROM inventory WHERE item_id = 1")
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM vault     WHERE item_id = 1")
+        .execute(pool)
+        .await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS proficiencies (
@@ -555,9 +645,9 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     .await?;
     // Migration Fase A: instance_data armazena ItemInstance serializada
     // como JSON. NULL pra stackáveis e itens legacy.
-    sqlx::query(
-        "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS instance_data TEXT NULL"
-    ).execute(pool).await?;
+    sqlx::query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS instance_data TEXT NULL")
+        .execute(pool)
+        .await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS equipment (
@@ -569,9 +659,9 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     )
     .execute(pool)
     .await?;
-    sqlx::query(
-        "ALTER TABLE equipment ADD COLUMN IF NOT EXISTS instance_data TEXT NULL"
-    ).execute(pool).await?;
+    sqlx::query("ALTER TABLE equipment ADD COLUMN IF NOT EXISTS instance_data TEXT NULL")
+        .execute(pool)
+        .await?;
 
     // Vault: bau persistente por personagem. Estrutura igual a inventory.
     sqlx::query(
@@ -585,9 +675,9 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     )
     .execute(pool)
     .await?;
-    sqlx::query(
-        "ALTER TABLE vault ADD COLUMN IF NOT EXISTS instance_data TEXT NULL"
-    ).execute(pool).await?;
+    sqlx::query("ALTER TABLE vault ADD COLUMN IF NOT EXISTS instance_data TEXT NULL")
+        .execute(pool)
+        .await?;
 
     // ── Economy tables ──────────────────────────────────────────────────────
     // Migration M23: as ferramentas deixaram de existir. Coleta e' automatica
@@ -611,9 +701,12 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
             updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             CHECK (id = 1)
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query("INSERT INTO economy_version (id, version) VALUES (1, 1) ON CONFLICT DO NOTHING")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS items (
@@ -624,7 +717,9 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
             shop_order  INTEGER,
             stack_max   INTEGER NOT NULL DEFAULT 1
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     // Fase F — campos editáveis pelo admin (slot, level, icon, stat ranges).
     // Cada coluna idempotente; backfill abaixo popula valores hardcoded em
     // items existentes na primeira boot pós-upgrade.
@@ -651,7 +746,9 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
         // Vinculado: fora do mercado global (docs/MERCADO.md).
         "ADD COLUMN IF NOT EXISTS vinculado BOOLEAN NOT NULL DEFAULT FALSE",
     ] {
-        sqlx::query(&format!("ALTER TABLE items {col}")).execute(pool).await?;
+        sqlx::query(&format!("ALTER TABLE items {col}"))
+            .execute(pool)
+            .await?;
     }
     // Recompensa de missao nasce vinculada (a Pocao de XP das missoes de area).
     // Uma vez so': depois disso quem manda e' a coluna.
@@ -663,7 +760,8 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     if marcou > 0 {
         sqlx::query("UPDATE items SET vinculado = TRUE WHERE id = $1")
             .bind(shared::item_id::XP_POTION as i32)
-            .execute(pool).await?;
+            .execute(pool)
+            .await?;
     }
     // Marcas e Selo da Tempestade nascem vinculados (docs/DUNGEONS_E_RAIDS.md).
     // Roda depois do seed dos itens; a linha que ainda nao existe entra la'.
@@ -671,8 +769,12 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
         .execute(pool).await?.rows_affected();
     if dungeon_v1 > 0 {
         sqlx::query("UPDATE items SET vinculado = TRUE WHERE id = ANY($1)")
-            .bind(vec![shared::item_id::MARCAS_TEMPESTADE as i32, shared::item_id::SELO_TEMPESTADE as i32])
-            .execute(pool).await?;
+            .bind(vec![
+                shared::item_id::MARCAS_TEMPESTADE as i32,
+                shared::item_id::SELO_TEMPESTADE as i32,
+            ])
+            .execute(pool)
+            .await?;
     }
     // Premio de presenca e' vinculado (docs/CALENDARIO.md): Fortuna e Sorte so'
     // saem de recompensa (diaria e calendario) e nao vao ao mercado.
@@ -680,8 +782,12 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
         .execute(pool).await?.rows_affected();
     if presenca_v1 > 0 {
         sqlx::query("UPDATE items SET vinculado = TRUE WHERE id = ANY($1)")
-            .bind(vec![shared::item_id::FORTUNA_POTION as i32, shared::item_id::SORTE_POTION as i32])
-            .execute(pool).await?;
+            .bind(vec![
+                shared::item_id::FORTUNA_POTION as i32,
+                shared::item_id::SORTE_POTION as i32,
+            ])
+            .execute(pool)
+            .await?;
     }
     // Override de item_level no drop por enemy_kind (era hardcoded em
     // world.rs::spawn_loot_drops). NULL = usa items.item_level como fallback.
@@ -690,19 +796,26 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     // enemy_builds.rs. Schema soft (nao quebra se NULL); admin pode editar
     // via SQL ate ter UI dedicada.
     sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_level INTEGER")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_weapon SMALLINT")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_offhand SMALLINT")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_armor SMALLINT")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS build_alloc_points INTEGER[]")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE enemy_kinds DROP COLUMN IF EXISTS build_learned_skills")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE enemy_kinds ADD COLUMN IF NOT EXISTS loot_item_level INTEGER")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS enemy_kinds (
@@ -724,7 +837,9 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
             tint_b           REAL    NOT NULL DEFAULT 1.0,
             tint_a           REAL    NOT NULL DEFAULT 1.0
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS loot_drops (
@@ -735,9 +850,12 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
             qty_max     INTEGER NOT NULL,
             chance      REAL    NOT NULL DEFAULT 1.0
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_loot_drops_kind ON loot_drops(enemy_kind)")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
 
     // Log de cada drop emitido pelo server. Cresce monotonicamente — admin
     // usa pra observabilidade (quantidade dropada por mob/item, frequência
@@ -753,13 +871,18 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
             item_level  INTEGER     NOT NULL DEFAULT 1,
             refinement  SMALLINT    NOT NULL DEFAULT 0
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_drops_log_ts   ON item_drops_log(ts DESC)")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_drops_log_item ON item_drops_log(item_id)")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_drops_log_kind ON item_drops_log(enemy_kind)")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
 
     // Farm node drops — análogo a loot_drops, mas keyed por (kind, tier).
     // kind = 'Tree' | 'Rock' | 'Flower'; tier = 1..4. Cada linha rola
@@ -774,10 +897,15 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
             qty_max  INTEGER NOT NULL,
             chance   REAL    NOT NULL DEFAULT 1.0
         )",
-    ).execute(pool).await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_farm_node_drops_kt \
-                 ON farm_node_drops(kind, tier)")
-        .execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_farm_node_drops_kt \
+                 ON farm_node_drops(kind, tier)",
+    )
+    .execute(pool)
+    .await?;
 
     // Vendor shops — cada vendor tem um shop_id que aponta pra uma lista
     // curada de itens. Permite "espadeiro" que só vende espadas, "alquimista"
@@ -787,7 +915,9 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
             shop_id  INTEGER PRIMARY KEY,
             name     TEXT NOT NULL
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS vendor_shop_items (
             shop_id     INTEGER NOT NULL REFERENCES vendor_shops(shop_id) ON DELETE CASCADE,
@@ -795,7 +925,9 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
             sort_order  INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (shop_id, item_id)
         )",
-    ).execute(pool).await?;
+    )
+    .execute(pool)
+    .await?;
 
     // ── Skills (Phase 1 / M11) ──────────────────────────────────────────────
     // Migration: ADD COLUMN knockback caso DB antigo nao tenha. Default 0.5
@@ -808,23 +940,27 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     // personagem. As tres colunas da M12 saem.
     for c in ["woodcutting_lvl", "mining_lvl", "gathering_lvl"] {
         let _ = sqlx::query(&format!("ALTER TABLE characters DROP COLUMN IF EXISTS {c}"))
-            .execute(pool).await;
+            .execute(pool)
+            .await;
     }
     sqlx::query(
-        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS faction TEXT NOT NULL DEFAULT 'peacemain'"
-    ).execute(pool).await?;
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS faction TEXT NOT NULL DEFAULT 'peacemain'",
+    )
+    .execute(pool)
+    .await?;
     // Quando o personagem concluiu o tutorial pela ultima vez (NULL = nunca).
     // Usado pra UI ("ja fez tutorial") e pro fluxo de re-treino. Nao gateia
     // nada de forma rigida — tutorial e' repetivel.
     sqlx::query(
-        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS last_tutorial_completed TIMESTAMPTZ NULL"
-    ).execute(pool).await?;
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS last_tutorial_completed TIMESTAMPTZ NULL",
+    )
+    .execute(pool)
+    .await?;
 
     seed_economy_if_needed(pool).await?;
 
     Ok(())
 }
-
 
 /// Seed inicial: insere defaults pros itens/enemies que ainda não estão no DB.
 /// Usa ON CONFLICT DO NOTHING — preserva tweaks manuais. Loot só seeda se a
@@ -842,24 +978,189 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     //    admin editar via web, icon_col != 0 e o seed vira no-op.
     //  - Itens 24-44 (Phase D/E) que ainda não tinham row são inseridos do zero.
     struct S {
-        id: i32, name: &'static str, sell: i32, buy: Option<i32>, ord: Option<i32>, stack: i32,
-        slot: Option<&'static str>, lvl: i32, ic: i32, ir: i32,
-        hp: (i32,i32), mp: (i32,i32), atk: (i32,i32),
-        def: (i32,i32), dex: (i32,i32), wis: (i32,i32),
+        id: i32,
+        name: &'static str,
+        sell: i32,
+        buy: Option<i32>,
+        ord: Option<i32>,
+        stack: i32,
+        slot: Option<&'static str>,
+        lvl: i32,
+        ic: i32,
+        ir: i32,
+        hp: (i32, i32),
+        mp: (i32, i32),
+        atk: (i32, i32),
+        def: (i32, i32),
+        dex: (i32, i32),
+        wis: (i32, i32),
     }
     let seed: &[S] = &[
         // Consumíveis / materiais — sem slot/range
-        S{ id: item_id::GOLD as i32,           name:"Gold",            sell:0,   buy:None,         ord:None,    stack:9999, slot:None, lvl:1, ic:15, ir:9,   hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::HEALTH_POTION as i32,  name:"HP Potion",       sell:5,   buy:Some(10),     ord:Some(0), stack:20,   slot:None, lvl:1, ic:3,  ir:17,  hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::MANA_POTION as i32,    name:"MP Potion",       sell:7,   buy:Some(15),     ord:Some(1), stack:20,   slot:None, lvl:1, ic:10, ir:7,   hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::GREATER_HEAL as i32,   name:"HP Potion+",      sell:20,  buy:Some(40),     ord:Some(2), stack:20,   slot:None, lvl:1, ic:11, ir:17,  hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::GREATER_MANA as i32,   name:"MP Potion+",      sell:25,  buy:Some(50),     ord:Some(3), stack:20,   slot:None, lvl:1, ic:9,  ir:7,   hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::STAMINA_POTION as i32, name:"Stamina Potion",  sell:10,  buy:Some(20),     ord:Some(4), stack:20,   slot:None, lvl:1, ic:8,  ir:7,   hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
+        S {
+            id: item_id::GOLD as i32,
+            name: "Gold",
+            sell: 0,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: 15,
+            ir: 9,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::HEALTH_POTION as i32,
+            name: "HP Potion",
+            sell: 5,
+            buy: Some(10),
+            ord: Some(0),
+            stack: 20,
+            slot: None,
+            lvl: 1,
+            ic: 3,
+            ir: 17,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::MANA_POTION as i32,
+            name: "MP Potion",
+            sell: 7,
+            buy: Some(15),
+            ord: Some(1),
+            stack: 20,
+            slot: None,
+            lvl: 1,
+            ic: 10,
+            ir: 7,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::GREATER_HEAL as i32,
+            name: "HP Potion+",
+            sell: 20,
+            buy: Some(40),
+            ord: Some(2),
+            stack: 20,
+            slot: None,
+            lvl: 1,
+            ic: 11,
+            ir: 17,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::GREATER_MANA as i32,
+            name: "MP Potion+",
+            sell: 25,
+            buy: Some(50),
+            ord: Some(3),
+            stack: 20,
+            slot: None,
+            lvl: 1,
+            ic: 9,
+            ir: 7,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::STAMINA_POTION as i32,
+            name: "Stamina Potion",
+            sell: 10,
+            buy: Some(20),
+            ord: Some(4),
+            stack: 20,
+            slot: None,
+            lvl: 1,
+            ic: 8,
+            ir: 7,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         // So' recompensa de missao de area: sem preco de compra, venda simbolica.
-        S{ id: item_id::XP_POTION as i32,      name:"Poção de Experiência", sell:1, buy:None,     ord:None,    stack:20,   slot:None, lvl:1, ic:-1, ir:-1,  hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
+        S {
+            id: item_id::XP_POTION as i32,
+            name: "Poção de Experiência",
+            sell: 1,
+            buy: None,
+            ord: None,
+            stack: 20,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         // Recompensa de diaria de oficina: sem preco de compra, venda simbolica.
-        S{ id: item_id::FORTUNA_POTION as i32, name:"Poção de Fortuna",  sell:1, buy:None,     ord:None,    stack:20,   slot:None, lvl:1, ic:-1, ir:-1,  hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::SORTE_POTION as i32,   name:"Poção de Sorte",    sell:1, buy:None,     ord:None,    stack:20,   slot:None, lvl:1, ic:-1, ir:-1,  hp:(0,0),  mp:(0,0),    atk:(0,0),   def:(0,0), dex:(0,0), wis:(0,0) },
+        S {
+            id: item_id::FORTUNA_POTION as i32,
+            name: "Poção de Fortuna",
+            sell: 1,
+            buy: None,
+            ord: None,
+            stack: 20,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::SORTE_POTION as i32,
+            name: "Poção de Sorte",
+            sell: 1,
+            buy: None,
+            ord: None,
+            stack: 20,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         // Armas
         // Fase F — armas tier 2 (gate de char_lvl + prof_lvl). Item lvl 10 marca o tier.
         // Fase F — armas tier 3 (char_lvl 20, sword prof 10). Item lvl 20.
@@ -870,8 +1171,24 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // Embarcacao — usavel na margem (consumida ao usar; volta no dismount).
         // Sem equip slot. Stack 1 (item unico). Icone re-aproveitado de barril
         // ate ter art proprio.
-        S{ id: item_id::BOAT_LYLIAN_LEUTARD as i32, name:"Lylian Leutard", sell:0, buy:Some(500), ord:Some(50), stack:1, slot:None, lvl:1, ic:0, ir:138, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-
+        S {
+            id: item_id::BOAT_LYLIAN_LEUTARD as i32,
+            name: "Lylian Leutard",
+            sell: 0,
+            buy: Some(500),
+            ord: Some(50),
+            stack: 1,
+            slot: None,
+            lvl: 1,
+            ic: 0,
+            ir: 138,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         // === Materiais de coleta e craft. Nunca estiveram na tabela: a coleta
         // entregava um item sem nome e sem `stack_max`, que caia em stack de 1 e
         // enchia a bolsa com dezenas de linhas de uma madeira cada. Achado com os
@@ -879,96 +1196,1454 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // === O equipamento (docs/COMBATE.md): um id por peca; grau e refino
         // moram na instancia. As faixas de stat sao as do template
         // (`items::item_template`). ===
-        S{ id: item_id::ESPADA_E_ESCUDO as i32,    name:"Espada e Escudo",    sell:60, buy:Some(960), ord:Some(20), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(10,30), mp:(0,0),   atk:(8,16), def:(0,0),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::KATANA as i32,             name:"Katana",             sell:60, buy:Some(960), ord:Some(21), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(8,15), def:(0,0),  dex:(5,12), wis:(0,0) },
-        S{ id: item_id::PISTOLAS as i32,           name:"Duas Pistolas",      sell:60, buy:Some(960), ord:Some(22), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(7,14), def:(0,0),  dex:(6,13), wis:(0,0) },
-        S{ id: item_id::ANEL_MAGICO as i32,        name:"Anel Mágico",        sell:60, buy:Some(960), ord:Some(23), stack:1, slot:Some("Weapon"),   lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(30,70), atk:(6,13), def:(0,0),  dex:(0,0),  wis:(4,10) },
-        S{ id: item_id::MANTO_DO_GUERREIRO as i32, name:"Manto do Guerreiro", sell:40, buy:Some(640), ord:Some(24), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(20,50), mp:(0,0),   atk:(0,0),  def:(3,8),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::BAINHA as i32,             name:"Bainha",             sell:40, buy:Some(640), ord:Some(25), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(1,4),  def:(0,0),  dex:(3,8),  wis:(0,0) },
-        S{ id: item_id::COLDRE as i32,             name:"Coldre",             sell:40, buy:Some(640), ord:Some(26), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(2,5),  def:(0,0),  dex:(3,7),  wis:(0,0) },
-        S{ id: item_id::MANTO_DO_MAGO as i32,      name:"Manto do Mago",      sell:40, buy:Some(640), ord:Some(27), stack:1, slot:Some("Offhand"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(25,60), atk:(0,0),  def:(0,0),  dex:(0,0),  wis:(3,8) },
-        S{ id: item_id::ARMADURA_LEVE as i32,      name:"Armadura Leve",      sell:50, buy:Some(800), ord:Some(28), stack:1, slot:Some("Armor"),    lvl:1, ic:-1, ir:-1, hp:(15,35), mp:(0,0),   atk:(0,0),  def:(1,4),  dex:(2,6),  wis:(0,0) },
-        S{ id: item_id::ARMADURA_MEDIA as i32,     name:"Armadura Média",     sell:70, buy:Some(1120), ord:Some(29), stack:1, slot:Some("Armor"),    lvl:1, ic:-1, ir:-1, hp:(30,60), mp:(0,0),   atk:(0,0),  def:(4,9),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::ARMADURA_PESADA as i32,    name:"Armadura Pesada",    sell:90, buy:Some(1440), ord:Some(30), stack:1, slot:Some("Armor"),    lvl:1, ic:-1, ir:-1, hp:(60,120),mp:(0,0),   atk:(0,0),  def:(8,16), dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::BRINCO as i32,             name:"Brinco",             sell:35, buy:Some(560), ord:Some(31), stack:1, slot:Some("Earring"),  lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(1,4),  def:(0,0),  dex:(2,6),  wis:(0,0) },
-        S{ id: item_id::AMULETO as i32,            name:"Amuleto",            sell:35, buy:Some(560), ord:Some(32), stack:1, slot:Some("Necklace"), lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(20,50), atk:(0,0),  def:(0,0),  dex:(0,0),  wis:(2,6) },
-        S{ id: item_id::BRACELETE as i32,          name:"Bracelete",          sell:35, buy:Some(560), ord:Some(33), stack:1, slot:Some("Bracelet"), lvl:1, ic:-1, ir:-1, hp:(0,0),   mp:(0,0),   atk:(2,5),  def:(1,3),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::CINTO as i32,              name:"Cinto",              sell:35, buy:Some(560), ord:Some(34), stack:1, slot:Some("Belt"),     lvl:1, ic:-1, ir:-1, hp:(20,45), mp:(0,0),   atk:(0,0),  def:(1,3),  dex:(0,0),  wis:(0,0) },
-        S{ id: item_id::WOOD_T1 as i32,        name:"Madeira T1",   sell:2,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::WOOD_T2 as i32,        name:"Madeira T2",   sell:6,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::WOOD_T3 as i32,        name:"Madeira T3",   sell:18,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::WOOD_T4 as i32,        name:"Madeira T4",   sell:54,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::LEATHER_T1 as i32,     name:"Couro T1",     sell:3,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::LEATHER_T2 as i32,     name:"Couro T2",     sell:9,    buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::LEATHER_T3 as i32,     name:"Couro T3",     sell:27,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::LEATHER_T4 as i32,     name:"Couro T4",     sell:81,   buy:None, ord:None, stack:999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-
+        S {
+            id: item_id::ESPADA_E_ESCUDO as i32,
+            name: "Espada e Escudo",
+            sell: 60,
+            buy: Some(960),
+            ord: Some(20),
+            stack: 1,
+            slot: Some("Weapon"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (10, 30),
+            mp: (0, 0),
+            atk: (8, 16),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::KATANA as i32,
+            name: "Katana",
+            sell: 60,
+            buy: Some(960),
+            ord: Some(21),
+            stack: 1,
+            slot: Some("Weapon"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (8, 15),
+            def: (0, 0),
+            dex: (5, 12),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::PISTOLAS as i32,
+            name: "Duas Pistolas",
+            sell: 60,
+            buy: Some(960),
+            ord: Some(22),
+            stack: 1,
+            slot: Some("Weapon"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (7, 14),
+            def: (0, 0),
+            dex: (6, 13),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::ANEL_MAGICO as i32,
+            name: "Anel Mágico",
+            sell: 60,
+            buy: Some(960),
+            ord: Some(23),
+            stack: 1,
+            slot: Some("Weapon"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (30, 70),
+            atk: (6, 13),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (4, 10),
+        },
+        S {
+            id: item_id::MANTO_DO_GUERREIRO as i32,
+            name: "Manto do Guerreiro",
+            sell: 40,
+            buy: Some(640),
+            ord: Some(24),
+            stack: 1,
+            slot: Some("Offhand"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (20, 50),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (3, 8),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::BAINHA as i32,
+            name: "Bainha",
+            sell: 40,
+            buy: Some(640),
+            ord: Some(25),
+            stack: 1,
+            slot: Some("Offhand"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (1, 4),
+            def: (0, 0),
+            dex: (3, 8),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::COLDRE as i32,
+            name: "Coldre",
+            sell: 40,
+            buy: Some(640),
+            ord: Some(26),
+            stack: 1,
+            slot: Some("Offhand"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (2, 5),
+            def: (0, 0),
+            dex: (3, 7),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::MANTO_DO_MAGO as i32,
+            name: "Manto do Mago",
+            sell: 40,
+            buy: Some(640),
+            ord: Some(27),
+            stack: 1,
+            slot: Some("Offhand"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (25, 60),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (3, 8),
+        },
+        S {
+            id: item_id::ARMADURA_LEVE as i32,
+            name: "Armadura Leve",
+            sell: 50,
+            buy: Some(800),
+            ord: Some(28),
+            stack: 1,
+            slot: Some("Armor"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (15, 35),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (1, 4),
+            dex: (2, 6),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::ARMADURA_MEDIA as i32,
+            name: "Armadura Média",
+            sell: 70,
+            buy: Some(1120),
+            ord: Some(29),
+            stack: 1,
+            slot: Some("Armor"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (30, 60),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (4, 9),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::ARMADURA_PESADA as i32,
+            name: "Armadura Pesada",
+            sell: 90,
+            buy: Some(1440),
+            ord: Some(30),
+            stack: 1,
+            slot: Some("Armor"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (60, 120),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (8, 16),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::BRINCO as i32,
+            name: "Brinco",
+            sell: 35,
+            buy: Some(560),
+            ord: Some(31),
+            stack: 1,
+            slot: Some("Earring"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (1, 4),
+            def: (0, 0),
+            dex: (2, 6),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::AMULETO as i32,
+            name: "Amuleto",
+            sell: 35,
+            buy: Some(560),
+            ord: Some(32),
+            stack: 1,
+            slot: Some("Necklace"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (20, 50),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (2, 6),
+        },
+        S {
+            id: item_id::BRACELETE as i32,
+            name: "Bracelete",
+            sell: 35,
+            buy: Some(560),
+            ord: Some(33),
+            stack: 1,
+            slot: Some("Bracelet"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (2, 5),
+            def: (1, 3),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::CINTO as i32,
+            name: "Cinto",
+            sell: 35,
+            buy: Some(560),
+            ord: Some(34),
+            stack: 1,
+            slot: Some("Belt"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (20, 45),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (1, 3),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::WOOD_T1 as i32,
+            name: "Madeira T1",
+            sell: 2,
+            buy: None,
+            ord: None,
+            stack: 999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::WOOD_T2 as i32,
+            name: "Madeira T2",
+            sell: 6,
+            buy: None,
+            ord: None,
+            stack: 999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::WOOD_T3 as i32,
+            name: "Madeira T3",
+            sell: 18,
+            buy: None,
+            ord: None,
+            stack: 999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::WOOD_T4 as i32,
+            name: "Madeira T4",
+            sell: 54,
+            buy: None,
+            ord: None,
+            stack: 999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::LEATHER_T1 as i32,
+            name: "Couro T1",
+            sell: 3,
+            buy: None,
+            ord: None,
+            stack: 999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::LEATHER_T2 as i32,
+            name: "Couro T2",
+            sell: 9,
+            buy: None,
+            ord: None,
+            stack: 999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::LEATHER_T3 as i32,
+            name: "Couro T3",
+            sell: 27,
+            buy: None,
+            ord: None,
+            stack: 999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::LEATHER_T4 as i32,
+            name: "Couro T4",
+            sell: 81,
+            buy: None,
+            ord: None,
+            stack: 999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         // === Materiais de craft. Poucos nomes girando muito: arma e sub-arma
         // gastam o mesmo, armaduras entre si idem, acessorios idem. Cada um
         // existe nas quatro cores, e a cor E' o tier.
-        S{ id: item_id::na_cor(item_id::STEEL, 1) as i32,                   name:"Aço Cinza",                      sell:3,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::STEEL, 2) as i32,                   name:"Aço Verde",                      sell:12,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::STEEL, 3) as i32,                   name:"Aço Azul",                       sell:48,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::STEEL, 4) as i32,                   name:"Aço Roxa",                       sell:192,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::DARK_HEART_STONE, 1) as i32,        name:"Pedra do Coração Negro Cinza",   sell:5,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::DARK_HEART_STONE, 2) as i32,        name:"Pedra do Coração Negro Verde",   sell:20,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::DARK_HEART_STONE, 3) as i32,        name:"Pedra do Coração Negro Azul",    sell:80,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::DARK_HEART_STONE, 4) as i32,        name:"Pedra do Coração Negro Roxa",    sell:320,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 1) as i32,       name:"Pedra Sombra-da-Lua Cinza",      sell:5,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 2) as i32,       name:"Pedra Sombra-da-Lua Verde",      sell:20,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 3) as i32,       name:"Pedra Sombra-da-Lua Azul",       sell:80,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 4) as i32,       name:"Pedra Sombra-da-Lua Roxa",       sell:320,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::QUINTESSENCE, 1) as i32,            name:"Quintessência Cinza",            sell:5,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::QUINTESSENCE, 2) as i32,            name:"Quintessência Verde",            sell:20,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::QUINTESSENCE, 3) as i32,            name:"Quintessência Azul",             sell:80,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::QUINTESSENCE, 4) as i32,            name:"Quintessência Roxa",             sell:320,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 1) as i32,         name:"Berloque de Exorcismo Cinza",    sell:5,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 2) as i32,         name:"Berloque de Exorcismo Verde",    sell:20,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 3) as i32,         name:"Berloque de Exorcismo Azul",     sell:80,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 4) as i32,         name:"Berloque de Exorcismo Roxa",     sell:320,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::PLATINUM, 1) as i32,                name:"Platina Cinza",                  sell:3,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::PLATINUM, 2) as i32,                name:"Platina Verde",                  sell:12,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::PLATINUM, 3) as i32,                name:"Platina Azul",                   sell:48,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::PLATINUM, 4) as i32,                name:"Platina Roxa",                   sell:192,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 1) as i32,   name:"Fragmento Iluminante Cinza",     sell:5,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 2) as i32,   name:"Fragmento Iluminante Verde",     sell:20,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 3) as i32,   name:"Fragmento Iluminante Azul",      sell:80,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 4) as i32,   name:"Fragmento Iluminante Roxa",      sell:320,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::ANIMA_STONE, 1) as i32,             name:"Pedra de Ânima Cinza",           sell:5,      buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::ANIMA_STONE, 2) as i32,             name:"Pedra de Ânima Verde",           sell:20,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::ANIMA_STONE, 3) as i32,             name:"Pedra de Ânima Azul",            sell:80,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::ANIMA_STONE, 4) as i32,             name:"Pedra de Ânima Roxa",            sell:320,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::SCALE, 1) as i32,                   name:"Escama Cinza",                   sell:40,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::SCALE, 2) as i32,                   name:"Escama Verde",                   sell:160,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::SCALE, 3) as i32,                   name:"Escama Azul",                    sell:640,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::SCALE, 4) as i32,                   name:"Escama Roxa",                    sell:2560,   buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::CLAW, 1) as i32,                    name:"Garra Cinza",                    sell:40,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::CLAW, 2) as i32,                    name:"Garra Verde",                    sell:160,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::CLAW, 3) as i32,                    name:"Garra Azul",                     sell:640,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::CLAW, 4) as i32,                    name:"Garra Roxa",                     sell:2560,   buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::HORN, 1) as i32,                    name:"Chifre Cinza",                   sell:40,     buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::HORN, 2) as i32,                    name:"Chifre Verde",                   sell:160,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::HORN, 3) as i32,                    name:"Chifre Azul",                    sell:640,    buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::na_cor(item_id::HORN, 4) as i32,                    name:"Chifre Roxa",                    sell:2560,   buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::COPPER as i32,                            name:"Cobre",                           sell:1, buy:None, ord:None, stack:999999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::DARKSTEEL as i32,                         name:"Darksteel",                       sell:4, buy:None, ord:None, stack:999999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::GLITTERING_POWDER as i32,                 name:"Pó Cintilante",                   sell:60, buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S {
+            id: item_id::na_cor(item_id::STEEL, 1) as i32,
+            name: "Aço Cinza",
+            sell: 3,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::STEEL, 2) as i32,
+            name: "Aço Verde",
+            sell: 12,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::STEEL, 3) as i32,
+            name: "Aço Azul",
+            sell: 48,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::STEEL, 4) as i32,
+            name: "Aço Roxa",
+            sell: 192,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::DARK_HEART_STONE, 1) as i32,
+            name: "Pedra do Coração Negro Cinza",
+            sell: 5,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::DARK_HEART_STONE, 2) as i32,
+            name: "Pedra do Coração Negro Verde",
+            sell: 20,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::DARK_HEART_STONE, 3) as i32,
+            name: "Pedra do Coração Negro Azul",
+            sell: 80,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::DARK_HEART_STONE, 4) as i32,
+            name: "Pedra do Coração Negro Roxa",
+            sell: 320,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 1) as i32,
+            name: "Pedra Sombra-da-Lua Cinza",
+            sell: 5,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 2) as i32,
+            name: "Pedra Sombra-da-Lua Verde",
+            sell: 20,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 3) as i32,
+            name: "Pedra Sombra-da-Lua Azul",
+            sell: 80,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 4) as i32,
+            name: "Pedra Sombra-da-Lua Roxa",
+            sell: 320,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::QUINTESSENCE, 1) as i32,
+            name: "Quintessência Cinza",
+            sell: 5,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::QUINTESSENCE, 2) as i32,
+            name: "Quintessência Verde",
+            sell: 20,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::QUINTESSENCE, 3) as i32,
+            name: "Quintessência Azul",
+            sell: 80,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::QUINTESSENCE, 4) as i32,
+            name: "Quintessência Roxa",
+            sell: 320,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 1) as i32,
+            name: "Berloque de Exorcismo Cinza",
+            sell: 5,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 2) as i32,
+            name: "Berloque de Exorcismo Verde",
+            sell: 20,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 3) as i32,
+            name: "Berloque de Exorcismo Azul",
+            sell: 80,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 4) as i32,
+            name: "Berloque de Exorcismo Roxa",
+            sell: 320,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::PLATINUM, 1) as i32,
+            name: "Platina Cinza",
+            sell: 3,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::PLATINUM, 2) as i32,
+            name: "Platina Verde",
+            sell: 12,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::PLATINUM, 3) as i32,
+            name: "Platina Azul",
+            sell: 48,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::PLATINUM, 4) as i32,
+            name: "Platina Roxa",
+            sell: 192,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 1) as i32,
+            name: "Fragmento Iluminante Cinza",
+            sell: 5,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 2) as i32,
+            name: "Fragmento Iluminante Verde",
+            sell: 20,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 3) as i32,
+            name: "Fragmento Iluminante Azul",
+            sell: 80,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 4) as i32,
+            name: "Fragmento Iluminante Roxa",
+            sell: 320,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::ANIMA_STONE, 1) as i32,
+            name: "Pedra de Ânima Cinza",
+            sell: 5,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::ANIMA_STONE, 2) as i32,
+            name: "Pedra de Ânima Verde",
+            sell: 20,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::ANIMA_STONE, 3) as i32,
+            name: "Pedra de Ânima Azul",
+            sell: 80,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::ANIMA_STONE, 4) as i32,
+            name: "Pedra de Ânima Roxa",
+            sell: 320,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::SCALE, 1) as i32,
+            name: "Escama Cinza",
+            sell: 40,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::SCALE, 2) as i32,
+            name: "Escama Verde",
+            sell: 160,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::SCALE, 3) as i32,
+            name: "Escama Azul",
+            sell: 640,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::SCALE, 4) as i32,
+            name: "Escama Roxa",
+            sell: 2560,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::CLAW, 1) as i32,
+            name: "Garra Cinza",
+            sell: 40,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::CLAW, 2) as i32,
+            name: "Garra Verde",
+            sell: 160,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::CLAW, 3) as i32,
+            name: "Garra Azul",
+            sell: 640,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::CLAW, 4) as i32,
+            name: "Garra Roxa",
+            sell: 2560,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::HORN, 1) as i32,
+            name: "Chifre Cinza",
+            sell: 40,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::HORN, 2) as i32,
+            name: "Chifre Verde",
+            sell: 160,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::HORN, 3) as i32,
+            name: "Chifre Azul",
+            sell: 640,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::na_cor(item_id::HORN, 4) as i32,
+            name: "Chifre Roxa",
+            sell: 2560,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::COPPER as i32,
+            name: "Cobre",
+            sell: 1,
+            buy: None,
+            ord: None,
+            stack: 999999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::DARKSTEEL as i32,
+            name: "Darksteel",
+            sell: 4,
+            buy: None,
+            ord: None,
+            stack: 999999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::GLITTERING_POWDER as i32,
+            name: "Pó Cintilante",
+            sell: 60,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         // Dungeons: Marcas (conclusao) e Selo (entrada do topo). Vinculados.
-        S{ id: item_id::MARCAS_TEMPESTADE as i32,                 name:"Marcas da Tempestade",            sell:1, buy:None, ord:None, stack:3000, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::SELO_TEMPESTADE as i32,                   name:"Selo da Tempestade",              sell:1, buy:None, ord:None, stack:20, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S {
+            id: item_id::MARCAS_TEMPESTADE as i32,
+            name: "Marcas da Tempestade",
+            sell: 1,
+            buy: None,
+            ord: None,
+            stack: 3000,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::SELO_TEMPESTADE as i32,
+            name: "Selo da Tempestade",
+            sell: 1,
+            buy: None,
+            ord: None,
+            stack: 20,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         // Chaves lendarias (cor 5): so' chefe/raid de nivel 80+ (`shared::chaves`).
-        S{ id: item_id::SCALE_LENDARIA as i32,                    name:"Escama Lendária",                 sell:10240, buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::CLAW_LENDARIA as i32,                     name:"Garra Lendária",                  sell:10240, buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::HORN_LENDARIA as i32,                     name:"Chifre Lendário",                 sell:10240, buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::HIDE_LENDARIA as i32,                     name:"Couro Lendário",                  sell:10240, buy:None, ord:None, stack:9999, slot:None, lvl:1, ic:-1, ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-
+        S {
+            id: item_id::SCALE_LENDARIA as i32,
+            name: "Escama Lendária",
+            sell: 10240,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::CLAW_LENDARIA as i32,
+            name: "Garra Lendária",
+            sell: 10240,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::HORN_LENDARIA as i32,
+            name: "Chifre Lendário",
+            sell: 10240,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::HIDE_LENDARIA as i32,
+            name: "Couro Lendário",
+            sell: 10240,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         // Peixes (drop da pesca) — stackáveis, sem slot. icon_path setado
         // explicitamente abaixo pros sprites de Fish/ (ic/ir são sentinela -1
         // pra NÃO virar Items/r###_c## no backfill de icon_path).
-        S{ id: item_id::FISH_ANCHOVY as i32,      name:"Anchova",                sell:8,   buy:None,       ord:None,     stack:99,slot:None,         lvl:1,  ic:-1,ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::FISH_CLOWNFISH as i32,    name:"Peixe-palhaço",          sell:18,  buy:None,       ord:None,     stack:99,slot:None,         lvl:1,  ic:-1,ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::FISH_SURGEONFISH as i32,  name:"Peixe-cirurgião",        sell:35,  buy:None,       ord:None,     stack:99,slot:None,         lvl:1,  ic:-1,ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
-        S{ id: item_id::FISH_PUFFERFISH as i32,   name:"Baiacu",                 sell:60,  buy:None,       ord:None,     stack:99,slot:None,         lvl:1,  ic:-1,ir:-1, hp:(0,0), mp:(0,0), atk:(0,0), def:(0,0), dex:(0,0), wis:(0,0) },
+        S {
+            id: item_id::FISH_ANCHOVY as i32,
+            name: "Anchova",
+            sell: 8,
+            buy: None,
+            ord: None,
+            stack: 99,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::FISH_CLOWNFISH as i32,
+            name: "Peixe-palhaço",
+            sell: 18,
+            buy: None,
+            ord: None,
+            stack: 99,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::FISH_SURGEONFISH as i32,
+            name: "Peixe-cirurgião",
+            sell: 35,
+            buy: None,
+            ord: None,
+            stack: 99,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::FISH_PUFFERFISH as i32,
+            name: "Baiacu",
+            sell: 60,
+            buy: None,
+            ord: None,
+            stack: 99,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
     ];
     for s in seed {
         sqlx::query(
@@ -989,20 +2664,41 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                def_min = EXCLUDED.def_min, def_max = EXCLUDED.def_max, \
                dex_min = EXCLUDED.dex_min, dex_max = EXCLUDED.dex_max, \
                wis_min = EXCLUDED.wis_min, wis_max = EXCLUDED.wis_max \
-             WHERE items.icon_col = 0 AND items.icon_row = 0"
+             WHERE items.icon_col = 0 AND items.icon_row = 0",
         )
-        .bind(s.id).bind(s.name).bind(s.sell).bind(s.buy).bind(s.ord).bind(s.stack)
-        .bind(s.slot).bind(s.lvl).bind(s.ic).bind(s.ir)
-        .bind(s.hp.0).bind(s.hp.1).bind(s.mp.0).bind(s.mp.1)
-        .bind(s.atk.0).bind(s.atk.1).bind(s.def.0).bind(s.def.1)
-        .bind(s.dex.0).bind(s.dex.1).bind(s.wis.0).bind(s.wis.1)
-        .execute(pool).await?;
+        .bind(s.id)
+        .bind(s.name)
+        .bind(s.sell)
+        .bind(s.buy)
+        .bind(s.ord)
+        .bind(s.stack)
+        .bind(s.slot)
+        .bind(s.lvl)
+        .bind(s.ic)
+        .bind(s.ir)
+        .bind(s.hp.0)
+        .bind(s.hp.1)
+        .bind(s.mp.0)
+        .bind(s.mp.1)
+        .bind(s.atk.0)
+        .bind(s.atk.1)
+        .bind(s.def.0)
+        .bind(s.def.1)
+        .bind(s.dex.0)
+        .bind(s.dex.1)
+        .bind(s.wis.0)
+        .bind(s.wis.1)
+        .execute(pool)
+        .await?;
 
         // Force-update name pra refletir traduções PT->EN. ON CONFLICT do
         // INSERT acima não atualiza name (preserva edits do admin), então
         // garantimos aqui que o seed sobrescreve o nome em DBs existentes.
         sqlx::query("UPDATE items SET name = $1 WHERE id = $2")
-            .bind(s.name).bind(s.id).execute(pool).await?;
+            .bind(s.name)
+            .bind(s.id)
+            .execute(pool)
+            .await?;
     }
     // Backfill icon_path apontando pros PNGs extraídos em
     // MMORPG/Assets/_Project/Resources/Items/r{row}_c{col}.png — naming
@@ -1012,19 +2708,24 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         "UPDATE items \
          SET icon_path = 'Items/r' || lpad(icon_row::text, 3, '0') || \
                           '_c' || lpad(icon_col::text, 2, '0') \
-         WHERE icon_path IS NULL AND icon_col >= 0 AND icon_row >= 0"
-    ).execute(pool).await?;
+         WHERE icon_path IS NULL AND icon_col >= 0 AND icon_row >= 0",
+    )
+    .execute(pool)
+    .await?;
 
     // Peixes: icon vem dos sprites Fish/<Nome> (RemoteContent), não do
     // spritesheet de Items. Só seta se NULL (admin pode sobrescrever).
     for (id, addr) in [
-        (item_id::FISH_ANCHOVY,     "Fish/Anchovy"),
-        (item_id::FISH_CLOWNFISH,   "Fish/Clownfish"),
+        (item_id::FISH_ANCHOVY, "Fish/Anchovy"),
+        (item_id::FISH_CLOWNFISH, "Fish/Clownfish"),
         (item_id::FISH_SURGEONFISH, "Fish/Surgeonfish"),
-        (item_id::FISH_PUFFERFISH,  "Fish/Pufferfish"),
+        (item_id::FISH_PUFFERFISH, "Fish/Pufferfish"),
     ] {
         sqlx::query("UPDATE items SET icon_path = $1 WHERE id = $2 AND icon_path IS NULL")
-            .bind(addr).bind(id as i32).execute(pool).await?;
+            .bind(addr)
+            .bind(id as i32)
+            .execute(pool)
+            .await?;
     }
 
     // Enemy kinds — espelha o array hardcoded antigo. Tuple muito grande;
@@ -1038,12 +2739,27 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
              detect_range, attack_range, kite_dist, proj_count, xp_reward, defense, size_scale, \
              tint_r, tint_g, tint_b, tint_a) VALUES \
              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) \
-             ON CONFLICT (kind) DO NOTHING"
+             ON CONFLICT (kind) DO NOTHING",
         )
-        .bind(e.kind).bind(e.name).bind(e.hp).bind(e.sp).bind(e.dmg).bind(e.cd)
-        .bind(e.det).bind(e.rng).bind(e.kite).bind(e.proj).bind(e.xp).bind(e.def).bind(e.sz)
-        .bind(e.t[0]).bind(e.t[1]).bind(e.t[2]).bind(e.t[3])
-        .execute(pool).await?;
+        .bind(e.kind)
+        .bind(e.name)
+        .bind(e.hp)
+        .bind(e.sp)
+        .bind(e.dmg)
+        .bind(e.cd)
+        .bind(e.det)
+        .bind(e.rng)
+        .bind(e.kite)
+        .bind(e.proj)
+        .bind(e.xp)
+        .bind(e.def)
+        .bind(e.sz)
+        .bind(e.t[0])
+        .bind(e.t[1])
+        .bind(e.t[2])
+        .bind(e.t[3])
+        .execute(pool)
+        .await?;
     }
     // balanceamento_hp_mobs_v1: os mobs comuns ganham ~2,4x de HP (o chefe
     // fica). Com o HP antigo tudo morria em dois golpes e quem atirava matava
@@ -1055,11 +2771,22 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     let hp_nova = sqlx::query("INSERT INTO economy_migrations(name) VALUES ('balanceamento_hp_mobs_v1') ON CONFLICT DO NOTHING")
         .execute(pool).await?.rows_affected() > 0;
     if hp_nova {
-        for (kind, velho) in [(0, 50), (1, 120), (2, 35), (3, 40), (4, 45), (5, 200), (6, 45)] {
+        for (kind, velho) in [
+            (0, 50),
+            (1, 120),
+            (2, 35),
+            (3, 40),
+            (4, 45),
+            (5, 200),
+            (6, 45),
+        ] {
             let novo = crate::economy::KINDS_INICIAIS[kind as usize].hp;
             sqlx::query("UPDATE enemy_kinds SET hp_max = $1 WHERE kind = $2 AND hp_max = $3")
-                .bind(novo).bind(kind).bind(velho)
-                .execute(pool).await?;
+                .bind(novo)
+                .bind(kind)
+                .bind(velho)
+                .execute(pool)
+                .await?;
         }
         tracing::info!("balanceamento_hp_mobs_v1: HP dos mobs comuns atualizado");
     }
@@ -1075,31 +2802,43 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     // nome velho pra rodar uma vez so'.
     sqlx::query(
         "UPDATE enemy_kinds SET attack_range = 2.6, kite_dist = NULL, proj_count = 1 \
-         WHERE kind = 7 AND name = 'Boss'"
-    ).execute(pool).await?;
+         WHERE kind = 7 AND name = 'Boss'",
+    )
+    .execute(pool)
+    .await?;
     for (kind, velho, novo) in [
-        (0, "Grunt", "Lobo"), (1, "Tank", "Urso"), (2, "Ranger", "Pistoleiro"),
-        (3, "Ninja", "Tigre"), (4, "Mago", "Mago"), (5, "Berserker", "Owlbear"),
-        (6, "Arqueiro", "Arqueiro"), (7, "Boss", "Lobo Grande"),
+        (0, "Grunt", "Lobo"),
+        (1, "Tank", "Urso"),
+        (2, "Ranger", "Pistoleiro"),
+        (3, "Ninja", "Tigre"),
+        (4, "Mago", "Mago"),
+        (5, "Berserker", "Owlbear"),
+        (6, "Arqueiro", "Arqueiro"),
+        (7, "Boss", "Lobo Grande"),
     ] {
         sqlx::query(
             "UPDATE enemy_kinds SET name = $3, tint_r = 1, tint_g = 1, tint_b = 1, tint_a = 1, \
              size_scale = CASE WHEN kind IN (2, 3, 4, 6) THEN 1.0 ELSE size_scale END \
-             WHERE kind = $1 AND name = $2"
-        ).bind(kind).bind(velho).bind(novo).execute(pool).await?;
+             WHERE kind = $1 AND name = $2",
+        )
+        .bind(kind)
+        .bind(velho)
+        .bind(novo)
+        .execute(pool)
+        .await?;
     }
 
     // Backfill do loot_item_level — antes hardcoded em world.rs.
     // Só seta se NULL (admin pode editar via web admin sem ser sobrescrito).
     let item_levels: &[(i32, i32)] = &[
-        (0, 10),  // Lobo
-        (1, 15),  // Urso
-        (2, 10),  // Pistoleiro
-        (3, 25),  // Tigre
-        (4, 20),  // Mago
-        (5, 30),  // Owlbear
-        (6, 10),  // Arqueiro
-        (7, 50),  // Lobo Grande
+        (0, 10), // Lobo
+        (1, 15), // Urso
+        (2, 10), // Pistoleiro
+        (3, 25), // Tigre
+        (4, 20), // Mago
+        (5, 30), // Owlbear
+        (6, 10), // Arqueiro
+        (7, 50), // Lobo Grande
     ];
     for (kind, lvl) in item_levels {
         sqlx::query("UPDATE enemy_kinds SET loot_item_level = $2 WHERE kind = $1 AND loot_item_level IS NULL")
@@ -1111,44 +2850,92 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     // Seed dos shops dos vendors. shop_id=1 fica como generalista (legacy
     // do shop antigo). Demais são especializados.
     let shop_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vendor_shops")
-        .fetch_one(pool).await?;
+        .fetch_one(pool)
+        .await?;
     if shop_count == 0 {
         let shops: &[(i32, &str, &[u16])] = &[
-            (1, "Merchant", &[
-                item_id::HEALTH_POTION, item_id::MANA_POTION, item_id::GREATER_HEAL,
-                item_id::GREATER_MANA, item_id::STAMINA_POTION,
-                item_id::ESPADA_E_ESCUDO, item_id::KATANA, item_id::PISTOLAS, item_id::ANEL_MAGICO,
-                item_id::ARMADURA_MEDIA,
-            ]),
-            (2, "Swordsmith", &[
-                item_id::ESPADA_E_ESCUDO, item_id::KATANA, item_id::MANTO_DO_GUERREIRO, item_id::BAINHA,
-            ]),
-            (3, "Alchemist", &[
-                item_id::HEALTH_POTION, item_id::MANA_POTION, item_id::GREATER_HEAL,
-                item_id::GREATER_MANA, item_id::STAMINA_POTION,
-            ]),
-            (4, "Blacksmith", &[
-                item_id::ARMADURA_LEVE, item_id::ARMADURA_MEDIA, item_id::ARMADURA_PESADA,
-            ]),
-            (5, "Mage", &[
-                item_id::ANEL_MAGICO, item_id::MANTO_DO_MAGO, item_id::BRINCO, item_id::AMULETO,
-                item_id::BRACELETE, item_id::CINTO,
-            ]),
-            (6, "Archer", &[
-                item_id::PISTOLAS, item_id::COLDRE, item_id::STAMINA_POTION,
-            ]),
+            (
+                1,
+                "Merchant",
+                &[
+                    item_id::HEALTH_POTION,
+                    item_id::MANA_POTION,
+                    item_id::GREATER_HEAL,
+                    item_id::GREATER_MANA,
+                    item_id::STAMINA_POTION,
+                    item_id::ESPADA_E_ESCUDO,
+                    item_id::KATANA,
+                    item_id::PISTOLAS,
+                    item_id::ANEL_MAGICO,
+                    item_id::ARMADURA_MEDIA,
+                ],
+            ),
+            (
+                2,
+                "Swordsmith",
+                &[
+                    item_id::ESPADA_E_ESCUDO,
+                    item_id::KATANA,
+                    item_id::MANTO_DO_GUERREIRO,
+                    item_id::BAINHA,
+                ],
+            ),
+            (
+                3,
+                "Alchemist",
+                &[
+                    item_id::HEALTH_POTION,
+                    item_id::MANA_POTION,
+                    item_id::GREATER_HEAL,
+                    item_id::GREATER_MANA,
+                    item_id::STAMINA_POTION,
+                ],
+            ),
+            (
+                4,
+                "Blacksmith",
+                &[
+                    item_id::ARMADURA_LEVE,
+                    item_id::ARMADURA_MEDIA,
+                    item_id::ARMADURA_PESADA,
+                ],
+            ),
+            (
+                5,
+                "Mage",
+                &[
+                    item_id::ANEL_MAGICO,
+                    item_id::MANTO_DO_MAGO,
+                    item_id::BRINCO,
+                    item_id::AMULETO,
+                    item_id::BRACELETE,
+                    item_id::CINTO,
+                ],
+            ),
+            (
+                6,
+                "Archer",
+                &[item_id::PISTOLAS, item_id::COLDRE, item_id::STAMINA_POTION],
+            ),
         ];
         for (sid, name, items) in shops {
             sqlx::query(
-                "INSERT INTO vendor_shops (shop_id, name) VALUES ($1, $2) ON CONFLICT DO NOTHING"
-            ).bind(sid).bind(*name).execute(pool).await?;
+                "INSERT INTO vendor_shops (shop_id, name) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            )
+            .bind(sid)
+            .bind(*name)
+            .execute(pool)
+            .await?;
             for (i, &item) in items.iter().enumerate() {
                 sqlx::query(
                     "INSERT INTO vendor_shop_items (shop_id, item_id, sort_order) \
-                     VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
+                     VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
                 )
-                .bind(sid).bind(item as i32).bind(i as i32)
-                .execute(pool).await?;
+                .bind(sid)
+                .bind(item as i32)
+                .bind(i as i32)
+                .execute(pool)
+                .await?;
             }
         }
         tracing::info!("economy seed: {} vendor shops inseridos", shops.len());
@@ -1158,23 +2945,38 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     let new_shop_items: &[(i32, u16)] = &[
         // O equipamento novo em cada loja (docs/COMBATE.md). O Mercador (1) e' o
         // unico que sempre existe no mundo, entao vende as quatro armas.
-        (1, item_id::ESPADA_E_ESCUDO), (1, item_id::KATANA), (1, item_id::PISTOLAS), (1, item_id::ANEL_MAGICO),
+        (1, item_id::ESPADA_E_ESCUDO),
+        (1, item_id::KATANA),
+        (1, item_id::PISTOLAS),
+        (1, item_id::ANEL_MAGICO),
         (1, item_id::ARMADURA_MEDIA),
-        (2, item_id::ESPADA_E_ESCUDO), (2, item_id::KATANA), (2, item_id::MANTO_DO_GUERREIRO), (2, item_id::BAINHA),
-        (4, item_id::ARMADURA_LEVE), (4, item_id::ARMADURA_MEDIA), (4, item_id::ARMADURA_PESADA),
-        (5, item_id::ANEL_MAGICO), (5, item_id::MANTO_DO_MAGO), (5, item_id::BRINCO), (5, item_id::AMULETO),
-        (5, item_id::BRACELETE), (5, item_id::CINTO),
-        (6, item_id::PISTOLAS), (6, item_id::COLDRE),
+        (2, item_id::ESPADA_E_ESCUDO),
+        (2, item_id::KATANA),
+        (2, item_id::MANTO_DO_GUERREIRO),
+        (2, item_id::BAINHA),
+        (4, item_id::ARMADURA_LEVE),
+        (4, item_id::ARMADURA_MEDIA),
+        (4, item_id::ARMADURA_PESADA),
+        (5, item_id::ANEL_MAGICO),
+        (5, item_id::MANTO_DO_MAGO),
+        (5, item_id::BRINCO),
+        (5, item_id::AMULETO),
+        (5, item_id::BRACELETE),
+        (5, item_id::CINTO),
+        (6, item_id::PISTOLAS),
+        (6, item_id::COLDRE),
         // Recursos T1 vendaveis no Mercador — facilita early game.
         (1, item_id::WOOD_T1),
         (1, item_id::LEATHER_T1),
     ];
     for (sid, item) in new_shop_items {
         let exists: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM vendor_shop_items WHERE shop_id = $1 AND item_id = $2"
+            "SELECT COUNT(*) FROM vendor_shop_items WHERE shop_id = $1 AND item_id = $2",
         )
-        .bind(sid).bind(*item as i32)
-        .fetch_one(pool).await?;
+        .bind(sid)
+        .bind(*item as i32)
+        .fetch_one(pool)
+        .await?;
         if exists == 0 {
             let next_order: i32 = sqlx::query_scalar(
                 "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM vendor_shop_items WHERE shop_id = $1"
@@ -1182,49 +2984,52 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             .bind(sid).fetch_one(pool).await?;
             sqlx::query(
                 "INSERT INTO vendor_shop_items (shop_id, item_id, sort_order) \
-                 VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
+                 VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
             )
-            .bind(sid).bind(*item as i32).bind(next_order)
-            .execute(pool).await?;
+            .bind(sid)
+            .bind(*item as i32)
+            .bind(next_order)
+            .execute(pool)
+            .await?;
         }
     }
 
     // Recursos T1 — buy_price = sell_price * 3 (custa 3x o preco de venda).
     // Idempotente: so seta se ainda for NULL/0 — admin pode editar via web sem
     // ser sobrescrito.
-    let t1_resources: &[u16] = &[
-        item_id::WOOD_T1, item_id::LEATHER_T1,
-    ];
+    let t1_resources: &[u16] = &[item_id::WOOD_T1, item_id::LEATHER_T1];
     for &iid in t1_resources {
         sqlx::query(
             "UPDATE items SET buy_price = sell_price * 3 \
              WHERE id = $1 \
                AND sell_price > 0 \
-               AND (buy_price IS NULL OR buy_price = 0)"
+               AND (buy_price IS NULL OR buy_price = 0)",
         )
         .bind(iid as i32)
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     }
 
     // Farm node drops — seed só se vazio. Replica o comportamento legado:
     // 1 row de material principal por (kind, tier) com qty escalando, +
     // 1 row de gold com chance proporcional ao tier.
     let farm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM farm_node_drops")
-        .fetch_one(pool).await?;
+        .fetch_one(pool)
+        .await?;
     if farm_count == 0 {
         // (kind, tier, item_id, qty_min, qty_max, chance)
         // qty_base = 2 + tier; qty_extra = +0..2 → range [base, base+2].
         let farm_drops: &[(&str, i32, u16, i32, i32, f32)] = &[
             // Tree → Madeira
-            ("Tree",   1, item_id::WOOD_T1,    3, 5, 1.0),
-            ("Tree",   2, item_id::WOOD_T2,    4, 6, 1.0),
-            ("Tree",   3, item_id::WOOD_T3,    5, 7, 1.0),
-            ("Tree",   4, item_id::WOOD_T4,    6, 8, 1.0),
+            ("Tree", 1, item_id::WOOD_T1, 3, 5, 1.0),
+            ("Tree", 2, item_id::WOOD_T2, 4, 6, 1.0),
+            ("Tree", 3, item_id::WOOD_T3, 5, 7, 1.0),
+            ("Tree", 4, item_id::WOOD_T4, 6, 8, 1.0),
             // Rock → Mineral
-            ("Rock",   1, item_id::na_cor(item_id::STEEL, 1), 3, 5, 1.0),
-            ("Rock",   2, item_id::na_cor(item_id::STEEL, 2), 4, 6, 1.0),
-            ("Rock",   3, item_id::na_cor(item_id::STEEL, 3), 5, 7, 1.0),
-            ("Rock",   4, item_id::na_cor(item_id::STEEL, 4), 6, 8, 1.0),
+            ("Rock", 1, item_id::na_cor(item_id::STEEL, 1), 3, 5, 1.0),
+            ("Rock", 2, item_id::na_cor(item_id::STEEL, 2), 4, 6, 1.0),
+            ("Rock", 3, item_id::na_cor(item_id::STEEL, 3), 5, 7, 1.0),
+            ("Rock", 4, item_id::na_cor(item_id::STEEL, 4), 6, 8, 1.0),
             // Flower → Couro (default legado; admin troca pra herbal/etc.)
             ("Flower", 1, item_id::LEATHER_T1, 3, 5, 1.0),
             ("Flower", 2, item_id::LEATHER_T2, 4, 6, 1.0),
@@ -1233,44 +3038,63 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             // Coleta nao da OURO: ele ficou raro (chefe, dungeon, mercado,
             // venda ao NPC, calendario). A moeda que sai do chao e' o COBRE —
             // a pedra ja' dava, a arvore e a flor passam a dar (docs/ECONOMIA.md).
-            ("Tree",   1, item_id::COPPER,     8, 16, 1.0),
-            ("Tree",   2, item_id::COPPER,    12, 24, 1.0),
-            ("Tree",   3, item_id::COPPER,    16, 32, 1.0),
-            ("Tree",   4, item_id::COPPER,    20, 40, 1.0),
-            ("Flower", 1, item_id::COPPER,     8, 16, 1.0),
-            ("Flower", 2, item_id::COPPER,    12, 24, 1.0),
-            ("Flower", 3, item_id::COPPER,    16, 32, 1.0),
-            ("Flower", 4, item_id::COPPER,    20, 40, 1.0),
+            ("Tree", 1, item_id::COPPER, 8, 16, 1.0),
+            ("Tree", 2, item_id::COPPER, 12, 24, 1.0),
+            ("Tree", 3, item_id::COPPER, 16, 32, 1.0),
+            ("Tree", 4, item_id::COPPER, 20, 40, 1.0),
+            ("Flower", 1, item_id::COPPER, 8, 16, 1.0),
+            ("Flower", 2, item_id::COPPER, 12, 24, 1.0),
+            ("Flower", 3, item_id::COPPER, 16, 32, 1.0),
+            ("Flower", 4, item_id::COPPER, 20, 40, 1.0),
         ];
         for (kind, tier, item, qmin, qmax, chance) in farm_drops {
             sqlx::query(
                 "INSERT INTO farm_node_drops (kind, tier, item_id, qty_min, qty_max, chance) \
-                 VALUES ($1, $2, $3, $4, $5, $6)"
+                 VALUES ($1, $2, $3, $4, $5, $6)",
             )
-            .bind(*kind).bind(tier).bind(*item as i32).bind(qmin).bind(qmax).bind(chance)
-            .execute(pool).await?;
+            .bind(*kind)
+            .bind(tier)
+            .bind(*item as i32)
+            .bind(qmin)
+            .bind(qmax)
+            .bind(chance)
+            .execute(pool)
+            .await?;
         }
-        tracing::info!("economy seed: {} farm node drops inseridos", farm_drops.len());
+        tracing::info!(
+            "economy seed: {} farm node drops inseridos",
+            farm_drops.len()
+        );
     }
 
     // M25: a pedra deixou de dar "Mineral" e passou a dar os materiais de
     // craft de verdade. Roda uma vez: se o Aco cinza ja' esta' na tabela, o
     // trabalho ja' foi feito e nao se mexe mais (admin pode ter ajustado).
     let ja: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM farm_node_drops WHERE kind = 'Rock' AND item_id = $1"
-    ).bind(item_id::STEEL as i32).fetch_one(pool).await?;
+        "SELECT COUNT(*) FROM farm_node_drops WHERE kind = 'Rock' AND item_id = $1",
+    )
+    .bind(item_id::STEEL as i32)
+    .fetch_one(pool)
+    .await?;
     if ja == 0 {
-        sqlx::query("DELETE FROM farm_node_drops WHERE kind = 'Rock'").execute(pool).await?;
+        sqlx::query("DELETE FROM farm_node_drops WHERE kind = 'Rock'")
+            .execute(pool)
+            .await?;
         // A tabela mora em `economy::linhas_da_pedra` — a mesma que os testes
         // de proporcao usam. Ver docs/ECONOMIA_DE_CRAFT.md.
         let mut n = 0;
         for (tier, id, qmin, qmax, chance) in crate::economy::linhas_da_pedra() {
             sqlx::query(
                 "INSERT INTO farm_node_drops (kind, tier, item_id, qty_min, qty_max, chance) \
-                 VALUES ('Rock', $1, $2, $3, $4, $5)"
+                 VALUES ('Rock', $1, $2, $3, $4, $5)",
             )
-            .bind(tier as i32).bind(id as i32).bind(qmin).bind(qmax).bind(chance)
-            .execute(pool).await?;
+            .bind(tier as i32)
+            .bind(id as i32)
+            .bind(qmin)
+            .bind(qmax)
+            .bind(chance)
+            .execute(pool)
+            .await?;
             n += 1;
         }
         tracing::info!("economy: {n} drops de pedra (materiais de craft) inseridos");
@@ -1306,7 +3130,10 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         let mut feitos = 0u64;
         // Banco novo: `craft_recipes` so' nasce no `recipes::init`, depois
         // daqui. Sem esta guarda o servidor nao subia num banco vazio.
-        let tem_receitas: bool = sqlx::query_scalar("SELECT to_regclass('craft_recipes') IS NOT NULL").fetch_one(pool).await?;
+        let tem_receitas: bool =
+            sqlx::query_scalar("SELECT to_regclass('craft_recipes') IS NOT NULL")
+                .fetch_one(pool)
+                .await?;
         for sql in [
             format!("UPDATE equipment SET item_id = {PRA_NOVO} WHERE {TEM_NOVO}"),
             format!("UPDATE inventory SET item_id = {PRA_NOVO} WHERE {TEM_NOVO}"),
@@ -1363,10 +3190,20 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         if nova {
             sqlx::query("UPDATE items SET buy_price = buy_price * 4 WHERE buy_price IS NOT NULL AND id BETWEEN 400 AND 499")
                 .execute(pool).await?;
-            sqlx::query("DELETE FROM farm_node_drops WHERE item_id = $1").bind(item_id::GOLD as i32)
-                .execute(pool).await?;
-            for (kind, tier, qmin, qmax) in [("Tree", 1, 8, 16), ("Tree", 2, 12, 24), ("Tree", 3, 16, 32), ("Tree", 4, 20, 40),
-                                             ("Flower", 1, 8, 16), ("Flower", 2, 12, 24), ("Flower", 3, 16, 32), ("Flower", 4, 20, 40)] {
+            sqlx::query("DELETE FROM farm_node_drops WHERE item_id = $1")
+                .bind(item_id::GOLD as i32)
+                .execute(pool)
+                .await?;
+            for (kind, tier, qmin, qmax) in [
+                ("Tree", 1, 8, 16),
+                ("Tree", 2, 12, 24),
+                ("Tree", 3, 16, 32),
+                ("Tree", 4, 20, 40),
+                ("Flower", 1, 8, 16),
+                ("Flower", 2, 12, 24),
+                ("Flower", 3, 16, 32),
+                ("Flower", 4, 20, 40),
+            ] {
                 sqlx::query(
                     "INSERT INTO farm_node_drops (kind, tier, item_id, qty_min, qty_max, chance) VALUES ($1,$2,$3,$4,$5,1.0) \
                      ON CONFLICT DO NOTHING",
@@ -1374,7 +3211,9 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                 .bind(kind).bind(tier).bind(item_id::COPPER as i32).bind(qmin).bind(qmax)
                 .execute(pool).await?;
             }
-            tracing::info!("M28: cobre e' a moeda — loja 4x, coleta sem ouro, arvore e flor com cobre");
+            tracing::info!(
+                "M28: cobre e' a moeda — loja 4x, coleta sem ouro, arvore e flor com cobre"
+            );
         }
     }
 
@@ -1398,48 +3237,96 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         ($t:ty, $colunas:expr) => {{
             let sql = format!("SELECT {} FROM characters{onde}", $colunas);
             let mut q = sqlx::query_as::<_, $t>(&sql);
-            if let Some(n) = so { q = q.bind(n); }
+            if let Some(n) = so {
+                q = q.bind(n);
+            }
             q.fetch_all(pool).await?
         }};
     }
     let rows = busca!(
-        (String, f32, f32, i32, i32, i64, i64, i64, i32, Vec<i32>, i32, i32,
-         Option<i16>, Option<f32>, Option<f32>, Option<i16>),
+        (
+            String,
+            f32,
+            f32,
+            i32,
+            i32,
+            i64,
+            i64,
+            i64,
+            i32,
+            Vec<i32>,
+            i32,
+            i32,
+            Option<i16>,
+            Option<f32>,
+            Option<f32>,
+            Option<i16>
+        ),
         "name, x, y, hp, max_hp, xp, fame, aura, unspent_points, allocated_points, \
          skill_points_earned, skill_points_spent, boat_kind, boat_x, boat_y, boat_dir"
     );
     // Query separada pra account_id + visual_json + gold (tuple FromRow limit 16).
-    let extras = busca!((String, Option<i64>, Option<String>, i64), "name, account_id, visual_json, gold");
-    let extras_map: HashMap<String, (Option<i64>, Option<String>, u64)> =
-        extras.into_iter().map(|(n, a, v, g)| (n, (a, v, g.max(0) as u64))).collect();
+    let extras = busca!(
+        (String, Option<i64>, Option<String>, i64),
+        "name, account_id, visual_json, gold"
+    );
+    let extras_map: HashMap<String, (Option<i64>, Option<String>, u64)> = extras
+        .into_iter()
+        .map(|(n, a, v, g)| (n, (a, v, g.max(0) as u64)))
+        .collect();
     // Faction — query separada (TEXT). Parse tolerante; default Peacemain.
     let faction_rows = busca!((String, String), "name, faction");
-    let faction_map: HashMap<String, shared::Faction> = faction_rows.into_iter()
+    let faction_map: HashMap<String, shared::Faction> = faction_rows
+        .into_iter()
         .map(|(n, f)| (n, shared::Faction::from_str_lenient(&f).unwrap_or_default()))
         .collect();
     // Tutorial concluído (epoch). NULL = nunca → login no mundo redireciona pro tutorial.
-    let tut_rows = busca!((String, Option<i64>), "name, EXTRACT(EPOCH FROM last_tutorial_completed)::BIGINT");
+    let tut_rows = busca!(
+        (String, Option<i64>),
+        "name, EXTRACT(EPOCH FROM last_tutorial_completed)::BIGINT"
+    );
     let tut_map: HashMap<String, Option<i64>> = tut_rows.into_iter().collect();
     // Boat 2.5D extras: yaw/sail/anchor + mounted_local. Tudo opcional pra
     // compat com rows legacy (sao NULL quando antigos).
-    type BoatExtras = (Option<f32>, Option<i16>, Option<f32>, Option<bool>, Option<f32>, Option<f32>);
+    type BoatExtras = (
+        Option<f32>,
+        Option<i16>,
+        Option<f32>,
+        Option<bool>,
+        Option<f32>,
+        Option<f32>,
+    );
     let boat_extras = busca!(
         (String, Option<f32>, Option<i16>, Option<f32>, Option<bool>, Option<f32>, Option<f32>),
         "name, boat_yaw, boat_sail_pos, boat_sail_angle, boat_anchor_dropped, mounted_local_x, mounted_local_y"
     );
-    let boat_extras_map: HashMap<String, BoatExtras> = boat_extras.into_iter()
+    let boat_extras_map: HashMap<String, BoatExtras> = boat_extras
+        .into_iter()
         .map(|(n, y, sp, sa, a, lx, ly)| (n, (y, sp, sa, a, lx, ly)))
         .collect();
     // Mana, stamina e zona. NULL = row de antes das colunas.
-    let vida = busca!((String, Option<f32>, Option<f32>, Option<String>), "name, mp, stamina, zona");
-    let vida_map: HashMap<String, (Option<f32>, Option<f32>, Option<String>)> =
-        vida.into_iter().map(|(n, m, s, z)| (n, (m, s, z))).collect();
+    let vida = busca!(
+        (String, Option<f32>, Option<f32>, Option<String>),
+        "name, mp, stamina, zona"
+    );
+    let vida_map: HashMap<String, (Option<f32>, Option<f32>, Option<String>)> = vida
+        .into_iter()
+        .map(|(n, m, s, z)| (n, (m, s, z)))
+        .collect();
     let bonus = busca!((String, i64), "name, xp_bonus_ate");
     let bonus_map: HashMap<String, i64> = bonus.into_iter().collect();
-    let drop = busca!((String, i64, i64, String), "name, fortuna_ate, sorte_ate, barra_json");
-    let drop_map: HashMap<String, (i64, i64, String)> =
-        drop.into_iter().map(|(n, f, s, b)| (n, (f, s, b))).collect();
-    let mortes = busca!((String, String, i64, i32), "name, mortes_json, recuperacoes_dia, recuperacoes_usadas");
+    let drop = busca!(
+        (String, i64, i64, String),
+        "name, fortuna_ate, sorte_ate, barra_json"
+    );
+    let drop_map: HashMap<String, (i64, i64, String)> = drop
+        .into_iter()
+        .map(|(n, f, s, b)| (n, (f, s, b)))
+        .collect();
+    let mortes = busca!(
+        (String, String, i64, i32),
+        "name, mortes_json, recuperacoes_dia, recuperacoes_usadas"
+    );
     let dungeon = busca!((String, String), "name, dungeon_json");
     let dungeon_map: HashMap<String, String> = dungeon.into_iter().collect();
     // Dados da conta: por account_id, fora do `busca!` (e' outra tabela).
@@ -1449,33 +3336,60 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
             if so.is_some() { " WHERE c.name = $1" } else { "" }
         );
         let mut q = sqlx::query_as::<_, (String, String)>(&sql);
-        if let Some(n) = so { q = q.bind(n); }
+        if let Some(n) = so {
+            q = q.bind(n);
+        }
         q.fetch_all(pool).await?.into_iter().collect()
     };
-    let mortes_map: HashMap<String, (String, i64, i32)> =
-        mortes.into_iter().map(|(n, m, d, u)| (n, (m, d, u))).collect();
+    let mortes_map: HashMap<String, (String, i64, i32)> = mortes
+        .into_iter()
+        .map(|(n, m, d, u)| (n, (m, d, u)))
+        .collect();
     let prefs = busca!((String, String), "name, preferencias_json");
     let prefs_map: HashMap<String, String> = prefs.into_iter().collect();
 
     let mut out = HashMap::with_capacity(rows.len());
-    for (name, x, y, hp, max_hp, xp, fame, aura, unspent, allocated_vec,
-         sp_earned, sp_spent, boat_kind, boat_x, boat_y, boat_dir) in rows
+    for (
+        name,
+        x,
+        y,
+        hp,
+        max_hp,
+        xp,
+        fame,
+        aura,
+        unspent,
+        allocated_vec,
+        sp_earned,
+        sp_spent,
+        boat_kind,
+        boat_x,
+        boat_y,
+        boat_dir,
+    ) in rows
     {
-        let (account_id, visual_json, gold) = extras_map.get(&name).cloned().unwrap_or((None, None, 0));
+        let (account_id, visual_json, gold) =
+            extras_map.get(&name).cloned().unwrap_or((None, None, 0));
         let faction = faction_map.get(&name).copied().unwrap_or_default();
         let inv = load_inventory(pool, &name).await?;
         let equip = load_equipment(pool, &name).await?;
         let vault = load_vault(pool, &name).await?;
         let profs = load_proficiencies(pool, &name).await?;
-        let (quests, faction_points) = crate::quests::load_char(pool, &name).await.unwrap_or_default();
+        let (quests, faction_points) = crate::quests::load_char(pool, &name)
+            .await
+            .unwrap_or_default();
         let mut allocated = [0u32; shared::STAT_COUNT];
-        for (i, v) in allocated_vec.into_iter().enumerate().take(shared::STAT_COUNT) {
+        for (i, v) in allocated_vec
+            .into_iter()
+            .enumerate()
+            .take(shared::STAT_COUNT)
+        {
             allocated[i] = v.max(0) as u32;
         }
         // Boat extras (Boat 2.5D — yaw/sail/anchor + mounted_local).
         let extras = boat_extras_map.get(&name).copied();
-        let (b_yaw, b_sail_pos, b_sail_angle, b_anchor, ml_x, ml_y) = extras
-            .unwrap_or((None, None, None, None, None, None));
+        let (b_yaw, b_sail_pos, b_sail_angle, b_anchor, ml_x, ml_y) =
+            extras.unwrap_or((None, None, None, None, None, None));
         let boat = match (boat_kind, boat_x, boat_y, boat_dir) {
             (Some(k), Some(bx), Some(by), Some(d)) => {
                 let dir = d.max(0) as u8;
@@ -1484,7 +3398,8 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 Some(PersistedBoat {
                     kind: k.max(0) as u16,
                     pos: Vec2::new(bx, by),
-                    dir, yaw,
+                    dir,
+                    yaw,
                     sail_position: b_sail_pos.map(|s| s.max(0) as u8).unwrap_or(0),
                     sail_angle: b_sail_angle.unwrap_or(0.0),
                     anchor_dropped: b_anchor.unwrap_or(true),
@@ -1513,7 +3428,10 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
             CharacterRow {
                 name,
                 pos: Vec2::new(x, y),
-                hp: Health { current: hp, max: max_hp },
+                hp: Health {
+                    current: hp,
+                    max: max_hp,
+                },
                 xp: xp.max(0) as u64,
                 gold,
                 boat,
@@ -1548,6 +3466,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 dungeon_json,
                 conta_dungeon_json,
                 presenca_aplicados: Vec::new(),
+                correio_recibos: Vec::new(),
             },
         );
     }
@@ -1581,7 +3500,7 @@ pub async fn create_character(
           skill_points_earned, skill_points_spent,
           account_id, visual_json, starting_weapon, faction, updated)
          VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 0, $6, 1, 0, $7, $8, $9, $10, $11)
-         ON CONFLICT(name) DO NOTHING"
+         ON CONFLICT(name) DO NOTHING",
     )
     .bind(name)
     .bind(spawn.x)
@@ -1606,7 +3525,7 @@ pub async fn create_character(
         sqlx::query(
             "INSERT INTO inventory (character_name, slot, item_id, qty)
              VALUES ($1, 0, $2, 1)
-             ON CONFLICT (character_name, slot) DO NOTHING"
+             ON CONFLICT (character_name, slot) DO NOTHING",
         )
         .bind(name)
         .bind(starting_weapon as i32)
@@ -1616,7 +3535,7 @@ pub async fn create_character(
         sqlx::query(
             "INSERT INTO equipment (character_name, slot, item_id)
              VALUES ($1, 'weapon', $2)
-             ON CONFLICT (character_name, slot) DO UPDATE SET item_id = EXCLUDED.item_id"
+             ON CONFLICT (character_name, slot) DO UPDATE SET item_id = EXCLUDED.item_id",
         )
         .bind(name)
         .bind(starting_weapon as i32)
@@ -1625,7 +3544,6 @@ pub async fn create_character(
     }
     Ok(true)
 }
-
 
 async fn load_proficiencies(pool: &PgPool, char_name: &str) -> Result<[u64; shared::PROF_COUNT]> {
     let mut arr = [0u64; shared::PROF_COUNT];
@@ -1636,7 +3554,9 @@ async fn load_proficiencies(pool: &PgPool, char_name: &str) -> Result<[u64; shar
     .fetch_all(pool)
     .await?;
     for (kind, xp) in rows {
-        if kind < 0 { continue; }
+        if kind < 0 {
+            continue;
+        }
         let idx = kind as usize;
         if idx < arr.len() {
             arr[idx] = xp.max(0) as u64;
@@ -1654,8 +3574,12 @@ async fn load_vault(pool: &PgPool, char_name: &str) -> Result<Vec<shared::Invent
     .fetch_all(pool)
     .await?;
     for (slot, item_id, qty, inst_json) in rows {
-        if slot < 0 || (slot as usize) >= shared::INVENTORY_SLOTS { continue; }
-        if qty <= 0 { continue; }
+        if slot < 0 || (slot as usize) >= shared::INVENTORY_SLOTS {
+            continue;
+        }
+        if qty <= 0 {
+            continue;
+        }
         slots[slot as usize] = shared::InventorySlot {
             item_id: item_id as u16,
             qty: qty as u32,
@@ -1693,8 +3617,12 @@ async fn load_inventory(pool: &PgPool, char_name: &str) -> Result<Vec<shared::In
     .fetch_all(pool)
     .await?;
     for (slot, item_id, qty, inst_json) in rows {
-        if slot < 0 || (slot as usize) >= shared::INVENTORY_SLOTS { continue; }
-        if qty <= 0 { continue; }
+        if slot < 0 || (slot as usize) >= shared::INVENTORY_SLOTS {
+            continue;
+        }
+        if qty <= 0 {
+            continue;
+        }
         slots[slot as usize] = shared::InventorySlot {
             item_id: item_id as u16,
             qty: qty as u32,
@@ -1729,11 +3657,16 @@ pub fn log_drop(
         let r = sqlx::query(
             "INSERT INTO item_drops_log \
               (enemy_kind, item_id, qty, rarity, item_level, refinement) \
-             VALUES ($1,$2,$3,$4,$5,$6)"
+             VALUES ($1,$2,$3,$4,$5,$6)",
         )
-        .bind(enemy_kind as i32).bind(item_id as i32).bind(qty as i32)
-        .bind(rarity as i16).bind(item_level as i32).bind(refinement as i16)
-        .execute(&pool).await;
+        .bind(enemy_kind as i32)
+        .bind(item_id as i32)
+        .bind(qty as i32)
+        .bind(rarity as i16)
+        .bind(item_level as i32)
+        .bind(refinement as i16)
+        .execute(&pool)
+        .await;
         if let Err(e) = r {
             tracing::warn!("drop log failed: {e:?}");
         }
@@ -1767,7 +3700,11 @@ pub fn spawn_writer(pool: PgPool) -> mpsc::UnboundedSender<SaveBatch> {
                 }
                 Err(e) => {
                     crate::telemetria::conta("save", "falha", 1);
-                    crate::telemetria::conta("save_atrasado_mercado", "", batch.mercado.len() as i64);
+                    crate::telemetria::conta(
+                        "save_atrasado_mercado",
+                        "",
+                        batch.mercado.len() as i64,
+                    );
                     tracing::warn!("persist write failed: {e:?}");
                     atrasado = Some(batch);
                 }
@@ -1793,7 +3730,10 @@ fn juntar_atrasado(velho: SaveBatch, novo: SaveBatch) -> SaveBatch {
 
 /// As fotos velhas cujo nome nao aparece nas novas, depois todas as novas.
 fn juntar_fotos<T>(velhas: Vec<T>, novas: Vec<T>, nome: impl Fn(&T) -> &str) -> Vec<T> {
-    let mut v: Vec<T> = velhas.into_iter().filter(|a| !novas.iter().any(|b| nome(b) == nome(a))).collect();
+    let mut v: Vec<T> = velhas
+        .into_iter()
+        .filter(|a| !novas.iter().any(|b| nome(b) == nome(a)))
+        .collect();
     v.extend(novas);
     v
 }
@@ -1812,7 +3752,10 @@ mod testes_save_atrasado {
 
     #[test]
     fn sem_novas_fica_tudo_do_velho() {
-        assert_eq!(juntar_fotos(vec![("ana", 1)], Vec::new(), |r| r.0), vec![("ana", 1)]);
+        assert_eq!(
+            juntar_fotos(vec![("ana", 1)], Vec::new(), |r| r.0),
+            vec![("ana", 1)]
+        );
     }
 }
 
@@ -1827,25 +3770,45 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .unwrap_or(0);
     for row in &batch.rows {
         let allocated_vec: Vec<i32> = row.allocated_points.iter().map(|&v| v as i32).collect();
-        let (boat_kind, boat_x, boat_y, boat_dir): (Option<i16>, Option<f32>, Option<f32>, Option<i16>) =
-            match row.boat {
-                Some(b) => (Some(b.kind as i16), Some(b.pos.x), Some(b.pos.y), Some(b.dir as i16)),
-                None    => (None, None, None, None),
-            };
-        let (boat_yaw, boat_sail_pos, boat_sail_angle, boat_anchor): (Option<f32>, Option<i16>, Option<f32>, Option<bool>) =
-            match row.boat {
-                Some(b) => (Some(b.yaw), Some(b.sail_position as i16), Some(b.sail_angle), Some(b.anchor_dropped)),
-                None    => (None, None, None, None),
-            };
-        let (mounted_local_x, mounted_local_y): (Option<f32>, Option<f32>) =
-            match row.mounted_local {
-                Some(p) => (Some(p.x), Some(p.y)),
-                None    => (None, None),
-            };
+        let (boat_kind, boat_x, boat_y, boat_dir): (
+            Option<i16>,
+            Option<f32>,
+            Option<f32>,
+            Option<i16>,
+        ) = match row.boat {
+            Some(b) => (
+                Some(b.kind as i16),
+                Some(b.pos.x),
+                Some(b.pos.y),
+                Some(b.dir as i16),
+            ),
+            None => (None, None, None, None),
+        };
+        let (boat_yaw, boat_sail_pos, boat_sail_angle, boat_anchor): (
+            Option<f32>,
+            Option<i16>,
+            Option<f32>,
+            Option<bool>,
+        ) = match row.boat {
+            Some(b) => (
+                Some(b.yaw),
+                Some(b.sail_position as i16),
+                Some(b.sail_angle),
+                Some(b.anchor_dropped),
+            ),
+            None => (None, None, None, None),
+        };
+        let (mounted_local_x, mounted_local_y): (Option<f32>, Option<f32>) = match row.mounted_local
+        {
+            Some(p) => (Some(p.x), Some(p.y)),
+            None => (None, None),
+        };
         // visual_json: persiste o VisualConfig em vigor (wardrobe mid-game).
         // None = mantem o que ja existe no banco (mas atualizamos sempre que
         // session.visual estiver setado, o que e o caso pra players logados).
-        let visual_json: Option<String> = row.visual.as_ref()
+        let visual_json: Option<String> = row
+            .visual
+            .as_ref()
             .and_then(|v| serde_json::to_string(v).ok());
         sqlx::query(
             "INSERT INTO characters (name, x, y, hp, max_hp, xp, fame, aura,
@@ -1952,6 +3915,7 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         // na mesma transacao (docs/CALENDARIO.md). Queda antes daqui deixa a
         // linha pendente e o proximo login entrega de novo, uma vez.
         crate::presenca::marcar_aplicados(&mut tx, &row.presenca_aplicados).await?;
+        crate::correio_admin::marcar(&mut tx, &row.name, &row.correio_recibos).await?;
 
         // Inventario: delete-all + insert-rows pra ser simples. O FK cascade
         // ja garante que deletar a linha do character limpa a inventory.
@@ -1960,7 +3924,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             .execute(&mut *tx)
             .await?;
         for (i, slot) in row.inventory.iter().enumerate() {
-            if slot.qty == 0 { continue; }
+            if slot.qty == 0 {
+                continue;
+            }
             let inst_json = slot.instance.and_then(|i| serde_json::to_string(&i).ok());
             sqlx::query(
                 "INSERT INTO inventory (character_name, slot, item_id, qty, instance_data)
@@ -1981,8 +3947,11 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             .execute(&mut *tx)
             .await?;
         for slot in shared::EquipSlot::TODOS {
-            let (slot_name, item_opt, inst_opt) =
-                (slot.as_db_str(), row.equipment.get(slot), row.equipment.get_inst(slot));
+            let (slot_name, item_opt, inst_opt) = (
+                slot.as_db_str(),
+                row.equipment.get(slot),
+                row.equipment.get_inst(slot),
+            );
             if let Some(iid) = item_opt {
                 let inst_json = inst_opt.and_then(|i| serde_json::to_string(&i).ok());
                 sqlx::query(
@@ -2004,7 +3973,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             .execute(&mut *tx)
             .await?;
         for (i, slot) in row.vault.iter().enumerate() {
-            if slot.qty == 0 { continue; }
+            if slot.qty == 0 {
+                continue;
+            }
             let inst_json = slot.instance.and_then(|i| serde_json::to_string(&i).ok());
             sqlx::query(
                 "INSERT INTO vault (character_name, slot, item_id, qty, instance_data)
@@ -2021,7 +3992,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
 
         // Proficiencias: upsert por prof_kind.
         for (i, xp) in row.proficiencies.iter().enumerate() {
-            if *xp == 0 { continue; }
+            if *xp == 0 {
+                continue;
+            }
             sqlx::query(
                 "INSERT INTO proficiencies (character_name, prof_kind, xp)
                  VALUES ($1, $2, $3)

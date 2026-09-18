@@ -36,7 +36,9 @@ fn fila() -> &'static Semaphore {
 }
 
 fn num_cpus() -> usize {
-    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4)
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
 }
 
 #[derive(Debug)]
@@ -92,7 +94,11 @@ pub async fn authenticate(
     .map_err(|e| AuthError::Internal(format!("join: {e}")))?;
 
     if ok {
-        Ok(AuthSuccess { account_id: id, username: uname, class })
+        Ok(AuthSuccess {
+            account_id: id,
+            username: uname,
+            class,
+        })
     } else {
         Err(AuthError::InvalidCredentials)
     }
@@ -102,7 +108,10 @@ pub async fn authenticate(
 /// dois lados — ver `crates/web/src/google.rs`).
 pub fn hash_do_token(token: &str) -> String {
     use sha2::{Digest, Sha256};
-    Sha256::digest(token.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(token.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// Login pela sessao que o login com Google emitiu (docs/LOGIN_GOOGLE.md).
@@ -123,7 +132,11 @@ pub async fn authenticate_token(pool: &PgPool, token: &str) -> Result<AuthSucces
     .fetch_optional(pool)
     .await;
     match row {
-        Ok(Some((id, username, class))) => Ok(AuthSuccess { account_id: id, username, class }),
+        Ok(Some((id, username, class))) => Ok(AuthSuccess {
+            account_id: id,
+            username,
+            class,
+        }),
         Ok(None) => Err(AuthError::InvalidCredentials),
         // Tabela ainda nao criada (o `web` e' quem cria): nao ha' sessao valida.
         Err(sqlx::Error::Database(e)) if e.code().as_deref() == Some("42P01") => {

@@ -24,7 +24,12 @@ pub fn fundo() {
     clear_background(FUNDO_BASE);
     let (w, h) = (screen_width(), screen_height());
     estilo::ret_gradiente(Rect::new(0.0, 0.0, w, h), 0.0, FUNDO_TOPO, FUNDO_BASE);
-    draw_circle(w * 0.5, -h * 0.35, h * 0.9, Color::new(0.30, 0.55, 0.85, 0.05));
+    draw_circle(
+        w * 0.5,
+        -h * 0.35,
+        h * 0.9,
+        Color::new(0.30, 0.55, 0.85, 0.05),
+    );
 }
 
 thread_local! {
@@ -67,7 +72,12 @@ fn dentro(r: Rect, p: Vec2) -> bool {
 pub fn botao(r: Rect, rotulo: &str, ativo: bool) -> bool {
     let (mx, my) = mouse_position();
     let sobre = ativo && dentro(r, vec2(mx, my));
-    let e = estilo::estado(sobre, is_mouse_button_down(MouseButton::Left), !ativo, false);
+    let e = estilo::estado(
+        sobre,
+        is_mouse_button_down(MouseButton::Left),
+        !ativo,
+        false,
+    );
     // O "x" de fechar e' icone, nao rotulo: botao discreto.
     estilo::botao(r, rotulo, e, false);
     sobre && is_mouse_button_pressed(MouseButton::Left)
@@ -89,10 +99,29 @@ pub fn campo(
 ) -> bool {
     estilo::texto_forte(r.x + 2.0, r.y - 8.0, rotulo, estilo::tam::LEGENDA, APAGADO);
     let raio = estilo::RAIO_PEQUENO + 2.0;
-    estilo::ret_gradiente(r, raio, estilo::FUNDO_BAIXO, estilo::alfa(estilo::clarear(estilo::FUNDO_BAIXO, 0.05), 0.95));
-    estilo::borda_arredondada(r, raio, if foco { 1.5 } else { 1.0 }, if foco { estilo::alfa(estilo::ACENTO, 0.85) } else { estilo::BORDA_FORTE });
+    estilo::ret_gradiente(
+        r,
+        raio,
+        estilo::FUNDO_BAIXO,
+        estilo::alfa(estilo::clarear(estilo::FUNDO_BAIXO, 0.05), 0.95),
+    );
+    estilo::borda_arredondada(
+        r,
+        raio,
+        if foco { 1.5 } else { 1.0 },
+        if foco {
+            estilo::alfa(estilo::ACENTO, 0.85)
+        } else {
+            estilo::BORDA_FORTE
+        },
+    );
     if foco {
-        estilo::borda_arredondada(Rect::new(r.x - 3.0, r.y - 3.0, r.w + 6.0, r.h + 6.0), raio + 3.0, 2.0, estilo::alfa(estilo::ACENTO, 0.18));
+        estilo::borda_arredondada(
+            Rect::new(r.x - 3.0, r.y - 3.0, r.w + 6.0, r.h + 6.0),
+            raio + 3.0,
+            2.0,
+            estilo::alfa(estilo::ACENTO, 0.18),
+        );
     }
 
     let mostrado = if senha {
@@ -101,8 +130,18 @@ pub fn campo(
         valor.clone()
     };
     // Cursor piscando: sem ele nao da' pra saber qual campo esta ouvindo.
-    let cursor = if foco && (get_time() * 2.0) as i32 % 2 == 0 { "|" } else { "" };
-    estilo::texto(r.x + 12.0, r.y + r.h * 0.5 + 6.0, &format!("{mostrado}{cursor}"), 18, TEXTO);
+    let cursor = if foco && (get_time() * 2.0) as i32 % 2 == 0 {
+        "|"
+    } else {
+        ""
+    };
+    estilo::texto(
+        r.x + 12.0,
+        r.y + r.h * 0.5 + 6.0,
+        &format!("{mostrado}{cursor}"),
+        18,
+        TEXTO,
+    );
 
     if foco {
         for &c in digitado {
@@ -132,11 +171,21 @@ pub fn linha(r: Rect, esquerda: &str, direita: &str, selecionada: bool) -> bool 
         estilo::cartao(r, sobre, selecionada);
     }
     if selecionada {
-        estilo::ret_arredondado(Rect::new(r.x + 4.0, r.y + 6.0, 3.0, r.h - 12.0), 1.5, estilo::ACENTO);
+        estilo::ret_arredondado(
+            Rect::new(r.x + 4.0, r.y + 6.0, 3.0, r.h - 12.0),
+            1.5,
+            estilo::ACENTO,
+        );
     }
     estilo::texto(r.x + 14.0, r.y + r.h * 0.5 + 6.0, esquerda, 17, TEXTO);
     let w = estilo::medir(direita, 15);
-    estilo::texto(r.x + r.w - w - 12.0, r.y + r.h * 0.5 + 5.0, direita, 15, APAGADO);
+    estilo::texto(
+        r.x + r.w - w - 12.0,
+        r.y + r.h * 0.5 + 5.0,
+        direita,
+        15,
+        APAGADO,
+    );
     sobre && is_mouse_button_pressed(MouseButton::Left)
 }
 

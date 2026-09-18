@@ -56,16 +56,24 @@ pub(super) fn marcar_entregue(aplicados: &mut Vec<String>, id: &str) -> bool {
 
 impl GameWorld {
     pub(super) fn handle_presenca(&mut self, sid: SessionId, pedido: PedidoPresenca) {
-        let Some(s) = self.sessions.get_mut(&sid) else { return };
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
         if !s.logged_in {
             return;
         }
         let (Some(conta), Some(ctx)) = (s.account_id, self.auth_ctx.as_ref()) else {
-            let _ = s.handle.to_client.send(ServerMessage::Presenca { aviso: AvisoPresenca::Recusado { texto: "Calendário indisponível.".into() } });
+            let _ = s.handle.to_client.send(ServerMessage::Presenca {
+                aviso: AvisoPresenca::Recusado {
+                    texto: "Calendário indisponível.".into(),
+                },
+            });
             return;
         };
         match pedido {
-            PedidoPresenca::Estado => db::spawn_estado(ctx.pool.clone(), ctx.tx.clone(), sid, conta),
+            PedidoPresenca::Estado => {
+                db::spawn_estado(ctx.pool.clone(), ctx.tx.clone(), sid, conta)
+            }
             PedidoPresenca::Resgatar { calendario } => {
                 // Duplo toque: o segundo espera a resposta do primeiro. O banco
                 // recusaria de qualquer jeito; isto so' poupa a ida.
@@ -73,7 +81,14 @@ impl GameWorld {
                     return;
                 }
                 s.presenca_em_voo = true;
-                db::spawn_resgate(ctx.pool.clone(), ctx.tx.clone(), sid, conta, s.name.clone(), calendario);
+                db::spawn_resgate(
+                    ctx.pool.clone(),
+                    ctx.tx.clone(),
+                    sid,
+                    conta,
+                    s.name.clone(),
+                    calendario,
+                );
             }
         }
     }
@@ -82,25 +97,43 @@ impl GameWorld {
         let unix = db::agora();
         match ev {
             Evento::Estado { sid, feitos } => {
-                let Some(s) = self.sessions.get_mut(&sid) else { return };
+                let Some(s) = self.sessions.get_mut(&sid) else {
+                    return;
+                };
                 s.presenca = DadosPresenca::de_resgates(&feitos, unix);
-                let _ = s.handle.to_client.send(ServerMessage::Presenca { aviso: AvisoPresenca::Estado(s.presenca.estado(unix, pr::EVENTOS)) });
+                let _ = s.handle.to_client.send(ServerMessage::Presenca {
+                    aviso: AvisoPresenca::Estado(s.presenca.estado(unix, pr::EVENTOS)),
+                });
             }
             Evento::Recusado { sid, texto, feitos } => {
-                let Some(s) = self.sessions.get_mut(&sid) else { return };
+                let Some(s) = self.sessions.get_mut(&sid) else {
+                    return;
+                };
                 s.presenca_em_voo = false;
-                let _ = s.handle.to_client.send(ServerMessage::Presenca { aviso: AvisoPresenca::Recusado { texto } });
+                let _ = s.handle.to_client.send(ServerMessage::Presenca {
+                    aviso: AvisoPresenca::Recusado { texto },
+                });
                 if let Some(feitos) = feitos {
                     s.presenca = DadosPresenca::de_resgates(&feitos, unix);
-                    let _ = s.handle.to_client.send(ServerMessage::Presenca { aviso: AvisoPresenca::Estado(s.presenca.estado(unix, pr::EVENTOS)) });
+                    let _ = s.handle.to_client.send(ServerMessage::Presenca {
+                        aviso: AvisoPresenca::Estado(s.presenca.estado(unix, pr::EVENTOS)),
+                    });
                 }
             }
-            Evento::Resgatou { sid, personagem, id, plano, feitos } => {
+            Evento::Resgatou {
+                sid,
+                personagem,
+                id,
+                plano,
+                feitos,
+            } => {
                 let entregue = self.presenca_entregar(sid, &personagem, &id, &plano.premios, unix);
                 let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.name == personagem) else {
                     // Saiu antes da resposta: a linha fica pendente e o proximo
                     // login da conta recebe.
-                    tracing::warn!("[presenca] {personagem} saiu antes de receber {id}: fica pendente");
+                    tracing::warn!(
+                        "[presenca] {personagem} saiu antes de receber {id}: fica pendente"
+                    );
                     return;
                 };
                 s.presenca_em_voo = false;
@@ -109,16 +142,25 @@ impl GameWorld {
                 let conta = s.account_id;
                 if let Some(e) = &entregue {
                     let _ = s.handle.to_client.send(ServerMessage::Presenca {
-                        aviso: AvisoPresenca::Resgatou { calendario: plano.calendario, dia: plano.dia_grade, premios: plano.premios.clone(), no_correio: e.no_correio.len() as u8 },
+                        aviso: AvisoPresenca::Resgatou {
+                            calendario: plano.calendario,
+                            dia: plano.dia_grade,
+                            premios: plano.premios.clone(),
+                            no_correio: e.no_correio.len() as u8,
+                        },
                     });
                 }
-                let _ = s.handle.to_client.send(ServerMessage::Presenca { aviso: AvisoPresenca::Estado(dados.estado(unix, pr::EVENTOS)) });
+                let _ = s.handle.to_client.send(ServerMessage::Presenca {
+                    aviso: AvisoPresenca::Estado(dados.estado(unix, pr::EVENTOS)),
+                });
                 // Os outros personagens da conta neste canal veem o dia resgatado.
                 if let Some(conta) = conta {
                     for (outro, o) in self.sessions.iter_mut() {
                         if *outro != sid && o.logged_in && o.account_id == Some(conta) {
                             o.presenca = dados.clone();
-                            let _ = o.handle.to_client.send(ServerMessage::Presenca { aviso: AvisoPresenca::Estado(dados.estado(unix, pr::EVENTOS)) });
+                            let _ = o.handle.to_client.send(ServerMessage::Presenca {
+                                aviso: AvisoPresenca::Estado(dados.estado(unix, pr::EVENTOS)),
+                            });
                         }
                     }
                 }
@@ -126,20 +168,37 @@ impl GameWorld {
                     self.dg_enviar_correio(sid);
                 }
             }
-            Evento::Pendentes { sid, personagem, pendentes, feitos } => {
+            Evento::Pendentes {
+                sid,
+                personagem,
+                pendentes,
+                feitos,
+            } => {
                 let mut correio = false;
                 for (id, premios) in &pendentes {
-                    let Some(e) = self.presenca_entregar(sid, &personagem, id, premios, unix) else { continue };
+                    let Some(e) = self.presenca_entregar(sid, &personagem, id, premios, unix)
+                    else {
+                        continue;
+                    };
                     correio |= !e.no_correio.is_empty();
                     if let Some(s) = self.sessions.get(&sid) {
                         let _ = s.handle.to_client.send(ServerMessage::Presenca {
-                            aviso: AvisoPresenca::Resgatou { calendario: pr::MENSAL, dia: 0, premios: premios.clone(), no_correio: e.no_correio.len() as u8 },
+                            aviso: AvisoPresenca::Resgatou {
+                                calendario: pr::MENSAL,
+                                dia: 0,
+                                premios: premios.clone(),
+                                no_correio: e.no_correio.len() as u8,
+                            },
                         });
                     }
                 }
-                let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.name == personagem) else { return };
+                let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.name == personagem) else {
+                    return;
+                };
                 s.presenca = DadosPresenca::de_resgates(&feitos, unix);
-                let _ = s.handle.to_client.send(ServerMessage::Presenca { aviso: AvisoPresenca::Estado(s.presenca.estado(unix, pr::EVENTOS)) });
+                let _ = s.handle.to_client.send(ServerMessage::Presenca {
+                    aviso: AvisoPresenca::Estado(s.presenca.estado(unix, pr::EVENTOS)),
+                });
                 if correio {
                     self.dg_enviar_correio(sid);
                 }
@@ -149,13 +208,29 @@ impl GameWorld {
 
     /// Entrega o premio do resgate `id` ao personagem logado, uma vez por id.
     /// `None` = ja' entregue ou o personagem nao esta' mais nesta sessao.
-    fn presenca_entregar(&mut self, sid: SessionId, personagem: &str, id: &str, premios: &[Premio], unix: i64) -> Option<Entrega> {
-        let s = self.sessions.get_mut(&sid).filter(|s| s.logged_in && s.name == personagem)?;
+    fn presenca_entregar(
+        &mut self,
+        sid: SessionId,
+        personagem: &str,
+        id: &str,
+        premios: &[Premio],
+        unix: i64,
+    ) -> Option<Entrega> {
+        let s = self
+            .sessions
+            .get_mut(&sid)
+            .filter(|s| s.logged_in && s.name == personagem)?;
         if !marcar_entregue(&mut s.presenca_aplicados, id) {
             return None;
         }
         let inventario = &mut s.inventory;
-        let e = entregar(premios, &mut s.gold, |item, q| add_to_inventory(inventario, item, q, None), &mut s.dungeon, unix);
+        let e = entregar(
+            premios,
+            &mut s.gold,
+            |item, q| add_to_inventory(inventario, item, q, None),
+            &mut s.dungeon,
+            unix,
+        );
         s.inventory_dirty = true;
         tracing::info!("[presenca] {personagem} recebeu {id}: {e:?}");
         self.save_pending = true;
@@ -173,11 +248,33 @@ mod tests {
         let mut gold = 10;
         let mut bolsa: Vec<(u16, u32)> = Vec::new();
         let mut dg = shared::dungeon::DadosDungeon::default();
-        let premios = [Premio { item_id: pr::OURO, qtd: 500 }, Premio { item_id: item_id::XP_POTION, qtd: 2 }];
-        let e = entregar(&premios, &mut gold, |id, q| { bolsa.push((id, q)); true }, &mut dg, 1);
+        let premios = [
+            Premio {
+                item_id: pr::OURO,
+                qtd: 500,
+            },
+            Premio {
+                item_id: item_id::XP_POTION,
+                qtd: 2,
+            },
+        ];
+        let e = entregar(
+            &premios,
+            &mut gold,
+            |id, q| {
+                bolsa.push((id, q));
+                true
+            },
+            &mut dg,
+            1,
+        );
         assert_eq!(gold, 510);
         assert_eq!(e.na_bolsa, vec![(item_id::XP_POTION, 2)]);
-        assert_eq!(bolsa, vec![(item_id::XP_POTION, 2)], "ouro nao entra na bolsa");
+        assert_eq!(
+            bolsa,
+            vec![(item_id::XP_POTION, 2)],
+            "ouro nao entra na bolsa"
+        );
         assert!(dg.correio.is_empty());
     }
 
@@ -185,11 +282,21 @@ mod tests {
     fn bolsa_cheia_vai_pro_correio() {
         let mut gold = 0;
         let mut dg = shared::dungeon::DadosDungeon::default();
-        let premios = [Premio { item_id: item_id::MARCAS_TEMPESTADE, qtd: 40 }];
+        let premios = [Premio {
+            item_id: item_id::MARCAS_TEMPESTADE,
+            qtd: 40,
+        }];
         let e = entregar(&premios, &mut gold, |_, _| false, &mut dg, 99);
         assert_eq!(e.no_correio, vec![(item_id::MARCAS_TEMPESTADE, 40)]);
         assert_eq!(dg.correio.len(), 1);
-        assert_eq!((dg.correio[0].item_id, dg.correio[0].qtd, dg.correio[0].motivo), (item_id::MARCAS_TEMPESTADE, 40, pr::MOTIVO_CORREIO));
+        assert_eq!(
+            (
+                dg.correio[0].item_id,
+                dg.correio[0].qtd,
+                dg.correio[0].motivo
+            ),
+            (item_id::MARCAS_TEMPESTADE, 40, pr::MOTIVO_CORREIO)
+        );
     }
 
     /// A mesma resposta do banco chegando duas vezes (ou o pendente de um

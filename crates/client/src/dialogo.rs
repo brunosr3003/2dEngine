@@ -38,7 +38,14 @@ pub struct Dialogo {
 }
 
 impl Dialogo {
-    pub fn abrir(&mut self, quem: &str, titulo: &str, falas: &[&str], fim: Fim, recompensa: String) {
+    pub fn abrir(
+        &mut self,
+        quem: &str,
+        titulo: &str,
+        falas: &[&str],
+        fim: Fim,
+        recompensa: String,
+    ) {
         *self = Self {
             aberto: true,
             quem: quem.to_string(),
@@ -55,7 +62,11 @@ impl Dialogo {
 
     /// Esc ou X. `Fechou` se havia algo aberto.
     pub fn fechar(&mut self) -> Resultado {
-        let r = if self.aberto { Resultado::Fechou } else { Resultado::Nada };
+        let r = if self.aberto {
+            Resultado::Fechou
+        } else {
+            Resultado::Nada
+        };
         *self = Self::default();
         r
     }
@@ -100,7 +111,12 @@ impl Dialogo {
 
     fn painel() -> Rect {
         let w = (screen_width() - 40.0).min(600.0);
-        Rect::new((screen_width() - w) * 0.5, screen_height() - 430.0, w, 176.0)
+        Rect::new(
+            (screen_width() - w) * 0.5,
+            screen_height() - 430.0,
+            w,
+            176.0,
+        )
     }
 
     pub fn pega_mouse(&self) -> bool {
@@ -113,22 +129,72 @@ impl Dialogo {
         }
         let p = Self::painel();
         estilo::painel(p);
-        estilo::texto_ajustado(&self.quem, p.x + 16.0, p.y + 28.0, p.w * 0.45, 20, estilo::OURO);
+        estilo::texto_ajustado(
+            &self.quem,
+            p.x + 16.0,
+            p.y + 28.0,
+            p.w * 0.45,
+            20,
+            estilo::OURO,
+        );
         let tw = estilo::medir(&self.titulo, 14).min(p.w * 0.45);
-        estilo::texto_ajustado(&self.titulo, p.x + p.w - 56.0 - tw, p.y + 27.0, p.w * 0.45, 14, estilo::SUAVE);
-        if crate::ui::botao(Rect::new(p.x + p.w - 44.0, p.y + 8.0, 32.0, 28.0), "x", true) {
+        estilo::texto_ajustado(
+            &self.titulo,
+            p.x + p.w - 56.0 - tw,
+            p.y + 27.0,
+            p.w * 0.45,
+            14,
+            estilo::SUAVE,
+        );
+        if crate::ui::botao(
+            Rect::new(p.x + p.w - 44.0, p.y + 8.0, 32.0, 28.0),
+            "x",
+            true,
+        ) {
             return self.fechar();
         }
-        draw_line(p.x + 12.0, p.y + 42.0, p.x + p.w - 12.0, p.y + 42.0, 1.0, estilo::BORDA);
-        for (k, linha) in crate::missoes::quebra(&self.falas[self.i], p.w - 32.0, 17, 3).iter().enumerate() {
-            estilo::texto(p.x + 16.0, p.y + 68.0 + k as f32 * 23.0, linha, 17, estilo::TEXTO);
+        draw_line(
+            p.x + 12.0,
+            p.y + 42.0,
+            p.x + p.w - 12.0,
+            p.y + 42.0,
+            1.0,
+            estilo::BORDA,
+        );
+        for (k, linha) in crate::missoes::quebra(&self.falas[self.i], p.w - 32.0, 17, 3)
+            .iter()
+            .enumerate()
+        {
+            estilo::texto(
+                p.x + 16.0,
+                p.y + 68.0 + k as f32 * 23.0,
+                linha,
+                17,
+                estilo::TEXTO,
+            );
         }
         let ultima = self.na_ultima();
         let rodape = p.y + p.h - 22.0;
-        estilo::texto(p.x + 16.0, rodape, &format!("{}/{}", self.i + 1, self.falas.len()), 13, estilo::SUAVE);
-        let paga = matches!(self.fim, Some(Fim::Entrega { .. }) | Some(Fim::Oferta { .. }));
+        estilo::texto(
+            p.x + 16.0,
+            rodape,
+            &format!("{}/{}", self.i + 1, self.falas.len()),
+            13,
+            estilo::SUAVE,
+        );
+        let paga = matches!(
+            self.fim,
+            Some(Fim::Entrega { .. }) | Some(Fim::Oferta { .. })
+        );
         if ultima && paga && !self.recompensa.is_empty() {
-            estilo::texto_ajustado(&format!("Recompensa: {}", self.recompensa), p.x + 60.0, rodape, p.w - 330.0, 14, estilo::OURO);
+            estilo::texto_ajustado(
+                &format!("Recompensa: {}", self.recompensa),
+                p.x + 60.0,
+                rodape,
+                p.w - 330.0,
+                14,
+                estilo::OURO,
+            );
         }
         let rotulo = if !ultima {
             "Próximo"
@@ -144,7 +210,10 @@ impl Dialogo {
         if crate::ui::botao(b, rotulo, true) {
             return self.avancar();
         }
-        if ultima && matches!(self.fim, Some(Fim::Oferta { .. })) && crate::ui::botao(Rect::new(b.x - 118.0, b.y, 108.0, 28.0), "Agora não", true) {
+        if ultima
+            && matches!(self.fim, Some(Fim::Oferta { .. }))
+            && crate::ui::botao(Rect::new(b.x - 118.0, b.y, 108.0, 28.0), "Agora não", true)
+        {
             return self.recusar();
         }
         Resultado::Nada
@@ -159,23 +228,66 @@ mod tests {
     fn proximo_ate_o_fim_decide() {
         let mut d = Dialogo::default();
         assert_eq!(d.avancar(), Resultado::Nada, "fechado");
-        d.abrir("Alquimista", "Conheça", &["a", "b", "c"], Fim::Conversa { quest_id: 501, npc: EntityId(7) }, String::new());
+        d.abrir(
+            "Alquimista",
+            "Conheça",
+            &["a", "b", "c"],
+            Fim::Conversa {
+                quest_id: 501,
+                npc: EntityId(7),
+            },
+            String::new(),
+        );
         assert!(d.aberto);
         assert_eq!(d.avancar(), Resultado::Nada);
         assert_eq!(d.avancar(), Resultado::Nada);
         assert!(d.na_ultima());
-        assert_eq!(d.avancar(), Resultado::Conversou { quest_id: 501, npc: EntityId(7) });
+        assert_eq!(
+            d.avancar(),
+            Resultado::Conversou {
+                quest_id: 501,
+                npc: EntityId(7)
+            }
+        );
         assert!(!d.aberto);
 
-        d.abrir("Mestre", "x", &["ok"], Fim::Entrega { quest_id: 502 }, "80 ouro".into());
+        d.abrir(
+            "Mestre",
+            "x",
+            &["ok"],
+            Fim::Entrega { quest_id: 502 },
+            "80 ouro".into(),
+        );
         assert_eq!(d.avancar(), Resultado::Receber(502));
 
-        d.abrir("Mestre", "x", &["a", "b"], Fim::Oferta { quest_id: 503 }, String::new());
+        d.abrir(
+            "Mestre",
+            "x",
+            &["a", "b"],
+            Fim::Oferta { quest_id: 503 },
+            String::new(),
+        );
         d.avancar();
         assert_eq!(d.recusar(), Resultado::Recusou(503));
-        d.abrir("Mestre", "x", &[], Fim::Oferta { quest_id: 503 }, String::new());
-        assert_eq!(d.avancar(), Resultado::Aceitar(503), "sem fala ainda tem o fim");
-        d.abrir("Mestre", "x", &["a"], Fim::Entrega { quest_id: 502 }, String::new());
+        d.abrir(
+            "Mestre",
+            "x",
+            &[],
+            Fim::Oferta { quest_id: 503 },
+            String::new(),
+        );
+        assert_eq!(
+            d.avancar(),
+            Resultado::Aceitar(503),
+            "sem fala ainda tem o fim"
+        );
+        d.abrir(
+            "Mestre",
+            "x",
+            &["a"],
+            Fim::Entrega { quest_id: 502 },
+            String::new(),
+        );
         assert_eq!(d.fechar(), Resultado::Fechou);
         assert_eq!(d.fechar(), Resultado::Nada);
     }

@@ -59,16 +59,126 @@ pub struct Conteudo {
 }
 
 pub const CONTEUDOS: &[Conteudo] = &[
-    Conteudo { id: 1, nome: "Porão do Naufrágio", tipo: Tipo::Porao, zona: "ilha_inicial", nivel_min: 6, grupo_max: 1, limite_s: 600, andares: 2, chefe: 11, disponivel: true },
-    Conteudo { id: 2, nome: "Adega do Contrabandista", tipo: Tipo::Porao, zona: "ilha_inicial", nivel_min: 14, grupo_max: 1, limite_s: 600, andares: 2, chefe: 12, disponivel: true },
-    Conteudo { id: 3, nome: "Casco Congelado", tipo: Tipo::Porao, zona: "ilha_gelo", nivel_min: 22, grupo_max: 1, limite_s: 600, andares: 2, chefe: 13, disponivel: true },
-    Conteudo { id: 10, nome: "Toca dos Lobos-do-Mar", tipo: Tipo::Gruta, zona: "ilha_inicial", nivel_min: 10, grupo_max: 5, limite_s: 1500, andares: 3, chefe: 10, disponivel: true },
-    Conteudo { id: 11, nome: "Grutas de Gelo Fundo", tipo: Tipo::Gruta, zona: "ilha_gelo", nivel_min: 20, grupo_max: 5, limite_s: 1500, andares: 3, chefe: 14, disponivel: true },
-    Conteudo { id: 12, nome: "Tumba das Areias Salgadas", tipo: Tipo::Gruta, zona: "ilha_deserto", nivel_min: 30, grupo_max: 5, limite_s: 1500, andares: 3, chefe: 15, disponivel: true },
-    Conteudo { id: 13, nome: "Mosteiro dos Ventos", tipo: Tipo::Gruta, zona: "ilha_planalto", nivel_min: 40, grupo_max: 5, limite_s: 1500, andares: 3, chefe: 17, disponivel: true },
-    Conteudo { id: 14, nome: "Forja do Titã", tipo: Tipo::Gruta, zona: "ilha_planalto", nivel_min: 50, grupo_max: 5, limite_s: 1500, andares: 3, chefe: 18, disponivel: true },
-    Conteudo { id: 15, nome: "Cemitério de Navios", tipo: Tipo::Gruta, zona: "recife_tempestade", nivel_min: 60, grupo_max: 5, limite_s: 1500, andares: 3, chefe: 11, disponivel: false },
-    Conteudo { id: 20, nome: "Mãe-da-Nevasca", tipo: Tipo::Cacada, zona: "ilha_gelo", nivel_min: 25, grupo_max: 10, limite_s: 1800, andares: 0, chefe: 13, disponivel: false },
+    Conteudo {
+        id: 1,
+        nome: "Porão do Naufrágio",
+        tipo: Tipo::Porao,
+        zona: "ilha_inicial",
+        nivel_min: 6,
+        grupo_max: 1,
+        limite_s: 600,
+        andares: 2,
+        chefe: 11,
+        disponivel: true,
+    },
+    Conteudo {
+        id: 2,
+        nome: "Adega do Contrabandista",
+        tipo: Tipo::Porao,
+        zona: "ilha_inicial",
+        nivel_min: 14,
+        grupo_max: 1,
+        limite_s: 600,
+        andares: 2,
+        chefe: 12,
+        disponivel: true,
+    },
+    Conteudo {
+        id: 3,
+        nome: "Casco Congelado",
+        tipo: Tipo::Porao,
+        zona: "ilha_gelo",
+        nivel_min: 22,
+        grupo_max: 1,
+        limite_s: 600,
+        andares: 2,
+        chefe: 13,
+        disponivel: true,
+    },
+    Conteudo {
+        id: 10,
+        nome: "Toca dos Lobos-do-Mar",
+        tipo: Tipo::Gruta,
+        zona: "ilha_inicial",
+        nivel_min: 10,
+        grupo_max: 5,
+        limite_s: 1500,
+        andares: 3,
+        chefe: 10,
+        disponivel: true,
+    },
+    Conteudo {
+        id: 11,
+        nome: "Grutas de Gelo Fundo",
+        tipo: Tipo::Gruta,
+        zona: "ilha_gelo",
+        nivel_min: 20,
+        grupo_max: 5,
+        limite_s: 1500,
+        andares: 3,
+        chefe: 14,
+        disponivel: true,
+    },
+    Conteudo {
+        id: 12,
+        nome: "Tumba das Areias Salgadas",
+        tipo: Tipo::Gruta,
+        zona: "ilha_deserto",
+        nivel_min: 30,
+        grupo_max: 5,
+        limite_s: 1500,
+        andares: 3,
+        chefe: 15,
+        disponivel: true,
+    },
+    Conteudo {
+        id: 13,
+        nome: "Mosteiro dos Ventos",
+        tipo: Tipo::Gruta,
+        zona: "ilha_planalto",
+        nivel_min: 40,
+        grupo_max: 5,
+        limite_s: 1500,
+        andares: 3,
+        chefe: 17,
+        disponivel: true,
+    },
+    Conteudo {
+        id: 14,
+        nome: "Forja do Titã",
+        tipo: Tipo::Gruta,
+        zona: "ilha_planalto",
+        nivel_min: 50,
+        grupo_max: 5,
+        limite_s: 1500,
+        andares: 3,
+        chefe: 18,
+        disponivel: true,
+    },
+    Conteudo {
+        id: 15,
+        nome: "Cemitério de Navios",
+        tipo: Tipo::Gruta,
+        zona: "recife_tempestade",
+        nivel_min: 60,
+        grupo_max: 5,
+        limite_s: 1500,
+        andares: 3,
+        chefe: 11,
+        disponivel: false,
+    },
+    Conteudo {
+        id: 20,
+        nome: "Mãe-da-Nevasca",
+        tipo: Tipo::Cacada,
+        zona: "ilha_gelo",
+        nivel_min: 25,
+        grupo_max: 10,
+        limite_s: 1800,
+        andares: 0,
+        chefe: 13,
+        disponivel: false,
+    },
 ];
 
 pub fn conteudo(id: u16) -> Option<&'static Conteudo> {
@@ -77,7 +187,11 @@ pub fn conteudo(id: u16) -> Option<&'static Conteudo> {
 
 /// Estagios que o conteudo tem. Porao nao tem estagio (1 so').
 pub fn estagios(c: &Conteudo) -> u8 {
-    if c.tipo == Tipo::Porao { 1 } else { 5 }
+    if c.tipo == Tipo::Porao {
+        1
+    } else {
+        5
+    }
 }
 
 /// Nivel dos inimigos e minimo do jogador no estagio `e` (1-based).
@@ -90,7 +204,12 @@ pub const PODER_PCT: [u32; 5] = [80, 85, 95, 105, 115];
 
 /// O mesmo numero do "Poder" da ficha do cliente.
 pub fn poder_de_stats(s: &PlayerStats) -> i32 {
-    s.attack_damage * 10 + s.defense * 8 + s.hp_max + s.mp_max / 2 + (s.dex + s.wis) * 5 + (s.crit_chance * 1000.0) as i32
+    s.attack_damage * 10
+        + s.defense * 8
+        + s.hp_max
+        + s.mp_max / 2
+        + (s.dex + s.wis) * 5
+        + (s.crit_chance * 1000.0) as i32
 }
 
 /// Poder de referencia de um nivel ⚠️: o de um personagem do nivel com o
@@ -127,7 +246,10 @@ pub const SELOS_POR_SEMANA: u8 = 2;
 pub enum Cadeado {
     EmBreve,
     Nivel(u32),
-    Poder { tem: i32, precisa: i32 },
+    Poder {
+        tem: i32,
+        precisa: i32,
+    },
     /// Vencer o estagio anterior primeiro.
     Estagio(u8),
     Selo,
@@ -147,7 +269,14 @@ impl Cadeado {
 
 /// O que trava o estagio `e` pra este personagem. `liberado` = maior estagio
 /// ja' vencido (0 = nenhum). Entrada zerada NAO trava: entra como Ajudante.
-pub fn cadeado(c: &Conteudo, e: u8, nivel: u32, poder: i32, liberado: u8, tem_selo: bool) -> Option<Cadeado> {
+pub fn cadeado(
+    c: &Conteudo,
+    e: u8,
+    nivel: u32,
+    poder: i32,
+    liberado: u8,
+    tem_selo: bool,
+) -> Option<Cadeado> {
     if !c.disponivel || e == 0 || e > estagios(c) {
         return Some(Cadeado::EmBreve);
     }
@@ -160,7 +289,10 @@ pub fn cadeado(c: &Conteudo, e: u8, nivel: u32, poder: i32, liberado: u8, tem_se
     }
     let minimo = poder_minimo(c, e);
     if poder < minimo {
-        return Some(Cadeado::Poder { tem: poder, precisa: minimo });
+        return Some(Cadeado::Poder {
+            tem: poder,
+            precisa: minimo,
+        });
     }
     if exige_selo(c, e) && !tem_selo {
         return Some(Cadeado::Selo);
@@ -266,8 +398,15 @@ impl Entradas {
         match tipo {
             Tipo::Porao => self.saldo = PORAO_RECOMPENSAS_POR_DIA,
             _ => {
-                let dias = if self.dia == 0 { 1 } else { (hoje - self.dia).clamp(0, 2) as u8 };
-                self.saldo = self.saldo.saturating_add(GRUTA_POR_DIA * dias).min(GRUTA_ACUMULA);
+                let dias = if self.dia == 0 {
+                    1
+                } else {
+                    (hoje - self.dia).clamp(0, 2) as u8
+                };
+                self.saldo = self
+                    .saldo
+                    .saturating_add(GRUTA_POR_DIA * dias)
+                    .min(GRUTA_ACUMULA);
             }
         }
         self.compradas = 0;
@@ -333,15 +472,25 @@ pub struct CartaDeCorreio {
 
 impl DadosDungeon {
     pub fn entradas(&mut self, tipo: Tipo) -> &mut Entradas {
-        if tipo == Tipo::Porao { &mut self.porao } else { &mut self.gruta }
+        if tipo == Tipo::Porao {
+            &mut self.porao
+        } else {
+            &mut self.gruta
+        }
     }
 
     pub fn liberado(&self, conteudo: u16) -> u8 {
-        self.liberado.iter().find(|l| l.0 == conteudo).map_or(0, |l| l.1)
+        self.liberado
+            .iter()
+            .find(|l| l.0 == conteudo)
+            .map_or(0, |l| l.1)
     }
 
     pub fn vitorias(&self, conteudo: u16, estagio: u8) -> u32 {
-        self.vitorias.iter().find(|v| v.0 == conteudo && v.1 == estagio).map_or(0, |v| v.2)
+        self.vitorias
+            .iter()
+            .find(|v| v.0 == conteudo && v.1 == estagio)
+            .map_or(0, |v| v.2)
     }
 
     /// Venceu: libera o proximo e conta. `true` = primeira vez nesse estagio.
@@ -350,7 +499,11 @@ impl DadosDungeon {
             Some(l) => l.1 = l.1.max(estagio),
             None => self.liberado.push((conteudo, estagio)),
         }
-        match self.vitorias.iter_mut().find(|v| v.0 == conteudo && v.1 == estagio) {
+        match self
+            .vitorias
+            .iter_mut()
+            .find(|v| v.0 == conteudo && v.1 == estagio)
+        {
             Some(v) => {
                 v.2 += 1;
                 false
@@ -373,9 +526,23 @@ impl DadosDungeon {
         true
     }
 
-    pub fn postar(&mut self, item_id: u16, qtd: u32, instance: Option<ItemInstance>, motivo: u8, quando: i64) {
+    pub fn postar(
+        &mut self,
+        item_id: u16,
+        qtd: u32,
+        instance: Option<ItemInstance>,
+        motivo: u8,
+        quando: i64,
+    ) {
         self.proxima_carta += 1;
-        self.correio.push(CartaDeCorreio { id: self.proxima_carta, item_id, qtd, instance, motivo, quando });
+        self.correio.push(CartaDeCorreio {
+            id: self.proxima_carta,
+            item_id,
+            qtd,
+            instance,
+            motivo,
+            quando,
+        });
     }
 }
 
@@ -393,7 +560,10 @@ pub struct DadosConta {
 impl DadosConta {
     pub fn virar(&mut self, semana: i64) {
         if self.semana != semana {
-            *self = DadosConta { semana, ..Default::default() };
+            *self = DadosConta {
+                semana,
+                ..Default::default()
+            };
         }
     }
 
@@ -445,17 +615,73 @@ pub fn tabela_de_peca(tipo: Tipo, nivel: u32, estagio: u8) -> (f32, [u32; 5]) {
     let topo = estagio >= 5;
     let (chance, dist) = match nivel {
         0..=9 => (0.20, [1000, 0, 0, 0, 0]),
-        10..=19 => if alto { (0.30, [500, 480, 20, 0, 0]) } else { (0.25, [750, 250, 0, 0, 0]) },
-        20..=29 => if alto { (0.30, [150, 750, 100, 0, 0]) } else { (0.25, [550, 420, 30, 0, 0]) },
-        30..=39 => if alto { (0.30, [0, 550, 450, 0, 0]) } else { (0.25, [0, 800, 200, 0, 0]) },
-        40..=49 => if alto { (0.30, [0, 200, 800, 0, 0]) } else { (0.25, [0, 600, 400, 0, 0]) },
-        50..=59 => if alto { (0.30, [0, 0, 1000, 0, 0]) } else { (0.25, [0, 100, 900, 0, 0]) },
-        60..=69 => if topo { (0.35, [0, 0, 800, 200, 0]) } else if alto { (0.30, [0, 0, 920, 80, 0]) } else { (0.25, [0, 0, 980, 20, 0]) },
-        70..=79 => if topo { (0.35, [0, 0, 400, 600, 0]) } else if alto { (0.30, [0, 0, 650, 350, 0]) } else { (0.25, [0, 0, 850, 150, 0]) },
-        _ => if topo { (0.35, [0, 0, 0, 995, 5]) } else { (0.30, [0, 0, 500, 500, 0]) },
+        10..=19 => {
+            if alto {
+                (0.30, [500, 480, 20, 0, 0])
+            } else {
+                (0.25, [750, 250, 0, 0, 0])
+            }
+        }
+        20..=29 => {
+            if alto {
+                (0.30, [150, 750, 100, 0, 0])
+            } else {
+                (0.25, [550, 420, 30, 0, 0])
+            }
+        }
+        30..=39 => {
+            if alto {
+                (0.30, [0, 550, 450, 0, 0])
+            } else {
+                (0.25, [0, 800, 200, 0, 0])
+            }
+        }
+        40..=49 => {
+            if alto {
+                (0.30, [0, 200, 800, 0, 0])
+            } else {
+                (0.25, [0, 600, 400, 0, 0])
+            }
+        }
+        50..=59 => {
+            if alto {
+                (0.30, [0, 0, 1000, 0, 0])
+            } else {
+                (0.25, [0, 100, 900, 0, 0])
+            }
+        }
+        60..=69 => {
+            if topo {
+                (0.35, [0, 0, 800, 200, 0])
+            } else if alto {
+                (0.30, [0, 0, 920, 80, 0])
+            } else {
+                (0.25, [0, 0, 980, 20, 0])
+            }
+        }
+        70..=79 => {
+            if topo {
+                (0.35, [0, 0, 400, 600, 0])
+            } else if alto {
+                (0.30, [0, 0, 650, 350, 0])
+            } else {
+                (0.25, [0, 0, 850, 150, 0])
+            }
+        }
+        _ => {
+            if topo {
+                (0.35, [0, 0, 0, 995, 5])
+            } else {
+                (0.30, [0, 0, 500, 500, 0])
+            }
+        }
     };
     // O Porao nao tem estagio: a primeira linha da faixa, chance de 20%.
-    if tipo == Tipo::Porao { (0.20, dist) } else { (chance, dist) }
+    if tipo == Tipo::Porao {
+        (0.20, dist)
+    } else {
+        (chance, dist)
+    }
 }
 
 /// Rola um grau na distribuicao e corta no teto.
@@ -490,7 +716,11 @@ pub fn nivel_da_peca(grau: Grau, nivel: u32) -> u16 {
 pub fn sortear_peca(grau: Grau, nivel: u32, r: f32) -> Premio {
     let n = (item_id::CINTO - item_id::ESPADA_E_ESCUDO + 1) as f32;
     let id = item_id::ESPADA_E_ESCUDO + ((r.clamp(0.0, 0.999_999) * n) as u16);
-    Premio { item_id: id, qtd: 1, peca: Some((grau, nivel_da_peca(grau, nivel))) }
+    Premio {
+        item_id: id,
+        qtd: 1,
+        peca: Some((grau, nivel_da_peca(grau, nivel))),
+    }
 }
 
 /// Cor do material pela faixa (1 cinza, 2 verde, 3 azul) e o multiplicador.
@@ -506,7 +736,13 @@ fn cor_do_material(nivel: u32, r: f32) -> (u8, u32) {
         70..=79 => (0.0, 1.0, 2),
         _ => (0.0, 1.0, 2),
     };
-    let cor = if r < azul { 3 } else if r < azul + verde { 2 } else { 1 };
+    let cor = if r < azul {
+        3
+    } else if r < azul + verde {
+        2
+    } else {
+        1
+    };
     (cor, mult)
 }
 
@@ -541,12 +777,17 @@ const MATERIAIS_DO_BAU: [u16; 8] = [
 
 fn rolar_material(nivel: u32, rng: &mut dyn FnMut() -> f32, metade: bool) -> Premio {
     let (cor, mult) = cor_do_material(nivel, rng());
-    let base = MATERIAIS_DO_BAU[((rng().clamp(0.0, 0.999_999)) * MATERIAIS_DO_BAU.len() as f32) as usize];
+    let base =
+        MATERIAIS_DO_BAU[((rng().clamp(0.0, 0.999_999)) * MATERIAIS_DO_BAU.len() as f32) as usize];
     let mut qtd = entre(rng(), 20, 40) * mult;
     if metade {
         qtd = (qtd / 2).max(1);
     }
-    Premio { item_id: item_id::na_cor(base, cor), qtd, peca: None }
+    Premio {
+        item_id: item_id::na_cor(base, cor),
+        qtd,
+        peca: None,
+    }
 }
 
 /// Marcas da conclusao ⚠️: Gruta 10, Porao 4; Ajudante 60%; bonus de tempo +50%.
@@ -562,29 +803,51 @@ pub fn marcas(tipo: Tipo, ajudante: bool, bonus: bool) -> u32 {
 /// Ajudante (entrou com a entrada zerada): cobre, material e Marcas, sem peca
 /// nem chave. Estagio 5 com Selo dobra darksteel e po. O teto de grau vale
 /// sempre.
-pub fn rolar_bau(c: &Conteudo, estagio: u8, ajudante: bool, bonus: bool, rng: &mut dyn FnMut() -> f32) -> Bau {
+pub fn rolar_bau(
+    c: &Conteudo,
+    estagio: u8,
+    ajudante: bool,
+    bonus: bool,
+    rng: &mut dyn FnMut() -> f32,
+) -> Bau {
     let nivel = nivel_do_estagio(c, estagio);
     let porao = c.tipo == Tipo::Porao;
     let mut itens = Vec::new();
     let cobre = (200 + 30 * nivel) / if porao { 2 } else { 1 };
-    itens.push(Premio { item_id: item_id::COPPER, qtd: cobre, peca: None });
+    itens.push(Premio {
+        item_id: item_id::COPPER,
+        qtd: cobre,
+        peca: None,
+    });
     let ((ds_lo, ds_hi), (po_chance, po_lo, po_hi)) = darksteel_e_po(nivel);
     let selo = exige_selo(c, estagio);
     let mut ds = entre(rng(), ds_lo, ds_hi) / if porao { 2 } else { 1 };
     if selo {
         ds *= 2;
     }
-    itens.push(Premio { item_id: item_id::DARKSTEEL, qtd: ds.max(1), peca: None });
+    itens.push(Premio {
+        item_id: item_id::DARKSTEEL,
+        qtd: ds.max(1),
+        peca: None,
+    });
     if po_chance > 0.0 && rng() < po_chance {
         let mut po = entre(rng(), po_lo, po_hi);
         if selo {
             po *= 2;
         }
-        itens.push(Premio { item_id: item_id::GLITTERING_POWDER, qtd: po, peca: None });
+        itens.push(Premio {
+            item_id: item_id::GLITTERING_POWDER,
+            qtd: po,
+            peca: None,
+        });
     }
     // OURO do bau: com as marcas, e' o que faz a dungeon valer ouro (o resto
     // da economia corre em cobre — docs/ECONOMIA.md).
-    itens.push(Premio { item_id: crate::item_id::GOLD, qtd: ouro_do_bau(c.tipo, nivel, ajudante), peca: None });
+    itens.push(Premio {
+        item_id: crate::item_id::GOLD,
+        qtd: ouro_do_bau(c.tipo, nivel, ajudante),
+        peca: None,
+    });
     itens.push(rolar_material(nivel, rng, porao));
     if bonus {
         itens.push(rolar_material(nivel, rng, porao));
@@ -596,10 +859,17 @@ pub fn rolar_bau(c: &Conteudo, estagio: u8, ajudante: bool, bonus: bool, rng: &m
             itens.push(sortear_peca(g, nivel, rng()));
         }
         if let Some(chave) = chaves::rolar(nivel, chaves::Fonte::Dungeon, 1.0, rng(), rng()) {
-            itens.push(Premio { item_id: chave, qtd: 1, peca: None });
+            itens.push(Premio {
+                item_id: chave,
+                qtd: 1,
+                peca: None,
+            });
         }
     }
-    Bau { itens, marcas: marcas(c.tipo, ajudante, bonus) }
+    Bau {
+        itens,
+        marcas: marcas(c.tipo, ajudante, bonus),
+    }
 }
 
 /// Ouro do bau de conclusao: pela faixa do estagio e pelo tipo. Ajudante (quem
@@ -611,7 +881,11 @@ pub fn ouro_do_bau(tipo: Tipo, nivel: u32, ajudante: bool) -> u32 {
         _ => 600,
     };
     let bruto = base + nivel * 25;
-    if ajudante { bruto * 6 / 10 } else { bruto }
+    if ajudante {
+        bruto * 6 / 10
+    } else {
+        bruto
+    }
 }
 
 /// Peca garantida da 1ª vitoria (semanal ou de todas): rolada uma linha
@@ -632,23 +906,44 @@ pub enum Pedido {
     /// Estado da janela (conteudos, cadeados, entradas, fila, sala).
     Estado,
     /// Porao: entra direto, sozinho.
-    EntrarSolo { conteudo: u16 },
-    FilaEntrar { conteudo: u16, estagio: u8 },
+    EntrarSolo {
+        conteudo: u16,
+    },
+    FilaEntrar {
+        conteudo: u16,
+        estagio: u8,
+    },
     FilaSair,
-    SalaCriar { conteudo: u16, estagio: u8, completar_pela_fila: bool },
-    SalasBuscar { conteudo: u16, estagio: u8 },
-    SalaEntrar { sala: u32 },
+    SalaCriar {
+        conteudo: u16,
+        estagio: u8,
+        completar_pela_fila: bool,
+    },
+    SalasBuscar {
+        conteudo: u16,
+        estagio: u8,
+    },
+    SalaEntrar {
+        sala: u32,
+    },
     SalaSair,
     /// So' o lider: abre o pronto-check com quem esta' na sala.
     SalaIniciar,
-    Pronto { partida: u32, aceito: bool },
+    Pronto {
+        partida: u32,
+        aceito: bool,
+    },
     ComprarEntrada,
     /// A porta embaixo do relogio: sai e a entrada fica gasta.
     Sair,
     Reviver,
-    AbrirBau { eid: u64 },
+    AbrirBau {
+        eid: u64,
+    },
     Correio,
-    CorreioRetirar { id: u64 },
+    CorreioRetirar {
+        id: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -709,10 +1004,26 @@ pub struct CartaNet {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Aviso {
-    Estado { conteudos: Vec<ConteudoEstado>, entradas: EntradasNet, fila: Option<FilaNet>, sala: Option<SalaNet> },
-    Salas { lista: Vec<SalaNet> },
-    Pronto { partida: u32, conteudo: u16, estagio: u8, membros: Vec<MembroNet>, expira_s: u8 },
-    ProntoFechou { partida: u32, texto: String },
+    Estado {
+        conteudos: Vec<ConteudoEstado>,
+        entradas: EntradasNet,
+        fila: Option<FilaNet>,
+        sala: Option<SalaNet>,
+    },
+    Salas {
+        lista: Vec<SalaNet>,
+    },
+    Pronto {
+        partida: u32,
+        conteudo: u16,
+        estagio: u8,
+        membros: Vec<MembroNet>,
+        expira_s: u8,
+    },
+    ProntoFechou {
+        partida: u32,
+        texto: String,
+    },
     /// A cada segundo dentro da instancia.
     Instancia {
         conteudo: u16,
@@ -726,11 +1037,27 @@ pub enum Aviso {
         membros: Vec<MembroDaInstancia>,
         concluida: bool,
     },
-    Resultado { conteudo: u16, estagio: u8, vitoria: bool, tempo_s: u32, bonus_tempo: bool, primeira_vitoria: bool },
-    Bau { itens: Vec<(u16, u32)>, marcas: u32, no_correio: u8 },
+    Resultado {
+        conteudo: u16,
+        estagio: u8,
+        vitoria: bool,
+        tempo_s: u32,
+        bonus_tempo: bool,
+        primeira_vitoria: bool,
+    },
+    Bau {
+        itens: Vec<(u16, u32)>,
+        marcas: u32,
+        no_correio: u8,
+    },
     Saiu,
-    Correio { cartas: Vec<CartaNet> },
-    Texto { ok: bool, texto: String },
+    Correio {
+        cartas: Vec<CartaNet>,
+    },
+    Texto {
+        ok: bool,
+        texto: String,
+    },
 }
 
 #[cfg(test)]
@@ -744,7 +1071,9 @@ mod testes {
     fn rng(seed: u64) -> impl FnMut() -> f32 {
         let mut s = seed;
         move || {
-            s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (s >> 11) as f32 / (1u64 << 53) as f32
         }
     }
@@ -756,10 +1085,21 @@ mod testes {
         ids.dedup();
         assert_eq!(ids.len(), CONTEUDOS.len());
         for c in CONTEUDOS.iter().filter(|c| c.disponivel) {
-            assert!(crate::terreno::def_da_zona(c.zona).is_some(), "{} numa ilha que nao existe", c.nome);
-            assert!(crate::bosses::chefe(c.chefe).is_some(), "{} sem chefe", c.nome);
+            assert!(
+                crate::terreno::def_da_zona(c.zona).is_some(),
+                "{} numa ilha que nao existe",
+                c.nome
+            );
+            assert!(
+                crate::bosses::chefe(c.chefe).is_some(),
+                "{} sem chefe",
+                c.nome
+            );
         }
-        assert!(conteudo(20).is_some_and(|c| c.tipo == Tipo::Cacada && !c.disponivel), "raid com cadeado");
+        assert!(
+            conteudo(20).is_some_and(|c| c.tipo == Tipo::Cacada && !c.disponivel),
+            "raid com cadeado"
+        );
     }
 
     #[test]
@@ -770,12 +1110,26 @@ mod testes {
         let forte = 1_000_000;
         assert_eq!(cadeado(c, 1, 9, forte, 0, false), Some(Cadeado::Nivel(10)));
         assert_eq!(cadeado(c, 1, 10, forte, 0, false), None);
-        assert_eq!(cadeado(c, 2, 30, forte, 0, false), Some(Cadeado::Estagio(1)), "tem que vencer o 1");
+        assert_eq!(
+            cadeado(c, 2, 30, forte, 0, false),
+            Some(Cadeado::Estagio(1)),
+            "tem que vencer o 1"
+        );
         assert_eq!(cadeado(c, 2, 30, forte, 1, false), None);
-        assert_eq!(cadeado(c, 3, 30, forte, 5, false), None, "liberou o 5, nao precisa repetir o 3");
-        assert!(matches!(cadeado(c, 1, 10, 10, 0, false), Some(Cadeado::Poder { .. })));
+        assert_eq!(
+            cadeado(c, 3, 30, forte, 5, false),
+            None,
+            "liberou o 5, nao precisa repetir o 3"
+        );
+        assert!(matches!(
+            cadeado(c, 1, 10, 10, 0, false),
+            Some(Cadeado::Poder { .. })
+        ));
         assert_eq!(estagios(conteudo(1).unwrap()), 1, "Porao sem estagio");
-        assert_eq!(cadeado(conteudo(20).unwrap(), 1, 99, forte, 0, false), Some(Cadeado::EmBreve));
+        assert_eq!(
+            cadeado(conteudo(20).unwrap(), 1, 99, forte, 0, false),
+            Some(Cadeado::EmBreve)
+        );
     }
 
     #[test]
@@ -786,16 +1140,28 @@ mod testes {
         // Sem ponto nenhum, com a arma inicial (+8 de ataque ≈ +80 de poder),
         // no nivel 10: passa no estagio 1.
         let pelado = poder_de_stats(&crate::components::base_player_stats());
-        assert!(pelado + 80 >= poder_minimo(c, 1), "a porta nao tranca quem esta' no nivel: {} < {}", pelado + 80, poder_minimo(c, 1));
+        assert!(
+            pelado + 80 >= poder_minimo(c, 1),
+            "a porta nao tranca quem esta' no nivel: {} < {}",
+            pelado + 80,
+            poder_minimo(c, 1)
+        );
     }
 
     #[test]
     fn selo_so_no_topo_de_conteudo_60() {
-        let sessenta = Conteudo { nivel_min: 60, disponivel: true, ..*gruta() };
+        let sessenta = Conteudo {
+            nivel_min: 60,
+            disponivel: true,
+            ..*gruta()
+        };
         assert!(exige_selo(&sessenta, 5));
         assert!(!exige_selo(&sessenta, 4));
         assert!(!exige_selo(gruta(), 5), "Gruta do Bosque nao pede Selo");
-        assert_eq!(cadeado(&sessenta, 5, 99, 1_000_000, 4, false), Some(Cadeado::Selo));
+        assert_eq!(
+            cadeado(&sessenta, 5, 99, 1_000_000, 4, false),
+            Some(Cadeado::Selo)
+        );
         assert_eq!(cadeado(&sessenta, 5, 99, 1_000_000, 4, true), None);
         let mut conta = DadosConta::default();
         conta.virar(10);
@@ -808,7 +1174,10 @@ mod testes {
 
     #[test]
     fn papel_do_bau_volta_do_kind() {
-        assert_eq!(crate::npc_papel_de_kind(crate::npc_kind(None, PAPEL_BAU)), PAPEL_BAU);
+        assert_eq!(
+            crate::npc_papel_de_kind(crate::npc_kind(None, PAPEL_BAU)),
+            PAPEL_BAU
+        );
     }
 
     /// O chefe do Porao (solo) sai com uma fracao da vida e do dano do
@@ -860,7 +1229,10 @@ mod testes {
         let quarta_0659 = 1_789_541_940;
         assert_eq!(dia(quarta_0659) + 1, dia(quarta_0659 + 60));
         assert_eq!(semana(quarta_0659) + 1, semana(quarta_0659 + 60));
-        assert_eq!(semana(quarta_0659 + 60), semana(quarta_0659 + 60 + 6 * 86_400));
+        assert_eq!(
+            semana(quarta_0659 + 60),
+            semana(quarta_0659 + 60 + 6 * 86_400)
+        );
     }
 
     #[test]
@@ -873,9 +1245,16 @@ mod testes {
         assert!(!d.abrir_bau(77), "abrir de novo nao da' nada");
         let json = serde_json::to_string(&d).unwrap();
         let mut volta: DadosDungeon = serde_json::from_str(&json).unwrap();
-        assert!(!volta.abrir_bau(77), "reiniciar o servidor nao reabre o bau");
+        assert!(
+            !volta.abrir_bau(77),
+            "reiniciar o servidor nao reabre o bau"
+        );
         let vazio: DadosDungeon = serde_json::from_str("{}").unwrap();
-        assert!(vazio.correio.is_empty() && vazio.baus_abertos.is_empty() && vazio.gruta == Entradas::default());
+        assert!(
+            vazio.correio.is_empty()
+                && vazio.baus_abertos.is_empty()
+                && vazio.gruta == Entradas::default()
+        );
     }
 
     #[test]
@@ -883,7 +1262,10 @@ mod testes {
         let mut c = DadosConta::default();
         c.virar(3);
         assert!(c.primeira_da_semana(10, 2));
-        assert!(!c.primeira_da_semana(10, 2), "outro personagem da mesma conta: nao repete");
+        assert!(
+            !c.primeira_da_semana(10, 2),
+            "outro personagem da mesma conta: nao repete"
+        );
         assert!(c.primeira_da_semana(10, 3));
         c.virar(4);
         assert!(c.primeira_da_semana(10, 2));
@@ -893,8 +1275,21 @@ mod testes {
     #[test]
     fn bau_nunca_da_epico_antes_do_60_nem_lendario_antes_do_80() {
         let mut r = rng(0xBA_0001);
-        for &(nivel_min, tipo) in &[(6u32, Tipo::Porao), (10, Tipo::Gruta), (30, Tipo::Gruta), (50, Tipo::Gruta), (60, Tipo::Gruta), (70, Tipo::Gruta), (80, Tipo::Gruta)] {
-            let c = Conteudo { nivel_min, tipo, disponivel: true, ..*gruta() };
+        for &(nivel_min, tipo) in &[
+            (6u32, Tipo::Porao),
+            (10, Tipo::Gruta),
+            (30, Tipo::Gruta),
+            (50, Tipo::Gruta),
+            (60, Tipo::Gruta),
+            (70, Tipo::Gruta),
+            (80, Tipo::Gruta),
+        ] {
+            let c = Conteudo {
+                nivel_min,
+                tipo,
+                disponivel: true,
+                ..*gruta()
+            };
             for estagio in 1..=estagios(&c) {
                 let nivel = nivel_do_estagio(&c, estagio);
                 let mut maior = Grau::Comum;
@@ -902,7 +1297,11 @@ mod testes {
                     for p in rolar_bau(&c, estagio, false, true, &mut r).itens {
                         if let Some((g, ilvl)) = p.peca {
                             maior = maior.max(g);
-                            assert_eq!(crate::items::tier_from_ilvl(ilvl), g as u8, "o nivel da peca da' o grau");
+                            assert_eq!(
+                                crate::items::tier_from_ilvl(ilvl),
+                                g as u8,
+                                "o nivel da peca da' o grau"
+                            );
                         }
                     }
                     let g = peca_garantida(&c, estagio, &mut r).peca.unwrap().0;
@@ -917,15 +1316,25 @@ mod testes {
     #[test]
     fn chave_do_bau_usa_a_tabela_de_dungeon_e_ajudante_nao_ganha() {
         let c = gruta();
-        let chaves_da_cor: Vec<u16> = item_id::CHAVES.iter().map(|&b| item_id::chave_na_cor(b, 1)).collect();
+        let chaves_da_cor: Vec<u16> = item_id::CHAVES
+            .iter()
+            .map(|&b| item_id::chave_na_cor(b, 1))
+            .collect();
         let mut r = rng(7);
         const N: u32 = 60_000;
         let mut caiu = 0;
         for _ in 0..N {
             let bau = rolar_bau(c, 1, false, false, &mut r);
-            caiu += bau.itens.iter().filter(|p| chaves_da_cor.contains(&p.item_id)).count() as u32;
+            caiu += bau
+                .itens
+                .iter()
+                .filter(|p| chaves_da_cor.contains(&p.item_id))
+                .count() as u32;
             let ajud = rolar_bau(c, 1, true, false, &mut r);
-            assert!(ajud.itens.iter().all(|p| p.peca.is_none() && !item_id::todas_as_chaves().contains(&p.item_id)));
+            assert!(ajud
+                .itens
+                .iter()
+                .all(|p| p.peca.is_none() && !item_id::todas_as_chaves().contains(&p.item_id)));
         }
         let taxa = caiu as f32 / N as f32;
         let esperado = chaves::faixa(10).chance;
@@ -941,10 +1350,29 @@ mod testes {
 
     #[test]
     fn mensagens_vao_e_voltam_no_postcard() {
-        let a = Aviso::Instancia { conteudo: 10, estagio: 2, andar: 1, andares: 3, restante_s: 900, inimigos: 7, reviver_em_s: Some(10), membros: vec![MembroDaInstancia { nome: "a@SA01".into(), vivo: false }], concluida: false };
+        let a = Aviso::Instancia {
+            conteudo: 10,
+            estagio: 2,
+            andar: 1,
+            andares: 3,
+            restante_s: 900,
+            inimigos: 7,
+            reviver_em_s: Some(10),
+            membros: vec![MembroDaInstancia {
+                nome: "a@SA01".into(),
+                vivo: false,
+            }],
+            concluida: false,
+        };
         let b = postcard::to_allocvec(&a).unwrap();
         assert_eq!(postcard::from_bytes::<Aviso>(&b).unwrap(), a);
-        let p = Pedido::FilaEntrar { conteudo: 10, estagio: 3 };
-        assert_eq!(postcard::from_bytes::<Pedido>(&postcard::to_allocvec(&p).unwrap()).unwrap(), p);
+        let p = Pedido::FilaEntrar {
+            conteudo: 10,
+            estagio: 3,
+        };
+        assert_eq!(
+            postcard::from_bytes::<Pedido>(&postcard::to_allocvec(&p).unwrap()).unwrap(),
+            p
+        );
     }
 }

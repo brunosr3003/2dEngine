@@ -93,7 +93,17 @@ fn nome_do_conteudo(id: u16) -> &'static str {
 fn botao(r: Rect, rotulo: &str, ativo: bool, primario: bool) -> bool {
     let m = Vec2::from(mouse_position());
     let sobre = ativo && r.contains(m);
-    estilo::botao(r, rotulo, estilo::estado(sobre, sobre && is_mouse_button_down(MouseButton::Left), !ativo, false), primario);
+    estilo::botao(
+        r,
+        rotulo,
+        estilo::estado(
+            sobre,
+            sobre && is_mouse_button_down(MouseButton::Left),
+            !ativo,
+            false,
+        ),
+        primario,
+    );
     sobre && is_mouse_button_pressed(MouseButton::Left)
 }
 
@@ -126,7 +136,9 @@ impl DungeonUi {
     pub fn estado_auto(&self, agora: f64) -> Option<crate::auto_dungeon::Estado> {
         let i = self.inst.as_ref()?;
         let caido = i.reviver_em_s.is_some();
-        let reviver_pronto = i.reviver_em_s.is_some_and(|s| agora - i.recebido >= s as f64);
+        let reviver_pronto = i
+            .reviver_em_s
+            .is_some_and(|s| agora - i.recebido >= s as f64);
         let r = self.resultado.as_ref();
         Some(crate::auto_dungeon::Estado {
             caido,
@@ -139,32 +151,65 @@ impl DungeonUi {
 
     /// Janela, pronto-check ou resultado na frente: o clique nao e' do mundo.
     pub fn pega_mouse(&self) -> bool {
-        if self.aberto || self.pronto.is_some() || self.resultado.as_ref().is_some_and(|r| !r.fechado) {
+        if self.aberto
+            || self.pronto.is_some()
+            || self.resultado.as_ref().is_some_and(|r| !r.fechado)
+        {
             return true;
         }
         let m = Vec2::from(mouse_position());
         let caido = self.inst.as_ref().is_some_and(|i| i.reviver_em_s.is_some());
         let (faixa, porta, reviver) = Self::rects_da_instancia();
-        self.inst.is_some() && (faixa.contains(m) || porta.contains(m) || Self::missao_rect().contains(m) || (caido && reviver.contains(m)))
+        self.inst.is_some()
+            && (faixa.contains(m)
+                || porta.contains(m)
+                || Self::missao_rect().contains(m)
+                || (caido && reviver.contains(m)))
     }
 
     /// O que o servidor mandou. Devolve pedidos de volta (raro).
     pub fn aviso(&mut self, a: Aviso, agora: f64) -> Vec<ClientMessage> {
         match a {
-            Aviso::Estado { conteudos, entradas, fila, sala } => {
+            Aviso::Estado {
+                conteudos,
+                entradas,
+                fila,
+                sala,
+            } => {
                 if self.sel == 0 || !conteudos.iter().any(|c| c.id == self.sel) {
                     self.sel = conteudos
                         .iter()
-                        .find(|c| dg::conteudo(c.id).is_some_and(|d| d.disponivel) && c.cadeados.first().is_some_and(|x| x.is_none()))
+                        .find(|c| {
+                            dg::conteudo(c.id).is_some_and(|d| d.disponivel)
+                                && c.cadeados.first().is_some_and(|x| x.is_none())
+                        })
                         .or(conteudos.first())
                         .map_or(0, |c| c.id);
                     self.estagio = 1;
                 }
-                self.estado = Some(Estado { conteudos, entradas, fila: fila.map(|f| (f, agora)), sala });
+                self.estado = Some(Estado {
+                    conteudos,
+                    entradas,
+                    fila: fila.map(|f| (f, agora)),
+                    sala,
+                });
             }
             Aviso::Salas { lista } => self.salas = Some(lista),
-            Aviso::Pronto { partida, conteudo, estagio, membros, expira_s } => {
-                self.pronto = Some(ProntoAberto { partida, conteudo, estagio, membros, expira_em: agora + expira_s as f64, respondeu: false });
+            Aviso::Pronto {
+                partida,
+                conteudo,
+                estagio,
+                membros,
+                expira_s,
+            } => {
+                self.pronto = Some(ProntoAberto {
+                    partida,
+                    conteudo,
+                    estagio,
+                    membros,
+                    expira_em: agora + expira_s as f64,
+                    respondeu: false,
+                });
             }
             Aviso::ProntoFechou { partida, texto } => {
                 if self.pronto.as_ref().is_some_and(|p| p.partida == partida) {
@@ -172,19 +217,60 @@ impl DungeonUi {
                 }
                 self.aviso = Some((texto, false, agora));
             }
-            Aviso::Instancia { conteudo, estagio, andar, andares, restante_s, inimigos, reviver_em_s, membros, concluida } => {
+            Aviso::Instancia {
+                conteudo,
+                estagio,
+                andar,
+                andares,
+                restante_s,
+                inimigos,
+                reviver_em_s,
+                membros,
+                concluida,
+            } => {
                 if self.inst.is_none() {
                     // Entrou: a janela e o pronto-check saem da frente.
                     self.aberto = false;
                     self.pronto = None;
                     self.resultado = None;
                 }
-                self.inst = Some(Inst { conteudo, estagio, andar, andares, restante_s, recebido: agora, inimigos, reviver_em_s, membros, concluida });
+                self.inst = Some(Inst {
+                    conteudo,
+                    estagio,
+                    andar,
+                    andares,
+                    restante_s,
+                    recebido: agora,
+                    inimigos,
+                    reviver_em_s,
+                    membros,
+                    concluida,
+                });
             }
-            Aviso::Resultado { conteudo, estagio, vitoria, tempo_s, bonus_tempo, primeira_vitoria } => {
-                self.resultado = Some(Resultado { conteudo, estagio, vitoria, tempo_s, bonus: bonus_tempo, primeira: primeira_vitoria, bau: None, fechado: false });
+            Aviso::Resultado {
+                conteudo,
+                estagio,
+                vitoria,
+                tempo_s,
+                bonus_tempo,
+                primeira_vitoria,
+            } => {
+                self.resultado = Some(Resultado {
+                    conteudo,
+                    estagio,
+                    vitoria,
+                    tempo_s,
+                    bonus: bonus_tempo,
+                    primeira: primeira_vitoria,
+                    bau: None,
+                    fechado: false,
+                });
             }
-            Aviso::Bau { itens, marcas, no_correio } => {
+            Aviso::Bau {
+                itens,
+                marcas,
+                no_correio,
+            } => {
                 if let Some(r) = &mut self.resultado {
                     r.bau = Some((itens, marcas, no_correio));
                     r.fechado = false;
@@ -205,9 +291,20 @@ impl DungeonUi {
     /// Texto curto pro chat (o que acabou de acontecer), se houver.
     pub fn texto_pro_chat(a: &Aviso) -> Option<String> {
         match a {
-            Aviso::Texto { texto, .. } | Aviso::ProntoFechou { texto, .. } => Some(format!("Dungeon: {texto}")),
-            Aviso::Resultado { vitoria: true, conteudo, .. } => Some(format!("Vitória em {}! Toque no baú.", nome_do_conteudo(*conteudo))),
-            Aviso::Resultado { vitoria: false, .. } => Some("Tempo esgotado: o estágio falhou.".into()),
+            Aviso::Texto { texto, .. } | Aviso::ProntoFechou { texto, .. } => {
+                Some(format!("Dungeon: {texto}"))
+            }
+            Aviso::Resultado {
+                vitoria: true,
+                conteudo,
+                ..
+            } => Some(format!(
+                "Vitória em {}! Toque no baú.",
+                nome_do_conteudo(*conteudo)
+            )),
+            Aviso::Resultado { vitoria: false, .. } => {
+                Some("Tempo esgotado: o estágio falhou.".into())
+            }
             _ => None,
         }
     }
@@ -233,8 +330,16 @@ impl DungeonUi {
         crate::hud_layout::escurece(0.55);
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
-        let (w, h) = ((980.0 * f).min(seguro.w - 16.0), (660.0 * f).min(seguro.h - 16.0));
-        let p = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+        let (w, h) = (
+            (980.0 * f).min(seguro.w - 16.0),
+            (660.0 * f).min(seguro.h - 16.0),
+        );
+        let p = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.center().y - h * 0.5,
+            w,
+            h,
+        );
         estilo::painel(p);
         estilo::texto(p.x + 18.0 * f, p.y + 34.0 * f, "Dungeons", 22, estilo::OURO);
         let fechar = Rect::new(p.x + p.w - 48.0 * f, p.y + 10.0 * f, 38.0 * f, 34.0 * f);
@@ -243,27 +348,62 @@ impl DungeonUi {
             return;
         }
         let Some(estado) = &self.estado else {
-            estilo::texto(p.x + 18.0 * f, p.y + 80.0 * f, "Carregando…", 16, estilo::SUAVE);
+            estilo::texto(
+                p.x + 18.0 * f,
+                p.y + 80.0 * f,
+                "Carregando…",
+                16,
+                estilo::SUAVE,
+            );
             return;
         };
         let m = Vec2::from(mouse_position());
         let clicou = is_mouse_button_pressed(MouseButton::Left);
 
         // ── esquerda: os conteudos ──
-        let esq = Rect::new(p.x + 18.0 * f, p.y + 56.0 * f, (p.w * 0.38).floor(), p.h - 56.0 * f - 44.0 * f);
+        let esq = Rect::new(
+            p.x + 18.0 * f,
+            p.y + 56.0 * f,
+            (p.w * 0.38).floor(),
+            p.h - 56.0 * f - 44.0 * f,
+        );
         let alt = ((esq.h / estado.conteudos.len().max(1) as f32).min(62.0 * f)).max(36.0 * f);
         let mut novo_sel = None;
         for (i, ce) in estado.conteudos.iter().enumerate() {
-            let Some(def) = dg::conteudo(ce.id) else { continue };
+            let Some(def) = dg::conteudo(ce.id) else {
+                continue;
+            };
             let r = Rect::new(esq.x, esq.y + i as f32 * alt, esq.w, alt - 4.0 * f);
             let sobre = r.contains(m);
             estilo::cartao(r, sobre, self.sel == ce.id);
             let travado = !def.disponivel || ce.cadeados.first().is_some_and(|x| x.is_some());
-            let cor = if travado { estilo::SUAVE } else { estilo::TEXTO };
-            estilo::texto_ajustado(def.nome, r.x + 12.0 * f, r.y + r.h * 0.45, r.w - 24.0 * f, 15, cor);
+            let cor = if travado {
+                estilo::SUAVE
+            } else {
+                estilo::TEXTO
+            };
+            estilo::texto_ajustado(
+                def.nome,
+                r.x + 12.0 * f,
+                r.y + r.h * 0.45,
+                r.w - 24.0 * f,
+                15,
+                cor,
+            );
             let ilha = shared::terreno::def_da_zona(def.zona).map_or("Ilha nova", |d| d.nome);
-            let sub = if def.disponivel { format!("{} · nível {} · {}", def.tipo.nome(), def.nivel_min, ilha) } else { format!("{} · Em breve", def.tipo.nome()) };
-            estilo::texto_ajustado(&sub, r.x + 12.0 * f, r.y + r.h * 0.82, r.w - 24.0 * f, 11, estilo::SUAVE);
+            let sub = if def.disponivel {
+                format!("{} · nível {} · {}", def.tipo.nome(), def.nivel_min, ilha)
+            } else {
+                format!("{} · Em breve", def.tipo.nome())
+            };
+            estilo::texto_ajustado(
+                &sub,
+                r.x + 12.0 * f,
+                r.y + r.h * 0.82,
+                r.w - 24.0 * f,
+                11,
+                estilo::SUAVE,
+            );
             if sobre && clicou {
                 novo_sel = Some(ce.id);
             }
@@ -275,13 +415,39 @@ impl DungeonUi {
         }
 
         // ── direita: o selecionado ──
-        let dir = Rect::new(esq.x + esq.w + 18.0 * f, esq.y, p.x + p.w - 18.0 * f - (esq.x + esq.w + 18.0 * f), esq.h);
-        let (Some(def), Some(ce)) = (dg::conteudo(self.sel), estado.conteudos.iter().find(|x| x.id == self.sel)) else { return };
+        let dir = Rect::new(
+            esq.x + esq.w + 18.0 * f,
+            esq.y,
+            p.x + p.w - 18.0 * f - (esq.x + esq.w + 18.0 * f),
+            esq.h,
+        );
+        let (Some(def), Some(ce)) = (
+            dg::conteudo(self.sel),
+            estado.conteudos.iter().find(|x| x.id == self.sel),
+        ) else {
+            return;
+        };
         let mut y = dir.y + 22.0 * f;
         estilo::texto_forte(dir.x, y, def.nome, 20, estilo::OURO);
         y += 22.0 * f;
-        let grupo = if def.grupo_max <= 1 { "Solo".to_string() } else { format!("Grupo de até {}", def.grupo_max) };
-        estilo::texto(dir.x, y, &format!("{} · {} · limite {} · vitórias {}", def.tipo.nome(), grupo, mmss(def.limite_s), ce.vitorias), 13, estilo::SUAVE);
+        let grupo = if def.grupo_max <= 1 {
+            "Solo".to_string()
+        } else {
+            format!("Grupo de até {}", def.grupo_max)
+        };
+        estilo::texto(
+            dir.x,
+            y,
+            &format!(
+                "{} · {} · limite {} · vitórias {}",
+                def.tipo.nome(),
+                grupo,
+                mmss(def.limite_s),
+                ce.vitorias
+            ),
+            13,
+            estilo::SUAVE,
+        );
         y += 26.0 * f;
 
         // Estagios 1–5 com cadeado; o motivo do selecionado embaixo.
@@ -292,11 +458,28 @@ impl DungeonUi {
             let bw = ((dir.w - 8.0 * f * 4.0) / 5.0).min(84.0 * f);
             for e in 1..=n {
                 let r = Rect::new(dir.x + (e - 1) as f32 * (bw + 8.0 * f), y, bw, 44.0 * f);
-                let travado = ce.cadeados.get((e - 1) as usize).is_some_and(|x| x.is_some());
+                let travado = ce
+                    .cadeados
+                    .get((e - 1) as usize)
+                    .is_some_and(|x| x.is_some());
                 let sobre = r.contains(m);
                 estilo::cartao(r, sobre, self.estagio == e);
-                let rot = if travado { format!("{e} 🔒") } else { e.to_string() };
-                estilo::texto_centro_forte(r.center().x, r.center().y + 6.0 * f, &rot, 16, if travado { estilo::SUAVE } else { estilo::TEXTO });
+                let rot = if travado {
+                    format!("{e} 🔒")
+                } else {
+                    e.to_string()
+                };
+                estilo::texto_centro_forte(
+                    r.center().x,
+                    r.center().y + 6.0 * f,
+                    &rot,
+                    16,
+                    if travado {
+                        estilo::SUAVE
+                    } else {
+                        estilo::TEXTO
+                    },
+                );
                 if sobre && clicou {
                     self.estagio = e;
                     self.salas = None;
@@ -308,13 +491,39 @@ impl DungeonUi {
         let nivel = dg::nivel_do_estagio(def, estagio);
         let cadeado = ce.cadeados.get((estagio - 1) as usize).cloned().flatten();
         let teto = dg::teto_de_grau(nivel);
-        estilo::texto(dir.x, y, &format!("Inimigos nível {nivel} · poder mínimo {} · peça até {}", dg::poder_minimo(def, estagio), teto.nome()), 13, estilo::TEXTO);
+        estilo::texto(
+            dir.x,
+            y,
+            &format!(
+                "Inimigos nível {nivel} · poder mínimo {} · peça até {}",
+                dg::poder_minimo(def, estagio),
+                teto.nome()
+            ),
+            13,
+            estilo::TEXTO,
+        );
         y += 20.0 * f;
         let chave = shared::chaves::faixa(nivel);
-        estilo::texto(dir.x, y, &format!("Chave de craft {} {:.0}% · Marcas da Tempestade", shared::chaves::nome_da_cor(chave.cor), chave.chance * 100.0), 13, estilo::SUAVE);
+        estilo::texto(
+            dir.x,
+            y,
+            &format!(
+                "Chave de craft {} {:.0}% · Marcas da Tempestade",
+                shared::chaves::nome_da_cor(chave.cor),
+                chave.chance * 100.0
+            ),
+            13,
+            estilo::SUAVE,
+        );
         y += 24.0 * f;
         if let Some(cad) = &cadeado {
-            estilo::texto(dir.x, y, &format!("Fechado: {}", cad.texto()), 15, estilo::VERMELHO);
+            estilo::texto(
+                dir.x,
+                y,
+                &format!("Fechado: {}", cad.texto()),
+                15,
+                estilo::VERMELHO,
+            );
             y += 24.0 * f;
         }
 
@@ -322,17 +531,54 @@ impl DungeonUi {
         let bw = (dir.w - 12.0 * f) * 0.5;
         match def.tipo {
             Tipo::Porao => {
-                estilo::texto(dir.x, y, &format!("Recompensas hoje: {}/{}", estado.entradas.porao, dg::PORAO_RECOMPENSAS_POR_DIA), 14, estilo::TEXTO);
+                estilo::texto(
+                    dir.x,
+                    y,
+                    &format!(
+                        "Recompensas hoje: {}/{}",
+                        estado.entradas.porao,
+                        dg::PORAO_RECOMPENSAS_POR_DIA
+                    ),
+                    14,
+                    estilo::TEXTO,
+                );
                 y += 18.0 * f;
-                estilo::texto(dir.x, y, "Entrada livre; sem recompensa, só cobre e Marcas.", 12, estilo::SUAVE);
+                estilo::texto(
+                    dir.x,
+                    y,
+                    "Entrada livre; sem recompensa, só cobre e Marcas.",
+                    12,
+                    estilo::SUAVE,
+                );
             }
             _ => {
-                estilo::texto(dir.x, y, &format!("Entradas: {}/{} (2 por dia)", estado.entradas.gruta, dg::GRUTA_ACUMULA), 14, estilo::TEXTO);
+                estilo::texto(
+                    dir.x,
+                    y,
+                    &format!(
+                        "Entradas: {}/{} (2 por dia)",
+                        estado.entradas.gruta,
+                        dg::GRUTA_ACUMULA
+                    ),
+                    14,
+                    estilo::TEXTO,
+                );
                 y += 18.0 * f;
-                estilo::texto(dir.x, y, "Sem entrada você vai como Ajudante: sem peça nem chave.", 12, estilo::SUAVE);
+                estilo::texto(
+                    dir.x,
+                    y,
+                    "Sem entrada você vai como Ajudante: sem peça nem chave.",
+                    12,
+                    estilo::SUAVE,
+                );
                 if let Some(preco) = estado.entradas.gruta_preco {
                     let r = Rect::new(dir.x + dir.w - bw, y - 30.0 * f, bw, 36.0 * f);
-                    if botao(r, &format!("Comprar entrada · {preco} ouro"), c.ouro >= preco, false) {
+                    if botao(
+                        r,
+                        &format!("Comprar entrada · {preco} ouro"),
+                        c.ouro >= preco,
+                        false,
+                    ) {
                         saida.push(pedir(Pedido::ComprarEntrada));
                     }
                 }
@@ -350,49 +596,139 @@ impl DungeonUi {
                 }
             }
             Tipo::Cacada => {
-                estilo::texto(dir.x, y + 26.0 * f, "A Caçada (raid) chega em breve.", 15, estilo::SUAVE);
+                estilo::texto(
+                    dir.x,
+                    y + 26.0 * f,
+                    "A Caçada (raid) chega em breve.",
+                    15,
+                    estilo::SUAVE,
+                );
             }
             Tipo::Gruta => {
-                let fila_aqui = estado.fila.as_ref().filter(|(fl, _)| fl.conteudo == def.id && fl.estagio == estagio);
+                let fila_aqui = estado
+                    .fila
+                    .as_ref()
+                    .filter(|(fl, _)| fl.conteudo == def.id && fl.estagio == estagio);
                 if let Some((fl, desde)) = fila_aqui {
                     let espera = fl.esperando_s + (agora - desde).max(0.0) as u32;
-                    estilo::texto(dir.x, y + 18.0 * f, &format!("Procurando grupo · {} · {} na fila", mmss(espera), fl.na_fila), 15, estilo::AUTO);
-                    if botao(Rect::new(dir.x + dir.w - bw, y, bw, 40.0 * f), "Sair da fila", true, false) {
+                    estilo::texto(
+                        dir.x,
+                        y + 18.0 * f,
+                        &format!(
+                            "Procurando grupo · {} · {} na fila",
+                            mmss(espera),
+                            fl.na_fila
+                        ),
+                        15,
+                        estilo::AUTO,
+                    );
+                    if botao(
+                        Rect::new(dir.x + dir.w - bw, y, bw, 40.0 * f),
+                        "Sair da fila",
+                        true,
+                        false,
+                    ) {
                         saida.push(pedir(Pedido::FilaSair));
                     }
-                } else if botao(Rect::new(dir.x, y, bw, 40.0 * f), "Entrar na fila", aberto && estado.sala.is_none(), true) {
-                    saida.push(pedir(Pedido::FilaEntrar { conteudo: def.id, estagio }));
+                } else if botao(
+                    Rect::new(dir.x, y, bw, 40.0 * f),
+                    "Entrar na fila",
+                    aberto && estado.sala.is_none(),
+                    true,
+                ) {
+                    saida.push(pedir(Pedido::FilaEntrar {
+                        conteudo: def.id,
+                        estagio,
+                    }));
                 }
                 y += 50.0 * f;
                 if let Some(sala) = &estado.sala {
                     self.desenha_sala(sala, c, dir, y, f, saida);
                 } else {
-                    if botao(Rect::new(dir.x, y, bw, 40.0 * f), "Criar sala", aberto, false) {
-                        saida.push(pedir(Pedido::SalaCriar { conteudo: def.id, estagio, completar_pela_fila: self.completar_pela_fila }));
+                    if botao(
+                        Rect::new(dir.x, y, bw, 40.0 * f),
+                        "Criar sala",
+                        aberto,
+                        false,
+                    ) {
+                        saida.push(pedir(Pedido::SalaCriar {
+                            conteudo: def.id,
+                            estagio,
+                            completar_pela_fila: self.completar_pela_fila,
+                        }));
                     }
-                    if botao(Rect::new(dir.x + dir.w - bw, y, bw, 40.0 * f), "Procurar salas", def.disponivel, false) {
-                        saida.push(pedir(Pedido::SalasBuscar { conteudo: def.id, estagio }));
+                    if botao(
+                        Rect::new(dir.x + dir.w - bw, y, bw, 40.0 * f),
+                        "Procurar salas",
+                        def.disponivel,
+                        false,
+                    ) {
+                        saida.push(pedir(Pedido::SalasBuscar {
+                            conteudo: def.id,
+                            estagio,
+                        }));
                     }
                     y += 48.0 * f;
                     let toggle = Rect::new(dir.x, y, dir.w, 30.0 * f);
-                    let marca = if self.completar_pela_fila { "☑" } else { "☐" };
-                    estilo::texto(dir.x, y + 20.0 * f, &format!("{marca} Completar as vagas pela fila depois de 1 min"), 13, estilo::TEXTO);
+                    let marca = if self.completar_pela_fila {
+                        "☑"
+                    } else {
+                        "☐"
+                    };
+                    estilo::texto(
+                        dir.x,
+                        y + 20.0 * f,
+                        &format!("{marca} Completar as vagas pela fila depois de 1 min"),
+                        13,
+                        estilo::TEXTO,
+                    );
                     if toggle.contains(m) && clicou {
                         self.completar_pela_fila = !self.completar_pela_fila;
                     }
                     y += 38.0 * f;
                     if let Some(salas) = &self.salas {
                         if salas.is_empty() {
-                            estilo::texto(dir.x, y + 18.0 * f, "Nenhuma sala aberta neste estágio.", 14, estilo::SUAVE);
+                            estilo::texto(
+                                dir.x,
+                                y + 18.0 * f,
+                                "Nenhuma sala aberta neste estágio.",
+                                14,
+                                estilo::SUAVE,
+                            );
                         }
                         let alt = 46.0 * f;
                         let cabem = (((dir.y + dir.h) - y) / alt).floor().max(0.0) as usize;
                         for (i, s) in salas.iter().take(cabem).enumerate() {
                             let r = Rect::new(dir.x, y + i as f32 * alt, dir.w, alt - 4.0 * f);
                             estilo::cartao(r, false, false);
-                            let lider = s.membros.iter().find(|x| x.lider).map_or("?", |x| x.nome.as_str());
-                            estilo::texto_ajustado(&format!("{lider} · {} jogador(es) · {} vaga(s)", s.membros.len(), s.vagas), r.x + 10.0 * f, r.y + r.h * 0.62, r.w - 130.0 * f, 14, estilo::TEXTO);
-                            if botao(Rect::new(r.x + r.w - 110.0 * f, r.y + 4.0 * f, 104.0 * f, r.h - 8.0 * f), "Entrar", s.vagas > 0 && aberto, true) {
+                            let lider = s
+                                .membros
+                                .iter()
+                                .find(|x| x.lider)
+                                .map_or("?", |x| x.nome.as_str());
+                            estilo::texto_ajustado(
+                                &format!(
+                                    "{lider} · {} jogador(es) · {} vaga(s)",
+                                    s.membros.len(),
+                                    s.vagas
+                                ),
+                                r.x + 10.0 * f,
+                                r.y + r.h * 0.62,
+                                r.w - 130.0 * f,
+                                14,
+                                estilo::TEXTO,
+                            );
+                            if botao(
+                                Rect::new(
+                                    r.x + r.w - 110.0 * f,
+                                    r.y + 4.0 * f,
+                                    104.0 * f,
+                                    r.h - 8.0 * f,
+                                ),
+                                "Entrar",
+                                s.vagas > 0 && aberto,
+                                true,
+                            ) {
                                 saida.push(pedir(Pedido::SalaEntrar { sala: s.id }));
                             }
                         }
@@ -404,30 +740,84 @@ impl DungeonUi {
         if let Some((texto, ok, quando)) = &self.aviso {
             if agora - quando < 6.0 {
                 let cor = if *ok { estilo::VERDE } else { estilo::VERMELHO };
-                estilo::texto_ajustado(texto, p.x + 18.0 * f, p.y + p.h - 16.0 * f, p.w - 36.0 * f, 14, cor);
+                estilo::texto_ajustado(
+                    texto,
+                    p.x + 18.0 * f,
+                    p.y + p.h - 16.0 * f,
+                    p.w - 36.0 * f,
+                    14,
+                    cor,
+                );
             }
         }
     }
 
-    fn desenha_sala(&self, sala: &dg::SalaNet, c: &Contexto, dir: Rect, mut y: f32, f: f32, saida: &mut Vec<ClientMessage>) {
-        let eu_lider = sala.membros.iter().any(|m| m.lider && m.nome.split('@').next() == Some(c.eu));
-        estilo::texto_forte(dir.x, y + 14.0 * f, &format!("Sua sala · {} · estágio {}", nome_do_conteudo(sala.conteudo), sala.estagio), 15, estilo::OURO);
+    fn desenha_sala(
+        &self,
+        sala: &dg::SalaNet,
+        c: &Contexto,
+        dir: Rect,
+        mut y: f32,
+        f: f32,
+        saida: &mut Vec<ClientMessage>,
+    ) {
+        let eu_lider = sala
+            .membros
+            .iter()
+            .any(|m| m.lider && m.nome.split('@').next() == Some(c.eu));
+        estilo::texto_forte(
+            dir.x,
+            y + 14.0 * f,
+            &format!(
+                "Sua sala · {} · estágio {}",
+                nome_do_conteudo(sala.conteudo),
+                sala.estagio
+            ),
+            15,
+            estilo::OURO,
+        );
         y += 26.0 * f;
         for m in &sala.membros {
             let coroa = if m.lider { " (líder)" } else { "" };
-            estilo::texto(dir.x + 8.0 * f, y + 14.0 * f, &format!("• {}{coroa}", m.nome), 14, estilo::TEXTO);
+            estilo::texto(
+                dir.x + 8.0 * f,
+                y + 14.0 * f,
+                &format!("• {}{coroa}", m.nome),
+                14,
+                estilo::TEXTO,
+            );
             y += 20.0 * f;
         }
         if sala.completar_pela_fila {
-            estilo::texto(dir.x + 8.0 * f, y + 14.0 * f, "Completa as vagas pela fila.", 12, estilo::SUAVE);
+            estilo::texto(
+                dir.x + 8.0 * f,
+                y + 14.0 * f,
+                "Completa as vagas pela fila.",
+                12,
+                estilo::SUAVE,
+            );
             y += 20.0 * f;
         }
         y += 10.0 * f;
         let bw = (dir.w - 12.0 * f) * 0.5;
-        if botao(Rect::new(dir.x, y, bw, 40.0 * f), if eu_lider { "Começar" } else { "Só o líder começa" }, eu_lider, true) {
+        if botao(
+            Rect::new(dir.x, y, bw, 40.0 * f),
+            if eu_lider {
+                "Começar"
+            } else {
+                "Só o líder começa"
+            },
+            eu_lider,
+            true,
+        ) {
             saida.push(pedir(Pedido::SalaIniciar));
         }
-        if botao(Rect::new(dir.x + dir.w - bw, y, bw, 40.0 * f), "Sair da sala", true, false) {
+        if botao(
+            Rect::new(dir.x + dir.w - bw, y, bw, 40.0 * f),
+            "Sair da sala",
+            true,
+            false,
+        ) {
             saida.push(pedir(Pedido::SalaSair));
         }
     }
@@ -435,16 +825,41 @@ impl DungeonUi {
     // ─────────────────────────────── fila ───────────────────────────────
 
     fn desenha_faixa_da_fila(&mut self, agora: f64, saida: &mut Vec<ClientMessage>) {
-        let Some((fl, desde)) = self.estado.as_ref().and_then(|e| e.fila.as_ref()) else { return };
+        let Some((fl, desde)) = self.estado.as_ref().and_then(|e| e.fila.as_ref()) else {
+            return;
+        };
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
         let w = (520.0 * f).min(seguro.w - 32.0);
-        let r = Rect::new(seguro.center().x - w * 0.5, seguro.y + 104.0 * f, w, 40.0 * f);
+        let r = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.y + 104.0 * f,
+            w,
+            40.0 * f,
+        );
         estilo::painel(r);
         let espera = fl.esperando_s + (agora - desde).max(0.0) as u32;
-        let t = format!("PROCURANDO GRUPO · {} · est. {} · {} · {} na fila", nome_do_conteudo(fl.conteudo), fl.estagio, mmss(espera), fl.na_fila);
-        estilo::texto_ajustado(&t, r.x + 12.0 * f, r.y + r.h * 0.64, r.w - 110.0 * f, 13, estilo::AUTO);
-        if botao(Rect::new(r.x + r.w - 92.0 * f, r.y + 4.0 * f, 86.0 * f, r.h - 8.0 * f), "Sair", true, false) {
+        let t = format!(
+            "PROCURANDO GRUPO · {} · est. {} · {} · {} na fila",
+            nome_do_conteudo(fl.conteudo),
+            fl.estagio,
+            mmss(espera),
+            fl.na_fila
+        );
+        estilo::texto_ajustado(
+            &t,
+            r.x + 12.0 * f,
+            r.y + r.h * 0.64,
+            r.w - 110.0 * f,
+            13,
+            estilo::AUTO,
+        );
+        if botao(
+            Rect::new(r.x + r.w - 92.0 * f, r.y + 4.0 * f, 86.0 * f, r.h - 8.0 * f),
+            "Sair",
+            true,
+            false,
+        ) {
             saida.push(pedir(Pedido::FilaSair));
         }
     }
@@ -461,26 +876,79 @@ impl DungeonUi {
         crate::hud_layout::escurece(0.45);
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
-        let (w, h) = ((460.0 * f).min(seguro.w - 16.0), (170.0 * f + 22.0 * f * p.membros.len() as f32).min(seguro.h - 16.0));
-        let r = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+        let (w, h) = (
+            (460.0 * f).min(seguro.w - 16.0),
+            (170.0 * f + 22.0 * f * p.membros.len() as f32).min(seguro.h - 16.0),
+        );
+        let r = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.center().y - h * 0.5,
+            w,
+            h,
+        );
         estilo::painel_destaque(r, estilo::OURO);
-        estilo::texto_centro_forte(r.center().x, r.y + 32.0 * f, "Grupo encontrado", 20, estilo::OURO);
-        estilo::texto_centro(r.center().x, r.y + 56.0 * f, &format!("{} · estágio {} · {:.0} s", nome_do_conteudo(p.conteudo), p.estagio, falta.ceil()), 14, estilo::TEXTO);
+        estilo::texto_centro_forte(
+            r.center().x,
+            r.y + 32.0 * f,
+            "Grupo encontrado",
+            20,
+            estilo::OURO,
+        );
+        estilo::texto_centro(
+            r.center().x,
+            r.y + 56.0 * f,
+            &format!(
+                "{} · estágio {} · {:.0} s",
+                nome_do_conteudo(p.conteudo),
+                p.estagio,
+                falta.ceil()
+            ),
+            14,
+            estilo::TEXTO,
+        );
         for (i, m) in p.membros.iter().enumerate() {
-            estilo::texto(r.x + 24.0 * f, r.y + 84.0 * f + i as f32 * 22.0 * f, &format!("• {}", m.nome), 14, estilo::TEXTO);
+            estilo::texto(
+                r.x + 24.0 * f,
+                r.y + 84.0 * f + i as f32 * 22.0 * f,
+                &format!("• {}", m.nome),
+                14,
+                estilo::TEXTO,
+            );
         }
         let bw = (r.w - 60.0 * f) * 0.5;
         let by = r.y + r.h - 56.0 * f;
         if p.respondeu {
-            estilo::texto_centro(r.center().x, by + 26.0 * f, "Esperando os outros…", 15, estilo::SUAVE);
+            estilo::texto_centro(
+                r.center().x,
+                by + 26.0 * f,
+                "Esperando os outros…",
+                15,
+                estilo::SUAVE,
+            );
             return;
         }
-        if botao(Rect::new(r.x + 20.0 * f, by, bw, 42.0 * f), "Aceitar", true, true) {
+        if botao(
+            Rect::new(r.x + 20.0 * f, by, bw, 42.0 * f),
+            "Aceitar",
+            true,
+            true,
+        ) {
             p.respondeu = true;
-            saida.push(pedir(Pedido::Pronto { partida: p.partida, aceito: true }));
+            saida.push(pedir(Pedido::Pronto {
+                partida: p.partida,
+                aceito: true,
+            }));
         }
-        if botao(Rect::new(r.x + r.w - 20.0 * f - bw, by, bw, 42.0 * f), "Recusar", true, false) {
-            saida.push(pedir(Pedido::Pronto { partida: p.partida, aceito: false }));
+        if botao(
+            Rect::new(r.x + r.w - 20.0 * f - bw, by, bw, 42.0 * f),
+            "Recusar",
+            true,
+            false,
+        ) {
+            saida.push(pedir(Pedido::Pronto {
+                partida: p.partida,
+                aceito: false,
+            }));
             self.pronto = None;
         }
     }
@@ -493,7 +961,12 @@ impl DungeonUi {
         // No lugar do rastreador de missoes: dentro da dungeon a missao E' a
         // dungeon, e as missoes normais nem aparecem (pedido do dono).
         let z = crate::hud_layout::atual();
-        Rect::new(z.rastreador.x, z.rastreador.y, z.rastreador.w.min(440.0 * z.s), MISSAO_H * z.s)
+        Rect::new(
+            z.rastreador.x,
+            z.rastreador.y,
+            z.rastreador.w.min(440.0 * z.s),
+            MISSAO_H * z.s,
+        )
     }
 
     /// (faixa do alto, porta de sair, botao de reviver).
@@ -501,9 +974,24 @@ impl DungeonUi {
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
         let w = (540.0 * f).min(seguro.w - 32.0);
-        let faixa = Rect::new(seguro.center().x - w * 0.5, seguro.y + 104.0 * f, w, 56.0 * f);
-        let porta = Rect::new(faixa.center().x - 60.0 * f, faixa.y + faixa.h + 6.0 * f, 120.0 * f, 34.0 * f);
-        let reviver = Rect::new(seguro.center().x - 130.0 * f, seguro.center().y + 20.0 * f, 260.0 * f, 48.0 * f);
+        let faixa = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.y + 104.0 * f,
+            w,
+            56.0 * f,
+        );
+        let porta = Rect::new(
+            faixa.center().x - 60.0 * f,
+            faixa.y + faixa.h + 6.0 * f,
+            120.0 * f,
+            34.0 * f,
+        );
+        let reviver = Rect::new(
+            seguro.center().x - 130.0 * f,
+            seguro.center().y + 20.0 * f,
+            260.0 * f,
+            48.0 * f,
+        );
         (faixa, porta, reviver)
     }
 
@@ -512,32 +1000,100 @@ impl DungeonUi {
         let f = estilo::fator_texto();
         let (faixa, porta, reviver) = Self::rects_da_instancia();
         estilo::painel(faixa);
-        let andar = if i.andar >= i.andares { "Chefe".to_string() } else { format!("Andar {}/{}", i.andar + 1, i.andares) };
-        let titulo = format!("{} · estágio {} · {andar}", nome_do_conteudo(i.conteudo), i.estagio);
-        estilo::texto_ajustado(&titulo, faixa.x + 12.0 * f, faixa.y + 22.0 * f, faixa.w - 24.0 * f, 15, estilo::OURO);
-        let restante = i.restante_s.saturating_sub((agora - i.recebido).max(0.0) as u32);
+        let andar = if i.andar >= i.andares {
+            "Chefe".to_string()
+        } else {
+            format!("Andar {}/{}", i.andar + 1, i.andares)
+        };
+        let titulo = format!(
+            "{} · estágio {} · {andar}",
+            nome_do_conteudo(i.conteudo),
+            i.estagio
+        );
+        estilo::texto_ajustado(
+            &titulo,
+            faixa.x + 12.0 * f,
+            faixa.y + 22.0 * f,
+            faixa.w - 24.0 * f,
+            15,
+            estilo::OURO,
+        );
+        let restante = i
+            .restante_s
+            .saturating_sub((agora - i.recebido).max(0.0) as u32);
         let linha = if i.concluida {
             "Vitória! Toque no baú para abrir.".to_string()
         } else {
-            format!("{} · inimigos {} · grupo {}/{}", mmss(restante), i.inimigos, i.membros.iter().filter(|m| m.vivo).count(), i.membros.len())
+            format!(
+                "{} · inimigos {} · grupo {}/{}",
+                mmss(restante),
+                i.inimigos,
+                i.membros.iter().filter(|m| m.vivo).count(),
+                i.membros.len()
+            )
         };
-        let cor = if !i.concluida && restante < 60 { estilo::VERMELHO } else { estilo::TEXTO };
-        estilo::texto_ajustado(&linha, faixa.x + 12.0 * f, faixa.y + 44.0 * f, faixa.w - 24.0 * f, 13, cor);
+        let cor = if !i.concluida && restante < 60 {
+            estilo::VERMELHO
+        } else {
+            estilo::TEXTO
+        };
+        estilo::texto_ajustado(
+            &linha,
+            faixa.x + 12.0 * f,
+            faixa.y + 44.0 * f,
+            faixa.w - 24.0 * f,
+            13,
+            cor,
+        );
         // ── a missao: completar a dungeon no automatico ──
         let missao = Self::missao_rect();
         let fm = crate::hud_layout::atual().s.max(0.5);
         let sobre = missao.contains(Vec2::from(mouse_position()));
-        let cor = if self.auto { estilo::AUTO } else { estilo::OURO };
+        let cor = if self.auto {
+            estilo::AUTO
+        } else {
+            estilo::OURO
+        };
         estilo::painel(missao);
-        draw_rectangle(missao.x, missao.y, missao.w, missao.h, Color::new(cor.r, cor.g, cor.b, if sobre { 0.16 } else { 0.08 }));
+        draw_rectangle(
+            missao.x,
+            missao.y,
+            missao.w,
+            missao.h,
+            Color::new(cor.r, cor.g, cor.b, if sobre { 0.16 } else { 0.08 }),
+        );
         let c = vec2(missao.x + 16.0 * fm, missao.center().y);
         draw_poly(c.x, c.y, 4, 6.0 * fm, 0.0, cor);
-        let feito = if i.andares == 0 { 0.0 } else { (i.andar.min(i.andares) as f32 + if i.concluida { 1.0 } else { 0.0 }) / (i.andares + 1) as f32 };
+        let feito = if i.andares == 0 {
+            0.0
+        } else {
+            (i.andar.min(i.andares) as f32 + if i.concluida { 1.0 } else { 0.0 })
+                / (i.andares + 1) as f32
+        };
         let rotulo = if self.auto { "› AUTO" } else { "Toque: AUTO" };
         let rw = estilo::medir(rotulo, 13) + 16.0 * fm;
-        estilo::texto_ajustado(&format!("Completar {}", nome_do_conteudo(i.conteudo)), missao.x + 30.0 * fm, missao.y + missao.h * 0.5 + 5.0 * fm, missao.w - rw - 44.0 * fm, 14, estilo::TEXTO);
-        estilo::texto(missao.x + missao.w - rw, missao.y + missao.h * 0.5 + 5.0 * fm, rotulo, 13, cor);
-        draw_rectangle(missao.x + 2.0, missao.y + missao.h - 3.0 * fm, (missao.w - 4.0) * feito, 2.0 * fm, cor);
+        estilo::texto_ajustado(
+            &format!("Completar {}", nome_do_conteudo(i.conteudo)),
+            missao.x + 30.0 * fm,
+            missao.y + missao.h * 0.5 + 5.0 * fm,
+            missao.w - rw - 44.0 * fm,
+            14,
+            estilo::TEXTO,
+        );
+        estilo::texto(
+            missao.x + missao.w - rw,
+            missao.y + missao.h * 0.5 + 5.0 * fm,
+            rotulo,
+            13,
+            cor,
+        );
+        draw_rectangle(
+            missao.x + 2.0,
+            missao.y + missao.h - 3.0 * fm,
+            (missao.w - 4.0) * feito,
+            2.0 * fm,
+            cor,
+        );
         if sobre && is_mouse_button_pressed(MouseButton::Left) {
             self.auto = !self.auto;
         }
@@ -546,12 +1102,33 @@ impl DungeonUi {
         }
         if let Some(espera) = i.reviver_em_s {
             let falta = (espera as f64 - (agora - i.recebido)).max(0.0);
-            let caixa = Rect::new(reviver.x - 40.0 * f, reviver.y - 90.0 * f, reviver.w + 80.0 * f, 160.0 * f);
+            let caixa = Rect::new(
+                reviver.x - 40.0 * f,
+                reviver.y - 90.0 * f,
+                reviver.w + 80.0 * f,
+                160.0 * f,
+            );
             estilo::painel_destaque(caixa, estilo::VERMELHO);
-            estilo::texto_centro_forte(caixa.center().x, caixa.y + 34.0 * f, "VOCÊ CAIU", 22, estilo::VERMELHO);
-            estilo::texto_centro(caixa.center().x, caixa.y + 60.0 * f, "Sem perda de experiência dentro da dungeon.", 13, estilo::SUAVE);
+            estilo::texto_centro_forte(
+                caixa.center().x,
+                caixa.y + 34.0 * f,
+                "VOCÊ CAIU",
+                22,
+                estilo::VERMELHO,
+            );
+            estilo::texto_centro(
+                caixa.center().x,
+                caixa.y + 60.0 * f,
+                "Sem perda de experiência dentro da dungeon.",
+                13,
+                estilo::SUAVE,
+            );
             let pronto = falta <= 0.0;
-            let rot = if pronto { "Reviver".to_string() } else { format!("Reviver em {:.0} s", falta.ceil()) };
+            let rot = if pronto {
+                "Reviver".to_string()
+            } else {
+                format!("Reviver em {:.0} s", falta.ceil())
+            };
             if botao(reviver, &rot, pronto, true) {
                 saida.push(pedir(Pedido::Reviver));
             }
@@ -566,41 +1143,135 @@ impl DungeonUi {
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
         let linhas = r.bau.as_ref().map_or(0, |b| b.0.len() + 1);
-        let (w, h) = ((460.0 * f).min(seguro.w - 16.0), (170.0 * f + 20.0 * f * linhas as f32).min(seguro.h - 16.0));
-        let caixa = Rect::new(seguro.x + seguro.w - w - 16.0 * f, seguro.center().y - h * 0.5, w, h);
-        estilo::painel_destaque(caixa, if r.vitoria { estilo::OURO } else { estilo::VERMELHO });
-        let titulo = if r.vitoria { "VITÓRIA" } else { "TEMPO ESGOTADO" };
-        estilo::texto_centro_forte(caixa.center().x, caixa.y + 32.0 * f, titulo, 22, if r.vitoria { estilo::OURO } else { estilo::VERMELHO });
+        let (w, h) = (
+            (460.0 * f).min(seguro.w - 16.0),
+            (170.0 * f + 20.0 * f * linhas as f32).min(seguro.h - 16.0),
+        );
+        let caixa = Rect::new(
+            seguro.x + seguro.w - w - 16.0 * f,
+            seguro.center().y - h * 0.5,
+            w,
+            h,
+        );
+        estilo::painel_destaque(
+            caixa,
+            if r.vitoria {
+                estilo::OURO
+            } else {
+                estilo::VERMELHO
+            },
+        );
+        let titulo = if r.vitoria {
+            "VITÓRIA"
+        } else {
+            "TEMPO ESGOTADO"
+        };
+        estilo::texto_centro_forte(
+            caixa.center().x,
+            caixa.y + 32.0 * f,
+            titulo,
+            22,
+            if r.vitoria {
+                estilo::OURO
+            } else {
+                estilo::VERMELHO
+            },
+        );
         let mut y = caixa.y + 56.0 * f;
-        estilo::texto_centro(caixa.center().x, y, &format!("{} · estágio {} · {}", nome_do_conteudo(r.conteudo), r.estagio, mmss(r.tempo_s)), 14, estilo::TEXTO);
+        estilo::texto_centro(
+            caixa.center().x,
+            y,
+            &format!(
+                "{} · estágio {} · {}",
+                nome_do_conteudo(r.conteudo),
+                r.estagio,
+                mmss(r.tempo_s)
+            ),
+            14,
+            estilo::TEXTO,
+        );
         y += 20.0 * f;
         if r.bonus {
-            estilo::texto_centro(caixa.center().x, y, "Bônus de tempo: +50% de Marcas", 13, estilo::AUTO);
+            estilo::texto_centro(
+                caixa.center().x,
+                y,
+                "Bônus de tempo: +50% de Marcas",
+                13,
+                estilo::AUTO,
+            );
             y += 18.0 * f;
         }
         if r.primeira {
-            estilo::texto_centro(caixa.center().x, y, "Primeira vitória! Recompensa nas Entregas.", 13, estilo::AUTO);
+            estilo::texto_centro(
+                caixa.center().x,
+                y,
+                "Primeira vitória! Recompensa nas Entregas.",
+                13,
+                estilo::AUTO,
+            );
             y += 18.0 * f;
         }
         match &r.bau {
             Some((itens, marcas, no_correio)) => {
                 for (id, q) in itens {
-                    let nome = c.nomes.get(id).cloned().unwrap_or_else(|| format!("Item {id}"));
-                    estilo::texto(caixa.x + 24.0 * f, y + 4.0 * f, &format!("• {nome} ×{q}"), 13, estilo::TEXTO);
+                    let nome = c
+                        .nomes
+                        .get(id)
+                        .cloned()
+                        .unwrap_or_else(|| format!("Item {id}"));
+                    estilo::texto(
+                        caixa.x + 24.0 * f,
+                        y + 4.0 * f,
+                        &format!("• {nome} ×{q}"),
+                        13,
+                        estilo::TEXTO,
+                    );
                     y += 20.0 * f;
                 }
-                let extra = if *no_correio > 0 { format!(" · {no_correio} nas Entregas (bolsa cheia)") } else { String::new() };
-                estilo::texto(caixa.x + 24.0 * f, y + 4.0 * f, &format!("+{marcas} Marcas da Tempestade{extra}"), 13, estilo::OURO);
+                let extra = if *no_correio > 0 {
+                    format!(" · {no_correio} nas Entregas (bolsa cheia)")
+                } else {
+                    String::new()
+                };
+                estilo::texto(
+                    caixa.x + 24.0 * f,
+                    y + 4.0 * f,
+                    &format!("+{marcas} Marcas da Tempestade{extra}"),
+                    13,
+                    estilo::OURO,
+                );
             }
-            None if r.vitoria => estilo::texto_centro(caixa.center().x, y + 6.0 * f, "Toque no baú para abrir (abre sozinho em 1 min).", 13, estilo::SUAVE),
-            None => estilo::texto_centro(caixa.center().x, y + 6.0 * f, "Sem baú de conclusão. A entrada ficou gasta.", 13, estilo::SUAVE),
+            None if r.vitoria => estilo::texto_centro(
+                caixa.center().x,
+                y + 6.0 * f,
+                "Toque no baú para abrir (abre sozinho em 1 min).",
+                13,
+                estilo::SUAVE,
+            ),
+            None => estilo::texto_centro(
+                caixa.center().x,
+                y + 6.0 * f,
+                "Sem baú de conclusão. A entrada ficou gasta.",
+                13,
+                estilo::SUAVE,
+            ),
         }
         let bw = (caixa.w - 60.0 * f) * 0.5;
         let by = caixa.y + caixa.h - 54.0 * f;
-        if botao(Rect::new(caixa.x + 20.0 * f, by, bw, 40.0 * f), "Sair agora", true, false) {
+        if botao(
+            Rect::new(caixa.x + 20.0 * f, by, bw, 40.0 * f),
+            "Sair agora",
+            true,
+            false,
+        ) {
             saida.push(pedir(Pedido::Sair));
         }
-        if botao(Rect::new(caixa.x + caixa.w - 20.0 * f - bw, by, bw, 40.0 * f), "Fechar", true, false) {
+        if botao(
+            Rect::new(caixa.x + caixa.w - 20.0 * f - bw, by, bw, 40.0 * f),
+            "Fechar",
+            true,
+            false,
+        ) {
             r.fechado = true;
         }
     }
@@ -613,7 +1284,12 @@ mod testes {
     #[test]
     fn abrir_pede_o_estado() {
         let mut d = DungeonUi::default();
-        assert!(matches!(d.abrir()[..], [ClientMessage::Dungeon { pedido: Pedido::Estado }]));
+        assert!(matches!(
+            d.abrir()[..],
+            [ClientMessage::Dungeon {
+                pedido: Pedido::Estado
+            }]
+        ));
         assert!(d.aberto);
     }
 
@@ -621,13 +1297,40 @@ mod testes {
     fn entrar_na_instancia_fecha_janela_e_pronto_e_sair_pede_estado() {
         let mut d = DungeonUi::default();
         d.abrir();
-        d.aviso(Aviso::Pronto { partida: 1, conteudo: 10, estagio: 1, membros: vec![], expira_s: 20 }, 0.0);
+        d.aviso(
+            Aviso::Pronto {
+                partida: 1,
+                conteudo: 10,
+                estagio: 1,
+                membros: vec![],
+                expira_s: 20,
+            },
+            0.0,
+        );
         assert!(d.pronto.is_some());
-        d.aviso(Aviso::Instancia { conteudo: 10, estagio: 1, andar: 0, andares: 3, restante_s: 1500, inimigos: 7, reviver_em_s: None, membros: vec![], concluida: false }, 1.0);
+        d.aviso(
+            Aviso::Instancia {
+                conteudo: 10,
+                estagio: 1,
+                andar: 0,
+                andares: 3,
+                restante_s: 1500,
+                inimigos: 7,
+                reviver_em_s: None,
+                membros: vec![],
+                concluida: false,
+            },
+            1.0,
+        );
         assert!(d.na_instancia() && !d.aberto && d.pronto.is_none());
         let volta = d.aviso(Aviso::Saiu, 2.0);
         assert!(!d.na_instancia());
-        assert!(matches!(volta[..], [ClientMessage::Dungeon { pedido: Pedido::Estado }]));
+        assert!(matches!(
+            volta[..],
+            [ClientMessage::Dungeon {
+                pedido: Pedido::Estado
+            }]
+        ));
     }
 
     #[test]
@@ -635,18 +1338,59 @@ mod testes {
         let mut d = DungeonUi::default();
         let conteudos = dg::CONTEUDOS
             .iter()
-            .map(|c| dg::ConteudoEstado { id: c.id, liberado: 0, cadeados: (1..=dg::estagios(c)).map(|_| if c.id == 1 { Some(dg::Cadeado::Nivel(6)) } else { None }).collect(), vitorias: 0 })
+            .map(|c| dg::ConteudoEstado {
+                id: c.id,
+                liberado: 0,
+                cadeados: (1..=dg::estagios(c))
+                    .map(|_| {
+                        if c.id == 1 {
+                            Some(dg::Cadeado::Nivel(6))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
+                vitorias: 0,
+            })
             .collect();
-        d.aviso(Aviso::Estado { conteudos, entradas: Default::default(), fila: None, sala: None }, 0.0);
+        d.aviso(
+            Aviso::Estado {
+                conteudos,
+                entradas: Default::default(),
+                fila: None,
+                sala: None,
+            },
+            0.0,
+        );
         assert_eq!(d.sel, 2, "o primeiro sem cadeado");
     }
 
     #[test]
     fn bau_entra_no_resultado() {
         let mut d = DungeonUi::default();
-        d.aviso(Aviso::Resultado { conteudo: 10, estagio: 1, vitoria: true, tempo_s: 300, bonus_tempo: true, primeira_vitoria: false }, 0.0);
-        d.aviso(Aviso::Bau { itens: vec![(344, 500)], marcas: 15, no_correio: 0 }, 1.0);
-        assert!(d.resultado.as_ref().is_some_and(|r| r.bau.as_ref().is_some_and(|b| b.1 == 15)));
+        d.aviso(
+            Aviso::Resultado {
+                conteudo: 10,
+                estagio: 1,
+                vitoria: true,
+                tempo_s: 300,
+                bonus_tempo: true,
+                primeira_vitoria: false,
+            },
+            0.0,
+        );
+        d.aviso(
+            Aviso::Bau {
+                itens: vec![(344, 500)],
+                marcas: 15,
+                no_correio: 0,
+            },
+            1.0,
+        );
+        assert!(d
+            .resultado
+            .as_ref()
+            .is_some_and(|r| r.bau.as_ref().is_some_and(|b| b.1 == 15)));
     }
 
     #[test]

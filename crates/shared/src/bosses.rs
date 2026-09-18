@@ -45,7 +45,10 @@ impl Forma {
                 }
                 (v / d).dot(dir).clamp(-1.0, 1.0).acos() <= abertura
             }
-            Forma::Linha { comprimento, largura } => {
+            Forma::Linha {
+                comprimento,
+                largura,
+            } => {
                 let ao_longo = v.dot(dir);
                 ao_longo >= 0.0 && ao_longo <= comprimento && v.perp_dot(dir).abs() <= largura * 0.5
             }
@@ -58,7 +61,10 @@ impl Forma {
     pub fn alcance(&self) -> f32 {
         match *self {
             Forma::Circulo { raio } | Forma::Cone { raio, .. } => raio,
-            Forma::Linha { comprimento, largura } => (comprimento * comprimento + largura * largura * 0.25).sqrt(),
+            Forma::Linha {
+                comprimento,
+                largura,
+            } => (comprimento * comprimento + largura * largura * 0.25).sqrt(),
             Forma::Anel { externo, .. } => externo,
         }
     }
@@ -154,7 +160,17 @@ const fn h(
     fase_min: u8,
     empurra: f32,
 ) -> Habilidade {
-    Habilidade { nome, forma, mira, carga_s, dano_mult, recarga_s, alcance, fase_min, empurra }
+    Habilidade {
+        nome,
+        forma,
+        mira,
+        carga_s,
+        dano_mult,
+        recarga_s,
+        alcance,
+        fase_min,
+        empurra,
+    }
 }
 
 use Forma::{Anel, Circulo, Cone, Linha};
@@ -165,85 +181,452 @@ use Mira::{AFrente, EmSi, NoAlvo};
 /// subindo pelas ilhas.
 pub const CHEFES: [Chefe; 9] = [
     Chefe {
-        kind: 10, nome: "Lobo Alfa da Clareira", corpo: Corpo::Bicho(0), escala: 2.3,
-        zona: "ilha_inicial", nivel: 8,
+        kind: 10,
+        nome: "Lobo Alfa da Clareira",
+        corpo: Corpo::Bicho(0),
+        escala: 2.3,
+        zona: "ilha_inicial",
+        nivel: 8,
         habilidades: &[
-            h("Mordida Dilacerante", Cone { raio: 3.6, abertura: 0.6 }, AFrente, 0.8, 2.4, 7.0, 3.6, 0, 0.6),
-            h("Investida", Linha { comprimento: 12.0, largura: 2.2 }, AFrente, 1.2, 2.2, 9.0, 12.0, 0, 1.2),
-            h("Uivo da Matilha", Anel { interno: 0.8, externo: 7.0 }, EmSi, 1.6, 1.8, 14.0, 7.0, 1, 0.8),
+            h(
+                "Mordida Dilacerante",
+                Cone {
+                    raio: 3.6,
+                    abertura: 0.6,
+                },
+                AFrente,
+                0.8,
+                2.4,
+                7.0,
+                3.6,
+                0,
+                0.6,
+            ),
+            h(
+                "Investida",
+                Linha {
+                    comprimento: 12.0,
+                    largura: 2.2,
+                },
+                AFrente,
+                1.2,
+                2.2,
+                9.0,
+                12.0,
+                0,
+                1.2,
+            ),
+            h(
+                "Uivo da Matilha",
+                Anel {
+                    interno: 0.8,
+                    externo: 7.0,
+                },
+                EmSi,
+                1.6,
+                1.8,
+                14.0,
+                7.0,
+                1,
+                0.8,
+            ),
         ],
     },
     Chefe {
-        kind: 11, nome: "Capitao Barba-Tormenta", corpo: Corpo::Pirata, escala: 1.8,
-        zona: "ilha_inicial", nivel: 11,
+        kind: 11,
+        nome: "Capitao Barba-Tormenta",
+        corpo: Corpo::Pirata,
+        escala: 1.8,
+        zona: "ilha_inicial",
+        nivel: 11,
         habilidades: &[
-            h("Corte de Sabre", Cone { raio: 4.0, abertura: 0.75 }, AFrente, 0.9, 2.4, 6.0, 4.0, 0, 0.6),
-            h("Tiro de Canhao", Circulo { raio: 3.0 }, NoAlvo, 1.6, 2.8, 8.0, 16.0, 0, 1.0),
-            h("Barragem", Circulo { raio: 5.0 }, NoAlvo, 2.0, 3.2, 15.0, 14.0, 1, 1.4),
+            h(
+                "Corte de Sabre",
+                Cone {
+                    raio: 4.0,
+                    abertura: 0.75,
+                },
+                AFrente,
+                0.9,
+                2.4,
+                6.0,
+                4.0,
+                0,
+                0.6,
+            ),
+            h(
+                "Tiro de Canhao",
+                Circulo { raio: 3.0 },
+                NoAlvo,
+                1.6,
+                2.8,
+                8.0,
+                16.0,
+                0,
+                1.0,
+            ),
+            h(
+                "Barragem",
+                Circulo { raio: 5.0 },
+                NoAlvo,
+                2.0,
+                3.2,
+                15.0,
+                14.0,
+                1,
+                1.4,
+            ),
         ],
     },
     Chefe {
-        kind: 12, nome: "Urso Anciao", corpo: Corpo::Bicho(1), escala: 2.0,
-        zona: "ilha_inicial", nivel: 14,
+        kind: 12,
+        nome: "Urso Anciao",
+        corpo: Corpo::Bicho(1),
+        escala: 2.0,
+        zona: "ilha_inicial",
+        nivel: 14,
         habilidades: &[
-            h("Patada Larga", Cone { raio: 4.5, abertura: 0.9 }, AFrente, 1.0, 3.0, 8.0, 4.5, 0, 0.9),
-            h("Pisao Sismico", Circulo { raio: 6.0 }, EmSi, 2.0, 3.0, 13.0, 6.0, 0, 1.2),
-            h("Rugido Esmagador", Anel { interno: 1.0, externo: 9.0 }, EmSi, 1.5, 2.0, 16.0, 9.0, 1, 1.0),
+            h(
+                "Patada Larga",
+                Cone {
+                    raio: 4.5,
+                    abertura: 0.9,
+                },
+                AFrente,
+                1.0,
+                3.0,
+                8.0,
+                4.5,
+                0,
+                0.9,
+            ),
+            h(
+                "Pisao Sismico",
+                Circulo { raio: 6.0 },
+                EmSi,
+                2.0,
+                3.0,
+                13.0,
+                6.0,
+                0,
+                1.2,
+            ),
+            h(
+                "Rugido Esmagador",
+                Anel {
+                    interno: 1.0,
+                    externo: 9.0,
+                },
+                EmSi,
+                1.5,
+                2.0,
+                16.0,
+                9.0,
+                1,
+                1.0,
+            ),
         ],
     },
     Chefe {
-        kind: 13, nome: "Tigre das Neves", corpo: Corpo::Bicho(3), escala: 2.2,
-        zona: "ilha_gelo", nivel: 24,
+        kind: 13,
+        nome: "Tigre das Neves",
+        corpo: Corpo::Bicho(3),
+        escala: 2.2,
+        zona: "ilha_gelo",
+        nivel: 24,
         habilidades: &[
-            h("Garras em Leque", Cone { raio: 4.0, abertura: 1.0 }, AFrente, 0.95, 2.4, 6.0, 4.0, 0, 0.7),
-            h("Salto Predador", Circulo { raio: 3.5 }, NoAlvo, 1.35, 2.8, 8.0, 14.0, 0, 1.2),
-            h("Rodopio", Circulo { raio: 5.0 }, EmSi, 1.7, 2.2, 12.0, 5.0, 1, 1.0),
+            h(
+                "Garras em Leque",
+                Cone {
+                    raio: 4.0,
+                    abertura: 1.0,
+                },
+                AFrente,
+                0.95,
+                2.4,
+                6.0,
+                4.0,
+                0,
+                0.7,
+            ),
+            h(
+                "Salto Predador",
+                Circulo { raio: 3.5 },
+                NoAlvo,
+                1.35,
+                2.8,
+                8.0,
+                14.0,
+                0,
+                1.2,
+            ),
+            h(
+                "Rodopio",
+                Circulo { raio: 5.0 },
+                EmSi,
+                1.7,
+                2.2,
+                12.0,
+                5.0,
+                1,
+                1.0,
+            ),
         ],
     },
     Chefe {
-        kind: 14, nome: "Lobo da Tempestade", corpo: Corpo::Bicho(7), escala: 1.0,
-        zona: "ilha_gelo", nivel: 30,
+        kind: 14,
+        nome: "Lobo da Tempestade",
+        corpo: Corpo::Bicho(7),
+        escala: 1.0,
+        zona: "ilha_gelo",
+        nivel: 30,
         habilidades: &[
-            h("Investida Trovejante", Linha { comprimento: 16.0, largura: 3.0 }, AFrente, 1.3, 3.0, 9.0, 16.0, 0, 1.5),
-            h("Uivo da Tempestade", Anel { interno: 1.0, externo: 10.0 }, EmSi, 1.8, 2.6, 15.0, 10.0, 0, 1.0),
-            h("Relampago Caido", Circulo { raio: 4.0 }, NoAlvo, 1.5, 3.0, 11.0, 18.0, 1, 0.8),
+            h(
+                "Investida Trovejante",
+                Linha {
+                    comprimento: 16.0,
+                    largura: 3.0,
+                },
+                AFrente,
+                1.3,
+                3.0,
+                9.0,
+                16.0,
+                0,
+                1.5,
+            ),
+            h(
+                "Uivo da Tempestade",
+                Anel {
+                    interno: 1.0,
+                    externo: 10.0,
+                },
+                EmSi,
+                1.8,
+                2.6,
+                15.0,
+                10.0,
+                0,
+                1.0,
+            ),
+            h(
+                "Relampago Caido",
+                Circulo { raio: 4.0 },
+                NoAlvo,
+                1.5,
+                3.0,
+                11.0,
+                18.0,
+                1,
+                0.8,
+            ),
         ],
     },
     Chefe {
-        kind: 15, nome: "Saqueador das Areias", corpo: Corpo::Gente(2), escala: 1.7,
-        zona: "ilha_deserto", nivel: 36,
+        kind: 15,
+        nome: "Saqueador das Areias",
+        corpo: Corpo::Gente(2),
+        escala: 1.7,
+        zona: "ilha_deserto",
+        nivel: 36,
         habilidades: &[
-            h("Linha de Tiro", Linha { comprimento: 18.0, largura: 1.6 }, AFrente, 1.0, 2.6, 8.0, 18.0, 0, 0.6),
-            h("Rajada em Leque", Cone { raio: 10.0, abertura: 0.45 }, AFrente, 1.25, 2.2, 7.0, 10.0, 0, 0.5),
-            h("Barril Explosivo", Circulo { raio: 4.0 }, NoAlvo, 1.6, 3.0, 10.0, 14.0, 1, 1.4),
+            h(
+                "Linha de Tiro",
+                Linha {
+                    comprimento: 18.0,
+                    largura: 1.6,
+                },
+                AFrente,
+                1.0,
+                2.6,
+                8.0,
+                18.0,
+                0,
+                0.6,
+            ),
+            h(
+                "Rajada em Leque",
+                Cone {
+                    raio: 10.0,
+                    abertura: 0.45,
+                },
+                AFrente,
+                1.25,
+                2.2,
+                7.0,
+                10.0,
+                0,
+                0.5,
+            ),
+            h(
+                "Barril Explosivo",
+                Circulo { raio: 4.0 },
+                NoAlvo,
+                1.6,
+                3.0,
+                10.0,
+                14.0,
+                1,
+                1.4,
+            ),
         ],
     },
     Chefe {
-        kind: 16, nome: "Arqueira do Ermo", corpo: Corpo::Gente(6), escala: 1.7,
-        zona: "ilha_deserto", nivel: 41,
+        kind: 16,
+        nome: "Arqueira do Ermo",
+        corpo: Corpo::Gente(6),
+        escala: 1.7,
+        zona: "ilha_deserto",
+        nivel: 41,
         habilidades: &[
-            h("Flecha Perfurante", Linha { comprimento: 20.0, largura: 1.4 }, AFrente, 1.1, 2.8, 7.0, 20.0, 0, 0.6),
-            h("Chuva de Flechas", Circulo { raio: 5.5 }, NoAlvo, 1.8, 2.6, 11.0, 18.0, 0, 0.3),
-            h("Armadilha Espinhosa", Anel { interno: 2.0, externo: 6.0 }, EmSi, 1.4, 2.0, 13.0, 6.0, 1, 0.8),
+            h(
+                "Flecha Perfurante",
+                Linha {
+                    comprimento: 20.0,
+                    largura: 1.4,
+                },
+                AFrente,
+                1.1,
+                2.8,
+                7.0,
+                20.0,
+                0,
+                0.6,
+            ),
+            h(
+                "Chuva de Flechas",
+                Circulo { raio: 5.5 },
+                NoAlvo,
+                1.8,
+                2.6,
+                11.0,
+                18.0,
+                0,
+                0.3,
+            ),
+            h(
+                "Armadilha Espinhosa",
+                Anel {
+                    interno: 2.0,
+                    externo: 6.0,
+                },
+                EmSi,
+                1.4,
+                2.0,
+                13.0,
+                6.0,
+                1,
+                0.8,
+            ),
         ],
     },
     Chefe {
-        kind: 17, nome: "Owlbear Primevo", corpo: Corpo::Bicho(5), escala: 2.0,
-        zona: "ilha_planalto", nivel: 52,
+        kind: 17,
+        nome: "Owlbear Primevo",
+        corpo: Corpo::Bicho(5),
+        escala: 2.0,
+        zona: "ilha_planalto",
+        nivel: 52,
         habilidades: &[
-            h("Patada Dupla", Cone { raio: 5.0, abertura: 0.8 }, AFrente, 1.0, 2.8, 6.0, 5.0, 0, 1.0),
-            h("Giro Selvagem", Anel { interno: 2.0, externo: 6.5 }, EmSi, 1.3, 2.6, 9.0, 6.5, 0, 1.2),
-            h("Queda Estrondosa", Circulo { raio: 6.2 }, NoAlvo, 2.0, 3.4, 14.0, 12.0, 1, 1.6),
+            h(
+                "Patada Dupla",
+                Cone {
+                    raio: 5.0,
+                    abertura: 0.8,
+                },
+                AFrente,
+                1.0,
+                2.8,
+                6.0,
+                5.0,
+                0,
+                1.0,
+            ),
+            h(
+                "Giro Selvagem",
+                Anel {
+                    interno: 2.0,
+                    externo: 6.5,
+                },
+                EmSi,
+                1.3,
+                2.6,
+                9.0,
+                6.5,
+                0,
+                1.2,
+            ),
+            h(
+                "Queda Estrondosa",
+                Circulo { raio: 6.2 },
+                NoAlvo,
+                2.0,
+                3.4,
+                14.0,
+                12.0,
+                1,
+                1.6,
+            ),
         ],
     },
     Chefe {
-        kind: 18, nome: "Arquimago da Tormenta", corpo: Corpo::Gente(4), escala: 1.7,
-        zona: "ilha_planalto", nivel: 60,
+        kind: 18,
+        nome: "Arquimago da Tormenta",
+        corpo: Corpo::Gente(4),
+        escala: 1.7,
+        zona: "ilha_planalto",
+        nivel: 60,
         habilidades: &[
-            h("Raio Arcano", Linha { comprimento: 22.0, largura: 2.0 }, AFrente, 1.2, 2.8, 8.0, 22.0, 0, 0.8),
-            h("Meteoro", Circulo { raio: 4.5 }, NoAlvo, 1.8, 3.2, 9.0, 20.0, 0, 1.0),
-            h("Nova de Gelo", Circulo { raio: 6.2 }, EmSi, 2.0, 2.6, 12.0, 6.2, 0, 1.2),
-            h("Anel de Chamas", Anel { interno: 5.0, externo: 11.0 }, EmSi, 2.0, 2.4, 16.0, 11.0, 1, 0.8),
+            h(
+                "Raio Arcano",
+                Linha {
+                    comprimento: 22.0,
+                    largura: 2.0,
+                },
+                AFrente,
+                1.2,
+                2.8,
+                8.0,
+                22.0,
+                0,
+                0.8,
+            ),
+            h(
+                "Meteoro",
+                Circulo { raio: 4.5 },
+                NoAlvo,
+                1.8,
+                3.2,
+                9.0,
+                20.0,
+                0,
+                1.0,
+            ),
+            h(
+                "Nova de Gelo",
+                Circulo { raio: 6.2 },
+                EmSi,
+                2.0,
+                2.6,
+                12.0,
+                6.2,
+                0,
+                1.2,
+            ),
+            h(
+                "Anel de Chamas",
+                Anel {
+                    interno: 5.0,
+                    externo: 11.0,
+                },
+                EmSi,
+                2.0,
+                2.4,
+                16.0,
+                11.0,
+                1,
+                0.8,
+            ),
         ],
     },
 ];
@@ -303,7 +686,8 @@ pub fn resistencia(defesa: i32, reducao: f32) -> f32 {
 pub fn dano_telegrafado(h: &Habilidade, fase: u8, hp_max_alvo: i32, resistencia: f32) -> i32 {
     let bonus = if fase >= 1 { BONUS_DA_FASE_2 } else { 1.0 };
     let bruto = hp_max_alvo as f32 * h.dano_mult * VIDA_POR_MULT * bonus;
-    ((bruto * (1.0 - resistencia.clamp(0.0, 0.90) * RESISTENCIA_NO_TELEGRAFICO)).round() as i32).max(1)
+    ((bruto * (1.0 - resistencia.clamp(0.0, 0.90) * RESISTENCIA_NO_TELEGRAFICO)).round() as i32)
+        .max(1)
 }
 
 /// XP do chefe (o servidor ainda multiplica chefe por 5 na morte).
@@ -319,21 +703,39 @@ pub fn respawn_s(nivel: u32) -> f32 {
 /// 0 com mais de metade da vida; 1 abaixo — golpes novos, carga e recarga
 /// mais curtas.
 pub fn fase(hp: i32, max: i32) -> u8 {
-    if hp * 2 <= max { 1 } else { 0 }
+    if hp * 2 <= max {
+        1
+    } else {
+        0
+    }
 }
 
 pub fn carga(h: &Habilidade, fase: u8) -> f32 {
-    if fase >= 1 { h.carga_s * 0.85 } else { h.carga_s }
+    if fase >= 1 {
+        h.carga_s * 0.85
+    } else {
+        h.carga_s
+    }
 }
 
 pub fn recarga(h: &Habilidade, fase: u8) -> f32 {
-    if fase >= 1 { h.recarga_s * 0.75 } else { h.recarga_s }
+    if fase >= 1 {
+        h.recarga_s * 0.75
+    } else {
+        h.recarga_s
+    }
 }
 
 /// Qual golpe comecar agora, se algum: pronto, liberado pela fase e com o
 /// alvo no alcance. Prioridade: golpe de fase alta, depois o mais forte, e
 /// no empate o primeiro da lista.
-pub fn escolher(c: &Chefe, prontas_em: &[f32; MAX_HABILIDADES], agora: f32, fase: u8, dist: f32) -> Option<usize> {
+pub fn escolher(
+    c: &Chefe,
+    prontas_em: &[f32; MAX_HABILIDADES],
+    agora: f32,
+    fase: u8,
+    dist: f32,
+) -> Option<usize> {
     c.habilidades
         .iter()
         .enumerate()
@@ -358,13 +760,27 @@ pub fn centro_e_dir(mira: Mira, chefe: glam::Vec2, alvo: glam::Vec2) -> (glam::V
 }
 
 /// Indices de `alvos` dentro da forma NO IMPACTO.
-pub fn atingidos(forma: &Forma, centro: glam::Vec2, dir: glam::Vec2, alvos: &[glam::Vec2]) -> Vec<usize> {
-    alvos.iter().enumerate().filter(|(_, p)| forma.contem(centro, dir, **p)).map(|(i, _)| i).collect()
+pub fn atingidos(
+    forma: &Forma,
+    centro: glam::Vec2,
+    dir: glam::Vec2,
+    alvos: &[glam::Vec2],
+) -> Vec<usize> {
+    alvos
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| forma.contem(centro, dir, **p))
+        .map(|(i, _)| i)
+        .collect()
 }
 
 /// Quanto do aviso ja' encheu (0 no inicio, 1 no impacto).
 pub fn preenchimento(decorrido: f32, carga_s: f32) -> f32 {
-    if carga_s <= 0.0 { 1.0 } else { (decorrido / carga_s).clamp(0.0, 1.0) }
+    if carga_s <= 0.0 {
+        1.0
+    } else {
+        (decorrido / carga_s).clamp(0.0, 1.0)
+    }
 }
 
 /// Um chefe no mapa da ilha.
@@ -387,23 +803,50 @@ mod testes {
         let c = Circulo { raio: 3.0 };
         assert!(c.contem(Vec2::ZERO, Vec2::X, Vec2::new(2.9, 0.0)));
         assert!(!c.contem(Vec2::ZERO, Vec2::X, Vec2::new(3.1, 0.0)));
-        let a = Anel { interno: 2.0, externo: 5.0 };
-        assert!(!a.contem(Vec2::ZERO, Vec2::X, Vec2::new(1.0, 0.0)), "colado no centro e' seguro");
+        let a = Anel {
+            interno: 2.0,
+            externo: 5.0,
+        };
+        assert!(
+            !a.contem(Vec2::ZERO, Vec2::X, Vec2::new(1.0, 0.0)),
+            "colado no centro e' seguro"
+        );
         assert!(a.contem(Vec2::ZERO, Vec2::X, Vec2::new(0.0, 3.0)));
         assert!(!a.contem(Vec2::ZERO, Vec2::X, Vec2::new(6.0, 0.0)));
     }
 
     #[test]
     fn cone_so_pra_frente_e_linha_so_no_corredor() {
-        let cone = Cone { raio: 4.0, abertura: 0.6 };
+        let cone = Cone {
+            raio: 4.0,
+            abertura: 0.6,
+        };
         assert!(cone.contem(Vec2::ZERO, Vec2::X, Vec2::new(3.0, 0.5)));
-        assert!(!cone.contem(Vec2::ZERO, Vec2::X, Vec2::new(-3.0, 0.0)), "atras nao");
-        assert!(!cone.contem(Vec2::ZERO, Vec2::X, Vec2::new(1.0, 2.0)), "de lado nao");
-        let l = Linha { comprimento: 10.0, largura: 2.0 };
+        assert!(
+            !cone.contem(Vec2::ZERO, Vec2::X, Vec2::new(-3.0, 0.0)),
+            "atras nao"
+        );
+        assert!(
+            !cone.contem(Vec2::ZERO, Vec2::X, Vec2::new(1.0, 2.0)),
+            "de lado nao"
+        );
+        let l = Linha {
+            comprimento: 10.0,
+            largura: 2.0,
+        };
         assert!(l.contem(Vec2::ZERO, Vec2::Y, Vec2::new(0.9, 8.0)));
-        assert!(!l.contem(Vec2::ZERO, Vec2::Y, Vec2::new(1.1, 8.0)), "fora da largura");
-        assert!(!l.contem(Vec2::ZERO, Vec2::Y, Vec2::new(0.0, -0.5)), "atras da origem");
-        assert!(!l.contem(Vec2::ZERO, Vec2::Y, Vec2::new(0.0, 10.5)), "alem do comprimento");
+        assert!(
+            !l.contem(Vec2::ZERO, Vec2::Y, Vec2::new(1.1, 8.0)),
+            "fora da largura"
+        );
+        assert!(
+            !l.contem(Vec2::ZERO, Vec2::Y, Vec2::new(0.0, -0.5)),
+            "atras da origem"
+        );
+        assert!(
+            !l.contem(Vec2::ZERO, Vec2::Y, Vec2::new(0.0, 10.5)),
+            "alem do comprimento"
+        );
     }
 
     #[test]
@@ -445,15 +888,39 @@ mod testes {
         use std::collections::HashSet;
         let mut kinds = HashSet::new();
         for c in &CHEFES {
-            assert!(c.kind >= KIND_MIN && kinds.insert(c.kind), "{}: kind repetido ou baixo", c.nome);
-            assert!((3..=MAX_HABILIDADES).contains(&c.habilidades.len()), "{}: 3–4 golpes", c.nome);
-            assert!(c.habilidades.iter().any(|h| h.fase_min == 1), "{}: sem golpe de fase 2", c.nome);
+            assert!(
+                c.kind >= KIND_MIN && kinds.insert(c.kind),
+                "{}: kind repetido ou baixo",
+                c.nome
+            );
+            assert!(
+                (3..=MAX_HABILIDADES).contains(&c.habilidades.len()),
+                "{}: 3–4 golpes",
+                c.nome
+            );
+            assert!(
+                c.habilidades.iter().any(|h| h.fase_min == 1),
+                "{}: sem golpe de fase 2",
+                c.nome
+            );
             for h in c.habilidades {
-                assert!(h.carga_s >= 0.8 && h.carga_s <= 2.0, "{}/{}: carga fora de 0,8–2 s", c.nome, h.nome);
+                assert!(
+                    h.carga_s >= 0.8 && h.carga_s <= 2.0,
+                    "{}/{}: carga fora de 0,8–2 s",
+                    c.nome,
+                    h.nome
+                );
                 assert!(h.recarga_s > h.carga_s, "{}/{}", c.nome, h.nome);
             }
-            let def = crate::terreno::ARQUIPELAGO.iter().find(|d| d.zona == c.zona).expect("ilha existe");
-            assert!(c.nivel >= def.nivel.0 && c.nivel <= def.nivel.1 + 5, "{}: nivel fora da ilha", c.nome);
+            let def = crate::terreno::ARQUIPELAGO
+                .iter()
+                .find(|d| d.zona == c.zona)
+                .expect("ilha existe");
+            assert!(
+                c.nivel >= def.nivel.0 && c.nivel <= def.nivel.1 + 5,
+                "{}: nivel fora da ilha",
+                c.nome
+            );
             assert!(vida(c.nivel) <= 60_000);
         }
         assert!(da_zona("ilha_inicial").len() >= 2);

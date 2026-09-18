@@ -30,9 +30,14 @@ fn state(i: u32) -> EntityState {
 
 fn main() {
     let mbs = |b: usize| b as f64 * 30.0 / 1024.0 / 1024.0;
-    println!("estado por entidade: {} bytes", shared::protocol::encode(&state(0)).unwrap().len());
-    println!("meta  por entidade: {} bytes (uma vez, na entrada do AOI)\n",
-        shared::protocol::encode(&meta(0)).unwrap().len());
+    println!(
+        "estado por entidade: {} bytes",
+        shared::protocol::encode(&state(0)).unwrap().len()
+    );
+    println!(
+        "meta  por entidade: {} bytes (uma vez, na entrada do AOI)\n",
+        shared::protocol::encode(&meta(0)).unwrap().len()
+    );
 
     for n in [30u32, 100, 300, 1000] {
         // Tick de regime: todo mundo ja entrou, so' o estado se repete.
@@ -49,13 +54,21 @@ fn main() {
         let entrada = WorldSnapshot {
             entered: (0..n).map(meta).collect(),
             states: (0..n).map(state).collect(),
-            ..WorldSnapshot { tick: 0, server_time_ms: 0, last_input_seq: 0,
-                              entered: Vec::new(), states: Vec::new(), removed: Vec::new(),
-                              acertos: Vec::new() }
+            ..WorldSnapshot {
+                tick: 0,
+                server_time_ms: 0,
+                last_input_seq: 0,
+                entered: Vec::new(),
+                states: Vec::new(),
+                removed: Vec::new(),
+                acertos: Vec::new(),
+            }
         };
         let r = shared::protocol::encode(&regime).unwrap().len();
         let e = shared::protocol::encode(&entrada).unwrap().len();
-        println!("{n:>4} entidades | regime {r:>6} B ({:>5.2} MB/s) | entrada {e:>6} B",
-            mbs(r));
+        println!(
+            "{n:>4} entidades | regime {r:>6} B ({:>5.2} MB/s) | entrada {e:>6} B",
+            mbs(r)
+        );
     }
 }

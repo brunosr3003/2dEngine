@@ -36,10 +36,22 @@ async fn main() -> Result<()> {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "--secret" | "-s" => { secret = Some(args.get(i+1).cloned().unwrap_or_default()); i += 2; }
-            "--target" | "-t" => { target = Some(args.get(i+1).cloned().unwrap_or_default()); i += 2; }
-            "--help" | "-h" => { print_usage(); return Ok(()); }
-            other => { positional.push(other.to_string()); i += 1; }
+            "--secret" | "-s" => {
+                secret = Some(args.get(i + 1).cloned().unwrap_or_default());
+                i += 2;
+            }
+            "--target" | "-t" => {
+                target = Some(args.get(i + 1).cloned().unwrap_or_default());
+                i += 2;
+            }
+            "--help" | "-h" => {
+                print_usage();
+                return Ok(());
+            }
+            other => {
+                positional.push(other.to_string());
+                i += 1;
+            }
         }
     }
     let secret = match secret {
@@ -47,24 +59,33 @@ async fn main() -> Result<()> {
         _ => std::env::var("MMORPG_ADMIN_SECRET")
             .map_err(|_| anyhow::anyhow!("falta --secret ou MMORPG_ADMIN_SECRET no env"))?,
     };
-    if positional.is_empty() { print_usage(); bail!("falta acao"); }
+    if positional.is_empty() {
+        print_usage();
+        bail!("falta acao");
+    }
     let action = parse_action(&positional)?;
-    let url = std::env::var("MMORPG_WS_URL")
-        .unwrap_or_else(|_| "ws://127.0.0.1:9000".to_string());
+    let url = std::env::var("MMORPG_WS_URL").unwrap_or_else(|_| "ws://127.0.0.1:9000".to_string());
 
     eprintln!("→ {}", url);
     let (ws, _) = tokio_tungstenite::connect_async(&url).await?;
     let (mut tx, mut rx) = ws.split();
 
     let handshake = ClientMessage::Handshake {
-        protocol_version: shared::PROTOCOL_VERSION, client_version: "admin_cli".into(),
+        protocol_version: shared::PROTOCOL_VERSION,
+        client_version: "admin_cli".into(),
     };
-    tx.send(Message::Binary(shared::protocol::encode(&handshake)?)).await?;
+    tx.send(Message::Binary(shared::protocol::encode(&handshake)?))
+        .await?;
 
     let spawn = matches!(action, AdminAction::SpawnTestBoss { .. });
-    let admin = ClientMessage::AdminCommand { secret, target_char: target.clone(), action };
+    let admin = ClientMessage::AdminCommand {
+        secret,
+        target_char: target.clone(),
+        action,
+    };
     // Credenciais nunca vao para stdout/stderr.
-    tx.send(Message::Binary(shared::protocol::encode(&admin)?)).await?;
+    tx.send(Message::Binary(shared::protocol::encode(&admin)?))
+        .await?;
 
     let mut confirmado = false;
     let _ = tokio::time::timeout(Duration::from_secs(3), async {
@@ -75,18 +96,29 @@ async fn main() -> Result<()> {
                         ServerMessage::Chat { text, .. } => {
                             eprintln!("{text}");
                             confirmado = text.contains("BOSS_SPAWNED");
-                            if confirmado || text.contains("BOSS_FAILED") { break; }
+                            if confirmado || text.contains("BOSS_FAILED") {
+                                break;
+                            }
                         }
-                        ServerMessage::Kick { reason } => { eprintln!("{reason}"); break; }
+                        ServerMessage::Kick { reason } => {
+                            eprintln!("{reason}");
+                            break;
+                        }
                         _ => {}
                     }
                 }
             }
         }
-    }).await;
+    })
+    .await;
     let _ = tx.send(Message::Close(None)).await;
-    if spawn && !confirmado { bail!("o servidor nao confirmou o spawn"); }
-    eprintln!("✓ enviado{}", target.map(|c| format!(" pra @{}", c)).unwrap_or_default());
+    if spawn && !confirmado {
+        bail!("o servidor nao confirmou o spawn");
+    }
+    eprintln!(
+        "✓ enviado{}",
+        target.map(|c| format!(" pra @{}", c)).unwrap_or_default()
+    );
     Ok(())
 }
 
@@ -94,15 +126,32 @@ fn parse_action(args: &[String]) -> Result<AdminAction> {
     let cmd = args[0].to_lowercase();
     let arg = |n: usize| args.get(n).cloned().unwrap_or_default();
     Ok(match cmd.as_str() {
-        "set_xp"      => AdminAction::SetXp { xp: arg(1).parse()? },
-        "set_gold"    => AdminAction::SetGold { gold: arg(1).parse()? },
-        "give_item"   => AdminAction::GiveItem { item_id: arg(1).parse()?, qty: arg(2).parse()? },
-        "clear_inv"   => AdminAction::ClearInventory,
-        "heal"        => AdminAction::HealFull,
-        "grant_sp"    => AdminAction::GrantSp { amount: arg(1).parse()? },
-        "grant_stat"  => AdminAction::GrantStatPoints { amount: arg(1).parse()? },
-        "set_level"   => AdminAction::SetLevel { level: arg(1).parse()? },
-        "spawn_boss"  => AdminAction::SpawnTestBoss { x: arg(1).parse()?, z: arg(2).parse()?, hp: arg(3).parse()? },
+        "set_xp" => AdminAction::SetXp {
+            xp: arg(1).parse()?,
+        },
+        "set_gold" => AdminAction::SetGold {
+            gold: arg(1).parse()?,
+        },
+        "give_item" => AdminAction::GiveItem {
+            item_id: arg(1).parse()?,
+            qty: arg(2).parse()?,
+        },
+        "clear_inv" => AdminAction::ClearInventory,
+        "heal" => AdminAction::HealFull,
+        "grant_sp" => AdminAction::GrantSp {
+            amount: arg(1).parse()?,
+        },
+        "grant_stat" => AdminAction::GrantStatPoints {
+            amount: arg(1).parse()?,
+        },
+        "set_level" => AdminAction::SetLevel {
+            level: arg(1).parse()?,
+        },
+        "spawn_boss" => AdminAction::SpawnTestBoss {
+            x: arg(1).parse()?,
+            z: arg(2).parse()?,
+            hp: arg(3).parse()?,
+        },
         other => bail!("acao desconhecida: {}", other),
     })
 }

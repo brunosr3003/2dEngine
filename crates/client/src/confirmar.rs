@@ -44,8 +44,16 @@ pub fn resta(segundos: i64) -> String {
 pub fn desenha(p: Pendente, nome: &str, restante_s: i64) -> Option<bool> {
     let f = estilo::fator_texto();
     let seguro = crate::hud_layout::tela_segura();
-    let (w, h) = ((520.0 * f).min(seguro.w - 24.0), (250.0 * f).min(seguro.h - 24.0));
-    let r = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+    let (w, h) = (
+        (520.0 * f).min(seguro.w - 24.0),
+        (250.0 * f).min(seguro.h - 24.0),
+    );
+    let r = Rect::new(
+        seguro.center().x - w * 0.5,
+        seguro.center().y - h * 0.5,
+        w,
+        h,
+    );
     crate::hud_layout::escurece(0.5);
     estilo::painel(r);
     let x = r.x + 24.0 * f;
@@ -74,9 +82,21 @@ pub fn desenha(p: Pendente, nome: &str, restante_s: i64) -> Option<bool> {
     let usar = Rect::new(cancelar.x + bw + 12.0 * f, by, bw, bh);
     let m = Vec2::from(mouse_position());
     estilo::cartao(cancelar, cancelar.contains(m), false);
-    estilo::texto_centro(cancelar.center().x, cancelar.center().y + 6.0 * f, "Cancelar", 16, estilo::TEXTO);
+    estilo::texto_centro(
+        cancelar.center().x,
+        cancelar.center().y + 6.0 * f,
+        "Cancelar",
+        16,
+        estilo::TEXTO,
+    );
     estilo::cartao(usar, usar.contains(m), true);
-    estilo::texto_centro_forte(usar.center().x, usar.center().y + 6.0 * f, "Usar assim mesmo", 16, estilo::OURO);
+    estilo::texto_centro_forte(
+        usar.center().x,
+        usar.center().y + 6.0 * f,
+        "Usar assim mesmo",
+        16,
+        estilo::OURO,
+    );
     if !is_mouse_button_pressed(MouseButton::Left) {
         return None;
     }
@@ -104,6 +124,14 @@ mod tests {
     #[test]
     fn guarda_o_item_de_cada_origem() {
         assert_eq!(Pendente::Bolsa { slot: 3, item: 350 }.item(), 350);
-        assert_eq!(Pendente::Barra { i: 1, forte: false, item: 352 }.item(), 352);
+        assert_eq!(
+            Pendente::Barra {
+                i: 1,
+                forte: false,
+                item: 352
+            }
+            .item(),
+            352
+        );
     }
 }

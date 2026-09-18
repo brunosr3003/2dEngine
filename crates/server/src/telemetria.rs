@@ -60,12 +60,17 @@ pub fn conta(tipo: &'static str, chave: impl ToString, n: i64) {
     }
     let chave = chave.to_string();
     let mut g = CONTADORES.lock();
-    *g.get_or_insert_with(HashMap::new).entry((tipo, chave)).or_insert(0) += n;
+    *g.get_or_insert_with(HashMap::new)
+        .entry((tipo, chave))
+        .or_insert(0) += n;
 }
 
 /// O valor de agora de uma medida (o ultimo vence).
 pub fn medir(nome: &'static str, valor: f64) {
-    MEDIDAS.lock().get_or_insert_with(HashMap::new).insert(nome, valor);
+    MEDIDAS
+        .lock()
+        .get_or_insert_with(HashMap::new)
+        .insert(nome, valor);
 }
 
 /// Tira tudo que foi somado ate' aqui.
@@ -97,7 +102,12 @@ pub fn registrar_erro(nivel: &'static str, alvo: &str, msg: String) {
         msg.truncate(corte);
         msg.push('…');
     }
-    let e = Erro { quando: agora_unix(), nivel, alvo: alvo.to_string(), msg };
+    let e = Erro {
+        quando: agora_unix(),
+        nivel,
+        alvo: alvo.to_string(),
+        msg,
+    };
     {
         let mut anel = ERROS.lock();
         if anel.len() >= ERROS_AO_VIVO {
@@ -135,7 +145,9 @@ fn devolver_erros(v: Vec<Erro>) {
 }
 
 fn agora_unix() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
 }
 
 /// Segundos desde que o processo marcou o inicio (`marcar_inicio`).
@@ -168,8 +180,15 @@ impl Banda {
 
 /// Registra a conexao `peer` e devolve o contador dela.
 pub fn abrir_banda(peer: &str) -> Arc<Banda> {
-    let b = Arc::new(Banda { enviados: AtomicU64::new(0), recebidos: AtomicU64::new(0), desde: Instant::now() });
-    BANDA.lock().get_or_insert_with(HashMap::new).insert(peer.to_string(), b.clone());
+    let b = Arc::new(Banda {
+        enviados: AtomicU64::new(0),
+        recebidos: AtomicU64::new(0),
+        desde: Instant::now(),
+    });
+    BANDA
+        .lock()
+        .get_or_insert_with(HashMap::new)
+        .insert(peer.to_string(), b.clone());
     conta("conexao", "aberta", 1);
     b
 }
@@ -178,8 +197,16 @@ pub fn abrir_banda(peer: &str) -> Arc<Banda> {
 pub fn fechar_banda(peer: &str) {
     let b = BANDA.lock().as_mut().and_then(|m| m.remove(peer));
     if let Some(b) = b {
-        conta("banda", "enviados_bytes", b.enviados.load(Ordering::Relaxed) as i64);
-        conta("banda", "recebidos_bytes", b.recebidos.load(Ordering::Relaxed) as i64);
+        conta(
+            "banda",
+            "enviados_bytes",
+            b.enviados.load(Ordering::Relaxed) as i64,
+        );
+        conta(
+            "banda",
+            "recebidos_bytes",
+            b.recebidos.load(Ordering::Relaxed) as i64,
+        );
     }
     conta("conexao", "fechada", 1);
 }
@@ -188,7 +215,11 @@ pub fn fechar_banda(peer: &str) {
 pub fn banda_de(peer: &str) -> Option<(u64, u64, f64)> {
     let g = BANDA.lock();
     let b = g.as_ref()?.get(peer)?;
-    Some((b.enviados.load(Ordering::Relaxed), b.recebidos.load(Ordering::Relaxed), b.desde.elapsed().as_secs_f64()))
+    Some((
+        b.enviados.load(Ordering::Relaxed),
+        b.recebidos.load(Ordering::Relaxed),
+        b.desde.elapsed().as_secs_f64(),
+    ))
 }
 
 // ─────────────────────────────── log ───────────────────────────────
@@ -226,7 +257,15 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for CamadaDeErros {
         }
         let mut m = Mensagem(String::new());
         ev.record(&mut m);
-        registrar_erro(if nivel == tracing::Level::ERROR { "error" } else { "warn" }, ev.metadata().target(), m.0);
+        registrar_erro(
+            if nivel == tracing::Level::ERROR {
+                "error"
+            } else {
+                "warn"
+            },
+            ev.metadata().target(),
+            m.0,
+        );
     }
 }
 
@@ -246,7 +285,9 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     )
     .execute(pool)
     .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS telemetria_tipo_minuto ON telemetria (tipo, minuto)").execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS telemetria_tipo_minuto ON telemetria (tipo, minuto)")
+        .execute(pool)
+        .await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS telemetria_medidas (
             minuto TIMESTAMPTZ NOT NULL,
@@ -270,19 +311,29 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     )
     .execute(pool)
     .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS telemetria_erros_quando ON telemetria_erros (quando)").execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS telemetria_erros_quando ON telemetria_erros (quando)")
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
 /// Identidade deste processo nas tabelas: `REALM/CANAL`, igual `channels.id`.
 pub fn canal() -> String {
-    format!("{}/{}", crate::canais::realm(), std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into()))
+    format!(
+        "{}/{}",
+        crate::canais::realm(),
+        std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into())
+    )
 }
 
 /// Task que grava a cada `TELEMETRIA_FLUSH_S` segundos (60 por padrao).
 pub fn spawn(pool: PgPool) {
     tokio::spawn(async move {
-        let passo = std::env::var("TELEMETRIA_FLUSH_S").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(60).max(1);
+        let passo = std::env::var("TELEMETRIA_FLUSH_S")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(60)
+            .max(1);
         let canal = canal();
         let mut limpou_em: Option<Instant> = None;
         loop {
@@ -299,9 +350,20 @@ pub fn spawn(pool: PgPool) {
             }
             if limpou_em.is_none_or(|t| t.elapsed() > Duration::from_secs(3600)) {
                 limpou_em = Some(Instant::now());
-                let _ = sqlx::query("DELETE FROM telemetria WHERE minuto < NOW() - INTERVAL '30 days'").execute(&pool).await;
-                let _ = sqlx::query("DELETE FROM telemetria_medidas WHERE minuto < NOW() - INTERVAL '30 days'").execute(&pool).await;
-                let _ = sqlx::query("DELETE FROM telemetria_erros WHERE quando < NOW() - INTERVAL '7 days'").execute(&pool).await;
+                let _ =
+                    sqlx::query("DELETE FROM telemetria WHERE minuto < NOW() - INTERVAL '30 days'")
+                        .execute(&pool)
+                        .await;
+                let _ = sqlx::query(
+                    "DELETE FROM telemetria_medidas WHERE minuto < NOW() - INTERVAL '30 days'",
+                )
+                .execute(&pool)
+                .await;
+                let _ = sqlx::query(
+                    "DELETE FROM telemetria_erros WHERE quando < NOW() - INTERVAL '7 days'",
+                )
+                .execute(&pool)
+                .await;
             }
         }
     });
@@ -339,7 +401,8 @@ async fn gravar(
         .await?;
     }
     if !medidas.is_empty() {
-        let (nomes, valores): (Vec<String>, Vec<f64>) = medidas.iter().map(|(n, v)| (n.to_string(), *v)).unzip();
+        let (nomes, valores): (Vec<String>, Vec<f64>) =
+            medidas.iter().map(|(n, v)| (n.to_string(), *v)).unzip();
         sqlx::query(
             "INSERT INTO telemetria_medidas (minuto, canal, nome, valor)
              SELECT date_trunc('minute', NOW()), $1, n, v
@@ -390,7 +453,10 @@ mod testes {
         let m = drenar();
         assert_eq!(m.get(&("t_soma", "a".into())), Some(&5));
         assert_eq!(m.get(&("t_soma", "b".into())), Some(&1));
-        assert!(!m.contains_key(&("t_soma", "zero".into())), "zero nao cria linha");
+        assert!(
+            !m.contains_key(&("t_soma", "zero".into())),
+            "zero nao cria linha"
+        );
         let outra = drenar();
         assert!(outra.keys().all(|k| k.0 != "t_soma"), "drenar leva tudo");
         // Devolve o que nao era deste teste, pra nao atrapalhar os outros.
@@ -401,7 +467,10 @@ mod testes {
     #[test]
     fn devolver_soma_com_o_que_chegou_depois() {
         conta("t_devolve", "x", 4);
-        let tirado: HashMap<Chave, i64> = drenar().into_iter().filter(|(k, _)| k.0 == "t_devolve").collect();
+        let tirado: HashMap<Chave, i64> = drenar()
+            .into_iter()
+            .filter(|(k, _)| k.0 == "t_devolve")
+            .collect();
         conta("t_devolve", "x", 1);
         devolver(tirado);
         let m = drenar();
@@ -417,7 +486,11 @@ mod testes {
         let anel = erros_recentes();
         assert!(anel.len() <= ERROS_AO_VIVO);
         registrar_erro("error", "teste_corte", "ã".repeat(MSG_MAX));
-        let ultimo = erros_recentes().into_iter().rev().find(|e| e.alvo == "teste_corte").unwrap();
+        let ultimo = erros_recentes()
+            .into_iter()
+            .rev()
+            .find(|e| e.alvo == "teste_corte")
+            .unwrap();
         assert!(ultimo.msg.len() <= MSG_MAX + '…'.len_utf8());
         assert!(ultimo.msg.ends_with('…'));
     }

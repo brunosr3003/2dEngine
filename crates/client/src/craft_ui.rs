@@ -25,16 +25,30 @@ const VERDE: Color = Color::new(0.45, 0.80, 0.42, 1.0);
 const VERMELHO: Color = Color::new(0.90, 0.40, 0.34, 1.0);
 
 /// Abas, na ordem do painel.
-const ABAS: [u8; 5] = [categoria::ARMA, categoria::SECUNDARIA, categoria::ARMADURA, categoria::ACESSORIO, categoria::BARCO];
+const ABAS: [u8; 5] = [
+    categoria::ARMA,
+    categoria::SECUNDARIA,
+    categoria::ARMADURA,
+    categoria::ACESSORIO,
+    categoria::BARCO,
+];
 
 /// Quanto de `id` (material empilhado, sem instancia) a bolsa tem.
 pub fn tem(slots: &[InventorySlot], id: u16) -> u32 {
-    slots.iter().filter(|s| s.item_id == id && s.instance.is_none() && s.qty > 0).map(|s| s.qty).sum()
+    slots
+        .iter()
+        .filter(|s| s.item_id == id && s.instance.is_none() && s.qty > 0)
+        .map(|s| s.qty)
+        .sum()
 }
 
 /// (item, tem, precisa) de cada ingrediente.
 pub fn ingredientes(r: &CraftRecipeNet, slots: &[InventorySlot]) -> Vec<(u16, u32, u32)> {
-    r.inputs.iter().filter(|[id, _]| *id != 0).map(|&[id, q]| (id as u16, tem(slots, id as u16), q)).collect()
+    r.inputs
+        .iter()
+        .filter(|[id, _]| *id != 0)
+        .map(|&[id, q]| (id as u16, tem(slots, id as u16), q))
+        .collect()
 }
 
 /// Por que nao da' pra criar agora (`None` = da').
@@ -42,7 +56,10 @@ pub fn motivo(r: &CraftRecipeNet, slots: &[InventorySlot], nivel: u32) -> Option
     if nivel < r.nivel_min as u32 {
         return Some(format!("Requer nível {}", r.nivel_min));
     }
-    let faltam = ingredientes(r, slots).iter().filter(|(_, t, p)| t < p).count();
+    let faltam = ingredientes(r, slots)
+        .iter()
+        .filter(|(_, t, p)| t < p)
+        .count();
     (faltam > 0).then(|| format!("Faltam {faltam} ingrediente(s)"))
 }
 
@@ -98,7 +115,12 @@ impl Craft {
     }
 
     fn painel() -> Rect {
-        Rect::new((screen_width() - LARGURA) * 0.5, (screen_height() - ALTURA) * 0.5, LARGURA, ALTURA)
+        Rect::new(
+            (screen_width() - LARGURA) * 0.5,
+            (screen_height() - ALTURA) * 0.5,
+            LARGURA,
+            ALTURA,
+        )
     }
 
     pub fn pega_mouse(&self) -> bool {
@@ -108,25 +130,47 @@ impl Craft {
     /// As receitas da aba atual, em ordem de nivel e nome.
     pub fn da_aba(&self) -> Vec<&CraftRecipeNet> {
         let cat = ABAS[self.aba.min(ABAS.len() - 1)];
-        let mut v: Vec<&CraftRecipeNet> = self.receitas.iter().filter(|r| r.category == cat).collect();
+        let mut v: Vec<&CraftRecipeNet> =
+            self.receitas.iter().filter(|r| r.category == cat).collect();
         v.sort_by_key(|r| (r.nivel_min, r.tier, r.id));
         v
     }
 
     /// Desenha e devolve o pedido do quadro (o `Craft`).
-    pub fn desenha(&mut self, slots: &[InventorySlot], nomes: &HashMap<u16, String>, nivel: u32, agora: f64) -> Option<ClientMessage> {
+    pub fn desenha(
+        &mut self,
+        slots: &[InventorySlot],
+        nomes: &HashMap<u16, String>,
+        nivel: u32,
+        agora: f64,
+    ) -> Option<ClientMessage> {
         if !self.aberto {
             return None;
         }
         let p = Self::painel();
         estilo::painel(p);
         estilo::texto(p.x + 18.0, p.y + 32.0, "Craft", 22, estilo::OURO);
-        estilo::texto(p.x + 90.0, p.y + 31.0, "chave + materiais da cor + darksteel + cobre", 13, estilo::SUAVE);
-        if crate::ui::botao(Rect::new(p.x + p.w - 44.0, p.y + 10.0, 32.0, 28.0), "x", true) {
+        estilo::texto(
+            p.x + 90.0,
+            p.y + 31.0,
+            "chave + materiais da cor + darksteel + cobre",
+            13,
+            estilo::SUAVE,
+        );
+        if crate::ui::botao(
+            Rect::new(p.x + p.w - 44.0, p.y + 10.0, 32.0, 28.0),
+            "x",
+            true,
+        ) {
             self.aberto = false;
             return None;
         }
-        let nome = |id: u16| nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"));
+        let nome = |id: u16| {
+            nomes
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| format!("item {id}"))
+        };
         // Abas.
         let mut x = p.x + 16.0;
         for (i, &cat) in ABAS.iter().enumerate() {
@@ -134,7 +178,13 @@ impl Craft {
             let w = estilo::medir(rot, 15) + 26.0;
             let r = Rect::new(x, p.y + 46.0, w, 28.0);
             if i == self.aba {
-                draw_rectangle(r.x, r.y, r.w, r.h, Color::new(estilo::OURO.r, estilo::OURO.g, estilo::OURO.b, 0.22));
+                draw_rectangle(
+                    r.x,
+                    r.y,
+                    r.w,
+                    r.h,
+                    Color::new(estilo::OURO.r, estilo::OURO.g, estilo::OURO.b, 0.22),
+                );
             }
             if crate::ui::botao(r, rot, true) && i != self.aba {
                 self.aba = i;
@@ -145,16 +195,29 @@ impl Craft {
         }
         // Lista.
         let lista = Rect::new(p.x + 12.0, p.y + 84.0, 330.0, p.h - 96.0);
-        draw_rectangle(lista.x, lista.y, lista.w, lista.h, Color::new(0.0, 0.0, 0.0, 0.25));
+        draw_rectangle(
+            lista.x,
+            lista.y,
+            lista.w,
+            lista.h,
+            Color::new(0.0, 0.0, 0.0, 0.25),
+        );
         let mouse = Vec2::from(mouse_position());
         let receitas: Vec<CraftRecipeNet> = self.da_aba().into_iter().cloned().collect();
         let total = receitas.len() as f32 * LINHA;
         if lista.contains(mouse) {
             let (_, roda) = mouse_wheel();
-            self.rolagem = (self.rolagem - roda.signum() * LINHA).clamp(0.0, (total - lista.h).max(0.0));
+            self.rolagem =
+                (self.rolagem - roda.signum() * LINHA).clamp(0.0, (total - lista.h).max(0.0));
         }
         if receitas.is_empty() {
-            estilo::texto(lista.x + 10.0, lista.y + 24.0, "Nenhuma receita nesta aba.", 14, estilo::SUAVE);
+            estilo::texto(
+                lista.x + 10.0,
+                lista.y + 24.0,
+                "Nenhuma receita nesta aba.",
+                14,
+                estilo::SUAVE,
+            );
         }
         if self.sel.is_none() {
             self.sel = receitas.first().map(|r| r.id);
@@ -168,15 +231,54 @@ impl Craft {
             let linha = Rect::new(lista.x, y, lista.w, LINHA - 3.0);
             let sobre = linha.contains(mouse) && lista.contains(mouse);
             let marcada = self.sel == Some(r.id);
-            let a = if marcada { 0.14 } else if sobre { 0.07 } else { 0.0 };
-            draw_rectangle(linha.x, linha.y, linha.w, linha.h, Color::new(1.0, 1.0, 1.0, a));
-            crate::bolsa::icone_do_item(Rect::new(linha.x + 4.0, linha.y + 3.0, 32.0, 32.0), r.output_item_id, 1.0);
+            let a = if marcada {
+                0.14
+            } else if sobre {
+                0.07
+            } else {
+                0.0
+            };
+            draw_rectangle(
+                linha.x,
+                linha.y,
+                linha.w,
+                linha.h,
+                Color::new(1.0, 1.0, 1.0, a),
+            );
+            crate::bolsa::icone_do_item(
+                Rect::new(linha.x + 4.0, linha.y + 3.0, 32.0, 32.0),
+                r.output_item_id,
+                1.0,
+            );
             let pode = motivo(r, slots, nivel).is_none();
-            let cor = if nivel < r.nivel_min as u32 { estilo::SUAVE } else { estilo::TEXTO };
-            estilo::texto_ajustado(&r.name, linha.x + 42.0, linha.y + 17.0, linha.w - 90.0, 15, cor);
-            estilo::texto(linha.x + 42.0, linha.y + 33.0, &format!("Nv {}", r.nivel_min.max(1)), 12, estilo::SUAVE);
+            let cor = if nivel < r.nivel_min as u32 {
+                estilo::SUAVE
+            } else {
+                estilo::TEXTO
+            };
+            estilo::texto_ajustado(
+                &r.name,
+                linha.x + 42.0,
+                linha.y + 17.0,
+                linha.w - 90.0,
+                15,
+                cor,
+            );
+            estilo::texto(
+                linha.x + 42.0,
+                linha.y + 33.0,
+                &format!("Nv {}", r.nivel_min.max(1)),
+                12,
+                estilo::SUAVE,
+            );
             if pode {
-                estilo::texto(linha.x + linha.w - 44.0, linha.y + 24.0, "pronto", 12, VERDE);
+                estilo::texto(
+                    linha.x + linha.w - 44.0,
+                    linha.y + 24.0,
+                    "pronto",
+                    12,
+                    VERDE,
+                );
             }
             if sobre && clicou {
                 self.sel = Some(r.id);
@@ -186,17 +288,51 @@ impl Craft {
         let d = Rect::new(p.x + 356.0, p.y + 84.0, p.w - 368.0, p.h - 96.0);
         let mut pedido = None;
         if let Some(r) = receitas.iter().find(|r| Some(r.id) == self.sel) {
-            crate::bolsa::icone_do_item(Rect::new(d.x + 6.0, d.y + 4.0, 56.0, 56.0), r.output_item_id, 1.0);
-            estilo::texto_ajustado(&r.name, d.x + 72.0, d.y + 26.0, d.w - 80.0, 19, estilo::OURO);
-            estilo::texto(d.x + 72.0, d.y + 48.0, &format!("{} · nível mínimo {}", nome_da_categoria(r.category), r.nivel_min.max(1)), 14, estilo::SUAVE);
+            crate::bolsa::icone_do_item(
+                Rect::new(d.x + 6.0, d.y + 4.0, 56.0, 56.0),
+                r.output_item_id,
+                1.0,
+            );
+            estilo::texto_ajustado(
+                &r.name,
+                d.x + 72.0,
+                d.y + 26.0,
+                d.w - 80.0,
+                19,
+                estilo::OURO,
+            );
+            estilo::texto(
+                d.x + 72.0,
+                d.y + 48.0,
+                &format!(
+                    "{} · nível mínimo {}",
+                    nome_da_categoria(r.category),
+                    r.nivel_min.max(1)
+                ),
+                14,
+                estilo::SUAVE,
+            );
             estilo::texto(d.x + 6.0, d.y + 90.0, "Ingredientes", 15, estilo::TEXTO);
             for (i, (id, t, q)) in ingredientes(r, slots).into_iter().enumerate() {
                 let y = d.y + 102.0 + i as f32 * 36.0;
                 crate::bolsa::icone_do_item(Rect::new(d.x + 6.0, y, 30.0, 30.0), id, 1.0);
-                estilo::texto_ajustado(&nome(id), d.x + 44.0, y + 20.0, d.w - 210.0, 15, estilo::TEXTO);
+                estilo::texto_ajustado(
+                    &nome(id),
+                    d.x + 44.0,
+                    y + 20.0,
+                    d.w - 210.0,
+                    15,
+                    estilo::TEXTO,
+                );
                 let txt = format!("{t}/{q}");
                 let cor = if t >= q { VERDE } else { VERMELHO };
-                estilo::texto(d.x + d.w - estilo::medir(&txt, 15) - 50.0, y + 20.0, &txt, 15, cor);
+                estilo::texto(
+                    d.x + d.w - estilo::medir(&txt, 15) - 50.0,
+                    y + 20.0,
+                    &txt,
+                    15,
+                    cor,
+                );
                 // Onde obter: a lupa de cada ingrediente.
                 if crate::onde_obter::botao(Rect::new(d.x + d.w - 40.0, y - 1.0, 34.0, 32.0)) {
                     self.onde_obter = Some(id);
@@ -226,20 +362,36 @@ mod tests {
     use super::*;
 
     fn slot(id: u16, qty: u32) -> InventorySlot {
-        InventorySlot { item_id: id, qty, instance: None }
+        InventorySlot {
+            item_id: id,
+            qty,
+            instance: None,
+        }
     }
 
     #[test]
     fn motivo_diz_nivel_e_faltas_e_libera_com_tudo() {
-        let r = shared::receitas::receitas_de_equipamento().into_iter().next().unwrap();
+        let r = shared::receitas::receitas_de_equipamento()
+            .into_iter()
+            .next()
+            .unwrap();
         let tudo: Vec<InventorySlot> = r.inputs.iter().map(|&[id, q]| slot(id as u16, q)).collect();
         assert_eq!(motivo(&r, &tudo, 1), None);
         let mut falta = tudo.clone();
         falta[0].qty = 0;
         falta[5].qty = 1;
-        assert_eq!(motivo(&r, &falta, 1).as_deref(), Some("Faltam 2 ingrediente(s)"));
-        let epico = shared::receitas::receitas_de_equipamento().into_iter().find(|r| r.nivel_min >= 60).unwrap();
-        assert_eq!(motivo(&epico, &tudo, 10).as_deref(), Some("Requer nível 60"));
+        assert_eq!(
+            motivo(&r, &falta, 1).as_deref(),
+            Some("Faltam 2 ingrediente(s)")
+        );
+        let epico = shared::receitas::receitas_de_equipamento()
+            .into_iter()
+            .find(|r| r.nivel_min >= 60)
+            .unwrap();
+        assert_eq!(
+            motivo(&epico, &tudo, 10).as_deref(),
+            Some("Requer nível 60")
+        );
         let ing = ingredientes(&r, &falta);
         assert_eq!(ing[0], (r.inputs[0][0] as u16, 0, 1));
     }
@@ -248,7 +400,12 @@ mod tests {
     fn abrir_receita_vai_pra_aba_e_seleciona() {
         let mut c = Craft::default();
         c.define_receitas(shared::receitas::receitas_de_equipamento());
-        let brinco = c.receitas.iter().find(|r| r.category == categoria::ACESSORIO).unwrap().id;
+        let brinco = c
+            .receitas
+            .iter()
+            .find(|r| r.category == categoria::ACESSORIO)
+            .unwrap()
+            .id;
         c.abrir_receita(brinco);
         assert!(c.aberto());
         assert_eq!((ABAS[c.aba], c.sel), (categoria::ACESSORIO, Some(brinco)));
@@ -263,6 +420,9 @@ mod tests {
         assert!(armas.iter().all(|r| r.category == categoria::ARMA));
         assert!(armas.windows(2).all(|w| w[0].nivel_min <= w[1].nivel_min));
         c.aba = 3;
-        assert!(c.da_aba().iter().all(|r| r.category == categoria::ACESSORIO));
+        assert!(c
+            .da_aba()
+            .iter()
+            .all(|r| r.category == categoria::ACESSORIO));
     }
 }

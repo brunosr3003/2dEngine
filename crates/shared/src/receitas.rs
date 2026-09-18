@@ -61,34 +61,190 @@ pub struct Faixa {
 }
 
 pub const FAIXAS: [Faixa; 4] = [
-    Faixa { cor: 1, grau: Grau::Comum, nivel_min: 1, item_level: 5, principal: 30, secundario: 10, darksteel: 200, cobre: 300 },
-    Faixa { cor: 2, grau: Grau::Fino, nivel_min: 20, item_level: 18, principal: 90, secundario: 30, darksteel: 1_500, cobre: 2_000 },
-    Faixa { cor: 3, grau: Grau::Raro, nivel_min: 40, item_level: 35, principal: 300, secundario: 100, darksteel: 8_000, cobre: 10_000 },
-    Faixa { cor: 4, grau: Grau::Epico, nivel_min: 60, item_level: 60, principal: 300, secundario: 100, darksteel: 60_000, cobre: 50_000 },
+    Faixa {
+        cor: 1,
+        grau: Grau::Comum,
+        nivel_min: 1,
+        item_level: 5,
+        principal: 30,
+        secundario: 10,
+        darksteel: 200,
+        cobre: 300,
+    },
+    Faixa {
+        cor: 2,
+        grau: Grau::Fino,
+        nivel_min: 20,
+        item_level: 18,
+        principal: 90,
+        secundario: 30,
+        darksteel: 1_500,
+        cobre: 2_000,
+    },
+    Faixa {
+        cor: 3,
+        grau: Grau::Raro,
+        nivel_min: 40,
+        item_level: 35,
+        principal: 300,
+        secundario: 100,
+        darksteel: 8_000,
+        cobre: 10_000,
+    },
+    Faixa {
+        cor: 4,
+        grau: Grau::Epico,
+        nivel_min: 60,
+        item_level: 60,
+        principal: 300,
+        secundario: 100,
+        darksteel: 60_000,
+        cobre: 50_000,
+    },
 ];
 
 /// (peca, nome, categoria, chave, principal, secundario 1, secundario 2)
 type Peca = (u16, &'static str, u8, u16, u16, u16, u16);
 
 pub const PECAS: [Peca; 15] = {
-    use item_id::*;
     use categoria::*;
+    use item_id::*;
     [
-        (ESPADA_E_ESCUDO, "Espada e Escudo", ARMA, SCALE, STEEL, DARK_HEART_STONE, MOON_SHADOW_STONE),
-        (KATANA, "Katana", ARMA, SCALE, STEEL, DARK_HEART_STONE, MOON_SHADOW_STONE),
-        (PISTOLAS, "Duas Pistolas", ARMA, SCALE, STEEL, DARK_HEART_STONE, MOON_SHADOW_STONE),
-        (ANEL_MAGICO, "Anel Mágico", ARMA, SCALE, STEEL, DARK_HEART_STONE, MOON_SHADOW_STONE),
-        (MANTO_DO_GUERREIRO, "Manto do Guerreiro", SECUNDARIA, CLAW, STEEL, DARK_HEART_STONE, MOON_SHADOW_STONE),
-        (BAINHA, "Bainha", SECUNDARIA, CLAW, STEEL, DARK_HEART_STONE, MOON_SHADOW_STONE),
-        (COLDRE, "Coldre", SECUNDARIA, CLAW, STEEL, DARK_HEART_STONE, MOON_SHADOW_STONE),
-        (MANTO_DO_MAGO, "Manto do Mago", SECUNDARIA, CLAW, STEEL, DARK_HEART_STONE, MOON_SHADOW_STONE),
-        (ARMADURA_LEVE, "Armadura Leve", ARMADURA, HIDE, STEEL, QUINTESSENCE, EXORCISM_BAUBLE),
-        (ARMADURA_MEDIA, "Armadura Média", ARMADURA, HIDE, STEEL, QUINTESSENCE, EXORCISM_BAUBLE),
-        (ARMADURA_PESADA, "Armadura Pesada", ARMADURA, HIDE, STEEL, QUINTESSENCE, EXORCISM_BAUBLE),
-        (BRINCO, "Brinco", ACESSORIO, HORN, PLATINUM, ILLUMINATING_FRAGMENT, ANIMA_STONE),
-        (AMULETO, "Amuleto", ACESSORIO, HORN, PLATINUM, ILLUMINATING_FRAGMENT, ANIMA_STONE),
-        (BRACELETE, "Bracelete", ACESSORIO, HORN, PLATINUM, ILLUMINATING_FRAGMENT, ANIMA_STONE),
-        (CINTO, "Cinto", ACESSORIO, HORN, PLATINUM, ILLUMINATING_FRAGMENT, ANIMA_STONE),
+        (
+            ESPADA_E_ESCUDO,
+            "Espada e Escudo",
+            ARMA,
+            SCALE,
+            STEEL,
+            DARK_HEART_STONE,
+            MOON_SHADOW_STONE,
+        ),
+        (
+            KATANA,
+            "Katana",
+            ARMA,
+            SCALE,
+            STEEL,
+            DARK_HEART_STONE,
+            MOON_SHADOW_STONE,
+        ),
+        (
+            PISTOLAS,
+            "Duas Pistolas",
+            ARMA,
+            SCALE,
+            STEEL,
+            DARK_HEART_STONE,
+            MOON_SHADOW_STONE,
+        ),
+        (
+            ANEL_MAGICO,
+            "Anel Mágico",
+            ARMA,
+            SCALE,
+            STEEL,
+            DARK_HEART_STONE,
+            MOON_SHADOW_STONE,
+        ),
+        (
+            MANTO_DO_GUERREIRO,
+            "Manto do Guerreiro",
+            SECUNDARIA,
+            CLAW,
+            STEEL,
+            DARK_HEART_STONE,
+            MOON_SHADOW_STONE,
+        ),
+        (
+            BAINHA,
+            "Bainha",
+            SECUNDARIA,
+            CLAW,
+            STEEL,
+            DARK_HEART_STONE,
+            MOON_SHADOW_STONE,
+        ),
+        (
+            COLDRE,
+            "Coldre",
+            SECUNDARIA,
+            CLAW,
+            STEEL,
+            DARK_HEART_STONE,
+            MOON_SHADOW_STONE,
+        ),
+        (
+            MANTO_DO_MAGO,
+            "Manto do Mago",
+            SECUNDARIA,
+            CLAW,
+            STEEL,
+            DARK_HEART_STONE,
+            MOON_SHADOW_STONE,
+        ),
+        (
+            ARMADURA_LEVE,
+            "Armadura Leve",
+            ARMADURA,
+            HIDE,
+            STEEL,
+            QUINTESSENCE,
+            EXORCISM_BAUBLE,
+        ),
+        (
+            ARMADURA_MEDIA,
+            "Armadura Média",
+            ARMADURA,
+            HIDE,
+            STEEL,
+            QUINTESSENCE,
+            EXORCISM_BAUBLE,
+        ),
+        (
+            ARMADURA_PESADA,
+            "Armadura Pesada",
+            ARMADURA,
+            HIDE,
+            STEEL,
+            QUINTESSENCE,
+            EXORCISM_BAUBLE,
+        ),
+        (
+            BRINCO,
+            "Brinco",
+            ACESSORIO,
+            HORN,
+            PLATINUM,
+            ILLUMINATING_FRAGMENT,
+            ANIMA_STONE,
+        ),
+        (
+            AMULETO,
+            "Amuleto",
+            ACESSORIO,
+            HORN,
+            PLATINUM,
+            ILLUMINATING_FRAGMENT,
+            ANIMA_STONE,
+        ),
+        (
+            BRACELETE,
+            "Bracelete",
+            ACESSORIO,
+            HORN,
+            PLATINUM,
+            ILLUMINATING_FRAGMENT,
+            ANIMA_STONE,
+        ),
+        (
+            CINTO,
+            "Cinto",
+            ACESSORIO,
+            HORN,
+            PLATINUM,
+            ILLUMINATING_FRAGMENT,
+            ANIMA_STONE,
+        ),
     ]
 };
 
@@ -170,18 +326,40 @@ mod testes {
     fn a_cor_decide_o_grau_e_epico_so_no_sessenta() {
         for r in receitas_de_equipamento() {
             let f = FAIXAS[(r.tier - 1) as usize];
-            assert_eq!(tier_from_ilvl(r.output_item_level), f.grau as u8, "{}", r.name);
+            assert_eq!(
+                tier_from_ilvl(r.output_item_level),
+                f.grau as u8,
+                "{}",
+                r.name
+            );
             if f.grau >= Grau::Epico {
-                assert!(r.nivel_min >= 60, "{} sai Epico no nivel {}", r.name, r.nivel_min);
+                assert!(
+                    r.nivel_min >= 60,
+                    "{} sai Epico no nivel {}",
+                    r.name,
+                    r.nivel_min
+                );
             }
             // Todo material colorido na cor da faixa.
             for [id, _] in &r.inputs[..4] {
                 let id = *id as u16;
-                let base = PECAS.iter().flat_map(|p| [p.3, p.4, p.5, p.6]).find(|b| (*b..*b + 4).contains(&id)).unwrap();
-                assert_eq!(id - base + 1, f.cor as u16, "{}: material fora da cor", r.name);
+                let base = PECAS
+                    .iter()
+                    .flat_map(|p| [p.3, p.4, p.5, p.6])
+                    .find(|b| (*b..*b + 4).contains(&id))
+                    .unwrap();
+                assert_eq!(
+                    id - base + 1,
+                    f.cor as u16,
+                    "{}: material fora da cor",
+                    r.name
+                );
             }
         }
         // Nivel 20: nada acima de Fino.
-        assert!(receitas_de_equipamento().iter().filter(|r| r.nivel_min <= 20).all(|r| tier_from_ilvl(r.output_item_level) <= 2));
+        assert!(receitas_de_equipamento()
+            .iter()
+            .filter(|r| r.nivel_min <= 20)
+            .all(|r| tier_from_ilvl(r.output_item_level) <= 2));
     }
 }

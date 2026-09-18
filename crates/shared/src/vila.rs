@@ -130,7 +130,10 @@ pub fn caixas_solidas(vila: &Vila) -> Vec<Caixa2> {
     let mut junta = |caixas: Vec<(Vec3, Vec3)>, chao: f32| {
         for (mn, mx) in caixas {
             if mn.y - chao < TETO_DA_COLISAO && mx.y - chao > PISO_DA_COLISAO {
-                saida.push(Caixa2 { min: Vec2::new(mn.x, mn.z), max: Vec2::new(mx.x, mx.z) });
+                saida.push(Caixa2 {
+                    min: Vec2::new(mn.x, mn.z),
+                    max: Vec2::new(mx.x, mx.z),
+                });
             }
         }
     };
@@ -159,7 +162,10 @@ struct Chao {
 impl Chao {
     fn novo(ger: &Gerador, centro: Vec2, raio: f32, nivel: i32) -> Self {
         let r = (raio / BLOCO).ceil() as i32;
-        let (cx, cz) = ((centro.x / BLOCO).round() as i32, (centro.y / BLOCO).round() as i32);
+        let (cx, cz) = (
+            (centro.x / BLOCO).round() as i32,
+            (centro.y / BLOCO).round() as i32,
+        );
         let lado = r * 2 + 1;
         let mut plano = vec![false; (lado * lado) as usize];
         for dz in 0..lado {
@@ -167,12 +173,24 @@ impl Chao {
                 plano[(dz * lado + dx) as usize] = ger.bloco_em(cx - r + dx, cz - r + dz) == nivel;
             }
         }
-        Self { x0: cx - r, z0: cz - r, lado, plano }
+        Self {
+            x0: cx - r,
+            z0: cz - r,
+            lado,
+            plano,
+        }
     }
 
     fn plano_em(&self, x: f32, z: f32) -> bool {
-        let (ix, iz) = ((x / BLOCO).round() as i32 - self.x0, (z / BLOCO).round() as i32 - self.z0);
-        ix >= 0 && iz >= 0 && ix < self.lado && iz < self.lado && self.plano[(iz * self.lado + ix) as usize]
+        let (ix, iz) = (
+            (x / BLOCO).round() as i32 - self.x0,
+            (z / BLOCO).round() as i32 - self.z0,
+        );
+        ix >= 0
+            && iz >= 0
+            && ix < self.lado
+            && iz < self.lado
+            && self.plano[(iz * self.lado + ix) as usize]
     }
 
     /// O retangulo (com folga) inteiro no nivel, e sem pisar em outro lote.
@@ -185,7 +203,10 @@ impl Chao {
             }
         }
         let ext = meia + Vec2::splat(folga);
-        let (nx, nz) = ((ext.x * 2.0 / BLOCO).ceil() as i32, (ext.y * 2.0 / BLOCO).ceil() as i32);
+        let (nx, nz) = (
+            (ext.x * 2.0 / BLOCO).ceil() as i32,
+            (ext.y * 2.0 / BLOCO).ceil() as i32,
+        );
         for i in 0..=nx {
             for k in 0..=nz {
                 let x = (centro.x - ext.x + i as f32 * BLOCO).min(centro.x + ext.x);
@@ -201,8 +222,8 @@ impl Chao {
 
 /// Desvios de angulo tentados em volta do rumo ideal de cada casa.
 const DESVIOS: [f32; 17] = [
-    0.0, 0.18, -0.18, 0.36, -0.36, 0.55, -0.55, 0.8, -0.8, 1.1, -1.1, 1.5, -1.5, 2.0, -2.0,
-    2.6, -2.6,
+    0.0, 0.18, -0.18, 0.36, -0.36, 0.55, -0.55, 0.8, -0.8, 1.1, -1.1, 1.5, -1.5, 2.0, -2.0, 2.6,
+    -2.6,
 ];
 
 /// Uma volta da busca: (raio minimo, raio maximo, folga do lote).
@@ -222,7 +243,11 @@ fn assentar(
 ) -> Option<Predio> {
     for (volta, &(rmin, rmax, folga)) in VOLTAS.iter().enumerate() {
         // Na primeira volta so' o leque perto do rumo; depois, a volta toda.
-        let desvios = if volta == 0 { &DESVIOS[..9] } else { &DESVIOS[..] };
+        let desvios = if volta == 0 {
+            &DESVIOS[..9]
+        } else {
+            &DESVIOS[..]
+        };
         for k in 0..8 {
             let seed = base_seed.wrapping_add(k * 7919);
             let c = construcao::gerar(tipo, papel, seed);
@@ -298,7 +323,16 @@ fn montar_cidade(ger: &Gerador, c: &Cidade, vila: &mut Vila) {
     for (i, &papel) in oficios.iter().enumerate() {
         let ang = ang0 + (i as f32 - n / 2.0 + 0.5) / n * TAU * 0.82;
         let base = r.next() as i32;
-        if let Some(p) = assentar(&chao, &mut lotes, centro, chao_y, TipoCasa::Casebre, papel, base, ang) {
+        if let Some(p) = assentar(
+            &chao,
+            &mut lotes,
+            centro,
+            chao_y,
+            TipoCasa::Casebre,
+            papel,
+            base,
+            ang,
+        ) {
             vila.predios.push(p);
         }
     }
@@ -306,13 +340,27 @@ fn montar_cidade(ger: &Gerador, c: &Cidade, vila: &mut Vila) {
     for j in 0..casas {
         let ang = ang0 + PI + (j as f32 - (casas - 1) as f32 * 0.5) * 1.1;
         let base = r.next() as i32;
-        if let Some(p) = assentar(&chao, &mut lotes, centro, chao_y, TipoCasa::Casebre, Papel::Casa, base, ang) {
+        if let Some(p) = assentar(
+            &chao,
+            &mut lotes,
+            centro,
+            chao_y,
+            TipoCasa::Casebre,
+            Papel::Casa,
+            base,
+            ang,
+        ) {
             vila.predios.push(p);
         }
     }
 
     // Mobilia da praca.
-    vila.props.push(PropPosto { tipo: TipoProp::Poco, seed: seed_vila, pos: Vec3::new(centro.x, chao_y, centro.y), yaw_q: 0 });
+    vila.props.push(PropPosto {
+        tipo: TipoProp::Poco,
+        seed: seed_vila,
+        pos: Vec3::new(centro.x, chao_y, centro.y),
+        yaw_q: 0,
+    });
     for k in 0..3 {
         let a = ang0 + TAU / 6.0 + k as f32 * TAU / 3.0;
         let p = centro + Vec2::new(a.cos(), a.sin()) * 3.2;
@@ -377,7 +425,11 @@ fn montar_porto(ger: &Gerador, p: &SitioPorto, vila: &mut Vila) {
         tipo: TipoCasa::Doca,
         papel: Papel::Estaleiro,
         seed: p.doca_seed,
-        pos: Vec3::new(pos_doca.x, chao_y - (DECK_Y + 1) as f32 * B_CASA + RESPIRO_DO_CAIS, pos_doca.y),
+        pos: Vec3::new(
+            pos_doca.x,
+            chao_y - (DECK_Y + 1) as f32 * B_CASA + RESPIRO_DO_CAIS,
+            pos_doca.y,
+        ),
         yaw_q: (p.mar_q + 2) % 4,
         chao: chao_y,
     });
@@ -387,17 +439,32 @@ fn montar_porto(ger: &Gerador, p: &SitioPorto, vila: &mut Vila) {
     let meio = raiz + mar * ((comp - p.recuo) * 0.5);
     let comprido = (comp + p.recuo) * 0.5;
     let largo = p.larg * 0.5 + 2.0;
-    let meia_cais = if mar.x.abs() > 0.5 { Vec2::new(comprido, largo) } else { Vec2::new(largo, comprido) };
+    let meia_cais = if mar.x.abs() > 0.5 {
+        Vec2::new(comprido, largo)
+    } else {
+        Vec2::new(largo, comprido)
+    };
     let mut lotes: Vec<(Vec2, Vec2)> = vec![(meio, meia_cais)];
 
     // Armazem e cabana do cartografo no patio, com a porta pro cais.
     const VAGAS: [(f32, f32); 10] = [
-        (8.0, 9.0), (8.0, -9.0), (10.0, 9.0), (10.0, -9.0), (6.0, 10.0),
-        (6.0, -10.0), (12.0, 10.0), (12.0, -10.0), (14.0, 12.0), (14.0, -12.0),
+        (8.0, 9.0),
+        (8.0, -9.0),
+        (10.0, 9.0),
+        (10.0, -9.0),
+        (6.0, 10.0),
+        (6.0, -10.0),
+        (12.0, 10.0),
+        (12.0, -10.0),
+        (14.0, 12.0),
+        (14.0, -12.0),
     ];
-    for (i, (tipo, papel)) in [(TipoCasa::Armazem, Papel::Deposito), (TipoCasa::Cabana, Papel::Cartografo)]
-        .into_iter()
-        .enumerate()
+    for (i, (tipo, papel)) in [
+        (TipoCasa::Armazem, Papel::Deposito),
+        (TipoCasa::Cabana, Papel::Cartografo),
+    ]
+    .into_iter()
+    .enumerate()
     {
         'achou: for k in 0..6 {
             let s = seed.wrapping_add((i as i32 + 1) * 1000 + k * 7919);
@@ -428,8 +495,14 @@ fn montar_porto(ger: &Gerador, p: &SitioPorto, vila: &mut Vila) {
         (TipoProp::Barril, raiz - mar * 5.5 - lado * 1.5),
         (TipoProp::Caixas, raiz - mar * 3.0 + lado * 3.5),
         (TipoProp::Barril, raiz - mar * 2.0 + lado * 2.6),
-        (TipoProp::Lampiao, raiz - mar * 1.5 + lado * (p.larg * 0.5 + 0.8)),
-        (TipoProp::Lampiao, raiz - mar * 1.5 - lado * (p.larg * 0.5 + 0.8)),
+        (
+            TipoProp::Lampiao,
+            raiz - mar * 1.5 + lado * (p.larg * 0.5 + 0.8),
+        ),
+        (
+            TipoProp::Lampiao,
+            raiz - mar * 1.5 - lado * (p.larg * 0.5 + 0.8),
+        ),
         (TipoProp::Lampiao, centro),
     ];
     for (k, (tipo, pos)) in props.into_iter().enumerate() {
@@ -441,7 +514,8 @@ fn montar_porto(ger: &Gerador, p: &SitioPorto, vila: &mut Vila) {
         });
     }
 
-    let npcs: Vec<NpcDaVila> = vila.predios[primeiro..].iter()
+    let npcs: Vec<NpcDaVila> = vila.predios[primeiro..]
+        .iter()
         .filter(|pr| pr.tipo != TipoCasa::Doca)
         .filter_map(npc_da_porta)
         .collect();
@@ -479,14 +553,22 @@ pub const PRACA_RAIO: f32 = 6.8;
 pub fn prop_barra(t: TipoProp) -> bool {
     matches!(
         t,
-        TipoProp::Poco | TipoProp::ArvoreOrnamental | TipoProp::Barraca | TipoProp::Carroca | TipoProp::Portal
+        TipoProp::Poco
+            | TipoProp::ArvoreOrnamental
+            | TipoProp::Barraca
+            | TipoProp::Carroca
+            | TipoProp::Portal
     )
 }
 
 fn dist_seg(p: Vec2, a: Vec2, b: Vec2) -> f32 {
     let ab = b - a;
     let l2 = ab.length_squared();
-    let t = if l2 < 1e-6 { 0.0 } else { ((p - a).dot(ab) / l2).clamp(0.0, 1.0) };
+    let t = if l2 < 1e-6 {
+        0.0
+    } else {
+        ((p - a).dot(ab) / l2).clamp(0.0, 1.0)
+    };
     p.distance(a + ab * t)
 }
 
@@ -496,14 +578,20 @@ pub fn pintura_em(vila: &Vila, p: Vec2, bx: i32, bz: i32) -> Option<Material> {
     // Hash por LAJE de 1 u (2 colunas): pedra do tamanho de pedra, e o merge
     // do chao ainda junta as colunas de uma mesma laje.
     let (tx, tz) = (bx.div_euclid(2), bz.div_euclid(2));
-    let h = ((tx.wrapping_mul(73_856_093) ^ tz.wrapping_mul(19_349_663)) as u32).wrapping_mul(2_654_435_761) >> 28;
+    let h = ((tx.wrapping_mul(73_856_093) ^ tz.wrapping_mul(19_349_663)) as u32)
+        .wrapping_mul(2_654_435_761)
+        >> 28;
     for (c, raio) in &vila.pracas {
         let d = p.distance(*c);
         if d < *raio {
             if d > raio - 0.6 {
                 return Some(Material::CalcadaEscura);
             }
-            return Some(if (tx + tz) & 1 == 0 || h < 3 { Material::Calcada } else { Material::CalcadaEscura });
+            return Some(if (tx + tz) & 1 == 0 || h < 3 {
+                Material::Calcada
+            } else {
+                Material::CalcadaEscura
+            });
         }
     }
     for (a, b) in &vila.caminhos {
@@ -512,10 +600,17 @@ pub fn pintura_em(vila: &Vila, p: Vec2, bx: i32, bz: i32) -> Option<Material> {
             if d > CAMINHO_MEIA - 0.35 {
                 return Some(Material::CalcadaEscura);
             }
-            return Some(if h < 5 { Material::Calcada } else { Material::Caminho });
+            return Some(if h < 5 {
+                Material::Calcada
+            } else {
+                Material::Caminho
+            });
         }
     }
-    vila.gramados.iter().any(|(c, raio)| p.distance(*c) < *raio).then_some(Material::GramaCuidada)
+    vila.gramados
+        .iter()
+        .any(|(c, raio)| p.distance(*c) < *raio)
+        .then_some(Material::GramaCuidada)
 }
 
 /// Onde ja' tem coisa: lotes das casas, caminhos e pontos ocupados.
@@ -539,7 +634,12 @@ impl Ocupacao<'_> {
                 return false;
             }
         }
-        if caminho && self.caminhos.iter().any(|(a, b)| dist_seg(p, *a, *b) < CAMINHO_MEIA + r) {
+        if caminho
+            && self
+                .caminhos
+                .iter()
+                .any(|(a, b)| dist_seg(p, *a, *b) < CAMINHO_MEIA + r)
+        {
             return false;
         }
         self.pontos.iter().all(|(q, qr)| p.distance(*q) >= qr + r)
@@ -551,7 +651,12 @@ impl Ocupacao<'_> {
 }
 
 fn poe(vila: &mut Vila, tipo: TipoProp, seed: i32, p: Vec2, y: f32, yaw_q: u8) {
-    vila.props.push(PropPosto { tipo, seed, pos: Vec3::new(p.x, y, p.y), yaw_q });
+    vila.props.push(PropPosto {
+        tipo,
+        seed,
+        pos: Vec3::new(p.x, y, p.y),
+        yaw_q,
+    });
 }
 
 /// O giro cujo eixo X LOCAL aponta pra `dir` (props compridos).
@@ -585,7 +690,11 @@ fn enfeitar_porta(
         Vec2::new(w.x, w.z)
     };
     let e = pc.escala;
-    let (x_esq, z_fundo, piv) = (pc.v.x0 as f32 * e, (pc.v.z0 + pc.v.nz) as f32 * e, pc.pivo());
+    let (x_esq, z_fundo, piv) = (
+        pc.v.x0 as f32 * e,
+        (pc.v.z0 + pc.v.nz) as f32 * e,
+        pc.pivo(),
+    );
     for sx in [-1.8f32, 1.8] {
         let pv = mundo(lx + sx, -0.8);
         if oc.livre(pv, 0.3, Some(lote), true) {
@@ -596,7 +705,11 @@ fn enfeitar_porta(
     if (p.papel.loja() || p.tipo != TipoCasa::Casebre) && r.float() < 0.7 {
         let sx = if r.float() < 0.5 { 3.3 } else { -3.3 };
         let pb = mundo(lx + sx, -1.1);
-        let tipo = if r.float() < 0.5 { TipoProp::Barril } else { TipoProp::Caixas };
+        let tipo = if r.float() < 0.5 {
+            TipoProp::Barril
+        } else {
+            TipoProp::Caixas
+        };
         if oc.livre(pb, 0.6, Some(lote), true) {
             poe(vila, tipo, prox(), pb, y, p.yaw_q);
             oc.ocupa(pb, 0.6);
@@ -641,7 +754,13 @@ fn enfeitar_porta(
 }
 
 /// Canteiro, moita e lampiao dos dois lados de cada caminho.
-fn enfeitar_caminhos(oc: &mut Ocupacao, vila: &mut Vila, r: &mut Rng, prox: &mut dyn FnMut() -> i32, y: f32) {
+fn enfeitar_caminhos(
+    oc: &mut Ocupacao,
+    vila: &mut Vila,
+    r: &mut Rng,
+    prox: &mut dyn FnMut() -> i32,
+    y: f32,
+) {
     let caminhos = oc.caminhos.clone();
     for (i, (a, b)) in caminhos.iter().enumerate() {
         let len = a.distance(*b);
@@ -706,7 +825,15 @@ fn plantar_anel(
     postas.len()
 }
 
-fn decorar_cidade(ger: &Gerador, c: &Cidade, chao: &Chao, lotes: &[(Vec2, Vec2)], ang0: f32, seed: i32, vila: &mut Vila) {
+fn decorar_cidade(
+    ger: &Gerador,
+    c: &Cidade,
+    chao: &Chao,
+    lotes: &[(Vec2, Vec2)],
+    ang0: f32,
+    seed: i32,
+    vila: &mut Vila,
+) {
     use std::f32::consts::{PI, TAU};
     let centro = c.centro();
     let y = c.altura();
@@ -729,14 +856,26 @@ fn decorar_cidade(ger: &Gerador, c: &Cidade, chao: &Chao, lotes: &[(Vec2, Vec2)]
         let dir = (porta - centro).normalize_or_zero();
         caminhos.push((centro + dir * (PRACA_RAIO - 0.5), porta));
     }
-    let mut saida = ger.porto().map(|p| p.centro - centro).unwrap_or(-centro).normalize_or_zero();
+    let mut saida = ger
+        .porto()
+        .map(|p| p.centro - centro)
+        .unwrap_or(-centro)
+        .normalize_or_zero();
     if saida == Vec2::ZERO {
         saida = Vec2::X;
     }
-    caminhos.push((centro + saida * (PRACA_RAIO - 0.5), centro + saida * (Cidade::RAIO_PLATO + 6.0)));
+    caminhos.push((
+        centro + saida * (PRACA_RAIO - 0.5),
+        centro + saida * (Cidade::RAIO_PLATO + 6.0),
+    ));
     vila.caminhos.extend(caminhos.iter().copied());
 
-    let mut oc = Ocupacao { chao, lotes, caminhos, pontos: Vec::new() };
+    let mut oc = Ocupacao {
+        chao,
+        lotes,
+        caminhos,
+        pontos: Vec::new(),
+    };
     for n in &vila.npcs {
         oc.ocupa(n.pos, 1.0);
     }
@@ -748,7 +887,10 @@ fn decorar_cidade(ger: &Gerador, c: &Cidade, chao: &Chao, lotes: &[(Vec2, Vec2)]
     for q in 0..2u8 {
         let (ex, ez) = construcao::rot_q(1.0, 0.0, q);
         let eixo = Vec2::new(ex, ez);
-        if [centro + eixo * 7.0, centro - eixo * 7.0].iter().all(|pp| oc.livre(*pp, 0.2, None, false)) {
+        if [centro + eixo * 7.0, centro - eixo * 7.0]
+            .iter()
+            .all(|pp| oc.livre(*pp, 0.2, None, false))
+        {
             poe(vila, TipoProp::Bandeirolas, prox(), centro, y, q);
         }
     }
@@ -757,10 +899,18 @@ fn decorar_cidade(ger: &Gerador, c: &Cidade, chao: &Chao, lotes: &[(Vec2, Vec2)]
     for k in 0..8 {
         let a = ang0 + TAU / 16.0 + k as f32 * TAU / 8.0;
         let p = centro + Vec2::new(a.cos(), a.sin()) * 7.9;
-        let tipo = if k % 4 == 1 { TipoProp::Banco } else { TipoProp::Canteiro };
+        let tipo = if k % 4 == 1 {
+            TipoProp::Banco
+        } else {
+            TipoProp::Canteiro
+        };
         if oc.livre(p, 0.8, None, true) {
             let pc = centro - p;
-            let q = if tipo == TipoProp::Banco { quarto_para(pc) } else { eixo_x_para(Vec2::new(-pc.y, pc.x)) };
+            let q = if tipo == TipoProp::Banco {
+                quarto_para(pc)
+            } else {
+                eixo_x_para(Vec2::new(-pc.y, pc.x))
+            };
             poe(vila, tipo, prox(), p, y, q);
             oc.ocupa(p, 0.8);
         }
@@ -772,7 +922,14 @@ fn decorar_cidade(ger: &Gerador, c: &Cidade, chao: &Chao, lotes: &[(Vec2, Vec2)]
             let a = ang0 + PI + da;
             let p = centro + Vec2::new(a.cos(), a.sin()) * rr;
             if oc.livre(p, 2.0, None, true) {
-                poe(vila, TipoProp::Barraca, prox(), p, y, quarto_para(centro - p));
+                poe(
+                    vila,
+                    TipoProp::Barraca,
+                    prox(),
+                    p,
+                    y,
+                    quarto_para(centro - p),
+                );
                 oc.ocupa(p, 2.0);
                 break;
             }
@@ -780,13 +937,25 @@ fn decorar_cidade(ger: &Gerador, c: &Cidade, chao: &Chao, lotes: &[(Vec2, Vec2)]
     }
 
     // QUADRO DE AVISOS ao lado do Mestre de Missoes.
-    if let Some(m) = vila.npcs.iter().find(|n| n.papel == Papel::Missoes).map(|n| n.pos) {
+    if let Some(m) = vila
+        .npcs
+        .iter()
+        .find(|n| n.papel == Papel::Missoes)
+        .map(|n| n.pos)
+    {
         let radial = (m - centro).normalize_or_zero();
         let lado = Vec2::new(-radial.y, radial.x);
         for sinal in [1.0f32, -1.0] {
             let p = m + radial * 0.8 + lado * sinal * 2.0;
             if oc.livre(p, 0.4, None, true) {
-                poe(vila, TipoProp::QuadroDeAvisos, prox(), p, y, quarto_para(centro - p));
+                poe(
+                    vila,
+                    TipoProp::QuadroDeAvisos,
+                    prox(),
+                    p,
+                    y,
+                    quarto_para(centro - p),
+                );
                 oc.ocupa(p, 0.4);
                 break;
             }
@@ -817,15 +986,46 @@ fn decorar_cidade(ger: &Gerador, c: &Cidade, chao: &Chao, lotes: &[(Vec2, Vec2)]
             let p = centro + Vec2::new(a.cos(), a.sin()) * rr;
             if oc.livre(p, 2.1, None, true) {
                 let t = p - centro;
-                poe(vila, TipoProp::Carroca, prox(), p, y, eixo_x_para(Vec2::new(-t.y, t.x)));
+                poe(
+                    vila,
+                    TipoProp::Carroca,
+                    prox(),
+                    p,
+                    y,
+                    eixo_x_para(Vec2::new(-t.y, t.x)),
+                );
                 oc.ocupa(p, 2.1);
                 break 'carroca;
             }
         }
     }
 
-    plantar_anel(&mut oc, vila, &mut prox, centro, y, ang0, &[13.5, 18.0, 22.5, 26.0], TipoProp::ArvoreOrnamental, 1.6, 6.5, 10);
-    plantar_anel(&mut oc, vila, &mut prox, centro, y, ang0 + 0.4, &[10.5, 15.5, 20.0, 24.5], TipoProp::Arbusto, 0.9, 3.0, 14);
+    plantar_anel(
+        &mut oc,
+        vila,
+        &mut prox,
+        centro,
+        y,
+        ang0,
+        &[13.5, 18.0, 22.5, 26.0],
+        TipoProp::ArvoreOrnamental,
+        1.6,
+        6.5,
+        10,
+    );
+    plantar_anel(
+        &mut oc,
+        vila,
+        &mut prox,
+        centro,
+        y,
+        ang0 + 0.4,
+        &[10.5, 15.5, 20.0, 24.5],
+        TipoProp::Arbusto,
+        0.9,
+        3.0,
+        14,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -849,7 +1049,12 @@ fn decorar_porto(
     };
     vila.caminhos.push((centro, raiz));
     vila.gramados.push((centro, SitioPorto::RAIO_PLATO));
-    let mut oc = Ocupacao { chao, lotes, caminhos: vec![(centro, raiz)], pontos: Vec::new() };
+    let mut oc = Ocupacao {
+        chao,
+        lotes,
+        caminhos: vec![(centro, raiz)],
+        pontos: Vec::new(),
+    };
     for n in &vila.npcs {
         oc.ocupa(n.pos, 1.0);
     }
@@ -881,23 +1086,60 @@ fn decorar_porto(
         let pb = raiz + mar * (comp * 0.55 + k as f32 * 1.5) + lado * sinal * (p.larg * 0.5 + 1.8);
         let (bx, bz) = ((pb.x / BLOCO).round() as i32, (pb.y / BLOCO).round() as i32);
         if ((ger.bloco_em(bx, bz) + 1) as f32 * BLOCO) < NIVEL_DO_MAR - 0.3 {
-            poe(vila, TipoProp::Barquinho, prox(), pb, NIVEL_DO_MAR - 0.12, eixo_x_para(mar));
+            poe(
+                vila,
+                TipoProp::Barquinho,
+                prox(),
+                pb,
+                NIVEL_DO_MAR - 0.12,
+                eixo_x_para(mar),
+            );
         }
     }
 
-    let casas: Vec<Predio> = vila.predios[primeiro..].iter().filter(|pr| pr.tipo != TipoCasa::Doca).cloned().collect();
+    let casas: Vec<Predio> = vila.predios[primeiro..]
+        .iter()
+        .filter(|pr| pr.tipo != TipoCasa::Doca)
+        .cloned()
+        .collect();
     for (j, pr) in casas.iter().enumerate() {
         enfeitar_porta(&mut oc, vila, &mut r, &mut prox, pr, j + 1, y);
     }
     enfeitar_caminhos(&mut oc, vila, &mut r, &mut prox, y);
-    plantar_anel(&mut oc, vila, &mut prox, centro, y, 0.3, &[12.0, 16.0, 20.0, 24.0], TipoProp::Arbusto, 0.9, 3.0, 8);
-    plantar_anel(&mut oc, vila, &mut prox, centro, y, 1.1, &[15.0, 21.0], TipoProp::ArvoreOrnamental, 1.6, 7.0, 3);
+    plantar_anel(
+        &mut oc,
+        vila,
+        &mut prox,
+        centro,
+        y,
+        0.3,
+        &[12.0, 16.0, 20.0, 24.0],
+        TipoProp::Arbusto,
+        0.9,
+        3.0,
+        8,
+    );
+    plantar_anel(
+        &mut oc,
+        vila,
+        &mut prox,
+        centro,
+        y,
+        1.1,
+        &[15.0, 21.0],
+        TipoProp::ArvoreOrnamental,
+        1.6,
+        7.0,
+        3,
+    );
 }
 
 #[cfg(test)]
 mod testes {
     use super::*;
-    use crate::terreno::{Ilha, SeguidorDeRota, ARQUIPELAGO, DEGRAU_BLOCOS, ESCALA_ALTURA, PULO_BLOCOS};
+    use crate::terreno::{
+        Ilha, SeguidorDeRota, ARQUIPELAGO, DEGRAU_BLOCOS, ESCALA_ALTURA, PULO_BLOCOS,
+    };
     use std::sync::OnceLock;
 
     const R: f32 = crate::constants::ENTITY_RADIUS;
@@ -928,10 +1170,13 @@ mod testes {
     fn simula_rota(i: &Ilha, de: Vec2, para: Vec2) -> Vec2 {
         let dt = 1.0 / 30.0;
         let vel = 5.0;
-        let Some(rota) = i.caminho(de, para, 60_000) else { return de };
+        let Some(rota) = i.caminho(de, para, 60_000) else {
+            return de;
+        };
         let mut seg = SeguidorDeRota::nova(rota, para);
         let mut p = de;
-        let (mut pulo_ate, mut pronto, mut agora, mut refeitas, mut ultima) = (-1.0f32, 0.0f32, 0.0f32, 0, -1.0f32);
+        let (mut pulo_ate, mut pronto, mut agora, mut refeitas, mut ultima) =
+            (-1.0f32, 0.0f32, 0.0f32, 0, -1.0f32);
         for _ in 0..30_000 {
             let Some(dir) = seg.direcao(p) else { break };
             if seg.travado() && agora - ultima >= 0.2 {
@@ -950,7 +1195,11 @@ mod testes {
                 pulo_ate = agora + crate::constants::PULO_DURACAO;
                 pronto = pulo_ate + crate::constants::PULO_ESPERA;
             }
-            let degrau = if agora < pulo_ate { PULO_BLOCOS } else { DEGRAU_BLOCOS };
+            let degrau = if agora < pulo_ate {
+                PULO_BLOCOS
+            } else {
+                DEGRAU_BLOCOS
+            };
             p = i.mover_com_degrau(p, dir * vel, dt, R, degrau);
             agora += dt;
         }
@@ -963,7 +1212,11 @@ mod testes {
             let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
             let vila = ger.vila();
             let c = ger.cidade().expect("sem cidade");
-            let na_cidade = vila.predios.iter().filter(|p| c.distancia(Vec2::new(p.pos.x, p.pos.z)) < 60.0).count();
+            let na_cidade = vila
+                .predios
+                .iter()
+                .filter(|p| c.distancia(Vec2::new(p.pos.x, p.pos.z)) < 60.0)
+                .count();
             let porto = vila.porto.expect("sem porto");
             println!(
                 "{}: cidade {:?} com {} predios ({} NPCs no total) | porto {:?} a {:.0} da cidade, cais {:.1} de comprimento",
@@ -974,10 +1227,26 @@ mod testes {
             for pr in &vila.props {
                 *contagem.entry(format!("{:?}", pr.tipo)).or_default() += 1;
             }
-            println!("  {} props {contagem:?} | {} caminhos", vila.props.len(), vila.caminhos.len());
-            assert!(na_cidade >= 7, "{}: so' {na_cidade} predios na cidade", d.zona);
-            assert!(contagem.get("Canteiro").copied().unwrap_or(0) >= 6, "{}: poucos canteiros", d.zona);
-            assert!(vila.npcs.iter().any(|n| n.loja == Some(LOJA_DE_POCOES)), "{}: sem Alquimista", d.zona);
+            println!(
+                "  {} props {contagem:?} | {} caminhos",
+                vila.props.len(),
+                vila.caminhos.len()
+            );
+            assert!(
+                na_cidade >= 7,
+                "{}: so' {na_cidade} predios na cidade",
+                d.zona
+            );
+            assert!(
+                contagem.get("Canteiro").copied().unwrap_or(0) >= 6,
+                "{}: poucos canteiros",
+                d.zona
+            );
+            assert!(
+                vila.npcs.iter().any(|n| n.loja == Some(LOJA_DE_POCOES)),
+                "{}: sem Alquimista",
+                d.zona
+            );
             assert!(porto.centro.distance(c.centro()) >= 150.0);
         }
     }
@@ -994,7 +1263,10 @@ mod testes {
     fn casas_no_plato_e_nunca_na_agua() {
         let i = ilha();
         let vila = i.vila();
-        let niveis: Vec<i32> = [i.cidade().map(|c| c.nivel), i.porto().map(|p| p.nivel)].into_iter().flatten().collect();
+        let niveis: Vec<i32> = [i.cidade().map(|c| c.nivel), i.porto().map(|p| p.nivel)]
+            .into_iter()
+            .flatten()
+            .collect();
         for p in vila.predios.iter().filter(|p| p.tipo != TipoCasa::Doca) {
             let c = p.construcao();
             let meia = c.meia(p.yaw_q);
@@ -1004,7 +1276,11 @@ mod testes {
                 while z <= p.pos.z + meia.y {
                     assert!(!i.agua(x, z), "{:?} sobre a agua", p.papel);
                     let (ix, iz) = i.coluna(x, z);
-                    assert!(niveis.contains(&i.bloco(ix, iz)), "{:?} fora do plato", p.papel);
+                    assert!(
+                        niveis.contains(&i.bloco(ix, iz)),
+                        "{:?} fora do plato",
+                        p.papel
+                    );
                     z += BLOCO;
                 }
                 x += BLOCO;
@@ -1023,7 +1299,13 @@ mod testes {
             let dentro = c.local_para_mundo(p.pos, p.yaw_q, Vec3::new(lx, 0.0, 1.6));
             let (a, b) = (Vec2::new(fora.x, fora.z), Vec2::new(dentro.x, dentro.z));
             let fim = anda_ate(i, a, b, 150);
-            assert!(fim.distance(b) < 0.3, "{:?}/{:?}: parou a {:.2} de dentro", p.tipo, p.papel, fim.distance(b));
+            assert!(
+                fim.distance(b) < 0.3,
+                "{:?}/{:?}: parou a {:.2} de dentro",
+                p.tipo,
+                p.papel,
+                fim.distance(b)
+            );
             testadas += 1;
         }
         assert!(testadas >= 7);
@@ -1045,7 +1327,11 @@ mod testes {
             let b = Vec2::new(p.pos.x, p.pos.z);
             let fim = anda_ate(i, a, b, 200);
             let parede = (c.v.nz - 2) as f32 * c.escala * 0.5 - c.escala;
-            assert!(fim.distance(b) > parede, "{:?}: atravessou a parede do fundo", p.papel);
+            assert!(
+                fim.distance(b) > parede,
+                "{:?}: atravessou a parede do fundo",
+                p.papel
+            );
             testadas += 1;
         }
         assert!(testadas >= 3, "so' {testadas} fundos testados");
@@ -1055,7 +1341,12 @@ mod testes {
     fn npc_nao_fica_dentro_de_parede() {
         let i = ilha();
         for n in &i.vila().npcs {
-            assert!(!i.caixa_toca(n.pos, 0.3), "{} dentro de parede em {:?}", n.nome, n.pos);
+            assert!(
+                !i.caixa_toca(n.pos, 0.3),
+                "{} dentro de parede em {:?}",
+                n.nome,
+                n.pos
+            );
         }
     }
 
@@ -1065,11 +1356,24 @@ mod testes {
     fn mestre_de_missoes_na_praca() {
         let i = ilha();
         let c = i.cidade().unwrap();
-        let mestres: Vec<_> = i.vila().npcs.iter().filter(|n| n.papel == Papel::Missoes).collect();
+        let mestres: Vec<_> = i
+            .vila()
+            .npcs
+            .iter()
+            .filter(|n| n.papel == Papel::Missoes)
+            .collect();
         assert_eq!(mestres.len(), 1, "mestres de missoes: {}", mestres.len());
         let m = mestres[0];
-        assert!(c.distancia(m.pos) < 6.0, "mestre longe da praca: {:.1}", c.distancia(m.pos));
-        assert!(i.sem_estorvo(m.pos, 0.3), "mestre dentro de estorvo em {:?}", m.pos);
+        assert!(
+            c.distancia(m.pos) < 6.0,
+            "mestre longe da praca: {:.1}",
+            c.distancia(m.pos)
+        );
+        assert!(
+            i.sem_estorvo(m.pos, 0.3),
+            "mestre dentro de estorvo em {:?}",
+            m.pos
+        );
         assert!(!i.agua(m.pos.x, m.pos.y));
         // Da' pra chegar nele andando pela praca — pelo LADO, tangente ao
         // poco: a reta vinda do outro lado da praca cruzaria o poco, que barra.
@@ -1078,7 +1382,11 @@ mod testes {
         let de = i.ponto_livre_perto(m.pos + lado * 4.0, R);
         let perto = m.pos + (de - m.pos).normalize() * 1.5;
         let fim = anda_ate(i, de, perto, 300);
-        assert!(fim.distance(perto) < 1.0, "nao chega no mestre: parou a {:.2}", fim.distance(perto));
+        assert!(
+            fim.distance(perto) < 1.0,
+            "nao chega no mestre: parou a {:.2}",
+            fim.distance(perto)
+        );
         // Olha pro poco.
         assert!((m.yaw - yaw_de(c.centro() - m.pos)).abs() < 1e-4);
     }
@@ -1089,7 +1397,11 @@ mod testes {
         let porto = i.vila().porto.unwrap();
         let alvo = porto.ponta - porto.mar * 1.0;
         let fim = anda_ate(i, porto.centro, alvo, 900);
-        assert!(fim.distance(alvo) < 1.0, "parou a {:.1} da ponta", fim.distance(alvo));
+        assert!(
+            fim.distance(alvo) < 1.0,
+            "parou a {:.1} da ponta",
+            fim.distance(alvo)
+        );
     }
 
     #[test]
@@ -1099,8 +1411,16 @@ mod testes {
         let porto = i.vila().porto.unwrap();
         let de = i.ponto_livre_perto(c.centro() + Vec2::new(9.0, 0.0), R);
         let fim = simula_rota(i, de, porto.centro);
-        println!("praca -> porto: {:.0} em linha reta, parou a {:.1}", de.distance(porto.centro), fim.distance(porto.centro));
-        assert!(fim.distance(porto.centro) < 6.0, "parou a {:.1} do porto", fim.distance(porto.centro));
+        println!(
+            "praca -> porto: {:.0} em linha reta, parou a {:.1}",
+            de.distance(porto.centro),
+            fim.distance(porto.centro)
+        );
+        assert!(
+            fim.distance(porto.centro) < 6.0,
+            "parou a {:.1} do porto",
+            fim.distance(porto.centro)
+        );
     }
 
     /// Com todos os enfeites no lugar, da' pra ir da praca a cada porta e ao
@@ -1111,21 +1431,39 @@ mod testes {
         let c = i.cidade().unwrap();
         let vila = i.vila();
         let mut n = 0;
-        for p in vila.predios.iter().filter(|p| p.tipo != TipoCasa::Doca && c.distancia(Vec2::new(p.pos.x, p.pos.z)) < 70.0) {
+        for p in vila
+            .predios
+            .iter()
+            .filter(|p| p.tipo != TipoCasa::Doca && c.distancia(Vec2::new(p.pos.x, p.pos.z)) < 70.0)
+        {
             let pc = p.construcao();
             let lx = pc.porta_local().unwrap();
             let w = pc.local_para_mundo(p.pos, p.yaw_q, Vec3::new(lx, 0.0, -1.6));
             let porta = Vec2::new(w.x, w.z);
             let de = i.ponto_livre_perto(c.centro() + (porta - c.centro()).normalize() * 7.0, R);
             let fim = simula_rota(i, de, porta);
-            assert!(fim.distance(porta) < 1.0, "{:?}: parou a {:.2} da porta", p.papel, fim.distance(porta));
+            assert!(
+                fim.distance(porta) < 1.0,
+                "{:?}: parou a {:.2} da porta",
+                p.papel,
+                fim.distance(porta)
+            );
             n += 1;
         }
         assert!(n >= 7, "so' {n} portas");
-        let m = vila.npcs.iter().find(|n| n.papel == Papel::Missoes).unwrap().pos;
+        let m = vila
+            .npcs
+            .iter()
+            .find(|n| n.papel == Papel::Missoes)
+            .unwrap()
+            .pos;
         let de = i.ponto_livre_perto(c.centro() - (m - c.centro()).normalize() * 8.0, R);
         let fim = simula_rota(i, de, m);
-        assert!(fim.distance(m) < 1.6, "nao chega no mestre: parou a {:.2}", fim.distance(m));
+        assert!(
+            fim.distance(m) < 1.6,
+            "nao chega no mestre: parou a {:.2}",
+            fim.distance(m)
+        );
     }
 
     /// Enfeite que BARRA (arvore, barraca, carroca, portal) nunca fica em
@@ -1135,7 +1473,11 @@ mod testes {
         let i = ilha();
         let vila = i.vila();
         let mut caixas = Vec::new();
-        for pr in vila.props.iter().filter(|pr| prop_barra(pr.tipo) && pr.tipo != TipoProp::Poco) {
+        for pr in vila
+            .props
+            .iter()
+            .filter(|pr| prop_barra(pr.tipo) && pr.tipo != TipoProp::Poco)
+        {
             for (mn, mx) in pr.construcao().caixas_mundo(pr.pos, pr.yaw_q) {
                 if mn.y - pr.pos.y < TETO_DA_COLISAO && mx.y - pr.pos.y > PISO_DA_COLISAO {
                     caixas.push((Vec2::new(mn.x, mn.z), Vec2::new(mx.x, mx.z)));
@@ -1149,7 +1491,10 @@ mod testes {
                 let q = a.lerp(*b, k as f32 / n as f32);
                 for (mn, mx) in &caixas {
                     let perto = Vec2::new(q.x.clamp(mn.x, mx.x), q.y.clamp(mn.y, mx.y));
-                    assert!(perto.distance(q) > R, "enfeite que barra em cima do caminho em {q:?}");
+                    assert!(
+                        perto.distance(q) > R,
+                        "enfeite que barra em cima do caminho em {q:?}"
+                    );
                 }
             }
         }
@@ -1163,10 +1508,16 @@ mod testes {
         let c = ger.cidade().unwrap().centro();
         let col = |p: Vec2| ((p.x / BLOCO).round() as i32, (p.y / BLOCO).round() as i32);
         let (bx, bz) = col(c + Vec2::new(1.0, 1.0));
-        assert!(matches!(ger.pintura_do_chao(bx, bz), Some(Material::Calcada | Material::CalcadaEscura)));
+        assert!(matches!(
+            ger.pintura_do_chao(bx, bz),
+            Some(Material::Calcada | Material::CalcadaEscura)
+        ));
         let (a, b) = ger.vila().caminhos[0];
         let (bx, bz) = col(a.lerp(b, 0.5));
-        assert!(matches!(ger.pintura_do_chao(bx, bz), Some(Material::Calcada | Material::CalcadaEscura | Material::Caminho)));
+        assert!(matches!(
+            ger.pintura_do_chao(bx, bz),
+            Some(Material::Calcada | Material::CalcadaEscura | Material::Caminho)
+        ));
         let (bx, bz) = col(c + Vec2::new(200.0, 0.0));
         assert_eq!(ger.pintura_do_chao(bx, bz), None);
     }

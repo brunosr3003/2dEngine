@@ -26,7 +26,11 @@ pub enum Fase {
     Indisponivel,
     Disponivel,
     Iniciando,
-    Aguardando { state: String, desde: f64, ultimo_poll: f64 },
+    Aguardando {
+        state: String,
+        desde: f64,
+        ultimo_poll: f64,
+    },
     Erro(String),
 }
 
@@ -54,14 +58,24 @@ pub struct LoginGoogle {
 
 impl Default for LoginGoogle {
     fn default() -> Self {
-        Self { fase: Fase::Indisponivel, cfg: None, start: None, poll: None }
+        Self {
+            fase: Fase::Indisponivel,
+            cfg: None,
+            start: None,
+            poll: None,
+        }
     }
 }
 
 impl LoginGoogle {
     /// Comeca perguntando ao `web` se o Google esta' ligado.
     pub fn consultando() -> Self {
-        Self { fase: Fase::Consultando, cfg: Some(api::google_config()), start: None, poll: None }
+        Self {
+            fase: Fase::Consultando,
+            cfg: Some(api::google_config()),
+            start: None,
+            poll: None,
+        }
     }
 
     pub fn disponivel(&self) -> bool {
@@ -133,7 +147,11 @@ impl LoginGoogle {
         match entrada {
             Entrada::Config(ligado) => {
                 if matches!(self.fase, Fase::Consultando) {
-                    self.fase = if ligado { Fase::Disponivel } else { Fase::Indisponivel };
+                    self.fase = if ligado {
+                        Fase::Disponivel
+                    } else {
+                        Fase::Indisponivel
+                    };
                 }
                 None
             }
@@ -143,7 +161,11 @@ impl LoginGoogle {
                 }
                 match r {
                     Ok((state, url)) => {
-                        self.fase = Fase::Aguardando { state, desde: agora, ultimo_poll: agora };
+                        self.fase = Fase::Aguardando {
+                            state,
+                            desde: agora,
+                            ultimo_poll: agora,
+                        };
                         Some(Saida::AbrirUrl(url))
                     }
                     Err(e) => {
@@ -178,7 +200,14 @@ impl LoginGoogle {
 
     /// Hora de perguntar de novo? Tambem desiste no tempo maximo.
     pub fn decide_poll(&mut self, agora: f64) -> Option<Saida> {
-        let Fase::Aguardando { state, desde, ultimo_poll } = &mut self.fase else { return None };
+        let Fase::Aguardando {
+            state,
+            desde,
+            ultimo_poll,
+        } = &mut self.fase
+        else {
+            return None;
+        };
         if agora - *desde > ESPERA_MAX_S {
             self.fase = Fase::Erro("Tempo esgotado esperando o navegador.".into());
             return None;
@@ -206,14 +235,20 @@ mod testes {
     use super::*;
 
     fn pronto_pra_clicar() -> LoginGoogle {
-        let mut g = LoginGoogle { fase: Fase::Consultando, ..Default::default() };
+        let mut g = LoginGoogle {
+            fase: Fase::Consultando,
+            ..Default::default()
+        };
         g.aplicar(Entrada::Config(true), 0.0);
         g
     }
 
     #[test]
     fn botao_so_aparece_com_google_ligado() {
-        let mut g = LoginGoogle { fase: Fase::Consultando, ..Default::default() };
+        let mut g = LoginGoogle {
+            fase: Fase::Consultando,
+            ..Default::default()
+        };
         assert!(!g.disponivel());
         g.aplicar(Entrada::Config(false), 0.0);
         assert_eq!(g.fase, Fase::Indisponivel);
@@ -225,16 +260,41 @@ mod testes {
     fn fluxo_completo_abre_url_pergunta_e_entrega_a_sessao() {
         let mut g = pronto_pra_clicar();
         g.fase = Fase::Iniciando; // `iniciar` dispara rede; aqui so' a decisao
-        let s = g.aplicar(Entrada::Start(Ok(("st".into(), "https://accounts.google.com/x".into()))), 10.0);
-        assert_eq!(s, Some(Saida::AbrirUrl("https://accounts.google.com/x".into())));
+        let s = g.aplicar(
+            Entrada::Start(Ok(("st".into(), "https://accounts.google.com/x".into()))),
+            10.0,
+        );
+        assert_eq!(
+            s,
+            Some(Saida::AbrirUrl("https://accounts.google.com/x".into()))
+        );
         assert!(g.aguardando());
         assert_eq!(g.decide_poll(11.0), None, "espera o intervalo");
         assert_eq!(g.decide_poll(11.6), Some(Saida::Consultar("st".into())));
-        assert_eq!(g.aplicar(Entrada::Poll(Ok(RespostaPoll::Pendente)), 12.0), None);
-        assert_eq!(g.aplicar(Entrada::Poll(Err("rede".into())), 13.0), None, "rede instavel nao derruba");
+        assert_eq!(
+            g.aplicar(Entrada::Poll(Ok(RespostaPoll::Pendente)), 12.0),
+            None
+        );
+        assert_eq!(
+            g.aplicar(Entrada::Poll(Err("rede".into())), 13.0),
+            None,
+            "rede instavel nao derruba"
+        );
         assert!(g.aguardando());
-        let s = g.aplicar(Entrada::Poll(Ok(RespostaPoll::Pronto { usuario: "Joao".into(), token: "t".into() })), 14.0);
-        assert_eq!(s, Some(Saida::Pronto { usuario: "Joao".into(), token: "t".into() }));
+        let s = g.aplicar(
+            Entrada::Poll(Ok(RespostaPoll::Pronto {
+                usuario: "Joao".into(),
+                token: "t".into(),
+            })),
+            14.0,
+        );
+        assert_eq!(
+            s,
+            Some(Saida::Pronto {
+                usuario: "Joao".into(),
+                token: "t".into()
+            })
+        );
         assert_eq!(g.fase, Fase::Disponivel);
     }
 
@@ -246,18 +306,39 @@ mod testes {
         assert!(matches!(g.fase, Fase::Erro(_)));
         assert!(g.texto().unwrap().contains("sem rede"));
 
-        g.fase = Fase::Aguardando { state: "s".into(), desde: 0.0, ultimo_poll: 0.0 };
+        g.fase = Fase::Aguardando {
+            state: "s".into(),
+            desde: 0.0,
+            ultimo_poll: 0.0,
+        };
         g.aplicar(Entrada::Poll(Ok(RespostaPoll::Expirado)), 1.0);
         assert!(matches!(g.fase, Fase::Erro(_)));
 
-        g.fase = Fase::Aguardando { state: "s".into(), desde: 0.0, ultimo_poll: 0.0 };
+        g.fase = Fase::Aguardando {
+            state: "s".into(),
+            desde: 0.0,
+            ultimo_poll: 0.0,
+        };
         assert_eq!(g.decide_poll(ESPERA_MAX_S + 1.0), None);
         assert!(matches!(g.fase, Fase::Erro(_)));
 
-        g.fase = Fase::Aguardando { state: "s".into(), desde: 0.0, ultimo_poll: 0.0 };
+        g.fase = Fase::Aguardando {
+            state: "s".into(),
+            desde: 0.0,
+            ultimo_poll: 0.0,
+        };
         g.cancelar();
         assert_eq!(g.fase, Fase::Disponivel);
         // Resposta atrasada de um pedido cancelado e' ignorada.
-        assert_eq!(g.aplicar(Entrada::Poll(Ok(RespostaPoll::Pronto { usuario: "x".into(), token: "y".into() })), 2.0), None);
+        assert_eq!(
+            g.aplicar(
+                Entrada::Poll(Ok(RespostaPoll::Pronto {
+                    usuario: "x".into(),
+                    token: "y".into()
+                })),
+                2.0
+            ),
+            None
+        );
     }
 }

@@ -48,7 +48,10 @@ pub struct Lascas {
 
 impl Default for Lascas {
     fn default() -> Self {
-        Self { pool: [Lasca::default(); TAMANHO_DO_POOL], prox: 0 }
+        Self {
+            pool: [Lasca::default(); TAMANHO_DO_POOL],
+            prox: 0,
+        }
     }
 }
 
@@ -106,7 +109,11 @@ impl Lascas {
                 pos,
                 vel: vec3(ang.cos() * lado, sobe, ang.sin() * lado) * forca,
                 idade: 0.0,
-                vida: if faisca { VIDA_DA_FAISCA_S } else { VIDA_S * (0.8 + rnd() * 0.4) },
+                vida: if faisca {
+                    VIDA_DA_FAISCA_S
+                } else {
+                    VIDA_S * (0.8 + rnd() * 0.4)
+                },
                 cor,
                 tam: if faisca { 0.022 } else { 0.04 + rnd() * 0.03 },
                 grav: GRAVIDADE,
@@ -143,7 +150,11 @@ impl Lascas {
                 cor: if brilho {
                     [255, 245, 220]
                 } else {
-                    [(cor[0] as f32 * varia).min(255.0) as u8, (cor[1] as f32 * varia).min(255.0) as u8, (cor[2] as f32 * varia).min(255.0) as u8]
+                    [
+                        (cor[0] as f32 * varia).min(255.0) as u8,
+                        (cor[1] as f32 * varia).min(255.0) as u8,
+                        (cor[2] as f32 * varia).min(255.0) as u8,
+                    ]
                 },
                 tam: if brilho { 0.09 } else { 0.08 + rnd() * 0.07 },
                 grav: GRAVIDADE,
@@ -154,7 +165,15 @@ impl Lascas {
     /// Uma faisca de aura: sobe devagar em volta do chefe e some.
     pub fn faisca_de_aura(&mut self, pos: Vec3, cor: [u8; 3], semente: u32) {
         let lado = ((semente % 100) as f32 * 0.01 - 0.5) * 0.3;
-        self.poe(Lasca { pos, vel: vec3(lado, 0.5, -lado), idade: 0.0, vida: 1.1, cor, tam: 0.05, grav: -0.4 });
+        self.poe(Lasca {
+            pos,
+            vel: vec3(lado, 0.5, -lado),
+            idade: 0.0,
+            vida: 1.1,
+            cor,
+            tam: 0.05,
+            grav: -0.4,
+        });
     }
 
     pub fn avanca(&mut self, dt: f32) {
@@ -175,7 +194,12 @@ impl Lascas {
             let u = (l.idade / l.vida).clamp(0.0, 1.0);
             let a = ((1.0 - u * u) * 255.0) as u8;
             let tam = l.tam * (1.0 - 0.5 * u);
-            draw_cube(l.pos, Vec3::splat(tam), None, Color::from_rgba(l.cor[0], l.cor[1], l.cor[2], a));
+            draw_cube(
+                l.pos,
+                Vec3::splat(tam),
+                None,
+                Color::from_rgba(l.cor[0], l.cor[1], l.cor[2], a),
+            );
         }
     }
 }
@@ -218,8 +242,14 @@ mod tests {
         assert!(cruzou(0.50, 0.60, 0.58));
         assert!(!cruzou(0.60, 0.70, 0.58), "depois do impacto nao repete");
         assert!(!cruzou(0.10, 0.20, 0.58), "antes do impacto nao dispara");
-        assert!(cruzou(0.50, 0.02, 0.58), "o relogio virou passando pelo impacto");
-        assert!(!cruzou(0.90, 0.05, 0.58), "virar sem passar pelo impacto nao dispara");
+        assert!(
+            cruzou(0.50, 0.02, 0.58),
+            "o relogio virou passando pelo impacto"
+        );
+        assert!(
+            !cruzou(0.90, 0.05, 0.58),
+            "virar sem passar pelo impacto nao dispara"
+        );
         // Tres golpes a 60 quadros por segundo: tres rajadas.
         let (mut ant, mut n, mut t) = (0.0f32, 0, 0.0f32);
         while t < 3.0 * crate::rig::PERIODO_DA_COLETA - 0.01 {
@@ -240,16 +270,24 @@ mod tests {
         let cores: Vec<[u8; 3]> = (1..=4).map(cor_do_tipo).collect();
         for i in 0..4 {
             for j in i + 1..4 {
-                assert_ne!(cores[i], cores[j], "tier {} e {} com a mesma cor", i + 1, j + 1);
+                assert_ne!(
+                    cores[i],
+                    cores[j],
+                    "tier {} e {} com a mesma cor",
+                    i + 1,
+                    j + 1
+                );
             }
         }
         // O po' da rajada sai na cor do tier (as faiscas sao claras e a parte).
         let mut l = Lascas::default();
         l.emite(Vec3::ZERO, 2, 7);
         let base = cor_do_tipo(2);
-        assert!(l.pool.iter().filter(|x| x.viva() && x.cor != [255, 238, 176]).all(|x| {
-            (0..3).all(|k| (x.cor[k] as i32 - (base[k] as f32 * 0.8) as i32) >= -1)
-        }));
+        assert!(l
+            .pool
+            .iter()
+            .filter(|x| x.viva() && x.cor != [255, 238, 176])
+            .all(|x| { (0..3).all(|k| (x.cor[k] as i32 - (base[k] as f32 * 0.8) as i32) >= -1) }));
     }
 
     #[test]
@@ -265,7 +303,10 @@ mod tests {
         for _ in 0..10 {
             a.avanca(0.05);
         }
-        assert!(a.pool.iter().filter(|x| x.viva()).all(|x| x.pos.y > 0.0), "aura sobe");
+        assert!(
+            a.pool.iter().filter(|x| x.viva()).all(|x| x.pos.y > 0.0),
+            "aura sobe"
+        );
         let mut e = Lascas::default();
         e.explosao(Vec3::ZERO, [10, 20, 30], 9);
         assert_eq!(e.vivas(), 7);
@@ -289,7 +330,13 @@ mod tests {
         for _ in 0..6 {
             r.avanca(0.05);
         }
-        assert!(r.pool.iter().filter(|x| x.viva()).all(|x| x.vel.y < 1.3 + 1.6), "gravidade puxa");
+        assert!(
+            r.pool
+                .iter()
+                .filter(|x| x.viva())
+                .all(|x| x.vel.y < 1.3 + 1.6),
+            "gravidade puxa"
+        );
         for _ in 0..40 {
             r.avanca(0.05);
         }

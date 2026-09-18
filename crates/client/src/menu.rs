@@ -48,49 +48,70 @@ type Linha = (Item, &'static str, Option<&'static str>);
 
 /// Os grupos, na ordem da tela.
 pub const GRUPOS: [(&str, &[Linha]); 7] = [
-    ("PERSONAGEM", &[
-        (Item::Bolsa, "Bolsa", None),
-        (Item::Ficha, "Ficha", Some("Em breve")),
-        (Item::Habilidades, "Habilidades", Some("Em breve")),
-        (Item::Montaria, "Montaria", None),
-    ]),
-    ("PROGRESSO", &[
-        (Item::Missoes, "Missões", None),
-        (Item::TodasMissoes, "Todas", None),
-        (Item::Diarias, "Diárias", None),
-        (Item::Conquistas, "Conquistas", Some("Em breve")),
-    ]),
-    ("OFICINA", &[
-        (Item::Craft, "Craft", None),
-        (Item::Forja, "Forja", None),
-        (Item::Encantar, "Encantar", Some("Em breve")),
-        (Item::Coleta, "Coleta", None),
-    ]),
-    ("AVENTURA", &[
-        (Item::Mapa, "Mapa", None),
-        (Item::Aventuras, "Dungeons", None),
-        (Item::Presenca, "Presença", None),
-        (Item::RecuperarXp, "Recuperar XP", None),
-    ]),
-    ("SOCIAL", &[
-        (Item::Grupo, "Grupo", Some("Em breve")),
-        (Item::Amigos, "Amigos", Some("Em breve")),
-        (Item::Correio, "Correio", Some("Em breve")),
-        (Item::Clan, "Clã", Some("Em breve")),
-    ]),
+    (
+        "PERSONAGEM",
+        &[
+            (Item::Bolsa, "Bolsa", None),
+            (Item::Ficha, "Ficha", Some("Em breve")),
+            (Item::Habilidades, "Habilidades", Some("Em breve")),
+            (Item::Montaria, "Montaria", None),
+        ],
+    ),
+    (
+        "PROGRESSO",
+        &[
+            (Item::Missoes, "Missões", None),
+            (Item::TodasMissoes, "Todas", None),
+            (Item::Diarias, "Diárias", None),
+            (Item::Conquistas, "Conquistas", Some("Em breve")),
+        ],
+    ),
+    (
+        "OFICINA",
+        &[
+            (Item::Craft, "Craft", None),
+            (Item::Forja, "Forja", None),
+            (Item::Encantar, "Encantar", Some("Em breve")),
+            (Item::Coleta, "Coleta", None),
+        ],
+    ),
+    (
+        "AVENTURA",
+        &[
+            (Item::Mapa, "Mapa", None),
+            (Item::Aventuras, "Dungeons", None),
+            (Item::Presenca, "Presença", None),
+            (Item::RecuperarXp, "Recuperar XP", None),
+        ],
+    ),
+    (
+        "SOCIAL",
+        &[
+            (Item::Grupo, "Grupo", None),
+            (Item::Amigos, "Amigos", None),
+            (Item::Correio, "Correio", None),
+            (Item::Clan, "Clã", None),
+        ],
+    ),
     // "Loja" do Menu e' a loja de CASH (Tempest Points), que ainda nao existe.
     // Vendedor NPC nunca vende de longe: "Vendedores" so' leva ate' ele.
-    ("COMÉRCIO", &[
-        (Item::LojaTp, "Loja", None),
-        (Item::Lojas, "Vendedores", None),
-        (Item::Mercado, "Mercado", None),
-    ]),
-    ("SISTEMA", &[
-        (Item::BarraItens, "Barra", None),
-        (Item::Configuracoes, "Interface", None),
-        (Item::TrocarPersonagem, "Trocar", Some("Em breve")),
-        (Item::Sair, "Sair", None),
-    ]),
+    (
+        "COMÉRCIO",
+        &[
+            (Item::LojaTp, "Loja", None),
+            (Item::Lojas, "Vendedores", None),
+            (Item::Mercado, "Mercado", None),
+        ],
+    ),
+    (
+        "SISTEMA",
+        &[
+            (Item::BarraItens, "Barra", None),
+            (Item::Configuracoes, "Interface", None),
+            (Item::TrocarPersonagem, "Trocar", Some("Em breve")),
+            (Item::Sair, "Sair", None),
+        ],
+    ),
 ];
 
 /// O que clicar num item faz.
@@ -161,17 +182,32 @@ impl Menu {
         let m = Vec2::from(mouse_position());
         let clique = is_mouse_button_pressed(MouseButton::Left);
         estilo::texto_forte(p.x + 20.0, p.y + 34.0, "MENU", 24, estilo::OURO);
-        if crate::ui::botao(Rect::new(p.x + p.w - 46.0, p.y + 12.0, 34.0, 30.0), "x", true) {
+        if crate::ui::botao(
+            Rect::new(p.x + p.w - 46.0, p.y + 12.0, 34.0, 30.0),
+            "x",
+            true,
+        ) {
             self.aberto = false;
             return None;
         }
         estilo::separador(p.x + 14.0, p.y + 50.0, p.w - 28.0);
 
         // ── coluna da esquerda: personagem e saldos ──
-        let esq = Rect::new(p.x + 14.0, p.y + 60.0, (p.w * 0.26).clamp(170.0, 300.0), p.h - 74.0);
+        let esq = Rect::new(
+            p.x + 14.0,
+            p.y + 60.0,
+            (p.w * 0.26).clamp(170.0, 300.0),
+            p.h - 74.0,
+        );
         estilo::cartao(esq, false, false);
         let cx = esq.center().x;
-        estilo::botao_redondo(vec2(cx, esq.y + 56.0), 38.0, estilo::OURO, estilo::Estado::Normal, false);
+        estilo::botao_redondo(
+            vec2(cx, esq.y + 56.0),
+            38.0,
+            estilo::OURO,
+            estilo::Estado::Normal,
+            false,
+        );
         estilo::texto_centro_forte(cx, esq.y + 52.0, "LV", 11, estilo::SUAVE);
         estilo::texto_centro_forte(cx, esq.y + 76.0, &c.nivel.to_string(), 26, estilo::TEXTO);
         let mut y = esq.y + 122.0;
@@ -180,8 +216,17 @@ impl Menu {
         estilo::texto_ajustado(c.arma, esq.x + 14.0, y, esq.w - 28.0, 14, estilo::SUAVE);
         y += 30.0;
         estilo::texto(esq.x + 14.0, y, "PODER", 11, estilo::SUAVE);
-        let poder = c.poder.map(|v| crate::bolsa::milhar(v.max(0) as u64)).unwrap_or_else(|| "—".into());
-        estilo::texto(esq.x + esq.w - 14.0 - estilo::medir(&poder, 18), y + 2.0, &poder, 18, estilo::OURO);
+        let poder = c
+            .poder
+            .map(|v| crate::bolsa::milhar(v.max(0) as u64))
+            .unwrap_or_else(|| "—".into());
+        estilo::texto(
+            esq.x + esq.w - 14.0 - estilo::medir(&poder, 18),
+            y + 2.0,
+            &poder,
+            18,
+            estilo::OURO,
+        );
         y += 16.0;
         estilo::separador(esq.x + 10.0, y, esq.w - 20.0);
         y += 24.0;
@@ -193,11 +238,22 @@ impl Menu {
             }
             estilo::texto(esq.x + 14.0, y, rotulo, 14, estilo::TEXTO);
             let v = crate::bolsa::milhar(*valor);
-            estilo::texto(esq.x + esq.w - 14.0 - estilo::medir(&v, 14), y, &v, 14, estilo::OURO);
+            estilo::texto(
+                esq.x + esq.w - 14.0 - estilo::medir(&v, 14),
+                y,
+                &v,
+                14,
+                estilo::OURO,
+            );
         }
 
         // ── direita: grupos em duas colunas ──
-        let dir = Rect::new(esq.x + esq.w + 14.0, esq.y, p.x + p.w - 14.0 - (esq.x + esq.w + 14.0), esq.h);
+        let dir = Rect::new(
+            esq.x + esq.w + 14.0,
+            esq.y,
+            p.x + p.w - 14.0 - (esq.x + esq.w + 14.0),
+            esq.h,
+        );
         let colunas = [&GRUPOS[..4], &GRUPOS[4..]];
         let col_w = (dir.w - 14.0) * 0.5;
         let por_linha = 4.0;
@@ -253,8 +309,19 @@ fn cadeado(c: Vec2, s: f32) {
     if crate::icones_ui::ui("cadeado", c, s * 2.6, cor) {
         return;
     }
-    estilo::ret_arredondado(Rect::new(c.x - s, c.y - s * 0.2, s * 2.0, s * 1.5), s * 0.35, cor);
-    estilo::arco(c - vec2(0.0, s * 0.2), s * 0.7, std::f32::consts::PI, 0.5, 1.8, cor);
+    estilo::ret_arredondado(
+        Rect::new(c.x - s, c.y - s * 0.2, s * 2.0, s * 1.5),
+        s * 0.35,
+        cor,
+    );
+    estilo::arco(
+        c - vec2(0.0, s * 0.2),
+        s * 0.7,
+        std::f32::consts::PI,
+        0.5,
+        1.8,
+        cor,
+    );
 }
 
 fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
@@ -301,9 +368,19 @@ fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
         Item::Habilidades => estilo::icone(6, c, s * 1.1, cor),
         Item::Aventuras => estilo::icone(7, c, s * 1.1, cor),
         _ => {
-            let letra: String = format!("{item:?}").chars().next().unwrap_or('?').to_string();
+            let letra: String = format!("{item:?}")
+                .chars()
+                .next()
+                .unwrap_or('?')
+                .to_string();
             draw_circle_lines(c.x, c.y, s * 1.1, 1.5, cor);
-            estilo::texto_centro(c.x, c.y + s * 0.5, &letra, (s * 1.3).clamp(12.0, 40.0) as u16, cor);
+            estilo::texto_centro(
+                c.x,
+                c.y + s * 0.5,
+                &letra,
+                (s * 1.3).clamp(12.0, 40.0) as u16,
+                cor,
+            );
         }
     }
 }
@@ -314,7 +391,30 @@ mod tests {
 
     #[test]
     fn todo_sistema_que_existe_abre_e_o_resto_so_avisa() {
-        let abre = [Item::Bolsa, Item::Missoes, Item::TodasMissoes, Item::Diarias, Item::Craft, Item::Forja, Item::Mapa, Item::Lojas, Item::Mercado, Item::Aventuras, Item::Presenca, Item::LojaTp, Item::Montaria, Item::RecuperarXp, Item::BarraItens, Item::Coleta, Item::Configuracoes, Item::Sair];
+        let abre = [
+            Item::Grupo,
+            Item::Amigos,
+            Item::Correio,
+            Item::Clan,
+            Item::Bolsa,
+            Item::Missoes,
+            Item::TodasMissoes,
+            Item::Diarias,
+            Item::Craft,
+            Item::Forja,
+            Item::Mapa,
+            Item::Lojas,
+            Item::Mercado,
+            Item::Aventuras,
+            Item::Presenca,
+            Item::LojaTp,
+            Item::Montaria,
+            Item::RecuperarXp,
+            Item::BarraItens,
+            Item::Coleta,
+            Item::Configuracoes,
+            Item::Sair,
+        ];
         for (_, itens) in GRUPOS.iter() {
             for l in itens.iter() {
                 match clique_de(l) {
@@ -327,11 +427,18 @@ mod tests {
             }
         }
         // "Loja" e' a de cash (TP); vendedor NPC so' com "Ir".
-        let loja = GRUPOS.iter().flat_map(|(_, it)| it.iter()).find(|l| l.1 == "Loja").expect("sem Loja");
+        let loja = GRUPOS
+            .iter()
+            .flat_map(|(_, it)| it.iter())
+            .find(|l| l.1 == "Loja")
+            .expect("sem Loja");
         assert_eq!(loja.0, Item::LojaTp);
         assert_eq!(clique_de(loja), Clique::Abrir(Item::LojaTp));
         for i in abre {
-            assert!(GRUPOS.iter().any(|(_, it)| it.iter().any(|l| l.0 == i)), "{i:?} fora do menu");
+            assert!(
+                GRUPOS.iter().any(|(_, it)| it.iter().any(|l| l.0 == i)),
+                "{i:?} fora do menu"
+            );
         }
     }
 

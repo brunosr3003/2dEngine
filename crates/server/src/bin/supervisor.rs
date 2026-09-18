@@ -42,15 +42,17 @@ struct Canal {
 }
 
 fn env_num<T: std::str::FromStr>(nome: &str, padrao: T) -> T {
-    std::env::var(nome).ok().and_then(|v| v.parse().ok()).unwrap_or(padrao)
+    std::env::var(nome)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(padrao)
 }
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
@@ -60,8 +62,16 @@ async fn main() -> anyhow::Result<()> {
     let bin = std::env::var("MMO_SERVER_BIN").unwrap_or_else(|_| "./server".into());
 
     let unico: bool = env_num::<u32>("MMO_CANAL_UNICO", 0) == 1;
-    let min: u32 = if unico { 1 } else { env_num("MMO_CANAIS_MIN", 1) };
-    let max: u32 = if unico { 1 } else { env_num("MMO_CANAIS_MAX", 8) };
+    let min: u32 = if unico {
+        1
+    } else {
+        env_num("MMO_CANAIS_MIN", 1)
+    };
+    let max: u32 = if unico {
+        1
+    } else {
+        env_num("MMO_CANAIS_MAX", 8)
+    };
     let cap_canal: u32 = env_num("MMO_CANAL_CAPACIDADE", 60);
     // Abre o proximo antes de encher de verdade: quem chega no canal cheio
     // esperaria na fila sem necessidade.
@@ -102,7 +112,10 @@ async fn main() -> anyhow::Result<()> {
         // reinicio automatico.
         canais.retain_mut(|c| match c.processo.try_wait() {
             Ok(Some(status)) => {
-                tracing::warn!("canal {} morreu ({status}); sera' reaberto se preciso", c.numero);
+                tracing::warn!(
+                    "canal {} morreu ({status}); sera' reaberto se preciso",
+                    c.numero
+                );
                 false
             }
             _ => true,
@@ -137,12 +150,21 @@ async fn main() -> anyhow::Result<()> {
             vivos
         };
         while (canais.len() as u32) < alvo {
-            let numero = (1..).find(|n| !canais.iter().any(|c| c.numero == *n)).unwrap();
+            let numero = (1..)
+                .find(|n| !canais.iter().any(|c| c.numero == *n))
+                .unwrap();
             let porta = porta_base + numero as u16 - 1;
             match abrir(&bin, &realm, numero, porta, &host_base, cap_canal, unico) {
                 Ok(processo) => {
-                    tracing::info!("canal {numero} aberto na porta {porta} (total {total} jogadores)");
-                    canais.push(Canal { numero, porta, processo, vazio_ha: 0 });
+                    tracing::info!(
+                        "canal {numero} aberto na porta {porta} (total {total} jogadores)"
+                    );
+                    canais.push(Canal {
+                        numero,
+                        porta,
+                        processo,
+                        vazio_ha: 0,
+                    });
                 }
                 Err(e) => {
                     tracing::error!("falha abrindo canal {numero}: {e}");
@@ -177,7 +199,11 @@ async fn main() -> anyhow::Result<()> {
                     .any(|(j, c)| j != i && !apertado(&c.numero));
                 if sobra_vaga {
                     let mut c = canais.remove(i);
-                    tracing::info!("canal {} vazio ha {} ciclos; fechando", c.numero, c.vazio_ha);
+                    tracing::info!(
+                        "canal {} vazio ha {} ciclos; fechando",
+                        c.numero,
+                        c.vazio_ha
+                    );
                     // SIGTERM: o servidor salva os personagens antes de sair.
                     let _ = c.processo.kill();
                     let _ = c.processo.wait();
@@ -270,10 +296,20 @@ mod testes_painel {
 
     #[test]
     fn porta_do_painel_por_canal() {
-        assert_eq!(painel_do_canal(Some("1"), None, 9000).as_deref(), Some("127.0.0.1:10000"));
-        assert_eq!(painel_do_canal(Some("1"), Some("500"), 9002).as_deref(), Some("127.0.0.1:9502"));
+        assert_eq!(
+            painel_do_canal(Some("1"), None, 9000).as_deref(),
+            Some("127.0.0.1:10000")
+        );
+        assert_eq!(
+            painel_do_canal(Some("1"), Some("500"), 9002).as_deref(),
+            Some("127.0.0.1:9502")
+        );
         assert_eq!(painel_do_canal(None, None, 9000), None);
         assert_eq!(painel_do_canal(Some("0"), None, 9000), None);
-        assert_eq!(painel_do_canal(Some("1"), None, 65000), None, "estouro nao abre porta errada");
+        assert_eq!(
+            painel_do_canal(Some("1"), None, 65000),
+            None,
+            "estouro nao abre porta errada"
+        );
     }
 }

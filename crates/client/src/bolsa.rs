@@ -181,7 +181,11 @@ fn aba_de(t: Tipo) -> Aba {
 }
 
 fn nome_do_slot(s: EquipSlot) -> &'static str {
-    ESQUERDA.iter().chain(DIREITA.iter()).find(|(x, _)| *x == s).map_or("?", |(_, n)| n)
+    ESQUERDA
+        .iter()
+        .chain(DIREITA.iter())
+        .find(|(x, _)| *x == s)
+        .map_or("?", |(_, n)| n)
 }
 
 fn cor_do_tier(t: u8) -> Color {
@@ -266,8 +270,15 @@ fn tela() -> Tela {
     let esq = Rect::new(painel.x + 16.0, painel.y + 56.0, esq_w, h - 72.0);
     let dx = esq.x + esq.w + 16.0;
     let dir = Rect::new(dx, esq.y, painel.x + w - 16.0 - dx, esq.h);
-    let cel = ((dir.w - (COLUNAS as f32 - 1.0) * VAO) / COLUNAS as f32).min(62.0).floor();
-    Tela { painel, esq, dir, cel }
+    let cel = ((dir.w - (COLUNAS as f32 - 1.0) * VAO) / COLUNAS as f32)
+        .min(62.0)
+        .floor();
+    Tela {
+        painel,
+        esq,
+        dir,
+        cel,
+    }
 }
 
 fn mouse() -> Vec2 {
@@ -303,20 +314,24 @@ impl Bolsa {
 
     fn peca(&self, s: Sel) -> Option<Peca> {
         match s {
-            Sel::Inv(i) => self
-                .slots
-                .get(i)
-                .filter(|x| x.qty > 0)
-                .map(|x| Peca { id: x.item_id, qty: x.qty, inst: x.instance }),
-            Sel::Equip(slot) => self
-                .equip
-                .get(slot)
-                .map(|id| Peca { id, qty: 1, inst: self.equip.get_inst(slot) }),
+            Sel::Inv(i) => self.slots.get(i).filter(|x| x.qty > 0).map(|x| Peca {
+                id: x.item_id,
+                qty: x.qty,
+                inst: x.instance,
+            }),
+            Sel::Equip(slot) => self.equip.get(slot).map(|id| Peca {
+                id,
+                qty: 1,
+                inst: self.equip.get_inst(slot),
+            }),
         }
     }
 
     pub(crate) fn nome(&self, id: u16) -> String {
-        self.nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"))
+        self.nomes
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| format!("item {id}"))
     }
 
     fn acao_padrao(&self, s: Sel) -> Option<Acao> {
@@ -348,7 +363,10 @@ impl Bolsa {
         match a {
             Acao::Equipar(i) | Acao::Usar(i) => Some(ClientMessage::UseItem { slot: i as u16 }),
             Acao::Desequipar(s) => match primeiro_vazio(&self.slots) {
-                Some(i) => Some(ClientMessage::InventorySwap { a: InvSpot::Equip(s), b: InvSpot::Inv(i as u16) }),
+                Some(i) => Some(ClientMessage::InventorySwap {
+                    a: InvSpot::Equip(s),
+                    b: InvSpot::Inv(i as u16),
+                }),
                 None => {
                     self.aviso = Some(("A bolsa está cheia.".into(), get_time()));
                     None
@@ -366,21 +384,42 @@ impl Bolsa {
         }
         let t = tela();
         let p = t.painel;
-        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.35));
+        draw_rectangle(
+            0.0,
+            0.0,
+            screen_width(),
+            screen_height(),
+            Color::new(0.0, 0.0, 0.0, 0.35),
+        );
         crate::hud_estilo::ret_arredondado(p, crate::hud_estilo::RAIO, FUNDO);
         crate::hud_estilo::painel_destaque(p, ui::OURO);
         crate::hud_estilo::separador(p.x + 16.0, p.y + 46.0, p.w - 32.0);
         ui::texto(p.x + 22.0, p.y + 33.0, "BOLSA", 26, ui::OURO);
         let ouro = format!("Ouro  {}", milhar(self.ouro));
         let d = crate::hud_estilo::medir_dim(&ouro, 20);
-        ui::texto(p.x + p.w - 70.0 - d.width, p.y + 31.0, &ouro, 20, ui::OURO_CLARO);
+        ui::texto(
+            p.x + p.w - 70.0 - d.width,
+            p.y + 31.0,
+            &ouro,
+            20,
+            ui::OURO_CLARO,
+        );
         draw_circle(p.x + p.w - 84.0 - d.width, p.y + 25.0, 7.0, ui::OURO);
-        if ui::botao(Rect::new(p.x + p.w - 50.0, p.y + 9.0, 34.0, 30.0), "x", true) {
+        if ui::botao(
+            Rect::new(p.x + p.w - 50.0, p.y + 9.0, 34.0, 30.0),
+            "x",
+            true,
+        ) {
             self.fecha();
             return None;
         }
 
-        let cartao = Rect::new(t.esq.x + 18.0, t.esq.y + 44.0, t.esq.w - 36.0, (t.esq.h - 60.0).min(380.0));
+        let cartao = Rect::new(
+            t.esq.x + 18.0,
+            t.esq.y + 44.0,
+            t.esq.w - 36.0,
+            (t.esq.h - 60.0).min(380.0),
+        );
         let bloqueio = self.sel.map(|_| cartao);
         let mut acao = self.desenha_equipamento(t.esq, vox, solido, bloqueio);
         if let Some(a) = self.desenha_grade(t.dir, t.cel) {
@@ -425,17 +464,28 @@ impl Bolsa {
         // O que esta' na mao — a pergunta que a bolsa existe pra responder.
         let arma = self.equip.weapon;
         let em_uso = match arma {
-            Some(id) => format!("Em uso: {} · {}", Conjunto::da_arma(id).nome(), self.nome(id)),
+            Some(id) => format!(
+                "Em uso: {} · {}",
+                Conjunto::da_arma(id).nome(),
+                self.nome(id)
+            ),
             None => "Em uso: nenhuma arma".to_string(),
         };
         ui::texto(r.x + 14.0, r.y + 44.0, &em_uso, 16, ui::OURO_CLARO);
 
-        let s = ((r.h - 60.0 - 170.0) / 4.0 - 16.0).clamp(40.0, 64.0).floor();
+        let s = ((r.h - 60.0 - 170.0) / 4.0 - 16.0)
+            .clamp(40.0, 64.0)
+            .floor();
         let passo = s + 16.0;
         let y0 = r.y + 60.0;
         let xe = r.x + 14.0;
         let xd = r.x + r.w - 14.0 - s;
-        let retrato = Rect::new(xe + s + 12.0, y0, xd - 12.0 - (xe + s + 12.0), 4.0 * passo - 16.0);
+        let retrato = Rect::new(
+            xe + s + 12.0,
+            y0,
+            xd - 12.0 - (xe + s + 12.0),
+            4.0 * passo - 16.0,
+        );
         self.desenha_retrato(retrato, vox, solido);
 
         let mut acao = None;
@@ -462,7 +512,13 @@ impl Bolsa {
         let mut y = y0 + 4.0 * passo + 8.0;
         if let Some(st) = &self.stats {
             ui::texto_centro(r.x + r.w * 0.5, y + 12.0, "PODER", 14, APAGADO);
-            ui::texto_centro(r.x + r.w * 0.5, y + 42.0, &milhar(poder(st).max(0) as u64), 32, ui::OURO);
+            ui::texto_centro(
+                r.x + r.w * 0.5,
+                y + 42.0,
+                &milhar(poder(st).max(0) as u64),
+                32,
+                ui::OURO,
+            );
             y += 62.0;
             let linhas = [
                 ("Ataque", st.attack_damage.to_string()),
@@ -472,7 +528,10 @@ impl Bolsa {
                 ("Destreza", st.dex.to_string()),
                 ("Sabedoria", st.wis.to_string()),
                 ("Crítico", format!("{:.1}%", st.crit_chance * 100.0)),
-                ("Vel. ataque", format!("{:.0}%", st.attack_speed_mult * 100.0)),
+                (
+                    "Vel. ataque",
+                    format!("{:.0}%", st.attack_speed_mult * 100.0),
+                ),
             ];
             let col_w = (r.w - 28.0) * 0.5;
             for (i, (rot, val)) in linhas.iter().enumerate() {
@@ -501,11 +560,23 @@ impl Bolsa {
         // um fundo atras, e o chao em que ele pisa
         draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.09, 0.08, 0.11, 1.0));
         let Some(corpo) = vox.rig(render3d::RIG_CORPO) else {
-            ui::texto_centro(r.x + r.w * 0.5, r.y + r.h * 0.5, "vox faltando: personagem/corpo.vox", 12, APAGADO);
+            ui::texto_centro(
+                r.x + r.w * 0.5,
+                r.y + r.h * 0.5,
+                "vox faltando: personagem/corpo.vox",
+                12,
+                APAGADO,
+            );
             return;
         };
         let Some(vp) = render3d::viewport_na_tela(r) else {
-            ui::texto_centro(r.x + r.w * 0.5, r.y + r.h * 0.5, "Retrato sem espaço na tela", 12, APAGADO);
+            ui::texto_centro(
+                r.x + r.w * 0.5,
+                r.y + r.h * 0.5,
+                "Retrato sem espaço na tela",
+                12,
+                APAGADO,
+            );
             return;
         };
         let cam = Camera3D {
@@ -528,7 +599,11 @@ impl Bolsa {
             tempo: get_time() as f32,
             ar: 0.0,
             degrau: [0.0, 0.0],
-            combate: crate::rig::Combate { conjunto, sacada: 1.0, ..Default::default() },
+            combate: crate::rig::Combate {
+                conjunto,
+                sacada: 1.0,
+                ..Default::default()
+            },
         };
         let base = Mat4::from_rotation_y((get_time() as f32 * 0.5).sin() * 0.9);
         let pose = crate::rig::pose(&entrada);
@@ -537,8 +612,21 @@ impl Bolsa {
         set_default_camera();
         // a plataforma dourada do MIR4, em 2D por cima do pe'
         let (cx, cy) = (r.x + r.w * 0.5, r.y + r.h * 0.90);
-        draw_ellipse_lines(cx, cy, r.w * 0.30, r.w * 0.06, 0.0, 1.5, com_alfa(ui::OURO, 0.55));
-        crate::hud_estilo::borda_arredondada(r, crate::hud_estilo::RAIO_PEQUENO + 2.0, 1.0, crate::hud_estilo::BORDA_FORTE);
+        draw_ellipse_lines(
+            cx,
+            cy,
+            r.w * 0.30,
+            r.w * 0.06,
+            0.0,
+            1.5,
+            com_alfa(ui::OURO, 0.55),
+        );
+        crate::hud_estilo::borda_arredondada(
+            r,
+            crate::hud_estilo::RAIO_PEQUENO + 2.0,
+            1.0,
+            crate::hud_estilo::BORDA_FORTE,
+        );
     }
 
     // ── a metade dos itens ──
@@ -564,7 +652,9 @@ impl Bolsa {
             (0..shared::INVENTORY_SLOTS).map(Some).collect()
         } else {
             (0..self.slots.len())
-                .filter(|&i| self.slots[i].qty > 0 && aba_de(tipo(self.slots[i].item_id)) == self.aba)
+                .filter(|&i| {
+                    self.slots[i].qty > 0 && aba_de(tipo(self.slots[i].item_id)) == self.aba
+                })
                 .map(Some)
                 .collect()
         };
@@ -575,7 +665,12 @@ impl Bolsa {
         let mut clicado = None;
         for (k, onde) in mostrar.iter().enumerate() {
             let (col, lin) = (k % COLUNAS, k / COLUNAS);
-            let c = Rect::new(r.x + col as f32 * (cel + VAO), y0 + lin as f32 * (cel + VAO), cel, cel);
+            let c = Rect::new(
+                r.x + col as f32 * (cel + VAO),
+                y0 + lin as f32 * (cel + VAO),
+                cel,
+                cel,
+            );
             if c.y + c.h > r.y + r.h - 50.0 {
                 break;
             }
@@ -595,9 +690,29 @@ impl Bolsa {
         // o pe': ocupacao, dica e organizar
         let ocupados = self.slots.iter().filter(|s| s.qty > 0).count();
         let pe = r.y + r.h - 40.0;
-        ui::texto(r.x, pe + 22.0, &format!("{ocupados}/{}", shared::INVENTORY_SLOTS), 20, if ocupados >= shared::INVENTORY_SLOTS { VERMELHO } else { TEXTO });
-        ui::texto(r.x + 70.0, pe + 21.0, "dois cliques: equipar ou usar", 15, APAGADO);
-        if ui::botao(Rect::new(r.x + r.w - 130.0, pe, 130.0, 34.0), "Organizar", true) {
+        ui::texto(
+            r.x,
+            pe + 22.0,
+            &format!("{ocupados}/{}", shared::INVENTORY_SLOTS),
+            20,
+            if ocupados >= shared::INVENTORY_SLOTS {
+                VERMELHO
+            } else {
+                TEXTO
+            },
+        );
+        ui::texto(
+            r.x + 70.0,
+            pe + 21.0,
+            "dois cliques: equipar ou usar",
+            15,
+            APAGADO,
+        );
+        if ui::botao(
+            Rect::new(r.x + r.w - 130.0, pe, 130.0, 34.0),
+            "Organizar",
+            true,
+        ) {
             acao = Some(Acao::Organizar);
         }
         acao
@@ -607,7 +722,11 @@ impl Bolsa {
 
     fn desenha_cartao(&mut self, r: Rect, sel: Sel, peca: Peca) -> Option<Acao> {
         let cor = cor_do_tier(peca.tier());
-        crate::hud_estilo::ret_arredondado(r, crate::hud_estilo::RAIO, Color::new(0.05, 0.06, 0.09, 0.97));
+        crate::hud_estilo::ret_arredondado(
+            r,
+            crate::hud_estilo::RAIO,
+            Color::new(0.05, 0.06, 0.09, 0.97),
+        );
         crate::hud_estilo::painel_destaque(r, cor);
         crate::hud_estilo::borda_arredondada(r, crate::hud_estilo::RAIO, 1.0, com_alfa(cor, 0.55));
 
@@ -615,9 +734,15 @@ impl Bolsa {
         celula(ic, Some(peca), false, None);
         let tx = ic.x + ic.w + 14.0;
         let nome = self.nome(peca.id);
-        let titulo = if peca.refino() > 0 { format!("+{} {nome}", peca.refino()) } else { nome };
+        let titulo = if peca.refino() > 0 {
+            format!("+{} {nome}", peca.refino())
+        } else {
+            nome
+        };
         ui::texto(tx, r.y + 40.0, &titulo, 22, cor);
-        if !matches!(tipo(peca.id), Tipo::Ouro) && crate::onde_obter::botao(Rect::new(r.x + r.w - 52.0, r.y + 14.0, 38.0, 38.0)) {
+        if !matches!(tipo(peca.id), Tipo::Ouro)
+            && crate::onde_obter::botao(Rect::new(r.x + r.w - 52.0, r.y + 14.0, 38.0, 38.0))
+        {
             self.onde_obter = Some(peca.id);
         }
         let t = tipo(peca.id);
@@ -630,9 +755,25 @@ impl Bolsa {
         };
         ui::texto(tx, r.y + 62.0, &classe, 16, TEXTO);
         if let Some(i) = peca.inst {
-            ui::texto(tx, r.y + 80.0, &format!("Tier {} · nível do item {}", ROMANO[(i.tier() - 1) as usize], i.item_level), 15, APAGADO);
+            ui::texto(
+                tx,
+                r.y + 80.0,
+                &format!(
+                    "Tier {} · nível do item {}",
+                    ROMANO[(i.tier() - 1) as usize],
+                    i.item_level
+                ),
+                15,
+                APAGADO,
+            );
         } else if peca.qty > 1 {
-            ui::texto(tx, r.y + 80.0, &format!("Quantidade {}", milhar(peca.qty as u64)), 15, APAGADO);
+            ui::texto(
+                tx,
+                r.y + 80.0,
+                &format!("Quantidade {}", milhar(peca.qty as u64)),
+                15,
+                APAGADO,
+            );
         }
 
         let mut y = r.y + 112.0;
@@ -655,7 +796,13 @@ impl Bolsa {
             }
             if let Some(req) = i.level_req {
                 let falta = (self.nivel as u16) < req && self.nivel > 0;
-                ui::texto(r.x + 20.0, y + 8.0, &format!("Requer nível {req}"), 16, if falta { VERMELHO } else { APAGADO });
+                ui::texto(
+                    r.x + 20.0,
+                    y + 8.0,
+                    &format!("Requer nível {req}"),
+                    16,
+                    if falta { VERMELHO } else { APAGADO },
+                );
                 y += 24.0;
             }
             // Comparacao com o que esta' vestido naquele slot — o MIR4 mostra a
@@ -739,12 +886,24 @@ fn celula(r: Rect, peca: Option<Peca>, selecionada: bool, vazio: Option<EquipSlo
             icone_do_item(r, p.id, 1.0);
             let fonte = (r.w * 0.26).clamp(11.0, 16.0) as u16;
             if p.inst.is_some() {
-                ui::texto(r.x + 4.0, r.y + fonte as f32, ROMANO[(p.tier() - 1) as usize], fonte, cor);
+                ui::texto(
+                    r.x + 4.0,
+                    r.y + fonte as f32,
+                    ROMANO[(p.tier() - 1) as usize],
+                    fonte,
+                    cor,
+                );
             }
             if p.refino() > 0 {
                 let t = format!("+{}", p.refino());
                 let d = crate::hud_estilo::medir_dim(&t, fonte);
-                ui::texto(r.x + r.w - d.width - 4.0, r.y + fonte as f32, &t, fonte, ui::OURO_CLARO);
+                ui::texto(
+                    r.x + r.w - d.width - 4.0,
+                    r.y + fonte as f32,
+                    &t,
+                    fonte,
+                    ui::OURO_CLARO,
+                );
             }
             if p.qty > 1 {
                 let t = curta(p.qty);
@@ -756,13 +915,22 @@ fn celula(r: Rect, peca: Option<Peca>, selecionada: bool, vazio: Option<EquipSlo
         None => {
             crate::hud_estilo::slot(r, None, sobre && vazio.is_none(), false);
             if let Some(s) = vazio {
-                let t = if s == EquipSlot::Weapon { Tipo::Arma(Conjunto::EspadaEscudo) } else { Tipo::Slot(s) };
+                let t = if s == EquipSlot::Weapon {
+                    Tipo::Arma(Conjunto::EspadaEscudo)
+                } else {
+                    Tipo::Slot(s)
+                };
                 icone(r, t, 0, 0.18);
             }
         }
     }
     if selecionada {
-        crate::hud_estilo::borda_arredondada(Rect::new(r.x - 3.0, r.y - 3.0, r.w + 6.0, r.h + 6.0), crate::hud_estilo::RAIO_PEQUENO + 4.0, 2.0, ui::OURO);
+        crate::hud_estilo::borda_arredondada(
+            Rect::new(r.x - 3.0, r.y - 3.0, r.w + 6.0, r.h + 6.0),
+            crate::hud_estilo::RAIO_PEQUENO + 4.0,
+            2.0,
+            ui::OURO,
+        );
     }
 }
 
@@ -787,7 +955,14 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
     let ouro = k(0.93, 0.75, 0.30);
     let pano = k(0.62, 0.66, 0.74);
     let linha = |x0: f32, y0: f32, x1: f32, y1: f32, w: f32, cor: Color| {
-        draw_line(c.x + x0 * s, c.y + y0 * s, c.x + x1 * s, c.y + y1 * s, w * s, cor)
+        draw_line(
+            c.x + x0 * s,
+            c.y + y0 * s,
+            c.x + x1 * s,
+            c.y + y1 * s,
+            w * s,
+            cor,
+        )
     };
     match t {
         Tipo::Arma(Conjunto::EspadaEscudo) | Tipo::Arma(Conjunto::Katana) => {
@@ -821,22 +996,58 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
                     draw_rectangle(c.x - s * 0.15, c.y - s * 0.95, s * 0.3, s * 0.3, aco_esc);
                 }
                 _ => {
-                    let cor = if id == item_id::MANTO_DO_MAGO { k(0.22, 0.28, 0.62) } else { k(0.62, 0.18, 0.18) };
-                    draw_triangle(vec2(c.x - s * 0.4, c.y - s * 0.85), vec2(c.x + s * 0.4, c.y - s * 0.85), vec2(c.x - s * 0.9, c.y + s * 0.9), cor);
-                    draw_triangle(vec2(c.x + s * 0.4, c.y - s * 0.85), vec2(c.x + s * 0.9, c.y + s * 0.9), vec2(c.x - s * 0.9, c.y + s * 0.9), cor);
+                    let cor = if id == item_id::MANTO_DO_MAGO {
+                        k(0.22, 0.28, 0.62)
+                    } else {
+                        k(0.62, 0.18, 0.18)
+                    };
+                    draw_triangle(
+                        vec2(c.x - s * 0.4, c.y - s * 0.85),
+                        vec2(c.x + s * 0.4, c.y - s * 0.85),
+                        vec2(c.x - s * 0.9, c.y + s * 0.9),
+                        cor,
+                    );
+                    draw_triangle(
+                        vec2(c.x + s * 0.4, c.y - s * 0.85),
+                        vec2(c.x + s * 0.9, c.y + s * 0.9),
+                        vec2(c.x - s * 0.9, c.y + s * 0.9),
+                        cor,
+                    );
                     draw_rectangle(c.x - s * 0.45, c.y - s * 0.92, s * 0.9, s * 0.16, ouro);
                 }
             }
         }
         Tipo::Slot(EquipSlot::Armor) => {
             draw_rectangle(c.x - s * 0.55, c.y - s * 0.55, s * 1.1, s * 1.4, pano);
-            draw_triangle(vec2(c.x - s * 0.55, c.y - s * 0.55), vec2(c.x - s * 0.95, c.y - s * 0.2), vec2(c.x - s * 0.55, c.y + s * 0.05), pano);
-            draw_triangle(vec2(c.x + s * 0.55, c.y - s * 0.55), vec2(c.x + s * 0.95, c.y - s * 0.2), vec2(c.x + s * 0.55, c.y + s * 0.05), pano);
-            draw_triangle(vec2(c.x - s * 0.22, c.y - s * 0.56), vec2(c.x + s * 0.22, c.y - s * 0.56), vec2(c.x, c.y - s * 0.2), k(0.3, 0.3, 0.34));
+            draw_triangle(
+                vec2(c.x - s * 0.55, c.y - s * 0.55),
+                vec2(c.x - s * 0.95, c.y - s * 0.2),
+                vec2(c.x - s * 0.55, c.y + s * 0.05),
+                pano,
+            );
+            draw_triangle(
+                vec2(c.x + s * 0.55, c.y - s * 0.55),
+                vec2(c.x + s * 0.95, c.y - s * 0.2),
+                vec2(c.x + s * 0.55, c.y + s * 0.05),
+                pano,
+            );
+            draw_triangle(
+                vec2(c.x - s * 0.22, c.y - s * 0.56),
+                vec2(c.x + s * 0.22, c.y - s * 0.56),
+                vec2(c.x, c.y - s * 0.2),
+                k(0.3, 0.3, 0.34),
+            );
         }
         Tipo::Slot(EquipSlot::Belt) => {
             draw_rectangle(c.x - s * 0.95, c.y - s * 0.22, s * 1.9, s * 0.44, couro);
-            draw_rectangle_lines(c.x - s * 0.25, c.y - s * 0.32, s * 0.5, s * 0.64, s * 0.14, ouro);
+            draw_rectangle_lines(
+                c.x - s * 0.25,
+                c.y - s * 0.32,
+                s * 0.5,
+                s * 0.64,
+                s * 0.14,
+                ouro,
+            );
         }
         Tipo::Slot(EquipSlot::Necklace) => {
             draw_circle_lines(c.x, c.y - s * 0.25, s * 0.65, s * 0.12, ouro);
@@ -864,18 +1075,36 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
             };
             draw_circle(c.x, c.y + s * 0.3, s * 0.62, k(0.75, 0.82, 0.88));
             draw_circle(c.x, c.y + s * 0.3, s * 0.52, liq);
-            draw_rectangle(c.x - s * 0.18, c.y - s * 0.7, s * 0.36, s * 0.55, k(0.75, 0.82, 0.88));
+            draw_rectangle(
+                c.x - s * 0.18,
+                c.y - s * 0.7,
+                s * 0.36,
+                s * 0.55,
+                k(0.75, 0.82, 0.88),
+            );
             draw_rectangle(c.x - s * 0.24, c.y - s * 0.9, s * 0.48, s * 0.22, couro);
             draw_circle(c.x - s * 0.2, c.y + s * 0.12, s * 0.12, k(1.0, 1.0, 1.0));
         }
         Tipo::Ouro => {
             for (dx, dy) in [(-0.35, 0.35), (0.35, 0.35), (0.0, -0.2)] {
                 draw_circle(c.x + dx * s, c.y + dy * s, s * 0.45, ouro);
-                draw_circle_lines(c.x + dx * s, c.y + dy * s, s * 0.45, s * 0.08, k(0.7, 0.52, 0.15));
+                draw_circle_lines(
+                    c.x + dx * s,
+                    c.y + dy * s,
+                    s * 0.45,
+                    s * 0.08,
+                    k(0.7, 0.52, 0.15),
+                );
             }
         }
         Tipo::Madeira => {
-            draw_rectangle(c.x - s * 0.8, c.y - s * 0.35, s * 1.6, s * 0.7, k(0.52, 0.34, 0.2));
+            draw_rectangle(
+                c.x - s * 0.8,
+                c.y - s * 0.35,
+                s * 1.6,
+                s * 0.7,
+                k(0.52, 0.34, 0.2),
+            );
             draw_circle(c.x + s * 0.8, c.y, s * 0.35, k(0.78, 0.6, 0.38));
             draw_circle_lines(c.x + s * 0.8, c.y, s * 0.2, s * 0.05, k(0.52, 0.34, 0.2));
         }
@@ -883,8 +1112,14 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
             // pedra lapidada, na cor do material (sai do id: estavel entre
             // sessoes, e materiais vizinhos na tabela ficam diferentes)
             const TONS: [(f32, f32, f32); 8] = [
-                (0.75, 0.78, 0.84), (0.46, 0.80, 0.52), (0.40, 0.58, 0.95), (0.70, 0.46, 0.95),
-                (0.92, 0.70, 0.32), (0.88, 0.42, 0.38), (0.40, 0.84, 0.86), (0.84, 0.84, 0.50),
+                (0.75, 0.78, 0.84),
+                (0.46, 0.80, 0.52),
+                (0.40, 0.58, 0.95),
+                (0.70, 0.46, 0.95),
+                (0.92, 0.70, 0.32),
+                (0.88, 0.42, 0.38),
+                (0.40, 0.84, 0.86),
+                (0.84, 0.84, 0.50),
             ];
             let (r_, g, b) = TONS[(id as usize * 7) % TONS.len()];
             draw_poly(c.x, c.y, 6, s * 0.9, 30.0, k(r_ * 0.7, g * 0.7, b * 0.7));
@@ -904,12 +1139,19 @@ mod testes {
     use super::*;
 
     fn slot(item_id: u16, qty: u32) -> InventorySlot {
-        InventorySlot { item_id, qty, instance: None }
+        InventorySlot {
+            item_id,
+            qty,
+            instance: None,
+        }
     }
 
     #[test]
     fn desequipar_vai_pro_primeiro_espaco_vazio() {
-        assert_eq!(primeiro_vazio(&[slot(3, 1), slot(0, 0), slot(2, 5)]), Some(1));
+        assert_eq!(
+            primeiro_vazio(&[slot(3, 1), slot(0, 0), slot(2, 5)]),
+            Some(1)
+        );
         // lista mais curta que a bolsa: o proximo indice ainda e' da bolsa
         assert_eq!(primeiro_vazio(&[slot(3, 1)]), Some(1));
         let cheia: Vec<_> = (0..shared::INVENTORY_SLOTS).map(|_| slot(3, 1)).collect();
@@ -923,7 +1165,10 @@ mod testes {
         assert_eq!(aba_de(tipo(item_id::HEALTH_POTION)), Aba::Consumivel);
         assert_eq!(aba_de(tipo(item_id::STEEL)), Aba::Material);
         assert_eq!(aba_de(tipo(item_id::GOLD)), Aba::Material);
-        assert_eq!(tipo(item_id::ESPADA_E_ESCUDO), Tipo::Arma(Conjunto::EspadaEscudo));
+        assert_eq!(
+            tipo(item_id::ESPADA_E_ESCUDO),
+            Tipo::Arma(Conjunto::EspadaEscudo)
+        );
         assert_eq!(tipo(item_id::PISTOLAS), Tipo::Arma(Conjunto::Pistolas));
     }
 

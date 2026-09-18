@@ -30,13 +30,22 @@ pub const ESCALA_UI_MAX: f32 = 1.6;
 
 /// Celular: tela pequena e densa, o texto de 14 px some. PC fica em 100%.
 pub fn escala_ui_padrao() -> f32 {
-    if crate::nativo::TECLADO_NA_TELA { 1.3 } else { 1.0 }
+    if crate::nativo::TECLADO_NA_TELA {
+        1.3
+    } else {
+        1.0
+    }
 }
 
 /// Bits do f32; 0 = nunca escolheu (vale o padrao da plataforma).
 static ESCALA_UI: AtomicU32 = AtomicU32::new(0);
 /// Area segura em px: topo, esquerda, baixo, direita.
-static MARGENS: [AtomicU32; 4] = [AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0)];
+static MARGENS: [AtomicU32; 4] = [
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+];
 /// Minimapa grande (0 = compacto). Entra na chave do memo do `atual`.
 static MINIMAPA_GRANDE: AtomicU32 = AtomicU32::new(0);
 static MINIMAPA_OCULTO: AtomicU32 = AtomicU32::new(0);
@@ -50,17 +59,26 @@ pub fn escala_ui() -> f32 {
 
 /// Em passos de 10%, dentro da faixa. Vale no quadro seguinte.
 pub fn define_escala_ui(v: f32) {
-    let v = if v.is_finite() { ((v * 10.0).round() / 10.0).clamp(ESCALA_UI_MIN, ESCALA_UI_MAX) } else { escala_ui_padrao() };
+    let v = if v.is_finite() {
+        ((v * 10.0).round() / 10.0).clamp(ESCALA_UI_MIN, ESCALA_UI_MAX)
+    } else {
+        escala_ui_padrao()
+    };
     ESCALA_UI.store(v.to_bits(), Ordering::Relaxed);
 }
 
 pub fn margens() -> [f32; 4] {
-    MARGENS.each_ref().map(|a| f32::from_bits(a.load(Ordering::Relaxed)))
+    MARGENS
+        .each_ref()
+        .map(|a| f32::from_bits(a.load(Ordering::Relaxed)))
 }
 
 pub fn define_margens(m: [f32; 4]) {
     for (a, v) in MARGENS.iter().zip(m) {
-        a.store(if v.is_finite() { v.max(0.0) } else { 0.0 }.to_bits(), Ordering::Relaxed);
+        a.store(
+            if v.is_finite() { v.max(0.0) } else { 0.0 }.to_bits(),
+            Ordering::Relaxed,
+        );
     }
 }
 
@@ -209,8 +227,11 @@ fn cruzam(a: Rect, b: Rect) -> bool {
 /// Tudo dentro de `w`×`h`, nada cobrindo nada e joystick com espaco pro polegar.
 pub fn cabe(z: &Zonas, w: f32, h: f32) -> bool {
     let todos = z.todos();
-    let dentro = todos.iter().all(|(_, r)| r.x >= -0.01 && r.y >= -0.01 && r.x + r.w <= w + 0.01 && r.y + r.h <= h + 0.01);
-    let livre = (0..todos.len()).all(|i| (i + 1..todos.len()).all(|j| !cruzam(todos[i].1, todos[j].1)));
+    let dentro = todos.iter().all(|(_, r)| {
+        r.x >= -0.01 && r.y >= -0.01 && r.x + r.w <= w + 0.01 && r.y + r.h <= h + 0.01
+    });
+    let livre =
+        (0..todos.len()).all(|i| (i + 1..todos.len()).all(|j| !cruzam(todos[i].1, todos[j].1)));
     let polegar = 2.0 * crate::joystick::RAIO_BASE * z.s;
     dentro && livre && z.joystick.w >= polegar && z.joystick.h >= polegar
 }
@@ -224,18 +245,46 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
     // 16:10 ganha uma missao; tela baixa perde. Medido na altura "de 1080"
     // (px / escala): no celular a 130% sobra menos altura que os px sugerem.
     let hb = sh / s;
-    let n = if hb >= 1150.0 { 5 } else if hb >= 960.0 { 4 } else if hb >= 860.0 { 3 } else { 2 };
-    let rastreador = Rect::new(m, buffs.y + buffs.h + 8.0 * s, 440.0 * s, (48.0 + 56.0 * n as f32 + 28.0) * s);
+    let n = if hb >= 1150.0 {
+        5
+    } else if hb >= 960.0 {
+        4
+    } else if hb >= 860.0 {
+        3
+    } else {
+        2
+    };
+    let rastreador = Rect::new(
+        m,
+        buffs.y + buffs.h + 8.0 * s,
+        440.0 * s,
+        (48.0 + 56.0 * n as f32 + 28.0) * s,
+    );
 
     // ── topo direito: icones, MENU, area, minimapa ──
     let menu = Rect::new(sw - m - 64.0 * s, m, 64.0 * s, 48.0 * s);
     let (icone, vao) = (48.0 * s, 8.0 * s);
     let icones = [0usize, 1, 2, 3, 4, 5].map(|i| {
-        Rect::new(menu.x - 16.0 * s - (6 - i) as f32 * (icone + vao) + vao, m, icone, icone)
+        Rect::new(
+            menu.x - 16.0 * s - (6 - i) as f32 * (icone + vao) + vao,
+            m,
+            icone,
+            icone,
+        )
     });
-    let area = Rect::new(sw - m - 320.0 * s, menu.y + menu.h + 12.0 * s, 320.0 * s, 56.0 * s);
+    let area = Rect::new(
+        sw - m - 320.0 * s,
+        menu.y + menu.h + 12.0 * s,
+        320.0 * s,
+        56.0 * s,
+    );
     let minimapa = Rect::new(area.x, area.y + area.h + 4.0 * s, 320.0 * s, 320.0 * s);
-    let mapa_icone = Rect::new(minimapa.x + minimapa.w - 32.0 * s, minimapa.y + 6.0 * s, 26.0 * s, 26.0 * s);
+    let mapa_icone = Rect::new(
+        minimapa.x + minimapa.w - 32.0 * s,
+        minimapa.y + 6.0 * s,
+        26.0 * s,
+        26.0 * s,
+    );
 
     // ── alvo: centrado no vao que sobra no alto ──
     let esq = ficha.x + ficha.w + 16.0 * s;
@@ -247,7 +296,12 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
     let exp = Rect::new(0.0, sh - 6.0, sw, 6.0);
     let base = sh - 10.0 * s;
     // Abaixo do rastreador: o canto inferior esquerdo ficou pro joystick.
-    let avisos = Rect::new(m, rastreador.y + rastreador.h + 8.0 * s, 440.0 * s, 68.0 * s);
+    let avisos = Rect::new(
+        m,
+        rastreador.y + rastreador.h + 8.0 * s,
+        440.0 * s,
+        68.0 * s,
+    );
     let ca = vec2(sw - 110.0 * s, base - 110.0 * s);
     let ra = 60.0 * s;
     let atacar = Rect::new(ca.x - ra, ca.y - ra, ra * 2.0, ra * 2.0);
@@ -255,7 +309,13 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
     // esquerda, 2 na diagonal, 3 acima. O 4, reservado, fica a' esquerda do 2.
     // Em caixa e nao so' em circulo: e' a caixa que o clique e o teste medem.
     let rs = 42.0 * s;
-    let skills = [vec2(-150.0, 0.0), vec2(-106.0, -106.0), vec2(0.0, -150.0), vec2(-256.0, -106.0)].map(|d| {
+    let skills = [
+        vec2(-150.0, 0.0),
+        vec2(-106.0, -106.0),
+        vec2(0.0, -150.0),
+        vec2(-256.0, -106.0),
+    ]
+    .map(|d| {
         let c = ca + d * s;
         Rect::new(c.x - rs, c.y - rs, rs * 2.0, rs * 2.0)
     });
@@ -268,14 +328,36 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
     let yb = base - 14.0 * s;
     let rapido = 56.0 * s;
     let x0 = direita - 3.0 * rapido - 16.0 * s;
-    let rapidos = [0usize, 1, 2].map(|i| Rect::new(x0 + i as f32 * (rapido + 8.0 * s), yb - rapido, rapido, rapido));
+    let rapidos = [0usize, 1, 2].map(|i| {
+        Rect::new(
+            x0 + i as f32 * (rapido + 8.0 * s),
+            yb - rapido,
+            rapido,
+            rapido,
+        )
+    });
     let pocao = Rect::new(x0 - 10.0 * s - 64.0 * s, yb - 64.0 * s, 64.0 * s, 64.0 * s);
-    let auto_combate = Rect::new(pocao.x - 14.0 * s - 88.0 * s, yb - 88.0 * s, 88.0 * s, 88.0 * s);
-    let auto_coleta = Rect::new(auto_combate.x - 10.0 * s - 88.0 * s, yb - 88.0 * s, 88.0 * s, 88.0 * s);
+    let auto_combate = Rect::new(
+        pocao.x - 14.0 * s - 88.0 * s,
+        yb - 88.0 * s,
+        88.0 * s,
+        88.0 * s,
+    );
+    let auto_coleta = Rect::new(
+        auto_combate.x - 10.0 * s - 88.0 * s,
+        yb - 88.0 * s,
+        88.0 * s,
+        88.0 * s,
+    );
     let fw = 520.0 * s;
     let faixa = Rect::new(sw * 0.5 - fw * 0.5, sh - 330.0 * s, fw, 34.0 * s);
     let cw = 380.0 * s;
-    let coleta = Rect::new(sw * 0.5 - cw * 0.5, faixa.y + faixa.h + 6.0 * s, cw, 30.0 * s);
+    let coleta = Rect::new(
+        sw * 0.5 - cw * 0.5,
+        faixa.y + faixa.h + 6.0 * s,
+        cw,
+        30.0 * s,
+    );
     // Joystick: TODA a faixa esquerda de baixo, do rastreador ate' a EXP e ate'
     // antes do que estiver mais a' esquerda entre a faixa, a barra de coleta e
     // o AUTO COLETA. Os avisos passam por cima sem pegar o toque — o dedo pode
@@ -286,8 +368,18 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
     // joystick termina acima dela.
     let lado_eco = 48.0 * s;
     let economia = Rect::new(m, exp.y - 8.0 * s - lado_eco, lado_eco, lado_eco);
-    let montaria = Rect::new(economia.x + economia.w + 10.0 * s, economia.y, lado_eco, lado_eco);
-    let joystick = Rect::new(m, jy, (jfim - m).max(0.0), (economia.y - 8.0 * s - jy).max(0.0));
+    let montaria = Rect::new(
+        economia.x + economia.w + 10.0 * s,
+        economia.y,
+        lado_eco,
+        lado_eco,
+    );
+    let joystick = Rect::new(
+        m,
+        jy,
+        (jfim - m).max(0.0),
+        (economia.y - 8.0 * s - jy).max(0.0),
+    );
 
     // Minimapa grande: cresce pra baixo, preso a' direita, e PARA antes do arco
     // de skills. O limite nao e' enfeite: sem ele o minimapa cruzaria o arco,
@@ -298,7 +390,10 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
         let teto = skills.iter().map(|r| r.y).fold(atacar.y, f32::min) - 12.0 * s;
         let lado = (520.0 * s).min(teto - minimapa.y).max(minimapa.w);
         let r = Rect::new(sw - m - lado, minimapa.y, lado, lado);
-        (r, Rect::new(r.x + r.w - 32.0 * s, r.y + 6.0 * s, 26.0 * s, 26.0 * s))
+        (
+            r,
+            Rect::new(r.x + r.w - 32.0 * s, r.y + 6.0 * s, 26.0 * s, 26.0 * s),
+        )
     } else {
         (minimapa, mapa_icone)
     };
@@ -337,9 +432,25 @@ impl Zonas {
     fn desloca(mut self, o: Vec2) -> Zonas {
         let d = move |r: Rect| Rect::new(r.x + o.x, r.y + o.y, r.w, r.h);
         for r in [
-            &mut self.ficha, &mut self.buffs, &mut self.rastreador, &mut self.alvo, &mut self.menu, &mut self.area,
-            &mut self.minimapa, &mut self.mapa_icone, &mut self.economia, &mut self.montaria, &mut self.pulo, &mut self.avisos, &mut self.joystick, &mut self.faixa,
-            &mut self.coleta, &mut self.atacar, &mut self.auto_combate, &mut self.auto_coleta, &mut self.pocao,
+            &mut self.ficha,
+            &mut self.buffs,
+            &mut self.rastreador,
+            &mut self.alvo,
+            &mut self.menu,
+            &mut self.area,
+            &mut self.minimapa,
+            &mut self.mapa_icone,
+            &mut self.economia,
+            &mut self.montaria,
+            &mut self.pulo,
+            &mut self.avisos,
+            &mut self.joystick,
+            &mut self.faixa,
+            &mut self.coleta,
+            &mut self.atacar,
+            &mut self.auto_combate,
+            &mut self.auto_coleta,
+            &mut self.pocao,
             &mut self.exp,
         ] {
             *r = d(*r);
@@ -374,7 +485,17 @@ impl Zonas {
             ("exp", self.exp),
         ];
         for (i, r) in self.icones.iter().enumerate() {
-            v.push((["icone_bolsa", "icone_missoes", "icone_diarias", "icone_grupo", "icone_avisos", "icone_presenca"][i], *r));
+            v.push((
+                [
+                    "icone_bolsa",
+                    "icone_missoes",
+                    "icone_diarias",
+                    "icone_grupo",
+                    "icone_avisos",
+                    "icone_presenca",
+                ][i],
+                *r,
+            ));
         }
         for (i, r) in self.skills.iter().enumerate() {
             v.push((["skill1", "skill2", "skill3", "skill4"][i], *r));
@@ -391,13 +512,29 @@ impl Zonas {
     pub fn contem(&self, p: Vec2) -> bool {
         // Minimapa fechado: so' o botao de reabrir pega o toque, o resto do
         // canto volta a ser mundo.
-        let minimapa = if minimapa_oculto() { self.minimapa_reabrir() } else { self.minimapa };
-        [self.ficha, self.menu, self.area, minimapa, self.atacar, self.auto_combate, self.auto_coleta, self.pocao, self.economia, self.montaria, self.pulo]
-            .iter()
-            .chain(self.icones.iter())
-            .chain(self.skills.iter())
-            .chain(self.rapidos.iter())
-            .any(|r| r.contains(p))
+        let minimapa = if minimapa_oculto() {
+            self.minimapa_reabrir()
+        } else {
+            self.minimapa
+        };
+        [
+            self.ficha,
+            self.menu,
+            self.area,
+            minimapa,
+            self.atacar,
+            self.auto_combate,
+            self.auto_coleta,
+            self.pocao,
+            self.economia,
+            self.montaria,
+            self.pulo,
+        ]
+        .iter()
+        .chain(self.icones.iter())
+        .chain(self.skills.iter())
+        .chain(self.rapidos.iter())
+        .any(|r| r.contains(p))
             || self.alvo_fechar().contains(p)
     }
 
@@ -405,7 +542,12 @@ impl Zonas {
     /// direita de onde ele fica. Grande o bastante pro dedo.
     pub fn minimapa_reabrir(&self) -> Rect {
         let lado = 46.0 * self.s;
-        Rect::new(self.minimapa.x + self.minimapa.w - lado - 4.0 * self.s, self.minimapa.y + 4.0 * self.s, lado, lado)
+        Rect::new(
+            self.minimapa.x + self.minimapa.w - lado - 4.0 * self.s,
+            self.minimapa.y + 4.0 * self.s,
+            lado,
+            lado,
+        )
     }
 
     /// O X pequeno do alvo (limpa a selecao).
@@ -438,7 +580,12 @@ pub fn desenha_faixa(z: &Zonas, texto: &str, cor: Color) {
     estilo::ret_gradiente(r, raio, estilo::FUNDO_ALTO, estilo::FUNDO);
     estilo::borda_arredondada(r, raio, 1.0, estilo::alfa(cor, 0.45));
     let pulso = 0.6 + 0.4 * (get_time() as f32 * 3.0).sin();
-    draw_circle(r.x + raio + 2.0, r.center().y, 4.0, estilo::alfa(cor, pulso));
+    draw_circle(
+        r.x + raio + 2.0,
+        r.center().y,
+        4.0,
+        estilo::alfa(cor, pulso),
+    );
     estilo::texto_centro_forte(r.center().x + 6.0, r.y + r.h * 0.5 + 5.0, texto, 14, cor);
 }
 
@@ -468,7 +615,12 @@ mod tests {
     /// esquerda, baixo, direita.
     const APARELHOS: [(&str, f32, f32, [f32; 4]); 5] = [
         ("iPhone 15 Pro", 2556.0, 1179.0, [48.0, 189.0, 75.0, 189.0]),
-        ("iPhone 15 Pro Max", 2796.0, 1290.0, [48.0, 189.0, 75.0, 189.0]),
+        (
+            "iPhone 15 Pro Max",
+            2796.0,
+            1290.0,
+            [48.0, 189.0, 75.0, 189.0],
+        ),
         ("iPhone SE", 1334.0, 750.0, [32.0, 32.0, 32.0, 32.0]),
         ("iPhone 11", 1792.0, 828.0, [32.0, 96.0, 50.0, 96.0]),
         ("iPad Air", 2360.0, 1640.0, [48.0, 48.0, 90.0, 48.0]),
@@ -476,16 +628,29 @@ mod tests {
 
     #[test]
     fn toda_escala_cabe_em_todo_aparelho() {
-        let telas = TELAS.iter().map(|&(w, h)| ("PC", w, h, [0.0; 4])).chain(APARELHOS);
+        let telas = TELAS
+            .iter()
+            .map(|&(w, h)| ("PC", w, h, [0.0; 4]))
+            .chain(APARELHOS);
         for (nome, sw, sh, mg) in telas {
             let seguro = Rect::new(mg[1], mg[0], sw - mg[1] - mg[3], sh - mg[0] - mg[2]);
             for ui in [ESCALA_UI_MIN, 1.0, 1.3, ESCALA_UI_MAX] {
                 for grande in [false, true] {
                     let z = zonas_com(sw, sh, mg, ui, grande);
                     let local = z.desloca(vec2(-seguro.x, -seguro.y));
-                    assert!(cabe(&local, seguro.w, seguro.h), "{nome} {sw}×{sh} a {ui} (grande {grande}): nao cabe na area segura (s {})", z.s);
-                    assert!(z.s + 1e-4 >= escala(seguro.w, seguro.h) * ui.min(1.0), "{nome} a {ui} (grande {grande}): encolheu demais");
-                    assert!(!z.contem(z.joystick.center()), "{nome} a {ui} (grande {grande}): meio do joystick cai num botao");
+                    assert!(
+                        cabe(&local, seguro.w, seguro.h),
+                        "{nome} {sw}×{sh} a {ui} (grande {grande}): nao cabe na area segura (s {})",
+                        z.s
+                    );
+                    assert!(
+                        z.s + 1e-4 >= escala(seguro.w, seguro.h) * ui.min(1.0),
+                        "{nome} a {ui} (grande {grande}): encolheu demais"
+                    );
+                    assert!(
+                        !z.contem(z.joystick.center()),
+                        "{nome} a {ui} (grande {grande}): meio do joystick cai num botao"
+                    );
                 }
             }
         }
@@ -494,12 +659,32 @@ mod tests {
     #[test]
     fn celular_a_130_fica_maior_e_longe_do_notch() {
         let (_, sw, sh, mg) = APARELHOS[0];
-        let (cem, cento_e_trinta) = (zonas_com(sw, sh, mg, 1.0, false), zonas_com(sw, sh, mg, 1.3, false));
-        assert!(cento_e_trinta.s > cem.s * 1.2, "130% cresceu so' {} → {}", cem.s, cento_e_trinta.s);
+        let (cem, cento_e_trinta) = (
+            zonas_com(sw, sh, mg, 1.0, false),
+            zonas_com(sw, sh, mg, 1.3, false),
+        );
+        assert!(
+            cento_e_trinta.s > cem.s * 1.2,
+            "130% cresceu so' {} → {}",
+            cem.s,
+            cento_e_trinta.s
+        );
         for z in [cem, cento_e_trinta] {
-            assert!(z.ficha.x >= mg[1] && z.ficha.y >= mg[0], "ficha no notch/canto: {:?}", z.ficha);
-            assert!(z.menu.x + z.menu.w <= sw - mg[3], "MENU no notch: {:?}", z.menu);
-            assert!(z.exp.y + z.exp.h <= sh - mg[2], "EXP na barra do home: {:?}", z.exp);
+            assert!(
+                z.ficha.x >= mg[1] && z.ficha.y >= mg[0],
+                "ficha no notch/canto: {:?}",
+                z.ficha
+            );
+            assert!(
+                z.menu.x + z.menu.w <= sw - mg[3],
+                "MENU no notch: {:?}",
+                z.menu
+            );
+            assert!(
+                z.exp.y + z.exp.h <= sh - mg[2],
+                "EXP na barra do home: {:?}",
+                z.exp
+            );
             assert!(z.atacar.x + z.atacar.w <= sw - mg[3], "ATACAR no notch");
         }
     }
@@ -532,8 +717,10 @@ mod tests {
     fn tudo_cabe_na_tela() {
         for (sw, sh) in TELAS {
             for (nome, r) in zonas(sw, sh).todos() {
-                assert!(r.x >= 0.0 && r.y >= 0.0 && r.x + r.w <= sw + 0.01 && r.y + r.h <= sh + 0.01,
-                    "{sw}×{sh}: {nome} {r:?} sai da tela");
+                assert!(
+                    r.x >= 0.0 && r.y >= 0.0 && r.x + r.w <= sw + 0.01 && r.y + r.h <= sh + 0.01,
+                    "{sw}×{sh}: {nome} {r:?} sai da tela"
+                );
             }
         }
     }
@@ -545,10 +732,22 @@ mod tests {
         assert_eq!(escala(940.0, 980.0), 0.70);
         let z = zonas(1920.0, 1080.0);
         assert_eq!(z.ficha.x, 20.0);
-        assert!(z.menu.x + z.menu.w <= 1900.01, "MENU no canto superior direito");
-        assert!(z.atacar.center().x > 1700.0 && z.atacar.center().y > 900.0, "ATACAR no canto inferior direito");
-        assert!(z.skills[0].center().x < z.atacar.center().x, "o 1 fica a' esquerda do ATACAR");
-        assert!(z.mapa_icone.x >= z.minimapa.x && z.mapa_icone.y >= z.minimapa.y, "⤢ dentro do minimapa");
+        assert!(
+            z.menu.x + z.menu.w <= 1900.01,
+            "MENU no canto superior direito"
+        );
+        assert!(
+            z.atacar.center().x > 1700.0 && z.atacar.center().y > 900.0,
+            "ATACAR no canto inferior direito"
+        );
+        assert!(
+            z.skills[0].center().x < z.atacar.center().x,
+            "o 1 fica a' esquerda do ATACAR"
+        );
+        assert!(
+            z.mapa_icone.x >= z.minimapa.x && z.mapa_icone.y >= z.minimapa.y,
+            "⤢ dentro do minimapa"
+        );
         assert_eq!(zonas(1920.0, 1200.0).missoes_no_rastreador, 5);
         assert_eq!(z.missoes_no_rastreador, 4);
     }
@@ -559,14 +758,39 @@ mod tests {
     fn avisos_em_cima_e_joystick_na_faixa_inteira() {
         for (sw, sh) in TELAS {
             let z = zonas(sw, sh);
-            assert!(z.avisos.y >= z.rastreador.y + z.rastreador.h, "{sw}×{sh}: avisos abaixo do rastreador");
-            assert!(z.joystick.y <= z.avisos.y + 0.01, "{sw}×{sh}: a faixa do joystick comeca no alto dos avisos");
-            assert!(z.joystick.contains(z.avisos.center()), "{sw}×{sh}: os avisos ficam DENTRO da faixa do joystick");
-            assert!(z.avisos.x >= 0.0 && z.avisos.y >= 0.0 && z.avisos.x + z.avisos.w <= sw && z.avisos.y + z.avisos.h <= sh, "{sw}×{sh}: avisos fora da tela");
-            assert!(z.joystick.x + z.joystick.w <= sw * 0.5 + 0.01, "{sw}×{sh}: joystick na metade esquerda");
+            assert!(
+                z.avisos.y >= z.rastreador.y + z.rastreador.h,
+                "{sw}×{sh}: avisos abaixo do rastreador"
+            );
+            assert!(
+                z.joystick.y <= z.avisos.y + 0.01,
+                "{sw}×{sh}: a faixa do joystick comeca no alto dos avisos"
+            );
+            assert!(
+                z.joystick.contains(z.avisos.center()),
+                "{sw}×{sh}: os avisos ficam DENTRO da faixa do joystick"
+            );
+            assert!(
+                z.avisos.x >= 0.0
+                    && z.avisos.y >= 0.0
+                    && z.avisos.x + z.avisos.w <= sw
+                    && z.avisos.y + z.avisos.h <= sh,
+                "{sw}×{sh}: avisos fora da tela"
+            );
+            assert!(
+                z.joystick.x + z.joystick.w <= sw * 0.5 + 0.01,
+                "{sw}×{sh}: joystick na metade esquerda"
+            );
             let min = 2.0 * crate::joystick::RAIO_BASE * z.s;
-            assert!(z.joystick.w >= min && z.joystick.h >= min, "{sw}×{sh}: joystick pequeno demais {:?}", z.joystick);
-            assert!(!z.contem(z.joystick.center()), "{sw}×{sh}: meio do joystick cai num botao");
+            assert!(
+                z.joystick.w >= min && z.joystick.h >= min,
+                "{sw}×{sh}: joystick pequeno demais {:?}",
+                z.joystick
+            );
+            assert!(
+                !z.contem(z.joystick.center()),
+                "{sw}×{sh}: meio do joystick cai num botao"
+            );
         }
     }
 
@@ -577,15 +801,31 @@ mod tests {
     fn minimapa_grande_cresce_sem_encolher_o_hud() {
         for (sw, sh) in TELAS {
             let (pequeno, grande) = (zonas(sw, sh), zonas_grandes(sw, sh));
-            assert_eq!(grande.s, pequeno.s, "{sw}×{sh}: expandir o minimapa encolheu o HUD inteiro");
-            assert!(grande.minimapa.w >= pequeno.minimapa.w, "{sw}×{sh}: o expandido nao cresceu");
-            assert!(grande.minimapa.w == grande.minimapa.h, "{sw}×{sh}: minimapa deixou de ser quadrado");
-            assert!(grande.mapa_icone.x >= grande.minimapa.x && grande.mapa_icone.y >= grande.minimapa.y, "⤢ fora do minimapa");
+            assert_eq!(
+                grande.s, pequeno.s,
+                "{sw}×{sh}: expandir o minimapa encolheu o HUD inteiro"
+            );
+            assert!(
+                grande.minimapa.w >= pequeno.minimapa.w,
+                "{sw}×{sh}: o expandido nao cresceu"
+            );
+            assert!(
+                grande.minimapa.w == grande.minimapa.h,
+                "{sw}×{sh}: minimapa deixou de ser quadrado"
+            );
+            assert!(
+                grande.mapa_icone.x >= grande.minimapa.x
+                    && grande.mapa_icone.y >= grande.minimapa.y,
+                "⤢ fora do minimapa"
+            );
             let todos = grande.todos();
             for i in 0..todos.len() {
                 for j in i + 1..todos.len() {
                     let ((na, a), (nb, b)) = (todos[i], todos[j]);
-                    assert!(!cruzam(a, b), "{sw}×{sh} com minimapa grande: {na} {a:?} cobre {nb} {b:?}");
+                    assert!(
+                        !cruzam(a, b),
+                        "{sw}×{sh} com minimapa grande: {na} {a:?} cobre {nb} {b:?}"
+                    );
                 }
             }
         }
@@ -598,8 +838,14 @@ mod tests {
         for (sw, sh) in TELAS {
             let z = zonas(sw, sh);
             let (missoes, diarias) = (z.icones[1], z.icones[2]);
-            assert!(diarias.x > missoes.x + missoes.w, "{sw}×{sh}: diarias a' direita de missoes");
-            assert!(diarias.x + diarias.w < z.menu.x, "{sw}×{sh}: diarias antes do MENU");
+            assert!(
+                diarias.x > missoes.x + missoes.w,
+                "{sw}×{sh}: diarias a' direita de missoes"
+            );
+            assert!(
+                diarias.x + diarias.w < z.menu.x,
+                "{sw}×{sh}: diarias antes do MENU"
+            );
             assert_eq!(diarias.y, missoes.y);
         }
     }

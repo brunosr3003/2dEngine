@@ -46,7 +46,12 @@ pub enum Categoria {
 
 impl Categoria {
     /// As abas de filtro do Comprar (a TP tem aba propria).
-    pub const FILTROS: [Categoria; 4] = [Categoria::Todas, Categoria::Equipamento, Categoria::Material, Categoria::Consumivel];
+    pub const FILTROS: [Categoria; 4] = [
+        Categoria::Todas,
+        Categoria::Equipamento,
+        Categoria::Material,
+        Categoria::Consumivel,
+    ];
 
     pub fn de_u8(v: u8) -> Categoria {
         match v {
@@ -75,7 +80,17 @@ pub fn categoria_do_item(item_id: u16, equipavel: bool) -> Categoria {
     if equipavel {
         Categoria::Equipamento
     } else if crate::pocoes::cura_de(item_id).is_some()
-        || matches!(item_id, it::HEALTH_POTION | it::MANA_POTION | it::GREATER_HEAL | it::GREATER_MANA | it::STAMINA_POTION | it::XP_POTION | it::FORTUNA_POTION | it::SORTE_POTION)
+        || matches!(
+            item_id,
+            it::HEALTH_POTION
+                | it::MANA_POTION
+                | it::GREATER_HEAL
+                | it::GREATER_MANA
+                | it::STAMINA_POTION
+                | it::XP_POTION
+                | it::FORTUNA_POTION
+                | it::SORTE_POTION
+        )
     {
         Categoria::Consumivel
     } else {
@@ -117,17 +132,25 @@ pub enum Recusa {
 impl Recusa {
     pub fn texto(&self) -> String {
         match self {
-            Recusa::NivelBaixo => format!("Precisa do nível {NIVEL_PARA_VENDER} para vender no mercado."),
+            Recusa::NivelBaixo => {
+                format!("Precisa do nível {NIVEL_PARA_VENDER} para vender no mercado.")
+            }
             Recusa::Vinculado => "Item vinculado: não pode ser vendido.".into(),
             Recusa::Quantidade => "Quantidade inválida.".into(),
             Recusa::Preco => format!("Preço inválido (1 a {PRECO_MAX_UNIT} por unidade)."),
             Recusa::MuitosAnuncios => format!("Limite de {MAX_ANUNCIOS} anúncios ativos."),
             Recusa::SemGold => "Gold insuficiente.".into(),
             Recusa::SemTp => "TP insuficiente.".into(),
-            Recusa::Indisponivel => "Mercado indisponível agora. Tente de novo em instantes.".into(),
-            Recusa::Esgotado => "O anúncio acabou ou não tem essa quantidade; o gold volta em Entregas.".into(),
+            Recusa::Indisponivel => {
+                "Mercado indisponível agora. Tente de novo em instantes.".into()
+            }
+            Recusa::Esgotado => {
+                "O anúncio acabou ou não tem essa quantidade; o gold volta em Entregas.".into()
+            }
             Recusa::PrecoMudou => "O preço do anúncio mudou; o gold volta em Entregas.".into(),
-            Recusa::ProprioAnuncio => "Não dá para comprar o próprio anúncio; o gold volta em Entregas.".into(),
+            Recusa::ProprioAnuncio => {
+                "Não dá para comprar o próprio anúncio; o gold volta em Entregas.".into()
+            }
         }
     }
 }
@@ -139,7 +162,13 @@ pub fn preco_valido(preco_unit: u64) -> bool {
 
 /// Anunciar `qtd` de um slot que tem `no_slot`. O limite de anuncios ativos
 /// e' conferido de novo no central (e' la' que a contagem e' verdadeira).
-pub fn pode_anunciar(nivel: u32, vinculado: bool, no_slot: u32, qtd: u32, preco_unit: u64) -> Result<u64, Recusa> {
+pub fn pode_anunciar(
+    nivel: u32,
+    vinculado: bool,
+    no_slot: u32,
+    qtd: u32,
+    preco_unit: u64,
+) -> Result<u64, Recusa> {
     if nivel < NIVEL_PARA_VENDER {
         return Err(Recusa::NivelBaixo);
     }
@@ -195,7 +224,13 @@ pub struct Fechamento {
     pub liquido: u64,
 }
 
-pub fn fechar_compra(restante: u64, estado: u8, preco_anuncio: u64, pedida: u64, preco_pedido: u64) -> Result<Fechamento, Recusa> {
+pub fn fechar_compra(
+    restante: u64,
+    estado: u8,
+    preco_anuncio: u64,
+    pedida: u64,
+    preco_pedido: u64,
+) -> Result<Fechamento, Recusa> {
     if estado != ESTADO_ATIVO || pedida == 0 || pedida > restante {
         return Err(Recusa::Esgotado);
     }
@@ -204,12 +239,21 @@ pub fn fechar_compra(restante: u64, estado: u8, preco_anuncio: u64, pedida: u64,
     }
     let bruto = total(pedida, preco_anuncio).ok_or(Recusa::Preco)?;
     let taxa = taxa(bruto);
-    Ok(Fechamento { vendida: pedida, sobra: restante - pedida, bruto, taxa, liquido: bruto - taxa })
+    Ok(Fechamento {
+        vendida: pedida,
+        sobra: restante - pedida,
+        bruto,
+        taxa,
+        liquido: bruto - taxa,
+    })
 }
 
 /// Quais cartas ainda faltam aplicar: tira as ja' aplicadas e as repetidas
 /// na propria lista. E' o que faz "aplicar duas vezes" valer uma.
-pub fn cartas_a_aplicar<'a>(cartas: &'a [CartaNet], ja_aplicadas: &HashSet<String>) -> Vec<&'a CartaNet> {
+pub fn cartas_a_aplicar<'a>(
+    cartas: &'a [CartaNet],
+    ja_aplicadas: &HashSet<String>,
+) -> Vec<&'a CartaNet> {
     let mut vistas = HashSet::new();
     cartas
         .iter()
@@ -276,7 +320,14 @@ mod tests {
     use super::*;
 
     fn carta(id: &str) -> CartaNet {
-        CartaNet { id: id.into(), item_id: 5, qtd: 1, instancia: None, gold: 0, motivo: String::new() }
+        CartaNet {
+            id: id.into(),
+            item_id: 5,
+            qtd: 1,
+            instancia: None,
+            gold: 0,
+            motivo: String::new(),
+        }
     }
 
     #[test]
@@ -288,12 +339,18 @@ mod tests {
         assert_eq!(taxa(0), 0);
         assert_eq!(liquido(1000), 950);
         assert_eq!(liquido(21), 19);
-        assert_eq!(taxa(u64::MAX / 10), (u64::MAX / 10).saturating_mul(5).div_ceil(100));
+        assert_eq!(
+            taxa(u64::MAX / 10),
+            (u64::MAX / 10).saturating_mul(5).div_ceil(100)
+        );
     }
 
     #[test]
     fn portao_de_nivel_e_vinculado() {
-        assert_eq!(pode_anunciar(19, false, 10, 1, 100), Err(Recusa::NivelBaixo));
+        assert_eq!(
+            pode_anunciar(19, false, 10, 1, 100),
+            Err(Recusa::NivelBaixo)
+        );
         assert_eq!(pode_anunciar(20, true, 10, 1, 100), Err(Recusa::Vinculado));
         assert_eq!(pode_anunciar(20, false, 10, 3, 100), Ok(300));
         assert_eq!(pode_anunciar_tp(10, 5, 100), Err(Recusa::NivelBaixo));
@@ -304,8 +361,15 @@ mod tests {
         assert_eq!(pode_anunciar(30, false, 2, 3, 100), Err(Recusa::Quantidade));
         assert_eq!(pode_anunciar(30, false, 2, 0, 100), Err(Recusa::Quantidade));
         assert_eq!(pode_anunciar(30, false, 2, 1, 0), Err(Recusa::Preco));
-        assert_eq!(pode_anunciar(30, false, 2, 1, PRECO_MAX_UNIT + 1), Err(Recusa::Preco));
-        assert_eq!(pode_comprar(u64::MAX, u64::MAX, PRECO_MAX_UNIT), Err(Recusa::Preco), "estouro recusa");
+        assert_eq!(
+            pode_anunciar(30, false, 2, 1, PRECO_MAX_UNIT + 1),
+            Err(Recusa::Preco)
+        );
+        assert_eq!(
+            pode_comprar(u64::MAX, u64::MAX, PRECO_MAX_UNIT),
+            Err(Recusa::Preco),
+            "estouro recusa"
+        );
         assert_eq!(pode_comprar(299, 3, 100), Err(Recusa::SemGold));
         assert_eq!(pode_comprar(300, 3, 100), Ok(300));
     }
@@ -313,24 +377,49 @@ mod tests {
     #[test]
     fn compra_parcial_divide_certo() {
         let f = fechar_compra(10, ESTADO_ATIVO, 7, 4, 7).unwrap();
-        assert_eq!(f, Fechamento { vendida: 4, sobra: 6, bruto: 28, taxa: 2, liquido: 26 });
+        assert_eq!(
+            f,
+            Fechamento {
+                vendida: 4,
+                sobra: 6,
+                bruto: 28,
+                taxa: 2,
+                liquido: 26
+            }
+        );
         let f2 = fechar_compra(f.sobra, ESTADO_ATIVO, 7, 6, 7).unwrap();
         assert_eq!(f2.sobra, 0);
-        assert_eq!(f.vendida + f2.vendida, 10, "nada some nem duplica entre as duas");
+        assert_eq!(
+            f.vendida + f2.vendida,
+            10,
+            "nada some nem duplica entre as duas"
+        );
     }
 
     #[test]
     fn compra_recusada_nao_fecha_nada() {
-        assert_eq!(fechar_compra(3, ESTADO_ATIVO, 7, 4, 7), Err(Recusa::Esgotado));
-        assert_eq!(fechar_compra(3, ESTADO_CANCELADO, 7, 1, 7), Err(Recusa::Esgotado));
-        assert_eq!(fechar_compra(3, ESTADO_ATIVO, 8, 1, 7), Err(Recusa::PrecoMudou));
+        assert_eq!(
+            fechar_compra(3, ESTADO_ATIVO, 7, 4, 7),
+            Err(Recusa::Esgotado)
+        );
+        assert_eq!(
+            fechar_compra(3, ESTADO_CANCELADO, 7, 1, 7),
+            Err(Recusa::Esgotado)
+        );
+        assert_eq!(
+            fechar_compra(3, ESTADO_ATIVO, 8, 1, 7),
+            Err(Recusa::PrecoMudou)
+        );
     }
 
     #[test]
     fn carta_aplicada_duas_vezes_vale_uma() {
         let cartas = vec![carta("a"), carta("b"), carta("a")];
         let mut aplicadas = HashSet::new();
-        let primeira: Vec<String> = cartas_a_aplicar(&cartas, &aplicadas).iter().map(|c| c.id.clone()).collect();
+        let primeira: Vec<String> = cartas_a_aplicar(&cartas, &aplicadas)
+            .iter()
+            .map(|c| c.id.clone())
+            .collect();
         assert_eq!(primeira, vec!["a", "b"]);
         aplicadas.extend(primeira);
         assert!(cartas_a_aplicar(&cartas, &aplicadas).is_empty());
@@ -340,7 +429,10 @@ mod tests {
     fn categorias() {
         use crate::constants::item_id as it;
         assert_eq!(categoria_do_item(it::KATANA, true), Categoria::Equipamento);
-        assert_eq!(categoria_do_item(it::HEALTH_POTION, false), Categoria::Consumivel);
+        assert_eq!(
+            categoria_do_item(it::HEALTH_POTION, false),
+            Categoria::Consumivel
+        );
         assert_eq!(categoria_do_item(it::WOOD_T1, false), Categoria::Material);
         assert_eq!(Categoria::de_u8(9), Categoria::Todas);
     }

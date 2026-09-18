@@ -47,7 +47,12 @@ pub fn normaliza_prefixo(p: &str) -> String {
 }
 
 impl Auth {
-    pub fn novo(senha: String, prefixo: &str, seguro: bool, confiar_proxy: bool) -> anyhow::Result<Auth> {
+    pub fn novo(
+        senha: String,
+        prefixo: &str,
+        seguro: bool,
+        confiar_proxy: bool,
+    ) -> anyhow::Result<Auth> {
         // Minimo 8 (escolha do dono): o freio de tentativas por IP e' o que
         // segura forca bruta pela internet.
         if senha.chars().count() < 8 {
@@ -132,12 +137,23 @@ impl Auth {
     }
 
     fn atributos(&self) -> String {
-        let caminho = if self.prefixo.is_empty() { "/".to_string() } else { format!("{}/", self.prefixo) };
-        format!("Path={caminho}; HttpOnly; SameSite=Strict{}", if self.seguro { "; Secure" } else { "" })
+        let caminho = if self.prefixo.is_empty() {
+            "/".to_string()
+        } else {
+            format!("{}/", self.prefixo)
+        };
+        format!(
+            "Path={caminho}; HttpOnly; SameSite=Strict{}",
+            if self.seguro { "; Secure" } else { "" }
+        )
     }
 
     pub fn cookie(&self, token: &str) -> String {
-        format!("{NOME_DO_COOKIE}={token}; Max-Age={}; {}", VALIDADE.as_secs(), self.atributos())
+        format!(
+            "{NOME_DO_COOKIE}={token}; Max-Age={}; {}",
+            VALIDADE.as_secs(),
+            self.atributos()
+        )
     }
 
     pub fn cookie_apagar(&self) -> String {
@@ -181,7 +197,13 @@ pub fn token_do_cookie(headers: &HeaderMap) -> Option<String> {
 /// De onde veio o pedido. Cabecalho de proxy so' vale com `confiar_proxy`.
 pub fn ip_do_pedido(headers: &HeaderMap, par: std::net::SocketAddr, confiar_proxy: bool) -> String {
     if confiar_proxy {
-        let cab = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::trim).filter(|v| !v.is_empty());
+        let cab = |n: &str| {
+            headers
+                .get(n)
+                .and_then(|v| v.to_str().ok())
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+        };
         if let Some(ip) = cab("x-real-ip") {
             return ip.to_string();
         }
@@ -265,7 +287,10 @@ mod testes {
         assert_eq!(tok.len(), 64);
         assert!(a.valida(&tok, t0));
         assert!(!a.valida("outro", t0));
-        assert!(!a.valida(&tok, t0 + VALIDADE + Duration::from_secs(1)), "expirada");
+        assert!(
+            !a.valida(&tok, t0 + VALIDADE + Duration::from_secs(1)),
+            "expirada"
+        );
         let tok2 = a.nova_sessao(t0).unwrap();
         assert_ne!(tok, tok2);
         a.encerrar(&tok2);
@@ -294,7 +319,13 @@ mod testes {
         let a = auth();
         let c = a.cookie("abc");
         assert!(c.starts_with("panoptico=abc;"));
-        for parte in ["HttpOnly", "SameSite=Strict", "Secure", "Path=/panoptico/", "Max-Age=43200"] {
+        for parte in [
+            "HttpOnly",
+            "SameSite=Strict",
+            "Secure",
+            "Path=/panoptico/",
+            "Max-Age=43200",
+        ] {
             assert!(c.contains(parte), "{c} sem {parte}");
         }
         assert!(a.cookie_apagar().contains("Max-Age=0"));
@@ -311,7 +342,11 @@ mod testes {
         assert_eq!(token_do_cookie(&HeaderMap::new()), None);
         let par: std::net::SocketAddr = "127.0.0.1:5000".parse().unwrap();
         h.insert("x-forwarded-for", "8.8.8.8, 10.0.0.1".parse().unwrap());
-        assert_eq!(ip_do_pedido(&h, par, false), "127.0.0.1", "sem confiar, cabecalho nao vale");
+        assert_eq!(
+            ip_do_pedido(&h, par, false),
+            "127.0.0.1",
+            "sem confiar, cabecalho nao vale"
+        );
         assert_eq!(ip_do_pedido(&h, par, true), "8.8.8.8");
         h.insert("x-real-ip", "1.1.1.1".parse().unwrap());
         assert_eq!(ip_do_pedido(&h, par, true), "1.1.1.1");

@@ -225,7 +225,11 @@ fn demanda() -> Vec<PassoDaDemanda> {
                 para: d.to_string(),
                 total: c.pecas_base,
                 passo,
-                vezes: if anterior_passo > 0.0 { passo / anterior_passo } else { 0.0 },
+                vezes: if anterior_passo > 0.0 {
+                    passo / anterior_passo
+                } else {
+                    0.0
+                },
                 horas: c.horas,
             });
             anterior_total = c.pecas_base;
@@ -281,19 +285,28 @@ async fn jogadores(pool: &PgPool) -> Jogadores {
         j.ouro_p90 = campo(&r, 3);
         j.ouro_maior = campo(&r, 4);
     }
-    if let Ok(rs) = sqlx::query("SELECT name, gold::bigint, xp::bigint FROM characters ORDER BY gold DESC LIMIT 12")
-        .fetch_all(pool)
-        .await
+    if let Ok(rs) = sqlx::query(
+        "SELECT name, gold::bigint, xp::bigint FROM characters ORDER BY gold DESC LIMIT 12",
+    )
+    .fetch_all(pool)
+    .await
     {
         j.maiores = rs
             .iter()
             .map(|r| {
                 let xp: i64 = campo(r, 2);
-                (campo::<String>(r, 0), campo::<i64>(r, 1), shared::level_of_xp(xp as u64))
+                (
+                    campo::<String>(r, 0),
+                    campo::<i64>(r, 1),
+                    shared::level_of_xp(xp as u64),
+                )
             })
             .collect();
     }
-    if let Ok(rs) = sqlx::query("SELECT xp::bigint FROM characters").fetch_all(pool).await {
+    if let Ok(rs) = sqlx::query("SELECT xp::bigint FROM characters")
+        .fetch_all(pool)
+        .await
+    {
         let mut por: std::collections::BTreeMap<u32, i64> = Default::default();
         for r in rs {
             let xp: i64 = campo(&r, 0);

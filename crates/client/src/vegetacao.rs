@@ -44,7 +44,11 @@ impl Rng {
         a + (self.proximo() % ((b - a + 1).max(1)) as u32) as i32
     }
     fn sinal(&mut self) -> f32 {
-        if self.proximo() % 2 == 0 { 1.0 } else { -1.0 }
+        if self.proximo() % 2 == 0 {
+            1.0
+        } else {
+            -1.0
+        }
     }
 }
 
@@ -57,7 +61,11 @@ pub struct Volume {
 
 impl Volume {
     fn novo(min: [i32; 3], dim: [i32; 3]) -> Self {
-        Self { min, dim, dados: vec![0; (dim[0] * dim[1] * dim[2]) as usize] }
+        Self {
+            min,
+            dim,
+            dados: vec![0; (dim[0] * dim[1] * dim[2]) as usize],
+        }
     }
 
     fn idx(&self, x: i32, y: i32, z: i32) -> Option<usize> {
@@ -80,7 +88,11 @@ impl Volume {
         // `0` e' vazio, o resto e' o discriminante do material mais um. Ler
         // por `Material::de_u8` e nao por tabela local: tabela paralela ja'
         // deixou tronco e folha invisiveis uma vez.
-        if v == 0 { None } else { Material::de_u8(v - 1) }
+        if v == 0 {
+            None
+        } else {
+            Material::de_u8(v - 1)
+        }
     }
 
     fn solido(&self, x: i32, y: i32, z: i32) -> bool {
@@ -172,18 +184,43 @@ fn betula(r: &mut Rng) -> Volume {
     let h = r.i(16, 21);
     let raio = r.i(3, 5);
     let lado = raio + 3;
-    let mut v = Volume::novo([-lado, 0, -lado], [lado * 2 + 1, h + raio + 3, lado * 2 + 1]);
+    let mut v = Volume::novo(
+        [-lado, 0, -lado],
+        [lado * 2 + 1, h + raio + 3, lado * 2 + 1],
+    );
     let (lx, lz) = (r.sinal() * 0.9, r.sinal() * 0.5);
     for iy in 0..=h {
         let t = iy as f32 / h as f32;
-        v.poe((lx * t).round() as i32, iy, (lz * t).round() as i32, Material::Tronco);
+        v.poe(
+            (lx * t).round() as i32,
+            iy,
+            (lz * t).round() as i32,
+            Material::Tronco,
+        );
     }
     let (cx, cz) = (lx.round() as i32, lz.round() as i32);
-    bolha(&mut v, r, cx, h, cz, raio, raio as f32 * 1.05, folha_de_betula);
+    bolha(
+        &mut v,
+        r,
+        cx,
+        h,
+        cz,
+        raio,
+        raio as f32 * 1.05,
+        folha_de_betula,
+    );
     // Uma bolha menor deslocada: copa unica le' como bola espetada no palito.
     let (ox, oz) = (r.i(-1, 1), r.i(-1, 1));
-    bolha(&mut v, r, cx + ox, h - 2, cz + oz, raio - 1, (raio - 1) as f32 * 0.9,
-          folha_de_betula);
+    bolha(
+        &mut v,
+        r,
+        cx + ox,
+        h - 2,
+        cz + oz,
+        raio - 1,
+        (raio - 1) as f32 * 0.9,
+        folha_de_betula,
+    );
     v
 }
 
@@ -232,7 +269,12 @@ fn seca(r: &mut Rng) -> Volume {
     let (lx, lz) = (r.sinal() * 1.2, r.sinal() * 0.8);
     for iy in 0..=h {
         let t = iy as f32 / h as f32;
-        v.poe((lx * t).round() as i32, iy, (lz * t).round() as i32, Material::Tronco);
+        v.poe(
+            (lx * t).round() as i32,
+            iy,
+            (lz * t).round() as i32,
+            Material::Tronco,
+        );
     }
     let (cx, cz) = (lx.round() as i32, lz.round() as i32);
     for g in 0..r.i(2, 4) {
@@ -300,11 +342,19 @@ fn folha_de_copa(r: &mut Rng) -> Material {
 }
 
 fn folha_de_betula(r: &mut Rng) -> Material {
-    if r.proximo() % 5 == 0 { Material::GramaClara } else { Material::Folha }
+    if r.proximo() % 5 == 0 {
+        Material::GramaClara
+    } else {
+        Material::Folha
+    }
 }
 
 fn folha_de_conifera(r: &mut Rng) -> Material {
-    if r.proximo() % 4 == 0 { Material::Folha } else { Material::FolhaEscura }
+    if r.proximo() % 4 == 0 {
+        Material::Folha
+    } else {
+        Material::FolhaEscura
+    }
 }
 
 // ─────────────────────────────── plantas ─────────────────────────────
@@ -336,12 +386,24 @@ fn moita(r: &mut Rng) -> Volume {
         let h = r.i(2, 5);
         let cai = r.i(0, 2);
         for iy in 0..h {
-            let dx = if iy >= h - cai { if r.proximo() % 2 == 0 { 1 } else { -1 } } else { 0 };
+            let dx = if iy >= h - cai {
+                if r.proximo() % 2 == 0 {
+                    1
+                } else {
+                    -1
+                }
+            } else {
+                0
+            };
             v.poe(
                 ix + dx,
                 iy,
                 iz,
-                if iy >= h - 2 { Material::GramaClara } else { Material::Folha },
+                if iy >= h - 2 {
+                    Material::GramaClara
+                } else {
+                    Material::Folha
+                },
             );
         }
     }
@@ -440,7 +502,11 @@ fn samambaia(r: &mut Rng) -> Volume {
                 (dx * s as f32).round() as i32,
                 y,
                 (dz * s as f32).round() as i32,
-                if s > comp - 2 { Material::FolhaEscura } else { Material::Folha },
+                if s > comp - 2 {
+                    Material::FolhaEscura
+                } else {
+                    Material::Folha
+                },
             );
         }
     }
@@ -465,8 +531,14 @@ fn pedra(r: &mut Rng) -> Volume {
                     continue;
                 }
                 v.poe(
-                    ix, iy, iz,
-                    if r.proximo() % 3 == 0 { Material::RochaEscura } else { Material::Rocha },
+                    ix,
+                    iy,
+                    iz,
+                    if r.proximo() % 3 == 0 {
+                        Material::RochaEscura
+                    } else {
+                        Material::Rocha
+                    },
                 );
             }
         }
@@ -500,7 +572,16 @@ pub fn minerio(tier: u8, variante: u32) -> Modelo {
                 if dx * dx + dy * dy + dz * dz > 1.0 || r.proximo() % 13 == 0 {
                     continue;
                 }
-                v.poe(ix, iy, iz, if r.proximo() % 3 == 0 { Material::Rocha } else { Material::RochaEscura });
+                v.poe(
+                    ix,
+                    iy,
+                    iz,
+                    if r.proximo() % 3 == 0 {
+                        Material::Rocha
+                    } else {
+                        Material::RochaEscura
+                    },
+                );
             }
         }
     }
@@ -612,9 +693,9 @@ fn malha(v: &Volume) -> Modelo {
                     p[eixo] = lo[eixo] + camada;
                     p[eu] = lo[eu] + iu as i32;
                     p[ev] = lo[ev] + iv as i32;
-                    let visivel = v.em(p[0], p[1], p[2]).filter(|_| {
-                        !v.solido(p[0] + n[0], p[1] + n[1], p[2] + n[2])
-                    });
+                    let visivel = v
+                        .em(p[0], p[1], p[2])
+                        .filter(|_| !v.solido(p[0] + n[0], p[1] + n[1], p[2] + n[2]));
                     mascara[iv * nu + iu] = visivel.map(|mat| {
                         let ao = [
                             oclusao(v, p, n, eu, ev, -1, -1),
@@ -659,7 +740,9 @@ fn malha(v: &Volume) -> Modelo {
                     p[eixo] = lo[eixo] + camada;
                     p[eu] = lo[eu] + iu as i32;
                     p[ev] = lo[ev] + iv as i32;
-                    emite(&mut m, p, n, eu, ev, w as i32, h as i32, celula.0, celula.1, luz);
+                    emite(
+                        &mut m, p, n, eu, ev, w as i32, h as i32, celula.0, celula.1, luz,
+                    );
                     iu += w;
                 }
                 iv += 1;
@@ -721,7 +804,11 @@ fn emite(
     for (pos, oc) in pontos {
         // Cristal nao toma luz de face nem oclusao: ele e' a fonte. Ver
         // `Material::emissivo`.
-        let k = if mat.emissivo() { 1.0 } else { luz * (oc as f32 / 255.0) };
+        let k = if mat.emissivo() {
+            1.0
+        } else {
+            luz * (oc as f32 / 255.0)
+        };
         m.verts.push(Vertex {
             position: pos * VOX,
             uv: vec2(0.0, 0.0),
@@ -734,7 +821,14 @@ fn emite(
             normal: Vec4::ZERO,
         });
     }
-    m.idx.extend_from_slice(&[inicio, inicio + 1, inicio + 2, inicio, inicio + 2, inicio + 3]);
+    m.idx.extend_from_slice(&[
+        inicio,
+        inicio + 1,
+        inicio + 2,
+        inicio,
+        inicio + 2,
+        inicio + 3,
+    ]);
 }
 
 /// Quanto o canto esta' encoberto, 140 (fechado) a 255 (aberto).
@@ -877,21 +971,25 @@ mod testes {
                 achou += 1;
             }
         }
-        assert!(achou >= 10, "so' {achou} de 12 variantes de flor tem petala");
+        assert!(
+            achou >= 10,
+            "so' {achou} de 12 variantes de flor tem petala"
+        );
     }
 
     /// Proporcao entre as especies: a arvore tem que ser bem maior que o
     /// arbusto, senao o bosque perde escala.
     #[test]
     fn arvore_e_maior_que_arbusto() {
-        let alt = |m: &Modelo| {
-            m.verts.iter().map(|v| v.position.y).fold(0.0f32, f32::max)
-        };
+        let alt = |m: &Modelo| m.verts.iter().map(|v| v.position.y).fold(0.0f32, f32::max);
         let arv = alt(&arvore(Arvore::Copada, 3));
         let arb = alt(&planta(Planta::Arbusto, 3));
         let moi = alt(&planta(Planta::Moita, 3));
         println!("copada {arv:.2}un · arbusto {arb:.2}un · moita {moi:.2}un (jogador 1,68)");
-        assert!(arv > arb * 2.5, "arvore {arv:.2} nao e' o dobro do arbusto {arb:.2}");
+        assert!(
+            arv > arb * 2.5,
+            "arvore {arv:.2} nao e' o dobro do arbusto {arb:.2}"
+        );
         assert!(arb < 1.7, "arbusto {arb:.2} esta' na altura do jogador");
     }
 }
@@ -916,8 +1014,13 @@ mod testes_porte {
     #[test]
     fn o_que_se_atravessa_nao_esconde() {
         for especie in [
-            Planta::Moita, Planta::Flor, Planta::Arbusto, Planta::Samambaia,
-            Planta::Pedra, Planta::Toco, Planta::Talo,
+            Planta::Moita,
+            Planta::Flor,
+            Planta::Arbusto,
+            Planta::Samambaia,
+            Planta::Pedra,
+            Planta::Toco,
+            Planta::Talo,
         ] {
             let barra = shared::terreno::raio_de_planta(especie).is_some();
             // O talo e' declarado: ele existe justamente pra dar silhueta alta
@@ -942,7 +1045,12 @@ mod testes_porte {
     /// E arvore fica ACIMA: e' o que faz ela valer como abrigo e como marco.
     #[test]
     fn arvore_passa_do_boneco() {
-        for especie in [Arvore::Copada, Arvore::Betula, Arvore::Pinheiro, Arvore::Seca] {
+        for especie in [
+            Arvore::Copada,
+            Arvore::Betula,
+            Arvore::Pinheiro,
+            Arvore::Seca,
+        ] {
             for variante in 0..6u32 {
                 let m = arvore(especie, variante);
                 let alto = m.verts.iter().map(|v| v.position.y).fold(0.0f32, f32::max);
@@ -972,7 +1080,10 @@ mod testes_orientacao {
     fn toda_vegetacao_aponta_pra_fora() {
         let mut conferidos = 0;
         for especie in [
-            Arvore::Copada, Arvore::Betula, Arvore::Pinheiro, Arvore::Seca,
+            Arvore::Copada,
+            Arvore::Betula,
+            Arvore::Pinheiro,
+            Arvore::Seca,
         ] {
             for variante in 0..6u32 {
                 let m = arvore(especie, variante);
@@ -981,8 +1092,13 @@ mod testes_orientacao {
             }
         }
         for especie in [
-            Planta::Moita, Planta::Flor, Planta::Arbusto, Planta::Samambaia,
-            Planta::Pedra, Planta::Toco, Planta::Talo,
+            Planta::Moita,
+            Planta::Flor,
+            Planta::Arbusto,
+            Planta::Samambaia,
+            Planta::Pedra,
+            Planta::Toco,
+            Planta::Talo,
         ] {
             for variante in 0..6u32 {
                 let m = planta(especie, variante);
@@ -1024,13 +1140,21 @@ mod testes_orientacao {
             let mut viu = 0usize;
             for variante in 0..6u32 {
                 let m = minerio(tier, variante);
-                assert!(m.quads() > 0, "tier {tier} variante {variante}: modelo vazio");
+                assert!(
+                    m.quads() > 0,
+                    "tier {tier} variante {variante}: modelo vazio"
+                );
                 for v in &m.verts {
                     // Sem luz de face: a cor sai IGUAL a' da paleta.
-                    if v.color[..3] == [cor.0, cor.1, cor.2] { viu += 1 }
+                    if v.color[..3] == [cor.0, cor.1, cor.2] {
+                        viu += 1
+                    }
                 }
             }
-            assert!(viu >= 24, "tier {tier}: so' {viu} vertices de cristal a' vista");
+            assert!(
+                viu >= 24,
+                "tier {tier}: so' {viu} vertices de cristal a' vista"
+            );
         }
         // Tier diferente, cor diferente — senao a leitura a distancia nao
         // existe.
@@ -1039,7 +1163,13 @@ mod testes_orientacao {
             .collect();
         for a in 0..cores.len() {
             for b in a + 1..cores.len() {
-                assert_ne!(cores[a], cores[b], "tiers {} e {} tem a mesma cor", a + 1, b + 1);
+                assert_ne!(
+                    cores[a],
+                    cores[b],
+                    "tiers {} e {} tem a mesma cor",
+                    a + 1,
+                    b + 1
+                );
             }
         }
     }
@@ -1068,10 +1198,17 @@ mod testes_orientacao {
                 }
             }
         }
-        println!("pedra: altura max {maior_alt:.2} u, meia-largura max {maior_raio:.2} u \
-                  (chao limpo: {meio_lado:.2} u de meia-largura)");
-        assert!(maior_raio + MINERIO_DESVIO <= meio_lado,
-            "pedra de {maior_raio:.2} u + desvio {MINERIO_DESVIO} nao cabe em {meio_lado:.2} u");
-        assert!(maior_alt < 1.3, "pedra de {maior_alt:.2} u — maior que joelho-a-cintura");
+        println!(
+            "pedra: altura max {maior_alt:.2} u, meia-largura max {maior_raio:.2} u \
+                  (chao limpo: {meio_lado:.2} u de meia-largura)"
+        );
+        assert!(
+            maior_raio + MINERIO_DESVIO <= meio_lado,
+            "pedra de {maior_raio:.2} u + desvio {MINERIO_DESVIO} nao cabe em {meio_lado:.2} u"
+        );
+        assert!(
+            maior_alt < 1.3,
+            "pedra de {maior_alt:.2} u — maior que joelho-a-cintura"
+        );
     }
 }

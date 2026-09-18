@@ -72,7 +72,14 @@ pub struct Carga {
 }
 
 impl Carga {
-    pub fn nova(forma: &Forma, centro: Vec2, dir: Vec2, chefe: Vec2, carga_s: f32, agora: f64) -> Self {
+    pub fn nova(
+        forma: &Forma,
+        centro: Vec2,
+        dir: Vec2,
+        chefe: Vec2,
+        carga_s: f32,
+        agora: f64,
+    ) -> Self {
         let golpe = golpe_de(forma, centro, chefe);
         let (dir, alcance) = match (golpe, forma) {
             (Golpe::Salto, _) => {
@@ -80,10 +87,19 @@ impl Carga {
                 (d.normalize_or(dir.normalize_or(Vec2::X)), d.length() * 0.85)
             }
             // Anda um bom pedaco da linha, sem sair do desenho da tela.
-            (Golpe::Investida, Forma::Linha { comprimento, .. }) => (dir.normalize_or(Vec2::X), (comprimento * 0.55).min(7.0)),
+            (Golpe::Investida, Forma::Linha { comprimento, .. }) => {
+                (dir.normalize_or(Vec2::X), (comprimento * 0.55).min(7.0))
+            }
             _ => (dir.normalize_or(Vec2::X), 0.0),
         };
-        Self { golpe, dir, alcance, inicio: agora, carga_s: carga_s.max(0.05), impacto: None }
+        Self {
+            golpe,
+            dir,
+            alcance,
+            inicio: agora,
+            carga_s: carga_s.max(0.05),
+            impacto: None,
+        }
     }
 
     fn impacto_em(&self) -> f64 {
@@ -170,29 +186,83 @@ fn sai_rapido(u: f32) -> f32 {
 /// A pose no fim da preparacao: o ponto mais armado.
 fn armado(g: Golpe) -> Ajuste {
     match g {
-        Golpe::Investida => Ajuste { pitch: 0.20, agacha: 0.20, avanca: -0.16, ..Default::default() },
-        Golpe::Pisao => Ajuste { pitch: -0.62, sobe: 0.30, avanca: -0.06, ..Default::default() },
-        Golpe::Salto => Ajuste { pitch: 0.14, agacha: 0.28, avanca: -0.08, ..Default::default() },
-        Golpe::Varrida => Ajuste { giro: -0.75, pitch: -0.18, sobe: 0.06, ..Default::default() },
-        Golpe::Giro => Ajuste { giro: -0.95, agacha: 0.14, pitch: 0.06, ..Default::default() },
+        Golpe::Investida => Ajuste {
+            pitch: 0.20,
+            agacha: 0.20,
+            avanca: -0.16,
+            ..Default::default()
+        },
+        Golpe::Pisao => Ajuste {
+            pitch: -0.62,
+            sobe: 0.30,
+            avanca: -0.06,
+            ..Default::default()
+        },
+        Golpe::Salto => Ajuste {
+            pitch: 0.14,
+            agacha: 0.28,
+            avanca: -0.08,
+            ..Default::default()
+        },
+        Golpe::Varrida => Ajuste {
+            giro: -0.75,
+            pitch: -0.18,
+            sobe: 0.06,
+            ..Default::default()
+        },
+        Golpe::Giro => Ajuste {
+            giro: -0.95,
+            agacha: 0.14,
+            pitch: 0.06,
+            ..Default::default()
+        },
     }
 }
 
 /// A pose no fim do golpe: o golpe dado.
 fn batido(g: Golpe, alcance: f32) -> Ajuste {
     match g {
-        Golpe::Investida => Ajuste { pitch: 0.10, agacha: 0.06, avanca: 0.12, desloca: alcance, ..Default::default() },
-        Golpe::Pisao => Ajuste { pitch: 0.28, sobe: -0.02, agacha: 0.32, avanca: 0.08, ..Default::default() },
-        Golpe::Salto => Ajuste { agacha: 0.24, pitch: 0.10, desloca: alcance, ..Default::default() },
-        Golpe::Varrida => Ajuste { giro: 0.85, pitch: 0.14, avanca: 0.12, ..Default::default() },
-        Golpe::Giro => Ajuste { giro: -0.95 + TAU, agacha: 0.05, ..Default::default() },
+        Golpe::Investida => Ajuste {
+            pitch: 0.10,
+            agacha: 0.06,
+            avanca: 0.12,
+            desloca: alcance,
+            ..Default::default()
+        },
+        Golpe::Pisao => Ajuste {
+            pitch: 0.28,
+            sobe: -0.02,
+            agacha: 0.32,
+            avanca: 0.08,
+            ..Default::default()
+        },
+        Golpe::Salto => Ajuste {
+            agacha: 0.24,
+            pitch: 0.10,
+            desloca: alcance,
+            ..Default::default()
+        },
+        Golpe::Varrida => Ajuste {
+            giro: 0.85,
+            pitch: 0.14,
+            avanca: 0.12,
+            ..Default::default()
+        },
+        Golpe::Giro => Ajuste {
+            giro: -0.95 + TAU,
+            agacha: 0.05,
+            ..Default::default()
+        },
     }
 }
 
 /// Onde o corpo termina a recuperacao: parado. O giro termina numa volta
 /// inteira — voltar a zero desgiraria o boneco pra tras.
 fn descanso(g: Golpe) -> Ajuste {
-    Ajuste { giro: if g == Golpe::Giro { TAU } else { 0.0 }, ..Default::default() }
+    Ajuste {
+        giro: if g == Golpe::Giro { TAU } else { 0.0 },
+        ..Default::default()
+    }
 }
 
 /// O ajuste deste quadro, ou `None` quando o golpe ja' terminou.
@@ -281,18 +351,24 @@ pub fn pontos_de_impacto(forma: &Forma, centro: Vec2, dir: Vec2) -> Vec<Vec2> {
     match *forma {
         Forma::Circulo { raio } => {
             let mut v = vec![centro];
-            v.extend((0..5).map(|k| centro + Vec2::from_angle(k as f32 * TAU / 5.0 + 0.3) * raio * 0.6));
+            v.extend(
+                (0..5).map(|k| centro + Vec2::from_angle(k as f32 * TAU / 5.0 + 0.3) * raio * 0.6),
+            );
             v
         }
         Forma::Anel { interno, externo } => {
             let r = (interno + externo) * 0.5;
-            (0..6).map(|k| centro + Vec2::from_angle(k as f32 * TAU / 6.0) * r).collect()
+            (0..6)
+                .map(|k| centro + Vec2::from_angle(k as f32 * TAU / 6.0) * r)
+                .collect()
         }
         Forma::Cone { raio, abertura } => [(-0.6f32, 0.45f32), (0.0, 0.3), (0.0, 0.75), (0.6, 0.6)]
             .iter()
             .map(|&(l, r)| centro + Vec2::from_angle(ang + l * abertura) * raio * r)
             .collect(),
-        Forma::Linha { comprimento, .. } => (1..=5).map(|k| centro + dir * comprimento * (k as f32 / 5.5)).collect(),
+        Forma::Linha { comprimento, .. } => (1..=5)
+            .map(|k| centro + dir * comprimento * (k as f32 / 5.5))
+            .collect(),
     }
 }
 
@@ -310,7 +386,12 @@ pub fn presenca(id: u64, kind: u16, p: Vec3, altura: f32, agora: f32, dt: f32) {
     const LADOS: usize = 20;
     let mut vertices = Vec::with_capacity(LADOS + 1);
     let mut indices: Vec<u16> = Vec::with_capacity(LADOS * 6);
-    let base = |q: Vec3, a: u8| Vertex { position: q, uv: Vec2::ZERO, color: [0, 0, 0, a], normal: Vec4::ZERO };
+    let base = |q: Vec3, a: u8| Vertex {
+        position: q,
+        uv: Vec2::ZERO,
+        color: [0, 0, 0, a],
+        normal: Vec4::ZERO,
+    };
     vertices.push(base(p + vec3(0.0, 0.04, 0.0), 90));
     for k in 0..LADOS {
         let a = k as f32 / LADOS as f32 * TAU;
@@ -320,7 +401,11 @@ pub fn presenca(id: u64, kind: u16, p: Vec3, altura: f32, agora: f32, dt: f32) {
         let (b, c) = (1 + k, 1 + (k + 1) % LADOS as u16);
         indices.extend_from_slice(&[0, b, c, 0, c, b]);
     }
-    draw_mesh(&Mesh { vertices, indices, texture: None });
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
     // Aura: poucas faiscas por segundo, subindo devagar em volta do corpo.
     let semente = (id % 997) as f32 * 0.013;
     if deve_emitir(agora, dt, 7.0, semente) {
@@ -355,11 +440,32 @@ mod testes {
     }
 
     const FORMAS: [(Forma, [f32; 2], Golpe); 5] = [
-        (Forma::Linha { comprimento: 12.0, largura: 2.0 }, [0.0, 0.0], Golpe::Investida),
+        (
+            Forma::Linha {
+                comprimento: 12.0,
+                largura: 2.0,
+            },
+            [0.0, 0.0],
+            Golpe::Investida,
+        ),
         (Forma::Circulo { raio: 5.0 }, [0.0, 0.0], Golpe::Pisao),
         (Forma::Circulo { raio: 3.0 }, [8.0, 0.0], Golpe::Salto),
-        (Forma::Cone { raio: 4.0, abertura: 0.7 }, [0.0, 0.0], Golpe::Varrida),
-        (Forma::Anel { interno: 2.0, externo: 6.0 }, [0.0, 0.0], Golpe::Giro),
+        (
+            Forma::Cone {
+                raio: 4.0,
+                abertura: 0.7,
+            },
+            [0.0, 0.0],
+            Golpe::Varrida,
+        ),
+        (
+            Forma::Anel {
+                interno: 2.0,
+                externo: 6.0,
+            },
+            [0.0, 0.0],
+            Golpe::Giro,
+        ),
     ];
 
     #[test]
@@ -375,8 +481,14 @@ mod testes {
         assert_eq!(tempo(&c, 10.0), Tempo::Prepara(0.0));
         assert!(matches!(tempo(&c, 10.5), Tempo::Prepara(u) if (u - 0.5).abs() < 1e-4));
         assert!(matches!(tempo(&c, 11.0 + 0.15), Tempo::Golpe(u) if (u - 0.5).abs() < 1e-3));
-        assert!(matches!(tempo(&c, 11.0 + GOLPE_S as f64 + 0.1), Tempo::Recupera(_)));
-        assert_eq!(tempo(&c, 11.0 + (GOLPE_S + RECUPERA_S) as f64 + 0.01), Tempo::Fim);
+        assert!(matches!(
+            tempo(&c, 11.0 + GOLPE_S as f64 + 0.1),
+            Tempo::Recupera(_)
+        ));
+        assert_eq!(
+            tempo(&c, 11.0 + (GOLPE_S + RECUPERA_S) as f64 + 0.01),
+            Tempo::Fim
+        );
         // Impacto do servidor adiantado: o golpe sai na hora dele.
         let mut cedo = c;
         cedo.bateu(10.8);
@@ -396,7 +508,10 @@ mod testes {
             let quase_parado = ajuste(&c, 11.0 + (GOLPE_S + RECUPERA_S) as f64 - 1e-3).unwrap();
             assert!(ajuste(&c, 13.0).is_none(), "{g:?} nao terminou");
             assert!(armado.tremor > 0.5, "{g:?}: sem tremor no fim da carga");
-            assert!(ajuste(&c, 10.2).unwrap().tremor == 0.0, "{g:?}: tremor cedo demais");
+            assert!(
+                ajuste(&c, 10.2).unwrap().tremor == 0.0,
+                "{g:?}: tremor cedo demais"
+            );
             let repouso = descanso(g);
             for (nome, v, alvo) in [
                 ("pitch", quase_parado.pitch, 0.0),
@@ -409,7 +524,11 @@ mod testes {
             match g {
                 Golpe::Investida => {
                     assert!(armado.avanca < 0.0, "investida recua antes");
-                    assert!(fim_do_golpe.desloca > 5.0, "investida anda: {}", fim_do_golpe.desloca);
+                    assert!(
+                        fim_do_golpe.desloca > 5.0,
+                        "investida anda: {}",
+                        fim_do_golpe.desloca
+                    );
                 }
                 Golpe::Pisao => {
                     assert!(armado.sobe > 0.2 && armado.pitch < -0.4, "pisao empina");
@@ -422,11 +541,17 @@ mod testes {
                     assert!(fim_do_golpe.desloca > 6.0, "salto cai no circulo");
                 }
                 Golpe::Varrida => {
-                    assert!(armado.giro < -0.5 && fim_do_golpe.giro > 0.5, "varrida vai de um lado ao outro");
+                    assert!(
+                        armado.giro < -0.5 && fim_do_golpe.giro > 0.5,
+                        "varrida vai de um lado ao outro"
+                    );
                     assert!(relogio_da_pata(&c, 11.1).is_some(), "a pata varre junto");
                 }
                 Golpe::Giro => {
-                    assert!(fim_do_golpe.giro - armado.giro > TAU - 0.1, "giro da' a volta inteira");
+                    assert!(
+                        fim_do_golpe.giro - armado.giro > TAU - 0.1,
+                        "giro da' a volta inteira"
+                    );
                 }
             }
         }
@@ -434,7 +559,13 @@ mod testes {
 
     #[test]
     fn relogios_de_pata_e_braco_andam_pra_frente() {
-        let c = carga(Forma::Cone { raio: 4.0, abertura: 0.7 }, Vec2::ZERO);
+        let c = carga(
+            Forma::Cone {
+                raio: 4.0,
+                abertura: 0.7,
+            },
+            Vec2::ZERO,
+        );
         let mut ant = -1.0;
         let mut ant_b = -1.0;
         for k in 0..=200 {
@@ -456,7 +587,10 @@ mod testes {
     fn tremor_de_camera_some_e_tem_teto() {
         assert_eq!(sacudida(0.2, 5.0, 5.1), Vec2::ZERO);
         let v = sacudida(9.0, 5.0 + TREMOR_S as f64, 5.0);
-        assert!(v.length() <= TREMOR_FORCA * 1.5, "forca fora do teto: {v:?}");
+        assert!(
+            v.length() <= TREMOR_FORCA * 1.5,
+            "forca fora do teto: {v:?}"
+        );
     }
 
     #[test]

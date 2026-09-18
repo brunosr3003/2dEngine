@@ -19,7 +19,12 @@ use crate::hud_estilo as estilo;
 use crate::vox::VoxCache;
 
 /// (rotulo, icone de HUD; vazio = o cristal do TP).
-const ABAS: [(&str, &str); 3] = [("Montarias", "montaria"), ("Skins", "paleta"), ("Tempest Points", "")];
+const ABAS: [(&str, &str); 4] = [
+    ("Montarias", "montaria"),
+    ("Skins", "paleta"),
+    ("Materiais", "craft"),
+    ("Tempest Points", ""),
+];
 
 // Paleta premium, so' da loja: roxo profundo com dourado.
 const ROXO_TOPO: Color = Color::new(0.115, 0.066, 0.215, 0.985);
@@ -97,7 +102,13 @@ pub fn medalhao(c: Vec2, r: f32, cor: Color, letra: &str) {
     draw_circle(c.x, c.y, r, estilo::alfa(cor, 0.25));
     draw_circle(c.x, c.y, r * 0.78, cor);
     draw_circle_lines(c.x, c.y, r, 2.0, estilo::alfa(cor, 0.9));
-    estilo::texto_centro_forte(c.x, c.y + r * 0.3, letra, (r * 0.9).clamp(12.0, 40.0) as u16, Color::from_rgba(20, 18, 24, 230));
+    estilo::texto_centro_forte(
+        c.x,
+        c.y + r * 0.3,
+        letra,
+        (r * 0.9).clamp(12.0, 40.0) as u16,
+        Color::from_rgba(20, 18, 24, 230),
+    );
 }
 
 pub fn situacao_montaria(id: u16, e: &EstadoLoja) -> Situacao {
@@ -109,7 +120,9 @@ pub fn situacao_montaria(id: u16, e: &EstadoLoja) -> Situacao {
 }
 
 pub fn situacao_skin(id: u16, e: &EstadoLoja) -> Situacao {
-    let Some(s) = cat::skin(id) else { return Situacao::RequerMontaria };
+    let Some(s) = cat::skin(id) else {
+        return Situacao::RequerMontaria;
+    };
     if s.preco_tp == 0 {
         Situacao::Inclusa
     } else if e.posses.skins.contains(&id) {
@@ -141,7 +154,11 @@ pub fn selo_do_pacote(id: u16) -> Option<&'static str> {
 
 /// Bonus do pacote em % sobre a TP base (arredonda pra baixo).
 pub fn bonus_pct(pk: &cat::PacoteTp) -> u64 {
-    if pk.tp == 0 { 0 } else { pk.bonus * 100 / pk.tp }
+    if pk.tp == 0 {
+        0
+    } else {
+        pk.bonus * 100 / pk.tp
+    }
 }
 
 /// Saldo depois de pagar `preco`; `None` = nao da'.
@@ -152,7 +169,11 @@ pub fn saldo_apos(tp: u64, preco: u64) -> Option<u64> {
 /// O saldo desenhado anda ate' o alvo (contagem animada), e cola no fim.
 fn anima_saldo(atual: f64, alvo: f64, dt: f32) -> f64 {
     let novo = atual + (alvo - atual) * (dt as f64 * 5.0).min(1.0);
-    if (alvo - novo).abs() < 0.5 { alvo } else { novo }
+    if (alvo - novo).abs() < 0.5 {
+        alvo
+    } else {
+        novo
+    }
 }
 
 fn milhar(v: u64) -> String {
@@ -193,7 +214,13 @@ fn faiscas(r: Rect, agora: f64, n: u32, k: f32, semente: u32) {
         let x = r.x + r.w * (0.06 + 0.88 * a) + (t * 0.7 + i as f32).sin() * 6.0 * k;
         let y = r.y + r.h * (1.0 - subida);
         let alfa = (subida * std::f32::consts::PI).sin() * (0.35 + 0.45 * sorteio(i + semente + 9));
-        let cor = if i % 3 == 0 { OURO_CLARO } else if i % 3 == 1 { CIANO } else { LILAS };
+        let cor = if i % 3 == 0 {
+            OURO_CLARO
+        } else if i % 3 == 1 {
+            CIANO
+        } else {
+            LILAS
+        };
         let raio = (1.2 + 1.8 * sorteio(i * 5 + semente)) * k.max(0.6);
         draw_circle(x, y, raio * 2.4, estilo::alfa(cor, alfa * 0.18));
         draw_circle(x, y, raio, estilo::alfa(cor, alfa));
@@ -205,10 +232,23 @@ fn selo(canto: Vec2, texto: &str, k: f32, forte: bool) -> f32 {
     let tam = ts(11.0, k);
     let w = estilo::medir_forte(texto, tam) + 20.0 * k;
     let r = Rect::new(canto.x, canto.y, w, 22.0 * k);
-    let (a, b) = if forte { (OURO_CLARO, OURO_ESCURO) } else { (Color::new(0.62, 0.52, 1.0, 1.0), Color::new(0.38, 0.26, 0.86, 1.0)) };
+    let (a, b) = if forte {
+        (OURO_CLARO, OURO_ESCURO)
+    } else {
+        (
+            Color::new(0.62, 0.52, 1.0, 1.0),
+            Color::new(0.38, 0.26, 0.86, 1.0),
+        )
+    };
     estilo::ret_gradiente(r, r.h * 0.5, a, b);
     estilo::borda_arredondada(r, r.h * 0.5, 1.0, estilo::alfa(WHITE, 0.35));
-    estilo::texto_centro_forte(r.center().x, r.center().y + 11.0 * k * 0.36, texto, tam, if forte { TINTA_BOTAO } else { WHITE });
+    estilo::texto_centro_forte(
+        r.center().x,
+        r.center().y + 11.0 * k * 0.36,
+        texto,
+        tam,
+        if forte { TINTA_BOTAO } else { WHITE },
+    );
     w
 }
 
@@ -216,34 +256,87 @@ fn selo(canto: Vec2, texto: &str, k: f32, forte: bool) -> f32 {
 fn botao_ouro(r: Rect, rotulo: &str, ativo: bool, sobre: bool, k: f32, agora: f64) {
     estilo::sombra(r, r.h * 0.5, 0.8);
     if ativo {
-        let (a, b) = if sobre { (estilo::clarear(OURO_CLARO, 0.08), estilo::clarear(OURO_ESCURO, 0.12)) } else { (OURO_CLARO, OURO_ESCURO) };
+        let (a, b) = if sobre {
+            (
+                estilo::clarear(OURO_CLARO, 0.08),
+                estilo::clarear(OURO_ESCURO, 0.12),
+            )
+        } else {
+            (OURO_CLARO, OURO_ESCURO)
+        };
         // halo que respira em volta: chama o olho sem piscar
         let pulso = 0.5 + 0.5 * (agora as f32 * 2.4).sin();
-        estilo::borda_arredondada(Rect::new(r.x - 3.0 * k, r.y - 3.0 * k, r.w + 6.0 * k, r.h + 6.0 * k), r.h * 0.5 + 3.0 * k, 2.0 * k.max(0.7), estilo::alfa(OURO_CLARO, 0.12 + 0.22 * pulso));
+        estilo::borda_arredondada(
+            Rect::new(r.x - 3.0 * k, r.y - 3.0 * k, r.w + 6.0 * k, r.h + 6.0 * k),
+            r.h * 0.5 + 3.0 * k,
+            2.0 * k.max(0.7),
+            estilo::alfa(OURO_CLARO, 0.12 + 0.22 * pulso),
+        );
         estilo::ret_gradiente(r, r.h * 0.5, a, b);
-        estilo::ret_arredondado(Rect::new(r.x + r.h * 0.25, r.y + 3.0 * k, r.w - r.h * 0.5, r.h * 0.40), r.h * 0.2, estilo::alfa(WHITE, 0.22));
-        estilo::borda_arredondada(r, r.h * 0.5, 1.5 * k.max(0.7), Color::new(0.55, 0.32, 0.05, 0.9));
+        estilo::ret_arredondado(
+            Rect::new(r.x + r.h * 0.25, r.y + 3.0 * k, r.w - r.h * 0.5, r.h * 0.40),
+            r.h * 0.2,
+            estilo::alfa(WHITE, 0.22),
+        );
+        estilo::borda_arredondada(
+            r,
+            r.h * 0.5,
+            1.5 * k.max(0.7),
+            Color::new(0.55, 0.32, 0.05, 0.9),
+        );
     } else {
-        estilo::ret_gradiente(r, r.h * 0.5, Color::new(0.30, 0.28, 0.36, 1.0), Color::new(0.18, 0.17, 0.23, 1.0));
+        estilo::ret_gradiente(
+            r,
+            r.h * 0.5,
+            Color::new(0.30, 0.28, 0.36, 1.0),
+            Color::new(0.18, 0.17, 0.23, 1.0),
+        );
         estilo::borda_arredondada(r, r.h * 0.5, 1.0, estilo::alfa(WHITE, 0.15));
     }
     let tam = ts(17.0, k);
     let px = 17.0 * k;
-    estilo::texto_centro_forte(r.center().x, r.center().y + px * 0.36, rotulo, tam, if ativo { TINTA_BOTAO } else { estilo::SUAVE });
+    estilo::texto_centro_forte(
+        r.center().x,
+        r.center().y + px * 0.36,
+        rotulo,
+        tam,
+        if ativo { TINTA_BOTAO } else { estilo::SUAVE },
+    );
 }
 
 /// Botao de contorno (Cancelar).
 fn botao_contorno(r: Rect, rotulo: &str, sobre: bool, k: f32) {
-    estilo::ret_arredondado(r, r.h * 0.5, estilo::alfa(WHITE, if sobre { 0.10 } else { 0.05 }));
-    estilo::borda_arredondada(r, r.h * 0.5, 1.5 * k.max(0.7), estilo::alfa(LILAS, if sobre { 0.7 } else { 0.4 }));
-    estilo::texto_centro_forte(r.center().x, r.center().y + 16.0 * k * 0.36, rotulo, ts(16.0, k), estilo::TEXTO);
+    estilo::ret_arredondado(
+        r,
+        r.h * 0.5,
+        estilo::alfa(WHITE, if sobre { 0.10 } else { 0.05 }),
+    );
+    estilo::borda_arredondada(
+        r,
+        r.h * 0.5,
+        1.5 * k.max(0.7),
+        estilo::alfa(LILAS, if sobre { 0.7 } else { 0.4 }),
+    );
+    estilo::texto_centro_forte(
+        r.center().x,
+        r.center().y + 16.0 * k * 0.36,
+        rotulo,
+        ts(16.0, k),
+        estilo::TEXTO,
+    );
 }
 
 /// Estado sem compra: "POSSUÍDA", "INCLUSA", "REQUER A MONTARIA".
 fn etiqueta_estado(r: Rect, rotulo: &str, cor: Color, k: f32) {
     estilo::ret_arredondado(r, r.h * 0.5, estilo::alfa(cor, 0.12));
     estilo::borda_arredondada(r, r.h * 0.5, 1.5 * k.max(0.7), estilo::alfa(cor, 0.6));
-    estilo::texto_centro_forte(r.center().x, r.center().y + 15.0 * k * 0.36, rotulo, ts(15.0, k), cor);
+    estilo::texto_centro_forte(
+        r.center().x,
+        r.center().y + 15.0 * k * 0.36,
+        rotulo,
+        ts(15.0, k),
+        cor,
+    );
 }
 
 /// Pilula com icone de HUD e texto. Devolve a largura.
@@ -255,17 +348,38 @@ fn chip(x: f32, y: f32, icone: &str, texto: &str, k: f32) -> f32 {
     estilo::borda_arredondada(r, r.h * 0.5, 1.0, estilo::alfa(LILAS, 0.35));
     let mut tx = r.x + 10.0 * k;
     if !icone.is_empty() {
-        crate::icones_ui::ui(icone, vec2(r.x + 18.0 * k, r.center().y), 20.0 * k, OURO_CLARO);
+        crate::icones_ui::ui(
+            icone,
+            vec2(r.x + 18.0 * k, r.center().y),
+            20.0 * k,
+            OURO_CLARO,
+        );
         tx = r.x + 32.0 * k;
     }
-    estilo::texto(tx, r.center().y + 13.0 * k * 0.36, texto, tam, estilo::TEXTO);
+    estilo::texto(
+        tx,
+        r.center().y + 13.0 * k * 0.36,
+        texto,
+        tam,
+        estilo::TEXTO,
+    );
     w
 }
 
 /// Visto desenhado (nao depende de glifo na fonte).
 fn visto(c: Vec2, s: f32, cor: Color) {
-    estilo::traco(c + vec2(-s * 0.45, 0.0), c + vec2(-s * 0.1, s * 0.35), (s * 0.18).max(1.5), cor);
-    estilo::traco(c + vec2(-s * 0.1, s * 0.35), c + vec2(s * 0.5, -s * 0.35), (s * 0.18).max(1.5), cor);
+    estilo::traco(
+        c + vec2(-s * 0.45, 0.0),
+        c + vec2(-s * 0.1, s * 0.35),
+        (s * 0.18).max(1.5),
+        cor,
+    );
+    estilo::traco(
+        c + vec2(-s * 0.1, s * 0.35),
+        c + vec2(s * 0.5, -s * 0.35),
+        (s * 0.18).max(1.5),
+        cor,
+    );
 }
 
 impl LojaTp {
@@ -275,7 +389,9 @@ impl LojaTp {
         if self.montaria_sel == 0 {
             self.montaria_sel = cat::MONTARIAS[0].id;
         }
-        vec![ClientMessage::Loja { pedido: PedidoLoja::Estado }]
+        vec![ClientMessage::Loja {
+            pedido: PedidoLoja::Estado,
+        }]
     }
 
     pub fn fechar(&mut self) {
@@ -315,7 +431,9 @@ impl LojaTp {
     /// de `shared::loja::pedido_valido`.
     fn novo_pedido(&mut self) -> String {
         self.contador = self.contador.wrapping_add(1);
-        let ns = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() as u64);
+        let ns = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos() as u64);
         let id = format!("c{ns:x}-{:x}", self.contador);
         debug_assert!(cat::pedido_valido(&id));
         id
@@ -323,8 +441,14 @@ impl LojaTp {
 
     /// A skin no palco: a escolhida, se e' da montaria; senao a padrao.
     fn skin_no_palco(&self) -> u16 {
-        let mt = cat::montaria(self.montaria_sel).copied().unwrap_or(cat::MONTARIAS[0]);
-        if cat::skin(self.skin_sel).is_some_and(|s| s.montaria == mt.id) { self.skin_sel } else { mt.skin_padrao }
+        let mt = cat::montaria(self.montaria_sel)
+            .copied()
+            .unwrap_or(cat::MONTARIAS[0]);
+        if cat::skin(self.skin_sel).is_some_and(|s| s.montaria == mt.id) {
+            self.skin_sel
+        } else {
+            mt.skin_padrao
+        }
     }
 
     pub fn desenha(&mut self, vox: &VoxCache, solido: &Material) -> Vec<ClientMessage> {
@@ -346,7 +470,12 @@ impl LojaTp {
         let w = (1500.0 * f).min(seguro.w - 24.0);
         let h = (920.0 * f).min(seguro.h - 20.0);
         let k = (w / 1200.0).min(h / 740.0);
-        let p = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+        let p = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.center().y - h * 0.5,
+            w,
+            h,
+        );
         let m = Vec2::from(mouse_position());
         let modal = self.confirma.is_some();
         let clicou = is_mouse_button_pressed(MouseButton::Left);
@@ -357,33 +486,89 @@ impl LojaTp {
         crate::hud_layout::escurece(0.62);
         estilo::sombra(p, raio, 1.2);
         estilo::ret_gradiente(p, raio, ROXO_TOPO, NOITE);
-        brilho_radial(vec2(p.x + p.w * 0.30, p.y + p.h * 0.58), p.h * 0.58, Color::new(0.45, 0.30, 0.95, 1.0), 0.16);
-        brilho_radial(vec2(p.x + p.w * 0.88, p.y + p.h * 0.02), p.h * 0.42, Color::new(0.95, 0.66, 0.28, 1.0), 0.10);
+        brilho_radial(
+            vec2(p.x + p.w * 0.30, p.y + p.h * 0.58),
+            p.h * 0.58,
+            Color::new(0.45, 0.30, 0.95, 1.0),
+            0.16,
+        );
+        brilho_radial(
+            vec2(p.x + p.w * 0.88, p.y + p.h * 0.02),
+            p.h * 0.42,
+            Color::new(0.95, 0.66, 0.28, 1.0),
+            0.10,
+        );
         faiscas(p, agora, 26, k, 11);
         estilo::borda_arredondada(p, raio, 1.6 * k.max(0.8), estilo::alfa(OURO_CLARO, 0.38));
-        draw_rectangle(p.x + 60.0 * k, p.y, p.w - 120.0 * k, 2.0 * k.max(0.8), estilo::alfa(OURO_CLARO, 0.55));
+        draw_rectangle(
+            p.x + 60.0 * k,
+            p.y,
+            p.w - 120.0 * k,
+            2.0 * k.max(0.8),
+            estilo::alfa(OURO_CLARO, 0.55),
+        );
 
         // ── cabecalho ──
         let xh = p.x + 28.0 * k;
         estilo::icone_tp(vec2(xh + 26.0 * k, p.y + 48.0 * k), 64.0 * k);
-        estilo::texto_sombra(xh + 64.0 * k, p.y + 50.0 * k, "LOJA", ts(30.0, k), OURO_CLARO, true);
-        estilo::texto(xh + 66.0 * k, p.y + 72.0 * k, "Itens exclusivos da Tempestade", ts(13.0, k), estilo::alfa(LILAS, 0.9));
+        estilo::texto_sombra(
+            xh + 64.0 * k,
+            p.y + 50.0 * k,
+            "LOJA",
+            ts(30.0, k),
+            OURO_CLARO,
+            true,
+        );
+        estilo::texto(
+            xh + 66.0 * k,
+            p.y + 72.0 * k,
+            "Itens exclusivos da Tempestade",
+            ts(13.0, k),
+            estilo::alfa(LILAS, 0.9),
+        );
 
         let fechar_c = vec2(p.x + p.w - 36.0 * k, p.y + 42.0 * k);
         let fechar_r = 19.0 * k;
         let sobre_fechar = !modal && m.distance(fechar_c) <= fechar_r * 1.2;
-        draw_circle(fechar_c.x, fechar_c.y, fechar_r, Color::new(0.0, 0.0, 0.0, if sobre_fechar { 0.55 } else { 0.35 }));
-        draw_circle_lines(fechar_c.x, fechar_c.y, fechar_r, 1.5 * k.max(0.8), estilo::alfa(LILAS, if sobre_fechar { 0.8 } else { 0.45 }));
+        draw_circle(
+            fechar_c.x,
+            fechar_c.y,
+            fechar_r,
+            Color::new(0.0, 0.0, 0.0, if sobre_fechar { 0.55 } else { 0.35 }),
+        );
+        draw_circle_lines(
+            fechar_c.x,
+            fechar_c.y,
+            fechar_r,
+            1.5 * k.max(0.8),
+            estilo::alfa(LILAS, if sobre_fechar { 0.8 } else { 0.45 }),
+        );
         let s = fechar_r * 0.38;
-        estilo::traco(fechar_c + vec2(-s, -s), fechar_c + vec2(s, s), 2.2 * k.max(0.8), estilo::TEXTO);
-        estilo::traco(fechar_c + vec2(-s, s), fechar_c + vec2(s, -s), 2.2 * k.max(0.8), estilo::TEXTO);
+        estilo::traco(
+            fechar_c + vec2(-s, -s),
+            fechar_c + vec2(s, s),
+            2.2 * k.max(0.8),
+            estilo::TEXTO,
+        );
+        estilo::traco(
+            fechar_c + vec2(-s, s),
+            fechar_c + vec2(s, -s),
+            2.2 * k.max(0.8),
+            estilo::TEXTO,
+        );
         if livre && sobre_fechar {
             self.fechar();
             return saida;
         }
 
         let Some(estado) = self.estado.clone() else {
-            estilo::texto_centro(p.center().x, p.center().y, "Carregando a vitrine…", ts(17.0, k), estilo::SUAVE);
+            estilo::texto_centro(
+                p.center().x,
+                p.center().y,
+                "Carregando a vitrine…",
+                ts(17.0, k),
+                estilo::SUAVE,
+            );
             return saida;
         };
         self.tp_mostrado = anima_saldo(self.tp_mostrado, estado.tp as f64, dt);
@@ -392,30 +577,87 @@ impl LojaTp {
         let txt_saldo = milhar(self.tp_mostrado.round().max(0.0) as u64);
         let tam_saldo = ts(21.0, k);
         let cw = estilo::largura_tp_texto(&txt_saldo, tam_saldo, true) + 70.0 * k;
-        let capsula = Rect::new(fechar_c.x - fechar_r - 18.0 * k - cw, p.y + 21.0 * k, cw, 44.0 * k);
-        estilo::ret_gradiente(capsula, capsula.h * 0.5, Color::new(0.20, 0.13, 0.36, 1.0), Color::new(0.08, 0.06, 0.16, 1.0));
-        estilo::borda_arredondada(capsula, capsula.h * 0.5, 1.5 * k.max(0.8), estilo::alfa(OURO_CLARO, 0.65));
-        estilo::tp_texto(capsula.x + 12.0 * k, capsula.center().y + 21.0 * k * 0.36, &txt_saldo, tam_saldo, estilo::TEXTO, true);
+        let capsula = Rect::new(
+            fechar_c.x - fechar_r - 18.0 * k - cw,
+            p.y + 21.0 * k,
+            cw,
+            44.0 * k,
+        );
+        estilo::ret_gradiente(
+            capsula,
+            capsula.h * 0.5,
+            Color::new(0.20, 0.13, 0.36, 1.0),
+            Color::new(0.08, 0.06, 0.16, 1.0),
+        );
+        estilo::borda_arredondada(
+            capsula,
+            capsula.h * 0.5,
+            1.5 * k.max(0.8),
+            estilo::alfa(OURO_CLARO, 0.65),
+        );
+        estilo::tp_texto(
+            capsula.x + 12.0 * k,
+            capsula.center().y + 21.0 * k * 0.36,
+            &txt_saldo,
+            tam_saldo,
+            estilo::TEXTO,
+            true,
+        );
         let mais_c = vec2(capsula.x + capsula.w - 22.0 * k, capsula.center().y);
         let sobre_mais = !modal && m.distance(mais_c) <= 17.0 * k;
-        draw_circle(mais_c.x, mais_c.y, 15.0 * k, if sobre_mais { estilo::clarear(OURO_CLARO, 0.1) } else { OURO_CLARO });
-        draw_circle(mais_c.x, mais_c.y - 3.0 * k, 10.0 * k, estilo::alfa(WHITE, 0.25));
-        estilo::traco(mais_c + vec2(-7.0 * k, 0.0), mais_c + vec2(7.0 * k, 0.0), 3.0 * k.max(0.7), TINTA_BOTAO);
-        estilo::traco(mais_c + vec2(0.0, -7.0 * k), mais_c + vec2(0.0, 7.0 * k), 3.0 * k.max(0.7), TINTA_BOTAO);
+        draw_circle(
+            mais_c.x,
+            mais_c.y,
+            15.0 * k,
+            if sobre_mais {
+                estilo::clarear(OURO_CLARO, 0.1)
+            } else {
+                OURO_CLARO
+            },
+        );
+        draw_circle(
+            mais_c.x,
+            mais_c.y - 3.0 * k,
+            10.0 * k,
+            estilo::alfa(WHITE, 0.25),
+        );
+        estilo::traco(
+            mais_c + vec2(-7.0 * k, 0.0),
+            mais_c + vec2(7.0 * k, 0.0),
+            3.0 * k.max(0.7),
+            TINTA_BOTAO,
+        );
+        estilo::traco(
+            mais_c + vec2(0.0, -7.0 * k),
+            mais_c + vec2(0.0, 7.0 * k),
+            3.0 * k.max(0.7),
+            TINTA_BOTAO,
+        );
         if livre && (sobre_mais || capsula.contains(m)) {
-            self.aba = 2;
+            self.aba = 3;
         }
         if estado.simulado {
             let t = "PAGAMENTO SIMULADO";
             let tam = ts(10.0, k);
             let tw = estilo::medir_forte(t, tam) + 18.0 * k;
-            let r = Rect::new(capsula.x + capsula.w - tw, capsula.y + capsula.h + 6.0 * k, tw, 20.0 * k);
+            let r = Rect::new(
+                capsula.x + capsula.w - tw,
+                capsula.y + capsula.h + 6.0 * k,
+                tw,
+                20.0 * k,
+            );
             estilo::ret_arredondado(r, r.h * 0.5, estilo::alfa(AMBAR, 0.16));
             estilo::borda_arredondada(r, r.h * 0.5, 1.0, estilo::alfa(AMBAR, 0.7));
             estilo::texto_centro_forte(r.center().x, r.center().y + 10.0 * k * 0.36, t, tam, AMBAR);
         }
         if !estado.ligada {
-            estilo::texto_centro(p.center().x, p.center().y, "A loja está desligada neste servidor.", ts(17.0, k), estilo::SUAVE);
+            estilo::texto_centro(
+                p.center().x,
+                p.center().y,
+                "A loja está desligada neste servidor.",
+                ts(17.0, k),
+                estilo::SUAVE,
+            );
             return saida;
         }
 
@@ -431,10 +673,26 @@ impl LojaTp {
             if ativa {
                 estilo::sombra(r, r.h * 0.5, 0.6);
                 estilo::ret_gradiente(r, r.h * 0.5, OURO_CLARO, OURO_ESCURO);
-                estilo::ret_arredondado(Rect::new(r.x + 4.0 * k, r.y + 3.0 * k, r.w - 8.0 * k, r.h * 0.42), r.h * 0.3, estilo::alfa(WHITE, 0.2));
+                estilo::ret_arredondado(
+                    Rect::new(r.x + 4.0 * k, r.y + 3.0 * k, r.w - 8.0 * k, r.h * 0.42),
+                    r.h * 0.3,
+                    estilo::alfa(WHITE, 0.2),
+                );
             } else {
-                estilo::ret_arredondado(r, r.h * 0.5, estilo::alfa(WHITE, if sobre { 0.10 } else { 0.05 }));
-                estilo::borda_arredondada(r, r.h * 0.5, 1.0, estilo::alfa(if sobre { OURO_CLARO } else { LILAS }, if sobre { 0.55 } else { 0.25 }));
+                estilo::ret_arredondado(
+                    r,
+                    r.h * 0.5,
+                    estilo::alfa(WHITE, if sobre { 0.10 } else { 0.05 }),
+                );
+                estilo::borda_arredondada(
+                    r,
+                    r.h * 0.5,
+                    1.0,
+                    estilo::alfa(
+                        if sobre { OURO_CLARO } else { LILAS },
+                        if sobre { 0.55 } else { 0.25 },
+                    ),
+                );
             }
             let cor = if ativa { TINTA_BOTAO } else { estilo::TEXTO };
             let ic = vec2(r.x + 25.0 * k, r.center().y);
@@ -443,7 +701,13 @@ impl LojaTp {
             } else {
                 crate::icones_ui::ui(icone, ic, 24.0 * k, cor);
             }
-            estilo::texto_forte(r.x + 44.0 * k, r.center().y + 15.0 * k * 0.36, nome, tam, cor);
+            estilo::texto_forte(
+                r.x + 44.0 * k,
+                r.center().y + 15.0 * k * 0.36,
+                nome,
+                tam,
+                cor,
+            );
             if livre && sobre {
                 self.aba = i;
             }
@@ -451,15 +715,27 @@ impl LojaTp {
         }
 
         let rodape_h = 44.0 * k;
-        let area = Rect::new(p.x + 24.0 * k, ya + 60.0 * k, p.w - 48.0 * k, p.y + p.h - rodape_h - 12.0 * k - (ya + 60.0 * k));
+        let area = Rect::new(
+            p.x + 24.0 * k,
+            ya + 60.0 * k,
+            p.w - 48.0 * k,
+            p.y + p.h - rodape_h - 12.0 * k - (ya + 60.0 * k),
+        );
         match self.aba {
             0 | 1 => self.vitrine(area, &estado, vox, solido, k, m, livre, modal, dt, agora),
+            2 => self.materiais(area, k, m, livre, modal, agora),
             _ => self.pacotes(area, k, m, livre, modal, agora),
         }
 
         // ── rodape ──
         let yr = p.y + p.h - rodape_h;
-        draw_rectangle(p.x + 24.0 * k, yr - 4.0 * k, p.w - 48.0 * k, 1.0, estilo::alfa(LILAS, 0.18));
+        draw_rectangle(
+            p.x + 24.0 * k,
+            yr - 4.0 * k,
+            p.w - 48.0 * k,
+            1.0,
+            estilo::alfa(LILAS, 0.18),
+        );
         let base = yr + 26.0 * k;
         if let Some((ok, t)) = &self.ultimo {
             let cor = if *ok { VERDE_POSSE } else { estilo::VERMELHO };
@@ -470,13 +746,31 @@ impl LojaTp {
             }
             estilo::texto_ajustado(t, p.x + 52.0 * k, base, p.w * 0.42, ts(14.0, k), cor);
         } else {
-            estilo::texto(p.x + 28.0 * k, base, "TP é da conta e vale em todos os servidores.", ts(13.0, k), estilo::alfa(LILAS, 0.8));
+            estilo::texto(
+                p.x + 28.0 * k,
+                base,
+                "TP é da conta e vale em todos os servidores.",
+                ts(13.0, k),
+                estilo::alfa(LILAS, 0.8),
+            );
         }
         if !estado.historico.is_empty() {
-            let hist: Vec<String> = estado.historico.iter().take(3).map(|c| format!("{} · {}", c.produto, c.valor)).collect();
+            let hist: Vec<String> = estado
+                .historico
+                .iter()
+                .take(3)
+                .map(|c| format!("{} · {}", c.produto, c.valor))
+                .collect();
             let t = format!("Últimas compras:  {}", hist.join("   |   "));
             let largura = p.w * 0.50;
-            estilo::texto_ajustado(&t, p.x + p.w - 24.0 * k - largura, base, largura, ts(12.0, k), estilo::SUAVE);
+            estilo::texto_ajustado(
+                &t,
+                p.x + p.w - 24.0 * k - largura,
+                base,
+                largura,
+                ts(12.0, k),
+                estilo::SUAVE,
+            );
         }
 
         // ── confirmacao ──
@@ -484,7 +778,9 @@ impl LojaTp {
             // So' vale clique de quando o modal JA' estava aberto: o toque no
             // COMPRAR que abriu a janela cai fora dela e a fechava no mesmo
             // quadro (no iPhone o dialogo "abria e fechava").
-            if let Some(msg) = self.modal(conf, p, &estado, vox, solido, k, m, clicou && modal, agora) {
+            if let Some(msg) =
+                self.modal(conf, p, &estado, vox, solido, k, m, clicou && modal, agora)
+            {
                 saida.push(msg);
             }
         }
@@ -496,38 +792,124 @@ impl LojaTp {
 
     /// Aba Montarias e aba Skins: palco 3D a' esquerda, lista a' direita.
     #[allow(clippy::too_many_arguments)]
-    fn vitrine(&mut self, area: Rect, estado: &EstadoLoja, vox: &VoxCache, solido: &Material, k: f32, m: Vec2, livre: bool, modal: bool, dt: f32, agora: f64) {
+    fn vitrine(
+        &mut self,
+        area: Rect,
+        estado: &EstadoLoja,
+        vox: &VoxCache,
+        solido: &Material,
+        k: f32,
+        m: Vec2,
+        livre: bool,
+        modal: bool,
+        dt: f32,
+        agora: f64,
+    ) {
         let palco = Rect::new(area.x, area.y, area.w * 0.60, area.h);
-        let lista = Rect::new(palco.x + palco.w + 18.0 * k, area.y, area.w - palco.w - 18.0 * k, area.h);
+        let lista = Rect::new(
+            palco.x + palco.w + 18.0 * k,
+            area.y,
+            area.w - palco.w - 18.0 * k,
+            area.h,
+        );
         // Aba Skins: o palco segue a skin escolhida (a primeira a venda, se nenhuma).
         if self.aba == 1 && cat::skin(self.skin_sel).is_none_or(|s| s.preco_tp == 0) {
-            if let Some(s) = cat::SKINS.iter().find(|s| s.preco_tp > 0 && s.montaria == self.montaria_sel).or_else(|| cat::SKINS.iter().find(|s| s.preco_tp > 0)) {
+            if let Some(s) = cat::SKINS
+                .iter()
+                .find(|s| s.preco_tp > 0 && s.montaria == self.montaria_sel)
+                .or_else(|| cat::SKINS.iter().find(|s| s.preco_tp > 0))
+            {
                 self.skin_sel = s.id;
                 self.montaria_sel = s.montaria;
             }
         }
-        let mt = cat::montaria(self.montaria_sel).copied().unwrap_or(cat::MONTARIAS[0]);
+        let mt = cat::montaria(self.montaria_sel)
+            .copied()
+            .unwrap_or(cat::MONTARIAS[0]);
         let skin = self.skin_no_palco();
 
         // palco
         let rp = 18.0 * k;
-        estilo::ret_gradiente(palco, rp, Color::new(0.19, 0.12, 0.36, 0.96), Color::new(0.05, 0.04, 0.12, 0.96));
+        estilo::ret_gradiente(
+            palco,
+            rp,
+            Color::new(0.19, 0.12, 0.36, 0.96),
+            Color::new(0.05, 0.04, 0.12, 0.96),
+        );
         // O pedestal vai onde o chao da montaria cai na tela: ela pisa nele.
-        let modelo = Rect::new(palco.x + palco.w * 0.08, palco.y + palco.h * 0.14, palco.w * 0.84, palco.h * 0.66);
-        let chao_y = crate::render3d::vitrine_chao(vox, skin, modelo).map_or(palco.y + palco.h * 0.72, |c| c.y);
+        let modelo = Rect::new(
+            palco.x + palco.w * 0.08,
+            palco.y + palco.h * 0.14,
+            palco.w * 0.84,
+            palco.h * 0.66,
+        );
+        let chao_y = crate::render3d::vitrine_chao(vox, skin, modelo)
+            .map_or(palco.y + palco.h * 0.72, |c| c.y);
         let topo = vec2(palco.center().x, palco.y + 4.0 * k);
-        draw_triangle(topo, vec2(palco.center().x - palco.w * 0.34, chao_y), vec2(palco.center().x + palco.w * 0.34, chao_y), Color::new(1.0, 0.88, 0.62, 0.05));
-        draw_triangle(topo, vec2(palco.center().x - palco.w * 0.18, chao_y), vec2(palco.center().x + palco.w * 0.18, chao_y), Color::new(1.0, 0.90, 0.70, 0.04));
-        brilho_radial(vec2(palco.center().x, chao_y - palco.h * 0.22), palco.h * 0.46, LILAS, 0.20);
+        draw_triangle(
+            topo,
+            vec2(palco.center().x - palco.w * 0.34, chao_y),
+            vec2(palco.center().x + palco.w * 0.34, chao_y),
+            Color::new(1.0, 0.88, 0.62, 0.05),
+        );
+        draw_triangle(
+            topo,
+            vec2(palco.center().x - palco.w * 0.18, chao_y),
+            vec2(palco.center().x + palco.w * 0.18, chao_y),
+            Color::new(1.0, 0.90, 0.70, 0.04),
+        );
+        brilho_radial(
+            vec2(palco.center().x, chao_y - palco.h * 0.22),
+            palco.h * 0.46,
+            LILAS,
+            0.20,
+        );
         let pulso = fracao(agora as f32 * 0.5);
         let ped = vec2(palco.center().x, chao_y);
         let (ew, eh) = (palco.w * 0.29, 24.0 * k);
-        draw_ellipse(ped.x, ped.y + 12.0 * k, ew * 1.12, eh * 1.2, 0.0, Color::new(0.0, 0.0, 0.0, 0.40));
-        draw_ellipse(ped.x, ped.y + 6.0 * k, ew, eh, 0.0, Color::new(0.16, 0.11, 0.30, 1.0));
+        draw_ellipse(
+            ped.x,
+            ped.y + 12.0 * k,
+            ew * 1.12,
+            eh * 1.2,
+            0.0,
+            Color::new(0.0, 0.0, 0.0, 0.40),
+        );
+        draw_ellipse(
+            ped.x,
+            ped.y + 6.0 * k,
+            ew,
+            eh,
+            0.0,
+            Color::new(0.16, 0.11, 0.30, 1.0),
+        );
         draw_ellipse(ped.x, ped.y, ew, eh, 0.0, Color::new(0.30, 0.22, 0.50, 1.0));
-        draw_ellipse(ped.x, ped.y - 1.0 * k, ew * 0.92, eh * 0.84, 0.0, Color::new(0.36, 0.27, 0.58, 1.0));
-        draw_ellipse_lines(ped.x, ped.y, ew, eh, 0.0, 2.2 * k.max(0.8), estilo::alfa(OURO_CLARO, 0.85));
-        draw_ellipse_lines(ped.x, ped.y, ew * (1.0 + pulso * 0.25), eh * (1.0 + pulso * 0.25), 0.0, 1.6 * k.max(0.8), estilo::alfa(OURO_CLARO, 0.45 * (1.0 - pulso)));
+        draw_ellipse(
+            ped.x,
+            ped.y - 1.0 * k,
+            ew * 0.92,
+            eh * 0.84,
+            0.0,
+            Color::new(0.36, 0.27, 0.58, 1.0),
+        );
+        draw_ellipse_lines(
+            ped.x,
+            ped.y,
+            ew,
+            eh,
+            0.0,
+            2.2 * k.max(0.8),
+            estilo::alfa(OURO_CLARO, 0.85),
+        );
+        draw_ellipse_lines(
+            ped.x,
+            ped.y,
+            ew * (1.0 + pulso * 0.25),
+            eh * (1.0 + pulso * 0.25),
+            0.0,
+            1.6 * k.max(0.8),
+            estilo::alfa(OURO_CLARO, 0.45 * (1.0 - pulso)),
+        );
         faiscas(palco, agora, 22, k, 3);
         estilo::borda_arredondada(palco, rp, 1.2 * k.max(0.8), estilo::alfa(LILAS, 0.28));
 
@@ -549,24 +931,61 @@ impl LojaTp {
         // textos do palco
         let tx = palco.x + 24.0 * k;
         let mut ty = palco.y + 22.0 * k;
-        let selo_txt = if self.aba == 0 { selo_da_montaria(mt.id) } else { None };
+        let selo_txt = if self.aba == 0 {
+            selo_da_montaria(mt.id)
+        } else {
+            None
+        };
         if let Some(sl) = selo_txt {
             selo(vec2(tx, ty), sl, k, sl != "NOVO");
             ty += 30.0 * k;
         }
-        let titulo = if self.aba == 0 { mt.nome.to_string() } else { cat::skin(skin).map_or(String::new(), |s| s.nome.to_string()) };
+        let titulo = if self.aba == 0 {
+            mt.nome.to_string()
+        } else {
+            cat::skin(skin).map_or(String::new(), |s| s.nome.to_string())
+        };
         estilo::texto_sombra(tx, ty + 28.0 * k, &titulo, ts(30.0, k), estilo::TEXTO, true);
-        let sub = if self.aba == 0 { mt.descricao.to_string() } else { format!("Skin de {} · só aparência", mt.nome) };
-        estilo::texto_ajustado(&sub, tx, ty + 52.0 * k, palco.w * 0.62, ts(14.0, k), estilo::alfa(LILAS, 0.95));
+        let sub = if self.aba == 0 {
+            mt.descricao.to_string()
+        } else {
+            format!("Skin de {} · só aparência", mt.nome)
+        };
+        estilo::texto_ajustado(
+            &sub,
+            tx,
+            ty + 52.0 * k,
+            palco.w * 0.62,
+            ts(14.0, k),
+            estilo::alfa(LILAS, 0.95),
+        );
         let yc = ty + 66.0 * k;
-        let w1 = chip(tx, yc, "montaria", &format!("+{:.0}% de velocidade", (cat::VEL_MONTADO - 1.0) * 100.0), k);
+        let w1 = chip(
+            tx,
+            yc,
+            "montaria",
+            &format!("+{:.0}% de velocidade", (cat::VEL_MONTADO - 1.0) * 100.0),
+            k,
+        );
         chip(tx + w1 + 8.0 * k, yc, "", "Vale para a conta toda", k);
-        estilo::texto(palco.x + palco.w - 24.0 * k - estilo::medir("arraste para girar", ts(11.0, k)), palco.y + 30.0 * k, "arraste para girar", ts(11.0, k), estilo::alfa(LILAS, 0.55));
+        estilo::texto(
+            palco.x + palco.w - 24.0 * k - estilo::medir("arraste para girar", ts(11.0, k)),
+            palco.y + 30.0 * k,
+            "arraste para girar",
+            ts(11.0, k),
+            estilo::alfa(LILAS, 0.55),
+        );
 
         // amostras de skin
         let skins: Vec<&cat::Skin> = cat::SKINS.iter().filter(|s| s.montaria == mt.id).collect();
         let ys = palco.y + palco.h - 44.0 * k;
-        estilo::texto(tx, ys - 30.0 * k, "SKINS", ts(11.0, k), estilo::alfa(LILAS, 0.7));
+        estilo::texto(
+            tx,
+            ys - 30.0 * k,
+            "SKINS",
+            ts(11.0, k),
+            estilo::alfa(LILAS, 0.7),
+        );
         for (i, s) in skins.iter().enumerate() {
             let c = vec2(tx + 20.0 * k + i as f32 * 50.0 * k, ys);
             let rr = 18.0 * k;
@@ -575,8 +994,23 @@ impl LojaTp {
                 draw_circle(c.x, c.y, rr + 7.0 * k, estilo::alfa(OURO_CLARO, 0.22));
             }
             draw_circle(c.x, c.y, rr, cor_da_skin(s.id));
-            draw_circle(c.x - rr * 0.3, c.y - rr * 0.35, rr * 0.35, estilo::alfa(WHITE, 0.28));
-            draw_circle_lines(c.x, c.y, rr, if sel { 3.0 } else { 1.5 } * k.max(0.7), if sel { OURO_CLARO } else { estilo::alfa(WHITE, 0.45) });
+            draw_circle(
+                c.x - rr * 0.3,
+                c.y - rr * 0.35,
+                rr * 0.35,
+                estilo::alfa(WHITE, 0.28),
+            );
+            draw_circle_lines(
+                c.x,
+                c.y,
+                rr,
+                if sel { 3.0 } else { 1.5 } * k.max(0.7),
+                if sel {
+                    OURO_CLARO
+                } else {
+                    estilo::alfa(WHITE, 0.45)
+                },
+            );
             let tem = s.preco_tp == 0 || estado.posses.skins.contains(&s.id);
             if tem && estado.posses.montarias.contains(&mt.id) {
                 let cc = c + vec2(rr * 0.75, -rr * 0.75);
@@ -600,30 +1034,75 @@ impl LojaTp {
         };
         let bw = 230.0 * k;
         let bh = 56.0 * k;
-        let bt = Rect::new(palco.x + palco.w - 22.0 * k - bw, palco.y + palco.h - 22.0 * k - bh, bw, bh);
+        let bt = Rect::new(
+            palco.x + palco.w - 22.0 * k - bw,
+            palco.y + palco.h - 22.0 * k - bh,
+            bw,
+            bh,
+        );
         match sit {
             Situacao::Comprar(preco) => {
                 let txt = milhar(preco);
                 let tam = ts(24.0, k);
                 let lw = estilo::largura_tp_texto(&txt, tam, true);
-                estilo::tp_texto(bt.center().x - lw * 0.5, bt.y - 14.0 * k, &txt, tam, OURO_CLARO, true);
+                estilo::tp_texto(
+                    bt.center().x - lw * 0.5,
+                    bt.y - 14.0 * k,
+                    &txt,
+                    tam,
+                    OURO_CLARO,
+                    true,
+                );
                 let ativo = !self.em_voo;
                 let sobre = !modal && bt.contains(m);
-                botao_ouro(bt, if self.em_voo { "AGUARDE…" } else { "COMPRAR" }, ativo, sobre, k, agora);
+                botao_ouro(
+                    bt,
+                    if self.em_voo { "AGUARDE…" } else { "COMPRAR" },
+                    ativo,
+                    sobre,
+                    k,
+                    agora,
+                );
                 if ativo && livre && sobre {
                     self.confirma = Some(Confirma::Item(produto));
                 }
             }
-            Situacao::Possui => etiqueta_estado(bt, if self.aba == 0 { "POSSUÍDA" } else { "SKIN POSSUÍDA" }, VERDE_POSSE, k),
+            Situacao::Possui => etiqueta_estado(
+                bt,
+                if self.aba == 0 {
+                    "POSSUÍDA"
+                } else {
+                    "SKIN POSSUÍDA"
+                },
+                VERDE_POSSE,
+                k,
+            ),
             Situacao::Inclusa => etiqueta_estado(bt, "INCLUSA NA MONTARIA", CIANO, k),
             Situacao::RequerMontaria => {
                 etiqueta_estado(bt, "REQUER A MONTARIA", estilo::SUAVE, k);
-                estilo::texto_centro(bt.center().x, bt.y - 12.0 * k, &format!("Compre o {} antes", mt.nome), ts(12.0, k), estilo::SUAVE);
+                estilo::texto_centro(
+                    bt.center().x,
+                    bt.y - 12.0 * k,
+                    &format!("Compre o {} antes", mt.nome),
+                    ts(12.0, k),
+                    estilo::SUAVE,
+                );
             }
         }
-        if self.aba == 0 && matches!(situacao_skin(skin, estado), Situacao::Comprar(_) | Situacao::RequerMontaria) {
+        if self.aba == 0
+            && matches!(
+                situacao_skin(skin, estado),
+                Situacao::Comprar(_) | Situacao::RequerMontaria
+            )
+        {
             let xnome = tx + skins.len() as f32 * 50.0 * k + 6.0 * k;
-            estilo::texto(xnome, ys + 23.0 * k, "à venda na aba Skins", ts(11.0, k), estilo::alfa(AMBAR, 0.9));
+            estilo::texto(
+                xnome,
+                ys + 23.0 * k,
+                "à venda na aba Skins",
+                ts(11.0, k),
+                estilo::alfa(AMBAR, 0.9),
+            );
         }
 
         // lista
@@ -649,7 +1128,12 @@ impl LojaTp {
             let cwid = (lista.w - vao) / colunas as f32;
             let ch = (lista.h - vao * (linhas as f32 - 1.0)) / linhas as f32;
             for (i, s) in pagas.iter().enumerate() {
-                let r = Rect::new(lista.x + (i % colunas) as f32 * (cwid + vao), lista.y + (i / colunas) as f32 * (ch + vao), cwid, ch);
+                let r = Rect::new(
+                    lista.x + (i % colunas) as f32 * (cwid + vao),
+                    lista.y + (i / colunas) as f32 * (ch + vao),
+                    cwid,
+                    ch,
+                );
                 let sel = s.id == skin;
                 let sobre = !modal && r.contains(m);
                 cartao_skin(r, s, sel, sobre, estado, k);
@@ -662,38 +1146,202 @@ impl LojaTp {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cartao_montaria(&self, r: Rect, mt: &cat::Montaria, sel: bool, sobre: bool, estado: &EstadoLoja, vox: &VoxCache, solido: &Material, k: f32, agora: f64) {
+    fn cartao_montaria(
+        &self,
+        r: Rect,
+        mt: &cat::Montaria,
+        sel: bool,
+        sobre: bool,
+        estado: &EstadoLoja,
+        vox: &VoxCache,
+        solido: &Material,
+        k: f32,
+        agora: f64,
+    ) {
         let rc = 16.0 * k;
         if sel {
-            estilo::ret_arredondado(Rect::new(r.x - 3.0 * k, r.y - 3.0 * k, r.w + 6.0 * k, r.h + 6.0 * k), rc + 3.0 * k, estilo::alfa(OURO_CLARO, 0.16));
+            estilo::ret_arredondado(
+                Rect::new(r.x - 3.0 * k, r.y - 3.0 * k, r.w + 6.0 * k, r.h + 6.0 * k),
+                rc + 3.0 * k,
+                estilo::alfa(OURO_CLARO, 0.16),
+            );
         }
-        estilo::ret_gradiente(r, rc, if sel { Color::new(0.30, 0.20, 0.50, 0.97) } else { Color::new(0.15, 0.11, 0.27, 0.93) }, Color::new(0.06, 0.05, 0.13, 0.95));
-        estilo::borda_arredondada(r, rc, if sel { 2.0 } else { 1.0 } * k.max(0.8), if sel { OURO_CLARO } else if sobre { estilo::alfa(OURO_CLARO, 0.5) } else { estilo::alfa(LILAS, 0.2) });
+        estilo::ret_gradiente(
+            r,
+            rc,
+            if sel {
+                Color::new(0.30, 0.20, 0.50, 0.97)
+            } else {
+                Color::new(0.15, 0.11, 0.27, 0.93)
+            },
+            Color::new(0.06, 0.05, 0.13, 0.95),
+        );
+        estilo::borda_arredondada(
+            r,
+            rc,
+            if sel { 2.0 } else { 1.0 } * k.max(0.8),
+            if sel {
+                OURO_CLARO
+            } else if sobre {
+                estilo::alfa(OURO_CLARO, 0.5)
+            } else {
+                estilo::alfa(LILAS, 0.2)
+            },
+        );
         let lado = (r.h - 16.0 * k).min(r.w * 0.45);
         let mini = Rect::new(r.x + 8.0 * k, r.y + (r.h - lado) * 0.5, lado, lado);
-        estilo::ret_gradiente(mini, 12.0 * k, Color::new(0.24, 0.17, 0.42, 1.0), Color::new(0.08, 0.06, 0.16, 1.0));
-        brilho_radial(vec2(mini.center().x, mini.y + mini.h * 0.62), mini.w * 0.48, LILAS, 0.18);
-        let chao = crate::render3d::vitrine_chao(vox, mt.skin_padrao, mini).unwrap_or(vec2(mini.center().x, mini.y + mini.h * 0.84));
-        draw_ellipse(chao.x, chao.y, mini.w * 0.34, mini.h * 0.07, 0.0, estilo::alfa(OURO_CLARO, 0.30));
-        let giro = if sel { 0.65 + (agora as f32 * 0.8).sin() * 0.35 } else { 0.65 };
+        estilo::ret_gradiente(
+            mini,
+            12.0 * k,
+            Color::new(0.24, 0.17, 0.42, 1.0),
+            Color::new(0.08, 0.06, 0.16, 1.0),
+        );
+        brilho_radial(
+            vec2(mini.center().x, mini.y + mini.h * 0.62),
+            mini.w * 0.48,
+            LILAS,
+            0.18,
+        );
+        let chao = crate::render3d::vitrine_chao(vox, mt.skin_padrao, mini)
+            .unwrap_or(vec2(mini.center().x, mini.y + mini.h * 0.84));
+        draw_ellipse(
+            chao.x,
+            chao.y,
+            mini.w * 0.34,
+            mini.h * 0.07,
+            0.0,
+            estilo::alfa(OURO_CLARO, 0.30),
+        );
+        let giro = if sel {
+            0.65 + (agora as f32 * 0.8).sin() * 0.35
+        } else {
+            0.65
+        };
         crate::render3d::vitrine_montaria(vox, mt.skin_padrao, mini, giro, solido);
         let x = mini.x + mini.w + 14.0 * k;
         let largura = r.x + r.w - x - 12.0 * k;
         let meio = r.center().y;
-        estilo::texto_ajustado(mt.nome, x, meio - 8.0 * k, largura, ts(18.0, k), estilo::TEXTO);
+        estilo::texto_ajustado(
+            mt.nome,
+            x,
+            meio - 8.0 * k,
+            largura,
+            ts(18.0, k),
+            estilo::TEXTO,
+        );
         match situacao_montaria(mt.id, estado) {
             Situacao::Comprar(preco) => {
                 estilo::valor_tp(x, meio + 22.0 * k, preco, ts(17.0, k), OURO_CLARO);
             }
             _ => {
                 visto(vec2(x + 7.0 * k, meio + 16.0 * k), 12.0 * k, VERDE_POSSE);
-                estilo::texto_forte(x + 20.0 * k, meio + 22.0 * k, "POSSUÍDA", ts(14.0, k), VERDE_POSSE);
+                estilo::texto_forte(
+                    x + 20.0 * k,
+                    meio + 22.0 * k,
+                    "POSSUÍDA",
+                    ts(14.0, k),
+                    VERDE_POSSE,
+                );
             }
         }
         if let Some(sl) = selo_da_montaria(mt.id) {
             let tam = ts(11.0, k);
             let w = estilo::medir_forte(sl, tam) + 20.0 * k;
-            selo(vec2(r.x + r.w - w - 10.0 * k, r.y + 10.0 * k), sl, k, sl != "NOVO");
+            selo(
+                vec2(r.x + r.w - w - 10.0 * k, r.y + 10.0 * k),
+                sl,
+                k,
+                sl != "NOVO",
+            );
+        }
+    }
+
+    /// Aba Materiais: consumiveis repetiveis de craft.
+    fn materiais(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
+        let bau = &cat::BAUS_CRAFT[0];
+        let w = (area.w * 0.62).min(650.0 * k);
+        let r = Rect::new(
+            area.center().x - w * 0.5,
+            area.y + 8.0 * k,
+            w,
+            area.h - 16.0 * k,
+        );
+        let sobre = !modal && r.contains(m);
+        estilo::sombra(r, 22.0 * k, 1.0);
+        estilo::ret_gradiente(
+            r,
+            22.0 * k,
+            Color::new(0.31, 0.18, 0.48, 0.98),
+            Color::new(0.055, 0.045, 0.13, 0.98),
+        );
+        estilo::borda_arredondada(
+            r,
+            22.0 * k,
+            1.5 * k.max(0.8),
+            estilo::alfa(if sobre { OURO_CLARO } else { LILAS }, 0.55),
+        );
+        faiscas(r, agora, 18, k, 93);
+        let arte = vec2(r.center().x, r.y + r.h * 0.27);
+        brilho_radial(arte, r.h * 0.20, OURO_CLARO, 0.28);
+        crate::icones_ui::ui("craft", arte, r.h * 0.20, OURO_CLARO);
+        estilo::texto_centro_forte(
+            r.center().x,
+            r.y + r.h * 0.47,
+            bau.nome,
+            ts(27.0, k),
+            estilo::TEXTO,
+        );
+        estilo::texto_centro(
+            r.center().x,
+            r.y + r.h * 0.53,
+            bau.descricao,
+            ts(14.0, k),
+            estilo::alfa(LILAS, 0.95),
+        );
+        let nomes = ["Cinza 55%", "Verde 28%", "Azul 12%", "Roxa 5%"];
+        let cores = [
+            Color::from_rgba(180, 186, 198, 255),
+            Color::from_rgba(88, 220, 125, 255),
+            Color::from_rgba(70, 150, 255, 255),
+            Color::from_rgba(184, 88, 245, 255),
+        ];
+        let passo = r.w * 0.20;
+        let inicio = r.center().x - passo * 1.5;
+        let yc = r.y + r.h * 0.64;
+        for i in 0..4 {
+            let x = inicio + passo * i as f32;
+            draw_circle(x, yc, 12.0 * k, cores[i]);
+            draw_circle_lines(x, yc, 14.0 * k, 1.5 * k.max(0.8), estilo::alfa(WHITE, 0.7));
+            estilo::texto_centro(x, yc + 29.0 * k, nomes[i], ts(12.0, k), estilo::TEXTO);
+        }
+        estilo::valor_tp(
+            r.center().x - estilo::largura_tp_texto(&milhar(bau.preco_tp), ts(23.0, k), true) * 0.5,
+            r.y + r.h - 88.0 * k,
+            bau.preco_tp,
+            ts(23.0, k),
+            OURO_CLARO,
+        );
+        let bt = Rect::new(
+            r.center().x - 120.0 * k,
+            r.y + r.h - 62.0 * k,
+            240.0 * k,
+            48.0 * k,
+        );
+        let ativo = !self.em_voo;
+        botao_ouro(
+            bt,
+            if self.em_voo {
+                "AGUARDE…"
+            } else {
+                "COMPRAR E ABRIR"
+            },
+            ativo,
+            !modal && bt.contains(m),
+            k,
+            agora,
+        );
+        if ativo && livre && bt.contains(m) {
+            self.confirma = Some(Confirma::Item(Produto::BauCraft(bau.id)));
         }
     }
 
@@ -708,23 +1356,67 @@ impl LojaTp {
         let cw = (area.w - vao * (colunas as f32 - 1.0)) / colunas as f32;
         let ch = (area.h - nota_h - topo_extra - vao * (linhas as f32 - 1.0)) / linhas as f32;
         for (i, pk) in cat::PACOTES.iter().enumerate() {
-            let r = Rect::new(area.x + (i % colunas) as f32 * (cw + vao), area.y + topo_extra + (i / colunas) as f32 * (ch + vao), cw, ch);
+            let r = Rect::new(
+                area.x + (i % colunas) as f32 * (cw + vao),
+                area.y + topo_extra + (i / colunas) as f32 * (ch + vao),
+                cw,
+                ch,
+            );
             let sobre = !modal && r.contains(m);
             let melhor = selo_do_pacote(pk.id) == Some("MELHOR VALOR");
             let rc = 18.0 * k;
             if melhor {
-                estilo::ret_arredondado(Rect::new(r.x - 3.0 * k, r.y - 3.0 * k, r.w + 6.0 * k, r.h + 6.0 * k), rc + 3.0 * k, estilo::alfa(OURO_CLARO, 0.18 + 0.08 * (agora as f32 * 2.0).sin()));
+                estilo::ret_arredondado(
+                    Rect::new(r.x - 3.0 * k, r.y - 3.0 * k, r.w + 6.0 * k, r.h + 6.0 * k),
+                    rc + 3.0 * k,
+                    estilo::alfa(OURO_CLARO, 0.18 + 0.08 * (agora as f32 * 2.0).sin()),
+                );
             }
             let sobe = if sobre { 4.0 * k } else { 0.0 };
             let r = Rect::new(r.x, r.y - sobe, r.w, r.h);
             estilo::sombra(r, rc, 1.0);
-            estilo::ret_gradiente(r, rc, if melhor { Color::new(0.34, 0.20, 0.50, 0.98) } else { Color::new(0.24, 0.16, 0.46, 0.97) }, Color::new(0.06, 0.05, 0.14, 0.97));
-            estilo::borda_arredondada(r, rc, if melhor { 2.0 } else { 1.2 } * k.max(0.8), if melhor { OURO_CLARO } else if sobre { estilo::alfa(OURO_CLARO, 0.55) } else { estilo::alfa(LILAS, 0.3) });
+            estilo::ret_gradiente(
+                r,
+                rc,
+                if melhor {
+                    Color::new(0.34, 0.20, 0.50, 0.98)
+                } else {
+                    Color::new(0.24, 0.16, 0.46, 0.97)
+                },
+                Color::new(0.06, 0.05, 0.14, 0.97),
+            );
+            estilo::borda_arredondada(
+                r,
+                rc,
+                if melhor { 2.0 } else { 1.2 } * k.max(0.8),
+                if melhor {
+                    OURO_CLARO
+                } else if sobre {
+                    estilo::alfa(OURO_CLARO, 0.55)
+                } else {
+                    estilo::alfa(LILAS, 0.3)
+                },
+            );
             let lado = (r.w * 0.62).min(r.h * 0.40);
             let flutua = (agora as f32 * 1.6 + i as f32 * 0.9).sin() * 4.0 * k;
             let arte = vec2(r.center().x, r.y + 30.0 * k + lado * 0.5 + flutua);
-            brilho_radial(arte, lado * 0.72, if melhor { Color::new(1.0, 0.75, 0.35, 1.0) } else { CIANO }, 0.22);
-            faiscas(Rect::new(r.x, r.y + 10.0 * k, r.w, lado + 40.0 * k), agora, 8, k, 40 + i as u32 * 10);
+            brilho_radial(
+                arte,
+                lado * 0.72,
+                if melhor {
+                    Color::new(1.0, 0.75, 0.35, 1.0)
+                } else {
+                    CIANO
+                },
+                0.22,
+            );
+            faiscas(
+                Rect::new(r.x, r.y + 10.0 * k, r.w, lado + 40.0 * k),
+                agora,
+                8,
+                k,
+                40 + i as u32 * 10,
+            );
             crate::icones_ui::loja(&format!("tp_{}", i + 1), arte, lado, 1.0);
 
             let mut y = r.y + 30.0 * k + lado + 44.0 * k;
@@ -733,20 +1425,55 @@ impl LojaTp {
             let lw = estilo::largura_tp_texto(&txt, tam, true);
             estilo::tp_texto(r.center().x - lw * 0.5, y, &txt, tam, estilo::TEXTO, true);
             y += 24.0 * k;
-            estilo::texto_centro(r.center().x, y, pk.nome, ts(14.0, k), estilo::alfa(LILAS, 0.95));
+            estilo::texto_centro(
+                r.center().x,
+                y,
+                pk.nome,
+                ts(14.0, k),
+                estilo::alfa(LILAS, 0.95),
+            );
             y += 12.0 * k;
             if pk.bonus > 0 {
                 let t = format!("+{}% DE BÔNUS", bonus_pct(pk));
                 let tam_b = ts(12.0, k);
                 let bw = estilo::medir_forte(&t, tam_b) + 22.0 * k;
                 let b = Rect::new(r.center().x - bw * 0.5, y, bw, 24.0 * k);
-                estilo::ret_gradiente(b, b.h * 0.5, Color::new(0.52, 0.95, 0.66, 1.0), Color::new(0.22, 0.66, 0.42, 1.0));
-                estilo::texto_centro_forte(b.center().x, b.center().y + 12.0 * k * 0.36, &t, tam_b, Color::new(0.03, 0.18, 0.08, 1.0));
-                estilo::texto_centro(r.center().x, b.y + b.h + 18.0 * k, &format!("{} + {} de bônus", milhar(pk.tp), milhar(pk.bonus)), ts(11.0, k), estilo::SUAVE);
+                estilo::ret_gradiente(
+                    b,
+                    b.h * 0.5,
+                    Color::new(0.52, 0.95, 0.66, 1.0),
+                    Color::new(0.22, 0.66, 0.42, 1.0),
+                );
+                estilo::texto_centro_forte(
+                    b.center().x,
+                    b.center().y + 12.0 * k * 0.36,
+                    &t,
+                    tam_b,
+                    Color::new(0.03, 0.18, 0.08, 1.0),
+                );
+                estilo::texto_centro(
+                    r.center().x,
+                    b.y + b.h + 18.0 * k,
+                    &format!("{} + {} de bônus", milhar(pk.tp), milhar(pk.bonus)),
+                    ts(11.0, k),
+                    estilo::SUAVE,
+                );
             }
-            let bt = Rect::new(r.x + 14.0 * k, r.y + r.h - 62.0 * k, r.w - 28.0 * k, 48.0 * k);
+            let bt = Rect::new(
+                r.x + 14.0 * k,
+                r.y + r.h - 62.0 * k,
+                r.w - 28.0 * k,
+                48.0 * k,
+            );
             let ativo = !self.em_voo;
-            botao_ouro(bt, &cat::preco_brl(pk.centavos), ativo, !modal && bt.contains(m), k, agora + i as f64 * 0.7);
+            botao_ouro(
+                bt,
+                &cat::preco_brl(pk.centavos),
+                ativo,
+                !modal && bt.contains(m),
+                k,
+                agora + i as f64 * 0.7,
+            );
             if ativo && livre && sobre {
                 self.confirma = Some(Confirma::Tp(pk.id));
             }
@@ -767,7 +1494,18 @@ impl LojaTp {
 
     /// Janela de confirmacao. Devolve o pedido quando confirma.
     #[allow(clippy::too_many_arguments)]
-    fn modal(&mut self, conf: Confirma, p: Rect, estado: &EstadoLoja, vox: &VoxCache, solido: &Material, k: f32, m: Vec2, clicou: bool, agora: f64) -> Option<ClientMessage> {
+    fn modal(
+        &mut self,
+        conf: Confirma,
+        p: Rect,
+        estado: &EstadoLoja,
+        vox: &VoxCache,
+        solido: &Material,
+        k: f32,
+        m: Vec2,
+        clicou: bool,
+        agora: f64,
+    ) -> Option<ClientMessage> {
         estilo::ret_arredondado(p, 20.0 * k, Color::new(0.0, 0.0, 0.02, 0.62));
         let mw = (660.0 * k).min(p.w - 40.0 * k);
         let mh = (440.0 * k).min(p.h - 40.0 * k);
@@ -775,16 +1513,47 @@ impl LojaTp {
         let rc = 20.0 * k;
         brilho_radial(r.center(), mw * 0.65, LILAS, 0.12);
         estilo::sombra(r, rc, 1.4);
-        estilo::ret_gradiente(r, rc, Color::new(0.24, 0.15, 0.45, 0.99), Color::new(0.06, 0.05, 0.14, 0.99));
+        estilo::ret_gradiente(
+            r,
+            rc,
+            Color::new(0.24, 0.15, 0.45, 0.99),
+            Color::new(0.06, 0.05, 0.14, 0.99),
+        );
         estilo::borda_arredondada(r, rc, 2.0 * k.max(0.8), estilo::alfa(OURO_CLARO, 0.75));
-        estilo::texto_centro_forte(r.center().x, r.y + 40.0 * k, "Confirmar compra", ts(22.0, k), OURO_CLARO);
-        draw_rectangle(r.x + 40.0 * k, r.y + 56.0 * k, r.w - 80.0 * k, 1.0, estilo::alfa(LILAS, 0.25));
+        estilo::texto_centro_forte(
+            r.center().x,
+            r.y + 40.0 * k,
+            "Confirmar compra",
+            ts(22.0, k),
+            OURO_CLARO,
+        );
+        draw_rectangle(
+            r.x + 40.0 * k,
+            r.y + 56.0 * k,
+            r.w - 80.0 * k,
+            1.0,
+            estilo::alfa(LILAS, 0.25),
+        );
 
         // Preview entre o titulo (72) e os botoes (24 + 50 + 24 de respiro).
         let lado = (r.h - 72.0 * k - 98.0 * k).min(r.w * 0.40);
         let prev = Rect::new(r.x + 26.0 * k, r.y + 72.0 * k, lado, lado);
-        estilo::ret_gradiente(prev, 16.0 * k, Color::new(0.28, 0.19, 0.50, 1.0), Color::new(0.07, 0.05, 0.16, 1.0));
-        brilho_radial(vec2(prev.center().x, prev.y + prev.h * 0.6), prev.w * 0.5, if matches!(conf, Confirma::Tp(_)) { CIANO } else { LILAS }, 0.22);
+        estilo::ret_gradiente(
+            prev,
+            16.0 * k,
+            Color::new(0.28, 0.19, 0.50, 1.0),
+            Color::new(0.07, 0.05, 0.16, 1.0),
+        );
+        brilho_radial(
+            vec2(prev.center().x, prev.y + prev.h * 0.6),
+            prev.w * 0.5,
+            if matches!(conf, Confirma::Tp(_)) {
+                CIANO
+            } else {
+                LILAS
+            },
+            0.22,
+        );
         estilo::borda_arredondada(prev, 16.0 * k, 1.2 * k.max(0.8), estilo::alfa(LILAS, 0.35));
         let x = prev.x + prev.w + 24.0 * k;
         let largura = r.x + r.w - x - 24.0 * k;
@@ -793,34 +1562,91 @@ impl LojaTp {
         match conf {
             Confirma::Tp(id) => {
                 let pk = cat::pacote(id).copied().unwrap_or(cat::PACOTES[0]);
-                crate::icones_ui::loja(&format!("tp_{}", cat::PACOTES.iter().position(|p| p.id == pk.id).unwrap_or(0) + 1), prev.center(), prev.w * 0.82, 1.0);
+                crate::icones_ui::loja(
+                    &format!(
+                        "tp_{}",
+                        cat::PACOTES.iter().position(|p| p.id == pk.id).unwrap_or(0) + 1
+                    ),
+                    prev.center(),
+                    prev.w * 0.82,
+                    1.0,
+                );
                 estilo::texto_ajustado(pk.nome, x, y, largura, ts(22.0, k), estilo::TEXTO);
                 y += 22.0 * k;
-                estilo::texto(x, y, "Pacote de Tempest Points", ts(13.0, k), estilo::alfa(LILAS, 0.9));
+                estilo::texto(
+                    x,
+                    y,
+                    "Pacote de Tempest Points",
+                    ts(13.0, k),
+                    estilo::alfa(LILAS, 0.9),
+                );
                 y += 40.0 * k;
                 estilo::texto(x, y, "Você recebe", ts(13.0, k), estilo::SUAVE);
-                estilo::valor_tp(x + largura - estilo::largura_tp_texto(&milhar(pk.total()), ts(22.0, k), true), y + 4.0 * k, pk.total(), ts(22.0, k), OURO_CLARO);
+                estilo::valor_tp(
+                    x + largura - estilo::largura_tp_texto(&milhar(pk.total()), ts(22.0, k), true),
+                    y + 4.0 * k,
+                    pk.total(),
+                    ts(22.0, k),
+                    OURO_CLARO,
+                );
                 y += 38.0 * k;
                 estilo::texto(x, y, "Preço", ts(13.0, k), estilo::SUAVE);
                 let preco = cat::preco_brl(pk.centavos);
-                estilo::texto_forte(x + largura - estilo::medir_forte(&preco, ts(22.0, k)), y + 4.0 * k, &preco, ts(22.0, k), estilo::TEXTO);
+                estilo::texto_forte(
+                    x + largura - estilo::medir_forte(&preco, ts(22.0, k)),
+                    y + 4.0 * k,
+                    &preco,
+                    ts(22.0, k),
+                    estilo::TEXTO,
+                );
                 if estado.simulado {
                     y += 32.0 * k;
-                    estilo::texto_ajustado("Pagamento simulado: nada é cobrado.", x, y, largura, ts(12.0, k), AMBAR);
+                    estilo::texto_ajustado(
+                        "Pagamento simulado: nada é cobrado.",
+                        x,
+                        y,
+                        largura,
+                        ts(12.0, k),
+                        AMBAR,
+                    );
                 }
             }
             Confirma::Item(pr) => {
                 let skin = match pr {
                     Produto::Montaria(id) => cat::montaria(id).map_or(0, |m| m.skin_padrao),
                     Produto::Skin(id) => id,
-                    Produto::Tp(_) => 0,
+                    Produto::Tp(_) | Produto::BauCraft(_) => 0,
                 };
-                self.giro += get_frame_time().min(0.1) * 0.6;
-                crate::render3d::vitrine_montaria(vox, skin, Rect::new(prev.x + 6.0 * k, prev.y + 6.0 * k, prev.w - 12.0 * k, prev.h - 12.0 * k), self.giro, solido);
+                if matches!(pr, Produto::BauCraft(_)) {
+                    brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
+                    crate::icones_ui::ui("craft", prev.center(), prev.w * 0.52, OURO_CLARO);
+                } else {
+                    self.giro += get_frame_time().min(0.1) * 0.6;
+                    crate::render3d::vitrine_montaria(
+                        vox,
+                        skin,
+                        Rect::new(
+                            prev.x + 6.0 * k,
+                            prev.y + 6.0 * k,
+                            prev.w - 12.0 * k,
+                            prev.h - 12.0 * k,
+                        ),
+                        self.giro,
+                        solido,
+                    );
+                }
                 let tipo = match pr {
                     Produto::Montaria(_) => "Montaria · +50% de velocidade".to_string(),
-                    Produto::Skin(id) => format!("Skin de {}", cat::skin(id).and_then(|s| cat::montaria(s.montaria)).map_or("?", |m| m.nome)),
+                    Produto::Skin(id) => format!(
+                        "Skin de {}",
+                        cat::skin(id)
+                            .and_then(|s| cat::montaria(s.montaria))
+                            .map_or("?", |m| m.nome)
+                    ),
                     Produto::Tp(_) => String::new(),
+                    Produto::BauCraft(_) => {
+                        "1 chave aleatória · Cinza, Verde, Azul ou Roxa".to_string()
+                    }
                 };
                 estilo::texto_ajustado(&pr.nome(), x, y, largura, ts(22.0, k), estilo::TEXTO);
                 y += 22.0 * k;
@@ -829,7 +1655,13 @@ impl LojaTp {
                 let tam = ts(20.0, k);
                 let linha = |y: f32, rotulo: &str, v: u64, cor: Color| {
                     estilo::texto(x, y, rotulo, ts(13.0, k), estilo::SUAVE);
-                    estilo::valor_tp(x + largura - estilo::largura_tp_texto(&milhar(v), tam, true), y + 4.0 * k, v, tam, cor);
+                    estilo::valor_tp(
+                        x + largura - estilo::largura_tp_texto(&milhar(v), tam, true),
+                        y + 4.0 * k,
+                        v,
+                        tam,
+                        cor,
+                    );
                 };
                 y += 40.0 * k;
                 linha(y, "Preço", preco, OURO_CLARO);
@@ -840,7 +1672,13 @@ impl LojaTp {
                     Some(v) => linha(y, "Após a compra", v, estilo::TEXTO),
                     None => {
                         insuficiente = true;
-                        estilo::texto_forte(x, y, "Saldo insuficiente", ts(15.0, k), estilo::VERMELHO);
+                        estilo::texto_forte(
+                            x,
+                            y,
+                            "Saldo insuficiente",
+                            ts(15.0, k),
+                            estilo::VERMELHO,
+                        );
                     }
                 }
             }
@@ -851,7 +1689,11 @@ impl LojaTp {
         let cancelar = Rect::new(r.x + 26.0 * k, r.y + r.h - 24.0 * k - bh, bw, bh);
         let confirmar = Rect::new(cancelar.x + bw + 26.0 * k, cancelar.y, bw, bh);
         botao_contorno(cancelar, "Cancelar", cancelar.contains(m), k);
-        let rotulo = if insuficiente { "COMPRAR TP" } else { "CONFIRMAR" };
+        let rotulo = if insuficiente {
+            "COMPRAR TP"
+        } else {
+            "CONFIRMAR"
+        };
         botao_ouro(confirmar, rotulo, true, confirmar.contains(m), k, agora);
         if !clicou {
             return None;
@@ -859,7 +1701,7 @@ impl LojaTp {
         if confirmar.contains(m) {
             self.confirma = None;
             if insuficiente {
-                self.aba = 2;
+                self.aba = 3;
                 return None;
             }
             let pedido = self.novo_pedido();
@@ -880,7 +1722,9 @@ impl LojaTp {
     /// Brilho, raios e confete quando uma compra da' certo.
     fn comemora(&mut self, p: Rect, k: f32, agora: f64) {
         const DURACAO: f32 = 2.4;
-        let Some((t0, texto)) = self.festa.clone() else { return };
+        let Some((t0, texto)) = self.festa.clone() else {
+            return;
+        };
         let e = (agora - t0) as f32;
         if e > DURACAO {
             self.festa = None;
@@ -894,7 +1738,12 @@ impl LojaTp {
             let len = p.h * (0.18 + 0.20 * e.min(1.0)) * (0.8 + 0.4 * sorteio(i));
             let de = c + vec2(a.cos(), a.sin()) * 40.0 * k;
             let ate = c + vec2(a.cos(), a.sin()) * len;
-            estilo::traco(de, ate, 3.0 * k.max(0.7), estilo::alfa(OURO_CLARO, 0.28 * some));
+            estilo::traco(
+                de,
+                ate,
+                3.0 * k.max(0.7),
+                estilo::alfa(OURO_CLARO, 0.28 * some),
+            );
         }
         let cores = [OURO_CLARO, LILAS, CIANO, VERDE_POSSE, AMBAR];
         for i in 0..56u32 {
@@ -902,7 +1751,14 @@ impl LojaTp {
             let vel = (160.0 + 360.0 * sorteio(i + 101)) * k;
             let pos = c + vec2(a.cos(), a.sin() * 0.7) * vel * e + vec2(0.0, 300.0 * k * e * e);
             let cor = estilo::alfa(cores[(i % 5) as usize], some);
-            draw_poly(pos.x, pos.y, 4, (3.0 + 3.0 * sorteio(i + 7)) * k.max(0.6), e * 400.0 * (sorteio(i + 3) - 0.5), cor);
+            draw_poly(
+                pos.x,
+                pos.y,
+                4,
+                (3.0 + 3.0 * sorteio(i + 7)) * k.max(0.6),
+                e * 400.0 * (sorteio(i + 3) - 0.5),
+                cor,
+            );
         }
         let pop = (e * 6.0).min(1.0);
         let escala = 0.75 + 0.25 * pop + (1.0 - pop) * 0.2;
@@ -914,7 +1770,13 @@ impl LojaTp {
             estilo::alfa(OURO_CLARO, some.max(0.0)),
             true,
         );
-        estilo::texto_centro(c.x, c.y + 32.0 * k, &texto, ts(15.0, k), estilo::alfa(estilo::TEXTO, some.max(0.0)));
+        estilo::texto_centro(
+            c.x,
+            c.y + 32.0 * k,
+            &texto,
+            ts(15.0, k),
+            estilo::alfa(estilo::TEXTO, some.max(0.0)),
+        );
     }
 }
 
@@ -922,10 +1784,34 @@ impl LojaTp {
 fn cartao_skin(r: Rect, s: &cat::Skin, sel: bool, sobre: bool, estado: &EstadoLoja, k: f32) {
     let rc = 14.0 * k;
     if sel {
-        estilo::ret_arredondado(Rect::new(r.x - 3.0 * k, r.y - 3.0 * k, r.w + 6.0 * k, r.h + 6.0 * k), rc + 3.0 * k, estilo::alfa(OURO_CLARO, 0.16));
+        estilo::ret_arredondado(
+            Rect::new(r.x - 3.0 * k, r.y - 3.0 * k, r.w + 6.0 * k, r.h + 6.0 * k),
+            rc + 3.0 * k,
+            estilo::alfa(OURO_CLARO, 0.16),
+        );
     }
-    estilo::ret_gradiente(r, rc, if sel { Color::new(0.30, 0.20, 0.50, 0.97) } else { Color::new(0.15, 0.11, 0.27, 0.93) }, Color::new(0.06, 0.05, 0.13, 0.95));
-    estilo::borda_arredondada(r, rc, if sel { 2.0 } else { 1.0 } * k.max(0.8), if sel { OURO_CLARO } else if sobre { estilo::alfa(OURO_CLARO, 0.5) } else { estilo::alfa(LILAS, 0.2) });
+    estilo::ret_gradiente(
+        r,
+        rc,
+        if sel {
+            Color::new(0.30, 0.20, 0.50, 0.97)
+        } else {
+            Color::new(0.15, 0.11, 0.27, 0.93)
+        },
+        Color::new(0.06, 0.05, 0.13, 0.95),
+    );
+    estilo::borda_arredondada(
+        r,
+        rc,
+        if sel { 2.0 } else { 1.0 } * k.max(0.8),
+        if sel {
+            OURO_CLARO
+        } else if sobre {
+            estilo::alfa(OURO_CLARO, 0.5)
+        } else {
+            estilo::alfa(LILAS, 0.2)
+        },
+    );
     let cor = cor_da_skin(s.id);
     let rr = (r.h * 0.26).min(r.w * 0.20);
     let c = vec2(r.x + 14.0 * k + rr, r.y + 14.0 * k + rr);
@@ -933,14 +1819,47 @@ fn cartao_skin(r: Rect, s: &cat::Skin, sel: bool, sobre: bool, estado: &EstadoLo
     brilho_radial(c, rr * 1.6, cor, 0.40);
     draw_circle(c.x, c.y + rr * 0.06, rr, estilo::clarear(cor, -0.35));
     draw_circle(c.x, c.y - rr * 0.04, rr * 0.92, cor);
-    draw_circle(c.x - rr * 0.12, c.y - rr * 0.2, rr * 0.62, estilo::clarear(cor, 0.12));
-    draw_circle(c.x - rr * 0.32, c.y - rr * 0.38, rr * 0.26, estilo::alfa(WHITE, 0.38));
-    draw_circle_lines(c.x, c.y, rr, 2.0 * k.max(0.7), estilo::alfa(if sel { OURO_CLARO } else { WHITE }, if sel { 0.9 } else { 0.45 }));
+    draw_circle(
+        c.x - rr * 0.12,
+        c.y - rr * 0.2,
+        rr * 0.62,
+        estilo::clarear(cor, 0.12),
+    );
+    draw_circle(
+        c.x - rr * 0.32,
+        c.y - rr * 0.38,
+        rr * 0.26,
+        estilo::alfa(WHITE, 0.38),
+    );
+    draw_circle_lines(
+        c.x,
+        c.y,
+        rr,
+        2.0 * k.max(0.7),
+        estilo::alfa(
+            if sel { OURO_CLARO } else { WHITE },
+            if sel { 0.9 } else { 0.45 },
+        ),
+    );
     let x = c.x + rr + 12.0 * k;
     let largura = r.x + r.w - x - 10.0 * k;
-    estilo::texto_ajustado(s.nome, x, c.y - 4.0 * k, largura, ts(15.0, k), estilo::TEXTO);
+    estilo::texto_ajustado(
+        s.nome,
+        x,
+        c.y - 4.0 * k,
+        largura,
+        ts(15.0, k),
+        estilo::TEXTO,
+    );
     let nome_m = cat::montaria(s.montaria).map_or("?", |m| m.nome);
-    estilo::texto_ajustado(nome_m, x, c.y + 14.0 * k, largura, ts(11.0, k), estilo::alfa(LILAS, 0.85));
+    estilo::texto_ajustado(
+        nome_m,
+        x,
+        c.y + 14.0 * k,
+        largura,
+        ts(11.0, k),
+        estilo::alfa(LILAS, 0.85),
+    );
     let yb = r.y + r.h - 16.0 * k;
     match situacao_skin(s.id, estado) {
         Situacao::Comprar(preco) => {
@@ -951,9 +1870,21 @@ fn cartao_skin(r: Rect, s: &cat::Skin, sel: bool, sobre: bool, estado: &EstadoLo
             estilo::texto_forte(r.x + 34.0 * k, yb, "POSSUÍDA", ts(13.0, k), VERDE_POSSE);
         }
         Situacao::RequerMontaria => {
-            estilo::valor_tp(r.x + 14.0 * k, yb, s.preco_tp, ts(15.0, k), estilo::alfa(OURO_CLARO, 0.6));
+            estilo::valor_tp(
+                r.x + 14.0 * k,
+                yb,
+                s.preco_tp,
+                ts(15.0, k),
+                estilo::alfa(OURO_CLARO, 0.6),
+            );
             let t = "requer montaria";
-            estilo::texto(r.x + r.w - 12.0 * k - estilo::medir(t, ts(10.0, k)), yb, t, ts(10.0, k), estilo::SUAVE);
+            estilo::texto(
+                r.x + r.w - 12.0 * k - estilo::medir(t, ts(10.0, k)),
+                yb,
+                t,
+                ts(10.0, k),
+                estilo::SUAVE,
+            );
         }
     }
 }
@@ -967,11 +1898,17 @@ fn cartao_skin(r: Rect, s: &cat::Skin, sel: bool, sobre: bool, estado: &EstadoLo
 pub async fn previa(vox: &VoxCache) {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/2dengine-loja".into());
     let _ = std::fs::create_dir_all(&saida);
-    if let Some(v) = std::env::var("MMO_PREVIA_UI").ok().and_then(|v| v.parse::<f32>().ok()) {
+    if let Some(v) = std::env::var("MMO_PREVIA_UI")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+    {
         crate::hud_layout::define_escala_ui(v);
     }
     if let Ok(mg) = std::env::var("MMO_PREVIA_MARGENS") {
-        let v: Vec<f32> = mg.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+        let v: Vec<f32> = mg
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
         if v.len() == 4 {
             crate::hud_layout::define_margens([v[0], v[1], v[2], v[3]]);
         }
@@ -984,7 +1921,10 @@ pub async fn previa(vox: &VoxCache) {
     let rt = macroquad::texture::render_target_ex(
         lw,
         lh,
-        macroquad::texture::RenderTargetParams { depth: true, sample_count: 1 },
+        macroquad::texture::RenderTargetParams {
+            depth: true,
+            sample_count: 1,
+        },
     );
     rt.texture.set_filter(FilterMode::Linear);
     crate::render3d::define_alvo(Some(rt.clone()));
@@ -995,15 +1935,42 @@ pub async fn previa(vox: &VoxCache) {
         ligada: true,
         simulado: true,
         tp: 1_250,
-        posses: cat::Posses { montarias: vec![1], skins: vec![102] },
+        posses: cat::Posses {
+            montarias: vec![1],
+            skins: vec![102],
+        },
         historico: vec![
-            cat::CompraNet { produto: "Bolsa de TP".into(), valor: "R$ 24,90".into(), status: "creditado".into(), quando_unix: 0 },
-            cat::CompraNet { produto: "Lobo da Clareira".into(), valor: "500 TP".into(), status: "entregue".into(), quando_unix: 0 },
-            cat::CompraNet { produto: "Lobo da Meia-Noite".into(), valor: "300 TP".into(), status: "entregue".into(), quando_unix: 0 },
+            cat::CompraNet {
+                produto: "Bolsa de TP".into(),
+                valor: "R$ 24,90".into(),
+                status: "creditado".into(),
+                quando_unix: 0,
+            },
+            cat::CompraNet {
+                produto: "Lobo da Clareira".into(),
+                valor: "500 TP".into(),
+                status: "entregue".into(),
+                quando_unix: 0,
+            },
+            cat::CompraNet {
+                produto: "Lobo da Meia-Noite".into(),
+                valor: "300 TP".into(),
+                status: "entregue".into(),
+                quando_unix: 0,
+            },
         ],
     };
     loja.receber(AvisoLoja::Estado(estado.clone()));
-    let cenas: [&str; 8] = ["1-montarias", "2-montaria-possuida", "3-skins", "4-tempest-points", "5-confirma-montaria", "6-confirma-tp", "7-compra-concluida", "8-mundo"];
+    let cenas: [&str; 8] = [
+        "1-montarias",
+        "2-montaria-possuida",
+        "3-skins",
+        "4-tempest-points",
+        "5-confirma-montaria",
+        "6-confirma-tp",
+        "7-compra-concluida",
+        "8-mundo",
+    ];
     let (sw, sh) = (lw, lh);
     for (n, cena) in cenas.iter().enumerate() {
         if n == 7 {
@@ -1015,16 +1982,40 @@ pub async fn previa(vox: &VoxCache) {
         loja.festa_pendente = None;
         loja.ultimo = None;
         match n {
-            0 => { loja.aba = 0; loja.montaria_sel = 2; loja.skin_sel = 0; }
-            1 => { loja.aba = 0; loja.montaria_sel = 1; loja.skin_sel = 102; }
-            2 => { loja.aba = 1; loja.montaria_sel = 2; loja.skin_sel = 203; }
-            3 => { loja.aba = 2; }
-            4 => { loja.aba = 0; loja.montaria_sel = 3; loja.confirma = Some(Confirma::Item(Produto::Montaria(3))); }
-            5 => { loja.aba = 2; loja.confirma = Some(Confirma::Tp(4)); }
+            0 => {
+                loja.aba = 0;
+                loja.montaria_sel = 2;
+                loja.skin_sel = 0;
+            }
+            1 => {
+                loja.aba = 0;
+                loja.montaria_sel = 1;
+                loja.skin_sel = 102;
+            }
+            2 => {
+                loja.aba = 1;
+                loja.montaria_sel = 2;
+                loja.skin_sel = 203;
+            }
+            3 => {
+                loja.aba = 2;
+            }
+            4 => {
+                loja.aba = 0;
+                loja.montaria_sel = 3;
+                loja.confirma = Some(Confirma::Item(Produto::Montaria(3)));
+            }
+            5 => {
+                loja.aba = 2;
+                loja.confirma = Some(Confirma::Tp(4));
+            }
             _ => {
                 loja.aba = 0;
                 loja.montaria_sel = 2;
-                loja.receber(AvisoLoja::Resultado { ok: true, texto: "Tigre das Neves é seu!".into() });
+                loja.receber(AvisoLoja::Resultado {
+                    ok: true,
+                    texto: "Tigre das Neves é seu!".into(),
+                });
             }
         }
         for quadro in 0..48 {
@@ -1034,7 +2025,12 @@ pub async fn previa(vox: &VoxCache) {
             let (lsw, lsh) = crate::render3d::tela();
             for i in 0..14 {
                 let x = (i as f32 * 0.137).fract() * lsw;
-                draw_circle(x, lsh * (0.3 + 0.5 * ((i as f32 * 0.71).fract())), 60.0 + i as f32 * 6.0, Color::new(0.20, 0.32, 0.22, 1.0));
+                draw_circle(
+                    x,
+                    lsh * (0.3 + 0.5 * ((i as f32 * 0.71).fract())),
+                    60.0 + i as f32 * 6.0,
+                    Color::new(0.20, 0.32, 0.22, 1.0),
+                );
             }
             let _ = loja.desenha(vox, &solido);
             if quadro == if n == 6 { 22 } else { 46 } {
@@ -1060,16 +2056,47 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
         (2, EntityTag::Enemy, 1, vec2(-4.2, 0.0), 0),
         (3, EntityTag::Enemy, 3, vec2(-0.9, 0.0), 0),
         (4, EntityTag::Enemy, 5, vec2(2.6, 0.0), 0),
-        (5, EntityTag::Enemy, 10, vec2(8.5, 2.5), shared::ent_flags::BOSS),
-        (6, EntityTag::Player, 201, vec2(-2.5, -4.2), shared::ent_flags::MONTADO),
+        (
+            5,
+            EntityTag::Enemy,
+            10,
+            vec2(8.5, 2.5),
+            shared::ent_flags::BOSS,
+        ),
+        (
+            6,
+            EntityTag::Player,
+            201,
+            vec2(-2.5, -4.2),
+            shared::ent_flags::MONTADO,
+        ),
     ];
     for (id, tag, kind, p, flags) in elenco {
-        metas.push(EntityMeta { id: EntityId(id), tag, name: None, hp_max: 100, faction: None, kind, nivel: 10 });
-        estados.push(EntityState::quantize(EntityId(id), ::glam::Vec2::new(p.x, p.y), ::glam::Vec2::ZERO, 100, flags));
+        metas.push(EntityMeta {
+            id: EntityId(id),
+            tag,
+            name: None,
+            hp_max: 100,
+            faction: None,
+            kind,
+            nivel: 10,
+        });
+        estados.push(EntityState::quantize(
+            EntityId(id),
+            ::glam::Vec2::new(p.x, p.y),
+            ::glam::Vec2::ZERO,
+            100,
+            flags,
+        ));
     }
     mundo.apply(metas, estados, &[]);
     // (nome, andando, fase da passada)
-    let tomadas: [(&str, bool, f32); 4] = [("parado", false, 0.0), ("corrida-1", true, 0.0), ("corrida-2", true, 1.6), ("corrida-3", true, 3.2)];
+    let tomadas: [(&str, bool, f32); 4] = [
+        ("parado", false, 0.0),
+        ("corrida-1", true, 0.0),
+        ("corrida-2", true, 1.6),
+        ("corrida-3", true, 3.2),
+    ];
     for (nome, anda, fase) in tomadas {
         for quadro in 0..30 {
             mundo.tick(get_frame_time(), &|_, _| 0.0);
@@ -1082,7 +2109,8 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
             clear_background(Color::new(0.08, 0.10, 0.12, 1.0));
             let (sw, sh) = crate::render3d::tela();
             let esquerda = Rect::new(0.0, 0.0, sw * 0.70, sh);
-            let mut vista = crate::render3d::Vista::nova(vec2(0.0, 1.0), 0.0, 0.4, 0.8, 0.0, &|_, _| 0.0);
+            let mut vista =
+                crate::render3d::Vista::nova(vec2(0.0, 1.0), 0.0, 0.4, 0.8, 0.0, &|_, _| 0.0);
             vista.cam.position = vec3(0.4, 6.5, -17.0);
             vista.cam.target = vec3(0.4, 1.0, 0.0);
             vista.cam.viewport = crate::render3d::viewport_na_tela(esquerda);
@@ -1090,16 +2118,34 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
             vista.cam.render_target = crate::render3d::alvo();
             set_camera(&vista.cam);
             crate::render3d::limpa_so_profundidade();
-            draw_plane(vec3(0.0, 0.0, 0.0), vec2(30.0, 30.0), None, Color::new(0.20, 0.24, 0.22, 1.0));
+            draw_plane(
+                vec3(0.0, 0.0, 0.0),
+                vec2(30.0, 30.0),
+                None,
+                Color::new(0.20, 0.24, 0.22, 1.0),
+            );
             macroquad::material::gl_use_material(solido);
             solido.set_uniform("Recorte", Vec3::ZERO);
             crate::render3d::draw_entities(&mut mundo, vox, None, &vista);
             macroquad::material::gl_use_default_material();
             crate::render3d::camera_padrao();
             let direita = Rect::new(sw * 0.72, sh * 0.2, sw * 0.26, sh * 0.55);
-            draw_rectangle(direita.x, direita.y, direita.w, direita.h, Color::new(0.16, 0.11, 0.30, 1.0));
+            draw_rectangle(
+                direita.x,
+                direita.y,
+                direita.w,
+                direita.h,
+                Color::new(0.16, 0.11, 0.30, 1.0),
+            );
             if let Some(c) = crate::render3d::vitrine_chao(vox, 201, direita) {
-                draw_ellipse(c.x, c.y, direita.w * 0.3, direita.h * 0.05, 0.0, estilo::alfa(OURO_CLARO, 0.6));
+                draw_ellipse(
+                    c.x,
+                    c.y,
+                    direita.w * 0.3,
+                    direita.h * 0.05,
+                    0.0,
+                    estilo::alfa(OURO_CLARO, 0.6),
+                );
             }
             crate::render3d::vitrine_montaria(vox, 201, direita, 2.2, solido);
             estilo::texto(16.0, 30.0, &format!("MUNDO · {nome} · lobo, urso, tigre, owlbear, chefe Lobo Alfa, cavaleiro no tigre"), 15, WHITE);
@@ -1151,13 +2197,24 @@ async fn previa_montado(
             vista.cam.render_target = crate::render3d::alvo();
             set_camera(&vista.cam);
             crate::render3d::limpa_so_profundidade();
-            draw_plane(vec3(0.0, 0.0, 0.0), vec2(30.0, 30.0), None, Color::new(0.20, 0.24, 0.22, 1.0));
+            draw_plane(
+                vec3(0.0, 0.0, 0.0),
+                vec2(30.0, 30.0),
+                None,
+                Color::new(0.20, 0.24, 0.22, 1.0),
+            );
             macroquad::material::gl_use_material(solido);
             solido.set_uniform("Recorte", Vec3::ZERO);
             crate::render3d::draw_entities(mundo, vox, None, &vista);
             macroquad::material::gl_use_default_material();
             crate::render3d::camera_padrao();
-            estilo::texto(16.0, 30.0, &format!("MONTADO · {nome} · cavaleiro no tigre"), 15, WHITE);
+            estilo::texto(
+                16.0,
+                30.0,
+                &format!("MONTADO · {nome} · cavaleiro no tigre"),
+                15,
+                WHITE,
+            );
             if quadro == 28 {
                 if let Some(rt) = crate::render3d::alvo() {
                     salva_alvo(&rt, &format!("{prefixo}-montado-{nome}.png"));
@@ -1191,7 +2248,12 @@ mod tests {
     use super::*;
 
     fn estado(montarias: Vec<u16>, skins: Vec<u16>, tp: u64) -> EstadoLoja {
-        EstadoLoja { ligada: true, tp, posses: cat::Posses { montarias, skins }, ..Default::default() }
+        EstadoLoja {
+            ligada: true,
+            tp,
+            posses: cat::Posses { montarias, skins },
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -1211,7 +2273,11 @@ mod tests {
         assert_eq!(situacao_skin(101, &e), Situacao::Inclusa);
         assert_eq!(situacao_skin(102, &e), Situacao::Possui);
         assert_eq!(situacao_skin(103, &e), Situacao::Comprar(450));
-        assert_eq!(situacao_skin(202, &e), Situacao::RequerMontaria, "sem a montaria nao compra a skin");
+        assert_eq!(
+            situacao_skin(202, &e),
+            Situacao::RequerMontaria,
+            "sem a montaria nao compra a skin"
+        );
     }
 
     #[test]
@@ -1236,12 +2302,24 @@ mod tests {
 
     #[test]
     fn resultado_vai_pro_chat_libera_o_botao_e_comemora() {
-        let mut l = LojaTp { em_voo: true, ..Default::default() };
-        assert_eq!(l.receber(AvisoLoja::Resultado { ok: true, texto: "ok".into() }), Some("Loja: ok".into()));
+        let mut l = LojaTp {
+            em_voo: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            l.receber(AvisoLoja::Resultado {
+                ok: true,
+                texto: "ok".into()
+            }),
+            Some("Loja: ok".into())
+        );
         assert!(!l.em_voo);
         assert!(l.festa_pendente.is_some());
         l.festa_pendente = None;
-        l.receber(AvisoLoja::Resultado { ok: false, texto: "sem saldo".into() });
+        l.receber(AvisoLoja::Resultado {
+            ok: false,
+            texto: "sem saldo".into(),
+        });
         assert!(l.festa_pendente.is_none(), "recusa nao comemora");
     }
 

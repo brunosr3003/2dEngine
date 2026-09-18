@@ -21,7 +21,18 @@ use crate::world::SessionId;
 #[derive(Debug)]
 pub enum Evento {
     /// Posses da conta (login, compra): montar sem abrir a loja.
-    Posses { sid: SessionId, personagem: String, posses: Posses },
+    Posses {
+        sid: SessionId,
+        personagem: String,
+        posses: Posses,
+    },
+    /// Consumivel pago, ja' rolado pelo servidor, para entregar ao personagem.
+    BauCraft {
+        sid: SessionId,
+        personagem: String,
+        item_id: u16,
+        cor: u8,
+    },
 }
 
 pub async fn criar_tabelas(pool: &PgPool) -> Result<()> {
@@ -79,10 +90,16 @@ pub enum Provedor {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Aprovacao {
-    Aprovado { externo: String },
+    Aprovado {
+        externo: String,
+    },
     /// Provedor real: o jogador paga fora e o webhook confirma depois.
-    Pendente { url: String },
-    Recusado { motivo: String },
+    Pendente {
+        url: String,
+    },
+    Recusado {
+        motivo: String,
+    },
 }
 
 impl Provedor {
@@ -103,19 +120,33 @@ impl Provedor {
 
     pub async fn iniciar(&self, pedido: &str, _pacote: &PacoteTp) -> Aprovacao {
         match self {
-            Provedor::Simulado => Aprovacao::Aprovado { externo: format!("sim-{pedido}") },
-            Provedor::Desligado => Aprovacao::Recusado { motivo: "Pagamento indisponível no momento.".into() },
+            Provedor::Simulado => Aprovacao::Aprovado {
+                externo: format!("sim-{pedido}"),
+            },
+            Provedor::Desligado => Aprovacao::Recusado {
+                motivo: "Pagamento indisponível no momento.".into(),
+            },
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Resposta {
-    Feito { saldo: u64, texto: String },
+    Feito {
+        saldo: u64,
+        texto: String,
+    },
     /// O mesmo pedido ja' tinha sido feito: nada mudou.
-    JaFeito { saldo: u64, texto: String },
-    Pendente { url: String },
-    Recusado { texto: String },
+    JaFeito {
+        saldo: u64,
+        texto: String,
+    },
+    Pendente {
+        url: String,
+    },
+    Recusado {
+        texto: String,
+    },
 }
 
 impl Resposta {
@@ -125,7 +156,9 @@ impl Resposta {
 
     pub fn texto(&self) -> String {
         match self {
-            Resposta::Feito { texto, .. } | Resposta::JaFeito { texto, .. } | Resposta::Recusado { texto } => texto.clone(),
+            Resposta::Feito { texto, .. }
+            | Resposta::JaFeito { texto, .. }
+            | Resposta::Recusado { texto } => texto.clone(),
             Resposta::Pendente { .. } => "Pagamento aguardando confirmação.".into(),
         }
     }
@@ -136,7 +169,13 @@ impl Resposta {
 }
 
 /// Compra de pacote de TP com dinheiro.
-pub async fn comprar_tp(central: &PgPool, provedor: Provedor, conta: &str, pacote_id: u16, pedido: &str) -> Result<Resposta> {
+pub async fn comprar_tp(
+    central: &PgPool,
+    provedor: Provedor,
+    conta: &str,
+    pacote_id: u16,
+    pedido: &str,
+) -> Result<Resposta> {
     if !cat::pedido_valido(pedido) {
         return Ok(Resposta::recusa("Pedido inválido."));
     }
@@ -156,14 +195,20 @@ pub async fn comprar_tp(central: &PgPool, provedor: Provedor, conta: &str, pacot
     .bind(provedor.nome())
     .execute(central)
     .await?;
-    let row = sqlx::query("SELECT conta, produto, status FROM loja_pedidos WHERE id = $1").bind(pedido).fetch_one(central).await?;
+    let row = sqlx::query("SELECT conta, produto, status FROM loja_pedidos WHERE id = $1")
+        .bind(pedido)
+        .fetch_one(central)
+        .await?;
     let (dono, produto, status): (String, String, String) = (row.get(0), row.get(1), row.get(2));
     if dono != conta || produto != codigo {
         return Ok(Resposta::recusa("Pedido inválido."));
     }
     match status.as_str() {
         "creditado" => {
-            return Ok(Resposta::JaFeito { saldo: razao::saldo(central, conta).await?, texto: "Esta compra já foi creditada.".into() });
+            return Ok(Resposta::JaFeito {
+                saldo: razao::saldo(central, conta).await?,
+                texto: "Esta compra já foi creditada.".into(),
+            });
         }
         "recusado" => return Ok(Resposta::recusa("Pagamento recusado.")),
         _ => {}
@@ -192,16 +237,23 @@ pub async fn comprar_tp(central: &PgPool, provedor: Provedor, conta: &str, pacot
 /// Pagamento aprovado: credita a TP do pacote. E' o que o webhook de um
 /// provedor real chama. Idempotente: a linha do pedido fica travada durante a
 /// transacao e o credito leva a referencia unica `loja:<pedido>`.
-pub async fn confirmar_pagamento(central: &PgPool, pedido: &str, externo: &str) -> Result<Resposta> {
+pub async fn confirmar_pagamento(
+    central: &PgPool,
+    pedido: &str,
+    externo: &str,
+) -> Result<Resposta> {
     let mut tx = central.begin().await?;
-    let Some(row) = sqlx::query("SELECT conta, produto, status, tipo FROM loja_pedidos WHERE id = $1 FOR UPDATE")
-        .bind(pedido)
-        .fetch_optional(&mut *tx)
-        .await?
+    let Some(row) = sqlx::query(
+        "SELECT conta, produto, status, tipo FROM loja_pedidos WHERE id = $1 FOR UPDATE",
+    )
+    .bind(pedido)
+    .fetch_optional(&mut *tx)
+    .await?
     else {
         return Ok(Resposta::recusa("Pedido não encontrado."));
     };
-    let (conta, produto, status, tipo): (String, String, String, String) = (row.get(0), row.get(1), row.get(2), row.get(3));
+    let (conta, produto, status, tipo): (String, String, String, String) =
+        (row.get(0), row.get(1), row.get(2), row.get(3));
     let pacote = match (tipo.as_str(), Produto::de_codigo(&produto)) {
         ("tp", Some(Produto::Tp(i))) => cat::pacote(i),
         _ => None,
@@ -212,9 +264,19 @@ pub async fn confirmar_pagamento(central: &PgPool, pedido: &str, externo: &str) 
     if status == "creditado" {
         let saldo = razao::saldo(&mut *tx, &conta).await?;
         tx.commit().await?;
-        return Ok(Resposta::JaFeito { saldo, texto: "Esta compra já foi creditada.".into() });
+        return Ok(Resposta::JaFeito {
+            saldo,
+            texto: "Esta compra já foi creditada.".into(),
+        });
     }
-    let m = razao::mover(&mut tx, &conta, pacote.total() as i64, "loja:tp", Some(&format!("loja:{pedido}"))).await?;
+    let m = razao::mover(
+        &mut tx,
+        &conta,
+        pacote.total() as i64,
+        "loja:tp",
+        Some(&format!("loja:{pedido}")),
+    )
+    .await?;
     sqlx::query("UPDATE loja_pedidos SET status = 'creditado', externo = $2, atualizado_em = NOW() WHERE id = $1")
         .bind(pedido)
         .bind(externo)
@@ -222,15 +284,26 @@ pub async fn confirmar_pagamento(central: &PgPool, pedido: &str, externo: &str) 
         .await?;
     tx.commit().await?;
     Ok(match m {
-        razao::Movimento::Feito { saldo } => Resposta::Feito { saldo, texto: format!("+{} TP creditados.", pacote.total()) },
+        razao::Movimento::Feito { saldo } => Resposta::Feito {
+            saldo,
+            texto: format!("+{} TP creditados.", pacote.total()),
+        },
         razao::Movimento::JaFeito { saldo } | razao::Movimento::SemSaldo { saldo } => {
-            Resposta::JaFeito { saldo, texto: "Esta compra já foi creditada.".into() }
+            Resposta::JaFeito {
+                saldo,
+                texto: "Esta compra já foi creditada.".into(),
+            }
         }
     })
 }
 
 /// Compra de montaria ou skin com TP: debito e posse na mesma transacao.
-pub async fn comprar_item(central: &PgPool, conta: &str, produto: Produto, pedido: &str) -> Result<Resposta> {
+pub async fn comprar_item(
+    central: &PgPool,
+    conta: &str,
+    produto: Produto,
+    pedido: &str,
+) -> Result<Resposta> {
     if !cat::pedido_valido(pedido) {
         return Ok(Resposta::recusa("Pedido inválido."));
     }
@@ -241,7 +314,10 @@ pub async fn comprar_item(central: &PgPool, conta: &str, produto: Produto, pedid
     let mut tx = central.begin().await?;
     // Mesma trava do razao (reentrante na transacao): compras da mesma conta
     // em serie — duas skins ao mesmo tempo nao leem o mesmo saldo.
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))").bind(conta).execute(&mut *tx).await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+        .bind(conta)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query(
         "INSERT INTO loja_pedidos (id, conta, produto, tipo, valor, moeda, status, provedor)
          VALUES ($1, $2, $3, 'item', $4, 'TP', 'pendente', 'tp')
@@ -257,7 +333,8 @@ pub async fn comprar_item(central: &PgPool, conta: &str, produto: Produto, pedid
         .bind(pedido)
         .fetch_one(&mut *tx)
         .await?;
-    let (dono, prod, status, motivo): (String, String, String, String) = (row.get(0), row.get(1), row.get(2), row.get(3));
+    let (dono, prod, status, motivo): (String, String, String, String) =
+        (row.get(0), row.get(1), row.get(2), row.get(3));
     if dono != conta || prod != codigo {
         return Ok(Resposta::recusa("Pedido inválido."));
     }
@@ -265,11 +342,18 @@ pub async fn comprar_item(central: &PgPool, conta: &str, produto: Produto, pedid
         "entregue" => {
             let saldo = razao::saldo(&mut *tx, conta).await?;
             tx.commit().await?;
-            return Ok(Resposta::JaFeito { saldo, texto: "Esta compra já foi entregue.".into() });
+            return Ok(Resposta::JaFeito {
+                saldo,
+                texto: "Esta compra já foi entregue.".into(),
+            });
         }
         "recusado" => {
             tx.commit().await?;
-            return Ok(Resposta::recusa(if motivo.is_empty() { "Compra recusada.".to_string() } else { motivo }));
+            return Ok(Resposta::recusa(if motivo.is_empty() {
+                "Compra recusada.".to_string()
+            } else {
+                motivo
+            }));
         }
         _ => {}
     }
@@ -280,7 +364,15 @@ pub async fn comprar_item(central: &PgPool, conta: &str, produto: Produto, pedid
         tx.commit().await?;
         return Ok(Resposta::recusa(r.texto()));
     }
-    let saldo = match razao::mover(&mut tx, conta, -(preco as i64), &format!("loja:item:{codigo}"), Some(&format!("loja:{pedido}"))).await? {
+    let saldo = match razao::mover(
+        &mut tx,
+        conta,
+        -(preco as i64),
+        &format!("loja:item:{codigo}"),
+        Some(&format!("loja:{pedido}")),
+    )
+    .await?
+    {
         razao::Movimento::SemSaldo { .. } => {
             recusar_pedido(&mut tx, pedido, RecusaCompra::SemSaldo.texto()).await?;
             tx.commit().await?;
@@ -288,12 +380,15 @@ pub async fn comprar_item(central: &PgPool, conta: &str, produto: Produto, pedid
         }
         razao::Movimento::Feito { saldo } | razao::Movimento::JaFeito { saldo } => saldo,
     };
-    sqlx::query("INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
-        .bind(conta)
-        .bind(&codigo)
-        .bind(pedido)
-        .execute(&mut *tx)
-        .await?;
+    // Consumiveis sao repetiveis e nao viram posse da conta.
+    if !matches!(produto, Produto::BauCraft(_)) {
+        sqlx::query("INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+            .bind(conta)
+            .bind(&codigo)
+            .bind(pedido)
+            .execute(&mut *tx)
+            .await?;
+    }
     if let Produto::Montaria(i) = produto {
         if let Some(m) = cat::montaria(i) {
             sqlx::query("INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
@@ -309,10 +404,21 @@ pub async fn comprar_item(central: &PgPool, conta: &str, produto: Produto, pedid
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(Resposta::Feito { saldo, texto: format!("{} é seu!", produto.nome()) })
+    Ok(Resposta::Feito {
+        saldo,
+        texto: if matches!(produto, Produto::BauCraft(_)) {
+            format!("{} aberto!", produto.nome())
+        } else {
+            format!("{} é seu!", produto.nome())
+        },
+    })
 }
 
-async fn recusar_pedido(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, pedido: &str, motivo: &str) -> Result<()> {
+async fn recusar_pedido(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    pedido: &str,
+    motivo: &str,
+) -> Result<()> {
     sqlx::query("UPDATE loja_pedidos SET status = 'recusado', motivo = $2, atualizado_em = NOW() WHERE id = $1")
         .bind(pedido)
         .bind(motivo)
@@ -323,7 +429,11 @@ async fn recusar_pedido(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, pedido: 
 
 /// O que a conta possui.
 pub async fn posses<'e, E: sqlx::PgExecutor<'e>>(exec: E, conta: &str) -> Result<Posses> {
-    let codigos: Vec<String> = sqlx::query_scalar("SELECT produto FROM loja_posses WHERE conta = $1").bind(conta).fetch_all(exec).await?;
+    let codigos: Vec<String> =
+        sqlx::query_scalar("SELECT produto FROM loja_posses WHERE conta = $1")
+            .bind(conta)
+            .fetch_all(exec)
+            .await?;
     Ok(Posses::de_codigos(codigos.iter().map(String::as_str)))
 }
 
@@ -343,7 +453,11 @@ pub async fn estado(central: &PgPool, conta: &str) -> Result<EstadoLoja> {
         let moeda: String = r.get(2);
         CompraNet {
             produto: Produto::de_codigo(&produto).map_or(produto, |p| p.nome()),
-            valor: if moeda == "TP" { format!("{valor} TP") } else { cat::preco_brl(valor.max(0) as u32) },
+            valor: if moeda == "TP" {
+                format!("{valor} TP")
+            } else {
+                cat::preco_brl(valor.max(0) as u32)
+            },
             status: r.get(3),
             quando_unix: r.get(4),
         }
@@ -365,8 +479,14 @@ mod tests {
     #[tokio::test]
     async fn simulado_aprova_na_hora_e_desligado_recusa() {
         let p = cat::pacote(1).unwrap();
-        assert!(matches!(Provedor::Simulado.iniciar("pedido-teste-1", p).await, Aprovacao::Aprovado { .. }));
-        assert!(matches!(Provedor::Desligado.iniciar("pedido-teste-1", p).await, Aprovacao::Recusado { .. }));
+        assert!(matches!(
+            Provedor::Simulado.iniciar("pedido-teste-1", p).await,
+            Aprovacao::Aprovado { .. }
+        ));
+        assert!(matches!(
+            Provedor::Desligado.iniciar("pedido-teste-1", p).await,
+            Aprovacao::Recusado { .. }
+        ));
     }
 
     /// Fluxo inteiro num Postgres descartavel: `DATABASE_URL_CENTRAL_TESTE`.
@@ -383,12 +503,18 @@ mod tests {
         let id = |s: &str| format!("{}-{s}", &tag[..16]);
 
         // Pacote de 550: o mesmo pedido duas vezes (clique duplo / reenvio).
-        let r = comprar_tp(&central, Provedor::Simulado, &conta, 2, &id("tp1")).await.unwrap();
+        let r = comprar_tp(&central, Provedor::Simulado, &conta, 2, &id("tp1"))
+            .await
+            .unwrap();
         assert!(matches!(r, Resposta::Feito { saldo: 550, .. }), "{r:?}");
-        let r = comprar_tp(&central, Provedor::Simulado, &conta, 2, &id("tp1")).await.unwrap();
+        let r = comprar_tp(&central, Provedor::Simulado, &conta, 2, &id("tp1"))
+            .await
+            .unwrap();
         assert!(matches!(r, Resposta::JaFeito { saldo: 550, .. }), "{r:?}");
         // Webhook repetido do provedor.
-        let r = confirmar_pagamento(&central, &id("tp1"), "sim").await.unwrap();
+        let r = confirmar_pagamento(&central, &id("tp1"), "sim")
+            .await
+            .unwrap();
         assert!(matches!(r, Resposta::JaFeito { saldo: 550, .. }), "{r:?}");
         // Dois canais com o MESMO pedido ao mesmo tempo: um credito so'.
         let tp2 = id("tp2");
@@ -398,30 +524,65 @@ mod tests {
         );
         let (a, b) = (a.unwrap(), b.unwrap());
         assert!(a.ok() && b.ok());
-        assert_eq!(razao::saldo(&central, &conta).await.unwrap(), 550 + 1200, "{a:?} {b:?}");
+        assert_eq!(
+            razao::saldo(&central, &conta).await.unwrap(),
+            550 + 1200,
+            "{a:?} {b:?}"
+        );
         // Pedido de outra conta com o mesmo id: recusado.
-        let r = comprar_tp(&central, Provedor::Simulado, "T:outra", 2, &id("tp1")).await.unwrap();
+        let r = comprar_tp(&central, Provedor::Simulado, "T:outra", 2, &id("tp1"))
+            .await
+            .unwrap();
         assert!(!r.ok());
         // Provedor desligado: recusa e nao credita.
-        let r = comprar_tp(&central, Provedor::Desligado, &conta, 1, &id("tp3")).await.unwrap();
+        let r = comprar_tp(&central, Provedor::Desligado, &conta, 1, &id("tp3"))
+            .await
+            .unwrap();
         assert!(!r.ok());
         assert_eq!(razao::saldo(&central, &conta).await.unwrap(), 1750);
 
         // Montaria (500): entrega, repetida vale uma, outra vez = ja' possui.
-        let r = comprar_item(&central, &conta, Produto::Montaria(1), &id("m1")).await.unwrap();
+        let r = comprar_item(&central, &conta, Produto::Montaria(1), &id("m1"))
+            .await
+            .unwrap();
         assert!(matches!(r, Resposta::Feito { saldo: 1250, .. }), "{r:?}");
-        let r = comprar_item(&central, &conta, Produto::Montaria(1), &id("m1")).await.unwrap();
+        let r = comprar_item(&central, &conta, Produto::Montaria(1), &id("m1"))
+            .await
+            .unwrap();
         assert!(matches!(r, Resposta::JaFeito { saldo: 1250, .. }), "{r:?}");
-        let r = comprar_item(&central, &conta, Produto::Montaria(1), &id("m1b")).await.unwrap();
-        assert_eq!(r, Resposta::Recusado { texto: RecusaCompra::JaPossui.texto().into() });
+        let r = comprar_item(&central, &conta, Produto::Montaria(1), &id("m1b"))
+            .await
+            .unwrap();
+        assert_eq!(
+            r,
+            Resposta::Recusado {
+                texto: RecusaCompra::JaPossui.texto().into()
+            }
+        );
         // Skin de montaria que nao tem; skin da que tem.
-        let r = comprar_item(&central, &conta, Produto::Skin(202), &id("s1")).await.unwrap();
-        assert_eq!(r, Resposta::Recusado { texto: RecusaCompra::PrecisaDaMontaria.texto().into() });
-        let r = comprar_item(&central, &conta, Produto::Skin(102), &id("s2")).await.unwrap();
+        let r = comprar_item(&central, &conta, Produto::Skin(202), &id("s1"))
+            .await
+            .unwrap();
+        assert_eq!(
+            r,
+            Resposta::Recusado {
+                texto: RecusaCompra::PrecisaDaMontaria.texto().into()
+            }
+        );
+        let r = comprar_item(&central, &conta, Produto::Skin(102), &id("s2"))
+            .await
+            .unwrap();
         assert!(matches!(r, Resposta::Feito { saldo: 950, .. }), "{r:?}");
         // Saldo insuficiente: nada muda.
-        let r = comprar_item(&central, &conta, Produto::Montaria(3), &id("m3")).await.unwrap();
-        assert_eq!(r, Resposta::Recusado { texto: RecusaCompra::SemSaldo.texto().into() });
+        let r = comprar_item(&central, &conta, Produto::Montaria(3), &id("m3"))
+            .await
+            .unwrap();
+        assert_eq!(
+            r,
+            Resposta::Recusado {
+                texto: RecusaCompra::SemSaldo.texto().into()
+            }
+        );
         assert_eq!(razao::saldo(&central, &conta).await.unwrap(), 950);
         // Duas compras diferentes ao mesmo tempo nao leem o mesmo saldo.
         let (m2, s3) = (id("m2"), id("s3"));
@@ -432,7 +593,11 @@ mod tests {
         let (a, b) = (a.unwrap(), b.unwrap());
         assert!(a.ok() != b.ok() || (a.ok() && b.ok()), "{a:?} {b:?}");
         let saldo = razao::saldo(&central, &conta).await.unwrap();
-        let gasto: u64 = [(&a, 800u64), (&b, 450u64)].iter().filter(|(r, _)| r.ok()).map(|(_, p)| *p).sum();
+        let gasto: u64 = [(&a, 800u64), (&b, 450u64)]
+            .iter()
+            .filter(|(r, _)| r.ok())
+            .map(|(_, p)| *p)
+            .sum();
         assert_eq!(saldo, 950 - gasto, "{a:?} {b:?}");
 
         let p = posses(&central, &conta).await.unwrap();

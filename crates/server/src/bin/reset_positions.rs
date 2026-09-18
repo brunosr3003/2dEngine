@@ -35,9 +35,8 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-        "postgres://solar:solar_dev_123@localhost:5432/mmo_dev".to_string()
-    });
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://solar:solar_dev_123@localhost:5432/mmo_dev".to_string());
 
     // Resolve o spawn tile do mesmo jeito que o server escolhe na
     // inicializacao (tick.rs::run_world_loop).
@@ -55,19 +54,31 @@ async fn main() -> Result<()> {
     // Centro do tile (mesma convencao de `default_spawn` no server).
     let x = sx as f32 + 0.5;
     let y = sy as f32 + 0.5;
-    tracing::info!("spawn resolvido: tile=({}, {}) → world=({:.1}, {:.1})", sx, sy, x, y);
+    tracing::info!(
+        "spawn resolvido: tile=({}, {}) → world=({:.1}, {:.1})",
+        sx,
+        sy,
+        x,
+        y
+    );
 
     let pool = sqlx::postgres::PgPool::connect(&database_url).await?;
 
     // Lista antes (pra log + sanity check)
-    let before: Vec<(String, f32, f32, i32, i32)> = sqlx::query_as(
-        "SELECT name, x, y, hp, max_hp FROM characters ORDER BY name",
-    )
-    .fetch_all(&pool)
-    .await?;
+    let before: Vec<(String, f32, f32, i32, i32)> =
+        sqlx::query_as("SELECT name, x, y, hp, max_hp FROM characters ORDER BY name")
+            .fetch_all(&pool)
+            .await?;
     tracing::info!("encontrados {} personagens", before.len());
     for (name, bx, by, hp, max_hp) in &before {
-        tracing::info!("  {:<16} pos=({:.1}, {:.1}) hp={}/{}", name, bx, by, hp, max_hp);
+        tracing::info!(
+            "  {:<16} pos=({:.1}, {:.1}) hp={}/{}",
+            name,
+            bx,
+            by,
+            hp,
+            max_hp
+        );
     }
 
     // Reset: pos = spawn, hp = max_hp (tira de dead state se aplicavel),
@@ -75,14 +86,12 @@ async fn main() -> Result<()> {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_millis() as i64;
-    let res = sqlx::query(
-        "UPDATE characters SET x = $1, y = $2, hp = max_hp, updated = $3",
-    )
-    .bind(x)
-    .bind(y)
-    .bind(now_ms)
-    .execute(&pool)
-    .await?;
+    let res = sqlx::query("UPDATE characters SET x = $1, y = $2, hp = max_hp, updated = $3")
+        .bind(x)
+        .bind(y)
+        .bind(now_ms)
+        .execute(&pool)
+        .await?;
 
     tracing::info!(
         "✓ {} personagens resetados pra ({:.1}, {:.1}) com HP cheio",

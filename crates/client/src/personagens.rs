@@ -1,10 +1,17 @@
 //! Selecao e criacao usam o mesmo contrato de personagens do servidor.
-use macroquad::prelude::*;
-use macroquad::material::{gl_use_default_material,gl_use_material,Material};
-use shared::{Faction,VisualConfig,skills::Conjunto,protocol::{CharacterListEntry,ClientMessage}};
 use crate::{hud_estilo as ui, render3d, vox::VoxCache};
+use macroquad::material::{gl_use_default_material, gl_use_material, Material};
+use macroquad::prelude::*;
+use shared::{
+    protocol::{CharacterListEntry, ClientMessage},
+    skills::Conjunto,
+    Faction, VisualConfig,
+};
 
-pub enum Acao { Enviar(ClientMessage), Voltar }
+pub enum Acao {
+    Enviar(ClientMessage),
+    Voltar,
+}
 
 /// A ilha de verdade atras da tela de personagens.
 struct Fundo {
@@ -16,11 +23,26 @@ struct Fundo {
 
 impl Fundo {
     fn novo() -> Option<Self> {
-        let def=shared::terreno::def_da_zona("ilha_inicial")?;
-        let ger=shared::terreno::Gerador::novo(def.semente,def.raio_blocos,def.bioma,shared::terreno::ESCALA_ALTURA);
+        let def = shared::terreno::def_da_zona("ilha_inicial")?;
+        let ger = shared::terreno::Gerador::novo(
+            def.semente,
+            def.raio_blocos,
+            def.bioma,
+            shared::terreno::ESCALA_ALTURA,
+        );
         // O Vec2 do shared e' de outra versao do glam.
-        let centro=ger.cidade().map(|c|{let p=c.centro();vec2(p.x,p.y)}).unwrap_or(Vec2::ZERO);
-        Some(Self{terreno:crate::terreno::Terreno::novo(def),casas:crate::construcoes::Construcoes::para(Some(def)),centro})
+        let centro = ger
+            .cidade()
+            .map(|c| {
+                let p = c.centro();
+                vec2(p.x, p.y)
+            })
+            .unwrap_or(Vec2::ZERO);
+        Some(Self {
+            terreno: crate::terreno::Terreno::novo(def),
+            casas: crate::construcoes::Construcoes::para(Some(def)),
+            centro,
+        })
     }
 }
 
@@ -31,7 +53,7 @@ pub struct Personagens {
     pub arma: Option<u16>,
     pub faccao: Faction,
     pub mensagem: Option<String>,
-    aguardando: Option<(String,f64)>,
+    aguardando: Option<(String, f64)>,
     foco_nome: bool,
     scroll: usize,
     giro: f32,
@@ -41,29 +63,46 @@ pub struct Personagens {
     fundo_tentado: bool,
 }
 
-pub fn valida_nome(nome: &str) -> Result<&str,&'static str> {
-    let nome=nome.trim();
-    if !(2..=24).contains(&nome.len()) { return Err("Use de 2 a 24 caracteres."); }
-    if !nome.chars().all(|c|c.is_ascii_alphanumeric() || c=='_') { return Err("Use letras sem acento, números ou _."); }
+pub fn valida_nome(nome: &str) -> Result<&str, &'static str> {
+    let nome = nome.trim();
+    if !(2..=24).contains(&nome.len()) {
+        return Err("Use de 2 a 24 caracteres.");
+    }
+    if !nome.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err("Use letras sem acento, números ou _.");
+    }
     Ok(nome)
 }
 
 fn conjunto_disponivel(id: u16, armas: &[u16]) -> bool {
-    armas.contains(&id) && Conjunto::TODOS.iter().any(|c|c.arma()==id)
+    armas.contains(&id) && Conjunto::TODOS.iter().any(|c| c.arma() == id)
 }
 
 impl Personagens {
-    pub fn recebeu_lista(&mut self, chars: &[CharacterListEntry], armas: &[u16], selecionado: &mut usize) {
-        if let Some((nome,_))=self.aguardando.take() {
-            if let Some(i)=chars.iter().position(|c|c.name==nome) {
-                *selecionado=i;self.criando=false;self.mensagem=Some("Personagem criado. Sua jornada pode começar.".into());
+    pub fn recebeu_lista(
+        &mut self,
+        chars: &[CharacterListEntry],
+        armas: &[u16],
+        selecionado: &mut usize,
+    ) {
+        if let Some((nome, _)) = self.aguardando.take() {
+            if let Some(i) = chars.iter().position(|c| c.name == nome) {
+                *selecionado = i;
+                self.criando = false;
+                self.mensagem = Some("Personagem criado. Sua jornada pode começar.".into());
             }
-        } else if chars.is_empty() { self.criando=true;self.foco_nome=true; }
-        *selecionado=(*selecionado).min(chars.len().saturating_sub(1));
-        if !self.arma.is_some_and(|id|conjunto_disponivel(id,armas)) {
-            self.arma=Conjunto::TODOS.iter().map(|c|c.arma()).find(|id|armas.contains(id));
+        } else if chars.is_empty() {
+            self.criando = true;
+            self.foco_nome = true;
         }
-        self.scroll=selecionado.saturating_sub(3);
+        *selecionado = (*selecionado).min(chars.len().saturating_sub(1));
+        if !self.arma.is_some_and(|id| conjunto_disponivel(id, armas)) {
+            self.arma = Conjunto::TODOS
+                .iter()
+                .map(|c| c.arma())
+                .find(|id| armas.contains(id));
+        }
+        self.scroll = selecionado.saturating_sub(3);
     }
 
     /// O campo de nome esta' com foco (o teclado da tela tem que estar aberto).
@@ -72,24 +111,41 @@ impl Personagens {
     }
 
     pub fn falhou(&mut self, motivo: String) {
-        self.aguardando=None;self.criando=true;
-        self.mensagem=Some(match motivo.as_str() {
-            "nome ja em uso"=>"Esse nome já está em uso. Escolha outro.".into(),
-            "nome 2-24 chars"=>"Use um nome de 2 a 24 caracteres.".into(),
-            "nome so letras/numeros/_"=>"Use letras sem acento, números ou _.".into(),
-            _=>motivo,
+        self.aguardando = None;
+        self.criando = true;
+        self.mensagem = Some(match motivo.as_str() {
+            "nome ja em uso" => "Esse nome já está em uso. Escolha outro.".into(),
+            "nome 2-24 chars" => "Use um nome de 2 a 24 caracteres.".into(),
+            "nome so letras/numeros/_" => "Use letras sem acento, números ou _.".into(),
+            _ => motivo,
         });
     }
 
-    fn pedido_criacao(&self, armas: &[u16]) -> Result<ClientMessage,&'static str> {
-        let nome=valida_nome(&self.nome)?;
-        let arma=self.arma.filter(|&id|conjunto_disponivel(id,armas)).ok_or("Escolha uma arma disponível.")?;
-        Ok(ClientMessage::CreateCharacter{name:nome.into(),visual:VisualConfig::default(),starting_weapon:arma,faction:self.faccao})
+    fn pedido_criacao(&self, armas: &[u16]) -> Result<ClientMessage, &'static str> {
+        let nome = valida_nome(&self.nome)?;
+        let arma = self
+            .arma
+            .filter(|&id| conjunto_disponivel(id, armas))
+            .ok_or("Escolha uma arma disponível.")?;
+        Ok(ClientMessage::CreateCharacter {
+            name: nome.into(),
+            visual: VisualConfig::default(),
+            starting_weapon: arma,
+            faction: self.faccao,
+        })
     }
 
-    pub fn desenha(&mut self, chars: &[CharacterListEntry], armas: &[u16], selecionado: &mut usize,
-        digitado: &[char], vox: &VoxCache, solido: &Material) -> Option<Acao> {
-        let w=largura_tela();let h=altura_tela();
+    pub fn desenha(
+        &mut self,
+        chars: &[CharacterListEntry],
+        armas: &[u16],
+        selecionado: &mut usize,
+        digitado: &[char],
+        vox: &VoxCache,
+        solido: &Material,
+    ) -> Option<Acao> {
+        let w = largura_tela();
+        let h = altura_tela();
         self.camera_ui();
         if self.saida_previa.is_none() {
             // Mesmo ceu do jogo: o que sobrar de vao no horizonte le' como ceu,
@@ -99,213 +155,563 @@ impl Personagens {
             self.camera_ui();
             // So' uma faixa atras do titulo: veu na tela inteira apagava a ilha
             // (so' aparecia desde que o mundo passou a sair antes do 2D).
-            ui::ret_gradiente(Rect::new(0.0,0.0,w,(h*0.22).max(120.0)),1.0,Color::new(0.012,0.018,0.030,0.70),Color::new(0.012,0.018,0.030,0.0));
+            ui::ret_gradiente(
+                Rect::new(0.0, 0.0, w, (h * 0.22).max(120.0)),
+                1.0,
+                Color::new(0.012, 0.018, 0.030, 0.70),
+                Color::new(0.012, 0.018, 0.030, 0.0),
+            );
         } else {
-            clear_background(Color::new(0.026,0.041,0.063,1.0));
+            clear_background(Color::new(0.026, 0.041, 0.063, 1.0));
         }
         for i in 0..20 {
-            let x=(i as f32*157.3+get_time() as f32*(3.0+(i%3) as f32))%w;
-            let y=(i as f32*89.7)%h;
-            draw_circle(x,y,1.0,Color::new(0.85,0.73,0.47,0.18));
+            let x = (i as f32 * 157.3 + get_time() as f32 * (3.0 + (i % 3) as f32)) % w;
+            let y = (i as f32 * 89.7) % h;
+            draw_circle(x, y, 1.0, Color::new(0.85, 0.73, 0.47, 0.18));
         }
-        let titulo=if self.criando {"Crie sua história"} else {"Escolha seu personagem"};
-        let seguro=crate::nativo::area_segura();
-        let compacto=self.criando && h<ALTURA_COMPACTA;
-        if compacto {
-            ui::texto(16.0+seguro[1],seguro[0]+31.0,titulo,22,ui::TEXTO);
+        let titulo = if self.criando {
+            "Crie sua história"
         } else {
-            ui::texto(32.0,35.0,"T E M P E S T",14,ui::OURO);
-            ui::texto(32.0,77.0,titulo,32,ui::TEXTO);
-            ui::texto(32.0,103.0,if self.criando {"Uma arma. Um novo começo."} else {"Seu próximo capítulo está esperando."},15,ui::SUAVE);
+            "Escolha seu personagem"
+        };
+        let seguro = crate::nativo::area_segura();
+        let compacto = self.criando && h < ALTURA_COMPACTA;
+        if compacto {
+            ui::texto(16.0 + seguro[1], seguro[0] + 31.0, titulo, 22, ui::TEXTO);
+        } else {
+            ui::texto(32.0, 35.0, "T E M P E S T", 14, ui::OURO);
+            ui::texto(32.0, 77.0, titulo, 32, ui::TEXTO);
+            ui::texto(
+                32.0,
+                103.0,
+                if self.criando {
+                    "Uma arma. Um novo começo."
+                } else {
+                    "Seu próximo capítulo está esperando."
+                },
+                15,
+                ui::SUAVE,
+            );
         }
-        let ocupado=self.aguardando.is_some();
-        let voltar=if compacto {Rect::new(w-16.0-seguro[3]-110.0,seguro[0]+8.0,110.0,32.0)} else {Rect::new(w-150.0,30.0,118.0,34.0)};
-        if botao(voltar,if self.criando {"Cancelar"} else {"Voltar"},!ocupado,false)
-            || (!ocupado && is_key_pressed(KeyCode::Escape)) {
-            self.mensagem=None;self.foco_nome=false;
-            if self.criando {self.criando=false;} else {return Some(Acao::Voltar);}
+        let ocupado = self.aguardando.is_some();
+        let voltar = if compacto {
+            Rect::new(w - 16.0 - seguro[3] - 110.0, seguro[0] + 8.0, 110.0, 32.0)
+        } else {
+            Rect::new(w - 150.0, 30.0, 118.0, 34.0)
+        };
+        if botao(
+            voltar,
+            if self.criando { "Cancelar" } else { "Voltar" },
+            !ocupado,
+            false,
+        ) || (!ocupado && is_key_pressed(KeyCode::Escape))
+        {
+            self.mensagem = None;
+            self.foco_nome = false;
+            if self.criando {
+                self.criando = false;
+            } else {
+                return Some(Acao::Voltar);
+            }
         }
-        if self.aguardando.as_ref().is_some_and(|(_,t)|get_time()-t>15.0) {
-            self.mensagem=Some("Aguardando confirmação do servidor…".into());
+        if self
+            .aguardando
+            .as_ref()
+            .is_some_and(|(_, t)| get_time() - t > 15.0)
+        {
+            self.mensagem = Some("Aguardando confirmação do servidor…".into());
         }
         if self.criando {
-            self.desenha_criacao(armas,digitado,vox,solido)
+            self.desenha_criacao(armas, digitado, vox, solido)
         } else {
-            self.desenha_selecao(chars,selecionado,vox,solido)
+            self.desenha_selecao(chars, selecionado, vox, solido)
         }
     }
 
-    fn desenha_criacao(&mut self, armas: &[u16], digitado: &[char], vox: &VoxCache, solido: &Material) -> Option<Acao> {
-        let w=largura_tela();let h=altura_tela();
-        let l=LayoutCriacao::novo(w,h,crate::nativo::area_segura());
-        let ocupado=self.aguardando.is_some();
-        let conjunto=Conjunto::da_arma(self.arma.unwrap_or(0));
+    fn desenha_criacao(
+        &mut self,
+        armas: &[u16],
+        digitado: &[char],
+        vox: &VoxCache,
+        solido: &Material,
+    ) -> Option<Acao> {
+        let w = largura_tela();
+        let h = altura_tela();
+        let l = LayoutCriacao::novo(w, h, crate::nativo::area_segura());
+        let ocupado = self.aguardando.is_some();
+        let conjunto = Conjunto::da_arma(self.arma.unwrap_or(0));
 
         // ── esquerda: o personagem, e embaixo dele o nome e o botao ──────────
-        self.desenha_retrato(l.retrato,l.rodape_retrato,conjunto,vox,solido);
-        let cx=l.retrato.x+l.retrato.w*0.5;
-        ui::texto_centro(cx,l.retrato.y+l.retrato.h-(l.rodape_retrato-20.0)*0.5-4.0,conjunto.nome(),if l.compacto {18} else {24},ui::TEXTO);
+        self.desenha_retrato(l.retrato, l.rodape_retrato, conjunto, vox, solido);
+        let cx = l.retrato.x + l.retrato.w * 0.5;
+        ui::texto_centro(
+            cx,
+            l.retrato.y + l.retrato.h - (l.rodape_retrato - 20.0) * 0.5 - 4.0,
+            conjunto.nome(),
+            if l.compacto { 18 } else { 24 },
+            ui::TEXTO,
+        );
         if !l.compacto {
-            ui::texto_centro(cx,l.retrato.y+l.retrato.h-6.0,"Arraste o personagem para girar",13,ui::SUAVE);
+            ui::texto_centro(
+                cx,
+                l.retrato.y + l.retrato.h - 6.0,
+                "Arraste o personagem para girar",
+                13,
+                ui::SUAVE,
+            );
         }
 
         // Teclado da tela aberto: ele cobre a metade de baixo, onde o campo mora.
         // O campo sobe pra logo acima dele, sobre o personagem.
-        let teclado=crate::nativo::TECLADO_NA_TELA && self.foco_no_nome();
-        let dy=l.subida_do_nome(teclado,h);
-        let campo=Rect::new(l.nome.x,l.nome.y-dy,l.nome.w,l.nome.h);
-        if dy>0.0 {
-            draw_rectangle(l.retrato.x-8.0,campo.y-28.0,l.retrato.w+16.0,campo.h+40.0,Color::new(0.012,0.018,0.030,0.94));
-            ui::texto(campo.x,campo.y-10.0,"NOME DO PERSONAGEM",12,ui::OURO);
+        let teclado = crate::nativo::TECLADO_NA_TELA && self.foco_no_nome();
+        let dy = l.subida_do_nome(teclado, h);
+        let campo = Rect::new(l.nome.x, l.nome.y - dy, l.nome.w, l.nome.h);
+        if dy > 0.0 {
+            draw_rectangle(
+                l.retrato.x - 8.0,
+                campo.y - 28.0,
+                l.retrato.w + 16.0,
+                campo.h + 40.0,
+                Color::new(0.012, 0.018, 0.030, 0.94),
+            );
+            ui::texto(campo.x, campo.y - 10.0, "NOME DO PERSONAGEM", 12, ui::OURO);
         } else if !l.compacto {
-            ui::texto(campo.x,campo.y-8.0,"NOME",12,ui::OURO);
+            ui::texto(campo.x, campo.y - 8.0, "NOME", 12, ui::OURO);
         }
-        if !ocupado { if let Some(p)=apertou_em() {self.foco_nome=campo.contains(p);} }
+        if !ocupado {
+            if let Some(p) = apertou_em() {
+                self.foco_nome = campo.contains(p);
+            }
+        }
         if !ocupado && self.foco_nome {
             for &c in digitado {
-                if c as u32==8 {self.nome.pop();} else if !c.is_control() && self.nome.chars().count()<24 {self.nome.push(c);}
+                if c as u32 == 8 {
+                    self.nome.pop();
+                } else if !c.is_control() && self.nome.chars().count() < 24 {
+                    self.nome.push(c);
+                }
             }
-            if is_key_pressed(KeyCode::Backspace) && !digitado.contains(&'\u{8}') {self.nome.pop();}
+            if is_key_pressed(KeyCode::Backspace) && !digitado.contains(&'\u{8}') {
+                self.nome.pop();
+            }
         }
-        draw_rectangle(campo.x,campo.y,campo.w,campo.h,ui::FUNDO);
-        draw_rectangle_lines(campo.x,campo.y,campo.w,campo.h,if self.foco_nome {2.0} else {1.0},if self.foco_nome {ui::OURO} else {ui::BORDA});
-        let cursor=if self.foco_nome && (get_time()*2.0) as u32%2==0 {"|"} else {""};
-        let meio=campo.y+campo.h*0.5+6.0;
-        if self.nome.is_empty() && !self.foco_nome {
-            ui::texto_centro(campo.x+campo.w*0.5,meio,"Toque para escolher o nome",16,ui::SUAVE);
+        draw_rectangle(campo.x, campo.y, campo.w, campo.h, ui::FUNDO);
+        draw_rectangle_lines(
+            campo.x,
+            campo.y,
+            campo.w,
+            campo.h,
+            if self.foco_nome { 2.0 } else { 1.0 },
+            if self.foco_nome { ui::OURO } else { ui::BORDA },
+        );
+        let cursor = if self.foco_nome && (get_time() * 2.0) as u32 % 2 == 0 {
+            "|"
         } else {
-            ui::texto_centro(campo.x+campo.w*0.5,meio,&format!("{}{cursor}",self.nome),18,ui::TEXTO);
+            ""
+        };
+        let meio = campo.y + campo.h * 0.5 + 6.0;
+        if self.nome.is_empty() && !self.foco_nome {
+            ui::texto_centro(
+                campo.x + campo.w * 0.5,
+                meio,
+                "Toque para escolher o nome",
+                16,
+                ui::SUAVE,
+            );
+        } else {
+            ui::texto_centro(
+                campo.x + campo.w * 0.5,
+                meio,
+                &format!("{}{cursor}", self.nome),
+                18,
+                ui::TEXTO,
+            );
         }
 
-        let erro=if self.nome.is_empty() {None} else {valida_nome(&self.nome).err()};
-        let msg=self.mensagem.as_deref().or(erro)
-            .or(if self.arma.is_none() {Some("Nenhuma arma inicial disponível neste servidor.")} else {None})
-            .or(if self.foco_nome {Some("2 a 24 caracteres · letras, números e _")} else {None});
-        if let Some(msg)=msg {
-            let cor=if erro.is_some() || self.mensagem.is_some() {ui::OURO} else {ui::SUAVE};
-            ui::texto_centro(cx,campo.y-if dy>0.0 {30.0} else if l.compacto {7.0} else {26.0},msg,13,cor);
+        let erro = if self.nome.is_empty() {
+            None
+        } else {
+            valida_nome(&self.nome).err()
+        };
+        let msg = self
+            .mensagem
+            .as_deref()
+            .or(erro)
+            .or(if self.arma.is_none() {
+                Some("Nenhuma arma inicial disponível neste servidor.")
+            } else {
+                None
+            })
+            .or(if self.foco_nome {
+                Some("2 a 24 caracteres · letras, números e _")
+            } else {
+                None
+            });
+        if let Some(msg) = msg {
+            let cor = if erro.is_some() || self.mensagem.is_some() {
+                ui::OURO
+            } else {
+                ui::SUAVE
+            };
+            ui::texto_centro(
+                cx,
+                campo.y
+                    - if dy > 0.0 {
+                        30.0
+                    } else if l.compacto {
+                        7.0
+                    } else {
+                        26.0
+                    },
+                msg,
+                13,
+                cor,
+            );
         }
 
-        let pode=!ocupado && self.pedido_criacao(armas).is_ok();
-        let rotulo=if ocupado {"Criando personagem…"} else if self.nome.trim().is_empty() {"Escolha um nome"} else {"Criar personagem"};
-        if dy==0.0 {
-            if botao(l.botao,rotulo,pode,true) {
-                if let Some(a)=self.envia_criacao(armas) {return Some(a);}
+        let pode = !ocupado && self.pedido_criacao(armas).is_ok();
+        let rotulo = if ocupado {
+            "Criando personagem…"
+        } else if self.nome.trim().is_empty() {
+            "Escolha um nome"
+        } else {
+            "Criar personagem"
+        };
+        if dy == 0.0 {
+            if botao(l.botao, rotulo, pode, true) {
+                if let Some(a) = self.envia_criacao(armas) {
+                    return Some(a);
+                }
             } else if !ocupado && !pode && clicou(l.botao) {
                 // Botao apagado por falta de nome: leva direto pro campo.
-                self.foco_nome=true;
+                self.foco_nome = true;
             }
         }
         if pode && self.foco_nome && is_key_pressed(KeyCode::Enter) {
-            if let Some(a)=self.envia_criacao(armas) {return Some(a);}
+            if let Some(a) = self.envia_criacao(armas) {
+                return Some(a);
+            }
         }
 
         // ── direita: arma e faccao ───────────────────────────────────────────
-        let painel=l.painel;
+        let painel = l.painel;
         ui::painel(painel);
-        let x=painel.x+14.0;let lw=painel.w-28.0;
-        let card_h=l.card_h;
-        ui::texto(x,painel.y+22.0,"ARMA INICIAL",13,ui::OURO);
-        for (i,c) in Conjunto::TODOS.iter().enumerate() {
-            let r=Rect::new(x+(i%2) as f32*(lw+8.0)*0.5,painel.y+32.0+(i/2) as f32*(card_h+6.0),(lw-8.0)*0.5,card_h);
-            let disponivel=armas.contains(&c.arma());let ativo=self.arma==Some(c.arma());
-            let cor=ui::cor_skill(*c as u32*3+1);
-            draw_rectangle(r.x,r.y,r.w,r.h,if ativo {Color::new(cor.r*0.11,cor.g*0.11,cor.b*0.11,1.0)} else {ui::FUNDO});
-            draw_rectangle_lines(r.x,r.y,r.w,r.h,if ativo {2.0} else {1.0},if ativo {cor} else {ui::BORDA});
-            let icone=if l.compacto {28.0} else {34.0};
-            let ix=r.x+8.0+icone*0.5;
-            if !crate::icones_ui::skill(*c as u32*3+1,vec2(ix,r.y+r.h*0.5),icone,if disponivel {1.0} else {0.35}) {
-                ui::icone(*c as u32*3+1,vec2(ix,r.y+r.h*0.5),icone*0.5,if disponivel {cor} else {ui::SUAVE});
+        let x = painel.x + 14.0;
+        let lw = painel.w - 28.0;
+        let card_h = l.card_h;
+        ui::texto(x, painel.y + 22.0, "ARMA INICIAL", 13, ui::OURO);
+        for (i, c) in Conjunto::TODOS.iter().enumerate() {
+            let r = Rect::new(
+                x + (i % 2) as f32 * (lw + 8.0) * 0.5,
+                painel.y + 32.0 + (i / 2) as f32 * (card_h + 6.0),
+                (lw - 8.0) * 0.5,
+                card_h,
+            );
+            let disponivel = armas.contains(&c.arma());
+            let ativo = self.arma == Some(c.arma());
+            let cor = ui::cor_skill(*c as u32 * 3 + 1);
+            draw_rectangle(
+                r.x,
+                r.y,
+                r.w,
+                r.h,
+                if ativo {
+                    Color::new(cor.r * 0.11, cor.g * 0.11, cor.b * 0.11, 1.0)
+                } else {
+                    ui::FUNDO
+                },
+            );
+            draw_rectangle_lines(
+                r.x,
+                r.y,
+                r.w,
+                r.h,
+                if ativo { 2.0 } else { 1.0 },
+                if ativo { cor } else { ui::BORDA },
+            );
+            let icone = if l.compacto { 28.0 } else { 34.0 };
+            let ix = r.x + 8.0 + icone * 0.5;
+            if !crate::icones_ui::skill(
+                *c as u32 * 3 + 1,
+                vec2(ix, r.y + r.h * 0.5),
+                icone,
+                if disponivel { 1.0 } else { 0.35 },
+            ) {
+                ui::icone(
+                    *c as u32 * 3 + 1,
+                    vec2(ix, r.y + r.h * 0.5),
+                    icone * 0.5,
+                    if disponivel { cor } else { ui::SUAVE },
+                );
             }
-            let tx=r.x+16.0+icone;
-            ui::texto_ajustado(c.nome(),tx,r.y+r.h*0.5-2.0,r.w-tx+r.x-6.0,if l.compacto {14} else {15},if disponivel {ui::TEXTO} else {ui::SUAVE});
-            ui::texto_ajustado(if !disponivel {"Indisponível"} else {estilo(*c).0},tx,r.y+r.h*0.5+14.0,r.w-tx+r.x-6.0,11,ui::SUAVE);
-            if !ocupado && disponivel && clicou(r) { self.arma=Some(c.arma());self.mensagem=None;self.giro=0.0; }
+            let tx = r.x + 16.0 + icone;
+            ui::texto_ajustado(
+                c.nome(),
+                tx,
+                r.y + r.h * 0.5 - 2.0,
+                r.w - tx + r.x - 6.0,
+                if l.compacto { 14 } else { 15 },
+                if disponivel { ui::TEXTO } else { ui::SUAVE },
+            );
+            ui::texto_ajustado(
+                if !disponivel {
+                    "Indisponível"
+                } else {
+                    estilo(*c).0
+                },
+                tx,
+                r.y + r.h * 0.5 + 14.0,
+                r.w - tx + r.x - 6.0,
+                11,
+                ui::SUAVE,
+            );
+            if !ocupado && disponivel && clicou(r) {
+                self.arma = Some(c.arma());
+                self.mensagem = None;
+                self.giro = 0.0;
+            }
         }
-        let fy=painel.y+32.0+2.0*(card_h+6.0)+14.0;
-        ui::texto(x,fy,"FACÇÃO",13,ui::OURO);
-        for (i,(f,n)) in [(Faction::Peacemain,"Peacemain"),(Faction::Morganeers,"Morganeers")].iter().enumerate() {
-            let r=Rect::new(x+i as f32*(lw+8.0)*0.5,fy+8.0,(lw-8.0)*0.5,l.faccao_h);
-            if botao(r,n,!ocupado,self.faccao==*f) {self.faccao=*f;}
+        let fy = painel.y + 32.0 + 2.0 * (card_h + 6.0) + 14.0;
+        ui::texto(x, fy, "FACÇÃO", 13, ui::OURO);
+        for (i, (f, n)) in [
+            (Faction::Peacemain, "Peacemain"),
+            (Faction::Morganeers, "Morganeers"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let r = Rect::new(
+                x + i as f32 * (lw + 8.0) * 0.5,
+                fy + 8.0,
+                (lw - 8.0) * 0.5,
+                l.faccao_h,
+            );
+            if botao(r, n, !ocupado, self.faccao == *f) {
+                self.faccao = *f;
+            }
         }
-        let mut y=fy+8.0+l.faccao_h+18.0;
-        ui::texto(x,y,if self.faccao==Faction::Peacemain {"Aventureiros e exploradores."} else {"Piratas em busca de saques."},13,ui::SUAVE);
-        y+=22.0;
-        let fim=painel.y+painel.h-10.0;
-        if y+14.0<fim {
-            y=texto_linhas_ate(estilo(conjunto).1,x,y,lw,13,ui::TEXTO,fim)+24.0;
+        let mut y = fy + 8.0 + l.faccao_h + 18.0;
+        ui::texto(
+            x,
+            y,
+            if self.faccao == Faction::Peacemain {
+                "Aventureiros e exploradores."
+            } else {
+                "Piratas em busca de saques."
+            },
+            13,
+            ui::SUAVE,
+        );
+        y += 22.0;
+        let fim = painel.y + painel.h - 10.0;
+        if y + 14.0 < fim {
+            y = texto_linhas_ate(estilo(conjunto).1, x, y, lw, 13, ui::TEXTO, fim) + 24.0;
         }
         // Skills iniciais so' quando sobra altura (desktop).
-        if y+44.0<fim {
-            let skills=shared::skills::playtest();
-            for (i,s) in skills.iter().filter(|s|s.conjunto==conjunto).enumerate() {
-                let sx=x+i as f32*lw/3.0;
-                if !crate::icones_ui::skill(s.id,vec2(sx+14.0,y),24.0,1.0) {
-                    ui::icone(s.id,vec2(sx+14.0,y),11.0,ui::cor_skill(s.id));
+        if y + 44.0 < fim {
+            let skills = shared::skills::playtest();
+            for (i, s) in skills.iter().filter(|s| s.conjunto == conjunto).enumerate() {
+                let sx = x + i as f32 * lw / 3.0;
+                if !crate::icones_ui::skill(s.id, vec2(sx + 14.0, y), 24.0, 1.0) {
+                    ui::icone(s.id, vec2(sx + 14.0, y), 11.0, ui::cor_skill(s.id));
                 }
-                ui::texto(sx+31.0,y+4.0,&format!("Lv {}",s.nivel_necessario()),12,ui::OURO);
-                ui::texto_ajustado(&s.nome,sx,y+24.0,lw/3.0-8.0,12,ui::TEXTO);
+                ui::texto(
+                    sx + 31.0,
+                    y + 4.0,
+                    &format!("Lv {}", s.nivel_necessario()),
+                    12,
+                    ui::OURO,
+                );
+                ui::texto_ajustado(&s.nome, sx, y + 24.0, lw / 3.0 - 8.0, 12, ui::TEXTO);
             }
         }
         None
     }
 
     fn envia_criacao(&mut self, armas: &[u16]) -> Option<Acao> {
-        let pedido=self.pedido_criacao(armas).ok()?;
-        self.aguardando=Some((self.nome.trim().into(),get_time()));self.mensagem=None;self.foco_nome=false;
+        let pedido = self.pedido_criacao(armas).ok()?;
+        self.aguardando = Some((self.nome.trim().into(), get_time()));
+        self.mensagem = None;
+        self.foco_nome = false;
         Some(Acao::Enviar(pedido))
     }
 
-    fn desenha_selecao(&mut self, chars: &[CharacterListEntry], selecionado: &mut usize, vox: &VoxCache, solido: &Material) -> Option<Acao> {
-        let w=largura_tela();let h=altura_tela();
-        let r=Rect::new(28.0,136.0,(w*0.34).clamp(280.0,370.0),h-220.0);
+    fn desenha_selecao(
+        &mut self,
+        chars: &[CharacterListEntry],
+        selecionado: &mut usize,
+        vox: &VoxCache,
+        solido: &Material,
+    ) -> Option<Acao> {
+        let w = largura_tela();
+        let h = altura_tela();
+        let r = Rect::new(28.0, 136.0, (w * 0.34).clamp(280.0, 370.0), h - 220.0);
         ui::painel(r);
-        ui::texto(r.x+18.0,r.y+28.0,&format!("SEUS PERSONAGENS  ·  {}",chars.len()),13,ui::OURO);
-        let visiveis=((r.h-112.0)/87.0).max(1.0) as usize;
+        ui::texto(
+            r.x + 18.0,
+            r.y + 28.0,
+            &format!("SEUS PERSONAGENS  ·  {}", chars.len()),
+            13,
+            ui::OURO,
+        );
+        let visiveis = ((r.h - 112.0) / 87.0).max(1.0) as usize;
         if r.contains(Vec2::from(mouse_position())) {
-            let (_,roda)=mouse_wheel();
-            if roda<0.0 {self.scroll=(self.scroll+1).min(chars.len().saturating_sub(visiveis));}
-            if roda>0.0 {self.scroll=self.scroll.saturating_sub(1);}
+            let (_, roda) = mouse_wheel();
+            if roda < 0.0 {
+                self.scroll = (self.scroll + 1).min(chars.len().saturating_sub(visiveis));
+            }
+            if roda > 0.0 {
+                self.scroll = self.scroll.saturating_sub(1);
+            }
         }
         if !chars.is_empty() {
-            if is_key_pressed(KeyCode::Down) {*selecionado=(*selecionado+1).min(chars.len()-1);}
-            if is_key_pressed(KeyCode::Up) {*selecionado=selecionado.saturating_sub(1);}
+            if is_key_pressed(KeyCode::Down) {
+                *selecionado = (*selecionado + 1).min(chars.len() - 1);
+            }
+            if is_key_pressed(KeyCode::Up) {
+                *selecionado = selecionado.saturating_sub(1);
+            }
             if is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::Up) {
-                if *selecionado<self.scroll {self.scroll=*selecionado;}
-                if *selecionado>=self.scroll+visiveis {self.scroll=*selecionado+1-visiveis;}
+                if *selecionado < self.scroll {
+                    self.scroll = *selecionado;
+                }
+                if *selecionado >= self.scroll + visiveis {
+                    self.scroll = *selecionado + 1 - visiveis;
+                }
             }
         }
-        for (i,c) in chars.iter().enumerate().skip(self.scroll).take(visiveis) {
-            let card=Rect::new(r.x+12.0,r.y+45.0+(i-self.scroll) as f32*87.0,r.w-24.0,77.0);
-            let conjunto=Conjunto::da_arma(c.weapon_id.unwrap_or(0));
-            let cor=ui::cor_skill(conjunto as u32*3+1);
-            draw_rectangle(card.x,card.y,card.w,card.h,if i==*selecionado {Color::new(0.10,0.13,0.17,1.0)} else {ui::FUNDO});
-            draw_rectangle_lines(card.x,card.y,card.w,card.h,1.0,if i==*selecionado {ui::OURO} else {ui::BORDA});
-            if !crate::icones_ui::skill(conjunto as u32*3+1,vec2(card.x+27.0,card.y+37.0),34.0,1.0) {
-                ui::icone(conjunto as u32*3+1,vec2(card.x+27.0,card.y+37.0),18.0,cor);
+        for (i, c) in chars.iter().enumerate().skip(self.scroll).take(visiveis) {
+            let card = Rect::new(
+                r.x + 12.0,
+                r.y + 45.0 + (i - self.scroll) as f32 * 87.0,
+                r.w - 24.0,
+                77.0,
+            );
+            let conjunto = Conjunto::da_arma(c.weapon_id.unwrap_or(0));
+            let cor = ui::cor_skill(conjunto as u32 * 3 + 1);
+            draw_rectangle(
+                card.x,
+                card.y,
+                card.w,
+                card.h,
+                if i == *selecionado {
+                    Color::new(0.10, 0.13, 0.17, 1.0)
+                } else {
+                    ui::FUNDO
+                },
+            );
+            draw_rectangle_lines(
+                card.x,
+                card.y,
+                card.w,
+                card.h,
+                1.0,
+                if i == *selecionado {
+                    ui::OURO
+                } else {
+                    ui::BORDA
+                },
+            );
+            if !crate::icones_ui::skill(
+                conjunto as u32 * 3 + 1,
+                vec2(card.x + 27.0, card.y + 37.0),
+                34.0,
+                1.0,
+            ) {
+                ui::icone(
+                    conjunto as u32 * 3 + 1,
+                    vec2(card.x + 27.0, card.y + 37.0),
+                    18.0,
+                    cor,
+                );
             }
-            ui::texto_ajustado(&c.name,card.x+54.0,card.y+29.0,card.w-62.0,19,ui::TEXTO);
-            ui::texto(card.x+54.0,card.y+53.0,&format!("Lv {}  ·  {}",c.level,conjunto.nome()),12,ui::SUAVE);
-            if clicou(card) {*selecionado=i;self.giro=0.0;self.mensagem=None;}
-        }
-        if chars.is_empty() {texto_linhas("Sua história começa aqui. Crie seu primeiro personagem.",r.x+18.0,r.y+85.0,r.w-36.0,18,ui::SUAVE);}
-        if chars.len()>visiveis {ui::texto(r.x+18.0,r.y+r.h-62.0,"Role para ver mais personagens",12,ui::SUAVE);}
-        if botao(Rect::new(r.x+12.0,r.y+r.h-50.0,r.w-24.0,38.0),"+  Novo personagem",true,false) {
-            self.criando=true;self.nome.clear();self.mensagem=None;self.foco_nome=true;self.giro=0.0;
-        }
-        if let Some(c)=chars.get(*selecionado) {
-            let conjunto=Conjunto::da_arma(c.weapon_id.unwrap_or(0));
-            let hero=Rect::new(r.x+r.w+20.0,128.0,w-r.x-r.w-48.0,h-218.0);
-            self.desenha_retrato(hero,84.0,conjunto,vox,solido);
-            let cx=hero.x+hero.w*0.5;
-            ui::texto_centro(cx,hero.y+hero.h-57.0,&c.name,30,ui::TEXTO);
-            ui::texto_centro(cx,hero.y+hero.h-29.0,&format!("Nível {}  ·  {}",c.level,conjunto.nome()),16,ui::OURO);
-            ui::texto_centro(cx,hero.y+hero.h-7.0,nome_faccao(c.faction),13,ui::SUAVE);
-            if botao(Rect::new(hero.x,h-66.0,hero.w,42.0),"Entrar no mundo",true,true) || is_key_pressed(KeyCode::Enter) {
-                return Some(Acao::Enviar(ClientMessage::SelectCharacter{name:c.name.clone()}));
+            ui::texto_ajustado(
+                &c.name,
+                card.x + 54.0,
+                card.y + 29.0,
+                card.w - 62.0,
+                19,
+                ui::TEXTO,
+            );
+            ui::texto(
+                card.x + 54.0,
+                card.y + 53.0,
+                &format!("Lv {}  ·  {}", c.level, conjunto.nome()),
+                12,
+                ui::SUAVE,
+            );
+            if clicou(card) {
+                *selecionado = i;
+                self.giro = 0.0;
+                self.mensagem = None;
             }
         }
-        if let Some(msg)=&self.mensagem {texto_linhas(msg,32.0,h-58.0,r.w,14,ui::OURO);}
+        if chars.is_empty() {
+            texto_linhas(
+                "Sua história começa aqui. Crie seu primeiro personagem.",
+                r.x + 18.0,
+                r.y + 85.0,
+                r.w - 36.0,
+                18,
+                ui::SUAVE,
+            );
+        }
+        if chars.len() > visiveis {
+            ui::texto(
+                r.x + 18.0,
+                r.y + r.h - 62.0,
+                "Role para ver mais personagens",
+                12,
+                ui::SUAVE,
+            );
+        }
+        if botao(
+            Rect::new(r.x + 12.0, r.y + r.h - 50.0, r.w - 24.0, 38.0),
+            "+  Novo personagem",
+            true,
+            false,
+        ) {
+            self.criando = true;
+            self.nome.clear();
+            self.mensagem = None;
+            self.foco_nome = true;
+            self.giro = 0.0;
+        }
+        if let Some(c) = chars.get(*selecionado) {
+            let conjunto = Conjunto::da_arma(c.weapon_id.unwrap_or(0));
+            let hero = Rect::new(r.x + r.w + 20.0, 128.0, w - r.x - r.w - 48.0, h - 218.0);
+            self.desenha_retrato(hero, 84.0, conjunto, vox, solido);
+            let cx = hero.x + hero.w * 0.5;
+            ui::texto_centro(cx, hero.y + hero.h - 57.0, &c.name, 30, ui::TEXTO);
+            ui::texto_centro(
+                cx,
+                hero.y + hero.h - 29.0,
+                &format!("Nível {}  ·  {}", c.level, conjunto.nome()),
+                16,
+                ui::OURO,
+            );
+            ui::texto_centro(
+                cx,
+                hero.y + hero.h - 7.0,
+                nome_faccao(c.faction),
+                13,
+                ui::SUAVE,
+            );
+            if botao(
+                Rect::new(hero.x, h - 66.0, hero.w, 42.0),
+                "Entrar no mundo",
+                true,
+                true,
+            ) || is_key_pressed(KeyCode::Enter)
+            {
+                return Some(Acao::Enviar(ClientMessage::SelectCharacter {
+                    name: c.name.clone(),
+                }));
+            }
+        }
+        if let Some(msg) = &self.mensagem {
+            texto_linhas(msg, 32.0, h - 58.0, r.w, 14, ui::OURO);
+        }
         None
     }
 
@@ -317,44 +723,52 @@ impl Personagens {
     /// chamado fora do modo de exportacao, que e' render target.
     fn desenha_mundo(&mut self, solido: &Material) {
         if !self.fundo_tentado {
-            self.fundo_tentado=true;
-            self.fundo=Fundo::novo();
+            self.fundo_tentado = true;
+            self.fundo = Fundo::novo();
         }
-        let Some(f)=self.fundo.as_mut() else { return };
-        let t=get_time() as f32;
+        let Some(f) = self.fundo.as_mut() else { return };
+        let t = get_time() as f32;
         // A vila e' assada numa thread; sem recolher aqui as malhas nunca ficam
         // prontas e nenhuma casa aparece (o jogo faz isso todo quadro, em main).
         f.casas.acompanhar();
         // O chao chega aos poucos, como no jogo: orcamento por quadro. Raio 11
         // (176 unidades) cobre o que esta camera enxerga.
-        f.terreno.atualiza(f.centro,11,4);
-        let giro=t*0.04;
-        let chao=f.terreno.altura(f.centro.x,f.centro.y);
+        f.terreno.atualiza(f.centro, 11, 4);
+        let giro = t * 0.04;
+        let chao = f.terreno.altura(f.centro.x, f.centro.y);
         // ~33 graus e LONGE da vila. Perto demais, a casa no caminho da orbita
         // entrava no quadro como um telhado gigante cortado atras do boneco; de
         // mais longe as casas ficam do tamanho de cenario.
-        let cam=Camera3D{
-            position:vec3(f.centro.x+giro.sin()*70.0,chao+46.0,f.centro.y+giro.cos()*70.0),
-            target:vec3(f.centro.x,chao+3.0,f.centro.y),
-            up:Vec3::Y,
-            fovy:45f32.to_radians(),
+        let cam = Camera3D {
+            position: vec3(
+                f.centro.x + giro.sin() * 70.0,
+                chao + 46.0,
+                f.centro.y + giro.cos() * 70.0,
+            ),
+            target: vec3(f.centro.x, chao + 3.0, f.centro.y),
+            up: Vec3::Y,
+            fovy: 45f32.to_radians(),
             ..Default::default()
         };
         set_camera(&cam);
         gl_use_material(solido);
-        solido.set_uniform("Recorte",Vec3::ZERO);
-        solido.set_uniform("RecorteZ",0.0f32);
-        f.terreno.desenha(&cam,Vec3::ZERO,0.0);
-        f.casas.desenha(&cam,None,Vec3::ZERO,0.0);
-        crate::agua::desenha(&f.terreno,&cam,t);
+        solido.set_uniform("Recorte", Vec3::ZERO);
+        solido.set_uniform("RecorteZ", 0.0f32);
+        f.terreno.desenha(&cam, Vec3::ZERO, 0.0);
+        f.casas.desenha(&cam, None, Vec3::ZERO, 0.0);
+        crate::agua::desenha(&f.terreno, &cam, t);
         gl_use_default_material();
     }
 
     fn camera_ui(&self) {
-        if let Some(rt)=&self.saida_previa {
-            let mut c=Camera2D::from_display_rect(Rect::new(0.0,0.0,largura_tela(),altura_tela()));
-            c.render_target=Some(rt.clone());set_camera(&c);
-        } else {set_default_camera();}
+        if let Some(rt) = &self.saida_previa {
+            let mut c =
+                Camera2D::from_display_rect(Rect::new(0.0, 0.0, largura_tela(), altura_tela()));
+            c.render_target = Some(rt.clone());
+            set_camera(&c);
+        } else {
+            set_default_camera();
+        }
     }
 
     /// A previa 3D desenhada DIRETO na tela, num viewport do tamanho do
@@ -367,70 +781,161 @@ impl Personagens {
     /// a area sai vazia nas duas telas (lista e criacao). O mundo aparecia
     /// porque desenha na tela, cuja view tem profundidade de 24 bits. Mesmo
     /// caminho aqui, igual em todas as plataformas.
-    fn desenha_retrato(&mut self, r: Rect, rodape: f32, conjunto: Conjunto, vox: &VoxCache, solido: &Material) {
-        let area=Rect::new(r.x,r.y,r.w.max(1.0),(r.h-rodape).max(1.0));
+    fn desenha_retrato(
+        &mut self,
+        r: Rect,
+        rodape: f32,
+        conjunto: Conjunto,
+        vox: &VoxCache,
+        solido: &Material,
+    ) {
+        let area = Rect::new(r.x, r.y, r.w.max(1.0), (r.h - rodape).max(1.0));
         // Sem caixa atras do boneco: ele fica de pe' direto na frente da ilha.
         // (Um retangulo escuro translucido aqui escurecia o fundo e ficava feio.)
-        let mouse=Vec2::from(mouse_position());
+        let mouse = Vec2::from(mouse_position());
         if is_mouse_button_down(MouseButton::Left) && r.contains(mouse) {
-            if let Some(antes)=self.mouse_anterior {self.giro+=(mouse.x-antes.x)*0.012;}
-            self.mouse_anterior=Some(mouse);
-        } else {self.mouse_anterior=None;}
-        let Some(corpo)=vox.rig(render3d::RIG_CORPO) else {
+            if let Some(antes) = self.mouse_anterior {
+                self.giro += (mouse.x - antes.x) * 0.012;
+            }
+            self.mouse_anterior = Some(mouse);
+        } else {
+            self.mouse_anterior = None;
+        }
+        let Some(corpo) = vox.rig(render3d::RIG_CORPO) else {
             // Sem o corpo nao ha' o que girar — mas sumir com a area inteira
             // escondia a causa (no iPhone nenhum .vox carregava). Fundo, aviso
             // na tela e uma linha de log.
-            static AVISOU: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            static AVISOU: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
             if !AVISOU.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                eprintln!("[previa] rig {} nao carregou — veja as linhas [vox] falta", render3d::RIG_CORPO);
+                eprintln!(
+                    "[previa] rig {} nao carregou — veja as linhas [vox] falta",
+                    render3d::RIG_CORPO
+                );
             }
-            ui::texto_centro(area.x+area.w*0.5,area.y+area.h*0.5,"Modelo do personagem indisponível",14,ui::SUAVE);
-            ui::texto_centro(area.x+area.w*0.5,area.y+area.h*0.5+18.0,"vox faltando: personagem/corpo.vox",12,ui::SUAVE);
+            ui::texto_centro(
+                area.x + area.w * 0.5,
+                area.y + area.h * 0.5,
+                "Modelo do personagem indisponível",
+                14,
+                ui::SUAVE,
+            );
+            ui::texto_centro(
+                area.x + area.w * 0.5,
+                area.y + area.h * 0.5 + 18.0,
+                "vox faltando: personagem/corpo.vox",
+                12,
+                ui::SUAVE,
+            );
             return;
         };
         // Tela exportada (MMO_PREVIA_EXPORTAR) desenha num alvo do tamanho da
         // tela em pontos; o resto, na tela em pixels.
-        let (escala,alto_px)=match &self.saida_previa {
-            Some(t)=>(1.0,t.texture.height()),
-            None=>{let s=macroquad::miniquad::window::dpi_scale();(s,altura_tela()*s)}
-        };
-        let Some(vp)=render3d::viewport_em_pixels(area,escala,alto_px) else {
-            static AVISOU_VP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-            if !AVISOU_VP.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                eprintln!("[previa] viewport vazio: area {area:?} escala {escala} altura {alto_px}");
+        let (escala, alto_px) = match &self.saida_previa {
+            Some(t) => (1.0, t.texture.height()),
+            None => {
+                let s = macroquad::miniquad::window::dpi_scale();
+                (s, altura_tela() * s)
             }
-            ui::texto_centro(area.x+area.w*0.5,area.y+area.h*0.5,"Prévia sem espaço na tela",13,ui::SUAVE);
+        };
+        let Some(vp) = render3d::viewport_em_pixels(area, escala, alto_px) else {
+            static AVISOU_VP: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !AVISOU_VP.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                eprintln!(
+                    "[previa] viewport vazio: area {area:?} escala {escala} altura {alto_px}"
+                );
+            }
+            ui::texto_centro(
+                area.x + area.w * 0.5,
+                area.y + area.h * 0.5,
+                "Prévia sem espaço na tela",
+                13,
+                ui::SUAVE,
+            );
             return;
         };
-        let aspecto=vp.2 as f32/vp.3 as f32;
-        let distancia=4.7*(0.62/aspecto).max(1.0);
-        let cam=Camera3D{position:vec3(0.0,1.35,distancia),target:vec3(0.0,0.88,0.0),up:Vec3::Y,
-            fovy:34f32.to_radians(),aspect:Some(aspecto),viewport:Some(vp),
-            render_target:self.saida_previa.clone(),..Default::default()};
+        let aspecto = vp.2 as f32 / vp.3 as f32;
+        let distancia = 4.7 * (0.62 / aspecto).max(1.0);
+        let cam = Camera3D {
+            position: vec3(0.0, 1.35, distancia),
+            target: vec3(0.0, 0.88, 0.0),
+            up: Vec3::Y,
+            fovy: 34f32.to_radians(),
+            aspect: Some(aspecto),
+            viewport: Some(vp),
+            render_target: self.saida_previa.clone(),
+            ..Default::default()
+        };
         set_camera(&cam);
         // O 2D do painel ja' foi pro framebuffer no `set_camera`; limpa so' a
         // PROFUNDIDADE (a cor fica) pro personagem nao brigar com o que houver.
         render3d::limpa_so_profundidade();
-        draw_cylinder(vec3(0.0,-0.07,0.0),0.90,0.93,0.06,None,Color::new(0.09,0.12,0.16,1.0));
-        for i in 0..64 {let a=i as f32*std::f32::consts::TAU/64.0;let b=(i+1) as f32*std::f32::consts::TAU/64.0;
-            draw_line_3d(vec3(a.cos()*0.88,-0.008,a.sin()*0.88),vec3(b.cos()*0.88,-0.008,b.sin()*0.88),ui::OURO);}
-        gl_use_material(solido);solido.set_uniform("Recorte",Vec3::ZERO);
-        let entrada=crate::rig::Entrada{fase:0.0,andar:0.0,correr:0.0,tempo:get_time() as f32,ar:0.0,degrau:[0.0,0.0],
-            combate:crate::rig::Combate{conjunto:conjunto as u8,sacada:1.0,..Default::default()}};
-        let pose=crate::rig::pose(&entrada);
-        let base=Mat4::from_rotation_y(self.giro+0.18+(get_time() as f32*0.35).sin()*0.10);
-        render3d::desenha_rig(base,&pose,corpo,vox.rig(render3d::RIG_CHAPEU),vox,None);
-        gl_use_default_material();self.camera_ui();
+        draw_cylinder(
+            vec3(0.0, -0.07, 0.0),
+            0.90,
+            0.93,
+            0.06,
+            None,
+            Color::new(0.09, 0.12, 0.16, 1.0),
+        );
+        for i in 0..64 {
+            let a = i as f32 * std::f32::consts::TAU / 64.0;
+            let b = (i + 1) as f32 * std::f32::consts::TAU / 64.0;
+            draw_line_3d(
+                vec3(a.cos() * 0.88, -0.008, a.sin() * 0.88),
+                vec3(b.cos() * 0.88, -0.008, b.sin() * 0.88),
+                ui::OURO,
+            );
+        }
+        gl_use_material(solido);
+        solido.set_uniform("Recorte", Vec3::ZERO);
+        let entrada = crate::rig::Entrada {
+            fase: 0.0,
+            andar: 0.0,
+            correr: 0.0,
+            tempo: get_time() as f32,
+            ar: 0.0,
+            degrau: [0.0, 0.0],
+            combate: crate::rig::Combate {
+                conjunto: conjunto as u8,
+                sacada: 1.0,
+                ..Default::default()
+            },
+        };
+        let pose = crate::rig::pose(&entrada);
+        let base =
+            Mat4::from_rotation_y(self.giro + 0.18 + (get_time() as f32 * 0.35).sin() * 0.10);
+        render3d::desenha_rig(base, &pose, corpo, vox.rig(render3d::RIG_CHAPEU), vox, None);
+        gl_use_default_material();
+        self.camera_ui();
     }
 }
 
-fn nome_faccao(f: Faction) -> &'static str {match f {Faction::Peacemain=>"Peacemain",Faction::Morganeers=>"Morganeers"}}
-fn estilo(c: Conjunto) -> (&'static str,&'static str) {
+fn nome_faccao(f: Faction) -> &'static str {
+    match f {
+        Faction::Peacemain => "Peacemain",
+        Faction::Morganeers => "Morganeers",
+    }
+}
+fn estilo(c: Conjunto) -> (&'static str, &'static str) {
     match c {
-        Conjunto::EspadaEscudo=>("Defesa e pressão","Lute na linha de frente com investidas, cortes amplos e uma barreira protetora."),
-        Conjunto::Katana=>("Cortes e mobilidade","Empunhe com as duas mãos e combine saques rápidos, cortes em área e ondas de energia."),
-        Conjunto::Pistolas=>("Combate à distância","Mantenha distância com tiros precisos, rajadas e um barril explosivo."),
-        Conjunto::AnelMagico=>("Magia e suporte","Restaure sua vida, cure aliados próximos e invoque um impacto mágico sobre o alvo."),
+        Conjunto::EspadaEscudo => (
+            "Defesa e pressão",
+            "Lute na linha de frente com investidas, cortes amplos e uma barreira protetora.",
+        ),
+        Conjunto::Katana => (
+            "Cortes e mobilidade",
+            "Empunhe com as duas mãos e combine saques rápidos, cortes em área e ondas de energia.",
+        ),
+        Conjunto::Pistolas => (
+            "Combate à distância",
+            "Mantenha distância com tiros precisos, rajadas e um barril explosivo.",
+        ),
+        Conjunto::AnelMagico => (
+            "Magia e suporte",
+            "Restaure sua vida, cure aliados próximos e invoque um impacto mágico sobre o alvo.",
+        ),
     }
 }
 /// Onde o dedo (ou o mouse) apertou NESTE quadro.
@@ -444,33 +949,69 @@ fn estilo(c: Conjunto) -> (&'static str,&'static str) {
 /// ficou de fora. Por isso o toque real vem primeiro; sem dedo, o mouse de
 /// sempre (PC igual).
 fn apertou_em() -> Option<Vec2> {
-    if let Some(t)=touches().into_iter().find(|t| t.phase==TouchPhase::Started) {
+    if let Some(t) = touches()
+        .into_iter()
+        .find(|t| t.phase == TouchPhase::Started)
+    {
         return Some(t.position);
     }
     is_mouse_button_pressed(MouseButton::Left).then(|| Vec2::from(mouse_position()))
 }
-fn clicou(r: Rect) -> bool {apertou_em().is_some_and(|p| r.contains(p))}
-fn botao(r: Rect,t: &str,ativo: bool,destaque: bool) -> bool {
-    let sobre=ativo && r.contains(Vec2::from(mouse_position()));
-    draw_rectangle(r.x,r.y,r.w,r.h,if destaque && ativo {Color::new(0.24,0.21,0.14,1.0)} else {ui::FUNDO});
-    draw_rectangle_lines(r.x,r.y,r.w,r.h,1.0,if ativo && (destaque || sobre) {ui::OURO} else {ui::BORDA});
-    ui::texto_centro(r.x+r.w*0.5,r.y+r.h*0.5+6.0,t,16,if ativo {ui::TEXTO} else {ui::SUAVE});
+fn clicou(r: Rect) -> bool {
+    apertou_em().is_some_and(|p| r.contains(p))
+}
+fn botao(r: Rect, t: &str, ativo: bool, destaque: bool) -> bool {
+    let sobre = ativo && r.contains(Vec2::from(mouse_position()));
+    draw_rectangle(
+        r.x,
+        r.y,
+        r.w,
+        r.h,
+        if destaque && ativo {
+            Color::new(0.24, 0.21, 0.14, 1.0)
+        } else {
+            ui::FUNDO
+        },
+    );
+    draw_rectangle_lines(
+        r.x,
+        r.y,
+        r.w,
+        r.h,
+        1.0,
+        if ativo && (destaque || sobre) {
+            ui::OURO
+        } else {
+            ui::BORDA
+        },
+    );
+    ui::texto_centro(
+        r.x + r.w * 0.5,
+        r.y + r.h * 0.5 + 6.0,
+        t,
+        16,
+        if ativo { ui::TEXTO } else { ui::SUAVE },
+    );
     ativo && clicou(r)
 }
 /// Tamanho da tela desta tela. Na previa exportada (`MMO_PREVIA_TAM=844x390`)
 /// e' o tamanho pedido, pra conferir o layout do celular num PC cuja janela o
 /// Hyprland ladrilha; no jogo, sempre a tela de verdade.
-fn tamanho_forcado() -> Option<(f32,f32)> {
-    static T: std::sync::OnceLock<Option<(f32,f32)>> = std::sync::OnceLock::new();
+fn tamanho_forcado() -> Option<(f32, f32)> {
+    static T: std::sync::OnceLock<Option<(f32, f32)>> = std::sync::OnceLock::new();
     *T.get_or_init(|| {
         std::env::var("MMO_PREVIA_EXPORTAR").ok()?;
-        let v=std::env::var("MMO_PREVIA_TAM").ok()?;
-        let (a,b)=v.split_once('x')?;
-        Some((a.trim().parse().ok()?,b.trim().parse().ok()?))
+        let v = std::env::var("MMO_PREVIA_TAM").ok()?;
+        let (a, b) = v.split_once('x')?;
+        Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
     })
 }
-fn largura_tela() -> f32 {tamanho_forcado().map_or_else(screen_width,|t|t.0)}
-fn altura_tela() -> f32 {tamanho_forcado().map_or_else(screen_height,|t|t.1)}
+fn largura_tela() -> f32 {
+    tamanho_forcado().map_or_else(screen_width, |t| t.0)
+}
+fn altura_tela() -> f32 {
+    tamanho_forcado().map_or_else(screen_height, |t| t.1)
+}
 
 /// Abaixo desta altura (celular deitado: 390-430 pontos) a criacao usa o
 /// layout compacto: sem o cabecalho grande e com cartoes baixos.
@@ -498,90 +1039,162 @@ struct LayoutCriacao {
 impl LayoutCriacao {
     /// `seguro` = area segura (topo, esquerda, baixo, direita).
     fn novo(w: f32, h: f32, seguro: [f32; 4]) -> Self {
-        let compacto=h<ALTURA_COMPACTA;
-        let esq=(if compacto {16.0} else {28.0})+seguro[1];
-        let dir=w-(if compacto {16.0} else {28.0})-seguro[3];
-        let topo=seguro[0]+if compacto {48.0} else {128.0};
-        let base=h-seguro[2]-if compacto {10.0} else {24.0};
-        let largura=dir-esq;
-        let col=(largura*if compacto {0.44} else {0.48}).min(620.0);
-        let botao_h=if compacto {40.0} else {46.0};
-        let nome_h=if compacto {38.0} else {44.0};
-        let botao=Rect::new(esq,base-botao_h,col,botao_h);
+        let compacto = h < ALTURA_COMPACTA;
+        let esq = (if compacto { 16.0 } else { 28.0 }) + seguro[1];
+        let dir = w - (if compacto { 16.0 } else { 28.0 }) - seguro[3];
+        let topo = seguro[0] + if compacto { 48.0 } else { 128.0 };
+        let base = h - seguro[2] - if compacto { 10.0 } else { 24.0 };
+        let largura = dir - esq;
+        let col = (largura * if compacto { 0.44 } else { 0.48 }).min(620.0);
+        let botao_h = if compacto { 40.0 } else { 46.0 };
+        let nome_h = if compacto { 38.0 } else { 44.0 };
+        let botao = Rect::new(esq, base - botao_h, col, botao_h);
         // Com mensagem (erro/dica) entre o personagem e o campo.
-        let nome=Rect::new(esq,botao.y-8.0-nome_h,col,nome_h);
-        let rodape=if compacto {26.0} else {60.0};
-        let retrato=Rect::new(esq,topo,col,(nome.y-if compacto {20.0} else {40.0}-topo).max(1.0));
-        let px=esq+col+if compacto {14.0} else {24.0};
-        let mut l=Self{compacto,retrato,rodape_retrato:rodape,nome,botao,painel:Rect::new(px,topo,dir-px,base-topo),
-            card_h:if compacto {46.0} else {74.0},faccao_h:if compacto {30.0} else {36.0}};
+        let nome = Rect::new(esq, botao.y - 8.0 - nome_h, col, nome_h);
+        let rodape = if compacto { 26.0 } else { 60.0 };
+        let retrato = Rect::new(
+            esq,
+            topo,
+            col,
+            (nome.y - if compacto { 20.0 } else { 40.0 } - topo).max(1.0),
+        );
+        let px = esq + col + if compacto { 14.0 } else { 24.0 };
+        let mut l = Self {
+            compacto,
+            retrato,
+            rodape_retrato: rodape,
+            nome,
+            botao,
+            painel: Rect::new(px, topo, dir - px, base - topo),
+            card_h: if compacto { 46.0 } else { 74.0 },
+            faccao_h: if compacto { 30.0 } else { 36.0 },
+        };
         // Tela grande: o painel acaba onde acaba o conteudo, sem um vao vazio embaixo.
-        if !compacto {l.painel.h=l.painel.h.min(l.fim_do_essencial()+130.0-topo);}
+        if !compacto {
+            l.painel.h = l.painel.h.min(l.fim_do_essencial() + 130.0 - topo);
+        }
         l
     }
 
     /// Quanto o campo de nome sobe com o teclado da tela aberto: o bastante pra
     /// ficar acima dele, deixando 36 px em cima pro rotulo e a dica.
     fn subida_do_nome(&self, teclado: bool, h: f32) -> f32 {
-        crate::teclado_virtual::deslocamento(teclado,h,self.nome.y-28.0,self.nome.y+self.nome.h)
+        crate::teclado_virtual::deslocamento(
+            teclado,
+            h,
+            self.nome.y - 28.0,
+            self.nome.y + self.nome.h,
+        )
     }
 
     /// Onde termina o que TEM que caber no painel (cartoes + faccao + legenda).
     fn fim_do_essencial(&self) -> f32 {
-        self.painel.y+32.0+2.0*(self.card_h+6.0)+14.0+8.0+self.faccao_h+18.0
+        self.painel.y + 32.0 + 2.0 * (self.card_h + 6.0) + 14.0 + 8.0 + self.faccao_h + 18.0
     }
 }
 
 /// Como `texto_linhas`, mas para antes de `limite` (y). Devolve o y da ultima linha.
-fn texto_linhas_ate(t: &str,x: f32,y: f32,w: f32,tam: u16,cor: Color,limite: f32) -> f32 {
-    let mut linha=String::new();let mut y=y;
+fn texto_linhas_ate(t: &str, x: f32, y: f32, w: f32, tam: u16, cor: Color, limite: f32) -> f32 {
+    let mut linha = String::new();
+    let mut y = y;
     for palavra in t.split_whitespace() {
-        let proxima=if linha.is_empty() {palavra.into()} else {format!("{linha} {palavra}")};
-        if ui::medir(&proxima,tam)>w && !linha.is_empty() {
-            if y+tam as f32+5.0>limite {break;}
-            ui::texto(x,y,&linha,tam,cor);y+=tam as f32+5.0;linha=palavra.into();
-        } else {linha=proxima;}
+        let proxima = if linha.is_empty() {
+            palavra.into()
+        } else {
+            format!("{linha} {palavra}")
+        };
+        if ui::medir(&proxima, tam) > w && !linha.is_empty() {
+            if y + tam as f32 + 5.0 > limite {
+                break;
+            }
+            ui::texto(x, y, &linha, tam, cor);
+            y += tam as f32 + 5.0;
+            linha = palavra.into();
+        } else {
+            linha = proxima;
+        }
     }
-    ui::texto(x,y,&linha,tam,cor);
+    ui::texto(x, y, &linha, tam, cor);
     y
 }
-fn texto_linhas(t: &str,x: f32,y: f32,w: f32,tam: u16,cor: Color) {
-    let mut linha=String::new();let mut y=y;
+fn texto_linhas(t: &str, x: f32, y: f32, w: f32, tam: u16, cor: Color) {
+    let mut linha = String::new();
+    let mut y = y;
     for palavra in t.split_whitespace() {
-        let proxima=if linha.is_empty() {palavra.into()} else {format!("{linha} {palavra}")};
-        if ui::medir(&proxima,tam)>w && !linha.is_empty() {ui::texto(x,y,&linha,tam,cor);y+=tam as f32+5.0;linha=palavra.into();}
-        else {linha=proxima;}
+        let proxima = if linha.is_empty() {
+            palavra.into()
+        } else {
+            format!("{linha} {palavra}")
+        };
+        if ui::medir(&proxima, tam) > w && !linha.is_empty() {
+            ui::texto(x, y, &linha, tam, cor);
+            y += tam as f32 + 5.0;
+            linha = palavra.into();
+        } else {
+            linha = proxima;
+        }
     }
-    ui::texto(x,y,&linha,tam,cor);
+    ui::texto(x, y, &linha, tam, cor);
 }
 
 /// Previa sem login nem escritas no servidor. Exporta selecao e as quatro armas.
 pub async fn previa(vox: &VoxCache) {
-    let mut tela=Personagens::default();
-    let chars=[("brunji",20,Conjunto::Katana),("Mare",5,Conjunto::Pistolas)]
-        .map(|(n,level,c)|CharacterListEntry{name:n.into(),level,visual:VisualConfig::default(),weapon_id:Some(c.arma()),faction:Default::default()});
-    let armas=Conjunto::TODOS.map(|c|c.arma());let mut sel=0;
-    tela.recebeu_lista(&chars,&armas,&mut sel);
-    let solido=render3d::material_solido();let inicio=get_time();let mut quadro=0;let mut cena=0;
-    let exportar=std::env::var("MMO_PREVIA_EXPORTAR").is_ok();
-    let mut teclado=crate::entrada::Teclado::novo();
+    let mut tela = Personagens::default();
+    let chars = [
+        ("brunji", 20, Conjunto::Katana),
+        ("Mare", 5, Conjunto::Pistolas),
+    ]
+    .map(|(n, level, c)| CharacterListEntry {
+        name: n.into(),
+        level,
+        visual: VisualConfig::default(),
+        weapon_id: Some(c.arma()),
+        faction: Default::default(),
+    });
+    let armas = Conjunto::TODOS.map(|c| c.arma());
+    let mut sel = 0;
+    tela.recebeu_lista(&chars, &armas, &mut sel);
+    let solido = render3d::material_solido();
+    let inicio = get_time();
+    let mut quadro = 0;
+    let mut cena = 0;
+    let exportar = std::env::var("MMO_PREVIA_EXPORTAR").is_ok();
+    let mut teclado = crate::entrada::Teclado::novo();
     loop {
         teclado.coleta(get_time());
-        if is_key_pressed(KeyCode::F10) {break;}
-        if exportar {
-            if tela.saida_previa.as_ref().is_none_or(|t|t.texture.width()!=largura_tela() || t.texture.height()!=altura_tela()) {
-                tela.saida_previa=Some(render_target(largura_tela() as u32,altura_tela() as u32));
-            }
-            tela.criando=cena>0;
-            if cena>0 {tela.arma=Some(armas[cena-1]);tela.nome="NovoHeroi".into();}
+        if is_key_pressed(KeyCode::F10) {
+            break;
         }
-        let _=tela.desenha(&chars,&armas,&mut sel,teclado.digitado(),vox,&solido);
-        if exportar && get_time()-inicio>2.0 {
-            quadro+=1;
-            if quadro%6==0 {
-                unsafe {get_internal_gl().flush();}
-                tela.saida_previa.as_ref().unwrap().texture.get_texture_data().export_png(&format!("/tmp/2dengine-personagem-{cena}.png"));
-                cena+=1;if cena==5 {break;}
+        if exportar {
+            if tela.saida_previa.as_ref().is_none_or(|t| {
+                t.texture.width() != largura_tela() || t.texture.height() != altura_tela()
+            }) {
+                tela.saida_previa =
+                    Some(render_target(largura_tela() as u32, altura_tela() as u32));
+            }
+            tela.criando = cena > 0;
+            if cena > 0 {
+                tela.arma = Some(armas[cena - 1]);
+                tela.nome = "NovoHeroi".into();
+            }
+        }
+        let _ = tela.desenha(&chars, &armas, &mut sel, teclado.digitado(), vox, &solido);
+        if exportar && get_time() - inicio > 2.0 {
+            quadro += 1;
+            if quadro % 6 == 0 {
+                unsafe {
+                    get_internal_gl().flush();
+                }
+                tela.saida_previa
+                    .as_ref()
+                    .unwrap()
+                    .texture
+                    .get_texture_data()
+                    .export_png(&format!("/tmp/2dengine-personagem-{cena}.png"));
+                cena += 1;
+                if cena == 5 {
+                    break;
+                }
             }
         }
         next_frame().await;
@@ -594,36 +1207,52 @@ mod tests {
     #[test]
     fn viewport_da_previa_em_pixels_cai_dentro_do_retrato() {
         // Tela 844x390 pontos (iPhone paisagem), retrato na esquerda.
-        let area=Rect::new(26.0,128.0,300.0,172.0);
-        for s in [1.0f32,2.0,3.0] {
-            let alto=390.0*s;
-            let (x,y,w,h)=render3d::viewport_em_pixels(area,s,alto).unwrap();
-            assert_eq!((x,w),((26.0*s) as i32,(300.0*s) as i32),"escala {s}");
-            assert_eq!(h,(172.0*s) as i32,"escala {s}");
+        let area = Rect::new(26.0, 128.0, 300.0, 172.0);
+        for s in [1.0f32, 2.0, 3.0] {
+            let alto = 390.0 * s;
+            let (x, y, w, h) = render3d::viewport_em_pixels(area, s, alto).unwrap();
+            assert_eq!(
+                (x, w),
+                ((26.0 * s) as i32, (300.0 * s) as i32),
+                "escala {s}"
+            );
+            assert_eq!(h, (172.0 * s) as i32, "escala {s}");
             // Origem embaixo: a base do retrato (300 pt) fica a 90 pt do chao.
-            assert_eq!(y,(90.0*s) as i32,"escala {s}");
-            assert!(y+h<=alto as i32);
+            assert_eq!(y, (90.0 * s) as i32, "escala {s}");
+            assert!(y + h <= alto as i32);
         }
-        assert!(render3d::viewport_em_pixels(Rect::new(0.0,500.0,100.0,50.0),2.0,780.0).is_none(),"fora da tela");
-        assert!(render3d::viewport_em_pixels(Rect::new(0.0,0.0,0.2,10.0),1.0,100.0).is_none(),"sem largura");
+        assert!(
+            render3d::viewport_em_pixels(Rect::new(0.0, 500.0, 100.0, 50.0), 2.0, 780.0).is_none(),
+            "fora da tela"
+        );
+        assert!(
+            render3d::viewport_em_pixels(Rect::new(0.0, 0.0, 0.2, 10.0), 1.0, 100.0).is_none(),
+            "sem largura"
+        );
     }
     /// Nenhum render target com profundidade em lugar nenhum do cliente: no
     /// iPhone ele sai vazio (ver `render3d::viewport_em_pixels`).
     #[test]
     fn nenhum_render_target_com_profundidade_no_cliente() {
-        let dir=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let proibido=["render_target", "_ex("].concat();
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let proibido = ["render_target", "_ex("].concat();
         for e in std::fs::read_dir(&dir).unwrap() {
-            let p=e.unwrap().path();
-            if p.extension().is_some_and(|x|x=="rs") {
-                let fonte=std::fs::read_to_string(&p).unwrap();
+            let p = e.unwrap().path();
+            if p.extension().is_some_and(|x| x == "rs") {
+                let fonte = std::fs::read_to_string(&p).unwrap();
                 // Excecao UNICA: a previa de captura (`MMO_PREVIA_LOJA`), que
                 // so' roda no desktop pra gerar PNG e nunca entra no app. Ela
                 // precisa de profundidade pra cena 3D sair certa.
-                let previa=p.file_name().is_some_and(|n|n=="loja_tp.rs") && fonte.contains("MMO_PREVIA_LOJA");
-                for (n,l) in fonte.lines().enumerate() {
-                    let codigo=l.split("//").next().unwrap_or("");
-                    assert!(!codigo.contains(&proibido) || previa,"{}:{}: render target com profundidade volta a sumir no iOS",p.display(),n+1);
+                let previa = p.file_name().is_some_and(|n| n == "loja_tp.rs")
+                    && fonte.contains("MMO_PREVIA_LOJA");
+                for (n, l) in fonte.lines().enumerate() {
+                    let codigo = l.split("//").next().unwrap_or("");
+                    assert!(
+                        !codigo.contains(&proibido) || previa,
+                        "{}:{}: render target com profundidade volta a sumir no iOS",
+                        p.display(),
+                        n + 1
+                    );
                 }
             }
         }
@@ -633,57 +1262,135 @@ mod tests {
     /// Tudo da criacao dentro da tela e sem se sobrepor, nos tamanhos de verdade.
     #[test]
     fn criacao_cabe_na_tela_do_celular_e_do_pc() {
-        let dentro=|r: Rect,w: f32,h: f32| r.x>=0.0 && r.y>=0.0 && r.x+r.w<=w && r.y+r.h<=h && r.w>0.0 && r.h>0.0;
+        let dentro = |r: Rect, w: f32, h: f32| {
+            r.x >= 0.0 && r.y >= 0.0 && r.x + r.w <= w && r.y + r.h <= h && r.w > 0.0 && r.h > 0.0
+        };
         // iPhone deitado (com notch e barra do home), Android do emulador, PC.
-        for (w,h,seguro) in [(844.0,390.0,[0.0,47.0,21.0,47.0]),(914.0,411.0,[0.0;4]),(667.0,375.0,[0.0;4]),
-                             (1280.0,720.0,[0.0;4]),(1920.0,1080.0,[0.0;4])] {
-            let l=LayoutCriacao::novo(w,h,seguro);
-            for (nome,r) in [("retrato",l.retrato),("nome",l.nome),("botao",l.botao),("painel",l.painel)] {
-                assert!(dentro(r,w,h),"{w}x{h}: {nome} fora da tela: {r:?}");
+        for (w, h, seguro) in [
+            (844.0, 390.0, [0.0, 47.0, 21.0, 47.0]),
+            (914.0, 411.0, [0.0; 4]),
+            (667.0, 375.0, [0.0; 4]),
+            (1280.0, 720.0, [0.0; 4]),
+            (1920.0, 1080.0, [0.0; 4]),
+        ] {
+            let l = LayoutCriacao::novo(w, h, seguro);
+            for (nome, r) in [
+                ("retrato", l.retrato),
+                ("nome", l.nome),
+                ("botao", l.botao),
+                ("painel", l.painel),
+            ] {
+                assert!(dentro(r, w, h), "{w}x{h}: {nome} fora da tela: {r:?}");
             }
-            assert!(!l.nome.overlaps(&l.botao),"{w}x{h}: nome em cima do botao");
-            assert!(l.retrato.y+l.retrato.h<=l.nome.y,"{w}x{h}: personagem em cima do nome");
-            assert!(l.retrato.x+l.retrato.w<=l.painel.x,"{w}x{h}: personagem em cima do painel");
+            assert!(!l.nome.overlaps(&l.botao), "{w}x{h}: nome em cima do botao");
+            assert!(
+                l.retrato.y + l.retrato.h <= l.nome.y,
+                "{w}x{h}: personagem em cima do nome"
+            );
+            assert!(
+                l.retrato.x + l.retrato.w <= l.painel.x,
+                "{w}x{h}: personagem em cima do painel"
+            );
             // Nome e botao centrados embaixo do personagem.
-            let cx=l.retrato.x+l.retrato.w*0.5;
-            for r in [l.nome,l.botao] {assert!((r.x+r.w*0.5-cx).abs()<1.0,"{w}x{h}: fora do centro do personagem");}
-            assert!(l.nome.y>l.retrato.y && l.botao.y>l.nome.y,"{w}x{h}: ordem personagem > nome > botao");
-            assert!(l.retrato.h-l.rodape_retrato>=150.0,"{w}x{h}: personagem pequeno demais: {}",l.retrato.h);
-            assert!(l.fim_do_essencial()<=l.painel.y+l.painel.h,"{w}x{h}: arma e faccao nao cabem no painel");
-            assert!(l.painel.w>=300.0,"{w}x{h}: painel estreito demais: {}",l.painel.w);
+            let cx = l.retrato.x + l.retrato.w * 0.5;
+            for r in [l.nome, l.botao] {
+                assert!(
+                    (r.x + r.w * 0.5 - cx).abs() < 1.0,
+                    "{w}x{h}: fora do centro do personagem"
+                );
+            }
+            assert!(
+                l.nome.y > l.retrato.y && l.botao.y > l.nome.y,
+                "{w}x{h}: ordem personagem > nome > botao"
+            );
+            assert!(
+                l.retrato.h - l.rodape_retrato >= 150.0,
+                "{w}x{h}: personagem pequeno demais: {}",
+                l.retrato.h
+            );
+            assert!(
+                l.fim_do_essencial() <= l.painel.y + l.painel.h,
+                "{w}x{h}: arma e faccao nao cabem no painel"
+            );
+            assert!(
+                l.painel.w >= 300.0,
+                "{w}x{h}: painel estreito demais: {}",
+                l.painel.w
+            );
         }
     }
     /// Com o teclado da tela aberto, o campo sobe e continua dentro da tela.
     #[test]
     fn campo_de_nome_sobe_acima_do_teclado() {
-        let (w,h)=(844.0,390.0);
-        let l=LayoutCriacao::novo(w,h,[0.0,47.0,21.0,47.0]);
-        let dy=l.subida_do_nome(true,h);
-        let y=l.nome.y-dy;
-        assert!(y+l.nome.h<=h*0.48,"campo ainda atras do teclado: {y}");
-        assert!(y-28.0>=0.0,"campo saiu por cima: {y}");
+        let (w, h) = (844.0, 390.0);
+        let l = LayoutCriacao::novo(w, h, [0.0, 47.0, 21.0, 47.0]);
+        let dy = l.subida_do_nome(true, h);
+        let y = l.nome.y - dy;
+        assert!(
+            y + l.nome.h <= h * 0.48,
+            "campo ainda atras do teclado: {y}"
+        );
+        assert!(y - 28.0 >= 0.0, "campo saiu por cima: {y}");
     }
     #[test]
     fn nome_segue_validacao_do_servidor() {
-        assert_eq!(valida_nome("  Ana_23 "),Ok("Ana_23"));
-        for n in ["a","","nome com espaco","João","aaaaaaaaaaaaaaaaaaaaaaaaa"] {assert!(valida_nome(n).is_err());}
+        assert_eq!(valida_nome("  Ana_23 "), Ok("Ana_23"));
+        for n in [
+            "a",
+            "",
+            "nome com espaco",
+            "João",
+            "aaaaaaaaaaaaaaaaaaaaaaaaa",
+        ] {
+            assert!(valida_nome(n).is_err());
+        }
     }
     #[test]
     fn criacao_envia_arma_e_faccao_e_recusa_arma_indisponivel() {
-        let mut p=Personagens::default();p.nome="Teste".into();p.arma=Some(Conjunto::Katana.arma());p.faccao=Faction::Morganeers;
-        let armas=Conjunto::TODOS.map(|c|c.arma());
-        match p.pedido_criacao(&armas).unwrap() {ClientMessage::CreateCharacter{name,starting_weapon,faction,..}=>{
-            assert_eq!(name,"Teste");assert_eq!(starting_weapon,Conjunto::Katana.arma());assert_eq!(faction,Faction::Morganeers);
-        },_=>panic!("mensagem incorreta")}
+        let mut p = Personagens::default();
+        p.nome = "Teste".into();
+        p.arma = Some(Conjunto::Katana.arma());
+        p.faccao = Faction::Morganeers;
+        let armas = Conjunto::TODOS.map(|c| c.arma());
+        match p.pedido_criacao(&armas).unwrap() {
+            ClientMessage::CreateCharacter {
+                name,
+                starting_weapon,
+                faction,
+                ..
+            } => {
+                assert_eq!(name, "Teste");
+                assert_eq!(starting_weapon, Conjunto::Katana.arma());
+                assert_eq!(faction, Faction::Morganeers);
+            }
+            _ => panic!("mensagem incorreta"),
+        }
         assert!(p.pedido_criacao(&[Conjunto::Pistolas.arma()]).is_err());
     }
     #[test]
     fn confirmacao_seleciona_novo_personagem_e_erro_preserva_escolhas() {
-        let mut p=Personagens::default();let mut sel=0;let armas=[Conjunto::Katana.arma()];
-        p.recebeu_lista(&[],&armas,&mut sel);assert!(p.criando);assert_eq!(p.arma,Some(armas[0]));
-        p.nome="Novo".into();p.aguardando=Some(("Novo".into(),0.0));
-        let chars=["Antigo","Novo"].map(|n|CharacterListEntry{name:n.into(),level:1,weapon_id:Some(armas[0]),visual:VisualConfig::default(),faction:Default::default()});
-        p.recebeu_lista(&chars,&armas,&mut sel);assert_eq!(sel,1);assert!(!p.criando);assert!(p.aguardando.is_none());
-        p.falhou("nome ja em uso".into());assert_eq!(p.nome,"Novo");assert_eq!(p.arma,Some(armas[0]));assert!(p.criando);
+        let mut p = Personagens::default();
+        let mut sel = 0;
+        let armas = [Conjunto::Katana.arma()];
+        p.recebeu_lista(&[], &armas, &mut sel);
+        assert!(p.criando);
+        assert_eq!(p.arma, Some(armas[0]));
+        p.nome = "Novo".into();
+        p.aguardando = Some(("Novo".into(), 0.0));
+        let chars = ["Antigo", "Novo"].map(|n| CharacterListEntry {
+            name: n.into(),
+            level: 1,
+            weapon_id: Some(armas[0]),
+            visual: VisualConfig::default(),
+            faction: Default::default(),
+        });
+        p.recebeu_lista(&chars, &armas, &mut sel);
+        assert_eq!(sel, 1);
+        assert!(!p.criando);
+        assert!(p.aguardando.is_none());
+        p.falhou("nome ja em uso".into());
+        assert_eq!(p.nome, "Novo");
+        assert_eq!(p.arma, Some(armas[0]));
+        assert!(p.criando);
     }
 }

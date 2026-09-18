@@ -34,7 +34,15 @@ pub struct ToqueLongo {
 impl ToqueLongo {
     /// Um quadro. `alvo` e' o botao sob o dedo no momento em que APERTOU
     /// (`None` = apertou fora: nao comeca nada).
-    pub fn quadro(&mut self, apertou: bool, segurando: bool, soltou: bool, alvo: Option<u32>, pos: Vec2, agora: f64) -> Toque {
+    pub fn quadro(
+        &mut self,
+        apertou: bool,
+        segurando: bool,
+        soltou: bool,
+        alvo: Option<u32>,
+        pos: Vec2,
+        agora: f64,
+    ) -> Toque {
         if apertou {
             match alvo {
                 Some(id) => {
@@ -45,7 +53,9 @@ impl ToqueLongo {
                 None => self.inicio = None,
             }
         }
-        let Some((id, de, t0)) = self.inicio else { return Toque::Nada };
+        let Some((id, de, t0)) = self.inicio else {
+            return Toque::Nada;
+        };
         if pos.distance(de) > TOLERANCIA_PX {
             self.longe = true;
         }
@@ -61,7 +71,11 @@ impl ToqueLongo {
             if self.longe {
                 return Toque::Arrasto(id);
             }
-            return if soltou { Toque::Curto(id) } else { Toque::Nada };
+            return if soltou {
+                Toque::Curto(id)
+            } else {
+                Toque::Nada
+            };
         }
         Toque::Nada
     }
@@ -88,10 +102,22 @@ mod testes {
         let p = vec2(50.0, 50.0);
         assert_eq!(t.quadro(true, true, false, Some(7), p, 0.0), Toque::Nada);
         assert_eq!(t.quadro(false, true, false, None, p, 0.3), Toque::Nada);
-        assert_eq!(t.quadro(false, true, false, None, vec2(53.0, 51.0), 0.51), Toque::Longo(7), "tremida pequena ainda e' toque");
+        assert_eq!(
+            t.quadro(false, true, false, None, vec2(53.0, 51.0), 0.51),
+            Toque::Longo(7),
+            "tremida pequena ainda e' toque"
+        );
         assert!(t.disparou());
-        assert_eq!(t.quadro(false, true, false, None, p, 0.9), Toque::Nada, "so' uma vez");
-        assert_eq!(t.quadro(false, false, true, None, p, 1.0), Toque::Nada, "soltar depois do longo nao e' clique");
+        assert_eq!(
+            t.quadro(false, true, false, None, p, 0.9),
+            Toque::Nada,
+            "so' uma vez"
+        );
+        assert_eq!(
+            t.quadro(false, false, true, None, p, 1.0),
+            Toque::Nada,
+            "soltar depois do longo nao e' clique"
+        );
         assert!(!t.ativo());
     }
 
@@ -102,7 +128,10 @@ mod testes {
         t.quadro(true, true, false, Some(2), p, 5.0);
         assert_eq!(t.quadro(false, false, true, None, p, 5.2), Toque::Curto(2));
         // Apertou e soltou no mesmo quadro.
-        assert_eq!(t.quadro(true, false, true, Some(3), p, 6.0), Toque::Curto(3));
+        assert_eq!(
+            t.quadro(true, false, true, Some(3), p, 6.0),
+            Toque::Curto(3)
+        );
         // Apertou fora de qualquer botao: nada.
         assert_eq!(t.quadro(true, true, false, None, p, 7.0), Toque::Nada);
         assert_eq!(t.quadro(false, false, true, None, p, 7.1), Toque::Nada);
@@ -112,8 +141,18 @@ mod testes {
     fn arrastar_nao_abre_nem_clica() {
         let mut t = ToqueLongo::default();
         t.quadro(true, true, false, Some(1), vec2(40.0, 40.0), 0.0);
-        assert_eq!(t.quadro(false, true, false, None, vec2(40.0, 0.0), 0.2), Toque::Nada);
-        assert_eq!(t.quadro(false, true, false, None, vec2(40.0, 0.0), 0.8), Toque::Nada, "arrastou antes: nao vira longo");
-        assert_eq!(t.quadro(false, false, true, None, vec2(40.0, 0.0), 0.9), Toque::Arrasto(1));
+        assert_eq!(
+            t.quadro(false, true, false, None, vec2(40.0, 0.0), 0.2),
+            Toque::Nada
+        );
+        assert_eq!(
+            t.quadro(false, true, false, None, vec2(40.0, 0.0), 0.8),
+            Toque::Nada,
+            "arrastou antes: nao vira longo"
+        );
+        assert_eq!(
+            t.quadro(false, false, true, None, vec2(40.0, 0.0), 0.9),
+            Toque::Arrasto(1)
+        );
     }
 }

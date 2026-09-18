@@ -232,9 +232,7 @@ pub fn publicar(w: &GameWorld, ultima: &mut f32) {
         return;
     }
     *ultima = w.sim_time_s;
-    let chao = |p: glam::Vec2| {
-        w.ilha.as_ref().map_or(0.0, |i| i.altura(p.x, p.y))
-    };
+    let chao = |p: glam::Vec2| w.ilha.as_ref().map_or(0.0, |i| i.altura(p.x, p.y));
 
     let agora_unix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -289,7 +287,9 @@ pub fn publicar(w: &GameWorld, ultima: &mut f32) {
             instancia: s.instancia,
             banda_enviados: banda.map_or(0, |b| b.0),
             banda_recebidos: banda.map_or(0, |b| b.1),
-            banda_kbps: banda.map_or(0.0, |(env, rec, seg)| (env + rec) as f64 * 8.0 / 1000.0 / seg.max(1.0)),
+            banda_kbps: banda.map_or(0.0, |(env, rec, seg)| {
+                (env + rec) as f64 * 8.0 / 1000.0 / seg.max(1.0)
+            }),
         });
     }
 
@@ -368,7 +368,11 @@ pub fn publicar(w: &GameWorld, ultima: &mut f32) {
                 x: pos.x,
                 z: pos.y,
                 vivo: v.vivo.is_some(),
-                renasce_em_s: if v.vivo.is_some() { 0.0 } else { (v.volta_em - w.sim_time_s).max(0.0) },
+                renasce_em_s: if v.vivo.is_some() {
+                    0.0
+                } else {
+                    (v.volta_em - w.sim_time_s).max(0.0)
+                },
                 hp,
                 hp_max,
             }
@@ -383,7 +387,10 @@ pub fn publicar(w: &GameWorld, ultima: &mut f32) {
             InstanciaAoVivo {
                 id: i.id,
                 conteudo: i.conteudo,
-                nome: c.map_or_else(|| format!("conteudo {}", i.conteudo), |c| c.nome.to_string()),
+                nome: c.map_or_else(
+                    || format!("conteudo {}", i.conteudo),
+                    |c| c.nome.to_string(),
+                ),
                 estagio: i.estagio,
                 andar: i.andar,
                 andares: c.map_or(0, |c| c.andares),
@@ -399,20 +406,53 @@ pub fn publicar(w: &GameWorld, ultima: &mut f32) {
                 membros: i
                     .membros
                     .iter()
-                    .map(|m| MembroAoVivo { nome: m.nome.clone(), mortes: m.mortes, ajudante: m.ajudante, saiu: m.saiu, abriu_bau: m.abriu_bau })
+                    .map(|m| MembroAoVivo {
+                        nome: m.nome.clone(),
+                        mortes: m.mortes,
+                        ajudante: m.ajudante,
+                        saiu: m.saiu,
+                        abriu_bau: m.abriu_bau,
+                    })
                     .collect(),
             }
         })
         .collect();
     let agora_mesa = w.sim_time_s as f64;
     let mesa = MesaAoVivo {
-        fila: w.mesa.fila.iter().map(|f| (f.conteudo, f.estagio, (agora_mesa - f.desde).max(0.0) as f32)).collect(),
-        salas: w.mesa.salas.iter().map(|s| (s.id, s.conteudo, s.estagio, s.membros.len(), s.completar_pela_fila)).collect(),
+        fila: w
+            .mesa
+            .fila
+            .iter()
+            .map(|f| {
+                (
+                    f.conteudo,
+                    f.estagio,
+                    (agora_mesa - f.desde).max(0.0) as f32,
+                )
+            })
+            .collect(),
+        salas: w
+            .mesa
+            .salas
+            .iter()
+            .map(|s| {
+                (
+                    s.id,
+                    s.conteudo,
+                    s.estagio,
+                    s.membros.len(),
+                    s.completar_pela_fila,
+                )
+            })
+            .collect(),
         prontos: w.mesa.prontos.len(),
     };
     let def = shared::terreno::def_da_zona(&w.zona);
     let p = Panorama {
-        build: Build { protocolo: shared::PROTOCOL_VERSION, versao: env!("CARGO_PKG_VERSION") },
+        build: Build {
+            protocolo: shared::PROTOCOL_VERSION,
+            versao: env!("CARGO_PKG_VERSION"),
+        },
         uptime_s: crate::telemetria::uptime_s(),
         chefes,
         instancias,
@@ -448,15 +488,31 @@ impl GameWorld {
     pub fn medir_telemetria(&self) {
         use crate::telemetria::medir;
         let online = self.sessions.values().filter(|s| s.logged_in).count();
-        let mobs = self.ecs.query::<&EnemyTag>().iter().filter(|(_, t)| !t.dead).count();
-        let chefes_vivos = self.vagas_de_chefe.iter().filter(|v| v.vivo.is_some()).count();
+        let mobs = self
+            .ecs
+            .query::<&EnemyTag>()
+            .iter()
+            .filter(|(_, t)| !t.dead)
+            .count();
+        let chefes_vivos = self
+            .vagas_de_chefe
+            .iter()
+            .filter(|v| v.vivo.is_some())
+            .count();
         medir("online", online as f64);
         medir("mobs_vivos", mobs as f64);
         medir("chefes_vivos", chefes_vivos as f64);
         medir("instancias", self.instancias.len() as f64);
         medir("fila_dungeon", self.mesa.fila.len() as f64);
         medir("salas_dungeon", self.mesa.salas.len() as f64);
-        medir("ouro_online", self.sessions.values().filter(|s| s.logged_in).map(|s| s.gold as f64).sum());
+        medir(
+            "ouro_online",
+            self.sessions
+                .values()
+                .filter(|s| s.logged_in)
+                .map(|s| s.gold as f64)
+                .sum(),
+        );
         let (nos, esgotados) = self.nos_de_coleta();
         medir("nos_de_coleta", nos as f64);
         medir("nos_de_coleta_esgotados", esgotados as f64);

@@ -63,7 +63,8 @@ impl GestoCamera {
     /// Um quadro. `sobre_hud` diz se o ponto do PRIMEIRO dedo esta' em cima de
     /// botao/painel — so' e' lido no quadro em que ele encosta.
     pub fn quadro(&mut self, toques: &[ToqueNoQuadro], sobre_hud: bool) -> Acao {
-        let mut vivos: Vec<&ToqueNoQuadro> = toques.iter().filter(|t| t.fase != Fase::Acabou).collect();
+        let mut vivos: Vec<&ToqueNoQuadro> =
+            toques.iter().filter(|t| t.fase != Fase::Acabou).collect();
         vivos.sort_by_key(|t| t.id);
 
         if vivos.len() >= 2 {
@@ -102,15 +103,31 @@ impl GestoCamera {
             None => {
                 if t.fase == Fase::Acabou {
                     // Encostou e soltou no mesmo quadro: toque curto.
-                    return if sobre_hud { Acao::Nada } else { Acao::Clique(t.pos) };
+                    return if sobre_hud {
+                        Acao::Nada
+                    } else {
+                        Acao::Clique(t.pos)
+                    };
                 }
-                self.dedo = Some(Dedo { id: t.id, inicio: t.pos, ultimo: t.pos, sobre_hud, arrastando: false });
+                self.dedo = Some(Dedo {
+                    id: t.id,
+                    inicio: t.pos,
+                    ultimo: t.pos,
+                    sobre_hud,
+                    arrastando: false,
+                });
                 Acao::Nada
             }
             Some(mut d) => {
                 if d.id != t.id {
                     // Outro dedo (o primeiro saiu sem Acabou visivel): recomeca.
-                    self.dedo = Some(Dedo { id: t.id, inicio: t.pos, ultimo: t.pos, sobre_hud, arrastando: false });
+                    self.dedo = Some(Dedo {
+                        id: t.id,
+                        inicio: t.pos,
+                        ultimo: t.pos,
+                        sobre_hud,
+                        arrastando: false,
+                    });
                     return Acao::Nada;
                 }
                 if !d.sobre_hud && !d.arrastando && t.pos.distance(d.inicio) > TOLERANCIA_PX {
@@ -121,12 +138,20 @@ impl GestoCamera {
                 if t.fase == Fase::Acabou {
                     self.dedo = None;
                     if d.arrastando || d.sobre_hud {
-                        return if d.arrastando && delta != Vec2::ZERO { Acao::Gira(delta) } else { Acao::Nada };
+                        return if d.arrastando && delta != Vec2::ZERO {
+                            Acao::Gira(delta)
+                        } else {
+                            Acao::Nada
+                        };
                     }
                     return Acao::Clique(t.pos);
                 }
                 self.dedo = Some(d);
-                if d.arrastando && delta != Vec2::ZERO { Acao::Gira(delta) } else { Acao::Nada }
+                if d.arrastando && delta != Vec2::ZERO {
+                    Acao::Gira(delta)
+                } else {
+                    Acao::Nada
+                }
             }
         }
     }
@@ -138,50 +163,106 @@ mod testes {
     use macroquad::prelude::vec2;
 
     fn t(id: u64, fase: Fase, x: f32, y: f32) -> ToqueNoQuadro {
-        ToqueNoQuadro { id, fase, pos: vec2(x, y) }
+        ToqueNoQuadro {
+            id,
+            fase,
+            pos: vec2(x, y),
+        }
     }
 
     #[test]
     fn toque_curto_e_clique_no_soltar() {
         let mut g = GestoCamera::default();
-        assert_eq!(g.quadro(&[t(1, Fase::Comecou, 100.0, 100.0)], false), Acao::Nada, "encostar nao clica");
+        assert_eq!(
+            g.quadro(&[t(1, Fase::Comecou, 100.0, 100.0)], false),
+            Acao::Nada,
+            "encostar nao clica"
+        );
         assert!(g.ativo());
-        assert_eq!(g.quadro(&[t(1, Fase::Segurando, 104.0, 101.0)], false), Acao::Nada, "tremida nao gira");
-        assert_eq!(g.quadro(&[t(1, Fase::Acabou, 104.0, 101.0)], false), Acao::Clique(vec2(104.0, 101.0)));
+        assert_eq!(
+            g.quadro(&[t(1, Fase::Segurando, 104.0, 101.0)], false),
+            Acao::Nada,
+            "tremida nao gira"
+        );
+        assert_eq!(
+            g.quadro(&[t(1, Fase::Acabou, 104.0, 101.0)], false),
+            Acao::Clique(vec2(104.0, 101.0))
+        );
         assert_eq!(g.quadro(&[], false), Acao::Nada);
         assert!(!g.ativo());
         // Encostou e soltou no mesmo quadro.
-        assert_eq!(g.quadro(&[t(2, Fase::Acabou, 5.0, 5.0)], false), Acao::Clique(vec2(5.0, 5.0)));
+        assert_eq!(
+            g.quadro(&[t(2, Fase::Acabou, 5.0, 5.0)], false),
+            Acao::Clique(vec2(5.0, 5.0))
+        );
     }
 
     #[test]
     fn arrastar_alem_do_limiar_gira_e_nao_clica() {
         let mut g = GestoCamera::default();
         g.quadro(&[t(1, Fase::Comecou, 100.0, 100.0)], false);
-        assert_eq!(g.quadro(&[t(1, Fase::Segurando, 130.0, 110.0)], false), Acao::Gira(vec2(30.0, 10.0)));
-        assert_eq!(g.quadro(&[t(1, Fase::Segurando, 140.0, 110.0)], false), Acao::Gira(vec2(10.0, 0.0)));
-        assert_eq!(g.quadro(&[t(1, Fase::Segurando, 140.0, 110.0)], false), Acao::Nada, "parado nao gira");
+        assert_eq!(
+            g.quadro(&[t(1, Fase::Segurando, 130.0, 110.0)], false),
+            Acao::Gira(vec2(30.0, 10.0))
+        );
+        assert_eq!(
+            g.quadro(&[t(1, Fase::Segurando, 140.0, 110.0)], false),
+            Acao::Gira(vec2(10.0, 0.0))
+        );
+        assert_eq!(
+            g.quadro(&[t(1, Fase::Segurando, 140.0, 110.0)], false),
+            Acao::Nada,
+            "parado nao gira"
+        );
         let fim = g.quadro(&[t(1, Fase::Acabou, 140.0, 110.0)], false);
-        assert!(!matches!(fim, Acao::Clique(_)), "soltar depois de arrastar nao clica: {fim:?}");
+        assert!(
+            !matches!(fim, Acao::Clique(_)),
+            "soltar depois de arrastar nao clica: {fim:?}"
+        );
     }
 
     #[test]
     fn comecar_em_cima_do_hud_nao_gira_nem_clica() {
         let mut g = GestoCamera::default();
         g.quadro(&[t(1, Fase::Comecou, 10.0, 10.0)], true);
-        assert_eq!(g.quadro(&[t(1, Fase::Segurando, 80.0, 10.0)], false), Acao::Nada);
-        assert_eq!(g.quadro(&[t(1, Fase::Acabou, 10.0, 10.0)], false), Acao::Nada, "o botao cuida do proprio toque");
+        assert_eq!(
+            g.quadro(&[t(1, Fase::Segurando, 80.0, 10.0)], false),
+            Acao::Nada
+        );
+        assert_eq!(
+            g.quadro(&[t(1, Fase::Acabou, 10.0, 10.0)], false),
+            Acao::Nada,
+            "o botao cuida do proprio toque"
+        );
     }
 
     #[test]
     fn pinca_da_zoom_na_direcao_certa() {
         let mut g = GestoCamera::default();
-        g.quadro(&[t(1, Fase::Comecou, 100.0, 100.0), t(2, Fase::Comecou, 200.0, 100.0)], false);
-        match g.quadro(&[t(1, Fase::Segurando, 80.0, 100.0), t(2, Fase::Segurando, 220.0, 100.0)], false) {
+        g.quadro(
+            &[
+                t(1, Fase::Comecou, 100.0, 100.0),
+                t(2, Fase::Comecou, 200.0, 100.0),
+            ],
+            false,
+        );
+        match g.quadro(
+            &[
+                t(1, Fase::Segurando, 80.0, 100.0),
+                t(2, Fase::Segurando, 220.0, 100.0),
+            ],
+            false,
+        ) {
             Acao::Zoom(d) => assert!(d > 0.0, "abrir os dedos = positivo: {d}"),
             outra => panic!("esperava zoom, veio {outra:?}"),
         }
-        match g.quadro(&[t(1, Fase::Segurando, 120.0, 100.0), t(2, Fase::Segurando, 180.0, 100.0)], false) {
+        match g.quadro(
+            &[
+                t(1, Fase::Segurando, 120.0, 100.0),
+                t(2, Fase::Segurando, 180.0, 100.0),
+            ],
+            false,
+        ) {
             Acao::Zoom(d) => assert!(d < 0.0, "fechar = negativo: {d}"),
             outra => panic!("esperava zoom, veio {outra:?}"),
         }
@@ -191,10 +272,28 @@ mod testes {
     fn segundo_dedo_cancela_o_clique_do_primeiro() {
         let mut g = GestoCamera::default();
         g.quadro(&[t(1, Fase::Comecou, 100.0, 100.0)], false);
-        g.quadro(&[t(1, Fase::Segurando, 100.0, 100.0), t(2, Fase::Comecou, 150.0, 100.0)], false);
+        g.quadro(
+            &[
+                t(1, Fase::Segurando, 100.0, 100.0),
+                t(2, Fase::Comecou, 150.0, 100.0),
+            ],
+            false,
+        );
         // Solta o segundo e depois o primeiro, parados: nada de clique.
-        assert_eq!(g.quadro(&[t(1, Fase::Segurando, 100.0, 100.0), t(2, Fase::Acabou, 150.0, 100.0)], false), Acao::Nada);
-        assert_eq!(g.quadro(&[t(1, Fase::Acabou, 100.0, 100.0)], false), Acao::Nada);
+        assert_eq!(
+            g.quadro(
+                &[
+                    t(1, Fase::Segurando, 100.0, 100.0),
+                    t(2, Fase::Acabou, 150.0, 100.0)
+                ],
+                false
+            ),
+            Acao::Nada
+        );
+        assert_eq!(
+            g.quadro(&[t(1, Fase::Acabou, 100.0, 100.0)], false),
+            Acao::Nada
+        );
         assert_eq!(g.quadro(&[], false), Acao::Nada);
         assert!(!g.ativo());
     }

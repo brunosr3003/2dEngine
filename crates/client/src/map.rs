@@ -20,7 +20,12 @@ pub struct Map {
 
 impl Map {
     pub fn new(name: String, width: u32, height: u32, tiles: Vec<u16>) -> Self {
-        Self { name, width, height, tiles }
+        Self {
+            name,
+            width,
+            height,
+            tiles,
+        }
     }
 
     pub fn tile(&self, x: i32, y: i32) -> u16 {
@@ -44,8 +49,8 @@ impl Map {
         // O arquivo vem do NOME da zona que o servidor mandou. Cada zona roda
         // em processo proprio com mapa proprio; carregar sempre o mesmo
         // arquivo mostrava o campo enquanto o jogador estava na cidade.
-        let path = std::env::var("MMO_MAP")
-            .unwrap_or_else(|_| format!("data/maps/{}.json", self.name));
+        let path =
+            std::env::var("MMO_MAP").unwrap_or_else(|_| format!("data/maps/{}.json", self.name));
         match shared::mapfile::MapFile::load(&path) {
             Ok(mf) => {
                 println!("[map] carregado de {path}: {}x{}", mf.width, mf.height);

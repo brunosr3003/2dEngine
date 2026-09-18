@@ -12,11 +12,13 @@ async fn main() -> Result<()> {
         .with_env_filter("info,set_max_bruno=debug")
         .init();
 
-    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-        "postgres://solar:solar_dev_123@localhost:5432/mmo_dev".to_string()
-    });
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://solar:solar_dev_123@localhost:5432/mmo_dev".to_string());
 
-    let pool = PgPoolOptions::new().max_connections(2).connect(&database_url).await?;
+    let pool = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&database_url)
+        .await?;
 
     // Char L100: cumulative xp = 100 × (99·100·199)/6 = 32,835,000.
     // Adicionamos 1M de margem.
@@ -30,7 +32,7 @@ async fn main() -> Result<()> {
          SET xp = $1,
              skill_points_earned = 100,
              skill_points_spent = 0
-         WHERE name = 'bruno'"
+         WHERE name = 'bruno'",
     )
     .bind(char_xp)
     .execute(&pool)
@@ -41,7 +43,7 @@ async fn main() -> Result<()> {
         sqlx::query(
             "INSERT INTO proficiencies (character_name, prof_kind, xp)
              VALUES ('bruno', $1, $2)
-             ON CONFLICT (character_name, prof_kind) DO UPDATE SET xp = EXCLUDED.xp"
+             ON CONFLICT (character_name, prof_kind) DO UPDATE SET xp = EXCLUDED.xp",
         )
         .bind(prof_kind)
         .bind(prof_xp)
@@ -51,11 +53,13 @@ async fn main() -> Result<()> {
 
     // Limpa skills aprendidas pra começar do zero (100 SP frescos).
     sqlx::query("DELETE FROM player_skills WHERE character_name = 'bruno'")
-        .execute(&pool).await?;
+        .execute(&pool)
+        .await?;
 
     tracing::info!(
         "✓ bruno setado: char xp={} (L100), 8 profs com {} xp (L100), 100 SP, learned_skills limpo",
-        char_xp, prof_xp,
+        char_xp,
+        prof_xp,
     );
     Ok(())
 }

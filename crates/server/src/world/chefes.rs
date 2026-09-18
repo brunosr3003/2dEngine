@@ -46,9 +46,17 @@ pub fn sitios_de_chefe(candidatos: &[Vec2], origem: Vec2, seguras: &[Vec2], n: u
     let mut c: Vec<Vec2> = candidatos
         .iter()
         .copied()
-        .filter(|p| seguras.iter().all(|s| s.distance(*p) >= LONGE_DA_ZONA_SEGURA))
+        .filter(|p| {
+            seguras
+                .iter()
+                .all(|s| s.distance(*p) >= LONGE_DA_ZONA_SEGURA)
+        })
         .collect();
-    c.sort_by(|a, b| a.distance_squared(origem).total_cmp(&b.distance_squared(origem)).then(a.x.total_cmp(&b.x)));
+    c.sort_by(|a, b| {
+        a.distance_squared(origem)
+            .total_cmp(&b.distance_squared(origem))
+            .then(a.x.total_cmp(&b.x))
+    });
     let mut escolhidos: Vec<Vec2> = Vec::new();
     if c.is_empty() {
         return escolhidos;
@@ -58,9 +66,14 @@ pub fn sitios_de_chefe(candidatos: &[Vec2], origem: Vec2, seguras: &[Vec2], n: u
         // Do indice alvo pra fora, alternando os lados.
         let achado = (0..c.len()).find_map(|k| {
             let cand = [alvo + k, alvo.wrapping_sub(k)];
-            cand.into_iter().filter(|j| *j < c.len()).map(|j| c[j]).find(|p| {
-                escolhidos.iter().all(|e| e.distance(*p) >= LONGE_DE_OUTRO_CHEFE)
-            })
+            cand.into_iter()
+                .filter(|j| *j < c.len())
+                .map(|j| c[j])
+                .find(|p| {
+                    escolhidos
+                        .iter()
+                        .all(|e| e.distance(*p) >= LONGE_DE_OUTRO_CHEFE)
+                })
         });
         if let Some(p) = achado {
             escolhidos.push(p);
@@ -73,12 +86,16 @@ pub fn sitios_de_chefe(candidatos: &[Vec2], origem: Vec2, seguras: &[Vec2], n: u
 /// equipamento (decisao: peca so' de craft e de bau de dungeon/raid).
 pub fn loot_de_chefe(kind: u16, seed: u64) -> Vec<(u16, u32)> {
     use shared::item_id::*;
-    let Some(c) = cat::chefe(kind) else { return Vec::new() };
+    let Some(c) = cat::chefe(kind) else {
+        return Vec::new();
+    };
     let n = c.nivel;
     let cor = cor_da_faixa(n);
     let mut s = seed ^ 0xB055_C0DE_u64;
     let mut rnd = || {
-        s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         ((s >> 33) as f32) / (1u64 << 31) as f32
     };
     let mut v = vec![
@@ -100,7 +117,9 @@ pub fn loot_de_chefe(kind: u16, seed: u64) -> Vec<(u16, u32)> {
     // A chave de craft: so' chefe da, na cor da faixa do chefe e com chance
     // que cai conforme o nivel sobe. Chefe do mundo rende menos que o de
     // dungeon/raid.
-    if let Some(chave) = shared::chaves::rolar(n, shared::chaves::Fonte::ChefeDoMundo, 1.0, rnd(), rnd()) {
+    if let Some(chave) =
+        shared::chaves::rolar(n, shared::chaves::Fonte::ChefeDoMundo, 1.0, rnd(), rnd())
+    {
         v.push((chave, 1));
     }
     v
@@ -108,7 +127,11 @@ pub fn loot_de_chefe(kind: u16, seed: u64) -> Vec<(u16, u32)> {
 
 /// Cor do material bom do chefe pelo nivel dele.
 fn cor_da_faixa(nivel: u32) -> u8 {
-    match nivel { 0..=14 => 1, 15..=29 => 2, _ => 3 }
+    match nivel {
+        0..=14 => 1,
+        15..=29 => 2,
+        _ => 3,
+    }
 }
 
 /// Tudo que `loot_de_chefe` pode dar, com a chance de cada um — pro "Onde
@@ -116,7 +139,9 @@ fn cor_da_faixa(nivel: u32) -> u8 {
 /// (teste `itens_do_chefe_cobre_o_loot`).
 pub fn itens_do_chefe(kind: u16) -> Vec<(u16, f32)> {
     use shared::item_id::*;
-    let Some(c) = cat::chefe(kind) else { return Vec::new() };
+    let Some(c) = cat::chefe(kind) else {
+        return Vec::new();
+    };
     let cor = cor_da_faixa(c.nivel);
     let chave = shared::chaves::faixa(c.nivel);
     let mut v = vec![
@@ -145,7 +170,15 @@ pub fn onde_obter_snapshot() -> Vec<shared::protocol::ItemResourceSources> {
     mobs.extend(crate::economy::KINDS_DE_PRAIA);
     let chefes = cat::CHEFES
         .iter()
-        .map(|c| (c.kind, c.nome.to_string(), c.nivel.min(u16::MAX as u32) as u16, ilha_da_zona(c.zona), itens_do_chefe(c.kind)))
+        .map(|c| {
+            (
+                c.kind,
+                c.nome.to_string(),
+                c.nivel.min(u16::MAX as u32) as u16,
+                ilha_da_zona(c.zona),
+                itens_do_chefe(c.kind),
+            )
+        })
         .collect();
     let receitas = crate::recipes::all();
     crate::economy::com_config(|cfg| {
@@ -165,7 +198,10 @@ pub fn onde_obter_snapshot() -> Vec<shared::protocol::ItemResourceSources> {
 
 /// Indice da ilha de `zona` em `ARQUIPELAGO` (0 se desconhecida).
 fn ilha_da_zona(zona: &str) -> u8 {
-    shared::terreno::ARQUIPELAGO.iter().position(|d| d.zona == zona).unwrap_or(0) as u8
+    shared::terreno::ARQUIPELAGO
+        .iter()
+        .position(|d| d.zona == zona)
+        .unwrap_or(0) as u8
 }
 
 /// Em que ilhas cada bicho nasce, pro "Onde obter" dizer o nome. Mesma conta
@@ -179,10 +215,23 @@ pub fn ilhas_dos_bichos(comuns: &[u16], praia: &[u16]) -> std::collections::Hash
         let chances: Vec<(u8, f32)> = ilhas
             .iter()
             .enumerate()
-            .map(|(i, d)| (i as u8, crate::quests::chance_do_kind(comuns, k, d.nivel.0, d.nivel.1)))
+            .map(|(i, d)| {
+                (
+                    i as u8,
+                    crate::quests::chance_do_kind(comuns, k, d.nivel.0, d.nivel.1),
+                )
+            })
             .collect();
-        let boas: Vec<u8> = chances.iter().filter(|c| c.1 >= 0.15).map(|c| c.0).collect();
-        let v = if boas.is_empty() { chances.iter().filter(|c| c.1 > 0.0).map(|c| c.0).collect() } else { boas };
+        let boas: Vec<u8> = chances
+            .iter()
+            .filter(|c| c.1 >= 0.15)
+            .map(|c| c.0)
+            .collect();
+        let v = if boas.is_empty() {
+            chances.iter().filter(|c| c.1 > 0.0).map(|c| c.0).collect()
+        } else {
+            boas
+        };
         m.insert(k, v);
     }
     for &k in praia {
@@ -203,7 +252,9 @@ impl GameWorld {
     pub(super) fn povoar_chefes(&mut self) {
         use shared::terreno::BLOCO;
         self.vagas_de_chefe.clear();
-        let (Some(ilha), Some(def)) = (self.ilha.as_ref(), shared::terreno::def_da_zona(&self.zona)) else {
+        let (Some(ilha), Some(def)) =
+            (self.ilha.as_ref(), shared::terreno::def_da_zona(&self.zona))
+        else {
             return;
         };
         let chefes = cat::da_zona(def.zona);
@@ -232,8 +283,19 @@ impl GameWorld {
         let lugares = sitios_de_chefe(&candidatos, self.porto_da_ilha, &seguras, chefes.len());
         for (c, pos) in chefes.iter().zip(lugares) {
             let e = self.nascer_chefe(c.kind, pos);
-            self.vagas_de_chefe.push(VagaDeChefe { kind: c.kind, pos, vivo: e, volta_em: 0.0 });
-            tracing::info!("chefe '{}' nv {} em ({:.0},{:.0})", c.nome, c.nivel, pos.x, pos.y);
+            self.vagas_de_chefe.push(VagaDeChefe {
+                kind: c.kind,
+                pos,
+                vivo: e,
+                volta_em: 0.0,
+            });
+            tracing::info!(
+                "chefe '{}' nv {} em ({:.0},{:.0})",
+                c.nome,
+                c.nivel,
+                pos.x,
+                pos.y
+            );
         }
     }
 
@@ -243,7 +305,12 @@ impl GameWorld {
     }
 
     /// O chefe do catalogo num nivel pedido (a dungeon usa o nivel do estagio).
-    pub(super) fn nascer_chefe_nivel(&mut self, kind: u16, pos: Vec2, nivel: u32) -> Option<Entity> {
+    pub(super) fn nascer_chefe_nivel(
+        &mut self,
+        kind: u16,
+        pos: Vec2,
+        nivel: u32,
+    ) -> Option<Entity> {
         let c = cat::chefe(kind)?;
         // Stats de comportamento (alcance, tiro, recuo) do mob preset do corpo;
         // os numeros de chefe por cima.
@@ -280,7 +347,12 @@ impl GameWorld {
             EntityKind::Enemy(kind),
             tag,
             body,
-            ChefeVivo { kind, prontas_em: [0.0; cat::MAX_HABILIDADES], livre_em: 0.0, carga: None },
+            ChefeVivo {
+                kind,
+                prontas_em: [0.0; cat::MAX_HABILIDADES],
+                livre_em: 0.0,
+                carga: None,
+            },
         ));
         Some(e)
     }
@@ -292,7 +364,11 @@ impl GameWorld {
         for (i, v) in self.vagas_de_chefe.iter_mut().enumerate() {
             match v.vivo {
                 Some(e) => {
-                    let vivo = self.ecs.get::<&EnemyTag>(e).map(|t| !t.dead).unwrap_or(false);
+                    let vivo = self
+                        .ecs
+                        .get::<&EnemyTag>(e)
+                        .map(|t| !t.dead)
+                        .unwrap_or(false);
                     if !vivo {
                         v.vivo = None;
                         let nivel = cat::chefe(v.kind).map_or(1, |c| c.nivel);
@@ -319,7 +395,13 @@ impl GameWorld {
         // quem esta' na MESMA instancia (0 = mundo aberto).
         let jogadores: Vec<(EntityId, Vec2, u32)> = self
             .ecs
-            .query::<(&NetId, &Position, &PlayerTag, &Health, Option<&super::dungeon::Instancia>)>()
+            .query::<(
+                &NetId,
+                &Position,
+                &PlayerTag,
+                &Health,
+                Option<&super::dungeon::Instancia>,
+            )>()
             .iter()
             .filter(|(_, (_, _, _, hp, _))| hp.current > 0)
             .map(|(_, (n, p, _, _, i))| (n.0, p.0, i.map_or(0, |i| i.0)))
@@ -329,7 +411,16 @@ impl GameWorld {
         let defesas: HashMap<EntityId, (i32, i32, f32)> = self
             .sessions
             .values()
-            .map(|s| (s.entity_id, (s.stats.hp_max, s.stats.defense, s.stats.damage_reduction_pct)))
+            .map(|s| {
+                (
+                    s.entity_id,
+                    (
+                        s.stats.hp_max,
+                        s.stats.defense,
+                        s.stats.damage_reduction_pct,
+                    ),
+                )
+            })
             .collect();
         let mut avisos: Vec<(Vec2, f32, ServerMessage, u32)> = Vec::new();
         let mut golpes: Vec<(EntityId, i32, EntityId, Vec2, f32)> = Vec::new();
@@ -342,13 +433,25 @@ impl GameWorld {
             &mut ChefeVivo,
             Option<&super::dungeon::Instancia>,
         )>() {
-            let Some(def) = cat::chefe(ch.kind) else { continue };
+            let Some(def) = cat::chefe(ch.kind) else {
+                continue;
+            };
             let inst = inst.map_or(0, |i| i.0);
-            let meus: Vec<usize> = (0..jogadores.len()).filter(|&i| jogadores[i].2 == inst).collect();
+            let meus: Vec<usize> = (0..jogadores.len())
+                .filter(|&i| jogadores[i].2 == inst)
+                .collect();
             let posicoes: Vec<Vec2> = meus.iter().map(|&i| jogadores[i].1).collect();
             if tag.dead || hp.current <= 0 {
                 if let Some(c) = ch.carga.take() {
-                    avisos.push((c.centro, 0.0, ServerMessage::TelegraficoFim { id: c.id, impacto: false }, inst));
+                    avisos.push((
+                        c.centro,
+                        0.0,
+                        ServerMessage::TelegraficoFim {
+                            id: c.id,
+                            impacto: false,
+                        },
+                        inst,
+                    ));
                 }
                 continue;
             }
@@ -362,7 +465,8 @@ impl GameWorld {
                     let h = &def.habilidades[c.hab];
                     for i in cat::atingidos(&h.forma, c.centro, c.dir, &posicoes) {
                         let alvo = jogadores[meus[i]].0;
-                        let (hp_max, defesa, reducao) = defesas.get(&alvo).copied().unwrap_or((100, 0, 0.0));
+                        let (hp_max, defesa, reducao) =
+                            defesas.get(&alvo).copied().unwrap_or((100, 0, 0.0));
                         let resist = cat::resistencia(defesa, reducao);
                         let quer = cat::dano_telegrafado(h, fase, hp_max, resist);
                         // O hit ainda passa por `dano_mitigado`: manda o bruto
@@ -370,7 +474,15 @@ impl GameWorld {
                         let bruto = (quer as f32 / (1.0 - resist).max(0.1)).ceil() as i32;
                         golpes.push((alvo, bruto, net.0, c.centro, h.empurra));
                     }
-                    avisos.push((c.centro, h.forma.alcance(), ServerMessage::TelegraficoFim { id: c.id, impacto: true }, inst));
+                    avisos.push((
+                        c.centro,
+                        h.forma.alcance(),
+                        ServerMessage::TelegraficoFim {
+                            id: c.id,
+                            impacto: true,
+                        },
+                        inst,
+                    ));
                     ch.carga = None;
                     ch.prontas_em[c.hab] = agora + cat::recarga(h, fase);
                     ch.livre_em = agora + cat::PAUSA_ENTRE_GOLPES;
@@ -381,16 +493,28 @@ impl GameWorld {
             if agora < ch.livre_em || tag.returning_home {
                 continue;
             }
-            let Some(alvo) = tag.ai_target.and_then(|id| jogadores.iter().find(|j| j.0 == id && j.2 == inst)).map(|j| j.1) else {
+            let Some(alvo) = tag
+                .ai_target
+                .and_then(|id| jogadores.iter().find(|j| j.0 == id && j.2 == inst))
+                .map(|j| j.1)
+            else {
                 continue;
             };
             let dist = alvo.distance(pos.0);
-            let Some(i) = cat::escolher(def, &ch.prontas_em, agora, fase, dist) else { continue };
+            let Some(i) = cat::escolher(def, &ch.prontas_em, agora, fase, dist) else {
+                continue;
+            };
             let h = &def.habilidades[i];
             let (centro, dir) = cat::centro_e_dir(h.mira, pos.0, alvo);
             let carga = cat::carga(h, fase);
             let id = ((net.0 .0 as u32) << 12) ^ tick;
-            ch.carga = Some(Carga { hab: i, id, centro, dir, impacto_em: agora + carga });
+            ch.carga = Some(Carga {
+                hab: i,
+                id,
+                centro,
+                dir,
+                impacto_em: agora + carga,
+            });
             vel.0 = Vec2::ZERO;
             tag.attack_dir = dir;
             tag.attack_cooldown = tag.attack_cooldown_base.max(0.4);
@@ -428,7 +552,14 @@ impl GameWorld {
             .sessions
             .iter()
             .filter(|(_, s)| s.logged_in)
-            .filter_map(|(sid, s)| s.entity.and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| (*sid, p.0, s.instancia))))
+            .filter_map(|(sid, s)| {
+                s.entity.and_then(|e| {
+                    self.ecs
+                        .get::<&Position>(e)
+                        .ok()
+                        .map(|p| (*sid, p.0, s.instancia))
+                })
+            })
             .collect();
         for (centro, alcance, msg, inst) in avisos {
             for (sid, p, inst_ouvinte) in &ouvintes {
@@ -483,7 +614,11 @@ mod testes {
         }
         // O mais fraco (primeiro) mais perto da cidade que o mais forte.
         assert!(s[0].distance(cidade) <= s[2].distance(cidade));
-        assert_eq!(s, sitios_de_chefe(&cand, cidade, &[cidade, Vec2::new(300.0, 0.0)], 3), "deterministico");
+        assert_eq!(
+            s,
+            sitios_de_chefe(&cand, cidade, &[cidade, Vec2::new(300.0, 0.0)], 3),
+            "deterministico"
+        );
         assert!(sitios_de_chefe(&[], cidade, &[], 2).is_empty());
     }
 
@@ -494,8 +629,14 @@ mod testes {
         assert!(baixo.iter().any(|(id, _)| *id == na_cor(STEEL, 1)));
         let alto = loot_de_chefe(18, 7);
         assert!(alto.iter().any(|(id, _)| *id == na_cor(STEEL, 3)));
-        assert!(loot_de_chefe(0, 7).is_empty(), "mob comum nao ganha loot de chefe");
-        assert_eq!(com_loot_de_chefe(vec![(COPPER, 5)], 0, 1), vec![(COPPER, 5)]);
+        assert!(
+            loot_de_chefe(0, 7).is_empty(),
+            "mob comum nao ganha loot de chefe"
+        );
+        assert_eq!(
+            com_loot_de_chefe(vec![(COPPER, 5)], 0, 1),
+            vec![(COPPER, 5)]
+        );
     }
 
     #[test]
@@ -507,7 +648,10 @@ mod testes {
             for seed in 0..N {
                 for (id, q) in loot_de_chefe(kind, seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)) {
                     if shared::item_id::todas_as_chaves().contains(&id) {
-                        assert!(chaves(cor).contains(&id), "chefe {kind}: chave {id} fora da cor {cor}");
+                        assert!(
+                            chaves(cor).contains(&id),
+                            "chefe {kind}: chave {id} fora da cor {cor}"
+                        );
                         assert_eq!(q, 1);
                         caiu += 1;
                     }
@@ -516,7 +660,10 @@ mod testes {
             let nivel = cat::chefe(kind).unwrap().nivel;
             let esperado = shared::chaves::faixa(nivel).chance_mundo;
             let taxa = caiu as f32 / N as f32;
-            assert!((taxa - esperado).abs() < 0.006, "chefe {kind} (nv {nivel}): {taxa}, tabela {esperado}");
+            assert!(
+                (taxa - esperado).abs() < 0.006,
+                "chefe {kind} (nv {nivel}): {taxa}, tabela {esperado}"
+            );
         }
     }
 
@@ -526,7 +673,11 @@ mod testes {
             let lista: Vec<u16> = itens_do_chefe(c.kind).iter().map(|x| x.0).collect();
             for seed in 0..3_000u64 {
                 for (id, _) in loot_de_chefe(c.kind, seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)) {
-                    assert!(lista.contains(&id), "chefe {}: {id} cai e nao aparece no Onde obter", c.kind);
+                    assert!(
+                        lista.contains(&id),
+                        "chefe {}: {id} cai e nao aparece no Onde obter",
+                        c.kind
+                    );
                 }
             }
         }
@@ -540,16 +691,25 @@ mod testes {
         let m = ilhas_dos_bichos(&comuns, &[8, 9]);
         assert!(m[&0].contains(&0), "lobo nasce no Bosque");
         let ultimo = *comuns.last().unwrap();
-        assert!(!m[&ultimo].contains(&0), "o bicho mais forte nao nasce no Bosque");
+        assert!(
+            !m[&ultimo].contains(&0),
+            "o bicho mais forte nao nasce no Bosque"
+        );
         assert!(!m[&ultimo].is_empty());
         assert_eq!(m[&8], vec![0, 1, 2, 3], "caranguejo em toda praia");
         assert_eq!(ilha_da_zona("ilha_gelo"), 1);
         for c in cat::CHEFES {
-            assert_eq!(shared::terreno::ARQUIPELAGO[ilha_da_zona(c.zona) as usize].zona, c.zona);
+            assert_eq!(
+                shared::terreno::ARQUIPELAGO[ilha_da_zona(c.zona) as usize].zona,
+                c.zona
+            );
         }
     }
 
     fn todas_as_chaves_da_cor(cor: u8) -> Vec<u16> {
-        shared::item_id::CHAVES.iter().map(|&b| shared::item_id::chave_na_cor(b, cor)).collect()
+        shared::item_id::CHAVES
+            .iter()
+            .map(|&b| shared::item_id::chave_na_cor(b, cor))
+            .collect()
     }
 }

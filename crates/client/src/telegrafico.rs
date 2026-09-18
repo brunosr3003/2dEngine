@@ -55,7 +55,16 @@ pub struct Telegrafos {
 
 impl Telegrafos {
     #[allow(clippy::too_many_arguments)]
-    pub fn comeca(&mut self, id: u32, chefe: EntityId, forma: Forma, centro: [f32; 2], dir: [f32; 2], carga_s: f32, agora: f64) {
+    pub fn comeca(
+        &mut self,
+        id: u32,
+        chefe: EntityId,
+        forma: Forma,
+        centro: [f32; 2],
+        dir: [f32; 2],
+        carga_s: f32,
+        agora: f64,
+    ) {
         self.avisos.retain(|a| a.id != id);
         self.avisos.push(Aviso {
             id,
@@ -71,7 +80,12 @@ impl Telegrafos {
 
     /// Fim do golpe. Devolve (chefe, forma, centro, direcao) pra quem precisa
     /// reagir no impacto (animacao, rajadas, tremor).
-    pub fn termina(&mut self, id: u32, impacto: bool, agora: f64) -> Option<(EntityId, Forma, Vec2, Vec2)> {
+    pub fn termina(
+        &mut self,
+        id: u32,
+        impacto: bool,
+        agora: f64,
+    ) -> Option<(EntityId, Forma, Vec2, Vec2)> {
         let a = self.avisos.iter_mut().find(|a| a.id == id)?;
         a.fim = Some((agora, impacto));
         Some((a.chefe, a.forma, a.centro, a.dir))
@@ -101,7 +115,11 @@ impl Telegrafos {
         for a in &self.avisos {
             let e = estilo_em(a.carga_s, a.recebido, a.fim, agora);
             for (vertices, indices) in formas(&a.forma, a.centro, a.dir, e, altura) {
-                draw_mesh(&Mesh { vertices, indices, texture: None });
+                draw_mesh(&Mesh {
+                    vertices,
+                    indices,
+                    texture: None,
+                });
             }
         }
     }
@@ -138,7 +156,11 @@ pub fn estilo_em(carga_s: f32, recebido: f64, fim: Option<(f64, bool)>, agora: f
                 t: 1.0,
                 pulso: 0.0,
                 clarao: (1.0 - d / CLARAO_S).clamp(0.0, 1.0) as f32,
-                choque: if d < CHOQUE_S { (d / CHOQUE_S) as f32 } else { 1.0 },
+                choque: if d < CHOQUE_S {
+                    (d / CHOQUE_S) as f32
+                } else {
+                    1.0
+                },
                 poeira: (1.0 - d / POEIRA_S).clamp(0.0, 1.0) as f32,
                 tempo: agora as f32,
             }
@@ -146,14 +168,31 @@ pub fn estilo_em(carga_s: f32, recebido: f64, fim: Option<(f64, bool)>, agora: f
         _ => {
             let decorrido = (agora - recebido) as f32;
             let resta = carga_s - decorrido;
-            let pulso = if resta < ALERTA_S { 0.5 + 0.5 * (agora as f32 * 38.0).sin() } else { 0.0 };
-            Estilo { t: preenchimento(decorrido, carga_s), pulso, clarao: 0.0, choque: 1.0, poeira: 0.0, tempo: agora as f32 }
+            let pulso = if resta < ALERTA_S {
+                0.5 + 0.5 * (agora as f32 * 38.0).sin()
+            } else {
+                0.0
+            };
+            Estilo {
+                t: preenchimento(decorrido, carga_s),
+                pulso,
+                clarao: 0.0,
+                choque: 1.0,
+                poeira: 0.0,
+                tempo: agora as f32,
+            }
         }
     }
 }
 
 /// A malha de uma forma no estilo `e`.
-pub fn formas(forma: &Forma, centro: Vec2, dir: Vec2, e: Estilo, altura: &dyn Fn(f32, f32) -> f32) -> Vec<(Vec<Vertex>, Vec<u16>)> {
+pub fn formas(
+    forma: &Forma,
+    centro: Vec2,
+    dir: Vec2,
+    e: Estilo,
+    altura: &dyn Fn(f32, f32) -> f32,
+) -> Vec<(Vec<Vertex>, Vec<u16>)> {
     let mut m = Malha::default();
     let dir = dir.normalize_or(Vec2::X);
     let ang = dir.y.atan2(dir.x);
@@ -169,7 +208,15 @@ fn a8(x: f32) -> u8 {
     x.clamp(0.0, 255.0) as u8
 }
 
-fn carga(m: &mut Malha, forma: &Forma, centro: Vec2, dir: Vec2, ang: f32, e: Estilo, altura: &dyn Fn(f32, f32) -> f32) {
+fn carga(
+    m: &mut Malha,
+    forma: &Forma,
+    centro: Vec2,
+    dir: Vec2,
+    ang: f32,
+    e: Estilo,
+    altura: &dyn Fn(f32, f32) -> f32,
+) {
     let t = e.t;
     let forte = 0.35 + 0.65 * t * t;
     let fundo = [200, 35, 28, a8(35.0 + 55.0 * t)];
@@ -177,7 +224,12 @@ fn carga(m: &mut Malha, forma: &Forma, centro: Vec2, dir: Vec2, ang: f32, e: Est
     let frente = [255, 190, 140, a8(150.0 + 80.0 * forte)];
     let sombra = [35, 0, 0, a8(120.0 + 60.0 * forte)];
     let viva = forte.max(e.pulso);
-    let borda = [255, a8(80.0 + 130.0 * e.pulso), a8(55.0 + 130.0 * e.pulso), a8(175.0 + 80.0 * viva)];
+    let borda = [
+        255,
+        a8(80.0 + 130.0 * e.pulso),
+        a8(55.0 + 130.0 * e.pulso),
+        a8(175.0 + 80.0 * viva),
+    ];
     let brilho = [255, 210, 170, a8(60.0 + 70.0 * forte)];
     let seta = [255, 225, 205, a8(110.0 + 110.0 * forte)];
     let frente_larg = 0.35;
@@ -185,27 +237,99 @@ fn carga(m: &mut Malha, forma: &Forma, centro: Vec2, dir: Vec2, ang: f32, e: Est
         Forma::Circulo { raio } => {
             m.setor(centro, ang, PI, 0.0, raio, fundo, altura);
             m.setor(centro, ang, PI, 0.0, raio * t, cheio, altura);
-            m.setor(centro, ang, PI, (raio * t - frente_larg).max(0.0), raio * t, frente, altura);
-            m.setor(centro, ang, PI, raio - BORDA * 0.3, raio + BORDA * 1.3, sombra, altura);
+            m.setor(
+                centro,
+                ang,
+                PI,
+                (raio * t - frente_larg).max(0.0),
+                raio * t,
+                frente,
+                altura,
+            );
+            m.setor(
+                centro,
+                ang,
+                PI,
+                raio - BORDA * 0.3,
+                raio + BORDA * 1.3,
+                sombra,
+                altura,
+            );
             m.setor(centro, ang, PI, raio - BORDA, raio, borda, altura);
-            m.setor(centro, ang, PI, raio - BORDA * 2.4, raio - BORDA * 1.4, brilho, altura);
+            m.setor(
+                centro,
+                ang,
+                PI,
+                raio - BORDA * 2.4,
+                raio - BORDA * 1.4,
+                brilho,
+                altura,
+            );
         }
         Forma::Anel { interno, externo } => {
             m.setor(centro, ang, PI, interno, externo, fundo, altura);
             let ate = interno + (externo - interno) * t;
             m.setor(centro, ang, PI, interno, ate, cheio, altura);
-            m.setor(centro, ang, PI, (ate - frente_larg).max(interno), ate, frente, altura);
-            m.setor(centro, ang, PI, externo - BORDA * 0.3, externo + BORDA * 1.3, sombra, altura);
+            m.setor(
+                centro,
+                ang,
+                PI,
+                (ate - frente_larg).max(interno),
+                ate,
+                frente,
+                altura,
+            );
+            m.setor(
+                centro,
+                ang,
+                PI,
+                externo - BORDA * 0.3,
+                externo + BORDA * 1.3,
+                sombra,
+                altura,
+            );
             m.setor(centro, ang, PI, externo - BORDA, externo, borda, altura);
-            m.setor(centro, ang, PI, (interno - BORDA * 1.3).max(0.0), interno + BORDA * 0.3, sombra, altura);
+            m.setor(
+                centro,
+                ang,
+                PI,
+                (interno - BORDA * 1.3).max(0.0),
+                interno + BORDA * 0.3,
+                sombra,
+                altura,
+            );
             m.setor(centro, ang, PI, interno, interno + BORDA, borda, altura);
-            m.setor(centro, ang, PI, externo - BORDA * 2.4, externo - BORDA * 1.4, brilho, altura);
+            m.setor(
+                centro,
+                ang,
+                PI,
+                externo - BORDA * 2.4,
+                externo - BORDA * 1.4,
+                brilho,
+                altura,
+            );
         }
         Forma::Cone { raio, abertura } => {
             m.setor(centro, ang, abertura, 0.0, raio, fundo, altura);
             m.setor(centro, ang, abertura, 0.0, raio * t, cheio, altura);
-            m.setor(centro, ang, abertura, (raio * t - frente_larg).max(0.0), raio * t, frente, altura);
-            m.setor(centro, ang, abertura, raio - BORDA * 0.3, raio + BORDA * 1.3, sombra, altura);
+            m.setor(
+                centro,
+                ang,
+                abertura,
+                (raio * t - frente_larg).max(0.0),
+                raio * t,
+                frente,
+                altura,
+            );
+            m.setor(
+                centro,
+                ang,
+                abertura,
+                raio - BORDA * 0.3,
+                raio + BORDA * 1.3,
+                sombra,
+                altura,
+            );
             m.setor(centro, ang, abertura, raio - BORDA, raio, borda, altura);
             for lado in [-abertura, abertura] {
                 let ponta = centro + Vec2::from_angle(ang + lado) * raio;
@@ -221,14 +345,27 @@ fn carga(m: &mut Malha, forma: &Forma, centro: Vec2, dir: Vec2, ang: f32, e: Est
                 }
             }
         }
-        Forma::Linha { comprimento, largura } => {
+        Forma::Linha {
+            comprimento,
+            largura,
+        } => {
             let fim = centro + dir * comprimento;
             m.retangulo(centro, fim, largura, fundo, altura);
             let ate = comprimento * t;
             m.retangulo(centro, centro + dir * ate, largura, cheio, altura);
-            m.retangulo(centro + dir * (ate - frente_larg).max(0.0), centro + dir * ate, largura, frente, altura);
+            m.retangulo(
+                centro + dir * (ate - frente_larg).max(0.0),
+                centro + dir * ate,
+                largura,
+                frente,
+                altura,
+            );
             let lado = dir.perp() * (largura * 0.5);
-            for (a, b) in [(centro + lado, fim + lado), (centro - lado, fim - lado), (fim - lado, fim + lado)] {
+            for (a, b) in [
+                (centro + lado, fim + lado),
+                (centro - lado, fim - lado),
+                (fim - lado, fim + lado),
+            ] {
                 m.faixa(a, b, BORDA * 2.6, sombra, altura);
                 m.faixa(a, b, BORDA, borda, altura);
             }
@@ -236,14 +373,28 @@ fn carga(m: &mut Malha, forma: &Forma, centro: Vec2, dir: Vec2, ang: f32, e: Est
             let passo = 2.6;
             let mut s = 1.2 + (e.tempo * 3.5).rem_euclid(passo);
             while s < comprimento - 0.4 {
-                m.seta(centro + dir * s, dir, (largura * 0.3).max(0.35), seta, altura);
+                m.seta(
+                    centro + dir * s,
+                    dir,
+                    (largura * 0.3).max(0.35),
+                    seta,
+                    altura,
+                );
                 s += passo;
             }
         }
     }
 }
 
-fn impacto(m: &mut Malha, forma: &Forma, centro: Vec2, dir: Vec2, ang: f32, e: Estilo, altura: &dyn Fn(f32, f32) -> f32) {
+fn impacto(
+    m: &mut Malha,
+    forma: &Forma,
+    centro: Vec2,
+    dir: Vec2,
+    ang: f32,
+    e: Estilo,
+    altura: &dyn Fn(f32, f32) -> f32,
+) {
     // A marca: poeira da forma inteira e rachaduras escuras, sumindo juntas.
     if e.poeira > 0.0 {
         let poeira = [70, 52, 38, a8(120.0 * e.poeira)];
@@ -251,51 +402,109 @@ fn impacto(m: &mut Malha, forma: &Forma, centro: Vec2, dir: Vec2, ang: f32, e: E
         preenche(m, forma, centro, dir, ang, poeira, altura);
         match *forma {
             Forma::Circulo { raio } | Forma::Cone { raio, .. } => {
-                let abre = if let Forma::Cone { abertura, .. } = *forma { abertura } else { PI };
+                let abre = if let Forma::Cone { abertura, .. } = *forma {
+                    abertura
+                } else {
+                    PI
+                };
                 for k in 0..7 {
-                    let a = ang - abre + 2.0 * abre * (k as f32 + 0.5) / 7.0 + ((k * 37) % 11) as f32 * 0.02;
+                    let a = ang - abre
+                        + 2.0 * abre * (k as f32 + 0.5) / 7.0
+                        + ((k * 37) % 11) as f32 * 0.02;
                     let d = Vec2::from_angle(a);
                     let quebra = centro + d * raio * 0.55 + d.perp() * 0.25;
                     m.faixa(centro + d * raio * 0.12, quebra, 0.10, racha, altura);
-                    m.faixa(quebra, centro + Vec2::from_angle(a + 0.08) * raio * 0.92, 0.07, racha, altura);
+                    m.faixa(
+                        quebra,
+                        centro + Vec2::from_angle(a + 0.08) * raio * 0.92,
+                        0.07,
+                        racha,
+                        altura,
+                    );
                 }
             }
             Forma::Anel { interno, externo } => {
                 for k in 0..10 {
                     let d = Vec2::from_angle(k as f32 * TAU / 10.0 + 0.2);
-                    m.faixa(centro + d * interno, centro + Vec2::from_angle(k as f32 * TAU / 10.0 + 0.3) * externo, 0.09, racha, altura);
+                    m.faixa(
+                        centro + d * interno,
+                        centro + Vec2::from_angle(k as f32 * TAU / 10.0 + 0.3) * externo,
+                        0.09,
+                        racha,
+                        altura,
+                    );
                 }
             }
-            Forma::Linha { comprimento, largura } => {
+            Forma::Linha {
+                comprimento,
+                largura,
+            } => {
                 let lado = dir.perp() * (largura * 0.18);
                 let n = (comprimento / 1.6).ceil().max(2.0) as usize;
                 for k in 0..n {
                     let (a, b) = (k as f32 / n as f32, (k + 1) as f32 / n as f32);
                     let s = if k % 2 == 0 { 1.0 } else { -1.0 };
-                    m.faixa(centro + dir * comprimento * a + lado * s, centro + dir * comprimento * b - lado * s, 0.09, racha, altura);
+                    m.faixa(
+                        centro + dir * comprimento * a + lado * s,
+                        centro + dir * comprimento * b - lado * s,
+                        0.09,
+                        racha,
+                        altura,
+                    );
                 }
             }
         }
     }
     // O clarao: a forma inteira acende no instante do golpe.
     if e.clarao > 0.0 {
-        preenche(m, forma, centro, dir, ang, [255, 235, 200, a8(200.0 * e.clarao)], altura);
+        preenche(
+            m,
+            forma,
+            centro,
+            dir,
+            ang,
+            [255, 235, 200, a8(200.0 * e.clarao)],
+            altura,
+        );
     }
     // A onda de choque sai da borda e se abre.
     if e.choque < 1.0 {
         let r = forma.alcance() * (0.55 + 0.75 * e.choque);
         let larg = 0.55 * (1.0 - e.choque) + 0.15;
-        let abre = if let Forma::Cone { abertura, .. } = *forma { abertura } else { PI };
-        m.setor(centro, ang, abre, (r - larg).max(0.0), r, [255, 225, 190, a8(220.0 * (1.0 - e.choque))], altura);
+        let abre = if let Forma::Cone { abertura, .. } = *forma {
+            abertura
+        } else {
+            PI
+        };
+        m.setor(
+            centro,
+            ang,
+            abre,
+            (r - larg).max(0.0),
+            r,
+            [255, 225, 190, a8(220.0 * (1.0 - e.choque))],
+            altura,
+        );
     }
 }
 
-fn preenche(m: &mut Malha, forma: &Forma, centro: Vec2, dir: Vec2, ang: f32, cor: [u8; 4], altura: &dyn Fn(f32, f32) -> f32) {
+fn preenche(
+    m: &mut Malha,
+    forma: &Forma,
+    centro: Vec2,
+    dir: Vec2,
+    ang: f32,
+    cor: [u8; 4],
+    altura: &dyn Fn(f32, f32) -> f32,
+) {
     match *forma {
         Forma::Circulo { raio } => m.setor(centro, ang, PI, 0.0, raio, cor, altura),
         Forma::Anel { interno, externo } => m.setor(centro, ang, PI, interno, externo, cor, altura),
         Forma::Cone { raio, abertura } => m.setor(centro, ang, abertura, 0.0, raio, cor, altura),
-        Forma::Linha { comprimento, largura } => m.retangulo(centro, centro + dir * comprimento, largura, cor, altura),
+        Forma::Linha {
+            comprimento,
+            largura,
+        } => m.retangulo(centro, centro + dir * comprimento, largura, cor, altura),
     }
 }
 
@@ -322,22 +531,37 @@ impl Malha {
     /// ligado e a camera pode ver o chao dos dois lados numa encosta).
     fn quad(&mut self, q: [Vec2; 4], cor: [u8; 4], altura: &dyn Fn(f32, f32) -> f32) {
         if self.v.len() + 4 > MAX_VERTICES {
-            self.feitas.push((std::mem::take(&mut self.v), std::mem::take(&mut self.i)));
+            self.feitas
+                .push((std::mem::take(&mut self.v), std::mem::take(&mut self.i)));
         }
         let b = [q[0], q[1], q[2], q[3]].map(|p| self.ponto(p, cor, altura));
-        self.i.extend_from_slice(&[b[0], b[1], b[2], b[0], b[2], b[3], b[0], b[2], b[1], b[0], b[3], b[2]]);
+        self.i.extend_from_slice(&[
+            b[0], b[1], b[2], b[0], b[2], b[3], b[0], b[2], b[1], b[0], b[3], b[2],
+        ]);
     }
 
     /// Setor de coroa: de `r0` a `r1`, `abertura` pra cada lado de `ang`.
     #[allow(clippy::too_many_arguments)]
-    fn setor(&mut self, c: Vec2, ang: f32, abertura: f32, r0: f32, r1: f32, cor: [u8; 4], altura: &dyn Fn(f32, f32) -> f32) {
+    fn setor(
+        &mut self,
+        c: Vec2,
+        ang: f32,
+        abertura: f32,
+        r0: f32,
+        r1: f32,
+        cor: [u8; 4],
+        altura: &dyn Fn(f32, f32) -> f32,
+    ) {
         if r1 <= r0 + 1e-3 {
             return;
         }
         let passos = ((abertura * 2.0 * r1.max(1.0) / 0.9).ceil() as usize).clamp(6, 48);
         let raios = ((r1 - r0) / 2.5).ceil().max(1.0) as usize;
         for k in 0..raios {
-            let (ra, rb) = (r0 + (r1 - r0) * k as f32 / raios as f32, r0 + (r1 - r0) * (k + 1) as f32 / raios as f32);
+            let (ra, rb) = (
+                r0 + (r1 - r0) * k as f32 / raios as f32,
+                r0 + (r1 - r0) * (k + 1) as f32 / raios as f32,
+            );
             for s in 0..passos {
                 let a0 = ang - abertura + 2.0 * abertura * s as f32 / passos as f32;
                 let a1 = ang - abertura + 2.0 * abertura * (s + 1) as f32 / passos as f32;
@@ -348,7 +572,14 @@ impl Malha {
     }
 
     /// Retangulo de `a` a `b` com `largura`, em pedacos que seguem o relevo.
-    fn retangulo(&mut self, a: Vec2, b: Vec2, largura: f32, cor: [u8; 4], altura: &dyn Fn(f32, f32) -> f32) {
+    fn retangulo(
+        &mut self,
+        a: Vec2,
+        b: Vec2,
+        largura: f32,
+        cor: [u8; 4],
+        altura: &dyn Fn(f32, f32) -> f32,
+    ) {
         let comp = a.distance(b);
         if comp < 1e-3 {
             return;
@@ -363,12 +594,26 @@ impl Malha {
         }
     }
 
-    fn faixa(&mut self, a: Vec2, b: Vec2, grossura: f32, cor: [u8; 4], altura: &dyn Fn(f32, f32) -> f32) {
+    fn faixa(
+        &mut self,
+        a: Vec2,
+        b: Vec2,
+        grossura: f32,
+        cor: [u8; 4],
+        altura: &dyn Fn(f32, f32) -> f32,
+    ) {
         self.retangulo(a, b, grossura, cor, altura);
     }
 
     /// Chevron com a PONTA em `ponta`, apontando pra `dir`.
-    fn seta(&mut self, ponta: Vec2, dir: Vec2, tam: f32, cor: [u8; 4], altura: &dyn Fn(f32, f32) -> f32) {
+    fn seta(
+        &mut self,
+        ponta: Vec2,
+        dir: Vec2,
+        tam: f32,
+        cor: [u8; 4],
+        altura: &dyn Fn(f32, f32) -> f32,
+    ) {
         let tras = -dir * tam;
         let lado = dir.perp() * tam * 0.8;
         self.faixa(ponta, ponta + tras + lado, 0.13, cor, altura);
@@ -385,7 +630,11 @@ impl Malha {
 
 /// "Fase 2" abaixo de metade da vida (a mesma regra do servidor).
 pub fn texto_de_fase(hp: u16, hp_max: u16) -> &'static str {
-    if shared::bosses::fase(hp as i32, hp_max as i32) >= 1 { "FASE 2" } else { "FASE 1" }
+    if shared::bosses::fase(hp as i32, hp_max as i32) >= 1 {
+        "FASE 2"
+    } else {
+        "FASE 1"
+    }
 }
 
 /// Chefe vivo, perto e em luta (vida abaixo do maximo): (nome, nivel, hp, max).
@@ -401,8 +650,19 @@ pub fn chefe_perto(world: &crate::world::World, eu: Vec2) -> Option<(String, u16
                 && e.state.hp < e.meta.hp_max
                 && e.render_pos.distance(eu) <= 30.0
         })
-        .min_by(|a, b| a.render_pos.distance_squared(eu).total_cmp(&b.render_pos.distance_squared(eu)))
-        .map(|e| (e.meta.name.clone().unwrap_or_else(|| "Chefe".into()), e.meta.nivel, e.state.hp, e.meta.hp_max))
+        .min_by(|a, b| {
+            a.render_pos
+                .distance_squared(eu)
+                .total_cmp(&b.render_pos.distance_squared(eu))
+        })
+        .map(|e| {
+            (
+                e.meta.name.clone().unwrap_or_else(|| "Chefe".into()),
+                e.meta.nivel,
+                e.state.hp,
+                e.meta.hp_max,
+            )
+        })
 }
 
 /// Quanto da barra de "vida perdida" desce por segundo (fracao da vida).
@@ -427,39 +687,120 @@ thread_local! {
 pub fn desenha_barra_de_chefe(slot: Rect, nome: &str, nivel: u16, hp: u16, hp_max: u16) {
     use crate::hud_estilo as estilo;
     let f = (hp as f32 / hp_max.max(1) as f32).clamp(0.0, 1.0);
-    let chave = nome.bytes().fold(nivel as u64 ^ 0x9E37, |h, b| h.wrapping_mul(131).wrapping_add(b as u64));
+    let chave = nome.bytes().fold(nivel as u64 ^ 0x9E37, |h, b| {
+        h.wrapping_mul(131).wrapping_add(b as u64)
+    });
     let agora = get_time();
     let mostrado = PERDIDA.with(|c| {
         let (k, m, t) = c.get();
-        let m = if k != chave { f } else { vida_perdida(m, f, (agora - t) as f32) };
+        let m = if k != chave {
+            f
+        } else {
+            vida_perdida(m, f, (agora - t) as f32)
+        };
         c.set((chave, m, agora));
         m
     });
     let laranja = Color::new(1.0, 0.64, 0.37, 1.0);
     estilo::painel(slot);
     // Moldura de chefe: filete dourado por dentro do painel.
-    draw_rectangle_lines(slot.x + 3.0, slot.y + 3.0, slot.w - 6.0, slot.h - 6.0, 1.5, Color::new(estilo::OURO.r, estilo::OURO.g, estilo::OURO.b, 0.85));
+    draw_rectangle_lines(
+        slot.x + 3.0,
+        slot.y + 3.0,
+        slot.w - 6.0,
+        slot.h - 6.0,
+        1.5,
+        Color::new(estilo::OURO.r, estilo::OURO.g, estilo::OURO.b, 0.85),
+    );
     desenha_coroa(vec2(slot.x + 22.0, slot.y + 24.0), 8.0);
-    estilo::texto(slot.x + 40.0, slot.y + 18.0, &format!("CHEFE · {}", texto_de_fase(hp, hp_max)), 11, laranja);
-    estilo::texto(slot.x + 40.0, slot.y + 36.0, &format!("{nome} · Lv {nivel}"), 15, estilo::TEXTO);
+    estilo::texto(
+        slot.x + 40.0,
+        slot.y + 18.0,
+        &format!("CHEFE · {}", texto_de_fase(hp, hp_max)),
+        11,
+        laranja,
+    );
+    estilo::texto(
+        slot.x + 40.0,
+        slot.y + 36.0,
+        &format!("{nome} · Lv {nivel}"),
+        15,
+        estilo::TEXTO,
+    );
     let barra = Rect::new(slot.x + 12.0, slot.y + slot.h - 22.0, slot.w - 24.0, 12.0);
-    draw_rectangle(barra.x - 1.0, barra.y - 1.0, barra.w + 2.0, barra.h + 2.0, Color::new(0.0, 0.0, 0.0, 0.7));
-    draw_rectangle(barra.x, barra.y, barra.w, barra.h, Color::new(0.18, 0.05, 0.05, 0.95));
+    draw_rectangle(
+        barra.x - 1.0,
+        barra.y - 1.0,
+        barra.w + 2.0,
+        barra.h + 2.0,
+        Color::new(0.0, 0.0, 0.0, 0.7),
+    );
+    draw_rectangle(
+        barra.x,
+        barra.y,
+        barra.w,
+        barra.h,
+        Color::new(0.18, 0.05, 0.05, 0.95),
+    );
     // Vida perdida (amarela), depois a vida (vermelha em duas camadas).
-    draw_rectangle(barra.x, barra.y, barra.w * mostrado, barra.h, Color::new(0.96, 0.78, 0.30, 1.0));
-    draw_rectangle(barra.x, barra.y, barra.w * f, barra.h, Color::new(0.72, 0.14, 0.16, 1.0));
-    draw_rectangle(barra.x, barra.y, barra.w * f, barra.h * 0.4, Color::new(0.95, 0.35, 0.30, 0.9));
+    draw_rectangle(
+        barra.x,
+        barra.y,
+        barra.w * mostrado,
+        barra.h,
+        Color::new(0.96, 0.78, 0.30, 1.0),
+    );
+    draw_rectangle(
+        barra.x,
+        barra.y,
+        barra.w * f,
+        barra.h,
+        Color::new(0.72, 0.14, 0.16, 1.0),
+    );
+    draw_rectangle(
+        barra.x,
+        barra.y,
+        barra.w * f,
+        barra.h * 0.4,
+        Color::new(0.95, 0.35, 0.30, 0.9),
+    );
     // Marca da fase 2 (metade da vida).
     let meio = barra.x + barra.w * 0.5;
-    draw_line(meio, barra.y - 2.0, meio, barra.y + barra.h + 2.0, 1.5, Color::new(1.0, 1.0, 1.0, 0.55));
-    draw_rectangle_lines(barra.x, barra.y, barra.w, barra.h, 1.0, Color::new(estilo::OURO.r, estilo::OURO.g, estilo::OURO.b, 0.6));
-    estilo::texto_centro(barra.x + barra.w * 0.5, barra.y + 10.0, &format!("{hp} / {hp_max}"), 10, estilo::TEXTO);
+    draw_line(
+        meio,
+        barra.y - 2.0,
+        meio,
+        barra.y + barra.h + 2.0,
+        1.5,
+        Color::new(1.0, 1.0, 1.0, 0.55),
+    );
+    draw_rectangle_lines(
+        barra.x,
+        barra.y,
+        barra.w,
+        barra.h,
+        1.0,
+        Color::new(estilo::OURO.r, estilo::OURO.g, estilo::OURO.b, 0.6),
+    );
+    estilo::texto_centro(
+        barra.x + barra.w * 0.5,
+        barra.y + 10.0,
+        &format!("{hp} / {hp_max}"),
+        10,
+        estilo::TEXTO,
+    );
 }
 
 /// Rotulo de fase por cima do painel de alvo, quando o alvo e' chefe.
 pub fn rotulo_de_fase(slot: Rect, hp: u16, hp_max: u16) {
     use crate::hud_estilo as estilo;
-    estilo::texto(slot.x + slot.w - 150.0, slot.y + 16.0, texto_de_fase(hp, hp_max), 10, Color::new(1.0, 0.64, 0.37, 1.0));
+    estilo::texto(
+        slot.x + slot.w - 150.0,
+        slot.y + 16.0,
+        texto_de_fase(hp, hp_max),
+        10,
+        Color::new(1.0, 0.64, 0.37, 1.0),
+    );
 }
 
 /// Coroa de chefe (mapa, placa e barra).
@@ -492,14 +833,30 @@ mod testes {
     }
 
     fn carregando(t: f32) -> Estilo {
-        Estilo { t, pulso: 0.0, clarao: 0.0, choque: 1.0, poeira: 0.0, tempo: 0.0 }
+        Estilo {
+            t,
+            pulso: 0.0,
+            clarao: 0.0,
+            choque: 1.0,
+            poeira: 0.0,
+            tempo: 0.0,
+        }
     }
 
     const TODAS: [Forma; 4] = [
         Forma::Circulo { raio: 7.0 },
-        Forma::Cone { raio: 10.0, abertura: 0.9 },
-        Forma::Linha { comprimento: 22.0, largura: 3.0 },
-        Forma::Anel { interno: 5.0, externo: 11.0 },
+        Forma::Cone {
+            raio: 10.0,
+            abertura: 0.9,
+        },
+        Forma::Linha {
+            comprimento: 22.0,
+            largura: 3.0,
+        },
+        Forma::Anel {
+            interno: 5.0,
+            externo: 11.0,
+        },
     ];
 
     #[test]
@@ -509,27 +866,60 @@ mod testes {
         assert_eq!(preenchimento(9.0, 1.5), 1.0);
         let chao = |_: f32, _: f32| 1.0;
         let c = Vec2::ZERO;
-        let meia = formas(&Forma::Circulo { raio: 5.0 }, c, Vec2::X, carregando(0.5), &chao);
-        let cheia = formas(&Forma::Circulo { raio: 5.0 }, c, Vec2::X, carregando(1.0), &chao);
+        let meia = formas(
+            &Forma::Circulo { raio: 5.0 },
+            c,
+            Vec2::X,
+            carregando(0.5),
+            &chao,
+        );
+        let cheia = formas(
+            &Forma::Circulo { raio: 5.0 },
+            c,
+            Vec2::X,
+            carregando(1.0),
+            &chao,
+        );
         let conta = |m: &[(Vec<Vertex>, Vec<u16>)]| m.iter().map(|(v, _)| v.len()).sum::<usize>();
         assert!(conta(&meia) < conta(&cheia));
-        assert!((raio_max(&cheia, c) - 5.0).abs() < 0.2, "a borda nao passa muito da forma");
+        assert!(
+            (raio_max(&cheia, c) - 5.0).abs() < 0.2,
+            "a borda nao passa muito da forma"
+        );
     }
 
     #[test]
     fn toda_forma_cabe_no_teto_de_indice_e_segue_o_chao() {
         let chao = |x: f32, _: f32| x * 0.1;
-        let impacto = Estilo { t: 1.0, pulso: 0.0, clarao: 0.8, choque: 0.3, poeira: 0.9, tempo: 2.0 };
-        let alerta = Estilo { pulso: 1.0, tempo: 5.3, ..carregando(0.95) };
+        let impacto = Estilo {
+            t: 1.0,
+            pulso: 0.0,
+            clarao: 0.8,
+            choque: 0.3,
+            poeira: 0.9,
+            tempo: 2.0,
+        };
+        let alerta = Estilo {
+            pulso: 1.0,
+            tempo: 5.3,
+            ..carregando(0.95)
+        };
         for f in TODAS {
             for e in [carregando(0.7), alerta, impacto] {
                 let m = formas(&f, Vec2::ZERO, Vec2::Y, e, &chao);
                 assert!(!m.is_empty(), "{f:?} sem malha");
                 for (v, i) in &m {
-                    assert!(v.len() <= MAX_VERTICES && i.len() <= 5_000 * 2, "{f:?}: {} vertices", v.len());
+                    assert!(
+                        v.len() <= MAX_VERTICES && i.len() <= 5_000 * 2,
+                        "{f:?}: {} vertices",
+                        v.len()
+                    );
                     assert!(i.iter().all(|k| (*k as usize) < v.len()));
                     for p in v {
-                        assert!((p.position.y - (p.position.x * 0.1 + ACIMA)).abs() < 1e-4, "fora do chao");
+                        assert!(
+                            (p.position.y - (p.position.x * 0.1 + ACIMA)).abs() < 1e-4,
+                            "fora do chao"
+                        );
                     }
                 }
             }
@@ -542,7 +932,10 @@ mod testes {
         assert_eq!(longe.pulso, 0.0);
         let perto = estilo_em(2.0, 0.0, None, 1.85);
         assert!((0.0..=1.0).contains(&perto.pulso));
-        let (a, b) = (estilo_em(2.0, 0.0, None, 1.80), estilo_em(2.0, 0.0, None, 1.84));
+        let (a, b) = (
+            estilo_em(2.0, 0.0, None, 1.80),
+            estilo_em(2.0, 0.0, None, 1.84),
+        );
         assert_ne!(a.pulso, b.pulso, "o alerta tem que variar no tempo");
     }
 
@@ -558,8 +951,21 @@ mod testes {
         assert_eq!(e2.poeira, 0.0);
         // A onda sai DA forma e passa da borda.
         let chao = |_: f32, _: f32| 0.0;
-        let tarde = Estilo { t: 1.0, pulso: 0.0, clarao: 0.0, choque: 0.9, poeira: 0.0, tempo: 0.0 };
-        let m = formas(&Forma::Circulo { raio: 4.0 }, Vec2::ZERO, Vec2::X, tarde, &chao);
+        let tarde = Estilo {
+            t: 1.0,
+            pulso: 0.0,
+            clarao: 0.0,
+            choque: 0.9,
+            poeira: 0.0,
+            tempo: 0.0,
+        };
+        let m = formas(
+            &Forma::Circulo { raio: 4.0 },
+            Vec2::ZERO,
+            Vec2::X,
+            tarde,
+            &chao,
+        );
         assert!(raio_max(&m, Vec2::ZERO) > 4.0 * 1.1, "a onda nao se abriu");
     }
 
@@ -567,12 +973,36 @@ mod testes {
     fn aviso_some_depois_da_marca_ou_cancelado() {
         let mut t = Telegrafos::default();
         let chefe = EntityId(77);
-        t.comeca(1, chefe, Forma::Circulo { raio: 3.0 }, [0.0, 0.0], [1.0, 0.0], 1.0, 0.0);
-        t.comeca(2, chefe, Forma::Circulo { raio: 3.0 }, [0.0, 0.0], [1.0, 0.0], 1.0, 0.0);
-        assert_eq!(t.termina(1, true, 1.0).map(|x| x.0), Some(chefe), "o fim diz de quem era o golpe");
+        t.comeca(
+            1,
+            chefe,
+            Forma::Circulo { raio: 3.0 },
+            [0.0, 0.0],
+            [1.0, 0.0],
+            1.0,
+            0.0,
+        );
+        t.comeca(
+            2,
+            chefe,
+            Forma::Circulo { raio: 3.0 },
+            [0.0, 0.0],
+            [1.0, 0.0],
+            1.0,
+            0.0,
+        );
+        assert_eq!(
+            t.termina(1, true, 1.0).map(|x| x.0),
+            Some(chefe),
+            "o fim diz de quem era o golpe"
+        );
         t.termina(2, false, 0.5);
         t.envelhece(1.1);
-        assert_eq!(t.quantos(), 1, "o impacto ainda marca o chao, o cancelado some");
+        assert_eq!(
+            t.quantos(),
+            1,
+            "o impacto ainda marca o chao, o cancelado some"
+        );
         t.envelhece(1.0 + POEIRA_S - 0.05);
         assert_eq!(t.quantos(), 1);
         t.envelhece(1.0 + POEIRA_S + 0.05);

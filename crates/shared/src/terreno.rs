@@ -80,7 +80,9 @@ impl Perlin {
         for (i, v) in ordem.iter_mut().enumerate() {
             *v = i as u16;
         }
-        let mut est = (semente as u32).wrapping_mul(1664525).wrapping_add(1013904223);
+        let mut est = (semente as u32)
+            .wrapping_mul(1664525)
+            .wrapping_add(1013904223);
         for i in (1..256).rev() {
             est = est.wrapping_mul(1664525).wrapping_add(1013904223);
             let j = (est % (i as u32 + 1)) as usize;
@@ -334,7 +336,13 @@ impl Forma {
         let mut r = Rng::novo(semente ^ 0x0F117A);
         let ang = r.float() * std::f32::consts::TAU;
         let d = r.inteiro(100);
-        let sem_enseada = |tipo, a, b| Self { tipo, ang, a, b, enseada: None };
+        let sem_enseada = |tipo, a, b| Self {
+            tipo,
+            ang,
+            a,
+            b,
+            enseada: None,
+        };
 
         // O DISCO leva a maior fatia: se toda ilha tivesse feitio marcante, o
         // marcante viraria o normal e nada se destacaria.
@@ -343,7 +351,11 @@ impl Forma {
         } else if d < 51 {
             sem_enseada(Feitio::Comprida, 0.98, 0.40 + r.float() * 0.08)
         } else if d < 68 {
-            sem_enseada(Feitio::Enseada, 0.62 + r.float() * 0.16, 0.50 + r.float() * 0.14)
+            sem_enseada(
+                Feitio::Enseada,
+                0.62 + r.float() * 0.16,
+                0.50 + r.float() * 0.14,
+            )
         } else if d < 82 {
             sem_enseada(Feitio::Lobada, 0.42 + r.float() * 0.04, 0.58)
         } else {
@@ -364,9 +376,7 @@ impl Forma {
         let u = (bx * ca + bz * sa) / r;
         let v = (-bx * sa + bz * ca) / r;
         match self.tipo {
-            Feitio::Comprida => {
-                (u * u / (self.a * self.a) + v * v / (self.b * self.b)).sqrt()
-            }
+            Feitio::Comprida => (u * u / (self.a * self.a) + v * v / (self.b * self.b)).sqrt(),
             Feitio::Enseada => {
                 // A mordida e' uma ELIPSE funda e estreita encostada num lado.
                 // Redonda ela comeria um setor inteiro e sobraria uma cunha.
@@ -390,7 +400,9 @@ impl Forma {
     }
 
     fn peso_da_enseada(&self, bx: f32, bz: f32) -> f32 {
-        let Some((ex, ez, raio)) = self.enseada else { return 0.0 };
+        let Some((ex, ez, raio)) = self.enseada else {
+            return 0.0;
+        };
         let d = ((bx - ex).powi(2) + (bz - ez).powi(2)).sqrt() / raio;
         if d >= 1.0 {
             return 0.0;
@@ -442,12 +454,11 @@ pub fn altura_do_relevo(
 
     let mut h = 0.0;
     if mascara > 0.0 {
-        let planicie = perfil.planicie.0
-            + perfil.planicie.1 * n01(p.fbm(sx * 0.9, sz * 0.9, 2, 0.5));
-        let colina = perfil.colina.0
-            + perfil.colina.1 * n01(p.fbm(sx * 1.5 + 7.0, sz * 1.5 - 4.0, 4, 0.45));
-        let serra =
-            perfil.serra.0 + perfil.serra.1 * p.crista(sx * 1.2 + 19.0, sz * 1.2 + 31.0, 4);
+        let planicie =
+            perfil.planicie.0 + perfil.planicie.1 * n01(p.fbm(sx * 0.9, sz * 0.9, 2, 0.5));
+        let colina =
+            perfil.colina.0 + perfil.colina.1 * n01(p.fbm(sx * 1.5 + 7.0, sz * 1.5 - 4.0, 4, 0.45));
+        let serra = perfil.serra.0 + perfil.serra.1 * p.crista(sx * 1.2 + 19.0, sz * 1.2 + 31.0, 4);
 
         // Controle largo com transicao suave. O fBm normalizado nao chega
         // perto de ±1, entao ele e' ESTICADO — sem isso a serra nunca sai.
@@ -702,7 +713,6 @@ impl Material {
     }
 }
 
-
 /// Material do TOPO de uma coluna.
 ///
 /// Faixa de altura por bioma, mais uma regra de declive — e e' o declive que
@@ -739,40 +749,65 @@ pub fn material_variado(
         // Cinza (ou arenito) marca ONDE NAO SE SOBE: o degrau passou do pulo.
         // Nao e' decoracao — e' a regra de movimento pintada no chao, e o
         // jogador aprende a ler o mapa sem nenhum texto.
-        return if bioma == Bioma::Deserto { Material::Arenito } else { Material::Rocha };
+        return if bioma == Bioma::Deserto {
+            Material::Arenito
+        } else {
+            Material::Rocha
+        };
     }
     match bioma {
         Bioma::Floresta => {
-            if altura < 1.0 { Material::AreiaMolhada }
-            else if altura < 2.6 { Material::Areia }
-            else if altura < 24.0 { grama(mancha) }
-            else if altura < 31.0 { Material::Rocha }
-            else { Material::Neve }
+            if altura < 1.0 {
+                Material::AreiaMolhada
+            } else if altura < 2.6 {
+                Material::Areia
+            } else if altura < 24.0 {
+                grama(mancha)
+            } else if altura < 31.0 {
+                Material::Rocha
+            } else {
+                Material::Neve
+            }
         }
         // Nenhuma faixa de grama em lugar nenhum: e' essa AUSENCIA que se
         // reconhece de longe.
         Bioma::Gelo => {
-            if altura < 2.6 { Material::Gelo }
-            else if altura < 30.0 { Material::Neve }
-            else { Material::Rocha }
+            if altura < 2.6 {
+                Material::Gelo
+            } else if altura < 30.0 {
+                Material::Neve
+            } else {
+                Material::Rocha
+            }
         }
         // Duna nao tem faixa alta: o Ermo so' se le' se a parte de cima virar
         // MESA. Areia ate' a meia altura, arenito acima, rocha no topo.
         Bioma::Deserto => {
-            if altura < 1.0 { Material::AreiaMolhada }
-            else if altura < 5.0 { Material::Areia }
-            else if altura < 9.5 { Material::Arenito }
-            else { Material::Rocha }
+            if altura < 1.0 {
+                Material::AreiaMolhada
+            } else if altura < 5.0 {
+                Material::Areia
+            } else if altura < 9.5 {
+                Material::Arenito
+            } else {
+                Material::Rocha
+            }
         }
         // A grama para na metade da altura: o que sobra e' paredao. Ilha de
         // rocha com vale verde no pe', que e' o que uma serra e' vista de
         // baixo.
         Bioma::Montanha => {
-            if altura < 1.0 { Material::AreiaMolhada }
-            else if altura < 2.6 { Material::Areia }
-            else if altura < 14.0 { grama(mancha) }
-            else if altura < 30.0 { Material::Rocha }
-            else { Material::Neve }
+            if altura < 1.0 {
+                Material::AreiaMolhada
+            } else if altura < 2.6 {
+                Material::Areia
+            } else if altura < 14.0 {
+                grama(mancha)
+            } else if altura < 30.0 {
+                Material::Rocha
+            } else {
+                Material::Neve
+            }
         }
     }
 }
@@ -795,8 +830,20 @@ pub fn material_de_profundidade(bioma: Bioma, topo: Material, altura: f32, prof:
     }
     match bioma {
         Bioma::Deserto => Material::Areia,
-        Bioma::Gelo => if altura < 3.0 { Material::Gelo } else { Material::Neve },
-        _ => if altura < 3.0 { Material::Areia } else { Material::Terra },
+        Bioma::Gelo => {
+            if altura < 3.0 {
+                Material::Gelo
+            } else {
+                Material::Neve
+            }
+        }
+        _ => {
+            if altura < 3.0 {
+                Material::Areia
+            } else {
+                Material::Terra
+            }
+        }
     }
 }
 
@@ -893,29 +940,49 @@ pub fn densidade_de_planta(bioma: Bioma) -> f32 {
 pub fn especie_de_planta(bioma: Bioma, f: f32) -> Planta {
     match bioma {
         Bioma::Floresta => {
-            if f < 0.28 { Planta::Moita }
+            if f < 0.28 {
+                Planta::Moita
+            }
             // Flor com peso alto: no verde ela some, entao "algumas flores"
             // por metro quadrado vira nenhuma flor na tela.
-            else if f < 0.52 { Planta::Flor }
-            else if f < 0.72 { Planta::Samambaia }
-            else if f < 0.88 { Planta::Arbusto }
-            else if f < 0.96 { Planta::Pedra }
-            else { Planta::Toco }
+            else if f < 0.52 {
+                Planta::Flor
+            } else if f < 0.72 {
+                Planta::Samambaia
+            } else if f < 0.88 {
+                Planta::Arbusto
+            } else if f < 0.96 {
+                Planta::Pedra
+            } else {
+                Planta::Toco
+            }
         }
         Bioma::Gelo => {
-            if f < 0.62 { Planta::Pedra }
-            else if f < 0.90 { Planta::Arbusto }
-            else { Planta::Moita }
+            if f < 0.62 {
+                Planta::Pedra
+            } else if f < 0.90 {
+                Planta::Arbusto
+            } else {
+                Planta::Moita
+            }
         }
         Bioma::Deserto => {
-            if f < 0.46 { Planta::Talo }
-            else if f < 0.78 { Planta::Arbusto }
-            else { Planta::Pedra }
+            if f < 0.46 {
+                Planta::Talo
+            } else if f < 0.78 {
+                Planta::Arbusto
+            } else {
+                Planta::Pedra
+            }
         }
         Bioma::Montanha => {
-            if f < 0.70 { Planta::Pedra }
-            else if f < 0.88 { Planta::Moita }
-            else { Planta::Arbusto }
+            if f < 0.70 {
+                Planta::Pedra
+            } else if f < 0.88 {
+                Planta::Moita
+            } else {
+                Planta::Arbusto
+            }
         }
     }
 }
@@ -941,17 +1008,38 @@ pub fn densidade_de_arvore(bioma: Bioma) -> f32 {
 pub fn especie_de_arvore(bioma: Bioma, f: f32) -> Arvore {
     match bioma {
         Bioma::Floresta => {
-            if f < 0.62 { Arvore::Copada }
-            else if f < 0.88 { Arvore::Betula }
-            else if f < 0.97 { Arvore::Pinheiro }
-            else { Arvore::Seca }
+            if f < 0.62 {
+                Arvore::Copada
+            } else if f < 0.88 {
+                Arvore::Betula
+            } else if f < 0.97 {
+                Arvore::Pinheiro
+            } else {
+                Arvore::Seca
+            }
         }
-        Bioma::Gelo => if f < 0.90 { Arvore::Pinheiro } else { Arvore::Seca },
-        Bioma::Deserto => if f < 0.85 { Arvore::Seca } else { Arvore::Copada },
+        Bioma::Gelo => {
+            if f < 0.90 {
+                Arvore::Pinheiro
+            } else {
+                Arvore::Seca
+            }
+        }
+        Bioma::Deserto => {
+            if f < 0.85 {
+                Arvore::Seca
+            } else {
+                Arvore::Copada
+            }
+        }
         Bioma::Montanha => {
-            if f < 0.82 { Arvore::Pinheiro }
-            else if f < 0.95 { Arvore::Betula }
-            else { Arvore::Seca }
+            if f < 0.82 {
+                Arvore::Pinheiro
+            } else if f < 0.95 {
+                Arvore::Betula
+            } else {
+                Arvore::Seca
+            }
         }
     }
 }
@@ -1065,7 +1153,13 @@ pub fn arvore_da_coluna(
     // So' onde o solo segura: nem rocha, nem encosta.
     // A mancha e' fbm de tres oitavas — cara. Ela so' e' calculada aqui,
     // depois de o sorteio de densidade ja' ter descartado 99,7% das colunas.
-    if !solo_vivo(material_variado(bioma, y, declive, false, ger.mancha(bx, bz))) {
+    if !solo_vivo(material_variado(
+        bioma,
+        y,
+        declive,
+        false,
+        ger.mancha(bx, bz),
+    )) {
         return None;
     }
     Some(ArvorePlantada {
@@ -1175,7 +1269,15 @@ pub const MINERIO_LIMIAR: f32 = 0.42;
 /// faixa azul e a escada de raridade invertia.
 pub fn tier_de_minerio(altura: f32, pico: f32) -> u8 {
     let t = altura / pico.max(1.0);
-    if t < 0.57 { 1 } else if t < 0.73 { 2 } else if t < 0.82 { 3 } else { 4 }
+    if t < 0.57 {
+        1
+    } else if t < 0.73 {
+        2
+    } else if t < 0.82 {
+        3
+    } else {
+        4
+    }
 }
 
 /// A pedra de minerio desta coluna, se houver.
@@ -1203,10 +1305,14 @@ pub fn minerio_da_coluna(
     ger: &Gerador,
     agua: bool,
 ) -> Option<Minerio> {
-    if agua || ger.na_cidade(bx, bz) { return None }
+    if agua || ger.na_cidade(bx, bz) {
+        return None;
+    }
     let y = (topo + 1) as f32 * BLOCO;
     let pico = ger.pico();
-    if y < pico * MINERIO_LIMIAR { return None }
+    if y < pico * MINERIO_LIMIAR {
+        return None;
+    }
 
     // ── espacamento ─────────────────────────────────────────────────────
     // So' e' candidata a coluna cujo sorteio e' o MENOR do quadrado em
@@ -1229,7 +1335,9 @@ pub fn minerio_da_coluna(
     // no barranco.
     for dz in -MINERIO_PLANO..=MINERIO_PLANO {
         for dx in -MINERIO_PLANO..=MINERIO_PLANO {
-            if ger.bloco_em(bx + dx, bz + dz) != topo { return None }
+            if ger.bloco_em(bx + dx, bz + dz) != topo {
+                return None;
+            }
         }
     }
 
@@ -1296,8 +1404,6 @@ pub const MINERIO_PORTE: (f32, f32) = (0.8, 1.05);
 
 /// Quanto o centro da pedra pode sair do centro da coluna, em unidades.
 pub const MINERIO_DESVIO: f32 = 0.15;
-
-
 
 /// Um corpo solido plantado no mundo: tronco, matacao ou toco.
 #[derive(Debug, Clone, Copy)]
@@ -1412,7 +1518,16 @@ pub struct Gerador {
 
 /// Terraplanagem de um sitio: plato cheio ate' `raio_plato`, smoothstep ate'
 /// `raio`. Nao aterra o mar e nao arrasa morro.
-fn aplainar_sitio(cx: f32, cz: f32, nivel: i32, raio_plato: f32, raio: f32, bx: i32, bz: i32, cru: i32) -> i32 {
+fn aplainar_sitio(
+    cx: f32,
+    cz: f32,
+    nivel: i32,
+    raio_plato: f32,
+    raio: f32,
+    bx: i32,
+    bz: i32,
+    cru: i32,
+) -> i32 {
     let d = ((bx as f32 - cx).powi(2) + (bz as f32 - cz).powi(2)).sqrt() * BLOCO;
     if d >= raio {
         return cru;
@@ -1469,7 +1584,9 @@ impl SitioPorto {
         let rel = p - self.raiz;
         let ao_longo = rel.dot(mar);
         let de_lado = rel.dot(glam::Vec2::new(-mar.y, mar.x)).abs();
-        ao_longo >= -self.recuo - folga && ao_longo <= self.comp + folga && de_lado <= self.larg * 0.5 + folga
+        ao_longo >= -self.recuo - folga
+            && ao_longo <= self.comp + folga
+            && de_lado <= self.larg * 0.5 + folga
     }
 
     /// Dentro do porto (patio ou pier), com `folga`.
@@ -1478,12 +1595,21 @@ impl SitioPorto {
     }
 
     fn aplainar(&self, bx: i32, bz: i32, cru: i32) -> i32 {
-        if self.no_pier(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO), BLOCO * 0.5) {
+        if self.no_pier(
+            glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO),
+            BLOCO * 0.5,
+        ) {
             return self.nivel;
         }
         aplainar_sitio(
-            self.centro.x / BLOCO, self.centro.y / BLOCO, self.nivel,
-            Self::RAIO_PLATO, Self::RAIO, bx, bz, cru,
+            self.centro.x / BLOCO,
+            self.centro.y / BLOCO,
+            self.nivel,
+            Self::RAIO_PLATO,
+            Self::RAIO,
+            bx,
+            bz,
+            cru,
         )
     }
 }
@@ -1548,7 +1674,16 @@ impl Cidade {
     /// em metros (topo + 1) com indice, e a borda da rampa saia meio bloco
     /// acima do terreno de fora.
     fn aplainar(&self, bx: i32, bz: i32, cru: i32) -> i32 {
-        aplainar_sitio(self.cx, self.cz, self.nivel, Self::RAIO_PLATO, Self::RAIO, bx, bz, cru)
+        aplainar_sitio(
+            self.cx,
+            self.cz,
+            self.nivel,
+            Self::RAIO_PLATO,
+            Self::RAIO,
+            bx,
+            bz,
+            cru,
+        )
     }
 }
 
@@ -1623,15 +1758,23 @@ impl Gerador {
         if !self.na_cidade(bx, bz) {
             return None;
         }
-        crate::vila::pintura_em(self.vila(), glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO), bx, bz)
+        crate::vila::pintura_em(
+            self.vila(),
+            glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO),
+            bx,
+            bz,
+        )
     }
 
     /// Coluna dentro de um povoado — cidade ou porto, com a folga do mato:
     /// nada nasce ali.
     pub fn na_cidade(&self, bx: i32, bz: i32) -> bool {
         let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
-        self.cidade.is_some_and(|c| c.distancia(p) < Cidade::RAIO + Cidade::FOLGA_DO_MATO)
-            || self.porto.is_some_and(|s| s.contem(p, Cidade::FOLGA_DO_MATO))
+        self.cidade
+            .is_some_and(|c| c.distancia(p) < Cidade::RAIO + Cidade::FOLGA_DO_MATO)
+            || self
+                .porto
+                .is_some_and(|s| s.contem(p, Cidade::FOLGA_DO_MATO))
     }
 
     /// `p` e' agua ligada ao OCEANO — e nao lago, baixada ou poca cercada de
@@ -1649,7 +1792,8 @@ impl Gerador {
         let raio_un = self.raio_blocos as f32 * BLOCO;
         let agua = |c: (i32, i32)| {
             let (x, z) = (c.0 as f32 * PASSO, c.1 as f32 * PASSO);
-            (self.bloco_cru((x / BLOCO).round() as i32, (z / BLOCO).round() as i32) + 1) as f32 * BLOCO
+            (self.bloco_cru((x / BLOCO).round() as i32, (z / BLOCO).round() as i32) + 1) as f32
+                * BLOCO
                 <= Cidade::SECO
         };
         let ini = ((p.x / PASSO).round() as i32, (p.y / PASSO).round() as i32);
@@ -1668,7 +1812,12 @@ impl Gerador {
             if visto.len() >= TETO {
                 return (false, visto.len());
             }
-            for v in [(c.0 + 1, c.1), (c.0 - 1, c.1), (c.0, c.1 + 1), (c.0, c.1 - 1)] {
+            for v in [
+                (c.0 + 1, c.1),
+                (c.0 - 1, c.1),
+                (c.0, c.1 + 1),
+                (c.0, c.1 - 1),
+            ] {
                 if visto.insert(v) && agua(v) {
                     fila.push((d2(v), v));
                 }
@@ -1690,7 +1839,8 @@ impl Gerador {
         let v2 = glam::Vec2::new;
         let raio_un = self.raio_blocos as f32 * BLOCO;
         let topo = |p: glam::Vec2| {
-            (self.bloco_cru((p.x / BLOCO).round() as i32, (p.y / BLOCO).round() as i32) + 1) as f32 * BLOCO
+            (self.bloco_cru((p.x / BLOCO).round() as i32, (p.y / BLOCO).round() as i32) + 1) as f32
+                * BLOCO
         };
         let seco = |p: glam::Vec2| topo(p) > Cidade::SECO;
         let doca_seed = self.semente ^ 0x0D0C_A5;
@@ -1718,76 +1868,82 @@ impl Gerador {
                 d += 1.0;
             }
             for pc in costas {
-            let mar_q = quarto_para(rumo);
-            let mar = frente_de(mar_q);
-            let centro = pc - mar * 14.0;
-            let mut t = 0.0;
-            let mut praia = None;
-            while t < 40.0 {
-                if !seco(centro + mar * t) {
-                    praia = Some(t);
-                    break;
-                }
-                t += 0.5;
-            }
-            let Some(praia) = praia else { continue };
-            if praia < 8.0 {
-                continue;
-            }
-            let recuo = praia - 1.0;
-            let raiz = centro + mar * recuo;
-            let fundo = |p: glam::Vec2| topo(p) <= -1.0;
-            if seco(raiz + mar * (comp * 0.5)) || !fundo(raiz + mar * comp) || !fundo(raiz + mar * (comp + 2.0)) {
-                continue;
-            }
-            let (mut soma, mut soma2, mut n, mut molhado) = (0.0f32, 0.0f32, 0.0f32, false);
-            for anel in 0..=4 {
-                let r = 10.0 * anel as f32 / 4.0;
-                let k_max = if anel == 0 { 1 } else { 12 };
-                for j in 0..k_max {
-                    let b = j as f32 / k_max as f32 * std::f32::consts::TAU;
-                    let p = centro + v2(b.cos(), b.sin()) * r;
-                    if !seco(p) {
-                        molhado = true;
+                let mar_q = quarto_para(rumo);
+                let mar = frente_de(mar_q);
+                let centro = pc - mar * 14.0;
+                let mut t = 0.0;
+                let mut praia = None;
+                while t < 40.0 {
+                    if !seco(centro + mar * t) {
+                        praia = Some(t);
+                        break;
                     }
-                    let blocos = topo(p) / BLOCO - 1.0;
-                    soma += blocos;
-                    soma2 += blocos * blocos;
-                    n += 1.0;
+                    t += 0.5;
                 }
-            }
-            if molhado {
-                continue;
-            }
-            let media = soma / n;
-            let altura = (media + 1.0) * BLOCO;
-            if !(0.8..=6.0).contains(&altura) {
-                continue;
-            }
-            let longe = cidade.map_or(1000.0, |c| c.centro().distance(centro));
-            if longe < 150.0 {
-                continue;
-            }
-            // Por ultimo (e' o teste caro): a agua da ponta do cais, e um
-            // pouco alem pro calado, tem que ser OCEANO — ligada ao mar em
-            // volta da ilha, e nao lago cercado de terra.
-            let ponta = raiz + mar * comp;
-            if !self.mar_aberto(ponta).0 || !self.mar_aberto(ponta + mar * 6.0).0 {
-                continue;
-            }
-            let nota = (soma2 / n - media * media) - longe.min(320.0) / 80.0;
-            if melhor.is_none_or(|(m, _)| nota < m) {
-                melhor = Some((nota, SitioPorto {
-                    centro,
-                    nivel: media.round() as i32,
-                    mar_q,
-                    raiz,
-                    recuo,
-                    comp,
-                    larg,
-                    doca_seed,
-                }));
-            }
+                let Some(praia) = praia else { continue };
+                if praia < 8.0 {
+                    continue;
+                }
+                let recuo = praia - 1.0;
+                let raiz = centro + mar * recuo;
+                let fundo = |p: glam::Vec2| topo(p) <= -1.0;
+                if seco(raiz + mar * (comp * 0.5))
+                    || !fundo(raiz + mar * comp)
+                    || !fundo(raiz + mar * (comp + 2.0))
+                {
+                    continue;
+                }
+                let (mut soma, mut soma2, mut n, mut molhado) = (0.0f32, 0.0f32, 0.0f32, false);
+                for anel in 0..=4 {
+                    let r = 10.0 * anel as f32 / 4.0;
+                    let k_max = if anel == 0 { 1 } else { 12 };
+                    for j in 0..k_max {
+                        let b = j as f32 / k_max as f32 * std::f32::consts::TAU;
+                        let p = centro + v2(b.cos(), b.sin()) * r;
+                        if !seco(p) {
+                            molhado = true;
+                        }
+                        let blocos = topo(p) / BLOCO - 1.0;
+                        soma += blocos;
+                        soma2 += blocos * blocos;
+                        n += 1.0;
+                    }
+                }
+                if molhado {
+                    continue;
+                }
+                let media = soma / n;
+                let altura = (media + 1.0) * BLOCO;
+                if !(0.8..=6.0).contains(&altura) {
+                    continue;
+                }
+                let longe = cidade.map_or(1000.0, |c| c.centro().distance(centro));
+                if longe < 150.0 {
+                    continue;
+                }
+                // Por ultimo (e' o teste caro): a agua da ponta do cais, e um
+                // pouco alem pro calado, tem que ser OCEANO — ligada ao mar em
+                // volta da ilha, e nao lago cercado de terra.
+                let ponta = raiz + mar * comp;
+                if !self.mar_aberto(ponta).0 || !self.mar_aberto(ponta + mar * 6.0).0 {
+                    continue;
+                }
+                let nota = (soma2 / n - media * media) - longe.min(320.0) / 80.0;
+                if melhor.is_none_or(|(m, _)| nota < m) {
+                    melhor = Some((
+                        nota,
+                        SitioPorto {
+                            centro,
+                            nivel: media.round() as i32,
+                            mar_q,
+                            raiz,
+                            recuo,
+                            comp,
+                            larg,
+                            doca_seed,
+                        },
+                    ));
+                }
             }
         }
         melhor.map(|(_, s)| s)
@@ -1808,7 +1964,9 @@ impl Gerador {
         for iz in -4..=4 {
             for ix in -4..=4 {
                 let (cx, cz) = (ex + ix as f32 * passo, ez + iz as f32 * passo);
-                let Some((var, nivel)) = self.avaliar_sitio(cx, cz) else { continue };
+                let Some((var, nivel)) = self.avaliar_sitio(cx, cz) else {
+                    continue;
+                };
                 // Um empurrao pro centro da enseada: entre dois sitios quase
                 // iguais, o que ela desenhou.
                 let nota = var + ((ix * ix + iz * iz) as f32).sqrt() * 0.5;
@@ -1832,7 +1990,10 @@ impl Gerador {
             let k_max = if anel == 0 { 1 } else { 12 };
             for k in 0..k_max {
                 let a = k as f32 / k_max as f32 * std::f32::consts::TAU;
-                let b = self.bloco_cru((cx + a.cos() * r).round() as i32, (cz + a.sin() * r).round() as i32);
+                let b = self.bloco_cru(
+                    (cx + a.cos() * r).round() as i32,
+                    (cz + a.sin() * r).round() as i32,
+                );
                 let seco = (b + 1) as f32 * BLOCO > Cidade::SECO;
                 if r <= plato_b {
                     if !seco {
@@ -1888,7 +2049,12 @@ impl Gerador {
     /// Mancha de terreno em `(bx, bz)`, 0..1. Baixa frequencia: as regioes
     /// tem dezenas de metros, nao centimetros.
     pub fn mancha(&self, bx: i32, bz: i32) -> f32 {
-        (0.5 + self.p.fbm(bx as f32 * 0.0075 + 313.0, bz as f32 * 0.0075 - 77.0, 3, 0.5) * 1.1)
+        (0.5 + self.p.fbm(
+            bx as f32 * 0.0075 + 313.0,
+            bz as f32 * 0.0075 - 77.0,
+            3,
+            0.5,
+        ) * 1.1)
             .clamp(0.0, 1.0)
     }
 
@@ -2033,7 +2199,14 @@ const VERSAO: u16 = 5;
 impl Ilha {
     pub fn gerar(semente: i32, raio_blocos: i32, bioma: Bioma, escala_altura: f32) -> Self {
         let p = bioma.perfil();
-        Self::com_terraco(semente, raio_blocos, bioma, escala_altura, p.terraco_blocos, p.terraco_forca)
+        Self::com_terraco(
+            semente,
+            raio_blocos,
+            bioma,
+            escala_altura,
+            p.terraco_blocos,
+            p.terraco_forca,
+        )
     }
 
     /// Mesma geracao, com o terraco por fora — e' assim que o `terreno --varre`
@@ -2048,7 +2221,12 @@ impl Ilha {
     ) -> Self {
         let lado = (raio_blocos * 2) as usize;
         let ger = Gerador::com_terraco(
-            semente, raio_blocos, bioma, escala_altura, terraco_blocos, terraco_forca,
+            semente,
+            raio_blocos,
+            bioma,
+            escala_altura,
+            terraco_blocos,
+            terraco_forca,
         );
         let mut blocos = vec![0i16; lado * lado];
         for iz in 0..lado {
@@ -2058,7 +2236,15 @@ impl Ilha {
                 blocos[iz * lado + ix] = ger.bloco_em(bx, bz) as i16;
             }
         }
-        Self::com_blocos(semente, raio_blocos, bioma, escala_altura, lado, blocos, ger)
+        Self::com_blocos(
+            semente,
+            raio_blocos,
+            bioma,
+            escala_altura,
+            lado,
+            blocos,
+            ger,
+        )
     }
 
     /// O caminho unico pra nascer uma ilha: gerada ou lida do cache, o indice
@@ -2127,7 +2313,14 @@ impl Ilha {
     }
 
     /// Alguma caixa solida no retangulo satisfaz `f`?
-    fn caixas_perto(&self, x0: f32, z0: f32, x1: f32, z1: f32, mut f: impl FnMut(&crate::vila::Caixa2) -> bool) -> bool {
+    fn caixas_perto(
+        &self,
+        x0: f32,
+        z0: f32,
+        x1: f32,
+        z1: f32,
+        mut f: impl FnMut(&crate::vila::Caixa2) -> bool,
+    ) -> bool {
         if self.solidos.is_empty() {
             return false;
         }
@@ -2135,7 +2328,9 @@ impl Ilha {
         let (c1x, c1z) = self.celula(x1, z1);
         for cz in c0z..=c1z {
             for cx in c0x..=c1x {
-                let Some(k) = self.celula_em(cx, cz) else { continue };
+                let Some(k) = self.celula_em(cx, cz) else {
+                    continue;
+                };
                 for &n in &self.grade_solidos[k] {
                     if f(&self.solidos[n as usize]) {
                         return true;
@@ -2148,7 +2343,9 @@ impl Ilha {
 
     /// Um corpo de raio `raio` em `p` encosta numa parede ou no poco?
     pub fn caixa_toca(&self, p: glam::Vec2, raio: f32) -> bool {
-        self.caixas_perto(p.x - raio, p.y - raio, p.x + raio, p.y + raio, |c| dist_caixa(c, p) < raio)
+        self.caixas_perto(p.x - raio, p.y - raio, p.x + raio, p.y + raio, |c| {
+            dist_caixa(c, p) < raio
+        })
     }
 
     /// Nao cabe um corpo aqui: tronco, pedra ou parede.
@@ -2160,9 +2357,15 @@ impl Ilha {
     /// engloba uma das pontas e' ignorada.
     fn trecho_sem_caixa(&self, a: glam::Vec2, b: glam::Vec2, raio: f32) -> bool {
         !self.caixas_perto(
-            a.x.min(b.x) - raio, a.y.min(b.y) - raio, a.x.max(b.x) + raio, a.y.max(b.y) + raio,
+            a.x.min(b.x) - raio,
+            a.y.min(b.y) - raio,
+            a.x.max(b.x) + raio,
+            a.y.max(b.y) + raio,
             |c| {
-                let e = crate::vila::Caixa2 { min: c.min - glam::Vec2::splat(raio), max: c.max + glam::Vec2::splat(raio) };
+                let e = crate::vila::Caixa2 {
+                    min: c.min - glam::Vec2::splat(raio),
+                    max: c.max + glam::Vec2::splat(raio),
+                };
                 if dist_caixa(&e, a) < 0.0 || dist_caixa(&e, b) < 0.0 {
                     return false;
                 }
@@ -2187,14 +2390,19 @@ impl Ilha {
     /// guarda isso e' o servidor. A forracao da coluna fica.
     pub fn esconder_coluna(&mut self, coluna: u32) -> Vec<(usize, u32)> {
         let (ix, iz) = ((coluna >> 16) as i32, (coluna & 0xffff) as i32);
-        let centro = glam::Vec2::new((ix - self.raio_blocos) as f32 * BLOCO, (iz - self.raio_blocos) as f32 * BLOCO);
+        let centro = glam::Vec2::new(
+            (ix - self.raio_blocos) as f32 * BLOCO,
+            (iz - self.raio_blocos) as f32 * BLOCO,
+        );
         let folga = self.raio_max_estorvo + BLOCO * 2.0;
         let (c0x, c0z) = self.celula(centro.x - folga, centro.y - folga);
         let (c1x, c1z) = self.celula(centro.x + folga, centro.y + folga);
         let mut tirados = Vec::new();
         for cz in c0z..=c1z {
             for cx in c0x..=c1x {
-                let Some(c) = self.celula_em(cx, cz) else { continue };
+                let Some(c) = self.celula_em(cx, cz) else {
+                    continue;
+                };
                 let estorvos = &self.estorvos;
                 self.grade[c].retain(|&n| {
                     let e = estorvos[n as usize];
@@ -2248,7 +2456,14 @@ impl Ilha {
                     .unwrap_or(0);
                 achados.clear();
                 estorvos_da_coluna(
-                    self.bioma, bx, bz, topo, declive, &self.ger, false, &mut achados,
+                    self.bioma,
+                    bx,
+                    bz,
+                    topo,
+                    declive,
+                    &self.ger,
+                    false,
+                    &mut achados,
                 );
                 for e in achados.drain(..) {
                     self.raio_max_estorvo = self.raio_max_estorvo.max(e.raio);
@@ -2301,8 +2516,14 @@ impl Ilha {
         for anel in 1..=3 {
             let d = anel as f32 * BLOCO;
             for (dx, dz) in [
-                (1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0),
-                (0.7, 0.7), (0.7, -0.7), (-0.7, 0.7), (-0.7, -0.7),
+                (1.0, 0.0),
+                (-1.0, 0.0),
+                (0.0, 1.0),
+                (0.0, -1.0),
+                (0.7, 0.7),
+                (0.7, -0.7),
+                (-0.7, 0.7),
+                (-0.7, -0.7),
             ] {
                 let p = centro + glam::Vec2::new(dx * d, dz * d);
                 if !self.ocupado(p, raio) && !self.agua(p.x, p.y) {
@@ -2320,7 +2541,9 @@ impl Ilha {
         let mut pior: Option<(f32, Estorvo)> = None;
         for cz in c0z..=c1z {
             for cx in c0x..=c1x {
-                let Some(c) = self.celula_em(cx, cz) else { continue };
+                let Some(c) = self.celula_em(cx, cz) else {
+                    continue;
+                };
                 for &n in &self.grade[c] {
                     let e = self.estorvos[n as usize];
                     let d = raio + e.raio;
@@ -2350,7 +2573,9 @@ impl Ilha {
         let raio_sq = raio * raio;
         for cz in c0z..=c1z {
             for cx in c0x..=c1x {
-                let Some(c) = self.celula_em(cx, cz) else { continue };
+                let Some(c) = self.celula_em(cx, cz) else {
+                    continue;
+                };
                 for &n in &self.grade[c] {
                     let e = self.estorvos[n as usize];
                     let tier = match e.tipo {
@@ -2358,12 +2583,20 @@ impl Ilha {
                         TipoDeEstorvo::Tronco => 0,
                         TipoDeEstorvo::Forracao => continue,
                     };
-                    if e.centro.distance_squared(p) > raio_sq { continue }
+                    if e.centro.distance_squared(p) > raio_sq {
+                        continue;
+                    }
                     // Um corpo grande entra em varias celulas: so' conta na
                     // que tem o centro dele, senao pedra grande vale por
                     // quatro e a densidade mente.
-                    if self.celula(e.centro.x, e.centro.y) != (cx, cz) { continue }
-                    saida.push(Coletavel { coluna: e.coluna, centro: e.centro, tier });
+                    if self.celula(e.centro.x, e.centro.y) != (cx, cz) {
+                        continue;
+                    }
+                    saida.push(Coletavel {
+                        coluna: e.coluna,
+                        centro: e.centro,
+                        tier,
+                    });
                 }
             }
         }
@@ -2379,7 +2612,9 @@ impl Ilha {
         let (c1x, c1z) = self.celula(p.x + raio, p.y + raio);
         for cz in c0z..=c1z {
             for cx in c0x..=c1x {
-                let Some(c) = self.celula_em(cx, cz) else { continue };
+                let Some(c) = self.celula_em(cx, cz) else {
+                    continue;
+                };
                 for &n in &self.grade[c] {
                     let e = self.estorvos[n as usize];
                     let d = raio + e.raio;
@@ -2414,7 +2649,9 @@ impl Ilha {
         let mut vistos: Vec<u32> = Vec::new();
         for cz in c0z..=c1z {
             for cx in c0x..=c1x {
-                let Some(c) = self.celula_em(cx, cz) else { continue };
+                let Some(c) = self.celula_em(cx, cz) else {
+                    continue;
+                };
                 for &n in &self.grade[c] {
                     if vistos.contains(&n) {
                         continue;
@@ -2436,10 +2673,16 @@ impl Ilha {
             return false;
         }
         // Parede: a mesma regra — livre, ou saindo dela.
-        !self.caixas_perto(para.x - raio, para.y - raio, para.x + raio, para.y + raio, |c| {
-            let dp = dist_caixa(c, para);
-            dp < raio && dp < dist_caixa(c, de) - 1e-6
-        })
+        !self.caixas_perto(
+            para.x - raio,
+            para.y - raio,
+            para.x + raio,
+            para.y + raio,
+            |c| {
+                let dp = dist_caixa(c, para);
+                dp < raio && dp < dist_caixa(c, de) - 1e-6
+            },
+        )
     }
 
     /// Da' pra ir de `a` a `b` com um corpo de raio `raio` sem esbarrar em
@@ -2469,7 +2712,9 @@ impl Ilha {
         let comp2 = ab.length_squared();
         for cz in c0z..=c1z {
             for cx in c0x..=c1x {
-                let Some(c) = self.celula_em(cx, cz) else { continue };
+                let Some(c) = self.celula_em(cx, cz) else {
+                    continue;
+                };
                 for &n in &self.grade[c] {
                     let e = self.estorvos[n as usize];
                     let t = if comp2 < 1e-12 {
@@ -2478,8 +2723,7 @@ impl Ilha {
                         ((e.centro - a).dot(ab) / comp2).clamp(0.0, 1.0)
                     };
                     let d = raio + e.raio;
-                    if e.centro.distance_squared(a) < d * d
-                        || e.centro.distance_squared(b) < d * d
+                    if e.centro.distance_squared(a) < d * d || e.centro.distance_squared(b) < d * d
                     {
                         continue;
                     }
@@ -2495,7 +2739,9 @@ impl Ilha {
     /// Quantos estorvos a ilha tem. So' pra medir.
     /// Todos os corpos plantados. Pra medicao e pro servidor montar indice
     /// proprio — no jogo se pergunta pelo raio, nunca pela lista inteira.
-    pub fn todos_os_estorvos(&self) -> &[Estorvo] { &self.estorvos }
+    pub fn todos_os_estorvos(&self) -> &[Estorvo] {
+        &self.estorvos
+    }
 
     pub fn total_de_estorvos(&self) -> usize {
         self.estorvos.len()
@@ -2684,7 +2930,8 @@ impl Ilha {
                     fora,
                 ] {
                     let alvo = pos + dir * v.length();
-                    if self.borda_livre(pos, alvo, raio, dir, degrau) && self.cabe(pos, alvo, raio) {
+                    if self.borda_livre(pos, alvo, raio, dir, degrau) && self.cabe(pos, alvo, raio)
+                    {
                         return alvo;
                     }
                 }
@@ -2868,10 +3115,14 @@ impl Ilha {
         #[derive(PartialEq, Eq)]
         struct No(i64, (i32, i32));
         impl Ord for No {
-            fn cmp(&self, o: &Self) -> std::cmp::Ordering { self.0.cmp(&o.0) }
+            fn cmp(&self, o: &Self) -> std::cmp::Ordering {
+                self.0.cmp(&o.0)
+            }
         }
         impl PartialOrd for No {
-            fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(o)) }
+            fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(o))
+            }
         }
         let h = |c: (i32, i32)| -> i64 {
             let (dx, dz) = ((c.0 - fim.0).abs() as i64, (c.1 - fim.1).abs() as i64);
@@ -2899,8 +3150,14 @@ impl Ilha {
             }
             let g = custo[&atual];
             for (dx, dz) in [
-                (1, 0), (-1, 0), (0, 1), (0, -1),
-                (1, 1), (1, -1), (-1, 1), (-1, -1),
+                (1, 0),
+                (-1, 0),
+                (0, 1),
+                (0, -1),
+                (1, 1),
+                (1, -1),
+                (-1, 1),
+                (-1, -1),
             ] {
                 let viz = (atual.0 + dx, atual.1 + dz);
                 let base = if dx != 0 && dz != 0 { 1414 } else { 1000 };
@@ -3076,12 +3333,10 @@ impl Ilha {
             return None;
         }
         let u16em = |i: usize| u16::from_le_bytes([dados[i], dados[i + 1]]);
-        let i32em = |i: usize| {
-            i32::from_le_bytes([dados[i], dados[i + 1], dados[i + 2], dados[i + 3]])
-        };
-        let f32em = |i: usize| {
-            f32::from_le_bytes([dados[i], dados[i + 1], dados[i + 2], dados[i + 3]])
-        };
+        let i32em =
+            |i: usize| i32::from_le_bytes([dados[i], dados[i + 1], dados[i + 2], dados[i + 3]]);
+        let f32em =
+            |i: usize| f32::from_le_bytes([dados[i], dados[i + 1], dados[i + 2], dados[i + 3]]);
         // Semente, raio, bioma e escala tem que bater: cache de uma ilha
         // servindo como se fosse de outra e' bug que so' aparece em producao.
         if u16em(4) != VERSAO
@@ -3115,7 +3370,10 @@ impl Ilha {
     /// isso, "mais areas planas" e' opiniao — com o numero na mao da' pra
     /// afinar o gerador ate' o mundo servir.
     pub fn estatisticas(&self) -> Estatisticas {
-        let mut e = Estatisticas { colunas: self.lado * self.lado, ..Default::default() };
+        let mut e = Estatisticas {
+            colunas: self.lado * self.lado,
+            ..Default::default()
+        };
         for iz in 0..self.lado as i32 {
             for ix in 0..self.lado as i32 {
                 let h = self.bloco(ix, iz);
@@ -3162,8 +3420,16 @@ impl Ilha {
                 }
                 iz += passo;
             }
-            let frac = if vistos == 0 { 0.0 } else { bons as f32 / vistos as f32 };
-            if campo == 0 { e.sitio_mob = frac } else { e.sitio_chefe = frac }
+            let frac = if vistos == 0 {
+                0.0
+            } else {
+                bons as f32 / vistos as f32
+            };
+            if campo == 0 {
+                e.sitio_mob = frac
+            } else {
+                e.sitio_chefe = frac
+            }
         }
         e
     }
@@ -3181,9 +3447,16 @@ impl Ilha {
         let passo = (r / 4).max(1);
         let mut d = passo;
         while d <= r {
-            for (dx, dz) in [(d, 0), (-d, 0), (0, d), (0, -d),
-                             (d * 7 / 10, d * 7 / 10), (-d * 7 / 10, d * 7 / 10),
-                             (d * 7 / 10, -d * 7 / 10), (-d * 7 / 10, -d * 7 / 10)] {
+            for (dx, dz) in [
+                (d, 0),
+                (-d, 0),
+                (0, d),
+                (0, -d),
+                (d * 7 / 10, d * 7 / 10),
+                (-d * 7 / 10, d * 7 / 10),
+                (d * 7 / 10, -d * 7 / 10),
+                (-d * 7 / 10, -d * 7 / 10),
+            ] {
                 if (self.bloco(cx + dx, cz + dz) - base).abs() > DEGRAU_BLOCOS {
                     return false;
                 }
@@ -3235,16 +3508,28 @@ pub struct Estatisticas {
 }
 
 impl Estatisticas {
-    pub fn pct_terra(&self) -> f32 { pct(self.terra, self.colunas) }
+    pub fn pct_terra(&self) -> f32 {
+        pct(self.terra, self.colunas)
+    }
     /// Das colunas de TERRA — que e' o que interessa: agua nao e' chao ruim,
     /// e' outra coisa.
-    pub fn pct_plana(&self) -> f32 { pct(self.plana, self.terra) }
-    pub fn pct_andavel(&self) -> f32 { pct(self.andavel, self.terra) }
-    pub fn pct_parede(&self) -> f32 { pct(self.parede, self.terra) }
+    pub fn pct_plana(&self) -> f32 {
+        pct(self.plana, self.terra)
+    }
+    pub fn pct_andavel(&self) -> f32 {
+        pct(self.andavel, self.terra)
+    }
+    pub fn pct_parede(&self) -> f32 {
+        pct(self.parede, self.terra)
+    }
 }
 
 fn pct(a: usize, b: usize) -> f32 {
-    if b == 0 { 0.0 } else { a as f32 * 100.0 / b as f32 }
+    if b == 0 {
+        0.0
+    } else {
+        a as f32 * 100.0 / b as f32
+    }
 }
 
 // ─────────────────────────── seguidor de rota ────────────────────────
@@ -3672,8 +3957,14 @@ mod testes {
         patamar(&mut i, 4 + PULO_BLOCOS as i16);
         let andando = anda(&i, DEGRAU_BLOCOS);
         let pulando = anda(&i, PULO_BLOCOS);
-        assert!(andando < 0.0, "andando tem que parar antes do patamar, parou em {andando}");
-        assert!(pulando > 1.0, "pulando tem que subir no patamar, parou em {pulando}");
+        assert!(
+            andando < 0.0,
+            "andando tem que parar antes do patamar, parou em {andando}"
+        );
+        assert!(
+            pulando > 1.0,
+            "pulando tem que subir no patamar, parou em {pulando}"
+        );
         // Um bloco acima do teto do pulo continua sendo parede: sem isto,
         // "pula mais alto" viraria "escala qualquer coisa".
         patamar(&mut i, 4 + PULO_BLOCOS as i16 + 1);
@@ -3717,7 +4008,11 @@ mod testes {
         // dele. O que este teste guarda e' o invariante, nao a imobilidade: a
         // borda da frente (raio 0,35) nao entra na primeira coluna, que
         // comeca em x = 0.
-        assert!(p.x + 0.35 <= 0.001, "entrou no muro: borda da frente em {}", p.x + 0.35);
+        assert!(
+            p.x + 0.35 <= 0.001,
+            "entrou no muro: borda da frente em {}",
+            p.x + 0.35
+        );
         assert!(p.x >= de.x - 0.001, "andou pra tras: {} < {}", p.x, de.x);
         assert!(p.y > de.y + 0.3, "Z devia ter passado, foi pra {}", p.y);
     }
@@ -3763,9 +4058,14 @@ mod testes {
         // Livre, vinte mil passos de 0,133 dariam 2.666 unidades. O que
         // falta e' encosta reprovada, e e' isso que se quer medir: nem passar
         // por tudo (mundo sem parede) nem travar (mundo sem chao).
-        println!("caminhou {andou:.0} de 2666 unidades possiveis ({:.0}% dos passos passaram)",
-            andou / 2666.0 * 100.0);
-        assert!(andou > 200.0, "andou so' {andou:.0} unidades — travou em algum canto");
+        println!(
+            "caminhou {andou:.0} de 2666 unidades possiveis ({:.0}% dos passos passaram)",
+            andou / 2666.0 * 100.0
+        );
+        assert!(
+            andou > 200.0,
+            "andou so' {andou:.0} unidades — travou em algum canto"
+        );
     }
 
     #[test]
@@ -3777,8 +4077,15 @@ mod testes {
         // Com a varredura o passo absurdo anda ate' a BEIRA e para; antes ele
         // era recusado inteiro e o corpo nem saia do lugar. O invariante e'
         // nao pisar na agua, e nao ficar imovel.
-        assert!(!i.agua(longe.x, longe.y), "parou dentro da agua, em {longe:?}");
-        assert!(longe.x < 9000.0, "atravessou o mar inteiro, ate' {}", longe.x);
+        assert!(
+            !i.agua(longe.x, longe.y),
+            "parou dentro da agua, em {longe:?}"
+        );
+        assert!(
+            longe.x < 9000.0,
+            "atravessou o mar inteiro, ate' {}",
+            longe.x
+        );
     }
 
     /// A rota tem que existir, chegar perto e — o que mais importa — so'
@@ -3807,7 +4114,11 @@ mod testes {
                     i.pulo_ok((a.x, a.y), (b.x, b.y)),
                     "a rota atravessa terreno intransitavel em {b:?}"
                 );
-                if i.passo_ok((a.x, a.y), (b.x, b.y)) { passos += 1 } else { pulos += 1 }
+                if i.passo_ok((a.x, a.y), (b.x, b.y)) {
+                    passos += 1
+                } else {
+                    pulos += 1
+                }
                 a = b;
             }
             p = *alvo;
@@ -3819,7 +4130,11 @@ mod testes {
             pulos * 4 < passos,
             "{pulos} pulos pra {passos} passos — o A* parou de preferir andar"
         );
-        assert!(p.distance(para) < 12.0, "parou a {:.0} do destino", p.distance(para));
+        assert!(
+            p.distance(para) < 12.0,
+            "parou a {:.0} do destino",
+            p.distance(para)
+        );
     }
 
     /// O jogador tem que conseguir ANDAR a rota inteira.
@@ -3839,7 +4154,9 @@ mod testes {
         const REFAZ_MAX: u32 = 8;
         let dt = 1.0 / 30.0;
         let vel = 5.0;
-        let Some(rota) = i.caminho(de, para, 20_000) else { return de };
+        let Some(rota) = i.caminho(de, para, 20_000) else {
+            return de;
+        };
         let mut seg = SeguidorDeRota::nova(rota.iter().copied(), para);
         let mut p = de;
         let (mut pulo_ate, mut pronto, mut agora) = (-1.0f32, 0.0f32, 0.0f32);
@@ -3862,13 +4179,16 @@ mod testes {
                 pulo_ate = agora + crate::constants::PULO_DURACAO;
                 pronto = pulo_ate + crate::constants::PULO_ESPERA;
             }
-            let degrau = if agora < pulo_ate { PULO_BLOCOS } else { DEGRAU_BLOCOS };
+            let degrau = if agora < pulo_ate {
+                PULO_BLOCOS
+            } else {
+                DEGRAU_BLOCOS
+            };
             p = i.mover_com_degrau(p, dir * vel, dt, 0.35, degrau);
             agora += dt;
         }
         p
     }
-
 
     /// Montado tambem sobe barranco pulando.
     ///
@@ -3882,13 +4202,18 @@ mod testes {
     fn montado_pula_o_paredao_da_trilha_da_pedra_roxa() {
         let d = &ARQUIPELAGO[0];
         let i = Ilha::gerar(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
-        let (de, para) = (glam::Vec2::new(43.95196, -39.21062), glam::Vec2::new(57.0, 93.0));
+        let (de, para) = (
+            glam::Vec2::new(43.95196, -39.21062),
+            glam::Vec2::new(57.0, 93.0),
+        );
         for montado in [false, true] {
-            let vel = crate::loja::velocidade_de_andar(crate::constants::PLAYER_SPEED, montado, 1.0);
+            let vel =
+                crate::loja::velocidade_de_andar(crate::constants::PLAYER_SPEED, montado, 1.0);
             let dt = 1.0f32 / 30.0;
             let mut seg = SeguidorDeRota::nova(Vec::new(), para);
             let mut p = de;
-            let (mut agora, mut pulo_ate, mut pronto, mut ultima_rota) = (0.0f32, -1.0f32, 0.0f32, -1.0f32);
+            let (mut agora, mut pulo_ate, mut pronto, mut ultima_rota) =
+                (0.0f32, -1.0f32, 0.0f32, -1.0f32);
             while agora < 60.0 && p.distance(para) >= 2.5 {
                 if (seg.vazia() || seg.travado()) && agora - ultima_rota >= 0.2 {
                     ultima_rota = agora;
@@ -3896,20 +4221,28 @@ mod testes {
                 }
                 let dir = seg.direcao(p).unwrap_or(glam::Vec2::ZERO);
                 // Como o servidor: a pergunta vai com a velocidade de verdade.
-                if dir.length_squared() > 0.01 && i.precisa_pular(p, dir.normalize_or_zero() * vel, dt, 0.35) && agora >= pronto {
+                if dir.length_squared() > 0.01
+                    && i.precisa_pular(p, dir.normalize_or_zero() * vel, dt, 0.35)
+                    && agora >= pronto
+                {
                     pulo_ate = agora + crate::constants::PULO_DURACAO;
                     pronto = pulo_ate + crate::constants::PULO_ESPERA;
                 }
                 let degrau = if agora < pulo_ate {
                     let t = crate::constants::PULO_DURACAO - (pulo_ate - agora);
-                    ((crate::constants::altura_do_pulo(t) / BLOCO).floor() as i32).clamp(DEGRAU_BLOCOS, PULO_BLOCOS)
+                    ((crate::constants::altura_do_pulo(t) / BLOCO).floor() as i32)
+                        .clamp(DEGRAU_BLOCOS, PULO_BLOCOS)
                 } else {
                     DEGRAU_BLOCOS
                 };
                 p = i.mover_com_degrau(p, dir * vel, dt, 0.35, degrau);
                 agora += dt;
             }
-            assert!(p.distance(para) < 2.5, "montado={montado}: parou em {p:?}, a {:.0} do destino", p.distance(para));
+            assert!(
+                p.distance(para) < 2.5,
+                "montado={montado}: parou em {p:?}, a {:.0} do destino",
+                p.distance(para)
+            );
         }
     }
 
@@ -3920,56 +4253,90 @@ mod testes {
         let de = glam::Vec2::new(-59.09517, 80.6707);
         let para = glam::Vec2::new(-106.37446, 88.95736);
         let rota = i.caminho(de, para, 20_000).unwrap();
-        println!("DBG rota {} pontos: {:?}", rota.len(), &rota[..rota.len().min(6)]);
+        println!(
+            "DBG rota {} pontos: {:?}",
+            rota.len(),
+            &rota[..rota.len().min(6)]
+        );
         let mut seg = SeguidorDeRota::nova(rota.iter().copied(), para);
         let mut p = de;
         let dt = 1.0 / 30.0;
         let (mut pulo_ate, mut pronto, mut agora) = (-1.0f32, 0.0f32, 0.0f32);
         for k in 0..400 {
             let (dt, vel) = (1.0f32 / 30.0, 5.0f32);
-            let Some(dir) = seg.direcao(p) else { println!("DBG rota acabou em {k}"); break };
+            let Some(dir) = seg.direcao(p) else {
+                println!("DBG rota acabou em {k}");
+                break;
+            };
             if seg.travado() {
-                println!("DBG travado no tick {k} em {p:?}, alvo {:?}", seg.pontos.front());
-                let bloco_aqui = i.bloco(i.coluna(p.x,p.y).0, i.coluna(p.x,p.y).1);
+                println!(
+                    "DBG travado no tick {k} em {p:?}, alvo {:?}",
+                    seg.pontos.front()
+                );
+                let bloco_aqui = i.bloco(i.coluna(p.x, p.y).0, i.coluna(p.x, p.y).1);
                 let a = p + dir * 0.5;
-                let bloco_la = i.bloco(i.coluna(a.x,a.y).0, i.coluna(a.x,a.y).1);
+                let bloco_la = i.bloco(i.coluna(a.x, a.y).0, i.coluna(a.x, a.y).1);
                 println!("DBG   bloco aqui {bloco_aqui} / meio bloco a' frente {bloco_la}");
-                println!("DBG   sem_estorvo aqui {} / a' frente {}",
-                    i.sem_estorvo(p, 0.35), i.sem_estorvo(a, 0.35));
-                println!("DBG   precisa_pular {}", i.precisa_pular(p, dir * vel, dt, 0.35));
+                println!(
+                    "DBG   sem_estorvo aqui {} / a' frente {}",
+                    i.sem_estorvo(p, 0.35),
+                    i.sem_estorvo(a, 0.35)
+                );
+                println!(
+                    "DBG   precisa_pular {}",
+                    i.precisa_pular(p, dir * vel, dt, 0.35)
+                );
                 println!("DBG   dir {dir:?}");
                 let est = i.estorvo_em(p + dir * 0.5, 0.35);
                 println!("DBG   estorvo a frente {est:?}");
-                let passo = i.mover_com_degrau(p, dir * 5.0, 1.0/30.0, 0.35, DEGRAU_BLOCOS);
+                let passo = i.mover_com_degrau(p, dir * 5.0, 1.0 / 30.0, 0.35, DEGRAU_BLOCOS);
                 println!("DBG   mover andou {:.4}", p.distance(passo));
-                let pulou = i.mover_com_degrau(p, dir * 5.0, 1.0/30.0, 0.35, PULO_BLOCOS);
+                let pulou = i.mover_com_degrau(p, dir * 5.0, 1.0 / 30.0, 0.35, PULO_BLOCOS);
                 println!("DBG   mover pulando andou {:.4}", p.distance(pulou));
                 if let Some(e) = est {
                     let fora = (p - e.centro).normalize_or_zero();
                     let t = glam::Vec2::new(-fora.y, fora.x);
                     let lado = if t.dot(dir) >= 0.0 { t } else { -t };
                     let alvo = p + lado * 0.167;
-                    println!("DBG   tangente {lado:?} borda {} estorvo_livre {}",
+                    println!(
+                        "DBG   tangente {lado:?} borda {} estorvo_livre {}",
                         i.borda_livre(p, alvo, 0.35, lado, DEGRAU_BLOCOS),
-                        i.sem_estorvo(alvo, 0.35));
-                    let cel = ((e.centro.x / (BLOCO * PASSO_CAMINHO as f32)).round(),
-                               (e.centro.y / (BLOCO * PASSO_CAMINHO as f32)).round());
-                    let cc = glam::Vec2::new(cel.0 * BLOCO * PASSO_CAMINHO as f32,
-                                             cel.1 * BLOCO * PASSO_CAMINHO as f32);
-                    println!("DBG   centro celula {cc:?} dist {:.2} raio {:.2}",
-                        cc.distance(e.centro), e.raio);
+                        i.sem_estorvo(alvo, 0.35)
+                    );
+                    let cel = (
+                        (e.centro.x / (BLOCO * PASSO_CAMINHO as f32)).round(),
+                        (e.centro.y / (BLOCO * PASSO_CAMINHO as f32)).round(),
+                    );
+                    let cc = glam::Vec2::new(
+                        cel.0 * BLOCO * PASSO_CAMINHO as f32,
+                        cel.1 * BLOCO * PASSO_CAMINHO as f32,
+                    );
+                    println!(
+                        "DBG   centro celula {cc:?} dist {:.2} raio {:.2}",
+                        cc.distance(e.centro),
+                        e.raio
+                    );
                 }
-                println!("DBG   rota nova? {:?}", i.caminho(p, para, 20_000).map(|r| r.len()));
+                println!(
+                    "DBG   rota nova? {:?}",
+                    i.caminho(p, para, 20_000).map(|r| r.len())
+                );
                 break;
             }
             if i.precisa_pular(p, dir * vel, dt, 0.35) && agora >= pronto {
                 pulo_ate = agora + crate::constants::PULO_DURACAO;
                 pronto = pulo_ate + crate::constants::PULO_ESPERA;
             }
-            let degrau = if agora < pulo_ate { PULO_BLOCOS } else { DEGRAU_BLOCOS };
+            let degrau = if agora < pulo_ate {
+                PULO_BLOCOS
+            } else {
+                DEGRAU_BLOCOS
+            };
             let antes = p;
             p = i.mover_com_degrau(p, dir * 5.0, dt, 0.35, degrau);
-            if k % 20 == 0 { println!("DBG t{k} {p:?} andou {:.3}", antes.distance(p)); }
+            if k % 20 == 0 {
+                println!("DBG t{k} {p:?} andou {:.3}", antes.distance(p));
+            }
             agora += dt;
         }
     }
@@ -3998,13 +4365,20 @@ mod testes {
             let a = k as f32 * 2.399_963; // angulo de ouro: cobre bem o disco
             let r = 20.0 + (k % 37) as f32 * 8.0;
             let de = i.terra_mais_proxima(a.cos() * r, a.sin() * r, 60.0);
-            if i.agua(de.x, de.y) { continue; }
+            if i.agua(de.x, de.y) {
+                continue;
+            }
             let b = a * 3.7 + 1.1;
             let alcance = 12.0 + (k % 11) as f32 * 9.0;
             let para = de + glam::Vec2::new(b.cos() * alcance, b.sin() * alcance);
-            if i.agua(para.x, para.y) { continue; }
+            if i.agua(para.x, para.y) {
+                continue;
+            }
             casos += 1;
-            let Some(r0) = i.caminho(de, para, 20_000) else { sem_rota += 1; continue };
+            let Some(r0) = i.caminho(de, para, 20_000) else {
+                sem_rota += 1;
+                continue;
+            };
             let alcanca = r0.last().unwrap().distance(para) < 6.0;
             let p = simula_ida(&i, de, para);
             if !alcanca {
@@ -4054,7 +4428,9 @@ mod testes {
             let t0 = std::time::Instant::now();
             let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
             let criar = t0.elapsed();
-            let p = ger.porto().unwrap_or_else(|| panic!("{}: sem porto", d.zona));
+            let p = ger
+                .porto()
+                .unwrap_or_else(|| panic!("{}: sem porto", d.zona));
             let ponta = p.raiz + p.mar() * p.comp;
             let longe = ger.cidade().map_or(0.0, |c| c.centro().distance(p.centro));
             let mut resumo = Vec::new();
@@ -4079,32 +4455,57 @@ mod testes {
     fn toda_ilha_tem_cidade_plana_seca_e_sem_mato() {
         for d in &ARQUIPELAGO {
             let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
-            let c = ger.cidade().unwrap_or_else(|| panic!("{}: sem cidade", d.zona));
+            let c = ger
+                .cidade()
+                .unwrap_or_else(|| panic!("{}: sem cidade", d.zona));
             let r = (Cidade::RAIO_PLATO / BLOCO) as i32;
             let (mut total, mut no_nivel) = (0, 0);
             for dz in -r..=r {
                 for dx in -r..=r {
-                    if dx * dx + dz * dz > r * r { continue; }
+                    if dx * dx + dz * dz > r * r {
+                        continue;
+                    }
                     let (bx, bz) = (c.cx.round() as i32 + dx, c.cz.round() as i32 + dz);
                     let b = ger.bloco_em(bx, bz);
-                    assert!((b + 1) as f32 * BLOCO > 0.35, "{}: agua dentro da cidade", d.zona);
+                    assert!(
+                        (b + 1) as f32 * BLOCO > 0.35,
+                        "{}: agua dentro da cidade",
+                        d.zona
+                    );
                     total += 1;
-                    if b == c.nivel { no_nivel += 1; }
-                    assert!(arvore_da_coluna(d.bioma, bx, bz, b, 0, &ger, false).is_none(),
-                        "{}: arvore na cidade", d.zona);
-                    assert!(planta_da_coluna(d.bioma, bx, bz, b, 0, &ger, false).is_none(),
-                        "{}: planta na cidade", d.zona);
-                    assert!(minerio_da_coluna(d.bioma, bx, bz, b, &ger, false).is_none(),
-                        "{}: pedra na cidade", d.zona);
+                    if b == c.nivel {
+                        no_nivel += 1;
+                    }
+                    assert!(
+                        arvore_da_coluna(d.bioma, bx, bz, b, 0, &ger, false).is_none(),
+                        "{}: arvore na cidade",
+                        d.zona
+                    );
+                    assert!(
+                        planta_da_coluna(d.bioma, bx, bz, b, 0, &ger, false).is_none(),
+                        "{}: planta na cidade",
+                        d.zona
+                    );
+                    assert!(
+                        minerio_da_coluna(d.bioma, bx, bz, b, &ger, false).is_none(),
+                        "{}: pedra na cidade",
+                        d.zona
+                    );
                 }
             }
             println!(
                 "{}: cidade em {:?} (enseada {:?}), chao {:.1}, {:.0}% do plato no nivel",
-                d.zona, c.centro(), Forma::de(d.semente, d.raio_blocos).enseada,
-                c.altura(), no_nivel as f32 / total as f32 * 100.0
+                d.zona,
+                c.centro(),
+                Forma::de(d.semente, d.raio_blocos).enseada,
+                c.altura(),
+                no_nivel as f32 / total as f32 * 100.0
             );
-            assert!(no_nivel * 100 >= total * 95,
-                "{}: so' {no_nivel} de {total} colunas no nivel do plato", d.zona);
+            assert!(
+                no_nivel * 100 >= total * 95,
+                "{}: so' {no_nivel} de {total} colunas no nivel do plato",
+                d.zona
+            );
         }
     }
 
@@ -4124,14 +4525,17 @@ mod testes {
                 while dist < Cidade::RAIO + 2.0 {
                     dist += BLOCO;
                     let p = c.centro() + dir * dist;
-                    let b = ger.bloco_em((p.x / BLOCO).round() as i32, (p.y / BLOCO).round() as i32);
+                    let b =
+                        ger.bloco_em((p.x / BLOCO).round() as i32, (p.y / BLOCO).round() as i32);
                     if (b + 1) as f32 * BLOCO <= 0.0 || (b - anterior).abs() > DEGRAU_BLOCOS {
                         livre = false;
                         break;
                     }
                     anterior = b;
                 }
-                if livre { saidas += 1; }
+                if livre {
+                    saidas += 1;
+                }
             }
             println!("{}: {saidas} de 16 direcoes saem andando", d.zona);
             assert!(saidas >= 6, "{}: so' {saidas} saidas da cidade", d.zona);
@@ -4148,7 +4552,10 @@ mod testes {
         assert_eq!(a.cidade(), b.cidade());
         let c = a.cidade().unwrap();
         for k in 0..200 {
-            let (bx, bz) = (c.cx as i32 + (k * 7) % 140 - 70, c.cz as i32 + (k * 13) % 140 - 70);
+            let (bx, bz) = (
+                c.cx as i32 + (k * 7) % 140 - 70,
+                c.cz as i32 + (k * 13) % 140 - 70,
+            );
             assert_eq!(a.bloco_em(bx, bz), b.bloco_em(bx, bz));
         }
     }
@@ -4202,11 +4609,16 @@ mod testes {
                 // barrado ja' saiu — "andou pouco" nao e' "ficou preso".
                 if p.distance(inicio) < 0.3 && e.centro.distance(p) < e.raio + raio - 0.02 {
                     presos += 1;
-                    let perto = i.todos_os_estorvos().iter()
-                        .filter(|o| o.centro.distance(inicio) < o.raio + raio + 1.0).count();
+                    let perto = i
+                        .todos_os_estorvos()
+                        .iter()
+                        .filter(|o| o.centro.distance(inicio) < o.raio + raio + 1.0)
+                        .count();
                     let (ax, az) = i.coluna(inicio.x, inicio.y);
-                    let degraus: Vec<i32> = [(1, 0), (-1, 0), (0, 1), (0, -1)].iter()
-                        .map(|(dx, dz)| i.bloco(ax + dx, az + dz) - i.bloco(ax, az)).collect();
+                    let degraus: Vec<i32> = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                        .iter()
+                        .map(|(dx, dz)| i.bloco(ax + dx, az + dz) - i.bloco(ax, az))
+                        .collect();
                     println!(
                         "  PRESO em {inicio:?} quer {quer:?} | tronco raio {:.2} | estorvos em 1: {perto} \
                          | parede? {} | degraus vizinhos {degraus:?} | andou {:.3}",
@@ -4247,28 +4659,41 @@ mod testes {
             let mut p = de;
             let mut mexeu_no_fim = 0.0;
             for k in 0..150 {
-                if p.distance(para) < 0.5 { break; }
+                if p.distance(para) < 0.5 {
+                    break;
+                }
                 let dir = perseguicao.direcao(&i, p, para, vel * dt, k as f32 * dt);
                 let antes = p;
                 p = i.mover_e_deslizar(p, dir * vel, dt, raio);
-                if k >= 120 { mexeu_no_fim += antes.distance(p); }
+                if k >= 120 {
+                    mexeu_no_fim += antes.distance(p);
+                }
             }
             if p.distance(para) > 1.0 {
                 presos += 1;
-                let perto = i.todos_os_estorvos().iter()
-                    .filter(|o| o.centro.distance(p) < o.raio + raio + 1.5).count();
+                let perto = i
+                    .todos_os_estorvos()
+                    .iter()
+                    .filter(|o| o.centro.distance(p) < o.raio + raio + 1.5)
+                    .count();
                 let frente = p + (para - p).normalize_or_zero() * 0.5;
                 let (ax, az) = i.coluna(p.x, p.y);
                 let (bx, bz) = i.coluna(frente.x, frente.y);
                 println!(
                     "  PRESO a {:.2} do alvo | estorvos em 1,5: {perto} | subida a' frente {} \
                      | mexeu nos ultimos 30 ticks {mexeu_no_fim:.2} | raio do tronco {:.2}",
-                    p.distance(para), i.bloco(bx, bz) - i.bloco(ax, az), e.raio);
+                    p.distance(para),
+                    i.bloco(bx, bz) - i.bloco(ax, az),
+                    e.raio
+                );
             }
         }
         println!("{casos} casos: {presos} nao passaram do tronco");
         assert!(casos > 100, "so' {casos} casos");
-        assert!(presos * 50 < casos, "{presos} de {casos} perseguicoes travaram no tronco (teto: 2%)");
+        assert!(
+            presos * 50 < casos,
+            "{presos} de {casos} perseguicoes travaram no tronco (teto: 2%)"
+        );
     }
 
     /// Ir pela ROTA ate' um ponto dentro de um tronco — o bicho colado na
@@ -4286,13 +4711,19 @@ mod testes {
                 e.centro.y + a.sin() * 14.0,
                 6.0,
             );
-            if i.agua(de.x, de.y) { continue; }
+            if i.agua(de.x, de.y) {
+                continue;
+            }
             let para = e.centro + glam::Vec2::new(a.cos(), a.sin()) * e.raio * 0.5;
             // Partida noutro patamar (so' o anel de 4 em volta do tronco e'
             // plano): o A* nao alcanca, e rota parcial nao e' o que se mede.
             let livre = i.ponto_livre_perto(para, 0.35);
-            let Some(r0) = i.caminho(de, para, 20_000) else { continue };
-            if r0.last().unwrap().distance(livre) > 1.0 { continue; }
+            let Some(r0) = i.caminho(de, para, 20_000) else {
+                continue;
+            };
+            if r0.last().unwrap().distance(livre) > 1.0 {
+                continue;
+            }
             casos += 1;
             let p = simula_ida(&i, de, para);
             if p.distance(e.centro) > e.raio + 0.35 + 1.5 {
@@ -4306,7 +4737,10 @@ mod testes {
         }
         println!("{casos} casos: {presos} nao chegaram ao pe' do tronco");
         assert!(casos > 50, "so' {casos} casos");
-        assert!(presos * 50 < casos, "{presos} de {casos} rotas nao chegaram ao pe' do tronco (teto: 2%)");
+        assert!(
+            presos * 50 < casos,
+            "{presos} de {casos} rotas nao chegaram ao pe' do tronco (teto: 2%)"
+        );
     }
 
     /// Destino inalcancavel devolve caminho PARCIAL, nao nada: andar na
@@ -4332,7 +4766,11 @@ mod testes {
             blocos(&i).into_iter().max().unwrap() as f32 * BLOCO
         };
         // Duna e' baixa, planalto e' alto, floresta fica no meio.
-        let (d, f, m) = (pico(Bioma::Deserto), pico(Bioma::Floresta), pico(Bioma::Montanha));
+        let (d, f, m) = (
+            pico(Bioma::Deserto),
+            pico(Bioma::Floresta),
+            pico(Bioma::Montanha),
+        );
         assert!(d < f, "deserto {d} >= floresta {f}");
         assert!(m > f, "planalto {m} <= floresta {f}");
     }
@@ -4348,7 +4786,12 @@ mod testes {
             // teste tem que medir o que sobe, nao um primo dela.
             let i = Ilha::gerar(d.semente, d.raio_blocos.min(800), d.bioma, ESCALA_ALTURA);
             let e = i.estatisticas();
-            assert!(e.sitio_chefe > 0.01, "{}: sitio de chefe {:.3}", d.zona, e.sitio_chefe);
+            assert!(
+                e.sitio_chefe > 0.01,
+                "{}: sitio de chefe {:.3}",
+                d.zona,
+                e.sitio_chefe
+            );
         }
     }
 
@@ -4378,7 +4821,9 @@ mod testes {
                 if !i.agua(p.x, p.y) {
                     i.coletaveis_em(p, COLETA_RAIO_SPOT, &mut achados);
                     n += 1;
-                    if achados.is_empty() { secos += 1 }
+                    if achados.is_empty() {
+                        secos += 1
+                    }
                     melhor_veio = melhor_veio.max(achados.iter().filter(|c| c.tier > 0).count());
                     melhor_mata = melhor_mata.max(achados.iter().filter(|c| c.tier == 0).count());
                 }
@@ -4392,13 +4837,17 @@ mod testes {
              melhor veio: {melhor_veio} pedras -> {:.1}s por coleta\n\
              melhor mata: {melhor_mata} troncos -> {:.1}s por coleta",
             100.0 * secos as f32 / n as f32,
-            intervalo(melhor_veio), intervalo(melhor_mata),
+            intervalo(melhor_veio),
+            intervalo(melhor_mata),
         );
         assert!(melhor_veio > 1, "nenhum veio com mais de uma pedra");
         assert!(melhor_mata > 1, "nenhuma mata com mais de um tronco");
         // Lugar seco tem que existir: se der pra coletar em qualquer lugar, o
         // spot nao vale nada e andar ate' ele nao significa nada.
-        assert!(secos * 10 > n, "so' {secos} de {n} amostras sem recurso — o mapa inteiro e' spot");
+        assert!(
+            secos * 10 > n,
+            "so' {secos} de {n} amostras sem recurso — o mapa inteiro e' spot"
+        );
     }
 
     #[test]
@@ -4417,18 +4866,21 @@ mod testes {
                 _ => {}
             }
         }
-        println!("troncos {troncos} | pedras: cinza {} verde {} azul {} roxo {}",
-            por_tier[1], por_tier[2], por_tier[3], por_tier[4]);
+        println!(
+            "troncos {troncos} | pedras: cinza {} verde {} azul {} roxo {}",
+            por_tier[1], por_tier[2], por_tier[3], por_tier[4]
+        );
         for (t, nome) in [(1, "cinza"), (2, "verde"), (3, "azul"), (4, "roxo")] {
             assert!(por_tier[t] > 0, "ilha sem pedra {nome}");
         }
         // A escada tem que DESCER: pedra melhor tem que ser mais rara, senao
         // subir a montanha nao e' progressao, e' passeio.
-        assert!(por_tier[1] > por_tier[2] && por_tier[2] > por_tier[3] && por_tier[3] > por_tier[4],
-            "escada de raridade invertida: {:?}", &por_tier[1..]);
+        assert!(
+            por_tier[1] > por_tier[2] && por_tier[2] > por_tier[3] && por_tier[3] > por_tier[4],
+            "escada de raridade invertida: {:?}",
+            &por_tier[1..]
+        );
     }
-
-
 }
 
 impl Ilha {
@@ -4503,7 +4955,11 @@ mod testes_visada_de_tiro {
 
     #[test]
     fn plano_passa() {
-        assert!(visada_de_tiro_com(|_, _| 3.0, Vec2::ZERO, Vec2::new(9.0, 0.0)));
+        assert!(visada_de_tiro_com(
+            |_, _| 3.0,
+            Vec2::ZERO,
+            Vec2::new(9.0, 0.0)
+        ));
     }
 
     #[test]
@@ -4536,8 +4992,17 @@ mod testes_visada_de_tiro {
                     let ang = k as f32 * std::f32::consts::FRAC_PI_4;
                     let b = a + Vec2::new(ang.cos(), ang.sin()) * 8.0;
                     let (ve_reta, ve_tiro) = (ilha.visada(a, b), ilha.visada_de_tiro(a, b));
-                    assert!(!ve_reta || ve_tiro, "tiro barrou o que a reta via: {a:?} -> {b:?}");
-                    if ve_reta { reta_ve += 1 } else if ve_tiro { libera += 1 } else { barra += 1 }
+                    assert!(
+                        !ve_reta || ve_tiro,
+                        "tiro barrou o que a reta via: {a:?} -> {b:?}"
+                    );
+                    if ve_reta {
+                        reta_ve += 1
+                    } else if ve_tiro {
+                        libera += 1
+                    } else {
+                        barra += 1
+                    }
                 }
                 x += 3.0;
             }

@@ -56,7 +56,11 @@ pub const BICHOS: [(&str, f32); 7] = [
 /// acumula com o ciclo do bicho (`anda_a_fase`) e a marcha sai da velocidade
 /// real, sem conversao no meio. O `kind` de quem esta' montado carrega a
 /// skin (`render3d`), e a skin diz qual montaria e' .
-pub fn da_montaria(tag: shared::EntityTag, kind: u16, montado: bool) -> Option<(&'static str, f32)> {
+pub fn da_montaria(
+    tag: shared::EntityTag,
+    kind: u16,
+    montado: bool,
+) -> Option<(&'static str, f32)> {
     if tag != shared::EntityTag::Player || !montado {
         return None;
     }
@@ -121,10 +125,22 @@ pub fn junta_de(nome: &str) -> Option<Junta> {
         "cabeca" => Junta::Cabeca,
         "pescoco" => Junta::Pescoco,
         "cauda" => Junta::Cauda,
-        "pata_fd" => Junta::Pata { frente: true, esq: false },
-        "pata_fe" => Junta::Pata { frente: true, esq: true },
-        "pata_td" => Junta::Pata { frente: false, esq: false },
-        "pata_te" => Junta::Pata { frente: false, esq: true },
+        "pata_fd" => Junta::Pata {
+            frente: true,
+            esq: false,
+        },
+        "pata_fe" => Junta::Pata {
+            frente: true,
+            esq: true,
+        },
+        "pata_td" => Junta::Pata {
+            frente: false,
+            esq: false,
+        },
+        "pata_te" => Junta::Pata {
+            frente: false,
+            esq: true,
+        },
         _ => return None,
     })
 }
@@ -204,7 +220,12 @@ struct Marcha {
 fn marcha(vel: f32) -> Marcha {
     let amp = (vel / 4.0).clamp(0.0, 1.0);
     let corre = (vel / VEL_DE_TROTE).clamp(0.0, 1.0);
-    Marcha { amp, acorda: (amp * 6.0).min(1.0), corre, alonga: 1.0 + ALONGA_NA_CORRIDA * corre }
+    Marcha {
+        amp,
+        acorda: (amp * 6.0).min(1.0),
+        corre,
+        alonga: 1.0 + ALONGA_NA_CORRIDA * corre,
+    }
 }
 
 /// Distancia (u) de um ciclo inteiro de passada nesta velocidade. Sai da
@@ -241,7 +262,11 @@ pub fn passo_da_pata(frente: bool, esq: bool, passada: f32, corre: f32, meia: f3
     } else {
         // NA VOLTA: pela frente, levantando; o seno pousa o pe' macio.
         let v = (u - FRACAO_DE_APOIO) / (1.0 - FRACAO_DE_APOIO);
-        vec3(0.0, (v * PI).sin() * meia * ALTURA_DO_PASSO, -meia + 2.0 * meia * v)
+        vec3(
+            0.0,
+            (v * PI).sin() * meia * ALTURA_DO_PASSO,
+            -meia + 2.0 * meia * v,
+        )
     }
 }
 
@@ -415,10 +440,16 @@ pub fn peca(j: Junta, e: &Entrada, a: &Anatomia, pivo: Vec3) -> (Quat, Vec3) {
     let dor = e.ferido.map_or(0.0, crate::rig::tranco);
     match j {
         Junta::Tronco => (Quat::IDENTITY, Vec3::ZERO),
-        Junta::Cauda => (x((e.tempo * 2.2 + e.semente * 0.01).sin() * 0.18 + 0.4 * dor), Vec3::ZERO),
+        Junta::Cauda => (
+            x((e.tempo * 2.2 + e.semente * 0.01).sin() * 0.18 + 0.4 * dor),
+            Vec3::ZERO,
+        ),
         Junta::Cabeca | Junta::Pescoco => {
             // no golpe a cabeca da' o tranco pra tras
-            (x((e.tempo * 1.6).sin() * 0.12 + e.passada.sin() * 0.05 * m.amp - 0.35 * dor), Vec3::ZERO)
+            (
+                x((e.tempo * 1.6).sin() * 0.12 + e.passada.sin() * 0.05 * m.amp - 0.35 * dor),
+                Vec3::ZERO,
+            )
         }
         Junta::Pata { frente, esq } if a.lateral => pata_de_caranguejo(frente, esq, e, a, pivo),
         Junta::Pata { frente, esq } => {
@@ -487,7 +518,13 @@ pub fn rastro(e: &Entrada, a: &Anatomia) -> Option<Rastro> {
 /// mesma identidade de nao-deslize da marcha dos quadrupedes. Os dois grupos
 /// de pernas vao em contratempo. A pinca abre e fecha devagar parada; no
 /// golpe, a do lado `a.lado` belisca pelo mesmo arco da patada, mais baixo.
-fn pata_de_caranguejo(frente: bool, esq: bool, e: &Entrada, a: &Anatomia, pivo: Vec3) -> (Quat, Vec3) {
+fn pata_de_caranguejo(
+    frente: bool,
+    esq: bool,
+    e: &Entrada,
+    a: &Anatomia,
+    pivo: Vec3,
+) -> (Quat, Vec3) {
     let m = marcha(e.vel);
     if !frente {
         let meia = MEIA_VIAGEM_DO_PE * a.altura * m.acorda * m.alonga;
@@ -501,9 +538,17 @@ fn pata_de_caranguejo(frente: bool, esq: bool, e: &Entrada, a: &Anatomia, pivo: 
     if !golpeia || g.ergue <= 0.0 {
         return (abre, Vec3::ZERO);
     }
-    let alvo = no_arco(a, g.angulo, altura_do_arco(a) * 0.55 + g.acima * a.altura, 0.0) - pivo;
+    let alvo = no_arco(
+        a,
+        g.angulo,
+        altura_do_arco(a) * 0.55 + g.acima * a.altura,
+        0.0,
+    ) - pivo;
     let belisca = Quat::from_rotation_y(a.lado * g.angulo) * Quat::from_rotation_x(-0.6);
-    (abre.slerp(belisca, g.ergue), Vec3::ZERO.lerp(alvo, g.ergue * 0.6))
+    (
+        abre.slerp(belisca, g.ergue),
+        Vec3::ZERO.lerp(alvo, g.ergue * 0.6),
+    )
 }
 
 /// Quanto o desenho gira o caranguejo pra ele andar de lado: 90 graus
@@ -540,7 +585,11 @@ mod tests {
                     let no_mundo = passada / TAU * c + d.z;
                     if d.y == 0.0 {
                         if let Some(a) = antes {
-                            assert!((no_mundo - a).abs() < 1e-3, "vel {vel}: pe' deslizou {}", no_mundo - a);
+                            assert!(
+                                (no_mundo - a).abs() < 1e-3,
+                                "vel {vel}: pe' deslizou {}",
+                                no_mundo - a
+                            );
                         }
                         antes = Some(no_mundo);
                     } else {
@@ -553,21 +602,45 @@ mod tests {
 
     #[test]
     fn passeio_e_de_quatro_tempos_e_trote_junta_as_diagonais() {
-        let mut passeio: Vec<f32> = PATAS.iter().map(|&(f, e)| atraso_da_pata(f, e, 0.0)).collect();
+        let mut passeio: Vec<f32> = PATAS
+            .iter()
+            .map(|&(f, e)| atraso_da_pata(f, e, 0.0))
+            .collect();
         passeio.sort_by(|a, b| a.partial_cmp(b).unwrap());
         assert_eq!(passeio, vec![0.0, 0.25, 0.5, 0.75]);
         // diagonal = dianteira de um lado com a traseira do outro
-        assert_eq!(atraso_da_pata(true, false, 1.0), atraso_da_pata(false, true, 1.0));
-        assert_eq!(atraso_da_pata(true, true, 1.0), atraso_da_pata(false, false, 1.0));
-        assert_ne!(atraso_da_pata(true, true, 1.0), atraso_da_pata(true, false, 1.0));
+        assert_eq!(
+            atraso_da_pata(true, false, 1.0),
+            atraso_da_pata(false, true, 1.0)
+        );
+        assert_eq!(
+            atraso_da_pata(true, true, 1.0),
+            atraso_da_pata(false, false, 1.0)
+        );
+        assert_ne!(
+            atraso_da_pata(true, true, 1.0),
+            atraso_da_pata(true, false, 1.0)
+        );
     }
 
     fn lobo() -> Anatomia {
-        Anatomia { altura: 1.0, frente: 0.55, ombro: vec3(0.12, 0.3, 0.2), lado: 1.0, lateral: false }
+        Anatomia {
+            altura: 1.0,
+            frente: 0.55,
+            ombro: vec3(0.12, 0.3, 0.2),
+            lado: 1.0,
+            lateral: false,
+        }
     }
 
     fn caranguejo() -> Anatomia {
-        Anatomia { altura: 0.5, frente: 0.4, ombro: vec3(0.15, 0.2, 0.2), lado: 1.0, lateral: true }
+        Anatomia {
+            altura: 0.5,
+            frente: 0.4,
+            ombro: vec3(0.15, 0.2, 0.2),
+            lado: 1.0,
+            lateral: true,
+        }
     }
 
     #[test]
@@ -579,14 +652,27 @@ mod tests {
                 let mut antes: Option<f32> = None;
                 for k in 0..2000 {
                     let passada = k as f32 * TAU / 1000.0;
-                    let e = Entrada { passada, vel, ..Default::default() };
-                    let (_, d) = peca(Junta::Pata { frente: false, esq }, &e, &a, vec3(0.0, 0.1, 0.0));
+                    let e = Entrada {
+                        passada,
+                        vel,
+                        ..Default::default()
+                    };
+                    let (_, d) = peca(
+                        Junta::Pata { frente: false, esq },
+                        &e,
+                        &a,
+                        vec3(0.0, 0.1, 0.0),
+                    );
                     assert_eq!(d.z, 0.0, "perna de caranguejo nao anda pra frente");
                     // o corpo anda no -X; o pe' plantado fica no lugar do mundo
                     let no_mundo = -(passada / TAU * c) + d.x;
                     if d.y == 0.0 {
                         if let Some(p) = antes {
-                            assert!((no_mundo - p).abs() < 1e-3, "vel {vel}: pe' deslizou {}", no_mundo - p);
+                            assert!(
+                                (no_mundo - p).abs() < 1e-3,
+                                "vel {vel}: pe' deslizou {}",
+                                no_mundo - p
+                            );
                         }
                         antes = Some(no_mundo);
                     } else {
@@ -600,32 +686,91 @@ mod tests {
     #[test]
     fn caranguejo_gira_de_lado_andando_e_volta_de_frente_no_golpe() {
         let a = caranguejo();
-        let parado = Entrada { vel: 0.0, golpe: 99.0, ..Default::default() };
-        let andando = Entrada { vel: 2.0, golpe: 99.0, ..Default::default() };
-        let golpeando = Entrada { vel: 2.0, golpe: T_LEVANTA + T_VARRE * 0.5, ..Default::default() };
+        let parado = Entrada {
+            vel: 0.0,
+            golpe: 99.0,
+            ..Default::default()
+        };
+        let andando = Entrada {
+            vel: 2.0,
+            golpe: 99.0,
+            ..Default::default()
+        };
+        let golpeando = Entrada {
+            vel: 2.0,
+            golpe: T_LEVANTA + T_VARRE * 0.5,
+            ..Default::default()
+        };
         assert_eq!(yaw_lateral(&a, &parado), 0.0);
         assert!((yaw_lateral(&a, &andando) - std::f32::consts::FRAC_PI_2).abs() < 1e-4);
-        assert!(yaw_lateral(&a, &golpeando) < 1e-4, "no golpe a pinca aponta pro alvo");
+        assert!(
+            yaw_lateral(&a, &golpeando) < 1e-4,
+            "no golpe a pinca aponta pro alvo"
+        );
         assert_eq!(yaw_lateral(&lobo(), &andando), 0.0, "lobo anda de frente");
     }
 
     #[test]
     fn a_pinca_belisca_so_no_golpe() {
         let a = caranguejo();
-        let pinca = |t: f32| peca(Junta::Pata { frente: true, esq: false }, &Entrada { golpe: t, ..Default::default() }, &a, a.ombro).1;
+        let pinca = |t: f32| {
+            peca(
+                Junta::Pata {
+                    frente: true,
+                    esq: false,
+                },
+                &Entrada {
+                    golpe: t,
+                    ..Default::default()
+                },
+                &a,
+                a.ombro,
+            )
+            .1
+        };
         assert_eq!(pinca(99.0), Vec3::ZERO, "parada a pinca so' abre e fecha");
-        assert!(pinca(T_LEVANTA + T_VARRE * 0.5).length() > 0.05, "no golpe ela sai do lugar");
-        let outra = peca(Junta::Pata { frente: true, esq: true }, &Entrada { golpe: T_LEVANTA, ..Default::default() }, &a, vec3(-0.15, 0.2, 0.2)).1;
+        assert!(
+            pinca(T_LEVANTA + T_VARRE * 0.5).length() > 0.05,
+            "no golpe ela sai do lugar"
+        );
+        let outra = peca(
+            Junta::Pata {
+                frente: true,
+                esq: true,
+            },
+            &Entrada {
+                golpe: T_LEVANTA,
+                ..Default::default()
+            },
+            &a,
+            vec3(-0.15, 0.2, 0.2),
+        )
+        .1;
         assert_eq!(outra, Vec3::ZERO, "so' uma pinca golpeia");
     }
 
     fn entrada(golpe: f32) -> Entrada {
-        Entrada { passada: 1.3, vel: 0.0, tempo: 4.0, golpe, semente: 7.0, ..Default::default() }
+        Entrada {
+            passada: 1.3,
+            vel: 0.0,
+            tempo: 4.0,
+            golpe,
+            semente: 7.0,
+            ..Default::default()
+        }
     }
 
     fn pata_que_golpeia(t: f32) -> Vec3 {
         let a = lobo();
-        let (_, d) = peca(Junta::Pata { frente: true, esq: false }, &entrada(t), &a, a.ombro);
+        let (_, d) = peca(
+            Junta::Pata {
+                frente: true,
+                esq: false,
+            },
+            &entrada(t),
+            &a,
+            a.ombro,
+        );
         a.ombro + d
     }
 
@@ -633,7 +778,11 @@ mod tests {
     fn parado_a_pata_nao_se_mexe() {
         let a = lobo();
         for (frente, esq) in PATAS {
-            let pivo = vec3(if esq { -0.12 } else { 0.12 }, 0.3, if frente { 0.2 } else { -0.2 });
+            let pivo = vec3(
+                if esq { -0.12 } else { 0.12 },
+                0.3,
+                if frente { 0.2 } else { -0.2 },
+            );
             let (giro, d) = peca(Junta::Pata { frente, esq }, &entrada(99.0), &a, pivo);
             assert_eq!(giro, Quat::IDENTITY);
             assert_eq!(d, Vec3::ZERO);
@@ -651,12 +800,18 @@ mod tests {
     #[test]
     fn a_patada_varre_120_graus_na_horizontal() {
         let (de, ate, _) = golpe(T_LEVANTA + T_VARRE - 1e-4).rastro.unwrap();
-        assert!(de - ate >= 120f32.to_radians() - 1e-3, "{} graus", (de - ate).to_degrees());
+        assert!(
+            de - ate >= 120f32.to_radians() - 1e-3,
+            "{} graus",
+            (de - ate).to_degrees()
+        );
         // na varrida a pata fica na altura da cabeca: sem arco pra cima
         let alturas: Vec<f32> = (0..=40)
             .map(|k| pata_que_golpeia(T_LEVANTA + T_VARRE * k as f32 / 40.0).y)
             .collect();
-        let (lo, hi) = alturas.iter().fold((f32::MAX, f32::MIN), |(l, h), y| (l.min(*y), h.max(*y)));
+        let (lo, hi) = alturas
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(l, h), y| (l.min(*y), h.max(*y)));
         assert!(lo >= 0.85 && hi - lo <= 0.13, "{lo}..{hi}");
         // cruza de um lado ao outro da cara
         assert!(pata_que_golpeia(T_LEVANTA + T_VARRE - 1e-4).x < -0.3);
@@ -671,8 +826,14 @@ mod tests {
             t += 0.002;
             let agora = (pata_que_golpeia(t), corpo(&entrada(t), &a));
             assert!(agora.0.distance(antes.0) < 0.05, "pata saltou em t={t}");
-            assert!((agora.1.torce - antes.1.torce).abs() < 0.02, "torcao saltou em t={t}");
-            assert!((agora.1.pitch - antes.1.pitch).abs() < 0.02, "mergulho saltou em t={t}");
+            assert!(
+                (agora.1.torce - antes.1.torce).abs() < 0.02,
+                "torcao saltou em t={t}"
+            );
+            assert!(
+                (agora.1.pitch - antes.1.pitch).abs() < 0.02,
+                "mergulho saltou em t={t}"
+            );
             antes = agora;
         }
         // e termina no lugar
@@ -685,7 +846,15 @@ mod tests {
         let a = lobo();
         let t = T_LEVANTA + T_VARRE * 0.5;
         let outra = vec3(-0.12, 0.3, 0.2);
-        let (_, d) = peca(Junta::Pata { frente: true, esq: true }, &entrada(t), &a, outra);
+        let (_, d) = peca(
+            Junta::Pata {
+                frente: true,
+                esq: true,
+            },
+            &entrada(t),
+            &a,
+            outra,
+        );
         assert_eq!(d, Vec3::ZERO);
         assert!(pata_que_golpeia(t).distance(a.ombro) > 0.4);
     }
@@ -711,6 +880,9 @@ mod tests {
         }
         assert!(do_mob(T::Player, 0, false).is_none());
         assert_eq!(do_mob(T::Enemy, 8, false).unwrap().0, "bichos/caranguejo");
-        assert_eq!(do_mob(T::Enemy, 9, false).unwrap().0, "bichos/caranguejo_rei");
+        assert_eq!(
+            do_mob(T::Enemy, 9, false).unwrap().0,
+            "bichos/caranguejo_rei"
+        );
     }
 }

@@ -46,7 +46,11 @@ pub fn info(inst: &ItemInstance) -> Info {
     Info {
         nivel,
         no_topo,
-        chance: if no_topo { 0 } else { forja::chance_de_refino(nivel + 1) },
+        chance: if no_topo {
+            0
+        } else {
+            forja::chance_de_refino(nivel + 1)
+        },
         darksteel,
         cobre,
         risco: !no_topo && nivel + 1 > forja::REFINO_SEGURO,
@@ -57,14 +61,28 @@ pub fn info(inst: &ItemInstance) -> Info {
 pub fn texto_do_resultado(res: u8, nivel: u8, nome: &str, motivo: &str) -> (String, Color) {
     match res {
         resultado::SUBIU => (format!("Sucesso! {nome} agora é +{nivel}."), VERDE),
-        resultado::FALHOU => (format!("Falhou. {nome} continua +{nivel} (só o material foi)."), AMARELO),
+        resultado::FALHOU => (
+            format!("Falhou. {nome} continua +{nivel} (só o material foi)."),
+            AMARELO,
+        ),
         resultado::DESTRUIU => (format!("Falhou e {nome} foi destruída."), VERMELHO),
-        _ => (if motivo.is_empty() { "Não deu pra refinar.".to_string() } else { format!("Não refinou: {motivo}.") }, VERMELHO),
+        _ => (
+            if motivo.is_empty() {
+                "Não deu pra refinar.".to_string()
+            } else {
+                format!("Não refinou: {motivo}.")
+            },
+            VERMELHO,
+        ),
     }
 }
 
 fn tem(slots: &[InventorySlot], id: u16) -> u32 {
-    slots.iter().filter(|s| s.item_id == id && s.instance.is_none() && s.qty > 0).map(|s| s.qty).sum()
+    slots
+        .iter()
+        .filter(|s| s.item_id == id && s.instance.is_none() && s.qty > 0)
+        .map(|s| s.qty)
+        .sum()
 }
 
 /// As pecas refinaveis: as vestidas primeiro, depois as da bolsa.
@@ -117,7 +135,12 @@ impl Forja {
     }
 
     fn painel() -> Rect {
-        Rect::new((screen_width() - LARGURA) * 0.5, (screen_height() - ALTURA) * 0.5, LARGURA, ALTURA)
+        Rect::new(
+            (screen_width() - LARGURA) * 0.5,
+            (screen_height() - ALTURA) * 0.5,
+            LARGURA,
+            ALTURA,
+        )
     }
 
     pub fn pega_mouse(&self) -> bool {
@@ -133,7 +156,13 @@ impl Forja {
         self.aviso = Some((res, txt, cor, agora));
     }
 
-    pub fn desenha(&mut self, slots: &[InventorySlot], equip: &Equipment, nomes: &HashMap<u16, String>, agora: f64) -> Option<ClientMessage> {
+    pub fn desenha(
+        &mut self,
+        slots: &[InventorySlot],
+        equip: &Equipment,
+        nomes: &HashMap<u16, String>,
+        agora: f64,
+    ) -> Option<ClientMessage> {
         if !self.aberto {
             return None;
         }
@@ -143,16 +172,38 @@ impl Forja {
         if let Some((_, _, cor, t)) = &self.aviso {
             let f = (1.0 - (agora - t) as f32 / 1.2).clamp(0.0, 1.0);
             if f > 0.0 {
-                draw_rectangle_lines(p.x - 3.0, p.y - 3.0, p.w + 6.0, p.h + 6.0, 4.0, Color::new(cor.r, cor.g, cor.b, f));
+                draw_rectangle_lines(
+                    p.x - 3.0,
+                    p.y - 3.0,
+                    p.w + 6.0,
+                    p.h + 6.0,
+                    4.0,
+                    Color::new(cor.r, cor.g, cor.b, f),
+                );
             }
         }
         estilo::texto(p.x + 18.0, p.y + 32.0, "Forja", 22, estilo::OURO);
-        estilo::texto(p.x + 92.0, p.y + 31.0, "até +5 é seguro · do +6 em diante falhar destrói a peça", 13, estilo::SUAVE);
-        if crate::ui::botao(Rect::new(p.x + p.w - 44.0, p.y + 10.0, 32.0, 28.0), "x", true) {
+        estilo::texto(
+            p.x + 92.0,
+            p.y + 31.0,
+            "até +5 é seguro · do +6 em diante falhar destrói a peça",
+            13,
+            estilo::SUAVE,
+        );
+        if crate::ui::botao(
+            Rect::new(p.x + p.w - 44.0, p.y + 10.0, 32.0, 28.0),
+            "x",
+            true,
+        ) {
             self.aberto = false;
             return None;
         }
-        let nome = |id: u16| nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"));
+        let nome = |id: u16| {
+            nomes
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| format!("item {id}"))
+        };
         let lista = pecas(slots, equip);
         if let Some(sel) = self.sel {
             if !lista.iter().any(|(a, _, _)| *a == sel) {
@@ -167,22 +218,45 @@ impl Forja {
         let mouse = Vec2::from(mouse_position());
         let clicou = is_mouse_button_pressed(MouseButton::Left);
         if lista.is_empty() {
-            estilo::texto(grade.x + 4.0, grade.y + 24.0, "Nenhuma peça refinável.", 15, estilo::SUAVE);
+            estilo::texto(
+                grade.x + 4.0,
+                grade.y + 24.0,
+                "Nenhuma peça refinável.",
+                15,
+                estilo::SUAVE,
+            );
         }
         for (i, (alvo, id, inst)) in lista.iter().enumerate() {
             let (col, lin) = (i % 6, i / 6);
-            let r = Rect::new(grade.x + col as f32 * CELULA, grade.y + lin as f32 * CELULA, CELULA - 6.0, CELULA - 6.0);
+            let r = Rect::new(
+                grade.x + col as f32 * CELULA,
+                grade.y + lin as f32 * CELULA,
+                CELULA - 6.0,
+                CELULA - 6.0,
+            );
             if r.y + r.h > grade.y + grade.h {
                 break;
             }
             let marcada = self.sel == Some(*alvo);
-            draw_rectangle(r.x, r.y, r.w, r.h, Color::new(1.0, 1.0, 1.0, if marcada { 0.16 } else { 0.05 }));
+            draw_rectangle(
+                r.x,
+                r.y,
+                r.w,
+                r.h,
+                Color::new(1.0, 1.0, 1.0, if marcada { 0.16 } else { 0.05 }),
+            );
             if marcada {
                 draw_rectangle_lines(r.x, r.y, r.w, r.h, 2.0, estilo::OURO);
             }
             crate::bolsa::icone_do_item(r, *id, 1.0);
             if inst.refinement > 0 {
-                estilo::texto(r.x + 3.0, r.y + 14.0, &format!("+{}", inst.refinement), 13, estilo::OURO);
+                estilo::texto(
+                    r.x + 3.0,
+                    r.y + 14.0,
+                    &format!("+{}", inst.refinement),
+                    13,
+                    estilo::OURO,
+                );
             }
             if matches!(alvo, AlvoDaForja::Equipado(_)) {
                 estilo::texto(r.x + r.w - 12.0, r.y + r.h - 4.0, "E", 12, estilo::AUTO);
@@ -192,33 +266,80 @@ impl Forja {
             }
         }
         // Detalhe.
-        let d = Rect::new(grade.x + grade.w + 12.0, p.y + 52.0, p.x + p.w - grade.x - grade.w - 26.0, p.h - 64.0);
+        let d = Rect::new(
+            grade.x + grade.w + 12.0,
+            p.y + 52.0,
+            p.x + p.w - grade.x - grade.w - 26.0,
+            p.h - 64.0,
+        );
         let mut pedido = None;
         if let Some((alvo, id, inst)) = lista.iter().find(|(a, _, _)| Some(*a) == self.sel) {
             let i = info(inst);
             crate::bolsa::icone_do_item(Rect::new(d.x, d.y, 64.0, 64.0), *id, 1.0);
-            estilo::texto_ajustado(&nome(*id), d.x + 74.0, d.y + 24.0, d.w - 80.0, 18, estilo::TEXTO);
+            estilo::texto_ajustado(
+                &nome(*id),
+                d.x + 74.0,
+                d.y + 24.0,
+                d.w - 80.0,
+                18,
+                estilo::TEXTO,
+            );
             let grau = Grau::de_u8(inst.rarity.clamp(1, 5)).unwrap_or(Grau::Comum);
-            let onde = if matches!(alvo, AlvoDaForja::Equipado(_)) { "vestida" } else { "na bolsa" };
-            estilo::texto(d.x + 74.0, d.y + 46.0, &format!("{} · {onde}", grau.nome()), 14, estilo::SUAVE);
+            let onde = if matches!(alvo, AlvoDaForja::Equipado(_)) {
+                "vestida"
+            } else {
+                "na bolsa"
+            };
+            estilo::texto(
+                d.x + 74.0,
+                d.y + 46.0,
+                &format!("{} · {onde}", grau.nome()),
+                14,
+                estilo::SUAVE,
+            );
             let y = d.y + 100.0;
-            let agora_prox = if i.no_topo { format!("+{} (no topo)", i.nivel) } else { format!("+{}  →  +{}", i.nivel, i.nivel + 1) };
+            let agora_prox = if i.no_topo {
+                format!("+{} (no topo)", i.nivel)
+            } else {
+                format!("+{}  →  +{}", i.nivel, i.nivel + 1)
+            };
             estilo::texto(d.x, y, &agora_prox, 26, estilo::OURO);
             // Quanto de poder o proximo nivel da': sem isto o refino parecia
             // nao fazer nada.
             if !i.no_topo {
                 let mut prox = *inst;
                 prox.refinement += 1;
-                let (a, b) = (crate::bolsa::poder_da_instancia(inst), crate::bolsa::poder_da_instancia(&prox));
+                let (a, b) = (
+                    crate::bolsa::poder_da_instancia(inst),
+                    crate::bolsa::poder_da_instancia(&prox),
+                );
                 let t = format!("Poder {a} → {b}  (+{})", b - a);
                 estilo::texto(d.x + d.w - estilo::medir(&t, 15), y - 2.0, &t, 15, VERDE);
             }
             if !i.no_topo {
-                let cor = if i.chance >= 80 { VERDE } else if i.chance >= 30 { AMARELO } else { VERMELHO };
+                let cor = if i.chance >= 80 {
+                    VERDE
+                } else if i.chance >= 30 {
+                    AMARELO
+                } else {
+                    VERMELHO
+                };
                 estilo::texto(d.x, y + 34.0, &format!("Chance: {}%", i.chance), 17, cor);
                 let (ds, cu) = (tem(slots, item_id::DARKSTEEL), tem(slots, item_id::COPPER));
-                estilo::texto(d.x, y + 62.0, &format!("Darksteel {ds}/{}", i.darksteel), 15, if ds >= i.darksteel { VERDE } else { VERMELHO });
-                estilo::texto(d.x, y + 84.0, &format!("Cobre {cu}/{}", i.cobre), 15, if cu >= i.cobre { VERDE } else { VERMELHO });
+                estilo::texto(
+                    d.x,
+                    y + 62.0,
+                    &format!("Darksteel {ds}/{}", i.darksteel),
+                    15,
+                    if ds >= i.darksteel { VERDE } else { VERMELHO },
+                );
+                estilo::texto(
+                    d.x,
+                    y + 84.0,
+                    &format!("Cobre {cu}/{}", i.cobre),
+                    15,
+                    if cu >= i.cobre { VERDE } else { VERMELHO },
+                );
                 if crate::onde_obter::botao(Rect::new(d.x + d.w - 36.0, y + 44.0, 34.0, 22.0)) {
                     self.onde_obter = Some(item_id::DARKSTEEL);
                 }
@@ -226,13 +347,33 @@ impl Forja {
                     self.onde_obter = Some(item_id::COPPER);
                 }
                 if i.risco {
-                    estilo::texto(d.x, y + 116.0, "⚠ Se falhar, a peça é DESTRUÍDA.", 15, VERMELHO);
+                    estilo::texto(
+                        d.x,
+                        y + 116.0,
+                        "⚠ Se falhar, a peça é DESTRUÍDA.",
+                        15,
+                        VERMELHO,
+                    );
                 } else {
-                    estilo::texto(d.x, y + 116.0, "Falhar aqui só gasta o material.", 14, estilo::SUAVE);
+                    estilo::texto(
+                        d.x,
+                        y + 116.0,
+                        "Falhar aqui só gasta o material.",
+                        14,
+                        estilo::SUAVE,
+                    );
                 }
                 let tem_tudo = ds >= i.darksteel && cu >= i.cobre;
                 let b = Rect::new(d.x, d.y + d.h - 50.0, d.w, 40.0);
-                if crate::ui::botao(b, if i.risco { "Refinar (arriscado)" } else { "Refinar" }, tem_tudo) {
+                if crate::ui::botao(
+                    b,
+                    if i.risco {
+                        "Refinar (arriscado)"
+                    } else {
+                        "Refinar"
+                    },
+                    tem_tudo,
+                ) {
                     pedido = Some(ClientMessage::Refinar { alvo: *alvo });
                 }
             }
@@ -275,7 +416,12 @@ mod tests {
         assert!(f.sel.is_none());
         let (t, _) = texto_do_resultado(resultado::SUBIU, 4, "Katana", "");
         assert!(t.contains("+4"));
-        let (t, _) = texto_do_resultado(resultado::SEM_MATERIAL, 1, "Katana", "precisa de 300 Darksteel e 100 Cobre");
+        let (t, _) = texto_do_resultado(
+            resultado::SEM_MATERIAL,
+            1,
+            "Katana",
+            "precisa de 300 Darksteel e 100 Cobre",
+        );
         assert!(t.contains("300 Darksteel"));
     }
 
@@ -284,8 +430,16 @@ mod tests {
         let mut equip = Equipment::default();
         equip.set(EquipSlot::Weapon, Some(item_id::KATANA), Some(peca(2)));
         let slots = vec![
-            InventorySlot { item_id: item_id::COPPER, qty: 50, instance: None },
-            InventorySlot { item_id: item_id::BRINCO, qty: 1, instance: Some(peca(0)) },
+            InventorySlot {
+                item_id: item_id::COPPER,
+                qty: 50,
+                instance: None,
+            },
+            InventorySlot {
+                item_id: item_id::BRINCO,
+                qty: 1,
+                instance: Some(peca(0)),
+            },
         ];
         let v = pecas(&slots, &equip);
         assert_eq!(v.len(), 2);

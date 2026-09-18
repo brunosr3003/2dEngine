@@ -28,9 +28,11 @@ fn carrega(bytes: &[u8]) -> Font {
 /// em corpo pequeno, com acentos e numeros largos iguais.
 fn fonte<T>(forte: bool, f: impl FnOnce(&Font) -> T) -> T {
     if forte {
-        f(FONTE_FORTE.get_or_init(|| carrega(include_bytes!("../../../assets/fonts/NotoSans-Bold.ttf"))))
+        f(FONTE_FORTE
+            .get_or_init(|| carrega(include_bytes!("../../../assets/fonts/NotoSans-Bold.ttf"))))
     } else {
-        f(FONTE.get_or_init(|| carrega(include_bytes!("../../../assets/fonts/NotoSans-Regular.ttf"))))
+        f(FONTE
+            .get_or_init(|| carrega(include_bytes!("../../../assets/fonts/NotoSans-Regular.ttf"))))
     }
 }
 
@@ -47,14 +49,30 @@ fn tam(tamanho: u16) -> u16 {
 
 fn desenha_texto(forte: bool, x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
     fonte(forte, |f| {
-        draw_text_ex(s, x, y, TextParams { font: Some(f), font_size: tam(tamanho), color: cor, ..Default::default() });
+        draw_text_ex(
+            s,
+            x,
+            y,
+            TextParams {
+                font: Some(f),
+                font_size: tam(tamanho),
+                color: cor,
+                ..Default::default()
+            },
+        );
     });
 }
 
-pub fn medir(s: &str, tamanho: u16) -> f32 { fonte(false, |f| measure_text(s, Some(f), tam(tamanho), 1.0).width) }
+pub fn medir(s: &str, tamanho: u16) -> f32 {
+    fonte(false, |f| measure_text(s, Some(f), tam(tamanho), 1.0).width)
+}
 /// Dimensoes na fonte da UI — pra quem alinha texto com `TextDimensions`.
-pub fn medir_dim(s: &str, tamanho: u16) -> TextDimensions { fonte(false, |f| measure_text(s, Some(f), tam(tamanho), 1.0)) }
-pub fn medir_forte(s: &str, tamanho: u16) -> f32 { fonte(true, |f| measure_text(s, Some(f), tam(tamanho), 1.0).width) }
+pub fn medir_dim(s: &str, tamanho: u16) -> TextDimensions {
+    fonte(false, |f| measure_text(s, Some(f), tam(tamanho), 1.0))
+}
+pub fn medir_forte(s: &str, tamanho: u16) -> f32 {
+    fonte(true, |f| measure_text(s, Some(f), tam(tamanho), 1.0).width)
+}
 
 // ─────────────────────────────── moedas ───────────────────────────────
 
@@ -77,42 +95,85 @@ fn moeda_texto(tp: bool, x: f32, y: f32, s: &str, tamanho: u16, cor: Color, fort
     let px = tam(tamanho) as f32;
     let lado = px * 1.25;
     let c = vec2(x + lado * 0.5, y - px * 0.34);
-    if tp { icone_tp(c, lado) } else { icone_ouro(c, lado) }
+    if tp {
+        icone_tp(c, lado)
+    } else {
+        icone_ouro(c, lado)
+    }
     let tx = x + lado + px * 0.2;
-    if forte { texto_forte(tx, y, s, tamanho, cor) } else { texto(tx, y, s, tamanho, cor) }
-    tx - x + if forte { medir_forte(s, tamanho) } else { medir(s, tamanho) }
+    if forte {
+        texto_forte(tx, y, s, tamanho, cor)
+    } else {
+        texto(tx, y, s, tamanho, cor)
+    }
+    tx - x
+        + if forte {
+            medir_forte(s, tamanho)
+        } else {
+            medir(s, tamanho)
+        }
 }
 
 fn largura_moeda(s: &str, tamanho: u16, forte: bool) -> f32 {
     let px = tam(tamanho) as f32;
-    px * 1.45 + if forte { medir_forte(s, tamanho) } else { medir(s, tamanho) }
+    px * 1.45
+        + if forte {
+            medir_forte(s, tamanho)
+        } else {
+            medir(s, tamanho)
+        }
 }
 
 /// Icone do TP + texto na linha de base `y`. Devolve a largura desenhada.
-pub fn tp_texto(x: f32, y: f32, s: &str, tamanho: u16, cor: Color, forte: bool) -> f32 { moeda_texto(true, x, y, s, tamanho, cor, forte) }
-pub fn largura_tp_texto(s: &str, tamanho: u16, forte: bool) -> f32 { largura_moeda(s, tamanho, forte) }
+pub fn tp_texto(x: f32, y: f32, s: &str, tamanho: u16, cor: Color, forte: bool) -> f32 {
+    moeda_texto(true, x, y, s, tamanho, cor, forte)
+}
+pub fn largura_tp_texto(s: &str, tamanho: u16, forte: bool) -> f32 {
+    largura_moeda(s, tamanho, forte)
+}
 /// Icone do TP + quantidade formatada ("1.250"), em negrito.
-pub fn valor_tp(x: f32, y: f32, qtd: u64, tamanho: u16, cor: Color) -> f32 { tp_texto(x, y, &crate::economia::milhar(qtd), tamanho, cor, true) }
+pub fn valor_tp(x: f32, y: f32, qtd: u64, tamanho: u16, cor: Color) -> f32 {
+    tp_texto(x, y, &crate::economia::milhar(qtd), tamanho, cor, true)
+}
 /// Icone do ouro + texto na linha de base `y`. Devolve a largura desenhada.
-pub fn ouro_texto(x: f32, y: f32, s: &str, tamanho: u16, cor: Color, forte: bool) -> f32 { moeda_texto(false, x, y, s, tamanho, cor, forte) }
-pub fn largura_ouro_texto(s: &str, tamanho: u16, forte: bool) -> f32 { largura_moeda(s, tamanho, forte) }
-pub fn texto(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) { desenha_texto(false, x, y, s, tamanho, cor); }
-pub fn texto_forte(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) { desenha_texto(true, x, y, s, tamanho, cor); }
-pub fn texto_centro(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) { texto(x - medir(s, tamanho) * 0.5, y, s, tamanho, cor); }
+pub fn ouro_texto(x: f32, y: f32, s: &str, tamanho: u16, cor: Color, forte: bool) -> f32 {
+    moeda_texto(false, x, y, s, tamanho, cor, forte)
+}
+pub fn largura_ouro_texto(s: &str, tamanho: u16, forte: bool) -> f32 {
+    largura_moeda(s, tamanho, forte)
+}
+pub fn texto(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
+    desenha_texto(false, x, y, s, tamanho, cor);
+}
+pub fn texto_forte(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
+    desenha_texto(true, x, y, s, tamanho, cor);
+}
+pub fn texto_centro(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
+    texto(x - medir(s, tamanho) * 0.5, y, s, tamanho, cor);
+}
 pub fn texto_centro_forte(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
     texto_forte(x - medir_forte(s, tamanho) * 0.5, y, s, tamanho, cor);
 }
 
 /// Texto com sombra curta embaixo: le em cima do mundo (chao claro, neve).
 pub fn texto_sombra(x: f32, y: f32, s: &str, tamanho: u16, cor: Color, forte: bool) {
-    desenha_texto(forte, x + 1.0, y + 1.5, s, tamanho, Color::new(0.0, 0.0, 0.0, 0.75 * cor.a));
+    desenha_texto(
+        forte,
+        x + 1.0,
+        y + 1.5,
+        s,
+        tamanho,
+        Color::new(0.0, 0.0, 0.0, 0.75 * cor.a),
+    );
     desenha_texto(forte, x, y, s, tamanho, cor);
 }
 
 pub fn texto_ajustado(s: &str, x: f32, y: f32, largura: f32, tamanho: u16, cor: Color) {
     let mut t = s.to_string();
     if medir(&t, tamanho) > largura {
-        while !t.is_empty() && medir(&format!("{t}…"), tamanho) > largura { t.pop(); }
+        while !t.is_empty() && medir(&format!("{t}…"), tamanho) > largura {
+            t.pop();
+        }
         t.push('…');
     }
     texto(x, y, &t, tamanho, cor);
@@ -157,19 +218,36 @@ pub mod tam {
     pub const MINI: u16 = 11;
 }
 
-pub fn alfa(c: Color, a: f32) -> Color { Color::new(c.r, c.g, c.b, a) }
+pub fn alfa(c: Color, a: f32) -> Color {
+    Color::new(c.r, c.g, c.b, a)
+}
 pub fn misturar(a: Color, b: Color, t: f32) -> Color {
     let t = t.clamp(0.0, 1.0);
-    Color::new(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t)
+    Color::new(
+        a.r + (b.r - a.r) * t,
+        a.g + (b.g - a.g) * t,
+        a.b + (b.b - a.b) * t,
+        a.a + (b.a - a.a) * t,
+    )
 }
 /// Mais claro (k > 0) ou mais escuro (k < 0), mantendo o alfa.
 pub fn clarear(c: Color, k: f32) -> Color {
-    if k >= 0.0 { misturar(c, Color::new(1.0, 1.0, 1.0, c.a), k) } else { misturar(c, Color::new(0.0, 0.0, 0.0, c.a), -k) }
+    if k >= 0.0 {
+        misturar(c, Color::new(1.0, 1.0, 1.0, c.a), k)
+    } else {
+        misturar(c, Color::new(0.0, 0.0, 0.0, c.a), -k)
+    }
 }
 
 /// Luminancia relativa (WCAG) de uma cor ja' opaca.
 pub fn luminancia(c: Color) -> f32 {
-    let canal = |v: f32| if v <= 0.03928 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) };
+    let canal = |v: f32| {
+        if v <= 0.03928 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    };
     0.2126 * canal(c.r) + 0.7152 * canal(c.g) + 0.0722 * canal(c.b)
 }
 
@@ -182,10 +260,14 @@ pub fn contraste(texto: Color, fundo: Color, cena: Color) -> f32 {
 
 // ───────────────────────────── geometria ─────────────────────────────
 
-fn raio_util(r: Rect, raio: f32) -> f32 { raio.min(r.w * 0.5).min(r.h * 0.5).max(0.0) }
+fn raio_util(r: Rect, raio: f32) -> f32 {
+    raio.min(r.w * 0.5).min(r.h * 0.5).max(0.0)
+}
 
 /// Lados de cada quarto de circulo: poucos em canto pequeno, mais em grande.
-fn lados(raio: f32) -> usize { ((raio * 0.6).ceil() as usize).clamp(2, 8) }
+fn lados(raio: f32) -> usize {
+    ((raio * 0.6).ceil() as usize).clamp(2, 8)
+}
 
 /// O contorno fechado de um retangulo arredondado, no sentido horario a
 /// partir do canto superior esquerdo. `4 × (lados + 1)` pontos.
@@ -211,7 +293,12 @@ fn vertice(p: Vec2, c: Color) -> Vertex {
     Vertex {
         position: vec3(p.x, p.y, 0.0),
         uv: Vec2::ZERO,
-        color: [(c.r * 255.0) as u8, (c.g * 255.0) as u8, (c.b * 255.0) as u8, (c.a * 255.0) as u8],
+        color: [
+            (c.r * 255.0) as u8,
+            (c.g * 255.0) as u8,
+            (c.b * 255.0) as u8,
+            (c.a * 255.0) as u8,
+        ],
         normal: Vec4::ZERO,
     }
 }
@@ -234,10 +321,16 @@ pub fn ret_gradiente(r: Rect, raio: f32, topo: Color, base: Color) {
     for i in 0..n {
         indices.extend_from_slice(&[0, 1 + i, 1 + (i + 1) % n]);
     }
-    draw_mesh(&Mesh { vertices, indices, texture: None });
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
 }
 
-pub fn ret_arredondado(r: Rect, raio: f32, cor: Color) { ret_gradiente(r, raio, cor, cor); }
+pub fn ret_arredondado(r: Rect, raio: f32, cor: Color) {
+    ret_gradiente(r, raio, cor, cor);
+}
 
 /// Borda de espessura `esp` por dentro do retangulo, como um anel.
 pub fn borda_arredondada(r: Rect, raio: f32, esp: f32, cor: Color) {
@@ -246,7 +339,11 @@ pub fn borda_arredondada(r: Rect, raio: f32, esp: f32, cor: Color) {
     }
     let l = lados(raio);
     let fora = contorno_arredondado(r, raio, l);
-    let dentro = contorno_arredondado(Rect::new(r.x + esp, r.y + esp, r.w - esp * 2.0, r.h - esp * 2.0), (raio - esp).max(0.0), l);
+    let dentro = contorno_arredondado(
+        Rect::new(r.x + esp, r.y + esp, r.w - esp * 2.0, r.h - esp * 2.0),
+        (raio - esp).max(0.0),
+        l,
+    );
     let mut vertices = Vec::with_capacity(fora.len() * 2);
     for (a, b) in fora.iter().zip(dentro.iter()) {
         vertices.push(vertice(*a, cor));
@@ -258,13 +355,26 @@ pub fn borda_arredondada(r: Rect, raio: f32, esp: f32, cor: Color) {
         let (a, b, c, d) = (i * 2, i * 2 + 1, ((i + 1) % n) * 2, ((i + 1) % n) * 2 + 1);
         indices.extend_from_slice(&[a, b, c, b, d, c]);
     }
-    draw_mesh(&Mesh { vertices, indices, texture: None });
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
 }
 
 /// Sombra suave: tres camadas crescendo e sumindo, deslocadas pra baixo.
 pub fn sombra(r: Rect, raio: f32, forca: f32) {
     for (k, a) in [(1.0, 0.16), (4.0, 0.09), (8.0, 0.05)] {
-        ret_arredondado(Rect::new(r.x - k, r.y - k + 3.0 + k * 0.4, r.w + k * 2.0, r.h + k * 2.0), raio + k, Color::new(0.0, 0.0, 0.0, a * forca));
+        ret_arredondado(
+            Rect::new(
+                r.x - k,
+                r.y - k + 3.0 + k * 0.4,
+                r.w + k * 2.0,
+                r.h + k * 2.0,
+            ),
+            raio + k,
+            Color::new(0.0, 0.0, 0.0, a * forca),
+        );
     }
 }
 
@@ -297,7 +407,12 @@ pub fn setor(c: Vec2, r: f32, fracao: f32, cor: Color) {
     for i in 0..n {
         let a = -PI * 0.5 + TAU * fracao * i as f32 / n as f32;
         let b = -PI * 0.5 + TAU * fracao * (i + 1) as f32 / n as f32;
-        draw_triangle(c, c + vec2(a.cos(), a.sin()) * r, c + vec2(b.cos(), b.sin()) * r, cor);
+        draw_triangle(
+            c,
+            c + vec2(a.cos(), a.sin()) * r,
+            c + vec2(b.cos(), b.sin()) * r,
+            cor,
+        );
     }
 }
 
@@ -325,7 +440,9 @@ fn passo_anima(chave: (i32, i32, u8), alvo: f32, dt: f32) -> f32 {
     })
 }
 
-fn chave(r: Rect, canal: u8) -> (i32, i32, u8) { (r.x as i32, r.y as i32, canal) }
+fn chave(r: Rect, canal: u8) -> (i32, i32, u8) {
+    (r.x as i32, r.y as i32, canal)
+}
 
 // ───────────────────────────── componentes ───────────────────────────
 
@@ -356,7 +473,12 @@ pub fn estado(sobre: bool, pressionado: bool, desabilitado: bool, ativo: bool) -
 
 pub fn estado_de(r: Rect, desabilitado: bool, ativo: bool) -> Estado {
     let sobre = r.contains(Vec2::from(mouse_position()));
-    estado(sobre, is_mouse_button_down(MouseButton::Left), desabilitado, ativo)
+    estado(
+        sobre,
+        is_mouse_button_down(MouseButton::Left),
+        desabilitado,
+        ativo,
+    )
 }
 
 /// Painel padrao: sombra macia, vidro escuro em gradiente, filete de brilho e
@@ -372,23 +494,51 @@ pub fn painel(r: Rect) {
 pub fn painel_destaque(r: Rect, cor: Color) {
     painel(r);
     let w = (r.w * 0.34).min(160.0);
-    ret_arredondado(Rect::new(r.center().x - w * 0.5, r.y - 1.0, w, 3.0), 1.5, alfa(cor, 0.9));
+    ret_arredondado(
+        Rect::new(r.center().x - w * 0.5, r.y - 1.0, w, 3.0),
+        1.5,
+        alfa(cor, 0.9),
+    );
 }
 
 /// Cartao dentro de painel (item de lista, ladrilho de menu).
 pub fn cartao(r: Rect, sobre: bool, ativo: bool) {
     let h = anima(chave(r, 1), if sobre || ativo { 1.0 } else { 0.0 });
-    ret_gradiente(r, RAIO_PEQUENO + 2.0, misturar(FUNDO_ALTO, clarear(FUNDO_ALTO, 0.10), h), FUNDO);
-    let borda = if ativo { alfa(ACENTO, 0.75) } else { misturar(BORDA, BORDA_FORTE, h) };
+    ret_gradiente(
+        r,
+        RAIO_PEQUENO + 2.0,
+        misturar(FUNDO_ALTO, clarear(FUNDO_ALTO, 0.10), h),
+        FUNDO,
+    );
+    let borda = if ativo {
+        alfa(ACENTO, 0.75)
+    } else {
+        misturar(BORDA, BORDA_FORTE, h)
+    };
     borda_arredondada(r, RAIO_PEQUENO + 2.0, 1.0, borda);
     brilho_topo(r, RAIO_PEQUENO + 2.0);
 }
 
 /// Botao com rotulo. `primario` pinta de acento; o resto e' vidro.
 pub fn botao(r: Rect, rotulo: &str, e: Estado, primario: bool) {
-    let h = anima(chave(r, 2), match e { Estado::Sobre | Estado::Ativo => 1.0, Estado::Pressionado => 0.6, _ => 0.0 });
+    let h = anima(
+        chave(r, 2),
+        match e {
+            Estado::Sobre | Estado::Ativo => 1.0,
+            Estado::Pressionado => 0.6,
+            _ => 0.0,
+        },
+    );
     let desab = e == Estado::Desabilitado;
-    let base = if primario { misturar(Color::new(0.16, 0.42, 0.62, 0.95), Color::new(0.22, 0.52, 0.74, 0.97), h) } else { misturar(FUNDO_ALTO, clarear(FUNDO_ALTO, 0.12), h) };
+    let base = if primario {
+        misturar(
+            Color::new(0.16, 0.42, 0.62, 0.95),
+            Color::new(0.22, 0.52, 0.74, 0.97),
+            h,
+        )
+    } else {
+        misturar(FUNDO_ALTO, clarear(FUNDO_ALTO, 0.12), h)
+    };
     let base = if desab { alfa(FUNDO_ALTO, 0.6) } else { base };
     let desce = if e == Estado::Pressionado { 1.0 } else { 0.0 };
     let rr = Rect::new(r.x, r.y + desce, r.w, r.h);
@@ -396,18 +546,44 @@ pub fn botao(r: Rect, rotulo: &str, e: Estado, primario: bool) {
         sombra(rr, RAIO_PEQUENO + 2.0, 0.6);
     }
     ret_gradiente(rr, RAIO_PEQUENO + 2.0, clarear(base, 0.08), base);
-    borda_arredondada(rr, RAIO_PEQUENO + 2.0, 1.0, if primario { alfa(ACENTO, 0.55 + 0.3 * h) } else { misturar(BORDA, BORDA_FORTE, h) });
+    borda_arredondada(
+        rr,
+        RAIO_PEQUENO + 2.0,
+        1.0,
+        if primario {
+            alfa(ACENTO, 0.55 + 0.3 * h)
+        } else {
+            misturar(BORDA, BORDA_FORTE, h)
+        },
+    );
     brilho_topo(rr, RAIO_PEQUENO + 2.0);
     let t = tam::CORPO.min(((r.h * 0.5) as u16).max(10));
     let cor = if desab { alfa(SUAVE, 0.6) } else { TEXTO };
-    texto_centro_forte(rr.center().x, rr.center().y + t as f32 * 0.36, rotulo, t, cor);
+    texto_centro_forte(
+        rr.center().x,
+        rr.center().y + t as f32 * 0.36,
+        rotulo,
+        t,
+        cor,
+    );
 }
 
 /// Botao redondo de acao (ATACAR, skills, AUTO): disco escuro com anel de
 /// acento e halo quando ativo.
 pub fn botao_redondo(c: Vec2, raio: f32, cor: Color, e: Estado, halo: bool) {
-    let h = anima((c.x as i32, c.y as i32, 3), match e { Estado::Sobre => 1.0, Estado::Pressionado => 0.5, _ => 0.0 });
-    let r = if e == Estado::Pressionado { raio * 0.96 } else { raio };
+    let h = anima(
+        (c.x as i32, c.y as i32, 3),
+        match e {
+            Estado::Sobre => 1.0,
+            Estado::Pressionado => 0.5,
+            _ => 0.0,
+        },
+    );
+    let r = if e == Estado::Pressionado {
+        raio * 0.96
+    } else {
+        raio
+    };
     draw_circle(c.x, c.y + 4.0, r + 3.0, Color::new(0.0, 0.0, 0.0, 0.30));
     if halo {
         let p = 0.5 + 0.5 * (get_time() as f32 * 3.0).sin();
@@ -418,7 +594,14 @@ pub fn botao_redondo(c: Vec2, raio: f32, cor: Color, e: Estado, halo: bool) {
     draw_circle(c.x, c.y + r * 0.10, r * 0.80, alfa(FUNDO, 0.9));
     draw_circle_lines(c.x, c.y, r - 1.0, 2.0 + h, alfa(cor, 0.55 + 0.35 * h));
     draw_circle_lines(c.x, c.y, r - 5.0, 1.0, alfa(cor, 0.16));
-    arco(c, r - 1.0, PI * 1.15, 0.20, 1.5, Color::new(1.0, 1.0, 1.0, 0.18 + 0.12 * h));
+    arco(
+        c,
+        r - 1.0,
+        PI * 1.15,
+        0.20,
+        1.5,
+        Color::new(1.0, 1.0, 1.0, 0.18 + 0.12 * h),
+    );
     if e == Estado::Desabilitado {
         draw_circle(c.x, c.y, r, Color::new(0.0, 0.0, 0.0, 0.45));
     }
@@ -428,14 +611,29 @@ pub fn botao_redondo(c: Vec2, raio: f32, cor: Color, e: Estado, halo: bool) {
 pub fn aba(r: Rect, rotulo: &str, ativa: bool, sobre: bool) {
     let h = anima(chave(r, 4), if ativa || sobre { 1.0 } else { 0.0 });
     if ativa || h > 0.01 {
-        ret_arredondado(r, RAIO_PEQUENO + 1.0, alfa(clarear(FUNDO_ALTO, 0.10), 0.85 * h.max(if ativa { 1.0 } else { 0.0 })));
+        ret_arredondado(
+            r,
+            RAIO_PEQUENO + 1.0,
+            alfa(
+                clarear(FUNDO_ALTO, 0.10),
+                0.85 * h.max(if ativa { 1.0 } else { 0.0 }),
+            ),
+        );
     }
     let t = tam::LEGENDA.min(((r.h * 0.46) as u16).max(10));
-    let cor = if ativa { TEXTO } else { misturar(SUAVE, TEXTO, h) };
+    let cor = if ativa {
+        TEXTO
+    } else {
+        misturar(SUAVE, TEXTO, h)
+    };
     texto_centro_forte(r.center().x, r.center().y + t as f32 * 0.36, rotulo, t, cor);
     if ativa {
         let w = (r.w * 0.45).min(56.0);
-        ret_arredondado(Rect::new(r.center().x - w * 0.5, r.y + r.h - 3.0, w, 3.0), 1.5, ACENTO);
+        ret_arredondado(
+            Rect::new(r.center().x - w * 0.5, r.y + r.h - 3.0, w, 3.0),
+            1.5,
+            ACENTO,
+        );
     }
 }
 
@@ -444,7 +642,12 @@ pub fn chip_tecla(canto: Vec2, tecla: &str) {
     let w = (medir_forte(tecla, tam::MINI) + 10.0).max(20.0);
     let c = Rect::new(canto.x - 2.0, canto.y - 2.0, w, 19.0);
     sombra(c, RAIO_PEQUENO, 0.8);
-    ret_gradiente(c, RAIO_PEQUENO, Color::new(0.16, 0.17, 0.21, 0.97), Color::new(0.08, 0.09, 0.12, 0.97));
+    ret_gradiente(
+        c,
+        RAIO_PEQUENO,
+        Color::new(0.16, 0.17, 0.21, 0.97),
+        Color::new(0.08, 0.09, 0.12, 0.97),
+    );
     borda_arredondada(c, RAIO_PEQUENO, 1.0, alfa(OURO, 0.7));
     texto_centro_forte(c.center().x, c.y + 14.0, tecla, tam::MINI, OURO);
 }
@@ -454,24 +657,43 @@ pub fn chip_tecla(canto: Vec2, tecla: &str) {
 pub fn barra(r: Rect, f: f32, fantasma: f32, cor: Color, rotulo: Option<&str>) {
     let f = f.clamp(0.0, 1.0);
     let raio = (r.h * 0.5).min(RAIO_PEQUENO + 2.0);
-    ret_arredondado(Rect::new(r.x - 1.0, r.y - 1.0, r.w + 2.0, r.h + 2.0), raio + 1.0, Color::new(0.0, 0.0, 0.0, 0.55));
+    ret_arredondado(
+        Rect::new(r.x - 1.0, r.y - 1.0, r.w + 2.0, r.h + 2.0),
+        raio + 1.0,
+        Color::new(0.0, 0.0, 0.0, 0.55),
+    );
     ret_gradiente(r, raio, FUNDO_BAIXO, alfa(clarear(FUNDO_BAIXO, 0.06), 0.95));
     let fant = fantasma.clamp(0.0, 1.0);
     if fant > f + 0.001 {
-        ret_arredondado(Rect::new(r.x, r.y, r.w * fant, r.h), raio, Color::new(1.0, 0.93, 0.82, 0.55));
+        ret_arredondado(
+            Rect::new(r.x, r.y, r.w * fant, r.h),
+            raio,
+            Color::new(1.0, 0.93, 0.82, 0.55),
+        );
     }
     if f > 0.001 {
         let w = (r.w * f).max(raio * 2.0).min(r.w);
         let cheio = Rect::new(r.x, r.y, w, r.h);
         ret_gradiente(cheio, raio, clarear(cor, 0.22), clarear(cor, -0.18));
         if r.h >= 6.0 {
-            ret_arredondado(Rect::new(r.x + 2.0, r.y + 1.5, (w - 4.0).max(0.0), r.h * 0.34), raio * 0.6, Color::new(1.0, 1.0, 1.0, 0.18));
+            ret_arredondado(
+                Rect::new(r.x + 2.0, r.y + 1.5, (w - 4.0).max(0.0), r.h * 0.34),
+                raio * 0.6,
+                Color::new(1.0, 1.0, 1.0, 0.18),
+            );
         }
     }
     if let Some(t) = rotulo {
         let tamanho = (r.h * 0.82).clamp(10.0, 15.0) as u16;
         let largura = medir_forte(t, tamanho);
-        texto_sombra(r.x + (r.w - largura) * 0.5, r.y + r.h * 0.5 + tamanho as f32 * 0.36, t, tamanho, TEXTO, true);
+        texto_sombra(
+            r.x + (r.w - largura) * 0.5,
+            r.y + r.h * 0.5 + tamanho as f32 * 0.36,
+            t,
+            tamanho,
+            TEXTO,
+            true,
+        );
     }
 }
 
@@ -479,15 +701,30 @@ pub fn barra(r: Rect, f: f32, fantasma: f32, cor: Color, rotulo: Option<&str>) {
 /// um brilho de baixo pra cima, e realce no hover/selecao.
 pub fn slot(r: Rect, raridade: Option<Color>, sobre: bool, selecionado: bool) {
     let h = anima(chave(r, 5), if sobre { 1.0 } else { 0.0 });
-    ret_gradiente(r, RAIO_PEQUENO + 1.0, alfa(clarear(FUNDO_BAIXO, 0.05), 0.95), FUNDO_BAIXO);
+    ret_gradiente(
+        r,
+        RAIO_PEQUENO + 1.0,
+        alfa(clarear(FUNDO_BAIXO, 0.05), 0.95),
+        FUNDO_BAIXO,
+    );
     if let Some(c) = raridade {
-        ret_gradiente(Rect::new(r.x, r.y + r.h * 0.35, r.w, r.h * 0.65), RAIO_PEQUENO + 1.0, alfa(c, 0.0), alfa(c, 0.22));
+        ret_gradiente(
+            Rect::new(r.x, r.y + r.h * 0.35, r.w, r.h * 0.65),
+            RAIO_PEQUENO + 1.0,
+            alfa(c, 0.0),
+            alfa(c, 0.22),
+        );
         borda_arredondada(r, RAIO_PEQUENO + 1.0, 1.5, alfa(c, 0.65 + 0.35 * h));
     } else {
         borda_arredondada(r, RAIO_PEQUENO + 1.0, 1.0, misturar(BORDA, BORDA_FORTE, h));
     }
     if selecionado {
-        borda_arredondada(Rect::new(r.x - 3.0, r.y - 3.0, r.w + 6.0, r.h + 6.0), RAIO_PEQUENO + 4.0, 2.0, OURO);
+        borda_arredondada(
+            Rect::new(r.x - 3.0, r.y - 3.0, r.w + 6.0, r.h + 6.0),
+            RAIO_PEQUENO + 4.0,
+            2.0,
+            OURO,
+        );
     }
 }
 
@@ -495,10 +732,19 @@ pub fn slot(r: Rect, raridade: Option<Color>, sobre: bool, selecionado: bool) {
 pub fn tooltip(ancora: Rect, t: &str, acima: bool) {
     let w = medir(t, tam::LEGENDA + 1) + 20.0;
     let x = (ancora.center().x - w * 0.5).clamp(4.0, (screen_width() - w - 4.0).max(4.0));
-    let y = if acima { ancora.y - 32.0 } else { ancora.y + ancora.h + 6.0 };
+    let y = if acima {
+        ancora.y - 32.0
+    } else {
+        ancora.y + ancora.h + 6.0
+    };
     let c = Rect::new(x, y, w, 26.0);
     sombra(c, RAIO_PEQUENO + 1.0, 1.0);
-    ret_gradiente(c, RAIO_PEQUENO + 1.0, Color::new(0.10, 0.12, 0.16, 0.97), Color::new(0.06, 0.07, 0.10, 0.97));
+    ret_gradiente(
+        c,
+        RAIO_PEQUENO + 1.0,
+        Color::new(0.10, 0.12, 0.16, 0.97),
+        Color::new(0.06, 0.07, 0.10, 0.97),
+    );
     borda_arredondada(c, RAIO_PEQUENO + 1.0, 1.0, BORDA_FORTE);
     texto(c.x + 10.0, c.y + 18.0, t, tam::LEGENDA + 1, TEXTO);
 }
@@ -517,7 +763,14 @@ pub fn badge(r: Rect) {
 pub fn separador(x: f32, y: f32, w: f32) {
     let meio = w * 0.5;
     draw_line(x, y, x + meio, y, 1.0, alfa(BORDA_FORTE, 0.25));
-    draw_line(x + meio * 0.3, y, x + w - meio * 0.3, y, 1.0, alfa(BORDA_FORTE, 0.45));
+    draw_line(
+        x + meio * 0.3,
+        y,
+        x + w - meio * 0.3,
+        y,
+        1.0,
+        alfa(BORDA_FORTE, 0.45),
+    );
 }
 
 /// Barra de rolagem fina.
@@ -525,14 +778,23 @@ pub fn scroll(trilho: Rect, inicio: f32, tamanho: f32) {
     ret_arredondado(trilho, trilho.w * 0.5, alfa(FUNDO_BAIXO, 0.8));
     let h = (trilho.h * tamanho.clamp(0.05, 1.0)).max(trilho.w * 2.0);
     let y = trilho.y + (trilho.h - h) * inicio.clamp(0.0, 1.0);
-    ret_arredondado(Rect::new(trilho.x, y, trilho.w, h), trilho.w * 0.5, alfa(SUAVE, 0.55));
+    ret_arredondado(
+        Rect::new(trilho.x, y, trilho.w, h),
+        trilho.w * 0.5,
+        alfa(SUAVE, 0.55),
+    );
 }
 
 // ───────────────────────────── pictogramas ───────────────────────────
 
 pub fn cor_skill(id: u32) -> Color {
-    match id { 1..=3 => Color::new(1.0, 0.74, 0.33, 1.0), 4..=6 => Color::new(0.38, 0.86, 1.0, 1.0),
-        7..=9 => Color::new(1.0, 0.52, 0.27, 1.0), 10 | 11 => AUTO, _ => Color::new(0.79, 0.58, 1.0, 1.0) }
+    match id {
+        1..=3 => Color::new(1.0, 0.74, 0.33, 1.0),
+        4..=6 => Color::new(0.38, 0.86, 1.0, 1.0),
+        7..=9 => Color::new(1.0, 0.52, 0.27, 1.0),
+        10 | 11 => AUTO,
+        _ => Color::new(0.79, 0.58, 1.0, 1.0),
+    }
 }
 
 /// Pictogramas vetoriais próprios: nenhuma textura ou arte de outro jogo.
@@ -541,43 +803,103 @@ pub fn icone(id: u32, c: Vec2, r: f32, cor: Color) {
     let p = |x, y| c + vec2(x, y) * r;
     let linha = |a: Vec2, b: Vec2, w: f32| traco(a, b, (w * r).max(1.2), cor);
     let lamina = |x: f32, y: f32| {
-        draw_triangle(p(x-0.55,y+0.5),p(x+0.55,y-0.65),p(x+0.12,y+0.1),cor);
-        linha(p(x-0.48,y+0.26),p(x-0.15,y+0.6),0.10);
-        linha(p(x-0.4,y+0.48),p(x-0.6,y+0.7),0.12);
+        draw_triangle(
+            p(x - 0.55, y + 0.5),
+            p(x + 0.55, y - 0.65),
+            p(x + 0.12, y + 0.1),
+            cor,
+        );
+        linha(p(x - 0.48, y + 0.26), p(x - 0.15, y + 0.6), 0.10);
+        linha(p(x - 0.4, y + 0.48), p(x - 0.6, y + 0.7), 0.12);
     };
     match id {
-        1 => { lamina(0.05,-0.02); for y in [-0.3,0.0,0.3] { linha(p(-0.82,y),p(-0.4,y-0.13),0.065); } }
+        1 => {
+            lamina(0.05, -0.02);
+            for y in [-0.3, 0.0, 0.3] {
+                linha(p(-0.82, y), p(-0.4, y - 0.13), 0.065);
+            }
+        }
         2 | 4 => {
-            arco(c,r*0.85,-PI*0.85,0.48,0.10*r,cor); lamina(0.0,0.0);
-            if id == 2 { arco(c,r*0.65,-PI*0.85,0.40,0.04*r,cor); }
+            arco(c, r * 0.85, -PI * 0.85, 0.48, 0.10 * r, cor);
+            lamina(0.0, 0.0);
+            if id == 2 {
+                arco(c, r * 0.65, -PI * 0.85, 0.40, 0.04 * r, cor);
+            }
         }
         3 => {
-            let ps = [p(-0.62,-0.5),p(0.0,-0.78),p(0.62,-0.5),p(0.48,0.3),p(0.0,0.78),p(-0.48,0.3)];
-            for i in 0..6 { linha(ps[i],ps[(i+1)%6],0.10); }
-            linha(p(0.0,-0.4),p(0.0,0.38),0.08); linha(p(-0.28,-0.12),p(0.28,-0.12),0.08);
+            let ps = [
+                p(-0.62, -0.5),
+                p(0.0, -0.78),
+                p(0.62, -0.5),
+                p(0.48, 0.3),
+                p(0.0, 0.78),
+                p(-0.48, 0.3),
+            ];
+            for i in 0..6 {
+                linha(ps[i], ps[(i + 1) % 6], 0.10);
+            }
+            linha(p(0.0, -0.4), p(0.0, 0.38), 0.08);
+            linha(p(-0.28, -0.12), p(0.28, -0.12), 0.08);
         }
-        5 => { for i in 0..3 { arco(c,r*(0.48+i as f32*0.17),i as f32*2.1,0.57,0.1*r,cor); } }
-        6 => { for x in [-0.28,0.10,0.46] { linha(p(x-0.4,-0.7),p(x+0.12,0.0),0.12); linha(p(x+0.12,0.0),p(x-0.4,0.7),0.09); } }
+        5 => {
+            for i in 0..3 {
+                arco(
+                    c,
+                    r * (0.48 + i as f32 * 0.17),
+                    i as f32 * 2.1,
+                    0.57,
+                    0.1 * r,
+                    cor,
+                );
+            }
+        }
+        6 => {
+            for x in [-0.28, 0.10, 0.46] {
+                linha(p(x - 0.4, -0.7), p(x + 0.12, 0.0), 0.12);
+                linha(p(x + 0.12, 0.0), p(x - 0.4, 0.7), 0.09);
+            }
+        }
         7 => {
-            arco(c,r*0.50,0.0,1.0,0.065*r,cor);
-            for i in 0..4 { let d=vec2((i as f32*PI/2.0).cos(),(i as f32*PI/2.0).sin()); linha(c+d*r*0.35,c+d*r*0.85,0.09); }
-            draw_circle(c.x,c.y,r*0.11,cor);
+            arco(c, r * 0.50, 0.0, 1.0, 0.065 * r, cor);
+            for i in 0..4 {
+                let d = vec2((i as f32 * PI / 2.0).cos(), (i as f32 * PI / 2.0).sin());
+                linha(c + d * r * 0.35, c + d * r * 0.85, 0.09);
+            }
+            draw_circle(c.x, c.y, r * 0.11, cor);
         }
-        8 => { for y in [-0.4,0.0,0.4] { linha(p(-0.75,y),p(0.35,y),0.12); draw_triangle(p(0.32,y-0.14),p(0.65,y),p(0.32,y+0.14),cor); } }
+        8 => {
+            for y in [-0.4, 0.0, 0.4] {
+                linha(p(-0.75, y), p(0.35, y), 0.12);
+                draw_triangle(p(0.32, y - 0.14), p(0.65, y), p(0.32, y + 0.14), cor);
+            }
+        }
         9 => {
-            draw_circle_lines(c.x,c.y+r*0.12,r*0.52,r*0.10,cor);
-            linha(p(0.0,-0.4),p(0.18,-0.7),0.10);
-            for i in 0..5 { let a=i as f32*TAU/5.0; let q=p(0.25,-0.73); linha(q+vec2(a.cos(),a.sin())*r*0.1,q+vec2(a.cos(),a.sin())*r*0.25,0.05); }
+            draw_circle_lines(c.x, c.y + r * 0.12, r * 0.52, r * 0.10, cor);
+            linha(p(0.0, -0.4), p(0.18, -0.7), 0.10);
+            for i in 0..5 {
+                let a = i as f32 * TAU / 5.0;
+                let q = p(0.25, -0.73);
+                linha(
+                    q + vec2(a.cos(), a.sin()) * r * 0.1,
+                    q + vec2(a.cos(), a.sin()) * r * 0.25,
+                    0.05,
+                );
+            }
         }
         10 | 11 => {
-            linha(p(-0.4,0.0),p(0.4,0.0),0.23); linha(p(0.0,-0.4),p(0.0,0.4),0.23);
-            arco(c,r*0.72,0.0,1.0,0.065*r,cor);
-            if id == 11 { arco(c,r*0.93,0.2,0.38,0.06*r,cor); arco(c,r*0.93,PI+0.2,0.38,0.06*r,cor); }
+            linha(p(-0.4, 0.0), p(0.4, 0.0), 0.23);
+            linha(p(0.0, -0.4), p(0.0, 0.4), 0.23);
+            arco(c, r * 0.72, 0.0, 1.0, 0.065 * r, cor);
+            if id == 11 {
+                arco(c, r * 0.93, 0.2, 0.38, 0.06 * r, cor);
+                arco(c, r * 0.93, PI + 0.2, 0.38, 0.06 * r, cor);
+            }
         }
         _ => {
-            draw_triangle(p(0.25,-0.85),p(-0.48,0.12),p(0.14,0.12),cor);
-            draw_triangle(p(-0.14,-0.12),p(0.48,-0.12),p(-0.25,0.85),cor);
-            arco(c,r*0.83,0.0,0.33,0.045*r,cor); arco(c,r*0.83,PI,0.33,0.045*r,cor);
+            draw_triangle(p(0.25, -0.85), p(-0.48, 0.12), p(0.14, 0.12), cor);
+            draw_triangle(p(-0.14, -0.12), p(0.48, -0.12), p(-0.25, 0.85), cor);
+            arco(c, r * 0.83, 0.0, 0.33, 0.045 * r, cor);
+            arco(c, r * 0.83, PI, 0.33, 0.045 * r, cor);
         }
     }
 }
@@ -592,10 +914,26 @@ mod tests {
 
     #[test]
     fn texto_contrasta_com_o_painel() {
-        assert!(contraste(TEXTO, FUNDO, CENA) >= 7.0, "texto: {}", contraste(TEXTO, FUNDO, CENA));
-        assert!(contraste(SUAVE, FUNDO, CENA) >= 4.5, "suave: {}", contraste(SUAVE, FUNDO, CENA));
-        assert!(contraste(OURO, FUNDO, CENA) >= 4.5, "ouro: {}", contraste(OURO, FUNDO, CENA));
-        assert!(contraste(ACENTO, FUNDO, CENA) >= 4.5, "acento: {}", contraste(ACENTO, FUNDO, CENA));
+        assert!(
+            contraste(TEXTO, FUNDO, CENA) >= 7.0,
+            "texto: {}",
+            contraste(TEXTO, FUNDO, CENA)
+        );
+        assert!(
+            contraste(SUAVE, FUNDO, CENA) >= 4.5,
+            "suave: {}",
+            contraste(SUAVE, FUNDO, CENA)
+        );
+        assert!(
+            contraste(OURO, FUNDO, CENA) >= 4.5,
+            "ouro: {}",
+            contraste(OURO, FUNDO, CENA)
+        );
+        assert!(
+            contraste(ACENTO, FUNDO, CENA) >= 4.5,
+            "acento: {}",
+            contraste(ACENTO, FUNDO, CENA)
+        );
         assert!(contraste(TEXTO, FUNDO_ALTO, CENA) >= 7.0);
     }
 
@@ -606,7 +944,13 @@ mod tests {
             let pts = contorno_arredondado(r, 9.0, lados);
             assert_eq!(pts.len(), 4 * (lados + 1));
             for p in &pts {
-                assert!(p.x >= r.x - 1e-3 && p.x <= r.x + r.w + 1e-3 && p.y >= r.y - 1e-3 && p.y <= r.y + r.h + 1e-3, "{p:?} fora");
+                assert!(
+                    p.x >= r.x - 1e-3
+                        && p.x <= r.x + r.w + 1e-3
+                        && p.y >= r.y - 1e-3
+                        && p.y <= r.y + r.h + 1e-3,
+                    "{p:?} fora"
+                );
             }
         }
         // Raio maior que meia altura vira pilula, sem ponto pra fora.
@@ -614,7 +958,9 @@ mod tests {
         assert!(pilula.iter().all(|p| p.y >= -1e-3 && p.y <= 10.001));
         // Raio zero: os pontos caem nos quatro cantos.
         let reto = contorno_arredondado(Rect::new(0.0, 0.0, 10.0, 10.0), 0.0, 2);
-        assert!(reto.iter().all(|p| (p.x == 0.0 || p.x == 10.0) && (p.y == 0.0 || p.y == 10.0)));
+        assert!(reto
+            .iter()
+            .all(|p| (p.x == 0.0 || p.x == 10.0) && (p.y == 0.0 || p.y == 10.0)));
     }
 
     #[test]
@@ -622,7 +968,11 @@ mod tests {
         assert_eq!(estado(false, false, false, false), Estado::Normal);
         assert_eq!(estado(true, false, false, false), Estado::Sobre);
         assert_eq!(estado(true, true, false, false), Estado::Pressionado);
-        assert_eq!(estado(false, true, false, false), Estado::Normal, "apertar fora nao pressiona");
+        assert_eq!(
+            estado(false, true, false, false),
+            Estado::Normal,
+            "apertar fora nao pressiona"
+        );
         assert_eq!(estado(false, false, false, true), Estado::Ativo);
         assert_eq!(estado(true, true, false, true), Estado::Pressionado);
         assert_eq!(estado(true, true, true, true), Estado::Desabilitado);

@@ -12,7 +12,8 @@ const FOLGA_ALCANCE: f32 = 0.25;
 
 /// Da borda do corpo do jogador a' borda do no' cabe no alcance?
 pub fn ao_alcance(pos: Vec2, centro: Vec2, raio_no: f32) -> bool {
-    pos.distance(centro) - raio_no - shared::ENTITY_RADIUS <= shared::COLETA_ALCANCE_UN + FOLGA_ALCANCE
+    pos.distance(centro) - raio_no - shared::ENTITY_RADIUS
+        <= shared::COLETA_ALCANCE_UN + FOLGA_ALCANCE
 }
 
 /// Onde ficar pra coletar: do lado de quem chega, no meio do alcance.
@@ -29,8 +30,15 @@ pub fn aceita(tipos: &[bool; 5], tier: u8) -> bool {
 /// Cabe TUDO o que o ciclo sorteou? Simula em copia, na mesma regra da bolsa
 /// (empilha no que ja' tem, depois ocupa espaco vazio). Se nao couber um
 /// item sequer, o ciclo nao conclui: coleta nunca joga material fora.
-pub fn cabe_tudo(inv: &[shared::InventorySlot], drops: &[(u16, u32)], pilha: &dyn Fn(u16) -> u32) -> bool {
-    let mut sim: Vec<(u16, u32, bool)> = inv.iter().map(|s| (s.item_id, s.qty, s.instance.is_some())).collect();
+pub fn cabe_tudo(
+    inv: &[shared::InventorySlot],
+    drops: &[(u16, u32)],
+    pilha: &dyn Fn(u16) -> u32,
+) -> bool {
+    let mut sim: Vec<(u16, u32, bool)> = inv
+        .iter()
+        .map(|s| (s.item_id, s.qty, s.instance.is_some()))
+        .collect();
     for &(item, mut qtd) in drops {
         if qtd == 0 {
             continue;
@@ -47,7 +55,9 @@ pub fn cabe_tudo(inv: &[shared::InventorySlot], drops: &[(u16, u32)], pilha: &dy
             }
         }
         while qtd > 0 {
-            let Some(vazio) = sim.iter_mut().find(|s| s.1 == 0) else { return false };
+            let Some(vazio) = sim.iter_mut().find(|s| s.1 == 0) else {
+                return false;
+            };
             let entra = qtd.min(max);
             *vazio = (item, entra, false);
             qtd -= entra;
@@ -85,7 +95,10 @@ mod testes {
         let centro = Vec2::new(10.0, -4.0);
         let p = ponto_de_coleta(centro, 0.6, Vec2::new(0.0, 0.0));
         assert!(ao_alcance(p, centro, 0.6));
-        assert!(p.distance(centro) > 0.6 + shared::ENTITY_RADIUS, "nao fica dentro do no'");
+        assert!(
+            p.distance(centro) > 0.6 + shared::ENTITY_RADIUS,
+            "nao fica dentro do no'"
+        );
         assert!(!ao_alcance(centro + Vec2::new(5.0, 0.0), centro, 0.6));
     }
 
@@ -93,32 +106,56 @@ mod testes {
     fn bolsa_cheia_nao_cabe_e_a_pausa_so_sai_quando_a_bolsa_muda() {
         use shared::InventorySlot;
         let pilha = |id: u16| if id == 7 { 100 } else { 1 };
-        let slot = |id: u16, qty: u32| InventorySlot { item_id: id, qty, instance: None };
+        let slot = |id: u16, qty: u32| InventorySlot {
+            item_id: id,
+            qty,
+            instance: None,
+        };
         // 40 espacos ocupados por itens que nao empilham.
-        let mut cheia: Vec<InventorySlot> = (0..shared::INVENTORY_SLOTS).map(|i| slot(1000 + i as u16, 1)).collect();
-        assert!(!cabe_tudo(&cheia, &[(7, 40)], &pilha), "sem espaco nao cabe");
+        let mut cheia: Vec<InventorySlot> = (0..shared::INVENTORY_SLOTS)
+            .map(|i| slot(1000 + i as u16, 1))
+            .collect();
+        assert!(
+            !cabe_tudo(&cheia, &[(7, 40)], &pilha),
+            "sem espaco nao cabe"
+        );
         // Uma pilha do mesmo material com folga: cabe o que a folga comporta.
         cheia[3] = slot(7, 70);
         assert!(cabe_tudo(&cheia, &[(7, 30)], &pilha));
-        assert!(!cabe_tudo(&cheia, &[(7, 31)], &pilha), "31 nao cabe em 30 de folga");
+        assert!(
+            !cabe_tudo(&cheia, &[(7, 31)], &pilha),
+            "31 nao cabe em 30 de folga"
+        );
         // Dois itens: um cabe, o outro nao -> o ciclo inteiro nao cabe.
-        assert!(!cabe_tudo(&cheia, &[(7, 10), (8, 1)], &pilha), "nao conclui pela metade");
+        assert!(
+            !cabe_tudo(&cheia, &[(7, 10), (8, 1)], &pilha),
+            "nao conclui pela metade"
+        );
         // Pausa: igual continua, mudou sai.
         let antes = impressao_da_bolsa(&cheia);
         assert!(continua_pausada(Some(antes), impressao_da_bolsa(&cheia)));
         cheia[10] = InventorySlot::default();
         let depois = impressao_da_bolsa(&cheia);
         assert_ne!(antes, depois);
-        assert!(!continua_pausada(Some(antes), depois), "abriu espaco: tenta de novo");
+        assert!(
+            !continua_pausada(Some(antes), depois),
+            "abriu espaco: tenta de novo"
+        );
         assert!(!continua_pausada(None, depois));
-        assert!(cabe_tudo(&cheia, &[(8, 1)], &pilha), "com o espaco aberto, cabe");
+        assert!(
+            cabe_tudo(&cheia, &[(8, 1)], &pilha),
+            "com o espaco aberto, cabe"
+        );
     }
 
     #[test]
     fn ciclo_por_tier_e_filtro_de_tipo() {
         assert_eq!(shared::ciclo_de_coleta_s(0), shared::COLETA_CICLO_ARVORE_S);
         for t in 1..=4u8 {
-            assert_eq!(shared::ciclo_de_coleta_s(t), shared::COLETA_CICLO_PEDRA_S[t as usize]);
+            assert_eq!(
+                shared::ciclo_de_coleta_s(t),
+                shared::COLETA_CICLO_PEDRA_S[t as usize]
+            );
         }
         let tipos = [true, false, false, true, false];
         assert!(aceita(&tipos, 0) && aceita(&tipos, 3));
@@ -142,10 +179,18 @@ mod testes {
         assert!(achados.iter().any(|c| c.coluna == e.coluna));
         let tirados = ilha.esconder_coluna(e.coluna);
         assert!(!tirados.is_empty());
-        assert!(ilha.sem_estorvo(e.centro, 0.05) || ilha.estorvo_em(e.centro, 0.05).is_some_and(|o| o.coluna != e.coluna),
-            "esgotado nao barra mais");
+        assert!(
+            ilha.sem_estorvo(e.centro, 0.05)
+                || ilha
+                    .estorvo_em(e.centro, 0.05)
+                    .is_some_and(|o| o.coluna != e.coluna),
+            "esgotado nao barra mais"
+        );
         ilha.coletaveis_em(e.centro, 1.0, &mut achados);
-        assert!(!achados.iter().any(|c| c.coluna == e.coluna), "esgotado nao e' coletavel");
+        assert!(
+            !achados.iter().any(|c| c.coluna == e.coluna),
+            "esgotado nao e' coletavel"
+        );
         ilha.mostrar_estorvos(&tirados);
         assert!(!ilha.sem_estorvo(e.centro, 0.05), "voltou e barra de novo");
         ilha.coletaveis_em(e.centro, 1.0, &mut achados);

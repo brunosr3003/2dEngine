@@ -20,7 +20,10 @@ struct Quem {
 }
 
 fn responde(to: &mpsc::UnboundedSender<ServerMessage>, ok: bool, texto: impl Into<String>) {
-    let _ = to.send(ServerMessage::MercadoResultado { ok, texto: texto.into() });
+    let _ = to.send(ServerMessage::MercadoResultado {
+        ok,
+        texto: texto.into(),
+    });
 }
 
 impl GameWorld {
@@ -38,9 +41,15 @@ impl GameWorld {
 
     /// Todo pedido do painel Mercado passa por aqui.
     pub(super) fn handle_mercado(&mut self, sid: SessionId, msg: ClientMessage) {
-        let Some(quem) = self.mercado_quem(sid) else { return };
+        let Some(quem) = self.mercado_quem(sid) else {
+            return;
+        };
         let Some(central) = mercado::central() else {
-            responde(&quem.to_client, false, "O mercado global está desligado neste servidor.");
+            responde(
+                &quem.to_client,
+                false,
+                "O mercado global está desligado neste servidor.",
+            );
             return;
         };
         let agora = self.sim_time_s;
@@ -51,13 +60,23 @@ impl GameWorld {
             _ => {}
         }
         self.mercado_pedido_em.insert(sid, agora);
-        let Some((realm_pool, tx_mundo)) = self.auth_ctx.as_ref().map(|c| (c.pool.clone(), c.tx.clone())) else { return };
+        let Some((realm_pool, tx_mundo)) = self
+            .auth_ctx
+            .as_ref()
+            .map(|c| (c.pool.clone(), c.tx.clone()))
+        else {
+            return;
+        };
         match msg {
             ClientMessage::MercadoBuscar { filtro } => {
                 tokio::spawn(async move {
                     match mercado::buscar(&central, &filtro, &quem.realm, &quem.nome).await {
                         Ok((anuncios, tem_mais)) => {
-                            let _ = quem.to_client.send(ServerMessage::MercadoLista { anuncios, pagina: filtro.pagina, tem_mais });
+                            let _ = quem.to_client.send(ServerMessage::MercadoLista {
+                                anuncios,
+                                pagina: filtro.pagina,
+                                tem_mais,
+                            });
                         }
                         Err(e) => {
                             tracing::warn!("mercado: busca falhou: {e:#}");
@@ -74,10 +93,18 @@ impl GameWorld {
             }
             ClientMessage::MercadoReceber => {
                 tokio::spawn(async move {
-                    match mercado::cartas_pendentes(&central, &realm_pool, &quem.realm, &quem.nome).await {
-                        Ok(cartas) if cartas.is_empty() => responde(&quem.to_client, true, "Nenhuma entrega esperando."),
+                    match mercado::cartas_pendentes(&central, &realm_pool, &quem.realm, &quem.nome)
+                        .await
+                    {
+                        Ok(cartas) if cartas.is_empty() => {
+                            responde(&quem.to_client, true, "Nenhuma entrega esperando.")
+                        }
                         Ok(cartas) => {
-                            let _ = tx_mundo.send(IncomingMessage::Mercado(Evento::Cartas { sid, personagem: quem.nome.clone(), cartas }));
+                            let _ = tx_mundo.send(IncomingMessage::Mercado(Evento::Cartas {
+                                sid,
+                                personagem: quem.nome.clone(),
+                                cartas,
+                            }));
                         }
                         Err(e) => {
                             tracing::warn!("mercado: entregas falharam: {e:#}");
@@ -107,7 +134,16 @@ impl GameWorld {
                     return;
                 }
                 tokio::spawn(async move {
-                    match mercado::anunciar_tp(&central, &quem.realm, &quem.conta, &quem.nome, qtd, preco_unit).await {
+                    match mercado::anunciar_tp(
+                        &central,
+                        &quem.realm,
+                        &quem.conta,
+                        &quem.nome,
+                        qtd,
+                        preco_unit,
+                    )
+                    .await
+                    {
                         Ok((ok, texto)) => responde(&quem.to_client, ok, texto),
                         Err(e) => {
                             tracing::warn!("mercado: anuncio de TP falhou: {e:#}");
@@ -117,10 +153,18 @@ impl GameWorld {
                     enviar_meus(&central, &quem).await;
                 });
             }
-            ClientMessage::MercadoAnunciar { inv_slot, qtd, preco_unit } => {
+            ClientMessage::MercadoAnunciar {
+                inv_slot,
+                qtd,
+                preco_unit,
+            } => {
                 self.mercado_anunciar(sid, quem, inv_slot as usize, qtd, preco_unit);
             }
-            ClientMessage::MercadoComprar { anuncio, qtd, preco_unit } => {
+            ClientMessage::MercadoComprar {
+                anuncio,
+                qtd,
+                preco_unit,
+            } => {
                 if anuncio.is_empty() || anuncio.len() > ID_MAX {
                     return;
                 }
@@ -132,14 +176,24 @@ impl GameWorld {
 
     /// O item sai da bolsa AGORA e a operacao entra na fila do save. Os dois
     /// vao pro banco na mesma transacao; o relay leva ao central depois.
-    fn mercado_anunciar(&mut self, sid: SessionId, quem: Quem, inv_slot: usize, qtd: u32, preco_unit: u64) {
-        let Some(s) = self.sessions.get_mut(&sid) else { return };
+    fn mercado_anunciar(
+        &mut self,
+        sid: SessionId,
+        quem: Quem,
+        inv_slot: usize,
+        qtd: u32,
+        preco_unit: u64,
+    ) {
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
         let Some(slot) = s.inventory.get(inv_slot).copied().filter(|sl| sl.qty > 0) else {
             responde(&quem.to_client, false, Recusa::Quantidade.texto());
             return;
         };
         // Peca de bau de dungeon vem vinculada na propria instancia.
-        let vinculado = crate::economy::item_vinculado(slot.item_id) || slot.instance.is_some_and(|i| i.vinculado);
+        let vinculado = crate::economy::item_vinculado(slot.item_id)
+            || slot.instance.is_some_and(|i| i.vinculado);
         if let Err(r) = regras::pode_anunciar(quem.nivel, vinculado, slot.qty, qtd, preco_unit) {
             responde(&quem.to_client, false, r.texto());
             return;
@@ -153,27 +207,42 @@ impl GameWorld {
         if nome.is_empty() {
             nome = format!("Item {}", slot.item_id);
         }
-        let categoria = regras::categoria_do_item(slot.item_id, crate::economy::item_equipavel(slot.item_id));
+        let categoria =
+            regras::categoria_do_item(slot.item_id, crate::economy::item_equipavel(slot.item_id));
         crate::telemetria::conta("mercado", "anunciar", 1);
-        responde(&quem.to_client, true, format!("Anúncio enviado: {nome} ×{qtd}. Aparece no mercado em instantes."));
-        self.mercado_registros.push(Registro::Saida(OpCentral::Anunciar {
-            id: mercado::novo_id(),
-            realm: quem.realm,
-            conta: quem.conta,
-            personagem: quem.nome,
-            item_id: slot.item_id,
-            nome,
-            categoria: categoria as u8,
-            instancia: slot.instance,
-            qtd: qtd as u64,
-            preco_unit,
-        }));
+        responde(
+            &quem.to_client,
+            true,
+            format!("Anúncio enviado: {nome} ×{qtd}. Aparece no mercado em instantes."),
+        );
+        self.mercado_registros
+            .push(Registro::Saida(OpCentral::Anunciar {
+                id: mercado::novo_id(),
+                realm: quem.realm,
+                conta: quem.conta,
+                personagem: quem.nome,
+                item_id: slot.item_id,
+                nome,
+                categoria: categoria as u8,
+                instancia: slot.instance,
+                qtd: qtd as u64,
+                preco_unit,
+            }));
         self.save_pending = true;
     }
 
     /// O gold sai AGORA; o central fecha a compra ou devolve por carta.
-    fn mercado_comprar(&mut self, sid: SessionId, quem: Quem, anuncio: String, qtd: u64, preco_unit: u64) {
-        let Some(s) = self.sessions.get_mut(&sid) else { return };
+    fn mercado_comprar(
+        &mut self,
+        sid: SessionId,
+        quem: Quem,
+        anuncio: String,
+        qtd: u64,
+        preco_unit: u64,
+    ) {
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
         let total = match regras::pode_comprar(s.gold, qtd, preco_unit) {
             Ok(t) => t,
             Err(r) => {
@@ -184,49 +253,80 @@ impl GameWorld {
         s.gold -= total;
         crate::telemetria::conta("mercado", "comprar", 1);
         crate::telemetria::conta("ouro_ralo", "mercado_compra", total as i64);
-        responde(&quem.to_client, true, format!("Compra enviada: {total} gold reservados. Chega em Entregas."));
-        self.mercado_registros.push(Registro::Saida(OpCentral::Comprar {
-            id: mercado::novo_id(),
-            realm: quem.realm,
-            conta: quem.conta,
-            personagem: quem.nome,
-            anuncio,
-            qtd,
-            preco_unit,
-            pago: total,
-        }));
+        responde(
+            &quem.to_client,
+            true,
+            format!("Compra enviada: {total} gold reservados. Chega em Entregas."),
+        );
+        self.mercado_registros
+            .push(Registro::Saida(OpCentral::Comprar {
+                id: mercado::novo_id(),
+                realm: quem.realm,
+                conta: quem.conta,
+                personagem: quem.nome,
+                anuncio,
+                qtd,
+                preco_unit,
+                pago: total,
+            }));
         self.save_pending = true;
     }
 
     /// Registros que vao no save destes personagens. O resto espera o save
     /// do dono: operacao gravada sem a bolsa que ela mudou duplicaria item.
-    pub fn tomar_registros_mercado(&mut self, rows: &[crate::persistence::CharacterRow]) -> Vec<Registro> {
+    pub fn tomar_registros_mercado(
+        &mut self,
+        rows: &[crate::persistence::CharacterRow],
+    ) -> Vec<Registro> {
         if self.mercado_registros.is_empty() {
             return Vec::new();
         }
-        let (vao, ficam): (Vec<Registro>, Vec<Registro>) = std::mem::take(&mut self.mercado_registros)
-            .into_iter()
-            .partition(|r| rows.iter().any(|row| row.name == r.personagem()));
+        let (vao, ficam): (Vec<Registro>, Vec<Registro>) =
+            std::mem::take(&mut self.mercado_registros)
+                .into_iter()
+                .partition(|r| rows.iter().any(|row| row.name == r.personagem()));
         self.mercado_registros = ficam;
         vao
     }
 
     pub fn on_mercado(&mut self, ev: Evento) {
         match ev {
-            Evento::Aviso { personagem, ok, texto } => {
-                if let Some(s) = self.sessions.values().find(|s| s.logged_in && s.name == personagem) {
+            Evento::Aviso {
+                personagem,
+                ok,
+                texto,
+            } => {
+                if let Some(s) = self
+                    .sessions
+                    .values()
+                    .find(|s| s.logged_in && s.name == personagem)
+                {
                     responde(&s.handle.to_client, ok, texto);
                 }
             }
-            Evento::Cartas { sid, personagem, cartas } => self.mercado_aplicar_cartas(sid, &personagem, cartas),
+            Evento::Cartas {
+                sid,
+                personagem,
+                cartas,
+            } => self.mercado_aplicar_cartas(sid, &personagem, cartas),
         }
     }
 
     /// Aplica o que couber na bolsa. Cada carta aplicada vira registro do
     /// save; a que ja' foi aplicada neste processo e' pulada.
     fn mercado_aplicar_cartas(&mut self, sid: SessionId, personagem: &str, cartas: Vec<CartaNet>) {
-        let a_aplicar: Vec<CartaNet> = regras::cartas_a_aplicar(&cartas, &self.mercado_cartas_vistas).into_iter().cloned().collect();
-        let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.logged_in && s.name == personagem) else { return };
+        let a_aplicar: Vec<CartaNet> =
+            regras::cartas_a_aplicar(&cartas, &self.mercado_cartas_vistas)
+                .into_iter()
+                .cloned()
+                .collect();
+        let Some(s) = self
+            .sessions
+            .get_mut(&sid)
+            .filter(|s| s.logged_in && s.name == personagem)
+        else {
+            return;
+        };
         let (mut recebidas, mut gold, mut cheia) = (0usize, 0u64, false);
         let mut aplicadas = Vec::new();
         for c in a_aplicar {
@@ -250,7 +350,10 @@ impl GameWorld {
         let to_client = s.handle.to_client.clone();
         for id in aplicadas {
             self.mercado_cartas_vistas.insert(id.clone());
-            self.mercado_registros.push(Registro::CartaAplicada { id, personagem: personagem.to_string() });
+            self.mercado_registros.push(Registro::CartaAplicada {
+                id,
+                personagem: personagem.to_string(),
+            });
         }
         if recebidas > 0 {
             self.save_pending = true;
@@ -269,7 +372,15 @@ impl GameWorld {
             }
             texto.push_str("Bolsa cheia: libere espaço para receber o resto.");
         }
-        responde(&to_client, recebidas > 0, if texto.is_empty() { "Nada para receber.".to_string() } else { texto });
+        responde(
+            &to_client,
+            recebidas > 0,
+            if texto.is_empty() {
+                "Nada para receber.".to_string()
+            } else {
+                texto
+            },
+        );
         self.handle_mercado(sid, ClientMessage::MercadoEntregas);
     }
 }
@@ -277,7 +388,11 @@ impl GameWorld {
 async fn enviar_meus(central: &sqlx::PgPool, quem: &Quem) {
     match mercado::meus(central, &quem.realm, &quem.nome, &quem.conta).await {
         Ok((anuncios, historico, tp)) => {
-            let _ = quem.to_client.send(ServerMessage::MercadoMeus { anuncios, historico, tp });
+            let _ = quem.to_client.send(ServerMessage::MercadoMeus {
+                anuncios,
+                historico,
+                tp,
+            });
         }
         Err(e) => {
             tracing::warn!("mercado: meus anuncios falhou: {e:#}");
@@ -291,7 +406,9 @@ async fn enviar_entregas(central: &sqlx::PgPool, realm_pool: &sqlx::PgPool, quem
     let tp = mercado::saldo_tp(central, &quem.conta).await;
     match (cartas, tp) {
         (Ok(cartas), Ok(tp)) => {
-            let _ = quem.to_client.send(ServerMessage::MercadoEntregas { cartas, tp });
+            let _ = quem
+                .to_client
+                .send(ServerMessage::MercadoEntregas { cartas, tp });
         }
         (Err(e), _) | (_, Err(e)) => {
             tracing::warn!("mercado: entregas falharam: {e:#}");

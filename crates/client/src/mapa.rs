@@ -37,12 +37,19 @@ const CHANCE_MINIMA_PCT: u8 = 15;
 
 impl InfoDaIlha {
     pub fn nome(&self, kind: u16) -> String {
-        self.nomes.get(&kind).cloned().unwrap_or_else(|| format!("Bicho {kind}"))
+        self.nomes
+            .get(&kind)
+            .cloned()
+            .unwrap_or_else(|| format!("Bicho {kind}"))
     }
 
     /// Todo bicho que nasce em alguma zona da ilha, do mais baixo pro mais alto.
     pub fn bichos(&self) -> Vec<u16> {
-        let mut v: Vec<u16> = self.zonas.iter().flat_map(|z| z.bichos.iter().map(|b| b.0)).collect();
+        let mut v: Vec<u16> = self
+            .zonas
+            .iter()
+            .flat_map(|z| z.bichos.iter().map(|b| b.0))
+            .collect();
         v.sort_unstable();
         v.dedup();
         v.sort_by_key(|k| self.faixa(*k).map_or(u16::MAX, |f| f.0));
@@ -52,14 +59,26 @@ impl InfoDaIlha {
     /// Faixa de nivel das zonas onde o bicho e' o dominante ou sai com chance
     /// razoavel; sem nenhuma assim, a da zona onde ele mais sai.
     pub fn faixa(&self, kind: u16) -> Option<(u16, u16)> {
-        let boas: Vec<&ZonaNoMapa> = self.zonas.iter()
-            .filter(|z| chance_na_zona(z, kind) >= CHANCE_MINIMA_PCT || z.bichos.first().is_some_and(|b| b.0 == kind))
+        let boas: Vec<&ZonaNoMapa> = self
+            .zonas
+            .iter()
+            .filter(|z| {
+                chance_na_zona(z, kind) >= CHANCE_MINIMA_PCT
+                    || z.bichos.first().is_some_and(|b| b.0 == kind)
+            })
             .collect();
         if boas.is_empty() {
-            let z = self.zonas.iter().filter(|z| chance_na_zona(z, kind) > 0).max_by_key(|z| chance_na_zona(z, kind))?;
+            let z = self
+                .zonas
+                .iter()
+                .filter(|z| chance_na_zona(z, kind) > 0)
+                .max_by_key(|z| chance_na_zona(z, kind))?;
             return Some((z.lv_min, z.lv_max));
         }
-        Some((boas.iter().map(|z| z.lv_min).min()?, boas.iter().map(|z| z.lv_max).max()?))
+        Some((
+            boas.iter().map(|z| z.lv_min).min()?,
+            boas.iter().map(|z| z.lv_max).max()?,
+        ))
     }
 
     /// Tipos de recurso que a ilha tem.
@@ -82,31 +101,51 @@ fn centro_da_zona(z: &ZonaNoMapa) -> Vec2 {
 /// A zona pra ir caçar `kind` — a mesma escolha de `quests::zona_do_bicho` do
 /// servidor: a mais perto em que ele sai com chance razoavel e cujo nivel o
 /// jogador aguenta; senao a mais perto com chance; senao a de maior chance.
-pub fn zona_mais_perto(zonas: &[ZonaNoMapa], kind: u16, eu: Vec2, nivel: u32) -> Option<&ZonaNoMapa> {
+pub fn zona_mais_perto(
+    zonas: &[ZonaNoMapa],
+    kind: u16,
+    eu: Vec2,
+    nivel: u32,
+) -> Option<&ZonaNoMapa> {
     fn perto<'a>(v: Vec<&'a ZonaNoMapa>, eu: Vec2) -> Option<&'a ZonaNoMapa> {
-        v.into_iter().min_by(|a, b| centro_da_zona(a).distance_squared(eu).total_cmp(&centro_da_zona(b).distance_squared(eu)))
+        v.into_iter().min_by(|a, b| {
+            centro_da_zona(a)
+                .distance_squared(eu)
+                .total_cmp(&centro_da_zona(b).distance_squared(eu))
+        })
     }
-    let boas: Vec<&ZonaNoMapa> = zonas.iter()
+    let boas: Vec<&ZonaNoMapa> = zonas
+        .iter()
         .filter(|z| chance_na_zona(z, kind) >= CHANCE_MINIMA_PCT && z.lv_min as u32 <= nivel + 3)
         .collect();
     if let Some(z) = perto(boas, eu) {
         return Some(z);
     }
-    let com: Vec<&ZonaNoMapa> = zonas.iter().filter(|z| chance_na_zona(z, kind) >= CHANCE_MINIMA_PCT).collect();
+    let com: Vec<&ZonaNoMapa> = zonas
+        .iter()
+        .filter(|z| chance_na_zona(z, kind) >= CHANCE_MINIMA_PCT)
+        .collect();
     if let Some(z) = perto(com, eu) {
         return Some(z);
     }
-    zonas.iter().filter(|z| chance_na_zona(z, kind) > 0).max_by(|a, b| {
-        chance_na_zona(a, kind)
-            .cmp(&chance_na_zona(b, kind))
-            .then(centro_da_zona(b).distance_squared(eu).total_cmp(&centro_da_zona(a).distance_squared(eu)))
-    })
+    zonas
+        .iter()
+        .filter(|z| chance_na_zona(z, kind) > 0)
+        .max_by(|a, b| {
+            chance_na_zona(a, kind).cmp(&chance_na_zona(b, kind)).then(
+                centro_da_zona(b)
+                    .distance_squared(eu)
+                    .total_cmp(&centro_da_zona(a).distance_squared(eu)),
+            )
+        })
 }
 
 /// A regiao do tipo mais perto do jogador.
 pub fn regiao_mais_perto(recursos: &[RegiaoNoMapa], tipo: u8, eu: Vec2) -> Option<&RegiaoNoMapa> {
     recursos.iter().filter(|r| r.tipo == tipo).min_by(|a, b| {
-        vec2(a.centro[0], a.centro[1]).distance_squared(eu).total_cmp(&vec2(b.centro[0], b.centro[1]).distance_squared(eu))
+        vec2(a.centro[0], a.centro[1])
+            .distance_squared(eu)
+            .total_cmp(&vec2(b.centro[0], b.centro[1]).distance_squared(eu))
     })
 }
 
@@ -168,13 +207,23 @@ pub struct Filtros {
 
 impl Default for Filtros {
     fn default() -> Self {
-        Self { mobs: false, bichos_ocultos: HashSet::new(), recursos: [false; 5], vila: false }
+        Self {
+            mobs: false,
+            bichos_ocultos: HashSet::new(),
+            recursos: [false; 5],
+            vila: false,
+        }
     }
 }
 
 impl From<&shared::protocol::FiltrosDoMapa> for Filtros {
     fn from(f: &shared::protocol::FiltrosDoMapa) -> Self {
-        Self { mobs: f.mobs, bichos_ocultos: f.bichos_ocultos.iter().copied().collect(), recursos: f.recursos, vila: f.vila }
+        Self {
+            mobs: f.mobs,
+            bichos_ocultos: f.bichos_ocultos.iter().copied().collect(),
+            recursos: f.recursos,
+            vila: f.vila,
+        }
     }
 }
 
@@ -184,13 +233,21 @@ impl Filtros {
     pub fn para_rede(&self) -> shared::protocol::FiltrosDoMapa {
         let mut bichos: Vec<u16> = self.bichos_ocultos.iter().copied().collect();
         bichos.sort_unstable();
-        shared::protocol::FiltrosDoMapa { mobs: self.mobs, bichos_ocultos: bichos, recursos: self.recursos, vila: self.vila }
+        shared::protocol::FiltrosDoMapa {
+            mobs: self.mobs,
+            bichos_ocultos: bichos,
+            recursos: self.recursos,
+            vila: self.vila,
+        }
     }
 
     /// Zona aparece se mobs estao ligados e o bicho DOMINANTE dela nao foi
     /// escondido: esconder "Lobo" tira as zonas de lobo.
     pub fn zona_visivel(&self, z: &ZonaNoMapa) -> bool {
-        self.mobs && z.bichos.first().is_some_and(|b| !self.bichos_ocultos.contains(&b.0))
+        self.mobs
+            && z.bichos
+                .first()
+                .is_some_and(|b| !self.bichos_ocultos.contains(&b.0))
     }
 
     pub fn regiao_visivel(&self, r: &RegiaoNoMapa) -> bool {
@@ -229,7 +286,14 @@ const LADO: usize = 384;
 
 /// Linha tracejada 2D pelos pontos (ja' em tela). Com `recorte`, so' os
 /// tracos com as duas pontas dentro dele.
-fn tracejado(pontos: &[Vec2], traco: f32, vao: f32, espessura: f32, cor: Color, recorte: Option<Rect>) {
+fn tracejado(
+    pontos: &[Vec2],
+    traco: f32,
+    vao: f32,
+    espessura: f32,
+    cor: Color,
+    recorte: Option<Rect>,
+) {
     let periodo = traco + vao;
     let mut fase = 0.0f32;
     for par in pontos.windows(2) {
@@ -242,7 +306,11 @@ fn tracejado(pontos: &[Vec2], traco: f32, vao: f32, espessura: f32, cor: Color, 
         let mut s = 0.0;
         while s < comp {
             let pos = fase % periodo;
-            let resto = if pos < traco { traco - pos } else { periodo - pos };
+            let resto = if pos < traco {
+                traco - pos
+            } else {
+                periodo - pos
+            };
             let passo = resto.min(comp - s);
             if pos < traco {
                 let (p0, p1) = (a + dir * s, a + dir * (s + passo));
@@ -320,7 +388,9 @@ impl Viagem {
 
     /// O que fazer neste quadro. `terra` responde se um ponto e' chao firme.
     pub fn passo(&mut self, eu: Vec2, agora: f64, terra: impl Fn(Vec2) -> bool) -> Passo {
-        let Some(destino) = self.destino else { return Passo::Nada };
+        let Some(destino) = self.destino else {
+            return Passo::Nada;
+        };
         if eu.distance(destino) <= CHEGOU {
             self.cancelar();
             return Passo::Chegou;
@@ -331,7 +401,9 @@ impl Viagem {
         }
         // A ultima etapa E' o destino: chegar perto dela nao pede outra, quem
         // encerra e' o `CHEGOU` acima.
-        let chegou_na_etapa = self.etapa.is_some_and(|e| e != destino && eu.distance(e) <= CHEGOU_ETAPA);
+        let chegou_na_etapa = self
+            .etapa
+            .is_some_and(|e| e != destino && eu.distance(e) <= CHEGOU_ETAPA);
         let parado = self.etapa.is_some() && agora - self.parado_desde >= PARADO_S;
         if !(self.etapa.is_none() || chegou_na_etapa || parado) {
             return Passo::Nada;
@@ -387,7 +459,11 @@ fn proxima_etapa(eu: Vec2, destino: Vec2, terra: &impl Fn(Vec2) -> bool) -> Vec2
 
 fn misturar(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
     let t = t.clamp(0.0, 1.0);
-    [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+    [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+    ]
 }
 
 fn cor_da_agua(h: f32) -> [f32; 3] {
@@ -465,7 +541,12 @@ fn gerar_dados(def: &'static DefIlha) -> Dados {
         .iter()
         .find(|n| matches!(n.papel, shared::construcao::Papel::Missoes))
         .map(|n| vec2(n.pos.x, n.pos.y));
-    Dados { rgba, pegadas, porto, mestre }
+    Dados {
+        rgba,
+        pegadas,
+        porto,
+        mestre,
+    }
 }
 
 /// RGBA da ilha inteira. Roda FORA do quadro.
@@ -511,12 +592,18 @@ fn gerar_imagem(def: &'static DefIlha) -> Vec<u8> {
 
 /// Ponto do mundo -> pixel do retangulo que mostra a ilha inteira.
 fn para_tela(p: Vec2, r: Rect, raio: f32) -> Vec2 {
-    vec2(r.x + (p.x + raio) / (2.0 * raio) * r.w, r.y + (p.y + raio) / (2.0 * raio) * r.h)
+    vec2(
+        r.x + (p.x + raio) / (2.0 * raio) * r.w,
+        r.y + (p.y + raio) / (2.0 * raio) * r.h,
+    )
 }
 
 /// Pixel do retangulo da ilha inteira -> ponto do mundo.
 fn de_tela(t: Vec2, r: Rect, raio: f32) -> Vec2 {
-    vec2((t.x - r.x) / r.w * 2.0 * raio - raio, (t.y - r.y) / r.h * 2.0 * raio - raio)
+    vec2(
+        (t.x - r.x) / r.w * 2.0 * raio - raio,
+        (t.y - r.y) / r.h * 2.0 * raio - raio,
+    )
 }
 
 // ─────────────────────────────── mapa ────────────────────────────────
@@ -620,7 +707,9 @@ impl Mapa {
     /// Os vendedores desta ilha (NPC com loja), da vila gerada da semente:
     /// (nome, posicao). E' o painel "Lojas da ilha" do Menu.
     pub fn lojas(&self) -> Vec<(String, Vec2)> {
-        let Some(g) = &self.ger else { return Vec::new() };
+        let Some(g) = &self.ger else {
+            return Vec::new();
+        };
         g.vila()
             .npcs
             .iter()
@@ -632,11 +721,16 @@ impl Mapa {
     /// Os vendedores com o id da loja: (loja, nome, posicao). E' como o "Onde
     /// obter" acha o NPC de um `FonteDeItem::Vendedor`.
     pub fn lojas_com_id(&self) -> Vec<(u32, String, Vec2)> {
-        let Some(g) = &self.ger else { return Vec::new() };
+        let Some(g) = &self.ger else {
+            return Vec::new();
+        };
         g.vila()
             .npcs
             .iter()
-            .filter_map(|n| n.loja.map(|l| (l, n.nome.to_string(), vec2(n.pos.x, n.pos.y))))
+            .filter_map(|n| {
+                n.loja
+                    .map(|l| (l, n.nome.to_string(), vec2(n.pos.x, n.pos.y)))
+            })
             .collect()
     }
 
@@ -676,17 +770,33 @@ impl Mapa {
         let info = self.info.as_ref()?;
         let raio = self.raio();
         let escala = r.w / (2.0 * raio);
-        let regiao = info.recursos.iter().enumerate()
+        let regiao = info
+            .recursos
+            .iter()
+            .enumerate()
             .filter(|(_, g)| self.filtros.regiao_visivel(g))
-            .map(|(i, g)| (i, para_tela(vec2(g.centro[0], g.centro[1]), r, raio).distance(m)))
+            .map(|(i, g)| {
+                (
+                    i,
+                    para_tela(vec2(g.centro[0], g.centro[1]), r, raio).distance(m),
+                )
+            })
             .filter(|(_, d)| *d <= 7.0)
             .min_by(|a, b| a.1.total_cmp(&b.1));
         if let Some((i, _)) = regiao {
             return Some(Marcador::Regiao(i));
         }
-        info.zonas.iter().enumerate()
+        info.zonas
+            .iter()
+            .enumerate()
             .filter(|(_, z)| self.filtros.zona_visivel(z))
-            .map(|(i, z)| (i, para_tela(centro_da_zona(z), r, raio).distance(m), (z.raio * escala).max(7.0)))
+            .map(|(i, z)| {
+                (
+                    i,
+                    para_tela(centro_da_zona(z), r, raio).distance(m),
+                    (z.raio * escala).max(7.0),
+                )
+            })
             .filter(|(_, d, rp)| d <= rp)
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(i, _, _)| Marcador::Zona(i))
@@ -698,7 +808,12 @@ impl Mapa {
             Marcador::Zona(i) => {
                 let z = info.zonas.get(i)?;
                 let dominante = z.bichos.first().map_or(0, |b| b.0);
-                Alvo { objetivo: Objetivo::Combate, pos: centro_da_zona(z), raio: z.raio, rotulo: info.nome(dominante) }
+                Alvo {
+                    objetivo: Objetivo::Combate,
+                    pos: centro_da_zona(z),
+                    raio: z.raio,
+                    rotulo: info.nome(dominante),
+                }
             }
             Marcador::Regiao(i) => {
                 let g = info.recursos.get(i)?;
@@ -714,20 +829,30 @@ impl Mapa {
 
     /// Tooltip do marcador sob o mouse.
     fn dica(&self, mk: Marcador, m: Vec2) {
-        let Some(info) = self.info.as_ref() else { return };
+        let Some(info) = self.info.as_ref() else {
+            return;
+        };
         let mut linhas: Vec<(String, Color)> = Vec::new();
         match mk {
             Marcador::Zona(i) => {
                 let Some(z) = info.zonas.get(i) else { return };
-                linhas.push((format!("Zona de caça · Nv {}–{}", z.lv_min, z.lv_max), estilo::OURO));
+                linhas.push((
+                    format!("Zona de caça · Nv {}–{}", z.lv_min, z.lv_max),
+                    estilo::OURO,
+                ));
                 for (k, c) in &z.bichos {
                     linhas.push((format!("{}  {c}%", info.nome(*k)), cor_do_bicho(*k)));
                 }
                 linhas.push(("clique: ir caçar (auto combate)".into(), estilo::AUTO));
             }
             Marcador::Regiao(i) => {
-                let Some(g) = info.recursos.get(i) else { return };
-                linhas.push((format!("{} · {} corpos", nome_do_tipo(g.tipo), g.contagem), cor_do_tipo(g.tipo)));
+                let Some(g) = info.recursos.get(i) else {
+                    return;
+                };
+                linhas.push((
+                    format!("{} · {} corpos", nome_do_tipo(g.tipo), g.contagem),
+                    cor_do_tipo(g.tipo),
+                ));
                 if let Some(rende) = info.rendimentos.get(&g.tipo) {
                     for parte in rende.split(", ").filter(|s| !s.is_empty()) {
                         linhas.push((parte.to_string(), estilo::TEXTO));
@@ -736,7 +861,11 @@ impl Mapa {
                 linhas.push(("clique: ir coletar (auto coleta)".into(), estilo::AUTO));
             }
         }
-        let w = linhas.iter().map(|(s, _)| estilo::medir(s, 13)).fold(120.0f32, f32::max) + 24.0;
+        let w = linhas
+            .iter()
+            .map(|(s, _)| estilo::medir(s, 13))
+            .fold(120.0f32, f32::max)
+            + 24.0;
         let h = 14.0 + linhas.len() as f32 * 19.0;
         let x = (m.x + 16.0).min(screen_width() - w - 8.0);
         let y = (m.y + 12.0).min(screen_height() - h - 8.0);
@@ -755,7 +884,13 @@ impl Mapa {
         let lat = Self::lateral_rect(r);
         estilo::painel(lat);
         let Some(info) = self.info.as_ref() else {
-            estilo::texto(lat.x + 14.0, lat.y + 28.0, "carregando zonas…", 14, estilo::SUAVE);
+            estilo::texto(
+                lat.x + 14.0,
+                lat.y + 28.0,
+                "carregando zonas…",
+                14,
+                estilo::SUAVE,
+            );
             return None;
         };
         let mouse = Vec2::from(mouse_position());
@@ -766,12 +901,23 @@ impl Mapa {
         // ── filtros ──
         estilo::texto_forte(lat.x + 14.0, lat.y + 26.0, "Filtros", 16, estilo::OURO);
         let (mut x, mut y) = (lat.x + 12.0, lat.y + 38.0);
-        let mut chips: Vec<(String, bool, Color, Chip)> = vec![("Mobs".into(), self.filtros.mobs, COR_MOB, Chip::Mobs)];
+        let mut chips: Vec<(String, bool, Color, Chip)> =
+            vec![("Mobs".into(), self.filtros.mobs, COR_MOB, Chip::Mobs)];
         for k in info.bichos() {
-            chips.push((info.nome(k), !self.filtros.bichos_ocultos.contains(&k), cor_do_bicho(k), Chip::Bicho(k)));
+            chips.push((
+                info.nome(k),
+                !self.filtros.bichos_ocultos.contains(&k),
+                cor_do_bicho(k),
+                Chip::Bicho(k),
+            ));
         }
         for t in 0..5u8 {
-            chips.push((nome_do_tipo(t).into(), self.filtros.recursos[t as usize], cor_do_tipo(t), Chip::Recurso(t)));
+            chips.push((
+                nome_do_tipo(t).into(),
+                self.filtros.recursos[t as usize],
+                cor_do_tipo(t),
+                Chip::Recurso(t),
+            ));
         }
         chips.push(("Vila".into(), self.filtros.vila, estilo::OURO, Chip::Vila));
         for (rotulo, ligado, cor, id) in &chips {
@@ -783,9 +929,33 @@ impl Mapa {
             let c = Rect::new(x, y, w, 22.0);
             let alfa = if *ligado { 0.26 } else { 0.0 };
             estilo::ret_arredondado(c, c.h * 0.5, Color::new(cor.r, cor.g, cor.b, alfa));
-            estilo::borda_arredondada(c, c.h * 0.5, 1.0, Color::new(cor.r, cor.g, cor.b, if *ligado { 0.85 } else { 0.30 }));
-            draw_circle(c.x + 9.0, c.y + 11.0, 3.5, if *ligado { *cor } else { Color::new(cor.r, cor.g, cor.b, 0.3) });
-            estilo::texto(c.x + 16.0, c.y + 16.0, rotulo, 13, if *ligado { estilo::TEXTO } else { estilo::SUAVE });
+            estilo::borda_arredondada(
+                c,
+                c.h * 0.5,
+                1.0,
+                Color::new(cor.r, cor.g, cor.b, if *ligado { 0.85 } else { 0.30 }),
+            );
+            draw_circle(
+                c.x + 9.0,
+                c.y + 11.0,
+                3.5,
+                if *ligado {
+                    *cor
+                } else {
+                    Color::new(cor.r, cor.g, cor.b, 0.3)
+                },
+            );
+            estilo::texto(
+                c.x + 16.0,
+                c.y + 16.0,
+                rotulo,
+                13,
+                if *ligado {
+                    estilo::TEXTO
+                } else {
+                    estilo::SUAVE
+                },
+            );
             if clique && c.contains(mouse) {
                 toggle = Some(*id);
             }
@@ -795,7 +965,12 @@ impl Mapa {
         // ── ir para ──
         y += 44.0;
         estilo::texto(lat.x + 14.0, y, "Ir para", 16, estilo::OURO);
-        let area = Rect::new(lat.x + 6.0, y + 8.0, lat.w - 12.0, lat.y + lat.h - (y + 16.0));
+        let area = Rect::new(
+            lat.x + 6.0,
+            y + 8.0,
+            lat.w - 12.0,
+            lat.y + lat.h - (y + 16.0),
+        );
         let eu = eu.unwrap_or(Vec2::ZERO);
         let bichos = info.bichos();
         let tipos = info.tipos();
@@ -807,13 +982,32 @@ impl Mapa {
         }
         let mut ly = area.y - rolagem;
         let visivel = |yy: f32| yy >= area.y - 1.0 && yy + LINHA_IR <= area.y + area.h + 1.0;
-        let mut linha = |rotulo: &str, detalhe: String, cor: Color, alvo: Option<Alvo>, ly: f32, saida: &mut Option<Entrada>| {
+        let mut linha = |rotulo: &str,
+                         detalhe: String,
+                         cor: Color,
+                         alvo: Option<Alvo>,
+                         ly: f32,
+                         saida: &mut Option<Entrada>| {
             if !visivel(ly) {
                 return;
             }
             draw_circle(area.x + 10.0, ly + 13.0, 4.0, cor);
-            estilo::texto_ajustado(rotulo, area.x + 20.0, ly + 12.0, area.w - 80.0, 13, estilo::TEXTO);
-            estilo::texto_ajustado(&detalhe, area.x + 20.0, ly + 24.0, area.w - 80.0, 11, estilo::SUAVE);
+            estilo::texto_ajustado(
+                rotulo,
+                area.x + 20.0,
+                ly + 12.0,
+                area.w - 80.0,
+                13,
+                estilo::TEXTO,
+            );
+            estilo::texto_ajustado(
+                &detalhe,
+                area.x + 20.0,
+                ly + 24.0,
+                area.w - 80.0,
+                11,
+                estilo::SUAVE,
+            );
             let b = Rect::new(area.x + area.w - 52.0, ly + 2.0, 46.0, 22.0);
             if let Some(a) = alvo {
                 if crate::ui::botao(b, "Ir", true) {
@@ -828,9 +1022,18 @@ impl Mapa {
         for k in &bichos {
             let nome = info.nome(*k);
             let z = zona_mais_perto(&info.zonas, *k, eu, nivel);
-            let faixa = info.faixa(*k).map_or(String::new(), |(a, b)| format!("Nv {a}–{b} · "));
-            let detalhe = z.map_or("sem zona".to_string(), |z| format!("{faixa}{:.0} m", centro_da_zona(z).distance(eu)));
-            let alvo = z.map(|z| Alvo { objetivo: Objetivo::Combate, pos: centro_da_zona(z), raio: z.raio, rotulo: nome.clone() });
+            let faixa = info
+                .faixa(*k)
+                .map_or(String::new(), |(a, b)| format!("Nv {a}–{b} · "));
+            let detalhe = z.map_or("sem zona".to_string(), |z| {
+                format!("{faixa}{:.0} m", centro_da_zona(z).distance(eu))
+            });
+            let alvo = z.map(|z| Alvo {
+                objetivo: Objetivo::Combate,
+                pos: centro_da_zona(z),
+                raio: z.raio,
+                rotulo: nome.clone(),
+            });
             linha(&nome, detalhe, cor_do_bicho(*k), alvo, ly, &mut saida);
             ly += LINHA_IR;
         }
@@ -842,7 +1045,10 @@ impl Mapa {
             let g = regiao_mais_perto(&info.recursos, *t, eu);
             let n = info.recursos.iter().filter(|r| r.tipo == *t).count();
             let detalhe = g.map_or("—".to_string(), |g| {
-                format!("{n} regiões · {:.0} m", vec2(g.centro[0], g.centro[1]).distance(eu))
+                format!(
+                    "{n} regiões · {:.0} m",
+                    vec2(g.centro[0], g.centro[1]).distance(eu)
+                )
             });
             let alvo = g.map(|g| Alvo {
                 objetivo: Objetivo::Coleta(*t),
@@ -850,7 +1056,14 @@ impl Mapa {
                 raio: g.raio,
                 rotulo: nome_do_tipo(*t).to_string(),
             });
-            linha(nome_do_tipo(*t), detalhe, cor_do_tipo(*t), alvo, ly, &mut saida);
+            linha(
+                nome_do_tipo(*t),
+                detalhe,
+                cor_do_tipo(*t),
+                alvo,
+                ly,
+                &mut saida,
+            );
             ly += LINHA_IR;
         }
         self.rolagem_lateral = rolagem;
@@ -861,7 +1074,9 @@ impl Mapa {
                     self.filtros.bichos_ocultos.insert(k);
                 }
             }
-            Some(Chip::Recurso(t)) => self.filtros.recursos[t as usize] = !self.filtros.recursos[t as usize],
+            Some(Chip::Recurso(t)) => {
+                self.filtros.recursos[t as usize] = !self.filtros.recursos[t as usize]
+            }
             Some(Chip::Vila) => self.filtros.vila = !self.filtros.vila,
             None => {}
         }
@@ -899,9 +1114,16 @@ impl Mapa {
 
     /// O mapa quadrado, com o painel lateral de filtros e "Ir para" a' direita.
     fn grande_rect() -> Rect {
-        let lado = (screen_width() - LARGURA_LATERAL - 60.0).min(screen_height() - 90.0).max(200.0);
+        let lado = (screen_width() - LARGURA_LATERAL - 60.0)
+            .min(screen_height() - 90.0)
+            .max(200.0);
         let total = lado + 14.0 + LARGURA_LATERAL;
-        Rect::new(((screen_width() - total) * 0.5).max(8.0), (screen_height() - lado) * 0.5 + 12.0, lado, lado)
+        Rect::new(
+            ((screen_width() - total) * 0.5).max(8.0),
+            (screen_height() - lado) * 0.5 + 12.0,
+            lado,
+            lado,
+        )
     }
 
     /// O botao de TAMANHO do minimapa, ao lado do ⤢ e dentro da moldura. Mora
@@ -916,8 +1138,16 @@ impl Mapa {
     fn canto_do_minimapa(direita: bool, baixo: bool) -> Rect {
         let (r, ic) = (Self::mini_rect(), crate::hud_layout::atual().mapa_icone);
         let recuo = ic.y - r.y;
-        let x = if direita { r.x + r.w - ic.w - recuo } else { r.x + recuo };
-        let y = if baixo { r.y + r.h - ic.h - recuo } else { ic.y };
+        let x = if direita {
+            r.x + r.w - ic.w - recuo
+        } else {
+            r.x + recuo
+        };
+        let y = if baixo {
+            r.y + r.h - ic.h - recuo
+        } else {
+            ic.y
+        };
         Rect::new(x, y, ic.w, ic.h)
     }
 
@@ -951,7 +1181,11 @@ impl Mapa {
     /// O clique e a roda sao do mapa (e nao do mundo nem da camera)?
     pub fn pega_mouse(&self) -> bool {
         let m = Vec2::from(mouse_position());
-        let mini = if crate::hud_layout::minimapa_oculto() { Self::reabrir_rect() } else { Self::mini_rect() };
+        let mini = if crate::hud_layout::minimapa_oculto() {
+            Self::reabrir_rect()
+        } else {
+            Self::mini_rect()
+        };
         self.tem_ilha() && (self.aberto || mini.contains(m))
     }
 
@@ -974,7 +1208,10 @@ impl Mapa {
                     self.aberto = false;
                     return None;
                 }
-                if let Some(a) = self.marcador_sob(m, r).and_then(|mk| self.alvo_do_marcador(mk)) {
+                if let Some(a) = self
+                    .marcador_sob(m, r)
+                    .and_then(|mk| self.alvo_do_marcador(mk))
+                {
                     return Some(Entrada::Ir(a));
                 }
                 return Some(Entrada::Viajar(de_tela(m, r, self.raio())));
@@ -1001,7 +1238,9 @@ impl Mapa {
                 return None;
             }
             if Self::expandir_rect().contains(p) {
-                crate::hud_layout::define_minimapa_expandido(!crate::hud_layout::minimapa_expandido());
+                crate::hud_layout::define_minimapa_expandido(
+                    !crate::hud_layout::minimapa_expandido(),
+                );
                 return None;
             }
             if Self::ocultar_rect().contains(p) {
@@ -1046,7 +1285,13 @@ impl Mapa {
             let sobre = b.contains(Vec2::from(mouse_position()));
             let (c, raio) = (b.center(), b.w * 0.5);
             draw_circle(c.x, c.y, raio, estilo::FUNDO_ALTO);
-            draw_circle_lines(c.x, c.y, raio, 2.0, estilo::alfa(estilo::OURO, if sobre { 1.0 } else { 0.75 }));
+            draw_circle_lines(
+                c.x,
+                c.y,
+                raio,
+                2.0,
+                estilo::alfa(estilo::OURO, if sobre { 1.0 } else { 0.75 }),
+            );
             let cor = if sobre { estilo::OURO } else { estilo::TEXTO };
             if !crate::icones_ui::mapa("mapa", c, b.w * 0.56, cor, 0.0) {
                 glifo_minimapa(b, cor);
@@ -1093,7 +1338,11 @@ impl Mapa {
                     }
                 }
             }
-            for g in info.recursos.iter().filter(|g| self.filtros.regiao_visivel(g)) {
+            for g in info
+                .recursos
+                .iter()
+                .filter(|g| self.filtros.regiao_visivel(g))
+            {
                 let q = ponto(vec2(g.centro[0], g.centro[1]));
                 if visivel(q) {
                     let cor = cor_do_tipo(g.tipo);
@@ -1105,7 +1354,13 @@ impl Mapa {
             // O Vec2 do shared e' de outra versao do glam.
             let q = ponto(vec2(ci.centro().x, ci.centro().y));
             if visivel(q) {
-                draw_circle_lines(q.x, q.y, (Cidade::RAIO * escala).max(4.0), 1.5, estilo::OURO);
+                draw_circle_lines(
+                    q.x,
+                    q.y,
+                    (Cidade::RAIO * escala).max(4.0),
+                    1.5,
+                    estilo::OURO,
+                );
                 casinha(q, 5.0, estilo::OURO);
             }
         }
@@ -1148,10 +1403,17 @@ impl Mapa {
             // dele. Preso no quadrado, ele parava nos cantos — que agora sao
             // moldura, e o jogador nao veria mais a marca.
             let fora = q - c;
-            let preso = if fora.length() > rad - 5.0 { c + fora.normalize_or_zero() * (rad - 5.0) } else { q };
+            let preso = if fora.length() > rad - 5.0 {
+                c + fora.normalize_or_zero() * (rad - 5.0)
+            } else {
+                q
+            };
             marca_destino(preso, 5.0);
         }
-        let yaw = world.self_id.and_then(|id| world.ents.get(&id)).map_or(0.0, |e| e.yaw);
+        let yaw = world
+            .self_id
+            .and_then(|id| world.ents.get(&id))
+            .map_or(0.0, |e| e.yaw);
         seta(c, yaw, 7.0, estilo::TEXTO);
         self.moldura(dentro, Some(eu));
     }
@@ -1165,10 +1427,23 @@ impl Mapa {
         // painel nenhum.
         for i in 0..4 {
             let k = i as f32;
-            draw_circle_lines(c.x, c.y, rad + 1.5 + k * 1.7, 2.0, Color::new(0.0, 0.0, 0.0, 0.18 - k * 0.04));
+            draw_circle_lines(
+                c.x,
+                c.y,
+                rad + 1.5 + k * 1.7,
+                2.0,
+                Color::new(0.0, 0.0, 0.0, 0.18 - k * 0.04),
+            );
         }
         estilo::arco(c, rad, 0.0, 1.0, 2.5, estilo::alfa(estilo::OURO, 0.75));
-        estilo::arco(c, rad - 3.0, 0.0, 1.0, 1.0, estilo::alfa(estilo::BRILHO, 0.5));
+        estilo::arco(
+            c,
+            rad - 3.0,
+            0.0,
+            1.0,
+            1.0,
+            estilo::alfa(estilo::BRILHO, 0.5),
+        );
         rosa_dos_ventos(c, rad);
         if let Some(eu) = eu {
             let t = format!("{:.0}, {:.0}", eu.x, eu.y);
@@ -1186,7 +1461,11 @@ impl Mapa {
         let sobre = ic.contains(m);
         botao_da_moldura(ic, sobre);
         let cor = if sobre { estilo::OURO } else { estilo::TEXTO };
-        let (a, b, d) = (vec2(ic.x + 5.0, ic.y + 5.0), vec2(ic.x + ic.w - 5.0, ic.y + ic.h - 5.0), ic.w * 0.28);
+        let (a, b, d) = (
+            vec2(ic.x + 5.0, ic.y + 5.0),
+            vec2(ic.x + ic.w - 5.0, ic.y + ic.h - 5.0),
+            ic.w * 0.28,
+        );
         draw_line(a.x, a.y, b.x, b.y, 1.5, cor);
         draw_line(a.x, a.y, a.x + d, a.y, 1.5, cor);
         draw_line(a.x, a.y, a.x, a.y + d, 1.5, cor);
@@ -1195,16 +1474,34 @@ impl Mapa {
         let ex = Self::expandir_rect();
         let sobre_ex = ex.contains(m);
         botao_da_moldura(ex, sobre_ex);
-        glifo_tamanho(ex, crate::hud_layout::minimapa_expandido(), if sobre_ex { estilo::OURO } else { estilo::TEXTO });
+        glifo_tamanho(
+            ex,
+            crate::hud_layout::minimapa_expandido(),
+            if sobre_ex {
+                estilo::OURO
+            } else {
+                estilo::TEXTO
+            },
+        );
         let apagado = estilo::alfa(estilo::TEXTO, 0.35);
         for (r, glifo, ativo) in [
             (Self::ocultar_rect(), '×', true),
-            (Self::zoom_menos_rect(), '−', self.alcance_mini < ALCANCE_MAX),
+            (
+                Self::zoom_menos_rect(),
+                '−',
+                self.alcance_mini < ALCANCE_MAX,
+            ),
             (Self::zoom_mais_rect(), '+', self.alcance_mini > ALCANCE_MIN),
         ] {
             let sobre = ativo && r.contains(m);
             botao_da_moldura(r, sobre);
-            let cor = if !ativo { apagado } else if sobre { estilo::OURO } else { estilo::TEXTO };
+            let cor = if !ativo {
+                apagado
+            } else if sobre {
+                estilo::OURO
+            } else {
+                estilo::TEXTO
+            };
             let (c, d) = (r.center(), r.w * 0.24);
             match glifo {
                 '×' => {
@@ -1246,7 +1543,13 @@ impl Mapa {
         let nome = self.def.map_or("", |d| d.nome);
         estilo::texto_forte(r.x, r.y - 14.0, &format!("Mapa · {nome}"), 17, estilo::OURO);
         let dica = "clique: viajar · zona/recurso: ir · Esc fecha";
-        estilo::texto(r.x + r.w - 36.0 - estilo::medir(dica, 13), r.y - 14.0, dica, 13, estilo::SUAVE);
+        estilo::texto(
+            r.x + r.w - 36.0 - estilo::medir(dica, 13),
+            r.y - 14.0,
+            dica,
+            13,
+            estilo::SUAVE,
+        );
         let f = Self::fechar_rect(r);
         if !crate::icones_ui::ui("fechar", f.center(), f.w.min(f.h) * 0.55, estilo::TEXTO) {
             estilo::texto_centro(f.x + f.w * 0.5, f.y + 19.0, "x", 18, estilo::TEXTO);
@@ -1254,11 +1557,23 @@ impl Mapa {
 
         draw_rectangle(r.x, r.y, r.w, r.h, COR_AGUA);
         match &self.tex {
-            Some(tex) => draw_texture_ex(tex, r.x, r.y, WHITE, DrawTextureParams {
-                dest_size: Some(vec2(r.w, r.h)),
-                ..Default::default()
-            }),
-            None => estilo::texto_centro(r.x + r.w * 0.5, r.y + r.h * 0.5, "carregando mapa…", 18, estilo::SUAVE),
+            Some(tex) => draw_texture_ex(
+                tex,
+                r.x,
+                r.y,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(vec2(r.w, r.h)),
+                    ..Default::default()
+                },
+            ),
+            None => estilo::texto_centro(
+                r.x + r.w * 0.5,
+                r.y + r.h * 0.5,
+                "carregando mapa…",
+                18,
+                estilo::SUAVE,
+            ),
         }
         let raio = self.raio();
         let escala = r.w / (2.0 * raio);
@@ -1271,8 +1586,19 @@ impl Mapa {
                 if !crate::icones_ui::mapa("chefe", q, 26.0, ouro, 0.0) {
                     crate::telegrafico::desenha_coroa(q, 8.0);
                 }
-                let t = format!("{} · Nv {}{}", ch.nome, ch.nivel, if ch.vivo { "" } else { " (renascendo)" });
-                estilo::texto_centro(q.x + 1.0, q.y + 23.0, &t, 12, Color::new(0.0, 0.0, 0.0, 0.8));
+                let t = format!(
+                    "{} · Nv {}{}",
+                    ch.nome,
+                    ch.nivel,
+                    if ch.vivo { "" } else { " (renascendo)" }
+                );
+                estilo::texto_centro(
+                    q.x + 1.0,
+                    q.y + 23.0,
+                    &t,
+                    12,
+                    Color::new(0.0, 0.0, 0.0, 0.8),
+                );
                 estilo::texto_centro(q.x, q.y + 22.0, &t, 12, Color::new(1.0, 0.64, 0.37, 1.0));
             }
             for z in info.zonas.iter().filter(|z| self.filtros.zona_visivel(z)) {
@@ -1284,17 +1610,33 @@ impl Mapa {
                 // Marcador do bicho dominante no centro da zona (acima do rotulo).
                 if let Some(b) = z.bichos.first() {
                     let y = if rp >= 14.0 { 13.0 } else { 0.0 };
-                    crate::icones_ui::mapa(crate::icones_ui::nome_do_bicho(b.0), q - vec2(0.0, y), 18.0, cor, 0.0);
+                    crate::icones_ui::mapa(
+                        crate::icones_ui::nome_do_bicho(b.0),
+                        q - vec2(0.0, y),
+                        18.0,
+                        cor,
+                        0.0,
+                    );
                 }
                 if rp >= 14.0 {
                     if let Some(b) = z.bichos.first() {
                         let t = format!("{} · Nv {}–{}", info.nome(b.0), z.lv_min, z.lv_max);
-                        estilo::texto_centro(q.x + 1.0, q.y + 5.0, &t, 12, Color::new(0.0, 0.0, 0.0, 0.8));
+                        estilo::texto_centro(
+                            q.x + 1.0,
+                            q.y + 5.0,
+                            &t,
+                            12,
+                            Color::new(0.0, 0.0, 0.0, 0.8),
+                        );
                         estilo::texto_centro(q.x, q.y + 4.0, &t, 12, estilo::TEXTO);
                     }
                 }
             }
-            for g in info.recursos.iter().filter(|g| self.filtros.regiao_visivel(g)) {
+            for g in info
+                .recursos
+                .iter()
+                .filter(|g| self.filtros.regiao_visivel(g))
+            {
                 let q = ponto(vec2(g.centro[0], g.centro[1]));
                 let s = 3.0 + (g.contagem as f32).sqrt().min(3.5);
                 let cor = cor_do_tipo(g.tipo);
@@ -1308,7 +1650,13 @@ impl Mapa {
         if let Some(ci) = self.cidade.filter(|_| self.filtros.vila) {
             // O Vec2 do shared e' de outra versao do glam.
             let q = ponto(vec2(ci.centro().x, ci.centro().y));
-            draw_circle_lines(q.x, q.y, (Cidade::RAIO * escala).max(6.0), 2.0, estilo::OURO);
+            draw_circle_lines(
+                q.x,
+                q.y,
+                (Cidade::RAIO * escala).max(6.0),
+                2.0,
+                estilo::OURO,
+            );
             casinha(q, 7.0, estilo::OURO);
             estilo::texto_centro(q.x, q.y - 12.0, "Cidade", 14, estilo::OURO);
         }
@@ -1345,13 +1693,29 @@ impl Mapa {
             let q = ponto(d);
             if let Some(eu) = eu {
                 let p = ponto(eu);
-                draw_line(p.x, p.y, q.x, q.y, 1.5, Color::new(estilo::AUTO.r, estilo::AUTO.g, estilo::AUTO.b, 0.7));
-                estilo::texto_centro(q.x, q.y + 20.0, &format!("{:.0} m", eu.distance(d)), 13, estilo::AUTO);
+                draw_line(
+                    p.x,
+                    p.y,
+                    q.x,
+                    q.y,
+                    1.5,
+                    Color::new(estilo::AUTO.r, estilo::AUTO.g, estilo::AUTO.b, 0.7),
+                );
+                estilo::texto_centro(
+                    q.x,
+                    q.y + 20.0,
+                    &format!("{:.0} m", eu.distance(d)),
+                    13,
+                    estilo::AUTO,
+                );
             }
             marca_destino(q, 7.0);
         }
         if let Some(eu) = eu {
-            let yaw = world.self_id.and_then(|id| world.ents.get(&id)).map_or(0.0, |e| e.yaw);
+            let yaw = world
+                .self_id
+                .and_then(|id| world.ents.get(&id))
+                .map_or(0.0, |e| e.yaw);
             seta(ponto(eu), yaw, 9.0, estilo::TEXTO);
         }
         // Onde o clique cairia: agua avisa antes de clicar.
@@ -1363,7 +1727,9 @@ impl Mapa {
 
     /// "Viajando · N m" enquanto houver viagem: o texto da faixa de estado.
     pub fn faixa_viagem(&self, eu: Option<Vec2>) -> Option<String> {
-        let (Some(d), Some(eu)) = (self.viagem.destino(), eu) else { return None };
+        let (Some(d), Some(eu)) = (self.viagem.destino(), eu) else {
+            return None;
+        };
         Some(format!("Viajando · {:.0} m", eu.distance(d)))
     }
 }
@@ -1392,7 +1758,12 @@ fn disco_do_mapa(tex: &Texture2D, c: Vec2, rad: f32, eu: Vec2, alcance: f32, rai
     let uv = |p: Vec2| vec2((p.x + raio) / (2.0 * raio), (p.y + raio) / (2.0 * raio));
     let branco = [255u8, 255, 255, 255];
     let mut vertices = Vec::with_capacity(N + 1);
-    vertices.push(Vertex { position: vec3(c.x, c.y, 0.0), uv: uv(eu), color: branco, normal: Vec4::ZERO });
+    vertices.push(Vertex {
+        position: vec3(c.x, c.y, 0.0),
+        uv: uv(eu),
+        color: branco,
+        normal: Vec4::ZERO,
+    });
     for i in 0..N {
         let a = i as f32 / N as f32 * std::f32::consts::TAU;
         let d = vec2(a.cos(), a.sin());
@@ -1407,7 +1778,11 @@ fn disco_do_mapa(tex: &Texture2D, c: Vec2, rad: f32, eu: Vec2, alcance: f32, rai
     for i in 0..N {
         indices.extend_from_slice(&[0, 1 + i as u16, 1 + ((i + 1) % N) as u16]);
     }
-    draw_mesh(&Mesh { vertices, indices, texture: Some(tex.clone()) });
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: Some(tex.clone()),
+    });
 }
 
 /// N/L/S/O em volta do disco. O norte e' o unico dourado: e' o que se procura.
@@ -1433,7 +1808,10 @@ const ALCANCE_MAX: f32 = 400.0;
 /// Onde o dedo (ou o mouse) apertou NESTE quadro. Igual ao da tela de
 /// personagens: o mouse simulado da macroquad fica no toque ANTERIOR.
 fn apertou_em() -> Option<Vec2> {
-    if let Some(t) = touches().into_iter().find(|t| t.phase == TouchPhase::Started) {
+    if let Some(t) = touches()
+        .into_iter()
+        .find(|t| t.phase == TouchPhase::Started)
+    {
         return Some(t.position);
     }
     is_mouse_button_pressed(MouseButton::Left).then(|| Vec2::from(mouse_position()))
@@ -1444,12 +1822,26 @@ fn glifo_minimapa(r: Rect, cor: Color) {
     let c = r.center();
     draw_circle_lines(c.x, c.y, r.w * 0.32, 1.6, cor);
     let s = r.w * 0.14;
-    draw_triangle(c + vec2(0.0, -s), c + vec2(-s * 0.7, s * 0.7), c + vec2(s * 0.7, s * 0.7), cor);
+    draw_triangle(
+        c + vec2(0.0, -s),
+        c + vec2(-s * 0.7, s * 0.7),
+        c + vec2(s * 0.7, s * 0.7),
+        cor,
+    );
 }
 
 fn botao_da_moldura(r: Rect, sobre: bool) {
     estilo::ret_arredondado(r, estilo::RAIO_PEQUENO, estilo::FUNDO_ALTO);
-    estilo::borda_arredondada(r, estilo::RAIO_PEQUENO, 1.0, if sobre { estilo::alfa(estilo::ACENTO, 0.7) } else { estilo::BORDA_FORTE });
+    estilo::borda_arredondada(
+        r,
+        estilo::RAIO_PEQUENO,
+        1.0,
+        if sobre {
+            estilo::alfa(estilo::ACENTO, 0.7)
+        } else {
+            estilo::BORDA_FORTE
+        },
+    );
 }
 
 /// Duas setas: afastando-se (crescer) ou aproximando-se (encolher). De
@@ -1473,7 +1865,11 @@ fn seta(c: Vec2, yaw: f32, s: f32, cor: Color) {
     }
     let dir = vec2(yaw.sin(), yaw.cos());
     let perp = vec2(-dir.y, dir.x);
-    let (a, b, d) = (c + dir * s, c - dir * s * 0.6 + perp * s * 0.6, c - dir * s * 0.6 - perp * s * 0.6);
+    let (a, b, d) = (
+        c + dir * s,
+        c - dir * s * 0.6 + perp * s * 0.6,
+        c - dir * s * 0.6 - perp * s * 0.6,
+    );
     draw_triangle(a, b, d, Color::new(0.0, 0.0, 0.0, 0.6));
     draw_triangle(a, b, d, cor);
     draw_triangle_lines(a, b, d, 1.0, Color::new(0.0, 0.0, 0.0, 0.8));
@@ -1489,8 +1885,18 @@ fn marca_destino(q: Vec2, s: f32) {
 
 /// Losango: o icone de regiao de recurso.
 fn losango(q: Vec2, s: f32, cor: Color) {
-    draw_triangle(vec2(q.x, q.y - s), vec2(q.x - s, q.y), vec2(q.x + s, q.y), cor);
-    draw_triangle(vec2(q.x, q.y + s), vec2(q.x - s, q.y), vec2(q.x + s, q.y), cor);
+    draw_triangle(
+        vec2(q.x, q.y - s),
+        vec2(q.x - s, q.y),
+        vec2(q.x + s, q.y),
+        cor,
+    );
+    draw_triangle(
+        vec2(q.x, q.y + s),
+        vec2(q.x - s, q.y),
+        vec2(q.x + s, q.y),
+        cor,
+    );
 }
 
 /// Retangulo da pegada de um predio, com tamanho minimo pra nao sumir de longe.
@@ -1509,7 +1915,14 @@ fn ancora(q: Vec2, s: f32, cor: Color) {
     for (c, g) in [(sombra, 3.0), (cor, 1.6)] {
         draw_circle_lines(q.x, q.y - s * 0.85, s * 0.25, g * 0.7, c);
         draw_line(q.x, q.y - s * 0.6, q.x, q.y + s * 0.8, g, c);
-        draw_line(q.x - s * 0.45, q.y - s * 0.3, q.x + s * 0.45, q.y - s * 0.3, g, c);
+        draw_line(
+            q.x - s * 0.45,
+            q.y - s * 0.3,
+            q.x + s * 0.45,
+            q.y - s * 0.3,
+            g,
+            c,
+        );
         draw_line(q.x - s * 0.75, q.y + s * 0.35, q.x, q.y + s * 0.8, g, c);
         draw_line(q.x + s * 0.75, q.y + s * 0.35, q.x, q.y + s * 0.8, g, c);
     }
@@ -1520,7 +1933,12 @@ fn casinha(q: Vec2, s: f32, cor: Color) {
         return;
     }
     draw_rectangle(q.x - s * 0.6, q.y - s * 0.1, s * 1.2, s * 0.8, cor);
-    draw_triangle(vec2(q.x - s * 0.85, q.y - s * 0.05), vec2(q.x + s * 0.85, q.y - s * 0.05), vec2(q.x, q.y - s * 0.8), cor);
+    draw_triangle(
+        vec2(q.x - s * 0.85, q.y - s * 0.05),
+        vec2(q.x + s * 0.85, q.y - s * 0.05),
+        vec2(q.x, q.y - s * 0.8),
+        cor,
+    );
 }
 
 #[cfg(test)]
@@ -1535,19 +1953,26 @@ mod tests {
     fn perto_vai_direto_ao_destino() {
         let mut v = Viagem::default();
         v.iniciar(vec2(100.0, 0.0), 0.0);
-        assert_eq!(v.passo(Vec2::ZERO, 0.0, tudo_terra), Passo::Enviar(vec2(100.0, 0.0)));
+        assert_eq!(
+            v.passo(Vec2::ZERO, 0.0, tudo_terra),
+            Passo::Enviar(vec2(100.0, 0.0))
+        );
     }
 
     #[test]
     fn longe_vira_etapa_dentro_do_alcance_do_servidor() {
         let mut v = Viagem::default();
         v.iniciar(vec2(500.0, 30.0), 0.0);
-        let Passo::Enviar(p) = v.passo(Vec2::ZERO, 0.0, tudo_terra) else { panic!("devia enviar") };
+        let Passo::Enviar(p) = v.passo(Vec2::ZERO, 0.0, tudo_terra) else {
+            panic!("devia enviar")
+        };
         assert!(p.length() <= ALCANCE_DIRETO, "etapa a {:.0}", p.length());
         assert!(p.x > 100.0, "etapa na direcao do destino: {p:?}");
         // Chegou perto da etapa: manda a proxima, mas respeitando o intervalo.
         assert_eq!(v.passo(p, 0.1, tudo_terra), Passo::Nada);
-        let Passo::Enviar(q) = v.passo(p, 0.5, tudo_terra) else { panic!("devia mandar a proxima") };
+        let Passo::Enviar(q) = v.passo(p, 0.5, tudo_terra) else {
+            panic!("devia mandar a proxima")
+        };
         assert!(q.distance(vec2(500.0, 30.0)) < p.distance(vec2(500.0, 30.0)));
     }
 
@@ -1557,7 +1982,9 @@ mod tests {
         let terra = |p: Vec2| !(140.0..175.0).contains(&p.x);
         let mut v = Viagem::default();
         v.iniciar(vec2(600.0, 0.0), 0.0);
-        let Passo::Enviar(p) = v.passo(Vec2::ZERO, 0.0, terra) else { panic!() };
+        let Passo::Enviar(p) = v.passo(Vec2::ZERO, 0.0, terra) else {
+            panic!()
+        };
         assert!(terra(p), "etapa caiu na agua: {p:?}");
     }
 
@@ -1574,7 +2001,10 @@ mod tests {
         for _ in 0..20 {
             t += 1.6;
             match v.passo(eu, t, tudo_terra) {
-                Passo::Desistiu => { desistiu = true; break; }
+                Passo::Desistiu => {
+                    desistiu = true;
+                    break;
+                }
                 Passo::Enviar(_) | Passo::Nada => {}
                 Passo::Chegou => panic!(),
             }
@@ -1587,7 +2017,10 @@ mod tests {
     fn chega_e_cancela() {
         let mut v = Viagem::default();
         v.iniciar(vec2(10.0, 0.0), 0.0);
-        assert!(matches!(v.passo(Vec2::ZERO, 0.0, tudo_terra), Passo::Enviar(_)));
+        assert!(matches!(
+            v.passo(Vec2::ZERO, 0.0, tudo_terra),
+            Passo::Enviar(_)
+        ));
         assert_eq!(v.passo(vec2(9.0, 0.0), 1.0, tudo_terra), Passo::Chegou);
         assert!(!v.ativa());
         v.iniciar(vec2(10.0, 0.0), 2.0);
@@ -1596,11 +2029,22 @@ mod tests {
     }
 
     fn zona(x: f32, lv: (u16, u16), bichos: Vec<(u16, u8)>) -> ZonaNoMapa {
-        ZonaNoMapa { centro: [x, 0.0], raio: 45.0, lv_min: lv.0, lv_max: lv.1, bichos }
+        ZonaNoMapa {
+            centro: [x, 0.0],
+            raio: 45.0,
+            lv_min: lv.0,
+            lv_max: lv.1,
+            bichos,
+        }
     }
 
     fn regiao(x: f32, tipo: u8) -> RegiaoNoMapa {
-        RegiaoNoMapa { centro: [x, 0.0], raio: 10.0, tipo, contagem: 5 }
+        RegiaoNoMapa {
+            centro: [x, 0.0],
+            raio: 10.0,
+            tipo,
+            contagem: 5,
+        }
     }
 
     #[test]
@@ -1611,10 +2055,18 @@ mod tests {
         assert!(!padrao.zona_visivel(&lobos));
         assert!((0..5).all(|t| !padrao.regiao_visivel(&regiao(0.0, t))));
         assert!(!padrao.vila);
-        let mut f = Filtros { mobs: true, bichos_ocultos: HashSet::new(), recursos: [true; 5], vila: true };
+        let mut f = Filtros {
+            mobs: true,
+            bichos_ocultos: HashSet::new(),
+            recursos: [true; 5],
+            vila: true,
+        };
         assert!(f.zona_visivel(&lobos));
         f.bichos_ocultos.insert(1);
-        assert!(f.zona_visivel(&lobos), "esconder o secundario nao tira a zona");
+        assert!(
+            f.zona_visivel(&lobos),
+            "esconder o secundario nao tira a zona"
+        );
         f.bichos_ocultos.insert(0);
         assert!(!f.zona_visivel(&lobos));
         f.bichos_ocultos.clear();
@@ -1635,14 +2087,29 @@ mod tests {
         ];
         // Lobo (kind 0): a mais perto em que ele sai bem e que o nivel aguenta.
         let z = zona_mais_perto(&zonas, 0, vec2(200.0, 0.0), 1).unwrap();
-        assert_eq!(z.centro[0], 400.0, "mandou pra zona alta so' por estar perto");
+        assert_eq!(
+            z.centro[0], 400.0,
+            "mandou pra zona alta so' por estar perto"
+        );
         // Kind 7 so' sai na zona alta, abaixo da chance minima: a de maior chance.
-        assert_eq!(zona_mais_perto(&zonas, 7, Vec2::ZERO, 1).unwrap().centro[0], 100.0);
+        assert_eq!(
+            zona_mais_perto(&zonas, 7, Vec2::ZERO, 1).unwrap().centro[0],
+            100.0
+        );
         assert!(zona_mais_perto(&zonas, 5, Vec2::ZERO, 1).is_none());
         let recursos = vec![regiao(-50.0, 3), regiao(30.0, 3), regiao(5.0, 0)];
-        assert_eq!(regiao_mais_perto(&recursos, 3, vec2(10.0, 0.0)).unwrap().centro[0], 30.0);
+        assert_eq!(
+            regiao_mais_perto(&recursos, 3, vec2(10.0, 0.0))
+                .unwrap()
+                .centro[0],
+            30.0
+        );
         assert!(regiao_mais_perto(&recursos, 4, Vec2::ZERO).is_none());
-        let info = InfoDaIlha { zonas, recursos, ..Default::default() };
+        let info = InfoDaIlha {
+            zonas,
+            recursos,
+            ..Default::default()
+        };
         assert_eq!(info.faixa(0), Some((1, 3)));
         assert_eq!(info.tipos(), vec![0, 3]);
         assert_eq!(info.bichos()[0], 0);

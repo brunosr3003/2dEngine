@@ -69,11 +69,56 @@ impl Cura {
 
 /// A tabela (proposta da pesquisa sobre a MIR4; ver docs/ITENS.md).
 pub const CURAS: [(u16, Cura); 5] = [
-    (it::HEALTH_POTION, Cura { grupo: Grupo::Vida, na_hora: 0.04, por_tick: 0.02, ticks: 5, recarga_s: 8 }),
-    (it::GREATER_HEAL, Cura { grupo: Grupo::Vida, na_hora: 0.06, por_tick: 0.03, ticks: 5, recarga_s: 8 }),
-    (it::MANA_POTION, Cura { grupo: Grupo::Mana, na_hora: 0.05, por_tick: 0.03, ticks: 5, recarga_s: 8 }),
-    (it::GREATER_MANA, Cura { grupo: Grupo::Mana, na_hora: 0.08, por_tick: 0.045, ticks: 5, recarga_s: 8 }),
-    (it::STAMINA_POTION, Cura { grupo: Grupo::Vigor, na_hora: 0.0, por_tick: 0.05, ticks: 6, recarga_s: 15 }),
+    (
+        it::HEALTH_POTION,
+        Cura {
+            grupo: Grupo::Vida,
+            na_hora: 0.04,
+            por_tick: 0.02,
+            ticks: 5,
+            recarga_s: 8,
+        },
+    ),
+    (
+        it::GREATER_HEAL,
+        Cura {
+            grupo: Grupo::Vida,
+            na_hora: 0.06,
+            por_tick: 0.03,
+            ticks: 5,
+            recarga_s: 8,
+        },
+    ),
+    (
+        it::MANA_POTION,
+        Cura {
+            grupo: Grupo::Mana,
+            na_hora: 0.05,
+            por_tick: 0.03,
+            ticks: 5,
+            recarga_s: 8,
+        },
+    ),
+    (
+        it::GREATER_MANA,
+        Cura {
+            grupo: Grupo::Mana,
+            na_hora: 0.08,
+            por_tick: 0.045,
+            ticks: 5,
+            recarga_s: 8,
+        },
+    ),
+    (
+        it::STAMINA_POTION,
+        Cura {
+            grupo: Grupo::Vigor,
+            na_hora: 0.0,
+            por_tick: 0.05,
+            ticks: 6,
+            recarga_s: 15,
+        },
+    ),
 ];
 
 // Por construcao: nenhuma recarga menor que a propria cura. Se alguem baixar
@@ -82,7 +127,10 @@ const _: () = {
     let mut i = 0;
     while i < CURAS.len() {
         let c = CURAS[i].1;
-        assert!(c.recarga_s as u32 >= c.ticks as u32 * TICK_S as u32, "recarga de pocao menor que a cura");
+        assert!(
+            c.recarga_s as u32 >= c.ticks as u32 * TICK_S as u32,
+            "recarga de pocao menor que a cura"
+        );
         i += 1;
     }
 };
@@ -107,7 +155,10 @@ pub fn escolher(familia: &[(u16, u32)], deficit: f32) -> Option<u16> {
         .filter_map(|(id, _)| cura_de(*id).map(|c| (*id, c.total())))
         .collect();
     com.sort_by(|a, b| a.1.total_cmp(&b.1));
-    com.iter().find(|(_, t)| *t >= deficit).or_else(|| com.last()).map(|(id, _)| *id)
+    com.iter()
+        .find(|(_, t)| *t >= deficit)
+        .or_else(|| com.last())
+        .map(|(id, _)| *id)
 }
 
 /// Cura em andamento de um grupo.
@@ -157,7 +208,11 @@ impl EstadoDePocoes {
             return Err(Recusa::Cheio);
         }
         self.recarga_ate[g] = agora + c.recarga_s as f32;
-        self.cura[g] = (c.ticks > 0).then(|| Ativa { por_tick: c.por_tick, restantes: c.ticks, proximo: agora + TICK_S as f32 });
+        self.cura[g] = (c.ticks > 0).then(|| Ativa {
+            por_tick: c.por_tick,
+            restantes: c.ticks,
+            proximo: agora + TICK_S as f32,
+        });
         Ok(c.na_hora)
     }
 
@@ -166,7 +221,9 @@ impl EstadoDePocoes {
     pub fn tick(&mut self, agora: f32) -> [f32; GRUPOS] {
         let mut ganho = [0.0; GRUPOS];
         for g in 0..GRUPOS {
-            let Some(a) = self.cura[g].as_mut() else { continue };
+            let Some(a) = self.cura[g].as_mut() else {
+                continue;
+            };
             while a.restantes > 0 && agora >= a.proximo {
                 ganho[g] += a.por_tick;
                 a.restantes -= 1;
@@ -192,7 +249,11 @@ mod testes {
     #[test]
     fn pocao_se_compra_com_cobre() {
         use crate::constants::item_id;
-        for id in [item_id::HEALTH_POTION, item_id::MANA_POTION, item_id::GREATER_HEAL] {
+        for id in [
+            item_id::HEALTH_POTION,
+            item_id::MANA_POTION,
+            item_id::GREATER_HEAL,
+        ] {
             assert!(compra_com_cobre(id), "{id} deveria custar cobre");
         }
         assert!(!compra_com_cobre(401), "katana continua em ouro");
@@ -256,10 +317,16 @@ mod testes {
         let mut e = EstadoDePocoes::default();
         assert_eq!(e.beber(&c, 0.0, false), Ok(0.0));
         let g = e.tick(3.5);
-        assert!((g[2] - 0.15).abs() < 1e-5, "3 ticks atrasados de uma vez: {g:?}");
+        assert!(
+            (g[2] - 0.15).abs() < 1e-5,
+            "3 ticks atrasados de uma vez: {g:?}"
+        );
         e.encerrar_curas();
         assert_eq!(e.tick(10.0), [0.0; GRUPOS]);
-        assert!(e.recarga_restante(Grupo::Vigor, 10.0) > 0.0, "a recarga continua");
+        assert!(
+            e.recarga_restante(Grupo::Vigor, 10.0) > 0.0,
+            "a recarga continua"
+        );
     }
 
     #[test]
@@ -267,8 +334,15 @@ mod testes {
         let f = [(it::HEALTH_POTION, 3), (it::GREATER_HEAL, 2)];
         assert_eq!(escolher(&f, 0.10), Some(it::HEALTH_POTION));
         assert_eq!(escolher(&f, 0.18), Some(it::GREATER_HEAL));
-        assert_eq!(escolher(&f, 0.60), Some(it::GREATER_HEAL), "nenhuma cobre: a maior");
-        assert_eq!(escolher(&[(it::HEALTH_POTION, 3), (it::GREATER_HEAL, 0)], 0.60), Some(it::HEALTH_POTION));
+        assert_eq!(
+            escolher(&f, 0.60),
+            Some(it::GREATER_HEAL),
+            "nenhuma cobre: a maior"
+        );
+        assert_eq!(
+            escolher(&[(it::HEALTH_POTION, 3), (it::GREATER_HEAL, 0)], 0.60),
+            Some(it::HEALTH_POTION)
+        );
         assert_eq!(escolher(&[], 0.5), None);
     }
 }

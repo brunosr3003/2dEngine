@@ -53,7 +53,11 @@ const QUADRIL: f32 = 19.0;
 /// Pivô de uma peça pelo nome — o que o carregamento do `.vox` precisa pra
 /// gerar a malha em volta dela. Peça fora da lista gira em volta da raiz.
 pub fn pivo(nome: &str) -> [f32; 3] {
-    PECAS.iter().find(|p| p.0 == nome).map(|p| p.2).unwrap_or(RAIZ)
+    PECAS
+        .iter()
+        .find(|p| p.0 == nome)
+        .map(|p| p.2)
+        .unwrap_or(RAIZ)
 }
 
 /// Coordenada de voxel da tela comum → mundo, relativa à raiz. É o mesmo mapa
@@ -105,7 +109,15 @@ pub struct Pose {
 
 impl Pose {
     fn de(rot: [Quat; N], subida: f32) -> Pose {
-        Pose { rot, subida, punho: [Quat::IDENTITY; 2], na_mao: false, armado: false, conjunto: 0, ferramenta: None }
+        Pose {
+            rot,
+            subida,
+            punho: [Quat::IDENTITY; 2],
+            na_mao: false,
+            armado: false,
+            conjunto: 0,
+            ferramenta: None,
+        }
     }
 }
 
@@ -288,9 +300,9 @@ fn segura_duas_maos(p: &Pose, m: &mut [Mat4; N], voxel: f32, entre_maos: f32) {
     let se = ombro(BRACO_E);
     let direcao = (p.rot[BRACO_D] * p.rot[ANTEBRACO_D] * p.punho[0]) * Vec3::Z;
     let separacao = direcao * (entre_maos * voxel);
-    let mut direita = local.transform_point3(m[ANTEBRACO_D].transform_point3(
-        mapa(MAO_D, voxel) - mapa(PECAS[ANTEBRACO_D].2, voxel),
-    ));
+    let mut direita = local.transform_point3(
+        m[ANTEBRACO_D].transform_point3(mapa(MAO_D, voxel) - mapa(PECAS[ANTEBRACO_D].2, voxel)),
+    );
     // A direita fica perto da guarda e a esquerda junto ao pomo. Trazemos
     // o cabo para o alcance dos DOIS ombros, sem esticar os membros.
     let alcance = 13.4 * voxel;
@@ -314,8 +326,8 @@ fn segura_duas_maos(p: &Pose, m: &mut [Mat4; N], voxel: f32, entre_maos: f32) {
         let eixo = delta / distancia;
         let superior = 6.0 * voxel;
         let inferior = 7.5 * voxel;
-        let ao_longo = (superior * superior - inferior * inferior + distancia * distancia)
-            / (2.0 * distancia);
+        let ao_longo =
+            (superior * superior - inferior * inferior + distancia * distancia) / (2.0 * distancia);
         let altura = (superior * superior - ao_longo * ao_longo).max(0.0).sqrt();
         // Cotovelos abertos para os lados e baixos, fora do peito.
         let polo = vec3(lado, -0.5, -0.25);
@@ -474,16 +486,44 @@ struct Chave {
 }
 
 const fn br(guinada: f32, elevacao: f32, cotovelo: f32) -> Braco {
-    Braco { guinada, elevacao, cotovelo }
+    Braco {
+        guinada,
+        elevacao,
+        cotovelo,
+    }
 }
 const fn la(guinada: f32, elevacao: f32, giro: f32) -> Lamina {
-    Lamina { guinada, elevacao, giro }
+    Lamina {
+        guinada,
+        elevacao,
+        giro,
+    }
 }
 /// Uma chave, na ordem: torcao, inclinacao, braco direito, braco esquerdo,
 /// arma direita, arma esquerda, escudo, avanco, agacha.
 #[allow(clippy::too_many_arguments)]
-const fn ch(torce: f32, inclina: f32, d: Braco, e: Braco, lamina: Lamina, arma_e: Lamina, escudo: f32, avanco: f32, agacha: f32) -> Chave {
-    Chave { torce, inclina, d, e, lamina, arma_e, escudo, avanco, agacha }
+const fn ch(
+    torce: f32,
+    inclina: f32,
+    d: Braco,
+    e: Braco,
+    lamina: Lamina,
+    arma_e: Lamina,
+    escudo: f32,
+    avanco: f32,
+    agacha: f32,
+) -> Chave {
+    Chave {
+        torce,
+        inclina,
+        d,
+        e,
+        lamina,
+        arma_e,
+        escudo,
+        avanco,
+        agacha,
+    }
 }
 const MEIA_VOLTA: f32 = std::f32::consts::FRAC_PI_2;
 const PI: f32 = std::f32::consts::PI;
@@ -502,21 +542,101 @@ struct Estilo {
 /// escudo cobrindo o peito. Golpes: horizontal da direita pra esquerda, de
 /// volta subindo, e de cima com o passo a' frente.
 const ESTILO_ESPADA: Estilo = Estilo {
-    guarda: ch(-0.15, 0.05, br(-0.35, 0.45, 1.25), br(-0.15, 0.55, 1.35), la(-0.2, 1.9, PI), SEM, 0.2, 0.0, -0.5),
+    guarda: ch(
+        -0.15,
+        0.05,
+        br(-0.35, 0.45, 1.25),
+        br(-0.15, 0.55, 1.35),
+        la(-0.2, 1.9, PI),
+        SEM,
+        0.2,
+        0.0,
+        -0.5,
+    ),
     // a mao direita no quadril esquerdo, a esquerda por cima do ombro
-    sacando: ch(0.3, 0.05, br(0.9, 0.35, 1.0), br(0.3, 2.6, 1.6), la(0.0, -0.5, 0.0), SEM, PI, 0.0, 0.0),
+    sacando: ch(
+        0.3,
+        0.05,
+        br(0.9, 0.35, 1.0),
+        br(0.3, 2.6, 1.6),
+        la(0.0, -0.5, 0.0),
+        SEM,
+        PI,
+        0.0,
+        0.0,
+    ),
     golpes: [
         [
-            ch(-0.75, 0.0, br(-1.4, 1.35, 0.5), br(-0.1, 0.5, 1.4), la(-1.6, 1.5, MEIA_VOLTA), SEM, 0.3, 0.0, 0.3),
-            ch(0.75, 0.05, br(0.9, 1.45, 0.25), br(0.5, 0.4, 1.1), la(1.1, 1.55, MEIA_VOLTA), SEM, 0.7, 0.0, -1.4),
+            ch(
+                -0.75,
+                0.0,
+                br(-1.4, 1.35, 0.5),
+                br(-0.1, 0.5, 1.4),
+                la(-1.6, 1.5, MEIA_VOLTA),
+                SEM,
+                0.3,
+                0.0,
+                0.3,
+            ),
+            ch(
+                0.75,
+                0.05,
+                br(0.9, 1.45, 0.25),
+                br(0.5, 0.4, 1.1),
+                la(1.1, 1.55, MEIA_VOLTA),
+                SEM,
+                0.7,
+                0.0,
+                -1.4,
+            ),
         ],
         [
-            ch(0.75, 0.05, br(1.1, 1.1, 0.7), br(0.5, 0.4, 1.1), la(1.3, 1.2, -MEIA_VOLTA), SEM, 0.7, 0.0, 0.2),
-            ch(-0.65, -0.05, br(-1.1, 1.8, 0.3), br(-0.1, 0.5, 1.4), la(-1.2, 1.9, -MEIA_VOLTA), SEM, 0.2, 0.0, -1.2),
+            ch(
+                0.75,
+                0.05,
+                br(1.1, 1.1, 0.7),
+                br(0.5, 0.4, 1.1),
+                la(1.3, 1.2, -MEIA_VOLTA),
+                SEM,
+                0.7,
+                0.0,
+                0.2,
+            ),
+            ch(
+                -0.65,
+                -0.05,
+                br(-1.1, 1.8, 0.3),
+                br(-0.1, 0.5, 1.4),
+                la(-1.2, 1.9, -MEIA_VOLTA),
+                SEM,
+                0.2,
+                0.0,
+                -1.2,
+            ),
         ],
         [
-            ch(-0.1, -0.25, br(-0.2, 2.8, 0.6), br(-0.1, 0.6, 1.3), la(-0.1, 3.3, PI), SEM, 0.2, 0.3, 0.8),
-            ch(0.05, 0.35, br(-0.1, 1.2, 0.15), br(0.2, 0.35, 1.0), la(-0.05, 1.15, PI), SEM, 0.4, 1.0, -2.2),
+            ch(
+                -0.1,
+                -0.25,
+                br(-0.2, 2.8, 0.6),
+                br(-0.1, 0.6, 1.3),
+                la(-0.1, 3.3, PI),
+                SEM,
+                0.2,
+                0.3,
+                0.8,
+            ),
+            ch(
+                0.05,
+                0.35,
+                br(-0.1, 1.2, 0.15),
+                br(0.2, 0.35, 1.0),
+                la(-0.05, 1.15, PI),
+                SEM,
+                0.4,
+                1.0,
+                -2.2,
+            ),
         ],
     ],
 };
@@ -525,21 +645,101 @@ const ESTILO_ESPADA: Estilo = Estilo {
 /// descendo do ombro direito (kesa-giri), diagonal subindo de volta
 /// (gyaku-kesa) e a estocada com o passo longo (tsuki).
 const ESTILO_KATANA: Estilo = Estilo {
-    guarda: ch(-0.15, 0.03, br(-0.1, 0.75, 1.2), br(0.35, 0.3, 0.7), la(-0.1, 2.15, PI), SEM, 0.0, 0.0, -0.6),
+    guarda: ch(
+        -0.15,
+        0.03,
+        br(-0.1, 0.75, 1.2),
+        br(0.35, 0.3, 0.7),
+        la(-0.1, 2.15, PI),
+        SEM,
+        0.0,
+        0.0,
+        -0.6,
+    ),
     // a mao direita no cabo, na boca da bainha; a esquerda segura a bainha
-    sacando: ch(0.35, 0.05, br(0.95, 0.45, 1.1), br(0.55, 0.3, 0.8), la(0.15, -1.12, 0.0), SEM, 0.0, 0.0, -0.4),
+    sacando: ch(
+        0.35,
+        0.05,
+        br(0.95, 0.45, 1.1),
+        br(0.55, 0.3, 0.8),
+        la(0.15, -1.12, 0.0),
+        SEM,
+        0.0,
+        0.0,
+        -0.4,
+    ),
     golpes: [
         [
-            ch(-0.55, -0.1, br(-0.8, 2.5, 0.9), br(0.3, 0.5, 1.0), la(-0.5, 2.9, PI), SEM, 0.0, 0.0, 0.4),
-            ch(0.6, 0.25, br(0.7, 0.95, 0.2), br(0.5, 0.3, 0.8), la(0.9, 0.85, PI), SEM, 0.0, 0.0, -1.8),
+            ch(
+                -0.55,
+                -0.1,
+                br(-0.8, 2.5, 0.9),
+                br(0.3, 0.5, 1.0),
+                la(-0.5, 2.9, PI),
+                SEM,
+                0.0,
+                0.0,
+                0.4,
+            ),
+            ch(
+                0.6,
+                0.25,
+                br(0.7, 0.95, 0.2),
+                br(0.5, 0.3, 0.8),
+                la(0.9, 0.85, PI),
+                SEM,
+                0.0,
+                0.0,
+                -1.8,
+            ),
         ],
         [
-            ch(0.6, 0.2, br(0.9, 0.8, 0.5), br(0.5, 0.3, 0.8), la(1.0, 0.7, 0.0), SEM, 0.0, 0.0, -0.6),
-            ch(-0.6, -0.05, br(-1.0, 2.05, 0.25), br(0.2, 0.5, 1.0), la(-1.1, 2.35, 0.0), SEM, 0.0, 0.0, -0.8),
+            ch(
+                0.6,
+                0.2,
+                br(0.9, 0.8, 0.5),
+                br(0.5, 0.3, 0.8),
+                la(1.0, 0.7, 0.0),
+                SEM,
+                0.0,
+                0.0,
+                -0.6,
+            ),
+            ch(
+                -0.6,
+                -0.05,
+                br(-1.0, 2.05, 0.25),
+                br(0.2, 0.5, 1.0),
+                la(-1.1, 2.35, 0.0),
+                SEM,
+                0.0,
+                0.0,
+                -0.8,
+            ),
         ],
         [
-            ch(-0.45, 0.0, br(-0.25, 1.0, 1.6), br(0.3, 0.9, 1.4), la(-0.1, 1.55, -MEIA_VOLTA), SEM, 0.0, 0.2, 0.2),
-            ch(0.25, 0.2, br(0.0, 1.5, 0.05), br(0.5, 0.4, 0.8), la(0.0, 1.57, -MEIA_VOLTA), SEM, 0.0, 1.0, -2.0),
+            ch(
+                -0.45,
+                0.0,
+                br(-0.25, 1.0, 1.6),
+                br(0.3, 0.9, 1.4),
+                la(-0.1, 1.55, -MEIA_VOLTA),
+                SEM,
+                0.0,
+                0.2,
+                0.2,
+            ),
+            ch(
+                0.25,
+                0.2,
+                br(0.0, 1.5, 0.05),
+                br(0.5, 0.4, 0.8),
+                la(0.0, 1.57, -MEIA_VOLTA),
+                SEM,
+                0.0,
+                1.0,
+                -2.0,
+            ),
         ],
     ],
 };
@@ -548,21 +748,101 @@ const ESTILO_KATANA: Estilo = Estilo {
 /// direita, tiro da esquerda, e as duas juntas — cada tiro com o COICE, o
 /// braco e o cano subindo e o corpo cedendo.
 const ESTILO_PISTOLAS: Estilo = Estilo {
-    guarda: ch(0.0, 0.05, br(-0.25, 0.75, 0.9), br(0.25, 0.75, 0.9), la(-0.1, 1.45, 0.0), la(0.1, 1.45, 0.0), 0.0, 0.0, -0.4),
+    guarda: ch(
+        0.0,
+        0.05,
+        br(-0.25, 0.75, 0.9),
+        br(0.25, 0.75, 0.9),
+        la(-0.1, 1.45, 0.0),
+        la(0.1, 1.45, 0.0),
+        0.0,
+        0.0,
+        -0.4,
+    ),
     // as duas maos nos coldres
-    sacando: ch(0.0, 0.05, br(-0.35, 0.05, 0.4), br(0.35, 0.05, 0.4), la(0.0, 0.0, 0.0), la(0.0, 0.0, 0.0), 0.0, 0.0, -0.3),
+    sacando: ch(
+        0.0,
+        0.05,
+        br(-0.35, 0.05, 0.4),
+        br(0.35, 0.05, 0.4),
+        la(0.0, 0.0, 0.0),
+        la(0.0, 0.0, 0.0),
+        0.0,
+        0.0,
+        -0.3,
+    ),
     golpes: [
         [
-            ch(-0.25, 0.0, br(-0.1, 1.35, 0.35), br(0.25, 0.75, 0.9), la(-0.05, 1.5, 0.0), la(0.1, 1.45, 0.0), 0.0, 0.0, 0.0),
-            ch(-0.15, -0.08, br(-0.05, 1.8, 0.25), br(0.25, 0.75, 0.9), la(0.0, 2.0, 0.0), la(0.1, 1.45, 0.0), 0.0, 0.0, -0.7),
+            ch(
+                -0.25,
+                0.0,
+                br(-0.1, 1.35, 0.35),
+                br(0.25, 0.75, 0.9),
+                la(-0.05, 1.5, 0.0),
+                la(0.1, 1.45, 0.0),
+                0.0,
+                0.0,
+                0.0,
+            ),
+            ch(
+                -0.15,
+                -0.08,
+                br(-0.05, 1.8, 0.25),
+                br(0.25, 0.75, 0.9),
+                la(0.0, 2.0, 0.0),
+                la(0.1, 1.45, 0.0),
+                0.0,
+                0.0,
+                -0.7,
+            ),
         ],
         [
-            ch(0.25, 0.0, br(-0.25, 0.8, 0.9), br(0.1, 1.35, 0.35), la(-0.1, 1.45, 0.0), la(0.05, 1.5, 0.0), 0.0, 0.0, 0.0),
-            ch(0.15, -0.08, br(-0.25, 0.8, 0.9), br(0.05, 1.8, 0.25), la(-0.1, 1.45, 0.0), la(0.0, 2.0, 0.0), 0.0, 0.0, -0.7),
+            ch(
+                0.25,
+                0.0,
+                br(-0.25, 0.8, 0.9),
+                br(0.1, 1.35, 0.35),
+                la(-0.1, 1.45, 0.0),
+                la(0.05, 1.5, 0.0),
+                0.0,
+                0.0,
+                0.0,
+            ),
+            ch(
+                0.15,
+                -0.08,
+                br(-0.25, 0.8, 0.9),
+                br(0.05, 1.8, 0.25),
+                la(-0.1, 1.45, 0.0),
+                la(0.0, 2.0, 0.0),
+                0.0,
+                0.0,
+                -0.7,
+            ),
         ],
         [
-            ch(0.0, 0.05, br(-0.12, 1.4, 0.4), br(0.12, 1.4, 0.4), la(-0.05, 1.5, 0.0), la(0.05, 1.5, 0.0), 0.0, 0.0, 0.3),
-            ch(0.0, -0.15, br(-0.08, 1.95, 0.3), br(0.08, 1.95, 0.3), la(-0.05, 2.1, 0.0), la(0.05, 2.1, 0.0), 0.0, 0.0, -1.2),
+            ch(
+                0.0,
+                0.05,
+                br(-0.12, 1.4, 0.4),
+                br(0.12, 1.4, 0.4),
+                la(-0.05, 1.5, 0.0),
+                la(0.05, 1.5, 0.0),
+                0.0,
+                0.0,
+                0.3,
+            ),
+            ch(
+                0.0,
+                -0.15,
+                br(-0.08, 1.95, 0.3),
+                br(0.08, 1.95, 0.3),
+                la(-0.05, 2.1, 0.0),
+                la(0.05, 2.1, 0.0),
+                0.0,
+                0.0,
+                -1.2,
+            ),
         ],
     ],
 };
@@ -571,21 +851,101 @@ const ESTILO_PISTOLAS: Estilo = Estilo {
 /// palma direita empurrando, as duas juntas, e a mao erguida descendo de uma
 /// vez. O anel projeta o circulo no pulso (efeito, nao modelo).
 const ESTILO_ANEL: Estilo = Estilo {
-    guarda: ch(-0.1, 0.05, br(-0.25, 0.95, 1.6), br(0.25, 0.95, 1.6), SEM, SEM, 0.0, 0.0, -0.3),
+    guarda: ch(
+        -0.1,
+        0.05,
+        br(-0.25, 0.95, 1.6),
+        br(0.25, 0.95, 1.6),
+        SEM,
+        SEM,
+        0.0,
+        0.0,
+        -0.3,
+    ),
     // "sacar" o anel e' erguer a mao
-    sacando: ch(0.0, 0.0, br(-0.3, 1.9, 1.3), br(0.3, 0.9, 1.6), SEM, SEM, 0.0, 0.0, 0.0),
+    sacando: ch(
+        0.0,
+        0.0,
+        br(-0.3, 1.9, 1.3),
+        br(0.3, 0.9, 1.6),
+        SEM,
+        SEM,
+        0.0,
+        0.0,
+        0.0,
+    ),
     golpes: [
         [
-            ch(-0.45, 0.0, br(-0.45, 1.25, 1.95), br(0.3, 0.9, 1.6), SEM, SEM, 0.0, 0.0, 0.2),
-            ch(0.3, 0.1, br(-0.05, 1.55, 0.05), br(0.35, 0.8, 1.5), SEM, SEM, 0.0, 0.0, -0.9),
+            ch(
+                -0.45,
+                0.0,
+                br(-0.45, 1.25, 1.95),
+                br(0.3, 0.9, 1.6),
+                SEM,
+                SEM,
+                0.0,
+                0.0,
+                0.2,
+            ),
+            ch(
+                0.3,
+                0.1,
+                br(-0.05, 1.55, 0.05),
+                br(0.35, 0.8, 1.5),
+                SEM,
+                SEM,
+                0.0,
+                0.0,
+                -0.9,
+            ),
         ],
         [
-            ch(0.0, -0.05, br(-0.35, 1.1, 1.9), br(0.35, 1.1, 1.9), SEM, SEM, 0.0, 0.0, 0.3),
-            ch(0.0, 0.1, br(-0.12, 1.5, 0.1), br(0.12, 1.5, 0.1), SEM, SEM, 0.0, 0.0, -1.0),
+            ch(
+                0.0,
+                -0.05,
+                br(-0.35, 1.1, 1.9),
+                br(0.35, 1.1, 1.9),
+                SEM,
+                SEM,
+                0.0,
+                0.0,
+                0.3,
+            ),
+            ch(
+                0.0,
+                0.1,
+                br(-0.12, 1.5, 0.1),
+                br(0.12, 1.5, 0.1),
+                SEM,
+                SEM,
+                0.0,
+                0.0,
+                -1.0,
+            ),
         ],
         [
-            ch(-0.1, -0.2, br(-0.2, 2.95, 0.4), br(0.35, 0.6, 1.2), SEM, SEM, 0.0, 0.0, 0.6),
-            ch(0.05, 0.3, br(-0.1, 1.0, 0.2), br(0.3, 0.5, 1.0), SEM, SEM, 0.0, 0.6, -1.8),
+            ch(
+                -0.1,
+                -0.2,
+                br(-0.2, 2.95, 0.4),
+                br(0.35, 0.6, 1.2),
+                SEM,
+                SEM,
+                0.0,
+                0.0,
+                0.6,
+            ),
+            ch(
+                0.05,
+                0.3,
+                br(-0.1, 1.0, 0.2),
+                br(0.3, 0.5, 1.0),
+                SEM,
+                SEM,
+                0.0,
+                0.6,
+                -1.8,
+            ),
         ],
     ],
 };
@@ -602,8 +962,20 @@ fn estilo(conjunto: u8) -> Option<&'static Estilo> {
 
 fn mistura(a: &Chave, b: &Chave, k: f32) -> Chave {
     let l = |x: f32, y: f32| x + (y - x) * k;
-    let bra = |x: &Braco, y: &Braco| br(l(x.guinada, y.guinada), l(x.elevacao, y.elevacao), l(x.cotovelo, y.cotovelo));
-    let lam = |x: &Lamina, y: &Lamina| la(l(x.guinada, y.guinada), l(x.elevacao, y.elevacao), l(x.giro, y.giro));
+    let bra = |x: &Braco, y: &Braco| {
+        br(
+            l(x.guinada, y.guinada),
+            l(x.elevacao, y.elevacao),
+            l(x.cotovelo, y.cotovelo),
+        )
+    };
+    let lam = |x: &Lamina, y: &Lamina| {
+        la(
+            l(x.guinada, y.guinada),
+            l(x.elevacao, y.elevacao),
+            l(x.giro, y.giro),
+        )
+    };
     Chave {
         torce: l(a.torce, b.torce),
         inclina: l(a.inclina, b.inclina),
@@ -649,7 +1021,11 @@ fn chave_do_golpe(est: &Estilo, passo: u8, t: f32, desde: &Chave) -> Chave {
     if t < PREPARA + CORTA + SEGURA {
         return *imp;
     }
-    mistura(imp, &est.guarda, suave((t - PREPARA - CORTA - SEGURA) / VOLTA))
+    mistura(
+        imp,
+        &est.guarda,
+        suave((t - PREPARA - CORTA - SEGURA) / VOLTA),
+    )
 }
 
 fn ombro(b: &Braco) -> Quat {
@@ -699,7 +1075,13 @@ fn aplica_combate(p: &mut Pose, e: &Entrada) {
 
 /// A ferramenta de cada tipo de coleta (0 madeira, 1..4 pedra pela cor da
 /// pedra: a cabeca da picareta sai na cor do veio). `tools/voxrender/armas.py`.
-pub const FERRAMENTAS: [&str; 5] = ["machado", "picareta_1", "picareta_2", "picareta_3", "picareta_4"];
+pub const FERRAMENTAS: [&str; 5] = [
+    "machado",
+    "picareta_1",
+    "picareta_2",
+    "picareta_3",
+    "picareta_4",
+];
 
 /// Um golpe de coleta. O ciclo do servidor (2,0 s no tronco, 2,5–3,4 s na
 /// pedra) cabe um golpe e meio a dois: o impacto le' como "trabalho", sem
@@ -713,7 +1095,11 @@ pub fn ferramenta_de(tipo: u8) -> &'static str {
 /// Fase (0..1 do golpe) do IMPACTO: o fim da varrida do machado e o fim da
 /// descida da picareta (`chave_da_coleta`). E' onde saem as lascas.
 pub fn fase_do_impacto(tipo: u8) -> f32 {
-    if tipo == 0 { 0.55 } else { 0.58 }
+    if tipo == 0 {
+        0.55
+    } else {
+        0.58
+    }
 }
 
 /// Onde a cabeca bate, no espaco da ferramenta (voxels a partir do marcador,
@@ -721,7 +1107,11 @@ pub fn fase_do_impacto(tipo: u8) -> f32 {
 /// o fio da cunha (voxels 13–18 do cabo, fio 3 a frente). Picareta: o olho da
 /// cabeca, no alto do cabo (voxel 17).
 pub fn cabeca_da_ferramenta(tipo: u8) -> Vec3 {
-    if tipo == 0 { vec3(0.0, 3.5, 12.5) } else { vec3(0.0, 0.0, 14.0) }
+    if tipo == 0 {
+        vec3(0.0, 3.5, 12.5)
+    } else {
+        vec3(0.0, 0.0, 14.0)
+    }
 }
 
 /// O braco direito, a ferramenta (no espaco do tronco) e o corpo (torce,
@@ -749,7 +1139,13 @@ fn chave_da_coleta(tipo: u8, u: f32) -> (Braco, Lamina, f32, f32, f32) {
             (0.5 * (1.0 - k), 0.3 * (1.0 - k))
         };
         let d = br(g, 1.35, 0.35);
-        return (d, la(g, 1.45, MEIA_VOLTA), torce, 0.12, if (0.5..0.63).contains(&u) { -0.8 } else { 0.0 });
+        return (
+            d,
+            la(g, 1.45, MEIA_VOLTA),
+            torce,
+            0.12,
+            if (0.5..0.63).contains(&u) { -0.8 } else { 0.0 },
+        );
     }
     // picareta: elevacao pi = pra cima
     let (e, lamina_e, inclina, agacha) = if u < 0.45 {
@@ -760,12 +1156,28 @@ fn chave_da_coleta(tipo: u8, u: f32) -> (Braco, Lamina, f32, f32, f32) {
         (2.9 - 2.3 * k, 3.1 - 2.9 * k, -0.1 + 0.5 * k, 0.4 - 1.8 * k)
     } else if u < 0.66 {
         let k = suave((u - 0.58) / 0.08);
-        (0.6 + 0.15 * k, 0.2 + 0.15 * k, 0.4 - 0.05 * k, -1.4 + 0.2 * k)
+        (
+            0.6 + 0.15 * k,
+            0.2 + 0.15 * k,
+            0.4 - 0.05 * k,
+            -1.4 + 0.2 * k,
+        )
     } else {
         let k = suave((u - 0.66) / 0.34);
-        (0.75 + 0.15 * k, 0.35 + 0.75 * k, 0.35 * (1.0 - k), -1.2 * (1.0 - k))
+        (
+            0.75 + 0.15 * k,
+            0.35 + 0.75 * k,
+            0.35 * (1.0 - k),
+            -1.2 * (1.0 - k),
+        )
     };
-    (br(0.15, e, 0.3), la(0.15, lamina_e, PI), 0.0, inclina, agacha)
+    (
+        br(0.15, e, 0.3),
+        la(0.15, lamina_e, PI),
+        0.0,
+        inclina,
+        agacha,
+    )
 }
 
 fn aplica_coleta(p: &mut Pose, tipo: u8, t: f32) {
@@ -780,7 +1192,11 @@ fn aplica_coleta(p: &mut Pose, tipo: u8, t: f32) {
     p.rot[ANTEBRACO_D] = frente(d.cotovelo);
     // A esquerda aqui e' so' o ponto de partida das molas: quem poe as DUAS
     // maos no cabo e' a IK em `matrizes` (`segura_duas_maos`).
-    let e = br(d.guinada + 0.3, (d.elevacao - 0.2).max(0.3), d.cotovelo + 0.3);
+    let e = br(
+        d.guinada + 0.3,
+        (d.elevacao - 0.2).max(0.3),
+        d.cotovelo + 0.3,
+    );
     p.rot[BRACO_E] = ombro(&e);
     p.rot[ANTEBRACO_E] = frente(e.cotovelo);
     agacha(p, agacha_d);
@@ -815,7 +1231,8 @@ mod testes_de_coleta {
                 for u in [0.0, 0.2, 0.44, fase_do_impacto(tipo), 0.62, 0.8, 0.99] {
                     let mut p = Pose::de([Quat::IDENTITY; N], 0.0);
                     aplica_coleta(&mut p, tipo, u * PERIODO_DA_COLETA);
-                    let base = Mat4::from_translation(vec3(2.0, 1.0, -3.0)) * Mat4::from_rotation_y(0.6);
+                    let base =
+                        Mat4::from_translation(vec3(2.0, 1.0, -3.0)) * Mat4::from_rotation_y(0.6);
                     let m = matrizes(&p, base, voxel);
                     let (nome, f) = armas(&p, &m, voxel)[0];
                     assert_eq!(nome, ferramenta_de(tipo));
@@ -823,7 +1240,8 @@ mod testes_de_coleta {
                         (BRACO_D, ANTEBRACO_D, MAO_D, MAOS_NA_FERRAMENTA),
                         (BRACO_E, ANTEBRACO_E, MAO_E, 0.0),
                     ] {
-                        let pos = m[antebraco].transform_point3(mapa(mao, voxel) - mapa(PECAS[antebraco].2, voxel));
+                        let pos = m[antebraco]
+                            .transform_point3(mapa(mao, voxel) - mapa(PECAS[antebraco].2, voxel));
                         let cabo = f.transform_point3(Vec3::Z * no_cabo * voxel);
                         assert!(
                             pos.distance(cabo) <= 0.06 * voxel / 0.04,
@@ -832,8 +1250,14 @@ mod testes_de_coleta {
                         );
                         let ombro = m[braco].transform_point3(Vec3::ZERO);
                         let cotovelo = m[antebraco].transform_point3(Vec3::ZERO);
-                        assert!((ombro.distance(cotovelo) / voxel - 6.0).abs() < 0.01, "braco esticou");
-                        assert!((cotovelo.distance(pos) / voxel - 7.5).abs() < 0.01, "antebraco esticou");
+                        assert!(
+                            (ombro.distance(cotovelo) / voxel - 6.0).abs() < 0.01,
+                            "braco esticou"
+                        );
+                        assert!(
+                            (cotovelo.distance(pos) / voxel - 7.5).abs() < 0.01,
+                            "antebraco esticou"
+                        );
                     }
                 }
             }
@@ -848,10 +1272,20 @@ mod testes_de_coleta {
         let (alto, _, _, _, _) = chave_da_coleta(1, 0.44);
         let (baixo, _, _, inclina, agacha) = chave_da_coleta(1, 0.58);
         let (fim, _, _, _, _) = chave_da_coleta(1, 1.0);
-        assert!(alto.elevacao > 2.5, "levanta acima da cabeca: {}", alto.elevacao);
+        assert!(
+            alto.elevacao > 2.5,
+            "levanta acima da cabeca: {}",
+            alto.elevacao
+        );
         assert!(baixo.elevacao < ini.elevacao, "desce no impacto");
-        assert!(inclina > 0.3 && agacha < -1.0, "o corpo vai junto no impacto");
-        assert!((fim.elevacao - ini.elevacao).abs() < 0.05, "volta ao comeco");
+        assert!(
+            inclina > 0.3 && agacha < -1.0,
+            "o corpo vai junto no impacto"
+        );
+        assert!(
+            (fim.elevacao - ini.elevacao).abs() < 0.05,
+            "volta ao comeco"
+        );
         // machado: arma pra direita, varre pra esquerda, volta ao meio.
         let (a, _, _, _, _) = chave_da_coleta(0, 0.39);
         let (b, _, _, _, _) = chave_da_coleta(0, 0.55);
@@ -874,7 +1308,11 @@ fn aplica_ferido(p: &mut Pose, t: f32, recuo: Vec3) {
     if k <= 0.001 {
         return;
     }
-    let recuo = if recuo.length_squared() > 0.01 { recuo.normalize() } else { vec3(0.0, 0.0, -1.0) };
+    let recuo = if recuo.length_squared() > 0.01 {
+        recuo.normalize()
+    } else {
+        vec3(0.0, 0.0, -1.0)
+    };
     let eixo = Vec3::Y.cross(recuo).normalize_or_zero();
     p.rot[TORSO] = Quat::from_axis_angle(eixo, 0.5 * k) * p.rot[TORSO];
     p.rot[1] = Quat::from_axis_angle(eixo, 0.35 * k) * p.rot[1];
@@ -919,70 +1357,180 @@ fn guarda_viva(est: &Estilo, e: &Entrada) -> Chave {
 /// Cada habilidade tem antecipacao, impacto e retorno proprios; o relogio
 /// vem do mesmo catalogo que agenda o efeito no servidor.
 fn chave_da_skill(est: &Estilo, id: u32, t: f32, impacto: f32) -> Chave {
-    if t >= impacto + shared::skills::RECUPERACAO_S { return est.guarda; }
+    if t >= impacto + shared::skills::RECUPERACAO_S {
+        return est.guarda;
+    }
     let mut prep = est.guarda;
     let mut hit = est.guarda;
     match id {
-        1 => { // investida: escudo firme e peso para a frente
-            prep.e = br(-0.12, 1.05, 1.4); prep.d = br(-0.6, 0.65, 1.5);
-            prep.inclina = 0.2; prep.agacha = -1.5; prep.escudo = 0.0;
-            hit = prep; hit.e = br(0.0, 1.45, 0.25); hit.inclina = 0.38; hit.avanco = 0.9; hit.agacha = -2.1;
+        1 => {
+            // investida: escudo firme e peso para a frente
+            prep.e = br(-0.12, 1.05, 1.4);
+            prep.d = br(-0.6, 0.65, 1.5);
+            prep.inclina = 0.2;
+            prep.agacha = -1.5;
+            prep.escudo = 0.0;
+            hit = prep;
+            hit.e = br(0.0, 1.45, 0.25);
+            hit.inclina = 0.38;
+            hit.avanco = 0.9;
+            hit.agacha = -2.1;
         }
-        2 => { prep = est.golpes[0][0]; prep.torce = -0.85; prep.agacha = -0.8;
-            hit = est.golpes[0][1]; hit.torce = 0.85; hit.avanco = 0.8; hit.agacha = -1.8; }
-        3 => { prep.e = br(-0.25, 0.7, 1.8); prep.agacha = -1.2;
-            hit.e = br(0.0, 1.3, 0.8); hit.d = br(-0.25, 0.9, 1.4); hit.agacha = -2.0; hit.escudo = 0.0; }
-        4 => { prep = est.golpes[1][0]; prep.torce = 0.65; prep.agacha = -1.6;
-            hit = est.golpes[1][1]; hit.torce = -0.65; hit.avanco = 0.95; hit.lamina = la(-0.75, 1.6, -MEIA_VOLTA); }
+        2 => {
+            prep = est.golpes[0][0];
+            prep.torce = -0.85;
+            prep.agacha = -0.8;
+            hit = est.golpes[0][1];
+            hit.torce = 0.85;
+            hit.avanco = 0.8;
+            hit.agacha = -1.8;
+        }
+        3 => {
+            prep.e = br(-0.25, 0.7, 1.8);
+            prep.agacha = -1.2;
+            hit.e = br(0.0, 1.3, 0.8);
+            hit.d = br(-0.25, 0.9, 1.4);
+            hit.agacha = -2.0;
+            hit.escudo = 0.0;
+        }
+        4 => {
+            prep = est.golpes[1][0];
+            prep.torce = 0.65;
+            prep.agacha = -1.6;
+            hit = est.golpes[1][1];
+            hit.torce = -0.65;
+            hit.avanco = 0.95;
+            hit.lamina = la(-0.75, 1.6, -MEIA_VOLTA);
+        }
         5 => {
-            prep = est.golpes[0][0]; prep.torce = -0.65; prep.agacha = -0.9;
-            hit = est.golpes[1][1]; hit.torce = -0.7; hit.avanco = 0.7;
+            prep = est.golpes[0][0];
+            prep.torce = -0.65;
+            prep.agacha = -0.9;
+            hit = est.golpes[1][1];
+            hit.torce = -0.7;
+            hit.avanco = 0.7;
             // Duas diagonais ligadas pelo quadril; nenhuma volta instantanea do tronco.
             let meio = est.golpes[0][1];
-            if t < impacto * 0.34 { return mistura(&est.guarda, &prep, suave(t / (impacto * 0.34))); }
-            if t < impacto * 0.65 { return mistura(&prep, &meio, suave((t / impacto - 0.34) / 0.31)); }
-            if t < impacto { return mistura(&meio, &hit, suave((t / impacto - 0.65) / 0.35)); }
+            if t < impacto * 0.34 {
+                return mistura(&est.guarda, &prep, suave(t / (impacto * 0.34)));
+            }
+            if t < impacto * 0.65 {
+                return mistura(&prep, &meio, suave((t / impacto - 0.34) / 0.31));
+            }
+            if t < impacto {
+                return mistura(&meio, &hit, suave((t / impacto - 0.65) / 0.35));
+            }
         }
-        6 => { prep = est.golpes[0][0]; prep.d = br(-0.15, 2.6, 0.9); prep.lamina = la(0.0, 2.9, PI);
-            hit = est.golpes[0][1]; hit.torce = 0.05; hit.d = br(0.0, 1.15, 0.2); hit.lamina = la(0.0, 1.05, PI); hit.avanco = 0.8; }
+        6 => {
+            prep = est.golpes[0][0];
+            prep.d = br(-0.15, 2.6, 0.9);
+            prep.lamina = la(0.0, 2.9, PI);
+            hit = est.golpes[0][1];
+            hit.torce = 0.05;
+            hit.d = br(0.0, 1.15, 0.2);
+            hit.lamina = la(0.0, 1.05, PI);
+            hit.avanco = 0.8;
+        }
         7 | 8 => {
             prep = est.golpes[if id == 7 { 0 } else { 2 }][0];
-            prep.agacha = -0.8; prep.torce = if id == 7 { -0.25 } else { 0.0 };
+            prep.agacha = -0.8;
+            prep.torce = if id == 7 { -0.25 } else { 0.0 };
             hit = prep;
             // O cano aponta ao alvo no disparo; o coice acontece DEPOIS.
             if t >= impacto {
                 let dt = t - impacto;
-                let coice = (dt / 0.045).min(1.0) * (1.0 - dt / shared::skills::RECUPERACAO_S).max(0.0);
-                hit.d.elevacao += coice * 0.42; hit.lamina.elevacao += coice * 0.35;
-                if id == 8 { hit.e.elevacao += coice * 0.38; hit.arma_e.elevacao += coice * 0.35; }
-                hit.inclina -= coice * 0.12; hit.agacha -= coice * 0.7;
-                return mistura(&hit, &est.guarda, suave((dt / shared::skills::RECUPERACAO_S).clamp(0.0, 1.0)));
+                let coice =
+                    (dt / 0.045).min(1.0) * (1.0 - dt / shared::skills::RECUPERACAO_S).max(0.0);
+                hit.d.elevacao += coice * 0.42;
+                hit.lamina.elevacao += coice * 0.35;
+                if id == 8 {
+                    hit.e.elevacao += coice * 0.38;
+                    hit.arma_e.elevacao += coice * 0.35;
+                }
+                hit.inclina -= coice * 0.12;
+                hit.agacha -= coice * 0.7;
+                return mistura(
+                    &hit,
+                    &est.guarda,
+                    suave((dt / shared::skills::RECUPERACAO_S).clamp(0.0, 1.0)),
+                );
             }
         }
-        9 => { prep.d = br(-0.4, 2.45, 1.4); prep.e = br(0.2, 0.55, 1.3); prep.torce = -0.35;
-            hit.d = br(0.05, 1.3, 0.12); hit.torce = 0.25; hit.inclina = 0.18; hit.avanco = 0.6;
+        9 => {
+            prep.d = br(-0.4, 2.45, 1.4);
+            prep.e = br(0.2, 0.55, 1.3);
+            prep.torce = -0.35;
+            hit.d = br(0.05, 1.3, 0.12);
+            hit.torce = 0.25;
+            hit.inclina = 0.18;
+            hit.avanco = 0.6;
             let solta = impacto * 0.45;
-            if t < solta * 0.6 { return mistura(&est.guarda, &prep, suave(t / (solta * 0.6))); }
-            if t < solta { return mistura(&prep, &hit, suave((t / solta - 0.6) / 0.4)); }
-            return mistura(&hit, &est.guarda, suave(((t - solta) / (impacto + shared::skills::RECUPERACAO_S - solta)).clamp(0.0, 1.0)));
+            if t < solta * 0.6 {
+                return mistura(&est.guarda, &prep, suave(t / (solta * 0.6)));
+            }
+            if t < solta {
+                return mistura(&prep, &hit, suave((t / solta - 0.6) / 0.4));
+            }
+            return mistura(
+                &hit,
+                &est.guarda,
+                suave(
+                    ((t - solta) / (impacto + shared::skills::RECUPERACAO_S - solta))
+                        .clamp(0.0, 1.0),
+                ),
+            );
         }
-        10 => { prep.d = br(0.35, 1.15, 1.7); prep.e = br(-0.35, 1.15, 1.7); prep.agacha = -0.7;
-            hit.d = br(-0.35, 1.75, 0.8); hit.e = br(0.35, 1.75, 0.8); hit.inclina = -0.08; }
-        11 => { prep.d = br(0.35, 1.05, 1.8); prep.e = br(-0.35, 1.05, 1.8); prep.agacha = -1.1;
-            hit.d = br(-1.0, 1.5, 0.3); hit.e = br(1.0, 1.5, 0.3); hit.agacha = -0.4; }
-        12 => { prep.d = br(-0.15, 2.75, 0.4); prep.e = br(0.25, 1.35, 1.5); prep.inclina = -0.12;
-            hit.d = br(0.0, 1.3, 0.12); hit.e = br(0.2, 1.0, 0.7); hit.inclina = 0.25; hit.agacha = -1.8; hit.avanco = 0.7; }
+        10 => {
+            prep.d = br(0.35, 1.15, 1.7);
+            prep.e = br(-0.35, 1.15, 1.7);
+            prep.agacha = -0.7;
+            hit.d = br(-0.35, 1.75, 0.8);
+            hit.e = br(0.35, 1.75, 0.8);
+            hit.inclina = -0.08;
+        }
+        11 => {
+            prep.d = br(0.35, 1.05, 1.8);
+            prep.e = br(-0.35, 1.05, 1.8);
+            prep.agacha = -1.1;
+            hit.d = br(-1.0, 1.5, 0.3);
+            hit.e = br(1.0, 1.5, 0.3);
+            hit.agacha = -0.4;
+        }
+        12 => {
+            prep.d = br(-0.15, 2.75, 0.4);
+            prep.e = br(0.25, 1.35, 1.5);
+            prep.inclina = -0.12;
+            hit.d = br(0.0, 1.3, 0.12);
+            hit.e = br(0.2, 1.0, 0.7);
+            hit.inclina = 0.25;
+            hit.agacha = -1.8;
+            hit.avanco = 0.7;
+        }
         _ => return est.guarda,
     }
     let prepara = (impacto - 0.14).max(0.06);
-    if t < prepara { mistura(&est.guarda, &prep, suave((t / prepara).clamp(0.0, 1.0))) }
-    else if t < impacto { mistura(&prep, &hit, suave(((t - prepara) / (impacto - prepara)).clamp(0.0, 1.0))) }
-    else { mistura(&hit, &est.guarda, suave(((t - impacto) / shared::skills::RECUPERACAO_S).clamp(0.0, 1.0))) }
+    if t < prepara {
+        mistura(&est.guarda, &prep, suave((t / prepara).clamp(0.0, 1.0)))
+    } else if t < impacto {
+        mistura(
+            &prep,
+            &hit,
+            suave(((t - prepara) / (impacto - prepara)).clamp(0.0, 1.0)),
+        )
+    } else {
+        mistura(
+            &hit,
+            &est.guarda,
+            suave(((t - impacto) / shared::skills::RECUPERACAO_S).clamp(0.0, 1.0)),
+        )
+    }
 }
 
 fn arma_na_mao(p: &mut Pose, e: &Entrada) {
     let c = &e.combate;
-    let Some(est) = estilo(c.conjunto) else { return };
+    let Some(est) = estilo(c.conjunto) else {
+        return;
+    };
     p.armado = true;
     p.conjunto = c.conjunto;
     let sacada = c.sacada.clamp(0.0, 1.0);
@@ -991,22 +1539,28 @@ fn arma_na_mao(p: &mut Pose, e: &Entrada) {
     // A chave do quadro e o quanto ela manda sobre a locomocao.
     let (chave, peso_bracos, peso_tronco) = if let Some((id, t, impacto)) = c.skill {
         (chave_da_skill(est, id, t, impacto), 1.0, 1.0)
-    } else { match c.golpe {
-        Some((passo, t)) => {
-            let desde = match c.golpe_ant {
-                Some((pa, ta)) => chave_do_golpe(est, pa, ta, &est.guarda),
-                None => est.guarda,
-            };
-            (chave_do_golpe(est, passo, t, &desde), 1.0, 1.0)
+    } else {
+        match c.golpe {
+            Some((passo, t)) => {
+                let desde = match c.golpe_ant {
+                    Some((pa, ta)) => chave_do_golpe(est, pa, ta, &est.guarda),
+                    None => est.guarda,
+                };
+                (chave_do_golpe(est, passo, t, &desde), 1.0, 1.0)
+            }
+            None => {
+                // Sacar e guardar sao o MESMO gesto de ida e volta: a mao vai a'
+                // arma na metade do caminho, e e' ai' que ela troca de lugar.
+                let bump = (sacada * PI).sin().max(0.0);
+                let g = suave(sacada) * (1.0 - 0.3 * e.correr.clamp(0.0, 1.0));
+                (
+                    mistura(&guarda_viva(est, e), &est.sacando, bump),
+                    (0.85 * g).max(bump),
+                    0.6 * g,
+                )
+            }
         }
-        None => {
-            // Sacar e guardar sao o MESMO gesto de ida e volta: a mao vai a'
-            // arma na metade do caminho, e e' ai' que ela troca de lugar.
-            let bump = (sacada * PI).sin().max(0.0);
-            let g = suave(sacada) * (1.0 - 0.3 * e.correr.clamp(0.0, 1.0));
-            (mistura(&guarda_viva(est, e), &est.sacando, bump), (0.85 * g).max(bump), 0.6 * g)
-        }
-    }};
+    };
     if peso_bracos <= 0.0 && !p.na_mao {
         return;
     }
@@ -1039,7 +1593,10 @@ fn arma_na_mao(p: &mut Pose, e: &Entrada) {
     } else {
         orienta_lamina(&chave.arma_e)
     };
-    p.punho = [cadeia_d.inverse() * orienta_lamina(&chave.lamina), cadeia_e.inverse() * esquerda];
+    p.punho = [
+        cadeia_d.inverse() * orienta_lamina(&chave.lamina),
+        cadeia_e.inverse() * esquerda,
+    ];
 }
 
 /// O achatamento elastico de quem apanha: amassa na hora do golpe e volta
@@ -1064,12 +1621,18 @@ pub fn esmagamento(t: f32) -> f32 {
 const NM: usize = N + 2;
 /// As pernas nao ganham mola: o pe' plantado e o joelho do degrau tem que
 /// cair exatamente onde a conta manda — mola ali e' pe' patinando.
-const COM_MOLA: [bool; NM] = [true, true, true, true, true, true, true, false, false, false, false, true, true];
+const COM_MOLA: [bool; NM] = [
+    true, true, true, true, true, true, true, false, false, false, false, true, true,
+];
 /// Rigidez (1/s^2) por junta: torso, cabeca, chapeu, braco d, antebraco d,
 /// braco e, antebraco e, as quatro da perna, punho d (lamina), punho e.
-const RIGIDEZ: [f32; NM] = [650.0, 260.0, 160.0, 520.0, 360.0, 520.0, 360.0, 0.0, 0.0, 0.0, 0.0, 240.0, 380.0];
+const RIGIDEZ: [f32; NM] = [
+    650.0, 260.0, 160.0, 520.0, 360.0, 520.0, 360.0, 0.0, 0.0, 0.0, 0.0, 240.0, 380.0,
+];
 /// Amortecimento relativo (1 = chega sem passar).
-const AMORTECE: [f32; NM] = [0.72, 0.55, 0.42, 0.6, 0.52, 0.6, 0.52, 1.0, 1.0, 1.0, 1.0, 0.45, 0.6];
+const AMORTECE: [f32; NM] = [
+    0.72, 0.55, 0.42, 0.6, 0.52, 0.6, 0.52, 1.0, 1.0, 1.0, 1.0, 0.45, 0.6,
+];
 
 #[derive(Clone, Copy, Debug)]
 pub struct Molas {
@@ -1080,7 +1643,11 @@ pub struct Molas {
 
 impl Default for Molas {
     fn default() -> Self {
-        Molas { rot: [Quat::IDENTITY; NM], vel: [Vec3::ZERO; NM], viva: false }
+        Molas {
+            rot: [Quat::IDENTITY; NM],
+            vel: [Vec3::ZERO; NM],
+            viva: false,
+        }
     }
 }
 
@@ -1146,7 +1713,9 @@ pub fn armas(p: &Pose, m: &[Mat4; N], voxel: f32) -> Vec<(&'static str, Mat4)> {
         let pega = (m[ANTEBRACO_D] * encaixe(MAO_D, ANTEBRACO_D)).transform_point3(Vec3::ZERO);
         let orientacao = p.rot[BRACO_D] * p.rot[ANTEBRACO_D] * p.punho[0];
         let local = m[TORSO].inverse().transform_point3(pega);
-        let presa = m[TORSO] * Mat4::from_translation(local) * Mat4::from_quat(orientacao)
+        let presa = m[TORSO]
+            * Mat4::from_translation(local)
+            * Mat4::from_quat(orientacao)
             * Mat4::from_translation(vec3(0.0, 0.0, -MAOS_NA_FERRAMENTA * voxel));
         let _ = mao_d;
         return vec![(f, presa)];
@@ -1161,7 +1730,10 @@ pub fn armas(p: &Pose, m: &[Mat4; N], voxel: f32) -> Vec<(&'static str, Mat4)> {
                 vec![("espada", mao_d), ("escudo", mao_e)]
             } else {
                 vec![
-                    ("espada", no_torso(QUADRIL_E, orienta_lamina(&ESTILO_ESPADA.sacando.lamina))),
+                    (
+                        "espada",
+                        no_torso(QUADRIL_E, orienta_lamina(&ESTILO_ESPADA.sacando.lamina)),
+                    ),
                     ("escudo", no_torso(COSTAS, orienta_escudo(PI))),
                 ]
             }
@@ -1169,20 +1741,35 @@ pub fn armas(p: &Pose, m: &[Mat4; N], voxel: f32) -> Vec<(&'static str, Mat4)> {
         KATANA => {
             let bainha = no_torso(BAINHA, orienta_lamina(&ESTILO_KATANA.sacando.lamina));
             let katana = if p.na_mao {
-                let pega = (m[ANTEBRACO_D] * encaixe(MAO_D, ANTEBRACO_D)).transform_point3(Vec3::ZERO);
+                let pega =
+                    (m[ANTEBRACO_D] * encaixe(MAO_D, ANTEBRACO_D)).transform_point3(Vec3::ZERO);
                 let orientacao = p.rot[BRACO_D] * p.rot[ANTEBRACO_D] * p.punho[0];
                 let local = m[TORSO].inverse().transform_point3(pega);
                 // O marcador do modelo fica no voxel 3 do cabo; a direita
                 // segura no 6, a esquerda no 1 (cinco voxels entre as maos).
-                pra_fora(m[TORSO] * Mat4::from_translation(local) * Mat4::from_quat(orientacao), 3.0)
-            } else { pra_fora(bainha, 5.0) };
+                pra_fora(
+                    m[TORSO] * Mat4::from_translation(local) * Mat4::from_quat(orientacao),
+                    3.0,
+                )
+            } else {
+                pra_fora(bainha, 5.0)
+            };
             vec![("bainha", bainha), ("katana", katana)]
         }
         PISTOLAS => {
             let q = orienta_lamina(&la(0.0, 0.0, 0.0));
             let (cd, ce) = (no_torso(COLDRE_D, q), no_torso(COLDRE_E, q));
-            let (pd, pe) = if p.na_mao { (mao_d, mao_e) } else { (pra_fora(cd, 3.0), pra_fora(ce, 3.0)) };
-            vec![("coldre", cd), ("coldre", ce), ("pistola", pd), ("pistola", pe)]
+            let (pd, pe) = if p.na_mao {
+                (mao_d, mao_e)
+            } else {
+                (pra_fora(cd, 3.0), pra_fora(ce, 3.0))
+            };
+            vec![
+                ("coldre", cd),
+                ("coldre", ce),
+                ("pistola", pd),
+                ("pistola", pe),
+            ]
         }
         _ => Vec::new(),
     }
@@ -1191,7 +1778,9 @@ pub fn armas(p: &Pose, m: &[Mat4; N], voxel: f32) -> Vec<(&'static str, Mat4)> {
 /// Os dois pulsos (direito, esquerdo), no espaco de mundo: e' neles que o
 /// anel projeta o circulo. O eixo -Y de cada um aponta pra mao.
 pub fn pulsos(m: &[Mat4; N], voxel: f32) -> [Mat4; 2] {
-    let em = |pt: [f32; 3], pai: usize| m[pai] * Mat4::from_translation(mapa(pt, voxel) - mapa(PECAS[pai].2, voxel));
+    let em = |pt: [f32; 3], pai: usize| {
+        m[pai] * Mat4::from_translation(mapa(pt, voxel) - mapa(PECAS[pai].2, voxel))
+    };
     [em(PULSO_D, ANTEBRACO_D), em(PULSO_E, ANTEBRACO_E)]
 }
 
@@ -1199,8 +1788,13 @@ pub fn pulsos(m: &[Mat4; N], voxel: f32) -> [Mat4; 2] {
 pub fn aplica_arqueiro(p: &mut Pose, golpe: Option<f32>) {
     p.armado = false;
     p.na_mao = false;
-    let puxar = golpe.map_or(0.2, |t| if t < IMPACTO { suave((t / IMPACTO).clamp(0.0, 1.0)) }
-        else { 1.0 - suave(((t - IMPACTO) / 0.16).clamp(0.0, 1.0)) });
+    let puxar = golpe.map_or(0.2, |t| {
+        if t < IMPACTO {
+            suave((t / IMPACTO).clamp(0.0, 1.0))
+        } else {
+            1.0 - suave(((t - IMPACTO) / 0.16).clamp(0.0, 1.0))
+        }
+    });
     p.rot[TORSO] = Quat::from_rotation_y(-0.3);
     p.rot[BRACO_E] = ombro(&br(0.05, 1.45, 0.15));
     p.rot[ANTEBRACO_E] = frente(0.15);
@@ -1211,7 +1805,9 @@ pub fn aplica_arqueiro(p: &mut Pose, golpe: Option<f32>) {
 /// Onde fica a palma de cada mao (direita, esquerda), no mundo: e' ali que o
 /// anel brilha.
 pub fn palmas(m: &[Mat4; N], voxel: f32) -> [Vec3; 2] {
-    let em = |pt: [f32; 3], pai: usize| m[pai].transform_point3(mapa(pt, voxel) - mapa(PECAS[pai].2, voxel));
+    let em = |pt: [f32; 3], pai: usize| {
+        m[pai].transform_point3(mapa(pt, voxel) - mapa(PECAS[pai].2, voxel))
+    };
     [em(MAO_D, ANTEBRACO_D), em(MAO_E, ANTEBRACO_E)]
 }
 
@@ -1227,7 +1823,6 @@ pub fn e_pistolas(p: &Pose) -> bool {
 
 /// O instante do tiro/impacto dentro do golpe, pro efeito casar com o gesto.
 pub const IMPACTO: f32 = PREPARA + CORTA * 0.35;
-
 
 #[cfg(test)]
 mod testes {
@@ -1272,8 +1867,16 @@ mod testes {
             e.degrau = [degrau, 0.0];
             let p = pose(&e);
             let s = sola(&p, COXA_D, CANELA_D);
-            assert!((s.y - degrau).abs() < 0.3, "degrau {degrau}: sola em y {:.2}", s.y);
-            assert!(s.z.abs() < 0.5, "degrau {degrau}: sola saiu {:.2} pra frente/trás", s.z);
+            assert!(
+                (s.y - degrau).abs() < 0.3,
+                "degrau {degrau}: sola em y {:.2}",
+                s.y
+            );
+            assert!(
+                s.z.abs() < 0.5,
+                "degrau {degrau}: sola saiu {:.2} pra frente/trás",
+                s.z
+            );
             // O outro pé continua no chão.
             assert!(sola(&p, COXA_E, CANELA_E).y.abs() < 0.01);
         }
@@ -1297,7 +1900,12 @@ mod testes {
             let p = pose(&e);
             for (c, kk) in [(COXA_D, CANELA_D), (COXA_E, CANELA_E)] {
                 let s = sola(&p, c, kk);
-                assert!(s.y < 4.5, "tempo {:.2}: perna encolhida, sola em y {:.2}", e.tempo, s.y);
+                assert!(
+                    s.y < 4.5,
+                    "tempo {:.2}: perna encolhida, sola em y {:.2}",
+                    e.tempo,
+                    s.y
+                );
             }
         }
     }
@@ -1319,17 +1927,39 @@ mod testes {
             // frente do corpo, a de trás sempre atrás, bem separadas. Quando
             // a abertura fecha, a da frente fica ~3 voxels à frente — ainda
             // na frente.
-            assert!(d.z > 1.5, "tempo {:.2}: a perna da frente saiu da frente ({:.2})", e.tempo, d.z);
-            assert!(es.z < -1.5, "tempo {:.2}: a perna de trás saiu de trás ({:.2})", e.tempo, es.z);
-            assert!(d.z - es.z > 4.0, "tempo {:.2}: as pernas se juntaram ({:.2} x {:.2})", e.tempo, d.z, es.z);
+            assert!(
+                d.z > 1.5,
+                "tempo {:.2}: a perna da frente saiu da frente ({:.2})",
+                e.tempo,
+                d.z
+            );
+            assert!(
+                es.z < -1.5,
+                "tempo {:.2}: a perna de trás saiu de trás ({:.2})",
+                e.tempo,
+                es.z
+            );
+            assert!(
+                d.z - es.z > 4.0,
+                "tempo {:.2}: as pernas se juntaram ({:.2} x {:.2})",
+                e.tempo,
+                d.z,
+                es.z
+            );
             let ombro = mapa(PECAS[BRACO_D].2, 1.0);
             let (md, me) = (mao(&p, ANTEBRACO_D), mao(&p, ANTEBRACO_E));
-            assert!(md.x.abs() > ombro.x.abs() + 3.0 && me.x.abs() > ombro.x.abs() + 3.0,
-                "tempo {:.2}: braço não está aberto", e.tempo);
+            assert!(
+                md.x.abs() > ombro.x.abs() + 3.0 && me.x.abs() > ombro.x.abs() + 3.0,
+                "tempo {:.2}: braço não está aberto",
+                e.tempo
+            );
             lo = lo.min(d.z);
             hi = hi.max(d.z);
         }
-        assert!(hi - lo > 0.8, "a perna não balança no ar ({lo:.2}..{hi:.2})");
+        assert!(
+            hi - lo > 0.8,
+            "a perna não balança no ar ({lo:.2}..{hi:.2})"
+        );
     }
 
     /// No meio do passo a perna direita está NA FRENTE (o +Z do rig) e a
@@ -1340,17 +1970,33 @@ mod testes {
         e.andar = 1.0;
         e.fase = std::f32::consts::FRAC_PI_2;
         let p = pose(&e);
-        assert!(sola(&p, COXA_D, CANELA_D).z > 2.0, "perna direita não foi pra frente");
-        assert!(sola(&p, COXA_E, CANELA_E).z < -2.0, "perna esquerda não foi pra trás");
+        assert!(
+            sola(&p, COXA_D, CANELA_D).z > 2.0,
+            "perna direita não foi pra frente"
+        );
+        assert!(
+            sola(&p, COXA_E, CANELA_E).z < -2.0,
+            "perna esquerda não foi pra trás"
+        );
         let m = matrizes(&p, Mat4::IDENTITY, 1.0);
-        let mao = m[ANTEBRACO_D].transform_point3(mapa([23.0, 12.0, 16.0], 1.0) - mapa(PECAS[ANTEBRACO_D].2, 1.0));
-        assert!(mao.z < 0.0, "braço direito deveria ir pra trás, mão em {mao:?}");
+        let mao = m[ANTEBRACO_D]
+            .transform_point3(mapa([23.0, 12.0, 16.0], 1.0) - mapa(PECAS[ANTEBRACO_D].2, 1.0));
+        assert!(
+            mao.z < 0.0,
+            "braço direito deveria ir pra trás, mão em {mao:?}"
+        );
     }
     // ── combate ──
 
     fn em_combate(golpe: Option<(u8, f32)>, golpe_ant: Option<(u8, f32)>, sacada: f32) -> Entrada {
         let mut e = parado();
-        e.combate = Combate { conjunto: 0, sacada, golpe, golpe_ant, ..Default::default() };
+        e.combate = Combate {
+            conjunto: 0,
+            sacada,
+            golpe,
+            golpe_ant,
+            ..Default::default()
+        };
         e
     }
 
@@ -1383,7 +2029,10 @@ mod testes {
         let a = armas(&p, &m, 1.0);
         let pega = |n: &str| a.iter().find(|(x, _)| *x == n).map(|(_, m)| *m).expect(n);
         let (espada, escudo) = (pega("espada"), pega("escudo"));
-        let (e, s) = (espada.transform_point3(Vec3::ZERO), escudo.transform_point3(Vec3::ZERO));
+        let (e, s) = (
+            espada.transform_point3(Vec3::ZERO),
+            escudo.transform_point3(Vec3::ZERO),
+        );
         // a esquerda do boneco e' o +X
         assert!(e.x > 4.0 && (15.0..26.0).contains(&e.y), "espada em {e:?}");
         assert!(s.z < -2.0, "escudo em {s:?}");
@@ -1396,7 +2045,10 @@ mod testes {
         assert!(prep.x < -8.0, "preparo a' direita: {prep:?}");
         assert!(imp.x > 8.0, "impacto a' esquerda: {imp:?}");
         for p in [prep, imp] {
-            assert!((18.0..40.0).contains(&p.y), "fora da altura do peito: {p:?}");
+            assert!(
+                (18.0..40.0).contains(&p.y),
+                "fora da altura do peito: {p:?}"
+            );
         }
         assert!((prep.y - imp.y).abs() < 10.0, "corte nao ficou horizontal");
     }
@@ -1406,14 +2058,21 @@ mod testes {
         let (prep, _, _) = armas_em(&em_combate(Some((2, PREPARA)), None, 1.0));
         let (imp, _, _) = armas_em(&em_combate(Some((2, PREPARA + CORTA)), None, 1.0));
         assert!(prep.y > 45.0, "preparo tem que ir la' em cima: {prep:?}");
-        assert!(imp.y < 30.0 && imp.z > 10.0, "impacto a' frente e embaixo: {imp:?}");
+        assert!(
+            imp.y < 30.0 && imp.z > 10.0,
+            "impacto a' frente e embaixo: {imp:?}"
+        );
     }
 
     #[test]
     fn o_golpe_nao_estala_nem_na_troca() {
         let (a, _, _) = armas_em(&em_combate(Some((0, 0.25)), None, 1.0));
         let (b, _, _) = armas_em(&em_combate(Some((1, 0.0)), Some((0, 0.25)), 1.0));
-        assert!(a.distance(b) < 0.5, "troca de golpe saltou {:.1} voxels", a.distance(b));
+        assert!(
+            a.distance(b) < 0.5,
+            "troca de golpe saltou {:.1} voxels",
+            a.distance(b)
+        );
         for passo in 0..3u8 {
             let mut antes = armas_em(&em_combate(Some((passo, 0.0)), None, 1.0));
             let mut t = 0.0;
@@ -1422,8 +2081,14 @@ mod testes {
                 let agora = armas_em(&em_combate(Some((passo, t)), None, 1.0));
                 // o corte varre ~190 graus somando tronco e braco: rapido de verdade, mas
                 // continuo — estalo seria dezenas de voxels
-                assert!(agora.0.distance(antes.0) < 6.0, "golpe {passo}: ponta saltou em t={t:.3}");
-                assert!(agora.1.distance(antes.1) < 1.0, "golpe {passo}: escudo saltou em t={t:.3}");
+                assert!(
+                    agora.0.distance(antes.0) < 6.0,
+                    "golpe {passo}: ponta saltou em t={t:.3}"
+                );
+                assert!(
+                    agora.1.distance(antes.1) < 1.0,
+                    "golpe {passo}: escudo saltou em t={t:.3}"
+                );
                 antes = agora;
             }
         }
@@ -1437,14 +2102,20 @@ mod testes {
             let agora = armas_em(&em_combate(None, None, s));
             // na metade a arma troca de lugar (quadril -> mao): so' la' pode andar mais
             let limite = if (s - 0.5).abs() < 0.003 { 14.0 } else { 1.5 };
-            assert!(agora.0.distance(antes.0) < limite, "sacando em {s:.3}: {:.1}", agora.0.distance(antes.0));
+            assert!(
+                agora.0.distance(antes.0) < limite,
+                "sacando em {s:.3}: {:.1}",
+                agora.0.distance(antes.0)
+            );
             antes = agora;
         }
     }
 
     #[test]
     fn apanhar_joga_a_cabeca_pra_tras() {
-        let cabeca = |e: &Entrada| matrizes(&pose(e), Mat4::IDENTITY, 1.0)[1].transform_point3(vec3(0.0, 6.0, 0.0));
+        let cabeca = |e: &Entrada| {
+            matrizes(&pose(e), Mat4::IDENTITY, 1.0)[1].transform_point3(vec3(0.0, 6.0, 0.0))
+        };
         let mut e = parado();
         let parada = cabeca(&e);
         e.combate.ferido = Some(0.05);
@@ -1466,8 +2137,14 @@ mod testes {
             max_lamina = max_lamina.max(q.punho[0].angle_between(Quat::IDENTITY));
             p = q;
         }
-        assert!(p.rot[BRACO_D].angle_between(alvo) < 0.02, "braco nao chegou");
-        assert!(max_lamina > 1.02, "a lamina tinha que passar do alvo: {max_lamina:.3}");
+        assert!(
+            p.rot[BRACO_D].angle_between(alvo) < 0.02,
+            "braco nao chegou"
+        );
+        assert!(
+            max_lamina > 1.02,
+            "a lamina tinha que passar do alvo: {max_lamina:.3}"
+        );
         // perna nao tem mola
         assert_eq!(p.rot[COXA_D], pose(&parado()).rot[COXA_D]);
     }
@@ -1485,7 +2162,9 @@ mod testes {
 
     #[test]
     fn o_tranco_vai_pra_longe_do_atacante() {
-        let cabeca = |e: &Entrada| matrizes(&pose(e), Mat4::IDENTITY, 1.0)[1].transform_point3(vec3(0.0, 6.0, 0.0));
+        let cabeca = |e: &Entrada| {
+            matrizes(&pose(e), Mat4::IDENTITY, 1.0)[1].transform_point3(vec3(0.0, 6.0, 0.0))
+        };
         let mut e = parado();
         let parada = cabeca(&e);
         e.combate.ferido = Some(0.05);
@@ -1502,7 +2181,12 @@ mod testes {
     fn arma_em(e: &Entrada, nome: &str, i: usize) -> Mat4 {
         let p = pose(e);
         let m = matrizes(&p, Mat4::IDENTITY, 1.0);
-        armas(&p, &m, 1.0).into_iter().filter(|(n, _)| *n == nome).nth(i).expect(nome).1
+        armas(&p, &m, 1.0)
+            .into_iter()
+            .filter(|(n, _)| *n == nome)
+            .nth(i)
+            .expect(nome)
+            .1
     }
 
     #[test]
@@ -1510,26 +2194,43 @@ mod testes {
         for voxel in [1.0, 0.04] {
             let mut molas = Molas::default();
             for quadro in 0..240 {
-                let mut e = com_conjunto(KATANA, if quadro < 60 { None } else {
-                    Some((((quadro - 60) / 60) as u8, ((quadro - 60) % 60) as f32 / 60.0))
-                }, 1.0);
+                let mut e = com_conjunto(
+                    KATANA,
+                    if quadro < 60 {
+                        None
+                    } else {
+                        Some((
+                            ((quadro - 60) / 60) as u8,
+                            ((quadro - 60) % 60) as f32 / 60.0,
+                        ))
+                    },
+                    1.0,
+                );
                 e.tempo = quadro as f32 / 60.0;
                 e.fase = e.tempo * 8.0;
                 e.andar = 1.0;
                 e.correr = 1.0;
                 let mut p = pose(&e);
                 molas.segue(&mut p, 1.0 / 60.0);
-                let base = Mat4::from_translation(vec3(3.0, 2.0, -4.0))
-                    * Mat4::from_rotation_y(0.8);
+                let base =
+                    Mat4::from_translation(vec3(3.0, 2.0, -4.0)) * Mat4::from_rotation_y(0.8);
                 let m = matrizes(&p, base, voxel);
-                let katana = armas(&p, &m, voxel).into_iter().find(|(n, _)| *n == "katana").unwrap().1;
+                let katana = armas(&p, &m, voxel)
+                    .into_iter()
+                    .find(|(n, _)| *n == "katana")
+                    .unwrap()
+                    .1;
                 for (braco, antebraco, mao, pega) in [
                     (BRACO_D, ANTEBRACO_D, MAO_D, 3.0),
                     (BRACO_E, ANTEBRACO_E, MAO_E, -2.0),
                 ] {
-                    let pos = m[antebraco].transform_point3(mapa(mao, voxel) - mapa(PECAS[antebraco].2, voxel));
+                    let pos = m[antebraco]
+                        .transform_point3(mapa(mao, voxel) - mapa(PECAS[antebraco].2, voxel));
                     let cabo = katana.transform_point3(Vec3::Z * pega * voxel);
-                    assert!(pos.distance(cabo) < 0.01 * voxel, "mao solta no quadro {quadro}: {pos:?} / {cabo:?}");
+                    assert!(
+                        pos.distance(cabo) < 0.01 * voxel,
+                        "mao solta no quadro {quadro}: {pos:?} / {cabo:?}"
+                    );
                     let ombro = m[braco].transform_point3(Vec3::ZERO);
                     let cotovelo = m[antebraco].transform_point3(Vec3::ZERO);
                     assert!((ombro.distance(cotovelo) / voxel - 6.0).abs() < 0.01);
@@ -1544,18 +2245,31 @@ mod testes {
         for skill in shared::skills::playtest() {
             let mut molas = Molas::default();
             for quadro in 0..120 {
-                let t = quadro as f32 / 120.0 * (skill.impacto_em() + shared::skills::RECUPERACAO_S);
+                let t =
+                    quadro as f32 / 120.0 * (skill.impacto_em() + shared::skills::RECUPERACAO_S);
                 let mut e = com_conjunto(skill.conjunto as u8, None, 1.0);
                 e.combate.skill = Some((skill.id, t, skill.impacto_em()));
                 let mut p = pose(&e);
                 molas.segue(&mut p, 1.0 / 120.0);
                 let m = matrizes(&p, Mat4::IDENTITY, 1.0);
-                assert!(m.iter().all(|mat| mat.is_finite()), "{} quadro {quadro}", skill.nome);
+                assert!(
+                    m.iter().all(|mat| mat.is_finite()),
+                    "{} quadro {quadro}",
+                    skill.nome
+                );
                 if skill.conjunto == shared::skills::Conjunto::Katana {
-                    let k = armas(&p, &m, 1.0).into_iter().find(|(n, _)| *n == "katana").unwrap().1;
+                    let k = armas(&p, &m, 1.0)
+                        .into_iter()
+                        .find(|(n, _)| *n == "katana")
+                        .unwrap()
+                        .1;
                     for (i, mao, z) in [(ANTEBRACO_D, MAO_D, 3.0), (ANTEBRACO_E, MAO_E, -2.0)] {
                         let pos = m[i].transform_point3(mapa(mao, 1.0) - mapa(PECAS[i].2, 1.0));
-                        assert!(pos.distance(k.transform_point3(Vec3::Z * z)) < 0.01, "{}: mao solta", skill.nome);
+                        assert!(
+                            pos.distance(k.transform_point3(Vec3::Z * z)) < 0.01,
+                            "{}: mao solta",
+                            skill.nome
+                        );
                     }
                 }
             }
@@ -1568,11 +2282,16 @@ mod testes {
             let est = estilo(skill.conjunto as u8).unwrap();
             for i in 0..=120 {
                 let t = i as f32 / 120.0 * (skill.impacto_em() + shared::skills::RECUPERACAO_S);
-                let c = chave_da_skill(est,skill.id,t,skill.impacto_em());
-                assert!(c.torce.abs() < 1.2, "{} torce demais",skill.nome);
+                let c = chave_da_skill(est, skill.id, t, skill.impacto_em());
+                assert!(c.torce.abs() < 1.2, "{} torce demais", skill.nome);
             }
-            let c = chave_da_skill(est,skill.id,skill.impacto_em() + shared::skills::RECUPERACAO_S + 0.001,skill.impacto_em());
-            assert_eq!(c,est.guarda,"{} nao voltou a guarda",skill.nome);
+            let c = chave_da_skill(
+                est,
+                skill.id,
+                skill.impacto_em() + shared::skills::RECUPERACAO_S + 0.001,
+                skill.impacto_em(),
+            );
+            assert_eq!(c, est.guarda, "{} nao voltou a guarda", skill.nome);
         }
     }
 
@@ -1580,7 +2299,10 @@ mod testes {
     fn a_katana_estoca_pra_frente_no_terceiro() {
         let e = com_conjunto(KATANA, Some((2, PREPARA + CORTA)), 1.0);
         let ponta = arma_em(&e, "katana", 0).transform_point3(vec3(0.0, 0.0, 22.0));
-        assert!(ponta.z > 22.0 && (15.0..38.0).contains(&ponta.y), "{ponta:?}");
+        assert!(
+            ponta.z > 22.0 && (15.0..38.0).contains(&ponta.y),
+            "{ponta:?}"
+        );
     }
 
     #[test]
@@ -1589,16 +2311,28 @@ mod testes {
         let (k, b) = (arma_em(&e, "katana", 0), arma_em(&e, "bainha", 0));
         let ponta = k.transform_point3(vec3(0.0, 0.0, 20.0));
         let meio = b.transform_point3(vec3(0.0, 0.0, 12.0));
-        assert!(ponta.distance(meio) < 6.0, "a lamina tem que estar na bainha: {ponta:?} x {meio:?}");
-        assert!(b.transform_point3(Vec3::ZERO).x > 4.0, "bainha no quadril esquerdo");
+        assert!(
+            ponta.distance(meio) < 6.0,
+            "a lamina tem que estar na bainha: {ponta:?} x {meio:?}"
+        );
+        assert!(
+            b.transform_point3(Vec3::ZERO).x > 4.0,
+            "bainha no quadril esquerdo"
+        );
     }
 
     #[test]
     fn a_pistola_aponta_pra_frente_e_da_coice() {
-        let cano = |t: f32| arma_em(&com_conjunto(PISTOLAS, Some((0, t)), 1.0), "pistola", 0).transform_vector3(Vec3::Z);
+        let cano = |t: f32| {
+            arma_em(&com_conjunto(PISTOLAS, Some((0, t)), 1.0), "pistola", 0)
+                .transform_vector3(Vec3::Z)
+        };
         let (prep, imp) = (cano(PREPARA), cano(PREPARA + CORTA));
         assert!(prep.z > 0.8, "{prep:?}");
-        assert!(imp.y > prep.y + 0.2, "o coice levanta o cano: {prep:?} -> {imp:?}");
+        assert!(
+            imp.y > prep.y + 0.2,
+            "o coice levanta o cano: {prep:?} -> {imp:?}"
+        );
     }
 
     #[test]
@@ -1606,7 +2340,9 @@ mod testes {
         let e = com_conjunto(PISTOLAS, None, 0.0);
         for i in 0..2 {
             let (pi, co) = (arma_em(&e, "pistola", i), arma_em(&e, "coldre", i));
-            let d = pi.transform_point3(vec3(0.0, 0.0, 6.0)).distance(co.transform_point3(vec3(0.0, 0.0, 4.0)));
+            let d = pi
+                .transform_point3(vec3(0.0, 0.0, 6.0))
+                .distance(co.transform_point3(vec3(0.0, 0.0, 4.0)));
             assert!(d < 4.0, "pistola {i} fora do coldre: {d:.1}");
         }
     }
@@ -1617,14 +2353,18 @@ mod testes {
             for passo in 0..3u8 {
                 let mao = |t: f32| {
                     let p = pose(&com_conjunto(conj, Some((passo, t)), 1.0));
-                    matrizes(&p, Mat4::IDENTITY, 1.0)[ANTEBRACO_D].transform_point3(vec3(0.0, -8.0, 0.0))
+                    matrizes(&p, Mat4::IDENTITY, 1.0)[ANTEBRACO_D]
+                        .transform_point3(vec3(0.0, -8.0, 0.0))
                 };
                 let mut antes = mao(0.0);
                 let mut t = 0.0;
                 while t < DURACAO_DO_GOLPE {
                     t += 0.001;
                     let agora = mao(t);
-                    assert!(agora.distance(antes) < 3.0, "conjunto {conj} golpe {passo} saltou em {t:.3}");
+                    assert!(
+                        agora.distance(antes) < 3.0,
+                        "conjunto {conj} golpe {passo} saltou em {t:.3}"
+                    );
                     antes = agora;
                 }
             }

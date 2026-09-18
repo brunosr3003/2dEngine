@@ -26,14 +26,25 @@ pub const MAX_REGIOES: usize = 600;
 pub fn bichos_da_zona(kinds: &[u16], lv_min: u32, lv_max: u32) -> Vec<(u16, u8)> {
     let mut v: Vec<(u16, u8)> = kinds
         .iter()
-        .map(|k| (*k, (crate::quests::chance_do_kind(kinds, *k, lv_min, lv_max) * 100.0).round() as u8))
+        .map(|k| {
+            (
+                *k,
+                (crate::quests::chance_do_kind(kinds, *k, lv_min, lv_max) * 100.0).round() as u8,
+            )
+        })
         .filter(|(_, c)| *c > 0)
         .collect();
     v.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.cmp(&a.0)));
     v
 }
 
-pub fn zona_no_mapa(centro: Vec2, raio: f32, lv_min: u32, lv_max: u32, kinds: &[u16]) -> ZonaNoMapa {
+pub fn zona_no_mapa(
+    centro: Vec2,
+    raio: f32,
+    lv_min: u32,
+    lv_max: u32,
+    kinds: &[u16],
+) -> ZonaNoMapa {
     ZonaNoMapa {
         centro: [quantiza(centro.x), quantiza(centro.y)],
         raio: raio.round(),
@@ -50,7 +61,11 @@ pub fn regioes_de_recurso(corpos: &[(Vec2, u8)]) -> Vec<RegiaoNoMapa> {
     use std::collections::HashMap;
     let mut grupos: HashMap<(i32, i32, u8), Vec<Vec2>> = HashMap::new();
     for (p, tipo) in corpos {
-        let chave = ((p.x / CELULA_DE_RECURSO).floor() as i32, (p.y / CELULA_DE_RECURSO).floor() as i32, *tipo);
+        let chave = (
+            (p.x / CELULA_DE_RECURSO).floor() as i32,
+            (p.y / CELULA_DE_RECURSO).floor() as i32,
+            *tipo,
+        );
         grupos.entry(chave).or_default().push(*p);
     }
     let mut v: Vec<RegiaoNoMapa> = grupos
@@ -82,7 +97,10 @@ pub fn regioes_de_recurso(corpos: &[(Vec2, u8)]) -> Vec<RegiaoNoMapa> {
 
 /// O que cada cor de pedra rende, pro tooltip: os itens mais provaveis daquela
 /// cor com quantidade e chance. `linhas` = `economy::linhas_da_pedra`.
-pub fn rendimentos_da_pedra(linhas: &[(u8, u16, i32, i32, f32)], nome: impl Fn(u16) -> String) -> Vec<(u8, String)> {
+pub fn rendimentos_da_pedra(
+    linhas: &[(u8, u16, i32, i32, f32)],
+    nome: impl Fn(u16) -> String,
+) -> Vec<(u8, String)> {
     (1..=4u8)
         .map(|tier| {
             let mut da_cor: Vec<_> = linhas.iter().filter(|l| l.0 == tier).collect();
@@ -91,7 +109,11 @@ pub fn rendimentos_da_pedra(linhas: &[(u8, u16, i32, i32, f32)], nome: impl Fn(u
                 .iter()
                 .take(4)
                 .map(|(_, item, mn, mx, chance)| {
-                    let qtd = if mn == mx { format!("{mn}") } else { format!("{mn}–{mx}") };
+                    let qtd = if mn == mx {
+                        format!("{mn}")
+                    } else {
+                        format!("{mn}–{mx}")
+                    };
                     format!("{} {qtd} ({:.0}%)", nome(*item), chance * 100.0)
                 })
                 .collect();
@@ -121,7 +143,10 @@ mod testes {
             let c = crate::quests::chance_do_kind(&kinds, *k, 1, 3);
             assert_eq!(*pct, (c * 100.0).round() as u8);
         }
-        let zonas = [(Vec2::new(10.0, 0.0), 1, 3), (Vec2::new(500.0, 0.0), 20, 25)];
+        let zonas = [
+            (Vec2::new(10.0, 0.0), 1, 3),
+            (Vec2::new(500.0, 0.0), 20, 25),
+        ];
         let dominante = b[0].0;
         assert_eq!(
             crate::quests::zona_do_bicho(&zonas, &kinds, &[dominante], Vec2::ZERO, 1),
@@ -159,7 +184,10 @@ mod testes {
         for (p, tipo) in corpos.iter().filter(|(_, t)| *t != 4) {
             let dona = r.iter().find(|x| x.tipo == *tipo).expect("tipo sem regiao");
             let c = Vec2::new(dona.centro[0], dona.centro[1]);
-            assert!(p.distance(c) <= dona.raio, "corpo {p:?} fora da regiao {dona:?}");
+            assert!(
+                p.distance(c) <= dona.raio,
+                "corpo {p:?} fora da regiao {dona:?}"
+            );
         }
         assert_eq!(r[0].contagem, 10, "a mais cheia vem primeiro");
         assert_eq!(regioes_de_recurso(&corpos), r, "ordem instavel");
@@ -189,9 +217,25 @@ mod testes {
         let zonas: Vec<_> = (0..60)
             .map(|i| zona_no_mapa(Vec2::new(i as f32 * 20.0, 0.0), 45.0, 1 + i, 3 + i, &kinds))
             .collect();
-        let nomes = kinds.iter().map(|k| (*k, format!("Bicho numero {k}"))).collect();
-        let rendimentos = (0..5).map(|t| (t, "Cobre 40–120 (100%), Aço 3–6 (55%), Platina 3–6 (30%)".to_string())).collect();
-        let msg = shared::protocol::ServerMessage::MapaDaIlha { zonas, recursos, nomes, rendimentos, chefes: Vec::new() };
+        let nomes = kinds
+            .iter()
+            .map(|k| (*k, format!("Bicho numero {k}")))
+            .collect();
+        let rendimentos = (0..5)
+            .map(|t| {
+                (
+                    t,
+                    "Cobre 40–120 (100%), Aço 3–6 (55%), Platina 3–6 (30%)".to_string(),
+                )
+            })
+            .collect();
+        let msg = shared::protocol::ServerMessage::MapaDaIlha {
+            zonas,
+            recursos,
+            nomes,
+            rendimentos,
+            chefes: Vec::new(),
+        };
         let bytes = shared::protocol::encode(&msg).unwrap().len();
         println!("MapaDaIlha: {bytes} bytes");
         assert!(bytes < 48_000, "MapaDaIlha com {bytes} bytes");
@@ -199,7 +243,11 @@ mod testes {
 
     #[test]
     fn rendimento_lista_o_mais_provavel_primeiro() {
-        let linhas = vec![(1, 10, 40, 120, 1.0), (1, 11, 3, 6, 0.55), (2, 12, 1, 1, 0.01)];
+        let linhas = vec![
+            (1, 10, 40, 120, 1.0),
+            (1, 11, 3, 6, 0.55),
+            (2, 12, 1, 1, 0.01),
+        ];
         let r = rendimentos_da_pedra(&linhas, |id| format!("i{id}"));
         assert_eq!(r.len(), 4);
         assert_eq!(r[0], (1, "i10 40–120 (100%), i11 3–6 (55%)".to_string()));

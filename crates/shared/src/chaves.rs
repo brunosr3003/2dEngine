@@ -42,16 +42,45 @@ impl FaixaDeChave {
 }
 
 pub const FAIXAS: [FaixaDeChave; 5] = [
-    FaixaDeChave { nivel_min: 1, cor: 1, chance: 0.15, chance_mundo: 0.05 },
-    FaixaDeChave { nivel_min: 20, cor: 2, chance: 0.10, chance_mundo: 0.03 },
-    FaixaDeChave { nivel_min: 40, cor: 3, chance: 0.06, chance_mundo: 0.02 },
-    FaixaDeChave { nivel_min: 60, cor: 4, chance: 0.03, chance_mundo: 0.01 },
-    FaixaDeChave { nivel_min: 80, cor: 5, chance: 0.01, chance_mundo: 0.003 },
+    FaixaDeChave {
+        nivel_min: 1,
+        cor: 1,
+        chance: 0.30,
+        chance_mundo: 0.12,
+    },
+    FaixaDeChave {
+        nivel_min: 20,
+        cor: 2,
+        chance: 0.10,
+        chance_mundo: 0.03,
+    },
+    FaixaDeChave {
+        nivel_min: 40,
+        cor: 3,
+        chance: 0.06,
+        chance_mundo: 0.02,
+    },
+    FaixaDeChave {
+        nivel_min: 60,
+        cor: 4,
+        chance: 0.03,
+        chance_mundo: 0.01,
+    },
+    FaixaDeChave {
+        nivel_min: 80,
+        cor: 5,
+        chance: 0.01,
+        chance_mundo: 0.003,
+    },
 ];
 
 /// A faixa de um conteudo de nivel `nivel`.
 pub fn faixa(nivel: u32) -> FaixaDeChave {
-    *FAIXAS.iter().rev().find(|f| nivel >= f.nivel_min).unwrap_or(&FAIXAS[0])
+    *FAIXAS
+        .iter()
+        .rev()
+        .find(|f| nivel >= f.nivel_min)
+        .unwrap_or(&FAIXAS[0])
 }
 
 pub fn nome_da_cor(cor: u8) -> &'static str {
@@ -83,7 +112,18 @@ mod tests {
 
     #[test]
     fn cor_pela_faixa_do_conteudo() {
-        for (nivel, cor) in [(1, 1), (19, 1), (20, 2), (39, 2), (40, 3), (59, 3), (60, 4), (79, 4), (80, 5), (120, 5)] {
+        for (nivel, cor) in [
+            (1, 1),
+            (19, 1),
+            (20, 2),
+            (39, 2),
+            (40, 3),
+            (59, 3),
+            (60, 4),
+            (79, 4),
+            (80, 5),
+            (120, 5),
+        ] {
             assert_eq!(faixa(nivel).cor, cor, "nivel {nivel}");
         }
     }
@@ -96,10 +136,15 @@ mod tests {
             assert!(par[1].nivel_min > par[0].nivel_min);
         }
         for f in FAIXAS {
-            assert!(f.chance_mundo < f.chance, "faixa {}: chefe do mundo tem que dar menos", f.nivel_min);
+            assert!(
+                f.chance_mundo < f.chance,
+                "faixa {}: chefe do mundo tem que dar menos",
+                f.nivel_min
+            );
             assert_eq!(f.chance_de(Fonte::Dungeon), f.chance_de(Fonte::Raid));
         }
-        assert!(FAIXAS[0].chance <= 0.2, "chance baixa desde o comeco");
+        assert_eq!(FAIXAS[0].chance, 0.30);
+        assert_eq!(FAIXAS[0].chance_mundo, 0.12);
     }
 
     #[test]
@@ -109,23 +154,40 @@ mod tests {
         assert_eq!(rolar(45, d, 1.0, 0.0, 0.99), Some(na_cor(HIDE, 3)));
         assert_eq!(rolar(65, Fonte::Raid, 1.0, 0.0, 0.3), Some(na_cor(CLAW, 4)));
         assert_eq!(rolar(90, d, 1.0, 0.0, 0.6), Some(HORN_LENDARIA));
-        assert_eq!(rolar(10, d, 1.0, 0.15, 0.0), None, "no limite da chance nao cai");
-        assert_eq!(rolar(10, Fonte::ChefeDoMundo, 1.0, 0.10, 0.0), None, "no mundo, 10% ja' passa");
+        assert_eq!(
+            rolar(10, d, 1.0, 0.30, 0.0),
+            None,
+            "no limite da chance nao cai"
+        );
+        assert_eq!(
+            rolar(10, Fonte::ChefeDoMundo, 1.0, 0.12, 0.0),
+            None,
+            "no limite da chance do mundo nao cai"
+        );
     }
 
     #[test]
     fn taxa_bate_com_a_tabela() {
         let mut s = 0x5EEDu64;
         let mut r = || {
-            s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (s >> 11) as f32 / (1u64 << 53) as f32
         };
         const N: u32 = 200_000;
         for f in FAIXAS {
             for fonte in [Fonte::ChefeDoMundo, Fonte::Dungeon] {
-                let caiu = (0..N).filter(|_| rolar(f.nivel_min, fonte, 1.0, r(), r()).is_some()).count() as f32 / N as f32;
+                let caiu = (0..N)
+                    .filter(|_| rolar(f.nivel_min, fonte, 1.0, r(), r()).is_some())
+                    .count() as f32
+                    / N as f32;
                 let esperado = f.chance_de(fonte);
-                assert!((caiu - esperado).abs() < 0.004, "faixa {} {fonte:?}: {caiu}", f.nivel_min);
+                assert!(
+                    (caiu - esperado).abs() < 0.004,
+                    "faixa {} {fonte:?}: {caiu}",
+                    f.nivel_min
+                );
             }
         }
     }
@@ -133,7 +195,10 @@ mod tests {
     #[test]
     fn lendarias_sao_ids_proprios() {
         let todas: Vec<u16> = CHAVES.iter().map(|&b| chave_na_cor(b, 5)).collect();
-        assert_eq!(todas, vec![SCALE_LENDARIA, CLAW_LENDARIA, HORN_LENDARIA, HIDE_LENDARIA]);
+        assert_eq!(
+            todas,
+            vec![SCALE_LENDARIA, CLAW_LENDARIA, HORN_LENDARIA, HIDE_LENDARIA]
+        );
         for b in CHAVES {
             for cor in 1..=4 {
                 assert!(!todas.contains(&chave_na_cor(b, cor)));

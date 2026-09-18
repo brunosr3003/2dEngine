@@ -213,7 +213,8 @@ fn anda_a_fase(ent: &mut Ent, andou: f32, dt: f32) {
             None => passada_de_gente(ent.correr),
         },
     };
-    ent.fase = (ent.fase + andou / passada * std::f32::consts::TAU) % (std::f32::consts::TAU * 64.0);
+    ent.fase =
+        (ent.fase + andou / passada * std::f32::consts::TAU) % (std::f32::consts::TAU * 64.0);
 }
 
 /// Um golpe que acertou alguem, na tela: o numero e a faisca.
@@ -249,7 +250,8 @@ impl World {
             if eu {
                 self.dor = 1.0;
             }
-            let h = (a.alvo.0 as u64 ^ (self.efeitos.len() as u64).wrapping_mul(0x9E37_79B9)).wrapping_mul(2_654_435_761);
+            let h = (a.alvo.0 as u64 ^ (self.efeitos.len() as u64).wrapping_mul(0x9E37_79B9))
+                .wrapping_mul(2_654_435_761);
             self.efeitos.push(Efeito {
                 alvo: a.alvo,
                 dano: a.dano,
@@ -283,7 +285,15 @@ impl World {
                 continue;
             }
             // O estado real vem no mesmo pacote, logo abaixo.
-            let state = EntityState { id, pos: [0, 0], vel: [0, 0], hp: 0, flags: 0, acao: 0, rumo: 0 };
+            let state = EntityState {
+                id,
+                pos: [0, 0],
+                vel: [0, 0],
+                hp: 0,
+                flags: 0,
+                acao: 0,
+                rumo: 0,
+            };
             // NPC de porta vem com o rumo no `kind`: nasce olhando pra fora e,
             // parado, o tick nao mexe no yaw.
             let yaw = if meta.tag == shared::EntityTag::Npc {
@@ -326,7 +336,9 @@ impl World {
             });
         }
         for st in states {
-            let Some(ent) = self.ents.get_mut(&st.id) else { continue };
+            let Some(ent) = self.ents.get_mut(&st.id) else {
+                continue;
+            };
             // Entidade recem-criada nasce ja na posicao certa, senao ela
             // desliza do canto do mundo ate o lugar dela.
             if ent.state.pos == [0, 0] {
@@ -377,7 +389,10 @@ impl World {
             // mundo.
             {
                 let caido = st.hp == 0 || st.flags & ent_flags::DOWNED != 0;
-                let tem_vida = matches!(ent.meta.tag, shared::EntityTag::Enemy | shared::EntityTag::Player);
+                let tem_vida = matches!(
+                    ent.meta.tag,
+                    shared::EntityTag::Enemy | shared::EntityTag::Player
+                );
                 if tem_vida && caido {
                     if ent.morte.is_none() {
                         ent.morte = Some(if ent.state.pos == [0, 0] { 9.0 } else { 0.0 });
@@ -399,13 +414,20 @@ impl World {
     /// `chao` da' a altura de apoio: e' o mesmo campo de altura que o servidor
     /// usa pra colisao, entao a entidade pisa exatamente onde ela pisa la'.
     pub fn tick(&mut self, dt: f32, chao: &dyn Fn(f32, f32) -> f32) {
-        let posicoes: HashMap<_, _> = self.ents.iter().map(|(&id, e)| (id, e.render_pos)).collect();
+        let posicoes: HashMap<_, _> = self
+            .ents
+            .iter()
+            .map(|(&id, e)| (id, e.render_pos))
+            .collect();
         for ef in &mut self.efeitos {
             ef.t += dt;
         }
         self.efeitos.retain(|ef| ef.t < 1.1);
         self.dor = (self.dor - dt * 2.2).max(0.0);
-        let alvo_pos = self.alvo.and_then(|a| self.ents.get(&a)).map(|e| e.render_pos);
+        let alvo_pos = self
+            .alvo
+            .and_then(|a| self.ents.get(&a))
+            .map(|e| e.render_pos);
         // Peso da suavizacao independente do frame rate.
         let a = 1.0 - (-SMOOTH_K * dt).exp();
 
@@ -417,18 +439,37 @@ impl World {
             ent.golpe = (ent.golpe + dt).min(99.0);
             if let Some((alvo, t, impacto)) = ent.ataque_mob.as_mut() {
                 *t += dt;
-                if let Some(p) = alvo.and_then(|id| posicoes.get(&id)) { ent.mira = Some((*p, 0.2)); }
-                if *t > *impacto + 0.3 || ent.morte.is_some() { ent.ataque_mob = None; }
+                if let Some(p) = alvo.and_then(|id| posicoes.get(&id)) {
+                    ent.mira = Some((*p, 0.2));
+                }
+                if *t > *impacto + 0.3 || ent.morte.is_some() {
+                    ent.ataque_mob = None;
+                }
             }
-            if let Some((_, t, _)) = ent.skill.as_mut() { *t += dt; }
-            if ent.skill.is_some_and(|(_, t, impacto)| t > impacto + shared::skills::RECUPERACAO_S) || ent.morte.is_some() { ent.skill = None; }
-            let saca = if shared::components::acao::em_combate(ent.state.acao) { 1.0 } else { 0.0 };
+            if let Some((_, t, _)) = ent.skill.as_mut() {
+                *t += dt;
+            }
+            if ent
+                .skill
+                .is_some_and(|(_, t, impacto)| t > impacto + shared::skills::RECUPERACAO_S)
+                || ent.morte.is_some()
+            {
+                ent.skill = None;
+            }
+            let saca = if shared::components::acao::em_combate(ent.state.acao) {
+                1.0
+            } else {
+                0.0
+            };
             let passo = dt / crate::rig::TEMPO_DE_SACAR;
             ent.sacada += (saca - ent.sacada).clamp(-passo, passo);
             if let Some((_, t)) = ent.combo.as_mut() {
                 *t += dt;
             }
-            if ent.combo.map_or(false, |(_, t)| t > crate::rig::DURACAO_DO_GOLPE) {
+            if ent
+                .combo
+                .map_or(false, |(_, t)| t > crate::rig::DURACAO_DO_GOLPE)
+            {
                 ent.combo = None;
                 ent.combo_ant = None;
             }
@@ -482,7 +523,11 @@ impl World {
                 let olhada = indo.length() * (DEGRAU_VISIVEL / SUBIDA) * ANTECIPACAO;
                 let frente = ent.render_pos + indo.normalize() * olhada;
                 let a = chao(frente.x, frente.y);
-                if a > apoio && a - apoio <= DEGRAU_VISIVEL { a } else { apoio }
+                if a > apoio && a - apoio <= DEGRAU_VISIVEL {
+                    a
+                } else {
+                    apoio
+                }
             } else {
                 apoio
             };
@@ -552,9 +597,7 @@ impl World {
                 // ja' paga do outro lado — abaixo disso e' teleporte de
                 // verdade (nascer, respawn) e ai' sim vale cortar.
                 let piso = apoio - DEGRAU_VISIVEL * ANTECIPACAO * 1.05;
-                ent.render_y = (ent.render_y + SUBIDA * dt)
-                    .min(alvo_alto)
-                    .max(piso);
+                ent.render_y = (ent.render_y + SUBIDA * dt).min(alvo_alto).max(piso);
             }
 
             // Quem esta' golpeando olha pra quem golpeia, mesmo andando de
@@ -579,15 +622,27 @@ impl World {
             // Os OUTROS olham pra onde o servidor diz (`EntityState::rumo`):
             // parado coletando, mirando ou mordendo, a velocidade nao sabe. O
             // proprio personagem continua na previsao local, sem atraso.
-            let rede = if ent.is_self() { None } else { shared::yaw_de_rumo(ent.state.rumo) };
+            let rede = if ent.is_self() {
+                None
+            } else {
+                shared::yaw_de_rumo(ent.state.rumo)
+            };
             // O modelo nasce olhando pro +Z do mundo.
-            let quer = rede.or_else(|| olhar.filter(|d| d.length_squared() > 1e-4).map(|dir| dir.x.atan2(dir.y)));
+            let quer = rede.or_else(|| {
+                olhar
+                    .filter(|d| d.length_squared() > 1e-4)
+                    .map(|dir| dir.x.atan2(dir.y))
+            });
             if let Some(want) = quer {
                 // Caminho mais curto no circulo, senao ele gira 350 graus pra
                 // virar 10.
                 let mut d = want - ent.yaw;
-                while d > std::f32::consts::PI { d -= std::f32::consts::TAU; }
-                while d < -std::f32::consts::PI { d += std::f32::consts::TAU; }
+                while d > std::f32::consts::PI {
+                    d -= std::f32::consts::TAU;
+                }
+                while d < -std::f32::consts::PI {
+                    d += std::f32::consts::TAU;
+                }
                 ent.yaw += d * a;
             }
         }
@@ -605,7 +660,9 @@ impl World {
     }
 
     pub fn self_pos(&self) -> Option<Vec2> {
-        self.self_id.and_then(|id| self.ents.get(&id)).map(|e| e.render_pos)
+        self.self_id
+            .and_then(|id| self.ents.get(&id))
+            .map(|e| e.render_pos)
     }
 
     /// Entidades ordenadas por y — quem esta mais ao sul desenha por cima.
@@ -635,19 +692,44 @@ mod testes {
         let mut w = World::default();
         for (id, flags) in [(EntityId(1), 0u8), (EntityId(2), ent_flags::SELF)] {
             w.apply(
-                vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0, nivel: 1 }],
-                vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags, acao: 0, rumo: shared::rumo_de_yaw(q) }],
+                vec![EntityMeta {
+                    id,
+                    tag: EntityTag::Player,
+                    name: None,
+                    hp_max: 100,
+                    faction: None,
+                    kind: 0,
+                    nivel: 1,
+                }],
+                vec![EntityState {
+                    id,
+                    pos: [16, 16],
+                    vel: [0, 0],
+                    hp: 100,
+                    flags,
+                    acao: 0,
+                    rumo: shared::rumo_de_yaw(q),
+                }],
                 &[],
             );
         }
         w.tick(1.0 / 60.0, &|_, _| 0.0);
         let um_quadro = w.ents[&EntityId(1)].yaw;
-        assert!(um_quadro > 0.0 && um_quadro < q * 0.9, "vira suave, nao de estalo: {um_quadro}");
+        assert!(
+            um_quadro > 0.0 && um_quadro < q * 0.9,
+            "vira suave, nao de estalo: {um_quadro}"
+        );
         for _ in 0..120 {
             w.tick(1.0 / 60.0, &|_, _| 0.0);
         }
-        assert!((w.ents[&EntityId(1)].yaw - q).abs() < 0.05, "chegou no rumo do fio");
-        assert!(w.ents[&EntityId(2)].yaw.abs() < 1e-4, "o proprio nao segue o fio");
+        assert!(
+            (w.ents[&EntityId(1)].yaw - q).abs() < 0.05,
+            "chegou no rumo do fio"
+        );
+        assert!(
+            w.ents[&EntityId(2)].yaw.abs() < 1e-4,
+            "o proprio nao segue o fio"
+        );
     }
 
     /// Teleporte (renascer, dungeon, troca de area) vai DIRETO e no chao, e o
@@ -657,19 +739,38 @@ mod testes {
         let mut w = World::default();
         let id = EntityId(7);
         let estado = |x: f32| {
-            let mut st = EntityState::quantize(id, ::glam::Vec2::new(x, 0.0), ::glam::Vec2::ZERO, 100, 0);
+            let mut st =
+                EntityState::quantize(id, ::glam::Vec2::new(x, 0.0), ::glam::Vec2::ZERO, 100, 0);
             st.flags = ent_flags::SELF;
             st
         };
-        w.apply(vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0, nivel: 1 }], vec![estado(1.0)], &[]);
+        w.apply(
+            vec![EntityMeta {
+                id,
+                tag: EntityTag::Player,
+                name: None,
+                hp_max: 100,
+                faction: None,
+                kind: 0,
+                nivel: 1,
+            }],
+            vec![estado(1.0)],
+            &[],
+        );
         for _ in 0..30 {
             w.tick(1.0 / 60.0, &|_, _| 0.0);
         }
-        assert!(!std::mem::take(&mut w.salto_do_eu), "entrar no mundo nao e' teleporte");
+        assert!(
+            !std::mem::take(&mut w.salto_do_eu),
+            "entrar no mundo nao e' teleporte"
+        );
         // Um passo: suave.
         w.apply(vec![], vec![estado(2.0)], &[]);
         w.tick(1.0 / 60.0, &|_, _| 0.0);
-        assert!(w.ents[&id].render_pos.x < 1.9 && !w.salto_do_eu, "passo curto desliza");
+        assert!(
+            w.ents[&id].render_pos.x < 1.9 && !w.salto_do_eu,
+            "passo curto desliza"
+        );
         // Teleporte: direto, no chao do lugar novo.
         for _ in 0..60 {
             w.tick(1.0 / 60.0, &|_, _| 0.0);
@@ -678,23 +779,60 @@ mod testes {
         assert!(w.salto_do_eu, "teleporte do proprio avisa o carregando");
         w.tick(1.0 / 60.0, &|_, _| 12.0);
         let e = &w.ents[&id];
-        assert!((e.render_pos.x - 300.0).abs() < 0.1, "foi direto: {:?}", e.render_pos);
-        assert!((e.render_y - 12.0).abs() < 0.01 && !e.voando, "no chao, sem cair: {}", e.render_y);
+        assert!(
+            (e.render_pos.x - 300.0).abs() < 0.1,
+            "foi direto: {:?}",
+            e.render_pos
+        );
+        assert!(
+            (e.render_y - 12.0).abs() < 0.01 && !e.voando,
+            "no chao, sem cair: {}",
+            e.render_y
+        );
     }
 
     #[test]
     fn mob_em_strafe_mira_no_alvo_durante_todo_o_golpe() {
         let mut w = World::default();
-        for (id,tag,pos) in [(EntityId(1),EntityTag::Enemy,[16,16]),(EntityId(2),EntityTag::Player,[16,48])] {
-            w.apply(vec![EntityMeta { id,tag,name:None,hp_max:100,faction:None,kind:2,nivel:1 }],
-                vec![EntityState { id,pos,vel:[16,0],hp:100,flags:0,acao:0,rumo:0 }],&[]);
+        for (id, tag, pos) in [
+            (EntityId(1), EntityTag::Enemy, [16, 16]),
+            (EntityId(2), EntityTag::Player, [16, 48]),
+        ] {
+            w.apply(
+                vec![EntityMeta {
+                    id,
+                    tag,
+                    name: None,
+                    hp_max: 100,
+                    faction: None,
+                    kind: 2,
+                    nivel: 1,
+                }],
+                vec![EntityState {
+                    id,
+                    pos,
+                    vel: [16, 0],
+                    hp: 100,
+                    flags: 0,
+                    acao: 0,
+                    rumo: 0,
+                }],
+                &[],
+            );
         }
-        w.ents.get_mut(&EntityId(1)).unwrap().ataque_mob = Some((Some(EntityId(2)),0.0,0.46));
-        for _ in 0..26 { w.tick(1.0 / 60.0,&|_,_|0.0); }
-        assert!(w.ents[&EntityId(1)].yaw.abs() < 0.01, "virou para a velocidade lateral");
-        w.ents.get_mut(&EntityId(2)).unwrap().render_pos = vec2(3.0,1.0);
-        w.ents.get_mut(&EntityId(2)).unwrap().state.pos = [48,16];
-        for _ in 0..16 { w.tick(1.0 / 60.0,&|_,_|0.0); }
+        w.ents.get_mut(&EntityId(1)).unwrap().ataque_mob = Some((Some(EntityId(2)), 0.0, 0.46));
+        for _ in 0..26 {
+            w.tick(1.0 / 60.0, &|_, _| 0.0);
+        }
+        assert!(
+            w.ents[&EntityId(1)].yaw.abs() < 0.01,
+            "virou para a velocidade lateral"
+        );
+        w.ents.get_mut(&EntityId(2)).unwrap().render_pos = vec2(3.0, 1.0);
+        w.ents.get_mut(&EntityId(2)).unwrap().state.pos = [48, 16];
+        for _ in 0..16 {
+            w.tick(1.0 / 60.0, &|_, _| 0.0);
+        }
         assert!((w.ents[&EntityId(1)].yaw - std::f32::consts::FRAC_PI_2).abs() < 0.02);
     }
 
@@ -722,8 +860,24 @@ mod testes {
         let mut w = World::default();
         let id = shared::EntityId(1);
         w.apply(
-            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0, nivel: 0 }],
-            vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF, acao: 0, rumo: 0 }],
+            vec![EntityMeta {
+                id,
+                tag: EntityTag::Player,
+                name: None,
+                hp_max: 100,
+                faction: None,
+                kind: 0,
+                nivel: 0,
+            }],
+            vec![EntityState {
+                id,
+                pos: [16, 16],
+                vel: [0, 0],
+                hp: 100,
+                flags: ent_flags::SELF,
+                acao: 0,
+                rumo: 0,
+            }],
             &[],
         );
         w.pular_local();
@@ -734,10 +888,22 @@ mod testes {
             // O servidor so' confirma depois de um tick — antes disso quem
             // segura o arco e' o palpite local.
             let flags = ent_flags::SELF
-                | if (0.05..voo).contains(&t) { ent_flags::PULANDO } else { 0 };
+                | if (0.05..voo).contains(&t) {
+                    ent_flags::PULANDO
+                } else {
+                    0
+                };
             w.apply(
                 Vec::new(),
-                vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags, acao: 0, rumo: 0 }],
+                vec![EntityState {
+                    id,
+                    pos: [16, 16],
+                    vel: [0, 0],
+                    hp: 100,
+                    flags,
+                    acao: 0,
+                    rumo: 0,
+                }],
                 &[],
             );
             w.tick(dt, &chao);
@@ -759,7 +925,10 @@ mod testes {
             (pico - shared::PULO_ALTURA).abs() < 0.05,
             "o pico tem que ser PULO_ALTURA, foi {pico}"
         );
-        assert!(alturas.last().is_some_and(|&h| h == 0.0), "tem que acabar no chao");
+        assert!(
+            alturas.last().is_some_and(|&h| h == 0.0),
+            "tem que acabar no chao"
+        );
     }
 
     /// ANDANDO ATE' UM DEGRAU: o corpo sobe, e NUNCA fica dentro da terra.
@@ -786,10 +955,20 @@ mod testes {
             pos: [(x * shared::POS_SCALE) as i16, 0],
             vel: [(vel * shared::POS_SCALE) as i8, 0],
             hp: 100,
-            flags: ent_flags::SELF, acao: 0, rumo: 0,
+            flags: ent_flags::SELF,
+            acao: 0,
+            rumo: 0,
         };
         w.apply(
-            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0, nivel: 0 }],
+            vec![EntityMeta {
+                id,
+                tag: EntityTag::Player,
+                name: None,
+                hp_max: 100,
+                faction: None,
+                kind: 0,
+                nivel: 0,
+            }],
             vec![estado(0.0)],
             &[],
         );
@@ -826,7 +1005,8 @@ mod testes {
         );
         assert!(
             (w.ents[&id].render_y - 0.5).abs() < 1e-3,
-            "terminou em {:.3} em vez de 0,5", w.ents[&id].render_y
+            "terminou em {:.3} em vez de 0,5",
+            w.ents[&id].render_y
         );
     }
 
@@ -869,8 +1049,24 @@ mod testes {
         let mut w = World::default();
         let id = shared::EntityId(1);
         w.apply(
-            vec![EntityMeta { id, tag: EntityTag::Player, name: None, hp_max: 100, faction: None, kind: 0, nivel: 0 }],
-            vec![EntityState { id, pos: [16, 16], vel: [0, 0], hp: 100, flags: ent_flags::SELF, acao: 0, rumo: 0 }],
+            vec![EntityMeta {
+                id,
+                tag: EntityTag::Player,
+                name: None,
+                hp_max: 100,
+                faction: None,
+                kind: 0,
+                nivel: 0,
+            }],
+            vec![EntityState {
+                id,
+                pos: [16, 16],
+                vel: [0, 0],
+                hp: 100,
+                flags: ent_flags::SELF,
+                acao: 0,
+                rumo: 0,
+            }],
             &[],
         );
         let chao = |_: f32, _: f32| 0.0;
@@ -882,6 +1078,10 @@ mod testes {
             alturas.push(w.ents[&id].render_y);
             t += dt;
         }
-        assert_eq!(arcos(&alturas), 1, "martelar a tecla tem que dar um arco so'");
+        assert_eq!(
+            arcos(&alturas),
+            1,
+            "martelar a tecla tem que dar um arco so'"
+        );
     }
 }

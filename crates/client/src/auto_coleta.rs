@@ -24,9 +24,16 @@ const RELIGA_S: f64 = 1.5;
 pub enum Acao {
     Nada,
     /// Pedir o no' mais perto dos tipos, a ate' `raio` de `centro`.
-    PedirNo { tipos: [bool; 5], raio: f32, centro: Vec2 },
+    PedirNo {
+        tipos: [bool; 5],
+        raio: f32,
+        centro: Vec2,
+    },
     /// Pedir o no' de UM tipo em volta de um ponto (o "Ir" do mapa).
-    PedirNoDoTipo { tipo: u8, perto: Vec2 },
+    PedirNoDoTipo {
+        tipo: u8,
+        perto: Vec2,
+    },
     Ir(Vec2),
     Coletar(u32),
 }
@@ -187,7 +194,11 @@ impl AutoColeta {
         if self.etapa == Etapa::Coletando {
             // Coletou e parou: o no' esgotou, vai pro proximo. Nem comecou:
             // recusou (longe, esgotou no caminho) — respiro e procura outro.
-            self.etapa = if self.confirmou { Etapa::Procurar } else { Etapa::Aguardando };
+            self.etapa = if self.confirmou {
+                Etapa::Procurar
+            } else {
+                Etapa::Aguardando
+            };
             if !self.confirmou {
                 self.desde = agora - (APOS_FALHA_S - APOS_RECUSA_S);
             }
@@ -198,14 +209,20 @@ impl AutoColeta {
 
     /// Um quadro.
     pub fn passo(&mut self, eu: Vec2, agora: f64, viajando: bool) -> Acao {
-        let Some(centro) = self.centro else { return Acao::Nada };
+        let Some(centro) = self.centro else {
+            return Acao::Nada;
+        };
         match self.etapa {
             Etapa::Procurar => {
                 self.etapa = Etapa::Esperando;
                 self.desde = agora;
                 match self.filtro {
                     Some((tipo, perto)) => Acao::PedirNoDoTipo { tipo, perto },
-                    None => Acao::PedirNo { tipos: self.tipos_efetivos(), raio: self.raio, centro },
+                    None => Acao::PedirNo {
+                        tipos: self.tipos_efetivos(),
+                        raio: self.raio,
+                        centro,
+                    },
                 }
             }
             Etapa::Esperando => {
@@ -254,7 +271,11 @@ impl AutoColeta {
         let r = retangulo();
         let c = r.center();
         let raio = r.w * 0.45;
-        let cor = if self.ativo() { estilo::AUTO } else { estilo::OURO };
+        let cor = if self.ativo() {
+            estilo::AUTO
+        } else {
+            estilo::OURO
+        };
         let e = estilo::estado_de(r, false, self.ativo());
         estilo::botao_redondo(c, raio, cor, e, self.ativo());
         if self.ativo() {
@@ -263,14 +284,24 @@ impl AutoColeta {
         if !crate::icones_ui::ui("auto_coleta", c - vec2(0.0, raio * 0.18), raio * 0.95, cor) {
             estilo::icone(3, c - vec2(0.0, raio * 0.18), raio * 0.40, cor);
         }
-        estilo::texto_centro_forte(c.x, c.y + raio * 0.66, if self.ativo() { "AUTO" } else { "COLETA" }, 10, cor);
+        estilo::texto_centro_forte(
+            c.x,
+            c.y + raio * 0.66,
+            if self.ativo() { "AUTO" } else { "COLETA" },
+            10,
+            cor,
+        );
         crate::hud_layout::chip(r, "X");
         // A engrenagem: roda dentada simples (anel + seis dentes).
         let g = engrenagem_de(r);
         let gc = g.center();
         let gr = g.w * 0.34;
         let sobre_g = g.contains(Vec2::from(mouse_position()));
-        let cor_g = if sobre_g { estilo::ACENTO } else { estilo::OURO };
+        let cor_g = if sobre_g {
+            estilo::ACENTO
+        } else {
+            estilo::OURO
+        };
         draw_circle(gc.x, gc.y + 1.5, gr + 4.5, Color::new(0.0, 0.0, 0.0, 0.35));
         draw_circle(gc.x, gc.y, gr + 4.0, estilo::FUNDO_BAIXO);
         draw_circle_lines(gc.x, gc.y, gr + 4.0, 1.0, estilo::BORDA_FORTE);
@@ -320,23 +351,53 @@ mod tests {
         a.tipos = [false, true, true, false, false];
         a.raio = 40.0;
         a.ligar(Vec2::ZERO, 0.0);
-        assert_eq!(a.passo(Vec2::ZERO, 0.0, false), Acao::PedirNo { tipos: [false, true, true, false, false], raio: 40.0, centro: Vec2::ZERO });
-        assert_eq!(a.passo(Vec2::ZERO, 0.1, false), Acao::Nada, "esperando resposta");
+        assert_eq!(
+            a.passo(Vec2::ZERO, 0.0, false),
+            Acao::PedirNo {
+                tipos: [false, true, true, false, false],
+                raio: 40.0,
+                centro: Vec2::ZERO
+            }
+        );
+        assert_eq!(
+            a.passo(Vec2::ZERO, 0.1, false),
+            Acao::Nada,
+            "esperando resposta"
+        );
         let onde = vec2(20.0, 0.0);
-        assert_eq!(a.no_recebido(Some((77, onde, vec2(21.0, 0.0), 2)), 0.2), Acao::Ir(onde));
+        assert_eq!(
+            a.no_recebido(Some((77, onde, vec2(21.0, 0.0), 2)), 0.2),
+            Acao::Ir(onde)
+        );
         assert_eq!(a.passo(vec2(10.0, 0.0), 1.0, true), Acao::Nada, "viajando");
-        assert_eq!(a.passo(vec2(15.0, 0.0), 2.0, false), Acao::Ir(onde), "parou longe: manda de novo");
-        assert_eq!(a.passo(onde, 3.0, false), Acao::Coletar(77), "chegou: coleta o no'");
+        assert_eq!(
+            a.passo(vec2(15.0, 0.0), 2.0, false),
+            Acao::Ir(onde),
+            "parou longe: manda de novo"
+        );
+        assert_eq!(
+            a.passo(onde, 3.0, false),
+            Acao::Coletar(77),
+            "chegou: coleta o no'"
+        );
         a.estado_coleta(2, false, 3.1);
         a.estado_coleta(2, true, 3.15);
         assert_eq!(a.faixa(None), Some("AUTO COLETA · BOLSA CHEIA"));
         for k in 0..5 {
-            assert_eq!(a.passo(onde, 3.16 + k as f64 * 0.01, false), Acao::Nada, "bolsa cheia: fica no no'");
+            assert_eq!(
+                a.passo(onde, 3.16 + k as f64 * 0.01, false),
+                Acao::Nada,
+                "bolsa cheia: fica no no'"
+            );
         }
         a.estado_coleta(2, false, 3.19);
         assert_eq!(a.faixa(None), Some("AUTO COLETA · COLETANDO"));
         for k in 0..20 {
-            assert_eq!(a.passo(onde, 3.2 + k as f64, false), Acao::Nada, "coletando: fica");
+            assert_eq!(
+                a.passo(onde, 3.2 + k as f64, false),
+                Acao::Nada,
+                "coletando: fica"
+            );
         }
         // Esgotou: o servidor para, e o auto procura o proximo.
         a.estado_coleta(shared::protocol::COLETA_PARADA, false, 30.0);
@@ -347,30 +408,52 @@ mod tests {
     fn sem_no_aguarda_recursos_e_recusa_nao_vira_loop() {
         let mut a = AutoColeta::default();
         a.ligar(Vec2::ZERO, 0.0);
-        assert!(matches!(a.passo(Vec2::ZERO, 0.0, false), Acao::PedirNo { .. }));
+        assert!(matches!(
+            a.passo(Vec2::ZERO, 0.0, false),
+            Acao::PedirNo { .. }
+        ));
         assert_eq!(a.no_recebido(None, 0.5), Acao::Nada);
         assert_eq!(a.faixa(None), Some("AUTO COLETA · AGUARDANDO RECURSOS…"));
         assert_eq!(a.passo(Vec2::ZERO, 3.0, false), Acao::Nada);
-        assert!(matches!(a.passo(Vec2::ZERO, 7.0, false), Acao::PedirNo { .. }));
+        assert!(matches!(
+            a.passo(Vec2::ZERO, 7.0, false),
+            Acao::PedirNo { .. }
+        ));
         // Recusado ao chegar (sem ter coletado): respiro curto antes de pedir.
         a.no_recebido(Some((5, Vec2::ZERO, Vec2::X, 0)), 7.1);
         assert_eq!(a.passo(Vec2::ZERO, 7.2, false), Acao::Coletar(5));
         a.estado_coleta(shared::protocol::COLETA_PARADA, false, 7.3);
         assert_eq!(a.passo(Vec2::ZERO, 7.4, false), Acao::Nada, "respiro");
-        assert!(matches!(a.passo(Vec2::ZERO, 9.0, false), Acao::PedirNo { .. }));
+        assert!(matches!(
+            a.passo(Vec2::ZERO, 9.0, false),
+            Acao::PedirNo { .. }
+        ));
         // Parar mantem a configuracao; resposta tardia e' ignorada.
         a.raio = 80.0;
         a.parar();
         assert_eq!(a.raio, 80.0);
-        assert_eq!(a.no_recebido(Some((1, Vec2::ONE, Vec2::ONE, 1)), 10.0), Acao::Nada);
+        assert_eq!(
+            a.no_recebido(Some((1, Vec2::ONE, Vec2::ONE, 1)), 10.0),
+            Acao::Nada
+        );
     }
 
     #[test]
     fn a_engrenagem_fica_no_canto_do_botao_sem_cobrir_o_miolo() {
-        for r in [Rect::new(100.0, 200.0, 88.0, 88.0), Rect::new(0.0, 0.0, 44.0, 44.0)] {
+        for r in [
+            Rect::new(100.0, 200.0, 88.0, 88.0),
+            Rect::new(0.0, 0.0, 44.0, 44.0),
+        ] {
             let g = engrenagem_de(r);
-            assert!(r.contains(vec2(g.x + 0.1, g.y + 0.1)) && r.contains(vec2(g.x + g.w - 0.1, g.y + g.h - 0.1)), "dentro do botao");
-            assert!(!g.contains(r.center()), "nao cobre o miolo (o toque curto liga o AUTO)");
+            assert!(
+                r.contains(vec2(g.x + 0.1, g.y + 0.1))
+                    && r.contains(vec2(g.x + g.w - 0.1, g.y + g.h - 0.1)),
+                "dentro do botao"
+            );
+            assert!(
+                !g.contains(r.center()),
+                "nao cobre o miolo (o toque curto liga o AUTO)"
+            );
         }
     }
 
@@ -379,9 +462,21 @@ mod tests {
         let mut a = AutoColeta::default();
         a.tipos = [true, false, false, false, false];
         a.ligar_missao(Vec2::ZERO, [false, true, true, true, true], 0.0);
-        assert!(matches!(a.passo(Vec2::ZERO, 0.0, false), Acao::PedirNo { tipos: [false, true, true, true, true], .. }));
+        assert!(matches!(
+            a.passo(Vec2::ZERO, 0.0, false),
+            Acao::PedirNo {
+                tipos: [false, true, true, true, true],
+                ..
+            }
+        ));
         a.ligar(Vec2::ZERO, 0.0);
         a.filtro = Some((3, vec2(9.0, 9.0)));
-        assert_eq!(a.passo(Vec2::ZERO, 0.0, false), Acao::PedirNoDoTipo { tipo: 3, perto: vec2(9.0, 9.0) });
+        assert_eq!(
+            a.passo(Vec2::ZERO, 0.0, false),
+            Acao::PedirNoDoTipo {
+                tipo: 3,
+                perto: vec2(9.0, 9.0)
+            }
+        );
     }
 }

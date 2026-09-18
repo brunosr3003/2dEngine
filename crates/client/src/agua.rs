@@ -81,7 +81,11 @@ pub fn cor_da_agua(prof: f32) -> [u8; 4] {
     const MEIO: [f32; 4] = [34.0, 140.0, 180.0, 212.0];
     const FUNDO: [f32; 4] = [14.0, 54.0, 102.0, 244.0];
     let t = (prof.max(0.0) / PROFUNDO).clamp(0.0, 1.0);
-    let (a, b, k) = if t < 0.35 { (RASO, MEIO, suave(t / 0.35)) } else { (MEIO, FUNDO, suave((t - 0.35) / 0.65)) };
+    let (a, b, k) = if t < 0.35 {
+        (RASO, MEIO, suave(t / 0.35))
+    } else {
+        (MEIO, FUNDO, suave((t - 0.35) / 0.65))
+    };
     let mut c = [0u8; 4];
     for i in 0..4 {
         c[i] = (a[i] + (b[i] - a[i]) * k).round() as u8;
@@ -107,11 +111,20 @@ pub fn quad_de_agua(profs: [f32; 4]) -> bool {
 
 fn empilha(malhas: &mut Vec<Mesh>, verts: &mut Vec<Vertex>, idx: &mut Vec<u16>) {
     if !idx.is_empty() {
-        malhas.push(Mesh { vertices: std::mem::take(verts), indices: std::mem::take(idx), texture: None });
+        malhas.push(Mesh {
+            vertices: std::mem::take(verts),
+            indices: std::mem::take(idx),
+            texture: None,
+        });
     }
 }
 
-fn quad(verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, p: [Vec3; 4], extra: [(f32, f32, [u8; 4]); 4]) {
+fn quad(
+    verts: &mut Vec<Vertex>,
+    idx: &mut Vec<u16>,
+    p: [Vec3; 4],
+    extra: [(f32, f32, [u8; 4]); 4],
+) {
     let b = verts.len() as u16;
     for (v, (onda, espuma, cor)) in p.into_iter().zip(extra) {
         verts.push(Vertex {
@@ -147,12 +160,17 @@ pub fn malhas_do_pedaco(ger: &Gerador, cx: i32, cz: i32) -> Vec<Mesh> {
     if max_prof < -1.0 {
         return Vec::new();
     }
-    let passo = if min_prof > ONDA_CHEIA + 0.5 { PASSO_GROSSO } else { PASSO_FINO };
+    let passo = if min_prof > ONDA_CHEIA + 0.5 {
+        PASSO_GROSSO
+    } else {
+        PASSO_FINO
+    };
     let n = CHUNK / passo;
     let mut grade = vec![0.0f32; ((n + 1) * (n + 1)) as usize];
     for iz in 0..=n {
         for ix in 0..=n {
-            grade[(iz * (n + 1) + ix) as usize] = profundidade(ger, bx0 + ix * passo, bz0 + iz * passo);
+            grade[(iz * (n + 1) + ix) as usize] =
+                profundidade(ger, bx0 + ix * passo, bz0 + iz * passo);
         }
     }
     let prof = |ix: i32, iz: i32| grade[(iz * (n + 1) + ix) as usize];
@@ -211,7 +229,12 @@ fn horizonte(centro: Vec2) -> Vec<Mesh> {
             let y = ALTURA_DA_AGUA - 0.05;
             let pt = |r: f32, a: f32| vec3(centro.x + r * a.cos(), y, centro.y + r * a.sin());
             let p = [pt(r0, a0), pt(r1, a0), pt(r1, a1), pt(r0, a1)];
-            let e = [(0.5, 0.0, cor_em(r0)), (0.5, 0.0, cor_em(r1)), (0.5, 0.0, cor_em(r1)), (0.5, 0.0, cor_em(r0))];
+            let e = [
+                (0.5, 0.0, cor_em(r0)),
+                (0.5, 0.0, cor_em(r1)),
+                (0.5, 0.0, cor_em(r1)),
+                (0.5, 0.0, cor_em(r0)),
+            ];
             quad(&mut verts, &mut idx, p, e);
         }
     }
@@ -283,7 +306,9 @@ thread_local! {
 /// Estado de pipeline do mar (sem descarte de face: a onda vira o quad).
 /// Compartilhado com o desenho direto na GPU (`gpu_estatica`).
 pub(crate) fn params_agua() -> PipelineParams {
-    use macroquad::miniquad::graphics::{BlendFactor, BlendState, BlendValue, Comparison, CullFace, Equation};
+    use macroquad::miniquad::graphics::{
+        BlendFactor, BlendState, BlendValue, Comparison, CullFace, Equation,
+    };
     PipelineParams {
         cull_face: CullFace::Nothing,
         depth_test: Comparison::LessOrEqual,
@@ -297,19 +322,27 @@ pub(crate) fn params_agua() -> PipelineParams {
     }
 }
 
-
 /// Desenha o mar (horizonte e superficie dos pedacos visiveis). Troca o
 /// material: quem chama volta o dele depois.
 pub fn desenha(t: &Terreno, cam: &Camera3D, tempo: f32) {
     use crate::gpu_estatica::{desenha as desenha_na_gpu, MalhaEstatica, Programa};
     let ondas = if ONDAS { 1.0f32 } else { 0.0 };
     // O anel acompanha o alvo da camera, refeito so' quando ele anda 32 u.
-    let chave = ((cam.target.x / 32.0).round() as i32, (cam.target.z / 32.0).round() as i32);
+    let chave = (
+        (cam.target.x / 32.0).round() as i32,
+        (cam.target.z / 32.0).round() as i32,
+    );
     HORIZONTE.with(|h| {
         let mut h = h.borrow_mut();
         if h.as_ref().is_none_or(|(k, _)| *k != chave) {
             let centro = vec2(chave.0 as f32 * 32.0, chave.1 as f32 * 32.0);
-            *h = Some((chave, horizonte(centro).into_iter().map(MalhaEstatica::nova).collect()));
+            *h = Some((
+                chave,
+                horizonte(centro)
+                    .into_iter()
+                    .map(MalhaEstatica::nova)
+                    .collect(),
+            ));
         }
         if let Some((_, malhas)) = h.as_ref() {
             desenha_na_gpu(Programa::Agua { tempo, ondas }, malhas);
@@ -335,7 +368,10 @@ mod testes {
             let c = cor_da_agua(k as f32 * 0.25);
             let l = luminancia(c);
             assert!(l <= anterior + 1e-3, "clareou em {} u", k as f32 * 0.25);
-            assert!(c[3] >= alfa, "raso tem que ser mais translucido que o fundo");
+            assert!(
+                c[3] >= alfa,
+                "raso tem que ser mais translucido que o fundo"
+            );
             anterior = l;
             alfa = c[3];
         }
@@ -358,7 +394,10 @@ mod testes {
         assert!(ALTURA_DA_AGUA + AMPLITUDE_MAX < primeira_terra);
         // E acima do leito (topo das colunas submersas, no nivel do mar).
         assert!(ALTURA_DA_AGUA > NIVEL_DO_MAR);
-        assert!(!quad_de_agua([-0.5, -1.0, -3.0, -0.3]), "quad todo em terra nao vira agua");
+        assert!(
+            !quad_de_agua([-0.5, -1.0, -3.0, -0.3]),
+            "quad todo em terra nao vira agua"
+        );
         assert!(quad_de_agua([-0.5, 0.2, -3.0, -0.3]));
     }
 
@@ -367,17 +406,34 @@ mod testes {
         let d = &ARQUIPELAGO[0];
         let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
         // Em volta do porto (costa, agua rasa e fundo) com o raio de desenho do jogo.
-        let porto = ger.vila().porto.as_ref().map(|p| p.centro).unwrap_or(::glam::Vec2::ZERO);
-        let (pcx, pcz) = (((porto.x / BLOCO) as i32).div_euclid(CHUNK), ((porto.y / BLOCO) as i32).div_euclid(CHUNK));
+        let porto = ger
+            .vila()
+            .porto
+            .as_ref()
+            .map(|p| p.centro)
+            .unwrap_or(::glam::Vec2::ZERO);
+        let (pcx, pcz) = (
+            ((porto.x / BLOCO) as i32).div_euclid(CHUNK),
+            ((porto.y / BLOCO) as i32).div_euclid(CHUNK),
+        );
         let t0 = std::time::Instant::now();
         let (mut malhas, mut verts, mut indices, mut pedacos) = (0, 0, 0, 0);
         for dz in -5..=5 {
             for dx in -5..=5 {
                 let ms = malhas_do_pedaco(&ger, pcx + dx, pcz + dz);
-                if !ms.is_empty() { pedacos += 1 }
+                if !ms.is_empty() {
+                    pedacos += 1
+                }
                 for m in &ms {
-                    assert!(m.indices.len() <= MAX_QUADS * 6, "malha com {} indices", m.indices.len());
-                    assert!(m.vertices.iter().all(|v| (v.position.y - ALTURA_DA_AGUA).abs() < 1e-4));
+                    assert!(
+                        m.indices.len() <= MAX_QUADS * 6,
+                        "malha com {} indices",
+                        m.indices.len()
+                    );
+                    assert!(m
+                        .vertices
+                        .iter()
+                        .all(|v| (v.position.y - ALTURA_DA_AGUA).abs() < 1e-4));
                     malhas += 1;
                     verts += m.vertices.len();
                     indices += m.indices.len();

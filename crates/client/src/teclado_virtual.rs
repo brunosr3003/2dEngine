@@ -30,7 +30,12 @@ const FRACAO_DO_TECLADO: f32 = 0.52;
 /// Quanto subir um painel pra que `fundo_do_campo` (y da borda de baixo do
 /// campo com foco) fique acima do teclado. Nunca sobe alem de deixar o topo
 /// do painel (`topo_do_painel`) a 8 px da borda.
-pub fn deslocamento(aberto: bool, altura_tela: f32, topo_do_painel: f32, fundo_do_campo: f32) -> f32 {
+pub fn deslocamento(
+    aberto: bool,
+    altura_tela: f32,
+    topo_do_painel: f32,
+    fundo_do_campo: f32,
+) -> f32 {
     if !aberto {
         return 0.0;
     }

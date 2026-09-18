@@ -1,12 +1,8 @@
 //! Loja de cash e montarias (docs/LOJA.md, docs/MONTARIAS.md).
 //!
-//! Fonte UNICA do catalogo: pacotes de TP (dinheiro de verdade), montarias e
-//! skins de montaria (TP). O servidor valida tudo por aqui; o cliente so'
+//! Fonte UNICA do catalogo: pacotes de TP (dinheiro de verdade), montarias,
+//! skins e consumiveis (TP). O servidor valida tudo por aqui; o cliente so'
 //! desenha.
-//!
-//! Regra de TP (docs/ECONOMIA.md): o que a TP compra NAO da' poder de combate.
-//! A montaria so' da' mobilidade — e todas correm igual (`VEL_MONTADO`); a
-//! skin e' so' cor.
 
 use serde::{Deserialize, Serialize};
 
@@ -56,10 +52,34 @@ impl PacoteTp {
 
 /// Valores iniciais ⚠️ (docs/LOJA.md).
 pub const PACOTES: [PacoteTp; 4] = [
-    PacoteTp { id: 1, nome: "Punhado de TP", tp: 100, bonus: 0, centavos: 490 },
-    PacoteTp { id: 2, nome: "Bolsa de TP", tp: 500, bonus: 50, centavos: 2490 },
-    PacoteTp { id: 3, nome: "Baú de TP", tp: 1000, bonus: 200, centavos: 4990 },
-    PacoteTp { id: 4, nome: "Tesouro de TP", tp: 2000, bonus: 600, centavos: 9990 },
+    PacoteTp {
+        id: 1,
+        nome: "Punhado de TP",
+        tp: 100,
+        bonus: 0,
+        centavos: 490,
+    },
+    PacoteTp {
+        id: 2,
+        nome: "Bolsa de TP",
+        tp: 500,
+        bonus: 50,
+        centavos: 2490,
+    },
+    PacoteTp {
+        id: 3,
+        nome: "Baú de TP",
+        tp: 1000,
+        bonus: 200,
+        centavos: 4990,
+    },
+    PacoteTp {
+        id: 4,
+        nome: "Tesouro de TP",
+        tp: 2000,
+        bonus: 600,
+        centavos: 9990,
+    },
 ];
 
 /// Uma montaria: o bicho em pecas que ela usa e onde o cavaleiro senta.
@@ -131,16 +151,99 @@ pub struct Skin {
 }
 
 pub const SKINS: [Skin; 9] = [
-    Skin { id: 101, montaria: 1, nome: "Pelagem Cinza", tinta: [0, 0, 0], forca: 0.0, preco_tp: 0 },
-    Skin { id: 102, montaria: 1, nome: "Lobo da Meia-Noite", tinta: [38, 42, 62], forca: 0.55, preco_tp: 300 },
-    Skin { id: 103, montaria: 1, nome: "Lobo Dourado", tinta: [232, 178, 64], forca: 0.5, preco_tp: 450 },
-    Skin { id: 201, montaria: 2, nome: "Listras Brancas", tinta: [0, 0, 0], forca: 0.0, preco_tp: 0 },
-    Skin { id: 202, montaria: 2, nome: "Tigre de Brasa", tinta: [214, 84, 36], forca: 0.5, preco_tp: 400 },
-    Skin { id: 203, montaria: 2, nome: "Tigre Espectral", tinta: [120, 196, 255], forca: 0.5, preco_tp: 600 },
-    Skin { id: 301, montaria: 3, nome: "Pelo Castanho", tinta: [0, 0, 0], forca: 0.0, preco_tp: 0 },
-    Skin { id: 302, montaria: 3, nome: "Urso Polar", tinta: [236, 240, 246], forca: 0.6, preco_tp: 350 },
-    Skin { id: 303, montaria: 3, nome: "Urso de Obsidiana", tinta: [30, 24, 34], forca: 0.6, preco_tp: 550 },
+    Skin {
+        id: 101,
+        montaria: 1,
+        nome: "Pelagem Cinza",
+        tinta: [0, 0, 0],
+        forca: 0.0,
+        preco_tp: 0,
+    },
+    Skin {
+        id: 102,
+        montaria: 1,
+        nome: "Lobo da Meia-Noite",
+        tinta: [38, 42, 62],
+        forca: 0.55,
+        preco_tp: 300,
+    },
+    Skin {
+        id: 103,
+        montaria: 1,
+        nome: "Lobo Dourado",
+        tinta: [232, 178, 64],
+        forca: 0.5,
+        preco_tp: 450,
+    },
+    Skin {
+        id: 201,
+        montaria: 2,
+        nome: "Listras Brancas",
+        tinta: [0, 0, 0],
+        forca: 0.0,
+        preco_tp: 0,
+    },
+    Skin {
+        id: 202,
+        montaria: 2,
+        nome: "Tigre de Brasa",
+        tinta: [214, 84, 36],
+        forca: 0.5,
+        preco_tp: 400,
+    },
+    Skin {
+        id: 203,
+        montaria: 2,
+        nome: "Tigre Espectral",
+        tinta: [120, 196, 255],
+        forca: 0.5,
+        preco_tp: 600,
+    },
+    Skin {
+        id: 301,
+        montaria: 3,
+        nome: "Pelo Castanho",
+        tinta: [0, 0, 0],
+        forca: 0.0,
+        preco_tp: 0,
+    },
+    Skin {
+        id: 302,
+        montaria: 3,
+        nome: "Urso Polar",
+        tinta: [236, 240, 246],
+        forca: 0.6,
+        preco_tp: 350,
+    },
+    Skin {
+        id: 303,
+        montaria: 3,
+        nome: "Urso de Obsidiana",
+        tinta: [30, 24, 34],
+        forca: 0.6,
+        preco_tp: 550,
+    },
 ];
+
+/// Consumivel repetivel que entrega uma das quatro chaves de craft. A cor e'
+/// rolada ao abrir; as probabilidades somam 100%.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BauCraft {
+    pub id: u16,
+    pub nome: &'static str,
+    pub preco_tp: u64,
+    pub descricao: &'static str,
+    /// Cinza, verde, azul e roxa, em pontos percentuais.
+    pub chances_cor: [u8; 4],
+}
+
+pub const BAUS_CRAFT: [BauCraft; 1] = [BauCraft {
+    id: 1,
+    nome: "Baú de Chaves de Craft",
+    preco_tp: 120,
+    descricao: "Contém 1 chave aleatória de craft, de qualquer cor.",
+    chances_cor: [55, 28, 12, 5],
+}];
 
 pub fn pacote(id: u16) -> Option<&'static PacoteTp> {
     PACOTES.iter().find(|p| p.id == id)
@@ -154,6 +257,31 @@ pub fn skin(id: u16) -> Option<&'static Skin> {
     SKINS.iter().find(|s| s.id == id)
 }
 
+pub fn bau_craft(id: u16) -> Option<&'static BauCraft> {
+    BAUS_CRAFT.iter().find(|b| b.id == id)
+}
+
+/// Rola o conteudo do bau com dois valores em [0, 1): um para a cor e outro
+/// para a familia (Escama, Garra, Chifre ou Couro).
+pub fn rolar_bau_craft(id: u16, r_cor: f32, r_tipo: f32) -> Option<(u16, u8)> {
+    let b = bau_craft(id)?;
+    let alvo = (r_cor.clamp(0.0, 0.999_999) * 100.0) as u16;
+    let mut soma = 0u16;
+    let mut cor = 4u8;
+    for (i, chance) in b.chances_cor.iter().enumerate() {
+        soma += *chance as u16;
+        if alvo < soma {
+            cor = i as u8 + 1;
+            break;
+        }
+    }
+    let tipo = ((r_tipo.clamp(0.0, 0.999_999) * 4.0) as usize).min(3);
+    Some((
+        crate::item_id::chave_na_cor(crate::item_id::CHAVES[tipo], cor),
+        cor,
+    ))
+}
+
 /// A montaria de uma skin.
 pub fn montaria_da_skin(skin_id: u16) -> Option<&'static Montaria> {
     skin(skin_id).and_then(|s| montaria(s.montaria))
@@ -165,6 +293,7 @@ pub enum Produto {
     Tp(u16),
     Montaria(u16),
     Skin(u16),
+    BauCraft(u16),
 }
 
 impl Produto {
@@ -174,6 +303,7 @@ impl Produto {
             Produto::Tp(i) => format!("tp:{i}"),
             Produto::Montaria(i) => format!("montaria:{i}"),
             Produto::Skin(i) => format!("skin:{i}"),
+            Produto::BauCraft(i) => format!("bau-craft:{i}"),
         }
     }
 
@@ -184,6 +314,7 @@ impl Produto {
             "tp" => Produto::Tp(id),
             "montaria" => Produto::Montaria(id),
             "skin" => Produto::Skin(id),
+            "bau-craft" => Produto::BauCraft(id),
             _ => return None,
         };
         p.existe().then_some(p)
@@ -194,14 +325,18 @@ impl Produto {
             Produto::Tp(i) => pacote(i).is_some(),
             Produto::Montaria(i) => montaria(i).is_some(),
             Produto::Skin(i) => skin(i).is_some(),
+            Produto::BauCraft(i) => bau_craft(i).is_some(),
         }
     }
 
     pub fn nome(&self) -> String {
         match *self {
-            Produto::Tp(i) => pacote(i).map_or("?".into(), |p| format!("{} ({} TP)", p.nome, p.total())),
+            Produto::Tp(i) => {
+                pacote(i).map_or("?".into(), |p| format!("{} ({} TP)", p.nome, p.total()))
+            }
             Produto::Montaria(i) => montaria(i).map_or("?".into(), |m| m.nome.to_string()),
             Produto::Skin(i) => skin(i).map_or("?".into(), |s| s.nome.to_string()),
+            Produto::BauCraft(i) => bau_craft(i).map_or("?".into(), |b| b.nome.to_string()),
         }
     }
 
@@ -211,6 +346,7 @@ impl Produto {
             Produto::Tp(_) => None,
             Produto::Montaria(i) => montaria(i).map(|m| m.preco_tp),
             Produto::Skin(i) => skin(i).filter(|s| s.preco_tp > 0).map(|s| s.preco_tp),
+            Produto::BauCraft(i) => bau_craft(i).map(|b| b.preco_tp),
         }
     }
 }
@@ -257,14 +393,26 @@ impl Posses {
             Produto::Tp(_) => false,
             Produto::Montaria(i) => self.montarias.contains(&i),
             Produto::Skin(i) => self.skins.contains(&i),
+            Produto::BauCraft(_) => false,
         }
     }
 
     /// A skin que vale pra montar: a escolhida, se a conta tem ela e a
     /// montaria dela; senao a padrao da primeira montaria que tiver.
     pub fn skin_para_montar(&self, escolhida: Option<u16>) -> Option<u16> {
-        let valida = |id: u16| skin(id).is_some_and(|s| self.montarias.contains(&s.montaria) && (s.preco_tp == 0 || self.skins.contains(&id)));
-        escolhida.filter(|id| valida(*id)).or_else(|| self.montarias.iter().filter_map(|m| montaria(*m)).map(|m| m.skin_padrao).find(|id| valida(*id)))
+        let valida = |id: u16| {
+            skin(id).is_some_and(|s| {
+                self.montarias.contains(&s.montaria)
+                    && (s.preco_tp == 0 || self.skins.contains(&id))
+            })
+        };
+        escolhida.filter(|id| valida(*id)).or_else(|| {
+            self.montarias
+                .iter()
+                .filter_map(|m| montaria(*m))
+                .map(|m| m.skin_padrao)
+                .find(|id| valida(*id))
+        })
     }
 }
 
@@ -309,7 +457,10 @@ pub fn pode_comprar(posses: &Posses, produto: Produto, saldo: u64) -> Result<u64
 
 /// Um id de pedido aceitavel: 8..=64 chars [A-Za-z0-9_-].
 pub fn pedido_valido(id: &str) -> bool {
-    (8..=PEDIDO_ID_MAX).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    (8..=PEDIDO_ID_MAX).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 // ─────────────────────────────── rede ───────────────────────────────
@@ -321,9 +472,15 @@ pub enum PedidoLoja {
     Estado,
     /// Pacote de TP por dinheiro. `pedido` e' gerado pelo cliente e faz o
     /// clique duplo / reenvio valer uma compra so'.
-    ComprarTp { pacote: u16, pedido: String },
+    ComprarTp {
+        pacote: u16,
+        pedido: String,
+    },
     /// Montaria ou skin, com TP.
-    ComprarItem { produto: Produto, pedido: String },
+    ComprarItem {
+        produto: Produto,
+        pedido: String,
+    },
     Montar,
     Desmontar,
 }
@@ -354,14 +511,20 @@ pub struct EstadoLoja {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AvisoLoja {
     Estado(EstadoLoja),
-    Resultado { ok: bool, texto: String },
+    Resultado {
+        ok: bool,
+        texto: String,
+    },
     /// Montando: o cavaleiro sobe em `segundos` (0 = cancelou).
-    Montando { segundos: f32 },
+    Montando {
+        segundos: f32,
+    },
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::item_id;
 
     #[test]
     fn catalogo_consistente() {
@@ -374,7 +537,12 @@ mod tests {
         for par in PACOTES.windows(2) {
             let a = par[0].total() as f64 / par[0].centavos as f64;
             let b = par[1].total() as f64 / par[1].centavos as f64;
-            assert!(b >= a, "pacote {} rende menos que o {}", par[1].id, par[0].id);
+            assert!(
+                b >= a,
+                "pacote {} rende menos que o {}",
+                par[1].id,
+                par[0].id
+            );
         }
         for m in MONTARIAS {
             assert!(ids.insert(("m", m.id)));
@@ -390,12 +558,22 @@ mod tests {
             assert!(montaria(s.montaria).is_some());
             assert!((0.0..=1.0).contains(&s.forca));
         }
+        for b in BAUS_CRAFT {
+            assert!(ids.insert(("b", b.id)));
+            assert!(b.preco_tp > 0);
+            assert_eq!(b.chances_cor.iter().map(|n| *n as u16).sum::<u16>(), 100);
+        }
         assert!(VEL_MONTADO > 1.0 && VEL_MONTADO <= 1.6);
     }
 
     #[test]
     fn codigo_ida_e_volta() {
-        for p in [Produto::Tp(2), Produto::Montaria(3), Produto::Skin(102)] {
+        for p in [
+            Produto::Tp(2),
+            Produto::Montaria(3),
+            Produto::Skin(102),
+            Produto::BauCraft(1),
+        ] {
             assert_eq!(Produto::de_codigo(&p.codigo()), Some(p));
         }
         assert_eq!(Produto::de_codigo("skin:999"), None);
@@ -405,27 +583,83 @@ mod tests {
     #[test]
     fn regras_de_compra() {
         let nada = Posses::default();
-        assert_eq!(pode_comprar(&nada, Produto::Montaria(1), 499), Err(RecusaCompra::SemSaldo));
+        assert_eq!(
+            pode_comprar(&nada, Produto::Montaria(1), 499),
+            Err(RecusaCompra::SemSaldo)
+        );
         assert_eq!(pode_comprar(&nada, Produto::Montaria(1), 500), Ok(500));
-        assert_eq!(pode_comprar(&nada, Produto::Skin(102), 9999), Err(RecusaCompra::PrecisaDaMontaria));
-        assert_eq!(pode_comprar(&nada, Produto::Skin(101), 9999), Err(RecusaCompra::ProdutoInvalido), "skin padrao nao se vende");
-        assert_eq!(pode_comprar(&nada, Produto::Tp(1), 9999), Err(RecusaCompra::ProdutoInvalido));
-        let lobo = Posses { montarias: vec![1], skins: vec![101] };
-        assert_eq!(pode_comprar(&lobo, Produto::Montaria(1), 9999), Err(RecusaCompra::JaPossui));
+        assert_eq!(
+            pode_comprar(&nada, Produto::Skin(102), 9999),
+            Err(RecusaCompra::PrecisaDaMontaria)
+        );
+        assert_eq!(
+            pode_comprar(&nada, Produto::Skin(101), 9999),
+            Err(RecusaCompra::ProdutoInvalido),
+            "skin padrao nao se vende"
+        );
+        assert_eq!(
+            pode_comprar(&nada, Produto::Tp(1), 9999),
+            Err(RecusaCompra::ProdutoInvalido)
+        );
+        let lobo = Posses {
+            montarias: vec![1],
+            skins: vec![101],
+        };
+        assert_eq!(
+            pode_comprar(&lobo, Produto::Montaria(1), 9999),
+            Err(RecusaCompra::JaPossui)
+        );
         assert_eq!(pode_comprar(&lobo, Produto::Skin(102), 300), Ok(300));
+        assert_eq!(pode_comprar(&lobo, Produto::BauCraft(1), 120), Ok(120));
+    }
+
+    #[test]
+    fn bau_de_craft_da_qualquer_familia_e_cor() {
+        let esperadas = [
+            (item_id::SCALE, 1),
+            (item_id::CLAW + 1, 2),
+            (item_id::HORN + 2, 3),
+            (item_id::HIDE + 3, 4),
+        ];
+        for ((item, cor), (esperado, cor_esperada)) in [
+            rolar_bau_craft(1, 0.00, 0.00).unwrap(),
+            rolar_bau_craft(1, 0.56, 0.26).unwrap(),
+            rolar_bau_craft(1, 0.84, 0.51).unwrap(),
+            rolar_bau_craft(1, 0.99, 0.99).unwrap(),
+        ]
+        .into_iter()
+        .zip(esperadas)
+        {
+            assert_eq!((item, cor), (esperado, cor_esperada));
+        }
+        assert_eq!(rolar_bau_craft(999, 0.0, 0.0), None);
     }
 
     #[test]
     fn skin_para_montar() {
         let nada = Posses::default();
         assert_eq!(nada.skin_para_montar(None), None);
-        let p = Posses { montarias: vec![1, 2], skins: vec![101, 201, 202] };
+        let p = Posses {
+            montarias: vec![1, 2],
+            skins: vec![101, 201, 202],
+        };
         assert_eq!(p.skin_para_montar(None), Some(101));
         assert_eq!(p.skin_para_montar(Some(202)), Some(202));
-        assert_eq!(p.skin_para_montar(Some(203)), Some(101), "skin nao comprada cai na padrao");
-        assert_eq!(p.skin_para_montar(Some(302)), Some(101), "skin de montaria que nao tem");
+        assert_eq!(
+            p.skin_para_montar(Some(203)),
+            Some(101),
+            "skin nao comprada cai na padrao"
+        );
+        assert_eq!(
+            p.skin_para_montar(Some(302)),
+            Some(101),
+            "skin de montaria que nao tem"
+        );
         // A padrao vale mesmo sem estar na lista de skins (vem com a montaria).
-        let so_montaria = Posses { montarias: vec![3], skins: vec![] };
+        let so_montaria = Posses {
+            montarias: vec![3],
+            skins: vec![],
+        };
         assert_eq!(so_montaria.skin_para_montar(Some(301)), Some(301));
     }
 
@@ -433,7 +667,11 @@ mod tests {
     fn montado_corre_mais_sem_sprint_e_luta_desmonta() {
         assert_eq!(velocidade_de_andar(3.0, false, 1.0), 3.0);
         assert_eq!(velocidade_de_andar(3.0, false, 1.65), 3.0 * 1.65);
-        assert_eq!(velocidade_de_andar(3.0, true, 1.65), 3.0 * VEL_MONTADO, "montado nao soma sprint");
+        assert_eq!(
+            velocidade_de_andar(3.0, true, 1.65),
+            3.0 * VEL_MONTADO,
+            "montado nao soma sprint"
+        );
         // Montou no segundo 10: golpe antes nao desmonta, golpe depois sim.
         assert!(!luta_desmonta(9.0, 10.0));
         assert!(luta_desmonta(10.0, 10.0));

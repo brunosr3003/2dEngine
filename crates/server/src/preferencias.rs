@@ -23,7 +23,9 @@ pub fn de_json(s: &str) -> Preferencias {
     if s.is_empty() || s.len() > PREFERENCIAS_MAX_BYTES {
         return Preferencias::default();
     }
-    serde_json::from_str::<Preferencias>(s).map(valida).unwrap_or_default()
+    serde_json::from_str::<Preferencias>(s)
+        .map(valida)
+        .unwrap_or_default()
 }
 
 /// O que o cliente mandou, pronto pra guardar — ou `None` se nem validado
@@ -53,7 +55,11 @@ mod testes {
     fn escala_da_interface_fora_da_faixa_e_recortada() {
         assert_eq!(de_json(r#"{"escala_ui":5}"#).escala_ui, Some(1.6));
         assert_eq!(de_json(r#"{"escala_ui":0.1}"#).escala_ui, Some(0.8));
-        assert_eq!(de_json(r#"{"skills_auto":[1]}"#).escala_ui, None, "JSON antigo: cliente fica com o padrao dele");
+        assert_eq!(
+            de_json(r#"{"skills_auto":[1]}"#).escala_ui,
+            None,
+            "JSON antigo: cliente fica com o padrao dele"
+        );
     }
 
     #[test]
@@ -74,7 +80,11 @@ mod testes {
         assert!(enorme.len() > PREFERENCIAS_MAX_BYTES);
         assert_eq!(de_json(&enorme), Preferencias::default());
         // Pela rede: lista enorme e' cortada no teto e cabe.
-        let p = aceita(Preferencias { skills_auto: (1..=5000).collect(), ..Default::default() }).unwrap();
+        let p = aceita(Preferencias {
+            skills_auto: (1..=5000).collect(),
+            ..Default::default()
+        })
+        .unwrap();
         assert!(p.skills_auto.len() <= 12);
     }
 }

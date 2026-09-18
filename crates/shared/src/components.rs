@@ -80,12 +80,12 @@ pub const fn base_player_stats() -> PlayerStats {
         attack_speed_mult: 1.0,
         stamina_max: 100,
         stamina_regen: 15.0,
-        block_dmg_reduction: 0.6,         // 60% absorvido por block (base)
-        defense_stamina_cost_mult: 1.0,   // 100% do custo base (RES reduz)
-        damage_reduction_pct: 0.0,        // breakpoints de VIT/RES somam aqui
-        bow_range_bonus_pct: 0.0,         // Eagle Eye passive (Bow T1)
-        dash_cd_mult: 1.0,                // SPD soma reduction por ponto
-        poise_max: 0,                     // hardcore: zero poise base — gateado em skill T4 (lvl 60+)
+        block_dmg_reduction: 0.6,       // 60% absorvido por block (base)
+        defense_stamina_cost_mult: 1.0, // 100% do custo base (RES reduz)
+        damage_reduction_pct: 0.0,      // breakpoints de VIT/RES somam aqui
+        bow_range_bonus_pct: 0.0,       // Eagle Eye passive (Bow T1)
+        dash_cd_mult: 1.0,              // SPD soma reduction por ponto
+        poise_max: 0,                   // hardcore: zero poise base — gateado em skill T4 (lvl 60+)
     }
 }
 
@@ -151,15 +151,27 @@ pub struct PlayerStats {
     pub damage_reduction_pct: f32,
 }
 
-fn default_poise_max() -> i32 { 50 }
+fn default_poise_max() -> i32 {
+    50
+}
 
-fn default_block_reduction() -> f32 { 0.6 }
-fn default_one() -> f32 { 1.0 }
+fn default_block_reduction() -> f32 {
+    0.6
+}
+fn default_one() -> f32 {
+    1.0
+}
 
-fn default_stamina_max() -> i32 { 100 }
-fn default_stamina_regen() -> f32 { 15.0 }
+fn default_stamina_max() -> i32 {
+    100
+}
+fn default_stamina_regen() -> f32 {
+    15.0
+}
 
-fn default_speed_mult() -> f32 { 1.0 }
+fn default_speed_mult() -> f32 {
+    1.0
+}
 
 /// Slots de equipamento. None = vazio; Some(item_id) = item equipado.
 /// `offhand` = escudo (apenas com armas que permitem — ver `weapon_allows_offhand`).
@@ -199,7 +211,10 @@ pub struct Equipment {
 }
 
 impl Equipment {
-    fn campo(&mut self, slot: crate::constants::EquipSlot) -> (&mut Option<u16>, &mut Option<crate::items::ItemInstance>) {
+    fn campo(
+        &mut self,
+        slot: crate::constants::EquipSlot,
+    ) -> (&mut Option<u16>, &mut Option<crate::items::ItemInstance>) {
         use crate::constants::EquipSlot::*;
         match slot {
             Weapon => (&mut self.weapon, &mut self.weapon_inst),
@@ -219,13 +234,21 @@ impl Equipment {
     }
 
     /// Lê a ItemInstance do slot (None = item sem rolagem).
-    pub fn get_inst(&self, slot: crate::constants::EquipSlot) -> Option<crate::items::ItemInstance> {
+    pub fn get_inst(
+        &self,
+        slot: crate::constants::EquipSlot,
+    ) -> Option<crate::items::ItemInstance> {
         let mut c = *self;
         *c.campo(slot).1
     }
 
     /// Sobrescreve item_id e instance do slot.
-    pub fn set(&mut self, slot: crate::constants::EquipSlot, id: Option<u16>, inst: Option<crate::items::ItemInstance>) {
+    pub fn set(
+        &mut self,
+        slot: crate::constants::EquipSlot,
+        id: Option<u16>,
+        inst: Option<crate::items::ItemInstance>,
+    ) {
         let (i, n) = self.campo(slot);
         *i = id;
         *n = inst;
@@ -233,7 +256,10 @@ impl Equipment {
 
     /// Todos os slots, na ordem de `EquipSlot::TODOS` — usado por effective_stats.
     pub fn iter_equipped(&self) -> Vec<(Option<u16>, Option<crate::items::ItemInstance>)> {
-        crate::constants::EquipSlot::TODOS.iter().map(|s| (self.get(*s), self.get_inst(*s))).collect()
+        crate::constants::EquipSlot::TODOS
+            .iter()
+            .map(|s| (self.get(*s), self.get_inst(*s)))
+            .collect()
     }
 }
 
@@ -279,7 +305,10 @@ pub mod acao {
     pub const EM_COMBATE_S: f32 = 8.0;
 
     pub fn monta(conjunto: u8, em_combate: bool, gesto: u8, variante: u8) -> u8 {
-        (conjunto & 0b11) | ((em_combate as u8) << 2) | ((gesto & 0b111) << 3) | ((variante & 0b11) << 6)
+        (conjunto & 0b11)
+            | ((em_combate as u8) << 2)
+            | ((gesto & 0b111) << 3)
+            | ((variante & 0b11) << 6)
     }
     pub fn conjunto(a: u8) -> u8 {
         a & 0b11
@@ -336,7 +365,10 @@ pub mod acao {
                     for g in [NADA, GOLPE, SKILL, COLETA, COLETA_MADEIRA] {
                         for v in 0..3 {
                             let a = monta(c, combate, g, v);
-                            assert_eq!((conjunto(a), em_combate(a), gesto(a), variante(a)), (c, combate, g, v));
+                            assert_eq!(
+                                (conjunto(a), em_combate(a), gesto(a), variante(a)),
+                                (c, combate, g, v)
+                            );
                         }
                     }
                 }
@@ -447,7 +479,10 @@ mod testes_npc_kind {
                 let k = npc_kind(Some(yaw), papel);
                 assert_eq!(npc_papel_de_kind(k), papel);
                 let volta = npc_yaw_de_kind(k).unwrap();
-                assert!((volta - yaw).abs() < 1e-3, "papel {papel}, passo {passo}: {volta} != {yaw}");
+                assert!(
+                    (volta - yaw).abs() < 1e-3,
+                    "papel {papel}, passo {passo}: {volta} != {yaw}"
+                );
             }
             let sem = npc_kind(None, papel);
             assert_eq!(npc_yaw_de_kind(sem), None);
@@ -460,7 +495,10 @@ mod testes_npc_kind {
     fn kind_so_de_rumo_continua_valendo() {
         let k = kind_de_npc_yaw(2.0);
         assert_eq!(npc_papel_de_kind(k), 0);
-        assert!((npc_yaw_de_kind(k).unwrap() - npc_yaw_de_kind(npc_kind(Some(2.0), 0)).unwrap()).abs() < 1e-6);
+        assert!(
+            (npc_yaw_de_kind(k).unwrap() - npc_yaw_de_kind(npc_kind(Some(2.0), 0)).unwrap()).abs()
+                < 1e-6
+        );
     }
 }
 
@@ -522,8 +560,13 @@ mod testes_rumo {
             assert_ne!(r, 0);
             let volta = yaw_de_rumo(r).unwrap();
             let mut d = (volta - yaw).rem_euclid(std::f32::consts::TAU);
-            if d > std::f32::consts::PI { d = std::f32::consts::TAU - d; }
-            assert!(d <= std::f32::consts::TAU / RUMO_PASSOS * 0.51, "yaw {yaw}: voltou {volta}");
+            if d > std::f32::consts::PI {
+                d = std::f32::consts::TAU - d;
+            }
+            assert!(
+                d <= std::f32::consts::TAU / RUMO_PASSOS * 0.51,
+                "yaw {yaw}: voltou {volta}"
+            );
         }
         assert_eq!(rumo_de_dir(Vec2::ZERO), 0);
         assert_eq!(yaw_de_rumo(0), None);
@@ -536,16 +579,30 @@ mod testes_rumo {
 
 impl EntityState {
     pub fn pos_f32(&self) -> Vec2 {
-        Vec2::new(self.pos[0] as f32 / POS_SCALE, self.pos[1] as f32 / POS_SCALE)
+        Vec2::new(
+            self.pos[0] as f32 / POS_SCALE,
+            self.pos[1] as f32 / POS_SCALE,
+        )
     }
 
     pub fn vel_f32(&self) -> Vec2 {
-        Vec2::new(self.vel[0] as f32 / POS_SCALE, self.vel[1] as f32 / POS_SCALE)
+        Vec2::new(
+            self.vel[0] as f32 / POS_SCALE,
+            self.vel[1] as f32 / POS_SCALE,
+        )
     }
 
     pub fn quantize(id: EntityId, pos: Vec2, vel: Vec2, hp: i32, flags: u8) -> Self {
-        let q = |v: f32| (v * POS_SCALE).round().clamp(i16::MIN as f32, i16::MAX as f32) as i16;
-        let qv = |v: f32| (v * POS_SCALE).round().clamp(i8::MIN as f32, i8::MAX as f32) as i8;
+        let q = |v: f32| {
+            (v * POS_SCALE)
+                .round()
+                .clamp(i16::MIN as f32, i16::MAX as f32) as i16
+        };
+        let qv = |v: f32| {
+            (v * POS_SCALE)
+                .round()
+                .clamp(i8::MIN as f32, i8::MAX as f32) as i8
+        };
         Self {
             id,
             pos: [q(pos.x), q(pos.y)],
@@ -558,31 +615,30 @@ impl EntityState {
     }
 }
 
-
 /// Bits do `EntitySnapshot.buffs` — mantém em sync com o cliente C#.
 pub mod buffs_mask {
-    pub const BLOODTHIRST:  u8 = 1 << 0;
+    pub const BLOODTHIRST: u8 = 1 << 0;
     pub const HUNTERS_MARK: u8 = 1 << 1;
-    pub const AURA_TIDE:     u8 = 1 << 2;
+    pub const AURA_TIDE: u8 = 1 << 2;
     pub const AURA_IGNITION: u8 = 1 << 3;
-    pub const AURA_MIST:     u8 = 1 << 4;
-    pub const AURA_TEMPEST:  u8 = 1 << 5;
+    pub const AURA_MIST: u8 = 1 << 4;
+    pub const AURA_TEMPEST: u8 = 1 << 5;
 }
 
 /// Codigo enviado em `EntitySnapshot.attack_anim` pra discriminar qual
 /// animacao o cliente deve tocar no atacante. O server escolhe baseado na
 /// arma equipada.
 pub mod attack_anim {
-    pub const SLASH: u8        = 0; // Sword/Dagger/GreatSword/Unarmed (pONE3)
-    pub const SHOOT: u8        = 1; // Bow (pBOW3)
-    pub const THRUST: u8       = 2; // Staff/Wand (pONE3 Thrust)
-    pub const ENEMY_SWING: u8  = 3; // Inimigo melee (compat com `attacking`)
-    pub const ENEMY_SHOOT: u8  = 4; // Inimigo ranged (Goblin Archer / Mago)
-    pub const DASH: u8         = 5; // Dash do player (anim de jump, p1 cols 4-7)
-    pub const PARRY_FLASH: u8  = 6; // Parry sucesso — full ShieldBash swing + flash
-    pub const SHIELD_BASH: u8  = 7; // Shield Bash skill (1003) — pONE3 ShieldBash
-    pub const TOOL_SWING:  u8  = 8; // Rock (mine) e Tree (wood) — p2 rows 0-3
-    pub const TOOL_GATHER: u8  = 9; // Flower — p2 rows 4-7
+    pub const SLASH: u8 = 0; // Sword/Dagger/GreatSword/Unarmed (pONE3)
+    pub const SHOOT: u8 = 1; // Bow (pBOW3)
+    pub const THRUST: u8 = 2; // Staff/Wand (pONE3 Thrust)
+    pub const ENEMY_SWING: u8 = 3; // Inimigo melee (compat com `attacking`)
+    pub const ENEMY_SHOOT: u8 = 4; // Inimigo ranged (Goblin Archer / Mago)
+    pub const DASH: u8 = 5; // Dash do player (anim de jump, p1 cols 4-7)
+    pub const PARRY_FLASH: u8 = 6; // Parry sucesso — full ShieldBash swing + flash
+    pub const SHIELD_BASH: u8 = 7; // Shield Bash skill (1003) — pONE3 ShieldBash
+    pub const TOOL_SWING: u8 = 8; // Rock (mine) e Tree (wood) — p2 rows 0-3
+    pub const TOOL_GATHER: u8 = 9; // Flower — p2 rows 4-7
 }
 
 /// Facção do personagem, escolhida na criação. Define ilha de spawn e
@@ -598,7 +654,9 @@ pub enum Faction {
 }
 
 impl Default for Faction {
-    fn default() -> Self { Faction::Peacemain }
+    fn default() -> Self {
+        Faction::Peacemain
+    }
 }
 
 impl Faction {
@@ -606,13 +664,16 @@ impl Faction {
     pub fn from_str_lenient(s: &str) -> Option<Faction> {
         match s.trim().to_ascii_lowercase().as_str() {
             "morganeers" => Some(Faction::Morganeers),
-            "peacemain"  => Some(Faction::Peacemain),
+            "peacemain" => Some(Faction::Peacemain),
             _ => None,
         }
     }
     /// String estável pra persistir no DB.
     pub fn as_db_str(self) -> &'static str {
-        match self { Faction::Morganeers => "morganeers", Faction::Peacemain => "peacemain" }
+        match self {
+            Faction::Morganeers => "morganeers",
+            Faction::Peacemain => "peacemain",
+        }
     }
 }
 
@@ -705,5 +766,7 @@ pub struct Solido;
 pub struct MapId(pub String);
 
 impl MapId {
-    pub fn overworld() -> Self { Self("overworld".into()) }
+    pub fn overworld() -> Self {
+        Self("overworld".into())
+    }
 }

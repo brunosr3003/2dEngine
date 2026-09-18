@@ -66,14 +66,21 @@ mod testes {
     use super::*;
 
     fn com_skills(ids: &[u32]) -> Preferencias {
-        Preferencias { skills_auto: ids.to_vec(), ..Default::default() }
+        Preferencias {
+            skills_auto: ids.to_vec(),
+            ..Default::default()
+        }
     }
 
     #[test]
     fn nada_sai_antes_de_receber_do_servidor() {
         let mut s = Sincronia::default();
         assert_eq!(s.acompanhar(&com_skills(&[1]), 0.0), None);
-        assert_eq!(s.acompanhar(&com_skills(&[1]), 99.0), None, "padrao nao sobrescreve o salvo");
+        assert_eq!(
+            s.acompanhar(&com_skills(&[1]), 99.0),
+            None,
+            "padrao nao sobrescreve o salvo"
+        );
         assert_eq!(s.forcar(&com_skills(&[1])), None);
     }
 
@@ -92,8 +99,15 @@ mod testes {
         assert_eq!(s.acompanhar(&com_skills(&[1]), 1.0), None);
         // Continua mudando: reinicia a espera.
         assert_eq!(s.acompanhar(&com_skills(&[1, 2]), 2.5), None);
-        assert_eq!(s.acompanhar(&com_skills(&[1, 2]), 4.0), None, "so' 1,5 s parado");
-        assert_eq!(s.acompanhar(&com_skills(&[1, 2]), 4.6), Some(com_skills(&[1, 2])));
+        assert_eq!(
+            s.acompanhar(&com_skills(&[1, 2]), 4.0),
+            None,
+            "so' 1,5 s parado"
+        );
+        assert_eq!(
+            s.acompanhar(&com_skills(&[1, 2]), 4.6),
+            Some(com_skills(&[1, 2]))
+        );
         assert_eq!(s.acompanhar(&com_skills(&[1, 2]), 9.0), None, "ja' mandado");
     }
 

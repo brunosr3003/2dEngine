@@ -30,7 +30,10 @@ pub fn texto_do_premio(p: &Premio, nomes: &HashMap<u16, String>) -> String {
     if p.item_id == pr::OURO {
         return format!("{} de ouro", crate::economia::milhar(p.qtd as u64));
     }
-    let nome = nomes.get(&p.item_id).cloned().unwrap_or_else(|| format!("Item {}", p.item_id));
+    let nome = nomes
+        .get(&p.item_id)
+        .cloned()
+        .unwrap_or_else(|| format!("Item {}", p.item_id));
     format!("{nome} ×{}", p.qtd)
 }
 
@@ -38,13 +41,19 @@ pub fn texto_do_premio(p: &Premio, nomes: &HashMap<u16, String>) -> String {
 fn falta(s: i64) -> String {
     let s = s.max(0);
     let (h, m) = (s / 3600, s / 60 % 60);
-    if h > 0 { format!("{h}h {m:02}m") } else { format!("{m}m") }
+    if h > 0 {
+        format!("{h}h {m:02}m")
+    } else {
+        format!("{m}m")
+    }
 }
 
 impl PresencaUi {
     pub fn abrir(&mut self) -> Vec<ClientMessage> {
         self.aberto = true;
-        vec![ClientMessage::Presenca { pedido: PedidoPresenca::Estado }]
+        vec![ClientMessage::Presenca {
+            pedido: PedidoPresenca::Estado,
+        }]
     }
 
     pub fn fechar(&mut self) {
@@ -57,7 +66,11 @@ impl PresencaUi {
     }
 
     /// Chegou aviso do servidor. Devolve texto pro chat.
-    pub fn receber(&mut self, aviso: AvisoPresenca, nomes: &HashMap<u16, String>) -> Option<String> {
+    pub fn receber(
+        &mut self,
+        aviso: AvisoPresenca,
+        nomes: &HashMap<u16, String>,
+    ) -> Option<String> {
         match aviso {
             AvisoPresenca::Estado(e) => {
                 if !self.abriu_no_login {
@@ -72,8 +85,14 @@ impl PresencaUi {
                 self.estado = Some(e);
                 None
             }
-            AvisoPresenca::Resgatou { dia, premios, no_correio, .. } => {
-                let lista: Vec<String> = premios.iter().map(|p| texto_do_premio(p, nomes)).collect();
+            AvisoPresenca::Resgatou {
+                dia,
+                premios,
+                no_correio,
+                ..
+            } => {
+                let lista: Vec<String> =
+                    premios.iter().map(|p| texto_do_premio(p, nomes)).collect();
                 // Dia 0: premio de um resgate que ficou pendente (queda antes do save).
                 let mut t = if dia == 0 {
                     format!("Presença · prêmio pendente entregue: {}", lista.join(", "))
@@ -103,15 +122,32 @@ impl PresencaUi {
         let seguro = crate::hud_layout::tela_segura();
         let w = (780.0 * f).min(seguro.w - 16.0);
         let h = (640.0 * f).min(seguro.h - 16.0);
-        let p = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+        let p = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.center().y - h * 0.5,
+            w,
+            h,
+        );
         crate::hud_layout::escurece(0.45);
         estilo::painel(p);
         let m = Vec2::from(mouse_position());
         let clicou = is_mouse_button_pressed(MouseButton::Left);
         let x0 = p.x + 20.0 * f;
-        estilo::texto_forte(x0, p.y + 36.0 * f, "Calendário de presença", 20, estilo::OURO);
+        estilo::texto_forte(
+            x0,
+            p.y + 36.0 * f,
+            "Calendário de presença",
+            20,
+            estilo::OURO,
+        );
         let fechar = Rect::new(p.x + p.w - 48.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);
-        estilo::texto_centro(fechar.center().x, fechar.center().y + 7.0 * f, "X", 18, estilo::TEXTO);
+        estilo::texto_centro(
+            fechar.center().x,
+            fechar.center().y + 7.0 * f,
+            "X",
+            18,
+            estilo::TEXTO,
+        );
         if clicou && fechar.contains(m) {
             self.fechar();
             return saida;
@@ -121,7 +157,13 @@ impl PresencaUi {
             return saida;
         };
         if estado.calendarios.is_empty() {
-            estilo::texto(x0, p.y + 80.0 * f, "Nenhum calendário ativo.", 15, estilo::SUAVE);
+            estilo::texto(
+                x0,
+                p.y + 80.0 * f,
+                "Nenhum calendário ativo.",
+                15,
+                estilo::SUAVE,
+            );
             return saida;
         }
         // Abas: o mensal e cada evento ativo.
@@ -132,7 +174,17 @@ impl PresencaUi {
                 let tw = estilo::medir(&c.nome, 14) + 28.0 * f;
                 let r = Rect::new(x, y, tw, 34.0 * f);
                 estilo::cartao(r, r.contains(m), i == self.aba);
-                estilo::texto_centro(r.center().x, r.center().y + 5.0 * f, &c.nome, 14, if i == self.aba { estilo::OURO } else { estilo::TEXTO });
+                estilo::texto_centro(
+                    r.center().x,
+                    r.center().y + 5.0 * f,
+                    &c.nome,
+                    14,
+                    if i == self.aba {
+                        estilo::OURO
+                    } else {
+                        estilo::TEXTO
+                    },
+                );
                 if c.pode_hoje {
                     crate::hud::selo(r);
                 }
@@ -145,7 +197,11 @@ impl PresencaUi {
         }
         let cal = &estado.calendarios[self.aba.min(estado.calendarios.len() - 1)];
         let sub = if cal.fim_unix > 0 {
-            format!("{} · termina em {}", cal.nome, falta(cal.fim_unix - agora_unix))
+            format!(
+                "{} · termina em {}",
+                cal.nome,
+                falta(cal.fim_unix - agora_unix)
+            )
         } else {
             format!("{} · o mês vira no dia 1 às 04:00", cal.nome)
         };
@@ -157,12 +213,18 @@ impl PresencaUi {
         let vao = 8.0 * f;
         let rodape = 96.0 * f;
         let cw = (p.w - 40.0 * f - vao * (COLUNAS as f32 - 1.0)) / COLUNAS as f32;
-        let ch = ((p.y + p.h - rodape - y - vao * (linhas as f32 - 1.0)) / linhas as f32).min(cw * 1.15);
+        let ch =
+            ((p.y + p.h - rodape - y - vao * (linhas as f32 - 1.0)) / linhas as f32).min(cw * 1.15);
         let proximo = cal.resgatados as usize;
         let mut dica: Option<(Rect, String)> = None;
         for (i, dia) in cal.grade.iter().enumerate() {
             let n = i as u8 + 1;
-            let r = Rect::new(x0 + (i % COLUNAS) as f32 * (cw + vao), y + (i / COLUNAS) as f32 * (ch + vao), cw, ch);
+            let r = Rect::new(
+                x0 + (i % COLUNAS) as f32 * (cw + vao),
+                y + (i / COLUNAS) as f32 * (ch + vao),
+                cw,
+                ch,
+            );
             let sobre = r.contains(m);
             let hoje = i == proximo && cal.pode_hoje;
             let marco = pr::e_marco(n);
@@ -173,16 +235,37 @@ impl PresencaUi {
             if hoje {
                 estilo::borda_arredondada(r, estilo::RAIO_PEQUENO, 3.0, estilo::ACENTO);
             }
-            estilo::texto_forte(r.x + 6.0 * f, r.y + 15.0 * f, &format!("{n}"), 12, if marco { estilo::OURO } else { estilo::SUAVE });
+            estilo::texto_forte(
+                r.x + 6.0 * f,
+                r.y + 15.0 * f,
+                &format!("{n}"),
+                12,
+                if marco { estilo::OURO } else { estilo::SUAVE },
+            );
             let premios: Vec<&Premio> = dia.iter().filter(|p| p.qtd > 0).collect();
             // Marco: icone maior; o segundo premio num canto.
             let lado = (r.w.min(r.h) * if marco { 0.62 } else { 0.52 }).max(16.0);
             if let Some(pp) = premios.first() {
-                let id = if pp.item_id == pr::OURO { shared::item_id::GOLD } else { pp.item_id };
-                let ic = Rect::new(r.center().x - lado * 0.5, r.y + (r.h - lado) * 0.45, lado, lado);
+                let id = if pp.item_id == pr::OURO {
+                    shared::item_id::GOLD
+                } else {
+                    pp.item_id
+                };
+                let ic = Rect::new(
+                    r.center().x - lado * 0.5,
+                    r.y + (r.h - lado) * 0.45,
+                    lado,
+                    lado,
+                );
                 crate::icones::icone(id, ic, None, None);
                 let q = crate::economia::milhar(pp.qtd as u64);
-                estilo::texto_centro_forte(r.center().x, r.y + r.h - 6.0 * f, &format!("×{q}"), 12, estilo::TEXTO);
+                estilo::texto_centro_forte(
+                    r.center().x,
+                    r.y + r.h - 6.0 * f,
+                    &format!("×{q}"),
+                    12,
+                    estilo::TEXTO,
+                );
             }
             if let Some(pp) = premios.get(1) {
                 let l2 = lado * 0.5;
@@ -193,33 +276,72 @@ impl PresencaUi {
                 estilo::ret_arredondado(r, estilo::RAIO_PEQUENO, Color::new(0.0, 0.0, 0.0, 0.55));
                 let c = r.center();
                 let s = r.w.min(r.h) * 0.22;
-                estilo::traco(vec2(c.x - s, c.y), vec2(c.x - s * 0.25, c.y + s * 0.75), 4.0, Color::new(0.45, 0.85, 0.52, 1.0));
-                estilo::traco(vec2(c.x - s * 0.25, c.y + s * 0.75), vec2(c.x + s, c.y - s * 0.7), 4.0, Color::new(0.45, 0.85, 0.52, 1.0));
+                estilo::traco(
+                    vec2(c.x - s, c.y),
+                    vec2(c.x - s * 0.25, c.y + s * 0.75),
+                    4.0,
+                    Color::new(0.45, 0.85, 0.52, 1.0),
+                );
+                estilo::traco(
+                    vec2(c.x - s * 0.25, c.y + s * 0.75),
+                    vec2(c.x + s, c.y - s * 0.7),
+                    4.0,
+                    Color::new(0.45, 0.85, 0.52, 1.0),
+                );
             }
             if sobre {
                 let t: Vec<String> = premios.iter().map(|p| texto_do_premio(p, nomes)).collect();
-                dica = Some((r, format!("Dia {n}{}: {}", if marco { " (marco)" } else { "" }, t.join(" + "))));
+                dica = Some((
+                    r,
+                    format!(
+                        "Dia {n}{}: {}",
+                        if marco { " (marco)" } else { "" },
+                        t.join(" + ")
+                    ),
+                ));
             }
         }
 
         // Rodape: progresso, contador, ultimo resgate e o botao.
         let yb = p.y + p.h - rodape + 12.0 * f;
-        estilo::texto_forte(x0, yb + 18.0 * f, &format!("Resgatados {}/{}", cal.resgatados, cal.grade.len()), 15, estilo::TEXTO);
+        estilo::texto_forte(
+            x0,
+            yb + 18.0 * f,
+            &format!("Resgatados {}/{}", cal.resgatados, cal.grade.len()),
+            15,
+            estilo::TEXTO,
+        );
         let contador = if cal.pode_hoje {
             "Resgate de hoje disponível".to_string()
         } else {
-            format!("Próximo resgate em {}", falta(estado.proximo_reset_unix - agora_unix))
+            format!(
+                "Próximo resgate em {}",
+                falta(estado.proximo_reset_unix - agora_unix)
+            )
         };
         estilo::texto(x0, yb + 40.0 * f, &contador, 13, estilo::SUAVE);
         if let Some(t) = &self.ultimo {
             estilo::texto_ajustado(t, x0, yb + 62.0 * f, p.w * 0.6, 12, estilo::SUAVE);
         }
-        let bot = Rect::new(p.x + p.w - 20.0 * f - 200.0 * f, yb + 4.0 * f, 200.0 * f, 54.0 * f);
+        let bot = Rect::new(
+            p.x + p.w - 20.0 * f - 200.0 * f,
+            yb + 4.0 * f,
+            200.0 * f,
+            54.0 * f,
+        );
         let ativo = cal.pode_hoje;
         estilo::cartao(bot, ativo && bot.contains(m), ativo);
-        estilo::texto_centro_forte(bot.center().x, bot.center().y + 7.0 * f, if ativo { "Resgatar" } else { "Resgatado" }, 18, if ativo { estilo::OURO } else { estilo::SUAVE });
+        estilo::texto_centro_forte(
+            bot.center().x,
+            bot.center().y + 7.0 * f,
+            if ativo { "Resgatar" } else { "Resgatado" },
+            18,
+            if ativo { estilo::OURO } else { estilo::SUAVE },
+        );
         if ativo && clicou && bot.contains(m) {
-            saida.push(ClientMessage::Presenca { pedido: PedidoPresenca::Resgatar { calendario: cal.id } });
+            saida.push(ClientMessage::Presenca {
+                pedido: PedidoPresenca::Resgatar { calendario: cal.id },
+            });
         }
         if let Some((r, t)) = dica {
             estilo::tooltip(r, &t, true);
@@ -233,7 +355,9 @@ mod tests {
     use super::*;
 
     fn estado(pode: bool) -> EstadoPresenca {
-        shared::presenca::DadosPresenca::default().estado(1_789_000_000, pr::EVENTOS).tap(pode)
+        shared::presenca::DadosPresenca::default()
+            .estado(1_789_000_000, pr::EVENTOS)
+            .tap(pode)
     }
 
     trait Tap {
@@ -266,20 +390,37 @@ mod tests {
     #[test]
     fn texto_do_resgate_diz_premios_e_correio() {
         let mut nomes = HashMap::new();
-        nomes.insert(shared::item_id::XP_POTION, "Poção de Experiência".to_string());
+        nomes.insert(
+            shared::item_id::XP_POTION,
+            "Poção de Experiência".to_string(),
+        );
         let mut ui = PresencaUi::default();
         let t = ui
             .receber(
                 AvisoPresenca::Resgatou {
                     calendario: 0,
                     dia: 7,
-                    premios: vec![Premio { item_id: shared::item_id::XP_POTION, qtd: 1 }, Premio { item_id: pr::OURO, qtd: 1500 }],
+                    premios: vec![
+                        Premio {
+                            item_id: shared::item_id::XP_POTION,
+                            qtd: 1,
+                        },
+                        Premio {
+                            item_id: pr::OURO,
+                            qtd: 1500,
+                        },
+                    ],
                     no_correio: 1,
                 },
                 &nomes,
             )
             .unwrap();
-        assert!(t.contains("dia 7") && t.contains("Poção de Experiência ×1") && t.contains("1.500 de ouro") && t.contains("Entregas"));
+        assert!(
+            t.contains("dia 7")
+                && t.contains("Poção de Experiência ×1")
+                && t.contains("1.500 de ouro")
+                && t.contains("Entregas")
+        );
     }
 
     #[test]

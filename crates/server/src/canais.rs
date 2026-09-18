@@ -86,20 +86,26 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS realm TEXT NOT NULL DEFAULT 'SA01'")
         .execute(pool)
         .await?;
-    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS zone TEXT NOT NULL DEFAULT 'overworld'")
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "ALTER TABLE channels ADD COLUMN IF NOT EXISTS zone TEXT NOT NULL DEFAULT 'overworld'",
+    )
+    .execute(pool)
+    .await?;
     // Area de instancia unica: quem le' a lista precisa saber que ali nao vai
     // abrir outro canal, vai dar fila. Antes o cliente adivinhava isso pelo
     // numero de canais visiveis — e errava sempre que a zona estava vazia.
-    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS single BOOLEAN NOT NULL DEFAULT FALSE")
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "ALTER TABLE channels ADD COLUMN IF NOT EXISTS single BOOLEAN NOT NULL DEFAULT FALSE",
+    )
+    .execute(pool)
+    .await?;
     // Saude, nao so' lotacao: e' com isto que o supervisor decide abrir canal
     // por carga real em vez de so' por cabeca contada.
-    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS tick_p99_ms REAL NOT NULL DEFAULT 0")
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "ALTER TABLE channels ADD COLUMN IF NOT EXISTS tick_p99_ms REAL NOT NULL DEFAULT 0",
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -155,9 +161,8 @@ pub fn spawn_heartbeat(pool: PgPool, pop: Populacao, saude: Saude, dir: Diretori
     let id = format!("{realm}/{id_curto}");
     // Endereco que o CLIENTE usa. Nao da pra deduzir do BIND_ADDR: o servidor
     // escuta em 0.0.0.0 e o cliente precisa de um host roteavel.
-    let host = std::env::var("MMO_HOST_PUBLICO").unwrap_or_else(|_| {
-        std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:9000".into())
-    });
+    let host = std::env::var("MMO_HOST_PUBLICO")
+        .unwrap_or_else(|_| std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:9000".into()));
     // Teto do CANAL — quantos cabem numa instancia do mapa antes da regiao
     // ficar apinhada. E' menor que o teto tecnico do processo de proposito:
     // canal cheio nao trava, so' fica ruim de jogar.
@@ -217,6 +222,9 @@ pub fn spawn_heartbeat(pool: PgPool, pop: Populacao, saude: Saude, dir: Diretori
             }
         }
     });
-    tracing::info!("servidor {} / canal {} anunciado", realm_id,
-        std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into()));
+    tracing::info!(
+        "servidor {} / canal {} anunciado",
+        realm_id,
+        std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into())
+    );
 }

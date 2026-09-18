@@ -20,7 +20,13 @@ fn avisa(to: &mpsc::UnboundedSender<ServerMessage>, aviso: AvisoLoja) {
 }
 
 fn resultado(to: &mpsc::UnboundedSender<ServerMessage>, ok: bool, texto: impl Into<String>) {
-    avisa(to, AvisoLoja::Resultado { ok, texto: texto.into() });
+    avisa(
+        to,
+        AvisoLoja::Resultado {
+            ok,
+            texto: texto.into(),
+        },
+    );
 }
 
 /// Manda o estado da loja e devolve as posses ao loop.
@@ -34,7 +40,11 @@ async fn enviar_estado(
 ) {
     match banco::estado(central, conta).await {
         Ok(estado) => {
-            let _ = tx_mundo.send(IncomingMessage::Loja(Evento::Posses { sid, personagem: personagem.to_string(), posses: estado.posses.clone() }));
+            let _ = tx_mundo.send(IncomingMessage::Loja(Evento::Posses {
+                sid,
+                personagem: personagem.to_string(),
+                posses: estado.posses.clone(),
+            }));
             avisa(to, AvisoLoja::Estado(estado));
         }
         Err(e) => {
@@ -54,35 +64,69 @@ impl GameWorld {
             }
             _ => {}
         }
-        let Some(s) = self.sessions.get(&sid).filter(|s| s.logged_in) else { return };
+        let Some(s) = self.sessions.get(&sid).filter(|s| s.logged_in) else {
+            return;
+        };
         let to = s.handle.to_client.clone();
         let personagem = s.name.clone();
         let conta = crate::mercado::conta_global(&crate::canais::realm(), s.account_id, &s.name);
         let Some(central) = crate::mercado::central() else {
-            avisa(&to, AvisoLoja::Estado(EstadoLoja { ligada: false, simulado: banco::simulado(), ..Default::default() }));
+            avisa(
+                &to,
+                AvisoLoja::Estado(EstadoLoja {
+                    ligada: false,
+                    simulado: banco::simulado(),
+                    ..Default::default()
+                }),
+            );
             resultado(&to, false, "A loja está desligada neste servidor.");
             return;
         };
-        let compra = matches!(pedido, PedidoLoja::ComprarTp { .. } | PedidoLoja::ComprarItem { .. });
+        let compra = matches!(
+            pedido,
+            PedidoLoja::ComprarTp { .. } | PedidoLoja::ComprarItem { .. }
+        );
         if compra {
             let agora = self.sim_time_s;
-            if self.loja_pedido_em.get(&sid).is_some_and(|t| agora - t < INTERVALO_MIN_S) {
+            if self
+                .loja_pedido_em
+                .get(&sid)
+                .is_some_and(|t| agora - t < INTERVALO_MIN_S)
+            {
                 return;
             }
             self.loja_pedido_em.insert(sid, agora);
         }
-        let Some(tx_mundo) = self.auth_ctx.as_ref().map(|c| c.tx.clone()) else { return };
+        let Some(tx_mundo) = self.auth_ctx.as_ref().map(|c| c.tx.clone()) else {
+            return;
+        };
         tokio::spawn(async move {
             match pedido {
                 PedidoLoja::Estado => {}
                 PedidoLoja::ComprarTp { pacote, pedido } => {
-                    match banco::comprar_tp(&central, banco::Provedor::do_ambiente(), &conta, pacote, &pedido).await {
+                    match banco::comprar_tp(
+                        &central,
+                        banco::Provedor::do_ambiente(),
+                        &conta,
+                        pacote,
+                        &pedido,
+                    )
+                    .await
+                    {
                         Ok(r) => {
                             if let (Resposta::Feito { .. }, Some(p)) = (&r, cat::pacote(pacote)) {
                                 let codigo = Produto::Tp(pacote).codigo();
                                 crate::telemetria::conta("loja_pedido", &codigo, 1);
-                                crate::telemetria::conta("loja_receita_centavos", "BRL", p.centavos as i64);
-                                crate::telemetria::conta("loja_tp_vendida", codigo, p.total() as i64);
+                                crate::telemetria::conta(
+                                    "loja_receita_centavos",
+                                    "BRL",
+                                    p.centavos as i64,
+                                );
+                                crate::telemetria::conta(
+                                    "loja_tp_vendida",
+                                    codigo,
+                                    p.total() as i64,
+                                );
                             }
                             resultado(&to, r.ok(), r.texto());
                         }
@@ -92,20 +136,40 @@ impl GameWorld {
                         }
                     }
                 }
-                PedidoLoja::ComprarItem { produto, pedido } => match banco::comprar_item(&central, &conta, produto, &pedido).await {
-                    Ok(r) => {
-                        if let Resposta::Feito { .. } = &r {
-                            let codigo = produto.codigo();
-                            crate::telemetria::conta("loja_item", &codigo, 1);
-                            crate::telemetria::conta("loja_tp_gasta", codigo, produto.preco_tp().unwrap_or(0) as i64);
+                PedidoLoja::ComprarItem { produto, pedido } => {
+                    match banco::comprar_item(&central, &conta, produto, &pedido).await {
+                        Ok(r) => {
+                            if let Resposta::Feito { .. } = &r {
+                                let codigo = produto.codigo();
+                                crate::telemetria::conta("loja_item", &codigo, 1);
+                                crate::telemetria::conta(
+                                    "loja_tp_gasta",
+                                    codigo,
+                                    produto.preco_tp().unwrap_or(0) as i64,
+                                );
+                                if let Produto::BauCraft(id) = produto {
+                                    if let Some((item_id, cor)) =
+                                        cat::rolar_bau_craft(id, fastrand::f32(), fastrand::f32())
+                                    {
+                                        let _ = tx_mundo.send(IncomingMessage::Loja(
+                                            Evento::BauCraft {
+                                                sid,
+                                                personagem: personagem.clone(),
+                                                item_id,
+                                                cor,
+                                            },
+                                        ));
+                                    }
+                                }
+                            }
+                            resultado(&to, r.ok(), r.texto());
                         }
-                        resultado(&to, r.ok(), r.texto());
+                        Err(e) => {
+                            tracing::warn!("loja: compra de item falhou: {e:#}");
+                            resultado(&to, false, "Loja indisponível no momento.");
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!("loja: compra de item falhou: {e:#}");
-                        resultado(&to, false, "Loja indisponível no momento.");
-                    }
-                },
+                }
                 PedidoLoja::Montar | PedidoLoja::Desmontar => return,
             }
             enviar_estado(&central, &conta, &to, &tx_mundo, sid, &personagem).await;
@@ -114,21 +178,71 @@ impl GameWorld {
 
     /// Login: as posses da conta vem do central (montar sem abrir a loja).
     pub(super) fn loja_ao_logar(&self, sid: SessionId) {
-        let (Some(s), Some(central), Some(ctx)) = (self.sessions.get(&sid), crate::mercado::central(), self.auth_ctx.as_ref()) else { return };
+        let (Some(s), Some(central), Some(ctx)) = (
+            self.sessions.get(&sid),
+            crate::mercado::central(),
+            self.auth_ctx.as_ref(),
+        ) else {
+            return;
+        };
         let conta = crate::mercado::conta_global(&crate::canais::realm(), s.account_id, &s.name);
         let (personagem, tx, to) = (s.name.clone(), ctx.tx.clone(), s.handle.to_client.clone());
         // O estado inteiro (saldo e posses): o cliente sabe se tem montaria
         // pro botao do HUD, sem abrir a loja.
-        tokio::spawn(async move { enviar_estado(&central, &conta, &to, &tx, sid, &personagem).await });
+        tokio::spawn(
+            async move { enviar_estado(&central, &conta, &to, &tx, sid, &personagem).await },
+        );
     }
 
     pub fn on_loja(&mut self, ev: Evento) {
         match ev {
-            Evento::Posses { sid, personagem, posses } => {
-                let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.name == personagem) else { return };
+            Evento::Posses {
+                sid,
+                personagem,
+                posses,
+            } => {
+                let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.name == personagem) else {
+                    return;
+                };
                 s.loja_posses = posses;
                 s.loja_carregada = true;
                 self.atualizar_skin_vista(sid);
+            }
+            Evento::BauCraft {
+                sid,
+                personagem,
+                item_id,
+                cor,
+            } => {
+                let Some(s) = self
+                    .sessions
+                    .get_mut(&sid)
+                    .filter(|s| s.logged_in && s.name == personagem)
+                else {
+                    return;
+                };
+                let foi_correio = !add_to_inventory(&mut s.inventory, item_id, 1, None);
+                if foi_correio {
+                    let quando = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    s.dungeon.postar(item_id, 1, None, 0, quando);
+                } else {
+                    s.inventory_dirty = true;
+                }
+                self.save_pending = true;
+                crate::telemetria::conta("loja_bau_craft_cor", cor, 1);
+                let nome = crate::economy::nome_do_item(item_id);
+                resultado(
+                    &s.handle.to_client,
+                    true,
+                    if foi_correio {
+                        format!("Você recebeu {nome}. Bolsa cheia: enviado ao correio.")
+                    } else {
+                        format!("Você recebeu {nome}!")
+                    },
+                );
             }
         }
     }
@@ -136,7 +250,9 @@ impl GameWorld {
     /// A skin que os outros veem (`EntityMeta::kind` do jogador). Mudou: a
     /// meta vai de novo pra todo mundo que ja' conhecia a entidade.
     pub(super) fn atualizar_skin_vista(&mut self, sid: SessionId) {
-        let Some(s) = self.sessions.get_mut(&sid) else { return };
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
         let skin = s.loja_posses.skin_para_montar(s.preferencias.montaria_skin);
         if skin == s.montaria_skin_vista {
             return;
@@ -154,7 +270,9 @@ impl GameWorld {
 
     fn pedir_montar(&mut self, sid: SessionId) {
         let agora = self.sim_time_s;
-        let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.logged_in) else { return };
+        let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.logged_in) else {
+            return;
+        };
         let to = s.handle.to_client.clone();
         if s.montado || s.montando_ate > 0.0 {
             return;
@@ -164,7 +282,10 @@ impl GameWorld {
             self.loja_ao_logar(sid);
             return;
         }
-        if s.loja_posses.skin_para_montar(s.preferencias.montaria_skin).is_none() {
+        if s.loja_posses
+            .skin_para_montar(s.preferencias.montaria_skin)
+            .is_none()
+        {
             resultado(&to, false, "Você ainda não tem montaria. Veja na Loja.");
             return;
         }
@@ -173,12 +294,19 @@ impl GameWorld {
             return;
         }
         s.montando_ate = agora + cat::MONTAR_S;
-        avisa(&to, AvisoLoja::Montando { segundos: cat::MONTAR_S });
+        avisa(
+            &to,
+            AvisoLoja::Montando {
+                segundos: cat::MONTAR_S,
+            },
+        );
     }
 
     /// Desce (ou cancela a montada). `true` = estava montado/montando.
     pub(super) fn desmontar(&mut self, sid: SessionId) -> bool {
-        let Some(s) = self.sessions.get_mut(&sid) else { return false };
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return false;
+        };
         let tinha = s.montado || s.montando_ate > 0.0;
         if s.montando_ate > 0.0 {
             avisa(&s.handle.to_client, AvisoLoja::Montando { segundos: 0.0 });
@@ -195,7 +323,11 @@ impl GameWorld {
             if s.montando_ate <= 0.0 && !s.montado {
                 continue;
             }
-            let desde = if s.montado { s.montado_em } else { s.montando_ate - cat::MONTAR_S };
+            let desde = if s.montado {
+                s.montado_em
+            } else {
+                s.montando_ate - cat::MONTAR_S
+            };
             let lutou = cat::luta_desmonta(ultima_luta(s), desde);
             let pode = pode_ficar_montado(s) && !lutou;
             if s.montando_ate > 0.0 {
@@ -216,17 +348,26 @@ impl GameWorld {
 
     /// Jogadores montados agora (panoptico).
     pub fn montados(&self) -> usize {
-        self.sessions.values().filter(|s| s.logged_in && s.montado).count()
+        self.sessions
+            .values()
+            .filter(|s| s.logged_in && s.montado)
+            .count()
     }
 }
 
 /// O instante mais recente de golpe, skill ou pancada recebida.
 fn ultima_luta(s: &Session) -> f32 {
-    s.last_combat_at_s.max(s.combo_last_attack).max(s.gesto_skill_em)
+    s.last_combat_at_s
+        .max(s.combo_last_attack)
+        .max(s.gesto_skill_em)
 }
 
 fn pode_ficar_montado(s: &Session) -> bool {
-    !s.downed && s.carrying.is_none() && s.instancia == 0 && s.coleta_no.is_none() && s.entity.is_some()
+    !s.downed
+        && s.carrying.is_none()
+        && s.instancia == 0
+        && s.coleta_no.is_none()
+        && s.entity.is_some()
 }
 
 /// Pode comecar a montar agora? O texto e' o motivo pro jogador.

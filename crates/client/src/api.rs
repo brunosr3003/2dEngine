@@ -79,11 +79,17 @@ fn get(caminho: &str) -> Result<(u16, String), String> {
         .set_read_timeout(Some(Duration::from_secs(6)))
         .map_err(|e| e.to_string())?;
     let pedido = format!("GET {caminho} HTTP/1.1\r\nHost: {endereco}\r\nConnection: close\r\n\r\n");
-    fluxo.write_all(pedido.as_bytes()).map_err(|e| e.to_string())?;
+    fluxo
+        .write_all(pedido.as_bytes())
+        .map_err(|e| e.to_string())?;
     let mut resposta = String::new();
-    fluxo.read_to_string(&mut resposta).map_err(|e| e.to_string())?;
+    fluxo
+        .read_to_string(&mut resposta)
+        .map_err(|e| e.to_string())?;
 
-    let (cabecalho, corpo) = resposta.split_once("\r\n\r\n").ok_or("resposta sem corpo")?;
+    let (cabecalho, corpo) = resposta
+        .split_once("\r\n\r\n")
+        .ok_or("resposta sem corpo")?;
     let codigo = cabecalho
         .split_whitespace()
         .nth(1)
@@ -133,7 +139,9 @@ pub fn interpreta_poll(codigo: u16, corpo: &str) -> RespostaPoll {
             (Some(usuario), Some(token)) => RespostaPoll::Pronto { usuario, token },
             _ => RespostaPoll::Erro("resposta incompleta do servidor".into()),
         },
-        Some("erro") => RespostaPoll::Erro(campo_json(corpo, "error").unwrap_or_else(|| "erro".into())),
+        Some("erro") => {
+            RespostaPoll::Erro(campo_json(corpo, "error").unwrap_or_else(|| "erro".into()))
+        }
         _ => RespostaPoll::Erro(format!("resposta inesperada ({codigo})")),
     }
 }
@@ -153,7 +161,8 @@ pub fn google_start() -> Receiver<Result<(String, String), String>> {
         let (codigo, corpo) = get("/api/auth/google/start")?;
         match (campo_json(&corpo, "state"), campo_json(&corpo, "url")) {
             (Some(state), Some(url)) if codigo == 200 => Ok((state, url)),
-            _ => Err(campo_json(&corpo, "error").unwrap_or_else(|| format!("servidor respondeu {codigo}"))),
+            _ => Err(campo_json(&corpo, "error")
+                .unwrap_or_else(|| format!("servidor respondeu {codigo}"))),
         }
     })
 }
@@ -174,10 +183,25 @@ mod testes {
         let ok = r#"{"status":"ok","username":"Joao_1","token":"abc\"def"}"#;
         assert_eq!(campo_json(ok, "username").as_deref(), Some("Joao_1"));
         assert_eq!(campo_json(ok, "token").as_deref(), Some("abc\"def"));
-        assert_eq!(interpreta_poll(200, ok), RespostaPoll::Pronto { usuario: "Joao_1".into(), token: "abc\"def".into() });
-        assert_eq!(interpreta_poll(200, r#"{"status": "pendente"}"#), RespostaPoll::Pendente);
-        assert_eq!(interpreta_poll(404, r#"{"status":"expirado"}"#), RespostaPoll::Expirado);
-        assert_eq!(interpreta_poll(200, r#"{"status":"erro","error":"negado"}"#), RespostaPoll::Erro("negado".into()));
+        assert_eq!(
+            interpreta_poll(200, ok),
+            RespostaPoll::Pronto {
+                usuario: "Joao_1".into(),
+                token: "abc\"def".into()
+            }
+        );
+        assert_eq!(
+            interpreta_poll(200, r#"{"status": "pendente"}"#),
+            RespostaPoll::Pendente
+        );
+        assert_eq!(
+            interpreta_poll(404, r#"{"status":"expirado"}"#),
+            RespostaPoll::Expirado
+        );
+        assert_eq!(
+            interpreta_poll(200, r#"{"status":"erro","error":"negado"}"#),
+            RespostaPoll::Erro("negado".into())
+        );
     }
 }
 
@@ -198,10 +222,14 @@ fn parse(corpo: &str) -> Vec<Canal> {
         let campo_num = |chave: &str| -> Option<u32> {
             let i = bloco.find(&format!("\"{chave}\""))? + chave.len() + 3;
             let resto = bloco[i..].trim_start_matches([':', ' ']);
-            let fim = resto.find(|c: char| !c.is_ascii_digit()).unwrap_or(resto.len());
+            let fim = resto
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(resto.len());
             resto[..fim].parse().ok()
         };
-        let (Some(id), Some(host)) = (campo_txt("id"), campo_txt("host")) else { continue };
+        let (Some(id), Some(host)) = (campo_txt("id"), campo_txt("host")) else {
+            continue;
+        };
         saida.push(Canal {
             id,
             zona: campo_txt("zone").unwrap_or_else(|| "?".into()),

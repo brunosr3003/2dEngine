@@ -62,7 +62,11 @@ impl Net {
             let _ = ws.flush();
         });
 
-        Self { tx_out, rx_in, bytes_in }
+        Self {
+            tx_out,
+            rx_in,
+            bytes_in,
+        }
     }
 
     /// Total de bytes recebidos ate agora. Quem chama tira a diferenca entre

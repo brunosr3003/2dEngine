@@ -45,12 +45,14 @@ pub async fn run_world_loop(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "data/maps/game.json".to_string());
     tracing::info!("loading map: {}", map_path);
-    let mf = shared::mapfile::MapFile::load(&map_path)
-        .map_err(|e| anyhow::anyhow!(
+    let mf = shared::mapfile::MapFile::load(&map_path).map_err(|e| {
+        anyhow::anyhow!(
             "failed to load mapfile '{}': {}. \
              Set MAP_FILE env var ou garanta que data/maps/game.json existe.",
-            map_path, e
-        ))?;
+            map_path,
+            e
+        )
+    })?;
     let mut world = GameWorld::new_from_mapfile(characters, mf);
     world.populacao = Some(populacao);
     world.saude = Some(saude.clone());
@@ -71,7 +73,11 @@ pub async fn run_world_loop(
         );
         tracing::info!(
             "ilha '{}' ({:?}, raio {} blocos, {} troncos/matacoes) pronta em {:?}",
-            world.zona, def.bioma, def.raio_blocos, ilha.total_de_estorvos(), t0.elapsed()
+            world.zona,
+            def.bioma,
+            def.raio_blocos,
+            ilha.total_de_estorvos(),
+            t0.elapsed()
         );
         world.ilha = Some(ilha);
         // Desembarque: o relevo decide, nao a coordenada herdada. E' daqui
@@ -136,6 +142,13 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::Mercado(ev)) => world.on_mercado(ev),
                 Ok(IncomingMessage::Presenca(ev)) => world.on_presenca(ev),
                 Ok(IncomingMessage::Loja(ev)) => world.on_loja(ev),
+                Ok(IncomingMessage::Social { sid, nome, avisos }) => {
+                    world.on_social(sid, nome, avisos)
+                }
+                Ok(IncomingMessage::CorreioEntrega(e)) => world.on_correio_entrega(e),
+                Ok(IncomingMessage::CorreioFim { sid, nome, texto }) => {
+                    world.on_correio_fim(sid, nome, texto)
+                }
                 Ok(IncomingMessage::AuthResult(id, r)) => world.on_auth_result(id, r),
                 Ok(IncomingMessage::CharCreated(id, row, success)) => {
                     world.on_char_created(id, *row, success);
@@ -164,6 +177,13 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::Mercado(ev)) => world.on_mercado(ev),
                 Ok(IncomingMessage::Presenca(ev)) => world.on_presenca(ev),
                 Ok(IncomingMessage::Loja(ev)) => world.on_loja(ev),
+                Ok(IncomingMessage::Social { sid, nome, avisos }) => {
+                    world.on_social(sid, nome, avisos)
+                }
+                Ok(IncomingMessage::CorreioEntrega(e)) => world.on_correio_entrega(e),
+                Ok(IncomingMessage::CorreioFim { sid, nome, texto }) => {
+                    world.on_correio_fim(sid, nome, texto)
+                }
                 Ok(_) => {} // outros variantes nao devem chegar aqui
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => break,

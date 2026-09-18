@@ -5,10 +5,10 @@
 //! quadro so' com os tiles visiveis — algumas centenas de quads, mais barato
 //! que manter chunk em cache e invalidar.
 
-use macroquad::prelude::*;
 use macroquad::material::{load_material, Material, MaterialParams};
 use macroquad::miniquad::graphics::{PipelineParams, UniformDesc, UniformType};
 use macroquad::models::{Mesh, Vertex};
+use macroquad::prelude::*;
 use shared::constants::tile_id;
 
 use crate::map::Map;
@@ -279,7 +279,10 @@ mod testes_camera {
         let base = (camera(Vec2::ZERO, 0.0, 0.0, 1.0, pitch_padrao()).position).length();
         for p in [PITCH_MIN, 0.8, pitch_padrao(), 1.1, PITCH_MAX] {
             let d = camera(Vec2::ZERO, 0.0, 0.0, 1.0, p).position.length();
-            assert!((d - base).abs() < 1e-3, "pitch {p} mudou a distancia: {d} vs {base}");
+            assert!(
+                (d - base).abs() < 1e-3,
+                "pitch {p} mudou a distancia: {d} vs {base}"
+            );
         }
     }
 
@@ -290,7 +293,10 @@ mod testes_camera {
     fn afastar_fecha_a_inclinacao() {
         let perto = pitch_min_para(ZOOM_MIN);
         let longe = pitch_min_para(ZOOM_MAX);
-        assert!((perto - PITCH_MIN).abs() < 1e-5, "colado tem que deitar ate' o limite");
+        assert!(
+            (perto - PITCH_MIN).abs() < 1e-5,
+            "colado tem que deitar ate' o limite"
+        );
         assert!(
             (longe - PITCH_MIN_LONGE).abs() < 1e-5,
             "afastado o piso tem que ser PITCH_MIN_LONGE, foi {longe}"
@@ -301,7 +307,10 @@ mod testes_camera {
         for k in 1..=10 {
             let z = ZOOM_MIN + (ZOOM_MAX - ZOOM_MIN) * k as f32 / 10.0;
             let p = pitch_min_para(z);
-            assert!(p >= anterior - 1e-6, "piso caiu de {anterior} pra {p} no zoom {z}");
+            assert!(
+                p >= anterior - 1e-6,
+                "piso caiu de {anterior} pra {p} no zoom {z}"
+            );
             anterior = p;
         }
     }
@@ -318,14 +327,23 @@ mod testes_camera {
                 p >= pitch_min_para(z) - 1e-5 && p <= PITCH_MAX + 1e-5,
                 "zoom {z}: automatico {p} fora da banda"
             );
-            assert!(p > anterior, "afastar tem que LEVANTAR: {anterior} -> {p} no zoom {z}");
+            assert!(
+                p > anterior,
+                "afastar tem que LEVANTAR: {anterior} -> {p} no zoom {z}"
+            );
             anterior = p;
         }
         // E tem que sobrar espaco pra mao nos dois sentidos.
         for z in [ZOOM_MIN, 1.0, ZOOM_MAX] {
             let p = pitch_do_zoom(z);
-            assert!(p - pitch_min_para(z) > 0.05, "zoom {z}: sem espaco pra deitar na mao");
-            assert!(PITCH_MAX - p > 0.05, "zoom {z}: sem espaco pra levantar na mao");
+            assert!(
+                p - pitch_min_para(z) > 0.05,
+                "zoom {z}: sem espaco pra deitar na mao"
+            );
+            assert!(
+                PITCH_MAX - p > 0.05,
+                "zoom {z}: sem espaco pra levantar na mao"
+            );
         }
     }
 
@@ -382,10 +400,12 @@ mod testes_camera {
             let meio = jogador + vec3(0.0, 0.6, 0.0);
             let alvo = world_to_screen_com(&m, meio, tela).expect("jogador na tela");
             assert!(
-                (recorte.x - alvo.x).abs() < 1.0
-                    && (recorte.y - (tela.y - alvo.y)).abs() < 1.0,
+                (recorte.x - alvo.x).abs() < 1.0 && (recorte.y - (tela.y - alvo.y)).abs() < 1.0,
                 "yaw {yaw}: furo em ({:.0}, {:.0}), jogador em ({:.0}, {:.0})",
-                recorte.x, recorte.y, alvo.x, tela.y - alvo.y
+                recorte.x,
+                recorte.y,
+                alvo.x,
+                tela.y - alvo.y
             );
 
             // E o corte comeca ANTES do jogador: a profundidade de referencia
@@ -519,7 +539,8 @@ mod testes_camera {
         // primeiro quadro ser o maior de todos, e disso cuida o teste do pico.
         assert!(
             h1 - 12.0 < 0.5 * 0.05,
-            "arrancou {:.4} de 0,5 no primeiro quadro", h1 - 12.0
+            "arrancou {:.4} de 0,5 no primeiro quadro",
+            h1 - 12.0
         );
         assert!(v1 > 0.0, "a mola nem comecou a andar");
 
@@ -531,7 +552,10 @@ mod testes_camera {
             (h, v) = altura_da_camera(h, v, 12.5, dt);
             maior = maior.max(h);
         }
-        assert!((h - 12.5).abs() < 0.01, "dois segundos depois estava em {h}");
+        assert!(
+            (h - 12.5).abs() < 0.01,
+            "dois segundos depois estava em {h}"
+        );
         assert!(maior <= 12.5 + 1e-3, "passou do ponto ate' {maior}");
 
         // O PICO da velocidade fica no MEIO do caminho, e nao no primeiro
@@ -563,8 +587,16 @@ mod testes_camera {
     #[test]
     fn a_vista_de_repouso_e_a_de_sempre() {
         let cam = camera(Vec2::ZERO, 0.0, 0.0, 1.0, pitch_padrao());
-        assert!((cam.position.y - CAM_HEIGHT).abs() < 1e-3, "altura {}", cam.position.y);
-        assert!((cam.position.z - CAM_BACK).abs() < 1e-3, "recuo {}", cam.position.z);
+        assert!(
+            (cam.position.y - CAM_HEIGHT).abs() < 1e-3,
+            "altura {}",
+            cam.position.y
+        );
+        assert!(
+            (cam.position.z - CAM_BACK).abs() < 1e-3,
+            "recuo {}",
+            cam.position.z
+        );
     }
 
     /// W tem que apontar pra LONGE da camera em qualquer angulo, e D pra
@@ -580,14 +612,20 @@ mod testes_camera {
             let frente = (cam.target - cam.position).normalize();
             let frente = vec2(frente.x, frente.z).normalize();
             let obtido = input_para_mundo(w, yaw);
-            assert!(perto(obtido, frente), "yaw {yaw}: W deu {obtido:?}, esperado {frente:?}");
+            assert!(
+                perto(obtido, frente),
+                "yaw {yaw}: W deu {obtido:?}, esperado {frente:?}"
+            );
             // D e' a direita DA TELA. Com o eixo Z crescendo pra baixo na
             // tela, a direita de `(fx, fz)` e' `(-fz, fx)` — a mao troca em
             // relacao a' convencao 3D, e foi ai' que eu errei o primeiro
             // assert (o codigo estava certo, o teste e' que nao).
             let dir_d = input_para_mundo(d, yaw);
             let direita = vec2(-frente.y, frente.x);
-            assert!(perto(dir_d, direita), "yaw {yaw}: D deu {dir_d:?}, esperado {direita:?}");
+            assert!(
+                perto(dir_d, direita),
+                "yaw {yaw}: D deu {dir_d:?}, esperado {direita:?}"
+            );
         }
     }
 }
@@ -659,7 +697,10 @@ impl<'a> Vista<'a> {
         apoio: f32,
         chao: &'a dyn Fn(f32, f32) -> f32,
     ) -> Self {
-        Self { cam: camera_com_chao(alvo, apoio, yaw, zoom, pitch, chao), chao }
+        Self {
+            cam: camera_com_chao(alvo, apoio, yaw, zoom, pitch, chao),
+            chao,
+        }
     }
 
     pub fn chao_em(&self, x: f32, z: f32) -> f32 {
@@ -724,12 +765,7 @@ pub fn raio_da_tela(cam: &Camera3D, tela: Vec2) -> (Vec3, Vec3) {
 /// DIRECAO DA CAMERA a partir dele. Só o que estiver antes disso vira furo, e
 /// isso e' obstaculo de verdade — parede, tronco, casa — e nao o chao em que
 /// ele pisa.
-pub fn recorte_do_jogador(
-    cam: &Camera3D,
-    jogador: Vec3,
-    fator: f32,
-    tela: Vec2,
-) -> (Vec3, f32) {
+pub fn recorte_do_jogador(cam: &Camera3D, jogador: Vec3, fator: f32, tela: Vec2) -> (Vec3, f32) {
     /// Quanto um obstaculo precisa estar a' frente do jogador pra virar furo.
     ///
     /// Mais que a metade da profundidade do corpo e menos que a distancia
@@ -769,7 +805,10 @@ pub fn recorte_do_jogador(
         (Some(pes), Some(topo)) => (topo.y - pes.y).abs().max(1.0),
         _ => tela.y * 0.1,
     };
-    (vec3(no_alvo.x, tela.y - no_alvo.y, alto_px * fator), atras.z)
+    (
+        vec3(no_alvo.x, tela.y - no_alvo.y, alto_px * fator),
+        atras.z,
+    )
 }
 
 /// A matriz projecao×vista da camera, com a proporcao vinda de fora.
@@ -842,14 +881,14 @@ pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
         uv = texcoord;
         recortavel = normal.x;
     }"#;
-    // O recorte que deixa o jogador aparecer atraves do que estiver na
-    // frente dele. Ver `recorte_do_jogador`.
-    //
-    //   Recorte.xy  centro do furo, em pixels (origem embaixo, como o
-    //               `gl_FragCoord`)
-    //   Recorte.z   raio do furo, em pixels. Zero desliga.
-    //   RecorteZ    profundidade de janela a partir da qual um fragmento
-    //               conta como "na frente do jogador"
+// O recorte que deixa o jogador aparecer atraves do que estiver na
+// frente dele. Ver `recorte_do_jogador`.
+//
+//   Recorte.xy  centro do furo, em pixels (origem embaixo, como o
+//               `gl_FragCoord`)
+//   Recorte.z   raio do furo, em pixels. Zero desliga.
+//   RecorteZ    profundidade de janela a partir da qual um fragmento
+//               conta como "na frente do jogador"
 pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
     varying lowp vec4 color;
     varying lowp vec2 uv;
@@ -891,25 +930,26 @@ pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
 /// (`gpu_estatica`) montam o pipeline daqui.
 pub(crate) fn params_solido() -> PipelineParams {
     PipelineParams {
-                cull_face: miniquad::graphics::CullFace::Back,
-                depth_test: miniquad::graphics::Comparison::LessOrEqual,
-                depth_write: true,
-                color_blend: Some(miniquad::graphics::BlendState::new(
-                    miniquad::graphics::Equation::Add,
-                    miniquad::graphics::BlendFactor::Value(
-                        miniquad::graphics::BlendValue::SourceAlpha,
-                    ),
-                    miniquad::graphics::BlendFactor::OneMinusValue(
-                        miniquad::graphics::BlendValue::SourceAlpha,
-                    ),
-                )),
-                ..Default::default()
-            }
+        cull_face: miniquad::graphics::CullFace::Back,
+        depth_test: miniquad::graphics::Comparison::LessOrEqual,
+        depth_write: true,
+        color_blend: Some(miniquad::graphics::BlendState::new(
+            miniquad::graphics::Equation::Add,
+            miniquad::graphics::BlendFactor::Value(miniquad::graphics::BlendValue::SourceAlpha),
+            miniquad::graphics::BlendFactor::OneMinusValue(
+                miniquad::graphics::BlendValue::SourceAlpha,
+            ),
+        )),
+        ..Default::default()
+    }
 }
 
 pub fn material_solido() -> Material {
     load_material(
-        ShaderSource::Glsl { vertex: SOLIDO_VERTICE, fragment: SOLIDO_FRAGMENTO },
+        ShaderSource::Glsl {
+            vertex: SOLIDO_VERTICE,
+            fragment: SOLIDO_FRAGMENTO,
+        },
         MaterialParams {
             uniforms: vec![
                 UniformDesc::new("Recorte", UniformType::Float3),
@@ -968,7 +1008,12 @@ pub fn draw_ground(map: &Map, center: Vec2) {
             255,
         ];
         for v in p {
-            verts.push(Vertex { position: v, uv: vec2(0.0, 0.0), color, normal: Vec4::ZERO });
+            verts.push(Vertex {
+                position: v,
+                uv: vec2(0.0, 0.0),
+                color,
+                normal: Vec4::ZERO,
+            });
         }
         idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
     };
@@ -1009,7 +1054,11 @@ pub fn draw_ground(map: &Map, center: Vec2) {
         }
     }
     if !verts.is_empty() {
-        draw_mesh(&Mesh { vertices: verts, indices: idx, texture: None });
+        draw_mesh(&Mesh {
+            vertices: verts,
+            indices: idx,
+            texture: None,
+        });
     }
 }
 
@@ -1074,7 +1123,13 @@ pub const ALTURA_DO_BICHO: [(&str, f32); 5] = [
 /// tem tier. Quatro tons do claro ao escuro, um por indice 241-244.
 pub fn variantes_do_saque() -> Vec<(&'static str, [[u8; 3]; 4])> {
     let rampa = |c: (u8, u8, u8)| {
-        let t = |f: f32| [(c.0 as f32 * f) as u8, (c.1 as f32 * f) as u8, (c.2 as f32 * f) as u8];
+        let t = |f: f32| {
+            [
+                (c.0 as f32 * f) as u8,
+                (c.1 as f32 * f) as u8,
+                (c.2 as f32 * f) as u8,
+            ]
+        };
         [t(1.0), t(0.82), t(0.66), t(0.5)]
     };
     let cristal = |t: u8| shared::terreno::cristal_do_tier(t).rgb();
@@ -1092,9 +1147,21 @@ pub const MODELOS_DE_GENTE: [&str; 4] = ["player", "pistoleiro", "mago", "arquei
 
 /// Os NPCs da vila, um rig de dez pecas por oficio (`tools/voxrender/npcs.py`).
 pub const MODELOS_DE_NPC: [&str; 15] = [
-    "npcs/alquimista", "npcs/ferreiro", "npcs/armeiro", "npcs/taberneiro", "npcs/alfaiate",
-    "npcs/treinador", "npcs/identificador", "npcs/cartografo", "npcs/estivador", "npcs/capitao",
-    "npcs/mestre_missoes", "npcs/mercador", "npcs/aldeao_1", "npcs/aldeao_2", "npcs/aldeao_3",
+    "npcs/alquimista",
+    "npcs/ferreiro",
+    "npcs/armeiro",
+    "npcs/taberneiro",
+    "npcs/alfaiate",
+    "npcs/treinador",
+    "npcs/identificador",
+    "npcs/cartografo",
+    "npcs/estivador",
+    "npcs/capitao",
+    "npcs/mestre_missoes",
+    "npcs/mercador",
+    "npcs/aldeao_1",
+    "npcs/aldeao_2",
+    "npcs/aldeao_3",
 ];
 
 /// `Papel::Missoes`: o proximo depois de `Alquimista` no enum do shared.
@@ -1136,20 +1203,40 @@ fn desenha_bau(p: Vec3) {
     let madeira = Color::from_rgba(122, 78, 40, 255);
     let escura = Color::from_rgba(86, 52, 26, 255);
     let ouro = Color::from_rgba(236, 190, 84, 255);
-    draw_cube(p + vec3(0.0, 0.38, 0.0), vec3(1.2, 0.76, 0.8), None, madeira);
-    draw_cube(p + vec3(0.0, 0.86, 0.0), vec3(1.26, 0.24, 0.86), None, escura);
+    draw_cube(
+        p + vec3(0.0, 0.38, 0.0),
+        vec3(1.2, 0.76, 0.8),
+        None,
+        madeira,
+    );
+    draw_cube(
+        p + vec3(0.0, 0.86, 0.0),
+        vec3(1.26, 0.24, 0.86),
+        None,
+        escura,
+    );
     for dx in [-0.42, 0.42] {
         draw_cube(p + vec3(dx, 0.5, 0.0), vec3(0.1, 0.98, 0.84), None, ouro);
     }
-    draw_cube(p + vec3(0.0, 0.66, 0.42), vec3(0.18, 0.22, 0.06), None, ouro);
+    draw_cube(
+        p + vec3(0.0, 0.66, 0.42),
+        vec3(0.18, 0.22, 0.06),
+        None,
+        ouro,
+    );
     let a = 0.55 + 0.35 * (t * 3.0).sin();
-    draw_ring(p, 0.95 + 0.08 * (t * 3.0).sin(), Color::new(0.95, 0.78, 0.35, a));
+    draw_ring(
+        p,
+        0.95 + 0.08 * (t * 3.0).sin(),
+        Color::new(0.95, 0.78, 0.35, a),
+    );
 }
 
 /// Escala de desenho do chefe de campo (1 pra quem nao e' chefe).
 pub(crate) fn escala_de_chefe(e: &crate::world::Ent) -> f32 {
     if e.meta.tag == shared::EntityTag::Enemy && e.state.flags & shared::ent_flags::BOSS != 0 {
-        shared::bosses::chefe(e.meta.kind).map_or(1.0, |c| c.escala) * crate::bicho::fator_do_modelo_de_chefe(e.meta.kind)
+        shared::bosses::chefe(e.meta.kind).map_or(1.0, |c| c.escala)
+            * crate::bicho::fator_do_modelo_de_chefe(e.meta.kind)
     } else {
         1.0
     }
@@ -1157,7 +1244,8 @@ pub(crate) fn escala_de_chefe(e: &crate::world::Ent) -> f32 {
 
 /// Altura do chefe na tela (u), pra sombra, aura, placa e poeira.
 pub(crate) fn altura_de_chefe(e: &crate::world::Ent) -> f32 {
-    crate::bicho::do_mob(e.meta.tag, e.meta.kind, true).map_or(1.95, |(_, a)| a) * escala_de_chefe(e)
+    crate::bicho::do_mob(e.meta.tag, e.meta.kind, true).map_or(1.95, |(_, a)| a)
+        * escala_de_chefe(e)
 }
 
 /// O tombo do chefe: o dobro do tempo do tombo comum e o mesmo quique — o
@@ -1167,15 +1255,24 @@ fn queda_de_chefe(t: f32) -> f32 {
 }
 
 fn rig_do_humanoide(e: &crate::world::Ent) -> Option<&'static str> {
-    if e.meta.tag != shared::EntityTag::Enemy { return None; }
+    if e.meta.tag != shared::EntityTag::Enemy {
+        return None;
+    }
     // Chefe: so' o feito de gente anda neste rig (o kind do corpo preset).
     let chefe = e.state.flags & shared::ent_flags::BOSS != 0;
-    if chefe && !matches!(shared::bosses::chefe(e.meta.kind).map(|c| c.corpo), Some(shared::bosses::Corpo::Gente(_))) {
+    if chefe
+        && !matches!(
+            shared::bosses::chefe(e.meta.kind).map(|c| c.corpo),
+            Some(shared::bosses::Corpo::Gente(_))
+        )
+    {
         return None;
     }
     match shared::bosses::kind_do_corpo(e.meta.kind) {
-        2 => Some("humanoides/pistoleiro"), 4 => Some("humanoides/mago"),
-        6 => Some("humanoides/arqueiro"), _ => None,
+        2 => Some("humanoides/pistoleiro"),
+        4 => Some("humanoides/mago"),
+        6 => Some("humanoides/arqueiro"),
+        _ => None,
     }
 }
 
@@ -1192,7 +1289,9 @@ pub fn draw_entities(
     let mut brilhos: Vec<Brilho> = Vec::new();
     let self_id = world.self_id;
     for id in order {
-        let Some(e) = world.ents.get_mut(&id) else { continue };
+        let Some(e) = world.ents.get_mut(&id) else {
+            continue;
+        };
         let p = vista.pos_de(e);
 
         // Marca do alvo: anel no chao, que e' como MMO de target sinaliza.
@@ -1203,7 +1302,14 @@ pub fn draw_entities(
         let boss = e.state.flags & shared::ent_flags::BOSS != 0;
         // Chefe vivo: sombra larga e aura na cor do elemento.
         if boss && e.meta.tag == shared::EntityTag::Enemy && e.morte.is_none() {
-            crate::chefe_anim::presenca(e.meta.id.0 as u64, e.meta.kind, p, altura_de_chefe(e), get_time() as f32, get_frame_time());
+            crate::chefe_anim::presenca(
+                e.meta.id.0 as u64,
+                e.meta.kind,
+                p,
+                altura_de_chefe(e),
+                get_time() as f32,
+                get_frame_time(),
+            );
         }
         if let Some(corpo) = rig_do_humanoide(e).and_then(|nome| vox.rig(nome)) {
             brilhos.extend(desenha_personagem(e, corpo, None, vox, vista, false));
@@ -1224,16 +1330,36 @@ pub fn draw_entities(
             }
         }
         // Chefe pirata: o corpo do personagem com o chapeu, na escala de chefe.
-        if boss && shared::bosses::chefe(e.meta.kind).is_some_and(|c| c.corpo == shared::bosses::Corpo::Pirata) {
+        if boss
+            && shared::bosses::chefe(e.meta.kind)
+                .is_some_and(|c| c.corpo == shared::bosses::Corpo::Pirata)
+        {
             if let Some(corpo) = vox.rig(RIG_CORPO) {
-                brilhos.extend(desenha_personagem(e, corpo, vox.rig(RIG_CHAPEU), vox, vista, false));
+                brilhos.extend(desenha_personagem(
+                    e,
+                    corpo,
+                    vox.rig(RIG_CHAPEU),
+                    vox,
+                    vista,
+                    false,
+                ));
                 continue;
             }
         }
         // Gente (jogador, NPC) e' desenhada em PECAS, com a pose do quadro.
-        if matches!(e.meta.tag, shared::EntityTag::Player | shared::EntityTag::Npc) {
+        if matches!(
+            e.meta.tag,
+            shared::EntityTag::Player | shared::EntityTag::Npc
+        ) {
             if let Some(corpo) = vox.rig(RIG_CORPO) {
-                brilhos.extend(desenha_personagem(e, corpo, vox.rig(RIG_CHAPEU), vox, vista, self_id == Some(id)));
+                brilhos.extend(desenha_personagem(
+                    e,
+                    corpo,
+                    vox.rig(RIG_CHAPEU),
+                    vox,
+                    vista,
+                    self_id == Some(id),
+                ));
                 continue;
             }
         }
@@ -1377,13 +1503,19 @@ fn desenha_personagem(
             skill: e.skill,
             ferido: e.ferido,
             recuo,
-            coleta: e.coleta.filter(|_| e.morte.is_none()).map(|t| (t, e.coleta_t)),
+            coleta: e
+                .coleta
+                .filter(|_| e.morte.is_none())
+                .map(|t| (t, e.coleta_t)),
         },
     };
     let mut entrada = entrada;
     // Montado (docs/MONTARIAS.md): o bicho da skin por baixo e o cavaleiro
     // sentado na sela, sem passada propria.
-    let montaria = if e.meta.tag == shared::EntityTag::Player && e.state.flags & shared::ent_flags::MONTADO != 0 && e.morte.is_none() {
+    let montaria = if e.meta.tag == shared::EntityTag::Player
+        && e.state.flags & shared::ent_flags::MONTADO != 0
+        && e.morte.is_none()
+    {
         shared::loja::skin(e.meta.kind)
             .and_then(|s| shared::loja::montaria(s.montaria).map(|m| (m, s)))
             .and_then(|(m, s)| vox.bicho(m.bicho).map(|b| (m, s, b)))
@@ -1399,11 +1531,18 @@ fn desenha_personagem(
     }
     let humanoide = rig_do_humanoide(e).is_some();
     if humanoide {
-        entrada.combate.conjunto = if shared::bosses::kind_do_corpo(e.meta.kind) == 4 { 3 } else { 2 };
+        entrada.combate.conjunto = if shared::bosses::kind_do_corpo(e.meta.kind) == 4 {
+            3
+        } else {
+            2
+        };
         entrada.combate.sacada = 1.0;
         entrada.combate.golpe = e.ataque_mob.map(|(_, t, impacto)| {
-            let relogio = if t <= impacto { t / impacto.max(0.01) * crate::rig::IMPACTO }
-                else { crate::rig::IMPACTO + t - impacto };
+            let relogio = if t <= impacto {
+                t / impacto.max(0.01) * crate::rig::IMPACTO
+            } else {
+                crate::rig::IMPACTO + t - impacto
+            };
             (0, relogio)
         });
     }
@@ -1415,15 +1554,21 @@ fn desenha_personagem(
     }
     // Chefe de gente com golpe telegrafado: o braco arma na carga e completa
     // no impacto; o corpo inteiro ganha o ajuste de `chefe_anim` la' embaixo.
-    let chefe = e.meta.tag == shared::EntityTag::Enemy && e.state.flags & shared::ent_flags::BOSS != 0;
+    let chefe =
+        e.meta.tag == shared::EntityTag::Enemy && e.state.flags & shared::ent_flags::BOSS != 0;
     let agora = get_time();
     let carga = e.carga_chefe.filter(|_| chefe && e.morte.is_none());
     let ajuste = carga.and_then(|c| crate::chefe_anim::ajuste(&c, agora));
     if let (Some(c), Some(_)) = (carga, ajuste) {
-        entrada.combate.golpe = Some((0, crate::chefe_anim::relogio_do_braco(&c, agora, crate::rig::IMPACTO)));
+        entrada.combate.golpe = Some((
+            0,
+            crate::chefe_anim::relogio_do_braco(&c, agora, crate::rig::IMPACTO),
+        ));
     }
     // Morto: sem passo, sem golpe, sem tranco — so' o tombo.
-    let cai = e.morte.map_or(0.0, |t| if chefe { queda_de_chefe(t) } else { queda(t) });
+    let cai = e
+        .morte
+        .map_or(0.0, |t| if chefe { queda_de_chefe(t) } else { queda(t) });
     if e.morte.is_some() {
         entrada.andar = 0.0;
         entrada.correr = 0.0;
@@ -1436,10 +1581,18 @@ fn desenha_personagem(
     if montaria.is_some() {
         crate::rig::aplica_montado(&mut pose, entrada.tempo);
     }
-    if e.skill.is_some_and(|(id, _, _)| id == 9) { pose.na_mao = false; }
-    if humanoide && e.meta.kind == 6 { crate::rig::aplica_arqueiro(&mut pose, entrada.combate.golpe.map(|(_, t)| t)); }
+    if e.skill.is_some_and(|(id, _, _)| id == 9) {
+        pose.na_mao = false;
+    }
+    if humanoide && e.meta.kind == 6 {
+        crate::rig::aplica_arqueiro(&mut pose, entrada.combate.golpe.map(|(_, t)| t));
+    }
     e.molas.segue(&mut pose, get_frame_time());
-    let s = if e.morte.is_some() { 0.0 } else { e.ferido.map_or(0.0, crate::rig::esmagamento) };
+    let s = if e.morte.is_some() {
+        0.0
+    } else {
+        e.ferido.map_or(0.0, crate::rig::esmagamento)
+    };
     // Cai de COSTAS girando em volta do pe': deitado, as costas ficariam 3
     // voxels abaixo do chao, entao o corpo sobe isso junto com o tombo.
     let sobe = cai / std::f32::consts::FRAC_PI_2 * 3.5 * VOXEL;
@@ -1449,7 +1602,11 @@ fn desenha_personagem(
             let alt = 1.95 * esc;
             let tz = crate::chefe_anim::tremor_xz(&a, agora as f32, alt);
             (
-                vec3(c.dir.x * a.desloca + tz.x, a.voa * alt + a.sobe * alt * 0.5, c.dir.y * a.desloca + tz.y),
+                vec3(
+                    c.dir.x * a.desloca + tz.x,
+                    a.voa * alt + a.sobe * alt * 0.5,
+                    c.dir.y * a.desloca + tz.y,
+                ),
                 a.giro,
                 a.pitch * 0.6,
                 a.agacha,
@@ -1492,7 +1649,12 @@ fn desenha_personagem(
         e.coleta_u_ant = 0.0;
     }
     if crate::rig::e_pistolas(&pose) && pose.na_mao {
-        for (i, (_, m)) in armas.iter().filter(|(n, _)| *n == "pistola").take(2).enumerate() {
+        for (i, (_, m)) in armas
+            .iter()
+            .filter(|(n, _)| *n == "pistola")
+            .take(2)
+            .enumerate()
+        {
             e.emissores[i] = m.transform_point3(vec3(0.0, 2.5 * VOXEL, 9.5 * VOXEL));
         }
     }
@@ -1504,9 +1666,13 @@ fn desenha_personagem(
         for k in 0..16 {
             let a = ponta(k as f32 / 8.0 - 1.0);
             let b = ponta((k + 1) as f32 / 8.0 - 1.0);
-            draw_cube(a.lerp(b,0.5),vec3(0.055,0.095,0.055),None,BROWN);
+            draw_cube(a.lerp(b, 0.5), vec3(0.055, 0.095, 0.055), None, BROWN);
         }
-        let puxada = if e.ataque_mob.is_some() { maos[0] } else { centro };
+        let puxada = if e.ataque_mob.is_some() {
+            maos[0]
+        } else {
+            centro
+        };
         draw_line_3d(ponta(-1.0), puxada, LIGHTGRAY);
         draw_line_3d(puxada, ponta(1.0), LIGHTGRAY);
         if e.ataque_mob.is_some_and(|(_, t, impacto)| t < impacto) {
@@ -1518,7 +1684,10 @@ fn desenha_personagem(
     // O rastro da lamina: base e ponta a cada quadro enquanto o golpe corre.
     // (onde a lamina comeca e termina, em voxels a partir da pega)
     let agora = get_time() as f32;
-    if e.combo.is_some() || e.skill.is_some_and(|(_, t, impacto)| t > impacto - 0.16 && t < impacto + 0.12) {
+    if e.combo.is_some()
+        || e.skill
+            .is_some_and(|(_, t, impacto)| t > impacto - 0.16 && t < impacto + 0.12)
+    {
         let lamina = armas.iter().find_map(|(n, m)| match *n {
             "espada" => Some((*m, 5.0, 22.0)),
             "katana" => Some((*m, 6.0, 26.0)),
@@ -1543,7 +1712,11 @@ fn desenha_personagem(
         if crate::rig::e_pistolas(&pose) {
             let dt = t - crate::rig::IMPACTO;
             if (0.0..0.08).contains(&dt) {
-                let pistolas: Vec<Mat4> = armas.iter().filter(|(n, _)| *n == "pistola").map(|(_, m)| *m).collect();
+                let pistolas: Vec<Mat4> = armas
+                    .iter()
+                    .filter(|(n, _)| *n == "pistola")
+                    .map(|(_, m)| *m)
+                    .collect();
                 let quais: &[usize] = match passo {
                     0 => &[0],
                     1 => &[1],
@@ -1551,7 +1724,10 @@ fn desenha_personagem(
                 };
                 for &i in quais {
                     if let Some(m) = pistolas.get(i) {
-                        brilhos.push(Brilho::Clarao(m.transform_point3(vec3(0.0, 2.5 * VOXEL, 9.5 * VOXEL)), dt / 0.08));
+                        brilhos.push(Brilho::Clarao(
+                            m.transform_point3(vec3(0.0, 2.5 * VOXEL, 9.5 * VOXEL)),
+                            dt / 0.08,
+                        ));
                     }
                 }
             }
@@ -1569,7 +1745,9 @@ fn desenha_personagem(
     // guardado, forte em combate, e um pico no instante do golpe. Anel nao
     // tem modelo (de cima ele e' um voxel): o brilho e' como ele aparece.
     if crate::rig::e_anel(&pose) {
-        let pico = e.combo.map_or(0.0, |(_, t)| (1.0 - (t - crate::rig::IMPACTO).abs() / 0.12).max(0.0));
+        let pico = e.combo.map_or(0.0, |(_, t)| {
+            (1.0 - (t - crate::rig::IMPACTO).abs() / 0.12).max(0.0)
+        });
         let forca = 0.55 + 0.45 * e.sacada.clamp(0.0, 1.0) + 0.8 * pico;
         for (i, p) in crate::rig::palmas(&mats, VOXEL).iter().enumerate() {
             brilhos.push(Brilho::Mao(*p, forca, agora + i as f32 * 1.7));
@@ -1585,12 +1763,20 @@ fn desenha_personagem(
 fn desenha_mao(p: Vec3, forca: f32, t: f32) {
     let pulso = 1.0 + 0.15 * (t * 6.0).sin();
     let alfa = |x: f32| (x * forca.min(1.0)).clamp(0.0, 255.0) as u8;
-    octaedro(p, 0.045 * pulso * forca.max(0.6), [255, 240, 255, alfa(255.0)]);
+    octaedro(
+        p,
+        0.045 * pulso * forca.max(0.6),
+        [255, 240, 255, alfa(255.0)],
+    );
     octaedro(p, 0.10 * pulso * forca, [205, 150, 255, alfa(120.0)]);
     octaedro(p, 0.19 * pulso * forca, [170, 110, 255, alfa(45.0)]);
     for k in 0..3 {
         let ang = t * 4.0 + k as f32 * 2.094;
-        let q = p + vec3(ang.cos() * 0.16, (t * 3.0 + k as f32).sin() * 0.06, ang.sin() * 0.16) * forca.max(0.7);
+        let q = p + vec3(
+            ang.cos() * 0.16,
+            (t * 3.0 + k as f32).sin() * 0.06,
+            ang.sin() * 0.16,
+        ) * forca.max(0.7);
         octaedro(q, 0.02, [235, 210, 255, alfa(220.0)]);
     }
 }
@@ -1614,11 +1800,20 @@ fn dupla(vertices: Vec<Vertex>, tris: Vec<[u16; 3]>) {
     for [a, b, c] in tris {
         indices.extend_from_slice(&[a, b, c, a, c, b]);
     }
-    draw_mesh(&Mesh { vertices, indices, texture: None });
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
 }
 
 fn vtx(p: Vec3, cor: [u8; 4]) -> Vertex {
-    Vertex { position: p, uv: vec2(0.0, 0.0), color: cor, normal: Vec4::ZERO }
+    Vertex {
+        position: p,
+        uv: vec2(0.0, 0.0),
+        color: cor,
+        normal: Vec4::ZERO,
+    }
 }
 
 /// O clarao do tiro: tres quadrados cruzados, amarelo quente, que encolhem
@@ -1630,7 +1825,12 @@ fn desenha_clarao(p: Vec3, u: f32) {
     let mut t = Vec::new();
     for (ea, eb) in [(Vec3::X, Vec3::Y), (Vec3::Y, Vec3::Z), (Vec3::X, Vec3::Z)] {
         let b0 = v.len() as u16;
-        for q in [p - ea * s - eb * s, p + ea * s - eb * s, p + ea * s + eb * s, p - ea * s + eb * s] {
+        for q in [
+            p - ea * s - eb * s,
+            p + ea * s - eb * s,
+            p + ea * s + eb * s,
+            p - ea * s + eb * s,
+        ] {
             v.push(vtx(q, [255, 232, 160, a]));
         }
         t.push([b0, b0 + 1, b0 + 2]);
@@ -1647,7 +1847,10 @@ fn faixa_circular(m: Mat4, y: f32, raio: f32, largura: f32, cor: [u8; 4]) {
     for i in 0..=N {
         let a = i as f32 / N as f32 * std::f32::consts::TAU;
         for r in [raio - largura * 0.5, raio + largura * 0.5] {
-            v.push(vtx(m.transform_point3(vec3(a.cos() * r, y, a.sin() * r)), cor));
+            v.push(vtx(
+                m.transform_point3(vec3(a.cos() * r, y, a.sin() * r)),
+                cor,
+            ));
         }
     }
     for i in 0..N {
@@ -1663,8 +1866,18 @@ fn faixa_circular(m: Mat4, y: f32, raio: f32, largura: f32, cor: [u8; 4]) {
 /// o golpe projetado atraves do anel (docs/PERSONAGEM.md).
 fn desenha_circulo(pulso: Mat4, t: f32) {
     let imp = crate::rig::IMPACTO;
-    let aceso = if t < imp { t / imp } else { (1.0 - (t - imp) / 0.25).max(0.0) };
-    faixa_circular(pulso, 0.0, 7.0 * VOXEL, 2.0 * VOXEL, [190, 130, 255, (aceso * 230.0) as u8]);
+    let aceso = if t < imp {
+        t / imp
+    } else {
+        (1.0 - (t - imp) / 0.25).max(0.0)
+    };
+    faixa_circular(
+        pulso,
+        0.0,
+        7.0 * VOXEL,
+        2.0 * VOXEL,
+        [190, 130, 255, (aceso * 230.0) as u8],
+    );
     if t > imp {
         let u = ((t - imp) / 0.22).min(1.0);
         faixa_circular(
@@ -1679,8 +1892,19 @@ fn desenha_circulo(pulso: Mat4, t: f32) {
 
 /// Octaedro: o menor solido que le' como bola de longe.
 fn octaedro(c: Vec3, r: f32, cor: [u8; 4]) {
-    let v = [Vec3::X, -Vec3::X, Vec3::Y, -Vec3::Y, Vec3::Z, -Vec3::Z].map(|d| vtx(c + d * r, cor)).to_vec();
-    let t = vec![[0, 2, 4], [2, 1, 4], [1, 3, 4], [3, 0, 4], [2, 0, 5], [1, 2, 5], [3, 1, 5], [0, 3, 5]];
+    let v = [Vec3::X, -Vec3::X, Vec3::Y, -Vec3::Y, Vec3::Z, -Vec3::Z]
+        .map(|d| vtx(c + d * r, cor))
+        .to_vec();
+    let t = vec![
+        [0, 2, 4],
+        [2, 1, 4],
+        [1, 3, 4],
+        [3, 0, 4],
+        [2, 0, 5],
+        [1, 2, 5],
+        [3, 1, 5],
+        [0, 3, 5],
+    ];
     dupla(v, t);
 }
 
@@ -1697,9 +1921,15 @@ fn desenha_projetil(e: &crate::world::Ent, p: Vec3) {
             let a = -1.3 + i as f32 * 2.6 / 12.0;
             let b = -1.3 + (i + 1) as f32 * 2.6 / 12.0;
             let ponto = |ang: f32, r: f32| alto + lado * ang.sin() * r + dir * ang.cos() * r;
-            dupla(vec![vtx(ponto(a, 0.85), [155, 235, 255, 255]), vtx(ponto(b, 0.85), [155, 235, 255, 255]),
-                vtx(ponto(b, 0.62), [90, 180, 255, 40]), vtx(ponto(a, 0.62), [90, 180, 255, 40])],
-                vec![[0, 1, 2], [0, 2, 3]]);
+            dupla(
+                vec![
+                    vtx(ponto(a, 0.85), [155, 235, 255, 255]),
+                    vtx(ponto(b, 0.85), [155, 235, 255, 255]),
+                    vtx(ponto(b, 0.62), [90, 180, 255, 40]),
+                    vtx(ponto(a, 0.62), [90, 180, 255, 40]),
+                ],
+                vec![[0, 1, 2], [0, 2, 3]],
+            );
         }
     } else if e.meta.kind == 1 {
         octaedro(alto, 0.15, [205, 150, 255, 255]);
@@ -1760,7 +1990,12 @@ fn desenha_fita(amostras: &[(Vec3, Vec3, f32)], agora: f32) {
         let u = ((agora - t) / VIDA_DO_RASTRO).clamp(0.0, 1.0);
         let a = (1.0 - u).powi(2) * 170.0;
         for (q, alfa) in [(*base, a / 3.0), (*ponta, a)] {
-            vertices.push(Vertex { position: q, uv: vec2(0.0, 0.0), color: [235, 244, 255, alfa as u8], normal: Vec4::ZERO });
+            vertices.push(Vertex {
+                position: q,
+                uv: vec2(0.0, 0.0),
+                color: [235, 244, 255, alfa as u8],
+                normal: Vec4::ZERO,
+            });
         }
     }
     let mut indices = Vec::new();
@@ -1768,7 +2003,11 @@ fn desenha_fita(amostras: &[(Vec3, Vec3, f32)], agora: f32) {
         let (a0, a1, b0, b1) = (i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 3);
         indices.extend_from_slice(&[a0, a1, b0, a1, b1, b0, a0, b0, a1, a1, b0, b1]);
     }
-    draw_mesh(&Mesh { vertices, indices, texture: None });
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
 }
 
 /// Um bicho em pecas: a pose sai da passada e do golpe (`bicho.rs`), e cada
@@ -1794,9 +2033,19 @@ fn desenha_bicho(
     let ajuste = carga.and_then(|c| crate::chefe_anim::ajuste(&c, agora));
     let entrada = crate::bicho::Entrada {
         passada: e.fase,
-        vel: if morto { 0.0 } else { e.andar * shared::PLAYER_SPEED },
+        vel: if morto {
+            0.0
+        } else {
+            e.andar * shared::PLAYER_SPEED
+        },
         tempo: if morto { 0.0 } else { agora as f32 },
-        golpe: if morto { 99.0 } else { carga.and_then(|c| crate::chefe_anim::relogio_da_pata(&c, agora)).unwrap_or(e.golpe) },
+        golpe: if morto {
+            99.0
+        } else {
+            carga
+                .and_then(|c| crate::chefe_anim::relogio_da_pata(&c, agora))
+                .unwrap_or(e.golpe)
+        },
         semente: e.meta.id.0 as f32,
         ferido: if morto { None } else { e.ferido },
         recuo: Quat::from_rotation_y(-e.yaw) * vec3(-e.golpe_de.x, 0.0, -e.golpe_de.y),
@@ -1810,29 +2059,53 @@ fn desenha_bicho(
         c.avanca += a.avanca * b.anat.altura;
         c.esmaga = (c.esmaga + a.agacha).min(0.45);
         let tz = crate::chefe_anim::tremor_xz(&a, agora as f32, b.anat.altura * esc);
-        desloca = vec3(cg.dir.x * a.desloca + tz.x, a.voa * b.anat.altura * esc, cg.dir.y * a.desloca + tz.y);
+        desloca = vec3(
+            cg.dir.x * a.desloca + tz.x,
+            a.voa * b.anat.altura * esc,
+            cg.dir.y * a.desloca + tz.y,
+        );
         giro = a.giro;
     }
     let lado = if e.meta.id.0 % 2 == 0 { 1.0 } else { -1.0 };
-    let cai = e.morte.map_or(0.0, |t| if boss { queda_de_chefe(t) } else { queda(t) });
+    let cai = e
+        .morte
+        .map_or(0.0, |t| if boss { queda_de_chefe(t) } else { queda(t) });
     if boss {
-        crate::chefe_anim::poeira_da_queda(e.morte, get_frame_time(), p, b.anat.altura * esc, e.meta.kind);
+        crate::chefe_anim::poeira_da_queda(
+            e.morte,
+            get_frame_time(),
+            p,
+            b.anat.altura * esc,
+            e.meta.kind,
+        );
     }
     let chao = Mat4::from_translation(p + desloca)
         * Mat4::from_scale(Vec3::splat(esc))
         * Mat4::from_rotation_y(e.yaw + giro + crate::bicho::yaw_lateral(&b.anat, &entrada))
         * Mat4::from_rotation_z(lado * cai)
-        * Mat4::from_scale(vec3(1.0 + 0.5 * c.esmaga, 1.0 - c.esmaga, 1.0 + 0.5 * c.esmaga));
+        * Mat4::from_scale(vec3(
+            1.0 + 0.5 * c.esmaga,
+            1.0 - c.esmaga,
+            1.0 + 0.5 * c.esmaga,
+        ));
     let patas = chao * Mat4::from_translation(vec3(0.0, c.sobe, 0.0));
     let tronco = patas
         * Mat4::from_translation(vec3(c.lado, c.sobe_tronco, c.avanca))
         * Mat4::from_rotation_y(c.torce)
         * Mat4::from_rotation_x(c.pitch);
     // o corpo escurece um pouco: de longe, morto nao se confunde com vivo
-    let tinta = if morto { Some(([0.0, 0.0, 0.0], 0.3)) } else { clarao(e, false) };
+    let tinta = if morto {
+        Some(([0.0, 0.0, 0.0], 0.3))
+    } else {
+        clarao(e, false)
+    };
     for peca in &b.pecas {
         let (giro, desloca) = crate::bicho::peca(peca.junta, &entrada, &b.anat, peca.pivo);
-        let base = if matches!(peca.junta, crate::bicho::Junta::Pata { .. }) { patas } else { tronco };
+        let base = if matches!(peca.junta, crate::bicho::Junta::Pata { .. }) {
+            patas
+        } else {
+            tronco
+        };
         let mat = base
             * Mat4::from_translation(peca.pivo + desloca)
             * Mat4::from_quat(giro)
@@ -1861,21 +2134,45 @@ fn desenha_montaria(
     // Igual ao mob: a fase JA' acumulou com o ciclo deste bicho
     // (`world::anda_a_fase` via `bicho::da_montaria`) e a marcha sai da
     // velocidade real. Sem conversao e sem teto no meio do caminho.
-    desenha_bicho_montaria(b, m, s, p, e.yaw, vel, e.fase, get_time() as f32, e.meta.id.0 as f32);
+    desenha_bicho_montaria(
+        b,
+        m,
+        s,
+        p,
+        e.yaw,
+        vel,
+        e.fase,
+        get_time() as f32,
+        e.meta.id.0 as f32,
+    );
 }
 
 /// A montaria parada num palco, girando em `yaw`: a vitrine da Loja.
 /// Desenhada DIRETO na tela num viewport (sem render target com
 /// profundidade, que o iPhone recusa — ver `viewport_em_pixels`). `false` =
 /// sem modelo ou sem espaco.
-pub fn vitrine_montaria(vox: &crate::vox::VoxCache, skin_id: u16, r: Rect, yaw: f32, solido: &Material) -> bool {
-    let Some(s) = shared::loja::skin(skin_id) else { return false };
-    let Some(m) = shared::loja::montaria(s.montaria) else { return false };
-    let Some(b) = vox.bicho(m.bicho) else { return false };
+pub fn vitrine_montaria(
+    vox: &crate::vox::VoxCache,
+    skin_id: u16,
+    r: Rect,
+    yaw: f32,
+    solido: &Material,
+) -> bool {
+    let Some(s) = shared::loja::skin(skin_id) else {
+        return false;
+    };
+    let Some(m) = shared::loja::montaria(s.montaria) else {
+        return false;
+    };
+    let Some(b) = vox.bicho(m.bicho) else {
+        return false;
+    };
     if r.w < 8.0 || r.h < 8.0 {
         return false;
     }
-    let Some(vp) = viewport_na_tela(r) else { return false };
+    let Some(vp) = viewport_na_tela(r) else {
+        return false;
+    };
     let cam = camera_da_vitrine(b, m, vp);
     set_camera(&cam);
     limpa_so_profundidade();
@@ -1889,7 +2186,11 @@ pub fn vitrine_montaria(vox: &crate::vox::VoxCache, skin_id: u16, r: Rect, yaw: 
 
 /// A camera da vitrine: tres-quartos de cima, como a do jogo, enquadrando o
 /// maior lado do bicho com folga.
-fn camera_da_vitrine(b: &crate::bicho::Bicho, m: &shared::loja::Montaria, vp: (i32, i32, i32, i32)) -> Camera3D {
+fn camera_da_vitrine(
+    b: &crate::bicho::Bicho,
+    m: &shared::loja::Montaria,
+    vp: (i32, i32, i32, i32),
+) -> Camera3D {
     let h = (b.anat.altura * m.escala).max(0.4);
     let comprido = (b.anat.frente.abs() * m.escala * 2.0).max(h);
     let aspecto = vp.2 as f32 / vp.3.max(1) as f32;
@@ -1919,7 +2220,10 @@ pub fn vitrine_chao(vox: &crate::vox::VoxCache, skin_id: u16, r: Rect) -> Option
         return None;
     }
     let ndc = clip.truncate() / clip.w;
-    Some(vec2(r.x + (ndc.x * 0.5 + 0.5) * r.w, r.y + (1.0 - (ndc.y * 0.5 + 0.5)) * r.h))
+    Some(vec2(
+        r.x + (ndc.x * 0.5 + 0.5) * r.w,
+        r.y + (1.0 - (ndc.y * 0.5 + 0.5)) * r.h,
+    ))
 }
 
 /// O bicho da montaria com a skin: o do cavaleiro no mundo e o da vitrine.
@@ -1958,11 +2262,22 @@ pub fn desenha_bicho_montaria(
         * Mat4::from_rotation_y(c.torce)
         * Mat4::from_rotation_x(c.pitch);
     let tinta = (s.forca > 0.0).then(|| {
-        ([s.tinta[0] as f32 / 255.0, s.tinta[1] as f32 / 255.0, s.tinta[2] as f32 / 255.0], s.forca)
+        (
+            [
+                s.tinta[0] as f32 / 255.0,
+                s.tinta[1] as f32 / 255.0,
+                s.tinta[2] as f32 / 255.0,
+            ],
+            s.forca,
+        )
     });
     for peca in &b.pecas {
         let (giro, desloca) = crate::bicho::peca(peca.junta, &entrada, &b.anat, peca.pivo);
-        let base = if matches!(peca.junta, crate::bicho::Junta::Pata { .. }) { patas } else { tronco };
+        let base = if matches!(peca.junta, crate::bicho::Junta::Pata { .. }) {
+            patas
+        } else {
+            tronco
+        };
         let mat = base
             * Mat4::from_translation(peca.pivo + desloca)
             * Mat4::from_quat(giro)
@@ -2017,7 +2332,11 @@ fn desenha_rastro(base: &Mat4, r: &crate::bicho::Rastro) {
             indices.extend_from_slice(&[a0, a1, b1, a1, c1, b1, a0, b1, a1, a1, b1, c1]);
         }
     }
-    draw_mesh(&Mesh { vertices, indices, texture: None });
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
 }
 
 /// Desenha uma malha com uma matriz de mundo inteira. Mesma conta do
@@ -2127,7 +2446,9 @@ pub fn viewport_na_tela(r: Rect) -> Option<(i32, i32, i32, i32)> {
 /// Depois do `set_camera` 3D de um viewport: limpa so' a PROFUNDIDADE (a cor
 /// do painel ja' desenhado fica), pro boneco nao brigar com o depth do mundo.
 pub fn limpa_so_profundidade() {
-    unsafe { get_internal_gl() }.quad_context.clear(None, Some(1.0), None);
+    unsafe { get_internal_gl() }
+        .quad_context
+        .clear(None, Some(1.0), None);
 }
 
 pub fn world_to_screen(cam: &Camera3D, p: Vec3) -> Option<Vec2> {
@@ -2153,7 +2474,9 @@ pub fn pick(world: &World, vista: &Vista, mouse: Vec2, raio_px: f32) -> Option<s
         if e.is_self() || e.morte.is_some() {
             continue;
         }
-        let Some(sp) = vista.na_tela(vista.mira_de(e)) else { continue };
+        let Some(sp) = vista.na_tela(vista.mira_de(e)) else {
+            continue;
+        };
         let d = sp.distance(mouse);
         if d <= raio_px && melhor.map_or(true, |(bd, _)| d < bd) {
             melhor = Some((d, *id));
@@ -2178,7 +2501,12 @@ fn draw_ring(center: Vec3, r: f32, color: Color) {
     for i in 0..N {
         let a = i as f32 / N as f32 * std::f32::consts::TAU;
         for raio in [r + LARGURA, r - LARGURA] {
-            vertices.push(Vertex { position: ponto(a, raio), uv: vec2(0.0, 0.0), color: cor, normal: Vec4::ZERO });
+            vertices.push(Vertex {
+                position: ponto(a, raio),
+                uv: vec2(0.0, 0.0),
+                color: cor,
+                normal: Vec4::ZERO,
+            });
         }
     }
     let mut indices = Vec::with_capacity(N * 6);
@@ -2190,8 +2518,16 @@ fn draw_ring(center: Vec3, r: f32, color: Color) {
             // ligado, enrolada ao contrario ela some vista de cima.
             let p = |k: u16| vertices[k as usize].position;
             let n = (p(tri[1]) - p(tri[0])).cross(p(tri[2]) - p(tri[0]));
-            if n.y >= 0.0 { indices.extend_from_slice(&tri) } else { indices.extend_from_slice(&[tri[0], tri[2], tri[1]]) }
+            if n.y >= 0.0 {
+                indices.extend_from_slice(&tri)
+            } else {
+                indices.extend_from_slice(&[tri[0], tri[2], tri[1]])
+            }
         }
     }
-    draw_mesh(&Mesh { vertices, indices, texture: None });
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
 }

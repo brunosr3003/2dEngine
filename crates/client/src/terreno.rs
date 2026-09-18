@@ -26,8 +26,8 @@ use macroquad::prelude::*;
 use crate::gpu_estatica::MalhaEstatica;
 
 use shared::terreno::{
-    material_de_profundidade, material_variado, tom_da_mancha, Arvore, Bioma, DefIlha, Gerador, Material,
-    Planta, BLOCO, NIVEL_DO_MAR,
+    material_de_profundidade, material_variado, tom_da_mancha, Arvore, Bioma, DefIlha, Gerador,
+    Material, Planta, BLOCO, NIVEL_DO_MAR,
 };
 
 /// Colunas por lado de um pedaco. 32 x 0,5 = 16 unidades de mundo.
@@ -164,22 +164,37 @@ impl Terreno {
         // VARIANTES por especie: uma arvore so' por especie faz a mata inteira
         // ler como papel de parede, que e' o mesmo defeito de ter uma especie
         // so'. Seis dao variedade sem encher a memoria.
-        for e in [Arvore::Copada, Arvore::Betula, Arvore::Pinheiro, Arvore::Seca] {
+        for e in [
+            Arvore::Copada,
+            Arvore::Betula,
+            Arvore::Pinheiro,
+            Arvore::Seca,
+        ] {
             for k in 0..VARIANTES {
-                t.arvores.push(crate::vegetacao::arvore(e, k as u32 * 7 + e as u32 * 101));
+                t.arvores
+                    .push(crate::vegetacao::arvore(e, k as u32 * 7 + e as u32 * 101));
             }
         }
         for e in [
-            Planta::Moita, Planta::Flor, Planta::Arbusto, Planta::Samambaia,
-            Planta::Pedra, Planta::Toco, Planta::Talo,
+            Planta::Moita,
+            Planta::Flor,
+            Planta::Arbusto,
+            Planta::Samambaia,
+            Planta::Pedra,
+            Planta::Toco,
+            Planta::Talo,
         ] {
             for k in 0..VARIANTES {
-                t.plantas.push(crate::vegetacao::planta(e, k as u32 * 13 + e as u32 * 211));
+                t.plantas
+                    .push(crate::vegetacao::planta(e, k as u32 * 13 + e as u32 * 211));
             }
         }
         for tier in 1..=4u8 {
             for k in 0..VARIANTES {
-                t.minerios.push(crate::vegetacao::minerio(tier, k as u32 * 17 + tier as u32 * 331));
+                t.minerios.push(crate::vegetacao::minerio(
+                    tier,
+                    k as u32 * 17 + tier as u32 * 331,
+                ));
             }
         }
         t
@@ -202,10 +217,13 @@ impl Terreno {
         } else {
             self.esgotadas.remove(&coluna)
         };
-        if !mudou { return }
+        if !mudou {
+            return;
+        }
         let (ix, iz) = ((coluna >> 16) as i32, (coluna & 0xffff) as i32);
         let (bx, bz) = (ix - self.ger.raio_blocos, iz - self.ger.raio_blocos);
-        self.pedacos.remove(&(bx.div_euclid(CHUNK), bz.div_euclid(CHUNK)));
+        self.pedacos
+            .remove(&(bx.div_euclid(CHUNK), bz.div_euclid(CHUNK)));
     }
 
     /// A pedra ou tronco VIVO mais perto de `p` (borda a ate' `raio`):
@@ -228,7 +246,9 @@ impl Terreno {
                     .max()
                     .unwrap_or(0);
                 buf.clear();
-                shared::terreno::estorvos_da_coluna(self.bioma, bx, bz, topo, declive, &self.ger, agua, &mut buf);
+                shared::terreno::estorvos_da_coluna(
+                    self.bioma, bx, bz, topo, declive, &self.ger, agua, &mut buf,
+                );
                 for e in buf.drain(..) {
                     let tipo = match e.tipo {
                         TipoDeEstorvo::Minerio(t) => t,
@@ -240,7 +260,8 @@ impl Terreno {
                     }
                     let borda = e.centro.distance(::glam::Vec2::new(p.x, p.y)) - e.raio;
                     if borda <= raio && melhor.is_none_or(|m| borda < m.4) {
-                        melhor = Some((e.coluna, vec2(e.centro.x, e.centro.y), tipo, e.raio, borda));
+                        melhor =
+                            Some((e.coluna, vec2(e.centro.x, e.centro.y), tipo, e.raio, borda));
                     }
                 }
             }
@@ -272,8 +293,14 @@ impl Terreno {
         let r = raio * 0.72;
         let mut maior = self.altura(x, z);
         for (dx, dz) in [
-            (raio, 0.0), (-raio, 0.0), (0.0, raio), (0.0, -raio),
-            (r, r), (-r, r), (r, -r), (-r, -r),
+            (raio, 0.0),
+            (-raio, 0.0),
+            (0.0, raio),
+            (0.0, -raio),
+            (r, r),
+            (-r, r),
+            (r, -r),
+            (-r, -r),
         ] {
             maior = maior.max(self.altura(x + dx, z + dz));
         }
@@ -287,9 +314,8 @@ impl Terreno {
     /// aparecer em duas piscadas.
     pub fn atualiza(&mut self, centro: Vec2, raio: i32, orcamento: usize) {
         let (ccx, ccz) = self.pedaco_de(centro);
-        self.pedacos.retain(|(cx, cz), _| {
-            (cx - ccx).abs() <= raio + 1 && (cz - ccz).abs() <= raio + 1
-        });
+        self.pedacos
+            .retain(|(cx, cz), _| (cx - ccx).abs() <= raio + 1 && (cz - ccz).abs() <= raio + 1);
 
         // Do mais perto pro mais longe: o buraco que aparece embaixo do
         // jogador incomoda muito mais que o do horizonte.
@@ -378,7 +404,11 @@ impl Terreno {
                 let (mut a, mut b) = (anterior, p);
                 for _ in 0..12 {
                     let m = (a + b) * 0.5;
-                    if m.y <= self.altura(m.x, m.z) { b = m } else { a = m }
+                    if m.y <= self.altura(m.x, m.z) {
+                        b = m
+                    } else {
+                        a = m
+                    }
                 }
                 return Some(vec2(b.x, b.z));
             }
@@ -461,11 +491,11 @@ impl Terreno {
             idx.extend_from_slice(&ordem(b, p, n));
         };
         let quad = |verts: &mut Vec<Vertex>,
-                        idx: &mut Vec<u16>,
-                        malhas: &mut Vec<Mesh>,
-                        p: [Vec3; 4],
-                        n: Vec3,
-                        c: [u8; 4]| {
+                    idx: &mut Vec<u16>,
+                    malhas: &mut Vec<Mesh>,
+                    p: [Vec3; 4],
+                    n: Vec3,
+                    c: [u8; 4]| {
             if idx.len() + 6 > MAX_QUADS * 6 {
                 malhas.push(Mesh {
                     vertices: std::mem::take(verts),
@@ -494,7 +524,11 @@ impl Terreno {
         // Tinta dos povoados (praca, caminho, gramado): entra na chave do
         // merge, senao um quad de grama engoliria a borda da calcada.
         let tinta = |x: i32, z: i32| {
-            if eh_agua(x, z) { None } else { self.ger.pintura_do_chao(cx * CHUNK + x, cz * CHUNK + z) }
+            if eh_agua(x, z) {
+                None
+            } else {
+                self.ger.pintura_do_chao(cx * CHUNK + x, cz * CHUNK + z)
+            }
         };
         for iz in 0..n as i32 {
             for ix in 0..n as i32 {
@@ -504,7 +538,8 @@ impl Terreno {
                 let h = em(ix, iz);
                 let a = eh_agua(ix, iz);
                 let t0 = tinta(ix, iz);
-                let igual = |x: i32, z: i32| em(x, z) == h && eh_agua(x, z) == a && tinta(x, z) == t0;
+                let igual =
+                    |x: i32, z: i32| em(x, z) == h && eh_agua(x, z) == a && tinta(x, z) == t0;
 
                 let mut w = 1;
                 while w < MERGE_MAX
@@ -557,7 +592,13 @@ impl Terreno {
                     // Grama cuidada so' onde ja' era grama: na Geleira a
                     // cidade continua branca.
                     Some(Material::GramaCuidada) => {
-                        if matches!(mat, Material::Grama | Material::GramaClara | Material::GramaEscura | Material::Terra) {
+                        if matches!(
+                            mat,
+                            Material::Grama
+                                | Material::GramaClara
+                                | Material::GramaEscura
+                                | Material::Terra
+                        ) {
                             Material::GramaCuidada
                         } else {
                             mat
@@ -622,7 +663,10 @@ impl Terreno {
                     // desceria ate' o fundo do talude, geometria que ninguem ve'.
                     let piso = hv.max(((NIVEL_DO_MAR / BLOCO) as i32) - 2);
                     let topo_mat = material_variado(
-                        self.bioma, topo, declive_col(&em, ix, iz), false,
+                        self.bioma,
+                        topo,
+                        declive_col(&em, ix, iz),
+                        false,
                         self.ger.mancha(cx * CHUNK + ix, cz * CHUNK + iz),
                     );
                     let lado_x = dx != 0;
@@ -632,31 +676,51 @@ impl Terreno {
                     // Sem isso um barranco de dez blocos sai de uma cor so'.
                     let mut b = h;
                     while b > piso {
-                        let mat = material_de_profundidade(
-                            self.bioma, topo_mat, topo, h - b,
-                        );
+                        let mat = material_de_profundidade(self.bioma, topo_mat, topo, h - b);
                         let mut fim = b;
                         while fim > piso
-                            && material_de_profundidade(
-                                self.bioma, topo_mat, topo, h - fim,
-                            ) == mat
+                            && material_de_profundidade(self.bioma, topo_mat, topo, h - fim) == mat
                         {
                             fim -= 1;
                         }
                         let y1 = (b + 1) as f32 * BLOCO;
                         let y0 = (fim + 1) as f32 * BLOCO;
                         let c = self.cor(
-                            mat, cx * CHUNK + ix, cz * CHUNK + iz, b, luz,
+                            mat,
+                            cx * CHUNK + ix,
+                            cz * CHUNK + iz,
+                            b,
+                            luz,
                             tom_da_mancha(self.ger.mancha(cx * CHUNK + ix, cz * CHUNK + iz)),
                         );
                         let p = if dx == 1 {
-                            [vec3(x1, y0, z0), vec3(x1, y0, z1), vec3(x1, y1, z1), vec3(x1, y1, z0)]
+                            [
+                                vec3(x1, y0, z0),
+                                vec3(x1, y0, z1),
+                                vec3(x1, y1, z1),
+                                vec3(x1, y1, z0),
+                            ]
                         } else if dx == -1 {
-                            [vec3(x0, y0, z1), vec3(x0, y0, z0), vec3(x0, y1, z0), vec3(x0, y1, z1)]
+                            [
+                                vec3(x0, y0, z1),
+                                vec3(x0, y0, z0),
+                                vec3(x0, y1, z0),
+                                vec3(x0, y1, z1),
+                            ]
                         } else if dz == 1 {
-                            [vec3(x1, y0, z1), vec3(x0, y0, z1), vec3(x0, y1, z1), vec3(x1, y1, z1)]
+                            [
+                                vec3(x1, y0, z1),
+                                vec3(x0, y0, z1),
+                                vec3(x0, y1, z1),
+                                vec3(x1, y1, z1),
+                            ]
                         } else {
-                            [vec3(x0, y0, z0), vec3(x1, y0, z0), vec3(x1, y1, z0), vec3(x0, y1, z0)]
+                            [
+                                vec3(x0, y0, z0),
+                                vec3(x1, y0, z0),
+                                vec3(x1, y1, z0),
+                                vec3(x0, y1, z0),
+                            ]
                         };
                         // A parede olha pro vizinho MAIS BAIXO, que e' o
                         // lado por onde ela e' vista.
@@ -670,115 +734,162 @@ impl Terreno {
 
         // ── vegetacao ────────────────────────────────────────────────────
         if vegetacao {
-        // Assada na malha do PEDACO, nao desenhada por arvore: pedaco e'
-        // cache, entao vegetacao estatica custa zero por quadro. Desenhar uma
-        // a uma exigiria transformar a malha na CPU (a macroquad nao tem
-        // transform por malha) centenas de vezes por frame.
-        for iz in 0..n as i32 {
-            for ix in 0..n as i32 {
-                let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
-                let topo = em(ix, iz);
-                let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                    .iter()
-                    .map(|(dx, dz)| (topo - em(ix + dx, iz + dz)).abs())
-                    .max()
-                    .unwrap_or(0);
-                // QUEM planta e' o `shared`, nao este laco. O tronco barra
-                // passagem, entao o lugar da arvore virou regra — e o
-                // servidor precisa chegar exatamente na mesma resposta sem
-                // nunca ter visto a malha. Aqui so' se DESENHA o que ele
-                // decidiu.
-                let Some(a) = shared::terreno::arvore_da_coluna(
-                    self.bioma, bx, bz, topo, declive, &self.ger, eh_agua(ix, iz),
-                ) else {
-                    continue;
-                };
-                // Tronco esgotado some como a pedra: sem isto o jogador via a
-                // arvore de pe' e nao tinha como saber que ali ja' nao rende.
-                let chave = shared::terreno::chave_de_coluna(
-                    bx + self.ger.raio_blocos, bz + self.ger.raio_blocos,
-                );
-                if self.esgotadas.contains(&chave) { continue }
-                crate::vegetacao::instancia(
-                    self.modelo_de_arvore(a.especie, a.variante),
-                    vec3(a.centro.x, (topo + 1) as f32 * BLOCO, a.centro.y),
-                    a.porte,
-                    &mut verts, &mut idx, &mut malhas, MAX_QUADS,
-                );
-            }
-        }
-
-        // ── minerio ──────────────────────────────────────────────────────
-        // Vem ANTES da forracao pra casar com `estorvos_da_coluna`, que
-        // descarta a forracao da coluna onde ha' pedra.
-        for iz in 0..n as i32 {
-            for ix in 0..n as i32 {
-                let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
-                let topo = em(ix, iz);
-                let Some(m) = shared::terreno::minerio_da_coluna(
-                    self.bioma, bx, bz, topo, &self.ger, eh_agua(ix, iz),
-                ) else {
-                    continue;
-                };
-                let chave = shared::terreno::chave_de_coluna(
-                    bx + self.ger.raio_blocos, bz + self.ger.raio_blocos,
-                );
-                if self.esgotadas.contains(&chave) { continue }
-                crate::vegetacao::instancia(
-                    self.modelo_de_minerio(m.tier, m.variante),
-                    vec3(m.centro.x, (topo + 1) as f32 * BLOCO, m.centro.y),
-                    m.porte,
-                    &mut verts, &mut idx, &mut malhas, MAX_QUADS,
-                );
-            }
-        }
-
-        // ── forracao ─────────────────────────────────────────────────────
-        // Varias vezes mais densa que arvore, e e' ela que separa "campo de
-        // golfe com arvore" de mundo. Cada planta sao uma ou duas caixinhas.
-        for iz in 0..n as i32 {
-            for ix in 0..n as i32 {
-                let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
-                let topo = em(ix, iz);
-                let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                    .iter()
-                    .map(|(dx, dz)| (topo - em(ix + dx, iz + dz)).abs())
-                    .max()
-                    .unwrap_or(0);
-                let Some(pl) = shared::terreno::planta_da_coluna(
-                    self.bioma, bx, bz, topo, declive, &self.ger, eh_agua(ix, iz),
-                ) else {
-                    continue;
-                };
-                // Onde ha' minerio a forracao nao entra — a mesma regra de
-                // `estorvos_da_coluna`. Matacao de cenario colado na pedra
-                // esconde justamente o que o jogador precisa enxergar.
-                if shared::terreno::minerio_da_coluna(
-                    self.bioma, bx, bz, topo, &self.ger, eh_agua(ix, iz),
-                ).is_some() {
-                    continue;
+            // Assada na malha do PEDACO, nao desenhada por arvore: pedaco e'
+            // cache, entao vegetacao estatica custa zero por quadro. Desenhar uma
+            // a uma exigiria transformar a malha na CPU (a macroquad nao tem
+            // transform por malha) centenas de vezes por frame.
+            for iz in 0..n as i32 {
+                for ix in 0..n as i32 {
+                    let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
+                    let topo = em(ix, iz);
+                    let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                        .iter()
+                        .map(|(dx, dz)| (topo - em(ix + dx, iz + dz)).abs())
+                        .max()
+                        .unwrap_or(0);
+                    // QUEM planta e' o `shared`, nao este laco. O tronco barra
+                    // passagem, entao o lugar da arvore virou regra — e o
+                    // servidor precisa chegar exatamente na mesma resposta sem
+                    // nunca ter visto a malha. Aqui so' se DESENHA o que ele
+                    // decidiu.
+                    let Some(a) = shared::terreno::arvore_da_coluna(
+                        self.bioma,
+                        bx,
+                        bz,
+                        topo,
+                        declive,
+                        &self.ger,
+                        eh_agua(ix, iz),
+                    ) else {
+                        continue;
+                    };
+                    // Tronco esgotado some como a pedra: sem isto o jogador via a
+                    // arvore de pe' e nao tinha como saber que ali ja' nao rende.
+                    let chave = shared::terreno::chave_de_coluna(
+                        bx + self.ger.raio_blocos,
+                        bz + self.ger.raio_blocos,
+                    );
+                    if self.esgotadas.contains(&chave) {
+                        continue;
+                    }
+                    crate::vegetacao::instancia(
+                        self.modelo_de_arvore(a.especie, a.variante),
+                        vec3(a.centro.x, (topo + 1) as f32 * BLOCO, a.centro.y),
+                        a.porte,
+                        &mut verts,
+                        &mut idx,
+                        &mut malhas,
+                        MAX_QUADS,
+                    );
                 }
-                #[cfg(test)]
-                CENSO.with(|c| {
-                    *c.borrow_mut().entry(format!("{:?}", pl.especie)).or_insert(0) += 1
-                });
-                crate::vegetacao::instancia(
-                    self.modelo_de_planta(pl.especie, pl.variante),
-                    vec3(pl.centro.x, (topo + 1) as f32 * BLOCO, pl.centro.y),
-                    pl.porte,
-                    &mut verts, &mut idx, &mut malhas, MAX_QUADS,
-                );
             }
-        }
 
+            // ── minerio ──────────────────────────────────────────────────────
+            // Vem ANTES da forracao pra casar com `estorvos_da_coluna`, que
+            // descarta a forracao da coluna onde ha' pedra.
+            for iz in 0..n as i32 {
+                for ix in 0..n as i32 {
+                    let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
+                    let topo = em(ix, iz);
+                    let Some(m) = shared::terreno::minerio_da_coluna(
+                        self.bioma,
+                        bx,
+                        bz,
+                        topo,
+                        &self.ger,
+                        eh_agua(ix, iz),
+                    ) else {
+                        continue;
+                    };
+                    let chave = shared::terreno::chave_de_coluna(
+                        bx + self.ger.raio_blocos,
+                        bz + self.ger.raio_blocos,
+                    );
+                    if self.esgotadas.contains(&chave) {
+                        continue;
+                    }
+                    crate::vegetacao::instancia(
+                        self.modelo_de_minerio(m.tier, m.variante),
+                        vec3(m.centro.x, (topo + 1) as f32 * BLOCO, m.centro.y),
+                        m.porte,
+                        &mut verts,
+                        &mut idx,
+                        &mut malhas,
+                        MAX_QUADS,
+                    );
+                }
+            }
+
+            // ── forracao ─────────────────────────────────────────────────────
+            // Varias vezes mais densa que arvore, e e' ela que separa "campo de
+            // golfe com arvore" de mundo. Cada planta sao uma ou duas caixinhas.
+            for iz in 0..n as i32 {
+                for ix in 0..n as i32 {
+                    let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
+                    let topo = em(ix, iz);
+                    let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                        .iter()
+                        .map(|(dx, dz)| (topo - em(ix + dx, iz + dz)).abs())
+                        .max()
+                        .unwrap_or(0);
+                    let Some(pl) = shared::terreno::planta_da_coluna(
+                        self.bioma,
+                        bx,
+                        bz,
+                        topo,
+                        declive,
+                        &self.ger,
+                        eh_agua(ix, iz),
+                    ) else {
+                        continue;
+                    };
+                    // Onde ha' minerio a forracao nao entra — a mesma regra de
+                    // `estorvos_da_coluna`. Matacao de cenario colado na pedra
+                    // esconde justamente o que o jogador precisa enxergar.
+                    if shared::terreno::minerio_da_coluna(
+                        self.bioma,
+                        bx,
+                        bz,
+                        topo,
+                        &self.ger,
+                        eh_agua(ix, iz),
+                    )
+                    .is_some()
+                    {
+                        continue;
+                    }
+                    #[cfg(test)]
+                    CENSO.with(|c| {
+                        *c.borrow_mut()
+                            .entry(format!("{:?}", pl.especie))
+                            .or_insert(0) += 1
+                    });
+                    crate::vegetacao::instancia(
+                        self.modelo_de_planta(pl.especie, pl.variante),
+                        vec3(pl.centro.x, (topo + 1) as f32 * BLOCO, pl.centro.y),
+                        pl.porte,
+                        &mut verts,
+                        &mut idx,
+                        &mut malhas,
+                        MAX_QUADS,
+                    );
+                }
+            }
         }
 
         if !verts.is_empty() {
-            malhas.push(Mesh { vertices: verts, indices: idx, texture: None });
+            malhas.push(Mesh {
+                vertices: verts,
+                indices: idx,
+                texture: None,
+            });
         }
         Pedaco {
             malhas: malhas.into_iter().map(MalhaEstatica::nova).collect(),
-            agua: crate::agua::malhas_do_pedaco(&self.ger, cx, cz).into_iter().map(MalhaEstatica::nova).collect(),
+            agua: crate::agua::malhas_do_pedaco(&self.ger, cx, cz)
+                .into_iter()
+                .map(MalhaEstatica::nova)
+                .collect(),
         }
     }
 
@@ -850,7 +961,10 @@ mod testes {
         let mut linhas: Vec<_> = censo.iter().collect();
         linhas.sort();
         for (k, v) in &linhas {
-            println!("  {k:<12} {v:>5}  ({:.0}%)", **v as f32 * 100.0 / total.max(1) as f32);
+            println!(
+                "  {k:<12} {v:>5}  ({:.0}%)",
+                **v as f32 * 100.0 / total.max(1) as f32
+            );
         }
         let flores = censo.get("Flor").copied().unwrap_or(0);
         assert!(total > 100, "so' {total} plantas em 36 pedacos");
@@ -891,18 +1005,19 @@ mod testes {
                     .max()
                     .unwrap_or(0);
                 // Uma arvore desenhada tem que ser um estorvo no servidor.
-                if let Some(a) = shared::terreno::arvore_da_coluna(
-                    d.bioma, bx, bz, topo, declive, &t.ger, agua,
-                ) {
+                if let Some(a) =
+                    shared::terreno::arvore_da_coluna(d.bioma, bx, bz, topo, declive, &t.ger, agua)
+                {
                     solidos += 1;
                     assert!(
                         !i.sem_estorvo(a.centro, 0.01),
-                        "arvore desenhada em {:?} nao barra no servidor", a.centro
+                        "arvore desenhada em {:?} nao barra no servidor",
+                        a.centro
                     );
                 }
-                let Some(pl) = shared::terreno::planta_da_coluna(
-                    d.bioma, bx, bz, topo, declive, &t.ger, agua,
-                ) else {
+                let Some(pl) =
+                    shared::terreno::planta_da_coluna(d.bioma, bx, bz, topo, declive, &t.ger, agua)
+                else {
                     continue;
                 };
                 match shared::terreno::raio_de_planta(pl.especie) {
@@ -912,7 +1027,8 @@ mod testes {
                         assert!(
                             !i.sem_estorvo(pl.centro, 0.01),
                             "{:?} desenhada em {:?} nao barra no servidor",
-                            pl.especie, pl.centro
+                            pl.especie,
+                            pl.centro
                         );
                     }
                     // Flor, capim, arbusto, samambaia e talo NAO barram — e
@@ -929,7 +1045,10 @@ mod testes {
             }
         }
         println!("{solidos} estorvos e {vazados} plantas vazadas conferidos");
-        assert!(solidos > 20, "so' {solidos} estorvos na amostra — teste vazio");
+        assert!(
+            solidos > 20,
+            "so' {solidos} estorvos na amostra — teste vazio"
+        );
         assert!(vazados > 100, "so' {vazados} plantas vazadas na amostra");
     }
 
@@ -950,15 +1069,29 @@ mod testes {
         let i = Ilha::carregar_ou_gerar("", d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
         let mut n = 0;
         for e in i.todos_os_estorvos() {
-            let TipoDeEstorvo::Minerio(tier) = e.tipo else { continue };
+            let TipoDeEstorvo::Minerio(tier) = e.tipo else {
+                continue;
+            };
             let (ix, iz) = ((e.coluna >> 16) as i32, (e.coluna & 0xffff) as i32);
             let (bx, bz) = (ix - d.raio_blocos, iz - d.raio_blocos);
             let topo = t.ger.bloco_em(bx, bz);
             let agua = (topo + 1) as f32 * BLOCO <= NIVEL_DO_MAR;
             let m = shared::terreno::minerio_da_coluna(d.bioma, bx, bz, topo, &t.ger, agua)
-                .unwrap_or_else(|| panic!("servidor tem pedra em {:?} que o cliente nao desenha", e.centro));
-            assert_eq!(m.tier, tier, "pedra em {:?}: cor diferente nos dois lados", e.centro);
-            assert!(m.centro.distance(e.centro) < 1e-4, "pedra em lugares diferentes");
+                .unwrap_or_else(|| {
+                    panic!(
+                        "servidor tem pedra em {:?} que o cliente nao desenha",
+                        e.centro
+                    )
+                });
+            assert_eq!(
+                m.tier, tier,
+                "pedra em {:?}: cor diferente nos dois lados",
+                e.centro
+            );
+            assert!(
+                m.centro.distance(e.centro) < 1e-4,
+                "pedra em lugares diferentes"
+            );
             n += 1;
         }
         println!("{n} pedras conferidas dos dois lados");
@@ -984,11 +1117,14 @@ mod testes {
                 "{:<14} pior malha: {pior_v} vertices, {pior_i} indices ({total} malhas)",
                 d.zona
             );
-            assert!(pior_i <= 5_000, "{}: {pior_i} indices — a macroquad corta em 5.000", d.zona);
+            assert!(
+                pior_i <= 5_000,
+                "{}: {pior_i} indices — a macroquad corta em 5.000",
+                d.zona
+            );
             assert!(pior_v <= 10_000, "{}: {pior_v} vertices", d.zona);
         }
     }
-
 }
 
 #[cfg(test)]
@@ -1095,7 +1231,10 @@ mod testes_alinhamento {
                         (consultada - c.y).abs() < 1e-3,
                         "topo desenhado em y={:.3} no ponto ({:.3}, {:.3}), \
                          mas altura() diz {:.3}",
-                        c.y, c.x, c.z, consultada
+                        c.y,
+                        c.x,
+                        c.z,
+                        consultada
                     );
                     conferidos += 1;
                 }

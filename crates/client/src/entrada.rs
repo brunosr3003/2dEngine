@@ -142,9 +142,15 @@ mod tests {
 
     fn teclado() -> Teclado {
         Teclado {
-            inscricao: 0, registra: false, fila: Vec::new(), repetindo_desde: 0.0,
-            ultima_repeticao: 0.0, agora: 1.0, pressionadas: HashSet::new(),
-            tecla_atual: None, tecla_repetida: false,
+            inscricao: 0,
+            registra: false,
+            fila: Vec::new(),
+            repetindo_desde: 0.0,
+            ultima_repeticao: 0.0,
+            agora: 1.0,
+            pressionadas: HashSet::new(),
+            tecla_atual: None,
+            tecla_repetida: false,
         }
     }
 

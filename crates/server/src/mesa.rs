@@ -60,10 +60,21 @@ pub enum Evento {
     /// Abriu um pronto-check: avisar os membros.
     Pronto(Pronto),
     /// Todos aceitaram: criar a instancia.
-    Comecar { conteudo: u16, estagio: u8, membros: Vec<Chave> },
+    Comecar {
+        conteudo: u16,
+        estagio: u8,
+        membros: Vec<Chave>,
+    },
     /// Pronto-check caiu. `recusou` saiu de tudo; o resto voltou.
-    Cancelado { partida: u32, membros: Vec<Chave>, recusou: Vec<Chave> },
-    SalaFechou { id: u32, membros: Vec<Chave> },
+    Cancelado {
+        partida: u32,
+        membros: Vec<Chave>,
+        recusou: Vec<Chave>,
+    },
+    SalaFechou {
+        id: u32,
+        membros: Vec<Chave>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -115,13 +126,24 @@ impl Mesa {
         self.prontos.iter().find(|p| p.id == id)
     }
 
-    pub fn entrar_fila(&mut self, k: Chave, conteudo: u16, estagio: u8, agora: f64) -> Result<(), &'static str> {
+    pub fn entrar_fila(
+        &mut self,
+        k: Chave,
+        conteudo: u16,
+        estagio: u8,
+        agora: f64,
+    ) -> Result<(), &'static str> {
         if matches!(self.onde(k), Onde::Pronto(_)) {
             return Err("Responda o pronto-check antes.");
         }
         self.sair_sala(k, agora);
         self.fila.retain(|f| f.chave != k);
-        self.fila.push(NaFila { chave: k, conteudo, estagio, desde: agora });
+        self.fila.push(NaFila {
+            chave: k,
+            conteudo,
+            estagio,
+            desde: agora,
+        });
         Ok(())
     }
 
@@ -129,7 +151,14 @@ impl Mesa {
         self.fila.retain(|f| f.chave != k);
     }
 
-    pub fn criar_sala(&mut self, k: Chave, conteudo: u16, estagio: u8, completar_pela_fila: bool, agora: f64) -> Result<u32, &'static str> {
+    pub fn criar_sala(
+        &mut self,
+        k: Chave,
+        conteudo: u16,
+        estagio: u8,
+        completar_pela_fila: bool,
+        agora: f64,
+    ) -> Result<u32, &'static str> {
         if matches!(self.onde(k), Onde::Pronto(_)) {
             return Err("Responda o pronto-check antes.");
         }
@@ -137,18 +166,34 @@ impl Mesa {
         self.sair_sala(k, agora);
         self.prox_sala += 1;
         let id = self.prox_sala;
-        self.salas.push(Sala { id, lider: k, conteudo, estagio, membros: vec![k], completar_pela_fila, mexeu_em: agora });
+        self.salas.push(Sala {
+            id,
+            lider: k,
+            conteudo,
+            estagio,
+            membros: vec![k],
+            completar_pela_fila,
+            mexeu_em: agora,
+        });
         Ok(id)
     }
 
-    pub fn entrar_sala(&mut self, k: Chave, id: u32, grupo_max: u8, agora: f64) -> Result<(), &'static str> {
+    pub fn entrar_sala(
+        &mut self,
+        k: Chave,
+        id: u32,
+        grupo_max: u8,
+        agora: f64,
+    ) -> Result<(), &'static str> {
         if matches!(self.onde(k), Onde::Pronto(_)) {
             return Err("Responda o pronto-check antes.");
         }
         if self.prontos.iter().any(|p| p.sala == Some(id)) {
             return Err("A sala está começando.");
         }
-        let Some(s) = self.salas.iter().find(|s| s.id == id) else { return Err("A sala não existe mais.") };
+        let Some(s) = self.salas.iter().find(|s| s.id == id) else {
+            return Err("A sala não existe mais.");
+        };
         if s.membros.contains(&k) {
             return Ok(());
         }
@@ -157,7 +202,11 @@ impl Mesa {
         }
         self.sair_fila(k);
         self.sair_sala(k, agora);
-        let s = self.salas.iter_mut().find(|s| s.id == id).expect("conferida acima");
+        let s = self
+            .salas
+            .iter_mut()
+            .find(|s| s.id == id)
+            .expect("conferida acima");
         s.membros.push(k);
         s.mexeu_em = agora;
         Ok(())
@@ -181,7 +230,9 @@ impl Mesa {
 
     /// O lider abre o pronto-check com quem esta' na sala.
     pub fn iniciar_sala(&mut self, k: Chave, agora: f64) -> Result<Evento, &'static str> {
-        let Some(s) = self.salas.iter().find(|s| s.membros.contains(&k)) else { return Err("Você não está numa sala.") };
+        let Some(s) = self.salas.iter().find(|s| s.membros.contains(&k)) else {
+            return Err("Você não está numa sala.");
+        };
         if s.lider != k {
             return Err("Só o líder começa.");
         }
@@ -192,16 +243,39 @@ impl Mesa {
         Ok(self.abrir_pronto(conteudo, estagio, membros, Some(id), Vec::new(), agora))
     }
 
-    fn abrir_pronto(&mut self, conteudo: u16, estagio: u8, membros: Vec<Chave>, sala: Option<u32>, desde: Vec<(Chave, f64)>, agora: f64) -> Evento {
+    fn abrir_pronto(
+        &mut self,
+        conteudo: u16,
+        estagio: u8,
+        membros: Vec<Chave>,
+        sala: Option<u32>,
+        desde: Vec<(Chave, f64)>,
+        agora: f64,
+    ) -> Evento {
         self.prox_partida += 1;
-        let p = Pronto { id: self.prox_partida, conteudo, estagio, membros, aceitos: Vec::new(), expira: agora + PRONTO_S, sala, desde };
+        let p = Pronto {
+            id: self.prox_partida,
+            conteudo,
+            estagio,
+            membros,
+            aceitos: Vec::new(),
+            expira: agora + PRONTO_S,
+            sala,
+            desde,
+        };
         self.prontos.push(p.clone());
         Evento::Pronto(p)
     }
 
     /// Resposta do pronto-check. Recusa fecha na hora.
     pub fn responder(&mut self, k: Chave, partida: u32, aceito: bool, agora: f64) -> Vec<Evento> {
-        let Some(p) = self.prontos.iter_mut().find(|p| p.id == partida && p.membros.contains(&k)) else { return Vec::new() };
+        let Some(p) = self
+            .prontos
+            .iter_mut()
+            .find(|p| p.id == partida && p.membros.contains(&k))
+        else {
+            return Vec::new();
+        };
         if aceito {
             if !p.aceitos.contains(&k) {
                 p.aceitos.push(k);
@@ -215,7 +289,11 @@ impl Mesa {
     pub fn remover(&mut self, k: Chave, agora: f64) -> Vec<Evento> {
         self.sair_fila(k);
         self.sair_sala(k, agora);
-        let partida = self.prontos.iter().find(|p| p.membros.contains(&k)).map(|p| p.id);
+        let partida = self
+            .prontos
+            .iter()
+            .find(|p| p.membros.contains(&k))
+            .map(|p| p.id);
         match partida {
             Some(id) => self.fechar_prontos(agora, Some((id, k))),
             None => Vec::new(),
@@ -229,7 +307,12 @@ impl Mesa {
             let p = &self.prontos[i];
             let recusou: Vec<Chave> = match recusa {
                 Some((id, k)) if id == p.id => vec![k],
-                _ if agora >= p.expira => p.membros.iter().copied().filter(|m| !p.aceitos.contains(m)).collect(),
+                _ if agora >= p.expira => p
+                    .membros
+                    .iter()
+                    .copied()
+                    .filter(|m| !p.aceitos.contains(m))
+                    .collect(),
                 _ => Vec::new(),
             };
             let todos = p.membros.iter().all(|m| p.aceitos.contains(m));
@@ -244,7 +327,11 @@ impl Mesa {
                     self.salas.retain(|s| s.id != id);
                 }
                 self.fila.retain(|f| !p.membros.contains(&f.chave));
-                ev.push(Evento::Comecar { conteudo: p.conteudo, estagio: p.estagio, membros: p.membros });
+                ev.push(Evento::Comecar {
+                    conteudo: p.conteudo,
+                    estagio: p.estagio,
+                    membros: p.membros,
+                });
                 continue;
             }
             // Caiu: quem recusou sai; quem nao recusou volta.
@@ -261,12 +348,21 @@ impl Mesa {
                     // Volta pro TOPO: com o `desde` de quando entrou.
                     for &k in p.membros.iter().filter(|m| !recusou.contains(m)) {
                         let desde = p.desde.iter().find(|d| d.0 == k).map_or(agora, |d| d.1);
-                        self.fila.push(NaFila { chave: k, conteudo: p.conteudo, estagio: p.estagio, desde });
+                        self.fila.push(NaFila {
+                            chave: k,
+                            conteudo: p.conteudo,
+                            estagio: p.estagio,
+                            desde,
+                        });
                     }
                     self.fila.sort_by(|a, b| a.desde.total_cmp(&b.desde));
                 }
             }
-            ev.push(Evento::Cancelado { partida: p.id, membros: p.membros, recusou });
+            ev.push(Evento::Cancelado {
+                partida: p.id,
+                membros: p.membros,
+                recusou,
+            });
         }
         ev
     }
@@ -280,14 +376,27 @@ impl Mesa {
         for si in 0..self.salas.len() {
             let (id, c, e, max, puxa, parada) = {
                 let s = &self.salas[si];
-                ((s.id), s.conteudo, s.estagio, (r.grupo_max)(s.conteudo) as usize, s.completar_pela_fila, agora - s.mexeu_em)
+                (
+                    (s.id),
+                    s.conteudo,
+                    s.estagio,
+                    (r.grupo_max)(s.conteudo) as usize,
+                    s.completar_pela_fila,
+                    agora - s.mexeu_em,
+                )
             };
             if self.prontos.iter().any(|p| p.sala == Some(id)) {
                 continue;
             }
             if puxa && parada >= SALA_PUXA_FILA_S {
                 while self.salas[si].membros.len() < max {
-                    let Some(fi) = self.fila.iter().position(|f| f.conteudo == c && f.estagio == e) else { break };
+                    let Some(fi) = self
+                        .fila
+                        .iter()
+                        .position(|f| f.conteudo == c && f.estagio == e)
+                    else {
+                        break;
+                    };
                     let f = self.fila.remove(fi);
                     self.salas[si].membros.push(f.chave);
                 }
@@ -302,12 +411,18 @@ impl Mesa {
         let paradas: Vec<Sala> = self
             .salas
             .iter()
-            .filter(|s| agora - s.mexeu_em >= SALA_PARADA_FECHA_S && !self.prontos.iter().any(|p| p.sala == Some(s.id)))
+            .filter(|s| {
+                agora - s.mexeu_em >= SALA_PARADA_FECHA_S
+                    && !self.prontos.iter().any(|p| p.sala == Some(s.id))
+            })
             .cloned()
             .collect();
         for s in paradas {
             self.salas.retain(|x| x.id != s.id);
-            ev.push(Evento::SalaFechou { id: s.id, membros: s.membros });
+            ev.push(Evento::SalaFechou {
+                id: s.id,
+                membros: s.membros,
+            });
         }
 
         // Fila: por (conteudo, estagio), na ordem de chegada.
@@ -321,13 +436,24 @@ impl Mesa {
             let max = (r.grupo_max)(c).max(1) as usize;
             let min = ((r.minimo)(c, e) as usize).clamp(1, max);
             loop {
-                let da_chave: Vec<&NaFila> = self.fila.iter().filter(|f| f.conteudo == c && f.estagio == e).collect();
-                let Some(mais_velho) = da_chave.first().map(|f| f.desde) else { break };
-                let fecha = da_chave.len() >= max || (da_chave.len() >= min && agora - mais_velho >= ESPERA_PRA_MENOS_S);
+                let da_chave: Vec<&NaFila> = self
+                    .fila
+                    .iter()
+                    .filter(|f| f.conteudo == c && f.estagio == e)
+                    .collect();
+                let Some(mais_velho) = da_chave.first().map(|f| f.desde) else {
+                    break;
+                };
+                let fecha = da_chave.len() >= max
+                    || (da_chave.len() >= min && agora - mais_velho >= ESPERA_PRA_MENOS_S);
                 if !fecha {
                     break;
                 }
-                let grupo: Vec<(Chave, f64)> = da_chave.iter().take(max).map(|f| (f.chave, f.desde)).collect();
+                let grupo: Vec<(Chave, f64)> = da_chave
+                    .iter()
+                    .take(max)
+                    .map(|f| (f.chave, f.desde))
+                    .collect();
                 self.fila.retain(|f| !grupo.iter().any(|g| g.0 == f.chave));
                 let membros = grupo.iter().map(|g| g.0).collect();
                 ev.push(self.abrir_pronto(c, e, membros, None, grupo, agora));
@@ -338,11 +464,17 @@ impl Mesa {
 
     /// Salas abertas de um conteudo/estagio (pra a lista Procurar).
     pub fn salas_de(&self, conteudo: u16, estagio: u8) -> Vec<&Sala> {
-        self.salas.iter().filter(|s| s.conteudo == conteudo && s.estagio == estagio).collect()
+        self.salas
+            .iter()
+            .filter(|s| s.conteudo == conteudo && s.estagio == estagio)
+            .collect()
     }
 
     pub fn contar_fila(&self, conteudo: u16, estagio: u8) -> usize {
-        self.fila.iter().filter(|f| f.conteudo == conteudo && f.estagio == estagio).count()
+        self.fila
+            .iter()
+            .filter(|f| f.conteudo == conteudo && f.estagio == estagio)
+            .count()
     }
 }
 
@@ -351,7 +483,10 @@ mod testes {
     use super::*;
 
     fn regras() -> Regras<'static> {
-        Regras { grupo_max: &|c| if c == 1 { 1 } else { 5 }, minimo: &|_, e| if e <= 2 { 3 } else { 4 } }
+        Regras {
+            grupo_max: &|c| if c == 1 { 1 } else { 5 },
+            minimo: &|_, e| if e <= 2 { 3 } else { 4 },
+        }
     }
 
     fn comecou(ev: &[Evento]) -> Option<Vec<Chave>> {
@@ -368,13 +503,18 @@ mod testes {
             m.entrar_fila(k, 10, 1, 0.0).unwrap();
         }
         let ev = m.tick(1.0, &regras());
-        let Some(Evento::Pronto(p)) = ev.first() else { panic!("{ev:?}") };
+        let Some(Evento::Pronto(p)) = ev.first() else {
+            panic!("{ev:?}")
+        };
         assert_eq!(p.membros.len(), 5);
         assert!(m.fila.is_empty());
         for k in 1..=4 {
             assert!(comecou(&m.responder(k, p.id, true, 2.0)).is_none());
         }
-        assert_eq!(comecou(&m.responder(5, p.id, true, 2.0)), Some(vec![1, 2, 3, 4, 5]));
+        assert_eq!(
+            comecou(&m.responder(5, p.id, true, 2.0)),
+            Some(vec![1, 2, 3, 4, 5])
+        );
         assert_eq!(m.onde(1), Onde::Livre);
     }
 
@@ -385,12 +525,17 @@ mod testes {
             m.entrar_fila(k, 10, 1, 0.0).unwrap();
         }
         assert!(m.tick(100.0, &regras()).is_empty());
-        assert!(matches!(m.tick(ESPERA_PRA_MENOS_S, &regras()).first(), Some(Evento::Pronto(p)) if p.membros.len() == 3));
+        assert!(
+            matches!(m.tick(ESPERA_PRA_MENOS_S, &regras()).first(), Some(Evento::Pronto(p)) if p.membros.len() == 3)
+        );
         let mut n = Mesa::default();
         for k in 1..=3 {
             n.entrar_fila(k, 10, 3, 0.0).unwrap();
         }
-        assert!(n.tick(ESPERA_PRA_MENOS_S * 2.0, &regras()).is_empty(), "estagio 3 pede 4");
+        assert!(
+            n.tick(ESPERA_PRA_MENOS_S * 2.0, &regras()).is_empty(),
+            "estagio 3 pede 4"
+        );
     }
 
     #[test]
@@ -401,12 +546,18 @@ mod testes {
         }
         m.entrar_fila(9, 10, 1, 50.0).unwrap();
         let ev = m.tick(60.0, &regras());
-        let Some(Evento::Pronto(p)) = ev.first() else { panic!() };
+        let Some(Evento::Pronto(p)) = ev.first() else {
+            panic!()
+        };
         m.responder(1, p.id, true, 61.0);
         let ev = m.responder(3, p.id, false, 61.0);
         assert!(matches!(&ev[..], [Evento::Cancelado { recusou, .. }] if recusou == &vec![3]));
         assert_eq!(m.onde(3), Onde::Livre);
-        assert_eq!(m.fila.first().map(|f| f.chave), Some(1), "quem aceitou volta ao topo");
+        assert_eq!(
+            m.fila.first().map(|f| f.chave),
+            Some(1),
+            "quem aceitou volta ao topo"
+        );
         assert!(m.fila.iter().any(|f| f.chave == 9));
     }
 
@@ -416,10 +567,16 @@ mod testes {
         for k in 1..=5 {
             m.entrar_fila(k, 10, 1, 0.0).unwrap();
         }
-        let Some(Evento::Pronto(p)) = m.tick(1.0, &regras()).into_iter().next() else { panic!() };
+        let Some(Evento::Pronto(p)) = m.tick(1.0, &regras()).into_iter().next() else {
+            panic!()
+        };
         m.responder(2, p.id, true, 2.0);
         let ev = m.tick(1.0 + PRONTO_S, &regras());
-        let Some(Evento::Cancelado { recusou, .. }) = ev.iter().find(|e| matches!(e, Evento::Cancelado { .. })) else { panic!("{ev:?}") };
+        let Some(Evento::Cancelado { recusou, .. }) =
+            ev.iter().find(|e| matches!(e, Evento::Cancelado { .. }))
+        else {
+            panic!("{ev:?}")
+        };
         assert_eq!(recusou.len(), 4);
         assert_eq!(m.onde(2), Onde::Fila);
     }
@@ -444,9 +601,14 @@ mod testes {
         for k in 10..=12 {
             m.entrar_fila(k, 10, 1, 3.0).unwrap();
         }
-        assert!(m.tick(30.0, &regras()).is_empty(), "antes de um minuto nao puxa (e a fila tem 3 < 5)");
+        assert!(
+            m.tick(30.0, &regras()).is_empty(),
+            "antes de um minuto nao puxa (e a fila tem 3 < 5)"
+        );
         let ev = m.tick(1.0 + SALA_PUXA_FILA_S, &regras());
-        let Some(Evento::Pronto(p)) = ev.iter().find(|e| matches!(e, Evento::Pronto(_))) else { panic!("{ev:?}") };
+        let Some(Evento::Pronto(p)) = ev.iter().find(|e| matches!(e, Evento::Pronto(_))) else {
+            panic!("{ev:?}")
+        };
         assert_eq!(p.membros, vec![1, 2, 10, 11, 12]);
         assert_eq!(p.sala, Some(s));
         let mut fim = Vec::new();
@@ -462,7 +624,9 @@ mod testes {
         let mut m = Mesa::default();
         let s = m.criar_sala(7, 10, 1, false, 0.0).unwrap();
         m.entrar_sala(8, s, 5, 0.0).unwrap();
-        let Evento::Pronto(p) = m.iniciar_sala(7, 1.0).unwrap() else { panic!() };
+        let Evento::Pronto(p) = m.iniciar_sala(7, 1.0).unwrap() else {
+            panic!()
+        };
         m.responder(7, p.id, true, 1.0);
         assert_eq!(comecou(&m.responder(8, p.id, true, 1.0)), Some(vec![7, 8]));
     }
@@ -472,7 +636,9 @@ mod testes {
         let mut m = Mesa::default();
         let s = m.criar_sala(1, 10, 1, false, 0.0).unwrap();
         m.entrar_sala(2, s, 5, 0.0).unwrap();
-        let Evento::Pronto(p) = m.iniciar_sala(1, 1.0).unwrap() else { panic!() };
+        let Evento::Pronto(p) = m.iniciar_sala(1, 1.0).unwrap() else {
+            panic!()
+        };
         let ev = m.remover(2, 2.0);
         assert!(matches!(&ev[..], [Evento::Cancelado { recusou, .. }] if recusou == &vec![2]));
         assert_eq!(m.onde(1), Onde::Sala(s), "o lider continua na sala");

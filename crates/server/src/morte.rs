@@ -64,7 +64,11 @@ pub fn registrar(mortes: &mut Vec<MorteRecuperavel>, quando: i64, xp: u64) {
 
 /// As que ainda valem agora.
 pub fn validas(mortes: &[MorteRecuperavel], agora: i64) -> Vec<MorteRecuperavel> {
-    mortes.iter().copied().filter(|m| m.quando + VALIDADE_S > agora).collect()
+    mortes
+        .iter()
+        .copied()
+        .filter(|m| m.quando + VALIDADE_S > agora)
+        .collect()
 }
 
 /// Recupera a morte `quando`. Devolve (XP devolvido, ouro cobrado) e ja'
@@ -78,7 +82,10 @@ pub fn recuperar(
     dia_salvo: &mut i64,
     usadas: &mut u32,
 ) -> Result<(u64, u64), String> {
-    let Some(i) = mortes.iter().position(|m| m.quando == quando && m.quando + VALIDADE_S > agora) else {
+    let Some(i) = mortes
+        .iter()
+        .position(|m| m.quando == quando && m.quando + VALIDADE_S > agora)
+    else {
         return Err("Essa morte não pode mais ser recuperada.".into());
     };
     let xp = mortes[i].xp;
@@ -137,17 +144,65 @@ mod testes {
         }
         let (mut dia_s, mut usadas) = (0i64, 0u32);
         for k in 0..3 {
-            let r = recuperar(&mut mortes, agora + k, agora + 10, 5, 0, &mut dia_s, &mut usadas);
+            let r = recuperar(
+                &mut mortes,
+                agora + k,
+                agora + 10,
+                5,
+                0,
+                &mut dia_s,
+                &mut usadas,
+            );
             assert_eq!(r, Ok((40, 0)), "gratis {k}");
         }
         assert_eq!(gratis_restantes(dia_s, usadas, agora + 10), 0);
         let custo = custo_gold(40, 5);
-        assert!(recuperar(&mut mortes, agora + 3, agora + 10, 5, custo - 1, &mut dia_s, &mut usadas).is_err(), "sem ouro nao recupera");
+        assert!(
+            recuperar(
+                &mut mortes,
+                agora + 3,
+                agora + 10,
+                5,
+                custo - 1,
+                &mut dia_s,
+                &mut usadas
+            )
+            .is_err(),
+            "sem ouro nao recupera"
+        );
         assert_eq!(mortes.len(), 2, "recusa nao consome a morte");
-        assert_eq!(recuperar(&mut mortes, agora + 3, agora + 10, 5, custo, &mut dia_s, &mut usadas), Ok((40, custo)));
+        assert_eq!(
+            recuperar(
+                &mut mortes,
+                agora + 3,
+                agora + 10,
+                5,
+                custo,
+                &mut dia_s,
+                &mut usadas
+            ),
+            Ok((40, custo))
+        );
         // Dia seguinte: gratis de novo.
-        assert_eq!(gratis_restantes(dia_s, usadas, agora + 86_400), GRATIS_POR_DIA);
-        assert_eq!(recuperar(&mut mortes, agora + 4, agora + 86_400 - 600, 5, 0, &mut dia_s, &mut usadas).map(|r| r.1).ok(), None, "ainda no mesmo dia e sem ouro");
+        assert_eq!(
+            gratis_restantes(dia_s, usadas, agora + 86_400),
+            GRATIS_POR_DIA
+        );
+        assert_eq!(
+            recuperar(
+                &mut mortes,
+                agora + 4,
+                agora + 86_400 - 600,
+                5,
+                0,
+                &mut dia_s,
+                &mut usadas
+            )
+            .map(|r| r.1)
+            .ok(),
+            None,
+            "ainda no mesmo dia e sem ouro"
+        );
     }
 
     #[test]
@@ -157,7 +212,16 @@ mod testes {
         assert_eq!(validas(&mortes, 1_000 + VALIDADE_S - 1).len(), 1);
         assert!(validas(&mortes, 1_000 + VALIDADE_S).is_empty());
         let (mut d, mut u) = (0, 0);
-        assert!(recuperar(&mut mortes, 1_000, 1_000 + VALIDADE_S, 1, 999_999, &mut d, &mut u).is_err());
+        assert!(recuperar(
+            &mut mortes,
+            1_000,
+            1_000 + VALIDADE_S,
+            1,
+            999_999,
+            &mut d,
+            &mut u
+        )
+        .is_err());
         for k in 0..(MAX_MORTES as i64 + 4) {
             registrar(&mut mortes, 5_000 + k, 1);
         }

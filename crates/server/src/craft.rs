@@ -11,7 +11,10 @@ use shared::{item_id, InventorySlot, ItemInstance};
 
 /// Quanto de `id` (sem instancia — material empilhado) a bolsa tem.
 pub fn tem(inv: &[InventorySlot], id: u16) -> u32 {
-    inv.iter().filter(|s| s.item_id == id && s.instance.is_none() && s.qty > 0).map(|s| s.qty).sum()
+    inv.iter()
+        .filter(|s| s.item_id == id && s.instance.is_none() && s.qty > 0)
+        .map(|s| s.qty)
+        .sum()
 }
 
 pub(crate) fn consumir(inv: &mut [InventorySlot], id: u16, mut qty: u32) {
@@ -57,10 +60,12 @@ pub fn conferir(
     }
     let cap = stack_max.max(1);
     if !r.roll_instance {
-        if let Some(i) = inv
-            .iter()
-            .position(|s| s.item_id == r.output_item_id && s.instance.is_none() && s.qty > 0 && s.qty + r.output_qty <= cap)
-        {
+        if let Some(i) = inv.iter().position(|s| {
+            s.item_id == r.output_item_id
+                && s.instance.is_none()
+                && s.qty > 0
+                && s.qty + r.output_qty <= cap
+        }) {
             return Ok(i);
         }
     }
@@ -75,19 +80,28 @@ pub fn conferir(
             consumir(&mut sim, id as u16, qtd);
         }
     }
-    sim.iter().position(|s| s.qty == 0).ok_or_else(|| "bolsa cheia".to_string())
+    sim.iter()
+        .position(|s| s.qty == 0)
+        .ok_or_else(|| "bolsa cheia".to_string())
 }
 
 /// Consome os materiais e poe o item. Chame so' depois de `conferir`. Devolve
 /// o slot onde o item ficou.
-pub fn aplicar(inv: &mut [InventorySlot], r: &CraftRecipeNet, inst: Option<ItemInstance>) -> Option<usize> {
+pub fn aplicar(
+    inv: &mut [InventorySlot],
+    r: &CraftRecipeNet,
+    inst: Option<ItemInstance>,
+) -> Option<usize> {
     for &[id, qtd] in &r.inputs {
         if id != 0 {
             consumir(inv, id as u16, qtd);
         }
     }
     if !r.roll_instance {
-        if let Some(i) = inv.iter().position(|s| s.item_id == r.output_item_id && s.instance.is_none() && s.qty > 0) {
+        if let Some(i) = inv
+            .iter()
+            .position(|s| s.item_id == r.output_item_id && s.instance.is_none() && s.qty > 0)
+        {
             inv[i].qty += r.output_qty;
             return Some(i);
         }
@@ -143,7 +157,11 @@ mod testes {
     fn bolsa(itens: &[(u16, u32)]) -> Vec<InventorySlot> {
         let mut v = vec![InventorySlot::default(); 24];
         for (i, &(id, q)) in itens.iter().enumerate() {
-            v[i] = InventorySlot { item_id: id, qty: q, instance: None };
+            v[i] = InventorySlot {
+                item_id: id,
+                qty: q,
+                instance: None,
+            };
         }
         v
     }
@@ -153,11 +171,19 @@ mod testes {
     }
 
     fn receita_cinza() -> CraftRecipeNet {
-        shared::receitas::receitas_de_equipamento().into_iter().next().unwrap()
+        shared::receitas::receitas_de_equipamento()
+            .into_iter()
+            .next()
+            .unwrap()
     }
 
     fn com_tudo(r: &CraftRecipeNet) -> Vec<InventorySlot> {
-        bolsa(&r.inputs.iter().map(|&[id, q]| (id as u16, q)).collect::<Vec<_>>())
+        bolsa(
+            &r.inputs
+                .iter()
+                .map(|&[id, q]| (id as u16, q))
+                .collect::<Vec<_>>(),
+        )
     }
 
     #[test]
@@ -180,12 +206,16 @@ mod testes {
         let r = receita_cinza();
         let mut inv = com_tudo(&r);
         inv[1].qty -= 1; // falta 1 do principal
-        let contagem = |v: &[InventorySlot]| v.iter().map(|s| (s.item_id, s.qty)).collect::<Vec<_>>();
+        let contagem =
+            |v: &[InventorySlot]| v.iter().map(|s| (s.item_id, s.qty)).collect::<Vec<_>>();
         let antes = contagem(&inv);
         let e = conferir(&inv, &r, 1, 1, &nome).unwrap_err();
         assert!(e.starts_with("faltam"), "{e}");
         assert_eq!(contagem(&inv), antes);
-        let epico = shared::receitas::receitas_de_equipamento().into_iter().find(|x| x.nivel_min >= 60).unwrap();
+        let epico = shared::receitas::receitas_de_equipamento()
+            .into_iter()
+            .find(|x| x.nivel_min >= 60)
+            .unwrap();
         let e = conferir(&com_tudo(&epico), &epico, 20, 1, &nome).unwrap_err();
         assert_eq!(e, "requer nível 60");
     }
@@ -197,7 +227,12 @@ mod testes {
             est = est.wrapping_mul(1664525).wrapping_add(1013904223);
             ((est >> 16) % 100) as u8
         };
-        let rico = || bolsa(&[(item_id::DARKSTEEL, 1_000_000), (item_id::COPPER, 1_000_000)]);
+        let rico = || {
+            bolsa(&[
+                (item_id::DARKSTEEL, 1_000_000),
+                (item_id::COPPER, 1_000_000),
+            ])
+        };
         let base = ItemInstance::roll_for(item_id::KATANA, 5, || 0.5).unwrap();
         let n = 20_000;
         let (mut subiu4, mut destruiu6, mut falhou4) = (0, 0, 0);
@@ -220,7 +255,11 @@ mod testes {
         let f = |x: i32| x as f32 / n as f32;
         assert!((f(subiu4) - 0.80).abs() < 0.02, "+4 subiu {}", f(subiu4));
         assert_eq!(subiu4 + falhou4, n);
-        assert!((f(destruiu6) - 0.70).abs() < 0.02, "+6 destruiu {}", f(destruiu6));
+        assert!(
+            (f(destruiu6) - 0.70).abs() < 0.02,
+            "+6 destruiu {}",
+            f(destruiu6)
+        );
     }
 
     #[test]

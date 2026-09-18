@@ -41,23 +41,42 @@ fn texto_contornado(s: &str, x: f32, y: f32, tam: f32, cor: Color) {
 /// So' pra quem esta' perto — a tela nao pode virar um mural —, e o alvo
 /// ganha a borda dourada e cresce um pouco.
 fn placas(world: &World, vista: &Vista) {
-    let eu = world.self_id.and_then(|i| world.ents.get(&i)).map(|e| e.render_pos);
+    let eu = world
+        .self_id
+        .and_then(|i| world.ents.get(&i))
+        .map(|e| e.render_pos);
     for (id, e) in &world.ents {
         if e.meta.tag != shared::EntityTag::Enemy || e.state.hp == 0 {
             continue;
         }
         let boss = e.state.flags & shared::ent_flags::BOSS != 0;
-        if eu.map_or(false, |p| p.distance(e.render_pos) > if boss { 40.0 } else { 26.0 }) {
+        if eu.map_or(false, |p| {
+            p.distance(e.render_pos) > if boss { 40.0 } else { 26.0 }
+        }) {
             continue;
         }
         let alvo = world.alvo == Some(*id);
         let topo = vista.pos_de(e) + vec3(0.0, altura_de(e) + 0.35, 0.0);
-        let Some(c) = world_to_screen(&vista.cam, topo) else { continue };
+        let Some(c) = world_to_screen(&vista.cam, topo) else {
+            continue;
+        };
         // Chefe: placa maior, moldura dourada e coroa ao lado do nome.
-        let (w, h) = if boss { (128.0, 9.0) } else if alvo { (86.0, 7.0) } else { (64.0, 5.0) };
+        let (w, h) = if boss {
+            (128.0, 9.0)
+        } else if alvo {
+            (86.0, 7.0)
+        } else {
+            (64.0, 5.0)
+        };
         let f = (e.state.hp as f32 / e.meta.hp_max.max(1) as f32).clamp(0.0, 1.0);
         let (x, y) = (c.x - w * 0.5, c.y);
-        draw_rectangle(x - 1.0, y - 1.0, w + 2.0, h + 2.0, Color::new(0.0, 0.0, 0.0, 0.75));
+        draw_rectangle(
+            x - 1.0,
+            y - 1.0,
+            w + 2.0,
+            h + 2.0,
+            Color::new(0.0, 0.0, 0.0, 0.75),
+        );
         draw_rectangle(x, y, w, h, Color::new(0.25, 0.06, 0.05, 0.9));
         draw_rectangle(x, y, w * f, h, Color::new(0.86, 0.22, 0.18, 1.0));
         draw_rectangle(x, y, w * f, h * 0.35, Color::new(1.0, 0.45, 0.38, 0.8));
@@ -65,9 +84,23 @@ fn placas(world: &World, vista: &Vista) {
             draw_rectangle_lines(x - 2.5, y - 2.5, w + 5.0, h + 5.0, 1.5, ui::OURO);
         }
         let nome = e.meta.name.as_deref().unwrap_or("?");
-        let txt = if e.meta.nivel > 0 { format!("Lv {} {nome}", e.meta.nivel) } else { nome.to_string() };
-        let tam = if boss { 18.0 } else if alvo { 17.0 } else { 14.0 };
-        let d = TextDimensions { width: crate::hud_estilo::medir_forte(&txt, tam as u16), height: tam, offset_y: tam };
+        let txt = if e.meta.nivel > 0 {
+            format!("Lv {} {nome}", e.meta.nivel)
+        } else {
+            nome.to_string()
+        };
+        let tam = if boss {
+            18.0
+        } else if alvo {
+            17.0
+        } else {
+            14.0
+        };
+        let d = TextDimensions {
+            width: crate::hud_estilo::medir_forte(&txt, tam as u16),
+            height: tam,
+            offset_y: tam,
+        };
         if boss {
             crate::telegrafico::desenha_coroa(vec2(c.x - d.width * 0.5 - 14.0, y - 10.0), 6.0);
         }
@@ -85,7 +118,9 @@ fn placas(world: &World, vista: &Vista) {
 pub fn desenha(world: &World, vista: &Vista) {
     placas(world, vista);
     for ef in &world.efeitos {
-        let Some(e) = world.ents.get(&ef.alvo) else { continue };
+        let Some(e) = world.ents.get(&ef.alvo) else {
+            continue;
+        };
         let pe = vista.pos_de(e);
         let alt = altura_de(e);
 
@@ -99,20 +134,34 @@ pub fn desenha(world: &World, vista: &Vista) {
                     Color::new(1.0, 0.95, 0.72, 1.0 - u)
                 };
                 let escala = if ef.critico { 1.5 } else { 1.0 };
-                draw_circle(c.x, c.y, (18.0 * (1.0 - u) + 4.0) * escala, Color::new(1.0, 1.0, 1.0, 0.55 * (1.0 - u)));
+                draw_circle(
+                    c.x,
+                    c.y,
+                    (18.0 * (1.0 - u) + 4.0) * escala,
+                    Color::new(1.0, 1.0, 1.0, 0.55 * (1.0 - u)),
+                );
                 for k in 0..8 {
                     let ang = ef.semente * 6.283 + k as f32 * 0.785;
                     let (s, co) = ang.sin_cos();
                     let r0 = 8.0 + 26.0 * u * escala;
                     let r1 = r0 + (16.0 - 10.0 * u) * escala;
-                    draw_line(c.x + co * r0, c.y + s * r0, c.x + co * r1, c.y + s * r1, 3.0 * (1.0 - u) + 1.0, cor);
+                    draw_line(
+                        c.x + co * r0,
+                        c.y + s * r0,
+                        c.x + co * r1,
+                        c.y + s * r1,
+                        3.0 * (1.0 - u) + 1.0,
+                        cor,
+                    );
                 }
             }
         }
 
         // ── o numero: pula grande, sobe e some ──
         if ef.t < VIDA_DO_NUMERO {
-            let Some(c) = world_to_screen(&vista.cam, pe + vec3(0.0, alt + 0.25, 0.0)) else { continue };
+            let Some(c) = world_to_screen(&vista.cam, pe + vec3(0.0, alt + 0.25, 0.0)) else {
+                continue;
+            };
             let u = ef.t / VIDA_DO_NUMERO;
             let sobe = 46.0 * (1.0 - (1.0 - u).powi(3));
             let pula = 1.0 + 0.7 * (-ef.t * 14.0).exp();
@@ -126,8 +175,16 @@ pub fn desenha(world: &World, vista: &Vista) {
             } else {
                 Color::new(1.0, 0.95, 0.78, alfa)
             };
-            let txt = if ef.critico { format!("{}!", ef.dano) } else { ef.dano.to_string() };
-            let d = TextDimensions { width: crate::hud_estilo::medir_forte(&txt, tam as u16), height: tam, offset_y: tam };
+            let txt = if ef.critico {
+                format!("{}!", ef.dano)
+            } else {
+                ef.dano.to_string()
+            };
+            let d = TextDimensions {
+                width: crate::hud_estilo::medir_forte(&txt, tam as u16),
+                height: tam,
+                offset_y: tam,
+            };
             let x = c.x - d.width * 0.5 + (ef.semente - 0.5) * 36.0;
             texto_contornado(&txt, x, c.y - sobe, tam, cor);
         }
@@ -140,7 +197,14 @@ pub fn desenha(world: &World, vista: &Vista) {
             let f = i as f32 / 14.0;
             let a = world.dor * 0.30 * (1.0 - f).powi(2);
             let m = i as f32 * 7.0;
-            draw_rectangle_lines(m, m, w - 2.0 * m, h - 2.0 * m, 7.0, Color::new(0.85, 0.08, 0.06, a));
+            draw_rectangle_lines(
+                m,
+                m,
+                w - 2.0 * m,
+                h - 2.0 * m,
+                7.0,
+                Color::new(0.85, 0.08, 0.06, a),
+            );
         }
     }
 }

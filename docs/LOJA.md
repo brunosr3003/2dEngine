@@ -1,7 +1,7 @@
 # Loja de cash
 
-Menu → Comércio → **Loja**. Três abas: **Montarias**, **Skins** (de
-montaria) e **Tempest Points**. O saldo de TP fica no topo. Código:
+Menu → Comércio → **Loja**. Quatro abas: **Montarias**, **Skins** (de
+montaria), **Materiais** e **Tempest Points**. O saldo de TP fica no topo. Código:
 `crates/shared/src/loja.rs` (catálogo, regras, mensagens),
 `crates/server/src/loja.rs` (banco central), `crates/server/src/world/loja_mundo.rs`
 (pedidos no loop do mundo), `crates/client/src/loja_tp.rs` (janela).
@@ -10,7 +10,8 @@ montaria) e **Tempest Points**. O saldo de TP fica no topo. Código:
 
 A TP é comprada com **dinheiro de verdade**; montaria e skin são compradas
 com **TP** (a TP é a moeda da loja, como no MIR4). Regra da economia
-(ECONOMIA.md): nada que a TP compra dá poder de combate.
+(ECONOMIA.md): montarias e skins não dão poder de combate; a aba Materiais
+vende um atalho opcional para o craft.
 
 | pacote | TP | bônus | total | preço |
 |---|---:|---:|---:|---:|
@@ -33,6 +34,15 @@ com **TP** (a TP é a moeda da loja, como no MIR4). Regra da economia
 | Tigre Espectral | Tigre | 600 TP |
 | Urso Polar | Urso | 350 TP |
 | Urso de Obsidiana | Urso | 550 TP |
+
+| material | preço | conteúdo |
+|---|---:|---|
+| Baú de Chaves de Craft | 120 TP | 1 Escama, Garra, Chifre ou Couro aleatório |
+
+O baú é repetível e pode entregar qualquer cor: **55% cinza, 28% verde,
+12% azul e 5% roxa**. O servidor faz os dois sorteios, debita a TP uma vez
+por pedido e entrega a chave na bolsa; se a bolsa estiver cheia, ela vai para
+o correio de recompensas.
 
 Skin só se compra tendo a montaria. Toda montaria corre igual
 (`VEL_MONTADO`): pagar mais compra aparência, não vantagem.
@@ -59,7 +69,8 @@ cliente ── ComprarTp{pacote, pedido} ──► canal ──► central: loja
   confere posse e saldo (`pode_comprar`), debita (`loja:item:<produto>`,
   referência `loja:<pedido>`), grava a posse e marca `entregue`. A montaria
   grava junto a skin padrão. Recusa (sem saldo, já possui, falta a montaria)
-  fica registrada no pedido com o motivo.
+  fica registrada no pedido com o motivo. Consumíveis são repetíveis e não
+  entram em `loja_posses`.
 - **Posse é da CONTA** (`loja_posses`, chave `REALM:id_da_conta`, a mesma da
   TP): vale para todos os personagens da conta no realm.
 

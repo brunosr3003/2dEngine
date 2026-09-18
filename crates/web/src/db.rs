@@ -83,7 +83,11 @@ pub fn base_de_usuario(nome: Option<&str>, email: Option<&str>) -> String {
         }
     }
     let s = s.trim_end_matches('_').to_string();
-    if s.len() < 3 { "jogador".into() } else { s }
+    if s.len() < 3 {
+        "jogador".into()
+    } else {
+        s
+    }
 }
 
 /// Variacao da base quando o nome ja' existe: `base_1234`, com os digitos
@@ -112,10 +116,12 @@ pub async fn conta_google(
         let sub = sub.to_string();
         let p = p.clone();
         async move {
-            sqlx::query_as::<_, (i64, String)>("SELECT id, username FROM accounts WHERE google_sub = $1")
-                .bind(sub)
-                .fetch_optional(&p)
-                .await
+            sqlx::query_as::<_, (i64, String)>(
+                "SELECT id, username FROM accounts WHERE google_sub = $1",
+            )
+            .bind(sub)
+            .fetch_optional(&p)
+            .await
         }
     };
     if let Some(conta) = por_sub(pool).await? {
@@ -125,16 +131,25 @@ pub async fn conta_google(
     let marcador = format!("google-{sub}@google.invalid");
     let mut email_final = match email.map(|e| e.trim().to_lowercase()) {
         Some(e) if e.contains('@') => {
-            let usado: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM accounts WHERE email = $1)")
-                .bind(&e)
-                .fetch_one(pool)
-                .await?;
-            if usado { marcador.clone() } else { e }
+            let usado: bool =
+                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM accounts WHERE email = $1)")
+                    .bind(&e)
+                    .fetch_one(pool)
+                    .await?;
+            if usado {
+                marcador.clone()
+            } else {
+                e
+            }
         }
         _ => marcador.clone(),
     };
     for tentativa in 0..20u32 {
-        let usuario = if tentativa == 0 { base.clone() } else { usuario_com_sufixo(&base, sub, tentativa) };
+        let usuario = if tentativa == 0 {
+            base.clone()
+        } else {
+            usuario_com_sufixo(&base, sub, tentativa)
+        };
         let r = sqlx::query_as::<_, (i64,)>(
             "INSERT INTO accounts (username, email, password_hash, class, google_sub)
              VALUES ($1, $2, '!google', 'none', $3)
@@ -194,14 +209,24 @@ mod testes {
 
     #[test]
     fn username_do_google_fica_valido() {
-        assert_eq!(base_de_usuario(Some("João da Silva"), None), "Joao_da_Silva");
-        assert_eq!(base_de_usuario(None, Some("maria.souza@gmail.com")), "maria_souza");
+        assert_eq!(
+            base_de_usuario(Some("João da Silva"), None),
+            "Joao_da_Silva"
+        );
+        assert_eq!(
+            base_de_usuario(None, Some("maria.souza@gmail.com")),
+            "maria_souza"
+        );
         assert_eq!(base_de_usuario(Some("  "), Some("x@y.com")), "jogador");
         assert_eq!(base_de_usuario(Some("李小龍"), None), "jogador");
         assert!(base_de_usuario(Some("Um Nome Muito Comprido Demais Pra Caber"), None).len() <= 20);
         let s = usuario_com_sufixo("Joao_da_Silva", "123", 1);
         assert!(s.starts_with("Joao_da_Silva_") && s.len() == "Joao_da_Silva_".len() + 4);
-        assert_eq!(s, usuario_com_sufixo("Joao_da_Silva", "123", 1), "sufixo estavel");
+        assert_eq!(
+            s,
+            usuario_com_sufixo("Joao_da_Silva", "123", 1),
+            "sufixo estavel"
+        );
         assert_ne!(s, usuario_com_sufixo("Joao_da_Silva", "123", 2));
     }
 
@@ -210,14 +235,31 @@ mod testes {
     #[tokio::test]
     #[ignore]
     async fn conta_google_idempotente_no_banco() {
-        let Ok(url) = std::env::var("DATABASE_URL_TESTE") else { return };
+        let Ok(url) = std::env::var("DATABASE_URL_TESTE") else {
+            return;
+        };
         let pool = open_pool(&url).await.unwrap();
         let sub = format!("teste-{}", std::process::id());
-        let a = conta_google(&pool, &sub, Some("teste-google@example.com"), Some("Teste Google")).await.unwrap();
-        let b = conta_google(&pool, &sub, Some("outro@example.com"), Some("Outro Nome")).await.unwrap();
+        let a = conta_google(
+            &pool,
+            &sub,
+            Some("teste-google@example.com"),
+            Some("Teste Google"),
+        )
+        .await
+        .unwrap();
+        let b = conta_google(&pool, &sub, Some("outro@example.com"), Some("Outro Nome"))
+            .await
+            .unwrap();
         assert_eq!(a, b, "mesmo sub = mesma conta");
-        grava_token_de_login(&pool, a.0, "hash-de-teste", 1).await.unwrap();
-        sqlx::query("DELETE FROM accounts WHERE google_sub = $1").bind(&sub).execute(&pool).await.unwrap();
+        grava_token_de_login(&pool, a.0, "hash-de-teste", 1)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM accounts WHERE google_sub = $1")
+            .bind(&sub)
+            .execute(&pool)
+            .await
+            .unwrap();
     }
 }
 
@@ -268,10 +310,7 @@ pub struct AccountRow {
     pub password_hash: String,
 }
 
-pub async fn find_account_by_username(
-    pool: &PgPool,
-    username: &str,
-) -> Result<Option<AccountRow>> {
+pub async fn find_account_by_username(pool: &PgPool, username: &str) -> Result<Option<AccountRow>> {
     let row = sqlx::query_as::<_, (i64, String, String)>(
         "SELECT id, username, password_hash FROM accounts WHERE username = $1",
     )

@@ -65,7 +65,12 @@ impl IrPara {
     }
 
     pub fn iniciar(&mut self, alvo: Alvo, agora: f64) {
-        *self = Self { alvo: Some(alvo), desde: agora - RELIGA_S, pedidos_sem_progresso: 0, melhor: f32::MAX };
+        *self = Self {
+            alvo: Some(alvo),
+            desde: agora - RELIGA_S,
+            pedidos_sem_progresso: 0,
+            melhor: f32::MAX,
+        };
     }
 
     pub fn parar(&mut self) {
@@ -118,7 +123,9 @@ impl IrPara {
 
     /// O texto da faixa de estado unica do HUD.
     pub fn faixa(&self, eu: Option<Vec2>) -> Option<String> {
-        let (Some(a), Some(eu)) = (&self.alvo, eu) else { return None };
+        let (Some(a), Some(eu)) = (&self.alvo, eu) else {
+            return None;
+        };
         Some(format!("INDO · {} · {:.0} m", a.rotulo, eu.distance(a.pos)))
     }
 }
@@ -128,30 +135,50 @@ mod tests {
     use super::*;
 
     fn alvo(objetivo: Objetivo, pos: Vec2, raio: f32) -> Alvo {
-        Alvo { objetivo, pos, raio, rotulo: "x".into() }
+        Alvo {
+            objetivo,
+            pos,
+            raio,
+            rotulo: "x".into(),
+        }
     }
 
     #[test]
     fn longe_viaja_e_perto_liga_o_que_o_lugar_pede() {
         let mut ir = IrPara::default();
         ir.iniciar(alvo(Objetivo::Combate, vec2(300.0, 0.0), 45.0), 0.0);
-        assert_eq!(ir.passo(Vec2::ZERO, 0.0, false), Some(Acao::Viajar(vec2(300.0, 0.0))));
+        assert_eq!(
+            ir.passo(Vec2::ZERO, 0.0, false),
+            Some(Acao::Viajar(vec2(300.0, 0.0)))
+        );
         // Viajando: nao pede de novo.
         assert_eq!(ir.passo(vec2(100.0, 0.0), 0.5, true), None);
         // Dentro da zona (ate' 12 do centro): liga o combate e acaba.
-        assert_eq!(ir.passo(vec2(290.0, 0.0), 3.0, true), Some(Acao::LigarCombate(vec2(300.0, 0.0))));
+        assert_eq!(
+            ir.passo(vec2(290.0, 0.0), 3.0, true),
+            Some(Acao::LigarCombate(vec2(300.0, 0.0)))
+        );
         assert!(!ir.ativo());
 
         ir.iniciar(alvo(Objetivo::Coleta(3), vec2(0.0, 50.0), 8.0), 0.0);
-        assert_eq!(ir.passo(vec2(0.0, 44.0), 0.0, false), Some(Acao::LigarColeta(3, vec2(0.0, 50.0))));
+        assert_eq!(
+            ir.passo(vec2(0.0, 44.0), 0.0, false),
+            Some(Acao::LigarColeta(3, vec2(0.0, 50.0)))
+        );
     }
 
     #[test]
     fn npc_para_do_lado_e_fala_ao_chegar() {
         let mut ir = IrPara::default();
         ir.iniciar(alvo(Objetivo::Npc, vec2(20.0, 0.0), 0.0), 0.0);
-        assert_eq!(ir.passo(Vec2::ZERO, 0.0, false), Some(Acao::Viajar(vec2(18.0, 0.0))));
-        assert_eq!(ir.passo(vec2(17.0, 0.0), 2.0, false), Some(Acao::FalarPerto(vec2(20.0, 0.0))));
+        assert_eq!(
+            ir.passo(Vec2::ZERO, 0.0, false),
+            Some(Acao::Viajar(vec2(18.0, 0.0)))
+        );
+        assert_eq!(
+            ir.passo(vec2(17.0, 0.0), 2.0, false),
+            Some(Acao::FalarPerto(vec2(20.0, 0.0)))
+        );
     }
 
     #[test]
@@ -177,8 +204,14 @@ mod tests {
     fn lugar_so_chega_e_avisa() {
         let mut ir = IrPara::default();
         ir.iniciar(alvo(Objetivo::Lugar, vec2(40.0, 0.0), 6.0), 0.0);
-        assert_eq!(ir.passo(Vec2::ZERO, 0.0, false), Some(Acao::Viajar(vec2(40.0, 0.0))));
-        assert_eq!(ir.passo(vec2(36.0, 0.0), 2.0, false), Some(Acao::Aviso("Chegou: x.".into())));
+        assert_eq!(
+            ir.passo(Vec2::ZERO, 0.0, false),
+            Some(Acao::Viajar(vec2(40.0, 0.0)))
+        );
+        assert_eq!(
+            ir.passo(vec2(36.0, 0.0), 2.0, false),
+            Some(Acao::Aviso("Chegou: x.".into()))
+        );
         assert!(!ir.ativo());
     }
 

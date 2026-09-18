@@ -38,9 +38,15 @@ pub fn apply_block_damage(stats: &PlayerStats, raw_damage: i32) -> i32 {
 /// Tenta consumir stamina pra um block ATIVO (RMB held + ranged + stamina).
 /// Retorna `Some((dano_residual, custo))` se conseguiu, None se faltou stamina.
 /// Caller deve drenar stamina_current pelo `custo` retornado.
-pub fn try_block_active(stats: &PlayerStats, target_stamina: f32, raw_damage: i32) -> Option<(i32, f32)> {
+pub fn try_block_active(
+    stats: &PlayerStats,
+    target_stamina: f32,
+    raw_damage: i32,
+) -> Option<(i32, f32)> {
     let cost = block_stamina_cost(stats);
-    if target_stamina < cost { return None; }
+    if target_stamina < cost {
+        return None;
+    }
     Some((apply_block_damage(stats, raw_damage), cost))
 }
 
@@ -48,7 +54,9 @@ pub fn try_block_active(stats: &PlayerStats, target_stamina: f32, raw_damage: i3
 /// se conseguiu. Anula o dano + staggera atacante.
 pub fn try_parry_active(stats: &PlayerStats, target_stamina: f32) -> Option<(f32, f32)> {
     let cost = parry_stamina_cost(stats);
-    if target_stamina < cost { return None; }
+    if target_stamina < cost {
+        return None;
+    }
     Some((cost, PARRY_STAGGER_S))
 }
 
@@ -68,7 +76,7 @@ mod tests {
     fn res_increases_block_absorption() {
         let mut s = base_player_stats();
         s.block_dmg_reduction = 0.9; // tipo 100 RES
-        // 50 * (1 - 0.9) = 5
+                                     // 50 * (1 - 0.9) = 5
         assert_eq!(apply_block_damage(&s, 50), 5);
     }
 
@@ -76,7 +84,7 @@ mod tests {
     fn block_capped_at_95_percent() {
         let mut s = base_player_stats();
         s.block_dmg_reduction = 0.99; // tentar bypass
-        // capado em 0.95: 100 * 0.05 = 5
+                                      // capado em 0.95: 100 * 0.05 = 5
         assert_eq!(apply_block_damage(&s, 100), 5);
     }
 

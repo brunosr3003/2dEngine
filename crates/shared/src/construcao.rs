@@ -35,7 +35,9 @@ pub struct Rng {
 
 impl Rng {
     pub fn novo(seed: i32) -> Self {
-        let mut r = Self { s: (seed as u32).wrapping_mul(2_654_435_761) | 1 };
+        let mut r = Self {
+            s: (seed as u32).wrapping_mul(2_654_435_761) | 1,
+        };
         // Aquecimento: o primeiro valor herdaria a cara da semente.
         for _ in 0..4 {
             r.next();
@@ -305,8 +307,16 @@ impl Papel {
         use Papel::*;
         matches!(
             self,
-            Ferreiro | Armas | Armaduras | Itens | Identificador | Treinador | Taberna
-                | Alfaiate | Mercador | Alquimista
+            Ferreiro
+                | Armas
+                | Armaduras
+                | Itens
+                | Identificador
+                | Treinador
+                | Taberna
+                | Alfaiate
+                | Mercador
+                | Alquimista
         )
     }
 
@@ -382,7 +392,15 @@ pub struct Voxels {
 
 impl Voxels {
     pub fn novo(x0: i32, y0: i32, z0: i32, nx: i32, ny: i32, nz: i32) -> Self {
-        Self { x0, y0, z0, nx, ny, nz, dados: vec![0; (nx * ny * nz).max(0) as usize] }
+        Self {
+            x0,
+            y0,
+            z0,
+            nx,
+            ny,
+            nz,
+            dados: vec![0; (nx * ny * nz).max(0) as usize],
+        }
     }
 
     pub fn dentro(&self, x: i32, y: i32, z: i32) -> bool {
@@ -399,7 +417,11 @@ impl Voxels {
     }
 
     pub fn get(&self, x: i32, y: i32, z: i32) -> u8 {
-        if self.dentro(x, y, z) { self.dados[self.idx(x, y, z)] } else { 0 }
+        if self.dentro(x, y, z) {
+            self.dados[self.idx(x, y, z)]
+        } else {
+            0
+        }
     }
 
     pub fn bloco(&self, x: i32, y: i32, z: i32) -> BlocoCasa {
@@ -531,7 +553,11 @@ impl Construcao {
     /// Meias-dimensoes do volume no chao, ja' giradas pelo quarto de volta.
     pub fn meia(&self, yaw_q: u8) -> Vec2 {
         let m = Vec2::new(self.v.nx as f32, self.v.nz as f32) * self.escala * 0.5;
-        if yaw_q % 2 == 1 { Vec2::new(m.y, m.x) } else { m }
+        if yaw_q % 2 == 1 {
+            Vec2::new(m.y, m.x)
+        } else {
+            m
+        }
     }
 
     /// Ponto LOCAL (unidades, eixos do volume) pro mundo, dado onde o pivo
@@ -549,8 +575,16 @@ impl Construcao {
             .caixas()
             .into_iter()
             .map(|[x0, y0, z0, x1, y1, z1]| {
-                let a = self.local_para_mundo(pos, yaw_q, Vec3::new(x0 as f32 * e, y0 as f32 * e, z0 as f32 * e));
-                let b = self.local_para_mundo(pos, yaw_q, Vec3::new(x1 as f32 * e, y1 as f32 * e, z1 as f32 * e));
+                let a = self.local_para_mundo(
+                    pos,
+                    yaw_q,
+                    Vec3::new(x0 as f32 * e, y0 as f32 * e, z0 as f32 * e),
+                );
+                let b = self.local_para_mundo(
+                    pos,
+                    yaw_q,
+                    Vec3::new(x1 as f32 * e, y1 as f32 * e, z1 as f32 * e),
+                );
                 (a.min(b), a.max(b))
             })
             .collect()
@@ -563,9 +597,7 @@ impl Construcao {
             let mut x0 = i32::MAX;
             let mut x1 = i32::MIN;
             for x in self.v.x0..self.v.x0 + self.v.nx {
-                if self.v.get(x, y, 0) == 0
-                    && self.v.get(x, 1, 0) == 0
-                    && self.v.get(x, 0, 0) != 0
+                if self.v.get(x, y, 0) == 0 && self.v.get(x, 1, 0) == 0 && self.v.get(x, 0, 0) != 0
                 {
                     x0 = x0.min(x);
                     x1 = x1.max(x);
@@ -613,11 +645,21 @@ fn borda(x: i32, z: i32, nx: i32, nz: i32) -> bool {
 }
 
 fn casa(tipo: TipoCasa, v: Voxels) -> Construcao {
-    Construcao { tipo: Tipo::Casa(tipo), v, escala: B_CASA, altura: 0.0 }
+    Construcao {
+        tipo: Tipo::Casa(tipo),
+        v,
+        escala: B_CASA,
+        altura: 0.0,
+    }
 }
 
 fn prop(tipo: TipoProp, v: Voxels) -> Construcao {
-    Construcao { tipo: Tipo::Prop(tipo), v, escala: B_PROP, altura: 0.0 }
+    Construcao {
+        tipo: Tipo::Prop(tipo),
+        v,
+        escala: B_PROP,
+        altura: 0.0,
+    }
 }
 
 // ───────────────────────────── receitas ──────────────────────────────
@@ -684,7 +726,16 @@ fn enxaimel(v: &mut Voxels, nx: i32, nz: i32, pe: i32, parede: BlocoCasa, com_ca
                 let canto = com_canto && (x == 0 || x == nx - 1) && (z == 0 || z == nz - 1);
                 let prumo = ((z == 0 || z == nz - 1) && x % 4 == 0)
                     || ((x == 0 || x == nx - 1) && z % 4 == 0);
-                v.set(x, y, z, if canto || prumo || y == pe { BlocoCasa::Viga } else { parede });
+                v.set(
+                    x,
+                    y,
+                    z,
+                    if canto || prumo || y == pe {
+                        BlocoCasa::Viga
+                    } else {
+                        parede
+                    },
+                );
             }
         }
     }
@@ -693,7 +744,16 @@ fn enxaimel(v: &mut Voxels, nx: i32, nz: i32, pe: i32, parede: BlocoCasa, com_ca
 fn alicerce(v: &mut Voxels, nx: i32, nz: i32) {
     for x in 0..nx {
         for z in 0..nz {
-            v.set(x, 0, z, if borda(x, z, nx, nz) { BlocoCasa::PedraBase } else { BlocoCasa::Assoalho });
+            v.set(
+                x,
+                0,
+                z,
+                if borda(x, z, nx, nz) {
+                    BlocoCasa::PedraBase
+                } else {
+                    BlocoCasa::Assoalho
+                },
+            );
         }
     }
 }
@@ -748,7 +808,16 @@ fn cabana(seed: i32) -> Construcao {
                 if !canto && r.float() < 0.10 {
                     continue;
                 }
-                v.set(x, y, z, if canto { BlocoCasa::Viga } else { BlocoCasa::Tabua });
+                v.set(
+                    x,
+                    y,
+                    z,
+                    if canto {
+                        BlocoCasa::Viga
+                    } else {
+                        BlocoCasa::Tabua
+                    },
+                );
             }
         }
     }
@@ -759,7 +828,11 @@ fn cabana(seed: i32) -> Construcao {
     }
     v.set(px, 0, 0, BlocoCasa::Assoalho);
     v.set(px + 1, 0, 0, BlocoCasa::Assoalho);
-    let lona = if r.float() < 0.55 { BlocoCasa::Pano } else { BlocoCasa::Ardosia };
+    let lona = if r.float() < 0.55 {
+        BlocoCasa::Pano
+    } else {
+        BlocoCasa::Ardosia
+    };
     for x in -1..=nx {
         for z in -1..=nz {
             v.set(x, pe + 1 + (nz - 1 - z) / 4, z, lona);
@@ -848,8 +921,16 @@ fn casebre(seed: i32, papel: Papel) -> Construcao {
         nz = r.int(11, (nx - 4).min(15));
         pe = r.int(9, 11);
     }
-    let parede = if r.float() < 0.40 { BlocoCasa::Tabua } else { BlocoCasa::Reboco };
-    let telha = if r.float() < 0.35 { BlocoCasa::Ardosia } else { BlocoCasa::Telha };
+    let parede = if r.float() < 0.40 {
+        BlocoCasa::Tabua
+    } else {
+        BlocoCasa::Reboco
+    };
+    let telha = if r.float() < 0.35 {
+        BlocoCasa::Ardosia
+    } else {
+        BlocoCasa::Telha
+    };
 
     let alt_telhado = (nz + 1) / 2 + 1;
     let mut v = Voxels::novo(-1, 0, -1, nx + 2, pe + alt_telhado + 5, nz + 2);
@@ -969,10 +1050,23 @@ fn casebre(seed: i32, papel: Papel) -> Construcao {
 
     // FLOREIRA sob a janela da frente: caixa de tabua com flor.
     for &x0 in &janelas_frente {
-        let flor = if d.float() < 0.5 { BlocoCasa::Flor } else { BlocoCasa::FlorAmarela };
+        let flor = if d.float() < 0.5 {
+            BlocoCasa::Flor
+        } else {
+            BlocoCasa::FlorAmarela
+        };
         for x in x0..=x0 + 1 {
             v.set(x, 1, -1, BlocoCasa::Tabua);
-            v.set(x, 2, -1, if d.float() < 0.3 { BlocoCasa::Folha } else { flor });
+            v.set(
+                x,
+                2,
+                -1,
+                if d.float() < 0.3 {
+                    BlocoCasa::Folha
+                } else {
+                    flor
+                },
+            );
         }
     }
 
@@ -1030,7 +1124,11 @@ fn casebre(seed: i32, papel: Papel) -> Construcao {
     ];
     let tinta = tintas[k.int(0, 4) as usize];
     // RODAPE: a primeira fiada da parede num tom mais escuro.
-    let rodape = if parede == BlocoCasa::Reboco { BlocoCasa::PedraBase } else { BlocoCasa::Viga };
+    let rodape = if parede == BlocoCasa::Reboco {
+        BlocoCasa::PedraBase
+    } else {
+        BlocoCasa::Viga
+    };
     for x in 0..nx {
         for z in 0..nz {
             if borda(x, z, nx, nz) && v.get(x, 1, z) == parede as u8 {
@@ -1069,7 +1167,11 @@ fn casebre(seed: i32, papel: Papel) -> Construcao {
     }
     // HERA subindo numa parede lateral, contornando a janela.
     if k.float() < 0.35 {
-        let (fora, dentro) = if k.float() < 0.5 { (-1, 0) } else { (nx, nx - 1) };
+        let (fora, dentro) = if k.float() < 0.5 {
+            (-1, 0)
+        } else {
+            (nx, nx - 1)
+        };
         let z_ini = k.int(1, (nz - 5).max(2));
         let fim = (z_ini + k.int(3, 6)).min(nz - 1);
         for z in z_ini..fim {
@@ -1098,7 +1200,11 @@ fn casebre(seed: i32, papel: Papel) -> Construcao {
 fn armazem(seed: i32) -> Construcao {
     let mut r = Rng::novo(semente(seed, 31, 1733));
     let (nx, nz, pe) = (r.int(15, 21), r.int(12, 17), r.int(7, 10));
-    let telha = if r.float() < 0.6 { BlocoCasa::Ardosia } else { BlocoCasa::Telha };
+    let telha = if r.float() < 0.6 {
+        BlocoCasa::Ardosia
+    } else {
+        BlocoCasa::Telha
+    };
     let mut v = Voxels::novo(-1, 0, -1, nx + 2, pe + (nz + 3) / 2 + 4, nz + 2);
     alicerce(&mut v, nx, nz);
     enxaimel(&mut v, nx, nz, pe, BlocoCasa::Tabua, false);
@@ -1135,7 +1241,16 @@ fn doca(seed: i32) -> Construcao {
     }
     for z in 0..comp {
         for x in 0..larg {
-            v.set(x, DECK_Y, z, if z & 1 == 0 { BlocoCasa::Assoalho } else { BlocoCasa::Tabua });
+            v.set(
+                x,
+                DECK_Y,
+                z,
+                if z & 1 == 0 {
+                    BlocoCasa::Assoalho
+                } else {
+                    BlocoCasa::Tabua
+                },
+            );
         }
     }
     for x in 0..larg {
@@ -1234,11 +1349,24 @@ fn caixas(seed: i32) -> Construcao {
         for x in 0..lado {
             for z in 0..lado {
                 for y in 0..lado {
-                    let arestas = [x == 0 || x == lado - 1, y == 0 || y == lado - 1, z == 0 || z == lado - 1]
-                        .iter()
-                        .filter(|b| **b)
-                        .count();
-                    v.set(cx + x, cy + y, cz + z, if arestas >= 2 { BlocoCasa::Viga } else { BlocoCasa::Tabua });
+                    let arestas = [
+                        x == 0 || x == lado - 1,
+                        y == 0 || y == lado - 1,
+                        z == 0 || z == lado - 1,
+                    ]
+                    .iter()
+                    .filter(|b| **b)
+                    .count();
+                    v.set(
+                        cx + x,
+                        cy + y,
+                        cz + z,
+                        if arestas >= 2 {
+                            BlocoCasa::Viga
+                        } else {
+                            BlocoCasa::Tabua
+                        },
+                    );
                 }
             }
         }
@@ -1256,7 +1384,16 @@ fn barril(seed: i32) -> Construcao {
                 continue;
             }
             for y in 0..alt {
-                v.set(x, y, z, if y == 1 || y == alt - 2 { BlocoCasa::Viga } else { BlocoCasa::Tabua });
+                v.set(
+                    x,
+                    y,
+                    z,
+                    if y == 1 || y == alt - 2 {
+                        BlocoCasa::Viga
+                    } else {
+                        BlocoCasa::Tabua
+                    },
+                );
             }
         }
     }
@@ -1305,7 +1442,18 @@ fn canteiro(seed: i32) -> Construcao {
                 for y in 2..alt {
                     v.set(x, y, z, BlocoCasa::Folha);
                 }
-                v.set(x, alt, z, if s < 0.42 { a } else if s < 0.68 { b } else { BlocoCasa::FolhaClara });
+                v.set(
+                    x,
+                    alt,
+                    z,
+                    if s < 0.42 {
+                        a
+                    } else if s < 0.68 {
+                        b
+                    } else {
+                        BlocoCasa::FolhaClara
+                    },
+                );
             }
         }
     }
@@ -1323,7 +1471,8 @@ fn arbusto(seed: i32) -> Construcao {
         for z in -rx..=rx {
             for y in 0..=ry * 2 {
                 let dy = y - ry;
-                let d = (x * x + z * z) as f32 / (rx * rx) as f32 + (dy * dy) as f32 / (ry * ry) as f32;
+                let d =
+                    (x * x + z * z) as f32 / (rx * rx) as f32 + (dy * dy) as f32 / (ry * ry) as f32;
                 if d > 1.0 {
                     continue;
                 }
@@ -1382,7 +1531,11 @@ fn arvore_ornamental(seed: i32) -> Construcao {
 /// Vaso de porta com flor.
 fn vaso(seed: i32) -> Construcao {
     let mut r = Rng::novo(semente(seed, 59, 3719));
-    let cor = [BlocoCasa::Telha, BlocoCasa::PinturaAzul, BlocoCasa::PedraBase][r.int(0, 3) as usize];
+    let cor = [
+        BlocoCasa::Telha,
+        BlocoCasa::PinturaAzul,
+        BlocoCasa::PedraBase,
+    ][r.int(0, 3) as usize];
     let flor = FLORES[r.int(0, 5) as usize];
     let mut v = Voxels::novo(-3, 0, -3, 7, 9, 7);
     for x in -2..=2 {
@@ -1392,13 +1545,31 @@ fn vaso(seed: i32) -> Construcao {
                 continue;
             }
             for y in 0..=3 {
-                v.set(x, y, z, if d >= 4 || y == 0 { cor } else { BlocoCasa::Terra });
+                v.set(
+                    x,
+                    y,
+                    z,
+                    if d >= 4 || y == 0 {
+                        cor
+                    } else {
+                        BlocoCasa::Terra
+                    },
+                );
             }
         }
     }
     for (x, z) in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)] {
         v.set(x, 4, z, BlocoCasa::Folha);
-        v.set(x, 5, z, if (x + z) % 2 == 0 { flor } else { BlocoCasa::FolhaClara });
+        v.set(
+            x,
+            5,
+            z,
+            if (x + z) % 2 == 0 {
+                flor
+            } else {
+                BlocoCasa::FolhaClara
+            },
+        );
     }
     v.set(0, 6, 0, flor);
     prop(TipoProp::Vaso, v)
@@ -1436,7 +1607,16 @@ fn barraca(seed: i32) -> Construcao {
     for x in -hx..=hx {
         for z in -hz..=-hz + 2 {
             for y in 0..=6 {
-                v.set(x, y, z, if y == 6 { BlocoCasa::Assoalho } else { BlocoCasa::Tabua });
+                v.set(
+                    x,
+                    y,
+                    z,
+                    if y == 6 {
+                        BlocoCasa::Assoalho
+                    } else {
+                        BlocoCasa::Tabua
+                    },
+                );
             }
         }
         for z in hz - 2..=hz {
@@ -1448,7 +1628,16 @@ fn barraca(seed: i32) -> Construcao {
     for x in -hx - 1..=hx + 1 {
         for z in -hz - 3..=hz + 1 {
             let y = 20 + (z + hz + 3) / 4;
-            v.set(x, y, z, if (x + 64) / 3 % 2 == 0 { lona_a } else { lona_b });
+            v.set(
+                x,
+                y,
+                z,
+                if (x + 64) / 3 % 2 == 0 {
+                    lona_a
+                } else {
+                    lona_b
+                },
+            );
         }
     }
     let mercadorias = [
@@ -1488,7 +1677,16 @@ fn carroca(seed: i32) -> Construcao {
             if x.abs() == 9 || z.abs() == 5 {
                 for y in 5..=7 {
                     let canto = x.abs() == 9 && z.abs() == 5;
-                    v.set(x, y, z, if canto { BlocoCasa::Viga } else { BlocoCasa::Tabua });
+                    v.set(
+                        x,
+                        y,
+                        z,
+                        if canto {
+                            BlocoCasa::Viga
+                        } else {
+                            BlocoCasa::Tabua
+                        },
+                    );
                 }
             }
         }
@@ -1499,7 +1697,16 @@ fn carroca(seed: i32) -> Construcao {
                 for dy in -3i32..=3 {
                     let d = dx * dx + dy * dy;
                     if d <= 10 {
-                        v.set(cx + dx, 3 + dy, lado, if d >= 5 { BlocoCasa::Viga } else { BlocoCasa::Tabua });
+                        v.set(
+                            cx + dx,
+                            3 + dy,
+                            lado,
+                            if d >= 5 {
+                                BlocoCasa::Viga
+                            } else {
+                                BlocoCasa::Tabua
+                            },
+                        );
                     }
                 }
             }
@@ -1509,7 +1716,12 @@ fn carroca(seed: i32) -> Construcao {
         v.set(x, 4, -2, BlocoCasa::Viga);
         v.set(x, 4, 2, BlocoCasa::Viga);
     }
-    let carga = [BlocoCasa::Lenha, BlocoCasa::Fruta, BlocoCasa::Palha, BlocoCasa::FlorAmarela][r.int(0, 4) as usize];
+    let carga = [
+        BlocoCasa::Lenha,
+        BlocoCasa::Fruta,
+        BlocoCasa::Palha,
+        BlocoCasa::FlorAmarela,
+    ][r.int(0, 4) as usize];
     for x in -8..=8 {
         for z in -4..=4 {
             if r.float() < 0.8 {
@@ -1600,7 +1812,16 @@ fn lenha() -> Construcao {
                 for dy in 0..2 {
                     for dz in 0..2 {
                         let ponta = x == -6 || x == 5;
-                        v.set(x, camada * 2 + dy, z0 + dz, if ponta { BlocoCasa::Assoalho } else { BlocoCasa::Lenha });
+                        v.set(
+                            x,
+                            camada * 2 + dy,
+                            z0 + dz,
+                            if ponta {
+                                BlocoCasa::Assoalho
+                            } else {
+                                BlocoCasa::Lenha
+                            },
+                        );
                     }
                 }
             }
@@ -1632,10 +1853,23 @@ fn portal(seed: i32) -> Construcao {
     for x in -8i32..=8 {
         for y in 19..=24 {
             let borda = x.abs() == 8 || y == 19 || y == 24;
-            v.set(x, y, -1, if borda { BlocoCasa::Viga } else { BlocoCasa::Papel });
+            v.set(
+                x,
+                y,
+                -1,
+                if borda {
+                    BlocoCasa::Viga
+                } else {
+                    BlocoCasa::Papel
+                },
+            );
         }
     }
-    let tinta = [BlocoCasa::PinturaVermelha, BlocoCasa::PinturaAzul, BlocoCasa::PinturaVerde][r.int(0, 3) as usize];
+    let tinta = [
+        BlocoCasa::PinturaVermelha,
+        BlocoCasa::PinturaAzul,
+        BlocoCasa::PinturaVerde,
+    ][r.int(0, 3) as usize];
     let mut x = -6;
     while x <= 6 {
         v.set(x, 21, -2, tinta);
@@ -1649,7 +1883,11 @@ fn portal(seed: i32) -> Construcao {
     for px in [-16, 16] {
         for y in 0..24 {
             if r.float() < 0.45 {
-                let b = if r.float() < 0.15 { BlocoCasa::Flor } else { BlocoCasa::Folha };
+                let b = if r.float() < 0.15 {
+                    BlocoCasa::Flor
+                } else {
+                    BlocoCasa::Folha
+                };
                 v.set(px, y, -2, b);
             }
         }
@@ -1669,12 +1907,25 @@ fn quadro_de_avisos(seed: i32) -> Construcao {
     for x in -7i32..=7 {
         for y in 6..=13 {
             let borda = x.abs() == 7 || y == 6 || y == 13;
-            v.set(x, y, 0, if borda { BlocoCasa::Viga } else { BlocoCasa::Tabua });
+            v.set(
+                x,
+                y,
+                0,
+                if borda {
+                    BlocoCasa::Viga
+                } else {
+                    BlocoCasa::Tabua
+                },
+            );
         }
     }
     for _ in 0..5 {
         let (px, py, w, h) = (r.int(-6, 4), r.int(7, 11), r.int(2, 4), r.int(2, 3));
-        let papel = if r.float() < 0.5 { BlocoCasa::Papel } else { BlocoCasa::ToldoPergaminho };
+        let papel = if r.float() < 0.5 {
+            BlocoCasa::Papel
+        } else {
+            BlocoCasa::ToldoPergaminho
+        };
         for dx in 0..w {
             for dy in 0..h {
                 v.set(px + dx, py + dy, -1, papel);
@@ -1719,7 +1970,16 @@ fn boia() -> Construcao {
             for y in 0..=4 {
                 let dy = y - 2;
                 if x * x + z * z + dy * dy <= 5 {
-                    v.set(x, y, z, if y == 2 { BlocoCasa::FlorBranca } else { BlocoCasa::PinturaVermelha });
+                    v.set(
+                        x,
+                        y,
+                        z,
+                        if y == 2 {
+                            BlocoCasa::FlorBranca
+                        } else {
+                            BlocoCasa::PinturaVermelha
+                        },
+                    );
                 }
             }
         }
@@ -1730,8 +1990,12 @@ fn boia() -> Construcao {
 /// Barco a remo amarrado, comprido em X.
 fn barquinho(seed: i32) -> Construcao {
     let mut r = Rng::novo(semente(seed, 83, 4337));
-    let cor = [BlocoCasa::PinturaAzul, BlocoCasa::PinturaVermelha, BlocoCasa::PinturaVerde, BlocoCasa::Tabua]
-        [r.int(0, 4) as usize];
+    let cor = [
+        BlocoCasa::PinturaAzul,
+        BlocoCasa::PinturaVermelha,
+        BlocoCasa::PinturaVerde,
+        BlocoCasa::Tabua,
+    ][r.int(0, 4) as usize];
     let (l, w) = (12, 4);
     let mut v = Voxels::novo(-l - 2, 0, -w - 3, l * 2 + 5, 7, w * 2 + 7);
     for x in -l..=l {
@@ -1786,9 +2050,11 @@ mod testes {
         for seed in 0..40 {
             for papel in [Papel::Casa, Papel::Alquimista, Papel::Ferreiro] {
                 let c = gerar(TipoCasa::Casebre, papel, seed);
-                let total: i32 = c.v.caixas().iter()
-                    .map(|[a, b, cc, d, e, f]| (d - a) * (e - b) * (f - cc))
-                    .sum();
+                let total: i32 =
+                    c.v.caixas()
+                        .iter()
+                        .map(|[a, b, cc, d, e, f]| (d - a) * (e - b) * (f - cc))
+                        .sum();
                 assert_eq!(total as usize, c.v.preenchidos(), "seed {seed}");
             }
         }
@@ -1806,12 +2072,18 @@ mod testes {
                 (TipoCasa::Cabana, Papel::Cartografo),
             ] {
                 let c = gerar(tipo, papel, seed);
-                let lx = c.porta_local().unwrap_or_else(|| panic!("{tipo:?} {seed} sem porta"));
+                let lx = c
+                    .porta_local()
+                    .unwrap_or_else(|| panic!("{tipo:?} {seed} sem porta"));
                 let ix = (lx / c.escala - 1.0).round() as i32;
                 for x in ix..=ix + 1 {
                     for y in 1..=4 {
                         for z in -1..=0 {
-                            assert_eq!(c.v.get(x, y, z), 0, "{tipo:?}/{papel:?} seed {seed}: vao tapado em {x},{y},{z}");
+                            assert_eq!(
+                                c.v.get(x, y, z),
+                                0,
+                                "{tipo:?}/{papel:?} seed {seed}: vao tapado em {x},{y},{z}"
+                            );
                         }
                     }
                 }

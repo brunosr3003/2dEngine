@@ -74,7 +74,10 @@ pub struct Onde<'a> {
 
 /// Indice da ilha de `zona` em `ARQUIPELAGO`.
 pub fn ilha_da_zona(zona: &str) -> Option<u8> {
-    shared::terreno::ARQUIPELAGO.iter().position(|d| d.zona == zona).map(|i| i as u8)
+    shared::terreno::ARQUIPELAGO
+        .iter()
+        .position(|d| d.zona == zona)
+        .map(|i| i as u8)
 }
 
 /// "Geleira, Ermo" — os nomes das ilhas, na ordem do arquipelago.
@@ -83,7 +86,11 @@ pub fn nomes_das_ilhas(ilhas: &[u8]) -> String {
     v.sort_unstable();
     v.dedup();
     v.iter()
-        .filter_map(|i| shared::terreno::ARQUIPELAGO.get(*i as usize).map(|d| d.nome))
+        .filter_map(|i| {
+            shared::terreno::ARQUIPELAGO
+                .get(*i as usize)
+                .map(|d| d.nome)
+        })
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -98,7 +105,11 @@ fn pct(chance: f32) -> String {
 }
 
 fn qtd(a: u32, b: u32) -> String {
-    if a == b { format!("{a}") } else { format!("{a}–{b}") }
+    if a == b {
+        format!("{a}")
+    } else {
+        format!("{a}–{b}")
+    }
 }
 
 fn distancia(eu: Option<Vec2>, p: Vec2) -> u32 {
@@ -143,9 +154,21 @@ pub fn opcoes(item: u16, fontes: &[FonteDeItem], c: &Onde) -> Vec<Opcao> {
 
 fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
     let fora = c.info.is_none();
-    let mut o = Opcao { titulo: String::new(), detalhe: String::new(), aviso: None, ir: None, sem_ir: None, ordem: (5, 0) };
+    let mut o = Opcao {
+        titulo: String::new(),
+        detalhe: String::new(),
+        aviso: None,
+        ir: None,
+        sem_ir: None,
+        ordem: (5, 0),
+    };
     match f {
-        FonteDeItem::Coleta { tipo, chance, qty_min, qty_max } => {
+        FonteDeItem::Coleta {
+            tipo,
+            chance,
+            qty_min,
+            qty_max,
+        } => {
             o.titulo = format!("Coletar: {}", nome_do_tipo(*tipo));
             o.detalhe = format!("{} por coleta · {}", qtd(*qty_min, *qty_max), pct(*chance));
             let regiao = c.info.and_then(|i| {
@@ -158,34 +181,74 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
                 Some(g) => {
                     let pos = vec2(g.centro[0], g.centro[1]);
                     o.ordem = (0, distancia(c.eu, pos));
-                    o.ir = Some(Ir::Alvo(Alvo { objetivo: Objetivo::Coleta(*tipo), pos, raio: g.raio, rotulo: nome_do_tipo(*tipo).to_string() }));
+                    o.ir = Some(Ir::Alvo(Alvo {
+                        objetivo: Objetivo::Coleta(*tipo),
+                        pos,
+                        raio: g.raio,
+                        rotulo: nome_do_tipo(*tipo).to_string(),
+                    }));
                 }
                 None => {
                     // Toda ilha tem arvore e as quatro cores de pedra (a cor
                     // sai da altura relativa ao pico): so' nao ha' perto.
                     o.ordem = (5, 0);
-                    o.sem_ir = Some(if fora { "Fora de ilha" } else { "Não há nesta ilha" }.into());
+                    o.sem_ir = Some(
+                        if fora {
+                            "Fora de ilha"
+                        } else {
+                            "Não há nesta ilha"
+                        }
+                        .into(),
+                    );
                 }
             }
         }
-        FonteDeItem::Mob { kind, nome, chance, qty_min, qty_max, ilhas } => {
+        FonteDeItem::Mob {
+            kind,
+            nome,
+            chance,
+            qty_min,
+            qty_max,
+            ilhas,
+        } => {
             o.titulo = format!("Caçar: {nome}");
             let zona = c.info.and_then(|i| {
-                let com: Vec<_> = i.zonas.iter().filter(|z| chance_na_zona(z, *kind) > 0).collect();
-                let boas: Vec<_> = com.iter().copied().filter(|z| chance_na_zona(z, *kind) >= CHANCE_MINIMA_PCT).collect();
+                let com: Vec<_> = i
+                    .zonas
+                    .iter()
+                    .filter(|z| chance_na_zona(z, *kind) > 0)
+                    .collect();
+                let boas: Vec<_> = com
+                    .iter()
+                    .copied()
+                    .filter(|z| chance_na_zona(z, *kind) >= CHANCE_MINIMA_PCT)
+                    .collect();
                 let lista = if boas.is_empty() { com } else { boas };
-                lista.into_iter().min_by_key(|z| distancia(c.eu, vec2(z.centro[0], z.centro[1])))
+                lista
+                    .into_iter()
+                    .min_by_key(|z| distancia(c.eu, vec2(z.centro[0], z.centro[1])))
             });
             match zona {
                 Some(z) => {
                     let pos = vec2(z.centro[0], z.centro[1]);
-                    o.detalhe = format!("Nv {}–{} · {} por morte · {}", z.lv_min, z.lv_max, pct(*chance), qtd(*qty_min, *qty_max));
+                    o.detalhe = format!(
+                        "Nv {}–{} · {} por morte · {}",
+                        z.lv_min,
+                        z.lv_max,
+                        pct(*chance),
+                        qtd(*qty_min, *qty_max)
+                    );
                     let alto = z.lv_min as u32 > c.nivel + ACIMA_DO_NIVEL;
                     if alto {
                         o.aviso = Some(format!("Zona nível {}+: acima do seu nível", z.lv_min));
                     }
                     o.ordem = (if alto { 3 } else { 0 }, distancia(c.eu, pos));
-                    o.ir = Some(Ir::Alvo(Alvo { objetivo: Objetivo::Combate, pos, raio: z.raio, rotulo: nome.clone() }));
+                    o.ir = Some(Ir::Alvo(Alvo {
+                        objetivo: Objetivo::Combate,
+                        pos,
+                        raio: z.raio,
+                        rotulo: nome.clone(),
+                    }));
                 }
                 None => {
                     o.detalhe = format!("{} por morte · {}", pct(*chance), qtd(*qty_min, *qty_max));
@@ -193,39 +256,81 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
                 }
             }
         }
-        FonteDeItem::ChefeDoMundo { kind, nome, nivel, chance, ilha } => {
+        FonteDeItem::ChefeDoMundo {
+            kind,
+            nome,
+            nivel,
+            chance,
+            ilha,
+        } => {
             o.titulo = format!("Chefe: {nome}");
             o.detalhe = format!("Chefe Nv {nivel} · {}", pct(*chance));
-            match c.info.and_then(|i| i.chefes.iter().find(|ch| ch.kind == *kind)) {
+            match c
+                .info
+                .and_then(|i| i.chefes.iter().find(|ch| ch.kind == *kind))
+            {
                 Some(ch) => {
                     let pos = vec2(ch.centro[0], ch.centro[1]);
                     let alto = *nivel as u32 > c.nivel + ACIMA_DO_NIVEL;
                     if alto {
-                        o.aviso = Some(format!("Nível {nivel}: bem acima do seu — o combate não liga sozinho"));
+                        o.aviso = Some(format!(
+                            "Nível {nivel}: bem acima do seu — o combate não liga sozinho"
+                        ));
                     } else if !ch.vivo {
                         o.aviso = Some("Renascendo".into());
                     }
                     o.ordem = (if alto { 4 } else { 1 }, distancia(c.eu, pos));
-                    let objetivo = if alto { Objetivo::Lugar } else { Objetivo::Combate };
-                    o.ir = Some(Ir::Alvo(Alvo { objetivo, pos, raio: 10.0, rotulo: nome.clone() }));
+                    let objetivo = if alto {
+                        Objetivo::Lugar
+                    } else {
+                        Objetivo::Combate
+                    };
+                    o.ir = Some(Ir::Alvo(Alvo {
+                        objetivo,
+                        pos,
+                        raio: 10.0,
+                        rotulo: nome.clone(),
+                    }));
                 }
                 None => sem_lugar(&mut o, &[*ilha], c),
             }
         }
         FonteDeItem::Vendedor { loja, nome, preco } => {
-            let npc = c.lojas.iter().filter(|l| l.0 == *loja).min_by_key(|l| distancia(c.eu, l.2));
+            let npc = c
+                .lojas
+                .iter()
+                .filter(|l| l.0 == *loja)
+                .min_by_key(|l| distancia(c.eu, l.2));
             o.titulo = format!("Comprar: {}", npc.map_or(nome.as_str(), |n| n.1.as_str()));
             o.detalhe = format!("{preco} de ouro");
             match npc {
                 Some((_, n, pos)) => {
                     o.ordem = (1, distancia(c.eu, *pos));
-                    o.ir = Some(Ir::Alvo(Alvo { objetivo: Objetivo::Npc, pos: *pos, raio: 0.0, rotulo: n.clone() }));
+                    o.ir = Some(Ir::Alvo(Alvo {
+                        objetivo: Objetivo::Npc,
+                        pos: *pos,
+                        raio: 0.0,
+                        rotulo: n.clone(),
+                    }));
                 }
                 // A vila de toda ilha tem o mesmo Alquimista.
-                None => o.sem_ir = Some(if fora { "Fora de ilha" } else { "Não há nesta ilha" }.into()),
+                None => {
+                    o.sem_ir = Some(
+                        if fora {
+                            "Fora de ilha"
+                        } else {
+                            "Não há nesta ilha"
+                        }
+                        .into(),
+                    )
+                }
             }
         }
-        FonteDeItem::Craft { receita, nome, nivel_min } => {
+        FonteDeItem::Craft {
+            receita,
+            nome,
+            nivel_min,
+        } => {
             o.titulo = format!("Criar: {nome}");
             o.detalhe = format!("Craft · nível mínimo {}", (*nivel_min).max(1));
             if c.nivel < *nivel_min as u32 {
@@ -236,7 +341,11 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
         }
         FonteDeItem::Missao { titulo, diaria, .. } => {
             o.titulo = format!("Recompensa: {titulo}");
-            o.detalhe = if *diaria { "Missão diária".into() } else { "Missão".into() };
+            o.detalhe = if *diaria {
+                "Missão diária".into()
+            } else {
+                "Missão".into()
+            };
             o.ordem = (7, 0);
             o.sem_ir = Some("Missão".into());
         }
@@ -249,7 +358,11 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
         FonteDeItem::Calendario { dias } => {
             o.titulo = "Calendário de presença".into();
             let lista: Vec<String> = dias.iter().map(|d| d.to_string()).collect();
-            o.detalhe = format!("Resgate diário · dia{} {}", if dias.len() > 1 { "s" } else { "" }, lista.join(", "));
+            o.detalhe = format!(
+                "Resgate diário · dia{} {}",
+                if dias.len() > 1 { "s" } else { "" },
+                lista.join(", ")
+            );
             o.ordem = (5, 0);
             o.ir = Some(Ir::AbrirCalendario);
         }
@@ -307,14 +420,30 @@ impl OndeObter {
         let f = estilo::fator_texto();
         let p = Self::painel();
         estilo::painel(p);
-        crate::bolsa::icone_do_item(Rect::new(p.x + 14.0 * f, p.y + 10.0 * f, 40.0 * f, 40.0 * f), item, 1.0);
-        estilo::texto_ajustado(&format!("Onde obter: {nome}"), p.x + 62.0 * f, p.y + 36.0 * f, p.w - 130.0 * f, 20, estilo::OURO);
+        crate::bolsa::icone_do_item(
+            Rect::new(p.x + 14.0 * f, p.y + 10.0 * f, 40.0 * f, 40.0 * f),
+            item,
+            1.0,
+        );
+        estilo::texto_ajustado(
+            &format!("Onde obter: {nome}"),
+            p.x + 62.0 * f,
+            p.y + 36.0 * f,
+            p.w - 130.0 * f,
+            20,
+            estilo::OURO,
+        );
         let fechar = Rect::new(p.x + p.w - 50.0 * f, p.y + 8.0 * f, 42.0 * f, 38.0 * f);
         if crate::ui::botao(fechar, "x", true) {
             self.fechar();
             return None;
         }
-        let lista = Rect::new(p.x + 10.0 * f, p.y + 58.0 * f, p.w - 20.0 * f, p.h - 68.0 * f);
+        let lista = Rect::new(
+            p.x + 10.0 * f,
+            p.y + 58.0 * f,
+            p.w - 20.0 * f,
+            p.h - 68.0 * f,
+        );
         let linha = 70.0 * f;
         let mouse = Vec2::from(mouse_position());
         let total = ops.len() as f32 * linha;
@@ -342,22 +471,52 @@ impl OndeObter {
         }
         self.rolagem = self.rolagem.clamp(0.0, max);
         if ops.is_empty() {
-            estilo::texto(lista.x + 8.0, lista.y + 26.0 * f, "Nenhuma fonte conhecida para este item.", 15, estilo::SUAVE);
+            estilo::texto(
+                lista.x + 8.0,
+                lista.y + 26.0 * f,
+                "Nenhuma fonte conhecida para este item.",
+                15,
+                estilo::SUAVE,
+            );
         }
         let mut saida = None;
         for (i, o) in ops.iter().enumerate() {
-            let r = Rect::new(lista.x, lista.y + i as f32 * linha - self.rolagem, lista.w, linha - 6.0 * f);
+            let r = Rect::new(
+                lista.x,
+                lista.y + i as f32 * linha - self.rolagem,
+                lista.w,
+                linha - 6.0 * f,
+            );
             if r.y + r.h < lista.y || r.y > lista.y + lista.h {
                 continue;
             }
             draw_rectangle(r.x, r.y, r.w, r.h, Color::new(1.0, 1.0, 1.0, 0.04));
             let texto_w = r.w - 130.0 * f;
-            estilo::texto_ajustado(&o.titulo, r.x + 12.0 * f, r.y + 22.0 * f, texto_w, 16, estilo::TEXTO);
-            estilo::texto_ajustado(&o.detalhe, r.x + 12.0 * f, r.y + 42.0 * f, texto_w, 13, estilo::SUAVE);
+            estilo::texto_ajustado(
+                &o.titulo,
+                r.x + 12.0 * f,
+                r.y + 22.0 * f,
+                texto_w,
+                16,
+                estilo::TEXTO,
+            );
+            estilo::texto_ajustado(
+                &o.detalhe,
+                r.x + 12.0 * f,
+                r.y + 42.0 * f,
+                texto_w,
+                13,
+                estilo::SUAVE,
+            );
             if let Some(a) = &o.aviso {
                 estilo::texto_ajustado(a, r.x + 12.0 * f, r.y + 59.0 * f, texto_w, 12, VERMELHO);
             }
-            let b = Rect::new(r.x + r.w - 110.0 * f, r.y + (r.h - 40.0 * f) * 0.5, 100.0 * f, 40.0 * f);
+            let b = Rect::new(
+                r.x + r.w - 110.0 * f,
+                r.y + (r.h - 40.0 * f) * 0.5,
+                100.0 * f,
+                40.0 * f,
+            );
             match (&o.ir, &o.sem_ir) {
                 (Some(ir), _) => {
                     let visivel = b.y >= lista.y && b.y + b.h <= lista.y + lista.h;
@@ -374,9 +533,19 @@ impl OndeObter {
                 (None, Some(motivo)) => {
                     let w = estilo::medir(motivo, 13);
                     if motivo == "Em breve" {
-                        crate::menu_missoes::cadeado(vec2(b.x + b.w - w - 20.0 * f, b.center().y), 7.0 * f, estilo::SUAVE);
+                        crate::menu_missoes::cadeado(
+                            vec2(b.x + b.w - w - 20.0 * f, b.center().y),
+                            7.0 * f,
+                            estilo::SUAVE,
+                        );
                     }
-                    estilo::texto(b.x + b.w - w, b.center().y + 5.0 * f, motivo, 13, estilo::SUAVE);
+                    estilo::texto(
+                        b.x + b.w - w,
+                        b.center().y + 5.0 * f,
+                        motivo,
+                        13,
+                        estilo::SUAVE,
+                    );
                 }
                 (None, None) => {}
             }
@@ -418,7 +587,12 @@ fn desenha_lupa(r: Rect, cor: Color) {
     let raio = s * 0.22;
     draw_circle_lines(c.x, c.y, raio, (s * 0.07).max(1.5), cor);
     let d = vec2(0.707, 0.707);
-    estilo::traco(c + d * raio, c + d * (raio + s * 0.24), (s * 0.09).max(2.0), cor);
+    estilo::traco(
+        c + d * raio,
+        c + d * (raio + s * 0.24),
+        (s * 0.09).max(2.0),
+        cor,
+    );
 }
 
 #[cfg(test)]
@@ -429,21 +603,56 @@ mod tests {
     fn info() -> InfoDaIlha {
         InfoDaIlha {
             zonas: vec![
-                ZonaNoMapa { centro: [100.0, 0.0], raio: 40.0, lv_min: 1, lv_max: 3, bichos: vec![(0, 80), (1, 20)] },
-                ZonaNoMapa { centro: [400.0, 0.0], raio: 40.0, lv_min: 30, lv_max: 32, bichos: vec![(5, 100)] },
+                ZonaNoMapa {
+                    centro: [100.0, 0.0],
+                    raio: 40.0,
+                    lv_min: 1,
+                    lv_max: 3,
+                    bichos: vec![(0, 80), (1, 20)],
+                },
+                ZonaNoMapa {
+                    centro: [400.0, 0.0],
+                    raio: 40.0,
+                    lv_min: 30,
+                    lv_max: 32,
+                    bichos: vec![(5, 100)],
+                },
             ],
             recursos: vec![
-                RegiaoNoMapa { centro: [300.0, 0.0], raio: 10.0, tipo: 2, contagem: 5 },
-                RegiaoNoMapa { centro: [50.0, 0.0], raio: 10.0, tipo: 2, contagem: 3 },
+                RegiaoNoMapa {
+                    centro: [300.0, 0.0],
+                    raio: 10.0,
+                    tipo: 2,
+                    contagem: 5,
+                },
+                RegiaoNoMapa {
+                    centro: [50.0, 0.0],
+                    raio: 10.0,
+                    tipo: 2,
+                    contagem: 3,
+                },
             ],
             nomes: HashMap::new(),
             rendimentos: HashMap::new(),
-            chefes: vec![shared::bosses::ChefeNoMapa { kind: 18, nome: "Arquimago".into(), nivel: 60, centro: [900.0, 0.0], vivo: true }],
+            chefes: vec![shared::bosses::ChefeNoMapa {
+                kind: 18,
+                nome: "Arquimago".into(),
+                nivel: 60,
+                centro: [900.0, 0.0],
+                vivo: true,
+            }],
         }
     }
 
     fn onde<'a>(i: &'a InfoDaIlha, lojas: &'a [(u32, String, Vec2)], vinculado: bool) -> Onde<'a> {
-        Onde { info: Some(i), lojas, eu: Some(Vec2::ZERO), nivel: 5, vinculado, ilha_atual: Some(0) }
+        Onde {
+            info: Some(i),
+            lojas,
+            eu: Some(Vec2::ZERO),
+            nivel: 5,
+            vinculado,
+            ilha_atual: Some(0),
+        }
     }
 
     fn alvo(o: &Opcao) -> &Alvo {
@@ -454,24 +663,56 @@ mod tests {
     }
 
     fn mob(kind: u16, nome: &str, chance: f32, ilhas: Vec<u8>) -> FonteDeItem {
-        FonteDeItem::Mob { kind, nome: nome.into(), chance, qty_min: 1, qty_max: 1, ilhas }
+        FonteDeItem::Mob {
+            kind,
+            nome: nome.into(),
+            chance,
+            qty_min: 1,
+            qty_max: 1,
+            ilhas,
+        }
     }
 
     #[test]
     fn coleta_vai_a_regiao_mais_perto_do_tipo_e_liga_so_ele() {
         let i = info();
-        let v = opcoes(1, &[FonteDeItem::Coleta { tipo: 2, chance: 0.2, qty_min: 3, qty_max: 6 }], &onde(&i, &[], false));
+        let v = opcoes(
+            1,
+            &[FonteDeItem::Coleta {
+                tipo: 2,
+                chance: 0.2,
+                qty_min: 3,
+                qty_max: 6,
+            }],
+            &onde(&i, &[], false),
+        );
         let a = alvo(&v[0]);
         assert_eq!((a.objetivo, a.pos), (Objetivo::Coleta(2), vec2(50.0, 0.0)));
-        let sem = opcoes(1, &[FonteDeItem::Coleta { tipo: 4, chance: 0.2, qty_min: 1, qty_max: 1 }], &onde(&i, &[], true));
-        assert_eq!((sem[0].ir.clone(), sem[0].sem_ir.as_deref()), (None, Some("Não há nesta ilha")));
+        let sem = opcoes(
+            1,
+            &[FonteDeItem::Coleta {
+                tipo: 4,
+                chance: 0.2,
+                qty_min: 1,
+                qty_max: 1,
+            }],
+            &onde(&i, &[], true),
+        );
+        assert_eq!(
+            (sem[0].ir.clone(), sem[0].sem_ir.as_deref()),
+            (None, Some("Não há nesta ilha"))
+        );
         assert_eq!(sem.len(), 1, "vinculado: sem Mercado");
     }
 
     #[test]
     fn bicho_liga_combate_e_avisa_nivel_alto() {
         let i = info();
-        let v = opcoes(1, &[mob(5, "Owlbear", 0.25, vec![0, 1])], &onde(&i, &[], true));
+        let v = opcoes(
+            1,
+            &[mob(5, "Owlbear", 0.25, vec![0, 1])],
+            &onde(&i, &[], true),
+        );
         assert_eq!(alvo(&v[0]).objetivo, Objetivo::Combate);
         assert!(v[0].aviso.is_some(), "zona 30+ pro nivel 5");
         let lobo = opcoes(1, &[mob(0, "Lobo", 0.08, vec![0])], &onde(&i, &[], true));
@@ -483,8 +724,15 @@ mod tests {
     fn bicho_de_outra_ilha_diz_qual_e_nao_tem_ir() {
         let i = info();
         let v = opcoes(1, &[mob(9, "Mago", 0.2, vec![2, 3])], &onde(&i, &[], true));
-        assert_eq!((v[0].ir.clone(), v[0].sem_ir.as_deref()), (None, Some(OUTRA_ILHA)));
-        assert!(v[0].detalhe.ends_with("Ilhas: Ermo, Planalto"), "{}", v[0].detalhe);
+        assert_eq!(
+            (v[0].ir.clone(), v[0].sem_ir.as_deref()),
+            (None, Some(OUTRA_ILHA))
+        );
+        assert!(
+            v[0].detalhe.ends_with("Ilhas: Ermo, Planalto"),
+            "{}",
+            v[0].detalhe
+        );
         // Nasce aqui, mas nenhuma zona perto no mapa.
         let aqui = opcoes(1, &[mob(9, "Mago", 0.2, vec![0])], &onde(&i, &[], true));
         assert_eq!(aqui[0].sem_ir.as_deref(), Some("Não há nesta ilha"));
@@ -493,7 +741,17 @@ mod tests {
     #[test]
     fn chefe_de_outra_ilha_diz_a_ilha() {
         let i = info();
-        let v = opcoes(1, &[FonteDeItem::ChefeDoMundo { kind: 13, nome: "Tigre das Neves".into(), nivel: 24, chance: 0.0075, ilha: 1 }], &onde(&i, &[], true));
+        let v = opcoes(
+            1,
+            &[FonteDeItem::ChefeDoMundo {
+                kind: 13,
+                nome: "Tigre das Neves".into(),
+                nivel: 24,
+                chance: 0.0075,
+                ilha: 1,
+            }],
+            &onde(&i, &[], true),
+        );
         assert_eq!(v[0].sem_ir.as_deref(), Some(OUTRA_ILHA));
         assert!(v[0].detalhe.ends_with("Ilha: Geleira"), "{}", v[0].detalhe);
     }
@@ -501,7 +759,13 @@ mod tests {
     #[test]
     fn chefe_muito_acima_so_chega() {
         let i = info();
-        let chefe = FonteDeItem::ChefeDoMundo { kind: 18, nome: "Arquimago".into(), nivel: 60, chance: 0.0025, ilha: 3 };
+        let chefe = FonteDeItem::ChefeDoMundo {
+            kind: 18,
+            nome: "Arquimago".into(),
+            nivel: 60,
+            chance: 0.0025,
+            ilha: 3,
+        };
         let v = opcoes(1, std::slice::from_ref(&chefe), &onde(&i, &[], true));
         assert_eq!(alvo(&v[0]).objetivo, Objetivo::Lugar);
         assert!(v[0].aviso.is_some());
@@ -517,28 +781,66 @@ mod tests {
         let lojas = vec![(3u32, "Alquimista Ana".to_string(), vec2(10.0, 10.0))];
         let fontes = [
             FonteDeItem::DungeonRaid,
-            FonteDeItem::Missao { quest: 7, titulo: "Pedreira".into(), diaria: false },
-            FonteDeItem::Craft { receita: 1000, nome: "Katana".into(), nivel_min: 1 },
-            FonteDeItem::Vendedor { loja: 3, nome: "Poções".into(), preco: 10 },
-            FonteDeItem::Coleta { tipo: 2, chance: 0.5, qty_min: 1, qty_max: 1 },
+            FonteDeItem::Missao {
+                quest: 7,
+                titulo: "Pedreira".into(),
+                diaria: false,
+            },
+            FonteDeItem::Craft {
+                receita: 1000,
+                nome: "Katana".into(),
+                nivel_min: 1,
+            },
+            FonteDeItem::Vendedor {
+                loja: 3,
+                nome: "Poções".into(),
+                preco: 10,
+            },
+            FonteDeItem::Coleta {
+                tipo: 2,
+                chance: 0.5,
+                qty_min: 1,
+                qty_max: 1,
+            },
         ];
         let v = opcoes(2, &fontes, &onde(&i, &lojas, false));
         let titulos: Vec<&str> = v.iter().map(|o| o.titulo.as_str()).collect();
         assert_eq!(
             titulos,
-            vec!["Coletar: Pedra verde", "Comprar: Alquimista Ana", "Criar: Katana", "Mercado", "Recompensa: Pedreira", "Chefe de dungeon (Gruta)"]
+            vec![
+                "Coletar: Pedra verde",
+                "Comprar: Alquimista Ana",
+                "Criar: Katana",
+                "Mercado",
+                "Recompensa: Pedreira",
+                "Chefe de dungeon (Gruta)"
+            ]
         );
         assert_eq!(alvo(&v[1]).objetivo, Objetivo::Npc);
         assert_eq!(v[2].ir, Some(Ir::AbrirCraft(1000)));
         assert_eq!(v[3].ir, Some(Ir::AbrirMercado(2)));
-        assert_eq!(v[5].ir, Some(Ir::AbrirDungeons), "a chave abre a janela das dungeons");
+        assert_eq!(
+            v[5].ir,
+            Some(Ir::AbrirDungeons),
+            "a chave abre a janela das dungeons"
+        );
     }
 
     #[test]
     fn fora_de_ilha_nao_tem_ir_de_lugar() {
-        let c = Onde { info: None, lojas: &[], eu: None, nivel: 1, vinculado: true, ilha_atual: None };
+        let c = Onde {
+            info: None,
+            lojas: &[],
+            eu: None,
+            nivel: 1,
+            vinculado: true,
+            ilha_atual: None,
+        };
         let v = opcoes(1, &[mob(0, "Lobo", 0.1, vec![0])], &c);
-        assert_eq!((v[0].ir.clone(), v[0].sem_ir.as_deref()), (None, Some("Fora de ilha")));
+        assert_eq!(
+            (v[0].ir.clone(), v[0].sem_ir.as_deref()),
+            (None, Some("Fora de ilha"))
+        );
         assert!(v[0].detalhe.ends_with("Ilha: Bosque"));
     }
 

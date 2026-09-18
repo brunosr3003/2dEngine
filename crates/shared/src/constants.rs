@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 103;
+pub const PROTOCOL_VERSION: u16 = 106;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -80,7 +80,11 @@ pub fn qtd_com_fortuna(qtd: u32, agora: i64, ate: i64) -> u32 {
 
 /// Multiplicador da chance de drop com a Sorte (1,0 sem ela).
 pub fn mult_de_sorte(agora: i64, ate: i64) -> f32 {
-    if agora < ate { 1.0 + BONUS_SORTE_PCT as f32 / 100.0 } else { 1.0 }
+    if agora < ate {
+        1.0 + BONUS_SORTE_PCT as f32 / 100.0
+    } else {
+        1.0
+    }
 }
 
 /// Ate' quando um buff de drop vale depois de beber agora (renova, nao soma).
@@ -99,7 +103,11 @@ mod testes_de_buff {
         assert_eq!(qtd_com_fortuna(0, 10, 20), 0);
         assert!((mult_de_sorte(10, 20) - 1.2).abs() < 1e-6);
         assert_eq!(mult_de_sorte(30, 20), 1.0);
-        assert_eq!(renovar_buff(100), 100 + DURACAO_BUFF_S, "renova a hora cheia, sem acumular");
+        assert_eq!(
+            renovar_buff(100),
+            100 + DURACAO_BUFF_S,
+            "renova a hora cheia, sem acumular"
+        );
     }
 }
 
@@ -112,7 +120,7 @@ pub const BOAT_MAX_SPEED: f32 = 32.0;
 /// mesmo SEM vento ou contra vento (vento vira boost, nao condicao). Modelo:
 ///   target = sail_factor × (BASE + BOOST × wind.intensity × alignment) × MAX
 /// Com BASE=0.55 BOOST=0.45 → contra-vento ~55%, a-favor ~100%.
-pub const BOAT_SAIL_BASE: f32  = 0.55;
+pub const BOAT_SAIL_BASE: f32 = 0.55;
 pub const BOAT_WIND_BOOST: f32 = 0.45;
 /// Drag da agua aplicado por segundo (sem vento, barco para em ~10s).
 /// Drag baixo + lerp_k baixo = barco com inercia (accel/decel lentos).
@@ -137,9 +145,9 @@ pub const BOAT_LYLIAN_DECK_HALF_H: f32 = 4.0;
 /// Canhoes: codigos >= CANNON_BASE. slot = code - CANNON_BASE.
 /// Permite barcos com N canhoes sem mexer no enum.
 pub mod station {
-    pub const HELM:        u8 = 0;
-    pub const SAIL:        u8 = 1;
-    pub const ANCHOR:      u8 = 2;
+    pub const HELM: u8 = 0;
+    pub const SAIL: u8 = 1;
+    pub const ANCHOR: u8 = 2;
     pub const CANNON_BASE: u8 = 3;
     pub const MAX_CANNONS: u8 = 16;
 }
@@ -256,7 +264,7 @@ pub const PROJ_SPAWN_OFFSET_Y: f32 = 0.5;
 pub const FIREBALL_FORWARD_OFFSET: f32 = 0.6;
 
 /// Stamina consumida por cada ataque primario (LMB).
-pub const ATTACK_STAMINA_COST: f32 = 0.0;  // basic attack sem custo (hardcore: stamina so' pra dash + sprint)
+pub const ATTACK_STAMINA_COST: f32 = 0.0; // basic attack sem custo (hardcore: stamina so' pra dash + sprint)
 
 /// Velocidade dos inimigos em tiles/segundo.
 pub const ENEMY_SPEED: f32 = 2.0;
@@ -376,7 +384,6 @@ pub const DOWNED_HP_MAX: i32 = 100;
 /// `shared::skills::Conjunto as usize`.
 pub const PROF_COUNT: usize = 4;
 
-
 /// Nivel de proficiencia dado XP acumulado (curva quadratica similar ao XP do player).
 pub const fn proficiency_level(prof_xp: u64) -> u32 {
     let mut lvl = 1u32;
@@ -386,7 +393,9 @@ pub const fn proficiency_level(prof_xp: u64) -> u32 {
         rem -= need;
         lvl += 1;
         need = (lvl as u64) * 50;
-        if lvl >= 100 { break; }
+        if lvl >= 100 {
+            break;
+        }
     }
     lvl
 }
@@ -421,7 +430,9 @@ pub const fn level_of_xp_with_mult(xp: u64, mult: u64) -> u32 {
     while remaining >= need {
         remaining -= need;
         lvl += 1;
-        if lvl >= CHAR_LEVEL_CAP { return CHAR_LEVEL_CAP; }
+        if lvl >= CHAR_LEVEL_CAP {
+            return CHAR_LEVEL_CAP;
+        }
         need = (lvl as u64) * (lvl as u64) * mult;
     }
     lvl
@@ -441,8 +452,12 @@ pub const fn xp_for_level_with_mult(level: u32, mult: u64) -> u64 {
 
 /// Default — server overwrites via DB-loaded mult em runtime, client recebe via
 /// HandshakeAck. Estes wrappers ficam pra call sites legacy/test.
-pub const fn level_of_xp(xp: u64) -> u32 { level_of_xp_with_mult(xp, DEFAULT_XP_MULTIPLIER) }
-pub const fn xp_for_level(level: u32) -> u64 { xp_for_level_with_mult(level, DEFAULT_XP_MULTIPLIER) }
+pub const fn level_of_xp(xp: u64) -> u32 {
+    level_of_xp_with_mult(xp, DEFAULT_XP_MULTIPLIER)
+}
+pub const fn xp_for_level(level: u32) -> u64 {
+    xp_for_level_with_mult(level, DEFAULT_XP_MULTIPLIER)
+}
 
 /// Quantidade de inimigos gerados no inicio.
 pub const ENEMY_START_COUNT: usize = 24;
@@ -480,17 +495,17 @@ pub mod item_id {
     pub const BRACELETE: u16 = 413;
     pub const CINTO: u16 = 414;
     // Moeda / consumíveis
-    pub const GOLD:            u16 = 1;
-    pub const HEALTH_POTION:   u16 = 2;
-    pub const MANA_POTION:     u16 = 8;
-    pub const GREATER_HEAL:    u16 = 9;   // +150 HP
-    pub const GREATER_MANA:    u16 = 10;  // +100 MP
-    pub const STAMINA_POTION:  u16 = 11;  // restaura 100 stamina
-    // Armas
-    // Armaduras
-    // Acessórios
-    // Materiais / loot raro
-    // === Fase D — novas armas + acessórios ===
+    pub const GOLD: u16 = 1;
+    pub const HEALTH_POTION: u16 = 2;
+    pub const MANA_POTION: u16 = 8;
+    pub const GREATER_HEAL: u16 = 9; // +150 HP
+    pub const GREATER_MANA: u16 = 10; // +100 MP
+    pub const STAMINA_POTION: u16 = 11; // restaura 100 stamina
+                                        // Armas
+                                        // Armaduras
+                                        // Acessórios
+                                        // Materiais / loot raro
+                                        // === Fase D — novas armas + acessórios ===
 
     // === Fase E — slots novos (helm/legs/boots/gloves/belt/cape/necklace) ===
 
@@ -498,21 +513,21 @@ pub mod item_id {
 
     // Resources — material de crafting. Tier define poder do item resultante.
     // Drops de mob baseados em loot_item_level: 1-15→t1, 16-30→t2, 31-50→t3, 51+→t4.
-    pub const WOOD_T1:         u16 = 60;
-    pub const WOOD_T2:         u16 = 61;
-    pub const WOOD_T3:         u16 = 62;
-    pub const WOOD_T4:         u16 = 63;
-    pub const LEATHER_T1:      u16 = 64;
-    pub const LEATHER_T2:      u16 = 65;
-    pub const LEATHER_T3:      u16 = 66;
-    pub const LEATHER_T4:      u16 = 67;
+    pub const WOOD_T1: u16 = 60;
+    pub const WOOD_T2: u16 = 61;
+    pub const WOOD_T3: u16 = 62;
+    pub const WOOD_T4: u16 = 63;
+    pub const LEATHER_T1: u16 = 64;
+    pub const LEATHER_T2: u16 = 65;
+    pub const LEATHER_T3: u16 = 66;
+    pub const LEATHER_T4: u16 = 67;
 
     // === Peixes (drop da pesca). Stackáveis, sem slot. O species da
     // EntityKind::Fish(n) mapeia 1:1 pra estes IDs via fish_item_for_species. ===
-    pub const FISH_ANCHOVY:       u16 = 96;  // T1 comum
-    pub const FISH_CLOWNFISH:     u16 = 97;  // T2
-    pub const FISH_SURGEONFISH:   u16 = 98;  // T3
-    pub const FISH_PUFFERFISH:    u16 = 99;  // T4 raro
+    pub const FISH_ANCHOVY: u16 = 96; // T1 comum
+    pub const FISH_CLOWNFISH: u16 = 97; // T2
+    pub const FISH_SURGEONFISH: u16 = 98; // T3
+    pub const FISH_PUFFERFISH: u16 = 99; // T4 raro
 
     // === Materiais de coleta ==========================================
     //
@@ -533,52 +548,52 @@ pub mod item_id {
     //
     // Darksteel e Copper variam com o NIVEL do item, nao com a cor. Glittering
     // Powder nao entra em craft nenhum: ela sobe a cor do material.
-    pub const STEEL: u16                 = 300;
-    pub const DARK_HEART_STONE: u16      = 304;
-    pub const MOON_SHADOW_STONE: u16     = 308;
-    pub const QUINTESSENCE: u16          = 312;
-    pub const EXORCISM_BAUBLE: u16       = 316;
-    pub const PLATINUM: u16              = 320;
+    pub const STEEL: u16 = 300;
+    pub const DARK_HEART_STONE: u16 = 304;
+    pub const MOON_SHADOW_STONE: u16 = 308;
+    pub const QUINTESSENCE: u16 = 312;
+    pub const EXORCISM_BAUBLE: u16 = 316;
+    pub const PLATINUM: u16 = 320;
     pub const ILLUMINATING_FRAGMENT: u16 = 324;
-    pub const ANIMA_STONE: u16           = 328;
+    pub const ANIMA_STONE: u16 = 328;
     /// Chave da arma: 1 por craft.
-    pub const SCALE: u16                 = 332;
+    pub const SCALE: u16 = 332;
     /// Chave da sub-arma: 1 por craft.
-    pub const CLAW: u16                  = 336;
+    pub const CLAW: u16 = 336;
     /// Chave do acessorio: 1 por craft.
-    pub const HORN: u16                  = 340;
+    pub const HORN: u16 = 340;
     /// Chave da armadura: 1 por craft. E' o `LEATHER_T*` que ja' existia.
-    pub const HIDE: u16                  = LEATHER_T1;
+    pub const HIDE: u16 = LEATHER_T1;
 
     /// Sem cor: quantidade varia com o NIVEL do item, nao com a cor dele.
-    pub const COPPER: u16                = 344;
-    pub const DARKSTEEL: u16             = 345;
+    pub const COPPER: u16 = 344;
+    pub const DARKSTEEL: u16 = 345;
     /// Sem cor porque ela E' a cor: e' o que sobe um material de uma cor pra
     /// proxima. Ver `docs/ECONOMIA_DE_CRAFT.md`.
-    pub const GLITTERING_POWDER: u16     = 346;
+    pub const GLITTERING_POWDER: u16 = 346;
     /// Pocao de Experiencia (+30% XP por 1 h). So' sai de recompensa de
     /// missao de area — nao ha' loja que venda. Fora das faixas que a M27
     /// apaga (3..51, 68..71, 80..95, 102..268).
-    pub const XP_POTION: u16             = 350;
+    pub const XP_POTION: u16 = 350;
     /// Pocao de Fortuna (+30% de ouro e cobre de bicho por 1 h) e Pocao de
     /// Sorte (+20% na chance de drop por 1 h). Recompensa de diaria, sem loja.
-    pub const FORTUNA_POTION: u16        = 351;
-    pub const SORTE_POTION: u16          = 352;
+    pub const FORTUNA_POTION: u16 = 351;
+    pub const SORTE_POTION: u16 = 352;
     /// Marcas da Tempestade: toda conclusao de dungeon da' (vinculadas).
     /// Moeda do Selo e, depois, do Mestre das Mares (docs/DUNGEONS_E_RAIDS.md).
-    pub const MARCAS_TEMPESTADE: u16     = 357;
+    pub const MARCAS_TEMPESTADE: u16 = 357;
     /// Selo da Tempestade: entrada do estagio 5 de conteudo 60+. So' craft.
-    pub const SELO_TEMPESTADE: u16       = 358;
+    pub const SELO_TEMPESTADE: u16 = 358;
 
     /// As quatro CHAVES de craft (uma por receita), pelo id da cinza. So'
     /// caem de chefe e de dungeon/raid (`shared::chaves`).
     pub const CHAVES: [u16; 4] = [SCALE, CLAW, HORN, HIDE];
     /// A cor 5 (lendaria) das chaves. Ficou fora da faixa contigua de
     /// `na_cor`: o id seguinte ao roxo ja' e' o proximo material.
-    pub const SCALE_LENDARIA: u16        = 353;
-    pub const CLAW_LENDARIA: u16         = 354;
-    pub const HORN_LENDARIA: u16         = 355;
-    pub const HIDE_LENDARIA: u16         = 356;
+    pub const SCALE_LENDARIA: u16 = 353;
+    pub const CLAW_LENDARIA: u16 = 354;
+    pub const HORN_LENDARIA: u16 = 355;
+    pub const HIDE_LENDARIA: u16 = 356;
 
     /// A chave na cor pedida, 1 cinza .. 4 roxa, 5 lendaria.
     pub const fn chave_na_cor(base: u16, cor: u8) -> u16 {
@@ -595,20 +610,37 @@ pub mod item_id {
 
     /// Toda chave, de toda cor.
     pub fn todas_as_chaves() -> Vec<u16> {
-        CHAVES.iter().flat_map(|&b| (1..=5).map(move |cor| chave_na_cor(b, cor))).collect()
+        CHAVES
+            .iter()
+            .flat_map(|&b| (1..=5).map(move |cor| chave_na_cor(b, cor)))
+            .collect()
     }
 
     /// Todos os materiais que existem nas quatro cores, pelo id da cinza.
     pub const MATERIAIS_COLORIDOS: [u16; 12] = [
-        STEEL, DARK_HEART_STONE, MOON_SHADOW_STONE,
-        QUINTESSENCE, EXORCISM_BAUBLE,
-        PLATINUM, ILLUMINATING_FRAGMENT, ANIMA_STONE,
-        SCALE, CLAW, HORN, HIDE,
+        STEEL,
+        DARK_HEART_STONE,
+        MOON_SHADOW_STONE,
+        QUINTESSENCE,
+        EXORCISM_BAUBLE,
+        PLATINUM,
+        ILLUMINATING_FRAGMENT,
+        ANIMA_STONE,
+        SCALE,
+        CLAW,
+        HORN,
+        HIDE,
     ];
 
     /// O mesmo material, na cor pedida (1 cinza .. 4 roxo).
     pub const fn na_cor(base: u16, cor: u8) -> u16 {
-        base + (if cor < 1 { 0 } else if cor > 4 { 3 } else { cor - 1 }) as u16
+        base + (if cor < 1 {
+            0
+        } else if cor > 4 {
+            3
+        } else {
+            cor - 1
+        }) as u16
     }
 
     /// item_id do peixe pra um species da EntityKind::Fish (1-4). Espécie
@@ -650,13 +682,13 @@ pub fn is_boat_item(id: u16) -> bool {
 /// `roll_instance=true`); senao output e' stackavel puro.
 #[derive(Debug, Clone, Copy)]
 pub struct CraftRecipe {
-    pub id:                u16,
-    pub name:              &'static str,
-    pub inputs:            [(u16, u32); 4],   // (item_id, qty); item_id=0 = vazio
-    pub output_item_id:    u16,
-    pub output_qty:        u32,
+    pub id: u16,
+    pub name: &'static str,
+    pub inputs: [(u16, u32); 4], // (item_id, qty); item_id=0 = vazio
+    pub output_item_id: u16,
+    pub output_qty: u32,
     pub output_item_level: u16,
-    pub roll_instance:     bool,
+    pub roll_instance: bool,
 }
 
 /// Tabela hardcoded. Hot-reload via DB em fase futura.
@@ -664,8 +696,34 @@ pub const CRAFT_RECIPES: &[CraftRecipe] = &[
     // As receitas do equipamento novo (chave + 3 materiais + darksteel +
     // cobre, docs/ECONOMIA_DE_CRAFT.md) pedem 6 ingredientes e ainda nao
     // existem. Sobram os barcos.
-    CraftRecipe { id:201, name:"Esquife",         inputs:[(item_id::WOOD_T1,40),(item_id::LEATHER_T1,20),(0,0),(0,0)], output_item_id:item_id::BOAT_ESQUIFE, output_qty:1, output_item_level:0, roll_instance:false },
-    CraftRecipe { id:200, name:"Lylian Leutard",  inputs:[(item_id::WOOD_T1,100),(item_id::WOOD_T2,100),(item_id::STEEL,100),(item_id::LEATHER_T2,100)], output_item_id:item_id::BOAT_LYLIAN_LEUTARD, output_qty:1, output_item_level:0, roll_instance:false },
+    CraftRecipe {
+        id: 201,
+        name: "Esquife",
+        inputs: [
+            (item_id::WOOD_T1, 40),
+            (item_id::LEATHER_T1, 20),
+            (0, 0),
+            (0, 0),
+        ],
+        output_item_id: item_id::BOAT_ESQUIFE,
+        output_qty: 1,
+        output_item_level: 0,
+        roll_instance: false,
+    },
+    CraftRecipe {
+        id: 200,
+        name: "Lylian Leutard",
+        inputs: [
+            (item_id::WOOD_T1, 100),
+            (item_id::WOOD_T2, 100),
+            (item_id::STEEL, 100),
+            (item_id::LEATHER_T2, 100),
+        ],
+        output_item_id: item_id::BOAT_LYLIAN_LEUTARD,
+        output_qty: 1,
+        output_item_level: 0,
+        roll_instance: false,
+    },
 ];
 
 pub fn craft_recipe(id: u16) -> Option<&'static CraftRecipe> {
@@ -675,9 +733,9 @@ pub fn craft_recipe(id: u16) -> Option<&'static CraftRecipe> {
 /// Estações de craft da praça. O cliente recebe `CraftRecipeNet.station` e
 /// filtra as receitas pela estação que o player abriu.
 pub mod craft_station {
-    pub const FORGE:     u8 = 0; // armas pesadas/médias + armadura placa
-    pub const ATELIER:   u8 = 1; // armas leves/mágicas + armadura couro/pano
-    pub const SMELTER:   u8 = 2; // refino de mineral + couro(=heart)
+    pub const FORGE: u8 = 0; // armas pesadas/médias + armadura placa
+    pub const ATELIER: u8 = 1; // armas leves/mágicas + armadura couro/pano
+    pub const SMELTER: u8 = 2; // refino de mineral + couro(=heart)
     pub const CARPENTRY: u8 = 3; // refino de madeira + barcos
 }
 
@@ -696,7 +754,7 @@ pub fn craft_station_of(output_item_id: u16) -> u8 {
 pub fn boat_kind_of(id: u16) -> Option<u16> {
     match id {
         item_id::BOAT_LYLIAN_LEUTARD => Some(0), // 0 = Lylian Leutard (T2)
-        item_id::BOAT_ESQUIFE        => Some(1), // 1 = Esquife (T1, 1 lugar)
+        item_id::BOAT_ESQUIFE => Some(1),        // 1 = Esquife (T1, 1 lugar)
         _ => None,
     }
 }
@@ -742,10 +800,6 @@ pub fn peso_da_armadura(item_id: u16) -> (f32, f32) {
         _ => (1.0, 0.0),
     }
 }
-
-
-
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum EquipSlot {
@@ -813,16 +867,18 @@ pub const MAX_SKILL_RANK: u8 = 10;
 /// Total para maxar uma skill = 1+1+1+2+2+2+3+3+3+5 = **23 SP**.
 pub const SP_COST_PER_RANK: [u32; 11] = [
     0, // rank 0 = não aprendida
-    1, 1, 1,  // rank 1-3: cheap unlock + early
-    2, 2, 2,  // rank 4-6: meio (rank 5 = milestone)
-    3, 3, 3,  // rank 7-9
-    5,        // rank 10 = capstone
+    1, 1, 1, // rank 1-3: cheap unlock + early
+    2, 2, 2, // rank 4-6: meio (rank 5 = milestone)
+    3, 3, 3, // rank 7-9
+    5, // rank 10 = capstone
 ];
 
 /// Custo em SP pra subir de `current_rank` para `current_rank + 1`.
 /// Retorna 0 se já está no max.
 pub const fn sp_cost_for_next_rank(current_rank: u8) -> u32 {
-    if current_rank >= MAX_SKILL_RANK { return 0; }
+    if current_rank >= MAX_SKILL_RANK {
+        return 0;
+    }
     SP_COST_PER_RANK[(current_rank + 1) as usize]
 }
 
@@ -847,10 +903,10 @@ pub const SKILL_BAR_SLOTS: usize = 6;
 /// Após isso, progressão vira ranking de skills individuais (max rank desbloqueia
 /// passives que aumentam o efeito daquela skill especifica).
 pub const SKILL_TIER_UNLOCKS: [(u8, u8); 4] = [
-    (2,  3),   // T1 — Aprendiz (acessível quase imediato)
-    (6,  8),   // T2 — Adepto
-    (12, 15),  // T3 — Mestre
-    (20, 25),  // T4 — Lendário (cap onde TUDO ta unlocked)
+    (2, 3),   // T1 — Aprendiz (acessível quase imediato)
+    (6, 8),   // T2 — Adepto
+    (12, 15), // T3 — Mestre
+    (20, 25), // T4 — Lendário (cap onde TUDO ta unlocked)
 ];
 
 /// Delta de char_lvl e prof_lvl exigido por rank acima do baseline da skill.
@@ -866,9 +922,13 @@ pub const SKILL_RANK_PROF_DELTA: u8 = 4;
 /// skill. `target_rank` é 1-indexed (1 = aprender, 10 = max). Rank 1 retorna
 /// o baseline; ranks maiores aplicam o delta por rank.
 pub const fn skill_rank_requirements(
-    unlock_char: u8, unlock_prof: u8, target_rank: u8,
+    unlock_char: u8,
+    unlock_prof: u8,
+    target_rank: u8,
 ) -> (u8, u8) {
-    if target_rank <= 1 { return (unlock_char, unlock_prof); }
+    if target_rank <= 1 {
+        return (unlock_char, unlock_prof);
+    }
     let extra = target_rank - 1;
     let char_need = unlock_char.saturating_add(extra.saturating_mul(SKILL_RANK_CHAR_DELTA));
     let prof_need = unlock_prof.saturating_add(extra.saturating_mul(SKILL_RANK_PROF_DELTA));
@@ -969,12 +1029,114 @@ pub const PARRY_WINDOW_S: f32 = 0.25;
 /// RES (Resistencia):  +DEFENSE_PER_RES def, +BLOCK_REDUCTION_PER_RES dmg absorvido em block,
 ///                     -STAMINA_COST_REDUCTION_PER_RES no custo de block/parry
 pub const STAT_POINT_BONUS: [StatAllocBonus; STAT_COUNT] = [
-    /* FOR */ StatAllocBonus { hp_max: 2, mp_max: 0, attack_damage: 1, dex: 0, wis: 0, defense: 0,                speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0, dash_cd_reduction_pct: 0.0 },
-    /* DES */ StatAllocBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 1, wis: 0, defense: 0,                speed_pct: 0.0,                      crit_chance: CRIT_CHANCE_PER_DES,  hp_regen: 0.0,               attack_speed_pct: ATTACK_SPEED_PCT_PER_DES,  stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0, dash_cd_reduction_pct: 0.0 },
-    /* INT */ StatAllocBonus { hp_max: 0, mp_max: 2, attack_damage: 0, dex: 0, wis: 1, defense: 0,                speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0, dash_cd_reduction_pct: 0.0 },
-    /* VIT */ StatAllocBonus { hp_max: 5, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: 0,                speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: HP_REGEN_PER_VIT,  attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0, dash_cd_reduction_pct: 0.0 },
-    /* SPD */ StatAllocBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: 0,                speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: STAMINA_MAX_PER_SPD,stamina_regen: STAMINA_REGEN_PER_SPD,    block_reduction_bonus: 0.0,             stamina_cost_reduction: 0.0, dash_cd_reduction_pct: DASH_CD_REDUCTION_PER_SPD },
-    /* RES */ StatAllocBonus { hp_max: 0, mp_max: 0, attack_damage: 0, dex: 0, wis: 0, defense: DEFENSE_PER_RES,  speed_pct: 0.0,                      crit_chance: 0.0,                  hp_regen: 0.0,               attack_speed_pct: 0.0,                       stamina_max: 0,                  stamina_regen: 0.0,                  block_reduction_bonus: BLOCK_REDUCTION_PER_RES, stamina_cost_reduction: STAMINA_COST_REDUCTION_PER_RES, dash_cd_reduction_pct: 0.0 },
+    /* FOR */
+    StatAllocBonus {
+        hp_max: 2,
+        mp_max: 0,
+        attack_damage: 1,
+        dex: 0,
+        wis: 0,
+        defense: 0,
+        speed_pct: 0.0,
+        crit_chance: 0.0,
+        hp_regen: 0.0,
+        attack_speed_pct: 0.0,
+        stamina_max: 0,
+        stamina_regen: 0.0,
+        block_reduction_bonus: 0.0,
+        stamina_cost_reduction: 0.0,
+        dash_cd_reduction_pct: 0.0,
+    },
+    /* DES */
+    StatAllocBonus {
+        hp_max: 0,
+        mp_max: 0,
+        attack_damage: 0,
+        dex: 1,
+        wis: 0,
+        defense: 0,
+        speed_pct: 0.0,
+        crit_chance: CRIT_CHANCE_PER_DES,
+        hp_regen: 0.0,
+        attack_speed_pct: ATTACK_SPEED_PCT_PER_DES,
+        stamina_max: 0,
+        stamina_regen: 0.0,
+        block_reduction_bonus: 0.0,
+        stamina_cost_reduction: 0.0,
+        dash_cd_reduction_pct: 0.0,
+    },
+    /* INT */
+    StatAllocBonus {
+        hp_max: 0,
+        mp_max: 2,
+        attack_damage: 0,
+        dex: 0,
+        wis: 1,
+        defense: 0,
+        speed_pct: 0.0,
+        crit_chance: 0.0,
+        hp_regen: 0.0,
+        attack_speed_pct: 0.0,
+        stamina_max: 0,
+        stamina_regen: 0.0,
+        block_reduction_bonus: 0.0,
+        stamina_cost_reduction: 0.0,
+        dash_cd_reduction_pct: 0.0,
+    },
+    /* VIT */
+    StatAllocBonus {
+        hp_max: 5,
+        mp_max: 0,
+        attack_damage: 0,
+        dex: 0,
+        wis: 0,
+        defense: 0,
+        speed_pct: 0.0,
+        crit_chance: 0.0,
+        hp_regen: HP_REGEN_PER_VIT,
+        attack_speed_pct: 0.0,
+        stamina_max: 0,
+        stamina_regen: 0.0,
+        block_reduction_bonus: 0.0,
+        stamina_cost_reduction: 0.0,
+        dash_cd_reduction_pct: 0.0,
+    },
+    /* SPD */
+    StatAllocBonus {
+        hp_max: 0,
+        mp_max: 0,
+        attack_damage: 0,
+        dex: 0,
+        wis: 0,
+        defense: 0,
+        speed_pct: 0.0,
+        crit_chance: 0.0,
+        hp_regen: 0.0,
+        attack_speed_pct: 0.0,
+        stamina_max: STAMINA_MAX_PER_SPD,
+        stamina_regen: STAMINA_REGEN_PER_SPD,
+        block_reduction_bonus: 0.0,
+        stamina_cost_reduction: 0.0,
+        dash_cd_reduction_pct: DASH_CD_REDUCTION_PER_SPD,
+    },
+    /* RES */
+    StatAllocBonus {
+        hp_max: 0,
+        mp_max: 0,
+        attack_damage: 0,
+        dex: 0,
+        wis: 0,
+        defense: DEFENSE_PER_RES,
+        speed_pct: 0.0,
+        crit_chance: 0.0,
+        hp_regen: 0.0,
+        attack_speed_pct: 0.0,
+        stamina_max: 0,
+        stamina_regen: 0.0,
+        block_reduction_bonus: BLOCK_REDUCTION_PER_RES,
+        stamina_cost_reduction: STAMINA_COST_REDUCTION_PER_RES,
+        dash_cd_reduction_pct: 0.0,
+    },
 ];
 
 /// Bonus de alocacao de pontos. Difere de `EquipBonus` por incluir
@@ -1019,16 +1181,39 @@ pub struct WeaponScaling {
 /// Scaling por arma equipada. level vem da Proficiency::from_item(weapon_id).
 /// Unarmed (sem arma): usa `unarmed_scaling()`.
 pub const fn weapon_scaling(item_id: u16) -> WeaponScaling {
-    let z = WeaponScaling { hp_max: 0.0, mp_max: 0.0, attack_damage: 0.0, dex: 0.0, wis: 0.0, defense: 0.0 };
+    let z = WeaponScaling {
+        hp_max: 0.0,
+        mp_max: 0.0,
+        attack_damage: 0.0,
+        dex: 0.0,
+        wis: 0.0,
+        defense: 0.0,
+    };
     match item_id {
         // espada e escudo: linha de frente — vida e resistencia
-        item_id::ESPADA_E_ESCUDO => WeaponScaling { hp_max: 1.0, defense: 0.1, ..z },
+        item_id::ESPADA_E_ESCUDO => WeaponScaling {
+            hp_max: 1.0,
+            defense: 0.1,
+            ..z
+        },
         // katana: corte rapido — dano e destreza
-        item_id::KATANA => WeaponScaling { attack_damage: 0.3, dex: 0.2, ..z },
+        item_id::KATANA => WeaponScaling {
+            attack_damage: 0.3,
+            dex: 0.2,
+            ..z
+        },
         // pistolas: a' distancia — destreza
-        item_id::PISTOLAS => WeaponScaling { attack_damage: 0.1, dex: 0.5, ..z },
+        item_id::PISTOLAS => WeaponScaling {
+            attack_damage: 0.1,
+            dex: 0.5,
+            ..z
+        },
         // anel: magia — mana e sabedoria
-        item_id::ANEL_MAGICO => WeaponScaling { mp_max: 1.0, wis: 0.3, ..z },
+        item_id::ANEL_MAGICO => WeaponScaling {
+            mp_max: 1.0,
+            wis: 0.3,
+            ..z
+        },
         _ => z,
     }
 }
@@ -1036,7 +1221,12 @@ pub const fn weapon_scaling(item_id: u16) -> WeaponScaling {
 /// Scaling quando sem arma (Unarmed). Aplicado com Proficiency::Unarmed level.
 pub const fn unarmed_scaling() -> WeaponScaling {
     WeaponScaling {
-        hp_max: 0.0, mp_max: 0.0, attack_damage: 0.2, dex: 0.0, wis: 0.0, defense: 0.0,
+        hp_max: 0.0,
+        mp_max: 0.0,
+        attack_damage: 0.2,
+        dex: 0.0,
+        wis: 0.0,
+        defense: 0.0,
     }
 }
 
@@ -1069,8 +1259,22 @@ pub const MELEE_CONE_HALF_ANGLE: f32 = std::f32::consts::FRAC_PI_3; // 60 graus 
 pub const fn item_bonus(item_id: u16) -> EquipBonus {
     // O que a peca da' SEM instancia (sem rolagem) — a mesma ordem de grandeza
     // do meio do template (`items::item_template`).
-    const fn b(hp_max: i32, mp_max: i32, attack_damage: i32, dex: i32, wis: i32, defense: i32) -> EquipBonus {
-        EquipBonus { hp_max, mp_max, attack_damage, dex, wis, defense }
+    const fn b(
+        hp_max: i32,
+        mp_max: i32,
+        attack_damage: i32,
+        dex: i32,
+        wis: i32,
+        defense: i32,
+    ) -> EquipBonus {
+        EquipBonus {
+            hp_max,
+            mp_max,
+            attack_damage,
+            dex,
+            wis,
+            defense,
+        }
     }
     match item_id {
         // A linha de frente: +60 de vida (era +20) — quem segura a mordida.
@@ -1118,12 +1322,12 @@ pub const INTERACT_RADIUS: f32 = 3.0;
 /// IDs logicos de tile — usados no WorldMap e no TileDef lookup.
 pub mod tile_id {
     pub const FLOOR: u16 = 1;
-    pub const WALL:  u16 = 2;
-    pub const DIRT:  u16 = 3;
+    pub const WALL: u16 = 2;
+    pub const DIRT: u16 = 3;
     pub const WATER: u16 = 4;
     /// Piso de dungeon — visualmente distinto, colisoes iguais a FLOOR.
     pub const DUNGEON_FLOOR: u16 = 5;
-    pub const WOOD:  u16 = 5;
+    pub const WOOD: u16 = 5;
 }
 
 // ── Coleta ────────────────────────────────────────────────────────────────
@@ -1226,21 +1430,25 @@ pub fn nome_do_no(tier: u8) -> &'static str {
 ///
 /// Nao ha' material laranja: sao quatro cores e o teto e' o roxo.
 pub const RENDIMENTO_DA_PEDRA: [[u16; 4]; 5] = [
-    [  0,  0,  0, 0],
-    [100,  0,  0, 0], // cinza: so' cinza
-    [ 80, 20,  0, 0], // verde: verde, com muito mais cinza
-    [ 65, 25, 10, 0], // azul: cinza ainda manda, mais verde que a anterior, um pouco de azul
-    [ 55, 27, 18, 0], // roxo: mesma escada, sem roxo, um pouquinho mais de azul
+    [0, 0, 0, 0],
+    [100, 0, 0, 0],  // cinza: so' cinza
+    [80, 20, 0, 0],  // verde: verde, com muito mais cinza
+    [65, 25, 10, 0], // azul: cinza ainda manda, mais verde que a anterior, um pouco de azul
+    [55, 27, 18, 0], // roxo: mesma escada, sem roxo, um pouquinho mais de azul
 ];
 
 /// Tier do MATERIAL que sai desta pedra neste sorteio. `f` e' 0..1.
 pub fn tier_do_rendimento(tier_da_pedra: u8, f: f32) -> u8 {
     let pesos = RENDIMENTO_DA_PEDRA[(tier_da_pedra as usize).min(4)];
     let total: u16 = pesos.iter().sum();
-    if total == 0 { return 1 }
+    if total == 0 {
+        return 1;
+    }
     let mut alvo = (f.clamp(0.0, 0.999) * total as f32) as u16;
     for (i, p) in pesos.iter().enumerate() {
-        if alvo < *p { return i as u8 + 1 }
+        if alvo < *p {
+            return i as u8 + 1;
+        }
         alvo -= *p;
     }
     1
@@ -1268,7 +1476,6 @@ pub const FISH_ATTRACT_RADIUS: f32 = 6.0;
 pub const FISH_ATTRACT_STRENGTH: f32 = 0.45;
 /// Distância (tiles) peixe ↔ boia pra considerar fisgado (encostou na boia).
 pub const FISH_HOOK_RADIUS: f32 = 0.7;
-
 
 #[cfg(test)]
 mod testes_coleta {
@@ -1306,8 +1513,10 @@ mod testes_coleta {
             for m in 1..=4usize {
                 let esperado = RENDIMENTO_DA_PEDRA[tier as usize][m - 1] as f32 / 100.0;
                 let obtido = conta[m] as f32 / N as f32;
-                assert!((obtido - esperado).abs() < 0.01,
-                    "pedra t{tier} material t{m}: {obtido:.3} != {esperado:.3}");
+                assert!(
+                    (obtido - esperado).abs() < 0.01,
+                    "pedra t{tier} material t{m}: {obtido:.3} != {esperado:.3}"
+                );
             }
         }
     }

@@ -11,8 +11,8 @@ use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct BoatStations {
-    pub helm:   [f32; 2],
-    pub sail:   [f32; 2],
+    pub helm: [f32; 2],
+    pub sail: [f32; 2],
     pub anchor: [f32; 2],
 }
 
@@ -48,17 +48,28 @@ pub struct BoatKindConfig {
 impl BoatKindConfig {
     pub fn cannon_base(&self, slot: usize) -> Option<glam::Vec2> {
         self.cannons.get(slot).and_then(|c| {
-            if c.len() >= 2 { Some(glam::Vec2::new(c[0], c[1])) } else { None }
+            if c.len() >= 2 {
+                Some(glam::Vec2::new(c[0], c[1]))
+            } else {
+                None
+            }
         })
     }
     pub fn cannon_side_angle(&self, slot: usize) -> f32 {
-        self.cannons.get(slot).map(|c| if c.len() >= 3 { c[2] } else { 0.0 }).unwrap_or(0.0)
+        self.cannons
+            .get(slot)
+            .map(|c| if c.len() >= 3 { c[2] } else { 0.0 })
+            .unwrap_or(0.0)
     }
     pub fn cannon_muzzle(&self, slot: usize) -> glam::Vec2 {
         // Se tiver muzzle (indices 3 e 4), usa; senao volta pro base.
         if let Some(c) = self.cannons.get(slot) {
-            if c.len() >= 5 { return glam::Vec2::new(c[3], c[4]); }
-            if c.len() >= 2 { return glam::Vec2::new(c[0], c[1]); }
+            if c.len() >= 5 {
+                return glam::Vec2::new(c[3], c[4]);
+            }
+            if c.len() >= 2 {
+                return glam::Vec2::new(c[0], c[1]);
+            }
         }
         glam::Vec2::ZERO
     }
@@ -68,9 +79,15 @@ impl BoatKindConfig {
     pub fn deck_half(&self) -> Vec2 {
         Vec2::new(self.deck_half_w, self.deck_half_h)
     }
-    pub fn helm_local(&self)   -> Vec2 { Vec2::new(self.stations.helm[0],   self.stations.helm[1]) }
-    pub fn sail_local(&self)   -> Vec2 { Vec2::new(self.stations.sail[0],   self.stations.sail[1]) }
-    pub fn anchor_local(&self) -> Vec2 { Vec2::new(self.stations.anchor[0], self.stations.anchor[1]) }
+    pub fn helm_local(&self) -> Vec2 {
+        Vec2::new(self.stations.helm[0], self.stations.helm[1])
+    }
+    pub fn sail_local(&self) -> Vec2 {
+        Vec2::new(self.stations.sail[0], self.stations.sail[1])
+    }
+    pub fn anchor_local(&self) -> Vec2 {
+        Vec2::new(self.stations.anchor[0], self.stations.anchor[1])
+    }
 
     /// Clampa `p` (local-space do barco) pra dentro do deck E fora dos
     /// obstaculos. Etapas:
@@ -93,7 +110,9 @@ impl BoatKindConfig {
         for _ in 0..3 {
             let mut moved = false;
             for obs in &self.obstacles {
-                if obs.len() < 3 { continue; }
+                if obs.len() < 3 {
+                    continue;
+                }
                 if point_in_polygon(q, obs) {
                     let edge = nearest_point_on_polygon(q, obs);
                     // Pequeno epsilon pra ficar realmente FORA do obstacle.
@@ -102,7 +121,9 @@ impl BoatKindConfig {
                     moved = true;
                 }
             }
-            if !moved { break; }
+            if !moved {
+                break;
+            }
         }
         q
     }
@@ -142,9 +163,9 @@ impl BoatKindConfig {
             // Fall-back final: 4 cantos da bbox.
             let h = self.deck_half();
             check(Vec2::new(-h.x, -h.y))
-                && check(Vec2::new( h.x, -h.y))
-                && check(Vec2::new(-h.x,  h.y))
-                && check(Vec2::new( h.x,  h.y))
+                && check(Vec2::new(h.x, -h.y))
+                && check(Vec2::new(-h.x, h.y))
+                && check(Vec2::new(h.x, h.y))
         }
     }
 
@@ -153,18 +174,15 @@ impl BoatKindConfig {
     /// - vertex) normalizado, somando todos. Aplica fracao por step ate
     /// chegar em pos navegavel ou esgotar tentativas. Sem mudar yaw — eh um
     /// translation-only repel.
-    pub fn repel_from_land(
-        &self,
-        pos: Vec2,
-        yaw: f32,
-        map: &shared::world_gen::WorldMap,
-    ) -> Vec2 {
+    pub fn repel_from_land(&self, pos: Vec2, yaw: f32, map: &shared::world_gen::WorldMap) -> Vec2 {
         let poly = if self.hull_polygon.len() >= 3 {
             &self.hull_polygon
         } else {
             &self.deck_polygon
         };
-        if poly.len() < 3 { return pos; }
+        if poly.len() < 3 {
+            return pos;
+        }
         let cos_y = yaw.cos();
         let sin_y = yaw.sin();
         let mut p = pos;
@@ -172,7 +190,8 @@ impl BoatKindConfig {
             let mut push = Vec2::ZERO;
             let mut count = 0usize;
             for v in poly {
-                let lx = v[0]; let ly = v[1];
+                let lx = v[0];
+                let ly = v[1];
                 let wx = p.x + lx * cos_y - ly * sin_y;
                 let wy = p.y + lx * sin_y + ly * cos_y;
                 if !map.is_navigable(wx.floor() as i32, wy.floor() as i32) {
@@ -186,7 +205,9 @@ impl BoatKindConfig {
                     }
                 }
             }
-            if count == 0 { break; }
+            if count == 0 {
+                break;
+            }
             push /= count as f32;
             p += push * 0.15; // step pequeno pra nao teleportar
         }
@@ -200,9 +221,9 @@ impl BoatKindConfig {
             deck_half_w: shared::constants::BOAT_LYLIAN_DECK_HALF_W,
             deck_half_h: shared::constants::BOAT_LYLIAN_DECK_HALF_H,
             stations: BoatStations {
-                helm:   [0.0, -shared::constants::BOAT_LYLIAN_DECK_HALF_H * 0.85],
-                sail:   [0.0, 0.0],
-                anchor: [0.0,  shared::constants::BOAT_LYLIAN_DECK_HALF_H * 0.85],
+                helm: [0.0, -shared::constants::BOAT_LYLIAN_DECK_HALF_H * 0.85],
+                sail: [0.0, 0.0],
+                anchor: [0.0, shared::constants::BOAT_LYLIAN_DECK_HALF_H * 0.85],
             },
             deck_polygon: Vec::new(),
             hull_polygon: Vec::new(),
@@ -251,7 +272,8 @@ pub fn registry() -> &'static HashMap<u16, BoatKindConfig> {
 
 pub fn get(kind: u16) -> &'static BoatKindConfig {
     let r = registry();
-    r.get(&kind).unwrap_or_else(|| r.get(&0).expect("boat_kind 0 default deve existir"))
+    r.get(&kind)
+        .unwrap_or_else(|| r.get(&0).expect("boat_kind 0 default deve existir"))
 }
 
 // ── Geometry helpers ────────────────────────────────────────────────────────
@@ -260,15 +282,19 @@ pub fn get(kind: u16) -> &'static BoatKindConfig {
 /// [x, y] em ordem (CW ou CCW, qualquer).
 pub fn point_in_polygon(p: Vec2, poly: &[[f32; 2]]) -> bool {
     let n = poly.len();
-    if n < 3 { return false; }
+    if n < 3 {
+        return false;
+    }
     let mut inside = false;
     let mut j = n - 1;
     for i in 0..n {
         let (xi, yi) = (poly[i][0], poly[i][1]);
         let (xj, yj) = (poly[j][0], poly[j][1]);
-        let intersect = (yi > p.y) != (yj > p.y)
-            && p.x < (xj - xi) * (p.y - yi) / (yj - yi + 1e-9) + xi;
-        if intersect { inside = !inside; }
+        let intersect =
+            (yi > p.y) != (yj > p.y) && p.x < (xj - xi) * (p.y - yi) / (yj - yi + 1e-9) + xi;
+        if intersect {
+            inside = !inside;
+        }
         j = i;
     }
     inside
@@ -284,7 +310,10 @@ pub fn nearest_point_on_polygon(p: Vec2, poly: &[[f32; 2]]) -> Vec2 {
         let b = Vec2::new(poly[(i + 1) % n][0], poly[(i + 1) % n][1]);
         let q = closest_on_segment(p, a, b);
         let d2 = (q - p).length_squared();
-        if d2 < best_d2 { best_d2 = d2; best = q; }
+        if d2 < best_d2 {
+            best_d2 = d2;
+            best = q;
+        }
     }
     best
 }
@@ -292,7 +321,9 @@ pub fn nearest_point_on_polygon(p: Vec2, poly: &[[f32; 2]]) -> Vec2 {
 fn closest_on_segment(p: Vec2, a: Vec2, b: Vec2) -> Vec2 {
     let ab = b - a;
     let len2 = ab.length_squared();
-    if len2 < 1e-6 { return a; }
+    if len2 < 1e-6 {
+        return a;
+    }
     let t = ((p - a).dot(ab) / len2).clamp(0.0, 1.0);
     a + ab * t
 }

@@ -43,7 +43,11 @@ enum Fase {
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let arg = |nome: &str, padrao: &str| -> String {
-        args.iter().position(|a| a == nome).and_then(|i| args.get(i + 1)).cloned().unwrap_or_else(|| padrao.to_string())
+        args.iter()
+            .position(|a| a == nome)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+            .unwrap_or_else(|| padrao.to_string())
     };
     let host = arg("--host", "127.0.0.1:9340");
     let user = arg("--user", "bot0");
@@ -53,11 +57,22 @@ async fn main() -> anyhow::Result<()> {
     let pedido_fixo = arg("--pedido", "");
     let pacote: u16 = arg("--pacote", "2").parse()?;
     let secs: u64 = arg("--secs", "60").parse()?;
-    let tag = format!("{:x}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos());
+    let tag = format!(
+        "{:x}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos()
+    );
 
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{host}")).await?;
-    let envia = |m: ClientMessage| -> anyhow::Result<Message> { Ok(Message::Binary(shared::protocol::encode(&m)?)) };
-    ws.send(envia(ClientMessage::Handshake { protocol_version: shared::PROTOCOL_VERSION, client_version: "lojabot".into() })?).await?;
+    let envia = |m: ClientMessage| -> anyhow::Result<Message> {
+        Ok(Message::Binary(shared::protocol::encode(&m)?))
+    };
+    ws.send(envia(ClientMessage::Handshake {
+        protocol_version: shared::PROTOCOL_VERSION,
+        client_version: "lojabot".into(),
+    })?)
+    .await?;
 
     let fim = Instant::now() + Duration::from_secs(secs);
     let mut linhas: Vec<String> = Vec::new();

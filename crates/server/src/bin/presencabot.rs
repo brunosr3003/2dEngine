@@ -21,7 +21,11 @@ use tokio_tungstenite::tungstenite::Message;
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let arg = |nome: &str, padrao: &str| -> String {
-        args.iter().position(|a| a == nome).and_then(|i| args.get(i + 1)).cloned().unwrap_or_else(|| padrao.to_string())
+        args.iter()
+            .position(|a| a == nome)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+            .unwrap_or_else(|| padrao.to_string())
     };
     let tem = |nome: &str| args.iter().any(|a| a == nome);
     let host = arg("--host", "127.0.0.1:9311");
@@ -38,8 +42,14 @@ async fn main() -> anyhow::Result<()> {
     let limpar = tem("--limpar");
 
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{host}")).await?;
-    let envia = |m: ClientMessage| -> anyhow::Result<Message> { Ok(Message::Binary(shared::protocol::encode(&m)?)) };
-    ws.send(envia(ClientMessage::Handshake { protocol_version: shared::PROTOCOL_VERSION, client_version: "presencabot".into() })?).await?;
+    let envia = |m: ClientMessage| -> anyhow::Result<Message> {
+        Ok(Message::Binary(shared::protocol::encode(&m)?))
+    };
+    ws.send(envia(ClientMessage::Handshake {
+        protocol_version: shared::PROTOCOL_VERSION,
+        client_version: "presencabot".into(),
+    })?)
+    .await?;
 
     let fim = Instant::now() + Duration::from_secs(segs);
     let mut no_mundo: Option<Instant> = None;
@@ -134,6 +144,9 @@ async fn main() -> anyhow::Result<()> {
     for l in &linhas {
         println!("   {l}");
     }
-    println!("   ouro={ouro} itens_na_bolsa={} correio={correio:?}", bolsa.len());
+    println!(
+        "   ouro={ouro} itens_na_bolsa={} correio={correio:?}",
+        bolsa.len()
+    );
     Ok(())
 }

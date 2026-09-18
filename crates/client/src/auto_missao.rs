@@ -97,7 +97,13 @@ impl AutoMissao {
     }
 
     pub fn iniciar(&mut self, quest_id: u16, nome: String, agora: f64) {
-        *self = Self { quest: Some(quest_id), nome, etapa: Some(Etapa::PedirDestino), destino: None, desde: agora };
+        *self = Self {
+            quest: Some(quest_id),
+            nome,
+            etapa: Some(Etapa::PedirDestino),
+            destino: None,
+            desde: agora,
+        };
     }
 
     pub fn parar(&mut self) {
@@ -112,21 +118,36 @@ impl AutoMissao {
 
     /// Resposta do servidor. `Some(aviso)` quando a missao nao tem pra onde ir
     /// (a auto missao para).
-    pub fn destino_recebido(&mut self, quest_id: u16, tipo: u8, pos: Vec2, raio: f32, npc: Option<EntityId>, agora: f64) -> Option<String> {
+    pub fn destino_recebido(
+        &mut self,
+        quest_id: u16,
+        tipo: u8,
+        pos: Vec2,
+        raio: f32,
+        npc: Option<EntityId>,
+        agora: f64,
+    ) -> Option<String> {
         if self.quest != Some(quest_id) || self.etapa != Some(Etapa::Esperando) {
             return None;
         }
         if tipo == destino_tipo::NENHUM {
             let nome = std::mem::take(&mut self.nome);
             self.parar();
-            return Some(format!("Auto missão: não sei onde fica o objetivo de \"{nome}\" nesta ilha."));
+            return Some(format!(
+                "Auto missão: não sei onde fica o objetivo de \"{nome}\" nesta ilha."
+            ));
         }
         if tipo == destino_tipo::TRAVA {
             let nome = std::mem::take(&mut self.nome);
             self.parar();
             return Some(format!("História: {nome} para continuar."));
         }
-        self.destino = Some(Destino { tipo, pos, raio, npc });
+        self.destino = Some(Destino {
+            tipo,
+            pos,
+            raio,
+            npc,
+        });
         self.etapa = Some(Etapa::Indo);
         // Ja' pode pedir a viagem no proximo quadro.
         self.desde = agora - RELIGA_S;
@@ -151,15 +172,27 @@ impl AutoMissao {
 
     /// Um quadro. Devolve o que o `main` deve fazer.
     pub fn passo(&mut self, c: Ctx) -> Vec<Acao> {
-        let (Some(id), Some(etapa)) = (self.quest, self.etapa) else { return Vec::new() };
+        let (Some(id), Some(etapa)) = (self.quest, self.etapa) else {
+            return Vec::new();
+        };
         let mut saida = Vec::new();
         // Abandonada (ou entregue por fora): nao ha' o que conduzir. Pedindo o
         // destino nao conta — a missao recem-aceita ainda nao chegou no log, e
         // a abandonada o servidor responde com `NENHUM`.
-        if !c.na_log && !matches!(etapa, Etapa::AguardandoProxima | Etapa::PedirDestino | Etapa::Esperando) {
+        if !c.na_log
+            && !matches!(
+                etapa,
+                Etapa::AguardandoProxima | Etapa::PedirDestino | Etapa::Esperando
+            )
+        {
             let nome = std::mem::take(&mut self.nome);
             self.parar();
-            return vec![Acao::PararAutos, Acao::Aviso(format!("Auto missão encerrada: \"{nome}\" não está mais ativa."))];
+            return vec![
+                Acao::PararAutos,
+                Acao::Aviso(format!(
+                    "Auto missão encerrada: \"{nome}\" não está mais ativa."
+                )),
+            ];
         }
         match etapa {
             Etapa::PedirDestino => {
@@ -211,7 +244,11 @@ impl AutoMissao {
                 } else if !c.viajando && c.agora - self.desde >= RELIGA_S {
                     self.desde = c.agora;
                     // NPC: pare do lado dele, nao em cima.
-                    let alvo = if npc { d.pos + (c.eu - d.pos).normalize_or_zero() * 2.0 } else { d.pos };
+                    let alvo = if npc {
+                        d.pos + (c.eu - d.pos).normalize_or_zero() * 2.0
+                    } else {
+                        d.pos
+                    };
                     saida.push(Acao::Viajar(alvo));
                 }
             }
@@ -243,7 +280,9 @@ impl AutoMissao {
             Etapa::AguardandoProxima => {
                 if c.agora - self.desde > ESPERA_PROXIMA_S {
                     self.parar();
-                    saida.push(Acao::Aviso("Auto missão: o Mestre não tem missão nova agora.".into()));
+                    saida.push(Acao::Aviso(
+                        "Auto missão: o Mestre não tem missão nova agora.".into(),
+                    ));
                 }
             }
             Etapa::NoLugar => {
@@ -276,7 +315,8 @@ impl AutoMissao {
 
     /// O texto da faixa de estado unica do HUD.
     pub fn faixa(&self) -> Option<String> {
-        self.ativo().then(|| format!("AUTO MISSÃO · {} · {}", self.nome, self.texto_da_etapa()))
+        self.ativo()
+            .then(|| format!("AUTO MISSÃO · {} · {}", self.nome, self.texto_da_etapa()))
     }
 }
 
@@ -285,11 +325,23 @@ mod tests {
     use super::*;
 
     fn ctx(eu: Vec2, agora: f64) -> Ctx {
-        Ctx { eu, agora, viajando: false, pronta: false, na_log: true, dialogo_aberto: false, combate_ativo: false, coleta_ativa: false }
+        Ctx {
+            eu,
+            agora,
+            viajando: false,
+            pronta: false,
+            na_log: true,
+            dialogo_aberto: false,
+            combate_ativo: false,
+            coleta_ativa: false,
+        }
     }
 
     fn pede(a: &mut AutoMissao, agora: f64) {
-        assert_eq!(a.passo(ctx(Vec2::ZERO, agora)), vec![Acao::PedirDestino(501)]);
+        assert_eq!(
+            a.passo(ctx(Vec2::ZERO, agora)),
+            vec![Acao::PedirDestino(501)]
+        );
         assert_eq!(a.etapa(), Some(Etapa::Esperando));
     }
 
@@ -301,25 +353,46 @@ mod tests {
         a.iniciar(501, "Conheça o Alquimista".into(), 0.0);
         pede(&mut a, 0.0);
         let alq = vec2(100.0, 0.0);
-        assert!(a.destino_recebido(501, destino_tipo::NPC, alq, 3.0, Some(EntityId(7)), 0.1).is_none());
+        assert!(a
+            .destino_recebido(501, destino_tipo::NPC, alq, 3.0, Some(EntityId(7)), 0.1)
+            .is_none());
         // Longe: viaja pra perto dele.
         let v = a.passo(ctx(Vec2::ZERO, 0.2));
-        assert!(matches!(v.as_slice(), [Acao::Viajar(p)] if p.distance(vec2(98.0, 0.0)) < 0.01), "{v:?}");
+        assert!(
+            matches!(v.as_slice(), [Acao::Viajar(p)] if p.distance(vec2(98.0, 0.0)) < 0.01),
+            "{v:?}"
+        );
         // Viajando: nao repete.
         let mut c = ctx(vec2(50.0, 0.0), 0.5);
         c.viajando = true;
         assert!(a.passo(c).is_empty());
         // Chegou: interage.
-        assert_eq!(a.passo(ctx(vec2(97.0, 0.0), 1.0)), vec![Acao::Interagir(EntityId(7), alq)]);
+        assert_eq!(
+            a.passo(ctx(vec2(97.0, 0.0), 1.0)),
+            vec![Acao::Interagir(EntityId(7), alq)]
+        );
         assert_eq!(a.etapa(), Some(Etapa::Falando));
         let mut c = ctx(vec2(97.0, 0.0), 3.0);
         c.dialogo_aberto = true;
         assert!(a.passo(c).is_empty(), "espera o jogador ler");
         a.conversou(3.5);
-        assert!(a.passo(ctx(vec2(97.0, 0.0), 3.6)).is_empty(), "folga pro servidor atualizar");
-        assert_eq!(a.passo(ctx(vec2(97.0, 0.0), 4.2)), vec![Acao::PedirDestino(501)]);
+        assert!(
+            a.passo(ctx(vec2(97.0, 0.0), 3.6)).is_empty(),
+            "folga pro servidor atualizar"
+        );
+        assert_eq!(
+            a.passo(ctx(vec2(97.0, 0.0), 4.2)),
+            vec![Acao::PedirDestino(501)]
+        );
         // Agora o destino e' o Mestre.
-        a.destino_recebido(501, destino_tipo::ENTREGA, Vec2::ZERO, 3.0, Some(EntityId(9)), 4.3);
+        a.destino_recebido(
+            501,
+            destino_tipo::ENTREGA,
+            Vec2::ZERO,
+            3.0,
+            Some(EntityId(9)),
+            4.3,
+        );
         let mut c = ctx(vec2(97.0, 0.0), 4.4);
         c.pronta = true;
         assert!(matches!(a.passo(c).as_slice(), [Acao::Viajar(_)]));
@@ -334,7 +407,10 @@ mod tests {
         assert!(a.ativo());
         // Chegou a oferta e o main aceitou: comeca a proxima.
         a.iniciar(502, "Lobos na estrada".into(), 11.0);
-        assert_eq!(a.passo(ctx(vec2(1.0, 0.0), 11.0)), vec![Acao::PedirDestino(502)]);
+        assert_eq!(
+            a.passo(ctx(vec2(1.0, 0.0), 11.0)),
+            vec![Acao::PedirDestino(502)]
+        );
     }
 
     /// Luta: vai a' zona, liga o combate, religa se desligar, e com o objetivo
@@ -347,13 +423,19 @@ mod tests {
         let zona = vec2(200.0, 0.0);
         a.destino_recebido(502, destino_tipo::COMBATE, zona, 22.0, None, 0.1);
         assert_eq!(a.passo(ctx(Vec2::ZERO, 0.2)), vec![Acao::Viajar(zona)]);
-        assert_eq!(a.passo(ctx(vec2(185.0, 0.0), 5.0)), vec![Acao::LigarCombate(zona)]);
+        assert_eq!(
+            a.passo(ctx(vec2(185.0, 0.0), 5.0)),
+            vec![Acao::LigarCombate(zona)]
+        );
         assert_eq!(a.etapa(), Some(Etapa::Combatendo));
         let mut c = ctx(vec2(190.0, 0.0), 5.5);
         c.combate_ativo = true;
         assert!(a.passo(c).is_empty());
         // O auto combate caiu (perseguiu longe demais): religa.
-        assert_eq!(a.passo(ctx(vec2(190.0, 0.0), 7.0)), vec![Acao::LigarCombate(zona)]);
+        assert_eq!(
+            a.passo(ctx(vec2(190.0, 0.0), 7.0)),
+            vec![Acao::LigarCombate(zona)]
+        );
         let mut c = ctx(vec2(190.0, 0.0), 20.0);
         c.combate_ativo = true;
         c.pronta = true;
@@ -373,13 +455,22 @@ mod tests {
         assert_eq!(a.passo(ctx(Vec2::ZERO, 0.2)), vec![Acao::Viajar(mirante)]);
         assert!(a.passo(ctx(vec2(40.0, 0.0), 2.0)).is_empty());
         assert_eq!(a.etapa(), Some(Etapa::NoLugar));
-        assert!(a.passo(ctx(vec2(40.0, 0.0), 5.0)).is_empty(), "espera o servidor");
+        assert!(
+            a.passo(ctx(vec2(40.0, 0.0), 5.0)).is_empty(),
+            "espera o servidor"
+        );
         a.passo(ctx(vec2(40.0, 0.0), 9.0));
-        assert_eq!(a.etapa(), Some(Etapa::PedirDestino), "sem mudar, pergunta de novo");
+        assert_eq!(
+            a.etapa(),
+            Some(Etapa::PedirDestino),
+            "sem mudar, pergunta de novo"
+        );
         // Proximo passo e' trava: para e avisa.
         a.iniciar(710, "Alcance o nível 10".into(), 10.0);
         a.passo(ctx(Vec2::ZERO, 10.0));
-        let aviso = a.destino_recebido(710, destino_tipo::TRAVA, Vec2::ZERO, 0.0, None, 10.1).unwrap();
+        let aviso = a
+            .destino_recebido(710, destino_tipo::TRAVA, Vec2::ZERO, 0.0, None, 10.1)
+            .unwrap();
         assert!(aviso.contains("nível 10"), "{aviso}");
         assert!(!a.ativo());
     }
@@ -390,7 +481,10 @@ mod tests {
         a.iniciar(503, "Cobre".into(), 0.0);
         a.passo(ctx(Vec2::ZERO, 0.0));
         a.destino_recebido(503, destino_tipo::COLETA, vec2(10.0, 0.0), 6.0, None, 0.1);
-        assert_eq!(a.passo(ctx(vec2(8.0, 0.0), 0.2)), vec![Acao::LigarColeta(vec2(10.0, 0.0))]);
+        assert_eq!(
+            a.passo(ctx(vec2(8.0, 0.0), 0.2)),
+            vec![Acao::LigarColeta(vec2(10.0, 0.0))]
+        );
         assert_eq!(a.etapa(), Some(Etapa::Coletando));
     }
 
@@ -400,7 +494,9 @@ mod tests {
         a.iniciar(505, "Porto".into(), 0.0);
         a.passo(ctx(Vec2::ZERO, 0.0));
         // Destino desconhecido: para e avisa.
-        assert!(a.destino_recebido(505, destino_tipo::NENHUM, Vec2::ZERO, 0.0, None, 0.1).is_some());
+        assert!(a
+            .destino_recebido(505, destino_tipo::NENHUM, Vec2::ZERO, 0.0, None, 0.1)
+            .is_some());
         assert!(!a.ativo());
         // Recem-aceita ainda fora do log: pede o destino mesmo assim.
         a.iniciar(502, "Lobos".into(), 0.0);
@@ -408,7 +504,14 @@ mod tests {
         c.na_log = false;
         assert_eq!(a.passo(c), vec![Acao::PedirDestino(502)]);
         // Abandonada no meio do caminho: encerra.
-        a.destino_recebido(502, destino_tipo::COMBATE, vec2(50.0, 0.0), 20.0, None, 0.05);
+        a.destino_recebido(
+            502,
+            destino_tipo::COMBATE,
+            vec2(50.0, 0.0),
+            20.0,
+            None,
+            0.05,
+        );
         let mut c = ctx(Vec2::ZERO, 0.1);
         c.na_log = false;
         let v = a.passo(c);
@@ -417,7 +520,9 @@ mod tests {
         // Resposta de outra missao (velha) e' ignorada.
         a.iniciar(502, "Lobos".into(), 0.0);
         a.passo(ctx(Vec2::ZERO, 0.0));
-        assert!(a.destino_recebido(501, destino_tipo::NPC, Vec2::ZERO, 3.0, None, 0.1).is_none());
+        assert!(a
+            .destino_recebido(501, destino_tipo::NPC, Vec2::ZERO, 3.0, None, 0.1)
+            .is_none());
         assert_eq!(a.etapa(), Some(Etapa::Esperando));
         // Servidor mudo: pergunta de novo.
         a.passo(ctx(Vec2::ZERO, 5.0));

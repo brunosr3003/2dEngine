@@ -13,9 +13,11 @@
 mod auth;
 #[cfg(test)]
 mod balanceamento;
+mod barra;
 mod boat_config;
 mod canais;
 mod coleta;
+mod correio_admin;
 mod craft;
 mod economy;
 mod loja;
@@ -24,17 +26,17 @@ mod mapa_ilha;
 mod mercado;
 mod mercado_razao;
 mod mesa;
-mod panoptico;
 mod morte;
-mod barra;
+mod panoptico;
+mod persistence;
 mod preferencias;
 mod presenca;
-mod persistence;
 mod quests;
 mod recipes;
 mod rumo;
 mod session;
 mod skills;
+mod social;
 mod telemetria;
 mod tick;
 mod world;
@@ -61,12 +63,12 @@ async fn main() -> Result<()> {
     }
 
     let addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:9000".to_string());
-    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-        "postgres://solar:solar_dev_123@localhost:5432/mmo_dev".to_string()
-    });
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://solar:solar_dev_123@localhost:5432/mmo_dev".to_string());
 
     // Abre Postgres, carrega personagens existentes, sobe task de escrita.
     let pool = persistence::open_pool(&database_url).await?;
+    social::init(&pool).await?;
     // Telemetria agregada por minuto pro panoptico. Tabelas antes de tudo:
     // o que acontecer no boot ja' conta.
     telemetria::init(&pool).await?;
@@ -90,7 +92,12 @@ async fn main() -> Result<()> {
     let populacao = canais::Populacao::default();
     let saude = canais::Saude::default();
     let diretorio = canais::Diretorio::default();
-    canais::spawn_heartbeat(pool.clone(), populacao.clone(), saude.clone(), diretorio.clone());
+    canais::spawn_heartbeat(
+        pool.clone(),
+        populacao.clone(),
+        saude.clone(),
+        diretorio.clone(),
+    );
 
     // Olho de cima. So' sobe se PANOPTICO_BIND existir — sem ele o processo
     // nao abre porta nenhuma a mais.
@@ -127,16 +134,26 @@ async fn main() -> Result<()> {
 
     let auth_pool = pool.clone();
     tokio::spawn(async move {
-        if let Err(e) = tick::run_world_loop(rx_incoming, characters, save_tx, auth_pool, shutdown_rx, populacao, saude, diretorio).await {
+        if let Err(e) = tick::run_world_loop(
+            rx_incoming,
+            characters,
+            save_tx,
+            auth_pool,
+            shutdown_rx,
+            populacao,
+            saude,
+            diretorio,
+        )
+        .await
+        {
             tracing::error!("world loop exited: {e:?}");
         }
     });
 
     // Aguarda SIGTERM ou SIGINT para shutdown gracioso.
     tokio::spawn(async move {
-        let mut sigterm = tokio::signal::unix::signal(
-            tokio::signal::unix::SignalKind::terminate(),
-        ).expect("failed to register SIGTERM handler");
+        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to register SIGTERM handler");
         tokio::select! {
             _ = sigterm.recv() => tracing::info!("SIGTERM received"),
             _ = tokio::signal::ctrl_c() => tracing::info!("SIGINT received"),

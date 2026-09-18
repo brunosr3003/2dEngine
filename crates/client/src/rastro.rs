@@ -67,7 +67,9 @@ impl Rastro {
     /// quina ele nunca chega a 0,6 do ponto, e o tracejado voltaria pra tras.
     pub fn acompanha(&mut self, eu: Vec2) {
         loop {
-            let Some(&p0) = self.pontos.first() else { break };
+            let Some(&p0) = self.pontos.first() else {
+                break;
+            };
             let passou = self.pontos.get(1).is_some_and(|&p1| {
                 (eu - p0).dot(p1 - p0) > 0.0 && eu.distance(p1) < p0.distance(p1)
             });
@@ -96,7 +98,11 @@ impl Rastro {
 
 /// Pontos 3D ao longo do caminho, rentes ao relevo, ate' `alcance`. Cada um
 /// com o quanto ja' se andou (no plano) desde o comeco.
-pub fn amostrar(caminho: &[Vec2], altura: &dyn Fn(f32, f32) -> f32, alcance: f32) -> Vec<(Vec3, f32)> {
+pub fn amostrar(
+    caminho: &[Vec2],
+    altura: &dyn Fn(f32, f32) -> f32,
+    alcance: f32,
+) -> Vec<(Vec3, f32)> {
     let mut saida: Vec<(Vec3, f32)> = Vec::new();
     let mut andado = 0.0;
     for par in caminho.windows(2) {
@@ -166,15 +172,21 @@ pub fn desenha_distancia(
     altura: &dyn Fn(f32, f32) -> f32,
     cam: &Camera3D,
 ) {
-    let Some(m) = restante(r, eu, destino_final) else { return };
+    let Some(m) = restante(r, eu, destino_final) else {
+        return;
+    };
     if m < 1.0 {
         return;
     }
     // Na viagem longa o numero e' do destino FINAL, entao mora nele; senao no
     // fim da rota.
-    let Some(alvo) = destino_final.or_else(|| r.destino()) else { return };
+    let Some(alvo) = destino_final.or_else(|| r.destino()) else {
+        return;
+    };
     let topo = vec3(alvo.x, altura(alvo.x, alvo.y) + 1.1, alvo.y);
-    let Some(c) = crate::render3d::world_to_screen(cam, topo) else { return };
+    let Some(c) = crate::render3d::world_to_screen(cam, topo) else {
+        return;
+    };
     let texto = formata_distancia(m);
     let largura = texto.chars().count() as f32 * 8.0 + 18.0;
     crate::hud_estilo::painel(Rect::new(c.x - largura * 0.5, c.y - 24.0, largura, 22.0));
@@ -191,7 +203,11 @@ fn ponto_em(amostras: &[(Vec3, f32)], s: f32) -> Vec3 {
         return amostras[amostras.len() - 1].0;
     }
     let ((a, da), (b, db)) = (amostras[i - 1], amostras[i]);
-    let t = if db - da > 1e-6 { (s - da) / (db - da) } else { 0.0 };
+    let t = if db - da > 1e-6 {
+        (s - da) / (db - da)
+    } else {
+        0.0
+    };
     a.lerp(b, t)
 }
 
@@ -216,14 +232,21 @@ pub fn intervalos(total: f32, t: f32, fim: f32) -> Vec<(f32, f32)> {
 
 pub fn tracos(amostras: &[(Vec3, f32)], total: f32, t: f32, largura: f32) -> Vec<[Vec3; 4]> {
     let mut quads = Vec::new();
-    let Some(&(_, fim)) = amostras.last() else { return quads };
+    let Some(&(_, fim)) = amostras.last() else {
+        return quads;
+    };
     if amostras.len() < 2 {
         return quads;
     }
     for (s0, s1) in intervalos(total, t, fim) {
         // O traco dobra junto com o relevo: passa pelas amostras de dentro.
         let mut pts = vec![ponto_em(amostras, s0)];
-        pts.extend(amostras.iter().filter(|(_, d)| *d > s0 && *d < s1).map(|(p, _)| *p));
+        pts.extend(
+            amostras
+                .iter()
+                .filter(|(_, d)| *d > s0 && *d < s1)
+                .map(|(p, _)| *p),
+        );
         pts.push(ponto_em(amostras, s1));
         for par in pts.windows(2) {
             if let Some(q) = faixa(par[0], par[1], largura) {
@@ -271,10 +294,13 @@ fn anel(centro: Vec3, raio: f32, espessura: f32, lados: usize) -> Vec<[Vec3; 4]>
 /// Um "X" no chao.
 fn xis(centro: Vec3, tamanho: f32, largura: f32) -> Vec<[Vec3; 4]> {
     let d = tamanho * 0.5;
-    [(vec3(-d, 0.0, -d), vec3(d, 0.0, d)), (vec3(-d, 0.0, d), vec3(d, 0.0, -d))]
-        .into_iter()
-        .filter_map(|(a, b)| faixa(centro + a, centro + b, largura))
-        .collect()
+    [
+        (vec3(-d, 0.0, -d), vec3(d, 0.0, d)),
+        (vec3(-d, 0.0, d), vec3(d, 0.0, -d)),
+    ]
+    .into_iter()
+    .filter_map(|(a, b)| faixa(centro + a, centro + b, largura))
+    .collect()
 }
 
 /// Quads na cor dada, ja' fatiados no teto de indice.
@@ -285,7 +311,12 @@ fn malhas(quads: &[[Vec3; 4]], cor: [u8; 4], saida: &mut Vec<(Vec<Vertex>, Vec<u
         for q in bloco {
             let i = verts.len() as u16;
             for p in q {
-                verts.push(Vertex { position: *p, uv: vec2(0.0, 0.0), color: cor, normal: Vec4::ZERO });
+                verts.push(Vertex {
+                    position: *p,
+                    uv: vec2(0.0, 0.0),
+                    color: cor,
+                    normal: Vec4::ZERO,
+                });
             }
             idx.extend_from_slice(&[i, i + 1, i + 2, i, i + 2, i + 3]);
         }
@@ -313,7 +344,10 @@ pub fn geometria(
         let total = comprimento(&caminho);
         let amostras = amostrar(&caminho, altura, ALCANCE);
         sombra.extend(tracos(&amostras, total, t, LARGURA * 1.9));
-        let acima: Vec<(Vec3, f32)> = amostras.iter().map(|(p, d)| (*p + vec3(0.0, 0.015, 0.0), *d)).collect();
+        let acima: Vec<(Vec3, f32)> = amostras
+            .iter()
+            .map(|(p, d)| (*p + vec3(0.0, 0.015, 0.0), *d))
+            .collect();
         claro.extend(tracos(&acima, total, t, LARGURA));
     }
     if let Some(d) = r.destino() {
@@ -340,12 +374,22 @@ pub fn geometria(
 }
 
 /// Desenha no passe do mundo (material solido ja' ligado).
-pub fn desenha(r: &Rastro, eu: Vec2, destino_final: Option<Vec2>, altura: &dyn Fn(f32, f32) -> f32, t: f32) {
+pub fn desenha(
+    r: &Rastro,
+    eu: Vec2,
+    destino_final: Option<Vec2>,
+    altura: &dyn Fn(f32, f32) -> f32,
+    t: f32,
+) {
     if !r.ativo() && destino_final.is_none() {
         return;
     }
     for (vertices, indices) in geometria(r, eu, destino_final, altura, t) {
-        draw_mesh(&Mesh { vertices, indices, texture: None });
+        draw_mesh(&Mesh {
+            vertices,
+            indices,
+            texture: None,
+        });
     }
 }
 
@@ -359,9 +403,15 @@ mod tests {
         assert_eq!(restante(&r, Vec2::ZERO, None), None, "parado: sem contador");
         r.define(vec![vec2(10.0, 0.0), vec2(10.0, 10.0)], vec2(10.0, 10.0));
         let m = restante(&r, Vec2::ZERO, None).unwrap();
-        assert!((m - 20.0).abs() < 1e-3, "pelo caminho (20), nao em reta: {m}");
+        assert!(
+            (m - 20.0).abs() < 1e-3,
+            "pelo caminho (20), nao em reta: {m}"
+        );
         let m = restante(&r, Vec2::ZERO, Some(vec2(10.0, 40.0))).unwrap();
-        assert!((m - 50.0).abs() < 1e-3, "viagem alem da rota soma a reta final: {m}");
+        assert!(
+            (m - 50.0).abs() < 1e-3,
+            "viagem alem da rota soma a reta final: {m}"
+        );
         assert_eq!(formata_distancia(0.2), "1 m");
         assert_eq!(formata_distancia(12.3), "13 m");
         assert_eq!(formata_distancia(1540.0), "1,5 km");
@@ -370,7 +420,10 @@ mod tests {
     #[test]
     fn descarta_pontos_alcancados_e_passados() {
         let mut r = Rastro::default();
-        r.define(vec![vec2(5.0, 0.0), vec2(10.0, 0.0), vec2(10.0, 10.0)], vec2(10.0, 10.0));
+        r.define(
+            vec![vec2(5.0, 0.0), vec2(10.0, 0.0), vec2(10.0, 10.0)],
+            vec2(10.0, 10.0),
+        );
         r.acompanha(vec2(0.0, 0.0));
         assert_eq!(r.caminho(vec2(0.0, 0.0)).len(), 4, "nada alcancado ainda");
         r.acompanha(vec2(4.6, 0.0));
@@ -410,33 +463,60 @@ mod tests {
         };
         let (a, b) = (comeco(20.0, 0.0, 0.0), comeco(20.0, 0.1, 0.0));
         let andou = (b - a).rem_euclid(TRACO + VAO);
-        assert!((andou - 0.1 * VELOCIDADE).abs() < 1e-3, "traco nao andou pra frente: {a} -> {b}");
+        assert!(
+            (andou - 0.1 * VELOCIDADE).abs() < 1e-3,
+            "traco nao andou pra frente: {a} -> {b}"
+        );
         // O jogador andou 3 u pela rota: o caminho encurtou pelo COMECO, e os
         // tracos (em coordenada de mundo = s + 3) continuam no mesmo lugar.
         let (x1, x2) = (comeco(20.0, 0.0, 0.0), comeco(17.0, 0.0, 3.0));
-        assert!((x1 - x2).abs() < 1e-3, "traco escorregou com o jogador: {x1} vs {x2}");
+        assert!(
+            (x1 - x2).abs() < 1e-3,
+            "traco escorregou com o jogador: {x1} vs {x2}"
+        );
         // E a geometria usa esses intervalos: ha' traco e ha' vao.
         let plano = |_: f32, _: f32| 0.0;
         let c = [vec2(0.0, 0.0), vec2(20.0, 0.0)];
-        let q = tracos(&amostrar(&c, &plano, ALCANCE), comprimento(&c), 0.0, LARGURA);
-        let coberto: f32 = q.iter().map(|q| (q[0].x - q[1].x).abs().max((q[0].x - q[2].x).abs())).sum();
-        assert!(coberto > 20.0 * 0.5 && coberto < 20.0 * 0.75, "cobertura {coberto}");
+        let q = tracos(
+            &amostrar(&c, &plano, ALCANCE),
+            comprimento(&c),
+            0.0,
+            LARGURA,
+        );
+        let coberto: f32 = q
+            .iter()
+            .map(|q| (q[0].x - q[1].x).abs().max((q[0].x - q[2].x).abs()))
+            .sum();
+        assert!(
+            coberto > 20.0 * 0.5 && coberto < 20.0 * 0.75,
+            "cobertura {coberto}"
+        );
     }
 
     #[test]
     fn geometria_virada_pra_cima_e_dentro_do_teto_de_indice() {
         let mut r = Rastro::default();
         // Zigue-zague longo: muito traco.
-        let pontos: Vec<Vec2> = (1..400).map(|i| vec2(i as f32 * 0.6, if i % 2 == 0 { 0.0 } else { 0.5 })).collect();
+        let pontos: Vec<Vec2> = (1..400)
+            .map(|i| vec2(i as f32 * 0.6, if i % 2 == 0 { 0.0 } else { 0.5 }))
+            .collect();
         let d = *pontos.last().unwrap();
         r.define(pontos, d);
         let relevo = |x: f32, _z: f32| (x * 0.3).sin();
         let g = geometria(&r, vec2(0.0, 0.0), Some(vec2(300.0, 40.0)), &relevo, 1.3);
         assert!(!g.is_empty());
         for (v, i) in &g {
-            assert!(i.len() <= MAX_QUADS * 6 && v.len() <= MAX_QUADS * 4, "{} indices", i.len());
+            assert!(
+                i.len() <= MAX_QUADS * 6 && v.len() <= MAX_QUADS * 4,
+                "{} indices",
+                i.len()
+            );
             for q in i.chunks(6) {
-                let (a, b, c) = (v[q[0] as usize].position, v[q[1] as usize].position, v[q[2] as usize].position);
+                let (a, b, c) = (
+                    v[q[0] as usize].position,
+                    v[q[1] as usize].position,
+                    v[q[2] as usize].position,
+                );
                 assert!((b - a).cross(c - a).y >= -1e-6, "face de costas pra camera");
             }
         }

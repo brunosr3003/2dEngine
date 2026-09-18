@@ -44,13 +44,19 @@ cair mais que o que ela pede em 100, senão o gargalo muda de lugar sozinho:
 
 **A chave não cai da pedra nem de mob.** Escama, Garra, Chifre e Couro saem
 só de chefe, na cor da faixa do conteúdo, com a chance caindo conforme sobe —
-chefe de dungeon/raid 15% cinza (até 19), 10% verde (20–39), 6% azul (40–59),
-3% épica (60–79), 1% lendária (80+); chefe do mundo bem menos (5/3/2/1/0,3%).
+chefe de dungeon/raid 30% cinza (até 19), 10% verde (20–39), 6% azul (40–59),
+3% épica (60–79), 1% lendária (80+); chefe do mundo 12% no início e depois
+3/2/1/0,3%.
 Ver [Loot dos mobs](LOOT_DOS_MOBS.md). O nível mínimo do craft segue as mesmas
 faixas (verde 20, azul 40, épico 60). Continua sendo o regulador real: material
 sobra, chave falta, e é ela que decide quantos itens o mundo produz por hora.
 A chave é a exceção à regra do roxo abaixo: a chave
 épica cai (rara) de conteúdo 60+.
+
+Como fonte alternativa, a loja de TP vende o **Baú de Chaves de Craft** por
+120 TP. Ele dá uma das quatro chaves, com 55% de chance cinza, 28% verde,
+12% azul e 5% roxa. A opção paga reduz o tempo de espera, mas as chaves
+continuam disponíveis gratuitamente em chefes e dungeons.
 
 ## A cor do material: sobe por síntese, não por drop
 

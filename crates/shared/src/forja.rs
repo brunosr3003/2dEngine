@@ -31,8 +31,13 @@ pub enum Grau {
 }
 
 impl Grau {
-    pub const TODOS: [Grau; 5] =
-        [Grau::Comum, Grau::Fino, Grau::Raro, Grau::Epico, Grau::Lendario];
+    pub const TODOS: [Grau; 5] = [
+        Grau::Comum,
+        Grau::Fino,
+        Grau::Raro,
+        Grau::Epico,
+        Grau::Lendario,
+    ];
 
     pub fn de_u8(v: u8) -> Option<Grau> {
         Self::TODOS.get(v.checked_sub(1)? as usize).copied()
@@ -76,7 +81,10 @@ pub struct Degrau {
 
 impl Degrau {
     pub fn novo(grau: Grau, tier: u8) -> Self {
-        Self { grau, tier: tier.clamp(1, TIER_MAX) }
+        Self {
+            grau,
+            tier: tier.clamp(1, TIER_MAX),
+        }
     }
 
     /// O degrau imediatamente acima. `None` no topo (Lendario IV).
@@ -139,7 +147,10 @@ pub fn combinar(a: (Degrau, u8), b: (Degrau, u8)) -> Combinacao {
         return Combinacao::Diferentes;
     }
     match a.0.acima() {
-        Some(degrau) => Combinacao::Subiu { degrau, refino_perdido: a.1.max(b.1) },
+        Some(degrau) => Combinacao::Subiu {
+            degrau,
+            refino_perdido: a.1.max(b.1),
+        },
         None => Combinacao::NoTopo,
     }
 }
@@ -275,7 +286,11 @@ pub fn pecas_por(alvo: u8) -> f64 {
     for k in (REFINO_SEGURO + 1)..=alvo.min(REFINO_MAX) {
         p *= chance_de_refino(k) as f64 / 100.0;
     }
-    if p <= 0.0 { f64::INFINITY } else { 1.0 / p }
+    if p <= 0.0 {
+        f64::INFINITY
+    } else {
+        1.0 / p
+    }
 }
 
 /// Tentativas gastas em media por peca ate' ela chegar ao alvo ou morrer
@@ -320,11 +335,17 @@ mod testes {
         let d = |g, t| Degrau::novo(g, t);
         assert_eq!(
             combinar((d(Grau::Raro, 2), 0), (d(Grau::Raro, 2), 0)),
-            Combinacao::Subiu { degrau: d(Grau::Raro, 3), refino_perdido: 0 }
+            Combinacao::Subiu {
+                degrau: d(Grau::Raro, 3),
+                refino_perdido: 0
+            }
         );
         assert_eq!(
             combinar((d(Grau::Raro, 4), 5), (d(Grau::Raro, 4), 9)),
-            Combinacao::Subiu { degrau: d(Grau::Epico, 1), refino_perdido: 9 }
+            Combinacao::Subiu {
+                degrau: d(Grau::Epico, 1),
+                refino_perdido: 9
+            }
         );
         assert_eq!(
             combinar((d(Grau::Lendario, 4), 0), (d(Grau::Lendario, 4), 0)),
@@ -450,11 +471,13 @@ mod testes_escada {
         let sete = e.iter().find(|x| x.alvo == 7).unwrap();
         assert!(
             (sete.pecas - 17.0).abs() < 1.0,
-            "Raro +7 pede {:.1} pecas, esperado ~17", sete.pecas
+            "Raro +7 pede {:.1} pecas, esperado ~17",
+            sete.pecas
         );
         assert!(
             (90.0..130.0).contains(&sete.horas),
-            "Raro +7 sai por {:.0} h de mineracao, esperado ~106", sete.horas
+            "Raro +7 sai por {:.0} h de mineracao, esperado ~106",
+            sete.horas
         );
     }
 
@@ -467,7 +490,8 @@ mod testes_escada {
                 assert!(
                     (e.pecas - 1.0).abs() < 1e-9,
                     "{grau:?} +{}: {:.2} pecas dentro da faixa segura",
-                    e.alvo, e.pecas
+                    e.alvo,
+                    e.pecas
                 );
             }
         }
@@ -537,10 +561,15 @@ mod testes_custo_total {
         assert_eq!(raro4.custo_em(base), 2048);
 
         let c = custo_total(raro4, 7, base);
-        assert!((c.pecas_do_degrau - 16.67).abs() < 0.5, "{}", c.pecas_do_degrau);
+        assert!(
+            (c.pecas_do_degrau - 16.67).abs() < 0.5,
+            "{}",
+            c.pecas_do_degrau
+        );
         assert!(
             (c.pecas_base - 34_133.0).abs() < 200.0,
-            "Raro IV +7 deu {:.0} pecas de base, esperado ~34.100", c.pecas_base
+            "Raro IV +7 deu {:.0} pecas de base, esperado ~34.100",
+            c.pecas_base
         );
         // O darksteel NAO muda com o tier: ele e' por tentativa, e a tentativa
         // cobra pelo grau. Quem paga o tier sao as pecas.
@@ -561,7 +590,8 @@ mod testes_custo_total {
                 if anterior > 0.0 {
                     assert!(
                         (c.pecas_base / anterior - 2.0).abs() < 1e-9,
-                        "{d}: {} nao e' o dobro de {anterior}", c.pecas_base
+                        "{d}: {} nao e' o dobro de {anterior}",
+                        c.pecas_base
                     );
                 }
                 anterior = c.pecas_base;

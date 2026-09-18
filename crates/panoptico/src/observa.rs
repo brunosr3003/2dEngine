@@ -35,7 +35,9 @@ async fn uma(pool: &PgPool, sql: &str) -> Option<PgRow> {
 }
 
 fn agora_unix() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
 }
 
 /// `characters.updated` guarda unix em segundos ou em ms, conforme a epoca do
@@ -49,10 +51,13 @@ pub fn para_segundos(v: i64) -> i64 {
 }
 
 async fn multiplicador_de_xp(pool: &PgPool) -> u64 {
-    uma(pool, "SELECT value FROM server_config WHERE key = 'xp_multiplier'")
-        .await
-        .and_then(|r| campo::<String>(&r, 0).parse().ok())
-        .unwrap_or(shared::DEFAULT_XP_MULTIPLIER)
+    uma(
+        pool,
+        "SELECT value FROM server_config WHERE key = 'xp_multiplier'",
+    )
+    .await
+    .and_then(|r| campo::<String>(&r, 0).parse().ok())
+    .unwrap_or(shared::DEFAULT_XP_MULTIPLIER)
 }
 
 async fn nomes_de_itens(pool: &PgPool) -> HashMap<i64, String> {
@@ -76,7 +81,10 @@ fn e_historia(id: u16) -> bool {
 }
 
 fn capitulo_de(id: u16) -> Option<&'static str> {
-    shared::historia::CAPITULOS.iter().find(|c| (c.primeiro..=c.ultimo).contains(&id)).map(|c| c.nome)
+    shared::historia::CAPITULOS
+        .iter()
+        .find(|c| (c.primeiro..=c.ultimo).contains(&id))
+        .map(|c| c.nome)
 }
 
 /// Categoria de uma missao, pro painel.
@@ -118,7 +126,12 @@ pub async fn jogadores(pool: &PgPool, online: &HashMap<String, String>) -> Value
 
     // Historia: onde cada um esta' na cadeia.
     let mut historia: HashMap<String, (u16, u8, u32)> = HashMap::new(); // (atual, status, concluidas)
-    for r in linhas(pool, "SELECT char_name, quest_id, status::int FROM character_quests").await {
+    for r in linhas(
+        pool,
+        "SELECT char_name, quest_id, status::int FROM character_quests",
+    )
+    .await
+    {
         let nome: String = campo(&r, 0);
         let id = campo::<i32>(&r, 1).clamp(0, u16::MAX as i32) as u16;
         let status = campo::<i32>(&r, 2) as u8;
@@ -147,7 +160,8 @@ pub async fn jogadores(pool: &PgPool, online: &HashMap<String, String>) -> Value
     .await;
 
     let hoje = shared::dungeon::dia(agora);
-    let (mut ativos_24h, mut ativos_7d, mut buffs, mut mortes_pend, mut xp_pend, mut eco_auto) = (0, 0, 0, 0, 0i64, 0);
+    let (mut ativos_24h, mut ativos_7d, mut buffs, mut mortes_pend, mut xp_pend, mut eco_auto) =
+        (0, 0, 0, 0, 0i64, 0);
     let mut por_zona: BTreeMap<String, (i64, i64)> = BTreeMap::new();
     let mut lista = Vec::with_capacity(rs.len());
     for r in &rs {
@@ -162,26 +176,45 @@ pub async fn jogadores(pool: &PgPool, online: &HashMap<String, String>) -> Value
             ativos_7d += 1;
         }
         let zona: String = campo(r, 5);
-        let z = por_zona.entry(if zona.is_empty() { "?".into() } else { zona.clone() }).or_default();
+        let z = por_zona
+            .entry(if zona.is_empty() {
+                "?".into()
+            } else {
+                zona.clone()
+            })
+            .or_default();
         z.0 += 1;
         let canal = online.get(&nome).cloned();
         if canal.is_some() {
             z.1 += 1;
         }
-        let (bxp, bfor, bsor) = (campo::<i64>(r, 8) - agora, campo::<i64>(r, 9) - agora, campo::<i64>(r, 10) - agora);
+        let (bxp, bfor, bsor) = (
+            campo::<i64>(r, 8) - agora,
+            campo::<i64>(r, 9) - agora,
+            campo::<i64>(r, 10) - agora,
+        );
         if bxp > 0 || bfor > 0 || bsor > 0 {
             buffs += 1;
         }
         let mortes: Vec<Value> = serde_json::from_str(&campo::<String>(r, 11)).unwrap_or_default();
-        let xp_mortes: i64 = mortes.iter().filter_map(|m| m.get("xp").and_then(Value::as_i64)).sum();
+        let xp_mortes: i64 = mortes
+            .iter()
+            .filter_map(|m| m.get("xp").and_then(Value::as_i64))
+            .sum();
         mortes_pend += mortes.len() as i64;
         xp_pend += xp_mortes;
-        let prefs: shared::protocol::Preferencias = serde_json::from_str(&campo::<String>(r, 13)).unwrap_or_default();
+        let prefs: shared::protocol::Preferencias =
+            serde_json::from_str(&campo::<String>(r, 13)).unwrap_or_default();
         if prefs.economia_auto_min.is_some_and(|m| m > 0) {
             eco_auto += 1;
         }
-        let mut dg: shared::dungeon::DadosDungeon = serde_json::from_str(&campo::<String>(r, 14)).unwrap_or_default();
-        let compradas_hoje = if dg.gruta.dia == hoje { dg.gruta.compradas } else { 0 };
+        let mut dg: shared::dungeon::DadosDungeon =
+            serde_json::from_str(&campo::<String>(r, 14)).unwrap_or_default();
+        let compradas_hoje = if dg.gruta.dia == hoje {
+            dg.gruta.compradas
+        } else {
+            0
+        };
         let vitorias: u32 = dg.vitorias.iter().map(|v| v.2).sum();
         let maior = dg.liberado.iter().map(|l| l.1).max().unwrap_or(0);
         dg.correio.truncate(200);
@@ -338,7 +371,14 @@ pub async fn mercado(realm: &PgPool, central: Option<&PgPool>) -> Value {
     )
     .await
     .iter()
-    .map(|r| json!([campo::<i64>(r, 0), campo::<i64>(r, 1), campo::<i64>(r, 2), campo::<i64>(r, 3)]))
+    .map(|r| {
+        json!([
+            campo::<i64>(r, 0),
+            campo::<i64>(r, 1),
+            campo::<i64>(r, 2),
+            campo::<i64>(r, 3)
+        ])
+    })
     .collect();
     let ultimas: Vec<Value> = linhas(
         c,
@@ -374,7 +414,13 @@ pub async fn mercado(realm: &PgPool, central: Option<&PgPool>) -> Value {
     )
     .await
     .iter()
-    .map(|r| json!([campo::<String>(r, 0), campo::<bool>(r, 1), campo::<i64>(r, 2)]))
+    .map(|r| {
+        json!([
+            campo::<String>(r, 0),
+            campo::<bool>(r, 1),
+            campo::<i64>(r, 2)
+        ])
+    })
     .collect();
     let recusadas: Vec<Value> = linhas(
         c,
@@ -383,7 +429,14 @@ pub async fn mercado(realm: &PgPool, central: Option<&PgPool>) -> Value {
     )
     .await
     .iter()
-    .map(|r| json!([campo::<String>(r, 0), campo::<String>(r, 1), campo::<String>(r, 2), campo::<i64>(r, 3)]))
+    .map(|r| {
+        json!([
+            campo::<String>(r, 0),
+            campo::<String>(r, 1),
+            campo::<String>(r, 2),
+            campo::<i64>(r, 3)
+        ])
+    })
     .collect();
     let tp = uma(
         c,
@@ -407,7 +460,13 @@ pub async fn mercado(realm: &PgPool, central: Option<&PgPool>) -> Value {
     )
     .await
     .iter()
-    .map(|r| json!([campo::<String>(r, 0), campo::<i64>(r, 1), campo::<i64>(r, 2)]))
+    .map(|r| {
+        json!([
+            campo::<String>(r, 0),
+            campo::<i64>(r, 1),
+            campo::<i64>(r, 2)
+        ])
+    })
     .collect();
     let tp_movs: Vec<Value> = linhas(
         c,
@@ -452,7 +511,10 @@ async fn somas(pool: &PgPool, filtro: &str, horas: i32) -> Vec<(String, String, 
           GROUP BY tipo, chave"
     );
     match sqlx::query(&sql).bind(horas).fetch_all(pool).await {
-        Ok(rs) => rs.iter().map(|r| (campo(r, 0), campo(r, 1), campo(r, 2))).collect(),
+        Ok(rs) => rs
+            .iter()
+            .map(|r| (campo(r, 0), campo(r, 1), campo(r, 2)))
+            .collect(),
         Err(e) => {
             tracing::warn!("panoptico: telemetria: {e}");
             Vec::new()
@@ -461,25 +523,54 @@ async fn somas(pool: &PgPool, filtro: &str, horas: i32) -> Vec<(String, String, 
 }
 
 /// Rotulo legivel de uma chave de telemetria.
-pub fn rotulo(tipo: &str, chave: &str, itens: &HashMap<i64, String>, receitas: &HashMap<i64, String>, skills: &HashMap<i64, String>) -> String {
-    let item = |s: &str| s.parse::<i64>().ok().and_then(|id| itens.get(&id).cloned()).unwrap_or_else(|| format!("item {s}"));
+pub fn rotulo(
+    tipo: &str,
+    chave: &str,
+    itens: &HashMap<i64, String>,
+    receitas: &HashMap<i64, String>,
+    skills: &HashMap<i64, String>,
+) -> String {
+    let item = |s: &str| {
+        s.parse::<i64>()
+            .ok()
+            .and_then(|id| itens.get(&id).cloned())
+            .unwrap_or_else(|| format!("item {s}"))
+    };
     match tipo {
-        "drop" | "coleta_item" | "item_usado" | "loja_compra" | "loja_venda" | "dungeon_bau_item" => item(chave),
+        "drop" | "coleta_item" | "item_usado" | "loja_compra" | "loja_venda"
+        | "dungeon_bau_item" => item(chave),
         "chave_drop" => match chave.split_once(':') {
             Some((origem, id)) => format!("{} · {origem}", item(id)),
             None => chave.to_string(),
         },
-        "craft" => chave.parse::<i64>().ok().and_then(|id| receitas.get(&id).cloned()).unwrap_or_else(|| format!("receita {chave}")),
-        "skill_pedida" => chave.parse::<i64>().ok().and_then(|id| skills.get(&id).cloned()).unwrap_or_else(|| format!("skill {chave}")),
+        "craft" => chave
+            .parse::<i64>()
+            .ok()
+            .and_then(|id| receitas.get(&id).cloned())
+            .unwrap_or_else(|| format!("receita {chave}")),
+        "skill_pedida" => chave
+            .parse::<i64>()
+            .ok()
+            .and_then(|id| skills.get(&id).cloned())
+            .unwrap_or_else(|| format!("skill {chave}")),
         "missao_entregue" | "missao_historia" | "missao_abandonada" => {
-            chave.parse::<u16>().map_or_else(|_| chave.to_string(), |id| format!("{} ({})", titulo_da_missao(id), categoria_da_missao(id)))
+            chave.parse::<u16>().map_or_else(
+                |_| chave.to_string(),
+                |id| format!("{} ({})", titulo_da_missao(id), categoria_da_missao(id)),
+            )
         }
         t if t.starts_with("dungeon") || t == "selo_usado" => {
             let mut p = chave.split(':');
-            match (p.next().and_then(|c| c.parse::<u16>().ok()), p.next(), p.next()) {
+            match (
+                p.next().and_then(|c| c.parse::<u16>().ok()),
+                p.next(),
+                p.next(),
+            ) {
                 (Some(c), Some(e), resto) => {
                     let base = format!("{} · estágio {e}", nome_do_conteudo(c));
-                    resto.map_or(base.clone(), |r| format!("{base} · {}", r.replace('_', " ")))
+                    resto.map_or(base.clone(), |r| {
+                        format!("{base} · {}", r.replace('_', " "))
+                    })
                 }
                 _ => chave.to_string(),
             }
@@ -558,11 +649,24 @@ pub async fn dungeons(pool: &PgPool, horas: i32) -> Value {
     let mut mapa: BTreeMap<(u16, u8), PorEstagio> = BTreeMap::new();
     let mut bau_itens: Vec<(i64, String, i64)> = Vec::new();
     let (mut compradas, mut chefes_mortos, mut mobs) = (0i64, 0i64, 0i64);
-    for (tipo, chave, v) in somas(pool, "tipo LIKE 'dungeon%' OR tipo IN ('selo_usado', 'chefe_dungeon_morto', 'kill_dungeon')", horas).await {
+    for (tipo, chave, v) in somas(
+        pool,
+        "tipo LIKE 'dungeon%' OR tipo IN ('selo_usado', 'chefe_dungeon_morto', 'kill_dungeon')",
+        horas,
+    )
+    .await
+    {
         match tipo.as_str() {
             "dungeon_bau_item" => {
                 let id = chave.parse::<i64>().unwrap_or(0);
-                bau_itens.push((id, itens.get(&id).cloned().unwrap_or_else(|| format!("item {id}")), v));
+                bau_itens.push((
+                    id,
+                    itens
+                        .get(&id)
+                        .cloned()
+                        .unwrap_or_else(|| format!("item {id}")),
+                    v,
+                ));
                 continue;
             }
             "dungeon_entrada_comprada" => {
@@ -579,7 +683,9 @@ pub async fn dungeons(pool: &PgPool, horas: i32) -> Value {
             }
             _ => {}
         }
-        let Some((c, e, resto)) = partes_de_dungeon(&chave) else { continue };
+        let Some((c, e, resto)) = partes_de_dungeon(&chave) else {
+            continue;
+        };
         let x = mapa.entry((c, e)).or_default();
         match (tipo.as_str(), resto) {
             ("dungeon_entrada", Some("ajudante")) => {
@@ -603,7 +709,8 @@ pub async fn dungeons(pool: &PgPool, horas: i32) -> Value {
     let hoje = shared::dungeon::dia(agora_unix());
     let mut vitorias_sempre: BTreeMap<(u16, u8), u32> = BTreeMap::new();
     let mut liberado: BTreeMap<(u16, u8), u32> = BTreeMap::new();
-    let (mut correio, mut baus, mut gruta_compradas_hoje, mut com_dados) = (0usize, 0usize, 0u32, 0usize);
+    let (mut correio, mut baus, mut gruta_compradas_hoje, mut com_dados) =
+        (0usize, 0usize, 0u32, 0usize);
     let mut correio_motivo = [0usize; 3];
     for r in linhas(pool, "SELECT COALESCE(dungeon_json, '') FROM characters WHERE dungeon_json IS NOT NULL AND dungeon_json <> ''").await {
         let Ok(d) = serde_json::from_str::<shared::dungeon::DadosDungeon>(&campo::<String>(&r, 0)) else { continue };
@@ -626,7 +733,10 @@ pub async fn dungeons(pool: &PgPool, horas: i32) -> Value {
     let semana = shared::dungeon::semana(agora_unix());
     let (mut selos_semana, mut primeiras_semana, mut contas) = (0u32, 0usize, 0usize);
     for r in linhas(pool, "SELECT COALESCE(dados_json, '') FROM dungeon_contas").await {
-        let Ok(d) = serde_json::from_str::<shared::dungeon::DadosConta>(&campo::<String>(&r, 0)) else { continue };
+        let Ok(d) = serde_json::from_str::<shared::dungeon::DadosConta>(&campo::<String>(&r, 0))
+        else {
+            continue;
+        };
         contas += 1;
         if d.semana == semana {
             selos_semana += d.selos as u32;
@@ -679,14 +789,27 @@ pub async fn dungeons(pool: &PgPool, horas: i32) -> Value {
 
 pub async fn missoes(pool: &PgPool, horas: i32) -> Value {
     let mut por: BTreeMap<u16, [i64; 3]> = BTreeMap::new();
-    for r in linhas(pool, "SELECT quest_id, status::int, COUNT(*)::bigint FROM character_quests GROUP BY 1, 2").await {
+    for r in linhas(
+        pool,
+        "SELECT quest_id, status::int, COUNT(*)::bigint FROM character_quests GROUP BY 1, 2",
+    )
+    .await
+    {
         let id = campo::<i32>(&r, 0).clamp(0, u16::MAX as i32) as u16;
         let st = (campo::<i32>(&r, 1) as usize).min(2);
         por.entry(id).or_default()[st] += campo::<i64>(&r, 2);
     }
     let mut tele: BTreeMap<u16, [i64; 3]> = BTreeMap::new();
-    for (tipo, chave, v) in somas(pool, "tipo IN ('missao_entregue', 'missao_historia', 'missao_abandonada')", horas).await {
-        let Ok(id) = chave.parse::<u16>() else { continue };
+    for (tipo, chave, v) in somas(
+        pool,
+        "tipo IN ('missao_entregue', 'missao_historia', 'missao_abandonada')",
+        horas,
+    )
+    .await
+    {
+        let Ok(id) = chave.parse::<u16>() else {
+            continue;
+        };
         let i = match tipo.as_str() {
             "missao_entregue" => 0,
             "missao_historia" => 1,
@@ -710,7 +833,12 @@ pub async fn missoes(pool: &PgPool, horas: i32) -> Value {
     // Onde a historia de cada um parou, por capitulo.
     let mut capitulos: BTreeMap<String, i64> = BTreeMap::new();
     let mut atual: HashMap<String, u16> = HashMap::new();
-    for r in linhas(pool, "SELECT char_name, quest_id, status::int FROM character_quests").await {
+    for r in linhas(
+        pool,
+        "SELECT char_name, quest_id, status::int FROM character_quests",
+    )
+    .await
+    {
         let id = campo::<i32>(&r, 1).clamp(0, u16::MAX as i32) as u16;
         if !e_historia(id) || campo::<i32>(&r, 2) as u8 == shared::quests::quest_status::TURNED_IN {
             continue;
@@ -719,7 +847,9 @@ pub async fn missoes(pool: &PgPool, horas: i32) -> Value {
         *e = (*e).max(id);
     }
     for id in atual.values() {
-        *capitulos.entry(capitulo_de(*id).unwrap_or("sem capítulo").to_string()).or_default() += 1;
+        *capitulos
+            .entry(capitulo_de(*id).unwrap_or("sem capítulo").to_string())
+            .or_default() += 1;
     }
     json!({ "horas": horas, "lista": lista, "historia_por_capitulo": capitulos.into_iter().collect::<Vec<_>>() })
 }
@@ -747,18 +877,32 @@ pub async fn itens(pool: &PgPool, horas: i32) -> Value {
         json!({ "id": id, "nome": nomes.get(&(id as i64)).cloned().unwrap_or_else(|| format!("item {id}")), "qtd": q, "donos": d })
     };
     let chaves: Vec<Value> = i::todas_as_chaves().into_iter().map(item).collect();
-    let especiais: Vec<Value> = [i::COPPER, i::DARKSTEEL, i::GLITTERING_POWDER, i::MARCAS_TEMPESTADE, i::SELO_TEMPESTADE, i::XP_POTION, i::FORTUNA_POTION, i::SORTE_POTION]
-        .into_iter()
-        .map(item)
-        .collect();
+    let especiais: Vec<Value> = [
+        i::COPPER,
+        i::DARKSTEEL,
+        i::GLITTERING_POWDER,
+        i::MARCAS_TEMPESTADE,
+        i::SELO_TEMPESTADE,
+        i::XP_POTION,
+        i::FORTUNA_POTION,
+        i::SORTE_POTION,
+    ]
+    .into_iter()
+    .map(item)
+    .collect();
     // Materiais por cor: a mesma escada que o craft pede.
     let materiais: Vec<Value> = i::MATERIAIS_COLORIDOS
         .iter()
         .map(|&base| {
-            let cores: Vec<i64> = (1..=4).map(|c| estoque.get(&(i::na_cor(base, c) as i64)).map_or(0, |e| e.0)).collect();
+            let cores: Vec<i64> = (1..=4)
+                .map(|c| estoque.get(&(i::na_cor(base, c) as i64)).map_or(0, |e| e.0))
+                .collect();
             // O id base e' o da cinza ("Aço Cinza"): o nome da linha e' o material.
             let nome = nomes.get(&(base as i64)).cloned().unwrap_or_default();
-            let nome = nome.strip_suffix(" Cinza").map(str::to_string).unwrap_or(nome);
+            let nome = nome
+                .strip_suffix(" Cinza")
+                .map(str::to_string)
+                .unwrap_or(nome);
             json!({ "nome": nome, "cores": cores })
         })
         .collect();
@@ -773,7 +917,13 @@ pub async fn itens(pool: &PgPool, horas: i32) -> Value {
     )
     .await
     .iter()
-    .map(|r| json!([campo::<String>(r, 0), campo::<i64>(r, 1), campo::<i64>(r, 2)]))
+    .map(|r| {
+        json!([
+            campo::<String>(r, 0),
+            campo::<i64>(r, 1),
+            campo::<i64>(r, 2)
+        ])
+    })
     .collect();
     let chaves_drop: Vec<Value> = somas(pool, "tipo = 'chave_drop'", horas)
         .await
@@ -781,7 +931,14 @@ pub async fn itens(pool: &PgPool, horas: i32) -> Value {
         .map(|(_, chave, v)| {
             let (origem, id) = chave.split_once(':').unwrap_or(("?", &chave));
             let id: i64 = id.parse().unwrap_or(0);
-            json!([origem, nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}")), v])
+            json!([
+                origem,
+                nomes
+                    .get(&id)
+                    .cloned()
+                    .unwrap_or_else(|| format!("item {id}")),
+                v
+            ])
         })
         .collect();
     json!({ "horas": horas, "chaves": chaves, "especiais": especiais, "materiais": materiais, "raridade": raridade, "chaves_drop": chaves_drop })
@@ -863,7 +1020,11 @@ pub async fn infra(pool: &PgPool, central: Option<&PgPool>) -> Value {
     let tamanhos = |p: &PgPool| {
         let p = p.clone();
         async move {
-            let db = uma(&p, "SELECT current_database(), pg_database_size(current_database())::bigint").await;
+            let db = uma(
+                &p,
+                "SELECT current_database(), pg_database_size(current_database())::bigint",
+            )
+            .await;
             let tabelas: Vec<Value> = linhas(
                 &p,
                 "SELECT c.relname, pg_total_relation_size(c.oid)::bigint FROM pg_class c
@@ -918,7 +1079,10 @@ mod testes {
     #[test]
     fn chave_de_dungeon() {
         assert_eq!(partes_de_dungeon("2:3"), Some((2, 3, None)));
-        assert_eq!(partes_de_dungeon("2:3:vitoria"), Some((2, 3, Some("vitoria"))));
+        assert_eq!(
+            partes_de_dungeon("2:3:vitoria"),
+            Some((2, 3, Some("vitoria")))
+        );
         assert_eq!(partes_de_dungeon("x"), None);
     }
 
@@ -927,15 +1091,39 @@ mod testes {
         let itens: HashMap<i64, String> = [(332, "Escama Cinza".to_string())].into();
         let receitas: HashMap<i64, String> = [(1000, "Espada".to_string())].into();
         let skills: HashMap<i64, String> = [(4, "Corte".to_string())].into();
-        assert_eq!(rotulo("drop", "332", &itens, &receitas, &skills), "Escama Cinza");
+        assert_eq!(
+            rotulo("drop", "332", &itens, &receitas, &skills),
+            "Escama Cinza"
+        );
         assert_eq!(rotulo("drop", "9", &itens, &receitas, &skills), "item 9");
-        assert_eq!(rotulo("chave_drop", "chefe:332", &itens, &receitas, &skills), "Escama Cinza · chefe");
-        assert_eq!(rotulo("craft", "1000", &itens, &receitas, &skills), "Espada");
-        assert_eq!(rotulo("skill_pedida", "4", &itens, &receitas, &skills), "Corte");
+        assert_eq!(
+            rotulo("chave_drop", "chefe:332", &itens, &receitas, &skills),
+            "Escama Cinza · chefe"
+        );
+        assert_eq!(
+            rotulo("craft", "1000", &itens, &receitas, &skills),
+            "Espada"
+        );
+        assert_eq!(
+            rotulo("skill_pedida", "4", &itens, &receitas, &skills),
+            "Corte"
+        );
         assert_eq!(rotulo("save_ms", "", &itens, &receitas, &skills), "total");
-        assert_eq!(rotulo("ouro_fonte", "venda_npc", &itens, &receitas, &skills), "venda npc");
-        let d = rotulo("dungeon_resultado", "1:2:tempo_esgotado", &itens, &receitas, &skills);
-        assert!(d.contains("estágio 2") && d.ends_with("tempo esgotado"), "{d}");
+        assert_eq!(
+            rotulo("ouro_fonte", "venda_npc", &itens, &receitas, &skills),
+            "venda npc"
+        );
+        let d = rotulo(
+            "dungeon_resultado",
+            "1:2:tempo_esgotado",
+            &itens,
+            &receitas,
+            &skills,
+        );
+        assert!(
+            d.contains("estágio 2") && d.ends_with("tempo esgotado"),
+            "{d}"
+        );
     }
 }
 
@@ -953,7 +1141,8 @@ pub async fn loja(realm: &PgPool, central: Option<&PgPool>) -> Value {
     let Some(c) = central else {
         return json!({ "ligado": false, "montados": montados });
     };
-    let nome = |cod: &str| shared::loja::Produto::de_codigo(cod).map_or(cod.to_string(), |p| p.nome());
+    let nome =
+        |cod: &str| shared::loja::Produto::de_codigo(cod).map_or(cod.to_string(), |p| p.nome());
     let receita = uma(
         c,
         "SELECT COALESCE(SUM(valor) FILTER (WHERE atualizado_em > NOW() - INTERVAL '24 hours'), 0)::bigint,
@@ -975,7 +1164,14 @@ pub async fn loja(realm: &PgPool, central: Option<&PgPool>) -> Value {
     )
     .await
     .iter()
-    .map(|r| json!([campo::<String>(r, 0), campo::<String>(r, 1), campo::<i64>(r, 2), campo::<i64>(r, 3)]))
+    .map(|r| {
+        json!([
+            campo::<String>(r, 0),
+            campo::<String>(r, 1),
+            campo::<i64>(r, 2),
+            campo::<i64>(r, 3)
+        ])
+    })
     .collect();
     let itens: Vec<Value> = linhas(
         c,
@@ -993,7 +1189,13 @@ pub async fn loja(realm: &PgPool, central: Option<&PgPool>) -> Value {
     )
     .await
     .iter()
-    .map(|r| json!([nome(&campo::<String>(r, 0)), campo::<i64>(r, 1), campo::<i64>(r, 2)]))
+    .map(|r| {
+        json!([
+            nome(&campo::<String>(r, 0)),
+            campo::<i64>(r, 1),
+            campo::<i64>(r, 2)
+        ])
+    })
     .collect();
     let por_hora: Vec<Value> = linhas(
         c,
@@ -1042,4 +1244,3 @@ pub async fn loja(realm: &PgPool, central: Option<&PgPool>) -> Value {
         "ultimos": ultimos,
     })
 }
-

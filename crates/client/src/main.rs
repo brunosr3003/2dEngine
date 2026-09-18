@@ -9,78 +9,79 @@
 //! `Protocol.cs` com 1175 linhas espelhadas a mao.
 
 mod api;
-mod gpu_estatica;
-mod login_google;
-mod nativo;
-mod teclado_virtual;
+mod auto_combate;
+mod auto_dungeon;
+mod auto_missao;
+mod avisos;
 mod bicho;
 mod bolsa;
+mod craft_ui;
+mod dungeon_ui;
 mod efeitos;
 mod entrada;
-mod hud;
-mod hud_layout;
-mod habilidades;
-mod habilidades_input;
-mod hud_estilo;
-mod icones;
-mod icones_ui;
-mod lojas;
-mod dungeon_ui;
-mod mercado_ui;
-mod menu;
-mod auto_combate;
-mod loja;
-mod craft_ui;
 mod forja_ui;
 mod ganhos;
+mod gpu_estatica;
+mod habilidades;
+mod habilidades_input;
+mod hud;
+mod hud_estilo;
+mod hud_layout;
+mod icones;
+mod icones_ui;
+mod login_google;
+mod loja;
+mod lojas;
+mod menu;
+mod mercado_ui;
 mod missoes;
-mod auto_missao;
-mod auto_dungeon;
-mod avisos;
+mod nativo;
+mod social_ui;
+mod teclado_virtual;
 
 /// Pedacos de terreno em volta do jogador que precisam existir pra tela de
 /// carregando sair (3 = 7x7, mais que a camera enxerga de perto).
 const RAIO_DO_CARREGANDO: i32 = 3;
+mod agua;
 mod auto_coleta;
-mod dialogo;
-mod construcoes;
-mod mapa;
-mod rastro;
-mod telegrafico;
-mod chefe_anim;
-mod toque;
-mod gesto_camera;
-mod camera_suave;
-mod joystick;
 mod barra;
-mod preferencias;
+mod camera_suave;
+mod chefe_anim;
+mod coleta_hud;
 mod config_barra;
 mod config_coleta;
 mod config_interface;
-mod economia;
 mod confirmar;
-mod presenca_ui;
-mod loja_tp;
-mod montarias_ui;
-mod onde_obter;
-mod coleta_hud;
-mod lascas;
-mod morte;
+mod construcoes;
 mod corrida;
-mod ir_para;
-mod menu_missoes;
+mod dialogo;
 mod diarias;
-mod personagens;
+mod economia;
+mod gesto_camera;
 mod habilidades_vfx;
-mod previa_skills;
+mod ir_para;
+mod joystick;
+mod lascas;
+mod loja_tp;
 mod map;
+mod mapa;
+mod menu_missoes;
+mod montarias_ui;
+mod morte;
 mod net;
+mod onde_obter;
+mod personagens;
+mod preferencias;
+mod presenca_ui;
+mod previa_skills;
+mod rastro;
 mod render3d;
 mod rig;
+mod telegrafico;
 mod terreno;
-mod agua;
-mod vegetacao;
+mod toque;
 mod ui;
+mod vegetacao;
 mod vox;
 mod world;
 
@@ -90,10 +91,10 @@ use macroquad::prelude::*;
 use shared::protocol::{ClientMessage, InputFrame, ServerMessage};
 
 use api::Canal;
+use macroquad::material::{gl_use_default_material, gl_use_material, Material};
 use map::Map;
 use net::{Net, NetEvent};
 use vox::VoxCache;
-use macroquad::material::{gl_use_default_material, gl_use_material, Material};
 use world::World;
 
 /// O servidor tica a 30Hz; mandar input mais rapido que isso so' gasta banda.
@@ -118,7 +119,10 @@ enum Tela {
     Conectando,
     Personagens,
     /// Canal de instancia unica lotado. Nao e' recusa: e' vez na fila.
-    Fila { posicao: u32, total: u32 },
+    Fila {
+        posicao: u32,
+        total: u32,
+    },
     Jogando,
     Erro(String),
 }
@@ -250,6 +254,7 @@ struct Jogo {
     lojas: lojas::Lojas,
     /// Menu → Comércio → Mercado (docs/MERCADO.md).
     mercado: mercado_ui::Mercado,
+    social: social_ui::Social,
     /// O painel aberto veio do Menu: Esc volta pra ele em vez de pro jogo.
     voltar_ao_menu: bool,
     /// Neste quadro o Esc fechou alguma coisa — nao cancela alvo nem AUTO.
@@ -369,8 +374,13 @@ async fn main() {
     }
     // O personagem em PECAS (docs/character create.md). Sem o arquivo, o
     // desenho cai no modelo inteiro de antes.
-    vox.load_rig(render3d::RIG_CORPO, render3d::VOXEL, rig::pivo).await;
-    for nome in ["humanoides/pistoleiro", "humanoides/mago", "humanoides/arqueiro"] {
+    vox.load_rig(render3d::RIG_CORPO, render3d::VOXEL, rig::pivo)
+        .await;
+    for nome in [
+        "humanoides/pistoleiro",
+        "humanoides/mago",
+        "humanoides/arqueiro",
+    ] {
         vox.load_rig(nome, render3d::VOXEL, rig::pivo).await;
     }
     // Um corpo por oficio (tools/voxrender/npcs.py). Sem o arquivo, o NPC cai
@@ -378,13 +388,18 @@ async fn main() {
     for nome in render3d::MODELOS_DE_NPC {
         vox.load_rig(nome, render3d::VOXEL, rig::pivo).await;
     }
-    vox.load_rig(render3d::RIG_CHAPEU, render3d::VOXEL, rig::pivo).await;
-    vox.load_variantes("saque", render3d::VOXEL, &render3d::variantes_do_saque()).await;
+    vox.load_rig(render3d::RIG_CHAPEU, render3d::VOXEL, rig::pivo)
+        .await;
+    vox.load_variantes("saque", render3d::VOXEL, &render3d::variantes_do_saque())
+        .await;
     // Os bichos em PECAS (tools/voxrender/bichos.py). Sem o arquivo, o mob
     // cai no modelo inteiro de antes.
     // As armas do primeiro conjunto (tools/voxrender/armas.py).
     // E as ferramentas de coleta (machado, picareta de cada cor).
-    for nome in ["espada", "escudo", "katana", "bainha", "pistola", "coldre"].into_iter().chain(rig::FERRAMENTAS) {
+    for nome in ["espada", "escudo", "katana", "bainha", "pistola", "coldre"]
+        .into_iter()
+        .chain(rig::FERRAMENTAS)
+    {
         vox.load_arma(nome, render3d::VOXEL).await;
     }
     for (nome, altura) in bicho::BICHOS {
@@ -395,13 +410,20 @@ async fn main() {
         previa_skills::abrir(&vox).await;
         return;
     }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_SOCIAL").is_ok() {
+        social_ui::previa().await;
+        return;
+    }
     if std::env::var("MMO_PREVIA_LOJA").is_ok() {
         loja_tp::previa(&vox).await;
         return;
     }
     // `option_env!` tambem: no celular nao ha' variavel de ambiente, e o APK
     // de medir desempenho e' compilado com ela ligada.
-    if std::env::var("MMO_PREVIA_PERSONAGENS").is_ok() || option_env!("MMO_PREVIA_PERSONAGENS").is_some() {
+    if std::env::var("MMO_PREVIA_PERSONAGENS").is_ok()
+        || option_env!("MMO_PREVIA_PERSONAGENS").is_some()
+    {
         personagens::previa(&vox).await;
         return;
     }
@@ -477,6 +499,7 @@ async fn main() {
         menu: menu::Menu::default(),
         lojas: lojas::Lojas::default(),
         mercado: mercado_ui::Mercado::default(),
+        social: social_ui::Social::default(),
         voltar_ao_menu: false,
         esc_consumido: false,
         tela_cheia: false,
@@ -614,7 +637,13 @@ impl Jogo {
             // Modo economia: parado tempo demais entra sozinho; ligado (ou
             // acabando de sair), nenhum toque chega ao mundo — so' o deslize.
             let agora = get_time();
-            if self.economia.parado_demais(agora, economia::houve_entrada()) {
+            if let Some(pedido) = self.social.passo(agora) {
+                self.envia(pedido);
+            }
+            if self
+                .economia
+                .parado_demais(agora, economia::houve_entrada())
+            {
                 self.entrar_economia();
             }
             let eco = self.economia.bloqueia_entrada(agora);
@@ -669,7 +698,9 @@ impl Jogo {
                 && !self.auto_combate.ativo()
                 // A coleta ANDA pro spot pela viagem: corre indo, nao parada nele.
                 && !(self.auto_coleta.ativo() && !self.mapa.viagem.ativa());
-            self.correndo_auto = self.corrida.atualiza(self.world.self_pos(), automatico, get_frame_time());
+            self.correndo_auto =
+                self.corrida
+                    .atualiza(self.world.self_pos(), automatico, get_frame_time());
             // Indo sozinho, a montaria entra igual a corrida: quem viaja no
             // automatico nao tem mao no teclado pra montar. O servidor recusa
             // em combate, e `montar_pra_viajar` tem o proprio intervalo.
@@ -719,7 +750,9 @@ impl Jogo {
     }
 
     fn conectar(&mut self) {
-        let Some(host) = self.host.clone() else { return };
+        let Some(host) = self.host.clone() else {
+            return;
+        };
         // Trocando de zona: o pendente vai pelo canal velho antes de soltar.
         self.guardar_preferencias_agora();
         self.prefs = preferencias::Sincronia::default();
@@ -748,6 +781,7 @@ impl Jogo {
         self.rastro.limpa();
         self.menu.fechar();
         self.lojas.fechar();
+        self.social = social_ui::Social::default();
         self.voltar_ao_menu = false;
         self.map = None;
         self.terreno = None;
@@ -794,11 +828,19 @@ impl Jogo {
                     }),
                 }
             }
-            ServerMessage::CharacterList { chars, available_weapons } => {
+            ServerMessage::CharacterList {
+                chars,
+                available_weapons,
+            } => {
                 self.personagens = chars;
-                self.personagens.sort_by(|a,b|a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                self.personagens
+                    .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
                 self.armas = available_weapons;
-                self.selecao_personagem.recebeu_lista(&self.personagens,&self.armas,&mut self.selecionado);
+                self.selecao_personagem.recebeu_lista(
+                    &self.personagens,
+                    &self.armas,
+                    &mut self.selecionado,
+                );
                 // `MMO_CHAR` pula a tela: e' o caminho do teste automatizado,
                 // que nao tem quem clique.
                 // Voltando de uma troca de zona: entra direto no mesmo
@@ -854,8 +896,13 @@ impl Jogo {
                 self.comecar_carregando();
                 // Caminho do teste automatizado (como o `MMO_CHAR`): entra
                 // sozinho na dungeon pedida e liga o AUTO DUNGEON la' dentro.
-                if let Some(c) = std::env::var("MMO_TESTE_DUNGEON").ok().and_then(|v| v.parse::<u16>().ok()) {
-                    self.envia(ClientMessage::Dungeon { pedido: shared::dungeon::Pedido::EntrarSolo { conteudo: c } });
+                if let Some(c) = std::env::var("MMO_TESTE_DUNGEON")
+                    .ok()
+                    .and_then(|v| v.parse::<u16>().ok())
+                {
+                    self.envia(ClientMessage::Dungeon {
+                        pedido: shared::dungeon::Pedido::EntrarSolo { conteudo: c },
+                    });
                     self.dungeon.auto = true;
                 }
             }
@@ -865,17 +912,35 @@ impl Jogo {
             // onde ja' passou.
             ServerMessage::PedrasEsgotadas { colunas } => {
                 if let Some(t) = &mut self.terreno {
-                    for c in colunas { t.marca_esgotada(c, true); }
+                    for c in colunas {
+                        t.marca_esgotada(c, true);
+                    }
                 }
             }
             ServerMessage::PedraEsgotada { coluna } => {
-                if let Some(t) = &mut self.terreno { t.marca_esgotada(coluna, true); }
+                if let Some(t) = &mut self.terreno {
+                    t.marca_esgotada(coluna, true);
+                }
             }
             ServerMessage::PedraVoltou { coluna } => {
-                if let Some(t) = &mut self.terreno { t.marca_esgotada(coluna, false); }
+                if let Some(t) = &mut self.terreno {
+                    t.marca_esgotada(coluna, false);
+                }
             }
-            ServerMessage::InfoCanal { realm, canal, zona, jogadores, capacidade } => {
-                self.info = hud::Info { realm, canal, zona, jogadores, capacidade };
+            ServerMessage::InfoCanal {
+                realm,
+                canal,
+                zona,
+                jogadores,
+                capacidade,
+            } => {
+                self.info = hud::Info {
+                    realm,
+                    canal,
+                    zona,
+                    jogadores,
+                    capacidade,
+                };
             }
             ServerMessage::TrocarZona { zona, host } => {
                 // Zona e' outro PROCESSO: reconecta. O personagem e' o mesmo
@@ -891,7 +956,13 @@ impl Jogo {
                 self.host = Some(host);
                 self.conectar();
             }
-            ServerMessage::MapChange { map_name, width, height, tiles, .. } => {
+            ServerMessage::MapChange {
+                map_name,
+                width,
+                height,
+                tiles,
+                ..
+            } => {
                 self.auto_combate.parar();
                 self.loja.fecha();
                 self.interacao.cancela();
@@ -908,7 +979,8 @@ impl Jogo {
                 self.mapa = mapa::Mapa::para(shared::terreno::def_da_zona(&map_name));
                 self.mapa.filtros = filtros;
                 self.ir_para.parar();
-                self.construcoes = construcoes::Construcoes::para(shared::terreno::def_da_zona(&map_name));
+                self.construcoes =
+                    construcoes::Construcoes::para(shared::terreno::def_da_zona(&map_name));
                 if self.terreno.is_some() {
                     self.map = None;
                     println!("[terreno] {map_name}: gerado da semente, sem arquivo");
@@ -927,9 +999,14 @@ impl Jogo {
                 self.world.acertos(&snapshot.acertos);
                 // Quem me bateu (bicho): a defesa da auto coleta revida.
                 let eu = self.world.self_id;
-                if let Some(a) = snapshot.acertos.iter().rev().find(|a| Some(a.alvo) == eu
-                    && self.world.ents.get(&a.atacante).is_some_and(|e| e.meta.tag == shared::EntityTag::Enemy))
-                {
+                if let Some(a) = snapshot.acertos.iter().rev().find(|a| {
+                    Some(a.alvo) == eu
+                        && self
+                            .world
+                            .ents
+                            .get(&a.atacante)
+                            .is_some_and(|e| e.meta.tag == shared::EntityTag::Enemy)
+                }) {
                     self.agressor = Some((a.atacante, get_time()));
                 }
             }
@@ -946,11 +1023,32 @@ impl Jogo {
             }
             ServerMessage::ResourceSources { items } => self.onde_obter.define(items),
             ServerMessage::ItemsConfig { items } => {
-                self.mercado.vinculados = items.iter().filter(|i| i.vinculado).map(|i| i.id).collect();
+                self.mercado.vinculados =
+                    items.iter().filter(|i| i.vinculado).map(|i| i.id).collect();
                 self.bolsa.nomes = items.into_iter().map(|i| (i.id, i.name)).collect();
+                self.social.nomes = self.bolsa.nomes.clone();
             }
-            ServerMessage::MercadoLista { anuncios, pagina, tem_mais } => self.mercado.lista(anuncios, pagina, tem_mais),
-            ServerMessage::MercadoMeus { anuncios, historico, tp } => self.mercado.meus(anuncios, historico, tp),
+            ServerMessage::Social { aviso } => self.social.receber(aviso),
+            ServerMessage::PartyInviteReceived { from } => {
+                self.chat.push(format!(
+                    "{from} convidou você para um grupo. Abra Menu → Grupo."
+                ));
+                self.social.convite = Some((from, get_time() + 60.0));
+            }
+            ServerMessage::PartyUpdate { members } => {
+                self.social.grupo = members;
+                self.social.convite = None;
+            }
+            ServerMessage::MercadoLista {
+                anuncios,
+                pagina,
+                tem_mais,
+            } => self.mercado.lista(anuncios, pagina, tem_mais),
+            ServerMessage::MercadoMeus {
+                anuncios,
+                historico,
+                tp,
+            } => self.mercado.meus(anuncios, historico, tp),
             ServerMessage::MercadoEntregas { cartas, tp } => self.mercado.entregas(cartas, tp),
             ServerMessage::Presenca { aviso } => {
                 if let Some(t) = self.presenca.receber(aviso, &self.bolsa.nomes) {
@@ -987,15 +1085,31 @@ impl Jogo {
             }
             ServerMessage::GoldUpdate { gold } => self.bolsa.ouro = gold,
             ServerMessage::CraftRecipes { recipes } => self.craft.define_receitas(recipes),
-            ServerMessage::CraftResultado { ok, motivo, item_id, .. } => {
-                let txt = if ok { format!("Criado: {}", self.bolsa.nome(item_id)) } else { format!("Craft recusado: {motivo}") };
+            ServerMessage::CraftResultado {
+                ok,
+                motivo,
+                item_id,
+                ..
+            } => {
+                let txt = if ok {
+                    format!("Criado: {}", self.bolsa.nome(item_id))
+                } else {
+                    format!("Craft recusado: {motivo}")
+                };
                 self.craft.resultado(ok, txt.clone(), get_time());
                 self.chat.push(txt);
             }
-            ServerMessage::RefinoResultado { resultado, nivel, item_id, motivo } => {
+            ServerMessage::RefinoResultado {
+                resultado,
+                nivel,
+                item_id,
+                motivo,
+            } => {
                 let nome = self.bolsa.nome(item_id);
-                self.forja.resultado(resultado, nivel, &nome, &motivo, get_time());
-                self.chat.push(forja_ui::texto_do_resultado(resultado, nivel, &nome, &motivo).0);
+                self.forja
+                    .resultado(resultado, nivel, &nome, &motivo, get_time());
+                self.chat
+                    .push(forja_ui::texto_do_resultado(resultado, nivel, &nome, &motivo).0);
             }
             // O Ferreiro da vila abre a mesma Forja do HUD.
             ServerMessage::BlacksmithOpen => {
@@ -1004,7 +1118,10 @@ impl Jogo {
                 self.forja.abrir();
             }
             ServerMessage::BuffXp { ate } => self.bonus_xp_ate = ate,
-            ServerMessage::BuffsDeDrop { fortuna_ate, sorte_ate } => {
+            ServerMessage::BuffsDeDrop {
+                fortuna_ate,
+                sorte_ate,
+            } => {
                 self.bonus_fortuna_ate = fortuna_ate;
                 self.bonus_sorte_ate = sorte_ate;
             }
@@ -1021,14 +1138,19 @@ impl Jogo {
                 }
                 self.morte.caido(active);
             }
-            ServerMessage::Recuperaveis { mortes, gratis_restantes } => {
+            ServerMessage::Recuperaveis {
+                mortes,
+                gratis_restantes,
+            } => {
                 self.morte.recuperaveis(mortes, gratis_restantes);
             }
             ServerMessage::RecuperarXpResultado { ok, motivo, .. } => {
                 self.chat.push(motivo.clone());
                 self.morte.resultado(ok, motivo);
             }
-            ServerMessage::ShopOpen { items, vendor_id, .. } => {
+            ServerMessage::ShopOpen {
+                items, vendor_id, ..
+            } => {
                 self.interacao.cancela();
                 self.missoes.fecha();
                 self.auto_missao.parar();
@@ -1050,44 +1172,98 @@ impl Jogo {
             ServerMessage::ManaUpdate { current } => self.ficha.mp = Some(current),
             ServerMessage::StaminaUpdate { current } => self.ficha.vigor = Some(current),
             ServerMessage::SkillsConfig { skills } => self.habilidades.catalogo = skills,
-            ServerMessage::SkillsState { cooldowns, busy_s } => self.habilidades.estado(cooldowns, busy_s),
-            ServerMessage::SkillRejected { skill_id, motivo } => self.habilidades.rejeitada(skill_id, motivo),
-            ServerMessage::MobAttackFx { attacker, target, dir, impact_s } => {
-                let alvo = target.and_then(|id| self.world.ents.get(&id)).map(|e| e.render_pos);
+            ServerMessage::SkillsState { cooldowns, busy_s } => {
+                self.habilidades.estado(cooldowns, busy_s)
+            }
+            ServerMessage::SkillRejected { skill_id, motivo } => {
+                self.habilidades.rejeitada(skill_id, motivo)
+            }
+            ServerMessage::MobAttackFx {
+                attacker,
+                target,
+                dir,
+                impact_s,
+            } => {
+                let alvo = target
+                    .and_then(|id| self.world.ents.get(&id))
+                    .map(|e| e.render_pos);
                 if let Some(e) = self.world.ents.get_mut(&attacker) {
                     e.golpe = 0.0;
                     e.ataque_mob = Some((target, 0.0, impact_s));
-                    e.mira = Some((alvo.unwrap_or(e.render_pos + vec2(dir[0], dir[1])), impact_s + 0.3));
+                    e.mira = Some((
+                        alvo.unwrap_or(e.render_pos + vec2(dir[0], dir[1])),
+                        impact_s + 0.3,
+                    ));
                 }
             }
-            ServerMessage::SkillCastFx { skill_id, caster_eid: Some(id), caster_pos, target_pos, target_eid, .. } => {
+            ServerMessage::SkillCastFx {
+                skill_id,
+                caster_eid: Some(id),
+                caster_pos,
+                target_pos,
+                target_eid,
+                ..
+            } => {
                 let de = vec2(caster_pos.x, caster_pos.y);
                 let alvo = vec2(target_pos.x, target_pos.y);
-                self.habilidades.efeito(skill_id, id, de, alvo, target_eid, false);
-                if let (Some(e), Some(s)) = (self.world.ents.get_mut(&id), self.habilidades.catalogo.iter().find(|s| s.id == skill_id)) {
+                self.habilidades
+                    .efeito(skill_id, id, de, alvo, target_eid, false);
+                if let (Some(e), Some(s)) = (
+                    self.world.ents.get_mut(&id),
+                    self.habilidades.catalogo.iter().find(|s| s.id == skill_id),
+                ) {
                     e.skill = Some((skill_id, 0.0, s.impacto_em()));
                     e.combo = None;
                     e.combo_ant = None;
                     e.sacada = 1.0;
-                    if de.distance(alvo) > 0.01 { e.mira = Some((alvo, s.impacto_em() + 0.3)); }
+                    if de.distance(alvo) > 0.01 {
+                        e.mira = Some((alvo, s.impacto_em() + 0.3));
+                    }
                 }
             }
-            ServerMessage::SkillImpactFx { skill_id, caster_eid, caster_pos, target_pos } => {
-                self.habilidades.efeito(skill_id, caster_eid, vec2(caster_pos.x, caster_pos.y), vec2(target_pos.x, target_pos.y), None, true);
+            ServerMessage::SkillImpactFx {
+                skill_id,
+                caster_eid,
+                caster_pos,
+                target_pos,
+            } => {
+                self.habilidades.efeito(
+                    skill_id,
+                    caster_eid,
+                    vec2(caster_pos.x, caster_pos.y),
+                    vec2(target_pos.x, target_pos.y),
+                    None,
+                    true,
+                );
             }
-            ServerMessage::SkillCastCancel { caster_eid, skill_id } => {
-                self.habilidades.cancelar(caster_eid, skill_id, self.world.self_id == Some(caster_eid));
-                if let Some(e) = self.world.ents.get_mut(&caster_eid) { e.skill = None; }
+            ServerMessage::SkillCastCancel {
+                caster_eid,
+                skill_id,
+            } => {
+                self.habilidades.cancelar(
+                    caster_eid,
+                    skill_id,
+                    self.world.self_id == Some(caster_eid),
+                );
+                if let Some(e) = self.world.ents.get_mut(&caster_eid) {
+                    e.skill = None;
+                }
             }
             // Missoes: a oferta abre a janela do NPC com quem se acabou de
             // falar; log, progresso e givers so' atualizam o estado.
-            ServerMessage::QuestOffer { giver_name, quests, .. } => {
+            ServerMessage::QuestOffer {
+                giver_name, quests, ..
+            } => {
                 self.interacao.cancela();
                 self.loja.fecha();
                 self.ao_receber_oferta(giver_name, quests);
             }
             ServerMessage::QuestLog { quests } => self.missoes.define_log(quests),
-            ServerMessage::QuestUpdate { quest_id, progress, status } => {
+            ServerMessage::QuestUpdate {
+                quest_id,
+                progress,
+                status,
+            } => {
                 use shared::historia;
                 if status == shared::quests::quest_status::TURNED_IN {
                     self.quest_entregues.entry(quest_id).or_insert(0);
@@ -1096,11 +1272,15 @@ impl Jogo {
                 // segue sozinha pro novo.
                 let segue = status == shared::quests::quest_status::ACTIVE
                     && historia::e_da_historia(quest_id)
-                    && self.auto_missao.quest.is_some_and(|q| q != quest_id && historia::e_da_historia(q));
+                    && self
+                        .auto_missao
+                        .quest
+                        .is_some_and(|q| q != quest_id && historia::e_da_historia(q));
                 self.missoes.atualiza(quest_id, progress, status);
                 if segue {
                     if let Some(d) = shared::quests::quest_by_id(quest_id) {
-                        self.auto_missao.iniciar(quest_id, d.title.to_string(), get_time());
+                        self.auto_missao
+                            .iniciar(quest_id, d.title.to_string(), get_time());
                     }
                 }
             }
@@ -1108,22 +1288,45 @@ impl Jogo {
                 self.quest_entregues = entregues.into_iter().collect();
                 self.faccao_qid = faccao;
             }
-            ServerMessage::MapaDaIlha { zonas, recursos, nomes, rendimentos, chefes } => {
+            ServerMessage::MapaDaIlha {
+                zonas,
+                recursos,
+                nomes,
+                rendimentos,
+                chefes,
+            } => {
                 self.mapa.define_info(zonas, recursos, nomes, rendimentos);
                 self.mapa.define_chefes(chefes);
             }
-            ServerMessage::Telegrafico { id, chefe, forma, centro, dir, carga_s } => {
+            ServerMessage::Telegrafico {
+                id,
+                chefe,
+                forma,
+                centro,
+                dir,
+                carga_s,
+            } => {
                 let agora = get_time();
-                self.telegrafos.comeca(id, chefe, forma, centro, dir, carga_s, agora);
+                self.telegrafos
+                    .comeca(id, chefe, forma, centro, dir, carga_s, agora);
                 // O chefe arma o golpe no desenho (preparacao ate' o impacto).
                 if let Some(e) = self.world.ents.get_mut(&chefe) {
                     let (c, d) = (vec2(centro[0], centro[1]), vec2(dir[0], dir[1]));
-                    e.carga_chefe = Some(chefe_anim::Carga::nova(&forma, c, d, e.render_pos, carga_s, agora));
+                    e.carga_chefe = Some(chefe_anim::Carga::nova(
+                        &forma,
+                        c,
+                        d,
+                        e.render_pos,
+                        carga_s,
+                        agora,
+                    ));
                 }
             }
             ServerMessage::TelegraficoFim { id, impacto } => {
                 let agora = get_time();
-                if let Some((chefe, forma, centro, dir)) = self.telegrafos.termina(id, impacto, agora) {
+                if let Some((chefe, forma, centro, dir)) =
+                    self.telegrafos.termina(id, impacto, agora)
+                {
                     // Cancelado (chefe morreu): o gesto para. Impacto: sai o golpe.
                     let kind = self.world.ents.get(&chefe).map_or(0, |e| e.meta.kind);
                     if let Some(e) = self.world.ents.get_mut(&chefe) {
@@ -1136,22 +1339,45 @@ impl Jogo {
                     if impacto {
                         if let Some(t) = &self.terreno {
                             let cor = chefe_anim::cor_do_chefe(kind);
-                            for (k, p) in chefe_anim::pontos_de_impacto(&forma, centro, dir).into_iter().enumerate() {
-                                lascas::explosao(vec3(p.x, t.altura(p.x, p.y) + 0.1, p.y), cor, id.wrapping_mul(31) ^ k as u32);
+                            for (k, p) in chefe_anim::pontos_de_impacto(&forma, centro, dir)
+                                .into_iter()
+                                .enumerate()
+                            {
+                                lascas::explosao(
+                                    vec3(p.x, t.altura(p.x, p.y) + 0.1, p.y),
+                                    cor,
+                                    id.wrapping_mul(31) ^ k as u32,
+                                );
                             }
                         }
                         // Perto do golpe: a camera sente (curto e com teto).
-                        if self.world.self_pos().is_some_and(|eu| eu.distance(centro) <= forma.alcance() + 8.0) {
-                            self.tremor = (chefe_anim::TREMOR_FORCA, agora + chefe_anim::TREMOR_S as f64);
+                        if self
+                            .world
+                            .self_pos()
+                            .is_some_and(|eu| eu.distance(centro) <= forma.alcance() + 8.0)
+                        {
+                            self.tremor = (
+                                chefe_anim::TREMOR_FORCA,
+                                agora + chefe_anim::TREMOR_S as f64,
+                            );
                         }
                     }
                 }
             }
             ServerMessage::QuestGivers { available } => self.missoes.define_givers(available),
             ServerMessage::Rota { pontos, destino } => {
-                self.rastro.define(pontos.into_iter().map(|p| vec2(p[0], p[1])).collect(), vec2(destino[0], destino[1]));
+                self.rastro.define(
+                    pontos.into_iter().map(|p| vec2(p[0], p[1])).collect(),
+                    vec2(destino[0], destino[1]),
+                );
             }
-            ServerMessage::QuestDestino { quest_id, tipo, pos, raio, npc_eid } => {
+            ServerMessage::QuestDestino {
+                quest_id,
+                tipo,
+                pos,
+                raio,
+                npc_eid,
+            } => {
                 use shared::quests::destino_tipo;
                 // Criar e refinar nao se faz andando: abre o painel e a auto
                 // missao para (quem cria e' o jogador).
@@ -1171,16 +1397,25 @@ impl Jogo {
                         if tipo == destino_tipo::PAINEL_CRAFT {
                             self.forja.fechar();
                             self.craft.abrir();
-                            self.chat.push("Missão: crie um equipamento no Craft.".into());
+                            self.chat
+                                .push("Missão: crie um equipamento no Craft.".into());
                         } else {
                             self.craft.fechar();
                             self.forja.abrir();
-                            self.chat.push("Missão: tente refinar uma peça na Forja.".into());
+                            self.chat
+                                .push("Missão: tente refinar uma peça na Forja.".into());
                         }
                     }
                 } else {
                     let npc = npc_eid.map(|e| shared::EntityId(e as u32));
-                    if let Some(aviso) = self.auto_missao.destino_recebido(quest_id, tipo, vec2(pos[0], pos[1]), raio, npc, get_time()) {
+                    if let Some(aviso) = self.auto_missao.destino_recebido(
+                        quest_id,
+                        tipo,
+                        vec2(pos[0], pos[1]),
+                        raio,
+                        npc,
+                        get_time(),
+                    ) {
                         self.chat.push(aviso);
                     }
                 }
@@ -1191,11 +1426,22 @@ impl Jogo {
                     self.mapa.viagem.iniciar(p, get_time());
                 }
             }
-            ServerMessage::ColetaEstado { tipo, intervalo_s, progresso, centro, pausado } => {
-                self.coleta_hud.recebe(tipo, intervalo_s, progresso, centro, pausado, get_time());
+            ServerMessage::ColetaEstado {
+                tipo,
+                intervalo_s,
+                progresso,
+                centro,
+                pausado,
+            } => {
+                self.coleta_hud
+                    .recebe(tipo, intervalo_s, progresso, centro, pausado, get_time());
                 self.auto_coleta.estado_coleta(tipo, pausado, get_time());
             }
-            ServerMessage::PocaoGrupo { grupo, recarga_s, cura_s } => {
+            ServerMessage::PocaoGrupo {
+                grupo,
+                recarga_s,
+                cura_s,
+            } => {
                 self.barra.pocao_grupo(grupo, recarga_s, cura_s, get_time());
             }
             // As demais ainda nao tem UI;
@@ -1227,7 +1473,12 @@ impl Jogo {
                 let terreno = self.terreno.as_ref();
                 let f = |x: f32, z: f32| terreno.map_or(0.0, |t| t.altura(x, z));
                 let vista = render3d::Vista::nova(
-                    centro, self.cam_yaw, self.cam_zoom, self.cam_pitch, self.cam_altura, &f,
+                    centro,
+                    self.cam_yaw,
+                    self.cam_zoom,
+                    self.cam_pitch,
+                    self.cam_altura,
+                    &f,
                 );
                 let alvo = render3d::pick(&self.world, &vista, vec2(mx, my), 48.0);
                 // Clicou no vazio? Entao foi no CHAO.
@@ -1243,11 +1494,16 @@ impl Jogo {
             };
             // So' bicho e gente viram alvo. Clicar no saque e' ir BUSCAR (ele
             // e' pego por proximidade); clicar em NPC nao mira ninguem.
-            let tag = escolhido.0.and_then(|id| self.world.ents.get(&id)).map(|e| (e.meta.tag, e.render_pos));
+            let tag = escolhido
+                .0
+                .and_then(|id| self.world.ents.get(&id))
+                .map(|e| (e.meta.tag, e.render_pos));
             // Qualquer clique novo desfaz o "ir falar com o NPC" anterior.
             self.interacao.cancela();
             match tag {
-                Some((shared::EntityTag::Enemy | shared::EntityTag::Player, _)) => self.alvo = escolhido.0,
+                Some((shared::EntityTag::Enemy | shared::EntityTag::Player, _)) => {
+                    self.alvo = escolhido.0
+                }
                 Some((shared::EntityTag::Npc, p)) => {
                     if let Some(id) = escolhido.0 {
                         self.falar_com(id, p);
@@ -1264,19 +1520,25 @@ impl Jogo {
             // dela e coleta ao chegar (`acompanhar_coleta_manual`).
             self.coleta_pendente = None;
             if let Some(p) = escolhido.1 {
-                let no = self.terreno.as_ref().and_then(|t| t.coletavel_perto(p, 0.8));
+                let no = self
+                    .terreno
+                    .as_ref()
+                    .and_then(|t| t.coletavel_perto(p, 0.8));
                 match (no, self.world.self_pos()) {
                     (Some((coluna, c, _tipo, raio)), Some(eu)) => {
                         let dir = (eu - c).try_normalize().unwrap_or(Vec2::X);
-                        let onde = c + dir * (raio + shared::ENTITY_RADIUS + shared::COLETA_ALCANCE_UN * 0.5);
+                        let onde = c + dir
+                            * (raio + shared::ENTITY_RADIUS + shared::COLETA_ALCANCE_UN * 0.5);
                         self.auto_coleta.parar();
                         self.coleta_pendente = Some((coluna, c, raio));
-                        self.envia(ClientMessage::MoverPara { x: onde.x, z: onde.y });
+                        self.envia(ClientMessage::MoverPara {
+                            x: onde.x,
+                            z: onde.y,
+                        });
                     }
                     _ => self.envia(ClientMessage::MoverPara { x: p.x, z: p.y }),
                 }
             }
-
         }
         if let Some(t) = self.alvo {
             // sumiu ou morreu: o alvo solta
@@ -1292,12 +1554,17 @@ impl Jogo {
     /// Clicou num NPC: perto, interage; longe, anda ate' ele e interage ao
     /// chegar (ver `acompanhar_loja`).
     fn falar_com(&mut self, id: shared::EntityId, npc: Vec2) {
-        let Some(eu) = self.world.self_pos() else { return };
+        let Some(eu) = self.world.self_pos() else {
+            return;
+        };
         if eu.distance(npc) <= loja::PERTO {
             self.interagir_agora(id);
         } else {
             let destino = npc + (eu - npc).normalize_or_zero() * 2.0;
-            self.envia(ClientMessage::MoverPara { x: destino.x, z: destino.y });
+            self.envia(ClientMessage::MoverPara {
+                x: destino.x,
+                z: destino.y,
+            });
             self.interacao.ir(id);
         }
     }
@@ -1309,15 +1576,27 @@ impl Jogo {
             self.interacao.cancela();
         }
         let eu = self.world.self_pos();
-        let npc = self.interacao.npc.and_then(|id| self.world.ents.get(&id)).map(|e| e.render_pos);
+        let npc = self
+            .interacao
+            .npc
+            .and_then(|id| self.world.ents.get(&id))
+            .map(|e| e.render_pos);
         if let Some(eu) = eu {
             if let Some(id) = self.interacao.acompanhar(eu, npc) {
                 self.interagir_agora(id);
             }
         }
-        let vendedor = self.loja.vendedor.and_then(|id| self.world.ents.get(&id)).map(|e| e.render_pos);
+        let vendedor = self
+            .loja
+            .vendedor
+            .and_then(|id| self.world.ents.get(&id))
+            .map(|e| e.render_pos);
         self.loja.conferir_distancia(eu, vendedor);
-        let mestre = self.missoes.npc.and_then(|id| self.world.ents.get(&id)).map(|e| e.render_pos);
+        let mestre = self
+            .missoes
+            .npc
+            .and_then(|id| self.world.ents.get(&id))
+            .map(|e| e.render_pos);
         self.missoes.conferir_distancia(eu, mestre);
     }
 
@@ -1328,10 +1607,18 @@ impl Jogo {
         self.ultimo_npc = Some(id);
         if let Some((quest_id, titulo, quem)) = self.conversa_de_missao(id) {
             let falas = shared::quests::falas(quest_id, shared::quests::momento::CONVERSA);
-            self.dialogo.abrir(&quem, &titulo, &falas, dialogo::Fim::Conversa { quest_id, npc: id }, String::new());
+            self.dialogo.abrir(
+                &quem,
+                &titulo,
+                &falas,
+                dialogo::Fim::Conversa { quest_id, npc: id },
+                String::new(),
+            );
             return;
         }
-        self.envia(ClientMessage::Interact { target_eid: Some(id.0 as u64) });
+        self.envia(ClientMessage::Interact {
+            target_eid: Some(id.0 as u64),
+        });
     }
 
     /// A missao "fale com" ativa cujo alvo e' este NPC: (id, titulo, nome dele).
@@ -1349,7 +1636,11 @@ impl Jogo {
                 && ((q.obj_kind == objective_kind::TALK && q.obj_target == papel)
                     || (q.obj_kind == objective_kind::VIAGEM && papel == capitao))
         })?;
-        Some((q.id, q.title.clone(), e.meta.name.clone().unwrap_or_default()))
+        Some((
+            q.id,
+            q.title.clone(),
+            e.meta.name.clone().unwrap_or_default(),
+        ))
     }
 
     /// Resposta do Mestre (`QuestOffer`): entrega pronta vira dialogo de
@@ -1360,15 +1651,27 @@ impl Jogo {
         use shared::quests::{falas, momento, GIVER_MESTRE_DA_ILHA};
         let pronta = {
             let slots = &self.bolsa.slots;
-            self.missoes.log.iter()
-                .find(|q| q.giver == GIVER_MESTRE_DA_ILHA && missoes::pronta(q, &|id| missoes::na_bolsa(slots, id)))
+            self.missoes
+                .log
+                .iter()
+                .find(|q| {
+                    q.giver == GIVER_MESTRE_DA_ILHA
+                        && missoes::pronta(q, &|id| missoes::na_bolsa(slots, id))
+                })
                 .cloned()
         };
-        self.missoes.guarda_oferta(self.ultimo_npc, quem.clone(), quests);
+        self.missoes
+            .guarda_oferta(self.ultimo_npc, quem.clone(), quests);
         let proxima = self.missoes.oferta().first().cloned();
         if let Some(q) = pronta {
             let r = missoes::recompensa(&q, &self.bolsa.nomes);
-            self.dialogo.abrir(&quem, &q.title, &falas(q.id, momento::ENTREGA), dialogo::Fim::Entrega { quest_id: q.id }, r);
+            self.dialogo.abrir(
+                &quem,
+                &q.title,
+                &falas(q.id, momento::ENTREGA),
+                dialogo::Fim::Entrega { quest_id: q.id },
+                r,
+            );
         } else if let Some(q) = proxima {
             if self.auto_missao.etapa() == Some(auto_missao::Etapa::AguardandoProxima) {
                 self.envia(ClientMessage::AcceptQuest { quest_id: q.id });
@@ -1376,7 +1679,13 @@ impl Jogo {
                 self.auto_missao.iniciar(q.id, q.title.clone(), get_time());
             } else {
                 let r = missoes::recompensa(&q, &self.bolsa.nomes);
-                self.dialogo.abrir(&quem, &q.title, &falas(q.id, momento::OFERTA), dialogo::Fim::Oferta { quest_id: q.id }, r);
+                self.dialogo.abrir(
+                    &quem,
+                    &q.title,
+                    &falas(q.id, momento::OFERTA),
+                    dialogo::Fim::Oferta { quest_id: q.id },
+                    r,
+                );
             }
         } else if !self.auto_missao.ativo() {
             self.missoes.abre_janela();
@@ -1385,7 +1694,15 @@ impl Jogo {
 
     /// Clicou numa missao do rastreador (ou "Ir" no diario): auto missao.
     fn iniciar_auto_missao(&mut self, id: u16) {
-        let Some(nome) = self.missoes.log.iter().find(|q| q.id == id).map(|q| q.title.clone()) else { return };
+        let Some(nome) = self
+            .missoes
+            .log
+            .iter()
+            .find(|q| q.id == id)
+            .map(|q| q.title.clone())
+        else {
+            return;
+        };
         self.mapa.viagem.cancelar();
         self.auto_combate.parar();
         self.auto_coleta.parar();
@@ -1415,6 +1732,7 @@ impl Jogo {
             || self.diarias.aberto
             || self.lojas.aberto
             || self.mercado.aberto
+            || self.social.aberto
             || self.morte.painel
             || self.config_barra.aberto
             || self.config_coleta.aberto
@@ -1444,7 +1762,8 @@ impl Jogo {
             Some(e) if self.ficha.nivel == 0 => e.meta.nivel as u32,
             _ => self.ficha.nivel,
         };
-        self.economia.entrar(get_time(), self.ficha.xp, nivel, self.bolsa.ouro);
+        self.economia
+            .entrar(get_time(), self.ficha.xp, nivel, self.bolsa.ouro);
     }
 
     /// O que o personagem esta' fazendo, pro resumo da tela preta.
@@ -1471,13 +1790,35 @@ impl Jogo {
         let agora = get_time();
         let eu = self.world.self_id.and_then(|id| self.world.ents.get(&id));
         let (hp, hp_max, nivel_ent, nome) = eu
-            .map(|e| (e.state.hp as i32, e.meta.hp_max as i32, e.meta.nivel as u32, e.meta.name.clone().unwrap_or_default()))
+            .map(|e| {
+                (
+                    e.state.hp as i32,
+                    e.meta.hp_max as i32,
+                    e.meta.nivel as u32,
+                    e.meta.name.clone().unwrap_or_default(),
+                )
+            })
             .unwrap_or_default();
-        let nivel = if self.ficha.nivel == 0 { nivel_ent } else { self.ficha.nivel };
+        let nivel = if self.ficha.nivel == 0 {
+            nivel_ent
+        } else {
+            self.ficha.nivel
+        };
         let hp_max = self.bolsa.stats.as_ref().map_or(hp_max, |s| s.hp_max);
-        let mult = if self.ficha.mult_xp > 0 { self.ficha.mult_xp } else { shared::DEFAULT_XP_MULTIPLIER };
-        let (base, prox) = (shared::xp_for_level_with_mult(nivel, mult), shared::xp_for_level_with_mult(nivel + 1, mult));
-        let exp = if prox > base { self.ficha.xp.saturating_sub(base) as f32 / (prox - base) as f32 } else { 0.0 };
+        let mult = if self.ficha.mult_xp > 0 {
+            self.ficha.mult_xp
+        } else {
+            shared::DEFAULT_XP_MULTIPLIER
+        };
+        let (base, prox) = (
+            shared::xp_for_level_with_mult(nivel, mult),
+            shared::xp_for_level_with_mult(nivel + 1, mult),
+        );
+        let exp = if prox > base {
+            self.ficha.xp.saturating_sub(base) as f32 / (prox - base) as f32
+        } else {
+            0.0
+        };
         let estado = self.estado_da_economia();
         let bolsa = &self.bolsa;
         let nome_item = |id: u16| bolsa.nome(id);
@@ -1495,7 +1836,8 @@ impl Jogo {
         };
         if self.economia.desenha(&resumo, agora) {
             // Deslizou: volta e mostra o que rendeu enquanto estava fora.
-            self.economia.sair_com_resumo(agora, self.ficha.xp, nivel, self.bolsa.ouro);
+            self.economia
+                .sair_com_resumo(agora, self.ficha.xp, nivel, self.bolsa.ouro);
         }
     }
 
@@ -1523,19 +1865,33 @@ impl Jogo {
 
     /// Quanto do chao em volta ja' existe (0..1), pra barra.
     fn progresso_do_carregando(&self) -> f32 {
-        let Some(eu) = self.world.self_pos() else { return 0.0 };
-        let (feitos, total) = self.terreno.as_ref().map_or((1, 1), |t| t.prontos_em(eu, RAIO_DO_CARREGANDO));
+        let Some(eu) = self.world.self_pos() else {
+            return 0.0;
+        };
+        let (feitos, total) = self
+            .terreno
+            .as_ref()
+            .map_or((1, 1), |t| t.prontos_em(eu, RAIO_DO_CARREGANDO));
         let vila = if self.construcoes.prontas() { 1.0 } else { 0.0 };
         (feitos as f32 / total.max(1) as f32) * 0.85 + vila * 0.15
     }
 
     fn acompanhar_carregando(&mut self) {
-        let Some(desde) = self.carregando_desde else { return };
+        let Some(desde) = self.carregando_desde else {
+            return;
+        };
         let passou = get_time() - desde;
         let pronto = self.world.self_pos().is_some() && self.progresso_do_carregando() >= 1.0;
         // Minimo curto pra nao piscar; teto pra nunca prender o jogador.
         if (pronto && passou >= 0.35) || passou >= 10.0 {
-            println!("[carregando] acabou em {passou:.2} s ({})", if pronto { "chao pronto" } else { "teto de 10 s" });
+            println!(
+                "[carregando] acabou em {passou:.2} s ({})",
+                if pronto {
+                    "chao pronto"
+                } else {
+                    "teto de 10 s"
+                }
+            );
             self.carregando_desde = None;
             self.cam_altura = f32::MIN;
         }
@@ -1586,14 +1942,19 @@ impl Jogo {
     fn alternar_montaria(&mut self) {
         use shared::loja::PedidoLoja;
         if self.eu_montado() || self.montarias.montando(get_time()) {
-            self.envia(ClientMessage::Loja { pedido: PedidoLoja::Desmontar });
+            self.envia(ClientMessage::Loja {
+                pedido: PedidoLoja::Desmontar,
+            });
             return;
         }
         if !self.montarias.tem_montaria() {
-            self.chat.push("Montaria: você ainda não tem. Onde obter: Menu → Comércio → Loja.".into());
+            self.chat
+                .push("Montaria: você ainda não tem. Onde obter: Menu → Comércio → Loja.".into());
             return;
         }
-        self.envia(ClientMessage::Loja { pedido: PedidoLoja::Montar });
+        self.envia(ClientMessage::Loja {
+            pedido: PedidoLoja::Montar,
+        });
     }
 
     /// Viagem automatica (mapa, Ir para, auto missao): sobe na montaria se
@@ -1601,11 +1962,17 @@ impl Jogo {
     /// pedir de novo a cada trecho da rota.
     fn montar_pra_viajar(&mut self) {
         let agora = get_time();
-        if !self.montarias.tem_montaria() || self.eu_montado() || self.montarias.montando(agora) || agora - self.montar_auto_em < 6.0 {
+        if !self.montarias.tem_montaria()
+            || self.eu_montado()
+            || self.montarias.montando(agora)
+            || agora - self.montar_auto_em < 6.0
+        {
             return;
         }
         self.montar_auto_em = agora;
-        self.envia(ClientMessage::Loja { pedido: shared::loja::PedidoLoja::Montar });
+        self.envia(ClientMessage::Loja {
+            pedido: shared::loja::PedidoLoja::Montar,
+        });
     }
 
     /// Fecha os paineis grandes: so' um por vez (docs/HUD.md 4.2).
@@ -1618,6 +1985,7 @@ impl Jogo {
         self.diarias.fechar();
         self.lojas.fechar();
         self.mercado.fechar();
+        self.social.fechar();
         self.dungeon.fechar();
         self.presenca.fechar();
         self.loja_tp.fechar();
@@ -1713,6 +2081,17 @@ impl Jogo {
                     self.envia(pedido);
                 }
             }
+            Item::Grupo | Item::Amigos | Item::Correio | Item::Clan => {
+                let aba = match item {
+                    Item::Grupo => social_ui::Aba::Grupo,
+                    Item::Amigos => social_ui::Aba::Amigos,
+                    Item::Correio => social_ui::Aba::Correio,
+                    _ => social_ui::Aba::Cla,
+                };
+                for pedido in self.social.abrir(aba) {
+                    self.envia(pedido);
+                }
+            }
             Item::Mercado => {
                 for pedido in self.mercado.abrir() {
                     self.envia(pedido);
@@ -1757,6 +2136,9 @@ impl Jogo {
             true
         } else if self.morte.painel {
             self.morte.painel = false;
+            true
+        } else if self.social.aberto {
+            self.social.fechar();
             true
         } else if self.mercado.aberto {
             self.mercado.fechar();
@@ -1804,7 +2186,9 @@ impl Jogo {
     /// e no MENU.
     fn selo_missoes(&self) -> bool {
         let slots = &self.bolsa.slots;
-        self.missoes.marcador(&|id| missoes::na_bolsa(slots, id)).is_some()
+        self.missoes
+            .marcador(&|id| missoes::na_bolsa(slots, id))
+            .is_some()
     }
 
     /// Diaria pra aceitar ou entregar: ponto vermelho no icone e no MENU.
@@ -1833,8 +2217,15 @@ impl Jogo {
         if let Some(a) = self.habilidades.aviso_ativo() {
             return Some((a.to_string(), hud_estilo::OURO));
         }
-        if self.sem_visada.is_some_and(|(id, t)| Some(id) == self.alvo && get_time() - t < 1.6) {
-            let t = if self.auto_combate.ativo() { "Sem visada · trocando de alvo" } else { "Sem visada · aproximando" };
+        if self
+            .sem_visada
+            .is_some_and(|(id, t)| Some(id) == self.alvo && get_time() - t < 1.6)
+        {
+            let t = if self.auto_combate.ativo() {
+                "Sem visada · trocando de alvo"
+            } else {
+                "Sem visada · aproximando"
+            };
             return Some((t.to_string(), hud_estilo::OURO));
         }
         if let Some(t) = self.ir_para.faixa(eu) {
@@ -1855,7 +2246,12 @@ impl Jogo {
         // Andando por clique, sem modo nenhum: quanto falta pelo caminho.
         rastro::restante(&self.rastro, eu?, self.mapa.viagem.destino())
             .filter(|m| *m >= 1.0)
-            .map(|m| (format!("Andando · {}", rastro::formata_distancia(m)), hud_estilo::AUTO))
+            .map(|m| {
+                (
+                    format!("Andando · {}", rastro::formata_distancia(m)),
+                    hud_estilo::AUTO,
+                )
+            })
     }
 
     /// Teclas de ACAO no molde do MIR4 de PC (docs/HUD.md 2.5). Nenhuma abre
@@ -1877,7 +2273,10 @@ impl Jogo {
         if is_key_pressed(KeyCode::C) {
             self.usar_rapido(0);
         }
-        for (i, k) in [KeyCode::Key8, KeyCode::Key9, KeyCode::Key0].into_iter().enumerate() {
+        for (i, k) in [KeyCode::Key8, KeyCode::Key9, KeyCode::Key0]
+            .into_iter()
+            .enumerate()
+        {
             if is_key_pressed(k) {
                 self.usar_rapido(i + 1);
             }
@@ -1886,12 +2285,16 @@ impl Jogo {
 
     /// Inimigos vivos perto, do mais perto pro mais longe.
     fn inimigos_perto(&self) -> Vec<shared::EntityId> {
-        let Some(eu) = self.world.self_pos() else { return Vec::new() };
+        let Some(eu) = self.world.self_pos() else {
+            return Vec::new();
+        };
         let mut v: Vec<(f32, shared::EntityId)> = self
             .world
             .ents
             .iter()
-            .filter(|(_, e)| e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none())
+            .filter(|(_, e)| {
+                e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none()
+            })
             .map(|(id, e)| (e.render_pos.distance(eu), *id))
             .filter(|(d, _)| *d <= RAIO_DE_MIRA)
             .collect();
@@ -1913,8 +2316,12 @@ impl Jogo {
     /// F ou o botao ATACAR: com alvo vivo, vai ate' ele (o golpe e' automatico
     /// no alcance); sem alvo, escolhe o inimigo mais perto.
     fn atacar(&mut self) {
-        let valido = self.alvo.and_then(|id| self.world.ents.get(&id))
-            .is_some_and(|e| e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none());
+        let valido = self
+            .alvo
+            .and_then(|id| self.world.ents.get(&id))
+            .is_some_and(|e| {
+                e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none()
+            });
         if valido {
             self.ultima_aproximacao = 0.0;
             return;
@@ -1931,13 +2338,18 @@ impl Jogo {
         if lista.is_empty() {
             return;
         }
-        let i = self.alvo.and_then(|a| lista.iter().position(|x| *x == a)).map_or(0, |p| (p + 1) % lista.len());
+        let i = self
+            .alvo
+            .and_then(|a| lista.iter().position(|x| *x == a))
+            .map_or(0, |p| (p + 1) % lista.len());
         self.mirar(lista[i]);
     }
 
     /// Quanto a bolsa tem do consumivel de cada espaco da barra.
     fn qtd_rapidos(&self) -> [u32; barra::ESPACOS] {
-        self.barra.espacos.map(|e| barra::quantidade(&self.bolsa.slots, e.item_id))
+        self.barra
+            .espacos
+            .map(|e| barra::quantidade(&self.bolsa.slots, e.item_id))
     }
 
     /// C (0) ou 8/9/0 (1..3): usa o consumivel do espaco. Vazio abre o
@@ -1966,7 +2378,11 @@ impl Jogo {
     fn usar_espaco(&mut self, i: usize, forte: bool) {
         if let Some(esp) = self.barra.espacos.get(i).copied() {
             if esp.item_id != 0 && self.buff_ativo_de(esp.item_id).is_some() {
-                self.confirmar = Some(confirmar::Pendente::Barra { i, forte, item: esp.item_id });
+                self.confirmar = Some(confirmar::Pendente::Barra {
+                    i,
+                    forte,
+                    item: esp.item_id,
+                });
                 return;
             }
         }
@@ -1976,7 +2392,9 @@ impl Jogo {
     /// O uso de verdade. O AUTO da barra entra por aqui: ele ja' pula buff
     /// ativo sozinho, e janela nenhuma pode aparecer sem o jogador pedir.
     fn usar_espaco_sem_perguntar(&mut self, i: usize, forte: bool) {
-        let Some(esp) = self.barra.espacos.get(i).copied() else { return };
+        let Some(esp) = self.barra.espacos.get(i).copied() else {
+            return;
+        };
         if esp.item_id == 0 {
             self.fecha_paineis();
             self.config_barra.abrir(Some(i));
@@ -1984,7 +2402,9 @@ impl Jogo {
         }
         match barra::slot_para_usar(&self.bolsa.slots, esp.item_id, forte) {
             Some(slot) => self.envia(ClientMessage::UseItem { slot: slot as u16 }),
-            None => self.chat.push(format!("Sem {} na bolsa.", self.bolsa.nome(esp.item_id))),
+            None => self
+                .chat
+                .push(format!("Sem {} na bolsa.", self.bolsa.nome(esp.item_id))),
         }
     }
 
@@ -2078,7 +2498,9 @@ impl Jogo {
     /// A cada quadro: o AUTO de cada espaco da barra. Roda com painel aberto
     /// tambem — pocao nao espera o jogador fechar a bolsa.
     fn auto_da_barra(&mut self) {
-        let Some(eu) = self.world.self_id.and_then(|id| self.world.ents.get(&id)) else { return };
+        let Some(eu) = self.world.self_id.and_then(|id| self.world.ents.get(&id)) else {
+            return;
+        };
         let st = self.bolsa.stats.as_ref();
         let mp_max = st.map_or(50, |s| s.mp_max).max(1) as f32;
         let vigor_max = st.map_or(100, |s| s.stamina_max).max(1) as f32;
@@ -2086,7 +2508,10 @@ impl Jogo {
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs() as i64);
         let estado = barra::Estado {
-            vivo: eu.state.hp > 0 && eu.morte.is_none() && eu.state.flags & shared::ent_flags::DOWNED == 0 && !self.morte.morto,
+            vivo: eu.state.hp > 0
+                && eu.morte.is_none()
+                && eu.state.flags & shared::ent_flags::DOWNED == 0
+                && !self.morte.morto,
             hp: eu.state.hp as f32 / eu.meta.hp_max.max(1) as f32,
             mp: self.ficha.mp.map_or(1.0, |m| m as f32 / mp_max),
             vigor: self.ficha.vigor.map_or(1.0, |v| v as f32 / vigor_max),
@@ -2095,7 +2520,10 @@ impl Jogo {
             sorte_ativo: self.bonus_sorte_ate > agora_unix,
         };
         let qtd = self.qtd_rapidos();
-        if let Some((i, forte)) = self.barra.decide(&estado, &qtd, &self.bolsa.slots, get_time()) {
+        if let Some((i, forte)) = self
+            .barra
+            .decide(&estado, &qtd, &self.bolsa.slots, get_time())
+        {
             self.usar_espaco_sem_perguntar(i, forte);
         }
     }
@@ -2105,14 +2533,26 @@ impl Jogo {
         if !self.auto_missao.ativo() {
             return;
         }
-        let morto = self.world.self_id.and_then(|id| self.world.ents.get(&id))
+        let morto = self
+            .world
+            .self_id
+            .and_then(|id| self.world.ents.get(&id))
             .is_some_and(|e| e.state.hp == 0 || e.morte.is_some());
         if self.andando_na_mao() || morto {
             self.auto_missao.parar();
-            self.chat.push(if morto { "Auto missão pausada: você caiu." } else { "Auto missão pausada." }.into());
+            self.chat.push(
+                if morto {
+                    "Auto missão pausada: você caiu."
+                } else {
+                    "Auto missão pausada."
+                }
+                .into(),
+            );
             return;
         }
-        let Some(eu) = self.world.self_pos() else { return };
+        let Some(eu) = self.world.self_pos() else {
+            return;
+        };
         let agora = get_time();
         let id = self.auto_missao.quest.unwrap_or(0);
         let ctx = {
@@ -2131,7 +2571,9 @@ impl Jogo {
         };
         for acao in self.auto_missao.passo(ctx) {
             match acao {
-                auto_missao::Acao::PedirDestino(q) => self.envia(ClientMessage::QuestDestino { quest_id: q }),
+                auto_missao::Acao::PedirDestino(q) => {
+                    self.envia(ClientMessage::QuestDestino { quest_id: q })
+                }
                 auto_missao::Acao::Viajar(p) => {
                     if self.alvo.take().is_some() {
                         self.envia(ClientMessage::SetTarget { target: None });
@@ -2153,7 +2595,8 @@ impl Jogo {
                 auto_missao::Acao::LigarColeta(p) => {
                     self.auto_combate.parar();
                     // Missao de coleta: os tipos DELA, nao os da configuracao.
-                    let tipos = shared::quests::quest_by_id(id).map_or([true; 5], |d| auto_coleta::tipos_da_missao(d));
+                    let tipos = shared::quests::quest_by_id(id)
+                        .map_or([true; 5], |d| auto_coleta::tipos_da_missao(d));
                     self.auto_coleta.ligar_missao(p, tipos, agora);
                 }
                 auto_missao::Acao::PararAutos => {
@@ -2176,14 +2619,18 @@ impl Jogo {
     fn defender_a_coleta(&mut self, agora: f64) -> bool {
         const LEMBRA_S: f64 = 3.0;
         let vivo = |w: &world::World, id: shared::EntityId| {
-            w.ents.get(&id).is_some_and(|e| e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none())
+            w.ents.get(&id).is_some_and(|e| {
+                e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none()
+            })
         };
         if !self.auto_coleta.defender {
             self.defesa_da_coleta = None;
             return false;
         }
         if self.defesa_da_coleta.is_none() {
-            let Some((id, quando)) = self.agressor else { return false };
+            let Some((id, quando)) = self.agressor else {
+                return false;
+            };
             if agora - quando > LEMBRA_S || !vivo(&self.world, id) {
                 return false;
             }
@@ -2192,7 +2639,9 @@ impl Jogo {
             self.envia(ClientMessage::PararColeta);
             self.chat.push("Auto coleta: atacado, revidando.".into());
         }
-        let Some(id) = self.defesa_da_coleta else { return false };
+        let Some(id) = self.defesa_da_coleta else {
+            return false;
+        };
         if vivo(&self.world, id) {
             if self.alvo != Some(id) {
                 self.alvo = Some(id);
@@ -2205,7 +2654,10 @@ impl Jogo {
         self.defesa_da_coleta = None;
         self.alvo = None;
         self.envia(ClientMessage::SetTarget { target: None });
-        if self.agressor.is_some_and(|(a, q)| a != id && agora - q <= LEMBRA_S && vivo(&self.world, a)) {
+        if self
+            .agressor
+            .is_some_and(|(a, q)| a != id && agora - q <= LEMBRA_S && vivo(&self.world, a))
+        {
             return self.defender_a_coleta(agora);
         }
         self.agressor = None;
@@ -2277,17 +2729,30 @@ impl Jogo {
             self.defesa_da_coleta = None;
             return;
         }
-        let Some(eu) = self.world.self_pos() else { return };
+        let Some(eu) = self.world.self_pos() else {
+            return;
+        };
         if self.defender_a_coleta(agora) {
             return;
         }
         match self.auto_coleta.passo(eu, agora, self.mapa.viagem.ativa()) {
-            auto_coleta::Acao::PedirNo { tipos, raio, centro } => {
-                self.envia(ClientMessage::PedirNoDeColeta { tipos, raio, centro: [centro.x, centro.y] });
+            auto_coleta::Acao::PedirNo {
+                tipos,
+                raio,
+                centro,
+            } => {
+                self.envia(ClientMessage::PedirNoDeColeta {
+                    tipos,
+                    raio,
+                    centro: [centro.x, centro.y],
+                });
             }
             // Veio do mapa ("Ir" numa regiao): so' aquele tipo, em volta dela.
             auto_coleta::Acao::PedirNoDoTipo { tipo, perto } => {
-                self.envia(ClientMessage::PedirSpotDeColetaDe { tipo, perto: [perto.x, perto.y] });
+                self.envia(ClientMessage::PedirSpotDeColetaDe {
+                    tipo,
+                    perto: [perto.x, perto.y],
+                });
             }
             auto_coleta::Acao::Ir(p) => self.mapa.viagem.iniciar(p, agora),
             auto_coleta::Acao::Coletar(coluna) => self.envia(ClientMessage::ColetarNo { coluna }),
@@ -2298,12 +2763,16 @@ impl Jogo {
     /// Clique numa pedra/tronco: anda ate' o alcance e manda coletar ao
     /// chegar. Teclado ou ligar o AUTO desistem.
     fn acompanhar_coleta_manual(&mut self, movimento: bool) {
-        let Some((coluna, centro, raio)) = self.coleta_pendente else { return };
+        let Some((coluna, centro, raio)) = self.coleta_pendente else {
+            return;
+        };
         if movimento || self.auto_coleta.ativo() {
             self.coleta_pendente = None;
             return;
         }
-        let Some(eu) = self.world.self_pos() else { return };
+        let Some(eu) = self.world.self_pos() else {
+            return;
+        };
         if eu.distance(centro) - raio - shared::ENTITY_RADIUS <= shared::COLETA_ALCANCE_UN {
             self.envia(ClientMessage::ColetarNo { coluna });
             self.coleta_pendente = None;
@@ -2322,8 +2791,8 @@ impl Jogo {
         self.interacao.cancela();
         self.loja.fecha();
         self.missoes.fecha();
-                self.auto_missao.parar();
-                self.dialogo.fechar();
+        self.auto_missao.parar();
+        self.dialogo.fechar();
         if self.alvo.take().is_some() {
             self.envia(ClientMessage::SetTarget { target: None });
         }
@@ -2356,16 +2825,23 @@ impl Jogo {
         if !self.ir_para.ativo() {
             return;
         }
-        let morto = self.world.self_id.and_then(|id| self.world.ents.get(&id))
+        let morto = self
+            .world
+            .self_id
+            .and_then(|id| self.world.ents.get(&id))
             .is_some_and(|e| e.state.hp == 0 || e.morte.is_some());
         if morto || self.andando_na_mao() {
             self.ir_para.parar();
             self.mapa.viagem.cancelar();
             return;
         }
-        let Some(eu) = self.world.self_pos() else { return };
+        let Some(eu) = self.world.self_pos() else {
+            return;
+        };
         let agora = get_time();
-        let Some(acao) = self.ir_para.passo(eu, agora, self.mapa.viagem.ativa()) else { return };
+        let Some(acao) = self.ir_para.passo(eu, agora, self.mapa.viagem.ativa()) else {
+            return;
+        };
         match acao {
             ir_para::Acao::Viajar(p) => self.mapa.viagem.iniciar(p, agora),
             ir_para::Acao::LigarCombate(p) => {
@@ -2380,9 +2856,18 @@ impl Jogo {
                 self.auto_coleta.filtro = Some((tipo, p));
             }
             ir_para::Acao::FalarPerto(p) => {
-                let npc = self.world.ents.iter()
-                    .filter(|(_, e)| e.meta.tag == shared::EntityTag::Npc && e.render_pos.distance(p) <= 8.0)
-                    .min_by(|a, b| a.1.render_pos.distance_squared(p).total_cmp(&b.1.render_pos.distance_squared(p)))
+                let npc = self
+                    .world
+                    .ents
+                    .iter()
+                    .filter(|(_, e)| {
+                        e.meta.tag == shared::EntityTag::Npc && e.render_pos.distance(p) <= 8.0
+                    })
+                    .min_by(|a, b| {
+                        a.1.render_pos
+                            .distance_squared(p)
+                            .total_cmp(&b.1.render_pos.distance_squared(p))
+                    })
                     .map(|(id, e)| (*id, e.render_pos));
                 match npc {
                     Some((id, pos)) => self.falar_com(id, pos),
@@ -2405,8 +2890,13 @@ impl Jogo {
                 self.diarias.fechar();
                 let nome = shared::construcao::Papel::Missoes.nome();
                 let mestre = self.mapa.mestre.or_else(|| {
-                    self.world.ents.values()
-                        .find(|e| e.meta.tag == shared::EntityTag::Npc && e.meta.name.as_deref() == Some(nome))
+                    self.world
+                        .ents
+                        .values()
+                        .find(|e| {
+                            e.meta.tag == shared::EntityTag::Npc
+                                && e.meta.name.as_deref() == Some(nome)
+                        })
                         .map(|e| e.render_pos)
                 });
                 match mestre {
@@ -2416,7 +2906,9 @@ impl Jogo {
                         raio: 0.0,
                         rotulo: nome.to_string(),
                     }),
-                    None => self.chat.push("Não sei onde fica o Mestre de Missões.".into()),
+                    None => self
+                        .chat
+                        .push("Não sei onde fica o Mestre de Missões.".into()),
                 }
             }
             menu_missoes::Clique::Aviso(s) => self.chat.push(s),
@@ -2428,13 +2920,18 @@ impl Jogo {
         if !self.mapa.viagem.ativa() {
             return;
         }
-        let morto = self.world.self_id.and_then(|id| self.world.ents.get(&id))
+        let morto = self
+            .world
+            .self_id
+            .and_then(|id| self.world.ents.get(&id))
             .is_some_and(|e| e.state.hp == 0 || e.morte.is_some());
         if morto || self.andando_na_mao() {
             self.mapa.viagem.cancelar();
             return;
         }
-        let Some(eu) = self.world.self_pos() else { return };
+        let Some(eu) = self.world.self_pos() else {
+            return;
+        };
         // A viagem sai do mapa pelo tempo da conta: ela quer `&mut`, e o teste
         // de terra quer o mapa inteiro.
         let mut viagem = std::mem::take(&mut self.mapa.viagem);
@@ -2445,8 +2942,14 @@ impl Jogo {
             mapa::Passo::Desistiu => self.chat.push("viagem: caminho bloqueado".into()),
             // Viagem pelo mapa chegou (e nada automatico segue): desce.
             mapa::Passo::Chegou => {
-                if self.eu_montado() && self.auto_missao.etapa().is_none() && !self.ir_para.ativo() && !self.auto_coleta.ativo() {
-                    self.envia(ClientMessage::Loja { pedido: shared::loja::PedidoLoja::Desmontar });
+                if self.eu_montado()
+                    && self.auto_missao.etapa().is_none()
+                    && !self.ir_para.ativo()
+                    && !self.auto_coleta.ativo()
+                {
+                    self.envia(ClientMessage::Loja {
+                        pedido: shared::loja::PedidoLoja::Desmontar,
+                    });
                 }
             }
             mapa::Passo::Nada => {}
@@ -2455,14 +2958,30 @@ impl Jogo {
 
     /// Skills ofensivas usam a selecao enviada por SetTarget.
     fn usar_habilidade(&mut self) {
-        if self.painel_grande() { self.habilidades.cancela_arrasto(); return; }
+        if self.painel_grande() {
+            self.habilidades.cancela_arrasto();
+            return;
+        }
         let conjunto = shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0));
-        let Some(eu)=self.world.self_id.and_then(|id|self.world.ents.get(&id)) else {return};
-        let distancia_alvo=self.alvo.and_then(|id|self.world.ents.get(&id)).filter(|e|e.state.hp>0 && e.morte.is_none()).map(|e|eu.render_pos.distance(e.render_pos));
-        let contexto=habilidades::Contexto{conjunto,nivel:self.ficha.nivel,mp:self.ficha.mp.unwrap_or(0),
-            vivo:eu.state.hp>0 && eu.state.flags & shared::ent_flags::DOWNED == 0,
-            vida_baixa:eu.state.hp as f32/(eu.meta.hp_max.max(1) as f32)<0.85,distancia_alvo};
-        let Some(id) = self.habilidades.pedido(contexto) else { return };
+        let Some(eu) = self.world.self_id.and_then(|id| self.world.ents.get(&id)) else {
+            return;
+        };
+        let distancia_alvo = self
+            .alvo
+            .and_then(|id| self.world.ents.get(&id))
+            .filter(|e| e.state.hp > 0 && e.morte.is_none())
+            .map(|e| eu.render_pos.distance(e.render_pos));
+        let contexto = habilidades::Contexto {
+            conjunto,
+            nivel: self.ficha.nivel,
+            mp: self.ficha.mp.unwrap_or(0),
+            vivo: eu.state.hp > 0 && eu.state.flags & shared::ent_flags::DOWNED == 0,
+            vida_baixa: eu.state.hp as f32 / (eu.meta.hp_max.max(1) as f32) < 0.85,
+            distancia_alvo,
+        };
+        let Some(id) = self.habilidades.pedido(contexto) else {
+            return;
+        };
         self.envia(ClientMessage::SkillCast { skill_id: id });
     }
 
@@ -2475,11 +2994,18 @@ impl Jogo {
             return;
         }
         // Fora da instancia so' espera: sair dela (`Aviso::Saiu`) ja' desliga.
-        let (Some(mut estado), Some(eu)) = (self.dungeon.estado_auto(agora), self.world.self_pos()) else {
+        let (Some(mut estado), Some(eu)) = (self.dungeon.estado_auto(agora), self.world.self_pos())
+        else {
             return;
         };
-        let bau = self.world.ents.iter()
-            .find(|(_, e)| e.meta.tag == shared::EntityTag::Npc && shared::npc_papel_de_kind(e.meta.kind) == shared::dungeon::PAPEL_BAU)
+        let bau = self
+            .world
+            .ents
+            .iter()
+            .find(|(_, e)| {
+                e.meta.tag == shared::EntityTag::Npc
+                    && shared::npc_papel_de_kind(e.meta.kind) == shared::dungeon::PAPEL_BAU
+            })
             .map(|(id, e)| (*id, e.render_pos));
         estado.bau = bau.map(|b| b.1);
         if estado.bau_aberto && self.auto_dungeon_bau_em.is_none() {
@@ -2492,7 +3018,9 @@ impl Jogo {
             Passo::Esperar => {}
             Passo::Reviver if pode_enviar => {
                 self.auto_dungeon_envio = agora;
-                self.envia(ClientMessage::Dungeon { pedido: shared::dungeon::Pedido::Reviver });
+                self.envia(ClientMessage::Dungeon {
+                    pedido: shared::dungeon::Pedido::Reviver,
+                });
             }
             Passo::Lutar => {
                 // O auto combate de sempre, com a area indo junto: a arena e'
@@ -2507,8 +3035,15 @@ impl Jogo {
                 self.auto_combate.centro = Some(eu);
                 // Nenhum no alcance do auto combate: anda ate' o mais perto.
                 if self.alvo.is_none() && pode_enviar {
-                    let perto = self.world.ents.values()
-                        .filter(|e| e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none())
+                    let perto = self
+                        .world
+                        .ents
+                        .values()
+                        .filter(|e| {
+                            e.meta.tag == shared::EntityTag::Enemy
+                                && e.state.hp > 0
+                                && e.morte.is_none()
+                        })
                         .map(|e| e.render_pos)
                         .min_by(|a, b| a.distance_squared(eu).total_cmp(&b.distance_squared(eu)));
                     if let Some(p) = perto {
@@ -2522,7 +3057,9 @@ impl Jogo {
                 self.auto_dungeon_envio = agora;
                 if let Some((id, p)) = bau {
                     if perto {
-                        self.envia(ClientMessage::Interact { target_eid: Some(id.0 as u64) });
+                        self.envia(ClientMessage::Interact {
+                            target_eid: Some(id.0 as u64),
+                        });
                     } else {
                         self.envia(ClientMessage::MoverPara { x: p.x, z: p.y });
                     }
@@ -2531,19 +3068,24 @@ impl Jogo {
             Passo::Sair if pode_enviar => {
                 self.auto_dungeon_envio = agora;
                 self.dungeon.auto = false;
-                self.envia(ClientMessage::Dungeon { pedido: shared::dungeon::Pedido::Sair });
+                self.envia(ClientMessage::Dungeon {
+                    pedido: shared::dungeon::Pedido::Sair,
+                });
             }
             _ => {}
         }
     }
 
     fn atualizar_auto_combate(&mut self) {
-        let movimento=self.andando_na_mao();
-        let clique_mundo=self.clique_no_mundo() && !self.ui_pega_mouse();
+        let movimento = self.andando_na_mao();
+        let clique_mundo = self.clique_no_mundo() && !self.ui_pega_mouse();
         // O botao so' existe com o HUD a' mostra; a tecla Z vale sempre. Painel
         // aberto NAO desliga o AUTO (MIR4: o menu aberto nao para o combate).
-        let alterna=is_key_pressed(KeyCode::Z) || (!self.painel_grande() && auto_combate::pega_mouse() && is_mouse_button_pressed(MouseButton::Left));
-        let esc=is_key_pressed(KeyCode::Escape) && !self.esc_consumido;
+        let alterna = is_key_pressed(KeyCode::Z)
+            || (!self.painel_grande()
+                && auto_combate::pega_mouse()
+                && is_mouse_button_pressed(MouseButton::Left));
+        let esc = is_key_pressed(KeyCode::Escape) && !self.esc_consumido;
         if self.auto_combate.ativo() && (esc || alterna) {
             self.auto_combate.parar();
             // Desligar o combate na mao desliga tambem o AUTO DUNGEON, que o religaria.
@@ -2552,8 +3094,11 @@ impl Jogo {
             if alterna || esc {
                 self.auto_missao.parar();
             }
-            self.alvo=None;self.envia(ClientMessage::SetTarget{target:None});
-            if let Some(p)=self.world.self_pos() {self.envia(ClientMessage::MoverPara{x:p.x,z:p.y});}
+            self.alvo = None;
+            self.envia(ClientMessage::SetTarget { target: None });
+            if let Some(p) = self.world.self_pos() {
+                self.envia(ClientMessage::MoverPara { x: p.x, z: p.y });
+            }
             return;
         }
         if alterna {
@@ -2563,52 +3108,74 @@ impl Jogo {
             self.auto_coleta.parar();
             self.auto_missao.parar();
             self.ir_para.parar();
-            if let Some(p)=self.world.self_pos() {self.auto_combate.ligar(p);}
+            if let Some(p) = self.world.self_pos() {
+                self.auto_combate.ligar(p);
+            }
         }
-        if !self.auto_combate.ativo() {return;}
-        let agora=get_time();
+        if !self.auto_combate.ativo() {
+            return;
+        }
+        let agora = get_time();
         // Andar nao desliga: teclado, ou clique no CHAO (clique em bicho so'
         // troca o alvo, e o AUTO segue com ele).
         if movimento || (clique_mundo && self.alvo.is_none()) {
             self.auto_combate.andar_manual(agora);
         }
-        let Some(eu)=self.world.self_pos() else {return};
-        if self.auto_combate.segurando(eu,agora) {return;}
-        let novo=self.auto_combate.escolher(&self.world,self.alvo,agora);
-        if novo!=self.alvo {
-            self.alvo=novo;self.envia(ClientMessage::SetTarget{target:novo});
+        let Some(eu) = self.world.self_pos() else {
+            return;
+        };
+        if self.auto_combate.segurando(eu, agora) {
+            return;
+        }
+        let novo = self.auto_combate.escolher(&self.world, self.alvo, agora);
+        if novo != self.alvo {
+            self.alvo = novo;
+            self.envia(ClientMessage::SetTarget { target: novo });
             if novo.is_none() {
-                if let Some(p)=self.world.self_pos() {self.envia(ClientMessage::MoverPara{x:p.x,z:p.y});}
+                if let Some(p) = self.world.self_pos() {
+                    self.envia(ClientMessage::MoverPara { x: p.x, z: p.y });
+                }
             }
         }
         // Limpou a area: vai atras do proximo em vez de ficar parado.
         if novo.is_none() {
-            if let Some(p)=self.auto_combate.caca(&self.world,eu,agora) {
-                self.envia(ClientMessage::MoverPara{x:p.x,z:p.y});
+            if let Some(p) = self.auto_combate.caca(&self.world, eu, agora) {
+                self.envia(ClientMessage::MoverPara { x: p.x, z: p.y });
             }
         }
     }
 
     /// Com um inimigo selecionado e fora do alcance, anda ate ele.
     fn ir_ate_o_alvo(&mut self) {
-        if self.habilidades.ocupada() { return; }
+        if self.habilidades.ocupada() {
+            return;
+        }
         let Some(alvo) = self.alvo else { return };
         if self.andando_na_mao() {
             return;
         }
         let eu = self.world.self_id.and_then(|i| self.world.ents.get(&i));
-        let (Some(eu), Some(ele)) = (eu, self.world.ents.get(&alvo)) else { return };
+        let (Some(eu), Some(ele)) = (eu, self.world.ents.get(&alvo)) else {
+            return;
+        };
         if ele.state.hp == 0 {
             return;
         }
-        let conjunto = shared::skills::Conjunto::de_u8(shared::components::acao::conjunto(eu.state.acao))
-            .unwrap_or(shared::skills::Conjunto::EspadaEscudo);
-        let alcance = if conjunto.a_distancia() { shared::RANGED_ATTACK_RANGE } else { shared::MELEE_RANGE };
+        let conjunto =
+            shared::skills::Conjunto::de_u8(shared::components::acao::conjunto(eu.state.acao))
+                .unwrap_or(shared::skills::Conjunto::EspadaEscudo);
+        let alcance = if conjunto.a_distancia() {
+            shared::RANGED_ATTACK_RANGE
+        } else {
+            shared::MELEE_RANGE
+        };
         let (a, b) = (eu.render_pos, ele.render_pos);
         let agora = get_time();
         // O servidor disse que o relevo barra o tiro: chega perto pelo
         // caminho (o servidor faz a rota) ate' a visada voltar.
-        let sem_visada = self.sem_visada.is_some_and(|(id, t)| id == alvo && agora - t < 1.6);
+        let sem_visada = self
+            .sem_visada
+            .is_some_and(|(id, t)| id == alvo && agora - t < 1.6);
         if a.distance(b) <= alcance * 0.9 && (!sem_visada || a.distance(b) <= 2.5) {
             return;
         }
@@ -2618,7 +3185,10 @@ impl Jogo {
         self.ultima_aproximacao = agora;
         let perto = if sem_visada { 2.0 } else { alcance * 0.6 };
         let destino = b + (a - b).normalize_or_zero() * perto;
-        self.envia(ClientMessage::MoverPara { x: destino.x, z: destino.y });
+        self.envia(ClientMessage::MoverPara {
+            x: destino.x,
+            z: destino.y,
+        });
     }
 
     /// Ping de 1 em 1 segundo e janela de banda de 1 segundo.
@@ -2630,7 +3200,9 @@ impl Jogo {
         let agora = get_time();
         if agora - self.ultimo_ping >= 1.0 {
             self.ultimo_ping = agora;
-            self.envia(ClientMessage::Ping { client_time_ms: agora_ms() });
+            self.envia(ClientMessage::Ping {
+                client_time_ms: agora_ms(),
+            });
         }
 
         let Some(net) = &self.net else { return };
@@ -2671,10 +3243,11 @@ impl Jogo {
         self.rastro.limpa();
         self.menu.fechar();
         self.lojas.fechar();
+        self.social = social_ui::Social::default();
         self.voltar_ao_menu = false;
-        self.personagem_atual=None;
+        self.personagem_atual = None;
         self.token_login = None;
-        self.selecao_personagem=personagens::Personagens::default();
+        self.selecao_personagem = personagens::Personagens::default();
         self.net = None;
         self.world = World::default();
         self.ganhos = ganhos::Ganhos::default();
@@ -2737,7 +3310,8 @@ impl Jogo {
         if !brutos.is_empty() {
             self.ultimo_toque = get_time();
         }
-        self.toque_ativo = !brutos.is_empty() || self.gesto_camera.ativo() || get_time() - self.ultimo_toque < 0.3;
+        self.toque_ativo =
+            !brutos.is_empty() || self.gesto_camera.ativo() || get_time() - self.ultimo_toque < 0.3;
         let toques: Vec<gesto_camera::ToqueNoQuadro> = brutos
             .iter()
             .map(|t| gesto_camera::ToqueNoQuadro {
@@ -2764,7 +3338,8 @@ impl Jogo {
             !painel && z.joystick.contains(p) && !z.contem(p) && !(so_um_dedo && sobre_ui)
         };
         let dono = self.joystick.dedo();
-        self.joystick.quadro(&toques, joystick::RAIO_BASE * z.s, &pode_comecar);
+        self.joystick
+            .quadro(&toques, joystick::RAIO_BASE * z.s, &pode_comecar);
         // O de antes tambem sai: no quadro do soltar o joystick ja' largou o id.
         let resto = joystick::sem_dedos(&toques, &[dono, self.joystick.dedo()]);
         // O HUD e' conferido no ponto do DEDO, nao no do mouse simulado: ele
@@ -2777,9 +3352,18 @@ impl Jogo {
     /// Andar "na mao": WASD/setas ou o joystick virtual. E' o que pausa auto
     /// missao, viagem, ir-para e a ida ate' o NPC.
     fn andando_na_mao(&self) -> bool {
-        let teclas = [KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D, KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right]
-            .iter()
-            .any(|k| is_key_down(*k));
+        let teclas = [
+            KeyCode::W,
+            KeyCode::A,
+            KeyCode::S,
+            KeyCode::D,
+            KeyCode::Up,
+            KeyCode::Down,
+            KeyCode::Left,
+            KeyCode::Right,
+        ]
+        .iter()
+        .any(|k| is_key_down(*k));
         joystick::movimento_manual(teclas, &self.joystick)
     }
 
@@ -2803,7 +3387,8 @@ impl Jogo {
         let dt = get_frame_time().min(0.1);
         // Tudo abaixo mexe no ALVO; a camera persegue no fim (camera_suave).
         // Valor mudado por fora (preferencia carregada) vira o alvo.
-        self.camera_suave.sincroniza(self.cam_yaw, self.cam_pitch_ajuste, self.cam_zoom);
+        self.camera_suave
+            .sincroniza(self.cam_yaw, self.cam_pitch_ajuste, self.cam_zoom);
         let mut dyaw = 0.0f32;
         let mut dzoom = 0.0f32;
         if is_key_down(KeyCode::Q) {
@@ -2872,7 +3457,9 @@ impl Jogo {
                     } else {
                         // Soltou: sobra a inercia do arrasto.
                         let v = self.camera_suave.filtro.velocidade();
-                        self.camera_suave.inercia.solta(vec2(v.x * 0.008, v.y * 0.004));
+                        self.camera_suave
+                            .inercia
+                            .solta(vec2(v.x * 0.008, v.y * 0.004));
                         self.camera_suave.filtro.zera();
                         self.girando_toque = false;
                     }
@@ -2901,10 +3488,12 @@ impl Jogo {
         // mao empurra um desvio que a camera nunca alcanca.
         let base_alvo = render3d::pitch_do_zoom(cs.zoom);
         let piso_alvo = render3d::pitch_min_para(cs.zoom);
-        cs.ajuste = (base_alvo + cs.ajuste + mexeu).clamp(piso_alvo, render3d::PITCH_MAX) - base_alvo;
+        cs.ajuste =
+            (base_alvo + cs.ajuste + mexeu).clamp(piso_alvo, render3d::PITCH_MAX) - base_alvo;
 
         // ── a camera persegue ──
-        let (yaw, ajuste, zoom) = cs.persegue(self.cam_yaw, self.cam_pitch_ajuste, self.cam_zoom, dt);
+        let (yaw, ajuste, zoom) =
+            cs.persegue(self.cam_yaw, self.cam_pitch_ajuste, self.cam_zoom, dt);
         self.cam_yaw = yaw;
         self.cam_pitch_ajuste = ajuste;
         self.cam_zoom = zoom;
@@ -2925,10 +3514,9 @@ impl Jogo {
         } else if self.cam_yaw < -std::f32::consts::PI {
             self.cam_yaw += std::f32::consts::TAU;
         }
-        self.camera_suave.escreveu(self.cam_yaw, self.cam_pitch_ajuste, self.cam_zoom);
+        self.camera_suave
+            .escreveu(self.cam_yaw, self.cam_pitch_ajuste, self.cam_zoom);
     }
-
-
 
     fn enviar_input(&mut self) {
         let agora = get_time();
@@ -2938,10 +3526,18 @@ impl Jogo {
         self.ultimo_input = agora;
 
         let mut dir = Vec2::ZERO;
-        if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) { dir.y -= 1.0; }
-        if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) { dir.y += 1.0; }
-        if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) { dir.x -= 1.0; }
-        if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) { dir.x += 1.0; }
+        if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) {
+            dir.y -= 1.0;
+        }
+        if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
+            dir.y += 1.0;
+        }
+        if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) {
+            dir.x -= 1.0;
+        }
+        if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) {
+            dir.x += 1.0;
+        }
         if dir != Vec2::ZERO {
             dir = dir.normalize();
         }
@@ -2965,7 +3561,8 @@ impl Jogo {
         // a tecla — sai da velocidade, igual pra quem esta' de fora.
         // Indo sozinho ha' um tempo (viagem, auto missao, rota por clique), o
         // bit vai ligado igual — ver `corrida`.
-        if is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) || self.correndo_auto {
+        if is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) || self.correndo_auto
+        {
             buttons |= shared::protocol::buttons::SPRINT;
         }
         // O servidor detecta a BORDA de subida; aqui basta mandar o estado.
@@ -3018,7 +3615,11 @@ impl Jogo {
                 ui::fundo();
                 let r = ui::painel(560.0, 220.0, "não deu");
                 ui::erro(r.x + r.w * 0.5, r.y + 50.0, &msg);
-                if ui::botao(Rect::new(r.x + r.w * 0.5 - 80.0, r.y + 110.0, 160.0, 40.0), "voltar", true) {
+                if ui::botao(
+                    Rect::new(r.x + r.w * 0.5 - 80.0, r.y + 110.0, 160.0, 40.0),
+                    "voltar",
+                    true,
+                ) {
                     self.net = None;
                     self.busca = Some(api::buscar_canais());
                     self.tela = Tela::Servidores;
@@ -3036,7 +3637,12 @@ impl Jogo {
         let terreno = self.terreno.as_ref();
         let f = |x: f32, z: f32| terreno.map_or(0.0, |t| t.altura(x, z));
         let vista = render3d::Vista::nova(
-            centro, self.cam_yaw, self.cam_zoom, self.cam_pitch, self.cam_altura, &f,
+            centro,
+            self.cam_yaw,
+            self.cam_zoom,
+            self.cam_pitch,
+            self.cam_altura,
+            &f,
         );
         set_camera(&vista.cam);
         // Tudo que e' mundo — chao, vegetacao, bichos — vai com descarte de
@@ -3065,12 +3671,22 @@ impl Jogo {
                 self.pedacos_desenhados = t.desenha(&vista.cam, recorte, corte_z);
                 // Casas no mesmo passe: descarte de face e recorte da camera
                 // valem pra elas como valem pra arvore.
-                let jogador = self.world.self_pos().map(|p| vec3(p.x, t.altura(p.x, p.y), p.y));
-                self.construcoes.desenha(&vista.cam, jogador, recorte, corte_z);
+                let jogador = self
+                    .world
+                    .self_pos()
+                    .map(|p| vec3(p.x, t.altura(p.x, p.y), p.y));
+                self.construcoes
+                    .desenha(&vista.cam, jogador, recorte, corte_z);
                 // Pra onde esta' indo: tracejado rente ao chao, no mesmo passe.
                 if let Some(eu) = self.world.self_pos() {
                     let altura = |x: f32, z: f32| t.altura(x, z);
-                    rastro::desenha(&self.rastro, eu, self.mapa.viagem.destino(), &altura, get_time() as f32);
+                    rastro::desenha(
+                        &self.rastro,
+                        eu,
+                        self.mapa.viagem.destino(),
+                        &altura,
+                        get_time() as f32,
+                    );
                 }
                 // Golpe de chefe carregando: onde vai bater, crescendo ate' o impacto.
                 {
@@ -3108,15 +3724,23 @@ impl Jogo {
         // Quanto falta andar, sobre o destino.
         if let (Some(t), Some(eu)) = (&self.terreno, self.world.self_pos()) {
             let altura = |x: f32, z: f32| t.altura(x, z);
-            rastro::desenha_distancia(&self.rastro, eu, self.mapa.viagem.destino(), &altura, &vista.cam);
+            rastro::desenha_distancia(
+                &self.rastro,
+                eu,
+                self.mapa.viagem.destino(),
+                &altura,
+                &vista.cam,
+            );
         }
         if let Some(e) = self.world.self_id.and_then(|i| self.world.ents.get(&i)) {
             let bolsa = &self.bolsa;
-            self.ganhos.desenha(&vista.cam, vista.pos_de(e), |id| bolsa.nome(id));
+            self.ganhos
+                .desenha(&vista.cam, vista.pos_de(e), |id| bolsa.nome(id));
         }
         {
             let slots = &self.bolsa.slots;
-            self.missoes.desenha_marcador(&self.world, &vista, &|id| missoes::na_bolsa(slots, id));
+            self.missoes
+                .desenha_marcador(&self.world, &vista, &|id| missoes::na_bolsa(slots, id));
         }
         // ── HUD no molde do MIR4 (docs/HUD.md). Posicoes em `hud_layout`. ──
         let z = hud_layout::atual();
@@ -3124,8 +3748,18 @@ impl Jogo {
         let agora_unix = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs() as i64);
-        let eu = self.world.self_id.and_then(|id| self.world.ents.get(&id))
-            .map(|e| (e.state.hp as i32, e.meta.hp_max as i32, e.meta.nivel as u32, e.meta.name.clone().unwrap_or_default()));
+        let eu = self
+            .world
+            .self_id
+            .and_then(|id| self.world.ents.get(&id))
+            .map(|e| {
+                (
+                    e.state.hp as i32,
+                    e.meta.hp_max as i32,
+                    e.meta.nivel as u32,
+                    e.meta.name.clone().unwrap_or_default(),
+                )
+            });
         let nivel = match &eu {
             Some((_, _, n, _)) if self.ficha.nivel == 0 => *n,
             _ => self.ficha.nivel,
@@ -3150,12 +3784,36 @@ impl Jogo {
             self.mapa.desenha_mini(&self.world);
             if let Some((hp, hp_max, _, nome)) = eu.clone() {
                 let st = self.bolsa.stats.as_ref();
-                let (hp_max, mp_max, vigor_max, poder) =
-                    (st.map_or(hp_max, |s| s.hp_max), st.map_or(50, |s| s.mp_max), st.map_or(100, |s| s.stamina_max), st.map(crate::bolsa::poder));
-                hud::draw_ficha(&z, &mut self.ficha, get_frame_time(), &nome, nivel, hp, hp_max, mp_max, vigor_max, poder);
-                hud::draw_buffs(self.bonus_xp_ate, self.bonus_fortuna_ate, self.bonus_sorte_ate, agora_unix, Rect::new(z.buffs.x, z.buffs.y - 6.0, z.buffs.w, 0.0), self.barra.curas(get_time()));
-                let conjunto = shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0));
-                self.habilidades.barra(conjunto, nivel, self.ficha.mp.unwrap_or(0));
+                let (hp_max, mp_max, vigor_max, poder) = (
+                    st.map_or(hp_max, |s| s.hp_max),
+                    st.map_or(50, |s| s.mp_max),
+                    st.map_or(100, |s| s.stamina_max),
+                    st.map(crate::bolsa::poder),
+                );
+                hud::draw_ficha(
+                    &z,
+                    &mut self.ficha,
+                    get_frame_time(),
+                    &nome,
+                    nivel,
+                    hp,
+                    hp_max,
+                    mp_max,
+                    vigor_max,
+                    poder,
+                );
+                hud::draw_buffs(
+                    self.bonus_xp_ate,
+                    self.bonus_fortuna_ate,
+                    self.bonus_sorte_ate,
+                    agora_unix,
+                    Rect::new(z.buffs.x, z.buffs.y - 6.0, z.buffs.w, 0.0),
+                    self.barra.curas(get_time()),
+                );
+                let conjunto =
+                    shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0));
+                self.habilidades
+                    .barra(conjunto, nivel, self.ficha.mp.unwrap_or(0));
                 self.auto_combate.desenha();
                 self.auto_coleta.desenha();
                 if hud::draw_atacar(&z, self.alvo.is_some()) {
@@ -3168,7 +3826,16 @@ impl Jogo {
                     let agora_s = get_time();
                     let recarga = std::array::from_fn(|i| self.barra.recarga(i, agora_s));
                     let curando = std::array::from_fn(|i| self.barra.curando(i, agora_s));
-                    hud::draw_rapidos(&z, itens, self.qtd_rapidos(), auto, recarga, curando, self.barra.arrastando(), &|id| bolsa.nome(id));
+                    hud::draw_rapidos(
+                        &z,
+                        itens,
+                        self.qtd_rapidos(),
+                        auto,
+                        recarga,
+                        curando,
+                        self.barra.arrastando(),
+                        &|id| bolsa.nome(id),
+                    );
                 }
                 // Barra de itens: clique usa, arrastar ↑/↓ liga/desliga o AUTO
                 // do espaco, botao direito abre o configurador.
@@ -3181,13 +3848,18 @@ impl Jogo {
                     }
                 }
                 // Botao direito no AUTO COLETA: o que coletar e o raio.
-                if is_mouse_button_pressed(MouseButton::Right) && auto_coleta::retangulo().contains(mouse) {
+                if is_mouse_button_pressed(MouseButton::Right)
+                    && auto_coleta::retangulo().contains(mouse)
+                {
                     self.fecha_paineis();
                     self.config_coleta.abrir();
                 }
                 // Segurar um espaco parado (toque longo) tambem abre o
                 // configurador; arrastar continua sendo o AUTO.
-                let sob_dedo = rects.iter().position(|r| r.contains(mouse)).map(|i| i as u32);
+                let sob_dedo = rects
+                    .iter()
+                    .position(|r| r.contains(mouse))
+                    .map(|i| i as u32);
                 if let toque::Toque::Longo(i) = self.toque_barra.quadro(
                     is_mouse_button_pressed(MouseButton::Left),
                     is_mouse_button_down(MouseButton::Left),
@@ -3226,8 +3898,17 @@ impl Jogo {
                         let nivel = self.ficha.nivel.max(1);
                         let base = shared::xp_for_level_with_mult(nivel, self.ficha.mult_xp);
                         let prox = shared::xp_for_level_with_mult(nivel + 1, self.ficha.mult_xp);
-                        let fracao = if prox > base { (self.ficha.xp.saturating_sub(base)) as f32 / (prox - base) as f32 } else { 0.0 };
-                        self.missoes.desenha_rastreador(&|id| missoes::na_bolsa(slots, id), self.auto_missao.quest, nivel, fracao)
+                        let fracao = if prox > base {
+                            (self.ficha.xp.saturating_sub(base)) as f32 / (prox - base) as f32
+                        } else {
+                            0.0
+                        };
+                        self.missoes.desenha_rastreador(
+                            &|id| missoes::na_bolsa(slots, id),
+                            self.auto_missao.quest,
+                            nivel,
+                            fracao,
+                        )
                     };
                     match clique {
                         Some(missoes::NoRastreador::Missao(id)) => self.iniciar_auto_missao(id),
@@ -3240,9 +3921,19 @@ impl Jogo {
                     }
                 }
             }
-            let alvo = self.alvo.and_then(|id| self.world.ents.get(&id)).filter(|a| a.morte.is_none()).map(|a| {
-                (a.meta.name.clone().unwrap_or_else(|| "?".into()), a.meta.nivel, a.state.hp, a.meta.hp_max, a.state.flags & shared::ent_flags::BOSS != 0)
-            });
+            let alvo = self
+                .alvo
+                .and_then(|id| self.world.ents.get(&id))
+                .filter(|a| a.morte.is_none())
+                .map(|a| {
+                    (
+                        a.meta.name.clone().unwrap_or_else(|| "?".into()),
+                        a.meta.nivel,
+                        a.state.hp,
+                        a.meta.hp_max,
+                        a.state.flags & shared::ent_flags::BOSS != 0,
+                    )
+                });
             if let Some((nome, nv, hp, hp_max, chefe)) = alvo {
                 if hud::draw_alvo(&z, &nome, nv, hp, hp_max, chefe) {
                     self.alvo = None;
@@ -3251,8 +3942,10 @@ impl Jogo {
                 if chefe {
                     telegrafico::rotulo_de_fase(z.alvo, hp, hp_max);
                 }
-            } else if let Some((nome, nv, hp, hp_max)) =
-                self.world.self_pos().and_then(|eu| telegrafico::chefe_perto(&self.world, eu))
+            } else if let Some((nome, nv, hp, hp_max)) = self
+                .world
+                .self_pos()
+                .and_then(|eu| telegrafico::chefe_perto(&self.world, eu))
             {
                 // Chefe em luta por perto sem estar selecionado: a barra dele.
                 telegrafico::desenha_barra_de_chefe(z.alvo, &nome, nv, hp, hp_max);
@@ -3260,7 +3953,13 @@ impl Jogo {
             let selo = self.selo_missoes();
             let selo_diarias = self.selo_diarias();
             let selo_presenca = self.presenca.tem_resgate();
-            match hud::draw_topo(&z, selo, selo_diarias, selo_presenca, selo || selo_diarias || selo_presenca) {
+            match hud::draw_topo(
+                &z,
+                selo,
+                selo_diarias,
+                selo_presenca,
+                selo || selo_diarias || selo_presenca,
+            ) {
                 Some(hud::Topo::Presenca) => {
                     self.fecha_paineis();
                     for pedido in self.presenca.abrir() {
@@ -3298,7 +3997,11 @@ impl Jogo {
         }
         // Pulo: sem tecla no celular, o botao e' o unico jeito de pular.
         {
-            let no_ar = self.world.self_id.and_then(|id| self.world.ents.get(&id)).is_some_and(|e| e.pulo_local > 0.0 || e.voando);
+            let no_ar = self
+                .world
+                .self_id
+                .and_then(|id| self.world.ents.get(&id))
+                .is_some_and(|e| e.pulo_local > 0.0 || e.voando);
             let (tocou, segurando) = hud::draw_pulo(&z, no_ar);
             self.pulo_toque |= tocou;
             self.pulo_segurando = segurando;
@@ -3319,32 +4022,58 @@ impl Jogo {
             hud::draw_exp(&z, &self.ficha, nivel);
         }
         if self.loja.aberta() {
-            let nome = self.loja.vendedor
+            let nome = self
+                .loja
+                .vendedor
                 .and_then(|id| self.world.ents.get(&id))
                 .and_then(|e| e.meta.name.clone())
                 .unwrap_or_else(|| "Loja".into());
-            let cobre: u64 = self.bolsa.slots.iter()
+            let cobre: u64 = self
+                .bolsa
+                .slots
+                .iter()
                 .filter(|s| s.item_id == shared::item_id::COPPER && s.instance.is_none())
-                .map(|s| s.qty as u64).sum();
-            for pedido in self.loja.desenha(&self.bolsa.nomes, self.bolsa.ouro, cobre, &nome) {
+                .map(|s| s.qty as u64)
+                .sum();
+            for pedido in self
+                .loja
+                .desenha(&self.bolsa.nomes, self.bolsa.ouro, cobre, &nome)
+            {
                 self.envia(pedido);
             }
         }
-        if self.craft.aberto() || self.forja.aberto() || self.config_barra.aberto || self.config_coleta.aberto || self.config_interface.aberto {
+        if self.craft.aberto()
+            || self.forja.aberto()
+            || self.config_barra.aberto
+            || self.config_coleta.aberto
+            || self.config_interface.aberto
+        {
             hud_layout::escurece(0.55);
         }
         if self.config_interface.aberto {
             // Vale no quadro seguinte e vai pro servidor pelas preferencias.
-            match self.config_interface.desenha(hud_layout::escala_ui(), self.economia.auto_min()) {
+            match self
+                .config_interface
+                .desenha(hud_layout::escala_ui(), self.economia.auto_min())
+            {
                 Some(config_interface::Mudanca::Escala(nova)) => hud_layout::define_escala_ui(nova),
-                Some(config_interface::Mudanca::EconomiaAuto(min)) => self.economia.auto_min = Some(min),
+                Some(config_interface::Mudanca::EconomiaAuto(min)) => {
+                    self.economia.auto_min = Some(min)
+                }
                 Some(config_interface::Mudanca::EconomiaAgora) => self.entrar_economia(),
                 None => {}
             }
         }
         if self.config_coleta.aberto {
-            let (mut tipos, mut raio, mut defender) = (self.auto_coleta.tipos, self.auto_coleta.raio, self.auto_coleta.defender);
-            if self.config_coleta.desenha(&mut tipos, &mut raio, &mut defender) {
+            let (mut tipos, mut raio, mut defender) = (
+                self.auto_coleta.tipos,
+                self.auto_coleta.raio,
+                self.auto_coleta.defender,
+            );
+            if self
+                .config_coleta
+                .desenha(&mut tipos, &mut raio, &mut defender)
+            {
                 // Vai pro servidor pelas preferencias (sincronia a cada quadro).
                 self.auto_coleta.tipos = tipos;
                 self.auto_coleta.raio = raio;
@@ -3354,7 +4083,10 @@ impl Jogo {
         // Com o "Onde obter" aberto por cima, o configurador fica parado.
         if self.config_barra.aberto && !self.onde_obter.aberto() {
             let bolsa = &self.bolsa;
-            if self.config_barra.desenha(&mut self.barra, &bolsa.slots, &|id| bolsa.nome(id)) {
+            if self
+                .config_barra
+                .desenha(&mut self.barra, &bolsa.slots, &|id| bolsa.nome(id))
+            {
                 self.salvar_barra();
             }
         }
@@ -3363,18 +4095,28 @@ impl Jogo {
         let onde = self.onde_obter.aberto();
         if self.craft.aberto() && !onde {
             let nivel = self.ficha.nivel.max(1);
-            if let Some(m) = self.craft.desenha(&self.bolsa.slots, &self.bolsa.nomes, nivel, get_time()) {
+            if let Some(m) =
+                self.craft
+                    .desenha(&self.bolsa.slots, &self.bolsa.nomes, nivel, get_time())
+            {
                 self.envia(m);
             }
         }
         if self.forja.aberto() && !onde {
-            if let Some(m) = self.forja.desenha(&self.bolsa.slots, &self.bolsa.equip, &self.bolsa.nomes, get_time()) {
+            if let Some(m) = self.forja.desenha(
+                &self.bolsa.slots,
+                &self.bolsa.equip,
+                &self.bolsa.nomes,
+                get_time(),
+            ) {
                 self.envia(m);
             }
         }
         if self.missoes.aberta && !onde {
             let slots = &self.bolsa.slots;
-            let pedidos = self.missoes.desenha(&self.bolsa.nomes, &|id| missoes::na_bolsa(slots, id));
+            let pedidos = self
+                .missoes
+                .desenha(&self.bolsa.nomes, &|id| missoes::na_bolsa(slots, id));
             for pedido in pedidos {
                 self.envia(pedido);
             }
@@ -3431,13 +4173,17 @@ impl Jogo {
         let agora = get_time();
         match self.dialogo.desenha() {
             dialogo::Resultado::Conversou { npc, .. } => {
-                self.envia(ClientMessage::ConcluirConversa { npc_eid: npc.0 as u64 });
+                self.envia(ClientMessage::ConcluirConversa {
+                    npc_eid: npc.0 as u64,
+                });
                 if self.auto_missao.ativo() {
                     self.auto_missao.conversou(agora);
                 } else {
                     // A mao: depois da conversa o NPC atende como sempre (a
                     // loja do Alquimista abre).
-                    self.envia(ClientMessage::Interact { target_eid: Some(npc.0 as u64) });
+                    self.envia(ClientMessage::Interact {
+                        target_eid: Some(npc.0 as u64),
+                    });
                 }
             }
             dialogo::Resultado::Receber(q) => {
@@ -3461,7 +4207,11 @@ impl Jogo {
             None => {}
         }
         // A bolsa por cima do mundo.
-        let pedido_da_bolsa = if onde { None } else { self.bolsa.desenha(&self.vox, &self.solido) };
+        let pedido_da_bolsa = if onde {
+            None
+        } else {
+            self.bolsa.desenha(&self.vox, &self.solido)
+        };
         if let Some(alvo) = self.bolsa.refinar.take() {
             self.fecha_paineis();
             self.forja.abrir_em(alvo);
@@ -3480,8 +4230,19 @@ impl Jogo {
                 _ => None,
             };
             match buff {
-                Some((slot, item)) => self.confirmar = Some(confirmar::Pendente::Bolsa { slot, item }),
+                Some((slot, item)) => {
+                    self.confirmar = Some(confirmar::Pendente::Bolsa { slot, item })
+                }
                 None => self.envia(pedido),
+            }
+        }
+        let eu_social = self.personagem_atual.clone().unwrap_or_default();
+        for pedido in self.social.desenha(&eu_social, self.teclado.digitado()) {
+            self.envia(pedido);
+        }
+        if std::mem::take(&mut self.social.entregas) {
+            for pedido in self.mercado.abrir_entregas() {
+                self.envia(pedido);
             }
         }
         if self.mercado.aberto && !onde {
@@ -3501,7 +4262,12 @@ impl Jogo {
             let lista = self.mapa.lojas();
             if let Some((nome, pos)) = self.lojas.desenha(&lista, self.world.self_pos()) {
                 self.voltar_ao_menu = false;
-                self.iniciar_ir_para(ir_para::Alvo { objetivo: ir_para::Objetivo::Npc, pos, raio: 0.0, rotulo: nome });
+                self.iniciar_ir_para(ir_para::Alvo {
+                    objetivo: ir_para::Objetivo::Npc,
+                    pos,
+                    raio: 0.0,
+                    rotulo: nome,
+                });
             }
         }
         // "Onde obter": a lupa de algum painel pediu; o popup vai por cima.
@@ -3540,7 +4306,9 @@ impl Jogo {
         if self.menu.aberto {
             let (nome, arma) = (
                 eu.as_ref().map_or(String::new(), |e| e.3.clone()),
-                shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0)).nome().to_string(),
+                shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0))
+                    .nome()
+                    .to_string(),
             );
             let tem = |id: u16| missoes::na_bolsa(&self.bolsa.slots, id) as u64;
             let saldos = [
@@ -3549,6 +4317,25 @@ impl Jogo {
                 ("Darksteel", tem(shared::constants::item_id::DARKSTEEL)),
             ];
             let mut selos: Vec<menu::Item> = Vec::new();
+            if self.social.convite.is_some() {
+                selos.push(menu::Item::Grupo);
+            }
+            if !self.social.estado.recebidos.is_empty() {
+                selos.push(menu::Item::Amigos);
+            }
+            if self
+                .social
+                .estado
+                .cartas
+                .iter()
+                .chain(&self.social.estado.oficiais)
+                .any(|c| !c.lida)
+            {
+                selos.push(menu::Item::Correio);
+            }
+            if !self.social.estado.convites_cla.is_empty() {
+                selos.push(menu::Item::Clan);
+            }
             if self.selo_missoes() {
                 selos.push(menu::Item::Missoes);
             }
@@ -3576,7 +4363,11 @@ impl Jogo {
         // Dungeons: HUD da instancia, fila, janela, resultado e pronto-check.
         {
             let eu = self.personagem_atual.clone().unwrap_or_default();
-            let ctx = dungeon_ui::Contexto { nomes: &self.bolsa.nomes, ouro: self.bolsa.ouro, eu: &eu };
+            let ctx = dungeon_ui::Contexto {
+                nomes: &self.bolsa.nomes,
+                ouro: self.bolsa.ouro,
+                eu: &eu,
+            };
             for pedido in self.dungeon.desenha(&ctx, get_time()) {
                 self.envia(pedido);
             }
@@ -3616,8 +4407,12 @@ impl Jogo {
                 Some(true) => {
                     self.confirmar = None;
                     match p {
-                        confirmar::Pendente::Bolsa { slot, .. } => self.envia(ClientMessage::UseItem { slot }),
-                        confirmar::Pendente::Barra { i, forte, .. } => self.usar_espaco_sem_perguntar(i, forte),
+                        confirmar::Pendente::Bolsa { slot, .. } => {
+                            self.envia(ClientMessage::UseItem { slot })
+                        }
+                        confirmar::Pendente::Barra { i, forte, .. } => {
+                            self.usar_espaco_sem_perguntar(i, forte)
+                        }
                     }
                 }
                 Some(false) => self.confirmar = None,
@@ -3648,8 +4443,18 @@ impl Jogo {
         }
         if self.canais.is_empty() {
             ui::erro(cx, r.y + 50.0, "nenhum servidor no ar");
-            ui::texto_centro(cx, r.y + 78.0, "confira o web (/api/channels)", 16, ui::OURO);
-            if ui::botao(Rect::new(cx - 80.0, r.y + 110.0, 160.0, 40.0), "procurar de novo", true) {
+            ui::texto_centro(
+                cx,
+                r.y + 78.0,
+                "confira o web (/api/channels)",
+                16,
+                ui::OURO,
+            );
+            if ui::botao(
+                Rect::new(cx - 80.0, r.y + 110.0, 160.0, 40.0),
+                "procurar de novo",
+                true,
+            ) {
                 self.busca = Some(api::buscar_canais());
             }
             return;
@@ -3662,7 +4467,10 @@ impl Jogo {
             let mut realms: Vec<(String, u32, u32)> = Vec::new();
             for c in &self.canais {
                 match realms.iter_mut().find(|(n, _, _)| n == c.realm()) {
-                    Some(e) => { e.1 += c.jogadores; e.2 += c.capacidade; }
+                    Some(e) => {
+                        e.1 += c.jogadores;
+                        e.2 += c.capacidade;
+                    }
                     None => realms.push((c.realm().to_string(), c.jogadores, c.capacidade)),
                 }
             }
@@ -3670,13 +4478,25 @@ impl Jogo {
             let mut escolhido = None;
             for (nome, jog, cap) in &realms {
                 let linha = Rect::new(r.x, y, r.w, 46.0);
-                if ui::linha(linha, nome, &format!("{jog} online · {} canais",
-                    self.canais.iter().filter(|c| c.realm() == nome).count()), false)
-                {
+                if ui::linha(
+                    linha,
+                    nome,
+                    &format!(
+                        "{jog} online · {} canais",
+                        self.canais.iter().filter(|c| c.realm() == nome).count()
+                    ),
+                    false,
+                ) {
                     escolhido = Some(nome.clone());
                 }
-                ui::barra(Rect::new(r.x + 12.0, y + 34.0, r.w - 24.0, 5.0),
-                    if *cap > 0 { *jog as f32 / *cap as f32 } else { 0.0 });
+                ui::barra(
+                    Rect::new(r.x + 12.0, y + 34.0, r.w - 24.0, 5.0),
+                    if *cap > 0 {
+                        *jog as f32 / *cap as f32
+                    } else {
+                        0.0
+                    },
+                );
                 y += 54.0;
             }
             if let Some(n) = escolhido {
@@ -3692,7 +4512,13 @@ impl Jogo {
         // a zona diz ONDE ele vai cair, o canal diz COM QUEM. Misturar numa
         // lista so' esconde que "cidade" tem uma instancia unica e "campo"
         // tem varias.
-        ui::texto(r.x, r.y - 4.0, &format!("servidor {realm}"), 18, ui::OURO_CLARO);
+        ui::texto(
+            r.x,
+            r.y - 4.0,
+            &format!("servidor {realm}"),
+            18,
+            ui::OURO_CLARO,
+        );
         let canais: Vec<Canal> = self
             .canais
             .iter()
@@ -3731,8 +4557,13 @@ impl Jogo {
                 ui::texto(r.x + 2.0, y + 14.0, zona, 17, ui::OURO);
                 let dir = format!("{online} online");
                 let d = crate::hud_estilo::medir_dim(&dir, 14);
-                ui::texto(r.x + r.w - d.width - 2.0, y + 14.0, &dir, 14,
-                    Color::new(0.55, 0.55, 0.58, 1.0));
+                ui::texto(
+                    r.x + r.w - d.width - 2.0,
+                    y + 14.0,
+                    &dir,
+                    14,
+                    Color::new(0.55, 0.55, 0.58, 1.0),
+                );
             }
             y += 24.0;
 
@@ -3755,7 +4586,10 @@ impl Jogo {
                     if ui::linha(linha, &rotulo, &direita, false) {
                         escolhido = Some(c.host.clone());
                     }
-                    ui::barra(Rect::new(linha.x + 12.0, y + 29.0, linha.w - 24.0, 5.0), c.fracao());
+                    ui::barra(
+                        Rect::new(linha.x + 12.0, y + 29.0, linha.w - 24.0, 5.0),
+                        c.fracao(),
+                    );
                 }
                 y += 46.0;
             }
@@ -3763,22 +4597,33 @@ impl Jogo {
         }
         // Diz que ha' mais. Lista cortada sem aviso parece lista completa.
         if rolagem_max > 0.0 {
-            let quanto = format!(
-                "{} canais · roda do mouse pra rolar",
-                canais.len()
+            let quanto = format!("{} canais · roda do mouse pra rolar", canais.len());
+            ui::texto_centro(
+                cx,
+                base + 16.0,
+                &quanto,
+                13,
+                Color::new(0.45, 0.45, 0.48, 1.0),
             );
-            ui::texto_centro(cx, base + 16.0, &quanto, 13, Color::new(0.45, 0.45, 0.48, 1.0));
         }
         if let Some(h) = escolhido {
             self.host = Some(h);
             self.tela = Tela::Login;
         }
 
-        if ui::botao(Rect::new(r.x, r.y + r.h - 44.0, 140.0, 40.0), "< servidores", true) {
+        if ui::botao(
+            Rect::new(r.x, r.y + r.h - 44.0, 140.0, 40.0),
+            "< servidores",
+            true,
+        ) {
             self.realm = None;
             self.rolagem = 0.0;
         }
-        if ui::botao(Rect::new(r.x + r.w - 140.0, r.y + r.h - 44.0, 140.0, 40.0), "atualizar", true) {
+        if ui::botao(
+            Rect::new(r.x + r.w - 140.0, r.y + r.h - 44.0, 140.0, 40.0),
+            "atualizar",
+            true,
+        ) {
             self.busca = Some(api::buscar_canais());
         }
     }
@@ -3791,7 +4636,12 @@ impl Jogo {
         let topo = (screen_height() - ALTURA) * 0.5;
         let fundo_campo = topo + 60.0 + if self.foco_senha { 164.0 } else { 88.0 };
         let aberto = nativo::TECLADO_NA_TELA && self.teclado_virtual.aberto();
-        ui::subir_paineis(teclado_virtual::deslocamento(aberto, screen_height(), topo, fundo_campo));
+        ui::subir_paineis(teclado_virtual::deslocamento(
+            aberto,
+            screen_height(),
+            topo,
+            fundo_campo,
+        ));
         let r = ui::painel(460.0, ALTURA, "entrar");
         ui::subir_paineis(0.0);
         let cx = r.x + r.w * 0.5;
@@ -3804,12 +4654,25 @@ impl Jogo {
         let mut usuario = std::mem::take(&mut self.usuario);
         let mut senha = std::mem::take(&mut self.senha);
         let digitado = self.teclado.digitado().to_vec();
-        let clicou_u = ui::campo(cu, "usuário", &mut usuario, !self.foco_senha, false, &digitado);
+        let clicou_u = ui::campo(
+            cu,
+            "usuário",
+            &mut usuario,
+            !self.foco_senha,
+            false,
+            &digitado,
+        );
         let clicou_s = ui::campo(cs, "senha", &mut senha, self.foco_senha, true, &digitado);
         self.usuario = usuario;
         self.senha = senha;
-        if clicou_u { self.foco_senha = false; self.campo_login_ativo = true; }
-        if clicou_s { self.foco_senha = true; self.campo_login_ativo = true; }
+        if clicou_u {
+            self.foco_senha = false;
+            self.campo_login_ativo = true;
+        }
+        if clicou_s {
+            self.foco_senha = true;
+            self.campo_login_ativo = true;
+        }
         // Toque fora dos campos fecha o teclado da tela.
         if is_mouse_button_pressed(MouseButton::Left) && !clicou_u && !clicou_s {
             self.campo_login_ativo = false;
@@ -3823,7 +4686,8 @@ impl Jogo {
         if enter && !self.foco_senha {
             self.foco_senha = true;
         } else {
-            let pode = !self.usuario.is_empty() && !self.senha.is_empty() && !self.google.aguardando();
+            let pode =
+                !self.usuario.is_empty() && !self.senha.is_empty() && !self.google.aguardando();
             let entrar = ui::botao(Rect::new(r.x, r.y + 196.0, r.w, 44.0), "entrar", pode)
                 || (pode && self.foco_senha && enter);
             if entrar {
@@ -3837,8 +4701,18 @@ impl Jogo {
         if self.google.disponivel() {
             let rg = Rect::new(r.x, r.y + 252.0, r.w, 44.0);
             if self.google.aguardando() {
-                ui::texto_centro(cx, rg.y + 16.0, &self.google.texto().unwrap_or_default(), 16, ui::OURO_CLARO);
-                if ui::botao(Rect::new(cx - 70.0, rg.y + 26.0, 140.0, 32.0), "cancelar", true) {
+                ui::texto_centro(
+                    cx,
+                    rg.y + 16.0,
+                    &self.google.texto().unwrap_or_default(),
+                    16,
+                    ui::OURO_CLARO,
+                );
+                if ui::botao(
+                    Rect::new(cx - 70.0, rg.y + 26.0, 140.0, 32.0),
+                    "cancelar",
+                    true,
+                ) {
                     self.google.cancelar();
                 }
             } else {
@@ -3852,7 +4726,11 @@ impl Jogo {
                 }
             }
         }
-        if ui::botao(Rect::new(r.x, r.y + r.h - 40.0, 140.0, 36.0), "< voltar", true) {
+        if ui::botao(
+            Rect::new(r.x, r.y + r.h - 40.0, 140.0, 36.0),
+            "< voltar",
+            true,
+        ) {
             self.campo_login_ativo = false;
             self.google.cancelar();
             self.tela = Tela::Servidores;
@@ -3885,7 +4763,7 @@ impl Jogo {
         let precisa = match self.tela {
             Tela::Login => self.campo_login_ativo,
             Tela::Personagens => self.selecao_personagem.foco_no_nome(),
-            Tela::Jogando => self.mercado.foco_na_busca(),
+            Tela::Jogando => self.mercado.foco_na_busca() || self.social.foco(),
             _ => false,
         };
         if let Some(mostrar) = self.teclado_virtual.quer(precisa) {
@@ -3894,15 +4772,23 @@ impl Jogo {
     }
 
     fn tela_personagens(&mut self) {
-        let acao=self.selecao_personagem.desenha(&self.personagens,&self.armas,&mut self.selecionado,
-            self.teclado.digitado(),&self.vox,&self.solido);
+        let acao = self.selecao_personagem.desenha(
+            &self.personagens,
+            &self.armas,
+            &mut self.selecionado,
+            self.teclado.digitado(),
+            &self.vox,
+            &self.solido,
+        );
         match acao {
             Some(personagens::Acao::Enviar(m)) => {
-                if matches!(m,ClientMessage::SelectCharacter{..}) {self.tela=Tela::Conectando;}
+                if matches!(m, ClientMessage::SelectCharacter { .. }) {
+                    self.tela = Tela::Conectando;
+                }
                 self.envia(m);
             }
             Some(personagens::Acao::Voltar) => self.sair(),
-            None => {},
+            None => {}
         }
     }
 
@@ -3910,13 +4796,27 @@ impl Jogo {
         ui::fundo();
         let r = ui::painel(460.0, 240.0, "fila de entrada");
         let cx = r.x + r.w * 0.5;
-        ui::texto_centro(cx, r.y + 60.0, &format!("{posicao}º de {total}"), 40, ui::OURO_CLARO);
+        ui::texto_centro(
+            cx,
+            r.y + 60.0,
+            &format!("{posicao}º de {total}"),
+            40,
+            ui::OURO_CLARO,
+        );
         ui::texto_centro(cx, r.y + 96.0, "este canal está cheio", 17, ui::OURO);
         // A barra anda pra tras conforme a fila anda: sem numero mexendo, a
         // espera e' indistinguivel de travamento.
-        let frac = if total > 0 { 1.0 - (posicao as f32 / total as f32) } else { 0.0 };
+        let frac = if total > 0 {
+            1.0 - (posicao as f32 / total as f32)
+        } else {
+            0.0
+        };
         ui::barra(Rect::new(r.x + 40.0, r.y + 120.0, r.w - 80.0, 10.0), frac);
-        if ui::botao(Rect::new(cx - 90.0, r.y + 155.0, 180.0, 40.0), "sair da fila", true) {
+        if ui::botao(
+            Rect::new(cx - 90.0, r.y + 155.0, 180.0, 40.0),
+            "sair da fila",
+            true,
+        ) {
             self.net = None;
             self.busca = Some(api::buscar_canais());
             self.tela = Tela::Servidores;

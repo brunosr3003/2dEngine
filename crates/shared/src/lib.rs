@@ -3,29 +3,29 @@
 //! Nada aqui depende de wgpu/winit/tokio — este crate compila em todos os
 //! targets (native + wasm + headless) para manter o protocolo canonico.
 
+pub mod bosses;
+pub mod chaves;
 pub mod combat;
 pub mod components;
 pub mod constants;
+pub mod construcao;
+pub mod dungeon;
+pub mod forja;
+pub mod historia;
 pub mod items;
+pub mod loja;
 pub mod mapfile;
+pub mod mercado;
+pub mod physics;
+pub mod pocoes;
+pub mod presenca;
 pub mod protocol;
 pub mod quests;
-pub mod historia;
-pub mod skills;
-pub mod world_gen;
-pub mod physics;
-pub mod forja;
-pub mod pocoes;
-pub mod mercado;
-pub mod bosses;
 pub mod receitas;
-pub mod chaves;
-pub mod presenca;
-pub mod loja;
-pub mod dungeon;
+pub mod skills;
 pub mod terreno;
-pub mod construcao;
 pub mod vila;
+pub mod world_gen;
 
 pub use combat::*;
 pub use components::*;
@@ -49,3 +49,5 @@ pub mod vec2_arr {
         Ok(Vec2::new(x, y))
     }
 }
+
+pub mod social;

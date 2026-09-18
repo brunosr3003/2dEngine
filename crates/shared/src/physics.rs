@@ -62,7 +62,9 @@ pub fn separar(corpos: &mut [(Vec2, f32, f32)]) {
                 if dy == 0 && dx < 0 {
                     continue;
                 }
-                let Some(vizinhos) = grade.get(&(cx + dx, cy + dy)) else { continue };
+                let Some(vizinhos) = grade.get(&(cx + dx, cy + dy)) else {
+                    continue;
+                };
                 for &i in indices {
                     for &j in vizinhos {
                         if j <= i && dx == 0 && dy == 0 {
@@ -184,7 +186,8 @@ mod testes_entre_iguais {
         let d = corpos[0].0.distance(corpos[1].0);
         assert!(
             d >= 2.0 * r - 1e-3,
-            "sobraram {d:.3} entre corpos que ocupam {:.2}", 2.0 * r
+            "sobraram {d:.3} entre corpos que ocupam {:.2}",
+            2.0 * r
         );
         assert!(d < 2.0 * r + 0.05, "afastaram demais: {d:.3}");
         assert_eq!(corpos[2].0, longe_antes, "corpo distante se mexeu");

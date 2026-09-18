@@ -114,8 +114,14 @@ pub struct EventoDePresenca {
 /// Eventos cadastrados. Vazio = so' o mensal.
 pub const EVENTOS: &[EventoDePresenca] = &[];
 
-pub fn eventos_ativos(unix: i64, eventos: &'static [EventoDePresenca]) -> Vec<&'static EventoDePresenca> {
-    eventos.iter().filter(|e| unix >= e.inicio_unix && unix < e.fim_unix).collect()
+pub fn eventos_ativos(
+    unix: i64,
+    eventos: &'static [EventoDePresenca],
+) -> Vec<&'static EventoDePresenca> {
+    eventos
+        .iter()
+        .filter(|e| unix >= e.inicio_unix && unix < e.fim_unix)
+        .collect()
 }
 
 /// (ano, mes 1..12, dia 1..31) do dia `dias` desde 1970-01-01 (Hinnant).
@@ -192,7 +198,10 @@ impl DadosPresenca {
     pub fn virar(&mut self, hoje: i64) {
         let m = mes(hoje);
         if self.mensal.ciclo != m {
-            self.mensal = Progresso { ciclo: m, ..Default::default() };
+            self.mensal = Progresso {
+                ciclo: m,
+                ..Default::default()
+            };
         }
     }
 
@@ -200,7 +209,13 @@ impl DadosPresenca {
         if calendario == MENSAL {
             return self.mensal;
         }
-        self.eventos.iter().find(|e| e.0 == calendario).map_or(Progresso { ciclo: calendario as i64, ..Default::default() }, |e| e.1)
+        self.eventos.iter().find(|e| e.0 == calendario).map_or(
+            Progresso {
+                ciclo: calendario as i64,
+                ..Default::default()
+            },
+            |e| e.1,
+        )
     }
 
     fn progresso_mut(&mut self, calendario: u32) -> &mut Progresso {
@@ -210,14 +225,25 @@ impl DadosPresenca {
         if let Some(i) = self.eventos.iter().position(|e| e.0 == calendario) {
             return &mut self.eventos[i].1;
         }
-        self.eventos.push((calendario, Progresso { ciclo: calendario as i64, ..Default::default() }));
+        self.eventos.push((
+            calendario,
+            Progresso {
+                ciclo: calendario as i64,
+                ..Default::default()
+            },
+        ));
         &mut self.eventos.last_mut().unwrap().1
     }
 
     /// Resgata o proximo premio de `calendario`. Idempotente no dia: o
     /// segundo pedido do mesmo dia volta `JaResgatouHoje` sem dar nada.
     /// Devolve (dia da grade, 1..=N) e os premios.
-    pub fn resgatar(&mut self, calendario: u32, unix: i64, eventos: &'static [EventoDePresenca]) -> Result<(u8, Vec<Premio>), Recusa> {
+    pub fn resgatar(
+        &mut self,
+        calendario: u32,
+        unix: i64,
+        eventos: &'static [EventoDePresenca],
+    ) -> Result<(u8, Vec<Premio>), Recusa> {
         let hoje = dia(unix);
         self.virar(hoje);
         let grade = grade_ativa(calendario, unix, eventos).ok_or(Recusa::SemCalendario)?;
@@ -263,7 +289,10 @@ impl DadosPresenca {
                 grade: e.grade.to_vec(),
             });
         }
-        EstadoPresenca { calendarios, proximo_reset_unix: proximo_reset(unix) }
+        EstadoPresenca {
+            calendarios,
+            proximo_reset_unix: proximo_reset(unix),
+        }
     }
 }
 
@@ -283,7 +312,11 @@ pub struct ResgateFeito {
 
 /// Mensal: o mes de jogo. Evento: o id dele (um ciclo so').
 pub fn ciclo_de(calendario: u32, hoje: i64) -> i64 {
-    if calendario == MENSAL { mes(hoje) } else { calendario as i64 }
+    if calendario == MENSAL {
+        mes(hoje)
+    } else {
+        calendario as i64
+    }
 }
 
 /// O proximo resgate de `calendario`, a partir do que a conta ja' fez.
@@ -298,14 +331,25 @@ pub struct Plano {
 
 /// Decide o resgate de agora. Pura: o servidor chama DENTRO da transacao que
 /// trava a conta, com as linhas lidas nela.
-pub fn planejar(calendario: u32, unix: i64, eventos: &'static [EventoDePresenca], feitos: &[ResgateFeito]) -> Result<Plano, Recusa> {
+pub fn planejar(
+    calendario: u32,
+    unix: i64,
+    eventos: &'static [EventoDePresenca],
+    feitos: &[ResgateFeito],
+) -> Result<Plano, Recusa> {
     let hoje = dia(unix);
     let grade = grade_ativa(calendario, unix, eventos).ok_or(Recusa::SemCalendario)?;
-    if feitos.iter().any(|f| f.calendario == calendario && f.dia_jogo == hoje) {
+    if feitos
+        .iter()
+        .any(|f| f.calendario == calendario && f.dia_jogo == hoje)
+    {
         return Err(Recusa::JaResgatouHoje);
     }
     let ciclo = ciclo_de(calendario, hoje);
-    let n = feitos.iter().filter(|f| f.calendario == calendario && f.ciclo == ciclo).count();
+    let n = feitos
+        .iter()
+        .filter(|f| f.calendario == calendario && f.ciclo == ciclo)
+        .count();
     if n >= grade.len() {
         return Err(Recusa::CicloCompleto);
     }
@@ -327,24 +371,42 @@ impl DadosPresenca {
             let doc = feitos.iter().filter(|f| f.calendario == calendario);
             Progresso {
                 ciclo,
-                resgatados: doc.clone().filter(|f| f.ciclo == ciclo).count().min(u8::MAX as usize) as u8,
+                resgatados: doc
+                    .clone()
+                    .filter(|f| f.ciclo == ciclo)
+                    .count()
+                    .min(u8::MAX as usize) as u8,
                 ultimo_dia: doc.map(|f| f.dia_jogo).max().unwrap_or(0),
             }
         };
-        let mut ids: Vec<u32> = feitos.iter().map(|f| f.calendario).filter(|c| *c != MENSAL).collect();
+        let mut ids: Vec<u32> = feitos
+            .iter()
+            .map(|f| f.calendario)
+            .filter(|c| *c != MENSAL)
+            .collect();
         ids.sort_unstable();
         ids.dedup();
-        DadosPresenca { mensal: progresso(MENSAL), eventos: ids.into_iter().map(|id| (id, progresso(id))).collect() }
+        DadosPresenca {
+            mensal: progresso(MENSAL),
+            eventos: ids.into_iter().map(|id| (id, progresso(id))).collect(),
+        }
     }
 }
 
 /// A grade de `calendario` se ele vale agora.
-pub fn grade_ativa(calendario: u32, unix: i64, eventos: &'static [EventoDePresenca]) -> Option<&'static [Dia]> {
+pub fn grade_ativa(
+    calendario: u32,
+    unix: i64,
+    eventos: &'static [EventoDePresenca],
+) -> Option<&'static [Dia]> {
     let ativos = eventos_ativos(unix, eventos);
     if calendario == MENSAL {
         return (!ativos.iter().any(|e| e.substitui)).then_some(&CALENDARIO[..]);
     }
-    ativos.into_iter().find(|e| e.id == calendario).map(|e| e.grade)
+    ativos
+        .into_iter()
+        .find(|e| e.id == calendario)
+        .map(|e| e.grade)
 }
 
 /// Todo item que algum calendario da (mensal e eventos), com os dias.
@@ -404,8 +466,15 @@ pub enum PedidoPresenca {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AvisoPresenca {
     Estado(EstadoPresenca),
-    Resgatou { calendario: u32, dia: u8, premios: Vec<Premio>, no_correio: u8 },
-    Recusado { texto: String },
+    Resgatou {
+        calendario: u32,
+        dia: u8,
+        premios: Vec<Premio>,
+        no_correio: u8,
+    },
+    Recusado {
+        texto: String,
+    },
 }
 
 /// `CartaDeCorreio::motivo` do premio que nao coube na bolsa.
@@ -441,7 +510,10 @@ mod tests {
         let t = unix(2026, 9, 15, 12);
         let (n, premios) = d.resgatar(MENSAL, t, EVENTOS).unwrap();
         assert_eq!((n, premios), (1, vec![CALENDARIO[0][0]]));
-        assert_eq!(d.resgatar(MENSAL, t + 60, EVENTOS), Err(Recusa::JaResgatouHoje));
+        assert_eq!(
+            d.resgatar(MENSAL, t + 60, EVENTOS),
+            Err(Recusa::JaResgatouHoje)
+        );
         assert_eq!(d.mensal.resgatados, 1);
     }
 
@@ -458,8 +530,12 @@ mod tests {
     fn reset_as_quatro_de_brasilia() {
         let mut d = DadosPresenca::default();
         // 06:59 UTC = 03:59 em Brasilia: ainda e' o "dia" anterior.
-        d.resgatar(MENSAL, unix(2026, 9, 16, 6) + 59 * 60, EVENTOS).unwrap();
-        assert_eq!(d.resgatar(MENSAL, unix(2026, 9, 16, 6) + 3599, EVENTOS), Err(Recusa::JaResgatouHoje));
+        d.resgatar(MENSAL, unix(2026, 9, 16, 6) + 59 * 60, EVENTOS)
+            .unwrap();
+        assert_eq!(
+            d.resgatar(MENSAL, unix(2026, 9, 16, 6) + 3599, EVENTOS),
+            Err(Recusa::JaResgatouHoje)
+        );
         // 07:00 UTC = 04:00: dia novo.
         assert!(d.resgatar(MENSAL, unix(2026, 9, 16, 7), EVENTOS).is_ok());
         assert_eq!(proximo_reset(unix(2026, 9, 16, 7)), unix(2026, 9, 17, 7));
@@ -485,7 +561,10 @@ mod tests {
         for dd in 1..=28 {
             d.resgatar(MENSAL, unix(2026, 7, dd, 12), EVENTOS).unwrap();
         }
-        assert_eq!(d.resgatar(MENSAL, unix(2026, 7, 29, 12), EVENTOS), Err(Recusa::CicloCompleto));
+        assert_eq!(
+            d.resgatar(MENSAL, unix(2026, 7, 29, 12), EVENTOS),
+            Err(Recusa::CicloCompleto)
+        );
         assert!(!d.estado(unix(2026, 7, 30, 12), EVENTOS).tem_resgate());
     }
 
@@ -501,32 +580,67 @@ mod tests {
                 assert!(d[1].qtd == 0, "dia {n}: dia comum tem um premio so'");
             }
             for pr in d.iter().filter(|p| p.qtd > 0 && p.item_id != OURO) {
-                assert!(PERMITIDOS.contains(&pr.item_id), "dia {n}: item {} fora da lista", pr.item_id);
+                assert!(
+                    PERMITIDOS.contains(&pr.item_id),
+                    "dia {n}: item {} fora da lista",
+                    pr.item_id
+                );
                 assert!(crate::equip_slot_of(pr.item_id).is_none());
             }
         }
     }
 
-    static GRADE_TESTE: [Dia; 3] = [[p(OURO, 1), NADA], [p(item_id::XP_POTION, 1), NADA], [p(item_id::SORTE_POTION, 1), NADA]];
-    static EV_COMPLEMENTA: [EventoDePresenca; 1] =
-        [EventoDePresenca { id: 7, nome: "Festival", inicio_unix: 1_000_000_000, fim_unix: 3_000_000_000, substitui: false, grade: &GRADE_TESTE }];
-    static EV_SUBSTITUI: [EventoDePresenca; 1] =
-        [EventoDePresenca { id: 9, nome: "Aniversário", inicio_unix: 1_000_000_000, fim_unix: 3_000_000_000, substitui: true, grade: &GRADE_TESTE }];
+    static GRADE_TESTE: [Dia; 3] = [
+        [p(OURO, 1), NADA],
+        [p(item_id::XP_POTION, 1), NADA],
+        [p(item_id::SORTE_POTION, 1), NADA],
+    ];
+    static EV_COMPLEMENTA: [EventoDePresenca; 1] = [EventoDePresenca {
+        id: 7,
+        nome: "Festival",
+        inicio_unix: 1_000_000_000,
+        fim_unix: 3_000_000_000,
+        substitui: false,
+        grade: &GRADE_TESTE,
+    }];
+    static EV_SUBSTITUI: [EventoDePresenca; 1] = [EventoDePresenca {
+        id: 9,
+        nome: "Aniversário",
+        inicio_unix: 1_000_000_000,
+        fim_unix: 3_000_000_000,
+        substitui: true,
+        grade: &GRADE_TESTE,
+    }];
 
     #[test]
     fn evento_complementa_ou_substitui() {
         let t = unix(2026, 9, 15, 12);
         let e = DadosPresenca::default().estado(t, &EV_COMPLEMENTA);
-        assert_eq!(e.calendarios.iter().map(|c| c.id).collect::<Vec<_>>(), vec![MENSAL, 7]);
+        assert_eq!(
+            e.calendarios.iter().map(|c| c.id).collect::<Vec<_>>(),
+            vec![MENSAL, 7]
+        );
         let mut d = DadosPresenca::default();
         d.resgatar(MENSAL, t, &EV_COMPLEMENTA).unwrap();
-        assert!(d.resgatar(7, t, &EV_COMPLEMENTA).is_ok(), "evento tem progresso proprio");
+        assert!(
+            d.resgatar(7, t, &EV_COMPLEMENTA).is_ok(),
+            "evento tem progresso proprio"
+        );
 
         let s = DadosPresenca::default().estado(t, &EV_SUBSTITUI);
-        assert_eq!(s.calendarios.iter().map(|c| c.id).collect::<Vec<_>>(), vec![9]);
-        assert_eq!(DadosPresenca::default().resgatar(MENSAL, t, &EV_SUBSTITUI), Err(Recusa::SemCalendario));
+        assert_eq!(
+            s.calendarios.iter().map(|c| c.id).collect::<Vec<_>>(),
+            vec![9]
+        );
+        assert_eq!(
+            DadosPresenca::default().resgatar(MENSAL, t, &EV_SUBSTITUI),
+            Err(Recusa::SemCalendario)
+        );
         // Fora do periodo o evento some.
-        assert_eq!(DadosPresenca::default().resgatar(7, 10, &EV_COMPLEMENTA), Err(Recusa::SemCalendario));
+        assert_eq!(
+            DadosPresenca::default().resgatar(7, 10, &EV_COMPLEMENTA),
+            Err(Recusa::SemCalendario)
+        );
     }
 
     #[test]
@@ -535,12 +649,25 @@ mod tests {
         let hoje = dia(t);
         let p = planejar(MENSAL, t, EVENTOS, &[]).unwrap();
         assert_eq!((p.dia_grade, p.dia_jogo, p.ciclo), (1, hoje, mes(hoje)));
-        let feito = ResgateFeito { calendario: MENSAL, ciclo: p.ciclo, dia_grade: 1, dia_jogo: hoje };
-        assert_eq!(planejar(MENSAL, t, EVENTOS, &[feito]), Err(Recusa::JaResgatouHoje));
+        let feito = ResgateFeito {
+            calendario: MENSAL,
+            ciclo: p.ciclo,
+            dia_grade: 1,
+            dia_jogo: hoje,
+        };
+        assert_eq!(
+            planejar(MENSAL, t, EVENTOS, &[feito]),
+            Err(Recusa::JaResgatouHoje)
+        );
         let amanha = planejar(MENSAL, t + 86_400, EVENTOS, &[feito]).unwrap();
         assert_eq!(amanha.dia_grade, 2);
         // Linha de mes passado nao conta no ciclo novo.
-        let velho = ResgateFeito { calendario: MENSAL, ciclo: mes(hoje) - 1, dia_grade: 9, dia_jogo: hoje - 40 };
+        let velho = ResgateFeito {
+            calendario: MENSAL,
+            ciclo: mes(hoje) - 1,
+            dia_grade: 9,
+            dia_jogo: hoje - 40,
+        };
         assert_eq!(planejar(MENSAL, t, EVENTOS, &[velho]).unwrap().dia_grade, 1);
         let d = DadosPresenca::de_resgates(&[feito, velho], t);
         assert_eq!((d.mensal.resgatados, d.mensal.ultimo_dia), (1, hoje));

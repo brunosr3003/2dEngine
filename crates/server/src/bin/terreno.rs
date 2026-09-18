@@ -44,7 +44,11 @@ fn main() {
         "ilha", "raio", "terra", "plana", "andavel", "parede", "sitio mob", "sitio chefe", "gerar"
     );
     for d in ARQUIPELAGO.iter() {
-        let raio = if cheio { d.raio_blocos } else { d.raio_blocos / 4 };
+        let raio = if cheio {
+            d.raio_blocos
+        } else {
+            d.raio_blocos / 4
+        };
         let t0 = std::time::Instant::now();
         let ilha = Ilha::gerar(d.semente, raio, d.bioma, ESCALA_ALTURA);
         let ms = t0.elapsed().as_millis();
@@ -104,22 +108,30 @@ fn pedaco() {
 /// chefe) nao se enxerga na imagem.
 fn varre() {
     let d = &ARQUIPELAGO[0];
-    println!("{:>6} {:>8} {:>7} {:>8} {:>8} {:>8} {:>10} {:>11}",
-        "escala", "terraco", "pico", "plana", "andavel", "parede", "sitio mob", "sitio chefe");
+    println!(
+        "{:>6} {:>8} {:>7} {:>8} {:>8} {:>8} {:>10} {:>11}",
+        "escala", "terraco", "pico", "plana", "andavel", "parede", "sitio mob", "sitio chefe"
+    );
     for escala in [0.35f32, 0.6, 0.9, 1.2] {
         for passo in [2i32, 4, 6] {
-            let ilha =
-                Ilha::com_terraco(d.semente, d.raio_blocos, d.bioma, escala, passo, 0.92);
+            let ilha = Ilha::com_terraco(d.semente, d.raio_blocos, d.bioma, escala, passo, 0.92);
             let e = ilha.estatisticas();
             let pico = (0..ilha.lado as i32)
                 .flat_map(|z| (0..ilha.lado as i32).map(move |x| (x, z)))
                 .map(|(x, z)| ilha.bloco(x, z))
                 .max()
                 .unwrap_or(0);
-            println!("{:>6.2} {:>6}bl {:>6.1}un {:>7.1}% {:>7.1}% {:>7.1}% {:>9.1}% {:>10.1}%",
-                escala, passo, (pico + 1) as f32 * BLOCO,
-                e.pct_plana(), e.pct_andavel(), e.pct_parede(),
-                e.sitio_mob * 100.0, e.sitio_chefe * 100.0);
+            println!(
+                "{:>6.2} {:>6}bl {:>6.1}un {:>7.1}% {:>7.1}% {:>7.1}% {:>9.1}% {:>10.1}%",
+                escala,
+                passo,
+                (pico + 1) as f32 * BLOCO,
+                e.pct_plana(),
+                e.pct_andavel(),
+                e.pct_parede(),
+                e.sitio_mob * 100.0,
+                e.sitio_chefe * 100.0
+            );
         }
     }
 }
@@ -136,8 +148,13 @@ fn alcance(args: &[String]) {
     use shared::terreno::TipoDeEstorvo;
     let d = &ARQUIPELAGO[0];
     let ilha = Ilha::gerar(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
-    let cidade = ilha.cidade().map(|c| c.centro()).unwrap_or(glam::Vec2::ZERO);
-    let corpos: Vec<(glam::Vec2, u8)> = ilha.todos_os_estorvos().iter()
+    let cidade = ilha
+        .cidade()
+        .map(|c| c.centro())
+        .unwrap_or(glam::Vec2::ZERO);
+    let corpos: Vec<(glam::Vec2, u8)> = ilha
+        .todos_os_estorvos()
+        .iter()
         .filter_map(|e| match e.tipo {
             TipoDeEstorvo::Tronco => Some((e.centro, 0)),
             TipoDeEstorvo::Minerio(t) => Some((e.centro, t)),
@@ -146,39 +163,86 @@ fn alcance(args: &[String]) {
         .collect();
     // Mesmo agrupamento do `mapa_ilha::regioes_de_recurso` (o bin nao enxerga
     // o crate do servidor): celula de 48 un por tipo, centro medio.
-    struct Regiao { tipo: u8, centro: [f32; 2], raio: f32, contagem: usize }
+    struct Regiao {
+        tipo: u8,
+        centro: [f32; 2],
+        raio: f32,
+        contagem: usize,
+    }
     let mut grupos: std::collections::HashMap<(i32, i32, u8), Vec<glam::Vec2>> = Default::default();
     for (p, t) in &corpos {
-        grupos.entry(((p.x / 48.0).floor() as i32, (p.y / 48.0).floor() as i32, *t)).or_default().push(*p);
+        grupos
+            .entry(((p.x / 48.0).floor() as i32, (p.y / 48.0).floor() as i32, *t))
+            .or_default()
+            .push(*p);
     }
-    let regioes: Vec<Regiao> = grupos.into_iter().filter(|(_, ps)| ps.len() >= 3).map(|((_, _, tipo), ps)| {
-        let c = ps.iter().fold(glam::Vec2::ZERO, |a, b| a + *b) / ps.len() as f32;
-        let raio = ps.iter().map(|p| p.distance(c)).fold(0.0f32, f32::max).max(4.0);
-        Regiao { tipo, centro: [c.x, c.y], raio, contagem: ps.len() }
-    }).collect();
+    let regioes: Vec<Regiao> = grupos
+        .into_iter()
+        .filter(|(_, ps)| ps.len() >= 3)
+        .map(|((_, _, tipo), ps)| {
+            let c = ps.iter().fold(glam::Vec2::ZERO, |a, b| a + *b) / ps.len() as f32;
+            let raio = ps
+                .iter()
+                .map(|p| p.distance(c))
+                .fold(0.0f32, f32::max)
+                .max(4.0);
+            Regiao {
+                tipo,
+                centro: [c.x, c.y],
+                raio,
+                contagem: ps.len(),
+            }
+        })
+        .collect();
     let chega = |de: glam::Vec2, para: glam::Vec2, orc: usize| -> f32 {
-        ilha.caminho(de, para, orc).and_then(|r| r.last().copied()).map_or(f32::MAX, |f| f.distance(para))
+        ilha.caminho(de, para, orc)
+            .and_then(|r| r.last().copied())
+            .map_or(f32::MAX, |f| f.distance(para))
     };
     let (mut ok, mut longe) = (0, Vec::new());
     for r in &regioes {
         let c = glam::Vec2::new(r.centro[0], r.centro[1]);
         let falta = chega(cidade, c, 2_000_000);
-        if falta <= r.raio + 8.0 { ok += 1 } else { longe.push((r.tipo, c, falta, r.contagem)) }
+        if falta <= r.raio + 8.0 {
+            ok += 1
+        } else {
+            longe.push((r.tipo, c, falta, r.contagem))
+        }
     }
-    println!("{}: {} regioes, {} alcancaveis da cidade", d.zona, regioes.len(), ok);
+    println!(
+        "{}: {} regioes, {} alcancaveis da cidade",
+        d.zona,
+        regioes.len(),
+        ok
+    );
     for (t, c, falta, n) in &longe {
-        println!("  INALCANCAVEL tipo {t} em {:.0},{:.0} ({n} corpos): rota para a {:.0} un", c.x, c.y, falta);
+        println!(
+            "  INALCANCAVEL tipo {t} em {:.0},{:.0} ({n} corpos): rota para a {:.0} un",
+            c.x, c.y, falta
+        );
     }
     if let Some(i) = args.iter().position(|a| a == "--de") {
-        let v: Vec<f32> = args[i + 1].split(',').filter_map(|x| x.parse().ok()).collect();
+        let v: Vec<f32> = args[i + 1]
+            .split(',')
+            .filter_map(|x| x.parse().ok())
+            .collect();
         let de = glam::Vec2::new(v[0], v[1]);
-        let mut roxas: Vec<_> = regioes.iter().filter(|r| r.tipo == 4).map(|r| glam::Vec2::new(r.centro[0], r.centro[1])).collect();
+        let mut roxas: Vec<_> = regioes
+            .iter()
+            .filter(|r| r.tipo == 4)
+            .map(|r| glam::Vec2::new(r.centro[0], r.centro[1]))
+            .collect();
         roxas.sort_by(|a, b| a.distance(de).total_cmp(&b.distance(de)));
         for c in roxas.iter().take(3) {
             println!("de {:.0},{:.0} ate' roxa {:.0},{:.0} ({:.0} un): orcamento 6000 para a {:.0}, ilimitado para a {:.0}",
                 de.x, de.y, c.x, c.y, de.distance(*c), chega(de, *c, 6_000), chega(de, *c, 2_000_000));
         }
-        println!("altura em {:.0},{:.0}: {:.1}", de.x, de.y, ilha.altura(de.x, de.y));
+        println!(
+            "altura em {:.0},{:.0}: {:.1}",
+            de.x,
+            de.y,
+            ilha.altura(de.x, de.y)
+        );
     }
 }
 
@@ -193,7 +257,10 @@ fn simula(args: &[String]) {
     use shared::terreno::{SeguidorDeRota, DEGRAU_BLOCOS, PULO_BLOCOS};
     let ponto = |nome: &str| -> glam::Vec2 {
         let i = args.iter().position(|a| a == nome).expect(nome);
-        let v: Vec<f32> = args[i + 1].split(',').filter_map(|x| x.parse().ok()).collect();
+        let v: Vec<f32> = args[i + 1]
+            .split(',')
+            .filter_map(|x| x.parse().ok())
+            .collect();
         glam::Vec2::new(v[0], v[1])
     };
     let (de, para) = (ponto("--de"), ponto("--para"));
@@ -205,7 +272,8 @@ fn simula(args: &[String]) {
         let r = shared::ENTITY_RADIUS;
         let mut seg = SeguidorDeRota::nova(Vec::new(), para);
         let mut p = de;
-        let (mut agora, mut pulo_ate, mut pronto, mut ultima_rota) = (0.0f32, -1.0f32, 0.0f32, -1.0f32);
+        let (mut agora, mut pulo_ate, mut pronto, mut ultima_rota) =
+            (0.0f32, -1.0f32, 0.0f32, -1.0f32);
         let (mut pulos, mut rotas) = (0, 0);
         let mut preso_desde = (p, 0.0f32);
         while agora < 90.0 {
@@ -232,7 +300,8 @@ fn simula(args: &[String]) {
             }
             let degrau = if agora < pulo_ate {
                 let t = shared::PULO_DURACAO - (pulo_ate - agora);
-                ((shared::altura_do_pulo(t) / BLOCO).floor() as i32).clamp(DEGRAU_BLOCOS, PULO_BLOCOS)
+                ((shared::altura_do_pulo(t) / BLOCO).floor() as i32)
+                    .clamp(DEGRAU_BLOCOS, PULO_BLOCOS)
             } else {
                 DEGRAU_BLOCOS
             };
@@ -258,19 +327,38 @@ fn histograma(ilha: &Ilha) {
     for iz in 0..ilha.lado as i32 {
         for ix in 0..ilha.lado as i32 {
             let h = ilha.bloco(ix, iz);
-            if (h + 1) as f32 * BLOCO <= 0.0 { continue }
-            min = min.min(h); max = max.max(h); soma += h as i64; n += 1;
+            if (h + 1) as f32 * BLOCO <= 0.0 {
+                continue;
+            }
+            min = min.min(h);
+            max = max.max(h);
+            soma += h as i64;
+            n += 1;
             faixas[((h / 4).clamp(0, 11)) as usize] += 1;
         }
     }
-    if n == 0 { return }
-    println!("   altura da terra: {}..{} blocos ({:.1}..{:.1} un), media {:.1}",
-        min, max, (min + 1) as f32 * BLOCO, (max + 1) as f32 * BLOCO,
-        soma as f32 / n as f32);
+    if n == 0 {
+        return;
+    }
+    println!(
+        "   altura da terra: {}..{} blocos ({:.1}..{:.1} un), media {:.1}",
+        min,
+        max,
+        (min + 1) as f32 * BLOCO,
+        (max + 1) as f32 * BLOCO,
+        soma as f32 / n as f32
+    );
     print!("   ");
     for (i, c) in faixas.iter().enumerate() {
-        if *c == 0 { continue }
-        print!("{}-{}bl:{:.0}%  ", i * 4, i * 4 + 3, *c as f32 * 100.0 / n as f32);
+        if *c == 0 {
+            continue;
+        }
+        print!(
+            "{}-{}bl:{:.0}%  ",
+            i * 4,
+            i * 4 + 3,
+            *c as f32 * 100.0 / n as f32
+        );
     }
     println!();
 }
@@ -313,4 +401,3 @@ fn desenha(ilha: &Ilha, caminho: &str, bioma: Bioma) {
     }
     let _ = std::fs::write(caminho, buf);
 }
-
