@@ -150,6 +150,140 @@ pub fn refinar(inst: &mut ItemInstance, inv: &mut [InventorySlot], sorte: u8) ->
     }
 }
 
+// ─────────────────────────── aprimorar e combinar ───────────────────────────
+
+/// Aba Aprimorar: funde as pecas dos slots `a` e `b` da bolsa na de tier
+/// seguinte (`forja::conferir_aprimorar`), cobrando cobre. A nova fica no
+/// slot `a`; o `b` esvazia. `rolar(item, nivel, tier)` rola a instancia nova
+/// (o template vem do cache do servidor). Devolve (item_id, tier novo).
+pub fn aprimorar(
+    inv: &mut [InventorySlot],
+    a: usize,
+    b: usize,
+    rolar: &mut dyn FnMut(u16, u16, u8) -> Option<ItemInstance>,
+) -> Result<(u16, u8), String> {
+    if a == b || a >= inv.len() || b >= inv.len() {
+        return Err("escolha duas peças diferentes da bolsa".into());
+    }
+    let (sa, sb) = (inv[a], inv[b]);
+    let (Some(ia), Some(ib)) = (sa.instance, sb.instance) else {
+        return Err("só peça de equipamento se aprimora".into());
+    };
+    if sa.qty == 0 || sb.qty == 0 {
+        return Err("escolha duas peças diferentes da bolsa".into());
+    }
+    let gema = |i: &ItemInstance| i.socketed_gems.iter().any(|g| *g != 0);
+    let tier = forja::conferir_aprimorar(
+        (sa.item_id, ia.tier(), gema(&ia)),
+        (sb.item_id, ib.tier(), gema(&ib)),
+    )
+    .map_err(str::to_string)?;
+    let cobre = forja::custo_de_aprimorar(ia.tier());
+    if tem(inv, item_id::COPPER) < cobre {
+        return Err(format!("faltam {} de cobre", cobre - tem(inv, item_id::COPPER)));
+    }
+    let nivel = ia.item_level.max(ib.item_level);
+    let Some(mut nova) = rolar(sa.item_id, nivel, tier) else {
+        return Err("este item não se aprimora".into());
+    };
+    // Peca de bau vinculada contamina a fusao: senao era so' fundir uma
+    // vinculada com uma qualquer pra poder vender.
+    nova.vinculado = ia.vinculado || ib.vinculado;
+    consumir(inv, item_id::COPPER, cobre);
+    inv[b] = InventorySlot::default();
+    inv[a] = InventorySlot {
+        item_id: sa.item_id,
+        qty: 1,
+        instance: Some(nova),
+    };
+    Ok((sa.item_id, tier))
+}
+
+/// Poe `qty` de um empilhavel na bolsa: completa as pilhas, depois os vazios.
+/// Tudo ou nada — sem espaco pra tudo, a bolsa nao muda.
+pub(crate) fn por_empilhavel(inv: &mut [InventorySlot], id: u16, qty: u32, cap: u32) -> bool {
+    let cap = cap.max(1);
+    let mut sim = inv.to_vec();
+    let mut falta = qty;
+    for s in sim.iter_mut() {
+        if falta == 0 {
+            break;
+        }
+        if s.item_id == id && s.instance.is_none() && s.qty > 0 && s.qty < cap {
+            let p = falta.min(cap - s.qty);
+            s.qty += p;
+            falta -= p;
+        }
+    }
+    for s in sim.iter_mut() {
+        if falta == 0 {
+            break;
+        }
+        if s.qty == 0 {
+            let p = falta.min(cap);
+            *s = InventorySlot {
+                item_id: id,
+                qty: p,
+                instance: None,
+            };
+            falta -= p;
+        }
+    }
+    if falta > 0 {
+        return false;
+    }
+    inv.copy_from_slice(&sim);
+    true
+}
+
+/// Aba Combinar: ate' `vezes` tentativas de `r`, limitadas ao que a bolsa
+/// paga. Cobra TODAS as tentativas e entrega os sucessos. Recusa (sem mexer
+/// na bolsa) se nao paga nenhuma ou se o pior caso — todas darem certo — nao
+/// cabe. `sorte()` devolve 0..=99. Devolve (tentativas, sucessos).
+pub fn combinar(
+    inv: &mut [InventorySlot],
+    r: &shared::combinar::ReceitaDeCombinar,
+    vezes: u16,
+    cap: u32,
+    nome: &dyn Fn(u16) -> String,
+    sorte: &mut dyn FnMut() -> u8,
+) -> Result<(u16, u16), String> {
+    let pode = shared::combinar::vezes_possiveis(r, &|id| tem(inv, id));
+    let n = (vezes.max(1) as u32).min(pode);
+    if n == 0 {
+        let mut faltas = Vec::new();
+        for (id, custo) in [
+            (r.entrada, r.qtd),
+            (item_id::COPPER, r.cobre),
+            (item_id::DARKSTEEL, r.darksteel),
+            (item_id::GLITTERING_POWDER, r.po),
+        ] {
+            if custo > 0 && tem(inv, id) < custo {
+                faltas.push(format!("{} {}/{}", nome(id), tem(inv, id), custo));
+            }
+        }
+        return Err(format!("faltam: {}", faltas.join(", ")));
+    }
+    let cobra = |b: &mut [InventorySlot]| {
+        consumir(b, r.entrada, r.qtd * n);
+        consumir(b, item_id::COPPER, r.cobre * n);
+        consumir(b, item_id::DARKSTEEL, r.darksteel * n);
+        consumir(b, item_id::GLITTERING_POWDER, r.po * n);
+    };
+    let mut sim = inv.to_vec();
+    cobra(&mut sim);
+    if !por_empilhavel(&mut sim, r.saida, n, cap) {
+        return Err("bolsa cheia".into());
+    }
+    let sucessos = (0..n).filter(|_| shared::combinar::deu_certo(r, sorte())).count() as u32;
+    cobra(inv);
+    if sucessos > 0 {
+        // Cabe: o pior caso (n) coube na simulacao.
+        por_empilhavel(inv, r.saida, sucessos, cap);
+    }
+    Ok((n as u16, sucessos as u16))
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -273,5 +407,113 @@ mod testes {
         assert_eq!(refinar(&mut p, &mut inv, 0), (resultado::SEM_MATERIAL, 1));
         p.refinement = forja::REFINO_MAX;
         assert_eq!(refinar(&mut p, &mut inv, 0).0, resultado::NO_TOPO);
+    }
+
+    fn foto(inv: &[InventorySlot]) -> Vec<(u16, u32, bool)> {
+        inv.iter().map(|s| (s.item_id, s.qty, s.instance.is_some())).collect()
+    }
+
+    fn peca(tier: u8, refino: u8) -> InventorySlot {
+        let mut i = ItemInstance::roll_for(item_id::KATANA, 5, || 0.5).unwrap();
+        i.rarity = tier;
+        i.refinement = refino;
+        InventorySlot {
+            item_id: item_id::KATANA,
+            qty: 1,
+            instance: Some(i),
+        }
+    }
+
+    fn rolar_katana(id: u16, nivel: u16, tier: u8) -> Option<ItemInstance> {
+        ItemInstance::roll_no_tier(shared::items::item_template(id), nivel, tier, || 0.5)
+    }
+
+    #[test]
+    fn aprimorar_funde_duas_iguais_no_tier_seguinte_e_zera_o_refino() {
+        let mut inv = bolsa(&[(item_id::COPPER, 600)]);
+        inv[3] = peca(1, 4);
+        inv[7] = peca(1, 0);
+        let antes = inv[3].instance.unwrap().attack_damage;
+        assert_eq!(aprimorar(&mut inv, 3, 7, &mut rolar_katana), Ok((item_id::KATANA, 2)));
+        let nova = inv[3].instance.unwrap();
+        assert_eq!((nova.tier(), nova.refinement), (2, 0));
+        assert!(nova.attack_damage > antes, "tier II rola mais forte");
+        assert_eq!(inv[7].qty, 0);
+        assert_eq!(tem(&inv, item_id::COPPER), 100);
+    }
+
+    #[test]
+    fn aprimorar_recusa_sem_cobre_diferentes_e_no_quatro() {
+        let mut inv = bolsa(&[(item_id::COPPER, 10)]);
+        inv[3] = peca(1, 0);
+        inv[7] = peca(1, 0);
+        let copia = foto(&inv);
+        assert!(aprimorar(&mut inv, 3, 7, &mut rolar_katana).is_err());
+        assert_eq!(foto(&inv), copia, "recusa nao mexe na bolsa");
+        let mut inv = bolsa(&[(item_id::COPPER, 99_999)]);
+        inv[3] = peca(1, 0);
+        inv[7] = peca(2, 0);
+        assert!(aprimorar(&mut inv, 3, 7, &mut rolar_katana).is_err());
+        inv[7] = peca(4, 0);
+        inv[3] = peca(4, 0);
+        assert!(aprimorar(&mut inv, 3, 7, &mut rolar_katana).is_err());
+        assert!(aprimorar(&mut inv, 3, 3, &mut rolar_katana).is_err());
+    }
+
+    #[test]
+    fn combinar_cobra_todas_e_entrega_so_os_sucessos() {
+        let r = shared::combinar::receita(item_id::HORN).unwrap();
+        let mut inv = bolsa(&[(item_id::HORN, 23)]);
+        // Sorte alterna 0 (certo) e 50 (errado): 4 tentativas, 2 sucessos.
+        let mut k = 0u8;
+        let mut sorte = || {
+            k = k.wrapping_add(1);
+            if k % 2 == 1 { 0 } else { 50 }
+        };
+        let r2 = combinar(&mut inv, &r, 50, 99, &nome, &mut sorte);
+        assert_eq!(r2, Ok((4, 2)));
+        assert_eq!(tem(&inv, item_id::HORN), 3);
+        assert_eq!(tem(&inv, r.saida), 2);
+        // 3 chifres nao pagam uma tentativa.
+        let e = combinar(&mut inv, &r, 1, 99, &nome, &mut || 0).unwrap_err();
+        assert!(e.contains("3/5"), "{e}");
+    }
+
+    #[test]
+    fn sintese_de_material_cobra_cobre_darksteel_e_po() {
+        let r = shared::combinar::receita(item_id::STEEL).unwrap();
+        let mut inv = bolsa(&[
+            (item_id::STEEL, 25),
+            (item_id::COPPER, 4_500),
+            (item_id::DARKSTEEL, 3_000),
+            (item_id::GLITTERING_POWDER, 9),
+        ]);
+        assert_eq!(combinar(&mut inv, &r, 50, 999, &nome, &mut || 99), Ok((2, 2)));
+        assert_eq!(tem(&inv, item_id::STEEL), 5);
+        assert_eq!(tem(&inv, item_id::COPPER), 500);
+        assert_eq!(tem(&inv, item_id::DARKSTEEL), 1_000);
+        assert_eq!(tem(&inv, item_id::GLITTERING_POWDER), 5);
+        assert_eq!(tem(&inv, r.saida), 2);
+    }
+
+    #[test]
+    fn combinar_com_bolsa_cheia_nao_cobra() {
+        let r = shared::combinar::receita(item_id::HORN).unwrap();
+        let mut inv: Vec<InventorySlot> = (0..4)
+            .map(|i| InventorySlot {
+                item_id: 900 + i,
+                qty: 1,
+                instance: None,
+            })
+            .collect();
+        inv[0] = InventorySlot {
+            item_id: item_id::HORN,
+            qty: 7,
+            instance: None,
+        };
+        let copia = foto(&inv);
+        // 7 chifres = 1 tentativa, sobra 2: o slot nao libera e nao ha' vazio.
+        assert_eq!(combinar(&mut inv, &r, 1, 99, &nome, &mut || 0), Err("bolsa cheia".into()));
+        assert_eq!(foto(&inv), copia);
     }
 }

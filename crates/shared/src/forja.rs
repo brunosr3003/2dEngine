@@ -314,6 +314,47 @@ pub fn tentativas_por_peca(alvo: u8, amostras: u32) -> f32 {
     total as f32 / amostras as f32
 }
 
+// ────────────────────────────── aprimorar ─────────────────────────────
+//
+// A aba "Aprimorar" do Craft: DUAS pecas iguais (mesmo item, mesmo tier)
+// viram UMA do tier seguinte, do Tier I ao Tier IV. E' a regra de `combinar`
+// aplicada ao item de verdade: o tier da instancia e' o campo `rarity`
+// (`ItemInstance::tier`), e a cor fica no `item_id` — por isso "iguais"
+// quer dizer mesmo `item_id`. A peca nova e' rolada de novo na escala do tier
+// novo, no maior nivel de item das duas; o refino das duas se perde.
+
+/// Ate' onde o Aprimorar sobe. O Tier V existe (drop de nivel 71+), mas nao
+/// se chega nele fundindo.
+pub const APRIMORAR_TIER_MAX: u8 = 4;
+
+/// Cobre de uma fusao, pelo tier de ORIGEM. Cresce 4x por degrau: e' a moeda
+/// do dia a dia, e o que pesa de verdade e' juntar a segunda peca.
+pub fn custo_de_aprimorar(tier: u8) -> u32 {
+    match tier {
+        1 => 500,
+        2 => 2_000,
+        _ => 8_000,
+    }
+}
+
+/// Por que duas pecas nao se fundem (a frase que o jogador le), ou o tier
+/// que sai. `a`/`b` = (item_id, tier, tem gema engastada).
+pub fn conferir_aprimorar(a: (u16, u8, bool), b: (u16, u8, bool)) -> Result<u8, &'static str> {
+    if a.0 != b.0 {
+        return Err("as duas peças precisam ser o mesmo item");
+    }
+    if a.1 != b.1 {
+        return Err("as duas peças precisam ter o mesmo tier");
+    }
+    if a.1 >= APRIMORAR_TIER_MAX {
+        return Err("Tier IV é o máximo do Aprimorar");
+    }
+    if a.2 || b.2 {
+        return Err("tire as gemas das peças antes");
+    }
+    Ok(a.1 + 1)
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -321,6 +362,18 @@ mod testes {
     /// A escada inteira, e o numero que ela implica. Se alguem mexer na regra
     /// de combinacao sem perceber, o custo do jogo muda por ordens de
     /// grandeza — e isso tem que quebrar um teste, nao aparecer no forum.
+    #[test]
+    fn aprimorar_pede_iguais_e_para_no_quatro() {
+        assert_eq!(conferir_aprimorar((10, 1, false), (10, 1, false)), Ok(2));
+        assert_eq!(conferir_aprimorar((10, 3, false), (10, 3, false)), Ok(4));
+        assert!(conferir_aprimorar((10, 4, false), (10, 4, false)).is_err());
+        assert!(conferir_aprimorar((10, 1, false), (11, 1, false)).is_err());
+        assert!(conferir_aprimorar((10, 1, false), (10, 2, false)).is_err());
+        assert!(conferir_aprimorar((10, 1, true), (10, 1, false)).is_err());
+        assert!(custo_de_aprimorar(1) < custo_de_aprimorar(2));
+        assert!(custo_de_aprimorar(2) < custo_de_aprimorar(3));
+    }
+
     #[test]
     fn a_escada_custa_meio_milhao() {
         let base = Degrau::novo(Grau::Comum, 1);

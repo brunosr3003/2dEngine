@@ -260,6 +260,17 @@ pub const fn alvo_de_mob(kind: u16) -> u16 {
     kind + 1
 }
 
+/// `obj_target` de KILL que aceita QUALQUER chefe de campo (`bosses::CHEFES`).
+/// Longe de todo kind real (`alvo_de_mob` de chefe fica em 11..18).
+pub const ALVO_QUALQUER_CHEFE: u16 = 1_000;
+
+/// A morte de um bicho de `kind` conta pra uma KILL com este `obj_target`?
+pub fn kill_conta(obj_target: u16, kind: u16) -> bool {
+    obj_target == 0
+        || alvo_de_mob(kind) == obj_target
+        || (obj_target == ALVO_QUALQUER_CHEFE && crate::bosses::e_chefe(kind))
+}
+
 /// Kinds da tabela de mobs (`enemy_kinds`) usados nas missoes.
 pub mod mob_kind {
     pub const LOBO: u16 = 0;
@@ -622,6 +633,184 @@ pub const QUESTS: &[QuestDef] = &[
         reward_item2: item_id::STEEL, reward_item2_qty: 20,
         requires: 509, min_level: 6, ..mestre() },
 
+    // ===== Mais Bosque (511-539) — seis cadeias em paralelo =====
+    // O capitulo I da historia acaba no nivel 15 e a cadeia de cima no 12; o
+    // resto da ilha (tres chefes de campo, sete bichos, duas dungeons, a
+    // oficina) ficava sem missao nenhuma. Cada cadeia anda sozinha — o Mestre
+    // oferece a proxima de TODAS ao mesmo tempo, entao sempre ha' varias no
+    // quadro. XP na escala do nivel pedido (~1/5 do nivel), cobre de dia a dia.
+    //
+    // A) Os chefes de campo do Bosque, do mais fraco pro mais forte.
+    QuestDef { id: 511, title: "O uivo da clareira",
+        desc: "Um lobo do tamanho de um cavalo lidera a matilha da clareira. Derrote o Lobo Alfa da Clareira — o mapa marca onde ele ronda. Chame alguém: chefe se enfrenta em grupo, e todos que lutarem perto contam.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(10), obj_count: 1,
+        reward_cobre: 600, reward_xp: 6_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        min_level: 8, ..mestre() },
+    QuestDef { id: 512, title: "A bandeira do Barba-Tormenta",
+        desc: "O Capitão Barba-Tormenta desembarcou com a tripulação e fincou bandeira na ilha. Derrube-o e o porto volta a respirar.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(11), obj_count: 1,
+        reward_cobre: 900, reward_xp: 14_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
+        reward_item2: item_id::SORTE_POTION, reward_item2_qty: 1,
+        requires: 511, min_level: 11, ..mestre() },
+    QuestDef { id: 513, title: "O velho da encosta",
+        desc: "O Urso Ancião dorme na encosta desde antes da vila. O trovão o acordou de mau humor. Derrote-o.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(12), obj_count: 1,
+        reward_cobre: 1_300, reward_xp: 30_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 2,
+        reward_item2: item_id::FORTUNA_POTION, reward_item2_qty: 1,
+        requires: 512, min_level: 14, ..mestre() },
+    QuestDef { id: 514, title: "Caçador de chefes",
+        desc: "Os três chefes do Bosque voltam depois de um tempo. Derrote 3 chefes de campo — qualquer um deles, quantas vezes precisar.",
+        obj_kind: objective_kind::KILL, obj_target: ALVO_QUALQUER_CHEFE, obj_count: 3,
+        reward_cobre: 2_000, reward_xp: 45_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 3,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        requires: 513, min_level: 14, ..mestre() },
+    QuestDef { id: 515, title: "A lenda do Bosque",
+        desc: "A vila já conta histórias sobre você. Derrote mais 5 chefes de campo e a lenda vira verdade.",
+        obj_kind: objective_kind::KILL, obj_target: ALVO_QUALQUER_CHEFE, obj_count: 5,
+        reward_cobre: 3_000, reward_xp: 70_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 5,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 2,
+        requires: 514, min_level: 15, ..mestre() },
+
+    // B) O bestiario: cada bicho da ilha, na ordem em que ele aparece.
+    QuestDef { id: 516, title: "Matilha cinzenta",
+        desc: "Os lobos se multiplicam perto da vila. Derrote 12.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::LOBO), obj_count: 12,
+        reward_cobre: 150, reward_xp: 900, reward_item: item_id::HEALTH_POTION, reward_item_qty: 3,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        min_level: 2, ..mestre() },
+    QuestDef { id: 517, title: "Garras na trilha",
+        desc: "Os ursos tomaram a trilha dos lenhadores. Derrote 10.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::URSO), obj_count: 10,
+        reward_cobre: 250, reward_xp: 2_500, reward_item: item_id::HEALTH_POTION, reward_item_qty: 4,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        requires: 516, min_level: 4, ..mestre() },
+    QuestDef { id: 518, title: "Pólvora na mata",
+        desc: "Pistoleiros de Morgan acampam na mata. Derrote 12 e apague as fogueiras deles.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::PISTOLEIRO), obj_count: 12,
+        reward_cobre: 400, reward_xp: 6_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 2,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        requires: 517, min_level: 7, ..mestre() },
+    QuestDef { id: 519, title: "Listras na estrada",
+        desc: "Tigres caçam na estrada do porto. Derrote 12.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::TIGRE), obj_count: 12,
+        reward_cobre: 600, reward_xp: 12_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        requires: 518, min_level: 10, ..mestre() },
+    QuestDef { id: 520, title: "Os magos do trovão",
+        desc: "Magos de Morgan puxam raios do céu para as pedras do farol. Derrote 12.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::MAGO), obj_count: 12,
+        reward_cobre: 800, reward_xp: 20_000, reward_item: item_id::GREATER_MANA, reward_item_qty: 3,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        requires: 519, min_level: 12, ..mestre() },
+    QuestDef { id: 521, title: "O que desceu do gelo",
+        desc: "Owlbears da Geleira atravessaram o mar gelado e rondam o alto da ilha. Derrote 5.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::OWLBEAR), obj_count: 5,
+        reward_cobre: 1_200, reward_xp: 40_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 4,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        requires: 520, min_level: 15, ..mestre() },
+    QuestDef { id: 522, title: "Limpa-trilhas",
+        desc: "A ilha inteira ainda ferve. Derrote 80 bichos de qualquer tipo.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 80,
+        reward_cobre: 1_500, reward_xp: 45_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 5,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 2,
+        requires: 520, min_level: 13, ..mestre() },
+
+    // C) A oficina: refino, craft e o estoque que ele come.
+    QuestDef { id: 523, title: "Martelo e bigorna",
+        desc: "O Ferreiro diz que peça sem refino é peça pela metade. Tente refinar 3 vezes na Forja.",
+        obj_kind: objective_kind::REFINE, obj_target: 0, obj_count: 3,
+        reward_cobre: 300, reward_xp: 3_000, reward_item: item_id::SORTE_POTION, reward_item_qty: 1,
+        min_level: 5, ..mestre() },
+    QuestDef { id: 524, title: "Armeiro de si mesmo",
+        desc: "Quem depende de loja não aguenta a tempestade. Crie 2 equipamentos no Craft.",
+        obj_kind: objective_kind::CRAFT, obj_target: 0, obj_count: 2,
+        reward_cobre: 400, reward_xp: 4_000, reward_item: item_id::FORTUNA_POTION, reward_item_qty: 1,
+        requires: 523, min_level: 6, ..mestre() },
+    QuestDef { id: 525, title: "Mais forte que o aço",
+        desc: "Tente refinar mais 5 vezes. Até o +5 a falha só leva o material.",
+        obj_kind: objective_kind::REFINE, obj_target: 0, obj_count: 5,
+        reward_cobre: 700, reward_xp: 12_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 1,
+        reward_item2: item_id::SORTE_POTION, reward_item2_qty: 1,
+        requires: 524, min_level: 10, ..mestre() },
+    QuestDef { id: 526, title: "Estoque de darksteel",
+        desc: "A forja da vila está sem metal escuro. Traga 150 de Darksteel — sai das pedras.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::DARKSTEEL, obj_count: 150,
+        reward_cobre: 900, reward_xp: 15_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 2,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        requires: 525, min_level: 12, ..mestre() },
+    QuestDef { id: 527, title: "Aço para a muralha",
+        desc: "A muralha da vila precisa de reforço antes da próxima tempestade. Traga 60 de Aço.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::STEEL, obj_count: 60,
+        reward_cobre: 1_000, reward_xp: 18_000, reward_item: item_id::QUINTESSENCE, reward_item_qty: 10,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        requires: 526, min_level: 13, ..mestre() },
+
+    // D) Coleta.
+    QuestDef { id: 528, title: "Lenhador",
+        desc: "O inverno vem aí e a vila quer lenha. Derrube 20 árvores.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::ARVORE, obj_count: 20,
+        reward_cobre: 200, reward_xp: 1_500, reward_item: item_id::HEALTH_POTION, reward_item_qty: 3,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        min_level: 3, ..mestre() },
+    QuestDef { id: 529, title: "Veio profundo",
+        desc: "O veio da encosta ainda guarda muito. Quebre 30 pedras.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 30,
+        reward_cobre: 350, reward_xp: 4_500, reward_item: item_id::STEEL, reward_item_qty: 15,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        requires: 528, min_level: 6, ..mestre() },
+    QuestDef { id: 530, title: "Mãos calejadas",
+        desc: "Quebre pedra ou derrube árvore: 60 coletas de qualquer tipo.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::QUALQUER, obj_count: 60,
+        reward_cobre: 700, reward_xp: 15_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 1,
+        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
+        requires: 529, min_level: 11, ..mestre() },
+
+    // E) As duas dungeons da ilha, de novo e de novo.
+    QuestDef { id: 531, title: "De volta ao porão",
+        desc: "Os Morganeers voltaram ao Porão do Naufrágio. Limpe-o outra vez (Dungeons, no Menu).",
+        obj_kind: objective_kind::DUNGEON, obj_target: 1, obj_count: 1,
+        reward_cobre: 600, reward_xp: 8_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
+        min_level: 8, ..mestre() },
+    QuestDef { id: 532, title: "A adega, de novo",
+        desc: "O contrabando voltou à adega sob o cais. Limpe a Adega do Contrabandista.",
+        obj_kind: objective_kind::DUNGEON, obj_target: 2, obj_count: 1,
+        reward_cobre: 1_000, reward_xp: 25_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 5,
+        requires: 531, min_level: 13, ..mestre() },
+    QuestDef { id: 533, title: "Rato de dungeon",
+        desc: "Conclua 3 dungeons, quaisquer. Cada chefe lá dentro pode largar chave.",
+        obj_kind: objective_kind::DUNGEON, obj_target: 0, obj_count: 3,
+        reward_cobre: 1_800, reward_xp: 50_000, reward_item: item_id::XP_POTION, reward_item_qty: 2,
+        reward_item2: item_id::GLITTERING_POWDER, reward_item2_qty: 2,
+        requires: 532, min_level: 14, ..mestre() },
+
+    // F) A vila: quem e' quem.
+    QuestDef { id: 534, title: "Notícias da taberna",
+        desc: "Quem ouve tudo na ilha é o Taberneiro. Passe lá e escute.",
+        obj_kind: objective_kind::TALK, obj_target: crate::construcao::Papel::Taberna as u16, obj_count: 1,
+        reward_cobre: 60, reward_xp: 200, reward_item: item_id::HEALTH_POTION, reward_item_qty: 2,
+        ..mestre() },
+    QuestDef { id: 535, title: "O mapa do Cartógrafo",
+        desc: "O Cartógrafo do porto desenha as trilhas da ilha. Fale com ele.",
+        obj_kind: objective_kind::TALK, obj_target: crate::construcao::Papel::Cartografo as u16, obj_count: 1,
+        reward_cobre: 100, reward_xp: 600, reward_item: item_id::HEALTH_POTION, reward_item_qty: 3,
+        requires: 534, min_level: 3, ..mestre() },
+    QuestDef { id: 536, title: "Carga no cais",
+        desc: "O Estivador sabe o que entra e sai da ilha. Pergunte a ele pelos barcos de Morgan.",
+        obj_kind: objective_kind::TALK, obj_target: crate::construcao::Papel::Deposito as u16, obj_count: 1,
+        reward_cobre: 150, reward_xp: 1_200, reward_item: item_id::MANA_POTION, reward_item_qty: 3,
+        requires: 535, min_level: 5, ..mestre() },
+    QuestDef { id: 537, title: "O que a pedra esconde",
+        desc: "O Identificador lê o que as pedras do farol carregam. Leve a ele o que ouviu no cais.",
+        obj_kind: objective_kind::TALK, obj_target: crate::construcao::Papel::Identificador as u16, obj_count: 1,
+        reward_cobre: 250, reward_xp: 3_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 2,
+        requires: 536, min_level: 8, ..mestre() },
+    QuestDef { id: 538, title: "Linha de tempestade",
+        desc: "O Alfaiate tece com fios que seguram o vento. Pergunte se ele costura para você.",
+        obj_kind: objective_kind::TALK, obj_target: crate::construcao::Papel::Alfaiate as u16, obj_count: 1,
+        reward_cobre: 400, reward_xp: 6_000, reward_item: item_id::GREATER_MANA, reward_item_qty: 3,
+        requires: 537, min_level: 10, ..mestre() },
+
     // ===================== DIARIAS do Mestre (6xx) — uma serie por ilha =====================
     // Mesmas sete tarefas em cada ilha, na escala da faixa dela (nivel de
     // entrada da ilha, contagem e paga crescendo): quebrar pedras e cacar
@@ -635,6 +824,7 @@ pub const QUESTS: &[QuestDef] = &[
     diaria(605, "Encanto do dia", "Encante uma peça.", objective_kind::ENCHANT, 0, 1, 150, 150, 0, 0, 1, false, true),
     diaria(606, "Porão do dia", "Conclua uma dungeon (Porão ou Gruta).", objective_kind::DUNGEON, 0, 1, 250, 250, 0, 0, 10, false, false),
     diaria(607, "Caçada do dia", "Derrote o chefe da Caçada.", objective_kind::RAID, 0, 1, 400, 400, 0, 0, 10, false, true),
+    diaria(608, "Chefe do dia", "Derrote um chefe de campo da ilha (o mapa mostra onde).", objective_kind::KILL, ALVO_QUALQUER_CHEFE, 1, 500, 3_000, item_id::GREATER_HEAL, 3, 8, true, false),
     // --- Geleira (ilha_gelo, 15-30) ---
     diaria(611, "Pedreira do dia", "Quebre 25 pedras em qualquer veio da ilha.", objective_kind::GATHER, alvo_de_coleta::PEDRA, 25, 450, 600, item_id::GREATER_HEAL, 3, 15, true, false),
     diaria(612, "Caça do dia", "Derrote 40 bichos da ilha.", objective_kind::KILL, 0, 40, 540, 800, item_id::GREATER_HEAL, 3, 15, true, false),
@@ -643,6 +833,7 @@ pub const QUESTS: &[QuestDef] = &[
     diaria(615, "Encanto do dia", "Encante uma peça.", objective_kind::ENCHANT, 0, 1, 450, 600, 0, 0, 15, false, true),
     diaria(616, "Porão do dia", "Conclua uma dungeon (Porão ou Gruta).", objective_kind::DUNGEON, 0, 1, 750, 1_000, 0, 0, 15, false, false),
     diaria(617, "Caçada do dia", "Derrote o chefe da Caçada.", objective_kind::RAID, 0, 1, 1_200, 1_600, 0, 0, 15, false, true),
+    diaria(618, "Chefe do dia", "Derrote um chefe de campo da ilha (o mapa mostra onde).", objective_kind::KILL, ALVO_QUALQUER_CHEFE, 1, 1_500, 12_000, item_id::GREATER_HEAL, 4, 20, true, false),
     // --- Ermo (ilha_deserto, 28-42) ---
     diaria(621, "Pedreira do dia", "Quebre 30 pedras em qualquer veio da ilha.", objective_kind::GATHER, alvo_de_coleta::PEDRA, 30, 750, 1_200, item_id::GREATER_HEAL, 4, 28, true, false),
     diaria(622, "Caça do dia", "Derrote 50 bichos da ilha.", objective_kind::KILL, 0, 50, 900, 1_600, item_id::GREATER_HEAL, 4, 28, true, false),
@@ -651,6 +842,7 @@ pub const QUESTS: &[QuestDef] = &[
     diaria(625, "Encanto do dia", "Encante uma peça.", objective_kind::ENCHANT, 0, 1, 750, 1_200, 0, 0, 28, false, true),
     diaria(626, "Porão do dia", "Conclua uma dungeon (Porão ou Gruta).", objective_kind::DUNGEON, 0, 1, 1_250, 2_000, 0, 0, 28, false, false),
     diaria(627, "Caçada do dia", "Derrote o chefe da Caçada.", objective_kind::RAID, 0, 1, 2_000, 3_200, 0, 0, 30, false, true),
+    diaria(628, "Chefe do dia", "Derrote um chefe de campo da ilha (o mapa mostra onde).", objective_kind::KILL, ALVO_QUALQUER_CHEFE, 1, 2_500, 20_000, item_id::GREATER_HEAL, 5, 33, true, false),
     // --- Planalto (ilha_planalto, 40-60) ---
     diaria(631, "Pedreira do dia", "Quebre 35 pedras em qualquer veio da ilha.", objective_kind::GATHER, alvo_de_coleta::PEDRA, 35, 1_200, 2_400, item_id::GREATER_HEAL, 5, 40, true, false),
     diaria(632, "Caça do dia", "Derrote 60 bichos da ilha.", objective_kind::KILL, 0, 60, 1_440, 3_200, item_id::GREATER_HEAL, 5, 40, true, false),
@@ -659,6 +851,7 @@ pub const QUESTS: &[QuestDef] = &[
     diaria(635, "Encanto do dia", "Encante uma peça.", objective_kind::ENCHANT, 0, 1, 1_200, 2_400, 0, 0, 40, false, true),
     diaria(636, "Porão do dia", "Conclua uma dungeon (Porão ou Gruta).", objective_kind::DUNGEON, 0, 1, 2_000, 4_000, 0, 0, 40, false, false),
     diaria(637, "Caçada do dia", "Derrote o chefe da Caçada.", objective_kind::RAID, 0, 1, 3_200, 6_400, 0, 0, 40, false, true),
+    diaria(638, "Chefe do dia", "Derrote um chefe de campo da ilha (o mapa mostra onde).", objective_kind::KILL, ALVO_QUALQUER_CHEFE, 1, 4_000, 40_000, item_id::GREATER_HEAL, 6, 48, true, false),
 
     // ===================== BOARD (quadro da cidade) — DIÁRIAS =====================
     QuestDef { id: 101, title: "Madeireiro", desc: "O quadro pede madeira para as obras da cidade.",

@@ -366,7 +366,7 @@ pub fn avancar_kill(
         let hit = if def.obj_kind == quests::objective_kind::KILL {
             pvp_victim_faction.is_none()
                 && (def.obj_target == 0
-                    || mob_kind.map(quests::alvo_de_mob) == Some(def.obj_target))
+                    || mob_kind.is_some_and(|k| quests::kill_conta(def.obj_target, k)))
         } else if def.obj_kind == quests::objective_kind::PVP_KILL {
             pvp_victim_faction
                 .map(|vf| vf != def.faction)
@@ -610,7 +610,7 @@ mod testes {
             offerable(src, GIVER_MESTRE_DA_ILHA, lv, 0, a, 0, "ilha_inicial")
                 .iter()
                 .map(|d| d.id)
-                .filter(|id| (500..600).contains(id))
+                .filter(|id| (501..=510).contains(id))
                 .collect::<Vec<_>>()
         };
         assert_eq!(ids(&[], 1), vec![501], "personagem novo so' ve' a primeira");
@@ -626,6 +626,47 @@ mod testes {
         assert!(ids(&ate_503, 2).is_empty());
         assert_eq!(ids(&ate_503, 3), vec![504]);
         assert!(available_givers(1, 0, &[], 0, "ilha_inicial").contains(&GIVER_MESTRE_DA_ILHA));
+    }
+
+    /// O caso que motivou 511-538: nivel 16, capitulo I acabado, cadeia do
+    /// Mestre ate' a 507 — o quadro tinha so' tres missoes. Agora cada uma
+    /// das seis cadeias novas abre a primeira ao mesmo tempo, inclusive a de
+    /// chefe.
+    #[test]
+    fn no_nivel_16_as_seis_cadeias_abrem_juntas() {
+        let src = quests::quest_source::NPC;
+        let feitas: Vec<CharQuest> = (501..=507).map(|id| cq(id, TURNED_IN, 1)).collect();
+        let ids: Vec<u16> = offerable(src, GIVER_MESTRE_DA_ILHA, 16, 0, &feitas, 0, "ilha_inicial")
+            .iter()
+            .map(|d| d.id)
+            .filter(|id| (500..600).contains(id))
+            .collect();
+        assert_eq!(ids, vec![508, 511, 516, 523, 528, 531, 534]);
+        // Nivel 1: so' a primeira da cadeia antiga e a conversa na taberna.
+        let novo: Vec<u16> = offerable(src, GIVER_MESTRE_DA_ILHA, 1, 0, &[], 0, "ilha_inicial")
+            .iter()
+            .map(|d| d.id)
+            .filter(|id| (500..600).contains(id))
+            .collect();
+        assert_eq!(novo, vec![501, 534]);
+    }
+
+    #[test]
+    fn chefe_conta_na_missao_de_chefe_e_bicho_nao() {
+        let um = |alvo: u16| {
+            let mut a = vec![cq(alvo, ACTIVE, 0)];
+            (
+                !avancar_kill(&mut a, Some(quests::mob_kind::LOBO), None).is_empty(),
+                !avancar_kill(&mut a, Some(10), None).is_empty(),
+                !avancar_kill(&mut a, Some(12), None).is_empty(),
+            )
+        };
+        // 511: o Lobo Alfa (kind 10), e so' ele.
+        assert_eq!(um(511), (false, true, false));
+        // 514: qualquer chefe.
+        assert_eq!(um(514), (false, true, true));
+        // 522: qualquer bicho — chefe tambem e' bicho.
+        assert_eq!(um(522), (true, true, true));
     }
 
     #[test]

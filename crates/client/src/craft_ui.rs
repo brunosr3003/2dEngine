@@ -1,6 +1,10 @@
 //! Painel de CRAFT: as receitas por categoria, os ingredientes com
 //! tem/precisa e o botao Criar.
 //!
+//! Depois das categorias, duas abas de oficina (`oficina_ui`): APRIMORAR
+//! (duas pecas iguais → tier de cima) e COMBINAR (chave/material → cor de
+//! cima).
+//!
 //! Abre pelo Menu (Oficina → Craft) — nunca por tecla.
 //! Nada aqui decide: o servidor confere nivel, materiais e espaco e responde
 //! `CraftResultado`; o que o painel mostra de "da'/nao da'" e' so' leitura da
@@ -32,6 +36,10 @@ const ABAS: [u8; 5] = [
     categoria::ACESSORIO,
     categoria::BARCO,
 ];
+
+/// As abas de oficina, depois das categorias.
+const ABA_APRIMORAR: usize = ABAS.len();
+const ABA_COMBINAR: usize = ABAS.len() + 1;
 
 /// Quanto de `id` (material empilhado, sem instancia) a bolsa tem.
 pub fn tem(slots: &[InventorySlot], id: u16) -> u32 {
@@ -74,6 +82,7 @@ pub struct Craft {
     aviso: Option<(String, bool, f64)>,
     /// Lupa tocada num ingrediente: o item pro "Onde obter".
     pub onde_obter: Option<u16>,
+    oficina: crate::oficina_ui::Oficina,
 }
 
 impl Craft {
@@ -103,6 +112,11 @@ impl Craft {
             self.sel = Some(id);
             self.rolagem = 0.0;
         }
+    }
+
+    /// Lupa tocada em qualquer aba (receita ou oficina).
+    pub fn onde_obter(&mut self) -> Option<u16> {
+        self.onde_obter.take().or_else(|| self.oficina.onde_obter.take())
     }
 
     pub fn define_receitas(&mut self, v: Vec<CraftRecipeNet>) {
@@ -150,13 +164,12 @@ impl Craft {
         let p = Self::painel();
         estilo::painel(p);
         estilo::texto(p.x + 18.0, p.y + 32.0, "Craft", 22, estilo::OURO);
-        estilo::texto(
-            p.x + 90.0,
-            p.y + 31.0,
-            "chave + materiais da cor + darksteel + cobre",
-            13,
-            estilo::SUAVE,
-        );
+        let dica = match self.aba {
+            ABA_APRIMORAR => "duas peças iguais viram uma do tier de cima (até o IV)",
+            ABA_COMBINAR => "chave e material de uma cor tentam a cor de cima",
+            _ => "chave + materiais da cor + darksteel + cobre",
+        };
+        estilo::texto(p.x + 90.0, p.y + 31.0, dica, 13, estilo::SUAVE);
         if crate::ui::botao(
             Rect::new(p.x + p.w - 44.0, p.y + 10.0, 32.0, 28.0),
             "x",
@@ -171,10 +184,13 @@ impl Craft {
                 .cloned()
                 .unwrap_or_else(|| format!("item {id}"))
         };
-        // Abas.
+        // Abas: as categorias de receita e depois as duas de oficina.
         let mut x = p.x + 16.0;
-        for (i, &cat) in ABAS.iter().enumerate() {
-            let rot = nome_da_categoria(cat);
+        let rotulos = ABAS
+            .iter()
+            .map(|&c| nome_da_categoria(c))
+            .chain(["Aprimorar", "Combinar"]);
+        for (i, rot) in rotulos.enumerate() {
             let w = estilo::medir(rot, 15) + 26.0;
             let r = Rect::new(x, p.y + 46.0, w, 28.0);
             if i == self.aba {
@@ -190,11 +206,22 @@ impl Craft {
                 self.aba = i;
                 self.sel = None;
                 self.rolagem = 0.0;
+                self.oficina.trocou_de_aba();
             }
             x += w + 6.0;
         }
         // Lista.
         let lista = Rect::new(p.x + 12.0, p.y + 84.0, 330.0, p.h - 96.0);
+        let d = Rect::new(p.x + 356.0, p.y + 84.0, p.w - 368.0, p.h - 96.0);
+        if self.aba >= ABA_APRIMORAR {
+            let pedido = if self.aba == ABA_APRIMORAR {
+                self.oficina.aprimorar(lista, d, slots, nomes)
+            } else {
+                self.oficina.combinar(lista, d, slots, nomes)
+            };
+            self.desenha_aviso(p, agora);
+            return pedido;
+        }
         draw_rectangle(
             lista.x,
             lista.y,
@@ -285,7 +312,6 @@ impl Craft {
             }
         }
         // Detalhe.
-        let d = Rect::new(p.x + 356.0, p.y + 84.0, p.w - 368.0, p.h - 96.0);
         let mut pedido = None;
         if let Some(r) = receitas.iter().find(|r| Some(r.id) == self.sel) {
             crate::bolsa::icone_do_item(
@@ -347,13 +373,88 @@ impl Craft {
                 pedido = Some(ClientMessage::Craft { recipe_id: r.id });
             }
         }
+        self.desenha_aviso(p, agora);
+        pedido
+    }
+
+    fn desenha_aviso(&self, p: Rect, agora: f64) {
         if let Some((txt, ok, t)) = &self.aviso {
             if agora - t < 4.0 {
                 let cor = if *ok { VERDE } else { VERMELHO };
                 estilo::texto_centro(p.x + p.w * 0.5, p.y + p.h - 8.0, txt, 15, cor);
             }
         }
-        pedido
+    }
+}
+
+/// Capturas das abas Aprimorar e Combinar com uma bolsa ficticia, sem rede
+/// (`MMO_PREVIA_OFICINA=1`; PNGs em `MMO_PREVIA_SAIDA`).
+#[cfg(debug_assertions)]
+pub async fn previa() {
+    use shared::item_id;
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-oficina-preview".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    // O painel centra pela tela: o alvo tem que ter o tamanho dela.
+    next_frame().await;
+    let rt = render_target(screen_width() as u32, screen_height() as u32);
+    crate::render3d::define_alvo(Some(rt.clone()));
+    let peca = |id: u16, tier: u8, refino: u8| {
+        let mut i = shared::ItemInstance::roll_for(id, 5, || 0.5).unwrap();
+        i.rarity = tier;
+        i.refinement = refino;
+        InventorySlot {
+            item_id: id,
+            qty: 1,
+            instance: Some(i),
+        }
+    };
+    let mat = |id: u16, qty: u32| InventorySlot {
+        item_id: id,
+        qty,
+        instance: None,
+    };
+    let slots = vec![
+        peca(item_id::KATANA, 1, 3),
+        peca(item_id::KATANA, 1, 0),
+        peca(item_id::KATANA, 2, 0),
+        peca(item_id::PISTOLAS, 1, 0),
+        mat(item_id::COPPER, 3_200),
+        mat(item_id::HORN, 12),
+        mat(item_id::SCALE, 3),
+        mat(item_id::STEEL, 45),
+        mat(item_id::DARKSTEEL, 1_800),
+        mat(item_id::GLITTERING_POWDER, 3),
+    ];
+    let mut nomes = HashMap::new();
+    for (id, n) in [
+        (item_id::KATANA, "Katana"),
+        (item_id::PISTOLAS, "Pistolas"),
+        (item_id::COPPER, "Cobre"),
+        (item_id::HORN, "Chifre"),
+        (item_id::na_cor(item_id::HORN, 2), "Chifre Verde"),
+        (item_id::SCALE, "Escama"),
+        (item_id::STEEL, "Aço"),
+        (item_id::na_cor(item_id::STEEL, 2), "Aço Verde"),
+        (item_id::DARKSTEEL, "Darksteel"),
+        (item_id::GLITTERING_POWDER, "Pó Cintilante"),
+    ] {
+        nomes.insert(id, n.to_string());
+    }
+    let mut c = Craft::default();
+    c.abrir();
+    for (aba, nome) in [(ABA_APRIMORAR, "aprimorar"), (ABA_COMBINAR, "combinar")] {
+        c.aba = aba;
+        for _ in 0..3 {
+            crate::render3d::camera_padrao();
+            clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
+            c.desenha(&slots, &nomes, 16, 0.0);
+            unsafe { get_internal_gl().flush() };
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
+            next_frame().await;
+        }
     }
 }
 

@@ -32,6 +32,34 @@ do jogo), Darksteel da pedra, Quintessência do tigre, Berloque do owlbear — e
 a última paga em chave, que é o único desses itens que não se farma na ilha
 (só cai de chefe, ver [LOOT_DOS_MOBS.md](LOOT_DOS_MOBS.md)).
 
+## O resto do Bosque (511–538): seis cadeias em paralelo
+
+O capítulo I da história acaba no nível 15 e a cadeia de cima no 12; os três
+chefes de campo, a maioria dos bichos, as duas dungeons e a oficina ficavam
+sem missão nenhuma — no nível 16 o quadro tinha três. Agora o Mestre oferece
+seis cadeias que andam **cada uma sozinha**: a próxima de todas aparece ao
+mesmo tempo (teste `no_nivel_16_as_seis_cadeias_abrem_juntas`).
+
+| cadeia | ids | o que pede | níveis |
+|---|---|---|---|
+| Chefes | 511–515 | Lobo Alfa, Barba-Tormenta, Urso Ancião; depois 3 e 5 chefes quaisquer | 8–15 |
+| Bestiário | 516–522 | lobo, urso, pistoleiro, tigre, mago, owlbear; 80 de qualquer | 2–15 |
+| Oficina | 523–527 | refinar 3, criar 2, refinar 5, 150 Darksteel, 60 Aço | 5–13 |
+| Coleta | 528–530 | 20 árvores, 30 pedras, 60 coletas | 3–11 |
+| Dungeons | 531–533 | Porão, Adega, 3 quaisquer | 8–14 |
+| Vila | 534–538 | Taberneiro, Cartógrafo, Estivador, Identificador, Alfaiate | 1–10 |
+
+XP na escala do nível pedido (~1/5 do nível), para o jogador de 14–16 ter
+o que fazer entre as travas da história.
+
+**Missão de chefe.** `KILL` com `obj_target` = `alvo_de_mob(kind do chefe)`
+(10, 11, 12 no Bosque) ou `ALVO_QUALQUER_CHEFE` (1000). A morte de chefe conta
+para **todo mundo a até 40 unidades** na mesma instância, não só para quem deu
+o último golpe e a party dele — chefe de campo é luta de muitos (a XP continua
+só para matador e party). A auto missão vai até a vaga do chefe, preferindo um
+vivo; o auto combate luta, mas **não desvia** dos telegráficos — isso é do
+jogador. Há também a diária **Chefe do dia** em cada ilha (608, 618, 628, 638).
+
 ## Regras (todas no servidor)
 
 - **Aceitar**: `pode_aceitar` — nível, facção, pré-requisito, estado e
@@ -100,8 +128,8 @@ HUD: faixa "AUTO MISSÃO · nome · etapa" acima da do auto combate.
 
 ## Diárias
 
-Cada ilha tem sete diárias do Mestre de Missões (ids 601–607 Bosque, 611–617
-Geleira, 621–627 Ermo, 631–637 Planalto), na escala da faixa da ilha:
+Cada ilha tem oito diárias do Mestre de Missões (ids 601–608 Bosque, 611–618
+Geleira, 621–628 Ermo, 631–638 Planalto), na escala da faixa da ilha:
 
 | tarefa | objetivo | como conta | auto missão |
 |---|---|---|---|
@@ -112,6 +140,7 @@ Geleira, 621–627 Ermo, 631–637 Planalto), na escala da faixa da ilha:
 | Encanto do dia | encantar | `ENCHANT` | **Em breve** (cadeado) |
 | Porão do dia | concluir uma dungeon (Porão ou Gruta) | `DUNGEON` | conta na vitória (docs/DUNGEONS_E_RAIDS.md) |
 | Caçada do dia | derrotar o chefe da Caçada | `RAID` | **Em breve** (cadeado) |
+| Chefe do dia | derrotar 1 chefe de campo da ilha | `KILL` `ALVO_QUALQUER_CHEFE` — conta pra quem estava na luta | vai à vaga do chefe e liga o auto combate |
 
 - **Reset:** meia-noite UTC. Entregue, a diária volta no dia seguinte. Aceita e
   não entregue até a meia-noite, **expira** e sai do log (o servidor confere a

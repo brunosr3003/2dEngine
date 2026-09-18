@@ -16,6 +16,7 @@ mod avisos;
 mod bicho;
 mod bolsa;
 mod craft_ui;
+mod oficina_ui;
 mod dungeon_ui;
 mod efeitos;
 mod entrada;
@@ -408,6 +409,11 @@ async fn main() {
 
     if std::env::var("MMO_PREVIA_SKILLS").is_ok() {
         previa_skills::abrir(&vox).await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_OFICINA").is_ok() {
+        craft_ui::previa().await;
         return;
     }
     #[cfg(debug_assertions)]
@@ -1096,6 +1102,38 @@ impl Jogo {
                 } else {
                     format!("Craft recusado: {motivo}")
                 };
+                self.craft.resultado(ok, txt.clone(), get_time());
+                self.chat.push(txt);
+            }
+            ServerMessage::AprimorarResultado {
+                ok,
+                texto,
+                item_id,
+                tier,
+            } => {
+                let txt = if ok {
+                    format!(
+                        "Aprimorado: {} agora é Tier {}!",
+                        self.bolsa.nome(item_id),
+                        oficina_ui::romano(tier)
+                    )
+                } else {
+                    format!("Não aprimorou: {texto}")
+                };
+                self.craft.resultado(ok, txt.clone(), get_time());
+                self.chat.push(txt);
+            }
+            ServerMessage::CombinarResultado {
+                entrada,
+                tentativas,
+                sucessos,
+                texto,
+            } => {
+                let saida = shared::combinar::receita(entrada)
+                    .map(|r| self.bolsa.nome(r.saida))
+                    .unwrap_or_default();
+                let (txt, ok) =
+                    oficina_ui::texto_do_resultado(tentativas, sucessos, &saida, &texto);
                 self.craft.resultado(ok, txt.clone(), get_time());
                 self.chat.push(txt);
             }
@@ -4272,7 +4310,7 @@ impl Jogo {
         }
         // "Onde obter": a lupa de algum painel pediu; o popup vai por cima.
         let pedido_onde = [
-            self.craft.onde_obter.take(),
+            self.craft.onde_obter(),
             self.forja.onde_obter.take(),
             self.bolsa.onde_obter.take(),
             self.missoes.onde_obter.take(),

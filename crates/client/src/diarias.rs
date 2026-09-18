@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn so_as_diarias_da_ilha_em_ordem() {
         let ids: Vec<u16> = da_ilha(Some("ilha_inicial")).iter().map(|d| d.id).collect();
-        assert_eq!(ids, vec![601, 602, 603, 604, 605, 606, 607]);
+        assert_eq!(ids, vec![601, 602, 603, 604, 605, 606, 607, 608]);
         assert!(da_ilha(None).is_empty(), "fora de ilha nao ha' diaria");
         let gelo = da_ilha(Some("ilha_gelo"));
         assert!(

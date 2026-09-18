@@ -305,6 +305,30 @@ pub(crate) fn init_vazia_para_testes() {
     let _ = ECONOMY.set(Arc::new(RwLock::new(EconomyConfig::default())));
 }
 
+/// Poe um item no cache dos testes (o que o banco daria em producao).
+#[cfg(test)]
+pub(crate) fn por_item_para_testes(id: u16, stack_max: u32, template: ItemTemplate) {
+    cell().write().items.insert(
+        id,
+        ItemDef {
+            id,
+            name: format!("item {id}"),
+            sell_price: 0,
+            buy_price: None,
+            shop_order: None,
+            stack_max,
+            equip_slot: None,
+            item_level: 1,
+            icon_col: 0,
+            icon_row: 0,
+            icon_path: None,
+            active: true,
+            vinculado: false,
+            template,
+        },
+    );
+}
+
 /// Inicializa o singleton com a config carregada do DB. Chamar 1x na boot.
 pub async fn init(pool: &PgPool) -> Result<()> {
     let cfg = load_from_db(pool).await?;

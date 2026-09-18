@@ -629,12 +629,24 @@ impl ItemInstance {
     pub fn roll_with_template<F: FnMut() -> f32>(
         tpl: ItemTemplate,
         item_level: u16,
+        rng: F,
+    ) -> Option<Self> {
+        Self::roll_no_tier(tpl, item_level, tier_from_ilvl(item_level), rng)
+    }
+
+    /// O mesmo roll, com o TIER dado em vez de tirado do `item_level`. E' o
+    /// que o Aprimorar usa: duas pecas Tier I viram uma Tier II do MESMO nivel
+    /// de item, rolada de novo na escala do tier novo.
+    pub fn roll_no_tier<F: FnMut() -> f32>(
+        tpl: ItemTemplate,
+        item_level: u16,
+        tier: u8,
         mut rng: F,
     ) -> Option<Self> {
         if !tpl.has_any_range() {
             return None;
         }
-        let tier = tier_from_ilvl(item_level);
+        let tier = tier.clamp(1, 5);
         let mult = tier_stat_mult(tier) * ilvl_scale(item_level);
         let mut inst = ItemInstance {
             rarity: tier, // campo `rarity` guarda o TIER (1–5)

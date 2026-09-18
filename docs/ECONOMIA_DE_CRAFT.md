@@ -131,12 +131,15 @@ e vira **matéria-prima de progressão**.
 
 ## O que ainda não existe no código
 
-- **A síntese de cor** (10 → 1 com pó cintilante) não está implementada.
+- ~~A síntese de cor~~ **existe desde 18/09/2026**: aba **Combinar** do Craft
+  (`shared::combinar`). Material: 10 → 1 garantido, com o cobre, o darksteel e
+  o pó da tabela acima (azul → roxo no valor extrapolado). Chave: 5 → 1 com
+  chance — 10% cinza → verde, 7%, 5%, e 3% roxa → lendária; falhar consome as
+  cinco. A chave é aposta de propósito: é ela que regula o craft.
 - **A troca por equipamento +8** depende do refino, que existe em
   `shared/forja.rs` mas ainda não conversa com o craft.
-- **Material roxo não tem fonte nenhuma hoje** — é consequência correta do
-  desenho (a pedra roxa não dá roxo), mas só deixa de ser um beco quando a
-  síntese de cor entrar.
+- **Material roxo** agora sai da síntese (10 azuis + 200.000 cobre + 25.000
+  darksteel + 300 pó) — caro de propósito, e ainda sem outra fonte.
 
 Fontes da pesquisa: [guia de craft do MIR4](https://gameplay.tips/guides/mir4-definitive-craft-system-guide.html),
 [EpicMaterialCalculator](https://github.com/cdrakke/EpicMaterialCalculator),

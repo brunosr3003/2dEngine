@@ -6,6 +6,7 @@
 pub mod bosses;
 pub mod chaves;
 pub mod combat;
+pub mod combinar;
 pub mod components;
 pub mod constants;
 pub mod construcao;

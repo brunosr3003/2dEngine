@@ -138,6 +138,20 @@ fn profundidade(d: &QuestDef) -> u32 {
     n
 }
 
+/// A primeira missao da cadeia de `d` (ela mesma, se nao pede nenhuma).
+fn raiz(d: &QuestDef) -> u16 {
+    let mut id = d.id;
+    let mut atual = d.requires;
+    for _ in 0..64 {
+        if atual == 0 {
+            break;
+        }
+        id = atual;
+        atual = shared::quests::quest_by_id(atual).map_or(0, |r| r.requires);
+    }
+    id
+}
+
 /// As missoes do menu, por ilha e na ordem da cadeia. As do mapa de tiles
 /// antigo (sem giver nas ilhas) ficam FORA: nao ha' como fazer nenhuma. As
 /// DIARIAS tambem: tem painel proprio (`diarias`).
@@ -149,6 +163,9 @@ pub fn todas() -> Vec<&'static QuestDef> {
     v.sort_by(|a, b| {
         zona_da_missao(a.id)
             .cmp(&zona_da_missao(b.id))
+            // Cadeia por cadeia: com varias correndo em paralelo, ordenar so'
+            // pela profundidade intercalava todas.
+            .then(raiz(a).cmp(&raiz(b)))
             .then(profundidade(a).cmp(&profundidade(b)))
             .then(a.id.cmp(&b.id))
     });
@@ -581,12 +598,11 @@ mod tests {
         // que a receita cinza pede e que o inicio nunca mostrava; 510 leva a
         // primeira dungeon, que era o unico lugar do inicio que ninguem
         // apresentava. A lista fica literal de proposito: e' ela que pega um id
-        // legado caindo por engano na faixa da ilha.
-        assert_eq!(
-            &bosque[..],
-            &[501, 502, 503, 504, 505, 506, 507, 508, 509, 510],
-            "so' a cadeia, em ordem"
-        );
+        // legado caindo por engano na faixa da ilha. 511-538 sao as seis
+        // cadeias paralelas do resto da ilha (chefes, bestiario, oficina,
+        // coleta, dungeons, vila).
+        let esperado: Vec<u16> = (501..=538).collect();
+        assert_eq!(&bosque[..], &esperado[..], "so' as cadeias, em ordem");
         assert!(
             todas().iter().all(|d| !d.daily),
             "diaria no menu de todas: tem painel proprio"

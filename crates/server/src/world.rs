@@ -97,6 +97,7 @@ pub(crate) use chefes::itens_do_chefe;
 pub(crate) mod dungeon;
 mod loja_mundo;
 mod mercado_mundo;
+mod oficina;
 mod presenca;
 mod social;
 use habilidades::HabilidadePendente;
@@ -6812,6 +6813,12 @@ impl GameWorld {
             ClientMessage::Craft { recipe_id } => {
                 self.handle_craft(id, recipe_id);
             }
+            ClientMessage::Aprimorar { slot_a, slot_b } => {
+                self.handle_aprimorar(id, slot_a as usize, slot_b as usize);
+            }
+            ClientMessage::Combinar { entrada, vezes } => {
+                self.handle_combinar(id, entrada, vezes);
+            }
             ClientMessage::StandUp => {
                 self.handle_stand_up(id);
             }
@@ -11314,7 +11321,30 @@ impl GameWorld {
                     }
                 }
                 // Progresso de quests de KILL (mob) — credita todos os recipients.
-                for r in recipients.clone() {
+                let mut creditados = recipients.clone();
+                // Chefe de campo e' luta de muitos: conta a missao pra todo
+                // mundo que estava na briga, nao so' pra quem deu o ultimo
+                // golpe (e a party dele). A XP segue so' pros de cima.
+                if shared::bosses::e_chefe(kind_id) {
+                    const RAIO_DA_LUTA_SQ: f32 = 40.0 * 40.0;
+                    for s in self.sessions.values() {
+                        if !s.logged_in
+                            || s.instancia != killer_instance
+                            || creditados.contains(&s.entity_id)
+                        {
+                            continue;
+                        }
+                        let perto = s.entity.is_some_and(|e| {
+                            self.ecs
+                                .get::<&Position>(e)
+                                .is_ok_and(|p| p.0.distance_squared(pos) <= RAIO_DA_LUTA_SQ)
+                        });
+                        if perto {
+                            creditados.push(s.entity_id);
+                        }
+                    }
+                }
+                for r in creditados {
                     self.quest_on_kill(r, None, Some(kind_id));
                 }
             }
@@ -14178,6 +14208,24 @@ impl GameWorld {
                 mais_perto(npcs).map(|(p, eid)| (destino_tipo::NPC, p, shared::INTERACT_RADIUS, Some(eid)))
             }
             objective_kind::KILL => {
+                // Missao de CHEFE: vai ate' a vaga dele (o vivo mais perto; se
+                // nenhum estiver vivo, a vaga mais perto, pra esperar la').
+                let quer_chefe = def.obj_target == shared::quests::ALVO_QUALQUER_CHEFE
+                    || (def.obj_target > 0 && shared::bosses::e_chefe(def.obj_target - 1));
+                if quer_chefe {
+                    let vagas = self
+                        .vagas_de_chefe
+                        .iter()
+                        .filter(|v| shared::quests::kill_conta(def.obj_target, v.kind));
+                    let perto = |a: &&chefes::VagaDeChefe, b: &&chefes::VagaDeChefe| {
+                        (a.vivo.is_none(), a.pos.distance_squared(eu))
+                            .partial_cmp(&(b.vivo.is_none(), b.pos.distance_squared(eu)))
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    };
+                    return vagas
+                        .min_by(perto)
+                        .map(|v| (destino_tipo::COMBATE, v.pos, MOB_ZONA_RAIO_UN * 0.5, None));
+                }
                 let alvos: Vec<u16> = if def.obj_target == 0 { Vec::new() } else { vec![def.obj_target - 1] };
                 self.zona_de_mob(&alvos, eu, nivel).map(|p| (destino_tipo::COMBATE, p, MOB_ZONA_RAIO_UN * 0.5, None))
             }

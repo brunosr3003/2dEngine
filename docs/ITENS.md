@@ -324,7 +324,14 @@ sendo o mesmo jogo; só cabe numa sessão.
   como item e não é cobrada.
 - **Onde se refina:** pelo botão Forja do HUD, de qualquer lugar, ou clicando no
   Ferreiro da vila. Nenhuma tecla abre.
-- **Combinação de tier e encanto:** continuam só em `forja.rs`/documento.
+- **Aprimorar (combinação de tier):** aba **Aprimorar** do Craft. Duas peças
+  da bolsa com o mesmo `item_id` e o mesmo tier viram uma do tier seguinte,
+  do I ao IV (`forja::APRIMORAR_TIER_MAX`); o Tier V continua só de drop 71+.
+  A nova é rolada de novo na escala do tier novo (`ItemInstance::roll_no_tier`),
+  no maior nível de item das duas; o refino se perde e peça vinculada
+  contamina a fusão. Custa cobre por tier de origem: 500 / 2.000 / 8.000.
+  Peça com gema é recusada. A subida de COR por dois Tier IV ainda não existe.
+- **Encanto:** continua só no documento.
 - **Poção de Experiência** (`item_id::XP_POTION` = 350, stack 20, sem compra,
   venda 1): usar dá **+30% de XP de personagem por 1 hora**; beber outra com o
   bônus ativo renova a hora cheia (não acumula %). O fim do bônus é um instante
