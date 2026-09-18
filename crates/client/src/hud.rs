@@ -69,7 +69,7 @@ fn mouse() -> Vec2 {
 /// clicado — e' o que abre o Mapa (MIR4: tocar no nome da area).
 pub fn draw_hud(
     z: &Zonas, info: &Info, rede: &Rede, map: Option<&Map>, tick: u32, ents: usize,
-    pedacos: usize, vivos: usize, pos: Vec2, chat: &[String],
+    pedacos: usize, vivos: usize, pos: Vec2, avisos: &[&str],
 ) -> bool {
     let r = z.area;
     estilo::painel(r);
@@ -85,16 +85,14 @@ pub fn draw_hud(
         estilo::texto(r.x + r.w - 62.0, r.y + r.h * 0.84, "mapa", 11, estilo::OURO);
     }
 
-    let cr = z.chat;
-    estilo::painel(cr);
-    estilo::texto(cr.x + 12.0, cr.y + 19.0, "MUNDO", 11, estilo::OURO);
-    estilo::texto(cr.x + 77.0, cr.y + 19.0, "Combate e mensagens", 11, estilo::SUAVE);
-    let linhas = (((cr.h - 30.0) / 18.0).floor() as usize).max(2);
-    for (i, linha) in chat.iter().rev().take(linhas).collect::<Vec<_>>().into_iter().rev().enumerate() {
-        estilo::texto_ajustado(linha, cr.x + 12.0, cr.y + 40.0 + i as f32 * 18.0, cr.w - 24.0, 13, estilo::TEXTO);
-    }
-    if chat.is_empty() {
-        estilo::texto(cr.x + 12.0, cr.y + 45.0, "Sua aventura continua.", 13, estilo::SUAVE);
+    // AVISOS: texto solto que some sozinho, sem caixa. O painel de chat saiu
+    // (pedido do dono) — ele ocupava justamente onde o polegar procura o
+    // joystick.
+    let cr = z.avisos;
+    for (i, linha) in avisos.iter().enumerate() {
+        let y = cr.y + 16.0 + i as f32 * 20.0;
+        estilo::texto_ajustado(linha, cr.x + 13.0, y + 1.0, cr.w - 24.0, 13, estilo::alfa(estilo::FUNDO, 0.9));
+        estilo::texto_ajustado(linha, cr.x + 12.0, y, cr.w - 24.0, 13, estilo::TEXTO);
     }
     // Diagnostico sob demanda: nao disputa espaco com vida e alvo.
     if is_key_down(KeyCode::F3) {

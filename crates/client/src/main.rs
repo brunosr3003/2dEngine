@@ -36,6 +36,7 @@ mod ganhos;
 mod missoes;
 mod auto_missao;
 mod auto_dungeon;
+mod avisos;
 
 /// Pedacos de terreno em volta do jogador que precisam existir pra tela de
 /// carregando sair (3 = 7x7, mais que a camera enxerga de perto).
@@ -328,7 +329,7 @@ struct Jogo {
     /// Marca da ultima janela de banda: instante e total de bytes.
     banda_marca: (f64, u64),
     info: hud::Info,
-    chat: Vec<String>,
+    chat: avisos::Avisos,
     /// Modo economia de energia (`economia.rs`).
     economia: economia::Economia,
     /// Calendario de presenca (`presenca_ui.rs`).
@@ -508,7 +509,7 @@ async fn main() {
         ultimo_ping: 0.0,
         banda_marca: (0.0, 0),
         info: hud::Info::default(),
-        chat: Vec::new(),
+        chat: avisos::Avisos::default(),
         economia: economia::Economia::default(),
         presenca: presenca_ui::PresencaUi::default(),
         loja_tp: loja_tp::LojaTp::default(),
@@ -934,9 +935,6 @@ impl Jogo {
             }
             ServerMessage::Chat { from, text } => {
                 self.chat.push(format!("{from}: {text}"));
-                if self.chat.len() > 8 {
-                    self.chat.remove(0);
-                }
             }
             // O que a bolsa mostra. O servidor manda tudo no login e de novo a
             // cada mudanca; aqui so' se guarda.
@@ -957,18 +955,12 @@ impl Jogo {
             ServerMessage::Presenca { aviso } => {
                 if let Some(t) = self.presenca.receber(aviso, &self.bolsa.nomes) {
                     self.chat.push(t);
-                    if self.chat.len() > 8 {
-                        self.chat.remove(0);
-                    }
                 }
             }
             ServerMessage::Loja { aviso } => {
                 self.montarias.receber(&aviso, get_time());
                 if let Some(t) = self.loja_tp.receber(aviso) {
                     self.chat.push(t);
-                    if self.chat.len() > 8 {
-                        self.chat.remove(0);
-                    }
                 }
             }
             ServerMessage::Dungeon { aviso } => {
@@ -977,9 +969,6 @@ impl Jogo {
                 }
                 if let Some(t) = dungeon_ui::DungeonUi::texto_pro_chat(&aviso) {
                     self.chat.push(t);
-                    if self.chat.len() > 8 {
-                        self.chat.remove(0);
-                    }
                 }
                 for pedido in self.dungeon.aviso(aviso, get_time()) {
                     self.envia(pedido);
@@ -988,9 +977,6 @@ impl Jogo {
             ServerMessage::MercadoResultado { ok, texto } => {
                 // Venda fechada chega com o painel fechado: o chat avisa.
                 self.chat.push(format!("Mercado: {texto}"));
-                if self.chat.len() > 8 {
-                    self.chat.remove(0);
-                }
                 for pedido in self.mercado.resultado(ok, texto, get_time()) {
                     self.envia(pedido);
                 }
@@ -1580,7 +1566,6 @@ impl Jogo {
         }
         let z = hud_layout::atual();
         z.contem(m)
-            || z.chat.contains(m)
             || self.mapa.pega_mouse()
             || self.loja.pega_mouse()
             || self.missoes.pega_mouse()
@@ -3151,7 +3136,7 @@ impl Jogo {
                 self.pedacos_desenhados,
                 self.terreno.as_ref().map_or(0, |t| t.pedacos_vivos()),
                 centro,
-                &self.chat,
+                &self.chat.recentes(get_time()),
             ) {
                 self.fecha_paineis();
                 self.mapa.abrir();
@@ -3226,7 +3211,10 @@ impl Jogo {
                     }
                 }
                 // A janela do NPC (ou o diario) e a loja cobrem o mesmo canto.
-                if !self.missoes.aberta && !self.loja.aberta() {
+                // Dentro da dungeon o rastreador e' da DUNGEON (a linha de
+                // missao dela ocupa este mesmo lugar): as missoes normais nao
+                // aparecem.
+                if !self.missoes.aberta && !self.loja.aberta() && !self.dungeon.na_instancia() {
                     let clique = {
                         let slots = &self.bolsa.slots;
                         let nivel = self.ficha.nivel.max(1);
@@ -3317,7 +3305,7 @@ impl Jogo {
             hud_layout::desenha_faixa(&z, &texto, cor);
         }
         // Joystick virtual: so' aparece com o dedo na tela.
-        self.joystick.desenha();
+        self.joystick.desenha(&hud_layout::atual());
         if self.coleta_hud.ativa() {
             self.coleta_hud.desenha(&z, get_time());
         }

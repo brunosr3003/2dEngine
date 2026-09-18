@@ -82,7 +82,7 @@ pub async fn abrir(vox: &VoxCache) {
             set_camera(&camera);
             let z=crate::hud_layout::atual();
             crate::hud::draw_hud(&z,&crate::hud::Info{realm:"Tempest".into(),canal:"1".into(),zona:"Vale dos Ventos".into(),jogadores:12,capacidade:100},
-                &crate::hud::Rede{ms:24.0,..Default::default()},None,0,5,0,0,Vec2::ZERO,&["Guardião de Treino sofreu 245 de dano.".into(),"Julgamento está pronto.".into()]);
+                &crate::hud::Rede{ms:24.0,..Default::default()},None,0,5,0,0,Vec2::ZERO,&["Guardião de Treino sofreu 245 de dano.","Julgamento está pronto.","Auto coleta: atacado, revidando."]);
             crate::hud::draw_ficha(&z,&mut ficha,0.016,"brunji",20,1840,2400,180,100,Some(12750));
             crate::hud::draw_alvo(&z,"Guardião de Treino",20,38450,50000,true);
             crate::hud::draw_exp(&z,&ficha,20);
@@ -91,6 +91,7 @@ pub async fn abrir(vox: &VoxCache) {
             crate::hud::draw_atacar(&z,true);
             crate::hud::draw_rapidos(&z,crate::barra::padrao().map(|e|e.item_id),[12,5,3,1],[true,false,false,false],[Some((5.0,8.0)),None,None,None],[true,false,false,false],None,&|_|String::new());
             crate::hud::draw_topo(&z,true,true,true,true);
+            crate::joystick::Joystick::default().desenha(&z);
             mapa.acompanhar();
             crate::hud_layout::define_minimapa_oculto(automatico && escolha==11);
             mapa.desenha_mini(&mundo);

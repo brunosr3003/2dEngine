@@ -127,9 +127,9 @@ pub struct Zonas {
     pub montaria: Rect,
     /// Botao de PULO: existe pro celular, que nao tem a tecla de espaco.
     pub pulo: Rect,
-    /// Chat: logo abaixo do rastreador, a' esquerda — o canto de baixo e' do
-    /// joystick.
-    pub chat: Rect,
+    /// AVISOS: as tres ultimas mensagens, em texto solto logo abaixo do
+    /// rastreador. Nao pega toque — a faixa inteira ali e' do joystick.
+    pub avisos: Rect,
     /// Onde um dedo pode COMECAR o joystick virtual (metade esquerda de baixo,
     /// ate' antes da faixa central e dos botoes AUTO). Nao e' botao: e' area.
     pub joystick: Rect,
@@ -247,7 +247,7 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
     let exp = Rect::new(0.0, sh - 6.0, sw, 6.0);
     let base = sh - 10.0 * s;
     // Abaixo do rastreador: o canto inferior esquerdo ficou pro joystick.
-    let chat = Rect::new(m, rastreador.y + rastreador.h + 10.0 * s, 440.0 * s, 150.0 * s);
+    let avisos = Rect::new(m, rastreador.y + rastreador.h + 8.0 * s, 440.0 * s, 68.0 * s);
     let ca = vec2(sw - 110.0 * s, base - 110.0 * s);
     let ra = 60.0 * s;
     let atacar = Rect::new(ca.x - ra, ca.y - ra, ra * 2.0, ra * 2.0);
@@ -276,9 +276,11 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
     let faixa = Rect::new(sw * 0.5 - fw * 0.5, sh - 330.0 * s, fw, 34.0 * s);
     let cw = 380.0 * s;
     let coleta = Rect::new(sw * 0.5 - cw * 0.5, faixa.y + faixa.h + 6.0 * s, cw, 30.0 * s);
-    // Joystick: do fim do chat ate' a EXP, e ate' antes do que estiver mais a'
-    // esquerda entre a faixa, a barra de coleta e o AUTO COLETA.
-    let jy = chat.y + chat.h + 16.0 * s;
+    // Joystick: TODA a faixa esquerda de baixo, do rastreador ate' a EXP e ate'
+    // antes do que estiver mais a' esquerda entre a faixa, a barra de coleta e
+    // o AUTO COLETA. Os avisos passam por cima sem pegar o toque — o dedo pode
+    // comecar em qualquer ponto da faixa (pedido do dono).
+    let jy = rastreador.y + rastreador.h + 8.0 * s;
     let jfim = faixa.x.min(coleta.x).min(auto_coleta.x) - 16.0 * s;
     // Bateria do modo economia: canto de baixo a' esquerda, sempre na tela. O
     // joystick termina acima dela.
@@ -316,7 +318,7 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
         economia,
         montaria,
         pulo,
-        chat,
+        avisos,
         joystick,
         faixa,
         coleta,
@@ -336,7 +338,7 @@ impl Zonas {
         let d = move |r: Rect| Rect::new(r.x + o.x, r.y + o.y, r.w, r.h);
         for r in [
             &mut self.ficha, &mut self.buffs, &mut self.rastreador, &mut self.alvo, &mut self.menu, &mut self.area,
-            &mut self.minimapa, &mut self.mapa_icone, &mut self.economia, &mut self.montaria, &mut self.pulo, &mut self.chat, &mut self.joystick, &mut self.faixa,
+            &mut self.minimapa, &mut self.mapa_icone, &mut self.economia, &mut self.montaria, &mut self.pulo, &mut self.avisos, &mut self.joystick, &mut self.faixa,
             &mut self.coleta, &mut self.atacar, &mut self.auto_combate, &mut self.auto_coleta, &mut self.pocao,
             &mut self.exp,
         ] {
@@ -349,7 +351,8 @@ impl Zonas {
     }
 
     /// Todo retangulo de nivel de cima (sem os de dentro de outro, como o ⤢ do
-    /// minimapa), com nome — pro teste e pro `contem`.
+    /// minimapa, e sem os AVISOS, que sao texto solto dentro da faixa do
+    /// joystick), com nome — pro teste e pro `contem`.
     pub fn todos(&self) -> Vec<(&'static str, Rect)> {
         let mut v = vec![
             ("ficha", self.ficha),
@@ -359,7 +362,6 @@ impl Zonas {
             ("menu", self.menu),
             ("area", self.area),
             ("minimapa", self.minimapa),
-            ("chat", self.chat),
             ("joystick", self.joystick),
             ("economia", self.economia),
             ("montaria", self.montaria),
@@ -551,14 +553,16 @@ mod tests {
         assert_eq!(z.missoes_no_rastreador, 4);
     }
 
-    /// O chat subiu pra baixo do rastreador e o canto inferior esquerdo e' do
-    /// joystick, com espaco pra um polegar em toda tela.
+    /// Os avisos sao texto solto no alto da faixa do joystick, e a faixa
+    /// inteira (do rastreador ate' a EXP) aceita o polegar.
     #[test]
-    fn chat_em_cima_e_joystick_no_canto_de_baixo() {
+    fn avisos_em_cima_e_joystick_na_faixa_inteira() {
         for (sw, sh) in TELAS {
             let z = zonas(sw, sh);
-            assert!(z.chat.y >= z.rastreador.y + z.rastreador.h, "{sw}×{sh}: chat abaixo do rastreador");
-            assert!(z.joystick.y >= z.chat.y + z.chat.h, "{sw}×{sh}: joystick abaixo do chat");
+            assert!(z.avisos.y >= z.rastreador.y + z.rastreador.h, "{sw}×{sh}: avisos abaixo do rastreador");
+            assert!(z.joystick.y <= z.avisos.y + 0.01, "{sw}×{sh}: a faixa do joystick comeca no alto dos avisos");
+            assert!(z.joystick.contains(z.avisos.center()), "{sw}×{sh}: os avisos ficam DENTRO da faixa do joystick");
+            assert!(z.avisos.x >= 0.0 && z.avisos.y >= 0.0 && z.avisos.x + z.avisos.w <= sw && z.avisos.y + z.avisos.h <= sh, "{sw}×{sh}: avisos fora da tela");
             assert!(z.joystick.x + z.joystick.w <= sw * 0.5 + 0.01, "{sw}×{sh}: joystick na metade esquerda");
             let min = 2.0 * crate::joystick::RAIO_BASE * z.s;
             assert!(z.joystick.w >= min && z.joystick.h >= min, "{sw}×{sh}: joystick pequeno demais {:?}", z.joystick);

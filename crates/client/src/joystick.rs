@@ -92,12 +92,32 @@ impl Joystick {
         }
     }
 
-    pub fn desenha(&self) {
-        if self.dedo.is_none() {
+    /// Onde a base descansa quando ninguem esta' com o dedo nela: em cima da
+    /// faixa do joystick, na altura do polegar (baixo e' onde a mao fica).
+    pub fn base_em_repouso(z: &crate::hud_layout::Zonas) -> Vec2 {
+        let r = z.joystick;
+        let raio = RAIO_BASE * z.s;
+        vec2(r.x + raio + 16.0 * z.s, r.y + r.h - raio - 16.0 * z.s)
+    }
+
+    /// Desenha. SEMPRE aparece (pedido do dono): parado, a base fica apagada
+    /// no lugar de descanso; com o dedo, ela vai pra onde ele encostou.
+    pub fn desenha(&self, z: &crate::hud_layout::Zonas) {
+        let segurando = self.dedo.is_some();
+        let (r, b) = if segurando {
+            (self.raio, self.base)
+        } else {
+            (RAIO_BASE * z.s, Self::base_em_repouso(z))
+        };
+        if !segurando {
+            draw_circle(b.x, b.y, r, estilo::alfa(estilo::FUNDO, 0.28));
+            draw_circle_lines(b.x, b.y, r, 2.0, estilo::alfa(estilo::TEXTO, 0.18));
+            draw_circle_lines(b.x, b.y, r * 0.55, 1.0, estilo::alfa(estilo::TEXTO, 0.08));
+            let rm = r * 0.42;
+            draw_circle(b.x, b.y, rm, estilo::alfa(estilo::FUNDO_ALTO, 0.5));
+            draw_circle_lines(b.x, b.y, rm, 2.0, estilo::alfa(estilo::TEXTO, 0.22));
             return;
         }
-        let r = self.raio;
-        let b = self.base;
         draw_circle(b.x, b.y + 3.0, r + 6.0, Color::new(0.0, 0.0, 0.0, 0.22));
         draw_circle(b.x, b.y, r, estilo::alfa(estilo::FUNDO, 0.55));
         draw_circle_lines(b.x, b.y, r, 2.0, estilo::alfa(estilo::TEXTO, 0.35));

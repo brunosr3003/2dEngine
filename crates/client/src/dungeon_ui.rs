@@ -490,9 +490,10 @@ impl DungeonUi {
     /// A linha de missao "Completar ..." entre a faixa e a porta. Tocar liga
     /// e desliga o AUTO DUNGEON.
     fn missao_rect() -> Rect {
-        let f = estilo::fator_texto();
-        let (faixa, _, _) = Self::rects_da_instancia();
-        Rect::new(faixa.x, faixa.y + faixa.h + 6.0 * f, faixa.w, MISSAO_H * f)
+        // No lugar do rastreador de missoes: dentro da dungeon a missao E' a
+        // dungeon, e as missoes normais nem aparecem (pedido do dono).
+        let z = crate::hud_layout::atual();
+        Rect::new(z.rastreador.x, z.rastreador.y, z.rastreador.w.min(440.0 * z.s), MISSAO_H * z.s)
     }
 
     /// (faixa do alto, porta de sair, botao de reviver).
@@ -501,7 +502,7 @@ impl DungeonUi {
         let seguro = crate::hud_layout::tela_segura();
         let w = (540.0 * f).min(seguro.w - 32.0);
         let faixa = Rect::new(seguro.center().x - w * 0.5, seguro.y + 104.0 * f, w, 56.0 * f);
-        let porta = Rect::new(faixa.center().x - 60.0 * f, faixa.y + faixa.h + 6.0 * f + MISSAO_H * f + 6.0 * f, 120.0 * f, 34.0 * f);
+        let porta = Rect::new(faixa.center().x - 60.0 * f, faixa.y + faixa.h + 6.0 * f, 120.0 * f, 34.0 * f);
         let reviver = Rect::new(seguro.center().x - 130.0 * f, seguro.center().y + 20.0 * f, 260.0 * f, 48.0 * f);
         (faixa, porta, reviver)
     }
@@ -524,18 +525,19 @@ impl DungeonUi {
         estilo::texto_ajustado(&linha, faixa.x + 12.0 * f, faixa.y + 44.0 * f, faixa.w - 24.0 * f, 13, cor);
         // ── a missao: completar a dungeon no automatico ──
         let missao = Self::missao_rect();
+        let fm = crate::hud_layout::atual().s.max(0.5);
         let sobre = missao.contains(Vec2::from(mouse_position()));
         let cor = if self.auto { estilo::AUTO } else { estilo::OURO };
         estilo::painel(missao);
         draw_rectangle(missao.x, missao.y, missao.w, missao.h, Color::new(cor.r, cor.g, cor.b, if sobre { 0.16 } else { 0.08 }));
-        let c = vec2(missao.x + 16.0 * f, missao.center().y);
-        draw_poly(c.x, c.y, 4, 6.0 * f, 0.0, cor);
+        let c = vec2(missao.x + 16.0 * fm, missao.center().y);
+        draw_poly(c.x, c.y, 4, 6.0 * fm, 0.0, cor);
         let feito = if i.andares == 0 { 0.0 } else { (i.andar.min(i.andares) as f32 + if i.concluida { 1.0 } else { 0.0 }) / (i.andares + 1) as f32 };
         let rotulo = if self.auto { "› AUTO" } else { "Toque: AUTO" };
-        let rw = estilo::medir(rotulo, 13) + 16.0 * f;
-        estilo::texto_ajustado(&format!("Completar {}", nome_do_conteudo(i.conteudo)), missao.x + 30.0 * f, missao.y + missao.h * 0.5 + 5.0 * f, missao.w - rw - 44.0 * f, 14, estilo::TEXTO);
-        estilo::texto(missao.x + missao.w - rw, missao.y + missao.h * 0.5 + 5.0 * f, rotulo, 13, cor);
-        draw_rectangle(missao.x + 2.0, missao.y + missao.h - 3.0 * f, (missao.w - 4.0) * feito, 2.0 * f, cor);
+        let rw = estilo::medir(rotulo, 13) + 16.0 * fm;
+        estilo::texto_ajustado(&format!("Completar {}", nome_do_conteudo(i.conteudo)), missao.x + 30.0 * fm, missao.y + missao.h * 0.5 + 5.0 * fm, missao.w - rw - 44.0 * fm, 14, estilo::TEXTO);
+        estilo::texto(missao.x + missao.w - rw, missao.y + missao.h * 0.5 + 5.0 * fm, rotulo, 13, cor);
+        draw_rectangle(missao.x + 2.0, missao.y + missao.h - 3.0 * fm, (missao.w - 4.0) * feito, 2.0 * fm, cor);
         if sobre && is_mouse_button_pressed(MouseButton::Left) {
             self.auto = !self.auto;
         }
