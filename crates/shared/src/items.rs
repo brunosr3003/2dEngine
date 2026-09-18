@@ -242,8 +242,9 @@ pub const MAX_AFFIXES: usize = 4;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ItemInstance {
-    /// TIER do item (1–5). Nome `rarity` mantido por compat de wire/DB; o
-    /// sistema de raridade aleatória virou tier (ver `tier_from_ilvl`).
+    /// GRAU (a cor) do item, 1 cinza .. 5 lendario. Nome `rarity` mantido por
+    /// compat de wire/DB. Sai do nivel do item no drop/craft
+    /// (`tier_from_ilvl`, nome antigo) e sobe no Aprimorar.
     pub rarity: u8,
     pub refinement: u8,
     /// Item Level — vem do enemy que dropou. Escala stats no roll
@@ -273,10 +274,25 @@ pub struct ItemInstance {
     /// Vinculada ao personagem: nao entra no mercado (peca de bau de dungeon).
     #[serde(default)]
     pub vinculado: bool,
+    /// TIER dentro da cor, I..IV (`forja::TIER_MAX`). Dois iguais viram o de
+    /// cima no Aprimorar; duas Tier IV +8 sobem de cor e voltam ao I. Peca de
+    /// antes deste campo (banco em JSON) le' como Tier I.
+    #[serde(default = "tier_um")]
+    pub tier: u8,
 }
 
 fn default_ilvl() -> u16 {
     1
+}
+
+fn tier_um() -> u8 {
+    1
+}
+
+/// Quanto cada tier soma dentro da cor: +15% por degrau (docs/ITENS.md). O
+/// Tier IV (1,52x) fica perto do I da cor de cima.
+pub fn bonus_do_tier(tier: u8) -> f32 {
+    1.15f32.powi(tier.clamp(1, 4) as i32 - 1)
 }
 
 /// Slot de affix — name_id=0 = vazio.
@@ -631,23 +647,24 @@ impl ItemInstance {
         item_level: u16,
         rng: F,
     ) -> Option<Self> {
-        Self::roll_no_tier(tpl, item_level, tier_from_ilvl(item_level), rng)
+        Self::roll_em(tpl, item_level, tier_from_ilvl(item_level), 1, rng)
     }
 
-    /// O mesmo roll, com o TIER dado em vez de tirado do `item_level`. E' o
-    /// que o Aprimorar usa: duas pecas Tier I viram uma Tier II do MESMO nivel
-    /// de item, rolada de novo na escala do tier novo.
-    pub fn roll_no_tier<F: FnMut() -> f32>(
+    /// O mesmo roll, com GRAU (cor) e TIER dados em vez de tirados do
+    /// `item_level`. E' o que o Aprimorar usa: a peca nova e' rolada de novo
+    /// na escala do degrau novo.
+    pub fn roll_em<F: FnMut() -> f32>(
         tpl: ItemTemplate,
         item_level: u16,
-        tier: u8,
+        grau: u8,
+        tier_na_cor: u8,
         mut rng: F,
     ) -> Option<Self> {
         if !tpl.has_any_range() {
             return None;
         }
-        let tier = tier.clamp(1, 5);
-        let mult = tier_stat_mult(tier) * ilvl_scale(item_level);
+        let tier = grau.clamp(1, 5);
+        let mult = tier_stat_mult(tier) * ilvl_scale(item_level) * bonus_do_tier(tier_na_cor);
         let mut inst = ItemInstance {
             rarity: tier, // campo `rarity` guarda o TIER (1–5)
             refinement: 0,
@@ -667,6 +684,7 @@ impl ItemInstance {
             sockets: sockets_for_tier(tier),
             socketed_gems: [0; 3],
             vinculado: false,
+            tier: tier_na_cor.clamp(1, 4),
         };
         // Affixes por tier: T1=0, T2=1, T3=2 (1pre+1suf), T4=3 (2pre+1suf),
         // T5=4 (2pre+2suf).
@@ -756,10 +774,15 @@ impl ItemInstance {
         (crit, atks, mov, hpr)
     }
 
-    /// Tier do item (1–5). Lê o campo `rarity` (mantido por compat, mas guarda
-    /// o tier) e clampa pra cobrir itens legados com valor fora de [1,5].
-    pub fn tier(&self) -> u8 {
+    /// Grau (cor) do item, 1–5. Lê o campo `rarity` e clampa pra cobrir
+    /// itens legados com valor fora de [1,5].
+    pub fn grau(&self) -> u8 {
         self.rarity.clamp(1, 5)
+    }
+
+    /// Tier dentro da cor, 1–4 (I..IV).
+    pub fn tier(&self) -> u8 {
+        self.tier.clamp(1, 4)
     }
 }
 

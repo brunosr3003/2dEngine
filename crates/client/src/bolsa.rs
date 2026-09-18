@@ -130,6 +130,11 @@ struct Peca {
 }
 
 impl Peca {
+    /// A cor (grau) — e' ela que pinta a borda.
+    fn grau(&self) -> u8 {
+        self.inst.map_or(1, |i| i.grau())
+    }
+    /// O tier dentro da cor (I..IV) — o numero romano do canto.
     fn tier(&self) -> u8 {
         self.inst.map_or(1, |i| i.tier())
     }
@@ -721,7 +726,7 @@ impl Bolsa {
     // ── o cartao do item ──
 
     fn desenha_cartao(&mut self, r: Rect, sel: Sel, peca: Peca) -> Option<Acao> {
-        let cor = cor_do_tier(peca.tier());
+        let cor = cor_do_tier(peca.grau());
         crate::hud_estilo::ret_arredondado(
             r,
             crate::hud_estilo::RAIO,
@@ -759,7 +764,8 @@ impl Bolsa {
                 tx,
                 r.y + 80.0,
                 &format!(
-                    "Tier {} · nível do item {}",
+                    "{} · Tier {} · nível do item {}",
+                    shared::forja::Grau::de_u8(i.grau()).map_or("Comum", |g| g.nome()),
                     ROMANO[(i.tier() - 1) as usize],
                     i.item_level
                 ),
@@ -881,7 +887,7 @@ fn celula(r: Rect, peca: Option<Peca>, selecionada: bool, vazio: Option<EquipSlo
     let sobre = r.contains(mouse());
     match peca {
         Some(p) => {
-            let cor = cor_do_tier(p.tier());
+            let cor = cor_do_tier(p.grau());
             crate::hud_estilo::slot(r, Some(cor), sobre, false);
             icone_do_item(r, p.id, 1.0);
             let fonte = (r.w * 0.26).clamp(11.0, 16.0) as u16;

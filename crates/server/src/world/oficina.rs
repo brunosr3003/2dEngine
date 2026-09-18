@@ -8,34 +8,38 @@ impl GameWorld {
     /// Aba Aprimorar do Craft: duas pecas iguais da bolsa viram uma do tier
     /// seguinte. Regras em `craft::aprimorar`.
     pub(super) fn handle_aprimorar(&mut self, sid: SessionId, a: usize, b: usize) {
+        let xpmult = crate::economy::xp_multiplier();
         let Some(session) = self.sessions.get_mut(&sid) else {
             return;
         };
         if !session.logged_in {
             return;
         }
-        let mut rolar = |id: u16, nivel: u16, tier: u8| {
-            shared::ItemInstance::roll_no_tier(
+        let nivel = shared::level_of_xp_with_mult(session.xp, xpmult);
+        let mut rolar = |id: u16, nivel_item: u16, grau: u8, tier: u8| {
+            shared::ItemInstance::roll_em(
                 crate::economy::item_template_of(id),
-                nivel,
+                nivel_item,
+                grau,
                 tier,
-                || fastrand::f32(),
+                fastrand::f32,
             )
         };
-        let r = crate::craft::aprimorar(&mut session.inventory, a, b, &mut rolar);
-        let (ok, texto, item_id, tier) = match r {
-            Ok((id, tier)) => {
+        let r = crate::craft::aprimorar(&mut session.inventory, a, b, nivel, &mut rolar);
+        let (ok, texto, item_id, grau, tier) = match r {
+            Ok((id, grau, tier)) => {
                 session.inventory_dirty = true;
                 self.save_pending = true;
-                crate::telemetria::conta("aprimorar", tier as u16, 1);
-                (true, String::new(), id, tier)
+                crate::telemetria::conta("aprimorar", format!("{grau}-{tier}"), 1);
+                (true, String::new(), id, grau, tier)
             }
-            Err(m) => (false, m, 0, 0),
+            Err(m) => (false, m, 0, 0, 0),
         };
         let _ = session.handle.to_client.send(ServerMessage::AprimorarResultado {
             ok,
             texto,
             item_id,
+            grau,
             tier,
         });
     }
@@ -182,6 +186,7 @@ mod tests {
         let peca = || {
             let mut i = shared::ItemInstance::roll_for(item_id::KATANA, 5, || 0.5).unwrap();
             i.rarity = 1;
+            i.tier = 1;
             shared::InventorySlot {
                 item_id: item_id::KATANA,
                 qty: 1,
@@ -198,13 +203,14 @@ mod tests {
             Some(ServerMessage::AprimorarResultado {
                 ok: true,
                 item_id: id,
+                grau: 1,
                 tier: 2,
                 ..
             }) => assert_eq!(id, item_id::KATANA),
             outra => panic!("resposta errada: {outra:?}"),
         }
         let s = &w.sessions[&sid];
-        assert_eq!(s.inventory[1].instance.map(|i| i.tier()), Some(2));
+        assert_eq!(s.inventory[1].instance.map(|i| (i.grau(), i.tier())), Some((1, 2)));
         assert_eq!(s.inventory[4].qty, 0);
         assert_eq!(crate::craft::tem(&s.inventory, item_id::COPPER), 200);
         // A mesma peca duas vezes: recusa.

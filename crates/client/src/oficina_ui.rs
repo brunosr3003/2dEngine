@@ -30,20 +30,45 @@ pub fn romano(tier: u8) -> &'static str {
 
 // ─────────────────────────────── aprimorar ───────────────────────────────
 
-/// Pecas iguais da bolsa: mesmo item, mesmo tier. `slots` em ordem de refino
-/// crescente — as duas primeiras sao as que vao pra fusao (perde-se menos).
+/// Pecas iguais da bolsa: mesmo item, mesma cor, mesmo tier. `slots` em
+/// ordem de refino crescente.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Grupo {
     pub item_id: u16,
+    pub grau: u8,
     pub tier: u8,
     pub slots: Vec<usize>,
 }
 
+fn refino(slots: &[InventorySlot], i: usize) -> u8 {
+    slots[i].instance.map_or(0, |x| x.refinement)
+}
+
 impl Grupo {
-    /// Da' pra fundir (sem contar o cobre)?
-    pub fn fundivel(&self) -> bool {
-        self.slots.len() >= 2 && self.tier < forja::APRIMORAR_TIER_MAX
+    /// Tier IV: a proxima fusao sobe de COR.
+    pub fn sobe_de_cor(&self) -> bool {
+        self.tier >= forja::TIER_MAX
     }
+
+    /// As duas que vao pra fusao: as de menor refino (perde-se menos); na
+    /// subida de cor, so' entre as +8.
+    pub fn escolhidas(&self, slots: &[InventorySlot]) -> Vec<usize> {
+        self.slots
+            .iter()
+            .copied()
+            .filter(|&i| !self.sobe_de_cor() || refino(slots, i) >= forja::REFINO_PARA_COR)
+            .take(2)
+            .collect()
+    }
+
+    /// Da' pra fundir (sem contar cobre e nivel)?
+    pub fn fundivel(&self, slots: &[InventorySlot]) -> bool {
+        self.escolhidas(slots).len() == 2 && !(self.sobe_de_cor() && self.grau >= 5)
+    }
+}
+
+pub fn nome_da_cor(grau: u8) -> &'static str {
+    forja::Grau::de_u8(grau).map_or("Comum", |g| g.nome())
 }
 
 /// As pecas de equipamento da bolsa agrupadas pra aba: as que se fundem
@@ -58,42 +83,73 @@ pub fn grupos(slots: &[InventorySlot]) -> Vec<Grupo> {
         if inst.socketed_gems.iter().any(|g| *g != 0) {
             continue;
         }
-        let tier = inst.tier();
-        match v.iter_mut().find(|g| g.item_id == s.item_id && g.tier == tier) {
+        let (grau, tier) = (inst.grau(), inst.tier());
+        match v
+            .iter_mut()
+            .find(|g| g.item_id == s.item_id && g.grau == grau && g.tier == tier)
+        {
             Some(g) => g.slots.push(i),
             None => v.push(Grupo {
                 item_id: s.item_id,
+                grau,
                 tier,
                 slots: vec![i],
             }),
         }
     }
     for g in &mut v {
-        g.slots.sort_by_key(|&i| (slots[i].instance.map_or(0, |x| x.refinement), i));
+        g.slots.sort_by_key(|&i| (refino(slots, i), i));
     }
-    v.sort_by_key(|g| (!g.fundivel(), g.item_id, g.tier));
+    v.sort_by_key(|g| (!g.fundivel(slots), g.item_id, g.grau, g.tier));
     v
 }
 
 /// O maior refino que a fusao do grupo joga fora (das duas escolhidas).
 pub fn refino_perdido(g: &Grupo, slots: &[InventorySlot]) -> u8 {
-    g.slots
+    g.escolhidas(slots)
         .iter()
-        .take(2)
-        .filter_map(|&i| slots[i].instance.map(|x| x.refinement))
+        .map(|&i| refino(slots, i))
         .max()
         .unwrap_or(0)
 }
 
+/// (cor, tier) que sai da fusao do grupo.
+pub fn resultado(g: &Grupo) -> (u8, u8) {
+    if g.sobe_de_cor() {
+        ((g.grau + 1).min(5), 1)
+    } else {
+        (g.grau, g.tier + 1)
+    }
+}
+
 /// Por que o grupo nao se funde agora (`None` = funde).
-pub fn motivo_aprimorar(g: &Grupo, slots: &[InventorySlot]) -> Option<String> {
-    if g.tier >= forja::APRIMORAR_TIER_MAX {
-        return Some("Tier IV é o máximo do Aprimorar".into());
+pub fn motivo_aprimorar(g: &Grupo, slots: &[InventorySlot], nivel: u32) -> Option<String> {
+    if g.sobe_de_cor() && g.grau >= 5 {
+        return Some("Lendário IV é o topo".into());
     }
-    if g.slots.len() < 2 {
-        return Some("Precisa de mais uma peça igual (mesmo item e tier)".into());
+    if g.escolhidas(slots).len() < 2 {
+        if g.sobe_de_cor() {
+            let n = g
+                .slots
+                .iter()
+                .filter(|&&i| refino(slots, i) >= forja::REFINO_PARA_COR)
+                .count();
+            return Some(format!(
+                "Para subir de cor: duas Tier IV +{} (você tem {n})",
+                forja::REFINO_PARA_COR
+            ));
+        }
+        return Some("Precisa de mais uma peça igual (mesmo item, cor e tier)".into());
     }
-    let cobre = forja::custo_de_aprimorar(g.tier);
+    let (grau, _) = resultado(g);
+    if grau > g.grau && nivel < forja::nivel_da_cor(grau) {
+        return Some(format!(
+            "Requer nível {} para {}",
+            forja::nivel_da_cor(grau),
+            nome_da_cor(grau)
+        ));
+    }
+    let cobre = forja::custo_de_aprimorar(g.grau, g.tier);
     let t = tem(slots, item_id::COPPER);
     (t < cobre).then(|| format!("Faltam {} de cobre", cobre - t))
 }
@@ -145,8 +201,8 @@ pub fn texto_do_resultado(
 
 #[derive(Default)]
 pub struct Oficina {
-    /// Grupo escolhido no Aprimorar: (item, tier).
-    sel_grupo: Option<(u16, u8)>,
+    /// Grupo escolhido no Aprimorar: (item, cor, tier).
+    sel_grupo: Option<(u16, u8, u8)>,
     /// Receita escolhida no Combinar (a entrada).
     sel_receita: Option<u16>,
     rolagem: f32,
@@ -164,6 +220,13 @@ fn seta(x: f32, y: f32) {
         Vec2::new(x + 28.0, y),
         c,
     );
+}
+
+/// A cor de um grau (a mesma da borda da bolsa).
+fn cor_da_cor(grau: u8) -> Color {
+    let h = shared::items::tier_color_hex(grau).trim_start_matches('#');
+    let v = u32::from_str_radix(h, 16).unwrap_or(0xbf_bf_bf);
+    Color::from_rgba((v >> 16) as u8, (v >> 8) as u8, v as u8, 255)
 }
 
 fn fundo_da_lista(lista: Rect) {
@@ -239,8 +302,10 @@ impl Oficina {
         d: Rect,
         slots: &[InventorySlot],
         nomes: &HashMap<u16, String>,
+        nivel: u32,
     ) -> Option<ClientMessage> {
         let nome = |id: u16| nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"));
+        let chave = |g: &Grupo| (g.item_id, g.grau, g.tier);
         fundo_da_lista(lista);
         let gs = grupos(slots);
         self.rolar(lista, gs.len() as f32 * LINHA);
@@ -248,8 +313,8 @@ impl Oficina {
             estilo::texto(lista.x + 10.0, lista.y + 24.0, "Nenhuma peça na bolsa.", 14, estilo::SUAVE);
             estilo::texto(lista.x + 10.0, lista.y + 44.0, "Crie no Craft ou guarde as que caírem.", 13, estilo::SUAVE);
         }
-        if self.sel_grupo.is_none_or(|s| !gs.iter().any(|g| (g.item_id, g.tier) == s)) {
-            self.sel_grupo = gs.first().map(|g| (g.item_id, g.tier));
+        if self.sel_grupo.is_none_or(|s| !gs.iter().any(|g| chave(g) == s)) {
+            self.sel_grupo = gs.first().map(chave);
         }
         let mouse = Vec2::from(mouse_position());
         let clicou = is_mouse_button_pressed(MouseButton::Left);
@@ -260,56 +325,77 @@ impl Oficina {
             }
             let linha = Rect::new(lista.x, y, lista.w, LINHA - 3.0);
             let sobre = linha.contains(mouse) && lista.contains(mouse);
-            realce(linha, self.sel_grupo == Some((g.item_id, g.tier)), sobre);
+            realce(linha, self.sel_grupo == Some(chave(g)), sobre);
             crate::bolsa::icone_do_item(Rect::new(linha.x + 4.0, linha.y + 4.0, 34.0, 34.0), g.item_id, 1.0);
-            let cor = if g.fundivel() { estilo::TEXTO } else { estilo::SUAVE };
+            let cor = if g.fundivel(slots) { estilo::TEXTO } else { estilo::SUAVE };
             estilo::texto_ajustado(&nome(g.item_id), linha.x + 44.0, linha.y + 18.0, linha.w - 100.0, 15, cor);
             estilo::texto(
                 linha.x + 44.0,
                 linha.y + 35.0,
-                &format!("Tier {} · {} na bolsa", romano(g.tier), g.slots.len()),
+                &format!(
+                    "{} · Tier {} · {} na bolsa",
+                    nome_da_cor(g.grau),
+                    romano(g.tier),
+                    g.slots.len()
+                ),
                 12,
-                estilo::SUAVE,
+                cor_da_cor(g.grau),
             );
-            if g.fundivel() && motivo_aprimorar(g, slots).is_none() {
+            if motivo_aprimorar(g, slots, nivel).is_none() {
                 estilo::texto(linha.x + linha.w - 48.0, linha.y + 26.0, "pronto", 12, VERDE);
             }
             if sobre && clicou {
-                self.sel_grupo = Some((g.item_id, g.tier));
+                self.sel_grupo = Some(chave(g));
             }
         }
-        let g = gs.iter().find(|g| Some((g.item_id, g.tier)) == self.sel_grupo)?;
-        // Detalhe: duas pecas → uma do tier de cima.
-        let novo = (g.tier + 1).min(forja::APRIMORAR_TIER_MAX);
-        estilo::texto_ajustado(&nome(g.item_id), d.x + 6.0, d.y + 22.0, d.w - 12.0, 19, estilo::OURO);
+        let g = gs.iter().find(|g| Some(chave(g)) == self.sel_grupo)?;
+        // Detalhe: duas pecas → uma do degrau de cima.
+        let (grau_novo, tier_novo) = resultado(g);
+        let escolhidas = g.escolhidas(slots);
+        let titulo = if g.sobe_de_cor() {
+            format!("{} · {} para {}", nome(g.item_id), nome_da_cor(g.grau), nome_da_cor(grau_novo))
+        } else {
+            format!("{} · {}", nome(g.item_id), nome_da_cor(g.grau))
+        };
+        estilo::texto_ajustado(&titulo, d.x + 6.0, d.y + 22.0, d.w - 12.0, 19, estilo::OURO);
         let cy = d.y + 44.0;
         for k in 0..2 {
             let r = Rect::new(d.x + 6.0 + k as f32 * 70.0, cy, 60.0, 60.0);
-            let tem_peca = g.slots.len() > k;
+            let tem_peca = escolhidas.len() > k;
             crate::bolsa::icone_do_item(r, g.item_id, if tem_peca { 1.0 } else { 0.25 });
-            let rot = format!("T {}", romano(g.tier));
-            estilo::texto(r.x + 2.0, r.y + r.h + 16.0, &rot, 13, estilo::SUAVE);
+            let mut rot = format!("T {}", romano(g.tier));
+            if let Some(&i) = escolhidas.get(k) {
+                if refino(slots, i) > 0 {
+                    rot = format!("{rot} +{}", refino(slots, i));
+                }
+            }
+            estilo::texto(r.x, r.y + r.h + 16.0, &rot, 12, cor_da_cor(g.grau));
         }
-        seta(d.x + 146.0, cy + 30.0);
-        let r = Rect::new(d.x + 190.0, cy, 60.0, 60.0);
+        seta(d.x + 152.0, cy + 30.0);
+        let r = Rect::new(d.x + 196.0, cy, 60.0, 60.0);
         crate::bolsa::icone_do_item(r, g.item_id, 1.0);
-        estilo::texto(r.x + 2.0, r.y + r.h + 16.0, &format!("T {}", romano(novo)), 13, VERDE);
         estilo::texto(
-            d.x + 6.0,
-            d.y + 150.0,
-            "Duas peças iguais viram uma do tier de cima,",
+            r.x,
+            r.y + r.h + 16.0,
+            &format!("{} {}", nome_da_cor(grau_novo), romano(tier_novo)),
             13,
-            estilo::SUAVE,
+            cor_da_cor(grau_novo),
         );
-        estilo::texto(
-            d.x + 6.0,
-            d.y + 167.0,
-            "com os atributos rolados de novo, mais fortes.",
-            13,
-            estilo::SUAVE,
-        );
+        let (l1, l2) = if g.sobe_de_cor() {
+            (
+                format!("Duas Tier IV +{} viram uma da cor de cima,", forja::REFINO_PARA_COR),
+                "no Tier I, com os atributos rolados de novo.".to_string(),
+            )
+        } else {
+            (
+                "Duas peças iguais viram uma do tier de cima,".to_string(),
+                "com os atributos rolados de novo, mais fortes.".to_string(),
+            )
+        };
+        estilo::texto(d.x + 6.0, d.y + 150.0, &l1, 13, estilo::SUAVE);
+        estilo::texto(d.x + 6.0, d.y + 167.0, &l2, 13, estilo::SUAVE);
         let perdido = refino_perdido(g, slots);
-        if perdido > 0 && g.fundivel() {
+        if perdido > 0 && g.fundivel(slots) {
             estilo::texto(
                 d.x + 6.0,
                 d.y + 188.0,
@@ -318,7 +404,7 @@ impl Oficina {
                 AMARELO,
             );
         }
-        let cobre = forja::custo_de_aprimorar(g.tier);
+        let cobre = forja::custo_de_aprimorar(g.grau, g.tier);
         linha_de_custo(
             d,
             d.y + 204.0,
@@ -328,15 +414,15 @@ impl Oficina {
             cobre,
             &mut self.onde_obter,
         );
-        let m = motivo_aprimorar(g, slots);
+        let m = motivo_aprimorar(g, slots, nivel);
         let b = Rect::new(d.x + d.w - 160.0, d.y + d.h - 48.0, 150.0, 38.0);
         if let Some(m) = &m {
             estilo::texto_ajustado(m, d.x + 6.0, b.y - 10.0, d.w - 12.0, 14, VERMELHO);
         }
         if crate::ui::botao(b, "Aprimorar", m.is_none()) {
             return Some(ClientMessage::Aprimorar {
-                slot_a: g.slots[0] as u16,
-                slot_b: g.slots[1] as u16,
+                slot_a: escolhidas[0] as u16,
+                slot_b: escolhidas[1] as u16,
             });
         }
         None
@@ -444,9 +530,10 @@ mod tests {
     use super::*;
     use shared::ItemInstance;
 
-    fn peca(id: u16, tier: u8, refino: u8) -> InventorySlot {
+    fn peca(id: u16, cor: u8, tier: u8, refino: u8) -> InventorySlot {
         let mut i = ItemInstance::roll_for(item_id::KATANA, 5, || 0.5).unwrap();
-        i.rarity = tier;
+        i.rarity = cor;
+        i.tier = tier;
         i.refinement = refino;
         InventorySlot {
             item_id: id,
@@ -467,21 +554,41 @@ mod tests {
     fn grupos_juntam_iguais_e_escolhem_as_de_menor_refino() {
         let k = item_id::KATANA;
         let slots = vec![
-            peca(k, 1, 6),
+            peca(k, 1, 1, 6),
             material(item_id::COPPER, 10),
-            peca(k, 1, 0),
-            peca(k, 2, 0),
-            peca(k, 1, 2),
+            peca(k, 1, 1, 0),
+            peca(k, 1, 2, 0),
+            peca(k, 1, 1, 2),
+            peca(k, 2, 1, 0),
         ];
         let gs = grupos(&slots);
-        assert_eq!(gs[0], Grupo { item_id: k, tier: 1, slots: vec![2, 4, 0] });
-        assert!(gs[0].fundivel());
-        assert!(!gs[1].fundivel(), "a Tier II esta' sozinha");
+        assert_eq!(gs[0], Grupo { item_id: k, grau: 1, tier: 1, slots: vec![2, 4, 0] });
+        assert!(gs[0].fundivel(&slots));
+        assert!(gs[1..].iter().all(|g| !g.fundivel(&slots)), "a Tier II e a verde estao sozinhas");
         assert_eq!(refino_perdido(&gs[0], &slots), 2);
         assert_eq!(
-            motivo_aprimorar(&gs[0], &slots).as_deref(),
+            motivo_aprimorar(&gs[0], &slots, 1).as_deref(),
             Some("Faltam 490 de cobre")
         );
+    }
+
+    #[test]
+    fn tier_iv_so_funde_entre_as_mais_8_e_sobe_de_cor() {
+        let k = item_id::KATANA;
+        let mut slots = vec![
+            peca(k, 1, 4, 3),
+            peca(k, 1, 4, 8),
+            material(item_id::COPPER, 99_999),
+        ];
+        let g = grupos(&slots)[0].clone();
+        assert!(!g.fundivel(&slots), "so' uma +8");
+        assert!(motivo_aprimorar(&g, &slots, 30).unwrap().contains("você tem 1"));
+        slots[0] = peca(k, 1, 4, 10);
+        let g = grupos(&slots)[0].clone();
+        assert_eq!(g.escolhidas(&slots), vec![1, 0]);
+        assert_eq!(resultado(&g), (2, 1));
+        assert!(motivo_aprimorar(&g, &slots, 19).unwrap().contains("nível 20"));
+        assert_eq!(motivo_aprimorar(&g, &slots, 20), None);
     }
 
     #[test]

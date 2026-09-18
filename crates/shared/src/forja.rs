@@ -316,43 +316,88 @@ pub fn tentativas_por_peca(alvo: u8, amostras: u32) -> f32 {
 
 // ────────────────────────────── aprimorar ─────────────────────────────
 //
-// A aba "Aprimorar" do Craft: DUAS pecas iguais (mesmo item, mesmo tier)
-// viram UMA do tier seguinte, do Tier I ao Tier IV. E' a regra de `combinar`
-// aplicada ao item de verdade: o tier da instancia e' o campo `rarity`
-// (`ItemInstance::tier`), e a cor fica no `item_id` — por isso "iguais"
-// quer dizer mesmo `item_id`. A peca nova e' rolada de novo na escala do tier
-// novo, no maior nivel de item das duas; o refino das duas se perde.
+// A aba "Aprimorar" do Craft, a escada de `combinar` aplicada ao item de
+// verdade. A instancia guarda a COR em `rarity` e o TIER em `tier`:
+//
+//   2 x (cor G, Tier I..III)        ->  1 x (cor G, tier seguinte)
+//   2 x (cor G, Tier IV, ambas +8)  ->  1 x (cor G+1, Tier I)
+//
+// "Iguais" = mesmo `item_id`, mesma cor, mesmo tier. A peca nova e' rolada de
+// novo na escala do degrau novo; o refino das duas se perde — e' por isso
+// que a subida de cor pede +8: o refino deixa de ser so' poder e vira
+// materia-prima da progressao (docs/ITENS.md).
 
-/// Ate' onde o Aprimorar sobe. O Tier V existe (drop de nivel 71+), mas nao
-/// se chega nele fundindo.
-pub const APRIMORAR_TIER_MAX: u8 = 4;
+/// Refino que as duas Tier IV precisam pra subir de cor.
+pub const REFINO_PARA_COR: u8 = 8;
 
-/// Cobre de uma fusao, pelo tier de ORIGEM. Cresce 4x por degrau: e' a moeda
-/// do dia a dia, e o que pesa de verdade e' juntar a segunda peca.
-pub fn custo_de_aprimorar(tier: u8) -> u32 {
-    match tier {
-        1 => 500,
-        2 => 2_000,
-        _ => 8_000,
+/// Nivel do personagem pra ter uma peca desta cor pelo Aprimorar: o mesmo
+/// minimo do craft (`receitas::FAIXAS`), e 80 pro lendario.
+pub fn nivel_da_cor(grau: u8) -> u32 {
+    match grau {
+        0 | 1 => 1,
+        2 => 20,
+        3 => 40,
+        4 => 60,
+        _ => 80,
     }
 }
 
-/// Por que duas pecas nao se fundem (a frase que o jogador le), ou o tier
-/// que sai. `a`/`b` = (item_id, tier, tem gema engastada).
-pub fn conferir_aprimorar(a: (u16, u8, bool), b: (u16, u8, bool)) -> Result<u8, &'static str> {
+/// Nivel de item da peca que sobe pra esta cor (o do craft da cor; 80 no
+/// lendario). Nunca desce: fica o maior entre este e o das duas.
+pub fn nivel_de_item_da_cor(grau: u8) -> u16 {
+    match grau {
+        0 | 1 => 5,
+        2 => 18,
+        3 => 35,
+        4 => 60,
+        _ => 80,
+    }
+}
+
+/// Cobre de uma fusao, pela cor e tier de ORIGEM. Tier sobe 4x por degrau e
+/// cada cor multiplica por 4; subir de cor custa o dobro do ultimo tier.
+pub fn custo_de_aprimorar(grau: u8, tier: u8) -> u32 {
+    let por_cor = 4u32.pow(grau.clamp(1, 5) as u32 - 1);
+    let passo = match tier {
+        1 => 500,
+        2 => 2_000,
+        3 => 8_000,
+        _ => 16_000,
+    };
+    passo * por_cor
+}
+
+/// Uma peca como o Aprimorar ve': (item_id, cor, tier, refino, tem gema).
+pub type PecaDoAprimorar = (u16, u8, u8, u8, bool);
+
+/// Por que duas pecas nao se fundem (a frase que o jogador le), ou o
+/// (cor, tier) que sai.
+pub fn conferir_aprimorar(a: PecaDoAprimorar, b: PecaDoAprimorar) -> Result<(u8, u8), String> {
     if a.0 != b.0 {
-        return Err("as duas peças precisam ser o mesmo item");
+        return Err("as duas peças precisam ser o mesmo item".into());
     }
     if a.1 != b.1 {
-        return Err("as duas peças precisam ter o mesmo tier");
+        return Err("as duas peças precisam ser da mesma cor".into());
     }
-    if a.1 >= APRIMORAR_TIER_MAX {
-        return Err("Tier IV é o máximo do Aprimorar");
+    if a.2 != b.2 {
+        return Err("as duas peças precisam ter o mesmo tier".into());
     }
-    if a.2 || b.2 {
-        return Err("tire as gemas das peças antes");
+    if a.4 || b.4 {
+        return Err("tire as gemas das peças antes".into());
     }
-    Ok(a.1 + 1)
+    let (grau, tier) = (a.1.clamp(1, 5), a.2.clamp(1, TIER_MAX));
+    if tier < TIER_MAX {
+        return Ok((grau, tier + 1));
+    }
+    if grau >= Grau::Lendario as u8 {
+        return Err("Lendário IV é o topo".into());
+    }
+    if a.3 < REFINO_PARA_COR || b.3 < REFINO_PARA_COR {
+        return Err(format!(
+            "para subir de cor, as duas Tier IV precisam estar +{REFINO_PARA_COR}"
+        ));
+    }
+    Ok((grau + 1, 1))
 }
 
 #[cfg(test)]
@@ -363,15 +408,23 @@ mod testes {
     /// de combinacao sem perceber, o custo do jogo muda por ordens de
     /// grandeza — e isso tem que quebrar um teste, nao aparecer no forum.
     #[test]
-    fn aprimorar_pede_iguais_e_para_no_quatro() {
-        assert_eq!(conferir_aprimorar((10, 1, false), (10, 1, false)), Ok(2));
-        assert_eq!(conferir_aprimorar((10, 3, false), (10, 3, false)), Ok(4));
-        assert!(conferir_aprimorar((10, 4, false), (10, 4, false)).is_err());
-        assert!(conferir_aprimorar((10, 1, false), (11, 1, false)).is_err());
-        assert!(conferir_aprimorar((10, 1, false), (10, 2, false)).is_err());
-        assert!(conferir_aprimorar((10, 1, true), (10, 1, false)).is_err());
-        assert!(custo_de_aprimorar(1) < custo_de_aprimorar(2));
-        assert!(custo_de_aprimorar(2) < custo_de_aprimorar(3));
+    fn aprimorar_sobe_o_tier_e_duas_iv_mais_8_sobem_de_cor() {
+        let p = |cor, tier, refino| (10u16, cor, tier, refino, false);
+        assert_eq!(conferir_aprimorar(p(1, 1, 0), p(1, 1, 3)), Ok((1, 2)));
+        assert_eq!(conferir_aprimorar(p(2, 3, 0), p(2, 3, 0)), Ok((2, 4)));
+        // Tier IV: so' com as duas +8, e ai' vira a cor de cima no Tier I.
+        assert!(conferir_aprimorar(p(1, 4, 8), p(1, 4, 7)).is_err());
+        assert_eq!(conferir_aprimorar(p(1, 4, 8), p(1, 4, 12)), Ok((2, 1)));
+        assert!(conferir_aprimorar(p(5, 4, 12), p(5, 4, 12)).is_err(), "topo");
+        // Diferentes nao fundem.
+        assert!(conferir_aprimorar(p(1, 1, 0), p(2, 1, 0)).is_err());
+        assert!(conferir_aprimorar(p(1, 1, 0), p(1, 2, 0)).is_err());
+        assert!(conferir_aprimorar((10, 1, 1, 0, false), (11, 1, 1, 0, false)).is_err());
+        assert!(conferir_aprimorar((10, 1, 1, 0, true), (10, 1, 1, 0, false)).is_err());
+        // Custo cresce no tier e na cor.
+        assert!(custo_de_aprimorar(1, 1) < custo_de_aprimorar(1, 2));
+        assert!(custo_de_aprimorar(1, 4) < custo_de_aprimorar(2, 4));
+        assert_eq!(custo_de_aprimorar(1, 1), 500);
     }
 
     #[test]

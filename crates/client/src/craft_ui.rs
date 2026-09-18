@@ -165,7 +165,7 @@ impl Craft {
         estilo::painel(p);
         estilo::texto(p.x + 18.0, p.y + 32.0, "Craft", 22, estilo::OURO);
         let dica = match self.aba {
-            ABA_APRIMORAR => "duas peças iguais viram uma do tier de cima (até o IV)",
+            ABA_APRIMORAR => "duas iguais sobem o tier; duas Tier IV +8 sobem a cor",
             ABA_COMBINAR => "chave e material de uma cor tentam a cor de cima",
             _ => "chave + materiais da cor + darksteel + cobre",
         };
@@ -215,7 +215,7 @@ impl Craft {
         let d = Rect::new(p.x + 356.0, p.y + 84.0, p.w - 368.0, p.h - 96.0);
         if self.aba >= ABA_APRIMORAR {
             let pedido = if self.aba == ABA_APRIMORAR {
-                self.oficina.aprimorar(lista, d, slots, nomes)
+                self.oficina.aprimorar(lista, d, slots, nomes, nivel)
             } else {
                 self.oficina.combinar(lista, d, slots, nomes)
             };
@@ -399,9 +399,10 @@ pub async fn previa() {
     next_frame().await;
     let rt = render_target(screen_width() as u32, screen_height() as u32);
     crate::render3d::define_alvo(Some(rt.clone()));
-    let peca = |id: u16, tier: u8, refino: u8| {
+    let peca = |id: u16, cor: u8, tier: u8, refino: u8| {
         let mut i = shared::ItemInstance::roll_for(id, 5, || 0.5).unwrap();
-        i.rarity = tier;
+        i.rarity = cor;
+        i.tier = tier;
         i.refinement = refino;
         InventorySlot {
             item_id: id,
@@ -415,11 +416,12 @@ pub async fn previa() {
         instance: None,
     };
     let slots = vec![
-        peca(item_id::KATANA, 1, 3),
-        peca(item_id::KATANA, 1, 0),
-        peca(item_id::KATANA, 2, 0),
-        peca(item_id::PISTOLAS, 1, 0),
-        mat(item_id::COPPER, 3_200),
+        peca(item_id::KATANA, 1, 4, 8),
+        peca(item_id::KATANA, 1, 4, 9),
+        peca(item_id::KATANA, 1, 2, 0),
+        peca(item_id::PISTOLAS, 1, 1, 0),
+        peca(item_id::PISTOLAS, 1, 1, 3),
+        mat(item_id::COPPER, 25_000),
         mat(item_id::HORN, 12),
         mat(item_id::SCALE, 3),
         mat(item_id::STEEL, 45),

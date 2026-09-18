@@ -401,11 +401,11 @@ pub enum ClientMessage {
     Social {
         pedido: crate::social::Pedido,
     },
-    // As duas abas novas do Craft. ANEXADAS no fim, sem bumpar a versao: o
-    // cliente antigo nunca manda nem recebe estas, e os indices de antes nao
-    // mudam — o app do TestFlight segue entrando.
-    /// Aba Aprimorar: funde duas pecas IGUAIS da bolsa no tier seguinte
-    /// (`forja::conferir_aprimorar`). Resposta: `AprimorarResultado`.
+    // As duas abas de oficina do Craft (protocolo 107, junto com o `tier` da
+    // `ItemInstance`).
+    /// Aba Aprimorar: funde duas pecas IGUAIS da bolsa no tier seguinte, ou
+    /// duas Tier IV +8 na cor de cima (`forja::conferir_aprimorar`).
+    /// Resposta: `AprimorarResultado`.
     Aprimorar {
         slot_a: u16,
         slot_b: u16,
@@ -1105,12 +1105,13 @@ pub enum ServerMessage {
     Social {
         aviso: crate::social::Aviso,
     },
-    /// Resposta do `Aprimorar`. `ok` = a peca nova (`item_id`, `tier`) esta'
-    /// na bolsa; senao `texto` diz o motivo.
+    /// Resposta do `Aprimorar`. `ok` = a peca nova (`item_id`, `grau` = cor,
+    /// `tier`) esta' na bolsa; senao `texto` diz o motivo.
     AprimorarResultado {
         ok: bool,
         texto: String,
         item_id: u16,
+        grau: u8,
         tier: u8,
     },
     /// Resposta do `Combinar`: quantas tentativas foram pagas e quantas deram

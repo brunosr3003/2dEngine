@@ -324,13 +324,19 @@ sendo o mesmo jogo; só cabe numa sessão.
   como item e não é cobrada.
 - **Onde se refina:** pelo botão Forja do HUD, de qualquer lugar, ou clicando no
   Ferreiro da vila. Nenhuma tecla abre.
-- **Aprimorar (combinação de tier):** aba **Aprimorar** do Craft. Duas peças
-  da bolsa com o mesmo `item_id` e o mesmo tier viram uma do tier seguinte,
-  do I ao IV (`forja::APRIMORAR_TIER_MAX`); o Tier V continua só de drop 71+.
-  A nova é rolada de novo na escala do tier novo (`ItemInstance::roll_no_tier`),
-  no maior nível de item das duas; o refino se perde e peça vinculada
-  contamina a fusão. Custa cobre por tier de origem: 500 / 2.000 / 8.000.
-  Peça com gema é recusada. A subida de COR por dois Tier IV ainda não existe.
+- **Aprimorar:** aba **Aprimorar** do Craft (protocolo 107). A instância
+  guarda a **cor** em `rarity` (1 cinza … 5 lendário — é o que pinta a borda e
+  decide o custo do refino) e o **tier** em `tier` (I…IV; peça salva antes do
+  campo lê como I).
+  - duas peças com o mesmo `item_id`, cor e tier → uma do tier seguinte;
+  - duas **Tier IV +8** → uma da **cor de cima, Tier I** (`REFINO_PARA_COR`),
+    pedindo o nível da cor (verde 20, azul 40, épico 60, lendário 80) e subindo
+    o nível do item pro da cor;
+  - a nova é rolada de novo (`ItemInstance::roll_em`): cada tier soma +15%
+    (`bonus_do_tier`, IV = 1,52×); o refino se perde; peça vinculada contamina;
+    peça com gema é recusada;
+  - cobre por degrau de origem: 500 / 2.000 / 8.000 (tiers) e 16.000 (cor),
+    ×4 a cada cor.
 - **Encanto:** continua só no documento.
 - **Poção de Experiência** (`item_id::XP_POTION` = 350, stack 20, sem compra,
   venda 1): usar dá **+30% de XP de personagem por 1 hora**; beber outra com o

@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 106;
+pub const PROTOCOL_VERSION: u16 = 107;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

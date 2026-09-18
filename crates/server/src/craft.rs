@@ -152,16 +152,19 @@ pub fn refinar(inst: &mut ItemInstance, inv: &mut [InventorySlot], sorte: u8) ->
 
 // ─────────────────────────── aprimorar e combinar ───────────────────────────
 
-/// Aba Aprimorar: funde as pecas dos slots `a` e `b` da bolsa na de tier
-/// seguinte (`forja::conferir_aprimorar`), cobrando cobre. A nova fica no
-/// slot `a`; o `b` esvazia. `rolar(item, nivel, tier)` rola a instancia nova
-/// (o template vem do cache do servidor). Devolve (item_id, tier novo).
+/// Aba Aprimorar: funde as pecas dos slots `a` e `b` da bolsa no degrau de
+/// cima (`forja::conferir_aprimorar`), cobrando cobre. A nova fica no slot
+/// `a`; o `b` esvazia. Subir de COR pede o nivel da cor
+/// (`forja::nivel_da_cor`). `rolar(item, nivel_de_item, cor, tier)` rola a
+/// instancia nova (o template vem do cache do servidor). Devolve
+/// (item_id, cor, tier).
 pub fn aprimorar(
     inv: &mut [InventorySlot],
     a: usize,
     b: usize,
-    rolar: &mut dyn FnMut(u16, u16, u8) -> Option<ItemInstance>,
-) -> Result<(u16, u8), String> {
+    nivel: u32,
+    rolar: &mut dyn FnMut(u16, u16, u8, u8) -> Option<ItemInstance>,
+) -> Result<(u16, u8, u8), String> {
     if a == b || a >= inv.len() || b >= inv.len() {
         return Err("escolha duas peças diferentes da bolsa".into());
     }
@@ -172,18 +175,28 @@ pub fn aprimorar(
     if sa.qty == 0 || sb.qty == 0 {
         return Err("escolha duas peças diferentes da bolsa".into());
     }
-    let gema = |i: &ItemInstance| i.socketed_gems.iter().any(|g| *g != 0);
-    let tier = forja::conferir_aprimorar(
-        (sa.item_id, ia.tier(), gema(&ia)),
-        (sb.item_id, ib.tier(), gema(&ib)),
-    )
-    .map_err(str::to_string)?;
-    let cobre = forja::custo_de_aprimorar(ia.tier());
+    let peca = |s: &InventorySlot, i: &ItemInstance| {
+        (
+            s.item_id,
+            i.grau(),
+            i.tier(),
+            i.refinement,
+            i.socketed_gems.iter().any(|g| *g != 0),
+        )
+    };
+    let (grau, tier) = forja::conferir_aprimorar(peca(&sa, &ia), peca(&sb, &ib))?;
+    if grau > ia.grau() && nivel < forja::nivel_da_cor(grau) {
+        return Err(format!("requer nível {} para essa cor", forja::nivel_da_cor(grau)));
+    }
+    let cobre = forja::custo_de_aprimorar(ia.grau(), ia.tier());
     if tem(inv, item_id::COPPER) < cobre {
         return Err(format!("faltam {} de cobre", cobre - tem(inv, item_id::COPPER)));
     }
-    let nivel = ia.item_level.max(ib.item_level);
-    let Some(mut nova) = rolar(sa.item_id, nivel, tier) else {
+    let nivel_item = ia
+        .item_level
+        .max(ib.item_level)
+        .max(forja::nivel_de_item_da_cor(grau));
+    let Some(mut nova) = rolar(sa.item_id, nivel_item, grau, tier) else {
         return Err("este item não se aprimora".into());
     };
     // Peca de bau vinculada contamina a fusao: senao era so' fundir uma
@@ -196,7 +209,7 @@ pub fn aprimorar(
         qty: 1,
         instance: Some(nova),
     };
-    Ok((sa.item_id, tier))
+    Ok((sa.item_id, grau, tier))
 }
 
 /// Poe `qty` de um empilhavel na bolsa: completa as pilhas, depois os vazios.
@@ -413,9 +426,10 @@ mod testes {
         inv.iter().map(|s| (s.item_id, s.qty, s.instance.is_some())).collect()
     }
 
-    fn peca(tier: u8, refino: u8) -> InventorySlot {
+    fn peca(cor: u8, tier: u8, refino: u8) -> InventorySlot {
         let mut i = ItemInstance::roll_for(item_id::KATANA, 5, || 0.5).unwrap();
-        i.rarity = tier;
+        i.rarity = cor;
+        i.tier = tier;
         i.refinement = refino;
         InventorySlot {
             item_id: item_id::KATANA,
@@ -424,40 +438,62 @@ mod testes {
         }
     }
 
-    fn rolar_katana(id: u16, nivel: u16, tier: u8) -> Option<ItemInstance> {
-        ItemInstance::roll_no_tier(shared::items::item_template(id), nivel, tier, || 0.5)
+    fn rolar_katana(id: u16, nivel: u16, cor: u8, tier: u8) -> Option<ItemInstance> {
+        ItemInstance::roll_em(shared::items::item_template(id), nivel, cor, tier, || 0.5)
     }
 
     #[test]
-    fn aprimorar_funde_duas_iguais_no_tier_seguinte_e_zera_o_refino() {
+    fn aprimorar_sobe_o_tier_na_mesma_cor_e_zera_o_refino() {
         let mut inv = bolsa(&[(item_id::COPPER, 600)]);
-        inv[3] = peca(1, 4);
-        inv[7] = peca(1, 0);
-        let antes = inv[3].instance.unwrap().attack_damage;
-        assert_eq!(aprimorar(&mut inv, 3, 7, &mut rolar_katana), Ok((item_id::KATANA, 2)));
+        inv[3] = peca(1, 1, 4);
+        inv[7] = peca(1, 1, 0);
+        let antes = rolar_katana(item_id::KATANA, 5, 1, 1).unwrap().attack_damage;
+        assert_eq!(
+            aprimorar(&mut inv, 3, 7, 1, &mut rolar_katana),
+            Ok((item_id::KATANA, 1, 2))
+        );
         let nova = inv[3].instance.unwrap();
-        assert_eq!((nova.tier(), nova.refinement), (2, 0));
-        assert!(nova.attack_damage > antes, "tier II rola mais forte");
+        assert_eq!((nova.grau(), nova.tier(), nova.refinement), (1, 2, 0));
+        assert!(nova.attack_damage > antes, "Tier II rola mais forte que o I");
         assert_eq!(inv[7].qty, 0);
         assert_eq!(tem(&inv, item_id::COPPER), 100);
     }
 
     #[test]
-    fn aprimorar_recusa_sem_cobre_diferentes_e_no_quatro() {
+    fn duas_tier_iv_mais_8_sobem_de_cor_no_tier_i() {
+        let mut inv = bolsa(&[(item_id::COPPER, 99_999)]);
+        inv[3] = peca(1, 4, 8);
+        inv[7] = peca(1, 4, 7);
+        let e = aprimorar(&mut inv, 3, 7, 30, &mut rolar_katana).unwrap_err();
+        assert!(e.contains("+8"), "{e}");
+        inv[7] = peca(1, 4, 9);
+        // Verde pede nivel 20.
+        let e = aprimorar(&mut inv, 3, 7, 19, &mut rolar_katana).unwrap_err();
+        assert!(e.contains("nível 20"), "{e}");
+        assert_eq!(
+            aprimorar(&mut inv, 3, 7, 20, &mut rolar_katana),
+            Ok((item_id::KATANA, 2, 1))
+        );
+        let nova = inv[3].instance.unwrap();
+        assert_eq!((nova.grau(), nova.tier(), nova.refinement), (2, 1, 0));
+        assert_eq!(nova.item_level, forja::nivel_de_item_da_cor(2));
+    }
+
+    #[test]
+    fn aprimorar_recusa_sem_cobre_diferentes_e_a_mesma_peca() {
         let mut inv = bolsa(&[(item_id::COPPER, 10)]);
-        inv[3] = peca(1, 0);
-        inv[7] = peca(1, 0);
+        inv[3] = peca(1, 1, 0);
+        inv[7] = peca(1, 1, 0);
         let copia = foto(&inv);
-        assert!(aprimorar(&mut inv, 3, 7, &mut rolar_katana).is_err());
+        assert!(aprimorar(&mut inv, 3, 7, 1, &mut rolar_katana).is_err());
         assert_eq!(foto(&inv), copia, "recusa nao mexe na bolsa");
         let mut inv = bolsa(&[(item_id::COPPER, 99_999)]);
-        inv[3] = peca(1, 0);
-        inv[7] = peca(2, 0);
-        assert!(aprimorar(&mut inv, 3, 7, &mut rolar_katana).is_err());
-        inv[7] = peca(4, 0);
-        inv[3] = peca(4, 0);
-        assert!(aprimorar(&mut inv, 3, 7, &mut rolar_katana).is_err());
-        assert!(aprimorar(&mut inv, 3, 3, &mut rolar_katana).is_err());
+        inv[3] = peca(1, 1, 0);
+        inv[7] = peca(1, 2, 0);
+        assert!(aprimorar(&mut inv, 3, 7, 1, &mut rolar_katana).is_err());
+        inv[7] = peca(2, 1, 0);
+        assert!(aprimorar(&mut inv, 3, 7, 60, &mut rolar_katana).is_err());
+        assert!(aprimorar(&mut inv, 3, 3, 1, &mut rolar_katana).is_err());
     }
 
     #[test]

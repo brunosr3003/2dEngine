@@ -1109,12 +1109,14 @@ impl Jogo {
                 ok,
                 texto,
                 item_id,
+                grau,
                 tier,
             } => {
                 let txt = if ok {
                     format!(
-                        "Aprimorado: {} agora é Tier {}!",
+                        "Aprimorado: {} agora é {} {}!",
                         self.bolsa.nome(item_id),
+                        oficina_ui::nome_da_cor(grau),
                         oficina_ui::romano(tier)
                     )
                 } else {
