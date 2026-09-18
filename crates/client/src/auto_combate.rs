@@ -7,6 +7,13 @@ use crate::{world::World, hud_estilo as estilo};
 
 const RAIO: f32 = 24.0;
 
+/// Sem bicho na area: o AUTO vai ATRAS do mais perto ate' esta distancia. Sem
+/// isto ele limpava o lugar e ficava parado olhando o mato — a area sо' andava
+/// quando o jogador andava na mao.
+const BUSCA: f32 = 110.0;
+/// Intervalo entre pedidos de "ir ate' la'" na caçada.
+const PASSO_DA_CACA_S: f64 = 1.2;
+
 /// Parado por este tempo depois de andar na mao, o AUTO volta a escolher alvo.
 const VOLTA_PARADO_S: f64 = 0.4;
 
@@ -23,6 +30,8 @@ pub struct AutoCombate {
     parado_desde: f64,
     /// Alvo que o servidor diz estar sem visada: (id, primeiro aviso, ultimo).
     sem_visada: Option<(EntityId,f64,f64)>,
+    /// Ultimo "ir ate' la'" da caçada.
+    caca_em: f64,
 }
 
 /// Aviso de "sem visada" seguido por este tempo: o AUTO larga o alvo. O
@@ -37,7 +46,7 @@ pub fn pega_mouse() -> bool { retangulo().contains(Vec2::from(mouse_position()))
 
 impl AutoCombate {
     pub fn ativo(&self) -> bool { self.centro.is_some() }
-    pub fn ligar(&mut self, p: Vec2) { self.centro=Some(p); self.observado=None; self.ignorados.clear(); }
+    pub fn ligar(&mut self, p: Vec2) { self.centro=Some(p); self.observado=None; self.ignorados.clear(); self.caca_em=f64::MIN; }
     pub fn parar(&mut self) { *self=Self::default(); }
 
     /// O servidor avisou que o alvo `id` esta' sem visada (`ServerMessage::
@@ -70,6 +79,27 @@ impl AutoCombate {
         self.centro=Some(pos);
         if agora-self.parado_desde>VOLTA_PARADO_S { self.manual=false; self.observado=None; return false; }
         true
+    }
+
+    /// Nenhum bicho na area: para onde ir caçar. Move a area pro personagem e
+    /// devolve o bicho vivo mais perto dentro de `BUSCA` — quem anda ate' la'
+    /// e' o `main`. `None` quando nao ha' o que caçar (ou e' cedo demais).
+    pub fn caca(&mut self, world: &World, eu: Vec2, agora: f64) -> Option<Vec2> {
+        if !self.ativo() || self.manual {
+            return None;
+        }
+        // A area acompanha o personagem: sem isso, limpar o lugar e' o fim.
+        self.centro = Some(eu);
+        if agora - self.caca_em < PASSO_DA_CACA_S {
+            return None;
+        }
+        let alvo = world.ents.values()
+            .filter(|e| e.meta.tag == EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none())
+            .map(|e| e.render_pos)
+            .filter(|p| p.distance(eu) <= BUSCA)
+            .min_by(|a, b| a.distance_squared(eu).total_cmp(&b.distance_squared(eu)))?;
+        self.caca_em = agora;
+        Some(alvo)
     }
 
     pub fn escolher(&mut self, world: &World, atual: Option<EntityId>, agora: f64) -> Option<EntityId> {
@@ -163,6 +193,25 @@ mod tests {
         let mut b=AutoCombate::default();b.ligar(Vec2::ZERO);b.escolher(&w,None,0.0);
         b.sem_visada(EntityId(3),0.0);b.sem_visada(EntityId(3),5.0);
         assert_eq!(b.escolher(&w,Some(EntityId(3)),5.1),Some(EntityId(3)));
+    }
+
+    /// Limpou o que estava perto: o AUTO vai atras do proximo bicho em vez de
+    /// ficar parado (era a queixa do dono — "so' mata um e para").
+    #[test]
+    fn sem_bicho_na_area_vai_cacar_o_proximo() {
+        let mut w=mundo();let mut a=AutoCombate::default();a.ligar(Vec2::ZERO);
+        // Mata os dois de perto; sobra o de 30 unidades, fora do raio da area.
+        for id in [3u32,4] { w.ents.get_mut(&EntityId(id)).unwrap().state.hp=0; }
+        assert_eq!(a.escolher(&w,None,0.0),None,"nenhum dentro da area");
+        assert_eq!(a.caca(&w,Vec2::ZERO,1.0),Some(vec2(30.0,0.0)),"vai ate' o proximo");
+        assert_eq!(a.caca(&w,Vec2::ZERO,1.1),None,"nao repete o pedido a cada quadro");
+        // Andou ate' la': a area foi junto e o `escolher` pega o bicho.
+        w.ents.get_mut(&EntityId(1)).unwrap().render_pos=vec2(28.0,0.0);
+        a.caca(&w,vec2(28.0,0.0),2.4);
+        assert_eq!(a.escolher(&w,None,2.5),Some(EntityId(5)));
+        // Longe demais: nao ha' o que caçar.
+        w.ents.get_mut(&EntityId(5)).unwrap().render_pos=vec2(400.0,0.0);
+        assert_eq!(a.caca(&w,Vec2::ZERO,9.0),None);
     }
 
     #[test]

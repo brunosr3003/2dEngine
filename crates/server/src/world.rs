@@ -582,6 +582,13 @@ pub(crate) fn deteccao_do_nivel(detect_range: f32, nivel: u32) -> f32 {
 }
 
 /// Vida e dano de um mob da tabela (`enemy_kinds`) no nivel em que nasceu.
+/// XP de um bicho pelo NIVEL da zona: +10% por nivel acima do 1. A dificuldade
+/// vem do KIND (a tabela), mas caçar longe da cidade tem que pagar mais que
+/// caçar no quintal dela.
+pub(crate) fn xp_do_mob(base: u64, nivel: u32) -> u64 {
+    (base as f32 * (1.0 + 0.10 * nivel.saturating_sub(1) as f32)).round() as u64
+}
+
 pub(crate) fn vida_e_dano_do_mob(hp: i32, dano: i32, nivel: u32) -> (i32, i32) {
     let c = CURVA_DO_INICIO;
     let (v, d) = (do_inicio(c.vida, nivel, 1.0), do_inicio(c.dano, nivel, 1.0));
@@ -3020,6 +3027,13 @@ impl GameWorld {
         // Zona de faixa: o nivel sorteado decide a curva de iniciante (vida,
         // dano, matilha, carga). Nivel 6+ sai com os numeros da tabela.
         if de_faixa {
+            // O NIVEL do bicho e' o da zona. Ficava 1 pra todo mundo (o
+            // `build_enemy_tag` poe 1 e ninguem trocava): a ilha inteira
+            // aparecia como "Lv 1" pro jogador, mesmo nas zonas de nivel 12.
+            tag.level = nivel as u32;
+            // XP acompanha o nivel: caçar zona mais dura tem que render mais
+            // que ficar no quintal da cidade.
+            tag.xp_reward = xp_do_mob(tag.xp_reward, nivel as u32);
             tag.nivel_da_faixa = nivel as u32;
             tag.detect_range = deteccao_do_nivel(tag.detect_range, nivel as u32);
             let (hp, dano) = vida_e_dano_do_mob(health.max, tag.stats.attack_damage, nivel as u32);
@@ -3029,7 +3043,7 @@ impl GameWorld {
         }
         let hp_max = health.max;
         let class_str = crate::economy::enemy_def(kind_def).name.clone();
-        let level = 1u32;
+        let level = tag.level;
         tracing::info!(
             "spawn zona #{}: lv{} {} hp={} pos=({:.1},{:.1})",
             zone_id, level, class_str, hp_max, pos.x, pos.y

@@ -2581,6 +2581,12 @@ impl Jogo {
                 if let Some(p)=self.world.self_pos() {self.envia(ClientMessage::MoverPara{x:p.x,z:p.y});}
             }
         }
+        // Limpou a area: vai atras do proximo em vez de ficar parado.
+        if novo.is_none() {
+            if let Some(p)=self.auto_combate.caca(&self.world,eu,agora) {
+                self.envia(ClientMessage::MoverPara{x:p.x,z:p.y});
+            }
+        }
     }
 
     /// Com um inimigo selecionado e fora do alcance, anda ate ele.

@@ -1486,3 +1486,42 @@ mod testes {
         assert_eq!(crate::world::regen_de_hp(99, 100, &mut 0.0, 5.0), 100, "nao passa do maximo");
     }
 }
+
+#[cfg(test)]
+mod testes_das_zonas {
+    /// A ilha inteira tem que ter faixa de nivel, e perto da cidade tem que
+    /// haver onde subir do 1 — o dono achou so' bicho de nivel 1 jogando.
+    #[test]
+    fn a_primeira_ilha_tem_faixa_de_nivel() {
+        let (cidade, zonas) = super::bosque();
+        let mut por_nivel: std::collections::BTreeMap<u32, usize> = Default::default();
+        let mut perto = Vec::new();
+        for z in &zonas.zonas {
+            *por_nivel.entry(z.lv_min).or_default() += 1;
+            let d = z.centro.distance(*cidade);
+            if d <= 260.0 {
+                perto.push((d.round() as i32, z.lv_min, z.lv_max));
+            }
+        }
+        perto.sort();
+        println!("zonas por nivel minimo: {por_nivel:?}");
+        println!("as 12 zonas mais perto da cidade (distancia, lv_min, lv_max): {:?}", &perto[..perto.len().min(12)]);
+        let maior = zonas.zonas.iter().map(|z| z.lv_max).max().unwrap_or(0);
+        assert!(maior >= 12, "a ilha inteira so' chega ao nivel {maior}");
+        let subindo = perto.iter().filter(|(_, lv, _)| *lv >= 3).count();
+        assert!(subindo >= 3, "perto da cidade so' ha' nivel baixo: {perto:?}");
+    }
+}
+
+#[cfg(test)]
+mod testes_do_nivel_do_mob {
+    /// O bicho de zona longe vale mais XP que o do quintal da cidade.
+    #[test]
+    fn xp_sobe_com_o_nivel_da_zona() {
+        use crate::world::xp_do_mob;
+        assert_eq!(xp_do_mob(30, 1), 30, "nivel 1 e' a tabela");
+        assert_eq!(xp_do_mob(30, 6), 45);
+        assert_eq!(xp_do_mob(30, 12), 63);
+        assert!(xp_do_mob(30, 12) > xp_do_mob(30, 6));
+    }
+}
