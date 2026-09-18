@@ -20,10 +20,6 @@ pub struct Canal {
     pub jogadores: u32,
     pub capacidade: u32,
     pub cheio: bool,
-    /// Area de instancia unica: ali nao abre outro canal, lota e vira fila.
-    /// Vem do servidor — antes o cliente adivinhava pela contagem de canais e
-    /// errava com a zona vazia.
-    pub unica: bool,
 }
 
 impl Canal {
@@ -32,18 +28,20 @@ impl Canal {
     pub fn realm(&self) -> &str {
         self.id.split('/').next().unwrap_or(&self.id)
     }
+}
 
-    pub fn numero(&self) -> &str {
-        self.id.split('/').nth(1).unwrap_or("1")
-    }
-
-    pub fn fracao(&self) -> f32 {
-        if self.capacidade == 0 {
-            0.0
-        } else {
-            self.jogadores as f32 / self.capacidade as f32
-        }
-    }
+/// Por onde se entra no servidor `realm`: o canal menos cheio da ilha
+/// inicial (sem fila, se houver). O jogador so' escolhe o SERVIDOR — a ilha e'
+/// a do personagem: ao escolher um salvo em outra ilha, o proprio servidor
+/// manda reconectar la' (`TrocarZona`), e o personagem novo nasce no Bosque.
+/// Sem canal da ilha inicial no ar, qualquer um do servidor serve de porta.
+pub fn porta_de_entrada(canais: &[Canal], realm: &str) -> Option<String> {
+    let inicial = shared::terreno::ARQUIPELAGO[0].zona;
+    canais
+        .iter()
+        .filter(|c| c.realm() == realm)
+        .min_by_key(|c| (c.zona != inicial, c.cheio, c.jogadores, c.id.clone()))
+        .map(|c| c.host.clone())
 }
 
 /// Onde o `web` atende. No celular (iOS e Android) nao ha variavel de ambiente
@@ -179,6 +177,35 @@ mod testes {
     use super::*;
 
     #[test]
+    fn a_porta_de_entrada_e_a_ilha_inicial_menos_cheia() {
+        let c = |id: &str, zona: &str, host: &str, jogadores: u32, cheio: bool| Canal {
+            id: id.into(),
+            zona: zona.into(),
+            host: host.into(),
+            jogadores,
+            capacidade: 10,
+            cheio,
+        };
+        let canais = vec![
+            c("SA01/gelo1", "ilha_gelo", "h:9100", 0, false),
+            c("SA01/1", "ilha_inicial", "h:9000", 7, false),
+            c("SA01/2", "ilha_inicial", "h:9001", 3, false),
+            c("BR1/1", "ilha_inicial", "b:9000", 0, false),
+        ];
+        assert_eq!(porta_de_entrada(&canais, "SA01").as_deref(), Some("h:9001"));
+        assert_eq!(porta_de_entrada(&canais, "BR1").as_deref(), Some("b:9000"));
+        assert_eq!(porta_de_entrada(&canais, "XX"), None);
+        // Canal da ilha inicial lotado vem depois do que tem vaga.
+        let lotado = vec![
+            c("SA01/1", "ilha_inicial", "h:9000", 10, true),
+            c("SA01/2", "ilha_inicial", "h:9001", 9, false),
+        ];
+        assert_eq!(porta_de_entrada(&lotado, "SA01").as_deref(), Some("h:9001"));
+        // Sem ilha inicial no ar: entra pelo que houver.
+        assert_eq!(porta_de_entrada(&canais[..1], "SA01").as_deref(), Some("h:9100"));
+    }
+
+    #[test]
     fn le_campos_e_respostas_do_login_google() {
         let ok = r#"{"status":"ok","username":"Joao_1","token":"abc\"def"}"#;
         assert_eq!(campo_json(ok, "username").as_deref(), Some("Joao_1"));
@@ -237,7 +264,6 @@ fn parse(corpo: &str) -> Vec<Canal> {
             jogadores: campo_num("players").unwrap_or(0),
             capacidade: campo_num("capacity").unwrap_or(0),
             cheio: bloco.contains("\"full\": true") || bloco.contains("\"full\":true"),
-            unica: bloco.contains("\"single\": true") || bloco.contains("\"single\":true"),
         });
     }
     saida

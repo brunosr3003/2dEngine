@@ -404,9 +404,15 @@ comem o stdin e um `read` normal passaria direto sem ninguém responder.
 
 ## Tela de login
 
-O cliente tem as telas: **servidores** (agrupados, com online e nº de canais),
-**canais** do servidor escolhido (com barra de lotação e marca de fila),
-**login**, **personagens** e **fila** com a posição.
+O cliente tem as telas: **servidores** (um por realm — `SA01` —, com o online
+somado de todas as ilhas), **login**, **personagens** e **fila** com a posição.
+
+**Não se escolhe ilha nem canal** (decisão de 18/09/2026). Cada ilha roda em
+processo próprio, mas para quem joga o servidor é um só: entra-se pela porta da
+ilha inicial (`api::porta_de_entrada` — o canal dela menos cheio, sem fila se
+houver) e, escolhido o personagem, o servidor o manda para a ilha onde ele está
+salvo (`TrocarZona`); o cliente reconecta e reentra no mesmo personagem
+sozinho. Personagem novo nasce no Bosque.
 
 São ~200 linhas de widgets de modo imediato em `ui.rs`. O cliente Unity (morto) tinha
 24.491 linhas de uGUI pra fazer menos que isso.
@@ -414,10 +420,8 @@ São ~200 linhas de widgets de modo imediato em `ui.rs`. O cliente Unity (morto)
 A lista vem de `/api/channels` por HTTP cru sobre `TcpStream`, sem dependência
 nova — é uma requisição GET num endpoint conhecido.
 
-O rótulo "instância única" vem do **servidor**, no campo `single` do
-heartbeat (`MMO_CANAL_UNICO`). Antes o cliente deduzia isso contando os canais
-visíveis, e errava sempre que a zona estava vazia: o campo aparecia como
-instância única só porque ainda não tinha aberto o segundo canal.
+O campo `single` do heartbeat (`MMO_CANAL_UNICO`) continua indo na lista, mas
+a tela não mostra mais canal nenhum.
 
 `MMO_HOST` pula a escolha e `MMO_CHAR` pula a seleção de personagem: é o
 caminho do teste de carga, que não tem quem clique.

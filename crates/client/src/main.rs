@@ -136,7 +136,6 @@ struct Jogo {
     /// Rolagem da lista de canais. Um realm cheio tem dezenas de canais e o
     /// painel tem altura fixa — sem isto a lista vaza pra fora e os ultimos
     /// canais ficam inclicaveis atras dos botoes.
-    rolagem: f32,
     realm: Option<String>,
     host: Option<String>,
     // ── login ──
@@ -437,7 +436,6 @@ async fn main() {
         tela: Tela::Servidores,
         canais: Vec::new(),
         busca: Some(api::buscar_canais()),
-        rolagem: 0.0,
         realm: None,
         host: std::env::var("MMO_HOST").ok(),
         usuario: std::env::var("MMO_USER").unwrap_or_default(),
@@ -4500,164 +4498,43 @@ impl Jogo {
             return;
         }
 
-        // Sem realm escolhido: lista os SERVIDORES, com a soma dos canais.
-        // Servidor e canal sao decisoes diferentes e nao cabem na mesma lista —
-        // trocar de servidor e' trocar de personagem.
-        let Some(realm) = self.realm.clone() else {
-            let mut realms: Vec<(String, u32, u32)> = Vec::new();
-            for c in &self.canais {
-                match realms.iter_mut().find(|(n, _, _)| n == c.realm()) {
-                    Some(e) => {
-                        e.1 += c.jogadores;
-                        e.2 += c.capacidade;
-                    }
-                    None => realms.push((c.realm().to_string(), c.jogadores, c.capacidade)),
+        // So' os SERVIDORES (realms), com a soma de todas as ilhas. A ilha nao
+        // se escolhe: e' onde o personagem esta'. Entra-se pela porta da ilha
+        // inicial (`api::porta_de_entrada`) e, se o personagem escolhido mora
+        // em outra, o servidor manda reconectar la' (`TrocarZona`).
+        let mut realms: Vec<(String, u32, u32)> = Vec::new();
+        for c in &self.canais {
+            match realms.iter_mut().find(|(n, _, _)| n == c.realm()) {
+                Some(e) => {
+                    e.1 += c.jogadores;
+                    e.2 += c.capacidade;
                 }
-            }
-            let mut y = r.y + 10.0;
-            let mut escolhido = None;
-            for (nome, jog, cap) in &realms {
-                let linha = Rect::new(r.x, y, r.w, 46.0);
-                if ui::linha(
-                    linha,
-                    nome,
-                    &format!(
-                        "{jog} online · {} canais",
-                        self.canais.iter().filter(|c| c.realm() == nome).count()
-                    ),
-                    false,
-                ) {
-                    escolhido = Some(nome.clone());
-                }
-                ui::barra(
-                    Rect::new(r.x + 12.0, y + 34.0, r.w - 24.0, 5.0),
-                    if *cap > 0 {
-                        *jog as f32 / *cap as f32
-                    } else {
-                        0.0
-                    },
-                );
-                y += 54.0;
-            }
-            if let Some(n) = escolhido {
-                self.realm = Some(n);
-                self.rolagem = 0.0;
-            }
-            return;
-        };
-
-        // Realm escolhido: os canais dele, agrupados por ZONA.
-        //
-        // Zona e canal sao coisas diferentes e o jogador precisa ver as duas:
-        // a zona diz ONDE ele vai cair, o canal diz COM QUEM. Misturar numa
-        // lista so' esconde que "cidade" tem uma instancia unica e "campo"
-        // tem varias.
-        ui::texto(
-            r.x,
-            r.y - 4.0,
-            &format!("servidor {realm}"),
-            18,
-            ui::OURO_CLARO,
-        );
-        let canais: Vec<Canal> = self
-            .canais
-            .iter()
-            .filter(|c| c.realm() == realm)
-            .cloned()
-            .collect();
-        let mut zonas: Vec<String> = Vec::new();
-        for c in &canais {
-            if !zonas.contains(&c.zona) {
-                zonas.push(c.zona.clone());
+                None => realms.push((c.realm().to_string(), c.jogadores, c.capacidade)),
             }
         }
-
-        // Area util da lista: acima dos botoes de baixo. Tudo que cai fora
-        // dela nao e' desenhado NEM clicavel — desenhar fora do painel deixava
-        // canal visivel atras do botao "atualizar", que roubava o clique.
-        let topo = r.y + 18.0;
-        let base = r.y + r.h - 52.0;
-        let altura_total: f32 = zonas
-            .iter()
-            .map(|z| 30.0 + canais.iter().filter(|c| &c.zona == z).count() as f32 * 46.0)
-            .sum();
-        let rolagem_max = (altura_total - (base - topo)).max(0.0);
-        let (_, roda) = mouse_wheel();
-        if roda != 0.0 {
-            self.rolagem = (self.rolagem - roda * 40.0).clamp(0.0, rolagem_max);
-        }
-        self.rolagem = self.rolagem.min(rolagem_max);
-
-        let mut y = topo + 4.0 - self.rolagem;
-        let mut escolhido: Option<String> = None;
-        for zona in &zonas {
-            let da_zona: Vec<&Canal> = canais.iter().filter(|c| &c.zona == zona).collect();
-            let online: u32 = da_zona.iter().map(|c| c.jogadores).sum();
-            if y >= topo && y + 20.0 <= base {
-                ui::texto(r.x + 2.0, y + 14.0, zona, 17, ui::OURO);
-                let dir = format!("{online} online");
-                let d = crate::hud_estilo::medir_dim(&dir, 14);
-                ui::texto(
-                    r.x + r.w - d.width - 2.0,
-                    y + 14.0,
-                    &dir,
-                    14,
-                    Color::new(0.55, 0.55, 0.58, 1.0),
-                );
+        let mut y = r.y + 10.0;
+        let mut escolhido = None;
+        for (nome, jog, cap) in &realms {
+            let linha = Rect::new(r.x, y, r.w, 46.0);
+            if ui::linha(linha, nome, &format!("{jog} online"), false) {
+                escolhido = Some(nome.clone());
             }
-            y += 24.0;
-
-            for c in da_zona {
-                if y >= topo && y + 40.0 <= base {
-                    let linha = Rect::new(r.x + 10.0, y, r.w - 10.0, 40.0);
-                    // A zona diz se e' instancia unica; contar canais visiveis
-                    // errava sempre que a zona estava vazia — campo com um
-                    // canal aberto aparecia como "instância única".
-                    let rotulo = if c.unica {
-                        "instância única".to_string()
-                    } else {
-                        format!("canal {}", c.numero())
-                    };
-                    let direita = if c.cheio {
-                        format!("{}/{} · fila", c.jogadores, c.capacidade)
-                    } else {
-                        format!("{}/{}", c.jogadores, c.capacidade)
-                    };
-                    if ui::linha(linha, &rotulo, &direita, false) {
-                        escolhido = Some(c.host.clone());
-                    }
-                    ui::barra(
-                        Rect::new(linha.x + 12.0, y + 29.0, linha.w - 24.0, 5.0),
-                        c.fracao(),
-                    );
-                }
-                y += 46.0;
-            }
-            y += 6.0;
-        }
-        // Diz que ha' mais. Lista cortada sem aviso parece lista completa.
-        if rolagem_max > 0.0 {
-            let quanto = format!("{} canais · roda do mouse pra rolar", canais.len());
-            ui::texto_centro(
-                cx,
-                base + 16.0,
-                &quanto,
-                13,
-                Color::new(0.45, 0.45, 0.48, 1.0),
+            ui::barra(
+                Rect::new(r.x + 12.0, y + 34.0, r.w - 24.0, 5.0),
+                if *cap > 0 {
+                    *jog as f32 / *cap as f32
+                } else {
+                    0.0
+                },
             );
+            y += 54.0;
         }
-        if let Some(h) = escolhido {
-            self.host = Some(h);
-            self.tela = Tela::Login;
-        }
-
-        if ui::botao(
-            Rect::new(r.x, r.y + r.h - 44.0, 140.0, 40.0),
-            "< servidores",
-            true,
-        ) {
-            self.realm = None;
-            self.rolagem = 0.0;
+        if let Some(n) = escolhido {
+            if let Some(host) = api::porta_de_entrada(&self.canais, &n) {
+                self.host = Some(host);
+                self.realm = Some(n);
+                self.tela = Tela::Login;
+            }
         }
         if ui::botao(
             Rect::new(r.x + r.w - 140.0, r.y + r.h - 44.0, 140.0, 40.0),
@@ -4685,8 +4562,8 @@ impl Jogo {
         let r = ui::painel(460.0, ALTURA, "entrar");
         ui::subir_paineis(0.0);
         let cx = r.x + r.w * 0.5;
-        if let Some(h) = &self.host {
-            ui::texto_centro(cx, r.y + 6.0, h, 15, ui::OURO);
+        if let Some(realm) = &self.realm {
+            ui::texto_centro(cx, r.y + 6.0, &format!("servidor {realm}"), 15, ui::OURO);
         }
 
         let cu = Rect::new(r.x, r.y + 46.0, r.w, 42.0);
