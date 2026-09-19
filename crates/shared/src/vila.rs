@@ -1466,6 +1466,73 @@ mod testes {
         );
     }
 
+    /// O poco da praca: a rota de um lado ate' o outro contorna ele, e o
+    /// corpo chega. (Relato de 19/09/2026: "o poco nao ta' sendo
+    /// considerado pro A*".)
+    #[test]
+    fn a_rota_contorna_o_poco_da_praca() {
+        let i = ilha();
+        let vila = i.vila();
+        let poco = vila
+            .props
+            .iter()
+            .find(|pr| pr.tipo == TipoProp::Poco)
+            .expect("a vila tem poco");
+        let caixas: Vec<(Vec2, Vec2)> = poco
+            .construcao()
+            .caixas_mundo(poco.pos, poco.yaw_q)
+            .into_iter()
+            .filter(|(mn, mx)| mn.y - poco.pos.y < TETO_DA_COLISAO && mx.y - poco.pos.y > PISO_DA_COLISAO)
+            .map(|(mn, mx)| (Vec2::new(mn.x, mn.z), Vec2::new(mx.x, mx.z)))
+            .collect();
+        assert!(!caixas.is_empty(), "o poco nao tem caixa de colisao");
+        let c = Vec2::new(poco.pos.x, poco.pos.z);
+        let raio_poco = caixas
+            .iter()
+            .map(|(mn, mx)| mn.distance(c).max(mx.distance(c)))
+            .fold(0.0f32, f32::max);
+        let corta = |a: Vec2, b: Vec2| {
+            let n = ((a.distance(b) / 0.05).ceil() as i32).max(1);
+            (0..=n).any(|k| {
+                let q = a.lerp(b, k as f32 / n as f32);
+                caixas.iter().any(|(mn, mx)| {
+                    let perto = Vec2::new(q.x.clamp(mn.x, mx.x), q.y.clamp(mn.y, mx.y));
+                    perto.distance(q) < R * 0.9
+                })
+            })
+        };
+        let mut falhas = Vec::new();
+        for k in 0..8 {
+            let ang = k as f32 * std::f32::consts::TAU / 8.0;
+            let dir = Vec2::new(ang.cos(), ang.sin());
+            let de = i.ponto_livre_perto(c + dir * (raio_poco + 2.5), R);
+            let para = i.ponto_livre_perto(c - dir * (raio_poco + 2.5), R);
+            let Some(rota) = i.caminho(de, para, 60_000) else {
+                falhas.push(format!("{k}: sem rota"));
+                continue;
+            };
+            let mut a = de;
+            for &b in &rota {
+                if corta(a, b) {
+                    falhas.push(format!("{k}: trecho {a:?} -> {b:?} atravessa o poco"));
+                    break;
+                }
+                a = b;
+            }
+            let fim = simula_rota(i, de, para);
+            if fim.distance(para) > 1.0 {
+                falhas.push(format!(
+                    "{k}: parou a {:.2} do destino; rota termina em {:?}, destino {:?}, ultimo trecho livre {}",
+                    fim.distance(para),
+                    rota.last(),
+                    para,
+                    rota.len() >= 2 && i.trecho_livre_publico(rota[rota.len() - 2], para)
+                ));
+            }
+        }
+        assert!(falhas.is_empty(), "poco em {c:?} (raio {raio_poco:.2}):\n{}", falhas.join("\n"));
+    }
+
     /// Enfeite que BARRA (arvore, barraca, carroca, portal) nunca fica em
     /// cima de caminho calcado.
     #[test]

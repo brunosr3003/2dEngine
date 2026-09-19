@@ -168,6 +168,15 @@ pub struct Zonas {
     pub exp: Rect,
 }
 
+/// Onde um dedo pode COMECAR o joystick: o quadrado inferior esquerdo da area
+/// segura inteiro (metade da largura, metade de baixo da altura). Os botoes
+/// que ficam ali dentro (bateria, montaria) continuam botoes: quem chama tira
+/// `Zonas::contem`.
+pub fn quadrante_do_joystick() -> Rect {
+    let t = tela_segura();
+    Rect::new(t.x, t.y + t.h * 0.5, t.w * 0.5, t.h * 0.5)
+}
+
 /// As zonas da tela atual.
 /// Com a area segura e a escala escolhida. Chamado varias vezes por quadro:
 /// guarda a ultima resposta (o ajuste abaixo testa sobreposicao).

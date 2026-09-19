@@ -3108,7 +3108,39 @@ impl Ilha {
         }
         let fim = cel(para);
         if inicio == fim {
-            return Some(vec![para]);
+            // Mesma celula: reto so' se o reto for livre. Era "vai reto" sem
+            // checar nada — e a celula grossa cabe um poco inteiro: a rota
+            // atravessava o poco da praca (19/09/2026).
+            if self.trecho_livre(de, para, PULO_BLOCOS) {
+                return Some(vec![para]);
+            }
+            // Contorna por uma vizinha que enxerga as duas pontas.
+            let mut desvio: Option<(f32, glam::Vec2)> = None;
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    if dx == 0 && dz == 0 {
+                        continue;
+                    }
+                    let v = self.ponto_livre_perto(
+                        bruto((inicio.0 + dx, inicio.1 + dz)),
+                        crate::constants::ENTITY_RADIUS,
+                    );
+                    if self.ocupado(v, crate::constants::ENTITY_RADIUS)
+                        || !self.trecho_livre(de, v, PULO_BLOCOS)
+                        || !self.trecho_livre(v, para, PULO_BLOCOS)
+                    {
+                        continue;
+                    }
+                    let d = de.distance(v) + v.distance(para);
+                    if desvio.is_none_or(|(m, _)| d < m) {
+                        desvio = Some((d, v));
+                    }
+                }
+            }
+            return Some(match desvio {
+                Some((_, v)) => vec![v, para],
+                None => vec![para],
+            });
         }
 
         // f e' negado: BinaryHeap e' max-heap e o A* quer o menor.
@@ -3218,16 +3250,24 @@ impl Ilha {
         // `skip(1)` pula a celula de onde se saiu — menos quando a porta do
         // grafo e' outra celula, que aí ela e' um ponto que o corpo precisa
         // andar de verdade.
-        let pular = if inicio == contendo { 1 } else { 0 };
         let mut saida: Vec<glam::Vec2> = rota
             .into_iter()
-            .skip(pular)
             .map(|c| {
                 *pontos.entry(c).or_insert_with(|| {
                     self.ponto_livre_perto(bruto(c), crate::constants::ENTITY_RADIUS)
                 })
             })
             .collect();
+        // A celula de onde se saiu so' sai da rota se o corpo ENXERGA a
+        // seguinte. O A* validou "porta -> segunda", nao "corpo -> segunda":
+        // pular sem checar mandava o corpo cortar caminho pelo que estivesse
+        // entre os dois — o poco da praca, medido (19/09/2026).
+        if inicio == contendo
+            && saida.len() >= 2
+            && self.trecho_livre(de, saida[1], PULO_BLOCOS)
+        {
+            saida.remove(0);
+        }
         if melhor.0 == fim {
             // O ultimo ponto quer ser o destino de VERDADE e nao o centro da
             // celula — mas so' se der pra chegar la'.
@@ -3242,15 +3282,21 @@ impl Ilha {
                 de
             };
             saida.pop();
+            let centro = *pontos.entry(fim).or_insert_with(|| {
+                self.ponto_livre_perto(bruto(fim), crate::constants::ENTITY_RADIUS)
+            });
             if self.trecho_livre(penultimo, para, PULO_BLOCOS) {
+                saida.push(para);
+            } else if self.trecho_livre(centro, para, PULO_BLOCOS) {
+                // O atalho do penultimo esbarra (no poco da praca, medido), mas
+                // do centro da ultima celula da' pra pisar: passa por ele.
+                saida.push(centro);
                 saida.push(para);
             } else {
                 // Nao da' pra pisar onde clicou: para no centro da celula, que
                 // e' o mais perto validado. Chegar perto e' melhor que chegar
                 // e travar.
-                saida.push(*pontos.entry(fim).or_insert_with(|| {
-                    self.ponto_livre_perto(bruto(fim), crate::constants::ENTITY_RADIUS)
-                }));
+                saida.push(centro);
             }
         }
         Some(saida)
@@ -3271,6 +3317,11 @@ impl Ilha {
     /// a linha central: corredor que cabe pra um ponto mas nao pra um circulo
     /// de raio 0,35 virava rota valida, e o jogador travava no ombro. Medido
     /// simulando a caminhada: **71 de 240 rotas travavam**.
+    #[cfg(test)]
+    pub(crate) fn trecho_livre_publico(&self, de: glam::Vec2, para: glam::Vec2) -> bool {
+        self.trecho_livre(de, para, PULO_BLOCOS)
+    }
+
     fn trecho_livre(&self, de: glam::Vec2, para: glam::Vec2, degrau: i32) -> bool {
         // Tronco, matacao e toco derrubam o trecho inteiro. Sem isto a rota
         // atravessa a arvore, o corpo bate nela e o seguidor fica raspando de

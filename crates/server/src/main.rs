@@ -19,6 +19,7 @@ mod canais;
 mod coleta;
 mod correio_admin;
 mod craft;
+mod loja_npc;
 mod economy;
 mod loja;
 mod loot_mobs;

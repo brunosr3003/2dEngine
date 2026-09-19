@@ -416,6 +416,13 @@ pub enum ClientMessage {
         entrada: u16,
         vezes: u16,
     },
+    /// Loja do NPC: `qtd` do item do `slot_idx` de uma vez, em cobre. Tudo ou
+    /// nada (cobre e espaco conferidos antes). Resposta: `ShopTradeResult`.
+    /// Anexada no fim: o app antigo segue com o `ShopBuy` de uma unidade.
+    ShopComprar {
+        slot_idx: u8,
+        qtd: u16,
+    },
 }
 
 /// Onde esta' a peca que a forja vai refinar.

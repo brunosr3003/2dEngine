@@ -1,9 +1,11 @@
-//! Loja de NPC: clicar num vendedor abre, clicar num item compra.
-//! Preco, ouro, espaco na bolsa e alcance continuam validados pelo servidor.
+//! Loja de NPC: clicar num vendedor abre; tocar num item ESCOLHE, e o bloco de
+//! baixo diz quanto comprar (−/+, 1, 10, 50, Max) e quanto custa o lote.
+//! Preco, cobre, espaco na bolsa e alcance continuam validados pelo servidor
+//! (`ShopComprar`, tudo ou nada).
 use crate::hud_estilo as estilo;
 use macroquad::prelude::*;
 use shared::protocol::{ClientMessage, ShopItem};
-use shared::EntityId;
+use shared::{EntityId, InventorySlot};
 use std::collections::HashMap;
 
 /// Chega a isto do NPC antes de pedir. Um pouco dentro do alcance do
@@ -11,10 +13,6 @@ use std::collections::HashMap;
 pub const PERTO: f32 = shared::INTERACT_RADIUS * 0.9;
 /// Longe disto a loja fecha sozinha: o servidor ja' recusaria a compra.
 const FECHA_LONGE: f32 = shared::INTERACT_RADIUS + 1.5;
-/// Shift+clique compra este tanto.
-const LOTE: usize = 5;
-const LARGURA: f32 = 360.0;
-const LINHA: f32 = 52.0;
 
 /// Clique num NPC longe: o personagem anda ate' ele e interage ao chegar.
 #[derive(Default)]
@@ -46,22 +44,48 @@ impl Pendente {
     }
 }
 
+/// Maior lote de uma vez (o mesmo teto do servidor).
+pub const MAX_LOTE: u32 = 999;
+/// Atalhos de quantidade do seletor.
+const ATALHOS: [u32; 3] = [1, 10, 50];
+const LARGURA: f32 = 380.0;
+const LINHA: f32 = 50.0;
+/// Altura do bloco de compra (item escolhido, seletor, total, botao).
+const DETALHE: f32 = 196.0;
+
 #[derive(Default)]
 pub struct Loja {
     /// O NPC da loja aberta. `None` = fechada.
     pub vendedor: Option<EntityId>,
     itens: Vec<ShopItem>,
-    aviso: Option<(String, f64)>,
+    /// Linha escolhida e quanto dela vai no lote.
+    sel: usize,
+    qtd: u32,
+    /// (texto, deu certo, quando).
+    aviso: Option<(String, bool, f64)>,
+    rolagem: crate::rolagem::Rolagem,
 }
 
-/// Os pedidos de um clique: um `ShopBuy` por unidade. O servidor compra uma
-/// por mensagem e revalida cada uma — ouro acabou no meio, as outras falham.
-pub fn pedidos(slot: usize, qtd: usize) -> Vec<ClientMessage> {
-    (0..qtd)
-        .map(|_| ClientMessage::ShopBuy {
-            slot_idx: slot as u8,
-        })
-        .collect()
+/// Quantos o cobre paga, no teto do lote (pelo menos 1, pra o botao existir).
+pub fn maximo(cobre: u64, preco: u32) -> u32 {
+    if preco == 0 {
+        return MAX_LOTE;
+    }
+    ((cobre / preco as u64).min(MAX_LOTE as u64) as u32).max(1)
+}
+
+/// Equipamento vai um por vez (pode ir direto pro corpo); o resto em lote.
+pub fn em_lote(item_id: u16) -> bool {
+    shared::equip_slot_of(item_id).is_none()
+}
+
+/// Quanto de `id` (empilhado) a bolsa tem.
+fn na_bolsa(slots: &[InventorySlot], id: u16) -> u64 {
+    slots
+        .iter()
+        .filter(|s| s.item_id == id && s.qty > 0)
+        .map(|s| s.qty as u64)
+        .sum()
 }
 
 impl Loja {
@@ -70,9 +94,12 @@ impl Loja {
     }
 
     pub fn abre(&mut self, vendor_id: u32, itens: Vec<ShopItem>) {
-        self.vendedor = Some(EntityId(vendor_id));
-        self.itens = itens;
-        self.aviso = None;
+        *self = Self {
+            vendedor: Some(EntityId(vendor_id)),
+            itens,
+            qtd: 1,
+            ..Self::default()
+        };
     }
 
     pub fn fecha(&mut self) {
@@ -80,7 +107,13 @@ impl Loja {
     }
 
     pub fn avisa(&mut self, s: String) {
-        self.aviso = Some((s, get_time()));
+        self.aviso = Some((s, false, get_time()));
+    }
+
+    /// O lote saiu: diz quanto e volta o seletor pra 1.
+    pub fn sucesso(&mut self, s: String) {
+        self.aviso = Some((s, true, get_time()));
+        self.qtd = 1;
     }
 
     /// Fecha se o vendedor sumiu ou o personagem se afastou dele.
@@ -94,25 +127,31 @@ impl Loja {
         }
     }
 
-    fn painel(&self) -> Rect {
-        let h = 118.0 + self.itens.len().max(1) as f32 * LINHA;
-        Rect::new(
-            crate::hud_layout::tela_segura().x + 24.0,
-            screen_height() * 0.16,
-            LARGURA,
-            h,
-        )
+    /// (painel, lista). A lista mostra no maximo o que cabe acima do bloco de
+    /// compra; o resto rola.
+    fn areas(&self) -> (Rect, Rect) {
+        let f = estilo::fator_texto();
+        let t = crate::hud_layout::tela_segura();
+        let topo = t.y + screen_height() * 0.12;
+        let cabe = (t.y + t.h - topo - 16.0).max(200.0 * f);
+        let fixo = (56.0 + DETALHE + 46.0) * f;
+        let lista_h = (self.itens.len().max(1) as f32 * LINHA * f)
+            .min((cabe - fixo).max(LINHA * f));
+        let p = Rect::new(t.x + 24.0, topo, LARGURA * f, fixo + lista_h);
+        let lista = Rect::new(p.x + 8.0 * f, p.y + 52.0 * f, p.w - 16.0 * f, lista_h);
+        (p, lista)
     }
 
     /// Com o mouse em cima do painel o clique e' da loja, e nao do mundo.
     pub fn pega_mouse(&self) -> bool {
-        self.aberta() && self.painel().contains(Vec2::from(mouse_position()))
+        self.aberta() && self.areas().0.contains(Vec2::from(mouse_position()))
     }
 
-    /// Desenha e devolve os pedidos de compra do quadro.
+    /// Desenha e devolve o pedido de compra do quadro.
     pub fn desenha(
         &mut self,
         nomes: &HashMap<u16, String>,
+        slots: &[InventorySlot],
         ouro: u64,
         cobre: u64,
         vendedor: &str,
@@ -120,105 +159,138 @@ impl Loja {
         if !self.aberta() {
             return Vec::new();
         }
-        let p = self.painel();
+        let f = estilo::fator_texto();
+        let (p, lista) = self.areas();
         let mouse = Vec2::from(mouse_position());
-        let clique = is_mouse_button_pressed(MouseButton::Left);
+        let nome_de = |id: u16| {
+            nomes
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| format!("item {id}"))
+        };
         estilo::painel(p);
-        estilo::texto_ajustado(
-            vendedor,
-            p.x + 16.0,
-            p.y + 30.0,
-            p.w - 70.0,
-            22,
-            estilo::OURO,
-        );
+        estilo::texto_ajustado(vendedor, p.x + 16.0 * f, p.y + 30.0 * f, p.w - 70.0 * f, 22, estilo::OURO);
         if crate::ui::botao(
-            Rect::new(p.x + p.w - 44.0, p.y + 8.0, 32.0, 28.0),
+            Rect::new(p.x + p.w - 44.0 * f, p.y + 8.0 * f, 32.0 * f, 28.0 * f),
             "x",
             true,
         ) {
             self.fecha();
             return Vec::new();
         }
-        draw_line(
-            p.x + 12.0,
-            p.y + 44.0,
-            p.x + p.w - 12.0,
-            p.y + 44.0,
-            1.0,
-            estilo::BORDA,
-        );
+        draw_line(p.x + 12.0, p.y + 44.0 * f, p.x + p.w - 12.0, p.y + 44.0 * f, 1.0, estilo::BORDA);
 
-        let mut saida = Vec::new();
+        // ── lista: tocar ESCOLHE (nao compra mais sem querer) ──
         if self.itens.is_empty() {
-            estilo::texto(p.x + 16.0, p.y + 78.0, "Nada à venda.", 16, estilo::SUAVE);
+            estilo::texto(p.x + 16.0 * f, lista.y + 28.0 * f, "Nada à venda.", 16, estilo::SUAVE);
         }
+        let linha_h = LINHA * f;
+        let total = self.itens.len() as f32 * linha_h;
+        let toque = self.rolagem.quadro(lista, total, linha_h);
+        let arrastando = self.rolagem.arrastando();
+        self.sel = self.sel.min(self.itens.len().saturating_sub(1));
+        crate::rolagem::recortar(Some(lista));
         for (i, item) in self.itens.iter().enumerate() {
             let r = Rect::new(
-                p.x + 10.0,
-                p.y + 52.0 + i as f32 * LINHA,
-                p.w - 20.0,
-                LINHA - 6.0,
+                lista.x,
+                lista.y + i as f32 * linha_h - self.rolagem.pos,
+                lista.w - 12.0,
+                linha_h - 4.0 * f,
             );
-            let sobre = r.contains(mouse);
-            // A loja do NPC cobra em COBRE (docs/ECONOMIA.md); o ouro ficou
-            // pras coisas raras.
-            let pode = cobre >= item.price as u64;
-            if sobre {
-                draw_rectangle(r.x, r.y, r.w, r.h, Color::new(1.0, 1.0, 1.0, 0.06));
-                draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.0, estilo::BORDA);
+            if r.y + r.h < lista.y || r.y > lista.y + lista.h {
+                continue;
             }
-            crate::bolsa::icone_do_item(
-                Rect::new(r.x + 4.0, r.y + 3.0, 40.0, 40.0),
-                item.item_id,
-                1.0,
-            );
-            let nome = nomes
-                .get(&item.item_id)
-                .cloned()
-                .unwrap_or_else(|| format!("item {}", item.item_id));
-            estilo::texto_ajustado(
-                &nome,
-                r.x + 54.0,
-                r.y + 29.0,
-                r.w - 150.0,
-                17,
-                estilo::TEXTO,
-            );
+            let marcada = i == self.sel;
+            let sobre = !arrastando && r.contains(mouse) && lista.contains(mouse);
+            if marcada || sobre {
+                draw_rectangle(r.x, r.y, r.w, r.h, Color::new(1.0, 1.0, 1.0, if marcada { 0.10 } else { 0.05 }));
+            }
+            if marcada {
+                draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5, estilo::OURO);
+            }
+            let lado = r.h - 6.0 * f;
+            crate::bolsa::icone_do_item(Rect::new(r.x + 4.0 * f, r.y + 3.0 * f, lado, lado), item.item_id, 1.0);
+            estilo::texto_ajustado(&nome_de(item.item_id), r.x + lado + 14.0 * f, r.y + r.h * 0.62, r.w - lado - 130.0 * f, 16, estilo::TEXTO);
             let preco = format!("{} cobre", crate::bolsa::milhar(item.price as u64));
-            let cor = if pode {
-                Color::new(0.85, 0.55, 0.32, 1.0)
-            } else {
-                Color::new(0.88, 0.38, 0.32, 1.0)
-            };
-            estilo::texto(
-                r.x + r.w - 10.0 - estilo::medir(&preco, 16),
-                r.y + 29.0,
-                &preco,
-                16,
-                cor,
-            );
-            if sobre && clique {
-                let qtd = if is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) {
-                    LOTE
-                } else {
-                    1
-                };
-                saida = pedidos(i, qtd);
+            let cor = if cobre >= item.price as u64 { COBRE } else { VERMELHO };
+            estilo::texto(r.x + r.w - 10.0 * f - estilo::medir(&preco, 15), r.y + r.h * 0.62, &preco, 15, cor);
+            if toque.is_some_and(|c| r.contains(c) && lista.contains(c)) && i != self.sel {
+                self.sel = i;
+                self.qtd = 1;
             }
         }
-        let rodape = p.y + p.h - 40.0;
-        draw_line(
-            p.x + 12.0,
-            rodape,
-            p.x + p.w - 12.0,
-            rodape,
-            1.0,
-            estilo::BORDA,
-        );
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(lista, total);
+
+        // ── compra: quanto, total e o botao ──
+        let mut saida = Vec::new();
+        let d = Rect::new(p.x + 12.0 * f, lista.y + lista.h + 8.0 * f, p.w - 24.0 * f, DETALHE * f);
+        draw_line(d.x, d.y, d.x + d.w, d.y, 1.0, estilo::BORDA);
+        if let Some(item) = self.itens.get(self.sel).cloned() {
+            let lote = em_lote(item.item_id);
+            let max = if lote { maximo(cobre, item.price) } else { 1 };
+            self.qtd = self.qtd.clamp(1, max.max(1));
+            let tem = na_bolsa(slots, item.item_id);
+            estilo::texto_ajustado(&nome_de(item.item_id), d.x + 4.0, d.y + 24.0 * f, d.w * 0.62, 17, estilo::OURO);
+            let info = format!("na bolsa: {}", crate::bolsa::milhar(tem));
+            estilo::texto(d.x + d.w - estilo::medir(&info, 14), d.y + 24.0 * f, &info, 14, estilo::SUAVE);
+
+            // Seletor: [−]  qtd  [+]   [1] [10] [50] [Máx]
+            let y = d.y + 38.0 * f;
+            let h = 36.0 * f;
+            let menos = Rect::new(d.x, y, 40.0 * f, h);
+            let caixa = Rect::new(menos.x + menos.w + 4.0 * f, y, 64.0 * f, h);
+            let mais = Rect::new(caixa.x + caixa.w + 4.0 * f, y, 40.0 * f, h);
+            if crate::ui::botao(menos, "-", lote && self.qtd > 1) {
+                self.qtd -= 1;
+            }
+            estilo::ret_arredondado(caixa, 6.0, estilo::alfa(estilo::FUNDO_BAIXO, 0.9));
+            estilo::texto_centro(caixa.center().x, caixa.y + h * 0.68, &self.qtd.to_string(), 19, estilo::TEXTO);
+            if crate::ui::botao(mais, "+", lote && self.qtd < max) {
+                self.qtd += 1;
+            }
+            let mut x = mais.x + mais.w + 10.0 * f;
+            let w = ((d.x + d.w - x) - 3.0 * 4.0 * f) / 4.0;
+            for n in ATALHOS {
+                if crate::ui::botao(Rect::new(x, y, w, h), &n.to_string(), lote && n <= max) {
+                    self.qtd = n;
+                }
+                x += w + 4.0 * f;
+            }
+            if crate::ui::botao(Rect::new(x, y, w, h), "Máx", lote && max > 1) {
+                self.qtd = max;
+            }
+
+            // Total do lote e o que sobra.
+            let total_lote = item.price as u64 * self.qtd as u64;
+            let falta = total_lote > cobre;
+            let t = format!("Total: {} cobre", crate::bolsa::milhar(total_lote));
+            estilo::texto(d.x + 4.0, d.y + 104.0 * f, &t, 17, if falta { VERMELHO } else { COBRE });
+            let resto = if falta {
+                format!("faltam {}", crate::bolsa::milhar(total_lote - cobre))
+            } else {
+                format!("sobra {}", crate::bolsa::milhar(cobre - total_lote))
+            };
+            estilo::texto(d.x + d.w - estilo::medir(&resto, 14), d.y + 104.0 * f, &resto, 14, estilo::SUAVE);
+            if !lote {
+                estilo::texto(d.x + 4.0, d.y + 124.0 * f, "Equipamento: um por vez.", 13, estilo::SUAVE);
+            }
+            let b = Rect::new(d.x, d.y + 134.0 * f, d.w, 44.0 * f);
+            let rotulo = format!("Comprar {}x", self.qtd);
+            if crate::ui::botao(b, &rotulo, !falta && !self.itens.is_empty()) {
+                saida.push(ClientMessage::ShopComprar {
+                    slot_idx: self.sel as u8,
+                    qtd: self.qtd as u16,
+                });
+            }
+        }
+
+        // ── rodape: saldo ──
+        let rodape = p.y + p.h - 38.0 * f;
+        draw_line(p.x + 12.0, rodape, p.x + p.w - 12.0, rodape, 1.0, estilo::BORDA);
         estilo::texto(
-            p.x + 16.0,
-            rodape + 24.0,
+            p.x + 16.0 * f,
+            rodape + 25.0 * f,
             &format!(
                 "Cobre {}  ·  Ouro {}",
                 crate::bolsa::milhar(cobre),
@@ -227,23 +299,15 @@ impl Loja {
             15,
             estilo::OURO,
         );
-        let dica = "clique: 1  ·  Shift: 5";
-        estilo::texto(
-            p.x + p.w - 16.0 - estilo::medir(dica, 14),
-            rodape + 23.0,
-            dica,
-            14,
-            estilo::SUAVE,
-        );
-        if let Some((msg, quando)) = &self.aviso {
-            if get_time() - quando < 3.0 {
+        if let Some((msg, ok, quando)) = &self.aviso {
+            if get_time() - quando < 3.5 {
                 estilo::texto_ajustado(
                     msg,
                     p.x + 16.0,
-                    p.y + p.h + 22.0,
+                    p.y + p.h + 22.0 * f,
                     p.w - 32.0,
                     15,
-                    Color::new(0.88, 0.38, 0.32, 1.0),
+                    if *ok { VERDE } else { VERMELHO },
                 );
             } else {
                 self.aviso = None;
@@ -252,6 +316,10 @@ impl Loja {
         saida
     }
 }
+
+const COBRE: Color = Color::new(0.85, 0.55, 0.32, 1.0);
+const VERMELHO: Color = Color::new(0.88, 0.38, 0.32, 1.0);
+const VERDE: Color = Color::new(0.45, 0.80, 0.42, 1.0);
 
 #[cfg(test)]
 mod tests {
@@ -292,12 +360,20 @@ mod tests {
     }
 
     #[test]
-    fn shift_compra_um_lote() {
-        assert_eq!(pedidos(2, 1).len(), 1);
-        let lote = pedidos(2, LOTE);
-        assert_eq!(lote.len(), 5);
-        assert!(lote
-            .iter()
-            .all(|m| matches!(m, ClientMessage::ShopBuy { slot_idx: 2 })));
+    fn maximo_e_o_que_o_cobre_paga_no_teto_do_lote() {
+        assert_eq!(maximo(95, 10), 9);
+        assert_eq!(maximo(5, 10), 1, "o botao existe; o total fica vermelho");
+        assert_eq!(maximo(1_000_000, 10), MAX_LOTE);
+        assert!(em_lote(shared::item_id::HEALTH_POTION));
+        assert!(!em_lote(shared::item_id::KATANA));
+    }
+
+    #[test]
+    fn abrir_escolhe_o_primeiro_com_um_no_seletor() {
+        let mut l = Loja::default();
+        l.abre(3, vec![ShopItem { item_id: 2, price: 10 }]);
+        assert_eq!((l.sel, l.qtd), (0, 1));
+        l.fecha();
+        assert!(!l.aberta());
     }
 }

@@ -152,6 +152,12 @@ impl Habilidades {
         get_time() < self.ocupada_ate || get_time() < self.pendente_ate
     }
 
+    /// O ponto `p` cai num botao de skill (ou no de pulo)? Sem olhar arrasto
+    /// em andamento — e' o que o joystick pergunta pro OUTRO dedo.
+    pub fn botao_em(&self, p: Vec2) -> bool {
+        (0..4).any(|i| retangulo(i).contains(p))
+    }
+
     pub fn pega_mouse(&self) -> bool {
         let (x, y) = mouse_position();
         // 0..4: o quarto e' o botao de PULO, e tocar nele tambem nao pode

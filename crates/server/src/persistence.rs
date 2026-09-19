@@ -3521,16 +3521,9 @@ pub async fn create_character(
     // Arma inicial = 0 → personagem nasce SEM arma (o tutorial entrega a T1).
     // Só popula inventário/equip se um id de arma válido foi passado (compat).
     if starting_weapon != 0 {
-        // Inventario[0] = arma escolhida (qty 1).
-        sqlx::query(
-            "INSERT INTO inventory (character_name, slot, item_id, qty)
-             VALUES ($1, 0, $2, 1)
-             ON CONFLICT (character_name, slot) DO NOTHING",
-        )
-        .bind(name)
-        .bind(starting_weapon as i32)
-        .execute(pool)
-        .await?;
+        // So' equipada. Ia tambem uma COPIA pra bolsa (slot 0), e com o
+        // Aprimorar isso virava duas pecas iguais de graca. A instancia
+        // (Comum, Tier I) entra no primeiro login (`craft::instancia_inicial`).
         // Equipa a arma na slot weapon (mainhand).
         sqlx::query(
             "INSERT INTO equipment (character_name, slot, item_id)

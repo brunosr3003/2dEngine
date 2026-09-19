@@ -150,6 +150,58 @@ pub fn refinar(inst: &mut ItemInstance, inv: &mut [InventorySlot], sorte: u8) ->
     }
 }
 
+// ─────────────────────────── peca sem instancia ───────────────────────────
+
+/// A instancia de uma peca que chegou SEM ela (a arma inicial, item antigo):
+/// Comum, Tier I, no nivel de item do craft cinza — a mesma de quem cria a
+/// peca no Craft. Sem instancia a peca nao tinha cor nem tier, e a Forja e o
+/// Aprimorar nao enxergavam ela. `None` pro que nao e' equipamento.
+pub fn instancia_inicial(item: u16) -> Option<ItemInstance> {
+    shared::equip_slot_of(item)?;
+    ItemInstance::roll_em(
+        crate::economy::item_template_of(item),
+        forja::nivel_de_item_da_cor(1),
+        1,
+        1,
+        fastrand::f32,
+    )
+}
+
+/// Da' instancia a toda peca de equipamento sem ela, na bolsa (ou cofre).
+/// Devolve se mudou algo (pra salvar).
+pub fn garantir_instancias(
+    inv: &mut [InventorySlot],
+    rolar: &mut dyn FnMut(u16) -> Option<ItemInstance>,
+) -> bool {
+    let mut mudou = false;
+    for s in inv.iter_mut() {
+        if s.qty == 1 && s.instance.is_none() && shared::equip_slot_of(s.item_id).is_some() {
+            if let Some(i) = rolar(s.item_id) {
+                s.instance = Some(i);
+                mudou = true;
+            }
+        }
+    }
+    mudou
+}
+
+/// O mesmo pro que esta' vestido.
+pub fn garantir_instancias_vestidas(
+    equip: &mut shared::Equipment,
+    rolar: &mut dyn FnMut(u16) -> Option<ItemInstance>,
+) -> bool {
+    let mut mudou = false;
+    for slot in shared::EquipSlot::TODOS {
+        if let (Some(id), None) = (equip.get(slot), equip.get_inst(slot)) {
+            if let Some(i) = rolar(id) {
+                equip.set(slot, Some(id), Some(i));
+                mudou = true;
+            }
+        }
+    }
+    mudou
+}
+
 // ─────────────────────────── aprimorar e combinar ───────────────────────────
 
 /// Aba Aprimorar: funde as pecas dos slots `a` e `b` da bolsa no degrau de
@@ -551,5 +603,28 @@ mod testes {
         // 7 chifres = 1 tentativa, sobra 2: o slot nao libera e nao ha' vazio.
         assert_eq!(combinar(&mut inv, &r, 1, 99, &nome, &mut || 0), Err("bolsa cheia".into()));
         assert_eq!(foto(&inv), copia);
+    }
+
+    #[test]
+    fn peca_sem_instancia_vira_comum_tier_i_e_o_resto_fica() {
+        let mut rolar = |id: u16| rolar_katana(id, 5, 1, 1);
+        let mut inv = bolsa(&[(item_id::COPPER, 50)]);
+        inv[2] = InventorySlot {
+            item_id: item_id::KATANA,
+            qty: 1,
+            instance: None,
+        };
+        inv[3] = peca(2, 3, 4);
+        assert!(garantir_instancias(&mut inv, &mut rolar));
+        let nova = inv[2].instance.expect("ganhou instancia");
+        assert_eq!((nova.grau(), nova.tier(), nova.refinement), (1, 1, 0));
+        assert!(inv[0].instance.is_none(), "cobre continua sem instancia");
+        assert_eq!(inv[3].instance.unwrap().tier(), 3, "peca que ja' tinha nao muda");
+        assert!(!garantir_instancias(&mut inv, &mut rolar), "segunda vez nao mexe");
+
+        let mut equip = shared::Equipment::default();
+        equip.set(shared::EquipSlot::Weapon, Some(item_id::KATANA), None);
+        assert!(garantir_instancias_vestidas(&mut equip, &mut rolar));
+        assert_eq!(equip.get_inst(shared::EquipSlot::Weapon).map(|i| i.tier()), Some(1));
     }
 }

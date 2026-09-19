@@ -4966,9 +4966,9 @@ impl GameWorld {
             mut health,
             saved_xp,
             saved_gold,
-            saved_inv,
-            saved_equip,
-            saved_vault,
+            mut saved_inv,
+            mut saved_equip,
+            mut saved_vault,
             saved_fame,
             saved_aura,
             saved_profs,
@@ -5000,6 +5000,16 @@ impl GameWorld {
             row.name.clone(),
             row.mounted_local,
             );
+        // Peca de equipamento sem instancia (a arma inicial, item antigo) vira
+        // Comum Tier I: sem instancia ela nao tinha cor nem tier, e a Forja e
+        // o Aprimorar nao enxergavam ela.
+        let pecas_consertadas = {
+            let mut rolar = crate::craft::instancia_inicial;
+            let a = crate::craft::garantir_instancias(&mut saved_inv, &mut rolar);
+            let b = crate::craft::garantir_instancias_vestidas(&mut saved_equip, &mut rolar);
+            let c = crate::craft::garantir_instancias(&mut saved_vault, &mut rolar);
+            a || b || c
+        };
         // Tutorial: spawna numa área ISOLADA do arquipélago (game.json), perto do
         // cluster de árvores. Ignora a pos salva. O BFS abaixo valida walkable.
         let tutorial_slot_idx: Option<usize> = None;
@@ -5251,6 +5261,12 @@ impl GameWorld {
             s.skills_dirty = false; // já enviamos PlayerSkillsUpdate no fim do login
             s.vault = saved_vault;
             s.vault_dirty = false;
+            if pecas_consertadas {
+                // Grava a instancia nova ja' no proximo save.
+                s.inventory_dirty = true;
+                s.vault_dirty = true;
+                s.stats_dirty = true;
+            }
             // Mana e stamina do ultimo save, no teto de agora (equipamento
             // pode ter mudado). Row antiga, sem as colunas: cheias.
             s.mp_current = row
@@ -6783,6 +6799,9 @@ impl GameWorld {
             }
             ClientMessage::ShopBuy { slot_idx } => {
                 self.handle_shop_buy(id, slot_idx as usize);
+            }
+            ClientMessage::ShopComprar { slot_idx, qtd } => {
+                self.handle_shop_comprar(id, slot_idx as usize, qtd as u32);
             }
             ClientMessage::ShopSell { inv_slot } => {
                 self.handle_shop_sell(id, inv_slot as usize);
@@ -15883,6 +15902,62 @@ impl GameWorld {
             if let Ok(mut hp) = self.ecs.get::<&mut Health>(player_entity) {
                 hp.max = nmax;
             }
+        }
+    }
+
+    /// A loja do NPC mais perto do jogador (dentro do alcance de interagir).
+    fn loja_perto(&self, sid: SessionId) -> Option<u32> {
+        let s = self.sessions.get(&sid).filter(|s| s.logged_in)?;
+        let eu = self.ecs.get::<&Position>(s.entity?).ok()?.0;
+        let r_sq = shared::INTERACT_RADIUS * shared::INTERACT_RADIUS;
+        self.ecs
+            .query::<(&Position, &EntityKind)>()
+            .iter()
+            .filter(|(_, (_, k))| matches!(k, EntityKind::Npc(n) if *n != 2))
+            .map(|(e, (p, _))| (e, p.0.distance_squared(eu)))
+            .filter(|(_, d)| *d <= r_sq)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(e, _)| self.ecs.get::<&VendorTag>(e).map(|t| t.shop_id).unwrap_or(1))
+    }
+
+    /// Loja do NPC em LOTE: `qtd` de uma vez, tudo ou nada (`loja_npc`).
+    /// Equipamento continua uma unidade por vez, pelo `ShopBuy` (ele pode
+    /// ir direto pro corpo).
+    fn handle_shop_comprar(&mut self, sid: SessionId, slot_idx: usize, qtd: u32) {
+        let Some(shop_id) = self.loja_perto(sid) else {
+            self.send_trade_result(sid, false, "longe demais do vendedor");
+            return;
+        };
+        let listing = crate::economy::shop_listing_for(shop_id);
+        let Some(&(item, preco)) = listing.get(slot_idx) else {
+            self.send_trade_result(sid, false, "item de loja inválido");
+            return;
+        };
+        if shared::equip_slot_of(item).is_some() {
+            if qtd == 1 {
+                self.handle_shop_buy(sid, slot_idx);
+            } else {
+                self.send_trade_result(sid, false, "equipamento se compra um de cada vez");
+            }
+            return;
+        }
+        let cap = crate::economy::item_stack_max(item);
+        let nome = crate::economy::nome_do_item(item);
+        let Some(session) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        match crate::loja_npc::comprar_lote(&mut session.inventory, item, preco, qtd, cap) {
+            Ok(total) => {
+                session.inventory_dirty = true;
+                crate::telemetria::conta("cobre_ralo", "loja", total as i64);
+                crate::telemetria::conta("loja_compra", item, qtd as i64);
+                let texto = format!("Comprou {qtd}x {nome} por {total} de cobre.");
+                let _ = session.handle.to_client.send(ServerMessage::ShopTradeResult {
+                    ok: true,
+                    reason: texto,
+                });
+            }
+            Err(motivo) => self.send_trade_result(sid, false, &motivo),
         }
     }
 

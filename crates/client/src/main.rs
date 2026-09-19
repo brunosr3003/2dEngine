@@ -322,6 +322,11 @@ struct Jogo {
     toque_acao: gesto_camera::Acao,
     /// Havia dedo na tela neste quadro: o aperto simulado do mouse nao vale.
     toque_ativo: bool,
+    /// Um painel tratado ANTES dos dedos (o mapa) consumiu o toque deste
+    /// quadro: o dedo e' da interface ate' soltar.
+    toque_consumido: bool,
+    /// Ids dos dedos na tela no quadro anterior (ver `ler_toques`).
+    dedos_anteriores: Vec<u64>,
     /// `get_time` do ultimo quadro com dedo na tela.
     ultimo_toque: f64,
     /// Alvos da camera (a entrada mexe neles; a camera persegue).
@@ -529,6 +534,8 @@ async fn main() {
         gesto_camera: gesto_camera::GestoCamera::default(),
         toque_acao: gesto_camera::Acao::Nada,
         toque_ativo: false,
+        toque_consumido: false,
+        dedos_anteriores: Vec::new(),
         ultimo_toque: f64::NEG_INFINITY,
         camera_suave: camera_suave::CameraSuave::default(),
         girando_toque: false,
@@ -655,6 +662,7 @@ impl Jogo {
             let eco_ativa = self.economia.ativa;
             let ui_pega = self.ui_pega_mouse();
             // Mapa e minimapa so' recebem clique quando estao a' mostra.
+            let mapa_aberto = self.mapa.aberto;
             if !eco && (self.mapa.aberto || !self.painel_grande()) {
                 match self.mapa.entrada(self.world.self_pos()) {
                     Some(mapa::Entrada::Viajar(destino)) => self.iniciar_viagem(destino),
@@ -665,6 +673,11 @@ impl Jogo {
             self.esc_consumido = !eco && is_key_pressed(KeyCode::Escape) && self.esc();
             // Toques antes de qualquer clique: com dedo, o clique no mundo sai
             // no SOLTAR (ver `gesto_camera`).
+            // O toque que FECHOU o mapa (no X ou fora dele) e' do mapa: ele e'
+            // tratado antes dos dedos, e sem isto o dedo parecia estar no
+            // mundo — ao soltar virava "toque no chao", o personagem andava
+            // pra la' e a auto rota caia.
+            self.toque_consumido = mapa_aberto && !self.mapa.aberto;
             if eco {
                 self.toque_acao = gesto_camera::Acao::Nada;
             } else {
@@ -1199,9 +1212,13 @@ impl Jogo {
                 self.loja.abre(vendor_id, items);
             }
             ServerMessage::ShopClose => self.loja.fecha(),
-            ServerMessage::ShopTradeResult { ok: false, reason } => {
+            ServerMessage::ShopTradeResult { ok, reason } => {
                 self.chat.push(format!("loja: {reason}"));
-                self.loja.avisa(reason);
+                if ok {
+                    self.loja.sucesso(reason);
+                } else {
+                    self.loja.avisa(reason);
+                }
             }
             ServerMessage::ProgressUpdate { xp, level } => {
                 self.bolsa.nivel = level;
@@ -1878,6 +1895,28 @@ impl Jogo {
             self.economia
                 .sair_com_resumo(agora, self.ficha.xp, nivel, self.bolsa.ouro);
         }
+    }
+
+    /// A interface pega o dedo que encostou em `p`? Como `ui_pega_em`, mas
+    /// sem contar o arrasto de skill do OUTRO dedo: segurar uma skill com a
+    /// direita nao pode travar o joystick da esquerda.
+    fn ui_pega_dedo(&self, p: Vec2) -> bool {
+        if self.carregando_desde.is_some()
+            || self.confirmar.is_some()
+            || self.economia.bloqueia_entrada(get_time())
+            || self.economia.resumo.is_some()
+            || self.painel_grande()
+            || self.morte.pega_mouse()
+        {
+            return true;
+        }
+        hud_layout::atual().contem(p)
+            || self.habilidades.botao_em(p)
+            || self.mapa.pega_mouse()
+            || self.loja.pega_mouse()
+            || self.missoes.pega_mouse()
+            || self.dialogo.pega_mouse()
+            || self.dungeon.pega_mouse()
     }
 
     fn ui_pega_mouse(&self) -> bool {
@@ -3351,17 +3390,31 @@ impl Jogo {
         }
         self.toque_ativo =
             !brutos.is_empty() || self.gesto_camera.ativo() || get_time() - self.ultimo_toque < 0.3;
+        // A fase vem da NOSSA memoria de dedos, nao so' da macroquad: ela guarda
+        // um toque por id e o evento mais novo do quadro sobrescreve o outro —
+        // o dedo que encosta e ja' ARRASTA no mesmo quadro chega como "Moveu",
+        // nunca como "Comecou". O joystick so' pega dedo que comeca, entao
+        // perdia esse, e a camera (que aceita qualquer fase) girava: o "as
+        // vezes o joystick buga e mexe a camera" (19/09/2026). Dedo que nao
+        // existia no quadro anterior E' um dedo que comecou.
+        let anteriores = std::mem::take(&mut self.dedos_anteriores);
         let toques: Vec<gesto_camera::ToqueNoQuadro> = brutos
             .iter()
             .map(|t| gesto_camera::ToqueNoQuadro {
                 id: t.id,
                 fase: match t.phase {
-                    TouchPhase::Started => gesto_camera::Fase::Comecou,
                     TouchPhase::Ended | TouchPhase::Cancelled => gesto_camera::Fase::Acabou,
+                    TouchPhase::Started => gesto_camera::Fase::Comecou,
+                    _ if !anteriores.contains(&t.id) => gesto_camera::Fase::Comecou,
                     _ => gesto_camera::Fase::Segurando,
                 },
                 pos: t.position,
             })
+            .collect();
+        self.dedos_anteriores = toques
+            .iter()
+            .filter(|t| t.fase != gesto_camera::Fase::Acabou)
+            .map(|t| t.id)
             .collect();
         // Joystick primeiro: um dedo que COMECA na metade esquerda de baixo,
         // fora de botao/painel, e' dele — e some da lista da camera e do
@@ -3371,10 +3424,25 @@ impl Jogo {
         if painel {
             self.joystick.soltar();
         }
-        let so_um_dedo = toques.len() == 1;
-        let sobre_ui = self.ui_pega_mouse();
+        // TODO o quadrado inferior esquerdo e' do joystick (pedido do dono em
+        // 19/09/2026: "as vezes buga e mexe a camera"). A faixa `z.joystick`
+        // parava acima da linha da bateria/montaria e antes do meio da tela —
+        // o polegar que encostava ali embaixo virava camera. Fora continuam
+        // so' os botoes do HUD e o que a interface pega, conferidos no ponto
+        // do DEDO.
+        let quadrante = hud_layout::quadrante_do_joystick();
+        let na_ui: Vec<Vec2> = toques
+            .iter()
+            .filter(|t| t.fase == gesto_camera::Fase::Comecou && self.ui_pega_dedo(t.pos))
+            .map(|t| t.pos)
+            .collect();
+        let consumido = self.toque_consumido;
         let pode_comecar = |p: Vec2| {
-            !painel && z.joystick.contains(p) && !z.contem(p) && !(so_um_dedo && sobre_ui)
+            !painel
+                && !consumido
+                && (quadrante.contains(p) || z.joystick.contains(p))
+                && !z.contem(p)
+                && !na_ui.contains(&p)
         };
         let dono = self.joystick.dedo();
         self.joystick
@@ -3384,7 +3452,7 @@ impl Jogo {
         // O HUD e' conferido no ponto do DEDO, nao no do mouse simulado: ele
         // fica onde foi o toque anterior, e um giro que comecasse logo depois
         // de tocar num botao nascia morto (ver `ui_pega_em`).
-        let sobre_hud = resto.first().is_some_and(|t| self.ui_pega_em(t.pos));
+        let sobre_hud = self.toque_consumido || resto.first().is_some_and(|t| self.ui_pega_em(t.pos));
         self.toque_acao = self.gesto_camera.quadro(&resto, sobre_hud);
     }
 
@@ -4076,7 +4144,7 @@ impl Jogo {
                 .sum();
             for pedido in self
                 .loja
-                .desenha(&self.bolsa.nomes, self.bolsa.ouro, cobre, &nome)
+                .desenha(&self.bolsa.nomes, &self.bolsa.slots, self.bolsa.ouro, cobre, &nome)
             {
                 self.envia(pedido);
             }
