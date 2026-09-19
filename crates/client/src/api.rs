@@ -52,7 +52,11 @@ fn endereco() -> String {
     const PADRAO: &str = "mmo.brunji.com.br:80";
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     const PADRAO: &str = "127.0.0.1:8080";
-    std::env::var("MMO_API").unwrap_or_else(|_| PADRAO.into())
+    // `MMO_API_PADRAO` na COMPILACAO troca o padrao: e' como um APK de teste
+    // aponta pro web local (10.0.2.2 no emulador), ja' que no celular nao ha'
+    // variavel de ambiente.
+    std::env::var("MMO_API")
+        .unwrap_or_else(|_| option_env!("MMO_API_PADRAO").unwrap_or(PADRAO).into())
 }
 
 /// Dispara a busca. O resultado (ou o erro) chega pelo receiver.

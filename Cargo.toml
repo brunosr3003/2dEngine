@@ -56,3 +56,10 @@ lto = "thin"
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# miniquad 0.4.11 com o toque do iOS corrigido (vendor/miniquad, busque
+# "TEMPEST" em src/native/ios.rs): o original mandava a fase de um dedo pra
+# todos os do evento e deixava dedo fantasma — arrasto virava pinca e a camera
+# so' dava zoom. Tirar quando a miniquad publicar a correcao.
+[patch.crates-io]
+miniquad = { path = "vendor/miniquad" }
