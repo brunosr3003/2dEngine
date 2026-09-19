@@ -52,7 +52,7 @@ pub struct Faixa {
     pub cor: u8,
     pub grau: Grau,
     pub nivel_min: u16,
-    /// Nivel da instancia rolada. `items::tier_from_ilvl` dele da' o grau.
+    /// Nível da instância criada. `items::tier_from_ilvl` dele dá o grau.
     pub item_level: u16,
     pub principal: u32,
     pub secundario: u32,

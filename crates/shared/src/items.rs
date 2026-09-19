@@ -1,15 +1,15 @@
-//! Sistema de itemização — Fase A.
+//! Sistema de itemização.
 //!
 //! Modelo:
-//!  - `ItemTemplate`: definição estática por item_id (ranges de stats).
-//!  - `ItemInstance`: instância única gerada no drop, com stats RoLAdos
-//!    + rarity + refinement.
+//!  - `ItemTemplate`: definição estática por item_id (faixas históricas).
+//!  - `ItemInstance`: instância única gerada no drop, com atributos fixos
+//!    pela combinação item + cor + tier + item level, além do refino.
 //!  - `InventorySlot.instance`: Option<ItemInstance> — quando None, item
 //!    usa stats base (compat com itens antigos pre-Fase A).
 //!
-//! Stats finais = base do item_id + rolls da instance × multiplier de
-//! rarity × (1 + refinement × REFINE_BOOST_PER_LEVEL), mais a parte fixa do
-//! refino por nivel (`refino_fixo`).
+//! Stats finais = valor central do template × cor × tier × item level ×
+//! refino, mais a parte fixa do refino por nivel (`refino_fixo`). Não há
+//! sorteio nem afixo aleatório.
 //!
 //! Sincronizar: ItemInstance é serializada como JSONB na coluna
 //! `inventory.instance_data` e replicada via wire pro cliente em
@@ -17,18 +17,15 @@
 
 use serde::{Deserialize, Serialize};
 
-// ── Tier do item (1–5) ───────────────────────────────────────────────────
-// Substitui o antigo sistema de raridade ALEATÓRIA (Comum/Mágico/Raro/Épico/
-// Lendário). Agora a qualidade vem do TIER, derivado do item level: mob mais
-// forte / receita de tier maior → item de tier maior. O tier controla cor,
-// multiplicador de stats, nº de affixes e sockets — não há mais sorteio.
-// Cores no cliente: T1 cinza, T2 verde, T3 azul, T4 roxo, T5 laranja.
+// ── Grau/cor do item (1–5) ───────────────────────────────────────────────
+// O item level determina a cor inicial: cinza, verde, azul, roxo ou laranja.
+// Dentro de cada cor, `ItemInstance::tier` guarda o Tier I–IV. Os dois são
+// determinísticos e multiplicam os atributos fixos do template.
 //
-// O campo `ItemInstance.rarity` foi MANTIDO (compat de wire/DB) mas agora
-// guarda este tier (1–5). O cliente deriva o tier do item_level pra exibir,
-// então itens legados (com valor antigo no campo) também coloram certo.
+// O nome `tier_from_ilvl` e o campo `ItemInstance.rarity` foram mantidos por
+// compatibilidade com o wire/DB, mas ambos representam o GRAU (cor) 1–5.
 
-/// Tier (1–5) a partir do item level.
+/// Grau/cor (1–5) a partir do item level. Nome legado mantido por compatibilidade.
 pub fn tier_from_ilvl(item_level: u16) -> u8 {
     match item_level {
         0..=10 => 1,
@@ -39,7 +36,7 @@ pub fn tier_from_ilvl(item_level: u16) -> u8 {
     }
 }
 
-/// Multiplier aplicado nos rolls de stats por tier (T1 fraco → T5 forte).
+/// Multiplicador dos atributos fixos por grau/cor (cinza → lendário).
 pub fn tier_stat_mult(tier: u8) -> f32 {
     match tier {
         1 => 0.6,
@@ -50,7 +47,7 @@ pub fn tier_stat_mult(tier: u8) -> f32 {
     }
 }
 
-/// Cor RGB (#RRGGBB) por tier. Fallback — o cliente tem a própria tabela.
+/// Cor RGB (#RRGGBB) por grau. Fallback — o cliente tem a própria tabela.
 pub fn tier_color_hex(tier: u8) -> &'static str {
     match tier {
         1 => "#bfbfbf", // cinza
@@ -61,7 +58,7 @@ pub fn tier_color_hex(tier: u8) -> &'static str {
     }
 }
 
-/// Nome curto do tier pra exibição.
+/// Nome curto legado do grau.
 pub fn tier_name(tier: u8) -> &'static str {
     match tier {
         1 => "T1",
@@ -72,19 +69,9 @@ pub fn tier_name(tier: u8) -> &'static str {
     }
 }
 
-/// (prefixos, sufixos) de affix por tier. T1=0, T2=1, T3=2, T4=3, T5=4.
-fn tier_affix_counts(tier: u8) -> (u8, u8) {
-    match tier {
-        1 => (0, 0),
-        2 => (1, 0),
-        3 => (1, 1),
-        4 => (2, 1),
-        _ => (2, 2),
-    }
-}
-
 /// Range de cada stat no template (min..=max inteiros, antes de
-/// aplicar rarity mult).
+/// aplicar o multiplicador. O jogo usa o ponto central; min/max continuam
+/// no modelo para manter as tabelas existentes legíveis.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct StatRange {
     pub min: i32,
@@ -237,7 +224,8 @@ pub fn item_template(item_id: u16) -> ItemTemplate {
 /// Refinement: +0 a `MAX_REFINE`. Cada nível adiciona
 /// `REFINE_BOOST_PER_LEVEL` × stats. NPC vendor (futuro) gasta ouro pra
 /// upgrade; chance de falha cresce com o nível.
-/// Maximo de affixes por instance (Magic=1, Rare=2, Epic=3, Legendary=4).
+/// Máximo de slots legados de afixo. O campo continua no wire/DB por
+/// compatibilidade, mas peças atuais sempre o deixam vazio.
 pub const MAX_AFFIXES: usize = 4;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -260,8 +248,8 @@ pub struct ItemInstance {
     pub dex: i32,
     pub wis: i32,
     pub defense: i32,
-    /// Affixes (Fase B). Magic=1, Rare=2, Epic=3, Legendary=4. Posicoes
-    /// vazias têm name_id=0.
+    /// Slots legados de afixo. Posições vazias têm name_id=0; o sistema
+    /// atual sempre os zera para que os atributos sejam determinísticos.
     #[serde(default)]
     pub affixes: [AffixSlot; MAX_AFFIXES],
     /// Sockets disponíveis (vem da rarity). 0..3.
@@ -354,10 +342,9 @@ pub fn refino_fixo(item_level: u16) -> i32 {
     ((item_level as i32 + 4) / 5).max(1)
 }
 
-// ── Fase B: Affix system ────────────────────────────────────────────────
-// Cada item Magic+ tem affixes que adicionam stats extras além dos rolls
-// base. Prefix = palavra antes do nome (ex: "Strong"), Suffix = palavra
-// depois (ex: "of the Bear"). Magic=1 affix, Rare=2, Epic=3, Legendary=4.
+// ── Compatibilidade do antigo sistema de afixos ─────────────────────────
+// Tipos e tabela permanecem porque fazem parte do formato salvo e do wire.
+// `ItemInstance::fixar` remove qualquer afixo ao carregar a peça.
 
 /// Tipo do stat afetado pelo affix.
 #[repr(u8)]
@@ -650,23 +637,22 @@ impl ItemInstance {
         Self::roll_em(tpl, item_level, tier_from_ilvl(item_level), 1, rng)
     }
 
-    /// O mesmo roll, com GRAU (cor) e TIER dados em vez de tirados do
-    /// `item_level`. E' o que o Aprimorar usa: a peca nova e' rolada de novo
-    /// na escala do degrau novo.
+    /// A mesma criação, com GRAU (cor) e TIER dados em vez de tirados do
+    /// `item_level`. É o que o Aprimorar usa. O parâmetro de RNG continua na
+    /// assinatura por compatibilidade com os chamadores, mas não é usado.
     pub fn roll_em<F: FnMut() -> f32>(
         tpl: ItemTemplate,
         item_level: u16,
         grau: u8,
         tier_na_cor: u8,
-        mut rng: F,
+        _rng: F,
     ) -> Option<Self> {
         if !tpl.has_any_range() {
             return None;
         }
         let tier = grau.clamp(1, 5);
-        let mult = tier_stat_mult(tier) * ilvl_scale(item_level) * bonus_do_tier(tier_na_cor);
         let mut inst = ItemInstance {
-            rarity: tier, // campo `rarity` guarda o TIER (1–5)
+            rarity: tier, // campo `rarity` guarda a COR (grau 1–5)
             refinement: 0,
             item_level,
             level_req: if item_level > 5 {
@@ -674,35 +660,56 @@ impl ItemInstance {
             } else {
                 None
             },
-            hp_max: tpl.hp_max.roll(rng(), mult),
-            mp_max: tpl.mp_max.roll(rng(), mult),
-            attack_damage: tpl.attack_damage.roll(rng(), mult),
-            dex: tpl.dex.roll(rng(), mult),
-            wis: tpl.wis.roll(rng(), mult),
-            defense: tpl.defense.roll(rng(), mult),
+            hp_max: 0,
+            mp_max: 0,
+            attack_damage: 0,
+            dex: 0,
+            wis: 0,
+            defense: 0,
             affixes: [AffixSlot::default(); MAX_AFFIXES],
             sockets: sockets_for_tier(tier),
             socketed_gems: [0; 3],
             vinculado: false,
             tier: tier_na_cor.clamp(1, 4),
         };
-        // Affixes por tier: T1=0, T2=1, T3=2 (1pre+1suf), T4=3 (2pre+1suf),
-        // T5=4 (2pre+2suf).
-        let (n_pre, n_suf) = tier_affix_counts(tier);
-        let mut idx = 0;
-        for _ in 0..n_pre {
-            if let Some(a) = Affix::roll(&mut rng, true, tier) {
-                inst.affixes[idx] = AffixSlot::from_affix(a);
-                idx += 1;
-            }
-        }
-        for _ in 0..n_suf {
-            if let Some(a) = Affix::roll(&mut rng, false, tier) {
-                inst.affixes[idx] = AffixSlot::from_affix(a);
-                idx += 1;
-            }
-        }
+        inst.fixar(tpl);
         Some(inst)
+    }
+
+    /// Atributos FIXOS (decisao de 19/09/2026: nada de roll aleatorio). Cada
+    /// atributo e' o MEIO da faixa do template na escala da peca (cor, nivel
+    /// e tier) — o mesmo ponto que o balanceamento sempre usou — e nao ha'
+    /// afixo. Mesma peca, mesma cor, mesmo tier: mesmos numeros. Refino,
+    /// gemas e vinculo ficam como estao. Devolve se mudou algo (pra acertar
+    /// as pecas que ja' existiam, roladas no sistema antigo).
+    pub fn fixar(&mut self, tpl: ItemTemplate) -> bool {
+        let antes = (
+            self.hp_max,
+            self.mp_max,
+            self.attack_damage,
+            self.dex,
+            self.wis,
+            self.defense,
+            self.affixes.iter().any(|a| !a.is_empty()),
+        );
+        let m = mult_do_roll(self.rarity, self.item_level, self.tier);
+        self.hp_max = tpl.hp_max.roll(0.5, m);
+        self.mp_max = tpl.mp_max.roll(0.5, m);
+        self.attack_damage = tpl.attack_damage.roll(0.5, m);
+        self.dex = tpl.dex.roll(0.5, m);
+        self.wis = tpl.wis.roll(0.5, m);
+        self.defense = tpl.defense.roll(0.5, m);
+        self.affixes = [AffixSlot::default(); MAX_AFFIXES];
+        let depois = (
+            self.hp_max,
+            self.mp_max,
+            self.attack_damage,
+            self.dex,
+            self.wis,
+            self.defense,
+            false,
+        );
+        antes != depois
     }
 
     /// Multiplier de refinamento (1.0 + refinement × `REFINE_BOOST_PER_LEVEL`).
@@ -710,13 +717,11 @@ impl ItemInstance {
         1.0 + (self.refinement as f32) * REFINE_BOOST_PER_LEVEL
     }
 
-    /// Bonus completo de stats (rolls + affixes inteiros) × refinement.
-    /// Affixes flat (Hp/Mp/Atk/Def/Dex/Wis) entram aqui; affixes %
-    /// (Crit/AtkSpd/MoveSpd/HpRegen) saem em `effective_pct_bonus`.
+    /// Bônus completo dos atributos fixos × refino. Afixos legados não contam.
     pub fn effective_bonus(&self) -> crate::constants::EquipBonus {
         let m = self.refine_mult();
         let (r, u) = (self.refinement as i32, refino_fixo(self.item_level));
-        // Percentual sobre o rolado + fixo por nivel, so' se a peca tem o atributo.
+        // Percentual sobre o valor base + fixo por nível, só se a peça tem o atributo.
         let com = |v: i32, fixo: i32| {
             if v == 0 {
                 0
@@ -724,54 +729,20 @@ impl ItemInstance {
                 (v as f32 * m).round() as i32 + fixo * r
             }
         };
-        let mut b = crate::constants::EquipBonus {
+        crate::constants::EquipBonus {
             hp_max: com(self.hp_max, 2 * u),
             mp_max: com(self.mp_max, 2 * u),
             attack_damage: com(self.attack_damage, u),
             dex: com(self.dex, 0),
             wis: com(self.wis, 0),
             defense: com(self.defense, u),
-        };
-        // Affixes flat também recebem refinement.
-        for a in &self.affixes {
-            if a.is_empty() {
-                continue;
-            }
-            let v = (a.value as f32 * m).round() as i32;
-            match a.stat() {
-                AffixStat::Hp => b.hp_max += v,
-                AffixStat::Mp => b.mp_max += v,
-                AffixStat::Attack => b.attack_damage += v,
-                AffixStat::Defense => b.defense += v,
-                AffixStat::Dex => b.dex += v,
-                AffixStat::Wis => b.wis += v,
-                _ => {}
-            }
         }
-        b
     }
 
-    /// Bonus de % stats dos affixes (nao recebem refinement — % são
-    /// fixos como rolaram). Retorna tuple
-    /// (crit_chance, atk_speed, move_speed, hp_regen).
+    /// Compatibilidade com os consumidores antigos. Afixos foram desativados,
+    /// então não existe bônus percentual vindo do item.
     pub fn effective_pct_bonus(&self) -> (f32, f32, f32, f32) {
-        let mut crit = 0.0;
-        let mut atks = 0.0;
-        let mut mov = 0.0;
-        let mut hpr = 0.0;
-        for a in &self.affixes {
-            if a.is_empty() {
-                continue;
-            }
-            match a.stat() {
-                AffixStat::CritChance => crit += a.value_pct,
-                AffixStat::AttackSpeed => atks += a.value_pct,
-                AffixStat::MoveSpeed => mov += a.value_pct,
-                AffixStat::HpRegen => hpr += a.value_pct,
-                _ => {}
-            }
-        }
-        (crit, atks, mov, hpr)
+        (0.0, 0.0, 0.0, 0.0)
     }
 
     /// Grau (cor) do item, 1–5. Lê o campo `rarity` e clampa pra cobrir
@@ -794,40 +765,9 @@ pub fn mult_do_roll(grau: u8, item_level: u16, tier: u8) -> f32 {
     tier_stat_mult(grau.clamp(1, 5)) * ilvl_scale(item_level) * bonus_do_tier(tier)
 }
 
-/// Piso do Aprimorar: a peca nova nunca sai pior que a MELHOR das usadas.
-/// Cada atributo que a peca tem fica no maior entre o que rolou e o melhor
-/// das antigas escalado pro degrau novo (o +15% do tier, ou a cor de cima).
-/// Sem isso a fusao rolava do zero e uma T2 podia sair com menos defesa que
-/// as duas T1 que a formaram.
-pub fn piso_do_aprimorar(nova: &mut ItemInstance, antigas: &[ItemInstance]) {
-    let m_nova = mult_do_roll(nova.rarity, nova.item_level, nova.tier);
-    let melhor = |f: fn(&ItemInstance) -> i32| {
-        antigas
-            .iter()
-            .map(|a| {
-                let m = mult_do_roll(a.rarity, a.item_level, a.tier).max(0.01);
-                (f(a) as f32 * m_nova / m).round() as i32
-            })
-            .max()
-            .unwrap_or(0)
-    };
-    let sobe = |v: &mut i32, piso: i32| {
-        if *v != 0 {
-            *v = (*v).max(piso);
-        }
-    };
-    sobe(&mut nova.hp_max, melhor(|a| a.hp_max));
-    sobe(&mut nova.mp_max, melhor(|a| a.mp_max));
-    sobe(&mut nova.attack_damage, melhor(|a| a.attack_damage));
-    sobe(&mut nova.dex, melhor(|a| a.dex));
-    sobe(&mut nova.wis, melhor(|a| a.wis));
-    sobe(&mut nova.defense, melhor(|a| a.defense));
-}
-
-/// O que uma peca de `item_id` criada no `item_level` pode rolar: (atributo,
-/// minimo, maximo), na MESMA conta do `roll_with_template` (sem os afixos,
-/// que sao sorteio a parte). Vazio pro que nao e' equipamento. E' o "o que
-/// da'" do Craft antes de criar.
+/// O que uma peca de `item_id` criada no `item_level` da': (atributo,
+/// valor, valor) — fixo desde 19/09/2026, entao minimo = maximo. Vazio pro
+/// que nao e' equipamento. E' o "o que da'" do Craft antes de criar.
 pub fn faixas_do_roll(item_id: u16, item_level: u16) -> Vec<(&'static str, i32, i32)> {
     let tpl = item_template(item_id);
     let mult = tier_stat_mult(tier_from_ilvl(item_level)) * ilvl_scale(item_level) * bonus_do_tier(1);
@@ -841,15 +781,8 @@ pub fn faixas_do_roll(item_id: u16, item_level: u16) -> Vec<(&'static str, i32, 
     ]
     .into_iter()
     .filter(|(_, r)| !r.is_zero())
-    .map(|(n, r)| (n, r.roll(0.0, mult), r.roll(1.0, mult)))
+    .map(|(n, r)| (n, r.roll(0.5, mult), r.roll(0.5, mult)))
     .collect()
-}
-
-/// Quantos atributos extras aleatorios (afixos) a peca criada no
-/// `item_level` traz.
-pub fn afixos_do_roll(item_level: u16) -> u8 {
-    let (pre, suf) = tier_affix_counts(tier_from_ilvl(item_level));
-    pre + suf
 }
 
 pub fn ilvl_scale(item_level: u16) -> f32 {
@@ -880,16 +813,37 @@ mod testes_do_refino {
     use super::*;
 
     #[test]
-    fn aprimorar_nunca_sai_pior_que_a_melhor_peca_usada() {
+    fn aprimorar_sobe_exatamente_pela_tabela_fixa() {
         use crate::constants::item_id::ARMADURA_PESADA;
-        // O caso real: T1 com defesa 9, T2 rolada com 7.
-        let t1 = ItemInstance::roll_em(item_template(ARMADURA_PESADA), 5, 1, 1, || 0.99).unwrap();
-        let mut t2 = ItemInstance::roll_em(item_template(ARMADURA_PESADA), 5, 1, 2, || 0.0).unwrap();
-        assert!(t2.defense < t1.defense, "o roll baixo da T2 perde da T1 boa");
-        piso_do_aprimorar(&mut t2, &[t1, t1]);
-        assert!(t2.defense as f32 >= t1.defense as f32 * 1.14, "{} vs {}", t2.defense, t1.defense);
-        assert!(t2.hp_max as f32 >= t1.hp_max as f32 * 1.14);
-        assert_eq!(t2.attack_damage, 0, "atributo que a peca nao tem continua zero");
+        let t1 = ItemInstance::roll_em(item_template(ARMADURA_PESADA), 5, 1, 1, || 0.0).unwrap();
+        let t2a = ItemInstance::roll_em(item_template(ARMADURA_PESADA), 5, 1, 2, || 0.0).unwrap();
+        let t2b = ItemInstance::roll_em(item_template(ARMADURA_PESADA), 5, 1, 2, || 0.99).unwrap();
+        assert_eq!((t2a.hp_max, t2a.defense), (t2b.hp_max, t2b.defense));
+        assert!(t2a.defense >= t1.defense, "{} vs {}", t2a.defense, t1.defense);
+        assert!(t2a.hp_max >= t1.hp_max);
+        assert_eq!(t2a.attack_damage, 0, "atributo que a peca nao tem continua zero");
+    }
+
+    #[test]
+    fn atributos_sao_fixos_e_pecas_antigas_se_acertam() {
+        use crate::constants::item_id::KATANA;
+        let a = ItemInstance::roll_for(KATANA, 40, || 0.0).unwrap();
+        let b = ItemInstance::roll_for(KATANA, 40, || 0.99).unwrap();
+        assert_eq!((a.attack_damage, a.dex), (b.attack_damage, b.dex), "sem sorte");
+        assert!(a.affixes.iter().all(|x| x.is_empty()), "sem afixo");
+        // Peca antiga (roll alto + afixo) volta pro fixo, mantendo o refino.
+        let mut velha = a;
+        velha.attack_damage += 5;
+        velha.refinement = 6;
+        velha.vinculado = true;
+        velha.socketed_gems[0] = 321;
+        velha.affixes[0] = AffixSlot { name_id: 1, stat: 2, tier: 1, value: 4, value_pct: 0.0, is_prefix: true };
+        assert!(velha.fixar(item_template(KATANA)));
+        assert_eq!((velha.attack_damage, velha.refinement), (a.attack_damage, 6));
+        assert!(velha.vinculado);
+        assert_eq!(velha.socketed_gems[0], 321);
+        assert!(velha.affixes.iter().all(|x| x.is_empty()));
+        assert!(!velha.fixar(item_template(KATANA)), "ja' fixa: nada muda");
     }
 
     #[test]
@@ -903,8 +857,6 @@ mod testes_do_refino {
             assert!((f[1].1..=f[1].2).contains(&i.dex));
         }
         assert!(faixas_do_roll(crate::constants::item_id::COPPER, 5).is_empty());
-        assert_eq!(afixos_do_roll(5), 0);
-        assert!(afixos_do_roll(60) > afixos_do_roll(20));
     }
 
     /// Cada nivel de refino MUDA a peca, ate' a cinza do comeco: o +1 nao

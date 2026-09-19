@@ -65,7 +65,7 @@ Colunas relevantes pra edição:
 - `icon_col, icon_row` — fallback do spritesheet `raven_icons.png`
 - `icon_path` — `Items/<slug>` (Resources do cliente). Tem prioridade sobre col/row.
 - `hp_min/max, mp_min/max, atk_min/max, def_min/max, dex_min/max, wis_min/max` —
-  ranges rolados em `ItemInstance::roll_with_template` quando o mob dropa.
+  valores fixos em `ItemInstance::roll_with_template` quando o mob dropa.
 
 ### `loot_drops` — quem dropa o quê
 `(id, enemy_kind, item_id, qty_min, qty_max, chance)`

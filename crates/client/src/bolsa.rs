@@ -896,7 +896,7 @@ impl Bolsa {
                 Tipo::Pocao(4) => "+30% de ouro e cobre dos bichos por 1 hora. Beber outra renova a hora.",
                 Tipo::Pocao(5) => "+20% de chance de drop (bichos e coleta) por 1 hora. Beber outra renova a hora.",
                 Tipo::Pocao(_) => "Recupera vigor.",
-                Tipo::Arma(_) | Tipo::Slot(_) => "Peça básica, sem atributos rolados.",
+                Tipo::Arma(_) | Tipo::Slot(_) => "Peça básica, sem instância de atributos.",
                 _ => "Material de criação.",
             };
             ui::texto(r.x + u(20.0), y + u(4.0), txt, 16, APAGADO);
@@ -915,7 +915,7 @@ impl Bolsa {
         let mut acao = None;
         // Uma fileira so': [acao principal] [Refinar +N] [Fechar]. No celular
         // o cartao e' baixo e uma segunda fileira cobriria os atributos.
-        // Refinar so' em peca com atributos rolados, e leva pra Forja com ela
+        // Refinar só em peça com instância de atributos, e leva pra Forja com ela
         // ja' escolhida.
         let bw3 = (r.w - u(32.0) - u(16.0)) / u(3.0);
         let coluna = |k: f32| Rect::new(r.x + u(16.0) + k * (bw3 + u(8.0)), by, bw3, u(36.0));
@@ -1250,6 +1250,16 @@ mod testes {
         assert_eq!(curta(12_345), "12k");
         assert_eq!(milhar(1_234_567), "1.234.567");
         assert_eq!(milhar(12), "12");
+    }
+
+    #[test]
+    fn armadura_t2_mais_cinco_tem_mais_poder_que_t1_mais_cinco() {
+        let tpl = shared::items::item_template(item_id::ARMADURA_PESADA);
+        let mut t1 = shared::ItemInstance::roll_em(tpl, 5, 1, 1, || 0.0).unwrap();
+        let mut t2 = shared::ItemInstance::roll_em(tpl, 5, 1, 2, || 0.99).unwrap();
+        t1.refinement = 5;
+        t2.refinement = 5;
+        assert!(poder_da_instancia(&t2) > poder_da_instancia(&t1));
     }
 
     #[test]

@@ -38,7 +38,7 @@ pub struct ItemDef {
     /// Vinculado: nao entra no mercado global (docs/MERCADO.md).
     pub vinculado: bool,
     /// Template de stat ranges. Usado por ItemInstance::roll_with_template
-    /// no drop pra rolar stats aleatórios.
+    /// no drop para calcular os atributos fixos da peça.
     pub template: ItemTemplate,
 }
 

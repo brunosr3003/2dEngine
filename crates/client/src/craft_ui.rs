@@ -59,8 +59,8 @@ pub fn ingredientes(r: &CraftRecipeNet, slots: &[InventorySlot]) -> Vec<(u16, u3
         .collect()
 }
 
-/// "Dá: Ataque 5–10 · Vida 6–18" e a linha de extras ("+1 atributo aleatório
-/// · usar a partir do Nv 10"). Sem atributos (barco, selo): o que sai.
+/// "Dá: Ataque +8 · Vida +12" e, quando houver, o nível para usar.
+/// Os atributos são valores exatos; sem atributos (barco, selo), mostra o item.
 pub fn o_que_da(
     r: &CraftRecipeNet,
     faixas: &[(&str, i32, i32)],
@@ -75,11 +75,6 @@ pub fn o_que_da(
         .map(|(n, a, b)| if a == b { format!("{n} +{a}") } else { format!("{n} +{a}–{b}") })
         .collect();
     let mut extra = Vec::new();
-    match shared::items::afixos_do_roll(r.output_item_level) {
-        0 => {}
-        1 => extra.push("+1 atributo aleatório".to_string()),
-        n => extra.push(format!("+{n} atributos aleatórios")),
-    }
     if r.output_item_level > 5 {
         extra.push(format!("usar a partir do Nv {}", r.output_item_level / 2));
     }
@@ -381,8 +376,7 @@ impl Craft {
                 14,
                 estilo::SUAVE,
             );
-            // O que a peca da': a faixa de cada atributo (a mesma conta do
-            // servidor) e os extras sorteados.
+            // O que a peça dá: os valores fixos, pela mesma conta do servidor.
             let faixas = shared::items::faixas_do_roll(r.output_item_id, r.output_item_level);
             let (texto_da, extra) = o_que_da(r, &faixas, &nome(r.output_item_id));
             estilo::texto_ajustado(&texto_da, d.x + u(6.0), d.y + u(80.0), d.w - u(12.0), 15, VERDE);
@@ -551,15 +545,17 @@ mod tests {
     }
 
     #[test]
-    fn o_que_da_mostra_a_faixa_de_cada_atributo() {
+    fn o_que_da_mostra_o_valor_fixo_de_cada_atributo() {
         let r = shared::receitas::receitas_de_equipamento()
             .into_iter()
             .find(|r| r.output_item_id == shared::item_id::KATANA)
             .unwrap();
         let f = shared::items::faixas_do_roll(r.output_item_id, r.output_item_level);
-        let (da, _) = o_que_da(&r, &f, "Katana");
+        let (da, extra) = o_que_da(&r, &f, "Katana");
         assert!(da.starts_with("Dá: Ataque +"), "{da}");
         assert!(da.contains("Destreza +"), "{da}");
+        assert!(!da.contains('–'), "não mostra faixa: {da}");
+        assert!(extra.as_deref().is_none_or(|e| !e.contains("aleat")));
         let mut barco = r.clone();
         barco.roll_instance = false;
         barco.output_qty = 1;

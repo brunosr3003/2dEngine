@@ -322,8 +322,8 @@ pub fn tentativas_por_peca(alvo: u8, amostras: u32) -> f32 {
 //   2 x (cor G, Tier I..III)        ->  1 x (cor G, tier seguinte)
 //   2 x (cor G, Tier IV, ambas +8)  ->  1 x (cor G+1, Tier I)
 //
-// "Iguais" = mesmo `item_id`, mesma cor, mesmo tier. A peca nova e' rolada de
-// novo na escala do degrau novo; o refino das duas se perde — e' por isso
+// "Iguais" = mesmo `item_id`, mesma cor, mesmo tier. A peça nova recebe os
+// valores fixos do degrau novo; o refino das duas se perde — é por isso
 // que a subida de cor pede +8: o refino deixa de ser so' poder e vira
 // materia-prima da progressao (docs/ITENS.md).
 

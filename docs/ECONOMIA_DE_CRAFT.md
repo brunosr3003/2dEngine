@@ -115,14 +115,14 @@ e vira **matéria-prima de progressão**.
   | azul | Raro | 40 | 1 | 300 | 100 | 8.000 | 10.000 |
   | roxo | Épico | 60 | 1 | 300 | 100 | 60.000 | 50.000 |
 
-  O grau sai da cor (o nível da instância rolada cai no tier certo) e o nível
+  O grau sai da cor (o nível da instância criada cai no grau certo) e o nível
   mínimo é validado no servidor: **nível 20 não cria Épico** — só a partir do
   60 (docs/DUNGEONS_E_RAIDS.md).
 - **Banco:** o `recipes` semeia as receitas em `craft_recipes` (coluna nova
   `nivel_min`) com `ON CONFLICT DO NOTHING` — ajuste manual fica. A M27 não
   apaga mais ids 1000+.
 - **Servidor:** `craft::conferir` (nível, cada ingrediente, espaço) e
-  `craft::aplicar` (consome e cria com instância rolada), e a resposta
+  `craft::aplicar` (consome e cria com instância de atributos fixos), e a resposta
   `CraftResultado` diz o motivo da recusa ("faltam: Aço 12/30").
 - **Cliente:** painel de Craft (abas Arma/Secundária/Armadura/Acessório/Barco,
   ingredientes com tem/precisa, botão Criar), aberto pelo HUD — sem tecla.

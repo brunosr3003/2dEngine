@@ -122,20 +122,28 @@ acima disso é vitrine.
 
 ## Encanto
 
-Os `AffixSlot` que já existem em `items.rs`. Quantidade de slots pelo grau
-(Comum 1 … Lendário 4), reagente próprio.
-
-**O encanto TAMBÉM se perde na promoção**, junto com o refino — eu tinha
-assumido que sobrevivia, e é o contrário: *"if the promotion is successful, the
-enhancement level and enchantment are reset"*. E para promover Épico ou acima,
-**as duas peças** (alvo e material) precisam estar num nível mínimo de refino.
-Isso é deliberado: é o que faz o material custar caro.
+O plano antigo de afixos sorteados foi cancelado. `AffixSlot` continua em
+`items.rs` somente para ler bancos e clientes antigos, mas toda peça atual o
+mantém vazio e o login remove afixos antigos. Se Encanto for implementado no
+futuro, ele também deverá ter resultado explícito e determinístico.
 
 ## O que já existe no código
 
-`ItemInstance` tem `rarity` (1-5, que é o **grau**), `refinement`, `affixes` e
-`sockets`. O que falta é o **tier I-IV** e as regras de combinação — está em
-`shared/src/forja.rs`.
+`ItemInstance` tem `rarity` (1-5, que é o **grau**), `tier` (I-IV),
+`refinement`, gemas e `sockets`. `affixes` permanece no formato salvo e no
+protocolo apenas por compatibilidade; peças atuais sempre o deixam vazio.
+
+Os atributos da peça são **fixos**. `item_id` + cor + tier + nível do item
+determinam exatamente vida, mana, ataque, destreza, sabedoria e defesa. O jogo
+usa o ponto central da antiga faixa do template, com os multiplicadores de cor,
+tier e nível; nenhum RNG ou afixo participa. Assim, duas peças equivalentes têm
+sempre os mesmos números e a tela de Craft mostra valores exatos.
+
+No primeiro login com essa regra, `fixar_pecas` normaliza as peças antigas da
+bolsa, do banco e as vestidas. Refino, gemas e vínculo são preservados; os
+atributos sorteados e afixos antigos são substituídos pelo valor fixo. Peças
+antigas que chegam depois pelo mercado ou correio são normalizadas antes de
+aparecer na bolsa.
 
 O campo continua se chamando `rarity` no wire e no banco por compatibilidade;
 o nome no código é grau.
@@ -332,12 +340,12 @@ sendo o mesmo jogo; só cabe numa sessão.
   - duas **Tier IV +8** → uma da **cor de cima, Tier I** (`REFINO_PARA_COR`),
     pedindo o nível da cor (verde 20, azul 40, épico 60, lendário 80) e subindo
     o nível do item pro da cor;
-  - a nova é rolada de novo (`ItemInstance::roll_em`): cada tier soma +15%
-    (`bonus_do_tier`, IV = 1,52×); o refino se perde; peça vinculada contamina;
-    peça com gema é recusada;
+  - a nova recebe os valores fixos do novo degrau (`ItemInstance::roll_em`):
+    cada tier soma +15% (`bonus_do_tier`, IV = 1,52×); o refino se perde; peça
+    vinculada contamina; peça com gema é recusada;
   - cobre por degrau de origem: 500 / 2.000 / 8.000 (tiers) e 16.000 (cor),
     ×4 a cada cor.
-- **Encanto:** continua só no documento.
+- **Encanto:** não existe; o plano antigo de atributos aleatórios foi cancelado.
 - **Poção de Experiência** (`item_id::XP_POTION` = 350, stack 20, sem compra,
   venda 1): usar dá **+30% de XP de personagem por 1 hora**; beber outra com o
   bônus ativo renova a hora cheia (não acumula %). O fim do bônus é um instante

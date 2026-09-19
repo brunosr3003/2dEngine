@@ -380,12 +380,12 @@ impl Oficina {
         let (l1, l2) = if g.sobe_de_cor() {
             (
                 format!("Duas Tier IV +{} viram uma da cor de cima,", forja::REFINO_PARA_COR),
-                "no Tier I, com os atributos rolados de novo.".to_string(),
+                "no Tier I, com os atributos fixos da nova cor.".to_string(),
             )
         } else {
             (
                 "Duas peças iguais viram uma do tier de cima,".to_string(),
-                "com os atributos rolados de novo, mais fortes.".to_string(),
+                "com os atributos fixos do novo tier, mais fortes.".to_string(),
             )
         };
         estilo::texto(d.x + u(6.0), d.y + u(150.0), &l1, 13, estilo::SUAVE);

@@ -487,7 +487,7 @@ pub const CHEFES: [Chefe; 9] = [
                 },
                 AFrente,
                 1.1,
-                2.8,
+                3.2,
                 7.0,
                 20.0,
                 0,

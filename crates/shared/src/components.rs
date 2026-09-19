@@ -53,8 +53,8 @@ pub enum EntityKind {
 
 /// Slot de inventario. None = vazio. Quando `qty == 0`, o slot esta vazio.
 ///
-/// `instance`: Some(...) para itens equipáveis dropados (rolls aleatórios
-/// + rarity + refinement). None pra itens stackáveis (gold, poções) ou
+/// `instance`: Some(...) para itens equipáveis dropados (atributos fixos
+/// + cor + tier + refino). None pra itens stackáveis (gold, poções) ou
 /// itens legacy pre-Fase A — esses usam stats base via `item_bonus`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub struct InventorySlot {

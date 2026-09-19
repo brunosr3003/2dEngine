@@ -681,7 +681,7 @@ pub fn is_boat_item(id: u16) -> bool {
 // ============================================================================
 
 /// Receita de crafting — N entradas (item_id, qty) consumidas, 1 saida.
-/// `output_item_level` define ilvl da instance rolada (so' aplica se
+/// `output_item_level` define o ilvl da instância criada (só se aplica se
 /// `roll_instance=true`); senao output e' stackavel puro.
 #[derive(Debug, Clone, Copy)]
 pub struct CraftRecipe {

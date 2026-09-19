@@ -5183,7 +5183,11 @@ impl GameWorld {
             let a = crate::craft::garantir_instancias(&mut saved_inv, &mut rolar);
             let b = crate::craft::garantir_instancias_vestidas(&mut saved_equip, &mut rolar);
             let c = crate::craft::garantir_instancias(&mut saved_vault, &mut rolar);
-            a || b || c
+            // Atributos fixos: as pecas roladas no sistema antigo se acertam.
+            let d = crate::craft::fixar_pecas(&mut saved_inv);
+            let e = crate::craft::fixar_vestidas(&mut saved_equip);
+            let f = crate::craft::fixar_pecas(&mut saved_vault);
+            a || b || c || d || e || f
         };
         // A bolsa e o banco no tamanho do personagem (o banco carrega ate' o
         // teto), e as pilhas que ficaram separadas — a pocao empilhava so'
@@ -12593,6 +12597,8 @@ impl GameWorld {
                 // volta pra carteira; ouro-item vira saldo.
                 let n = shared::armazem::tamanho(false, session.bolsa_extra);
                 let ouro = arrumar_bolsa(&mut session.inventory, n);
+                // Peca que chegou do mercado/correio rolada no sistema antigo.
+                crate::craft::fixar_pecas(&mut session.inventory);
                 if ouro > 0 {
                     session.gold = session.gold.saturating_add(ouro);
                 }
@@ -13127,8 +13133,8 @@ impl GameWorld {
     }
 
     /// Crafta receita: valida inputs no inv, consome, deposita output. Output
-    /// equipavel ganha ItemInstance rolado (rarity Common/Magic/Rare baseada em
-    /// rng) — qualidade emerge do roll. Falha silenciosa se faltam materiais ou
+    /// equipável ganha ItemInstance com atributos fixos (cor baseada no nível
+    /// do item). Falha silenciosa se faltam materiais ou
     /// inv cheio. Sem retorno explicito — InventoryUpdate seguinte espelha.
     fn handle_craft(&mut self, sid: SessionId, recipe_id: u16) {
         // Recipes vem do DB cache (admin pode mudar custos sem rebuild).
@@ -18906,8 +18912,8 @@ pub(crate) fn effective_stats(
     s.damage_reduction_pct += (res / 30) as f32 * 0.05;
 
     // Bonus do equipamento. Cada slot tem item_id (base bonus via
-    // item_bonus) + Option<ItemInstance> (rolls aleatorios × rarity ×
-    // refinement). Instance None = item legacy → só base bonus.
+    // item_bonus) + Option<ItemInstance> (atributos fixos × cor × tier ×
+    // refino). Instance None = item legacy → só base bonus.
     let slot_pairs = equip.iter_equipped();
     for (id_opt, inst_opt) in slot_pairs {
         if let Some(id) = id_opt {

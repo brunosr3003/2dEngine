@@ -202,6 +202,33 @@ pub fn garantir_instancias_vestidas(
     mudou
 }
 
+/// Atributos fixos (`ItemInstance::fixar`) em toda peca da lista: as roladas
+/// no sistema antigo (valor sorteado + afixos) voltam pro valor da tabela.
+/// Devolve se mudou algo (pra salvar).
+pub fn fixar_pecas(inv: &mut [InventorySlot]) -> bool {
+    let mut mudou = false;
+    for s in inv.iter_mut().filter(|s| s.qty > 0) {
+        if let Some(i) = s.instance.as_mut() {
+            mudou |= i.fixar(crate::economy::item_template_of(s.item_id));
+        }
+    }
+    mudou
+}
+
+/// Idem, nas pecas vestidas.
+pub fn fixar_vestidas(equip: &mut shared::Equipment) -> bool {
+    let mut mudou = false;
+    for slot in shared::EquipSlot::TODOS {
+        if let (Some(id), Some(mut i)) = (equip.get(slot), equip.get_inst(slot)) {
+            if i.fixar(crate::economy::item_template_of(id)) {
+                equip.set(slot, Some(id), Some(i));
+                mudou = true;
+            }
+        }
+    }
+    mudou
+}
+
 // ─────────────────────────── aprimorar e combinar ───────────────────────────
 
 /// Aba Aprimorar: funde as pecas dos slots `a` e `b` da bolsa no degrau de
@@ -251,8 +278,8 @@ pub fn aprimorar(
     let Some(mut nova) = rolar(sa.item_id, nivel_item, grau, tier) else {
         return Err("este item não se aprimora".into());
     };
-    // Nunca pior que a melhor das duas (o roll novo podia sair abaixo).
-    shared::items::piso_do_aprimorar(&mut nova, &[ia, ib]);
+    // Os atributos vêm diretamente da tabela fixa para item/cor/tier/nível.
+    // As peças consumidas não influenciam os números da nova.
     // Peca de bau vinculada contamina a fusao: senao era so' fundir uma
     // vinculada com uma qualquer pra poder vender.
     nova.vinculado = ia.vinculado || ib.vinculado;
