@@ -31,6 +31,7 @@ mod hud;
 mod hud_estilo;
 mod hud_layout;
 mod icones;
+mod icone_npc;
 mod icones_ui;
 mod login_google;
 mod loja;
@@ -4039,6 +4040,8 @@ impl Jogo {
             self.ganhos
                 .desenha(&vista.cam, vista.pos_de(e), |id| bolsa.nome(id));
         }
+        // O oficio de cada NPC em cima da cabeca; o "!" de missao vai acima.
+        icone_npc::desenha(&self.world, &vista, self.world.self_pos());
         {
             let slots = &self.bolsa.slots;
             self.missoes
