@@ -32,13 +32,33 @@ do jogo), Darksteel da pedra, Quintessência do tigre, Berloque do owlbear — e
 a última paga em chave, que é o único desses itens que não se farma na ilha
 (só cai de chefe, ver [LOOT_DOS_MOBS.md](LOOT_DOS_MOBS.md)).
 
-## O resto do Bosque (511–538): seis cadeias em paralelo
+## O resto do Bosque (511–538): seis cadeias, de NPC em NPC
 
 O capítulo I da história acaba no nível 15 e a cadeia de cima no 12; os três
 chefes de campo, a maioria dos bichos, as duas dungeons e a oficina ficavam
-sem missão nenhuma — no nível 16 o quadro tinha três. Agora o Mestre oferece
-seis cadeias que andam **cada uma sozinha**: a próxima de todas aparece ao
-mesmo tempo (teste `no_nivel_16_as_seis_cadeias_abrem_juntas`).
+sem missão nenhuma. Agora são seis **linhas de subquests em sequência**, e
+cada passo se pega — e se entrega — com um **NPC diferente da vila**
+(19/09/2026: eram todas do Mestre, que oferecia as seis de uma vez).
+
+- **Quem dá:** todo ofício da vila é um giver, `quests::giver_do_papel`
+  (`140 + papel`; o Mestre segue com o 121). Armeiro de armas e de armaduras são
+  o mesmo NPC (`giver_do_npc`).
+- **Falar com o NPC:** se ele tem missão pra oferecer ou uma pronta pra
+  receber, isso vem ANTES da loja/forja/cofre dele (`tem_missao_com`). Sem
+  nada, o clique segue normal.
+- **"!" e "?"** aparecem sobre cada NPC com missão, não só sobre o Mestre.
+- **Todas as missões:** a disponível diz "pegar com: X", e o **Ir** leva até
+  esse NPC (pela vila gerada, mesmo fora da área carregada) e fala com ele.
+- **Entrega:** a auto missão pronta vai até quem deu.
+
+| cadeia | quem dá, na ordem |
+|---|---|
+| Chefes | Treinador → Capitão do Porto → Cartógrafo → Treinador → Mestre |
+| Bestiário | Estivador → Alfaiate → Capitão → Estivador → Identificador → Cartógrafo / Treinador |
+| Oficina | Ferreiro → Armeiro → Ferreiro → Ferreiro → Armeiro |
+| Coleta | Estivador → Ferreiro → Alquimista |
+| Dungeons | Capitão → Taberneiro → Mestre |
+| Vila | Mestre → Taberneiro → Cartógrafo → Estivador → Identificador (cada um manda falar com o próximo) |
 
 | cadeia | ids | o que pede | níveis |
 |---|---|---|---|

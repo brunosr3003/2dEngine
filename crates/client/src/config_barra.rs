@@ -167,7 +167,7 @@ impl ConfigBarra {
                     tx,
                     linha.y + 38.0,
                     if alvo {
-                        "Escolha um item na lista →"
+                        "Escolha um item na lista ›"
                     } else {
                         "Vazio"
                     },

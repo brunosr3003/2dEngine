@@ -137,7 +137,7 @@ impl MontariasUi {
             estilo::texto(
                 x0,
                 y + 56.0 * f,
-                "Onde obter: Loja (Menu → Comércio → Loja).",
+                "Onde obter: Loja (Menu › Comércio › Loja).",
                 14,
                 estilo::SUAVE,
             );

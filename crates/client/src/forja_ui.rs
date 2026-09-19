@@ -301,7 +301,7 @@ impl Forja {
             let agora_prox = if i.no_topo {
                 format!("+{} (no topo)", i.nivel)
             } else {
-                format!("+{}  →  +{}", i.nivel, i.nivel + 1)
+                format!("+{}  ›  +{}", i.nivel, i.nivel + 1)
             };
             estilo::texto(d.x, y, &agora_prox, 26, estilo::OURO);
             // Quanto de poder o proximo nivel da': sem isto o refino parecia
@@ -313,7 +313,7 @@ impl Forja {
                     crate::bolsa::poder_da_instancia(inst),
                     crate::bolsa::poder_da_instancia(&prox),
                 );
-                let t = format!("Poder {a} → {b}  (+{})", b - a);
+                let t = format!("Poder {a} › {b}  (+{})", b - a);
                 estilo::texto(d.x + d.w - estilo::medir(&t, 15), y - 2.0, &t, 15, VERDE);
             }
             if !i.no_topo {

@@ -629,19 +629,32 @@ mod testes {
     }
 
     /// O caso que motivou 511-538: nivel 16, capitulo I acabado, cadeia do
-    /// Mestre ate' a 507 — o quadro tinha so' tres missoes. Agora cada uma
-    /// das seis cadeias novas abre a primeira ao mesmo tempo, inclusive a de
-    /// chefe.
+    /// Mestre ate' a 507. As seis cadeias novas abrem juntas, mas CADA UMA com
+    /// o seu NPC da vila — o Mestre nao oferece mais tudo de uma vez.
     #[test]
-    fn no_nivel_16_as_seis_cadeias_abrem_juntas() {
+    fn no_nivel_16_cada_cadeia_abre_no_seu_npc() {
+        use shared::construcao::Papel;
+        use shared::quests::giver_do_papel;
         let src = quests::quest_source::NPC;
         let feitas: Vec<CharQuest> = (501..=507).map(|id| cq(id, TURNED_IN, 1)).collect();
-        let ids: Vec<u16> = offerable(src, GIVER_MESTRE_DA_ILHA, 16, 0, &feitas, 0, "ilha_inicial")
-            .iter()
-            .map(|d| d.id)
-            .filter(|id| (500..600).contains(id))
-            .collect();
-        assert_eq!(ids, vec![508, 511, 516, 523, 528, 531, 534]);
+        let de = |g: u16| -> Vec<u16> {
+            offerable(src, g, 16, 0, &feitas, 0, "ilha_inicial")
+                .iter()
+                .map(|d| d.id)
+                .filter(|id| (500..600).contains(id))
+                .collect()
+        };
+        assert_eq!(de(GIVER_MESTRE_DA_ILHA), vec![508, 534], "o Mestre so' tem as dele");
+        assert_eq!(de(giver_do_papel(Papel::Treinador)), vec![511]);
+        assert_eq!(de(giver_do_papel(Papel::Deposito)), vec![516, 528]);
+        assert_eq!(de(giver_do_papel(Papel::Ferreiro)), vec![523]);
+        assert_eq!(de(giver_do_papel(Papel::Estaleiro)), vec![531]);
+        // A proxima de uma cadeia sai de OUTRO NPC: 511 entregue, a 512 e' do
+        // Capitao do Porto.
+        let mut depois = feitas.clone();
+        depois.push(cq(511, TURNED_IN, 1));
+        let capitao = offerable(src, giver_do_papel(Papel::Estaleiro), 16, 0, &depois, 0, "ilha_inicial");
+        assert!(capitao.iter().any(|d| d.id == 512));
         // Nivel 1: so' a primeira da cadeia antiga e a conversa na taberna.
         let novo: Vec<u16> = offerable(src, GIVER_MESTRE_DA_ILHA, 1, 0, &[], 0, "ilha_inicial")
             .iter()
@@ -744,8 +757,9 @@ mod testes {
         assert!(checar_entrega(def(501), &cq(501, TURNED_IN, 1), 0).is_err());
     }
 
-    /// A cadeia e' coerente: todo 5xx e' do Mestre, o pre-requisito existe e
-    /// vem antes, e toda TALK aponta pra um NPC que existe na vila.
+    /// A cadeia e' coerente: todo 5xx e' de um NPC que EXISTE na vila (o
+    /// Mestre ou um oficio), o pre-requisito existe e vem antes, e toda TALK
+    /// aponta pra um NPC que existe na vila.
     #[test]
     fn a_cadeia_e_coerente() {
         let cadeia: Vec<_> = quests::QUESTS
@@ -763,8 +777,17 @@ mod testes {
             );
             ger.vila().npcs.iter().map(|n| n.papel as u16).collect()
         };
+        let givers_da_vila: Vec<u16> = vila_papeis
+            .iter()
+            .filter_map(|p| shared::quests::giver_do_npc(*p))
+            .collect();
         for d in cadeia {
-            assert_eq!(d.giver, GIVER_MESTRE_DA_ILHA, "{}", d.id);
+            assert!(
+                d.giver == GIVER_MESTRE_DA_ILHA || givers_da_vila.contains(&d.giver),
+                "{}: giver {} nao tem NPC na vila",
+                d.id,
+                d.giver
+            );
             if d.requires != 0 {
                 assert!(
                     d.requires < d.id && quests::quest_by_id(d.requires).is_some(),

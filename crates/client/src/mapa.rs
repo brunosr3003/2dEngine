@@ -718,6 +718,17 @@ impl Mapa {
             .collect()
     }
 
+    /// Onde fica o NPC da vila que atende `giver` (o Mestre inclusive): e' o
+    /// "Ir" de uma missao ainda nao aceita, que leva a quem da'.
+    pub fn npc_do_giver(&self, giver: u16) -> Option<(String, Vec2)> {
+        let g = self.ger.as_ref()?;
+        g.vila()
+            .npcs
+            .iter()
+            .find(|n| shared::quests::giver_do_npc(n.papel as u16) == Some(giver))
+            .map(|n| (n.nome.to_string(), vec2(n.pos.x, n.pos.y)))
+    }
+
     /// Os vendedores com o id da loja: (loja, nome, posicao). E' como o "Onde
     /// obter" acha o NPC de um `FonteDeItem::Vendedor`.
     pub fn lojas_com_id(&self) -> Vec<(u32, String, Vec2)> {

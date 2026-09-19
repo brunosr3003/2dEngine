@@ -378,7 +378,14 @@ impl MenuMissoes {
                 Color::new(1.0, 1.0, 1.0, fundo),
             );
             let (rotulo, cor) = match &e {
-                Estado::Disponivel => ("Disponível".to_string(), Color::new(1.0, 0.84, 0.2, 1.0)),
+                // Diz COM QUEM pegar: as cadeias passam de NPC em NPC.
+                Estado::Disponivel => (
+                    match shared::quests::quem_da(d) {
+                        Some(quem) => format!("Disponível · pegar com: {quem}"),
+                        None => "Disponível".to_string(),
+                    },
+                    Color::new(1.0, 0.84, 0.2, 1.0),
+                ),
                 Estado::EmAndamento { feito, total } => {
                     (format!("Em andamento · {feito}/{total}"), estilo::TEXTO)
                 }

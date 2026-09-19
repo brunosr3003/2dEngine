@@ -13948,11 +13948,33 @@ impl GameWorld {
     /// `EntityKind::Npc` do Mestre de Missoes da praca.
     pub const NPC_DE_MISSOES: u16 = 10;
 
-    /// O jogador esta' perto de quem atende a missao? So' o Mestre de Missoes
-    /// tem corpo na ilha; os givers antigos (arauto, quadro, faccao) seguem
-    /// sem essa trava.
+    /// O giver de um NPC da vila (o Mestre inclusive): o papel vem do `rumo`,
+    /// o mesmo que o cliente le' do `kind`.
+    fn giver_da_entidade(&self, e: hecs::Entity) -> Option<u16> {
+        if matches!(self.ecs.get::<&EntityKind>(e).ok().as_deref(), Some(EntityKind::Npc(n)) if *n == Self::NPC_DE_MISSOES) {
+            return Some(shared::quests::GIVER_MESTRE_DA_ILHA);
+        }
+        let t = self.ecs.get::<&NpcDaVilaTag>(e).ok()?;
+        shared::quests::giver_do_npc(shared::npc_papel_de_kind(t.rumo) as u16)
+    }
+
+    /// (posicao, eid) dos NPCs que atendem `giver`.
+    fn npcs_do_giver(&self, giver: u16) -> Vec<(Vec2, u64)> {
+        self.ecs
+            .query::<(&NetId, &Position, &EntityKind)>()
+            .iter()
+            .filter(|(e, (_, _, k))| {
+                matches!(k, EntityKind::Npc(_)) && self.giver_da_entidade(*e) == Some(giver)
+            })
+            .map(|(_, (n, p, _))| (p.0, n.0.0 as u64))
+            .collect()
+    }
+
+    /// O jogador esta' perto de quem atende a missao? Os NPCs da vila (o
+    /// Mestre e os oficios) tem corpo na ilha; os givers antigos (arauto,
+    /// quadro, faccao) seguem sem essa trava.
     fn perto_de_quem_atende(&self, sid: SessionId, def: &shared::quests::QuestDef) -> bool {
-        if def.giver != shared::quests::GIVER_MESTRE_DA_ILHA {
+        if shared::quests::papel_do_giver(def.giver).is_none() {
             return true;
         }
         let Some(pos) = self
@@ -13964,13 +13986,43 @@ impl GameWorld {
             return false;
         };
         let alcance = shared::INTERACT_RADIUS + 1.0;
-        self.ecs
-            .query::<(&Position, &EntityKind)>()
+        self.npcs_do_giver(def.giver)
             .iter()
-            .any(|(_, (p, k))| {
-                matches!(k, EntityKind::Npc(n) if *n == Self::NPC_DE_MISSOES)
-                    && p.0.distance(pos) <= alcance
-        })
+            .any(|(p, _)| p.distance(pos) <= alcance)
+    }
+
+    /// O NPC `giver` tem o que tratar com o jogador: missao pra oferecer, ou
+    /// uma dele pronta pra entregar.
+    fn tem_missao_com(&self, sid: SessionId, giver: u16) -> bool {
+        use shared::quests::{objective_kind, quest_status};
+        let Some(s) = self.sessions.get(&sid) else {
+            return false;
+        };
+        let now = (now_ms() / 1000) as i64;
+        let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
+        let fac = Self::faction_qid(s.faction);
+        let oferece = !crate::quests::offerable(
+            shared::quests::quest_source::NPC,
+            giver,
+            nivel,
+            fac,
+            &s.quests,
+            now,
+            &self.zona,
+        )
+        .is_empty();
+        oferece
+            || s.quests.iter().any(|c| {
+                let Some(d) = shared::quests::quest_by_id(c.quest_id) else {
+                    return false;
+                };
+                if d.giver != giver || c.status == quest_status::TURNED_IN {
+                    return false;
+                }
+                c.status == quest_status::READY
+                    || (matches!(d.obj_kind, objective_kind::COLLECT | objective_kind::DELIVER)
+                        && crate::craft::tem(&s.inventory, d.obj_target) >= d.obj_count)
+            })
     }
 
     fn avisa_missao(&self, sid: SessionId, texto: String) {
@@ -14212,11 +14264,9 @@ impl GameWorld {
             }
         }
         if pronta {
-            let mestres: Vec<(Vec2, u64)> = self.ecs.query::<(&NetId, &Position, &EntityKind)>().iter()
-                .filter(|(_, (_, _, k))| matches!(k, EntityKind::Npc(n) if *n == Self::NPC_DE_MISSOES))
-                .map(|(_, (n, p, _))| (p.0, n.0.0 as u64))
-                .collect();
-            return mais_perto(mestres).map(|(p, eid)| (destino_tipo::ENTREGA, p, shared::INTERACT_RADIUS, Some(eid)));
+            // Entrega-se a quem deu: o Mestre ou o NPC da vila da cadeia.
+            let quem = self.npcs_do_giver(def.giver);
+            return mais_perto(quem).map(|(p, eid)| (destino_tipo::ENTREGA, p, shared::INTERACT_RADIUS, Some(eid)));
         }
         match def.obj_kind {
             objective_kind::TALK => {
@@ -14866,14 +14916,9 @@ impl GameWorld {
         let _ = h
             .to_client
             .send(ServerMessage::FactionPoints { points: pts });
-        // Entregou ao Mestre: a proxima da cadeia ja' aparece na janela aberta.
-        if def.giver == shared::quests::GIVER_MESTRE_DA_ILHA {
-            self.send_quest_offer(
-                sid,
-                def.source,
-                def.giver,
-                shared::construcao::Papel::Missoes.nome().to_string(),
-            );
+        // Entregou a um NPC da vila: a proxima dele ja' aparece na janela.
+        if let Some(papel) = shared::quests::papel_do_giver(def.giver) {
+            self.send_quest_offer(sid, def.source, def.giver, papel.nome().to_string());
         }
     }
 
@@ -15454,6 +15499,26 @@ impl GameWorld {
         }
         // Missao "fale com" NAO conta no clique: conta quando o jogador termina
         // o dialogo (`ConcluirConversa`), que o cliente abre antes da loja.
+        //
+        // NPC da vila que DA' missao (as cadeias do Bosque passam de um pro
+        // outro): se ele tem missao pra oferecer ou pra receber, isso vem
+        // antes da loja/forja/cofre dele. Sem nada, o clique segue normal.
+        if let Some((e, kind, _, _)) = best {
+            if kind != Self::NPC_DE_MISSOES {
+                if let Some(g) = self.giver_da_entidade(e) {
+                    if self.tem_missao_com(sid, g) {
+                        let nome = self
+                            .ecs
+                            .get::<&NpcDaVilaTag>(e)
+                            .map(|t| t.nome.clone())
+                            .unwrap_or_default();
+                        self.send_quest_log(sid);
+                        self.send_quest_offer(sid, shared::quests::quest_source::NPC, g, nome);
+                        return;
+                    }
+                }
+            }
+        }
         match best {
             Some((_, 2, _, _)) => {
                 let slots = self

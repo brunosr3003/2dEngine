@@ -122,6 +122,50 @@ pub fn e_de_area(d: &QuestDef) -> bool {
 /// (1..2), arauto (101..112) e morador (99).
 pub const GIVER_MESTRE_DA_ILHA: u16 = 121;
 
+/// Os outros NPCs da vila tambem DAO missao: cada oficio e' um giver,
+/// `140 + papel` (fora das faixas acima). Quem da' e' quem recebe a entrega —
+/// as cadeias do Bosque passam de um NPC pro outro (511-538).
+pub const GIVER_DA_VILA: u16 = 140;
+
+/// O giver de um NPC da vila. O Mestre continua com o dele.
+pub const fn giver_do_papel(p: crate::construcao::Papel) -> u16 {
+    match p {
+        crate::construcao::Papel::Missoes => GIVER_MESTRE_DA_ILHA,
+        _ => GIVER_DA_VILA + p as u16,
+    }
+}
+
+/// O giver do NPC da vila de papel `papel` (como u16: `Papel as u16`, o que
+/// o servidor tira do nome e o cliente do `kind`). Armas e Armaduras sao o
+/// mesmo "Armeiro": os dois dao o giver de Armaduras.
+pub fn giver_do_npc(papel: u16) -> Option<u16> {
+    use crate::construcao::Papel;
+    let p = PAPEIS_DE_CONVERSA
+        .iter()
+        .chain([Papel::Armas].iter())
+        .copied()
+        .find(|p| *p as u16 == papel)?;
+    Some(giver_do_papel(if p == Papel::Armas { Papel::Armaduras } else { p }))
+}
+
+/// O NPC da vila por tras de um giver (o Mestre inclusive).
+pub fn papel_do_giver(g: u16) -> Option<crate::construcao::Papel> {
+    use crate::construcao::Papel;
+    if g == GIVER_MESTRE_DA_ILHA {
+        return Some(Papel::Missoes);
+    }
+    PAPEIS_DE_CONVERSA
+        .iter()
+        .chain([Papel::Armas].iter())
+        .copied()
+        .find(|p| *p != Papel::Missoes && GIVER_DA_VILA + *p as u16 == g)
+}
+
+/// Nome do NPC que da' (e recebe) a missao, pra dizer "fale com o X".
+pub fn quem_da(d: &QuestDef) -> Option<&'static str> {
+    papel_do_giver(d.giver).map(|p| p.nome())
+}
+
 /// Em que ilha (zona) a missao existe de verdade — quem a da' mora la'.
 ///
 /// So' a cadeia do Mestre (5xx) tem giver no mundo de ilhas; o resto do
@@ -550,6 +594,15 @@ const fn diaria(
     }
 }
 
+// Atalho pra um NPC da vila como quem da' a missao.
+const fn de(p: crate::construcao::Papel) -> QuestDef {
+    QuestDef {
+        source: quest_source::NPC,
+        giver: giver_do_papel(p),
+        ..q()
+    }
+}
+
 // Atalho pro Mestre de Missoes da ilha inicial.
 const fn mestre() -> QuestDef {
     QuestDef {
@@ -633,12 +686,14 @@ pub const QUESTS: &[QuestDef] = &[
         reward_item2: item_id::STEEL, reward_item2_qty: 20,
         requires: 509, min_level: 6, ..mestre() },
 
-    // ===== Mais Bosque (511-539) — seis cadeias em paralelo =====
+    // ===== Mais Bosque (511-538) — seis cadeias, de NPC em NPC =====
     // O capitulo I da historia acaba no nivel 15 e a cadeia de cima no 12; o
     // resto da ilha (tres chefes de campo, sete bichos, duas dungeons, a
-    // oficina) ficava sem missao nenhuma. Cada cadeia anda sozinha — o Mestre
-    // oferece a proxima de TODAS ao mesmo tempo, entao sempre ha' varias no
-    // quadro. XP na escala do nivel pedido (~1/5 do nivel), cobre de dia a dia.
+    // oficina) ficava sem missao nenhuma. Cada cadeia e' uma linha de
+    // subquests em SEQUENCIA, e cada passo se pega (e se entrega) com um NPC
+    // diferente da vila — `de(Papel)`. Eram todas do Mestre, que oferecia as
+    // seis de uma vez (pedido do dono em 19/09/2026: "tem que ser quest line
+    // pegando com diferentes NPCs"). XP na escala do nivel pedido.
     //
     // A) Os chefes de campo do Bosque, do mais fraco pro mais forte.
     QuestDef { id: 511, title: "O uivo da clareira",
@@ -646,31 +701,31 @@ pub const QUESTS: &[QuestDef] = &[
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(10), obj_count: 1,
         reward_cobre: 600, reward_xp: 6_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        min_level: 8, ..mestre() },
+        min_level: 8, ..de(crate::construcao::Papel::Treinador) },
     QuestDef { id: 512, title: "A bandeira do Barba-Tormenta",
         desc: "O Capitão Barba-Tormenta desembarcou com a tripulação e fincou bandeira na ilha. Derrube-o e o porto volta a respirar.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(11), obj_count: 1,
         reward_cobre: 900, reward_xp: 14_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
         reward_item2: item_id::SORTE_POTION, reward_item2_qty: 1,
-        requires: 511, min_level: 11, ..mestre() },
+        requires: 511, min_level: 11, ..de(crate::construcao::Papel::Estaleiro) },
     QuestDef { id: 513, title: "O velho da encosta",
         desc: "O Urso Ancião dorme na encosta desde antes da vila. O trovão o acordou de mau humor. Derrote-o.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(12), obj_count: 1,
         reward_cobre: 1_300, reward_xp: 30_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 2,
         reward_item2: item_id::FORTUNA_POTION, reward_item2_qty: 1,
-        requires: 512, min_level: 14, ..mestre() },
+        requires: 512, min_level: 14, ..de(crate::construcao::Papel::Cartografo) },
     QuestDef { id: 514, title: "Caçador de chefes",
         desc: "Os três chefes do Bosque voltam depois de um tempo. Derrote 3 chefes de campo — qualquer um deles, quantas vezes precisar.",
         obj_kind: objective_kind::KILL, obj_target: ALVO_QUALQUER_CHEFE, obj_count: 3,
         reward_cobre: 2_000, reward_xp: 45_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 3,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 513, min_level: 14, ..mestre() },
+        requires: 513, min_level: 14, ..de(crate::construcao::Papel::Treinador) },
     QuestDef { id: 515, title: "A lenda do Bosque",
         desc: "A vila já conta histórias sobre você. Derrote mais 5 chefes de campo e a lenda vira verdade.",
         obj_kind: objective_kind::KILL, obj_target: ALVO_QUALQUER_CHEFE, obj_count: 5,
         reward_cobre: 3_000, reward_xp: 70_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 5,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 2,
-        requires: 514, min_level: 15, ..mestre() },
+        requires: 514, min_level: 15, ..de(crate::construcao::Papel::Missoes) },
 
     // B) O bestiario: cada bicho da ilha, na ordem em que ele aparece.
     QuestDef { id: 516, title: "Matilha cinzenta",
@@ -678,73 +733,73 @@ pub const QUESTS: &[QuestDef] = &[
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::LOBO), obj_count: 12,
         reward_cobre: 150, reward_xp: 900, reward_item: item_id::HEALTH_POTION, reward_item_qty: 3,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        min_level: 2, ..mestre() },
+        min_level: 2, ..de(crate::construcao::Papel::Deposito) },
     QuestDef { id: 517, title: "Garras na trilha",
         desc: "Os ursos tomaram a trilha dos lenhadores. Derrote 10.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::URSO), obj_count: 10,
         reward_cobre: 250, reward_xp: 2_500, reward_item: item_id::HEALTH_POTION, reward_item_qty: 4,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 516, min_level: 4, ..mestre() },
+        requires: 516, min_level: 4, ..de(crate::construcao::Papel::Alfaiate) },
     QuestDef { id: 518, title: "Pólvora na mata",
         desc: "Pistoleiros de Morgan acampam na mata. Derrote 12 e apague as fogueiras deles.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::PISTOLEIRO), obj_count: 12,
         reward_cobre: 400, reward_xp: 6_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 2,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 517, min_level: 7, ..mestre() },
+        requires: 517, min_level: 7, ..de(crate::construcao::Papel::Estaleiro) },
     QuestDef { id: 519, title: "Listras na estrada",
         desc: "Tigres caçam na estrada do porto. Derrote 12.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::TIGRE), obj_count: 12,
         reward_cobre: 600, reward_xp: 12_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 518, min_level: 10, ..mestre() },
+        requires: 518, min_level: 10, ..de(crate::construcao::Papel::Deposito) },
     QuestDef { id: 520, title: "Os magos do trovão",
         desc: "Magos de Morgan puxam raios do céu para as pedras do farol. Derrote 12.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::MAGO), obj_count: 12,
         reward_cobre: 800, reward_xp: 20_000, reward_item: item_id::GREATER_MANA, reward_item_qty: 3,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 519, min_level: 12, ..mestre() },
+        requires: 519, min_level: 12, ..de(crate::construcao::Papel::Identificador) },
     QuestDef { id: 521, title: "O que desceu do gelo",
         desc: "Owlbears da Geleira atravessaram o mar gelado e rondam o alto da ilha. Derrote 5.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::OWLBEAR), obj_count: 5,
         reward_cobre: 1_200, reward_xp: 40_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 4,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 520, min_level: 15, ..mestre() },
+        requires: 520, min_level: 15, ..de(crate::construcao::Papel::Cartografo) },
     QuestDef { id: 522, title: "Limpa-trilhas",
         desc: "A ilha inteira ainda ferve. Derrote 80 bichos de qualquer tipo.",
         obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 80,
         reward_cobre: 1_500, reward_xp: 45_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 5,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 2,
-        requires: 520, min_level: 13, ..mestre() },
+        requires: 520, min_level: 13, ..de(crate::construcao::Papel::Treinador) },
 
     // C) A oficina: refino, craft e o estoque que ele come.
     QuestDef { id: 523, title: "Martelo e bigorna",
         desc: "O Ferreiro diz que peça sem refino é peça pela metade. Tente refinar 3 vezes na Forja.",
         obj_kind: objective_kind::REFINE, obj_target: 0, obj_count: 3,
         reward_cobre: 300, reward_xp: 3_000, reward_item: item_id::SORTE_POTION, reward_item_qty: 1,
-        min_level: 5, ..mestre() },
+        min_level: 5, ..de(crate::construcao::Papel::Ferreiro) },
     QuestDef { id: 524, title: "Armeiro de si mesmo",
         desc: "Quem depende de loja não aguenta a tempestade. Crie 2 equipamentos no Craft.",
         obj_kind: objective_kind::CRAFT, obj_target: 0, obj_count: 2,
         reward_cobre: 400, reward_xp: 4_000, reward_item: item_id::FORTUNA_POTION, reward_item_qty: 1,
-        requires: 523, min_level: 6, ..mestre() },
+        requires: 523, min_level: 6, ..de(crate::construcao::Papel::Armaduras) },
     QuestDef { id: 525, title: "Mais forte que o aço",
         desc: "Tente refinar mais 5 vezes. Até o +5 a falha só leva o material.",
         obj_kind: objective_kind::REFINE, obj_target: 0, obj_count: 5,
         reward_cobre: 700, reward_xp: 12_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 1,
         reward_item2: item_id::SORTE_POTION, reward_item2_qty: 1,
-        requires: 524, min_level: 10, ..mestre() },
+        requires: 524, min_level: 10, ..de(crate::construcao::Papel::Ferreiro) },
     QuestDef { id: 526, title: "Estoque de darksteel",
         desc: "A forja da vila está sem metal escuro. Traga 150 de Darksteel — sai das pedras.",
         obj_kind: objective_kind::COLLECT, obj_target: item_id::DARKSTEEL, obj_count: 150,
         reward_cobre: 900, reward_xp: 15_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 2,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 525, min_level: 12, ..mestre() },
+        requires: 525, min_level: 12, ..de(crate::construcao::Papel::Ferreiro) },
     QuestDef { id: 527, title: "Aço para a muralha",
         desc: "A muralha da vila precisa de reforço antes da próxima tempestade. Traga 60 de Aço.",
         obj_kind: objective_kind::COLLECT, obj_target: item_id::STEEL, obj_count: 60,
         reward_cobre: 1_000, reward_xp: 18_000, reward_item: item_id::QUINTESSENCE, reward_item_qty: 10,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 526, min_level: 13, ..mestre() },
+        requires: 526, min_level: 13, ..de(crate::construcao::Papel::Armaduras) },
 
     // D) Coleta.
     QuestDef { id: 528, title: "Lenhador",
@@ -752,64 +807,64 @@ pub const QUESTS: &[QuestDef] = &[
         obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::ARVORE, obj_count: 20,
         reward_cobre: 200, reward_xp: 1_500, reward_item: item_id::HEALTH_POTION, reward_item_qty: 3,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        min_level: 3, ..mestre() },
+        min_level: 3, ..de(crate::construcao::Papel::Deposito) },
     QuestDef { id: 529, title: "Veio profundo",
         desc: "O veio da encosta ainda guarda muito. Quebre 30 pedras.",
         obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 30,
         reward_cobre: 350, reward_xp: 4_500, reward_item: item_id::STEEL, reward_item_qty: 15,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 528, min_level: 6, ..mestre() },
+        requires: 528, min_level: 6, ..de(crate::construcao::Papel::Ferreiro) },
     QuestDef { id: 530, title: "Mãos calejadas",
         desc: "Quebre pedra ou derrube árvore: 60 coletas de qualquer tipo.",
         obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::QUALQUER, obj_count: 60,
         reward_cobre: 700, reward_xp: 15_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 1,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 529, min_level: 11, ..mestre() },
+        requires: 529, min_level: 11, ..de(crate::construcao::Papel::Alquimista) },
 
     // E) As duas dungeons da ilha, de novo e de novo.
     QuestDef { id: 531, title: "De volta ao porão",
         desc: "Os Morganeers voltaram ao Porão do Naufrágio. Limpe-o outra vez (Dungeons, no Menu).",
         obj_kind: objective_kind::DUNGEON, obj_target: 1, obj_count: 1,
         reward_cobre: 600, reward_xp: 8_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
-        min_level: 8, ..mestre() },
+        min_level: 8, ..de(crate::construcao::Papel::Estaleiro) },
     QuestDef { id: 532, title: "A adega, de novo",
         desc: "O contrabando voltou à adega sob o cais. Limpe a Adega do Contrabandista.",
         obj_kind: objective_kind::DUNGEON, obj_target: 2, obj_count: 1,
         reward_cobre: 1_000, reward_xp: 25_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 5,
-        requires: 531, min_level: 13, ..mestre() },
+        requires: 531, min_level: 13, ..de(crate::construcao::Papel::Taberna) },
     QuestDef { id: 533, title: "Rato de dungeon",
         desc: "Conclua 3 dungeons, quaisquer. Cada chefe lá dentro pode largar chave.",
         obj_kind: objective_kind::DUNGEON, obj_target: 0, obj_count: 3,
         reward_cobre: 1_800, reward_xp: 50_000, reward_item: item_id::XP_POTION, reward_item_qty: 2,
         reward_item2: item_id::GLITTERING_POWDER, reward_item2_qty: 2,
-        requires: 532, min_level: 14, ..mestre() },
+        requires: 532, min_level: 14, ..de(crate::construcao::Papel::Missoes) },
 
     // F) A vila: quem e' quem.
     QuestDef { id: 534, title: "Notícias da taberna",
         desc: "Quem ouve tudo na ilha é o Taberneiro. Passe lá e escute.",
         obj_kind: objective_kind::TALK, obj_target: crate::construcao::Papel::Taberna as u16, obj_count: 1,
         reward_cobre: 60, reward_xp: 200, reward_item: item_id::HEALTH_POTION, reward_item_qty: 2,
-        ..mestre() },
+        ..de(crate::construcao::Papel::Missoes) },
     QuestDef { id: 535, title: "O mapa do Cartógrafo",
         desc: "O Cartógrafo do porto desenha as trilhas da ilha. Fale com ele.",
         obj_kind: objective_kind::TALK, obj_target: crate::construcao::Papel::Cartografo as u16, obj_count: 1,
         reward_cobre: 100, reward_xp: 600, reward_item: item_id::HEALTH_POTION, reward_item_qty: 3,
-        requires: 534, min_level: 3, ..mestre() },
+        requires: 534, min_level: 3, ..de(crate::construcao::Papel::Taberna) },
     QuestDef { id: 536, title: "Carga no cais",
         desc: "O Estivador sabe o que entra e sai da ilha. Pergunte a ele pelos barcos de Morgan.",
         obj_kind: objective_kind::TALK, obj_target: crate::construcao::Papel::Deposito as u16, obj_count: 1,
         reward_cobre: 150, reward_xp: 1_200, reward_item: item_id::MANA_POTION, reward_item_qty: 3,
-        requires: 535, min_level: 5, ..mestre() },
+        requires: 535, min_level: 5, ..de(crate::construcao::Papel::Cartografo) },
     QuestDef { id: 537, title: "O que a pedra esconde",
         desc: "O Identificador lê o que as pedras do farol carregam. Leve a ele o que ouviu no cais.",
         obj_kind: objective_kind::TALK, obj_target: crate::construcao::Papel::Identificador as u16, obj_count: 1,
         reward_cobre: 250, reward_xp: 3_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 2,
-        requires: 536, min_level: 8, ..mestre() },
+        requires: 536, min_level: 8, ..de(crate::construcao::Papel::Deposito) },
     QuestDef { id: 538, title: "Linha de tempestade",
         desc: "O Alfaiate tece com fios que seguram o vento. Pergunte se ele costura para você.",
         obj_kind: objective_kind::TALK, obj_target: crate::construcao::Papel::Alfaiate as u16, obj_count: 1,
         reward_cobre: 400, reward_xp: 6_000, reward_item: item_id::GREATER_MANA, reward_item_qty: 3,
-        requires: 537, min_level: 10, ..mestre() },
+        requires: 537, min_level: 10, ..de(crate::construcao::Papel::Identificador) },
 
     // ===================== DIARIAS do Mestre (6xx) — uma serie por ilha =====================
     // Mesmas sete tarefas em cada ilha, na escala da faixa dela (nivel de
@@ -1152,4 +1207,42 @@ pub fn tutorial_next(id: u16) -> Option<u16> {
 /// `id` faz parte da cadeia de tutorial?
 pub fn is_tutorial_quest(id: u16) -> bool {
     TUTORIAL_CHAIN.contains(&id)
+}
+
+#[cfg(test)]
+mod testes_dos_givers {
+    use super::*;
+
+    #[test]
+    fn cada_npc_da_vila_e_um_giver_que_volta_pro_papel() {
+        use crate::construcao::Papel;
+        for p in PAPEIS_DE_CONVERSA.iter().chain([Papel::Armas].iter()) {
+            assert_eq!(papel_do_giver(giver_do_papel(*p)), Some(*p), "{p:?}");
+        }
+        assert_eq!(giver_do_papel(Papel::Missoes), GIVER_MESTRE_DA_ILHA);
+        assert_eq!(papel_do_giver(99), None, "morador antigo nao e' da vila");
+        assert_eq!(
+            giver_do_npc(Papel::Armas as u16),
+            giver_do_npc(Papel::Armaduras as u16),
+            "os dois sao o Armeiro"
+        );
+        assert_eq!(giver_do_npc(Papel::Missoes as u16), Some(GIVER_MESTRE_DA_ILHA));
+    }
+
+    /// As cadeias 511-538 passam de NPC em NPC: dois passos seguidos quase
+    /// nunca com o mesmo (a oficina do Ferreiro repete uma vez).
+    #[test]
+    fn as_cadeias_do_bosque_trocam_de_npc() {
+        let bosque = || QUESTS.iter().filter(|d| (511..=538).contains(&d.id));
+        let mut mesmos = 0;
+        for d in bosque() {
+            assert!(quem_da(d).is_some(), "{} sem NPC", d.id);
+            if quest_by_id(d.requires).is_some_and(|a| a.giver == d.giver) {
+                mesmos += 1;
+            }
+        }
+        assert!(mesmos <= 1, "{mesmos} passos seguidos com o mesmo NPC");
+        let npcs: std::collections::HashSet<u16> = bosque().map(|d| d.giver).collect();
+        assert!(npcs.len() >= 8, "so' {} NPCs dando missao", npcs.len());
+    }
 }

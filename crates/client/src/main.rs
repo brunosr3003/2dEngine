@@ -1049,7 +1049,7 @@ impl Jogo {
             ServerMessage::Social { aviso } => self.social.receber(aviso),
             ServerMessage::PartyInviteReceived { from } => {
                 self.chat.push(format!(
-                    "{from} convidou você para um grupo. Abra Menu → Grupo."
+                    "{from} convidou você para um grupo. Abra Menu › Grupo."
                 ));
                 self.social.convite = Some((from, get_time() + 60.0));
             }
@@ -1308,11 +1308,14 @@ impl Jogo {
             // Missoes: a oferta abre a janela do NPC com quem se acabou de
             // falar; log, progresso e givers so' atualizam o estado.
             ServerMessage::QuestOffer {
-                giver_name, quests, ..
+                giver_id,
+                giver_name,
+                quests,
+                ..
             } => {
                 self.interacao.cancela();
                 self.loja.fecha();
-                self.ao_receber_oferta(giver_name, quests);
+                self.ao_receber_oferta(giver_id, giver_name, quests);
             }
             ServerMessage::QuestLog { quests } => self.missoes.define_log(quests),
             ServerMessage::QuestUpdate {
@@ -1703,21 +1706,21 @@ impl Jogo {
     /// "Receber"; missao nova vira dialogo de "Aceitar" — ou, em auto missao
     /// logo depois de receber, ja' e' aceita e o personagem segue; sem nada a
     /// fazer, a janela de sempre.
-    fn ao_receber_oferta(&mut self, quem: String, quests: Vec<shared::quests::QuestNet>) {
-        use shared::quests::{falas, momento, GIVER_MESTRE_DA_ILHA};
+    fn ao_receber_oferta(&mut self, giver: u16, quem: String, quests: Vec<shared::quests::QuestNet>) {
+        use shared::quests::{falas, momento};
+        // Entrega-se a quem deu: o Mestre OU o NPC da vila da cadeia.
         let pronta = {
             let slots = &self.bolsa.slots;
             self.missoes
                 .log
                 .iter()
                 .find(|q| {
-                    q.giver == GIVER_MESTRE_DA_ILHA
-                        && missoes::pronta(q, &|id| missoes::na_bolsa(slots, id))
+                    q.giver == giver && missoes::pronta(q, &|id| missoes::na_bolsa(slots, id))
                 })
                 .cloned()
         };
         self.missoes
-            .guarda_oferta(self.ultimo_npc, quem.clone(), quests);
+            .guarda_oferta(self.ultimo_npc, giver, quem.clone(), quests);
         let proxima = self.missoes.oferta().first().cloned();
         if let Some(q) = pronta {
             let r = missoes::recompensa(&q, &self.bolsa.nomes);
@@ -2027,7 +2030,7 @@ impl Jogo {
         }
         if !self.montarias.tem_montaria() {
             self.chat
-                .push("Montaria: você ainda não tem. Onde obter: Menu → Comércio → Loja.".into());
+                .push("Montaria: você ainda não tem. Onde obter: Menu › Comércio › Loja.".into());
             return;
         }
         self.envia(ClientMessage::Loja {
@@ -2964,29 +2967,40 @@ impl Jogo {
                 self.diarias.fechar();
                 self.iniciar_auto_missao(id);
             }
-            menu_missoes::Clique::IrAoGiver(_) => {
+            menu_missoes::Clique::IrAoGiver(id) => {
+                // Missao ainda nao aceita: vai ate' QUEM DA' (o Mestre ou o
+                // NPC da vila da cadeia) e fala com ele ao chegar.
                 self.diarias.fechar();
-                let nome = shared::construcao::Papel::Missoes.nome();
-                let mestre = self.mapa.mestre.or_else(|| {
-                    self.world
-                        .ents
-                        .values()
-                        .find(|e| {
-                            e.meta.tag == shared::EntityTag::Npc
-                                && e.meta.name.as_deref() == Some(nome)
-                        })
-                        .map(|e| e.render_pos)
-                });
-                match mestre {
-                    Some(p) => self.iniciar_ir_para(ir_para::Alvo {
-                        objetivo: ir_para::Objetivo::Npc,
-                        pos: p,
-                        raio: 0.0,
-                        rotulo: nome.to_string(),
-                    }),
-                    None => self
-                        .chat
-                        .push("Não sei onde fica o Mestre de Missões.".into()),
+                let giver = shared::quests::quest_by_id(id)
+                    .map_or(shared::quests::GIVER_MESTRE_DA_ILHA, |d| d.giver);
+                let npc = self
+                    .world
+                    .ents
+                    .iter()
+                    .find(|(_, e)| {
+                        e.meta.tag == shared::EntityTag::Npc
+                            && shared::quests::giver_do_npc(
+                                shared::npc_papel_de_kind(e.meta.kind) as u16,
+                            ) == Some(giver)
+                    })
+                    .map(|(id, e)| (*id, e.render_pos));
+                match (npc, self.mapa.npc_do_giver(giver)) {
+                    // Ja' a' vista: anda e fala.
+                    (Some((eid, pos)), _) => {
+                        self.menu_missoes.aberto = false;
+                        self.falar_com(eid, pos);
+                    }
+                    // Longe (fora da area carregada): vai ate' a posicao dele.
+                    (None, Some((nome, pos))) => {
+                        self.menu_missoes.aberto = false;
+                        self.iniciar_ir_para(ir_para::Alvo {
+                            objetivo: ir_para::Objetivo::Npc,
+                            pos,
+                            raio: 0.0,
+                            rotulo: nome,
+                        });
+                    }
+                    (None, None) => self.chat.push("Não sei onde fica quem dá essa missão.".into()),
                 }
             }
             menu_missoes::Clique::Aviso(s) => self.chat.push(s),

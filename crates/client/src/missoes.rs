@@ -63,6 +63,9 @@ pub struct Missoes {
     givers: Vec<u16>,
     /// "Ir" apertado no diario neste quadro: o `main` liga a auto missao.
     pub ir: Option<u16>,
+    /// O giver do NPC que abriu a janela (o Mestre ou um oficio da vila):
+    /// so' as missoes DELE se entregam aqui.
+    giver: Option<u16>,
     /// Ofertas + ativas passam da tela (o Mestre oferece varias de uma vez).
     rolagem: crate::rolagem::Rolagem,
 }
@@ -206,6 +209,7 @@ pub(crate) fn quebra(s: &str, largura: f32, tam: u16, max: usize) -> Vec<String>
 impl Missoes {
     /// `QuestOffer`: abre a janela do NPC com o que ele oferece.
     pub fn abre_oferta(&mut self, npc: Option<EntityId>, nome: String, quests: Vec<QuestNet>) {
+        self.giver = None;
         // Repetivel em cooldown vem como TURNED_IN: nao ha' o que aceitar.
         self.oferta = quests
             .into_iter()
@@ -219,7 +223,14 @@ impl Missoes {
 
     /// Guarda a oferta do NPC SEM abrir a janela: quem mostra e' o dialogo.
     /// Precisa ficar guardada pra o `QuestUpdate` de aceite achar a missao.
-    pub fn guarda_oferta(&mut self, npc: Option<EntityId>, nome: String, quests: Vec<QuestNet>) {
+    pub fn guarda_oferta(
+        &mut self,
+        npc: Option<EntityId>,
+        giver: u16,
+        nome: String,
+        quests: Vec<QuestNet>,
+    ) {
+        self.giver = Some(giver);
         self.oferta = quests
             .into_iter()
             .filter(|q| q.status != quest_status::TURNED_IN)
@@ -311,13 +322,14 @@ impl Missoes {
 
     /// Sobre o Mestre: "?" tem entrega pronta, "!" tem missao nova.
     pub fn marcador(&self, tem: Tem) -> Option<&'static str> {
-        if self
-            .log
-            .iter()
-            .any(|q| q.giver == GIVER_MESTRE_DA_ILHA && pronta(q, tem))
-        {
+        self.marcador_de(GIVER_MESTRE_DA_ILHA, tem)
+    }
+
+    /// O mesmo pra qualquer NPC que da' missao (`giver`).
+    pub fn marcador_de(&self, giver: u16, tem: Tem) -> Option<&'static str> {
+        if self.log.iter().any(|q| q.giver == giver && pronta(q, tem)) {
             Some("?")
-        } else if self.givers.contains(&GIVER_MESTRE_DA_ILHA) {
+        } else if self.givers.contains(&giver) {
             Some("!")
         } else {
             None
@@ -481,7 +493,9 @@ impl Missoes {
                 estilo::TEXTO,
             );
             let estado = if ok {
-                "Pronta — entregue ao Mestre de Missões".to_string()
+                let quem = shared::quests::papel_do_giver(q.giver)
+                    .map_or("quem deu a missão", |p| p.nome());
+                format!("Pronta — entregue: {quem}")
             } else {
                 format!("{}  {feito}/{total}", verbo(q))
             };
@@ -504,7 +518,7 @@ impl Missoes {
                 estilo::OURO,
             );
             let mut bx = p.x + p.w - 28.0;
-            if ok && com_o_mestre && q.giver == GIVER_MESTRE_DA_ILHA {
+            if ok && com_o_mestre && Some(q.giver) == self.giver {
                 bx -= 92.0;
                 let b = Rect::new(bx, y + 4.0, 92.0, 26.0);
                 let _ = crate::ui::botao(b, "Entregar", true);
@@ -697,39 +711,37 @@ impl Missoes {
         saida
     }
 
-    /// "!" ou "?" flutuando sobre o Mestre de Missoes, projetado da camera.
+    /// "!" ou "?" flutuando sobre cada NPC da vila que tem missao pra dar ou
+    /// receber (o Mestre e os oficios das cadeias), projetado da camera.
     pub fn desenha_marcador(&self, world: &World, vista: &Vista, tem: Tem) {
-        let Some(sinal) = self.marcador(tem) else {
-            return;
-        };
-        let nome = shared::construcao::Papel::Missoes.nome();
-        let Some(e) = world
-            .ents
-            .values()
-            .find(|e| e.meta.tag == shared::EntityTag::Npc && e.meta.name.as_deref() == Some(nome))
-        else {
-            return;
-        };
-        let balanco = (get_time() as f32 * 3.0).sin() * 0.08;
-        let topo = vista.pos_de(e) + vec3(0.0, 2.55 + balanco, 0.0);
-        let Some(c) = world_to_screen(&vista.cam, topo) else {
-            return;
-        };
-        let cor = if sinal == "?" {
-            estilo::AUTO
-        } else {
-            Color::new(1.0, 0.84, 0.2, 1.0)
-        };
-        for (dx, dy) in [(-2.0, 0.0), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0)] {
-            estilo::texto_centro(
-                c.x + dx,
-                c.y + dy,
-                sinal,
-                34,
-                Color::new(0.0, 0.0, 0.0, 0.85),
-            );
+        let mestre = shared::construcao::Papel::Missoes.nome();
+        for e in world.ents.values() {
+            if e.meta.tag != shared::EntityTag::Npc {
+                continue;
+            }
+            let giver = if e.meta.name.as_deref() == Some(mestre) {
+                Some(GIVER_MESTRE_DA_ILHA)
+            } else {
+                shared::quests::giver_do_npc(shared::npc_papel_de_kind(e.meta.kind) as u16)
+            };
+            let Some(sinal) = giver.and_then(|g| self.marcador_de(g, tem)) else {
+                continue;
+            };
+            let balanco = (get_time() as f32 * 3.0).sin() * 0.08;
+            let topo = vista.pos_de(e) + vec3(0.0, 2.55 + balanco, 0.0);
+            let Some(c) = world_to_screen(&vista.cam, topo) else {
+                continue;
+            };
+            let cor = if sinal == "?" {
+                estilo::AUTO
+            } else {
+                Color::new(1.0, 0.84, 0.2, 1.0)
+            };
+            for (dx, dy) in [(-2.0, 0.0), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0)] {
+                estilo::texto_centro(c.x + dx, c.y + dy, sinal, 34, Color::new(0.0, 0.0, 0.0, 0.85));
+            }
+            estilo::texto_centro(c.x, c.y, sinal, 34, cor);
         }
-        estilo::texto_centro(c.x, c.y, sinal, 34, cor);
     }
 }
 
