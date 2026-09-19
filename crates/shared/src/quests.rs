@@ -884,7 +884,7 @@ pub const QUESTS: &[QuestDef] = &[
         reward_cobre: 100, reward_xp: 600, reward_item: item_id::HEALTH_POTION, reward_item_qty: 3,
         requires: 534, min_level: 3, ..de(crate::construcao::Papel::Taberna) },
     QuestDef { id: 536, title: "Carga no cais",
-        desc: "O Estivador sabe o que entra e sai da ilha. Pergunte a ele pelos barcos de Morgan.",
+        desc: "O Banqueiro sabe o que entra e sai do porto — o dinheiro conta tudo. Pergunte a ele pelos barcos de Morgan.",
         obj_kind: objective_kind::TALK, obj_target: crate::construcao::Papel::Deposito as u16, obj_count: 1,
         reward_cobre: 150, reward_xp: 1_200, reward_item: item_id::MANA_POTION, reward_item_qty: 3,
         requires: 535, min_level: 5, ..de(crate::construcao::Papel::Cartografo) },

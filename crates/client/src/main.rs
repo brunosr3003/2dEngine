@@ -60,6 +60,7 @@ mod corrida;
 mod dialogo;
 mod diarias;
 mod economia;
+mod escolha_npc;
 mod gesto_camera;
 mod habilidades_vfx;
 mod ir_para;
@@ -349,10 +350,12 @@ struct Jogo {
     presenca: presenca_ui::PresencaUi,
     /// Menu "Viajar" do Capitao do Porto.
     viagem: viagem_ui::ViagemUi,
-    /// O banco (Estivador da vila).
+    /// O banco (Banqueiro da vila).
     banco: banco_ui::Banco,
     /// Banco que chegou com um dialogo aberto: abre quando fechar.
     banco_pendente: Option<Vec<shared::InventorySlot>>,
+    /// "Missões ou Loja?" do NPC que tem as duas coisas.
+    escolha_npc: escolha_npc::EscolhaNpc,
     /// Menu do Capitao que chegou com um dialogo aberto: abre quando fechar.
     viagem_pendente: Option<Vec<shared::viagem::Destino>>,
     /// O botao "Teleportar" do ultimo quadro (so' com viagem longa na tela).
@@ -563,6 +566,7 @@ async fn main() {
         banco: banco_ui::Banco::default(),
         banco_pendente: None,
         viagem_pendente: None,
+        escolha_npc: escolha_npc::EscolhaNpc::default(),
         botao_teleporte: None,
         loja_tp: loja_tp::LojaTp::default(),
         montarias: montarias_ui::MontariasUi::default(),
@@ -1129,7 +1133,7 @@ impl Jogo {
             }
             ServerMessage::GoldUpdate { gold } => self.bolsa.ouro = gold,
             ServerMessage::VaultOpen { slots } => {
-                // Como o Capitao: com a oferta de missao do Estivador na
+                // Como o Capitao: com a oferta de missao do Banqueiro na
                 // frente, o banco espera o dialogo fechar.
                 if self.dialogo.aberto {
                     self.banco_pendente = Some(slots);
@@ -1183,6 +1187,14 @@ impl Jogo {
                 };
                 self.craft.resultado(ok, txt.clone(), get_time());
                 self.chat.push(txt);
+            }
+            ServerMessage::EscolhaNoNpc {
+                npc_eid,
+                nome,
+                funcao,
+            } => {
+                self.dialogo.fechar();
+                self.escolha_npc.abrir(npc_eid, nome, funcao);
             }
             ServerMessage::Viagem { destinos } => {
                 // O Capitao pode abrir com uma oferta de missao na frente: o
@@ -1939,6 +1951,7 @@ impl Jogo {
             || self.presenca.aberto
             || self.viagem.aberto()
             || self.banco.aberto()
+            || self.escolha_npc.aberta()
             || self.loja_tp.aberto
             || self.montarias.aberto
     }
@@ -2213,6 +2226,7 @@ impl Jogo {
         self.presenca.fechar();
         self.viagem.fechar();
         self.banco.fechar();
+        self.escolha_npc.fechar();
         self.loja_tp.fechar();
         self.montarias.fechar();
         self.morte.painel = false;
@@ -2286,7 +2300,7 @@ impl Jogo {
                 self.chat.push("Mapa: só nas ilhas.".into());
             }
             Item::Lojas => self.lojas.abrir(),
-            // O banco so' abre no Estivador: o Menu leva ate' ele.
+            // O banco so' abre no Banqueiro: o Menu leva ate' ele.
             Item::Banco => {
                 self.voltar_ao_menu = false;
                 match self
@@ -2304,7 +2318,7 @@ impl Jogo {
                             rotulo: format!("Banco · {nome}"),
                         });
                     }
-                    None => self.chat.push("Banco: só nas ilhas, com o Estivador do porto.".into()),
+                    None => self.chat.push("Banco: só nas ilhas, com o Banqueiro do porto.".into()),
                 }
             }
             Item::Presenca => {
@@ -4692,6 +4706,9 @@ impl Jogo {
                 self.missoes.fecha();
                 self.banco.abrir(cofre);
             }
+        }
+        if let Some(pedido) = self.escolha_npc.desenha() {
+            self.envia(pedido);
         }
         if let Some(pedido) = self.banco.desenha(&self.bolsa.slots, self.bolsa.ouro) {
             self.envia(pedido);

@@ -59,11 +59,11 @@ cada passo se pega — e se entrega — com um **NPC diferente da vila**
 | cadeia | quem dá, na ordem |
 |---|---|
 | Chefes | Treinador → Capitão do Porto → Cartógrafo → Treinador → Mestre |
-| Bestiário | Estivador → Alfaiate → Capitão → Estivador → Identificador → Cartógrafo / Treinador |
+| Bestiário | Banqueiro → Alfaiate → Capitão → Banqueiro → Identificador → Cartógrafo / Treinador |
 | Oficina | Ferreiro → Armeiro → Ferreiro → Ferreiro → Armeiro |
-| Coleta | Estivador → Ferreiro → Alquimista |
+| Coleta | Banqueiro → Ferreiro → Alquimista |
 | Dungeons | Capitão → Taberneiro → Mestre |
-| Vila | Mestre → Taberneiro → Cartógrafo → Estivador → Identificador (cada um manda falar com o próximo) |
+| Vila | Mestre → Taberneiro → Cartógrafo → Banqueiro → Identificador (cada um manda falar com o próximo) |
 
 | cadeia | ids | o que pede | níveis |
 |---|---|---|---|
@@ -72,7 +72,7 @@ cada passo se pega — e se entrega — com um **NPC diferente da vila**
 | Oficina | 523–527 | refinar 3, criar 2, refinar 5, 150 Darksteel, 60 Aço | 5–13 |
 | Coleta | 528–530 | 20 árvores, 30 pedras, 60 coletas | 3–11 |
 | Dungeons | 531–533 | Porão, Adega, 3 quaisquer | 8–14 |
-| Vila | 534–538 | Taberneiro, Cartógrafo, Estivador, Identificador, Alfaiate | 1–10 |
+| Vila | 534–538 | Taberneiro, Cartógrafo, Banqueiro, Identificador, Alfaiate | 1–10 |
 
 XP na escala do nível pedido (~1/5 do nível), para o jogador de 14–16 ter
 o que fazer entre as travas da história.

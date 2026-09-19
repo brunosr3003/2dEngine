@@ -1,8 +1,8 @@
-//! O BANCO, com o Estivador da vila: a bolsa a' esquerda, o banco a' direita.
+//! O BANCO, com o Banqueiro da vila: a bolsa a' esquerda, o banco a' direita.
 //! Tocar num item o passa pro outro lado (`VaultDeposit` / `VaultWithdraw`).
 //! Embaixo de cada lado, o "+10 espaços" em ouro (`shared::armazem`).
 //!
-//! Abre quando o servidor manda `VaultOpen` (toque no Estivador). Nada aqui
+//! Abre quando o servidor manda `VaultOpen` (toque no Banqueiro). Nada aqui
 //! decide: o servidor confere a distancia, o espaco e o ouro.
 
 use macroquad::prelude::*;

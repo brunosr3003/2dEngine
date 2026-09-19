@@ -947,6 +947,12 @@ pub enum Pedido {
     CorreioRetirar {
         id: u64,
     },
+    /// Gruta sem grupo: entra direto, sozinho, no estagio. A vida dos
+    /// inimigos cai com o grupo (`vida_por_grupo`). Anexado no fim.
+    GrutaSolo {
+        conteudo: u16,
+        estagio: u8,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

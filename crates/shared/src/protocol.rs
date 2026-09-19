@@ -445,6 +445,12 @@ pub enum ClientMessage {
     ExpandirArmazem {
         banco: bool,
     },
+    /// Resposta ao `EscolhaNoNpc`: `missao` = ver as missoes dele; senao, a
+    /// funcao dele (loja, forja, viajar, banco).
+    EscolherNoNpc {
+        npc_eid: u64,
+        missao: bool,
+    },
 }
 
 /// Onde esta' a peca que a forja vai refinar.
@@ -1160,6 +1166,14 @@ pub enum ServerMessage {
     Armazem {
         bolsa_extra: u8,
         banco_extra: u8,
+    },
+    /// Toque num NPC que tem missao E uma funcao: o jogador escolhe o que
+    /// quer (antes a missao vinha na frente e a funcao abria atras dela).
+    /// `funcao` e' o rotulo do botao: "Loja", "Forja", "Viajar", "Banco".
+    EscolhaNoNpc {
+        npc_eid: u64,
+        nome: String,
+        funcao: String,
     },
 }
 

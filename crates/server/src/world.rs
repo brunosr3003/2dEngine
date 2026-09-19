@@ -7002,6 +7002,9 @@ impl GameWorld {
             }
             ClientMessage::Viajar { ilha } => self.handle_viajar(id, ilha),
             ClientMessage::ExpandirArmazem { banco } => self.handle_expandir_armazem(id, banco),
+            ClientMessage::EscolherNoNpc { npc_eid, missao } => {
+                self.handle_escolher_no_npc(id, npc_eid, missao)
+            }
             ClientMessage::Teleportar { x, z } => self.handle_teleportar(id, Vec2::new(x, z)),
             ClientMessage::Tutorial { acao } => {
                 // Passo tutorial: o cliente conta o gesto (e' interface, nao
@@ -13532,7 +13535,7 @@ impl GameWorld {
         true
     }
 
-    /// Perto de quem guarda o banco: o Estivador da vila (ou o cofre antigo,
+    /// Perto de quem guarda o banco: o Banqueiro da vila (ou o cofre antigo,
     /// `Npc(2)`, dos mapas de arquivo).
     fn perto_do_banco(&self, sid: SessionId) -> bool {
         const PERTO: f32 = 8.0;
@@ -13563,10 +13566,10 @@ impl GameWorld {
     }
 
     /// +10 espacos na bolsa ou no banco, em ouro (`shared::armazem`). O
-    /// banco se compra perto do Estivador; a bolsa, de qualquer lugar.
+    /// banco se compra perto do Banqueiro; a bolsa, de qualquer lugar.
     fn handle_expandir_armazem(&mut self, sid: SessionId, banco: bool) {
         if banco && !self.perto_do_banco(sid) {
-            self.avisa_missao(sid, "Aumente o banco com o Estivador, no porto.".into());
+            self.avisa_missao(sid, "Aumente o banco com o Banqueiro, no porto.".into());
             return;
         }
         let Some(s) = self.sessions.get_mut(&sid) else {
@@ -13622,7 +13625,7 @@ impl GameWorld {
         self.save_pending = true;
     }
 
-    /// A entidade e' o Estivador da vila (quem guarda o banco)?
+    /// A entidade e' o Banqueiro da vila (quem guarda o banco)?
     fn e_estivador(&self, e: hecs::Entity) -> bool {
         self.ecs
             .get::<&NpcDaVilaTag>(e)
@@ -13896,7 +13899,7 @@ impl GameWorld {
     /// Move um item do inv[inv_slot] pro primeiro slot livre (ou stack) do vault.
     fn handle_vault_deposit(&mut self, sid: SessionId, inv_slot: usize) {
         if !self.perto_do_banco(sid) {
-            self.avisa_missao(sid, "O banco fica com o Estivador, no porto.".into());
+            self.avisa_missao(sid, "O banco fica com o Banqueiro, no porto.".into());
             return;
         }
         let Some(session) = self.sessions.get_mut(&sid) else {
@@ -13946,7 +13949,7 @@ impl GameWorld {
     /// Move um item do vault[vault_slot] pro primeiro slot livre (ou stack) do inv.
     fn handle_vault_withdraw(&mut self, sid: SessionId, vault_slot: usize) {
         if !self.perto_do_banco(sid) {
-            self.avisa_missao(sid, "O banco fica com o Estivador, no porto.".into());
+            self.avisa_missao(sid, "O banco fica com o Banqueiro, no porto.".into());
             return;
         }
         let Some(session) = self.sessions.get_mut(&sid) else {
@@ -15913,6 +15916,55 @@ impl GameWorld {
     }
 
     fn handle_interact(&mut self, sid: SessionId, clicked_eid: Option<u64>) {
+        self.interagir(sid, clicked_eid, false);
+    }
+
+    /// `EscolherNoNpc`: as missoes do NPC, ou a funcao dele (pulando a
+    /// missao, que foi o que o jogador recusou ao escolher).
+    fn handle_escolher_no_npc(&mut self, sid: SessionId, npc_eid: u64, missao: bool) {
+        if !missao {
+            self.interagir(sid, Some(npc_eid), true);
+            return;
+        }
+        let achado = self
+            .ecs
+            .query::<(&NetId, &NpcDaVilaTag)>()
+            .iter()
+            .find(|(_, (n, _))| n.0 .0 as u64 == npc_eid)
+            .map(|(e, (_, t))| (e, t.nome.clone()));
+        let Some((e, nome)) = achado else {
+            return;
+        };
+        if let Some(g) = self.giver_da_entidade(e) {
+            self.send_quest_log(sid);
+            self.send_quest_offer(sid, shared::quests::quest_source::NPC, g, nome);
+        }
+    }
+
+    /// O que o NPC faz alem de dar missao: o rotulo do botao na escolha.
+    fn funcao_do_npc(&self, e: hecs::Entity) -> Option<&'static str> {
+        if self.ecs.get::<&VendorTag>(e).is_ok() {
+            return Some("Loja");
+        }
+        if self.tutorial_mode || self.dungeon_mode {
+            return None;
+        }
+        if self.e_capitao(e) {
+            return Some("Viajar");
+        }
+        if self.e_estivador(e) {
+            return Some("Banco");
+        }
+        let ferreiro = self
+            .ecs
+            .get::<&NpcDaVilaTag>(e)
+            .is_ok_and(|t| {
+                shared::npc_papel_de_kind(t.rumo) == shared::construcao::Papel::Ferreiro as u8
+            });
+        ferreiro.then_some("Forja")
+    }
+
+    fn interagir(&mut self, sid: SessionId, clicked_eid: Option<u64>, pular_missao: bool) {
         // Bau de conclusao da dungeon: o toque abre (so' pra quem estava la').
         if let Some(eid) = clicked_eid {
             if self.dg_abrir_bau(sid, EntityId(eid as u32)) {
@@ -15991,24 +16043,25 @@ impl GameWorld {
         if let Some((e, kind, _, _)) = best {
             if kind != Self::NPC_DE_MISSOES {
                 if let Some(g) = self.giver_da_entidade(e) {
-                    if self.tem_missao_com(sid, g) {
+                    if !pular_missao && self.tem_missao_com(sid, g) {
                         let nome = self
                             .ecs
                             .get::<&NpcDaVilaTag>(e)
                             .map(|t| t.nome.clone())
                             .unwrap_or_default();
+                        // Tem missao E funcao (loja, forja, barco, banco): o
+                        // jogador escolhe. So' missao: a oferta, direto.
+                        if let Some(funcao) = self.funcao_do_npc(e) {
+                            let npc_eid = self.ecs.get::<&NetId>(e).map_or(0, |n| n.0 .0 as u64);
+                            let _ = handle.to_client.send(ServerMessage::EscolhaNoNpc {
+                                npc_eid,
+                                nome,
+                                funcao: funcao.into(),
+                            });
+                            return;
+                        }
                         self.send_quest_log(sid);
                         self.send_quest_offer(sid, shared::quests::quest_source::NPC, g, nome);
-                        // O Capitao da' missao E leva de barco: a oferta nao
-                        // pode esconder a viagem (o cliente abre o menu quando
-                        // o dialogo fecha).
-                        if self.e_capitao(e) && !self.tutorial_mode && !self.dungeon_mode {
-                            self.abrir_menu_viagem(sid);
-                        }
-                        // Idem o Estivador e o banco.
-                        if self.e_estivador(e) {
-                            self.abrir_banco(sid);
-                        }
                         return;
                     }
                 }
@@ -16136,7 +16189,7 @@ impl GameWorld {
                 if self.e_capitao(entity) && !self.tutorial_mode && !self.dungeon_mode {
                     self.abrir_menu_viagem(sid);
                 }
-                // O Estivador guarda o banco (docs/BANCO.md).
+                // O Banqueiro guarda o banco (docs/BANCO.md).
                 if self.e_estivador(entity) {
                     self.abrir_banco(sid);
                 }

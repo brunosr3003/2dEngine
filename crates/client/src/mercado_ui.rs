@@ -473,12 +473,12 @@ impl Mercado {
         if total <= cabem {
             return;
         }
-        let cima = Rect::new(r.x, r.y, 60.0 * f, r.h);
-        let baixo = Rect::new(r.x + 66.0 * f, r.y, 60.0 * f, r.h);
-        if botao(cima, "▲", livre && self.rolagem > 0, false) {
+        let cima = Rect::new(r.x, r.y, 78.0 * f, r.h);
+        let baixo = Rect::new(r.x + 84.0 * f, r.y, 78.0 * f, r.h);
+        if botao(cima, "Subir", livre && self.rolagem > 0, false) {
             self.rolagem = self.rolagem.saturating_sub(cabem.max(2) - 1);
         }
-        if botao(baixo, "▼", livre && self.rolagem + cabem < total, false) {
+        if botao(baixo, "Descer", livre && self.rolagem + cabem < total, false) {
             self.rolagem += cabem.max(2) - 1;
         }
         self.rolagem = self.rolagem.min(total.saturating_sub(cabem));

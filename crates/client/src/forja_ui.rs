@@ -361,7 +361,7 @@ impl Forja {
                     estilo::texto(
                         d.x,
                         y + u(116.0),
-                        "⚠ Se falhar, a peça é DESTRUÍDA.",
+                        "Atenção: se falhar, a peça é DESTRUÍDA.",
                         15,
                         VERMELHO,
                     );

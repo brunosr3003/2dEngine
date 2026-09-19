@@ -1,11 +1,12 @@
 # Banco e tamanho da bolsa
 
-O **banco** fica com o **Estivador** da vila (toda ilha tem um, no porto).
+O **banco** fica com o **Banqueiro** da vila (toda ilha tem um, no porto).
 Tocar nele abre o painel Banco: a bolsa a' esquerda, o banco a' direita; tocar
 num item passa ele pro outro lado (`VaultDeposit` / `VaultWithdraw`, que o
-servidor so' aceita perto do Estivador — `perto_do_banco`). Se o Estivador
-tiver missao pra oferecer, o dialogo vem antes e o banco abre quando ele
-fecha. No Menu, **Comércio → Banco** leva ate' o Estivador (com o botao
+servidor so' aceita perto do Banqueiro — `perto_do_banco`). Se o Banqueiro
+tiver missao pra oferecer, o toque pergunta antes: **Missões** ou **Banco**
+(`EscolhaNoNpc`; vale pra todo NPC com missao e funcao — Loja, Forja,
+Viajar, Banco). No Menu, **Comércio → Banco** leva ate' o Banqueiro (com o botao
 Teleportar, se houver pergaminho). O banco e' do PERSONAGEM e e' o mesmo em
 toda ilha (mesma tabela `vault`).
 
@@ -20,7 +21,7 @@ Bolsa e banco comecam com 40 espacos e sobem de 10 em 10, pagando **ouro**
 | Banco | 160 (12 expansoes) | 1.000 × n² (1.000, 4.000, 9.000 …) |
 
 O botao **+10 espaços** fica no pe' da bolsa (de qualquer lugar) e embaixo de
-cada lado no painel do Banco (o do banco, so' perto do Estivador).
+cada lado no painel do Banco (o do banco, so' perto do Banqueiro).
 `ClientMessage::ExpandirArmazem { banco }` → `ServerMessage::Armazem` (tambem
 no login). As expansoes compradas moram em `characters.bolsa_extra` /
 `banco_extra`; o tamanho e' conta. A grade da bolsa e a do banco ROLAM

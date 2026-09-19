@@ -469,13 +469,17 @@ impl DungeonUi {
                     .is_some_and(|x| x.is_some());
                 let sobre = r.contains(m);
                 estilo::cartao(r, sobre, self.estagio == e);
-                let rot = if travado {
-                    format!("{e} 🔒")
-                } else {
-                    e.to_string()
-                };
+                // Cadeado desenhado: a fonte da HUD nao tem o emoji.
+                let rot = e.to_string();
+                if travado {
+                    crate::menu_missoes::cadeado(
+                        vec2(r.center().x + 16.0 * f, r.center().y),
+                        7.0 * f,
+                        estilo::SUAVE,
+                    );
+                }
                 estilo::texto_centro_forte(
-                    r.center().x,
+                    r.center().x - if travado { 8.0 * f } else { 0.0 },
                     r.center().y + 6.0 * f,
                     &rot,
                     16,
@@ -635,16 +639,30 @@ impl DungeonUi {
                     ) {
                         saida.push(pedir(Pedido::FilaSair));
                     }
-                } else if botao(
-                    Rect::new(dir.x, y, bw, 40.0 * f),
-                    "Entrar na fila",
-                    aberto && estado.sala.is_none(),
-                    true,
-                ) {
-                    saida.push(pedir(Pedido::FilaEntrar {
-                        conteudo: def.id,
-                        estagio,
-                    }));
+                } else {
+                    if botao(
+                        Rect::new(dir.x, y, bw, 40.0 * f),
+                        "Entrar na fila",
+                        aberto && estado.sala.is_none(),
+                        true,
+                    ) {
+                        saida.push(pedir(Pedido::FilaEntrar {
+                            conteudo: def.id,
+                            estagio,
+                        }));
+                    }
+                    // Sem grupo: vai sozinho (os inimigos tem menos vida).
+                    if botao(
+                        Rect::new(dir.x + dir.w - bw, y, bw, 40.0 * f),
+                        "Entrar sozinho",
+                        aberto && estado.sala.is_none(),
+                        false,
+                    ) {
+                        saida.push(pedir(Pedido::GrutaSolo {
+                            conteudo: def.id,
+                            estagio,
+                        }));
+                    }
                 }
                 y += 50.0 * f;
                 if let Some(sala) = &estado.sala {
@@ -675,15 +693,20 @@ impl DungeonUi {
                     }
                     y += 48.0 * f;
                     let toggle = Rect::new(dir.x, y, dir.w, 30.0 * f);
-                    let marca = if self.completar_pela_fila {
-                        "☑"
-                    } else {
-                        "☐"
-                    };
+                    // Caixinha desenhada: a fonte nao tem ☐/☑.
+                    let cx = Rect::new(dir.x, y + 6.0 * f, 18.0 * f, 18.0 * f);
+                    estilo::borda_arredondada(cx, 3.0 * f, 1.5, estilo::TEXTO);
+                    if self.completar_pela_fila {
+                        estilo::ret_arredondado(
+                            Rect::new(cx.x + 4.0 * f, cx.y + 4.0 * f, cx.w - 8.0 * f, cx.h - 8.0 * f),
+                            2.0 * f,
+                            estilo::AUTO,
+                        );
+                    }
                     estilo::texto(
-                        dir.x,
+                        dir.x + 26.0 * f,
                         y + 20.0 * f,
-                        &format!("{marca} Completar as vagas pela fila depois de 1 min"),
+                        "Completar as vagas pela fila depois de 1 min",
                         13,
                         estilo::TEXTO,
                     );

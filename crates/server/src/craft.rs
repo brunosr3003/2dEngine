@@ -251,6 +251,8 @@ pub fn aprimorar(
     let Some(mut nova) = rolar(sa.item_id, nivel_item, grau, tier) else {
         return Err("este item não se aprimora".into());
     };
+    // Nunca pior que a melhor das duas (o roll novo podia sair abaixo).
+    shared::items::piso_do_aprimorar(&mut nova, &[ia, ib]);
     // Peca de bau vinculada contamina a fusao: senao era so' fundir uma
     // vinculada com uma qualquer pra poder vender.
     nova.vinculado = ia.vinculado || ib.vinculado;

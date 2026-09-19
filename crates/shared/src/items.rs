@@ -788,6 +788,42 @@ impl ItemInstance {
 
 /// Multiplier de stats baseado em item_level. iLvl 1 = 1.0× (baseline),
 /// cresce ~1% por level. Fórmula: 1.0 + (ilvl - 1) × 0.015.
+/// O multiplicador que o roll aplica numa peca dessa cor, nivel e tier (a
+/// mesma conta do `roll_em`).
+pub fn mult_do_roll(grau: u8, item_level: u16, tier: u8) -> f32 {
+    tier_stat_mult(grau.clamp(1, 5)) * ilvl_scale(item_level) * bonus_do_tier(tier)
+}
+
+/// Piso do Aprimorar: a peca nova nunca sai pior que a MELHOR das usadas.
+/// Cada atributo que a peca tem fica no maior entre o que rolou e o melhor
+/// das antigas escalado pro degrau novo (o +15% do tier, ou a cor de cima).
+/// Sem isso a fusao rolava do zero e uma T2 podia sair com menos defesa que
+/// as duas T1 que a formaram.
+pub fn piso_do_aprimorar(nova: &mut ItemInstance, antigas: &[ItemInstance]) {
+    let m_nova = mult_do_roll(nova.rarity, nova.item_level, nova.tier);
+    let melhor = |f: fn(&ItemInstance) -> i32| {
+        antigas
+            .iter()
+            .map(|a| {
+                let m = mult_do_roll(a.rarity, a.item_level, a.tier).max(0.01);
+                (f(a) as f32 * m_nova / m).round() as i32
+            })
+            .max()
+            .unwrap_or(0)
+    };
+    let sobe = |v: &mut i32, piso: i32| {
+        if *v != 0 {
+            *v = (*v).max(piso);
+        }
+    };
+    sobe(&mut nova.hp_max, melhor(|a| a.hp_max));
+    sobe(&mut nova.mp_max, melhor(|a| a.mp_max));
+    sobe(&mut nova.attack_damage, melhor(|a| a.attack_damage));
+    sobe(&mut nova.dex, melhor(|a| a.dex));
+    sobe(&mut nova.wis, melhor(|a| a.wis));
+    sobe(&mut nova.defense, melhor(|a| a.defense));
+}
+
 /// O que uma peca de `item_id` criada no `item_level` pode rolar: (atributo,
 /// minimo, maximo), na MESMA conta do `roll_with_template` (sem os afixos,
 /// que sao sorteio a parte). Vazio pro que nao e' equipamento. E' o "o que
@@ -842,6 +878,19 @@ pub fn sockets_for_tier(tier: u8) -> u8 {
 #[cfg(test)]
 mod testes_do_refino {
     use super::*;
+
+    #[test]
+    fn aprimorar_nunca_sai_pior_que_a_melhor_peca_usada() {
+        use crate::constants::item_id::ARMADURA_PESADA;
+        // O caso real: T1 com defesa 9, T2 rolada com 7.
+        let t1 = ItemInstance::roll_em(item_template(ARMADURA_PESADA), 5, 1, 1, || 0.99).unwrap();
+        let mut t2 = ItemInstance::roll_em(item_template(ARMADURA_PESADA), 5, 1, 2, || 0.0).unwrap();
+        assert!(t2.defense < t1.defense, "o roll baixo da T2 perde da T1 boa");
+        piso_do_aprimorar(&mut t2, &[t1, t1]);
+        assert!(t2.defense as f32 >= t1.defense as f32 * 1.14, "{} vs {}", t2.defense, t1.defense);
+        assert!(t2.hp_max as f32 >= t1.hp_max as f32 * 1.14);
+        assert_eq!(t2.attack_damage, 0, "atributo que a peca nao tem continua zero");
+    }
 
     #[test]
     fn faixas_do_roll_cercam_o_que_o_craft_rola() {

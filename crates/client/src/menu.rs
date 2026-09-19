@@ -33,7 +33,7 @@ pub enum Item {
     Correio,
     Clan,
     Lojas,
-    /// O banco (leva ao Estivador).
+    /// O banco (leva ao Banqueiro).
     Banco,
     Mercado,
     LojaTp,

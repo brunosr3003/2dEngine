@@ -505,6 +505,8 @@ struct Dados {
     porto: Option<PortoNoMapa>,
     /// Onde fica o Mestre de Missoes (pro "Ir" do menu de missoes).
     mestre: Option<Vec2>,
+    /// Os NPCs da vila (nome, posicao), montados junto — fora do quadro.
+    npcs: Vec<(String, Vec2)>,
 }
 
 #[derive(Clone, Copy)]
@@ -544,11 +546,17 @@ fn gerar_dados(def: &'static DefIlha) -> Dados {
         .iter()
         .find(|n| matches!(n.papel, shared::construcao::Papel::Missoes))
         .map(|n| vec2(n.pos.x, n.pos.y));
+    let npcs = vila
+        .npcs
+        .iter()
+        .map(|n| (n.nome.to_string(), vec2(n.pos.x, n.pos.y)))
+        .collect();
     Dados {
         rgba,
         pegadas,
         porto,
         mestre,
+        npcs,
     }
 }
 
@@ -634,6 +642,10 @@ pub struct Mapa {
     pub rota: Vec<Vec2>,
     /// Onde fica o Mestre de Missoes nesta ilha.
     pub mestre: Option<Vec2>,
+    /// NPCs da vila (da thread do mapa): o marcador e o "Ir para".
+    npcs: Vec<(String, Vec2)>,
+    /// A secao NPCs do "Ir para" aberta (fechada por padrao: e' lista longa).
+    npcs_abertos: bool,
     /// Zonas de mob e regioes de recurso (`MapaDaIlha`).
     pub info: Option<InfoDaIlha>,
     pub filtros: Filtros,
@@ -655,6 +667,8 @@ impl Default for Mapa {
             viagem: Viagem::default(),
             rota: Vec::new(),
             mestre: None,
+            npcs: Vec::new(),
+            npcs_abertos: false,
             info: None,
             filtros: Filtros::default(),
             rolagem_lateral: Default::default(),
@@ -696,6 +710,7 @@ impl Mapa {
             self.pegadas = dados.pegadas;
             self.porto = dados.porto;
             self.mestre = dados.mestre;
+            self.npcs = dados.npcs;
             let t = Texture2D::from_rgba8(LADO as u16, LADO as u16, &dados.rgba);
             t.set_filter(FilterMode::Linear);
             self.tex = Some(t);
@@ -785,7 +800,7 @@ impl Mapa {
         let escala = r.w / (2.0 * raio);
         let k = Self::escala();
         // NPC primeiro: e' o menor, dentro da cidade, por cima de tudo.
-        {
+        if self.filtros.vila {
             let npc = self
                 .npcs_da_vila()
                 .iter()
@@ -1020,7 +1035,8 @@ impl Mapa {
         let eu = eu.unwrap_or(Vec2::ZERO);
         let bichos = info.bichos();
         let tipos = info.tipos();
-        let npcs = self.npcs_da_vila();
+        let npcs = if self.npcs_abertos { self.npcs.clone() } else { Vec::new() };
+        let n_npcs = self.npcs.len();
         let total = (3 + bichos.len() + tipos.len() + npcs.len()) as f32 * u(LINHA_IR);
         // Rola arrastando, pela roda ou pela barra; o "Ir" vale no SOLTAR.
         let clique = self.rolagem_lateral.quadro(area, total, u(LINHA_IR));
@@ -1061,9 +1077,19 @@ impl Mapa {
                 }
             }
         };
-        // NPCs primeiro: e' o que mais se procura na vila (loja, missao, barco).
+        // NPCs: fechados por padrao (a lista e' longa); tocar no titulo abre.
+        let titulo_npcs = Rect::new(area.x, ly, area.w - u(14.0), u(LINHA_IR));
+        let mut alterna_npcs = false;
         if visivel(ly) {
-            estilo::texto(area.x + u(6.0), ly + u(18.0), "NPCs", 13, estilo::SUAVE);
+            let acao = if self.npcs_abertos { "ocultar" } else { "ver ›" };
+            estilo::texto(
+                area.x + u(6.0),
+                ly + u(18.0),
+                &format!("NPCs ({n_npcs}) · {acao}"),
+                13,
+                estilo::OURO,
+            );
+            alterna_npcs = clique.is_some_and(|c| titulo_npcs.contains(c) && area.contains(c));
         }
         ly += u(LINHA_IR);
         for (nome, p) in &npcs {
@@ -1129,6 +1155,9 @@ impl Mapa {
         }
         crate::rolagem::recortar(None);
         self.rolagem_lateral.desenha(area, total);
+        if alterna_npcs {
+            self.npcs_abertos = !self.npcs_abertos;
+        }
         match toggle {
             Some(Chip::Mobs) => self.filtros.mobs = !self.filtros.mobs,
             Some(Chip::Bicho(k)) => {
@@ -1195,17 +1224,10 @@ impl Mapa {
         estilo::escala_do_painel(LARGURA_LATERAL + 560.0, 600.0)
     }
 
-    /// Os NPCs da vila desta ilha: (nome, posicao). Sempre no mapa grande —
-    /// o `world` so' tem os que estao perto.
+    /// Os NPCs da vila desta ilha: (nome, posicao). Vem da thread do mapa
+    /// (gerar a vila no quadro travava a abertura do mapa no celular).
     pub fn npcs_da_vila(&self) -> Vec<(String, Vec2)> {
-        let Some(g) = &self.ger else {
-            return Vec::new();
-        };
-        g.vila()
-            .npcs
-            .iter()
-            .map(|n| (n.nome.to_string(), vec2(n.pos.x, n.pos.y)))
-            .collect()
+        self.npcs.clone()
     }
 
     /// O botao de TAMANHO do minimapa, ao lado do ⤢ e dentro da moldura. Mora
@@ -1756,12 +1778,14 @@ impl Mapa {
             ancora(q, u(7.0), COR_PORTO);
             estilo::texto_centro(q.x, q.y - u(14.0), "Porto", 14, COR_PORTO);
         }
-        // NPCs da vila: todos, sempre — com ou sem o filtro Vila (o `world`
-        // so' tem os de perto). Tocar leva ate' ele.
-        for (_, p) in self.npcs_da_vila() {
-            let q = ponto(p);
-            if !crate::icones_ui::mapa("npc", q, u(18.0), COR_NPC, 0.0) {
-                draw_circle(q.x, q.y, u(4.0), COR_NPC);
+        // NPCs da vila, com o filtro Vila (o `world` so' tem os de perto).
+        // Tocar leva ate' ele; a lista do "Ir para" tem todos, sempre.
+        if self.filtros.vila {
+            for (_, p) in &self.npcs {
+                let q = ponto(*p);
+                if !crate::icones_ui::mapa("npc", q, u(14.0), COR_NPC, 0.0) {
+                    draw_circle(q.x, q.y, u(3.5), COR_NPC);
+                }
             }
         }
         for (id, e) in &world.ents {

@@ -291,6 +291,19 @@ impl GameWorld {
                 self.dg_comecar(conteudo, 1, vec![sid]);
                 return;
             }
+            Pedido::GrutaSolo { conteudo, estagio } => {
+                let Some(c) = dg::conteudo(conteudo).filter(|c| c.tipo == Tipo::Gruta) else {
+                    return;
+                };
+                if let Some(motivo) = self.dg_recusa(sid, c, estagio) {
+                    self.dg_texto(sid, false, motivo);
+                    return;
+                }
+                let ev = self.mesa.remover(k, agora);
+                self.dg_eventos(ev);
+                self.dg_comecar(conteudo, estagio, vec![sid]);
+                return;
+            }
             Pedido::FilaEntrar { conteudo, estagio }
             | Pedido::SalaCriar {
                 conteudo, estagio, ..

@@ -2,7 +2,7 @@
 //!
 //! Os dois comecam com `INVENTORY_SLOTS` (40) espacos e sobem de 10 em 10,
 //! pagando OURO — a bolsa ate' 100, o banco ate' 160. O banco fica com o
-//! Estivador da vila (toda ilha tem um). Quantas expansoes cada personagem ja'
+//! Banqueiro da vila (toda ilha tem um). Quantas expansoes cada personagem ja'
 //! comprou mora no personagem (`bolsa_extra`, `banco_extra`); o tamanho e' so'
 //! conta. Ver docs/BANCO.md.
 

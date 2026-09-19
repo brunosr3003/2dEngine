@@ -332,7 +332,7 @@ impl Papel {
             Treinador => "Treinador",
             Cartografo => "Cartografo",
             Taberna => "Taberneiro",
-            Deposito => "Estivador",
+            Deposito => "Banqueiro",
             Alfaiate => "Alfaiate",
             Estaleiro => "Capitao do Porto",
             Mercador => "Mercador",
