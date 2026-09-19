@@ -20,7 +20,7 @@ use shared::protocol::{ClientMessage, CraftRecipeNet};
 use shared::receitas::{categoria, nome_da_categoria};
 use shared::InventorySlot;
 
-use crate::hud_estilo as estilo;
+use crate::hud_estilo::{self as estilo, u};
 
 const LARGURA: f32 = 780.0;
 const ALTURA: f32 = 520.0;
@@ -57,6 +57,36 @@ pub fn ingredientes(r: &CraftRecipeNet, slots: &[InventorySlot]) -> Vec<(u16, u3
         .filter(|[id, _]| *id != 0)
         .map(|&[id, q]| (id as u16, tem(slots, id as u16), q))
         .collect()
+}
+
+/// "Dá: Ataque 5–10 · Vida 6–18" e a linha de extras ("+1 atributo aleatório
+/// · usar a partir do Nv 10"). Sem atributos (barco, selo): o que sai.
+pub fn o_que_da(
+    r: &CraftRecipeNet,
+    faixas: &[(&str, i32, i32)],
+    nome_da_saida: &str,
+) -> (String, Option<String>) {
+    if faixas.is_empty() || !r.roll_instance {
+        let qtd = r.output_qty.max(1);
+        return (format!("Cria: {qtd}× {nome_da_saida}"), None);
+    }
+    let atributos: Vec<String> = faixas
+        .iter()
+        .map(|(n, a, b)| if a == b { format!("{n} +{a}") } else { format!("{n} +{a}–{b}") })
+        .collect();
+    let mut extra = Vec::new();
+    match shared::items::afixos_do_roll(r.output_item_level) {
+        0 => {}
+        1 => extra.push("+1 atributo aleatório".to_string()),
+        n => extra.push(format!("+{n} atributos aleatórios")),
+    }
+    if r.output_item_level > 5 {
+        extra.push(format!("usar a partir do Nv {}", r.output_item_level / 2));
+    }
+    (
+        format!("Dá: {}", atributos.join(" · ")),
+        (!extra.is_empty()).then(|| extra.join(" · ")),
+    )
 }
 
 /// Por que nao da' pra criar agora (`None` = da').
@@ -128,13 +158,16 @@ impl Craft {
         self.aviso = Some((texto, ok, agora));
     }
 
+    /// A escala do painel (no celular ele enche a tela; ver
+    /// `hud_estilo::escala_do_painel`).
+    fn escala() -> f32 {
+        estilo::escala_do_painel(LARGURA, ALTURA)
+    }
+
     fn painel() -> Rect {
-        Rect::new(
-            (screen_width() - LARGURA) * 0.5,
-            (screen_height() - ALTURA) * 0.5,
-            LARGURA,
-            ALTURA,
-        )
+        let k = Self::escala();
+        let (w, h) = (LARGURA * k, ALTURA * k);
+        Rect::new((screen_width() - w) * 0.5, (screen_height() - h) * 0.5, w, h)
     }
 
     pub fn pega_mouse(&self) -> bool {
@@ -161,17 +194,28 @@ impl Craft {
         if !self.aberto {
             return None;
         }
+        estilo::no_painel(Self::escala(), || self.desenha_na_escala(slots, nomes, nivel, agora))
+    }
+
+    fn desenha_na_escala(
+        &mut self,
+        slots: &[InventorySlot],
+        nomes: &HashMap<u16, String>,
+        nivel: u32,
+        agora: f64,
+    ) -> Option<ClientMessage> {
+        let linha_h = u(LINHA);
         let p = Self::painel();
         estilo::painel(p);
-        estilo::texto(p.x + 18.0, p.y + 32.0, "Craft", 22, estilo::OURO);
+        estilo::texto(p.x + u(18.0), p.y + u(32.0), "Craft", 22, estilo::OURO);
         let dica = match self.aba {
             ABA_APRIMORAR => "duas iguais sobem o tier; duas Tier IV +8 sobem a cor",
             ABA_COMBINAR => "chave e material de uma cor tentam a cor de cima",
             _ => "chave + materiais da cor + darksteel + cobre",
         };
-        estilo::texto(p.x + 90.0, p.y + 31.0, dica, 13, estilo::SUAVE);
+        estilo::texto(p.x + u(90.0), p.y + u(31.0), dica, 13, estilo::SUAVE);
         if crate::ui::botao(
-            Rect::new(p.x + p.w - 44.0, p.y + 10.0, 32.0, 28.0),
+            Rect::new(p.x + p.w - u(44.0), p.y + u(10.0), u(32.0), u(28.0)),
             "x",
             true,
         ) {
@@ -185,14 +229,14 @@ impl Craft {
                 .unwrap_or_else(|| format!("item {id}"))
         };
         // Abas: as categorias de receita e depois as duas de oficina.
-        let mut x = p.x + 16.0;
+        let mut x = p.x + u(16.0);
         let rotulos = ABAS
             .iter()
             .map(|&c| nome_da_categoria(c))
             .chain(["Aprimorar", "Combinar"]);
         for (i, rot) in rotulos.enumerate() {
-            let w = estilo::medir(rot, 15) + 26.0;
-            let r = Rect::new(x, p.y + 46.0, w, 28.0);
+            let w = estilo::medir(rot, 15) + u(26.0);
+            let r = Rect::new(x, p.y + u(46.0), w, u(28.0));
             if i == self.aba {
                 draw_rectangle(
                     r.x,
@@ -208,11 +252,11 @@ impl Craft {
                 self.rolagem.zera();
                 self.oficina.trocou_de_aba();
             }
-            x += w + 6.0;
+            x += w + u(6.0);
         }
         // Lista.
-        let lista = Rect::new(p.x + 12.0, p.y + 84.0, 330.0, p.h - 96.0);
-        let d = Rect::new(p.x + 356.0, p.y + 84.0, p.w - 368.0, p.h - 96.0);
+        let lista = Rect::new(p.x + u(12.0), p.y + u(84.0), u(330.0), p.h - u(96.0));
+        let d = Rect::new(p.x + u(356.0), p.y + u(84.0), p.w - u(368.0), p.h - u(96.0));
         if self.aba >= ABA_APRIMORAR {
             let pedido = if self.aba == ABA_APRIMORAR {
                 self.oficina.aprimorar(lista, d, slots, nomes, nivel)
@@ -231,13 +275,13 @@ impl Craft {
         );
         let mouse = Vec2::from(mouse_position());
         let receitas: Vec<CraftRecipeNet> = self.da_aba().into_iter().cloned().collect();
-        let total = receitas.len() as f32 * LINHA;
-        let clique = self.rolagem.quadro(lista, total, LINHA);
+        let total = receitas.len() as f32 * linha_h;
+        let clique = self.rolagem.quadro(lista, total, linha_h);
         let arrastando = self.rolagem.arrastando();
         if receitas.is_empty() {
             estilo::texto(
-                lista.x + 10.0,
-                lista.y + 24.0,
+                lista.x + u(10.0),
+                lista.y + u(24.0),
                 "Nenhuma receita nesta aba.",
                 14,
                 estilo::SUAVE,
@@ -248,11 +292,11 @@ impl Craft {
         }
         crate::rolagem::recortar(Some(lista));
         for (i, r) in receitas.iter().enumerate() {
-            let y = lista.y + i as f32 * LINHA - self.rolagem.pos;
-            if y + LINHA < lista.y || y > lista.y + lista.h {
+            let y = lista.y + i as f32 * linha_h - self.rolagem.pos;
+            if y + linha_h < lista.y || y > lista.y + lista.h {
                 continue;
             }
-            let linha = Rect::new(lista.x, y, lista.w - 12.0, LINHA - 3.0);
+            let linha = Rect::new(lista.x, y, lista.w - u(12.0), linha_h - u(3.0));
             let sobre = !arrastando && linha.contains(mouse) && lista.contains(mouse);
             let marcada = self.sel == Some(r.id);
             let a = if marcada {
@@ -270,7 +314,7 @@ impl Craft {
                 Color::new(1.0, 1.0, 1.0, a),
             );
             crate::bolsa::icone_do_item(
-                Rect::new(linha.x + 4.0, linha.y + 3.0, 32.0, 32.0),
+                Rect::new(linha.x + u(4.0), linha.y + u(3.0), u(32.0), u(32.0)),
                 r.output_item_id,
                 1.0,
             );
@@ -282,23 +326,23 @@ impl Craft {
             };
             estilo::texto_ajustado(
                 &r.name,
-                linha.x + 42.0,
-                linha.y + 17.0,
-                linha.w - 90.0,
+                linha.x + u(42.0),
+                linha.y + u(17.0),
+                linha.w - u(90.0),
                 15,
                 cor,
             );
             estilo::texto(
-                linha.x + 42.0,
-                linha.y + 33.0,
+                linha.x + u(42.0),
+                linha.y + u(33.0),
                 &format!("Nv {}", r.nivel_min.max(1)),
                 12,
                 estilo::SUAVE,
             );
             if pode {
                 estilo::texto(
-                    linha.x + linha.w - 44.0,
-                    linha.y + 24.0,
+                    linha.x + linha.w - u(44.0),
+                    linha.y + u(24.0),
                     "pronto",
                     12,
                     VERDE,
@@ -314,21 +358,21 @@ impl Craft {
         let mut pedido = None;
         if let Some(r) = receitas.iter().find(|r| Some(r.id) == self.sel) {
             crate::bolsa::icone_do_item(
-                Rect::new(d.x + 6.0, d.y + 4.0, 56.0, 56.0),
+                Rect::new(d.x + u(6.0), d.y + u(4.0), u(56.0), u(56.0)),
                 r.output_item_id,
                 1.0,
             );
             estilo::texto_ajustado(
                 &r.name,
-                d.x + 72.0,
-                d.y + 26.0,
-                d.w - 80.0,
+                d.x + u(72.0),
+                d.y + u(26.0),
+                d.w - u(80.0),
                 19,
                 estilo::OURO,
             );
             estilo::texto(
-                d.x + 72.0,
-                d.y + 48.0,
+                d.x + u(72.0),
+                d.y + u(48.0),
                 &format!(
                     "{} · nível mínimo {}",
                     nome_da_categoria(r.category),
@@ -337,36 +381,44 @@ impl Craft {
                 14,
                 estilo::SUAVE,
             );
-            estilo::texto(d.x + 6.0, d.y + 90.0, "Ingredientes", 15, estilo::TEXTO);
+            // O que a peca da': a faixa de cada atributo (a mesma conta do
+            // servidor) e os extras sorteados.
+            let faixas = shared::items::faixas_do_roll(r.output_item_id, r.output_item_level);
+            let (texto_da, extra) = o_que_da(r, &faixas, &nome(r.output_item_id));
+            estilo::texto_ajustado(&texto_da, d.x + u(6.0), d.y + u(80.0), d.w - u(12.0), 15, VERDE);
+            if let Some(e) = &extra {
+                estilo::texto_ajustado(e, d.x + u(6.0), d.y + u(100.0), d.w - u(12.0), 13, estilo::SUAVE);
+            }
+            estilo::texto(d.x + u(6.0), d.y + u(128.0), "Ingredientes", 15, estilo::TEXTO);
             for (i, (id, t, q)) in ingredientes(r, slots).into_iter().enumerate() {
-                let y = d.y + 102.0 + i as f32 * 36.0;
-                crate::bolsa::icone_do_item(Rect::new(d.x + 6.0, y, 30.0, 30.0), id, 1.0);
+                let y = d.y + u(138.0) + i as f32 * u(38.0);
+                crate::bolsa::icone_do_item(Rect::new(d.x + u(6.0), y, u(30.0), u(30.0)), id, 1.0);
                 estilo::texto_ajustado(
                     &nome(id),
-                    d.x + 44.0,
-                    y + 20.0,
-                    d.w - 210.0,
+                    d.x + u(44.0),
+                    y + u(20.0),
+                    d.w - u(210.0),
                     15,
                     estilo::TEXTO,
                 );
                 let txt = format!("{t}/{q}");
                 let cor = if t >= q { VERDE } else { VERMELHO };
                 estilo::texto(
-                    d.x + d.w - estilo::medir(&txt, 15) - 50.0,
-                    y + 20.0,
+                    d.x + d.w - estilo::medir(&txt, 15) - u(50.0),
+                    y + u(20.0),
                     &txt,
                     15,
                     cor,
                 );
                 // Onde obter: a lupa de cada ingrediente.
-                if crate::onde_obter::botao(Rect::new(d.x + d.w - 40.0, y - 1.0, 34.0, 32.0)) {
+                if crate::onde_obter::botao(Rect::new(d.x + d.w - u(42.0), y - u(2.0), u(38.0), u(36.0))) {
                     self.onde_obter = Some(id);
                 }
             }
             let m = motivo(r, slots, nivel);
-            let b = Rect::new(d.x + d.w - 160.0, d.y + d.h - 48.0, 150.0, 38.0);
+            let b = Rect::new(d.x + d.w - u(160.0), d.y + d.h - u(48.0), u(150.0), u(38.0));
             if let Some(m) = &m {
-                estilo::texto(d.x + 6.0, b.y + 24.0, m, 14, VERMELHO);
+                estilo::texto(d.x + u(6.0), b.y + u(24.0), m, 14, VERMELHO);
             }
             if crate::ui::botao(b, "Criar", m.is_none()) {
                 pedido = Some(ClientMessage::Craft { recipe_id: r.id });
@@ -380,7 +432,7 @@ impl Craft {
         if let Some((txt, ok, t)) = &self.aviso {
             if agora - t < 4.0 {
                 let cor = if *ok { VERDE } else { VERMELHO };
-                estilo::texto_centro(p.x + p.w * 0.5, p.y + p.h - 8.0, txt, 15, cor);
+                estilo::texto_centro(p.x + p.w * 0.5, p.y + p.h - u(8.0), txt, 15, cor);
             }
         }
     }
@@ -496,6 +548,22 @@ mod tests {
         );
         let ing = ingredientes(&r, &falta);
         assert_eq!(ing[0], (r.inputs[0][0] as u16, 0, 1));
+    }
+
+    #[test]
+    fn o_que_da_mostra_a_faixa_de_cada_atributo() {
+        let r = shared::receitas::receitas_de_equipamento()
+            .into_iter()
+            .find(|r| r.output_item_id == shared::item_id::KATANA)
+            .unwrap();
+        let f = shared::items::faixas_do_roll(r.output_item_id, r.output_item_level);
+        let (da, _) = o_que_da(&r, &f, "Katana");
+        assert!(da.starts_with("Dá: Ataque +"), "{da}");
+        assert!(da.contains("Destreza +"), "{da}");
+        let mut barco = r.clone();
+        barco.roll_instance = false;
+        barco.output_qty = 1;
+        assert_eq!(o_que_da(&barco, &[], "Barco").0, "Cria: 1× Barco");
     }
 
     #[test]

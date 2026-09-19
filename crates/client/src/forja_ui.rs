@@ -16,7 +16,7 @@ use shared::forja::{self, resultado, Grau};
 use shared::protocol::{AlvoDaForja, ClientMessage};
 use shared::{item_id, EquipSlot, Equipment, InventorySlot, ItemInstance};
 
-use crate::hud_estilo as estilo;
+use crate::hud_estilo::{self as estilo, u};
 
 const LARGURA: f32 = 720.0;
 const ALTURA: f32 = 500.0;
@@ -134,13 +134,14 @@ impl Forja {
         self.aberto
     }
 
+    fn escala() -> f32 {
+        estilo::escala_do_painel(LARGURA, ALTURA)
+    }
+
     fn painel() -> Rect {
-        Rect::new(
-            (screen_width() - LARGURA) * 0.5,
-            (screen_height() - ALTURA) * 0.5,
-            LARGURA,
-            ALTURA,
-        )
+        let k = Self::escala();
+        let (w, h) = (LARGURA * k, ALTURA * k);
+        Rect::new((screen_width() - w) * 0.5, (screen_height() - h) * 0.5, w, h)
     }
 
     pub fn pega_mouse(&self) -> bool {
@@ -166,6 +167,16 @@ impl Forja {
         if !self.aberto {
             return None;
         }
+        estilo::no_painel(Self::escala(), || self.desenha_na_escala(slots, equip, nomes, agora))
+    }
+
+    fn desenha_na_escala(
+        &mut self,
+        slots: &[InventorySlot],
+        equip: &Equipment,
+        nomes: &HashMap<u16, String>,
+        agora: f64,
+    ) -> Option<ClientMessage> {
         let p = Self::painel();
         estilo::painel(p);
         // Pisca na cor do resultado.
@@ -173,25 +184,25 @@ impl Forja {
             let f = (1.0 - (agora - t) as f32 / 1.2).clamp(0.0, 1.0);
             if f > 0.0 {
                 draw_rectangle_lines(
-                    p.x - 3.0,
-                    p.y - 3.0,
-                    p.w + 6.0,
-                    p.h + 6.0,
-                    4.0,
+                    p.x - u(3.0),
+                    p.y - u(3.0),
+                    p.w + u(6.0),
+                    p.h + u(6.0),
+                    u(4.0),
                     Color::new(cor.r, cor.g, cor.b, f),
                 );
             }
         }
-        estilo::texto(p.x + 18.0, p.y + 32.0, "Forja", 22, estilo::OURO);
+        estilo::texto(p.x + u(18.0), p.y + u(32.0), "Forja", 22, estilo::OURO);
         estilo::texto(
-            p.x + 92.0,
-            p.y + 31.0,
+            p.x + u(92.0),
+            p.y + u(31.0),
             "até +5 é seguro · do +6 em diante falhar destrói a peça",
             13,
             estilo::SUAVE,
         );
         if crate::ui::botao(
-            Rect::new(p.x + p.w - 44.0, p.y + 10.0, 32.0, 28.0),
+            Rect::new(p.x + p.w - u(44.0), p.y + u(10.0), u(32.0), u(28.0)),
             "x",
             true,
         ) {
@@ -214,13 +225,13 @@ impl Forja {
             self.sel = lista.first().map(|(a, _, _)| *a);
         }
         // Grade de pecas.
-        let grade = Rect::new(p.x + 14.0, p.y + 52.0, 6.0 * CELULA, p.h - 64.0);
+        let grade = Rect::new(p.x + u(14.0), p.y + u(52.0), u(6.0) * CELULA, p.h - u(64.0));
         let mouse = Vec2::from(mouse_position());
         let clicou = is_mouse_button_pressed(MouseButton::Left);
         if lista.is_empty() {
             estilo::texto(
-                grade.x + 4.0,
-                grade.y + 24.0,
+                grade.x + u(4.0),
+                grade.y + u(24.0),
                 "Nenhuma peça refinável.",
                 15,
                 estilo::SUAVE,
@@ -231,8 +242,8 @@ impl Forja {
             let r = Rect::new(
                 grade.x + col as f32 * CELULA,
                 grade.y + lin as f32 * CELULA,
-                CELULA - 6.0,
-                CELULA - 6.0,
+                CELULA - u(6.0),
+                CELULA - u(6.0),
             );
             if r.y + r.h > grade.y + grade.h {
                 break;
@@ -246,20 +257,20 @@ impl Forja {
                 Color::new(1.0, 1.0, 1.0, if marcada { 0.16 } else { 0.05 }),
             );
             if marcada {
-                draw_rectangle_lines(r.x, r.y, r.w, r.h, 2.0, estilo::OURO);
+                draw_rectangle_lines(r.x, r.y, r.w, r.h, u(2.0), estilo::OURO);
             }
             crate::bolsa::icone_do_item(r, *id, 1.0);
             if inst.refinement > 0 {
                 estilo::texto(
-                    r.x + 3.0,
-                    r.y + 14.0,
+                    r.x + u(3.0),
+                    r.y + u(14.0),
                     &format!("+{}", inst.refinement),
                     13,
                     estilo::OURO,
                 );
             }
             if matches!(alvo, AlvoDaForja::Equipado(_)) {
-                estilo::texto(r.x + r.w - 12.0, r.y + r.h - 4.0, "E", 12, estilo::AUTO);
+                estilo::texto(r.x + r.w - u(12.0), r.y + r.h - u(4.0), "E", 12, estilo::AUTO);
             }
             if r.contains(mouse) && clicou {
                 self.sel = Some(*alvo);
@@ -267,20 +278,20 @@ impl Forja {
         }
         // Detalhe.
         let d = Rect::new(
-            grade.x + grade.w + 12.0,
-            p.y + 52.0,
-            p.x + p.w - grade.x - grade.w - 26.0,
-            p.h - 64.0,
+            grade.x + grade.w + u(12.0),
+            p.y + u(52.0),
+            p.x + p.w - grade.x - grade.w - u(26.0),
+            p.h - u(64.0),
         );
         let mut pedido = None;
         if let Some((alvo, id, inst)) = lista.iter().find(|(a, _, _)| Some(*a) == self.sel) {
             let i = info(inst);
-            crate::bolsa::icone_do_item(Rect::new(d.x, d.y, 64.0, 64.0), *id, 1.0);
+            crate::bolsa::icone_do_item(Rect::new(d.x, d.y, u(64.0), u(64.0)), *id, 1.0);
             estilo::texto_ajustado(
                 &nome(*id),
-                d.x + 74.0,
-                d.y + 24.0,
-                d.w - 80.0,
+                d.x + u(74.0),
+                d.y + u(24.0),
+                d.w - u(80.0),
                 18,
                 estilo::TEXTO,
             );
@@ -291,13 +302,13 @@ impl Forja {
                 "na bolsa"
             };
             estilo::texto(
-                d.x + 74.0,
-                d.y + 46.0,
+                d.x + u(74.0),
+                d.y + u(46.0),
                 &format!("{} · {onde}", grau.nome()),
                 14,
                 estilo::SUAVE,
             );
-            let y = d.y + 100.0;
+            let y = d.y + u(100.0);
             let agora_prox = if i.no_topo {
                 format!("+{} (no topo)", i.nivel)
             } else {
@@ -314,7 +325,7 @@ impl Forja {
                     crate::bolsa::poder_da_instancia(&prox),
                 );
                 let t = format!("Poder {a} › {b}  (+{})", b - a);
-                estilo::texto(d.x + d.w - estilo::medir(&t, 15), y - 2.0, &t, 15, VERDE);
+                estilo::texto(d.x + d.w - estilo::medir(&t, 15), y - u(2.0), &t, 15, VERDE);
             }
             if !i.no_topo {
                 let cor = if i.chance >= 80 {
@@ -324,32 +335,32 @@ impl Forja {
                 } else {
                     VERMELHO
                 };
-                estilo::texto(d.x, y + 34.0, &format!("Chance: {}%", i.chance), 17, cor);
+                estilo::texto(d.x, y + u(34.0), &format!("Chance: {}%", i.chance), 17, cor);
                 let (ds, cu) = (tem(slots, item_id::DARKSTEEL), tem(slots, item_id::COPPER));
                 estilo::texto(
                     d.x,
-                    y + 62.0,
+                    y + u(62.0),
                     &format!("Darksteel {ds}/{}", i.darksteel),
                     15,
                     if ds >= i.darksteel { VERDE } else { VERMELHO },
                 );
                 estilo::texto(
                     d.x,
-                    y + 84.0,
+                    y + u(84.0),
                     &format!("Cobre {cu}/{}", i.cobre),
                     15,
                     if cu >= i.cobre { VERDE } else { VERMELHO },
                 );
-                if crate::onde_obter::botao(Rect::new(d.x + d.w - 36.0, y + 44.0, 34.0, 22.0)) {
+                if crate::onde_obter::botao(Rect::new(d.x + d.w - u(36.0), y + u(44.0), u(34.0), u(22.0))) {
                     self.onde_obter = Some(item_id::DARKSTEEL);
                 }
-                if crate::onde_obter::botao(Rect::new(d.x + d.w - 36.0, y + 68.0, 34.0, 22.0)) {
+                if crate::onde_obter::botao(Rect::new(d.x + d.w - u(36.0), y + u(68.0), u(34.0), u(22.0))) {
                     self.onde_obter = Some(item_id::COPPER);
                 }
                 if i.risco {
                     estilo::texto(
                         d.x,
-                        y + 116.0,
+                        y + u(116.0),
                         "⚠ Se falhar, a peça é DESTRUÍDA.",
                         15,
                         VERMELHO,
@@ -357,14 +368,14 @@ impl Forja {
                 } else {
                     estilo::texto(
                         d.x,
-                        y + 116.0,
+                        y + u(116.0),
                         "Falhar aqui só gasta o material.",
                         14,
                         estilo::SUAVE,
                     );
                 }
                 let tem_tudo = ds >= i.darksteel && cu >= i.cobre;
-                let b = Rect::new(d.x, d.y + d.h - 50.0, d.w, 40.0);
+                let b = Rect::new(d.x, d.y + d.h - u(50.0), d.w, u(40.0));
                 if crate::ui::botao(
                     b,
                     if i.risco {
@@ -380,7 +391,7 @@ impl Forja {
         }
         if let Some((_, txt, cor, t)) = &self.aviso {
             if agora - t < 4.0 {
-                estilo::texto_centro(p.x + p.w * 0.5, p.y + p.h - 6.0, txt, 15, *cor);
+                estilo::texto_centro(p.x + p.w * 0.5, p.y + p.h - u(6.0), txt, 15, *cor);
             }
         }
         pedido

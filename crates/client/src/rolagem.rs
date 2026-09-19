@@ -14,7 +14,8 @@ use macroquad::prelude::*;
 
 use crate::hud_estilo as estilo;
 
-/// Largura da barra desenhada e da faixa que pega o dedo nela.
+/// Largura da barra desenhada e da faixa que pega o dedo nela (a 100%; crescem
+/// com a escala do painel).
 const LARGURA_BARRA: f32 = 6.0;
 const FAIXA_DA_BARRA: f32 = 26.0;
 
@@ -66,9 +67,9 @@ pub fn maximo(area: Rect, total: f32) -> f32 {
 /// A faixa da barra (trilho), a' direita da lista.
 pub fn trilho(area: Rect) -> Rect {
     Rect::new(
-        area.x + area.w - LARGURA_BARRA - 2.0,
+        area.x + area.w - estilo::u(LARGURA_BARRA) - 2.0,
         area.y + 2.0,
-        LARGURA_BARRA,
+        estilo::u(LARGURA_BARRA),
         area.h - 4.0,
     )
 }
@@ -114,9 +115,9 @@ impl Rolagem {
         }
         if e.apertou && area.contains(e.mouse) {
             let faixa = Rect::new(
-                area.x + area.w - FAIXA_DA_BARRA,
+                area.x + area.w - estilo::u(FAIXA_DA_BARRA),
                 area.y,
-                FAIXA_DA_BARRA,
+                estilo::u(FAIXA_DA_BARRA),
                 area.h,
             );
             self.gesto = Some(Gesto {

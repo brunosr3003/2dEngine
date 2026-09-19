@@ -9,7 +9,7 @@ use shared::quests::{objective_kind, quest_status, QuestNet, GIVER_MESTRE_DA_ILH
 use shared::EntityId;
 use std::collections::HashMap;
 
-use crate::hud_estilo as estilo;
+use crate::hud_estilo::{self as estilo, u};
 use crate::render3d::{world_to_screen, Vista};
 use crate::world::World;
 
@@ -338,19 +338,26 @@ impl Missoes {
         }
     }
 
+    /// Altura do conteudo, na escala atual (`u`).
     fn altura(&self) -> f32 {
-        let mut h = 58.0;
+        let mut h = u(58.0);
         if !self.oferta.is_empty() {
-            h += TITULO_SECAO + self.oferta.len() as f32 * LINHA_OFERTA;
+            h += u(TITULO_SECAO) + self.oferta.len() as f32 * u(LINHA_OFERTA);
         }
-        h += TITULO_SECAO + self.log.len().max(1) as f32 * LINHA_ATIVA;
-        h + 10.0
+        h += u(TITULO_SECAO) + self.log.len().max(1) as f32 * u(LINHA_ATIVA);
+        h + u(10.0)
+    }
+
+    fn escala() -> f32 {
+        estilo::escala_do_painel(LARGURA * 2.0, 620.0)
     }
 
     fn painel(&self) -> Rect {
-        let t = crate::hud_layout::tela_segura();
-        let h = self.altura().min(t.y + t.h - screen_height() * 0.16 - 16.0);
-        Rect::new(t.x + 24.0, screen_height() * 0.16, LARGURA, h)
+        estilo::no_painel(Self::escala(), || {
+            let t = crate::hud_layout::tela_segura();
+            let h = self.altura().min(t.y + t.h - screen_height() * 0.16 - 16.0);
+            Rect::new(t.x + u(24.0), screen_height() * 0.16, u(LARGURA), h)
+        })
     }
 
     /// Com o mouse em cima da janela (ou do rastreador) o clique e' dela, e nao
@@ -387,19 +394,23 @@ impl Missoes {
         if !self.aberta {
             return Vec::new();
         }
+        estilo::no_painel(Self::escala(), || self.desenha_na_escala(nomes, tem))
+    }
+
+    fn desenha_na_escala(&mut self, nomes: &HashMap<u16, String>, tem: Tem) -> Vec<ClientMessage> {
         let p = self.painel();
         let mut saida = Vec::new();
         estilo::painel(p);
         estilo::texto_ajustado(
             &self.quem,
-            p.x + 16.0,
-            p.y + 30.0,
-            p.w - 70.0,
+            p.x + u(16.0),
+            p.y + u(30.0),
+            p.w - u(70.0),
             22,
             estilo::OURO,
         );
         if crate::ui::botao(
-            Rect::new(p.x + p.w - 44.0, p.y + 8.0, 32.0, 28.0),
+            Rect::new(p.x + p.w - u(44.0), p.y + u(8.0), u(32.0), u(28.0)),
             "x",
             true,
         ) {
@@ -407,44 +418,44 @@ impl Missoes {
             return saida;
         }
         draw_line(
-            p.x + 12.0,
-            p.y + 44.0,
-            p.x + p.w - 12.0,
-            p.y + 44.0,
+            p.x + u(12.0),
+            p.y + u(44.0),
+            p.x + p.w - u(12.0),
+            p.y + u(44.0),
             1.0,
             estilo::BORDA,
         );
-        let texto_w = p.w - 44.0;
+        let texto_w = p.w - u(44.0);
         // Ofertas e ativas rolam (dedo, roda ou barra) em vez de sumir quando
         // nao cabem; botao dentro da lista vale no SOLTAR.
-        let area = Rect::new(p.x + 2.0, p.y + 48.0, p.w - 4.0, p.h - 52.0);
-        let total = self.altura() - 58.0 + 6.0;
-        let clique = self.rolagem.quadro(area, total, LINHA_ATIVA);
+        let area = Rect::new(p.x + u(2.0), p.y + u(48.0), p.w - u(4.0), p.h - u(52.0));
+        let total = self.altura() - u(58.0) + u(6.0);
+        let clique = self.rolagem.quadro(area, total, u(LINHA_ATIVA));
         let tocou = |r: Rect| clique.is_some_and(|c| r.contains(c) && area.contains(c));
         let fora = |y: f32, h: f32| y + h < area.y || y > area.y + area.h;
         crate::rolagem::recortar(Some(area));
-        let mut y = area.y + 4.0 - self.rolagem.pos;
+        let mut y = area.y + u(4.0) - self.rolagem.pos;
 
         if !self.oferta.is_empty() {
-            estilo::texto(p.x + 16.0, y + 18.0, "Disponíveis", 15, estilo::SUAVE);
-            y += TITULO_SECAO;
+            estilo::texto(p.x + u(16.0), y + u(18.0), "Disponíveis", 15, estilo::SUAVE);
+            y += u(TITULO_SECAO);
             for q in &self.oferta {
-                if fora(y, LINHA_OFERTA) {
-                    y += LINHA_OFERTA;
+                if fora(y, u(LINHA_OFERTA)) {
+                    y += u(LINHA_OFERTA);
                     continue;
                 }
                 estilo::texto_ajustado(
                     &q.title,
-                    p.x + 16.0,
-                    y + 20.0,
-                    texto_w - 100.0,
+                    p.x + u(16.0),
+                    y + u(20.0),
+                    texto_w - u(100.0),
                     18,
                     estilo::TEXTO,
                 );
                 for (k, linha) in quebra(&q.desc, texto_w, 14, 3).iter().enumerate() {
                     estilo::texto(
-                        p.x + 16.0,
-                        y + 42.0 + k as f32 * 18.0,
+                        p.x + u(16.0),
+                        y + u(42.0) + k as f32 * u(18.0),
                         linha,
                         14,
                         estilo::SUAVE,
@@ -452,45 +463,45 @@ impl Missoes {
                 }
                 estilo::texto_ajustado(
                     &recompensa(q, nomes),
-                    p.x + 16.0,
-                    y + 100.0,
+                    p.x + u(16.0),
+                    y + u(100.0),
                     texto_w,
                     14,
                     estilo::OURO,
                 );
-                let b = Rect::new(p.x + p.w - 120.0, y + 4.0, 92.0, 26.0);
+                let b = Rect::new(p.x + p.w - u(120.0), y + u(4.0), u(92.0), u(26.0));
                 let _ = crate::ui::botao(b, "Aceitar", true);
                 if tocou(b) {
                     saida.push(ClientMessage::AcceptQuest { quest_id: q.id });
                 }
-                y += LINHA_OFERTA;
+                y += u(LINHA_OFERTA);
             }
         }
 
-        estilo::texto(p.x + 16.0, y + 18.0, "Em andamento", 15, estilo::SUAVE);
-        y += TITULO_SECAO;
+        estilo::texto(p.x + u(16.0), y + u(18.0), "Em andamento", 15, estilo::SUAVE);
+        y += u(TITULO_SECAO);
         if self.log.is_empty() {
             let dica = if self.npc.is_some() {
                 "Nenhuma missão ativa."
             } else {
                 "Nenhuma missão ativa. Fale com o Mestre de Missões na praça."
             };
-            estilo::texto_ajustado(dica, p.x + 16.0, y + 22.0, texto_w, 15, estilo::SUAVE);
+            estilo::texto_ajustado(dica, p.x + u(16.0), y + u(22.0), texto_w, 15, estilo::SUAVE);
         }
         let com_o_mestre = self.npc.is_some();
         let mut ir = None;
         for q in &self.log {
-            if fora(y, LINHA_ATIVA) {
-                y += LINHA_ATIVA;
+            if fora(y, u(LINHA_ATIVA)) {
+                y += u(LINHA_ATIVA);
                 continue;
             }
             let (feito, total) = progresso(q, tem);
             let ok = pronta(q, tem);
             estilo::texto_ajustado(
                 &q.title,
-                p.x + 16.0,
-                y + 20.0,
-                texto_w - 200.0,
+                p.x + u(16.0),
+                y + u(20.0),
+                texto_w - u(200.0),
                 17,
                 estilo::TEXTO,
             );
@@ -502,9 +513,9 @@ impl Missoes {
                 format!("{}  {feito}/{total}", verbo(q))
             };
             let cor = if ok { estilo::AUTO } else { estilo::SUAVE };
-            estilo::texto_ajustado(&estado, p.x + 16.0, y + 42.0, texto_w - 110.0, 14, cor);
+            estilo::texto_ajustado(&estado, p.x + u(16.0), y + u(42.0), texto_w - u(110.0), 14, cor);
             // Barrinha de progresso.
-            let barra = Rect::new(p.x + 16.0, y + 52.0, texto_w - 110.0, 4.0);
+            let barra = Rect::new(p.x + u(16.0), y + u(52.0), texto_w - u(110.0), u(4.0));
             draw_rectangle(
                 barra.x,
                 barra.y,
@@ -519,18 +530,18 @@ impl Missoes {
                 barra.h,
                 estilo::OURO,
             );
-            let mut bx = p.x + p.w - 28.0;
+            let mut bx = p.x + p.w - u(28.0);
             if ok && com_o_mestre && Some(q.giver) == self.giver {
-                bx -= 92.0;
-                let b = Rect::new(bx, y + 4.0, 92.0, 26.0);
+                bx -= u(92.0);
+                let b = Rect::new(bx, y + u(4.0), u(92.0), u(26.0));
                 let _ = crate::ui::botao(b, "Entregar", true);
                 if tocou(b) {
                     saida.push(ClientMessage::TurnInQuest { quest_id: q.id });
                 }
-                bx -= 8.0;
+                bx -= u(8.0);
             }
             if !com_o_mestre {
-                let b = Rect::new(bx - 92.0, y + 4.0, 92.0, 26.0);
+                let b = Rect::new(bx - u(92.0), y + u(4.0), u(92.0), u(26.0));
                 let _ = crate::ui::botao(b, "Ir", true);
                 if tocou(b) {
                     ir = Some(q.id);
@@ -538,11 +549,11 @@ impl Missoes {
             }
             if coleta(q) && q.obj_target != 0 && !ok {
                 let lx = if com_o_mestre {
-                    bx - 40.0
+                    bx - u(40.0)
                 } else {
-                    bx - 92.0 - 40.0
+                    bx - u(92.0) - u(40.0)
                 };
-                let lupa = Rect::new(lx, y + 2.0, 34.0, 30.0);
+                let lupa = Rect::new(lx, y + u(2.0), u(34.0), u(30.0));
                 let _ = crate::onde_obter::botao(lupa);
                 if tocou(lupa) {
                     self.onde_obter = Some(q.obj_target);
@@ -550,13 +561,13 @@ impl Missoes {
             }
             // A historia nao se abandona.
             if !historia::e_da_historia(q.id) {
-                let b = Rect::new(bx - 92.0, y + 34.0, 92.0, 24.0);
+                let b = Rect::new(bx - u(92.0), y + u(34.0), u(92.0), u(24.0));
                 let _ = crate::ui::botao(b, "Abandonar", true);
                 if tocou(b) {
                     saida.push(ClientMessage::AbandonQuest { quest_id: q.id });
                 }
             }
-            y += LINHA_ATIVA;
+            y += u(LINHA_ATIVA);
         }
         crate::rolagem::recortar(None);
         self.rolagem.desenha(area, total);

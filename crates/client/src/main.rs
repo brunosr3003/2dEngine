@@ -1866,12 +1866,14 @@ impl Jogo {
             .map(|s| s.qty)
             .sum();
         let rotulo = format!("Teleportar ×{qtd}");
-        let w = hud_estilo::medir_forte(&rotulo, 14) + 40.0;
+        // Maior que a faixa: e' um botao de dedo, nao um rotulo.
+        let h = z.faixa.h * 1.5;
+        let w = hud_estilo::medir_forte(&rotulo, 18) + h * 1.4;
         let r = Rect::new(
             z.faixa.center().x - w * 0.5,
-            z.faixa.y + z.faixa.h + 6.0,
+            z.faixa.y + z.faixa.h + 8.0,
             w,
-            z.faixa.h,
+            h,
         );
         self.botao_teleporte = Some(r);
         hud_estilo::botao(r, &rotulo, hud_estilo::estado_de(r, qtd == 0, false), qtd > 0);

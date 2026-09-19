@@ -16,7 +16,7 @@ use shared::protocol::ClientMessage;
 use shared::{item_id, InventorySlot};
 
 use crate::craft_ui::tem;
-use crate::hud_estilo as estilo;
+use crate::hud_estilo::{self as estilo, u};
 
 const LINHA: f32 = 44.0;
 const VERDE: Color = Color::new(0.45, 0.80, 0.42, 1.0);
@@ -213,11 +213,11 @@ pub struct Oficina {
 /// Seta "vira" entre dois icones. Desenhada: a fonte do HUD nao tem o "→".
 fn seta(x: f32, y: f32) {
     let c = estilo::OURO;
-    draw_rectangle(x, y - 3.0, 18.0, 6.0, c);
+    draw_rectangle(x, y - u(3.0), u(18.0), u(6.0), c);
     draw_triangle(
-        Vec2::new(x + 16.0, y - 10.0),
-        Vec2::new(x + 16.0, y + 10.0),
-        Vec2::new(x + 28.0, y),
+        Vec2::new(x + u(16.0), y - u(10.0)),
+        Vec2::new(x + u(16.0), y + u(10.0)),
+        Vec2::new(x + u(28.0), y),
         c,
     );
 }
@@ -266,18 +266,18 @@ fn linha_de_custo(
     precisa: u32,
     onde: &mut Option<u16>,
 ) {
-    crate::bolsa::icone_do_item(Rect::new(d.x + 6.0, y, 30.0, 30.0), id, 1.0);
-    estilo::texto_ajustado(nome, d.x + 44.0, y + 20.0, d.w - 210.0, 15, estilo::TEXTO);
+    crate::bolsa::icone_do_item(Rect::new(d.x + u(6.0), y, u(30.0), u(30.0)), id, 1.0);
+    estilo::texto_ajustado(nome, d.x + u(44.0), y + u(20.0), d.w - u(210.0), 15, estilo::TEXTO);
     let txt = format!("{}/{}", crate::bolsa::milhar(t as u64), crate::bolsa::milhar(precisa as u64));
     let cor = if t >= precisa { VERDE } else { VERMELHO };
     estilo::texto(
-        d.x + d.w - estilo::medir(&txt, 15) - 50.0,
-        y + 20.0,
+        d.x + d.w - estilo::medir(&txt, 15) - u(50.0),
+        y + u(20.0),
         &txt,
         15,
         cor,
     );
-    if crate::onde_obter::botao(Rect::new(d.x + d.w - 40.0, y - 1.0, 34.0, 32.0)) {
+    if crate::onde_obter::botao(Rect::new(d.x + d.w - u(42.0), y - u(2.0), u(38.0), u(36.0))) {
         *onde = Some(id);
     }
 }
@@ -300,12 +300,12 @@ impl Oficina {
         let chave = |g: &Grupo| (g.item_id, g.grau, g.tier);
         fundo_da_lista(lista);
         let gs = grupos(slots);
-        let total = gs.len() as f32 * LINHA;
-        let clique = self.rolagem.quadro(lista, total, LINHA);
+        let total = gs.len() as f32 * u(LINHA);
+        let clique = self.rolagem.quadro(lista, total, u(LINHA));
         let arrastando = self.rolagem.arrastando();
         if gs.is_empty() {
-            estilo::texto(lista.x + 10.0, lista.y + 24.0, "Nenhuma peça na bolsa.", 14, estilo::SUAVE);
-            estilo::texto(lista.x + 10.0, lista.y + 44.0, "Crie no Craft ou guarde as que caírem.", 13, estilo::SUAVE);
+            estilo::texto(lista.x + u(10.0), lista.y + u(24.0), "Nenhuma peça na bolsa.", 14, estilo::SUAVE);
+            estilo::texto(lista.x + u(10.0), lista.y + u(44.0), "Crie no Craft ou guarde as que caírem.", 13, estilo::SUAVE);
         }
         if self.sel_grupo.is_none_or(|s| !gs.iter().any(|g| chave(g) == s)) {
             self.sel_grupo = gs.first().map(chave);
@@ -313,19 +313,19 @@ impl Oficina {
         let mouse = Vec2::from(mouse_position());
         crate::rolagem::recortar(Some(lista));
         for (i, g) in gs.iter().enumerate() {
-            let y = lista.y + i as f32 * LINHA - self.rolagem.pos;
-            if y + LINHA < lista.y || y > lista.y + lista.h {
+            let y = lista.y + i as f32 * u(LINHA) - self.rolagem.pos;
+            if y + u(LINHA) < lista.y || y > lista.y + lista.h {
                 continue;
             }
-            let linha = Rect::new(lista.x, y, lista.w - 12.0, LINHA - 3.0);
+            let linha = Rect::new(lista.x, y, lista.w - u(12.0), u(LINHA) - u(3.0));
             let sobre = !arrastando && linha.contains(mouse) && lista.contains(mouse);
             realce(linha, self.sel_grupo == Some(chave(g)), sobre);
-            crate::bolsa::icone_do_item(Rect::new(linha.x + 4.0, linha.y + 4.0, 34.0, 34.0), g.item_id, 1.0);
+            crate::bolsa::icone_do_item(Rect::new(linha.x + u(4.0), linha.y + u(4.0), u(34.0), u(34.0)), g.item_id, 1.0);
             let cor = if g.fundivel(slots) { estilo::TEXTO } else { estilo::SUAVE };
-            estilo::texto_ajustado(&nome(g.item_id), linha.x + 44.0, linha.y + 18.0, linha.w - 100.0, 15, cor);
+            estilo::texto_ajustado(&nome(g.item_id), linha.x + u(44.0), linha.y + u(18.0), linha.w - u(100.0), 15, cor);
             estilo::texto(
-                linha.x + 44.0,
-                linha.y + 35.0,
+                linha.x + u(44.0),
+                linha.y + u(35.0),
                 &format!(
                     "{} · Tier {} · {} na bolsa",
                     nome_da_cor(g.grau),
@@ -336,7 +336,7 @@ impl Oficina {
                 cor_da_cor(g.grau),
             );
             if motivo_aprimorar(g, slots, nivel).is_none() {
-                estilo::texto(linha.x + linha.w - 48.0, linha.y + 26.0, "pronto", 12, VERDE);
+                estilo::texto(linha.x + linha.w - u(48.0), linha.y + u(26.0), "pronto", 12, VERDE);
             }
             if clique.is_some_and(|c| linha.contains(c)) {
                 self.sel_grupo = Some(chave(g));
@@ -353,10 +353,10 @@ impl Oficina {
         } else {
             format!("{} · {}", nome(g.item_id), nome_da_cor(g.grau))
         };
-        estilo::texto_ajustado(&titulo, d.x + 6.0, d.y + 22.0, d.w - 12.0, 19, estilo::OURO);
-        let cy = d.y + 44.0;
+        estilo::texto_ajustado(&titulo, d.x + u(6.0), d.y + u(22.0), d.w - u(12.0), 19, estilo::OURO);
+        let cy = d.y + u(44.0);
         for k in 0..2 {
-            let r = Rect::new(d.x + 6.0 + k as f32 * 70.0, cy, 60.0, 60.0);
+            let r = Rect::new(d.x + u(6.0) + k as f32 * u(70.0), cy, u(60.0), u(60.0));
             let tem_peca = escolhidas.len() > k;
             crate::bolsa::icone_do_item(r, g.item_id, if tem_peca { 1.0 } else { 0.25 });
             let mut rot = format!("T {}", romano(g.tier));
@@ -365,14 +365,14 @@ impl Oficina {
                     rot = format!("{rot} +{}", refino(slots, i));
                 }
             }
-            estilo::texto(r.x, r.y + r.h + 16.0, &rot, 12, cor_da_cor(g.grau));
+            estilo::texto(r.x, r.y + r.h + u(16.0), &rot, 12, cor_da_cor(g.grau));
         }
-        seta(d.x + 152.0, cy + 30.0);
-        let r = Rect::new(d.x + 196.0, cy, 60.0, 60.0);
+        seta(d.x + u(152.0), cy + u(30.0));
+        let r = Rect::new(d.x + u(196.0), cy, u(60.0), u(60.0));
         crate::bolsa::icone_do_item(r, g.item_id, 1.0);
         estilo::texto(
             r.x,
-            r.y + r.h + 16.0,
+            r.y + r.h + u(16.0),
             &format!("{} {}", nome_da_cor(grau_novo), romano(tier_novo)),
             13,
             cor_da_cor(grau_novo),
@@ -388,13 +388,13 @@ impl Oficina {
                 "com os atributos rolados de novo, mais fortes.".to_string(),
             )
         };
-        estilo::texto(d.x + 6.0, d.y + 150.0, &l1, 13, estilo::SUAVE);
-        estilo::texto(d.x + 6.0, d.y + 167.0, &l2, 13, estilo::SUAVE);
+        estilo::texto(d.x + u(6.0), d.y + u(150.0), &l1, 13, estilo::SUAVE);
+        estilo::texto(d.x + u(6.0), d.y + u(167.0), &l2, 13, estilo::SUAVE);
         let perdido = refino_perdido(g, slots);
         if perdido > 0 && g.fundivel(slots) {
             estilo::texto(
-                d.x + 6.0,
-                d.y + 188.0,
+                d.x + u(6.0),
+                d.y + u(188.0),
                 &format!("O refino +{perdido} das peças se perde."),
                 14,
                 AMARELO,
@@ -403,7 +403,7 @@ impl Oficina {
         let cobre = forja::custo_de_aprimorar(g.grau, g.tier);
         linha_de_custo(
             d,
-            d.y + 204.0,
+            d.y + u(204.0),
             item_id::COPPER,
             &nome(item_id::COPPER),
             tem(slots, item_id::COPPER),
@@ -411,9 +411,9 @@ impl Oficina {
             &mut self.onde_obter,
         );
         let m = motivo_aprimorar(g, slots, nivel);
-        let b = Rect::new(d.x + d.w - 160.0, d.y + d.h - 48.0, 150.0, 38.0);
+        let b = Rect::new(d.x + d.w - u(160.0), d.y + d.h - u(48.0), u(150.0), u(38.0));
         if let Some(m) = &m {
-            estilo::texto_ajustado(m, d.x + 6.0, b.y - 10.0, d.w - 12.0, 14, VERMELHO);
+            estilo::texto_ajustado(m, d.x + u(6.0), b.y - u(10.0), d.w - u(12.0), 14, VERMELHO);
         }
         if crate::ui::botao(b, "Aprimorar", m.is_none()) {
             return Some(ClientMessage::Aprimorar {
@@ -436,8 +436,8 @@ impl Oficina {
         let t = |id: u16| tem(slots, id);
         fundo_da_lista(lista);
         let rs = receitas(slots);
-        let total = rs.len() as f32 * LINHA;
-        let clique = self.rolagem.quadro(lista, total, LINHA);
+        let total = rs.len() as f32 * u(LINHA);
+        let clique = self.rolagem.quadro(lista, total, u(LINHA));
         let arrastando = self.rolagem.arrastando();
         if self.sel_receita.is_none() {
             self.sel_receita = rs.first().map(|r| r.entrada);
@@ -445,26 +445,26 @@ impl Oficina {
         let mouse = Vec2::from(mouse_position());
         crate::rolagem::recortar(Some(lista));
         for (i, r) in rs.iter().enumerate() {
-            let y = lista.y + i as f32 * LINHA - self.rolagem.pos;
-            if y + LINHA < lista.y || y > lista.y + lista.h {
+            let y = lista.y + i as f32 * u(LINHA) - self.rolagem.pos;
+            if y + u(LINHA) < lista.y || y > lista.y + lista.h {
                 continue;
             }
-            let linha = Rect::new(lista.x, y, lista.w - 12.0, LINHA - 3.0);
+            let linha = Rect::new(lista.x, y, lista.w - u(12.0), u(LINHA) - u(3.0));
             let sobre = !arrastando && linha.contains(mouse) && lista.contains(mouse);
             realce(linha, self.sel_receita == Some(r.entrada), sobre);
-            crate::bolsa::icone_do_item(Rect::new(linha.x + 4.0, linha.y + 4.0, 34.0, 34.0), r.entrada, 1.0);
+            crate::bolsa::icone_do_item(Rect::new(linha.x + u(4.0), linha.y + u(4.0), u(34.0), u(34.0)), r.entrada, 1.0);
             let pode = combinar::vezes_possiveis(r, &t) > 0;
             let cor = if t(r.entrada) > 0 { estilo::TEXTO } else { estilo::SUAVE };
-            estilo::texto_ajustado(&nome(r.entrada), linha.x + 44.0, linha.y + 18.0, linha.w - 100.0, 15, cor);
+            estilo::texto_ajustado(&nome(r.entrada), linha.x + u(44.0), linha.y + u(18.0), linha.w - u(100.0), 15, cor);
             estilo::texto(
-                linha.x + 44.0,
-                linha.y + 35.0,
+                linha.x + u(44.0),
+                linha.y + u(35.0),
                 &format!("{} por 1 · {}% · tem {}", r.qtd, r.chance, t(r.entrada)),
                 12,
                 estilo::SUAVE,
             );
             if pode {
-                estilo::texto(linha.x + linha.w - 48.0, linha.y + 26.0, "pronto", 12, VERDE);
+                estilo::texto(linha.x + linha.w - u(48.0), linha.y + u(26.0), "pronto", 12, VERDE);
             }
             if clique.is_some_and(|c| linha.contains(c)) {
                 self.sel_receita = Some(r.entrada);
@@ -474,20 +474,20 @@ impl Oficina {
         self.rolagem.desenha(lista, total);
         let r = rs.iter().find(|r| Some(r.entrada) == self.sel_receita)?;
         // Detalhe: N da cor → 1 da de cima, a chance e o que cada tentativa cobra.
-        let cy = d.y + 8.0;
-        crate::bolsa::icone_do_item(Rect::new(d.x + 6.0, cy, 56.0, 56.0), r.entrada, 1.0);
-        estilo::texto(d.x + 70.0, cy + 36.0, &format!("{}x", r.qtd), 17, estilo::TEXTO);
-        seta(d.x + 108.0, cy + 28.0);
-        crate::bolsa::icone_do_item(Rect::new(d.x + 146.0, cy, 56.0, 56.0), r.saida, 1.0);
-        estilo::texto_ajustado(&nome(r.saida), d.x + 210.0, cy + 24.0, d.w - 216.0, 16, estilo::OURO);
+        let cy = d.y + u(8.0);
+        crate::bolsa::icone_do_item(Rect::new(d.x + u(6.0), cy, u(56.0), u(56.0)), r.entrada, 1.0);
+        estilo::texto(d.x + u(70.0), cy + u(36.0), &format!("{}x", r.qtd), 17, estilo::TEXTO);
+        seta(d.x + u(108.0), cy + u(28.0));
+        crate::bolsa::icone_do_item(Rect::new(d.x + u(146.0), cy, u(56.0), u(56.0)), r.saida, 1.0);
+        estilo::texto_ajustado(&nome(r.saida), d.x + u(210.0), cy + u(24.0), d.w - u(216.0), 16, estilo::OURO);
         let (chance, cor) = if r.chance >= 100 {
             ("sempre dá certo".to_string(), VERDE)
         } else {
             (format!("{}% por tentativa", r.chance), AMARELO)
         };
-        estilo::texto_ajustado(&chance, d.x + 210.0, cy + 46.0, d.w - 216.0, 14, cor);
-        estilo::texto(d.x + 6.0, d.y + 92.0, "Cada tentativa gasta", 15, estilo::TEXTO);
-        let mut y = d.y + 104.0;
+        estilo::texto_ajustado(&chance, d.x + u(210.0), cy + u(46.0), d.w - u(216.0), 14, cor);
+        estilo::texto(d.x + u(6.0), d.y + u(92.0), "Cada tentativa gasta", 15, estilo::TEXTO);
+        let mut y = d.y + u(104.0);
         for (id, custo) in [
             (r.entrada, r.qtd),
             (item_id::COPPER, r.cobre),
@@ -498,16 +498,16 @@ impl Oficina {
                 continue;
             }
             linha_de_custo(d, y, id, &nome(id), t(id), custo, &mut self.onde_obter);
-            y += 36.0;
+            y += u(36.0);
         }
         if r.chance < 100 {
-            estilo::texto(d.x + 6.0, y + 16.0, "Falhar consome tudo.", 13, estilo::SUAVE);
+            estilo::texto(d.x + u(6.0), y + u(16.0), "Falhar consome tudo.", 13, estilo::SUAVE);
         }
         let n = combinar::vezes_possiveis(r, &t);
-        let b1 = Rect::new(d.x + d.w - 160.0, d.y + d.h - 48.0, 150.0, 38.0);
-        let b2 = Rect::new(d.x + d.w - 320.0, d.y + d.h - 48.0, 150.0, 38.0);
+        let b1 = Rect::new(d.x + d.w - u(160.0), d.y + d.h - u(48.0), u(150.0), u(38.0));
+        let b2 = Rect::new(d.x + d.w - u(320.0), d.y + d.h - u(48.0), u(150.0), u(38.0));
         if n == 0 {
-            estilo::texto(d.x + 6.0, b1.y - 10.0, "Falta material para uma tentativa.", 14, VERMELHO);
+            estilo::texto(d.x + u(6.0), b1.y - u(10.0), "Falta material para uma tentativa.", 14, VERMELHO);
         }
         if crate::ui::botao(b1, "Combinar 1x", n > 0) {
             return Some(ClientMessage::Combinar {

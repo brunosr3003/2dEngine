@@ -114,6 +114,10 @@ impl PresencaUi {
 
     /// Desenha e trata o toque. Devolve os pedidos pro servidor.
     pub fn desenha(&mut self, nomes: &HashMap<u16, String>, agora_unix: i64) -> Vec<ClientMessage> {
+        estilo::no_painel(estilo::escala_do_painel(780.0, 640.0), || self.desenha_na_escala(nomes, agora_unix))
+    }
+
+    fn desenha_na_escala(&mut self, nomes: &HashMap<u16, String>, agora_unix: i64) -> Vec<ClientMessage> {
         let mut saida = Vec::new();
         if !self.aberto {
             return saida;

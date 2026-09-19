@@ -455,7 +455,15 @@ impl MenuMissoes {
         }
     }
 
+    fn escala() -> f32 {
+        estilo::escala_do_painel(LARGURA, 540.0)
+    }
+
     fn painel() -> Rect {
+        estilo::no_painel(Self::escala(), Self::painel_na_escala)
+    }
+
+    fn painel_na_escala() -> Rect {
         let f = estilo::fator_texto();
         let w = (LARGURA * f).min(screen_width() - 24.0);
         let h = (screen_height() - 100.0).clamp(240.0, 760.0 * f);
@@ -468,6 +476,10 @@ impl MenuMissoes {
 
     /// Desenha o menu e devolve o clique do quadro.
     pub fn desenha(&mut self, c: &Contexto) -> Option<Clique> {
+        estilo::no_painel(Self::escala(), || self.desenha_na_escala(c))
+    }
+
+    fn desenha_na_escala(&mut self, c: &Contexto) -> Option<Clique> {
         if !self.aberto {
             return None;
         }

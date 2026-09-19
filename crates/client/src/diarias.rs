@@ -10,7 +10,7 @@ use macroquad::prelude::*;
 use shared::quests::{zona_da_missao, QuestDef, QUESTS};
 use std::collections::HashMap;
 
-use crate::hud_estilo as estilo;
+use crate::hud_estilo::{self as estilo, u};
 use crate::menu_missoes::{cadeado, clique_de, estado, reset_em, Clique, Contexto, Estado};
 
 const LARGURA: f32 = 640.0;
@@ -112,9 +112,14 @@ impl Diarias {
         self.aberto = false;
     }
 
+    fn escala() -> f32 {
+        estilo::escala_do_painel(LARGURA, 560.0)
+    }
+
     fn painel() -> Rect {
-        let w = LARGURA.min(screen_width() - 24.0);
-        let h = (screen_height() - 140.0).clamp(260.0, 720.0);
+        let k = Self::escala();
+        let w = (LARGURA * k).min(screen_width() - 24.0);
+        let h = (screen_height() - 140.0 * k).clamp((260.0 * k).min(screen_height() - 24.0), 720.0 * k);
         Rect::new(
             (screen_width() - w) * 0.5,
             (screen_height() - h) * 0.5,
@@ -128,41 +133,45 @@ impl Diarias {
         if !self.aberto {
             return None;
         }
+        estilo::no_painel(Self::escala(), || self.desenha_na_escala(c, nomes))
+    }
+
+    fn desenha_na_escala(&mut self, c: &Contexto, nomes: &HashMap<u16, String>) -> Option<Clique> {
         let p = Self::painel();
         estilo::painel(p);
-        estilo::texto(p.x + 18.0, p.y + 32.0, "Diárias", 22, estilo::OURO);
+        estilo::texto(p.x + u(18.0), p.y + u(32.0), "Diárias", 22, estilo::OURO);
         let ilha = c
             .zona
             .and_then(shared::terreno::def_da_zona)
             .map_or("—", |d| d.nome);
         estilo::texto(
-            p.x + 18.0,
-            p.y + 54.0,
+            p.x + u(18.0),
+            p.y + u(54.0),
             &format!("{ilha} · reset em {}", reset_em(c.agora_unix)),
             14,
             estilo::SUAVE,
         );
         if crate::ui::botao(
-            Rect::new(p.x + p.w - 44.0, p.y + 10.0, 32.0, 28.0),
+            Rect::new(p.x + p.w - u(44.0), p.y + u(10.0), u(32.0), u(28.0)),
             "x",
             true,
         ) {
             self.aberto = false;
             return None;
         }
-        let area = Rect::new(p.x + 10.0, p.y + 68.0, p.w - 20.0, p.h - 78.0);
+        let area = Rect::new(p.x + u(10.0), p.y + u(68.0), p.w - u(20.0), p.h - u(78.0));
         let mouse = Vec2::from(mouse_position());
         let lista = da_ilha(c.zona);
-        let total = lista.len() as f32 * LINHA;
+        let total = lista.len() as f32 * u(LINHA);
         // Toque na linha, no botao ou na lupa vale no SOLTAR (a lista rola
         // arrastando).
-        let clique = self.rolagem.quadro(area, total, LINHA);
+        let clique = self.rolagem.quadro(area, total, u(LINHA));
         let arrastando = self.rolagem.arrastando();
         let tocou = |r: Rect| clique.is_some_and(|c| r.contains(c) && area.contains(c));
         if lista.is_empty() {
             estilo::texto(
-                area.x + 8.0,
-                area.y + 22.0,
+                area.x + u(8.0),
+                area.y + u(22.0),
                 "Nenhuma diária nesta ilha.",
                 15,
                 estilo::SUAVE,
@@ -174,9 +183,9 @@ impl Diarias {
         for (i, d) in lista.iter().enumerate() {
             let linha = Rect::new(
                 area.x,
-                area.y - self.rolagem.pos + i as f32 * LINHA,
-                area.w - 12.0,
-                LINHA - 6.0,
+                area.y - self.rolagem.pos + i as f32 * u(LINHA),
+                area.w - u(12.0),
+                u(LINHA) - u(6.0),
             );
             if linha.y + linha.h < area.y || linha.y > area.y + area.h {
                 continue;
@@ -200,41 +209,41 @@ impl Diarias {
                 Estado::Concluida => ("Concluída hoje".to_string(), estilo::SUAVE),
                 Estado::Bloqueada(m) => (m.first().cloned().unwrap_or_default(), vermelho),
             };
-            let icone = vec2(linha.x + 22.0, linha.y + 26.0);
+            let icone = vec2(linha.x + u(22.0), linha.y + u(26.0));
             match &e {
-                Estado::Bloqueada(_) => cadeado(icone, 9.0, vermelho),
+                Estado::Bloqueada(_) => cadeado(icone, u(9.0), vermelho),
                 Estado::Concluida => {
                     draw_line(
-                        icone.x - 7.0,
+                        icone.x - u(7.0),
                         icone.y,
-                        icone.x - 2.0,
-                        icone.y + 6.0,
-                        3.0,
+                        icone.x - u(2.0),
+                        icone.y + u(6.0),
+                        u(3.0),
                         estilo::SUAVE,
                     );
                     draw_line(
-                        icone.x - 2.0,
-                        icone.y + 6.0,
-                        icone.x + 8.0,
-                        icone.y - 7.0,
-                        3.0,
+                        icone.x - u(2.0),
+                        icone.y + u(6.0),
+                        icone.x + u(8.0),
+                        icone.y - u(7.0),
+                        u(3.0),
                         estilo::SUAVE,
                     );
                 }
                 Estado::Pronta => {
-                    estilo::texto_centro(icone.x, icone.y + 10.0, "?", 26, estilo::AUTO)
+                    estilo::texto_centro(icone.x, icone.y + u(10.0), "?", 26, estilo::AUTO)
                 }
-                Estado::Disponivel => estilo::texto_centro(icone.x, icone.y + 10.0, "!", 26, cor),
+                Estado::Disponivel => estilo::texto_centro(icone.x, icone.y + u(10.0), "!", 26, cor),
                 Estado::EmAndamento { .. } => {
-                    draw_circle_lines(icone.x, icone.y, 8.0, 2.0, estilo::TEXTO)
+                    draw_circle_lines(icone.x, icone.y, u(8.0), u(2.0), estilo::TEXTO)
                 }
             }
             let apagada = matches!(e, Estado::Bloqueada(_) | Estado::Concluida);
-            let largura_texto = linha.w - 170.0;
+            let largura_texto = linha.w - u(170.0);
             estilo::texto_ajustado(
                 d.title,
-                linha.x + 44.0,
-                linha.y + 22.0,
+                linha.x + u(44.0),
+                linha.y + u(22.0),
                 largura_texto,
                 16,
                 if apagada {
@@ -245,16 +254,16 @@ impl Diarias {
             );
             estilo::texto_ajustado(
                 &rotulo,
-                linha.x + 44.0,
-                linha.y + 42.0,
+                linha.x + u(44.0),
+                linha.y + u(42.0),
                 largura_texto,
                 13,
                 cor,
             );
             estilo::texto_ajustado(
                 &recompensa(d, nomes),
-                linha.x + 44.0,
-                linha.y + 62.0,
+                linha.x + u(44.0),
+                linha.y + u(62.0),
                 largura_texto,
                 13,
                 estilo::OURO,
@@ -263,14 +272,14 @@ impl Diarias {
                 && d.obj_target != 0
                 && !apagada
             {
-                let lupa = Rect::new(linha.x + linha.w - 164.0, linha.y + 20.0, 36.0, 34.0);
+                let lupa = Rect::new(linha.x + linha.w - u(164.0), linha.y + u(20.0), u(36.0), u(34.0));
                 let _ = crate::onde_obter::botao(lupa);
                 if tocou(lupa) {
                     self.onde_obter = Some(d.obj_target);
                 }
             }
             if let Some(t) = botao_de(&e) {
-                let b = Rect::new(linha.x + linha.w - 122.0, linha.y + 22.0, 110.0, 30.0);
+                let b = Rect::new(linha.x + linha.w - u(122.0), linha.y + u(22.0), u(110.0), u(30.0));
                 let _ = crate::ui::botao(b, t, true);
                 if tocou(b) {
                     saida = Some(clique_da_diaria(d, &e, c.agora_unix));
@@ -291,19 +300,19 @@ impl Diarias {
                 .iter()
                 .map(|s| estilo::medir(s, 14))
                 .fold(160.0f32, f32::max)
-                + 24.0;
-            let h = 30.0 + m.len() as f32 * 20.0;
-            let x = (mouse.x + 16.0).min(screen_width() - w - 8.0);
-            let y = (mouse.y + 12.0).min(screen_height() - h - 8.0);
+                + u(24.0);
+            let h = u(30.0) + m.len() as f32 * u(20.0);
+            let x = (mouse.x + u(16.0)).min(screen_width() - w - u(8.0));
+            let y = (mouse.y + u(12.0)).min(screen_height() - h - u(8.0));
             estilo::painel(Rect::new(x, y, w, h));
             cadeado(
-                vec2(x + 16.0, y + 17.0),
-                7.0,
+                vec2(x + u(16.0), y + u(17.0)),
+                u(7.0),
                 Color::new(0.85, 0.45, 0.40, 1.0),
             );
-            estilo::texto(x + 30.0, y + 22.0, "Pré-requisitos", 14, estilo::OURO);
+            estilo::texto(x + u(30.0), y + u(22.0), "Pré-requisitos", 14, estilo::OURO);
             for (i, s) in m.iter().enumerate() {
-                estilo::texto(x + 12.0, y + 42.0 + i as f32 * 20.0, s, 14, estilo::TEXTO);
+                estilo::texto(x + u(12.0), y + u(42.0) + i as f32 * u(20.0), s, 14, estilo::TEXTO);
             }
         }
         saida

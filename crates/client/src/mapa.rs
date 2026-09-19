@@ -7,7 +7,8 @@
 //! Eixos: o mundo e' (x, z), e a camera em yaw 0 olha pra -z. O mapa usa norte
 //! fixo com x pra direita e z pra BAIXO — a vista da camera sem giro —, entao
 //! o que esta' a' esquerda no mundo esta' a' esquerda no mapa.
-use crate::{hud_estilo as estilo, world::World};
+use crate::hud_estilo::{self as estilo, u};
+use crate::world::World;
 use macroquad::prelude::*;
 use shared::terreno::{Bioma, Cidade, DefIlha, Gerador, BLOCO, ESCALA_ALTURA, NIVEL_DO_MAR};
 use shared::EntityTag;
@@ -268,6 +269,8 @@ pub enum Entrada {
 enum Marcador {
     Zona(usize),
     Regiao(usize),
+    /// NPC da vila (indice em `npcs_da_vila`).
+    Npc(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -778,9 +781,23 @@ impl Mapa {
     /// A zona ou regiao VISIVEL sob o mouse no mapa grande. Regiao primeiro:
     /// e' o marcador pequeno, que fica por cima da zona.
     fn marcador_sob(&self, m: Vec2, r: Rect) -> Option<Marcador> {
-        let info = self.info.as_ref()?;
         let raio = self.raio();
         let escala = r.w / (2.0 * raio);
+        let k = Self::escala();
+        // NPC primeiro: e' o menor, dentro da cidade, por cima de tudo.
+        {
+            let npc = self
+                .npcs_da_vila()
+                .iter()
+                .enumerate()
+                .map(|(i, (_, p))| (i, para_tela(*p, r, raio).distance(m)))
+                .filter(|(_, d)| *d <= 12.0 * k)
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            if let Some((i, _)) = npc {
+                return Some(Marcador::Npc(i));
+            }
+        }
+        let info = self.info.as_ref()?;
         let regiao = info
             .recursos
             .iter()
@@ -792,7 +809,7 @@ impl Mapa {
                     para_tela(vec2(g.centro[0], g.centro[1]), r, raio).distance(m),
                 )
             })
-            .filter(|(_, d)| *d <= 7.0)
+            .filter(|(_, d)| *d <= 9.0 * k)
             .min_by(|a, b| a.1.total_cmp(&b.1));
         if let Some((i, _)) = regiao {
             return Some(Marcador::Regiao(i));
@@ -805,7 +822,7 @@ impl Mapa {
                 (
                     i,
                     para_tela(centro_da_zona(z), r, raio).distance(m),
-                    (z.raio * escala).max(7.0),
+                    (z.raio * escala).max(9.0 * k),
                 )
             })
             .filter(|(_, d, rp)| d <= rp)
@@ -814,8 +831,18 @@ impl Mapa {
     }
 
     fn alvo_do_marcador(&self, mk: Marcador) -> Option<Alvo> {
+        if let Marcador::Npc(i) = mk {
+            let (nome, pos) = self.npcs_da_vila().into_iter().nth(i)?;
+            return Some(Alvo {
+                objetivo: Objetivo::Npc,
+                pos,
+                raio: 0.0,
+                rotulo: nome,
+            });
+        }
         let info = self.info.as_ref()?;
         Some(match mk {
+            Marcador::Npc(_) => return None,
             Marcador::Zona(i) => {
                 let z = info.zonas.get(i)?;
                 let dominante = z.bichos.first().map_or(0, |b| b.0);
@@ -845,6 +872,13 @@ impl Mapa {
         };
         let mut linhas: Vec<(String, Color)> = Vec::new();
         match mk {
+            Marcador::Npc(i) => {
+                let Some((nome, _)) = self.npcs_da_vila().into_iter().nth(i) else {
+                    return;
+                };
+                linhas.push((nome, COR_NPC));
+                linhas.push(("clique: ir falar (ou teleportar)".into(), estilo::AUTO));
+            }
             Marcador::Zona(i) => {
                 let Some(z) = info.zonas.get(i) else { return };
                 linhas.push((
@@ -876,18 +910,19 @@ impl Mapa {
             .iter()
             .map(|(s, _)| estilo::medir(s, 13))
             .fold(120.0f32, f32::max)
-            + 24.0;
-        let h = 14.0 + linhas.len() as f32 * 19.0;
-        let x = (m.x + 16.0).min(screen_width() - w - 8.0);
-        let y = (m.y + 12.0).min(screen_height() - h - 8.0);
+            + u(24.0);
+        let h = u(14.0) + linhas.len() as f32 * u(19.0);
+        let x = (m.x + u(16.0)).min(screen_width() - w - u(8.0));
+        let y = (m.y + u(12.0)).min(screen_height() - h - u(8.0));
         estilo::painel(Rect::new(x, y, w, h));
         for (i, (s, cor)) in linhas.iter().enumerate() {
-            estilo::texto(x + 12.0, y + 22.0 + i as f32 * 19.0, s, 13, *cor);
+            estilo::texto(x + u(12.0), y + u(22.0) + i as f32 * u(19.0), s, 13, *cor);
         }
     }
 
     fn lateral_rect(r: Rect) -> Rect {
-        Rect::new(r.x + r.w + 14.0, r.y - 38.0, LARGURA_LATERAL, r.h + 46.0)
+        let k = Self::escala();
+        Rect::new(r.x + r.w + 14.0 * k, r.y - 38.0 * k, LARGURA_LATERAL * k, r.h + 46.0 * k)
     }
 
     /// Filtros e "Ir para", ao lado do mapa grande. Devolve o "Ir" clicado.
@@ -896,8 +931,8 @@ impl Mapa {
         estilo::painel(lat);
         let Some(info) = self.info.as_ref() else {
             estilo::texto(
-                lat.x + 14.0,
-                lat.y + 28.0,
+                lat.x + u(14.0),
+                lat.y + u(28.0),
                 "carregando zonas…",
                 14,
                 estilo::SUAVE,
@@ -910,8 +945,8 @@ impl Mapa {
         let mut saida: Option<Entrada> = None;
 
         // ── filtros ──
-        estilo::texto_forte(lat.x + 14.0, lat.y + 26.0, "Filtros", 16, estilo::OURO);
-        let (mut x, mut y) = (lat.x + 12.0, lat.y + 38.0);
+        estilo::texto_forte(lat.x + u(14.0), lat.y + u(26.0), "Filtros", 16, estilo::OURO);
+        let (mut x, mut y) = (lat.x + u(12.0), lat.y + u(38.0));
         let mut chips: Vec<(String, bool, Color, Chip)> =
             vec![("Mobs".into(), self.filtros.mobs, COR_MOB, Chip::Mobs)];
         for k in info.bichos() {
@@ -932,12 +967,12 @@ impl Mapa {
         }
         chips.push(("Vila".into(), self.filtros.vila, estilo::OURO, Chip::Vila));
         for (rotulo, ligado, cor, id) in &chips {
-            let w = estilo::medir(rotulo, 13) + 24.0;
-            if x + w > lat.x + lat.w - 10.0 {
-                x = lat.x + 12.0;
-                y += 27.0;
+            let w = estilo::medir(rotulo, 13) + u(24.0);
+            if x + w > lat.x + lat.w - u(10.0) {
+                x = lat.x + u(12.0);
+                y += u(27.0);
             }
-            let c = Rect::new(x, y, w, 22.0);
+            let c = Rect::new(x, y, w, u(22.0));
             let alfa = if *ligado { 0.26 } else { 0.0 };
             estilo::ret_arredondado(c, c.h * 0.5, Color::new(cor.r, cor.g, cor.b, alfa));
             estilo::borda_arredondada(
@@ -947,9 +982,9 @@ impl Mapa {
                 Color::new(cor.r, cor.g, cor.b, if *ligado { 0.85 } else { 0.30 }),
             );
             draw_circle(
-                c.x + 9.0,
-                c.y + 11.0,
-                3.5,
+                c.x + u(9.0),
+                c.y + u(11.0),
+                u(3.5),
                 if *ligado {
                     *cor
                 } else {
@@ -957,8 +992,8 @@ impl Mapa {
                 },
             );
             estilo::texto(
-                c.x + 16.0,
-                c.y + 16.0,
+                c.x + u(16.0),
+                c.y + u(16.0),
                 rotulo,
                 13,
                 if *ligado {
@@ -970,26 +1005,27 @@ impl Mapa {
             if clique && c.contains(mouse) {
                 toggle = Some(*id);
             }
-            x += w + 6.0;
+            x += w + u(6.0);
         }
 
         // ── ir para ──
-        y += 44.0;
-        estilo::texto(lat.x + 14.0, y, "Ir para", 16, estilo::OURO);
+        y += u(44.0);
+        estilo::texto(lat.x + u(14.0), y, "Ir para", 16, estilo::OURO);
         let area = Rect::new(
-            lat.x + 6.0,
-            y + 8.0,
-            lat.w - 12.0,
-            lat.y + lat.h - (y + 16.0),
+            lat.x + u(6.0),
+            y + u(8.0),
+            lat.w - u(12.0),
+            lat.y + lat.h - (y + u(16.0)),
         );
         let eu = eu.unwrap_or(Vec2::ZERO);
         let bichos = info.bichos();
         let tipos = info.tipos();
-        let total = (2 + bichos.len() + tipos.len()) as f32 * LINHA_IR;
+        let npcs = self.npcs_da_vila();
+        let total = (3 + bichos.len() + tipos.len() + npcs.len()) as f32 * u(LINHA_IR);
         // Rola arrastando, pela roda ou pela barra; o "Ir" vale no SOLTAR.
-        let clique = self.rolagem_lateral.quadro(area, total, LINHA_IR);
+        let clique = self.rolagem_lateral.quadro(area, total, u(LINHA_IR));
         let mut ly = area.y - self.rolagem_lateral.pos;
-        let visivel = |yy: f32| yy + LINHA_IR > area.y && yy < area.y + area.h;
+        let visivel = |yy: f32| yy + u(LINHA_IR) > area.y && yy < area.y + area.h;
         crate::rolagem::recortar(Some(area));
         let mut linha = |rotulo: &str,
                          detalhe: String,
@@ -1000,24 +1036,24 @@ impl Mapa {
             if !visivel(ly) {
                 return;
             }
-            draw_circle(area.x + 10.0, ly + 13.0, 4.0, cor);
+            draw_circle(area.x + u(10.0), ly + u(13.0), u(4.0), cor);
             estilo::texto_ajustado(
                 rotulo,
-                area.x + 20.0,
-                ly + 12.0,
-                area.w - 80.0,
+                area.x + u(20.0),
+                ly + u(12.0),
+                area.w - u(80.0),
                 13,
                 estilo::TEXTO,
             );
             estilo::texto_ajustado(
                 &detalhe,
-                area.x + 20.0,
-                ly + 24.0,
-                area.w - 80.0,
+                area.x + u(20.0),
+                ly + u(24.0),
+                area.w - u(80.0),
                 11,
                 estilo::SUAVE,
             );
-            let b = Rect::new(area.x + area.w - 64.0, ly + 2.0, 46.0, 22.0);
+            let b = Rect::new(area.x + area.w - u(64.0), ly + u(2.0), u(46.0), u(22.0));
             if let Some(a) = alvo {
                 let _ = crate::ui::botao(b, "Ir", true);
                 if clique.is_some_and(|c| b.contains(c) && area.contains(c)) {
@@ -1025,10 +1061,25 @@ impl Mapa {
                 }
             }
         };
+        // NPCs primeiro: e' o que mais se procura na vila (loja, missao, barco).
         if visivel(ly) {
-            estilo::texto(area.x + 6.0, ly + 18.0, "Bichos", 13, estilo::SUAVE);
+            estilo::texto(area.x + u(6.0), ly + u(18.0), "NPCs", 13, estilo::SUAVE);
         }
-        ly += LINHA_IR;
+        ly += u(LINHA_IR);
+        for (nome, p) in &npcs {
+            let alvo = Alvo {
+                objetivo: Objetivo::Npc,
+                pos: *p,
+                raio: 0.0,
+                rotulo: nome.clone(),
+            };
+            linha(nome, format!("{:.0} m", p.distance(eu)), COR_NPC, Some(alvo), ly, &mut saida);
+            ly += u(LINHA_IR);
+        }
+        if visivel(ly) {
+            estilo::texto(area.x + u(6.0), ly + u(18.0), "Bichos", 13, estilo::SUAVE);
+        }
+        ly += u(LINHA_IR);
         for k in &bichos {
             let nome = info.nome(*k);
             let z = zona_mais_perto(&info.zonas, *k, eu, nivel);
@@ -1045,12 +1096,12 @@ impl Mapa {
                 rotulo: nome.clone(),
             });
             linha(&nome, detalhe, cor_do_bicho(*k), alvo, ly, &mut saida);
-            ly += LINHA_IR;
+            ly += u(LINHA_IR);
         }
         if visivel(ly) {
-            estilo::texto(area.x + 6.0, ly + 18.0, "Recursos", 13, estilo::SUAVE);
+            estilo::texto(area.x + u(6.0), ly + u(18.0), "Recursos", 13, estilo::SUAVE);
         }
-        ly += LINHA_IR;
+        ly += u(LINHA_IR);
         for t in &tipos {
             let g = regiao_mais_perto(&info.recursos, *t, eu);
             let n = info.recursos.iter().filter(|r| r.tipo == *t).count();
@@ -1074,7 +1125,7 @@ impl Mapa {
                 ly,
                 &mut saida,
             );
-            ly += LINHA_IR;
+            ly += u(LINHA_IR);
         }
         crate::rolagem::recortar(None);
         self.rolagem_lateral.desenha(area, total);
@@ -1125,16 +1176,36 @@ impl Mapa {
 
     /// O mapa quadrado, com o painel lateral de filtros e "Ir para" a' direita.
     fn grande_rect() -> Rect {
-        let lado = (screen_width() - LARGURA_LATERAL - 60.0)
-            .min(screen_height() - 90.0)
-            .max(200.0);
-        let total = lado + 14.0 + LARGURA_LATERAL;
+        let k = Self::escala();
+        let s = crate::hud_layout::tela_segura();
+        let lat = LARGURA_LATERAL * k;
+        let lado = (s.w - lat - 60.0 * k).min(s.h - 90.0 * k).max(200.0);
+        let total = lado + 14.0 * k + lat;
         Rect::new(
-            ((screen_width() - total) * 0.5).max(8.0),
-            (screen_height() - lado) * 0.5 + 12.0,
+            (s.x + (s.w - total) * 0.5).max(8.0),
+            s.y + (s.h - lado) * 0.5 + 12.0 * k,
             lado,
             lado,
         )
+    }
+
+    /// Escala do mapa grande e do painel ao lado (no celular ele cresce ate'
+    /// caber; ver `hud_estilo::escala_do_painel`).
+    fn escala() -> f32 {
+        estilo::escala_do_painel(LARGURA_LATERAL + 560.0, 600.0)
+    }
+
+    /// Os NPCs da vila desta ilha: (nome, posicao). Sempre no mapa grande —
+    /// o `world` so' tem os que estao perto.
+    pub fn npcs_da_vila(&self) -> Vec<(String, Vec2)> {
+        let Some(g) = &self.ger else {
+            return Vec::new();
+        };
+        g.vila()
+            .npcs
+            .iter()
+            .map(|n| (n.nome.to_string(), vec2(n.pos.x, n.pos.y)))
+            .collect()
     }
 
     /// O botao de TAMANHO do minimapa, ao lado do ⤢ e dentro da moldura. Mora
@@ -1186,7 +1257,8 @@ impl Mapa {
     }
 
     fn fechar_rect(r: Rect) -> Rect {
-        Rect::new(r.x + r.w - 26.0, r.y - 32.0, 26.0, 26.0)
+        let k = Self::escala();
+        Rect::new(r.x + r.w - 32.0 * k, r.y - 36.0 * k, 32.0 * k, 32.0 * k)
     }
 
     /// O clique e a roda sao do mapa (e nao do mundo nem da camera)?
@@ -1535,35 +1607,37 @@ impl Mapa {
         if !self.aberto || !self.tem_ilha() {
             return None;
         }
-        self.desenha_grande_mapa(world);
-        let m = Vec2::from(mouse_position());
-        let r = Self::grande_rect();
-        if r.contains(m) {
-            if let Some(mk) = self.marcador_sob(m, r) {
-                self.dica(mk, m);
+        estilo::no_painel(Self::escala(), || {
+            self.desenha_grande_mapa(world);
+            let m = Vec2::from(mouse_position());
+            let r = Self::grande_rect();
+            if r.contains(m) {
+                if let Some(mk) = self.marcador_sob(m, r) {
+                    self.dica(mk, m);
+                }
             }
-        }
-        self.desenha_lateral(r, world.self_pos(), nivel)
+            self.desenha_lateral(r, world.self_pos(), nivel)
+        })
     }
 
     fn desenha_grande_mapa(&self, world: &World) {
         let (sw, sh) = (screen_width(), screen_height());
         draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.45));
         let r = Self::grande_rect();
-        estilo::painel(Rect::new(r.x - 8.0, r.y - 38.0, r.w + 16.0, r.h + 46.0));
+        estilo::painel(Rect::new(r.x - u(8.0), r.y - u(38.0), r.w + u(16.0), r.h + u(46.0)));
         let nome = self.def.map_or("", |d| d.nome);
-        estilo::texto_forte(r.x, r.y - 14.0, &format!("Mapa · {nome}"), 17, estilo::OURO);
+        estilo::texto_forte(r.x, r.y - u(14.0), &format!("Mapa · {nome}"), 17, estilo::OURO);
         let dica = "clique: viajar · zona/recurso: ir · Esc fecha";
         estilo::texto(
-            r.x + r.w - 36.0 - estilo::medir(dica, 13),
-            r.y - 14.0,
+            r.x + r.w - u(36.0) - estilo::medir(dica, 13),
+            r.y - u(14.0),
             dica,
             13,
             estilo::SUAVE,
         );
         let f = Self::fechar_rect(r);
         if !crate::icones_ui::ui("fechar", f.center(), f.w.min(f.h) * 0.55, estilo::TEXTO) {
-            estilo::texto_centro(f.x + f.w * 0.5, f.y + 19.0, "x", 18, estilo::TEXTO);
+            estilo::texto_centro(f.x + f.w * 0.5, f.y + u(19.0), "x", 18, estilo::TEXTO);
         }
 
         draw_rectangle(r.x, r.y, r.w, r.h, COR_AGUA);
@@ -1594,8 +1668,8 @@ impl Mapa {
             for ch in &info.chefes {
                 let q = ponto(vec2(ch.centro[0], ch.centro[1]));
                 let ouro = Color::new(1.0, 0.72, 0.25, if ch.vivo { 1.0 } else { 0.5 });
-                if !crate::icones_ui::mapa("chefe", q, 26.0, ouro, 0.0) {
-                    crate::telegrafico::desenha_coroa(q, 8.0);
+                if !crate::icones_ui::mapa("chefe", q, u(26.0), ouro, 0.0) {
+                    crate::telegrafico::desenha_coroa(q, u(8.0));
                 }
                 let t = format!(
                     "{} · Nv {}{}",
@@ -1605,41 +1679,41 @@ impl Mapa {
                 );
                 estilo::texto_centro(
                     q.x + 1.0,
-                    q.y + 23.0,
+                    q.y + u(23.0),
                     &t,
                     12,
                     Color::new(0.0, 0.0, 0.0, 0.8),
                 );
-                estilo::texto_centro(q.x, q.y + 22.0, &t, 12, Color::new(1.0, 0.64, 0.37, 1.0));
+                estilo::texto_centro(q.x, q.y + u(22.0), &t, 12, Color::new(1.0, 0.64, 0.37, 1.0));
             }
             for z in info.zonas.iter().filter(|z| self.filtros.zona_visivel(z)) {
                 let q = ponto(centro_da_zona(z));
-                let rp = (z.raio * escala).max(5.0);
+                let rp = (z.raio * escala).max(u(5.0));
                 let cor = z.bichos.first().map_or(COR_MOB, |b| cor_do_bicho(b.0));
                 draw_circle(q.x, q.y, rp, Color::new(cor.r, cor.g, cor.b, 0.16));
                 draw_circle_lines(q.x, q.y, rp, 1.5, Color::new(cor.r, cor.g, cor.b, 0.85));
                 // Marcador do bicho dominante no centro da zona (acima do rotulo).
                 if let Some(b) = z.bichos.first() {
-                    let y = if rp >= 14.0 { 13.0 } else { 0.0 };
+                    let y = if rp >= u(14.0) { u(13.0) } else { 0.0 };
                     crate::icones_ui::mapa(
                         crate::icones_ui::nome_do_bicho(b.0),
                         q - vec2(0.0, y),
-                        18.0,
+                        u(18.0),
                         cor,
                         0.0,
                     );
                 }
-                if rp >= 14.0 {
+                if rp >= u(14.0) {
                     if let Some(b) = z.bichos.first() {
                         let t = format!("{} · Nv {}–{}", info.nome(b.0), z.lv_min, z.lv_max);
                         estilo::texto_centro(
                             q.x + 1.0,
-                            q.y + 5.0,
+                            q.y + u(5.0),
                             &t,
                             12,
                             Color::new(0.0, 0.0, 0.0, 0.8),
                         );
-                        estilo::texto_centro(q.x, q.y + 4.0, &t, 12, estilo::TEXTO);
+                        estilo::texto_centro(q.x, q.y + u(4.0), &t, 12, estilo::TEXTO);
                     }
                 }
             }
@@ -1652,9 +1726,9 @@ impl Mapa {
                 let s = 3.0 + (g.contagem as f32).sqrt().min(3.5);
                 let cor = cor_do_tipo(g.tipo);
                 let nome = if g.tipo == 0 { "madeira" } else { "pedra" };
-                if !crate::icones_ui::mapa(nome, q, (s + 1.2) * 3.2, cor, 0.0) {
-                    losango(q, s + 1.2, Color::new(0.0, 0.0, 0.0, 0.7));
-                    losango(q, s, cor);
+                if !crate::icones_ui::mapa(nome, q, (s + 1.2) * u(3.2), cor, 0.0) {
+                    losango(q, u(s + 1.2), Color::new(0.0, 0.0, 0.0, 0.7));
+                    losango(q, u(s), cor);
                 }
             }
         }
@@ -1664,12 +1738,12 @@ impl Mapa {
             draw_circle_lines(
                 q.x,
                 q.y,
-                (Cidade::RAIO * escala).max(6.0),
-                2.0,
+                (Cidade::RAIO * escala).max(u(6.0)),
+                u(2.0),
                 estilo::OURO,
             );
-            casinha(q, 7.0, estilo::OURO);
-            estilo::texto_centro(q.x, q.y - 12.0, "Cidade", 14, estilo::OURO);
+            casinha(q, u(7.0), estilo::OURO);
+            estilo::texto_centro(q.x, q.y - u(12.0), "Cidade", 14, estilo::OURO);
         }
         for (centro, meia) in self.pegadas.iter().filter(|_| self.filtros.vila) {
             pegada(ponto(*centro - *meia), ponto(*centro + *meia), 1.0);
@@ -1677,28 +1751,28 @@ impl Mapa {
         if let Some(po) = self.porto.filter(|_| self.filtros.vila) {
             let q = ponto(po.centro);
             let (a, b) = (ponto(po.raiz), ponto(po.ponta));
-            draw_circle_lines(q.x, q.y, (po.raio * escala).max(6.0), 2.0, COR_PORTO);
-            draw_line(a.x, a.y, b.x, b.y, 3.0, COR_PREDIO);
-            ancora(q, 7.0, COR_PORTO);
-            estilo::texto_centro(q.x, q.y - 14.0, "Porto", 14, COR_PORTO);
+            draw_circle_lines(q.x, q.y, (po.raio * escala).max(u(6.0)), u(2.0), COR_PORTO);
+            draw_line(a.x, a.y, b.x, b.y, u(3.0), COR_PREDIO);
+            ancora(q, u(7.0), COR_PORTO);
+            estilo::texto_centro(q.x, q.y - u(14.0), "Porto", 14, COR_PORTO);
+        }
+        // NPCs da vila: todos, sempre — com ou sem o filtro Vila (o `world`
+        // so' tem os de perto). Tocar leva ate' ele.
+        for (_, p) in self.npcs_da_vila() {
+            let q = ponto(p);
+            if !crate::icones_ui::mapa("npc", q, u(18.0), COR_NPC, 0.0) {
+                draw_circle(q.x, q.y, u(4.0), COR_NPC);
+            }
         }
         for (id, e) in &world.ents {
-            if Some(*id) == world.self_id {
+            if Some(*id) == world.self_id || e.meta.tag != EntityTag::Player {
                 continue;
             }
-            let cor = match e.meta.tag {
-                EntityTag::Npc if self.filtros.vila => COR_NPC,
-                EntityTag::Player => COR_GENTE,
-                _ => continue,
-            };
             let q = ponto(e.render_pos);
-            if e.meta.tag == EntityTag::Npc && crate::icones_ui::mapa("npc", q, 15.0, cor, 0.0) {
-                continue;
-            }
-            draw_circle(q.x, q.y, 3.0, cor);
+            draw_circle(q.x, q.y, u(3.0), COR_GENTE);
         }
         let rota: Vec<Vec2> = self.rota.iter().map(|p| ponto(*p)).collect();
-        tracejado(&rota, 5.0, 3.0, 2.5, estilo::AUTO, None);
+        tracejado(&rota, u(5.0), u(3.0), u(2.5), estilo::AUTO, None);
         let eu = world.self_pos();
         if let Some(d) = self.viagem.destino() {
             let q = ponto(d);
@@ -1714,25 +1788,25 @@ impl Mapa {
                 );
                 estilo::texto_centro(
                     q.x,
-                    q.y + 20.0,
+                    q.y + u(20.0),
                     &format!("{:.0} m", eu.distance(d)),
                     13,
                     estilo::AUTO,
                 );
             }
-            marca_destino(q, 7.0);
+            marca_destino(q, u(7.0));
         }
         if let Some(eu) = eu {
             let yaw = world
                 .self_id
                 .and_then(|id| world.ents.get(&id))
                 .map_or(0.0, |e| e.yaw);
-            seta(ponto(eu), yaw, 9.0, estilo::TEXTO);
+            seta(ponto(eu), yaw, u(9.0), estilo::TEXTO);
         }
         // Onde o clique cairia: agua avisa antes de clicar.
         let m = Vec2::from(mouse_position());
         if r.contains(m) && self.tex.is_some() && !self.terra(de_tela(m, r, raio)) {
-            estilo::texto_centro(m.x, m.y - 12.0, "água", 13, estilo::SUAVE);
+            estilo::texto_centro(m.x, m.y - u(12.0), "água", 13, estilo::SUAVE);
         }
     }
 

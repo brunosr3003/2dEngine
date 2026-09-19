@@ -223,6 +223,10 @@ impl Mercado {
 
     /// Desenha e devolve os pedidos do quadro.
     pub fn desenha(&mut self, c: &Contexto, agora: f64) -> Vec<ClientMessage> {
+        estilo::no_painel(estilo::escala_do_painel(980.0, 660.0), || self.desenha_na_escala(c, agora))
+    }
+
+    fn desenha_na_escala(&mut self, c: &Contexto, agora: f64) -> Vec<ClientMessage> {
         let mut saida = Vec::new();
         if !self.aberto {
             return saida;

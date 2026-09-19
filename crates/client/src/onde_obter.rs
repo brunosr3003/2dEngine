@@ -376,6 +376,10 @@ pub struct OndeObter {
     /// Item do popup aberto.
     pub item: Option<u16>,
     rolagem: crate::rolagem::Rolagem,
+    /// Abriu com o dedo ainda na tela (a lupa vale no ENCOSTAR): ate' ele
+    /// soltar, nada aqui dentro recebe o toque — senao o mesmo toque que
+    /// abriu caia no "Ir" que ficou embaixo e o personagem saia andando.
+    espera_soltar: bool,
 }
 
 impl OndeObter {
@@ -390,6 +394,7 @@ impl OndeObter {
     pub fn abrir(&mut self, item: u16) {
         self.item = Some(item);
         self.rolagem.zera();
+        self.espera_soltar = true;
     }
 
     pub fn fechar(&mut self) {
@@ -400,8 +405,12 @@ impl OndeObter {
         self.item.is_some()
     }
 
+    fn escala() -> f32 {
+        estilo::escala_do_painel(600.0, 560.0)
+    }
+
     fn painel() -> Rect {
-        let f = estilo::fator_texto();
+        let f = Self::escala();
         let s = crate::hud_layout::tela_segura();
         let (w, h) = ((600.0 * f).min(s.w - 16.0), (560.0 * f).min(s.h - 16.0));
         Rect::new(s.center().x - w * 0.5, s.center().y - h * 0.5, w, h)
@@ -413,7 +422,22 @@ impl OndeObter {
 
     /// Desenha o popup. `Some` no quadro em que um "Ir" foi tocado.
     pub fn desenha(&mut self, nome: &str, ops: &[Opcao]) -> Option<Ir> {
+        self.item?;
+        estilo::no_painel(Self::escala(), || self.desenha_na_escala(nome, ops))
+    }
+
+    fn desenha_na_escala(&mut self, nome: &str, ops: &[Opcao]) -> Option<Ir> {
         let item = self.item?;
+        let mut entrada = crate::rolagem::Entrada::agora();
+        if self.espera_soltar {
+            if entrada.segurando || entrada.soltou {
+                entrada.apertou = false;
+                entrada.soltou = false;
+            } else {
+                self.espera_soltar = false;
+            }
+        }
+        let esperando = self.espera_soltar;
         crate::hud_layout::escurece(0.55);
         let f = estilo::fator_texto();
         let p = Self::painel();
@@ -432,7 +456,7 @@ impl OndeObter {
             estilo::OURO,
         );
         let fechar = Rect::new(p.x + p.w - 50.0 * f, p.y + 8.0 * f, 42.0 * f, 38.0 * f);
-        if crate::ui::botao(fechar, "x", true) {
+        if crate::ui::botao(fechar, "x", true) && !esperando {
             self.fechar();
             return None;
         }
@@ -446,7 +470,7 @@ impl OndeObter {
         let total = ops.len() as f32 * linha;
         // Rola arrastando (dedo), pela roda ou pela barra; o botao da linha
         // vale no SOLTAR, senao o arrasto que comeca nele ja' viajava.
-        let clique = self.rolagem.quadro(lista, total, linha);
+        let clique = self.rolagem.passo(lista, total, linha, entrada);
         if ops.is_empty() {
             estilo::texto(
                 lista.x + 8.0,

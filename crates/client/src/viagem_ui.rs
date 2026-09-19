@@ -27,6 +27,10 @@ impl ViagemUi {
 
     /// Desenha; devolve a ilha escolhida pra embarcar (o menu fecha junto).
     pub fn desenha(&mut self) -> Option<u8> {
+        estilo::no_painel(estilo::escala_do_painel(560.0, 420.0), || self.desenha_na_escala())
+    }
+
+    fn desenha_na_escala(&mut self) -> Option<u8> {
         let destinos = self.destinos.as_ref()?;
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();

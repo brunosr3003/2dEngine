@@ -316,11 +316,13 @@ impl DungeonUi {
         } else if !self.aberto {
             self.desenha_faixa_da_fila(agora, &mut saida);
         }
-        if self.aberto {
-            self.desenha_janela(c, agora, &mut saida);
-        }
-        self.desenha_resultado(c, &mut saida);
-        self.desenha_pronto(agora, &mut saida);
+        estilo::no_painel(estilo::escala_do_painel(980.0, 660.0), || {
+            if self.aberto {
+                self.desenha_janela(c, agora, &mut saida);
+            }
+            self.desenha_resultado(c, &mut saida);
+            self.desenha_pronto(agora, &mut saida);
+        });
         saida
     }
 

@@ -788,6 +788,34 @@ impl ItemInstance {
 
 /// Multiplier de stats baseado em item_level. iLvl 1 = 1.0× (baseline),
 /// cresce ~1% por level. Fórmula: 1.0 + (ilvl - 1) × 0.015.
+/// O que uma peca de `item_id` criada no `item_level` pode rolar: (atributo,
+/// minimo, maximo), na MESMA conta do `roll_with_template` (sem os afixos,
+/// que sao sorteio a parte). Vazio pro que nao e' equipamento. E' o "o que
+/// da'" do Craft antes de criar.
+pub fn faixas_do_roll(item_id: u16, item_level: u16) -> Vec<(&'static str, i32, i32)> {
+    let tpl = item_template(item_id);
+    let mult = tier_stat_mult(tier_from_ilvl(item_level)) * ilvl_scale(item_level) * bonus_do_tier(1);
+    [
+        ("Ataque", tpl.attack_damage),
+        ("Defesa", tpl.defense),
+        ("Vida", tpl.hp_max),
+        ("Mana", tpl.mp_max),
+        ("Destreza", tpl.dex),
+        ("Sabedoria", tpl.wis),
+    ]
+    .into_iter()
+    .filter(|(_, r)| !r.is_zero())
+    .map(|(n, r)| (n, r.roll(0.0, mult), r.roll(1.0, mult)))
+    .collect()
+}
+
+/// Quantos atributos extras aleatorios (afixos) a peca criada no
+/// `item_level` traz.
+pub fn afixos_do_roll(item_level: u16) -> u8 {
+    let (pre, suf) = tier_affix_counts(tier_from_ilvl(item_level));
+    pre + suf
+}
+
 pub fn ilvl_scale(item_level: u16) -> f32 {
     1.0 + (item_level.saturating_sub(1) as f32) * 0.015
 }
@@ -814,6 +842,21 @@ pub fn sockets_for_tier(tier: u8) -> u8 {
 #[cfg(test)]
 mod testes_do_refino {
     use super::*;
+
+    #[test]
+    fn faixas_do_roll_cercam_o_que_o_craft_rola() {
+        use crate::constants::item_id::KATANA;
+        let f = faixas_do_roll(KATANA, 5);
+        assert_eq!(f.iter().map(|x| x.0).collect::<Vec<_>>(), vec!["Ataque", "Destreza"]);
+        for r in [0.0f32, 0.3, 0.7, 0.999] {
+            let i = ItemInstance::roll_for(KATANA, 5, || r).unwrap();
+            assert!((f[0].1..=f[0].2).contains(&i.attack_damage), "{r}: {}", i.attack_damage);
+            assert!((f[1].1..=f[1].2).contains(&i.dex));
+        }
+        assert!(faixas_do_roll(crate::constants::item_id::COPPER, 5).is_empty());
+        assert_eq!(afixos_do_roll(5), 0);
+        assert!(afixos_do_roll(60) > afixos_do_roll(20));
+    }
 
     /// Cada nivel de refino MUDA a peca, ate' a cinza do comeco: o +1 nao
     /// pode arredondar pra nada (era o caso com so' +5%).

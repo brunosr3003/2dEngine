@@ -40,7 +40,46 @@ fn fonte<T>(forte: bool, f: impl FnOnce(&Font) -> T) -> T {
 /// Interface; 130% no celular por padrao). Todo texto e toda medida passam
 /// por aqui, entao o `tamanho` dos chamadores continua "o de 100%".
 pub fn fator_texto() -> f32 {
-    crate::hud_layout::escala_ui()
+    ESCALA_DO_PAINEL
+        .with(|c| c.get())
+        .unwrap_or_else(crate::hud_layout::escala_ui)
+}
+
+thread_local! {
+    /// Escala do painel sendo desenhado agora (`no_painel`): enquanto ele
+    /// desenha, `fator_texto` devolve ela — texto e medida crescem juntos.
+    static ESCALA_DO_PAINEL: std::cell::Cell<Option<f32>> = const { std::cell::Cell::new(None) };
+}
+
+/// A escala de um painel que a 100% mede `base_w` x `base_h`.
+///
+/// No PC e' a da interface. No celular a tela e' densa e o alvo e' o dedo: o
+/// painel cresce ate' encher a area segura (Craft, Forja, Onde obter...),
+/// nunca passando dela nem de 2,2x. A escolha em Menu → Interface continua
+/// valendo: o padrao (130%) enche; menos que isso encolhe na mesma proporcao.
+pub fn escala_do_painel(base_w: f32, base_h: f32) -> f32 {
+    let f = crate::hud_layout::escala_ui();
+    if !crate::nativo::TECLADO_NA_TELA {
+        return f;
+    }
+    let s = crate::hud_layout::tela_segura();
+    let caber = ((s.w - 16.0) / base_w).min((s.h - 16.0) / base_h);
+    let gosto = f / crate::hud_layout::escala_ui_padrao();
+    (caber * gosto).min(caber).clamp(0.8, 2.2)
+}
+
+/// Desenha `corpo` com `fator_texto() == k`: quem mede com o fator (texto,
+/// `u`) sai na escala do painel.
+pub fn no_painel<T>(k: f32, corpo: impl FnOnce() -> T) -> T {
+    let antes = ESCALA_DO_PAINEL.with(|c| c.replace(Some(k)));
+    let r = corpo();
+    ESCALA_DO_PAINEL.with(|c| c.set(antes));
+    r
+}
+
+/// Uma medida "de 100%" na escala atual (a do painel, dentro de `no_painel`).
+pub fn u(v: f32) -> f32 {
+    v * fator_texto()
 }
 
 fn tam(tamanho: u16) -> u16 {

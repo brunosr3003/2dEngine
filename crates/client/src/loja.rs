@@ -129,7 +129,15 @@ impl Loja {
 
     /// (painel, lista). A lista mostra no maximo o que cabe acima do bloco de
     /// compra; o resto rola.
+    fn escala() -> f32 {
+        estilo::escala_do_painel(LARGURA, 640.0)
+    }
+
     fn areas(&self) -> (Rect, Rect) {
+        estilo::no_painel(Self::escala(), || self.areas_na_escala())
+    }
+
+    fn areas_na_escala(&self) -> (Rect, Rect) {
         let f = estilo::fator_texto();
         let t = crate::hud_layout::tela_segura();
         let topo = t.y + screen_height() * 0.12;
@@ -149,6 +157,17 @@ impl Loja {
 
     /// Desenha e devolve o pedido de compra do quadro.
     pub fn desenha(
+        &mut self,
+        nomes: &HashMap<u16, String>,
+        slots: &[InventorySlot],
+        ouro: u64,
+        cobre: u64,
+        vendedor: &str,
+    ) -> Vec<ClientMessage> {
+        estilo::no_painel(Self::escala(), || self.desenha_na_escala(nomes, slots, ouro, cobre, vendedor))
+    }
+
+    fn desenha_na_escala(
         &mut self,
         nomes: &HashMap<u16, String>,
         slots: &[InventorySlot],
