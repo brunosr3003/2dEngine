@@ -63,6 +63,8 @@ pub struct Missoes {
     givers: Vec<u16>,
     /// "Ir" apertado no diario neste quadro: o `main` liga a auto missao.
     pub ir: Option<u16>,
+    /// Ofertas + ativas passam da tela (o Mestre oferece varias de uma vez).
+    rolagem: crate::rolagem::Rolagem,
 }
 
 /// (feito, total) pra mostrar. Coleta conta o que esta' na bolsa.
@@ -212,6 +214,7 @@ impl Missoes {
         self.quem = nome;
         self.npc = npc;
         self.aberta = true;
+        self.rolagem.zera();
     }
 
     /// Guarda a oferta do NPC SEM abrir a janela: quem mostra e' o dialogo.
@@ -228,6 +231,7 @@ impl Missoes {
     /// Abre a janela com a oferta ja' guardada.
     pub fn abre_janela(&mut self) {
         self.aberta = true;
+        self.rolagem.zera();
     }
 
     pub fn oferta(&self) -> &[QuestNet] {
@@ -396,16 +400,24 @@ impl Missoes {
             1.0,
             estilo::BORDA,
         );
-        let texto_w = p.w - 32.0;
-        let fim = p.y + p.h;
-        let mut y = p.y + 52.0;
+        let texto_w = p.w - 44.0;
+        // Ofertas e ativas rolam (dedo, roda ou barra) em vez de sumir quando
+        // nao cabem; botao dentro da lista vale no SOLTAR.
+        let area = Rect::new(p.x + 2.0, p.y + 48.0, p.w - 4.0, p.h - 52.0);
+        let total = self.altura() - 58.0 + 6.0;
+        let clique = self.rolagem.quadro(area, total, LINHA_ATIVA);
+        let tocou = |r: Rect| clique.is_some_and(|c| r.contains(c) && area.contains(c));
+        let fora = |y: f32, h: f32| y + h < area.y || y > area.y + area.h;
+        crate::rolagem::recortar(Some(area));
+        let mut y = area.y + 4.0 - self.rolagem.pos;
 
         if !self.oferta.is_empty() {
             estilo::texto(p.x + 16.0, y + 18.0, "Disponíveis", 15, estilo::SUAVE);
             y += TITULO_SECAO;
             for q in &self.oferta {
-                if y + LINHA_OFERTA > fim {
-                    break;
+                if fora(y, LINHA_OFERTA) {
+                    y += LINHA_OFERTA;
+                    continue;
                 }
                 estilo::texto_ajustado(
                     &q.title,
@@ -432,11 +444,9 @@ impl Missoes {
                     14,
                     estilo::OURO,
                 );
-                if crate::ui::botao(
-                    Rect::new(p.x + p.w - 108.0, y + 4.0, 92.0, 26.0),
-                    "Aceitar",
-                    true,
-                ) {
+                let b = Rect::new(p.x + p.w - 120.0, y + 4.0, 92.0, 26.0);
+                let _ = crate::ui::botao(b, "Aceitar", true);
+                if tocou(b) {
                     saida.push(ClientMessage::AcceptQuest { quest_id: q.id });
                 }
                 y += LINHA_OFERTA;
@@ -456,8 +466,9 @@ impl Missoes {
         let com_o_mestre = self.npc.is_some();
         let mut ir = None;
         for q in &self.log {
-            if y + LINHA_ATIVA > fim {
-                break;
+            if fora(y, LINHA_ATIVA) {
+                y += LINHA_ATIVA;
+                continue;
             }
             let (feito, total) = progresso(q, tem);
             let ok = pronta(q, tem);
@@ -492,18 +503,22 @@ impl Missoes {
                 barra.h,
                 estilo::OURO,
             );
-            let mut bx = p.x + p.w - 16.0;
+            let mut bx = p.x + p.w - 28.0;
             if ok && com_o_mestre && q.giver == GIVER_MESTRE_DA_ILHA {
                 bx -= 92.0;
-                if crate::ui::botao(Rect::new(bx, y + 4.0, 92.0, 26.0), "Entregar", true) {
+                let b = Rect::new(bx, y + 4.0, 92.0, 26.0);
+                let _ = crate::ui::botao(b, "Entregar", true);
+                if tocou(b) {
                     saida.push(ClientMessage::TurnInQuest { quest_id: q.id });
                 }
                 bx -= 8.0;
             }
-            if !com_o_mestre
-                && crate::ui::botao(Rect::new(bx - 92.0, y + 4.0, 92.0, 26.0), "Ir", true)
-            {
-                ir = Some(q.id);
+            if !com_o_mestre {
+                let b = Rect::new(bx - 92.0, y + 4.0, 92.0, 26.0);
+                let _ = crate::ui::botao(b, "Ir", true);
+                if tocou(b) {
+                    ir = Some(q.id);
+                }
             }
             if coleta(q) && q.obj_target != 0 && !ok {
                 let lx = if com_o_mestre {
@@ -511,22 +526,24 @@ impl Missoes {
                 } else {
                     bx - 92.0 - 40.0
                 };
-                if crate::onde_obter::botao(Rect::new(lx, y + 2.0, 34.0, 30.0)) {
+                let lupa = Rect::new(lx, y + 2.0, 34.0, 30.0);
+                let _ = crate::onde_obter::botao(lupa);
+                if tocou(lupa) {
                     self.onde_obter = Some(q.obj_target);
                 }
             }
             // A historia nao se abandona.
-            if !historia::e_da_historia(q.id)
-                && crate::ui::botao(
-                    Rect::new(bx - 92.0, y + 34.0, 92.0, 24.0),
-                    "Abandonar",
-                    true,
-                )
-            {
-                saida.push(ClientMessage::AbandonQuest { quest_id: q.id });
+            if !historia::e_da_historia(q.id) {
+                let b = Rect::new(bx - 92.0, y + 34.0, 92.0, 24.0);
+                let _ = crate::ui::botao(b, "Abandonar", true);
+                if tocou(b) {
+                    saida.push(ClientMessage::AbandonQuest { quest_id: q.id });
+                }
             }
             y += LINHA_ATIVA;
         }
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(area, total);
         if ir.is_some() {
             self.ir = ir;
             self.fecha();

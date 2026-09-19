@@ -3,10 +3,11 @@
 //!
 //! Duas familias, duas regras:
 //!
-//! - **Chaves** (Escama, Garra, Chifre, Couro): 5 da mesma cor tentam 1 da
-//!   cor seguinte, com CHANCE — 10% de cinza pra verde, caindo a cada degrau.
-//!   A chave e' o regulador do craft (so' cai de chefe), entao subir de cor
-//!   por aqui tem que ser aposta, nao conta fechada. Falhar consome as 5.
+//! - **Chaves** (Escama, Garra, Chifre, Couro — os itens UNICOS de cada
+//!   receita): 5 da mesma cor tentam 1 da cor seguinte com 10% de chance, em
+//!   todo degrau, ate' roxa → lendaria. A chave e' o regulador do craft (so'
+//!   cai de chefe), entao subir de cor por aqui e' aposta, nao conta fechada.
+//!   Falhar consome as 5.
 //! - **Materiais** (os oito coloridos de 100/300): a sintese de
 //!   `docs/ECONOMIA_DE_CRAFT.md` — 10 da cor viram 1 da seguinte, sempre, mas
 //!   cobrando cobre, darksteel e Po Cintilante. E' a unica fonte de material
@@ -38,14 +39,10 @@ pub struct ReceitaDeCombinar {
 
 /// Chaves consumidas por tentativa.
 pub const CHAVES_POR_TENTATIVA: u32 = 5;
-/// Chance de subir a chave da cor `cor` (1 cinza .. 4 roxa → lendaria).
-pub const fn chance_da_chave(cor: u8) -> u8 {
-    match cor {
-        1 => 10,
-        2 => 7,
-        3 => 5,
-        _ => 3,
-    }
+/// Chance de subir a chave da cor `cor` (1 cinza .. 4 roxa → lendaria): 10%
+/// em todo degrau (decisao de 19/09/2026 — era 10/7/5/3).
+pub const fn chance_da_chave(_cor: u8) -> u8 {
+    10
 }
 
 /// Material consumido por sintese.
@@ -148,12 +145,17 @@ mod testes {
     }
 
     #[test]
-    fn a_chave_roxa_sobe_pra_lendaria() {
+    fn toda_chave_sobe_de_cor_a_dez_por_cento_ate_a_lendaria() {
         for &base in &item_id::CHAVES {
-            let r = receita(item_id::chave_na_cor(base, 4)).unwrap();
-            assert_eq!(r.saida, item_id::chave_na_cor(base, 5));
-            assert!(r.chance > 0 && r.chance < chance_da_chave(1));
+            for cor in 1..=4u8 {
+                let r = receita(item_id::chave_na_cor(base, cor)).unwrap();
+                assert_eq!(r.saida, item_id::chave_na_cor(base, cor + 1));
+                assert_eq!((r.qtd, r.chance), (5, 10), "cor {cor} de {base}");
+            }
         }
+        // Garra cinza x5 → garra verde, o exemplo do pedido.
+        let garra = receita(item_id::CLAW).unwrap();
+        assert_eq!(garra.saida, item_id::na_cor(item_id::CLAW, 2));
     }
 
     #[test]

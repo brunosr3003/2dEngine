@@ -375,8 +375,7 @@ pub struct OndeObter {
     fontes: HashMap<u16, Vec<FonteDeItem>>,
     /// Item do popup aberto.
     pub item: Option<u16>,
-    rolagem: f32,
-    arrasto: Option<f32>,
+    rolagem: crate::rolagem::Rolagem,
 }
 
 impl OndeObter {
@@ -390,8 +389,7 @@ impl OndeObter {
 
     pub fn abrir(&mut self, item: u16) {
         self.item = Some(item);
-        self.rolagem = 0.0;
-        self.arrasto = None;
+        self.rolagem.zera();
     }
 
     pub fn fechar(&mut self) {
@@ -445,31 +443,10 @@ impl OndeObter {
             p.h - 68.0 * f,
         );
         let linha = 70.0 * f;
-        let mouse = Vec2::from(mouse_position());
         let total = ops.len() as f32 * linha;
-        let max = (total - lista.h).max(0.0);
-        if lista.contains(mouse) {
-            let (_, roda) = mouse_wheel();
-            self.rolagem -= roda.signum() * linha;
-        }
-        // Arrasto de dedo rola a lista.
-        if is_mouse_button_pressed(MouseButton::Left) && lista.contains(mouse) {
-            self.arrasto = Some(mouse.y);
-        }
-        let mut arrastou = false;
-        if let Some(y0) = self.arrasto {
-            if is_mouse_button_down(MouseButton::Left) {
-                let dy = mouse.y - y0;
-                if dy.abs() > 8.0 {
-                    self.rolagem -= dy;
-                    self.arrasto = Some(mouse.y);
-                    arrastou = true;
-                }
-            } else {
-                self.arrasto = None;
-            }
-        }
-        self.rolagem = self.rolagem.clamp(0.0, max);
+        // Rola arrastando (dedo), pela roda ou pela barra; o botao da linha
+        // vale no SOLTAR, senao o arrasto que comeca nele ja' viajava.
+        let clique = self.rolagem.quadro(lista, total, linha);
         if ops.is_empty() {
             estilo::texto(
                 lista.x + 8.0,
@@ -480,11 +457,12 @@ impl OndeObter {
             );
         }
         let mut saida = None;
+        crate::rolagem::recortar(Some(lista));
         for (i, o) in ops.iter().enumerate() {
             let r = Rect::new(
                 lista.x,
-                lista.y + i as f32 * linha - self.rolagem,
-                lista.w,
+                lista.y + i as f32 * linha - self.rolagem.pos,
+                lista.w - 12.0,
                 linha - 6.0 * f,
             );
             if r.y + r.h < lista.y || r.y > lista.y + lista.h {
@@ -519,14 +497,15 @@ impl OndeObter {
             );
             match (&o.ir, &o.sem_ir) {
                 (Some(ir), _) => {
-                    let visivel = b.y >= lista.y && b.y + b.h <= lista.y + lista.h;
+                    let visivel = b.y + b.h > lista.y && b.y < lista.y + lista.h;
                     let rotulo = match ir {
                         Ir::Alvo(_) => "Ir",
                         Ir::AbrirCraft(_) => "Abrir",
                         Ir::AbrirMercado(_) => "Buscar",
                         Ir::AbrirDungeons | Ir::AbrirCalendario => "Abrir",
                     };
-                    if crate::ui::botao(b, rotulo, visivel) && visivel && !arrastou {
+                    let _ = crate::ui::botao(b, rotulo, visivel);
+                    if visivel && clique.is_some_and(|c| b.contains(c) && lista.contains(c)) {
                         saida = Some(ir.clone());
                     }
                 }
@@ -550,6 +529,8 @@ impl OndeObter {
                 (None, None) => {}
             }
         }
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(lista, total);
         if saida.is_some() {
             self.fechar();
         }

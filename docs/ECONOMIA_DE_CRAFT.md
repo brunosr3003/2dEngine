@@ -133,9 +133,10 @@ e vira **matéria-prima de progressão**.
 
 - ~~A síntese de cor~~ **existe desde 18/09/2026**: aba **Combinar** do Craft
   (`shared::combinar`). Material: 10 → 1 garantido, com o cobre, o darksteel e
-  o pó da tabela acima (azul → roxo no valor extrapolado). Chave: 5 → 1 com
-  chance — 10% cinza → verde, 7%, 5%, e 3% roxa → lendária; falhar consome as
-  cinco. A chave é aposta de propósito: é ela que regula o craft.
+  o pó da tabela acima (azul → roxo no valor extrapolado). Chave (Escama,
+  Garra, Chifre, Couro): 5 → 1 da cor de cima com **10% em todo degrau**, até
+  roxa → lendária; falhar consome as cinco. A chave é aposta de propósito: é
+  ela que regula o craft.
 - **A troca por equipamento +8** depende do refino, que existe em
   `shared/forja.rs` mas ainda não conversa com o craft.
 - **Material roxo** agora sai da síntese (10 azuis + 200.000 cobre + 25.000

@@ -205,7 +205,7 @@ pub struct Oficina {
     sel_grupo: Option<(u16, u8, u8)>,
     /// Receita escolhida no Combinar (a entrada).
     sel_receita: Option<u16>,
-    rolagem: f32,
+    rolagem: crate::rolagem::Rolagem,
     /// Lupa tocada: o item pro "Onde obter".
     pub onde_obter: Option<u16>,
 }
@@ -283,16 +283,8 @@ fn linha_de_custo(
 }
 
 impl Oficina {
-    fn rolar(&mut self, lista: Rect, total: f32) {
-        if lista.contains(Vec2::from(mouse_position())) {
-            let (_, roda) = mouse_wheel();
-            self.rolagem =
-                (self.rolagem - roda.signum() * LINHA).clamp(0.0, (total - lista.h).max(0.0));
-        }
-    }
-
     pub fn trocou_de_aba(&mut self) {
-        self.rolagem = 0.0;
+        self.rolagem.zera();
     }
 
     /// Aba Aprimorar. `lista` e `d` sao as duas colunas do painel.
@@ -308,7 +300,9 @@ impl Oficina {
         let chave = |g: &Grupo| (g.item_id, g.grau, g.tier);
         fundo_da_lista(lista);
         let gs = grupos(slots);
-        self.rolar(lista, gs.len() as f32 * LINHA);
+        let total = gs.len() as f32 * LINHA;
+        let clique = self.rolagem.quadro(lista, total, LINHA);
+        let arrastando = self.rolagem.arrastando();
         if gs.is_empty() {
             estilo::texto(lista.x + 10.0, lista.y + 24.0, "Nenhuma peça na bolsa.", 14, estilo::SUAVE);
             estilo::texto(lista.x + 10.0, lista.y + 44.0, "Crie no Craft ou guarde as que caírem.", 13, estilo::SUAVE);
@@ -317,14 +311,14 @@ impl Oficina {
             self.sel_grupo = gs.first().map(chave);
         }
         let mouse = Vec2::from(mouse_position());
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
+        crate::rolagem::recortar(Some(lista));
         for (i, g) in gs.iter().enumerate() {
-            let y = lista.y + i as f32 * LINHA - self.rolagem;
+            let y = lista.y + i as f32 * LINHA - self.rolagem.pos;
             if y + LINHA < lista.y || y > lista.y + lista.h {
                 continue;
             }
-            let linha = Rect::new(lista.x, y, lista.w, LINHA - 3.0);
-            let sobre = linha.contains(mouse) && lista.contains(mouse);
+            let linha = Rect::new(lista.x, y, lista.w - 12.0, LINHA - 3.0);
+            let sobre = !arrastando && linha.contains(mouse) && lista.contains(mouse);
             realce(linha, self.sel_grupo == Some(chave(g)), sobre);
             crate::bolsa::icone_do_item(Rect::new(linha.x + 4.0, linha.y + 4.0, 34.0, 34.0), g.item_id, 1.0);
             let cor = if g.fundivel(slots) { estilo::TEXTO } else { estilo::SUAVE };
@@ -344,10 +338,12 @@ impl Oficina {
             if motivo_aprimorar(g, slots, nivel).is_none() {
                 estilo::texto(linha.x + linha.w - 48.0, linha.y + 26.0, "pronto", 12, VERDE);
             }
-            if sobre && clicou {
+            if clique.is_some_and(|c| linha.contains(c)) {
                 self.sel_grupo = Some(chave(g));
             }
         }
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(lista, total);
         let g = gs.iter().find(|g| Some(chave(g)) == self.sel_grupo)?;
         // Detalhe: duas pecas → uma do degrau de cima.
         let (grau_novo, tier_novo) = resultado(g);
@@ -440,19 +436,21 @@ impl Oficina {
         let t = |id: u16| tem(slots, id);
         fundo_da_lista(lista);
         let rs = receitas(slots);
-        self.rolar(lista, rs.len() as f32 * LINHA);
+        let total = rs.len() as f32 * LINHA;
+        let clique = self.rolagem.quadro(lista, total, LINHA);
+        let arrastando = self.rolagem.arrastando();
         if self.sel_receita.is_none() {
             self.sel_receita = rs.first().map(|r| r.entrada);
         }
         let mouse = Vec2::from(mouse_position());
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
+        crate::rolagem::recortar(Some(lista));
         for (i, r) in rs.iter().enumerate() {
-            let y = lista.y + i as f32 * LINHA - self.rolagem;
+            let y = lista.y + i as f32 * LINHA - self.rolagem.pos;
             if y + LINHA < lista.y || y > lista.y + lista.h {
                 continue;
             }
-            let linha = Rect::new(lista.x, y, lista.w, LINHA - 3.0);
-            let sobre = linha.contains(mouse) && lista.contains(mouse);
+            let linha = Rect::new(lista.x, y, lista.w - 12.0, LINHA - 3.0);
+            let sobre = !arrastando && linha.contains(mouse) && lista.contains(mouse);
             realce(linha, self.sel_receita == Some(r.entrada), sobre);
             crate::bolsa::icone_do_item(Rect::new(linha.x + 4.0, linha.y + 4.0, 34.0, 34.0), r.entrada, 1.0);
             let pode = combinar::vezes_possiveis(r, &t) > 0;
@@ -468,10 +466,12 @@ impl Oficina {
             if pode {
                 estilo::texto(linha.x + linha.w - 48.0, linha.y + 26.0, "pronto", 12, VERDE);
             }
-            if sobre && clicou {
+            if clique.is_some_and(|c| linha.contains(c)) {
                 self.sel_receita = Some(r.entrada);
             }
         }
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(lista, total);
         let r = rs.iter().find(|r| Some(r.entrada) == self.sel_receita)?;
         // Detalhe: N da cor → 1 da de cima, a chance e o que cada tentativa cobra.
         let cy = d.y + 8.0;
@@ -483,9 +483,9 @@ impl Oficina {
         let (chance, cor) = if r.chance >= 100 {
             ("sempre dá certo".to_string(), VERDE)
         } else {
-            (format!("{}% de chance por tentativa", r.chance), AMARELO)
+            (format!("{}% por tentativa", r.chance), AMARELO)
         };
-        estilo::texto(d.x + 210.0, cy + 46.0, &chance, 14, cor);
+        estilo::texto_ajustado(&chance, d.x + 210.0, cy + 46.0, d.w - 216.0, 14, cor);
         estilo::texto(d.x + 6.0, d.y + 92.0, "Cada tentativa gasta", 15, estilo::TEXTO);
         let mut y = d.y + 104.0;
         for (id, custo) in [

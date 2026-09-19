@@ -245,19 +245,19 @@ fn grupo(d: &QuestDef) -> String {
 #[derive(Default)]
 pub struct MenuMissoes {
     pub aberto: bool,
-    rolagem: f32,
+    rolagem: crate::rolagem::Rolagem,
 }
 
 impl MenuMissoes {
     /// Abre pelo rodape do rastreador ou pelo Menu — nunca por tecla.
     pub fn abrir(&mut self) {
         self.aberto = true;
-        self.rolagem = 0.0;
+        self.rolagem.zera();
     }
 
     pub fn alterna(&mut self) {
         self.aberto = !self.aberto;
-        self.rolagem = 0.0;
+        self.rolagem.zera();
     }
 
     fn painel() -> Rect {
@@ -312,15 +312,14 @@ impl MenuMissoes {
             }
         }
         let total = grupos as f32 * TITULO_GRUPO + lista.len() as f32 * LINHA;
-        if area.contains(mouse) {
-            let (_, roda) = mouse_wheel();
-            self.rolagem =
-                (self.rolagem - roda.signum() * LINHA).clamp(0.0, (total - area.h).max(0.0));
-        }
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
+        // Toque na linha (ou no "Ir") vale no SOLTAR: a mesma lista rola
+        // arrastando, e o aperto nao sabe ainda qual dos dois vai ser.
+        let clique = self.rolagem.quadro(area, total, LINHA);
+        let arrastando = self.rolagem.arrastando();
         let mut saida = None;
         let mut dica: Option<Vec<String>> = None;
-        let mut y = area.y - self.rolagem;
+        let mut y = area.y - self.rolagem.pos;
+        crate::rolagem::recortar(Some(area));
         let mut ultima: Option<String> = None;
         if lista.is_empty() {
             estilo::texto(
@@ -359,7 +358,7 @@ impl MenuMissoes {
                 }
                 y += TITULO_GRUPO;
             }
-            let linha = Rect::new(area.x, y, area.w, LINHA - 4.0);
+            let linha = Rect::new(area.x, y, area.w - 12.0, LINHA - 4.0);
             y += LINHA;
             if linha.y + linha.h < area.y || linha.y > area.y + area.h {
                 continue;
@@ -369,7 +368,7 @@ impl MenuMissoes {
             } else {
                 estado(d, c)
             };
-            let sobre = linha.contains(mouse) && area.contains(mouse);
+            let sobre = !arrastando && linha.contains(mouse) && area.contains(mouse);
             let fundo = if sobre { 0.08 } else { 0.03 };
             draw_rectangle(
                 linha.x,
@@ -445,11 +444,14 @@ impl MenuMissoes {
                 Estado::Disponivel | Estado::EmAndamento { .. } | Estado::Pronta
             );
             let b = Rect::new(linha.x + linha.w - 82.0, linha.y + 12.0, 70.0, 28.0);
+            let tocou = |r: Rect| clique.is_some_and(|c| r.contains(c) && area.contains(c));
             if clicavel {
-                if crate::ui::botao(b, "Ir", true) {
+                // Desenha o botao; quem decide e' o toque no soltar.
+                let _ = crate::ui::botao(b, "Ir", true);
+                if tocou(b) {
                     saida = Some(clique_de(d, &e));
                 }
-            } else if sobre && clicou {
+            } else if tocou(linha) {
                 saida = Some(clique_de(d, &e));
             }
             if let Estado::Bloqueada(m) = &e {
@@ -458,8 +460,8 @@ impl MenuMissoes {
                 }
             }
         }
-        // Tampa o que rolou pra fora da area (a lista desenha por cima do
-        // cabecalho e do rodape do painel).
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(area, total);
         if let Some(m) = dica {
             let w = m
                 .iter()

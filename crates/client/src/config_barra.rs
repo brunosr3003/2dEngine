@@ -21,6 +21,8 @@ pub struct ConfigBarra {
     pub espaco_alvo: Option<usize>,
     /// A lupa de um item pediu o "Onde obter" (main abre o popup).
     pub onde_obter: Option<u16>,
+    /// A lista de consumiveis: com a bolsa cheia de pocoes ela passa da tela.
+    rolagem: crate::rolagem::Rolagem,
 }
 
 /// Consumiveis da bolsa que cabem na barra, sem repetir, com a quantidade.
@@ -46,7 +48,7 @@ impl ConfigBarra {
             aberto: true,
             selecionado: None,
             espaco_alvo: espaco,
-            onde_obter: None,
+            ..Self::default()
         };
     }
 
@@ -266,10 +268,22 @@ impl ConfigBarra {
                 estilo::SUAVE,
             );
         }
+        // Rola (dedo, roda ou barra) em vez de cortar o que nao cabe. Toque
+        // no item ou na lupa vale no soltar.
+        let area = Rect::new(lx, p.y + 102.0, lw, p.h - 112.0);
+        let total = lista.len() as f32 * 50.0;
+        let toque = self.rolagem.quadro(area, total, 50.0);
+        let tocou = |r: Rect| toque.is_some_and(|c| r.contains(c) && area.contains(c));
+        crate::rolagem::recortar(Some(area));
         for (k, (id, q)) in lista.iter().enumerate() {
-            let r = Rect::new(lx, p.y + 102.0 + k as f32 * 50.0, lw, 44.0);
-            if r.y + r.h > p.y + p.h - 10.0 {
-                break;
+            let r = Rect::new(
+                lx,
+                area.y + k as f32 * 50.0 - self.rolagem.pos,
+                lw - 12.0,
+                44.0,
+            );
+            if r.y + r.h < area.y || r.y > area.y + area.h {
+                continue;
             }
             estilo::painel(r);
             if self.selecionado == Some(*id) {
@@ -286,12 +300,15 @@ impl ConfigBarra {
                 13,
                 estilo::SUAVE,
             );
-            if crate::onde_obter::botao(lupa) {
+            let _ = crate::onde_obter::botao(lupa);
+            if tocou(lupa) {
                 self.onde_obter = Some(*id);
-            } else if clique && r.contains(m) {
+            } else if tocou(r) {
                 mudou |= self.escolhe_item(barra, *id);
             }
         }
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(area, total);
         mudou
     }
 }

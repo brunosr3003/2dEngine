@@ -634,7 +634,7 @@ pub struct Mapa {
     /// Zonas de mob e regioes de recurso (`MapaDaIlha`).
     pub info: Option<InfoDaIlha>,
     pub filtros: Filtros,
-    rolagem_lateral: f32,
+    rolagem_lateral: crate::rolagem::Rolagem,
 }
 
 impl Default for Mapa {
@@ -654,7 +654,7 @@ impl Default for Mapa {
             mestre: None,
             info: None,
             filtros: Filtros::default(),
-            rolagem_lateral: 0.0,
+            rolagem_lateral: Default::default(),
         }
     }
 }
@@ -975,13 +975,11 @@ impl Mapa {
         let bichos = info.bichos();
         let tipos = info.tipos();
         let total = (2 + bichos.len() + tipos.len()) as f32 * LINHA_IR;
-        let mut rolagem = self.rolagem_lateral;
-        if area.contains(mouse) {
-            let (_, roda) = mouse_wheel();
-            rolagem = (rolagem - roda.signum() * LINHA_IR).clamp(0.0, (total - area.h).max(0.0));
-        }
-        let mut ly = area.y - rolagem;
-        let visivel = |yy: f32| yy >= area.y - 1.0 && yy + LINHA_IR <= area.y + area.h + 1.0;
+        // Rola arrastando, pela roda ou pela barra; o "Ir" vale no SOLTAR.
+        let clique = self.rolagem_lateral.quadro(area, total, LINHA_IR);
+        let mut ly = area.y - self.rolagem_lateral.pos;
+        let visivel = |yy: f32| yy + LINHA_IR > area.y && yy < area.y + area.h;
+        crate::rolagem::recortar(Some(area));
         let mut linha = |rotulo: &str,
                          detalhe: String,
                          cor: Color,
@@ -1008,9 +1006,10 @@ impl Mapa {
                 11,
                 estilo::SUAVE,
             );
-            let b = Rect::new(area.x + area.w - 52.0, ly + 2.0, 46.0, 22.0);
+            let b = Rect::new(area.x + area.w - 64.0, ly + 2.0, 46.0, 22.0);
             if let Some(a) = alvo {
-                if crate::ui::botao(b, "Ir", true) {
+                let _ = crate::ui::botao(b, "Ir", true);
+                if clique.is_some_and(|c| b.contains(c) && area.contains(c)) {
                     *saida = Some(Entrada::Ir(a));
                 }
             }
@@ -1066,7 +1065,8 @@ impl Mapa {
             );
             ly += LINHA_IR;
         }
-        self.rolagem_lateral = rolagem;
+        crate::rolagem::recortar(None);
+        self.rolagem_lateral.desenha(area, total);
         match toggle {
             Some(Chip::Mobs) => self.filtros.mobs = !self.filtros.mobs,
             Some(Chip::Bicho(k)) => {

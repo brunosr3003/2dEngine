@@ -46,6 +46,9 @@ impl Fundo {
     }
 }
 
+/// Altura de um cartao da lista, com o vao.
+const CARTAO: f32 = 87.0;
+
 #[derive(Default)]
 pub struct Personagens {
     pub criando: bool,
@@ -55,7 +58,7 @@ pub struct Personagens {
     pub mensagem: Option<String>,
     aguardando: Option<(String, f64)>,
     foco_nome: bool,
-    scroll: usize,
+    rolagem: crate::rolagem::Rolagem,
     giro: f32,
     mouse_anterior: Option<Vec2>,
     saida_previa: Option<RenderTarget>,
@@ -102,7 +105,7 @@ impl Personagens {
                 .map(|c| c.arma())
                 .find(|id| armas.contains(id));
         }
-        self.scroll = selecionado.saturating_sub(3);
+        self.rolagem.pos = selecionado.saturating_sub(3) as f32 * CARTAO;
     }
 
     /// O campo de nome esta' com foco (o teclado da tela tem que estar aberto).
@@ -554,16 +557,10 @@ impl Personagens {
             13,
             ui::OURO,
         );
-        let visiveis = ((r.h - 112.0) / 87.0).max(1.0) as usize;
-        if r.contains(Vec2::from(mouse_position())) {
-            let (_, roda) = mouse_wheel();
-            if roda < 0.0 {
-                self.scroll = (self.scroll + 1).min(chars.len().saturating_sub(visiveis));
-            }
-            if roda > 0.0 {
-                self.scroll = self.scroll.saturating_sub(1);
-            }
-        }
+        // Os cartoes rolam arrastando (dedo), pela roda ou pela barra.
+        let area = Rect::new(r.x + 12.0, r.y + 45.0, r.w - 24.0, r.h - 115.0);
+        let total = chars.len() as f32 * CARTAO;
+        let clique = self.rolagem.quadro(area, total, CARTAO);
         if !chars.is_empty() {
             if is_key_pressed(KeyCode::Down) {
                 *selecionado = (*selecionado + 1).min(chars.len() - 1);
@@ -572,21 +569,27 @@ impl Personagens {
                 *selecionado = selecionado.saturating_sub(1);
             }
             if is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::Up) {
-                if *selecionado < self.scroll {
-                    self.scroll = *selecionado;
-                }
-                if *selecionado >= self.scroll + visiveis {
-                    self.scroll = *selecionado + 1 - visiveis;
+                // O escolhido pelas setas fica a' vista.
+                let y = *selecionado as f32 * CARTAO;
+                if y < self.rolagem.pos {
+                    self.rolagem.pos = y;
+                } else if y + CARTAO > self.rolagem.pos + area.h {
+                    self.rolagem.pos = y + CARTAO - area.h;
                 }
             }
         }
-        for (i, c) in chars.iter().enumerate().skip(self.scroll).take(visiveis) {
+        self.rolagem.pos = self.rolagem.pos.clamp(0.0, crate::rolagem::maximo(area, total));
+        crate::rolagem::recortar(Some(area));
+        for (i, c) in chars.iter().enumerate() {
             let card = Rect::new(
-                r.x + 12.0,
-                r.y + 45.0 + (i - self.scroll) as f32 * 87.0,
-                r.w - 24.0,
-                77.0,
+                area.x,
+                area.y + i as f32 * CARTAO - self.rolagem.pos,
+                area.w - 12.0,
+                CARTAO - 10.0,
             );
+            if card.y + card.h < area.y || card.y > area.y + area.h {
+                continue;
+            }
             let conjunto = Conjunto::da_arma(c.weapon_id.unwrap_or(0));
             let cor = ui::cor_skill(conjunto as u32 * 3 + 1);
             draw_rectangle(
@@ -640,12 +643,14 @@ impl Personagens {
                 12,
                 ui::SUAVE,
             );
-            if clicou(card) {
+            if clique.is_some_and(|p| card.contains(p) && area.contains(p)) {
                 *selecionado = i;
                 self.giro = 0.0;
                 self.mensagem = None;
             }
         }
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(area, total);
         if chars.is_empty() {
             texto_linhas(
                 "Sua história começa aqui. Crie seu primeiro personagem.",
@@ -656,11 +661,11 @@ impl Personagens {
                 ui::SUAVE,
             );
         }
-        if chars.len() > visiveis {
+        if total > area.h {
             ui::texto(
                 r.x + 18.0,
                 r.y + r.h - 62.0,
-                "Role para ver mais personagens",
+                "Arraste para ver mais personagens",
                 12,
                 ui::SUAVE,
             );

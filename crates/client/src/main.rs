@@ -17,6 +17,7 @@ mod bicho;
 mod bolsa;
 mod craft_ui;
 mod oficina_ui;
+mod rolagem;
 mod dungeon_ui;
 mod efeitos;
 mod entrada;

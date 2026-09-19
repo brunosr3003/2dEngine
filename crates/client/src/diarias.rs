@@ -97,7 +97,7 @@ pub fn recompensa(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
 #[derive(Default)]
 pub struct Diarias {
     pub aberto: bool,
-    rolagem: f32,
+    rolagem: crate::rolagem::Rolagem,
     /// Lupa numa diaria de juntar item: o item pro "Onde obter".
     pub onde_obter: Option<u16>,
 }
@@ -105,7 +105,7 @@ pub struct Diarias {
 impl Diarias {
     pub fn abrir(&mut self) {
         self.aberto = true;
-        self.rolagem = 0.0;
+        self.rolagem.zera();
     }
 
     pub fn fechar(&mut self) {
@@ -154,11 +154,11 @@ impl Diarias {
         let mouse = Vec2::from(mouse_position());
         let lista = da_ilha(c.zona);
         let total = lista.len() as f32 * LINHA;
-        if area.contains(mouse) {
-            let (_, roda) = mouse_wheel();
-            self.rolagem =
-                (self.rolagem - roda.signum() * LINHA).clamp(0.0, (total - area.h).max(0.0));
-        }
+        // Toque na linha, no botao ou na lupa vale no SOLTAR (a lista rola
+        // arrastando).
+        let clique = self.rolagem.quadro(area, total, LINHA);
+        let arrastando = self.rolagem.arrastando();
+        let tocou = |r: Rect| clique.is_some_and(|c| r.contains(c) && area.contains(c));
         if lista.is_empty() {
             estilo::texto(
                 area.x + 8.0,
@@ -168,21 +168,21 @@ impl Diarias {
                 estilo::SUAVE,
             );
         }
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
         let mut saida = None;
         let mut dica: Option<Vec<String>> = None;
+        crate::rolagem::recortar(Some(area));
         for (i, d) in lista.iter().enumerate() {
             let linha = Rect::new(
                 area.x,
-                area.y - self.rolagem + i as f32 * LINHA,
-                area.w,
+                area.y - self.rolagem.pos + i as f32 * LINHA,
+                area.w - 12.0,
                 LINHA - 6.0,
             );
             if linha.y + linha.h < area.y || linha.y > area.y + area.h {
                 continue;
             }
             let e = estado_da_diaria(d, c);
-            let sobre = linha.contains(mouse) && area.contains(mouse);
+            let sobre = !arrastando && linha.contains(mouse) && area.contains(mouse);
             draw_rectangle(
                 linha.x,
                 linha.y,
@@ -263,21 +263,19 @@ impl Diarias {
                 && d.obj_target != 0
                 && !apagada
             {
-                if crate::onde_obter::botao(Rect::new(
-                    linha.x + linha.w - 164.0,
-                    linha.y + 20.0,
-                    36.0,
-                    34.0,
-                )) {
+                let lupa = Rect::new(linha.x + linha.w - 164.0, linha.y + 20.0, 36.0, 34.0);
+                let _ = crate::onde_obter::botao(lupa);
+                if tocou(lupa) {
                     self.onde_obter = Some(d.obj_target);
                 }
             }
             if let Some(t) = botao_de(&e) {
                 let b = Rect::new(linha.x + linha.w - 122.0, linha.y + 22.0, 110.0, 30.0);
-                if crate::ui::botao(b, t, true) {
+                let _ = crate::ui::botao(b, t, true);
+                if tocou(b) {
                     saida = Some(clique_da_diaria(d, &e, c.agora_unix));
                 }
-            } else if sobre && clicou {
+            } else if tocou(linha) {
                 saida = Some(clique_da_diaria(d, &e, c.agora_unix));
             }
             if let Estado::Bloqueada(m) = &e {
@@ -286,6 +284,8 @@ impl Diarias {
                 }
             }
         }
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(area, total);
         if let Some(m) = dica {
             let w = m
                 .iter()

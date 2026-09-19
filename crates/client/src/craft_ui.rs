@@ -77,7 +77,7 @@ pub struct Craft {
     receitas: Vec<CraftRecipeNet>,
     aba: usize,
     sel: Option<u16>,
-    rolagem: f32,
+    rolagem: crate::rolagem::Rolagem,
     /// (texto, deu certo, quando).
     aviso: Option<(String, bool, f64)>,
     /// Lupa tocada num ingrediente: o item pro "Onde obter".
@@ -110,7 +110,7 @@ impl Craft {
                 self.aba = i;
             }
             self.sel = Some(id);
-            self.rolagem = 0.0;
+            self.rolagem.zera();
         }
     }
 
@@ -205,7 +205,7 @@ impl Craft {
             if crate::ui::botao(r, rot, true) && i != self.aba {
                 self.aba = i;
                 self.sel = None;
-                self.rolagem = 0.0;
+                self.rolagem.zera();
                 self.oficina.trocou_de_aba();
             }
             x += w + 6.0;
@@ -232,11 +232,8 @@ impl Craft {
         let mouse = Vec2::from(mouse_position());
         let receitas: Vec<CraftRecipeNet> = self.da_aba().into_iter().cloned().collect();
         let total = receitas.len() as f32 * LINHA;
-        if lista.contains(mouse) {
-            let (_, roda) = mouse_wheel();
-            self.rolagem =
-                (self.rolagem - roda.signum() * LINHA).clamp(0.0, (total - lista.h).max(0.0));
-        }
+        let clique = self.rolagem.quadro(lista, total, LINHA);
+        let arrastando = self.rolagem.arrastando();
         if receitas.is_empty() {
             estilo::texto(
                 lista.x + 10.0,
@@ -249,14 +246,14 @@ impl Craft {
         if self.sel.is_none() {
             self.sel = receitas.first().map(|r| r.id);
         }
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
+        crate::rolagem::recortar(Some(lista));
         for (i, r) in receitas.iter().enumerate() {
-            let y = lista.y + i as f32 * LINHA - self.rolagem;
+            let y = lista.y + i as f32 * LINHA - self.rolagem.pos;
             if y + LINHA < lista.y || y > lista.y + lista.h {
                 continue;
             }
-            let linha = Rect::new(lista.x, y, lista.w, LINHA - 3.0);
-            let sobre = linha.contains(mouse) && lista.contains(mouse);
+            let linha = Rect::new(lista.x, y, lista.w - 12.0, LINHA - 3.0);
+            let sobre = !arrastando && linha.contains(mouse) && lista.contains(mouse);
             let marcada = self.sel == Some(r.id);
             let a = if marcada {
                 0.14
@@ -307,10 +304,12 @@ impl Craft {
                     VERDE,
                 );
             }
-            if sobre && clicou {
+            if clique.is_some_and(|c| linha.contains(c)) {
                 self.sel = Some(r.id);
             }
         }
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(lista, total);
         // Detalhe.
         let mut pedido = None;
         if let Some(r) = receitas.iter().find(|r| Some(r.id) == self.sel) {
