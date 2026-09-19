@@ -55,6 +55,9 @@ pub enum IncomingMessage {
         Box<crate::persistence::CharacterRow>,
         crate::auth::AuthSuccess,
     ),
+    /// Os personagens da conta lidos do banco no login: a lista de verdade,
+    /// e nao a do cache de quando o processo subiu.
+    CharsDaConta(SessionId, i64, Vec<crate::persistence::CharacterRow>),
     /// Mercado global: resposta do relay/central (ver `crate::mercado`).
     Mercado(crate::mercado::Evento),
     /// Calendario de presenca: resposta do banco (ver `crate::presenca`).
@@ -4343,8 +4346,51 @@ impl GameWorld {
             // Login por sessao (Google) chega sem nome: vem do banco.
             s.name = success.username.clone();
         }
-        self.send_character_list(sid, success.account_id);
+        self.pedir_lista_da_conta(sid, success.account_id);
         return;
+    }
+
+    /// A lista de personagens do login vem do BANCO: o cache deste processo e'
+    /// de quando ele subiu, e um personagem criado depois noutro processo
+    /// (outra ilha) nao estava nele — chegar na Geleira pela viagem mostrava
+    /// "crie seu personagem" com o personagem inteiro no banco. Sem banco
+    /// (teste), usa o cache.
+    fn pedir_lista_da_conta(&mut self, sid: SessionId, account_id: i64) {
+        let Some(ctx) = self.auth_ctx.clone() else {
+            self.send_character_list(sid, account_id);
+            return;
+        };
+        tokio::spawn(async move {
+            match crate::persistence::load_da_conta(&ctx.pool, account_id).await {
+                Ok(rows) => {
+                    let _ = ctx.tx.send(IncomingMessage::CharsDaConta(sid, account_id, rows));
+                }
+                Err(e) => {
+                    tracing::error!("lista da conta {account_id}: {e:?}");
+                    let _ = ctx.tx.send(IncomingMessage::CharsDaConta(sid, account_id, Vec::new()));
+                }
+            }
+        });
+    }
+
+    /// Chegou a lista do banco: atualiza o cache (menos o que ESTE processo
+    /// gravou ha' pouco, que e' mais novo) e manda a lista.
+    pub fn on_chars_da_conta(
+        &mut self,
+        sid: SessionId,
+        account_id: i64,
+        rows: Vec<crate::persistence::CharacterRow>,
+    ) {
+        for r in rows {
+            let fresca = self
+                .salvo_aqui_em
+                .get(&r.name)
+                .is_some_and(|t| self.sim_time_s - t < 30.0);
+            if !fresca {
+                self.characters.insert(r.name.clone(), r);
+            }
+        }
+        self.send_character_list(sid, account_id);
     }
 
     /// Envia ao cliente a lista de personagens da conta. Filtra `self.characters`

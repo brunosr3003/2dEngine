@@ -156,6 +156,9 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::CharReloadedForSelect(id, row, success)) => {
                     world.on_char_reloaded_for_select(id, *row, success);
                 }
+                Ok(IncomingMessage::CharsDaConta(id, conta, rows)) => {
+                    world.on_chars_da_conta(id, conta, rows);
+                }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
                     tracing::warn!("all senders dropped, exiting world loop");
@@ -173,6 +176,9 @@ pub async fn run_world_loop(
                 }
                 Ok(IncomingMessage::CharReloadedForSelect(id, row, success)) => {
                     world.on_char_reloaded_for_select(id, *row, success);
+                }
+                Ok(IncomingMessage::CharsDaConta(id, conta, rows)) => {
+                    world.on_chars_da_conta(id, conta, rows);
                 }
                 Ok(IncomingMessage::Mercado(ev)) => world.on_mercado(ev),
                 Ok(IncomingMessage::Presenca(ev)) => world.on_presenca(ev),

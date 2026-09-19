@@ -3231,6 +3231,25 @@ pub async fn load_one(pool: &PgPool, name: &str) -> Result<Option<CharacterRow>>
     Ok(load(pool, Some(name)).await?.remove(name))
 }
 
+/// Os personagens da conta, direto do banco. E' a lista que o login mostra:
+/// o cache de cada processo e' do momento em que ele subiu, e quem foi criado
+/// DEPOIS noutro processo (outra ilha, outro canal) nao estava nele — viajar
+/// pra Geleira mostrava "crie seu personagem" (19/09/2026).
+pub async fn load_da_conta(pool: &PgPool, account_id: i64) -> Result<Vec<CharacterRow>> {
+    let nomes: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM characters WHERE account_id = $1")
+            .bind(account_id)
+            .fetch_all(pool)
+            .await?;
+    let mut v = Vec::with_capacity(nomes.len());
+    for n in nomes {
+        if let Some(r) = load_one(pool, &n).await? {
+            v.push(r);
+        }
+    }
+    Ok(v)
+}
+
 async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, CharacterRow>> {
     let onde = if so.is_some() { " WHERE name = $1" } else { "" };
     macro_rules! busca {
