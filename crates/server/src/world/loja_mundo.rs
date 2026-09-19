@@ -147,6 +147,17 @@ impl GameWorld {
                                     codigo,
                                     produto.preco_tp().unwrap_or(0) as i64,
                                 );
+                                if let Some(m) = match produto {
+                                    Produto::Moeda(id) => cat::moeda(id),
+                                    _ => None,
+                                } {
+                                    let _ = tx_mundo.send(IncomingMessage::Loja(Evento::Moeda {
+                                        sid,
+                                        personagem: personagem.clone(),
+                                        item_id: m.item_id,
+                                        qtd: m.qtd,
+                                    }));
+                                }
                                 if let Produto::BauCraft(id) = produto {
                                     if let Some((item_id, cor)) =
                                         cat::rolar_bau_craft(id, fastrand::f32(), fastrand::f32())
@@ -242,6 +253,36 @@ impl GameWorld {
                     } else {
                         format!("Você recebeu {nome}!")
                     },
+                );
+            }
+            Evento::Moeda {
+                sid,
+                personagem,
+                item_id,
+                qtd,
+            } => {
+                let Some(s) = self
+                    .sessions
+                    .get_mut(&sid)
+                    .filter(|s| s.logged_in && s.name == personagem)
+                else {
+                    return;
+                };
+                // Ouro vai pro saldo; cobre e darksteel pra carteira (nunca
+                // falta espaco pra eles).
+                if item_id == shared::item_id::GOLD {
+                    s.gold = s.gold.saturating_add(qtd as u64);
+                } else {
+                    add_to_inventory(&mut s.inventory, item_id, qtd, None);
+                    s.inventory_dirty = true;
+                }
+                self.save_pending = true;
+                crate::telemetria::conta("loja_moeda", item_id.to_string(), qtd as i64);
+                let nome = crate::economy::nome_do_item(item_id);
+                resultado(
+                    &s.handle.to_client,
+                    true,
+                    format!("Você recebeu {} de {nome}!", milhar(qtd as u64)),
                 );
             }
         }
@@ -385,4 +426,17 @@ fn pode_montar(s: &Session, agora: f32) -> Result<(), &'static str> {
         return Err("Saia do combate para montar.");
     }
     Ok(())
+}
+
+/// 20000 -> "20.000".
+fn milhar(v: u64) -> String {
+    let t = v.to_string();
+    let mut out = String::new();
+    for (i, c) in t.chars().enumerate() {
+        if i > 0 && (t.len() - i) % 3 == 0 {
+            out.push('.');
+        }
+        out.push(c);
+    }
+    out
 }

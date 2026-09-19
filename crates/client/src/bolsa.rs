@@ -241,10 +241,19 @@ pub(crate) fn milhar(v: u64) -> String {
 /// Primeiro espaco livre da bolsa, contando os que o servidor ainda nem
 /// mandou (a lista pode vir mais curta que a bolsa).
 fn primeiro_vazio(slots: &[InventorySlot]) -> Option<usize> {
-    slots
+    let n = slots.len().saturating_sub(shared::armazem::CARTEIRA.len()).max(shared::INVENTORY_SLOTS.min(slots.len()));
+    slots[..n.min(slots.len())]
         .iter()
         .position(|s| s.qty == 0)
         .or((slots.len() < shared::INVENTORY_SLOTS).then_some(slots.len()))
+}
+
+/// Espacos da grade da bolsa com `extra` expansoes: a lista do servidor
+/// menos a carteira do fim (nunca menos que o tamanho comprado).
+pub(crate) fn grade(slots: &[InventorySlot], extra: u8) -> usize {
+    let comprado = shared::armazem::tamanho(false, extra);
+    let na_lista = slots.len().saturating_sub(shared::armazem::CARTEIRA.len());
+    comprado.max(na_lista)
 }
 
 /// O "poder" do MIR4: um numero so' que resume a ficha. A conta e' nossa.
@@ -423,7 +432,14 @@ impl Bolsa {
         crate::hud_estilo::painel_destaque(p, ui::OURO);
         crate::hud_estilo::separador(p.x + u(16.0), p.y + u(46.0), p.w - u(32.0));
         ui::texto(p.x + u(22.0), p.y + u(33.0), "BOLSA", 26, ui::OURO);
-        let ouro = format!("Ouro  {}", milhar(self.ouro));
+        // As moedas: ouro (saldo), cobre e darksteel (carteira) — nenhuma
+        // ocupa espaco na grade.
+        let ouro = format!(
+            "Ouro  {}   Cobre  {}   Darksteel  {}",
+            milhar(self.ouro),
+            milhar(self.moeda(item_id::COPPER)),
+            milhar(self.moeda(item_id::DARKSTEEL))
+        );
         let d = crate::hud_estilo::medir_dim(&ouro, 20);
         ui::texto(
             p.x + p.w - u(70.0) - d.width,
@@ -680,7 +696,7 @@ impl Bolsa {
         let mut mostrar: Vec<Option<usize>> = if self.aba == Aba::Tudo {
             (0..tamanho).map(Some).collect()
         } else {
-            (0..self.slots.len())
+            (0..tamanho.min(self.slots.len()))
                 .filter(|&i| {
                     self.slots[i].qty > 0 && aba_de(tipo(self.slots[i].item_id)) == self.aba
                 })
@@ -725,7 +741,10 @@ impl Bolsa {
         }
 
         // o pe': ocupacao, aumentar e organizar
-        let ocupados = self.slots.iter().filter(|s| s.qty > 0).count();
+        let ocupados = self.slots[..tamanho.min(self.slots.len())]
+            .iter()
+            .filter(|s| s.qty > 0)
+            .count();
         let pe = r.y + r.h - u(40.0);
         ui::texto(
             r.x,
@@ -754,10 +773,19 @@ impl Bolsa {
         acao
     }
 
-    /// Espacos da bolsa: o que as expansoes dao (o servidor manda a lista
-    /// inteira, entao vale o maior dos dois).
+    /// Espacos da GRADE: o que as expansoes dao. A lista do servidor tem a
+    /// carteira no fim (cobre, darksteel), que nao e' grade.
     fn tamanho(&self) -> usize {
-        shared::armazem::tamanho(false, self.extra).max(self.slots.len())
+        grade(&self.slots, self.extra)
+    }
+
+    /// Quanto da moeda `id` a carteira (e o resto da lista) tem.
+    pub fn moeda(&self, id: u16) -> u64 {
+        self.slots
+            .iter()
+            .filter(|s| s.item_id == id && s.instance.is_none())
+            .map(|s| s.qty as u64)
+            .sum()
     }
 
     // ── o cartao do item ──

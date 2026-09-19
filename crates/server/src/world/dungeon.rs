@@ -25,7 +25,9 @@ pub struct Instancia(pub u32);
 const RAIO_DO_ANDAR: f32 = 55.0;
 /// Depois de vencer: o bau abre sozinho aqui, e a instancia fecha um pouco depois.
 const BAU_ABRE_SOZINHO_S: f32 = 60.0;
-const FECHA_DEPOIS_DE_VENCER_S: f32 = 75.0;
+/// Tempo pra juntar o que o chefe largou. O que sobrar no chao nao some: vai
+/// pra quem sai (sozinho) ou e' repartido na hora de fechar (`dg_recolher`).
+const FECHA_DEPOIS_DE_VENCER_S: f32 = dg::FECHA_DEPOIS_DE_VENCER_S;
 const FECHA_DEPOIS_DE_FALHAR_S: f32 = 8.0;
 /// Distancia maxima pra abrir o bau com toque.
 const ALCANCE_DO_BAU: f32 = 8.0;
@@ -913,6 +915,15 @@ impl GameWorld {
         };
         if matches!(self.instancias[idx].estado, EstadoDg::Concluida { .. }) {
             self.dg_dar_bau(idx, sid);
+            // Saindo por ultimo: o saque do chao vem junto (ninguem mais pega).
+            let outros = self.instancias[idx]
+                .membros
+                .iter()
+                .any(|m| m.sid != sid && !m.saiu);
+            if !outros {
+                let id = self.instancias[idx].id;
+                self.dg_recolher(id, &[sid]);
+            }
         }
         if let Some(m) = self.instancias[idx]
             .membros
@@ -1370,7 +1381,61 @@ impl GameWorld {
         );
     }
 
+    /// O saque que ficou no chao da instancia `id`, repartido entre `quem`
+    /// (um item pra cada, em roda). Entra na bolsa; o que nao cabe vai pras
+    /// Entregas da dungeon. Antes, fechar a instancia apagava tudo.
+    fn dg_recolher(&mut self, id: u32, quem: &[SessionId]) {
+        if quem.is_empty() {
+            return;
+        }
+        let saque: Vec<(Entity, EntityId, LootTag)> = self
+            .ecs
+            .query::<(&NetId, &LootTag, &Instancia)>()
+            .iter()
+            .filter(|(_, (_, _, i))| i.0 == id)
+            .map(|(e, (n, l, _))| (e, n.0, l.clone()))
+            .collect();
+        if saque.is_empty() {
+            return;
+        }
+        let quando = unix_agora();
+        let mut recolhidos = vec![0u32; quem.len()];
+        for (k, (e, eid, l)) in saque.into_iter().enumerate() {
+            let sid = quem[k % quem.len()];
+            let Some(s) = self.sessions.get_mut(&sid) else {
+                continue;
+            };
+            if l.item_id == shared::item_id::GOLD {
+                s.gold = s.gold.saturating_add(l.qty as u64);
+            } else if add_to_inventory(&mut s.inventory, l.item_id, l.qty, l.instance) {
+                s.inventory_dirty = true;
+            } else {
+                s.dungeon.postar(l.item_id, l.qty, l.instance, 0, quando);
+            }
+            recolhidos[k % quem.len()] += 1;
+            let _ = self.ecs.despawn(e);
+            self.removed_this_tick.push(eid);
+        }
+        for (i, sid) in quem.iter().enumerate() {
+            if recolhidos[i] > 0 {
+                self.dg_texto(
+                    *sid,
+                    true,
+                    &format!("{} item(ns) do chão recolhidos.", recolhidos[i]),
+                );
+            }
+        }
+        self.save_pending = true;
+    }
+
     fn dg_fechar(&mut self, idx: usize) {
+        {
+            let i = &self.instancias[idx];
+            let presentes: Vec<SessionId> =
+                i.membros.iter().filter(|m| !m.saiu).map(|m| m.sid).collect();
+            let id = i.id;
+            self.dg_recolher(id, &presentes);
+        }
         let inst = self.instancias.remove(idx);
         let mut sobra = inst.vivos;
         if let Some((b, _)) = inst.bau {

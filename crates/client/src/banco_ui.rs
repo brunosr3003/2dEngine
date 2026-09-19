@@ -108,6 +108,9 @@ impl Banco {
         let dir = Rect::new(esq.x + col_w + meio, topo, col_w, alto);
         let mut pedido = None;
         let (bolsa_extra, banco_extra) = (self.bolsa_extra, self.banco_extra);
+        // So' a grade: a carteira (cobre, darksteel) nao vai pro banco.
+        let n = crate::bolsa::grade(bolsa, bolsa_extra).min(bolsa.len());
+        let bolsa = &bolsa[..n];
         if let Some(r) = lado(esq, "Bolsa", bolsa, false, bolsa_extra, ouro, &mut self.rol_bolsa) {
             pedido = Some(match r {
                 Toque::Item(i) => ClientMessage::VaultDeposit { inv_slot: i as u16 },

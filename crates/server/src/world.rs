@@ -464,6 +464,60 @@ pub struct NpcSkin {
     pub preset: u8,
 }
 
+/// Soma `qty` da moeda `id` no espaco dela na carteira (fim da lista).
+/// `false` se a lista nao tem carteira (nao deveria acontecer).
+pub fn por_na_carteira(inv: &mut [shared::InventorySlot], id: u16, qty: u32) -> bool {
+    let Some(k) = shared::armazem::CARTEIRA.iter().position(|m| *m == id) else {
+        return false;
+    };
+    let n = shared::armazem::CARTEIRA.len();
+    if inv.len() < n {
+        return false;
+    }
+    let i = inv.len() - n + k;
+    let s = &mut inv[i];
+    if s.qty > 0 && (s.item_id != id || s.instance.is_some()) {
+        return false;
+    }
+    s.item_id = id;
+    s.qty = s.qty.saturating_add(qty);
+    s.instance = None;
+    true
+}
+
+/// A bolsa no formato certo: `n` espacos de grade + a carteira no fim (cobre,
+/// darksteel). Toda moeda solta na grade vai pra carteira; ouro solto (item
+/// 1) sai da lista e volta como o valor a somar no saldo. Nada se perde:
+/// se a grade tiver item depois de `n`, ela para no ultimo ocupado.
+pub fn arrumar_bolsa(inv: &mut Vec<shared::InventorySlot>, n: usize) -> u64 {
+    use shared::armazem::CARTEIRA;
+    let mut moedas = [0u64; CARTEIRA.len()];
+    let mut ouro = 0u64;
+    for s in inv.iter_mut() {
+        if s.qty == 0 || s.instance.is_some() {
+            continue;
+        }
+        if s.item_id == shared::item_id::GOLD {
+            ouro += s.qty as u64;
+            *s = shared::InventorySlot::default();
+        } else if let Some(k) = CARTEIRA.iter().position(|m| *m == s.item_id) {
+            moedas[k] += s.qty as u64;
+            *s = shared::InventorySlot::default();
+        }
+    }
+    let ultimo = inv.iter().rposition(|s| s.qty > 0).map_or(0, |i| i + 1);
+    inv.resize(n.max(ultimo), shared::InventorySlot::default());
+    for (k, id) in CARTEIRA.iter().enumerate() {
+        let q = moedas[k].min(u32::MAX as u64) as u32;
+        inv.push(if q > 0 {
+            shared::InventorySlot { item_id: *id, qty: q, instance: None }
+        } else {
+            shared::InventorySlot::default()
+        });
+    }
+    ouro
+}
+
 /// Junta pilhas do mesmo item (sem instancia) ate' o teto de cada um, e as
 /// que sobram vazias viram espaco livre. Devolve se mudou algo.
 pub fn juntar_pilhas(v: &mut [shared::InventorySlot], cap: &dyn Fn(u16) -> u32) -> bool {
@@ -905,6 +959,26 @@ pub(crate) fn zonas_comuns_da_ilha(
 #[cfg(test)]
 mod testes_praia {
     use super::*;
+
+    #[test]
+    fn carteira_guarda_cobre_e_darksteel_fora_da_grade_e_ouro_vira_saldo() {
+        use shared::item_id::{COPPER, DARKSTEEL, GOLD};
+        let p = |id: u16, q: u32| shared::InventorySlot { item_id: id, qty: q, instance: None };
+        let mut v = vec![p(COPPER, 500), p(2, 5), p(GOLD, 70), p(DARKSTEEL, 9), p(COPPER, 25)];
+        let ouro = arrumar_bolsa(&mut v, 4);
+        assert_eq!(ouro, 70);
+        assert_eq!(v.len(), 4 + 2);
+        assert_eq!((v[1].item_id, v[1].qty), (2, 5), "o resto fica onde estava");
+        assert_eq!((v[4].item_id, v[4].qty), (COPPER, 525));
+        assert_eq!((v[5].item_id, v[5].qty), (DARKSTEEL, 9));
+        assert!(v[..4].iter().all(|s| s.qty == 0 || s.item_id == 2));
+        // Grade CHEIA: moeda entra mesmo assim.
+        let mut cheia = vec![p(2, 1); 4];
+        arrumar_bolsa(&mut cheia, 4);
+        assert!(add_to_inventory(&mut cheia, COPPER, 1_000_000, None));
+        assert_eq!(cheia[4].qty, 1_000_000);
+        assert_eq!(crate::craft::tem(&cheia, COPPER), 1_000_000);
+    }
 
     #[test]
     fn juntar_pilhas_une_o_mesmo_item_ate_o_teto() {
@@ -5119,7 +5193,8 @@ impl GameWorld {
             let b = juntar_pilhas(&mut saved_vault, &crate::economy::item_stack_max);
             a || b
         };
-        no_tamanho(&mut saved_inv, shared::armazem::tamanho(false, row.bolsa_extra));
+        let ouro_solto =
+            arrumar_bolsa(&mut saved_inv, shared::armazem::tamanho(false, row.bolsa_extra));
         no_tamanho(&mut saved_vault, shared::armazem::tamanho(true, row.banco_extra));
         // Tutorial: spawna numa área ISOLADA do arquipélago (game.json), perto do
         // cluster de árvores. Ignora a pos salva. O BFS abaixo valida walkable.
@@ -5374,7 +5449,8 @@ impl GameWorld {
             s.vault_dirty = false;
             s.bolsa_extra = row.bolsa_extra;
             s.banco_extra = row.banco_extra;
-            s.inventory_dirty |= pilhas_juntas;
+            s.inventory_dirty |= pilhas_juntas || ouro_solto > 0;
+            s.gold = s.gold.saturating_add(ouro_solto);
             s.vault_dirty |= pilhas_juntas;
             let _ = s.handle.to_client.send(ServerMessage::Armazem {
                 bolsa_extra: s.bolsa_extra,
@@ -7189,6 +7265,7 @@ impl GameWorld {
                     .for_each(|s| *s = shared::InventorySlot::default());
                 let n = shared::armazem::tamanho(false, session.bolsa_extra);
                 session.inventory.resize(n, shared::InventorySlot::default());
+                arrumar_bolsa(&mut session.inventory, n);
                 session.inventory_dirty = true;
             }
             shared::protocol::AdminAction::HealFull => {
@@ -12509,6 +12586,13 @@ impl GameWorld {
             }
             if session.inventory_dirty {
                 session.inventory_dirty = false;
+                // Moeda que caiu na grade (troca, organizar, pedido antigo)
+                // volta pra carteira; ouro-item vira saldo.
+                let n = shared::armazem::tamanho(false, session.bolsa_extra);
+                let ouro = arrumar_bolsa(&mut session.inventory, n);
+                if ouro > 0 {
+                    session.gold = session.gold.saturating_add(ouro);
+                }
                 let _ = session
                     .handle
                     .to_client
@@ -13514,7 +13598,8 @@ impl GameWorld {
             s.vault_dirty = true;
         } else {
             s.bolsa_extra = novo;
-            no_tamanho(&mut s.inventory, shared::armazem::tamanho(false, novo));
+            let ouro = arrumar_bolsa(&mut s.inventory, shared::armazem::tamanho(false, novo));
+            s.gold = s.gold.saturating_add(ouro);
             s.inventory_dirty = true;
         }
         let tam = shared::armazem::tamanho(banco, novo);
@@ -18884,6 +18969,11 @@ fn add_to_inventory(
     mut qty: u32,
     instance: Option<shared::items::ItemInstance>,
 ) -> bool {
+    // Cobre e darksteel vao pra CARTEIRA (os dois ultimos espacos), sem teto
+    // de pilha e sem ocupar a grade.
+    if instance.is_none() && shared::armazem::e_moeda(item_id) {
+        return por_na_carteira(inv, item_id, qty);
+    }
     let max_stack = crate::economy::item_stack_max(item_id);
     // Equipáveis com instance NÃO stackam — cada drop é único. Vai
     // direto pra slot vazio.

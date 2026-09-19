@@ -61,6 +61,8 @@ struct Resultado {
     primeira: bool,
     bau: Option<(Vec<(u16, u32)>, u32, u8)>,
     fechado: bool,
+    /// `get_time()` no 1º desenho: a contagem ate' a instancia fechar.
+    chegou: f64,
 }
 
 #[derive(Default)]
@@ -264,6 +266,7 @@ impl DungeonUi {
                     primeira: primeira_vitoria,
                     bau: None,
                     fechado: false,
+                    chegou: 0.0,
                 });
             }
             Aviso::Bau {
@@ -1147,7 +1150,7 @@ impl DungeonUi {
         let linhas = r.bau.as_ref().map_or(0, |b| b.0.len() + 1);
         let (w, h) = (
             (460.0 * f).min(seguro.w - 16.0),
-            (170.0 * f + 20.0 * f * linhas as f32).min(seguro.h - 16.0),
+            (196.0 * f + 20.0 * f * linhas as f32).min(seguro.h - 16.0),
         );
         let caixa = Rect::new(
             seguro.x + seguro.w - w - 16.0 * f,
@@ -1258,23 +1261,41 @@ impl DungeonUi {
                 estilo::SUAVE,
             ),
         }
+        // Vitoria: tempo pra juntar o saque do chao antes de a instancia
+        // fechar; sair antes traz o que sobrou (sozinho) — nada se perde.
+        if r.chegou == 0.0 {
+            r.chegou = get_time();
+        }
+        if r.vitoria {
+            let resta = (shared::dungeon::FECHA_DEPOIS_DE_VENCER_S as f64
+                - (get_time() - r.chegou))
+                .max(0.0) as u32;
+            estilo::texto_centro(
+                caixa.center().x,
+                caixa.y + caixa.h - 64.0 * f,
+                &format!("Junte o saque · a dungeon fecha em {}", mmss(resta)),
+                13,
+                estilo::AUTO,
+            );
+        }
         let bw = (caixa.w - 60.0 * f) * 0.5;
         let by = caixa.y + caixa.h - 54.0 * f;
+        // "Juntar saque" (fecha o painel) vem primeiro: e' o que se quer.
         if botao(
             Rect::new(caixa.x + 20.0 * f, by, bw, 40.0 * f),
-            "Sair agora",
-            true,
-            false,
-        ) {
-            saida.push(pedir(Pedido::Sair));
-        }
-        if botao(
-            Rect::new(caixa.x + caixa.w - 20.0 * f - bw, by, bw, 40.0 * f),
-            "Fechar",
+            if r.vitoria { "Juntar saque" } else { "Fechar" },
             true,
             false,
         ) {
             r.fechado = true;
+        }
+        if botao(
+            Rect::new(caixa.x + caixa.w - 20.0 * f - bw, by, bw, 40.0 * f),
+            "Sair",
+            true,
+            false,
+        ) {
+            saida.push(pedir(Pedido::Sair));
         }
     }
 }

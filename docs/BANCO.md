@@ -30,3 +30,16 @@ no login). As expansoes compradas moram em `characters.bolsa_extra` /
 
 Pocoes empilham ate' 999 (eram 20). No login, pilhas separadas do mesmo item
 viram uma so' (`juntar_pilhas`), na bolsa e no banco.
+
+## Moedas: ouro, cobre e darksteel
+
+Nenhuma moeda ocupa espaço na grade. O **ouro** é um saldo (`gold`); o que
+entrar como item (baú, correio, prêmio antigo) vira saldo. **Cobre** e
+**darksteel** moram na **carteira**: os dois últimos espaços da lista da
+bolsa (`armazem::CARTEIRA`), depois da grade. `add_to_inventory` e
+`por_empilhavel` põem essas moedas direto lá (sem teto de pilha, mesmo com a
+bolsa cheia), e `arrumar_bolsa` — no login, ao expandir e antes de todo envio
+da bolsa — recolhe moeda solta na grade. Como a carteira faz parte da lista,
+as contas de craft, forja, oficina e loja (`tem`/`consumir`) seguem iguais. A
+bolsa mostra as três moedas no cabeçalho.
+

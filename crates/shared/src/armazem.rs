@@ -6,7 +6,16 @@
 //! comprou mora no personagem (`bolsa_extra`, `banco_extra`); o tamanho e' so'
 //! conta. Ver docs/BANCO.md.
 
-use crate::constants::INVENTORY_SLOTS;
+use crate::constants::{item_id, INVENTORY_SLOTS};
+
+/// As moedas que moram na CARTEIRA: os dois ultimos espacos da lista da
+/// bolsa, fora da grade (nao ocupam espaco nem aparecem como item). O ouro
+/// nem isso: e' um saldo a parte (`gold`). Ver docs/BANCO.md.
+pub const CARTEIRA: [u16; 2] = [item_id::COPPER, item_id::DARKSTEEL];
+
+pub fn e_moeda(id: u16) -> bool {
+    CARTEIRA.contains(&id)
+}
 
 /// Espacos a mais por expansao.
 pub const PASSO: usize = 10;

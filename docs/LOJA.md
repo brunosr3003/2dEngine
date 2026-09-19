@@ -44,6 +44,18 @@ O baú é repetível e pode entregar qualquer cor: **55% cinza, 28% verde,
 por pedido e entrega a chave na bolsa; se a bolsa estiver cheia, ela vai para
 o correio de recompensas.
 
+Na mesma aba, as **moedas do jogo** (`MOEDAS`, `Produto::Moeda`), repetíveis
+e entregues na hora no personagem que está jogando:
+
+| pacote | vem | preço |
+|---|---:|---:|
+| Saco de Ouro | 10.000 ouro | 50 TP |
+| Saco de Cobre | 20.000 cobre | 40 TP |
+| Barras de Darksteel | 2.000 darksteel | 60 TP |
+
+O ouro entra no saldo; cobre e darksteel, na carteira (docs/BANCO.md) — nunca
+falta espaço. Não viram posse da conta (`loja_posses`), como o baú.
+
 Skin só se compra tendo a montaria. Toda montaria corre igual
 (`VEL_MONTADO`): pagar mais compra aparência, não vantagem.
 

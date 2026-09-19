@@ -1256,16 +1256,23 @@ impl LojaTp {
         }
     }
 
-    /// Aba Materiais: consumiveis repetiveis de craft.
+    /// Aba Materiais: consumiveis repetiveis — o bau de chaves a' esquerda e
+    /// as moedas do jogo (ouro, cobre, darksteel) a' direita.
     fn materiais(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
         let bau = &cat::BAUS_CRAFT[0];
-        let w = (area.w * 0.62).min(650.0 * k);
-        let r = Rect::new(
-            area.center().x - w * 0.5,
-            area.y + 8.0 * k,
-            w,
-            area.h - 16.0 * k,
+        let vao = 16.0 * k;
+        let w = ((area.w - vao) * 0.5).min(560.0 * k);
+        let total = w * 2.0 + vao;
+        let x0 = area.center().x - total * 0.5;
+        self.moedas(
+            Rect::new(x0 + w + vao, area.y + 8.0 * k, w, area.h - 16.0 * k),
+            k,
+            m,
+            livre,
+            modal,
+            agora,
         );
+        let r = Rect::new(x0, area.y + 8.0 * k, w, area.h - 16.0 * k);
         let sobre = !modal && r.contains(m);
         estilo::sombra(r, 22.0 * k, 1.0);
         estilo::ret_gradiente(
@@ -1342,6 +1349,63 @@ impl LojaTp {
         );
         if ativo && livre && bt.contains(m) {
             self.confirma = Some(Confirma::Item(Produto::BauCraft(bau.id)));
+        }
+    }
+
+    /// Os pacotes de moeda do jogo, um por linha: icone, quanto vem, preco e
+    /// "COMPRAR".
+    fn moedas(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
+        let n = cat::MOEDAS.len() as f32;
+        let vao = 12.0 * k;
+        let h = (area.h - vao * (n - 1.0)) / n;
+        for (i, pk) in cat::MOEDAS.iter().enumerate() {
+            let r = Rect::new(area.x, area.y + i as f32 * (h + vao), area.w, h);
+            let sobre = !modal && r.contains(m);
+            estilo::sombra(r, 18.0 * k, 1.0);
+            estilo::ret_gradiente(
+                r,
+                18.0 * k,
+                Color::new(0.20, 0.15, 0.30, 0.98),
+                Color::new(0.055, 0.045, 0.13, 0.98),
+            );
+            estilo::borda_arredondada(
+                r,
+                18.0 * k,
+                1.5 * k.max(0.8),
+                estilo::alfa(if sobre { OURO_CLARO } else { LILAS }, 0.45),
+            );
+            let lado = (r.h * 0.62).min(96.0 * k);
+            let ic = Rect::new(r.x + 16.0 * k, r.center().y - lado * 0.5, lado, lado);
+            brilho_radial(ic.center(), lado * 0.6, OURO_CLARO, 0.18);
+            crate::bolsa::icone_do_item(ic, pk.item_id, 1.0);
+            let tx = ic.x + ic.w + 14.0 * k;
+            estilo::texto_forte(tx, r.y + r.h * 0.36, pk.nome, ts(20.0, k), estilo::TEXTO);
+            estilo::texto(
+                tx,
+                r.y + r.h * 0.36 + 24.0 * k,
+                &format!("{} de uma vez", milhar(pk.qtd as u64)),
+                ts(15.0, k),
+                OURO_CLARO,
+            );
+            estilo::valor_tp(tx, r.y + r.h * 0.36 + 52.0 * k, pk.preco_tp, ts(17.0, k), estilo::TEXTO);
+            let bt = Rect::new(
+                r.x + r.w - 150.0 * k,
+                r.center().y - 22.0 * k,
+                136.0 * k,
+                44.0 * k,
+            );
+            let ativo = !self.em_voo;
+            botao_ouro(
+                bt,
+                if self.em_voo { "AGUARDE…" } else { "COMPRAR" },
+                ativo,
+                !modal && bt.contains(m),
+                k,
+                agora,
+            );
+            if ativo && livre && bt.contains(m) {
+                self.confirma = Some(Confirma::Item(Produto::Moeda(pk.id)));
+            }
         }
     }
 
@@ -1615,11 +1679,21 @@ impl LojaTp {
                 let skin = match pr {
                     Produto::Montaria(id) => cat::montaria(id).map_or(0, |m| m.skin_padrao),
                     Produto::Skin(id) => id,
-                    Produto::Tp(_) | Produto::BauCraft(_) => 0,
+                    Produto::Tp(_) | Produto::BauCraft(_) | Produto::Moeda(_) => 0,
                 };
                 if matches!(pr, Produto::BauCraft(_)) {
                     brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
                     crate::icones_ui::ui("craft", prev.center(), prev.w * 0.52, OURO_CLARO);
+                } else if let Produto::Moeda(id) = pr {
+                    brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
+                    if let Some(mo) = cat::moeda(id) {
+                        let l = prev.w * 0.5;
+                        crate::bolsa::icone_do_item(
+                            Rect::new(prev.center().x - l * 0.5, prev.center().y - l * 0.5, l, l),
+                            mo.item_id,
+                            1.0,
+                        );
+                    }
                 } else {
                     self.giro += get_frame_time().min(0.1) * 0.6;
                     crate::render3d::vitrine_montaria(
@@ -1647,6 +1721,9 @@ impl LojaTp {
                     Produto::BauCraft(_) => {
                         "1 chave aleatória · Cinza, Verde, Azul ou Roxa".to_string()
                     }
+                    Produto::Moeda(id) => cat::moeda(id).map_or(String::new(), |mo| {
+                        format!("{} · entra na hora", milhar(mo.qtd as u64))
+                    }),
                 };
                 estilo::texto_ajustado(&pr.nome(), x, y, largura, ts(22.0, k), estilo::TEXTO);
                 y += 22.0 * k;

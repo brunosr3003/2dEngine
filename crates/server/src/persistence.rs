@@ -3687,7 +3687,7 @@ async fn load_equipment(pool: &PgPool, char_name: &str) -> Result<shared::Equipm
 
 async fn load_inventory(pool: &PgPool, char_name: &str) -> Result<Vec<shared::InventorySlot>> {
     // Ate' o teto: o tamanho do personagem (`bolsa_extra`) corta no spawn.
-    let mut slots = vec![shared::InventorySlot::default(); shared::armazem::BOLSA_MAX];
+    let mut slots = vec![shared::InventorySlot::default(); shared::armazem::BOLSA_MAX + shared::armazem::CARTEIRA.len()];
     let rows = sqlx::query_as::<_, (i32, i32, i32, Option<String>)>(
         "SELECT slot, item_id, qty, instance_data FROM inventory WHERE character_name = $1",
     )
@@ -3695,7 +3695,7 @@ async fn load_inventory(pool: &PgPool, char_name: &str) -> Result<Vec<shared::In
     .fetch_all(pool)
     .await?;
     for (slot, item_id, qty, inst_json) in rows {
-        if slot < 0 || (slot as usize) >= shared::armazem::BOLSA_MAX {
+        if slot < 0 || (slot as usize) >= shared::armazem::BOLSA_MAX + shared::armazem::CARTEIRA.len() {
             continue;
         }
         if qty <= 0 {

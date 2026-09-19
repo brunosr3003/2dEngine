@@ -267,6 +267,9 @@ pub fn aprimorar(
 /// Poe `qty` de um empilhavel na bolsa: completa as pilhas, depois os vazios.
 /// Tudo ou nada — sem espaco pra tudo, a bolsa nao muda.
 pub(crate) fn por_empilhavel(inv: &mut [InventorySlot], id: u16, qty: u32, cap: u32) -> bool {
+    if shared::armazem::e_moeda(id) {
+        return crate::world::por_na_carteira(inv, id, qty);
+    }
     let cap = cap.max(1);
     let mut sim = inv.to_vec();
     let mut falta = qty;

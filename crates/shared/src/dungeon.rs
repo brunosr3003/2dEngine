@@ -237,6 +237,9 @@ pub fn exige_selo(c: &Conteudo, e: u8) -> bool {
 /// de cima de um u16 (`npc_kind` desloca 9): tem que ser <= 127, senao estoura
 /// e o cliente le' outro papel.
 pub const PAPEL_BAU: u8 = 120;
+/// Depois da vitoria, a instancia fica aberta este tanto (pra juntar o saque
+/// do chao; o que sobrar vai pra quem estiver la').
+pub const FECHA_DEPOIS_DE_VENCER_S: f32 = 120.0;
 
 /// Selos craftados por semana, POR CONTA.
 pub const SELOS_POR_SEMANA: u8 = 2;

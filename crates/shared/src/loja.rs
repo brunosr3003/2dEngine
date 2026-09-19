@@ -245,6 +245,47 @@ pub const BAUS_CRAFT: [BauCraft; 1] = [BauCraft {
     chances_cor: [55, 28, 12, 5],
 }];
 
+/// Moeda do jogo comprada com TP: entregue na hora no personagem (o ouro no
+/// saldo; cobre e darksteel na carteira). Repetivel. Valores iniciais ⚠️
+/// (docs/LOJA.md).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PacoteMoeda {
+    pub id: u16,
+    pub nome: &'static str,
+    /// `item_id::GOLD`, `COPPER` ou `DARKSTEEL`.
+    pub item_id: u16,
+    pub qtd: u32,
+    pub preco_tp: u64,
+}
+
+pub const MOEDAS: [PacoteMoeda; 3] = [
+    PacoteMoeda {
+        id: 1,
+        nome: "Saco de Ouro",
+        item_id: crate::item_id::GOLD,
+        qtd: 10_000,
+        preco_tp: 50,
+    },
+    PacoteMoeda {
+        id: 2,
+        nome: "Saco de Cobre",
+        item_id: crate::item_id::COPPER,
+        qtd: 20_000,
+        preco_tp: 40,
+    },
+    PacoteMoeda {
+        id: 3,
+        nome: "Barras de Darksteel",
+        item_id: crate::item_id::DARKSTEEL,
+        qtd: 2_000,
+        preco_tp: 60,
+    },
+];
+
+pub fn moeda(id: u16) -> Option<&'static PacoteMoeda> {
+    MOEDAS.iter().find(|m| m.id == id)
+}
+
 pub fn pacote(id: u16) -> Option<&'static PacoteTp> {
     PACOTES.iter().find(|p| p.id == id)
 }
@@ -294,6 +335,8 @@ pub enum Produto {
     Montaria(u16),
     Skin(u16),
     BauCraft(u16),
+    /// Ouro, cobre ou darksteel (`MOEDAS`). Anexado no fim do enum.
+    Moeda(u16),
 }
 
 impl Produto {
@@ -304,6 +347,7 @@ impl Produto {
             Produto::Montaria(i) => format!("montaria:{i}"),
             Produto::Skin(i) => format!("skin:{i}"),
             Produto::BauCraft(i) => format!("bau-craft:{i}"),
+            Produto::Moeda(i) => format!("moeda:{i}"),
         }
     }
 
@@ -315,6 +359,7 @@ impl Produto {
             "montaria" => Produto::Montaria(id),
             "skin" => Produto::Skin(id),
             "bau-craft" => Produto::BauCraft(id),
+            "moeda" => Produto::Moeda(id),
             _ => return None,
         };
         p.existe().then_some(p)
@@ -326,6 +371,7 @@ impl Produto {
             Produto::Montaria(i) => montaria(i).is_some(),
             Produto::Skin(i) => skin(i).is_some(),
             Produto::BauCraft(i) => bau_craft(i).is_some(),
+            Produto::Moeda(i) => moeda(i).is_some(),
         }
     }
 
@@ -337,6 +383,7 @@ impl Produto {
             Produto::Montaria(i) => montaria(i).map_or("?".into(), |m| m.nome.to_string()),
             Produto::Skin(i) => skin(i).map_or("?".into(), |s| s.nome.to_string()),
             Produto::BauCraft(i) => bau_craft(i).map_or("?".into(), |b| b.nome.to_string()),
+            Produto::Moeda(i) => moeda(i).map_or("?".into(), |m| m.nome.to_string()),
         }
     }
 
@@ -347,6 +394,7 @@ impl Produto {
             Produto::Montaria(i) => montaria(i).map(|m| m.preco_tp),
             Produto::Skin(i) => skin(i).filter(|s| s.preco_tp > 0).map(|s| s.preco_tp),
             Produto::BauCraft(i) => bau_craft(i).map(|b| b.preco_tp),
+            Produto::Moeda(i) => moeda(i).map(|m| m.preco_tp),
         }
     }
 }
@@ -393,7 +441,7 @@ impl Posses {
             Produto::Tp(_) => false,
             Produto::Montaria(i) => self.montarias.contains(&i),
             Produto::Skin(i) => self.skins.contains(&i),
-            Produto::BauCraft(_) => false,
+            Produto::BauCraft(_) | Produto::Moeda(_) => false,
         }
     }
 
@@ -523,6 +571,20 @@ pub enum AvisoLoja {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn moeda_se_compra_com_tp_de_novo_e_de_novo() {
+        for m in MOEDAS.iter() {
+            let p = Produto::Moeda(m.id);
+            assert_eq!(Produto::de_codigo(&p.codigo()), Some(p));
+            assert_eq!(pode_comprar(&Posses::default(), p, m.preco_tp), Ok(m.preco_tp));
+            assert!(!Posses::de_codigos([p.codigo().as_str()]).tem(p), "nao vira posse");
+        }
+        assert_eq!(
+            pode_comprar(&Posses::default(), Produto::Moeda(1), 10),
+            Err(RecusaCompra::SemSaldo)
+        );
+    }
+
     use super::*;
     use crate::item_id;
 

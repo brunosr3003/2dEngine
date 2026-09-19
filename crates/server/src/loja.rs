@@ -33,6 +33,13 @@ pub enum Evento {
         item_id: u16,
         cor: u8,
     },
+    /// Pacote de moeda pago em TP: ouro, cobre ou darksteel.
+    Moeda {
+        sid: SessionId,
+        personagem: String,
+        item_id: u16,
+        qtd: u32,
+    },
 }
 
 pub async fn criar_tabelas(pool: &PgPool) -> Result<()> {
@@ -381,7 +388,7 @@ pub async fn comprar_item(
         razao::Movimento::Feito { saldo } | razao::Movimento::JaFeito { saldo } => saldo,
     };
     // Consumiveis sao repetiveis e nao viram posse da conta.
-    if !matches!(produto, Produto::BauCraft(_)) {
+    if !matches!(produto, Produto::BauCraft(_) | Produto::Moeda(_)) {
         sqlx::query("INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
             .bind(conta)
             .bind(&codigo)
@@ -408,6 +415,8 @@ pub async fn comprar_item(
         saldo,
         texto: if matches!(produto, Produto::BauCraft(_)) {
             format!("{} aberto!", produto.nome())
+        } else if matches!(produto, Produto::Moeda(_)) {
+            format!("{} comprado!", produto.nome())
         } else {
             format!("{} é seu!", produto.nome())
         },
