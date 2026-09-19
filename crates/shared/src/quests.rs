@@ -85,6 +85,36 @@ pub mod objective_kind {
     /// Ir pra outra ilha (`obj_target` = indice em `terreno::ARQUIPELAGO`)
     /// pelo Capitao do Porto. Conclui ao entrar no mundo daquela ilha.
     pub const VIAGEM: u8 = 16;
+    /// Passo TUTORIAL da historia: fazer uma acao da interface uma vez
+    /// (`obj_target` = `tutorial::*`). O cliente avisa com
+    /// `ClientMessage::Tutorial` quando o jogador faz o gesto.
+    pub const TUTORIAL: u8 = 17;
+}
+
+/// As acoes que os passos tutoriais ensinam (`obj_target` de TUTORIAL).
+pub mod tutorial {
+    /// Ajustou a % de vida em que a pocao e' bebida (Menu › Sistema › Barra).
+    pub const POCAO_LIMIAR: u16 = 1;
+    /// Arrastou uma skill pra CIMA: uso automatico ligado.
+    pub const SKILL_AUTO: u16 = 2;
+    /// Ligou o AUTO COMBATE.
+    pub const AUTO_COMBATE: u16 = 3;
+    /// Ligou o AUTO COLETA.
+    pub const AUTO_COLETA: u16 = 4;
+    /// Tocou num lugar do mapa e o personagem foi sozinho.
+    pub const MAPA_IR: u16 = 5;
+
+    /// O que fazer, curto, pro rastreador.
+    pub fn instrucao(acao: u16) -> &'static str {
+        match acao {
+            POCAO_LIMIAR => "Menu › Sistema › Barra: ajuste a % da poção",
+            SKILL_AUTO => "Arraste uma skill para CIMA",
+            AUTO_COMBATE => "Toque em COMBATE",
+            AUTO_COLETA => "Toque em COLETA",
+            MAPA_IR => "Abra o mapa e toque num lugar",
+            _ => "Siga a dica",
+        }
+    }
 }
 
 /// `obj_target` de GATHER.
@@ -210,6 +240,9 @@ pub mod destino_tipo {
     /// Objetivo e' vencer uma dungeon: abre o painel de Dungeon, nao anda.
     /// `raio` leva o id do conteudo (0 = qualquer).
     pub const PAINEL_DUNGEON: u8 = 9;
+    /// Passo tutorial: nao anda; o cliente abre o painel ou mostra a dica da
+    /// acao. `raio` leva a acao (`tutorial::*`).
+    pub const TUTORIAL: u8 = 10;
 }
 
 /// Em que ponto da missao a fala acontece.

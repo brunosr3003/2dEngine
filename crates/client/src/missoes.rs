@@ -101,6 +101,7 @@ fn verbo(q: &QuestNet) -> &'static str {
         objective_kind::NIVEL => "Nível",
         objective_kind::VIAGEM => "Viajar",
         objective_kind::DUNGEON => "Vencer",
+        objective_kind::TUTORIAL => "Aprender",
         _ => "Objetivo",
     }
 }
@@ -124,6 +125,7 @@ fn estado_da_historia(q: &QuestNet, nivel: u32) -> String {
         objective_kind::NIVEL => format!("Alcance o nível {} · você: {nivel}", q.obj_count),
         objective_kind::LUGAR => format!("Ir até {}", historia::ponto::nome(q.obj_target)),
         objective_kind::VIAGEM => "Fale com o Capitão do Porto".into(),
+        objective_kind::TUTORIAL => shared::quests::tutorial::instrucao(q.obj_target).into(),
         objective_kind::DUNGEON => match shared::dungeon::conteudo(q.obj_target) {
             Some(c) => format!("Vencer {} · toque para abrir", c.nome),
             None => "Vencer uma dungeon · toque para abrir".into(),

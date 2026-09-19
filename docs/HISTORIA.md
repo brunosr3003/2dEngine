@@ -127,3 +127,27 @@ Passo concluído não vira linha: a história infinita não engorda o banco.
 - O menu de todas as missões abre com a seção **História**: capítulos escritos
   e as crônicas atual e seguinte, com concluídos, o atual e os futuros com
   cadeado e o motivo (nível no caminho, passo anterior, ilha).
+
+## Tutoriais no capítulo I (19/09/2026)
+
+Cinco passos da história ensinam UMA coisa da interface cada, na hora em que
+ela começa a fazer falta (`objective_kind::TUTORIAL`, `quests::tutorial`):
+
+| id | passo | depois de | ação |
+|---|---|---|---|
+| 770 | Poção na hora certa | 701 (o Alquimista dá as poções) | ajustar a % da poção na Barra (Menu › Sistema › Barra) |
+| 771 | Luta sem as mãos | antes de 702 (lobos) | ligar o AUTO COMBATE |
+| 772 | Golpe no automático | 703 (Treinador) | arrastar uma skill pra CIMA (uso automático) |
+| 773 | Coleta sem esforço | antes de 704 (lenha) | ligar o AUTO COLETA |
+| 774 | O mapa mostra o caminho | antes de 709 (mirante) | tocar num lugar do mapa |
+
+- O cliente avisa o gesto com `ClientMessage::Tutorial { acao }`, e só com o
+  passo ativo. O "Ir" do passo abre onde se faz (a Barra, o mapa) ou mostra a
+  dica.
+- **Ids fora da sequência de propósito:** a história agora anda pela POSIÇÃO
+  na lista (`id_do_passo`, `indice`, `capitulo_escrito`), e não por
+  `700 + índice`. Inserir passo não renumera nenhum outro.
+- O jogador guarda o ÍNDICE na linha marcadora; quem já tinha passado do ponto
+  de inserção tem o marcador realinhado ao passo em andamento no login
+  (`quests::garantir_historia`). Esse personagem não vê os tutoriais que ficaram
+  para trás.

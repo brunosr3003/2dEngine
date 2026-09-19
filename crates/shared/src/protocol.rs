@@ -423,6 +423,11 @@ pub enum ClientMessage {
         slot_idx: u8,
         qtd: u16,
     },
+    /// O jogador fez a acao de um passo TUTORIAL da historia
+    /// (`quests::tutorial::*`). O cliente so' manda com o passo ativo.
+    Tutorial {
+        acao: u16,
+    },
 }
 
 /// Onde esta' a peca que a forja vai refinar.

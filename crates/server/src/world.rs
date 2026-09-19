@@ -6803,6 +6803,13 @@ impl GameWorld {
             ClientMessage::ShopComprar { slot_idx, qtd } => {
                 self.handle_shop_comprar(id, slot_idx as usize, qtd as u32);
             }
+            ClientMessage::Tutorial { acao } => {
+                // Passo tutorial: o cliente conta o gesto (e' interface, nao
+                // regra de jogo — nada aqui da' vantagem).
+                self.quest_on_evento_se(id, shared::quests::objective_kind::TUTORIAL, 1, &|d| {
+                    d.obj_target == acao
+                });
+            }
             ClientMessage::ShopSell { inv_slot } => {
                 self.handle_shop_sell(id, inv_slot as usize);
             }
@@ -14226,6 +14233,10 @@ impl GameWorld {
             }
             match def.obj_kind {
                 objective_kind::NIVEL => return Some((destino_tipo::TRAVA, eu, 0.0, None)),
+                // Tutorial nao anda: o cliente abre o painel ou mostra a dica.
+                objective_kind::TUTORIAL => {
+                    return Some((destino_tipo::TUTORIAL, eu, def.obj_target as f32, None))
+                }
                 objective_kind::LUGAR => {
                     let alvo = self.pontos_historia.get(&def.obj_target).copied().flatten()?;
                     return Some((destino_tipo::LUGAR, alvo, shared::historia::ponto::raio(def.obj_target), None));

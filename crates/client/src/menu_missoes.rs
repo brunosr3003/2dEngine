@@ -386,6 +386,9 @@ pub fn frase(d: &QuestDef, e: &Estado) -> String {
             Some(q) => format!("Disponível · pegar com: {q}"),
             None => "Disponível".into(),
         },
+        Estado::EmAndamento { .. } if d.obj_kind == shared::quests::objective_kind::TUTORIAL => {
+            format!("Tutorial · {}", shared::quests::tutorial::instrucao(d.obj_target))
+        }
         Estado::EmAndamento { feito, total } => format!("Em andamento · {feito}/{total}"),
         Estado::Pronta => match shared::quests::quem_da(d) {
             Some(q) => format!("Pronta · entregar: {q}"),

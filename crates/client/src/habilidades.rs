@@ -20,6 +20,9 @@ pub struct Habilidades {
     efeitos: Vec<Efeito>,
     luz: Option<macroquad::material::Material>,
     pub automaticas: HashSet<u32>,
+    /// O jogador LIGOU o automatico de uma skill neste quadro (o passo
+    /// tutorial conta o gesto; o `main` le' e zera).
+    pub ligou_auto: bool,
     arrasto: Arrasto,
     tentar_apos: HashMap<u32, f64>,
     ultimo_auto: u32,
@@ -202,6 +205,7 @@ impl Habilidades {
             {
                 if ligar {
                     self.automaticas.insert(id);
+                    self.ligou_auto = true;
                 } else {
                     self.automaticas.remove(&id);
                 }
@@ -447,9 +451,9 @@ impl Habilidades {
                 let (_, inicio) = self.arrasto.inicio.unwrap();
                 let p = Vec2::from(mouse_position());
                 let texto = if p.y > inicio.y + 20.0 {
-                    "↓ Solte: MANUAL"
+                    "Solte: MANUAL"
                 } else {
-                    "↑ Solte: AUTO"
+                    "Solte: AUTO"
                 };
                 estilo::painel(Rect::new(c.x - 82.0, r.y - 74.0, 164.0, 31.0));
                 estilo::texto_centro(c.x, r.y - 53.0, texto, 15, estilo::AUTO);
@@ -471,7 +475,7 @@ impl Habilidades {
                     x + 12.0,
                     r.y - 53.0,
                     &format!(
-                        "Lv {}  ·  {} MP  ·  {:.0}s  ·  {}  ·  arraste ↑ AUTO / ↓ manual",
+                        "Lv {}  ·  {} MP  ·  {:.0}s  ·  {}  ·  pra cima: AUTO · pra baixo: manual",
                         s.nivel_necessario(),
                         s.custo_mp,
                         s.espera_s,

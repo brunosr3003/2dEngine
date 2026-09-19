@@ -210,6 +210,24 @@ pub fn passo_atual(active: &[CharQuest]) -> Option<&CharQuest> {
 /// primeiro passo. Repoe a linha do passo atual se ela sumiu. Devolve o id
 /// dado, se deu.
 pub fn garantir_historia(active: &mut Vec<CharQuest>) -> Option<u16> {
+    // O marcador guarda o INDICE; o passo em andamento guarda o ID. Se a
+    // historia ganhou passo no meio (os tutoriais 770+, em 19/09/2026), o
+    // indice salvo aponta pra outro passo — o id em andamento e' quem manda,
+    // e o marcador se realinha a ele.
+    let em_andamento = active
+        .iter()
+        .find(|c| {
+            c.quest_id != historia::ID_MARCO
+                && historia::e_da_historia(c.quest_id)
+                && c.status != quests::quest_status::TURNED_IN
+        })
+        .and_then(|c| historia::indice(c.quest_id));
+    if let (Some(certo), Some(m)) = (
+        em_andamento,
+        active.iter_mut().find(|c| c.quest_id == historia::ID_MARCO),
+    ) {
+        m.progress = certo;
+    }
     let i = match indice_da_historia(active) {
         Some(i) => i,
         None => {
@@ -680,6 +698,21 @@ mod testes {
         assert_eq!(um(514), (false, true, true));
         // 522: qualquer bicho — chefe tambem e' bicho.
         assert_eq!(um(522), (true, true, true));
+    }
+
+    /// Personagem salvo antes dos tutoriais: marcador no indice velho (11) e
+    /// o passo 711 em andamento. O marcador se realinha ao 711 e nada de
+    /// passo fantasma entra no diario.
+    #[test]
+    fn marcador_velho_se_realinha_ao_passo_em_andamento() {
+        let mut a = vec![
+            CharQuest { quest_id: historia::ID_MARCO, status: historia::STATUS_MARCO, progress: 11, cooldown_until: 0 },
+            cq(711, ACTIVE, 0),
+        ];
+        assert_eq!(garantir_historia(&mut a), None, "nao da' passo novo");
+        assert_eq!(indice_da_historia(&a), historia::indice(711));
+        assert_eq!(passo_atual(&a).map(|c| c.quest_id), Some(711));
+        assert_eq!(a.len(), 2);
     }
 
     #[test]

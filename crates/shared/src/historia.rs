@@ -24,7 +24,8 @@ use std::sync::{Mutex, OnceLock};
 use crate::constants::item_id;
 use crate::construcao::Papel;
 use crate::quests::{
-    alvo_de_coleta, alvo_de_mob, mob_kind, momento, objective_kind, quest_source, QuestDef,
+    alvo_de_coleta, alvo_de_mob, mob_kind, momento, objective_kind, quest_source, tutorial as tut,
+    QuestDef,
 };
 
 /// Giver das missoes da historia. Nao e' NPC nenhum: fora de toda faixa de
@@ -41,6 +42,10 @@ pub const PRIMEIRO_ID: u16 = 700;
 /// e chave so' cai de chefe. Os dois andam juntos: ver o teste
 /// `a_chave_vem_no_passo_antes_do_craft`.
 pub const PASSO_DO_CRAFT: u16 = 707;
+/// Faixa dos passos TUTORIAIS: entram no meio do capitulo I sem renumerar os
+/// outros (ver `id_do_passo`, que anda pela POSICAO na lista).
+pub const PRIMEIRO_ID_TUTORIAL: u16 = 770;
+pub const ULTIMO_ID_TUTORIAL: u16 = 789;
 /// Primeiro id das cronicas. Ate' `u16::MAX` sao 55.536 passos de epilogo —
 /// mais de nove mil capitulos.
 pub const PRIMEIRO_ID_DO_EPILOGO: u16 = 10_000;
@@ -355,6 +360,28 @@ const fn nivel(id: u16, title: &'static str, n: u32) -> QuestDef {
     }
 }
 
+/// Passo tutorial: fazer uma acao da interface (`quests::tutorial::*`).
+#[allow(clippy::too_many_arguments)]
+const fn tutorial(
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    acao: u16,
+    gold: u32,
+    xp: u64,
+    item: u16,
+    qtd: u16,
+) -> QuestDef {
+    QuestDef {
+        obj_kind: objective_kind::TUTORIAL,
+        obj_target: acao,
+        obj_count: 1,
+        reward_item: item,
+        reward_item_qty: qtd,
+        ..base(id, title, desc, gold, xp)
+    }
+}
+
 const fn viajar(
     id: u16,
     title: &'static str,
@@ -385,13 +412,20 @@ pub const PASSOS: &[QuestDef] = &[
     // `o_inicio_entrega_a_primeira_armadura`.
     falar(700, "Desperte na praça", "Você acordou na praia na noite em que o farol do Bosque apagou. Procure o Mestre de Missões, perto do poço da praça.", Papel::Missoes, 20, 500, item_id::HEALTH_POTION, 5),
     falar(701, "Um gole de coragem", "O Mestre quer você de pé. Fale com o Alquimista, na loja de toldo verde: sem poção, a mata engole qualquer um.", Papel::Alquimista, 20, 1_000, item_id::HEALTH_POTION, 5),
+    // Tutoriais (770+): cada um ensina UMA coisa da interface, na hora em que
+    // ela passa a fazer falta. Ids fora da sequencia de proposito.
+    tutorial(770, "Poção na hora certa", "O Alquimista insiste: poção boa é a que se bebe sozinha. Abra Menu › Sistema › Barra, escolha a Poção de Vida e ajuste com − e + a % de vida em que ela é bebida.", tut::POCAO_LIMIAR, 20, 300, item_id::HEALTH_POTION, 5),
+    tutorial(771, "Luta sem as mãos", "Antes dos lobos, aprenda a lutar sem pensar: toque em COMBATE, no canto de baixo, e o personagem enfrenta sozinho o que estiver perto. Toque de novo para parar.", tut::AUTO_COMBATE, 20, 300, item_id::HEALTH_POTION, 3),
     cacar_com(702, "A trilha dos lobos", "Os lobos enlouqueceram desde que o farol apagou: descem à trilha de dia, coisa que nunca fizeram. Derrote 5 fora da cidade. Os caçadores juntaram berloques que os bichos arrancaram das carroças — são seus.", alvo_de_mob(mob_kind::LOBO), 5, 60, 1_000, item_id::EXORCISM_BAUBLE, 10, item_id::HEALTH_POTION, 5),
     falar(703, "Mãos firmes", "Você sobreviveu aos lobos. O Treinador da praça quer ver do que é capaz — e guarda quintessência para quem aguenta o tranco.", Papel::Treinador, 40, 2_500, item_id::QUINTESSENCE, 10),
+    tutorial(772, "Golpe no automático", "O Treinador mostra: arraste uma skill PARA CIMA e ela passa a ser usada sozinha no combate. Para baixo, volta pro manual.", tut::SKILL_AUTO, 40, 800, item_id::HEALTH_POTION, 3),
+    tutorial(773, "Coleta sem esforço", "A forja come madeira e pedra. Toque em COLETA: o personagem corta e quebra sozinho o que estiver por perto — a engrenagem do botão escolhe o quê.", tut::AUTO_COLETA, 40, 800, item_id::XP_POTION, 1),
     coletar_com(704, "Lenha para a forja", "A forja da vila come madeira dia e noite. Derrube 8 árvores — é da árvore que sai toda a madeira da ilha. O Ferreiro paga em Darksteel, o metal escuro que toda peça pede.", alvo_de_coleta::ARVORE, 8, 60, 2_000, item_id::DARKSTEEL, 200, item_id::XP_POTION, 1),
     coletar_com(705, "Pedra que canta", "As pedras da ilha zumbem com o trovão. Quebre 10 pedras em qualquer veio — é da pedra que saem o Aço e o Darksteel de toda peça. A mineradora completa o seu Aço.", alvo_de_coleta::PEDRA, 10, 80, 4_000, item_id::STEEL, 30, item_id::XP_POTION, 1),
     falar_com_dois(706, "O metal da tempestade", "Leve o que ouviu nas pedras ao Ferreiro. Ele sabe o que o metal carrega — e guarda o couro e o cobre que faltam para quem vai forjar.", Papel::Ferreiro, 60, 4_000, item_id::COPPER, 300, item_id::HIDE, 1),
     criar(707, "Sua primeira peça", "Você tem tudo o que a Armadura pede: o couro do Ferreiro, Aço, Quintessência, Berloque, Darksteel e cobre. Abra o Craft e crie sua primeira armadura. Depois disso, tudo isso se farma: pedra, árvore, bicho e chefe.", 100, 6_000),
     cacar(708, "Ursos na encosta", "Os ursos desceram das encostas atrás do cheiro de trovão. Derrote 4 ursos.", alvo_de_mob(mob_kind::URSO), 4, 120, 6_500, item_id::HEALTH_POTION),
+    tutorial(774, "O mapa mostra o caminho", "Toque no minimapa para abrir o mapa da ilha e toque num lugar: o personagem vai sozinho até lá.", tut::MAPA_IR, 60, 1_500, item_id::HEALTH_POTION, 3),
     ir(709, "O mirante do Bosque", "Suba ao ponto mais alto da ilha. De lá se vê o olho da tempestade — e, lá embaixo, o casco do naufrágio encalhado.", ponto::MIRANTE, 150, 8_500),
     dungeon(710, "O porão do naufrágio", "Do mirante você viu o casco. Os Morganeers fizeram do porão um esconderijo, e quem manda lá dentro carrega chave no bolso — chefe de dungeon larga chave bem mais que chefe de campo. Toque no passo (ou em Dungeons, no Menu) e limpe o Porão do Naufrágio. Sozinho dá.", 1, 300, 19_000, item_id::GREATER_HEAL, 5),
     refinar(711, "Fogo na forja", "Peça fraca não aguenta a tempestade. Tente refinar uma peça na Forja.", 1, 150, 20_000),
@@ -466,15 +500,19 @@ pub fn total_escritos() -> u32 {
 
 /// `id` e' um passo da historia (escrito ou cronica)?
 pub fn e_da_historia(id: u16) -> bool {
-    let fim_escritos = PRIMEIRO_ID as u32 + total_escritos();
-    ((PRIMEIRO_ID as u32)..fim_escritos).contains(&(id as u32)) || id >= PRIMEIRO_ID_DO_EPILOGO
+    id >= PRIMEIRO_ID_DO_EPILOGO || PASSOS.iter().any(|d| d.id == id)
 }
 
 /// O id do passo de indice `i`. `None` so' depois do ultimo id de cronica.
+///
+/// Os escritos andam pela POSICAO na lista, nao por `PRIMEIRO_ID + i`: e' o
+/// que deixa os tutoriais (770+) entrarem no meio do capitulo I sem mudar o
+/// id de passo nenhum. O jogador guarda o INDICE (a linha marcadora), entao
+/// inserir passo desloca quem ja' passou dali — pro personagem novo, nada.
 pub fn id_do_passo(i: u32) -> Option<u16> {
     let n = total_escritos();
     if i < n {
-        return Some(PRIMEIRO_ID + i as u16);
+        return Some(PASSOS[i as usize].id);
     }
     let id = PRIMEIRO_ID_DO_EPILOGO as u32 + (i - n);
     (id <= u16::MAX as u32).then_some(id as u16)
@@ -488,7 +526,7 @@ pub fn indice(id: u16) -> Option<u32> {
     if id >= PRIMEIRO_ID_DO_EPILOGO {
         return Some(total_escritos() + (id - PRIMEIRO_ID_DO_EPILOGO) as u32);
     }
-    Some((id - PRIMEIRO_ID) as u32)
+    PASSOS.iter().position(|d| d.id == id).map(|i| i as u32)
 }
 
 /// A definicao do passo `id`, com vida estatica. As cronicas sao geradas uma
@@ -511,11 +549,21 @@ pub fn def_da_historia(id: u16) -> Option<&'static QuestDef> {
     Some(d)
 }
 
-/// O capitulo escrito do passo `id`, se for um.
+/// O capitulo escrito do passo `id`, se for um — pela POSICAO: o capitulo
+/// vai do indice do `primeiro` ao do `ultimo` (os tutoriais moram no meio).
 pub fn capitulo_escrito(id: u16) -> Option<&'static Capitulo> {
-    CAPITULOS
-        .iter()
-        .find(|c| (c.primeiro..=c.ultimo).contains(&id))
+    let i = indice(id).filter(|i| *i < total_escritos())?;
+    CAPITULOS.iter().find(|c| {
+        matches!((indice(c.primeiro), indice(c.ultimo)), (Some(a), Some(b)) if (a..=b).contains(&i))
+    })
+}
+
+/// Os passos escritos de um capitulo, na ordem.
+pub fn passos_do_capitulo(c: &Capitulo) -> &'static [QuestDef] {
+    match (indice(c.primeiro), indice(c.ultimo)) {
+        (Some(a), Some(b)) => &PASSOS[a as usize..=b as usize],
+        _ => &[],
+    }
 }
 
 /// Nome do capitulo do passo de indice `i` ("I · O Farol do Bosque",
@@ -865,8 +913,18 @@ mod testes {
 
     #[test]
     fn ids_seguidos_e_capitulos_cobrem_tudo() {
-        for (i, d) in PASSOS.iter().enumerate() {
-            assert_eq!(d.id, PRIMEIRO_ID + i as u16, "passo {i} fora de ordem");
+        let mut vistos = std::collections::HashSet::new();
+        let mut escrito = PRIMEIRO_ID;
+        for d in PASSOS.iter() {
+            assert!(vistos.insert(d.id), "{} repetido", d.id);
+            if (PRIMEIRO_ID_TUTORIAL..=ULTIMO_ID_TUTORIAL).contains(&d.id) {
+                assert_eq!(d.obj_kind, objective_kind::TUTORIAL, "{} na faixa de tutorial", d.id);
+            } else {
+                // Os de sempre seguem 700, 701, 702... com tutorial no meio.
+                assert_eq!(d.id, escrito, "passo fora de ordem");
+                escrito += 1;
+            }
+            assert_eq!(indice(d.id).and_then(id_do_passo), Some(d.id));
             assert_eq!(d.source, quest_source::HISTORIA);
             assert!(
                 crate::quests::QUESTS.iter().all(|q| q.id != d.id),
@@ -880,13 +938,12 @@ mod testes {
                 d.id
             );
         }
-        assert_eq!(
-            CAPITULOS.last().unwrap().ultimo as u32 + 1,
-            PRIMEIRO_ID as u32 + total_escritos()
-        );
+        assert_eq!(PASSOS.last().unwrap().id, CAPITULOS.last().unwrap().ultimo);
+        let cobertos: usize = CAPITULOS.iter().map(|c| passos_do_capitulo(c).len()).sum();
+        assert_eq!(cobertos, PASSOS.len(), "passo fora de capitulo");
         for c in CAPITULOS {
-            let n = c.ultimo - c.primeiro + 1;
-            assert!((12..=20).contains(&n), "{}: {n} passos", c.nome);
+            let n = passos_do_capitulo(c).len();
+            assert!((12..=26).contains(&n), "{}: {n} passos", c.nome);
         }
         assert!(!e_da_historia(ID_MARCO));
     }
@@ -931,8 +988,8 @@ mod testes {
             let altura = |x: f32, z: f32| ger.altura(x, z);
             let agua = |x: f32, z: f32| ger.altura(x, z) <= crate::terreno::NIVEL_DO_MAR + 0.01;
             let mut pontos: HashMap<u16, glam::Vec2> = HashMap::new();
-            for id in cap.primeiro..=cap.ultimo {
-                let d = def_da_historia(id).unwrap();
+            for d in passos_do_capitulo(cap) {
+                let id = d.id;
                 match d.obj_kind {
                     objective_kind::TALK => {
                         assert!(
@@ -992,8 +1049,8 @@ mod testes {
         let zona = ARQUIPELAGO[cap.ilha].zona;
         let mut xp = 0u64;
         let mut dungeons = 0;
-        for id in cap.primeiro..=cap.ultimo {
-            let d = def_da_historia(id).unwrap();
+        for d in passos_do_capitulo(&cap) {
+            let id = d.id;
             assert_ne!(
                 d.obj_kind,
                 objective_kind::NIVEL,
@@ -1040,8 +1097,8 @@ mod testes {
             .find(|r| r.tier == 1 && r.category == crate::receitas::categoria::ARMADURA)
             .unwrap();
         let mut ganho: HashMap<u32, u32> = HashMap::new();
-        for id in PRIMEIRO_ID..PASSO_DO_CRAFT {
-            let d = def_da_historia(id).unwrap();
+        let ate = indice(PASSO_DO_CRAFT).unwrap() as usize;
+        for d in &PASSOS[..ate] {
             for (item, qtd) in [
                 (d.reward_item, d.reward_item_qty),
                 (d.reward_item2, d.reward_item2_qty),
@@ -1073,7 +1130,10 @@ mod testes {
             objective_kind::CRAFT,
             "{PASSO_DO_CRAFT} deixou de ser o passo de criar"
         );
-        let chave = def_da_historia(PASSO_DO_CRAFT - 1).unwrap();
+        let chave = indice(PASSO_DO_CRAFT)
+            .and_then(|i| id_do_passo(i - 1))
+            .and_then(def_da_historia)
+            .unwrap();
         assert_eq!(
             chave.obj_kind,
             objective_kind::TALK,
@@ -1090,6 +1150,31 @@ mod testes {
             "o passo {} parou de entregar chave: o craft do {PASSO_DO_CRAFT} fica impossivel",
             chave.id
         );
+    }
+
+    /// Os tutoriais ensinam cada acao UMA vez, no capitulo I, e cada um tem
+    /// o texto do que fazer.
+    #[test]
+    fn tutoriais_no_capitulo_um_uma_acao_cada() {
+        use crate::quests::tutorial as t;
+        let tut: Vec<&QuestDef> = PASSOS
+            .iter()
+            .filter(|d| d.obj_kind == objective_kind::TUTORIAL)
+            .collect();
+        let acoes: Vec<u16> = tut.iter().map(|d| d.obj_target).collect();
+        for a in [t::POCAO_LIMIAR, t::SKILL_AUTO, t::AUTO_COMBATE, t::AUTO_COLETA, t::MAPA_IR] {
+            assert_eq!(acoes.iter().filter(|x| **x == a).count(), 1, "acao {a}");
+            assert_ne!(t::instrucao(a), "Siga a dica");
+        }
+        for d in tut {
+            assert_eq!(capitulo_escrito(d.id).map(|c| c.nome), Some(CAPITULOS[0].nome), "{} fora do capitulo I", d.id);
+        }
+        // A poção vem logo depois do Alquimista dar as pocoes, e o auto
+        // combate antes dos lobos.
+        let pos = |id: u16| indice(id).unwrap();
+        assert_eq!(pos(770), pos(701) + 1);
+        assert!(pos(771) < pos(702));
+        assert!(pos(772) > pos(703) && pos(773) < pos(704) && pos(774) < pos(709));
     }
 
     /// Cronicas: estaveis (mesmo id, mesma referencia e mesmo texto),

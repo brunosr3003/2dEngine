@@ -23,6 +23,8 @@ pub struct ConfigBarra {
     pub onde_obter: Option<u16>,
     /// A lista de consumiveis: com a bolsa cheia de pocoes ela passa da tela.
     rolagem: crate::rolagem::Rolagem,
+    /// Mexeu na % de uso de uma pocao neste quadro (o passo tutorial conta).
+    pub mexeu_no_limiar: bool,
 }
 
 /// Consumiveis da bolsa que cabem na barra, sem repetir, com a quantidade.
@@ -105,7 +107,7 @@ impl ConfigBarra {
         let mut mudou = false;
 
         estilo::texto(p.x + 20.0, p.y + 34.0, "Barra de itens", 22, estilo::OURO);
-        estilo::texto(p.x + 20.0, p.y + 56.0, "Escolha um item e depois um espaço (ou o contrário). Na tela, arraste o botão ↑ pra ligar o AUTO.", 13, estilo::SUAVE);
+        estilo::texto(p.x + 20.0, p.y + 56.0, "Escolha um item e depois um espaço (ou o contrário). Na tela, arraste o botão pra CIMA pra ligar o AUTO.", 13, estilo::SUAVE);
         let x_fechar = Rect::new(p.x + p.w - 38.0, p.y + 12.0, 26.0, 26.0);
         estilo::painel(x_fechar);
         estilo::texto_centro(
@@ -225,10 +227,12 @@ impl ConfigBarra {
                     if clique && menos.contains(m) {
                         barra.ajustar_limiar(i, -5);
                         mudou = true;
+                        self.mexeu_no_limiar = true;
                     }
                     if clique && mais.contains(m) {
                         barra.ajustar_limiar(i, 5);
                         mudou = true;
+                        self.mexeu_no_limiar = true;
                     }
                 }
                 estilo::texto(

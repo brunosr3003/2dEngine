@@ -602,9 +602,9 @@ pub fn draw_rapidos(
         match arrastando {
             Some((j, de)) if j == i => {
                 let texto = if m.y > de.y + 20.0 {
-                    "↓ Solte: MANUAL"
+                    "Solte: MANUAL"
                 } else {
-                    "↑ Solte: AUTO"
+                    "Solte: AUTO"
                 };
                 estilo::texto_centro(r.center().x, r.y - 36.0, texto, 14, estilo::AUTO);
                 draw_line(
@@ -626,7 +626,7 @@ pub fn draw_rapidos(
                         format!("{} · sem estoque", nome(itens[i]))
                     };
                     format!(
-                        "{base} · {} · arraste ↑ AUTO / ↓ manual · botão direito configura",
+                        "{base} · {} · pra cima: AUTO · pra baixo: manual · botão direito configura",
                         if auto[i] { "AUTO" } else { "manual" }
                     )
                 };

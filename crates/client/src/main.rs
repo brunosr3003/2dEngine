@@ -665,8 +665,14 @@ impl Jogo {
             let mapa_aberto = self.mapa.aberto;
             if !eco && (self.mapa.aberto || !self.painel_grande()) {
                 match self.mapa.entrada(self.world.self_pos()) {
-                    Some(mapa::Entrada::Viajar(destino)) => self.iniciar_viagem(destino),
-                    Some(mapa::Entrada::Ir(alvo)) => self.iniciar_ir_para(alvo),
+                    Some(mapa::Entrada::Viajar(destino)) => {
+                        self.iniciar_viagem(destino);
+                        self.tutorial(shared::quests::tutorial::MAPA_IR);
+                    }
+                    Some(mapa::Entrada::Ir(alvo)) => {
+                        self.iniciar_ir_para(alvo);
+                        self.tutorial(shared::quests::tutorial::MAPA_IR);
+                    }
                     None => {}
                 }
             }
@@ -697,6 +703,9 @@ impl Jogo {
             self.conduzir_auto_dungeon();
             self.atualizar_auto_combate();
             self.usar_habilidade();
+            if std::mem::take(&mut self.habilidades.ligou_auto) {
+                self.tutorial(shared::quests::tutorial::SKILL_AUTO);
+            }
             self.auto_da_barra();
             self.world.alvo = self.alvo;
             self.ir_ate_o_alvo();
@@ -1450,6 +1459,26 @@ impl Jogo {
                             self.envia(pedido);
                         }
                     }
+                } else if tipo == destino_tipo::TUTORIAL {
+                    // Passo tutorial nao anda: abre onde se faz (a barra, o
+                    // mapa) ou diz o gesto.
+                    if self.auto_missao.quest == Some(quest_id) {
+                        use shared::quests::tutorial as t;
+                        self.auto_missao.parar();
+                        let acao = raio as u16;
+                        match acao {
+                            t::POCAO_LIMIAR => {
+                                self.fecha_paineis();
+                                self.config_barra.abrir(Some(0));
+                            }
+                            t::MAPA_IR => {
+                                self.fecha_paineis();
+                                self.mapa.aberto = true;
+                            }
+                            _ => {}
+                        }
+                        self.chat.push(format!("Tutorial: {}", t::instrucao(acao)));
+                    }
                 } else if tipo == destino_tipo::PAINEL_CRAFT || tipo == destino_tipo::PAINEL_FORJA {
                     if self.auto_missao.quest == Some(quest_id) {
                         self.auto_missao.parar();
@@ -1748,6 +1777,20 @@ impl Jogo {
             }
         } else if !self.auto_missao.ativo() {
             self.missoes.abre_janela();
+        }
+    }
+
+    /// O jogador fez a acao de um passo TUTORIAL: avisa o servidor — so' se
+    /// o passo esta' ativo, pra nao mandar a cada toque no COMBATE.
+    fn tutorial(&mut self, acao: u16) {
+        use shared::quests::{objective_kind, quest_status};
+        let ativo = self.missoes.log.iter().any(|q| {
+            q.obj_kind == objective_kind::TUTORIAL
+                && q.obj_target == acao
+                && q.status == quest_status::ACTIVE
+        });
+        if ativo {
+            self.envia(ClientMessage::Tutorial { acao });
         }
     }
 
@@ -2804,6 +2847,7 @@ impl Jogo {
             }
             if let Some(p) = self.world.self_pos() {
                 self.auto_coleta.ligar(p, agora);
+                self.tutorial(shared::quests::tutorial::AUTO_COLETA);
             }
         }
         if !self.auto_coleta.ativo() {
@@ -3202,6 +3246,7 @@ impl Jogo {
             self.ir_para.parar();
             if let Some(p) = self.world.self_pos() {
                 self.auto_combate.ligar(p);
+                self.tutorial(shared::quests::tutorial::AUTO_COMBATE);
             }
         }
         if !self.auto_combate.ativo() {
@@ -4210,6 +4255,9 @@ impl Jogo {
             {
                 self.salvar_barra();
             }
+            if std::mem::take(&mut self.config_barra.mexeu_no_limiar) {
+                self.tutorial(shared::quests::tutorial::POCAO_LIMIAR);
+            }
         }
         // Com o "Onde obter" aberto os paineis de baixo nao desenham: o toque
         // no popup nao pode cair num botao deles.
@@ -4323,8 +4371,14 @@ impl Jogo {
         }
         let nivel = self.ficha.nivel.max(1);
         match self.mapa.desenha_grande(&self.world, nivel) {
-            Some(mapa::Entrada::Ir(alvo)) => self.iniciar_ir_para(alvo),
-            Some(mapa::Entrada::Viajar(p)) => self.iniciar_viagem(p),
+            Some(mapa::Entrada::Ir(alvo)) => {
+                self.iniciar_ir_para(alvo);
+                self.tutorial(shared::quests::tutorial::MAPA_IR);
+            }
+            Some(mapa::Entrada::Viajar(p)) => {
+                self.iniciar_viagem(p);
+                self.tutorial(shared::quests::tutorial::MAPA_IR);
+            }
             None => {}
         }
         // A bolsa por cima do mundo.
