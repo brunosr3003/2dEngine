@@ -440,6 +440,11 @@ pub enum ClientMessage {
         x: f32,
         z: f32,
     },
+    /// Compra +10 espacos na bolsa (`banco = false`) ou no banco, em ouro
+    /// (`shared::armazem::custo`). Resposta: `Armazem` e a bolsa/banco novos.
+    ExpandirArmazem {
+        banco: bool,
+    },
 }
 
 /// Onde esta' a peca que a forja vai refinar.
@@ -1149,6 +1154,12 @@ pub enum ServerMessage {
     /// Clique no Capitao do Porto: o menu "Viajar", uma linha por ilha.
     Viagem {
         destinos: Vec<crate::viagem::Destino>,
+    },
+    /// Expansoes compradas da bolsa e do banco (`shared::armazem`). Vai no
+    /// login, ao abrir o banco e a cada expansao.
+    Armazem {
+        bolsa_extra: u8,
+        banco_extra: u8,
     },
 }
 

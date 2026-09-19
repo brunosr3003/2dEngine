@@ -124,6 +124,9 @@ pub struct CharacterRow {
     /// bolsa (docs/CALENDARIO.md). Nao e' carregado do banco.
     pub presenca_aplicados: Vec<String>,
     pub correio_recibos: Vec<crate::correio_admin::Recibo>,
+    /// Expansoes compradas da bolsa e do banco (`shared::armazem`).
+    pub bolsa_extra: u8,
+    pub banco_extra: u8,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -548,6 +551,14 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS zona TEXT NULL")
         .execute(pool)
         .await?;
+    // Expansoes da bolsa e do banco (docs/BANCO.md).
+    for col in ["bolsa_extra", "banco_extra"] {
+        sqlx::query(&format!(
+            "ALTER TABLE characters ADD COLUMN IF NOT EXISTS {col} SMALLINT NOT NULL DEFAULT 0"
+        ))
+        .execute(pool)
+        .await?;
+    }
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS xp_bonus_ate BIGINT NOT NULL DEFAULT 0",
     )
@@ -760,6 +771,30 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     if marcou > 0 {
         sqlx::query("UPDATE items SET vinculado = TRUE WHERE id = $1")
             .bind(shared::item_id::XP_POTION as i32)
+            .execute(pool)
+            .await?;
+    }
+    // Pocao empilha ate' 999 (era 20: comprar 50 ocupava tres espacos). Uma
+    // vez so' — depois quem manda e' a coluna (web/admin).
+    let pilhas_v1 = sqlx::query("INSERT INTO migracoes_de_dados (nome) VALUES ('pocoes_empilham_999_v1') ON CONFLICT DO NOTHING")
+        .execute(pool).await?.rows_affected();
+    if pilhas_v1 > 0 {
+        sqlx::query("UPDATE items SET stack_max = 999 WHERE id = ANY($1) AND stack_max < 999")
+            .bind(
+                [
+                    shared::item_id::HEALTH_POTION,
+                    shared::item_id::MANA_POTION,
+                    shared::item_id::GREATER_HEAL,
+                    shared::item_id::GREATER_MANA,
+                    shared::item_id::STAMINA_POTION,
+                    shared::item_id::XP_POTION,
+                    shared::item_id::FORTUNA_POTION,
+                    shared::item_id::SORTE_POTION,
+                ]
+                .iter()
+                .map(|&i| i as i32)
+                .collect::<Vec<i32>>(),
+            )
             .execute(pool)
             .await?;
     }
@@ -1021,7 +1056,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             sell: 5,
             buy: Some(10),
             ord: Some(0),
-            stack: 20,
+            stack: 999,
             slot: None,
             lvl: 1,
             ic: 3,
@@ -1039,7 +1074,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             sell: 7,
             buy: Some(15),
             ord: Some(1),
-            stack: 20,
+            stack: 999,
             slot: None,
             lvl: 1,
             ic: 10,
@@ -1057,7 +1092,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             sell: 20,
             buy: Some(40),
             ord: Some(2),
-            stack: 20,
+            stack: 999,
             slot: None,
             lvl: 1,
             ic: 11,
@@ -1075,7 +1110,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             sell: 25,
             buy: Some(50),
             ord: Some(3),
-            stack: 20,
+            stack: 999,
             slot: None,
             lvl: 1,
             ic: 9,
@@ -1093,7 +1128,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             sell: 10,
             buy: Some(20),
             ord: Some(4),
-            stack: 20,
+            stack: 999,
             slot: None,
             lvl: 1,
             ic: 8,
@@ -1112,7 +1147,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             sell: 1,
             buy: None,
             ord: None,
-            stack: 20,
+            stack: 999,
             slot: None,
             lvl: 1,
             ic: -1,
@@ -1131,7 +1166,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             sell: 1,
             buy: None,
             ord: None,
-            stack: 20,
+            stack: 999,
             slot: None,
             lvl: 1,
             ic: -1,
@@ -1149,7 +1184,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             sell: 1,
             buy: None,
             ord: None,
-            stack: 20,
+            stack: 999,
             slot: None,
             lvl: 1,
             ic: -1,
@@ -3370,6 +3405,11 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
     let dungeon = busca!((String, String), "name, dungeon_json");
     let dungeon_map: HashMap<String, String> = dungeon.into_iter().collect();
     // Dados da conta: por account_id, fora do `busca!` (e' outra tabela).
+    let armazem = busca!((String, i16, i16), "name, bolsa_extra, banco_extra");
+    let armazem_map: HashMap<String, (u8, u8)> = armazem
+        .into_iter()
+        .map(|(n, b, v)| (n, (b.clamp(0, 255) as u8, v.clamp(0, 255) as u8)))
+        .collect();
     let conta_map: HashMap<String, String> = {
         let sql = format!(
             "SELECT c.name, COALESCE(d.dados_json, '') FROM characters c LEFT JOIN dungeon_contas d ON d.account_id = c.account_id{}",
@@ -3463,6 +3503,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         let preferencias_json = prefs_map.get(&name).cloned().unwrap_or_default();
         let dungeon_json = dungeon_map.get(&name).cloned().unwrap_or_default();
         let conta_dungeon_json = conta_map.get(&name).cloned().unwrap_or_default();
+        let (bolsa_extra, banco_extra) = armazem_map.get(&name).copied().unwrap_or_default();
         out.insert(
             name.clone(),
             CharacterRow {
@@ -3507,6 +3548,8 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 conta_dungeon_json,
                 presenca_aplicados: Vec::new(),
                 correio_recibos: Vec::new(),
+                bolsa_extra,
+                banco_extra,
             },
         );
     }
@@ -3599,7 +3642,8 @@ async fn load_proficiencies(pool: &PgPool, char_name: &str) -> Result<[u64; shar
 }
 
 async fn load_vault(pool: &PgPool, char_name: &str) -> Result<Vec<shared::InventorySlot>> {
-    let mut slots = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
+    // Ate' o teto: o tamanho do personagem (`banco_extra`) corta no spawn.
+    let mut slots = vec![shared::InventorySlot::default(); shared::armazem::BANCO_MAX];
     let rows = sqlx::query_as::<_, (i32, i32, i32, Option<String>)>(
         "SELECT slot, item_id, qty, instance_data FROM vault WHERE character_name = $1",
     )
@@ -3607,7 +3651,7 @@ async fn load_vault(pool: &PgPool, char_name: &str) -> Result<Vec<shared::Invent
     .fetch_all(pool)
     .await?;
     for (slot, item_id, qty, inst_json) in rows {
-        if slot < 0 || (slot as usize) >= shared::INVENTORY_SLOTS {
+        if slot < 0 || (slot as usize) >= shared::armazem::BANCO_MAX {
             continue;
         }
         if qty <= 0 {
@@ -3642,7 +3686,8 @@ async fn load_equipment(pool: &PgPool, char_name: &str) -> Result<shared::Equipm
 }
 
 async fn load_inventory(pool: &PgPool, char_name: &str) -> Result<Vec<shared::InventorySlot>> {
-    let mut slots = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
+    // Ate' o teto: o tamanho do personagem (`bolsa_extra`) corta no spawn.
+    let mut slots = vec![shared::InventorySlot::default(); shared::armazem::BOLSA_MAX];
     let rows = sqlx::query_as::<_, (i32, i32, i32, Option<String>)>(
         "SELECT slot, item_id, qty, instance_data FROM inventory WHERE character_name = $1",
     )
@@ -3650,7 +3695,7 @@ async fn load_inventory(pool: &PgPool, char_name: &str) -> Result<Vec<shared::In
     .fetch_all(pool)
     .await?;
     for (slot, item_id, qty, inst_json) in rows {
-        if slot < 0 || (slot as usize) >= shared::INVENTORY_SLOTS {
+        if slot < 0 || (slot as usize) >= shared::armazem::BOLSA_MAX {
             continue;
         }
         if qty <= 0 {
@@ -3853,8 +3898,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                                      boat_anchor_dropped, mounted_local_x, mounted_local_y,
                                      mp, stamina, zona, xp_bonus_ate,
                                      mortes_json, recuperacoes_dia, recuperacoes_usadas,
-                                     fortuna_ate, sorte_ate, barra_json, preferencias_json, dungeon_json)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
+                                     fortuna_ate, sorte_ate, barra_json, preferencias_json, dungeon_json,
+                                     bolsa_extra, banco_extra)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -3891,7 +3937,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                sorte_ate = EXCLUDED.sorte_ate,
                barra_json = EXCLUDED.barra_json,
                preferencias_json = EXCLUDED.preferencias_json,
-               dungeon_json = EXCLUDED.dungeon_json",
+               dungeon_json = EXCLUDED.dungeon_json,
+               bolsa_extra = EXCLUDED.bolsa_extra,
+               banco_extra = EXCLUDED.banco_extra",
         )
         .bind(&row.name)
         .bind(row.pos.x)
@@ -3930,6 +3978,8 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(&row.barra_json)
         .bind(&row.preferencias_json)
         .bind(&row.dungeon_json)
+        .bind(row.bolsa_extra as i16)
+        .bind(row.banco_extra as i16)
         .execute(&mut *tx)
         .await?;
         // A conta vai junto: bau aberto num personagem e a 1ª vitoria semanal

@@ -21,6 +21,7 @@ use shared::protocol::{ClientMessage, InvSpot};
 use shared::skills::Conjunto;
 use shared::{item_id, EquipSlot, InventorySlot, PlayerStats};
 
+use crate::hud_estilo::u;
 use crate::render3d;
 use crate::ui;
 use crate::vox::VoxCache;
@@ -79,6 +80,8 @@ enum Acao {
     Usar(usize),
     Desequipar(EquipSlot),
     Organizar,
+    /// +10 espacos, em ouro (`shared::armazem`).
+    Expandir,
 }
 
 /// O que o jogador tem, como o servidor contou, e o estado da tela.
@@ -100,6 +103,10 @@ pub struct Bolsa {
     pub onde_obter: Option<u16>,
     /// "Refinar +N" tocado no cartao: a peca pra Forja abrir ja' escolhida.
     pub refinar: Option<shared::protocol::AlvoDaForja>,
+    /// Expansoes compradas (`ServerMessage::Armazem`).
+    pub extra: u8,
+    /// A grade rola: com as expansoes ela passa do painel.
+    rolagem: crate::rolagem::Rolagem,
 }
 
 impl Default for Bolsa {
@@ -118,6 +125,8 @@ impl Default for Bolsa {
             aviso: None,
             onde_obter: None,
             refinar: None,
+            extra: 0,
+            rolagem: Default::default(),
         }
     }
 }
@@ -206,7 +215,7 @@ fn com_alfa(c: Color, a: f32) -> Color {
 const ROMANO: [&str; 5] = ["I", "II", "III", "IV", "V"];
 
 /// "5226" -> "5,2k". A celula tem 50 px: numero cheio nao cabe.
-fn curta(q: u32) -> String {
+pub(crate) fn curta(q: u32) -> String {
     if q >= 10_000 {
         format!("{}k", q / 1000)
     } else if q >= 1000 {
@@ -266,17 +275,26 @@ struct Tela {
     cel: f32,
 }
 
+/// Escala da bolsa (no celular ela cresce ate' encher a tela).
+fn escala() -> f32 {
+    crate::hud_estilo::escala_do_painel(1080.0, 680.0)
+}
+
 fn tela() -> Tela {
+    crate::hud_estilo::no_painel(escala(), tela_na_escala)
+}
+
+fn tela_na_escala() -> Tela {
     let (sw, sh) = (screen_width(), screen_height());
-    let w = (sw - 40.0).min(1080.0);
-    let h = (sh - 40.0).min(680.0);
+    let w = (sw - 16.0).min(u(1080.0));
+    let h = (sh - 16.0).min(u(680.0));
     let painel = Rect::new((sw - w) * 0.5, (sh - h) * 0.5, w, h);
     let esq_w = (w * 0.44).floor();
-    let esq = Rect::new(painel.x + 16.0, painel.y + 56.0, esq_w, h - 72.0);
-    let dx = esq.x + esq.w + 16.0;
-    let dir = Rect::new(dx, esq.y, painel.x + w - 16.0 - dx, esq.h);
-    let cel = ((dir.w - (COLUNAS as f32 - 1.0) * VAO) / COLUNAS as f32)
-        .min(62.0)
+    let esq = Rect::new(painel.x + u(16.0), painel.y + u(56.0), esq_w, h - u(72.0));
+    let dx = esq.x + esq.w + u(16.0);
+    let dir = Rect::new(dx, esq.y, painel.x + w - u(16.0) - dx, esq.h);
+    let cel = ((dir.w - (COLUNAS as f32 - 1.0) * u(VAO)) / COLUNAS as f32)
+        .min(u(62.0))
         .floor();
     Tela {
         painel,
@@ -378,6 +396,7 @@ impl Bolsa {
                 }
             },
             Acao::Organizar => Some(ClientMessage::InventoryAutoArrange),
+            Acao::Expandir => Some(ClientMessage::ExpandirArmazem { banco: false }),
         }
     }
 
@@ -387,6 +406,10 @@ impl Bolsa {
         if !self.aberta {
             return None;
         }
+        crate::hud_estilo::no_painel(escala(), || self.desenha_na_escala(vox, solido))
+    }
+
+    fn desenha_na_escala(&mut self, vox: &VoxCache, solido: &Material) -> Option<ClientMessage> {
         let t = tela();
         let p = t.painel;
         draw_rectangle(
@@ -398,20 +421,20 @@ impl Bolsa {
         );
         crate::hud_estilo::ret_arredondado(p, crate::hud_estilo::RAIO, FUNDO);
         crate::hud_estilo::painel_destaque(p, ui::OURO);
-        crate::hud_estilo::separador(p.x + 16.0, p.y + 46.0, p.w - 32.0);
-        ui::texto(p.x + 22.0, p.y + 33.0, "BOLSA", 26, ui::OURO);
+        crate::hud_estilo::separador(p.x + u(16.0), p.y + u(46.0), p.w - u(32.0));
+        ui::texto(p.x + u(22.0), p.y + u(33.0), "BOLSA", 26, ui::OURO);
         let ouro = format!("Ouro  {}", milhar(self.ouro));
         let d = crate::hud_estilo::medir_dim(&ouro, 20);
         ui::texto(
-            p.x + p.w - 70.0 - d.width,
-            p.y + 31.0,
+            p.x + p.w - u(70.0) - d.width,
+            p.y + u(31.0),
             &ouro,
             20,
             ui::OURO_CLARO,
         );
-        draw_circle(p.x + p.w - 84.0 - d.width, p.y + 25.0, 7.0, ui::OURO);
+        draw_circle(p.x + p.w - u(84.0) - d.width, p.y + u(25.0), u(7.0), ui::OURO);
         if ui::botao(
-            Rect::new(p.x + p.w - 50.0, p.y + 9.0, 34.0, 30.0),
+            Rect::new(p.x + p.w - u(50.0), p.y + u(9.0), u(34.0), u(30.0)),
             "x",
             true,
         ) {
@@ -420,10 +443,10 @@ impl Bolsa {
         }
 
         let cartao = Rect::new(
-            t.esq.x + 18.0,
-            t.esq.y + 44.0,
-            t.esq.w - 36.0,
-            (t.esq.h - 60.0).min(380.0),
+            t.esq.x + u(18.0),
+            t.esq.y + u(44.0),
+            t.esq.w - u(36.0),
+            (t.esq.h - u(60.0)).min(u(380.0)),
         );
         let bloqueio = self.sel.map(|_| cartao);
         let mut acao = self.desenha_equipamento(t.esq, vox, solido, bloqueio);
@@ -442,7 +465,7 @@ impl Bolsa {
         }
         if let Some((msg, quando)) = &self.aviso {
             if get_time() - quando < 2.5 {
-                ui::texto_centro(p.x + p.w * 0.5, p.y + p.h - 10.0, msg, 18, VERMELHO);
+                ui::texto_centro(p.x + p.w * 0.5, p.y + p.h - u(10.0), msg, 18, VERMELHO);
             } else {
                 self.aviso = None;
             }
@@ -460,11 +483,11 @@ impl Bolsa {
         bloqueio: Option<Rect>,
     ) -> Option<Acao> {
         crate::hud_estilo::cartao(r, false, false);
-        ui::texto(r.x + 14.0, r.y + 24.0, "Equipamento", 20, ui::OURO);
+        ui::texto(r.x + u(14.0), r.y + u(24.0), "Equipamento", 20, ui::OURO);
         if self.nivel > 0 {
             let n = format!("Nível {}", self.nivel);
             let d = crate::hud_estilo::medir_dim(&n, 17);
-            ui::texto(r.x + r.w - 14.0 - d.width, r.y + 24.0, &n, 17, TEXTO);
+            ui::texto(r.x + r.w - u(14.0) - d.width, r.y + u(24.0), &n, 17, TEXTO);
         }
         // O que esta' na mao — a pergunta que a bolsa existe pra responder.
         let arma = self.equip.weapon;
@@ -476,20 +499,20 @@ impl Bolsa {
             ),
             None => "Em uso: nenhuma arma".to_string(),
         };
-        ui::texto(r.x + 14.0, r.y + 44.0, &em_uso, 16, ui::OURO_CLARO);
+        ui::texto(r.x + u(14.0), r.y + u(44.0), &em_uso, 16, ui::OURO_CLARO);
 
-        let s = ((r.h - 60.0 - 170.0) / 4.0 - 16.0)
-            .clamp(40.0, 64.0)
+        let s = ((r.h - u(60.0) - u(170.0)) / u(4.0) - u(16.0))
+            .clamp(u(40.0), u(64.0))
             .floor();
-        let passo = s + 16.0;
-        let y0 = r.y + 60.0;
-        let xe = r.x + 14.0;
-        let xd = r.x + r.w - 14.0 - s;
+        let passo = s + u(16.0);
+        let y0 = r.y + u(60.0);
+        let xe = r.x + u(14.0);
+        let xd = r.x + r.w - u(14.0) - s;
         let retrato = Rect::new(
-            xe + s + 12.0,
+            xe + s + u(12.0),
             y0,
-            xd - 12.0 - (xe + s + 12.0),
-            4.0 * passo - 16.0,
+            xd - u(12.0) - (xe + s + u(12.0)),
+            u(4.0) * passo - u(16.0),
         );
         self.desenha_retrato(retrato, vox, solido);
 
@@ -502,7 +525,7 @@ impl Bolsa {
                 let peca = self.peca(Sel::Equip(*slot));
                 let sel = self.sel == Some(Sel::Equip(*slot));
                 celula(c, peca, sel, Some(*slot));
-                ui::texto_centro(c.x + s * 0.5, c.y + s + 12.0, rotulo, 12, APAGADO);
+                ui::texto_centro(c.x + s * 0.5, c.y + s + u(12.0), rotulo, 12, APAGADO);
                 let livre = bloqueio.map_or(true, |b| !b.contains(mouse()));
                 if livre && peca.is_some() && clicou_em(c) {
                     clicado = Some(Sel::Equip(*slot));
@@ -514,17 +537,17 @@ impl Bolsa {
         }
 
         // O poder e a ficha, embaixo do retrato.
-        let mut y = y0 + 4.0 * passo + 8.0;
+        let mut y = y0 + u(4.0) * passo + u(8.0);
         if let Some(st) = &self.stats {
-            ui::texto_centro(r.x + r.w * 0.5, y + 12.0, "PODER", 14, APAGADO);
+            ui::texto_centro(r.x + r.w * 0.5, y + u(12.0), "PODER", 14, APAGADO);
             ui::texto_centro(
                 r.x + r.w * 0.5,
-                y + 42.0,
+                y + u(42.0),
                 &milhar(poder(st).max(0) as u64),
                 32,
                 ui::OURO,
             );
-            y += 62.0;
+            y += u(62.0);
             let linhas = [
                 ("Ataque", st.attack_damage.to_string()),
                 ("Defesa", st.defense.to_string()),
@@ -532,22 +555,22 @@ impl Bolsa {
                 ("Mana", st.mp_max.to_string()),
                 ("Destreza", st.dex.to_string()),
                 ("Sabedoria", st.wis.to_string()),
-                ("Crítico", format!("{:.1}%", st.crit_chance * 100.0)),
+                ("Crítico", format!("{:.1}%", st.crit_chance * u(100.0))),
                 (
                     "Vel. ataque",
-                    format!("{:.0}%", st.attack_speed_mult * 100.0),
+                    format!("{:.0}%", st.attack_speed_mult * u(100.0)),
                 ),
             ];
-            let col_w = (r.w - 28.0) * 0.5;
+            let col_w = (r.w - u(28.0)) * 0.5;
             for (i, (rot, val)) in linhas.iter().enumerate() {
-                let cx = r.x + 14.0 + (i % 2) as f32 * col_w;
-                let cy = y + (i / 2) as f32 * 20.0;
-                if cy > r.y + r.h - 6.0 {
+                let cx = r.x + u(14.0) + (i % 2) as f32 * col_w;
+                let cy = y + (i / 2) as f32 * u(20.0);
+                if cy > r.y + r.h - u(6.0) {
                     break;
                 }
                 ui::texto(cx, cy, rot, 16, APAGADO);
                 let d = crate::hud_estilo::medir_dim(val, 16);
-                ui::texto(cx + col_w - 16.0 - d.width, cy, val, 16, TEXTO);
+                ui::texto(cx + col_w - u(16.0) - d.width, cy, val, 16, TEXTO);
             }
         }
         acao
@@ -639,9 +662,9 @@ impl Bolsa {
     fn desenha_grade(&mut self, r: Rect, cel: f32) -> Option<Acao> {
         let mut acao = None;
         // abas
-        let aba_w = (r.w - 3.0 * 6.0) / 4.0;
+        let aba_w = (r.w - u(3.0) * u(6.0)) / u(4.0);
         for (k, (aba, rotulo)) in ABAS.iter().enumerate() {
-            let a = Rect::new(r.x + k as f32 * (aba_w + 6.0), r.y, aba_w, 32.0);
+            let a = Rect::new(r.x + k as f32 * (aba_w + u(6.0)), r.y, aba_w, u(32.0));
             let ativa = self.aba == *aba;
             let sobre = a.contains(mouse());
             crate::hud_estilo::aba(a, rotulo, ativa, sobre);
@@ -653,8 +676,9 @@ impl Bolsa {
 
         // Quais espacos aparecem: em "Tudo", a bolsa inteira na ordem dela; nas
         // outras abas, so' os itens daquela categoria, juntos no comeco.
+        let tamanho = self.tamanho();
         let mut mostrar: Vec<Option<usize>> = if self.aba == Aba::Tudo {
-            (0..shared::INVENTORY_SLOTS).map(Some).collect()
+            (0..tamanho).map(Some).collect()
         } else {
             (0..self.slots.len())
                 .filter(|&i| {
@@ -663,64 +687,77 @@ impl Bolsa {
                 .map(Some)
                 .collect()
         };
-        let linhas = shared::INVENTORY_SLOTS.div_ceil(COLUNAS);
-        mostrar.resize(mostrar.len().max(linhas * COLUNAS), None);
-
-        let y0 = r.y + 44.0;
+        let passo = cel + u(VAO);
+        let area = Rect::new(r.x, r.y + u(44.0), r.w, r.h - u(44.0) - u(50.0));
+        // Enche a area mesmo com a aba quase vazia (a grade nao "encolhe").
+        let cabem = ((area.h + u(VAO)) / passo).floor().max(1.0) as usize * COLUNAS;
+        mostrar.resize(mostrar.len().max(cabem).div_ceil(COLUNAS) * COLUNAS, None);
+        let total = (mostrar.len() / COLUNAS) as f32 * passo;
+        // Rola arrastando (dedo), pela roda ou pela barra; o toque na celula
+        // vale no SOLTAR, senao o arrasto que comeca nela ja' selecionava.
+        let clique = self.rolagem.quadro(area, total, passo);
         let mut clicado = None;
+        crate::rolagem::recortar(Some(area));
         for (k, onde) in mostrar.iter().enumerate() {
             let (col, lin) = (k % COLUNAS, k / COLUNAS);
             let c = Rect::new(
-                r.x + col as f32 * (cel + VAO),
-                y0 + lin as f32 * (cel + VAO),
+                r.x + col as f32 * passo,
+                area.y + lin as f32 * passo - self.rolagem.pos,
                 cel,
                 cel,
             );
-            if c.y + c.h > r.y + r.h - 50.0 {
-                break;
+            if c.y + c.h < area.y || c.y > area.y + area.h {
+                continue;
             }
             let peca = onde.and_then(|i| self.peca(Sel::Inv(i)));
             let sel = onde.is_some() && self.sel == onde.map(Sel::Inv);
             celula(c, peca, sel, None);
             if let (Some(i), Some(_)) = (onde, peca) {
-                if clicou_em(c) {
+                if clique.is_some_and(|p| c.contains(p) && area.contains(p)) {
                     clicado = Some(Sel::Inv(*i));
                 }
             }
         }
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(area, total);
         if let Some(s) = clicado {
             acao = self.clica(s);
         }
 
-        // o pe': ocupacao, dica e organizar
+        // o pe': ocupacao, aumentar e organizar
         let ocupados = self.slots.iter().filter(|s| s.qty > 0).count();
-        let pe = r.y + r.h - 40.0;
+        let pe = r.y + r.h - u(40.0);
         ui::texto(
             r.x,
-            pe + 22.0,
-            &format!("{ocupados}/{}", shared::INVENTORY_SLOTS),
+            pe + u(22.0),
+            &format!("{ocupados}/{tamanho}"),
             20,
-            if ocupados >= shared::INVENTORY_SLOTS {
-                VERMELHO
-            } else {
-                TEXTO
-            },
+            if ocupados >= tamanho { VERMELHO } else { TEXTO },
         );
-        ui::texto(
-            r.x + 70.0,
-            pe + 21.0,
-            "dois cliques: equipar ou usar",
-            15,
-            APAGADO,
+        let org = Rect::new(r.x + r.w - u(130.0), pe, u(130.0), u(34.0));
+        let exp_x = r.x + u(86.0);
+        let exp = Rect::new(exp_x, pe, (org.x - u(10.0) - exp_x).max(u(60.0)), u(34.0));
+        let custo = shared::armazem::custo(false, self.extra);
+        let pode = custo.is_some_and(|c| self.ouro >= c);
+        crate::hud_estilo::botao(
+            exp,
+            &crate::banco_ui::rotulo_de_expandir(false, self.extra),
+            crate::hud_estilo::estado_de(exp, !pode, false),
+            pode,
         );
-        if ui::botao(
-            Rect::new(r.x + r.w - 130.0, pe, 130.0, 34.0),
-            "Organizar",
-            true,
-        ) {
+        if custo.is_some() && clicou_em(exp) {
+            acao = Some(Acao::Expandir);
+        }
+        if ui::botao(org, "Organizar", true) {
             acao = Some(Acao::Organizar);
         }
         acao
+    }
+
+    /// Espacos da bolsa: o que as expansoes dao (o servidor manda a lista
+    /// inteira, entao vale o maior dos dois).
+    fn tamanho(&self) -> usize {
+        shared::armazem::tamanho(false, self.extra).max(self.slots.len())
     }
 
     // ── o cartao do item ──
@@ -735,18 +772,18 @@ impl Bolsa {
         crate::hud_estilo::painel_destaque(r, cor);
         crate::hud_estilo::borda_arredondada(r, crate::hud_estilo::RAIO, 1.0, com_alfa(cor, 0.55));
 
-        let ic = Rect::new(r.x + 16.0, r.y + 18.0, 64.0, 64.0);
+        let ic = Rect::new(r.x + u(16.0), r.y + u(18.0), u(64.0), u(64.0));
         celula(ic, Some(peca), false, None);
-        let tx = ic.x + ic.w + 14.0;
+        let tx = ic.x + ic.w + u(14.0);
         let nome = self.nome(peca.id);
         let titulo = if peca.refino() > 0 {
             format!("+{} {nome}", peca.refino())
         } else {
             nome
         };
-        ui::texto(tx, r.y + 40.0, &titulo, 22, cor);
+        ui::texto(tx, r.y + u(40.0), &titulo, 22, cor);
         if !matches!(tipo(peca.id), Tipo::Ouro)
-            && crate::onde_obter::botao(Rect::new(r.x + r.w - 52.0, r.y + 14.0, 38.0, 38.0))
+            && crate::onde_obter::botao(Rect::new(r.x + r.w - u(52.0), r.y + u(14.0), u(38.0), u(38.0)))
         {
             self.onde_obter = Some(peca.id);
         }
@@ -758,11 +795,11 @@ impl Bolsa {
             Tipo::Ouro => "Moeda".into(),
             _ => "Material".into(),
         };
-        ui::texto(tx, r.y + 62.0, &classe, 16, TEXTO);
+        ui::texto(tx, r.y + u(62.0), &classe, 16, TEXTO);
         if let Some(i) = peca.inst {
             ui::texto(
                 tx,
-                r.y + 80.0,
+                r.y + u(80.0),
                 &format!(
                     "{} · Tier {} · nível do item {}",
                     shared::forja::Grau::de_u8(i.grau()).map_or("Comum", |g| g.nome()),
@@ -775,15 +812,15 @@ impl Bolsa {
         } else if peca.qty > 1 {
             ui::texto(
                 tx,
-                r.y + 80.0,
+                r.y + u(80.0),
                 &format!("Quantidade {}", milhar(peca.qty as u64)),
                 15,
                 APAGADO,
             );
         }
 
-        let mut y = r.y + 112.0;
-        crate::hud_estilo::separador(r.x + 16.0, y - 12.0, r.w - 32.0);
+        let mut y = r.y + u(112.0);
+        crate::hud_estilo::separador(r.x + u(16.0), y - u(12.0), r.w - u(32.0));
         if let Some(i) = peca.inst {
             let atributos = [
                 ("Ataque", i.attack_damage),
@@ -794,22 +831,22 @@ impl Bolsa {
                 ("Sabedoria", i.wis),
             ];
             for (rot, v) in atributos.iter().filter(|(_, v)| *v != 0) {
-                ui::texto(r.x + 20.0, y + 4.0, rot, 17, TEXTO);
+                ui::texto(r.x + u(20.0), y + u(4.0), rot, 17, TEXTO);
                 let val = format!("+{v}");
                 let d = crate::hud_estilo::medir_dim(&val, 17);
-                ui::texto(r.x + r.w - 20.0 - d.width, y + 4.0, &val, 17, VERDE);
-                y += 22.0;
+                ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
+                y += u(22.0);
             }
             if let Some(req) = i.level_req {
                 let falta = (self.nivel as u16) < req && self.nivel > 0;
                 ui::texto(
-                    r.x + 20.0,
-                    y + 8.0,
+                    r.x + u(20.0),
+                    y + u(8.0),
                     &format!("Requer nível {req}"),
                     16,
                     if falta { VERMELHO } else { APAGADO },
                 );
-                y += 24.0;
+                y += u(24.0);
             }
             // Comparacao com o que esta' vestido naquele slot — o MIR4 mostra a
             // seta; aqui vai o saldo de poder.
@@ -821,7 +858,7 @@ impl Bolsa {
                     s if s > 0 => (format!("+{s} de poder sobre o vestido"), VERDE),
                     s => (format!("{s} de poder sobre o vestido"), VERMELHO),
                 };
-                ui::texto(r.x + 20.0, y + 10.0, &txt, 16, c);
+                ui::texto(r.x + u(20.0), y + u(10.0), &txt, 16, c);
             }
         } else {
             let txt = match t {
@@ -834,11 +871,11 @@ impl Bolsa {
                 Tipo::Arma(_) | Tipo::Slot(_) => "Peça básica, sem atributos rolados.",
                 _ => "Material de criação.",
             };
-            ui::texto(r.x + 20.0, y + 4.0, txt, 16, APAGADO);
+            ui::texto(r.x + u(20.0), y + u(4.0), txt, 16, APAGADO);
         }
 
         // acoes
-        let by = r.y + r.h - 50.0;
+        let by = r.y + r.h - u(50.0);
         let principal = match sel {
             Sel::Equip(s) => Some(("Desequipar", Acao::Desequipar(s))),
             Sel::Inv(i) => match t {
@@ -852,8 +889,8 @@ impl Bolsa {
         // o cartao e' baixo e uma segunda fileira cobriria os atributos.
         // Refinar so' em peca com atributos rolados, e leva pra Forja com ela
         // ja' escolhida.
-        let bw3 = (r.w - 32.0 - 16.0) / 3.0;
-        let coluna = |k: f32| Rect::new(r.x + 16.0 + k * (bw3 + 8.0), by, bw3, 36.0);
+        let bw3 = (r.w - u(32.0) - u(16.0)) / u(3.0);
+        let coluna = |k: f32| Rect::new(r.x + u(16.0) + k * (bw3 + u(8.0)), by, bw3, u(36.0));
         if let Some((rot, a)) = principal {
             if ui::botao(coluna(0.0), rot, true) {
                 acao = Some(a);
@@ -873,7 +910,7 @@ impl Bolsa {
                 self.sel = None;
             }
         }
-        if ui::botao(coluna(2.0), "Fechar", true) {
+        if ui::botao(coluna(u(2.0)), "Fechar", true) {
             self.sel = None;
         }
         acao
@@ -890,10 +927,10 @@ fn celula(r: Rect, peca: Option<Peca>, selecionada: bool, vazio: Option<EquipSlo
             let cor = cor_do_tier(p.grau());
             crate::hud_estilo::slot(r, Some(cor), sobre, false);
             icone_do_item(r, p.id, 1.0);
-            let fonte = (r.w * 0.26).clamp(11.0, 16.0) as u16;
+            let fonte = (r.w * 0.26).clamp(u(11.0), u(16.0)) as u16;
             if p.inst.is_some() {
                 ui::texto(
-                    r.x + 4.0,
+                    r.x + u(4.0),
                     r.y + fonte as f32,
                     ROMANO[(p.tier() - 1) as usize],
                     fonte,
@@ -904,7 +941,7 @@ fn celula(r: Rect, peca: Option<Peca>, selecionada: bool, vazio: Option<EquipSlo
                 let t = format!("+{}", p.refino());
                 let d = crate::hud_estilo::medir_dim(&t, fonte);
                 ui::texto(
-                    r.x + r.w - d.width - 4.0,
+                    r.x + r.w - d.width - u(4.0),
                     r.y + fonte as f32,
                     &t,
                     fonte,
@@ -914,8 +951,8 @@ fn celula(r: Rect, peca: Option<Peca>, selecionada: bool, vazio: Option<EquipSlo
             if p.qty > 1 {
                 let t = curta(p.qty);
                 let d = crate::hud_estilo::medir_dim(&t, fonte);
-                ui::texto(r.x + r.w - d.width - 3.0, r.y + r.h - 4.0, &t, fonte, BLACK);
-                ui::texto(r.x + r.w - d.width - 4.0, r.y + r.h - 5.0, &t, fonte, TEXTO);
+                ui::texto(r.x + r.w - d.width - u(3.0), r.y + r.h - u(4.0), &t, fonte, BLACK);
+                ui::texto(r.x + r.w - d.width - u(4.0), r.y + r.h - u(5.0), &t, fonte, TEXTO);
             }
         }
         None => {
@@ -932,9 +969,9 @@ fn celula(r: Rect, peca: Option<Peca>, selecionada: bool, vazio: Option<EquipSlo
     }
     if selecionada {
         crate::hud_estilo::borda_arredondada(
-            Rect::new(r.x - 3.0, r.y - 3.0, r.w + 6.0, r.h + 6.0),
-            crate::hud_estilo::RAIO_PEQUENO + 4.0,
-            2.0,
+            Rect::new(r.x - u(3.0), r.y - u(3.0), r.w + u(6.0), r.h + u(6.0)),
+            crate::hud_estilo::RAIO_PEQUENO + u(4.0),
+            u(2.0),
             ui::OURO,
         );
     }

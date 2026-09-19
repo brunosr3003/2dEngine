@@ -464,6 +464,41 @@ pub struct NpcSkin {
     pub preset: u8,
 }
 
+/// Junta pilhas do mesmo item (sem instancia) ate' o teto de cada um, e as
+/// que sobram vazias viram espaco livre. Devolve se mudou algo.
+pub fn juntar_pilhas(v: &mut [shared::InventorySlot], cap: &dyn Fn(u16) -> u32) -> bool {
+    let mut mudou = false;
+    for i in 0..v.len() {
+        if v[i].qty == 0 || v[i].instance.is_some() {
+            continue;
+        }
+        let teto = cap(v[i].item_id).max(1);
+        for j in (i + 1)..v.len() {
+            if v[i].qty >= teto {
+                break;
+            }
+            if v[j].qty == 0 || v[j].item_id != v[i].item_id || v[j].instance.is_some() {
+                continue;
+            }
+            let passa = (teto - v[i].qty).min(v[j].qty);
+            v[i].qty += passa;
+            v[j].qty -= passa;
+            if v[j].qty == 0 {
+                v[j] = shared::InventorySlot::default();
+            }
+            mudou = true;
+        }
+    }
+    mudou
+}
+
+/// Poe a bolsa (ou o banco) em `n` espacos. Nunca corta item: se houver
+/// algo depois de `n` (nao deveria), o vetor para no ultimo ocupado.
+pub fn no_tamanho(v: &mut Vec<shared::InventorySlot>, n: usize) {
+    let ultimo = v.iter().rposition(|s| s.qty > 0).map_or(0, |i| i + 1);
+    v.resize(n.max(ultimo), shared::InventorySlot::default());
+}
+
 /// NPC da vila (`shared::vila`): o nome e o rumo pra onde ele olha, ja'
 /// codificado pro `EntityMeta.kind` (`shared::kind_de_npc_yaw`).
 #[derive(Clone)]
@@ -869,6 +904,23 @@ pub(crate) fn zonas_comuns_da_ilha(
 
 #[cfg(test)]
 mod testes_praia {
+    use super::*;
+
+    #[test]
+    fn juntar_pilhas_une_o_mesmo_item_ate_o_teto() {
+        let p = |id: u16, q: u32| shared::InventorySlot { item_id: id, qty: q, instance: None };
+        let mut v = vec![p(2, 20), p(8, 5), p(2, 20), p(2, 10), shared::InventorySlot::default()];
+        assert!(juntar_pilhas(&mut v, &|_| 999));
+        assert_eq!((v[0].item_id, v[0].qty), (2, 50));
+        assert_eq!((v[1].item_id, v[1].qty), (8, 5));
+        assert!(v[2].qty == 0 && v[3].qty == 0);
+        let mut teto = vec![p(2, 20), p(2, 20)];
+        assert!(!juntar_pilhas(&mut teto, &|_| 20), "cheias: nada muda");
+        let mut n = vec![p(2, 1), p(2, 1)];
+        no_tamanho(&mut n, 50);
+        assert_eq!(n.len(), 50);
+    }
+
     use super::*;
 
     /// Caranguejo nasce na AREIA, com OCEANO perto e longe da cidade e do
@@ -1544,6 +1596,9 @@ pub struct Session {
     pub vault: Vec<shared::InventorySlot>,
     /// True quando vault mudou — envia VaultUpdate no proximo tick.
     pub vault_dirty: bool,
+    /// Expansoes compradas da bolsa e do banco (`shared::armazem`).
+    pub bolsa_extra: u8,
+    pub banco_extra: u8,
     /// Configuracao visual do paper-doll (skin/race/outfit/hair) replicada
     /// em EntitySnapshot.visual pra todos os clientes que enxergam esse
     /// player. Defaultada por classe no login.
@@ -5056,6 +5111,16 @@ impl GameWorld {
             let c = crate::craft::garantir_instancias(&mut saved_vault, &mut rolar);
             a || b || c
         };
+        // A bolsa e o banco no tamanho do personagem (o banco carrega ate' o
+        // teto), e as pilhas que ficaram separadas — a pocao empilhava so'
+        // ate' 20 — viram uma so'. ANTES de qualquer envio da bolsa.
+        let pilhas_juntas = {
+            let a = juntar_pilhas(&mut saved_inv, &crate::economy::item_stack_max);
+            let b = juntar_pilhas(&mut saved_vault, &crate::economy::item_stack_max);
+            a || b
+        };
+        no_tamanho(&mut saved_inv, shared::armazem::tamanho(false, row.bolsa_extra));
+        no_tamanho(&mut saved_vault, shared::armazem::tamanho(true, row.banco_extra));
         // Tutorial: spawna numa área ISOLADA do arquipélago (game.json), perto do
         // cluster de árvores. Ignora a pos salva. O BFS abaixo valida walkable.
         let tutorial_slot_idx: Option<usize> = None;
@@ -5307,6 +5372,14 @@ impl GameWorld {
             s.skills_dirty = false; // já enviamos PlayerSkillsUpdate no fim do login
             s.vault = saved_vault;
             s.vault_dirty = false;
+            s.bolsa_extra = row.bolsa_extra;
+            s.banco_extra = row.banco_extra;
+            s.inventory_dirty |= pilhas_juntas;
+            s.vault_dirty |= pilhas_juntas;
+            let _ = s.handle.to_client.send(ServerMessage::Armazem {
+                bolsa_extra: s.bolsa_extra,
+                banco_extra: s.banco_extra,
+            });
             if pecas_consertadas {
                 // Grava a instancia nova ja' no proximo save.
                 s.inventory_dirty = true;
@@ -6383,6 +6456,8 @@ impl GameWorld {
                 stats_dirty: false,
                 vault: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 vault_dirty: false,
+                bolsa_extra: 0,
+                banco_extra: 0,
                 visual: shared::VisualConfig::for_class("warrior"),
                 defending: false,
                 last_press_primary_at: f32::NEG_INFINITY,
@@ -6850,6 +6925,7 @@ impl GameWorld {
                 self.handle_shop_comprar(id, slot_idx as usize, qtd as u32);
             }
             ClientMessage::Viajar { ilha } => self.handle_viajar(id, ilha),
+            ClientMessage::ExpandirArmazem { banco } => self.handle_expandir_armazem(id, banco),
             ClientMessage::Teleportar { x, z } => self.handle_teleportar(id, Vec2::new(x, z)),
             ClientMessage::Tutorial { acao } => {
                 // Passo tutorial: o cliente conta o gesto (e' interface, nao
@@ -7111,9 +7187,8 @@ impl GameWorld {
                     .inventory
                     .iter_mut()
                     .for_each(|s| *s = shared::InventorySlot::default());
-                session
-                    .inventory
-                    .resize(shared::INVENTORY_SLOTS, shared::InventorySlot::default());
+                let n = shared::armazem::tamanho(false, session.bolsa_extra);
+                session.inventory.resize(n, shared::InventorySlot::default());
                 session.inventory_dirty = true;
             }
             shared::protocol::AdminAction::HealFull => {
@@ -12594,6 +12669,8 @@ impl GameWorld {
             conta_dungeon_json: String,
             presenca_aplicados: Vec<String>,
             correio_recibos: Vec<crate::correio_admin::Recibo>,
+            bolsa_extra: u8,
+            banco_extra: u8,
         }
         let mut entries: Vec<E> = Vec::new();
         for session in self.sessions.values() {
@@ -12699,6 +12776,8 @@ impl GameWorld {
                     .unwrap_or_default(),
                 presenca_aplicados: session.presenca_aplicados.clone(),
                 correio_recibos: session.correio_recibos.clone(),
+                bolsa_extra: session.bolsa_extra,
+                banco_extra: session.banco_extra,
             });
         }
         for e in entries {
@@ -12750,6 +12829,8 @@ impl GameWorld {
                 conta_dungeon_json: e.conta_dungeon_json,
                 presenca_aplicados: e.presenca_aplicados,
                 correio_recibos: e.correio_recibos,
+                bolsa_extra: e.bolsa_extra,
+                banco_extra: e.banco_extra,
             };
             self.salvo_aqui_em.insert(e.name.clone(), self.sim_time_s);
             self.characters.insert(e.name, row.clone());
@@ -13367,6 +13448,105 @@ impl GameWorld {
         true
     }
 
+    /// Perto de quem guarda o banco: o Estivador da vila (ou o cofre antigo,
+    /// `Npc(2)`, dos mapas de arquivo).
+    fn perto_do_banco(&self, sid: SessionId) -> bool {
+        const PERTO: f32 = 8.0;
+        let Some(eu) = self.pos_do_jogador(sid) else {
+            return false;
+        };
+        let estivador = shared::construcao::Papel::Deposito as u8;
+        self.ecs
+            .query::<(&Position, &EntityKind, Option<&NpcDaVilaTag>)>()
+            .iter()
+            .any(|(_, (p, k, t))| {
+                let banco = matches!(k, EntityKind::Npc(2))
+                    || t.is_some_and(|t| shared::npc_papel_de_kind(t.rumo) == estivador);
+                banco && p.0.distance(eu) <= PERTO
+            })
+    }
+
+    /// Abre o banco: o cofre e as expansoes.
+    fn abrir_banco(&self, sid: SessionId) {
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        let _ = s.handle.to_client.send(ServerMessage::Armazem {
+            bolsa_extra: s.bolsa_extra,
+            banco_extra: s.banco_extra,
+        });
+        let _ = s.handle.to_client.send(ServerMessage::VaultOpen { slots: s.vault.clone() });
+    }
+
+    /// +10 espacos na bolsa ou no banco, em ouro (`shared::armazem`). O
+    /// banco se compra perto do Estivador; a bolsa, de qualquer lugar.
+    fn handle_expandir_armazem(&mut self, sid: SessionId, banco: bool) {
+        if banco && !self.perto_do_banco(sid) {
+            self.avisa_missao(sid, "Aumente o banco com o Estivador, no porto.".into());
+            return;
+        }
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        if !s.logged_in {
+            return;
+        }
+        let extra = if banco { s.banco_extra } else { s.bolsa_extra };
+        let Some(custo) = shared::armazem::custo(banco, extra) else {
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "SYS".into(),
+                text: "Já está no tamanho máximo.".into(),
+            });
+            return;
+        };
+        if s.gold < custo {
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "SYS".into(),
+                text: format!("Faltam {} de ouro para aumentar.", custo - s.gold),
+            });
+            return;
+        }
+        s.gold -= custo;
+        let novo = extra + 1;
+        if banco {
+            s.banco_extra = novo;
+            no_tamanho(&mut s.vault, shared::armazem::tamanho(true, novo));
+            s.vault_dirty = true;
+        } else {
+            s.bolsa_extra = novo;
+            no_tamanho(&mut s.inventory, shared::armazem::tamanho(false, novo));
+            s.inventory_dirty = true;
+        }
+        let tam = shared::armazem::tamanho(banco, novo);
+        let _ = s.handle.to_client.send(ServerMessage::Armazem {
+            bolsa_extra: s.bolsa_extra,
+            banco_extra: s.banco_extra,
+        });
+        let _ = s.handle.to_client.send(ServerMessage::Chat {
+            from: "SYS".into(),
+            text: format!(
+                "{} agora tem {tam} espaços (−{custo} de ouro).",
+                if banco { "O banco" } else { "A bolsa" }
+            ),
+        });
+        crate::telemetria::conta(
+            if banco { "banco_expandido" } else { "bolsa_expandida" },
+            novo.to_string(),
+            1,
+        );
+        self.save_pending = true;
+    }
+
+    /// A entidade e' o Estivador da vila (quem guarda o banco)?
+    fn e_estivador(&self, e: hecs::Entity) -> bool {
+        self.ecs
+            .get::<&NpcDaVilaTag>(e)
+            .map(|t| {
+                shared::npc_papel_de_kind(t.rumo) == shared::construcao::Papel::Deposito as u8
+            })
+            .unwrap_or(false)
+    }
+
     /// A entidade e' o Capitao do Porto da vila?
     fn e_capitao(&self, e: hecs::Entity) -> bool {
         self.ecs
@@ -13630,6 +13810,10 @@ impl GameWorld {
 
     /// Move um item do inv[inv_slot] pro primeiro slot livre (ou stack) do vault.
     fn handle_vault_deposit(&mut self, sid: SessionId, inv_slot: usize) {
+        if !self.perto_do_banco(sid) {
+            self.avisa_missao(sid, "O banco fica com o Estivador, no porto.".into());
+            return;
+        }
         let Some(session) = self.sessions.get_mut(&sid) else {
             return;
         };
@@ -13676,6 +13860,10 @@ impl GameWorld {
 
     /// Move um item do vault[vault_slot] pro primeiro slot livre (ou stack) do inv.
     fn handle_vault_withdraw(&mut self, sid: SessionId, vault_slot: usize) {
+        if !self.perto_do_banco(sid) {
+            self.avisa_missao(sid, "O banco fica com o Estivador, no porto.".into());
+            return;
+        }
         let Some(session) = self.sessions.get_mut(&sid) else {
             return;
         };
@@ -15732,20 +15920,17 @@ impl GameWorld {
                         if self.e_capitao(e) && !self.tutorial_mode && !self.dungeon_mode {
                             self.abrir_menu_viagem(sid);
                         }
+                        // Idem o Estivador e o banco.
+                        if self.e_estivador(e) {
+                            self.abrir_banco(sid);
+                        }
                         return;
                     }
                 }
             }
         }
         match best {
-            Some((_, 2, _, _)) => {
-                let slots = self
-                    .sessions
-                    .get(&sid)
-                    .map(|s| s.vault.clone())
-                    .unwrap_or_default();
-                let _ = handle.to_client.send(ServerMessage::VaultOpen { slots });
-            }
+            Some((_, 2, _, _)) => self.abrir_banco(sid),
             Some((entity, 1, vendor_eid, _)) => {
                 // Vendor — usa VendorTag.shop_id pra pegar listing específico.
                 let shop_id = self
@@ -15865,6 +16050,10 @@ impl GameWorld {
                 // liberou — ir e voltar (`shared::viagem`).
                 if self.e_capitao(entity) && !self.tutorial_mode && !self.dungeon_mode {
                     self.abrir_menu_viagem(sid);
+                }
+                // O Estivador guarda o banco (docs/BANCO.md).
+                if self.e_estivador(entity) {
+                    self.abrir_banco(sid);
                 }
             }
             Some((_, 8, _, _)) => {
@@ -18337,6 +18526,8 @@ impl GameWorld {
             conta_dungeon_json: serde_json::to_string(&session.conta_dungeon).unwrap_or_default(),
             presenca_aplicados: session.presenca_aplicados.clone(),
             correio_recibos: session.correio_recibos.clone(),
+            bolsa_extra: session.bolsa_extra,
+            banco_extra: session.banco_extra,
         };
         self.salvo_aqui_em
             .insert(session.name.clone(), self.sim_time_s);

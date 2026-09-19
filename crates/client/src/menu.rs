@@ -33,6 +33,8 @@ pub enum Item {
     Correio,
     Clan,
     Lojas,
+    /// O banco (leva ao Estivador).
+    Banco,
     Mercado,
     LojaTp,
     BarraItens,
@@ -101,6 +103,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
             (Item::LojaTp, "Loja", None),
             (Item::Lojas, "Vendedores", None),
             (Item::Mercado, "Mercado", None),
+            (Item::Banco, "Banco", None),
         ],
     ),
     (
@@ -346,6 +349,7 @@ fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
         Item::Correio => "correio",
         Item::Clan => "clan",
         Item::Lojas => "lojas",
+        Item::Banco => "banco",
         Item::Mercado => "mercado",
         Item::LojaTp => "loja_tp",
         Item::BarraItens => "barra_itens",
@@ -404,6 +408,7 @@ mod tests {
             Item::Forja,
             Item::Mapa,
             Item::Lojas,
+            Item::Banco,
             Item::Mercado,
             Item::Aventuras,
             Item::Presenca,

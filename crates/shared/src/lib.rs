@@ -3,6 +3,7 @@
 //! Nada aqui depende de wgpu/winit/tokio — este crate compila em todos os
 //! targets (native + wasm + headless) para manter o protocolo canonico.
 
+pub mod armazem;
 pub mod bosses;
 pub mod chaves;
 pub mod combat;

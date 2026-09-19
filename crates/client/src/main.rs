@@ -10,6 +10,7 @@
 
 mod api;
 mod auto_combate;
+mod banco_ui;
 mod auto_dungeon;
 mod auto_missao;
 mod avisos;
@@ -348,6 +349,10 @@ struct Jogo {
     presenca: presenca_ui::PresencaUi,
     /// Menu "Viajar" do Capitao do Porto.
     viagem: viagem_ui::ViagemUi,
+    /// O banco (Estivador da vila).
+    banco: banco_ui::Banco,
+    /// Banco que chegou com um dialogo aberto: abre quando fechar.
+    banco_pendente: Option<Vec<shared::InventorySlot>>,
     /// Menu do Capitao que chegou com um dialogo aberto: abre quando fechar.
     viagem_pendente: Option<Vec<shared::viagem::Destino>>,
     /// O botao "Teleportar" do ultimo quadro (so' com viagem longa na tela).
@@ -555,6 +560,8 @@ async fn main() {
         economia: economia::Economia::default(),
         presenca: presenca_ui::PresencaUi::default(),
         viagem: viagem_ui::ViagemUi::default(),
+        banco: banco_ui::Banco::default(),
+        banco_pendente: None,
         viagem_pendente: None,
         botao_teleporte: None,
         loja_tp: loja_tp::LojaTp::default(),
@@ -1121,6 +1128,27 @@ impl Jogo {
                 self.bolsa.equip = equipment;
             }
             ServerMessage::GoldUpdate { gold } => self.bolsa.ouro = gold,
+            ServerMessage::VaultOpen { slots } => {
+                // Como o Capitao: com a oferta de missao do Estivador na
+                // frente, o banco espera o dialogo fechar.
+                if self.dialogo.aberto {
+                    self.banco_pendente = Some(slots);
+                } else {
+                    self.fecha_paineis();
+                    self.missoes.fecha();
+                    self.banco.abrir(slots);
+                }
+            }
+            ServerMessage::VaultUpdate { slots } => self.banco.cofre = slots,
+            ServerMessage::VaultClose => self.banco.fechar(),
+            ServerMessage::Armazem {
+                bolsa_extra,
+                banco_extra,
+            } => {
+                self.bolsa.extra = bolsa_extra;
+                self.banco.bolsa_extra = bolsa_extra;
+                self.banco.banco_extra = banco_extra;
+            }
             ServerMessage::CraftRecipes { recipes } => self.craft.define_receitas(recipes),
             ServerMessage::CraftResultado {
                 ok,
@@ -1910,6 +1938,7 @@ impl Jogo {
             || self.dungeon.aberto
             || self.presenca.aberto
             || self.viagem.aberto()
+            || self.banco.aberto()
             || self.loja_tp.aberto
             || self.montarias.aberto
     }
@@ -2183,6 +2212,7 @@ impl Jogo {
         self.dungeon.fechar();
         self.presenca.fechar();
         self.viagem.fechar();
+        self.banco.fechar();
         self.loja_tp.fechar();
         self.montarias.fechar();
         self.morte.painel = false;
@@ -2256,6 +2286,27 @@ impl Jogo {
                 self.chat.push("Mapa: só nas ilhas.".into());
             }
             Item::Lojas => self.lojas.abrir(),
+            // O banco so' abre no Estivador: o Menu leva ate' ele.
+            Item::Banco => {
+                self.voltar_ao_menu = false;
+                match self
+                    .mapa
+                    .npcs_da_vila()
+                    .into_iter()
+                    .find(|(n, _)| n == shared::construcao::Papel::Deposito.nome())
+                {
+                    Some((nome, pos)) => {
+                        self.chat.push(format!("Indo ao banco: {nome}"));
+                        self.iniciar_ir_para(ir_para::Alvo {
+                            objetivo: ir_para::Objetivo::Npc,
+                            pos,
+                            raio: 0.0,
+                            rotulo: format!("Banco · {nome}"),
+                        });
+                    }
+                    None => self.chat.push("Banco: só nas ilhas, com o Estivador do porto.".into()),
+                }
+            }
             Item::Presenca => {
                 for pedido in self.presenca.abrir() {
                     self.envia(pedido);
@@ -4633,8 +4684,17 @@ impl Jogo {
         if !self.dialogo.aberto && !is_mouse_button_pressed(MouseButton::Left) {
             if let Some(d) = self.viagem_pendente.take() {
                 self.fecha_paineis();
+                self.missoes.fecha();
                 self.viagem.abrir(d);
             }
+            if let Some(cofre) = self.banco_pendente.take() {
+                self.fecha_paineis();
+                self.missoes.fecha();
+                self.banco.abrir(cofre);
+            }
+        }
+        if let Some(pedido) = self.banco.desenha(&self.bolsa.slots, self.bolsa.ouro) {
+            self.envia(pedido);
         }
         if let Some(ilha) = self.viagem.desenha() {
             self.envia(ClientMessage::Viajar { ilha });
