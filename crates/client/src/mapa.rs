@@ -287,8 +287,117 @@ const LINHA_IR: f32 = 26.0;
 
 const LADO: usize = 384;
 
+/// Teto de chamadas de desenho da rota 2D em um quadro. Uma rota recebida do
+/// servidor pode ter 128 pontos; no celular, transformar cada trecho comprido
+/// em dezenas de risquinhos custava mais que o resto do mapa.
+const MAX_TRACOS_2D: usize = 256;
+
+/// Recorta `a..b` no retangulo e devolve tambem a fracao do segmento que
+/// sobrou. Liang-Barsky: alem de nao desenhar fora, evita ITERAR pelos tracos
+/// invisiveis ate' chegar na tela.
+fn recortar_segmento(a: Vec2, b: Vec2, r: Rect) -> Option<(Vec2, Vec2, f32, f32)> {
+    let d = b - a;
+    let mut entrada = 0.0f32;
+    let mut saida = 1.0f32;
+    for (p, q) in [
+        (-d.x, a.x - r.x),
+        (d.x, r.x + r.w - a.x),
+        (-d.y, a.y - r.y),
+        (d.y, r.y + r.h - a.y),
+    ] {
+        if p.abs() < 1e-6 {
+            if q < 0.0 {
+                return None;
+            }
+            continue;
+        }
+        let t = q / p;
+        if p < 0.0 {
+            entrada = entrada.max(t);
+        } else {
+            saida = saida.min(t);
+        }
+        if entrada > saida {
+            return None;
+        }
+    }
+    Some((a + d * entrada, a + d * saida, entrada, saida))
+}
+
+/// Visita so' os tracos que de fato podem aparecer. Separado do desenho para
+/// testar o custo: um destino absurdamente longe continua gerando trabalho
+/// proporcional ao tamanho da TELA, nao ao tamanho do caminho.
+fn para_cada_traco(
+    pontos: &[Vec2],
+    traco: f32,
+    vao: f32,
+    recorte: Option<Rect>,
+    limite: usize,
+    mut visitar: impl FnMut(Vec2, Vec2),
+) -> usize {
+    let periodo = traco + vao;
+    if periodo <= 1e-3 || traco <= 0.0 || limite == 0 {
+        return 0;
+    }
+    let mut antes = 0.0f32;
+    let mut feitos = 0usize;
+    for par in pontos.windows(2) {
+        let (a, b) = (par[0], par[1]);
+        let comp = a.distance(b);
+        if comp < 1e-3 || !comp.is_finite() {
+            continue;
+        }
+        let dir = (b - a) / comp;
+        let Some((vis_a, vis_b, t0, t1)) = recorte
+            .map(|r| recortar_segmento(a, b, r))
+            .unwrap_or(Some((a, b, 0.0, 1.0)))
+        else {
+            antes += comp;
+            continue;
+        };
+        let inicio = t0 * comp;
+        let fim = t1 * comp;
+        let mut s = inicio;
+        while s < fim - 1e-4 {
+            let pos = (antes + s).rem_euclid(periodo);
+            let ate_mudar = if pos < traco {
+                traco - pos
+            } else {
+                periodo - pos
+            };
+            let passo = ate_mudar.max(1e-4).min(fim - s);
+            if pos < traco {
+                // Parte do ponto ja' recortado: evita perder precisao ao
+                // somar um deslocamento enorme a uma origem muito distante.
+                let mut p0 = vis_a + dir * (s - inicio);
+                let mut p1 = if fim - (s + passo) < 1e-4 {
+                    vis_b
+                } else {
+                    vis_a + dir * (s + passo - inicio)
+                };
+                // Com coordenadas muito distantes, f32 pode arredondar o
+                // ponto recortado alguns centesimos para fora.
+                if let Some(r) = recorte {
+                    let prender =
+                        |p: Vec2| vec2(p.x.clamp(r.x, r.x + r.w), p.y.clamp(r.y, r.y + r.h));
+                    p0 = prender(p0);
+                    p1 = prender(p1);
+                }
+                visitar(p0, p1);
+                feitos += 1;
+                if feitos >= limite {
+                    return feitos;
+                }
+            }
+            s += passo;
+        }
+        antes += comp;
+    }
+    feitos
+}
+
 /// Linha tracejada 2D pelos pontos (ja' em tela). Com `recorte`, so' os
-/// tracos com as duas pontas dentro dele.
+/// tracos dentro dele. O recorte acontece ANTES de picotar a linha.
 fn tracejado(
     pontos: &[Vec2],
     traco: f32,
@@ -297,34 +406,18 @@ fn tracejado(
     cor: Color,
     recorte: Option<Rect>,
 ) {
-    let periodo = traco + vao;
-    let mut fase = 0.0f32;
-    for par in pontos.windows(2) {
-        let (a, b) = (par[0], par[1]);
-        let comp = a.distance(b);
-        if comp < 1e-3 {
-            continue;
-        }
-        let dir = (b - a) / comp;
-        let mut s = 0.0;
-        while s < comp {
-            let pos = fase % periodo;
-            let resto = if pos < traco {
-                traco - pos
-            } else {
-                periodo - pos
-            };
-            let passo = resto.min(comp - s);
-            if pos < traco {
-                let (p0, p1) = (a + dir * s, a + dir * (s + passo));
-                if recorte.map_or(true, |r| r.contains(p0) && r.contains(p1)) {
-                    draw_line(p0.x, p0.y, p1.x, p1.y, espessura, cor);
-                }
-            }
-            s += passo;
-            fase += passo;
-        }
-    }
+    // Uma folga conserva a espessura na borda do recorte.
+    let recorte = recorte.map(|r| {
+        Rect::new(
+            r.x - espessura,
+            r.y - espessura,
+            r.w + espessura * 2.0,
+            r.h + espessura * 2.0,
+        )
+    });
+    para_cada_traco(pontos, traco, vao, recorte, MAX_TRACOS_2D, |p0, p1| {
+        draw_line(p0.x, p0.y, p1.x, p1.y, espessura, cor);
+    });
 }
 
 // ─────────────────────────────── viagem ──────────────────────────────
@@ -2056,6 +2149,32 @@ mod tests {
 
     fn tudo_terra(_: Vec2) -> bool {
         true
+    }
+
+    #[test]
+    fn rota_longe_so_processa_o_pedaco_visivel() {
+        let tela = Rect::new(100.0, 100.0, 200.0, 200.0);
+        let rota = [vec2(-1_000_000.0, 180.0), vec2(1_000_000.0, 180.0)];
+        let mut vistos = Vec::new();
+        let n = para_cada_traco(&rota, 5.0, 3.0, Some(tela), 256, |a, b| {
+            vistos.push((a, b));
+        });
+        assert!(n <= 27, "so' cabem poucos tracos em 200 px: {n}");
+        assert!(n > 20, "a parte que cruza a tela continua desenhada: {n}");
+        assert!(vistos.iter().all(|(a, b)| {
+            a.x >= tela.x - 0.01
+                && b.x <= tela.x + tela.w + 0.01
+                && a.y >= tela.y
+                && b.y <= tela.y + tela.h
+        }));
+    }
+
+    #[test]
+    fn rota_2d_tem_teto_de_trabalho_por_quadro() {
+        let rota = [Vec2::ZERO, vec2(1_000_000.0, 0.0)];
+        let mut chamados = 0;
+        let n = para_cada_traco(&rota, 1.0, 1.0, None, 37, |_, _| chamados += 1);
+        assert_eq!((n, chamados), (37, 37));
     }
 
     #[test]
