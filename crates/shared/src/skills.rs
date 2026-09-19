@@ -180,22 +180,27 @@ pub const RECUPERACAO_S: f32 = 0.36;
 /// O `dano` de cada skill do catalogo e' peso relativo, e este e' o meio da
 /// escala: uma skill de `dano` 30 rende o ganho cheio da forma dela.
 pub const DANO_DE_REFERENCIA: f32 = 30.0;
-/// Quanto a skill rende contra o ataque basico que ela desliga. Alvo unico
-/// precisa render bem mais, porque acerta um so'; area rende menos POR ALVO,
-/// porque o lucro dela e' acertar varios.
-pub const GANHO_ALVO_UNICO: f32 = 1.35;
-pub const GANHO_EM_AREA: f32 = 0.70;
-/// Teto do quanto uma skill pode render sobre o basico que desliga. Nenhuma
-/// pode decidir a luta sozinha: sem o teto o Vento Cortante (dano 45, alvo
-/// unico) rendia 2,4x, e o simulador mostrava a katana matando chefe em ~50s —
-/// abaixo do minimo de 60s das metas — e vencendo ATE' PARADA, sem esquivar
-/// telegrafico nenhum.
+/// Quanto a skill rende contra o ataque basico que ela desliga, pro `dano`
+/// de referencia. Alvo unico rende mais, porque acerta um so'; area rende
+/// menos POR ALVO, porque o lucro dela e' acertar varios.
+pub const GANHO_ALVO_UNICO: f32 = 1.60;
+pub const GANHO_EM_AREA: f32 = 1.30;
+/// PISO: contra UM alvo, toda skill ofensiva rende pelo menos isto do basico
+/// que desliga — de area inclusive.
 ///
-/// ATENCAO: neste valor as DUAS skills de projetil (Tiro Certeiro e Vento
-/// Cortante) batem no teto, entao quem manda no dano de alvo unico e' ele, e
-/// nao o `GANHO_ALVO_UNICO` — medido na grade: trocar o ganho de 1,15 pra 1,35
-/// nao muda uma linha do resultado.
-pub const TETO_DO_GANHO: f32 = 1.05;
+/// Ate' 19/09/2026 a area rendia 0,47x a 0,82x por alvo e o alvo unico batia
+/// num teto de 1,05x: contra um bicho ou um chefe, apertar quase qualquer
+/// skill era PERDER dano pro basico (o jogador sentiu: "o tempinho de
+/// carregamento deixa a skill pior que o ataque basico"). A conta so' fechava
+/// contando tres alvos, e o basico corpo a corpo tambem acerta todo mundo no
+/// cone.
+pub const PISO_ALVO_UNICO: f32 = 1.60;
+pub const PISO_EM_AREA: f32 = 1.35;
+/// Teto do quanto uma skill pode render sobre o basico que desliga: nenhuma
+/// decide a luta sozinha. A duracao das lutas de chefe (60 a 240 s, no
+/// simulador) e' segurada pela vida do chefe (`bosses::vida`), nao por skill
+/// fraca.
+pub const TETO_DO_GANHO: f32 = 1.80;
 
 impl Skill {
     /// Skills ofensivas exigem uma entidade selecionada; suporte usa o conjurador.
@@ -262,19 +267,23 @@ impl Skill {
         if self.dano <= 0 {
             return 0;
         }
-        let janela = self.impacto_em() + RECUPERACAO_S;
-        let deslocado = janela * atk.max(1) as f32 / cd_basico.max(0.05);
-        let ganho = if self.forma == Forma::Projetil {
-            GANHO_ALVO_UNICO
-        } else {
-            GANHO_EM_AREA
-        };
-        let mult = (ganho * (self.dano as f32 / DANO_DE_REFERENCIA)).min(TETO_DO_GANHO);
-        (deslocado * mult).round().max(1.0) as i32
+        (self.basico_deslocado(atk, cd_basico) * self.ganho())
+            .round()
+            .max(1.0) as i32
     }
 
-    /// So' pro teste: o dano de basico que o cast joga fora. O simulador NAO
-    /// usa esta funcao — ele chama `dano_efetivo`, que ja' embute a janela.
+    /// Quantas vezes o basico deslocado a skill rende contra UM alvo: o peso
+    /// do catalogo na escala da forma, entre o piso e o teto.
+    pub fn ganho(&self) -> f32 {
+        let (ganho, piso) = if self.forma == Forma::Projetil {
+            (GANHO_ALVO_UNICO, PISO_ALVO_UNICO)
+        } else {
+            (GANHO_EM_AREA, PISO_EM_AREA)
+        };
+        (ganho * (self.dano as f32 / DANO_DE_REFERENCIA)).clamp(piso, TETO_DO_GANHO)
+    }
+
+    /// O dano de basico que o cast joga fora (a janela travada × a cadencia).
     pub fn basico_deslocado(&self, atk: i32, cd_basico: f32) -> f32 {
         (self.impacto_em() + RECUPERACAO_S) * atk.max(1) as f32 / cd_basico.max(0.05)
     }
@@ -388,17 +397,27 @@ mod testes {
                 for s in playtest().iter().filter(|s| s.dano > 0) {
                     let deslocado = s.basico_deslocado(atk, cd);
                     let rende = s.dano_efetivo(atk, cd) as f32;
-                    // Area rende menos por alvo, e o lucro dela e' acertar
-                    // varios: tres e' uma matilha modesta.
-                    let alvos = if s.forma == Forma::Projetil { 1.0 } else { 3.0 };
+                    // Contra UM alvo so' — chefe, bicho sozinho. Era contando
+                    // tres que a area passava, e perdia pro basico no resto.
+                    let piso = if s.forma == Forma::Projetil {
+                        PISO_ALVO_UNICO
+                    } else {
+                        PISO_EM_AREA
+                    };
                     assert!(
-                        rende * alvos > deslocado,
-                        "{} com atk {atk} e cd {cd}: rende {rende:.0} em {alvos:.0} alvo(s) e joga fora {deslocado:.0} de basico",
+                        rende >= deslocado * piso - 1.0,
+                        "{} com atk {atk} e cd {cd}: rende {rende:.0} num alvo e joga fora {deslocado:.0} de basico",
                         s.nome
                     );
                 }
             }
         }
+        // E o peso do catalogo continua valendo: a mais pesada de cada forma
+        // rende mais que a mais leve.
+        let t = playtest();
+        let g = |id: u32| t.iter().find(|s| s.id == id).unwrap().ganho();
+        assert!(g(12) > g(8), "Julgamento (55) acima da Rajada (20)");
+        assert!(g(6) >= g(7), "Vento Cortante (45) nao abaixo do Tiro Certeiro (28)");
     }
 
     /// O dano de skill tem que ANDAR com o ataque de quem conjura. Se algum dia
@@ -477,10 +496,10 @@ pub fn playtest() -> Vec<Skill> {
         ),
         // ── katana: corte rapido ──
         (
-            4, "Saque", "katana", 1, "linha", 8, 6.0, 0.0, 30, 0, 4.0, 0.8,
+            4, "Saque", "katana", 1, "linha", 8, 10.0, 0.0, 30, 0, 4.0, 0.8,
         ),
         (
-            5, "Dança", "katana", 2, "circulo", 18, 10.0, 0.0, 28, 0, 0.0, 2.5,
+            5, "Dança", "katana", 2, "circulo", 18, 15.0, 0.0, 28, 0, 0.0, 2.5,
         ),
         (
             6,
@@ -489,7 +508,7 @@ pub fn playtest() -> Vec<Skill> {
             3,
             "projetil",
             22,
-            12.0,
+            20.0,
             0.3,
             45,
             0,

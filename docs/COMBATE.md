@@ -184,15 +184,32 @@ custa:
 ```
 janela    = impacto_em() + RECUPERACAO_S
 deslocado = janela × atk / cadência_do_básico    (o básico que a skill desliga)
-dano      = deslocado × min(ganho × dano/30, TETO_DO_GANHO)
+dano      = deslocado × clamp(ganho × dano/30, PISO, TETO_DO_GANHO)
 ```
 
-O `dano` do catálogo virou PESO RELATIVO entre as doze. Ganho de 1,35 para
-alvo único e 0,70 para área — que rende menos POR ALVO porque acerta vários —
-com teto de 1,05. Um coeficiente fixo não resolveria: a cadência do básico
+O `dano` do catálogo virou PESO RELATIVO entre as doze. Ganho de 1,60 para
+alvo único e 1,30 para área, com **piso** de 1,60 e 1,35 e teto de 1,80 —
+contra UM alvo, toda skill rende pelo menos 35% a mais que o básico que
+desliga. E a skill pode dar crítico, com a mesma chance e o mesmo
+multiplicador do básico.
+
+**Por que mudou (19/09/2026).** Até então a área rendia 0,47× a 0,82× por
+alvo e o alvo único batia num teto de 1,05×: contra um bicho ou um chefe,
+apertar quase qualquer skill era perder dano — o jogador percebeu o "tempinho
+de carregamento" deixando a skill pior que o básico. A regra só fechava
+contando três alvos, e o básico corpo a corpo também acerta todo mundo no
+cone. O freio da duração das lutas de chefe passou para onde ele deve estar:
+a vida do chefe subiu 12% (docs/BOSSES.md) e a katana, que conjura sem parar,
+ganhou esperas maiores (Saque 10 s, Dança 15 s, Vento Cortante 20 s). O piso
+de área de 1,35 não é arbitrário: com 1,20–1,25 a skill deixava o bicho quase
+morto, a luta se arrastava e a espada (nv5) e a katana (nv10) morriam no
+simulador de farm; de 1,35 pra cima as quatro terminam vivas.
+
+Um coeficiente fixo não resolveria: a cadência do básico
 melhora com o nível, então a dívida cresce junto, e por isso a cadência entra
 na conta. Três invariantes em `shared/src/skills.rs` seguram a regra: toda
-skill ofensiva rende mais que o básico que desliga, o dano acompanha o ataque
+skill ofensiva rende pelo menos o piso sobre o básico que desliga contra UM
+alvo, o dano acompanha o ataque
 de quem conjura, e skill sem dano continua sem dano.
 
 **Defeito do simulador achado no caminho.** Ele travava o básico só por

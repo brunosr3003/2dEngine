@@ -30,7 +30,7 @@ estao no catalogo.
 
 | O que | Regra |
 |---|---|
-| Vida | 8.000 + 240 × nivel, teto 18.500 (o dano do jogador cresce com o equipamento da faixa) |
+| Vida | 8.960 + 269 × nivel, teto 20.720 (+12% em 19/09/2026, quando as skills passaram a render mais que o básico; o dano do jogador cresce com o equipamento da faixa) |
 | Golpe comum | 12 + 2 × nivel, mitigado normalmente; cadencia minima 2,4 s (`CADENCIA_COMUM_S`) |
 | Golpe telegrafado | tira `dano_mult` × 12% da VIDA MAXIMA de quem ficou dentro (1,8 → 22%, 3,4 → 41%); a resistencia NAO vale contra ele (`RESISTENCIA_NO_TELEGRAFICO = 0`); fase 2 ×1,15 |
 | Roubo de vida | o chefe cura 25% de todo dano que causa (regra antiga do servidor, mantida) |

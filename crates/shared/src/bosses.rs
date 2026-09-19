@@ -664,7 +664,10 @@ pub fn kind_do_corpo(kind: u16) -> u16 {
 /// equipamento da faixa: sem ele o anel passava de 4 min no Planalto. Cabe no
 /// `u16` do fio.
 pub fn vida(nivel: u32) -> i32 {
-    (8_000 + nivel as i32 * 240).min(18_500)
+    // +12% em 19/09/2026: as skills passaram a render mais que o basico que
+    // desligam (`skills::PISO_*`), e a katana — que ja' estava no piso de 60 s
+    // — caia pra 50 s. A vida segura a duracao; skill fraca nao e' o freio.
+    (8_960 + nivel as i32 * 269).min(20_720)
 }
 
 /// Dano do golpe COMUM (mitigado normalmente). O telegrafado nao usa isto:

@@ -355,16 +355,26 @@ impl GameWorld {
         }
         // O dano sai do ataque de quem conjurou, pela mesma `session.stats` que
         // alimenta o golpe basico — ver `Skill::dano_efetivo` pro porque.
-        let (atk, cd) = self.sessions.values().find(|s| s.entity_id == dono).map_or(
-            (shared::base_player_stats().attack_damage, 0.65),
+        let (atk, cd, chance_crit) = self.sessions.values().find(|s| s.entity_id == dono).map_or(
+            (shared::base_player_stats().attack_damage, 0.65, 0.0),
             |s| {
                 (
                     s.stats.attack_damage,
                     super::cooldown_do_ataque(s.equipment.weapon.unwrap_or(0), &s.stats, false),
+                    s.stats.crit_chance,
                 )
             },
         );
-        let dano = skill.dano_efetivo(atk, cd);
+        // Critico com a MESMA chance e o mesmo multiplicador do basico: antes
+        // a skill nunca critava e o basico sim — mais um motivo pra ela
+        // render menos que o golpe que desliga. Um sorteio por conjuracao,
+        // como o basico faz por golpe (todos os alvos levam o mesmo).
+        let crit = chance_crit > 0.0 && fastrand::f32() < chance_crit;
+        let dano = if crit {
+            (skill.dano_efetivo(atk, cd) as f32 * shared::CRIT_DAMAGE_MULT).round() as i32
+        } else {
+            skill.dano_efetivo(atk, cd)
+        };
         if skill.forma == Forma::Projetil {
             // Disparo target: outro mob cruzando a linha nao troca o destinatario.
             self.pending_skill_hits.push(PendingSkillHit {
@@ -372,7 +382,7 @@ impl GameWorld {
                 damage: dano,
                 attacker_net: dono,
                 hurt_dir: -dir,
-                is_crit: false,
+                is_crit: crit,
                 from_player: true,
                 knockback: 0.0,
             });
@@ -385,7 +395,7 @@ impl GameWorld {
                     damage: dano,
                     attacker_net: dono,
                     hurt_dir: (de - pos).normalize_or_zero(),
-                    is_crit: false,
+                    is_crit: crit,
                     from_player: true,
                     knockback: if skill.id == 1 { 0.7 } else { 0.0 },
                 });
