@@ -84,6 +84,7 @@ mod terreno;
 mod toque;
 mod ui;
 mod vegetacao;
+mod viagem_ui;
 mod vox;
 mod world;
 
@@ -345,6 +346,12 @@ struct Jogo {
     economia: economia::Economia,
     /// Calendario de presenca (`presenca_ui.rs`).
     presenca: presenca_ui::PresencaUi,
+    /// Menu "Viajar" do Capitao do Porto.
+    viagem: viagem_ui::ViagemUi,
+    /// Menu do Capitao que chegou com um dialogo aberto: abre quando fechar.
+    viagem_pendente: Option<Vec<shared::viagem::Destino>>,
+    /// O botao "Teleportar" do ultimo quadro (so' com viagem longa na tela).
+    botao_teleporte: Option<Rect>,
     /// Loja de cash (`loja_tp.rs`).
     loja_tp: loja_tp::LojaTp,
     /// Janela de montarias (`montarias_ui.rs`).
@@ -547,6 +554,9 @@ async fn main() {
         chat: avisos::Avisos::default(),
         economia: economia::Economia::default(),
         presenca: presenca_ui::PresencaUi::default(),
+        viagem: viagem_ui::ViagemUi::default(),
+        viagem_pendente: None,
+        botao_teleporte: None,
         loja_tp: loja_tp::LojaTp::default(),
         montarias: montarias_ui::MontariasUi::default(),
         montaria_skin: None,
@@ -1145,6 +1155,16 @@ impl Jogo {
                 };
                 self.craft.resultado(ok, txt.clone(), get_time());
                 self.chat.push(txt);
+            }
+            ServerMessage::Viagem { destinos } => {
+                // O Capitao pode abrir com uma oferta de missao na frente: o
+                // menu espera o dialogo fechar.
+                if self.dialogo.aberto {
+                    self.viagem_pendente = Some(destinos);
+                } else {
+                    self.fecha_paineis();
+                    self.viagem.abrir(destinos);
+                }
             }
             ServerMessage::CombinarResultado {
                 entrada,
@@ -1824,6 +1844,51 @@ impl Jogo {
 
     /// Algum painel GRANDE aberto (Menu, Bolsa, Mapa, Craft, Forja, Todas as
     /// missoes, Lojas)? Com ele o HUD some e todo clique e roda sao do painel.
+    /// Viagem longa em curso (mapa, "Ir" de missao, NPC): o botao do
+    /// Pergaminho de Teleporte, logo abaixo da faixa. Sem pergaminho ele
+    /// continua ali — o toque diz onde comprar.
+    fn botao_de_teleporte(&mut self, z: &hud_layout::Zonas) {
+        self.botao_teleporte = None;
+        let (Some(eu), Some(destino)) = (self.world.self_pos(), self.mapa.viagem.destino()) else {
+            return;
+        };
+        if eu.distance(destino) < shared::viagem::TELEPORTE_MIN
+            || self.dungeon.na_instancia()
+            || self.painel_grande()
+        {
+            return;
+        }
+        let qtd: u32 = self
+            .bolsa
+            .slots
+            .iter()
+            .filter(|s| s.item_id == shared::item_id::PERGAMINHO_TELEPORTE)
+            .map(|s| s.qty)
+            .sum();
+        let rotulo = format!("Teleportar ×{qtd}");
+        let w = hud_estilo::medir_forte(&rotulo, 14) + 40.0;
+        let r = Rect::new(
+            z.faixa.center().x - w * 0.5,
+            z.faixa.y + z.faixa.h + 6.0,
+            w,
+            z.faixa.h,
+        );
+        self.botao_teleporte = Some(r);
+        hud_estilo::botao(r, &rotulo, hud_estilo::estado_de(r, qtd == 0, false), qtd > 0);
+        if !(is_mouse_button_pressed(MouseButton::Left) && r.contains(Vec2::from(mouse_position()))) {
+            return;
+        }
+        if qtd == 0 {
+            self.chat
+                .push("Sem Pergaminho de Teleporte: o Alquimista da vila vende (em cobre).".into());
+            return;
+        }
+        self.envia(ClientMessage::Teleportar {
+            x: destino.x,
+            z: destino.y,
+        });
+    }
+
     fn painel_grande(&self) -> bool {
         self.menu.aberto
             || self.bolsa.aberta
@@ -1842,6 +1907,7 @@ impl Jogo {
             || self.onde_obter.aberto()
             || self.dungeon.aberto
             || self.presenca.aberto
+            || self.viagem.aberto()
             || self.loja_tp.aberto
             || self.montarias.aberto
     }
@@ -1957,6 +2023,7 @@ impl Jogo {
             return true;
         }
         hud_layout::atual().contem(p)
+            || self.botao_teleporte.is_some_and(|r| r.contains(p))
             || self.habilidades.botao_em(p)
             || self.mapa.pega_mouse()
             || self.loja.pega_mouse()
@@ -2046,6 +2113,7 @@ impl Jogo {
         }
         let z = hud_layout::atual();
         z.contem(m)
+            || self.botao_teleporte.is_some_and(|r| r.contains(m))
             || self.mapa.pega_mouse()
             || self.loja.pega_mouse()
             || self.missoes.pega_mouse()
@@ -2112,6 +2180,7 @@ impl Jogo {
         self.social.fechar();
         self.dungeon.fechar();
         self.presenca.fechar();
+        self.viagem.fechar();
         self.loja_tp.fechar();
         self.montarias.fechar();
         self.morte.painel = false;
@@ -4179,6 +4248,7 @@ impl Jogo {
         if let Some((texto, cor)) = self.texto_da_faixa() {
             hud_layout::desenha_faixa(&z, &texto, cor);
         }
+        self.botao_de_teleporte(&z);
         // Joystick virtual: so' aparece com o dedo na tela.
         self.joystick.desenha(&hud_layout::atual());
         if self.coleta_hud.ativa() {
@@ -4555,6 +4625,17 @@ impl Jogo {
             for pedido in self.presenca.desenha(&self.bolsa.nomes, agora_unix) {
                 self.envia(pedido);
             }
+        }
+        // Nao no quadro do toque que fechou o dialogo: o mesmo toque, fora do
+        // menu recem-aberto, o fecharia na hora.
+        if !self.dialogo.aberto && !is_mouse_button_pressed(MouseButton::Left) {
+            if let Some(d) = self.viagem_pendente.take() {
+                self.fecha_paineis();
+                self.viagem.abrir(d);
+            }
+        }
+        if let Some(ilha) = self.viagem.desenha() {
+            self.envia(ClientMessage::Viajar { ilha });
         }
         // Loja de cash e janela de montarias (Menu).
         for pedido in self.loja_tp.desenha(&self.vox, &self.solido) {

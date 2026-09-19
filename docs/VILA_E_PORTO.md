@@ -64,3 +64,25 @@ entrar. Vale em `sem_estorvo`, `cabe`, `trecho_sem_estorvo`, no A* e no
 `NpcDaVila`: `Npc(1)` + `VendorTag` pra quem tem loja, `Npc(9)` pro resto. Mob
 não nasce na cidade nem no porto. O rumo do NPC vai no `EntityMeta.kind`
 (`shared::kind_de_npc_yaw` / `npc_yaw_de_kind`).
+
+## Viajar e Pergaminho de Teleporte
+
+Tocar no **Capitão do Porto** abre o menu **Viajar** (`ServerMessage::Viagem`):
+uma linha por ilha do `ARQUIPELAGO` — "você está aqui", **Embarcar**,
+"sem barco agora" (servidor da ilha fora do ar) ou bloqueada com o passo da
+história que libera ("Rumo à Geleira"). Liberada = a história chegou ao passo
+de viagem daquela ilha (`viagem::liberada`); a inicial, sempre. Ir e voltar é
+de graça. `ClientMessage::Viajar` confere de novo no servidor: perto do
+Capitão (`PERTO_DO_CAPITAO`), ilha liberada, canal no ar; aí `embarcar` grava
+a chegada na praça de lá e manda `TrocarZona`. Se o Capitão tem missão a
+oferecer, o diálogo vem antes e o menu abre quando ele fecha.
+
+O **Pergaminho de Teleporte** (id 359) é vendido pelo Alquimista em cobre
+(`viagem::PRECO_PERGAMINHO`, 100). Com uma viagem longa em curso — ponto
+marcado no mapa, "Ir" de missão, ir até um NPC — aparece o botão
+**Teleportar ×N** embaixo da faixa (a partir de `TELEPORTE_MIN`, 40 m).
+`ClientMessage::Teleportar` gasta 1 e põe o corpo no chão firme mais perto do
+destino (`terra_mais_proxima`, até 16 m); a viagem termina ali mesmo e o "Ir"
+faz o que faria ao chegar. Não cruza o mar e não vale em dungeon, caído ou
+carregando alguém; recusa não gasta.
+

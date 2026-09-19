@@ -6849,6 +6849,8 @@ impl GameWorld {
             ClientMessage::ShopComprar { slot_idx, qtd } => {
                 self.handle_shop_comprar(id, slot_idx as usize, qtd as u32);
             }
+            ClientMessage::Viajar { ilha } => self.handle_viajar(id, ilha),
+            ClientMessage::Teleportar { x, z } => self.handle_teleportar(id, Vec2::new(x, z)),
             ClientMessage::Tutorial { acao } => {
                 // Passo tutorial: o cliente conta o gesto (e' interface, nao
                 // regra de jogo — nada aqui da' vantagem).
@@ -13307,11 +13309,18 @@ impl GameWorld {
         else {
             return;
         };
-        let Some(dest) = shared::terreno::ARQUIPELAGO.get(def.obj_target as usize) else {
-            return;
+        self.embarcar(sid, def.obj_target as usize);
+    }
+
+    /// Embarca pra ilha `ilha` do `ARQUIPELAGO`: grava a chegada (a praca de
+    /// la') e manda o cliente reconectar no canal dela. `false` = nao
+    /// embarcou (mesma ilha, ou ilha sem canal no ar — o jogador e' avisado).
+    fn embarcar(&mut self, sid: SessionId, ilha: usize) -> bool {
+        let Some(dest) = shared::terreno::ARQUIPELAGO.get(ilha) else {
+            return false;
         };
         if dest.zona == self.zona {
-            return;
+            return false;
         }
         let Some(host) = self.diretorio.as_ref().and_then(|d| d.melhor(dest.zona)) else {
             self.avisa_missao(
@@ -13321,7 +13330,10 @@ impl GameWorld {
                     dest.nome
                 ),
             );
-            return;
+            return false;
+        };
+        let Some(s) = self.sessions.get(&sid) else {
+            return false;
         };
         let (entidade, nome) = (s.entity, s.name.clone());
         // Chega na praca da outra ilha: a posicao salva vale LA'.
@@ -13351,7 +13363,141 @@ impl GameWorld {
                 host,
             });
         }
-        tracing::info!("historia: viagem {} -> {}", self.zona, dest.zona);
+        tracing::info!("viagem: {} -> {}", self.zona, dest.zona);
+        true
+    }
+
+    /// A entidade e' o Capitao do Porto da vila?
+    fn e_capitao(&self, e: hecs::Entity) -> bool {
+        self.ecs
+            .get::<&NpcDaVilaTag>(e)
+            .map(|t| {
+                shared::npc_papel_de_kind(t.rumo) == shared::construcao::Papel::Estaleiro as u8
+            })
+            .unwrap_or(false)
+    }
+
+    /// Clique no Capitao do Porto sem passo de viagem da historia: o menu
+    /// "Viajar", com toda ilha e se da' pra ir.
+    fn abrir_menu_viagem(&self, sid: SessionId) {
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        let indice = crate::quests::indice_da_historia(&s.quests);
+        let no_ar = |z: &str| {
+            z == self.zona || self.diretorio.as_ref().is_some_and(|d| d.melhor(z).is_some())
+        };
+        let destinos = shared::viagem::destinos(&self.zona, indice, &no_ar);
+        let _ = s.handle.to_client.send(ServerMessage::Viagem { destinos });
+    }
+
+    /// "Embarcar" no menu do Capitao: perto dele, ilha liberada pela
+    /// historia e com canal no ar.
+    fn handle_viajar(&mut self, sid: SessionId, ilha: u8) {
+        if self.tutorial_mode || self.dungeon_mode {
+            return;
+        }
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        if !s.logged_in || s.instancia != 0 || s.downed {
+            return;
+        }
+        let indice = crate::quests::indice_da_historia(&s.quests);
+        let Some(eu) = self.pos_do_jogador(sid) else {
+            return;
+        };
+        let capitao = shared::construcao::Papel::Estaleiro as u8;
+        let perto = self
+            .ecs
+            .query::<(&Position, &NpcDaVilaTag)>()
+            .iter()
+            .any(|(_, (p, t))| {
+                shared::npc_papel_de_kind(t.rumo) == capitao
+                    && p.0.distance(eu) <= shared::viagem::PERTO_DO_CAPITAO
+            });
+        if !perto {
+            self.avisa_missao(sid, "Fale com o Capitão do Porto, no cais, para embarcar.".into());
+            return;
+        }
+        let i = ilha as usize;
+        let Some(dest) = shared::terreno::ARQUIPELAGO.get(i) else {
+            return;
+        };
+        if !shared::viagem::liberada(i, indice) {
+            let passo = shared::viagem::passo_que_libera(i)
+                .map(|(_, t)| format!(" (libera em \"{t}\")"))
+                .unwrap_or_default();
+            self.avisa_missao(
+                sid,
+                format!("A história ainda não chegou a {}{passo}.", dest.nome),
+            );
+            return;
+        }
+        self.embarcar(sid, i);
+    }
+
+    /// Pergaminho de Teleporte: gasta 1 e salta pro chao firme mais perto de
+    /// `alvo`, dentro desta ilha. Qualquer recusa nao gasta nada.
+    fn handle_teleportar(&mut self, sid: SessionId, alvo: Vec2) {
+        use shared::item_id::PERGAMINHO_TELEPORTE;
+        let recusa = |w: &Self, t: &str| w.avisa_missao(sid, t.to_string());
+        if self.tutorial_mode || self.dungeon_mode {
+            recusa(self, "O pergaminho não funciona aqui.");
+            return;
+        }
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        if !s.logged_in {
+            return;
+        }
+        if s.instancia != 0 {
+            recusa(self, "O pergaminho não funciona dentro de dungeon.");
+            return;
+        }
+        if s.downed || s.carrying.is_some() || s.carried_by.is_some() {
+            recusa(self, "Agora não dá para usar o pergaminho.");
+            return;
+        }
+        let tem = s
+            .inventory
+            .iter()
+            .any(|i| i.item_id == PERGAMINHO_TELEPORTE && i.qty > 0);
+        if !tem {
+            recusa(self, "Sem Pergaminho de Teleporte: o Alquimista da vila vende.");
+            return;
+        }
+        let Some(entidade) = s.entity else {
+            return;
+        };
+        let (Some(ilha), true) = (self.ilha.as_ref(), alvo.is_finite()) else {
+            return;
+        };
+        let destino =
+            ilha.terra_mais_proxima(alvo.x, alvo.y, shared::viagem::TELEPORTE_BUSCA);
+        if ilha.agua(destino.x, destino.y)
+            || !ilha.sem_estorvo(destino, shared::constants::ENTITY_RADIUS)
+        {
+            recusa(self, "Não há chão firme nesse destino.");
+            return;
+        }
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        dungeon::tirar_item(&mut s.inventory, PERGAMINHO_TELEPORTE, 1);
+        s.inventory_dirty = true;
+        s.rota.limpa();
+        let nome = s.name.clone();
+        if let Ok(mut pos) = self.ecs.get::<&mut Position>(entidade) {
+            pos.0 = destino;
+        }
+        if let Ok(mut vel) = self.ecs.get::<&mut Velocity>(entidade) {
+            vel.0 = Vec2::ZERO;
+        }
+        self.save_pending = true;
+        crate::telemetria::conta("pergaminho_teleporte", self.zona.clone(), 1);
+        tracing::info!("{nome}: pergaminho de teleporte -> ({:.0},{:.0})", destino.x, destino.y);
     }
 
     /// Virada do dia UTC: diarias aceitas e nao entregues saem do log.
@@ -14145,6 +14291,44 @@ impl GameWorld {
         self.send_quest_givers(sid);
     }
 
+    /// Manda o auto caminho da missao `quest_id` ate' o Capitao do Porto desta
+    /// ilha (passo de viagem, ou passo que acontece noutra ilha). `false` =
+    /// ilha sem Capitao.
+    fn destino_no_capitao(&self, sid: SessionId, quest_id: u16) -> bool {
+        let Some(p) = self.ilha.as_ref().and_then(|ilha| {
+            ilha.vila()
+                .npcs
+                .iter()
+                .find(|n| n.papel == shared::construcao::Papel::Estaleiro)
+                .map(|n| n.pos)
+        }) else {
+            return false;
+        };
+        let eid = self
+            .ecs
+            .query::<(&NetId, &Position, &EntityKind)>()
+            .iter()
+            .filter(|(_, (_, _, k))| matches!(k, EntityKind::Npc(_)))
+            .filter(|(_, (_, pos, _))| pos.0.distance_squared(p) < 4.0)
+            .min_by(|a, b| {
+                a.1.1
+                    .0
+                    .distance_squared(p)
+                    .total_cmp(&b.1.1.0.distance_squared(p))
+            })
+            .map(|(_, (n, _, _))| n.0.0 as u64);
+        if let Some(s) = self.sessions.get(&sid) {
+            let _ = s.handle.to_client.send(ServerMessage::QuestDestino {
+                quest_id,
+                tipo: shared::quests::destino_tipo::NPC,
+                pos: [p.x, p.y],
+                raio: shared::INTERACT_RADIUS,
+                npc_eid: eid,
+            });
+        }
+        true
+    }
+
     /// Onde fica o objetivo da missao `quest_id` do jogador (auto missao).
     fn handle_quest_destino(&mut self, sid: SessionId, quest_id: u16) {
         use shared::quests::{destino_tipo, quest_status};
@@ -14169,58 +14353,29 @@ impl GameWorld {
                 }
             };
             if let Some(z) = shared::quests::zona_da_missao(quest_id).filter(|z| *z != self.zona) {
+                // Passo de outra ilha: o caminho comeca no Capitao do Porto,
+                // que leva a qualquer ilha liberada (`shared::viagem`).
                 let ilha = shared::terreno::def_da_zona(z).map_or(z, |d| d.nome);
                 self.avisa_missao(
                     sid,
-                    format!("História: este passo acontece na ilha {ilha}."),
+                    format!("História: este passo acontece na ilha {ilha}. Embarque com o Capitão do Porto."),
                 );
-                nenhum(self);
+                if !self.destino_no_capitao(sid, quest_id) {
+                    nenhum(self);
+                }
                 return;
             }
             // Em passos de viagem, primeiro se caminha ate' o Capitao. A
             // disponibilidade do canal de destino so' importa ao embarcar;
             // conferir aqui fazia o auto caminho parar longe do porto quando
             // a proxima ilha ainda nao estava no ar.
-        }
-
-        // Último passo do Bosque: o destino é sempre o Capitão do Porto da
-        // ilha atual. Resolva antes da busca genérica, pois essa etapa marca
-        // uma troca de ilha e não pode virar NENHUM enquanto o personagem
-        // ainda está caminhando até o cais.
-        if quest_id == 718 && def.obj_kind == shared::quests::objective_kind::VIAGEM {
-            if let Some(p) = self.ilha.as_ref().and_then(|ilha| {
-                ilha.vila()
-                    .npcs
-                    .iter()
-                    .find(|n| n.papel == shared::construcao::Papel::Estaleiro)
-                    .map(|n| n.pos)
-            }) {
-                let eid = self
-                    .ecs
-                    .query::<(&NetId, &Position, &EntityKind)>()
-                    .iter()
-                    .filter(|(_, (_, _, k))| matches!(k, EntityKind::Npc(_)))
-                    .filter(|(_, (_, pos, _))| pos.0.distance_squared(p) < 4.0)
-                    .min_by(|a, b| {
-                        a.1.1
-                            .0
-                            .distance_squared(p)
-                            .total_cmp(&b.1.1.0.distance_squared(p))
-                    })
-                    .map(|(_, (n, _, _))| n.0.0 as u64);
-                if let Some(s) = self.sessions.get(&sid) {
-                    tracing::info!("quest_destino: quest=718 capitao=({:.1},{:.1}) eid={eid:?}", p.x, p.y);
-                    let _ = s.handle.to_client.send(ServerMessage::QuestDestino {
-                        quest_id,
-                        tipo: shared::quests::destino_tipo::NPC,
-                        pos: [p.x, p.y],
-                        raio: shared::INTERACT_RADIUS,
-                        npc_eid: eid,
-                    });
-                }
+            if def.obj_kind == shared::quests::objective_kind::VIAGEM
+                && self.destino_no_capitao(sid, quest_id)
+            {
                 return;
             }
         }
+
         let (cq, tem, nivel) = {
             let Some(s) = self.sessions.get(&sid) else {
                 return;
@@ -15571,6 +15726,12 @@ impl GameWorld {
                             .unwrap_or_default();
                         self.send_quest_log(sid);
                         self.send_quest_offer(sid, shared::quests::quest_source::NPC, g, nome);
+                        // O Capitao da' missao E leva de barco: a oferta nao
+                        // pode esconder a viagem (o cliente abre o menu quando
+                        // o dialogo fecha).
+                        if self.e_capitao(e) && !self.tutorial_mode && !self.dungeon_mode {
+                            self.abrir_menu_viagem(sid);
+                        }
                         return;
                     }
                 }
@@ -15699,6 +15860,11 @@ impl GameWorld {
                     .unwrap_or(false);
                 if ferreiro {
                     let _ = handle.to_client.send(ServerMessage::BlacksmithOpen);
+                }
+                // O Capitao do Porto leva a qualquer ilha que a historia ja'
+                // liberou — ir e voltar (`shared::viagem`).
+                if self.e_capitao(entity) && !self.tutorial_mode && !self.dungeon_mode {
+                    self.abrir_menu_viagem(sid);
                 }
             }
             Some((_, 8, _, _)) => {

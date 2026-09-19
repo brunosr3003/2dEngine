@@ -2496,6 +2496,25 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             dex: (0, 0),
             wis: (0, 0),
         },
+        // Pergaminho de Teleporte: Alquimista, em cobre (`shared::viagem`).
+        S {
+            id: item_id::PERGAMINHO_TELEPORTE as i32,
+            name: "Pergaminho de Teleporte",
+            sell: 25,
+            buy: Some(shared::viagem::PRECO_PERGAMINHO as i32),
+            ord: None,
+            stack: 999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         // Chaves lendarias (cor 5): so' chefe/raid de nivel 80+ (`shared::chaves`).
         S {
             id: item_id::SCALE_LENDARIA as i32,
@@ -2965,6 +2984,8 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         (5, item_id::CINTO),
         (6, item_id::PISTOLAS),
         (6, item_id::COLDRE),
+        // O Alquimista da vila (loja de pocoes) vende o pergaminho de teleporte.
+        (shared::vila::LOJA_DE_POCOES as i32, item_id::PERGAMINHO_TELEPORTE),
         // Recursos T1 vendaveis no Mercador — facilita early game.
         (1, item_id::WOOD_T1),
         (1, item_id::LEATHER_T1),

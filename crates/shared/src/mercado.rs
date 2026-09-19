@@ -90,6 +90,7 @@ pub fn categoria_do_item(item_id: u16, equipavel: bool) -> Categoria {
                 | it::XP_POTION
                 | it::FORTUNA_POTION
                 | it::SORTE_POTION
+                | it::PERGAMINHO_TELEPORTE
         )
     {
         Categoria::Consumivel

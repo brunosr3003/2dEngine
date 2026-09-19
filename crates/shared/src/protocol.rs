@@ -428,6 +428,18 @@ pub enum ClientMessage {
     Tutorial {
         acao: u16,
     },
+    /// Menu do Capitao do Porto: embarca pra ilha `ilha` (indice do
+    /// `ARQUIPELAGO`), se a historia ja' liberou e o servidor dela esta' no
+    /// ar (`shared::viagem`). Sucesso = `TrocarZona`.
+    Viajar {
+        ilha: u8,
+    },
+    /// Gasta 1 Pergaminho de Teleporte e salta pro chao firme mais perto de
+    /// (x, z), na ilha atual. Recusa (motivo no chat) nao gasta.
+    Teleportar {
+        x: f32,
+        z: f32,
+    },
 }
 
 /// Onde esta' a peca que a forja vai refinar.
@@ -1133,6 +1145,10 @@ pub enum ServerMessage {
         tentativas: u16,
         sucessos: u16,
         texto: String,
+    },
+    /// Clique no Capitao do Porto: o menu "Viajar", uma linha por ilha.
+    Viagem {
+        destinos: Vec<crate::viagem::Destino>,
     },
 }
 

@@ -136,9 +136,10 @@ const _: () = {
 };
 
 /// Pocao de recurso na loja do NPC se paga com COBRE, nao com ouro (pedido do
-/// dono, 17/09/2026). O preco e' o mesmo numero de `items.buy_price`.
+/// dono, 17/09/2026). O preco e' o mesmo numero de `items.buy_price`. O
+/// Pergaminho de Teleporte, vendido no mesmo balcao, tambem.
 pub fn compra_com_cobre(item_id: u16) -> bool {
-    cura_de(item_id).is_some()
+    cura_de(item_id).is_some() || item_id == crate::constants::item_id::PERGAMINHO_TELEPORTE
 }
 
 pub fn cura_de(item_id: u16) -> Option<Cura> {

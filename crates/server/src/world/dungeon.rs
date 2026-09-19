@@ -100,7 +100,7 @@ fn chave(sid: SessionId) -> mesa::Chave {
     h.finish()
 }
 
-fn tirar_item(inv: &mut [shared::InventorySlot], item: u16, mut qtd: u32) -> bool {
+pub(super) fn tirar_item(inv: &mut [shared::InventorySlot], item: u16, mut qtd: u32) -> bool {
     let tem: u32 = inv
         .iter()
         .filter(|s| s.qty > 0 && s.item_id == item)

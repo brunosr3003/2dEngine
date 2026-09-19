@@ -285,6 +285,24 @@ def frasco(s, cor, forma, marca=None):
         s.traco(linha((32, 46), (34, 52)), (80, 160, 90), 1.4, contorno=False, sombra=False)
 
 
+
+def pergaminho(s):
+    """Pergaminho de Teleporte: papel aberto entre dois rolos, runa azul."""
+    papel = (236, 214, 168)
+    s.halo(32, 32, 30, (110, 170, 255), 0.4)
+    s.peca(rrect(14, 14, 36, 36, 3), papel, contorno=2.2)
+    for y in (12, 48):
+        s.peca(rrect(9, y, 46, 8, 4), mul(papel, 0.78), contorno=2.0)
+        s.peca(circ(9, y + 4, 4.2), (150, 96, 56), contorno=1.6, sombra=False)
+        s.peca(circ(55, y + 4, 4.2), (150, 96, 56), contorno=1.6, sombra=False)
+    runa = (70, 130, 240)
+    s.traco(circ(32, 32, 9), runa, 2.2, contorno=False, sombra=False)
+    s.traco(linha((32, 21), (32, 43)), runa, 1.8, contorno=False, sombra=False)
+    s.traco(linha((23, 32), (41, 32)), runa, 1.8, contorno=False, sombra=False)
+    s.faisca(46, 22, 5, (210, 230, 255))
+    s.brilho(20, 22, 3, 6, 0.35, 20)
+
+
 # ─────────────────────────────── madeira, peixe, barco ───────────────────────────────
 
 
@@ -637,6 +655,8 @@ def catalogo():
         # Dungeons: Marcas da Tempestade (moeda de raio) e Selo da Tempestade.
         357: lambda s: (s.halo(32, 34, 26, (120, 180, 255), 0.35), moeda(s, 32, 34, 20, (96, 150, 230))),
         358: lambda s: (s.halo(32, 32, 30, (170, 120, 255), 0.5), moeda(s, 32, 32, 22, (140, 96, 220)), s.faisca(44, 18, 6, (230, 210, 255))),
+        # Pergaminho de Teleporte (Alquimista, em cobre).
+        359: pergaminho,
         60: lambda s: madeira(s, 1),
         61: lambda s: madeira(s, 2),
         62: lambda s: madeira(s, 3),

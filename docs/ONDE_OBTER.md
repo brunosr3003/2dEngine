@@ -62,7 +62,8 @@ chefe em `world/chefes.rs`). O bicho conta nas ilhas cuja faixa de nível o
 sorteia com chance ≥ 15% (mesma conta do spawn, `quests::chance_do_kind`);
 caranguejo, em toda ilha. Se a fonte não está na ilha atual, a linha diz
 "Ilha: Geleira" (ou "Ilhas: Ermo, Planalto") e fica **sem Ir**, com "Outra
-ilha": viajar entre ilhas só existe pela história, no Capitão do Porto.
+ilha": a viagem é pelo menu Viajar do Capitão do Porto (ilhas que a história
+já liberou).
 Coleta e vendedor não precisam: toda ilha tem árvore (o deserto, rala), as
 quatro cores de pedra (a cor sai da altura relativa ao pico) e o Alquimista
 na vila.

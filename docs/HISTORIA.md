@@ -50,6 +50,9 @@ Cada passo leva a um ponto-chave:
 - **Viagem** (`objective_kind::VIAGEM`): falar com o Capitão do Porto embarca
   pra ilha seguinte (reconecta no canal dela). Sem canal no ar: "Rota
   indisponível no momento", sem avançar. Conclui ao entrar no mundo da ilha.
+  O passo LIBERA a ilha: dali em diante o menu **Viajar** do Capitão (em toda
+  ilha) leva e traz de graça (`shared::viagem`, ver VILA_E_PORTO.md). O "Ir"
+  de um passo que acontece noutra ilha leva ao Capitão desta.
 
 Recompensas seguem a faixa: ouro, XP, poções (maiores a partir da Geleira),
 Poção de Experiência nas missões de área (caça e pedra), material na cor da

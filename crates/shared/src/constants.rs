@@ -584,6 +584,9 @@ pub mod item_id {
     pub const MARCAS_TEMPESTADE: u16 = 357;
     /// Selo da Tempestade: entrada do estagio 5 de conteudo 60+. So' craft.
     pub const SELO_TEMPESTADE: u16 = 358;
+    /// Pergaminho de Teleporte: salta pro destino marcado (mapa, "Ir" de
+    /// missao, NPC) dentro da ilha. Alquimista, em cobre (`shared::viagem`).
+    pub const PERGAMINHO_TELEPORTE: u16 = 359;
 
     /// As quatro CHAVES de craft (uma por receita), pelo id da cinza. So'
     /// caem de chefe e de dungeon/raid (`shared::chaves`).

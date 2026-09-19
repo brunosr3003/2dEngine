@@ -138,7 +138,7 @@ mod testes {
             }
         }
         v.extend(i::todas_as_chaves());
-        v.extend([i::MARCAS_TEMPESTADE, i::SELO_TEMPESTADE]);
+        v.extend([i::MARCAS_TEMPESTADE, i::SELO_TEMPESTADE, i::PERGAMINHO_TELEPORTE]);
         v.sort_unstable();
         v.dedup();
         v
