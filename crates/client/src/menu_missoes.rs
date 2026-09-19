@@ -13,8 +13,6 @@ use crate::hud_estilo as estilo;
 use crate::missoes::{progresso, pronta, Tem};
 
 const LARGURA: f32 = 540.0;
-const LINHA: f32 = 56.0;
-const TITULO_GRUPO: f32 = 30.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Estado {
@@ -234,40 +232,231 @@ pub fn lista_do_menu(log: &[QuestNet]) -> Vec<&'static QuestDef> {
     v
 }
 
-/// O grupo (cabecalho) de uma linha do menu.
-fn grupo(d: &QuestDef) -> String {
-    match historia::indice(d.id) {
-        Some(i) => format!("História · {}", historia::nome_do_capitulo(i)),
-        None => format!("{:?}", zona_da_missao(d.id)),
+// ─────────────────────────── linhas (quest lines) ───────────────────────────
+//
+// O menu mostra LINHAS, nao passos: a historia e cada cadeia de subquests
+// viram UMA entrada, com o passo em que o jogador esta' e "passo 2 de 5".
+// Listar passo por passo (a historia inteira, as 38 do Bosque) parecia um
+// monte de missoes soltas e nao dizia o que dava pra fazer agora (pedido do
+// dono em 19/09/2026). E as linhas vao em ABAS pelo estado do passo atual.
+
+/// Uma linha de missoes: a historia, ou uma cadeia (pelo `requires`).
+pub struct Linha {
+    pub nome: String,
+    pub passos: Vec<&'static QuestDef>,
+    pub historia: bool,
+}
+
+/// Nome de cada cadeia, pela primeira missao dela.
+pub fn nome_da_cadeia(raiz: u16) -> Option<&'static str> {
+    Some(match raiz {
+        501 => "Os primeiros dias",
+        511 => "Os chefes do Bosque",
+        516 => "Bestiário do Bosque",
+        523 => "A oficina",
+        528 => "Mãos na terra",
+        531 => "Porões e adegas",
+        534 => "Gente da vila",
+        _ => return None,
+    })
+}
+
+/// As linhas do menu: a historia primeiro, depois as cadeias, cada uma com
+/// os passos na ordem.
+pub fn linhas(log: &[QuestNet]) -> Vec<Linha> {
+    let lista = lista_do_menu(log);
+    let mut v = Vec::new();
+    let hist: Vec<&'static QuestDef> = lista
+        .iter()
+        .copied()
+        .filter(|d| historia::e_da_historia(d.id))
+        .collect();
+    if !hist.is_empty() {
+        v.push(Linha {
+            nome: "História".into(),
+            passos: hist,
+            historia: true,
+        });
+    }
+    // `todas` ja' vem por ilha, cadeia e profundidade: cadeia e' contigua.
+    let mut raiz_atual = None;
+    for d in todas() {
+        let r = raiz(d);
+        if raiz_atual != Some(r) {
+            raiz_atual = Some(r);
+            let nome = nome_da_cadeia(r)
+                .map(str::to_string)
+                .or_else(|| shared::quests::quest_by_id(r).map(|q| q.title.to_string()))
+                .unwrap_or_default();
+            v.push(Linha {
+                nome,
+                passos: Vec::new(),
+                historia: false,
+            });
+        }
+        if let Some(l) = v.last_mut() {
+            l.passos.push(d);
+        }
+    }
+    v
+}
+
+/// Onde a linha esta' pro jogador: o passo atual, o estado dele e quantos
+/// ja' foram.
+pub struct Resumo {
+    /// `None` = linha inteira concluida.
+    pub atual: Option<&'static QuestDef>,
+    pub estado: Estado,
+    pub feitos: usize,
+    pub total: usize,
+    /// Estado de cada passo, na ordem (pra lista aberta).
+    pub estados: Vec<Estado>,
+}
+
+pub fn resumo(l: &Linha, c: &Contexto) -> Resumo {
+    let estados: Vec<Estado> = l
+        .passos
+        .iter()
+        .map(|d| {
+            if l.historia {
+                estado_da_historia(d, c)
+            } else {
+                estado(d, c)
+            }
+        })
+        .collect();
+    let feitos = estados.iter().filter(|e| **e == Estado::Concluida).count();
+    // O passo atual: o que esta' em andamento (ou pronto); senao o que da'
+    // pra pegar; senao o primeiro travado. Ramos paralelos (o bestiario abre
+    // dois no fim) caem no primeiro.
+    let achar = |f: &dyn Fn(&Estado) -> bool| estados.iter().position(f);
+    let i = achar(&|e| matches!(e, Estado::EmAndamento { .. } | Estado::Pronta))
+        .or_else(|| achar(&|e| *e == Estado::Disponivel))
+        .or_else(|| achar(&|e| matches!(e, Estado::Bloqueada(_))));
+    Resumo {
+        atual: i.map(|i| l.passos[i]),
+        estado: i.map_or(Estado::Concluida, |i| estados[i].clone()),
+        feitos,
+        total: l.passos.len(),
+        estados,
     }
 }
+
+/// As abas do menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Aba {
+    EmAndamento,
+    Disponiveis,
+    Bloqueadas,
+    Concluidas,
+}
+
+impl Aba {
+    pub const TODAS: [Aba; 4] = [
+        Aba::EmAndamento,
+        Aba::Disponiveis,
+        Aba::Bloqueadas,
+        Aba::Concluidas,
+    ];
+
+    pub fn nome(self) -> &'static str {
+        match self {
+            Aba::EmAndamento => "Em andamento",
+            Aba::Disponiveis => "Disponíveis",
+            Aba::Bloqueadas => "Bloqueadas",
+            Aba::Concluidas => "Concluídas",
+        }
+    }
+}
+
+/// Em que aba a linha vai, pelo estado do passo atual.
+pub fn aba_de(r: &Resumo) -> Aba {
+    match r.estado {
+        Estado::EmAndamento { .. } | Estado::Pronta => Aba::EmAndamento,
+        Estado::Disponivel => Aba::Disponiveis,
+        Estado::Bloqueada(_) => Aba::Bloqueadas,
+        Estado::Concluida => Aba::Concluidas,
+    }
+}
+
+/// A frase do estado do passo atual, curta: o que fazer AGORA.
+pub fn frase(d: &QuestDef, e: &Estado) -> String {
+    match e {
+        Estado::Disponivel => match shared::quests::quem_da(d) {
+            Some(q) => format!("Disponível · pegar com: {q}"),
+            None => "Disponível".into(),
+        },
+        Estado::EmAndamento { feito, total } => format!("Em andamento · {feito}/{total}"),
+        Estado::Pronta => match shared::quests::quem_da(d) {
+            Some(q) => format!("Pronta · entregar: {q}"),
+            None => "Pronta pra entregar".into(),
+        },
+        Estado::Concluida => "Concluída".into(),
+        Estado::Bloqueada(m) => m.join(" · "),
+    }
+}
+
+fn cor_do_estado(e: &Estado) -> Color {
+    match e {
+        Estado::Disponivel => Color::new(1.0, 0.84, 0.2, 1.0),
+        Estado::EmAndamento { .. } => estilo::TEXTO,
+        Estado::Pronta => estilo::AUTO,
+        Estado::Concluida => estilo::SUAVE,
+        Estado::Bloqueada(_) => Color::new(0.85, 0.45, 0.40, 1.0),
+    }
+}
+
+/// O icone do estado, centrado em `c`.
+fn icone(c: Vec2, e: &Estado, s: f32) {
+    let cor = cor_do_estado(e);
+    match e {
+        Estado::Bloqueada(_) => cadeado(c, 9.0 * s, cor),
+        Estado::Concluida => {
+            draw_line(c.x - 7.0 * s, c.y, c.x - 2.0 * s, c.y + 6.0 * s, 3.0, cor);
+            draw_line(c.x - 2.0 * s, c.y + 6.0 * s, c.x + 8.0 * s, c.y - 7.0 * s, 3.0, cor);
+        }
+        Estado::Pronta => estilo::texto_centro(c.x, c.y + 10.0 * s, "?", 26, cor),
+        Estado::Disponivel => estilo::texto_centro(c.x, c.y + 10.0 * s, "!", 26, cor),
+        Estado::EmAndamento { .. } => draw_circle_lines(c.x, c.y, 8.0 * s, 2.0, cor),
+    }
+}
+
+const CARTAO: f32 = 76.0;
+const PASSO: f32 = 26.0;
 
 #[derive(Default)]
 pub struct MenuMissoes {
     pub aberto: bool,
     rolagem: crate::rolagem::Rolagem,
+    /// `None` = escolher na abertura (em andamento, ou disponiveis).
+    aba: Option<Aba>,
+    /// Linha aberta (mostra os passos), pelo nome.
+    expandida: Option<String>,
 }
 
 impl MenuMissoes {
     /// Abre pelo rodape do rastreador ou pelo Menu — nunca por tecla.
     pub fn abrir(&mut self) {
         self.aberto = true;
+        self.aba = None;
+        self.expandida = None;
         self.rolagem.zera();
     }
 
     pub fn alterna(&mut self) {
-        self.aberto = !self.aberto;
-        self.rolagem.zera();
+        let abrir = !self.aberto;
+        if abrir {
+            self.abrir();
+        } else {
+            self.aberto = false;
+        }
     }
 
     fn painel() -> Rect {
-        let h = (screen_height() - 140.0).clamp(240.0, 720.0);
-        Rect::new(
-            (screen_width() - LARGURA) * 0.5,
-            (screen_height() - h) * 0.5,
-            LARGURA,
-            h,
-        )
+        let f = estilo::fator_texto();
+        let w = (LARGURA * f).min(screen_width() - 24.0);
+        let h = (screen_height() - 100.0).clamp(240.0, 760.0 * f);
+        Rect::new((screen_width() - w) * 0.5, (screen_height() - h) * 0.5, w, h)
     }
 
     pub fn pega_mouse(&self) -> bool {
@@ -279,215 +468,137 @@ impl MenuMissoes {
         if !self.aberto {
             return None;
         }
+        let f = estilo::fator_texto();
         let p = Self::painel();
         estilo::painel(p);
-        estilo::texto(p.x + 18.0, p.y + 32.0, "Todas as missões", 22, estilo::OURO);
-        estilo::texto(
-            p.x + 18.0,
-            p.y + 52.0,
-            "Esc fecha · clique: ir (se liberada e nesta ilha)",
-            13,
-            estilo::SUAVE,
-        );
+        estilo::texto(p.x + 18.0, p.y + 32.0 * f, "Missões", 22, estilo::OURO);
         if crate::ui::botao(
-            Rect::new(p.x + p.w - 44.0, p.y + 10.0, 32.0, 28.0),
+            Rect::new(p.x + p.w - 44.0 * f, p.y + 10.0, 32.0 * f, 28.0 * f),
             "x",
             true,
         ) {
             self.aberto = false;
             return None;
         }
-        let area = Rect::new(p.x + 10.0, p.y + 64.0, p.w - 20.0, p.h - 74.0);
-        let mouse = Vec2::from(mouse_position());
-        let lista = lista_do_menu(c.log);
-        // Altura total pra limitar a rolagem.
-        // Grupo = capitulo da historia, ou ilha.
-        let mut grupos = 0;
-        let mut ultima: Option<String> = None;
-        for d in &lista {
-            let chave = grupo(d);
-            if Some(&chave) != ultima.as_ref() {
-                grupos += 1;
-                ultima = Some(chave);
+
+        // ── as linhas e as abas ──
+        let todas: Vec<(Linha, Resumo)> = linhas(c.log)
+            .into_iter()
+            .map(|l| {
+                let r = resumo(&l, c);
+                (l, r)
+            })
+            .collect();
+        let conta = |a: Aba| todas.iter().filter(|(_, r)| aba_de(r) == a).count();
+        let aba = *self.aba.get_or_insert(if conta(Aba::EmAndamento) > 0 {
+            Aba::EmAndamento
+        } else {
+            Aba::Disponiveis
+        });
+        let ya = p.y + 44.0 * f;
+        let wa = (p.w - 20.0 - 3.0 * 6.0) / 4.0;
+        for (k, a) in Aba::TODAS.iter().enumerate() {
+            let r = Rect::new(p.x + 10.0 + k as f32 * (wa + 6.0), ya, wa, 34.0 * f);
+            if *a == aba {
+                estilo::ret_arredondado(r, 6.0, estilo::alfa(estilo::OURO, 0.22));
+            }
+            let rot = format!("{} ({})", a.nome(), conta(*a));
+            if crate::ui::botao(r, &rot, true) && *a != aba {
+                self.aba = Some(*a);
+                self.expandida = None;
+                self.rolagem.zera();
             }
         }
-        let total = grupos as f32 * TITULO_GRUPO + lista.len() as f32 * LINHA;
-        // Toque na linha (ou no "Ir") vale no SOLTAR: a mesma lista rola
-        // arrastando, e o aperto nao sabe ainda qual dos dois vai ser.
-        let clique = self.rolagem.quadro(area, total, LINHA);
-        let arrastando = self.rolagem.arrastando();
-        let mut saida = None;
-        let mut dica: Option<Vec<String>> = None;
-        let mut y = area.y - self.rolagem.pos;
-        crate::rolagem::recortar(Some(area));
-        let mut ultima: Option<String> = None;
-        if lista.is_empty() {
-            estilo::texto(
-                area.x + 8.0,
-                area.y + 20.0,
-                "Nenhuma missão nesta versão.",
-                15,
-                estilo::SUAVE,
-            );
-        }
-        for d in &lista {
-            let z = zona_da_missao(d.id);
-            let chave = grupo(d);
-            if Some(&chave) != ultima.as_ref() {
-                ultima = Some(chave.clone());
-                if y + TITULO_GRUPO > area.y && y < area.y + area.h {
-                    let (t, destaque) = if historia::e_da_historia(d.id) {
-                        (chave, true)
-                    } else {
-                        let aqui = z == c.zona;
-                        let ilha = z.map_or_else(|| "?".into(), nome_da_zona);
-                        let t = format!("{ilha}{}", if aqui { " · você está aqui" } else { "" });
-                        (t, aqui)
-                    };
-                    estilo::texto(
-                        area.x + 6.0,
-                        y + 21.0,
-                        &t,
-                        15,
-                        if destaque {
-                            estilo::OURO
-                        } else {
-                            estilo::SUAVE
-                        },
-                    );
+
+        // ── a lista da aba ──
+        let area = Rect::new(p.x + 10.0, ya + 42.0 * f, p.w - 20.0, p.y + p.h - (ya + 42.0 * f) - 10.0);
+        let da_aba: Vec<&(Linha, Resumo)> = todas.iter().filter(|(_, r)| aba_de(r) == aba).collect();
+        let altura = |l: &Linha| {
+            CARTAO * f
+                + if self.expandida.as_deref() == Some(l.nome.as_str()) {
+                    l.passos.len() as f32 * PASSO * f + 8.0
+                } else {
+                    0.0
                 }
-                y += TITULO_GRUPO;
-            }
-            let linha = Rect::new(area.x, y, area.w - 12.0, LINHA - 4.0);
-            y += LINHA;
-            if linha.y + linha.h < area.y || linha.y > area.y + area.h {
+        };
+        let total: f32 = da_aba.iter().map(|(l, _)| altura(l) + 6.0).sum();
+        let clique = self.rolagem.quadro(area, total, CARTAO * f);
+        let arrastando = self.rolagem.arrastando();
+        let tocou = |r: Rect| clique.is_some_and(|q| r.contains(q) && area.contains(q));
+        let mouse = Vec2::from(mouse_position());
+        let mut saida = None;
+        let mut alternar: Option<String> = None;
+        if da_aba.is_empty() {
+            let vazio = match aba {
+                Aba::EmAndamento => "Nada em andamento. Veja as Disponíveis.",
+                Aba::Disponiveis => "Nada pra pegar agora.",
+                Aba::Bloqueadas => "Nenhuma linha travada.",
+                Aba::Concluidas => "Nenhuma linha concluída ainda.",
+            };
+            estilo::texto(area.x + 8.0, area.y + 26.0 * f, vazio, 15, estilo::SUAVE);
+        }
+        crate::rolagem::recortar(Some(area));
+        let mut y = area.y - self.rolagem.pos;
+        for (l, r) in da_aba {
+            let h = altura(l);
+            let card = Rect::new(area.x, y, area.w - 12.0, h);
+            y += h + 6.0;
+            if card.y + card.h < area.y || card.y > area.y + area.h {
                 continue;
             }
-            let e = if historia::e_da_historia(d.id) {
-                estado_da_historia(d, c)
-            } else {
-                estado(d, c)
-            };
-            let sobre = !arrastando && linha.contains(mouse) && area.contains(mouse);
-            let fundo = if sobre { 0.08 } else { 0.03 };
-            draw_rectangle(
-                linha.x,
-                linha.y,
-                linha.w,
-                linha.h,
-                Color::new(1.0, 1.0, 1.0, fundo),
-            );
-            let (rotulo, cor) = match &e {
-                // Diz COM QUEM pegar: as cadeias passam de NPC em NPC.
-                Estado::Disponivel => (
-                    match shared::quests::quem_da(d) {
-                        Some(quem) => format!("Disponível · pegar com: {quem}"),
-                        None => "Disponível".to_string(),
-                    },
-                    Color::new(1.0, 0.84, 0.2, 1.0),
+            let topo = Rect::new(card.x, card.y, card.w, CARTAO * f);
+            let sobre = !arrastando && topo.contains(mouse) && area.contains(mouse);
+            estilo::ret_arredondado(card, 8.0, Color::new(1.0, 1.0, 1.0, if sobre { 0.08 } else { 0.04 }));
+            icone(vec2(card.x + 24.0 * f, card.y + 28.0 * f), &r.estado, f);
+            let tx = card.x + 48.0 * f;
+            let largura = card.w - 48.0 * f - 90.0 * f;
+            estilo::texto_ajustado(&l.nome, tx, card.y + 22.0 * f, largura, 17, estilo::TEXTO);
+            let passo = match r.atual {
+                Some(d) if l.historia => format!(
+                    "{} · {}",
+                    historia::indice(d.id).map_or(String::new(), |i| historia::nome_do_capitulo(i).to_string()),
+                    d.title
                 ),
-                Estado::EmAndamento { feito, total } => {
-                    (format!("Em andamento · {feito}/{total}"), estilo::TEXTO)
-                }
-                Estado::Pronta => ("Pronta pra entregar".to_string(), estilo::AUTO),
-                Estado::Concluida => ("Concluída".to_string(), estilo::SUAVE),
-                Estado::Bloqueada(m) => (
-                    m.first().cloned().unwrap_or_default(),
-                    Color::new(0.85, 0.45, 0.40, 1.0),
-                ),
+                Some(d) => format!("Passo {} de {} · {}", r.feitos + 1, r.total, d.title),
+                None => format!("{} de {} passos", r.total, r.total),
             };
-            let icone = vec2(linha.x + 22.0, linha.y + linha.h * 0.5);
-            match &e {
-                Estado::Bloqueada(_) => cadeado(icone, 9.0, Color::new(0.85, 0.45, 0.40, 1.0)),
-                Estado::Concluida => {
-                    draw_line(
-                        icone.x - 7.0,
-                        icone.y,
-                        icone.x - 2.0,
-                        icone.y + 6.0,
-                        3.0,
-                        estilo::SUAVE,
-                    );
-                    draw_line(
-                        icone.x - 2.0,
-                        icone.y + 6.0,
-                        icone.x + 8.0,
-                        icone.y - 7.0,
-                        3.0,
-                        estilo::SUAVE,
-                    );
-                }
-                Estado::Pronta => {
-                    estilo::texto_centro(icone.x, icone.y + 10.0, "?", 26, estilo::AUTO)
-                }
-                Estado::Disponivel => estilo::texto_centro(icone.x, icone.y + 10.0, "!", 26, cor),
-                Estado::EmAndamento { .. } => {
-                    draw_circle_lines(icone.x, icone.y, 8.0, 2.0, estilo::TEXTO)
+            estilo::texto_ajustado(&passo, tx, card.y + 43.0 * f, largura, 13, estilo::SUAVE);
+            if let Some(d) = r.atual {
+                estilo::texto_ajustado(&frase(d, &r.estado), tx, card.y + 63.0 * f, card.w - 60.0 * f, 13, cor_do_estado(&r.estado));
+            }
+            // "Ir" no passo atual, quando da' pra fazer algo com ele.
+            let ir = Rect::new(card.x + card.w - 82.0 * f, card.y + 12.0 * f, 72.0 * f, 30.0 * f);
+            let clicavel = matches!(r.estado, Estado::Disponivel | Estado::EmAndamento { .. } | Estado::Pronta);
+            if let (true, Some(d)) = (clicavel, r.atual) {
+                let _ = crate::ui::botao(ir, "Ir", true);
+                if tocou(ir) {
+                    saida = Some(clique_de(d, &r.estado));
                 }
             }
-            let titulo_cor = if matches!(e, Estado::Bloqueada(_) | Estado::Concluida) {
-                estilo::SUAVE
-            } else {
-                estilo::TEXTO
-            };
-            estilo::texto_ajustado(
-                d.title,
-                linha.x + 44.0,
-                linha.y + 21.0,
-                linha.w - 140.0,
-                16,
-                titulo_cor,
-            );
-            estilo::texto_ajustado(
-                &rotulo,
-                linha.x + 44.0,
-                linha.y + 41.0,
-                linha.w - 140.0,
-                13,
-                cor,
-            );
-            let clicavel = matches!(
-                e,
-                Estado::Disponivel | Estado::EmAndamento { .. } | Estado::Pronta
-            );
-            let b = Rect::new(linha.x + linha.w - 82.0, linha.y + 12.0, 70.0, 28.0);
-            let tocou = |r: Rect| clique.is_some_and(|c| r.contains(c) && area.contains(c));
-            if clicavel {
-                // Desenha o botao; quem decide e' o toque no soltar.
-                let _ = crate::ui::botao(b, "Ir", true);
-                if tocou(b) {
-                    saida = Some(clique_de(d, &e));
-                }
-            } else if tocou(linha) {
-                saida = Some(clique_de(d, &e));
+            if tocou(topo) && !(clicavel && tocou(ir)) {
+                alternar = Some(l.nome.clone());
             }
-            if let Estado::Bloqueada(m) = &e {
-                if sobre {
-                    dica = Some(m.clone());
+            // Aberta: os passos, com o que ja' foi, o atual e o que falta.
+            if self.expandida.as_deref() == Some(l.nome.as_str()) {
+                let mut py = card.y + CARTAO * f;
+                for (d, e) in l.passos.iter().zip(&r.estados) {
+                    let atual = r.atual.is_some_and(|a| a.id == d.id);
+                    let cor = if atual { estilo::OURO } else { cor_do_estado(e) };
+                    icone(vec2(tx + 6.0 * f, py + PASSO * f * 0.5), e, f * 0.7);
+                    let t = if atual { format!("› {}", d.title) } else { d.title.to_string() };
+                    estilo::texto_ajustado(&t, tx + 22.0 * f, py + PASSO * f * 0.68, card.w - 90.0 * f, 13, cor);
+                    py += PASSO * f;
                 }
             }
         }
         crate::rolagem::recortar(None);
         self.rolagem.desenha(area, total);
-        if let Some(m) = dica {
-            let w = m
-                .iter()
-                .map(|s| estilo::medir(s, 14))
-                .fold(160.0f32, f32::max)
-                + 24.0;
-            let h = 30.0 + m.len() as f32 * 20.0;
-            let x = (mouse.x + 16.0).min(screen_width() - w - 8.0);
-            let y = (mouse.y + 12.0).min(screen_height() - h - 8.0);
-            estilo::painel(Rect::new(x, y, w, h));
-            cadeado(
-                vec2(x + 16.0, y + 17.0),
-                7.0,
-                Color::new(0.85, 0.45, 0.40, 1.0),
-            );
-            estilo::texto(x + 30.0, y + 22.0, "Pré-requisitos", 14, estilo::OURO);
-            for (i, s) in m.iter().enumerate() {
-                estilo::texto(x + 12.0, y + 42.0 + i as f32 * 20.0, s, 14, estilo::TEXTO);
-            }
+        if let Some(nome) = alternar {
+            self.expandida = if self.expandida.as_deref() == Some(nome.as_str()) {
+                None
+            } else {
+                Some(nome)
+            };
         }
         saida
     }
@@ -694,6 +805,50 @@ mod tests {
             ids.first().copied(),
             historia::id_do_passo(historia::total_escritos() + 2 * historia::PASSOS_POR_CRONICA)
         );
+    }
+
+    /// O menu mostra LINHAS: a historia e uma entrada por cadeia, com o passo
+    /// atual. Nada de 38 passos soltos.
+    #[test]
+    fn linhas_juntam_a_cadeia_e_acham_o_passo_atual() {
+        let ls = linhas(&[]);
+        assert!(ls[0].historia, "a historia vem primeiro");
+        let nomes: Vec<&str> = ls.iter().filter(|l| !l.historia).map(|l| l.nome.as_str()).collect();
+        for n in ["Os primeiros dias", "Os chefes do Bosque", "Bestiário do Bosque", "A oficina", "Mãos na terra", "Porões e adegas", "Gente da vila"] {
+            assert!(nomes.contains(&n), "{n} fora do menu: {nomes:?}");
+        }
+        let chefes = ls.iter().find(|l| l.nome == "Os chefes do Bosque").unwrap();
+        assert_eq!(chefes.passos.iter().map(|d| d.id).collect::<Vec<_>>(), vec![511, 512, 513, 514, 515]);
+
+        // Nivel 16, a 511 entregue: a linha dos chefes esta' no passo 2 e e'
+        // do Capitao do Porto.
+        let mut entregues = HashMap::new();
+        for id in 501..=507 {
+            entregues.insert(id, 0);
+        }
+        entregues.insert(511, 0);
+        let c = ctx(&[], &entregues, 16, Some("ilha_inicial"));
+        let r = resumo(chefes, &c);
+        assert_eq!(r.atual.map(|d| d.id), Some(512));
+        assert_eq!((r.feitos, r.total), (1, 5));
+        assert_eq!(aba_de(&r), Aba::Disponiveis);
+        assert!(frase(r.atual.unwrap(), &r.estado).contains("Capitao do Porto"));
+
+        // Em andamento vence disponivel; tudo feito vai pra Concluidas.
+        let ativa = QuestNet::from_def(quest_by_id(512).unwrap(), quest_status::ACTIVE, 0);
+        let log = [ativa];
+        let c2 = ctx(&log, &entregues, 16, Some("ilha_inicial"));
+        assert_eq!(aba_de(&resumo(chefes, &c2)), Aba::EmAndamento);
+        for id in 512..=515 {
+            entregues.insert(id, 0);
+        }
+        let c3 = ctx(&[], &entregues, 16, Some("ilha_inicial"));
+        let fim = resumo(chefes, &c3);
+        assert_eq!((aba_de(&fim), fim.atual.map(|d| d.id)), (Aba::Concluidas, None));
+        // Nivel baixo: a primeira da linha trava e ela vai pra Bloqueadas.
+        let nenhuma = HashMap::new();
+        let c4 = ctx(&[], &nenhuma, 1, Some("ilha_inicial"));
+        assert_eq!(aba_de(&resumo(chefes, &c4)), Aba::Bloqueadas);
     }
 
     /// Diaria de sistema que ainda nao existe: cadeado com "Em breve"; reset

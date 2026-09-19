@@ -47,8 +47,13 @@ cada passo se pega — e se entrega — com um **NPC diferente da vila**
   receber, isso vem ANTES da loja/forja/cofre dele (`tem_missao_com`). Sem
   nada, o clique segue normal.
 - **"!" e "?"** aparecem sobre cada NPC com missão, não só sobre o Mestre.
-- **Todas as missões:** a disponível diz "pegar com: X", e o **Ir** leva até
-  esse NPC (pela vila gerada, mesmo fora da área carregada) e fala com ele.
+- **Menu de missões por LINHAS e ABAS** (19/09/2026): a história e cada
+  cadeia são UMA entrada, com o passo atual ("Passo 2 de 5 · título") e o que
+  fazer agora ("pegar com: X", "Em andamento 1/3", "entregar: X", o motivo da
+  trava). As abas são Em andamento, Disponíveis, Bloqueadas e Concluídas, pelo
+  estado do passo atual, cada uma com a contagem. Tocar na linha abre os
+  passos dela; o **Ir** age no passo atual e, na disponível, leva até quem dá
+  (pela vila gerada, mesmo fora da área carregada) e fala com ele.
 - **Entrega:** a auto missão pronta vai até quem deu.
 
 | cadeia | quem dá, na ordem |
