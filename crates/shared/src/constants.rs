@@ -39,14 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-///
-/// **Parado em 116 de proposito em 20/09/2026.** O 117 foi subido por
-/// precaucao (o destino da missao 776 mudou de tipo, e cliente velho vai
-/// coletar madeira no lugar de Energia), mas a Apple recusou o build seguinte
-/// com "Upload limit reached… wait 1 day": subir o protocolo deixaria o dono
-/// sem conseguir entrar ate' amanha. O formato do fio nao mudou, entao 116
-/// conecta. Subir pra 117 no primeiro build que a Apple aceitar.
-pub const PROTOCOL_VERSION: u16 = 116;
+pub const PROTOCOL_VERSION: u16 = 117;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
