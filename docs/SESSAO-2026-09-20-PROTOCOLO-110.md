@@ -304,3 +304,20 @@ refeitos nesta sessão.
   9100 devolveram `101 Switching Protocols`.
 - Consulta somente leitura confirmou as 13 skills cadastradas (ids 445–457).
 - **É necessário atualizar o cliente para o protocolo 114.**
+
+## A borda da célula voltou a ter a cor do item
+
+- `Peca::grau()` lia a cor SÓ da `ItemInstance`. Só equipamento rolado tem
+  instância, então material colorido, chave e pet — que guardam a cor no
+  próprio `item_id` — apareciam todos com borda cinza. Na prática, quase toda
+  a bolsa ficava sem cor.
+- `item_id::cor_de_id` é a fonte nova: cobre os doze materiais coloridos (as
+  quatro cores contíguas), as chaves (incluindo a lendária, que ficou fora da
+  faixa) e os pets. A instância continua valendo para equipamento rolado.
+- Teste novo cobre as três famílias, as bordas da faixa e o equipamento.
+- O protocolo não muda: é conta de cliente.
+- Cheguei a escrever uma prévia da bolsa para conferir na tela, mas no
+  offscreen ela pega roda do mouse fantasma e rola sozinha, mostrando a grade
+  fora da posição. Preferi removê-la a deixar um harness que mente sobre o que
+  está na bolsa; a confirmação visual que serviu foi a das células de pet, com
+  as cinco cores distintas.

@@ -706,6 +706,27 @@ pub mod item_id {
         HIDE,
     ];
 
+    /// A COR (1 cinza .. 5 laranja) que o proprio id carrega, quando ele
+    /// carrega. Material colorido, chave e pet guardam a cor no id — so'
+    /// equipamento rolado guarda numa `ItemInstance`. Sem isso a bolsa
+    /// pintava de cinza um Aço Roxo e uma Escama Azul.
+    pub fn cor_de_id(id: u16) -> Option<u8> {
+        if let Some((_, grau)) = pet_de_id(id) {
+            return Some(grau);
+        }
+        // As lendarias ficaram fora da faixa contigua das chaves.
+        if matches!(
+            id,
+            SCALE_LENDARIA | CLAW_LENDARIA | HORN_LENDARIA | HIDE_LENDARIA
+        ) {
+            return Some(5);
+        }
+        MATERIAIS_COLORIDOS
+            .iter()
+            .find(|&&b| id >= b && id < b + 4)
+            .map(|&b| (id - b) as u8 + 1)
+    }
+
     /// O mesmo material, na cor pedida (1 cinza .. 4 roxo).
     pub const fn na_cor(base: u16, cor: u8) -> u16 {
         base + (if cor < 1 {

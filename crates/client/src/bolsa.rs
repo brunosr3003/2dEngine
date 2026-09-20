@@ -144,11 +144,16 @@ struct Peca {
 }
 
 impl Peca {
-    /// A cor (grau) — e' ela que pinta a borda. O pet nao tem instancia: o
-    /// grau dele mora no proprio item_id (docs/PETS.md).
+    /// A cor (grau) — e' ela que pinta a borda da celula.
+    ///
+    /// Duas fontes, nesta ordem: o proprio `item_id`, pra quem guarda a cor
+    /// nele (material colorido, chave e pet — `item_id::cor_de_id`), e a
+    /// `ItemInstance`, pra equipamento rolado. Antes so' a instancia contava,
+    /// e por isso TODO material aparecia com borda cinza, fosse ele verde,
+    /// azul ou roxo.
     fn grau(&self) -> u8 {
-        if let Some((_, grau)) = shared::pets::de_item(self.id) {
-            return grau;
+        if let Some(cor) = item_id::cor_de_id(self.id) {
+            return cor;
         }
         self.inst.map_or(1, |i| i.grau())
     }
@@ -1506,6 +1511,50 @@ mod testes {
     #[test]
     /// O pet nao tem instancia: a cor da borda e a aba tem que sair do
     /// proprio item_id, senao todo pet apareceria cinza e como material.
+    /// A borda da celula sai da cor do item. Quem guarda a cor no ID
+    /// (material colorido, chave, pet) tem que devolver a cor DELE; so'
+    /// equipamento rolado tira da instancia. Antes tudo sem instancia caia em
+    /// cinza — um Aço Roxo aparecia igual a um Aço Cinza.
+    #[test]
+    fn a_borda_sai_da_cor_do_item_e_nao_so_da_instancia() {
+        let peca = |id: u16| Peca {
+            id,
+            qty: 1,
+            inst: None,
+        };
+        for cor in 1..=4u8 {
+            assert_eq!(peca(item_id::na_cor(item_id::STEEL, cor)).grau(), cor);
+            assert_eq!(
+                peca(item_id::na_cor(item_id::ANIMA_STONE, cor)).grau(),
+                cor
+            );
+        }
+        // Chave: as quatro contiguas e a lendaria, que ficou fora da faixa.
+        for cor in 1..=5u8 {
+            assert_eq!(peca(item_id::chave_na_cor(item_id::HORN, cor)).grau(), cor);
+        }
+        assert_eq!(peca(item_id::HIDE_LENDARIA).grau(), 5);
+        for grau in 1..=shared::pets::GRAU_MAX {
+            assert_eq!(
+                peca(item_id::pet_no_grau(item_id::PET_URSO, grau)).grau(),
+                grau
+            );
+        }
+        // Quem nao guarda cor no id continua cinza sem instancia.
+        assert_eq!(peca(item_id::HEALTH_POTION).grau(), 1);
+        assert_eq!(peca(item_id::GOLD).grau(), 1);
+        // E equipamento rolado continua saindo da instancia.
+        let mut inst = shared::items::ItemInstance::vazia_de_grau(4);
+        inst.tier = 2;
+        let espada = Peca {
+            id: item_id::KATANA,
+            qty: 1,
+            inst: Some(inst),
+        };
+        assert_eq!(espada.grau(), 4);
+        assert_eq!(espada.tier(), 2);
+    }
+
     #[test]
     fn o_pet_pega_a_cor_do_grau_pelo_id() {
         for grau in 1..=shared::pets::GRAU_MAX {
@@ -1532,3 +1581,4 @@ mod testes {
         }
     }
 }
+
