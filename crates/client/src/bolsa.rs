@@ -168,6 +168,10 @@ enum Tipo {
     /// 0 vida, 1 mana, 2 vigor.
     Pocao(u8),
     Pergaminho,
+    /// Ração de Pet.
+    RacaoPet,
+    /// Skill de pet, ou o Removedor.
+    SkillPet,
     Ouro,
     Madeira,
     Material,
@@ -199,6 +203,8 @@ fn tipo(id: u16) -> Tipo {
         {
             Tipo::Pergaminho
         }
+        x if x == item_id::RACAO_DE_PET => Tipo::RacaoPet,
+        x if x == item_id::REMOVEDOR_DE_SKILL_PET || item_id::e_skill_de_pet(x) => Tipo::SkillPet,
         _ => Tipo::Material,
     }
 }
@@ -206,7 +212,7 @@ fn tipo(id: u16) -> Tipo {
 fn aba_de(t: Tipo) -> Aba {
     match t {
         Tipo::Arma(_) | Tipo::Slot(_) => Aba::Equip,
-        Tipo::Pocao(_) | Tipo::Pergaminho => Aba::Consumivel,
+        Tipo::Pocao(_) | Tipo::Pergaminho | Tipo::RacaoPet | Tipo::SkillPet => Aba::Consumivel,
         _ => Aba::Material,
     }
 }
@@ -287,7 +293,32 @@ pub(crate) fn poder(s: &PlayerStats) -> i32 {
 }
 
 fn poder_da_peca(p: &Peca) -> i32 {
+    if shared::pets::de_item(p.id).is_some() {
+        return poder_do_pet(p.id, &shared::pets::dados(p.inst.as_ref()));
+    }
     p.inst.map_or(0, |i| poder_da_instancia(&i))
+}
+
+/// O poder que um PET soma. Ele nao tem atributo de item: o que ele da' entra
+/// como ponto alocado (docs/PETS.md), entao a conta passa os pontos pela
+/// mesma `STAT_POINT_BONUS` do servidor e depois pela formula do `poder`.
+pub(crate) fn poder_do_pet(id: u16, d: &shared::items::PetData) -> i32 {
+    let (mut atk, mut def, mut hp, mut mp, mut dex, mut wis) = (0, 0, 0, 0, 0, 0);
+    let mut crit = 0.0f32;
+    for (i, pts) in shared::pets::pontos_por_stat(id, d).iter().enumerate() {
+        let Some(b) = shared::STAT_POINT_BONUS.get(i) else {
+            continue;
+        };
+        let p = *pts as i32;
+        atk += b.attack_damage * p;
+        def += b.defense * p;
+        hp += b.hp_max * p;
+        mp += b.mp_max * p;
+        dex += b.dex * p;
+        wis += b.wis * p;
+        crit += b.crit_chance * *pts as f32;
+    }
+    atk * 10 + def * 8 + hp + mp / 2 + (dex + wis) * 5 + (crit * 1000.0) as i32
 }
 
 /// O poder que uma peca soma, com o refino — a MESMA conta do servidor
@@ -491,13 +522,13 @@ impl Bolsa {
         );
         let bloqueio = self.sel.map(|_| cartao);
         let mut acao = self.desenha_equipamento(t.esq, vox, solido, bloqueio);
-        if let Some(a) = self.desenha_grade(t.dir, t.cel) {
+        if let Some(a) = self.desenha_grade(t.dir, t.cel, Some((vox, solido))) {
             acao = Some(a);
         }
         if let Some(sel) = self.sel {
             match self.peca(sel) {
                 Some(peca) => {
-                    if let Some(a) = self.desenha_cartao(cartao, sel, peca) {
+                    if let Some(a) = self.desenha_cartao(cartao, sel, peca, Some((vox, solido))) {
                         acao = Some(a);
                     }
                 }
@@ -565,7 +596,7 @@ impl Bolsa {
                 let c = Rect::new(x, y0 + k as f32 * passo, s, s);
                 let peca = self.peca(Sel::Equip(*slot));
                 let sel = self.sel == Some(Sel::Equip(*slot));
-                celula(c, peca, sel, Some(*slot));
+                celula(c, peca, sel, Some(*slot), Some((vox, solido)));
                 ui::texto_centro(c.x + s * 0.5, c.y + s + u(12.0), rotulo, 12, APAGADO);
                 let livre = bloqueio.map_or(true, |b| !b.contains(mouse()));
                 if livre && peca.is_some() && clicou_em(c) {
@@ -700,7 +731,12 @@ impl Bolsa {
 
     // ── a metade dos itens ──
 
-    fn desenha_grade(&mut self, r: Rect, cel: f32) -> Option<Acao> {
+    fn desenha_grade(
+        &mut self,
+        r: Rect,
+        cel: f32,
+        palco: Option<(&VoxCache, &Material)>,
+    ) -> Option<Acao> {
         let mut acao = None;
         // abas
         let aba_w = (r.w - u(3.0) * u(6.0)) / u(4.0);
@@ -752,7 +788,7 @@ impl Bolsa {
             }
             let peca = onde.and_then(|i| self.peca(Sel::Inv(i)));
             let sel = onde.is_some() && self.sel == onde.map(Sel::Inv);
-            celula(c, peca, sel, None);
+            celula(c, peca, sel, None, palco);
             if let (Some(i), Some(_)) = (onde, peca) {
                 if clique.is_some_and(|p| c.contains(p) && area.contains(p)) {
                     clicado = Some(Sel::Inv(*i));
@@ -815,7 +851,13 @@ impl Bolsa {
 
     // ── o cartao do item ──
 
-    fn desenha_cartao(&mut self, r: Rect, sel: Sel, peca: Peca) -> Option<Acao> {
+    fn desenha_cartao(
+        &mut self,
+        r: Rect,
+        sel: Sel,
+        peca: Peca,
+        palco: Option<(&VoxCache, &Material)>,
+    ) -> Option<Acao> {
         let cor = cor_do_tier(peca.grau());
         crate::hud_estilo::ret_arredondado(
             r,
@@ -826,7 +868,7 @@ impl Bolsa {
         crate::hud_estilo::borda_arredondada(r, crate::hud_estilo::RAIO, 1.0, com_alfa(cor, 0.55));
 
         let ic = Rect::new(r.x + u(16.0), r.y + u(18.0), u(64.0), u(64.0));
-        celula(ic, Some(peca), false, None);
+        celula(ic, Some(peca), false, None, palco);
         let tx = ic.x + ic.w + u(14.0);
         let nome = self.nome(peca.id);
         let titulo = if peca.refino() > 0 {
@@ -883,16 +925,29 @@ impl Bolsa {
         // O pet nao tem atributo de item: o que ele da' entra como PONTO
         // ALOCADO (docs/PETS.md), entao a ficha dele e' outra.
         if let Some((especie, grau)) = shared::pets::de_item(peca.id) {
+            let dados = shared::pets::dados(peca.inst.as_ref());
             ui::texto(r.x + u(20.0), y + u(4.0), especie.descricao, 15, APAGADO);
             y += u(26.0);
             let linhas = [
                 (
+                    "Poder",
+                    milhar(poder_do_pet(peca.id, &dados).max(0) as u64),
+                ),
+                (
+                    "Nível",
+                    format!(
+                        "{} / {}",
+                        shared::pets::nivel_de_xp(dados.xp),
+                        shared::pets::NIVEL_MAX
+                    ),
+                ),
+                (
                     "Velocidade",
-                    format!("{:.0}%", shared::pets::velocidade(grau) * 100.0),
+                    format!("{:.0}%", shared::pets::velocidade_com(grau, &dados) * 100.0),
                 ),
                 (
                     "Busca saque a",
-                    format!("{:.0} tiles", shared::pets::raio_de_busca(grau)),
+                    format!("{:.0} tiles", shared::pets::raio_com(grau, &dados)),
                 ),
             ];
             for (rot, val) in linhas {
@@ -903,7 +958,10 @@ impl Bolsa {
             }
             const SIGLAS: [&str; shared::STAT_COUNT] =
                 ["FOR", "DES", "INT", "VIT", "SPD", "RES"];
-            for (i, pts) in shared::pets::pontos_por_stat(peca.id).iter().enumerate() {
+            for (i, pts) in shared::pets::pontos_por_stat(peca.id, &dados)
+                .iter()
+                .enumerate()
+            {
                 if *pts == 0 {
                     continue;
                 }
@@ -1018,13 +1076,24 @@ impl Bolsa {
 /// Uma celula de item: fundo na cor do grau, o icone, o tier em romano no
 /// canto de cima, o refino do outro lado e a quantidade embaixo. `vazio` e' o
 /// slot de equipamento sem nada: aparece a silhueta apagada do que vai ali.
-fn celula(r: Rect, peca: Option<Peca>, selecionada: bool, vazio: Option<EquipSlot>) {
+fn celula(
+    r: Rect,
+    peca: Option<Peca>,
+    selecionada: bool,
+    vazio: Option<EquipSlot>,
+    // O palco 3D. `None` desenha a silhueta vetorial — e' o que acontece em
+    // teste e em qualquer chamada que nao tenha o cache de modelos a mao.
+    palco: Option<(&VoxCache, &Material)>,
+) {
     let sobre = r.contains(mouse());
     match peca {
         Some(p) => {
             let cor = cor_do_tier(p.grau());
             crate::hud_estilo::slot(r, Some(cor), sobre, false);
-            icone_do_item(r, p.id, 1.0);
+            // O icone do PET e' o modelo 3D dele (docs/PETS.md).
+            if !icone_de_pet(r, p.id, palco) {
+                icone_do_item(r, p.id, 1.0);
+            }
             let fonte = (r.w * 0.26).clamp(u(11.0), u(16.0)) as u16;
             if p.inst.is_some() {
                 ui::texto(
@@ -1096,6 +1165,21 @@ pub(crate) fn icone_do_item(r: Rect, id: u16, a: f32) {
     icone(r, tipo(id), id, a);
 }
 
+/// O icone de um PET e' o modelo 3D dele girando (docs/PETS.md): o bichinho
+/// na cor do grau. Sem palco (celula pequena demais, modelo ainda carregando,
+/// orcamento do quadro estourado) cai na silhueta vetorial.
+///
+/// Devolve `false` quando nao desenhou em 3D.
+fn icone_de_pet(r: Rect, id: u16, palco: Option<(&VoxCache, &Material)>) -> bool {
+    let Some((vox, solido)) = palco else {
+        return false;
+    };
+    // Um giro lento e preguicoso, com fase por item: dois pets na mesma tela
+    // nao ficam em espelho.
+    let giro = get_time() as f32 * 0.5 + id as f32 * 0.7;
+    crate::render3d::vitrine_pet(vox, id, r, giro, solido)
+}
+
 /// O icone de um item, desenhado por categoria. Nao ha arte de icone ainda:
 /// a silhueta diz o que a coisa e', e a cor do grau vem da celula.
 fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
@@ -1134,6 +1218,78 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
             linha(-0.5, 0.95, 0.35, -0.5, 0.18, couro);
             draw_circle(c.x + s * 0.45, c.y - s * 0.65, s * 0.32, k(0.45, 0.62, 1.0));
             draw_circle(c.x + s * 0.38, c.y - s * 0.72, s * 0.11, k(0.85, 0.92, 1.0));
+        }
+        Tipo::RacaoPet => {
+            // Tigela com ração: um monte de bolinhas dentro.
+            let tigela = k(0.55, 0.40, 0.28);
+            let racao = k(0.70, 0.45, 0.20);
+            for (dx, dy) in [(-0.3, -0.2), (0.05, -0.32), (0.35, -0.18), (0.0, -0.05)] {
+                draw_circle(c.x + dx * s, c.y + dy * s, s * 0.17, racao);
+            }
+            draw_triangle(
+                vec2(c.x - s * 0.85, c.y - s * 0.05),
+                vec2(c.x + s * 0.85, c.y - s * 0.05),
+                vec2(c.x, c.y + s * 0.85),
+                tigela,
+            );
+            draw_rectangle(c.x - s * 0.9, c.y - s * 0.2, s * 1.8, s * 0.2, tigela);
+        }
+        Tipo::SkillPet => {
+            // Pata com um brilho: skill e' o que o bichinho aprende. O
+            // Removedor sai em vermelho, com um corte por cima.
+            let removedor = id == item_id::REMOVEDOR_DE_SKILL_PET;
+            let cor = if removedor {
+                k(0.88, 0.35, 0.32)
+            } else {
+                k(0.55, 0.78, 1.0)
+            };
+            draw_circle(c.x, c.y + s * 0.3, s * 0.45, cor);
+            for dx in [-0.55, -0.18, 0.18, 0.55] {
+                draw_circle(c.x + dx * s, c.y - s * 0.4, s * 0.2, cor);
+            }
+            if removedor {
+                linha(-0.9, -0.9, 0.9, 0.9, 0.22, k(0.98, 0.9, 0.9));
+            } else {
+                draw_circle(c.x + s * 0.62, c.y - s * 0.75, s * 0.14, ouro);
+            }
+        }
+        Tipo::Slot(EquipSlot::Pet) => {
+            // Silhueta de bichinho de quatro patas, de lado: so' aparece
+            // quando o modelo 3D nao pode ser desenhado.
+            let cor = shared::pets::de_item(id)
+                .map(|(_, g)| com_alfa(cor_do_tier(g), a))
+                .unwrap_or(couro);
+            let escuro = Color::new(cor.r * 0.7, cor.g * 0.7, cor.b * 0.7, a);
+            // tronco
+            crate::hud_estilo::ret_arredondado(
+                Rect::new(c.x - s * 0.75, c.y - s * 0.15, s * 1.3, s * 0.7),
+                s * 0.3,
+                cor,
+            );
+            // cabeca
+            draw_circle(c.x + s * 0.78, c.y - s * 0.3, s * 0.42, cor);
+            // orelhas
+            draw_triangle(
+                vec2(c.x + s * 0.55, c.y - s * 0.6),
+                vec2(c.x + s * 0.72, c.y - s * 0.95),
+                vec2(c.x + s * 0.85, c.y - s * 0.58),
+                escuro,
+            );
+            draw_triangle(
+                vec2(c.x + s * 0.92, c.y - s * 0.62),
+                vec2(c.x + s * 1.08, c.y - s * 0.92),
+                vec2(c.x + s * 1.12, c.y - s * 0.5),
+                escuro,
+            );
+            // patas
+            for i in 0..3 {
+                let x = c.x - s * 0.6 + i as f32 * s * 0.55;
+                draw_rectangle(x, c.y + s * 0.45, s * 0.22, s * 0.45, escuro);
+            }
+            // rabo
+            linha(-0.75, -0.05, -1.15, -0.65, 0.18, escuro);
+            // olho
+            draw_circle(c.x + s * 0.92, c.y - s * 0.34, s * 0.09, k(0.08, 0.08, 0.1));
         }
         Tipo::Slot(EquipSlot::Offhand) => {
             // a secundaria do conjunto: manto, bainha ou coldre

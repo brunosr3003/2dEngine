@@ -424,6 +424,7 @@ pub async fn comprar_item(
             | Produto::PergaminhoTomo(_)
             | Produto::Energia(_)
             | Produto::PergaminhoPet(_)
+            | Produto::ItemDePet(_)
     ) {
         sqlx::query("INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
             .bind(conta)
@@ -455,6 +456,7 @@ pub async fn comprar_item(
                 | Produto::PergaminhoMontaria(_)
                 | Produto::PergaminhoTomo(_)
                 | Produto::PergaminhoPet(_)
+                | Produto::ItemDePet(_)
         ) {
             format!("{} entregue na bolsa!", produto.nome())
         } else if matches!(produto, Produto::Moeda(_) | Produto::Energia(_)) {

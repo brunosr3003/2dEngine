@@ -309,6 +309,55 @@ pub const PERGAMINHOS_PET: [PergaminhoPet; 1] = [PergaminhoPet {
     preco_tp: 250,
 }];
 
+/// Consumivel de PET vendido por TP (docs/PETS.md): Ração, Removedor e as
+/// cinco skills. Todos entregues na bolsa e NEGOCIAVEIS — quem farma compra
+/// no mercado por gold.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ItemDePet {
+    pub id: u16,
+    pub item_id: u16,
+    pub nome: &'static str,
+    pub descricao: &'static str,
+    pub preco_tp: u64,
+}
+
+/// Racao e removedor. As skills entram depois, do catalogo de `pets`.
+const FIXOS: [ItemDePet; 2] = [
+    ItemDePet {
+        id: 1,
+        item_id: crate::item_id::RACAO_DE_PET,
+        nome: "Ração de Pet",
+        descricao: "Alimenta o pet por 2 h. Com fome ele não ganha experiência.",
+        preco_tp: 30,
+    },
+    ItemDePet {
+        id: 2,
+        item_id: crate::item_id::REMOVEDOR_DE_SKILL_PET,
+        nome: "Removedor de Skill",
+        descricao: "Tira todas as skills do pet e devolve os slots.",
+        preco_tp: 200,
+    },
+];
+
+/// A lista inteira: os dois fixos e uma linha por skill, com id seguindo.
+pub fn itens_de_pet() -> Vec<ItemDePet> {
+    let mut v = FIXOS.to_vec();
+    for (i, sk) in crate::pets::SKILLS.iter().enumerate() {
+        v.push(ItemDePet {
+            id: FIXOS.len() as u16 + 1 + i as u16,
+            item_id: sk.item_id,
+            nome: sk.nome,
+            descricao: sk.descricao,
+            preco_tp: sk.preco_tp,
+        });
+    }
+    v
+}
+
+pub fn item_de_pet(id: u16) -> Option<ItemDePet> {
+    itens_de_pet().into_iter().find(|x| x.id == id)
+}
+
 pub fn pergaminho_pet(id: u16) -> Option<&'static PergaminhoPet> {
     PERGAMINHOS_PET.iter().find(|p| p.id == id)
 }
@@ -489,6 +538,8 @@ pub enum Produto {
     Energia(u16),
     /// Pergaminho repetível; sorteia espécie e grau de um pet coletor.
     PergaminhoPet(u16),
+    /// Ração, removedor ou skill de pet (`itens_de_pet`).
+    ItemDePet(u16),
 }
 
 impl Produto {
@@ -504,6 +555,7 @@ impl Produto {
             Produto::PergaminhoTomo(i) => format!("pergaminho-tomo:{i}"),
             Produto::Energia(i) => format!("energia:{i}"),
             Produto::PergaminhoPet(i) => format!("pergaminho-pet:{i}"),
+            Produto::ItemDePet(i) => format!("item-pet:{i}"),
         }
     }
 
@@ -520,6 +572,7 @@ impl Produto {
             "pergaminho-tomo" => Produto::PergaminhoTomo(id),
             "energia" => Produto::Energia(id),
             "pergaminho-pet" => Produto::PergaminhoPet(id),
+            "item-pet" => Produto::ItemDePet(id),
             _ => return None,
         };
         p.existe().then_some(p)
@@ -536,6 +589,7 @@ impl Produto {
             Produto::PergaminhoTomo(i) => pergaminho_tomo(i).is_some(),
             Produto::Energia(i) => energia(i).is_some(),
             Produto::PergaminhoPet(i) => pergaminho_pet(i).is_some(),
+            Produto::ItemDePet(i) => item_de_pet(i).is_some(),
         }
     }
 
@@ -558,6 +612,7 @@ impl Produto {
             Produto::PergaminhoPet(i) => {
                 pergaminho_pet(i).map_or("?".into(), |p| p.nome.to_string())
             }
+            Produto::ItemDePet(i) => item_de_pet(i).map_or("?".into(), |p| p.nome.to_string()),
         }
     }
 
@@ -573,6 +628,7 @@ impl Produto {
             Produto::PergaminhoTomo(i) => pergaminho_tomo(i).map(|p| p.preco_tp),
             Produto::Energia(i) => energia(i).map(|e| e.preco_tp),
             Produto::PergaminhoPet(i) => pergaminho_pet(i).map(|p| p.preco_tp),
+            Produto::ItemDePet(i) => item_de_pet(i).map(|p| p.preco_tp),
         }
     }
 }
@@ -627,7 +683,8 @@ impl Posses {
             | Produto::PergaminhoMontaria(_)
             | Produto::PergaminhoTomo(_)
             | Produto::Energia(_)
-            | Produto::PergaminhoPet(_) => false,
+            | Produto::PergaminhoPet(_)
+            | Produto::ItemDePet(_) => false,
         }
     }
 

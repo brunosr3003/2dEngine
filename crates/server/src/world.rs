@@ -1936,9 +1936,74 @@ impl Session {
         });
     }
 
+    /// A fatia da XP que vai pro PET equipado (docs/PETS.md). So' entra se
+    /// ele estiver alimentado — Ração e' o que liga a torneira. Devolve o
+    /// nivel novo quando o pet sobe, pra quem chamou avisar.
+    fn xp_pro_pet(&mut self, amount: u64) -> Option<u8> {
+        let pet = self.equipment.pet?;
+        shared::pets::de_item(pet)?;
+        let agora = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        let mut d = shared::pets::dados(self.equipment.pet_inst.as_ref());
+        if !shared::pets::alimentado(&d, agora) {
+            return None;
+        }
+        let antes = shared::pets::nivel_de_xp(d.xp);
+        if antes >= shared::pets::NIVEL_MAX {
+            return None;
+        }
+        let ganho = (amount as f32 * shared::pets::fatia_da_xp(&d)).round() as u64;
+        if ganho == 0 {
+            return None;
+        }
+        d.xp = d.xp.saturating_add(ganho);
+        self.guarda_pet(d);
+        let agora_nivel = shared::pets::nivel_de_xp(d.xp);
+        (agora_nivel > antes).then_some(agora_nivel)
+    }
+
+    /// Escreve o estado do pet na instancia do slot, criando a instancia se
+    /// ela ainda nao existir (pet de antes do nivel), e recalcula os stats —
+    /// nivel e skill mexem no que o pet da'.
+    fn guarda_pet(&mut self, d: shared::items::PetData) {
+        let Some(pet) = self.equipment.pet else {
+            return;
+        };
+        let mut inst = self.equipment.pet_inst.unwrap_or_else(|| {
+            let grau = shared::pets::de_item(pet).map_or(1, |(_, g)| g);
+            shared::items::ItemInstance::vazia_de_grau(grau)
+        });
+        inst.pet = Some(d);
+        self.equipment.set(shared::EquipSlot::Pet, Some(pet), Some(inst));
+        self.stats = effective_stats(
+            &self.equipment,
+            &self.allocated_points,
+            &self.proficiencies,
+            self.xp,
+        );
+        self.stats_dirty = true;
+    }
+
     /// Soma XP SEM o bonus da pocao (a devolucao do XP da morte nao pode
     /// render 30% a mais) e processa o level-up.
     fn somar_xp(&mut self, amount: u64) {
+        if let Some(n) = self.xp_pro_pet(amount) {
+            let nome = self
+                .equipment
+                .pet
+                .and_then(shared::pets::nome_do_item)
+                .unwrap_or_else(|| "Seu pet".into());
+            let aviso = if shared::pets::slots_de_skill(n) > shared::pets::slots_de_skill(n - 1) {
+                format!("[Pet] {nome} chegou ao nível {n} — um slot de skill abriu!")
+            } else {
+                format!("[Pet] {nome} chegou ao nível {n}.")
+            };
+            let _ = self.handle.to_client.send(ServerMessage::Chat {
+                from: "System".to_string(),
+                text: aviso,
+            });
+        }
         self.xp = self.xp.saturating_add(amount);
         let new_level = shared::level_of_xp_with_mult(self.xp, crate::economy::xp_multiplier());
         if new_level > self.last_level {
@@ -17355,6 +17420,83 @@ impl GameWorld {
         }
     }
 
+    /// Ração, skill e removedor: agem no pet EQUIPADO. Consome o item so'
+    /// quando o efeito acontece — recusa nao cobra nada.
+    fn handle_item_de_pet(&mut self, sid: SessionId, slot_idx: usize, item_id: u16) {
+        let agora = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.logged_in) else {
+            return;
+        };
+        let Some(pet) = s.equipment.pet else {
+            self.send_chat_to(sid, "[Pet] Equipe um pet antes.");
+            return;
+        };
+        let mut d = shared::pets::dados(s.equipment.pet_inst.as_ref());
+        let nivel = shared::pets::nivel_de_xp(d.xp);
+        let nome = shared::pets::nome_do_item(pet).unwrap_or_else(|| "o pet".into());
+
+        let aviso = if item_id == shared::item_id::RACAO_DE_PET {
+            // Alimentar acumula: usar duas racoes dobra o tempo, nao o perde.
+            let base = d.alimentado_ate.max(agora);
+            d.alimentado_ate = base + shared::pets::duracao_da_racao(&d);
+            format!(
+                "[Pet] {nome} comeu. Alimentado por mais {} min.",
+                shared::pets::duracao_da_racao(&d) / 60
+            )
+        } else if item_id == shared::item_id::REMOVEDOR_DE_SKILL_PET {
+            if d.skills.iter().all(|x| *x == 0) {
+                self.send_chat_to(sid, "[Pet] Esse pet não tem skill nenhuma.");
+                return;
+            }
+            d.skills = [0; 3];
+            format!("[Pet] As skills de {nome} foram removidas.")
+        } else {
+            // Skill: precisa de slot ABERTO pelo nivel e ainda vazio.
+            let Some(skill) = shared::pets::skill(item_id) else {
+                return;
+            };
+            let abertos = shared::pets::slots_de_skill(nivel);
+            if abertos == 0 {
+                self.send_chat_to(
+                    sid,
+                    &format!(
+                        "[Pet] O primeiro slot de skill abre no nível {}.",
+                        shared::pets::nivel_do_slot(0)
+                    ),
+                );
+                return;
+            }
+            if d.skills[..abertos].contains(&item_id) {
+                self.send_chat_to(sid, &format!("[Pet] {nome} já tem {}.", skill.nome));
+                return;
+            }
+            let Some(livre) = (0..abertos).find(|i| d.skills[*i] == 0) else {
+                self.send_chat_to(
+                    sid,
+                    "[Pet] Todos os slots abertos estão ocupados. Use o Removedor.",
+                );
+                return;
+            };
+            d.skills[livre] = item_id;
+            format!("[Pet] {nome} aprendeu {}.", skill.nome)
+        };
+
+        // Cobra o item so' agora, com o efeito garantido.
+        let Some(slot) = s.inventory.get_mut(slot_idx).filter(|x| x.qty > 0) else {
+            return;
+        };
+        slot.qty -= 1;
+        if slot.qty == 0 {
+            *slot = shared::InventorySlot::default();
+        }
+        s.inventory_dirty = true;
+        s.guarda_pet(d);
+        self.save_pending = true;
+        self.send_chat_to(sid, &aviso);
+    }
+
     fn handle_use_item(&mut self, sid: SessionId, slot_idx: usize) {
         let pergaminho = self
             .sessions
@@ -17372,6 +17514,22 @@ impl GameWorld {
             });
         if pergaminho {
             self.handle_abrir_pergaminhos(sid, slot_idx, 1);
+            return;
+        }
+        // Ração, skill de pet e removedor agem no PET EQUIPADO, nao no corpo
+        // de quem usou — saem do caminho comum antes dele (docs/PETS.md).
+        let do_pet = self
+            .sessions
+            .get(&sid)
+            .and_then(|s| s.inventory.get(slot_idx))
+            .map(|s| s.item_id)
+            .filter(|id| {
+                *id == shared::item_id::RACAO_DE_PET
+                    || *id == shared::item_id::REMOVEDOR_DE_SKILL_PET
+                    || shared::item_id::e_skill_de_pet(*id)
+            });
+        if let Some(id) = do_pet {
+            self.handle_item_de_pet(sid, slot_idx, id);
             return;
         }
         // Extrai estado + identifica a acao fora do borrow mutavel do ECS.
@@ -19501,7 +19659,8 @@ pub(crate) fn effective_stats(
     // em quem usa arma magica, igual ao ponto que o jogador aloca na mao.
     let mut allocated = *allocated;
     if let Some(pet) = equip.pet {
-        for (i, p) in shared::pets::pontos_por_stat(pet).iter().enumerate() {
+        let d = shared::pets::dados(equip.pet_inst.as_ref());
+        for (i, p) in shared::pets::pontos_por_stat(pet, &d).iter().enumerate() {
             allocated[i] = allocated[i].saturating_add(*p);
         }
     }

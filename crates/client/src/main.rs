@@ -22,6 +22,7 @@ mod efeitos;
 mod entrada;
 mod evolucao_skills;
 mod ficha_ui;
+mod pets_ui;
 mod forja_ui;
 mod ganhos;
 mod gpu_estatica;
@@ -182,6 +183,8 @@ struct Jogo {
     ficha: hud::Ficha,
     /// Ficha completa e distribuição dos seis atributos.
     ficha_ui: ficha_ui::FichaUi,
+    /// A aba Pets: o bichinho equipado, nivel, fome e skills (docs/PETS.md).
+    pets_ui: pets_ui::PetsUi,
     habilidades: habilidades::Habilidades,
     evolucao_skills: evolucao_skills::EvolucaoSkills,
     invocacao: invocacao_ui::InvocacaoUi,
@@ -444,6 +447,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_PETS").is_ok() {
+        pets_ui::previa(&vox, &render3d::material_solido()).await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_FICHA").is_ok() {
         ficha_ui::previa().await;
         return;
@@ -508,6 +516,7 @@ async fn main() {
         bolsa: bolsa::Bolsa::default(),
         ficha: hud::Ficha::default(),
         ficha_ui: ficha_ui::FichaUi::default(),
+        pets_ui: pets_ui::PetsUi::default(),
         habilidades: habilidades::Habilidades::default(),
         evolucao_skills: evolucao_skills::EvolucaoSkills::default(),
         invocacao: invocacao_ui::InvocacaoUi::default(),
@@ -2017,6 +2026,7 @@ impl Jogo {
             || self.forja.aberto()
             || self.evolucao_skills.aberto
             || self.ficha_ui.aberta
+            || self.pets_ui.aberta
             || self.invocacao.aberta()
             || self.menu_missoes.aberto
             || self.diarias.aberto
@@ -2300,6 +2310,7 @@ impl Jogo {
         self.forja.fechar();
         self.evolucao_skills.fechar();
         self.ficha_ui.fechar();
+        self.pets_ui.fechar();
         self.menu_missoes.aberto = false;
         self.diarias.fechar();
         self.lojas.fechar();
@@ -2370,6 +2381,7 @@ impl Jogo {
         match item {
             Item::Bolsa => self.bolsa.abrir(),
             Item::Ficha => self.ficha_ui.abrir(),
+            Item::Pets => self.pets_ui.abrir(),
             Item::Missoes => {
                 self.missoes.fecha();
                 self.missoes.alterna_diario();
@@ -2483,6 +2495,9 @@ impl Jogo {
             true
         } else if self.ficha_ui.aberta {
             self.ficha_ui.fechar();
+            true
+        } else if self.pets_ui.aberta {
+            self.pets_ui.fechar();
             true
         } else if self.invocacao.aberta() {
             self.invocacao.fechar();
@@ -3643,6 +3658,7 @@ impl Jogo {
         self.bolsa = bolsa::Bolsa::default();
         self.ficha = hud::Ficha::default();
         self.ficha_ui = ficha_ui::FichaUi::default();
+        self.pets_ui = pets_ui::PetsUi::default();
         self.invocacao = invocacao_ui::InvocacaoUi::default();
         self.teclado.limpa();
         // Volta pro login e nao pra escolha de servidor: o canal continua
@@ -4581,6 +4597,25 @@ impl Jogo {
                 self.bolsa.stats.as_ref(),
                 self.bolsa.energia,
             );
+            if let Some(pedido) = pedido {
+                self.envia(pedido);
+            }
+        }
+        if self.pets_ui.aberta && !onde {
+            let agora_unix = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs() as i64);
+            // `desenha` so' le' a bolsa; o emprestimo do palco sai antes do
+            // `envia`, que precisa do self inteiro.
+            let pedido = {
+                let equip = self.bolsa.equip;
+                let slots = std::mem::take(&mut self.bolsa.slots);
+                let p = self
+                    .pets_ui
+                    .desenha(&self.vox, &self.solido, &equip, &slots, agora_unix);
+                self.bolsa.slots = slots;
+                p
+            };
             if let Some(pedido) = pedido {
                 self.envia(pedido);
             }

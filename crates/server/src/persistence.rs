@@ -2830,6 +2830,47 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             .execute(pool)
             .await?;
     }
+    // Ração, removedor e as cinco skills de pet (docs/PETS.md). Sao itens de
+    // loja NEGOCIAVEIS: quem farma compra no mercado por gold.
+    {
+        let mut consumiveis: Vec<(i32, String, i32)> = vec![
+            (
+                item_id::RACAO_DE_PET as i32,
+                "Ração de Pet".to_string(),
+                50,
+            ),
+            (
+                item_id::REMOVEDOR_DE_SKILL_PET as i32,
+                "Removedor de Skill de Pet".to_string(),
+                200,
+            ),
+        ];
+        for sk in shared::pets::SKILLS {
+            consumiveis.push((sk.item_id as i32, format!("Skill: {}", sk.nome), 400));
+        }
+        for (id, nome, venda) in consumiveis {
+            sqlx::query(
+                "INSERT INTO items \
+                  (id, name, sell_price, buy_price, shop_order, stack_max, \
+                   equip_slot, item_level, icon_col, icon_row) \
+                 VALUES ($1,$2,$3,NULL,NULL,99,NULL,1,-1,-1) \
+                 ON CONFLICT (id) DO UPDATE SET \
+                   stack_max = EXCLUDED.stack_max, \
+                   sell_price = EXCLUDED.sell_price",
+            )
+            .bind(id)
+            .bind(&nome)
+            .bind(venda)
+            .execute(pool)
+            .await?;
+            sqlx::query("UPDATE items SET name = $1 WHERE id = $2")
+                .bind(&nome)
+                .bind(id)
+                .execute(pool)
+                .await?;
+        }
+    }
+
     // O pergaminho de pet cai na recompensa diaria, e o calendario nao
     // entrega item negociavel (docs/CALENDARIO.md): ele nasce VINCULADO. O
     // que sai dele — o pet — e' negociavel normalmente, que e' o ponto.

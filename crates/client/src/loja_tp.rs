@@ -22,12 +22,13 @@ use crate::vox::VoxCache;
 /// A aba dos pacotes de TP. Nomeada porque varios caminhos ("+" do saldo,
 /// saldo insuficiente) mandam pra ela — com indice na mao, inserir uma aba no
 /// meio levava o jogador pro lugar errado.
-const ABA_TP: usize = 4;
+const ABA_TP: usize = 5;
 
-const ABAS: [(&str, &str); 5] = [
+const ABAS: [(&str, &str); 6] = [
     ("Montarias", "montaria"),
     ("Skins", "paleta"),
     ("Materiais", "craft"),
+    ("Pets", "montaria"),
     ("Moedas", "bolsa"),
     ("Tempest Points", ""),
 ];
@@ -741,7 +742,8 @@ impl LojaTp {
         match self.aba {
             0 | 1 => self.vitrine(area, &estado, vox, solido, k, m, livre, modal, dt, agora),
             2 => self.materiais(area, k, m, livre, modal, agora),
-            3 => self.moedas_e_energia(area, k, m, livre, modal, agora),
+            3 => self.aba_pets(area, k, m, livre, modal, agora),
+            4 => self.moedas_e_energia(area, k, m, livre, modal, agora),
             _ => self.pacotes(area, k, m, livre, modal, agora),
         }
 
@@ -1305,11 +1307,9 @@ impl LojaTp {
     fn materiais(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
         let bau = &cat::BAUS_CRAFT[0];
         let vao = 12.0 * k;
-        let w = ((area.w - vao * 2.0) / 3.0).min(390.0 * k);
-        let total = w * 3.0 + vao * 2.0;
+        let w = ((area.w - vao) / 2.0).min(390.0 * k);
+        let total = w * 2.0 + vao;
         let x0 = area.center().x - total * 0.5;
-        let coluna = |i: f32| Rect::new(x0 + (w + vao) * i, area.y + 8.0 * k, w, area.h - 16.0 * k);
-        self.pergaminho_de_pet(coluna(2.0), k, m, livre, modal, agora);
         let r = Rect::new(x0, area.y + 8.0 * k, w, area.h - 16.0 * k);
         let sobre = !modal && r.contains(m);
         estilo::sombra(r, 22.0 * k, 1.0);
@@ -1464,6 +1464,71 @@ impl LojaTp {
         );
         if !self.em_voo && livre && bt.contains(m) {
             self.confirma = Some(Confirma::Item(Produto::PergaminhoTomo(tomo.id)));
+        }
+    }
+
+    /// Aba Pets: o pergaminho de invocação num cartao grande e, ao lado, a
+    /// Ração, o Removedor e as cinco skills em lista. Tudo negociavel — quem
+    /// farma compra no mercado por gold (docs/PETS.md).
+    fn aba_pets(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
+        let vao = 12.0 * k;
+        let w = ((area.w - vao * 3.0) / 4.0).min(390.0 * k);
+        let total = w * 4.0 + vao * 3.0;
+        let x0 = area.center().x - total * 0.5;
+        let alto = area.h - 16.0 * k;
+        self.pergaminho_de_pet(
+            Rect::new(x0, area.y + 8.0 * k, w, alto),
+            k,
+            m,
+            livre,
+            modal,
+            agora,
+        );
+        // Tres colunas de tres linhas cobrem os sete consumiveis com folga.
+        let itens = cat::itens_de_pet();
+        let linhas = 3.0;
+        let h = (alto - vao * (linhas - 1.0)) / linhas;
+        for (n, item) in itens.iter().enumerate() {
+            let col = n / linhas as usize;
+            let lin = n % linhas as usize;
+            let r = Rect::new(
+                x0 + (w + vao) * (col as f32 + 1.0),
+                area.y + 8.0 * k + lin as f32 * (h + vao),
+                w,
+                h,
+            );
+            let racao = item.item_id == shared::item_id::RACAO_DE_PET;
+            self.cartao_de_lista(
+                r,
+                k,
+                m,
+                livre,
+                modal,
+                agora,
+                if racao {
+                    (
+                        Color::new(0.30, 0.22, 0.10, 0.98),
+                        Color::new(0.09, 0.06, 0.04, 0.98),
+                    )
+                } else {
+                    (
+                        Color::new(0.14, 0.20, 0.34, 0.98),
+                        Color::new(0.045, 0.055, 0.13, 0.98),
+                    )
+                },
+                item.nome,
+                item.descricao,
+                None,
+                item.preco_tp,
+                Produto::ItemDePet(item.id),
+                |c, lado| {
+                    crate::bolsa::icone_do_item(
+                        Rect::new(c.x - lado * 0.5, c.y - lado * 0.5, lado, lado),
+                        item.item_id,
+                        1.0,
+                    );
+                },
+            );
         }
     }
 
@@ -2001,7 +2066,8 @@ impl LojaTp {
                     | Produto::PergaminhoMontaria(_)
                     | Produto::PergaminhoTomo(_)
                     | Produto::Energia(_)
-                    | Produto::PergaminhoPet(_) => 0,
+                    | Produto::PergaminhoPet(_)
+                    | Produto::ItemDePet(_) => 0,
                 };
                 if matches!(
                     pr,
@@ -2024,6 +2090,16 @@ impl LojaTp {
                         prev.center(),
                         prev.w * 0.58,
                     );
+                } else if let Produto::ItemDePet(id) = pr {
+                    brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
+                    if let Some(x) = cat::item_de_pet(id) {
+                        let l = prev.w * 0.5;
+                        crate::bolsa::icone_do_item(
+                            Rect::new(prev.center().x - l * 0.5, prev.center().y - l * 0.5, l, l),
+                            x.item_id,
+                            1.0,
+                        );
+                    }
                 } else if let Produto::Energia(_) = pr {
                     brilho_radial(
                         prev.center(),
@@ -2083,6 +2159,9 @@ impl LojaTp {
                     }),
                     Produto::PergaminhoPet(_) => {
                         "Pergaminho · 1 pet coletor · espécie e grau sorteados".to_string()
+                    }
+                    Produto::ItemDePet(id) => {
+                        cat::item_de_pet(id).map_or(String::new(), |x| x.descricao.to_string())
                     }
                 };
                 estilo::texto_ajustado(&pr.nome(), x, y, largura, ts(22.0, k), estilo::TEXTO);
@@ -2399,17 +2478,18 @@ pub async fn previa(vox: &VoxCache) {
         ],
     };
     loja.receber(AvisoLoja::Estado(estado.clone()));
-    let cenas: [&str; 10] = [
+    let cenas: [&str; 11] = [
         "1-montarias",
         "2-montaria-possuida",
         "3-skins",
         "4-materiais",
-        "5-moedas",
+        "5-pets",
         "6-confirma-pergaminho",
         "7-confirma-tp",
         "8-compra-concluida",
         "9-mundo",
         "10-tempest-points",
+        "11-moedas",
     ];
     let (sw, sh) = (lw, lh);
     for (n, cena) in cenas.iter().enumerate() {
@@ -2445,6 +2525,9 @@ pub async fn previa(vox: &VoxCache) {
             }
             9 => {
                 loja.aba = ABA_TP;
+            }
+            10 => {
+                loja.aba = 4;
             }
             5 => {
                 loja.aba = 0;

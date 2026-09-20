@@ -267,6 +267,51 @@ pub struct ItemInstance {
     /// antes deste campo (banco em JSON) le' como Tier I.
     #[serde(default = "tier_um")]
     pub tier: u8,
+    /// Estado do PET (docs/PETS.md): nivel, fome e skills. Viaja com o item,
+    /// entao pet vendido no mercado leva o que voce criou junto. `None` = pet
+    /// de antes deste campo, lido como nivel 1 com fome e sem skill.
+    #[serde(default)]
+    pub pet: Option<PetData>,
+}
+
+/// O que o pet acumula. Fica na instancia porque o pet e' item: assim nivel e
+/// skills sobrevivem ao mercado, ao banco e ao correio sem tabela propria.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct PetData {
+    pub xp: u64,
+    /// Unix em segundos ate' quando esta' alimentado. Com fome, o pet nao
+    /// recebe XP nenhuma (docs/PETS.md).
+    #[serde(default)]
+    pub alimentado_ate: i64,
+    /// Skills instaladas (item_id, 0 = slot vazio). O nivel libera os slots.
+    #[serde(default)]
+    pub skills: [u16; 3],
+}
+
+impl ItemInstance {
+    /// Uma instancia sem atributo nenhum, so' com a cor. E' o que um PET usa:
+    /// ele nao tem roll, mas precisa de instancia pra carregar nivel e skills
+    /// (docs/PETS.md).
+    pub fn vazia_de_grau(grau: u8) -> ItemInstance {
+        ItemInstance {
+            rarity: grau.clamp(1, 5),
+            refinement: 0,
+            item_level: 1,
+            level_req: None,
+            hp_max: 0,
+            mp_max: 0,
+            attack_damage: 0,
+            dex: 0,
+            wis: 0,
+            defense: 0,
+            affixes: [AffixSlot::default(); MAX_AFFIXES],
+            pet: None,
+            sockets: 0,
+            socketed_gems: [0; 3],
+            vinculado: false,
+            tier: 1,
+        }
+    }
 }
 
 fn default_ilvl() -> u16 {
@@ -667,6 +712,7 @@ impl ItemInstance {
             wis: 0,
             defense: 0,
             affixes: [AffixSlot::default(); MAX_AFFIXES],
+            pet: None,
             sockets: sockets_for_tier(tier),
             socketed_gems: [0; 3],
             vinculado: false,

@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 112;
+pub const PROTOCOL_VERSION: u16 = 113;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -600,6 +600,11 @@ pub mod item_id {
     pub const PERGAMINHO_INVOCA_MONTARIA: u16 = 361;
     pub const PERGAMINHO_INVOCA_TOMO: u16 = 362;
     pub const PERGAMINHO_INVOCA_PET: u16 = 363;
+    /// Ração de Pet: alimenta o pet equipado (docs/PETS.md). Com fome ele nao
+    /// recebe XP nenhuma. Item de loja, negociavel.
+    pub const RACAO_DE_PET: u16 = 364;
+    /// Tira TODAS as skills do pet equipado e devolve os slots.
+    pub const REMOVEDOR_DE_SKILL_PET: u16 = 365;
 
     /// Os cinco pets coletores (docs/PETS.md), pelo id do CINZA. Cada especie
     /// ocupa cinco ids seguidos, um por grau — a mesma convencao de `na_cor`
@@ -614,6 +619,20 @@ pub mod item_id {
     pub const PETS: [u16; 5] = [PET_LOBO, PET_URSO, PET_TIGRE, PET_OWLBEAR, PET_CARANGUEJO];
     /// Ultimo id de pet — tudo entre `PET_LOBO` e este e' pet.
     pub const PET_ULTIMO: u16 = PET_CARANGUEJO + 4;
+
+    /// As cinco skills de pet (`shared::pets::SKILLS`), em ids seguidos.
+    pub const SKILL_PET_FARO: u16 = 445;
+    pub const SKILL_PET_PASSO: u16 = 446;
+    pub const SKILL_PET_ESTOMAGO: u16 = 447;
+    pub const SKILL_PET_APRENDIZ: u16 = 448;
+    pub const SKILL_PET_VIGOR: u16 = 449;
+    pub const SKILL_PET_PRIMEIRA: u16 = SKILL_PET_FARO;
+    pub const SKILL_PET_ULTIMA: u16 = SKILL_PET_VIGOR;
+
+    /// E' uma skill de pet?
+    pub const fn e_skill_de_pet(id: u16) -> bool {
+        id >= SKILL_PET_PRIMEIRA && id <= SKILL_PET_ULTIMA
+    }
 
     /// id do pet da especie `base` no grau `grau` (1 cinza .. 5 laranja).
     pub const fn pet_no_grau(base: u16, grau: u8) -> u16 {

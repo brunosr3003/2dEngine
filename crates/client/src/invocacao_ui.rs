@@ -298,7 +298,7 @@ impl InvocacaoUi {
                         &format!(
                             "Equipe no slot do pet: busca o saque a {:.0} tiles e dá {} pontos",
                             shared::pets::raio_de_busca(grau),
-                            shared::pets::pontos(grau)
+                            shared::pets::pontos(grau, 1)
                         ),
                         13,
                         estilo::SUAVE,

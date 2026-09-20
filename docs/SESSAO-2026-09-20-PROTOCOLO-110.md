@@ -252,3 +252,25 @@ refeitos nesta sessão.
   9100 devolveram `101 Switching Protocols`.
 - O protocolo continua 112: a janela de prioridade é regra de servidor, não
   mexe no wire.
+
+## Nível, ração e skills de pet (protocolo 113)
+
+- O pet ganhou **nível 1–30**, guardado em `ItemInstance::pet` — viaja com o
+  item, então pet vendido no mercado leva o que o dono criou junto.
+- Ele só recebe XP **alimentado**: a Ração de Pet dá 2 h e usos seguidos
+  somam. Alimentado, entra 20% da XP que o dono ganha matando.
+- O nível dobra o atributo que o pet dá, do 1 ao 30, e abre slot de skill no
+  10, no 20 e no 30.
+- Cinco skills passivas (raio, velocidade, duração da ração, XP do pet e
+  pontos de atributo) e um Removedor, todos itens de loja **negociáveis**.
+- Aba **Pets** no Menu → Personagem: modelo 3D girando, barra de XP, estado da
+  fome com botão ALIMENTAR, atributos, Poder e os três slots.
+- O ícone do pet na bolsa passou a ser o modelo 3D, tingido pela cor do grau.
+  Sem palco (célula pequena, modelo carregando) cai numa silhueta vetorial.
+- A loja ganhou a aba **Pets** (pergaminho + ração + removedor + 5 skills) e o
+  pergaminho saiu de Materiais, que voltou a ter dois cartões.
+- Protocolo 113: `ItemInstance` ganhou campo e `Produto::ItemDePet` é novo.
+- Prévias conferidas em `/tmp/tempest-pets-ui3/pets.png` e
+  `/tmp/tempest-loja-petsaba/`.
+- **Não exercitado**: ninguém alimentou nem subiu um pet num cliente de
+  verdade. O que rodou foram os testes de mundo e as prévias.

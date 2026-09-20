@@ -15,6 +15,8 @@ pub enum Item {
     Bolsa,
     Ficha,
     Habilidades,
+    /// O pet coletor (docs/PETS.md).
+    Pets,
     Montaria,
     RecuperarXp,
     Missoes,
@@ -48,6 +50,11 @@ pub enum Item {
 /// (item, rotulo, motivo do cadeado).
 type Linha = (Item, &'static str, Option<&'static str>);
 
+/// Quantos quadradinhos cabem numa linha de grupo. PERSONAGEM usa os cinco
+/// (Bolsa, Ficha, Habilidades, Pets, Montaria); os outros tem quatro e sobra
+/// espaco no fim da linha.
+const POR_LINHA: f32 = 5.0;
+
 /// Os grupos, na ordem da tela.
 pub const GRUPOS: [(&str, &[Linha]); 7] = [
     (
@@ -56,6 +63,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
             (Item::Bolsa, "Bolsa", None),
             (Item::Ficha, "Ficha", None),
             (Item::Habilidades, "Habilidades", None),
+            (Item::Pets, "Pets", None),
             (Item::Montaria, "Montaria", None),
         ],
     ),
@@ -259,7 +267,7 @@ impl Menu {
         );
         let colunas = [&GRUPOS[..4], &GRUPOS[4..]];
         let col_w = (dir.w - 14.0) * 0.5;
-        let por_linha = 4.0;
+        let por_linha = POR_LINHA;
         let t_w = (col_w - 10.0 * (por_linha - 1.0)) / por_linha;
         let t_h = (dir.h / 4.0) - 46.0;
         let t = t_w.min(t_h).clamp(44.0, 110.0);
@@ -331,6 +339,7 @@ fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
     let nome = match item {
         Item::Bolsa => "bolsa",
         Item::Ficha => "ficha",
+        Item::Pets => "montaria",
         Item::Habilidades => "habilidades",
         Item::Montaria => "montaria",
         Item::RecuperarXp => "recuperar_xp",
@@ -402,6 +411,7 @@ mod tests {
             Item::Clan,
             Item::Bolsa,
             Item::Ficha,
+            Item::Pets,
             Item::Missoes,
             Item::TodasMissoes,
             Item::Diarias,
@@ -449,9 +459,13 @@ mod tests {
         }
     }
 
+    /// A grade dimensiona o quadradinho por `POR_LINHA`; um item a mais que
+    /// isso sairia da coluna e entraria na do lado.
     #[test]
-    fn nenhum_grupo_passa_de_quatro_itens() {
-        // A grade tem 4 por linha; um quinto sairia da coluna.
-        assert!(GRUPOS.iter().all(|(_, it)| it.len() <= 4));
+    fn nenhum_grupo_passa_da_linha() {
+        assert!(GRUPOS
+            .iter()
+            .all(|(nome, it)| it.len() <= POR_LINHA as usize
+                || panic!("{nome} tem {} itens", it.len())));
     }
 }

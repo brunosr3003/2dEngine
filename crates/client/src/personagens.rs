@@ -1251,7 +1251,9 @@ mod tests {
                 let previa = (p.file_name().is_some_and(|n| n == "loja_tp.rs")
                     && fonte.contains("MMO_PREVIA_LOJA"))
                     || (p.file_name().is_some_and(|n| n == "invocacao_ui.rs")
-                        && fonte.contains("MMO_PREVIA_INVOCACAO"));
+                        && fonte.contains("MMO_PREVIA_INVOCACAO"))
+                    || (p.file_name().is_some_and(|n| n == "pets_ui.rs")
+                        && fonte.contains("MMO_PREVIA_PETS"));
                 for (n, l) in fonte.lines().enumerate() {
                     let codigo = l.split("//").next().unwrap_or("");
                     assert!(

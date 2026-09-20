@@ -135,6 +135,19 @@ impl GameWorld {
             return;
         }
 
+        // O estado do pet de cada dono: nivel e skills mexem no raio e na
+        // velocidade, e eles moram na instancia do item equipado.
+        let dados_de: HashMap<SessionId, shared::items::PetData> = self
+            .sessions
+            .values()
+            .map(|s| {
+                (
+                    s.handle.id,
+                    shared::pets::dados(s.equipment.pet_inst.as_ref()),
+                )
+            })
+            .collect();
+
         // Saque disponivel, por instancia.
         let saques: Vec<(Entity, EntityId, Vec2, LootTag, u32)> = self
             .ecs
@@ -162,8 +175,9 @@ impl GameWorld {
             let Some((_, grau)) = shared::pets::de_item(tag.item_id) else {
                 continue;
             };
-            let raio = shared::pets::raio_de_busca(grau);
-            let velocidade = shared::pets::velocidade(grau) * shared::PLAYER_SPEED;
+            let d = dados_de.get(&tag.dono).copied().unwrap_or_default();
+            let raio = shared::pets::raio_com(grau, &d);
+            let velocidade = shared::pets::velocidade_com(grau, &d) * shared::PLAYER_SPEED;
 
             // O alvo de antes ainda vale?
             let alvo = tag
@@ -452,6 +466,96 @@ mod testes {
             pos.distance(Vec2::ZERO) <= shared::pets::COLEIRA,
             "o pet nao pode passar da coleira: {pos:?}"
         );
+    }
+
+    fn poe_na_bolsa(w: &mut GameWorld, sid: SessionId, item_id: u16, qty: u32) {
+        let s = w.sessions.get_mut(&sid).unwrap();
+        add_to_inventory(&mut s.inventory, item_id, qty, None);
+    }
+
+    fn pet_data(w: &GameWorld, sid: SessionId) -> shared::items::PetData {
+        shared::pets::dados(w.sessions[&sid].equipment.pet_inst.as_ref())
+    }
+
+    /// Com fome nao entra XP nenhuma; alimentado, entra a fatia. E' a Ração
+    /// que liga a torneira (docs/PETS.md).
+    #[test]
+    fn so_pet_alimentado_recebe_experiencia() {
+        let (mut w, sid) = mundo();
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_TIGRE, 2);
+        w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
+
+        w.sessions.get_mut(&sid).unwrap().somar_xp(1_000);
+        assert_eq!(pet_data(&w, sid).xp, 0, "com fome nao entra nada");
+
+        poe_na_bolsa(&mut w, sid, shared::item_id::RACAO_DE_PET, 1);
+        w.handle_item_de_pet(sid, 0, shared::item_id::RACAO_DE_PET);
+        assert!(
+            pet_data(&w, sid).alimentado_ate > 0,
+            "a racao tem que alimentar"
+        );
+        assert_eq!(
+            crate::craft::tem(&w.sessions[&sid].inventory, shared::item_id::RACAO_DE_PET),
+            0,
+            "a racao e' consumida"
+        );
+
+        w.sessions.get_mut(&sid).unwrap().somar_xp(1_000);
+        let d = pet_data(&w, sid);
+        assert_eq!(
+            d.xp,
+            (1_000.0 * shared::pets::FATIA_DA_XP) as u64,
+            "alimentado, entra a fatia"
+        );
+        // E o pet passou a valer mais: o nivel subiu e os pontos com ele.
+        assert!(shared::pets::nivel_de_xp(d.xp) > 1);
+    }
+
+    /// Skill so' entra em slot que o NIVEL abriu, e o removedor devolve todos.
+    #[test]
+    fn skill_de_pet_precisa_de_slot_aberto() {
+        let (mut w, sid) = mundo();
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 3);
+        w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
+        poe_na_bolsa(&mut w, sid, shared::item_id::SKILL_PET_FARO, 2);
+
+        // Nivel 1: nao ha' slot.
+        w.handle_item_de_pet(sid, 0, shared::item_id::SKILL_PET_FARO);
+        assert_eq!(pet_data(&w, sid).skills, [0; 3]);
+        assert_eq!(
+            crate::craft::tem(&w.sessions[&sid].inventory, shared::item_id::SKILL_PET_FARO),
+            2,
+            "recusa nao cobra o item"
+        );
+
+        // Sobe pro 10 e o primeiro slot abre.
+        let mut d = pet_data(&w, sid);
+        d.xp = shared::pets::xp_para_nivel(10);
+        w.sessions.get_mut(&sid).unwrap().guarda_pet(d);
+        w.handle_item_de_pet(sid, 0, shared::item_id::SKILL_PET_FARO);
+        assert_eq!(pet_data(&w, sid).skills[0], shared::item_id::SKILL_PET_FARO);
+        assert_eq!(
+            crate::craft::tem(&w.sessions[&sid].inventory, shared::item_id::SKILL_PET_FARO),
+            1
+        );
+
+        // A mesma skill de novo e' recusada, e sem cobrar.
+        w.handle_item_de_pet(sid, 0, shared::item_id::SKILL_PET_FARO);
+        assert_eq!(
+            crate::craft::tem(&w.sessions[&sid].inventory, shared::item_id::SKILL_PET_FARO),
+            1,
+            "skill repetida nao cobra"
+        );
+
+        // O removedor limpa tudo.
+        poe_na_bolsa(&mut w, sid, shared::item_id::REMOVEDOR_DE_SKILL_PET, 1);
+        let slot = w.sessions[&sid]
+            .inventory
+            .iter()
+            .position(|x| x.item_id == shared::item_id::REMOVEDOR_DE_SKILL_PET)
+            .unwrap();
+        w.handle_item_de_pet(sid, slot, shared::item_id::REMOVEDOR_DE_SKILL_PET);
+        assert_eq!(pet_data(&w, sid).skills, [0; 3]);
     }
 
     /// A regra crua da janela, nas bordas. Vale pro pickup por proximidade e

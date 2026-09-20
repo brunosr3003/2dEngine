@@ -65,6 +65,50 @@ Entrega e pickup por proximidade passam pelo **mesmo** `creditar_saque`:
 equipável vai para o slot vazio, ouro para o saldo, o resto para a bolsa.
 A regra não mora em dois lugares.
 
+## Nível, fome e skills
+
+O pet tem **nível próprio, de 1 a 30**, e ele mora na instância do item — por
+isso viaja junto quando o pet é vendido no mercado, sem tabela à parte.
+
+**Ele só ganha experiência se estiver alimentado.** Com fome não entra nada.
+A **Ração de Pet** alimenta por 2 h; usar duas seguidas soma o tempo, não o
+perde. Alimentado, o pet recebe **20% da experiência** que o dono ganha
+matando — a mesma XP, sem tirar nada do jogador.
+
+O nível **aumenta o atributo que o pet dá**: do 1 ao 30 ele dobra. Um Lobinho
+Laranja nível 1 dá 17 pontos; no 30, 34.
+
+Os slots de skill abrem com o nível: **o primeiro no 10, o segundo no 20 e o
+terceiro no 30**, que é o teto. Slot travado não conta: uma skill guardada num
+slot que o nível ainda não abriu simplesmente não vale.
+
+### As cinco skills
+
+Nada de combate — o pet não luta. Toda skill mexe no que ele já faz:
+
+| skill | o que faz | preço |
+|---|---|---:|
+| Faro Apurado | +3 tiles no raio de busca | 300 TP |
+| Passo Leve | +20% de velocidade | 300 TP |
+| Estômago Fundo | a Ração dura o dobro | 250 TP |
+| Aprendiz | +50% da experiência que o pet recebe | 400 TP |
+| Vigor Emprestado | +3 pontos de atributo, na afinidade da espécie | 500 TP |
+
+São três slots para cinco skills: a escolha é real. O **Removedor de Skill**
+(200 TP) limpa todos os slots de uma vez.
+
+Ração, skills e Removedor são itens de loja **negociáveis**: quem farma compra
+no mercado por gold, do mesmo jeito que compra TP.
+
+### A aba Pets
+
+**Menu → Personagem → Pets**: o bichinho equipado em 3D girando, o nível e a
+barra de experiência, quanto falta de ração, os atributos que ele dá, o Poder,
+e os três slots de skill com o nível que cada um abre. O botão ALIMENTAR usa
+uma Ração da bolsa — é o mesmo `UseItem` da poção, o painel só manda o pedido.
+
+O ícone do pet na bolsa também é o modelo 3D, tingido com a cor do grau.
+
 ## Quem matou tem a frente por 2 segundos
 
 `LootTag` guarda quem deu o golpe final. Por `LOOT_PRIORIDADE_S` (2 s) o saque
@@ -137,8 +181,8 @@ Anotado aqui para a documentação não passar a mentir:
 
 - **Pet que luta.** O auto combate não desvia porque desviar é a graça; pet
   batendo no seu lugar vai na mesma direção.
-- **Nível de pet.** O grau é o único eixo. "Níveis de pet iguais aos itens"
-  são as cinco cores, e é o que está implementado.
+- **Skill de pet que afete combate.** Todas são passivas sobre a coleta, a
+  fome ou o atributo. O pet não entra na briga.
 - **Prazo de validade do saque.** O drop ainda não despawna: a janela de
   prioridade fecha em 2 s, mas o saquinho fica no chão para sempre. Com muito
   jogador, isso é entidade acumulando no mapa.
