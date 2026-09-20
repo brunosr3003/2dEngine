@@ -1529,15 +1529,15 @@ fn desenha_personagem(
         entrada.combate.coleta = None;
         entrada.ar = 0.0;
     }
-    // Montado (docs/MONTARIAS.md): o bicho da skin por baixo e o cavaleiro
-    // sentado na sela, sem passada propria.
+    // Montado (docs/MONTARIAS.md): o bicho da montaria EQUIPADA por baixo e o
+    // cavaleiro sentado na sela, sem passada propria. O `kind` da meta e' o
+    // item_id da montaria: especie e cor saem dele.
     let montaria = if e.meta.tag == shared::EntityTag::Player
         && e.state.flags & shared::ent_flags::MONTADO != 0
         && e.morte.is_none()
     {
-        shared::loja::skin(e.meta.kind)
-            .and_then(|s| shared::loja::montaria(s.montaria).map(|m| (m, s)))
-            .and_then(|(m, s)| vox.bicho(m.bicho).map(|b| (m, s, b)))
+        shared::montarias::de_item(e.meta.kind)
+            .and_then(|(esp, grau)| vox.bicho(esp.bicho).map(|b| (esp, grau, b)))
     } else {
         None
     };
@@ -2146,16 +2146,16 @@ fn desenha_bicho(
     crate::bicho::rastro(&entrada, &b.anat).map(|r| (patas, r))
 }
 
-/// A montaria por baixo do cavaleiro: o bicho em pecas na escala da montaria,
-/// puxado pra cor da skin, com a passada na velocidade de quem monta.
+/// A montaria por baixo do cavaleiro: o bicho em pecas na escala da especie,
+/// tingido pela COR dela, com a passada na velocidade de quem monta.
 fn desenha_montaria(
     e: &crate::world::Ent,
-    m: &shared::loja::Montaria,
-    s: &shared::loja::Skin,
+    esp: &shared::montarias::Especie,
+    grau: u8,
     b: &crate::bicho::Bicho,
     p: Vec3,
 ) {
-    let vel = e.andar * shared::PLAYER_SPEED * shared::loja::VEL_MONTADO;
+    let vel = e.andar * shared::PLAYER_SPEED * shared::montarias::velocidade(grau);
     // A fase do cavaleiro anda com a DISTANCIA, mas dividida pela passada de
     // GENTE; o bicho tem passada de outro tamanho. Converter pela razao entre
     // as duas poe a pata no chao que passa: sem isso ela patina (o passo do
@@ -2165,8 +2165,8 @@ fn desenha_montaria(
     // velocidade real. Sem conversao e sem teto no meio do caminho.
     desenha_bicho_montaria(
         b,
-        m.escala,
-        tinta_da_skin(s),
+        esp.escala,
+        tinta_do_grau(grau),
         p,
         e.yaw,
         vel,
@@ -2182,18 +2182,15 @@ fn desenha_montaria(
 /// sem modelo ou sem espaco.
 pub fn vitrine_montaria(
     vox: &crate::vox::VoxCache,
-    skin_id: u16,
+    item_id: u16,
     r: Rect,
     yaw: f32,
     solido: &Material,
 ) -> bool {
-    let Some(s) = shared::loja::skin(skin_id) else {
+    let Some((especie, grau)) = shared::montarias::de_item(item_id) else {
         return false;
     };
-    let Some(m) = shared::loja::montaria(s.montaria) else {
-        return false;
-    };
-    let Some(b) = vox.bicho(m.bicho) else {
+    let Some(b) = vox.bicho(especie.bicho) else {
         return false;
     };
     if r.w < 8.0 || r.h < 8.0 {
@@ -2202,15 +2199,15 @@ pub fn vitrine_montaria(
     let Some(vp) = viewport_na_tela(r) else {
         return false;
     };
-    let cam = camera_da_vitrine(b, m.escala, 1.0, vp);
+    let cam = camera_da_vitrine(b, especie.escala, 1.25, vp);
     set_camera(&cam);
     limpa_so_profundidade();
     macroquad::material::gl_use_material(solido);
     // Vitrine: a montaria esta' PARADA no palco (so' gira em `yaw`).
     desenha_bicho_montaria(
         b,
-        m.escala,
-        tinta_da_skin(s),
+        especie.escala,
+        tinta_do_grau(grau),
         Vec3::ZERO,
         yaw,
         0.0,
@@ -2221,20 +2218,6 @@ pub fn vitrine_montaria(
     macroquad::material::gl_use_default_material();
     camera_padrao();
     true
-}
-
-/// A tinta de uma skin de montaria, no formato que o desenho espera.
-fn tinta_da_skin(s: &shared::loja::Skin) -> Option<([f32; 3], f32)> {
-    (s.forca > 0.0).then(|| {
-        (
-            [
-                s.tinta[0] as f32 / 255.0,
-                s.tinta[1] as f32 / 255.0,
-                s.tinta[2] as f32 / 255.0,
-            ],
-            s.forca,
-        )
-    })
 }
 
 /// O PET num palco, girando em `yaw` — e' o icone dele na bolsa e na loja
@@ -2333,12 +2316,11 @@ fn camera_da_vitrine(
 
 /// Onde o CHAO sob a montaria (origem) cai na tela, dentro de `r`: e' ali
 /// que a Loja poe o pedestal, pra montaria pisar nele.
-pub fn vitrine_chao(vox: &crate::vox::VoxCache, skin_id: u16, r: Rect) -> Option<Vec2> {
-    let s = shared::loja::skin(skin_id)?;
-    let m = shared::loja::montaria(s.montaria)?;
-    let b = vox.bicho(m.bicho)?;
+pub fn vitrine_chao(vox: &crate::vox::VoxCache, item_id: u16, r: Rect) -> Option<Vec2> {
+    let (especie, _) = shared::montarias::de_item(item_id)?;
+    let b = vox.bicho(especie.bicho)?;
     let vp = viewport_na_tela(r)?;
-    let cam = camera_da_vitrine(b, m.escala, 1.0, vp);
+    let cam = camera_da_vitrine(b, especie.escala, 1.25, vp);
     let clip = cam.matrix() * Vec3::ZERO.extend(1.0);
     if clip.w <= 0.0 {
         return None;

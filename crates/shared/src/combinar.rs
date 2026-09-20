@@ -8,7 +8,7 @@
 //!   todo degrau, ate' roxa → lendaria. A chave e' o regulador do craft (so'
 //!   cai de chefe), entao subir de cor por aqui e' aposta, nao conta fechada.
 //!   Falhar consome as 5.
-//! - **Pets** (docs/PETS.md): 3 do mesmo grau tentam 1 do grau de cima,
+//! - **Montarias** (docs/MONTARIAS.md) e **pets** (docs/PETS.md): 3 do mesmo grau tentam 1 do grau de cima,
 //!   cobrando cobre. Aposta como a chave — falhar consome os tres — e a
 //!   chance cai a cada degrau. O pet e' item de bolsa justamente pra caber
 //!   aqui e no mercado.
@@ -89,6 +89,21 @@ pub fn receitas() -> Vec<ReceitaDeCombinar> {
                 po: 0,
                 cor,
                 chave: true,
+            });
+        }
+    }
+    for &base in &item_id::MONTARIAS {
+        for grau in 1..crate::montarias::GRAU_MAX {
+            v.push(ReceitaDeCombinar {
+                entrada: item_id::montaria_no_grau(base, grau),
+                qtd: crate::montarias::MONTARIAS_POR_TENTATIVA,
+                saida: item_id::montaria_no_grau(base, grau + 1),
+                chance: crate::montarias::chance_de_combinar(grau + 1),
+                cobre: crate::montarias::cobre_de_combinar(grau),
+                darksteel: 0,
+                po: 0,
+                cor: grau,
+                chave: false,
             });
         }
     }
@@ -190,8 +205,8 @@ mod testes {
     #[test]
     fn cada_item_sobe_por_um_caminho_so_e_nunca_vira_ele_mesmo() {
         let v = receitas();
-        // 4 chaves x 4 degraus, 5 pets x 4 degraus, 8 materiais x 3.
-        assert_eq!(v.len(), 4 * 4 + 5 * 4 + 8 * 3);
+        // 4 chaves, 3 montarias e 5 pets x 4 degraus; 8 materiais x 3.
+        assert_eq!(v.len(), 4 * 4 + 3 * 4 + 5 * 4 + 8 * 3);
         for (i, a) in v.iter().enumerate() {
             assert_ne!(a.entrada, a.saida);
             assert!(v[i + 1..].iter().all(|b| b.entrada != a.entrada));

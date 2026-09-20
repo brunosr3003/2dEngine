@@ -40,11 +40,12 @@ const VERMELHO: Color = Color::new(0.88, 0.38, 0.32, 1.0);
 
 /// Os slots em volta do retrato, como no MIR4: o que se empunha e se veste
 /// de um lado, os acessorios do outro (docs/COMBATE.md).
-const ESQUERDA: [(EquipSlot, &str); 4] = [
+const ESQUERDA: [(EquipSlot, &str); 5] = [
     (EquipSlot::Weapon, "Arma"),
     (EquipSlot::Offhand, "Secundária"),
     (EquipSlot::Armor, "Armadura"),
     (EquipSlot::Pet, "Pet"),
+    (EquipSlot::Montaria, "Montaria"),
 ];
 const DIREITA: [(EquipSlot, &str); 4] = [
     (EquipSlot::Earring, "Brinco"),
@@ -1257,6 +1258,35 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
             } else {
                 draw_circle(c.x + s * 0.62, c.y - s * 0.75, s * 0.14, ouro);
             }
+        }
+        Tipo::Slot(EquipSlot::Montaria) => {
+            // Bicho de porte com sela: e' o que separa da silhueta do pet.
+            let cor = shared::montarias::de_item(id)
+                .map(|(_, g)| com_alfa(cor_do_tier(g), a))
+                .unwrap_or(couro);
+            let escuro = Color::new(cor.r * 0.7, cor.g * 0.7, cor.b * 0.7, a);
+            crate::hud_estilo::ret_arredondado(
+                Rect::new(c.x - s * 0.95, c.y - s * 0.25, s * 1.6, s * 0.8),
+                s * 0.3,
+                cor,
+            );
+            draw_circle(c.x + s * 0.95, c.y - s * 0.45, s * 0.4, cor);
+            draw_triangle(
+                vec2(c.x + s * 0.75, c.y - s * 0.75),
+                vec2(c.x + s * 0.88, c.y - s * 1.1),
+                vec2(c.x + s * 1.0, c.y - s * 0.72),
+                escuro,
+            );
+            for dx in [-0.75, -0.2, 0.35] {
+                draw_rectangle(c.x + dx * s, c.y + s * 0.5, s * 0.24, s * 0.5, escuro);
+            }
+            // a sela
+            crate::hud_estilo::ret_arredondado(
+                Rect::new(c.x - s * 0.35, c.y - s * 0.55, s * 0.7, s * 0.34),
+                s * 0.12,
+                escuro,
+            );
+            linha(-0.95, -0.2, -1.3, -0.8, 0.18, escuro);
         }
         Tipo::Slot(EquipSlot::Pet) => {
             // Silhueta de bichinho de quatro patas, de lado: so' aparece

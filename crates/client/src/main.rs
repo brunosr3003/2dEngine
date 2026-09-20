@@ -2258,6 +2258,14 @@ impl Jogo {
     }
 
     /// O proprio personagem esta' montado (flag do servidor)?
+    /// Tem montaria EQUIPADA? E' o slot da bolsa que decide (docs/MONTARIAS.md).
+    fn tem_montaria(&self) -> bool {
+        self.bolsa
+            .equip
+            .montaria
+            .is_some_and(|id| shared::montarias::de_item(id).is_some())
+    }
+
     fn eu_montado(&self) -> bool {
         self.world
             .self_id
@@ -2274,9 +2282,11 @@ impl Jogo {
             });
             return;
         }
-        if !self.montarias.tem_montaria() {
-            self.chat
-                .push("Montaria: você ainda não tem. Onde obter: Menu › Comércio › Loja.".into());
+        if !self.tem_montaria() {
+            self.chat.push(
+                "Montaria: equipe uma no slot Montaria da bolsa. Onde obter: Menu › Comércio › Loja."
+                    .into(),
+            );
             return;
         }
         self.envia(ClientMessage::Loja {
@@ -2289,7 +2299,7 @@ impl Jogo {
     /// pedir de novo a cada trecho da rota.
     fn montar_pra_viajar(&mut self) {
         let agora = get_time();
-        if !self.montarias.tem_montaria()
+        if !self.tem_montaria()
             || self.eu_montado()
             || self.montarias.montando(agora)
             || agora - self.montar_auto_em < 6.0
@@ -4437,7 +4447,7 @@ impl Jogo {
                 self.montarias.montou();
             }
             let progresso = self.montarias.progresso(get_time());
-            if hud::draw_botao_montaria(&z, montado, progresso, self.montarias.tem_montaria()) {
+            if hud::draw_botao_montaria(&z, montado, progresso, self.tem_montaria()) {
                 self.alternar_montaria();
             }
         }
@@ -4925,8 +4935,11 @@ impl Jogo {
         for pedido in self.loja_tp.desenha(&self.vox, &self.solido) {
             self.envia(pedido);
         }
-        match self.montarias.desenha(self.montaria_skin) {
-            Some(montarias_ui::Acao::Escolher(skin)) => self.montaria_skin = Some(skin),
+        let equip = self.bolsa.equip;
+        match self
+            .montarias
+            .desenha(&self.vox, &self.solido, &equip)
+        {
             Some(montarias_ui::Acao::AbrirLoja) => {
                 self.montarias.fechar();
                 for pedido in self.loja_tp.abrir() {

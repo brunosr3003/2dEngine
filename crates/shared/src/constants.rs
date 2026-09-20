@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 114;
+pub const PROTOCOL_VERSION: u16 = 115;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -634,6 +634,32 @@ pub mod item_id {
     pub const SKILL_PET_PRIMEIRA: u16 = SKILL_PET_FARO;
     pub const SKILL_PET_ULTIMA: u16 = 457;
 
+    /// As tres montarias (docs/MONTARIAS.md), pelo id da CINZA. Cinco ids
+    /// seguidos por especie, um por cor — a mesma convencao do pet.
+    pub const MONTARIA_LOBO: u16 = 460;
+    pub const MONTARIA_TIGRE: u16 = 465;
+    pub const MONTARIA_URSO: u16 = 470;
+    pub const MONTARIAS: [u16; 3] = [MONTARIA_LOBO, MONTARIA_TIGRE, MONTARIA_URSO];
+    pub const MONTARIA_ULTIMA: u16 = MONTARIA_URSO + 4;
+
+    pub const fn montaria_no_grau(base: u16, grau: u8) -> u16 {
+        base + (if grau < 1 {
+            0
+        } else if grau > 5 {
+            4
+        } else {
+            grau - 1
+        }) as u16
+    }
+
+    pub const fn montaria_de_id(id: u16) -> Option<(u16, u8)> {
+        if id < MONTARIA_LOBO || id > MONTARIA_ULTIMA {
+            return None;
+        }
+        let d = id - MONTARIA_LOBO;
+        Some((MONTARIA_LOBO + (d / 5) * 5, (d % 5) as u8 + 1))
+    }
+
     /// E' uma skill de pet?
     pub const fn e_skill_de_pet(id: u16) -> bool {
         id >= SKILL_PET_PRIMEIRA && id <= SKILL_PET_ULTIMA
@@ -712,6 +738,9 @@ pub mod item_id {
     /// pintava de cinza um Aço Roxo e uma Escama Azul.
     pub fn cor_de_id(id: u16) -> Option<u8> {
         if let Some((_, grau)) = pet_de_id(id) {
+            return Some(grau);
+        }
+        if let Some((_, grau)) = montaria_de_id(id) {
             return Some(grau);
         }
         // As lendarias ficaram fora da faixa contigua das chaves.
@@ -882,6 +911,7 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
         BRACELETE => Some(EquipSlot::Bracelet),
         CINTO => Some(EquipSlot::Belt),
         id if pet_de_id(id).is_some() => Some(EquipSlot::Pet),
+        id if montaria_de_id(id).is_some() => Some(EquipSlot::Montaria),
         _ => None,
     }
 }
@@ -918,10 +948,13 @@ pub enum EquipSlot {
     /// O pet coletor (docs/PETS.md). Equipado, ele nasce no mundo e busca o
     /// saque do chao; os atributos dele entram como pontos alocados.
     Pet,
+    /// A montaria (docs/MONTARIAS.md). E' nela que se monta, e a cor dela
+    /// manda na velocidade.
+    Montaria,
 }
 
 impl EquipSlot {
-    pub const TODOS: [EquipSlot; 8] = [
+    pub const TODOS: [EquipSlot; 9] = [
         EquipSlot::Weapon,
         EquipSlot::Offhand,
         EquipSlot::Armor,
@@ -930,6 +963,7 @@ impl EquipSlot {
         EquipSlot::Bracelet,
         EquipSlot::Belt,
         EquipSlot::Pet,
+        EquipSlot::Montaria,
     ];
 
     /// String do slot pra ser persistido no DB (coluna `slot`).
@@ -943,6 +977,7 @@ impl EquipSlot {
             EquipSlot::Bracelet => "bracelet",
             EquipSlot::Belt => "belt",
             EquipSlot::Pet => "pet",
+            EquipSlot::Montaria => "montaria",
         }
     }
 

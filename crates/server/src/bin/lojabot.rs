@@ -3,10 +3,10 @@
 //!
 //! Cenarios (`--cenario`):
 //! - `completo`: compra pacote de TP com o MESMO pedido duas vezes (conta um
-//!   credito so'), compra a montaria, tenta comprar de novo (recusa), mede a
+//!   credito so'), compra o pergaminho de montaria duas vezes, mede a
 //!   velocidade a pe' e montado, chama um chefe de teste perto e confere que
 //!   desmonta ao lutar.
-//! - `estado`: so' loga e imprime saldo e posses (reconexao mantem tudo).
+//! - `estado`: so' loga e imprime o saldo (reconexao mantem tudo).
 //! - `pedido`: compra o pacote `--pacote` com o pedido fixo `--pedido` (dois
 //!   processos da mesma conta ao mesmo tempo nao duplicam o credito).
 //!
@@ -85,7 +85,6 @@ async fn main() -> anyhow::Result<()> {
     let mut andar = glam::Vec2::ZERO;
     let mut tp_inicial: Option<u64> = None;
     let mut tp_atual = 0u64;
-    let mut posses = shared::loja::Posses::default();
     let mut estados = 0u32;
     let mut medida: Option<(Instant, glam::Vec2)> = None;
     let (mut vel_a_pe, mut vel_montado) = (0.0f32, 0.0f32);
@@ -120,21 +119,19 @@ async fn main() -> anyhow::Result<()> {
                         linhas.push(format!("TP depois de 2 pedidos iguais do pacote {pacote}: {tp_atual} (antes {})", tp_inicial.unwrap_or(0)));
                         if cenario == "pedido" {
                             muda(&mut fase, &mut fase_em, Fase::Fim, &mut linhas);
-                        } else if posses.montarias.contains(&1) {
-                            linhas.push("ja' possui a montaria 1: pula a compra".into());
-                            muda(&mut fase, &mut fase_em, Fase::CompraRepetida, &mut linhas);
-                            ws.send(envia(ClientMessage::Loja { pedido: PedidoLoja::ComprarItem { produto: Produto::Montaria(1), pedido: format!("{tag}-m1b") } })?).await?;
                         } else {
+                            // A montaria virou ITEM: compra-se o pergaminho, e
+                            // ele e' repetivel (docs/MONTARIAS.md).
                             muda(&mut fase, &mut fase_em, Fase::CompraMontaria, &mut linhas);
-                            ws.send(envia(ClientMessage::Loja { pedido: PedidoLoja::ComprarItem { produto: Produto::Montaria(1), pedido: format!("{tag}-m1") } })?).await?;
+                            ws.send(envia(ClientMessage::Loja { pedido: PedidoLoja::ComprarItem { produto: Produto::PergaminhoMontaria(1), pedido: format!("{tag}-m1") } })?).await?;
                         }
                     }
                     Fase::CompraMontaria if t > Duration::from_secs(2) => {
                         muda(&mut fase, &mut fase_em, Fase::CompraRepetida, &mut linhas);
-                        ws.send(envia(ClientMessage::Loja { pedido: PedidoLoja::ComprarItem { produto: Produto::Montaria(1), pedido: format!("{tag}-m1b") } })?).await?;
+                        ws.send(envia(ClientMessage::Loja { pedido: PedidoLoja::ComprarItem { produto: Produto::PergaminhoMontaria(1), pedido: format!("{tag}-m1b") } })?).await?;
                     }
                     Fase::CompraRepetida if t > Duration::from_secs(2) => {
-                        linhas.push(format!("posses: {posses:?}, TP {tp_atual}"));
+                        linhas.push(format!("TP {tp_atual}"));
                         muda(&mut fase, &mut fase_em, Fase::APe, &mut linhas);
                         andar = -glam::Vec2::X;
                         medida = None;
@@ -255,8 +252,7 @@ async fn main() -> anyhow::Result<()> {
                         AvisoLoja::Estado(e) => {
                             estados += 1;
                             tp_atual = e.tp;
-                            posses = e.posses.clone();
-                            linhas.push(format!("estado: ligada={} simulado={} TP={} posses={:?}", e.ligada, e.simulado, e.tp, e.posses));
+                            linhas.push(format!("estado: ligada={} simulado={} TP={}", e.ligada, e.simulado, e.tp));
                             if tp_inicial.is_none() {
                                 tp_inicial = Some(e.tp);
                                 if cenario == "estado" {
@@ -292,6 +288,6 @@ async fn main() -> anyhow::Result<()> {
     for l in &linhas {
         println!("  · {l}");
     }
-    println!("  RESUMO tp_inicial={:?} tp_final={tp_atual} posses={posses:?} vel_a_pe={vel_a_pe:.2} vel_montado={vel_montado:.2} desmontou_lutando={desmontou_lutando}", tp_inicial);
+    println!("  RESUMO tp_inicial={:?} tp_final={tp_atual} vel_a_pe={vel_a_pe:.2} vel_montado={vel_montado:.2} desmontou_lutando={desmontou_lutando}", tp_inicial);
     Ok(())
 }

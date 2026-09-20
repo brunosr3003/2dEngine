@@ -1,18 +1,20 @@
-//! Montarias (docs/MONTARIAS.md): Menu → Personagem → Montaria. Escolhe a
-//! montaria e a skin que vale ao montar; montar e desmontar e' pelo botao do
-//! HUD (ao lado da bateria). Quem nao tem montaria e' mandado pra Loja.
+//! Montarias (docs/MONTARIAS.md): Menu → Personagem → Montaria.
+//!
+//! A montaria virou **item de bolsa**, como o pet: quem escolhe qual vale é o
+//! slot Montaria do equipamento, não esta janela. Aqui só se vê a equipada —
+//! em 3D, na cor dela — e se monta.
+//!
+//! Não há mais skin: **a cor é a variação**. O catálogo de skins saiu inteiro.
+
 use macroquad::prelude::*;
-use shared::loja::{self as cat, AvisoLoja, EstadoLoja, PedidoLoja};
 use shared::protocol::ClientMessage;
 
 use crate::hud_estilo as estilo;
-use crate::loja_tp::{cor_da_skin, medalhao};
+use crate::vox::VoxCache;
 
 /// O que a janela pede ao jogo.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Acao {
-    /// Esta skin passa a valer (vai pras preferencias).
-    Escolher(u16),
     AbrirLoja,
     Montar,
 }
@@ -20,279 +22,251 @@ pub enum Acao {
 #[derive(Default)]
 pub struct MontariasUi {
     pub aberto: bool,
-    estado: Option<EstadoLoja>,
+    /// Gira o modelo no palco.
+    giro: f32,
     /// Relogio (get_time) em que a montada termina; 0 = nao esta' montando.
     montando_ate: f64,
     montando_desde: f64,
 }
 
+const SIGLAS: [&str; shared::STAT_COUNT] = ["FOR", "DES", "INT", "VIT", "SPD", "RES"];
+
 impl MontariasUi {
     pub fn abrir(&mut self) -> Vec<ClientMessage> {
         self.aberto = true;
-        vec![ClientMessage::Loja {
-            pedido: PedidoLoja::Estado,
-        }]
+        Vec::new()
     }
 
     pub fn fechar(&mut self) {
         self.aberto = false;
     }
 
-    pub fn receber(&mut self, aviso: &AvisoLoja, agora: f64) {
-        match aviso {
-            AvisoLoja::Estado(e) => self.estado = Some(e.clone()),
-            AvisoLoja::Montando { segundos } => {
-                if *segundos > 0.0 {
-                    self.montando_desde = agora;
-                    self.montando_ate = agora + *segundos as f64;
-                } else {
-                    self.montando_ate = 0.0;
-                }
-            }
-            AvisoLoja::Resultado { .. } => {}
-            AvisoLoja::Invocacao {
-                premio: cat::PremioInvocacao::Montaria { id, quantidade },
-            } => {
-                if let Some(e) = self.estado.as_mut() {
-                    e.posses.registrar_montaria(*id, *quantidade);
-                }
-            }
-            AvisoLoja::Invocacao { .. } => {}
-            AvisoLoja::Invocacoes { premios } => {
-                if let Some(e) = self.estado.as_mut() {
-                    for premio in premios {
-                        if let cat::PremioInvocacao::Montaria { id, quantidade } = premio {
-                            e.posses.registrar_montaria(*id, *quantidade);
-                        }
-                    }
-                }
-            }
-        }
+    pub fn pega_o_mouse(&self) -> bool {
+        self.aberto
     }
 
-    pub fn tem_montaria(&self) -> bool {
-        self.estado
-            .as_ref()
-            .is_some_and(|e| !e.posses.montarias.is_empty())
+    /// A montada acabou: zera o progresso.
+    pub fn montou(&mut self) {
+        self.montando_ate = 0.0;
+        self.montando_desde = 0.0;
     }
 
-    pub fn montando(&self, agora: f64) -> bool {
-        self.montando_ate > 0.0 && agora < self.montando_ate + 0.5
-    }
-
-    /// 0..1 enquanto sobe na montaria.
+    /// 0..1 enquanto monta; `None` fora disso. E' o anel do botao do HUD.
     pub fn progresso(&self, agora: f64) -> Option<f32> {
-        if self.montando_ate <= 0.0 || agora >= self.montando_ate {
+        if agora >= self.montando_ate {
             return None;
         }
-        let total = (self.montando_ate - self.montando_desde).max(0.01);
+        let total = (self.montando_ate - self.montando_desde).max(0.001);
         Some(((agora - self.montando_desde) / total).clamp(0.0, 1.0) as f32)
     }
 
-    /// Ja' montou (o flag chegou): esquece a barra.
-    pub fn montou(&mut self) {
-        self.montando_ate = 0.0;
+    /// Esta' no meio da montada?
+    pub fn montando(&self, agora: f64) -> bool {
+        agora < self.montando_ate
     }
 
-    pub fn desenha(&mut self, escolhida: Option<u16>) -> Option<Acao> {
+    /// O que a loja avisa que interessa aqui: o inicio da montada.
+    pub fn receber(&mut self, aviso: &shared::loja::AvisoLoja, agora: f64) {
+        if let shared::loja::AvisoLoja::Montando { segundos } = aviso {
+            self.montando_desde = agora;
+            self.montando_ate = agora + *segundos as f64;
+        }
+    }
+
+    pub fn desenha(
+        &mut self,
+        vox: &VoxCache,
+        solido: &Material,
+        equip: &shared::Equipment,
+    ) -> Option<Acao> {
         if !self.aberto {
             return None;
         }
+        let escala = estilo::escala_do_painel(760.0, 470.0);
+        estilo::no_painel(escala, || self.na_escala(vox, solido, equip))
+    }
+
+    fn na_escala(
+        &mut self,
+        vox: &VoxCache,
+        solido: &Material,
+        equip: &shared::Equipment,
+    ) -> Option<Acao> {
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
         let w = (760.0 * f).min(seguro.w - 16.0);
-        let h = (560.0 * f).min(seguro.h - 16.0);
+        let h = (470.0 * f).min(seguro.h - 16.0);
         let p = Rect::new(
             seguro.center().x - w * 0.5,
             seguro.center().y - h * 0.5,
             w,
             h,
         );
-        crate::hud_layout::escurece(0.45);
+        crate::hud_layout::escurece(0.55);
         estilo::painel(p);
-        let m = Vec2::from(mouse_position());
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
-        let x0 = p.x + 20.0 * f;
-        estilo::texto_forte(x0, p.y + 36.0 * f, "Montarias", 22, estilo::OURO);
-        let fechar = Rect::new(p.x + p.w - 48.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);
-        estilo::texto_centro(
-            fechar.center().x,
-            fechar.center().y + 7.0 * f,
-            "X",
-            18,
-            estilo::TEXTO,
-        );
-        if clicou && fechar.contains(m) {
+        let mouse = Vec2::from(mouse_position());
+        let clique = is_mouse_button_pressed(MouseButton::Left);
+
+        estilo::texto_forte(p.x + 20.0 * f, p.y + 36.0 * f, "MONTARIA", 23, estilo::OURO);
+        let fechar = Rect::new(p.x + p.w - 49.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);
+        estilo::botao(fechar, "X", estilo::estado_de(fechar, false, false), false);
+        if clique && fechar.contains(mouse) {
             self.fechar();
             return None;
         }
-        let Some(estado) = self.estado.clone() else {
-            estilo::texto(x0, p.y + 80.0 * f, "Carregando…", 15, estilo::SUAVE);
-            return None;
-        };
-        let mut acao = None;
-        estilo::texto(
-            x0,
-            p.y + 64.0 * f,
-            &format!(
-                "Montado: velocidade +{:.0}%. Só mobilidade — nada de combate muda.",
-                (cat::VEL_MONTADO - 1.0) * 100.0
-            ),
-            13,
-            estilo::SUAVE,
-        );
-        let valendo = estado.posses.skin_para_montar(escolhida);
-        let mut y = p.y + 84.0 * f;
-        if estado.posses.montarias.is_empty() {
-            estilo::texto(
-                x0,
-                y + 30.0 * f,
-                "Você ainda não tem montaria.",
+
+        let Some(id) = equip
+            .montaria
+            .filter(|id| shared::montarias::de_item(*id).is_some())
+        else {
+            estilo::texto_ajustado(
+                "Nenhuma montaria equipada. Equipe uma no slot Montaria da bolsa — a cor dela manda na velocidade.",
+                p.x + 24.0 * f,
+                p.y + 110.0 * f,
+                p.w - 48.0 * f,
                 17,
-                estilo::TEXTO,
-            );
-            estilo::texto(
-                x0,
-                y + 56.0 * f,
-                "Onde obter: Loja (Menu › Comércio › Loja).",
-                14,
                 estilo::SUAVE,
             );
-        }
-        let linha_h = 104.0 * f;
-        for mid in &estado.posses.montarias {
-            let Some(mt) = cat::montaria(*mid) else {
-                continue;
-            };
-            let r = Rect::new(x0, y, p.w - 40.0 * f, linha_h - 10.0 * f);
-            estilo::cartao(
-                r,
-                false,
-                valendo.is_some_and(|s| cat::skin(s).is_some_and(|s| s.montaria == mt.id)),
-            );
-            let raio = 30.0 * f;
-            let skin_da_linha = valendo
-                .filter(|s| cat::skin(*s).is_some_and(|s| s.montaria == mt.id))
-                .unwrap_or(mt.skin_padrao);
-            medalhao(
-                vec2(r.x + 16.0 * f + raio, r.center().y),
-                raio,
-                cor_da_skin(skin_da_linha),
-                &mt.nome.chars().next().unwrap_or('?').to_string(),
-            );
-            let tx = r.x + 32.0 * f + raio * 2.0;
-            estilo::texto_forte(tx, r.y + 30.0 * f, mt.nome, 17, estilo::TEXTO);
-            // As skins da conta desta montaria (a padrao vem junto).
-            let mut cx = tx;
-            for s in cat::SKINS.iter().filter(|s| {
-                s.montaria == mt.id && (s.preco_tp == 0 || estado.posses.skins.contains(&s.id))
-            }) {
-                let tw = estilo::medir(s.nome, 13) + 38.0 * f;
-                let chip = Rect::new(cx, r.y + 44.0 * f, tw, 36.0 * f);
-                let sel = valendo == Some(s.id);
-                estilo::cartao(chip, chip.contains(m), sel);
-                draw_circle(
-                    chip.x + 14.0 * f,
-                    chip.center().y,
-                    7.0 * f,
-                    cor_da_skin(s.id),
-                );
-                estilo::texto(
-                    chip.x + 26.0 * f,
-                    chip.center().y + 5.0 * f,
-                    s.nome,
-                    13,
-                    if sel { estilo::OURO } else { estilo::TEXTO },
-                );
-                if clicou && chip.contains(m) {
-                    acao = Some(Acao::Escolher(s.id));
-                }
-                cx += tw + 8.0 * f;
-                if cx > r.x + r.w - 120.0 * f {
-                    break;
-                }
+            let loja = Rect::new(p.center().x - 110.0 * f, p.y + 160.0 * f, 220.0 * f, 40.0 * f);
+            estilo::botao(loja, "Ver na Loja", estilo::estado_de(loja, false, false), true);
+            if clique && loja.contains(mouse) {
+                return Some(Acao::AbrirLoja);
             }
-            y += linha_h;
-            if y > p.y + p.h - 150.0 * f {
-                break;
-            }
-        }
+            return None;
+        };
+        let (especie, grau) = shared::montarias::de_item(id).expect("filtrado acima");
+        let cor = cor_do_grau(grau);
 
-        let bw = 200.0 * f;
-        let loja = Rect::new(
-            p.x + p.w - 20.0 * f - bw,
-            p.y + p.h - 70.0 * f,
-            bw,
-            50.0 * f,
-        );
-        estilo::cartao(loja, loja.contains(m), estado.posses.montarias.is_empty());
+        // ── palco 3D ──
+        let palco = Rect::new(p.x + 18.0 * f, p.y + 60.0 * f, 300.0 * f, 300.0 * f);
+        estilo::cartao(palco, false, false);
+        self.giro += get_frame_time().min(0.1) * 0.5;
+        crate::render3d::vitrine_montaria(vox, id, palco, self.giro, solido);
         estilo::texto_centro_forte(
-            loja.center().x,
-            loja.center().y + 6.0 * f,
-            "Ir para a Loja",
-            16,
+            palco.center().x,
+            palco.y + palco.h - 14.0 * f,
+            &format!("{} {}", especie.nome, shared::pets::nome_do_grau(grau)),
+            19,
+            cor,
+        );
+
+        // ── ficha ──
+        let dir = Rect::new(p.x + 334.0 * f, p.y + 60.0 * f, p.w - 352.0 * f, 300.0 * f);
+        estilo::cartao(dir, false, false);
+        let mut y = dir.y + 32.0 * f;
+        estilo::texto_ajustado(
+            especie.descricao,
+            dir.x + 14.0 * f,
+            y,
+            dir.w - 28.0 * f,
+            15,
+            estilo::SUAVE,
+        );
+        y += 34.0 * f;
+        estilo::texto(dir.x + 14.0 * f, y, "Velocidade montado", 13, estilo::SUAVE);
+        estilo::texto_forte(
+            dir.x + 14.0 * f,
+            y + 24.0 * f,
+            &format!("{:.0}%", shared::montarias::velocidade(grau) * 100.0),
+            22,
+            estilo::VERDE,
+        );
+
+        y += 62.0 * f;
+        estilo::texto(dir.x + 14.0 * f, y, "ATRIBUTOS", 13, estilo::SUAVE);
+        y += 22.0 * f;
+        let mut x = dir.x + 14.0 * f;
+        for (i, pts) in shared::montarias::pontos_por_stat(id).iter().enumerate() {
+            if *pts == 0 {
+                continue;
+            }
+            estilo::texto(x, y, SIGLAS[i], 13, estilo::SUAVE);
+            estilo::texto_forte(x, y + 20.0 * f, &format!("+{pts}"), 18, estilo::VERDE);
+            x += 62.0 * f;
+        }
+        let poder = format!(
+            "PODER  {}",
+            crate::bolsa::milhar(poder_da_montaria(id).max(0) as u64)
+        );
+        estilo::texto_forte(
+            dir.x + dir.w - 14.0 * f - estilo::medir_forte(&poder, 17),
+            y + 20.0 * f,
+            &poder,
+            17,
             estilo::OURO,
         );
-        if clicou && loja.contains(m) {
-            acao = Some(Acao::AbrirLoja);
-        }
-        if !estado.posses.montarias.is_empty() {
-            let montar = Rect::new(loja.x - 12.0 * f - bw, loja.y, bw, 50.0 * f);
-            estilo::cartao(montar, montar.contains(m), true);
+
+        // ── montar ──
+        let agora = get_time();
+        let montando = agora < self.montando_ate;
+        let bt = Rect::new(p.center().x - 130.0 * f, p.y + h - 62.0 * f, 260.0 * f, 44.0 * f);
+        if montando {
+            let total = (self.montando_ate - self.montando_desde).max(0.001);
+            let frac = ((agora - self.montando_desde) / total).clamp(0.0, 1.0) as f32;
+            estilo::barra(bt, frac, frac, estilo::ACENTO, None);
             estilo::texto_centro_forte(
-                montar.center().x,
-                montar.center().y + 6.0 * f,
-                "Montar",
-                16,
-                estilo::OURO,
+                bt.center().x,
+                bt.center().y + 6.0 * f,
+                "MONTANDO…",
+                18,
+                estilo::TEXTO,
             );
-            if clicou && montar.contains(m) {
-                acao = Some(Acao::Montar);
+        } else {
+            estilo::botao(bt, "MONTAR", estilo::estado_de(bt, false, false), true);
+            if clique && bt.contains(mouse) {
+                return Some(Acao::Montar);
             }
         }
-        acao
+        None
     }
 }
 
+fn cor_do_grau(grau: u8) -> Color {
+    let h = shared::items::tier_color_hex(grau).trim_start_matches('#');
+    let v = u32::from_str_radix(h, 16).unwrap_or(0xbf_bf_bf);
+    Color::from_rgba((v >> 16) as u8, (v >> 8) as u8, v as u8, 255)
+}
+
+/// O poder que a montaria soma, pela mesma formula do resto da ficha.
+pub(crate) fn poder_da_montaria(id: u16) -> i32 {
+    let (mut atk, mut def, mut hp, mut mp, mut dex, mut wis) = (0, 0, 0, 0, 0, 0);
+    let mut crit = 0.0f32;
+    for (i, pts) in shared::montarias::pontos_por_stat(id).iter().enumerate() {
+        let Some(b) = shared::STAT_POINT_BONUS.get(i) else {
+            continue;
+        };
+        let p = *pts as i32;
+        atk += b.attack_damage * p;
+        def += b.defense * p;
+        hp += b.hp_max * p;
+        mp += b.mp_max * p;
+        dex += b.dex * p;
+        wis += b.wis * p;
+        crit += b.crit_chance * *pts as f32;
+    }
+    atk * 10 + def * 8 + hp + mp / 2 + (dex + wis) * 5 + (crit * 1000.0) as i32
+}
+
 #[cfg(test)]
-mod tests {
+mod testes {
     use super::*;
 
+    /// Sem montaria equipada a janela nao pede nada alem de abrir a Loja, e
+    /// com uma equipada ela sabe dizer o que a cor da'.
     #[test]
-    fn sem_estado_nao_tem_montaria_e_montando_so_com_aviso() {
-        let mut u = MontariasUi::default();
-        assert!(!u.tem_montaria());
-        u.receber(
-            &AvisoLoja::Estado(EstadoLoja {
-                posses: cat::Posses {
-                    montarias: vec![2],
-                    skins: vec![],
-                    ..Default::default()
-                },
-                ..Default::default()
-            }),
-            0.0,
-        );
-        assert!(u.tem_montaria());
-        u.receber(
-            &AvisoLoja::Invocacao {
-                premio: cat::PremioInvocacao::Montaria {
-                    id: 2,
-                    quantidade: 3,
-                },
-            },
-            0.0,
-        );
-        assert_eq!(
-            u.estado.as_ref().unwrap().posses.quantidade_montaria(2),
-            3
-        );
-        assert!(!u.montando(0.0));
-        u.montando_desde = 10.0;
-        u.montando_ate = 11.0;
-        assert!(u.montando(10.5));
-        assert_eq!(u.progresso(10.5), Some(0.5));
-        u.receber(&AvisoLoja::Montando { segundos: 0.0 }, 10.5);
-        assert!(u.progresso(10.5).is_none());
+    fn a_janela_le_a_montaria_equipada() {
+        let ui = MontariasUi::default();
+        assert!(!ui.aberto);
+        let mut equip = shared::Equipment::default();
+        assert!(equip.montaria.is_none());
+        let id = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_URSO, 4);
+        equip.set(shared::EquipSlot::Montaria, Some(id), None);
+        assert_eq!(equip.montaria, Some(id));
+        let (e, grau) = shared::montarias::de_item(id).unwrap();
+        assert_eq!(grau, 4);
+        assert_eq!(e.base, shared::item_id::MONTARIA_URSO);
+        // O poder acompanha a cor: roxo vale mais que cinza.
+        let cinza = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_URSO, 1);
+        assert!(poder_da_montaria(id) > poder_da_montaria(cinza));
     }
 }

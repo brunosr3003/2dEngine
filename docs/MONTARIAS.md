@@ -1,23 +1,67 @@
 # Montarias
 
-Vêm do **Pergaminho de Invocação: Montaria** da loja de cash (LOJA.md). Só
-**mobilidade**: nenhum atributo de combate muda (regra da TP em ECONOMIA.md).
+A montaria é **item de bolsa**, como o pet (docs/PETS.md): o grau (a cor) mora
+no `item_id`, e por isso ela é **negociável no mercado** e **combinável** na
+aba Combinar do Craft. Equipada no slot `EquipSlot::Montaria`, é nela que se
+monta.
 
-A montaria continua assim. O **pet** (docs/PETS.md) é a exceção consciente:
-ele dá atributo e também sai de pergaminho de TP. O que segura a regra de pé
-é que o pergaminho de pet cai na recompensa diária e o primeiro pet vem da
-história principal — quem paga compra velocidade de progresso, não acesso.
+**Não há nível** — de propósito. O pet tem, porque ele trabalha; a montaria só
+leva você de um lado pro outro.
 
-## Invocação e cópias
+## A cor é a variação
 
-- O pergaminho custa 500 TP, vai para a bolsa e só sorteia quando o jogador
-  toca em **Abrir**: Lobo 55%, Tigre 30%, Urso 15%.
-- A abertura mostra o pergaminho, partículas e a montaria 3D sorteada. O prêmio
-  já foi decidido pelo servidor; pular ou fechar a animação não muda nada.
-- A primeira cópia libera a montaria e sua skin padrão para toda a conta.
-  Duplicatas são válidas e ficam contadas em `loja_montarias`, para a futura
-  combinação/evolução de montarias.
-- A loja mostra a chance de cada montaria e, nas já obtidas, `POSSUÍDA ×N`.
+O sistema de **skins acabou**. A cor do grau é a aparência: ela tinge o bicho
+inteiro, que era exatamente o que a skin fazia. Nove skins viraram cinco cores
+por espécie, e a aba Skins da loja saiu.
+
+| grau | velocidade montado | pontos de atributo |
+|---|---:|---:|
+| Cinza | 150% | 4 |
+| Verde | 160% | 5 |
+| Azul | 170% | 7 |
+| Roxo | 180% | 9 |
+| Laranja | 190% | 11 |
+
+O **cinza vale o que a montaria única valia antes** (`VEL_MONTADO` = 1,5×):
+ninguém ficou mais lento do que já estava, a cor só sobe daí.
+
+A montaria dá **menos** ponto que o pet no mesmo grau — ela só anda. Os pontos
+entram como ponto alocado, pela afinidade da espécie:
+
+| espécie | modelo | afinidade |
+|---|---|---|
+| Lobo da Clareira | `lobo` | SPD 6 · DES 4 |
+| Tigre das Neves | `tigre` | FOR 6 · DES 4 |
+| Urso de Carga | `urso` | VIT 6 · RES 4 |
+
+## De onde vem
+
+O **Pergaminho de Invocação: Montaria** (500 TP, aba Materiais) sorteia
+espécie e cor: Cinza 55%, Verde 28%, Azul 12%, Roxo 4%, Laranja 1%. O
+pergaminho entrega um item na bolsa; nada vira posse de conta.
+
+**Combinar**: 3 do mesmo grau tentam 1 do grau de cima, cobrando cobre.
+Aposta, como a chave e como o pet — falhar consome as três. 60/40/25/10% por
+degrau.
+
+## A regra que isto quebrou
+
+`ECONOMIA.md` dizia que item de TP não muda atributo de combate, e este
+documento dizia que toda montaria corre igual: *"pagar mais caro compra
+aparência, não vantagem"*. **As duas coisas deixaram de valer para a
+montaria**: a cor dá velocidade e atributo.
+
+É a mesma decisão consciente tomada no pet, e o que segura o equilíbrio é o
+mesmo: a montaria é negociável, então quem farma compra a cor que quiser no
+mercado por gold, do mesmo jeito que compra TP.
+
+## A migração
+
+As posses antigas foram **apagadas e o TP devolvido** (`loja_posses` de
+`montaria:%` e `skin:%`, e `loja_montarias` inteira). A decisão foi começar do
+zero no sistema novo, não converter. Roda uma vez, marcada por
+`montarias_viraram_item_v1` no livro-caixa: reiniciar o servidor não paga de
+novo.
 
 ## Regras (servidor, `world/loja_mundo.rs`)
 
@@ -27,22 +71,23 @@ história principal — quem paga compra velocidade de progresso, não acesso.
 - Leva **1 s** (`MONTAR_S`) com um anel de progresso no botão.
 - Só monta **fora de combate** (3 s sem golpear, conjurar nem apanhar),
   **fora de dungeon**, sem coletar, vivo e sem carregar nada. Na cidade pode.
-- Montado anda **+50%** (`VEL_MONTADO`, igual pra toda montaria), sem sprint
-  por cima.
+- Montado anda o que a COR da montaria manda (`montarias::velocidade`), sem
+  sprint por cima.
 - **Desmonta sozinho** ao golpear (inclusive o auto-ataque), conjurar skill,
   apanhar, começar a coletar, cair, entrar em dungeon ou carregar algo. O
   mesmo vale durante a subida: ela é cancelada.
-- **Viagem automática** (mapa, "Ir para", auto missão) monta sozinha se a
-  conta tiver montaria e o personagem estiver a pé (o cliente pede no máximo
+- **Viagem automática** (mapa, "Ir para", auto missão) monta sozinha se
+  houver montaria EQUIPADA e o personagem estiver a pé (o cliente pede no máximo
   a cada 6 s). Viagem pelo mapa que chega sem nada automático seguindo
   desmonta. Auto combate não monta: lutar desmonta.
-- Posse validada no servidor (`Posses::skin_para_montar`): skin escolhida que
-  a conta não tem cai na skin padrão da primeira montaria.
+- Quem decide qual montaria vale é o **slot do equipamento**, conferido no
+  servidor: desequipar no meio da montada derruba quem estava montado.
 
 ## Rede
 
 - `ent_flags::MONTADO` no estado de cada jogador (por tick).
-- `EntityMeta::kind` do jogador = **id da skin** (0 = nenhuma). Quando a skin
+- `EntityMeta::kind` do jogador = **item_id da montaria** (0 = nenhuma), que
+  já diz espécie e cor. Quando a montaria
   muda, a meta é reenviada a quem já conhecia a entidade (o servidor tira a
   entidade do `last_sent` de todos; o cliente troca só a meta).
 - `Preferencias::montaria_skin` guarda a escolha (salva no personagem).

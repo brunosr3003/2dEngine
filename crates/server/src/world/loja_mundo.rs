@@ -29,7 +29,8 @@ fn resultado(to: &mpsc::UnboundedSender<ServerMessage>, ok: bool, texto: impl In
     );
 }
 
-/// Manda o estado da loja e devolve as posses ao loop.
+/// Manda o estado da loja (saldo e historico). Nao ha' mais posse: montaria
+/// e skin sairam da loja (docs/MONTARIAS.md).
 async fn enviar_estado(
     central: &sqlx::PgPool,
     conta: &str,
@@ -40,10 +41,9 @@ async fn enviar_estado(
 ) {
     match banco::estado(central, conta).await {
         Ok(estado) => {
-            let _ = tx_mundo.send(IncomingMessage::Loja(Evento::Posses {
+            let _ = tx_mundo.send(IncomingMessage::Loja(Evento::LojaCarregada {
                 sid,
                 personagem: personagem.to_string(),
-                posses: estado.posses.clone(),
             }));
             avisa(to, AvisoLoja::Estado(estado));
         }
@@ -229,17 +229,12 @@ impl GameWorld {
 
     pub fn on_loja(&mut self, ev: Evento) {
         match ev {
-            Evento::Posses {
-                sid,
-                personagem,
-                posses,
-            } => {
+            Evento::LojaCarregada { sid, personagem } => {
                 let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.name == personagem) else {
                     return;
                 };
-                s.loja_posses = posses;
                 s.loja_carregada = true;
-                self.atualizar_skin_vista(sid);
+                self.atualizar_montaria_vista(sid);
             }
             Evento::Consumivel {
                 sid,
@@ -274,66 +269,6 @@ impl GameWorld {
                         format!("{nome} entregue na bolsa. Abra para revelar o prêmio!")
                     },
                 );
-            }
-            Evento::MontariaInvocada {
-                sid,
-                personagem,
-                montaria,
-                quantidade,
-            } => {
-                let to = {
-                    let Some(s) = self
-                        .sessions
-                        .get_mut(&sid)
-                        .filter(|s| s.logged_in && s.name == personagem)
-                    else {
-                        return;
-                    };
-                    s.loja_posses.registrar_montaria(montaria, quantidade);
-                    s.handle.to_client.clone()
-                };
-                self.atualizar_skin_vista(sid);
-                avisa(
-                    &to,
-                    AvisoLoja::Invocacao {
-                        premio: cat::PremioInvocacao::Montaria {
-                            id: montaria,
-                            quantidade,
-                        },
-                    },
-                );
-            }
-            Evento::MontariasInvocadas {
-                sid,
-                personagem,
-                premios,
-            } => {
-                let (to, varios) = {
-                    let Some(s) = self
-                        .sessions
-                        .get_mut(&sid)
-                        .filter(|s| s.logged_in && s.name == personagem)
-                    else {
-                        return;
-                    };
-                    for &(id, quantidade) in &premios {
-                        s.loja_posses.registrar_montaria(id, quantidade);
-                    }
-                    (s.handle.to_client.clone(), premios.len() > 1)
-                };
-                self.atualizar_skin_vista(sid);
-                let mut premios: Vec<_> = premios
-                    .into_iter()
-                    .map(|(id, quantidade)| cat::PremioInvocacao::Montaria { id, quantidade })
-                    .collect();
-                let aviso = if varios {
-                    AvisoLoja::Invocacoes { premios }
-                } else {
-                    AvisoLoja::Invocacao {
-                        premio: premios.remove(0),
-                    }
-                };
-                avisa(&to, aviso);
             }
             Evento::FalhaInvocacao {
                 sid,
@@ -435,17 +370,22 @@ impl GameWorld {
 
     /// A skin que os outros veem (`EntityMeta::kind` do jogador). Mudou: a
     /// meta vai de novo pra todo mundo que ja' conhecia a entidade.
-    pub(super) fn atualizar_skin_vista(&mut self, sid: SessionId) {
+    /// A montaria que os outros veem e' a EQUIPADA (docs/MONTARIAS.md). Sem
+    /// montaria equipada ninguem fica montado no ar.
+    pub(super) fn atualizar_montaria_vista(&mut self, sid: SessionId) {
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
-        let skin = s.loja_posses.skin_para_montar(s.preferencias.montaria_skin);
-        if skin == s.montaria_skin_vista {
+        let montaria = s
+            .equipment
+            .montaria
+            .filter(|id| shared::montarias::de_item(*id).is_some());
+        if montaria == s.montaria_vista {
             return;
         }
-        s.montaria_skin_vista = skin;
+        s.montaria_vista = montaria;
         let eid = s.entity_id;
-        if skin.is_none() && (s.montado || s.montando_ate > 0.0) {
+        if montaria.is_none() && (s.montado || s.montando_ate > 0.0) {
             s.montado = false;
             s.montando_ate = 0.0;
         }
@@ -463,16 +403,16 @@ impl GameWorld {
         if s.montado || s.montando_ate > 0.0 {
             return;
         }
-        if !s.loja_carregada {
-            resultado(&to, false, "Carregando suas montarias…");
-            self.loja_ao_logar(sid);
-            return;
-        }
-        if s.loja_posses
-            .skin_para_montar(s.preferencias.montaria_skin)
+        if s.equipment
+            .montaria
+            .filter(|id| shared::montarias::de_item(*id).is_some())
             .is_none()
         {
-            resultado(&to, false, "Você ainda não tem montaria. Veja na Loja.");
+            resultado(
+                &to,
+                false,
+                "Equipe uma montaria na bolsa antes de montar.",
+            );
             return;
         }
         if let Err(t) = pode_montar(s, agora) {
@@ -524,7 +464,7 @@ impl GameWorld {
                     s.montando_ate = 0.0;
                     s.montado = true;
                     s.montado_em = agora;
-                    crate::telemetria::conta("montaria", s.montaria_skin_vista.unwrap_or(0), 1);
+                    crate::telemetria::conta("montaria", s.montaria_vista.unwrap_or(0), 1);
                 }
             } else if !pode {
                 s.montado = false;

@@ -50,6 +50,10 @@ A primeira cópia libera a montaria e a skin padrão; duplicatas ficam em
 aprimorar montarias. A compra direta de `Produto::Montaria` é recusada pelo
 servidor; essa variante permanece apenas para representar posses antigas.
 
+A aba Materiais tem **quatro pergaminhos**: chaves, tomos, pet e montaria. As
+abas **Montarias** e **Skins** saíram: a montaria virou item de bolsa e a cor
+dela é a variação (docs/MONTARIAS.md), então não há mais skin para vender.
+
 O terceiro pergaminho da aba é o **Pergaminho de Invocação: Pet**
 (`PERGAMINHOS_PET`, `Produto::PergaminhoPet`), 250 TP: sorteia espécie e grau
 de um pet coletor (docs/PETS.md). Cinza 55%, Verde 28%, Azul 12%, Roxo 4%,

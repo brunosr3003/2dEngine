@@ -331,3 +331,31 @@ refeitos nesta sessão.
   binário ficar em sincronia com o commit: a correção é de cliente e o
   servidor não mudou de comportamento. Protocolo continua 114.
 - Backups em `tempest-prod/dumps/*-pre-borda-2609201736.dump`.
+
+## Montaria virou item, e a skin saiu (protocolo 115)
+
+- A montaria seguiu o caminho do pet: **item de bolsa**, cor no `item_id` (3
+  espécies × 5 cores), slot `EquipSlot::Montaria`, negociável no mercado e
+  combinável na aba Combinar (3 do mesmo grau, 60/40/25/10%).
+- **Sem nível**, por decisão: o pet trabalha, a montaria só anda.
+- A **cor dá velocidade** (150% no cinza até 190% no laranja) e a **espécie dá
+  atributo** (SPD/DES no lobo, FOR/DES no tigre, VIT/RES no urso). O cinza vale
+  o que a montaria única valia antes, então ninguém ficou mais lento.
+- **O sistema de skins acabou**: a tinta do grau é a variação. Saíram
+  `loja::Skin`, `SKINS`, `loja::Montaria`, `MONTARIAS`, `Produto::Montaria`,
+  `Produto::Skin`, `Posses` inteiro e as abas Montarias e Skins da loja.
+  A loja ficou com quatro abas e quatro pergaminhos em Materiais.
+- Sumiu junto todo o caminho de transação central da invocação de montaria: o
+  pergaminho agora sorteia e entrega na bolsa, como o de pet.
+- `montarias_ui` foi reescrita no molde de `pets_ui`: modelo 3D da equipada na
+  cor dela, velocidade, atributos, Poder e o botão MONTAR.
+- **Migração `montarias_viraram_item_v1`**: apaga as posses de montaria e skin
+  e devolve em TP tudo que foi comprado nelas. Roda uma vez, marcada no
+  livro-caixa. A decisão foi começar do zero, não converter.
+- Protocolo 115: `Produto`, `EstadoLoja`, `PremioInvocacao`, `EquipSlot` e
+  `Equipment` mudaram.
+- Duas regras escritas caíram de propósito, anotadas em MONTARIAS.md: item de
+  TP que muda atributo, e "toda montaria corre igual".
+- Prévias conferidas em `/tmp/tempest-loja-mont/`.
+- **Não exercitado**: ninguém equipou nem montou num cliente de verdade, e a
+  migração não rodou contra a prod ainda — ela roda no próximo start.

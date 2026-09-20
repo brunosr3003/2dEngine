@@ -226,6 +226,11 @@ pub struct Equipment {
     pub pet: Option<u16>,
     #[serde(default)]
     pub pet_inst: Option<crate::items::ItemInstance>,
+    /// A montaria equipada (docs/MONTARIAS.md).
+    #[serde(default)]
+    pub montaria: Option<u16>,
+    #[serde(default)]
+    pub montaria_inst: Option<crate::items::ItemInstance>,
 }
 
 impl Equipment {
@@ -243,6 +248,7 @@ impl Equipment {
             Bracelet => (&mut self.bracelet, &mut self.bracelet_inst),
             Belt => (&mut self.belt, &mut self.belt_inst),
             Pet => (&mut self.pet, &mut self.pet_inst),
+            Montaria => (&mut self.montaria, &mut self.montaria_inst),
         }
     }
 

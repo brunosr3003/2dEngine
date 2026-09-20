@@ -22,11 +22,9 @@ use crate::vox::VoxCache;
 /// A aba dos pacotes de TP. Nomeada porque varios caminhos ("+" do saldo,
 /// saldo insuficiente) mandam pra ela — com indice na mao, inserir uma aba no
 /// meio levava o jogador pro lugar errado.
-const ABA_TP: usize = 5;
+const ABA_TP: usize = 3;
 
-const ABAS: [(&str, &str); 6] = [
-    ("Montarias", "montaria"),
-    ("Skins", "paleta"),
+const ABAS: [(&str, &str); 4] = [
     ("Materiais", "craft"),
     ("Pets", "montaria"),
     ("Moedas", "bolsa"),
@@ -66,10 +64,6 @@ pub struct LojaTp {
     pub aberto: bool,
     estado: Option<EstadoLoja>,
     aba: usize,
-    /// Montaria no palco (aba Montarias).
-    montaria_sel: u16,
-    /// Skin no palco (0 = a padrao da montaria).
-    skin_sel: u16,
     confirma: Option<Confirma>,
     /// Ultimo resultado (ok, texto), no rodape.
     ultimo: Option<(bool, String)>,
@@ -87,51 +81,8 @@ pub struct LojaTp {
     tp_mostrado: f64,
 }
 
-/// A cor do bicho de uma montaria (a skin padrao nao tinge).
-pub fn cor_da_montaria(id: u16) -> Color {
-    match id {
-        1 => Color::from_rgba(150, 152, 162, 255),
-        2 => Color::from_rgba(228, 164, 72, 255),
-        _ => Color::from_rgba(126, 86, 54, 255),
-    }
-}
 
-/// A cor de uma skin: a da montaria puxada pra tinta, como no 3D.
-pub fn cor_da_skin(id: u16) -> Color {
-    let Some(s) = cat::skin(id) else { return GRAY };
-    let base = cor_da_montaria(s.montaria);
-    let t = Color::from_rgba(s.tinta[0], s.tinta[1], s.tinta[2], 255);
-    estilo::misturar(base, t, s.forca)
-}
 
-/// Um medalhao redondo com a cor e a inicial da montaria.
-pub fn medalhao(c: Vec2, r: f32, cor: Color, letra: &str) {
-    draw_circle(c.x, c.y, r, estilo::alfa(cor, 0.25));
-    draw_circle(c.x, c.y, r * 0.78, cor);
-    draw_circle_lines(c.x, c.y, r, 2.0, estilo::alfa(cor, 0.9));
-    estilo::texto_centro_forte(
-        c.x,
-        c.y + r * 0.3,
-        letra,
-        (r * 0.9).clamp(12.0, 40.0) as u16,
-        Color::from_rgba(20, 18, 24, 230),
-    );
-}
-
-pub fn situacao_skin(id: u16, e: &EstadoLoja) -> Situacao {
-    let Some(s) = cat::skin(id) else {
-        return Situacao::RequerMontaria;
-    };
-    if s.preco_tp == 0 {
-        Situacao::Inclusa
-    } else if e.posses.skins.contains(&id) {
-        Situacao::Possui
-    } else if !e.posses.montarias.contains(&s.montaria) {
-        Situacao::RequerMontaria
-    } else {
-        Situacao::Comprar(s.preco_tp)
-    }
-}
 
 /// Selo de vitrine da montaria.
 pub fn selo_da_montaria(id: u16) -> Option<&'static str> {
@@ -385,9 +336,6 @@ impl LojaTp {
     pub fn abrir(&mut self) -> Vec<ClientMessage> {
         self.aberto = true;
         self.confirma = None;
-        if self.montaria_sel == 0 {
-            self.montaria_sel = cat::MONTARIAS[0].id;
-        }
         vec![ClientMessage::Loja {
             pedido: PedidoLoja::Estado,
         }]
@@ -423,25 +371,8 @@ impl LojaTp {
                 Some(format!("Loja: {texto}"))
             }
             AvisoLoja::Montando { .. } => None,
-            AvisoLoja::Invocacao {
-                premio: cat::PremioInvocacao::Montaria { id, quantidade },
-            } => {
-                if let Some(e) = self.estado.as_mut() {
-                    e.posses.registrar_montaria(id, quantidade);
-                }
-                None
-            }
             AvisoLoja::Invocacao { .. } => None,
-            AvisoLoja::Invocacoes { premios } => {
-                if let Some(e) = self.estado.as_mut() {
-                    for premio in premios {
-                        if let cat::PremioInvocacao::Montaria { id, quantidade } = premio {
-                            e.posses.registrar_montaria(id, quantidade);
-                        }
-                    }
-                }
-                None
-            }
+            AvisoLoja::Invocacoes { .. } => None,
         }
     }
 
@@ -457,25 +388,11 @@ impl LojaTp {
         id
     }
 
-    /// A skin no palco: a escolhida, se e' da montaria; senao a padrao.
-    fn skin_no_palco(&self) -> u16 {
-        let mt = cat::montaria(self.montaria_sel)
-            .copied()
-            .unwrap_or(cat::MONTARIAS[0]);
-        if cat::skin(self.skin_sel).is_some_and(|s| s.montaria == mt.id) {
-            self.skin_sel
-        } else {
-            mt.skin_padrao
-        }
-    }
 
     pub fn desenha(&mut self, vox: &VoxCache, solido: &Material) -> Vec<ClientMessage> {
         let mut saida = Vec::new();
         if !self.aberto {
             return saida;
-        }
-        if cat::montaria(self.montaria_sel).is_none() {
-            self.montaria_sel = cat::MONTARIAS[0].id;
         }
         let agora = get_time();
         let dt = get_frame_time().min(0.1);
@@ -740,10 +657,9 @@ impl LojaTp {
             p.y + p.h - rodape_h - 12.0 * k - (ya + 60.0 * k),
         );
         match self.aba {
-            0 | 1 => self.vitrine(area, &estado, vox, solido, k, m, livre, modal, dt, agora),
-            2 => self.materiais(area, k, m, livre, modal, agora),
-            3 => self.aba_pets(area, k, m, livre, modal, agora),
-            4 => self.moedas_e_energia(area, k, m, livre, modal, agora),
+            0 => self.materiais(area, k, m, livre, modal, agora),
+            1 => self.aba_pets(area, k, m, livre, modal, agora),
+            2 => self.moedas_e_energia(area, k, m, livre, modal, agora),
             _ => self.pacotes(area, k, m, livre, modal, agora),
         }
 
@@ -810,508 +726,24 @@ impl LojaTp {
         saida
     }
 
-    /// Aba Montarias e aba Skins: palco 3D a' esquerda, lista a' direita.
-    #[allow(clippy::too_many_arguments)]
-    fn vitrine(
-        &mut self,
-        area: Rect,
-        estado: &EstadoLoja,
-        vox: &VoxCache,
-        solido: &Material,
-        k: f32,
-        m: Vec2,
-        livre: bool,
-        modal: bool,
-        dt: f32,
-        agora: f64,
-    ) {
-        let palco = Rect::new(area.x, area.y, area.w * 0.60, area.h);
-        let lista = Rect::new(
-            palco.x + palco.w + 18.0 * k,
-            area.y,
-            area.w - palco.w - 18.0 * k,
-            area.h,
-        );
-        // Aba Skins: o palco segue a skin escolhida (a primeira a venda, se nenhuma).
-        if self.aba == 1 && cat::skin(self.skin_sel).is_none_or(|s| s.preco_tp == 0) {
-            if let Some(s) = cat::SKINS
-                .iter()
-                .find(|s| s.preco_tp > 0 && s.montaria == self.montaria_sel)
-                .or_else(|| cat::SKINS.iter().find(|s| s.preco_tp > 0))
-            {
-                self.skin_sel = s.id;
-                self.montaria_sel = s.montaria;
-            }
-        }
-        let mt = cat::montaria(self.montaria_sel)
-            .copied()
-            .unwrap_or(cat::MONTARIAS[0]);
-        let skin = self.skin_no_palco();
-
-        // palco
-        let rp = 18.0 * k;
-        estilo::ret_gradiente(
-            palco,
-            rp,
-            Color::new(0.19, 0.12, 0.36, 0.96),
-            Color::new(0.05, 0.04, 0.12, 0.96),
-        );
-        // O pedestal vai onde o chao da montaria cai na tela: ela pisa nele.
-        let modelo = Rect::new(
-            palco.x + palco.w * 0.08,
-            palco.y + palco.h * 0.14,
-            palco.w * 0.84,
-            palco.h * 0.66,
-        );
-        let chao_y = crate::render3d::vitrine_chao(vox, skin, modelo)
-            .map_or(palco.y + palco.h * 0.72, |c| c.y);
-        let topo = vec2(palco.center().x, palco.y + 4.0 * k);
-        draw_triangle(
-            topo,
-            vec2(palco.center().x - palco.w * 0.34, chao_y),
-            vec2(palco.center().x + palco.w * 0.34, chao_y),
-            Color::new(1.0, 0.88, 0.62, 0.05),
-        );
-        draw_triangle(
-            topo,
-            vec2(palco.center().x - palco.w * 0.18, chao_y),
-            vec2(palco.center().x + palco.w * 0.18, chao_y),
-            Color::new(1.0, 0.90, 0.70, 0.04),
-        );
-        brilho_radial(
-            vec2(palco.center().x, chao_y - palco.h * 0.22),
-            palco.h * 0.46,
-            LILAS,
-            0.20,
-        );
-        let pulso = fracao(agora as f32 * 0.5);
-        let ped = vec2(palco.center().x, chao_y);
-        let (ew, eh) = (palco.w * 0.29, 24.0 * k);
-        draw_ellipse(
-            ped.x,
-            ped.y + 12.0 * k,
-            ew * 1.12,
-            eh * 1.2,
-            0.0,
-            Color::new(0.0, 0.0, 0.0, 0.40),
-        );
-        draw_ellipse(
-            ped.x,
-            ped.y + 6.0 * k,
-            ew,
-            eh,
-            0.0,
-            Color::new(0.16, 0.11, 0.30, 1.0),
-        );
-        draw_ellipse(ped.x, ped.y, ew, eh, 0.0, Color::new(0.30, 0.22, 0.50, 1.0));
-        draw_ellipse(
-            ped.x,
-            ped.y - 1.0 * k,
-            ew * 0.92,
-            eh * 0.84,
-            0.0,
-            Color::new(0.36, 0.27, 0.58, 1.0),
-        );
-        draw_ellipse_lines(
-            ped.x,
-            ped.y,
-            ew,
-            eh,
-            0.0,
-            2.2 * k.max(0.8),
-            estilo::alfa(OURO_CLARO, 0.85),
-        );
-        draw_ellipse_lines(
-            ped.x,
-            ped.y,
-            ew * (1.0 + pulso * 0.25),
-            eh * (1.0 + pulso * 0.25),
-            0.0,
-            1.6 * k.max(0.8),
-            estilo::alfa(OURO_CLARO, 0.45 * (1.0 - pulso)),
-        );
-        faiscas(palco, agora, 22, k, 3);
-        estilo::borda_arredondada(palco, rp, 1.2 * k.max(0.8), estilo::alfa(LILAS, 0.28));
-
-        if !modal && is_mouse_button_pressed(MouseButton::Left) && modelo.contains(m) {
-            self.arrasto = Some(m.x);
-        }
-        match self.arrasto {
-            Some(x0) if is_mouse_button_down(MouseButton::Left) => {
-                self.giro += (m.x - x0) * 0.011 / k.max(0.4);
-                self.arrasto = Some(m.x);
-            }
-            _ => {
-                self.arrasto = None;
-                self.giro += dt * 0.42;
-            }
-        }
-        crate::render3d::vitrine_montaria(vox, skin, modelo, self.giro, solido);
-
-        // textos do palco
-        let tx = palco.x + 24.0 * k;
-        let mut ty = palco.y + 22.0 * k;
-        let selo_txt = if self.aba == 0 {
-            selo_da_montaria(mt.id)
-        } else {
-            None
-        };
-        if let Some(sl) = selo_txt {
-            selo(vec2(tx, ty), sl, k, sl != "NOVO");
-            ty += 30.0 * k;
-        }
-        let titulo = if self.aba == 0 {
-            mt.nome.to_string()
-        } else {
-            cat::skin(skin).map_or(String::new(), |s| s.nome.to_string())
-        };
-        estilo::texto_sombra(tx, ty + 28.0 * k, &titulo, ts(30.0, k), estilo::TEXTO, true);
-        let sub = if self.aba == 0 {
-            mt.descricao.to_string()
-        } else {
-            format!("Skin de {} · só aparência", mt.nome)
-        };
-        estilo::texto_ajustado(
-            &sub,
-            tx,
-            ty + 52.0 * k,
-            palco.w * 0.62,
-            ts(14.0, k),
-            estilo::alfa(LILAS, 0.95),
-        );
-        let yc = ty + 66.0 * k;
-        let w1 = chip(
-            tx,
-            yc,
-            "montaria",
-            &format!("+{:.0}% de velocidade", (cat::VEL_MONTADO - 1.0) * 100.0),
-            k,
-        );
-        chip(tx + w1 + 8.0 * k, yc, "", "Vale para a conta toda", k);
-        if self.aba == 0 {
-            estilo::texto(
-                tx,
-                yc + 31.0 * k,
-                "Pergaminho aleatório: 55% Lobo · 30% Tigre · 15% Urso",
-                ts(12.0, k),
-                OURO_CLARO,
-            );
-        }
-        estilo::texto(
-            palco.x + palco.w - 24.0 * k - estilo::medir("arraste para girar", ts(11.0, k)),
-            palco.y + 30.0 * k,
-            "arraste para girar",
-            ts(11.0, k),
-            estilo::alfa(LILAS, 0.55),
-        );
-
-        // amostras de skin
-        let skins: Vec<&cat::Skin> = cat::SKINS.iter().filter(|s| s.montaria == mt.id).collect();
-        let ys = palco.y + palco.h - 44.0 * k;
-        estilo::texto(
-            tx,
-            ys - 30.0 * k,
-            "SKINS",
-            ts(11.0, k),
-            estilo::alfa(LILAS, 0.7),
-        );
-        for (i, s) in skins.iter().enumerate() {
-            let c = vec2(tx + 20.0 * k + i as f32 * 50.0 * k, ys);
-            let rr = 18.0 * k;
-            let sel = s.id == skin;
-            if sel {
-                draw_circle(c.x, c.y, rr + 7.0 * k, estilo::alfa(OURO_CLARO, 0.22));
-            }
-            draw_circle(c.x, c.y, rr, cor_da_skin(s.id));
-            draw_circle(
-                c.x - rr * 0.3,
-                c.y - rr * 0.35,
-                rr * 0.35,
-                estilo::alfa(WHITE, 0.28),
-            );
-            draw_circle_lines(
-                c.x,
-                c.y,
-                rr,
-                if sel { 3.0 } else { 1.5 } * k.max(0.7),
-                if sel {
-                    OURO_CLARO
-                } else {
-                    estilo::alfa(WHITE, 0.45)
-                },
-            );
-            let tem = s.preco_tp == 0 || estado.posses.skins.contains(&s.id);
-            if tem && estado.posses.montarias.contains(&mt.id) {
-                let cc = c + vec2(rr * 0.75, -rr * 0.75);
-                draw_circle(cc.x, cc.y, 7.0 * k, VERDE_POSSE);
-                visto(cc, 7.0 * k, TINTA_BOTAO);
-            }
-            if livre && m.distance(c) <= rr + 4.0 * k {
-                self.skin_sel = s.id;
-            }
-        }
-        if let Some(s) = cat::skin(skin) {
-            let xnome = tx + skins.len() as f32 * 50.0 * k + 6.0 * k;
-            estilo::texto_forte(xnome, ys + 5.0 * k, s.nome, ts(13.0, k), estilo::TEXTO);
-        }
-
-        // compra
-        let (sit, produto) = if self.aba == 0 {
-            let perg = cat::PERGAMINHOS_MONTARIA[0];
-            (
-                Situacao::Comprar(perg.preco_tp),
-                Produto::PergaminhoMontaria(perg.id),
-            )
-        } else {
-            (situacao_skin(skin, estado), Produto::Skin(skin))
-        };
-        let bw = 230.0 * k;
-        let bh = 56.0 * k;
-        let bt = Rect::new(
-            palco.x + palco.w - 22.0 * k - bw,
-            palco.y + palco.h - 22.0 * k - bh,
-            bw,
-            bh,
-        );
-        match sit {
-            Situacao::Comprar(preco) => {
-                let txt = milhar(preco);
-                let tam = ts(24.0, k);
-                let lw = estilo::largura_tp_texto(&txt, tam, true);
-                estilo::tp_texto(
-                    bt.center().x - lw * 0.5,
-                    bt.y - 14.0 * k,
-                    &txt,
-                    tam,
-                    OURO_CLARO,
-                    true,
-                );
-                let ativo = !self.em_voo;
-                let sobre = !modal && bt.contains(m);
-                botao_ouro(
-                    bt,
-                    if self.em_voo {
-                        "AGUARDE…"
-                    } else if matches!(produto, Produto::PergaminhoMontaria(_)) {
-                        "COMPRAR PERGAMINHO"
-                    } else {
-                        "COMPRAR"
-                    },
-                    ativo,
-                    sobre,
-                    k,
-                    agora,
-                );
-                if ativo && livre && sobre {
-                    self.confirma = Some(Confirma::Item(produto));
-                }
-            }
-            Situacao::Possui => etiqueta_estado(
-                bt,
-                if self.aba == 0 {
-                    "POSSUÍDA"
-                } else {
-                    "SKIN POSSUÍDA"
-                },
-                VERDE_POSSE,
-                k,
-            ),
-            Situacao::Inclusa => etiqueta_estado(bt, "INCLUSA NA MONTARIA", CIANO, k),
-            Situacao::RequerMontaria => {
-                etiqueta_estado(bt, "REQUER A MONTARIA", estilo::SUAVE, k);
-                estilo::texto_centro(
-                    bt.center().x,
-                    bt.y - 12.0 * k,
-                    &format!("Compre o {} antes", mt.nome),
-                    ts(12.0, k),
-                    estilo::SUAVE,
-                );
-            }
-        }
-        if self.aba == 0
-            && matches!(
-                situacao_skin(skin, estado),
-                Situacao::Comprar(_) | Situacao::RequerMontaria
-            )
-        {
-            let xnome = tx + skins.len() as f32 * 50.0 * k + 6.0 * k;
-            estilo::texto(
-                xnome,
-                ys + 23.0 * k,
-                "à venda na aba Skins",
-                ts(11.0, k),
-                estilo::alfa(AMBAR, 0.9),
-            );
-        }
-
-        // lista
-        if self.aba == 0 {
-            let n = cat::MONTARIAS.len();
-            let vao = 12.0 * k;
-            let ch = (lista.h - vao * (n as f32 - 1.0)) / n as f32;
-            for (i, mtc) in cat::MONTARIAS.iter().enumerate() {
-                let r = Rect::new(lista.x, lista.y + i as f32 * (ch + vao), lista.w, ch);
-                let sel = mtc.id == self.montaria_sel;
-                let sobre = !modal && r.contains(m);
-                self.cartao_montaria(r, mtc, sel, sobre, estado, vox, solido, k, agora);
-                if livre && sobre {
-                    self.montaria_sel = mtc.id;
-                    self.skin_sel = 0;
-                }
-            }
-        } else {
-            let pagas: Vec<&cat::Skin> = cat::SKINS.iter().filter(|s| s.preco_tp > 0).collect();
-            let colunas = 2usize;
-            let linhas = pagas.len().div_ceil(colunas).max(1);
-            let vao = 10.0 * k;
-            let cwid = (lista.w - vao) / colunas as f32;
-            let ch = (lista.h - vao * (linhas as f32 - 1.0)) / linhas as f32;
-            for (i, s) in pagas.iter().enumerate() {
-                let r = Rect::new(
-                    lista.x + (i % colunas) as f32 * (cwid + vao),
-                    lista.y + (i / colunas) as f32 * (ch + vao),
-                    cwid,
-                    ch,
-                );
-                let sel = s.id == skin;
-                let sobre = !modal && r.contains(m);
-                cartao_skin(r, s, sel, sobre, estado, k);
-                if livre && sobre {
-                    self.skin_sel = s.id;
-                    self.montaria_sel = s.montaria;
-                }
-            }
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn cartao_montaria(
-        &self,
-        r: Rect,
-        mt: &cat::Montaria,
-        sel: bool,
-        sobre: bool,
-        estado: &EstadoLoja,
-        vox: &VoxCache,
-        solido: &Material,
-        k: f32,
-        agora: f64,
-    ) {
-        let rc = 16.0 * k;
-        if sel {
-            estilo::ret_arredondado(
-                Rect::new(r.x - 3.0 * k, r.y - 3.0 * k, r.w + 6.0 * k, r.h + 6.0 * k),
-                rc + 3.0 * k,
-                estilo::alfa(OURO_CLARO, 0.16),
-            );
-        }
-        estilo::ret_gradiente(
-            r,
-            rc,
-            if sel {
-                Color::new(0.30, 0.20, 0.50, 0.97)
-            } else {
-                Color::new(0.15, 0.11, 0.27, 0.93)
-            },
-            Color::new(0.06, 0.05, 0.13, 0.95),
-        );
-        estilo::borda_arredondada(
-            r,
-            rc,
-            if sel { 2.0 } else { 1.0 } * k.max(0.8),
-            if sel {
-                OURO_CLARO
-            } else if sobre {
-                estilo::alfa(OURO_CLARO, 0.5)
-            } else {
-                estilo::alfa(LILAS, 0.2)
-            },
-        );
-        let lado = (r.h - 16.0 * k).min(r.w * 0.45);
-        let mini = Rect::new(r.x + 8.0 * k, r.y + (r.h - lado) * 0.5, lado, lado);
-        estilo::ret_gradiente(
-            mini,
-            12.0 * k,
-            Color::new(0.24, 0.17, 0.42, 1.0),
-            Color::new(0.08, 0.06, 0.16, 1.0),
-        );
-        brilho_radial(
-            vec2(mini.center().x, mini.y + mini.h * 0.62),
-            mini.w * 0.48,
-            LILAS,
-            0.18,
-        );
-        let chao = crate::render3d::vitrine_chao(vox, mt.skin_padrao, mini)
-            .unwrap_or(vec2(mini.center().x, mini.y + mini.h * 0.84));
-        draw_ellipse(
-            chao.x,
-            chao.y,
-            mini.w * 0.34,
-            mini.h * 0.07,
-            0.0,
-            estilo::alfa(OURO_CLARO, 0.30),
-        );
-        let giro = if sel {
-            0.65 + (agora as f32 * 0.8).sin() * 0.35
-        } else {
-            0.65
-        };
-        crate::render3d::vitrine_montaria(vox, mt.skin_padrao, mini, giro, solido);
-        let x = mini.x + mini.w + 14.0 * k;
-        let largura = r.x + r.w - x - 12.0 * k;
-        let meio = r.center().y;
-        estilo::texto_ajustado(
-            mt.nome,
-            x,
-            meio - 8.0 * k,
-            largura,
-            ts(18.0, k),
-            estilo::TEXTO,
-        );
-        let chance = cat::PERGAMINHOS_MONTARIA[0]
-            .chances
-            .get(mt.id.saturating_sub(1) as usize)
-            .copied()
-            .unwrap_or(0);
-        if estado.posses.montarias.contains(&mt.id) {
-            visto(vec2(x + 7.0 * k, meio + 16.0 * k), 12.0 * k, VERDE_POSSE);
-            estilo::texto_forte(
-                x + 20.0 * k,
-                meio + 22.0 * k,
-                &format!("POSSUÍDA ×{}", estado.posses.quantidade_montaria(mt.id)),
-                ts(14.0, k),
-                VERDE_POSSE,
-            );
-        } else {
-            estilo::texto_forte(
-                x,
-                meio + 22.0 * k,
-                &format!("{chance}% na invocação"),
-                ts(14.0, k),
-                OURO_CLARO,
-            );
-        }
-        if let Some(sl) = selo_da_montaria(mt.id) {
-            let tam = ts(11.0, k);
-            let w = estilo::medir_forte(sl, tam) + 20.0 * k;
-            selo(
-                vec2(r.x + r.w - w - 10.0 * k, r.y + 10.0 * k),
-                sl,
-                k,
-                sl != "NOVO",
-            );
-        }
-    }
-
     /// Aba Materiais: pergaminhos repetíveis de chaves e tomos, mais moedas.
     fn materiais(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
         let bau = &cat::BAUS_CRAFT[0];
         let vao = 12.0 * k;
-        let w = ((area.w - vao * 2.0) / 3.0).min(390.0 * k);
-        let total = w * 3.0 + vao * 2.0;
+        let w = ((area.w - vao * 3.0) / 4.0).min(390.0 * k);
+        let total = w * 4.0 + vao * 3.0;
         let x0 = area.center().x - total * 0.5;
+        let alto = area.h - 16.0 * k;
         self.pergaminho_de_pet(
-            Rect::new(x0 + (w + vao) * 2.0, area.y + 8.0 * k, w, area.h - 16.0 * k),
+            Rect::new(x0 + (w + vao) * 2.0, area.y + 8.0 * k, w, alto),
+            k,
+            m,
+            livre,
+            modal,
+            agora,
+        );
+        self.pergaminho_de_montaria(
+            Rect::new(x0 + (w + vao) * 3.0, area.y + 8.0 * k, w, alto),
             k,
             m,
             livre,
@@ -1586,6 +1018,86 @@ impl LojaTp {
             modal,
             agora,
         );
+    }
+
+    /// O Pergaminho de Invocação: Montaria. Espécie e cor saem no ABRIR, como
+    /// no de pet — a montaria virou item de bolsa (docs/MONTARIAS.md).
+    fn pergaminho_de_montaria(
+        &mut self,
+        r: Rect,
+        k: f32,
+        m: Vec2,
+        livre: bool,
+        modal: bool,
+        agora: f64,
+    ) {
+        let perg = &cat::PERGAMINHOS_MONTARIA[0];
+        let sobre = !modal && r.contains(m);
+        estilo::sombra(r, 22.0 * k, 1.0);
+        estilo::ret_gradiente(
+            r,
+            22.0 * k,
+            Color::new(0.14, 0.24, 0.40, 0.98),
+            Color::new(0.04, 0.06, 0.13, 0.98),
+        );
+        estilo::borda_arredondada(
+            r,
+            22.0 * k,
+            1.5 * k.max(0.8),
+            estilo::alfa(if sobre { OURO_CLARO } else { LILAS }, 0.60),
+        );
+        faiscas(r, agora, 18, k, 307);
+        let arte = vec2(r.center().x, r.y + r.h * 0.27);
+        brilho_radial(arte, r.h * 0.20, OURO_CLARO, 0.28);
+        crate::invocacao_ui::icone_pergaminho_de(
+            shared::item_id::PERGAMINHO_INVOCA_MONTARIA,
+            arte,
+            r.h * 0.32,
+        );
+        estilo::texto_centro_forte(
+            r.center().x,
+            r.y + r.h * 0.47,
+            "Invocação de Montaria",
+            ts(22.0, k),
+            estilo::TEXTO,
+        );
+        estilo::texto_centro(
+            r.center().x,
+            r.y + r.h * 0.53,
+            "1 montaria, espécie sorteada.",
+            ts(13.0, k),
+            estilo::alfa(LILAS, 0.95),
+        );
+        let passo = r.w * 0.17;
+        let inicio = r.center().x - passo * 2.0;
+        let yc = r.y + r.h * 0.64;
+        for (i, chance) in shared::montarias::CHANCES_DO_PERGAMINHO.iter().enumerate() {
+            let x = inicio + passo * i as f32;
+            let cor = cor_do_grau(i as u8 + 1);
+            draw_circle(x, yc, 10.0 * k, cor);
+            draw_circle_lines(x, yc, 12.0 * k, 1.5 * k.max(0.8), estilo::alfa(WHITE, 0.7));
+            estilo::texto_centro(x, yc + 27.0 * k, &format!("{chance}%"), ts(11.0, k), estilo::TEXTO);
+        }
+        estilo::valor_tp(
+            r.center().x
+                - estilo::largura_tp_texto(&milhar(perg.preco_tp), ts(23.0, k), true) * 0.5,
+            r.y + r.h - 88.0 * k,
+            perg.preco_tp,
+            ts(23.0, k),
+            OURO_CLARO,
+        );
+        let bt = Rect::new(r.center().x - 108.0 * k, r.y + r.h - 62.0 * k, 216.0 * k, 48.0 * k);
+        botao_ouro(
+            bt,
+            if self.em_voo { "AGUARDE…" } else { "COMPRAR PERGAMINHO" },
+            !self.em_voo,
+            !modal && bt.contains(m),
+            k,
+            agora,
+        );
+        if !self.em_voo && livre && bt.contains(m) {
+            self.confirma = Some(Confirma::Item(Produto::PergaminhoMontaria(perg.id)));
+        }
     }
 
     /// O Pergaminho de Invocação: Pet. Especie e grau saem no ABRIR, entao o
@@ -2079,8 +1591,6 @@ impl LojaTp {
             }
             Confirma::Item(pr) => {
                 let skin = match pr {
-                    Produto::Montaria(id) => cat::montaria(id).map_or(0, |m| m.skin_padrao),
-                    Produto::Skin(id) => id,
                     Produto::Tp(_)
                     | Produto::BauCraft(_)
                     | Produto::Moeda(_)
@@ -2155,19 +1665,12 @@ impl LojaTp {
                     );
                 }
                 let tipo = match pr {
-                    Produto::Montaria(_) => "Montaria · +50% de velocidade".to_string(),
-                    Produto::Skin(id) => format!(
-                        "Skin de {}",
-                        cat::skin(id)
-                            .and_then(|s| cat::montaria(s.montaria))
-                            .map_or("?", |m| m.nome)
-                    ),
                     Produto::Tp(_) => String::new(),
                     Produto::BauCraft(_) => {
                         "Pergaminho · abra na bolsa · chave aleatória".to_string()
                     }
                     Produto::PergaminhoMontaria(_) => {
-                        "Pergaminho · 1 montaria aleatória · duplicatas contam".to_string()
+                        "Pergaminho · 1 montaria · espécie e cor sorteadas".to_string()
                     }
                     Produto::PergaminhoTomo(_) => {
                         "Pergaminho · tomo aleatório para 1 de 12 habilidades".to_string()
@@ -2317,114 +1820,6 @@ impl LojaTp {
     }
 }
 
-/// Cartao de skin na aba Skins.
-fn cartao_skin(r: Rect, s: &cat::Skin, sel: bool, sobre: bool, estado: &EstadoLoja, k: f32) {
-    let rc = 14.0 * k;
-    if sel {
-        estilo::ret_arredondado(
-            Rect::new(r.x - 3.0 * k, r.y - 3.0 * k, r.w + 6.0 * k, r.h + 6.0 * k),
-            rc + 3.0 * k,
-            estilo::alfa(OURO_CLARO, 0.16),
-        );
-    }
-    estilo::ret_gradiente(
-        r,
-        rc,
-        if sel {
-            Color::new(0.30, 0.20, 0.50, 0.97)
-        } else {
-            Color::new(0.15, 0.11, 0.27, 0.93)
-        },
-        Color::new(0.06, 0.05, 0.13, 0.95),
-    );
-    estilo::borda_arredondada(
-        r,
-        rc,
-        if sel { 2.0 } else { 1.0 } * k.max(0.8),
-        if sel {
-            OURO_CLARO
-        } else if sobre {
-            estilo::alfa(OURO_CLARO, 0.5)
-        } else {
-            estilo::alfa(LILAS, 0.2)
-        },
-    );
-    let cor = cor_da_skin(s.id);
-    let rr = (r.h * 0.26).min(r.w * 0.20);
-    let c = vec2(r.x + 14.0 * k + rr, r.y + 14.0 * k + rr);
-    // A amostra como uma gema da cor da skin: base escura, corpo, brilho.
-    brilho_radial(c, rr * 1.6, cor, 0.40);
-    draw_circle(c.x, c.y + rr * 0.06, rr, estilo::clarear(cor, -0.35));
-    draw_circle(c.x, c.y - rr * 0.04, rr * 0.92, cor);
-    draw_circle(
-        c.x - rr * 0.12,
-        c.y - rr * 0.2,
-        rr * 0.62,
-        estilo::clarear(cor, 0.12),
-    );
-    draw_circle(
-        c.x - rr * 0.32,
-        c.y - rr * 0.38,
-        rr * 0.26,
-        estilo::alfa(WHITE, 0.38),
-    );
-    draw_circle_lines(
-        c.x,
-        c.y,
-        rr,
-        2.0 * k.max(0.7),
-        estilo::alfa(
-            if sel { OURO_CLARO } else { WHITE },
-            if sel { 0.9 } else { 0.45 },
-        ),
-    );
-    let x = c.x + rr + 12.0 * k;
-    let largura = r.x + r.w - x - 10.0 * k;
-    estilo::texto_ajustado(
-        s.nome,
-        x,
-        c.y - 4.0 * k,
-        largura,
-        ts(15.0, k),
-        estilo::TEXTO,
-    );
-    let nome_m = cat::montaria(s.montaria).map_or("?", |m| m.nome);
-    estilo::texto_ajustado(
-        nome_m,
-        x,
-        c.y + 14.0 * k,
-        largura,
-        ts(11.0, k),
-        estilo::alfa(LILAS, 0.85),
-    );
-    let yb = r.y + r.h - 16.0 * k;
-    match situacao_skin(s.id, estado) {
-        Situacao::Comprar(preco) => {
-            estilo::valor_tp(r.x + 14.0 * k, yb, preco, ts(16.0, k), OURO_CLARO);
-        }
-        Situacao::Possui | Situacao::Inclusa => {
-            visto(vec2(r.x + 21.0 * k, yb - 5.0 * k), 11.0 * k, VERDE_POSSE);
-            estilo::texto_forte(r.x + 34.0 * k, yb, "POSSUÍDA", ts(13.0, k), VERDE_POSSE);
-        }
-        Situacao::RequerMontaria => {
-            estilo::valor_tp(
-                r.x + 14.0 * k,
-                yb,
-                s.preco_tp,
-                ts(15.0, k),
-                estilo::alfa(OURO_CLARO, 0.6),
-            );
-            let t = "requer montaria";
-            estilo::texto(
-                r.x + r.w - 12.0 * k - estilo::medir(t, ts(10.0, k)),
-                yb,
-                t,
-                ts(10.0, k),
-                estilo::SUAVE,
-            );
-        }
-    }
-}
 
 // ─────────────────────────────── previa offscreen ───────────────────────────────
 
@@ -2472,11 +1867,6 @@ pub async fn previa(vox: &VoxCache) {
         ligada: true,
         simulado: true,
         tp: 1_250,
-        posses: cat::Posses {
-            montarias: vec![1],
-            skins: vec![102],
-            montarias_qtd: vec![(1, 1)],
-        },
         historico: vec![
             cat::CompraNet {
                 produto: "Bolsa de TP".into(),
@@ -2499,75 +1889,42 @@ pub async fn previa(vox: &VoxCache) {
         ],
     };
     loja.receber(AvisoLoja::Estado(estado.clone()));
-    let cenas: [&str; 11] = [
-        "1-montarias",
-        "2-montaria-possuida",
-        "3-skins",
-        "4-materiais",
-        "5-pets",
-        "6-confirma-pergaminho",
-        "7-confirma-tp",
-        "8-compra-concluida",
-        "9-mundo",
-        "10-tempest-points",
-        "11-moedas",
+    let cenas: [&str; 7] = [
+        "1-materiais",
+        "2-pets",
+        "3-moedas",
+        "4-tempest-points",
+        "5-confirma-pergaminho",
+        "6-confirma-tp",
+        "7-compra-concluida",
     ];
-    let (sw, sh) = (lw, lh);
     for (n, cena) in cenas.iter().enumerate() {
-        if n == 8 {
-            previa_mundo(vox, &solido, &format!("{saida}/{sw}x{sh}")).await;
-            continue;
-        }
         loja.confirma = None;
         loja.festa = None;
         loja.festa_pendente = None;
         loja.ultimo = None;
         match n {
-            0 => {
-                loja.aba = 0;
-                loja.montaria_sel = 2;
-                loja.skin_sel = 0;
-            }
-            1 => {
-                loja.aba = 0;
-                loja.montaria_sel = 1;
-                loja.skin_sel = 102;
-            }
-            2 => {
-                loja.aba = 1;
-                loja.montaria_sel = 2;
-                loja.skin_sel = 203;
-            }
-            3 => {
-                loja.aba = 2;
-            }
+            0 => loja.aba = 0,
+            1 => loja.aba = 1,
+            2 => loja.aba = 2,
+            3 => loja.aba = ABA_TP,
             4 => {
-                loja.aba = 3;
-            }
-            9 => {
-                loja.aba = ABA_TP;
-            }
-            10 => {
-                loja.aba = 4;
-            }
-            5 => {
                 loja.aba = 0;
-                loja.montaria_sel = 3;
                 loja.confirma = Some(Confirma::Item(Produto::PergaminhoMontaria(1)));
             }
-            6 => {
+            5 => {
                 loja.aba = ABA_TP;
                 loja.confirma = Some(Confirma::Tp(4));
             }
             _ => {
                 loja.aba = 0;
-                loja.montaria_sel = 2;
                 loja.receber(AvisoLoja::Resultado {
                     ok: true,
-                    texto: "Pergaminho entregue na bolsa!".into(),
+                    texto: "Pergaminho de Invocação: Montaria entregue na bolsa!".into(),
                 });
             }
         }
+        let (sw, sh) = (lw, lh);
         for quadro in 0..48 {
             crate::render3d::camera_padrao();
             clear_background(Color::new(0.10, 0.14, 0.12, 1.0));
@@ -2616,7 +1973,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
         (
             6,
             EntityTag::Player,
-            201,
+            shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_TIGRE, 4),
             vec2(-2.5, -4.2),
             shared::ent_flags::MONTADO,
         ),
@@ -2797,15 +2154,11 @@ fn salva_alvo(rt: &macroquad::texture::RenderTarget, caminho: &str) {
 mod tests {
     use super::*;
 
-    fn estado(montarias: Vec<u16>, skins: Vec<u16>, tp: u64) -> EstadoLoja {
+
+    fn estado(tp: u64) -> EstadoLoja {
         EstadoLoja {
             ligada: true,
             tp,
-            posses: cat::Posses {
-                montarias,
-                skins,
-                ..Default::default()
-            },
             ..Default::default()
         }
     }
@@ -2819,33 +2172,7 @@ mod tests {
         assert_ne!(a, b);
     }
 
-    #[test]
-    fn situacoes_respeitam_posses() {
-        let e = estado(vec![1], vec![102], 0);
-        assert_eq!(situacao_skin(101, &e), Situacao::Inclusa);
-        assert_eq!(situacao_skin(102, &e), Situacao::Possui);
-        assert_eq!(situacao_skin(103, &e), Situacao::Comprar(450));
-        assert_eq!(
-            situacao_skin(202, &e),
-            Situacao::RequerMontaria,
-            "sem a montaria nao compra a skin"
-        );
-    }
 
-    #[test]
-    fn invocacao_atualiza_a_quantidade_sem_reabrir_a_loja() {
-        let mut l = LojaTp::default();
-        l.receber(AvisoLoja::Estado(estado(vec![], vec![], 500)));
-        l.receber(AvisoLoja::Invocacao {
-            premio: cat::PremioInvocacao::Montaria {
-                id: 3,
-                quantidade: 2,
-            },
-        });
-        let p = &l.estado().unwrap().posses;
-        assert_eq!(p.quantidade_montaria(3), 2);
-        assert!(p.skins.contains(&301));
-    }
 
     #[test]
     fn selos_bonus_e_saldo() {
@@ -2893,7 +2220,7 @@ mod tests {
     #[test]
     fn primeiro_estado_nao_anima_o_saldo() {
         let mut l = LojaTp::default();
-        l.receber(AvisoLoja::Estado(estado(vec![], vec![], 900)));
+        l.receber(AvisoLoja::Estado(estado(900)));
         assert_eq!(l.tp_mostrado, 900.0);
     }
 }

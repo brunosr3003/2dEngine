@@ -2871,6 +2871,38 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         }
     }
 
+    // As 15 montarias (3 especies x 5 cores, docs/MONTARIAS.md). Mesma forma
+    // do pet: item de bolsa, pilha 1, slot proprio, sem atributo no template
+    // (o que ela da' entra como ponto alocado em `effective_stats`).
+    for e in shared::montarias::ESPECIES {
+        for grau in 1..=shared::montarias::GRAU_MAX {
+            let id = item_id::montaria_no_grau(e.base, grau) as i32;
+            let nome = shared::montarias::nome_do_item(id as u16).unwrap_or_default();
+            let venda = 200i32 * (grau as i32) * (grau as i32);
+            sqlx::query(
+                "INSERT INTO items \
+                  (id, name, sell_price, buy_price, shop_order, stack_max, \
+                   equip_slot, item_level, icon_col, icon_row) \
+                 VALUES ($1,$2,$3,NULL,NULL,1,$4,1,-1,-1) \
+                 ON CONFLICT (id) DO UPDATE SET \
+                   equip_slot = EXCLUDED.equip_slot, \
+                   stack_max = EXCLUDED.stack_max, \
+                   sell_price = EXCLUDED.sell_price",
+            )
+            .bind(id)
+            .bind(&nome)
+            .bind(venda)
+            .bind(shared::EquipSlot::Montaria.as_db_str())
+            .execute(pool)
+            .await?;
+            sqlx::query("UPDATE items SET name = $1 WHERE id = $2")
+                .bind(&nome)
+                .bind(id)
+                .execute(pool)
+                .await?;
+        }
+    }
+
     // O pergaminho de pet cai na recompensa diaria, e o calendario nao
     // entrega item negociavel (docs/CALENDARIO.md): ele nasce VINCULADO. O
     // que sai dele — o pet — e' negociavel normalmente, que e' o ponto.

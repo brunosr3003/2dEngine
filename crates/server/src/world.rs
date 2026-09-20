@@ -1865,7 +1865,6 @@ pub struct Session {
     /// enquanto estiver dentro (queda no meio nao prende ninguem na arena).
     pub retorno_da_dungeon: Option<Vec2>,
     /// Montarias e skins da CONTA (banco central, `crate::loja`).
-    pub loja_posses: shared::loja::Posses,
     /// As posses ja' chegaram do central nesta sessao.
     pub loja_carregada: bool,
     /// Montado agora (docs/MONTARIAS.md).
@@ -1875,7 +1874,9 @@ pub struct Session {
     /// Quando montou (sim_time_s): golpe/pancada depois disto desmonta.
     pub montado_em: f32,
     /// Skin que os outros veem (`EntityMeta::kind`), ja' validada.
-    pub montaria_skin_vista: Option<u16>,
+    /// A montaria EQUIPADA que os outros veem (docs/MONTARIAS.md). E' o
+    /// item_id: ele ja' diz especie e cor.
+    pub montaria_vista: Option<u16>,
 }
 
 impl Session {
@@ -6811,12 +6812,11 @@ impl GameWorld {
                 correio_em_voo: false,
                 instancia: 0,
                 retorno_da_dungeon: None,
-                loja_posses: Default::default(),
                 loja_carregada: false,
                 montado: false,
                 montando_ate: 0.0,
                 montado_em: 0.0,
-                montaria_skin_vista: None,
+                montaria_vista: None,
             },
         );
     }
@@ -7749,8 +7749,7 @@ impl GameWorld {
             s.preferencias = p;
             self.save_pending = true;
         }
-        // A skin de montaria escolhida pode ter mudado o que os outros veem.
-        self.atualizar_skin_vista(sid);
+        self.atualizar_montaria_vista(sid);
     }
 
     /// Devolve o XP de uma morte: 3 vezes por dia de graca, depois por ouro.
@@ -12517,7 +12516,7 @@ impl GameWorld {
             .sessions
             .values()
             .filter(|s| s.logged_in)
-            .map(|s| (s.entity_id, (s.montado, s.montaria_skin_vista.unwrap_or(0))))
+            .map(|s| (s.entity_id, (s.montado, s.montaria_vista.unwrap_or(0))))
             .collect();
         let nivel_de: HashMap<EntityId, u16> = self
             .sessions
@@ -12689,7 +12688,7 @@ impl GameWorld {
                             EntityKind::Projectile => projtag.map_or(0, |p| p.kind as u16),
                             // NPC: o rumo pra onde olha (a porta, o mar).
                             EntityKind::Npc(_) => vila_tag.map_or(0, |t| t.rumo),
-                            // Jogador: a skin de montaria (0 = nenhuma).
+                            // Jogador: o item da montaria (0 = nenhuma).
                             EntityKind::Player => montaria_de.get(&net.0).map_or(0, |m| m.1),
                             // Pet: o item_id, que ja' diz especie e grau.
                             EntityKind::Pet(id) => *id,
@@ -17281,58 +17280,6 @@ impl GameWorld {
                 s.name.clone(),
             )
         };
-        // Montarias precisam da transação central. Conferimos o serviço antes
-        // de consumir; se a transação falhar, todos os pergaminhos voltam.
-        if item_id == shared::item_id::PERGAMINHO_INVOCA_MONTARIA {
-            let (Some(central), Some(tx)) = (
-                crate::mercado::central(),
-                self.auth_ctx.as_ref().map(|c| c.tx.clone()),
-            ) else {
-                self.send_chat_to(sid, "[Invocação] Serviço de montarias indisponível.");
-                return;
-            };
-            let montarias: Vec<u16> = (0..total)
-                .filter_map(|_| shared::loja::rolar_montaria(1, fastrand::f32()))
-                .collect();
-            if montarias.len() != total {
-                return;
-            }
-            let Some(s) = self.sessions.get_mut(&sid) else {
-                return;
-            };
-            let slot = &mut s.inventory[slot_idx];
-            slot.qty -= pagos as u32;
-            if slot.qty == 0 {
-                *slot = shared::InventorySlot::default();
-            }
-            s.inventory_dirty = true;
-            self.save_pending = true;
-            tokio::spawn(async move {
-                match crate::loja::invocar_montarias(&central, &conta, &montarias).await {
-                    Ok(premios) => {
-                        let _ = tx.send(IncomingMessage::Loja(
-                            crate::loja::Evento::MontariasInvocadas {
-                                sid,
-                                personagem,
-                                premios,
-                            },
-                        ));
-                    }
-                    Err(e) => {
-                        tracing::warn!("invocacao de montarias falhou: {e:#}");
-                        let _ = tx.send(IncomingMessage::Loja(
-                            crate::loja::Evento::FalhaInvocacao {
-                                sid,
-                                personagem,
-                                item_id,
-                                quantidade: pagos as u32,
-                            },
-                        ));
-                    }
-                }
-            });
-            return;
-        }
 
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
@@ -17365,6 +17312,30 @@ impl GameWorld {
                     cor,
                 });
                 crate::telemetria::conta("invocacao_chave_cor", cor, 1);
+            }
+        } else if item_id == shared::item_id::PERGAMINHO_INVOCA_MONTARIA {
+            // A montaria virou ITEM (docs/MONTARIAS.md): o sorteio e a entrega
+            // acontecem aqui, sem transacao no banco central.
+            for _ in 0..total {
+                let Some(montaria) =
+                    shared::loja::rolar_montaria(1, fastrand::f32(), fastrand::f32())
+                else {
+                    continue;
+                };
+                if !add_to_inventory(&mut s.inventory, montaria, 1, None) {
+                    let quando = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    s.dungeon.postar(montaria, 1, None, 0, quando);
+                    no_correio += 1;
+                }
+                premios.push(shared::loja::PremioInvocacao::Montaria { item_id: montaria });
+                crate::telemetria::conta(
+                    "invocacao_montaria_grau",
+                    shared::montarias::de_item(montaria).map_or(0, |(_, g)| g),
+                    1,
+                );
             }
         } else if item_id == shared::item_id::PERGAMINHO_INVOCA_PET {
             // O pet e' ITEM: bolsa cheia manda pras Entregas, igual a chave.
@@ -19667,6 +19638,13 @@ pub(crate) fn effective_stats(
         // Regen nao passa por ponto alocado: e' soma direta no stat.
         s.hp_regen += shared::pets::regen_de_vida(&d);
         s.mp_regen += shared::pets::regen_de_mana(&d);
+    }
+    // A MONTARIA tambem da' atributo, pela especie (docs/MONTARIAS.md). Vale
+    // equipada, montado ou nao: o bicho anda com voce de qualquer jeito.
+    if let Some(m) = equip.montaria {
+        for (i, p) in shared::montarias::pontos_por_stat(m).iter().enumerate() {
+            allocated[i] = allocated[i].saturating_add(*p);
+        }
     }
     let allocated = &allocated;
 

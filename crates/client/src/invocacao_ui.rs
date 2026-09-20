@@ -185,10 +185,15 @@ impl InvocacaoUi {
                             shared::forja::Grau::de_u8(*cor).map_or("Comum", |g| g.nome()).to_string(),
                             Color::from_rgba(80, 170, 255, 255),
                         ),
-                        PremioInvocacao::Montaria { id, quantidade } => (
-                            shared::loja::montaria(*id).map_or("Montaria", |m| m.nome).to_string(),
-                            format!("agora x{quantidade}"),
-                            estilo::OURO,
+                        PremioInvocacao::Montaria { item_id } => (
+                            shared::montarias::de_item(*item_id)
+                                .map_or("Montaria".into(), |(e, _)| e.nome.to_string()),
+                            shared::montarias::de_item(*item_id).map_or(String::new(), |(_, g)| {
+                                format!("{} · montaria", shared::pets::nome_do_grau(g))
+                            }),
+                            cor_do_grau(
+                                shared::montarias::de_item(*item_id).map_or(1, |(_, g)| g),
+                            ),
                         ),
                         PremioInvocacao::Tomo { skill_id, grau, quantidade } => (
                             skills.iter().find(|s| s.id == *skill_id).map_or("Tomo", |s| s.nome.as_str()).to_string(),
@@ -243,38 +248,39 @@ impl InvocacaoUi {
                         estilo::SUAVE,
                     );
                 }
-                PremioInvocacao::Montaria { id, quantidade } => {
-                    if let Some(m) = shared::loja::montaria(id) {
-                        crate::render3d::vitrine_montaria(
-                            vox,
-                            m.skin_padrao,
-                            Rect::new(c.x - 170.0 * k, c.y - 135.0 * k, 340.0 * k, 245.0 * k),
-                            t * 0.45,
-                            solido,
-                        );
-                        estilo::texto_centro_forte(c.x, c.y + 113.0 * k, m.nome, 25, estilo::TEXTO);
-                        let estado = if quantidade > 1 {
-                            format!("Cópia para aprimoramento · você possui x{quantidade}")
-                        } else {
-                            "Nova montaria liberada · você possui x1".into()
-                        };
-                        estilo::texto_centro(
-                            c.x,
-                            c.y + 143.0 * k,
-                            &estado,
-                            14,
-                            if quantidade > 1 {
-                                estilo::ACENTO
-                            } else {
-                                estilo::VERDE
-                            },
-                        );
-                    }
+                PremioInvocacao::Montaria { item_id } => {
+                    let Some((especie, grau)) = shared::montarias::de_item(item_id) else {
+                        return;
+                    };
+                    crate::render3d::vitrine_montaria(
+                        vox,
+                        item_id,
+                        Rect::new(c.x - 170.0 * k, c.y - 135.0 * k, 340.0 * k, 245.0 * k),
+                        t * 0.45,
+                        solido,
+                    );
+                    let cor = cor_do_grau(grau);
+                    estilo::texto_centro_forte(
+                        c.x,
+                        c.y + 113.0 * k,
+                        &format!("{} {}", especie.nome, shared::pets::nome_do_grau(grau)),
+                        25,
+                        cor,
+                    );
+                    estilo::texto_centro(
+                        c.x,
+                        c.y + 143.0 * k,
+                        &format!(
+                            "Equipe no slot da montaria: {:.0}% de velocidade montado",
+                            shared::montarias::velocidade(grau) * 100.0
+                        ),
+                        14,
+                        estilo::TEXTO,
+                    );
                 }
                 PremioInvocacao::Pet { item_id } => {
-                    let (especie, grau) = match shared::pets::de_item(item_id) {
-                        Some(v) => v,
-                        None => return,
+                    let Some((especie, grau)) = shared::pets::de_item(item_id) else {
+                        return;
                     };
                     let cor = cor_do_grau(grau);
                     brilho_livro(c, 105.0 * k, cor, t);
@@ -285,13 +291,7 @@ impl InvocacaoUi {
                         24,
                         cor,
                     );
-                    estilo::texto_centro(
-                        c.x,
-                        c.y + 133.0 * k,
-                        especie.descricao,
-                        15,
-                        estilo::TEXTO,
-                    );
+                    estilo::texto_centro(c.x, c.y + 133.0 * k, especie.descricao, 15, estilo::TEXTO);
                     estilo::texto_centro(
                         c.x,
                         c.y + 158.0 * k,
@@ -385,8 +385,10 @@ pub async fn previa(vox: &VoxCache) {
         (
             "1-abrindo.png",
             vec![PremioInvocacao::Montaria {
-                id: 2,
-                quantidade: 1,
+                item_id: shared::item_id::montaria_no_grau(
+                    shared::item_id::MONTARIA_TIGRE,
+                    3,
+                ),
             }],
             0.55,
         ),
@@ -401,8 +403,10 @@ pub async fn previa(vox: &VoxCache) {
         (
             "3-montaria.png",
             vec![PremioInvocacao::Montaria {
-                id: 2,
-                quantidade: 3,
+                item_id: shared::item_id::montaria_no_grau(
+                    shared::item_id::MONTARIA_TIGRE,
+                    3,
+                ),
             }],
             2.2,
         ),

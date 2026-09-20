@@ -19,6 +19,7 @@ pub mod loja;
 pub mod mapfile;
 pub mod mercado;
 pub mod physics;
+pub mod montarias;
 pub mod pets;
 pub mod pocoes;
 pub mod presenca;

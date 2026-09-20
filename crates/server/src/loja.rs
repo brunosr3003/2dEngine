@@ -11,7 +11,7 @@
 //!   grava a posse. A posse e' da CONTA (vale pra todo personagem dela).
 
 use anyhow::Result;
-use shared::loja::{self as cat, CompraNet, EstadoLoja, PacoteTp, Posses, Produto, RecusaCompra};
+use shared::loja::{self as cat, CompraNet, EstadoLoja, PacoteTp, Produto, RecusaCompra};
 use sqlx::{PgPool, Row};
 
 use crate::mercado_razao as razao;
@@ -20,28 +20,13 @@ use crate::world::SessionId;
 /// Resposta do banco central de volta ao loop do mundo.
 #[derive(Debug)]
 pub enum Evento {
-    /// Posses da conta (login, compra): montar sem abrir a loja.
-    Posses {
-        sid: SessionId,
-        personagem: String,
-        posses: Posses,
-    },
+    /// A loja da conta terminou de carregar (saldo e historico ja' foram).
+    LojaCarregada { sid: SessionId, personagem: String },
     /// A compra entrega um pergaminho na bolsa; nenhum prêmio foi rolado ainda.
     Consumivel {
         sid: SessionId,
         personagem: String,
         item_id: u16,
-    },
-    MontariaInvocada {
-        sid: SessionId,
-        personagem: String,
-        montaria: u16,
-        quantidade: u32,
-    },
-    MontariasInvocadas {
-        sid: SessionId,
-        personagem: String,
-        premios: Vec<(u16, u32)>,
     },
     FalhaInvocacao {
         sid: SessionId,
@@ -97,6 +82,59 @@ pub async fn criar_tabelas(pool: &PgPool) -> Result<()> {
     ] {
         sqlx::query(sql).execute(pool).await?;
     }
+    migrar_montarias_para_item(pool).await?;
+    Ok(())
+}
+
+/// A montaria virou ITEM de bolsa e a skin deixou de existir
+/// (docs/MONTARIAS.md). Esta migracao apaga as posses antigas e devolve em TP
+/// tudo que foi comprado nelas — a decisao foi comecar do zero no sistema
+/// novo, nao converter.
+///
+/// Roda uma vez, marcada por `montarias_viraram_item_v1` no livro-caixa: o
+/// credito usa a referencia da conta, entao reiniciar o servidor nao paga de
+/// novo.
+async fn migrar_montarias_para_item(pool: &PgPool) -> Result<()> {
+    let feita: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM loja_pedidos WHERE id = 'montarias_viraram_item_v1')",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+    if feita {
+        return Ok(());
+    }
+    // Quanto cada conta gastou em montaria e skin, pelos pedidos entregues.
+    let gastos: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT conta, COALESCE(SUM(valor), 0) FROM loja_pedidos          WHERE moeda = 'TP' AND status = 'entregue'            AND (produto LIKE 'montaria:%' OR produto LIKE 'skin:%')          GROUP BY conta",
+    )
+    .fetch_all(pool)
+    .await?;
+    for (conta, tp) in &gastos {
+        if *tp <= 0 {
+            continue;
+        }
+        razao::creditar(
+            pool,
+            conta,
+            *tp as u64,
+            "montaria virou item: devolucao",
+            Some("montarias_viraram_item_v1"),
+        )
+        .await?;
+        tracing::info!("migracao de montaria: {conta} recebeu {tp} TP de volta");
+    }
+    sqlx::query("DELETE FROM loja_posses WHERE produto LIKE 'montaria:%' OR produto LIKE 'skin:%'")
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM loja_montarias").execute(pool).await?;
+    // O marcador e' um pedido proprio: a tabela ja' tem chave primaria por id.
+    sqlx::query(
+        "INSERT INTO loja_pedidos (id, conta, produto, tipo, valor, moeda, status, provedor)          VALUES ('montarias_viraram_item_v1', '', 'migracao', 'item', 0, 'TP', 'entregue', '')          ON CONFLICT (id) DO NOTHING",
+    )
+    .execute(pool)
+    .await?;
+    tracing::info!("migracao de montaria: {} conta(s) atendidas", gastos.len());
     Ok(())
 }
 
@@ -392,9 +430,8 @@ pub async fn comprar_item(
         }
         _ => {}
     }
-    let tem = posses(&mut *tx, conta).await?;
     let saldo = razao::saldo(&mut *tx, conta).await?;
-    if let Err(r) = cat::pode_comprar(&tem, produto, saldo) {
+    if let Err(r) = cat::pode_comprar(produto, saldo) {
         recusar_pedido(&mut tx, pedido, r.texto()).await?;
         tx.commit().await?;
         return Ok(Resposta::recusa(r.texto()));
@@ -415,34 +452,10 @@ pub async fn comprar_item(
         }
         razao::Movimento::Feito { saldo } | razao::Movimento::JaFeito { saldo } => saldo,
     };
-    // Consumiveis sao repetiveis e nao viram posse da conta.
-    if !matches!(
-        produto,
-        Produto::BauCraft(_)
-            | Produto::Moeda(_)
-            | Produto::PergaminhoMontaria(_)
-            | Produto::PergaminhoTomo(_)
-            | Produto::Energia(_)
-            | Produto::PergaminhoPet(_)
-            | Produto::ItemDePet(_)
-    ) {
-        sqlx::query("INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
-            .bind(conta)
-            .bind(&codigo)
-            .bind(pedido)
-            .execute(&mut *tx)
-            .await?;
-    }
-    if let Produto::Montaria(i) = produto {
-        if let Some(m) = cat::montaria(i) {
-            sqlx::query("INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
-                .bind(conta)
-                .bind(Produto::Skin(m.skin_padrao).codigo())
-                .bind(format!("{pedido}#padrao"))
-                .execute(&mut *tx)
-                .await?;
-        }
-    }
+    // Nada mais vira posse da conta: montaria e skin sairam da loja (a
+    // montaria virou item de bolsa, docs/MONTARIAS.md) e todo o resto do
+    // catalogo e' repetivel. A tabela `loja_posses` fica so' com o historico
+    // antigo, que a migracao limpa.
     sqlx::query("UPDATE loja_pedidos SET status = 'entregue', atualizado_em = NOW() WHERE id = $1")
         .bind(pedido)
         .execute(&mut *tx)
@@ -480,15 +493,6 @@ async fn recusar_pedido(
     Ok(())
 }
 
-/// O que a conta possui.
-pub async fn posses<'e, E: sqlx::PgExecutor<'e>>(exec: E, conta: &str) -> Result<Posses> {
-    let codigos: Vec<String> =
-        sqlx::query_scalar("SELECT produto FROM loja_posses WHERE conta = $1")
-            .bind(conta)
-            .fetch_all(exec)
-            .await?;
-    Ok(Posses::de_codigos(codigos.iter().map(String::as_str)))
-}
 
 /// Saldo, posses e as ultimas compras.
 pub async fn estado(central: &PgPool, conta: &str) -> Result<EstadoLoja> {
@@ -516,85 +520,14 @@ pub async fn estado(central: &PgPool, conta: &str) -> Result<EstadoLoja> {
         }
     })
     .collect();
-    let mut posse = posses(central, conta).await?;
-    posse.montarias_qtd = sqlx::query_as::<_, (i32, i32)>(
-        "SELECT montaria, quantidade FROM loja_montarias WHERE conta = $1 ORDER BY montaria",
-    )
-    .bind(conta)
-    .fetch_all(central)
-    .await?
-    .into_iter()
-    .map(|(m, q)| (m.max(0) as u16, q.max(0) as u32))
-    .collect();
     Ok(EstadoLoja {
         ligada: true,
         simulado: simulado(),
         tp: razao::saldo(central, conta).await?,
-        posses: posse,
         historico,
     })
 }
 
-/// Registra uma cópia invocada. A primeira libera a montaria e a skin padrão;
-/// as seguintes ficam contadas para a futura combinação/aprimoramento.
-pub async fn invocar_montaria(central: &PgPool, conta: &str, id: u16) -> Result<u32> {
-    Ok(invocar_montarias(central, conta, &[id]).await?[0].1)
-}
-
-/// Registra várias invocações na mesma transação. A ordem da resposta é a dos
-/// sorteios e cada quantidade é o estoque logo depois daquele prêmio.
-pub async fn invocar_montarias(
-    central: &PgPool,
-    conta: &str,
-    ids: &[u16],
-) -> Result<Vec<(u16, u32)>> {
-    let mut tx = central.begin().await?;
-    let mut resultado = Vec::with_capacity(ids.len());
-    for &id in ids {
-        let m = cat::montaria(id).ok_or_else(|| anyhow::anyhow!("montaria invalida"))?;
-        let ja_possuia: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM loja_posses WHERE conta=$1 AND produto=$2)",
-        )
-        .bind(conta)
-        .bind(Produto::Montaria(id).codigo())
-        .fetch_one(&mut *tx)
-        .await?;
-        let inicial = if ja_possuia { 2i32 } else { 1i32 };
-        let qtd: i32 = sqlx::query_scalar(
-            "INSERT INTO loja_montarias (conta, montaria, quantidade) VALUES ($1,$2,$3)
-             ON CONFLICT (conta,montaria) DO UPDATE
-             SET quantidade = loja_montarias.quantidade + 1
-             RETURNING quantidade",
-        )
-        .bind(conta)
-        .bind(id as i32)
-        .bind(inicial)
-        .fetch_one(&mut *tx)
-        .await?;
-        let referencia = format!("invocacao-montaria-{conta}-{id}");
-        sqlx::query(
-            "INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1,$2,$3)
-             ON CONFLICT (conta,produto) DO NOTHING",
-        )
-        .bind(conta)
-        .bind(Produto::Montaria(id).codigo())
-        .bind(&referencia)
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query(
-            "INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1,$2,$3)
-             ON CONFLICT (conta,produto) DO NOTHING",
-        )
-        .bind(conta)
-        .bind(Produto::Skin(m.skin_padrao).codigo())
-        .bind(format!("{referencia}-skin"))
-        .execute(&mut *tx)
-        .await?;
-        resultado.push((id, qtd.max(1) as u32));
-    }
-    tx.commit().await?;
-    Ok(resultado)
-}
 
 #[cfg(test)]
 mod tests {
@@ -615,7 +548,7 @@ mod tests {
 
     /// Fluxo inteiro num Postgres descartavel: `DATABASE_URL_CENTRAL_TESTE`.
     #[tokio::test]
-    async fn pedidos_idempotentes_e_posses_no_postgres() {
+    async fn pedidos_idempotentes_e_repetiveis_no_postgres() {
         let Ok(url) = std::env::var("DATABASE_URL_CENTRAL_TESTE") else {
             eprintln!("DATABASE_URL_CENTRAL_TESTE nao setada: teste de integracao da loja pulado");
             return;
@@ -675,43 +608,25 @@ mod tests {
             .await
             .unwrap();
         assert!(matches!(r, Resposta::JaFeito { saldo: 1250, .. }), "{r:?}");
-        assert_eq!(invocar_montaria(&central, &conta, 1).await.unwrap(), 1);
         let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), &id("m1b"))
             .await
             .unwrap();
         assert!(matches!(r, Resposta::Feito { saldo: 750, .. }), "{r:?}");
-        assert_eq!(invocar_montaria(&central, &conta, 1).await.unwrap(), 2);
-        assert_eq!(
-            invocar_montarias(&central, &conta, &[1, 2, 1])
+        // Montaria e skin sairam da loja: os codigos antigos nao existem mais.
+        assert_eq!(shared::loja::Produto::de_codigo("montaria:2"), None);
+        assert_eq!(shared::loja::Produto::de_codigo("skin:102"), None);
+        // Nada mais vira posse de conta: tudo no catalogo e' repetivel.
+        let posses: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM loja_posses WHERE conta = $1")
+                .bind(&conta)
+                .fetch_one(&central)
                 .await
-                .unwrap(),
-            vec![(1, 3), (2, 1), (1, 4)],
-            "o lote preserva ordem e quantidade após cada prêmio"
-        );
-        let r = comprar_item(&central, &conta, Produto::Montaria(2), &id("direta"))
+                .unwrap();
+        assert_eq!(posses, 0, "pergaminho nao vira posse");
+        let r = comprar_item(&central, &conta, Produto::ItemDePet(1), &id("racao"))
             .await
             .unwrap();
-        assert_eq!(
-            r,
-            Resposta::Recusado {
-                texto: RecusaCompra::ProdutoInvalido.texto().into()
-            },
-            "compra direta de montaria ficou bloqueada"
-        );
-        // Skin de montaria que nao tem; skin da que tem.
-        let r = comprar_item(&central, &conta, Produto::Skin(202), &id("s1"))
-            .await
-            .unwrap();
-        assert_eq!(
-            r,
-            Resposta::Recusado {
-                texto: RecusaCompra::PrecisaDaMontaria.texto().into()
-            }
-        );
-        let r = comprar_item(&central, &conta, Produto::Skin(102), &id("s2"))
-            .await
-            .unwrap();
-        assert!(matches!(r, Resposta::Feito { saldo: 450, .. }), "{r:?}");
+        assert!(matches!(r, Resposta::Feito { saldo: 720, .. }), "{r:?}");
         // Saldo insuficiente: nada muda.
         let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), &id("m3"))
             .await
@@ -722,30 +637,67 @@ mod tests {
                 texto: RecusaCompra::SemSaldo.texto().into()
             }
         );
-        assert_eq!(razao::saldo(&central, &conta).await.unwrap(), 450);
+        assert_eq!(razao::saldo(&central, &conta).await.unwrap(), 720);
         // Duas compras diferentes ao mesmo tempo nao leem o mesmo saldo.
         let (m2, s3) = (id("m2"), id("s3"));
         let (a, b) = tokio::join!(
             comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), &m2),
-            comprar_item(&central, &conta, Produto::Skin(103), &s3),
+            comprar_item(&central, &conta, Produto::PergaminhoPet(1), &s3),
         );
         let (a, b) = (a.unwrap(), b.unwrap());
         assert!(a.ok() != b.ok() || (a.ok() && b.ok()), "{a:?} {b:?}");
         let saldo = razao::saldo(&central, &conta).await.unwrap();
-        let gasto: u64 = [(&a, 500u64), (&b, 450u64)]
+        let gasto: u64 = [(&a, 500u64), (&b, 250u64)]
             .iter()
             .filter(|(r, _)| r.ok())
             .map(|(_, p)| *p)
             .sum();
-        assert_eq!(saldo, 450 - gasto, "{a:?} {b:?}");
+        assert_eq!(saldo, 720 - gasto, "{a:?} {b:?}");
 
-        let p = posses(&central, &conta).await.unwrap();
-        assert!(p.montarias.contains(&1));
-        assert!(p.skins.contains(&101) && p.skins.contains(&102), "{p:?}");
         let e = estado(&central, &conta).await.unwrap();
         assert!(e.ligada && e.historico.len() >= 6);
         assert_eq!(e.tp, saldo);
-        assert_eq!(e.posses.quantidade_montaria(1), 4);
-        assert_eq!(e.posses.quantidade_montaria(2), 1);
+    }
+
+    /// A migracao devolve em TP o que a conta gastou em montaria e skin, e
+    /// roda uma vez so' — reiniciar o servidor nao paga de novo.
+    #[tokio::test]
+    #[ignore = "precisa de DATABASE_URL_CENTRAL"]
+    async fn migracao_de_montaria_devolve_tp_uma_vez() {
+        let Ok(url) = std::env::var("DATABASE_URL_CENTRAL") else {
+            return;
+        };
+        let central = PgPool::connect(&url).await.unwrap();
+        criar_tabelas(&central).await.unwrap();
+        let conta = format!("migra-{}", fastrand::u32(..));
+        // Um pedido antigo de skin, ja' entregue.
+        sqlx::query(
+            "INSERT INTO loja_pedidos (id, conta, produto, tipo, valor, moeda, status, provedor) \
+             VALUES ($1, $2, 'skin:102', 'item', 350, 'TP', 'entregue', '')",
+        )
+        .bind(format!("velho-{conta}"))
+        .bind(&conta)
+        .execute(&central)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1,'skin:102',$2)")
+            .bind(&conta)
+            .bind(format!("velho-{conta}"))
+            .execute(&central)
+            .await
+            .unwrap();
+        // O marcador global ja' existe do `criar_tabelas` acima, entao o
+        // credito desta conta nao acontece: a migracao e' de uma vez so'.
+        let posses: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM loja_posses WHERE conta = $1 AND produto LIKE 'skin:%'",
+        )
+        .bind(&conta)
+        .fetch_one(&central)
+        .await
+        .unwrap();
+        assert_eq!(posses, 1, "a conta entrou depois da migracao ter rodado");
+        // Rodar de novo nao credita nada nem apaga o que chegou depois.
+        criar_tabelas(&central).await.unwrap();
+        assert_eq!(razao::saldo(&central, &conta).await.unwrap(), 0);
     }
 }

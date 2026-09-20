@@ -64,10 +64,11 @@ pub fn da_montaria(
     if tag != shared::EntityTag::Player || !montado {
         return None;
     }
-    let skin = shared::loja::skin(kind)?;
-    let m = shared::loja::montaria(skin.montaria)?;
-    let (nome, altura) = BICHOS.iter().copied().find(|(n, _)| *n == m.bicho)?;
-    Some((nome, altura * m.escala))
+    // O `kind` do jogador montado e' o item_id da montaria: especie e cor
+    // saem dele (docs/MONTARIAS.md).
+    let (e, _) = shared::montarias::de_item(kind)?;
+    let (nome, altura) = BICHOS.iter().copied().find(|(n, _)| *n == e.bicho)?;
+    Some((nome, altura * e.escala))
 }
 
 /// O bicho de um PET (docs/PETS.md), com a altura ja' na escala dele. O
