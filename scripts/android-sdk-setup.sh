@@ -56,8 +56,13 @@ if [ ! -d "$AVD" ]; then
   echo "== AVD tempest (Pixel 6, x86_64, GPU do host, teclado fisico)"
   echo no | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd -n tempest \
     -k "system-images;android-34;google_apis;x86_64" -d pixel_6 >/dev/null
+  # `initialOrientation = landscape` porque o jogo e' paisagem: se o aparelho
+  # nascer EM PE', a janela do emulador precisa girar depois — e cada giro
+  # RECENTRA a janela, o que a joga pra fora da tela (y negativo). Nascendo
+  # deitado nao ha' giro nenhum. Ver docs/BUILD.md.
   sed -i 's/^hw.keyboard=.*/hw.keyboard=yes/; s/^hw.ramSize=.*/hw.ramSize=4096/;
-          s/^hw.gpu.enabled=.*/hw.gpu.enabled=yes/; s/^hw.gpu.mode=.*/hw.gpu.mode=host/' "$AVD/config.ini"
+          s/^hw.gpu.enabled=.*/hw.gpu.enabled=yes/; s/^hw.gpu.mode=.*/hw.gpu.mode=host/;
+          s/^hw.initialOrientation=.*/hw.initialOrientation=landscape/' "$AVD/config.ini"
 fi
 
 echo "== pronto"

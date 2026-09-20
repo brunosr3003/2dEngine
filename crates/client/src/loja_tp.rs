@@ -1738,8 +1738,21 @@ impl LojaTp {
                     }
                     ax += 52.0 * k;
                 }
+                // O desconto ao lado dos atalhos: e' tocando no "10x" e vendo
+                // o "−10%" aparecer que a regra se aprende, sem texto.
+                let pct = cat::desconto_pct(lote);
+                if pct > 0 {
+                    estilo::texto_forte(
+                        ax + 6.0 * k,
+                        sel.y + 27.0 * k,
+                        &format!("−{pct}%"),
+                        ts(17.0, k),
+                        estilo::VERDE,
+                    );
+                }
                 y = sel.y + lado - 24.0 * k;
-                let preco = unitario.saturating_mul(lote as u64);
+                let cheio = unitario.saturating_mul(lote as u64);
+                let preco = cat::preco_do_lote(unitario, lote);
                 let tam = ts(20.0, k);
                 let linha = |y: f32, rotulo: &str, v: u64, cor: Color| {
                     estilo::texto(x, y, rotulo, ts(13.0, k), estilo::SUAVE);
@@ -1762,6 +1775,25 @@ impl LojaTp {
                     preco,
                     OURO_CLARO,
                 );
+                // O que ele deixou de pagar, riscado: sem isso o desconto e'
+                // so' um numero menor, e numero menor ninguem compara de
+                // cabeca com o que teria sido.
+                if pct > 0 {
+                    let velho = milhar(cheio);
+                    let t = ts(13.0, k);
+                    let w = estilo::medir(&velho, t);
+                    let vx = x + largura - estilo::largura_tp_texto(&milhar(preco), tam, true) - w
+                        - 12.0 * k;
+                    estilo::texto(vx, y - 10.0 * k, &velho, t, estilo::SUAVE);
+                    draw_line(
+                        vx,
+                        y - 14.0 * k,
+                        vx + w,
+                        y - 14.0 * k,
+                        1.5 * k,
+                        estilo::SUAVE,
+                    );
+                }
                 y += 34.0 * k;
                 linha(y, "Seu saldo", estado.tp, estilo::TEXTO);
                 y += 34.0 * k;

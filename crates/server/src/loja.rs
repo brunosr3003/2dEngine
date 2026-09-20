@@ -390,7 +390,9 @@ pub async fn comprar_item(
     let Some(unitario) = produto.preco_tp() else {
         return Ok(Resposta::recusa(RecusaCompra::ProdutoInvalido.texto()));
     };
-    let preco = unitario.saturating_mul(vezes as u64);
+    // O desconto do lote entra aqui, e NAO no cliente: o `pedido` guarda o
+    // valor cobrado e o razao debita por ele.
+    let preco = cat::preco_do_lote(unitario, vezes);
     let codigo = produto.codigo();
     let mut tx = central.begin().await?;
     // Mesma trava do razao (reentrante na transacao): compras da mesma conta
@@ -476,6 +478,11 @@ pub async fn comprar_item(
     } else {
         String::new()
     };
+    // O desconto no texto: o jogador confere que o abatimento entrou.
+    let abatido = match cat::desconto_pct(vezes) {
+        0 => String::new(),
+        p => format!(" (−{p}%)"),
+    };
     Ok(Resposta::Feito {
         saldo,
         texto: if matches!(
@@ -486,11 +493,11 @@ pub async fn comprar_item(
                 | Produto::PergaminhoPet(_)
                 | Produto::ItemDePet(_)
         ) {
-            format!("{quantos}{} entregue na bolsa!", produto.nome())
+            format!("{quantos}{} entregue na bolsa!{abatido}", produto.nome())
         } else if matches!(produto, Produto::Moeda(_) | Produto::Energia(_)) {
-            format!("{quantos}{} comprado!", produto.nome())
+            format!("{quantos}{} comprado!{abatido}", produto.nome())
         } else {
-            format!("{quantos}{} é seu!", produto.nome())
+            format!("{quantos}{} é seu!{abatido}", produto.nome())
         },
     })
 }

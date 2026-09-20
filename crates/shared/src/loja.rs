@@ -573,16 +573,42 @@ pub fn lote(vezes: u16) -> u16 {
     vezes.clamp(1, LOTE_MAX)
 }
 
+/// Desconto do lote: (a partir de quantas unidades, quantos % de abatimento).
+/// Da maior faixa pra menor — `desconto_pct` pega a primeira que couber.
+///
+/// As faixas casam com os atalhos da janela (1x / 10x / 50x): quem toca em
+/// "10x" ve' o desconto mudar, que e' o que ensina a regra sem texto.
+pub const DESCONTO_DO_LOTE: [(u16, u64); 4] = [(50, 20), (25, 15), (10, 10), (5, 5)];
+
+/// Quantos % de desconto `vezes` unidades rendem.
+pub fn desconto_pct(vezes: u16) -> u64 {
+    let n = lote(vezes);
+    DESCONTO_DO_LOTE
+        .iter()
+        .find(|(minimo, _)| n >= *minimo)
+        .map_or(0, |(_, pct)| *pct)
+}
+
+/// Preco TOTAL de `vezes` unidades de `unitario`, com o desconto do lote.
+///
+/// A divisao inteira TRUNCA, e isso e' de proposito: a sobra fica com o
+/// jogador. Arredondar pra cima seria cobrar por um TP que o desconto disse
+/// que ele nao ia pagar.
+pub fn preco_do_lote(unitario: u64, vezes: u16) -> u64 {
+    let cheio = unitario.saturating_mul(lote(vezes) as u64);
+    cheio * (100 - desconto_pct(vezes)) / 100
+}
+
 /// Pode comprar `vezes` unidades? Tudo na loja hoje e' repetivel (pergaminho,
 /// moeda, Energia, item de pet): so' o saldo decide. Montaria e skin sairam
 /// daqui — a montaria virou item de bolsa e vem do pergaminho
 /// (docs/MONTARIAS.md), e a skin deixou de existir: a cor da montaria E' a
 /// variacao dela.
 ///
-/// Devolve o preco TOTAL do lote.
+/// Devolve o preco TOTAL do lote, ja' com desconto.
 pub fn pode_comprar(produto: Produto, vezes: u16, saldo: u64) -> Result<u64, RecusaCompra> {
     let preco = produto.preco_tp().ok_or(RecusaCompra::ProdutoInvalido)?;
-    let total = preco.saturating_mul(lote(vezes) as u64);
+    let total = preco_do_lote(preco, vezes);
     if saldo < total {
         return Err(RecusaCompra::SemSaldo);
     }
@@ -646,22 +672,72 @@ mod tests {
         );
     }
 
-    /// O LOTE cobra o preco vezes a quantidade, e o saldo tem que cobrir o
-    /// TOTAL — nao o unitario. Cobrar unitario e entregar dez era o jeito
+    /// O desconto do lote: nunca cobra mais, nunca zera, e quanto maior o
+    /// lote menor o preco POR UNIDADE. Sem a ultima, o desconto podia
+    /// inverter numa faixa e comprar mais sairia mais caro por peca.
+    #[test]
+    fn o_desconto_do_lote_so_barateia() {
+        // As faixas estao em ordem decrescente — `desconto_pct` pega a
+        // primeira que couber, e fora de ordem ela pegaria a errada.
+        for par in DESCONTO_DO_LOTE.windows(2) {
+            assert!(par[0].0 > par[1].0, "faixas fora de ordem: {DESCONTO_DO_LOTE:?}");
+            assert!(par[0].1 > par[1].1, "% fora de ordem: {DESCONTO_DO_LOTE:?}");
+        }
+        assert!(
+            DESCONTO_DO_LOTE.iter().all(|(_, p)| *p < 100),
+            "100% seria de graca"
+        );
+
+        let unit = 500u64;
+        let mut anterior = f64::MAX;
+        for vezes in 1..=LOTE_MAX {
+            let total = preco_do_lote(unit, vezes);
+            let cheio = unit * vezes as u64;
+            assert!(total <= cheio, "{vezes}x cobrou MAIS que o cheio");
+            assert!(total > 0, "{vezes}x saiu de graca");
+            // Por unidade, nunca sobe.
+            let por_peca = total as f64 / vezes as f64;
+            assert!(
+                por_peca <= anterior + 1e-9,
+                "{vezes}x ficou mais caro por peca ({por_peca:.2} depois de {anterior:.2})"
+            );
+            anterior = por_peca;
+            // E o abatimento e' exatamente o da faixa (truncado pra baixo).
+            assert_eq!(total, cheio * (100 - desconto_pct(vezes)) / 100);
+        }
+
+        // As faixas onde o desconto muda, uma a uma.
+        assert_eq!(desconto_pct(1), 0);
+        assert_eq!(desconto_pct(4), 0);
+        assert_eq!(desconto_pct(5), 5);
+        assert_eq!(desconto_pct(9), 5);
+        assert_eq!(desconto_pct(10), 10);
+        assert_eq!(desconto_pct(25), 15);
+        assert_eq!(desconto_pct(50), 20);
+        assert_eq!(desconto_pct(LOTE_MAX), 20);
+        // O clamp vale aqui tambem: cliente pode mandar o que quiser.
+        assert_eq!(desconto_pct(0), 0);
+        assert_eq!(desconto_pct(u16::MAX), 20);
+
+        // A sobra da divisao fica com o JOGADOR, nunca contra ele.
+        assert_eq!(preco_do_lote(3, 10), 27, "30 −10% = 27");
+        assert_eq!(preco_do_lote(1, 5), 4, "5 −5% = 4,75 → 4");
+    }
+
+    /// O LOTE cobra o TOTAL (ja' com desconto), e o saldo tem que cobrir esse
+    /// total — nao o unitario. Cobrar unitario e entregar dez era o jeito
     /// obvio de a loja virar fabrica de TP.
     #[test]
     fn o_lote_cobra_o_total_e_nao_o_unitario() {
         let p = Produto::Moeda(MOEDAS[0].id);
         let unit = MOEDAS[0].preco_tp;
         for vezes in [1u16, 2, 10, LOTE_MAX] {
-            assert_eq!(
-                pode_comprar(p, vezes, unit * vezes as u64),
-                Ok(unit * vezes as u64),
-                "{vezes}x"
-            );
+            let total = preco_do_lote(unit, vezes);
+            assert!(total >= unit, "{vezes}x saiu mais barato que UMA unidade");
+            assert_eq!(pode_comprar(p, vezes, total), Ok(total), "{vezes}x");
             // Um TP a menos que o total ja' recusa.
             assert_eq!(
-                pode_comprar(p, vezes, unit * vezes as u64 - 1),
+                pode_comprar(p, vezes, total - 1),
                 Err(RecusaCompra::SemSaldo),
                 "{vezes}x com um a menos"
             );
@@ -673,9 +749,10 @@ mod tests {
         assert_eq!(lote(LOTE_MAX), LOTE_MAX);
         assert_eq!(lote(u16::MAX), LOTE_MAX);
         assert_eq!(pode_comprar(p, 0, unit), Ok(unit), "0 cobra como 1");
+        let teto = preco_do_lote(unit, LOTE_MAX);
         assert_eq!(
-            pode_comprar(p, u16::MAX, unit * LOTE_MAX as u64),
-            Ok(unit * LOTE_MAX as u64),
+            pode_comprar(p, u16::MAX, teto),
+            Ok(teto),
             "acima do teto cobra o teto"
         );
     }

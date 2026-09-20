@@ -91,14 +91,20 @@ Armadilhas já resolvidas (ver comentários nos scripts):
 - Android 12+ exige `android:exported` na activity.
 - `.vox` no Android vêm do AssetManager, cuja raiz já é `assets/`: o `vox.rs`
   tira esse prefixo.
-- **A janela do emulador tem que girar junto com o aparelho.** O jogo força
-  paisagem; o Android gira a tela (o `screencap` sai 2400x1080) mas a janela
-  fica **em pé**, mostrando o quadro deitado dentro do quadro retrato — e aí o
-  emulador mapeia o toque pela geometria retrato e **o clique do mouse não
-  acerta nada**, enquanto `adb shell input tap` continua funcionando (ele
-  entra direto no Android, sem passar pela janela). Essa diferença é o
-  diagnóstico: se o `tap` funciona e o mouse não, é a janela. `adb emu rotate`
-  gira 90°; o script compara as duas orientações e gira até casarem.
+- **O AVD nasce em paisagem** (`hw.initialOrientation = landscape`), porque o
+  jogo é paisagem. Se nascesse em pé, a janela mostraria o quadro deitado
+  dentro do quadro retrato e o emulador mapearia o toque pela geometria
+  retrato — **o clique do mouse não acerta nada**, enquanto `adb shell input
+  tap` continua funcionando (ele entra direto no Android, sem passar pela
+  janela). Essa diferença é o diagnóstico: **se o `tap` funciona e o mouse
+  não, é a janela**.
+- **Não use a tela cheia do emulador, e evite `adb emu rotate`.** Cada mudança
+  de tamanho/orientação faz o emulador **recentrar** a janela, e ela vai parar
+  fora da tela (y negativo). De lá não há volta: mover a janela de fora não
+  funciona (`movewindowpixel` e regra de `move` não surtem efeito), e a
+  posição do `emulator-user.ini` é aplicada antes da rotação. A recuperação é
+  reiniciar o emulador. O script ainda tem a rede de segurança que gira até as
+  orientações casarem, mas com o AVD em paisagem ela não dispara.
 - A janela também **não pode ser tilada**: o Hyprland a redimensiona depois do
   mapa e o emulador continua mapeando o toque pelo tamanho que ele escolheu. A
   regra de janela tem que existir **antes do mapa** (float/resize em runtime

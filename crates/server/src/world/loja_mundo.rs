@@ -147,10 +147,13 @@ impl GameWorld {
                             if let Resposta::Feito { .. } = &r {
                                 let codigo = produto.codigo();
                                 crate::telemetria::conta("loja_item", &codigo, vezes as i64);
+                                // O gasto medido e' o COBRADO, com desconto —
+                                // senao a telemetria de TP nao fecha com o razao.
                                 crate::telemetria::conta(
                                     "loja_tp_gasta",
                                     codigo,
-                                    produto.preco_tp().unwrap_or(0) as i64 * vezes as i64,
+                                    cat::preco_do_lote(produto.preco_tp().unwrap_or(0), vezes)
+                                        as i64,
                                 );
                                 if let Some(m) = match produto {
                                     Produto::Moeda(id) => cat::moeda(id),

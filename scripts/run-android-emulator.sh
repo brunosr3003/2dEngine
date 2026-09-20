@@ -54,7 +54,11 @@ hyprctl eval 'hl.window_rule({
     float = true,
 })' >/dev/null 2>&1
 
-# A JANELA TEM QUE GIRAR JUNTO COM O APARELHO
+# A JANELA TEM QUE GIRAR JUNTO COM O APARELHO — mas o normal e' nao precisar:
+# o AVD nasce com `hw.initialOrientation = landscape`, e sem giro a janela
+# fica onde esta'. Isto aqui e' a rede de seguranca, porque CADA GIRO recentra
+# a janela e pode joga-la pra fora da tela (y negativo), e dai' so' reiniciando
+# — mover a janela de fora nao funciona neste emulador.
 #
 # O jogo forca paisagem. O Android gira a tela (o `screencap` sai 2400x1080),
 # mas a janela do emulador continua em PE' e mostra o quadro deitado dentro do

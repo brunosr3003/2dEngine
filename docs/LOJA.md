@@ -109,8 +109,32 @@ empilhar é trabalho do `add_to_inventory`. O texto do resultado diz quantos
 ("10x Pergaminho entregue na bolsa!") — é a única confirmação de que o lote
 inteiro entrou.
 
+### Desconto por quantidade
+
+| a partir de | desconto |
+|---|---|
+| 5 | 5% |
+| 10 | 10% |
+| 25 | 15% |
+| 50 | 20% |
+
+As faixas (`DESCONTO_DO_LOTE`) casam com os atalhos **1x / 10x / 50x** da
+janela: tocar no "10x" e ver o "−10%" aparecer é o que ensina a regra sem
+texto. A conta é do **servidor** (`preco_do_lote`) — o `pedido` guarda o valor
+cobrado e o razão debita por ele; o cliente só desenha. A divisão inteira
+**trunca, e a sobra fica com o jogador**: arredondar pra cima seria cobrar por
+um TP que o desconto disse que ele não ia pagar.
+
+`o_desconto_do_lote_so_barateia` amarra o que importa: as faixas em ordem
+decrescente (fora de ordem, `desconto_pct` pega a errada), nunca cobrar mais
+que o cheio, nunca sair de graça, e o preço **por unidade** nunca subir ao
+comprar mais — sem essa última o desconto podia inverter numa faixa e comprar
+mais sairia mais caro por peça.
+
 Na janela: **−**, **+**, o número, e os atalhos **1x / 10x / 50x**. O preço
-mostra `Preço · 10x 500` com o total à direita. A quantidade volta a 1 a cada
+mostra `Preço · 10x 500` com o total à direita, o `−10%` em verde ao lado dos
+atalhos e o preço cheio **riscado** acima do total — número menor sozinho
+ninguém compara de cabeça com o que teria pagado. A quantidade volta a 1 a cada
 abertura da confirmação: lote herdado da compra anterior é compra sem querer.
 O servidor clampa de qualquer jeito (`cat::lote`) — cliente pode mandar o que
 quiser.
