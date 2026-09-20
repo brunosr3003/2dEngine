@@ -158,6 +158,16 @@ impl GameWorld {
                                         qtd: m.qtd,
                                     }));
                                 }
+                                if let Produto::Energia(id) = produto {
+                                    if let Some(e) = cat::energia(id) {
+                                        let _ =
+                                            tx_mundo.send(IncomingMessage::Loja(Evento::Energia {
+                                                sid,
+                                                personagem: personagem.clone(),
+                                                qtd: e.qtd,
+                                            }));
+                                    }
+                                }
                                 let pergaminho = match produto {
                                     Produto::BauCraft(_) => {
                                         Some(shared::item_id::PERGAMINHO_INVOCA_CHAVE)
@@ -386,6 +396,32 @@ impl GameWorld {
                     &s.handle.to_client,
                     true,
                     format!("Você recebeu {} de {nome}!", milhar(qtd as u64)),
+                );
+            }
+            Evento::Energia {
+                sid,
+                personagem,
+                qtd,
+            } => {
+                let Some(s) = self
+                    .sessions
+                    .get_mut(&sid)
+                    .filter(|s| s.logged_in && s.name == personagem)
+                else {
+                    return;
+                };
+                // Mesmo saldo que a coleta enche e que tier e atributo gastam.
+                s.skill_progress.energia = s.skill_progress.energia.saturating_add(qtd);
+                s.skills_dirty = true;
+                let _ = s.handle.to_client.send(ServerMessage::ProgressoDeSkills {
+                    progresso: s.skill_progress.clone(),
+                });
+                self.save_pending = true;
+                crate::telemetria::conta("loja_energia", "TP", qtd as i64);
+                resultado(
+                    &s.handle.to_client,
+                    true,
+                    format!("Você recebeu {} de Energia!", milhar(qtd)),
                 );
             }
         }

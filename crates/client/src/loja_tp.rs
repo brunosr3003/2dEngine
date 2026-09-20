@@ -1298,11 +1298,19 @@ impl LojaTp {
     fn materiais(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
         let bau = &cat::BAUS_CRAFT[0];
         let vao = 12.0 * k;
-        let w = ((area.w - vao * 2.0) / 3.0).min(390.0 * k);
-        let total = w * 3.0 + vao * 2.0;
+        let w = ((area.w - vao * 3.0) / 4.0).min(390.0 * k);
+        let total = w * 4.0 + vao * 3.0;
         let x0 = area.center().x - total * 0.5;
         self.moedas(
             Rect::new(x0 + (w + vao) * 2.0, area.y + 8.0 * k, w, area.h - 16.0 * k),
+            k,
+            m,
+            livre,
+            modal,
+            agora,
+        );
+        self.energias(
+            Rect::new(x0 + (w + vao) * 3.0, area.y + 8.0 * k, w, area.h - 16.0 * k),
             k,
             m,
             livre,
@@ -1466,66 +1474,145 @@ impl LojaTp {
         }
     }
 
-    /// Os pacotes de moeda do jogo, um por linha: icone, quanto vem, preco e
-    /// "COMPRAR".
+    /// Um cartao de lista da aba Materiais. A coluna e' estreita, entao o
+    /// COMPRAR ocupa a base inteira: ao lado do texto ele cobria o preco.
+    #[allow(clippy::too_many_arguments)]
+    fn cartao_de_lista(
+        &mut self,
+        r: Rect,
+        k: f32,
+        m: Vec2,
+        livre: bool,
+        modal: bool,
+        agora: f64,
+        fundo: (Color, Color),
+        nome: &str,
+        quanto: &str,
+        nota: Option<(String, Color)>,
+        preco: u64,
+        produto: Produto,
+        icone: impl FnOnce(Vec2, f32),
+    ) {
+        let sobre = !modal && r.contains(m);
+        estilo::sombra(r, 18.0 * k, 1.0);
+        estilo::ret_gradiente(r, 18.0 * k, fundo.0, fundo.1);
+        estilo::borda_arredondada(
+            r,
+            18.0 * k,
+            1.5 * k.max(0.8),
+            estilo::alfa(if sobre { OURO_CLARO } else { LILAS }, 0.45),
+        );
+        let lado = (r.h * 0.46).min(76.0 * k);
+        let ic = vec2(r.x + 14.0 * k + lado * 0.5, r.y + 44.0 * k);
+        brilho_radial(ic, lado * 0.62, OURO_CLARO, 0.18);
+        icone(ic, lado);
+        let tx = r.x + 14.0 * k + lado + 12.0 * k;
+        let largura = r.x + r.w - 12.0 * k - tx;
+        estilo::texto_ajustado(nome, tx, r.y + 26.0 * k, largura, ts(16.0, k), estilo::TEXTO);
+        estilo::texto_ajustado(
+            quanto,
+            tx,
+            r.y + 46.0 * k,
+            largura,
+            ts(14.0, k),
+            OURO_CLARO,
+        );
+        let y_preco = r.y + 68.0 * k;
+        estilo::valor_tp(tx, y_preco, preco, ts(16.0, k), estilo::TEXTO);
+        // O rendimento vai na mesma linha do preco: e' o que compara pacotes.
+        if let Some((t, cor)) = nota {
+            let x = tx + estilo::largura_tp_texto(&milhar(preco), ts(16.0, k), true) + 8.0 * k;
+            estilo::texto_ajustado(&t, x, y_preco, r.x + r.w - 12.0 * k - x, ts(12.0, k), cor);
+        }
+        let bt = Rect::new(r.x + 12.0 * k, r.y + r.h - 50.0 * k, r.w - 24.0 * k, 40.0 * k);
+        let ativo = !self.em_voo;
+        botao_ouro(
+            bt,
+            if self.em_voo { "AGUARDE…" } else { "COMPRAR" },
+            ativo,
+            !modal && bt.contains(m),
+            k,
+            agora,
+        );
+        if ativo && livre && bt.contains(m) {
+            self.confirma = Some(Confirma::Item(produto));
+        }
+    }
+
+    /// Os pacotes de moeda do jogo, um por linha.
     fn moedas(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
         let n = cat::MOEDAS.len() as f32;
         let vao = 12.0 * k;
         let h = (area.h - vao * (n - 1.0)) / n;
         for (i, pk) in cat::MOEDAS.iter().enumerate() {
             let r = Rect::new(area.x, area.y + i as f32 * (h + vao), area.w, h);
-            let sobre = !modal && r.contains(m);
-            estilo::sombra(r, 18.0 * k, 1.0);
-            estilo::ret_gradiente(
+            self.cartao_de_lista(
                 r,
-                18.0 * k,
-                Color::new(0.20, 0.15, 0.30, 0.98),
-                Color::new(0.055, 0.045, 0.13, 0.98),
-            );
-            estilo::borda_arredondada(
-                r,
-                18.0 * k,
-                1.5 * k.max(0.8),
-                estilo::alfa(if sobre { OURO_CLARO } else { LILAS }, 0.45),
-            );
-            let lado = (r.h * 0.62).min(96.0 * k);
-            let ic = Rect::new(r.x + 16.0 * k, r.center().y - lado * 0.5, lado, lado);
-            brilho_radial(ic.center(), lado * 0.6, OURO_CLARO, 0.18);
-            crate::bolsa::icone_do_item(ic, pk.item_id, 1.0);
-            let tx = ic.x + ic.w + 14.0 * k;
-            estilo::texto_forte(tx, r.y + r.h * 0.25, pk.nome, ts(17.0, k), estilo::TEXTO);
-            estilo::texto(
-                tx,
-                r.y + r.h * 0.25 + 24.0 * k,
-                &format!("{} de uma vez", milhar(pk.qtd as u64)),
-                ts(15.0, k),
-                OURO_CLARO,
-            );
-            estilo::valor_tp(
-                tx,
-                r.y + r.h - 24.0 * k,
-                pk.preco_tp,
-                ts(17.0, k),
-                estilo::TEXTO,
-            );
-            let bt = Rect::new(
-                r.x + r.w - 150.0 * k,
-                r.y + r.h - 56.0 * k,
-                136.0 * k,
-                44.0 * k,
-            );
-            let ativo = !self.em_voo;
-            botao_ouro(
-                bt,
-                if self.em_voo { "AGUARDE…" } else { "COMPRAR" },
-                ativo,
-                !modal && bt.contains(m),
                 k,
+                m,
+                livre,
+                modal,
                 agora,
+                (
+                    Color::new(0.20, 0.15, 0.30, 0.98),
+                    Color::new(0.055, 0.045, 0.13, 0.98),
+                ),
+                pk.nome,
+                &format!("{} de uma vez", milhar(pk.qtd as u64)),
+                None,
+                pk.preco_tp,
+                Produto::Moeda(pk.id),
+                |c, lado| {
+                    crate::bolsa::icone_do_item(
+                        Rect::new(c.x - lado * 0.5, c.y - lado * 0.5, lado, lado),
+                        pk.item_id,
+                        1.0,
+                    );
+                },
             );
-            if ativo && livre && bt.contains(m) {
-                self.confirma = Some(Confirma::Item(Produto::Moeda(pk.id)));
-            }
+        }
+    }
+
+    /// Os pacotes de Energia. Energia nao e' item de bolsa: cai no saldo que
+    /// paga tier de habilidade e ponto de atributo, entao o cartao usa o
+    /// cristal, nao um icone de item.
+    fn energias(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
+        let n = cat::ENERGIAS.len() as f32;
+        let vao = 12.0 * k;
+        let h = (area.h - vao * (n - 1.0)) / n;
+        let melhor = cat::ENERGIAS
+            .iter()
+            .map(|e| e.tp_por_mil())
+            .fold(f32::MAX, f32::min);
+        for (i, pk) in cat::ENERGIAS.iter().enumerate() {
+            let r = Rect::new(area.x, area.y + i as f32 * (h + vao), area.w, h);
+            let melhor_rendimento = cat::ENERGIAS.len() > 1 && pk.tp_por_mil() <= melhor;
+            let nota = (
+                format!("{:.1} TP/mil", pk.tp_por_mil()).replace('.', ","),
+                if melhor_rendimento {
+                    OURO_CLARO
+                } else {
+                    estilo::SUAVE
+                },
+            );
+            self.cartao_de_lista(
+                r,
+                k,
+                m,
+                livre,
+                modal,
+                agora,
+                (
+                    Color::new(0.11, 0.24, 0.36, 0.98),
+                    Color::new(0.045, 0.055, 0.13, 0.98),
+                ),
+                pk.nome,
+                &format!("{} de Energia", milhar(pk.qtd)),
+                Some(nota),
+                pk.preco_tp,
+                Produto::Energia(pk.id),
+                |c, lado| estilo::icone_energia(c, lado),
+            );
         }
     }
 
@@ -1803,7 +1890,8 @@ impl LojaTp {
                     | Produto::BauCraft(_)
                     | Produto::Moeda(_)
                     | Produto::PergaminhoMontaria(_)
-                    | Produto::PergaminhoTomo(_) => 0,
+                    | Produto::PergaminhoTomo(_)
+                    | Produto::Energia(_) => 0,
                 };
                 if matches!(
                     pr,
@@ -1824,6 +1912,14 @@ impl LojaTp {
                         prev.center(),
                         prev.w * 0.58,
                     );
+                } else if let Produto::Energia(_) = pr {
+                    brilho_radial(
+                        prev.center(),
+                        prev.w * 0.42,
+                        Color::new(0.35, 0.8, 1.0, 1.0),
+                        0.34,
+                    );
+                    estilo::icone_energia(prev.center(), prev.w * 0.5);
                 } else if let Produto::Moeda(id) = pr {
                     brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
                     if let Some(mo) = cat::moeda(id) {
@@ -1869,6 +1965,9 @@ impl LojaTp {
                     }
                     Produto::Moeda(id) => cat::moeda(id).map_or(String::new(), |mo| {
                         format!("{} · entra na hora", milhar(mo.qtd as u64))
+                    }),
+                    Produto::Energia(id) => cat::energia(id).map_or(String::new(), |e| {
+                        format!("{} de Energia · entra na hora", milhar(e.qtd))
                     }),
                 };
                 estilo::texto_ajustado(&pr.nome(), x, y, largura, ts(22.0, k), estilo::TEXTO);

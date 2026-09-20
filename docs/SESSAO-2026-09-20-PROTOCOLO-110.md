@@ -147,3 +147,16 @@ refeitos nesta sessão.
 - Reiniciados os quatro serviços às 12:05 de 20/09/2026 (São Paulo), sem
   ninguém conectado. API pública respondeu protocolo 111 e as portas 9000 e
   9100 devolveram `101 Switching Protocols`.
+
+## Energia na loja de cash
+
+- Três pacotes de Energia na aba Materiais da loja de TP: Fagulha (2.000 por
+  40 TP), Cristal (12.000 por 200 TP) e Núcleo (70.000 por 1.000 TP). O pacote
+  maior rende mais Energia por TP e o cartão mostra o TP por mil.
+- `Produto::Energia` é repetível: não vira posse da conta, e o servidor entrega
+  no saldo de evolução do personagem logado, nunca na bolsa.
+- A aba Materiais passou de três para quatro colunas. O cartão de lista foi
+  refeito — o COMPRAR desceu para a base porque, na coluna estreita, ele cobria
+  o preço (isso já acontecia com a quantidade das moedas antes da mudança).
+- Prévias conferidas em `/tmp/tempest-loja-energia4/`.
+- Nenhuma mensagem nova: o protocolo continua 111.

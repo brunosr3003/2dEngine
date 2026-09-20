@@ -62,6 +62,20 @@ e entregues na hora no personagem que está jogando:
 O ouro entra no saldo; cobre e darksteel, na carteira (docs/BANCO.md) — nunca
 falta espaço. Não viram posse da conta (`loja_posses`), como os pergaminhos.
 
+Na quarta coluna da aba, a **Energia** (`ENERGIAS`, `Produto::Energia`),
+também repetível e entregue na hora:
+
+| pacote | vem | preço | rendimento |
+|---|---:|---:|---:|
+| Fagulha de Energia | 2.000 Energia | 40 TP | 20,0 TP/mil |
+| Cristal de Energia | 12.000 Energia | 200 TP | 16,7 TP/mil |
+| Núcleo de Energia | 70.000 Energia | 1.000 TP | 14,3 TP/mil |
+
+Energia não é item de bolsa: cai no saldo de evolução do personagem
+(`skill_progress.energia`), o mesmo que a coleta enche e que paga tier de
+habilidade (docs/SKILLS.md) e ponto de atributo. O pacote maior sempre rende
+mais Energia por TP — o cartão mostra o TP por mil e destaca o melhor.
+
 Skin só se compra tendo a montaria. Toda montaria corre igual
 (`VEL_MONTADO`): pagar mais compra aparência, não vantagem.
 

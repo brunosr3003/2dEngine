@@ -56,6 +56,12 @@ pub enum Evento {
         item_id: u16,
         qtd: u32,
     },
+    /// Energia paga em TP: entra no saldo de evolucao, nunca na bolsa.
+    Energia {
+        sid: SessionId,
+        personagem: String,
+        qtd: u64,
+    },
 }
 
 pub async fn criar_tabelas(pool: &PgPool) -> Result<()> {
@@ -416,6 +422,7 @@ pub async fn comprar_item(
             | Produto::Moeda(_)
             | Produto::PergaminhoMontaria(_)
             | Produto::PergaminhoTomo(_)
+            | Produto::Energia(_)
     ) {
         sqlx::query("INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
             .bind(conta)
@@ -446,7 +453,7 @@ pub async fn comprar_item(
             Produto::BauCraft(_) | Produto::PergaminhoMontaria(_) | Produto::PergaminhoTomo(_)
         ) {
             format!("{} entregue na bolsa!", produto.nome())
-        } else if matches!(produto, Produto::Moeda(_)) {
+        } else if matches!(produto, Produto::Moeda(_) | Produto::Energia(_)) {
             format!("{} comprado!", produto.nome())
         } else {
             format!("{} é seu!", produto.nome())

@@ -365,6 +365,52 @@ pub fn moeda(id: u16) -> Option<&'static PacoteMoeda> {
     MOEDAS.iter().find(|m| m.id == id)
 }
 
+/// Energia comprada com TP. Nao e' item de bolsa: cai direto no saldo de
+/// evolucao do personagem, o mesmo que paga tier de habilidade e ponto de
+/// atributo. Repetivel. Valores iniciais ⚠️ (docs/LOJA.md).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PacoteEnergia {
+    pub id: u16,
+    pub nome: &'static str,
+    pub qtd: u64,
+    pub preco_tp: u64,
+}
+
+impl PacoteEnergia {
+    /// TP por 1.000 de Energia — e' assim que o pacote maior se justifica.
+    pub fn tp_por_mil(&self) -> f32 {
+        if self.qtd == 0 {
+            return 0.0;
+        }
+        self.preco_tp as f32 * 1_000.0 / self.qtd as f32
+    }
+}
+
+pub const ENERGIAS: [PacoteEnergia; 3] = [
+    PacoteEnergia {
+        id: 1,
+        nome: "Fagulha de Energia",
+        qtd: 2_000,
+        preco_tp: 40,
+    },
+    PacoteEnergia {
+        id: 2,
+        nome: "Cristal de Energia",
+        qtd: 12_000,
+        preco_tp: 200,
+    },
+    PacoteEnergia {
+        id: 3,
+        nome: "Núcleo de Energia",
+        qtd: 70_000,
+        preco_tp: 1_000,
+    },
+];
+
+pub fn energia(id: u16) -> Option<&'static PacoteEnergia> {
+    ENERGIAS.iter().find(|e| e.id == id)
+}
+
 pub fn pacote(id: u16) -> Option<&'static PacoteTp> {
     PACOTES.iter().find(|p| p.id == id)
 }
@@ -420,6 +466,8 @@ pub enum Produto {
     PergaminhoMontaria(u16),
     /// Pergaminho repetível; sorteia um tomo para uma das doze habilidades.
     PergaminhoTomo(u16),
+    /// Energia repetível; cai no saldo de evolução, não na bolsa.
+    Energia(u16),
 }
 
 impl Produto {
@@ -433,6 +481,7 @@ impl Produto {
             Produto::Moeda(i) => format!("moeda:{i}"),
             Produto::PergaminhoMontaria(i) => format!("pergaminho-montaria:{i}"),
             Produto::PergaminhoTomo(i) => format!("pergaminho-tomo:{i}"),
+            Produto::Energia(i) => format!("energia:{i}"),
         }
     }
 
@@ -447,6 +496,7 @@ impl Produto {
             "moeda" => Produto::Moeda(id),
             "pergaminho-montaria" => Produto::PergaminhoMontaria(id),
             "pergaminho-tomo" => Produto::PergaminhoTomo(id),
+            "energia" => Produto::Energia(id),
             _ => return None,
         };
         p.existe().then_some(p)
@@ -461,6 +511,7 @@ impl Produto {
             Produto::Moeda(i) => moeda(i).is_some(),
             Produto::PergaminhoMontaria(i) => pergaminho_montaria(i).is_some(),
             Produto::PergaminhoTomo(i) => pergaminho_tomo(i).is_some(),
+            Produto::Energia(i) => energia(i).is_some(),
         }
     }
 
@@ -479,6 +530,7 @@ impl Produto {
             Produto::PergaminhoTomo(i) => {
                 pergaminho_tomo(i).map_or("?".into(), |p| p.nome.to_string())
             }
+            Produto::Energia(i) => energia(i).map_or("?".into(), |e| e.nome.to_string()),
         }
     }
 
@@ -492,6 +544,7 @@ impl Produto {
             Produto::Moeda(i) => moeda(i).map(|m| m.preco_tp),
             Produto::PergaminhoMontaria(i) => pergaminho_montaria(i).map(|p| p.preco_tp),
             Produto::PergaminhoTomo(i) => pergaminho_tomo(i).map(|p| p.preco_tp),
+            Produto::Energia(i) => energia(i).map(|e| e.preco_tp),
         }
     }
 }
@@ -544,7 +597,8 @@ impl Posses {
             Produto::BauCraft(_)
             | Produto::Moeda(_)
             | Produto::PergaminhoMontaria(_)
-            | Produto::PergaminhoTomo(_) => false,
+            | Produto::PergaminhoTomo(_)
+            | Produto::Energia(_) => false,
         }
     }
 
@@ -795,7 +849,44 @@ mod tests {
             assert!(p.preco_tp > 0);
             assert_eq!(p.chances.iter().map(|n| *n as u16).sum::<u16>(), 100);
         }
+        for e in ENERGIAS {
+            assert!(ids.insert(("e", e.id)));
+            assert!(e.preco_tp > 0 && e.qtd > 0);
+        }
+        // Pacote maior tem que render mais Energia por TP, senao nao existe
+        // motivo pra comprar o grande.
+        for par in ENERGIAS.windows(2) {
+            assert!(par[1].qtd > par[0].qtd, "{} nao cresce", par[1].nome);
+            assert!(
+                par[1].tp_por_mil() < par[0].tp_por_mil(),
+                "{} nao rende mais por TP que {}",
+                par[1].nome,
+                par[0].nome
+            );
+        }
         assert!(VEL_MONTADO > 1.0 && VEL_MONTADO <= 1.6);
+    }
+
+    /// Energia comprada tem que pagar evolucao e atributo — e' o mesmo saldo.
+    #[test]
+    fn pacote_de_energia_paga_tier_e_ponto_de_atributo() {
+        let menor = ENERGIAS[0];
+        assert!(
+            menor.qtd >= crate::skills::custo_de_evolucao(1).unwrap().energia,
+            "o pacote mais barato nao cobre nem o primeiro tier"
+        );
+        // O maior banca uma rodada inteira de atributos de um personagem novo.
+        let maior = ENERGIAS[ENERGIAS.len() - 1];
+        assert!(maior.qtd >= crate::custo_energia_de_varios(0, 60));
+        assert_eq!(pode_comprar(&Posses::default(), Produto::Energia(1), 39), Err(RecusaCompra::SemSaldo));
+        assert_eq!(
+            pode_comprar(&Posses::default(), Produto::Energia(1), 40),
+            Ok(40)
+        );
+        assert_eq!(
+            pode_comprar(&Posses::default(), Produto::Energia(99), 9_999),
+            Err(RecusaCompra::ProdutoInvalido)
+        );
     }
 
     #[test]
@@ -807,9 +898,11 @@ mod tests {
             Produto::BauCraft(1),
             Produto::PergaminhoMontaria(1),
             Produto::PergaminhoTomo(1),
+            Produto::Energia(2),
         ] {
             assert_eq!(Produto::de_codigo(&p.codigo()), Some(p));
         }
+        assert_eq!(Produto::de_codigo("energia:99"), None);
         assert_eq!(Produto::de_codigo("skin:999"), None);
         assert_eq!(Produto::de_codigo("lixo"), None);
     }
