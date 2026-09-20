@@ -1739,6 +1739,28 @@ pub const MOB_ATTACK_IMPACT_S: f32 = MOB_ATTACK_PREPARE_S + MOB_ATTACK_CUT_S;
 mod testes_atributos {
     use super::*;
 
+    /// UMA coleta de Energia tem que pagar o PRIMEIRO ponto de atributo.
+    ///
+    /// O tutorial manda coletar Energia (776) e logo depois gastar um ponto
+    /// (775). Se um ciclo de coleta rendesse menos que o ponto custa, o passo
+    /// seguinte pediria uma coisa impossivel — e foi assim que o dono
+    /// encontrou, jogando, em 20/09/2026: "o tutorial me pede pra distribuir
+    /// atributos mas nao me deu energia pra fazer isso".
+    #[test]
+    fn uma_coleta_de_energia_paga_o_primeiro_ponto() {
+        let rende = crate::skills::energia_por_coleta(0);
+        let custo = custo_energia_do_ponto(0);
+        assert!(
+            rende >= custo,
+            "uma coleta rende {rende} e o primeiro ponto custa {custo}"
+        );
+        // E vale em toda ilha: quem chega na Geleira com o passo em aberto
+        // tambem tem que conseguir.
+        for ilha in 0..4 {
+            assert!(crate::skills::energia_por_coleta(ilha) >= custo);
+        }
+    }
+
     /// A media so' existe como escolha se compensar em algum lugar: ela da'
     /// menos defesa que a pesada e nao tem o dano da leve.
     #[test]

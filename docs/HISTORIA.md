@@ -143,13 +143,21 @@ ela começa a fazer falta (`objective_kind::TUTORIAL`, `quests::tutorial`):
 | 772 | Golpe no automático | 703 (Treinador) | arrastar uma skill pra CIMA (uso automático) |
 | 773 | Coleta sem esforço | antes de 704 (lenha) | ligar o AUTO COLETA |
 | 774 | O mapa mostra o caminho | antes de 709 (mirante) | tocar num lugar do mapa |
-| 775 | O que o nível te deu | antes de 702 | gastar um ponto de atributo (Menu › Ficha) |
 | 776 | A luz nas pedras | antes de 704 | coletar um cristal de Energia |
+| 775 | O que o nível te deu | **depois de 776** | gastar um ponto de atributo (Menu › Ficha) |
 | 777 | O primeiro despertar | depois de 719 (cap. II) | evoluir uma habilidade de tier |
 
 - O cliente avisa o gesto com `ClientMessage::Tutorial { acao }`, e só com o
   passo ativo. O "Ir" do passo abre onde se faz (a Barra, o mapa) ou mostra a
   dica.
+- **A ordem entre 776 e 775 é contrato, não gosto.** Gastar ponto custa
+  Energia (`custo_energia_do_ponto`), então mandar gastar antes de mandar
+  coletar pede uma coisa que o jogador não tem como fazer — foi o que o dono
+  encontrou jogando em 20/09/2026. Dois testes amarram:
+  `pos(776) < pos(775)` em `tutoriais_no_capitulo_um_uma_acao_cada`, e
+  `uma_coleta_de_energia_paga_o_primeiro_ponto`, que confere que um ciclo de
+  coleta (12 na primeira ilha) cobre o primeiro ponto (10) em toda ilha.
+
 - **Os três novos são contados pelo SERVIDOR** (`passo_de_tutorial`), no ponto
   em que a ação de fato aconteceu: o ponto gasto em `handle_alloc_stat_point`
   (depois de descontar a Energia), o cristal no crédito da pedra tier 5, o tier

@@ -416,12 +416,12 @@ pub const PASSOS: &[QuestDef] = &[
     // ela passa a fazer falta. Ids fora da sequencia de proposito.
     tutorial(770, "Poção na hora certa", "O Alquimista insiste: poção boa é a que se bebe sozinha. Abra Menu › Sistema › Barra, escolha a Poção de Vida e ajuste com − e + a % de vida em que ela é bebida.", tut::POCAO_LIMIAR, 20, 300, item_id::HEALTH_POTION, 5),
     tutorial(771, "Luta sem as mãos", "Antes dos lobos, aprenda a lutar sem pensar: toque em COMBATE, no canto de baixo, e o personagem enfrenta sozinho o que estiver perto. Toque de novo para parar.", tut::AUTO_COMBATE, 20, 300, item_id::HEALTH_POTION, 3),
-    tutorial(775, "O que o nível te deu", "Cada nível rende pontos que ninguém gasta por você. Abra Menu › Personagem › Ficha e coloque um ponto no atributo que combina com a sua arma — FOR bate mais forte, DES acerta mais, INT move a magia.", tut::PONTO_ATRIBUTO, 20, 400, item_id::HEALTH_POTION, 3),
     cacar_com(702, "A trilha dos lobos", "Os lobos enlouqueceram desde que o farol apagou: descem à trilha de dia, coisa que nunca fizeram. Derrote 5 fora da cidade. Os caçadores juntaram berloques que os bichos arrancaram das carroças — são seus.", alvo_de_mob(mob_kind::LOBO), 5, 60, 1_000, item_id::EXORCISM_BAUBLE, 10, item_id::HEALTH_POTION, 5),
     falar(703, "Mãos firmes", "Você sobreviveu aos lobos. O Treinador da praça quer ver do que é capaz — e guarda quintessência para quem aguenta o tranco.", Papel::Treinador, 40, 2_500, item_id::QUINTESSENCE, 10),
     tutorial(772, "Golpe no automático", "O Treinador mostra: arraste uma skill PARA CIMA e ela passa a ser usada sozinha no combate. Para baixo, volta pro manual.", tut::SKILL_AUTO, 40, 800, item_id::HEALTH_POTION, 3),
     tutorial(773, "Coleta sem esforço", "A forja come madeira e pedra. Toque em COLETA: o personagem corta e quebra sozinho o que estiver por perto — a engrenagem do botão escolhe o quê.", tut::AUTO_COLETA, 40, 800, item_id::XP_POTION, 1),
     tutorial(776, "A luz nas pedras", "O trovão deixou cristais azuis no relevo: é Energia, e ela não ocupa espaço na bolsa. Colete um — o filtro Energia do mapa mostra onde eles estão.", tut::COLETA_ENERGIA, 40, 900, item_id::HEALTH_POTION, 3),
+    tutorial(775, "O que o nível te deu", "Cada ponto de atributo custa Energia — a mesma dos cristais azuis do relevo. Abra Menu › Personagem › Ficha e coloque um ponto no atributo que combina com a sua arma: FOR bate mais forte, DES acerta mais, INT move a magia. Se faltar Energia, quebre um cristal e volte.", tut::PONTO_ATRIBUTO, 20, 400, item_id::HEALTH_POTION, 3),
     coletar_com(704, "Lenha para a forja", "A forja da vila come madeira dia e noite. Derrube 8 árvores — é da árvore que sai toda a madeira da ilha. O Ferreiro paga em Darksteel, o metal escuro que toda peça pede.", alvo_de_coleta::ARVORE, 8, 60, 2_000, item_id::DARKSTEEL, 200, item_id::XP_POTION, 1),
     coletar_com(705, "Pedra que canta", "As pedras da ilha zumbem com o trovão. Quebre 10 pedras em qualquer veio — é da pedra que saem o Aço e o Darksteel de toda peça. A mineradora completa o seu Aço.", alvo_de_coleta::PEDRA, 10, 80, 4_000, item_id::STEEL, 30, item_id::XP_POTION, 1),
     falar_com_dois(706, "O metal da tempestade", "Leve o que ouviu nas pedras ao Ferreiro. Ele sabe o que o metal carrega — e guarda o couro e o cobre que faltam para quem vai forjar.", Papel::Ferreiro, 60, 4_000, item_id::COPPER, 300, item_id::HIDE, 1),
@@ -1198,7 +1198,11 @@ mod testes {
         assert!(pos(772) > pos(703) && pos(773) < pos(704) && pos(774) < pos(709));
         // O ponto de atributo vem cedo, antes do primeiro bando de lobos; a
         // Energia junto da coleta; o despertar depois da travessia.
-        assert!(pos(775) < pos(702));
+        // Gastar ponto CUSTA Energia (`custo_energia_do_ponto`): o passo que
+        // manda gastar tem que vir depois do que manda coletar, senao ele
+        // pede uma coisa que o jogador ainda nao tem como fazer. Foi
+        // exatamente isso que o dono encontrou jogando, em 20/09/2026.
+        assert!(pos(776) < pos(775), "Energia antes do ponto de atributo");
         assert!(pos(776) < pos(704));
         assert!(pos(777) > pos(718));
     }
