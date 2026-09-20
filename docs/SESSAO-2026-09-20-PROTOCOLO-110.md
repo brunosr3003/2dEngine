@@ -205,3 +205,21 @@ refeitos nesta sessão.
 - Não implementado: dono e prazo do saque no chão. Com pet de 16 tiles, quem
   tem o grau melhor alcança o drop de quem matou. Também não foi medido o
   efeito do pet no AOI com o canal cheio — isso precisa de bots.
+
+## Publicação dos pets
+
+- Commit `00746f9` publicado no Git. Suíte antes do build: cliente 324,
+  servidor 150, shared 186, nenhum falho.
+- TestFlight: **Tempest 1.1 (2609201633)**, `UPLOAD SUCCEEDED with no errors`.
+  Delivery UUID: `9eed157b-694f-4339-bb2d-bb4e1a7c3610`. O processamento pela
+  Apple não foi verificado no App Store Connect.
+- Backups: `tempest-prod/dumps/*-pre-pets-2609201633.dump`; binários anteriores
+  em `tempest-prod/bak-pets-2609201633/`.
+- Reiniciados os quatro serviços às 13:36 de 20/09/2026 (São Paulo), sem
+  ninguém conectado. API pública respondeu protocolo 112 e as portas 9000 e
+  9100 devolveram `101 Switching Protocols`.
+- Consulta somente leitura confirmou os 25 pets cadastrados (ids 420–444, slot
+  `pet`, pilha 1) e o Pergaminho de Invocação: Pet vinculado.
+- **É necessário atualizar o cliente para o protocolo 112.** Nenhum pet foi
+  exercitado num cliente de verdade nesta publicação: o que rodou foram os
+  testes de mundo (nascer, andar, coletar, bolsa cheia) e as prévias da loja.
