@@ -45,14 +45,13 @@ swallow false
 #
 # O jeito que funciona e' o simples: ARRASTE a janela uma vez pra onde voce
 # quiser e o emulador lembra dali em diante.
+# So' `float`. Fixar tamanho ou `fullscreen_state = 0` aqui TRAVA a tela
+# cheia do emulador — o botao passa a nao fazer nada. O tamanho quem escolhe
+# e' ele, e ja' sai na proporcao do aparelho.
 hyprctl eval 'hl.window_rule({
     name  = "android-emulador",
     match = { class = "^(Emulator)$" },
     float = true,
-    fullscreen = false,
-    fullscreen_state = 0,
-    size  = { "monitor_w*0.47", "monitor_h*0.39" },
-    move  = { "monitor_w*0.52", "monitor_h*0.30" },
 })' >/dev/null 2>&1
 
 # A JANELA TEM QUE GIRAR JUNTO COM O APARELHO
