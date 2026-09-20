@@ -105,8 +105,10 @@ async fn migrar_montarias_para_item(pool: &PgPool) -> Result<()> {
         return Ok(());
     }
     // Quanto cada conta gastou em montaria e skin, pelos pedidos entregues.
+    // `SUM` de BIGINT volta NUMERIC no Postgres: sem o cast pra BIGINT o
+    // decode em i64 falha e o servidor entra em crash-loop no start.
     let gastos: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT conta, COALESCE(SUM(valor), 0) FROM loja_pedidos          WHERE moeda = 'TP' AND status = 'entregue'            AND (produto LIKE 'montaria:%' OR produto LIKE 'skin:%')          GROUP BY conta",
+        "SELECT conta, COALESCE(SUM(valor), 0)::BIGINT FROM loja_pedidos          WHERE moeda = 'TP' AND status = 'entregue'            AND (produto LIKE 'montaria:%' OR produto LIKE 'skin:%')          GROUP BY conta",
     )
     .fetch_all(pool)
     .await?;

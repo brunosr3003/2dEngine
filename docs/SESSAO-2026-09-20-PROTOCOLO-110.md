@@ -359,3 +359,21 @@ refeitos nesta sessão.
 - Prévias conferidas em `/tmp/tempest-loja-mont/`.
 - **Não exercitado**: ninguém equipou nem montou num cliente de verdade, e a
   migração não rodou contra a prod ainda — ela roda no próximo start.
+
+## Publicação da montaria como item
+
+- Commit `b8f2f59` publicado. TestFlight: **Tempest 1.1 (2609201812)**,
+  `UPLOAD SUCCEEDED with no errors`. Delivery UUID:
+  `78f5a196-fd1a-40ba-8c74-83282363f724`.
+- **A primeira subida derrubou a prod**: a migração somava `valor` com
+  `SUM(...)`, que no Postgres devolve NUMERIC, e o decode em `i64` falhava —
+  o servidor entrou em crash-loop no start, às 15:13. Corrigido com
+  `::BIGINT` no `SELECT` e republicado; o mundo subiu limpo às 15:17.
+  Ninguém estava conectado.
+- A migração rodou: `loja_posses` de montaria e skin zerada,
+  `loja_montarias` zerada, marcador `montarias_viraram_item_v1` gravado e
+  **3.350 TP devolvidos** à conta `SA01:1` (saldo foi de 100 para 3.450).
+- Consulta somente leitura confirmou as 15 montarias cadastradas (ids
+  460–474, slot `montaria`).
+- Backups: `tempest-prod/dumps/*-pre-reset-montaria.dump`; binários anteriores
+  em `tempest-prod/bak-montaria-item/`.
