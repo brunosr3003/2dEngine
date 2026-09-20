@@ -28,7 +28,7 @@ Quando a reserva zera o nó **esgota**: some pra todo mundo, **sai da colisão**
 | tempo de um ciclo | pedra 2,5 · 2,8 · 3,1 · 3,4 s; tronco 2,0 s | **decisão provisória (não estava no planejamento)** — o doc só tinha o ritmo por densidade |
 | alcance | 1,4 u de borda a borda | **decisão provisória (não estava no planejamento)** |
 | raio do AUTO COLETA | 20–100 u, padrão 60 | **decisão provisória (não estava no planejamento)** |
-| Cristal de Energia | 20 coletas · 360 s de respawn · ciclo de 2,5 s | `COLETAS_POR_ENERGIA`, `RESPAWN_DA_ENERGIA` e `COLETA_CICLO_ENERGIA_S` |
+| Veio de Energia | **50 coletas** · 360 s de respawn · ciclo de 2,5 s | `COLETAS_POR_ENERGIA`, `RESPAWN_DA_ENERGIA` e `COLETA_CICLO_ENERGIA_S` |
 
 O **cristal de Energia** é um novo recurso coletável (tipo 5), distinto de
 pedra e árvore. Cada ciclo credita Energia diretamente ao personagem, sem
@@ -38,14 +38,57 @@ agregadas, não cada cristal; o AUTO COLETA tem uma opção própria para ele.
 Missões que pedem especificamente **pedra** não contam Energia. Os cristais
 usam uma grade de geração própria: não substituem nem reduzem os minérios.
 
-**O modelo** (`vegetacao::energia`) é um cacho: base de rocha escura irregular
-e cinco lascas afuniladas — três voxels de largura embaixo, uma na ponta —
-abrindo pra fora como um buquê, mais duas ou três lascas boiando por cima. A
-primeira versão eram três colunas de um voxel, retas e paralelas, com um voxel
-cinza colado em cada: de perto lia como três palitos, e era o único prop da
-ilha sem volume nenhum. Afunilar, inclinar pra fora e pôr lasca boiando são as
-três coisas que dão a leitura, e `o_veio_de_energia_e_um_cacho_afunilado`
-amarra as três — senão o modelo volta a ser palito sem ninguém perceber.
+### O veio nasce em CAMPO
+
+A Energia não é mais um cristal solto a cada tantas centenas de metros: ela
+nasce em **campos** (`terreno::no_campo_de_energia`), como a pedra tem os seus
+lugares. Uma célula de 300 blocos em cada 4 tem campo; o campo é um **disco**
+de 80 blocos em volta de um centro sorteado dentro da célula — disco, e não a
+célula inteira, porque quadrado se enxerga no mapa. Dentro dele toda coluna
+candidata vira veio, com espaçamento de 7 blocos (o do minério é 3: o veio é
+largo, e encostados os halos do chão viravam uma poça de luz só).
+
+Dois números que a Energia **não** herda do minério:
+
+- **Altura** (`ENERGIA_LIMIAR` 0,16 contra `MINERIO_LIMIAR` 0,42). A pedra é de
+  mina e mora no cume; o veio é fenda de relevo e pode estar no meio da encosta.
+- **Cume**. O minério exige nada mais alto num raio de 8 u. Exigir isso do veio
+  seria pedir um campo inteiro de picos — campo de Energia é clareira, não
+  cordilheira.
+
+Medido na ilha inicial: **175 veios em 42 células de 40 u** (4,2 por célula),
+contra 55 espalhados antes. O teste
+`toda_pedra_e_energia_do_servidor_e_desenhada_no_cliente` cobra essa razão — se
+ela cair abaixo de 2,5, os veios voltaram a se espalhar.
+
+### O veio se MEXE
+
+Ele **não** é modelo de voxel assado no pedaço do terreno, como o minério:
+`energia_vfx` desenha os veios à vista quadro a quadro, em cor de vértice, no
+material do mundo. Assado, ele era uma pedra parada — foi o que o dono viu em
+20/09/2026: "sai de uma pedra, tá muito ruim; tem que ser um negócio com
+animação de energia fluindo, tipo um veio".
+
+De baixo pra cima: o **halo** aceso rente à terra com a greta escura no meio
+(é ele que diz que a luz vem de baixo — só o losango escuro lia como sombra);
+seis **lascas** afuniladas em cacho, abrindo pra fora, com uma faixa clara que
+**sobe sem parar** e dá a volta (parar no topo leria como "acabou"); um
+**facho** curto por dentro do cacho; e **fagulhas** subindo, cada uma na sua
+fase.
+
+Três coisas que custaram uma versão cada, e valem a pena lembrar:
+
+1. **Em cacho, não em fila.** Enfileiradas ao longo da greta, de certos
+   ângulos as lascas ficavam uma atrás da outra e o veio virava duas agulhas.
+2. **O facho fica DENTRO do cacho.** Subindo acima de tudo, sozinho contra o
+   céu escuro, o azul translúcido virava uma lasca cinza espetada — lia como
+   antena, não como luz.
+3. **Afunilar sem virar agulha.** Com a ponta fechando em 0,88 do raio elas
+   liam como pingente de gelo.
+
+Custa ~uma centena de triângulos por veio, só os à vista, e sem shader novo
+nem segunda passada. `MMO_PREVIA_ENERGIA=1` captura três instantes do mesmo
+veio — uma captura só não diz se ele se mexe.
 
 Missões e diárias de coleta (`GATHER`) contam **por coleta rendida** (cada
 ciclo), não por nó esgotado.

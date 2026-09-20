@@ -20,6 +20,7 @@ mod colecao;
 mod craft_ui;
 mod dungeon_ui;
 mod efeitos;
+mod energia_vfx;
 mod entrada;
 mod evolucao_skills;
 mod ficha_ui;
@@ -455,6 +456,11 @@ async fn main() {
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_PETS").is_ok() {
         pets_ui::previa(&vox, &render3d::material_solido()).await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_ENERGIA").is_ok() {
+        energia_vfx::previa(&render3d::material_solido()).await;
         return;
     }
     #[cfg(debug_assertions)]
@@ -4232,6 +4238,14 @@ impl Jogo {
                         get_time() as f32,
                     );
                 }
+                // Os veios de Energia: desenhados quadro a quadro, com a luz
+                // subindo. Antes de os bichos entrarem, pra o facho ficar
+                // atras de quem passa na frente dele.
+                energia_vfx::desenha(
+                    t.energias_visiveis(&vista.cam).into_iter(),
+                    &vista.cam,
+                    get_time() as f32,
+                );
                 // Golpe de chefe carregando: onde vai bater, crescendo ate' o impacto.
                 {
                     let altura = |x: f32, z: f32| t.altura(x, z);

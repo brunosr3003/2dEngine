@@ -1609,8 +1609,13 @@ pub const RESPAWN_DA_ARVORE: f32 = 90.0;
 pub const COLETA_CICLO_PEDRA_S: [f32; 5] = [0.0, 2.5, 2.8, 3.1, 3.4];
 /// Segundos de um ciclo num tronco. DECISAO PROVISORIA.
 pub const COLETA_CICLO_ARVORE_S: f32 = 2.0;
-/// Cristal de Energia: reserva e respawn próprios, sem ocupar a bolsa.
-pub const COLETAS_POR_ENERGIA: u32 = 20;
+/// Veio de Energia: reserva e respawn próprios, sem ocupar a bolsa.
+///
+/// Eram 20 ciclos — 240 de Energia por veio na primeira ilha, o que o dono
+/// resumiu em 20/09/2026 como "acaba rápido, é muito pouco". Um veio agora
+/// paga 600, e eles nascem em CAMPO (`terreno::no_campo_de_energia`), não
+/// soltos pela ilha: o lugar é que é a fonte, e não o cristal.
+pub const COLETAS_POR_ENERGIA: u32 = 50;
 pub const RESPAWN_DA_ENERGIA: f32 = 360.0;
 pub const COLETA_CICLO_ENERGIA_S: f32 = 2.5;
 /// Distancia maxima da BORDA do corpo pra coletar. DECISAO PROVISORIA.

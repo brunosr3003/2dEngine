@@ -1310,6 +1310,60 @@ pub fn minerio_da_coluna(
     recurso_montanha_da_coluna(bioma, bx, bz, topo, ger, agua, false)
 }
 
+/// Fração do pico a partir da qual a Energia nasce. Bem mais baixa que a do
+/// minério (0,42): a pedra é de MINA e mora no cume, a Energia é fenda de
+/// relevo e pode estar no meio da encosta e no fundo do vale. Sem baixar
+/// isto, os campos caíam quase todos em terra baixa e não rendiam veio
+/// nenhum — 29 na ilha inteira, menos que antes de haver campo.
+pub const ENERGIA_LIMIAR: f32 = 0.16;
+
+/// Lado da célula que sorteia um CAMPO de Energia, em blocos.
+pub const ENERGIA_CELULA: i32 = 300;
+/// Uma em cada tantas células tem campo.
+pub const ENERGIA_CELULA_EM: u32 = 4;
+/// Raio do campo, em blocos (80 = 40 unidades).
+pub const ENERGIA_CAMPO_RAIO: i32 = 80;
+/// Espaçamento dos veios DENTRO do campo, em blocos. Bem maior que o do
+/// minério (3) porque o veio é largo: encostados, os halos do chão viravam
+/// uma poça de luz só e o campo perdia a forma.
+pub const ENERGIA_ESPACO: i32 = 7;
+
+/// Esta coluna está dentro de um CAMPO de Energia?
+///
+/// A Energia deixou de ser um cristal solto a cada tantas centenas de metros
+/// e passou a nascer em **campos**, como a pedra: dentro do campo ela é densa,
+/// fora não existe. Era o pedido do dono em 20/09/2026 — "tem que ter local só
+/// de coleta de Energia igual tem de pedra". Espalhada, ela não dava lugar
+/// nenhum: o jogador andava a ilha inteira pra achar um veio e ele acabava em
+/// dois minutos.
+///
+/// O campo é um disco em volta de um centro sorteado dentro da célula, e não
+/// a célula inteira — célula é quadrado, e quadrado se vê no mapa. Confere as
+/// nove células em volta porque o centro da vizinha pode alcançar aqui.
+pub fn no_campo_de_energia(bx: i32, bz: i32) -> bool {
+    let (cx, cz) = (bx.div_euclid(ENERGIA_CELULA), bz.div_euclid(ENERGIA_CELULA));
+    for dz in -1..=1 {
+        for dx in -1..=1 {
+            let (ax, az) = (cx + dx, cz + dz);
+            let h = mistura_minerio(
+                ax.wrapping_mul(7_919).wrapping_add(101),
+                az.wrapping_mul(6_271).wrapping_sub(57),
+            );
+            if h % ENERGIA_CELULA_EM != 0 {
+                continue;
+            }
+            let jx = ((h >> 8) & 0xff) as i32 * ENERGIA_CELULA / 256;
+            let jz = ((h >> 16) & 0xff) as i32 * ENERGIA_CELULA / 256;
+            let (px, pz) = (ax * ENERGIA_CELULA + jx, az * ENERGIA_CELULA + jz);
+            let (ddx, ddz) = (bx - px, bz - pz);
+            if ddx * ddx + ddz * ddz <= ENERGIA_CAMPO_RAIO * ENERGIA_CAMPO_RAIO {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Cristal de Energia: grade independente da de minérios. Não transforma
 /// minério em Energia nem reduz a oferta de pedra na ilha.
 pub fn energia_da_coluna(
@@ -1337,7 +1391,12 @@ fn recurso_montanha_da_coluna(
     }
     let y = (topo + 1) as f32 * BLOCO;
     let pico = ger.pico();
-    if y < pico * MINERIO_LIMIAR {
+    let limiar = if energia {
+        ENERGIA_LIMIAR
+    } else {
+        MINERIO_LIMIAR
+    };
+    if y < pico * limiar {
         return None;
     }
 
@@ -1350,11 +1409,19 @@ fn recurso_montanha_da_coluna(
     let sorteio = |x: i32, z: i32| mistura_minerio(x + sal.0, z + sal.1);
     let meu = sorteio(bx, bz);
     let g1 = meu.wrapping_mul(2_246_822_519).wrapping_add(374_761_393);
-    if energia && ((g1 >> 13) % 5) != 0 {
+    // Energia so' dentro do campo — e, la' dentro, TODA candidata vale. O
+    // filtro de 1 em 5 que havia aqui espalhava um cristal solto por vez, que
+    // e' o contrario de ter um lugar de coletar Energia.
+    if energia && !no_campo_de_energia(bx, bz) {
         return None;
     }
-    for dz in -MINERIO_ESPACO..=MINERIO_ESPACO {
-        for dx in -MINERIO_ESPACO..=MINERIO_ESPACO {
+    let espaco = if energia {
+        ENERGIA_ESPACO
+    } else {
+        MINERIO_ESPACO
+    };
+    for dz in -espaco..=espaco {
+        for dx in -espaco..=espaco {
             if (dx, dz) != (0, 0) && sorteio(bx + dx, bz + dz) <= meu {
                 return None;
             }
@@ -1379,7 +1446,10 @@ fn recurso_montanha_da_coluna(
     // terraco de 4 blocos do relevo, isso quer dizer: ela esta' no patamar
     // mais alto das redondezas — o TOPO, e nao uma prateleira no meio da
     // encosta que por acaso passou do limiar de altura.
-    let c = MINERIO_CUME;
+    //
+    // A ENERGIA nao passa por aqui: exigir cume dela seria pedir um campo
+    // inteiro de picos, e campo de Energia e' clareira, nao cordilheira.
+    let c = if energia { 0 } else { MINERIO_CUME };
     let mut dz = -c;
     while dz <= c {
         let mut dx = -c;

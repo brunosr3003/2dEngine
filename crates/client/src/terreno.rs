@@ -75,6 +75,10 @@ struct Pedaco {
     /// A superficie do mar deste pedaco (`agua::malhas_do_pedaco`), com
     /// material proprio. Vazia em pedaco todo terra.
     agua: Vec<MalhaEstatica>,
+    /// O PE' de cada veio de Energia do pedaco. Ele nao entra na malha
+    /// assada: e' desenhado quadro a quadro, com a luz subindo
+    /// (`energia_vfx`). Assado, ele era uma pedra parada.
+    energias: Vec<Vec3>,
 }
 
 /// O pedaco `(cx, cz)` cai no cone da camera? O mesmo teste pro chao e pro
@@ -115,7 +119,6 @@ pub struct Terreno {
     /// ela tem mais cristal, e o modelo carrega isso.
     minerios: Vec<crate::vegetacao::Modelo>,
     /// Cristais altos de Energia, separados visualmente do minério.
-    energias: Vec<crate::vegetacao::Modelo>,
     /// Colunas cujas pedras ja' foram esgotadas. Quem esta' aqui NAO e'
     /// desenhado — sem isso o jogador nao teria como distinguir o veio cheio
     /// do veio que ele acabou de limpar.
@@ -159,7 +162,6 @@ impl Terreno {
             arvores: Vec::new(),
             plantas: Vec::new(),
             minerios: Vec::new(),
-            energias: Vec::new(),
             esgotadas: std::collections::HashSet::new(),
             pedacos: HashMap::new(),
             gerados: 0,
@@ -201,8 +203,6 @@ impl Terreno {
             }
         }
         for k in 0..VARIANTES {
-            t.energias
-                .push(crate::vegetacao::energia(k as u32 * 29 + 811));
         }
         t
     }
@@ -212,9 +212,6 @@ impl Terreno {
         &self.minerios[t * VARIANTES + (k as usize % VARIANTES)]
     }
 
-    fn modelo_de_energia(&self, k: u32) -> &crate::vegetacao::Modelo {
-        &self.energias[k as usize % VARIANTES]
-    }
 
     /// Marca uma pedra como esgotada (ou de volta) e joga fora o pedaco que a
     /// contem, pra ela sumir (ou reaparecer) no proximo quadro.
@@ -386,6 +383,16 @@ impl Terreno {
         visiveis.len()
     }
 
+    /// O pe' dos veios de Energia a` vista. Eles sao desenhados quadro a
+    /// quadro (`energia_vfx`) e nao entram na malha assada do pedaco.
+    pub fn energias_visiveis(&self, cam: &Camera3D) -> Vec<Vec3> {
+        self.pedacos
+            .iter()
+            .filter(|((cx, cz), p)| !p.energias.is_empty() && pedaco_visivel(cam, *cx, *cz))
+            .flat_map(|(_, p)| p.energias.iter().copied())
+            .collect()
+    }
+
     /// A superficie do mar dos pedacos visiveis. Quem chama ja' pos o
     /// material da agua (ver `agua::desenha`).
     pub fn desenha_agua(&self, cam: &Camera3D, tempo: f32, ondas: f32) {
@@ -476,6 +483,7 @@ impl Terreno {
         let mut malhas: Vec<Mesh> = Vec::new();
         let mut verts: Vec<Vertex> = Vec::new();
         let mut idx: Vec<u16> = Vec::new();
+        let mut energias: Vec<Vec3> = Vec::new();
 
         let mut quad4 = |verts: &mut Vec<Vertex>,
                          idx: &mut Vec<u16>,
@@ -820,14 +828,15 @@ impl Terreno {
                         ),
                     ];
                     for m in recursos.into_iter().flatten() {
-                        let modelo = if m.energia {
-                            self.modelo_de_energia(m.variante)
-                        } else {
-                            self.modelo_de_minerio(m.tier, m.variante)
-                        };
+                        let base = vec3(m.centro.x, (topo + 1) as f32 * BLOCO, m.centro.y);
+                        // Energia nao vai pra malha: ela se MEXE.
+                        if m.energia {
+                            energias.push(base);
+                            continue;
+                        }
                         crate::vegetacao::instancia(
-                            modelo,
-                            vec3(m.centro.x, (topo + 1) as f32 * BLOCO, m.centro.y),
+                            self.modelo_de_minerio(m.tier, m.variante),
+                            base,
                             m.porte,
                             &mut verts,
                             &mut idx,
@@ -917,6 +926,7 @@ impl Terreno {
                 .into_iter()
                 .map(MalhaEstatica::nova)
                 .collect(),
+            energias,
         }
     }
 
@@ -1142,11 +1152,26 @@ mod testes {
             );
             n += 1;
         }
-        println!("{n} pedras conferidas dos dois lados");
+        println!("{n} recursos conferidos dos dois lados — {energias} veios de Energia");
+        // O veio nasce em CAMPO, e nao solto: confirmado contando quantas
+        // celulas de 40 unidades tem veio. Espalhados, seriam quase uma
+        // celula por veio; em campo, varios dividem a mesma.
+        let mut celulas: std::collections::HashSet<(i32, i32)> = Default::default();
+        for e in i.todos_os_estorvos() {
+            if matches!(e.tipo, TipoDeEstorvo::Energia) {
+                celulas.insert(((e.centro.x / 40.0) as i32, (e.centro.y / 40.0) as i32));
+            }
+        }
+        println!("{} celulas de 40u com veio", celulas.len());
+        assert!(
+            energias as f32 / celulas.len() as f32 >= 2.5,
+            "os veios estao espalhados, nao em campo: {energias} veios em {} celulas",
+            celulas.len()
+        );
         assert!(n > 50, "so' {n} pedras na ilha — teste vazio");
         assert!(
-            energias > 10,
-            "so' {energias} cristais na ilha — teste vazio"
+            energias > 40,
+            "so' {energias} veios na ilha — Energia tem que ter LUGAR de coleta"
         );
     }
 

@@ -1253,7 +1253,9 @@ mod tests {
                     || (p.file_name().is_some_and(|n| n == "invocacao_ui.rs")
                         && fonte.contains("MMO_PREVIA_INVOCACAO"))
                     || (p.file_name().is_some_and(|n| n == "pets_ui.rs")
-                        && fonte.contains("MMO_PREVIA_PETS"));
+                        && fonte.contains("MMO_PREVIA_PETS"))
+                    || (p.file_name().is_some_and(|n| n == "energia_vfx.rs")
+                        && fonte.contains("MMO_PREVIA_ENERGIA"));
                 for (n, l) in fonte.lines().enumerate() {
                     let codigo = l.split("//").next().unwrap_or("");
                     assert!(
