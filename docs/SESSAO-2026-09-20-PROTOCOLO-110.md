@@ -237,3 +237,18 @@ refeitos nesta sessão.
 - Três testes novos: a regra nas bordas da janela, o pet de quem não matou
   esperando, e o pet de quem matou pegando na hora. Nada disso foi exercitado
   com dois jogadores de verdade — falta teste com bots.
+
+## Publicação da prioridade no saque
+
+- Commit `76b1828` publicado no Git. Suíte antes do build: cliente 324,
+  servidor 153, shared 186, nenhum falho.
+- TestFlight: **Tempest 1.1 (2609201644)**, `UPLOAD SUCCEEDED with no errors`.
+  Delivery UUID: `ee3ffc2b-6420-4ff9-ac8e-ab93159b1078`. O processamento pela
+  Apple não foi verificado no App Store Connect.
+- Backups: `tempest-prod/dumps/*-pre-prioridade-2609201644.dump`; binários
+  anteriores em `tempest-prod/bak-prioridade-2609201644/`.
+- Reiniciados os quatro serviços às 13:46 de 20/09/2026 (São Paulo), sem
+  ninguém conectado. API pública respondeu protocolo 112 e as portas 9000 e
+  9100 devolveram `101 Switching Protocols`.
+- O protocolo continua 112: a janela de prioridade é regra de servidor, não
+  mexe no wire.
