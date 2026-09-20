@@ -837,14 +837,16 @@ fn bosque() -> &'static (Vec2, crate::world::ZonasComuns) {
 
 pub(crate) fn jornada(conjunto: Conjunto, com_pocoes: bool) -> Jornada {
     let (cidade, zonas) = bosque();
-    // Forte fora: a missao nunca manda pra la' (`zona_de_mob`), e a simulacao
-    // tem que percorrer a MESMA jornada que o jogador percorre.
-    let tuplas: Vec<(Vec2, u32, u32)> = zonas
-        .zonas
-        .iter()
-        .filter(|z| !z.forte)
-        .map(|z| (z.centro, z.lv_min, z.lv_max))
-        .collect();
+    // A simulacao percorre a MESMA jornada que o jogador: o forte entra na
+    // lista a partir de `FORTE_NA_MISSAO_NIVEL`, igual `zona_de_mob`.
+    let monta_zonas = |nivel: u32| -> Vec<(Vec2, u32, u32)> {
+        zonas
+            .zonas
+            .iter()
+            .filter(|z| !z.forte || nivel >= crate::world::FORTE_NA_MISSAO_NIVEL)
+            .map(|z| (z.centro, z.lv_min, z.lv_max))
+            .collect()
+    };
     let comuns: Vec<u16> = (0..7).collect();
     let mut equip = shared::Equipment::default();
     equip.weapon = Some(arma_do(conjunto));
@@ -911,6 +913,7 @@ pub(crate) fn jornada(conjunto: Conjunto, com_pocoes: bool) -> Jornada {
                 (Vec::new(), Parada::Xp(falta), LIMITE_DO_NIVEL_S)
             }
         };
+        let tuplas = monta_zonas(nivel);
         let Some(centro) = crate::quests::zona_do_bicho(&tuplas, &comuns, &alvos, *cidade, nivel)
         else {
             panic!("{nome}: nenhuma zona");
@@ -1916,6 +1919,58 @@ mod testes {
 
 #[cfg(test)]
 mod testes_das_zonas {
+
+    /// A missao de matar bicho MANDA pro forte — mas so' a partir do nivel
+    /// `FORTE_NA_MISSAO_NIVEL`. Matar N bichos num lugar com o dobro da
+    /// densidade acaba em metade do tempo, e e' isso que da' ao forte uma
+    /// razao pra existir alem de estar marcado no mapa. Antes disso ele mata
+    /// o jogador: ver `metas_do_inicio`.
+    #[test]
+    fn a_missao_manda_pro_forte_depois_do_nivel_de_corte() {
+        use crate::world::FORTE_NA_MISSAO_NIVEL;
+        let (cidade, zonas) = super::bosque();
+        let comuns: Vec<u16> = (0..7).collect();
+        let lista = |nivel: u32| -> Vec<(glam::Vec2, u32, u32)> {
+            zonas
+                .zonas
+                .iter()
+                .filter(|z| !z.forte || nivel >= FORTE_NA_MISSAO_NIVEL)
+                .map(|z| (z.centro, z.lv_min, z.lv_max))
+                .collect()
+        };
+        let e_forte = |c: glam::Vec2| {
+            zonas
+                .zonas
+                .iter()
+                .any(|z| z.forte && z.centro == c)
+        };
+
+        // Abaixo do corte, nenhum destino cai num forte — em nivel nenhum.
+        for nivel in 1..FORTE_NA_MISSAO_NIVEL {
+            let zs = lista(nivel);
+            for alvo in 0..7u16 {
+                if let Some(c) =
+                    crate::quests::zona_do_bicho(&zs, &comuns, &[alvo], *cidade, nivel)
+                {
+                    assert!(!e_forte(c), "nivel {nivel} mandou pro forte");
+                }
+            }
+        }
+        // Acima do corte o forte entra na disputa, e em ALGUM caso ele ganha —
+        // senao a regra existiria sem efeito nenhum.
+        let mut foi = false;
+        for nivel in FORTE_NA_MISSAO_NIVEL..=15 {
+            let zs = lista(nivel);
+            for alvo in 0..7u16 {
+                if let Some(c) =
+                    crate::quests::zona_do_bicho(&zs, &comuns, &[alvo], *cidade, nivel)
+                {
+                    foi |= e_forte(c);
+                }
+            }
+        }
+        assert!(foi, "o forte nunca e' escolhido: a regra nao faz nada");
+    }
 
     /// Os fortes se espalham pela ilha inteira: um perto do desembarque, pra
     /// o jogador saber cedo que a coisa existe, e outros ate' a ponta, pra

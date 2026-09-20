@@ -619,6 +619,16 @@ O mapa marca: mancha mais cheia, anel duplo, uma torre com ameias por cima e
 mostra o anel grosso e a torre. Sem isso o forte seria uma emboscada, não um
 lugar.
 
+**A missão de matar bicho manda pro forte** a partir de `FORTE_NA_MISSAO_NIVEL`
+(5): matar N bichos num lugar com o dobro da densidade acaba em metade do
+tempo, e é isso que dá ao forte uma razão de existir além de estar marcado no
+mapa. Abaixo desse nível, não: com o forte valendo desde o nível 3 a primeira
+caçada (702) dá **quatro bichos em cima, vida a zero e morte** — medido por
+`metas_do_inicio`. O 4 já passa; o 5 é ele com um nível de folga, porque a
+simulação é um modelo e o jogador de verdade erra mais. A preferência não é
+incondicional: `zona_do_bicho` escolhe a zona mais perto que serve, então um
+forte do outro lado da ilha perde pra zona comum ali do lado.
+
 
 - **Gate de tutorial herdado**: `SKIP_TUTORIAL_GATE=1` pra contornar. É lixo
   do projeto antigo e tem que sair.

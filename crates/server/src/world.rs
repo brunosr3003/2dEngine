@@ -653,6 +653,14 @@ pub const FORTE_RAIO_UN: f32 = 24.0;
 pub const FORTE_ESPACO_UN: f32 = 4.0;
 /// Teto de mobs num forte.
 pub const FORTE_POR_ZONA: u32 = 34;
+/// A partir de que nivel a MISSAO de matar bicho manda pro forte. Abaixo
+/// disso ela manda pra zona comum.
+///
+/// Medido com `metas_do_inicio`, que simula a jornada inteira: com o forte
+/// valendo desde o nivel 3 a primeira cacada (702) da' QUATRO bichos em cima,
+/// vida a zero e morte. O 4 ja' passa; o 5 e' ele com um nivel de folga,
+/// porque a simulacao e' um modelo e o jogador de verdade erra mais.
+pub const FORTE_NA_MISSAO_NIVEL: u32 = 5;
 
 /// O centro de indice `i` vira forte? Os centros ja' saem embaralhados pela
 /// semente da ilha, entao pegar de N em N espalha os fortes sem uma segunda
@@ -14500,15 +14508,22 @@ impl GameWorld {
 
     /// Centro da zona de mob onde um de `alvos` nasce (vazio = qualquer um).
     ///
-    /// **Forte fica de fora.** Ele tem o mesmo nivel e os mesmos bichos da
-    /// vizinhanca, entao serviria — mas mandar a missao pra la' seria empurrar
-    /// o jogador pra dentro de quatro inimigos de uma vez sem ele ter
-    /// escolhido isso. O forte e' pra quem ve' no mapa e decide entrar.
+    /// **O FORTE tem preferencia** (pedido do dono em 20/09/2026: "nas missoes
+    /// de derrotar mobs tem q levar pro spot da vila onde tem uma quantidade
+    /// maior de mobs pra matar"). Missao de matar N bichos num lugar com o
+    /// dobro da densidade acaba em metade do tempo, e e' o que da' ao forte
+    /// uma razao pra existir alem de estar marcado no mapa.
+    ///
+    /// **Mas so' a partir de `FORTE_NA_MISSAO_NIVEL`.** Abaixo disso a
+    /// simulacao reprova na hora: na primeira cacada (702, nivel 2) o jogador
+    /// chegava com QUATRO bichos em cima, caia a zero de vida e morria. O
+    /// forte e' um lugar pra voltar, nao a primeira coisa que se ve'.
     fn zona_de_mob(&self, alvos: &[u16], eu: Vec2, nivel: u32) -> Option<Vec2> {
+        let com_forte = nivel >= FORTE_NA_MISSAO_NIVEL;
         let zonas: Vec<(Vec2, u32, u32)> = self
             .spawn_zones
             .iter()
-            .filter(|z| !z.forte)
+            .filter(|z| com_forte || !z.forte)
             .filter_map(|z| {
                 z.level_range
                     .map(|(a, b, _)| (z.origin + z.size * 0.5, a, b))
