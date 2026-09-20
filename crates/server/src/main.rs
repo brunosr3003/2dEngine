@@ -14,7 +14,6 @@ mod auth;
 #[cfg(test)]
 mod balanceamento;
 mod barra;
-mod boat_config;
 mod canais;
 mod coleta;
 mod correio_admin;
@@ -121,11 +120,6 @@ async fn main() -> Result<()> {
     // Skills (Phase 1). Compartilha o mesmo `economy_version`.
     skills::init(&pool).await?;
     skills::recarregar(&pool).await;
-
-    // Carrega configs de barco (lylian + outros kinds) de data/boats/*.json.
-    // Forca load no startup pra logs aparecerem cedo.
-    let boats_loaded = boat_config::registry().len();
-    tracing::info!("boats carregados: {} kinds", boats_loaded);
 
     let listener = TcpListener::bind(&addr).await?;
     tracing::info!("server listening on ws://{addr} ({TICK_RATE_HZ} Hz)");

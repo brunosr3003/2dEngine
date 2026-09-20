@@ -38,12 +38,6 @@ pub enum EntityKind {
     Npc(u16),
     /// Portal para outro mapa. Ao pisar, servidor teleporta o jogador.
     Portal,
-    /// Barco navegavel. u16 = boat_kind (0=Lylian Leutard). Cliente usa o
-    /// kind pra escolher quais sprite-sheets carregar.
-    Boat(u16),
-    /// Bola de canhao em voo. Renderiza sprite + sombra; explode no impacto.
-    /// Snapshot envia `pos` (XY do landing) e `height` (offset Y do arco).
-    CannonBomb,
     /// Peixe nadando no oceano. u16 = species (1=Anchova, 2=Peixe-palhaço,
     /// 3=Peixe-cirurgião, 4=Baiacu). Spawnado pelo servidor perto dos players
     /// em tiles de água; vagueia com wander AI. Ao pescar, é atraído pela boia
@@ -298,7 +292,6 @@ pub enum EntityTag {
     Loot,
     Npc,
     Portal,
-    Boat,
     Other,
     /// Pet coletor. O `EntityMeta::kind` carrega o item_id do pet, de onde o
     /// cliente tira o modelo e a cor do grau.

@@ -96,7 +96,7 @@ chão marca o alvo. Alvo que sai do mundo deixa de ser alvo.
 `EntitySnapshot` tinha **58 campos**. O cliente 3D usa 7. A maioria existia pro
 paper doll 2D de entao (`visual`, `skin_preset`, `attack_anim`, `combo_step`,
 `hurt_dir`, `sprite_id`), pro combate de ação (`aim_dir`, `is_crit`,
-`poise_active`, `defending`) ou pra amarração dos barcos (20 campos de leme,
+`poise_active`, `defending`) ou pra amarração dos barcos, já apagada (20 campos de leme,
 vela, âncora, estação).
 
 Virou dois tipos:

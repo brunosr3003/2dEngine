@@ -72,21 +72,6 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     .await?;
     seed_equipamento(pool).await?;
 
-    // Seed IDEMPOTENTE: roda sempre. `seed_from_constants` usa
-    // `ON CONFLICT (id) DO NOTHING`, então insere apenas ids NOVOS de
-    // CRAFT_RECIPES (ex: barcos T1+) sem sobrescrever receitas já no DB ou
-    // editadas pelo admin. Antes só seedava com a tabela vazia, o que deixava
-    // receitas novas de fora até limpar a tabela.
-    seed_from_constants(pool).await?;
-    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM craft_recipes")
-        .fetch_one(pool)
-        .await?;
-    tracing::info!(
-        "[recipes] seed idempotente ok ({} defs estáticas, {} no DB)",
-        shared::CRAFT_RECIPES.len(),
-        count.0
-    );
-
     reload(pool).await?;
     let v: i64 = sqlx::query_scalar("SELECT version FROM recipes_version WHERE id = 1")
         .fetch_one(pool)
@@ -141,7 +126,9 @@ pub async fn reload(pool: &PgPool) -> anyhow::Result<()> {
             id: id as u16,
             name,
             category: cat.max(0) as u8,
-            station: shared::craft_station_of(oid as u16),
+            // `craft_station_of` so' existia pra mandar barco pra CARPENTRY;
+            // sem barco, toda receita e' da FORGE. O cliente nem le' o campo.
+            station: shared::craft_station::FORGE,
             tier: tier.max(1) as u8,
             inputs,
             output_item_id: oid as u16,
@@ -157,60 +144,6 @@ pub async fn reload(pool: &PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn seed_from_constants(pool: &PgPool) -> anyhow::Result<()> {
-    for r in shared::CRAFT_RECIPES.iter() {
-        // Categoria heuristica baseada em output_item_id.
-        let cat: i16 = match r.output_item_id {
-            // Resources
-            60..=71 => 3,
-            // Weapons (Sword/Bow/Axe/Spear/Dagger/Staff/Wand)
-            3 | 6 | 12 | 14 | 15 | 25 | 26 => 1,
-            // Armor (chest/helm/legs/boots/gloves)
-            4 | 7 | 16 | 17 | 18 | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42
-            | 43 | 44 => 2,
-            // Boats (naval) — barcos consumiveis.
-            100..=109 => 4,
-            _ => 0,
-        };
-        let tier: i16 = derive_tier(r.output_item_id, r.output_item_level) as i16;
-
-        // Inputs validos (item_id != 0).
-        let inputs_pairs: Vec<[u32; 2]> = r
-            .inputs
-            .iter()
-            .filter_map(|&(id, qty)| {
-                if id == 0 {
-                    None
-                } else {
-                    Some([id as u32, qty as u32])
-                }
-            })
-            .collect();
-        let inputs_json = serde_json::to_value(&inputs_pairs)?;
-
-        sqlx::query(
-            "INSERT INTO craft_recipes (id, name, category, tier, inputs, \
-                output_item_id, output_qty, output_item_level, roll_instance) \
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) \
-             ON CONFLICT (id) DO NOTHING",
-        )
-        .bind(r.id as i32)
-        .bind(r.name)
-        .bind(cat)
-        .bind(tier)
-        .bind(inputs_json)
-        .bind(r.output_item_id as i32)
-        .bind(r.output_qty as i32)
-        .bind(r.output_item_level as i32)
-        .bind(r.roll_instance)
-        .execute(pool)
-        .await?;
-    }
-    Ok(())
-}
-
-/// As receitas de equipamento (`shared::receitas`, ids 1000+). Idempotente:
-/// `ON CONFLICT DO NOTHING` — so' entra id novo; ajuste feito no banco fica.
 async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
     let mut novas = 0u64;
     let mut todas = shared::receitas::receitas_de_equipamento();

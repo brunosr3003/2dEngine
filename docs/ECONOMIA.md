@@ -85,6 +85,16 @@ O mar entre as ilhas hoje é cenário. Com colônia ele vira destino: navegar at
 a sua, e mais tarde ver a dos outros. Barco deixa de ser transporte e vira
 conteúdo.
 
+**O barco antigo foi apagado em 20/09/2026, de propósito, pra ser refeito do
+zero.** O que havia era um veículo completo do lado do servidor — física de
+vela e leme, vento, ancoragem, canhões com mira e AoE, deck com múltiplos
+passageiros e estações, persistência — herdado da geração anterior do cliente
+(Unity/2D). O cliente macroquad não tinha **uma linha** disso: nenhum
+`BoardBoat`, nenhum `HelmAdjust`. E mesmo que tivesse, não havia pra onde ir:
+viajar entre ilhas é pelo Capitão do Porto, e o mar não tem bicho nem conteúdo.
+Era código vivo sustentando uma promessa morta. Quando o barco voltar, volta
+com um motivo — colônia — e desenhado pro cliente que existe.
+
 ## Mercado
 
 Modelo do MIR4: **quase nada é comerciável**, só existe **venda** (não troca),

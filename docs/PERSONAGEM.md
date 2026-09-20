@@ -366,9 +366,8 @@ livro de habilidade próprio (também TP).
 pela cor, coleta o saque do chão e dá ponto de atributo pela espécie.
 
 **DEPOIS — o modelo da montaria.** De onde vêm e como são fica pra quando essa
-parte começar. O que já está pronto e não depende disso: o encanamento (`Mounted`
-aponta pra uma entidade, e o barco já usa) e a pose do personagem montado, que
-é procedural — ver a tabela da animação.
+parte começar. O que já está pronto e não depende disso: a pose do personagem
+montado, que é procedural — ver a tabela da animação.
 
 ## O que o fio precisa
 

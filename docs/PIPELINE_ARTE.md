@@ -49,8 +49,7 @@ Custo: **~9 segundos pros 71 modelos** do zone14 numa direção.
 
 Os modelos do zone14 se dividem em dois grupos, e isso muda como usar cada um.
 
-**Saem prontos** — barcos (`sot_sloop`, `chalupa`, `barco_chalupa`,
-`sloop_hull`), nuvens, golens (`colosso_de_pedra`, `golem_de_pedra`,
+**Saem prontos** — nuvens, golens (`colosso_de_pedra`, `golem_de_pedra`,
 `golem_de_terra`), árvores (`ent`, `treebeard`, `barbarvore`), esqueletos
 (`esquelord`, `rei_esqueleto`), aves (`aguia`, `coruja`, `gaivota`, `flamingo`,
 `arara`, `pavao`, `tucano`), porcos e tubarões.

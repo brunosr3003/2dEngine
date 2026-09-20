@@ -124,7 +124,7 @@ e vira **matéria-prima de progressão**.
 - **Servidor:** `craft::conferir` (nível, cada ingrediente, espaço) e
   `craft::aplicar` (consome e cria com instância de atributos fixos), e a resposta
   `CraftResultado` diz o motivo da recusa ("faltam: Aço 12/30").
-- **Cliente:** painel de Craft (abas Arma/Secundária/Armadura/Acessório/Barco,
+- **Cliente:** painel de Craft (abas Arma/Secundária/Armadura/Acessório,
   ingredientes com tem/precisa, botão Criar), aberto pelo HUD — sem tecla.
 - **Material roxo continua sem fonte** até a síntese de cor, então a receita
   Épica existe mas ainda não se cumpre.

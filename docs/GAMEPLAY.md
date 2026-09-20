@@ -24,7 +24,7 @@ Visual: **Mana Seed** — sprites 64×64px modulares (paper doll), tiles 16×16p
 ```
 spawn no Porto Central (hub, safe zone)
   ↓
-pega barco → navega até ilha (tier escolhido)
+fala com o Capitão do Porto → viaja até a ilha (tier escolhido)
   ↓
 explora, mata mobs, coleta loot, ganha XP de proficiências
   ↓
@@ -93,8 +93,11 @@ passivas ou árvores de compra de habilidades. Ver [SKILLS.md](SKILLS.md).
 
 ## Navegação e Ilhas
 
-- **Porto Central (hub):** safe zone, NPCs (vendedor, reparador, banco), doca de barcos, baú pessoal.
-- **Barco:** item equipável de transporte. Permite navegar entre ilhas. Pode ser atacado em zonas PvP.
+- **Porto Central (hub):** safe zone, NPCs (vendedor, reparador, banco), doca, baú pessoal.
+- **Viagem entre ilhas:** pelo Capitão do Porto (`ClientMessage::Viajar`), grátis e imediata.
+  O **barco navegável foi apagado em 20/09/2026** (ver `docs/ECONOMIA.md`): existia como
+  veículo completo no servidor — vela, leme, vento, canhões — sem uma linha de cliente e sem
+  nada pra fazer no mar. Vai ser refeito do zero quando houver destino.
 - **Ilhas Rasas (tier 1):** piratas fracos, caranguejos, tartarugas. Farm de XP seguro.
 - **Ilhas Vulcânicas (tier 2):** golems de lava, serpentes, armadilhas. PvP ativo.
 - **Ilhas Amaldiçoadas (tier 3):** mortos-vivos navais, brumas, low-visibility. Full-loot PvP.

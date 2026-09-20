@@ -122,59 +122,6 @@ pub enum ClientMessage {
     RefineItem {
         slot: u16,
     },
-    /// Pede pra subir num barco. Server valida proximidade (player em
-    /// tile adjacente ao barco) e parenta o player (Mounted) com
-    /// local_pos no ponto de entrada do deck.
-    BoardBoat {
-        boat_eid: EntityId,
-    },
-    /// Desce do barco atual. Server faz BFS pequeno procurando tile
-    /// walkable adjacente ao barco — falha se barco em alto-mar.
-    /// Mantém o nome `DismountBoat` por compat com clientes antigos —
-    /// `LeaveBoat` é o alias preferido daqui pra frente.
-    LeaveBoat,
-    /// LEGADO — alias de `LeaveBoat`. Manter pra clientes velhos
-    /// enquanto a transição rola.
-    DismountBoat,
-    /// Pega uma estação do barco onde o player está. Player precisa
-    /// estar dentro da interaction zone da estação (helm/sail/anchor).
-    /// Falha silenciosamente se ocupada ou fora de zona.
-    GrabStation {
-        station: u8,
-    },
-    /// Solta a estação atual (se tiver alguma). Idempotente.
-    ReleaseStation,
-    /// Ajusta a vela do barco onde o player tem a estação SAIL.
-    /// `delta_position`: -1 baixa 1 nivel, +1 sobe 1 nivel
-    /// (clamp em [0..2]).
-    /// `delta_angle`: rad a adicionar ao angulo da vela (clamp -PI/2..PI/2).
-    SailAdjust {
-        delta_position: i8,
-        delta_angle: f32,
-    },
-    /// Toggle da ancora. Player precisa ter station ANCHOR. Inicia
-    /// animacao de drop (se up) ou raise (se down). Anim leva
-    /// BOAT_ANCHOR_ANIM_TIME segundos.
-    AnchorToggle,
-    /// Ajusta angulo da roda do leme. Delta em rad — server soma e
-    /// clampa em [-BOAT_MAX_RUDDER_ANGLE, +]. rudder_angle PERSISTE
-    /// quando o player solta a estacao HELM (igual barco real).
-    HelmAdjust {
-        delta_angle: f32,
-    },
-    /// Ajusta o angulo de mira do canhao do slot `slot`. Player precisa
-    /// ter station CANNON_BASE+slot. Angle: -CANNON_AIM_MAX_RAD a +.
-    /// Server clampa e persiste.
-    CannonAim {
-        slot: u8,
-        angle: f32,
-    },
-    /// Dispara o canhao. `power` 0..1 — controla range e altura do arco.
-    /// Spawn de CannonBombTag; explosao AoE no impacto.
-    CannonFire {
-        slot: u8,
-        power: f32,
-    },
     /// Toggle do PK Mode (player vs player opt-in). Quando ON, o player
     /// pode dar/levar dano de outros players com pk_mode ON tambem.
     /// Futuro: zonas PvP forcam ON; faccoes diferentes ignoram flag.
@@ -183,7 +130,7 @@ pub enum ClientMessage {
     },
     /// Teletransporta o player para o spawn do mapa. Usar como escape em
     /// caso de bug de colisão (player preso em wall, fora do mapa, etc.).
-    /// Permitido em qualquer estado — se montado em barco, desmonta antes.
+    /// Permitido em qualquer estado.
     ResetPosition,
     /// Joga o item do slot do inventario no chao perto do player. Server
     /// valida slot ocupado, decrementa qty (ou zera) e spawna LootTag.
@@ -858,13 +805,6 @@ pub enum ServerMessage {
         reason: String,
     },
 
-    /// Estado global do vento. Servidor envia no login (snapshot inicial)
-    /// + sempre que muda significativamente (drift suave ou storm event).
-    /// `direction` em rad world-space; `intensity` em [0,1] onde 1 = vendaval.
-    WindUpdate {
-        direction: f32,
-        intensity: f32,
-    },
     /// Resposta ao Interact com um quest giver (quadro/NPC/facção): lista de
     /// quests DISPONÍVEIS pra aceitar dali (já filtradas por level/facção/cooldown).
     QuestOffer {

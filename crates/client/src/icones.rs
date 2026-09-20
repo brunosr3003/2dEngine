@@ -125,8 +125,6 @@ mod testes {
             i::FISH_CLOWNFISH,
             i::FISH_SURGEONFISH,
             i::FISH_PUFFERFISH,
-            i::BOAT_ESQUIFE,
-            i::BOAT_LYLIAN_LEUTARD,
             i::COPPER,
             i::DARKSTEEL,
             i::GLITTERING_POWDER,

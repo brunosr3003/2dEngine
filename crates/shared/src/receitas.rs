@@ -27,7 +27,6 @@ pub mod categoria {
     pub const ARMA: u8 = 1;
     pub const ARMADURA: u8 = 2;
     pub const MATERIAL: u8 = 3;
-    pub const BARCO: u8 = 4;
     pub const SECUNDARIA: u8 = 5;
     pub const ACESSORIO: u8 = 6;
 }
@@ -37,7 +36,6 @@ pub fn nome_da_categoria(c: u8) -> &'static str {
         categoria::ARMA => "Arma",
         categoria::ARMADURA => "Armadura",
         categoria::MATERIAL => "Material",
-        categoria::BARCO => "Barco",
         categoria::SECUNDARIA => "Secundária",
         categoria::ACESSORIO => "Acessório",
         _ => "Outros",

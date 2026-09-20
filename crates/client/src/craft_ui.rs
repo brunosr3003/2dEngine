@@ -29,12 +29,11 @@ const VERDE: Color = Color::new(0.45, 0.80, 0.42, 1.0);
 const VERMELHO: Color = Color::new(0.90, 0.40, 0.34, 1.0);
 
 /// Abas, na ordem do painel.
-const ABAS: [u8; 5] = [
+const ABAS: [u8; 4] = [
     categoria::ARMA,
     categoria::SECUNDARIA,
     categoria::ARMADURA,
     categoria::ACESSORIO,
-    categoria::BARCO,
 ];
 
 /// As abas de oficina, depois das categorias.
@@ -60,7 +59,7 @@ pub fn ingredientes(r: &CraftRecipeNet, slots: &[InventorySlot]) -> Vec<(u16, u3
 }
 
 /// "Dá: Ataque +8 · Vida +12" e, quando houver, o nível para usar.
-/// Os atributos são valores exatos; sem atributos (barco, selo), mostra o item.
+/// Os atributos são valores exatos; sem atributos (selo), mostra o item.
 pub fn o_que_da(
     r: &CraftRecipeNet,
     faixas: &[(&str, i32, i32)],
@@ -556,10 +555,6 @@ mod tests {
         assert!(da.contains("Destreza +"), "{da}");
         assert!(!da.contains('–'), "não mostra faixa: {da}");
         assert!(extra.as_deref().is_none_or(|e| !e.contains("aleat")));
-        let mut barco = r.clone();
-        barco.roll_instance = false;
-        barco.output_qty = 1;
-        assert_eq!(o_que_da(&barco, &[], "Barco").0, "Cria: 1× Barco");
     }
 
     #[test]

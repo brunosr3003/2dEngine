@@ -1111,27 +1111,6 @@ pub const QUESTS: &[QuestDef] = &[
         desc: "Va ate a arena (a leste) e derrote 3 inimigos com sua arma nova. Vai te dar XP pra subir de nivel!",
         obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 3,
         reward_xp: 120, ..q() },
-    QuestDef { id: 905, title: "Convoque o Barco",
-        desc: "Va ate o cais (ao norte) e USE o item do barco no inventario pra coloca-lo na agua.",
-        obj_kind: objective_kind::EXPLORE, obj_count: 1,
-        obj_x: 195.5, obj_y: 1050.5, obj_radius: 6.0,
-        reward_xp: 50, ..q() },
-    // 906/907 são deck-relativos (detectados pela pos do player no convés vs a
-    // estação) — obj_kind COLLECT só pra não mostrar marcador de EXPLORE no mundo.
-    QuestDef { id: 906, title: "Vá até a Vela",
-        desc: "Suba no barco (interaja com ele) e ande pelo convés ate a VELA.",
-        obj_kind: objective_kind::COLLECT, obj_target: 0, obj_count: 1,
-        reward_xp: 40, ..q() },
-    QuestDef { id: 907, title: "Vá até o Leme",
-        desc: "Agora ande pelo convés ate o LEME (a roda do timao).",
-        obj_kind: objective_kind::COLLECT, obj_target: 0, obj_count: 1,
-        reward_xp: 40, ..q() },
-    QuestDef { id: 908, title: "Navegue até o Mar",
-        desc: "Use a VELA pra ganhar velocidade e o LEME pra virar. Navegue rumo ao mar aberto, ao norte.",
-        obj_kind: objective_kind::EXPLORE, obj_count: 1,
-        obj_x: 195.5, obj_y: 1085.5, obj_radius: 9.0,
-        reward_xp: 100, ..q() },
-
     // ===================== STORYLINE (4xx) — Lvl 1-10 (Chapter 1) =====================
     QuestDef { id: 401, source: quest_source::NPC, giver: 107,
         title: "O Sal da Terra", desc: "A Armada Real bloqueou o porto. Fale com os pescadores e ajude coletando 15 Madeiras para reparar as barricadas.",
@@ -1148,13 +1127,6 @@ pub const QUESTS: &[QuestDef] = &[
         obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 10,
         reward_cobre: 400, reward_xp: 200, reward_item: item_id::BRACELETE, reward_item_qty: 1,
         min_level: 3, ..q() },
-    QuestDef { id: 404, source: quest_source::NPC, giver: 108,
-        title: "O Juramento do Mar", desc: "A Armada recuou temporariamente. Vá até as docas ao norte para avaliar a situação e reivindicar seu barco.",
-        obj_kind: objective_kind::EXPLORE, obj_count: 1,
-        obj_x: 850.0, obj_y: 620.0, obj_radius: 20.0, // Doca da ilha inicial (Perto da cidade 3)
-        reward_cobre: 500, reward_xp: 300, reward_item: item_id::BOAT_ESQUIFE, reward_item_qty: 1,
-        min_level: 4, ..q() },
-
     // ===================== STORYLINE (4xx) — Lvl 10-30 (Chapter 2) =====================
     QuestDef { id: 405, source: quest_source::NPC, giver: 107,
         title: "Seguindo o Vento", desc: "Leve 10 Madeiras T1 para o posto avançado na ilha a leste (siga a bússola até a área indicada).",
@@ -1242,7 +1214,7 @@ pub const QUESTS: &[QuestDef] = &[
 /// (auto em TUTORIAL_MODE); concluir a última finaliza o tutorial.
 /// Ordem: pular+falar → equipar → colher+entregar → forjar → combater →
 /// convocar barco → ir à vela → ir ao leme → navegar.
-pub const TUTORIAL_CHAIN: &[u16] = &[900, 901, 902, 903, 904, 905, 906, 907, 908];
+pub const TUTORIAL_CHAIN: &[u16] = &[900, 901, 902, 903, 904];
 /// Primeira quest da cadeia (concedida no spawn do tutorial).
 pub fn tutorial_first() -> u16 {
     TUTORIAL_CHAIN[0]

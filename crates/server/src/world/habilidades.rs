@@ -185,8 +185,6 @@ impl GameWorld {
             || s.entity.is_none()
             || s.carrying.is_some()
             || s.carried_by.is_some()
-            || s.entity
-                .is_some_and(|e| self.ecs.get::<&Mounted>(e).is_ok())
             || agora < s.stagger_until
             || agora < s.hurt_until
             || agora < s.casting_until
