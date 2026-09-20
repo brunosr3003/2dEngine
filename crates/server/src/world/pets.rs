@@ -120,14 +120,15 @@ impl GameWorld {
     pub(super) fn tick_pets(&mut self, dt: f32) {
         let agora = self.sim_time_s;
 
-        // Onde esta' cada dono, e em que instancia.
-        let donos: HashMap<SessionId, (Vec2, u32)> = self
+        // Onde esta' cada dono, em que instancia, e qual o corpo dele — e'
+        // pelo corpo que a janela de prioridade do saque e' conferida.
+        let donos: HashMap<SessionId, (Vec2, u32, EntityId)> = self
             .sessions
             .values()
             .filter_map(|s| {
                 let e = s.entity?;
                 let pos = self.ecs.get::<&Position>(e).ok()?.0;
-                Some((s.handle.id, (pos, s.instancia)))
+                Some((s.handle.id, (pos, s.instancia, s.entity_id)))
             })
             .collect();
         if donos.is_empty() {
@@ -155,7 +156,7 @@ impl GameWorld {
         let mut prometidos: Vec<EntityId> = Vec::new();
 
         for (pet, (pos, tag)) in self.ecs.query::<(&Position, &PetTag)>().iter() {
-            let Some((dono_pos, instancia)) = donos.get(&tag.dono).copied() else {
+            let Some((dono_pos, instancia, dono_eid)) = donos.get(&tag.dono).copied() else {
                 continue;
             };
             let Some((_, grau)) = shared::pets::de_item(tag.item_id) else {
@@ -168,11 +169,12 @@ impl GameWorld {
             let alvo = tag
                 .alvo
                 .filter(|id| {
-                    saques.iter().any(|(_, sid, spos, _, inst)| {
+                    saques.iter().any(|(_, sid, spos, l, inst)| {
                         sid == id
                             && *inst == instancia
                             && dono_pos.distance(*spos) <= raio
                             && !prometidos.contains(id)
+                            && l.liberado_para(dono_eid, agora)
                     })
                 })
                 .or_else(|| {
@@ -182,6 +184,9 @@ impl GameWorld {
                         .filter(|(_, sid, spos, l, inst)| {
                             *inst == instancia
                                 && agora - l.spawn_at >= shared::LOOT_PICKUP_DELAY_S
+                                // O pet do matador entra na janela; o dos
+                                // outros espera ela passar (docs/PETS.md).
+                                && l.liberado_para(dono_eid, agora)
                                 && dono_pos.distance(*spos) <= raio
                                 && !prometidos.contains(sid)
                                 && !tag
@@ -329,11 +334,25 @@ mod testes {
         s.logged_in = true;
         s.name = "dono".into();
         s.entity = Some(e);
+        s.entity_id = EntityId(900);
         s.inventory = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
         (w, sid)
     }
 
     fn poe_saque(w: &mut GameWorld, pos: Vec2, item_id: u16, qty: u32) -> EntityId {
+        poe_saque_de(w, pos, item_id, qty, None, -100.0)
+    }
+
+    /// Saque com dono e instante de queda — pra exercitar a janela de
+    /// prioridade de quem matou.
+    fn poe_saque_de(
+        w: &mut GameWorld,
+        pos: Vec2,
+        item_id: u16,
+        qty: u32,
+        dono: Option<EntityId>,
+        spawn_at: f32,
+    ) -> EntityId {
         let eid = w.alloc_entity_id();
         w.ecs.spawn((
             NetId(eid),
@@ -344,7 +363,8 @@ mod testes {
                 item_id,
                 qty,
                 instance: None,
-                spawn_at: -100.0,
+                spawn_at,
+                dono,
             },
         ));
         eid
@@ -431,6 +451,108 @@ mod testes {
         assert!(
             pos.distance(Vec2::ZERO) <= shared::pets::COLEIRA,
             "o pet nao pode passar da coleira: {pos:?}"
+        );
+    }
+
+    /// A regra crua da janela, nas bordas. Vale pro pickup por proximidade e
+    /// pro pet — os dois perguntam pra ela.
+    #[test]
+    fn a_janela_de_prioridade_abre_no_segundo_dois() {
+        let eu = EntityId(1);
+        let outro = EntityId(2);
+        let saque = |dono| LootTag {
+            item_id: shared::item_id::COPPER,
+            qty: 1,
+            instance: None,
+            spawn_at: 100.0,
+            dono,
+        };
+        let meu = saque(Some(eu));
+        assert!(meu.liberado_para(eu, 100.0), "pro dono, desde o primeiro quadro");
+        assert!(!meu.liberado_para(outro, 100.0));
+        assert!(
+            !meu.liberado_para(outro, 100.0 + shared::LOOT_PRIORIDADE_S - 0.01),
+            "ainda dentro da janela"
+        );
+        assert!(
+            meu.liberado_para(outro, 100.0 + shared::LOOT_PRIORIDADE_S),
+            "fechada a janela, e' de quem chegar"
+        );
+        // Saque sem dono (coleta, item largado) nunca teve janela.
+        let de_ninguem = saque(None);
+        assert!(de_ninguem.liberado_para(outro, 100.0));
+    }
+
+    /// Quem matou tem `LOOT_PRIORIDADE_S` de frente. O pet de quem NAO matou
+    /// so' encosta no saque depois que a janela fecha — senao pet de raio
+    /// grande limpava o drop alheio antes do dono chegar.
+    #[test]
+    fn o_pet_de_quem_nao_matou_espera_a_janela_de_prioridade() {
+        let (mut w, sid) = mundo();
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 5);
+        w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
+        w.sincroniza_pets();
+        // Caiu agora, e quem matou foi OUTRO corpo.
+        let alheio = EntityId(777);
+        let agora = w.sim_time_s;
+        poe_saque_de(
+            &mut w,
+            Vec2::new(2.0, 0.0),
+            shared::item_id::COPPER,
+            30,
+            Some(alheio),
+            agora,
+        );
+        // Dentro da janela: o pet nao pode encostar.
+        for _ in 0..30 {
+            w.tick_pets(1.0 / 30.0);
+        }
+        assert_eq!(
+            crate::craft::tem(&w.sessions[&sid].inventory, shared::item_id::COPPER),
+            0,
+            "dentro da janela o saque e' de quem matou"
+        );
+
+        // Passada a janela, e' de quem chegar.
+        w.sim_time_s += shared::LOOT_PRIORIDADE_S + 0.1;
+        for _ in 0..60 {
+            w.tick_pets(1.0 / 30.0);
+        }
+        assert_eq!(
+            crate::craft::tem(&w.sessions[&sid].inventory, shared::item_id::COPPER),
+            30,
+            "fechada a janela, o pet pega"
+        );
+    }
+
+    /// O pet de QUEM MATOU entra na janela na hora: e' a vantagem de ter pet.
+    #[test]
+    fn o_pet_de_quem_matou_pega_dentro_da_janela() {
+        let (mut w, sid) = mundo();
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 5);
+        w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
+        w.sincroniza_pets();
+        let meu = w.sessions[&sid].entity_id;
+        let caiu = w.sim_time_s - shared::LOOT_PICKUP_DELAY_S;
+        poe_saque_de(
+            &mut w,
+            Vec2::new(3.0, 0.0),
+            shared::item_id::COPPER,
+            77,
+            Some(meu),
+            caiu,
+        );
+        for _ in 0..30 {
+            w.tick_pets(1.0 / 30.0);
+        }
+        assert_eq!(
+            crate::craft::tem(&w.sessions[&sid].inventory, shared::item_id::COPPER),
+            77,
+            "o pet de quem matou nao espera nada"
+        );
+        assert!(
+            w.sim_time_s < shared::LOOT_PRIORIDADE_S,
+            "o teste tem que caber dentro da janela"
         );
     }
 

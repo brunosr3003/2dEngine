@@ -223,3 +223,17 @@ refeitos nesta sessão.
 - **É necessário atualizar o cliente para o protocolo 112.** Nenhum pet foi
   exercitado num cliente de verdade nesta publicação: o que rodou foram os
   testes de mundo (nascer, andar, coletar, bolsa cheia) e as prévias da loja.
+
+## Prioridade de quem matou (2 s)
+
+- `LootTag` passou a guardar quem deu o golpe final, e `LOOT_PRIORIDADE_S`
+  (2 s) reserva o saque pra ele e pro pet dele nesse tempo. Depois, é de quem
+  chegar.
+- Pickup por proximidade e pet perguntam pra mesma `LootTag::liberado_para`.
+- Saque sem dono (coleta, item largado, morte de jogador) continua livre desde
+  o primeiro quadro.
+- Resolve o buraco anotado na publicação dos pets: pet de raio grande limpava
+  o drop de quem matou o bicho.
+- Três testes novos: a regra nas bordas da janela, o pet de quem não matou
+  esperando, e o pet de quem matou pegando na hora. Nada disso foi exercitado
+  com dois jogadores de verdade — falta teste com bots.

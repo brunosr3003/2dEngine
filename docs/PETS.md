@@ -65,6 +65,23 @@ Entrega e pickup por proximidade passam pelo **mesmo** `creditar_saque`:
 equipável vai para o slot vazio, ouro para o saldo, o resto para a bolsa.
 A regra não mora em dois lugares.
 
+## Quem matou tem a frente por 2 segundos
+
+`LootTag` guarda quem deu o golpe final. Por `LOOT_PRIORIDADE_S` (2 s) o saque
+é **só dele e do pet dele**; passado isso, é de quem chegar.
+
+Dois segundos é o suficiente pra andar até o drop e pegar na mão, e o pet
+continua valendo a pena por dois motivos: dentro da janela ele já busca o que
+é seu sem você sair do lugar, e fora dela ele alcança o que os outros
+deixaram pra trás. Sem a janela, um pet laranja de 16 tiles limpava o drop de
+quem matou o bicho antes de o dono dar dois passos.
+
+O pickup por proximidade e o pet perguntam pra **mesma** função
+(`LootTag::liberado_para`): a regra não mora em dois lugares.
+
+Saque sem dono — coleta, item largado da bolsa, morte de jogador — nunca tem
+janela: é livre desde o primeiro quadro.
+
 ## O custo de rede
 
 Este é o ponto caro. `AOI_MAX_ENTIDADES` é 60 e a medição de
@@ -122,6 +139,6 @@ Anotado aqui para a documentação não passar a mentir:
   batendo no seu lugar vai na mesma direção.
 - **Nível de pet.** O grau é o único eixo. "Níveis de pet iguais aos itens"
   são as cinco cores, e é o que está implementado.
-- **Dono do saque.** `LootTag` continua sem dono e sem prazo: com pet de 16
-  tiles, quem tem o grau melhor alcança o drop de quem matou. É a próxima
-  coisa a fazer, e não foi feita.
+- **Prazo de validade do saque.** O drop ainda não despawna: a janela de
+  prioridade fecha em 2 s, mas o saquinho fica no chão para sempre. Com muito
+  jogador, isso é entidade acumulando no mapa.

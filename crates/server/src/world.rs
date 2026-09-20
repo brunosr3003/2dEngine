@@ -1104,6 +1104,21 @@ pub struct LootTag {
     /// `sim_time_s` no momento do spawn. Auto-pickup só roda depois de
     /// `LOOT_PICKUP_DELAY_S` pra dar tempo do player VER o drop.
     pub spawn_at: f32,
+    /// Quem matou o bicho. Por `LOOT_PRIORIDADE_S` o saque e' so' dele (e do
+    /// pet dele); depois disso e' de quem chegar. `None` = de ninguem desde
+    /// o inicio (saque de coleta, de morte de jogador, de dungeon).
+    pub dono: Option<EntityId>,
+}
+
+impl LootTag {
+    /// `quem` pode pegar este saque agora? Dentro da janela de prioridade, so'
+    /// o dono; fora dela, qualquer um.
+    pub fn liberado_para(&self, quem: EntityId, agora: f32) -> bool {
+        match self.dono {
+            Some(d) if agora - self.spawn_at < shared::LOOT_PRIORIDADE_S => d == quem,
+            _ => true,
+        }
+    }
 }
 
 /// Bola de canhao em voo. Trajetoria parabolica determinada na hora do tiro:
@@ -2039,6 +2054,10 @@ pub struct GameWorld {
     pub arena_dg: Vec<Vec2>,
     /// Instancia do mob que esta' soltando saque agora (0 = mundo).
     pub inst_do_saque: u32,
+    /// Quem matou o bicho que esta' dropando agora. Mesmo padrao do
+    /// `inst_do_saque`: `spawn_loot_drops` e' chamado de varios lugares e nem
+    /// todos tem matador (coleta, morte de jogador).
+    pub dono_do_saque: Option<EntityId>,
     /// Cartas ja' aplicadas neste processo (antes do save confirmar).
     mercado_cartas_vistas: std::collections::HashSet<String>,
     /// Ultimo pedido ao mercado por sessao: segura spam no banco central.
@@ -2547,6 +2566,7 @@ impl GameWorld {
             prox_instancia: 0,
             arena_dg: Vec::new(),
             inst_do_saque: 0,
+            dono_do_saque: None,
             mercado_cartas_vistas: std::collections::HashSet::new(),
             mercado_pedido_em: HashMap::new(),
             loja_pedido_em: HashMap::new(),
@@ -2737,6 +2757,7 @@ impl GameWorld {
             prox_instancia: 0,
             arena_dg: Vec::new(),
             inst_do_saque: 0,
+            dono_do_saque: None,
             mercado_cartas_vistas: std::collections::HashSet::new(),
             mercado_pedido_em: HashMap::new(),
             loja_pedido_em: HashMap::new(),
@@ -11703,8 +11724,10 @@ impl GameWorld {
             } else {
                 3.0
             };
+            self.dono_do_saque = kill_credits.get(&eid).copied();
             self.spawn_loot_drops(pos, &drops, seed, spread, kind_id);
             self.inst_do_saque = 0;
+            self.dono_do_saque = None;
 
             // Creditar XP (e Fame, se mob grande) para o jogador que matou
             if let Some(attacker_eid) = kill_credits.get(&eid).copied() {
@@ -12070,6 +12093,10 @@ impl GameWorld {
                     continue;
                 }
                 if ppos.distance_squared(lpos) < pick_r_sq {
+                    let eu = self.sessions.get(sid).map_or(EntityId(0), |s| s.entity_id);
+                    if !ltag.liberado_para(eu, now) {
+                        continue;
+                    }
                     if let Some(hp) = self.creditar_saque(*sid, &ltag) {
                         hp_max_updates.extend(hp);
                         picked.push((le, leid));
@@ -14337,6 +14364,7 @@ impl GameWorld {
                     qty: *qty,
                     instance,
                     spawn_at: now,
+                    dono: self.dono_do_saque,
                 },
             ));
             if self.inst_do_saque != 0 {
@@ -15452,6 +15480,9 @@ impl GameWorld {
                 qty,
                 instance,
                 spawn_at: now,
+                // Item largado da bolsa nao tem dono: quem largou nao tem
+                // prioridade nenhuma pra pegar de volta.
+                dono: None,
             },
         ));
         // Zera o slot e marca save pendente.

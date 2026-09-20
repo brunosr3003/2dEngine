@@ -472,6 +472,13 @@ pub const PICKUP_RADIUS: f32 = 0.8;
 /// Garante que o player VEJA o drop cair antes de ele "voar" pro inv.
 pub const LOOT_PICKUP_DELAY_S: f32 = 0.6;
 
+/// Quem matou tem a frente no saque por este tempo (docs/PETS.md). Da' pra
+/// pegar andando ate' la', e o pet continua valendo a pena: ele busca o que
+/// esta' longe demais pra alcancar a tempo, e depois da janela pega o que os
+/// outros deixaram pra tras. Sem isto, pet de raio grande limpava o drop de
+/// quem matou o bicho.
+pub const LOOT_PRIORIDADE_S: f32 = 2.0;
+
 /// Itens conhecidos. Numeric id vai pro DB e rede. Manter sincronizado com
 /// o cliente para sprite/cor por item.
 pub mod item_id {
