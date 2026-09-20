@@ -570,7 +570,7 @@ pub fn botao(r: Rect) -> bool {
     estilo::cartao(r, sobre, false);
     let cor = if sobre { estilo::ACENTO } else { estilo::OURO };
     desenha_lupa(r, cor);
-    sobre && is_mouse_button_pressed(MouseButton::Left)
+    sobre && crate::foco::clique()
 }
 
 /// A lupa desenhada DENTRO de um icone de item (canto de cima, a' direita): o
@@ -583,7 +583,7 @@ pub fn lupa_no_icone(icone: Rect) -> bool {
     let canto = Rect::new(icone.x + icone.w - s, icone.y, s, s);
     estilo::ret_arredondado(canto, s * 0.25, Color::new(0.0, 0.0, 0.0, 0.55));
     desenha_lupa(canto, if sobre { estilo::ACENTO } else { estilo::OURO });
-    sobre && is_mouse_button_pressed(MouseButton::Left)
+    sobre && crate::foco::clique()
 }
 
 fn desenha_lupa(r: Rect, cor: Color) {
@@ -614,6 +614,7 @@ mod tests {
                     lv_min: 1,
                     lv_max: 3,
                     bichos: vec![(0, 80), (1, 20)],
+            forte: false,
                 },
                 ZonaNoMapa {
                     centro: [400.0, 0.0],
@@ -621,6 +622,7 @@ mod tests {
                     lv_min: 30,
                     lv_max: 32,
                     bichos: vec![(5, 100)],
+            forte: false,
                 },
             ],
             recursos: vec![

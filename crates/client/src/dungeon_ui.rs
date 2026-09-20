@@ -106,7 +106,7 @@ fn botao(r: Rect, rotulo: &str, ativo: bool, primario: bool) -> bool {
         ),
         primario,
     );
-    sobre && is_mouse_button_pressed(MouseButton::Left)
+    sobre && crate::foco::clique()
 }
 
 impl DungeonUi {
@@ -363,7 +363,7 @@ impl DungeonUi {
             return;
         };
         let m = Vec2::from(mouse_position());
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
+        let clicou = crate::foco::clique();
 
         // ── esquerda: os conteudos ──
         let esq = Rect::new(
@@ -1122,7 +1122,7 @@ impl DungeonUi {
             2.0 * fm,
             cor,
         );
-        if sobre && is_mouse_button_pressed(MouseButton::Left) {
+        if sobre && crate::foco::clique() {
             self.auto = !self.auto;
         }
         if botao(porta, "Sair", true, false) {

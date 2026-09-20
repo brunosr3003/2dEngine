@@ -1380,6 +1380,10 @@ pub struct ZonaNoMapa {
     pub lv_min: u16,
     pub lv_max: u16,
     pub bichos: Vec<(u16, u8)>,
+    /// FORTE: mesma escada de nivel, o dobro de inimigos num raio menor. O
+    /// mapa marca com icone proprio — e' informacao de rota, nao enfeite.
+    #[serde(default)]
+    pub forte: bool,
 }
 
 /// Regiao de recurso: corpos coletaveis de UM tipo agrupados. `tipo` 0 =

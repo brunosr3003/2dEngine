@@ -212,7 +212,7 @@ fn botao(r: Rect, texto: &str, ativo: bool) -> bool {
         16,
         if ativo { estilo::TEXTO } else { estilo::SUAVE },
     );
-    ativo && sobre && is_mouse_button_pressed(MouseButton::Left)
+    ativo && sobre && crate::foco::clique()
 }
 
 /// 1200 -> "1.200".

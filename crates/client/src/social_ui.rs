@@ -175,7 +175,7 @@ impl Social {
                 e::badge(r);
             }
             if r.contains(Vec2::from(mouse_position()))
-                && is_mouse_button_pressed(MouseButton::Left)
+                && crate::foco::clique()
             {
                 self.aba = *aba;
                 self.pagina = 0;
@@ -681,7 +681,7 @@ impl Social {
                 if c.lida { e::TEXTO } else { e::OURO },
             );
             if r.contains(Vec2::from(mouse_position()))
-                && is_mouse_button_pressed(MouseButton::Left)
+                && crate::foco::clique()
             {
                 self.carta = Some(c.id);
                 self.carta_pagina = 0;
@@ -1142,7 +1142,7 @@ fn campo(
     digitado: &[char],
     max: usize,
 ) {
-    let clicou = is_mouse_button_pressed(MouseButton::Left);
+    let clicou = crate::foco::clique();
     if clicou && r.contains(Vec2::from(mouse_position())) {
         *foco = Some(id);
     } else if clicou && *foco == Some(id) {

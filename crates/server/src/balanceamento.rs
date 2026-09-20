@@ -837,9 +837,12 @@ fn bosque() -> &'static (Vec2, crate::world::ZonasComuns) {
 
 pub(crate) fn jornada(conjunto: Conjunto, com_pocoes: bool) -> Jornada {
     let (cidade, zonas) = bosque();
+    // Forte fora: a missao nunca manda pra la' (`zona_de_mob`), e a simulacao
+    // tem que percorrer a MESMA jornada que o jogador percorre.
     let tuplas: Vec<(Vec2, u32, u32)> = zonas
         .zonas
         .iter()
+        .filter(|z| !z.forte)
         .map(|z| (z.centro, z.lv_min, z.lv_max))
         .collect();
     let comuns: Vec<u16> = (0..7).collect();
@@ -1913,6 +1916,58 @@ mod testes {
 
 #[cfg(test)]
 mod testes_das_zonas {
+    /// O FORTE e' mais inimigo no mesmo chao, e nao um degrau de nivel.
+    ///
+    /// Este teste roda na ilha de verdade porque a densidade sai do relevo: os
+    /// slots do forte vem dos mesmos sitios planos, so' que com espacamento
+    /// menor. Num mapa sintetico o numero nao diria nada.
+    #[test]
+    fn o_forte_e_densidade_e_nao_nivel() {
+        let (_, zonas) = super::bosque();
+        let fortes: Vec<_> = zonas.zonas.iter().filter(|z| z.forte).collect();
+        let comuns: Vec<_> = zonas.zonas.iter().filter(|z| !z.forte).collect();
+        assert!(
+            !fortes.is_empty() && !comuns.is_empty(),
+            "o Bosque tem que ter os dois: {} fortes de {} zonas",
+            fortes.len(),
+            zonas.zonas.len()
+        );
+        assert!(
+            fortes.len() * 3 < zonas.zonas.len(),
+            "forte demais deixa de ser lugar marcado: {} de {}",
+            fortes.len(),
+            zonas.zonas.len()
+        );
+        let densidade = |z: &crate::world::ZonaComum| {
+            z.slots.len() as f32 / (z.raio * z.raio * std::f32::consts::PI)
+        };
+        let media = |v: &[&crate::world::ZonaComum]| {
+            v.iter().map(|z| densidade(z)).sum::<f32>() / v.len() as f32
+        };
+        let (df, dc) = (media(&fortes), media(&comuns));
+        assert!(
+            df > dc * 2.0,
+            "o forte tem que ser MUITO mais cheio: {df:.4} contra {dc:.4} por unidade quadrada"
+        );
+        // O nivel nao muda: fosse nivel e densidade juntos, o forte deixaria de
+        // ser escolha e viraria muro.
+        let faixa = |v: &[&crate::world::ZonaComum]| {
+            (
+                v.iter().map(|z| z.lv_min).min().unwrap_or(0),
+                v.iter().map(|z| z.lv_max).max().unwrap_or(0),
+            )
+        };
+        let (fmin, fmax) = faixa(&fortes);
+        let (cmin, cmax) = faixa(&comuns);
+        assert!(
+            fmin >= cmin && fmax <= cmax,
+            "o forte saiu da escada de nivel da ilha: {fmin}–{fmax} contra {cmin}–{cmax}"
+        );
+        // E o raio dele e' menor: e' isso que aperta a mancha no mapa.
+        assert!(fortes.iter().all(|z| z.raio < comuns[0].raio));
+    }
+
+
     /// A ilha inteira tem que ter faixa de nivel, e perto da cidade tem que
     /// haver onde subir do 1 — o dono achou so' bicho de nivel 1 jogando.
     #[test]

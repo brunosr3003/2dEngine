@@ -103,7 +103,7 @@ impl ConfigBarra {
         let p = Rect::new((sw - w) * 0.5, (sh - h) * 0.5, w, h);
         estilo::painel(p);
         let m = Vec2::from(mouse_position());
-        let clique = is_mouse_button_pressed(MouseButton::Left);
+        let clique = crate::foco::clique();
         let mut mudou = false;
 
         estilo::texto(p.x + 20.0, p.y + 34.0, "Barra de itens", 22, estilo::OURO);
@@ -207,6 +207,12 @@ impl ConfigBarra {
                 if c.limiar_padrao().is_some() {
                     let menos = Rect::new(b_auto.x + b_auto.w + 10.0, b_auto.y, 26.0, 26.0);
                     let mais = Rect::new(menos.x + 86.0, b_auto.y, 26.0, 26.0);
+                    // Os dois botoes e o "< N%" no meio viram UM alvo de
+                    // tutorial: o passo e' "mexa na %", nao "aperte o menos".
+                    crate::foco::marca(
+                        crate::foco::chave::POCAO_LIMIAR,
+                        Rect::new(menos.x, menos.y, mais.x + mais.w - menos.x, menos.h),
+                    );
                     for (r, s) in [(menos, "−"), (mais, "+")] {
                         estilo::painel(r);
                         estilo::texto_centro(

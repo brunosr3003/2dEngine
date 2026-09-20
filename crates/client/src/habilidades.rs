@@ -172,7 +172,7 @@ impl Habilidades {
         let teclas = [KeyCode::Key1, KeyCode::Key2, KeyCode::Key3];
         let mouse = Vec2::from(mouse_position());
         let agora = get_time();
-        if is_mouse_button_pressed(MouseButton::Left) {
+        if crate::foco::clique() {
             if let Some(s) = self.catalogo.iter().find(|s| {
                 s.conjunto == contexto.conjunto
                     && retangulo(s.ordem.saturating_sub(1) as usize).contains(mouse)

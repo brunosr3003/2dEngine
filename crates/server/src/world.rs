@@ -606,6 +606,9 @@ pub struct ServerSpawnZone {
     pub active: bool,
     /// sim_time_s da ultima vez que algum player estava dentro do wake radius.
     pub last_player_near_at: f32,
+    /// FORTE: mesma escada de nivel das outras, mas com o dobro de inimigos
+    /// no mesmo pedaco de chao. E' o que aparece marcado no mapa.
+    pub forte: bool,
 }
 
 /// Raio do disco plano que um mob comum exige pra nascer, em unidades.
@@ -617,6 +620,35 @@ pub const MOB_ZONA_ESPACO_UN: f32 = 90.0;
 pub const MOB_ZONA_RAIO_UN: f32 = 45.0;
 /// Espacamento minimo entre dois mobs da mesma zona.
 pub const MOB_ESPACO_UN: f32 = 7.0;
+// ─────────────────────────────── fortes ───────────────────────────────
+//
+// Um FORTE e' uma zona comum com a densidade apertada: mesmo nivel, mesmo
+// sorteio de bicho, mas o dobro de inimigos num raio pela metade. E' pra ser
+// um lugar que se ve' no mapa e se escolhe enfrentar — ou contornar.
+//
+// O nivel NAO sobe: fosse nivel e densidade juntos, o forte deixaria de ser
+// escolha e viraria "a zona que voce ainda nao pode visitar".
+/// Um centro a cada tantos vira forte. Espalhado porque os centros ja' sao
+/// sorteados embaralhados: pegar de N em N na lista da' fortes longe uns dos
+/// outros sem uma segunda passada de espacamento.
+pub const FORTE_A_CADA: usize = 7;
+/// Raio de um forte: pouco mais da metade do da zona comum.
+pub const FORTE_RAIO_UN: f32 = 24.0;
+/// Espacamento entre inimigos dentro do forte. A grade de sitios tem passo de
+/// 6 unidades, entao isto e' "todo sitio vale" — que e' o ponto.
+pub const FORTE_ESPACO_UN: f32 = 4.0;
+/// Teto de mobs num forte.
+pub const FORTE_POR_ZONA: u32 = 34;
+
+/// O centro de indice `i` vira forte? Os centros ja' saem embaralhados pela
+/// semente da ilha, entao pegar de N em N espalha os fortes sem uma segunda
+/// passada de espacamento — e da' o mesmo mapa em toda subida do servidor.
+///
+/// O indice 0 nunca e' forte: ele e' o centro mais perto do desembarque.
+pub(crate) fn e_forte(i: usize) -> bool {
+    i > 0 && i % FORTE_A_CADA == 0
+}
+
 /// Teto de mobs por zona.
 pub const MOB_POR_ZONA: u32 = 18;
 
@@ -851,6 +883,9 @@ pub(crate) struct ZonaComum {
     pub lv_min: u32,
     pub lv_max: u32,
     pub slots: Vec<Vec2>,
+    /// Raio dela: o do forte e' menor, e e' ele que vai pro mapa e pro AABB.
+    pub raio: f32,
+    pub forte: bool,
 }
 
 pub(crate) struct ZonasComuns {
@@ -926,6 +961,19 @@ pub(crate) fn zonas_comuns_da_ilha(
         }
     }
     for (i, c) in r.centros.iter().enumerate() {
+        // FORTE: um a cada `FORTE_A_CADA` centros. A lista ja' foi embaralhada
+        // pela semente da ilha, entao pegar de N em N espalha sozinho — e da'
+        // o mesmo mapa em toda subida do servidor.
+        //
+        // O primeiro centro nunca e' forte: ele e' o mais perto do
+        // desembarque, e receber um forte de cara na praia era a diferenca
+        // entre "isto aqui e' perigoso" e "eu nem sai' do porto".
+        let forte = e_forte(i);
+        let (raio, espaco, teto) = if forte {
+            (FORTE_RAIO_UN, FORTE_ESPACO_UN, FORTE_POR_ZONA)
+        } else {
+            (MOB_ZONA_RAIO_UN, MOB_ESPACO_UN, MOB_POR_ZONA)
+        };
         // Nivel pela distancia do desembarque: perto e' o minimo da ilha,
         // a ponta mais longe e' o maximo. E' a progressao inteira, e ela
         // sai do relevo em vez de uma lista escrita a mao.
@@ -939,12 +987,10 @@ pub(crate) fn zonas_comuns_da_ilha(
         // em ladeira.
         let mut slots: Vec<Vec2> = Vec::new();
         for s in &sitios {
-            if slots.len() as u32 >= MOB_POR_ZONA {
+            if slots.len() as u32 >= teto {
                 break;
             }
-            if s.distance(*c) > MOB_ZONA_RAIO_UN
-                || slots.iter().any(|o| o.distance(*s) < MOB_ESPACO_UN)
-            {
+            if s.distance(*c) > raio || slots.iter().any(|o| o.distance(*s) < espaco) {
                 continue;
             }
             slots.push(*s);
@@ -956,6 +1002,8 @@ pub(crate) fn zonas_comuns_da_ilha(
                 lv_min,
                 lv_max,
                 slots,
+                raio,
+                forte,
             });
         }
     }
@@ -4165,6 +4213,9 @@ impl GameWorld {
                         // chegar perto. Economiza tick de IA pra zonas distantes.
                         active: false,
                         last_player_near_at: 0.0,
+                        // Zona vinda do mapfile: o forte so' nasce na geracao
+                        // das zonas comuns da ilha.
+                        forte: false,
                     });
                     if let Some((mn, mx, c)) = level_range {
                         tracing::info!(
@@ -4528,6 +4579,18 @@ impl GameWorld {
         s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp);
         s.stats_dirty = true;
         self.save_pending = true;
+        // O passo do tutorial fecha AQUI, e nao no toque do "+": so' aqui se
+        // sabe que o ponto foi mesmo gasto (tinha ponto, tinha Energia).
+        self.passo_de_tutorial(sid, shared::quests::tutorial::PONTO_ATRIBUTO);
+    }
+
+    /// Um passo TUTORIAL foi cumprido: fecha o objetivo se ele estiver aberto.
+    /// Os de interface chegam do cliente; os que mexem em saldo (Energia,
+    /// ponto, tier) sao contados aqui dentro, onde a acao de fato aconteceu.
+    pub(crate) fn passo_de_tutorial(&mut self, sid: SessionId, acao: u16) {
+        self.quest_on_evento_se(sid, shared::quests::objective_kind::TUTORIAL, 1, &|d| {
+            d.obj_target == acao
+        });
     }
 
     /// Refunda todos os pontos alocados pro unspent. Sem custo nem cooldown
@@ -4818,8 +4881,8 @@ impl GameWorld {
             let n = slots.len() as u32;
             zonas.push(ServerSpawnZone {
                 id: 10_000 + i as u32,
-                origin: *c - Vec2::splat(MOB_ZONA_RAIO_UN),
-                size: Vec2::splat(MOB_ZONA_RAIO_UN * 2.0),
+                origin: *c - Vec2::splat(z.raio),
+                size: Vec2::splat(z.raio * 2.0),
                 respawn_delay_s: 20.0,
                 quotas: Vec::new(),
                 live: Vec::new(),
@@ -4831,6 +4894,7 @@ impl GameWorld {
                 slots,
                 active: false,
                 last_player_near_at: -1e9,
+                forte: z.forte,
             });
         }
 
@@ -4907,6 +4971,9 @@ impl GameWorld {
                 slots,
                 active: false,
                 last_player_near_at: -1e9,
+                // Praia e mapfile nunca sao forte: o forte e' escolhido na
+                // geracao das zonas comuns.
+                forte: false,
             });
             zonas_praia += 1;
         }
@@ -7243,11 +7310,9 @@ impl GameWorld {
             ClientMessage::EvoluirSkill { skill_id } => self.handle_evoluir_skill(id, skill_id),
             ClientMessage::Teleportar { x, z } => self.handle_teleportar(id, Vec2::new(x, z)),
             ClientMessage::Tutorial { acao } => {
-                // Passo tutorial: o cliente conta o gesto (e' interface, nao
-                // regra de jogo — nada aqui da' vantagem).
-                self.quest_on_evento_se(id, shared::quests::objective_kind::TUTORIAL, 1, &|d| {
-                    d.obj_target == acao
-                });
+                // Passo tutorial de INTERFACE (ligar o auto, mexer na barra):
+                // so' o cliente ve' o gesto, e nada aqui da' vantagem.
+                self.passo_de_tutorial(id, acao);
             }
             ClientMessage::ShopSell { inv_slot } => {
                 self.handle_shop_sell(id, inv_slot as usize);
@@ -15246,10 +15311,16 @@ impl GameWorld {
     }
 
     /// Centro da zona de mob onde um de `alvos` nasce (vazio = qualquer um).
+    ///
+    /// **Forte fica de fora.** Ele tem o mesmo nivel e os mesmos bichos da
+    /// vizinhanca, entao serviria — mas mandar a missao pra la' seria empurrar
+    /// o jogador pra dentro de quatro inimigos de uma vez sem ele ter
+    /// escolhido isso. O forte e' pra quem ve' no mapa e decide entrar.
     fn zona_de_mob(&self, alvos: &[u16], eu: Vec2, nivel: u32) -> Option<Vec2> {
         let zonas: Vec<(Vec2, u32, u32)> = self
             .spawn_zones
             .iter()
+            .filter(|z| !z.forte)
             .filter_map(|z| {
                 z.level_range
                     .map(|(a, b, _)| (z.origin + z.size * 0.5, a, b))
@@ -15398,6 +15469,7 @@ impl GameWorld {
                         a,
                         b,
                         &kinds,
+                        z.forte,
                     );
                     // Praia sorteia os proprios bichos, fora da escada por nivel.
                     if z.id >= ZONA_DE_PRAIA_ID {
@@ -18347,6 +18419,7 @@ impl GameWorld {
             self.save_pending = true;
             crate::telemetria::conta("energia_coletada", self.zona.clone(), qtd as i64);
             self.quest_on_gather(sid, c.tier);
+            self.passo_de_tutorial(sid, shared::quests::tutorial::COLETA_ENERGIA);
             self.avancar_reserva_do_no(c, limite, respawn_s);
             return true;
         }
@@ -19649,6 +19722,12 @@ pub(crate) fn effective_stats(
         // Regen nao passa por ponto alocado: e' soma direta no stat.
         s.hp_regen += shared::pets::regen_de_vida(&d);
         s.mp_regen += shared::pets::regen_de_mana(&d);
+    }
+    // A armadura MEDIA empresta FOR: sem isso ela era a pior das tres — menos
+    // defesa que a pesada e sem o dano da leve (docs/COMBATE.md).
+    if let Some(armadura) = equip.armor {
+        allocated[shared::stat_idx::FOR] = allocated[shared::stat_idx::FOR]
+            .saturating_add(shared::for_da_armadura(armadura, char_lvl));
     }
     // A MONTARIA tambem da' atributo, pela especie (docs/MONTARIAS.md). Vale
     // equipada, montado ou nao: o bicho anda com voce de qualquer jeito.

@@ -32,8 +32,19 @@ Três pesos, e cada um é uma troca declarada:
 | peso | dá | cobra |
 |---|---|---|
 | **leve** | bônus de dano | pouca resistência |
-| **média** | equilíbrio | equilíbrio |
+| **média** | **FOR que cresce com o nível**, equilíbrio | equilíbrio |
 | **pesada** | resistência | menos dano |
+
+**A média empresta FOR** (`for_da_armadura`), somada como ponto alocado em
+`effective_stats`. Sem isso ela era a pior das três em toda conta: menos defesa
+que a pesada e sem o dano da leve — "o meio" não é uma escolha se não dá nada
+de próprio. O peso dela continua o do meio: a FOR não a transformou numa leve.
+
+O valor **cresce com o nível**: 1 ponto, mais 1 a cada 10 níveis
+(`FOR_DA_ARMADURA_MEDIA`, `FOR_DA_MEDIA_A_CADA`). Fixo em 5 a simulação de
+chefe reprovou na hora — o Lobo Alfa (nível 8) caía em 55 s contra a meta de
+60, e o jogador **parado** bebendo poção vencia com 13% de vida. Cinco pontos
+são ruído no nível 60 e são a luta inteira no nível 8.
 
 A armadura deixa de ser "número maior é melhor" e passa a ser uma posição no
 eixo dano↔resistência. Combinada com a arma, é ela que faz duas pessoas com a

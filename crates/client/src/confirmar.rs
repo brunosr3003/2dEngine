@@ -97,7 +97,7 @@ pub fn desenha(p: Pendente, nome: &str, restante_s: i64) -> Option<bool> {
         16,
         estilo::OURO,
     );
-    if !is_mouse_button_pressed(MouseButton::Left) {
+    if !crate::foco::clique() {
         return None;
     }
     if usar.contains(m) {

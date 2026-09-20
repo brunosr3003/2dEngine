@@ -165,7 +165,7 @@ pub fn draw_hud(
             estilo::SUAVE,
         );
     }
-    sobre && is_mouse_button_pressed(MouseButton::Left)
+    sobre && crate::foco::clique()
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -336,7 +336,7 @@ pub fn draw_topo(
     selo_menu: bool,
 ) -> Option<Topo> {
     let m = mouse();
-    let clique = is_mouse_button_pressed(MouseButton::Left);
+    let clique = crate::foco::clique();
     let mut saida = None;
     let nomes = ["Bolsa", "Missões", "Diárias", "Grupo", "Avisos", "Presença"];
     let alvos = [
@@ -426,7 +426,7 @@ pub fn draw_dash(z: &Zonas, restante: f32, duracao: f32) -> bool {
             c.y + 8.0, &texto, 22, WHITE, true);
     }
     layout::chip(r, "CTRL");
-    pronto && sobre && is_mouse_button_pressed(MouseButton::Left)
+    pronto && sobre && crate::foco::clique()
 }
 
 /// O botao de PULO, acima do dash. Devolve `(tocou, segurando)`: o
@@ -467,7 +467,7 @@ pub fn draw_pulo(z: &Zonas, no_ar: bool) -> (bool, bool) {
     }
     layout::chip(r, "ESP");
     (
-        sobre && is_mouse_button_pressed(MouseButton::Left),
+        sobre && crate::foco::clique(),
         segurando,
     )
 }
@@ -491,7 +491,7 @@ pub fn draw_botao_economia(z: &Zonas) -> bool {
     if sobre {
         dica(r, "Economia de energia");
     }
-    sobre && is_mouse_button_pressed(MouseButton::Left)
+    sobre && crate::foco::clique()
 }
 
 /// Montar/desmontar, ao lado da bateria. `progresso` 0..1 enquanto sobe;
@@ -522,7 +522,7 @@ pub fn draw_botao_montaria(z: &Zonas, montado: bool, progresso: Option<f32>, tem
     if sobre {
         dica(r, if montado { "Desmontar" } else { "Montar" });
     }
-    sobre && is_mouse_button_pressed(MouseButton::Left)
+    sobre && crate::foco::clique()
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -553,7 +553,7 @@ pub fn draw_atacar(z: &Zonas, tem_alvo: bool) -> bool {
         cor,
     );
     layout::chip(r, "F");
-    sobre && is_mouse_button_pressed(MouseButton::Left)
+    sobre && crate::foco::clique()
 }
 
 /// Os quatro botoes de pocao, na ordem de `pocoes_auto`: vida (C), mana (8),
@@ -1014,5 +1014,5 @@ pub fn draw_alvo(z: &Zonas, nome: &str, nivel: u16, hp: u16, hp_max: u16, chefe:
         Rect::new(r.x + r.w - 60.0, r.y + r.h - 18.0, 0.0, 0.0),
         "Tab",
     );
-    sobre && is_mouse_button_pressed(MouseButton::Left)
+    sobre && crate::foco::clique()
 }

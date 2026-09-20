@@ -46,7 +46,7 @@ impl ViagemUi {
         crate::hud_layout::escurece(0.45);
         estilo::painel_destaque(p, estilo::ACENTO);
         let m = Vec2::from(mouse_position());
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
+        let clicou = crate::foco::clique();
         let x0 = p.x + 20.0 * f;
         estilo::texto_forte(x0, p.y + 36.0 * f, "Viajar", 20, estilo::OURO);
         estilo::texto(

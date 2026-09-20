@@ -262,7 +262,7 @@ impl Mercado {
         // ── abas ──
         let livre = self.compra.is_none();
         let m = Vec2::from(mouse_position());
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
+        let clicou = crate::foco::clique();
         let ty = p.y + 52.0 * f;
         let tw = (p.w - 36.0 * f) / ABAS.len() as f32;
         for (i, (aba, rotulo)) in ABAS.iter().enumerate() {
@@ -320,7 +320,7 @@ impl Mercado {
         saida: &mut Vec<ClientMessage>,
     ) {
         let m = Vec2::from(mouse_position());
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
+        let clicou = crate::foco::clique();
         // Categorias.
         let cw = (a.w * 0.5 / Categoria::FILTROS.len() as f32).min(150.0 * f);
         for (i, cat) in Categoria::FILTROS.iter().enumerate() {
@@ -601,7 +601,7 @@ impl Mercado {
         saida: &mut Vec<ClientMessage>,
     ) {
         let m = Vec2::from(mouse_position());
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
+        let clicou = crate::foco::clique();
         let pode = c.nivel >= regras::NIVEL_PARA_VENDER;
         let esq = Rect::new(a.x, a.y, a.w * 0.52, a.h);
         let dir = Rect::new(a.x + a.w * 0.55, a.y, a.w * 0.45, a.h);
@@ -1253,7 +1253,7 @@ fn botao(r: Rect, rotulo: &str, ativo: bool, primario: bool) -> bool {
         ),
         primario,
     );
-    sobre && is_mouse_button_pressed(MouseButton::Left)
+    sobre && crate::foco::clique()
 }
 
 fn linha_valor(x: f32, y: f32, w: f32, rotulo: &str, valor: &str, cor: Color, _f: f32) {

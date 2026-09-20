@@ -156,6 +156,7 @@ impl GameWorld {
             Ok(texto) => {
                 self.save_pending = true;
                 crate::telemetria::conta("evoluir_skill", skill_id, 1);
+                self.passo_de_tutorial(sid, shared::quests::tutorial::EVOLUIR_SKILL);
                 self.resposta_de_evolucao(sid, true, texto);
             }
             Err(texto) => self.resposta_de_evolucao(sid, false, texto),

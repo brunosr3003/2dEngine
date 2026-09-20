@@ -103,6 +103,12 @@ pub mod tutorial {
     pub const AUTO_COLETA: u16 = 4;
     /// Tocou num lugar do mapa e o personagem foi sozinho.
     pub const MAPA_IR: u16 = 5;
+    /// Coletou um cristal de Energia (docs/SKILLS.md).
+    pub const COLETA_ENERGIA: u16 = 6;
+    /// Distribuiu um ponto de atributo na Ficha (docs/PERSONAGEM.md).
+    pub const PONTO_ATRIBUTO: u16 = 7;
+    /// Evoluiu uma habilidade de tier, gastando Energia.
+    pub const EVOLUIR_SKILL: u16 = 8;
 
     /// O que fazer, curto, pro rastreador.
     pub fn instrucao(acao: u16) -> &'static str {
@@ -112,6 +118,9 @@ pub mod tutorial {
             AUTO_COMBATE => "Toque em COMBATE",
             AUTO_COLETA => "Toque em COLETA",
             MAPA_IR => "Abra o mapa e toque num lugar",
+            COLETA_ENERGIA => "Colete um cristal de Energia",
+            PONTO_ATRIBUTO => "Menu › Ficha: gaste um ponto",
+            EVOLUIR_SKILL => "Menu › Habilidades: evolua um tier",
             _ => "Siga a dica",
         }
     }

@@ -82,7 +82,7 @@ impl EscolhaNpc {
             estilo::SUAVE,
         );
         let m = Vec2::from(mouse_position());
-        let clicou = !self.espera_soltar && is_mouse_button_pressed(MouseButton::Left);
+        let clicou = !self.espera_soltar && crate::foco::clique();
         let bw = (p.w - u(60.0)) * 0.5;
         let bh = u(58.0);
         let by = p.y + p.h - bh - u(56.0);

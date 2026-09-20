@@ -413,7 +413,7 @@ impl LojaTp {
         );
         let m = Vec2::from(mouse_position());
         let modal = self.confirma.is_some();
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
+        let clicou = crate::foco::clique();
         let livre = clicou && !modal;
         let raio = 20.0 * k;
 

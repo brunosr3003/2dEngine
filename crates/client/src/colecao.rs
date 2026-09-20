@@ -52,7 +52,7 @@ impl Colecao {
         palco: Option<(&VoxCache, &Material)>,
     ) -> Option<ClientMessage> {
         let mouse = Vec2::from(mouse_position());
-        let clique = is_mouse_button_pressed(MouseButton::Left);
+        let clique = crate::foco::clique();
         estilo::cartao(r, false, false);
         estilo::texto_forte(r.x + 14.0 * f, r.y + 24.0 * f, titulo, 15, estilo::OURO);
 

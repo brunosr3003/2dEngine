@@ -375,7 +375,7 @@ fn mouse() -> Vec2 {
 }
 
 fn clicou_em(r: Rect) -> bool {
-    r.contains(mouse()) && is_mouse_button_pressed(MouseButton::Left)
+    r.contains(mouse()) && crate::foco::clique()
 }
 
 impl Bolsa {
@@ -1118,8 +1118,9 @@ fn celula(
         Some(p) => {
             let cor = cor_do_tier(p.grau());
             crate::hud_estilo::slot(r, Some(cor), sobre, selecionada);
-            // O icone do PET e' o modelo 3D dele (docs/PETS.md).
-            if !icone_de_pet(r, p.id, palco) {
+            // O icone do PET e da MONTARIA e' o modelo 3D dele
+            // (docs/PETS.md, docs/MONTARIAS.md).
+            if !icone_de_bicho(r, p.id, palco) {
                 icone_do_item(r, p.id, 1.0);
             }
             let fonte = (r.w * 0.26).clamp(u(11.0), u(16.0)) as u16;
@@ -1193,19 +1194,25 @@ pub(crate) fn icone_do_item(r: Rect, id: u16, a: f32) {
     icone(r, tipo(id), id, a);
 }
 
-/// O icone de um PET e' o modelo 3D dele girando (docs/PETS.md): o bichinho
-/// na cor do grau. Sem palco (celula pequena demais, modelo ainda carregando,
-/// orcamento do quadro estourado) cai na silhueta vetorial.
+/// O icone de um PET ou de uma MONTARIA e' o modelo 3D dele girando
+/// (docs/PETS.md, docs/MONTARIAS.md): o bicho na cor do grau. Sem palco
+/// (celula pequena demais, modelo ainda carregando, orcamento do quadro
+/// estourado) cai na silhueta vetorial.
+///
+/// A montaria entrou aqui junto com o pet porque a silhueta dela era a mesma
+/// para as cinco especies: sem o modelo, o urso laranja e o lobo cinza eram
+/// dois quadradinhos iguais de cores diferentes.
 ///
 /// Devolve `false` quando nao desenhou em 3D.
-fn icone_de_pet(r: Rect, id: u16, palco: Option<(&VoxCache, &Material)>) -> bool {
+fn icone_de_bicho(r: Rect, id: u16, palco: Option<(&VoxCache, &Material)>) -> bool {
     let Some((vox, solido)) = palco else {
         return false;
     };
-    // Um giro lento e preguicoso, com fase por item: dois pets na mesma tela
-    // nao ficam em espelho.
+    // Um giro lento e preguicoso, com fase por item: dois bichos na mesma
+    // tela nao ficam em espelho.
     let giro = get_time() as f32 * 0.5 + id as f32 * 0.7;
     crate::render3d::vitrine_pet(vox, id, r, giro, solido)
+        || crate::render3d::vitrine_montaria(vox, id, r, giro, solido)
 }
 
 /// O icone de um item, desenhado por categoria. Nao ha arte de icone ainda:

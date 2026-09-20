@@ -135,7 +135,7 @@ impl PresencaUi {
         crate::hud_layout::escurece(0.45);
         estilo::painel(p);
         let m = Vec2::from(mouse_position());
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
+        let clicou = crate::foco::clique();
         let x0 = p.x + 20.0 * f;
         estilo::texto_forte(
             x0,

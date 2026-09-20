@@ -23,6 +23,7 @@ mod efeitos;
 mod entrada;
 mod evolucao_skills;
 mod ficha_ui;
+mod foco;
 mod pets_ui;
 mod forja_ui;
 mod ganhos;
@@ -396,6 +397,10 @@ struct Jogo {
     dash_recarga: (f64, f32),
     /// Uso de pocao de efeito esperando "tem certeza?" (`confirmar.rs`).
     confirmar: Option<confirmar::Pendente>,
+    /// O passo TUTORIAL com o foco armado: (quest, quando armou). Armar e'
+    /// tocar no passo no rastreador; o prazo existe pra que um alvo que
+    /// sumiu da tela nunca deixe o jogador preso atras do escuro.
+    foco_tutorial: Option<(u16, f64)>,
 }
 
 #[macroquad::main(window_conf)]
@@ -620,6 +625,7 @@ async fn main() {
         dash_toque: false,
         dash_recarga: (0.0, 0.0),
         confirmar: None,
+        foco_tutorial: None,
     };
     // `MMO_HOST` explicito pula a escolha — e' o caminho do run-client.sh e dos
     // testes de carga.
@@ -1614,6 +1620,7 @@ impl Jogo {
                             }
                             _ => {}
                         }
+                        self.foco_tutorial = Some((quest_id, get_time()));
                         self.chat.push(format!("Tutorial: {}", t::instrucao(acao)));
                     }
                 } else if tipo == destino_tipo::PAINEL_CRAFT || tipo == destino_tipo::PAINEL_FORJA {
@@ -1922,6 +1929,54 @@ impl Jogo {
         }
     }
 
+    /// Quanto tempo o foco do tutorial fica de pe' depois de armado. E' a
+    /// valvula de escape: se o alvo sumir da tela (painel que nao abriu, botao
+    /// que so' aparece com item), o escuro se desfaz sozinho em vez de deixar
+    /// o jogador preso.
+    const FOCO_TUTORIAL_S: f64 = 90.0;
+
+    /// O passo TUTORIAL armado pede o foco. A lista vai do botao mais FUNDO
+    /// (dentro do painel) ao mais raso (o MENU): ganha o primeiro que estiver
+    /// na tela, e e' assim que o buraco anda sozinho MENU -> Ficha -> "+".
+    fn foco_do_tutorial(&mut self) {
+        use shared::quests::{objective_kind, quest_status, tutorial as t};
+        let Some((quest, armado)) = self.foco_tutorial else {
+            return;
+        };
+        let ativo = self.missoes.log.iter().any(|q| {
+            q.id == quest
+                && q.obj_kind == objective_kind::TUTORIAL
+                && q.status == quest_status::ACTIVE
+        });
+        if !ativo || get_time() - armado > Self::FOCO_TUTORIAL_S {
+            self.foco_tutorial = None;
+            return;
+        }
+        let Some(acao) = self
+            .missoes
+            .log
+            .iter()
+            .find(|q| q.id == quest)
+            .map(|q| q.obj_target)
+        else {
+            return;
+        };
+        use foco::chave as c;
+        let caminho: &[u16] = match acao {
+            t::POCAO_LIMIAR => &[c::POCAO_LIMIAR, c::MENU],
+            t::SKILL_AUTO => &[c::SKILL_AUTO],
+            t::AUTO_COMBATE => &[c::AUTO_COMBATE],
+            t::AUTO_COLETA => &[c::AUTO_COLETA],
+            t::MAPA_IR => &[c::MAPA_IR, c::MINIMAPA],
+            t::PONTO_ATRIBUTO => &[c::FICHA_MAIS, c::MENU_FICHA, c::MENU],
+            t::EVOLUIR_SKILL => &[c::SKILL_EVOLUIR, c::MENU_SKILLS, c::MENU],
+            // COLETA_ENERGIA se faz no MUNDO: escurecer a tela esconderia
+            // exatamente a pedra que ele tem que achar.
+            _ => return,
+        };
+        foco::pede(caminho);
+    }
+
     /// O jogador fez a acao de um passo TUTORIAL: avisa o servidor — so' se
     /// o passo esta' ativo, pra nao mandar a cada toque no COMBATE.
     fn tutorial(&mut self, acao: u16) {
@@ -2004,7 +2059,7 @@ impl Jogo {
             hud_estilo::estado_de(r, qtd == 0, false),
             qtd > 0,
         );
-        if !(is_mouse_button_pressed(MouseButton::Left) && r.contains(Vec2::from(mouse_position())))
+        if !(crate::foco::clique() && r.contains(Vec2::from(mouse_position())))
         {
             return;
         }
@@ -2579,6 +2634,37 @@ impl Jogo {
         self.ficha_ui.tem_ponto_sobrando()
     }
 
+    /// Da' pra evoluir alguma habilidade AGORA (nivel, Energia, cobre e tomo
+    /// na mao): ponto vermelho em Habilidades. Sem ele so' se descobria
+    /// abrindo o painel e conferindo as doze uma a uma.
+    fn selo_skills(&self) -> bool {
+        let cobre: u32 = self
+            .bolsa
+            .slots
+            .iter()
+            .filter(|s| s.item_id == shared::item_id::COPPER && s.instance.is_none())
+            .map(|s| s.qty)
+            .sum();
+        self.evolucao_skills.pode_evoluir_alguma(
+            &self.habilidades.catalogo,
+            self.ficha.nivel.max(1),
+            cobre,
+        )
+    }
+
+    /// Pet equipado com FOME: ponto vermelho em Pets. Com fome ele nao ganha
+    /// experiencia nenhuma (docs/PETS.md) — e' o aviso que mais importa.
+    fn selo_pets(&self) -> bool {
+        let equip = &self.bolsa.equip;
+        let Some(_) = equip.pet.filter(|id| shared::pets::de_item(*id).is_some()) else {
+            return false;
+        };
+        let agora_unix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        !shared::pets::alimentado(&shared::pets::dados(equip.pet_inst.as_ref()), agora_unix)
+    }
+
     /// Diaria pra aceitar ou entregar: ponto vermelho no icone e no MENU.
     fn selo_diarias(&self) -> bool {
         let agora_unix = std::time::SystemTime::now()
@@ -3078,13 +3164,13 @@ impl Jogo {
         let mouse = Vec2::from(mouse_position());
         let livre = !self.painel_grande();
         let na_engrenagem = livre && auto_coleta::engrenagem().contains(mouse);
-        if na_engrenagem && is_mouse_button_pressed(MouseButton::Left) {
+        if na_engrenagem && crate::foco::clique() {
             self.fecha_paineis();
             self.config_coleta.abrir();
         }
         let sobre_botao = (livre && auto_coleta::pega_mouse() && !na_engrenagem).then_some(0);
         let toque = self.toque_coleta.quadro(
-            is_mouse_button_pressed(MouseButton::Left),
+            crate::foco::clique(),
             is_mouse_button_down(MouseButton::Left),
             is_mouse_button_released(MouseButton::Left),
             sobre_botao,
@@ -3492,7 +3578,7 @@ impl Jogo {
         let alterna = is_key_pressed(KeyCode::Z)
             || (!self.painel_grande()
                 && auto_combate::pega_mouse()
-                && is_mouse_button_pressed(MouseButton::Left));
+                && crate::foco::clique());
         let esc = is_key_pressed(KeyCode::Escape) && !self.esc_consumido;
         if self.auto_combate.ativo() && (esc || alterna) {
             self.auto_combate.parar();
@@ -3774,6 +3860,8 @@ impl Jogo {
         let pode_comecar = |p: Vec2| {
             !painel
                 && !consumido
+                // Tutorial com foco: o dedo fora do buraco nao anda.
+                && foco::passa_ponto(p)
                 && (quadrante.contains(p) || z.joystick.contains(p))
                 && !z.contem(p)
                 && !na_ui.contains(&p)
@@ -3814,7 +3902,7 @@ impl Jogo {
     fn clique_no_mundo(&self) -> bool {
         match self.toque_acao {
             gesto_camera::Acao::Clique(_) => true,
-            _ => !self.toque_ativo && is_mouse_button_pressed(MouseButton::Left),
+            _ => !self.toque_ativo && crate::foco::clique(),
         }
     }
 
@@ -4040,6 +4128,7 @@ impl Jogo {
 
     // ────────────────────────────── desenho ──────────────────────────────
     fn desenhar(&mut self) {
+        self.foco_do_tutorial();
         match &self.tela {
             Tela::Jogando if self.economia.ativa => self.desenhar_economia(),
             Tela::Jogando => {
@@ -4076,6 +4165,11 @@ impl Jogo {
                 }
             }
         }
+        // O foco do tutorial vai por CIMA de tudo — HUD, paineis, popup: o
+        // que ele apaga tem mesmo que sumir. Depois fecha o quadro: o alvo
+        // marcado agora e' o buraco do quadro seguinte.
+        foco::desenha(get_time());
+        foco::novo_quadro();
     }
 
     fn desenhar_mundo(&mut self) {
@@ -4272,6 +4366,11 @@ impl Jogo {
                 );
                 self.auto_combate.desenha();
                 self.auto_coleta.desenha();
+                // Alvos de tutorial que moram no HUD.
+                foco::marca(foco::chave::AUTO_COMBATE, auto_combate::retangulo());
+                foco::marca(foco::chave::AUTO_COLETA, auto_coleta::retangulo());
+                foco::marca(foco::chave::SKILL_AUTO, z.skills[0]);
+                foco::marca(foco::chave::MINIMAPA, z.minimapa);
                 if hud::draw_atacar(&z, self.alvo.is_some()) {
                     self.atacar();
                 }
@@ -4317,7 +4416,7 @@ impl Jogo {
                     .position(|r| r.contains(mouse))
                     .map(|i| i as u32);
                 if let toque::Toque::Longo(i) = self.toque_barra.quadro(
-                    is_mouse_button_pressed(MouseButton::Left),
+                    crate::foco::clique(),
                     is_mouse_button_down(MouseButton::Left),
                     is_mouse_button_released(MouseButton::Left),
                     sob_dedo,
@@ -4331,7 +4430,7 @@ impl Jogo {
                 let gesto = self.barra.entrada(
                     &rects,
                     mouse,
-                    is_mouse_button_pressed(MouseButton::Left),
+                    crate::foco::clique(),
                     is_mouse_button_down(MouseButton::Left),
                     is_mouse_button_released(MouseButton::Left),
                 );
@@ -4406,17 +4505,18 @@ impl Jogo {
                 // Chefe em luta por perto sem estar selecionado: a barra dele.
                 telegrafico::desenha_barra_de_chefe(z.alvo, &nome, nv, hp, hp_max);
             }
+            foco::marca(foco::chave::MENU, z.menu);
             let selo = self.selo_missoes();
             let selo_diarias = self.selo_diarias();
             let selo_presenca = self.presenca.tem_resgate();
             let selo_ficha = self.selo_ficha();
-            match hud::draw_topo(
-                &z,
-                selo,
-                selo_diarias,
-                selo_presenca,
-                selo || selo_diarias || selo_presenca || selo_ficha,
-            ) {
+            let selo_menu = selo
+                || selo_diarias
+                || selo_presenca
+                || selo_ficha
+                || self.selo_skills()
+                || self.selo_pets();
+            match hud::draw_topo(&z, selo, selo_diarias, selo_presenca, selo_menu) {
                 Some(hud::Topo::Presenca) => {
                     self.fecha_paineis();
                     for pedido in self.presenca.abrir() {
@@ -4870,6 +4970,12 @@ impl Jogo {
             if self.selo_ficha() {
                 selos.push(menu::Item::Ficha);
             }
+            if self.selo_skills() {
+                selos.push(menu::Item::Habilidades);
+            }
+            if self.selo_pets() {
+                selos.push(menu::Item::Pets);
+            }
             let ctx = menu::Contexto {
                 nome: &nome,
                 nivel,
@@ -4911,7 +5017,7 @@ impl Jogo {
         }
         // Nao no quadro do toque que fechou o dialogo: o mesmo toque, fora do
         // menu recem-aberto, o fecharia na hora.
-        if !self.dialogo.aberto && !is_mouse_button_pressed(MouseButton::Left) {
+        if !self.dialogo.aberto && !crate::foco::clique() {
             if let Some(d) = self.viagem_pendente.take() {
                 self.fecha_paineis();
                 self.missoes.fecha();
@@ -5120,7 +5226,7 @@ impl Jogo {
             self.campo_login_ativo = true;
         }
         // Toque fora dos campos fecha o teclado da tela.
-        if is_mouse_button_pressed(MouseButton::Left) && !clicou_u && !clicou_s {
+        if crate::foco::clique() && !clicou_u && !clicou_s {
             self.campo_login_ativo = false;
         }
         // Tab troca de campo; Enter (ou o Return do teclado do iPhone) no

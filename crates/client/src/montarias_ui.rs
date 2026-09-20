@@ -109,7 +109,7 @@ impl MontariasUi {
         crate::hud_layout::escurece(0.55);
         estilo::painel(p);
         let mouse = Vec2::from(mouse_position());
-        let clique = is_mouse_button_pressed(MouseButton::Left);
+        let clique = crate::foco::clique();
 
         estilo::texto_forte(p.x + 20.0 * f, p.y + 36.0 * f, "MONTARIA", 23, estilo::OURO);
         let fechar = Rect::new(p.x + p.w - 49.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);

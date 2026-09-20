@@ -38,6 +38,15 @@ agregadas, não cada cristal; o AUTO COLETA tem uma opção própria para ele.
 Missões que pedem especificamente **pedra** não contam Energia. Os cristais
 usam uma grade de geração própria: não substituem nem reduzem os minérios.
 
+**O modelo** (`vegetacao::energia`) é um cacho: base de rocha escura irregular
+e cinco lascas afuniladas — três voxels de largura embaixo, uma na ponta —
+abrindo pra fora como um buquê, mais duas ou três lascas boiando por cima. A
+primeira versão eram três colunas de um voxel, retas e paralelas, com um voxel
+cinza colado em cada: de perto lia como três palitos, e era o único prop da
+ilha sem volume nenhum. Afunilar, inclinar pra fora e pôr lasca boiando são as
+três coisas que dão a leitura, e `o_veio_de_energia_e_um_cacho_afunilado`
+amarra as três — senão o modelo volta a ser palito sem ninguém perceber.
+
 Missões e diárias de coleta (`GATHER`) contam **por coleta rendida** (cada
 ciclo), não por nó esgotado.
 

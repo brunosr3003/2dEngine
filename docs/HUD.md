@@ -141,7 +141,13 @@ depende disso.**
 4. **Tocar leva lá.** Missão, nome da área e vendedor de poção são todos
    clicáveis e ligam o auto-path.
 5. **Aviso é um ponto vermelho no ícone**, que sobe até o botão de Menu. Não
-   se usa janela pulando na cara.
+   se usa janela pulando na cara. Hoje acendem: Missões, Diárias, Presença,
+   Grupo, Amigos, Correio, Clã, **Ficha** (ponto de atributo sobrando),
+   **Habilidades** (dá pra evoluir alguma agora — nível, Energia, cobre e tomo
+   na mão, as mesmas quatro contas do botão "Evoluir habilidade") e **Pets**
+   (o pet equipado está com fome, e com fome ele não ganha experiência
+   nenhuma). O ponto só vale se for acionável: acender por uma conta e o botão
+   continuar apagado é pior que não acender.
 6. **Um painel por vez, em tela cheia, com abas e X.** Voltar é Esc ou X.
 7. **O cluster de combate fica no canto inferior direito, em arco.** O botão
    grande fica no canto, as skills em volta e os AUTO à esquerda dele.

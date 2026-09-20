@@ -95,6 +95,29 @@ pub fn chance_na_zona(z: &ZonaNoMapa, kind: u16) -> u8 {
     z.bichos.iter().find(|b| b.0 == kind).map_or(0, |b| b.1)
 }
 
+/// A torre do FORTE: um bloco com ameias e uma haste de bandeira. Desenhada
+/// a mao porque nenhum icone de `icones_ui` diz "posicao militar" — e o que
+/// marca o forte tem que se separar do circulo do bicho a` primeira olhada.
+fn torre(c: Vec2, lado: f32, cor: Color) {
+    let preto = Color::new(0.0, 0.0, 0.0, 0.75);
+    let corpo = Rect::new(c.x - lado * 0.5, c.y - lado * 0.35, lado, lado * 0.85);
+    draw_rectangle(
+        corpo.x - 1.0,
+        corpo.y - 1.0,
+        corpo.w + 2.0,
+        corpo.h + 2.0,
+        preto,
+    );
+    draw_rectangle(corpo.x, corpo.y, corpo.w, corpo.h, cor);
+    // Ameias: tres dentes em cima, que e' o que le' como muralha.
+    let dente = lado / 3.0;
+    for k in 0..3 {
+        let x = corpo.x + k as f32 * dente;
+        draw_rectangle(x - 1.0, corpo.y - dente - 1.0, dente * 0.66 + 2.0, dente + 2.0, preto);
+        draw_rectangle(x, corpo.y - dente, dente * 0.66, dente, cor);
+    }
+}
+
 fn centro_da_zona(z: &ZonaNoMapa) -> Vec2 {
     vec2(z.centro[0], z.centro[1])
 }
@@ -1000,9 +1023,23 @@ impl Mapa {
             Marcador::Zona(i) => {
                 let Some(z) = info.zonas.get(i) else { return };
                 linhas.push((
-                    format!("Zona de caça · Nv {}–{}", z.lv_min, z.lv_max),
+                    format!(
+                        "{} · Nv {}–{}",
+                        if z.forte { "FORTE" } else { "Zona de caça" },
+                        z.lv_min,
+                        z.lv_max
+                    ),
                     estilo::OURO,
                 ));
+                if z.forte {
+                    // O nivel e' o mesmo da vizinhanca; o que muda e' quantos
+                    // vem de uma vez. Dizer isso e' o que faz o jogador
+                    // escolher entrar em vez de tropecar.
+                    linhas.push((
+                        "muito mais inimigos no mesmo espaço".into(),
+                        estilo::VERMELHO,
+                    ));
+                }
                 for (k, c) in &z.bichos {
                     linhas.push((format!("{}  {c}%", info.nome(*k)), cor_do_bicho(*k)));
                 }
@@ -1063,7 +1100,7 @@ impl Mapa {
             return None;
         };
         let mouse = Vec2::from(mouse_position());
-        let clique = is_mouse_button_pressed(MouseButton::Left);
+        let clique = crate::foco::clique();
         let mut toggle: Option<Chip> = None;
         let mut saida: Option<Entrada> = None;
 
@@ -1440,7 +1477,7 @@ impl Mapa {
         let m = Vec2::from(mouse_position());
         if self.aberto {
             let r = Self::grande_rect();
-            if is_mouse_button_pressed(MouseButton::Left) {
+            if crate::foco::clique() {
                 // O painel lateral trata os proprios botoes no desenho.
                 if Self::lateral_rect(r).contains(m) {
                     return None;
@@ -1568,7 +1605,11 @@ impl Mapa {
                 let rp = (z.raio * escala).max(3.0);
                 if q.distance(c) - rp < dentro.w * 0.75 {
                     let cor = z.bichos.first().map_or(COR_MOB, |b| cor_do_bicho(b.0));
-                    draw_circle_lines(q.x, q.y, rp, 1.0, Color::new(cor.r, cor.g, cor.b, 0.45));
+                    let (esp, a) = if z.forte { (2.0, 0.8) } else { (1.0, 0.45) };
+                    draw_circle_lines(q.x, q.y, rp, esp, Color::new(cor.r, cor.g, cor.b, a));
+                    if z.forte && visivel(q) {
+                        torre(q, 7.0, cor);
+                    }
                 }
             }
             for ch in &info.chefes {
@@ -1770,6 +1811,8 @@ impl Mapa {
             self.desenha_grande_mapa(world);
             let m = Vec2::from(mouse_position());
             let r = Self::grande_rect();
+            // Tutorial "abra o mapa e toque num lugar": o alvo e' o mapa todo.
+            crate::foco::marca(crate::foco::chave::MAPA_IR, r);
             if r.contains(m) {
                 if let Some(mk) = self.marcador_sob(m, r) {
                     self.dica(mk, m);
@@ -1860,8 +1903,22 @@ impl Mapa {
                 let q = ponto(centro_da_zona(z));
                 let rp = (z.raio * escala).max(u(5.0));
                 let cor = z.bichos.first().map_or(COR_MOB, |b| cor_do_bicho(b.0));
-                draw_circle(q.x, q.y, rp, Color::new(cor.r, cor.g, cor.b, 0.16));
-                draw_circle_lines(q.x, q.y, rp, 1.5, Color::new(cor.r, cor.g, cor.b, 0.85));
+                // O FORTE e' o mesmo circulo, mais forte e com anel duplo: a
+                // mancha mais cheia ja' diz "aqui tem mais bicho" antes de o
+                // olho chegar no icone.
+                let (fundo, anel) = if z.forte { (0.30, 2.5) } else { (0.16, 1.5) };
+                draw_circle(q.x, q.y, rp, Color::new(cor.r, cor.g, cor.b, fundo));
+                draw_circle_lines(q.x, q.y, rp, anel, Color::new(cor.r, cor.g, cor.b, 0.85));
+                if z.forte {
+                    draw_circle_lines(
+                        q.x,
+                        q.y,
+                        rp + u(3.0),
+                        1.0,
+                        Color::new(cor.r, cor.g, cor.b, 0.45),
+                    );
+                    torre(q - vec2(0.0, rp.max(u(14.0)) + u(4.0)), u(9.0), cor);
+                }
                 // Marcador do bicho dominante no centro da zona (acima do rotulo).
                 if let Some(b) = z.bichos.first() {
                     let y = if rp >= u(14.0) { u(13.0) } else { 0.0 };
@@ -1875,7 +1932,11 @@ impl Mapa {
                 }
                 if rp >= u(14.0) {
                     if let Some(b) = z.bichos.first() {
-                        let t = format!("{} · Nv {}–{}", info.nome(b.0), z.lv_min, z.lv_max);
+                        let t = if z.forte {
+                            format!("Forte · {} · Nv {}–{}", info.nome(b.0), z.lv_min, z.lv_max)
+                        } else {
+                            format!("{} · Nv {}–{}", info.nome(b.0), z.lv_min, z.lv_max)
+                        };
                         estilo::texto_centro(
                             q.x + 1.0,
                             q.y + u(5.0),
@@ -2071,7 +2132,7 @@ fn apertou_em() -> Option<Vec2> {
     {
         return Some(t.position);
     }
-    is_mouse_button_pressed(MouseButton::Left).then(|| Vec2::from(mouse_position()))
+    crate::foco::clique().then(|| Vec2::from(mouse_position()))
 }
 
 /// Minimapa fechado: um disco com a seta do jogador, pra ler "minimapa".
@@ -2318,6 +2379,7 @@ mod tests {
             lv_min: lv.0,
             lv_max: lv.1,
             bichos,
+            forte: false,
         }
     }
 

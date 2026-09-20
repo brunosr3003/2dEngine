@@ -595,7 +595,7 @@ impl Missoes {
             .len()
             .min(z.missoes_no_rastreador);
         let mouse = Vec2::from(mouse_position());
-        let clique = is_mouse_button_pressed(MouseButton::Left);
+        let clique = crate::foco::clique();
         let mut saida = None;
         estilo::painel(r);
         // Abas: Missões (ativa) e Grupo (em breve).

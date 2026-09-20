@@ -416,10 +416,12 @@ pub const PASSOS: &[QuestDef] = &[
     // ela passa a fazer falta. Ids fora da sequencia de proposito.
     tutorial(770, "Poção na hora certa", "O Alquimista insiste: poção boa é a que se bebe sozinha. Abra Menu › Sistema › Barra, escolha a Poção de Vida e ajuste com − e + a % de vida em que ela é bebida.", tut::POCAO_LIMIAR, 20, 300, item_id::HEALTH_POTION, 5),
     tutorial(771, "Luta sem as mãos", "Antes dos lobos, aprenda a lutar sem pensar: toque em COMBATE, no canto de baixo, e o personagem enfrenta sozinho o que estiver perto. Toque de novo para parar.", tut::AUTO_COMBATE, 20, 300, item_id::HEALTH_POTION, 3),
+    tutorial(775, "O que o nível te deu", "Cada nível rende pontos que ninguém gasta por você. Abra Menu › Personagem › Ficha e coloque um ponto no atributo que combina com a sua arma — FOR bate mais forte, DES acerta mais, INT move a magia.", tut::PONTO_ATRIBUTO, 20, 400, item_id::HEALTH_POTION, 3),
     cacar_com(702, "A trilha dos lobos", "Os lobos enlouqueceram desde que o farol apagou: descem à trilha de dia, coisa que nunca fizeram. Derrote 5 fora da cidade. Os caçadores juntaram berloques que os bichos arrancaram das carroças — são seus.", alvo_de_mob(mob_kind::LOBO), 5, 60, 1_000, item_id::EXORCISM_BAUBLE, 10, item_id::HEALTH_POTION, 5),
     falar(703, "Mãos firmes", "Você sobreviveu aos lobos. O Treinador da praça quer ver do que é capaz — e guarda quintessência para quem aguenta o tranco.", Papel::Treinador, 40, 2_500, item_id::QUINTESSENCE, 10),
     tutorial(772, "Golpe no automático", "O Treinador mostra: arraste uma skill PARA CIMA e ela passa a ser usada sozinha no combate. Para baixo, volta pro manual.", tut::SKILL_AUTO, 40, 800, item_id::HEALTH_POTION, 3),
     tutorial(773, "Coleta sem esforço", "A forja come madeira e pedra. Toque em COLETA: o personagem corta e quebra sozinho o que estiver por perto — a engrenagem do botão escolhe o quê.", tut::AUTO_COLETA, 40, 800, item_id::XP_POTION, 1),
+    tutorial(776, "A luz nas pedras", "O trovão deixou cristais azuis no relevo: é Energia, e ela não ocupa espaço na bolsa. Colete um — o filtro Energia do mapa mostra onde eles estão.", tut::COLETA_ENERGIA, 40, 900, item_id::HEALTH_POTION, 3),
     coletar_com(704, "Lenha para a forja", "A forja da vila come madeira dia e noite. Derrube 8 árvores — é da árvore que sai toda a madeira da ilha. O Ferreiro paga em Darksteel, o metal escuro que toda peça pede.", alvo_de_coleta::ARVORE, 8, 60, 2_000, item_id::DARKSTEEL, 200, item_id::XP_POTION, 1),
     coletar_com(705, "Pedra que canta", "As pedras da ilha zumbem com o trovão. Quebre 10 pedras em qualquer veio — é da pedra que saem o Aço e o Darksteel de toda peça. A mineradora completa o seu Aço.", alvo_de_coleta::PEDRA, 10, 80, 4_000, item_id::STEEL, 30, item_id::XP_POTION, 1),
     falar_com_dois(706, "O metal da tempestade", "Leve o que ouviu nas pedras ao Ferreiro. Ele sabe o que o metal carrega — e guarda o couro e o cobre que faltam para quem vai forjar.", Papel::Ferreiro, 60, 4_000, item_id::COPPER, 300, item_id::HIDE, 1),
@@ -438,6 +440,7 @@ pub const PASSOS: &[QuestDef] = &[
     viajar(718, "Rumo à Geleira", "O farol da Geleira ainda brilha, mas por pouco. Peça ao Capitão do Porto um lugar no barco.", 1, 400, 1_500),
     // ═════════════ II · O Farol Congelado (Geleira, 15–30) ═════════════
     falar(719, "Frio de rachar os ossos", "Você desembarcou na Geleira. Apresente-se ao Mestre de Missões da praça.", Papel::Missoes, 200, 1_200, item_id::GREATER_HEAL, 2),
+    tutorial(777, "O primeiro despertar", "A Energia que você juntou no Bosque não é só brilho: ela desperta o que você já sabe. Abra Menu › Personagem › Habilidades, escolha uma das suas e suba um tier.", tut::EVOLUIR_SKILL, 200, 3_000, item_id::XP_POTION, 1),
     falar(720, "Histórias de taberna", "Quem sabe dos Morganeers na neve é o Taberneiro. Pague um ouvido a ele.", Papel::Taberna, 200, 1_300, item_id::GREATER_MANA, 2),
     cacar(721, "Corujursos na neve", "Owlbears famintos atacam as trilhas de gelo. Derrote 6.", alvo_de_mob(mob_kind::OWLBEAR), 6, 300, 1_800, item_id::GREATER_HEAL),
     coletar(722, "Gelo que guarda trovão", "A pedra da Geleira prende relâmpago. Quebre 20 pedras.", 20, 300, 2_000, VERDE, 4),
@@ -1162,12 +1165,30 @@ mod testes {
             .filter(|d| d.obj_kind == objective_kind::TUTORIAL)
             .collect();
         let acoes: Vec<u16> = tut.iter().map(|d| d.obj_target).collect();
-        for a in [t::POCAO_LIMIAR, t::SKILL_AUTO, t::AUTO_COMBATE, t::AUTO_COLETA, t::MAPA_IR] {
+        for a in [
+            t::POCAO_LIMIAR,
+            t::SKILL_AUTO,
+            t::AUTO_COMBATE,
+            t::AUTO_COLETA,
+            t::MAPA_IR,
+            t::COLETA_ENERGIA,
+            t::PONTO_ATRIBUTO,
+            t::EVOLUIR_SKILL,
+        ] {
             assert_eq!(acoes.iter().filter(|x| **x == a).count(), 1, "acao {a}");
             assert_ne!(t::instrucao(a), "Siga a dica");
         }
-        for d in tut {
-            assert_eq!(capitulo_escrito(d.id).map(|c| c.nome), Some(CAPITULOS[0].nome), "{} fora do capitulo I", d.id);
+        // Todo tutorial mora num capitulo — o da hora em que aquilo passa a
+        // fazer falta. Quase todos no I; o despertar de skill espera a
+        // Energia juntar, e so' aparece no II.
+        for d in &tut {
+            let cap = capitulo_escrito(d.id).map(|c| c.nome);
+            assert!(cap.is_some(), "{} sem capitulo", d.id);
+            if d.obj_target == t::EVOLUIR_SKILL {
+                assert_eq!(cap, Some(CAPITULOS[1].nome), "{} devia estar no II", d.id);
+            } else {
+                assert_eq!(cap, Some(CAPITULOS[0].nome), "{} fora do capitulo I", d.id);
+            }
         }
         // A poção vem logo depois do Alquimista dar as pocoes, e o auto
         // combate antes dos lobos.
@@ -1175,6 +1196,11 @@ mod testes {
         assert_eq!(pos(770), pos(701) + 1);
         assert!(pos(771) < pos(702));
         assert!(pos(772) > pos(703) && pos(773) < pos(704) && pos(774) < pos(709));
+        // O ponto de atributo vem cedo, antes do primeiro bando de lobos; a
+        // Energia junto da coleta; o despertar depois da travessia.
+        assert!(pos(775) < pos(702));
+        assert!(pos(776) < pos(704));
+        assert!(pos(777) > pos(718));
     }
 
     /// Cronicas: estaveis (mesmo id, mesma referencia e mesmo texto),

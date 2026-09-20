@@ -960,7 +960,7 @@ fn apertou_em() -> Option<Vec2> {
     {
         return Some(t.position);
     }
-    is_mouse_button_pressed(MouseButton::Left).then(|| Vec2::from(mouse_position()))
+    crate::foco::clique().then(|| Vec2::from(mouse_position()))
 }
 fn clicou(r: Rect) -> bool {
     apertou_em().is_some_and(|p| r.contains(p))

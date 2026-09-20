@@ -143,10 +143,40 @@ ela começa a fazer falta (`objective_kind::TUTORIAL`, `quests::tutorial`):
 | 772 | Golpe no automático | 703 (Treinador) | arrastar uma skill pra CIMA (uso automático) |
 | 773 | Coleta sem esforço | antes de 704 (lenha) | ligar o AUTO COLETA |
 | 774 | O mapa mostra o caminho | antes de 709 (mirante) | tocar num lugar do mapa |
+| 775 | O que o nível te deu | antes de 702 | gastar um ponto de atributo (Menu › Ficha) |
+| 776 | A luz nas pedras | antes de 704 | coletar um cristal de Energia |
+| 777 | O primeiro despertar | depois de 719 (cap. II) | evoluir uma habilidade de tier |
 
 - O cliente avisa o gesto com `ClientMessage::Tutorial { acao }`, e só com o
   passo ativo. O "Ir" do passo abre onde se faz (a Barra, o mapa) ou mostra a
   dica.
+- **Os três novos são contados pelo SERVIDOR** (`passo_de_tutorial`), no ponto
+  em que a ação de fato aconteceu: o ponto gasto em `handle_alloc_stat_point`
+  (depois de descontar a Energia), o cristal no crédito da pedra tier 5, o tier
+  em `handle_evoluir_skill` no `Ok`. Contar no toque do botão fecharia o passo
+  numa tentativa que falta Energia pra concluir.
+
+### O foco: tela escura e toque travado (20/09/2026)
+
+Texto no rastreador não ensina onde fica: "toque em COMBATE" não diz **onde**
+COMBATE está. `client/foco.rs` escurece a tela inteira menos um buraco, pisca
+um anel dourado em volta dele e **trava o toque fora dali**.
+
+- Quem desenha um botão que pode ser alvo **marca** o retângulo
+  (`foco::marca(chave, r)`); o passo armado **pede** uma lista de chaves
+  (`foco::pede`). Ganha a primeira que estiver na tela, e é assim que o buraco
+  anda sozinho MENU → Ficha → "+" sem ninguém saber da ordem de desenho dos
+  outros. O alvo marcado num quadro vale no quadro seguinte.
+- A trava está num lugar só: `foco::clique()` no lugar de
+  `is_mouse_button_pressed(Left)`, nos 61 pontos da interface. Trava pelo
+  **ponto do dedo**, não pelo retângulo do widget — é o que faz valer também
+  pro mundo, pro joystick e pra quem eu esquecesse de converter.
+- Armar é tocar no passo no rastreador. Vale por `FOCO_TUTORIAL_S` (90 s) ou
+  até o passo sair de ACTIVE: se o alvo sumir da tela, o escuro se desfaz
+  sozinho em vez de deixar o jogador preso atrás dele. Chave pedida que ninguém
+  marcou também não acende nada — melhor sem foco que tela preta sem buraco.
+- `COLETA_ENERGIA` não tem foco: a ação é no mundo, e escurecer a tela
+  esconderia exatamente a pedra que ele precisa achar.
 - **Ids fora da sequência de propósito:** a história agora anda pela POSIÇÃO
   na lista (`id_do_passo`, `indice`, `capitulo_escrito`), e não por
   `700 + índice`. Inserir passo não renumera nenhum outro.

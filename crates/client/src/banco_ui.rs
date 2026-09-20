@@ -193,7 +193,7 @@ fn lado(
         estilo::estado_de(b, !pode, false),
         pode,
     );
-    if custo.is_some() && is_mouse_button_pressed(MouseButton::Left) && b.contains(Vec2::from(mouse_position())) {
+    if custo.is_some() && crate::foco::clique() && b.contains(Vec2::from(mouse_position())) {
         saida = Some(Toque::Expandir);
     }
     saida

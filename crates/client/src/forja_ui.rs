@@ -227,7 +227,7 @@ impl Forja {
         // Grade de pecas.
         let grade = Rect::new(p.x + u(14.0), p.y + u(52.0), u(6.0) * CELULA, p.h - u(64.0));
         let mouse = Vec2::from(mouse_position());
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
+        let clicou = crate::foco::clique();
         if lista.is_empty() {
             estilo::texto(
                 grade.x + u(4.0),

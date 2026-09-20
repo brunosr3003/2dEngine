@@ -30,6 +30,26 @@ impl EvolucaoSkills {
         self.aviso = Some(texto);
     }
 
+    /// Da' pra evoluir ALGUMA habilidade agora mesmo? E' o ponto vermelho na
+    /// aba Habilidades: sem ele, o jogador so' descobria que juntou Energia
+    /// e tomo bastante abrindo o painel e conferindo as doze na mao.
+    ///
+    /// As mesmas quatro contas do botao "Evoluir habilidade": nivel, Energia,
+    /// cobre e tomo. Nao adianta acender por uma e o botao continuar apagado.
+    pub fn pode_evoluir_alguma(&self, catalogo: &[Skill], nivel: u32, cobre: u32) -> bool {
+        catalogo.iter().any(|skill| {
+            if nivel < skill.nivel_necessario() {
+                return false;
+            }
+            skills::custo_de_evolucao(self.progresso.tier(skill.id)).is_some_and(|c| {
+                nivel >= c.nivel
+                    && self.progresso.energia >= c.energia
+                    && cobre >= c.cobre
+                    && c.tomo.is_none_or(|g| self.progresso.tomos(skill.id, g) > 0)
+            })
+        })
+    }
+
     pub fn desenha(&mut self, catalogo: &[Skill], nivel: u32, cobre: u32) -> Option<ClientMessage> {
         if !self.aberto {
             return None;
@@ -60,7 +80,7 @@ impl EvolucaoSkills {
         crate::hud_layout::escurece(0.5);
         estilo::painel(p);
         let m = Vec2::from(mouse_position());
-        let clique = is_mouse_button_pressed(MouseButton::Left);
+        let clique = crate::foco::clique();
         estilo::texto_forte(
             p.x + 20.0 * f,
             p.y + 36.0 * f,
@@ -294,6 +314,9 @@ impl EvolucaoSkills {
                 && c.tomo.is_none_or(|g| self.progresso.tomos(skill.id, g) > 0)
         });
         let evoluir = Rect::new(x + 287.0 * f, y + 357.0 * f, 267.0 * f, 45.0 * f);
+        if pode {
+            crate::foco::marca(crate::foco::chave::SKILL_EVOLUIR, evoluir);
+        }
         estilo::botao(
             evoluir,
             "Evoluir habilidade",

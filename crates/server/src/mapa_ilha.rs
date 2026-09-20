@@ -44,6 +44,7 @@ pub fn zona_no_mapa(
     lv_min: u32,
     lv_max: u32,
     kinds: &[u16],
+    forte: bool,
 ) -> ZonaNoMapa {
     ZonaNoMapa {
         centro: [quantiza(centro.x), quantiza(centro.y)],
@@ -51,6 +52,7 @@ pub fn zona_no_mapa(
         lv_min: lv_min.min(u16::MAX as u32) as u16,
         lv_max: lv_max.min(u16::MAX as u32) as u16,
         bichos: bichos_da_zona(kinds, lv_min, lv_max),
+        forte,
     }
 }
 
@@ -235,7 +237,7 @@ mod testes {
         assert_eq!(recursos.len(), MAX_REGIOES, "o teto de regioes nao segurou");
         let kinds: Vec<u16> = (0..8).collect();
         let zonas: Vec<_> = (0..60)
-            .map(|i| zona_no_mapa(Vec2::new(i as f32 * 20.0, 0.0), 45.0, 1 + i, 3 + i, &kinds))
+            .map(|i| zona_no_mapa(Vec2::new(i as f32 * 20.0, 0.0), 45.0, 1 + i, 3 + i, &kinds, false))
             .collect();
         let nomes = kinds
             .iter()

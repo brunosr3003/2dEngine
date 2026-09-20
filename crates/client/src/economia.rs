@@ -239,7 +239,7 @@ impl Economia {
         if let Some((c, t)) = dica {
             estilo::tooltip(c, &t, false);
         }
-        if is_mouse_button_pressed(MouseButton::Left) && ok.contains(m) {
+        if crate::foco::clique() && ok.contains(m) {
             self.resumo = None;
         }
     }
@@ -429,7 +429,7 @@ impl Economia {
         let m = Vec2::from(mouse_position());
         let bola = trilho.h - 8.0;
         let curso = (trilho.w - bola - 8.0).max(1.0);
-        if is_mouse_button_pressed(MouseButton::Left) && trilho.contains(m) {
+        if crate::foco::clique() && trilho.contains(m) {
             self.arrasto = Some(m.x);
         }
         let progresso = match self.arrasto {

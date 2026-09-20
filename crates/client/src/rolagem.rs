@@ -51,7 +51,7 @@ impl Entrada {
     pub fn agora() -> Self {
         Entrada {
             mouse: Vec2::from(mouse_position()),
-            apertou: is_mouse_button_pressed(MouseButton::Left),
+            apertou: crate::foco::clique(),
             segurando: is_mouse_button_down(MouseButton::Left),
             soltou: is_mouse_button_released(MouseButton::Left),
             roda: mouse_wheel().1,

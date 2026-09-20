@@ -191,7 +191,7 @@ impl Menu {
         let p = Self::painel();
         estilo::painel_destaque(p, estilo::OURO);
         let m = Vec2::from(mouse_position());
-        let clique = is_mouse_button_pressed(MouseButton::Left);
+        let clique = crate::foco::clique();
         estilo::texto_forte(p.x + 20.0, p.y + 34.0, "MENU", 24, estilo::OURO);
         if crate::ui::botao(
             Rect::new(p.x + p.w - 46.0, p.y + 12.0, 34.0, 30.0),
@@ -283,6 +283,14 @@ impl Menu {
                     let r = Rect::new(x0 + i as f32 * (t + 10.0), gy, t, t);
                     let sobre = r.contains(m);
                     let travado = l.2.is_some();
+                    // O foco do tutorial anda ate' aqui: "Menu > Ficha".
+                    match l.0 {
+                        Item::Ficha => crate::foco::marca(crate::foco::chave::MENU_FICHA, r),
+                        Item::Habilidades => {
+                            crate::foco::marca(crate::foco::chave::MENU_SKILLS, r)
+                        }
+                        _ => {}
+                    }
                     estilo::cartao(r, sobre && !travado, false);
                     let cor = if travado {
                         Color::new(0.45, 0.47, 0.50, 1.0)

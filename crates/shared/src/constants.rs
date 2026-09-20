@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 115;
+pub const PROTOCOL_VERSION: u16 = 116;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -934,6 +934,31 @@ pub fn peso_da_armadura(item_id: u16) -> (f32, f32) {
     }
 }
 
+/// Quanto de FOR a armadura empresta, como ponto alocado.
+///
+/// A MEDIA ganha isto porque, sem, ela era a pior escolha das tres: da' menos
+/// defesa que a pesada e nao tem o dano da leve. A FOR paga a diferenca em
+/// ataque e vida, sem mexer no peso — ela continua sendo o meio.
+///
+/// **Cresce com o nivel** em vez de ser um numero fixo. Fixo em 5 a simulacao
+/// de chefe reprovou na hora: o Lobo Alfa (nivel 8) caia em 55s contra a meta
+/// de 60, e o jogador PARADO bebendo pocao vencia com 13% de vida. Cinco
+/// pontos sao ruido no nivel 60 e sao a luta inteira no nivel 8. Um por
+/// `FOR_DA_MEDIA_A_CADA` niveis poe o ganho na mesma escala em que o resto do
+/// personagem cresce.
+pub fn for_da_armadura(item_id: u16, nivel: u32) -> u32 {
+    match item_id {
+        item_id::ARMADURA_MEDIA => FOR_DA_ARMADURA_MEDIA + nivel / FOR_DA_MEDIA_A_CADA,
+        _ => 0,
+    }
+}
+
+/// Pontos de FOR da armadura media. Vale +1 ataque e +2 vida cada
+/// (`STAT_POINT_BONUS`).
+pub const FOR_DA_ARMADURA_MEDIA: u32 = 1;
+/// A cada tantos niveis a media empresta mais um ponto de FOR.
+pub const FOR_DA_MEDIA_A_CADA: u32 = 10;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum EquipSlot {
     /// A arma: o conjunto (docs/COMBATE.md).
@@ -1713,6 +1738,36 @@ pub const MOB_ATTACK_IMPACT_S: f32 = MOB_ATTACK_PREPARE_S + MOB_ATTACK_CUT_S;
 #[cfg(test)]
 mod testes_atributos {
     use super::*;
+
+    /// A media so' existe como escolha se compensar em algum lugar: ela da'
+    /// menos defesa que a pesada e nao tem o dano da leve.
+    #[test]
+    fn so_a_armadura_media_empresta_forca() {
+        assert_eq!(for_da_armadura(item_id::ARMADURA_MEDIA, 1), FOR_DA_ARMADURA_MEDIA);
+        assert!(FOR_DA_ARMADURA_MEDIA > 0);
+        for nivel in [1, 8, 30, 60] {
+            assert_eq!(for_da_armadura(item_id::ARMADURA_LEVE, nivel), 0);
+            assert_eq!(for_da_armadura(item_id::ARMADURA_PESADA, nivel), 0);
+            assert_eq!(
+                for_da_armadura(0, nivel),
+                0,
+                "sem armadura nao empresta nada"
+            );
+            assert_eq!(for_da_armadura(item_id::KATANA, nivel), 0);
+        }
+        // Cresce com o nivel, e devagar: no nivel do primeiro chefe ela ainda
+        // vale UM ponto — foi isso que a simulacao de chefe cobrou.
+        assert_eq!(for_da_armadura(item_id::ARMADURA_MEDIA, 8), 1);
+        let baixo = for_da_armadura(item_id::ARMADURA_MEDIA, 10);
+        let alto = for_da_armadura(item_id::ARMADURA_MEDIA, 60);
+        assert!(alto > baixo, "no nivel 60 tem que valer mais que no 10");
+        assert!(alto <= 10, "media nao pode virar a melhor de longe: {alto}");
+        // O peso dela continua o do meio: a FOR nao a transformou em leve.
+        assert_eq!(peso_da_armadura(item_id::ARMADURA_MEDIA), (1.0, 0.0));
+        let (dano_leve, _) = peso_da_armadura(item_id::ARMADURA_LEVE);
+        let (dano_pesada, red_pesada) = peso_da_armadura(item_id::ARMADURA_PESADA);
+        assert!(dano_leve > 1.0 && dano_pesada < 1.0 && red_pesada > 0.0);
+    }
 
     /// Cada ponto de atributo custa mais Energia que o anterior, e o total
     /// de uma tacada e' a soma dos degraus — nunca um multiplo do primeiro.

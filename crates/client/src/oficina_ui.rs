@@ -205,6 +205,10 @@ pub struct Oficina {
     sel_grupo: Option<(u16, u8, u8)>,
     /// Receita escolhida no Combinar (a entrada).
     sel_receita: Option<u16>,
+    /// Combinar: mostrar so' o que da' pra tentar agora. A lista tem uma
+    /// receita por material de cada cor — sao dezenas, e quase sempre o
+    /// jogador quer ver as quatro que ele consegue fazer hoje.
+    so_possiveis: bool,
     rolagem: crate::rolagem::Rolagem,
     /// Lupa tocada: o item pro "Onde obter".
     pub onde_obter: Option<u16>,
@@ -434,8 +438,52 @@ impl Oficina {
     ) -> Option<ClientMessage> {
         let nome = |id: u16| nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"));
         let t = |id: u16| tem(slots, id);
+        // ── filtro: a barra come a primeira faixa da lista ──
+        let filtro = Rect::new(lista.x, lista.y, lista.w - u(12.0), u(26.0));
+        let lista = Rect::new(
+            lista.x,
+            lista.y + u(32.0),
+            lista.w,
+            (lista.h - u(32.0)).max(u(40.0)),
+        );
+        let todas = receitas(slots);
+        let quantas_dao = todas
+            .iter()
+            .filter(|r| combinar::vezes_possiveis(r, &t) > 0)
+            .count();
+        if crate::ui::botao(
+            filtro,
+            &if self.so_possiveis {
+                format!("mostrando só o que dá ({quantas_dao})")
+            } else {
+                format!("mostrar só o que dá ({quantas_dao})")
+            },
+            true,
+        ) {
+            self.so_possiveis = !self.so_possiveis;
+            self.rolagem.zera();
+        }
         fundo_da_lista(lista);
-        let rs = receitas(slots);
+        let rs: Vec<ReceitaDeCombinar> = todas
+            .into_iter()
+            .filter(|r| !self.so_possiveis || combinar::vezes_possiveis(r, &t) > 0)
+            .collect();
+        if rs.is_empty() {
+            estilo::texto_ajustado(
+                "Nada pronto pra combinar agora. Toque de novo pra ver a lista inteira.",
+                lista.x + u(10.0),
+                lista.y + u(26.0),
+                lista.w - u(24.0),
+                14,
+                estilo::SUAVE,
+            );
+            self.sel_receita = None;
+            return None;
+        }
+        // A escolhida saiu da lista com o filtro: cai na primeira que ficou.
+        if !rs.iter().any(|r| Some(r.entrada) == self.sel_receita) {
+            self.sel_receita = None;
+        }
         let total = rs.len() as f32 * u(LINHA);
         let clique = self.rolagem.quadro(lista, total, u(LINHA));
         let arrastando = self.rolagem.arrastando();
@@ -598,6 +646,39 @@ mod tests {
         assert_eq!(rs[0].entrada, item_id::HORN, "chifre: 7 pagam uma");
         assert_eq!(rs[1].entrada, item_id::STEEL, "tem aco, mas falta pra sintese");
         assert_eq!(rs.len(), combinar::receitas().len());
+    }
+
+    /// O filtro do Combinar mostra so' o que da' pra tentar AGORA — e a
+    /// conta que vai no rotulo e' a mesma que o filtro aplica.
+    #[test]
+    fn o_filtro_do_combinar_deixa_so_o_que_da() {
+        let slots = vec![material(item_id::HORN, 7), material(item_id::STEEL, 3)];
+        let t = |id: u16| tem(&slots, id);
+        let todas = receitas(&slots);
+        let dao: Vec<_> = todas
+            .iter()
+            .filter(|r| combinar::vezes_possiveis(r, &t) > 0)
+            .collect();
+        assert!(!dao.is_empty(), "com 7 chifres alguma coisa tem que dar");
+        assert!(
+            dao.len() < todas.len(),
+            "se tudo desse, o filtro nao teria pra que existir"
+        );
+        assert!(
+            dao.iter().all(|r| t(r.entrada) >= r.qtd),
+            "entrou no filtro sem ter as pecas na mao"
+        );
+        // Bolsa vazia: o filtro nao deixa nada, e a tela tem que dizer isso
+        // em vez de mostrar uma lista em branco.
+        let vazia: Vec<InventorySlot> = Vec::new();
+        let sem = |id: u16| tem(&vazia, id);
+        assert_eq!(
+            receitas(&vazia)
+                .iter()
+                .filter(|r| combinar::vezes_possiveis(r, &sem) > 0)
+                .count(),
+            0
+        );
     }
 
     #[test]

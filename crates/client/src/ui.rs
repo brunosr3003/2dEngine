@@ -80,7 +80,7 @@ pub fn botao(r: Rect, rotulo: &str, ativo: bool) -> bool {
     );
     // O "x" de fechar e' icone, nao rotulo: botao discreto.
     estilo::botao(r, rotulo, e, false);
-    sobre && is_mouse_button_pressed(MouseButton::Left)
+    sobre && crate::foco::clique()
 }
 
 /// Campo de texto.
@@ -160,7 +160,7 @@ pub fn campo(
     }
 
     let (mx, my) = mouse_position();
-    dentro(r, vec2(mx, my)) && is_mouse_button_pressed(MouseButton::Left)
+    dentro(r, vec2(mx, my)) && crate::foco::clique()
 }
 
 /// Linha de lista selecionavel. Devolve `true` quando clicada.
@@ -186,7 +186,7 @@ pub fn linha(r: Rect, esquerda: &str, direita: &str, selecionada: bool) -> bool 
         15,
         APAGADO,
     );
-    sobre && is_mouse_button_pressed(MouseButton::Left)
+    sobre && crate::foco::clique()
 }
 
 /// Barra de lotacao. Vermelha quando cheia — o jogador decide antes de clicar.

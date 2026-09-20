@@ -136,7 +136,11 @@ e vira **matéria-prima de progressão**.
   o pó da tabela acima (azul → roxo no valor extrapolado). Chave (Escama,
   Garra, Chifre, Couro): 5 → 1 da cor de cima com **10% em todo degrau**, até
   roxa → lendária; falhar consome as cinco. A chave é aposta de propósito: é
-  ela que regula o craft.
+  ela que regula o craft. A aba tem o filtro **"mostrar só o que dá"** com a
+  conta ao lado: a lista tem uma receita por material de cada cor, são dezenas,
+  e quase sempre o que o jogador quer ver são as poucas que ele consegue fazer
+  hoje. Com o filtro ligado e nada pronto, a tela diz isso em vez de mostrar
+  lista em branco.
 - **A troca por equipamento +8** depende do refino, que existe em
   `shared/forja.rs` mas ainda não conversa com o craft.
 - **Material roxo** agora sai da síntese (10 azuis + 200.000 cobre + 25.000

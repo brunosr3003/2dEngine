@@ -112,7 +112,7 @@ impl FichaUi {
         crate::hud_layout::escurece(0.55);
         estilo::painel(p);
         let mouse = Vec2::from(mouse_position());
-        let clique = is_mouse_button_pressed(MouseButton::Left);
+        let clique = crate::foco::clique();
 
         estilo::texto_forte(
             p.x + 20.0 * f,
@@ -240,6 +240,12 @@ impl FichaUi {
             estilo::texto_forte(r.x + 283.0 * f, r.y + 29.0 * f, &valor, 20, estilo::OURO);
             let botao = Rect::new(r.x + r.w - 43.0 * f, r.y + 4.0 * f, 36.0 * f, 36.0 * f);
             let pode = self.pode_alocar(i);
+            if pode {
+                // Tutorial "gaste um ponto": o foco vai pro primeiro "+" que
+                // da' pra apertar — apontar um travado seria mandar o jogador
+                // bater num botao que nao responde.
+                crate::foco::marca(crate::foco::chave::FICHA_MAIS, botao);
+            }
             estilo::botao(botao, "+", estilo::estado_de(botao, !pode, false), pode);
             if clique && botao.contains(mouse) && pode {
                 return Some(ClientMessage::AllocStatPoint { stat: i as u8 });

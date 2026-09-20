@@ -119,7 +119,11 @@ barra de experiência, quanto falta de ração, os atributos que ele dá, o Pode
 e os três slots de skill com o nível que cada um abre. O botão ALIMENTAR usa
 uma Ração da bolsa — é o mesmo `UseItem` da poção, o painel só manda o pedido.
 
-O ícone do pet na bolsa também é o modelo 3D, tingido com a cor do grau.
+O ícone do pet na bolsa também é o modelo 3D, tingido com a cor do grau — e
+**o da montaria também**, pelo mesmo caminho (`bolsa::icone_de_bicho`, que
+tenta `vitrine_pet` e depois `vitrine_montaria`). A silhueta vetorial da
+montaria era a mesma para as cinco espécies: sem o modelo, o urso laranja e o
+lobo cinza eram dois quadradinhos iguais de cores diferentes.
 
 ## Quem matou tem a frente por 2 segundos
 

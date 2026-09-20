@@ -597,6 +597,28 @@ sem tocar em código de mundo. A faixa de cada ilha está em `DefIlha::nivel`
 O `lazy_spawn` continua valendo: das 59 zonas, só as perto do jogador custam
 alguma coisa.
 
+### Fortes
+
+Um centro a cada `FORTE_A_CADA` (7) vira **forte**: a mesma faixa de nível da
+vizinhança, mas o raio cai de 45 para 24 unidades, o espaçamento entre mobs cai
+de 7 para 4 e o teto sobe de 18 para 34. Dá **mais que o dobro de inimigos por
+unidade quadrada** — é o que `o_forte_e_densidade_e_nao_nivel` mede, na ilha de
+verdade.
+
+O nível **não** sobe junto. Densidade e nível somados fariam do forte "a zona
+que você ainda não pode visitar" em vez de uma escolha: entrar, contornar, ou
+voltar com o grupo.
+
+Os centros já saem embaralhados pela semente da ilha, então pegar de 7 em 7
+espalha os fortes sem uma segunda passada de espaçamento — e dá o mesmo mapa em
+toda subida do servidor. O índice 0 nunca é forte: é o centro mais perto do
+desembarque.
+
+O mapa marca: mancha mais cheia, anel duplo, uma torre com ameias por cima e
+"FORTE" na dica, com a linha "muito mais inimigos no mesmo espaço". O minimapa
+mostra o anel grosso e a torre. Sem isso o forte seria uma emboscada, não um
+lugar.
+
 
 - **Gate de tutorial herdado**: `SKIP_TUTORIAL_GATE=1` pra contornar. É lixo
   do projeto antigo e tem que sair.

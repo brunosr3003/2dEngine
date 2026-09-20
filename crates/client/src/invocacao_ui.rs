@@ -329,13 +329,13 @@ impl InvocacaoUi {
                 pronto,
             );
             if pronto
-                && is_mouse_button_pressed(MouseButton::Left)
+                && crate::foco::clique()
                 && bt.contains(Vec2::from(mouse_position()))
             {
                 self.fechar();
             }
         }
-        if t < 2.0 && is_mouse_button_pressed(MouseButton::Left) {
+        if t < 2.0 && crate::foco::clique() {
             self.atual = Some((premios, agora - 3.0));
         }
     }

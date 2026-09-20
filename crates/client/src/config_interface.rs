@@ -70,7 +70,7 @@ impl ConfigInterface {
             estilo::TEXTO,
         );
         let m = Vec2::from(mouse_position());
-        let clicou = is_mouse_button_pressed(MouseButton::Left);
+        let clicou = crate::foco::clique();
         if clicou && fechar.contains(m) {
             self.fechar();
             return None;
