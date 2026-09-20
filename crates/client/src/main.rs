@@ -2547,6 +2547,12 @@ impl Jogo {
             .is_some()
     }
 
+    /// Ponto de atributo sobrando pra distribuir: ponto vermelho na Ficha e no
+    /// MENU. Some sozinho quando o servidor confirma que gastou tudo.
+    fn selo_ficha(&self) -> bool {
+        self.ficha_ui.tem_ponto_sobrando()
+    }
+
     /// Diaria pra aceitar ou entregar: ponto vermelho no icone e no MENU.
     fn selo_diarias(&self) -> bool {
         let agora_unix = std::time::SystemTime::now()
@@ -4376,12 +4382,13 @@ impl Jogo {
             let selo = self.selo_missoes();
             let selo_diarias = self.selo_diarias();
             let selo_presenca = self.presenca.tem_resgate();
+            let selo_ficha = self.selo_ficha();
             match hud::draw_topo(
                 &z,
                 selo,
                 selo_diarias,
                 selo_presenca,
-                selo || selo_diarias || selo_presenca,
+                selo || selo_diarias || selo_presenca || selo_ficha,
             ) {
                 Some(hud::Topo::Presenca) => {
                     self.fecha_paineis();
@@ -4812,6 +4819,9 @@ impl Jogo {
             }
             if self.selo_diarias() {
                 selos.push(menu::Item::Diarias);
+            }
+            if self.selo_ficha() {
+                selos.push(menu::Item::Ficha);
             }
             let ctx = menu::Contexto {
                 nome: &nome,

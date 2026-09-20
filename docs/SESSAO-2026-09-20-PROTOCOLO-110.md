@@ -98,3 +98,10 @@ refeitos nesta sessão.
 - Teste de mundo confirmou interrupção de skill antes do impacto, reembolso
   de mana e ausência de nova cobrança ao apertar Dash durante a recarga.
 - Estas correções são posteriores ao TestFlight 2609201402 descrito acima.
+
+## Ponto vermelho da Ficha
+
+- Ponto de atributo sobrando passa a marcar a Ficha no MENU e o próprio botão
+  MENU do HUD, no mesmo padrão já usado por Missões, Diárias e Presença.
+- O selo vem do último retrato enviado pelo servidor: sem retrato não há selo,
+  e ele some quando a distribuição zera os pontos.

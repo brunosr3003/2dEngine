@@ -47,6 +47,12 @@ impl FichaUi {
         self.pontos.map(|(n, _)| n)
     }
 
+    /// Ha' ponto sobrando pra distribuir: vira o ponto vermelho da Ficha e do
+    /// MENU. Sem snapshot do servidor nao ha' selo — nao inventamos pendencia.
+    pub fn tem_ponto_sobrando(&self) -> bool {
+        self.pontos_disponiveis().is_some_and(|n| n > 0)
+    }
+
     fn pode_alocar(&self, indice: usize) -> bool {
         indice < STAT_COUNT && self.pontos.is_some_and(|(n, _)| n > 0)
     }
@@ -303,6 +309,18 @@ mod tests {
         assert!(!ui.pode_alocar(shared::STAT_COUNT));
         ui.atualizar_pontos(0, [1, 2, 3, 4, 5, 6]);
         assert!(!ui.pode_alocar(0));
+    }
+
+    #[test]
+    fn ponto_vermelho_so_com_ponto_sobrando() {
+        let mut ui = FichaUi::default();
+        assert!(!ui.tem_ponto_sobrando(), "sem snapshot nao ha' pendencia");
+        ui.atualizar_pontos(3, [0; STAT_COUNT]);
+        assert!(ui.tem_ponto_sobrando());
+        ui.atualizar_pontos(0, [1, 1, 1, 0, 0, 0]);
+        assert!(!ui.tem_ponto_sobrando(), "gastou tudo: o selo some");
+        ui.limpar_pontos();
+        assert!(!ui.tem_ponto_sobrando());
     }
 }
 
