@@ -399,3 +399,21 @@ refeitos nesta sessão.
   para os dois painéis): lista o que está na bolsa, com equipar e combinar.
 - Quatro testes novos cobrem os três bugs. Servidor foi de 155 para 159.
 - Backups: `tempest-prod/dumps/*-pre-colecao-2609201831.dump`.
+
+## Peça em uso na coleção, e o atirador que não foge
+
+- Commits `f640517` (a peça equipada aparece na faixa) e `0be5c9d` (atirador).
+  TestFlight: **Tempest 1.1 (2609201844)** e **(2609201850)**, as duas com
+  `UPLOAD SUCCEEDED`.
+- A peça equipada **sai da bolsa**, então sumia da faixa justamente quando
+  virava a principal. Agora ela vem primeiro, com ponto dourado, e combinar
+  conta só as cópias da bolsa.
+- **Atirador não foge**: pistoleiro, mago e arqueiro paravam no `kite_dist`
+  (5 a 8, bem mais perto do que o tiro exigia) e recuavam quando o jogador
+  colava. Agora param em 90% do `attack_range` e atiram dali. A folga de 10%
+  evita o tremor de avançar a cada quadro quando o jogador dá um passo.
+- Prod reiniciada às 15:52, com o dono avisado: havia uma sessão na Geleira e
+  ele pediu para subir assim mesmo.
+- A publicação de `f640517` NÃO reiniciou a prod: era commit só de cliente e
+  havia jogador conectado. Os binários ficaram instalados para o restart
+  seguinte.
