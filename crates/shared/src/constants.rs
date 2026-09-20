@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 116;
+pub const PROTOCOL_VERSION: u16 = 117;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -1041,6 +1041,26 @@ pub fn custo_energia_do_ponto(ja_alocados: u32) -> u64 {
     ENERGIA_BASE_DO_PONTO + ENERGIA_PASSO_DO_PONTO * ja_alocados as u64
 }
 
+/// Ate' que nivel o tutorial da Energia tem que dar folga. O passo manda
+/// juntar Energia bastante pra o jogador gastar TODOS os pontos que os
+/// primeiros niveis renderam — nao um cristal de enfeite.
+pub const NIVEL_DO_TUTORIAL_DE_ENERGIA: u32 = 4;
+
+/// Energia pra gastar, do zero, todos os pontos que um personagem ganha ate'
+/// `nivel`. E' a soma da escada `custo_energia_do_ponto`, em forma fechada
+/// porque isto precisa ser `const` (a missao guarda o numero).
+pub const fn energia_pros_pontos_ate_o_nivel(nivel: u32) -> u64 {
+    let n = (POINTS_PER_LEVEL * nivel.saturating_sub(1)) as u64;
+    if n == 0 {
+        return 0;
+    }
+    ENERGIA_BASE_DO_PONTO * n + ENERGIA_PASSO_DO_PONTO * (n * (n - 1) / 2)
+}
+
+/// Quanta Energia o passo de tutorial pede.
+pub const ENERGIA_DO_TUTORIAL: u32 =
+    energia_pros_pontos_ate_o_nivel(NIVEL_DO_TUTORIAL_DE_ENERGIA) as u32;
+
 /// Energia total pra sair de `ja_alocados` e alocar mais `quantos` pontos.
 pub fn custo_energia_de_varios(ja_alocados: u32, quantos: u32) -> u64 {
     (0..quantos)
@@ -1738,6 +1758,36 @@ pub const MOB_ATTACK_IMPACT_S: f32 = MOB_ATTACK_PREPARE_S + MOB_ATTACK_CUT_S;
 #[cfg(test)]
 mod testes_atributos {
     use super::*;
+
+    /// A forma fechada tem que bater com a escada somada um a um — se ela
+    /// divergir, a missao pede um numero que nao corresponde a nada.
+    #[test]
+    fn a_conta_fechada_do_tutorial_bate_com_a_escada() {
+        for nivel in 1..=10u32 {
+            let pontos = POINTS_PER_LEVEL * nivel.saturating_sub(1);
+            assert_eq!(
+                energia_pros_pontos_ate_o_nivel(nivel),
+                custo_energia_de_varios(0, pontos),
+                "nivel {nivel}"
+            );
+        }
+        assert_eq!(energia_pros_pontos_ate_o_nivel(1), 0, "nivel 1 nao rendeu");
+        // O numero da missao: nove pontos (tres niveis a tres cada).
+        assert_eq!(
+            ENERGIA_DO_TUTORIAL as u64,
+            custo_energia_de_varios(0, POINTS_PER_LEVEL * 3)
+        );
+        assert!(ENERGIA_DO_TUTORIAL > 0);
+        // E ele tem que caber em pouca coleta: mais que dois veios inteiros
+        // seria farm, nao tutorial. Um veio rende COLETAS_POR_ENERGIA ciclos.
+        let por_veio =
+            crate::skills::energia_por_coleta(0) * COLETAS_POR_ENERGIA as u64;
+        assert!(
+            (ENERGIA_DO_TUTORIAL as u64) <= por_veio * 2,
+            "{} de Energia sao mais de dois veios ({por_veio} cada)",
+            ENERGIA_DO_TUTORIAL
+        );
+    }
 
     /// UMA coleta de Energia tem que pagar o PRIMEIRO ponto de atributo.
     ///

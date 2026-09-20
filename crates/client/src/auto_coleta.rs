@@ -55,7 +55,10 @@ pub struct AutoColeta {
     pub energia: bool,
     pub raio: f32,
     /// Tipos da missao em curso: ignoram a configuracao.
-    forcados: Option<[bool; 5]>,
+    /// Missao mandando: (tipos de corpo, aceita Energia). A Energia e' um
+    /// campo proprio porque ela nao e' um tier de `tipos` — e' um recurso a
+    /// parte, com passo de tutorial proprio.
+    forcados: Option<([bool; 5], bool)>,
     /// Coleta de UM tipo em volta de um ponto (o "Ir" do mapa numa regiao).
     pub filtro: Option<(u8, Vec2)>,
     etapa: Etapa,
@@ -126,9 +129,9 @@ impl AutoColeta {
     }
 
     /// Liga pra uma missao: os tipos dela, nao os da configuracao.
-    pub fn ligar_missao(&mut self, p: Vec2, tipos: [bool; 5], _agora: f64) {
+    pub fn ligar_missao(&mut self, p: Vec2, tipos: [bool; 5], energia: bool, _agora: f64) {
         self.reinicia(Some(p));
-        self.forcados = Some(tipos);
+        self.forcados = Some((tipos, energia));
     }
 
     /// Desliga. A configuracao (tipos e raio) fica.
@@ -158,7 +161,14 @@ impl AutoColeta {
 
     /// Tipos que valem agora: os da missao, se houver.
     pub fn tipos_efetivos(&self) -> [bool; 5] {
-        self.forcados.unwrap_or(self.tipos)
+        self.forcados.map_or(self.tipos, |(t, _)| t)
+    }
+
+    /// Aceita Energia agora? Com missao mandando, e' ela quem diz — o passo
+    /// do tutorial pede Energia e SO' Energia, e as outras missoes de coleta
+    /// nao podem gastar o veio do jogador sem ele mandar.
+    pub fn energia_efetiva(&self) -> bool {
+        self.forcados.map_or(self.energia, |(_, e)| e)
     }
 
     /// Resposta do servidor a um pedido de no'.
@@ -223,7 +233,7 @@ impl AutoColeta {
                     Some((tipo, perto)) => Acao::PedirNoDoTipo { tipo, perto },
                     None => Acao::PedirNo {
                         tipos: self.tipos_efetivos(),
-                        energia: self.forcados.is_none() && self.energia,
+                        energia: self.energia_efetiva(),
                         raio: self.raio,
                         centro,
                     },
@@ -337,16 +347,76 @@ impl AutoColeta {
 
 /// Os tipos que uma missao de coleta pede (0 madeira, 1..4 pedra). Missao que
 /// nao e' de coleta por no' aceita tudo.
-pub fn tipos_da_missao(def: &shared::quests::QuestDef) -> [bool; 5] {
-    if def.obj_kind != shared::quests::objective_kind::GATHER {
-        return [true; 5];
+/// O que a missao manda coletar: (tipos de corpo, aceita Energia).
+///
+/// O tutorial da Energia e' o unico que quer SO' Energia: mandar junto os
+/// troncos e as pedras faria o auto parar no primeiro toco do caminho e o
+/// passo nunca andaria.
+pub fn tipos_da_missao(def: &shared::quests::QuestDef) -> ([bool; 5], bool) {
+    use shared::quests::{objective_kind, tutorial};
+    if def.obj_kind == objective_kind::TUTORIAL && def.obj_target == tutorial::COLETA_ENERGIA {
+        return ([false; 5], true);
     }
-    std::array::from_fn(|t| shared::quests::alvo_de_coleta::conta(def.obj_target, t as u8))
+    if def.obj_kind != objective_kind::GATHER {
+        return ([true; 5], true);
+    }
+    // Missao de pedra/arvore nao gasta o veio de Energia do jogador.
+    (
+        std::array::from_fn(|t| shared::quests::alvo_de_coleta::conta(def.obj_target, t as u8)),
+        false,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// O tutorial da Energia quer SO' Energia: com tronco e pedra ligados o
+    /// auto parava no primeiro toco do caminho e o passo nunca andava. E o
+    /// contrario tambem vale — missao de pedra nao gasta o veio de Energia.
+    #[test]
+    fn a_missao_manda_no_que_o_auto_coleta() {
+        use shared::quests::{objective_kind, tutorial};
+        let def = |kind: u8, alvo: u16| shared::quests::QuestDef {
+            obj_kind: kind,
+            obj_target: alvo,
+            ..*shared::quests::quest_by_id(776).expect("776 existe")
+        };
+
+        let (tipos, energia) = tipos_da_missao(&def(
+            objective_kind::TUTORIAL,
+            tutorial::COLETA_ENERGIA,
+        ));
+        assert!(energia, "o passo pede Energia");
+        assert!(!tipos.iter().any(|t| *t), "e nada mais: {tipos:?}");
+
+        // Tutorial de GESTO nao coleta nada em especial: fica com o padrao.
+        let (t_gesto, e_gesto) =
+            tipos_da_missao(&def(objective_kind::TUTORIAL, tutorial::AUTO_COLETA));
+        assert!(t_gesto.iter().all(|t| *t) && e_gesto);
+
+        // Missao de arvore: so' tronco, e sem Energia.
+        let (t_arv, e_arv) = tipos_da_missao(&def(
+            objective_kind::GATHER,
+            shared::quests::alvo_de_coleta::ARVORE,
+        ));
+        assert!(t_arv[0], "tronco e' o tier 0");
+        assert!(!t_arv[1..].iter().any(|t| *t), "pedra nao conta");
+        assert!(!e_arv, "missao de arvore nao gasta o veio de Energia");
+
+        // E o forcado manda mesmo com a configuracao dizendo o contrario.
+        let mut a = AutoColeta::default();
+        a.tipos = [true; 5];
+        a.energia = true;
+        a.ligar_missao(Vec2::ZERO, [false; 5], true, 0.0);
+        assert_eq!(a.tipos_efetivos(), [false; 5]);
+        assert!(a.energia_efetiva());
+        a.ligar_missao(Vec2::ZERO, [true, false, false, false, false], false, 0.0);
+        assert!(!a.energia_efetiva(), "a missao desligou a Energia");
+        a.parar();
+        assert_eq!(a.tipos_efetivos(), [true; 5], "solta, volta a configuracao");
+        assert!(a.energia_efetiva());
+    }
 
     #[test]
     fn procura_vai_coleta_e_troca_ao_esgotar() {
@@ -466,7 +536,7 @@ mod tests {
     fn missao_ignora_a_configuracao_e_mapa_pede_o_tipo() {
         let mut a = AutoColeta::default();
         a.tipos = [true, false, false, false, false];
-        a.ligar_missao(Vec2::ZERO, [false, true, true, true, true], 0.0);
+        a.ligar_missao(Vec2::ZERO, [false, true, true, true, true], false, 0.0);
         assert!(matches!(
             a.passo(Vec2::ZERO, 0.0, false),
             Acao::PedirNo {

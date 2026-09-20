@@ -3073,9 +3073,9 @@ impl Jogo {
                 auto_missao::Acao::LigarColeta(p) => {
                     self.auto_combate.parar();
                     // Missao de coleta: os tipos DELA, nao os da configuracao.
-                    let tipos = shared::quests::quest_by_id(id)
-                        .map_or([true; 5], |d| auto_coleta::tipos_da_missao(d));
-                    self.auto_coleta.ligar_missao(p, tipos, agora);
+                    let (tipos, energia) = shared::quests::quest_by_id(id)
+                        .map_or(([true; 5], true), auto_coleta::tipos_da_missao);
+                    self.auto_coleta.ligar_missao(p, tipos, energia, agora);
                 }
                 auto_missao::Acao::PararAutos => {
                     self.auto_combate.parar();

@@ -143,13 +143,24 @@ ela começa a fazer falta (`objective_kind::TUTORIAL`, `quests::tutorial`):
 | 772 | Golpe no automático | 703 (Treinador) | arrastar uma skill pra CIMA (uso automático) |
 | 773 | Coleta sem esforço | antes de 704 (lenha) | ligar o AUTO COLETA |
 | 774 | O mapa mostra o caminho | antes de 709 (mirante) | tocar num lugar do mapa |
-| 776 | A luz nas pedras | antes de 704 | coletar um cristal de Energia |
+| 776 | A luz nas pedras | antes de 704 | **juntar 270 de Energia** (leva até um veio sozinho) |
 | 775 | O que o nível te deu | **depois de 776** | gastar um ponto de atributo (Menu › Ficha) |
 | 777 | O primeiro despertar | depois de 719 (cap. II) | evoluir uma habilidade de tier |
 
 - O cliente avisa o gesto com `ClientMessage::Tutorial { acao }`, e só com o
   passo ativo. O "Ir" do passo abre onde se faz (a Barra, o mapa) ou mostra a
   dica.
+- **O 776 é o único tutorial que ANDA.** Os outros ensinam um botão; esse
+  ensina um lugar. O destino dele é `destino_tipo::COLETA` no veio de Energia
+  mais perto (`spot_de_coleta_longe` com `tier == 5`), e o auto coleta vai
+  forçado em **só Energia** — com tronco e pedra ligados ele parava no primeiro
+  toco do caminho. Sem isso o passo era "ache 1 dos 55 cristais do Bosque".
+- **Ele pede QUANTIDADE, não um cristal.** `ENERGIA_DO_TUTORIAL` é a soma da
+  escada `custo_energia_do_ponto` para todos os pontos que os três primeiros
+  níveis rendem (9 pontos × 3 por nível = 270), derivada em `const fn` pra não
+  descolar das constantes. O crédito conta pelo valor, não por coleta. Cabe em
+  menos de dois veios (240 cada) — mais que isso seria farm, não tutorial.
+
 - **A ordem entre 776 e 775 é contrato, não gosto.** Gastar ponto custa
   Energia (`custo_energia_do_ponto`), então mandar gastar antes de mandar
   coletar pede uma coisa que o jogador não tem como fazer — foi o que o dono

@@ -118,7 +118,7 @@ pub mod tutorial {
             AUTO_COMBATE => "Toque em COMBATE",
             AUTO_COLETA => "Toque em COLETA",
             MAPA_IR => "Abra o mapa e toque num lugar",
-            COLETA_ENERGIA => "Colete um cristal de Energia",
+            COLETA_ENERGIA => "Junte Energia nos cristais azuis",
             PONTO_ATRIBUTO => "Menu › Ficha: gaste um ponto",
             EVOLUIR_SKILL => "Menu › Habilidades: evolua um tier",
             _ => "Siga a dica",

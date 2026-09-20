@@ -611,6 +611,20 @@ pub struct ServerSpawnZone {
     pub forte: bool,
 }
 
+/// O `tier` do corpo de Energia. Pedra e' 1..=4, arvore e' 0.
+pub const TIER_DA_ENERGIA: u8 = 5;
+
+/// O tier de coleta casa com as fontes que a missao aceita? Energia nunca
+/// entra por aqui: ela tem passo proprio, e uma missao de "quebre 10 pedras"
+/// que aceitasse cristal gastaria o veio de Energia do jogador a` toa.
+fn tier_de_fonte(tier: u8, tronco: bool, pedra: bool) -> bool {
+    match tier {
+        0 => tronco,
+        1..=4 => pedra,
+        _ => false,
+    }
+}
+
 /// Raio do disco plano que um mob comum exige pra nascer, em unidades.
 pub const MOB_RAIO_SITIO_UN: f32 = 3.0;
 /// Espacamento minimo entre centros de zona. Sem isso a mesma clareira recebe
@@ -15157,7 +15171,17 @@ impl GameWorld {
             }
             match def.obj_kind {
                 objective_kind::NIVEL => return Some((destino_tipo::TRAVA, eu, 0.0, None)),
-                // Tutorial nao anda: o cliente abre o painel ou mostra a dica.
+                // O tutorial da Energia e' o unico que ANDA: os outros ensinam
+                // um botao, e este ensina um lugar. Sem levar ate' um veio, o
+                // passo virava "ache 1 dos 55 cristais do Bosque".
+                objective_kind::TUTORIAL
+                    if def.obj_target == shared::quests::tutorial::COLETA_ENERGIA =>
+                {
+                    return self
+                        .spot_de_coleta_longe(eu, &|tier| tier == TIER_DA_ENERGIA)
+                        .map(|(p, _)| (destino_tipo::COLETA, p, shared::COLETA_RAIO_SPOT, None));
+                }
+                // Os outros nao andam: o cliente abre o painel ou mostra a dica.
                 objective_kind::TUTORIAL => {
                     return Some((destino_tipo::TUTORIAL, eu, def.obj_target as f32, None))
                 }
@@ -15285,7 +15309,7 @@ impl GameWorld {
                 if !tronco && !pedra {
                     return None;
                 }
-                self.spot_de_coleta_longe(eu, Some((tronco, pedra)))
+                self.spot_de_coleta_longe(eu, &|t| tier_de_fonte(t, tronco, pedra))
                     .map(|(p, _)| (destino_tipo::COLETA, p, shared::COLETA_RAIO_SPOT, None))
             }
             objective_kind::GATHER => {
@@ -15294,8 +15318,11 @@ impl GameWorld {
                     shared::quests::alvo_de_coleta::ARVORE => Some((true, false)),
                     _ => None,
                 };
-                self.spot_de_coleta_longe(eu, fontes)
-                    .map(|(p, _)| (destino_tipo::COLETA, p, shared::COLETA_RAIO_SPOT, None))
+                self.spot_de_coleta_longe(eu, &|t| match fontes {
+                    Some((tronco, pedra)) => tier_de_fonte(t, tronco, pedra),
+                    None => t != TIER_DA_ENERGIA,
+                })
+                .map(|(p, _)| (destino_tipo::COLETA, p, shared::COLETA_RAIO_SPOT, None))
             }
             // Criar e refinar nao se faz andando: o cliente abre o painel.
             objective_kind::CRAFT => Some((destino_tipo::PAINEL_CRAFT, eu, 0.0, None)),
@@ -15358,20 +15385,13 @@ impl GameWorld {
     fn spot_de_coleta_longe(
         &self,
         eu: Vec2,
-        fontes: Option<(bool, bool)>,
+        aceita: &dyn Fn(u8) -> bool,
     ) -> Option<(Vec2, usize)> {
         use shared::terreno::TipoDeEstorvo;
-        if let Some(s) = self.spot_de_coleta(eu, 200.0, fontes) {
+        if let Some(s) = self.spot_de_coleta_em(eu, eu, 200.0, aceita) {
             return Some(s);
         }
         let ilha = self.ilha.as_ref()?;
-        let aceita = |tier: u8| {
-            fontes.is_none_or(|(tronco, pedra)| match tier {
-                0 => tronco,
-                1..=4 => pedra,
-                _ => false,
-            })
-        };
         let vivos: Vec<(Vec2, u8)> = ilha
             .todos_os_estorvos()
             .iter()
@@ -18419,7 +18439,14 @@ impl GameWorld {
             self.save_pending = true;
             crate::telemetria::conta("energia_coletada", self.zona.clone(), qtd as i64);
             self.quest_on_gather(sid, c.tier);
-            self.passo_de_tutorial(sid, shared::quests::tutorial::COLETA_ENERGIA);
+            // O passo de tutorial conta a Energia pelo VALOR, nao por coleta:
+            // ele pede o bastante pra gastar os pontos dos primeiros niveis.
+            self.quest_on_evento_se(
+                sid,
+                shared::quests::objective_kind::TUTORIAL,
+                qtd as u32,
+                &|d| d.obj_target == shared::quests::tutorial::COLETA_ENERGIA,
+            );
             self.avancar_reserva_do_no(c, limite, respawn_s);
             return true;
         }
