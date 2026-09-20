@@ -1916,6 +1916,69 @@ mod testes {
 
 #[cfg(test)]
 mod testes_das_zonas {
+
+    /// Os fortes se espalham pela ilha inteira: um perto do desembarque, pra
+    /// o jogador saber cedo que a coisa existe, e outros ate' a ponta, pra
+    /// continuarem valendo. Imprime onde ficam — e' o jeito de responder
+    /// "onde fica o forte" sem abrir o jogo.
+    #[test]
+    fn os_fortes_se_espalham_pela_ilha() {
+        let (cidade, zonas) = super::bosque();
+        let mut v: Vec<_> = zonas.zonas.iter().filter(|z| z.forte).collect();
+        v.sort_by(|a, b| {
+            a.centro
+                .distance(*cidade)
+                .total_cmp(&b.centro.distance(*cidade))
+        });
+        println!("cidade em ({:.0}, {:.0})", cidade.x, cidade.y);
+        for z in &v {
+            let d = z.centro.distance(*cidade);
+            let ang = (z.centro.y - cidade.y).atan2(z.centro.x - cidade.x).to_degrees();
+            let rumo = match ((ang + 360.0) % 360.0) as i32 {
+                0..=22 | 338..=360 => "leste",
+                23..=67 => "sudeste",
+                68..=112 => "sul",
+                113..=157 => "sudoeste",
+                158..=202 => "oeste",
+                203..=247 => "noroeste",
+                248..=292 => "norte",
+                _ => "nordeste",
+            };
+            println!(
+                "forte em ({:7.0},{:7.0})  {:5.0} u da cidade, a {rumo}  nv {}-{}  {} inimigos",
+                z.centro.x,
+                z.centro.y,
+                d,
+                z.lv_min,
+                z.lv_max,
+                z.slots.len()
+            );
+        }
+        println!("{} fortes de {} zonas", v.len(), zonas.zonas.len());
+
+        let d = |z: &&crate::world::ZonaComum| z.centro.distance(*cidade);
+        let perto = v.first().map(d).unwrap_or(f32::MAX);
+        let longe = v.last().map(d).unwrap_or(0.0);
+        assert!(
+            perto < 300.0,
+            "o forte mais perto esta' a {perto:.0} u: o jogador nunca ia topar com um"
+        );
+        assert!(
+            longe > 600.0,
+            "todos os fortes cabem nos primeiros {longe:.0} u: eles param de valer cedo"
+        );
+        // A escada de nivel acompanha: forte perto e' de nivel baixo, forte
+        // longe e' do fim da ilha. Senao um deles e' muro e o outro e' enfeite.
+        let (p, l) = (v.first().unwrap(), v.last().unwrap());
+        assert!(
+            p.lv_max < l.lv_min,
+            "o forte perto ({}-{}) nao e' mais fraco que o longe ({}-{})",
+            p.lv_min,
+            p.lv_max,
+            l.lv_min,
+            l.lv_max
+        );
+    }
     /// O FORTE e' mais inimigo no mesmo chao, e nao um degrau de nivel.
     ///
     /// Este teste roda na ilha de verdade porque a densidade sai do relevo: os
