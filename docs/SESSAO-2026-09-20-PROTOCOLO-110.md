@@ -160,3 +160,18 @@ refeitos nesta sessão.
   o preço (isso já acontecia com a quantidade das moedas antes da mudança).
 - Prévias conferidas em `/tmp/tempest-loja-energia4/`.
 - Nenhuma mensagem nova: o protocolo continua 111.
+
+## Publicação da Energia na loja
+
+- Commit `0d3b59e` publicado no Git. Suíte completa antes do build: cliente
+  322, servidor 146, shared 180, nenhum falho.
+- TestFlight: **Tempest 1.1 (2609201519)**, `UPLOAD SUCCEEDED with no errors`.
+  Delivery UUID: `091bcd90-2aa0-4be1-b93b-9cede78f02c0`. O processamento pela
+  Apple não foi verificado no App Store Connect.
+- Backups: `tempest-prod/dumps/*-pre-loja-energia-2609201519.dump`; binários
+  anteriores em `tempest-prod/bak-loja-energia-2609201519/`.
+- Reiniciados os quatro serviços às 12:21 de 20/09/2026 (São Paulo), sem
+  ninguém conectado. API pública respondeu protocolo 111 e as portas 9000 e
+  9100 devolveram `101 Switching Protocols`.
+- A compra de Energia em si não foi exercitada contra o banco central nesta
+  publicação; o que rodou foram os testes de catálogo e de regra de compra.
