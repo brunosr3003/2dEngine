@@ -729,6 +729,38 @@ mod testes {
     }
 
     #[test]
+    fn dash_interrompe_skill_antes_do_impacto_e_respeita_recarga() {
+        crate::economy::init_vazia_para_testes();
+        let skill = shared::skills::playtest().remove(8);
+        let (mut w, sid, _) = mundo(&skill);
+        w.conjurar_skill(sid, skill.clone());
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.stats.stamina_max = 100;
+            s.stamina_current = 100.0;
+            s.pending_input = Some(shared::protocol::InputFrame {
+                seq: 1, tick: 1, move_dir: Vec2::X,
+                aim: Vec2::new(20.0, 10.0), buttons: buttons::DASH,
+            });
+        }
+        w.step(shared::TICK_DT);
+        let s = &w.sessions[&sid];
+        assert!(s.dash_cooldown > 0.0);
+        assert_eq!(s.casting_skill_id, 0);
+        assert_eq!(s.mp_current, 100.0);
+        assert!(s.stamina_current < 100.0);
+        assert!(w.pending_habilidades.is_empty());
+        assert!(!s.skill_cds.contains_key(&skill.id));
+        let antes = s.stamina_current;
+        w.sessions.get_mut(&sid).unwrap().pending_input = Some(shared::protocol::InputFrame {
+            seq: 2, tick: 2, move_dir: Vec2::X,
+            aim: Vec2::new(20.0, 10.0), buttons: buttons::DASH,
+        });
+        w.step(shared::TICK_DT);
+        assert!(w.sessions[&sid].stamina_current >= antes, "recarga não cobra outro Dash");
+    }
+
+    #[test]
     fn trocar_arma_antes_do_impacto_cancela_e_devolve_mana() {
         let skill = shared::skills::playtest().remove(8);
         let (mut w, sid, _) = mundo(&skill);

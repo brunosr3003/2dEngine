@@ -80,6 +80,7 @@ pub struct Ent {
     /// subida de verdade continua sendo decidida no servidor. Se o servidor
     /// recusar (cooldown), o unico prejuizo e' uma animacao curta a toa.
     pub pulo_local: f32,
+    pub dash_visual_ate: f64,
     /// Velocidade de queda, em unidades por segundo (negativa = caindo).
     pub vel_y: f32,
     /// Estava no ar no quadro anterior? So' serve pra achar a borda de subida.
@@ -308,6 +309,7 @@ impl World {
                 yaw,
                 render_y: f32::MIN,
                 pulo_local: 0.0,
+                dash_visual_ate: 0.0,
                 vel_y: 0.0,
                 no_ar_antes: false,
                 voando: false,
@@ -358,6 +360,13 @@ impl World {
             }
             if st.flags & ent_flags::SELF != 0 {
                 self.self_id = Some(st.id);
+            }
+            // O servidor segura o bit do golpe uns quadros; a patada comeca
+            if st.flags & ent_flags::DASHING != 0 {
+                ent.combo = None;
+                ent.combo_ant = None;
+                ent.skill = None;
+                ent.ferido = None;
             }
             // O servidor segura o bit do golpe uns quadros; a patada comeca
             // quando ele ACENDE.

@@ -8598,6 +8598,35 @@ impl GameWorld {
                 frame.move_dir = glam::Vec2::ZERO;
                 // NAO continue — segue pro processamento de attacks/skills/etc.
             }
+            // Dash tem prioridade sobre cast, golpe, salto e defesa. Valida
+            // antes de mascarar os botoes durante a animacao da habilidade.
+            let dash_prioritario = frame.buttons & buttons::DASH != 0
+                && !session.downed && session.carrying.is_none()
+                && session.dash_cooldown <= 0.0
+                && session.dash_until <= self.sim_time_s
+                && session.stamina_current >= shared::DASH_STAMINA_COST as f32;
+            if dash_prioritario {
+                let skill = session.casting_skill_id;
+                if session.casting_mp_paid > 0.0 {
+                    session.mp_current = (session.mp_current + session.casting_mp_paid)
+                        .min(session.stats.mp_max as f32);
+                    session.skill_cds.remove(&skill);
+                }
+                session.casting_mp_paid = 0.0;
+                session.casting_st_paid = 0.0;
+                session.casting_until = 0.0;
+                session.casting_skill_id = 0;
+                session.gesto_skill_em = 0.0;
+                session.cast_movement_ticks = 0;
+                session.combo_last_attack = 0.0;
+                session.leap_until = 0.0;
+                session.pulo_ate = 0.0;
+                session.hurt_until = 0.0;
+                session.stagger_until = 0.0;
+                session.defending = false;
+                frame.buttons = buttons::DASH;
+                cancelled_cast_owners.push((session.entity_id, skill));
+            }
             // CASTING: durante cast_time_s o player fica travado na pose. A
             // checagem de cancel-por-movimento eh feita ABAIXO, depois do dir
             // ser processado (in_hurt zera dir → não cancela durante stagger).
@@ -8865,7 +8894,7 @@ impl GameWorld {
                 }
             }
             // Downed/Carregando/Hurt/Dashing/Defending/Staggered: sem ataques
-            let was_dashing = self.sim_time_s < session.dash_until;
+            let was_dashing = dash_prioritario || self.sim_time_s < session.dash_until;
             // Preenchida pelo bloco abaixo quando o auto-ataque dispara.
             let mut attack_aim: Option<Vec2> = None;
             let wants_attack = if session.downed
@@ -8968,18 +8997,9 @@ impl GameWorld {
                 )
             };
 
-            // Dash: tap-button (Space/Shift). Impulso linear na direcao do
-            // movimento atual (ou facing se parado), bloqueia movimento e
-            // da i-frames durante a duracao. Bloqueado enquanto defending
-            // (RMB held) ou em stagger pos-parry.
-            let wants_dash = !session.downed
-                && !in_hurt
-                && !session.defending
-                && !staggered
-                && (frame.buttons & buttons::DASH != 0)
-                && session.dash_cooldown <= 0.0
-                && session.stamina_current >= shared::DASH_STAMINA_COST as f32
-                && session.dash_until <= self.sim_time_s;
+            // Dash prioritario (Ctrl/botao): impulso na direcao de movimento
+            // ou da mira quando parado, com i-frames durante a duracao.
+            let wants_dash = dash_prioritario;
             let dashing = self.sim_time_s < session.dash_until;
             let speed = if dashing {
                 // Player ja esta dashando — mantem direcao/velocidade fixas
@@ -8989,8 +9009,7 @@ impl GameWorld {
                 let dash_dir = if dir.length_squared() > 0.01 {
                     dir.normalize()
                 } else {
-                    // sem input → usa hurt_dir oposto se existe, senao Vec2::Y
-                    Vec2::new(0.0, -1.0) // S como fallback
+                    (frame.aim - aqui).try_normalize().unwrap_or(Vec2::NEG_Y)
                 };
                 session.dash_until = self.sim_time_s + shared::DASH_DURATION;
                 session.dash_dir = dash_dir;
@@ -9006,6 +9025,9 @@ impl GameWorld {
                                              // pra que o "0.2s minimo" seja apos o fim
                 session.stamina_current =
                     (session.stamina_current - shared::DASH_STAMINA_COST as f32).max(0.0);
+                let _ = session.handle.to_client.send(ServerMessage::DashRecarga {
+                    segundos: session.dash_cooldown,
+                });
                 shared::DASH_SPEED
             } else {
                 base_speed
@@ -9130,6 +9152,8 @@ impl GameWorld {
                 .retain(|d| !cancelled_eids.contains(&d.owner_eid));
             self.pending_habilidades
                 .retain(|h| !cancelled_eids.contains(&h.dono));
+            self.pending_melee.retain(|h| !cancelled_eids.contains(&h.attacker_eid));
+            self.pending_shots.retain(|h| !cancelled_eids.contains(&h.owner_id));
             let sids: Vec<_> = self
                 .sessions
                 .iter()
@@ -12213,6 +12237,8 @@ impl GameWorld {
             }
         }
         let now_for_cast = self.sim_time_s;
+        let dash_agora: std::collections::HashSet<EntityId> = self.sessions.values()
+            .filter(|s| s.dash_until > now_for_cast).map(|s| s.entity_id).collect();
         for s in self.sessions.values_mut() {
             if !s.logged_in {
                 continue;
@@ -12487,6 +12513,9 @@ impl GameWorld {
                                 })
                         });
                     let mut flags = 0u8;
+                    if dash_agora.contains(&net.0) {
+                        flags |= shared::ent_flags::DASHING;
+                    }
                     if etag.map_or(false, |t| t.is_boss) {
                         flags |= shared::ent_flags::BOSS;
                     }

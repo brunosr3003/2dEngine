@@ -1510,6 +1510,16 @@ fn desenha_personagem(
         },
     };
     let mut entrada = entrada;
+    let dash = e.morte.is_none() && (e.dash_visual_ate > get_time()
+        || e.state.flags & shared::ent_flags::DASHING != 0);
+    if dash {
+        entrada.combate.golpe = None;
+        entrada.combate.golpe_ant = None;
+        entrada.combate.skill = None;
+        entrada.combate.ferido = None;
+        entrada.combate.coleta = None;
+        entrada.ar = 0.0;
+    }
     // Montado (docs/MONTARIAS.md): o bicho da skin por baixo e o cavaleiro
     // sentado na sela, sem passada propria.
     let montaria = if e.meta.tag == shared::EntityTag::Player
@@ -1588,6 +1598,16 @@ fn desenha_personagem(
         crate::rig::aplica_arqueiro(&mut pose, entrada.combate.golpe.map(|(_, t)| t));
     }
     e.molas.segue(&mut pose, get_frame_time());
+    if dash {
+        crate::rig::aplica_dash(&mut pose);
+        let frente = vec3(sin, 0.0, cos);
+        let lado = vec3(cos, 0.0, -sin);
+        for i in [-1.0, 1.0] {
+            let inicio = p + vec3(0.0, 0.65, 0.0) + lado * (i * 0.28);
+            draw_line_3d(inicio, inicio - frente * 1.1,
+                Color::new(0.55, 0.85, 1.0, 0.45));
+        }
+    }
     let s = if e.morte.is_some() {
         0.0
     } else {

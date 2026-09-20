@@ -393,6 +393,7 @@ pub mod ent_flags {
     /// Montado (docs/MONTARIAS.md). A skin vai no `EntityMeta::kind` do
     /// jogador.
     pub const MONTADO: u8 = 1 << 6;
+    pub const DASHING: u8 = 1 << 7;
 }
 
 /// Precisao da posicao no wire: 1/16 de tile.

@@ -249,6 +249,23 @@ fn pose_no_chao(e: &Entrada) -> Pose {
     Pose::de(rot, subida)
 }
 
+/// Impulso baixo: tronco adiantado, perna dianteira dobrada e bracos para tras.
+/// Sobrepoe a pose de combate para o Dash interromper visualmente o golpe.
+pub fn aplica_dash(p: &mut Pose) {
+    p.rot.fill(Quat::IDENTITY);
+    p.rot[TORSO] = Quat::from_rotation_x(0.65);
+    p.rot[BRACO_D] = Quat::from_rotation_x(-0.65);
+    p.rot[BRACO_E] = Quat::from_rotation_x(-0.50);
+    p.rot[ANTEBRACO_D] = Quat::from_rotation_x(0.45);
+    p.rot[ANTEBRACO_E] = Quat::from_rotation_x(0.55);
+    p.rot[COXA_D] = Quat::from_rotation_x(0.75);
+    p.rot[CANELA_D] = Quat::from_rotation_x(-1.0);
+    p.rot[COXA_E] = Quat::from_rotation_x(-0.55);
+    p.rot[CANELA_E] = Quat::from_rotation_x(-0.25);
+    p.subida = -2.0;
+    p.ferramenta = None;
+}
+
 /// A matriz de mundo de cada peça, pai antes do filho.
 ///
 /// `base` já traz posição e direção da entidade. Cada peça é

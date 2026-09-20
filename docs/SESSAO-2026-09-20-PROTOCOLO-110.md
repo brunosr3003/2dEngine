@@ -83,3 +83,18 @@ refeitos nesta sessão.
   com limite de pilha 99 no banco do realm.
 - É necessário atualizar o cliente para o protocolo 110. Não foi feito reset
   de personagens nesta publicação.
+
+## Correções posteriores — Dash (protocolo 111, ainda não publicado)
+
+- Botão mostra setor de recarga, arco e segundos restantes. A contagem começa
+  quando o servidor aceita o Dash e já inclui a redução por SPD.
+- Dash é processado antes do bloqueio de comandos da skill: interrompe cast,
+  recuperação do ataque, salto, defesa e reação de dano. Continua exigindo
+  vigor e recarga disponível e não permite escapar do estado caído/carregado.
+- Golpes e habilidades ainda pendentes são removidos. Skill cancelada antes
+  do impacto devolve mana e libera sua recarga; efeito já aplicado não é desfeito.
+- Pose baixa de impulso com braços para trás, pernas assimétricas e rastro
+  curto. Estado de Dash replicado para os demais jogadores.
+- Teste de mundo confirmou interrupção de skill antes do impacto, reembolso
+  de mana e ausência de nova cobrança ao apertar Dash durante a recarga.
+- Estas correções são posteriores ao TestFlight 2609201402 descrito acima.

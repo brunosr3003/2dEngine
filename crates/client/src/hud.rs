@@ -389,15 +389,16 @@ pub fn draw_topo(
 
 /// Dash no quarto lugar do arco. E' toque (nao hold): o servidor aplica a
 /// recarga e os i-frames, e SPD reduz o intervalo entre usos.
-pub fn draw_dash(z: &Zonas) -> bool {
+pub fn draw_dash(z: &Zonas, restante: f32, duracao: f32) -> bool {
     let r = z.dash;
     let m = mouse();
     let sobre = r.contains(m);
     let c = r.center();
     let raio = r.w * 0.5;
     let cor = Color::new(0.35, 0.86, 1.0, 1.0);
-    let e = estilo::estado(sobre, is_mouse_button_down(MouseButton::Left), false, false);
-    estilo::botao_redondo(c, raio, cor, e, true);
+    let pronto = restante <= 0.0;
+    let e = estilo::estado(sobre, is_mouse_button_down(MouseButton::Left), !pronto, false);
+    estilo::botao_redondo(c, raio, cor, e, pronto);
     // Duas marcas inclinadas de impulso; desenho proprio pra nao depender de
     // glifo ausente na fonte nem de um asset novo.
     let s = raio * 0.38;
@@ -416,8 +417,16 @@ pub fn draw_dash(z: &Zonas) -> bool {
         );
     }
     estilo::texto_centro_forte(c.x, c.y + raio * 0.70, "DASH", 10, cor);
+    if !pronto {
+        let fracao = (restante / duracao.max(0.01)).clamp(0.0, 1.0);
+        estilo::setor(c, raio - 3.0, fracao, Color::new(0.0, 0.0, 0.0, 0.62));
+        estilo::arco(c, raio - 2.0, -std::f32::consts::FRAC_PI_2, fracao, 2.0, estilo::OURO);
+        let texto = format!("{restante:.1}");
+        estilo::texto_sombra(c.x - estilo::medir_forte(&texto, 22) * 0.5,
+            c.y + 8.0, &texto, 22, WHITE, true);
+    }
     layout::chip(r, "CTRL");
-    sobre && is_mouse_button_pressed(MouseButton::Left)
+    pronto && sobre && is_mouse_button_pressed(MouseButton::Left)
 }
 
 /// O botao de PULO, acima do dash. Devolve `(tocou, segurando)`: o

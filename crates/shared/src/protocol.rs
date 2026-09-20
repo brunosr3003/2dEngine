@@ -1201,6 +1201,8 @@ pub enum ServerMessage {
         ok: bool,
         texto: String,
     },
+    /// Enviado somente quando o servidor aceita o Dash; inclui redução por SPD.
+    DashRecarga { segundos: f32 },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.

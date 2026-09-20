@@ -389,6 +389,7 @@ struct Jogo {
     /// Dash tocado no HUD. Fica memorizado ate o proximo pacote de input para
     /// um toque curto nao se perder entre dois envios de rede.
     dash_toque: bool,
+    dash_recarga: (f64, f32),
     /// Uso de pocao de efeito esperando "tem certeza?" (`confirmar.rs`).
     confirmar: Option<confirmar::Pendente>,
 }
@@ -607,6 +608,7 @@ async fn main() {
         pulo_toque: false,
         pulo_segurando: false,
         dash_toque: false,
+        dash_recarga: (0.0, 0.0),
         confirmar: None,
     };
     // `MMO_HOST` explicito pula a escolha — e' o caminho do run-client.sh e dos
@@ -1339,6 +1341,17 @@ impl Jogo {
             }
             ServerMessage::ManaUpdate { current } => self.ficha.mp = Some(current),
             ServerMessage::StaminaUpdate { current } => self.ficha.vigor = Some(current),
+            ServerMessage::DashRecarga { segundos } => {
+                self.dash_recarga = (get_time() + segundos as f64, segundos);
+                if let Some(e) = self.world.self_id.and_then(|id| self.world.ents.get_mut(&id)) {
+                    e.dash_visual_ate = get_time() + shared::DASH_DURATION as f64;
+                    e.skill = None;
+                    e.combo = None;
+                    e.combo_ant = None;
+                    e.ferido = None;
+                    e.pulo_local = 0.0;
+                }
+            }
             ServerMessage::SkillsConfig { skills } => self.habilidades.catalogo = skills,
             ServerMessage::ProgressoDeSkills { progresso } => {
                 self.ganhos.energia_nova(progresso.energia);
@@ -1424,6 +1437,8 @@ impl Jogo {
                 );
                 if let Some(e) = self.world.ents.get_mut(&caster_eid) {
                     e.skill = None;
+                    e.combo = None;
+                    e.combo_ant = None;
                 }
             }
             // Missoes: a oferta abre a janela do NPC com quem se acabou de
@@ -4404,7 +4419,8 @@ impl Jogo {
             }
         }
         // Dash ocupa o antigo quarto slot do arco; Pulo subiu uma fileira.
-        if hud::draw_dash(&z) {
+        let dash_restante = (self.dash_recarga.0 - get_time()).max(0.0) as f32;
+        if hud::draw_dash(&z, dash_restante, self.dash_recarga.1) {
             self.dash_toque = true;
         }
         // Pulo: sem tecla no celular, o botao e' o unico jeito de pular.
