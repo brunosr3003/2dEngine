@@ -2845,7 +2845,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                 200,
             ),
         ];
-        for sk in shared::pets::SKILLS {
+        for sk in shared::pets::todas_as_skills() {
             consumiveis.push((sk.item_id as i32, format!("Skill: {}", sk.nome), 400));
         }
         for (id, nome, venda) in consumiveis {

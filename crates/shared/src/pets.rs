@@ -144,7 +144,10 @@ pub fn raio_com(grau: u8, d: &crate::items::PetData) -> f32 {
 
 /// Quanto tempo a Ração alimenta este pet, com as skills.
 pub fn duracao_da_racao(d: &crate::items::PetData) -> i64 {
-    if skills_ativas(d).any(|s| s.efeito == Efeito::RacaoDobrada) {
+    if skills_ativas(d)
+        .iter()
+        .any(|s| s.efeito == Efeito::RacaoDobrada)
+    {
         RACAO_SEGUNDOS * 2
     } else {
         RACAO_SEGUNDOS
@@ -258,6 +261,13 @@ pub enum Efeito {
     XpExtra(f32),
     /// Soma pontos de atributo, repartidos pela afinidade da especie.
     PontosExtra(u32),
+    /// Soma pontos num atributo ESCOLHIDO (indice de `stat_idx`). E' como se
+    /// consertar o que a especie nao da': corujinha com VIT, ursinho com DES.
+    PontoEm(usize, u32),
+    /// Soma vida por segundo no regen base do dono.
+    RegenDeVida(f32),
+    /// Soma mana por segundo no regen base do dono.
+    RegenDeMana(f32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -269,7 +279,7 @@ pub struct SkillDePet {
     pub preco_tp: u64,
 }
 
-pub const SKILLS: [SkillDePet; 5] = [
+pub const SKILLS: [SkillDePet; 7] = [
     SkillDePet {
         item_id: item_id::SKILL_PET_FARO,
         nome: "Faro Apurado",
@@ -305,10 +315,61 @@ pub const SKILLS: [SkillDePet; 5] = [
         efeito: Efeito::PontosExtra(3),
         preco_tp: 500,
     },
+    SkillDePet {
+        item_id: item_id::SKILL_PET_REGEN_VIDA,
+        nome: "Sopro Curativo",
+        descricao: "+1,5 de vida por segundo.",
+        efeito: Efeito::RegenDeVida(1.5),
+        preco_tp: 450,
+    },
+    SkillDePet {
+        item_id: item_id::SKILL_PET_REGEN_MANA,
+        nome: "Fonte Interior",
+        descricao: "+2 de mana por segundo.",
+        efeito: Efeito::RegenDeMana(2.0),
+        preco_tp: 450,
+    },
 ];
 
-pub fn skill(item_id: u16) -> Option<&'static SkillDePet> {
-    SKILLS.iter().find(|s| s.item_id == item_id)
+/// Quantos pontos uma skill de atributo da'.
+pub const PONTOS_DA_SKILL_DE_ATRIBUTO: u32 = 4;
+
+/// Nome e sigla de cada atributo, na ordem de `stat_idx`.
+const ATRIBUTOS: [(&str, &str); STAT_COUNT] = [
+    ("Força Emprestada", "FOR"),
+    ("Destreza Emprestada", "DES"),
+    ("Sabedoria Emprestada", "INT"),
+    ("Vitalidade Emprestada", "VIT"),
+    ("Ligeireza Emprestada", "SPD"),
+    ("Resistência Emprestada", "RES"),
+];
+
+/// O catalogo inteiro: as fixas acima e uma por atributo.
+pub fn todas_as_skills() -> Vec<SkillDePet> {
+    let mut v = SKILLS.to_vec();
+    for (i, (nome, sigla)) in ATRIBUTOS.iter().enumerate() {
+        v.push(SkillDePet {
+            item_id: item_id::SKILL_PET_ATRIBUTO[i],
+            nome,
+            // O `descricao` e' `&'static str`: a sigla ja' esta' no nome, e o
+            // numero e' o mesmo pra todas.
+            descricao: match sigla {
+                &"FOR" => "+4 de FOR.",
+                &"DES" => "+4 de DES.",
+                &"INT" => "+4 de INT.",
+                &"VIT" => "+4 de VIT.",
+                &"SPD" => "+4 de SPD.",
+                _ => "+4 de RES.",
+            },
+            efeito: Efeito::PontoEm(i, PONTOS_DA_SKILL_DE_ATRIBUTO),
+            preco_tp: 450,
+        });
+    }
+    v
+}
+
+pub fn skill(item_id: u16) -> Option<SkillDePet> {
+    todas_as_skills().into_iter().find(|s| s.item_id == item_id)
 }
 
 /// O estado do pet, com o default de quem ainda nao tem instancia.
@@ -319,14 +380,35 @@ pub fn dados(inst: Option<&crate::items::ItemInstance>) -> crate::items::PetData
 /// As skills instaladas que o NIVEL de fato libera. Slot travado nao vale:
 /// assim, um pet que perdeu nivel (nao acontece hoje) ou uma instancia
 /// adulterada nao rendem skill de graca.
-pub fn skills_ativas(d: &crate::items::PetData) -> impl Iterator<Item = &'static SkillDePet> {
+pub fn skills_ativas(d: &crate::items::PetData) -> Vec<SkillDePet> {
     let n = slots_de_skill(nivel_de_xp(d.xp));
-    let ids = d.skills;
-    (0..n).filter_map(move |i| ids.get(i).copied().and_then(skill))
+    (0..n)
+        .filter_map(|i| d.skills.get(i).copied().and_then(skill))
+        .collect()
+}
+
+/// Vida por segundo que as skills do pet somam no dono.
+pub fn regen_de_vida(d: &crate::items::PetData) -> f32 {
+    soma_efeito(d, |ef| match ef {
+        Efeito::RegenDeVida(v) => Some(v),
+        _ => None,
+    })
+    .iter()
+    .sum()
+}
+
+/// Mana por segundo que as skills do pet somam no dono.
+pub fn regen_de_mana(d: &crate::items::PetData) -> f32 {
+    soma_efeito(d, |ef| match ef {
+        Efeito::RegenDeMana(v) => Some(v),
+        _ => None,
+    })
+    .iter()
+    .sum()
 }
 
 fn soma_efeito<T: Copy>(d: &crate::items::PetData, f: impl Fn(Efeito) -> Option<T>) -> Vec<T> {
-    skills_ativas(d).filter_map(|s| f(s.efeito)).collect()
+    skills_ativas(d).iter().filter_map(|s| f(s.efeito)).collect()
 }
 
 /// Quantos pontos de atributo o pet do grau `grau` entrega no nivel `nivel`.
@@ -351,6 +433,12 @@ pub fn pontos_por_stat(item_id: u16, d: &crate::items::PetData) -> [u32; STAT_CO
     .iter()
     .sum();
     let total = pontos(grau, nivel_de_xp(d.xp)) + extra;
+    // Os pontos de atributo ESCOLHIDO nao passam pela afinidade: eles vao
+    // direto no stat da skill, somados depois do reparto.
+    let escolhidos = soma_efeito(d, |ef| match ef {
+        Efeito::PontoEm(i, n) => Some((i, n)),
+        _ => None,
+    });
     let mut v = [0u32; STAT_COUNT];
     for (i, &peso) in e.afinidade.iter().enumerate() {
         v[i] = total * peso as u32 / PESO_TOTAL as u32;
@@ -365,6 +453,11 @@ pub fn pontos_por_stat(item_id: u16, d: &crate::items::PetData) -> [u32; STAT_CO
             .max_by_key(|(_, p)| **p)
             .map_or(0, |(i, _)| i);
         v[maior] += total - dado;
+    }
+    for (i, n) in escolhidos {
+        if let Some(x) = v.get_mut(i) {
+            *x += n;
+        }
     }
     v
 }
@@ -568,7 +661,7 @@ mod testes {
             alimentado_ate: 0,
             skills: tres,
         };
-        assert_eq!(skills_ativas(&cru).count(), 0);
+        assert_eq!(skills_ativas(&cru).len(), 0);
         assert_eq!(raio_com(3, &cru), raio_de_busca(3));
         assert_eq!(velocidade_com(3, &cru), velocidade(3));
 
@@ -577,7 +670,7 @@ mod testes {
             xp: xp_para_nivel(10),
             ..cru
         };
-        assert_eq!(skills_ativas(&dez).count(), 1);
+        assert_eq!(skills_ativas(&dez).len(), 1);
         assert_eq!(raio_com(3, &dez), raio_de_busca(3) + 3.0);
         assert_eq!(velocidade_com(3, &dez), velocidade(3));
 
@@ -586,7 +679,7 @@ mod testes {
             xp: xp_para_nivel(NIVEL_MAX),
             ..cru
         };
-        assert_eq!(skills_ativas(&trinta).count(), 3);
+        assert_eq!(skills_ativas(&trinta).len(), 3);
         assert!((velocidade_com(3, &trinta) - (velocidade(3) + 0.2)).abs() < 1e-6);
         assert_eq!(
             pontos_por_stat(item_id::pet_no_grau(item_id::PET_LOBO, 3), &trinta)
@@ -627,15 +720,55 @@ mod testes {
         assert!(fatia_da_xp(&aprendiz) > fatia_da_xp(&d));
     }
 
+    /// Regen e atributo escolhido: os dois somam DIRETO, sem passar pela
+    /// afinidade da especie — e' assim que se conserta o que o bicho nao da'.
+    #[test]
+    fn regen_e_atributo_escolhido_somam_direto() {
+        use crate::items::PetData;
+        let vazio = PetData::default();
+        assert_eq!(regen_de_vida(&vazio), 0.0);
+        assert_eq!(regen_de_mana(&vazio), 0.0);
+
+        let d = PetData {
+            xp: xp_para_nivel(NIVEL_MAX),
+            alimentado_ate: 0,
+            skills: [
+                item_id::SKILL_PET_REGEN_VIDA,
+                item_id::SKILL_PET_REGEN_MANA,
+                // Corujinha e' INT/VIT; esta da' DES, que ela nao tem.
+                item_id::SKILL_PET_ATRIBUTO[stat_idx::DES],
+            ],
+        };
+        assert!(regen_de_vida(&d) > 0.0);
+        assert!(regen_de_mana(&d) > 0.0);
+
+        let coruja = item_id::pet_no_grau(item_id::PET_OWLBEAR, 1);
+        let sem = pontos_por_stat(coruja, &vazio);
+        let com = pontos_por_stat(coruja, &d);
+        assert_eq!(sem[stat_idx::DES], 0, "corujinha nao da' DES sozinha");
+        assert_eq!(com[stat_idx::DES], PONTOS_DA_SKILL_DE_ATRIBUTO);
+        // O resto do reparto so' cresce pelo NIVEL, nao pela skill escolhida.
+        assert_eq!(
+            com[stat_idx::INT],
+            pontos_por_stat(coruja, &PetData { skills: [0; 3], ..d })[stat_idx::INT]
+        );
+    }
+
     #[test]
     fn toda_skill_tem_item_proprio_e_preco() {
         let mut ids = std::collections::HashSet::new();
-        for s in SKILLS {
+        for s in todas_as_skills() {
             assert!(ids.insert(s.item_id), "id repetido em {}", s.nome);
             assert!(item_id::e_skill_de_pet(s.item_id), "{} fora da faixa", s.nome);
             assert!(s.preco_tp > 0);
             assert_eq!(skill(s.item_id).map(|x| x.nome), Some(s.nome));
         }
+        // Uma por atributo, e nenhuma fora da faixa.
+        assert_eq!(
+            todas_as_skills().len(),
+            SKILLS.len() + STAT_COUNT,
+            "cada atributo tem a skill dele"
+        );
         assert!(!item_id::e_skill_de_pet(item_id::PET_ULTIMO));
         assert!(!item_id::e_skill_de_pet(item_id::RACAO_DE_PET));
         assert_eq!(skill(item_id::GOLD), None);

@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 113;
+pub const PROTOCOL_VERSION: u16 = 114;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -626,8 +626,13 @@ pub mod item_id {
     pub const SKILL_PET_ESTOMAGO: u16 = 447;
     pub const SKILL_PET_APRENDIZ: u16 = 448;
     pub const SKILL_PET_VIGOR: u16 = 449;
+    /// Regeneracao: vida e mana por segundo.
+    pub const SKILL_PET_REGEN_VIDA: u16 = 450;
+    pub const SKILL_PET_REGEN_MANA: u16 = 451;
+    /// Uma por atributo, na ordem de `stat_idx`: FOR, DES, INT, VIT, SPD, RES.
+    pub const SKILL_PET_ATRIBUTO: [u16; super::STAT_COUNT] = [452, 453, 454, 455, 456, 457];
     pub const SKILL_PET_PRIMEIRA: u16 = SKILL_PET_FARO;
-    pub const SKILL_PET_ULTIMA: u16 = SKILL_PET_VIGOR;
+    pub const SKILL_PET_ULTIMA: u16 = 457;
 
     /// E' uma skill de pet?
     pub const fn e_skill_de_pet(id: u16) -> bool {

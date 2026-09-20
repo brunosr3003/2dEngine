@@ -294,6 +294,7 @@ impl FichaUi {
                 ("Crítico", format!("{:.1}%", s.crit_chance * 100.0)),
                 ("Vel. ataque", format!("{:.2}x", s.attack_speed_mult)),
                 ("Reg. vida", format!("{:.1}/s", s.hp_regen)),
+                ("Reg. mana", format!("{:.1}/s", s.mp_regen)),
                 ("Vigor máx.", s.stamina_max.to_string()),
                 ("Reg. vigor", format!("{:.1}/s", s.stamina_regen)),
                 ("Bloqueio", format!("{:.0}%", s.block_dmg_reduction * 100.0)),

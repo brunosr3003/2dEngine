@@ -342,7 +342,7 @@ const FIXOS: [ItemDePet; 2] = [
 /// A lista inteira: os dois fixos e uma linha por skill, com id seguindo.
 pub fn itens_de_pet() -> Vec<ItemDePet> {
     let mut v = FIXOS.to_vec();
-    for (i, sk) in crate::pets::SKILLS.iter().enumerate() {
+    for (i, sk) in crate::pets::todas_as_skills().iter().enumerate() {
         v.push(ItemDePet {
             id: FIXOS.len() as u16 + 1 + i as u16,
             item_id: sk.item_id,

@@ -80,6 +80,7 @@ pub const fn base_player_stats() -> PlayerStats {
         speed_mult: 1.0,
         crit_chance: 0.0,
         hp_regen: 0.5, // regen base de fora-de-combate
+        mp_regen: crate::constants::MP_REGEN_PER_SEC,
         attack_speed_mult: 1.0,
         stamina_max: 100,
         stamina_regen: 15.0,
@@ -114,6 +115,11 @@ pub struct PlayerStats {
     /// HP regenerado por segundo. VIT soma `HP_REGEN_PER_VIT` por ponto.
     #[serde(default)]
     pub hp_regen: f32,
+    /// MP regenerado por segundo. Era a constante `MP_REGEN_PER_SEC` fixa;
+    /// virou stat pra skill de pet poder somar (docs/PETS.md). Ficha antiga
+    /// no banco le' o valor base.
+    #[serde(default = "default_mp_regen")]
+    pub mp_regen: f32,
     /// Multiplicador de velocidade de ataque (1.0 = base). DES soma
     /// `ATTACK_SPEED_PCT_PER_DES` por ponto. Aplicado dividindo o cooldown.
     #[serde(default = "default_speed_mult")]
@@ -168,6 +174,10 @@ fn default_one() -> f32 {
 fn default_stamina_max() -> i32 {
     100
 }
+fn default_mp_regen() -> f32 {
+    crate::constants::MP_REGEN_PER_SEC
+}
+
 fn default_stamina_regen() -> f32 {
     15.0
 }

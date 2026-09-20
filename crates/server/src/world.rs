@@ -8615,11 +8615,12 @@ impl GameWorld {
                 session.dash_cooldown -= dt;
             }
 
-            // Regen de MP (continua mesmo sem input pendente).
+            // Regen de MP (continua mesmo sem input pendente). Sai do STAT,
+            // nao da constante: skill de pet soma nele (docs/PETS.md).
             let mp_max = session.stats.mp_max as f32;
             if session.mp_current < mp_max {
                 session.mp_current =
-                    (session.mp_current + shared::MP_REGEN_PER_SEC * dt).min(mp_max);
+                    (session.mp_current + session.stats.mp_regen * dt).min(mp_max);
             }
 
             // Regen de HP (escalado por VIT via stats.hp_regen). Roda no
@@ -19663,6 +19664,9 @@ pub(crate) fn effective_stats(
         for (i, p) in shared::pets::pontos_por_stat(pet, &d).iter().enumerate() {
             allocated[i] = allocated[i].saturating_add(*p);
         }
+        // Regen nao passa por ponto alocado: e' soma direta no stat.
+        s.hp_regen += shared::pets::regen_de_vida(&d);
+        s.mp_regen += shared::pets::regen_de_mana(&d);
     }
     let allocated = &allocated;
 

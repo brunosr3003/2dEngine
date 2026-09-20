@@ -82,9 +82,10 @@ Os slots de skill abrem com o nível: **o primeiro no 10, o segundo no 20 e o
 terceiro no 30**, que é o teto. Slot travado não conta: uma skill guardada num
 slot que o nível ainda não abriu simplesmente não vale.
 
-### As cinco skills
+### As onze skills
 
-Nada de combate — o pet não luta. Toda skill mexe no que ele já faz:
+Nada de combate — o pet não luta. Toda skill mexe no que ele já faz, no que o
+dono regenera, ou num atributo:
 
 | skill | o que faz | preço |
 |---|---|---:|
@@ -92,10 +93,21 @@ Nada de combate — o pet não luta. Toda skill mexe no que ele já faz:
 | Passo Leve | +20% de velocidade | 300 TP |
 | Estômago Fundo | a Ração dura o dobro | 250 TP |
 | Aprendiz | +50% da experiência que o pet recebe | 400 TP |
-| Vigor Emprestado | +3 pontos de atributo, na afinidade da espécie | 500 TP |
+| Vigor Emprestado | +3 pontos, na afinidade da espécie | 500 TP |
+| Sopro Curativo | +1,5 de vida por segundo | 450 TP |
+| Fonte Interior | +2 de mana por segundo | 450 TP |
+| *Emprestada* (uma por atributo) | +4 de FOR, DES, INT, VIT, SPD ou RES | 450 TP |
 
-São três slots para cinco skills: a escolha é real. O **Removedor de Skill**
-(200 TP) limpa todos os slots de uma vez.
+As seis de atributo somam **direto no stat escolhido**, fora da afinidade da
+espécie — é assim que se conserta o que o bicho não dá: uma Corujinha-urso
+(INT/VIT) com Destreza Emprestada passa a dar DES, que ela não tem sozinha.
+
+O regen de mana era uma constante fixa (`MP_REGEN_PER_SEC`); virou **stat**
+(`PlayerStats::mp_regen`) pra Fonte Interior poder somar nele. A Ficha mostra
+os dois regens agora.
+
+São três slots para onze skills: a escolha é bem real. O **Removedor de
+Skill** (200 TP) limpa todos os slots de uma vez.
 
 Ração, skills e Removedor são itens de loja **negociáveis**: quem farma compra
 no mercado por gold, do mesmo jeito que compra TP.

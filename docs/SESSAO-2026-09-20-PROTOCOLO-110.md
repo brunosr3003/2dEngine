@@ -274,3 +274,18 @@ refeitos nesta sessão.
   `/tmp/tempest-loja-petsaba/`.
 - **Não exercitado**: ninguém alimentou nem subiu um pet num cliente de
   verdade. O que rodou foram os testes de mundo e as prévias.
+
+## Skills de regeneração e de atributo (protocolo 114)
+
+- Seis skills novas de pet, uma por atributo (+4 de FOR, DES, INT, VIT, SPD ou
+  RES), que somam DIRETO no stat escolhido, fora da afinidade da espécie.
+- Duas de regeneração: Sopro Curativo (+1,5 de vida/s) e Fonte Interior
+  (+2 de mana/s).
+- O regen de mana era a constante `MP_REGEN_PER_SEC` no tick; virou o stat
+  `PlayerStats::mp_regen`, com o valor antigo como padrão. Ficha salva no banco
+  sem o campo lê o valor base. A Ficha do personagem passou a mostrar os dois
+  regens.
+- A aba Pets da loja virou grade 5x3 (treze consumíveis) com cartão compacto;
+  o pergaminho voltou para Materiais, que ficou com três cartões.
+- Protocolo 114: `PlayerStats` ganhou campo.
+- Prévia conferida em `/tmp/tempest-loja-skills/2532x1170-5-pets.png`.

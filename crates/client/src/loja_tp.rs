@@ -1307,9 +1307,17 @@ impl LojaTp {
     fn materiais(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
         let bau = &cat::BAUS_CRAFT[0];
         let vao = 12.0 * k;
-        let w = ((area.w - vao) / 2.0).min(390.0 * k);
-        let total = w * 2.0 + vao;
+        let w = ((area.w - vao * 2.0) / 3.0).min(390.0 * k);
+        let total = w * 3.0 + vao * 2.0;
         let x0 = area.center().x - total * 0.5;
+        self.pergaminho_de_pet(
+            Rect::new(x0 + (w + vao) * 2.0, area.y + 8.0 * k, w, area.h - 16.0 * k),
+            k,
+            m,
+            livre,
+            modal,
+            agora,
+        );
         let r = Rect::new(x0, area.y + 8.0 * k, w, area.h - 16.0 * k);
         let sobre = !modal && r.contains(m);
         estilo::sombra(r, 22.0 * k, 1.0);
@@ -1467,74 +1475,87 @@ impl LojaTp {
         }
     }
 
-    /// Aba Pets: o pergaminho de invocação num cartao grande e, ao lado, a
-    /// Ração, o Removedor e as cinco skills em lista. Tudo negociavel — quem
-    /// farma compra no mercado por gold (docs/PETS.md).
+    /// Aba Pets: os consumiveis do pet numa grade. Sao treze (Ração,
+    /// Removedor e onze skills), entao o cartao aqui e' COMPACTO — icone em
+    /// cima, nome e preco embaixo, e o cartao inteiro e' o botao. O cartao de
+    /// lista, com descricao ao lado, nao caberia em cinco colunas.
     fn aba_pets(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
-        let vao = 12.0 * k;
-        let w = ((area.w - vao * 3.0) / 4.0).min(390.0 * k);
-        let total = w * 4.0 + vao * 3.0;
-        let x0 = area.center().x - total * 0.5;
-        let alto = area.h - 16.0 * k;
-        self.pergaminho_de_pet(
-            Rect::new(x0, area.y + 8.0 * k, w, alto),
-            k,
-            m,
-            livre,
-            modal,
-            agora,
-        );
-        // Tres colunas de tres linhas cobrem os sete consumiveis com folga.
         let itens = cat::itens_de_pet();
-        let linhas = 3.0;
-        let h = (alto - vao * (linhas - 1.0)) / linhas;
+        let colunas = 5usize;
+        let linhas = itens.len().div_ceil(colunas).max(1);
+        let vao = 12.0 * k;
+        let w = ((area.w - vao * (colunas as f32 - 1.0)) / colunas as f32).min(300.0 * k);
+        let h = (area.h - 16.0 * k - vao * (linhas as f32 - 1.0)) / linhas as f32;
+        let total = w * colunas as f32 + vao * (colunas as f32 - 1.0);
+        let x0 = area.center().x - total * 0.5;
         for (n, item) in itens.iter().enumerate() {
-            let col = n / linhas as usize;
-            let lin = n % linhas as usize;
             let r = Rect::new(
-                x0 + (w + vao) * (col as f32 + 1.0),
-                area.y + 8.0 * k + lin as f32 * (h + vao),
+                x0 + (n % colunas) as f32 * (w + vao),
+                area.y + 8.0 * k + (n / colunas) as f32 * (h + vao),
                 w,
                 h,
             );
+            let sobre = !modal && r.contains(m);
             let racao = item.item_id == shared::item_id::RACAO_DE_PET;
-            self.cartao_de_lista(
+            let remove = item.item_id == shared::item_id::REMOVEDOR_DE_SKILL_PET;
+            estilo::sombra(r, 18.0 * k, 1.0);
+            estilo::ret_gradiente(
                 r,
-                k,
-                m,
-                livre,
-                modal,
-                agora,
+                18.0 * k,
                 if racao {
-                    (
-                        Color::new(0.30, 0.22, 0.10, 0.98),
-                        Color::new(0.09, 0.06, 0.04, 0.98),
-                    )
+                    Color::new(0.30, 0.22, 0.10, 0.98)
+                } else if remove {
+                    Color::new(0.32, 0.13, 0.14, 0.98)
                 } else {
-                    (
-                        Color::new(0.14, 0.20, 0.34, 0.98),
-                        Color::new(0.045, 0.055, 0.13, 0.98),
-                    )
+                    Color::new(0.14, 0.20, 0.34, 0.98)
                 },
-                item.nome,
-                item.descricao,
-                None,
-                item.preco_tp,
-                Produto::ItemDePet(item.id),
-                |c, lado| {
-                    crate::bolsa::icone_do_item(
-                        Rect::new(c.x - lado * 0.5, c.y - lado * 0.5, lado, lado),
-                        item.item_id,
-                        1.0,
-                    );
-                },
+                Color::new(0.045, 0.055, 0.13, 0.98),
             );
+            estilo::borda_arredondada(
+                r,
+                18.0 * k,
+                1.5 * k.max(0.8),
+                estilo::alfa(if sobre { OURO_CLARO } else { LILAS }, 0.5),
+            );
+            let lado = (r.h * 0.38).min(74.0 * k);
+            let ic = vec2(r.center().x, r.y + r.h * 0.30);
+            brilho_radial(ic, lado * 0.7, OURO_CLARO, 0.18);
+            crate::bolsa::icone_do_item(
+                Rect::new(ic.x - lado * 0.5, ic.y - lado * 0.5, lado, lado),
+                item.item_id,
+                1.0,
+            );
+            estilo::texto_centro_forte(
+                r.center().x,
+                r.y + r.h * 0.58,
+                item.nome,
+                ts(15.0, k),
+                estilo::TEXTO,
+            );
+            estilo::texto_ajustado(
+                item.descricao,
+                r.x + 10.0 * k,
+                r.y + r.h * 0.70,
+                r.w - 20.0 * k,
+                ts(12.0, k),
+                estilo::alfa(LILAS, 0.95),
+            );
+            let preco = milhar(item.preco_tp);
+            estilo::valor_tp(
+                r.center().x - estilo::largura_tp_texto(&preco, ts(17.0, k), true) * 0.5,
+                r.y + r.h - 16.0 * k,
+                item.preco_tp,
+                ts(17.0, k),
+                OURO_CLARO,
+            );
+            if !self.em_voo && livre && sobre {
+                self.confirma = Some(Confirma::Item(Produto::ItemDePet(item.id)));
+            }
         }
     }
 
     /// Aba Moedas: o que se compra direto e cai na hora — sacos de moeda e
-    /// pacotes de Energia. Ficavam na aba Materiais; com o terceiro
-    /// pergaminho, cinco colunas espremiam os cartoes e o texto sumia.
+    /// pacotes de Energia.
     fn moedas_e_energia(
         &mut self,
         area: Rect,
