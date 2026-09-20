@@ -4320,7 +4320,11 @@ mod testes {
         );
         for montado in [false, true] {
             let vel =
-                crate::loja::velocidade_de_andar(crate::constants::PLAYER_SPEED, montado, 1.0);
+                crate::loja::velocidade_de_andar(
+                    crate::constants::PLAYER_SPEED,
+                    montado.then_some(crate::loja::VEL_MONTADO),
+                    1.0,
+                );
             let dt = 1.0f32 / 30.0;
             let mut seg = SeguidorDeRota::nova(Vec::new(), para);
             let mut p = de;

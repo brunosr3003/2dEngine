@@ -16,6 +16,7 @@ mod avisos;
 mod banco_ui;
 mod bicho;
 mod bolsa;
+mod colecao;
 mod craft_ui;
 mod dungeon_ui;
 mod efeitos;
@@ -4936,10 +4937,15 @@ impl Jogo {
             self.envia(pedido);
         }
         let equip = self.bolsa.equip;
-        match self
+        let slots = std::mem::take(&mut self.bolsa.slots);
+        let (acao, msg) = self
             .montarias
-            .desenha(&self.vox, &self.solido, &equip)
-        {
+            .desenha(&self.vox, &self.solido, &equip, &slots);
+        self.bolsa.slots = slots;
+        if let Some(msg) = msg {
+            self.envia(msg);
+        }
+        match acao {
             Some(montarias_ui::Acao::AbrirLoja) => {
                 self.montarias.fechar();
                 for pedido in self.loja_tp.abrir() {

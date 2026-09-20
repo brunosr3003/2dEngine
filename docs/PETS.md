@@ -198,3 +198,26 @@ Anotado aqui para a documentação não passar a mentir:
 - **Prazo de validade do saque.** O drop ainda não despawna: a janela de
   prioridade fecha em 2 s, mas o saquinho fica no chão para sempre. Com muito
   jogador, isso é entidade acumulando no mapa.
+
+## A faixa "meus pets"
+
+O painel lista **tudo o que está na bolsa**, não só o equipado: cada pet numa
+célula com a cor do grau, e de lá se **equipa** e se **combina**. A montaria
+tem a mesma faixa, pelo mesmo código (`client/colecao.rs`) — mudar a regra num
+painel mudava no outro e o outro ficava para trás.
+
+Equipar é `UseItem` no slot, o mesmo caminho da bolsa. Combinar é `Combinar`,
+o mesmo da aba Combinar do Craft. Nada aqui é caminho novo de servidor.
+
+O botão de combinar só acende com as três na mão. O servidor recusaria sem
+cobrar nada, mas prometer o que não dá é pior que não oferecer.
+
+## Teleporte e dungeon
+
+O pet **reaparece do lado do dono** quando a distância passa de
+`TELEPORTE` (40 tiles): ninguém anda isso num quadro, então foi portal,
+viagem ou pergaminho. Voltar andando fazia o bicho atravessar o mapa a pé e
+sumir da tela no caminho.
+
+Entrar em dungeon muda a instância, e o pet **renasce lá dentro**. Antes ele
+ficava na instância velha — invisível para o dono e sem enxergar saque nenhum.

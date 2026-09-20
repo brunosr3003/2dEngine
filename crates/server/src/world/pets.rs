@@ -48,21 +48,24 @@ impl GameWorld {
             })
             .collect();
 
-        // O que existe hoje.
-        let existe: Vec<(Entity, EntityId, SessionId, u16)> = self
+        // O que existe hoje, e em que instancia ele nasceu.
+        let existe: Vec<(Entity, EntityId, SessionId, u16, u32)> = self
             .ecs
-            .query::<(&NetId, &PetTag)>()
+            .query::<(&NetId, &PetTag, Option<&dungeon::Instancia>)>()
             .iter()
-            .map(|(e, (net, p))| (e, net.0, p.dono, p.item_id))
+            .map(|(e, (net, p, i))| (e, net.0, p.dono, p.item_id, i.map_or(0, |i| i.0)))
             .collect();
 
         for (sid, quer, instancia) in desejado {
-            let atual = existe.iter().find(|(_, _, d, _)| *d == sid);
+            let atual = existe.iter().find(|(_, _, d, _, _)| *d == sid);
             match (quer, atual) {
-                (Some(id), Some((_, _, _, tem))) if *tem == id => {}
+                // Trocou de instancia (entrou ou saiu de dungeon): o pet
+                // renasce la' dentro. Sem isto ele ficava na instancia velha,
+                // invisivel pro dono e sem enxergar saque nenhum.
+                (Some(id), Some((_, _, _, tem, inst))) if *tem == id && *inst == instancia => {}
                 (None, None) => {}
                 _ => {
-                    if let Some((e, eid, _, _)) = atual {
+                    if let Some((e, eid, _, _, _)) = atual {
                         let _ = self.ecs.despawn(*e);
                         self.removed_this_tick.push(*eid);
                     }
@@ -220,8 +223,13 @@ impl GameWorld {
                 .and_then(|id| saques.iter().find(|(_, s, _, _, _)| *s == id))
                 .map(|(_, _, spos, _, _)| *spos);
 
-            // Longe demais do dono: larga tudo e volta.
-            let fora_da_coleira = pos.0.distance(dono_pos) > shared::pets::COLEIRA;
+            // Longe demais do dono: larga tudo. E se estiver MUITO longe, o
+            // dono teleportou (portal, viagem, pergaminho) — andar de volta
+            // levaria o bicho atravessando o mapa, entao ele reaparece do
+            // lado. A coleira comum continua sendo caminhada.
+            let distancia = pos.0.distance(dono_pos);
+            let fora_da_coleira = distancia > shared::pets::COLEIRA;
+            let teleportou = distancia > shared::pets::TELEPORTE;
             let (alvo, destino) = if fora_da_coleira {
                 (None, None)
             } else {
@@ -243,7 +251,9 @@ impl GameWorld {
 
             let delta = mira - pos.0;
             let passo = velocidade * dt;
-            let (nova_pos, vel) = if delta.length() <= passo {
+            let (nova_pos, vel) = if teleportou {
+                (dono_pos, Vec2::ZERO)
+            } else if delta.length() <= passo {
                 (mira, Vec2::ZERO)
             } else {
                 let dir = delta.normalize_or_zero();
@@ -556,6 +566,127 @@ mod testes {
             .unwrap();
         w.handle_item_de_pet(sid, slot, shared::item_id::REMOVEDOR_DE_SKILL_PET);
         assert_eq!(pet_data(&w, sid).skills, [0; 3]);
+    }
+
+    /// Teleporte (portal, viagem, pergaminho): o pet reaparece do lado do
+    /// dono. Antes ele voltava ANDANDO — atravessava o mapa inteiro a pe' e
+    /// sumia da tela no caminho.
+    #[test]
+    fn o_pet_reaparece_quando_o_dono_teleporta() {
+        let (mut w, sid) = mundo();
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 1);
+        w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
+        w.sincroniza_pets();
+        let (_, antes) = pet_de(&w).expect("nasceu");
+        assert!(antes.distance(Vec2::ZERO) < 1.0);
+
+        // O dono some pro outro lado do mapa.
+        let longe = Vec2::new(300.0, -180.0);
+        let e = w.sessions[&sid].entity.unwrap();
+        if let Ok(mut pos) = w.ecs.get::<&mut Position>(e) {
+            pos.0 = longe;
+        }
+        w.tick_pets(1.0 / 30.0);
+        let (_, depois) = pet_de(&w).expect("continua no mundo");
+        assert!(
+            depois.distance(longe) < 0.01,
+            "o pet tinha que aparecer do lado do dono, e esta' em {depois:?}"
+        );
+
+        // Um passo normal continua sendo caminhada, nao teletransporte.
+        if let Ok(mut pos) = w.ecs.get::<&mut Position>(e) {
+            pos.0 = longe + Vec2::new(6.0, 0.0);
+        }
+        w.tick_pets(1.0 / 30.0);
+        let (_, andando) = pet_de(&w).expect("continua no mundo");
+        assert!(
+            andando.distance(longe + Vec2::new(6.0, 0.0)) > 1.0,
+            "6 tiles se anda, nao se teleporta"
+        );
+    }
+
+    /// Entrar em dungeon muda a instancia: o pet tem que renascer lá dentro,
+    /// senao ele fica na instancia velha — invisivel e sem ver saque.
+    #[test]
+    fn o_pet_segue_o_dono_pra_dungeon() {
+        let (mut w, sid) = mundo();
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_URSO, 2);
+        w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
+        w.sincroniza_pets();
+        let inst_do_pet = |w: &GameWorld| {
+            w.ecs
+                .query::<(&PetTag, Option<&dungeon::Instancia>)>()
+                .iter()
+                .map(|(_, (_, i))| i.map_or(0, |i| i.0))
+                .next()
+        };
+        assert_eq!(inst_do_pet(&w), Some(0), "nasceu no mundo aberto");
+
+        w.sessions.get_mut(&sid).unwrap().instancia = 7;
+        w.sincroniza_pets();
+        assert_eq!(inst_do_pet(&w), Some(7), "seguiu pra dungeon");
+        assert_eq!(w.ecs.query::<&PetTag>().iter().count(), 1, "nao duplicou");
+
+        w.sessions.get_mut(&sid).unwrap().instancia = 0;
+        w.sincroniza_pets();
+        assert_eq!(inst_do_pet(&w), Some(0), "voltou com o dono");
+    }
+
+    /// Equipar montaria tem que aparecer PRA TODO MUNDO. Antes so' o login e
+    /// a troca de preferencia atualizavam a montaria vista, entao quem
+    /// equipava montava sem bicho nenhum embaixo: andava mais rapido e
+    /// continuava a pe' na tela.
+    #[test]
+    fn equipar_montaria_atualiza_o_que_os_outros_veem() {
+        let (mut w, sid) = mundo();
+        assert_eq!(w.sessions[&sid].montaria_vista, None);
+
+        let id = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_TIGRE, 3);
+        w.sessions.get_mut(&sid).unwrap().equipment.montaria = Some(id);
+        w.sincroniza_montarias();
+        assert_eq!(
+            w.sessions[&sid].montaria_vista,
+            Some(id),
+            "equipou: os outros tem que ver a montaria"
+        );
+
+        // Desequipar no meio da montada derruba quem estava montado.
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.montado = true;
+            s.equipment.montaria = None;
+        }
+        w.sincroniza_montarias();
+        assert_eq!(w.sessions[&sid].montaria_vista, None);
+        assert!(
+            !w.sessions[&sid].montado,
+            "sem montaria equipada ninguem fica montado no ar"
+        );
+    }
+
+    /// A cor da montaria e' que manda na velocidade de quem monta.
+    #[test]
+    fn a_cor_da_montaria_muda_a_velocidade() {
+        let cinza = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_LOBO, 1);
+        let laranja = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_LOBO, 5);
+        let vel = |id| {
+            shared::loja::velocidade_de_andar(
+                shared::PLAYER_SPEED,
+                shared::loja::mult_de_montaria(true, Some(id)),
+                1.0,
+            )
+        };
+        assert!(vel(laranja) > vel(cinza));
+        assert_eq!(vel(cinza), shared::PLAYER_SPEED * shared::loja::VEL_MONTADO);
+        // A pe' nenhuma cor acelera.
+        assert_eq!(
+            shared::loja::velocidade_de_andar(
+                shared::PLAYER_SPEED,
+                shared::loja::mult_de_montaria(false, Some(laranja)),
+                1.0
+            ),
+            shared::PLAYER_SPEED
+        );
     }
 
     /// A regra crua da janela, nas bordas. Vale pro pickup por proximidade e

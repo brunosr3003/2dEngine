@@ -18,6 +18,8 @@ pub struct PetsUi {
     pub aberta: bool,
     /// Gira o modelo no palco.
     giro: f32,
+    /// A faixa "meus pets": escolher, equipar, combinar.
+    colecao: crate::colecao::Colecao,
 }
 
 const SIGLAS: [&str; shared::STAT_COUNT] = ["FOR", "DES", "INT", "VIT", "SPD", "RES"];
@@ -44,7 +46,7 @@ impl PetsUi {
         if !self.aberta {
             return None;
         }
-        let escala = estilo::escala_do_painel(860.0, 540.0);
+        let escala = estilo::escala_do_painel(860.0, 604.0);
         estilo::no_painel(escala, || {
             self.na_escala(vox, solido, equip, bolsa, agora_unix)
         })
@@ -61,7 +63,7 @@ impl PetsUi {
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
         let w = (860.0 * f).min(seguro.w - 16.0);
-        let h = (540.0 * f).min(seguro.h - 16.0);
+        let h = (604.0 * f).min(seguro.h - 16.0);
         let p = Rect::new(
             seguro.center().x - w * 0.5,
             seguro.center().y - h * 0.5,
@@ -81,6 +83,7 @@ impl PetsUi {
             return None;
         }
 
+        let mut pedido: Option<ClientMessage> = None;
         let Some(pet) = equip.pet.filter(|id| shared::pets::de_item(*id).is_some()) else {
             estilo::texto_ajustado(
                 "Nenhum pet equipado. Equipe um no slot Pet da bolsa — ele nasce no mundo e busca o saque do chão pra você.",
@@ -98,7 +101,7 @@ impl PetsUi {
         let cor = cor_do_grau(grau);
 
         // ── palco 3D, à esquerda ──
-        let palco = Rect::new(p.x + 18.0 * f, p.y + 60.0 * f, 300.0 * f, 300.0 * f);
+        let palco = Rect::new(p.x + 18.0 * f, p.y + 60.0 * f, 250.0 * f, 250.0 * f);
         estilo::cartao(palco, false, false);
         self.giro += get_frame_time().min(0.1) * 0.6;
         crate::render3d::vitrine_pet(vox, pet, palco, self.giro, solido);
@@ -111,7 +114,7 @@ impl PetsUi {
         );
 
         // ── nível e experiência ──
-        let dir = Rect::new(p.x + 334.0 * f, p.y + 60.0 * f, p.w - 352.0 * f, 300.0 * f);
+        let dir = Rect::new(p.x + 284.0 * f, p.y + 60.0 * f, p.w - 302.0 * f, 250.0 * f);
         estilo::cartao(dir, false, false);
         let mut y = dir.y + 30.0 * f;
         estilo::texto_forte(
@@ -187,7 +190,6 @@ impl PetsUi {
             estilo::estado_de(alimentar, racoes == 0, false),
             racoes > 0,
         );
-        let mut pedido = None;
         if clique && racoes > 0 && alimentar.contains(mouse) {
             if let Some(i) = bolsa
                 .iter()
@@ -231,8 +233,23 @@ impl PetsUi {
             estilo::OURO,
         );
 
+        // ── meus pets: tudo o que esta' na bolsa ──
+        let faixa = Rect::new(p.x + 18.0 * f, p.y + 318.0 * f, p.w - 36.0 * f, 152.0 * f);
+        if let Some(msg) = self.colecao.desenha(
+            faixa,
+            f,
+            "MEUS PETS",
+            bolsa,
+            equip.pet,
+            &|id| shared::pets::de_item(id).is_some(),
+            &|id| shared::pets::nome_do_item(id).unwrap_or_default(),
+            Some((vox, solido)),
+        ) {
+            pedido = Some(msg);
+        }
+
         // ── slots de skill ──
-        let baixo = Rect::new(p.x + 18.0 * f, p.y + 372.0 * f, p.w - 36.0 * f, 148.0 * f);
+        let baixo = Rect::new(p.x + 18.0 * f, p.y + 478.0 * f, p.w - 36.0 * f, 112.0 * f);
         estilo::cartao(baixo, false, false);
         estilo::texto_forte(
             baixo.x + 14.0 * f,
@@ -253,9 +270,9 @@ impl PetsUi {
         for i in 0..3 {
             let r = Rect::new(
                 baixo.x + 14.0 * f + i as f32 * (sw + 10.0 * f),
-                baixo.y + 40.0 * f,
+                baixo.y + 36.0 * f,
                 sw,
-                92.0 * f,
+                66.0 * f,
             );
             let aberto = i < abertos;
             estilo::cartao(r, false, false);
@@ -345,11 +362,20 @@ pub async fn previa(vox: &VoxCache, solido: &Material) {
         ],
     });
     equip.set(shared::EquipSlot::Pet, Some(pet), Some(inst));
-    let bolsa = vec![InventorySlot {
-        item_id: shared::item_id::RACAO_DE_PET,
-        qty: 7,
+    let item = |id, qty| InventorySlot {
+        item_id: id,
+        qty,
         instance: None,
-    }];
+    };
+    let bolsa = vec![
+        item(shared::item_id::RACAO_DE_PET, 7),
+        item(shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 2), 3),
+        item(shared::item_id::pet_no_grau(shared::item_id::PET_URSO, 1), 1),
+        item(
+            shared::item_id::pet_no_grau(shared::item_id::PET_CARANGUEJO, 3),
+            1,
+        ),
+    ];
     for _ in 0..3 {
         crate::render3d::camera_padrao();
         clear_background(Color::new(0.08, 0.12, 0.16, 1.0));

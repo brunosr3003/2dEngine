@@ -269,7 +269,11 @@ fn simula(args: &[String]) {
     let ilha = Ilha::gerar(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
     for montado in [false, true] {
         let dt = 1.0f32 / 30.0;
-        let vel = shared::loja::velocidade_de_andar(shared::PLAYER_SPEED, montado, 1.0);
+        let vel = shared::loja::velocidade_de_andar(
+            shared::PLAYER_SPEED,
+            montado.then_some(shared::loja::VEL_MONTADO),
+            1.0,
+        );
         let r = shared::ENTITY_RADIUS;
         let mut seg = SeguidorDeRota::nova(Vec::new(), para);
         let mut p = de;

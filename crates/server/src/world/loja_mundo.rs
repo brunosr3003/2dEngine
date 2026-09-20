@@ -370,6 +370,21 @@ impl GameWorld {
 
     /// A skin que os outros veem (`EntityMeta::kind` do jogador). Mudou: a
     /// meta vai de novo pra todo mundo que ja' conhecia a entidade.
+    /// Passa em todo mundo logado e acerta a montaria vista. Roda no tick,
+    /// pelo mesmo motivo do `sincroniza_pets`: equipar tem caminho demais pra
+    /// pendurar gancho em cada um.
+    pub(super) fn sincroniza_montarias(&mut self) {
+        let sids: Vec<SessionId> = self
+            .sessions
+            .values()
+            .filter(|s| s.logged_in)
+            .map(|s| s.handle.id)
+            .collect();
+        for sid in sids {
+            self.atualizar_montaria_vista(sid);
+        }
+    }
+
     /// A montaria que os outros veem e' a EQUIPADA (docs/MONTARIAS.md). Sem
     /// montaria equipada ninguem fica montado no ar.
     pub(super) fn atualizar_montaria_vista(&mut self, sid: SessionId) {

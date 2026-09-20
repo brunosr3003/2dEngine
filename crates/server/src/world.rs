@@ -8894,7 +8894,10 @@ impl GameWorld {
                     // `terreno --simula`: a pe' chegava, montado nunca).
                     let velocidade = shared::loja::velocidade_de_andar(
                         shared::PLAYER_SPEED * session.stats.speed_mult.max(0.1),
-                        session.montado,
+                        shared::loja::mult_de_montaria(
+                            session.montado,
+                            session.equipment.montaria,
+                        ),
                         1.0,
                     );
                     let passo = dir.normalize_or_zero() * velocidade;
@@ -9147,7 +9150,7 @@ impl GameWorld {
                 // Montado: so' mobilidade (docs/MONTARIAS.md), sem sprint por cima.
                 shared::loja::velocidade_de_andar(
                     PLAYER_SPEED * spd_scale,
-                    session.montado,
+                    shared::loja::mult_de_montaria(session.montado, session.equipment.montaria),
                     sprint_mult,
                 )
             };
@@ -12123,6 +12126,11 @@ impl GameWorld {
         // passar por cima.
         self.sincroniza_pets();
         self.tick_pets(dt);
+        // A montaria VISTA sai do equipamento, e equipar acontece por muitos
+        // caminhos (bolsa, saque que auto-equipa, correio, mercado). Conferir
+        // no tick cobre todos: sem isto, equipar nao avisava ninguem e o
+        // jogador montava sem bicho nenhum embaixo.
+        self.sincroniza_montarias();
 
         // ── J.5: pickup de loot ───────────────────────────────────────────────
         // Coleta pares (session_id, player_pos) e todos os loots proximos.

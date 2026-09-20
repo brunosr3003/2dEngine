@@ -24,6 +24,8 @@ pub struct MontariasUi {
     pub aberto: bool,
     /// Gira o modelo no palco.
     giro: f32,
+    /// A faixa "minhas montarias": escolher, equipar, combinar.
+    colecao: crate::colecao::Colecao,
     /// Relogio (get_time) em que a montada termina; 0 = nao esta' montando.
     montando_ate: f64,
     montando_desde: f64,
@@ -78,12 +80,13 @@ impl MontariasUi {
         vox: &VoxCache,
         solido: &Material,
         equip: &shared::Equipment,
-    ) -> Option<Acao> {
+        bolsa: &[shared::InventorySlot],
+    ) -> (Option<Acao>, Option<ClientMessage>) {
         if !self.aberto {
-            return None;
+            return (None, None);
         }
-        let escala = estilo::escala_do_painel(760.0, 470.0);
-        estilo::no_painel(escala, || self.na_escala(vox, solido, equip))
+        let escala = estilo::escala_do_painel(760.0, 552.0);
+        estilo::no_painel(escala, || self.na_escala(vox, solido, equip, bolsa))
     }
 
     fn na_escala(
@@ -91,11 +94,12 @@ impl MontariasUi {
         vox: &VoxCache,
         solido: &Material,
         equip: &shared::Equipment,
-    ) -> Option<Acao> {
+        bolsa: &[shared::InventorySlot],
+    ) -> (Option<Acao>, Option<ClientMessage>) {
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
         let w = (760.0 * f).min(seguro.w - 16.0);
-        let h = (470.0 * f).min(seguro.h - 16.0);
+        let h = (552.0 * f).min(seguro.h - 16.0);
         let p = Rect::new(
             seguro.center().x - w * 0.5,
             seguro.center().y - h * 0.5,
@@ -112,7 +116,7 @@ impl MontariasUi {
         estilo::botao(fechar, "X", estilo::estado_de(fechar, false, false), false);
         if clique && fechar.contains(mouse) {
             self.fechar();
-            return None;
+            return (None, None);
         }
 
         let Some(id) = equip
@@ -129,16 +133,26 @@ impl MontariasUi {
             );
             let loja = Rect::new(p.center().x - 110.0 * f, p.y + 160.0 * f, 220.0 * f, 40.0 * f);
             estilo::botao(loja, "Ver na Loja", estilo::estado_de(loja, false, false), true);
-            if clique && loja.contains(mouse) {
-                return Some(Acao::AbrirLoja);
-            }
-            return None;
+            let acao = (clique && loja.contains(mouse)).then_some(Acao::AbrirLoja);
+            // A faixa vale mesmo sem nada equipado: e' dela que se equipa.
+            let faixa = Rect::new(p.x + 18.0 * f, p.y + 220.0 * f, p.w - 36.0 * f, 152.0 * f);
+            let msg = self.colecao.desenha(
+                faixa,
+                f,
+                "MINHAS MONTARIAS",
+                bolsa,
+                None,
+                &|id| shared::montarias::de_item(id).is_some(),
+                &|id| shared::montarias::nome_do_item(id).unwrap_or_default(),
+                Some((vox, solido)),
+            );
+            return (acao, msg);
         };
         let (especie, grau) = shared::montarias::de_item(id).expect("filtrado acima");
         let cor = cor_do_grau(grau);
 
         // ── palco 3D ──
-        let palco = Rect::new(p.x + 18.0 * f, p.y + 60.0 * f, 300.0 * f, 300.0 * f);
+        let palco = Rect::new(p.x + 18.0 * f, p.y + 60.0 * f, 250.0 * f, 250.0 * f);
         estilo::cartao(palco, false, false);
         self.giro += get_frame_time().min(0.1) * 0.5;
         crate::render3d::vitrine_montaria(vox, id, palco, self.giro, solido);
@@ -151,7 +165,7 @@ impl MontariasUi {
         );
 
         // ── ficha ──
-        let dir = Rect::new(p.x + 334.0 * f, p.y + 60.0 * f, p.w - 352.0 * f, 300.0 * f);
+        let dir = Rect::new(p.x + 284.0 * f, p.y + 60.0 * f, p.w - 302.0 * f, 250.0 * f);
         estilo::cartao(dir, false, false);
         let mut y = dir.y + 32.0 * f;
         estilo::texto_ajustado(
@@ -196,6 +210,19 @@ impl MontariasUi {
             estilo::OURO,
         );
 
+        // ── minhas montarias ──
+        let faixa = Rect::new(p.x + 18.0 * f, p.y + 318.0 * f, p.w - 36.0 * f, 152.0 * f);
+        let msg = self.colecao.desenha(
+            faixa,
+            f,
+            "MINHAS MONTARIAS",
+            bolsa,
+            Some(id),
+            &|x| shared::montarias::de_item(x).is_some(),
+            &|x| shared::montarias::nome_do_item(x).unwrap_or_default(),
+            Some((vox, solido)),
+        );
+
         // ── montar ──
         let agora = get_time();
         let montando = agora < self.montando_ate;
@@ -214,10 +241,10 @@ impl MontariasUi {
         } else {
             estilo::botao(bt, "MONTAR", estilo::estado_de(bt, false, false), true);
             if clique && bt.contains(mouse) {
-                return Some(Acao::Montar);
+                return (Some(Acao::Montar), msg);
             }
         }
-        None
+        (None, msg)
     }
 }
 

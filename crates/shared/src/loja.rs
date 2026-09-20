@@ -6,17 +6,33 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Velocidade de movimento montado, sobre a do personagem a pe'. A mesma pra
-/// toda montaria: pagar mais caro compra aparencia, nao vantagem.
+/// Velocidade de movimento montado, sobre a do personagem a pe'. E' o piso: a
+/// montaria CINZA vale isto, e a cor sobe daí (`montarias::velocidade`).
+/// Antes era a mesma pra toda montaria.
 pub const VEL_MONTADO: f32 = 1.5;
 /// Quanto demora pra montar (cancela com golpe, skill ou dano).
 pub const MONTAR_S: f32 = 1.0;
 /// Sem atacar nem apanhar por isto antes de poder montar.
 pub const SEM_COMBATE_PRA_MONTAR_S: f32 = 3.0;
-/// Velocidade de andar: montado ganha `VEL_MONTADO` e perde o sprint; a pe'
-/// vale o sprint de quem esta' correndo.
-pub fn velocidade_de_andar(base: f32, montado: bool, sprint_mult: f32) -> f32 {
-    base * if montado { VEL_MONTADO } else { sprint_mult }
+/// Velocidade de andar. Montado vale o multiplicador da MONTARIA — que sai da
+/// cor dela (`montarias::velocidade`) — e perde o sprint; a pe' vale o sprint
+/// de quem esta' correndo. `montado` = `None` quando esta' a pe'.
+pub fn velocidade_de_andar(base: f32, montado: Option<f32>, sprint_mult: f32) -> f32 {
+    base * montado.unwrap_or(sprint_mult)
+}
+
+/// O multiplicador da montaria equipada, pra quem esta' montado. `None` = a
+/// pe'. Montado sem montaria equipada nao existe, mas se acontecer o piso
+/// vale, em vez de virar velocidade de tartaruga.
+pub fn mult_de_montaria(montado: bool, equipada: Option<u16>) -> Option<f32> {
+    if !montado {
+        return None;
+    }
+    Some(
+        equipada
+            .and_then(crate::montarias::de_item)
+            .map_or(VEL_MONTADO, |(_, grau)| crate::montarias::velocidade(grau)),
+    )
 }
 
 /// O instante da ultima luta (golpe, skill ou pancada) desmonta quem montou
@@ -754,13 +770,28 @@ mod tests {
 
     #[test]
     fn montado_corre_mais_sem_sprint_e_luta_desmonta() {
-        assert_eq!(velocidade_de_andar(3.0, false, 1.0), 3.0);
-        assert_eq!(velocidade_de_andar(3.0, false, 1.65), 3.0 * 1.65);
+        assert_eq!(velocidade_de_andar(3.0, None, 1.0), 3.0);
+        assert_eq!(velocidade_de_andar(3.0, None, 1.65), 3.0 * 1.65);
         assert_eq!(
-            velocidade_de_andar(3.0, true, 1.65),
+            velocidade_de_andar(3.0, Some(VEL_MONTADO), 1.65),
             3.0 * VEL_MONTADO,
             "montado nao soma sprint"
         );
+        // A COR da montaria equipada e' que manda no multiplicador.
+        let cinza = crate::item_id::montaria_no_grau(crate::item_id::MONTARIA_LOBO, 1);
+        let laranja = crate::item_id::montaria_no_grau(crate::item_id::MONTARIA_LOBO, 5);
+        assert_eq!(mult_de_montaria(false, Some(laranja)), None, "a pe' e' a pe'");
+        assert_eq!(mult_de_montaria(true, Some(cinza)), Some(VEL_MONTADO));
+        assert_eq!(
+            mult_de_montaria(true, Some(laranja)),
+            Some(crate::montarias::velocidade(5))
+        );
+        assert!(
+            mult_de_montaria(true, Some(laranja)) > mult_de_montaria(true, Some(cinza)),
+            "a cor melhor tem que correr mais"
+        );
+        // Montado sem montaria equipada (nao deveria acontecer) cai no piso.
+        assert_eq!(mult_de_montaria(true, None), Some(VEL_MONTADO));
         // Montou no segundo 10: golpe antes nao desmonta, golpe depois sim.
         assert!(!luta_desmonta(9.0, 10.0));
         assert!(luta_desmonta(10.0, 10.0));

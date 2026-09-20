@@ -194,8 +194,12 @@ pub fn raio_de_busca(grau: u8) -> f32 {
     }
 }
 
-/// Mais longe que isto do dono, o pet larga o alvo e volta.
+/// Mais longe que isto do dono, o pet larga o alvo e volta andando.
 pub const COLEIRA: f32 = 20.0;
+/// Mais longe que ISTO, ninguem andou: o dono teleportou (portal, viagem,
+/// pergaminho, dungeon). O pet reaparece do lado dele em vez de atravessar o
+/// mapa a pe'.
+pub const TELEPORTE: f32 = 40.0;
 /// Encostou a esta distancia do saque, coletou.
 pub const ALCANCE_DA_COLETA: f32 = 0.6;
 /// Distancia em que o pet orbita o dono quando nao tem o que fazer.

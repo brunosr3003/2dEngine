@@ -1079,6 +1079,28 @@ impl Bolsa {
     }
 }
 
+/// Uma celula avulsa, pra quem desenha lista de item fora da bolsa (a faixa
+/// de colecao do pet e da montaria). Mesma cara da celula da grade.
+pub(crate) fn celula_avulsa(
+    r: Rect,
+    id: u16,
+    qty: u32,
+    selecionada: bool,
+    palco: Option<(&VoxCache, &Material)>,
+) {
+    celula(
+        r,
+        Some(Peca {
+            id,
+            qty,
+            inst: None,
+        }),
+        selecionada,
+        None,
+        palco,
+    );
+}
+
 /// Uma celula de item: fundo na cor do grau, o icone, o tier em romano no
 /// canto de cima, o refino do outro lado e a quantidade embaixo. `vazio` e' o
 /// slot de equipamento sem nada: aparece a silhueta apagada do que vai ali.
@@ -1095,7 +1117,7 @@ fn celula(
     match peca {
         Some(p) => {
             let cor = cor_do_tier(p.grau());
-            crate::hud_estilo::slot(r, Some(cor), sobre, false);
+            crate::hud_estilo::slot(r, Some(cor), sobre, selecionada);
             // O icone do PET e' o modelo 3D dele (docs/PETS.md).
             if !icone_de_pet(r, p.id, palco) {
                 icone_do_item(r, p.id, 1.0);
