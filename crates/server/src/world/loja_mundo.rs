@@ -136,26 +136,32 @@ impl GameWorld {
                         }
                     }
                 }
-                PedidoLoja::ComprarItem { produto, pedido } => {
-                    match banco::comprar_item(&central, &conta, produto, &pedido).await {
+                PedidoLoja::ComprarItem {
+                    produto,
+                    vezes,
+                    pedido,
+                } => {
+                    let vezes = cat::lote(vezes);
+                    match banco::comprar_item(&central, &conta, produto, vezes, &pedido).await {
                         Ok(r) => {
                             if let Resposta::Feito { .. } = &r {
                                 let codigo = produto.codigo();
-                                crate::telemetria::conta("loja_item", &codigo, 1);
+                                crate::telemetria::conta("loja_item", &codigo, vezes as i64);
                                 crate::telemetria::conta(
                                     "loja_tp_gasta",
                                     codigo,
-                                    produto.preco_tp().unwrap_or(0) as i64,
+                                    produto.preco_tp().unwrap_or(0) as i64 * vezes as i64,
                                 );
                                 if let Some(m) = match produto {
                                     Produto::Moeda(id) => cat::moeda(id),
                                     _ => None,
                                 } {
+                                    // Lote: a moeda entra de uma vez, multiplicada.
                                     let _ = tx_mundo.send(IncomingMessage::Loja(Evento::Moeda {
                                         sid,
                                         personagem: personagem.clone(),
                                         item_id: m.item_id,
-                                        qtd: m.qtd,
+                                        qtd: m.qtd.saturating_mul(vezes as u32),
                                     }));
                                 }
                                 if let Produto::Energia(id) = produto {
@@ -164,7 +170,7 @@ impl GameWorld {
                                             tx_mundo.send(IncomingMessage::Loja(Evento::Energia {
                                                 sid,
                                                 personagem: personagem.clone(),
-                                                qtd: e.qtd,
+                                                qtd: e.qtd.saturating_mul(vezes as u64),
                                             }));
                                     }
                                 }
@@ -187,12 +193,18 @@ impl GameWorld {
                                     _ => None,
                                 };
                                 if let Some(item_id) = pergaminho {
-                                    let _ =
-                                        tx_mundo.send(IncomingMessage::Loja(Evento::Consumivel {
-                                            sid,
-                                            personagem: personagem.clone(),
-                                            item_id,
-                                        }));
+                                    // Um evento por unidade: o `Consumivel` entrega
+                                    // UM item, e empilhar na bolsa e' trabalho do
+                                    // `add_to_inventory`.
+                                    for _ in 0..vezes {
+                                        let _ = tx_mundo.send(IncomingMessage::Loja(
+                                            Evento::Consumivel {
+                                                sid,
+                                                personagem: personagem.clone(),
+                                                item_id,
+                                            },
+                                        ));
+                                    }
                                 }
                             }
                             resultado(&to, r.ok(), r.texto());

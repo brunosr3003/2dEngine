@@ -123,12 +123,12 @@ async fn main() -> anyhow::Result<()> {
                             // A montaria virou ITEM: compra-se o pergaminho, e
                             // ele e' repetivel (docs/MONTARIAS.md).
                             muda(&mut fase, &mut fase_em, Fase::CompraMontaria, &mut linhas);
-                            ws.send(envia(ClientMessage::Loja { pedido: PedidoLoja::ComprarItem { produto: Produto::PergaminhoMontaria(1), pedido: format!("{tag}-m1") } })?).await?;
+                            ws.send(envia(ClientMessage::Loja { pedido: PedidoLoja::ComprarItem { produto: Produto::PergaminhoMontaria(1), vezes: 1, pedido: format!("{tag}-m1") } })?).await?;
                         }
                     }
                     Fase::CompraMontaria if t > Duration::from_secs(2) => {
                         muda(&mut fase, &mut fase_em, Fase::CompraRepetida, &mut linhas);
-                        ws.send(envia(ClientMessage::Loja { pedido: PedidoLoja::ComprarItem { produto: Produto::PergaminhoMontaria(1), pedido: format!("{tag}-m1b") } })?).await?;
+                        ws.send(envia(ClientMessage::Loja { pedido: PedidoLoja::ComprarItem { produto: Produto::PergaminhoMontaria(1), vezes: 1, pedido: format!("{tag}-m1b") } })?).await?;
                     }
                     Fase::CompraRepetida if t > Duration::from_secs(2) => {
                         linhas.push(format!("TP {tp_atual}"));

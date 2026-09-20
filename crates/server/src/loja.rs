@@ -373,18 +373,24 @@ pub async fn confirmar_pagamento(
 }
 
 /// Compra de montaria ou skin com TP: debito e posse na mesma transacao.
+/// Compra `vezes` unidades de `produto` num PEDIDO so': uma transacao, um
+/// debito, um id de idempotencia. Lote em pedidos separados podia falhar no
+/// meio e deixar o jogador sem saber quantos entraram.
 pub async fn comprar_item(
     central: &PgPool,
     conta: &str,
     produto: Produto,
+    vezes: u16,
     pedido: &str,
 ) -> Result<Resposta> {
     if !cat::pedido_valido(pedido) {
         return Ok(Resposta::recusa("Pedido inválido."));
     }
-    let Some(preco) = produto.preco_tp() else {
+    let vezes = cat::lote(vezes);
+    let Some(unitario) = produto.preco_tp() else {
         return Ok(Resposta::recusa(RecusaCompra::ProdutoInvalido.texto()));
     };
+    let preco = unitario.saturating_mul(vezes as u64);
     let codigo = produto.codigo();
     let mut tx = central.begin().await?;
     // Mesma trava do razao (reentrante na transacao): compras da mesma conta
@@ -433,7 +439,7 @@ pub async fn comprar_item(
         _ => {}
     }
     let saldo = razao::saldo(&mut *tx, conta).await?;
-    if let Err(r) = cat::pode_comprar(produto, saldo) {
+    if let Err(r) = cat::pode_comprar(produto, vezes, saldo) {
         recusar_pedido(&mut tx, pedido, r.texto()).await?;
         tx.commit().await?;
         return Ok(Resposta::recusa(r.texto()));
@@ -463,6 +469,13 @@ pub async fn comprar_item(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
+    // O texto diz QUANTOS: "10x Pergaminho entregue na bolsa" e' a unica
+    // confirmacao de que o lote inteiro entrou.
+    let quantos = if vezes > 1 {
+        format!("{vezes}x ")
+    } else {
+        String::new()
+    };
     Ok(Resposta::Feito {
         saldo,
         texto: if matches!(
@@ -473,11 +486,11 @@ pub async fn comprar_item(
                 | Produto::PergaminhoPet(_)
                 | Produto::ItemDePet(_)
         ) {
-            format!("{} entregue na bolsa!", produto.nome())
+            format!("{quantos}{} entregue na bolsa!", produto.nome())
         } else if matches!(produto, Produto::Moeda(_) | Produto::Energia(_)) {
-            format!("{} comprado!", produto.nome())
+            format!("{quantos}{} comprado!", produto.nome())
         } else {
-            format!("{} é seu!", produto.nome())
+            format!("{quantos}{} é seu!", produto.nome())
         },
     })
 }
@@ -602,15 +615,15 @@ mod tests {
 
         // Pergaminho de montaria (500): a compra e' idempotente, mas novos
         // pergaminhos sao repetiveis. A montaria so' vira posse ao abrir.
-        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), &id("m1"))
+        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), 1, &id("m1"))
             .await
             .unwrap();
         assert!(matches!(r, Resposta::Feito { saldo: 1250, .. }), "{r:?}");
-        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), &id("m1"))
+        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), 1, &id("m1"))
             .await
             .unwrap();
         assert!(matches!(r, Resposta::JaFeito { saldo: 1250, .. }), "{r:?}");
-        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), &id("m1b"))
+        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), 1, &id("m1b"))
             .await
             .unwrap();
         assert!(matches!(r, Resposta::Feito { saldo: 750, .. }), "{r:?}");
@@ -625,12 +638,12 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(posses, 0, "pergaminho nao vira posse");
-        let r = comprar_item(&central, &conta, Produto::ItemDePet(1), &id("racao"))
+        let r = comprar_item(&central, &conta, Produto::ItemDePet(1), 1, &id("racao"))
             .await
             .unwrap();
         assert!(matches!(r, Resposta::Feito { saldo: 720, .. }), "{r:?}");
         // Saldo insuficiente: nada muda.
-        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), &id("m3"))
+        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), 1, &id("m3"))
             .await
             .unwrap();
         assert_eq!(
@@ -643,8 +656,8 @@ mod tests {
         // Duas compras diferentes ao mesmo tempo nao leem o mesmo saldo.
         let (m2, s3) = (id("m2"), id("s3"));
         let (a, b) = tokio::join!(
-            comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), &m2),
-            comprar_item(&central, &conta, Produto::PergaminhoPet(1), &s3),
+            comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), 1, &m2),
+            comprar_item(&central, &conta, Produto::PergaminhoPet(1), 1, &s3),
         );
         let (a, b) = (a.unwrap(), b.unwrap());
         assert!(a.ok() != b.ok() || (a.ok() && b.ok()), "{a:?} {b:?}");

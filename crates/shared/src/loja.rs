@@ -524,9 +524,19 @@ pub enum PedidoLoja {
         pacote: u16,
         pedido: String,
     },
-    /// Montaria ou skin, com TP.
+    /// Item de TP, `vezes` de uma vez. Tudo na loja e' repetivel, e comprar
+    /// dez pergaminhos era tocar dez vezes no mesmo botao e confirmar dez
+    /// vezes — pedido do dono em 20/09/2026.
+    ///
+    /// O LOTE e' um pedido so': um `pedido` (id de idempotencia), uma
+    /// transacao, um debito. Dez pedidos separados podiam falhar no meio e
+    /// deixar o jogador sem saber quantos entraram.
     ComprarItem {
         produto: Produto,
+        /// 1..=`LOTE_MAX`. O servidor clampa — cliente velho nao manda e o
+        /// serde cai em 1.
+        #[serde(default = "um")]
+        vezes: u16,
         pedido: String,
     },
     Montar,
@@ -549,16 +559,34 @@ pub enum PremioInvocacao {
 }
 
 
-/// Pode comprar? Tudo na loja hoje e' repetivel (pergaminho, moeda, Energia,
-/// item de pet): so' o saldo decide. Montaria e skin sairam daqui — a
-/// montaria virou item de bolsa e vem do pergaminho (docs/MONTARIAS.md), e a
-/// skin deixou de existir: a cor da montaria E' a variacao dela.
-pub fn pode_comprar(produto: Produto, saldo: u64) -> Result<u64, RecusaCompra> {
+/// Maximo de unidades num lote. Noventa e nove porque o preco total tem que
+/// caber na cabeca do jogador antes de ele confirmar — lote de mil e' pedido
+/// que se faz sem querer.
+pub const LOTE_MAX: u16 = 99;
+
+fn um() -> u16 {
+    1
+}
+
+/// `vezes` valido pra um lote: pelo menos 1, no maximo `LOTE_MAX`.
+pub fn lote(vezes: u16) -> u16 {
+    vezes.clamp(1, LOTE_MAX)
+}
+
+/// Pode comprar `vezes` unidades? Tudo na loja hoje e' repetivel (pergaminho,
+/// moeda, Energia, item de pet): so' o saldo decide. Montaria e skin sairam
+/// daqui — a montaria virou item de bolsa e vem do pergaminho
+/// (docs/MONTARIAS.md), e a skin deixou de existir: a cor da montaria E' a
+/// variacao dela.
+///
+/// Devolve o preco TOTAL do lote.
+pub fn pode_comprar(produto: Produto, vezes: u16, saldo: u64) -> Result<u64, RecusaCompra> {
     let preco = produto.preco_tp().ok_or(RecusaCompra::ProdutoInvalido)?;
-    if saldo < preco {
+    let total = preco.saturating_mul(lote(vezes) as u64);
+    if saldo < total {
         return Err(RecusaCompra::SemSaldo);
     }
-    Ok(preco)
+    Ok(total)
 }
 
 /// Uma linha do historico de compras.
@@ -610,14 +638,45 @@ mod tests {
         for m in MOEDAS.iter() {
             let p = Produto::Moeda(m.id);
             assert_eq!(Produto::de_codigo(&p.codigo()), Some(p));
-            assert_eq!(
-                pode_comprar(p, m.preco_tp),
-                Ok(m.preco_tp)
-            );
+            assert_eq!(pode_comprar(p, 1, m.preco_tp), Ok(m.preco_tp));
         }
         assert_eq!(
-            pode_comprar(Produto::Moeda(1), 10),
+            pode_comprar(Produto::Moeda(1), 1, 10),
             Err(RecusaCompra::SemSaldo)
+        );
+    }
+
+    /// O LOTE cobra o preco vezes a quantidade, e o saldo tem que cobrir o
+    /// TOTAL — nao o unitario. Cobrar unitario e entregar dez era o jeito
+    /// obvio de a loja virar fabrica de TP.
+    #[test]
+    fn o_lote_cobra_o_total_e_nao_o_unitario() {
+        let p = Produto::Moeda(MOEDAS[0].id);
+        let unit = MOEDAS[0].preco_tp;
+        for vezes in [1u16, 2, 10, LOTE_MAX] {
+            assert_eq!(
+                pode_comprar(p, vezes, unit * vezes as u64),
+                Ok(unit * vezes as u64),
+                "{vezes}x"
+            );
+            // Um TP a menos que o total ja' recusa.
+            assert_eq!(
+                pode_comprar(p, vezes, unit * vezes as u64 - 1),
+                Err(RecusaCompra::SemSaldo),
+                "{vezes}x com um a menos"
+            );
+        }
+        // O clamp: 0 vale 1, e acima do teto para no teto. O cliente pode
+        // mandar qualquer coisa — quem decide e' o servidor.
+        assert_eq!(lote(0), 1);
+        assert_eq!(lote(1), 1);
+        assert_eq!(lote(LOTE_MAX), LOTE_MAX);
+        assert_eq!(lote(u16::MAX), LOTE_MAX);
+        assert_eq!(pode_comprar(p, 0, unit), Ok(unit), "0 cobra como 1");
+        assert_eq!(
+            pode_comprar(p, u16::MAX, unit * LOTE_MAX as u64),
+            Ok(unit * LOTE_MAX as u64),
+            "acima do teto cobra o teto"
         );
     }
 
@@ -685,13 +744,13 @@ mod tests {
         // O maior banca uma rodada inteira de atributos de um personagem novo.
         let maior = ENERGIAS[ENERGIAS.len() - 1];
         assert!(maior.qtd >= crate::custo_energia_de_varios(0, 60));
-        assert_eq!(pode_comprar(Produto::Energia(1), 39), Err(RecusaCompra::SemSaldo));
+        assert_eq!(pode_comprar(Produto::Energia(1), 1, 39), Err(RecusaCompra::SemSaldo));
         assert_eq!(
-            pode_comprar(Produto::Energia(1), 40),
+            pode_comprar(Produto::Energia(1), 1, 40),
             Ok(40)
         );
         assert_eq!(
-            pode_comprar(Produto::Energia(99), 9_999),
+            pode_comprar(Produto::Energia(99), 1, 9_999),
             Err(RecusaCompra::ProdutoInvalido)
         );
     }
@@ -718,17 +777,17 @@ mod tests {
     #[test]
     fn regras_de_compra() {
         assert_eq!(
-            pode_comprar(Produto::Tp(1), 9999),
+            pode_comprar(Produto::Tp(1), 1, 9999),
             Err(RecusaCompra::ProdutoInvalido),
             "pacote de TP nao se compra COM TP"
         );
         assert_eq!(
-            pode_comprar(Produto::PergaminhoMontaria(1), 499),
+            pode_comprar(Produto::PergaminhoMontaria(1), 1, 499),
             Err(RecusaCompra::SemSaldo)
         );
-        assert_eq!(pode_comprar(Produto::PergaminhoMontaria(1), 500), Ok(500));
+        assert_eq!(pode_comprar(Produto::PergaminhoMontaria(1), 1, 500), Ok(500));
         assert_eq!(
-            pode_comprar(Produto::PergaminhoPet(99), 9999),
+            pode_comprar(Produto::PergaminhoPet(99), 1, 9999),
             Err(RecusaCompra::ProdutoInvalido)
         );
     }

@@ -90,6 +90,31 @@ mais Energia por TP — o cartão mostra o TP por mil e destaca o melhor.
 Skin só se compra tendo a montaria. Toda montaria corre igual
 (`VEL_MONTADO`): pagar mais compra aparência, não vantagem.
 
+## Comprar em lote
+
+`PedidoLoja::ComprarItem` leva `vezes` (1..=`LOTE_MAX`, 99). Tudo no catálogo é
+repetível, então o lote vale pra todos os itens — **menos pacote de TP**, que é
+compra de dinheiro de verdade e onde lote é cobrança repetida sem querer.
+
+O lote é **um pedido só**: um id de idempotência, uma transação, um débito do
+total. Dez pedidos separados podiam falhar no meio e deixar o jogador sem saber
+quantos entraram. `pode_comprar(produto, vezes, saldo)` devolve o preço **total**
+e o saldo tem que cobrir ele — cobrar o unitário e entregar dez seria o jeito
+óbvio de a loja virar fábrica de TP, e `o_lote_cobra_o_total_e_nao_o_unitario`
+cobra isso.
+
+Na entrega, moeda e Energia entram multiplicadas de uma vez; pergaminho e item
+de pet vão um evento por unidade, porque `Evento::Consumivel` entrega UM item e
+empilhar é trabalho do `add_to_inventory`. O texto do resultado diz quantos
+("10x Pergaminho entregue na bolsa!") — é a única confirmação de que o lote
+inteiro entrou.
+
+Na janela: **−**, **+**, o número, e os atalhos **1x / 10x / 50x**. O preço
+mostra `Preço · 10x 500` com o total à direita. A quantidade volta a 1 a cada
+abertura da confirmação: lote herdado da compra anterior é compra sem querer.
+O servidor clampa de qualquer jeito (`cat::lote`) — cliente pode mandar o que
+quiser.
+
 ## Pagamento
 
 ```

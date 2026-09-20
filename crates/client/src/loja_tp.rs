@@ -65,6 +65,10 @@ pub struct LojaTp {
     estado: Option<EstadoLoja>,
     aba: usize,
     confirma: Option<Confirma>,
+    /// Quantas unidades do lote na confirmacao. Volta a 1 a cada abertura —
+    /// lote herdado da compra anterior e' compra sem querer. Lido sempre por
+    /// `cat::lote`, que clampa: o `Default` do struct da' 0.
+    lote: u16,
     /// Ultimo resultado (ok, texto), no rodape.
     ultimo: Option<(bool, String)>,
     /// Compra enviada e sem resposta: o botao fica "Aguarde".
@@ -831,6 +835,7 @@ impl LojaTp {
         );
         if ativo && livre && bt.contains(m) {
             self.confirma = Some(Confirma::Item(Produto::BauCraft(bau.id)));
+            self.lote = 1;
         }
 
         let tomo = &cat::PERGAMINHOS_TOMO[0];
@@ -904,6 +909,7 @@ impl LojaTp {
         );
         if !self.em_voo && livre && bt.contains(m) {
             self.confirma = Some(Confirma::Item(Produto::PergaminhoTomo(tomo.id)));
+            self.lote = 1;
         }
     }
 
@@ -982,6 +988,7 @@ impl LojaTp {
             );
             if !self.em_voo && livre && sobre {
                 self.confirma = Some(Confirma::Item(Produto::ItemDePet(item.id)));
+            self.lote = 1;
             }
         }
     }
@@ -1097,6 +1104,7 @@ impl LojaTp {
         );
         if !self.em_voo && livre && bt.contains(m) {
             self.confirma = Some(Confirma::Item(Produto::PergaminhoMontaria(perg.id)));
+            self.lote = 1;
         }
     }
 
@@ -1178,6 +1186,7 @@ impl LojaTp {
         );
         if !self.em_voo && livre && bt.contains(m) {
             self.confirma = Some(Confirma::Item(Produto::PergaminhoPet(perg.id)));
+            self.lote = 1;
         }
     }
 
@@ -1243,6 +1252,7 @@ impl LojaTp {
         );
         if ativo && livre && bt.contains(m) {
             self.confirma = Some(Confirma::Item(produto));
+            self.lote = 1;
         }
     }
 
@@ -1454,6 +1464,7 @@ impl LojaTp {
             );
             if ativo && livre && sobre {
                 self.confirma = Some(Confirma::Tp(pk.id));
+            self.lote = 1;
             }
             if let Some(sl) = selo_do_pacote(pk.id) {
                 let tam_s = ts(11.0, k);
@@ -1691,7 +1702,44 @@ impl LojaTp {
                 estilo::texto_ajustado(&pr.nome(), x, y, largura, ts(22.0, k), estilo::TEXTO);
                 y += 22.0 * k;
                 estilo::texto_ajustado(&tipo, x, y, largura, ts(13.0, k), estilo::alfa(LILAS, 0.9));
-                let preco = pr.preco_tp().unwrap_or(0);
+                // ── quantas de uma vez ──
+                //
+                // So' pra item: pacote de TP e' compra de dinheiro de verdade,
+                // e lote ali e' cobranca repetida sem querer.
+                let unitario = pr.preco_tp().unwrap_or(0);
+                let lote = cat::lote(self.lote);
+                let sel = Rect::new(x, y + 24.0 * k, largura, 40.0 * k);
+                let lado = 40.0 * k;
+                let menos = Rect::new(sel.x, sel.y, lado, lado);
+                let mais = Rect::new(sel.x + lado + 8.0 * k, sel.y, lado, lado);
+                for (b, t, liga) in [
+                    (menos, "−", lote > 1),
+                    (mais, "+", lote < cat::LOTE_MAX),
+                ] {
+                    botao_contorno(b, t, liga && b.contains(m), k);
+                    if clicou && liga && b.contains(m) {
+                        self.lote = if t == "−" { lote - 1 } else { lote + 1 };
+                    }
+                }
+                estilo::texto_centro_forte(
+                    mais.x + lado + 30.0 * k,
+                    sel.y + 27.0 * k,
+                    &format!("{lote}x"),
+                    ts(20.0, k),
+                    estilo::TEXTO,
+                );
+                // Atalhos: o lote grande se faz num toque, nao em dez.
+                let mut ax = mais.x + lado + 62.0 * k;
+                for n in [1u16, 10, 50] {
+                    let b = Rect::new(ax, sel.y + 4.0 * k, 46.0 * k, lado - 8.0 * k);
+                    botao_contorno(b, &format!("{n}x"), b.contains(m), k);
+                    if clicou && b.contains(m) {
+                        self.lote = n;
+                    }
+                    ax += 52.0 * k;
+                }
+                y = sel.y + lado - 24.0 * k;
+                let preco = unitario.saturating_mul(lote as u64);
                 let tam = ts(20.0, k);
                 let linha = |y: f32, rotulo: &str, v: u64, cor: Color| {
                     estilo::texto(x, y, rotulo, ts(13.0, k), estilo::SUAVE);
@@ -1704,7 +1752,16 @@ impl LojaTp {
                     );
                 };
                 y += 40.0 * k;
-                linha(y, "Preço", preco, OURO_CLARO);
+                linha(
+                    y,
+                    &if lote > 1 {
+                        format!("Preço · {lote}x {}", milhar(unitario))
+                    } else {
+                        "Preço".to_string()
+                    },
+                    preco,
+                    OURO_CLARO,
+                );
                 y += 34.0 * k;
                 linha(y, "Seu saldo", estado.tp, estilo::TEXTO);
                 y += 34.0 * k;
@@ -1749,7 +1806,11 @@ impl LojaTp {
             return Some(ClientMessage::Loja {
                 pedido: match conf {
                     Confirma::Tp(pacote) => PedidoLoja::ComprarTp { pacote, pedido },
-                    Confirma::Item(produto) => PedidoLoja::ComprarItem { produto, pedido },
+                    Confirma::Item(produto) => PedidoLoja::ComprarItem {
+                        produto,
+                        vezes: cat::lote(self.lote),
+                        pedido,
+                    },
                 },
             });
         }
