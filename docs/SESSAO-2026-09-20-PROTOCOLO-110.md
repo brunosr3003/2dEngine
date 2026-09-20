@@ -133,3 +133,17 @@ refeitos nesta sessão.
   do zero e é paga de novo.
 - Não houve mudança de mensagens: o protocolo continua 111.
 - Prévia local conferida em `/tmp/tempest-ficha-111/ficha.png`.
+
+## Publicação da Energia no atributo
+
+- Commit `a83086f` publicado no Git. Suíte completa antes do build: cliente
+  322, servidor 146, shared 179, nenhum falho.
+- TestFlight: **Tempest 1.1 (2609201503)**, `UPLOAD SUCCEEDED with no errors`.
+  Delivery UUID: `77b1bcc5-c3db-4e76-a4d0-e4a743f663c1`. O processamento pela
+  Apple não foi verificado no App Store Connect.
+- Backups: `tempest-prod/dumps/tempest_sa01-pre-energia-2609201503.dump` e
+  `tempest_central-pre-energia-2609201503.dump`. Binários anteriores em
+  `tempest-prod/bak-energia-2609201503/`.
+- Reiniciados os quatro serviços às 12:05 de 20/09/2026 (São Paulo), sem
+  ninguém conectado. API pública respondeu protocolo 111 e as portas 9000 e
+  9100 devolveram `101 Switching Protocols`.
