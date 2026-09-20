@@ -321,3 +321,13 @@ refeitos nesta sessão.
   fora da posição. Preferi removê-la a deixar um harness que mente sobre o que
   está na bolsa; a confirmação visual que serviu foi a das células de pet, com
   as cinco cores distintas.
+
+## Publicação da correção da borda
+
+- Commit `8baa486`. TestFlight: **Tempest 1.1 (2609201736)**,
+  `UPLOAD SUCCEEDED with no errors`. Delivery UUID:
+  `c8bea7a0-576f-4c04-ab93-a5c677bd81af`.
+- Prod reiniciada às 14:39 de 20/09/2026, sem ninguém conectado, só para o
+  binário ficar em sincronia com o commit: a correção é de cliente e o
+  servidor não mudou de comportamento. Protocolo continua 114.
+- Backups em `tempest-prod/dumps/*-pre-borda-2609201736.dump`.
