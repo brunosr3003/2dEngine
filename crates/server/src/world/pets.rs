@@ -568,6 +568,31 @@ mod testes {
         assert_eq!(pet_data(&w, sid).skills, [0; 3]);
     }
 
+    /// O atirador para no ALCANCE e atira; nunca anda de re'. Antes ele
+    /// parava no `kite_dist` (bem mais perto que o tiro exigia) e recuava
+    /// quando o jogador colava — andava de re' pelo mapa inteiro.
+    #[test]
+    fn o_atirador_para_no_alcance_e_nao_recua() {
+        use crate::world::atirador_avanca;
+        // Mago: alcance 12. Longe avanca, perto para.
+        assert!(atirador_avanca(20.0, 12.0), "longe, avanca");
+        assert!(!atirador_avanca(10.0, 12.0), "dentro do alcance, para");
+        assert!(!atirador_avanca(0.5, 12.0), "colado, para — nao recua");
+        // A ultima casquinha do alcance ainda vale avancar: parar em 12 na
+        // borda exata deixaria o tiro na sorte do primeiro passo do jogador.
+        assert!(atirador_avanca(11.0, 12.0));
+        // Ele para ANTES da borda, pra um passo do jogador nao tirar ele de
+        // alcance e fazer o bicho tremer avancando a cada quadro.
+        assert!(!atirador_avanca(12.0 * 0.9, 12.0));
+        assert!(atirador_avanca(12.0 * 0.95, 12.0));
+        // Quem tem MAIS alcance para mais longe: a 9,5 o mago (12) ja' atira,
+        // e o pistoleiro (9) ainda precisa chegar mais perto.
+        assert!(!atirador_avanca(9.5, 12.0), "o mago ja' pode atirar daqui");
+        assert!(atirador_avanca(9.5, 9.0), "o pistoleiro ainda avanca");
+        // Alcance minusculo nao vira "nunca avanca".
+        assert!(atirador_avanca(5.0, 0.5));
+    }
+
     /// Teleporte (portal, viagem, pergaminho): o pet reaparece do lado do
     /// dono. Antes ele voltava ANDANDO — atravessava o mapa inteiro a pe' e
     /// sumia da tela no caminho.

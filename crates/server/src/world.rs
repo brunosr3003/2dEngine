@@ -9636,11 +9636,14 @@ impl GameWorld {
                             .direcao(ilha, pos.0, *ppos, passo, now_sim),
                         None => to_player,
                     };
-                    let move_dir = if let Some(kite) = enemy.kite_dist {
-                        if dist > kite + 0.5 {
+                    let move_dir = if enemy.kite_dist.is_some() {
+                        // Atirador NAO foge (docs/COMBATE.md): chega ate' o
+                        // alcance dele e atira dali. Recuar fazia o bicho andar
+                        // de re' pelo mapa enquanto quem persegue nunca
+                        // alcancava — e ele ainda parava em `kite_dist`, bem
+                        // mais perto do que o tiro dele exigia.
+                        if atirador_avanca(dist, enemy.attack_range) {
                             aproxima(enemy)
-                        } else if dist < kite - 0.5 {
-                            -to_player
                         } else {
                             Vec2::ZERO
                         }
@@ -20223,6 +20226,17 @@ fn now_ms() -> u64 {
 /// Computa tier 1-4 pra exibicao client-side do halo de loot. Resources
 /// (60-71) tem tier embutido no item_id; equipaveis com instance derivam
 /// do item_level. None pra itens sem tier (gold, pocoes, etc.).
+/// Quanto do alcance o atirador usa pra parar. Um pouco antes da borda: na
+/// borda exata, um passo do jogador ja' tirava ele de alcance e o bicho
+/// avancava de novo a cada quadro — ficava tremendo no lugar.
+const FOLGA_DO_ATIRADOR: f32 = 0.9;
+
+/// O atirador ainda precisa avancar, a esta distancia? Ele nunca recua: ou
+/// anda pra frente, ou para e atira (docs/COMBATE.md).
+pub(crate) fn atirador_avanca(dist: f32, alcance: f32) -> bool {
+    dist > (alcance * FOLGA_DO_ATIRADOR).max(1.0)
+}
+
 fn compute_loot_tier(l: &LootTag) -> Option<u8> {
     if l.item_id >= 60 && l.item_id <= 71 {
         return Some(((l.item_id - 60) % 4 + 1) as u8);

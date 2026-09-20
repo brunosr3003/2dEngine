@@ -315,6 +315,13 @@ morsa, e um punhado de aves. Sem peças: esqueleto-lorde, colosso, árvores.
 **DECIDIDO — os oito mobs: quem morde é bicho, quem atira é gente.**
 Os oito são os da tabela `enemy_kinds`, nomes herdados com atributos.
 
+**Atirador não foge.** Pistoleiro, mago e arqueiro andam até o alcance do tiro
+deles e atiram dali — nunca dão um passo para trás. Antes eles paravam no
+`kite_dist` (5 a 8, bem mais perto do que o tiro exigia) e recuavam quando o
+jogador colava: o bicho andava de ré pelo mapa e quem perseguia nunca
+alcançava. O `kite_dist` continua na tabela, mas só como marca de "é
+atirador"; quem manda na parada é o `attack_range`.
+
 | tipo | no banco | vira | por quê |
 |---|---|---|---|
 | Grunt | 50 de vida, corpo a corpo | lobo | o mob comum; já existe |
