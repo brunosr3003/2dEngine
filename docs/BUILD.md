@@ -91,6 +91,20 @@ Armadilhas já resolvidas (ver comentários nos scripts):
 - Android 12+ exige `android:exported` na activity.
 - `.vox` no Android vêm do AssetManager, cuja raiz já é `assets/`: o `vox.rs`
   tira esse prefixo.
+- **A janela do emulador tem que girar junto com o aparelho.** O jogo força
+  paisagem; o Android gira a tela (o `screencap` sai 2400x1080) mas a janela
+  fica **em pé**, mostrando o quadro deitado dentro do quadro retrato — e aí o
+  emulador mapeia o toque pela geometria retrato e **o clique do mouse não
+  acerta nada**, enquanto `adb shell input tap` continua funcionando (ele
+  entra direto no Android, sem passar pela janela). Essa diferença é o
+  diagnóstico: se o `tap` funciona e o mouse não, é a janela. `adb emu rotate`
+  gira 90°; o script compara as duas orientações e gira até casarem.
+- A janela também **não pode ser tilada**: o Hyprland a redimensiona depois do
+  mapa e o emulador continua mapeando o toque pelo tamanho que ele escolheu. A
+  regra de janela tem que existir **antes do mapa** (float/resize em runtime
+  devolvem "ok" e não mudam nada), então o script a registra por `hyprctl eval`
+  — e não no arquivo de config, porque recarregar a config derruba o stream do
+  Moonlight. Mesma armadilha da janela do QEMU.
 
 No celular o cliente vai direto no web de produção (`api.rs`), igual ao iOS.
 Ainda falta no Android: abrir URL (login Google), tela sempre acesa e área
