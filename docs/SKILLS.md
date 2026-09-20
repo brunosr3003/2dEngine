@@ -21,6 +21,14 @@ cabeçalho da bolsa e o ganho de cada coleta flutua sobre o personagem. Um ciclo
 cristal rende 20 ciclos, some e volta após 360 s. Cada ciclo dá 12, 28, 60
 ou 120 Energia, respectivamente, no Bosque, Geleira, Ermo e Planalto.
 
+A Energia tem um segundo destino: **distribuir ponto de atributo na Ficha**
+também cobra Energia, e o preço sobe a cada ponto já alocado — o primeiro
+ponto custa 10, o 11º custa 60, o 51º custa 260 (`10 + 5 × pontos alocados`).
+Sem saldo o servidor recusa o pedido sem gastar o ponto livre, e a Ficha
+mostra o saldo, o custo do próximo ponto e desliga o `+`. **Redistribuir
+grátis** devolve os pontos, nunca a Energia: quem reseta desce a escada e
+paga a subida de novo.
+
 | Para chegar ao tier | Nível | Energia | Cobre | Tomo da habilidade |
 |---|---:|---:|---:|---|
 | II | 1 | 100 | 100 | — |

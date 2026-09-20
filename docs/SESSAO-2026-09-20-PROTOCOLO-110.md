@@ -105,3 +105,31 @@ refeitos nesta sessão.
   MENU do HUD, no mesmo padrão já usado por Missões, Diárias e Presença.
 - O selo vem do último retrato enviado pelo servidor: sem retrato não há selo,
   e ele some quando a distribuição zera os pontos.
+
+## Publicação do protocolo 111
+
+- Commit `6ce00ac` publicado no Git. Build release de server, supervisor, web
+  e panóptico concluído sem erro.
+- TestFlight: **Tempest 1.1 (2609201451)**, `UPLOAD SUCCEEDED with no errors`.
+  Delivery UUID: `c309c92e-fa26-462a-ad0d-cc799d582b46`. O processamento pela
+  Apple não foi verificado no App Store Connect.
+- Backups: `tempest-prod/dumps/tempest_sa01-pre-111-2609201451.dump` e
+  `tempest_central-pre-111-2609201451.dump`. Binários anteriores em
+  `tempest-prod/bak-111-2609201451/`.
+- Reiniciados `tempest-prod-web`, `tempest-prod-panoptico`, `tempest-prod-campo`
+  e `tempest-prod-geleira` às 11:55 de 20/09/2026 (São Paulo). Havia uma sessão
+  ativa no Bosque, derrubada pelo restart com autorização do usuário.
+- API pública respondeu protocolo 111; portas 9000 e 9100 devolveram
+  `101 Switching Protocols`. Os dois mundos subiram sem erro no log.
+
+## Energia no ponto de atributo
+
+- Alocar ponto de atributo passou a cobrar Energia do mesmo saldo da evolução
+  de habilidades, com preço crescente: `10 + 5 × pontos já alocados`.
+- Sem saldo o servidor recusa sem consumir o ponto livre e devolve o texto
+  "faltam N de Energia para este ponto"; a Ficha desliga o `+` e mostra saldo
+  e custo do próximo ponto no cabeçalho de ATRIBUTOS.
+- O reset continua grátis e devolve só os pontos — a escada de Energia começa
+  do zero e é paga de novo.
+- Não houve mudança de mensagens: o protocolo continua 111.
+- Prévia local conferida em `/tmp/tempest-ficha-111/ficha.png`.

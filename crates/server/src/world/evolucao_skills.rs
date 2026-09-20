@@ -189,6 +189,51 @@ mod testes {
         (w, sid, rx)
     }
 
+    /// Atributo passou a beber da mesma Energia da evolucao, e cada ponto
+    /// custa mais que o anterior.
+    #[test]
+    fn ponto_de_atributo_cobra_energia_crescente_e_para_sem_saldo() {
+        let (mut w, sid, mut rx) = jogador();
+        let s = w.sessions.get_mut(&sid).unwrap();
+        s.unspent_points = 4;
+        s.skill_progress.energia = 35; // paga 10 + 15 e para antes dos 20
+        while rx.try_recv().is_ok() {}
+
+        w.on_message(sid, ClientMessage::AllocStatPoint { stat: 0 });
+        let s = &w.sessions[&sid];
+        assert_eq!(s.allocated_points[0], 1);
+        assert_eq!(s.unspent_points, 3);
+        assert_eq!(s.skill_progress.energia, 25, "primeiro ponto custa 10");
+
+        w.on_message(sid, ClientMessage::AllocStatPoint { stat: 3 });
+        let s = &w.sessions[&sid];
+        assert_eq!(s.allocated_points[3], 1);
+        assert_eq!(s.skill_progress.energia, 10, "segundo ponto custa 15");
+        assert!(s.skills_dirty && s.stat_points_dirty && w.save_pending);
+
+        // Terceiro custa 20 e so' ha' 10: nada muda e o cliente e' avisado.
+        while rx.try_recv().is_ok() {}
+        w.on_message(sid, ClientMessage::AllocStatPoint { stat: 1 });
+        let s = &w.sessions[&sid];
+        assert_eq!(s.allocated_points[1], 0);
+        assert_eq!(s.unspent_points, 2, "ponto livre nao e' consumido");
+        assert_eq!(s.skill_progress.energia, 10);
+        let mut avisou = false;
+        while let Ok(m) = rx.try_recv() {
+            if let ServerMessage::ResultadoDeEvolucao { ok: false, texto } = m {
+                avisou |= texto.contains("Energia");
+            }
+        }
+        assert!(avisou, "recusa por Energia tem que chegar ao cliente");
+
+        // Redistribuir devolve os pontos, nunca a Energia.
+        w.on_message(sid, ClientMessage::ResetStats);
+        let s = &w.sessions[&sid];
+        assert_eq!(s.unspent_points, 4);
+        assert_eq!(s.allocated_points, [0u32; shared::STAT_COUNT]);
+        assert_eq!(s.skill_progress.energia, 10);
+    }
+
     #[test]
     fn evolucao_cobra_uma_vez_e_recusa_sem_nivel_ou_tomo() {
         let (mut w, sid, mut rx) = jogador();

@@ -4352,6 +4352,10 @@ impl GameWorld {
         tracing::info!("dungeon: spawn de {} inimigos", spots.len());
     }
 
+    /// Aloca 1 ponto de atributo. Alem do ponto livre, cobra Energia: o preco
+    /// sobe a cada ponto ja' alocado (`shared::custo_energia_do_ponto`), entao
+    /// atributo virou destino de Energia junto com a evolucao de habilidade.
+    /// Sem saldo, o pedido e' recusado sem gastar o ponto.
     fn handle_alloc_stat_point(&mut self, sid: SessionId, stat: u8) {
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
@@ -4366,12 +4370,28 @@ impl GameWorld {
         if s.unspent_points == 0 {
             return;
         }
+        let ja_alocados: u32 = s.allocated_points.iter().sum();
+        let custo = shared::custo_energia_do_ponto(ja_alocados);
+        if s.skill_progress.energia < custo {
+            let falta = custo - s.skill_progress.energia;
+            let _ = s.handle.to_client.send(ServerMessage::ResultadoDeEvolucao {
+                ok: false,
+                texto: format!("faltam {falta} de Energia para este ponto"),
+            });
+            return;
+        }
+        s.skill_progress.energia -= custo;
+        s.skills_dirty = true;
+        let _ = s.handle.to_client.send(ServerMessage::ProgressoDeSkills {
+            progresso: s.skill_progress.clone(),
+        });
         s.unspent_points -= 1;
         s.allocated_points[idx] = s.allocated_points[idx].saturating_add(1);
         s.stat_points_dirty = true;
         // Recalcula stats. max_hp pode ter subido — HP nao sobe automatico.
         s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp);
         s.stats_dirty = true;
+        self.save_pending = true;
     }
 
     /// Refunda todos os pontos alocados pro unspent. Sem custo nem cooldown

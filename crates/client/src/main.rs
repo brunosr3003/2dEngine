@@ -4579,6 +4579,7 @@ impl Jogo {
                 self.ficha.xp,
                 self.ficha.mult_xp,
                 self.bolsa.stats.as_ref(),
+                self.bolsa.energia,
             );
             if let Some(pedido) = pedido {
                 self.envia(pedido);

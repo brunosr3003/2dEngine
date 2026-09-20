@@ -20,6 +20,8 @@ const ATRIBUTOS: [(&str, &str); STAT_COUNT] = [
 pub struct FichaUi {
     pub aberta: bool,
     pontos: Option<(u32, [u32; STAT_COUNT])>,
+    /// Saldo de Energia da evolucao: alocar atributo tambem gasta dela.
+    energia: u64,
     confirmar_reset: bool,
 }
 
@@ -53,8 +55,18 @@ impl FichaUi {
         self.pontos_disponiveis().is_some_and(|n| n > 0)
     }
 
+    /// Energia do proximo ponto. Sobe com o que ja' foi alocado, entao a
+    /// conta e' a mesma do servidor — o botao nunca promete o que sera'
+    /// recusado.
+    pub fn custo_do_proximo_ponto(&self) -> u64 {
+        let ja: u32 = self.pontos.map_or(0, |(_, a)| a.iter().sum());
+        shared::custo_energia_do_ponto(ja)
+    }
+
     fn pode_alocar(&self, indice: usize) -> bool {
-        indice < STAT_COUNT && self.pontos.is_some_and(|(n, _)| n > 0)
+        indice < STAT_COUNT
+            && self.pontos.is_some_and(|(n, _)| n > 0)
+            && self.energia >= self.custo_do_proximo_ponto()
     }
 
     pub fn desenha(
@@ -64,10 +76,12 @@ impl FichaUi {
         xp: u64,
         mult_xp: u64,
         stats: Option<&PlayerStats>,
+        energia: u64,
     ) -> Option<ClientMessage> {
         if !self.aberta {
             return None;
         }
+        self.energia = energia;
         let seguro = crate::hud_layout::tela_segura();
         let escala = estilo::escala_do_painel(860.0, 540.0)
             .min((seguro.w - 16.0) / 860.0)
@@ -177,10 +191,10 @@ impl FichaUi {
         );
         let pontos = self.pontos_disponiveis();
         estilo::texto(
-            esq.x + 194.0 * f,
+            esq.x + 120.0 * f,
             esq.y + 27.0 * f,
             &format!(
-                "Pontos livres: {}",
+                "Livres: {}",
                 pontos.map_or_else(|| "…".into(), |n| n.to_string())
             ),
             14,
@@ -189,6 +203,22 @@ impl FichaUi {
             } else {
                 estilo::SUAVE
             },
+        );
+        // O ponto tambem custa Energia, e o preco sobe a cada ponto alocado:
+        // o saldo fica ao lado do custo pra escolha nao virar tentativa.
+        let custo = self.custo_do_proximo_ponto();
+        let paga = self.energia >= custo;
+        let texto_energia = format!(
+            "Energia: {} · ponto −{}",
+            crate::bolsa::milhar(self.energia),
+            crate::bolsa::milhar(custo)
+        );
+        estilo::texto(
+            esq.x + esq.w - 14.0 * f - estilo::medir(&texto_energia, 13),
+            esq.y + 27.0 * f,
+            &texto_energia,
+            13,
+            if paga { estilo::SUAVE } else { estilo::VERMELHO },
         );
 
         for (i, (sigla, bonus)) in ATRIBUTOS.iter().enumerate() {
@@ -302,6 +332,7 @@ mod tests {
     fn todos_os_seis_atributos_recebem_pontos_do_servidor() {
         assert_eq!(ATRIBUTOS.len(), shared::STAT_COUNT);
         let mut ui = FichaUi::default();
+        ui.energia = u64::MAX; // aqui o assunto e' o ponto, nao a Energia
         assert!(!ui.pode_alocar(0), "sem snapshot nao pode gastar");
         ui.atualizar_pontos(2, [1, 2, 3, 4, 5, 6]);
         assert_eq!(ui.pontos_disponiveis(), Some(2));
@@ -321,6 +352,29 @@ mod tests {
         assert!(!ui.tem_ponto_sobrando(), "gastou tudo: o selo some");
         ui.limpar_pontos();
         assert!(!ui.tem_ponto_sobrando());
+    }
+
+    #[test]
+    fn sem_energia_o_botao_nao_promete_ponto() {
+        let mut ui = FichaUi::default();
+        ui.atualizar_pontos(5, [0; STAT_COUNT]);
+        assert_eq!(ui.custo_do_proximo_ponto(), 10);
+        ui.energia = 9;
+        assert!(
+            (0..STAT_COUNT).all(|i| !ui.pode_alocar(i)),
+            "faltando 1 de Energia nenhum atributo aceita"
+        );
+        ui.energia = 10;
+        assert!((0..STAT_COUNT).all(|i| ui.pode_alocar(i)));
+        // O preco acompanha o que ja' esta' alocado, igual ao servidor.
+        ui.atualizar_pontos(5, [4, 3, 2, 1, 0, 0]);
+        assert_eq!(ui.custo_do_proximo_ponto(), 10 + 5 * 10);
+        assert!((0..STAT_COUNT).all(|i| !ui.pode_alocar(i)), "10 nao paga 60");
+        ui.energia = 60;
+        assert!((0..STAT_COUNT).all(|i| ui.pode_alocar(i)));
+        // Sem ponto livre nao adianta ter Energia.
+        ui.atualizar_pontos(0, [4, 3, 2, 1, 0, 0]);
+        assert!((0..STAT_COUNT).all(|i| !ui.pode_alocar(i)));
     }
 }
 
@@ -347,13 +401,7 @@ pub async fn previa() {
     for _ in 0..3 {
         crate::render3d::camera_padrao();
         clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
-        ui.desenha(
-            "Camteste",
-            16,
-            (xp16 + xp17) / 2,
-            1,
-            Some(&stats),
-        );
+        ui.desenha("Camteste", 16, (xp16 + xp17) / 2, 1, Some(&stats), 1_480);
         unsafe { get_internal_gl().flush() };
         rt.texture
             .get_texture_data()

@@ -875,6 +875,26 @@ pub const POINTS_PER_LEVEL: u32 = 3;
 /// Skill points ganhos por level-up. Pool global compartilhado entre profs.
 pub const SP_PER_LEVEL: u32 = 1;
 
+/// Energia cobrada pelo PRIMEIRO ponto de atributo de um personagem.
+pub const ENERGIA_BASE_DO_PONTO: u64 = 10;
+/// Quanto a Energia do proximo ponto sobe a cada ponto ja' alocado.
+pub const ENERGIA_PASSO_DO_PONTO: u64 = 5;
+
+/// Energia do PROXIMO ponto de atributo, dado quantos ja' estao alocados.
+/// Sobe em passo fixo: o ponto 1 custa 10, o 11 custa 60, o 51 custa 260.
+/// Quem redistribui de graca volta ao comeco da escada e paga a subida de
+/// novo — o reset devolve os pontos, nunca a Energia.
+pub fn custo_energia_do_ponto(ja_alocados: u32) -> u64 {
+    ENERGIA_BASE_DO_PONTO + ENERGIA_PASSO_DO_PONTO * ja_alocados as u64
+}
+
+/// Energia total pra sair de `ja_alocados` e alocar mais `quantos` pontos.
+pub fn custo_energia_de_varios(ja_alocados: u32, quantos: u32) -> u64 {
+    (0..quantos)
+        .map(|k| custo_energia_do_ponto(ja_alocados.saturating_add(k)))
+        .sum()
+}
+
 /// Rank máximo de uma skill (0 = não aprendida; 1..=10 = ranks).
 pub const MAX_SKILL_RANK: u8 = 10;
 
@@ -1561,3 +1581,28 @@ pub const PLAYER_ATTACK_IMPACT_S: f32 = PLAYER_ATTACK_PREPARE_S + PLAYER_ATTACK_
 pub const MOB_ATTACK_PREPARE_S: f32 = 0.24;
 pub const MOB_ATTACK_CUT_S: f32 = 0.22;
 pub const MOB_ATTACK_IMPACT_S: f32 = MOB_ATTACK_PREPARE_S + MOB_ATTACK_CUT_S;
+
+#[cfg(test)]
+mod testes_atributos {
+    use super::*;
+
+    /// Cada ponto de atributo custa mais Energia que o anterior, e o total
+    /// de uma tacada e' a soma dos degraus — nunca um multiplo do primeiro.
+    #[test]
+    fn energia_do_ponto_sobe_com_o_que_ja_foi_gasto() {
+        assert_eq!(custo_energia_do_ponto(0), 10);
+        assert_eq!(custo_energia_do_ponto(1), 15);
+        assert_eq!(custo_energia_do_ponto(10), 60);
+        assert_eq!(custo_energia_do_ponto(50), 260);
+        for n in 0..200u32 {
+            assert!(custo_energia_do_ponto(n + 1) > custo_energia_do_ponto(n));
+        }
+        assert_eq!(custo_energia_de_varios(0, 0), 0);
+        assert_eq!(custo_energia_de_varios(0, 1), 10);
+        assert_eq!(custo_energia_de_varios(0, 3), 10 + 15 + 20);
+        assert_eq!(custo_energia_de_varios(10, 2), 60 + 65);
+        // Um level-up inteiro (3 pontos) no comeco cabe em 3 coletas da ilha 1.
+        assert!(custo_energia_de_varios(0, POINTS_PER_LEVEL) <= 3 * 12 + 9);
+    }
+
+}
