@@ -59,5 +59,27 @@ refeitos nesta sessão.
 
 ## Publicação
 
-Em andamento. Os resultados do build iOS, envio ao TestFlight, backup e
-reinício da produção serão registrados abaixo após confirmação.
+- Código publicado no Git: commit `8d46cb1`.
+- Build release de servidor, API e painel concluído sem erro.
+- Teste adicional pelo despachante (10 pagos/11 entregues e repetição sem saldo)
+  passou após a suíte completa.
+- Mac atualizado por fast-forward e build iOS executado pelo script do projeto.
+- TestFlight: **Tempest 1.1 (2609201402)**, `UPLOAD SUCCEEDED with no errors`.
+  Delivery UUID: `718ae1e0-3b6c-49ea-8267-ecf998a3d62f`.
+  O upload foi confirmado; processamento e disponibilidade pela Apple não
+  foram verificados no App Store Connect.
+- Backups: `tempest-prod/dumps/tempest_sa01-pre-110-2609201402.dump` e
+  `tempest-prod/dumps/tempest_central-pre-110-2609201402.dump`.
+- Binários anteriores preservados em `tempest-prod/bak-110-2609201402/`.
+- Instalados os binários server, supervisor, web e panoptico. Reiniciados
+  `tempest-prod-campo`, `tempest-prod-geleira`, `tempest-prod-web` e
+  `tempest-prod-panoptico` às 11:26 de 20/09/2026 (São Paulo).
+- API pública confirmou protocolo 110 e anunciou Bosque (9000) e Geleira (9100).
+  Os quatro serviços ficaram ativos; logs confirmaram os dois mundos iniciados.
+- As portas públicas 9000 e 9100 responderam `101 Switching Protocols` à
+  negociação WebSocket. A conexão aberta foi encerrada pelo limite de 3 s
+  do teste. Hashes de server e web instalados conferem com o build release.
+- Consulta somente leitura confirmou item 362, Pergaminho de Invocação: Tomos,
+  com limite de pilha 99 no banco do realm.
+- É necessário atualizar o cliente para o protocolo 110. Não foi feito reset
+  de personagens nesta publicação.
