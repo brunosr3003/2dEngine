@@ -377,3 +377,25 @@ refeitos nesta sessão.
   460–474, slot `montaria`).
 - Backups: `tempest-prod/dumps/*-pre-reset-montaria.dump`; binários anteriores
   em `tempest-prod/bak-montaria-item/`.
+
+## Faixa de coleção e dois bugs de montaria (publicação)
+
+- Commit `6b07585`. TestFlight: **Tempest 1.1 (2609201831)**,
+  `UPLOAD SUCCEEDED with no errors`. Delivery UUID:
+  `f56e252c-be93-4c8f-93d1-91cf8fa56534`. Prod reiniciada às 15:33, sem
+  ninguém conectado; protocolo continua 115.
+- **Bug: não dava para montar.** Equipar a montaria não atualizava
+  `montaria_vista`, que só era mexida no login e na troca de preferência.
+  O `EntityMeta::kind` ia 0, o cliente não achava o modelo e desenhava o
+  jogador a pé — montado no servidor, a pé na tela. Agora
+  `sincroniza_montarias` roda no tick, como o `sincroniza_pets`.
+- **Bug: a cor não mudava a velocidade.** O servidor ainda usava a constante
+  `VEL_MONTADO` para todo mundo. `velocidade_de_andar` passou a receber o
+  multiplicador da montaria equipada (`mult_de_montaria`).
+- **Bug: o pet bugava no teleporte.** Passando de `TELEPORTE` (40 tiles) ele
+  reaparece ao lado do dono em vez de voltar andando; e mudança de instância
+  (dungeon) agora faz o pet renascer lá dentro.
+- Faixa **"meus pets" / "minhas montarias"** (`client/colecao.rs`, um código
+  para os dois painéis): lista o que está na bolsa, com equipar e combinar.
+- Quatro testes novos cobrem os três bugs. Servidor foi de 155 para 159.
+- Backups: `tempest-prod/dumps/*-pre-colecao-2609201831.dump`.
