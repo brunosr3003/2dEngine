@@ -35,14 +35,24 @@ swallow false
 #
 # A tela do aparelho e' 2400x1080 deitada (o jogo e' paisagem); a janela segue
 # essa proporcao pra nao sobrar tarja, que e' area onde o clique nao faz nada.
+#
+# A POSICAO nao vem daqui e nem adianta forcar: o emulador guarda a dele em
+# `~/.android/avd/tempest.avd/emulator-user.ini` e ignora o gerenciador de
+# janelas (`move` na regra e `movewindowpixel` em runtime nao surtem efeito).
+# Escrever o ini na mao tambem nao resolve, porque a posicao e' aplicada com a
+# janela ainda EM PE' e a rotacao pra paisagem a desloca — num teste foi parar
+# em y negativo, fora da tela.
+#
+# O jeito que funciona e' o simples: ARRASTE a janela uma vez pra onde voce
+# quiser e o emulador lembra dali em diante.
 hyprctl eval 'hl.window_rule({
     name  = "android-emulador",
     match = { class = "^(Emulator)$" },
     float = true,
     fullscreen = false,
     fullscreen_state = 0,
-    size  = { "monitor_w*0.68", "monitor_h*0.62" },
-    move  = { "monitor_w*0.30", "monitor_h*0.06" },
+    size  = { "monitor_w*0.47", "monitor_h*0.39" },
+    move  = { "monitor_w*0.52", "monitor_h*0.30" },
 })' >/dev/null 2>&1
 
 # A JANELA TEM QUE GIRAR JUNTO COM O APARELHO
@@ -92,11 +102,9 @@ if [ "${1:-}" = "--instalar" ]; then
     ) &
 fi
 
-# -gpu host: GL da placa (a RTX), nao o SwiftShader em CPU.
-# `GPU=swiftshader_indirect` troca pro software — mais lento, mas e' o teste
-# pra quando o clique do mouse nao chega no guest (o `adb shell input tap`
-# continua funcionando porque entra direto no Android, sem passar pela janela).
+# -gpu host: GL da placa (a RTX), nao o SwiftShader em CPU. `GPU=...` troca
+# (swiftshader_indirect e' o software; swangle_indirect DERRUBA o app).
 DISPLAY="${DISPLAY:-:1}" \
 XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
-QT_QPA_PLATFORM=xcb \
+QT_QPA_PLATFORM="${QT_PLAT:-xcb}" \
 "$ANDROID_HOME/emulator/emulator" -avd tempest -gpu "${GPU:-host}" -no-boot-anim -no-audio -no-metrics
