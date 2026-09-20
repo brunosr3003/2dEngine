@@ -123,11 +123,11 @@ pub mod alvo_de_coleta {
     pub const PEDRA: u16 = 1;
     pub const ARVORE: u16 = 2;
 
-    /// A coleta de um corpo de `tier` (0 = arvore, 1..4 = pedra) conta pra
-    /// este alvo?
+    /// A coleta de um corpo de `tier` (0 = arvore, 1..4 = pedra, 5 = Energia)
+    /// conta pra este alvo?
     pub fn conta(alvo: u16, tier: u8) -> bool {
         match alvo {
-            PEDRA => tier > 0,
+            PEDRA => (1..=4).contains(&tier),
             ARVORE => tier == 0,
             _ => true,
         }
@@ -175,7 +175,11 @@ pub fn giver_do_npc(papel: u16) -> Option<u16> {
         .chain([Papel::Armas].iter())
         .copied()
         .find(|p| *p as u16 == papel)?;
-    Some(giver_do_papel(if p == Papel::Armas { Papel::Armaduras } else { p }))
+    Some(giver_do_papel(if p == Papel::Armas {
+        Papel::Armaduras
+    } else {
+        p
+    }))
 }
 
 /// O NPC da vila por tras de um giver (o Mestre inclusive).
@@ -1259,7 +1263,10 @@ mod testes_dos_givers {
             giver_do_npc(Papel::Armaduras as u16),
             "os dois sao o Armeiro"
         );
-        assert_eq!(giver_do_npc(Papel::Missoes as u16), Some(GIVER_MESTRE_DA_ILHA));
+        assert_eq!(
+            giver_do_npc(Papel::Missoes as u16),
+            Some(GIVER_MESTRE_DA_ILHA)
+        );
     }
 
     /// As cadeias 511-538 passam de NPC em NPC: dois passos seguidos quase

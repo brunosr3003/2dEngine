@@ -114,6 +114,8 @@ pub struct Terreno {
     /// Um modelo por tier e variante. A pedra roxa nao e' a cinza pintada:
     /// ela tem mais cristal, e o modelo carrega isso.
     minerios: Vec<crate::vegetacao::Modelo>,
+    /// Cristais altos de Energia, separados visualmente do minério.
+    energias: Vec<crate::vegetacao::Modelo>,
     /// Colunas cujas pedras ja' foram esgotadas. Quem esta' aqui NAO e'
     /// desenhado — sem isso o jogador nao teria como distinguir o veio cheio
     /// do veio que ele acabou de limpar.
@@ -157,6 +159,7 @@ impl Terreno {
             arvores: Vec::new(),
             plantas: Vec::new(),
             minerios: Vec::new(),
+            energias: Vec::new(),
             esgotadas: std::collections::HashSet::new(),
             pedacos: HashMap::new(),
             gerados: 0,
@@ -197,12 +200,20 @@ impl Terreno {
                 ));
             }
         }
+        for k in 0..VARIANTES {
+            t.energias
+                .push(crate::vegetacao::energia(k as u32 * 29 + 811));
+        }
         t
     }
 
     fn modelo_de_minerio(&self, tier: u8, k: u32) -> &crate::vegetacao::Modelo {
         let t = (tier.clamp(1, 4) - 1) as usize;
         &self.minerios[t * VARIANTES + (k as usize % VARIANTES)]
+    }
+
+    fn modelo_de_energia(&self, k: u32) -> &crate::vegetacao::Modelo {
+        &self.energias[k as usize % VARIANTES]
     }
 
     /// Marca uma pedra como esgotada (ou de volta) e joga fora o pedaco que a
@@ -252,6 +263,7 @@ impl Terreno {
                 for e in buf.drain(..) {
                     let tipo = match e.tipo {
                         TipoDeEstorvo::Minerio(t) => t,
+                        TipoDeEstorvo::Energia => 5,
                         TipoDeEstorvo::Tronco => 0,
                         TipoDeEstorvo::Forracao => continue,
                     };
@@ -791,16 +803,6 @@ impl Terreno {
                 for ix in 0..n as i32 {
                     let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
                     let topo = em(ix, iz);
-                    let Some(m) = shared::terreno::minerio_da_coluna(
-                        self.bioma,
-                        bx,
-                        bz,
-                        topo,
-                        &self.ger,
-                        eh_agua(ix, iz),
-                    ) else {
-                        continue;
-                    };
                     let chave = shared::terreno::chave_de_coluna(
                         bx + self.ger.raio_blocos,
                         bz + self.ger.raio_blocos,
@@ -808,15 +810,31 @@ impl Terreno {
                     if self.esgotadas.contains(&chave) {
                         continue;
                     }
-                    crate::vegetacao::instancia(
-                        self.modelo_de_minerio(m.tier, m.variante),
-                        vec3(m.centro.x, (topo + 1) as f32 * BLOCO, m.centro.y),
-                        m.porte,
-                        &mut verts,
-                        &mut idx,
-                        &mut malhas,
-                        MAX_QUADS,
-                    );
+                    let agua = eh_agua(ix, iz);
+                    let recursos = [
+                        shared::terreno::minerio_da_coluna(
+                            self.bioma, bx, bz, topo, &self.ger, agua,
+                        ),
+                        shared::terreno::energia_da_coluna(
+                            self.bioma, bx, bz, topo, &self.ger, agua,
+                        ),
+                    ];
+                    for m in recursos.into_iter().flatten() {
+                        let modelo = if m.energia {
+                            self.modelo_de_energia(m.variante)
+                        } else {
+                            self.modelo_de_minerio(m.tier, m.variante)
+                        };
+                        crate::vegetacao::instancia(
+                            modelo,
+                            vec3(m.centro.x, (topo + 1) as f32 * BLOCO, m.centro.y),
+                            m.porte,
+                            &mut verts,
+                            &mut idx,
+                            &mut malhas,
+                            MAX_QUADS,
+                        );
+                    }
                 }
             }
 
@@ -855,6 +873,15 @@ impl Terreno {
                         eh_agua(ix, iz),
                     )
                     .is_some()
+                        || shared::terreno::energia_da_coluna(
+                            self.bioma,
+                            bx,
+                            bz,
+                            topo,
+                            &self.ger,
+                            eh_agua(ix, iz),
+                        )
+                        .is_some()
                     {
                         continue;
                     }
@@ -1062,32 +1089,53 @@ mod testes {
     /// as colunas VIZINHAS (chao limpo, cume): se um lado lesse a altura por
     /// outro caminho, a divergencia apareceria so' na beira do patamar.
     #[test]
-    fn toda_pedra_do_servidor_e_desenhada_no_cliente() {
+    fn toda_pedra_e_energia_do_servidor_e_desenhada_no_cliente() {
         use shared::terreno::{Ilha, TipoDeEstorvo, ESCALA_ALTURA, NIVEL_DO_MAR};
         let d = &ARQUIPELAGO[0];
         let t = Terreno::novo(d);
         let i = Ilha::carregar_ou_gerar("", d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
         let mut n = 0;
+        let mut energias = 0;
         for e in i.todos_os_estorvos() {
-            let TipoDeEstorvo::Minerio(tier) = e.tipo else {
-                continue;
+            let tier = match e.tipo {
+                TipoDeEstorvo::Minerio(tier) => tier,
+                TipoDeEstorvo::Energia => 5,
+                _ => continue,
             };
             let (ix, iz) = ((e.coluna >> 16) as i32, (e.coluna & 0xffff) as i32);
             let (bx, bz) = (ix - d.raio_blocos, iz - d.raio_blocos);
             let topo = t.ger.bloco_em(bx, bz);
             let agua = (topo + 1) as f32 * BLOCO <= NIVEL_DO_MAR;
-            let m = shared::terreno::minerio_da_coluna(d.bioma, bx, bz, topo, &t.ger, agua)
+            let m = if tier == 5 {
+                shared::terreno::energia_da_coluna(d.bioma, bx, bz, topo, &t.ger, agua)
+            } else {
+                shared::terreno::minerio_da_coluna(d.bioma, bx, bz, topo, &t.ger, agua)
+            }
                 .unwrap_or_else(|| {
                     panic!(
-                        "servidor tem pedra em {:?} que o cliente nao desenha",
+                        "servidor tem recurso em {:?} que o cliente nao desenha",
                         e.centro
                     )
                 });
-            assert_eq!(
-                m.tier, tier,
-                "pedra em {:?}: cor diferente nos dois lados",
-                e.centro
-            );
+            if tier == 5 {
+                assert!(
+                    m.energia,
+                    "cristal em {:?} virou pedra no cliente",
+                    e.centro
+                );
+                energias += 1;
+            } else {
+                assert!(
+                    !m.energia,
+                    "pedra em {:?} virou cristal no cliente",
+                    e.centro
+                );
+                assert_eq!(
+                    m.tier, tier,
+                    "pedra em {:?}: cor diferente nos dois lados",
+                    e.centro
+                );
+            }
             assert!(
                 m.centro.distance(e.centro) < 1e-4,
                 "pedra em lugares diferentes"
@@ -1096,6 +1144,10 @@ mod testes {
         }
         println!("{n} pedras conferidas dos dois lados");
         assert!(n > 50, "so' {n} pedras na ilha — teste vazio");
+        assert!(
+            energias > 10,
+            "so' {energias} cristais na ilha — teste vazio"
+        );
     }
 
     #[test]

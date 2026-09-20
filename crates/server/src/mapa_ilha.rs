@@ -55,7 +55,7 @@ pub fn zona_no_mapa(
 }
 
 /// Agrupa corpos coletaveis `(centro, tipo)` em regioes por celula e tipo.
-/// Tipo 0 = madeira, 1..4 = pedra pela cor. Ordem estavel: da mais cheia pra
+/// Tipo 0 = madeira, 1..4 = pedra pela cor, 5 = Energia. Ordem estavel: da mais cheia pra
 /// menos, desempatando pela posicao — duas subidas do servidor mandam igual.
 pub fn regioes_de_recurso(corpos: &[(Vec2, u8)]) -> Vec<RegiaoNoMapa> {
     use std::collections::HashMap;
@@ -70,7 +70,9 @@ pub fn regioes_de_recurso(corpos: &[(Vec2, u8)]) -> Vec<RegiaoNoMapa> {
     }
     let mut v: Vec<RegiaoNoMapa> = grupos
         .into_iter()
-        .filter(|(_, ps)| ps.len() >= MINIMO_POR_REGIAO)
+        // Energia e' rara (55 cristais no Bosque inteiro); uma celula com
+        // apenas um ja' precisa aparecer no mapa para ser encontravel.
+        .filter(|((_, _, tipo), ps)| ps.len() >= if *tipo == 5 { 1 } else { MINIMO_POR_REGIAO })
         .map(|((_, _, tipo), ps)| {
             let c = ps.iter().fold(Vec2::ZERO, |a, b| a + *b) / ps.len() as f32;
             let r = ps.iter().map(|p| p.distance(c)).fold(0.0f32, f32::max);
@@ -85,8 +87,11 @@ pub fn regioes_de_recurso(corpos: &[(Vec2, u8)]) -> Vec<RegiaoNoMapa> {
         })
         .collect();
     v.sort_by(|a, b| {
-        b.contagem
-            .cmp(&a.contagem)
+        // Regiao de Energia aparece mesmo se a ilha tiver >600 regioes
+        // comuns: sem isso o recurso novo some da busca do jogador.
+        (b.tipo == 5)
+            .cmp(&(a.tipo == 5))
+            .then(b.contagem.cmp(&a.contagem))
             .then(a.tipo.cmp(&b.tipo))
             .then(a.centro[0].total_cmp(&b.centro[0]))
             .then(a.centro[1].total_cmp(&b.centro[1]))
@@ -191,6 +196,21 @@ mod testes {
         }
         assert_eq!(r[0].contagem, 10, "a mais cheia vem primeiro");
         assert_eq!(regioes_de_recurso(&corpos), r, "ordem instavel");
+    }
+
+    #[test]
+    fn cristal_raro_aparece_no_mapa_mesmo_com_teto_de_regioes() {
+        let mut corpos = vec![(Vec2::new(8.0, 8.0), 5)];
+        for i in 0..(MAX_REGIOES + 20) {
+            let x = (i as f32) * CELULA_DE_RECURSO * 2.0;
+            for j in 0..MINIMO_POR_REGIAO {
+                corpos.push((Vec2::new(x + j as f32, 120.0), 1));
+            }
+        }
+        let regioes = regioes_de_recurso(&corpos);
+        assert_eq!(regioes.len(), MAX_REGIOES);
+        assert_eq!(regioes[0].tipo, 5);
+        assert_eq!(regioes[0].contagem, 1);
     }
 
     /// Ilha cheia de pedra e tronco espalhados, 60 zonas: a mensagem inteira no

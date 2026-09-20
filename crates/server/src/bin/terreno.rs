@@ -158,6 +158,7 @@ fn alcance(args: &[String]) {
         .filter_map(|e| match e.tipo {
             TipoDeEstorvo::Tronco => Some((e.centro, 0)),
             TipoDeEstorvo::Minerio(t) => Some((e.centro, t)),
+            TipoDeEstorvo::Energia => Some((e.centro, 5)),
             TipoDeEstorvo::Forracao => None,
         })
         .collect();

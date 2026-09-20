@@ -6,6 +6,7 @@ pub(super) struct HabilidadePendente {
     sid: SessionId,
     pub(super) dono: EntityId,
     skill: Skill,
+    tier: u8,
     de: Vec2,
     alvo: Vec2,
     alvo_eid: EntityId,
@@ -37,6 +38,59 @@ fn valida(
         return Err("Mana insuficiente.");
     }
     Ok(())
+}
+
+/// Geometria dos despertares, fixada no início da conjuração.
+fn skill_ajustada(mut skill: Skill, tier: u8) -> Skill {
+    if tier >= 5 {
+        match skill.id {
+            2 | 4 | 6 | 8 => skill.alcance *= 1.15,
+            5 | 9 | 11 | 12 => skill.raio *= 1.20,
+            _ => {}
+        }
+    }
+    if tier >= 8 {
+        match skill.id {
+            4 | 6 => skill.alcance *= 1.15,
+            5 | 9 | 11 | 12 => skill.raio *= 1.10,
+            _ => {}
+        }
+    }
+    skill
+}
+
+fn dano_evoluido(base: i32, tier: u8, skill_id: u32) -> i32 {
+    if base <= 0 {
+        return 0;
+    }
+    let mut mult = shared::skills::multiplicador_do_tier(tier);
+    if tier >= 5 && matches!(skill_id, 1 | 6 | 7) {
+        mult += 0.08;
+    }
+    if tier >= 8 && matches!(skill_id, 5 | 7 | 9 | 12) {
+        mult += 0.08;
+    }
+    if tier >= 10 && matches!(skill_id, 1 | 2 | 4 | 5 | 6 | 8 | 9 | 12) {
+        mult += 0.12;
+    }
+    (base as f32 * mult).round().max(1.0) as i32
+}
+
+fn cura_evoluida(base: i32, tier: u8, skill_id: u32) -> i32 {
+    if base <= 0 {
+        return 0;
+    }
+    let mut mult = shared::skills::multiplicador_do_tier(tier);
+    if tier >= 5 && skill_id == 10 {
+        mult += 0.10;
+    }
+    if tier >= 8 && matches!(skill_id, 10 | 11) {
+        mult += 0.10;
+    }
+    if tier >= 10 && matches!(skill_id, 10 | 11) {
+        mult += 0.15;
+    }
+    (base as f32 * mult).round().max(1.0) as i32
 }
 
 impl GameWorld {
@@ -139,6 +193,8 @@ impl GameWorld {
             || agora < s.dash_until
             || agora < s.leap_until;
         let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
+        let tier = s.skill_progress.tier(skill_id);
+        let skill = skill_ajustada(skill, tier);
         if let Err(motivo) = valida(
             &skill,
             Conjunto::da_arma(s.equipment.weapon.unwrap_or(0)),
@@ -204,6 +260,7 @@ impl GameWorld {
             inicio: agora,
             impacto: agora + skill.impacto_em(),
             skill,
+            tier,
         });
         self.estado_skills(sid);
         for s in self.sessions.values().filter(|s| s.logged_in) {
@@ -315,7 +372,7 @@ impl GameWorld {
             }
             let origem = if h.skill.id == 1 { h.de } else { pos };
             let alvo = h.alvo;
-            self.efeito_habilidade(h.dono, h.alvo_eid, origem, alvo, &h.skill);
+            self.efeito_habilidade(h.dono, h.alvo_eid, origem, alvo, &h.skill, h.tier);
             if let Some(s) = self.sessions.get_mut(&h.sid) {
                 s.casting_mp_paid = 0.0;
                 s.casting_skill_id = 0;
@@ -338,18 +395,31 @@ impl GameWorld {
         de: Vec2,
         alvo: Vec2,
         skill: &Skill,
+        tier: u8,
     ) {
         let dir = (alvo - de).try_normalize().unwrap_or(Vec2::Y);
         if skill.id == 3 {
             if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == dono) {
-                s.muralha_ate = self.sim_time_s + skill.duracao_efeito();
+                s.muralha_ate = self.sim_time_s
+                    + if tier >= 10 {
+                        8.0
+                    } else if tier >= 5 {
+                        6.0
+                    } else {
+                        skill.duracao_efeito()
+                    };
             }
             return;
+        }
+        if skill.id == 1 && tier >= 8 {
+            if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == dono) {
+                s.muralha_ate = s.muralha_ate.max(self.sim_time_s + 2.0);
+            }
         }
         if skill.forma == Forma::EmSi {
             self.pending_heals.push(PendingHeal {
                 target_net: dono,
-                amount: skill.cura,
+                amount: cura_evoluida(skill.cura, tier, skill.id),
             });
             return;
         }
@@ -369,12 +439,14 @@ impl GameWorld {
         // a skill nunca critava e o basico sim — mais um motivo pra ela
         // render menos que o golpe que desliga. Um sorteio por conjuracao,
         // como o basico faz por golpe (todos os alvos levam o mesmo).
-        let crit = chance_crit > 0.0 && fastrand::f32() < chance_crit;
-        let dano = if crit {
+        let crit =
+            (skill.id == 7 && tier >= 10) || (chance_crit > 0.0 && fastrand::f32() < chance_crit);
+        let dano_base = if crit {
             (skill.dano_efetivo(atk, cd) as f32 * shared::CRIT_DAMAGE_MULT).round() as i32
         } else {
             skill.dano_efetivo(atk, cd)
         };
+        let dano = dano_evoluido(dano_base, tier, skill.id);
         if skill.forma == Forma::Projetil {
             // Disparo target: outro mob cruzando a linha nao troca o destinatario.
             self.pending_skill_hits.push(PendingSkillHit {
@@ -384,7 +456,7 @@ impl GameWorld {
                 hurt_dir: -dir,
                 is_crit: crit,
                 from_player: true,
-                knockback: 0.0,
+                knockback: if skill.id == 7 && tier >= 8 { 0.7 } else { 0.0 },
             });
             return;
         }
@@ -397,13 +469,17 @@ impl GameWorld {
                     hurt_dir: (de - pos).normalize_or_zero(),
                     is_crit: crit,
                     from_player: true,
-                    knockback: if skill.id == 1 { 0.7 } else { 0.0 },
+                    knockback: if skill.id == 1 || (skill.id == 8 && tier >= 8) {
+                        0.7
+                    } else {
+                        0.0
+                    },
                 });
             }
             if skill.cura > 0 {
                 self.pending_heals.push(PendingHeal {
                     target_net: net,
-                    amount: skill.cura,
+                    amount: cura_evoluida(skill.cura, tier, skill.id),
                 });
             }
         }
@@ -498,6 +574,35 @@ fn dentro_da_forma(skill: &Skill, de: Vec2, dir: Vec2, alvo: Vec2, pos: Vec2) ->
                 && (de + dir * t).distance(pos) <= skill.raio.max(0.8)
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod testes_de_evolucao {
+    use super::*;
+
+    #[test]
+    fn tier_um_preserva_o_golpe_e_tier_x_melhora() {
+        for skill in shared::skills::playtest() {
+            if skill.dano > 0 {
+                assert_eq!(dano_evoluido(100, 1, skill.id), 100);
+                assert!(dano_evoluido(100, 10, skill.id) >= 121);
+            }
+            if skill.cura > 0 {
+                assert_eq!(cura_evoluida(100, 1, skill.id), 100);
+                assert!(cura_evoluida(100, 10, skill.id) >= 121);
+            }
+        }
+        let tiro = shared::skills::playtest()
+            .into_iter()
+            .find(|s| s.id == 7)
+            .unwrap();
+        assert_eq!(skill_ajustada(tiro.clone(), 1).alcance, tiro.alcance);
+        let barril = shared::skills::playtest()
+            .into_iter()
+            .find(|s| s.id == 9)
+            .unwrap();
+        assert!(skill_ajustada(barril.clone(), 8).raio > barril.raio);
     }
 }
 

@@ -157,6 +157,7 @@ pub fn nome_do_tipo(t: u8) -> &'static str {
         2 => "Pedra verde",
         3 => "Pedra azul",
         4 => "Pedra roxa",
+        5 => "Energia",
         _ => "Recurso",
     }
 }
@@ -168,6 +169,7 @@ fn cor_do_tipo(t: u8) -> Color {
         2 => Color::new(0.35, 0.90, 0.45, 1.0),
         3 => Color::new(0.35, 0.60, 1.0, 1.0),
         4 => Color::new(0.78, 0.45, 1.0, 1.0),
+        5 => Color::new(0.25, 0.82, 1.0, 1.0),
         _ => WHITE,
     }
 }
@@ -202,6 +204,7 @@ pub struct Filtros {
     pub bichos_ocultos: HashSet<u16>,
     /// Por tipo: 0 madeira, 1..4 pedra pela cor.
     pub recursos: [bool; 5],
+    pub energia: bool,
     /// Cidade, porto, predios e NPCs.
     pub vila: bool,
 }
@@ -212,6 +215,7 @@ impl Default for Filtros {
             mobs: false,
             bichos_ocultos: HashSet::new(),
             recursos: [false; 5],
+            energia: false,
             vila: false,
         }
     }
@@ -223,6 +227,7 @@ impl From<&shared::protocol::FiltrosDoMapa> for Filtros {
             mobs: f.mobs,
             bichos_ocultos: f.bichos_ocultos.iter().copied().collect(),
             recursos: f.recursos,
+            energia: f.energia,
             vila: f.vila,
         }
     }
@@ -238,6 +243,7 @@ impl Filtros {
             mobs: self.mobs,
             bichos_ocultos: bichos,
             recursos: self.recursos,
+            energia: self.energia,
             vila: self.vila,
         }
     }
@@ -252,7 +258,11 @@ impl Filtros {
     }
 
     pub fn regiao_visivel(&self, r: &RegiaoNoMapa) -> bool {
-        self.recursos.get(r.tipo as usize).copied().unwrap_or(false)
+        if r.tipo == 5 {
+            self.energia
+        } else {
+            self.recursos.get(r.tipo as usize).copied().unwrap_or(false)
+        }
     }
 }
 
@@ -1030,7 +1040,12 @@ impl Mapa {
 
     fn lateral_rect(r: Rect) -> Rect {
         let k = Self::escala();
-        Rect::new(r.x + r.w + 14.0 * k, r.y - 38.0 * k, LARGURA_LATERAL * k, r.h + 46.0 * k)
+        Rect::new(
+            r.x + r.w + 14.0 * k,
+            r.y - 38.0 * k,
+            LARGURA_LATERAL * k,
+            r.h + 46.0 * k,
+        )
     }
 
     /// Filtros e "Ir para", ao lado do mapa grande. Devolve o "Ir" clicado.
@@ -1053,7 +1068,13 @@ impl Mapa {
         let mut saida: Option<Entrada> = None;
 
         // ── filtros ──
-        estilo::texto_forte(lat.x + u(14.0), lat.y + u(26.0), "Filtros", 16, estilo::OURO);
+        estilo::texto_forte(
+            lat.x + u(14.0),
+            lat.y + u(26.0),
+            "Filtros",
+            16,
+            estilo::OURO,
+        );
         let (mut x, mut y) = (lat.x + u(12.0), lat.y + u(38.0));
         let mut chips: Vec<(String, bool, Color, Chip)> =
             vec![("Mobs".into(), self.filtros.mobs, COR_MOB, Chip::Mobs)];
@@ -1065,10 +1086,14 @@ impl Mapa {
                 Chip::Bicho(k),
             ));
         }
-        for t in 0..5u8 {
+        for t in 0..6u8 {
             chips.push((
                 nome_do_tipo(t).into(),
-                self.filtros.recursos[t as usize],
+                if t == 5 {
+                    self.filtros.energia
+                } else {
+                    self.filtros.recursos[t as usize]
+                },
                 cor_do_tipo(t),
                 Chip::Recurso(t),
             ));
@@ -1128,7 +1153,11 @@ impl Mapa {
         let eu = eu.unwrap_or(Vec2::ZERO);
         let bichos = info.bichos();
         let tipos = info.tipos();
-        let npcs = if self.npcs_abertos { self.npcs.clone() } else { Vec::new() };
+        let npcs = if self.npcs_abertos {
+            self.npcs.clone()
+        } else {
+            Vec::new()
+        };
         let n_npcs = self.npcs.len();
         let total = (3 + bichos.len() + tipos.len() + npcs.len()) as f32 * u(LINHA_IR);
         // Rola arrastando, pela roda ou pela barra; o "Ir" vale no SOLTAR.
@@ -1174,7 +1203,11 @@ impl Mapa {
         let titulo_npcs = Rect::new(area.x, ly, area.w - u(14.0), u(LINHA_IR));
         let mut alterna_npcs = false;
         if visivel(ly) {
-            let acao = if self.npcs_abertos { "ocultar" } else { "ver ›" };
+            let acao = if self.npcs_abertos {
+                "ocultar"
+            } else {
+                "ver ›"
+            };
             estilo::texto(
                 area.x + u(6.0),
                 ly + u(18.0),
@@ -1192,7 +1225,14 @@ impl Mapa {
                 raio: 0.0,
                 rotulo: nome.clone(),
             };
-            linha(nome, format!("{:.0} m", p.distance(eu)), COR_NPC, Some(alvo), ly, &mut saida);
+            linha(
+                nome,
+                format!("{:.0} m", p.distance(eu)),
+                COR_NPC,
+                Some(alvo),
+                ly,
+                &mut saida,
+            );
             ly += u(LINHA_IR);
         }
         if visivel(ly) {
@@ -1259,7 +1299,11 @@ impl Mapa {
                 }
             }
             Some(Chip::Recurso(t)) => {
-                self.filtros.recursos[t as usize] = !self.filtros.recursos[t as usize]
+                if t == 5 {
+                    self.filtros.energia = !self.filtros.energia;
+                } else {
+                    self.filtros.recursos[t as usize] = !self.filtros.recursos[t as usize];
+                }
             }
             Some(Chip::Vila) => self.filtros.vila = !self.filtros.vila,
             None => {}
@@ -1739,9 +1783,20 @@ impl Mapa {
         let (sw, sh) = (screen_width(), screen_height());
         draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.45));
         let r = Self::grande_rect();
-        estilo::painel(Rect::new(r.x - u(8.0), r.y - u(38.0), r.w + u(16.0), r.h + u(46.0)));
+        estilo::painel(Rect::new(
+            r.x - u(8.0),
+            r.y - u(38.0),
+            r.w + u(16.0),
+            r.h + u(46.0),
+        ));
         let nome = self.def.map_or("", |d| d.nome);
-        estilo::texto_forte(r.x, r.y - u(14.0), &format!("Mapa · {nome}"), 17, estilo::OURO);
+        estilo::texto_forte(
+            r.x,
+            r.y - u(14.0),
+            &format!("Mapa · {nome}"),
+            17,
+            estilo::OURO,
+        );
         let dica = "clique: viajar · zona/recurso: ir · Esc fecha";
         estilo::texto(
             r.x + r.w - u(36.0) - estilo::medir(dica, 13),
@@ -2281,15 +2336,19 @@ mod tests {
         // O mapa abre limpo: nada aparece ate' o jogador ligar.
         let padrao = Filtros::default();
         assert!(!padrao.zona_visivel(&lobos));
-        assert!((0..5).all(|t| !padrao.regiao_visivel(&regiao(0.0, t))));
+        assert!((0..=5).all(|t| !padrao.regiao_visivel(&regiao(0.0, t))));
         assert!(!padrao.vila);
         let mut f = Filtros {
             mobs: true,
             bichos_ocultos: HashSet::new(),
             recursos: [true; 5],
+            energia: true,
             vila: true,
         };
         assert!(f.zona_visivel(&lobos));
+        assert!(f.regiao_visivel(&regiao(0.0, 5)));
+        f.energia = false;
+        assert!(!f.regiao_visivel(&regiao(0.0, 5)));
         f.bichos_ocultos.insert(1);
         assert!(
             f.zona_visivel(&lobos),

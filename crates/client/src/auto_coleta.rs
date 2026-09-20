@@ -26,6 +26,7 @@ pub enum Acao {
     /// Pedir o no' mais perto dos tipos, a ate' `raio` de `centro`.
     PedirNo {
         tipos: [bool; 5],
+        energia: bool,
         raio: f32,
         centro: Vec2,
     },
@@ -51,6 +52,7 @@ pub struct AutoColeta {
     pub centro: Option<Vec2>,
     /// Configuracao do jogador (salva nas preferencias).
     pub tipos: [bool; 5],
+    pub energia: bool,
     pub raio: f32,
     /// Tipos da missao em curso: ignoram a configuracao.
     forcados: Option<[bool; 5]>,
@@ -75,6 +77,7 @@ impl Default for AutoColeta {
         Self {
             centro: None,
             tipos: [true; 5],
+            energia: true,
             raio: shared::COLETA_RAIO_AUTO_PADRAO,
             forcados: None,
             filtro: None,
@@ -220,6 +223,7 @@ impl AutoColeta {
                     Some((tipo, perto)) => Acao::PedirNoDoTipo { tipo, perto },
                     None => Acao::PedirNo {
                         tipos: self.tipos_efetivos(),
+                        energia: self.forcados.is_none() && self.energia,
                         raio: self.raio,
                         centro,
                     },
@@ -355,6 +359,7 @@ mod tests {
             a.passo(Vec2::ZERO, 0.0, false),
             Acao::PedirNo {
                 tipos: [false, true, true, false, false],
+                energia: true,
                 raio: 40.0,
                 centro: Vec2::ZERO
             }

@@ -28,6 +28,15 @@ Quando a reserva zera o nó **esgota**: some pra todo mundo, **sai da colisão**
 | tempo de um ciclo | pedra 2,5 · 2,8 · 3,1 · 3,4 s; tronco 2,0 s | **decisão provisória (não estava no planejamento)** — o doc só tinha o ritmo por densidade |
 | alcance | 1,4 u de borda a borda | **decisão provisória (não estava no planejamento)** |
 | raio do AUTO COLETA | 20–100 u, padrão 60 | **decisão provisória (não estava no planejamento)** |
+| Cristal de Energia | 20 coletas · 360 s de respawn · ciclo de 2,5 s | `COLETAS_POR_ENERGIA`, `RESPAWN_DA_ENERGIA` e `COLETA_CICLO_ENERGIA_S` |
+
+O **cristal de Energia** é um novo recurso coletável (tipo 5), distinto de
+pedra e árvore. Cada ciclo credita Energia diretamente ao personagem, sem
+ocupar bolsa: 12/28/60/120 por ciclo, conforme a ilha. Ela serve à evolução
+das habilidades ([SKILLS.md](SKILLS.md)). O filtro do mapa mostra regiões
+agregadas, não cada cristal; o AUTO COLETA tem uma opção própria para ele.
+Missões que pedem especificamente **pedra** não contam Energia. Os cristais
+usam uma grade de geração própria: não substituem nem reduzem os minérios.
 
 Missões e diárias de coleta (`GATHER`) contam **por coleta rendida** (cada
 ciclo), não por nó esgotado.

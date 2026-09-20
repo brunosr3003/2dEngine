@@ -10,18 +10,17 @@
 
 mod api;
 mod auto_combate;
-mod banco_ui;
 mod auto_dungeon;
 mod auto_missao;
 mod avisos;
+mod banco_ui;
 mod bicho;
 mod bolsa;
 mod craft_ui;
-mod oficina_ui;
-mod rolagem;
 mod dungeon_ui;
 mod efeitos;
 mod entrada;
+mod evolucao_skills;
 mod forja_ui;
 mod ganhos;
 mod gpu_estatica;
@@ -30,8 +29,8 @@ mod habilidades_input;
 mod hud;
 mod hud_estilo;
 mod hud_layout;
-mod icones;
 mod icone_npc;
+mod icones;
 mod icones_ui;
 mod login_google;
 mod loja;
@@ -40,6 +39,8 @@ mod menu;
 mod mercado_ui;
 mod missoes;
 mod nativo;
+mod oficina_ui;
+mod rolagem;
 mod social_ui;
 mod teclado_virtual;
 
@@ -178,6 +179,7 @@ struct Jogo {
     /// Vida, mana, vigor e experiencia do HUD (`hud::Ficha`).
     ficha: hud::Ficha,
     habilidades: habilidades::Habilidades,
+    evolucao_skills: evolucao_skills::EvolucaoSkills,
     auto_combate: auto_combate::AutoCombate,
     /// Loja do NPC vendedor aberta, e o NPC clicado de longe (anda e fala).
     loja: loja::Loja,
@@ -433,6 +435,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_EVOLUCAO").is_ok() {
+        evolucao_skills::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_OFICINA").is_ok() {
         craft_ui::previa().await;
         return;
@@ -482,6 +489,7 @@ async fn main() {
         bolsa: bolsa::Bolsa::default(),
         ficha: hud::Ficha::default(),
         habilidades: habilidades::Habilidades::default(),
+        evolucao_skills: evolucao_skills::EvolucaoSkills::default(),
         auto_combate: auto_combate::AutoCombate::default(),
         loja: loja::Loja::default(),
         ganhos: ganhos::Ganhos::default(),
@@ -808,6 +816,7 @@ impl Jogo {
         self.world = World::default();
         self.ganhos = ganhos::Ganhos::default();
         self.habilidades = habilidades::Habilidades::default();
+        self.evolucao_skills.progresso = Default::default();
         if self.economia.ativa {
             self.economia.sair(get_time());
         }
@@ -1298,6 +1307,13 @@ impl Jogo {
             ServerMessage::ManaUpdate { current } => self.ficha.mp = Some(current),
             ServerMessage::StaminaUpdate { current } => self.ficha.vigor = Some(current),
             ServerMessage::SkillsConfig { skills } => self.habilidades.catalogo = skills,
+            ServerMessage::ProgressoDeSkills { progresso } => {
+                self.evolucao_skills.progresso = progresso;
+            }
+            ServerMessage::ResultadoDeEvolucao { ok: _, texto } => {
+                self.evolucao_skills.resultado(texto.clone());
+                self.chat.push(texto);
+            }
             ServerMessage::SkillsState { cooldowns, busy_s } => {
                 self.habilidades.estado(cooldowns, busy_s)
             }
@@ -1796,7 +1812,12 @@ impl Jogo {
     /// "Receber"; missao nova vira dialogo de "Aceitar" — ou, em auto missao
     /// logo depois de receber, ja' e' aceita e o personagem segue; sem nada a
     /// fazer, a janela de sempre.
-    fn ao_receber_oferta(&mut self, giver: u16, quem: String, quests: Vec<shared::quests::QuestNet>) {
+    fn ao_receber_oferta(
+        &mut self,
+        giver: u16,
+        quem: String,
+        quests: Vec<shared::quests::QuestNet>,
+    ) {
         use shared::quests::{falas, momento};
         // Entrega-se a quem deu: o Mestre OU o NPC da vila da cadeia.
         let pronta = {
@@ -1917,8 +1938,14 @@ impl Jogo {
             h,
         );
         self.botao_teleporte = Some(r);
-        hud_estilo::botao(r, &rotulo, hud_estilo::estado_de(r, qtd == 0, false), qtd > 0);
-        if !(is_mouse_button_pressed(MouseButton::Left) && r.contains(Vec2::from(mouse_position()))) {
+        hud_estilo::botao(
+            r,
+            &rotulo,
+            hud_estilo::estado_de(r, qtd == 0, false),
+            qtd > 0,
+        );
+        if !(is_mouse_button_pressed(MouseButton::Left) && r.contains(Vec2::from(mouse_position())))
+        {
             return;
         }
         if qtd == 0 {
@@ -1938,6 +1965,7 @@ impl Jogo {
             || self.mapa.aberto
             || self.craft.aberto()
             || self.forja.aberto()
+            || self.evolucao_skills.aberto
             || self.menu_missoes.aberto
             || self.diarias.aberto
             || self.lojas.aberto
@@ -2218,6 +2246,7 @@ impl Jogo {
         self.mapa.aberto = false;
         self.craft.fechar();
         self.forja.fechar();
+        self.evolucao_skills.fechar();
         self.menu_missoes.aberto = false;
         self.diarias.fechar();
         self.lojas.fechar();
@@ -2295,6 +2324,7 @@ impl Jogo {
             Item::Diarias => self.diarias.abrir(),
             Item::Craft => self.craft.abrir(),
             Item::Forja => self.forja.abrir(),
+            Item::Habilidades => self.evolucao_skills.abrir(),
             Item::Mapa if self.mapa.tem_ilha() => self.mapa.abrir(),
             Item::Mapa => {
                 self.voltar_ao_menu = false;
@@ -2319,7 +2349,9 @@ impl Jogo {
                             rotulo: format!("Banco · {nome}"),
                         });
                     }
-                    None => self.chat.push("Banco: só nas ilhas, com o Banqueiro do porto.".into()),
+                    None => self
+                        .chat
+                        .push("Banco: só nas ilhas, com o Banqueiro do porto.".into()),
                 }
             }
             Item::Presenca => {
@@ -2391,6 +2423,9 @@ impl Jogo {
             true
         } else if self.forja.aberto() {
             self.forja.fechar();
+            true
+        } else if self.evolucao_skills.aberto {
+            self.evolucao_skills.fechar();
             true
         } else if self.craft.aberto() {
             self.craft.fechar();
@@ -2691,6 +2726,9 @@ impl Jogo {
         if let Some(t) = p.coleta_tipos {
             self.auto_coleta.tipos = t;
         }
+        if let Some(e) = p.coleta_energia {
+            self.auto_coleta.energia = e;
+        }
         if let Some(r) = p.coleta_raio {
             self.auto_coleta.raio = r;
         }
@@ -2730,6 +2768,7 @@ impl Jogo {
             camera_zoom: Some(cent(self.cam_zoom)),
             camera_pitch_ajuste: Some(cent(self.cam_pitch_ajuste)),
             coleta_tipos: Some(self.auto_coleta.tipos),
+            coleta_energia: Some(self.auto_coleta.energia),
             coleta_raio: Some(cent(self.auto_coleta.raio)),
             coleta_defender: Some(self.auto_coleta.defender),
             escala_ui: Some(cent(hud_layout::escala_ui())),
@@ -3000,11 +3039,13 @@ impl Jogo {
         match self.auto_coleta.passo(eu, agora, self.mapa.viagem.ativa()) {
             auto_coleta::Acao::PedirNo {
                 tipos,
+                energia,
                 raio,
                 centro,
             } => {
                 self.envia(ClientMessage::PedirNoDeColeta {
                     tipos,
+                    energia,
                     raio,
                     centro: [centro.x, centro.y],
                 });
@@ -3161,7 +3202,7 @@ impl Jogo {
                     .find(|(_, e)| {
                         e.meta.tag == shared::EntityTag::Npc
                             && shared::quests::giver_do_npc(
-                                shared::npc_papel_de_kind(e.meta.kind) as u16,
+                                shared::npc_papel_de_kind(e.meta.kind) as u16
                             ) == Some(giver)
                     })
                     .map(|(id, e)| (*id, e.render_pos));
@@ -3181,7 +3222,9 @@ impl Jogo {
                             rotulo: nome,
                         });
                     }
-                    (None, None) => self.chat.push("Não sei onde fica quem dá essa missão.".into()),
+                    (None, None) => self
+                        .chat
+                        .push("Não sei onde fica quem dá essa missão.".into()),
                 }
             }
             menu_missoes::Clique::Aviso(s) => self.chat.push(s),
@@ -3648,7 +3691,8 @@ impl Jogo {
         // O HUD e' conferido no ponto do DEDO, nao no do mouse simulado: ele
         // fica onde foi o toque anterior, e um giro que comecasse logo depois
         // de tocar num botao nascia morto (ver `ui_pega_em`).
-        let sobre_hud = self.toque_consumido || resto.first().is_some_and(|t| self.ui_pega_em(t.pos));
+        let sobre_hud =
+            self.toque_consumido || resto.first().is_some_and(|t| self.ui_pega_em(t.pos));
         self.toque_acao = self.gesto_camera.quadro(&resto, sobre_hud);
     }
 
@@ -4117,8 +4161,12 @@ impl Jogo {
                 );
                 let conjunto =
                     shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0));
-                self.habilidades
-                    .barra(conjunto, nivel, self.ficha.mp.unwrap_or(0));
+                self.habilidades.barra(
+                    conjunto,
+                    nivel,
+                    self.ficha.mp.unwrap_or(0),
+                    &self.evolucao_skills.progresso,
+                );
                 self.auto_combate.desenha();
                 self.auto_coleta.desenha();
                 if hud::draw_atacar(&z, self.alvo.is_some()) {
@@ -4341,10 +4389,13 @@ impl Jogo {
                 .filter(|s| s.item_id == shared::item_id::COPPER && s.instance.is_none())
                 .map(|s| s.qty as u64)
                 .sum();
-            for pedido in self
-                .loja
-                .desenha(&self.bolsa.nomes, &self.bolsa.slots, self.bolsa.ouro, cobre, &nome)
-            {
+            for pedido in self.loja.desenha(
+                &self.bolsa.nomes,
+                &self.bolsa.slots,
+                self.bolsa.ouro,
+                cobre,
+                &nome,
+            ) {
                 self.envia(pedido);
             }
         }
@@ -4371,17 +4422,19 @@ impl Jogo {
             }
         }
         if self.config_coleta.aberto {
-            let (mut tipos, mut raio, mut defender) = (
+            let (mut tipos, mut energia, mut raio, mut defender) = (
                 self.auto_coleta.tipos,
+                self.auto_coleta.energia,
                 self.auto_coleta.raio,
                 self.auto_coleta.defender,
             );
             if self
                 .config_coleta
-                .desenha(&mut tipos, &mut raio, &mut defender)
+                .desenha(&mut tipos, &mut energia, &mut raio, &mut defender)
             {
                 // Vai pro servidor pelas preferencias (sincronia a cada quadro).
                 self.auto_coleta.tipos = tipos;
+                self.auto_coleta.energia = energia;
                 self.auto_coleta.raio = raio;
                 self.auto_coleta.defender = defender;
             }
@@ -4419,6 +4472,22 @@ impl Jogo {
                 get_time(),
             ) {
                 self.envia(m);
+            }
+        }
+        if self.evolucao_skills.aberto && !onde {
+            let cobre: u32 = self
+                .bolsa
+                .slots
+                .iter()
+                .filter(|s| s.item_id == shared::item_id::COPPER && s.instance.is_none())
+                .map(|s| s.qty)
+                .sum();
+            if let Some(pedido) = self.evolucao_skills.desenha(
+                &self.habilidades.catalogo,
+                self.ficha.nivel.max(1),
+                cobre,
+            ) {
+                self.envia(pedido);
             }
         }
         if self.missoes.aberta && !onde {

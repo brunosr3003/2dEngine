@@ -207,7 +207,12 @@ pub async fn abrir(vox: &VoxCache) {
                     distancia_alvo: None,
                 });
             }
-            habilidades.barra(skill.conjunto, 20, 126);
+            habilidades.barra(
+                skill.conjunto,
+                20,
+                126,
+                &shared::skills::ProgressoDeSkills::default(),
+            );
             auto.desenha();
             crate::hud::draw_atacar(&z, true);
             crate::hud::draw_rapidos(

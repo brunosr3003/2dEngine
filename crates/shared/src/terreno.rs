@@ -1233,6 +1233,8 @@ pub struct Minerio {
     pub tier: u8,
     pub porte: f32,
     pub variante: u32,
+    /// A Energia usa este mesmo formato, mas uma grade de geracao separada.
+    pub energia: bool,
 }
 
 /// Cristal da cor do tier: 1 cinza, 2 verde, 3 azul, 4 roxo.
@@ -1305,6 +1307,31 @@ pub fn minerio_da_coluna(
     ger: &Gerador,
     agua: bool,
 ) -> Option<Minerio> {
+    recurso_montanha_da_coluna(bioma, bx, bz, topo, ger, agua, false)
+}
+
+/// Cristal de Energia: grade independente da de minérios. Não transforma
+/// minério em Energia nem reduz a oferta de pedra na ilha.
+pub fn energia_da_coluna(
+    bioma: Bioma,
+    bx: i32,
+    bz: i32,
+    topo: i32,
+    ger: &Gerador,
+    agua: bool,
+) -> Option<Minerio> {
+    recurso_montanha_da_coluna(bioma, bx, bz, topo, ger, agua, true)
+}
+
+fn recurso_montanha_da_coluna(
+    bioma: Bioma,
+    bx: i32,
+    bz: i32,
+    topo: i32,
+    ger: &Gerador,
+    agua: bool,
+    energia: bool,
+) -> Option<Minerio> {
     if agua || ger.na_cidade(bx, bz) {
         return None;
     }
@@ -1318,16 +1345,22 @@ pub fn minerio_da_coluna(
     // So' e' candidata a coluna cujo sorteio e' o MENOR do quadrado em
     // volta. Sorteio independente por coluna deixava duas pedras nascerem
     // encostadas, uma atravessando a outra.
-    let meu = mistura_minerio(bx, bz);
+    // O sal desloca a grade de Energia sem mudar um unico no' de minerio.
+    let sal = if energia { (1_003, -1_009) } else { (0, 0) };
+    let sorteio = |x: i32, z: i32| mistura_minerio(x + sal.0, z + sal.1);
+    let meu = sorteio(bx, bz);
+    let g1 = meu.wrapping_mul(2_246_822_519).wrapping_add(374_761_393);
+    if energia && ((g1 >> 13) % 5) != 0 {
+        return None;
+    }
     for dz in -MINERIO_ESPACO..=MINERIO_ESPACO {
         for dx in -MINERIO_ESPACO..=MINERIO_ESPACO {
-            if (dx, dz) != (0, 0) && mistura_minerio(bx + dx, bz + dz) <= meu {
+            if (dx, dz) != (0, 0) && sorteio(bx + dx, bz + dz) <= meu {
                 return None;
             }
         }
     }
     let g0 = meu;
-    let g1 = g0.wrapping_mul(2_246_822_519).wrapping_add(374_761_393);
 
     // ── chao limpo ──────────────────────────────────────────────────────
     // O quadrado inteiro em volta na MESMA altura. E' o que tira a pedra da
@@ -1359,18 +1392,36 @@ pub fn minerio_da_coluna(
         dz += 2;
     }
 
-    let _ = bioma;
     let (pmin, pmax) = MINERIO_PORTE;
+    // Desvio pequeno: o chao limpo foi medido em volta do CENTRO da coluna.
+    let centro = glam::Vec2::new(
+        bx as f32 * BLOCO + ((g0 >> 4 & 0xff) as f32 / 255.0 - 0.5) * MINERIO_DESVIO * 2.0,
+        bz as f32 * BLOCO + ((g1 >> 4 & 0xff) as f32 / 255.0 - 0.5) * MINERIO_DESVIO * 2.0,
+    );
+    let porte = pmin + ((g0 >> 14) & 0xff) as f32 / 255.0 * (pmax - pmin);
+    if energia {
+        // A grade nova nao desloca nem cobre uma pedra antiga. Duas grades
+        // podem escolher colunas vizinhas, entao conferir a distancia real.
+        for dz in -2..=2 {
+            for dx in -2..=2 {
+                let nx = bx + dx;
+                let nz = bz + dz;
+                let ntopo = ger.bloco_em(nx, nz);
+                if let Some(pedra) = minerio_da_coluna(bioma, nx, nz, ntopo, ger, false) {
+                    let separacao = RAIO_DE_MINERIO * (porte + pedra.porte) + 0.15;
+                    if centro.distance_squared(pedra.centro) < separacao * separacao {
+                        return None;
+                    }
+                }
+            }
+        }
+    }
     Some(Minerio {
-        // Desvio pequeno: o chao limpo foi medido em volta do CENTRO da
-        // coluna, e desviar muito levaria a pedra pra fora dele.
-        centro: glam::Vec2::new(
-            bx as f32 * BLOCO + ((g0 >> 4 & 0xff) as f32 / 255.0 - 0.5) * MINERIO_DESVIO * 2.0,
-            bz as f32 * BLOCO + ((g1 >> 4 & 0xff) as f32 / 255.0 - 0.5) * MINERIO_DESVIO * 2.0,
-        ),
+        centro,
         tier: tier_de_minerio(y, pico),
-        porte: pmin + ((g0 >> 14) & 0xff) as f32 / 255.0 * (pmax - pmin),
+        porte,
         variante: (g1 >> 22) & 0x3f,
+        energia,
     })
 }
 
@@ -1426,6 +1477,8 @@ pub enum TipoDeEstorvo {
     Forracao,
     /// Pedra de minerio, com o tier dela (1 cinza .. 4 roxo).
     Minerio(u8),
+    /// Cristal coletável de Energia. O saldo vai direto ao personagem.
+    Energia,
 }
 
 /// Empacota a coluna da ILHA (indices 0..lado) numa chave de 32 bits.
@@ -1482,6 +1535,15 @@ pub fn estorvos_da_coluna(
             centro: m.centro,
             raio: RAIO_DE_MINERIO * m.porte,
             tipo: TipoDeEstorvo::Minerio(m.tier),
+            coluna,
+        });
+    }
+    if let Some(m) = energia_da_coluna(bioma, bx, bz, topo, ger, agua) {
+        saida.retain(|e| e.tipo != TipoDeEstorvo::Forracao);
+        saida.push(Estorvo {
+            centro: m.centro,
+            raio: RAIO_DE_MINERIO * m.porte,
+            tipo: TipoDeEstorvo::Energia,
             coluna,
         });
     }
@@ -2178,7 +2240,7 @@ pub struct Coletavel {
     /// ja' sairam dele, e por ela que o cliente sabe qual parar de desenhar.
     pub coluna: u32,
     pub centro: glam::Vec2,
-    /// 1..4 pra pedra (a cor E' o tier), 0 pra tronco.
+    /// 1..4 pra pedra (a cor E' o tier), 0 pra tronco, 5 pra Energia.
     pub tier: u8,
 }
 
@@ -2194,7 +2256,8 @@ const MAGICA: [u8; 4] = *b"TALT";
 /// 3: plato da cidade maior, patio do porto e o pier erguido no relevo.
 /// 4: o porto so' assenta em costa de MAR ABERTO (antes caia em lago), e o
 /// patio e o pier mudaram de lugar.
-const VERSAO: u16 = 5;
+// 6: cristais de Energia substituem uma fração dos veios minerais.
+const VERSAO: u16 = 7;
 
 impl Ilha {
     pub fn gerar(semente: i32, raio_blocos: i32, bioma: Bioma, escala_altura: f32) -> Self {
@@ -2580,6 +2643,7 @@ impl Ilha {
                     let e = self.estorvos[n as usize];
                     let tier = match e.tipo {
                         TipoDeEstorvo::Minerio(t) => t,
+                        TipoDeEstorvo::Energia => 5,
                         TipoDeEstorvo::Tronco => 0,
                         TipoDeEstorvo::Forracao => continue,
                     };
@@ -3262,10 +3326,7 @@ impl Ilha {
         // seguinte. O A* validou "porta -> segunda", nao "corpo -> segunda":
         // pular sem checar mandava o corpo cortar caminho pelo que estivesse
         // entre os dois — o poco da praca, medido (19/09/2026).
-        if inicio == contendo
-            && saida.len() >= 2
-            && self.trecho_livre(de, saida[1], PULO_BLOCOS)
-        {
+        if inicio == contendo && saida.len() >= 2 && self.trecho_livre(de, saida[1], PULO_BLOCOS) {
             saida.remove(0);
         }
         if melhor.0 == fim {
@@ -4910,20 +4971,38 @@ mod testes {
         let i = Ilha::gerar(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
         let mut por_tier = [0u32; 5];
         let mut troncos = 0u32;
+        let mut energias = 0u32;
+        let mut pedras = Vec::new();
+        let mut cristais = Vec::new();
         for e in i.todos_os_estorvos() {
             match e.tipo {
-                TipoDeEstorvo::Minerio(t) => por_tier[t as usize] += 1,
+                TipoDeEstorvo::Minerio(t) => {
+                    por_tier[t as usize] += 1;
+                    pedras.push(e);
+                }
+                TipoDeEstorvo::Energia => {
+                    energias += 1;
+                    cristais.push(e);
+                }
                 TipoDeEstorvo::Tronco => troncos += 1,
                 _ => {}
             }
         }
         println!(
-            "troncos {troncos} | pedras: cinza {} verde {} azul {} roxo {}",
+            "troncos {troncos} | energias {energias} | pedras: cinza {} verde {} azul {} roxo {}",
             por_tier[1], por_tier[2], por_tier[3], por_tier[4]
         );
         for (t, nome) in [(1, "cinza"), (2, "verde"), (3, "azul"), (4, "roxo")] {
             assert!(por_tier[t] > 0, "ilha sem pedra {nome}");
         }
+        assert!(energias > 0, "ilha sem cristal de Energia");
+        assert!(
+            cristais.iter().all(|a| pedras.iter().all(|b| {
+                a.coluna != b.coluna
+                    && a.centro.distance(b.centro) >= a.raio + b.raio
+            })),
+            "cristal de Energia cobre ou compartilha coluna com minerio"
+        );
         // A escada tem que DESCER: pedra melhor tem que ser mais rara, senao
         // subir a montanha nao e' progressao, e' passeio.
         assert!(

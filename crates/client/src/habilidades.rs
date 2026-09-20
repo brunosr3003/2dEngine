@@ -358,7 +358,13 @@ impl Habilidades {
         }
     }
 
-    pub fn barra(&self, conjunto: Conjunto, nivel: u32, mp: i32) {
+    pub fn barra(
+        &self,
+        conjunto: Conjunto,
+        nivel: u32,
+        mp: i32,
+        progresso: &shared::skills::ProgressoDeSkills,
+    ) {
         let agora = get_time();
         // O slot 4 e' o PULO (`hud::draw_pulo`): era um disco cinza sem
         // funcao, e no celular nao ha' tecla de espaco pra pular.
@@ -429,6 +435,18 @@ impl Habilidades {
                 );
             }
             crate::hud_layout::chip(r, &(i + 1).to_string());
+            if livre {
+                let tier = progresso.tier(s.id);
+                let selo = Rect::new(r.x + r.w - 26.0, r.y - 5.0, 28.0, 18.0);
+                estilo::ret_arredondado(selo, 7.0, estilo::FUNDO_BAIXO);
+                estilo::texto_centro_forte(
+                    selo.center().x,
+                    selo.y + 13.0,
+                    shared::skills::tier_romano(tier),
+                    11,
+                    estilo::OURO,
+                );
+            }
             if auto {
                 let pilula = Rect::new(c.x - 22.0, r.y + r.h - 10.0, 44.0, 17.0);
                 estilo::ret_arredondado(pilula, 8.5, estilo::FUNDO_BAIXO);
@@ -462,7 +480,17 @@ impl Habilidades {
                 let w = 380.0_f32.min(screen_width() - 24.0);
                 let x = (r.x + r.w - w).clamp(12.0, screen_width() - w - 12.0);
                 estilo::painel(Rect::new(x, r.y - 122.0, w, 88.0));
-                estilo::texto(x + 12.0, r.y - 98.0, &s.nome, 19, cor);
+                estilo::texto(
+                    x + 12.0,
+                    r.y - 98.0,
+                    &format!(
+                        "{} · Tier {}",
+                        s.nome,
+                        shared::skills::tier_romano(progresso.tier(s.id))
+                    ),
+                    19,
+                    cor,
+                );
                 estilo::texto_ajustado(
                     s.descricao(),
                     x + 12.0,

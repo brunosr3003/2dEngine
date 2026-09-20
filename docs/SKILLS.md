@@ -3,7 +3,47 @@
 São 12 skills ativas, três para cada conjunto. A arma equipada escolhe as
 skills disponíveis; o nível do personagem libera a primeira no **nível 1**,
 a segunda no **5** e a terceira no **10**. Esses níveis são os valores
-iniciais do playtest. Não há pontos para comprar skills, ranks ou passivas.
+iniciais do playtest. Não há pontos para comprar skills nem passivas. Cada
+habilidade pode evoluir separadamente do Tier I ao X (veja abaixo).
+
+## Evolução com Energia
+
+Em **Menu → Personagem → Habilidades**, escolha uma das quatro armas e uma das
+três habilidades dela. Cada habilidade começa no Tier I. A evolução é
+determinística: não há sorteio, falha nem livro vindo de chefe. O servidor
+confere nível, Energia, cobre e tomo antes de consumir qualquer coisa.
+
+**Energia** é um novo cristal azul coletável no relevo das ilhas (tipo 5),
+visível pelo filtro Energia no mapa e selecionável no AUTO COLETA. Ela entra
+direto no saldo do personagem, sem ocupar bolsa. Um ciclo dura 2,5 s; um
+cristal rende 20 ciclos, some e volta após 360 s. Cada ciclo dá 12, 28, 60
+ou 120 Energia, respectivamente, no Bosque, Geleira, Ermo e Planalto.
+
+| Para chegar ao tier | Nível | Energia | Cobre | Tomo da habilidade |
+|---|---:|---:|---:|---|
+| II | 1 | 100 | 100 | — |
+| III | 5 | 400 | 300 | — |
+| IV | 10 | 1.200 | 1.000 | — |
+| V | 15 | 1.500 | 2.000 | Verde |
+| VI | 20 | 5.000 | 4.000 | — |
+| VII | 30 | 12.000 | 8.000 | — |
+| VIII | 40 | 10.000 | 10.000 | Roxo |
+| IX | 55 | 60.000 | 40.000 | — |
+| X | 70 | 50.000 | 50.000 | Lendário |
+
+O tomo é condensado na mesma tela para a habilidade escolhida: Verde custa
+3.000 Energia + 2.000 cobre; Roxo 25.000 + 20.000; Lendário 150.000 +
+100.000. O tomo e a Energia ficam no estado persistente do personagem, não
+na bolsa. A evolução consome um tomo nos marcos V/VIII/X.
+
+O multiplicador numérico por tier é fixo: I 1,00; II 1,02; III 1,04; IV
+1,06; V 1,09; VI 1,11; VII 1,13; VIII 1,16; IX 1,18; X 1,21. Dano ou
+cura são calculados no impacto com o tier capturado no início da conjuração.
+Os marcos também melhoram alcance, área, empurrão, crítico ou proteção
+conforme a habilidade; a tela lista os três efeitos dela. A Muralha vai de
+50% de redução/5 s no Tier I a 60%/8 s no X. Investida VIII dá escudo de
+2 s após o impacto. Todas as regras estão em `shared::skills` e
+`server::world::habilidades`.
 
 ## Catálogo
 
@@ -75,7 +115,7 @@ reembolso. A Investida usa a colisão do movimento normal.
 
 Os gestos e efeitos visuais são procedurais no cliente. A katana mantém as
 duas mãos no cabo durante suas três skills. Os efeitos de início, impacto e
-cancelamento vêm do servidor. Cliente e servidor usam o protocolo 81.
+cancelamento vêm do servidor. A evolução e o novo recurso usam o protocolo 108.
 
 Os gestos têm preparação legível, ação rápida e 0,36 s de recuperação.
 Pistolas apontam para o alvo no disparo e recuam depois; a Dança liga dois

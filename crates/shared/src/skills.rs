@@ -177,6 +177,246 @@ pub struct Skill {
 pub const DESTRAVA_EM: [u32; 3] = [1, 5, 10];
 pub const RECUPERACAO_S: f32 = 0.36;
 
+// ───────────────────── evolução das habilidades ────────────────────────
+
+pub const SKILL_COUNT: usize = 12;
+pub const TIER_MAX: u8 = 10;
+
+/// Tomos dos três despertares. Eles são condensados pelo jogador para uma
+/// habilidade escolhida; nunca vêm de sorteio e nunca falham.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum GrauTomo {
+    Verde = 0,
+    Roxo = 1,
+    Lendario = 2,
+}
+
+impl GrauTomo {
+    pub const TODOS: [Self; 3] = [Self::Verde, Self::Roxo, Self::Lendario];
+
+    pub fn nome(self) -> &'static str {
+        match self {
+            Self::Verde => "Verde",
+            Self::Roxo => "Roxo",
+            Self::Lendario => "Lendário",
+        }
+    }
+
+    pub fn de_u8(v: u8) -> Option<Self> {
+        Self::TODOS.get(v as usize).copied()
+    }
+}
+
+/// Estado persistente de evolução de um personagem. A Energia é saldo, não
+/// ocupa bolsa. Cada habilidade começa no Tier I e guarda seus próprios tomos.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProgressoDeSkills {
+    pub energia: u64,
+    pub tiers: [u8; SKILL_COUNT],
+    pub tomos: [[u16; 3]; SKILL_COUNT],
+}
+
+impl Default for ProgressoDeSkills {
+    fn default() -> Self {
+        Self {
+            energia: 0,
+            tiers: [1; SKILL_COUNT],
+            tomos: [[0; 3]; SKILL_COUNT],
+        }
+    }
+}
+
+impl ProgressoDeSkills {
+    pub fn normalizar(&mut self) {
+        for tier in &mut self.tiers {
+            *tier = (*tier).clamp(1, TIER_MAX);
+        }
+    }
+
+    pub fn tier(&self, skill_id: u32) -> u8 {
+        skill_id
+            .checked_sub(1)
+            .and_then(|i| self.tiers.get(i as usize))
+            .copied()
+            .unwrap_or(1)
+            .clamp(1, TIER_MAX)
+    }
+
+    pub fn tomos(&self, skill_id: u32, grau: GrauTomo) -> u16 {
+        skill_id
+            .checked_sub(1)
+            .and_then(|i| self.tomos.get(i as usize))
+            .map_or(0, |v| v[grau as usize])
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CustoDeEvolucao {
+    pub destino: u8,
+    pub nivel: u32,
+    pub energia: u64,
+    pub cobre: u32,
+    pub tomo: Option<GrauTomo>,
+}
+
+/// Custo para sair de `tier`. Os despertares V, VIII e X consomem um tomo
+/// específico da habilidade; os demais são treino direto com Energia.
+pub fn custo_de_evolucao(tier: u8) -> Option<CustoDeEvolucao> {
+    Some(match tier {
+        1 => CustoDeEvolucao {
+            destino: 2,
+            nivel: 1,
+            energia: 100,
+            cobre: 100,
+            tomo: None,
+        },
+        2 => CustoDeEvolucao {
+            destino: 3,
+            nivel: 5,
+            energia: 400,
+            cobre: 300,
+            tomo: None,
+        },
+        3 => CustoDeEvolucao {
+            destino: 4,
+            nivel: 10,
+            energia: 1_200,
+            cobre: 1_000,
+            tomo: None,
+        },
+        4 => CustoDeEvolucao {
+            destino: 5,
+            nivel: 15,
+            energia: 1_500,
+            cobre: 2_000,
+            tomo: Some(GrauTomo::Verde),
+        },
+        5 => CustoDeEvolucao {
+            destino: 6,
+            nivel: 20,
+            energia: 5_000,
+            cobre: 4_000,
+            tomo: None,
+        },
+        6 => CustoDeEvolucao {
+            destino: 7,
+            nivel: 30,
+            energia: 12_000,
+            cobre: 8_000,
+            tomo: None,
+        },
+        7 => CustoDeEvolucao {
+            destino: 8,
+            nivel: 40,
+            energia: 10_000,
+            cobre: 10_000,
+            tomo: Some(GrauTomo::Roxo),
+        },
+        8 => CustoDeEvolucao {
+            destino: 9,
+            nivel: 55,
+            energia: 60_000,
+            cobre: 40_000,
+            tomo: None,
+        },
+        9 => CustoDeEvolucao {
+            destino: 10,
+            nivel: 70,
+            energia: 50_000,
+            cobre: 50_000,
+            tomo: Some(GrauTomo::Lendario),
+        },
+        _ => return None,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CustoDeTomo {
+    pub energia: u64,
+    pub cobre: u32,
+}
+
+pub fn custo_de_tomo(grau: GrauTomo) -> CustoDeTomo {
+    match grau {
+        GrauTomo::Verde => CustoDeTomo {
+            energia: 3_000,
+            cobre: 2_000,
+        },
+        GrauTomo::Roxo => CustoDeTomo {
+            energia: 25_000,
+            cobre: 20_000,
+        },
+        GrauTomo::Lendario => CustoDeTomo {
+            energia: 150_000,
+            cobre: 100_000,
+        },
+    }
+}
+
+/// Multiplicador numérico fixo. Os saltos maiores coincidem com os três
+/// despertares; Tier X fica 21% acima do Tier I antes do efeito especial.
+pub fn multiplicador_do_tier(tier: u8) -> f32 {
+    const M: [f32; 10] = [1.00, 1.02, 1.04, 1.06, 1.09, 1.11, 1.13, 1.16, 1.18, 1.21];
+    M[(tier.clamp(1, TIER_MAX) - 1) as usize]
+}
+
+pub fn tier_romano(tier: u8) -> &'static str {
+    const R: [&str; 10] = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+    R[(tier.clamp(1, TIER_MAX) - 1) as usize]
+}
+
+/// Texto curto dos três despertares. A regra correspondente mora no servidor,
+/// mas o texto é compartilhado para a tela nunca prometer outra coisa.
+pub fn despertar(skill_id: u32, tier: u8) -> &'static str {
+    match (skill_id, tier) {
+        (1, 5) => "Impacto mais forte",
+        (1, 8) => "Escudo por 2 s após a investida",
+        (1, 10) => "Golpe final ampliado",
+        (2, 5) => "Cone mais longo",
+        (2, 8) => "Corte reforçado",
+        (2, 10) => "Corte final ampliado",
+        (3, 5) => "Muralha por 6 s",
+        (3, 8) => "Reduz 55% do dano",
+        (3, 10) => "Reduz 60% por 8 s",
+        (4, 5) => "Linha mais longa",
+        (4, 8) => "Corte atravessa mais longe",
+        (4, 10) => "Saque final ampliado",
+        (5, 5) => "Área maior",
+        (5, 8) => "Área e dano ampliados",
+        (5, 10) => "Golpe final",
+        (6, 5) => "Onda mais forte e longa",
+        (6, 8) => "Onda atravessa mais longe",
+        (6, 10) => "Onda final ampliada",
+        (7, 5) => "Tiro mais forte",
+        (7, 8) => "Empurra o alvo",
+        (7, 10) => "Crítico garantido",
+        (8, 5) => "Leque maior",
+        (8, 8) => "Empurra inimigos",
+        (8, 10) => "Rajada final",
+        (9, 5) => "Explosão maior",
+        (9, 8) => "Explosão mais forte",
+        (9, 10) => "Incêndio devastador",
+        (10, 5) => "Cura reforçada",
+        (10, 8) => "Recuperação adicional",
+        (10, 10) => "Cura máxima",
+        (11, 5) => "Aura maior",
+        (11, 8) => "Área e cura reforçadas",
+        (11, 10) => "Pulso de cura máximo",
+        (12, 5) => "Impacto maior",
+        (12, 8) => "Atinge alvos mais distantes",
+        (12, 10) => "Julgamento final",
+        _ => "",
+    }
+}
+
+/// Energia por ciclo de um cristal, conforme a ilha. O índice é a ilha do
+/// arquipélago; canais sem ilha usam o primeiro valor.
+pub fn energia_por_coleta(indice_da_ilha: usize) -> u64 {
+    [12, 28, 60, 120].get(indice_da_ilha).copied().unwrap_or(12)
+}
+
 /// O `dano` de cada skill do catalogo e' peso relativo, e este e' o meio da
 /// escala: uma skill de `dano` 30 rende o ganho cheio da forma dela.
 pub const DANO_DE_REFERENCIA: f32 = 30.0;
@@ -316,6 +556,47 @@ impl Skill {
 mod testes {
     use super::*;
 
+    #[test]
+    fn evolucao_e_deterministica_e_tem_tres_despertares() {
+        let mut anterior = 0.0;
+        for tier in 1..=TIER_MAX {
+            let m = multiplicador_do_tier(tier);
+            assert!(m >= anterior);
+            anterior = m;
+        }
+        assert_eq!(multiplicador_do_tier(1), 1.0);
+        assert_eq!(multiplicador_do_tier(10), 1.21);
+        for id in 1..=SKILL_COUNT as u32 {
+            for tier in [5, 8, 10] {
+                assert!(!despertar(id, tier).is_empty(), "skill {id} T{tier}");
+            }
+        }
+    }
+
+    #[test]
+    fn custos_cobrem_i_ao_x_e_tomos_so_nos_despertares() {
+        let destinos: Vec<u8> = (1..TIER_MAX)
+            .map(|tier| custo_de_evolucao(tier).unwrap().destino)
+            .collect();
+        assert_eq!(destinos, (2..=TIER_MAX).collect::<Vec<_>>());
+        for tier in 1..TIER_MAX {
+            let c = custo_de_evolucao(tier).unwrap();
+            assert_eq!(c.tomo.is_some(), matches!(c.destino, 5 | 8 | 10));
+        }
+        assert!(custo_de_evolucao(TIER_MAX).is_none());
+    }
+
+    #[test]
+    fn progresso_antigo_vira_tier_um() {
+        let mut p = ProgressoDeSkills::default();
+        p.tiers[0] = 0;
+        p.tiers[1] = 99;
+        p.normalizar();
+        assert_eq!(p.tier(1), 1);
+        assert_eq!(p.tier(2), TIER_MAX);
+        assert_eq!(p.tier(999), 1);
+    }
+
     /// A primeira skill vem com a arma. Pegar um conjunto novo e não ter o que
     /// apertar seria uma arma sem verbo.
     #[test]
@@ -417,7 +698,10 @@ mod testes {
         let t = playtest();
         let g = |id: u32| t.iter().find(|s| s.id == id).unwrap().ganho();
         assert!(g(12) > g(8), "Julgamento (55) acima da Rajada (20)");
-        assert!(g(6) >= g(7), "Vento Cortante (45) nao abaixo do Tiro Certeiro (28)");
+        assert!(
+            g(6) >= g(7),
+            "Vento Cortante (45) nao abaixo do Tiro Certeiro (28)"
+        );
     }
 
     /// O dano de skill tem que ANDAR com o ataque de quem conjura. Se algum dia

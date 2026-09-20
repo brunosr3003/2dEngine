@@ -171,7 +171,12 @@ mod testes {
         let e = *ilha
             .todos_os_estorvos()
             .iter()
-            .find(|e| matches!(e.tipo, TipoDeEstorvo::Tronco | TipoDeEstorvo::Minerio(_)))
+            .find(|e| {
+                matches!(
+                    e.tipo,
+                    TipoDeEstorvo::Tronco | TipoDeEstorvo::Minerio(_) | TipoDeEstorvo::Energia
+                )
+            })
             .expect("ilha de teste sem no'");
         assert!(!ilha.sem_estorvo(e.centro, 0.05), "vivo barra");
         let mut achados = Vec::new();

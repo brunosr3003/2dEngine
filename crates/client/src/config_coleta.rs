@@ -42,9 +42,15 @@ impl ConfigColeta {
     }
 
     /// Desenha e trata o clique. Devolve se a configuracao mudou.
-    pub fn desenha(&mut self, tipos: &mut [bool; 5], raio: &mut f32, defender: &mut bool) -> bool {
+    pub fn desenha(
+        &mut self,
+        tipos: &mut [bool; 5],
+        energia: &mut bool,
+        raio: &mut f32,
+        defender: &mut bool,
+    ) -> bool {
         let (sw, sh) = (screen_width(), screen_height());
-        let r = Rect::new(sw * 0.5 - 200.0, sh * 0.5 - 190.0, 400.0, 380.0);
+        let r = Rect::new(sw * 0.5 - 200.0, sh * 0.5 - 207.0, 400.0, 414.0);
         estilo::painel(r);
         estilo::texto(r.x + 18.0, r.y + 32.0, "Auto coleta", 20, estilo::OURO);
         let fechar = Rect::new(r.x + r.w - 38.0, r.y + 10.0, 28.0, 28.0);
@@ -87,7 +93,30 @@ impl ConfigColeta {
                 mudou = true;
             }
         }
-        let y = r.y + 262.0;
+        let linha_energia = Rect::new(r.x + 18.0, r.y + 244.0, r.w - 36.0, 28.0);
+        let caixa = Rect::new(linha_energia.x, linha_energia.y + 4.0, 20.0, 20.0);
+        draw_rectangle_lines(caixa.x, caixa.y, caixa.w, caixa.h, 2.0, estilo::OURO);
+        if *energia {
+            draw_rectangle(
+                caixa.x + 4.0,
+                caixa.y + 4.0,
+                caixa.w - 8.0,
+                caixa.h - 8.0,
+                estilo::AUTO,
+            );
+        }
+        estilo::texto(
+            linha_energia.x + 32.0,
+            linha_energia.y + 20.0,
+            "Energia",
+            15,
+            estilo::TEXTO,
+        );
+        if clicou && linha_energia.contains(m) {
+            *energia = !*energia;
+            mudou = true;
+        }
+        let y = r.y + 296.0;
         estilo::texto(r.x + 18.0, y, "Raio de busca", 14, estilo::SUAVE);
         let menos = Rect::new(r.x + 160.0, y - 20.0, 30.0, 28.0);
         let mais = Rect::new(r.x + 280.0, y - 20.0, 30.0, 28.0);

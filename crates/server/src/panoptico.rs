@@ -182,6 +182,8 @@ struct Coleta {
     pedras: [u32; 5],
     /// Troncos vivos no raio.
     troncos: u32,
+    /// Cristais de Energia vivos no raio.
+    energias: u32,
     /// Corpos vivos no raio — e' ela que divide `COLETA_INTERVALO_BASE_S`.
     densidade: f32,
     /// Segundos por coleta aqui, agora.
@@ -273,6 +275,7 @@ pub fn publicar(w: &GameWorld, ultima: &mut f32) {
             coleta: w.retrato_da_coleta(pos).map(|r| Coleta {
                 pedras: r.pedras,
                 troncos: r.troncos,
+                energias: r.energias,
                 densidade: r.densidade,
                 intervalo_s: r.intervalo_s,
                 coletas_restantes: r.coletas_restantes,

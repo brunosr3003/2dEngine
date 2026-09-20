@@ -662,7 +662,11 @@ mod testes {
                 .filter(|id| (500..600).contains(id))
                 .collect()
         };
-        assert_eq!(de(GIVER_MESTRE_DA_ILHA), vec![508, 534], "o Mestre so' tem as dele");
+        assert_eq!(
+            de(GIVER_MESTRE_DA_ILHA),
+            vec![508, 534],
+            "o Mestre so' tem as dele"
+        );
         assert_eq!(de(giver_do_papel(Papel::Treinador)), vec![511]);
         assert_eq!(de(giver_do_papel(Papel::Deposito)), vec![516, 528]);
         assert_eq!(de(giver_do_papel(Papel::Ferreiro)), vec![523]);
@@ -671,7 +675,15 @@ mod testes {
         // Capitao do Porto.
         let mut depois = feitas.clone();
         depois.push(cq(511, TURNED_IN, 1));
-        let capitao = offerable(src, giver_do_papel(Papel::Estaleiro), 16, 0, &depois, 0, "ilha_inicial");
+        let capitao = offerable(
+            src,
+            giver_do_papel(Papel::Estaleiro),
+            16,
+            0,
+            &depois,
+            0,
+            "ilha_inicial",
+        );
         assert!(capitao.iter().any(|d| d.id == 512));
         // Nivel 1: so' a primeira da cadeia antiga e a conversa na taberna.
         let novo: Vec<u16> = offerable(src, GIVER_MESTRE_DA_ILHA, 1, 0, &[], 0, "ilha_inicial")
@@ -706,7 +718,12 @@ mod testes {
     #[test]
     fn marcador_velho_se_realinha_ao_passo_em_andamento() {
         let mut a = vec![
-            CharQuest { quest_id: historia::ID_MARCO, status: historia::STATUS_MARCO, progress: 11, cooldown_until: 0 },
+            CharQuest {
+                quest_id: historia::ID_MARCO,
+                status: historia::STATUS_MARCO,
+                progress: 11,
+                cooldown_until: 0,
+            },
             cq(711, ACTIVE, 0),
         ];
         assert_eq!(garantir_historia(&mut a), None, "nao da' passo novo");

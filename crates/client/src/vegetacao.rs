@@ -622,6 +622,34 @@ pub fn minerio(tier: u8, variante: u32) -> Modelo {
     malha(&v)
 }
 
+/// Veio de Energia: três cristais azuis altos saindo de uma base escura.
+/// A silhueta vertical o separa do minério mesmo à distância e sem texto.
+pub fn energia(variante: u32) -> Modelo {
+    let mut r = Rng::nova(variante ^ 0xE6E2_91A5);
+    let mut v = caixa_vazia(6, 15);
+    for ix in -3..=3 {
+        for iz in -3..=3 {
+            if ix * ix + iz * iz <= 10 {
+                v.poe(ix, 0, iz, Material::RochaEscura);
+                if r.proximo() % 3 != 0 {
+                    v.poe(ix, 1, iz, Material::Rocha);
+                }
+            }
+        }
+    }
+    for (ox, oz, h) in [(-2, 0, 9), (2, 1, 7), (0, -2, 12)] {
+        for y in 1..=h {
+            let estreita = y > h - 3;
+            v.poe(ox, y, oz, Material::CristalAzul);
+            if !estreita && y < h - 1 {
+                v.poe(ox + 1, y, oz, Material::CristalAzul);
+                v.poe(ox, y, oz + 1, Material::CristalCinza);
+            }
+        }
+    }
+    malha(&v)
+}
+
 fn toco(r: &mut Rng) -> Volume {
     let raio = r.i(2, 3);
     let h = r.i(2, 4);

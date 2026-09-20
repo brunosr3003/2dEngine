@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 107;
+pub const PROTOCOL_VERSION: u16 = 108;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -1396,6 +1396,10 @@ pub const RESPAWN_DA_ARVORE: f32 = 90.0;
 pub const COLETA_CICLO_PEDRA_S: [f32; 5] = [0.0, 2.5, 2.8, 3.1, 3.4];
 /// Segundos de um ciclo num tronco. DECISAO PROVISORIA.
 pub const COLETA_CICLO_ARVORE_S: f32 = 2.0;
+/// Cristal de Energia: reserva e respawn próprios, sem ocupar a bolsa.
+pub const COLETAS_POR_ENERGIA: u32 = 20;
+pub const RESPAWN_DA_ENERGIA: f32 = 360.0;
+pub const COLETA_CICLO_ENERGIA_S: f32 = 2.5;
 /// Distancia maxima da BORDA do corpo pra coletar. DECISAO PROVISORIA.
 pub const COLETA_ALCANCE_UN: f32 = 1.4;
 /// Raio de busca do AUTO COLETA a partir de onde foi ligado (config do
@@ -1406,10 +1410,10 @@ pub const COLETA_RAIO_AUTO_PADRAO: f32 = 60.0;
 
 /// Ciclo de coleta de um no' (0 = tronco, 1..4 = pedra pela cor).
 pub fn ciclo_de_coleta_s(tier: u8) -> f32 {
-    if tier == 0 {
-        COLETA_CICLO_ARVORE_S
-    } else {
-        COLETA_CICLO_PEDRA_S[(tier as usize).min(4)]
+    match tier {
+        0 => COLETA_CICLO_ARVORE_S,
+        5 => COLETA_CICLO_ENERGIA_S,
+        _ => COLETA_CICLO_PEDRA_S[(tier as usize).min(4)],
     }
 }
 
@@ -1420,7 +1424,9 @@ pub fn nome_do_no(tier: u8) -> &'static str {
         1 => "Pedra cinza",
         2 => "Pedra verde",
         3 => "Pedra azul",
-        _ => "Pedra roxa",
+        4 => "Pedra roxa",
+        5 => "Energia",
+        _ => "Recurso",
     }
 }
 

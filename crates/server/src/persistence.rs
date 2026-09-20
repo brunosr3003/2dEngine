@@ -113,6 +113,8 @@ pub struct CharacterRow {
     pub recuperacoes_usadas: i32,
     /// Preferencias de tela (`preferencias::para_json`). Vazio = padrao.
     pub preferencias_json: String,
+    /// Energia, tiers e tomos das doze habilidades.
+    pub skill_progress: shared::skills::ProgressoDeSkills,
     /// Dungeons do personagem (`shared::dungeon::DadosDungeon`): entradas,
     /// estagios liberados, baus abertos, correio. Vai no MESMO save da bolsa.
     pub dungeon_json: String,
@@ -610,6 +612,8 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     // Calendario de presenca (docs/CALENDARIO.md): uma linha por resgate.
     crate::presenca::criar_tabelas(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS preferencias_json TEXT NOT NULL DEFAULT ''")
+        .execute(pool).await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS skill_progress_json TEXT NOT NULL DEFAULT ''")
         .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS gold BIGINT NOT NULL DEFAULT 0")
         .execute(pool)
@@ -3020,7 +3024,10 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         (6, item_id::PISTOLAS),
         (6, item_id::COLDRE),
         // O Alquimista da vila (loja de pocoes) vende o pergaminho de teleporte.
-        (shared::vila::LOJA_DE_POCOES as i32, item_id::PERGAMINHO_TELEPORTE),
+        (
+            shared::vila::LOJA_DE_POCOES as i32,
+            item_id::PERGAMINHO_TELEPORTE,
+        ),
         // Recursos T1 vendaveis no Mercador — facilita early game.
         (1, item_id::WOOD_T1),
         (1, item_id::LEATHER_T1),
@@ -3427,6 +3434,16 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         .collect();
     let prefs = busca!((String, String), "name, preferencias_json");
     let prefs_map: HashMap<String, String> = prefs.into_iter().collect();
+    let skill_progress = busca!((String, String), "name, skill_progress_json");
+    let skill_progress_map: HashMap<String, shared::skills::ProgressoDeSkills> = skill_progress
+        .into_iter()
+        .map(|(n, json)| {
+            let mut p: shared::skills::ProgressoDeSkills =
+                serde_json::from_str(&json).unwrap_or_default();
+            p.normalizar();
+            (n, p)
+        })
+        .collect();
 
     let mut out = HashMap::with_capacity(rows.len());
     for (
@@ -3501,6 +3518,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         let (mortes_json, recuperacoes_dia, recuperacoes_usadas) =
             mortes_map.get(&name).cloned().unwrap_or_default();
         let preferencias_json = prefs_map.get(&name).cloned().unwrap_or_default();
+        let skill_progress = skill_progress_map.get(&name).cloned().unwrap_or_default();
         let dungeon_json = dungeon_map.get(&name).cloned().unwrap_or_default();
         let conta_dungeon_json = conta_map.get(&name).cloned().unwrap_or_default();
         let (bolsa_extra, banco_extra) = armazem_map.get(&name).copied().unwrap_or_default();
@@ -3544,6 +3562,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 recuperacoes_dia,
                 recuperacoes_usadas,
                 preferencias_json,
+                skill_progress,
                 dungeon_json,
                 conta_dungeon_json,
                 presenca_aplicados: Vec::new(),
@@ -3687,7 +3706,10 @@ async fn load_equipment(pool: &PgPool, char_name: &str) -> Result<shared::Equipm
 
 async fn load_inventory(pool: &PgPool, char_name: &str) -> Result<Vec<shared::InventorySlot>> {
     // Ate' o teto: o tamanho do personagem (`bolsa_extra`) corta no spawn.
-    let mut slots = vec![shared::InventorySlot::default(); shared::armazem::BOLSA_MAX + shared::armazem::CARTEIRA.len()];
+    let mut slots = vec![
+        shared::InventorySlot::default();
+        shared::armazem::BOLSA_MAX + shared::armazem::CARTEIRA.len()
+    ];
     let rows = sqlx::query_as::<_, (i32, i32, i32, Option<String>)>(
         "SELECT slot, item_id, qty, instance_data FROM inventory WHERE character_name = $1",
     )
@@ -3695,7 +3717,9 @@ async fn load_inventory(pool: &PgPool, char_name: &str) -> Result<Vec<shared::In
     .fetch_all(pool)
     .await?;
     for (slot, item_id, qty, inst_json) in rows {
-        if slot < 0 || (slot as usize) >= shared::armazem::BOLSA_MAX + shared::armazem::CARTEIRA.len() {
+        if slot < 0
+            || (slot as usize) >= shared::armazem::BOLSA_MAX + shared::armazem::CARTEIRA.len()
+        {
             continue;
         }
         if qty <= 0 {
@@ -3888,6 +3912,8 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             .visual
             .as_ref()
             .and_then(|v| serde_json::to_string(v).ok());
+        let skill_progress_json =
+            serde_json::to_string(&row.skill_progress).unwrap_or_else(|_| "{}".to_string());
         sqlx::query(
             "INSERT INTO characters (name, x, y, hp, max_hp, xp, fame, aura,
                                      unspent_points, allocated_points,
@@ -3899,8 +3925,8 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                                      mp, stamina, zona, xp_bonus_ate,
                                      mortes_json, recuperacoes_dia, recuperacoes_usadas,
                                      fortuna_ate, sorte_ate, barra_json, preferencias_json, dungeon_json,
-                                     bolsa_extra, banco_extra)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)
+                                     bolsa_extra, banco_extra, skill_progress_json)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -3939,7 +3965,8 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                preferencias_json = EXCLUDED.preferencias_json,
                dungeon_json = EXCLUDED.dungeon_json,
                bolsa_extra = EXCLUDED.bolsa_extra,
-               banco_extra = EXCLUDED.banco_extra",
+               banco_extra = EXCLUDED.banco_extra,
+               skill_progress_json = EXCLUDED.skill_progress_json",
         )
         .bind(&row.name)
         .bind(row.pos.x)
@@ -3980,6 +4007,7 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(&row.dungeon_json)
         .bind(row.bolsa_extra as i16)
         .bind(row.banco_extra as i16)
+        .bind(&skill_progress_json)
         .execute(&mut *tx)
         .await?;
         // A conta vai junto: bau aberto num personagem e a 1ª vitoria semanal

@@ -307,6 +307,7 @@ pub enum ClientMessage {
     /// Resposta: `NoDeColeta`.
     PedirNoDeColeta {
         tipos: [bool; 5],
+        energia: bool,
         raio: f32,
         centro: [f32; 2],
     },
@@ -450,6 +451,16 @@ pub enum ClientMessage {
     EscolherNoNpc {
         npc_eid: u64,
         missao: bool,
+    },
+    /// Condensa Energia num tomo da habilidade escolhida. Determinístico.
+    FabricarTomoDeSkill {
+        skill_id: u32,
+        grau: u8,
+    },
+    /// Evolui uma habilidade em um tier. O servidor cobra Energia, cobre e,
+    /// nos despertares, o tomo já condensado.
+    EvoluirSkill {
+        skill_id: u32,
     },
 }
 
@@ -1175,6 +1186,15 @@ pub enum ServerMessage {
         nome: String,
         funcao: String,
     },
+    /// Saldo, tiers e tomos das doze habilidades. Vai no login e após toda
+    /// coleta/fabricação/evolução que alterar o estado.
+    ProgressoDeSkills {
+        progresso: crate::skills::ProgressoDeSkills,
+    },
+    ResultadoDeEvolucao {
+        ok: bool,
+        texto: String,
+    },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.
@@ -1203,6 +1223,8 @@ pub struct Preferencias {
     pub camera_pitch_ajuste: Option<f32>,
     /// AUTO COLETA: tipos marcados (0 madeira, 1..4 pedra pela cor).
     pub coleta_tipos: Option<[bool; 5]>,
+    /// Cristais de Energia no AUTO COLETA.
+    pub coleta_energia: Option<bool>,
     /// AUTO COLETA: raio de busca a partir de onde foi ligado.
     pub coleta_raio: Option<f32>,
     /// AUTO COLETA: apanhou de bicho, mata e volta a coletar.
@@ -1230,11 +1252,12 @@ pub struct FiltrosDoMapa {
     pub bichos_ocultos: Vec<u16>,
     /// 0 madeira, 1..4 pedra pela cor.
     pub recursos: [bool; 5],
+    pub energia: bool,
     pub vila: bool,
 }
 
 impl Preferencias {
-    pub const VERSAO: u8 = 1;
+    pub const VERSAO: u8 = 2;
     /// Listas nao crescem sem fim: nem 12 skills nem 8 bichos chegam perto.
     const MAX_LISTA: usize = 64;
 
@@ -1280,12 +1303,14 @@ mod testes_preferencias {
                 mobs: true,
                 bichos_ocultos: vec![3, 3, 1],
                 recursos: [true; 5],
+                energia: true,
                 vila: true,
             },
             alcance_minimapa: Some(5000.0),
             camera_zoom: Some(f32::NAN),
             camera_pitch_ajuste: Some(-9.0),
             coleta_tipos: Some([true, false, true, false, true]),
+            coleta_energia: Some(true),
             coleta_raio: Some(5000.0),
             escala_ui: Some(9.0),
             economia_auto_min: Some(500),
@@ -1299,6 +1324,7 @@ mod testes_preferencias {
         assert_eq!(p.economia_auto_min, Some(60));
         assert_eq!(p.coleta_raio, Some(crate::COLETA_RAIO_AUTO_MAX));
         assert_eq!(p.coleta_tipos, Some([true, false, true, false, true]));
+        assert_eq!(p.coleta_energia, Some(true));
         assert_eq!(p.versao, Preferencias::VERSAO);
         assert_eq!(p.skills_auto, vec![1, 5]);
         assert_eq!(p.filtros_mapa.bichos_ocultos, vec![1, 3]);
