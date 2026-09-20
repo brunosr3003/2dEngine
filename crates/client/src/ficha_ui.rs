@@ -221,6 +221,11 @@ impl FichaUi {
             if paga { estilo::SUAVE } else { estilo::VERMELHO },
         );
 
+        // A COLUNA inteira dos "+", e nao um botao so': o passo e' "gaste um
+        // ponto", nao "gaste em FOR". Marcando o primeiro que podia, o foco
+        // do tutorial travava o toque em todos os outros e so' dava pra subir
+        // forca — o dono achou jogando, em 20/09/2026.
+        let mut coluna: Option<Rect> = None;
         for (i, (sigla, bonus)) in ATRIBUTOS.iter().enumerate() {
             let y = esq.y + (45.0 + i as f32 * 48.0) * f;
             let r = Rect::new(esq.x + 10.0 * f, y, esq.w - 20.0 * f, 45.0 * f);
@@ -241,15 +246,25 @@ impl FichaUi {
             let botao = Rect::new(r.x + r.w - 43.0 * f, r.y + 4.0 * f, 36.0 * f, 36.0 * f);
             let pode = self.pode_alocar(i);
             if pode {
-                // Tutorial "gaste um ponto": o foco vai pro primeiro "+" que
-                // da' pra apertar — apontar um travado seria mandar o jogador
-                // bater num botao que nao responde.
-                crate::foco::marca(crate::foco::chave::FICHA_MAIS, botao);
+                // So' os que dao pra apertar entram: apontar um travado seria
+                // mandar o jogador bater num botao que nao responde.
+                coluna = Some(match coluna {
+                    None => botao,
+                    Some(c) => Rect::new(
+                        c.x.min(botao.x),
+                        c.y.min(botao.y),
+                        c.w.max(botao.x + botao.w - c.x.min(botao.x)),
+                        (botao.y + botao.h).max(c.y + c.h) - c.y.min(botao.y),
+                    ),
+                });
             }
             estilo::botao(botao, "+", estilo::estado_de(botao, !pode, false), pode);
             if clique && botao.contains(mouse) && pode {
                 return Some(ClientMessage::AllocStatPoint { stat: i as u8 });
             }
+        }
+        if let Some(c) = coluna {
+            crate::foco::marca(crate::foco::chave::FICHA_MAIS, c);
         }
         let total: u32 = self.pontos.map_or(0, |(_, a)| a.iter().sum());
         let reset = Rect::new(esq.x + 10.0 * f, esq.y + 339.0 * f, 185.0 * f, 24.0 * f);
@@ -347,6 +362,54 @@ mod tests {
         assert!(!ui.pode_alocar(shared::STAT_COUNT));
         ui.atualizar_pontos(0, [1, 2, 3, 4, 5, 6]);
         assert!(!ui.pode_alocar(0));
+    }
+
+    /// O foco do tutorial tem que caber a COLUNA inteira dos "+": o passo e'
+    /// "gaste um ponto", nao "gaste em FOR". Marcando so' o primeiro, o foco
+    /// travava o toque nos outros cinco e o unico atributo que dava pra subir
+    /// era forca.
+    #[test]
+    fn o_foco_do_tutorial_abre_a_coluna_toda_dos_mais() {
+        // A uniao dos retangulos, como `desenha` monta: a mesma conta.
+        let une = |a: Option<Rect>, b: Rect| -> Option<Rect> {
+            Some(match a {
+                None => b,
+                Some(c) => Rect::new(
+                    c.x.min(b.x),
+                    c.y.min(b.y),
+                    c.w.max(b.x + b.w - c.x.min(b.x)),
+                    (b.y + b.h).max(c.y + c.h) - c.y.min(b.y),
+                ),
+            })
+        };
+        // A coluna do painel: um botao por atributo, 48 de passo.
+        let botoes: Vec<Rect> = (0..STAT_COUNT)
+            .map(|i| Rect::new(300.0, 45.0 + i as f32 * 48.0, 36.0, 36.0))
+            .collect();
+        let coluna = botoes.iter().fold(None, |a, b| une(a, *b)).expect("coluna");
+        for (i, b) in botoes.iter().enumerate() {
+            assert!(
+                coluna.contains(b.center()),
+                "o atributo {i} ficou de fora do foco"
+            );
+        }
+        assert!(coluna.h >= botoes[STAT_COUNT - 1].y + 36.0 - botoes[0].y);
+
+        // E so' os que DAO pra apertar entram: apontar um botao travado e'
+        // mandar o jogador bater onde nao responde.
+        let mut ui = FichaUi::default();
+        ui.atualizar_pontos(1, [0; STAT_COUNT]);
+        ui.energia = 9; // um a menos que o primeiro ponto custa
+        assert!((0..STAT_COUNT).all(|i| !ui.pode_alocar(i)));
+        let so_os_que_podem: Option<Rect> = botoes
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| ui.pode_alocar(*i))
+            .fold(None, |a, (_, b)| une(a, *b));
+        assert!(
+            so_os_que_podem.is_none(),
+            "sem Energia nenhum + entra no foco"
+        );
     }
 
     #[test]

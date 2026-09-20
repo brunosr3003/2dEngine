@@ -196,6 +196,12 @@ um anel dourado em volta dele e **trava o toque fora dali**.
   marcou também não acende nada — melhor sem foco que tela preta sem buraco.
 - `COLETA_ENERGIA` não tem foco: a ação é no mundo, e escurecer a tela
   esconderia exatamente a pedra que ele precisa achar.
+- **O buraco cobre TODA escolha que o passo aceita.** O de "gaste um ponto"
+  marcava o primeiro `+` que dava pra apertar, e como o toque fica travado
+  fora do buraco, o único atributo que subia era FOR. O passo é "gaste um
+  ponto", não "gaste em FOR": a Ficha marca a **união** da coluna de `+`
+  (só os que dão pra apertar — apontar um travado é mandar bater onde não
+  responde), e `o_foco_do_tutorial_abre_a_coluna_toda_dos_mais` cobra isso.
 - **Ids fora da sequência de propósito:** a história agora anda pela POSIÇÃO
   na lista (`id_do_passo`, `indice`, `capitulo_escrito`), e não por
   `700 + índice`. Inserir passo não renumera nenhum outro.
