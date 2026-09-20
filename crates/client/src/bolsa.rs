@@ -161,6 +161,7 @@ enum Tipo {
     Slot(EquipSlot),
     /// 0 vida, 1 mana, 2 vigor.
     Pocao(u8),
+    Pergaminho,
     Ouro,
     Madeira,
     Material,
@@ -185,6 +186,9 @@ fn tipo(id: u16) -> Tipo {
         x if x == item_id::XP_POTION => Tipo::Pocao(3),
         x if x == item_id::FORTUNA_POTION => Tipo::Pocao(4),
         x if x == item_id::SORTE_POTION => Tipo::Pocao(5),
+        x if x == item_id::PERGAMINHO_INVOCA_CHAVE || x == item_id::PERGAMINHO_INVOCA_MONTARIA => {
+            Tipo::Pergaminho
+        }
         _ => Tipo::Material,
     }
 }
@@ -192,7 +196,7 @@ fn tipo(id: u16) -> Tipo {
 fn aba_de(t: Tipo) -> Aba {
     match t {
         Tipo::Arma(_) | Tipo::Slot(_) => Aba::Equip,
-        Tipo::Pocao(_) => Aba::Consumivel,
+        Tipo::Pocao(_) | Tipo::Pergaminho => Aba::Consumivel,
         _ => Aba::Material,
     }
 }
@@ -377,7 +381,7 @@ impl Bolsa {
             Sel::Equip(slot) => Some(Acao::Desequipar(slot)),
             Sel::Inv(i) => match tipo(self.peca(s)?.id) {
                 Tipo::Arma(_) | Tipo::Slot(_) => Some(Acao::Equipar(i)),
-                Tipo::Pocao(_) => Some(Acao::Usar(i)),
+                Tipo::Pocao(_) | Tipo::Pergaminho => Some(Acao::Usar(i)),
                 _ => None,
             },
         }
@@ -832,6 +836,7 @@ impl Bolsa {
             Tipo::Arma(c) => format!("Arma · {}", c.nome()),
             Tipo::Slot(s) => nome_do_slot(s).to_string(),
             Tipo::Pocao(_) => "Consumível".into(),
+            Tipo::Pergaminho => "Pergaminho de Invocação".into(),
             Tipo::Ouro => "Moeda".into(),
             _ => "Material".into(),
         };
@@ -908,6 +913,7 @@ impl Bolsa {
                 Tipo::Pocao(4) => "+30% de ouro e cobre dos bichos por 1 hora. Beber outra renova a hora.",
                 Tipo::Pocao(5) => "+20% de chance de drop (bichos e coleta) por 1 hora. Beber outra renova a hora.",
                 Tipo::Pocao(_) => "Recupera vigor.",
+                Tipo::Pergaminho => "Abra para revelar um prêmio aleatório decidido pelo servidor.",
                 Tipo::Arma(_) | Tipo::Slot(_) => "Peça básica, sem instância de atributos.",
                 _ => "Material de criação.",
             };
@@ -920,7 +926,7 @@ impl Bolsa {
             Sel::Equip(s) => Some(("Desequipar", Acao::Desequipar(s))),
             Sel::Inv(i) => match t {
                 Tipo::Arma(_) | Tipo::Slot(_) => Some(("Equipar", Acao::Equipar(i))),
-                Tipo::Pocao(_) => Some(("Usar", Acao::Usar(i))),
+                Tipo::Pocao(_) | Tipo::Pergaminho => Some(("Abrir", Acao::Usar(i))),
                 _ => None,
             },
         };
@@ -1179,6 +1185,32 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
             );
             draw_rectangle(c.x - s * 0.24, c.y - s * 0.9, s * 0.48, s * 0.22, couro);
             draw_circle(c.x - s * 0.2, c.y + s * 0.12, s * 0.12, k(1.0, 1.0, 1.0));
+        }
+        Tipo::Pergaminho => {
+            let papel = k(0.92, 0.78, 0.48);
+            draw_rectangle(c.x - s * 0.62, c.y - s * 0.72, s * 1.24, s * 1.44, papel);
+            draw_circle(c.x - s * 0.62, c.y - s * 0.62, s * 0.18, ouro);
+            draw_circle(c.x + s * 0.62, c.y + s * 0.62, s * 0.18, ouro);
+            draw_line(
+                c.x - s * 0.38,
+                c.y - s * 0.2,
+                c.x + s * 0.38,
+                c.y - s * 0.2,
+                s * 0.10,
+                k(0.36, 0.20, 0.55),
+            );
+            draw_poly(
+                c.x,
+                c.y + s * 0.28,
+                4,
+                s * 0.25,
+                45.0,
+                if id == item_id::PERGAMINHO_INVOCA_MONTARIA {
+                    ouro
+                } else {
+                    k(0.35, 0.78, 1.0)
+                },
+            );
         }
         Tipo::Ouro => {
             for (dx, dy) in [(-0.35, 0.35), (0.35, 0.35), (0.0, -0.2)] {

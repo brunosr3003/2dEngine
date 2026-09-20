@@ -54,7 +54,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
         "PERSONAGEM",
         &[
             (Item::Bolsa, "Bolsa", None),
-            (Item::Ficha, "Ficha", Some("Em breve")),
+            (Item::Ficha, "Ficha", None),
             (Item::Habilidades, "Habilidades", None),
             (Item::Montaria, "Montaria", None),
         ],
@@ -401,6 +401,7 @@ mod tests {
             Item::Correio,
             Item::Clan,
             Item::Bolsa,
+            Item::Ficha,
             Item::Missoes,
             Item::TodasMissoes,
             Item::Diarias,

@@ -111,14 +111,6 @@ pub fn medalhao(c: Vec2, r: f32, cor: Color, letra: &str) {
     );
 }
 
-pub fn situacao_montaria(id: u16, e: &EstadoLoja) -> Situacao {
-    match cat::montaria(id) {
-        _ if e.posses.montarias.contains(&id) => Situacao::Possui,
-        Some(m) => Situacao::Comprar(m.preco_tp),
-        None => Situacao::RequerMontaria,
-    }
-}
-
 pub fn situacao_skin(id: u16, e: &EstadoLoja) -> Situacao {
     let Some(s) = cat::skin(id) else {
         return Situacao::RequerMontaria;
@@ -424,6 +416,15 @@ impl LojaTp {
                 Some(format!("Loja: {texto}"))
             }
             AvisoLoja::Montando { .. } => None,
+            AvisoLoja::Invocacao {
+                premio: cat::PremioInvocacao::Montaria { id, quantidade },
+            } => {
+                if let Some(e) = self.estado.as_mut() {
+                    e.posses.registrar_montaria(id, quantidade);
+                }
+                None
+            }
+            AvisoLoja::Invocacao { .. } => None,
         }
     }
 
@@ -968,6 +969,15 @@ impl LojaTp {
             k,
         );
         chip(tx + w1 + 8.0 * k, yc, "", "Vale para a conta toda", k);
+        if self.aba == 0 {
+            estilo::texto(
+                tx,
+                yc + 31.0 * k,
+                "Pergaminho aleatório: 55% Lobo · 30% Tigre · 15% Urso",
+                ts(12.0, k),
+                OURO_CLARO,
+            );
+        }
         estilo::texto(
             palco.x + palco.w - 24.0 * k - estilo::medir("arraste para girar", ts(11.0, k)),
             palco.y + 30.0 * k,
@@ -1028,7 +1038,11 @@ impl LojaTp {
 
         // compra
         let (sit, produto) = if self.aba == 0 {
-            (situacao_montaria(mt.id, estado), Produto::Montaria(mt.id))
+            let perg = cat::PERGAMINHOS_MONTARIA[0];
+            (
+                Situacao::Comprar(perg.preco_tp),
+                Produto::PergaminhoMontaria(perg.id),
+            )
         } else {
             (situacao_skin(skin, estado), Produto::Skin(skin))
         };
@@ -1057,7 +1071,13 @@ impl LojaTp {
                 let sobre = !modal && bt.contains(m);
                 botao_ouro(
                     bt,
-                    if self.em_voo { "AGUARDE…" } else { "COMPRAR" },
+                    if self.em_voo {
+                        "AGUARDE…"
+                    } else if matches!(produto, Produto::PergaminhoMontaria(_)) {
+                        "COMPRAR PERGAMINHO"
+                    } else {
+                        "COMPRAR"
+                    },
                     ativo,
                     sobre,
                     k,
@@ -1229,20 +1249,28 @@ impl LojaTp {
             ts(18.0, k),
             estilo::TEXTO,
         );
-        match situacao_montaria(mt.id, estado) {
-            Situacao::Comprar(preco) => {
-                estilo::valor_tp(x, meio + 22.0 * k, preco, ts(17.0, k), OURO_CLARO);
-            }
-            _ => {
-                visto(vec2(x + 7.0 * k, meio + 16.0 * k), 12.0 * k, VERDE_POSSE);
-                estilo::texto_forte(
-                    x + 20.0 * k,
-                    meio + 22.0 * k,
-                    "POSSUÍDA",
-                    ts(14.0, k),
-                    VERDE_POSSE,
-                );
-            }
+        let chance = cat::PERGAMINHOS_MONTARIA[0]
+            .chances
+            .get(mt.id.saturating_sub(1) as usize)
+            .copied()
+            .unwrap_or(0);
+        if estado.posses.montarias.contains(&mt.id) {
+            visto(vec2(x + 7.0 * k, meio + 16.0 * k), 12.0 * k, VERDE_POSSE);
+            estilo::texto_forte(
+                x + 20.0 * k,
+                meio + 22.0 * k,
+                &format!("POSSUÍDA ×{}", estado.posses.quantidade_montaria(mt.id)),
+                ts(14.0, k),
+                VERDE_POSSE,
+            );
+        } else {
+            estilo::texto_forte(
+                x,
+                meio + 22.0 * k,
+                &format!("{chance}% na invocação"),
+                ts(14.0, k),
+                OURO_CLARO,
+            );
         }
         if let Some(sl) = selo_da_montaria(mt.id) {
             let tam = ts(11.0, k);
@@ -1256,7 +1284,7 @@ impl LojaTp {
         }
     }
 
-    /// Aba Materiais: consumiveis repetiveis — o bau de chaves a' esquerda e
+    /// Aba Materiais: pergaminho repetível de chaves à esquerda e
     /// as moedas do jogo (ouro, cobre, darksteel) a' direita.
     fn materiais(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
         let bau = &cat::BAUS_CRAFT[0];
@@ -1290,7 +1318,7 @@ impl LojaTp {
         faiscas(r, agora, 18, k, 93);
         let arte = vec2(r.center().x, r.y + r.h * 0.27);
         brilho_radial(arte, r.h * 0.20, OURO_CLARO, 0.28);
-        crate::icones_ui::ui("craft", arte, r.h * 0.20, OURO_CLARO);
+        crate::invocacao_ui::icone_pergaminho(arte, r.h * 0.32, LILAS);
         estilo::texto_centro_forte(
             r.center().x,
             r.y + r.h * 0.47,
@@ -1340,7 +1368,7 @@ impl LojaTp {
             if self.em_voo {
                 "AGUARDE…"
             } else {
-                "COMPRAR E ABRIR"
+                "COMPRAR PERGAMINHO"
             },
             ativo,
             !modal && bt.contains(m),
@@ -1387,7 +1415,13 @@ impl LojaTp {
                 ts(15.0, k),
                 OURO_CLARO,
             );
-            estilo::valor_tp(tx, r.y + r.h * 0.36 + 52.0 * k, pk.preco_tp, ts(17.0, k), estilo::TEXTO);
+            estilo::valor_tp(
+                tx,
+                r.y + r.h * 0.36 + 52.0 * k,
+                pk.preco_tp,
+                ts(17.0, k),
+                estilo::TEXTO,
+            );
             let bt = Rect::new(
                 r.x + r.w - 150.0 * k,
                 r.center().y - 22.0 * k,
@@ -1679,11 +1713,22 @@ impl LojaTp {
                 let skin = match pr {
                     Produto::Montaria(id) => cat::montaria(id).map_or(0, |m| m.skin_padrao),
                     Produto::Skin(id) => id,
-                    Produto::Tp(_) | Produto::BauCraft(_) | Produto::Moeda(_) => 0,
+                    Produto::Tp(_)
+                    | Produto::BauCraft(_)
+                    | Produto::Moeda(_)
+                    | Produto::PergaminhoMontaria(_) => 0,
                 };
-                if matches!(pr, Produto::BauCraft(_)) {
+                if matches!(pr, Produto::BauCraft(_) | Produto::PergaminhoMontaria(_)) {
                     brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
-                    crate::icones_ui::ui("craft", prev.center(), prev.w * 0.52, OURO_CLARO);
+                    crate::invocacao_ui::icone_pergaminho(
+                        prev.center(),
+                        prev.w * 0.58,
+                        if matches!(pr, Produto::PergaminhoMontaria(_)) {
+                            OURO_CLARO
+                        } else {
+                            LILAS
+                        },
+                    );
                 } else if let Produto::Moeda(id) = pr {
                     brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
                     if let Some(mo) = cat::moeda(id) {
@@ -1719,7 +1764,10 @@ impl LojaTp {
                     ),
                     Produto::Tp(_) => String::new(),
                     Produto::BauCraft(_) => {
-                        "1 chave aleatória · Cinza, Verde, Azul ou Roxa".to_string()
+                        "Pergaminho · abra na bolsa · chave aleatória".to_string()
+                    }
+                    Produto::PergaminhoMontaria(_) => {
+                        "Pergaminho · 1 montaria aleatória · duplicatas contam".to_string()
                     }
                     Produto::Moeda(id) => cat::moeda(id).map_or(String::new(), |mo| {
                         format!("{} · entra na hora", milhar(mo.qtd as u64))
@@ -2015,6 +2063,7 @@ pub async fn previa(vox: &VoxCache) {
         posses: cat::Posses {
             montarias: vec![1],
             skins: vec![102],
+            montarias_qtd: vec![(1, 1)],
         },
         historico: vec![
             cat::CompraNet {
@@ -2038,19 +2087,20 @@ pub async fn previa(vox: &VoxCache) {
         ],
     };
     loja.receber(AvisoLoja::Estado(estado.clone()));
-    let cenas: [&str; 8] = [
+    let cenas: [&str; 9] = [
         "1-montarias",
         "2-montaria-possuida",
         "3-skins",
-        "4-tempest-points",
-        "5-confirma-montaria",
-        "6-confirma-tp",
-        "7-compra-concluida",
-        "8-mundo",
+        "4-materiais",
+        "5-tempest-points",
+        "6-confirma-pergaminho",
+        "7-confirma-tp",
+        "8-compra-concluida",
+        "9-mundo",
     ];
     let (sw, sh) = (lw, lh);
     for (n, cena) in cenas.iter().enumerate() {
-        if n == 7 {
+        if n == 8 {
             previa_mundo(vox, &solido, &format!("{saida}/{sw}x{sh}")).await;
             continue;
         }
@@ -2078,12 +2128,15 @@ pub async fn previa(vox: &VoxCache) {
                 loja.aba = 2;
             }
             4 => {
-                loja.aba = 0;
-                loja.montaria_sel = 3;
-                loja.confirma = Some(Confirma::Item(Produto::Montaria(3)));
+                loja.aba = 3;
             }
             5 => {
-                loja.aba = 2;
+                loja.aba = 0;
+                loja.montaria_sel = 3;
+                loja.confirma = Some(Confirma::Item(Produto::PergaminhoMontaria(1)));
+            }
+            6 => {
+                loja.aba = 3;
                 loja.confirma = Some(Confirma::Tp(4));
             }
             _ => {
@@ -2091,7 +2144,7 @@ pub async fn previa(vox: &VoxCache) {
                 loja.montaria_sel = 2;
                 loja.receber(AvisoLoja::Resultado {
                     ok: true,
-                    texto: "Tigre das Neves é seu!".into(),
+                    texto: "Pergaminho entregue na bolsa!".into(),
                 });
             }
         }
@@ -2328,7 +2381,11 @@ mod tests {
         EstadoLoja {
             ligada: true,
             tp,
-            posses: cat::Posses { montarias, skins },
+            posses: cat::Posses {
+                montarias,
+                skins,
+                ..Default::default()
+            },
             ..Default::default()
         }
     }
@@ -2345,8 +2402,6 @@ mod tests {
     #[test]
     fn situacoes_respeitam_posses() {
         let e = estado(vec![1], vec![102], 0);
-        assert_eq!(situacao_montaria(1, &e), Situacao::Possui);
-        assert_eq!(situacao_montaria(2, &e), Situacao::Comprar(800));
         assert_eq!(situacao_skin(101, &e), Situacao::Inclusa);
         assert_eq!(situacao_skin(102, &e), Situacao::Possui);
         assert_eq!(situacao_skin(103, &e), Situacao::Comprar(450));
@@ -2355,6 +2410,21 @@ mod tests {
             Situacao::RequerMontaria,
             "sem a montaria nao compra a skin"
         );
+    }
+
+    #[test]
+    fn invocacao_atualiza_a_quantidade_sem_reabrir_a_loja() {
+        let mut l = LojaTp::default();
+        l.receber(AvisoLoja::Estado(estado(vec![], vec![], 500)));
+        l.receber(AvisoLoja::Invocacao {
+            premio: cat::PremioInvocacao::Montaria {
+                id: 3,
+                quantidade: 2,
+            },
+        });
+        let p = &l.estado().unwrap().posses;
+        assert_eq!(p.quantidade_montaria(3), 2);
+        assert!(p.skins.contains(&301));
     }
 
     #[test]

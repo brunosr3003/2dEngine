@@ -50,6 +50,14 @@ impl MontariasUi {
                 }
             }
             AvisoLoja::Resultado { .. } => {}
+            AvisoLoja::Invocacao {
+                premio: cat::PremioInvocacao::Montaria { id, quantidade },
+            } => {
+                if let Some(e) = self.estado.as_mut() {
+                    e.posses.registrar_montaria(*id, *quantidade);
+                }
+            }
+            AvisoLoja::Invocacao { .. } => {}
         }
     }
 
@@ -250,12 +258,26 @@ mod tests {
                 posses: cat::Posses {
                     montarias: vec![2],
                     skins: vec![],
+                    ..Default::default()
                 },
                 ..Default::default()
             }),
             0.0,
         );
         assert!(u.tem_montaria());
+        u.receber(
+            &AvisoLoja::Invocacao {
+                premio: cat::PremioInvocacao::Montaria {
+                    id: 2,
+                    quantidade: 3,
+                },
+            },
+            0.0,
+        );
+        assert_eq!(
+            u.estado.as_ref().unwrap().posses.quantidade_montaria(2),
+            3
+        );
         assert!(!u.montando(0.0));
         u.montando_desde = 10.0;
         u.montando_ate = 11.0;

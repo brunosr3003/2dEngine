@@ -21,6 +21,7 @@ mod dungeon_ui;
 mod efeitos;
 mod entrada;
 mod evolucao_skills;
+mod ficha_ui;
 mod forja_ui;
 mod ganhos;
 mod gpu_estatica;
@@ -32,6 +33,7 @@ mod hud_layout;
 mod icone_npc;
 mod icones;
 mod icones_ui;
+mod invocacao_ui;
 mod login_google;
 mod loja;
 mod lojas;
@@ -178,8 +180,11 @@ struct Jogo {
     bolsa: bolsa::Bolsa,
     /// Vida, mana, vigor e experiencia do HUD (`hud::Ficha`).
     ficha: hud::Ficha,
+    /// Ficha completa e distribuição dos seis atributos.
+    ficha_ui: ficha_ui::FichaUi,
     habilidades: habilidades::Habilidades,
     evolucao_skills: evolucao_skills::EvolucaoSkills,
+    invocacao: invocacao_ui::InvocacaoUi,
     auto_combate: auto_combate::AutoCombate,
     /// Loja do NPC vendedor aberta, e o NPC clicado de longe (anda e fala).
     loja: loja::Loja,
@@ -435,6 +440,16 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_FICHA").is_ok() {
+        ficha_ui::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_INVOCACAO").is_ok() {
+        invocacao_ui::previa(&vox).await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_EVOLUCAO").is_ok() {
         evolucao_skills::previa().await;
         return;
@@ -488,8 +503,10 @@ async fn main() {
         alvo: None,
         bolsa: bolsa::Bolsa::default(),
         ficha: hud::Ficha::default(),
+        ficha_ui: ficha_ui::FichaUi::default(),
         habilidades: habilidades::Habilidades::default(),
         evolucao_skills: evolucao_skills::EvolucaoSkills::default(),
+        invocacao: invocacao_ui::InvocacaoUi::default(),
         auto_combate: auto_combate::AutoCombate::default(),
         loja: loja::Loja::default(),
         ganhos: ganhos::Ganhos::default(),
@@ -817,6 +834,7 @@ impl Jogo {
         self.ganhos = ganhos::Ganhos::default();
         self.habilidades = habilidades::Habilidades::default();
         self.evolucao_skills.progresso = Default::default();
+        self.ficha_ui.limpar_pontos();
         if self.economia.ativa {
             self.economia.sair(get_time());
         }
@@ -1115,6 +1133,10 @@ impl Jogo {
             }
             ServerMessage::Loja { aviso } => {
                 self.montarias.receber(&aviso, get_time());
+                if let shared::loja::AvisoLoja::Invocacao { premio } = &aviso {
+                    self.fecha_paineis();
+                    self.invocacao.abrir(premio.clone(), get_time());
+                }
                 if let Some(t) = self.loja_tp.receber(aviso) {
                     self.chat.push(t);
                 }
@@ -1140,6 +1162,9 @@ impl Jogo {
             ServerMessage::StatsUpdate { stats, equipment } => {
                 self.bolsa.stats = Some(stats);
                 self.bolsa.equip = equipment;
+            }
+            ServerMessage::StatPointsUpdate { unspent, allocated } => {
+                self.ficha_ui.atualizar_pontos(unspent, allocated);
             }
             ServerMessage::GoldUpdate { gold } => self.bolsa.ouro = gold,
             ServerMessage::VaultOpen { slots } => {
@@ -1968,6 +1993,8 @@ impl Jogo {
             || self.craft.aberto()
             || self.forja.aberto()
             || self.evolucao_skills.aberto
+            || self.ficha_ui.aberta
+            || self.invocacao.aberta()
             || self.menu_missoes.aberto
             || self.diarias.aberto
             || self.lojas.aberto
@@ -2249,6 +2276,7 @@ impl Jogo {
         self.craft.fechar();
         self.forja.fechar();
         self.evolucao_skills.fechar();
+        self.ficha_ui.fechar();
         self.menu_missoes.aberto = false;
         self.diarias.fechar();
         self.lojas.fechar();
@@ -2318,6 +2346,7 @@ impl Jogo {
         self.voltar_ao_menu = true;
         match item {
             Item::Bolsa => self.bolsa.abrir(),
+            Item::Ficha => self.ficha_ui.abrir(),
             Item::Missoes => {
                 self.missoes.fecha();
                 self.missoes.alterna_diario();
@@ -2428,6 +2457,12 @@ impl Jogo {
             true
         } else if self.evolucao_skills.aberto {
             self.evolucao_skills.fechar();
+            true
+        } else if self.ficha_ui.aberta {
+            self.ficha_ui.fechar();
+            true
+        } else if self.invocacao.aberta() {
+            self.invocacao.fechar();
             true
         } else if self.craft.aberto() {
             self.craft.fechar();
@@ -3578,6 +3613,8 @@ impl Jogo {
         self.chat.clear();
         self.bolsa = bolsa::Bolsa::default();
         self.ficha = hud::Ficha::default();
+        self.ficha_ui = ficha_ui::FichaUi::default();
+        self.invocacao = invocacao_ui::InvocacaoUi::default();
         self.teclado.limpa();
         // Volta pro login e nao pra escolha de servidor: o canal continua
         // sendo o mesmo, quem mudou de ideia foi a conta.
@@ -4492,6 +4529,18 @@ impl Jogo {
                 self.envia(pedido);
             }
         }
+        if self.ficha_ui.aberta && !onde {
+            let pedido = self.ficha_ui.desenha(
+                self.personagem_atual.as_deref().unwrap_or("Personagem"),
+                self.ficha.nivel.max(1),
+                self.ficha.xp,
+                self.ficha.mult_xp,
+                self.bolsa.stats.as_ref(),
+            );
+            if let Some(pedido) = pedido {
+                self.envia(pedido);
+            }
+        }
         if self.missoes.aberta && !onde {
             let slots = &self.bolsa.slots;
             let pedidos = self
@@ -4808,6 +4857,8 @@ impl Jogo {
             }
             None => {}
         }
+        self.invocacao
+            .desenha(&self.bolsa.nomes, &self.vox, &self.solido, get_time());
         // "Tem certeza?" do buff ja' ativo, por cima de tudo.
         if let Some(p) = self.confirmar {
             let nome = self.bolsa.nome(p.item());

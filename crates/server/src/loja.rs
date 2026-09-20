@@ -26,12 +26,22 @@ pub enum Evento {
         personagem: String,
         posses: Posses,
     },
-    /// Consumivel pago, ja' rolado pelo servidor, para entregar ao personagem.
-    BauCraft {
+    /// A compra entrega um pergaminho na bolsa; nenhum prêmio foi rolado ainda.
+    Consumivel {
         sid: SessionId,
         personagem: String,
         item_id: u16,
-        cor: u8,
+    },
+    MontariaInvocada {
+        sid: SessionId,
+        personagem: String,
+        montaria: u16,
+        quantidade: u32,
+    },
+    FalhaInvocacao {
+        sid: SessionId,
+        personagem: String,
+        item_id: u16,
     },
     /// Pacote de moeda pago em TP: ouro, cobre ou darksteel.
     Moeda {
@@ -65,6 +75,12 @@ pub async fn criar_tabelas(pool: &PgPool) -> Result<()> {
             pedido   TEXT        NOT NULL UNIQUE,
             quando   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             PRIMARY KEY (conta, produto)
+        )",
+        "CREATE TABLE IF NOT EXISTS loja_montarias (
+            conta       TEXT    NOT NULL,
+            montaria    INTEGER NOT NULL,
+            quantidade INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (conta, montaria)
         )",
     ] {
         sqlx::query(sql).execute(pool).await?;
@@ -388,7 +404,10 @@ pub async fn comprar_item(
         razao::Movimento::Feito { saldo } | razao::Movimento::JaFeito { saldo } => saldo,
     };
     // Consumiveis sao repetiveis e nao viram posse da conta.
-    if !matches!(produto, Produto::BauCraft(_) | Produto::Moeda(_)) {
+    if !matches!(
+        produto,
+        Produto::BauCraft(_) | Produto::Moeda(_) | Produto::PergaminhoMontaria(_)
+    ) {
         sqlx::query("INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
             .bind(conta)
             .bind(&codigo)
@@ -413,8 +432,11 @@ pub async fn comprar_item(
     tx.commit().await?;
     Ok(Resposta::Feito {
         saldo,
-        texto: if matches!(produto, Produto::BauCraft(_)) {
-            format!("{} aberto!", produto.nome())
+        texto: if matches!(
+            produto,
+            Produto::BauCraft(_) | Produto::PergaminhoMontaria(_)
+        ) {
+            format!("{} entregue na bolsa!", produto.nome())
         } else if matches!(produto, Produto::Moeda(_)) {
             format!("{} comprado!", produto.nome())
         } else {
@@ -472,13 +494,70 @@ pub async fn estado(central: &PgPool, conta: &str) -> Result<EstadoLoja> {
         }
     })
     .collect();
+    let mut posse = posses(central, conta).await?;
+    posse.montarias_qtd = sqlx::query_as::<_, (i32, i32)>(
+        "SELECT montaria, quantidade FROM loja_montarias WHERE conta = $1 ORDER BY montaria",
+    )
+    .bind(conta)
+    .fetch_all(central)
+    .await?
+    .into_iter()
+    .map(|(m, q)| (m.max(0) as u16, q.max(0) as u32))
+    .collect();
     Ok(EstadoLoja {
         ligada: true,
         simulado: simulado(),
         tp: razao::saldo(central, conta).await?,
-        posses: posses(central, conta).await?,
+        posses: posse,
         historico,
     })
+}
+
+/// Registra uma cópia invocada. A primeira libera a montaria e a skin padrão;
+/// as seguintes ficam contadas para a futura combinação/aprimoramento.
+pub async fn invocar_montaria(central: &PgPool, conta: &str, id: u16) -> Result<u32> {
+    let m = cat::montaria(id).ok_or_else(|| anyhow::anyhow!("montaria invalida"))?;
+    let mut tx = central.begin().await?;
+    let ja_possuia: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM loja_posses WHERE conta=$1 AND produto=$2)",
+    )
+    .bind(conta)
+    .bind(Produto::Montaria(id).codigo())
+    .fetch_one(&mut *tx)
+    .await?;
+    let inicial = if ja_possuia { 2i32 } else { 1i32 };
+    let qtd: i32 = sqlx::query_scalar(
+        "INSERT INTO loja_montarias (conta, montaria, quantidade) VALUES ($1,$2,$3)
+         ON CONFLICT (conta,montaria) DO UPDATE
+         SET quantidade = loja_montarias.quantidade + 1
+         RETURNING quantidade",
+    )
+    .bind(conta)
+    .bind(id as i32)
+    .bind(inicial)
+    .fetch_one(&mut *tx)
+    .await?;
+    let referencia = format!("invocacao-montaria-{conta}-{id}");
+    sqlx::query(
+        "INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1,$2,$3)
+         ON CONFLICT (conta,produto) DO NOTHING",
+    )
+    .bind(conta)
+    .bind(Produto::Montaria(id).codigo())
+    .bind(&referencia)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1,$2,$3)
+         ON CONFLICT (conta,produto) DO NOTHING",
+    )
+    .bind(conta)
+    .bind(Produto::Skin(m.skin_padrao).codigo())
+    .bind(format!("{referencia}-skin"))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(qtd.max(1) as u32)
 }
 
 #[cfg(test)]
@@ -550,23 +629,31 @@ mod tests {
         assert!(!r.ok());
         assert_eq!(razao::saldo(&central, &conta).await.unwrap(), 1750);
 
-        // Montaria (500): entrega, repetida vale uma, outra vez = ja' possui.
-        let r = comprar_item(&central, &conta, Produto::Montaria(1), &id("m1"))
+        // Pergaminho de montaria (500): a compra e' idempotente, mas novos
+        // pergaminhos sao repetiveis. A montaria so' vira posse ao abrir.
+        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), &id("m1"))
             .await
             .unwrap();
         assert!(matches!(r, Resposta::Feito { saldo: 1250, .. }), "{r:?}");
-        let r = comprar_item(&central, &conta, Produto::Montaria(1), &id("m1"))
+        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), &id("m1"))
             .await
             .unwrap();
         assert!(matches!(r, Resposta::JaFeito { saldo: 1250, .. }), "{r:?}");
-        let r = comprar_item(&central, &conta, Produto::Montaria(1), &id("m1b"))
+        assert_eq!(invocar_montaria(&central, &conta, 1).await.unwrap(), 1);
+        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), &id("m1b"))
+            .await
+            .unwrap();
+        assert!(matches!(r, Resposta::Feito { saldo: 750, .. }), "{r:?}");
+        assert_eq!(invocar_montaria(&central, &conta, 1).await.unwrap(), 2);
+        let r = comprar_item(&central, &conta, Produto::Montaria(2), &id("direta"))
             .await
             .unwrap();
         assert_eq!(
             r,
             Resposta::Recusado {
-                texto: RecusaCompra::JaPossui.texto().into()
-            }
+                texto: RecusaCompra::ProdutoInvalido.texto().into()
+            },
+            "compra direta de montaria ficou bloqueada"
         );
         // Skin de montaria que nao tem; skin da que tem.
         let r = comprar_item(&central, &conta, Produto::Skin(202), &id("s1"))
@@ -581,9 +668,9 @@ mod tests {
         let r = comprar_item(&central, &conta, Produto::Skin(102), &id("s2"))
             .await
             .unwrap();
-        assert!(matches!(r, Resposta::Feito { saldo: 950, .. }), "{r:?}");
+        assert!(matches!(r, Resposta::Feito { saldo: 450, .. }), "{r:?}");
         // Saldo insuficiente: nada muda.
-        let r = comprar_item(&central, &conta, Produto::Montaria(3), &id("m3"))
+        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), &id("m3"))
             .await
             .unwrap();
         assert_eq!(
@@ -592,22 +679,22 @@ mod tests {
                 texto: RecusaCompra::SemSaldo.texto().into()
             }
         );
-        assert_eq!(razao::saldo(&central, &conta).await.unwrap(), 950);
+        assert_eq!(razao::saldo(&central, &conta).await.unwrap(), 450);
         // Duas compras diferentes ao mesmo tempo nao leem o mesmo saldo.
         let (m2, s3) = (id("m2"), id("s3"));
         let (a, b) = tokio::join!(
-            comprar_item(&central, &conta, Produto::Montaria(2), &m2),
+            comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), &m2),
             comprar_item(&central, &conta, Produto::Skin(103), &s3),
         );
         let (a, b) = (a.unwrap(), b.unwrap());
         assert!(a.ok() != b.ok() || (a.ok() && b.ok()), "{a:?} {b:?}");
         let saldo = razao::saldo(&central, &conta).await.unwrap();
-        let gasto: u64 = [(&a, 800u64), (&b, 450u64)]
+        let gasto: u64 = [(&a, 500u64), (&b, 450u64)]
             .iter()
             .filter(|(r, _)| r.ok())
             .map(|(_, p)| *p)
             .sum();
-        assert_eq!(saldo, 950 - gasto, "{a:?} {b:?}");
+        assert_eq!(saldo, 450 - gasto, "{a:?} {b:?}");
 
         let p = posses(&central, &conta).await.unwrap();
         assert!(p.montarias.contains(&1));
@@ -615,5 +702,6 @@ mod tests {
         let e = estado(&central, &conta).await.unwrap();
         assert!(e.ligada && e.historico.len() >= 6);
         assert_eq!(e.tp, saldo);
+        assert_eq!(e.posses.quantidade_montaria(1), 2);
     }
 }

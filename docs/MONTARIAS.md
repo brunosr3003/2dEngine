@@ -1,7 +1,18 @@
 # Montarias
 
-Primeiro item da loja de cash (LOJA.md). Só **mobilidade**: nenhum atributo
-de combate muda (regra da TP em ECONOMIA.md).
+Vêm do **Pergaminho de Invocação: Montaria** da loja de cash (LOJA.md). Só
+**mobilidade**: nenhum atributo de combate muda (regra da TP em ECONOMIA.md).
+
+## Invocação e cópias
+
+- O pergaminho custa 500 TP, vai para a bolsa e só sorteia quando o jogador
+  toca em **Abrir**: Lobo 55%, Tigre 30%, Urso 15%.
+- A abertura mostra o pergaminho, partículas e a montaria 3D sorteada. O prêmio
+  já foi decidido pelo servidor; pular ou fechar a animação não muda nada.
+- A primeira cópia libera a montaria e sua skin padrão para toda a conta.
+  Duplicatas são válidas e ficam contadas em `loja_montarias`, para a futura
+  combinação/evolução de montarias.
+- A loja mostra a chance de cada montaria e, nas já obtidas, `POSSUÍDA ×N`.
 
 ## Regras (servidor, `world/loja_mundo.rs`)
 
@@ -31,6 +42,8 @@ de combate muda (regra da TP em ECONOMIA.md).
   entidade do `last_sent` de todos; o cliente troca só a meta).
 - `Preferencias::montaria_skin` guarda a escolha (salva no personagem).
 - `PedidoLoja::Montar / Desmontar`, `AvisoLoja::Montando { segundos }`.
+- `AvisoLoja::Invocacao` leva o prêmio autoritativo para a animação; o item de
+  bolsa é `PERGAMINHO_INVOCA_MONTARIA`.
 
 ## Visual (`render3d::desenha_montaria`, `rig::aplica_montado`)
 

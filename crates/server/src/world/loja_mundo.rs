@@ -158,19 +158,22 @@ impl GameWorld {
                                         qtd: m.qtd,
                                     }));
                                 }
-                                if let Produto::BauCraft(id) = produto {
-                                    if let Some((item_id, cor)) =
-                                        cat::rolar_bau_craft(id, fastrand::f32(), fastrand::f32())
-                                    {
-                                        let _ = tx_mundo.send(IncomingMessage::Loja(
-                                            Evento::BauCraft {
-                                                sid,
-                                                personagem: personagem.clone(),
-                                                item_id,
-                                                cor,
-                                            },
-                                        ));
+                                let pergaminho = match produto {
+                                    Produto::BauCraft(_) => {
+                                        Some(shared::item_id::PERGAMINHO_INVOCA_CHAVE)
                                     }
+                                    Produto::PergaminhoMontaria(_) => {
+                                        Some(shared::item_id::PERGAMINHO_INVOCA_MONTARIA)
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(item_id) = pergaminho {
+                                    let _ =
+                                        tx_mundo.send(IncomingMessage::Loja(Evento::Consumivel {
+                                            sid,
+                                            personagem: personagem.clone(),
+                                            item_id,
+                                        }));
                                 }
                             }
                             resultado(&to, r.ok(), r.texto());
@@ -219,11 +222,10 @@ impl GameWorld {
                 s.loja_carregada = true;
                 self.atualizar_skin_vista(sid);
             }
-            Evento::BauCraft {
+            Evento::Consumivel {
                 sid,
                 personagem,
                 item_id,
-                cor,
             } => {
                 let Some(s) = self
                     .sessions
@@ -243,16 +245,64 @@ impl GameWorld {
                     s.inventory_dirty = true;
                 }
                 self.save_pending = true;
-                crate::telemetria::conta("loja_bau_craft_cor", cor, 1);
                 let nome = crate::economy::nome_do_item(item_id);
                 resultado(
                     &s.handle.to_client,
                     true,
                     if foi_correio {
-                        format!("Você recebeu {nome}. Bolsa cheia: enviado ao correio.")
+                        format!("{nome} enviado ao correio: sua bolsa está cheia.")
                     } else {
-                        format!("Você recebeu {nome}!")
+                        format!("{nome} entregue na bolsa. Abra para revelar o prêmio!")
                     },
+                );
+            }
+            Evento::MontariaInvocada {
+                sid,
+                personagem,
+                montaria,
+                quantidade,
+            } => {
+                let to = {
+                    let Some(s) = self
+                        .sessions
+                        .get_mut(&sid)
+                        .filter(|s| s.logged_in && s.name == personagem)
+                    else {
+                        return;
+                    };
+                    s.loja_posses.registrar_montaria(montaria, quantidade);
+                    s.handle.to_client.clone()
+                };
+                self.atualizar_skin_vista(sid);
+                avisa(
+                    &to,
+                    AvisoLoja::Invocacao {
+                        premio: cat::PremioInvocacao::Montaria {
+                            id: montaria,
+                            quantidade,
+                        },
+                    },
+                );
+            }
+            Evento::FalhaInvocacao {
+                sid,
+                personagem,
+                item_id,
+            } => {
+                let Some(s) = self
+                    .sessions
+                    .get_mut(&sid)
+                    .filter(|s| s.logged_in && s.name == personagem)
+                else {
+                    return;
+                };
+                add_to_inventory(&mut s.inventory, item_id, 1, None);
+                s.inventory_dirty = true;
+                self.save_pending = true;
+                resultado(
+                    &s.handle.to_client,
+                    false,
+                    "Invocação indisponível. O pergaminho voltou para sua bolsa.",
                 );
             }
             Evento::Moeda {

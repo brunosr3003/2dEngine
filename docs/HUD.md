@@ -378,7 +378,7 @@ A coluna **"Também no HUD"** lista o outro caminho por clique além do Menu.
 
 | Grupo | Item | Ícone sugerido | Abre | NPC? | Selo ● quando | Também no HUD | Estado |
 |---|---|---|---|---|---|---|---|
-| Personagem | **Ficha** | busto | painel **Personagem**, aba Atributos (distribuir pontos: `AllocStatPoint`/`ResetStats` já existem no servidor) | não | há pontos livres | clique no círculo de nível da ficha (A) | a fazer (cliente) |
+| Personagem | **Ficha** | busto | painel com XP, poder, status de combate e os seis atributos (`AllocStatPoint`/`ResetStats`) | não | há pontos livres | clique no círculo de nível da ficha (A) | feito |
 | Personagem | **Bolsa** | mochila | painel **Personagem**, aba Bolsa (a bolsa atual: equipamento + grade) | não | peça melhor que a vestida entrou; bolsa cheia | ícone 🎒 (D) | existe, migrar |
 | Personagem | **Habilidades** | três lâminas | painel **Personagem**, aba Habilidades (as 12 skills, liberação por nível, AUTO/manual por skill, prévia de `previa_skills.rs`) | não | skill liberada no nível | clique direito ou ⓘ numa skill do arco (K) ⚠️ proposta | a fazer (a barra já existe) |
 | Personagem | Montaria/Barco | âncora | aba Montaria | — | — | — | em breve |

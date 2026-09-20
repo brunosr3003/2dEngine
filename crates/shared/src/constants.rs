@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 108;
+pub const PROTOCOL_VERSION: u16 = 109;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -587,6 +587,10 @@ pub mod item_id {
     /// Pergaminho de Teleporte: salta pro destino marcado (mapa, "Ir" de
     /// missao, NPC) dentro da ilha. Alquimista, em cobre (`shared::viagem`).
     pub const PERGAMINHO_TELEPORTE: u16 = 359;
+    /// Consumíveis da loja: a compra entrega o pergaminho na bolsa; o prêmio
+    /// só é sorteado pelo servidor quando o jogador o usa.
+    pub const PERGAMINHO_INVOCA_CHAVE: u16 = 360;
+    pub const PERGAMINHO_INVOCA_MONTARIA: u16 = 361;
 
     /// As quatro CHAVES de craft (uma por receita), pelo id da cinza. So'
     /// caem de chefe e de dungeon/raid (`shared::chaves`).

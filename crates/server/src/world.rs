@@ -17077,6 +17077,8 @@ impl GameWorld {
             /// Pocoes de Fortuna e de Sorte: ligam (ou renovam) o buff de drop.
             FortunaBuff,
             SorteBuff,
+            InvocarChave,
+            InvocarMontaria,
             /// Player tentou usar um item de barco. Server tenta spawnar
             /// um barco em agua adjacente; consome o item se sucesso.
             SpawnBoat {
@@ -17161,6 +17163,10 @@ impl GameWorld {
                     id if id == shared::item_id::XP_POTION => UseAction::XpBuff,
                     id if id == shared::item_id::FORTUNA_POTION => UseAction::FortunaBuff,
                     id if id == shared::item_id::SORTE_POTION => UseAction::SorteBuff,
+                    id if id == shared::item_id::PERGAMINHO_INVOCA_CHAVE => UseAction::InvocarChave,
+                    id if id == shared::item_id::PERGAMINHO_INVOCA_MONTARIA => {
+                        UseAction::InvocarMontaria
+                    }
                     _ => return,
                 };
                 (player_entity, a)
@@ -17299,6 +17305,81 @@ impl GameWorld {
                 }
                 self.save_pending = true;
                 consume_slot(&mut self.sessions);
+            }
+            UseAction::InvocarChave => {
+                let Some((item_id, cor)) =
+                    shared::loja::rolar_bau_craft(1, fastrand::f32(), fastrand::f32())
+                else {
+                    return;
+                };
+                consume_slot(&mut self.sessions);
+                let Some(s) = self.sessions.get_mut(&sid) else {
+                    return;
+                };
+                let foi_correio = !add_to_inventory(&mut s.inventory, item_id, 1, None);
+                if foi_correio {
+                    let quando = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    s.dungeon.postar(item_id, 1, None, 0, quando);
+                } else {
+                    s.inventory_dirty = true;
+                }
+                self.save_pending = true;
+                crate::telemetria::conta("invocacao_chave_cor", cor, 1);
+                let _ = s.handle.to_client.send(ServerMessage::Loja {
+                    aviso: shared::loja::AvisoLoja::Invocacao {
+                        premio: shared::loja::PremioInvocacao::Chave { item_id, cor },
+                    },
+                });
+                if foi_correio {
+                    self.send_chat_to(sid, "[Invocação] Bolsa cheia: prêmio enviado às Entregas.");
+                }
+            }
+            UseAction::InvocarMontaria => {
+                let (Some(central), Some(tx)) = (
+                    crate::mercado::central(),
+                    self.auth_ctx.as_ref().map(|c| c.tx.clone()),
+                ) else {
+                    self.send_chat_to(sid, "[Invocação] Serviço de montarias indisponível.");
+                    return;
+                };
+                let Some(montaria) = shared::loja::rolar_montaria(1, fastrand::f32()) else {
+                    return;
+                };
+                let Some(s) = self.sessions.get(&sid) else {
+                    return;
+                };
+                let conta =
+                    crate::mercado::conta_global(&crate::canais::realm(), s.account_id, &s.name);
+                let personagem = s.name.clone();
+                consume_slot(&mut self.sessions);
+                self.save_pending = true;
+                tokio::spawn(async move {
+                    match crate::loja::invocar_montaria(&central, &conta, montaria).await {
+                        Ok(quantidade) => {
+                            let _ = tx.send(IncomingMessage::Loja(
+                                crate::loja::Evento::MontariaInvocada {
+                                    sid,
+                                    personagem,
+                                    montaria,
+                                    quantidade,
+                                },
+                            ));
+                        }
+                        Err(e) => {
+                            tracing::warn!("invocacao de montaria falhou: {e:#}");
+                            let _ = tx.send(IncomingMessage::Loja(
+                                crate::loja::Evento::FalhaInvocacao {
+                                    sid,
+                                    personagem,
+                                    item_id: shared::item_id::PERGAMINHO_INVOCA_MONTARIA,
+                                },
+                            ));
+                        }
+                    }
+                });
             }
             UseAction::SpawnBoat {
                 kind,

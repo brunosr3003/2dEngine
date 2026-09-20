@@ -8,8 +8,8 @@ montaria), **Materiais** e **Tempest Points**. O saldo de TP fica no topo. Códi
 
 ## Produtos e preços iniciais ⚠️
 
-A TP é comprada com **dinheiro de verdade**; montaria e skin são compradas
-com **TP** (a TP é a moeda da loja, como no MIR4). Regra da economia
+A TP é comprada com **dinheiro de verdade**; pergaminhos de invocação e skins
+são comprados com **TP** (a TP é a moeda da loja, como no MIR4). Regra da economia
 (ECONOMIA.md): montarias e skins não dão poder de combate; a aba Materiais
 vende um atalho opcional para o craft.
 
@@ -20,11 +20,10 @@ vende um atalho opcional para o craft.
 | Baú de TP | 1.000 | 200 | 1.200 | R$ 49,90 |
 | Tesouro de TP | 2.000 | 600 | 2.600 | R$ 99,90 |
 
-| montaria | bicho | preço | skin que vem junto |
-|---|---|---:|---|
-| Lobo da Clareira | lobo | 500 TP | Pelagem Cinza |
-| Tigre das Neves | tigre | 800 TP | Listras Brancas |
-| Urso de Carga | urso | 1.200 TP | Pelo Castanho |
+| pergaminho | preço | resultado ao abrir |
+|---|---:|---|
+| Invocação: Montaria | 500 TP | Lobo 55%, Tigre 30%, Urso 15% |
+| Invocação: Chaves | 120 TP | Escama, Garra, Chifre ou Couro; cor aleatória |
 
 | skin | montaria | preço |
 |---|---|---:|
@@ -35,14 +34,17 @@ vende um atalho opcional para o craft.
 | Urso Polar | Urso | 350 TP |
 | Urso de Obsidiana | Urso | 550 TP |
 
-| material | preço | conteúdo |
-|---|---:|---|
-| Baú de Chaves de Craft | 120 TP | 1 Escama, Garra, Chifre ou Couro aleatório |
+Os pergaminhos são repetíveis e entram na bolsa; comprar **não sorteia nem abre**.
+Ao usar o item, o servidor decide o prêmio e o cliente mostra a abertura animada.
+O de chaves sorteia a família e a cor: **55% cinza, 28% verde, 12% azul e 5%
+roxa**. Se a bolsa estiver cheia na compra, o pergaminho vai para as Entregas;
+se ela encher entre abrir e receber a chave, a chave vai para as Entregas.
 
-O baú é repetível e pode entregar qualquer cor: **55% cinza, 28% verde,
-12% azul e 5% roxa**. O servidor faz os dois sorteios, debita a TP uma vez
-por pedido e entrega a chave na bolsa; se a bolsa estiver cheia, ela vai para
-o correio de recompensas.
+O pergaminho de montaria pode entregar uma montaria que a conta já possui.
+A primeira cópia libera a montaria e a skin padrão; duplicatas ficam em
+`loja_montarias.quantidade`, reservadas para o futuro sistema de combinar e
+aprimorar montarias. A compra direta de `Produto::Montaria` é recusada pelo
+servidor; essa variante permanece apenas para representar posses antigas.
 
 Na mesma aba, as **moedas do jogo** (`MOEDAS`, `Produto::Moeda`), repetíveis
 e entregues na hora no personagem que está jogando:
@@ -54,7 +56,7 @@ e entregues na hora no personagem que está jogando:
 | Barras de Darksteel | 2.000 darksteel | 60 TP |
 
 O ouro entra no saldo; cobre e darksteel, na carteira (docs/BANCO.md) — nunca
-falta espaço. Não viram posse da conta (`loja_posses`), como o baú.
+falta espaço. Não viram posse da conta (`loja_posses`), como os pergaminhos.
 
 Skin só se compra tendo a montaria. Toda montaria corre igual
 (`VEL_MONTADO`): pagar mais compra aparência, não vantagem.
@@ -82,7 +84,8 @@ cliente ── ComprarTp{pacote, pedido} ──► canal ──► central: loja
   referência `loja:<pedido>`), grava a posse e marca `entregue`. A montaria
   grava junto a skin padrão. Recusa (sem saldo, já possui, falta a montaria)
   fica registrada no pedido com o motivo. Consumíveis são repetíveis e não
-  entram em `loja_posses`.
+  entram em `loja_posses`. Abrir uma invocação de montaria atualiza
+  `loja_montarias` e então garante a posse e a skin padrão.
 - **Posse é da CONTA** (`loja_posses`, chave `REALM:id_da_conta`, a mesma da
   TP): vale para todos os personagens da conta no realm.
 
@@ -116,6 +119,7 @@ conforme a loja de cada um). Não implementado.
   BRL_CENTAVOS|TP, status pendente|creditado|entregue|recusado, provedor,
   externo, motivo, criado_em, atualizado_em)`
 - `loja_posses (conta, produto, pedido UNIQUE, quando, PK (conta, produto))`
+- `loja_montarias (conta, montaria, quantidade, PK (conta, montaria))`
 - `tp_razao` (já existia: MERCADO.md)
 
 Criadas no boot do canal quando `DATABASE_URL_CENTRAL` existe. Sem o central
