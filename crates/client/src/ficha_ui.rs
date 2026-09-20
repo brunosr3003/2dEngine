@@ -10,9 +10,9 @@ use crate::hud_estilo as estilo;
 const ATRIBUTOS: [(&str, &str); STAT_COUNT] = [
     ("FOR", "+1 ataque · +2 vida"),
     ("DES", "+1 destreza · crítico/ataque"),
-    ("INT", "+1 sabedoria · +2 mana"),
+    ("INT", "+1 dano mágico · +2 mana"),
     ("VIT", "+5 vida · regeneração"),
-    ("SPD", "+2 vigor · recarga do avanço"),
+    ("SPD", "+2 vigor · regeneração · recarga do Dash"),
     ("RES", "+1 defesa · bloqueio"),
 ];
 
@@ -265,7 +265,7 @@ impl FichaUi {
                     "Red. dano",
                     format!("{:.0}%", s.damage_reduction_pct * 100.0),
                 ),
-                ("Avanço", format!("{:.2}x", s.dash_cd_mult)),
+                ("Recarga do Dash", format!("{:.2}x", s.dash_cd_mult)),
             ];
             for (i, (rotulo, valor)) in linhas.iter().enumerate() {
                 let col = i / 7;

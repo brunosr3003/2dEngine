@@ -78,6 +78,7 @@ const ABAS: [(Aba, &str); 4] = [
 enum Acao {
     Equipar(usize),
     Usar(usize),
+    Abrir10(usize),
     Desequipar(EquipSlot),
     Organizar,
     /// +10 espacos, em ouro (`shared::armazem`).
@@ -186,7 +187,10 @@ fn tipo(id: u16) -> Tipo {
         x if x == item_id::XP_POTION => Tipo::Pocao(3),
         x if x == item_id::FORTUNA_POTION => Tipo::Pocao(4),
         x if x == item_id::SORTE_POTION => Tipo::Pocao(5),
-        x if x == item_id::PERGAMINHO_INVOCA_CHAVE || x == item_id::PERGAMINHO_INVOCA_MONTARIA => {
+        x if x == item_id::PERGAMINHO_INVOCA_CHAVE
+            || x == item_id::PERGAMINHO_INVOCA_MONTARIA
+            || x == item_id::PERGAMINHO_INVOCA_TOMO =>
+        {
             Tipo::Pergaminho
         }
         _ => Tipo::Material,
@@ -404,6 +408,10 @@ impl Bolsa {
         self.sel = None;
         match a {
             Acao::Equipar(i) | Acao::Usar(i) => Some(ClientMessage::UseItem { slot: i as u16 }),
+            Acao::Abrir10(i) => Some(ClientMessage::AbrirPergaminhos {
+                slot: i as u16,
+                quantidade: 10,
+            }),
             Acao::Desequipar(s) => match primeiro_vazio(&self.slots) {
                 Some(i) => Some(ClientMessage::InventorySwap {
                     a: InvSpot::Equip(s),
@@ -942,6 +950,11 @@ impl Bolsa {
                 acao = Some(a);
             }
         }
+        if let (Sel::Inv(i), Tipo::Pergaminho) = (sel, t) {
+            if ui::botao(coluna(1.0), "Abrir 10+1", peca.qty >= 10) && peca.qty >= 10 {
+                acao = Some(Acao::Abrir10(i));
+            }
+        }
         if let Some(i) = peca.inst {
             let (rot, pode) = if i.refinement >= shared::forja::REFINO_MAX {
                 ("Refino máx.".to_string(), false)
@@ -1187,30 +1200,7 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
             draw_circle(c.x - s * 0.2, c.y + s * 0.12, s * 0.12, k(1.0, 1.0, 1.0));
         }
         Tipo::Pergaminho => {
-            let papel = k(0.92, 0.78, 0.48);
-            draw_rectangle(c.x - s * 0.62, c.y - s * 0.72, s * 1.24, s * 1.44, papel);
-            draw_circle(c.x - s * 0.62, c.y - s * 0.62, s * 0.18, ouro);
-            draw_circle(c.x + s * 0.62, c.y + s * 0.62, s * 0.18, ouro);
-            draw_line(
-                c.x - s * 0.38,
-                c.y - s * 0.2,
-                c.x + s * 0.38,
-                c.y - s * 0.2,
-                s * 0.10,
-                k(0.36, 0.20, 0.55),
-            );
-            draw_poly(
-                c.x,
-                c.y + s * 0.28,
-                4,
-                s * 0.25,
-                45.0,
-                if id == item_id::PERGAMINHO_INVOCA_MONTARIA {
-                    ouro
-                } else {
-                    k(0.35, 0.78, 1.0)
-                },
-            );
+            crate::invocacao_ui::icone_pergaminho_de(id, c, s * 2.15);
         }
         Tipo::Ouro => {
             for (dx, dy) in [(-0.35, 0.35), (0.35, 0.35), (0.0, -0.2)] {

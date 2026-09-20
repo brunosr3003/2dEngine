@@ -126,6 +126,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn pergaminhos_de_tomo_dez_pagados_entregam_onze_e_recusam_repeticao() {
+        crate::economy::init_vazia_para_testes();
+        let mut w = GameWorld::new(HashMap::new());
+        let (sid, mut rx) = jogador(&mut w);
+        w.sessions.get_mut(&sid).unwrap().inventory =
+            vec![mat(item_id::PERGAMINHO_INVOCA_TOMO, 10)];
+        w.on_message(sid, ClientMessage::AbrirPergaminhos { slot: 0, quantidade: 10 });
+        let s = &w.sessions[&sid];
+        assert_eq!(s.inventory[0].qty, 0);
+        assert_eq!(s.skill_progress.tomos.iter().flatten().map(|n| *n as u32).sum::<u32>(), 11);
+        assert!(matches!(ultima(&mut rx), Some(ServerMessage::Loja {
+            aviso: shared::loja::AvisoLoja::Invocacoes { premios }
+        }) if premios.len() == 11));
+        w.on_message(sid, ClientMessage::AbrirPergaminhos { slot: 0, quantidade: 10 });
+        assert_eq!(w.sessions[&sid].skill_progress.tomos.iter().flatten().map(|n| *n as u32).sum::<u32>(), 11);
+    }
+
     /// Ponta a ponta pelo `on_message`: a mensagem do cliente chega, a bolsa
     /// muda e a resposta sai no canal da sessao.
     #[test]

@@ -165,6 +165,9 @@ impl GameWorld {
                                     Produto::PergaminhoMontaria(_) => {
                                         Some(shared::item_id::PERGAMINHO_INVOCA_MONTARIA)
                                     }
+                                    Produto::PergaminhoTomo(_) => {
+                                        Some(shared::item_id::PERGAMINHO_INVOCA_TOMO)
+                                    }
                                     _ => None,
                                 };
                                 if let Some(item_id) = pergaminho {
@@ -284,10 +287,43 @@ impl GameWorld {
                     },
                 );
             }
+            Evento::MontariasInvocadas {
+                sid,
+                personagem,
+                premios,
+            } => {
+                let (to, varios) = {
+                    let Some(s) = self
+                        .sessions
+                        .get_mut(&sid)
+                        .filter(|s| s.logged_in && s.name == personagem)
+                    else {
+                        return;
+                    };
+                    for &(id, quantidade) in &premios {
+                        s.loja_posses.registrar_montaria(id, quantidade);
+                    }
+                    (s.handle.to_client.clone(), premios.len() > 1)
+                };
+                self.atualizar_skin_vista(sid);
+                let mut premios: Vec<_> = premios
+                    .into_iter()
+                    .map(|(id, quantidade)| cat::PremioInvocacao::Montaria { id, quantidade })
+                    .collect();
+                let aviso = if varios {
+                    AvisoLoja::Invocacoes { premios }
+                } else {
+                    AvisoLoja::Invocacao {
+                        premio: premios.remove(0),
+                    }
+                };
+                avisa(&to, aviso);
+            }
             Evento::FalhaInvocacao {
                 sid,
                 personagem,
                 item_id,
+                quantidade,
             } => {
                 let Some(s) = self
                     .sessions
@@ -296,13 +332,30 @@ impl GameWorld {
                 else {
                     return;
                 };
-                add_to_inventory(&mut s.inventory, item_id, 1, None);
-                s.inventory_dirty = true;
+                let foi_correio = !crate::craft::por_empilhavel(
+                    &mut s.inventory,
+                    item_id,
+                    quantidade,
+                    crate::economy::item_stack_max(item_id),
+                );
+                if foi_correio {
+                    let quando = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    s.dungeon.postar(item_id, quantidade, None, 0, quando);
+                } else {
+                    s.inventory_dirty = true;
+                }
                 self.save_pending = true;
                 resultado(
                     &s.handle.to_client,
                     false,
-                    "Invocação indisponível. O pergaminho voltou para sua bolsa.",
+                    if foi_correio {
+                        "Invocação indisponível. Os pergaminhos voltaram pelas Entregas."
+                    } else {
+                        "Invocação indisponível. Os pergaminhos voltaram para sua bolsa."
+                    },
                 );
             }
             Evento::Moeda {

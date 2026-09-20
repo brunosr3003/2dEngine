@@ -462,6 +462,12 @@ pub enum ClientMessage {
     EvoluirSkill {
         skill_id: u32,
     },
+    /// Abre pergaminho de invocação. `quantidade` aceita 1 ou 10; ao gastar
+    /// 10 o servidor sorteia e entrega 11 prêmios (bônus 10+1).
+    AbrirPergaminhos {
+        slot: u16,
+        quantidade: u8,
+    },
 }
 
 /// Onde esta' a peca que a forja vai refinar.

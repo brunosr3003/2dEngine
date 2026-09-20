@@ -387,7 +387,40 @@ pub fn draw_topo(
     saida
 }
 
-/// O botao de PULO, ao lado da montaria. Devolve `(tocou, segurando)`: o
+/// Dash no quarto lugar do arco. E' toque (nao hold): o servidor aplica a
+/// recarga e os i-frames, e SPD reduz o intervalo entre usos.
+pub fn draw_dash(z: &Zonas) -> bool {
+    let r = z.dash;
+    let m = mouse();
+    let sobre = r.contains(m);
+    let c = r.center();
+    let raio = r.w * 0.5;
+    let cor = Color::new(0.35, 0.86, 1.0, 1.0);
+    let e = estilo::estado(sobre, is_mouse_button_down(MouseButton::Left), false, false);
+    estilo::botao_redondo(c, raio, cor, e, true);
+    // Duas marcas inclinadas de impulso; desenho proprio pra nao depender de
+    // glifo ausente na fonte nem de um asset novo.
+    let s = raio * 0.38;
+    for dx in [-s * 0.42, s * 0.42] {
+        estilo::traco(
+            c + vec2(dx - s * 0.48, s * 0.72),
+            c + vec2(dx + s * 0.48, 0.0),
+            3.2,
+            cor,
+        );
+        estilo::traco(
+            c + vec2(dx + s * 0.48, 0.0),
+            c + vec2(dx - s * 0.48, -s * 0.72),
+            3.2,
+            cor,
+        );
+    }
+    estilo::texto_centro_forte(c.x, c.y + raio * 0.70, "DASH", 10, cor);
+    layout::chip(r, "CTRL");
+    sobre && is_mouse_button_pressed(MouseButton::Left)
+}
+
+/// O botao de PULO, acima do dash. Devolve `(tocou, segurando)`: o
 /// toque dispara a animacao local e o segurar manda o bit pro servidor — o
 /// mesmo que a tecla de espaco faz no PC, que no celular nao existe.
 pub fn draw_pulo(z: &Zonas, no_ar: bool) -> (bool, bool) {
@@ -397,7 +430,7 @@ pub fn draw_pulo(z: &Zonas, no_ar: bool) -> (bool, bool) {
     let segurando = sobre && is_mouse_button_down(MouseButton::Left);
     let c = r.center();
     let raio = r.w * 0.5;
-    // Mesmo disco das skills: ele E' o quarto slot do arco.
+    // Disco proprio acima do arco.
     let cor = if no_ar {
         estilo::OURO
     } else {
@@ -423,7 +456,7 @@ pub fn draw_pulo(z: &Zonas, no_ar: bool) -> (bool, bool) {
             estilo::alfa(cor, 0.7),
         );
     }
-    layout::chip(r, "4");
+    layout::chip(r, "ESP");
     (
         sobre && is_mouse_button_pressed(MouseButton::Left),
         segurando,

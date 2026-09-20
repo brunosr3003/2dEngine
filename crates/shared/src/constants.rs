@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 109;
+pub const PROTOCOL_VERSION: u16 = 110;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -591,6 +591,7 @@ pub mod item_id {
     /// só é sorteado pelo servidor quando o jogador o usa.
     pub const PERGAMINHO_INVOCA_CHAVE: u16 = 360;
     pub const PERGAMINHO_INVOCA_MONTARIA: u16 = 361;
+    pub const PERGAMINHO_INVOCA_TOMO: u16 = 362;
 
     /// As quatro CHAVES de craft (uma por receita), pelo id da cinza. So'
     /// caem de chefe e de dungeon/raid (`shared::chaves`).
@@ -795,6 +796,13 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
         CINTO => Some(EquipSlot::Belt),
         _ => None,
     }
+}
+
+/// Armas cujo ataque e habilidades escalam com Sabedoria/INT. Centralizar a
+/// classificacao aqui faz os proximos cajados, grimorios etc. herdarem a
+/// mesma regra sem espalhar `match` pelo servidor. Hoje so existe o anel.
+pub const fn arma_magica(item_id: u16) -> bool {
+    matches!(item_id, item_id::ANEL_MAGICO)
 }
 
 /// O peso da armadura (docs/COMBATE.md): leve da' dano e cobra resistencia,
@@ -1030,7 +1038,8 @@ pub const PARRY_WINDOW_S: f32 = 0.25;
 ///
 /// FOR (Forca):        +1 atk, +2 hp_max
 /// DES (Destreza):     +1 dex, +CRIT_CHANCE_PER_DES crit, +ATTACK_SPEED_PCT_PER_DES atk speed
-/// INT (Inteligencia): +1 wis, +2 mp_max
+/// INT (Inteligencia): +1 wis/dano mágico, +2 mp_max. Com arma mágica, cada
+/// ponto alocado entra no ataque básico e nas habilidades.
 /// VIT (Vitalidade):   +5 hp_max, +HP_REGEN_PER_VIT hp regen
 /// SPD (Velocidade):   +MOVE_SPEED_PCT_PER_SPD move speed, +STAMINA_MAX_PER_SPD stamina, +STAMINA_REGEN_PER_SPD st regen
 /// RES (Resistencia):  +DEFENSE_PER_RES def, +BLOCK_REDUCTION_PER_RES dmg absorvido em block,

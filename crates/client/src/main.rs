@@ -386,6 +386,9 @@ struct Jogo {
     /// quadro e esta' segurando.
     pulo_toque: bool,
     pulo_segurando: bool,
+    /// Dash tocado no HUD. Fica memorizado ate o proximo pacote de input para
+    /// um toque curto nao se perder entre dois envios de rede.
+    dash_toque: bool,
     /// Uso de pocao de efeito esperando "tem certeza?" (`confirmar.rs`).
     confirmar: Option<confirmar::Pendente>,
 }
@@ -603,6 +606,7 @@ async fn main() {
         tela_acesa: false,
         pulo_toque: false,
         pulo_segurando: false,
+        dash_toque: false,
         confirmar: None,
     };
     // `MMO_HOST` explicito pula a escolha — e' o caminho do run-client.sh e dos
@@ -1136,6 +1140,10 @@ impl Jogo {
                 if let shared::loja::AvisoLoja::Invocacao { premio } = &aviso {
                     self.fecha_paineis();
                     self.invocacao.abrir(premio.clone(), get_time());
+                }
+                if let shared::loja::AvisoLoja::Invocacoes { premios } = &aviso {
+                    self.fecha_paineis();
+                    self.invocacao.abrir_varias(premios.clone(), get_time());
                 }
                 if let Some(t) = self.loja_tp.receber(aviso) {
                     self.chat.push(t);
@@ -3955,6 +3963,14 @@ impl Jogo {
         if is_key_down(KeyCode::Space) || self.pulo_segurando {
             buttons |= shared::protocol::buttons::PULO;
         }
+        // No celular vem do quarto botao do arco; no PC, Ctrl. O toque e'
+        // pulso unico para nao repetir o dash quando o dedo fica apoiado.
+        if std::mem::take(&mut self.dash_toque)
+            || is_key_down(KeyCode::LeftControl)
+            || is_key_down(KeyCode::RightControl)
+        {
+            buttons |= shared::protocol::buttons::DASH;
+        }
         // O arco comeca no quadro da tecla, sem esperar a ida e volta. So' a
         // ANIMACAO: quem decide se o degrau de dois blocos foi vencido e' o
         // servidor, e ele responde antes de o arco chegar ao topo.
@@ -4386,6 +4402,10 @@ impl Jogo {
             if hud::draw_botao_montaria(&z, montado, progresso, self.montarias.tem_montaria()) {
                 self.alternar_montaria();
             }
+        }
+        // Dash ocupa o antigo quarto slot do arco; Pulo subiu uma fileira.
+        if hud::draw_dash(&z) {
+            self.dash_toque = true;
         }
         // Pulo: sem tecla no celular, o botao e' o unico jeito de pular.
         {
@@ -4858,7 +4878,13 @@ impl Jogo {
             None => {}
         }
         self.invocacao
-            .desenha(&self.bolsa.nomes, &self.vox, &self.solido, get_time());
+            .desenha(
+                &self.bolsa.nomes,
+                &self.habilidades.catalogo,
+                &self.vox,
+                &self.solido,
+                get_time(),
+            );
         // "Tem certeza?" do buff ja' ativo, por cima de tudo.
         if let Some(p) = self.confirmar {
             let nome = self.bolsa.nome(p.item());

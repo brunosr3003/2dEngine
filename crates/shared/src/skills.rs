@@ -182,8 +182,8 @@ pub const RECUPERACAO_S: f32 = 0.36;
 pub const SKILL_COUNT: usize = 12;
 pub const TIER_MAX: u8 = 10;
 
-/// Tomos dos três despertares. Eles são condensados pelo jogador para uma
-/// habilidade escolhida; nunca vêm de sorteio e nunca falham.
+/// Tomos dos três despertares. Podem ser condensados pelo jogador para uma
+/// habilidade escolhida ou invocados por pergaminho; nunca falham ao evoluir.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum GrauTomo {

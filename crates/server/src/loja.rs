@@ -38,10 +38,16 @@ pub enum Evento {
         montaria: u16,
         quantidade: u32,
     },
+    MontariasInvocadas {
+        sid: SessionId,
+        personagem: String,
+        premios: Vec<(u16, u32)>,
+    },
     FalhaInvocacao {
         sid: SessionId,
         personagem: String,
         item_id: u16,
+        quantidade: u32,
     },
     /// Pacote de moeda pago em TP: ouro, cobre ou darksteel.
     Moeda {
@@ -406,7 +412,10 @@ pub async fn comprar_item(
     // Consumiveis sao repetiveis e nao viram posse da conta.
     if !matches!(
         produto,
-        Produto::BauCraft(_) | Produto::Moeda(_) | Produto::PergaminhoMontaria(_)
+        Produto::BauCraft(_)
+            | Produto::Moeda(_)
+            | Produto::PergaminhoMontaria(_)
+            | Produto::PergaminhoTomo(_)
     ) {
         sqlx::query("INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
             .bind(conta)
@@ -434,7 +443,7 @@ pub async fn comprar_item(
         saldo,
         texto: if matches!(
             produto,
-            Produto::BauCraft(_) | Produto::PergaminhoMontaria(_)
+            Produto::BauCraft(_) | Produto::PergaminhoMontaria(_) | Produto::PergaminhoTomo(_)
         ) {
             format!("{} entregue na bolsa!", produto.nome())
         } else if matches!(produto, Produto::Moeda(_)) {
@@ -516,48 +525,62 @@ pub async fn estado(central: &PgPool, conta: &str) -> Result<EstadoLoja> {
 /// Registra uma cópia invocada. A primeira libera a montaria e a skin padrão;
 /// as seguintes ficam contadas para a futura combinação/aprimoramento.
 pub async fn invocar_montaria(central: &PgPool, conta: &str, id: u16) -> Result<u32> {
-    let m = cat::montaria(id).ok_or_else(|| anyhow::anyhow!("montaria invalida"))?;
+    Ok(invocar_montarias(central, conta, &[id]).await?[0].1)
+}
+
+/// Registra várias invocações na mesma transação. A ordem da resposta é a dos
+/// sorteios e cada quantidade é o estoque logo depois daquele prêmio.
+pub async fn invocar_montarias(
+    central: &PgPool,
+    conta: &str,
+    ids: &[u16],
+) -> Result<Vec<(u16, u32)>> {
     let mut tx = central.begin().await?;
-    let ja_possuia: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM loja_posses WHERE conta=$1 AND produto=$2)",
-    )
-    .bind(conta)
-    .bind(Produto::Montaria(id).codigo())
-    .fetch_one(&mut *tx)
-    .await?;
-    let inicial = if ja_possuia { 2i32 } else { 1i32 };
-    let qtd: i32 = sqlx::query_scalar(
-        "INSERT INTO loja_montarias (conta, montaria, quantidade) VALUES ($1,$2,$3)
-         ON CONFLICT (conta,montaria) DO UPDATE
-         SET quantidade = loja_montarias.quantidade + 1
-         RETURNING quantidade",
-    )
-    .bind(conta)
-    .bind(id as i32)
-    .bind(inicial)
-    .fetch_one(&mut *tx)
-    .await?;
-    let referencia = format!("invocacao-montaria-{conta}-{id}");
-    sqlx::query(
-        "INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1,$2,$3)
-         ON CONFLICT (conta,produto) DO NOTHING",
-    )
-    .bind(conta)
-    .bind(Produto::Montaria(id).codigo())
-    .bind(&referencia)
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query(
-        "INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1,$2,$3)
-         ON CONFLICT (conta,produto) DO NOTHING",
-    )
-    .bind(conta)
-    .bind(Produto::Skin(m.skin_padrao).codigo())
-    .bind(format!("{referencia}-skin"))
-    .execute(&mut *tx)
-    .await?;
+    let mut resultado = Vec::with_capacity(ids.len());
+    for &id in ids {
+        let m = cat::montaria(id).ok_or_else(|| anyhow::anyhow!("montaria invalida"))?;
+        let ja_possuia: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM loja_posses WHERE conta=$1 AND produto=$2)",
+        )
+        .bind(conta)
+        .bind(Produto::Montaria(id).codigo())
+        .fetch_one(&mut *tx)
+        .await?;
+        let inicial = if ja_possuia { 2i32 } else { 1i32 };
+        let qtd: i32 = sqlx::query_scalar(
+            "INSERT INTO loja_montarias (conta, montaria, quantidade) VALUES ($1,$2,$3)
+             ON CONFLICT (conta,montaria) DO UPDATE
+             SET quantidade = loja_montarias.quantidade + 1
+             RETURNING quantidade",
+        )
+        .bind(conta)
+        .bind(id as i32)
+        .bind(inicial)
+        .fetch_one(&mut *tx)
+        .await?;
+        let referencia = format!("invocacao-montaria-{conta}-{id}");
+        sqlx::query(
+            "INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1,$2,$3)
+             ON CONFLICT (conta,produto) DO NOTHING",
+        )
+        .bind(conta)
+        .bind(Produto::Montaria(id).codigo())
+        .bind(&referencia)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO loja_posses (conta, produto, pedido) VALUES ($1,$2,$3)
+             ON CONFLICT (conta,produto) DO NOTHING",
+        )
+        .bind(conta)
+        .bind(Produto::Skin(m.skin_padrao).codigo())
+        .bind(format!("{referencia}-skin"))
+        .execute(&mut *tx)
+        .await?;
+        resultado.push((id, qtd.max(1) as u32));
+    }
     tx.commit().await?;
-    Ok(qtd.max(1) as u32)
+    Ok(resultado)
 }
 
 #[cfg(test)]
@@ -645,6 +668,13 @@ mod tests {
             .unwrap();
         assert!(matches!(r, Resposta::Feito { saldo: 750, .. }), "{r:?}");
         assert_eq!(invocar_montaria(&central, &conta, 1).await.unwrap(), 2);
+        assert_eq!(
+            invocar_montarias(&central, &conta, &[1, 2, 1])
+                .await
+                .unwrap(),
+            vec![(1, 3), (2, 1), (1, 4)],
+            "o lote preserva ordem e quantidade após cada prêmio"
+        );
         let r = comprar_item(&central, &conta, Produto::Montaria(2), &id("direta"))
             .await
             .unwrap();
@@ -702,6 +732,7 @@ mod tests {
         let e = estado(&central, &conta).await.unwrap();
         assert!(e.ligada && e.historico.len() >= 6);
         assert_eq!(e.tp, saldo);
-        assert_eq!(e.posses.quantidade_montaria(1), 2);
+        assert_eq!(e.posses.quantidade_montaria(1), 4);
+        assert_eq!(e.posses.quantidade_montaria(2), 1);
     }
 }

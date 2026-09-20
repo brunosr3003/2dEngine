@@ -278,6 +278,52 @@ pub fn rolar_montaria(id: u16, sorte: f32) -> Option<u16> {
     Some(MONTARIAS.last()?.id)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PergaminhoTomo {
+    pub id: u16,
+    pub nome: &'static str,
+    pub preco_tp: u64,
+    /// Verde, Roxo e Lendário, em pontos percentuais.
+    pub chances: [u8; 3],
+}
+
+pub const PERGAMINHOS_TOMO: [PergaminhoTomo; 1] = [PergaminhoTomo {
+    id: 1,
+    nome: "Pergaminho de Invocação: Tomos",
+    preco_tp: 150,
+    chances: [75, 20, 5],
+}];
+
+pub fn pergaminho_tomo(id: u16) -> Option<&'static PergaminhoTomo> {
+    PERGAMINHOS_TOMO.iter().find(|p| p.id == id)
+}
+
+/// Sorteia a habilidade (1..=12) e o grau do tomo. O estoque resultante
+/// continua sendo do personagem e da habilidade, não um item da bolsa.
+pub fn rolar_tomo(id: u16, r_skill: f32, r_grau: f32) -> Option<(u32, crate::skills::GrauTomo)> {
+    let p = pergaminho_tomo(id)?;
+    let skill_id = ((r_skill.clamp(0.0, 0.999_999) * crate::skills::SKILL_COUNT as f32) as u32) + 1;
+    let alvo = (r_grau.clamp(0.0, 0.999_999) * 100.0) as u16;
+    let mut soma = 0u16;
+    for (i, chance) in p.chances.iter().enumerate() {
+        soma += *chance as u16;
+        if alvo < soma {
+            return Some((skill_id, crate::skills::GrauTomo::TODOS[i]));
+        }
+    }
+    Some((skill_id, crate::skills::GrauTomo::Lendario))
+}
+
+/// Quantos prêmios a abertura entrega. Dez pagos recebem um bônus; qualquer
+/// outro lote é recusado para o cliente não inventar multiplicadores.
+pub const fn premios_da_abertura(pagos: u8) -> Option<usize> {
+    match pagos {
+        1 => Some(1),
+        10 => Some(11),
+        _ => None,
+    }
+}
+
 /// Moeda do jogo comprada com TP: entregue na hora no personagem (o ouro no
 /// saldo; cobre e darksteel na carteira). Repetivel. Valores iniciais ⚠️
 /// (docs/LOJA.md).
@@ -372,6 +418,8 @@ pub enum Produto {
     Moeda(u16),
     /// Pergaminho repetível; a montaria só é sorteada ao abrir na bolsa.
     PergaminhoMontaria(u16),
+    /// Pergaminho repetível; sorteia um tomo para uma das doze habilidades.
+    PergaminhoTomo(u16),
 }
 
 impl Produto {
@@ -384,6 +432,7 @@ impl Produto {
             Produto::BauCraft(i) => format!("bau-craft:{i}"),
             Produto::Moeda(i) => format!("moeda:{i}"),
             Produto::PergaminhoMontaria(i) => format!("pergaminho-montaria:{i}"),
+            Produto::PergaminhoTomo(i) => format!("pergaminho-tomo:{i}"),
         }
     }
 
@@ -397,6 +446,7 @@ impl Produto {
             "bau-craft" => Produto::BauCraft(id),
             "moeda" => Produto::Moeda(id),
             "pergaminho-montaria" => Produto::PergaminhoMontaria(id),
+            "pergaminho-tomo" => Produto::PergaminhoTomo(id),
             _ => return None,
         };
         p.existe().then_some(p)
@@ -410,6 +460,7 @@ impl Produto {
             Produto::BauCraft(i) => bau_craft(i).is_some(),
             Produto::Moeda(i) => moeda(i).is_some(),
             Produto::PergaminhoMontaria(i) => pergaminho_montaria(i).is_some(),
+            Produto::PergaminhoTomo(i) => pergaminho_tomo(i).is_some(),
         }
     }
 
@@ -425,6 +476,9 @@ impl Produto {
             Produto::PergaminhoMontaria(i) => {
                 pergaminho_montaria(i).map_or("?".into(), |p| p.nome.to_string())
             }
+            Produto::PergaminhoTomo(i) => {
+                pergaminho_tomo(i).map_or("?".into(), |p| p.nome.to_string())
+            }
         }
     }
 
@@ -437,6 +491,7 @@ impl Produto {
             Produto::BauCraft(i) => bau_craft(i).map(|b| b.preco_tp),
             Produto::Moeda(i) => moeda(i).map(|m| m.preco_tp),
             Produto::PergaminhoMontaria(i) => pergaminho_montaria(i).map(|p| p.preco_tp),
+            Produto::PergaminhoTomo(i) => pergaminho_tomo(i).map(|p| p.preco_tp),
         }
     }
 }
@@ -486,7 +541,10 @@ impl Posses {
             Produto::Tp(_) => false,
             Produto::Montaria(i) => self.montarias.contains(&i),
             Produto::Skin(i) => self.skins.contains(&i),
-            Produto::BauCraft(_) | Produto::Moeda(_) | Produto::PergaminhoMontaria(_) => false,
+            Produto::BauCraft(_)
+            | Produto::Moeda(_)
+            | Produto::PergaminhoMontaria(_)
+            | Produto::PergaminhoTomo(_) => false,
         }
     }
 
@@ -615,6 +673,11 @@ pub enum PedidoLoja {
 pub enum PremioInvocacao {
     Chave { item_id: u16, cor: u8 },
     Montaria { id: u16, quantidade: u32 },
+    Tomo {
+        skill_id: u32,
+        grau: crate::skills::GrauTomo,
+        quantidade: u16,
+    },
 }
 
 /// Uma linha do historico de compras.
@@ -653,6 +716,10 @@ pub enum AvisoLoja {
     },
     Invocacao {
         premio: PremioInvocacao,
+    },
+    /// Abertura em lote: dez pergaminhos pagos, onze prêmios entregues.
+    Invocacoes {
+        premios: Vec<PremioInvocacao>,
     },
 }
 
@@ -723,6 +790,11 @@ mod tests {
             assert!(p.preco_tp > 0);
             assert_eq!(p.chances.iter().map(|n| *n as u16).sum::<u16>(), 100);
         }
+        for p in PERGAMINHOS_TOMO {
+            assert!(ids.insert(("pt", p.id)));
+            assert!(p.preco_tp > 0);
+            assert_eq!(p.chances.iter().map(|n| *n as u16).sum::<u16>(), 100);
+        }
         assert!(VEL_MONTADO > 1.0 && VEL_MONTADO <= 1.6);
     }
 
@@ -734,6 +806,7 @@ mod tests {
             Produto::Skin(102),
             Produto::BauCraft(1),
             Produto::PergaminhoMontaria(1),
+            Produto::PergaminhoTomo(1),
         ] {
             assert_eq!(Produto::de_codigo(&p.codigo()), Some(p));
         }
@@ -782,6 +855,10 @@ mod tests {
         assert_eq!(pode_comprar(&lobo, Produto::Skin(102), 300), Ok(300));
         assert_eq!(pode_comprar(&lobo, Produto::BauCraft(1), 120), Ok(120));
         assert_eq!(
+            pode_comprar(&lobo, Produto::PergaminhoTomo(1), 150),
+            Ok(150)
+        );
+        assert_eq!(
             pode_comprar(&lobo, Produto::PergaminhoMontaria(1), 500),
             Ok(500),
             "duplicata de montaria continua possivel"
@@ -819,6 +896,19 @@ mod tests {
         assert_eq!(rolar_montaria(1, 0.85), Some(3));
         assert_eq!(rolar_montaria(1, 1.0), Some(3));
         assert_eq!(rolar_montaria(999, 0.0), None);
+    }
+
+    #[test]
+    fn pergaminho_de_tomo_sorteia_habilidade_e_grau() {
+        use crate::skills::GrauTomo;
+        assert_eq!(rolar_tomo(1, 0.00, 0.00), Some((1, GrauTomo::Verde)));
+        assert_eq!(rolar_tomo(1, 0.99, 0.749), Some((12, GrauTomo::Verde)));
+        assert_eq!(rolar_tomo(1, 0.40, 0.75), Some((5, GrauTomo::Roxo)));
+        assert_eq!(rolar_tomo(1, 0.40, 0.95), Some((5, GrauTomo::Lendario)));
+        assert_eq!(rolar_tomo(999, 0.0, 0.0), None);
+        assert_eq!(premios_da_abertura(1), Some(1));
+        assert_eq!(premios_da_abertura(10), Some(11));
+        assert_eq!(premios_da_abertura(11), None);
     }
 
     #[test]

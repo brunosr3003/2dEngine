@@ -58,6 +58,15 @@ impl MontariasUi {
                 }
             }
             AvisoLoja::Invocacao { .. } => {}
+            AvisoLoja::Invocacoes { premios } => {
+                if let Some(e) = self.estado.as_mut() {
+                    for premio in premios {
+                        if let cat::PremioInvocacao::Montaria { id, quantidade } = premio {
+                            e.posses.registrar_montaria(*id, *quantidade);
+                        }
+                    }
+                }
+            }
         }
     }
 

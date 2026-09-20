@@ -42,7 +42,10 @@ Todos os jogadores começam iguais. A build emerge do que vc usa.
 ### Nível Principal
 - Ganho por XP geral (matar mobs, completar ilhas).
 - Cada level dá **Pontos de Atributo** pra distribuir livremente em:
-  `FOR` (dano físico, HP), `DES` (velocidade, crítico), `INT` (dano mágico, MP), `VIT` (HP max, regeneração), `SPD` (velocidade de movimento).
+  `FOR` (dano físico, HP), `DES` (ataque rápido, crítico), `INT` (cada ponto
+  alocado dá dano ao Anel Mágico — ataque básico e habilidades — e MP),
+  `VIT` (HP max, regeneração),
+  `SPD` (mais vigor, regeneração de vigor e recarga menor do Dash).
 - **Level cap: 100.** O nível principal define o **cap máximo** de cada Proficiência.
 
 ### Proficiências

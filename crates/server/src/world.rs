@@ -7006,6 +7006,9 @@ impl GameWorld {
             ClientMessage::UseItem { slot } => {
                 self.handle_use_item(id, slot as usize);
             }
+            ClientMessage::AbrirPergaminhos { slot, quantidade } => {
+                self.handle_abrir_pergaminhos(id, slot as usize, quantidade);
+            }
             ClientMessage::Interact { target_eid } => {
                 self.handle_interact(id, target_eid);
             }
@@ -17063,7 +17066,178 @@ impl GameWorld {
         }
     }
 
+    /// Abre 1 pergaminho ou paga 10 para receber 11 invocações. Todo prêmio é
+    /// decidido e creditado aqui; a animação do cliente é apenas apresentação.
+    fn handle_abrir_pergaminhos(&mut self, sid: SessionId, slot_idx: usize, pagos: u8) {
+        let Some(total) = shared::loja::premios_da_abertura(pagos) else {
+            return;
+        };
+        let (item_id, conta, personagem) = {
+            let Some(s) = self.sessions.get(&sid).filter(|s| s.logged_in) else {
+                return;
+            };
+            let Some(slot) = s.inventory.get(slot_idx) else {
+                return;
+            };
+            if slot.qty < pagos as u32
+                || !matches!(
+                    slot.item_id,
+                    shared::item_id::PERGAMINHO_INVOCA_CHAVE
+                        | shared::item_id::PERGAMINHO_INVOCA_MONTARIA
+                        | shared::item_id::PERGAMINHO_INVOCA_TOMO
+                )
+            {
+                self.send_chat_to(sid, "[Invocação] Você não tem pergaminhos suficientes.");
+                return;
+            }
+            (
+                slot.item_id,
+                crate::mercado::conta_global(&crate::canais::realm(), s.account_id, &s.name),
+                s.name.clone(),
+            )
+        };
+        // Montarias precisam da transação central. Conferimos o serviço antes
+        // de consumir; se a transação falhar, todos os pergaminhos voltam.
+        if item_id == shared::item_id::PERGAMINHO_INVOCA_MONTARIA {
+            let (Some(central), Some(tx)) = (
+                crate::mercado::central(),
+                self.auth_ctx.as_ref().map(|c| c.tx.clone()),
+            ) else {
+                self.send_chat_to(sid, "[Invocação] Serviço de montarias indisponível.");
+                return;
+            };
+            let montarias: Vec<u16> = (0..total)
+                .filter_map(|_| shared::loja::rolar_montaria(1, fastrand::f32()))
+                .collect();
+            if montarias.len() != total {
+                return;
+            }
+            let Some(s) = self.sessions.get_mut(&sid) else {
+                return;
+            };
+            let slot = &mut s.inventory[slot_idx];
+            slot.qty -= pagos as u32;
+            if slot.qty == 0 {
+                *slot = shared::InventorySlot::default();
+            }
+            s.inventory_dirty = true;
+            self.save_pending = true;
+            tokio::spawn(async move {
+                match crate::loja::invocar_montarias(&central, &conta, &montarias).await {
+                    Ok(premios) => {
+                        let _ = tx.send(IncomingMessage::Loja(
+                            crate::loja::Evento::MontariasInvocadas {
+                                sid,
+                                personagem,
+                                premios,
+                            },
+                        ));
+                    }
+                    Err(e) => {
+                        tracing::warn!("invocacao de montarias falhou: {e:#}");
+                        let _ = tx.send(IncomingMessage::Loja(
+                            crate::loja::Evento::FalhaInvocacao {
+                                sid,
+                                personagem,
+                                item_id,
+                                quantidade: pagos as u32,
+                            },
+                        ));
+                    }
+                }
+            });
+            return;
+        }
+
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        let slot = &mut s.inventory[slot_idx];
+        slot.qty -= pagos as u32;
+        if slot.qty == 0 {
+            *slot = shared::InventorySlot::default();
+        }
+        s.inventory_dirty = true;
+        let mut premios = Vec::with_capacity(total);
+        let mut no_correio = 0u32;
+        if item_id == shared::item_id::PERGAMINHO_INVOCA_CHAVE {
+            for _ in 0..total {
+                let Some((chave, cor)) =
+                    shared::loja::rolar_bau_craft(1, fastrand::f32(), fastrand::f32())
+                else {
+                    continue;
+                };
+                if !add_to_inventory(&mut s.inventory, chave, 1, None) {
+                    let quando = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    s.dungeon.postar(chave, 1, None, 0, quando);
+                    no_correio += 1;
+                }
+                premios.push(shared::loja::PremioInvocacao::Chave {
+                    item_id: chave,
+                    cor,
+                });
+                crate::telemetria::conta("invocacao_chave_cor", cor, 1);
+            }
+        } else {
+            for _ in 0..total {
+                let Some((skill_id, grau)) =
+                    shared::loja::rolar_tomo(1, fastrand::f32(), fastrand::f32())
+                else {
+                    continue;
+                };
+                let i = (skill_id - 1) as usize;
+                let q = s.skill_progress.tomos[i][grau as usize].saturating_add(1);
+                s.skill_progress.tomos[i][grau as usize] = q;
+                premios.push(shared::loja::PremioInvocacao::Tomo {
+                    skill_id,
+                    grau,
+                    quantidade: q,
+                });
+                crate::telemetria::conta("invocacao_tomo", format!("{skill_id}-{grau:?}"), 1);
+            }
+            s.skills_dirty = true;
+            let _ = s.handle.to_client.send(ServerMessage::ProgressoDeSkills {
+                progresso: s.skill_progress.clone(),
+            });
+        }
+        let aviso = if pagos == 10 {
+            shared::loja::AvisoLoja::Invocacoes { premios }
+        } else if let Some(premio) = premios.pop() {
+            shared::loja::AvisoLoja::Invocacao { premio }
+        } else {
+            return;
+        };
+        let _ = s.handle.to_client.send(ServerMessage::Loja { aviso });
+        self.save_pending = true;
+        if no_correio > 0 {
+            self.send_chat_to(
+                sid,
+                &format!("[Invocação] {no_correio} prêmio(s) foram para as Entregas."),
+            );
+        }
+    }
+
     fn handle_use_item(&mut self, sid: SessionId, slot_idx: usize) {
+        let pergaminho = self
+            .sessions
+            .get(&sid)
+            .and_then(|s| s.inventory.get(slot_idx))
+            .map(|s| s.item_id)
+            .is_some_and(|id| {
+                matches!(
+                    id,
+                    shared::item_id::PERGAMINHO_INVOCA_CHAVE
+                        | shared::item_id::PERGAMINHO_INVOCA_MONTARIA
+                        | shared::item_id::PERGAMINHO_INVOCA_TOMO
+                )
+            });
+        if pergaminho {
+            self.handle_abrir_pergaminhos(sid, slot_idx, 1);
+            return;
+        }
         // Extrai estado + identifica a acao fora do borrow mutavel do ECS.
         enum UseAction {
             Equip {
@@ -17077,8 +17251,6 @@ impl GameWorld {
             /// Pocoes de Fortuna e de Sorte: ligam (ou renovam) o buff de drop.
             FortunaBuff,
             SorteBuff,
-            InvocarChave,
-            InvocarMontaria,
             /// Player tentou usar um item de barco. Server tenta spawnar
             /// um barco em agua adjacente; consome o item se sucesso.
             SpawnBoat {
@@ -17163,10 +17335,6 @@ impl GameWorld {
                     id if id == shared::item_id::XP_POTION => UseAction::XpBuff,
                     id if id == shared::item_id::FORTUNA_POTION => UseAction::FortunaBuff,
                     id if id == shared::item_id::SORTE_POTION => UseAction::SorteBuff,
-                    id if id == shared::item_id::PERGAMINHO_INVOCA_CHAVE => UseAction::InvocarChave,
-                    id if id == shared::item_id::PERGAMINHO_INVOCA_MONTARIA => {
-                        UseAction::InvocarMontaria
-                    }
                     _ => return,
                 };
                 (player_entity, a)
@@ -17305,81 +17473,6 @@ impl GameWorld {
                 }
                 self.save_pending = true;
                 consume_slot(&mut self.sessions);
-            }
-            UseAction::InvocarChave => {
-                let Some((item_id, cor)) =
-                    shared::loja::rolar_bau_craft(1, fastrand::f32(), fastrand::f32())
-                else {
-                    return;
-                };
-                consume_slot(&mut self.sessions);
-                let Some(s) = self.sessions.get_mut(&sid) else {
-                    return;
-                };
-                let foi_correio = !add_to_inventory(&mut s.inventory, item_id, 1, None);
-                if foi_correio {
-                    let quando = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs() as i64;
-                    s.dungeon.postar(item_id, 1, None, 0, quando);
-                } else {
-                    s.inventory_dirty = true;
-                }
-                self.save_pending = true;
-                crate::telemetria::conta("invocacao_chave_cor", cor, 1);
-                let _ = s.handle.to_client.send(ServerMessage::Loja {
-                    aviso: shared::loja::AvisoLoja::Invocacao {
-                        premio: shared::loja::PremioInvocacao::Chave { item_id, cor },
-                    },
-                });
-                if foi_correio {
-                    self.send_chat_to(sid, "[Invocação] Bolsa cheia: prêmio enviado às Entregas.");
-                }
-            }
-            UseAction::InvocarMontaria => {
-                let (Some(central), Some(tx)) = (
-                    crate::mercado::central(),
-                    self.auth_ctx.as_ref().map(|c| c.tx.clone()),
-                ) else {
-                    self.send_chat_to(sid, "[Invocação] Serviço de montarias indisponível.");
-                    return;
-                };
-                let Some(montaria) = shared::loja::rolar_montaria(1, fastrand::f32()) else {
-                    return;
-                };
-                let Some(s) = self.sessions.get(&sid) else {
-                    return;
-                };
-                let conta =
-                    crate::mercado::conta_global(&crate::canais::realm(), s.account_id, &s.name);
-                let personagem = s.name.clone();
-                consume_slot(&mut self.sessions);
-                self.save_pending = true;
-                tokio::spawn(async move {
-                    match crate::loja::invocar_montaria(&central, &conta, montaria).await {
-                        Ok(quantidade) => {
-                            let _ = tx.send(IncomingMessage::Loja(
-                                crate::loja::Evento::MontariaInvocada {
-                                    sid,
-                                    personagem,
-                                    montaria,
-                                    quantidade,
-                                },
-                            ));
-                        }
-                        Err(e) => {
-                            tracing::warn!("invocacao de montaria falhou: {e:#}");
-                            let _ = tx.send(IncomingMessage::Loja(
-                                crate::loja::Evento::FalhaInvocacao {
-                                    sid,
-                                    personagem,
-                                    item_id: shared::item_id::PERGAMINHO_INVOCA_MONTARIA,
-                                },
-                            ));
-                        }
-                    }
-                });
             }
             UseAction::SpawnBoat {
                 kind,
@@ -19354,9 +19447,16 @@ pub(crate) fn effective_stats(
     s.defense += (scaling.defense * lvl) as i32;
 
     // Atk-scaling extra por stat secundario:
+    //   Armas magicas: cada ponto ALOCADO em INT vira ataque magico. Como
+    //   skills e ataque basico leem `attack_damage`, os dois crescem pela
+    //   mesma regra. O bonus usa os pontos alocados; a Sabedoria das pecas
+    //   permanece separada. Hoje a unica arma magica e' o anel.
     //   Bow/Crossbow: cada DEX = +0.5 atk (ranger usa destreza) + atk_speed
     //   Spear:        DEX bonus baixo (1/5), FOR bonus alto (1/1)
     let for_pts = allocated[shared::stat_idx::FOR] as i32;
+    if shared::arma_magica(weapon_id) {
+        s.attack_damage += allocated[shared::stat_idx::INT] as i32;
+    }
     match weapon_id {
         // pistolas: a destreza vira dano, e o disparo e' rapido
         shared::item_id::PISTOLAS => {
@@ -19897,6 +19997,33 @@ fn auto_arrange_slots(slots: &mut Vec<shared::InventorySlot>) {
 #[cfg(test)]
 mod impacto_tests {
     use super::*;
+
+    #[test]
+    fn int_vira_dano_com_anel_magico_mas_nao_com_arma_fisica() {
+        let mut pontos = [0; shared::STAT_COUNT];
+        let profs = [0; shared::PROF_COUNT];
+        let anel = shared::Equipment {
+            weapon: Some(shared::item_id::ANEL_MAGICO),
+            ..Default::default()
+        };
+        let espada = shared::Equipment {
+            weapon: Some(shared::item_id::ESPADA_E_ESCUDO),
+            ..Default::default()
+        };
+        let anel_base = effective_stats(&anel, &pontos, &profs, 0).attack_damage;
+        let espada_base = effective_stats(&espada, &pontos, &profs, 0).attack_damage;
+        pontos[shared::stat_idx::INT] = 10;
+        assert_eq!(
+            effective_stats(&anel, &pontos, &profs, 0).attack_damage - anel_base,
+            10,
+            "cada INT acrescenta um ao ataque mágico"
+        );
+        assert_eq!(
+            effective_stats(&espada, &pontos, &profs, 0).attack_damage,
+            espada_base,
+            "INT não aumenta arma física"
+        );
+    }
 
     fn golpe(atacante: EntityId, impacto: f32) -> MeleeSwing {
         MeleeSwing {

@@ -277,6 +277,9 @@ async fn main() -> anyhow::Result<()> {
                         AvisoLoja::Invocacao { premio } => {
                             linhas.push(format!("invocacao: {premio:?}"));
                         }
+                        AvisoLoja::Invocacoes { premios } => {
+                            linhas.push(format!("invocacoes: {premios:?}"));
+                        }
                     },
                     ServerMessage::Kick { reason } => anyhow::bail!("kick: {reason}"),
                     ServerMessage::LoginDenied { reason } => anyhow::bail!("login negado: {reason}"),

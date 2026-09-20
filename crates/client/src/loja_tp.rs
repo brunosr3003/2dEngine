@@ -425,6 +425,16 @@ impl LojaTp {
                 None
             }
             AvisoLoja::Invocacao { .. } => None,
+            AvisoLoja::Invocacoes { premios } => {
+                if let Some(e) = self.estado.as_mut() {
+                    for premio in premios {
+                        if let cat::PremioInvocacao::Montaria { id, quantidade } = premio {
+                            e.posses.registrar_montaria(id, quantidade);
+                        }
+                    }
+                }
+                None
+            }
         }
     }
 
@@ -1284,16 +1294,15 @@ impl LojaTp {
         }
     }
 
-    /// Aba Materiais: pergaminho repetível de chaves à esquerda e
-    /// as moedas do jogo (ouro, cobre, darksteel) a' direita.
+    /// Aba Materiais: pergaminhos repetíveis de chaves e tomos, mais moedas.
     fn materiais(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
         let bau = &cat::BAUS_CRAFT[0];
-        let vao = 16.0 * k;
-        let w = ((area.w - vao) * 0.5).min(560.0 * k);
-        let total = w * 2.0 + vao;
+        let vao = 12.0 * k;
+        let w = ((area.w - vao * 2.0) / 3.0).min(390.0 * k);
+        let total = w * 3.0 + vao * 2.0;
         let x0 = area.center().x - total * 0.5;
         self.moedas(
-            Rect::new(x0 + w + vao, area.y + 8.0 * k, w, area.h - 16.0 * k),
+            Rect::new(x0 + (w + vao) * 2.0, area.y + 8.0 * k, w, area.h - 16.0 * k),
             k,
             m,
             livre,
@@ -1318,18 +1327,22 @@ impl LojaTp {
         faiscas(r, agora, 18, k, 93);
         let arte = vec2(r.center().x, r.y + r.h * 0.27);
         brilho_radial(arte, r.h * 0.20, OURO_CLARO, 0.28);
-        crate::invocacao_ui::icone_pergaminho(arte, r.h * 0.32, LILAS);
+        crate::invocacao_ui::icone_pergaminho_de(
+            shared::item_id::PERGAMINHO_INVOCA_CHAVE,
+            arte,
+            r.h * 0.32,
+        );
         estilo::texto_centro_forte(
             r.center().x,
             r.y + r.h * 0.47,
-            bau.nome,
-            ts(27.0, k),
+            "Invocação de Chaves",
+            ts(22.0, k),
             estilo::TEXTO,
         );
         estilo::texto_centro(
             r.center().x,
             r.y + r.h * 0.53,
-            bau.descricao,
+            "1 chave aleatória de craft.",
             ts(14.0, k),
             estilo::alfa(LILAS, 0.95),
         );
@@ -1378,6 +1391,79 @@ impl LojaTp {
         if ativo && livre && bt.contains(m) {
             self.confirma = Some(Confirma::Item(Produto::BauCraft(bau.id)));
         }
+
+        let tomo = &cat::PERGAMINHOS_TOMO[0];
+        let r = Rect::new(x0 + w + vao, area.y + 8.0 * k, w, area.h - 16.0 * k);
+        let sobre = !modal && r.contains(m);
+        estilo::sombra(r, 22.0 * k, 1.0);
+        estilo::ret_gradiente(
+            r,
+            22.0 * k,
+            Color::new(0.10, 0.32, 0.30, 0.98),
+            Color::new(0.035, 0.09, 0.10, 0.98),
+        );
+        estilo::borda_arredondada(
+            r,
+            22.0 * k,
+            1.5 * k.max(0.8),
+            estilo::alfa(if sobre { OURO_CLARO } else { estilo::VERDE }, 0.60),
+        );
+        faiscas(r, agora, 18, k, 151);
+        let arte = vec2(r.center().x, r.y + r.h * 0.27);
+        brilho_radial(arte, r.h * 0.20, estilo::VERDE, 0.28);
+        crate::invocacao_ui::icone_pergaminho_de(
+            shared::item_id::PERGAMINHO_INVOCA_TOMO,
+            arte,
+            r.h * 0.32,
+        );
+        estilo::texto_centro_forte(
+            r.center().x,
+            r.y + r.h * 0.47,
+            "Invocação de Tomos",
+            ts(22.0, k),
+            estilo::TEXTO,
+        );
+        estilo::texto_centro(
+            r.center().x,
+            r.y + r.h * 0.53,
+            "1 tomo para uma de 12 habilidades.",
+            ts(13.0, k),
+            estilo::alfa(estilo::VERDE, 0.95),
+        );
+        let graus = ["Verde 75%", "Roxo 20%", "Lendário 5%"];
+        let cores = [
+            Color::from_rgba(88, 220, 125, 255),
+            Color::from_rgba(184, 88, 245, 255),
+            Color::from_rgba(245, 184, 55, 255),
+        ];
+        let passo = r.w * 0.27;
+        let inicio = r.center().x - passo;
+        let yc = r.y + r.h * 0.64;
+        for i in 0..3 {
+            let x = inicio + passo * i as f32;
+            draw_circle(x, yc, 12.0 * k, cores[i]);
+            draw_circle_lines(x, yc, 14.0 * k, 1.5 * k.max(0.8), estilo::alfa(WHITE, 0.7));
+            estilo::texto_centro(x, yc + 29.0 * k, graus[i], ts(11.0, k), estilo::TEXTO);
+        }
+        estilo::valor_tp(
+            r.center().x - estilo::largura_tp_texto(&milhar(tomo.preco_tp), ts(23.0, k), true) * 0.5,
+            r.y + r.h - 88.0 * k,
+            tomo.preco_tp,
+            ts(23.0, k),
+            OURO_CLARO,
+        );
+        let bt = Rect::new(r.center().x - 108.0 * k, r.y + r.h - 62.0 * k, 216.0 * k, 48.0 * k);
+        botao_ouro(
+            bt,
+            if self.em_voo { "AGUARDE…" } else { "COMPRAR PERGAMINHO" },
+            !self.em_voo,
+            !modal && bt.contains(m),
+            k,
+            agora,
+        );
+        if !self.em_voo && livre && bt.contains(m) {
+            self.confirma = Some(Confirma::Item(Produto::PergaminhoTomo(tomo.id)));
+        }
     }
 
     /// Os pacotes de moeda do jogo, um por linha: icone, quanto vem, preco e
@@ -1407,24 +1493,24 @@ impl LojaTp {
             brilho_radial(ic.center(), lado * 0.6, OURO_CLARO, 0.18);
             crate::bolsa::icone_do_item(ic, pk.item_id, 1.0);
             let tx = ic.x + ic.w + 14.0 * k;
-            estilo::texto_forte(tx, r.y + r.h * 0.36, pk.nome, ts(20.0, k), estilo::TEXTO);
+            estilo::texto_forte(tx, r.y + r.h * 0.25, pk.nome, ts(17.0, k), estilo::TEXTO);
             estilo::texto(
                 tx,
-                r.y + r.h * 0.36 + 24.0 * k,
+                r.y + r.h * 0.25 + 24.0 * k,
                 &format!("{} de uma vez", milhar(pk.qtd as u64)),
                 ts(15.0, k),
                 OURO_CLARO,
             );
             estilo::valor_tp(
                 tx,
-                r.y + r.h * 0.36 + 52.0 * k,
+                r.y + r.h - 24.0 * k,
                 pk.preco_tp,
                 ts(17.0, k),
                 estilo::TEXTO,
             );
             let bt = Rect::new(
                 r.x + r.w - 150.0 * k,
-                r.center().y - 22.0 * k,
+                r.y + r.h - 56.0 * k,
                 136.0 * k,
                 44.0 * k,
             );
@@ -1716,18 +1802,27 @@ impl LojaTp {
                     Produto::Tp(_)
                     | Produto::BauCraft(_)
                     | Produto::Moeda(_)
-                    | Produto::PergaminhoMontaria(_) => 0,
+                    | Produto::PergaminhoMontaria(_)
+                    | Produto::PergaminhoTomo(_) => 0,
                 };
-                if matches!(pr, Produto::BauCraft(_) | Produto::PergaminhoMontaria(_)) {
+                if matches!(
+                    pr,
+                    Produto::BauCraft(_)
+                        | Produto::PergaminhoMontaria(_)
+                        | Produto::PergaminhoTomo(_)
+                ) {
                     brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
-                    crate::invocacao_ui::icone_pergaminho(
+                    let item_id = match pr {
+                        Produto::PergaminhoMontaria(_) => {
+                            shared::item_id::PERGAMINHO_INVOCA_MONTARIA
+                        }
+                        Produto::PergaminhoTomo(_) => shared::item_id::PERGAMINHO_INVOCA_TOMO,
+                        _ => shared::item_id::PERGAMINHO_INVOCA_CHAVE,
+                    };
+                    crate::invocacao_ui::icone_pergaminho_de(
+                        item_id,
                         prev.center(),
                         prev.w * 0.58,
-                        if matches!(pr, Produto::PergaminhoMontaria(_)) {
-                            OURO_CLARO
-                        } else {
-                            LILAS
-                        },
                     );
                 } else if let Produto::Moeda(id) = pr {
                     brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
@@ -1768,6 +1863,9 @@ impl LojaTp {
                     }
                     Produto::PergaminhoMontaria(_) => {
                         "Pergaminho · 1 montaria aleatória · duplicatas contam".to_string()
+                    }
+                    Produto::PergaminhoTomo(_) => {
+                        "Pergaminho · tomo aleatório para 1 de 12 habilidades".to_string()
                     }
                     Produto::Moeda(id) => cat::moeda(id).map_or(String::new(), |mo| {
                         format!("{} · entra na hora", milhar(mo.qtd as u64))

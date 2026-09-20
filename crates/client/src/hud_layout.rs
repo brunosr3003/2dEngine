@@ -143,7 +143,9 @@ pub struct Zonas {
     pub economia: Rect,
     /// Montar/desmontar: ao lado da bateria, sempre visivel.
     pub montaria: Rect,
-    /// Botao de PULO: existe pro celular, que nao tem a tecla de espaco.
+    /// DASH: ocupa o quarto lugar do arco, ao lado das habilidades.
+    pub dash: Rect,
+    /// Botao de PULO: separado e um pouco acima do dash.
     pub pulo: Rect,
     /// AVISOS: as tres ultimas mensagens, em texto solto logo abaixo do
     /// rastreador. Nao pega toque — a faixa inteira ali e' do joystick.
@@ -328,10 +330,12 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
         let c = ca + d * s;
         Rect::new(c.x - rs, c.y - rs, rs * 2.0, rs * 2.0)
     });
-    // PULO: e' o QUARTO slot do arco, que estava reservado e so' desenhava um
-    // disco cinza sem funcao. O celular nao tem tecla de espaco, e este e' o
-    // lugar que o polegar ja' procura.
-    let pulo = skills[3];
+    // DASH ocupa o quarto slot do arco. O PULO continua perto do polegar, mas
+    // sobe uma fileira para os dois movimentos existirem no celular.
+    let dash = skills[3];
+    let rp = 36.0 * s;
+    let cp = dash.center() + vec2(0.0, -94.0 * s);
+    let pulo = Rect::new(cp.x - rp, cp.y - rp, rp * 2.0, rp * 2.0);
     // Linha de baixo, a' esquerda do arco: [COLETA][COMBATE][C][8][9][0].
     let direita = sw - 312.0 * s;
     let yb = base - 14.0 * s;
@@ -396,7 +400,12 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
     // INTEIRO pra caber — o jogador pede um minimapa maior e recebe uma
     // interface menor.
     let (minimapa, mapa_icone) = if minimapa_grande {
-        let teto = skills.iter().map(|r| r.y).fold(atacar.y, f32::min) - 12.0 * s;
+        let teto = skills
+            .iter()
+            .map(|r| r.y)
+            .fold(atacar.y, f32::min)
+            .min(pulo.y)
+            - 12.0 * s;
         let lado = (520.0 * s).min(teto - minimapa.y).max(minimapa.w);
         let r = Rect::new(sw - m - lado, minimapa.y, lado, lado);
         (
@@ -421,6 +430,7 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
         mapa_icone,
         economia,
         montaria,
+        dash,
         pulo,
         avisos,
         joystick,
@@ -451,6 +461,7 @@ impl Zonas {
             &mut self.mapa_icone,
             &mut self.economia,
             &mut self.montaria,
+            &mut self.dash,
             &mut self.pulo,
             &mut self.avisos,
             &mut self.joystick,
@@ -485,6 +496,7 @@ impl Zonas {
             ("joystick", self.joystick),
             ("economia", self.economia),
             ("montaria", self.montaria),
+            ("pulo", self.pulo),
             ("faixa", self.faixa),
             ("coleta", self.coleta),
             ("atacar", self.atacar),
@@ -507,7 +519,7 @@ impl Zonas {
             ));
         }
         for (i, r) in self.skills.iter().enumerate() {
-            v.push((["skill1", "skill2", "skill3", "skill4"][i], *r));
+            v.push((["skill1", "skill2", "skill3", "dash"][i], *r));
         }
         for (i, r) in self.rapidos.iter().enumerate() {
             v.push((["rapido8", "rapido9", "rapido0"][i], *r));

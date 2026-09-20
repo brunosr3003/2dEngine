@@ -11,7 +11,7 @@ montaria), **Materiais** e **Tempest Points**. O saldo de TP fica no topo. Códi
 A TP é comprada com **dinheiro de verdade**; pergaminhos de invocação e skins
 são comprados com **TP** (a TP é a moeda da loja, como no MIR4). Regra da economia
 (ECONOMIA.md): montarias e skins não dão poder de combate; a aba Materiais
-vende um atalho opcional para o craft.
+vende atalhos opcionais para craft e evolução de habilidades.
 
 | pacote | TP | bônus | total | preço |
 |---|---:|---:|---:|---:|
@@ -24,6 +24,7 @@ vende um atalho opcional para o craft.
 |---|---:|---|
 | Invocação: Montaria | 500 TP | Lobo 55%, Tigre 30%, Urso 15% |
 | Invocação: Chaves | 120 TP | Escama, Garra, Chifre ou Couro; cor aleatória |
+| Invocação: Tomos | 150 TP | habilidade aleatória; Verde 75%, Roxo 20%, Lendário 5% |
 
 | skin | montaria | preço |
 |---|---|---:|
@@ -39,6 +40,9 @@ Ao usar o item, o servidor decide o prêmio e o cliente mostra a abertura animad
 O de chaves sorteia a família e a cor: **55% cinza, 28% verde, 12% azul e 5%
 roxa**. Se a bolsa estiver cheia na compra, o pergaminho vai para as Entregas;
 se ela encher entre abrir e receber a chave, a chave vai para as Entregas.
+Na bolsa, **Abrir 10+1** consome 10 pergaminhos e entrega 11 prêmios. O
+servidor credita todos antes de iniciar a animação; fechá-la não perde nada.
+As onze montarias são registradas numa única transação no banco central.
 
 O pergaminho de montaria pode entregar uma montaria que a conta já possui.
 A primeira cópia libera a montaria e a skin padrão; duplicatas ficam em

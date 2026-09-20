@@ -10,8 +10,9 @@ habilidade pode evoluir separadamente do Tier I ao X (veja abaixo).
 
 Em **Menu → Personagem → Habilidades**, escolha uma das quatro armas e uma das
 três habilidades dela. Cada habilidade começa no Tier I. A evolução é
-determinística: não há sorteio, falha nem livro vindo de chefe. O servidor
-confere nível, Energia, cobre e tomo antes de consumir qualquer coisa.
+determinística: não há sorteio nem falha ao evoluir ou condensar diretamente.
+O servidor confere nível, Energia, cobre e tomo antes de consumir qualquer
+coisa. O pergaminho opcional da loja, descrito abaixo, sorteia tomos.
 
 **Energia** é um novo cristal azul coletável no relevo das ilhas (tipo 5),
 visível pelo filtro Energia no mapa e selecionável no AUTO COLETA. Ela entra
@@ -32,11 +33,17 @@ ou 120 Energia, respectivamente, no Bosque, Geleira, Ermo e Planalto.
 | IX | 55 | 60.000 | 40.000 | — |
 | X | 70 | 50.000 | 50.000 | Lendário |
 
-O tomo é condensado na mesma tela para a habilidade escolhida: Verde custa
+O tomo pode ser condensado na mesma tela para a habilidade escolhida: Verde custa
 3.000 Energia + 2.000 cobre; Roxo 25.000 + 20.000; Lendário 150.000 +
 100.000. O tomo e a Energia ficam no estado persistente do personagem, não
 como itens da bolsa. A tela mostra os três estoques de tomos da habilidade
 selecionada mesmo antes de um desbloqueio. A evolução consome um tomo nos marcos V/VIII/X.
+
+Há também o **Pergaminho de Invocação: Tomos** na loja de TP (150 TP). Ao
+abrir, o servidor sorteia uma das 12 habilidades e o grau do tomo: 75% Verde,
+20% Roxo e 5% Lendário. O tomo entra direto no estoque daquela habilidade. A
+bolsa oferece **Abrir 10+1**: consome 10 pergaminhos e entrega 11 prêmios; todos
+são creditados antes da animação.
 
 O multiplicador numérico por tier é fixo: I 1,00; II 1,02; III 1,04; IV
 1,06; V 1,09; VI 1,11; VII 1,13; VIII 1,16; IX 1,18; X 1,21. Dano ou

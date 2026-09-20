@@ -366,8 +366,7 @@ impl Habilidades {
         progresso: &shared::skills::ProgressoDeSkills,
     ) {
         let agora = get_time();
-        // O slot 4 e' o PULO (`hud::draw_pulo`): era um disco cinza sem
-        // funcao, e no celular nao ha' tecla de espaco pra pular.
+        // O slot 4 e' o DASH (`hud::draw_dash`); as tres skills ficam juntas.
         for i in 0..3 {
             let r = retangulo(i);
             let skill = self
