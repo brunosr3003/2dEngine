@@ -19,10 +19,16 @@ use crate::hud_estilo as estilo;
 use crate::vox::VoxCache;
 
 /// (rotulo, icone de HUD; vazio = o cristal do TP).
-const ABAS: [(&str, &str); 4] = [
+/// A aba dos pacotes de TP. Nomeada porque varios caminhos ("+" do saldo,
+/// saldo insuficiente) mandam pra ela — com indice na mao, inserir uma aba no
+/// meio levava o jogador pro lugar errado.
+const ABA_TP: usize = 4;
+
+const ABAS: [(&str, &str); 5] = [
     ("Montarias", "montaria"),
     ("Skins", "paleta"),
     ("Materiais", "craft"),
+    ("Moedas", "bolsa"),
     ("Tempest Points", ""),
 ];
 
@@ -645,7 +651,7 @@ impl LojaTp {
             TINTA_BOTAO,
         );
         if livre && (sobre_mais || capsula.contains(m)) {
-            self.aba = 3;
+            self.aba = ABA_TP;
         }
         if estado.simulado {
             let t = "PAGAMENTO SIMULADO";
@@ -735,6 +741,7 @@ impl LojaTp {
         match self.aba {
             0 | 1 => self.vitrine(area, &estado, vox, solido, k, m, livre, modal, dt, agora),
             2 => self.materiais(area, k, m, livre, modal, agora),
+            3 => self.moedas_e_energia(area, k, m, livre, modal, agora),
             _ => self.pacotes(area, k, m, livre, modal, agora),
         }
 
@@ -1298,25 +1305,11 @@ impl LojaTp {
     fn materiais(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
         let bau = &cat::BAUS_CRAFT[0];
         let vao = 12.0 * k;
-        let w = ((area.w - vao * 3.0) / 4.0).min(390.0 * k);
-        let total = w * 4.0 + vao * 3.0;
+        let w = ((area.w - vao * 2.0) / 3.0).min(390.0 * k);
+        let total = w * 3.0 + vao * 2.0;
         let x0 = area.center().x - total * 0.5;
-        self.moedas(
-            Rect::new(x0 + (w + vao) * 2.0, area.y + 8.0 * k, w, area.h - 16.0 * k),
-            k,
-            m,
-            livre,
-            modal,
-            agora,
-        );
-        self.energias(
-            Rect::new(x0 + (w + vao) * 3.0, area.y + 8.0 * k, w, area.h - 16.0 * k),
-            k,
-            m,
-            livre,
-            modal,
-            agora,
-        );
+        let coluna = |i: f32| Rect::new(x0 + (w + vao) * i, area.y + 8.0 * k, w, area.h - 16.0 * k);
+        self.pergaminho_de_pet(coluna(2.0), k, m, livre, modal, agora);
         let r = Rect::new(x0, area.y + 8.0 * k, w, area.h - 16.0 * k);
         let sobre = !modal && r.contains(m);
         estilo::sombra(r, 22.0 * k, 1.0);
@@ -1471,6 +1464,122 @@ impl LojaTp {
         );
         if !self.em_voo && livre && bt.contains(m) {
             self.confirma = Some(Confirma::Item(Produto::PergaminhoTomo(tomo.id)));
+        }
+    }
+
+    /// Aba Moedas: o que se compra direto e cai na hora — sacos de moeda e
+    /// pacotes de Energia. Ficavam na aba Materiais; com o terceiro
+    /// pergaminho, cinco colunas espremiam os cartoes e o texto sumia.
+    fn moedas_e_energia(
+        &mut self,
+        area: Rect,
+        k: f32,
+        m: Vec2,
+        livre: bool,
+        modal: bool,
+        agora: f64,
+    ) {
+        let vao = 12.0 * k;
+        let w = ((area.w - vao) / 2.0).min(440.0 * k);
+        let total = w * 2.0 + vao;
+        let x0 = area.center().x - total * 0.5;
+        let alto = area.h - 16.0 * k;
+        self.moedas(
+            Rect::new(x0, area.y + 8.0 * k, w, alto),
+            k,
+            m,
+            livre,
+            modal,
+            agora,
+        );
+        self.energias(
+            Rect::new(x0 + w + vao, area.y + 8.0 * k, w, alto),
+            k,
+            m,
+            livre,
+            modal,
+            agora,
+        );
+    }
+
+    /// O Pergaminho de Invocação: Pet. Especie e grau saem no ABRIR, entao o
+    /// cartao mostra a chance de cada cor, como o de chaves e o de tomos.
+    fn pergaminho_de_pet(
+        &mut self,
+        r: Rect,
+        k: f32,
+        m: Vec2,
+        livre: bool,
+        modal: bool,
+        agora: f64,
+    ) {
+        let perg = &cat::PERGAMINHOS_PET[0];
+        let sobre = !modal && r.contains(m);
+        estilo::sombra(r, 22.0 * k, 1.0);
+        estilo::ret_gradiente(
+            r,
+            22.0 * k,
+            Color::new(0.34, 0.20, 0.12, 0.98),
+            Color::new(0.10, 0.05, 0.04, 0.98),
+        );
+        estilo::borda_arredondada(
+            r,
+            22.0 * k,
+            1.5 * k.max(0.8),
+            estilo::alfa(if sobre { OURO_CLARO } else { AMBAR }, 0.60),
+        );
+        faiscas(r, agora, 18, k, 211);
+        let arte = vec2(r.center().x, r.y + r.h * 0.27);
+        brilho_radial(arte, r.h * 0.20, AMBAR, 0.28);
+        crate::invocacao_ui::icone_pergaminho_de(
+            shared::item_id::PERGAMINHO_INVOCA_PET,
+            arte,
+            r.h * 0.32,
+        );
+        estilo::texto_centro_forte(
+            r.center().x,
+            r.y + r.h * 0.47,
+            "Invocação de Pet",
+            ts(22.0, k),
+            estilo::TEXTO,
+        );
+        estilo::texto_centro(
+            r.center().x,
+            r.y + r.h * 0.53,
+            "1 pet coletor, espécie sorteada.",
+            ts(13.0, k),
+            estilo::alfa(AMBAR, 0.95),
+        );
+        // As cinco cores e a chance de cada uma, na mesma ordem do catalogo.
+        let passo = r.w * 0.17;
+        let inicio = r.center().x - passo * 2.0;
+        let yc = r.y + r.h * 0.64;
+        for (i, chance) in shared::pets::CHANCES_DO_PERGAMINHO.iter().enumerate() {
+            let x = inicio + passo * i as f32;
+            let cor = cor_do_grau(i as u8 + 1);
+            draw_circle(x, yc, 10.0 * k, cor);
+            draw_circle_lines(x, yc, 12.0 * k, 1.5 * k.max(0.8), estilo::alfa(WHITE, 0.7));
+            estilo::texto_centro(x, yc + 27.0 * k, &format!("{chance}%"), ts(11.0, k), estilo::TEXTO);
+        }
+        estilo::valor_tp(
+            r.center().x
+                - estilo::largura_tp_texto(&milhar(perg.preco_tp), ts(23.0, k), true) * 0.5,
+            r.y + r.h - 88.0 * k,
+            perg.preco_tp,
+            ts(23.0, k),
+            OURO_CLARO,
+        );
+        let bt = Rect::new(r.center().x - 108.0 * k, r.y + r.h - 62.0 * k, 216.0 * k, 48.0 * k);
+        botao_ouro(
+            bt,
+            if self.em_voo { "AGUARDE…" } else { "COMPRAR PERGAMINHO" },
+            !self.em_voo,
+            !modal && bt.contains(m),
+            k,
+            agora,
+        );
+        if !self.em_voo && livre && bt.contains(m) {
+            self.confirma = Some(Confirma::Item(Produto::PergaminhoPet(perg.id)));
         }
     }
 
@@ -1891,13 +2000,15 @@ impl LojaTp {
                     | Produto::Moeda(_)
                     | Produto::PergaminhoMontaria(_)
                     | Produto::PergaminhoTomo(_)
-                    | Produto::Energia(_) => 0,
+                    | Produto::Energia(_)
+                    | Produto::PergaminhoPet(_) => 0,
                 };
                 if matches!(
                     pr,
                     Produto::BauCraft(_)
                         | Produto::PergaminhoMontaria(_)
                         | Produto::PergaminhoTomo(_)
+                        | Produto::PergaminhoPet(_)
                 ) {
                     brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
                     let item_id = match pr {
@@ -1905,6 +2016,7 @@ impl LojaTp {
                             shared::item_id::PERGAMINHO_INVOCA_MONTARIA
                         }
                         Produto::PergaminhoTomo(_) => shared::item_id::PERGAMINHO_INVOCA_TOMO,
+                        Produto::PergaminhoPet(_) => shared::item_id::PERGAMINHO_INVOCA_PET,
                         _ => shared::item_id::PERGAMINHO_INVOCA_CHAVE,
                     };
                     crate::invocacao_ui::icone_pergaminho_de(
@@ -1969,6 +2081,9 @@ impl LojaTp {
                     Produto::Energia(id) => cat::energia(id).map_or(String::new(), |e| {
                         format!("{} de Energia · entra na hora", milhar(e.qtd))
                     }),
+                    Produto::PergaminhoPet(_) => {
+                        "Pergaminho · 1 pet coletor · espécie e grau sorteados".to_string()
+                    }
                 };
                 estilo::texto_ajustado(&pr.nome(), x, y, largura, ts(22.0, k), estilo::TEXTO);
                 y += 22.0 * k;
@@ -2023,7 +2138,7 @@ impl LojaTp {
         if confirmar.contains(m) {
             self.confirma = None;
             if insuficiente {
-                self.aba = 3;
+                self.aba = ABA_TP;
                 return None;
             }
             let pedido = self.novo_pedido();
@@ -2284,16 +2399,17 @@ pub async fn previa(vox: &VoxCache) {
         ],
     };
     loja.receber(AvisoLoja::Estado(estado.clone()));
-    let cenas: [&str; 9] = [
+    let cenas: [&str; 10] = [
         "1-montarias",
         "2-montaria-possuida",
         "3-skins",
         "4-materiais",
-        "5-tempest-points",
+        "5-moedas",
         "6-confirma-pergaminho",
         "7-confirma-tp",
         "8-compra-concluida",
         "9-mundo",
+        "10-tempest-points",
     ];
     let (sw, sh) = (lw, lh);
     for (n, cena) in cenas.iter().enumerate() {
@@ -2327,13 +2443,16 @@ pub async fn previa(vox: &VoxCache) {
             4 => {
                 loja.aba = 3;
             }
+            9 => {
+                loja.aba = ABA_TP;
+            }
             5 => {
                 loja.aba = 0;
                 loja.montaria_sel = 3;
                 loja.confirma = Some(Confirma::Item(Produto::PergaminhoMontaria(1)));
             }
             6 => {
-                loja.aba = 3;
+                loja.aba = ABA_TP;
                 loja.confirma = Some(Confirma::Tp(4));
             }
             _ => {
@@ -2673,4 +2792,11 @@ mod tests {
         l.receber(AvisoLoja::Estado(estado(vec![], vec![], 900)));
         assert_eq!(l.tp_mostrado, 900.0);
     }
+}
+
+/// A cor do grau do pet, da mesma tabela de cor dos itens.
+fn cor_do_grau(grau: u8) -> Color {
+    let h = shared::items::tier_color_hex(grau).trim_start_matches('#');
+    let v = u32::from_str_radix(h, 16).unwrap_or(0xbf_bf_bf);
+    Color::from_rgba((v >> 16) as u8, (v >> 8) as u8, v as u8, 255)
 }

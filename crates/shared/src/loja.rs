@@ -294,6 +294,25 @@ pub const PERGAMINHOS_TOMO: [PergaminhoTomo; 1] = [PergaminhoTomo {
     chances: [75, 20, 5],
 }];
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PergaminhoPet {
+    pub id: u16,
+    pub nome: &'static str,
+    pub preco_tp: u64,
+}
+
+/// O pergaminho de pet (docs/PETS.md). O grau e a especie sao sorteados ao
+/// ABRIR, por `pets::rolar` — a compra so' entrega o pergaminho na bolsa.
+pub const PERGAMINHOS_PET: [PergaminhoPet; 1] = [PergaminhoPet {
+    id: 1,
+    nome: "Pergaminho de Invocação: Pet",
+    preco_tp: 250,
+}];
+
+pub fn pergaminho_pet(id: u16) -> Option<&'static PergaminhoPet> {
+    PERGAMINHOS_PET.iter().find(|p| p.id == id)
+}
+
 pub fn pergaminho_tomo(id: u16) -> Option<&'static PergaminhoTomo> {
     PERGAMINHOS_TOMO.iter().find(|p| p.id == id)
 }
@@ -468,6 +487,8 @@ pub enum Produto {
     PergaminhoTomo(u16),
     /// Energia repetível; cai no saldo de evolução, não na bolsa.
     Energia(u16),
+    /// Pergaminho repetível; sorteia espécie e grau de um pet coletor.
+    PergaminhoPet(u16),
 }
 
 impl Produto {
@@ -482,6 +503,7 @@ impl Produto {
             Produto::PergaminhoMontaria(i) => format!("pergaminho-montaria:{i}"),
             Produto::PergaminhoTomo(i) => format!("pergaminho-tomo:{i}"),
             Produto::Energia(i) => format!("energia:{i}"),
+            Produto::PergaminhoPet(i) => format!("pergaminho-pet:{i}"),
         }
     }
 
@@ -497,6 +519,7 @@ impl Produto {
             "pergaminho-montaria" => Produto::PergaminhoMontaria(id),
             "pergaminho-tomo" => Produto::PergaminhoTomo(id),
             "energia" => Produto::Energia(id),
+            "pergaminho-pet" => Produto::PergaminhoPet(id),
             _ => return None,
         };
         p.existe().then_some(p)
@@ -512,6 +535,7 @@ impl Produto {
             Produto::PergaminhoMontaria(i) => pergaminho_montaria(i).is_some(),
             Produto::PergaminhoTomo(i) => pergaminho_tomo(i).is_some(),
             Produto::Energia(i) => energia(i).is_some(),
+            Produto::PergaminhoPet(i) => pergaminho_pet(i).is_some(),
         }
     }
 
@@ -531,6 +555,9 @@ impl Produto {
                 pergaminho_tomo(i).map_or("?".into(), |p| p.nome.to_string())
             }
             Produto::Energia(i) => energia(i).map_or("?".into(), |e| e.nome.to_string()),
+            Produto::PergaminhoPet(i) => {
+                pergaminho_pet(i).map_or("?".into(), |p| p.nome.to_string())
+            }
         }
     }
 
@@ -545,6 +572,7 @@ impl Produto {
             Produto::PergaminhoMontaria(i) => pergaminho_montaria(i).map(|p| p.preco_tp),
             Produto::PergaminhoTomo(i) => pergaminho_tomo(i).map(|p| p.preco_tp),
             Produto::Energia(i) => energia(i).map(|e| e.preco_tp),
+            Produto::PergaminhoPet(i) => pergaminho_pet(i).map(|p| p.preco_tp),
         }
     }
 }
@@ -598,7 +626,8 @@ impl Posses {
             | Produto::Moeda(_)
             | Produto::PergaminhoMontaria(_)
             | Produto::PergaminhoTomo(_)
-            | Produto::Energia(_) => false,
+            | Produto::Energia(_)
+            | Produto::PergaminhoPet(_) => false,
         }
     }
 
@@ -732,6 +761,8 @@ pub enum PremioInvocacao {
         grau: crate::skills::GrauTomo,
         quantidade: u16,
     },
+    /// Pet coletor: o item_id ja' diz especie e grau.
+    Pet { item_id: u16 },
 }
 
 /// Uma linha do historico de compras.

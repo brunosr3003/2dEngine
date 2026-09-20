@@ -178,6 +178,9 @@ impl GameWorld {
                                     Produto::PergaminhoTomo(_) => {
                                         Some(shared::item_id::PERGAMINHO_INVOCA_TOMO)
                                     }
+                                    Produto::PergaminhoPet(_) => {
+                                        Some(shared::item_id::PERGAMINHO_INVOCA_PET)
+                                    }
                                     _ => None,
                                 };
                                 if let Some(item_id) = pergaminho {

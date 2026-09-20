@@ -207,7 +207,9 @@ fn anda_a_fase(ent: &mut Ent, andou: f32, dt: f32) {
     let montado = ent.state.flags & ent_flags::MONTADO != 0;
     let passada = match crate::bicho::da_montaria(ent.meta.tag, ent.meta.kind, montado) {
         Some((_, altura)) => crate::bicho::ciclo(altura, vel),
-        None => match crate::bicho::do_mob(ent.meta.tag, ent.meta.kind, boss) {
+        None => match crate::bicho::do_mob(ent.meta.tag, ent.meta.kind, boss)
+            .or_else(|| crate::bicho::do_pet(ent.meta.tag, ent.meta.kind))
+        {
             // bicho: o ciclo casa com a viagem do pe' (ver `bicho`), senao a
             // pata patina no chao
             Some((_, altura)) => crate::bicho::ciclo(altura, ent.andar * shared::PLAYER_SPEED),

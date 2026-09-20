@@ -1074,6 +1074,13 @@ fn model_for(tag: shared::EntityTag, boss: bool, kind: u16) -> Option<&'static s
         T::Player | T::Npc => Some("player"),
         T::Enemy if boss => Some("lobo"),
         T::Enemy => Some(modelo_do_mob(kind)),
+        // O pet: o bicho da especie, se o arquivo em pecas faltar.
+        T::Pet => shared::pets::de_item(kind).map(|(e, _)| match e.base {
+            id if id == shared::item_id::PET_URSO => "urso",
+            id if id == shared::item_id::PET_TIGRE => "tigre",
+            id if id == shared::item_id::PET_OWLBEAR => "owlbear",
+            _ => "lobo_pequeno",
+        }),
         // O saque vem com o tier do item no `kind` (0 = ouro/pocao).
         T::Loot => Some(match kind {
             1 => "saque_1",
@@ -1365,7 +1372,9 @@ pub fn draw_entities(
         }
         // Bicho de quatro patas anda em PECAS (`bicho.rs`). Sem o arquivo,
         // cai no modelo inteiro abaixo, parado.
-        if let Some((arquivo, _)) = crate::bicho::do_mob(e.meta.tag, e.meta.kind, boss) {
+        if let Some((arquivo, _)) = crate::bicho::do_mob(e.meta.tag, e.meta.kind, boss)
+            .or_else(|| crate::bicho::do_pet(e.meta.tag, e.meta.kind))
+        {
             if let Some(b) = vox.bicho(arquivo) {
                 if let Some(r) = desenha_bicho(e, b, vista) {
                     rastros.push(r);

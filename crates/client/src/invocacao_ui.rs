@@ -199,6 +199,16 @@ impl InvocacaoUi {
                                 shared::skills::GrauTomo::Lendario => estilo::OURO,
                             },
                         ),
+                        PremioInvocacao::Pet { item_id } => (
+                            shared::pets::de_item(*item_id)
+                                .map_or("Pet".into(), |(e, _)| e.nome.to_string()),
+                            shared::pets::de_item(*item_id).map_or(String::new(), |(_, g)| {
+                                format!("{} · coletor", shared::pets::nome_do_grau(g))
+                            }),
+                            cor_do_grau(
+                                shared::pets::de_item(*item_id).map_or(1, |(_, g)| g),
+                            ),
+                        ),
                     };
                     draw_circle(card.x + 22.0 * k, card.center().y, 12.0 * k, cor);
                     estilo::texto_ajustado(&titulo, card.x + 42.0 * k, card.y + 29.0 * k, card.w - 48.0 * k, 14, estilo::TEXTO);
@@ -260,6 +270,39 @@ impl InvocacaoUi {
                             },
                         );
                     }
+                }
+                PremioInvocacao::Pet { item_id } => {
+                    let (especie, grau) = match shared::pets::de_item(item_id) {
+                        Some(v) => v,
+                        None => return,
+                    };
+                    let cor = cor_do_grau(grau);
+                    brilho_livro(c, 105.0 * k, cor, t);
+                    estilo::texto_centro_forte(
+                        c.x,
+                        c.y + 105.0 * k,
+                        &format!("{} {}", especie.nome, shared::pets::nome_do_grau(grau)),
+                        24,
+                        cor,
+                    );
+                    estilo::texto_centro(
+                        c.x,
+                        c.y + 133.0 * k,
+                        especie.descricao,
+                        15,
+                        estilo::TEXTO,
+                    );
+                    estilo::texto_centro(
+                        c.x,
+                        c.y + 158.0 * k,
+                        &format!(
+                            "Equipe no slot do pet: busca o saque a {:.0} tiles e dá {} pontos",
+                            shared::pets::raio_de_busca(grau),
+                            shared::pets::pontos(grau)
+                        ),
+                        13,
+                        estilo::SUAVE,
+                    );
                 }
                 PremioInvocacao::Tomo { skill_id, grau, quantidade } => {
                     let cor = match grau {
@@ -389,4 +432,11 @@ pub async fn previa(vox: &VoxCache) {
             next_frame().await;
         }
     }
+}
+
+/// A cor do grau do pet: a mesma tabela de cor dos itens.
+fn cor_do_grau(grau: u8) -> Color {
+    let h = shared::items::tier_color_hex(grau).trim_start_matches('#');
+    let v = u32::from_str_radix(h, 16).unwrap_or(0xbf_bf_bf);
+    Color::from_rgba((v >> 16) as u8, (v >> 8) as u8, v as u8, 255)
 }

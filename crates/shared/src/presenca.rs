@@ -62,7 +62,7 @@ pub const CALENDARIO: [Dia; DIAS] = {
         [p(FORTUNA_POTION, 1), NADA],
         [p(OURO, 1_200), NADA],
         [p(GREATER_HEAL, 8), NADA],
-        [p(XP_POTION, 2), p(SORTE_POTION, 1)], // 14
+        [p(XP_POTION, 2), p(PERGAMINHO_INVOCA_PET, 1)], // 14
         [p(OURO, 1_500), NADA],
         [p(MANA_POTION, 15), NADA],
         [p(STAMINA_POTION, 8), NADA],
@@ -76,13 +76,15 @@ pub const CALENDARIO: [Dia; DIAS] = {
         [p(OURO, 2_500), NADA],
         [p(GREATER_HEAL, 12), NADA],
         [p(FORTUNA_POTION, 1), NADA],
-        [p(XP_POTION, 3), p(MARCAS_TEMPESTADE, 40)], // 28
+        [p(XP_POTION, 3), p(PERGAMINHO_INVOCA_PET, 2)], // 28
     ]
 };
 
-/// Itens que podem aparecer num calendario: vinculados ou vendidos pelo
-/// Alquimista. O teste da grade (e de todo evento) confere contra esta lista.
-pub const PERMITIDOS: [u16; 9] = [
+/// Itens que podem aparecer num calendario: vinculados, vendidos pelo
+/// Alquimista, ou pergaminho de invocacao — que e' item de loja, mas entra
+/// aqui VINCULADO, pra quem nao paga tambem abrir (docs/CALENDARIO.md).
+/// O teste da grade (e de todo evento) confere contra esta lista.
+pub const PERMITIDOS: [u16; 10] = [
     item_id::HEALTH_POTION,
     item_id::MANA_POTION,
     item_id::STAMINA_POTION,
@@ -92,6 +94,7 @@ pub const PERMITIDOS: [u16; 9] = [
     item_id::FORTUNA_POTION,
     item_id::SORTE_POTION,
     item_id::MARCAS_TEMPESTADE,
+    item_id::PERGAMINHO_INVOCA_PET,
 ];
 
 pub fn e_marco(dia_da_grade: u8) -> bool {

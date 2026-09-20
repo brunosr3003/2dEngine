@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 111;
+pub const PROTOCOL_VERSION: u16 = 112;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -592,6 +592,41 @@ pub mod item_id {
     pub const PERGAMINHO_INVOCA_CHAVE: u16 = 360;
     pub const PERGAMINHO_INVOCA_MONTARIA: u16 = 361;
     pub const PERGAMINHO_INVOCA_TOMO: u16 = 362;
+    pub const PERGAMINHO_INVOCA_PET: u16 = 363;
+
+    /// Os cinco pets coletores (docs/PETS.md), pelo id do CINZA. Cada especie
+    /// ocupa cinco ids seguidos, um por grau — a mesma convencao de `na_cor`
+    /// dos materiais. O grau mora no id porque o pet e' item de bolsa:
+    /// negociavel no mercado e combinavel na aba Combinar do Craft.
+    pub const PET_LOBO: u16 = 420;
+    pub const PET_URSO: u16 = 425;
+    pub const PET_TIGRE: u16 = 430;
+    pub const PET_OWLBEAR: u16 = 435;
+    pub const PET_CARANGUEJO: u16 = 440;
+    /// O cinza de cada especie, na ordem do catalogo (`shared::pets`).
+    pub const PETS: [u16; 5] = [PET_LOBO, PET_URSO, PET_TIGRE, PET_OWLBEAR, PET_CARANGUEJO];
+    /// Ultimo id de pet — tudo entre `PET_LOBO` e este e' pet.
+    pub const PET_ULTIMO: u16 = PET_CARANGUEJO + 4;
+
+    /// id do pet da especie `base` no grau `grau` (1 cinza .. 5 laranja).
+    pub const fn pet_no_grau(base: u16, grau: u8) -> u16 {
+        base + (if grau < 1 {
+            0
+        } else if grau > 5 {
+            4
+        } else {
+            grau - 1
+        }) as u16
+    }
+
+    /// (especie cinza, grau) de um id de pet. `None` se nao for pet.
+    pub const fn pet_de_id(id: u16) -> Option<(u16, u8)> {
+        if id < PET_LOBO || id > PET_ULTIMO {
+            return None;
+        }
+        let d = id - PET_LOBO;
+        Some((PET_LOBO + (d / 5) * 5, (d % 5) as u8 + 1))
+    }
 
     /// As quatro CHAVES de craft (uma por receita), pelo id da cinza. So'
     /// caem de chefe e de dungeon/raid (`shared::chaves`).
@@ -794,6 +829,7 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
         AMULETO => Some(EquipSlot::Necklace),
         BRACELETE => Some(EquipSlot::Bracelet),
         CINTO => Some(EquipSlot::Belt),
+        id if pet_de_id(id).is_some() => Some(EquipSlot::Pet),
         _ => None,
     }
 }
@@ -827,10 +863,13 @@ pub enum EquipSlot {
     Necklace,
     Bracelet,
     Belt,
+    /// O pet coletor (docs/PETS.md). Equipado, ele nasce no mundo e busca o
+    /// saque do chao; os atributos dele entram como pontos alocados.
+    Pet,
 }
 
 impl EquipSlot {
-    pub const TODOS: [EquipSlot; 7] = [
+    pub const TODOS: [EquipSlot; 8] = [
         EquipSlot::Weapon,
         EquipSlot::Offhand,
         EquipSlot::Armor,
@@ -838,6 +877,7 @@ impl EquipSlot {
         EquipSlot::Necklace,
         EquipSlot::Bracelet,
         EquipSlot::Belt,
+        EquipSlot::Pet,
     ];
 
     /// String do slot pra ser persistido no DB (coluna `slot`).
@@ -850,6 +890,7 @@ impl EquipSlot {
             EquipSlot::Necklace => "necklace",
             EquipSlot::Bracelet => "bracelet",
             EquipSlot::Belt => "belt",
+            EquipSlot::Pet => "pet",
         }
     }
 

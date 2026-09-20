@@ -50,7 +50,14 @@ A primeira cópia libera a montaria e a skin padrão; duplicatas ficam em
 aprimorar montarias. A compra direta de `Produto::Montaria` é recusada pelo
 servidor; essa variante permanece apenas para representar posses antigas.
 
-Na mesma aba, as **moedas do jogo** (`MOEDAS`, `Produto::Moeda`), repetíveis
+O terceiro pergaminho da aba é o **Pergaminho de Invocação: Pet**
+(`PERGAMINHOS_PET`, `Produto::PergaminhoPet`), 250 TP: sorteia espécie e grau
+de um pet coletor (docs/PETS.md). Cinza 55%, Verde 28%, Azul 12%, Roxo 4%,
+Laranja 1%.
+
+Moedas e Energia ficam na aba **Moedas**, ao lado: com o terceiro pergaminho,
+cinco colunas na mesma aba espremiam os cartões e o preço sumia atrás do
+botão. Lá estão as **moedas do jogo** (`MOEDAS`, `Produto::Moeda`), repetíveis
 e entregues na hora no personagem que está jogando:
 
 | pacote | vem | preço |
@@ -62,7 +69,7 @@ e entregues na hora no personagem que está jogando:
 O ouro entra no saldo; cobre e darksteel, na carteira (docs/BANCO.md) — nunca
 falta espaço. Não viram posse da conta (`loja_posses`), como os pergaminhos.
 
-Na quarta coluna da aba, a **Energia** (`ENERGIAS`, `Produto::Energia`),
+Na mesma aba, a **Energia** (`ENERGIAS`, `Produto::Energia`),
 também repetível e entregue na hora:
 
 | pacote | vem | preço | rendimento |

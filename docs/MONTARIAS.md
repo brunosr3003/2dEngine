@@ -3,6 +3,11 @@
 Vêm do **Pergaminho de Invocação: Montaria** da loja de cash (LOJA.md). Só
 **mobilidade**: nenhum atributo de combate muda (regra da TP em ECONOMIA.md).
 
+A montaria continua assim. O **pet** (docs/PETS.md) é a exceção consciente:
+ele dá atributo e também sai de pergaminho de TP. O que segura a regra de pé
+é que o pergaminho de pet cai na recompensa diária e o primeiro pet vem da
+história principal — quem paga compra velocidade de progresso, não acesso.
+
 ## Invocação e cópias
 
 - O pergaminho custa 500 TP, vai para a bolsa e só sorteia quando o jogador

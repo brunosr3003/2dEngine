@@ -137,6 +137,9 @@ dinheiro se encontram é a troca TP↔gold — e ela não cria nada, só move.
 - **TP compra na loja de cash**: montaria, skins de armadura e de arma, pets,
   livros de habilidade de pet e de montaria, e pedras de refino. As skins
   ficam presas ao personagem (ver `docs/PERSONAGEM.md`).
+- O **pet** (docs/PETS.md) é o único item de TP que muda atributo. Ele é item
+  de bolsa e **negociável**: quem farma pega pet no mercado por gold, do mesmo
+  jeito que pega TP. O pergaminho dele também cai na diária, vinculado.
 - **Gold é gasto** na entrada extra de dungeon e na taxa do mercado.
 
 ## Cobre é a moeda, ouro é raro (decisão do dono, 17/09/2026)

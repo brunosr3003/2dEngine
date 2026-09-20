@@ -711,10 +711,12 @@ pub const QUESTS: &[QuestDef] = &[
         reward_item2: item_id::GREATER_HEAL, reward_item2_qty: 2,
         requires: 507, min_level: 8, ..mestre() },
     QuestDef { id: 509, title: "O berloque do owlbear",
-        desc: "Falta a última peça da receita: o berloque, que os owlbears carregam preso ao pelo. Traga 6 e o Mestre abre o baú da vila para você.",
+        desc: "Falta a última peça da receita: o berloque, que os owlbears carregam preso ao pelo. Traga 6 e o Mestre abre o baú da vila — e solta o filhote que anda rondando o depósito.",
         obj_kind: objective_kind::COLLECT, obj_target: item_id::EXORCISM_BAUBLE, obj_count: 6,
         reward_cobre: 400, reward_xp: 900, reward_item: item_id::HIDE, reward_item_qty: 1,
-        reward_item2: item_id::STEEL, reward_item2_qty: 15,
+        // O primeiro PET (docs/PETS.md). Todo mundo ganha o cinza pela historia
+        // principal: o auto-loot e' mecanica do jogo, nao privilegio de loja.
+        reward_item2: item_id::PET_LOBO, reward_item2_qty: 1,
         requires: 508, min_level: 12, ..mestre() },
     QuestDef { id: 510, title: "O que há sob o naufrágio",
         desc: "O Porão do Naufrágio guarda o que a maré não levou, e quem manda lá dentro cai com a chave no bolso: chefe de dungeon larga chave três vezes mais que chefe de campo. Entre e limpe uma — sozinho já dá.",

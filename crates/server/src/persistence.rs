@@ -2591,6 +2591,24 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             wis: (0, 0),
         },
         S {
+            id: item_id::PERGAMINHO_INVOCA_PET as i32,
+            name: "Pergaminho de Invocação: Pet",
+            sell: 1,
+            buy: None,
+            ord: None,
+            stack: 99,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
             id: item_id::PERGAMINHO_INVOCA_TOMO as i32,
             name: "Pergaminho de Invocação: Tomos",
             sell: 1,
@@ -2812,6 +2830,48 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             .execute(pool)
             .await?;
     }
+    // O pergaminho de pet cai na recompensa diaria, e o calendario nao
+    // entrega item negociavel (docs/CALENDARIO.md): ele nasce VINCULADO. O
+    // que sai dele — o pet — e' negociavel normalmente, que e' o ponto.
+    sqlx::query("UPDATE items SET vinculado = TRUE WHERE id = $1")
+        .bind(item_id::PERGAMINHO_INVOCA_PET as i32)
+        .execute(pool)
+        .await?;
+
+    // Os 25 pets (5 especies x 5 graus, docs/PETS.md). Ficam fora da lista
+    // estatica porque o nome sai de `pets::nome_do_item`, que monta especie +
+    // grau — repetir os 25 na mao so' daria chance de divergir do catalogo.
+    // Eles nao tem atributo no template: o que o pet da' entra como PONTO
+    // ALOCADO em `effective_stats`, nao como bonus de item.
+    for e in shared::pets::ESPECIES {
+        for grau in 1..=shared::pets::GRAU_MAX {
+            let id = item_id::pet_no_grau(e.base, grau) as i32;
+            let nome = shared::pets::nome_do_item(id as u16).unwrap_or_default();
+            let venda = 100i32 * (grau as i32) * (grau as i32);
+            sqlx::query(
+                "INSERT INTO items \
+                  (id, name, sell_price, buy_price, shop_order, stack_max, \
+                   equip_slot, item_level, icon_col, icon_row) \
+                 VALUES ($1,$2,$3,NULL,NULL,1,$4,1,-1,-1) \
+                 ON CONFLICT (id) DO UPDATE SET \
+                   equip_slot = EXCLUDED.equip_slot, \
+                   stack_max = EXCLUDED.stack_max, \
+                   sell_price = EXCLUDED.sell_price",
+            )
+            .bind(id)
+            .bind(&nome)
+            .bind(venda)
+            .bind(shared::EquipSlot::Pet.as_db_str())
+            .execute(pool)
+            .await?;
+            sqlx::query("UPDATE items SET name = $1 WHERE id = $2")
+                .bind(&nome)
+                .bind(id)
+                .execute(pool)
+                .await?;
+        }
+    }
+
     // Backfill icon_path apontando pros PNGs extraídos em
     // MMORPG/Assets/_Project/Resources/Items/r{row}_c{col}.png — naming
     // gerado direto a partir do (icon_col, icon_row) já populados.

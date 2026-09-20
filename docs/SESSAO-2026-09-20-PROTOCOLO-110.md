@@ -175,3 +175,33 @@ refeitos nesta sessão.
   9100 devolveram `101 Switching Protocols`.
 - A compra de Energia em si não foi exercitada contra o banco central nesta
   publicação; o que rodou foram os testes de catálogo e de regra de compra.
+
+## Pets coletores (protocolo 112)
+
+- Sistema novo em `docs/PETS.md`: o saque continua caindo no chão e o pet vai
+  buscá-lo fisicamente, creditando no dono ao encostar.
+- O pet é **item de bolsa**, não posse de conta — é isso que o torna
+  negociável no mercado e combinável na aba Combinar do Craft sem sistema
+  novo. O grau mora no `item_id` (cinco ids por espécie), a convenção dos
+  materiais coloridos.
+- Cinco espécies, cinco graus. Velocidade 90%→150% de `PLAYER_SPEED`, busca de
+  8 a 16 tiles, 5 a 17 pontos de atributo pela curva `items::tier_stat_mult`.
+  Os pontos entram como ponto ALOCADO, então a afinidade da espécie combina
+  com a classe sem regra nova.
+- Quatro fontes: missão 509 da história (1 Lobinho Cinza), Pergaminho de
+  Invocação: Pet (250 TP), recompensa diária vinculada nos dias 14 e 28, e
+  combinar 3 do mesmo grau.
+- Combinar é aposta, não conta fechada: 60/40/25/10% por degrau e falhar
+  consome os três — a mesma regra da chave de craft.
+- AOI: pet dos outros leva penalidade na ordenação e é o primeiro a cair
+  quando o teto de 60 enche. O pet do dono nunca cai.
+- Protocolo subiu para 112: `EntityKind::Pet`, `EntityTag::Pet`,
+  `EquipSlot::Pet` e `Produto::PergaminhoPet` mudam o wire.
+- A loja ganhou a aba **Moedas**: com o terceiro pergaminho, cinco colunas na
+  aba Materiais espremiam os cartões e o preço sumia atrás do botão.
+- Duas regras escritas foram alteradas de propósito, e estão anotadas em
+  PETS.md: item de TP que muda atributo (MONTARIAS.md) e pergaminho vinculado
+  na recompensa diária (CALENDARIO.md).
+- Não implementado: dono e prazo do saque no chão. Com pet de 16 tiles, quem
+  tem o grau melhor alcança o drop de quem matou. Também não foi medido o
+  efeito do pet no AOI com o canal cheio — isso precisa de bots.

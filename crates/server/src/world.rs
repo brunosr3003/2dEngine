@@ -102,6 +102,7 @@ mod evolucao_skills;
 mod loja_mundo;
 mod mercado_mundo;
 mod oficina;
+mod pets;
 mod presenca;
 mod social;
 use habilidades::HabilidadePendente;
@@ -4350,6 +4351,54 @@ impl GameWorld {
             self.place_enemy(Vec2::new(x as f32 + 0.5, y as f32 + 0.5), kind, 0.0);
         }
         tracing::info!("dungeon: spawn de {} inimigos", spots.len());
+    }
+
+    /// Entrega um saque do chao ao dono: equipa se o slot esta' vazio, ouro vai
+    /// pro saldo, o resto pra bolsa. `None` = nao coube (a bolsa encheu) e o
+    /// saquinho fica onde esta'. `Some` traz o novo hp_max quando equipar
+    /// mudou a vida maxima — quem chama aplica no `Health`.
+    ///
+    /// Vale pro pickup por proximidade e pro pet (docs/PETS.md): os dois
+    /// entregam pelo mesmo caminho, entao a regra nao mora em dois lugares.
+    fn creditar_saque(&mut self, sid: SessionId, ltag: &LootTag) -> Option<Option<(Entity, i32)>> {
+        let session = self.sessions.get_mut(&sid)?;
+        // Se for equipavel e o slot esta vazio, equipa direto.
+        // Gate offhand+weapon: se incompativel, fallback pro inv.
+        if let Some(slot) = shared::equip_slot_of(ltag.item_id) {
+            let empty = session.equipment.get(slot).is_none();
+            let allowed = can_equip_in_slot(&session.equipment, slot, ltag.item_id);
+            if empty && allowed {
+                session
+                    .equipment
+                    .set(slot, Some(ltag.item_id), ltag.instance);
+                session.stats = effective_stats(
+                    &session.equipment,
+                    &session.allocated_points,
+                    &session.proficiencies,
+                    session.xp,
+                );
+                session.stats_dirty = true;
+                let hp = session.entity.map(|pe| (pe, session.stats.hp_max));
+                return Some(hp);
+            }
+        }
+        // Gold é currency: vai pro contador, não ocupa inventário.
+        if ltag.item_id == shared::item_id::GOLD {
+            session.gold = session.gold.saturating_add(ltag.qty as u64);
+            crate::telemetria::conta("ouro_fonte", "saque", ltag.qty as i64);
+            return Some(None);
+        }
+        // Senao, inventario normal.
+        if add_to_inventory(
+            &mut session.inventory,
+            ltag.item_id,
+            ltag.qty,
+            ltag.instance,
+        ) {
+            session.inventory_dirty = true;
+            return Some(None);
+        }
+        None
     }
 
     /// Aloca 1 ponto de atributo. Alem do ponto livre, cobra Energia: o preco
@@ -11980,6 +12029,13 @@ impl GameWorld {
             }
         }
 
+        // ── J.4: pets coletores (docs/PETS.md) ────────────────────────────────
+        // Antes do pickup por proximidade: o que o pet encostar neste tick ja'
+        // sai da lista, e o que ele nao alcancou continua valendo pro dono
+        // passar por cima.
+        self.sincroniza_pets();
+        self.tick_pets(dt);
+
         // ── J.5: pickup de loot ───────────────────────────────────────────────
         // Coleta pares (session_id, player_pos) e todos os loots proximos.
         let pickup_players: Vec<(SessionId, Vec2)> = self
@@ -12014,48 +12070,10 @@ impl GameWorld {
                     continue;
                 }
                 if ppos.distance_squared(lpos) < pick_r_sq {
-                    if let Some(session) = self.sessions.get_mut(sid) {
-                        // Se for equipavel e o slot esta vazio, equipa direto.
-                        // Gate offhand+weapon: se incompativel, fallback pro inv.
-                        if let Some(slot) = shared::equip_slot_of(ltag.item_id) {
-                            let empty = session.equipment.get(slot).is_none();
-                            let allowed = can_equip_in_slot(&session.equipment, slot, ltag.item_id);
-                            if empty && allowed {
-                                session
-                                    .equipment
-                                    .set(slot, Some(ltag.item_id), ltag.instance);
-                                session.stats = effective_stats(
-                                    &session.equipment,
-                                    &session.allocated_points,
-                                    &session.proficiencies,
-                                    session.xp,
-                                );
-                                session.stats_dirty = true;
-                                if let Some(pe) = session.entity {
-                                    hp_max_updates.push((pe, session.stats.hp_max));
-                                }
-                                picked.push((le, leid));
-                                continue 'loot_loop;
-                            }
-                        }
-                        // Gold é currency: vai pro contador, não ocupa inventário.
-                        if ltag.item_id == shared::item_id::GOLD {
-                            session.gold = session.gold.saturating_add(ltag.qty as u64);
-                            crate::telemetria::conta("ouro_fonte", "saque", ltag.qty as i64);
-                            picked.push((le, leid));
-                            continue 'loot_loop;
-                        }
-                        // Senao, inventario normal.
-                        if add_to_inventory(
-                            &mut session.inventory,
-                            ltag.item_id,
-                            ltag.qty,
-                            ltag.instance,
-                        ) {
-                            session.inventory_dirty = true;
-                            picked.push((le, leid));
-                            continue 'loot_loop;
-                        }
+                    if let Some(hp) = self.creditar_saque(*sid, &ltag) {
+                        hp_max_updates.extend(hp);
+                        picked.push((le, leid));
+                        continue 'loot_loop;
                     }
                 }
             }
@@ -12513,6 +12531,7 @@ impl GameWorld {
                         EntityKind::Npc(_) => shared::EntityTag::Npc,
                         EntityKind::Portal => shared::EntityTag::Portal,
                         EntityKind::Boat(_) => shared::EntityTag::Boat,
+                        EntityKind::Pet(_) => shared::EntityTag::Pet,
                         _ => shared::EntityTag::Other,
                     };
                     let name = ptag
@@ -12579,6 +12598,8 @@ impl GameWorld {
                             EntityKind::Npc(_) => vila_tag.map_or(0, |t| t.rumo),
                             // Jogador: a skin de montaria (0 = nenhuma).
                             EntityKind::Player => montaria_de.get(&net.0).map_or(0, |m| m.1),
+                            // Pet: o item_id, que ja' diz especie e grau.
+                            EntityKind::Pet(id) => *id,
                             _ => 0,
                         },
                     };
@@ -12626,6 +12647,17 @@ impl GameWorld {
         let radius_sq = AOI_RADIUS * AOI_RADIUS;
         // Instancia de dungeon: so' se ve quem esta' na MESMA (0 = mundo).
         let inst_de = self.dg_instancias_por_eid();
+        // De quem e' cada pet (docs/PETS.md). O teto de AOI ja' anda quase
+        // cheio (60 entidades, ~47 estados por snapshot com o canal lotado —
+        // docs/SERVIDORES_E_CANAIS.md), e um pet por jogador dobraria a
+        // lista numa briga. Entao pet dos OUTROS e' o primeiro a cair: ele
+        // nao muda a leitura da luta. O do dono nunca cai.
+        let dono_do_pet: HashMap<EntityId, SessionId> = self
+            .ecs
+            .query::<(&NetId, &pets::PetTag)>()
+            .iter()
+            .map(|(_, (net, p))| (net.0, p.dono))
+            .collect();
         // Reaproveitado entre sessoes: com 200 jogadores isto seria 200
         // alocacoes por tick.
         let mut candidatos: Vec<(f32, usize)> = Vec::with_capacity(256);
@@ -12659,7 +12691,13 @@ impl GameWorld {
                         }
                         let d2 = all[i].1.pos_f32().distance_squared(center);
                         if d2 <= radius_sq {
-                            candidatos.push((d2, i));
+                            // A chave da ordem e' a distancia; o pet dos
+                            // outros leva um empurrao pro fim da fila.
+                            let chave = match dono_do_pet.get(&all[i].1.id) {
+                                Some(dono) if dono != sid => d2 + radius_sq,
+                                _ => d2,
+                            };
+                            candidatos.push((chave, i));
                         }
                     }
                 }
@@ -17134,6 +17172,7 @@ impl GameWorld {
                     shared::item_id::PERGAMINHO_INVOCA_CHAVE
                         | shared::item_id::PERGAMINHO_INVOCA_MONTARIA
                         | shared::item_id::PERGAMINHO_INVOCA_TOMO
+                        | shared::item_id::PERGAMINHO_INVOCA_PET
                 )
             {
                 self.send_chat_to(sid, "[Invocação] Você não tem pergaminhos suficientes.");
@@ -17230,6 +17269,22 @@ impl GameWorld {
                 });
                 crate::telemetria::conta("invocacao_chave_cor", cor, 1);
             }
+        } else if item_id == shared::item_id::PERGAMINHO_INVOCA_PET {
+            // O pet e' ITEM: bolsa cheia manda pras Entregas, igual a chave.
+            for _ in 0..total {
+                let (especie, grau) = shared::pets::rolar(fastrand::f32(), fastrand::f32());
+                let pet = shared::item_id::pet_no_grau(especie, grau);
+                if !add_to_inventory(&mut s.inventory, pet, 1, None) {
+                    let quando = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    s.dungeon.postar(pet, 1, None, 0, quando);
+                    no_correio += 1;
+                }
+                premios.push(shared::loja::PremioInvocacao::Pet { item_id: pet });
+                crate::telemetria::conta("invocacao_pet_grau", grau, 1);
+            }
         } else {
             for _ in 0..total {
                 let Some((skill_id, grau)) =
@@ -17281,6 +17336,7 @@ impl GameWorld {
                     shared::item_id::PERGAMINHO_INVOCA_CHAVE
                         | shared::item_id::PERGAMINHO_INVOCA_MONTARIA
                         | shared::item_id::PERGAMINHO_INVOCA_TOMO
+                        | shared::item_id::PERGAMINHO_INVOCA_PET
                 )
             });
         if pergaminho {
@@ -19408,6 +19464,17 @@ pub(crate) fn effective_stats(
     if (char_lvl as u8) >= shared::constants::POISE_BASE_UNLOCK_LEVEL {
         s.poise_max += shared::constants::POISE_BASE_VALUE;
     }
+
+    // O PET equipado entra como pontos alocados (docs/PETS.md): e' assim que
+    // ele "comba" com a classe sem regra nova — INT do owlbear so' vira ataque
+    // em quem usa arma magica, igual ao ponto que o jogador aloca na mao.
+    let mut allocated = *allocated;
+    if let Some(pet) = equip.pet {
+        for (i, p) in shared::pets::pontos_por_stat(pet).iter().enumerate() {
+            allocated[i] = allocated[i].saturating_add(*p);
+        }
+    }
+    let allocated = &allocated;
 
     // Pontos alocados pelo player (FOR/DES/INT/VIT/SPD).
     for (i, &pts) in allocated.iter().enumerate() {

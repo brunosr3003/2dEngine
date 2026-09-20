@@ -39,7 +39,10 @@ resgate no servidor em `crates/server/src/world/presenca.rs`, janela em
 - **Ouro** vai direto pro ouro do personagem; **item** vai pra bolsa; o que não
   couber vira carta nas **Entregas do Mercado** (motivo "Calendário de
   presença").
-- Nada de TP, equipamento ou item negociável.
+- Nada de moeda TP, equipamento ou item negociável. **Pergaminho de invocação
+  pode**, desde que entre **vinculado**: é item de loja, mas assim não vira
+  torneira de mercado, e quem não paga também abre (docs/PETS.md). Hoje só o
+  Pergaminho de Invocação: Pet, nos dias 14 e 28.
 
 ## Prêmios do mês ⚠️
 

@@ -49,6 +49,9 @@ pub enum EntityKind {
     /// em tiles de água; vagueia com wander AI. Ao pescar, é atraído pela boia
     /// e fisgado quando encosta. Cliente usa o species pra escolher o sprite.
     Fish(u16),
+    /// Pet coletor de um jogador (docs/PETS.md). u16 = item_id do pet, que ja'
+    /// carrega especie e grau — o cliente tira dele o modelo e a cor.
+    Pet(u16),
 }
 
 /// Slot de inventario. None = vazio. Quando `qty == 0`, o slot esta vazio.
@@ -208,6 +211,11 @@ pub struct Equipment {
     pub belt: Option<u16>,
     #[serde(default)]
     pub belt_inst: Option<crate::items::ItemInstance>,
+    /// O pet coletor equipado (docs/PETS.md).
+    #[serde(default)]
+    pub pet: Option<u16>,
+    #[serde(default)]
+    pub pet_inst: Option<crate::items::ItemInstance>,
 }
 
 impl Equipment {
@@ -224,6 +232,7 @@ impl Equipment {
             Necklace => (&mut self.necklace, &mut self.necklace_inst),
             Bracelet => (&mut self.bracelet, &mut self.bracelet_inst),
             Belt => (&mut self.belt, &mut self.belt_inst),
+            Pet => (&mut self.pet, &mut self.pet_inst),
         }
     }
 
@@ -275,6 +284,9 @@ pub enum EntityTag {
     Portal,
     Boat,
     Other,
+    /// Pet coletor. O `EntityMeta::kind` carrega o item_id do pet, de onde o
+    /// cliente tira o modelo e a cor do grau.
+    Pet,
 }
 
 /// O que o corpo esta' fazendo, num byte do `EntityState`.

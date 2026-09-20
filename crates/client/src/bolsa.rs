@@ -40,10 +40,11 @@ const VERMELHO: Color = Color::new(0.88, 0.38, 0.32, 1.0);
 
 /// Os slots em volta do retrato, como no MIR4: o que se empunha e se veste
 /// de um lado, os acessorios do outro (docs/COMBATE.md).
-const ESQUERDA: [(EquipSlot, &str); 3] = [
+const ESQUERDA: [(EquipSlot, &str); 4] = [
     (EquipSlot::Weapon, "Arma"),
     (EquipSlot::Offhand, "Secundária"),
     (EquipSlot::Armor, "Armadura"),
+    (EquipSlot::Pet, "Pet"),
 ];
 const DIREITA: [(EquipSlot, &str); 4] = [
     (EquipSlot::Earring, "Brinco"),
@@ -143,8 +144,12 @@ struct Peca {
 }
 
 impl Peca {
-    /// A cor (grau) — e' ela que pinta a borda.
+    /// A cor (grau) — e' ela que pinta a borda. O pet nao tem instancia: o
+    /// grau dele mora no proprio item_id (docs/PETS.md).
     fn grau(&self) -> u8 {
+        if let Some((_, grau)) = shared::pets::de_item(self.id) {
+            return grau;
+        }
         self.inst.map_or(1, |i| i.grau())
     }
     /// O tier dentro da cor (I..IV) — o numero romano do canto.
@@ -189,7 +194,8 @@ fn tipo(id: u16) -> Tipo {
         x if x == item_id::SORTE_POTION => Tipo::Pocao(5),
         x if x == item_id::PERGAMINHO_INVOCA_CHAVE
             || x == item_id::PERGAMINHO_INVOCA_MONTARIA
-            || x == item_id::PERGAMINHO_INVOCA_TOMO =>
+            || x == item_id::PERGAMINHO_INVOCA_TOMO
+            || x == item_id::PERGAMINHO_INVOCA_PET =>
         {
             Tipo::Pergaminho
         }
@@ -874,7 +880,40 @@ impl Bolsa {
 
         let mut y = r.y + u(112.0);
         crate::hud_estilo::separador(r.x + u(16.0), y - u(12.0), r.w - u(32.0));
-        if let Some(i) = peca.inst {
+        // O pet nao tem atributo de item: o que ele da' entra como PONTO
+        // ALOCADO (docs/PETS.md), entao a ficha dele e' outra.
+        if let Some((especie, grau)) = shared::pets::de_item(peca.id) {
+            ui::texto(r.x + u(20.0), y + u(4.0), especie.descricao, 15, APAGADO);
+            y += u(26.0);
+            let linhas = [
+                (
+                    "Velocidade",
+                    format!("{:.0}%", shared::pets::velocidade(grau) * 100.0),
+                ),
+                (
+                    "Busca saque a",
+                    format!("{:.0} tiles", shared::pets::raio_de_busca(grau)),
+                ),
+            ];
+            for (rot, val) in linhas {
+                ui::texto(r.x + u(20.0), y + u(4.0), rot, 17, TEXTO);
+                let d = crate::hud_estilo::medir_dim(&val, 17);
+                ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
+                y += u(22.0);
+            }
+            const SIGLAS: [&str; shared::STAT_COUNT] =
+                ["FOR", "DES", "INT", "VIT", "SPD", "RES"];
+            for (i, pts) in shared::pets::pontos_por_stat(peca.id).iter().enumerate() {
+                if *pts == 0 {
+                    continue;
+                }
+                ui::texto(r.x + u(20.0), y + u(4.0), SIGLAS[i], 17, TEXTO);
+                let val = format!("+{pts}");
+                let d = crate::hud_estilo::medir_dim(&val, 17);
+                ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
+                y += u(22.0);
+            }
+        } else if let Some(i) = peca.inst {
             let atributos = [
                 ("Ataque", i.attack_damage),
                 ("Defesa", i.defense),
@@ -1306,6 +1345,28 @@ mod testes {
         t1.refinement = 5;
         t2.refinement = 5;
         assert!(poder_da_instancia(&t2) > poder_da_instancia(&t1));
+    }
+
+    #[test]
+    /// O pet nao tem instancia: a cor da borda e a aba tem que sair do
+    /// proprio item_id, senao todo pet apareceria cinza e como material.
+    #[test]
+    fn o_pet_pega_a_cor_do_grau_pelo_id() {
+        for grau in 1..=shared::pets::GRAU_MAX {
+            let id = item_id::pet_no_grau(item_id::PET_TIGRE, grau);
+            let p = Peca {
+                id,
+                qty: 1,
+                inst: None,
+            };
+            assert_eq!(p.grau(), grau, "a borda tem que ser da cor do grau");
+            assert_eq!(tipo(id), Tipo::Slot(EquipSlot::Pet));
+            assert_eq!(aba_de(tipo(id)), Aba::Equip);
+            assert_ne!(nome_do_slot(EquipSlot::Pet), "?");
+        }
+        // O pergaminho continua sendo consumivel, nao equipamento.
+        assert_eq!(tipo(item_id::PERGAMINHO_INVOCA_PET), Tipo::Pergaminho);
+        assert_eq!(aba_de(Tipo::Pergaminho), Aba::Consumivel);
     }
 
     #[test]

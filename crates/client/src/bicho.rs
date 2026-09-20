@@ -70,6 +70,17 @@ pub fn da_montaria(
     Some((nome, altura * m.escala))
 }
 
+/// O bicho de um PET (docs/PETS.md), com a altura ja' na escala dele. O
+/// `kind` da meta e' o item_id, que carrega especie e grau.
+pub fn do_pet(tag: shared::EntityTag, kind: u16) -> Option<(&'static str, f32)> {
+    if tag != shared::EntityTag::Pet {
+        return None;
+    }
+    let (especie, _) = shared::pets::de_item(kind)?;
+    let (nome, altura) = BICHOS.iter().copied().find(|(n, _)| *n == especie.bicho)?;
+    Some((nome, altura * especie.escala))
+}
+
 pub fn do_mob(tag: shared::EntityTag, kind: u16, boss: bool) -> Option<(&'static str, f32)> {
     if tag != shared::EntityTag::Enemy {
         return None;

@@ -355,8 +355,11 @@ owlbear só na ponta mais longe do desembarque.
 **DECIDIDO — os dois são itens da loja de cash**, comprados com TP, cada um com
 livro de habilidade próprio (também TP).
 
-**DEPOIS — o modelo.** De onde vêm e como são fica pra quando essa parte
-começar. O que já está pronto e não depende disso: o encanamento (`Mounted`
+**FEITO — o pet.** O modelo está em docs/PETS.md: item de bolsa, cinco graus
+pela cor, coleta o saque do chão e dá ponto de atributo pela espécie.
+
+**DEPOIS — o modelo da montaria.** De onde vêm e como são fica pra quando essa
+parte começar. O que já está pronto e não depende disso: o encanamento (`Mounted`
 aponta pra uma entidade, e o barco já usa) e a pose do personagem montado, que
 é procedural — ver a tabela da animação.
 
