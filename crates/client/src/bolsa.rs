@@ -93,6 +93,8 @@ pub struct Bolsa {
     /// Nome de cada item (`ServerMessage::ItemsConfig`).
     pub nomes: HashMap<u16, String>,
     pub ouro: u64,
+    /// Energia de habilidades: saldo próprio, fora da grade e da carteira.
+    pub energia: u64,
     pub nivel: u32,
     aba: Aba,
     sel: Option<Sel>,
@@ -118,6 +120,7 @@ impl Default for Bolsa {
             stats: None,
             nomes: HashMap::new(),
             ouro: 0,
+            energia: 0,
             nivel: 0,
             aba: Aba::Tudo,
             sel: None,
@@ -241,7 +244,10 @@ pub(crate) fn milhar(v: u64) -> String {
 /// Primeiro espaco livre da bolsa, contando os que o servidor ainda nem
 /// mandou (a lista pode vir mais curta que a bolsa).
 fn primeiro_vazio(slots: &[InventorySlot]) -> Option<usize> {
-    let n = slots.len().saturating_sub(shared::armazem::CARTEIRA.len()).max(shared::INVENTORY_SLOTS.min(slots.len()));
+    let n = slots
+        .len()
+        .saturating_sub(shared::armazem::CARTEIRA.len())
+        .max(shared::INVENTORY_SLOTS.min(slots.len()));
     slots[..n.min(slots.len())]
         .iter()
         .position(|s| s.qty == 0)
@@ -432,23 +438,24 @@ impl Bolsa {
         crate::hud_estilo::painel_destaque(p, ui::OURO);
         crate::hud_estilo::separador(p.x + u(16.0), p.y + u(46.0), p.w - u(32.0));
         ui::texto(p.x + u(22.0), p.y + u(33.0), "BOLSA", 26, ui::OURO);
-        // As moedas: ouro (saldo), cobre e darksteel (carteira) — nenhuma
-        // ocupa espaco na grade.
-        let ouro = format!(
-            "Ouro  {}   Cobre  {}   Darksteel  {}",
+        // Duas linhas de saldos: assim a Energia cabe no celular sem virar
+        // item da grade nem empurrar o titulo da bolsa para fora do painel.
+        let linha_1 = format!(
+            "Ouro {}    Cobre {}",
             milhar(self.ouro),
             milhar(self.moeda(item_id::COPPER)),
-            milhar(self.moeda(item_id::DARKSTEEL))
         );
-        let d = crate::hud_estilo::medir_dim(&ouro, 20);
-        ui::texto(
-            p.x + p.w - u(70.0) - d.width,
-            p.y + u(31.0),
-            &ouro,
-            20,
-            ui::OURO_CLARO,
+        let linha_2 = format!(
+            "Darksteel {}    Energia {}",
+            milhar(self.moeda(item_id::DARKSTEEL)),
+            milhar(self.energia),
         );
-        draw_circle(p.x + p.w - u(84.0) - d.width, p.y + u(25.0), u(7.0), ui::OURO);
+        let largura =
+            crate::hud_estilo::medir(&linha_1, 14).max(crate::hud_estilo::medir(&linha_2, 14));
+        let x = (p.x + p.w - u(65.0) - largura).max(p.x + u(120.0));
+        ui::texto(x, p.y + u(20.0), &linha_1, 14, ui::OURO_CLARO);
+        ui::texto(x, p.y + u(40.0), &linha_2, 14, crate::hud_estilo::ACENTO);
+        crate::hud_estilo::icone_energia(vec2(x - u(13.0), p.y + u(34.0)), u(18.0));
         if ui::botao(
             Rect::new(p.x + p.w - u(50.0), p.y + u(9.0), u(34.0), u(30.0)),
             "x",
@@ -811,7 +818,12 @@ impl Bolsa {
         };
         ui::texto(tx, r.y + u(40.0), &titulo, 22, cor);
         if !matches!(tipo(peca.id), Tipo::Ouro)
-            && crate::onde_obter::botao(Rect::new(r.x + r.w - u(52.0), r.y + u(14.0), u(38.0), u(38.0)))
+            && crate::onde_obter::botao(Rect::new(
+                r.x + r.w - u(52.0),
+                r.y + u(14.0),
+                u(38.0),
+                u(38.0),
+            ))
         {
             self.onde_obter = Some(peca.id);
         }
@@ -979,8 +991,20 @@ fn celula(r: Rect, peca: Option<Peca>, selecionada: bool, vazio: Option<EquipSlo
             if p.qty > 1 {
                 let t = curta(p.qty);
                 let d = crate::hud_estilo::medir_dim(&t, fonte);
-                ui::texto(r.x + r.w - d.width - u(3.0), r.y + r.h - u(4.0), &t, fonte, BLACK);
-                ui::texto(r.x + r.w - d.width - u(4.0), r.y + r.h - u(5.0), &t, fonte, TEXTO);
+                ui::texto(
+                    r.x + r.w - d.width - u(3.0),
+                    r.y + r.h - u(4.0),
+                    &t,
+                    fonte,
+                    BLACK,
+                );
+                ui::texto(
+                    r.x + r.w - d.width - u(4.0),
+                    r.y + r.h - u(5.0),
+                    &t,
+                    fonte,
+                    TEXTO,
+                );
             }
         }
         None => {

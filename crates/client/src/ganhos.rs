@@ -22,8 +22,15 @@ const JUNTA_S: f32 = 0.35;
 #[derive(Default)]
 pub struct Ganhos {
     anterior: Option<HashMap<u16, u32>>,
-    /// (item, quantidade, idade em segundos)
-    pub linhas: Vec<(u16, u32, f32)>,
+    energia_anterior: Option<u64>,
+    /// (origem, quantidade, idade em segundos)
+    pub linhas: Vec<(Origem, u64, f32)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origem {
+    Item(u16),
+    Energia,
 }
 
 fn totais(slots: &[shared::InventorySlot]) -> HashMap<u16, u32> {
@@ -54,18 +61,36 @@ impl Ganhos {
         entrou.sort_unstable();
         self.anterior = Some(agora);
         for &(id, q) in &entrou {
-            match self
-                .linhas
-                .iter_mut()
-                .find(|(i, _, t)| *i == id && *t < JUNTA_S)
-            {
-                Some(l) => l.1 += q,
-                None => self.linhas.push((id, q, 0.0)),
-            }
+            self.adicionar(Origem::Item(id), q as u64);
+        }
+        entrou
+    }
+
+    /// O saldo novo veio do servidor. O primeiro é o login, não uma coleta;
+    /// aumentos seguintes aparecem como "+N Energia" sobre o personagem.
+    pub fn energia_nova(&mut self, saldo: u64) -> Option<u64> {
+        let ganho = self
+            .energia_anterior
+            .filter(|antes| saldo > *antes)
+            .map(|antes| saldo - antes);
+        self.energia_anterior = Some(saldo);
+        if let Some(q) = ganho {
+            self.adicionar(Origem::Energia, q);
+        }
+        ganho
+    }
+
+    fn adicionar(&mut self, origem: Origem, q: u64) {
+        match self
+            .linhas
+            .iter_mut()
+            .find(|(i, _, t)| *i == origem && *t < JUNTA_S)
+        {
+            Some(l) => l.1 = l.1.saturating_add(q),
+            None => self.linhas.push((origem, q, 0.0)),
         }
         let sobra = self.linhas.len().saturating_sub(MAX_LINHAS);
         self.linhas.drain(..sobra);
-        entrou
     }
 
     pub fn avanca(&mut self, dt: f32) {
@@ -81,11 +106,14 @@ impl Ganhos {
         let Some(c) = world_to_screen(cam, pe + vec3(0.0, 2.3, 0.0)) else {
             return;
         };
-        for (k, (id, q, t)) in self.linhas.iter().rev().enumerate() {
+        for (k, (origem, q, t)) in self.linhas.iter().rev().enumerate() {
             let u = t / VIDA;
             let alfa = if u < 0.7 { 1.0 } else { 1.0 - (u - 0.7) / 0.3 };
             let y = c.y - 18.0 - k as f32 * 20.0 - 30.0 * u;
-            let txt = format!("+{q} {}", nome(*id));
+            let txt = match origem {
+                Origem::Item(id) => format!("+{q} {}", nome(*id)),
+                Origem::Energia => format!("+{q} Energia"),
+            };
             let tam = 19.0;
             let w = crate::hud_estilo::medir_forte(&txt, tam as u16);
             let x = c.x - w * 0.5;
@@ -93,13 +121,12 @@ impl Ganhos {
             for (dx, dy) in [(-1.5, 0.0), (1.5, 0.0), (0.0, -1.5), (0.0, 1.5)] {
                 crate::hud_estilo::texto_forte(x + dx, y + dy, &txt, tam as u16, sombra);
             }
-            crate::hud_estilo::texto_forte(
-                x,
-                y,
-                &txt,
-                tam as u16,
-                Color::new(0.62, 1.0, 0.55, alfa),
-            );
+            let cor = if *origem == Origem::Energia {
+                Color::new(0.36, 0.87, 1.0, alfa)
+            } else {
+                Color::new(0.62, 1.0, 0.55, alfa)
+            };
+            crate::hud_estilo::texto_forte(x, y, &txt, tam as u16, cor);
         }
     }
 }
@@ -137,11 +164,22 @@ mod tests {
         g.bolsa_nova(&[]);
         g.bolsa_nova(&[slot(344, 40)]);
         g.bolsa_nova(&[slot(344, 100)]);
-        assert_eq!(g.linhas, vec![(344, 100, 0.0)]);
+        assert_eq!(g.linhas, vec![(Origem::Item(344), 100, 0.0)]);
         g.avanca(VIDA + 0.1);
         assert!(g.linhas.is_empty());
         // Pilha em dois slots conta junta.
         g.bolsa_nova(&[slot(344, 60), slot(344, 60)]);
-        assert_eq!(g.linhas, vec![(344, 20, 0.0)]);
+        assert_eq!(g.linhas, vec![(Origem::Item(344), 20, 0.0)]);
+    }
+
+    #[test]
+    fn energia_do_login_nao_pisca_mas_coleta_aparece_e_soma() {
+        let mut g = Ganhos::default();
+        assert_eq!(g.energia_nova(1_200), None);
+        assert!(g.linhas.is_empty());
+        assert_eq!(g.energia_nova(1_212), Some(12));
+        assert_eq!(g.energia_nova(1_224), Some(12));
+        assert_eq!(g.linhas, vec![(Origem::Energia, 24, 0.0)]);
+        assert_eq!(g.energia_nova(1_200), None, "gasto nao aparece como ganho");
     }
 }

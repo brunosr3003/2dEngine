@@ -15,7 +15,8 @@ confere nível, Energia, cobre e tomo antes de consumir qualquer coisa.
 
 **Energia** é um novo cristal azul coletável no relevo das ilhas (tipo 5),
 visível pelo filtro Energia no mapa e selecionável no AUTO COLETA. Ela entra
-direto no saldo do personagem, sem ocupar bolsa. Um ciclo dura 2,5 s; um
+direto no saldo do personagem, sem ocupar espaço na bolsa. O saldo aparece no
+cabeçalho da bolsa e o ganho de cada coleta flutua sobre o personagem. Um ciclo dura 2,5 s; um
 cristal rende 20 ciclos, some e volta após 360 s. Cada ciclo dá 12, 28, 60
 ou 120 Energia, respectivamente, no Bosque, Geleira, Ermo e Planalto.
 
@@ -34,7 +35,8 @@ ou 120 Energia, respectivamente, no Bosque, Geleira, Ermo e Planalto.
 O tomo é condensado na mesma tela para a habilidade escolhida: Verde custa
 3.000 Energia + 2.000 cobre; Roxo 25.000 + 20.000; Lendário 150.000 +
 100.000. O tomo e a Energia ficam no estado persistente do personagem, não
-na bolsa. A evolução consome um tomo nos marcos V/VIII/X.
+como itens da bolsa. A tela mostra os três estoques de tomos da habilidade
+selecionada mesmo antes de um desbloqueio. A evolução consome um tomo nos marcos V/VIII/X.
 
 O multiplicador numérico por tier é fixo: I 1,00; II 1,02; III 1,04; IV
 1,06; V 1,09; VI 1,11; VII 1,13; VIII 1,16; IX 1,18; X 1,21. Dano ou

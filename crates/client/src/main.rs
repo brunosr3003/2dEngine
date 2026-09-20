@@ -1308,6 +1308,8 @@ impl Jogo {
             ServerMessage::StaminaUpdate { current } => self.ficha.vigor = Some(current),
             ServerMessage::SkillsConfig { skills } => self.habilidades.catalogo = skills,
             ServerMessage::ProgressoDeSkills { progresso } => {
+                self.ganhos.energia_nova(progresso.energia);
+                self.bolsa.energia = progresso.energia;
                 self.evolucao_skills.progresso = progresso;
             }
             ServerMessage::ResultadoDeEvolucao { ok: _, texto } => {

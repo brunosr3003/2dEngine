@@ -123,6 +123,20 @@ pub fn icone_tp(c: Vec2, lado: f32) {
     }
 }
 
+/// Cristal azul da Energia de habilidades (saldo, nao item de bolsa).
+pub fn icone_energia(c: Vec2, lado: f32) {
+    let r = lado * 0.46;
+    let topo = vec2(c.x, c.y - r);
+    let esq = vec2(c.x - r * 0.72, c.y - r * 0.18);
+    let dir = vec2(c.x + r * 0.72, c.y - r * 0.18);
+    let baixo = vec2(c.x, c.y + r);
+    draw_triangle(topo, esq, c, Color::new(0.64, 0.98, 1.0, 1.0));
+    draw_triangle(topo, c, dir, Color::new(0.22, 0.77, 1.0, 1.0));
+    draw_triangle(esq, baixo, c, Color::new(0.12, 0.53, 0.86, 1.0));
+    draw_triangle(c, baixo, dir, Color::new(0.09, 0.37, 0.74, 1.0));
+    draw_line(topo.x, topo.y, baixo.x, baixo.y, lado * 0.055, WHITE);
+}
+
 /// A moeda de ouro, centrada em `c`.
 pub fn icone_ouro(c: Vec2, lado: f32) {
     if !crate::icones_ui::loja("ouro", c, lado, 1.0) {
