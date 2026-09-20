@@ -201,8 +201,13 @@ Anotado aqui para a documentação não passar a mentir:
 
 ## A faixa "meus pets"
 
-O painel lista **tudo o que está na bolsa**, não só o equipado: cada pet numa
-célula com a cor do grau, e de lá se **equipa** e se **combina**. A montaria
+O painel lista **tudo o que você tem**: o equipado vem primeiro, com um ponto
+dourado no canto, e depois o que está na bolsa — cada um numa célula com a cor
+do grau. De lá se **equipa** e se **combina**.
+
+O equipado precisa entrar na lista porque ele **sai da bolsa** ao ser
+equipado; sem isso ele sumia da faixa justamente quando virava o principal.
+Combinar conta só as cópias da bolsa: a que está em uso não é consumida. A montaria
 tem a mesma faixa, pelo mesmo código (`client/colecao.rs`) — mudar a regra num
 painel mudava no outro e o outro ficava para trás.
 
