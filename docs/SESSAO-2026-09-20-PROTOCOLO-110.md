@@ -289,3 +289,18 @@ refeitos nesta sessão.
   o pergaminho voltou para Materiais, que ficou com três cartões.
 - Protocolo 114: `PlayerStats` ganhou campo.
 - Prévia conferida em `/tmp/tempest-loja-skills/2532x1170-5-pets.png`.
+
+## Publicação das skills de pet
+
+- Commit `9dc93d5` publicado no Git. Suíte antes do build: cliente 325,
+  servidor 155, shared 191, nenhum falho.
+- TestFlight: **Tempest 1.1 (2609201720)**, `UPLOAD SUCCEEDED with no errors`.
+  Delivery UUID: `139b6f62-171b-494c-9de3-fdfb10098e12`. O processamento pela
+  Apple não foi verificado no App Store Connect.
+- Backups: `tempest-prod/dumps/*-pre-petskills-2609201720.dump`; binários
+  anteriores em `tempest-prod/bak-petskills-2609201720/`.
+- Reiniciados os quatro serviços às 14:22 de 20/09/2026 (São Paulo), sem
+  ninguém conectado. API pública respondeu protocolo 114 e as portas 9000 e
+  9100 devolveram `101 Switching Protocols`.
+- Consulta somente leitura confirmou as 13 skills cadastradas (ids 445–457).
+- **É necessário atualizar o cliente para o protocolo 114.**
