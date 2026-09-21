@@ -244,7 +244,7 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
         .map(|(i, v)| {
             let lv = nivel + (i as u32 % 3);
             let k = kind_para_nivel_em(&comuns, lv, (i as u64).wrapping_mul(2_654_435_761) >> 7);
-            Mob::novo(&KINDS_INICIAIS[k as usize], v, lv)
+            Mob::novo(crate::economy::kind_inicial(k).expect("kind conhecido"), v, lv)
         })
         .collect();
     let mut hp = stats.hp_max;
@@ -551,7 +551,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                                 .wrapping_add(respawns.wrapping_mul(2_654_435_761));
                             let lv = lv_min + (s % (lv_max - lv_min + 1) as u64) as u32;
                             let k = kind_para_nivel_em(&comuns, lv, s >> 7);
-                            Mob::novo(&KINDS_INICIAIS[k as usize], m.casa, lv)
+                            Mob::novo(crate::economy::kind_inicial(k).expect("kind conhecido"), m.casa, lv)
                         }
                         None => Mob::novo(m.def, m.casa, m.nivel),
                     };
@@ -950,7 +950,7 @@ pub(crate) fn jornada(conjunto: Conjunto, com_pocoes: bool) -> Jornada {
                         >> 11;
                     let lv = z.lv_min + (s % (z.lv_max - z.lv_min + 1) as u64) as u32;
                     let k = kind_para_nivel_em(&comuns, lv, s >> 7);
-                    Mob::novo(&KINDS_INICIAIS[k as usize], *p, lv)
+                    Mob::novo(crate::economy::kind_inicial(k).expect("kind conhecido"), *p, lv)
                 })
                 .collect();
             let falta = total - feito;
@@ -1212,7 +1212,7 @@ pub(crate) fn duelar(
         cat::Corpo::Bicho(k) | cat::Corpo::Gente(k) => k,
         cat::Corpo::Pirata => 0,
     };
-    let base = &KINDS_INICIAIS[base_kind as usize];
+    let base = crate::economy::kind_inicial(base_kind).expect("kind conhecido");
     let hp_chefe_max = cat::vida(c.nivel);
     let mut hp_chefe = hp_chefe_max;
     let def_chefe = c.nivel as i32 / 2;
@@ -1525,7 +1525,7 @@ pub(crate) fn duelar(
 mod testes {
     use super::*;
 
-    const CONJUNTOS: [Conjunto; 4] = [
+    pub(super) const CONJUNTOS: [Conjunto; 4] = [
         Conjunto::EspadaEscudo,
         Conjunto::Katana,
         Conjunto::Pistolas,
@@ -2120,5 +2120,110 @@ mod testes_do_nivel_do_mob {
         assert_eq!(xp_do_mob(30, 6), 45);
         assert_eq!(xp_do_mob(30, 12), 63);
         assert!(xp_do_mob(30, 12) > xp_do_mob(30, 6));
+    }
+}
+
+#[cfg(test)]
+mod testes_do_mar {
+    use super::*;
+
+    /// O MAR tem que ser atravessavel no nivel da rota.
+    ///
+    /// Bicho de mar entra como kind comum, e por isso nao caia em guarda
+    /// nenhuma: `metas_do_inicio` so' percorre a ilha inicial e
+    /// `metas_dos_chefes` so' olha a lista de chefes. Era um buraco, nao uma
+    /// licenca — os numeros do mar nasceram de uma interpolacao, e
+    /// interpolacao nao e' medida.
+    ///
+    /// A simulacao e' mais dura que a de terra de proposito: **dois bichos ao
+    /// mesmo tempo e sem kitar**. No mar o jogador esta' num casco, e a saida
+    /// de andar pra tras enquanto atira nao existe do mesmo jeito.
+    #[test]
+    fn metas_do_mar() {
+        let mut falhas: Vec<String> = Vec::new();
+        for rota in shared::mar::ROTAS.iter() {
+            let mut pior = 1.0f32;
+            for c in super::testes::CONJUNTOS {
+                let nivel = rota.nivel.0;
+                // O JOGADOR TEM QUE SER DA FAIXA. A primeira versao deste
+                // teste montava so' a arma e passava xp 0 — um personagem de
+                // nivel 1 contra bicho de 46. O resultado era 1% de vida em
+                // TODA faixa e TODA classe, que nao e' sinal de
+                // balanceamento nenhum: e' o simulador errado.
+                //
+                // `build_do_nivel` e' o mesmo molde que o resto do arquivo
+                // usa: equipamento, pontos e proficiencia do nivel.
+                let (equip, alloc, profs, xp) = build_do_nivel(c, nivel);
+                let stats = effective_stats(&equip, &alloc, &profs, xp);
+                let skills: Vec<shared::skills::Skill> = shared::skills::playtest()
+                    .into_iter()
+                    .filter(|s| s.conjunto == c && s.destravada(nivel))
+                    .collect();
+                let kind = crate::economy::kind_do_mar(nivel);
+                let def = crate::economy::kind_inicial(kind).expect("kind do mar");
+                // Dois, colados: e' o pior caso honesto de uma travessia.
+                let mobs: Vec<Mob> = [Vec2::new(4.0, 0.0), Vec2::new(-3.0, 2.0)]
+                    .into_iter()
+                    .map(|p| Mob::novo(def, p, nivel))
+                    .collect();
+                let mut hp = stats.hp_max;
+                let mut pocoes = Pocoes::Nenhuma;
+                let s = lutar(
+                    Luta {
+                        conjunto: c,
+                        nivel,
+                        stats: &stats,
+                        skills: &skills,
+                        mobs,
+                        sorteio: None,
+                        centro: Vec2::ZERO,
+                        inicio: Vec2::ZERO,
+                        chegada: Vec2::ZERO,
+                        parada: Parada::Abates(2),
+                        limite_s: LIMITE_S,
+                    },
+                    &mut hp,
+                    &mut pocoes,
+                );
+                // `Saida::hp_min` JA' e' fracao do maximo. Dividir de novo
+                // pelo hp_max dava "0%" em toda faixa e toda classe — numero
+                // uniforme demais pra ser balanceamento, e era o simulador.
+                let hp_min = s.hp_min;
+                let quem = format!("{} {c:?} nv{nivel} ({})", rota.nome, def.name);
+                println!(
+                    "{quem}: {} abates em {:.0}s, HP min {:.0}%",
+                    s.abates,
+                    s.t10.unwrap_or(0.0),
+                    hp_min * 100.0
+                );
+                if s.abates < 2 {
+                    falhas.push(format!("{quem}: nao venceu ({} de 2)", s.abates));
+                }
+                if hp_min < 0.25 {
+                    falhas.push(format!("{quem}: HP minimo {:.0}% < 25%", hp_min * 100.0));
+                }
+                pior = pior.min(hp_min);
+            }
+            // E O TETO, que e' metade do valor deste teste.
+            //
+            // Um guarda que so' pega "dificil demais" deixa passar o oposto —
+            // e foi o que aconteceu: a primeira calibragem destes bichos
+            // terminava com 96-100% de vida em toda faixa. Passava no piso e
+            // era decoracao: o mar nao mordia.
+            //
+            // Cobrado da ROTA e nao de cada classe, porque escudo bloqueia
+            // quase tudo e fica perto de 100% ate' em terra (a jornada mostra
+            // EspadaEscudo em 86% com quatro ursos em cima). Exigir de todo
+            // mundo reprovaria o jogo inteiro; o que importa e' a travessia
+            // ameacar ALGUEM.
+            if pior > 0.80 {
+                falhas.push(format!(
+                    "{}: nem a classe mais fragil desce de 80% ({:.0}%) — o mar nao morde",
+                    rota.nome,
+                    pior * 100.0
+                ));
+            }
+        }
+        assert!(falhas.is_empty(), "metas do mar quebradas:\n{}", falhas.join("\n"));
     }
 }

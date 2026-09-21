@@ -3217,7 +3217,12 @@ impl GameWorld {
                     // aqui se montava um build procedural (classe, equipamento,
                     // skills); mob agora e' so' o que a tabela diz.
                     // Zona de praia tem bicho proprio (caranguejos).
-                    let escolhido = if zone_id >= ZONA_DE_PRAIA_ID {
+                    let escolhido = if self.mar.is_some() {
+                        // No MAR o bicho sai da tabela do mar. Sem isto um
+                        // lobo nasceria boiando: a escolha por nivel so'
+                        // conhece os bichos de terra.
+                        crate::economy::kind_do_mar(lvl)
+                    } else if zone_id >= ZONA_DE_PRAIA_ID {
                         crate::economy::kind_de_praia(lcg(s_lvl))
                     } else {
                         crate::economy::kind_para_nivel(lvl, lcg(s_lvl))
@@ -15881,6 +15886,13 @@ impl GameWorld {
                 self.send_quest_offer(sid, shared::quests::quest_source::NPC, giver, gname);
             }
             Some((entity, 7, _, _)) => {
+                // NAUFRAGIO (docs/MAR_ABERTO.md): o bau que boia na rota. Nao
+                // tem quest, nao tem dono, e da' material — e' o que faz valer
+                // parar no meio da travessia em vez de so' atravessar.
+                if self.ecs.get::<&crate::world::barco::NaufragioTag>(entity).is_ok() {
+                    self.saquear_naufragio(sid, entity);
+                    return;
+                }
                 // Baú de tesouro: abrir conclui a quest TREASURE + dá a relíquia.
                 if let Ok(qid) = self
                     .ecs

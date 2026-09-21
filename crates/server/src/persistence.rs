@@ -2982,7 +2982,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             (5, 200),
             (6, 45),
         ] {
-            let novo = crate::economy::KINDS_INICIAIS[kind as usize].hp;
+            let novo = crate::economy::kind_inicial(kind as u16).map_or(0, |k| k.hp);
             sqlx::query("UPDATE enemy_kinds SET hp_max = $1 WHERE kind = $2 AND hp_max = $3")
                 .bind(novo)
                 .bind(kind)

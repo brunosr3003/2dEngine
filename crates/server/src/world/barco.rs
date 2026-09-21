@@ -283,3 +283,159 @@ mod testes {
         }
     }
 }
+
+impl GameWorld {
+    /// Povoa o MAR ABERTO: bicho ao longo das rotas e naufragio pra saquear.
+    ///
+    /// E' o irmao do `povoar_ilha`, e a diferenca que importa e' de ONDE sai
+    /// o lugar. Na ilha os sitios saem do relevo — clareira plana, longe da
+    /// cidade. No mar nao ha' relevo pra consultar: o que existe sao as
+    /// ROTAS, e elas sao o mapa. Bicho no meio do nada do oceano nunca seria
+    /// encontrado; bicho na rota e' a travessia ficando perigosa, que e' o
+    /// ponto.
+    pub fn povoar_mar(&mut self) {
+        let Some(mar) = self.mar.as_ref() else {
+            return;
+        };
+        const POR_ROTA: usize = 7;
+        const RAIO_DA_ZONA: f32 = 30.0;
+        const POR_ZONA: usize = 4;
+        const ESPACO: f32 = 9.0;
+
+        let mut zonas: Vec<ServerSpawnZone> = Vec::new();
+        let mut naufragios: Vec<Vec2> = Vec::new();
+        for (ir, rota) in shared::mar::ROTAS.iter().enumerate() {
+            for (k, centro) in mar.pontos_da_rota(rota, POR_ROTA).into_iter().enumerate() {
+                // Um ponto em cada tres vira NAUFRAGIO em vez de cardume: sem
+                // isso a rota e' so' uma fila de briga, e nao ha' motivo pra
+                // parar no meio do mar.
+                if k % 3 == 1 {
+                    naufragios.push(centro);
+                    continue;
+                }
+                // Os slots saem de um anel em volta do centro — e todos tem
+                // que estar na AGUA, senao um bicho nasce dentro do domo de
+                // uma ilha e fica preso pra sempre.
+                let mut slots: Vec<SpawnSlot> = Vec::new();
+                for j in 0..POR_ZONA * 3 {
+                    if slots.len() >= POR_ZONA {
+                        break;
+                    }
+                    let a = j as f32 / (POR_ZONA * 3) as f32 * std::f32::consts::TAU;
+                    let p = centro + Vec2::new(a.cos(), a.sin()) * (RAIO_DA_ZONA * 0.6);
+                    if !mar.agua(p.x, p.y) || slots.iter().any(|s: &SpawnSlot| s.pos.distance(p) < ESPACO) {
+                        continue;
+                    }
+                    slots.push(SpawnSlot {
+                        pos: p,
+                        occupant: None,
+                        respawn_at: 0.0,
+                    });
+                }
+                if slots.len() < 2 {
+                    continue;
+                }
+                let n = slots.len() as u32;
+                zonas.push(ServerSpawnZone {
+                    id: 20_000 + (ir * 100 + k) as u32,
+                    origin: centro - Vec2::splat(RAIO_DA_ZONA),
+                    size: Vec2::splat(RAIO_DA_ZONA * 2.0),
+                    respawn_delay_s: 25.0,
+                    quotas: Vec::new(),
+                    live: Vec::new(),
+                    respawn_queue: Vec::new(),
+                    polygon: None,
+                    level_range: Some((rota.nivel.0, rota.nivel.1, n)),
+                    level_range_live: 0,
+                    level_range_queue: (0..n).map(|_| 0.0_f32).collect(),
+                    slots,
+                    forte: false,
+                    active: false,
+                    last_player_near_at: 0.0,
+                });
+            }
+        }
+        tracing::info!(
+            "mar aberto: {} zonas de bicho, {} naufragios",
+            zonas.len(),
+            naufragios.len()
+        );
+        self.spawn_zones = zonas;
+        self.boss_areas.clear();
+        for p in naufragios {
+            let eid = self.alloc_entity_id();
+            self.ecs.spawn((
+                NetId(eid),
+                Position(p),
+                Velocity(Vec2::ZERO),
+                EntityKind::Npc(7), // 7 = bau de tesouro
+                NaufragioTag,
+            ));
+        }
+    }
+}
+
+/// Um naufragio: o bau que boia na rota, pra quem parar e saquear.
+pub struct NaufragioTag;
+
+impl GameWorld {
+    /// Saqueia um naufragio: cobre, darksteel e material da faixa da rota.
+    ///
+    /// **Sem peca de equipamento, de proposito.** O mar da' MATERIAL; a forja
+    /// da' peca. Um bau de mar que droppasse equipamento passaria a competir
+    /// com a dungeon pelo unico slot de recompensa que a dungeon existe pra
+    /// ocupar — e o mar e' solavel e repetivel, a dungeon nao.
+    ///
+    /// O bau some e volta depois. Quem chegou primeiro levou: nao ha' "ja'
+    /// abri este" por jogador aqui, porque nao ha' quest — ha' um objeto no
+    /// mundo, e objeto no mundo e' de quem alcanca.
+    pub(crate) fn saquear_naufragio(&mut self, sid: SessionId, entidade: Entity) {
+        let Some(pos) = self.ecs.get::<&Position>(entidade).ok().map(|p| p.0) else {
+            return;
+        };
+        // O nivel sai da ROTA mais perto: um bau no Olho da Tempestade nao
+        // pode pagar como um da Rota do Bosque.
+        let nivel = self
+            .mar
+            .as_ref()
+            .map(|m| {
+                shared::mar::ROTAS
+                    .iter()
+                    .filter_map(|r| {
+                        let a = m.cais_de(r.de as usize)?;
+                        let b = m.cais_de(r.para as usize)?;
+                        let meio = (a + b) * 0.5;
+                        Some((meio.distance(pos) as i32, r.nivel.0))
+                    })
+                    .min()
+                    .map_or(12, |(_, n)| n)
+            })
+            .unwrap_or(12);
+
+        let cobre = 150 + 20 * nivel;
+        let darksteel = 40 + 6 * nivel;
+        let cor = shared::chaves::faixa(nivel).cor;
+        let material = shared::item_id::na_cor(shared::item_id::STEEL, cor);
+
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        Self::pagar_em_cobre(s, cobre, "naufragio");
+        add_to_inventory(&mut s.inventory, shared::item_id::DARKSTEEL, darksteel, None);
+        add_to_inventory(&mut s.inventory, material, 3 + nivel / 10, None);
+        s.inventory_dirty = true;
+        let _ = s.handle.to_client.send(ServerMessage::Chat {
+            from: "SYS".into(),
+            text: format!(
+                "Naufrágio saqueado: {cobre} cobre, {darksteel} darksteel e material."
+            ),
+        });
+
+        let eid = self.ecs.get::<&NetId>(entidade).map(|n| n.0).ok();
+        let _ = self.ecs.despawn(entidade);
+        if let Some(eid) = eid {
+            self.removed_this_tick.push(eid);
+        }
+        self.save_pending = true;
+    }
+}

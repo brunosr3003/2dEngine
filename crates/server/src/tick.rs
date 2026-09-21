@@ -67,6 +67,7 @@ pub async fn run_world_loop(
     if shared::mar::e_mar(&world.zona) {
         let t0 = Instant::now();
         world.mar = Some(shared::mar::Mar::novo());
+        world.povoar_mar();
         tracing::info!("mar aberto pronto em {:?}", t0.elapsed());
     } else if let Some(def) = shared::terreno::def_da_zona(&world.zona) {
         let dir = std::env::var("MMO_ILHAS").unwrap_or_else(|_| "data/ilhas".into());

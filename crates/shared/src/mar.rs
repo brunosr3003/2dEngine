@@ -423,3 +423,44 @@ pub enum AvisoBarco {
     /// Nao deu, e por que. E' o que impede uma recusa silenciosa.
     Recusa(String),
 }
+
+// ─────────────────────────────── as rotas ───────────────────────────────
+
+/// Uma travessia: as duas ilhas que ela liga e a faixa de nivel do MAR entre
+/// elas (docs/MAR_ABERTO.md).
+///
+/// A faixa e' do mar, nao das ilhas: a Rota do Bosque liga uma ilha de 1-15 a
+/// uma de 15-30, e o mar entre elas e' 12-20. Quem atravessa cedo demais nao
+/// e' barrado — a historia ja' barra —, mas encontra bicho acima do nivel.
+pub struct Rota {
+    pub de: u8,
+    pub para: u8,
+    pub nome: &'static str,
+    pub nivel: (u32, u32),
+}
+
+pub const ROTAS: [Rota; 4] = [
+    Rota { de: 0, para: 1, nome: "Rota do Bosque", nivel: (12, 20) },
+    Rota { de: 0, para: 2, nome: "Rota das Areias", nivel: (24, 32) },
+    Rota { de: 1, para: 3, nome: "Mar Fundo", nivel: (34, 44) },
+    Rota { de: 2, para: 3, nome: "Olho da Tempestade", nivel: (46, 58) },
+];
+
+impl Mar {
+    /// Pontos espacados ao longo de uma rota, em agua. E' onde nascem os
+    /// bichos e os naufragios.
+    ///
+    /// `n` pontos entre os dois ancoradouros, pulando o que cair em terra —
+    /// uma rota pode raspar a borda de uma ilha, e bicho de mar em cima do
+    /// morro seria o mesmo defeito que desligou a pesca por um mes.
+    pub fn pontos_da_rota(&self, r: &Rota, n: usize) -> Vec<Vec2> {
+        let (Some(a), Some(b)) = (self.cais_de(r.de as usize), self.cais_de(r.para as usize))
+        else {
+            return Vec::new();
+        };
+        (1..=n)
+            .map(|k| a.lerp(b, k as f32 / (n + 1) as f32))
+            .filter(|p| self.agua(p.x, p.y))
+            .collect()
+    }
+}
