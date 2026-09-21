@@ -16822,29 +16822,22 @@ impl GameWorld {
                 let old = session.equipment.get(es);
                 let old_inst = session.equipment.get_inst(es);
                 let new_id = slot.item_id;
-                // PET e MONTARIA ganham a AFINIDADE ao serem equipados, se
-                // ainda nao tiverem (docs/PETS.md). E' o ponto unico: cobre o
-                // pergaminho, a quest, a combinacao, o mercado e o correio de
-                // uma vez, e migra sozinho o que ja' existia. So' aqui porque
-                // pet/montaria na bolsa podem estar em pilha, e pilha tem uma
-                // instancia so' — dois bichos do mesmo slot nao teriam como
-                // carregar sorteios diferentes.
+                // Equipar NAO sorteia nada: a afinidade do bicho e' a que ele
+                // trouxe de nascenca (docs/PETS.md), e so' a Pedra de
+                // Afinidade troca. O que se faz aqui e' garantir a instancia,
+                // porque e' nela que o pet guarda nivel, fome e skills.
+                //
+                // Bicho de antes do sorteio chega sem afinidade e continua
+                // assim — usa a fixa da criatura ate' alguem gastar uma
+                // Pedra. Rolar aqui daria ao jogador um dado de graca a cada
+                // clique no slot, que e' justamente o que a Pedra vende.
                 let new_inst = match es {
                     shared::EquipSlot::Pet | shared::EquipSlot::Montaria => {
-                        let grau = shared::pets::de_item(new_id)
-                            .map(|(_, g)| g)
-                            .or_else(|| shared::montarias::de_item(new_id).map(|(_, g)| g))
-                            .unwrap_or(1);
-                        let mut inst = slot
-                            .instance
-                            .unwrap_or_else(|| shared::items::ItemInstance::vazia_de_grau(grau));
-                        if inst.afinidade.is_none() {
-                            inst.afinidade = Some(shared::pets::rolar_afinidade(
-                                fastrand::f32(),
-                                fastrand::f32(),
-                            ));
-                        }
-                        Some(inst)
+                        let grau = grau_de_bicho(new_id).unwrap_or(1);
+                        Some(
+                            slot.instance
+                                .unwrap_or_else(|| shared::items::ItemInstance::vazia_de_grau(grau)),
+                        )
                     }
                     _ => slot.instance,
                 };
@@ -18197,10 +18190,18 @@ fn calc_hurt_dir_from_eid(ecs: &World, target_net: EntityId, attacker_pos: Vec2)
     Vec2::ZERO
 }
 
+/// O grau do bicho, se `item_id` for pet ou montaria. E' o que diz a
+/// `add_to_inventory` que aquele item nasce com afinidade e nao empilha.
+fn grau_de_bicho(item_id: u16) -> Option<u8> {
+    shared::pets::de_item(item_id)
+        .map(|(_, g)| g)
+        .or_else(|| shared::montarias::de_item(item_id).map(|(_, g)| g))
+}
+
 /// Tenta adicionar um item ao inventario. Stacka em slots existentes primeiro;
 /// se nao couber, procura slot vazio. Retorna true se coube (parcial ou total
 /// dentro do stack do primeiro slot achado — se nao couber NADA, retorna false).
-fn add_to_inventory(
+pub(crate) fn add_to_inventory(
     inv: &mut [shared::InventorySlot],
     item_id: u16,
     mut qty: u32,
@@ -18211,9 +18212,37 @@ fn add_to_inventory(
     if instance.is_none() && shared::armazem::e_moeda(item_id) {
         return por_na_carteira(inv, item_id, qty);
     }
-    let max_stack = crate::economy::item_stack_max(item_id);
+    // PET e MONTARIA nascem com a AFINIDADE sorteada (docs/PETS.md). O que a
+    // criatura empresta se decide no NASCIMENTO do bicho — depois disso so'
+    // a Pedra de Afinidade muda. Aqui e' o funil: pergaminho, quest,
+    // combinacao, loja, mercado, correio e dungeon todos passam por esta
+    // funcao, entao um lugar so' cobre tudo.
+    //
+    // Cada bicho ganha instancia PROPRIA, e e' isso que desfaz a pilha: dois
+    // no mesmo slot dividiriam uma instancia e teriam que ter o mesmo
+    // sorteio. Por isso a checagem de espaco vem antes — `qty` bichos
+    // precisam de `qty` vagas, e meio lote entregue seria pior que recusar.
+    if instance.is_none() {
+        if let Some(grau) = grau_de_bicho(item_id) {
+            let n = qty.max(1);
+            if (inv.iter().filter(|s| s.qty == 0).count() as u32) < n {
+                return false;
+            }
+            for _ in 0..n {
+                let mut inst = shared::items::ItemInstance::vazia_de_grau(grau);
+                inst.afinidade = Some(shared::pets::rolar_afinidade(
+                    fastrand::f32(),
+                    fastrand::f32(),
+                ));
+                add_to_inventory(inv, item_id, 1, Some(inst));
+            }
+            return true;
+        }
+    }
     // Equipáveis com instance NÃO stackam — cada drop é único. Vai
-    // direto pra slot vazio.
+    // direto pra slot vazio. Vem antes do `item_stack_max` de proposito: o
+    // caminho com instancia nao precisa do cache da economia, e e' por ele
+    // que o bicho recem-sorteado volta aqui.
     if instance.is_some() {
         if let Some(empty) = inv.iter_mut().find(|s| s.qty == 0) {
             empty.item_id = item_id;
@@ -18223,6 +18252,7 @@ fn add_to_inventory(
         }
         return false;
     }
+    let max_stack = crate::economy::item_stack_max(item_id);
     // Stackáveis: combina com slots existentes (instance None) primeiro.
     for slot in inv.iter_mut() {
         if slot.qty > 0

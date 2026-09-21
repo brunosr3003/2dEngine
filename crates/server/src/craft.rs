@@ -9,20 +9,34 @@ use shared::forja::{self, resultado, Grau};
 use shared::protocol::CraftRecipeNet;
 use shared::{item_id, InventorySlot, ItemInstance};
 
-/// Quanto de `id` (sem instancia — material empilhado) a bolsa tem.
+/// Pet e montaria contam e sao consumidos MESMO com instancia.
+///
+/// Instancia sempre quis dizer "peca unica, fora do material empilhado" — e
+/// o Combinar, que so' mexe com material, ignorava quem tivesse uma. Desde
+/// que o bicho nasce com afinidade (docs/PETS.md) ele SEMPRE tem instancia,
+/// e a regra velha apagaria a escada de cor inteira: nenhum pet apareceria
+/// pro Combinar. Aqui o bicho e' a excecao, e so' ele.
+fn conta_com_instancia(id: u16) -> bool {
+    shared::pets::de_item(id).is_some() || shared::montarias::de_item(id).is_some()
+}
+
+/// Quanto de `id` (sem instancia — material empilhado) a bolsa tem. Bicho
+/// conta junto, com instancia e tudo (ver `conta_com_instancia`).
 pub fn tem(inv: &[InventorySlot], id: u16) -> u32 {
+    let bicho = conta_com_instancia(id);
     inv.iter()
-        .filter(|s| s.item_id == id && s.instance.is_none() && s.qty > 0)
+        .filter(|s| s.item_id == id && (bicho || s.instance.is_none()) && s.qty > 0)
         .map(|s| s.qty)
         .sum()
 }
 
 pub(crate) fn consumir(inv: &mut [InventorySlot], id: u16, mut qty: u32) {
+    let bicho = conta_com_instancia(id);
     for s in inv.iter_mut() {
         if qty == 0 {
             break;
         }
-        if s.item_id != id || s.instance.is_some() || s.qty == 0 {
+        if s.item_id != id || (!bicho && s.instance.is_some()) || s.qty == 0 {
             continue;
         }
         let tira = qty.min(s.qty);
@@ -298,6 +312,12 @@ pub fn aprimorar(
 pub(crate) fn por_empilhavel(inv: &mut [InventorySlot], id: u16, qty: u32, cap: u32) -> bool {
     if shared::armazem::e_moeda(id) {
         return crate::world::por_na_carteira(inv, id, qty);
+    }
+    // Bicho nao e' empilhavel: cada um sai do Combinar com a SUA afinidade
+    // sorteada, e quem sabe sortear e' a `add_to_inventory`. Ela tambem e'
+    // tudo-ou-nada pra bicho, que e' o contrato desta funcao.
+    if conta_com_instancia(id) {
+        return crate::world::add_to_inventory(inv, id, qty, None);
     }
     let cap = cap.max(1);
     let mut sim = inv.to_vec();
@@ -635,6 +655,45 @@ mod testes {
         // 7 chifres = 1 tentativa, sobra 2: o slot nao libera e nao ha' vazio.
         assert_eq!(combinar(&mut inv, &r, 1, 99, &nome, &mut || 0), Err("bolsa cheia".into()));
         assert_eq!(foto(&inv), copia);
+    }
+
+    /// O bicho nasce com instancia (a afinidade) e MESMO ASSIM sobe de cor.
+    ///
+    /// Esta e' a regra que quase morreu: `tem`/`consumir` pulavam qualquer
+    /// slot com instancia, entao no dia em que o pet passou a nascer com
+    /// afinidade o Combinar deixou de enxergar pet nenhum. E o que sai tem
+    /// que ser um bicho NOVO, com sorteio proprio — nao uma pilha.
+    #[test]
+    fn bicho_com_instancia_ainda_combina_e_o_filho_sai_sorteado() {
+        let cinza = item_id::pet_no_grau(item_id::PET_BASE, 1);
+        let r = shared::combinar::receita(cinza).expect("pet cinza sobe");
+        let mut inv = vec![InventorySlot::default(); 24];
+        for (i, s) in inv.iter_mut().take(3).enumerate() {
+            let mut inst = ItemInstance::vazia_de_grau(1);
+            // Tres afinidades diferentes, pra provar que nao empilham.
+            inst.afinidade = Some([i as u8, (i as u8 + 1) % 6]);
+            *s = InventorySlot {
+                item_id: cinza,
+                qty: 1,
+                instance: Some(inst),
+            };
+        }
+        inv[3] = InventorySlot {
+            item_id: item_id::COPPER,
+            qty: 999_999,
+            instance: None,
+        };
+        assert_eq!(tem(&inv, cinza), 3, "com instancia, o pet TEM que contar");
+
+        assert_eq!(combinar(&mut inv, &r, 1, 1, &nome, &mut || 0), Ok((1, 1)));
+        assert_eq!(tem(&inv, cinza), 0, "os tres entraram na tentativa");
+        let filho: Vec<_> = inv.iter().filter(|s| s.item_id == r.saida && s.qty > 0).collect();
+        assert_eq!(filho.len(), 1);
+        assert_eq!(filho[0].qty, 1, "bicho nunca empilha");
+        assert!(
+            filho[0].instance.and_then(|i| i.afinidade).is_some(),
+            "o verde tem que sair com a afinidade ja' sorteada"
+        );
     }
 
     #[test]

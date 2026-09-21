@@ -25,14 +25,27 @@ muda**: a afinidade só diz *onde* os pontos caem.
 Assim a criatura decide o porte e a cor, e o que ela **empresta** é sorte —
 sorte que se pode comprar de novo.
 
-**O sorteio acontece ao EQUIPAR**, e é de propósito o único ponto: cobre o
-pergaminho, a quest, a combinação, o mercado e o correio de uma vez, e migra
-sozinho o que já existia. Não dá pra rolar na bolsa porque pet e montaria
-empilham, e uma pilha tem **uma** instância só — dois bichos do mesmo slot não
-teriam como carregar sorteios diferentes.
+**O sorteio acontece no NASCIMENTO do bicho** — pergaminho, quest,
+combinação, loja, mercado, correio e Entregas. Todos passam pela mesma
+`add_to_inventory`, então um lugar só cobre tudo.
 
-Bicho de antes disso (`afinidade: None`) usa a afinidade fixa da criatura até
-ser equipado. Ninguém perde o que tinha.
+**Equipar não rola nada.** Foi correção do dono, e o motivo é direto: se o
+slot sorteasse, cada clique seria um dado de graça — exatamente o que a
+Pedra vende. O que a criatura dá é o que ela trouxe.
+
+Cada bicho leva instância própria, e **é isso que desfaz a pilha**: dois no
+mesmo slot dividiriam uma instância e teriam que ter o mesmo sorteio. Por
+isso a entrega é tudo-ou-nada — `qty` bichos precisam de `qty` vagas, e meio
+lote entregue seria pior que recusar.
+
+Isso quase matou o **Combinar**. `tem` e `consumir` pulavam todo slot com
+instância, porque instância sempre quis dizer "peça única, fora do material
+empilhado". No dia em que o bicho passou a nascer com afinidade, o Combinar
+deixaria de enxergar pet nenhum — a escada de cor inteira sumiria. O bicho é
+a exceção da regra, e só ele.
+
+Bicho de antes disto (`afinidade: None`) usa a afinidade fixa da criatura e
+fica assim até alguém gastar uma Pedra. Ninguém perde o que tinha.
 
 ### Pedra de Afinidade
 

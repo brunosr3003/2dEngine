@@ -421,6 +421,37 @@ mod testes {
         assert!(pet_de(&w).is_none(), "desequipou, o pet some do mundo");
     }
 
+    /// O bicho ja' chega na bolsa com a afinidade, e EQUIPAR nao encosta
+    /// nela. Foi um pedido direto do dono: o que a criatura da' e' o que ela
+    /// trouxe, e so' a Pedra de Afinidade troca. Se o equipar sorteasse, cada
+    /// clique no slot seria um dado de graca — exatamente o que a Pedra vende.
+    ///
+    /// E dois bichos iguais nao empilham: cada um leva o SEU sorteio, o que
+    /// so' cabe em slots separados.
+    #[test]
+    fn o_bicho_nasce_sorteado_e_equipar_nao_re_rola() {
+        let (mut w, sid) = mundo();
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 2);
+        poe_na_bolsa(&mut w, sid, id, 2);
+
+        let s = &w.sessions[&sid];
+        let bicho: Vec<_> = s.inventory.iter().filter(|x| x.item_id == id && x.qty > 0).collect();
+        assert_eq!(bicho.len(), 2, "dois bichos, dois slots — nunca uma pilha");
+        let nasceu = bicho[0].instance.and_then(|i| i.afinidade);
+        assert!(nasceu.is_some(), "o bicho tem que nascer com a afinidade");
+        assert!(bicho[1].instance.and_then(|i| i.afinidade).is_some());
+
+        let idx = s.inventory.iter().position(|x| x.item_id == id).unwrap();
+        w.handle_use_item(sid, idx);
+        let s = &w.sessions[&sid];
+        assert_eq!(s.equipment.pet, Some(id), "equipou");
+        assert_eq!(
+            s.equipment.pet_inst.and_then(|i| i.afinidade),
+            nasceu,
+            "equipar NAO pode re-rolar a afinidade"
+        );
+    }
+
     #[test]
     fn o_pet_anda_ate_o_saque_e_credita_no_dono() {
         let (mut w, sid) = mundo();
