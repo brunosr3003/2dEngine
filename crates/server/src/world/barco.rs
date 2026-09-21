@@ -246,21 +246,40 @@ mod testes {
         );
     }
 
-    /// Zarpar e atracar sao a MESMA conta, em sentidos opostos. Um erro de
-    /// sinal aqui poe o jogador do outro lado do arquipelago, e o teste
-    /// custa menos que descobrir isso jogando.
+    /// A ilha e' PAREDE, e o cais e' a porta.
+    ///
+    /// Regra do dono: *"nao pode entrar dentro da ilha com o barco, apenas na
+    /// borda e aportar no porto"*. Ela sai de graca do desenho — a ilha vista
+    /// do mar e' um domo de terra, e o casco so' anda na agua — mas "de
+    /// graca" e' exatamente o tipo de coisa que alguem quebra sem perceber.
     #[test]
-    fn zarpar_e_atracar_fecham_a_conta() {
+    fn a_ilha_e_parede_e_o_cais_e_a_porta() {
         let mar = shared::mar::Mar::novo();
         for i in 0..mar.ilhas() {
-            let Some(cais) = mar.cais_de(i) else { continue };
-            // A ponta do cais e' agua: da' pra chegar nela de casco.
-            assert!(mar.agua(cais.x, cais.y), "cais {i} fora da agua");
-            // E fica DENTRO do alcance de atracar, olhando da propria ilha.
-            assert!(mar.ilha_mais_perto(cais) == i, "cais {i} mais perto de outra ilha");
+            let vista = &mar.vistas()[i];
+            // Dentro da ilha nao ha' agua: nao se navega pra dentro.
+            assert!(
+                !mar.agua(vista.centro.x, vista.centro.y),
+                "da' pra navegar ate' o centro da ilha {i}"
+            );
+            let Some(ancoradouro) = mar.cais_de(i) else {
+                continue;
+            };
+            // O ANCORADOURO e' agua: e' onde o casco aparece ao zarpar, e
+            // nascer dentro do tabuado deixaria o jogador entalado.
+            assert!(
+                mar.agua(ancoradouro.x, ancoradouro.y),
+                "o ancoradouro {i} caiu em terra"
+            );
+            // O CAIS e' solido: e' nele que o casco encosta e para. E' a
+            // porta da ilha, nao um caminho pra dentro dela.
+            let (raiz, ponta) = vista.cais.expect("tem cais");
+            let meio = (raiz + ponta) * 0.5;
+            assert!(!mar.agua(meio.x, meio.y), "o cais {i} nao e' solido");
+            assert_eq!(mar.ilha_mais_perto(ancoradouro), i);
             // Ida e volta pro referencial da ilha.
-            let local = mar.para_local(i, cais);
-            assert!((mar.para_mar(i, local) - cais).length() < 1e-3);
+            let local = mar.para_local(i, ancoradouro);
+            assert!((mar.para_mar(i, local) - ancoradouro).length() < 1e-3);
         }
     }
 }

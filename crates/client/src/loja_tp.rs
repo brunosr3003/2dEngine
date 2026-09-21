@@ -2099,7 +2099,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
     ];
     for (nome, anda, fase) in tomadas {
         for quadro in 0..30 {
-            mundo.tick(get_frame_time(), &|_, _| 0.0);
+            mundo.tick(get_frame_time(), false, &|_, _| 0.0);
             for e in mundo.ents.values_mut() {
                 e.yaw = std::f32::consts::FRAC_PI_2;
                 e.andar = if anda { 1.0 } else { 0.0 };
@@ -2180,7 +2180,7 @@ async fn previa_montado(
     let foco = vec2(-2.5, -4.2);
     for (nome, ang, anda) in tomadas {
         for quadro in 0..30 {
-            mundo.tick(get_frame_time(), &|_, _| 0.0);
+            mundo.tick(get_frame_time(), false, &|_, _| 0.0);
             for e in mundo.ents.values_mut() {
                 e.yaw = std::f32::consts::FRAC_PI_2;
                 e.andar = if anda { 1.0 } else { 0.0 };

@@ -717,7 +717,8 @@ impl Jogo {
             self.habilidades.acompanhar_alvos(&mut self.world);
             {
                 let terreno = self.terreno.as_ref();
-                self.world.tick(get_frame_time(), &|x, z| {
+                let no_mar = self.no_mar;
+                self.world.tick(get_frame_time(), no_mar, &|x, z| {
                     terreno.map_or(0.0, |t| t.altura_apoio(x, z, shared::ENTITY_RADIUS))
                 });
             }

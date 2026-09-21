@@ -109,15 +109,14 @@ fn pedaco_visivel(cam: &Camera3D, cx: i32, cz: i32) -> bool {
 
 pub struct Terreno {
     ger: Gerador,
-    /// Os OUTROS geradores, quando esta zona e' o Mar Aberto: um por ilha,
-    /// com o centro dela em blocos, na coordenada do mar
-    /// (docs/MAR_ABERTO.md). Vazio numa ilha.
+    /// O MAR ABERTO, quando esta zona e' ele (docs/MAR_ABERTO.md). `None`
+    /// numa ilha.
     ///
-    /// E' o mesmo truque do `shared::mar::Mar`, deste lado: o terreno do mar
-    /// SAO as ilhas de verdade, nas posicoes de verdade. Quem desenha
-    /// pergunta por coluna, e `ger_em` diz qual gerador responde e com que
-    /// coordenada.
-    mares: Vec<(i32, i32, f32, Gerador)>,
+    /// E' o MESMO objeto que o servidor usa. Nao ha' uma versao do relevo do
+    /// mar aqui e outra la' — a primeira tentativa tinha, e os dois
+    /// discordaram calados: o servidor via agua funda e o cliente desenhava
+    /// um plano de areia por cima do oceano inteiro.
+    mar: Option<shared::mar::Mar>,
     bioma: Bioma,
     /// Modelos de vegetacao assados uma vez por especie e variante. Instanciar
     /// e' copiar vertice com offset — a macroquad nao tem transform por malha,
@@ -165,70 +164,57 @@ impl Terreno {
     /// testes de distancia — e 99% das colunas do mar aberto nao caem em
     /// nenhum disco, e voltam o gerador da ilha 0 com a coluna bem longe
     /// dela, que e' fundo de mar.
-    fn ger_em(&self, bx: i32, bz: i32) -> (&Gerador, i32, i32) {
-        if self.mares.is_empty() {
-            return (&self.ger, bx, bz);
-        }
-        let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
-        for (cbx, cbz, raio, g) in &self.mares {
-            let c = glam::Vec2::new(*cbx as f32 * BLOCO, *cbz as f32 * BLOCO);
-            if p.distance(c) <= raio + 64.0 {
-                return (g, bx - cbx, bz - cbz);
-            }
-        }
-        // Longe de tudo: manda pra bem fora da ilha 0, que e' agua funda.
-        let (_, _, _, g) = &self.mares[0];
-        (g, g.raio_blocos * 4, g.raio_blocos * 4)
-    }
-
-    /// Bloco de topo na coluna, roteado (ver `ger_em`).
+    /// Bloco de topo na coluna.
+    ///
+    /// No mar quem responde e' o `Mar` — a ilha vista de la' e' um DOMO e um
+    /// cais, e nao o relevo inteiro (docs/MAR_ABERTO.md). De longe o que o
+    /// navegante precisa e' "ha' terra ali, e se entra por ali"; arvore e
+    /// casa a 800 u sao ruido caro.
     fn bloco_em(&self, bx: i32, bz: i32) -> i32 {
-        let (g, x, z) = self.ger_em(bx, bz);
-        g.bloco_em(x, z)
+        match self.mar.as_ref() {
+            Some(m) => m.bloco_em(bx, bz),
+            None => self.ger.bloco_em(bx, bz),
+        }
     }
 
     fn mancha_em(&self, bx: i32, bz: i32) -> f32 {
-        let (g, x, z) = self.ger_em(bx, bz);
-        g.mancha(x, z)
+        match self.mar.as_ref() {
+            Some(_) => 0.5,
+            None => self.ger.mancha(bx, bz),
+        }
     }
 
     fn pintura_em(&self, bx: i32, bz: i32) -> Option<shared::terreno::Material> {
-        let (g, x, z) = self.ger_em(bx, bz);
-        g.pintura_do_chao(x, z)
+        if self.mar.is_some() {
+            return None;
+        }
+        self.ger.pintura_do_chao(bx, bz)
     }
 
-    /// A chave de coluna do cache de esgotadas. No mar ela sai do gerador
-    /// DA ILHA, senao duas ilhas dividiriam chave e o tronco derrubado numa
-    /// sumiria na outra.
+    /// A chave de coluna do cache de esgotadas. No mar nao ha' o que esgotar.
     fn chave_da_coluna(&self, bx: i32, bz: i32) -> u32 {
-        let (g, x, z) = self.ger_em(bx, bz);
-        shared::terreno::chave_de_coluna(x + g.raio_blocos, z + g.raio_blocos)
+        if self.mar.is_some() {
+            return u32::MAX;
+        }
+        shared::terreno::chave_de_coluna(bx + self.ger.raio_blocos, bz + self.ger.raio_blocos)
     }
 
-    /// O terreno do MAR ABERTO: os quatro geradores do arquipelago, cada um
-    /// no centro dele em coordenada do mar.
+    /// O terreno do MAR ABERTO.
     pub fn do_mar() -> Self {
-        let o = shared::mar::Mar::origem_de(&shared::terreno::ARQUIPELAGO);
         let mut t = Self::novo(&shared::terreno::ARQUIPELAGO[0]);
-        t.mares = shared::terreno::ARQUIPELAGO
-            .iter()
-            .map(|d| {
-                let (cx, cz) = ((d.centro[0] - o.x) / BLOCO, (d.centro[1] - o.y) / BLOCO);
-                (
-                    cx.round() as i32,
-                    cz.round() as i32,
-                    d.raio_m(),
-                    Gerador::da_ilha(d),
-                )
-            })
-            .collect();
+        t.mar = Some(shared::mar::Mar::novo());
+        // Nada nasce no mar: sem arvore, sem planta, sem minerio. Limpar aqui
+        // e' o que impede uma floresta de brotar no domo da ilha vista.
+        t.arvores.clear();
+        t.plantas.clear();
+        t.minerios.clear();
         t
     }
 
     pub fn novo(def: &DefIlha) -> Self {
         let mut t = Self {
             ger: Gerador::da_ilha(def),
-            mares: Vec::new(),
+            mar: None,
             bioma: def.bioma,
             arvores: Vec::new(),
             plantas: Vec::new(),

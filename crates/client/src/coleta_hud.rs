@@ -164,7 +164,7 @@ mod tests {
         st.acao = acao::monta_coleta(0, false, 3);
         w.apply(vec![meta.clone()], vec![st], &[]);
         for _ in 0..60 {
-            w.tick(1.0 / 30.0, &|_, _| 0.0);
+            w.tick(1.0 / 30.0, false, &|_, _| 0.0);
         }
         let e = &w.ents[&EntityId(1)];
         assert_eq!(e.coleta, Some(3));
@@ -181,7 +181,7 @@ mod tests {
         assert_eq!(w.ents[&EntityId(1)].coleta_t, 0.0);
         st.acao = acao::monta(0, false, acao::NADA, 0);
         w.apply(vec![meta], vec![st], &[]);
-        w.tick(1.0 / 30.0, &|_, _| 0.0);
+        w.tick(1.0 / 30.0, false, &|_, _| 0.0);
         assert!(w.ents[&EntityId(1)].coleta.is_none(), "gesto apagou: para");
     }
 }

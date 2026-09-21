@@ -3,34 +3,34 @@
 //! Desde 21/09/2026 trocar de ilha exige navegar. O teleporte do Capitao
 //! acabou, e o mar deixou de ser cenario: e' por onde se vai.
 //!
-//! # Por que isto nao e' uma `Ilha`
+//! # A ilha vista do mar e' uma SILHUETA
 //!
-//! `Ilha` e' um quadrado de blocos centrado na origem — `coluna()` soma
-//! `raio_blocos` e nao ha' campo de deslocamento. Cobrir as quatro ilhas do
-//! `ARQUIPELAGO` pediria raio de ~5.200 blocos: 108 milhoes de colunas, uns
-//! 216 MB de cache `.alt` (o teto documentado e' 20 MB) e um `plantar()` em
-//! cima de tudo isso a cada boot.
+//! A primeira versao compunha os quatro `Gerador`es de verdade: o relevo do
+//! mar ERA o das ilhas, nas posicoes delas. Funcionava e era bonito no papel,
+//! mas o dono viu o que importava: *"nao quero que as ilhas se materializem
+//! inteiras no open world; quero uma mega simplificacao da ilha e um porto
+//! mostrando onde entra"*.
 //!
-//! # O que e' entao
+//! Ele esta' certo por tres motivos de uma vez:
 //!
-//! Um COMPOSTO dos quatro `Gerador`es que ja' existem, cada um no seu
-//! `DefIlha::centro`. Perguntar a altura de uma coluna aqui e' fazer quatro
-//! testes de distancia e delegar pro gerador da ilha que contem o ponto;
-//! fora de todas, fundo do mar.
+//! - **Leitura.** De longe, o que o navegante precisa e' "ha' terra ali, e se
+//!   entra por ali". Arvore, casa e trilha a 800 u de distancia sao ruido.
+//! - **Custo.** Ruido de Perlin por coluna, em quatro ilhas, num celular,
+//!   pra desenhar o que vira um borrao.
+//! - **Honestidade.** O mar nao e' a ilha. Quem quer a ilha, atraca.
 //!
-//! E' esse o pulo: **o terreno do mar SAO as ilhas de verdade, nas posicoes
-//! de verdade.** Navegar a noroeste saindo do cais do Bosque e chegar no cais
-//! real da Geleira nao e' aproximacao — e' o mesmo `Gerador` produzindo as
-//! mesmas colunas. Sem cache, sem versao nova de relevo, e o custo de boot
-//! sao quatro `Gerador::novo`, que o cliente ja' paga uma vez por login.
+//! Entao o terreno daqui e' ANALITICO: um domo por ilha, e um cais marcando a
+//! entrada. Sem Perlin, sem cache, sem `plantar`, sem vila. Uma conta de
+//! distancia por coluna.
 //!
-//! O preco e' que aqui nao existe `Ilha`: nada de arvore plantada, nada de
-//! vila indexada, nada de estorvo. No mar nao ha' o que plantar.
+//! Os `Gerador`es ainda nascem uma vez no boot — mas so' pra PERGUNTAR onde
+//! fica o porto de cada ilha, que e' o unico dado do mundo real que o mar
+//! precisa. Depois disso eles sao descartados.
 
 use glam::Vec2;
 
 use crate::terreno::{
-    mover_casco, Bioma, DefIlha, Gerador, ARQUIPELAGO, BLOCO, ESCALA_ALTURA, NIVEL_DO_MAR,
+    mover_casco, suave, Bioma, DefIlha, Gerador, ARQUIPELAGO, BLOCO, NIVEL_DO_MAR,
 };
 
 /// O nome da zona do mar. Nao e' ilha do arquipelago: os indices do
@@ -40,12 +40,16 @@ pub const ZONA: &str = "mar_aberto";
 
 /// Fundo do mar longe de tudo, em blocos. Bem abaixo do nivel do mar: o que
 /// importa e' que seja agua, nao a profundidade.
-const FUNDO: i32 = -80;
+///
+/// **Publico de proposito:** o cliente precisa do MESMO numero. Ele tem o
+/// proprio roteador de colunas (`client::terreno::ger_em`), e enquanto este
+/// valor morava so' aqui os dois discordavam — o servidor via agua funda e o
+/// cliente desenhava um plano marrom de areia por cima do oceano inteiro.
+pub const FUNDO: i32 = -80;
 
-/// Folga em volta do disco de cada ilha, em unidades. O relevo de uma ilha
-/// nao para exatamente no raio — ele afunda pro mar perto da borda — entao a
-/// consulta tem que continuar indo no gerador um pouco depois do fim.
-const MARGEM: f32 = 64.0;
+/// Folga em volta do disco de cada ilha, em unidades. Tambem publica pelo
+/// mesmo motivo: e' onde os dois lados decidem "aqui ainda e' a ilha".
+pub const MARGEM: f32 = 64.0;
 
 /// Perto disto de um cais o barco pode atracar.
 pub const PERTO_DO_CAIS: f32 = 14.0;
@@ -62,12 +66,34 @@ pub const PERTO_DO_CAIS: f32 = 14.0;
 /// O `ARQUIPELAGO::centro` nao muda: ele continua sendo o mapa-mundi, e a
 /// conversao mora aqui dentro e em nenhum outro lugar.
 pub struct Mar {
-    /// (centro em coordenada do MAR, raio em unidades, gerador).
-    ilhas: Vec<(Vec2, f32, Gerador)>,
+    ilhas: Vec<IlhaVista>,
     /// Centro da caixa do arquipelago, em coordenada do mapa-mundi. E' o que
     /// se soma pra voltar pro referencial do `ARQUIPELAGO`.
     origem: Vec2,
 }
+
+/// Uma ilha COMO SE VE DO MAR: um domo e um cais. Nada mais.
+pub struct IlhaVista {
+    /// Centro, em coordenada do mar.
+    pub centro: Vec2,
+    /// Raio da ilha, em unidades.
+    pub raio: f32,
+    /// Raiz do cais na costa e a ponta dele, em coordenada do mar. `None`
+    /// quando a ilha nao tem porto.
+    pub cais: Option<(Vec2, Vec2)>,
+}
+
+/// Altura do domo no centro da ilha, em unidades. Alto o bastante pra virar
+/// silhueta no horizonte, baixo o bastante pra nao virar muralha.
+const ALTURA_DA_ILHA: f32 = 26.0;
+/// Que fracao do raio a encosta ocupa. O resto e' planalto.
+const ENCOSTA: f32 = 0.42;
+/// Largura do cais, em unidades.
+const CAIS_LARG: f32 = 5.0;
+/// Quanto o cais avanca mar adentro, a partir da borda do domo.
+const CAIS_COMP: f32 = 22.0;
+/// Altura do tabuado do cais acima do nivel do mar.
+const CAIS_ALTURA: f32 = 1.2;
 
 impl Mar {
     /// Monta o mar. Quatro `Gerador::novo` — cada um faz a busca da cidade e
@@ -83,11 +109,28 @@ impl Mar {
         let ilhas = defs
             .iter()
             .map(|d| {
-                (
-                    Vec2::from(d.centro) - origem,
-                    d.raio_m(),
-                    Gerador::da_ilha(d),
-                )
+                let centro = Vec2::from(d.centro) - origem;
+                // O gerador nasce, responde ONDE FICA O PORTO, e morre. E' o
+                // unico dado do mundo real que o mar precisa: e' por ali que
+                // se entra na ilha, e o cais daqui tem que casar com o de la'.
+                // O cais sai do domo na MESMA DIRECAO do porto de verdade —
+                // e' por ali que se entra na ilha, e a silhueta tem que
+                // concordar com o que o jogador acha quando atraca.
+                //
+                // Mas a RAIZ e' na borda do domo, nao na costa de verdade: a
+                // costa real e' irregular e fica bem dentro do circulo, entao
+                // ancorar nela enterrava o cais inteiro no morro — e ai' nao
+                // havia agua no alcance pra encostar.
+                let cais = Gerador::da_ilha(d).porto().map(|p| {
+                    let rumo = (p.raiz + p.mar() * p.comp).try_normalize().unwrap_or(Vec2::X);
+                    let raiz = centro + rumo * (d.raio_m() - 2.0);
+                    (raiz, raiz + rumo * CAIS_COMP)
+                });
+                IlhaVista {
+                    centro,
+                    raio: d.raio_m(),
+                    cais,
+                }
             })
             .collect();
         Self { ilhas, origem }
@@ -113,7 +156,7 @@ impl Mar {
     pub fn meia_extensao(&self) -> f32 {
         self.ilhas
             .iter()
-            .map(|(c, r, _)| c.abs().max_element() + r)
+            .map(|i| i.centro.abs().max_element() + i.raio)
             .fold(0.0, f32::max)
     }
 
@@ -129,13 +172,34 @@ impl Mar {
     /// um mapa quase todo de agua sai mais barato que uma ilha, nao mais caro.
     pub fn bloco_em(&self, bx: i32, bz: i32) -> i32 {
         let p = Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
-        for (centro, raio, ger) in &self.ilhas {
-            if p.distance(*centro) <= raio + MARGEM {
-                let c = *centro / BLOCO;
-                return ger.bloco_em(bx - c.x.round() as i32, bz - c.y.round() as i32);
+        let mut alto = f32::MIN;
+        for i in &self.ilhas {
+            let d = p.distance(i.centro);
+            if d > i.raio + MARGEM {
+                continue;
+            }
+            // O DOMO: planalto no meio, encosta na borda, agua fora.
+            let t = ((i.raio - d) / (i.raio * ENCOSTA)).clamp(0.0, 1.0);
+            alto = alto.max(suave(t) * ALTURA_DA_ILHA);
+            // O CAIS: uma lingua estreita saindo da costa, no nivel do mar.
+            // E' ele que diz "entra por aqui" — sem ele a ilha e' uma parede
+            // fechada e o jogador contorna procurando porta.
+            if let Some((raiz, ponta)) = i.cais {
+                let eixo = (ponta - raiz).normalize_or_zero();
+                let rel = p - raiz;
+                let ao_longo = rel.dot(eixo);
+                let de_lado = rel.dot(Vec2::new(-eixo.y, eixo.x)).abs();
+                if (-6.0..=(ponta - raiz).length()).contains(&ao_longo)
+                    && de_lado <= CAIS_LARG * 0.5
+                {
+                    alto = alto.max(NIVEL_DO_MAR + CAIS_ALTURA);
+                }
             }
         }
-        FUNDO
+        if alto == f32::MIN {
+            return FUNDO;
+        }
+        (alto / BLOCO).round() as i32 - 1
     }
 
     /// Altura do chao em unidades de mundo, como `Ilha::altura`.
@@ -158,15 +222,20 @@ impl Mar {
     pub fn ilha_em(&self, p: Vec2) -> Option<usize> {
         self.ilhas
             .iter()
-            .position(|(c, r, _)| p.distance(*c) <= *r)
+            .position(|i| p.distance(i.centro) <= i.raio)
+    }
+
+    /// As ilhas como o mar as enxerga. E' o que o cliente desenha.
+    pub fn vistas(&self) -> &[IlhaVista] {
+        &self.ilhas
     }
 
     /// A ilha mais perto, sempre. E' quem decide pra onde a correnteza leva
     /// um naufrago.
     pub fn ilha_mais_perto(&self, p: Vec2) -> usize {
         let mut melhor = (0usize, f32::MAX);
-        for (i, (c, _, _)) in self.ilhas.iter().enumerate() {
-            let d = p.distance_squared(*c);
+        for (i, il) in self.ilhas.iter().enumerate() {
+            let d = p.distance_squared(il.centro);
             if d < melhor.1 {
                 melhor = (i, d);
             }
@@ -174,15 +243,15 @@ impl Mar {
         melhor.0
     }
 
-    /// A PONTA DO CAIS da ilha `i`, em coordenadas de mundo.
+    /// O ANCORADOURO da ilha `i`: a agua logo depois da ponta do cais.
     ///
-    /// E' o ponto de partida e de chegada de toda travessia. `SitioPorto` ja'
-    /// garante que a ponta e mais 6 u adiante sao oceano de verdade, e nao
-    /// lago — entao todo cais e' alcancavel por casco por construcao.
+    /// E' onde o casco aparece ao zarpar e de onde se atraca — entao tem que
+    /// ser AGUA, e nao o tabuado. O cais em si e' solido de proposito: ele e'
+    /// a porta da ilha, e bater nele e' o que faz o barco parar ali.
     pub fn cais_de(&self, i: usize) -> Option<Vec2> {
-        let (centro, _, ger) = self.ilhas.get(i)?;
-        let p = ger.porto()?;
-        Some(*centro + p.raiz + p.mar() * (p.comp + 4.0))
+        let il = self.ilhas.get(i)?;
+        let (raiz, ponta) = il.cais?;
+        Some(ponta + (ponta - raiz).normalize_or_zero() * 3.5)
     }
 
     /// Coordenada do mar -> coordenada LOCAL da ilha `i`.
@@ -191,12 +260,12 @@ impl Mar {
     /// toda travessia passa por esta conversao ao atracar — e pela irma, ao
     /// zarpar.
     pub fn para_local(&self, i: usize, no_mar: Vec2) -> Vec2 {
-        no_mar - self.ilhas.get(i).map_or(Vec2::ZERO, |(c, _, _)| *c)
+        no_mar - self.ilhas.get(i).map_or(Vec2::ZERO, |i| i.centro)
     }
 
     /// Coordenada LOCAL da ilha `i` -> coordenada do mar.
     pub fn para_mar(&self, i: usize, local: Vec2) -> Vec2 {
-        local + self.ilhas.get(i).map_or(Vec2::ZERO, |(c, _, _)| *c)
+        local + self.ilhas.get(i).map_or(Vec2::ZERO, |i| i.centro)
     }
 
     /// Quantas ilhas o mar tem.
@@ -240,10 +309,14 @@ mod testes {
         }])
     }
 
-    /// O terreno do mar E' a ilha, deslocada pro `centro` dela. Se isto
-    /// quebrar, navegar deixa de chegar no cais de verdade.
+    /// A ilha vista do mar e' um DOMO no lugar certo — nao o relevo dela.
+    ///
+    /// Este teste ja' afirmou o contrario: que o relevo do mar batia, coluna
+    /// a coluna, com o da ilha sozinha. Era verdade e foi recusado — o dono
+    /// nao quer a ilha inteira materializada no mar, quer saber que ha' terra
+    /// ali e por onde se entra.
     #[test]
-    fn a_ilha_aparece_no_centro_que_o_arquipelago_diz() {
+    fn a_ilha_vista_do_mar_e_um_domo_no_lugar_certo() {
         let m = mar_pequeno();
         // Numa ilha so', o centro dela E' a origem do mar — mas o mapa-mundi
         // continua sabendo onde ela fica de verdade.
@@ -257,15 +330,15 @@ mod testes {
         assert!(m.agua(longe.x, longe.y), "fora do disco tinha que ser agua");
         assert_eq!(m.ilha_em(longe), None);
 
-        // E o relevo bate com o da ilha sozinha, ponto a ponto.
-        let sozinha = crate::terreno::Ilha::gerar(5, 64, Bioma::Floresta, ESCALA_ALTURA);
-        for (dx, dz) in [(0.0, 0.0), (8.0, -6.0), (-12.0, 3.0)] {
-            assert_eq!(
-                m.altura(centro.x + dx, centro.y + dz),
-                sozinha.altura(dx, dz),
-                "relevo divergiu em ({dx}, {dz})"
-            );
-        }
+        // E a silhueta SOBE indo pro centro: e' isso que a faz ler como ilha
+        // no horizonte em vez de mancha.
+        let raio = m.vistas()[0].raio;
+        let borda = m.altura(raio * 0.92, 0.0);
+        let meio = m.altura(raio * 0.4, 0.0);
+        assert!(
+            meio > borda && borda > crate::terreno::NIVEL_DO_MAR,
+            "a encosta nao sobe: borda {borda}, meio {meio}"
+        );
     }
 
     /// Ida e volta entre coordenada de mundo e coordenada da ilha. Toda

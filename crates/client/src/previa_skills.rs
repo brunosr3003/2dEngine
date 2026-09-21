@@ -91,7 +91,7 @@ pub async fn abrir(vox: &VoxCache) {
         } else {
             tempo % (skill.impacto_em() + habilidades_vfx::duracao(skill.id) + 0.4)
         };
-        mundo.tick(get_frame_time(), &|_, _| 0.0);
+        mundo.tick(get_frame_time(), false, &|_, _| 0.0);
         for (&id, e) in &mut mundo.ents {
             e.yaw = if id.0 == 2 { std::f32::consts::PI } else { 0.0 };
             if id.0 == 1 {

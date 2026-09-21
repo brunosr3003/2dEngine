@@ -884,7 +884,7 @@ mod tests {
         w.apply(vec![meta], vec![estado], &[]);
         assert!((w.ents[&EntityId(7)].yaw - esperado).abs() < 1e-4);
         for _ in 0..30 {
-            w.tick(1.0 / 30.0, &|_, _| 0.0);
+            w.tick(1.0 / 30.0, false, &|_, _| 0.0);
         }
         assert!(
             (w.ents[&EntityId(7)].yaw - esperado).abs() < 1e-4,
