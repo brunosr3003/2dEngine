@@ -114,6 +114,7 @@
     <button class="aba" data-aba="atividade">atividade</button>
     <button class="aba" data-aba="missoes">missões</button>
     <button class="aba" data-aba="infra">infra</button>
+    <button class="aba" data-aba="correio">correio</button>
     <form method="post" action="sair" style="flex:1 0 33%;margin:0"><button class="aba" style="width:100%">sair</button></form>
   </div>
   <h2>Canais</h2>
@@ -285,6 +286,42 @@
   <h2>História: onde cada um parou</h2>
   <div id="mi-capitulos"></div>
   <div id="mi-grupos"></div>
+</div>
+
+<!-- ─────────────────────────── correio ─────────────────────────── -->
+<div class="aba-painel" id="aba-correio" hidden>
+  <h2>Correio oficial</h2>
+  <p class="nota">
+    Manda carta com item pra um personagem, ou pra todos. Mesma transação do
+    envio de dentro do jogo: fica registrada em <code>social_campanhas</code>,
+    o identificador impede envio repetido, e o anexo nunca entrega pela metade
+    (bolsa cheia = ninguém recebe nada).
+  </p>
+  <div class="grade">
+    <div>
+      <h2>Quem assina</h2>
+      <label class="f">personagem <input id="co-autor" placeholder="curandinho"></label>
+      <p class="nota">Precisa ter cargo em <code>social_staff</code>
+        (<code>cargo run --bin social_staff NOME admin</code>). É o nome que
+        vai no registro.</p>
+      <h2>Para quem</h2>
+      <label class="f">personagem <input id="co-para" placeholder="vazio = todos"></label>
+    </div>
+    <div>
+      <h2>A carta</h2>
+      <label class="f">identificador <input id="co-envio" placeholder="teste-pets-001"></label>
+      <p class="nota">8 a 100 caracteres, letras/números/hífen. Reenviar o
+        mesmo não duplica.</p>
+      <label class="f">assunto <input id="co-assunto" maxlength="60"></label>
+      <label class="f">texto <textarea id="co-texto" rows="4" maxlength="1000"></textarea></label>
+    </div>
+  </div>
+  <h2>Anexos (até 8)</h2>
+  <div class="tabela" id="co-anexos"></div>
+  <button class="aba" id="co-mais" style="width:auto;padding:6px 14px">+ item</button>
+  <h2></h2>
+  <button class="aba" id="co-enviar" style="width:auto;padding:8px 20px">enviar</button>
+  <div id="co-resultado" class="nota"></div>
 </div>
 
 <!-- ─────────────────────────── infra ─────────────────────────── -->
@@ -707,6 +744,7 @@ let abaAtual = 'mundo';
 const PUXA = {
   jogadores: puxaJogadores, economia: puxaEconomia, mercado: puxaMercado, loja: puxaLoja, dungeons: puxaDungeons,
   atividade: puxaAtividade, missoes: puxaMissoes, infra: puxaInfra,
+  correio: montaCorreio,
 };
 function mostraAba(nome) {
   if (nome !== 'mundo' && !PUXA[nome]) nome = 'mundo';
@@ -1154,6 +1192,64 @@ function busca() {
        <span class="v">n${e.nivel} · ${esc(e.estado)}</span>
      </div>`).join('') || '<div class="vazio">nada</div>';
 }
+
+// ── correio ───────────────────────────────────────────────────────────
+//
+// Os anexos sao linhas que se somam: o servidor aceita ate' 8 itens
+// distintos, ate' 100.000 de cada.
+let coAnexos = [];
+function montaCorreio() {
+  if (!coAnexos.length) coAnexos = [{ item_id: '', qtd: 1 }];
+  desenhaAnexos();
+}
+function desenhaAnexos() {
+  const el = document.getElementById('co-anexos');
+  el.innerHTML = '';
+  coAnexos.forEach((a, i) => {
+    const l = document.createElement('div');
+    l.className = 'linha';
+    l.innerHTML = `<input value="${a.item_id}" placeholder="item_id" style="width:120px">
+      <input value="${a.qtd}" placeholder="qtd" style="width:100px">
+      <button style="width:auto;padding:2px 10px">x</button>`;
+    const [id, qtd, tira] = l.querySelectorAll('input, button');
+    id.oninput = () => { coAnexos[i].item_id = id.value; };
+    qtd.oninput = () => { coAnexos[i].qtd = qtd.value; };
+    tira.onclick = () => { coAnexos.splice(i, 1); desenhaAnexos(); };
+    el.appendChild(l);
+  });
+}
+document.getElementById('co-mais').onclick = () => {
+  if (coAnexos.length < 8) { coAnexos.push({ item_id: '', qtd: 1 }); desenhaAnexos(); }
+};
+document.getElementById('co-enviar').onclick = async () => {
+  const r = document.getElementById('co-resultado');
+  const corpo = {
+    autor: document.getElementById('co-autor').value.trim(),
+    envio: document.getElementById('co-envio').value.trim(),
+    para: document.getElementById('co-para').value.trim(),
+    assunto: document.getElementById('co-assunto').value,
+    texto: document.getElementById('co-texto').value,
+    anexos: coAnexos
+      .filter(a => String(a.item_id).trim() !== '')
+      .map(a => ({ item_id: Number(a.item_id), qtd: Number(a.qtd) || 1 })),
+  };
+  const quem = corpo.para ? corpo.para : 'TODOS os personagens';
+  if (!confirm(`Enviar para ${quem}? ${corpo.anexos.length} anexo(s). Fica registrado e nao da' pra desfazer.`)) return;
+  r.textContent = 'enviando...';
+  try {
+    const resp = await fetch('api/correio', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(corpo),
+    });
+    const d = await resp.json();
+    r.textContent = d.ok
+      ? `entregue a ${d.destinatarios} personagem(ns)`
+      : `recusado: ${d.erro}`;
+  } catch (e) {
+    r.textContent = 'falhou: ' + e;
+  }
+};
 
 mostraAba(location.hash.slice(1) || 'mundo');
 </script>

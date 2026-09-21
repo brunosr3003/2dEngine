@@ -43,6 +43,7 @@ argon2 = "0.5"
 
 # Internal workspace crates
 shared = { path = "crates/shared" }
+correio = { path = "crates/correio" }
 
 [profile.dev]
 opt-level = 1

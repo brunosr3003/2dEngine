@@ -336,6 +336,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "correio"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "shared",
+ "sqlx",
+ "tracing",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1430,6 +1441,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "correio",
  "glam 0.29.3",
  "http-body-util",
  "hyper",
@@ -2017,6 +2029,7 @@ dependencies = [
  "anyhow",
  "argon2",
  "axum",
+ "correio",
  "fastrand",
  "futures-util",
  "glam 0.29.3",

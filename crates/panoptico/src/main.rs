@@ -148,7 +148,8 @@ async fn main() -> anyhow::Result<()> {
         .route(&p("/api/atividade"), get(atividade))
         .route(&p("/api/missoes"), get(missoes))
         .route(&p("/api/itens"), get(itens))
-        .route(&p("/api/infra"), get(infra));
+        .route(&p("/api/infra"), get(infra))
+        .route(&p("/api/correio"), post(correio));
     if !auth.prefixo.is_empty() {
         // "/panoptico" sem barra: a pagina usa caminhos relativos e precisa da barra.
         let destino = p("/");
@@ -431,6 +432,84 @@ async fn economia(State(st): State<Estado>) -> impl IntoResponse {
 async fn jogadores(State(st): State<Estado>) -> impl IntoResponse {
     let online = quem_esta_online(&st).await;
     axum::Json(observa::jogadores(&st.pool, &online).await)
+}
+
+/// **Correio oficial pelo painel.** Manda carta com anexo pra um personagem
+/// (ou pra todos), pela MESMA transacao auditavel do envio de dentro do jogo
+/// (`correio::enviar`): campanha registrada, destinatarios fotografados,
+/// `envio` como chave de idempotencia e anexo que nunca entrega metade.
+///
+/// Autor e conta: o painel nao tem personagem logado, entao ele assina como
+/// `autor` do corpo — e esse nome precisa ter cargo (`social_staff`), igual
+/// no jogo. O panoptico ja' esta' atras de senha, sessao e freio de
+/// tentativas (`auth.rs`); o cargo e' a SEGUNDA tranca, a que diz de quem foi
+/// o envio no registro.
+async fn correio(
+    State(st): State<Estado>,
+    axum::Json(c): axum::Json<CorreioPedido>,
+) -> impl IntoResponse {
+    let conta: Option<i64> = match sqlx::query_scalar(
+        "SELECT account_id FROM characters WHERE lower(name) = lower($1)",
+    )
+    .bind(&c.autor)
+    .fetch_optional(&*st.pool)
+    .await
+    {
+        Ok(v) => v.flatten(),
+        Err(e) => return erro_do_correio(format!("banco: {e}")),
+    };
+    let Some(conta) = conta else {
+        return erro_do_correio(format!("personagem '{}' nao encontrado", c.autor));
+    };
+    let pedido = shared::social::Pedido::EnviarOficial {
+        envio: c.envio,
+        para: c.para.filter(|p| !p.trim().is_empty()),
+        assunto: c.assunto,
+        texto: c.texto,
+        anexos: c
+            .anexos
+            .into_iter()
+            .map(|a| shared::social::Anexo {
+                item_id: a.item_id,
+                qtd: a.qtd,
+            })
+            .collect(),
+    };
+    match correio::enviar(&st.pool, &c.autor, conta, &pedido).await {
+        Ok(n) => (
+            axum::http::StatusCode::OK,
+            axum::Json(serde_json::json!({ "ok": true, "destinatarios": n })),
+        ),
+        Err(e) => erro_do_correio(e.to_string()),
+    }
+}
+
+fn erro_do_correio(texto: String) -> (axum::http::StatusCode, axum::Json<serde_json::Value>) {
+    tracing::warn!("correio pelo painel recusado: {texto}");
+    (
+        axum::http::StatusCode::BAD_REQUEST,
+        axum::Json(serde_json::json!({ "ok": false, "erro": texto })),
+    )
+}
+
+#[derive(serde::Deserialize)]
+struct CorreioPedido {
+    /// Personagem que ASSINA o envio — precisa ter cargo em `social_staff`.
+    autor: String,
+    /// Chave de idempotencia: reenviar o mesmo id nao duplica.
+    envio: String,
+    /// `None` ou vazio = todo mundo.
+    para: Option<String>,
+    assunto: String,
+    texto: String,
+    #[serde(default)]
+    anexos: Vec<CorreioAnexo>,
+}
+
+#[derive(serde::Deserialize)]
+struct CorreioAnexo {
+    item_id: u16,
+    qtd: u32,
 }
 
 async fn mercado(State(st): State<Estado>) -> impl IntoResponse {
