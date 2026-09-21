@@ -1006,6 +1006,19 @@ impl Bolsa {
                 ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
                 y += u(22.0);
             }
+            // A FOR DA ARMADURA MEDIA nao e' atributo do TEMPLATE: ela entra
+            // em `effective_stats` como ponto alocado, e por isso nao aparecia
+            // em lugar nenhum que se pudesse ler. Do lado de fora isso le'
+            // como "a media nao da' forca" — e foi o que o dono leu, duas
+            // vezes: uma na ficha e outra montando a peca no Craft.
+            let emp = shared::for_da_armadura(peca.id, self.nivel.max(1));
+            if emp > 0 {
+                ui::texto(r.x + u(20.0), y + u(4.0), "Força", 17, TEXTO);
+                let val = format!("+{emp}");
+                let d = crate::hud_estilo::medir_dim(&val, 17);
+                ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
+                y += u(22.0);
+            }
             if let Some(req) = i.level_req {
                 let falta = (self.nivel as u16) < req && self.nivel > 0;
                 ui::texto(

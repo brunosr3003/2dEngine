@@ -18,6 +18,9 @@ const ATRIBUTOS: [(&str, &str); STAT_COUNT] = [
 
 #[derive(Default)]
 pub struct FichaUi {
+    /// O que o EQUIPAMENTO empresta por atributo (armadura media, pet,
+    /// montaria). Vem separado do alocado — ver `atualizar_pontos`.
+    emprestados: [u32; STAT_COUNT],
     pub aberta: bool,
     pontos: Option<(u32, [u32; STAT_COUNT])>,
     /// Saldo de Energia da evolucao: alocar atributo tambem gasta dela.
@@ -35,11 +38,18 @@ impl FichaUi {
         self.confirmar_reset = false;
     }
 
-    pub fn atualizar_pontos(&mut self, unspent: u32, allocated: [u32; STAT_COUNT]) {
+    pub fn atualizar_pontos(
+        &mut self,
+        unspent: u32,
+        allocated: [u32; STAT_COUNT],
+        emprestados: [u32; STAT_COUNT],
+    ) {
         self.pontos = Some((unspent, allocated));
+        self.emprestados = emprestados;
         self.confirmar_reset = false;
     }
 
+    /// O que o equipamento empresta de cada atributo (ver `atualizar_pontos`).
     pub fn limpar_pontos(&mut self) {
         self.pontos = None;
         self.confirmar_reset = false;
@@ -243,6 +253,22 @@ impl FichaUi {
                 .pontos
                 .map_or_else(|| "—".to_string(), |(_, a)| a[i].to_string());
             estilo::texto_forte(r.x + 283.0 * f, r.y + 29.0 * f, &valor, 20, estilo::OURO);
+            // O QUE O EQUIPAMENTO EMPRESTA, ao lado e em verde.
+            //
+            // Separado do que se gastou, e nao somado: somar faria o jogador
+            // achar que gastou pontos que nao gastou, e tirar a montaria
+            // pareceria perder pontos. Sem mostrar, o emprestimo virava
+            // invisivel — a armadura media dava FOR e ninguem via.
+            let emp = self.emprestados[i];
+            if emp > 0 {
+                estilo::texto_forte(
+                    r.x + 310.0 * f,
+                    r.y + 29.0 * f,
+                    &format!("+{emp}"),
+                    15,
+                    estilo::VERDE,
+                );
+            }
             let botao = Rect::new(r.x + r.w - 43.0 * f, r.y + 4.0 * f, 36.0 * f, 36.0 * f);
             let pode = self.pode_alocar(i);
             if pode {
@@ -368,11 +394,11 @@ mod tests {
         let mut ui = FichaUi::default();
         ui.energia = u64::MAX; // aqui o assunto e' o ponto, nao a Energia
         assert!(!ui.pode_alocar(0), "sem snapshot nao pode gastar");
-        ui.atualizar_pontos(2, [1, 2, 3, 4, 5, 6]);
+        ui.atualizar_pontos(2, [1, 2, 3, 4, 5, 6], [0; STAT_COUNT]);
         assert_eq!(ui.pontos_disponiveis(), Some(2));
         assert!((0..shared::STAT_COUNT).all(|i| ui.pode_alocar(i)));
         assert!(!ui.pode_alocar(shared::STAT_COUNT));
-        ui.atualizar_pontos(0, [1, 2, 3, 4, 5, 6]);
+        ui.atualizar_pontos(0, [1, 2, 3, 4, 5, 6], [0; STAT_COUNT]);
         assert!(!ui.pode_alocar(0));
     }
 
@@ -410,7 +436,7 @@ mod tests {
         // E so' os que DAO pra apertar entram: apontar um botao travado e'
         // mandar o jogador bater onde nao responde.
         let mut ui = FichaUi::default();
-        ui.atualizar_pontos(1, [0; STAT_COUNT]);
+        ui.atualizar_pontos(1, [0; STAT_COUNT], [0; STAT_COUNT]);
         ui.energia = 9; // um a menos que o primeiro ponto custa
         assert!((0..STAT_COUNT).all(|i| !ui.pode_alocar(i)));
         let so_os_que_podem: Option<Rect> = botoes
@@ -437,9 +463,9 @@ mod tests {
     fn ponto_vermelho_so_com_ponto_sobrando() {
         let mut ui = FichaUi::default();
         assert!(!ui.tem_ponto_sobrando(), "sem snapshot nao ha' pendencia");
-        ui.atualizar_pontos(3, [0; STAT_COUNT]);
+        ui.atualizar_pontos(3, [0; STAT_COUNT], [0; STAT_COUNT]);
         assert!(ui.tem_ponto_sobrando());
-        ui.atualizar_pontos(0, [1, 1, 1, 0, 0, 0]);
+        ui.atualizar_pontos(0, [1, 1, 1, 0, 0, 0], [0; STAT_COUNT]);
         assert!(!ui.tem_ponto_sobrando(), "gastou tudo: o selo some");
         ui.limpar_pontos();
         assert!(!ui.tem_ponto_sobrando());
@@ -448,7 +474,7 @@ mod tests {
     #[test]
     fn sem_energia_o_botao_nao_promete_ponto() {
         let mut ui = FichaUi::default();
-        ui.atualizar_pontos(5, [0; STAT_COUNT]);
+        ui.atualizar_pontos(5, [0; STAT_COUNT], [0; STAT_COUNT]);
         assert_eq!(ui.custo_do_proximo_ponto(), 10);
         ui.energia = 9;
         assert!(
@@ -458,13 +484,13 @@ mod tests {
         ui.energia = 10;
         assert!((0..STAT_COUNT).all(|i| ui.pode_alocar(i)));
         // O preco acompanha o que ja' esta' alocado, igual ao servidor.
-        ui.atualizar_pontos(5, [4, 3, 2, 1, 0, 0]);
+        ui.atualizar_pontos(5, [4, 3, 2, 1, 0, 0], [0; STAT_COUNT]);
         assert_eq!(ui.custo_do_proximo_ponto(), 10 + 5 * 10);
         assert!((0..STAT_COUNT).all(|i| !ui.pode_alocar(i)), "10 nao paga 60");
         ui.energia = 60;
         assert!((0..STAT_COUNT).all(|i| ui.pode_alocar(i)));
         // Sem ponto livre nao adianta ter Energia.
-        ui.atualizar_pontos(0, [4, 3, 2, 1, 0, 0]);
+        ui.atualizar_pontos(0, [4, 3, 2, 1, 0, 0], [0; STAT_COUNT]);
         assert!((0..STAT_COUNT).all(|i| !ui.pode_alocar(i)));
     }
 }
@@ -479,7 +505,7 @@ pub async fn previa() {
     let rt = render_target(screen_width() as u32, screen_height() as u32);
     crate::render3d::define_alvo(Some(rt.clone()));
     let mut ui = FichaUi::default();
-    ui.atualizar_pontos(7, [8, 13, 5, 11, 4, 2]);
+    ui.atualizar_pontos(7, [8, 13, 5, 11, 4, 2], [3, 0, 0, 2, 0, 0]);
     ui.abrir();
     let mut stats = shared::base_player_stats();
     stats.hp_max = 278;

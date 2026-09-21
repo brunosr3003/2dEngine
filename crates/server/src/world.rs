@@ -12598,6 +12598,10 @@ impl GameWorld {
                     .send(ServerMessage::StatPointsUpdate {
                         unspent: session.unspent_points,
                         allocated: session.allocated_points,
+                        emprestados: emprestados_pelo_equipamento(
+                            &session.equipment,
+                            session.xp,
+                        ),
                     });
             }
             // DownedUpdate: envia entrada/saida + updates com quantizacao do timer
@@ -18289,6 +18293,42 @@ pub(crate) fn dano_mitigado(dmg: i32, defesa: i32, reducao: f32) -> i32 {
     let def_resist_pct = (defesa as f32 * 0.015).clamp(0.0, 0.75);
     let total_resist = (def_resist_pct + reducao.clamp(0.0, 0.75)).min(0.90);
     (((dmg as f32) * (1.0 - total_resist)).round() as i32).max(1)
+}
+
+/// Quanto o EQUIPAMENTO empresta de cada atributo.
+///
+/// Armadura media, pet e montaria entram em `effective_stats` como ponto
+/// alocado — e por isso mexem em ataque, vida e o resto. Mas a FICHA mostrava
+/// so' `session.allocated_points`, que e' o que o jogador GASTOU: o emprestimo
+/// melhorava os numeros derivados e nunca aparecia como FOR.
+///
+/// Do lado de fora isso le' como bug, e o dono leu: *"armadura media n ta
+/// dando forca, era pra dar"*. Estava dando — so' que em lugar nenhum que ele
+/// pudesse ver.
+pub(crate) fn emprestados_pelo_equipamento(
+    equip: &shared::Equipment,
+    char_xp: u64,
+) -> [u32; shared::STAT_COUNT] {
+    let mut e = [0u32; shared::STAT_COUNT];
+    let char_lvl = shared::level_of_xp_with_mult(char_xp, crate::economy::xp_multiplier());
+    if let Some(pet) = equip.pet {
+        let d = shared::pets::dados(equip.pet_inst.as_ref());
+        let af = equip.pet_inst.as_ref().and_then(|i| i.afinidade);
+        for (i, p) in shared::pets::pontos_por_stat(pet, &d, af).iter().enumerate() {
+            e[i] = e[i].saturating_add(*p);
+        }
+    }
+    if let Some(armadura) = equip.armor {
+        e[shared::stat_idx::FOR] = e[shared::stat_idx::FOR]
+            .saturating_add(shared::for_da_armadura(armadura, char_lvl));
+    }
+    if let Some(m) = equip.montaria {
+        let af = equip.montaria_inst.as_ref().and_then(|i| i.afinidade);
+        for (i, p) in shared::montarias::pontos_por_stat(m, af).iter().enumerate() {
+            e[i] = e[i].saturating_add(*p);
+        }
+    }
+    e
 }
 
 pub(crate) fn effective_stats(

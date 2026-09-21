@@ -1221,8 +1221,13 @@ impl Jogo {
                 self.bolsa.stats = Some(stats);
                 self.bolsa.equip = equipment;
             }
-            ServerMessage::StatPointsUpdate { unspent, allocated } => {
-                self.ficha_ui.atualizar_pontos(unspent, allocated);
+            ServerMessage::StatPointsUpdate {
+                unspent,
+                allocated,
+                emprestados,
+            } => {
+                self.ficha_ui
+                    .atualizar_pontos(unspent, allocated, emprestados);
             }
             ServerMessage::GoldUpdate { gold } => self.bolsa.ouro = gold,
             ServerMessage::VaultOpen { slots } => {

@@ -809,6 +809,14 @@ pub enum ServerMessage {
     StatPointsUpdate {
         unspent: u32,
         allocated: [u32; crate::STAT_COUNT],
+        /// O que o EQUIPAMENTO empresta: armadura media, pet e montaria.
+        ///
+        /// Vem separado do `allocated` de proposito. Somar os dois num numero
+        /// so' faria o jogador achar que gastou pontos que nao gastou — e
+        /// tirar a montaria pareceria perder pontos. Separado, a ficha diz
+        /// "12 (+3)": o que e' seu, e o que o equipamento empresta.
+        #[serde(default)]
+        emprestados: [u32; crate::STAT_COUNT],
     },
     Kick {
         reason: String,
