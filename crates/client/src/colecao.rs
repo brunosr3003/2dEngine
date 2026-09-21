@@ -155,9 +155,13 @@ impl Colecao {
             return Some(ClientMessage::UseItem { slot: slot as u16 });
         }
 
-        // Combinar: 3 iguais tentam 1 do grau de cima. O botão só acende com
-        // as três na mão — a recusa do servidor não cobraria nada, mas prometer
-        // o que não dá é pior que não oferecer.
+        // Combinar: 3 da MESMA COR tentam 1 da cor de cima (estilo MIR4) —
+        // três porquinhos cinza tentam um filhote de lobo verde. Como a cor é
+        // a criatura (docs/PETS.md), "mesma cor" e "mesmo bicho" são a mesma
+        // coisa: não há dois cinzas diferentes pra juntar por engano.
+        //
+        // O botão só acende com os três na mão — a recusa do servidor não
+        // cobraria nada, mas prometer o que não dá é pior que não oferecer.
         let receita = shared::combinar::receita(escolhida.item_id);
         let bt_co = Rect::new(r.x + r.w - bw - 14.0 * f, by, bw, 32.0 * f);
         match receita {
@@ -178,8 +182,10 @@ impl Colecao {
                     r.x + 14.0 * f,
                     by + 36.0 * f,
                     &format!(
-                        "Combinar: {} iguais tentam o grau de cima, {}% de chance, {} de cobre. Falhar consome as {}.",
+                        "Combinar: {} {} tentam {}, {}% de chance, {} de cobre. Falhar consome os {}.",
                         rc.qtd,
+                        nome(escolhida.item_id),
+                        nome(rc.saida),
                         rc.chance,
                         crate::bolsa::milhar(rc.cobre as u64),
                         rc.qtd
