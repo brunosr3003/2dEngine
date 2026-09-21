@@ -352,6 +352,11 @@ struct Jogo {
     girando_toque: bool,
     /// WASD virtual na metade esquerda (so' com toque).
     joystick: joystick::Joystick,
+    /// Esta zona e' o Mar Aberto? Muda o polegar de andar pra pilotar.
+    no_mar: bool,
+    /// Ultimo (leme, forca) mandado, e quando. O comando sai so' na mudanca.
+    ultimo_comando: (i8, i8),
+    ultimo_comando_em: f64,
     rede: hud::Rede,
     ultimo_ping: f64,
     /// Marca da ultima janela de banda: instante e total de bytes.
@@ -606,6 +611,9 @@ async fn main() {
         camera_suave: camera_suave::CameraSuave::default(),
         girando_toque: false,
         joystick: joystick::Joystick::default(),
+        no_mar: false,
+        ultimo_comando: (0, 0),
+        ultimo_comando_em: 0.0,
         rede: hud::Rede::default(),
         ultimo_ping: 0.0,
         banda_marca: (0.0, 0),
@@ -710,8 +718,17 @@ impl Jogo {
             self.habilidades.acompanhar_alvos(&mut self.world);
             {
                 let terreno = self.terreno.as_ref();
+                // O CONVES E' CHAO. Este fecho e' o unico lugar que decide a
+                // altura de um corpo, entao consultar os cascos aqui poe o
+                // passageiro em cima do barco usando a mesma suavizacao de
+                // degrau que ja' existe — inclusive a rampa de subir a bordo.
+                // Zero codigo de desenho novo, zero interpolacao nova.
+                let cascos = self.world.cascos();
                 self.world.tick(get_frame_time(), &|x, z| {
-                    terreno.map_or(0.0, |t| t.altura_apoio(x, z, shared::ENTITY_RADIUS))
+                    crate::world::deck_em(&cascos, x, z)
+                        .unwrap_or_else(|| {
+                            terreno.map_or(0.0, |t| t.altura_apoio(x, z, shared::ENTITY_RADIUS))
+                        })
                 });
             }
             self.seguir_altura();
@@ -1076,7 +1093,16 @@ impl Jogo {
                 self.rastro.limpa();
                 // Ilha do arquipelago: o terreno nasce da SEMENTE, e nem o
                 // arquivo de tiles nem um byte de rede entram nisso.
-                self.terreno = shared::terreno::def_da_zona(&map_name).map(terreno::Terreno::novo);
+                // O MAR ABERTO nao e' ilha do arquipelago: o terreno dele e' o
+                // composto dos quatro geradores (docs/MAR_ABERTO.md), o mesmo
+                // que o servidor monta. Cliente e servidor desenham e colidem
+                // a partir da MESMA funcao — nao ha' como divergirem.
+                self.no_mar = shared::mar::e_mar(&map_name);
+                self.terreno = if shared::mar::e_mar(&map_name) {
+                    Some(terreno::Terreno::do_mar())
+                } else {
+                    shared::terreno::def_da_zona(&map_name).map(terreno::Terreno::novo)
+                };
                 // Mapa novo pra ilha nova; a viagem da ilha anterior morre junto.
                 // Os filtros do mapa valem a sessao: sobrevivem a ilha nova.
                 let filtros = std::mem::take(&mut self.mapa.filtros);
@@ -1270,7 +1296,7 @@ impl Jogo {
                     self.viagem_pendente = Some(destinos);
                 } else {
                     self.fecha_paineis();
-                    self.viagem.abrir(destinos);
+                    self.viagem.abrir(destinos, self.no_mar);
                 }
             }
             ServerMessage::CombinarResultado {
@@ -4083,6 +4109,34 @@ impl Jogo {
         if joy != Vec2::ZERO {
             dir = joy;
         }
+        // ── A BORDO, O MESMO POLEGAR VIRA LEME ──────────────────────────
+        //
+        // Nao ha' controle novo, nem botao novo, nem codigo de toque novo: o
+        // `direcao()` do joystick JA' E' `(leme, -acelerador)`. Empurrar pra
+        // frente acelera, pro lado vira. O polegar do jogador ja' esta' ali.
+        //
+        // Sai so' na MUDANCA e com banda morta. `Comando` nao entra no
+        // `InputFrame` de proposito: aquilo viaja na taxa de input pra todo
+        // jogador de toda zona, e dois bytes pra todo mundo em todo lugar pra
+        // UMA zona poder virar leme e' a troca errada.
+        if self.no_mar {
+            let leme = (dir.x.clamp(-1.0, 1.0) * 127.0) as i8;
+            let forca = ((-dir.y).clamp(0.0, 1.0) * 127.0) as i8;
+            let mudou = (leme as i16 - self.ultimo_comando.0 as i16).abs() > 8
+                || (forca as i16 - self.ultimo_comando.1 as i16).abs() > 8;
+            let agora = get_time();
+            if mudou && agora - self.ultimo_comando_em > 0.1 {
+                self.ultimo_comando = (leme, forca);
+                self.ultimo_comando_em = agora;
+                self.envia(shared::protocol::ClientMessage::Barco {
+                    pedido: shared::mar::PedidoBarco::Comando { leme, forca },
+                });
+            }
+            // E o corpo NAO anda: quem se move e' o casco, e a posicao de
+            // quem esta' a bordo e' derivada dele no servidor. Sem zerar, o
+            // jogador correria no lugar em cima do conves.
+            dir = Vec2::ZERO;
+        }
         // "Pra frente" e' longe da camera, nao o norte do mundo. A conta e'
         // aqui; o que sai no fio continua sendo direcao em espaco de mundo.
         dir = render3d::input_para_mundo(dir, self.cam_yaw);
@@ -5035,7 +5089,7 @@ impl Jogo {
             if let Some(d) = self.viagem_pendente.take() {
                 self.fecha_paineis();
                 self.missoes.fecha();
-                self.viagem.abrir(d);
+                self.viagem.abrir(d, self.no_mar);
             }
             if let Some(cofre) = self.banco_pendente.take() {
                 self.fecha_paineis();
@@ -5050,7 +5104,15 @@ impl Jogo {
             self.envia(pedido);
         }
         if let Some(ilha) = self.viagem.desenha() {
-            self.envia(ClientMessage::Viajar { ilha });
+            // O Capitao nao teleporta mais: no cais o botao ZARPA, e no mar
+            // ATRACA (docs/MAR_ABERTO.md). A `Viajar` morreu com ele.
+            self.envia(ClientMessage::Barco {
+                pedido: if self.no_mar {
+                    shared::mar::PedidoBarco::Atracar { ilha }
+                } else {
+                    shared::mar::PedidoBarco::Zarpar
+                },
+            });
         }
         // Loja de cash e janela de montarias (Menu).
         for pedido in self.loja_tp.desenha(&self.vox, &self.solido) {

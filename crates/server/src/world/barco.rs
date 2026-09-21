@@ -34,6 +34,9 @@ pub struct BarcoTag {
     /// -1..1, do HUD. O piloto automatico escreve no MESMO campo, pra haver
     /// um caminho de pilotagem so'.
     pub leme: f32,
+    /// De que cais o casco estava perto no tick passado. E' o que faz o
+    /// painel de atracar abrir sozinho ao chegar, e so' uma vez.
+    pub cais_perto: Option<u8>,
     /// 0..1, do HUD.
     pub acelerador: f32,
 }
@@ -77,7 +80,11 @@ impl GameWorld {
             } else {
                 (tag.vel - FREIO * dt).max(alvo)
             };
-            let dir = Vec2::new(yaw.cos(), yaw.sin());
+            // Convencao do FIO: `rumo_de_dir` usa `x.atan2(z)`, entao a
+            // frente e' (sin, cos). Guardar o yaw ja' nessa convencao evita
+            // uma conversao a cada snapshot — e evita o bug de ela existir
+            // num lugar e faltar noutro.
+            let dir = Vec2::new(yaw.sin(), yaw.cos());
             let pedido = dir * vel;
             let novo = mar.mover_no_mar(pos.0, pedido, dt, RAIO_CASCO);
             // Andou menos de 30% do que pediu: bateu na costa. Encalhe nao e'
@@ -93,7 +100,7 @@ impl GameWorld {
                 pos.0 = novo;
             }
             if let Ok(mut v) = self.ecs.get::<&mut Velocity>(e) {
-                v.0 = Vec2::new(yaw.cos(), yaw.sin()) * vel;
+                v.0 = Vec2::new(yaw.sin(), yaw.cos()) * vel;
             }
             let dono = {
                 let Ok(mut t) = self.ecs.get::<&mut BarcoTag>(e) else {
@@ -123,6 +130,47 @@ impl GameWorld {
         for sid in afundaram {
             self.naufragio(sid);
         }
+        self.avisa_cais();
+    }
+
+    /// O CAIS AVISA SOZINHO.
+    ///
+    /// No mar nao ha' Capitao pra clicar, e um botao permanente de "atracar"
+    /// seria um botao que nao serve 99% da travessia. Chegar perto de um cais
+    /// abre a lista de portos — a MESMA do porto, com os mesmos estados, pra
+    /// quem chegou saber na hora se aquele porto caiu ou se a historia ainda
+    /// nao liberou.
+    ///
+    /// So' na BORDA: abre ao entrar no alcance, e nao de novo ate' sair.
+    fn avisa_cais(&mut self) {
+        let Some(mar) = self.mar.as_ref() else {
+            return;
+        };
+        let cais: Vec<(u8, Vec2)> = (0..shared::terreno::ARQUIPELAGO.len())
+            .filter_map(|i| mar.cais_de(i).map(|c| (i as u8, c)))
+            .collect();
+        let mut abrir: Vec<SessionId> = Vec::new();
+        let mut mudancas: Vec<(Entity, Option<u8>)> = Vec::new();
+        for (e, (pos, tag)) in self.ecs.query::<(&Position, &BarcoTag)>().iter() {
+            let perto = cais
+                .iter()
+                .find(|(_, c)| c.distance(pos.0) <= shared::mar::PERTO_DO_CAIS)
+                .map(|(i, _)| *i);
+            if perto != tag.cais_perto {
+                mudancas.push((e, perto));
+                if perto.is_some() {
+                    abrir.push(tag.dono);
+                }
+            }
+        }
+        for (e, perto) in mudancas {
+            if let Ok(mut t) = self.ecs.get::<&mut BarcoTag>(e) {
+                t.cais_perto = perto;
+            }
+        }
+        for sid in abrir {
+            self.abrir_menu_viagem(sid);
+        }
     }
 
     /// Poe um casco no mundo sob o jogador, se ele ainda nao tem um.
@@ -147,6 +195,7 @@ impl GameWorld {
                 vel: 0.0,
                 leme: 0.0,
                 acelerador: 0.0,
+                cais_perto: None,
             },
         ));
     }

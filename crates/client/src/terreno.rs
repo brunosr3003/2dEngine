@@ -109,6 +109,15 @@ fn pedaco_visivel(cam: &Camera3D, cx: i32, cz: i32) -> bool {
 
 pub struct Terreno {
     ger: Gerador,
+    /// Os OUTROS geradores, quando esta zona e' o Mar Aberto: um por ilha,
+    /// com o centro dela em blocos, na coordenada do mar
+    /// (docs/MAR_ABERTO.md). Vazio numa ilha.
+    ///
+    /// E' o mesmo truque do `shared::mar::Mar`, deste lado: o terreno do mar
+    /// SAO as ilhas de verdade, nas posicoes de verdade. Quem desenha
+    /// pergunta por coluna, e `ger_em` diz qual gerador responde e com que
+    /// coordenada.
+    mares: Vec<(i32, i32, f32, Gerador)>,
     bioma: Bioma,
     /// Modelos de vegetacao assados uma vez por especie e variante. Instanciar
     /// e' copiar vertice com offset — a macroquad nao tem transform por malha,
@@ -150,9 +159,76 @@ fn ordem(b: u16, p: [Vec3; 4], n: Vec3) -> [u16; 6] {
 }
 
 impl Terreno {
+    /// Que gerador responde pela coluna, e em que coordenada dele.
+    ///
+    /// Numa ilha e' sempre o proprio, sem deslocamento. No mar sao quatro
+    /// testes de distancia — e 99% das colunas do mar aberto nao caem em
+    /// nenhum disco, e voltam o gerador da ilha 0 com a coluna bem longe
+    /// dela, que e' fundo de mar.
+    fn ger_em(&self, bx: i32, bz: i32) -> (&Gerador, i32, i32) {
+        if self.mares.is_empty() {
+            return (&self.ger, bx, bz);
+        }
+        let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
+        for (cbx, cbz, raio, g) in &self.mares {
+            let c = glam::Vec2::new(*cbx as f32 * BLOCO, *cbz as f32 * BLOCO);
+            if p.distance(c) <= raio + 64.0 {
+                return (g, bx - cbx, bz - cbz);
+            }
+        }
+        // Longe de tudo: manda pra bem fora da ilha 0, que e' agua funda.
+        let (_, _, _, g) = &self.mares[0];
+        (g, g.raio_blocos * 4, g.raio_blocos * 4)
+    }
+
+    /// Bloco de topo na coluna, roteado (ver `ger_em`).
+    fn bloco_em(&self, bx: i32, bz: i32) -> i32 {
+        let (g, x, z) = self.ger_em(bx, bz);
+        g.bloco_em(x, z)
+    }
+
+    fn mancha_em(&self, bx: i32, bz: i32) -> f32 {
+        let (g, x, z) = self.ger_em(bx, bz);
+        g.mancha(x, z)
+    }
+
+    fn pintura_em(&self, bx: i32, bz: i32) -> Option<shared::terreno::Material> {
+        let (g, x, z) = self.ger_em(bx, bz);
+        g.pintura_do_chao(x, z)
+    }
+
+    /// A chave de coluna do cache de esgotadas. No mar ela sai do gerador
+    /// DA ILHA, senao duas ilhas dividiriam chave e o tronco derrubado numa
+    /// sumiria na outra.
+    fn chave_da_coluna(&self, bx: i32, bz: i32) -> u32 {
+        let (g, x, z) = self.ger_em(bx, bz);
+        shared::terreno::chave_de_coluna(x + g.raio_blocos, z + g.raio_blocos)
+    }
+
+    /// O terreno do MAR ABERTO: os quatro geradores do arquipelago, cada um
+    /// no centro dele em coordenada do mar.
+    pub fn do_mar() -> Self {
+        let o = shared::mar::Mar::origem_de(&shared::terreno::ARQUIPELAGO);
+        let mut t = Self::novo(&shared::terreno::ARQUIPELAGO[0]);
+        t.mares = shared::terreno::ARQUIPELAGO
+            .iter()
+            .map(|d| {
+                let (cx, cz) = ((d.centro[0] - o.x) / BLOCO, (d.centro[1] - o.y) / BLOCO);
+                (
+                    cx.round() as i32,
+                    cz.round() as i32,
+                    d.raio_m(),
+                    Gerador::da_ilha(d),
+                )
+            })
+            .collect();
+        t
+    }
+
     pub fn novo(def: &DefIlha) -> Self {
         let mut t = Self {
             ger: Gerador::da_ilha(def),
+            mares: Vec::new(),
             bioma: def.bioma,
             arvores: Vec::new(),
             plantas: Vec::new(),
@@ -241,11 +317,11 @@ impl Terreno {
         let mut melhor: Option<(u32, Vec2, u8, f32, f32)> = None;
         for bz in cz - r..=cz + r {
             for bx in cx - r..=cx + r {
-                let topo = self.ger.bloco_em(bx, bz);
+                let topo = self.bloco_em(bx, bz);
                 let agua = (topo + 1) as f32 * BLOCO <= NIVEL_DO_MAR;
                 let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                     .iter()
-                    .map(|(dx, dz)| (topo - self.ger.bloco_em(bx + dx, bz + dz)).abs())
+                    .map(|(dx, dz)| (topo - self.bloco_em(bx + dx, bz + dz)).abs())
                     .max()
                     .unwrap_or(0);
                 buf.clear();
@@ -465,7 +541,7 @@ impl Terreno {
             for ix in 0..lado {
                 let bx = cx * CHUNK + ix as i32 - 1;
                 let bz = cz * CHUNK + iz as i32 - 1;
-                let h = self.ger.bloco_em(bx, bz);
+                let h = self.bloco_em(bx, bz);
                 agua[iz * lado + ix] = h <= BLOCO_DO_MAR;
                 // O mar e' uma superficie so'. Sem isso o merge guloso nao
                 // junta nada embaixo d'agua e a costa vira milhares de quads.
@@ -542,7 +618,7 @@ impl Terreno {
             if eh_agua(x, z) {
                 None
             } else {
-                self.ger.pintura_do_chao(cx * CHUNK + x, cz * CHUNK + z)
+                self.pintura_em(cx * CHUNK + x, cz * CHUNK + z)
             }
         };
         for iz in 0..n as i32 {
@@ -601,7 +677,7 @@ impl Terreno {
                     .map(|(dx, dz)| (h - em(ix + dx, iz + dz)).abs())
                     .max()
                     .unwrap_or(0);
-                let manchinha = self.ger.mancha(cx * CHUNK + ix, cz * CHUNK + iz);
+                let manchinha = self.mancha_em(cx * CHUNK + ix, cz * CHUNK + iz);
                 let mat = material_variado(self.bioma, y, declive, a, manchinha);
                 let mat = match t0 {
                     // Grama cuidada so' onde ja' era grama: na Geleira a
@@ -645,7 +721,7 @@ impl Terreno {
                     // Submerso e' LEITO: areia escurecendo com a fundura,
                     // que a agua rasa translucida deixa ver.
                     [if a {
-                        crate::agua::cor_do_leito(self.ger.bloco_em(gx, gz), gx, gz)
+                        crate::agua::cor_do_leito(self.bloco_em(gx, gz), gx, gz)
                     } else {
                         self.cor(mat, gx, gz, h, 1.0, tom_da_mancha(manchinha))
                     }; 4],
@@ -682,7 +758,7 @@ impl Terreno {
                         topo,
                         declive_col(&em, ix, iz),
                         false,
-                        self.ger.mancha(cx * CHUNK + ix, cz * CHUNK + iz),
+                        self.mancha_em(cx * CHUNK + ix, cz * CHUNK + iz),
                     );
                     let lado_x = dx != 0;
                     let luz = if lado_x { 0.74 } else { 0.58 };
@@ -706,7 +782,7 @@ impl Terreno {
                             cz * CHUNK + iz,
                             b,
                             luz,
-                            tom_da_mancha(self.ger.mancha(cx * CHUNK + ix, cz * CHUNK + iz)),
+                            tom_da_mancha(self.mancha_em(cx * CHUNK + ix, cz * CHUNK + iz)),
                         );
                         let p = if dx == 1 {
                             [
@@ -780,10 +856,7 @@ impl Terreno {
                     };
                     // Tronco esgotado some como a pedra: sem isto o jogador via a
                     // arvore de pe' e nao tinha como saber que ali ja' nao rende.
-                    let chave = shared::terreno::chave_de_coluna(
-                        bx + self.ger.raio_blocos,
-                        bz + self.ger.raio_blocos,
-                    );
+                    let chave = self.chave_da_coluna(bx, bz);
                     if self.esgotadas.contains(&chave) {
                         continue;
                     }
@@ -806,10 +879,7 @@ impl Terreno {
                 for ix in 0..n as i32 {
                     let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
                     let topo = em(ix, iz);
-                    let chave = shared::terreno::chave_de_coluna(
-                        bx + self.ger.raio_blocos,
-                        bz + self.ger.raio_blocos,
-                    );
+                    let chave = self.chave_da_coluna(bx, bz);
                     if self.esgotadas.contains(&chave) {
                         continue;
                     }
@@ -1029,11 +1099,11 @@ mod testes {
         let (mut solidos, mut vazados) = (0, 0);
         for bz in -160..160 {
             for bx in -160..160 {
-                let topo = t.ger.bloco_em(bx, bz);
+                let topo = t.bloco_em(bx, bz);
                 let agua = (topo + 1) as f32 * BLOCO <= shared::terreno::NIVEL_DO_MAR;
                 let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                     .iter()
-                    .map(|(dx, dz)| (topo - t.ger.bloco_em(bx + dx, bz + dz)).abs())
+                    .map(|(dx, dz)| (topo - t.bloco_em(bx + dx, bz + dz)).abs())
                     .max()
                     .unwrap_or(0);
                 // Uma arvore desenhada tem que ser um estorvo no servidor.
@@ -1109,7 +1179,7 @@ mod testes {
             };
             let (ix, iz) = ((e.coluna >> 16) as i32, (e.coluna & 0xffff) as i32);
             let (bx, bz) = (ix - d.raio_blocos, iz - d.raio_blocos);
-            let topo = t.ger.bloco_em(bx, bz);
+            let topo = t.bloco_em(bx, bz);
             let agua = (topo + 1) as f32 * BLOCO <= NIVEL_DO_MAR;
             let m = if tier == 5 {
                 shared::terreno::energia_da_coluna(d.bioma, bx, bz, topo, &t.ger, agua)

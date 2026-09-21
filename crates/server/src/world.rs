@@ -93,7 +93,7 @@ pub struct ProjTag {
     pub kind: u8,
 }
 
-mod barco;
+pub(crate) mod barco;
 mod boss_teste;
 mod chefes;
 mod habilidades;
@@ -2755,7 +2755,14 @@ impl GameWorld {
                 DUNGEON_LANE_COUNT
             );
         }
-        w.spawn_mapfile_entities(&mf);
+        // O MAR ABERTO ignora o mapfile. Ele precisa de um pra bootar (o
+        // `tick` aborta sem), mas o conteudo dele e' do mapa de TILES antigo:
+        // 231 bichos em coordenadas de terra que, no espaco do mar, caem
+        // boiando no meio do oceano. Ilha tambem nao usa — ela e' povoada
+        // pelo relevo — mas ali as coordenadas ao menos caem dentro dela.
+        if !shared::mar::e_mar(&crate::canais::zona()) {
+            w.spawn_mapfile_entities(&mf);
+        }
         if w.tutorial_mode {
             w.spawn_tutorial_island();
             w.spawn_tutorial_content();
@@ -11971,6 +11978,16 @@ impl GameWorld {
             .filter(|s| s.logged_in)
             .map(|s| (s.entity_id, shared::level_of_xp(s.xp) as u16))
             .collect();
+        // O RUMO DO CASCO. O barco nao ganhou campo novo no fio: a proa
+        // viaja no `EntityState::rumo`, o byte que ja' existia. Sem isto um
+        // casco PARADO perderia a direcao (o rumo sai da velocidade), e um
+        // barco ancorado apontando pro norte por padrao e' desorientador.
+        let rumo_do_casco: HashMap<EntityId, u8> = self
+            .ecs
+            .query::<(&NetId, &crate::world::barco::BarcoTag)>()
+            .iter()
+            .map(|(_, (n, t))| (n.0, shared::rumo_de_yaw(t.yaw)))
+            .collect();
         let acao_de: HashMap<EntityId, u8> = {
             use shared::components::acao;
             let agora = self.sim_time_s;
@@ -12160,6 +12177,9 @@ impl GameWorld {
                         vel.0,
                         vila_tag.and_then(|t| shared::npc_yaw_de_kind(t.rumo)),
                     );
+                    if let Some(r) = rumo_do_casco.get(&net.0) {
+                        state.rumo = *r;
+                    }
                     (meta, state)
                 },
             )
@@ -13415,7 +13435,7 @@ impl GameWorld {
 
     /// Clique no Capitao do Porto sem passo de viagem da historia: o menu
     /// "Viajar", com toda ilha e se da' pra ir.
-    fn abrir_menu_viagem(&self, sid: SessionId) {
+    pub(crate) fn abrir_menu_viagem(&self, sid: SessionId) {
         let Some(s) = self.sessions.get(&sid) else {
             return;
         };

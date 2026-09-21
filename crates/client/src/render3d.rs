@@ -1202,6 +1202,54 @@ pub fn rig_do_npc(papel: u8, id: u64) -> &'static str {
 }
 
 /// O bau da dungeon: madeira, faixas de ouro e um anel que pulsa no chao.
+/// O CASCO, de cubos (docs/MAR_ABERTO.md).
+///
+/// Arte nao pode travar o corte 1: o `.vox` do barco velho foi apagado junto
+/// com ele, e esperar modelo pra poder NAVEGAR seria trocar a ordem das
+/// coisas. Cubos, como o bau da dungeon, e o modelo entra depois sem mexer
+/// em mais nada.
+///
+/// `yaw` vem do `EntityState::rumo`, o byte que ja' existia: o barco nao
+/// custou um campo novo no fio.
+fn desenha_casco(p: Vec3, yaw: f32) {
+    let madeira = Color::from_rgba(112, 72, 38, 255);
+    let escura = Color::from_rgba(78, 48, 24, 255);
+    let pano = Color::from_rgba(226, 219, 198, 255);
+    // O modelo do jogo nasce olhando pro +Z, e o yaw e' `x.atan2(z)`: a
+    // frente e' (sin, cos). A mesma convencao do servidor, de proposito —
+    // ter duas seria ter uma errada.
+    let (fx, fz) = (yaw.sin(), yaw.cos());
+    let em = |ao_longo: f32, ao_lado: f32, y: f32| {
+        p + vec3(
+            ao_longo * fx + ao_lado * fz,
+            y,
+            ao_longo * fz - ao_lado * fx,
+        )
+    };
+    // Casco: tres pedacos afunilando pra proa, pra ele ter FRENTE. Um cubo
+    // so' ficaria igual de todos os lados, e ai' nao da' pra pilotar.
+    for (ao_longo, comp, larg) in [(-1.1f32, 1.6f32, 2.0f32), (0.5, 1.4, 1.6), (1.5, 0.9, 0.9)] {
+        draw_cube(
+            em(ao_longo, 0.0, 0.18),
+            vec3(comp, 0.42, larg),
+            None,
+            madeira,
+        );
+    }
+    // Amurada, pra o conves ler como chao e nao como tampo.
+    for lado in [-1.0f32, 1.0] {
+        draw_cube(
+            em(-0.3, lado * 0.92, 0.5),
+            vec3(2.8, 0.26, 0.16),
+            None,
+            escura,
+        );
+    }
+    // Mastro e vela.
+    draw_cube(em(-0.2, 0.0, 1.5), vec3(0.16, 2.2, 0.16), None, escura);
+    draw_cube(em(-0.2, 0.0, 1.9), vec3(0.1, 1.2, 1.7), None, pano);
+}
+
 fn desenha_bau(p: Vec3) {
     let t = get_time() as f32;
     let madeira = Color::from_rgba(122, 78, 40, 255);
@@ -1334,6 +1382,11 @@ pub fn draw_entities(
         }
         if let Some(corpo) = rig_do_humanoide(e).and_then(|nome| vox.rig(nome)) {
             brilhos.extend(desenha_personagem(e, corpo, None, vox, vista, false));
+            continue;
+        }
+        // O CASCO: sem rig, sem placa de nome, sem sombra de bicho.
+        if e.meta.tag == shared::EntityTag::Barco {
+            desenha_casco(p, e.yaw);
             continue;
         }
         // NPC da vila: o rig do OFICIO dele. Sem o arquivo, cai no corpo de
