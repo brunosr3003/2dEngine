@@ -43,12 +43,22 @@ pub struct Social {
     carta: Option<i64>,
     carta_pagina: usize,
     escrevendo: bool,
-    confirmacao: Option<(String, Pedido)>,
+    /// (texto, pedidos). E' uma LISTA porque o "Pegar tudo" confirma varios
+    /// de uma vez — um pedido so' e' uma lista de um.
+    confirmacao: Option<(String, Vec<Pedido>)>,
     aviso: String,
     ok: bool,
     carregado: bool,
     atualizar_em: f64,
     ocupado_ate: f64,
+    /// Pedidos em fila do "Pegar tudo e apagar".
+    ///
+    /// O servidor resgata UMA carta por vez (`correio_em_voo`), entao o botao
+    /// nao pode disparar tudo de uma vez: a fila escoa em `passo`, um pedido
+    /// por resposta, aproveitando que `ocupado_ate` ja' zera quando o
+    /// servidor responde. Resgatar vem antes de apagar — apagar uma carta com
+    /// anexo por resgatar e' jogar o item fora.
+    fila: Vec<Pedido>,
 }
 fn msg(pedido: Pedido) -> ClientMessage {
     ClientMessage::Social { pedido }
@@ -107,6 +117,15 @@ impl Social {
     pub fn passo(&mut self, agora: f64) -> Option<ClientMessage> {
         if self.convite.as_ref().is_some_and(|(_, ate)| agora >= *ate) {
             self.convite = None;
+        }
+        // A fila do "Pegar tudo" escoa aqui: um pedido por resposta.
+        if agora >= self.ocupado_ate && !self.fila.is_empty() {
+            let p = self.fila.remove(0);
+            self.ocupado_ate = agora + 8.0;
+            self.atualizar_em = agora + 5.0;
+            self.aviso = format!("Esvaziando a caixa… faltam {}", self.fila.len() + 1);
+            self.ok = true;
+            return Some(msg(p));
         }
         // Atualiza notificacoes mesmo com a janela fechada, sem interromper digitacao.
         if agora >= self.atualizar_em && agora >= self.ocupado_ate {
@@ -257,11 +276,11 @@ impl Social {
         saida.push(msg(p));
     }
     fn confirmar(&mut self, texto: String, p: Pedido) {
-        self.confirmacao = Some((texto, p));
+        self.confirmacao = Some((texto, vec![p]));
         self.foco = None;
     }
     fn desenha_confirmacao(&mut self, p: Rect, saida: &mut Vec<ClientMessage>) {
-        let (texto, pedido) = self.confirmacao.clone().unwrap();
+        let (texto, pedidos) = self.confirmacao.clone().unwrap();
         texto_em_linhas(
             &texto,
             Rect::new(
@@ -287,7 +306,13 @@ impl Social {
             get_time() >= self.ocupado_ate,
         ) {
             self.confirmacao = None;
-            self.enviar(pedido, saida);
+            // Um pedido vai direto; varios entram na fila, que escoa em
+            // `passo` conforme o servidor responde.
+            let mut it = pedidos.into_iter();
+            if let Some(primeiro) = it.next() {
+                self.enviar(primeiro, saida);
+            }
+            self.fila.extend(it);
         }
     }
     fn grupo_ui(&mut self, a: Rect, d: &[char], s: &mut Vec<ClientMessage>) {
@@ -660,6 +685,40 @@ impl Social {
         } else {
             self.estado.cartas.clone()
         };
+        // ── pegar tudo e apagar ──
+        //
+        // Resgatar carta por carta e apagar uma a uma era o unico caminho, e
+        // com meia duzia de cartas vira trabalho. Resgate ANTES do apagar, na
+        // fila: a ordem e' o que garante que nenhum anexo vai pro lixo.
+        let a_resgatar: Vec<i64> = cartas
+            .iter()
+            .filter(|c| c.oficial && !c.anexos.is_empty() && !c.resgatada)
+            .map(|c| c.id)
+            .collect();
+        let quantas = cartas.len();
+        if crate::ui::botao(
+            Rect::new(a.x + a.w - 500.0, a.y, 245.0, 38.0),
+            &if a_resgatar.is_empty() {
+                format!("Apagar tudo ({quantas})")
+            } else {
+                format!("Pegar tudo e apagar ({quantas})")
+            },
+            quantas > 0 && self.fila.is_empty(),
+        ) {
+            let mut fila: Vec<Pedido> = a_resgatar
+                .iter()
+                .map(|id| Pedido::ReceberAnexos { id: *id })
+                .collect();
+            fila.extend(cartas.iter().map(|c| Pedido::ApagarCarta { id: c.id }));
+            self.confirmacao = Some((
+                format!(
+                    "Receber os itens de {} carta(s) e apagar as {quantas}? Não dá pra desfazer.",
+                    a_resgatar.len()
+                ),
+                fila,
+            ));
+            self.foco = None;
+        }
         let range = paginacao(left, cartas.len(), &mut self.pagina);
         if cartas.is_empty() {
             e::texto(left.x, left.y + 25.0, "Sua caixa está vazia.", 18, e::SUAVE);
@@ -1307,4 +1366,76 @@ pub async fn previa() {
         }
     }
     crate::render3d::define_alvo(None);
+}
+
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    /// "Pegar tudo" resgata ANTES de apagar. Invertido, a carta com anexo
+    /// sumia com o item dentro — o jeito mais caro possivel de esvaziar a
+    /// caixa.
+    #[test]
+    fn a_fila_resgata_antes_de_apagar() {
+        let carta = |id: i64, anexos: bool, resgatada: bool| shared::social::Carta {
+            id,
+            de: "Sistema".into(),
+            assunto: "x".into(),
+            texto: "y".into(),
+            quando: 0,
+            lida: false,
+            oficial: true,
+            anexos: if anexos {
+                vec![shared::social::Anexo {
+                    item_id: 424,
+                    qtd: 1,
+                }]
+            } else {
+                Vec::new()
+            },
+            resgatada,
+        };
+        // Duas com anexo por pegar, uma ja' resgatada, uma sem anexo.
+        let cartas = vec![
+            carta(1, true, false),
+            carta(2, true, true),
+            carta(3, false, false),
+            carta(4, true, false),
+        ];
+        let a_resgatar: Vec<i64> = cartas
+            .iter()
+            .filter(|c| c.oficial && !c.anexos.is_empty() && !c.resgatada)
+            .map(|c| c.id)
+            .collect();
+        assert_eq!(a_resgatar, vec![1, 4], "so' as que tem anexo POR PEGAR");
+
+        let mut fila: Vec<Pedido> = a_resgatar
+            .iter()
+            .map(|id| Pedido::ReceberAnexos { id: *id })
+            .collect();
+        fila.extend(cartas.iter().map(|c| Pedido::ApagarCarta { id: c.id }));
+
+        // Todo resgate vem antes de todo apagar.
+        let primeiro_apagar = fila
+            .iter()
+            .position(|p| matches!(p, Pedido::ApagarCarta { .. }))
+            .expect("tem apagar");
+        assert!(
+            fila[..primeiro_apagar]
+                .iter()
+                .all(|p| matches!(p, Pedido::ReceberAnexos { .. })),
+            "apagar entrou no meio dos resgates"
+        );
+        // E toda carta e' apagada, inclusive as que nao tinham anexo.
+        assert_eq!(fila.len(), a_resgatar.len() + cartas.len());
+        for c in &cartas {
+            assert!(
+                fila.iter()
+                    .any(|p| matches!(p, Pedido::ApagarCarta { id } if *id == c.id)),
+                "carta {} ficou pra tras",
+                c.id
+            );
+        }
+    }
 }
