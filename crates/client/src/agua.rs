@@ -404,7 +404,7 @@ mod testes {
     #[test]
     fn malha_da_agua_cabe_no_desenho() {
         let d = &ARQUIPELAGO[0];
-        let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+        let ger = Gerador::da_ilha(d);
         // Em volta do porto (costa, agua rasa e fundo) com o raio de desenho do jogo.
         let porto = ger
             .vila()

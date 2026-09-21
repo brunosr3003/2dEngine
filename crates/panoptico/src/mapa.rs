@@ -25,12 +25,7 @@ use shared::terreno::{
 const COLUNAS_POR_PIXEL: i32 = 2;
 
 pub fn pintar(def: &'static DefIlha) -> anyhow::Result<Vec<u8>> {
-    let ger = Gerador::novo(
-        def.semente,
-        def.raio_blocos,
-        def.bioma,
-        shared::terreno::ESCALA_ALTURA,
-    );
+    let ger = Gerador::da_ilha(def);
     let lado = (def.raio_blocos * 2 / COLUNAS_POR_PIXEL) as usize;
     let mut px = vec![0u8; lado * lado * 4];
 

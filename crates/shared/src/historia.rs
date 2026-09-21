@@ -1003,7 +1003,7 @@ mod testes {
     fn todo_destino_escrito_existe_na_ilha() {
         for cap in CAPITULOS {
             let def = &ARQUIPELAGO[cap.ilha];
-            let ger = Gerador::novo(def.semente, def.raio_blocos, def.bioma, ESCALA_ALTURA);
+            let ger = Gerador::da_ilha(def);
             let papeis: Vec<u16> = ger.vila().npcs.iter().map(|n| n.papel as u16).collect();
             let porto = ger.vila().porto.as_ref().map(|p| (p.centro, p.ponta));
             let cidade = ger.cidade().map(|c| c.centro());

@@ -152,12 +152,7 @@ fn ordem(b: u16, p: [Vec3; 4], n: Vec3) -> [u16; 6] {
 impl Terreno {
     pub fn novo(def: &DefIlha) -> Self {
         let mut t = Self {
-            ger: Gerador::novo(
-                def.semente,
-                def.raio_blocos,
-                def.bioma,
-                shared::terreno::ESCALA_ALTURA,
-            ),
+            ger: Gerador::da_ilha(def),
             bioma: def.bioma,
             arvores: Vec::new(),
             plantas: Vec::new(),

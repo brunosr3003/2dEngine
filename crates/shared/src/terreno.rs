@@ -1643,9 +1643,85 @@ pub struct Gerador {
     pub semente: i32,
     cidade: Option<Cidade>,
     porto: Option<SitioPorto>,
+    /// Pra onde o cais deve olhar (`DefIlha::rumo_do_porto`). `None` = so'
+    /// costa plana e longe da cidade, como era antes do mar existir.
+    rumo_do_mar: Option<glam::Vec2>,
     /// Casas, props e NPCs. Calculada na primeira vez que alguem pede — o
     /// cliente e o servidor pedem, o `terreno --varre` nao.
     vila: std::sync::OnceLock<crate::vila::Vila>,
+}
+
+/// Move um CASCO: a regra da terra, ao contrario.
+///
+/// Em terra `subida()` devolve `None` sobre agua e o passo e' recusado — e'
+/// essa comparacao que faz o mar ser parede. Um barco precisa exatamente do
+/// avesso, e por isso isto e' uma funcao IRMA de `mover_com_degrau`, nao um
+/// parametro dela: aquela e' recursiva, roda duas vezes por tick pra cada
+/// mob com rota, e e' a funcao mais quente do `shared`. Um `if` falso
+/// 99,99% das vezes naquele laco nao compra nada e abre caminho pro caminho
+/// de terra quebrar.
+///
+/// `agua` responde "ha' agua neste ponto?" — `Ilha::agua` numa ilha,
+/// `Mar::agua` no mar aberto. Nao ha' degrau, nao ha' estorvo (nada e'
+/// plantado no mar) e nao ha' deslize por eixo: um casco que bate na costa
+/// PARA, e quem chama trata isso como encalhe.
+pub fn mover_casco(
+    agua: &dyn Fn(f32, f32) -> bool,
+    pos: glam::Vec2,
+    vel: glam::Vec2,
+    dt: f32,
+    raio: f32,
+) -> glam::Vec2 {
+    // Varredura, pelo mesmo motivo do `mover_com_degrau`: a 11 u/s o passo de
+    // um tick e' 0,36 u contra blocos de 0,5. Sem dividir, o casco atravessa
+    // um recife de uma coluna so' — e recife que nao existe nao ensina nada.
+    const PASSO_MAX: f32 = 0.15;
+    let anda = (vel * dt).length();
+    if anda > PASSO_MAX {
+        let n = (anda / PASSO_MAX).ceil().min(16.0);
+        let mut p = pos;
+        for _ in 0..n as u32 {
+            let novo = mover_casco(agua, p, vel, dt / n, raio);
+            if novo.distance_squared(p) <= 1e-9 {
+                return p;
+            }
+            p = novo;
+        }
+        return p;
+    }
+    let v = vel * dt;
+    if v == glam::Vec2::ZERO {
+        return pos;
+    }
+    let alvo = pos + v;
+    let dir = v.normalize_or_zero();
+    if borda_molhada(agua, alvo, raio, dir) {
+        alvo
+    } else {
+        pos
+    }
+}
+
+/// A borda DA FRENTE do casco esta' toda na agua?
+///
+/// Tres pontos, a mesma geometria do `borda_livre` (o centro e os dois
+/// ombros): com so' o centro, a proa passa raspando e metade do casco fica
+/// dentro do barranco. E aqui os tres precisam passar, nao um — meio casco
+/// em terra e' encalhe, nao navegacao.
+fn borda_molhada(
+    agua: &dyn Fn(f32, f32) -> bool,
+    para: glam::Vec2,
+    raio: f32,
+    dir: glam::Vec2,
+) -> bool {
+    let perp = glam::Vec2::new(-dir.y, dir.x);
+    for k in [-0.7f32, 0.0, 0.7] {
+        let p = para + dir * raio + perp * (raio * k);
+        if !agua(p.x, p.y) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Terraplanagem de um sitio: plato cheio ate' `raio_plato`, smoothstep ate'
@@ -1847,6 +1923,36 @@ impl Gerador {
             semente,
             cidade: None,
             porto: None,
+            rumo_do_mar: None,
+            vila: std::sync::OnceLock::new(),
+        };
+        g.cidade = g.achar_cidade();
+        g.porto = g.achar_porto(g.cidade);
+        g
+    }
+
+    /// O gerador de uma ilha do arquipelago. E' por aqui que o cais aprende
+    /// pra que lado fica a rota (`DefIlha::rumo_do_porto`) — e e' por isso
+    /// que quem constroi a partir de um `DefIlha` deve usar isto, e nao
+    /// `novo`: com os quatro argumentos soltos o rumo se perde e o porto sai
+    /// no lugar errado, sem erro nenhum.
+    pub fn da_ilha(def: &DefIlha) -> Self {
+        let p = def.bioma.perfil();
+        let (tb, tf) = (p.terraco_blocos, p.terraco_forca);
+        let mut g = Self {
+            p: Perlin::novo(def.semente),
+            pw: Perlin::novo(def.semente ^ 0x5f37_59df),
+            pctrl: Perlin::novo(def.semente ^ 0x1b87_3593),
+            forma: Forma::de(def.semente, def.raio_blocos),
+            perfil: def.bioma.perfil(),
+            raio_blocos: def.raio_blocos,
+            escala_altura: ESCALA_ALTURA,
+            terraco_blocos: tb,
+            terraco_forca: tf,
+            semente: def.semente,
+            cidade: None,
+            porto: None,
+            rumo_do_mar: def.rumo_do_porto(),
             vila: std::sync::OnceLock::new(),
         };
         g.cidade = g.achar_cidade();
@@ -2060,7 +2166,17 @@ impl Gerador {
                 if !self.mar_aberto(ponta).0 || !self.mar_aberto(ponta + mar * 6.0).0 {
                     continue;
                 }
-                let nota = (soma2 / n - media * media) - longe.min(320.0) / 80.0;
+                // Achatamento, menos um puxao pra longe da cidade, menos o
+                // premio por OLHAR PRA ROTA. O rumo que conta e' o `mar`
+                // ja' encaixado no quarto de volta — e' ele que decide pra
+                // onde o cais aponta de verdade, nao o raio cru.
+                //
+                // Peso 6 contra 4 do "longe": entre uma costa plana virada
+                // pro lado errado e uma costa boa virada pra rota, a rota
+                // ganha. Uma travessia que da' a volta na ilha custa minutos
+                // por viagem, todo dia, pra sempre.
+                let olhando = self.rumo_do_mar.map_or(0.0, |alvo| mar.dot(alvo));
+                let nota = (soma2 / n - media * media) - longe.min(320.0) / 80.0 - olhando * 6.0;
                 if melhor.is_none_or(|(m, _)| nota < m) {
                     melhor = Some((
                         nota,
@@ -2327,7 +2443,11 @@ const MAGICA: [u8; 4] = *b"TALT";
 /// 4: o porto so' assenta em costa de MAR ABERTO (antes caia em lago), e o
 /// patio e o pier mudaram de lugar.
 // 6: cristais de Energia substituem uma fração dos veios minerais.
-const VERSAO: u16 = 7;
+// 8 (21/09/2026): o cais passou a apontar pra rota entre as ilhas
+// (`DefIlha::rumo_do_porto`), entao o porto MUDOU DE LUGAR e o relevo do
+// patio com ele. Cache velho traria a ilha antiga com o porto novo desenhado
+// por cima.
+const VERSAO: u16 = 8;
 
 impl Ilha {
     pub fn gerar(semente: i32, raio_blocos: i32, bioma: Bioma, escala_altura: f32) -> Self {
@@ -2378,6 +2498,44 @@ impl Ilha {
             blocos,
             ger,
         )
+    }
+
+    /// A ilha de uma zona do arquipelago, com o cais virado pra rota.
+    ///
+    /// E' o par de `Gerador::da_ilha`, e quem simula uma ilha de verdade tem
+    /// que vir por aqui: pelos quatro argumentos soltos o rumo se perde e o
+    /// servidor acaba com o porto num lugar e o cliente noutro.
+    pub fn da_ilha(def: &DefIlha) -> Self {
+        let lado = (def.raio_blocos * 2) as usize;
+        let ger = Gerador::da_ilha(def);
+        let mut blocos = vec![0i16; lado * lado];
+        for iz in 0..lado {
+            let bz = iz as i32 - def.raio_blocos;
+            for ix in 0..lado {
+                let bx = ix as i32 - def.raio_blocos;
+                blocos[iz * lado + ix] = ger.bloco_em(bx, bz) as i16;
+            }
+        }
+        Self::com_blocos(
+            def.semente,
+            def.raio_blocos,
+            def.bioma,
+            ESCALA_ALTURA,
+            lado,
+            blocos,
+            ger,
+        )
+    }
+
+    /// `carregar_ou_gerar` pra uma ilha do arquipelago.
+    pub fn carregar_ou_gerar_da_ilha(dir: &str, def: &DefIlha) -> Self {
+        let caminho = format!("{dir}/{}-{}.alt", def.semente, def.raio_blocos);
+        if let Some(i) = Self::carregar_da_ilha(&caminho, def) {
+            return i;
+        }
+        let ilha = Self::da_ilha(def);
+        let _ = ilha.salvar(&caminho);
+        ilha
     }
 
     /// O caminho unico pra nascer uma ilha: gerada ou lida do cache, o indice
@@ -2911,6 +3069,18 @@ impl Ilha {
     pub fn agua(&self, x: f32, z: f32) -> bool {
         let (ix, iz) = self.coluna(x, z);
         (self.bloco(ix, iz) + 1) as f32 * BLOCO <= NIVEL_DO_MAR
+    }
+
+    /// Move um casco pela agua DESTA ilha (ver `mover_casco`). E' o avesso
+    /// do `mover_e_deslizar`: aqui terra e' que barra.
+    pub fn mover_no_mar(
+        &self,
+        pos: glam::Vec2,
+        vel: glam::Vec2,
+        dt: f32,
+        raio: f32,
+    ) -> glam::Vec2 {
+        mover_casco(&|x, z| self.agua(x, z), pos, vel, dt, raio)
     }
 
     /// Da' pra ANDAR de um ponto ao outro? Um bloco de subida passa como
@@ -3545,6 +3715,27 @@ impl Ilha {
         ))
     }
 
+    /// `carregar` pra uma ilha do arquipelago: o cache guarda so' altura, mas
+    /// o `Gerador` que volta junto precisa saber o rumo do cais.
+    fn carregar_da_ilha(caminho: &str, def: &DefIlha) -> Option<Self> {
+        let i = Self::carregar(
+            caminho,
+            def.semente,
+            def.raio_blocos,
+            def.bioma,
+            ESCALA_ALTURA,
+        )?;
+        Some(Self::com_blocos(
+            def.semente,
+            def.raio_blocos,
+            def.bioma,
+            ESCALA_ALTURA,
+            i.lado,
+            i.blocos,
+            Gerador::da_ilha(def),
+        ))
+    }
+
     /// Quanto desta ilha serve pra jogar.
     ///
     /// MMO nao precisa de relevo bonito, precisa de CHAO: mob, chefe e briga
@@ -3941,6 +4132,31 @@ impl DefIlha {
     pub fn raio_m(&self) -> f32 {
         self.raio_blocos as f32 * BLOCO
     }
+
+    /// Pra onde o CAIS desta ilha tem que apontar: o rumo do mar entre as
+    /// ilhas, que e' a direcao do centro de massa das OUTRAS.
+    ///
+    /// Antes de 21/09/2026 o porto so' precisava de uma costa plana e longe
+    /// da cidade, porque o mar era cenario e a viagem era um clique. Agora a
+    /// travessia e' navegada, e um cais virado pro lado errado custa a volta
+    /// inteira na ilha: medido no arquipelago de hoje, Bosque->Geleira dava
+    /// 2833 u de cais a cais contra 2110 de centro a centro.
+    ///
+    /// Derivado da tabela em vez de escrito a mao, pra mover uma ilha
+    /// continuar dando cais que se olham. `None` = ilha que nao esta' no
+    /// arquipelago (as dos testes), e ai' vale a regra antiga.
+    pub fn rumo_do_porto(&self) -> Option<glam::Vec2> {
+        let outras: Vec<&DefIlha> = ARQUIPELAGO.iter().filter(|d| d.zona != self.zona).collect();
+        if outras.len() + 1 != ARQUIPELAGO.len() {
+            return None;
+        }
+        let n = outras.len() as f32;
+        let alvo = outras
+            .iter()
+            .fold(glam::Vec2::ZERO, |a, d| a + glam::Vec2::from(d.centro))
+            / n;
+        (alvo - glam::Vec2::from(self.centro)).try_normalize()
+    }
 }
 
 /// O arquipelago do play test: quatro ilhas, progressao pro OESTE.
@@ -4267,6 +4483,35 @@ mod testes {
             longe.x < 9000.0,
             "atravessou o mar inteiro, ate' {}",
             longe.x
+        );
+    }
+
+    /// O avesso do teste acima, e por isso ele mora colado nele: o CASCO so'
+    /// anda na agua, e para na costa em vez de subir a praia.
+    ///
+    /// As duas regras existem separadas de proposito — a de terra recusa
+    /// agua, a do casco recusa terra — e um teste ao lado do outro e' o que
+    /// impede alguem de "simplificar" as duas numa com um booleano.
+    #[test]
+    fn casco_so_anda_na_agua() {
+        let i = Ilha::gerar(5, 64, Bioma::Floresta, ESCALA_ALTURA);
+        // Bem fora da ilha e' mar aberto: la' o casco anda a vontade.
+        let mar = glam::Vec2::new(60.0, 0.0);
+        assert!(i.agua(mar.x, mar.y), "o ponto de partida tinha que ser mar");
+        let andou = i.mover_no_mar(mar, glam::Vec2::new(0.0, 4.0), 1.0, 1.2);
+        assert!(andou.distance(mar) > 1.0, "o casco nao saiu do lugar");
+        assert!(i.agua(andou.x, andou.y), "o casco parou em terra: {andou:?}");
+
+        // Rumo ao centro da ilha: para na costa, e nao sobe a praia.
+        let na_costa = i.mover_no_mar(mar, glam::Vec2::new(-9999.0, 0.0), 1.0, 1.2);
+        assert!(
+            i.agua(na_costa.x, na_costa.y),
+            "o casco encalhou em terra seca, em {na_costa:?}"
+        );
+        assert!(
+            na_costa.x > -30.0,
+            "o casco atravessou a ilha inteira, ate' {}",
+            na_costa.x
         );
     }
 
@@ -4612,7 +4857,7 @@ mod testes {
         let mut falhas = Vec::new();
         for d in &ARQUIPELAGO {
             let t0 = std::time::Instant::now();
-            let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+            let ger = Gerador::da_ilha(d);
             let criar = t0.elapsed();
             let p = ger
                 .porto()
@@ -4640,7 +4885,7 @@ mod testes {
     #[test]
     fn toda_ilha_tem_cidade_plana_seca_e_sem_mato() {
         for d in &ARQUIPELAGO {
-            let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+            let ger = Gerador::da_ilha(d);
             let c = ger
                 .cidade()
                 .unwrap_or_else(|| panic!("{}: sem cidade", d.zona));
@@ -4699,7 +4944,7 @@ mod testes {
     #[test]
     fn da_pra_sair_da_cidade_andando() {
         for d in &ARQUIPELAGO {
-            let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+            let ger = Gerador::da_ilha(d);
             let c = ger.cidade().unwrap();
             let mut saidas = 0;
             for k in 0..16 {
@@ -4733,8 +4978,8 @@ mod testes {
     #[test]
     fn a_cidade_sai_igual_nos_dois_lados() {
         let d = &ARQUIPELAGO[0];
-        let a = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
-        let b = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+        let a = Gerador::da_ilha(d);
+        let b = Gerador::da_ilha(d);
         assert_eq!(a.cidade(), b.cidade());
         let c = a.cidade().unwrap();
         for k in 0..200 {

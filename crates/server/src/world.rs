@@ -633,7 +633,16 @@ pub const MOB_ZONA_ESPACO_UN: f32 = 90.0;
 /// Raio de uma zona: de onde ela tira os slots.
 pub const MOB_ZONA_RAIO_UN: f32 = 45.0;
 /// Espacamento minimo entre dois mobs da mesma zona.
-pub const MOB_ESPACO_UN: f32 = 7.0;
+///
+/// Subiu de 7 pra 8 em 21/09/2026. O passo "Ursos na encosta" (nv 6) passava
+/// na simulacao com margem ZERO — 35% de HP contra um piso de 35% — pras
+/// classes de longe, que nao tem como mitigar tres ursos de uma vez. Qualquer
+/// mexida no relevo derrubava, e foi o que o cais virado pra rota fez.
+///
+/// Uma unidade de folga entre mobs e' menos gente agredindo ao mesmo tempo no
+/// pior canto da ilha, e a simulacao inteira continua verde. Margem zero num
+/// guarda nao e' guarda: e' um alarme que ja' disparou.
+pub const MOB_ESPACO_UN: f32 = 8.0;
 // ─────────────────────────────── fortes ───────────────────────────────
 //
 // Um FORTE e' uma zona comum com a densidade apertada: mesmo nivel, mesmo
@@ -658,9 +667,19 @@ pub const FORTE_POR_ZONA: u32 = 34;
 ///
 /// Medido com `metas_do_inicio`, que simula a jornada inteira: com o forte
 /// valendo desde o nivel 3 a primeira cacada (702) da' QUATRO bichos em cima,
-/// vida a zero e morte. O 4 ja' passa; o 5 e' ele com um nivel de folga,
-/// porque a simulacao e' um modelo e o jogador de verdade erra mais.
-pub const FORTE_NA_MISSAO_NIVEL: u32 = 5;
+/// vida a zero e morte.
+///
+/// **Subiu de 5 pra 7 em 21/09/2026.** O 5 deixava "Ursos na encosta" (708,
+/// nivel 6) cair num forte, e as classes de LONGE terminavam com 24% de vida
+/// contra um piso de 35% — elas nao tem como mitigar tres ursos de uma vez.
+/// Passava por margem zero antes so' porque o sorteio dos fortes calhava de
+/// nao pegar a 708; mexer no relevo (o cais virado pra rota) foi o bastante
+/// pra derrubar. Margem zero num guarda nao e' guarda.
+///
+/// O 7 poe o primeiro forte de missao DEPOIS do ultimo passo de cacada do
+/// capitulo I, que e' onde o jogador ja' tem equipamento e pocao pra escolher
+/// entrar.
+pub const FORTE_NA_MISSAO_NIVEL: u32 = 7;
 
 /// O centro de indice `i` vira forte? Os centros ja' saem embaralhados pela
 /// semente da ilha, entao pegar de N em N espalha os fortes sem uma segunda
@@ -13176,12 +13195,7 @@ impl GameWorld {
         };
         let (entidade, nome) = (s.entity, s.name.clone());
         // Chega na praca da outra ilha: a posicao salva vale LA'.
-        let chegada = shared::terreno::Gerador::novo(
-            dest.semente,
-            dest.raio_blocos,
-            dest.bioma,
-            shared::terreno::ESCALA_ALTURA,
-        )
+        let chegada = shared::terreno::Gerador::da_ilha(dest)
         .cidade()
         .map(|c| c.centro())
         .unwrap_or(Vec2::ZERO);

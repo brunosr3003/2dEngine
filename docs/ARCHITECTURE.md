@@ -91,7 +91,7 @@ guardada pra desincronizar. Exige token e não sobe sem um.
 Nada de terreno. Nada de vegetação. Nada de altura.
 
 O cliente recebe `EntityMeta` uma vez (nome, tipo, hp máximo) e `EntityState`
-por tick só de quem mudou: 13 bytes com posição em 1/16 de tile, velocidade
+por tick só de quem mudou: 13 bytes com posição em 1/8 de tile, velocidade
 saturada em i8 e um byte de bandeiras. A altura o cliente calcula do próprio
 campo de altura — é o mesmo do servidor, então não há o que divergir e não há
 o que forjar.

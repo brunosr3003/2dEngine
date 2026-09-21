@@ -83,7 +83,7 @@ fn main() {
 /// couber numa fatia de 16 ms, o mundo aparece as solavancos.
 fn pedaco() {
     let d = &ARQUIPELAGO[0];
-    let g = shared::terreno::Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+    let g = shared::terreno::Gerador::da_ilha(d);
     let n = 34i32;
     for rodada in 0..3 {
         let t0 = std::time::Instant::now();

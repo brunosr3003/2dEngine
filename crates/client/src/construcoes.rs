@@ -237,7 +237,7 @@ impl Construcoes {
 /// Todas as construcoes da vila e do porto da ilha, assadas. Roda FORA do
 /// quadro.
 pub fn assar_vila(def: &DefIlha) -> Vec<Assada> {
-    let ger = Gerador::novo(def.semente, def.raio_blocos, def.bioma, ESCALA_ALTURA);
+    let ger = Gerador::da_ilha(def);
     let vila = ger.vila();
     let mut saida = Vec::with_capacity(vila.predios.len() + vila.props.len());
     for p in &vila.predios {
@@ -629,7 +629,7 @@ mod tests {
     #[test]
     fn a_porta_da_malha_e_a_porta_da_colisao() {
         let d = &ARQUIPELAGO[0];
-        let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+        let ger = Gerador::da_ilha(d);
         let mut casas = 0;
         for p in ger
             .vila()
@@ -724,7 +724,7 @@ mod tests {
     #[test]
     fn a_casa_assenta_no_chao() {
         let d = &ARQUIPELAGO[0];
-        let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+        let ger = Gerador::da_ilha(d);
         for p in ger
             .vila()
             .predios
@@ -756,7 +756,7 @@ mod tests {
     #[test]
     fn o_teto_some_so_por_dentro() {
         let d = &ARQUIPELAGO[0];
-        let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+        let ger = Gerador::da_ilha(d);
         let mut casas = 0;
         for p in ger
             .vila()

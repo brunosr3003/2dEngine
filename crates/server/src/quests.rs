@@ -819,12 +819,7 @@ mod testes {
         assert!(cadeia.len() >= 4);
         let vila_papeis: Vec<u16> = {
             let d = &shared::terreno::ARQUIPELAGO[0];
-            let ger = shared::terreno::Gerador::novo(
-                d.semente,
-                d.raio_blocos,
-                d.bioma,
-                shared::terreno::ESCALA_ALTURA,
-            );
+            let ger = shared::terreno::Gerador::da_ilha(d);
             ger.vila().npcs.iter().map(|n| n.papel as u16).collect()
         };
         let givers_da_vila: Vec<u16> = vila_papeis

@@ -822,13 +822,7 @@ fn bosque() -> &'static (Vec2, crate::world::ZonasComuns) {
     B.get_or_init(|| {
         let def = shared::terreno::def_da_zona("ilha_inicial").expect("ilha inicial");
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/ilhas");
-        let ilha = shared::terreno::Ilha::carregar_ou_gerar(
-            dir,
-            def.semente,
-            def.raio_blocos,
-            def.bioma,
-            shared::terreno::ESCALA_ALTURA,
-        );
+        let ilha = shared::terreno::Ilha::carregar_ou_gerar_da_ilha(dir, def);
         let cidade = ilha.cidade().map_or(Vec2::ZERO, |c| c.centro());
         let zonas = crate::world::zonas_comuns_da_ilha(&ilha, def, cidade);
         (cidade, zonas)

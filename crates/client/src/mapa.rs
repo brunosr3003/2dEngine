@@ -650,7 +650,7 @@ const COR_PORTO: Color = Color::new(0.55, 0.82, 0.95, 1.0);
 /// gera o voxel de cada predio pra saber o tamanho dele.
 fn gerar_dados(def: &'static DefIlha) -> Dados {
     let rgba = gerar_imagem(def);
-    let ger = Gerador::novo(def.semente, def.raio_blocos, def.bioma, ESCALA_ALTURA);
+    let ger = Gerador::da_ilha(def);
     let vila = ger.vila();
     let pegadas = vila
         .predios
@@ -688,7 +688,7 @@ fn gerar_dados(def: &'static DefIlha) -> Dados {
 
 /// RGBA da ilha inteira. Roda FORA do quadro.
 fn gerar_imagem(def: &'static DefIlha) -> Vec<u8> {
-    let ger = Gerador::novo(def.semente, def.raio_blocos, def.bioma, ESCALA_ALTURA);
+    let ger = Gerador::da_ilha(def);
     let raio = def.raio_blocos as f32 * BLOCO;
     let pico = ger.pico().max(1.0);
     let mut hs = vec![0f32; LADO * LADO];
@@ -821,7 +821,7 @@ impl Mapa {
         std::thread::spawn(move || {
             let _ = tx.send(gerar_dados(def));
         });
-        let ger = Gerador::novo(def.semente, def.raio_blocos, def.bioma, ESCALA_ALTURA);
+        let ger = Gerador::da_ilha(def);
         m.cidade = ger.cidade();
         m.ger = Some(ger);
         m.def = Some(def);

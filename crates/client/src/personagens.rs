@@ -24,12 +24,7 @@ struct Fundo {
 impl Fundo {
     fn novo() -> Option<Self> {
         let def = shared::terreno::def_da_zona("ilha_inicial")?;
-        let ger = shared::terreno::Gerador::novo(
-            def.semente,
-            def.raio_blocos,
-            def.bioma,
-            shared::terreno::ESCALA_ALTURA,
-        );
+        let ger = shared::terreno::Gerador::da_ilha(def);
         // O Vec2 do shared e' de outra versao do glam.
         let centro = ger
             .cidade()

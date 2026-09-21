@@ -39,7 +39,7 @@ Cliente (60+ Hz)                            Servidor (30 Hz)
 | `EntityState` | por tick, só de quem mudou | **13 bytes** |
 | `ClientMessage::Input` | ~30 Hz | direção, mira, botões |
 
-`EntityState` é `Copy`: posição em 1/16 de tile (`i16`), velocidade saturada
+`EntityState` é `Copy`: posição em 1/8 de tile (`i16`), velocidade saturada
 em `i8`, hp em `u16`, um byte de bandeiras. Antes era um struct de 58 campos
 com duas `String` dentro — com 100 jogadores vendo 100 entidades, a diferença
 é 10 mil clones com alocação por tick contra 10 mil cópias de bloco.

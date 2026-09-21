@@ -106,7 +106,7 @@ Virou dois tipos:
 - **`EntityState`** — id, posição, velocidade, hp, flags. 13 bytes, `Copy`, sem
   nenhuma `String`.
 
-A posição foi quantizada pra **1/16 de tile** em `i16`: 4 bytes em vez de 8, e
+A posição foi quantizada pra **1/8 de tile** em `i16`: 4 bytes em vez de 8, e
 ±2048 tiles de alcance. Erro de um décimo de pixel numa vista de cima ninguém
 enxerga, e o cliente interpola por cima.
 

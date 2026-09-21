@@ -64,13 +64,7 @@ pub async fn run_world_loop(
     if let Some(def) = shared::terreno::def_da_zona(&world.zona) {
         let dir = std::env::var("MMO_ILHAS").unwrap_or_else(|_| "data/ilhas".into());
         let t0 = Instant::now();
-        let ilha = shared::terreno::Ilha::carregar_ou_gerar(
-            &dir,
-            def.semente,
-            def.raio_blocos,
-            def.bioma,
-            shared::terreno::ESCALA_ALTURA,
-        );
+        let ilha = shared::terreno::Ilha::carregar_ou_gerar_da_ilha(&dir, def);
         tracing::info!(
             "ilha '{}' ({:?}, raio {} blocos, {} troncos/matacoes) pronta em {:?}",
             world.zona,

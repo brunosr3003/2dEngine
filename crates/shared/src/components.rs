@@ -417,12 +417,27 @@ pub mod ent_flags {
     pub const DASHING: u8 = 1 << 7;
 }
 
-/// Precisao da posicao no wire: 1/16 de tile.
+/// Precisao da posicao no wire: 1/8 de tile.
 ///
-/// Com `i16` isso cobre +-2048 tiles, folga de sobra pro mundo, e corta a
-/// posicao de 8 bytes (2x f32) pra 4. Um decimo de pixel de erro num jogo de
-/// vista de cima ninguem enxerga — e o cliente interpola por cima disso.
-pub const POS_SCALE: f32 = 16.0;
+/// Com `i16` isso cobre +-4095 tiles e corta a posicao de 8 bytes (2x f32)
+/// pra 4. Um decimo de pixel de erro num jogo de vista de cima ninguem
+/// enxerga — e o cliente interpola por cima disso.
+///
+/// **Era 1/16 ate' 21/09/2026, e apertava em dois lugares ao mesmo tempo.**
+/// `quantize` CLAMPA, em silencio:
+///
+/// - **posicao**, com `i16`, cobria +-2047,9 u. O Mar Aberto poe as quatro
+///   ilhas num espaco de coordenadas so' (`terreno::ARQUIPELAGO`), e o
+///   Planalto mora em x = -3600: toda entidade a oeste de -2048 empilharia no
+///   mesmo ponto, sem um erro em log nenhum.
+/// - **velocidade**, com `i8`, cobria +-7,94 u/s. Um casco a 11 u/s ja'
+///   saturava — e `vel` e' o que o cliente usa pra girar o modelo e decidir
+///   se anda.
+///
+/// Meia escala conserta os dois, e o fio nao muda: mesmo `i16`, mesmo `i8`,
+/// mesmos bytes. So' a precisao cai de 6,25 cm pra 12,5 cm, que continua
+/// abaixo do que se enxerga.
+pub const POS_SCALE: f32 = 8.0;
 
 /// Dado ESTAVEL de uma entidade: vai uma vez, quando ela entra no campo de
 /// visao do jogador.
@@ -528,9 +543,9 @@ mod testes_npc_kind {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct EntityState {
     pub id: EntityId,
-    /// Posicao em 1/16 de tile (ver `POS_SCALE`).
+    /// Posicao em 1/8 de tile (ver `POS_SCALE`).
     pub pos: [i16; 2],
-    /// Velocidade em 1/16 de tile/s, saturada. O cliente usa pra girar o
+    /// Velocidade em 1/8 de tile/s, saturada. O cliente usa pra girar o
     /// modelo e decidir se anda — nao precisa de precisao.
     pub vel: [i8; 2],
     pub hp: u16,

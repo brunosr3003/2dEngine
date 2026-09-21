@@ -466,26 +466,57 @@ fn montar_porto(ger: &Gerador, p: &SitioPorto, vila: &mut Vila) {
     .into_iter()
     .enumerate()
     {
-        'achou: for k in 0..6 {
-            let s = seed.wrapping_add((i as i32 + 1) * 1000 + k * 7919);
-            let c = construcao::gerar(tipo, papel, s);
-            for (recuo, afast) in VAGAS {
-                let pos = raiz - mar * recuo + lado * afast;
-                let q = quarto_para(raiz - mar * recuo - pos);
-                let meia = c.meia(q);
-                if chao.cabe(&lotes, pos, meia, 1.0) {
-                    lotes.push((pos, meia));
-                    vila.predios.push(Predio {
-                        tipo,
-                        papel,
-                        seed: s,
-                        pos: Vec3::new(pos.x, chao_y - B_CASA + RESPIRO, pos.y),
-                        yaw_q: q,
-                        chao: chao_y,
-                    });
-                    break 'achou;
+        // O NPC DO PORTO NAO E' OPCIONAL.
+        //
+        // Antes isto era um laco que, nao achando vaga, simplesmente nao
+        // punha o predio — e com ele sumia o NPC. Um passo da historia que
+        // aponta pro Cartografo vira um passo impossivel, sem erro em lugar
+        // nenhum ate' alguem jogar ate' la'. Foi o que aconteceu quando o
+        // cais virou pra rota e o porto do Planalto mudou de costa.
+        //
+        // Agora a folga cede antes do NPC: tenta com respiro, depois
+        // espremido, e por ultimo enfia na primeira vaga. Predio encostado e'
+        // feio; ilha sem Cartografo e' quest quebrada.
+        let mut posto = false;
+        'achou: for folga in [1.0f32, 0.5, 0.0] {
+            for k in 0..6 {
+                let s = seed.wrapping_add((i as i32 + 1) * 1000 + k * 7919);
+                let c = construcao::gerar(tipo, papel, s);
+                for (recuo, afast) in VAGAS {
+                    let pos = raiz - mar * recuo + lado * afast;
+                    let q = quarto_para(raiz - mar * recuo - pos);
+                    let meia = c.meia(q);
+                    if chao.cabe(&lotes, pos, meia, folga) {
+                        lotes.push((pos, meia));
+                        vila.predios.push(Predio {
+                            tipo,
+                            papel,
+                            seed: s,
+                            pos: Vec3::new(pos.x, chao_y - B_CASA + RESPIRO, pos.y),
+                            yaw_q: q,
+                            chao: chao_y,
+                        });
+                        posto = true;
+                        break 'achou;
+                    }
                 }
             }
+        }
+        if !posto {
+            let s = seed.wrapping_add((i as i32 + 1) * 1000);
+            let c = construcao::gerar(tipo, papel, s);
+            let (recuo, afast) = VAGAS[0];
+            let pos = raiz - mar * recuo + lado * afast;
+            let q = quarto_para(raiz - mar * recuo - pos);
+            lotes.push((pos, c.meia(q)));
+            vila.predios.push(Predio {
+                tipo,
+                papel,
+                seed: s,
+                pos: Vec3::new(pos.x, chao_y - B_CASA + RESPIRO, pos.y),
+                yaw_q: q,
+                chao: chao_y,
+            });
         }
     }
 
@@ -1137,6 +1168,34 @@ fn decorar_porto(
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// TODA ilha do arquipelago tem os NPCs do porto.
+    ///
+    /// O Cartografo e o Deposito moram no patio do porto, e antes eles eram
+    /// postos por um laco que desistia calado quando nao achava vaga. O passo
+    /// 766 da historia aponta pro Cartografo do Planalto — e no dia em que o
+    /// cais virou pra rota, o porto mudou de costa, o predio nao coube e a
+    /// quest virou impossivel. Sem erro, sem log: so' um NPC que nao existe.
+    ///
+    /// Este teste e' o que impede isso de voltar em silencio.
+    #[test]
+    fn todo_porto_tem_os_npcs_dele() {
+        for d in crate::terreno::ARQUIPELAGO.iter() {
+            let ger = Gerador::da_ilha(d);
+            if ger.porto().is_none() {
+                continue; // ilha sem costa que sirva nao promete porto
+            }
+            let papeis: Vec<Papel> = ger.vila().npcs.iter().map(|n| n.papel).collect();
+            for papel in [Papel::Estaleiro, Papel::Deposito, Papel::Cartografo] {
+                assert!(
+                    papeis.contains(&papel),
+                    "{}: o porto ficou sem {papel:?}",
+                    d.zona
+                );
+            }
+        }
+    }
+
     use crate::terreno::{
         Ilha, SeguidorDeRota, ARQUIPELAGO, DEGRAU_BLOCOS, ESCALA_ALTURA, PULO_BLOCOS,
     };
@@ -1209,7 +1268,7 @@ mod testes {
     #[test]
     fn numeros_das_quatro_ilhas() {
         for d in &ARQUIPELAGO {
-            let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+            let ger = Gerador::da_ilha(d);
             let vila = ger.vila();
             let c = ger.cidade().expect("sem cidade");
             let na_cidade = vila
@@ -1254,8 +1313,8 @@ mod testes {
     #[test]
     fn vila_e_deterministica() {
         let d = &ARQUIPELAGO[1];
-        let a = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
-        let b = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+        let a = Gerador::da_ilha(d);
+        let b = Gerador::da_ilha(d);
         assert_eq!(a.vila(), b.vila());
     }
 
@@ -1571,7 +1630,7 @@ mod testes {
     #[test]
     fn chao_pintado_so_na_vila() {
         let d = &ARQUIPELAGO[0];
-        let ger = Gerador::novo(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+        let ger = Gerador::da_ilha(d);
         let c = ger.cidade().unwrap().centro();
         let col = |p: Vec2| ((p.x / BLOCO).round() as i32, (p.y / BLOCO).round() as i32);
         let (bx, bz) = col(c + Vec2::new(1.0, 1.0));
