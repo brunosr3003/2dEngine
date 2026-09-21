@@ -1114,6 +1114,14 @@ pub fn modelo_do_mob(kind: u16) -> &'static str {
 ///
 /// Gente (jogador, pistoleiro, mago, arqueiro) nao entra aqui: ela usa o
 /// mesmo `VOXEL` do corpo, porque o rig inteiro depende de 1 voxel = 4 cm.
+/// O casco da Chalupa (docs/MAR_ABERTO.md). Vem do zone14, que ja' tinha o
+/// modelo pronto — desenhar barco de cubos foi um andaime de um dia.
+///
+/// Carregado na ALTURA porque o arquivo e' de 160x160x80 voxels: o que
+/// importa e' o tamanho no mundo, nao a resolucao do arquivo.
+pub const MODELO_DO_BARCO: &str = "barcos/chalupa";
+pub const ALTURA_DO_BARCO: f32 = 2.6;
+
 pub const ALTURA_DO_BICHO: [(&str, f32); 5] = [
     ("lobo_pequeno", 0.9),
     ("urso", 1.3),
@@ -1202,15 +1210,11 @@ pub fn rig_do_npc(papel: u8, id: u64) -> &'static str {
 }
 
 /// O bau da dungeon: madeira, faixas de ouro e um anel que pulsa no chao.
-/// O CASCO, de cubos (docs/MAR_ABERTO.md).
+/// O CASCO, de cubos — a RESERVA (docs/MAR_ABERTO.md).
 ///
-/// Arte nao pode travar o corte 1: o `.vox` do barco velho foi apagado junto
-/// com ele, e esperar modelo pra poder NAVEGAR seria trocar a ordem das
-/// coisas. Cubos, como o bau da dungeon, e o modelo entra depois sem mexer
-/// em mais nada.
-///
-/// `yaw` vem do `EntityState::rumo`, o byte que ja' existia: o barco nao
-/// custou um campo novo no fio.
+/// Arte nao podia travar o corte 1, entao o barco nasceu de cubos como o bau
+/// da dungeon. O modelo de verdade veio depois, do zone14, e isto ficou como
+/// desenho de emergencia: sem o arquivo, ainda da' pra navegar.
 fn desenha_casco(p: Vec3, yaw: f32) {
     let madeira = Color::from_rgba(112, 72, 38, 255);
     let escura = Color::from_rgba(78, 48, 24, 255);
@@ -1350,6 +1354,7 @@ pub fn draw_entities(
     vox: &VoxCache,
     target: Option<shared::EntityId>,
     vista: &Vista,
+    no_mar: bool,
 ) {
     let order: Vec<_> = world.draw_order().to_vec();
     // Os rastros sao transparentes: vao depois de tudo que e' solido, senao
@@ -1384,9 +1389,19 @@ pub fn draw_entities(
             brilhos.extend(desenha_personagem(e, corpo, None, vox, vista, false));
             continue;
         }
-        // O CASCO: sem rig, sem placa de nome, sem sombra de bicho.
-        if e.meta.tag == shared::EntityTag::Barco {
-            desenha_casco(p, e.yaw);
+        // NO MAR TODO JOGADOR E' UM CASCO.
+        //
+        // Nao ha' entidade barco: navegar e' andar na agua (world/barco.rs),
+        // entao o que muda e' so' o que se DESENHA. O boneco some e o casco
+        // entra no lugar dele, virado pro mesmo rumo que o corpo teria.
+        if no_mar && e.meta.tag == shared::EntityTag::Player {
+            if let Some(meshes) = vox.peek(MODELO_DO_BARCO) {
+                for m in meshes {
+                    draw_mesh_at(m, p, e.yaw);
+                }
+            } else {
+                desenha_casco(p, e.yaw);
+            }
             continue;
         }
         // NPC da vila: o rig do OFICIO dele. Sem o arquivo, cai no corpo de

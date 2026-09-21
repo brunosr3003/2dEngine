@@ -1571,6 +1571,9 @@ pub struct Session {
     pub inventory_dirty: bool,
     /// True quando o equipamento mudou (envia StatsUpdate no proximo tick).
     pub stats_dirty: bool,
+    /// De que cais o jogador estava perto no tick passado. E' o que faz o
+    /// painel de atracar abrir sozinho ao chegar, e so' uma vez.
+    pub cais_perto: Option<u8>,
     /// De que ILHA este personagem zarpou (docs/MAR_ABERTO.md).
     ///
     /// Existe por um modo de falha novo e severo: navegando, a zona salva e'
@@ -6580,6 +6583,7 @@ impl GameWorld {
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 inventory_dirty: false,
                 stats_dirty: false,
+                cais_perto: None,
                 zona_volta: None,
                 vault: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 vault_dirty: false,
@@ -8883,6 +8887,10 @@ impl GameWorld {
                 PLAYER_SPEED * 0.5 * spd_scale
             } else if session.defending {
                 PLAYER_SPEED * shared::MOVE_SPEED_DEFENDING_MULT * spd_scale
+            } else if self.mar.is_some() {
+                // No mar quem anda e' o CASCO: uma velocidade so', sem
+                // montaria e sem sprint. Nao ha' pernas em cima da agua.
+                crate::world::barco::VEL_MAX
             } else {
                 // Montado: so' mobilidade (docs/MONTARIAS.md), sem sprint por cima.
                 shared::loja::velocidade_de_andar(
@@ -10052,11 +10060,30 @@ impl GameWorld {
                 .unwrap_or(shared::terreno::DEGRAU_BLOCOS);
             // Numa ilha a parede nao e' tile, e' desnivel: quem barra e' a
             // regra de degrau contra o campo de altura.
+            // NO MAR O CORPO E' O CASCO (docs/MAR_ABERTO.md).
+            //
+            // Navegar e' andar, so' que na agua: o mesmo direcional, o mesmo
+            // "pra frente e' longe da camera", o mesmo tudo. A tentativa
+            // anterior tinha leme e acelerador, e o dono foi direto ao ponto:
+            // "ta perdendo o referencial de frente tras que tinha antes".
+            // Perdia mesmo — leme e' um esquema de controle NOVO, e nao havia
+            // motivo pra ele existir depois que combate no mar virou PvP entre
+            // barcos, e nao luta de conves.
+            //
+            // Entao nao ha' entidade barco, nao ha' passageiro derivado e nao
+            // ha' conves: ha' um corpo que, no mar, colide com terra em vez de
+            // com agua. O cliente desenha um casco no lugar do boneco.
             corpos.push((
                 e,
-                match &self.ilha {
-                    Some(i) => i.mover_com_degrau(pos.0, vel.0, dt, ENTITY_RADIUS, degrau),
-                    None => self.map.move_and_slide(pos.0, vel.0, dt, ENTITY_RADIUS),
+                match (&self.ilha, &self.mar) {
+                    (Some(i), _) => i.mover_com_degrau(pos.0, vel.0, dt, ENTITY_RADIUS, degrau),
+                    (None, Some(m)) => m.mover_no_mar(
+                        pos.0,
+                        vel.0,
+                        dt,
+                        crate::world::barco::RAIO_CASCO,
+                    ),
+                    (None, None) => self.map.move_and_slide(pos.0, vel.0, dt, ENTITY_RADIUS),
                 },
                 mobilidade,
             ));
@@ -11596,11 +11623,6 @@ impl GameWorld {
         // passar por cima.
         self.sincroniza_pets();
         self.tick_pets(dt);
-        // Os cascos andam DEPOIS dos jogadores: quem esta' a bordo tem a
-        // posicao derivada do casco, e derivar da posicao do tick passado
-        // faria o passageiro arrastar atras do barco.
-        self.sincroniza_barcos();
-        self.tick_barcos(dt);
         // A montaria VISTA sai do equipamento, e equipar acontece por muitos
         // caminhos (bolsa, saque que auto-equipa, correio, mercado). Conferir
         // no tick cobre todos: sem isto, equipar nao avisava ninguem e o
@@ -11978,16 +12000,6 @@ impl GameWorld {
             .filter(|s| s.logged_in)
             .map(|s| (s.entity_id, shared::level_of_xp(s.xp) as u16))
             .collect();
-        // O RUMO DO CASCO. O barco nao ganhou campo novo no fio: a proa
-        // viaja no `EntityState::rumo`, o byte que ja' existia. Sem isto um
-        // casco PARADO perderia a direcao (o rumo sai da velocidade), e um
-        // barco ancorado apontando pro norte por padrao e' desorientador.
-        let rumo_do_casco: HashMap<EntityId, u8> = self
-            .ecs
-            .query::<(&NetId, &crate::world::barco::BarcoTag)>()
-            .iter()
-            .map(|(_, (n, t))| (n.0, shared::rumo_de_yaw(t.yaw)))
-            .collect();
         let acao_de: HashMap<EntityId, u8> = {
             use shared::components::acao;
             let agora = self.sim_time_s;
@@ -12087,7 +12099,6 @@ impl GameWorld {
                         EntityKind::Npc(_) => shared::EntityTag::Npc,
                         EntityKind::Portal => shared::EntityTag::Portal,
                         EntityKind::Pet(_) => shared::EntityTag::Pet,
-                        EntityKind::Barco(_) => shared::EntityTag::Barco,
                         _ => shared::EntityTag::Other,
                     };
                     let name = ptag
@@ -12156,8 +12167,6 @@ impl GameWorld {
                             EntityKind::Player => montaria_de.get(&net.0).map_or(0, |m| m.1),
                             // Pet: o item_id, que ja' diz especie e grau.
                             EntityKind::Pet(id) => *id,
-                            // Casco: a classe dele.
-                            EntityKind::Barco(k) => *k,
                             _ => 0,
                         },
                     };
@@ -12177,9 +12186,6 @@ impl GameWorld {
                         vel.0,
                         vila_tag.and_then(|t| shared::npc_yaw_de_kind(t.rumo)),
                     );
-                    if let Some(r) = rumo_do_casco.get(&net.0) {
-                        state.rumo = *r;
-                    }
                     (meta, state)
                 },
             )

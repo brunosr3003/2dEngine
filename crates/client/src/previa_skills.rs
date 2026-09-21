@@ -124,7 +124,7 @@ pub async fn abrir(vox: &VoxCache) {
         );
         gl_use_material(&solido);
         solido.set_uniform("Recorte", Vec3::ZERO);
-        render3d::draw_entities(&mut mundo, vox, None, &vista);
+        render3d::draw_entities(&mut mundo, vox, None, &vista, false);
         gl_use_default_material();
         let de = Vec3::ZERO;
         habilidades_vfx::desenha(

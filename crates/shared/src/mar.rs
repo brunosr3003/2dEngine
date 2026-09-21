@@ -331,12 +331,6 @@ pub enum PedidoBarco {
     Zarpar,
     /// No mar, perto do cais: entra na ilha `ilha` (indice do `ARQUIPELAGO`).
     Atracar { ilha: u8 },
-    /// Leme e acelerador, -127..127 e 0..127.
-    ///
-    /// NAO entra no `InputFrame`: aquilo viaja na taxa de input pra todo
-    /// jogador de toda zona, e dois bytes pra todo mundo em todo lugar pra
-    /// uma zona poder virar leme e' a troca errada. Vai so' na mudanca.
-    Comando { leme: i8, forca: i8 },
     /// Desce do casco pra terra firme mais perto.
     Desembarcar,
 }

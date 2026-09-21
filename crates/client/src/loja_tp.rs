@@ -2126,7 +2126,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
             );
             macroquad::material::gl_use_material(solido);
             solido.set_uniform("Recorte", Vec3::ZERO);
-            crate::render3d::draw_entities(&mut mundo, vox, None, &vista);
+            crate::render3d::draw_entities(&mut mundo, vox, None, &vista, false);
             macroquad::material::gl_use_default_material();
             crate::render3d::camera_padrao();
             let direita = Rect::new(sw * 0.72, sh * 0.2, sw * 0.26, sh * 0.55);
@@ -2205,7 +2205,7 @@ async fn previa_montado(
             );
             macroquad::material::gl_use_material(solido);
             solido.set_uniform("Recorte", Vec3::ZERO);
-            crate::render3d::draw_entities(mundo, vox, None, &vista);
+            crate::render3d::draw_entities(mundo, vox, None, &vista, false);
             macroquad::material::gl_use_default_material();
             crate::render3d::camera_padrao();
             estilo::texto(
