@@ -264,7 +264,19 @@ impl FichaUi {
             }
         }
         if let Some(c) = coluna {
-            crate::foco::marca(crate::foco::chave::FICHA_MAIS, c);
+            // O X entra no buraco junto: sem ele o jogador ficava preso no
+            // painel ate' o foco expirar sozinho.
+            let x0 = c.x.min(fechar.x);
+            let y0 = c.y.min(fechar.y);
+            crate::foco::marca(
+                crate::foco::chave::FICHA_MAIS,
+                Rect::new(
+                    x0,
+                    y0,
+                    (c.x + c.w).max(fechar.x + fechar.w) - x0,
+                    (c.y + c.h).max(fechar.y + fechar.h) - y0,
+                ),
+            );
         }
         let total: u32 = self.pontos.map_or(0, |(_, a)| a.iter().sum());
         let reset = Rect::new(esq.x + 10.0 * f, esq.y + 339.0 * f, 185.0 * f, 24.0 * f);
@@ -410,6 +422,15 @@ mod tests {
             so_os_que_podem.is_none(),
             "sem Energia nenhum + entra no foco"
         );
+
+        // E o X tem que caber no buraco: sem ele o jogador fica preso no
+        // painel ate' o foco expirar sozinho.
+        let fechar = Rect::new(600.0, 8.0, 36.0, 36.0);
+        let com_x = une(Some(coluna), fechar).expect("uniao");
+        assert!(com_x.contains(fechar.center()), "o X ficou de fora");
+        for (i, b) in botoes.iter().enumerate() {
+            assert!(com_x.contains(b.center()), "o atributo {i} saiu do buraco");
+        }
     }
 
     #[test]

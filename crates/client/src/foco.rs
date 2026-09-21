@@ -298,6 +298,50 @@ mod testes {
         limpa();
     }
 
+    /// O buraco cobre TODA escolha que o passo aceita.
+    ///
+    /// Dois passos ja' caíram nisto: "gaste um ponto" apontava so' o primeiro
+    /// "+" e o jogador so' conseguia subir FOR; "evolua uma skill" apontava
+    /// so' o botao da skill selecionada e so' dava pra subir a primeira da
+    /// lista. Em ambos o foco nao estava errado — ele estava certo demais,
+    /// apontando UMA das respostas certas e trancando as outras.
+    #[test]
+    fn o_buraco_cobre_a_escolha_inteira() {
+        limpa();
+        // Uma coluna de botoes: apontar so' o primeiro tranca o resto.
+        let botoes: Vec<Rect> = (0..6)
+            .map(|i| Rect::new(300.0, 45.0 + i as f32 * 48.0, 36.0, 36.0))
+            .collect();
+        pede(&[chave::FICHA_MAIS]);
+        marca(chave::FICHA_MAIS, botoes[0]);
+        novo_quadro();
+        assert!(passa(botoes[0]));
+        assert!(
+            !passa(*botoes.last().unwrap()),
+            "so' o primeiro marcado: o ultimo fica travado — era o defeito"
+        );
+
+        // A UNIAO deixa todos passarem.
+        let uniao = botoes.iter().fold(botoes[0], |a, b| {
+            let (x0, y0) = (a.x.min(b.x), a.y.min(b.y));
+            Rect::new(
+                x0,
+                y0,
+                (a.x + a.w).max(b.x + b.w) - x0,
+                (a.y + a.h).max(b.y + b.h) - y0,
+            )
+        });
+        pede(&[chave::FICHA_MAIS]);
+        marca(chave::FICHA_MAIS, uniao);
+        novo_quadro();
+        for (i, b) in botoes.iter().enumerate() {
+            assert!(passa(*b), "o botao {i} ficou de fora do buraco");
+        }
+        // E o que esta' FORA continua travado: o foco nao virou "tudo passa".
+        assert!(!passa(Rect::new(900.0, 600.0, 50.0, 50.0)));
+        limpa();
+    }
+
     /// Marca de um quadro nao vaza pro seguinte: painel fechado apaga o foco.
     #[test]
     fn marca_nao_vaza_de_um_quadro_pro_outro() {

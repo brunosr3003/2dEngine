@@ -110,6 +110,18 @@ impl EvolucaoSkills {
             estilo::OURO,
         );
 
+        // ── o foco do tutorial cobre o CORPO do painel ──
+        //
+        // O passo e' "evolua uma habilidade", nao "evolua esta aqui". Marcando
+        // so' o botao da skill SELECIONADA, o foco travava o toque no resto e
+        // a unica que dava pra subir era a primeira da lista — o mesmo defeito
+        // que a coluna de "+" da Ficha teve, achado jogando em 20/09/2026.
+        //
+        // O painel INTEIRO, e nao so' da' lista pra baixo: as abas de
+        // conjunto, as doze habilidades, o botao de evoluir — e o X. Deixar o
+        // X de fora prendia o jogador no painel ate' o foco expirar sozinho.
+        crate::foco::marca(crate::foco::chave::SKILL_EVOLUIR, p);
+
         let largura_aba = 210.0 * f;
         for (i, conjunto) in Conjunto::TODOS.iter().enumerate() {
             let r = Rect::new(
@@ -314,9 +326,6 @@ impl EvolucaoSkills {
                 && c.tomo.is_none_or(|g| self.progresso.tomos(skill.id, g) > 0)
         });
         let evoluir = Rect::new(x + 287.0 * f, y + 357.0 * f, 267.0 * f, 45.0 * f);
-        if pode {
-            crate::foco::marca(crate::foco::chave::SKILL_EVOLUIR, evoluir);
-        }
         estilo::botao(
             evoluir,
             "Evoluir habilidade",

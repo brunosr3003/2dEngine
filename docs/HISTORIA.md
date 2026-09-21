@@ -196,12 +196,19 @@ um anel dourado em volta dele e **trava o toque fora dali**.
   marcou também não acende nada — melhor sem foco que tela preta sem buraco.
 - `COLETA_ENERGIA` não tem foco: a ação é no mundo, e escurecer a tela
   esconderia exatamente a pedra que ele precisa achar.
-- **O buraco cobre TODA escolha que o passo aceita.** O de "gaste um ponto"
-  marcava o primeiro `+` que dava pra apertar, e como o toque fica travado
-  fora do buraco, o único atributo que subia era FOR. O passo é "gaste um
-  ponto", não "gaste em FOR": a Ficha marca a **união** da coluna de `+`
-  (só os que dão pra apertar — apontar um travado é mandar bater onde não
-  responde), e `o_foco_do_tutorial_abre_a_coluna_toda_dos_mais` cobra isso.
+- **O buraco cobre TODA escolha que o passo aceita, e o X junto.** Dois passos
+  caíram nisso, os dois achados jogando: "gaste um ponto" marcava o primeiro
+  `+` e só dava pra subir FOR; "evolua uma habilidade" marcava o botão da
+  skill **selecionada** e só dava pra subir a primeira da lista. Nos dois o
+  foco não estava errado — estava **certo demais**, apontando uma das respostas
+  certas e trancando as outras.
+
+  A Ficha marca a **união** da coluna de `+` (só os que dão pra apertar —
+  apontar um travado é mandar bater onde não responde) e Habilidades marca o
+  **painel inteiro**. O `X` entra no buraco nos dois: sem ele o jogador fica
+  preso no painel até o foco expirar sozinho. Três testes cobram —
+  `o_foco_do_tutorial_abre_a_coluna_toda_dos_mais`,
+  `o_buraco_cobre_a_escolha_inteira` e o do fechar.
 - **Ids fora da sequência de propósito:** a história agora anda pela POSIÇÃO
   na lista (`id_do_passo`, `indice`, `capitulo_escrito`), e não por
   `700 + índice`. Inserir passo não renumera nenhum outro.
