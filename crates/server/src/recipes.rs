@@ -148,6 +148,7 @@ async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
     let mut novas = 0u64;
     let mut todas = shared::receitas::receitas_de_equipamento();
     todas.push(shared::receitas::receita_do_selo());
+    todas.extend(shared::receitas::receitas_de_barco());
     for r in todas {
         novas += sqlx::query(
             "INSERT INTO craft_recipes (id, name, category, tier, inputs, \

@@ -232,6 +232,12 @@ pub struct Equipment {
     pub montaria: Option<u16>,
     #[serde(default)]
     pub montaria_inst: Option<crate::items::ItemInstance>,
+    /// O BARCO equipado (docs/MAR_ABERTO.md). E' o que zarpa — e e' na
+    /// instancia dele que moram casco, melhorias e quilometragem.
+    #[serde(default)]
+    pub barco: Option<u16>,
+    #[serde(default)]
+    pub barco_inst: Option<crate::items::ItemInstance>,
 }
 
 impl Equipment {
@@ -250,6 +256,7 @@ impl Equipment {
             Belt => (&mut self.belt, &mut self.belt_inst),
             Pet => (&mut self.pet, &mut self.pet_inst),
             Montaria => (&mut self.montaria, &mut self.montaria_inst),
+            Barco => (&mut self.barco, &mut self.barco_inst),
         }
     }
 

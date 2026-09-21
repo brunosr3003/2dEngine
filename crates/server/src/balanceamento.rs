@@ -2127,100 +2127,54 @@ mod testes_do_nivel_do_mob {
 mod testes_do_mar {
     use super::*;
 
-    /// O MAR tem que ser atravessavel no nivel da rota.
+    /// O CASCO aguenta a travessia — e nao aguenta pra sempre.
     ///
-    /// Bicho de mar entra como kind comum, e por isso nao caia em guarda
-    /// nenhuma: `metas_do_inicio` so' percorre a ilha inicial e
-    /// `metas_dos_chefes` so' olha a lista de chefes. Era um buraco, nao uma
-    /// licenca — os numeros do mar nasceram de uma interpolacao, e
-    /// interpolacao nao e' medida.
+    /// Este teste ja' mediu outra coisa: o jogador matando dois bichos do
+    /// mar. Media o jogo errado. Desde que "navegacao e' navegacao, e combate
+    /// no mar e' PvP entre barcos", bicho de mar nao e' encontro de combate —
+    /// e' PERIGO que roi o casco, e a resposta e' desviar ou correr.
     ///
-    /// A simulacao e' mais dura que a de terra de proposito: **dois bichos ao
-    /// mesmo tempo e sem kitar**. No mar o jogador esta' num casco, e a saida
-    /// de andar pra tras enquanto atira nao existe do mesmo jeito.
+    /// Entao a pergunta certa e': **quanto tempo o casco da faixa aguenta
+    /// sendo mordido?** Tem que ser tempo bastante pra dar meia-volta (o
+    /// aviso de casco critico sai aos 30%), e pouco o bastante pra que
+    /// atravessar por dentro de um cardume seja burrice.
     #[test]
     fn metas_do_mar() {
+        /// Segundos pra perceber o problema e virar a proa.
+        const MEIA_VOLTA_S: f32 = 40.0;
+        /// Acima disto o cardume e' decoracao: da' pra atravessar por dentro.
+        const DECORACAO_S: f32 = 240.0;
+
         let mut falhas: Vec<String> = Vec::new();
         for rota in shared::mar::ROTAS.iter() {
-            let mut pior = 1.0f32;
-            for c in super::testes::CONJUNTOS {
-                let nivel = rota.nivel.0;
-                // O JOGADOR TEM QUE SER DA FAIXA. A primeira versao deste
-                // teste montava so' a arma e passava xp 0 — um personagem de
-                // nivel 1 contra bicho de 46. O resultado era 1% de vida em
-                // TODA faixa e TODA classe, que nao e' sinal de
-                // balanceamento nenhum: e' o simulador errado.
-                //
-                // `build_do_nivel` e' o mesmo molde que o resto do arquivo
-                // usa: equipamento, pontos e proficiencia do nivel.
-                let (equip, alloc, profs, xp) = build_do_nivel(c, nivel);
-                let stats = effective_stats(&equip, &alloc, &profs, xp);
-                let skills: Vec<shared::skills::Skill> = shared::skills::playtest()
-                    .into_iter()
-                    .filter(|s| s.conjunto == c && s.destravada(nivel))
-                    .collect();
-                let kind = crate::economy::kind_do_mar(nivel);
-                let def = crate::economy::kind_inicial(kind).expect("kind do mar");
-                // Dois, colados: e' o pior caso honesto de uma travessia.
-                let mobs: Vec<Mob> = [Vec2::new(4.0, 0.0), Vec2::new(-3.0, 2.0)]
-                    .into_iter()
-                    .map(|p| Mob::novo(def, p, nivel))
-                    .collect();
-                let mut hp = stats.hp_max;
-                let mut pocoes = Pocoes::Nenhuma;
-                let s = lutar(
-                    Luta {
-                        conjunto: c,
-                        nivel,
-                        stats: &stats,
-                        skills: &skills,
-                        mobs,
-                        sorteio: None,
-                        centro: Vec2::ZERO,
-                        inicio: Vec2::ZERO,
-                        chegada: Vec2::ZERO,
-                        parada: Parada::Abates(2),
-                        limite_s: LIMITE_S,
-                    },
-                    &mut hp,
-                    &mut pocoes,
-                );
-                // `Saida::hp_min` JA' e' fracao do maximo. Dividir de novo
-                // pelo hp_max dava "0%" em toda faixa e toda classe — numero
-                // uniforme demais pra ser balanceamento, e era o simulador.
-                let hp_min = s.hp_min;
-                let quem = format!("{} {c:?} nv{nivel} ({})", rota.nome, def.name);
-                println!(
-                    "{quem}: {} abates em {:.0}s, HP min {:.0}%",
-                    s.abates,
-                    s.t10.unwrap_or(0.0),
-                    hp_min * 100.0
-                );
-                if s.abates < 2 {
-                    falhas.push(format!("{quem}: nao venceu ({} de 2)", s.abates));
-                }
-                if hp_min < 0.25 {
-                    falhas.push(format!("{quem}: HP minimo {:.0}% < 25%", hp_min * 100.0));
-                }
-                pior = pior.min(hp_min);
-            }
-            // E O TETO, que e' metade do valor deste teste.
-            //
-            // Um guarda que so' pega "dificil demais" deixa passar o oposto —
-            // e foi o que aconteceu: a primeira calibragem destes bichos
-            // terminava com 96-100% de vida em toda faixa. Passava no piso e
-            // era decoracao: o mar nao mordia.
-            //
-            // Cobrado da ROTA e nao de cada classe, porque escudo bloqueia
-            // quase tudo e fica perto de 100% ate' em terra (a jornada mostra
-            // EspadaEscudo em 86% com quatro ursos em cima). Exigir de todo
-            // mundo reprovaria o jogo inteiro; o que importa e' a travessia
-            // ameacar ALGUEM.
-            if pior > 0.80 {
+            let nivel = rota.nivel.0;
+            let kind = crate::economy::kind_do_mar(nivel);
+            let def = crate::economy::kind_inicial(kind).expect("kind do mar");
+            let (_, dano) = crate::world::vida_e_dano_do_mob(def.hp, def.dmg, nivel);
+            // Dois em cima, que e' o pior caso honesto de uma zona.
+            let dps = 2.0 * dano as f32 / def.cd;
+            let (item, melhoria) = rota.casco;
+            let casco = shared::barcos::casco_max(item, melhoria) as f32;
+            let aguenta = casco / dps;
+            println!(
+                "{}: {} ({} de dano a cada {:.1}s) contra {} de casco — {:.0}s",
+                rota.nome,
+                def.name,
+                dano,
+                def.cd,
+                casco as u32,
+                aguenta
+            );
+            if aguenta < MEIA_VOLTA_S {
                 falhas.push(format!(
-                    "{}: nem a classe mais fragil desce de 80% ({:.0}%) — o mar nao morde",
-                    rota.nome,
-                    pior * 100.0
+                    "{}: o casco cai em {aguenta:.0}s — nao da' tempo de virar a proa",
+                    rota.nome
+                ));
+            }
+            if aguenta > DECORACAO_S {
+                falhas.push(format!(
+                    "{}: o casco aguenta {aguenta:.0}s — o cardume e' decoracao",
+                    rota.nome
                 ));
             }
         }

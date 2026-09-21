@@ -582,6 +582,33 @@ pub mod item_id {
         }) as u16
     }
 
+    // ── BARCOS (docs/MAR_ABERTO.md) ──────────────────────────────────
+    //
+    // Tres CASCOS, e os ids guardam a CLASSE — nao a cor. E' a quebra
+    // deliberada com pet e montaria: barco nao tem escada de cor, nao entra
+    // no Combinar, e `cor_de_id` devolve `None` pra eles.
+    //
+    // 465..469 ficam vagos de proposito, como 425..444 ficaram: reusar id de
+    // item e' como ressuscitar o item.
+    pub const BARCO_BASE: u16 = 470;
+    pub const BARCO_ESCUNA: u16 = 471;
+    pub const BARCO_NAU: u16 = 472;
+    pub const BARCO_ULTIMO: u16 = BARCO_NAU;
+
+    /// Este id e' um casco?
+    pub const fn e_barco(id: u16) -> bool {
+        id >= BARCO_BASE && id <= BARCO_ULTIMO
+    }
+
+    /// A classe do casco (1 Chalupa, 2 Escuna, 3 Nau).
+    pub const fn casco_de_id(id: u16) -> Option<u8> {
+        if e_barco(id) {
+            Some((id - BARCO_BASE) as u8 + 1)
+        } else {
+            None
+        }
+    }
+
     pub const fn montaria_de_id(id: u16) -> Option<(u16, u8)> {
         if id < MONTARIA_BASE || id > MONTARIA_ULTIMA {
             return None;
@@ -751,6 +778,7 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
         CINTO => Some(EquipSlot::Belt),
         id if pet_de_id(id).is_some() => Some(EquipSlot::Pet),
         id if montaria_de_id(id).is_some() => Some(EquipSlot::Montaria),
+        id if e_barco(id) => Some(EquipSlot::Barco),
         _ => None,
     }
 }
@@ -815,10 +843,14 @@ pub enum EquipSlot {
     /// A montaria (docs/MONTARIAS.md). E' nela que se monta, e a cor dela
     /// manda na velocidade.
     Montaria,
+    /// O BARCO (docs/MAR_ABERTO.md). Exatamente UM casco ativo, resolvido
+    /// num lookup — sem dialogo de "qual barco?" no cais. Os outros ficam na
+    /// bolsa, e bolsa se vende.
+    Barco,
 }
 
 impl EquipSlot {
-    pub const TODOS: [EquipSlot; 9] = [
+    pub const TODOS: [EquipSlot; 10] = [
         EquipSlot::Weapon,
         EquipSlot::Offhand,
         EquipSlot::Armor,
@@ -828,6 +860,7 @@ impl EquipSlot {
         EquipSlot::Belt,
         EquipSlot::Pet,
         EquipSlot::Montaria,
+        EquipSlot::Barco,
     ];
 
     /// String do slot pra ser persistido no DB (coluna `slot`).
@@ -842,6 +875,7 @@ impl EquipSlot {
             EquipSlot::Belt => "belt",
             EquipSlot::Pet => "pet",
             EquipSlot::Montaria => "montaria",
+            EquipSlot::Barco => "barco",
         }
     }
 

@@ -47,11 +47,15 @@ const ESQUERDA: [(EquipSlot, &str); 5] = [
     (EquipSlot::Pet, "Pet"),
     (EquipSlot::Montaria, "Montaria"),
 ];
-const DIREITA: [(EquipSlot, &str); 4] = [
+const DIREITA: [(EquipSlot, &str); 5] = [
     (EquipSlot::Earring, "Brinco"),
     (EquipSlot::Necklace, "Amuleto"),
     (EquipSlot::Bracelet, "Bracelete"),
     (EquipSlot::Belt, "Cinto"),
+    // O BARCO fica com os acessorios porque o outro lado ja' tem cinco. O que
+    // importa e' ter LUGAR: ha' um teste afirmando que todo slot aparece na
+    // tela, e foi ele que pegou o barco sem casa.
+    (EquipSlot::Barco, "Barco"),
 ];
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -1296,6 +1300,30 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
             } else {
                 draw_circle(c.x + s * 0.62, c.y - s * 0.75, s * 0.14, ouro);
             }
+        }
+        Tipo::Slot(EquipSlot::Barco) => {
+            // Um casco com vela: silhueta de barco, e nao de bicho.
+            let madeira = com_alfa(Color::new(0.44, 0.28, 0.15, 1.0), a);
+            let pano = com_alfa(Color::new(0.90, 0.88, 0.82, 1.0), a);
+            draw_triangle(
+                vec2(c.x - s * 0.95, c.y + s * 0.15),
+                vec2(c.x + s * 0.95, c.y + s * 0.15),
+                vec2(c.x + s * 0.55, c.y + s * 0.8),
+                madeira,
+            );
+            draw_triangle(
+                vec2(c.x - s * 0.95, c.y + s * 0.15),
+                vec2(c.x + s * 0.55, c.y + s * 0.8),
+                vec2(c.x - s * 0.5, c.y + s * 0.8),
+                madeira,
+            );
+            draw_line(c.x, c.y + s * 0.15, c.x, c.y - s * 0.95, s * 0.12, madeira);
+            draw_triangle(
+                vec2(c.x + s * 0.08, c.y - s * 0.9),
+                vec2(c.x + s * 0.08, c.y + s * 0.05),
+                vec2(c.x + s * 0.8, c.y - s * 0.1),
+                pano,
+            );
         }
         Tipo::Slot(EquipSlot::Montaria) => {
             // Bicho de porte com sela: e' o que separa da silhueta do pet.

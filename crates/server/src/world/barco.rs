@@ -43,6 +43,37 @@ pub const VEL_MAX: f32 = 11.0;
 pub const RAIO_CASCO: f32 = 1.4;
 
 impl GameWorld {
+    /// O barco equipado e o estado dele.
+    pub(super) fn barco_equipado(
+        &self,
+        sid: SessionId,
+    ) -> Option<(u16, shared::items::BarcoData)> {
+        let s = self.sessions.get(&sid)?;
+        let id = s.equipment.barco?;
+        Some((
+            id,
+            shared::barcos::dados(s.equipment.barco_inst.as_ref(), id),
+        ))
+    }
+
+    /// Escreve o estado do barco equipado de volta na instancia.
+    pub(super) fn guarda_barco(&mut self, sid: SessionId, d: shared::items::BarcoData) {
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        let Some(id) = s.equipment.barco else {
+            return;
+        };
+        let mut inst = s
+            .equipment
+            .barco_inst
+            .unwrap_or_else(|| shared::items::ItemInstance::vazia_de_grau(1));
+        inst.barco = Some(d);
+        s.equipment.set(shared::EquipSlot::Barco, Some(id), Some(inst));
+        s.inventory_dirty = true;
+        self.save_pending = true;
+    }
+
     /// Perto do Capitao do Porto? E' quem libera zarpar.
     fn no_cais(&self, sid: SessionId) -> bool {
         let Some(eu) = self.pos_do_jogador(sid) else {
@@ -69,6 +100,20 @@ impl GameWorld {
             self.recusa_barco(sid, "Fale com o Capitão do Porto, no cais.");
             return;
         }
+        // SEM BARCO NAO SE ZARPA. E' o que faz a quest da historia ser a
+        // porta de saida da primeira ilha, e nao um enfeite.
+        let Some((id, dados)) = self.barco_equipado(sid) else {
+            self.recusa_barco(
+                sid,
+                "Você precisa de um barco equipado. Fale com o Carpinteiro Naval.",
+            );
+            return;
+        };
+        if dados.casco == 0 {
+            self.recusa_barco(sid, "Casco destruído. O Carpinteiro Naval conserta.");
+            return;
+        }
+        let _ = id;
         let Some(i) = shared::terreno::ARQUIPELAGO
             .iter()
             .position(|d| d.zona == self.zona)
@@ -138,7 +183,14 @@ impl GameWorld {
             .or_else(|| ger.cidade().map(|c| c.centro()))
             .unwrap_or(Vec2::ZERO);
         let aviso = format!("Você atraca em {}.", dest.nome);
-        self.mandar_para_zona(sid, dest.zona, chegada, Some(&aviso), Some(dest.nome));
+        if self.mandar_para_zona(sid, dest.zona, chegada, Some(&aviso), Some(dest.nome)) {
+            // O hodometro. Nao faz nada mecanicamente — e' o que o mercado
+            // le' quando alguem anuncia o barco.
+            if let Some((_, mut d)) = self.barco_equipado(sid) {
+                d.travessias = d.travessias.saturating_add(1);
+                self.guarda_barco(sid, d);
+            }
+        }
     }
 
     /// NAUFRAGIO: o casco chegou a zero.
@@ -153,6 +205,14 @@ impl GameWorld {
         let Some(eu) = self.pos_do_jogador(sid) else {
             return;
         };
+        // O BARCO FICA AVARIADO. E' a perda do naufragio: nao o item, o
+        // casco. Quem afunda volta pro porto e paga o conserto — ou aceita o
+        // piso de graca e navega com um quarto de casco.
+        if let Some((_, mut d)) = self.barco_equipado(sid) {
+            d.casco = 0;
+            d.afundou = d.afundou.saturating_add(1);
+            self.guarda_barco(sid, d);
+        }
         let mar = shared::mar::Mar::novo();
         let passo = self
             .sessions
@@ -196,7 +256,7 @@ impl GameWorld {
         self.recusa_barco(sid, "O casco cedeu, mas não há porto no ar. Você fica à deriva.");
     }
 
-    fn recusa_barco(&self, sid: SessionId, motivo: &str) {
+    pub(super) fn recusa_barco(&self, sid: SessionId, motivo: &str) {
         if let Some(s) = self.sessions.get(&sid) {
             let _ = s.handle.to_client.send(ServerMessage::Barco {
                 aviso: shared::mar::AvisoBarco::Recusa(motivo.to_string()),
@@ -211,6 +271,8 @@ impl GameWorld {
             P::Zarpar => self.handle_zarpar(sid),
             P::Atracar { ilha } => self.handle_atracar(sid, ilha),
             P::Desembarcar => {}
+            P::Reparar { pagando } => self.handle_reparar(sid, pagando),
+            P::Melhorar { eixo } => self.handle_melhorar(sid, eixo),
         }
     }
 }
@@ -437,5 +499,179 @@ impl GameWorld {
             self.removed_this_tick.push(eid);
         }
         self.save_pending = true;
+    }
+}
+
+impl GameWorld {
+    /// De quem e' esta entidade de jogador?
+    pub(super) fn sid_da_entidade(&self, e: Entity) -> Option<SessionId> {
+        self.sessions
+            .values()
+            .find(|s| s.entity == Some(e))
+            .map(|s| s.handle.id)
+    }
+
+    /// Dano no CASCO. Zerou, naufragou.
+    pub(super) fn dano_no_casco(&mut self, sid: SessionId, dmg: i32) {
+        let Some((id, mut d)) = self.barco_equipado(sid) else {
+            // Sem barco no mar (corte 1, barco gratis): nao ha' o que roer.
+            return;
+        };
+        d.casco = d.casco.saturating_sub(dmg.max(0) as u16);
+        let max = shared::barcos::casco_max(id, d.melhorias[shared::barcos::eixo::CASCO]);
+        // Um aviso so', na primeira vez que cruza 30%: o jogador tem que ter
+        // chance de voltar antes de afundar, e uma barra que ele talvez nao
+        // esteja olhando nao e' chance.
+        let antes = d.casco as f32 + dmg.max(0) as f32;
+        let limiar = max as f32 * 0.3;
+        if antes > limiar && (d.casco as f32) <= limiar && d.casco > 0 {
+            self.recusa_barco(sid, "Casco crítico — volte ao porto.");
+        }
+        let afundou = d.casco == 0;
+        self.guarda_barco(sid, d);
+        if afundou {
+            self.naufragio(sid);
+        }
+    }
+}
+
+impl GameWorld {
+    /// Perto do Carpinteiro Naval? Por ora ele divide o cais com o Capitao.
+    fn no_estaleiro(&self, sid: SessionId) -> bool {
+        self.no_cais(sid)
+    }
+
+    /// Abre o painel do estaleiro.
+    pub(super) fn abrir_estaleiro(&self, sid: SessionId) {
+        let Some((item, d)) = self.barco_equipado(sid) else {
+            return;
+        };
+        let custos: Vec<Vec<(u16, u32)>> = (0..3)
+            .map(|e| {
+                let n = d.melhorias[e];
+                if n >= shared::barcos::MELHORIA_MAX {
+                    Vec::new()
+                } else {
+                    shared::barcos::custo_da_melhoria(item, n + 1).to_vec()
+                }
+            })
+            .collect();
+        if let Some(s) = self.sessions.get(&sid) {
+            let _ = s.handle.to_client.send(ServerMessage::Barco {
+                aviso: shared::mar::AvisoBarco::Estaleiro {
+                    item,
+                    casco: d.casco,
+                    casco_max: shared::barcos::casco_max(
+                        item,
+                        d.melhorias[shared::barcos::eixo::CASCO],
+                    ),
+                    melhorias: d.melhorias,
+                    travessias: d.travessias,
+                    afundou: d.afundou,
+                    reparo: shared::barcos::custo_do_reparo(item, &d),
+                    custos,
+                },
+            });
+        }
+    }
+
+    /// REPARAR. Pagando, enche; de graca, o piso.
+    fn handle_reparar(&mut self, sid: SessionId, pagando: bool) {
+        if !self.no_estaleiro(sid) {
+            self.recusa_barco(sid, "O Carpinteiro Naval fica no cais.");
+            return;
+        }
+        let Some((item, mut d)) = self.barco_equipado(sid) else {
+            self.recusa_barco(sid, "Você não tem barco equipado.");
+            return;
+        };
+        let max = shared::barcos::casco_max(item, d.melhorias[shared::barcos::eixo::CASCO]);
+        if d.casco >= max {
+            self.recusa_barco(sid, "O casco já está inteiro.");
+            return;
+        }
+        if !pagando {
+            // O PISO DE GRACA. Incondicional: sem cooldown, sem teste de
+            // riqueza, sem contar quantas vezes. E' o que impede a travessia
+            // obrigatoria de travar uma conta — e e' por ser incondicional
+            // que nao ha' nada pra burlar.
+            let piso = shared::barcos::reparo_de_graca(item, &d);
+            if d.casco >= piso {
+                self.recusa_barco(
+                    sid,
+                    "O conserto de cortesia só cobre até um quarto do casco.",
+                );
+                return;
+            }
+            d.casco = piso;
+            self.guarda_barco(sid, d);
+            self.recusa_barco(sid, "O Carpinteiro calafeta o pior. Navegue com cuidado.");
+            self.abrir_estaleiro(sid);
+            return;
+        }
+        let (cobre, madeira) = shared::barcos::custo_do_reparo(item, &d);
+        let mad = shared::barcos::madeira_da_classe(
+            shared::item_id::casco_de_id(item).unwrap_or(1),
+        );
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        if crate::craft::tem(&s.inventory, shared::item_id::COPPER) < cobre
+            || crate::craft::tem(&s.inventory, mad) < madeira
+        {
+            self.recusa_barco(sid, &format!("Faltam {cobre} cobre e {madeira} de madeira."));
+            return;
+        }
+        crate::craft::consumir(&mut s.inventory, shared::item_id::COPPER, cobre);
+        crate::craft::consumir(&mut s.inventory, mad, madeira);
+        s.inventory_dirty = true;
+        d.casco = max;
+        self.guarda_barco(sid, d);
+        self.recusa_barco(sid, "Casco inteiro. Bom mar.");
+        self.abrir_estaleiro(sid);
+    }
+
+    /// MELHORAR um eixo. Nunca falha — ver `shared::barcos`.
+    fn handle_melhorar(&mut self, sid: SessionId, eixo: u8) {
+        if !self.no_estaleiro(sid) {
+            self.recusa_barco(sid, "O Carpinteiro Naval fica no cais.");
+            return;
+        }
+        let e = eixo as usize;
+        if e >= 3 {
+            return;
+        }
+        let Some((item, mut d)) = self.barco_equipado(sid) else {
+            self.recusa_barco(sid, "Você não tem barco equipado.");
+            return;
+        };
+        if d.melhorias[e] >= shared::barcos::MELHORIA_MAX {
+            self.recusa_barco(sid, "Este eixo já está no máximo.");
+            return;
+        }
+        let custo = shared::barcos::custo_da_melhoria(item, d.melhorias[e] + 1);
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        for (id, q) in custo {
+            if crate::craft::tem(&s.inventory, id) < q {
+                self.recusa_barco(sid, "Falta material para esta melhoria.");
+                return;
+            }
+        }
+        for (id, q) in custo {
+            crate::craft::consumir(&mut s.inventory, id, q);
+        }
+        s.inventory_dirty = true;
+        // Melhorar o CASCO enche junto o que ele ganhou: subir o teto e
+        // deixar o barco pela metade seria cobrar duas vezes pelo mesmo
+        // conserto.
+        let antes = shared::barcos::casco_max(item, d.melhorias[shared::barcos::eixo::CASCO]);
+        d.melhorias[e] += 1;
+        let depois = shared::barcos::casco_max(item, d.melhorias[shared::barcos::eixo::CASCO]);
+        d.casco = d.casco.saturating_add(depois.saturating_sub(antes));
+        self.guarda_barco(sid, d);
+        self.recusa_barco(sid, "O Carpinteiro trabalha. O barco melhorou.");
+        self.abrir_estaleiro(sid);
     }
 }

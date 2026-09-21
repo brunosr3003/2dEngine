@@ -4,6 +4,7 @@
 //! targets (native + wasm + headless) para manter o protocolo canonico.
 
 pub mod armazem;
+pub mod barcos;
 pub mod bosses;
 pub mod chaves;
 pub mod combat;

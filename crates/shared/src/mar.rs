@@ -406,6 +406,10 @@ pub enum PedidoBarco {
     Atracar { ilha: u8 },
     /// Desce do casco pra terra firme mais perto.
     Desembarcar,
+    /// No porto: conserta o casco. `pagando = false` pede o piso de graca.
+    Reparar { pagando: bool },
+    /// No porto: sobe um eixo de melhoria (`barcos::eixo`).
+    Melhorar { eixo: u8 },
 }
 
 /// O que o barco responde.
@@ -422,6 +426,21 @@ pub enum AvisoBarco {
     Naufragio { porto: String, perdeu: u16 },
     /// Nao deu, e por que. E' o que impede uma recusa silenciosa.
     Recusa(String),
+    /// O painel do CARPINTEIRO: o casco, o que custa consertar e o que custa
+    /// subir cada eixo. Conta pura dos dois lados (`shared::barcos`), entao o
+    /// painel desenha exatamente o que o servidor vai cobrar.
+    Estaleiro {
+        item: u16,
+        casco: u16,
+        casco_max: u16,
+        melhorias: [u8; 4],
+        travessias: u32,
+        afundou: u32,
+        /// (cobre, madeira) do reparo completo.
+        reparo: (u32, u32),
+        /// Por eixo: (item, qtd) x3 do proximo nivel. Vazio = no maximo.
+        custos: Vec<Vec<(u16, u32)>>,
+    },
 }
 
 // ─────────────────────────────── as rotas ───────────────────────────────
@@ -437,13 +456,44 @@ pub struct Rota {
     pub para: u8,
     pub nome: &'static str,
     pub nivel: (u32, u32),
+    /// O casco que se espera ter aqui: (item do casco, melhoria).
+    ///
+    /// Nao e' TRAVA — a trava de progressao e' a historia, decisao do dono.
+    /// E' a referencia do balanceamento: `metas_do_mar` pergunta se ESTE
+    /// casco aguenta a travessia, e o painel do porto avisa quem esta' abaixo
+    /// dela.
+    pub casco: (u16, u8),
 }
 
 pub const ROTAS: [Rota; 4] = [
-    Rota { de: 0, para: 1, nome: "Rota do Bosque", nivel: (12, 20) },
-    Rota { de: 0, para: 2, nome: "Rota das Areias", nivel: (24, 32) },
-    Rota { de: 1, para: 3, nome: "Mar Fundo", nivel: (34, 44) },
-    Rota { de: 2, para: 3, nome: "Olho da Tempestade", nivel: (46, 58) },
+    Rota {
+        de: 0,
+        para: 1,
+        nome: "Rota do Bosque",
+        nivel: (12, 20),
+        casco: (crate::item_id::BARCO_BASE, 0),
+    },
+    Rota {
+        de: 0,
+        para: 2,
+        nome: "Rota das Areias",
+        nivel: (24, 32),
+        casco: (crate::item_id::BARCO_BASE, 3),
+    },
+    Rota {
+        de: 1,
+        para: 3,
+        nome: "Mar Fundo",
+        nivel: (34, 44),
+        casco: (crate::item_id::BARCO_ESCUNA, 0),
+    },
+    Rota {
+        de: 2,
+        para: 3,
+        nome: "Olho da Tempestade",
+        nivel: (46, 58),
+        casco: (crate::item_id::BARCO_ESCUNA, 4),
+    },
 ];
 
 impl Mar {

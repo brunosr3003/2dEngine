@@ -793,8 +793,9 @@ mod tests {
             ),
             Clique::AutoMissao(705)
         ));
-        // Outra ilha no futuro: diz onde.
-        match estado_da_historia(historia::def_da_historia(719).unwrap(), &c) {
+        // Outra ilha no futuro: diz onde. (721 desde que o barco entrou na
+        // historia e empurrou o capitulo II em dois — docs/MAR_ABERTO.md.)
+        match estado_da_historia(historia::def_da_historia(721).unwrap(), &c) {
             Estado::Bloqueada(m) => assert!(m.iter().any(|s| s == "Na ilha Geleira"), "{m:?}"),
             outro => panic!("{outro:?}"),
         }

@@ -281,6 +281,37 @@ pub struct ItemInstance {
     /// rolar a primeira vez.
     #[serde(default)]
     pub afinidade: Option<[u8; 2]>,
+    /// Estado do BARCO (docs/MAR_ABERTO.md): casco, melhorias e
+    /// quilometragem. Viaja com o item, entao barco vendido no mercado leva
+    /// junto tudo o que o dono investiu nele. `None` = casco de antes deste
+    /// campo, lido como cheio e sem melhoria.
+    #[serde(default)]
+    pub barco: Option<BarcoData>,
+}
+
+/// O que o BARCO acumula.
+///
+/// Mora na instancia porque o barco e' item: assim casco, melhorias e
+/// quilometragem sobrevivem ao mercado e ao banco sem tabela propria — e' o
+/// mesmo arranjo do `PetData`.
+///
+/// **12 bytes e `Copy`**, e essa restricao e' carga: `ItemInstance` e' `Copy`
+/// e existe uma vez por slot de bolsa, de banco, de anuncio e de envio no
+/// fio. E' por isso que o PORAO (corte 4) NAO vai morar aqui — um porao
+/// dentro da instancia somaria centenas de bytes a todo item do jogo, e
+/// instancia nao pode conter instancia.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct BarcoData {
+    /// Pontos de casco AGORA. 0 = naufragado: nao zarpa ate' reparar.
+    pub casco: u16,
+    /// Nivel de cada melhoria: [casco, vela, porao, canhao]. O canhao e'
+    /// fase 2 e fica em 0 ate' la'.
+    pub melhorias: [u8; 4],
+    /// Travessias concluidas. Nao faz nada mecanicamente: e' o hodometro que
+    /// o mercado le' ("Nau, 340 travessias, 2 naufragios").
+    pub travessias: u32,
+    /// Quantas vezes afundou. Honestidade no anuncio.
+    pub afundou: u32,
 }
 
 /// O que o pet acumula. Fica na instancia porque o pet e' item: assim nivel e
@@ -316,6 +347,7 @@ impl ItemInstance {
             affixes: [AffixSlot::default(); MAX_AFFIXES],
             pet: None,
             afinidade: None,
+            barco: None,
             sockets: 0,
             socketed_gems: [0; 3],
             vinculado: false,
@@ -724,6 +756,7 @@ impl ItemInstance {
             affixes: [AffixSlot::default(); MAX_AFFIXES],
             pet: None,
             afinidade: None,
+            barco: None,
             sockets: sockets_for_tier(tier),
             socketed_gems: [0; 3],
             vinculado: false,

@@ -2859,6 +2859,35 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         }
     }
 
+    // Os tres CASCOS (docs/MAR_ABERTO.md). `sell_price` bem abaixo do custo
+    // de craft de proposito: ninguem deve vender um barco pro NPC. Quem quer
+    // se livrar de um vende no MERCADO, onde a instancia (casco, melhorias,
+    // travessias) vai junto e vale alguma coisa.
+    for id in item_id::BARCO_BASE..=item_id::BARCO_ULTIMO {
+        let Some(nome) = shared::barcos::nome_do_item(id) else {
+            continue;
+        };
+        let classe = item_id::casco_de_id(id).unwrap_or(1) as i32;
+        let venda = 1_500 * classe * classe;
+        sqlx::query(
+            "INSERT INTO items \
+              (id, name, sell_price, buy_price, shop_order, stack_max, \
+               equip_slot, item_level, icon_col, icon_row) \
+             VALUES ($1,$2,$3,NULL,NULL,1,$4,1,-1,-1) \
+             ON CONFLICT (id) DO UPDATE SET \
+               name = EXCLUDED.name, \
+               equip_slot = EXCLUDED.equip_slot, \
+               stack_max = EXCLUDED.stack_max, \
+               sell_price = EXCLUDED.sell_price",
+        )
+        .bind(id as i32)
+        .bind(&nome)
+        .bind(venda)
+        .bind(shared::EquipSlot::Barco.as_db_str())
+        .execute(pool)
+        .await?;
+    }
+
     // O pergaminho de pet cai na recompensa diaria, e o calendario nao
     // entrega item negociavel (docs/CALENDARIO.md): ele nasce VINCULADO. O
     // que sai dele — o pet — e' negociavel normalmente, que e' o ponto.

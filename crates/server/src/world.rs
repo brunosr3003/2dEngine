@@ -11013,7 +11013,23 @@ impl GameWorld {
             // esconderia justamente o que se quer ver enquanto se constroi
             // mundo: se o mob ACERTA, e quanto.
             let protegido = self.imortal && self.ecs.get::<&PlayerTag>(entity).is_ok();
-            if !protegido {
+            // ── NO MAR QUEM APANHA E' O CASCO ────────────────────────────
+            //
+            // "Navegacao e' navegacao; combate no mar sera PvP entre barcos
+            // apenas" — decisao do dono. Entao bicho de mar nao e' encontro
+            // de combate: e' PERIGO. Ele rói o casco, e a resposta do jogador
+            // e' desviar ou correr, nao trocar golpe boiando.
+            //
+            // Isso tambem e' o que da' sentido ao eixo CASCO das melhorias e
+            // ao reparo: sem dano no casco, os dois seriam numero morto.
+            let no_casco = self.mar.is_some()
+                && self.ecs.get::<&PlayerTag>(entity).is_ok()
+                && !attacker_is_player;
+            if no_casco && !protegido {
+                if let Some(sid) = self.sid_da_entidade(entity) {
+                    self.dano_no_casco(sid, dmg);
+                }
+            } else if !protegido {
                 if let Ok(mut hp) = self.ecs.get::<&mut Health>(entity) {
                     hp.current = (hp.current - dmg).max(0);
                     if hp.current == 0 && attacker_is_player {
@@ -13460,6 +13476,9 @@ impl GameWorld {
         };
         let destinos = shared::viagem::destinos(&self.zona, indice, &no_ar);
         let _ = s.handle.to_client.send(ServerMessage::Viagem { destinos });
+        // O ESTALEIRO vem junto: quem chega no cais quer ver o barco. Mandar
+        // os dois num clique evita um NPC a mais e um menu a mais.
+        self.abrir_estaleiro(sid);
     }
 
     /// "Embarcar" no menu do Capitao: perto dele, ilha liberada pela
@@ -18381,6 +18400,14 @@ pub(crate) fn add_to_inventory(
     // no mesmo slot dividiriam uma instancia e teriam que ter o mesmo
     // sorteio. Por isso a checagem de espaco vem antes — `qty` bichos
     // precisam de `qty` vagas, e meio lote entregue seria pior que recusar.
+    // O BARCO nasce com estado proprio (docs/MAR_ABERTO.md): casco cheio,
+    // sem melhoria. Mesmo funil do bicho, e pelo mesmo motivo — craft,
+    // quest, mercado, banco e grant de admin passam todos por aqui.
+    if instance.is_none() && shared::item_id::e_barco(item_id) {
+        let mut inst = shared::items::ItemInstance::vazia_de_grau(1);
+        inst.barco = Some(shared::barcos::novo(item_id));
+        return add_to_inventory(inv, item_id, 1, Some(inst));
+    }
     if instance.is_none() {
         if let Some(grau) = grau_de_bicho(item_id) {
             let n = qty.max(1);
