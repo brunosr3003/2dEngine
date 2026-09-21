@@ -711,7 +711,8 @@ mod testes {
                     faction: None,
                     kind: 0,
                     nivel: 1,
-                }],
+                aparencia: 0,
+            }],
                 vec![EntityState {
                     id,
                     pos: [16, 16],
@@ -764,6 +765,7 @@ mod testes {
                 faction: None,
                 kind: 0,
                 nivel: 1,
+                aparencia: 0,
             }],
             vec![estado(1.0)],
             &[],
@@ -818,7 +820,8 @@ mod testes {
                     faction: None,
                     kind: 2,
                     nivel: 1,
-                }],
+                aparencia: 0,
+            }],
                 vec![EntityState {
                     id,
                     pos,
@@ -879,6 +882,7 @@ mod testes {
                 faction: None,
                 kind: 0,
                 nivel: 0,
+                aparencia: 0,
             }],
             vec![EntityState {
                 id,
@@ -979,6 +983,7 @@ mod testes {
                 faction: None,
                 kind: 0,
                 nivel: 0,
+                aparencia: 0,
             }],
             vec![estado(0.0)],
             &[],
@@ -1068,6 +1073,7 @@ mod testes {
                 faction: None,
                 kind: 0,
                 nivel: 0,
+                aparencia: 0,
             }],
             vec![EntityState {
                 id,

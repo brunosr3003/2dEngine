@@ -480,6 +480,11 @@ tem o nginx e os `stream` das portas velhas. As units são de usuário
 `EnvironmentFile=/home/brunji/tempest-prod/tempest.env`. Banco `tempest_sa01`
 no container `mmo-pg`. Deploy é trocar o binário em `~/tempest-prod/bin`.
 
+Cada zona atende o panóptico em `127.0.0.1:(porta do jogo + 1000)` —
+`PANOPTICO_BIND` na unit, que o supervisor passa sozinho pros canais do
+Bosque e que a Geleira e a Colônia trazem escrito. Só loopback: o painel de
+fora entra pelo `tempest-prod-panoptico`, que é quem junta os retratos.
+
 As portas 9000/9100/9200 **continuam de pé** no `stream` da VPS: cliente
 publicado antes da virada ainda entra por elas. Elas saem quando não houver
 mais build antigo no TestFlight.
@@ -509,5 +514,7 @@ fazem TLS. Antes de qualquer jogador de verdade, isso tem que virar
 - **Canal 4+ do Bosque**: o caminho cobre 1-3 (`location` no vhost e `-R` no
   túnel). Abrir mais exige as duas linhas — hoje `MMO_CANAIS_MAX=1`, então
   não chega perto.
-- **Geleira e Colônia sem panóptico**: sobem sem `PANOPTICO_BIND`, então
-  aparecem mudas no painel. É uma linha em cada unit.
+- **Mapa da Colônia no painel**: ela tem painel (`127.0.0.1:10200`) e o
+  retrato chega, mas `semente` e `raio` vêm zerados e `/api/mapa/colonia` dá
+  404 — o relevo dela é por instância, não da zona, então não há ilha no
+  nível do processo pra desenhar.

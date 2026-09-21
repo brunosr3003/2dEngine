@@ -91,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
                         } else {
                             ClientMessage::CreateCharacter {
                                 name: personagem.clone(),
-                                visual: shared::VisualConfig::default(),
+                                aparencia: Default::default(),
                                 starting_weapon: available_weapons.first().copied().unwrap_or(0),
                                 faction: Default::default(),
                             }

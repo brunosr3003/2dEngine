@@ -32,6 +32,8 @@ pub enum Item {
     Presenca,
     /// A colonia (docs/COLONIA.md): colher e melhorar.
     MinhaIlha,
+    /// O guarda-roupa (docs/PERSONAGEM.md): trocar a aparencia.
+    GuardaRoupa,
     Grupo,
     Amigos,
     Correio,
@@ -52,9 +54,14 @@ pub enum Item {
 /// (item, rotulo, motivo do cadeado).
 type Linha = (Item, &'static str, Option<&'static str>);
 
-/// Quantos quadradinhos cabem numa linha de grupo. PERSONAGEM usa os cinco
-/// (Bolsa, Ficha, Habilidades, Pets, Montaria); os outros tem quatro e sobra
-/// espaco no fim da linha.
+/// Quantos quadradinhos cabem numa linha de grupo. A grade NAO quebra linha:
+/// um item a mais entra na coluna do lado.
+///
+/// Em 21/09/2026 o guarda-roupa precisou de lugar em PERSONAGEM, que ja'
+/// estava nos cinco. Em vez de apertar a grade (o quadrado tem piso de 44 px
+/// e encolher so' faria a linha vazar), duas coisas mudaram de grupo pra onde
+/// elas ja' faziam mais sentido: a MONTARIA foi pra AVENTURA, que e' como se
+/// viaja, e RECUPERAR XP foi pra PROGRESSO, que e' do que ele trata.
 const POR_LINHA: f32 = 5.0;
 
 /// Os grupos, na ordem da tela.
@@ -66,7 +73,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
             (Item::Ficha, "Ficha", None),
             (Item::Habilidades, "Habilidades", None),
             (Item::Pets, "Pets", None),
-            (Item::Montaria, "Montaria", None),
+            (Item::GuardaRoupa, "Aparência", None),
         ],
     ),
     (
@@ -76,6 +83,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
             (Item::TodasMissoes, "Todas", None),
             (Item::Diarias, "Diárias", None),
             (Item::Conquistas, "Conquistas", Some("Em breve")),
+            (Item::RecuperarXp, "Recuperar XP", None),
         ],
     ),
     (
@@ -94,7 +102,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
             (Item::Aventuras, "Dungeons", None),
             (Item::Presenca, "Presença", None),
             (Item::MinhaIlha, "Minha Ilha", None),
-            (Item::RecuperarXp, "Recuperar XP", None),
+            (Item::Montaria, "Montaria", None),
         ],
     ),
     (
@@ -365,6 +373,7 @@ fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
         Item::Aventuras => "aventuras",
         Item::Presenca => "presenca",
         Item::MinhaIlha => "mapa",
+        Item::GuardaRoupa => "ficha",
         Item::Grupo => "grupo",
         Item::Amigos => "amigos",
         Item::Correio => "correio",
@@ -437,6 +446,7 @@ mod tests {
             Item::Aventuras,
             Item::Presenca,
             Item::MinhaIlha,
+            Item::GuardaRoupa,
             Item::LojaTp,
             Item::Montaria,
             Item::RecuperarXp,

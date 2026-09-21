@@ -5,7 +5,7 @@ use macroquad::prelude::*;
 use shared::{
     protocol::{CharacterListEntry, ClientMessage},
     skills::Conjunto,
-    Faction, VisualConfig,
+    Faction,
 };
 
 pub enum Acao {
@@ -50,6 +50,13 @@ pub struct Personagens {
     pub nome: String,
     pub arma: Option<u16>,
     pub faccao: Faction,
+    /// A aparência escolhida (docs/PERSONAGEM.md). O retrato 3D ao lado é
+    /// desenhado com ela — escolher e ver são a mesma coisa.
+    pub aparencia: shared::aparencia::Aparencia,
+    /// Que metade do painel da direita está aberta: 0 = arma e facção,
+    /// 1 = aparência. São duas porque as duas juntas não cabem numa tela de
+    /// 390 px de altura (o iPhone deitado) — faltavam 119 px, medidos.
+    aba: u8,
     pub mensagem: Option<String>,
     aguardando: Option<(String, f64)>,
     foco_nome: bool,
@@ -127,7 +134,7 @@ impl Personagens {
             .ok_or("Escolha uma arma disponível.")?;
         Ok(ClientMessage::CreateCharacter {
             name: nome.into(),
-            visual: VisualConfig::default(),
+            aparencia: self.aparencia,
             starting_weapon: arma,
             faction: self.faccao,
         })
@@ -397,11 +404,27 @@ impl Personagens {
         let x = painel.x + 14.0;
         let lw = painel.w - 28.0;
         let card_h = l.card_h;
-        ui::texto(x, painel.y + 22.0, "ARMA INICIAL", 13, ui::OURO);
+        // ── as duas abas ──
+        for (i, nome) in ["Arma & Facção", "Aparência"].iter().enumerate() {
+            let r = Rect::new(
+                x + i as f32 * (lw + 8.0) * 0.5,
+                painel.y + 8.0,
+                (lw - 8.0) * 0.5,
+                l.aba_h,
+            );
+            if botao(r, nome, !ocupado, self.aba == i as u8) {
+                self.aba = i as u8;
+            }
+        }
+        if self.aba == 1 {
+            self.desenha_aparencia(x, painel.y + l.aba_h + 22.0, lw, l.faccao_h, ocupado);
+            return None;
+        }
+        ui::texto(x, painel.y + l.aba_h + 30.0, "ARMA INICIAL", 13, ui::OURO);
         for (i, c) in Conjunto::TODOS.iter().enumerate() {
             let r = Rect::new(
                 x + (i % 2) as f32 * (lw + 8.0) * 0.5,
-                painel.y + 32.0 + (i / 2) as f32 * (card_h + 6.0),
+                painel.y + l.aba_h + 40.0 + (i / 2) as f32 * (card_h + 6.0),
                 (lw - 8.0) * 0.5,
                 card_h,
             );
@@ -469,7 +492,7 @@ impl Personagens {
                 self.giro = 0.0;
             }
         }
-        let fy = painel.y + 32.0 + 2.0 * (card_h + 6.0) + 14.0;
+        let fy = painel.y + l.aba_h + 40.0 + 2.0 * (card_h + 6.0) + 14.0;
         ui::texto(x, fy, "FACÇÃO", 13, ui::OURO);
         for (i, (f, n)) in [
             (Faction::Peacemain, "Peacemain"),
@@ -906,7 +929,11 @@ impl Personagens {
         let pose = crate::rig::pose(&entrada);
         let base =
             Mat4::from_rotation_y(self.giro + 0.18 + (get_time() as f32 * 0.35).sin() * 0.10);
-        render3d::desenha_rig(base, &pose, corpo, vox.rig(render3d::RIG_CHAPEU), vox, None);
+        // O retrato mostra a APARÊNCIA escolhida: é o que faz os seletores
+        // ao lado significarem alguma coisa.
+        let veste = render3d::vestimenta_de(vox, self.aparencia.empacota())
+            .unwrap_or_else(|| render3d::Vestimenta::nua(corpo));
+        render3d::desenha_rig(base, &pose, &veste, vox, None);
         gl_use_default_material();
         self.camera_ui();
     }
@@ -960,6 +987,82 @@ fn apertou_em() -> Option<Vec2> {
 fn clicou(r: Rect) -> bool {
     apertou_em().is_some_and(|p| r.contains(p))
 }
+impl Personagens {
+    /// Os quatro seletores de aparência: rosto, cabelo, cor e pele.
+    ///
+    /// Cada um é `‹ nome ›` — a forma mais barata que existe de escolher
+    /// numa lista curta com o dedo, e que não ocupa a tela com uma grade.
+    /// Devolve o y em que terminou.
+    fn desenha_aparencia(&mut self, x: f32, y: f32, lw: f32, alt: f32, ocupado: bool) -> f32 {
+        use shared::aparencia as ap;
+        ui::texto(x, y, "APARÊNCIA", 13, ui::OURO);
+        let mut y = y + 8.0;
+        // (rótulo, quantas opções, índice atual)
+        // Cabelo + "sem cabelo" + os CHAPÉUS, que são grátis e já vêm
+        // destravados — não há por que escondê-los de quem está criando.
+        let cabelos = ap::CABELOS + 1 + ap::CHAPEUS.len() as u8;
+        // Roupa: o padrão mais as grátis. As pagas ficam pra loja.
+        let roupas = ap::ROUPAS_GRATIS as u8 + 1;
+        let atual_roupa = if self.aparencia.roupa >= ap::ROUPA_BASE {
+            (self.aparencia.roupa - ap::ROUPA_BASE + 1) as u8
+        } else {
+            0
+        };
+        let linhas: [(&str, u8, u8); 5] = [
+            ("Rosto", ap::ROSTOS, self.aparencia.rosto),
+            ("Cabelo", cabelos, self.aparencia.cabelo),
+            ("Cor", ap::CORES_DE_CABELO.len() as u8, self.aparencia.cor_cabelo),
+            ("Pele", ap::TONS_DE_PELE.len() as u8, self.aparencia.pele),
+            ("Roupa", roupas, atual_roupa),
+        ];
+        // A mesma constante que dimensiona o painel (`altura_da_aparencia`).
+        debug_assert_eq!(linhas.len() as f32, LINHAS_DE_APARENCIA);
+        let mut escolhas = [0u8; 5];
+        for (i, (rotulo, n, atual)) in linhas.iter().enumerate() {
+            let r = Rect::new(x, y, lw, alt);
+            let lado = alt.min(40.0);
+            let mut v = *atual;
+            if botao(Rect::new(r.x, r.y, lado, r.h), "‹", !ocupado, false) {
+                v = (v + n - 1) % n;
+            }
+            if botao(
+                Rect::new(r.x + r.w - lado, r.y, lado, r.h),
+                "›",
+                !ocupado,
+                false,
+            ) {
+                v = (v + 1) % n;
+            }
+            let nome = match i {
+                1 if *atual == ap::CABELOS => "sem cabelo".to_string(),
+                1 if *atual > ap::CABELOS => ap::chapeu_do_cabelo(*atual)
+                    .and_then(ap::nome_da_skin)
+                    .unwrap_or("sem cabelo")
+                    .to_string(),
+                2 => ap::CORES_DE_CABELO[(*atual as usize).min(5)].to_string(),
+                3 => ap::TONS_DE_PELE[(*atual as usize).min(3)].to_string(),
+                4 if *atual == 0 => "padrão".to_string(),
+                4 => ap::nome_da_skin(ap::ROUPA_BASE + *atual as u16 - 1)
+                    .unwrap_or("padrão")
+                    .to_string(),
+                _ => format!("{} {}", rotulo, atual + 1),
+            };
+            ui::texto_centro(r.x + r.w * 0.5, r.y + r.h * 0.5 + 5.0, &nome, 14, ui::TEXTO);
+            escolhas[i] = v;
+            y += alt + 6.0;
+        }
+        self.aparencia.rosto = escolhas[0];
+        self.aparencia.cabelo = escolhas[1];
+        self.aparencia.cor_cabelo = escolhas[2];
+        self.aparencia.pele = escolhas[3];
+        self.aparencia.roupa = match escolhas[4] {
+            0 => 0,
+            k => ap::ROUPA_BASE + k as u16 - 1,
+        };
+        y
+    }
+}
+
 fn botao(r: Rect, t: &str, ativo: bool, destaque: bool) -> bool {
     let sobre = ativo && r.contains(Vec2::from(mouse_position()));
     draw_rectangle(
@@ -1021,6 +1124,12 @@ const ALTURA_COMPACTA: f32 = 560.0;
 /// tamanhos de tela de verdade: no iPhone deitado o campo de nome caia em
 /// y=450 numa tela de 390 — fora dela — e sem nome o "Criar personagem" nunca
 /// acendia.
+/// Quantos seletores o bloco de APARENCIA tem (rosto, cabelo, cor, pele,
+/// roupa). Mora aqui porque DOIS lugares precisam concordar: quem desenha e
+/// quem calcula a altura do painel. Quando eram dois numeros a mao, o painel
+/// parou de cobrir as duas ultimas linhas.
+const LINHAS_DE_APARENCIA: f32 = 5.0;
+
 #[derive(Debug, Clone, Copy)]
 struct LayoutCriacao {
     compacto: bool,
@@ -1034,6 +1143,8 @@ struct LayoutCriacao {
     painel: Rect,
     card_h: f32,
     faccao_h: f32,
+    /// Altura dos botoes de aba, no topo do painel da direita.
+    aba_h: f32,
 }
 
 impl LayoutCriacao {
@@ -1068,6 +1179,7 @@ impl LayoutCriacao {
             painel: Rect::new(px, topo, dir - px, base - topo),
             card_h: if compacto { 46.0 } else { 74.0 },
             faccao_h: if compacto { 30.0 } else { 36.0 },
+            aba_h: if compacto { 28.0 } else { 34.0 },
         };
         // Tela grande: o painel acaba onde acaba o conteudo, sem um vao vazio embaixo.
         if !compacto {
@@ -1087,9 +1199,39 @@ impl LayoutCriacao {
         )
     }
 
-    /// Onde termina o que TEM que caber no painel (cartoes + faccao + legenda).
+    /// Onde termina o que TEM que caber no painel: cartoes de arma, faccao,
+    /// os seletores de APARENCIA e a legenda.
+    ///
+    /// A aparencia entrou aqui em 21/09/2026 e nao estava: o painel e'
+    /// recortado por esta conta, entao as duas ultimas linhas (Pele e Roupa)
+    /// ficavam DESENHADAS FORA do fundo. O numero de linhas vem de uma
+    /// constante compartilhada com quem desenha — duas contagens a mao
+    /// divergem no primeiro seletor novo.
     fn fim_do_essencial(&self) -> f32 {
-        self.painel.y + 32.0 + 2.0 * (self.card_h + 6.0) + 14.0 + 8.0 + self.faccao_h + 18.0
+        self.fim_da_faccao().max(self.fim_da_aparencia())
+    }
+
+    /// Onde a aba ARMA & FACCAO termina (cartoes + faccao + legenda).
+    fn fim_da_faccao(&self) -> f32 {
+        self.painel.y
+            + self.aba_h
+            + 40.0
+            + 2.0 * (self.card_h + 6.0)
+            + 14.0
+            + 8.0
+            + self.faccao_h
+            + 18.0
+            + 22.0
+    }
+
+    /// Onde a aba APARENCIA termina.
+    fn fim_da_aparencia(&self) -> f32 {
+        self.painel.y + self.aba_h + 22.0 + self.altura_da_aparencia()
+    }
+
+    /// Quanto o bloco de aparencia ocupa: o rotulo mais as linhas.
+    fn altura_da_aparencia(&self) -> f32 {
+        8.0 + LINHAS_DE_APARENCIA * (self.faccao_h + 6.0)
     }
 }
 
@@ -1147,7 +1289,7 @@ pub async fn previa(vox: &VoxCache) {
     .map(|(n, level, c)| CharacterListEntry {
         name: n.into(),
         level,
-        visual: VisualConfig::default(),
+        aparencia: 0,
         weapon_id: Some(c.arma()),
         faction: Default::default(),
     });
@@ -1316,7 +1458,7 @@ mod tests {
             );
             assert!(
                 l.fim_do_essencial() <= l.painel.y + l.painel.h,
-                "{w}x{h}: arma e faccao nao cabem no painel"
+                "{w}x{h}: o painel nao cobre o conteudo — texto desenhado fora do fundo"
             );
             assert!(
                 l.painel.w >= 300.0,
@@ -1387,7 +1529,7 @@ mod tests {
             name: n.into(),
             level: 1,
             weapon_id: Some(armas[0]),
-            visual: VisualConfig::default(),
+            aparencia: 0,
             faction: Default::default(),
         });
         p.recebeu_lista(&chars, &armas, &mut sel);

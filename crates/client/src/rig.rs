@@ -51,13 +51,29 @@ const CANELA: f32 = 10.0;
 const QUADRIL: f32 = 19.0;
 
 /// Pivô de uma peça pelo nome — o que o carregamento do `.vox` precisa pra
-/// gerar a malha em volta dela. Peça fora da lista gira em volta da raiz.
-pub fn pivo(nome: &str) -> [f32; 3] {
-    PECAS
-        .iter()
-        .find(|p| p.0 == nome)
-        .map(|p| p.2)
-        .unwrap_or(RAIZ)
+/// gerar a malha em volta dela.
+///
+/// `None` pra nome fora do contrato, e isso importa: até 21/09/2026 esta
+/// função devolvia a RAIZ (o chão, entre os pés) pra qualquer nome
+/// desconhecido. Uma peça mal-nomeada virava malha em volta do chão e
+/// **nunca era desenhada** — `desenha_rig` percorre `PECAS`, não o arquivo.
+/// Duas falhas caladas empilhadas, bem no caminho de quem vai escrever
+/// skins com `capuz` e `elmo` (docs/ARTE_DO_PERSONAGEM.md).
+pub fn pivo(nome: &str) -> Option<[f32; 3]> {
+    let slot = slot_de(nome)?;
+    PECAS.iter().find(|p| p.0 == slot).map(|p| p.2)
+}
+
+/// A peça do rig que este objeto ocupa.
+///
+/// Quase sempre é o próprio nome. A exceção é o slot `cabelo`, que recebe
+/// cabelo, chapéu, capuz e elmo — são a mesma junta na cabeça, e quem estiver
+/// lá ganha (docs/ARTE_DO_PERSONAGEM.md, skins de armadura).
+pub fn slot_de(nome: &str) -> Option<&'static str> {
+    match nome {
+        "capuz" | "elmo" | "chapeu" => Some("cabelo"),
+        _ => PECAS.iter().find(|p| p.0 == nome).map(|p| p.0),
+    }
 }
 
 /// Coordenada de voxel da tela comum → mundo, relativa à raiz. É o mesmo mapa
@@ -2394,5 +2410,71 @@ mod testes {
         let m = matrizes(&p, Mat4::IDENTITY, 1.0);
         assert!(armas(&p, &m, 1.0).is_empty());
         assert!(e_anel(&p));
+    }
+}
+
+#[cfg(test)]
+mod testes_do_contrato {
+    use super::*;
+
+    /// TODA peça de TODO `.vox` de personagem tem pivô.
+    ///
+    /// `pivo` devolvia a RAIZ pra nome desconhecido, e `desenha_rig` percorre
+    /// `PECAS` e não o arquivo: uma peça mal-nomeada virava malha em volta do
+    /// chão que ninguém desenhava. Duas falhas caladas, uma escondendo a
+    /// outra. Este teste abre os arquivos de verdade — é a conferência que
+    /// hoje acontece no boot e que a carga preguiçosa vai tirar de lá.
+    #[test]
+    fn toda_peca_de_personagem_tem_pivo() {
+        let mut vistos = 0;
+        for dir in ["personagem", "humanoides", "npcs"] {
+            let caminho = format!("../../assets/vox/{dir}");
+            let Ok(entradas) = std::fs::read_dir(&caminho) else {
+                continue;
+            };
+            for e in entradas.flatten() {
+                let p = e.path();
+                if p.extension().is_none_or(|x| x != "vox") {
+                    continue;
+                }
+                let bytes = std::fs::read(&p).expect("le o vox");
+                let Ok(pecas) = crate::vox::parse_nomeado(&bytes) else {
+                    continue;
+                };
+                // Arquivo de UMA peça sem nome é modelo inteiro (arma, saque):
+                // não é rig e não passa por `pivo`.
+                if pecas.len() == 1 && pecas[0].0.is_empty() {
+                    continue;
+                }
+                for (nome, _) in &pecas {
+                    assert!(
+                        !nome.is_empty(),
+                        "{:?}: peça SEM NOME — ela some no carregamento",
+                        p.file_name().unwrap()
+                    );
+                    assert!(
+                        pivo(nome).is_some(),
+                        "{:?}: a peça '{nome}' não está no contrato do rig \
+                         ({:?}) — ela nunca seria desenhada",
+                        p.file_name().unwrap(),
+                        PECAS.iter().map(|x| x.0).collect::<Vec<_>>()
+                    );
+                    vistos += 1;
+                }
+            }
+        }
+        assert!(vistos > 100, "só {vistos} peças conferidas — achou os arquivos?");
+    }
+
+    /// Os apelidos da cabeça caem no slot do cabelo, e nada mais inventa slot.
+    #[test]
+    fn capuz_e_elmo_ocupam_o_slot_do_cabelo() {
+        for n in ["capuz", "elmo", "chapeu"] {
+            assert_eq!(slot_de(n), Some("cabelo"), "{n}");
+            assert_eq!(pivo(n), pivo("cabelo"), "{n} gira no pivô da cabeça");
+        }
+        assert_eq!(slot_de("torso"), Some("torso"));
+        assert_eq!(slot_de("perna_d"), None, "nome que não existe não vira slot");
+        assert_eq!(pivo("perna_d"), None);
     }
 }

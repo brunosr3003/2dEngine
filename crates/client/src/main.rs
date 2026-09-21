@@ -95,6 +95,7 @@ mod toque;
 mod ui;
 mod vegetacao;
 mod colonia_ui;
+mod guarda_roupa_ui;
 mod mundo_ui;
 mod nivel_vfx;
 mod viagem_ui;
@@ -369,6 +370,7 @@ struct Jogo {
     viagem: viagem_ui::ViagemUi,
     colonia: colonia_ui::ColoniaUi,
     mundo: mundo_ui::Mundo,
+    guarda_roupa: guarda_roupa_ui::GuardaRoupaUi,
     subiu_de_nivel: nivel_vfx::SubiuDeNivel,
     /// O banco (Banqueiro da vila).
     banco: banco_ui::Banco,
@@ -381,6 +383,8 @@ struct Jogo {
     /// A quest da ilha propria ja' passou (docs/COLONIA.md). Vem no menu do
     /// Capitao, que e' o unico lugar de onde se viaja pra la'.
     tem_colonia: bool,
+    /// O guarda-roupa que o servidor confirmou (docs/PERSONAGEM.md).
+    guarda_roupa_salvo: shared::aparencia::GuardaRoupa,
     /// O botao "Teleportar" do ultimo quadro (so' com viagem longa na tela).
     botao_teleporte: Option<Rect>,
     /// Loja de cash (`loja_tp.rs`).
@@ -442,6 +446,14 @@ async fn main() {
     }
     vox.load_rig(render3d::RIG_CHAPEU, render3d::VOXEL, rig::pivo)
         .await;
+    // Rostos, cabelos e chapeus (tools/voxrender/personagem.py). Sao 14
+    // arquivos pequenos; o boot ja' carregava 19 rigs.
+    //
+    // A lista sai de `rigs_da_cabeca`, que e' a MESMA que o seletor oferece:
+    // dois lacos a mao divergiram uma vez e os chapeus ficaram sem carregar.
+    for nome in render3d::rigs_da_cabeca() {
+        vox.load_rig(&nome, render3d::VOXEL, rig::pivo).await;
+    }
     vox.load_variantes("saque", render3d::VOXEL, &render3d::variantes_do_saque())
         .await;
     // Os bichos em PECAS (tools/voxrender/bichos.py). Sem o arquivo, o mob
@@ -625,11 +637,13 @@ async fn main() {
         viagem: viagem_ui::ViagemUi::default(),
         colonia: colonia_ui::ColoniaUi::default(),
         mundo: mundo_ui::Mundo::default(),
+        guarda_roupa: guarda_roupa_ui::GuardaRoupaUi::default(),
         subiu_de_nivel: nivel_vfx::SubiuDeNivel::default(),
         banco: banco_ui::Banco::default(),
         banco_pendente: None,
         viagem_pendente: None,
         tem_colonia: false,
+        guarda_roupa_salvo: Default::default(),
         escolha_npc: escolha_npc::EscolhaNpc::default(),
         botao_teleporte: None,
         loja_tp: loja_tp::LojaTp::default(),
@@ -655,6 +669,11 @@ async fn main() {
     loop {
         jogo.passo();
         jogo.desenhar();
+        // UM pendente por quadro (skins de roupa que alguem a' vista esta'
+        // usando). Um rig custa 2-5 ms de malha; dois por quadro engasgam.
+        // A 60 fps isto resolve uma praca cheia de skins distintas em pouco
+        // mais de um segundo, mostrando o corpo padrao enquanto isso.
+        jogo.vox.atende_um_pendente(render3d::VOXEL).await;
         // Modo economia: o quadro cai pra `economia::FPS`.
         jogo.economia.segurar_quadro();
         next_frame().await;
@@ -1109,6 +1128,10 @@ impl Jogo {
                     }
                     self.map = Some(m);
                 }
+            }
+            ServerMessage::GuardaRoupa { guarda_roupa } => {
+                self.guarda_roupa.define(&guarda_roupa);
+                self.guarda_roupa_salvo = guarda_roupa;
             }
             ServerMessage::Mundo { ilhas } => {
                 // A ilha em que se esta' tambem se atualiza por aqui.
@@ -2166,6 +2189,7 @@ impl Jogo {
             || self.presenca.aberto
             || self.viagem.aberto()
             || self.colonia.aberto()
+            || self.guarda_roupa.aberto
             || self.banco.aberto()
             || self.escolha_npc.aberta()
             || self.loja_tp.aberto
@@ -2455,6 +2479,7 @@ impl Jogo {
         self.presenca.fechar();
         self.viagem.fechar();
         self.colonia.fechar();
+        self.guarda_roupa.fechar();
         self.banco.fechar();
         self.escolha_npc.fechar();
         self.loja_tp.fechar();
@@ -2555,6 +2580,11 @@ impl Jogo {
                         .chat
                         .push("Banco: só nas ilhas, com o Banqueiro do porto.".into()),
                 }
+            }
+            Item::GuardaRoupa => {
+                self.fecha_paineis();
+                let g = self.guarda_roupa_salvo.clone();
+                self.guarda_roupa.abrir(&g);
             }
             Item::MinhaIlha => {
                 // Quem manda e' o servidor: se a quest ainda nao passou, ele
@@ -5141,6 +5171,17 @@ impl Jogo {
                 self.fecha_paineis();
                 self.missoes.fecha();
                 self.banco.abrir(cofre);
+            }
+        }
+        if let Some(msg) = self.guarda_roupa.desenha() {
+            self.envia(msg);
+        }
+        // PROVAR É VER. Com a janela aberta, o próprio boneco no mundo usa a
+        // aparência experimentada — sem ida à rede, e sem esperar o servidor.
+        // É local e some ao fechar; quem manda continua sendo a meta.
+        if let (Some(a), Some(id)) = (self.guarda_roupa.provando(), self.world.self_id) {
+            if let Some(e) = self.world.ents.get_mut(&id) {
+                e.meta.aparencia = a.empacota();
             }
         }
         nivel_vfx::desenha_faixa(&self.subiu_de_nivel, self.ficha.nivel);

@@ -397,6 +397,13 @@ pub enum Produto {
     PergaminhoPet(u16),
     /// Ração, removedor ou skill de pet (`itens_de_pet`).
     ItemDePet(u16),
+    /// Uma SKIN de aparência (roupa ou chapéu, `shared::aparencia`). O `u16`
+    /// é o próprio id da skin.
+    ///
+    /// Ela chega como item de bolsa e **destrava ao ser usada**, como o tomo:
+    /// o item some e o direito fica no guarda-roupa do personagem. Sem isso,
+    /// vestir e revender manteria a aparência de graça.
+    Skin(u16),
 }
 
 impl Produto {
@@ -411,6 +418,7 @@ impl Produto {
             Produto::Energia(i) => format!("energia:{i}"),
             Produto::PergaminhoPet(i) => format!("pergaminho-pet:{i}"),
             Produto::ItemDePet(i) => format!("item-pet:{i}"),
+            Produto::Skin(i) => format!("skin:{i}"),
         }
     }
 
@@ -426,6 +434,7 @@ impl Produto {
             "energia" => Produto::Energia(id),
             "pergaminho-pet" => Produto::PergaminhoPet(id),
             "item-pet" => Produto::ItemDePet(id),
+            "skin" => Produto::Skin(id),
             _ => return None,
         };
         p.existe().then_some(p)
@@ -441,6 +450,7 @@ impl Produto {
             Produto::Energia(i) => energia(i).is_some(),
             Produto::PergaminhoPet(i) => pergaminho_pet(i).is_some(),
             Produto::ItemDePet(i) => item_de_pet(i).is_some(),
+            Produto::Skin(i) => crate::aparencia::nome_da_skin(i).is_some(),
         }
     }
 
@@ -462,6 +472,7 @@ impl Produto {
                 pergaminho_pet(i).map_or("?".into(), |p| p.nome.to_string())
             }
             Produto::ItemDePet(i) => item_de_pet(i).map_or("?".into(), |p| p.nome.to_string()),
+            Produto::Skin(i) => crate::aparencia::nome_da_skin(i).unwrap_or("?").to_string(),
         }
     }
 
@@ -476,6 +487,7 @@ impl Produto {
             Produto::Energia(i) => energia(i).map(|e| e.preco_tp),
             Produto::PergaminhoPet(i) => pergaminho_pet(i).map(|p| p.preco_tp),
             Produto::ItemDePet(i) => item_de_pet(i).map(|p| p.preco_tp),
+            Produto::Skin(i) => crate::aparencia::preco_da_skin(i),
         }
     }
 }

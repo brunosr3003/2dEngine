@@ -459,6 +459,15 @@ pub struct EntityMeta {
     pub kind: u16,
     /// Nivel: o do mob, ou o do personagem. Vai na placa em cima da cabeca.
     pub nivel: u16,
+    /// APARENCIA empacotada (`aparencia::Aparencia::empacota`). Zero = o
+    /// corpo padrao — e' o que mob, saque e projetil mandam.
+    ///
+    /// Aqui e nao no `kind`: o `kind` do Player ja' carrega o item_id da
+    /// montaria. E aqui e nao numa mensagem propria: a meta ja' e' o lugar do
+    /// dado estavel por entidade, e ja' tem reenvio forcado
+    /// (`loja_mundo::atualizar_montaria_vista`).
+    #[serde(default)]
+    pub aparencia: u32,
 }
 
 /// Rumo de NPC parado, guardado no `EntityMeta::kind` (so' pra
@@ -714,78 +723,6 @@ impl Faction {
     }
 }
 
-/// Configuracao visual de um personagem (skin/race/outfit/hair). Replicada
-/// no `EntitySnapshot.visual` pra que clientes remotos renderizem o
-/// paper-doll Mana Seed correto. Nomes de campo casam com `VisualConfig`
-/// no cliente C#.
-///
-/// Default por classe via `VisualConfig::for_class("warrior"|"wizard"|"archer")`.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct VisualConfig {
-    pub skin: Option<u8>,
-    pub skin_race: Option<String>,
-    pub outfit: Option<String>,
-    pub outfit_color: Option<u8>,
-    pub hair: Option<String>,
-    pub hair_color: Option<u8>,
-    /// Hat layer (5hat sheet). None = sem chapeu. Cliente derive overlay
-    /// (chifres/cauda) a partir de skin_race; hat e independente.
-    /// NAO usa skip_serializing pra que client distinga "no hat" de
-    /// "campo omitido" — wardrobe pode REMOVER chapeu mid-game.
-    pub hat: Option<String>,
-    pub hat_color: Option<u8>,
-    /// Tint RGBA aplicado por cima do paper-doll inteiro. Usado pra
-    /// diferenciar mobs do mesmo "class visual" mas tier diferente
-    /// (goblin verde / amarelo / cinza / demonio roxo / vermelho / dourado).
-    /// None = sem tint (Color.white). Cliente multiplica este valor em todos
-    /// os SpriteRenderers do paper-doll.
-    pub body_tint: Option<[f32; 4]>,
-}
-
-impl VisualConfig {
-    /// Default por classe. Usado quando o player loga e nao tem visual
-    /// customizado salvo. Outfits/hairs escolhidos pra ter sheets em
-    /// TODOS os pages (p1/p2/p3/p4 + pONE/pBOW/pPOL) — senao sumiria
-    /// durante combate.
-    pub fn for_class(class: &str) -> Self {
-        match class {
-            "wizard" => Self {
-                skin: Some(1),
-                skin_race: Some("humn".into()),
-                outfit: Some("pfpn".into()),
-                outfit_color: Some(4),
-                hair: Some("dap1".into()),
-                hair_color: Some(7),
-                hat: None,
-                hat_color: None,
-                body_tint: None,
-            },
-            "archer" => Self {
-                skin: Some(2),
-                skin_race: Some("humn".into()),
-                outfit: Some("fstr".into()),
-                outfit_color: Some(3),
-                hair: Some("bob1".into()),
-                hair_color: Some(2),
-                hat: None,
-                hat_color: None,
-                body_tint: None,
-            },
-            // "warrior" (default)
-            _ => Self {
-                skin: Some(1),
-                skin_race: Some("humn".into()),
-                outfit: Some("fstr".into()),
-                outfit_color: Some(1),
-                hair: Some("dap1".into()),
-                hair_color: Some(1),
-                hat: None,
-                hat_color: None,
-                body_tint: None,
-            },
-        }
-    }
-}
 
 /// Marca de corpo solido: empurra e e' empurrado no passe de separacao.
 ///

@@ -142,7 +142,8 @@ pub enum ClientMessage {
     /// entry na CharacterList apos sucesso. Server valida nome unico.
     CreateCharacter {
         name: String,
-        visual: crate::VisualConfig,
+        /// A aparencia escolhida na criacao (docs/PERSONAGEM.md).
+        aparencia: crate::aparencia::Aparencia,
         starting_weapon: u16,
         /// Facção escolhida na criação. Default Peacemain se cliente antigo
         /// não enviar (compat).
@@ -158,12 +159,11 @@ pub enum ClientMessage {
     /// quando session.downed=true, sem precisar esperar o timer chegar a 0.
     /// Server teleporta pro spawn_tile, restaura HP, limpa estado downed.
     RespawnAtCity,
-    /// Atualiza o visual do player mid-game (wardrobe). Server valida,
-    /// salva no Session, persiste no DB, e o proximo snapshot replica
-    /// pra todos os clientes — incluindo o autor (que ja aplicou local
-    /// pra responsividade, mas confirma com server snapshot).
+    /// O GUARDA-ROUPA: troca a aparencia em jogo. O servidor valida (rosto e
+    /// cabelo contra a tabela, roupa contra o que foi destravado) e reenvia a
+    /// meta pra quem ja' via o jogador.
     UpdateVisual {
-        visual: crate::VisualConfig,
+        aparencia: crate::aparencia::Aparencia,
     },
     /// Comando admin — server valida `secret` contra env var
     /// `MMORPG_ADMIN_SECRET`. Se `target_char` Some, aplica no char com
@@ -1109,6 +1109,11 @@ pub enum ServerMessage {
     Mundo {
         ilhas: Vec<crate::bosses::IlhaNoMundo>,
     },
+    /// O GUARDA-ROUPA do personagem: a aparencia em vigor e o que ele ja'
+    /// destravou. Vai no login e a cada troca.
+    GuardaRoupa {
+        guarda_roupa: crate::aparencia::GuardaRoupa,
+    },
     /// O painel da COLONIA (docs/COLONIA.md).
     Colonia {
         aviso: crate::colonia::AvisoColonia,
@@ -1484,7 +1489,10 @@ pub struct ItemResourceSources {
 pub struct CharacterListEntry {
     pub name: String,
     pub level: u32,
-    pub visual: crate::VisualConfig,
+    /// A aparencia, ja' empacotada — a tela de selecao desenha cada
+    /// personagem com a cara dele.
+    #[serde(default)]
+    pub aparencia: u32,
     /// item_id da arma equipada (informativo — mostra ao lado do nome).
     pub weapon_id: Option<u16>,
     /// Facção do char (cliente mostra cor/badge no card de seleção).

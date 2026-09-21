@@ -95,6 +95,46 @@ pub fn lombo_medido(
         })
 }
 
+/// As faixas de paleta que o SHADER tinge (docs/ARTE_DO_PERSONAGEM.md).
+///
+/// A arte escreve uma cor de rascunho nesses indices; quem manda na cor final
+/// e' o uniforme do draw. E' o que deixa tom de pele e cor de cabelo custarem
+/// ZERO: sem elas, cada tom seria uma malha nova, e a peca `cabeca` — que tem
+/// as DUAS faixas — daria 4 tons x 6 cores = 24 copias de cada rosto.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Faixa {
+    /// 241-244: o friso de tier (arma, saque, detalhe de armadura).
+    Tier,
+    /// 245-248: cabelo e barba.
+    Cabelo,
+    /// 249-252: pele.
+    Pele,
+}
+
+impl Faixa {
+    /// O numero que vai no vertice. Zero fica reservado pra "sem faixa".
+    pub fn slot(self) -> f32 {
+        match self {
+            Faixa::Tier => 1.0,
+            Faixa::Cabelo => 2.0,
+            Faixa::Pele => 3.0,
+        }
+    }
+}
+
+/// A faixa e o DEGRAU de um indice de paleta: 1.0 no mais claro da rampa,
+/// 0.0 no mais escuro. `None` fora das faixas — a cor fica a do arquivo.
+pub fn faixa_de(indice: u8) -> Option<(Faixa, f32)> {
+    let (faixa, primeiro) = match indice {
+        241..=244 => (Faixa::Tier, 241),
+        245..=248 => (Faixa::Cabelo, 245),
+        249..=252 => (Faixa::Pele, 249),
+        _ => return None,
+    };
+    // Quatro tons na rampa: o primeiro e' o mais claro.
+    Some((faixa, 1.0 - (indice - primeiro) as f32 / 3.0))
+}
+
 pub fn parse_nomeado(data: &[u8]) -> Result<Vec<(String, VoxModel)>, String> {
     if data.len() < 8 || &data[0..4] != b"VOX " {
         return Err("nao e' um .vox".into());
@@ -289,8 +329,14 @@ fn malha(model: &VoxModel, scale: f32, origem: [f32; 3]) -> Vec<Mesh> {
     let mut verts: Vec<Vertex> = Vec::new();
     let mut idx: Vec<u16> = Vec::new();
 
-    let mut push_quad =
-        |verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, corners: [[f32; 3]; 4], color: [u8; 4]| {
+    // `faixa` e' (slot, degrau, sombra da face): o shader reconstroi a cor a
+    // partir do uniforme do draw. Sem faixa vai (0, 0, 0) e o vertice fica com
+    // a cor que ja' veio assada em `color`, como sempre foi.
+    let mut push_quad = |verts: &mut Vec<Vertex>,
+                         idx: &mut Vec<u16>,
+                         corners: [[f32; 3]; 4],
+                         color: [u8; 4],
+                         faixa: [f32; 3]| {
             let b = verts.len() as u16;
             for c in corners {
                 verts.push(Vertex {
@@ -304,7 +350,9 @@ fn malha(model: &VoxModel, scale: f32, origem: [f32; 3]) -> Vec<Mesh> {
                     ),
                     uv: vec2(0.0, 0.0),
                     color,
-                    normal: Vec4::ZERO,
+                    // x e' o RECORTE, que o shader solido ja' lia. y/z/w
+                    // estavam sobrando e agora levam a faixa de paleta.
+                    normal: Vec4::new(0.0, faixa[0], faixa[1], faixa[2]),
                 });
             }
             idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
@@ -373,6 +421,13 @@ fn malha(model: &VoxModel, scale: f32, origem: [f32; 3]) -> Vec<Mesh> {
                     let (color_idx, positive) = cur.unwrap();
                     let rgba = model.palette[color_idx as usize];
                     let k = shade(axis, positive);
+                    // A sombra de face vai pro vertice tambem: quem tinge no
+                    // shader perde a cor assada, e sem isto o personagem
+                    // ficaria chapado enquanto o resto do mundo tem volume.
+                    let faixa = match faixa_de(color_idx) {
+                        Some((f, t)) => [f.slot(), t, k],
+                        None => [0.0, 0.0, 0.0],
+                    };
                     let color = [
                         (rgba[0] as f32 * k) as u8,
                         (rgba[1] as f32 * k) as u8,
@@ -427,7 +482,7 @@ fn malha(model: &VoxModel, scale: f32, origem: [f32; 3]) -> Vec<Mesh> {
                             texture: None,
                         });
                     }
-                    push_quad(&mut verts, &mut idx, quad, color);
+                    push_quad(&mut verts, &mut idx, quad, color, faixa);
 
                     for dj in 0..h {
                         for di in 0..w {
@@ -469,6 +524,9 @@ pub fn modelo_de_arma(bytes: &[u8]) -> Option<(VoxModel, [f32; 3])> {
 /// Cache de modelos ja carregados e transformados em malha.
 #[derive(Default)]
 pub struct VoxCache {
+    /// Rigs pedidos pelo desenho e ainda não carregados (`rig_ou_pede`).
+    /// `RefCell` porque o desenho só tem `&VoxCache`.
+    pendentes: std::cell::RefCell<Vec<String>>,
     meshes: HashMap<String, Vec<Mesh>>,
     /// Arquivos de PECAS: nome do arquivo -> nome da peca -> malhas em volta
     /// do pivo da peca.
@@ -706,6 +764,47 @@ impl VoxCache {
         self.rigs.get(name)
     }
 
+    /// Como `rig`, mas ANOTA a falta em vez de só devolver `None`.
+    ///
+    /// O desenho é síncrono e todo `load_*` é `async`: não dá pra esperar
+    /// arquivo dentro do quadro. Quem chama desenha o que tem (o corpo
+    /// padrão) e o laço principal atende um pendente por quadro.
+    pub fn rig_ou_pede(&self, name: &str) -> Option<&HashMap<String, Vec<Mesh>>> {
+        if let Some(r) = self.rigs.get(name) {
+            return Some(r);
+        }
+        if let Ok(mut p) = self.pendentes.try_borrow_mut() {
+            if !p.iter().any(|x| x == name) {
+                p.push(name.to_string());
+            }
+        }
+        None
+    }
+
+    /// Carrega UM pendente. Uma vez por quadro no laço principal: um rig
+    /// custa 2-5 ms de malha, e dois por quadro engasgam a 60 fps.
+    ///
+    /// **NUNCA descarrega.** O cache de buffer da GPU é chaveado pelo
+    /// PONTEIRO dos vértices (`gpu_estatica`), e duas variantes da mesma peça
+    /// têm contagem de vértices idêntica por construção: liberar uma e
+    /// alocar outra no mesmo endereço devolveria o buffer velho, e o jogador
+    /// apareceria com a roupa errada, sem erro nenhum.
+    pub async fn atende_um_pendente(&mut self, scale: f32) -> bool {
+        let Some(nome) = self
+            .pendentes
+            .try_borrow_mut()
+            .ok()
+            .and_then(|mut p| if p.is_empty() { None } else { Some(p.remove(0)) })
+        else {
+            return false;
+        };
+        // Mesmo que o arquivo não exista: marca como visto pra não pedir de
+        // novo a cada quadro. Um rig vazio desenha o corpo padrão.
+        self.load_rig(&nome, scale, crate::rig::pivo).await;
+        self.rigs.entry(nome).or_default();
+        true
+    }
+
     /// Carrega um arquivo de PECAS (objetos nomeados no MagicaVoxel). Cada
     /// peca vira malha em volta do proprio pivo, que `pivo` responde pelo
     /// nome. `None` quando o arquivo nao existe — o cliente cai no modelo
@@ -714,19 +813,35 @@ impl VoxCache {
         &mut self,
         name: &str,
         scale: f32,
-        pivo: impl Fn(&str) -> [f32; 3],
+        pivo: impl Fn(&str) -> Option<[f32; 3]>,
     ) -> Option<usize> {
         let bytes = ler_vox(&format!("{name}.vox")).await?;
         let pecas = parse_nomeado(&bytes).ok()?;
         let mut mapa = HashMap::new();
         let mut tris = 0usize;
         for (nome, m) in pecas {
+            // Peca sem nome ou fora do contrato NAO entra — mas RECLAMA.
+            //
+            // Antes as duas sumiam caladas: um objeto que perdeu o `_name` no
+            // MagicaVoxel levava embora aquele pedaco do corpo, e um nome
+            // errado virava malha em volta do chao que ninguem desenhava. Com
+            // a roupa substituindo peca a peca isso fica PIOR, nao melhor: a
+            // peca do corpo aparece por baixo e o personagem sai meio-armado,
+            // sem aviso nenhum.
             if nome.is_empty() {
+                eprintln!("[vox] {name}: peca SEM NOME descartada — salve o objeto com nome no MagicaVoxel");
                 continue;
             }
-            let ms = mesh_na_origem(&m, scale, pivo(&nome));
+            let Some(p) = pivo(&nome) else {
+                eprintln!("[vox] {name}: peca '{nome}' fora do contrato do rig — nao sera desenhada");
+                continue;
+            };
+            let ms = mesh_na_origem(&m, scale, p);
             tris += ms.iter().map(|x| x.indices.len() / 3).sum::<usize>();
-            mapa.insert(nome, ms);
+            // Pelo SLOT, e nao pelo nome do arquivo: `capuz` e `elmo` ocupam
+            // o slot `cabelo`, que e' o que `desenha_rig` procura.
+            let slot = crate::rig::slot_de(&nome).unwrap_or("cabelo");
+            mapa.insert(slot.to_string(), ms);
         }
         let n = mapa.len();
         println!("[vox] {name}: {n} pecas, {tris} triangulos");
@@ -1331,6 +1446,320 @@ mod testes_de_inspecao {
                 },
                 Err(e) => println!("{caminho}: nao abriu ({e})"),
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod testes_das_faixas {
+    use super::*;
+
+    /// As três faixas, os quatro degraus, e NADA fora delas.
+    ///
+    /// A faixa errada é o tipo de erro que não aparece: o voxel continua
+    /// desenhado, só que com a cor de outra coisa. Vale travar os limites.
+    #[test]
+    fn a_faixa_sai_do_indice_e_o_degrau_vai_do_claro_ao_escuro() {
+        assert_eq!(faixa_de(241), Some((Faixa::Tier, 1.0)));
+        assert_eq!(faixa_de(244), Some((Faixa::Tier, 0.0)));
+        assert_eq!(faixa_de(245), Some((Faixa::Cabelo, 1.0)));
+        assert_eq!(faixa_de(248), Some((Faixa::Cabelo, 0.0)));
+        assert_eq!(faixa_de(249), Some((Faixa::Pele, 1.0)));
+        assert_eq!(faixa_de(252), Some((Faixa::Pele, 0.0)));
+        // Fora das faixas a cor é a do arquivo.
+        for i in [0u8, 1, 128, 240, 253, 254, 255] {
+            assert_eq!(faixa_de(i), None, "índice {i}");
+        }
+        // Os slots são distintos e nenhum é zero — zero é "sem faixa".
+        let slots: Vec<f32> = [Faixa::Tier, Faixa::Cabelo, Faixa::Pele]
+            .iter()
+            .map(|f| f.slot())
+            .collect();
+        assert!(slots.iter().all(|s| *s > 0.5), "slot zero colide com 'sem faixa'");
+        assert_eq!(slots.len(), 3);
+        assert!(slots[0] != slots[1] && slots[1] != slots[2] && slots[0] != slots[2]);
+    }
+
+    /// O CRITÉRIO DE ACEITE do tingimento: com as faixas desligadas, o
+    /// vértice sai exatamente como saía antes.
+    ///
+    /// É o que permite ligar isto sem tocar em bicho, terreno, NPC nem nas
+    /// duas prévias — todos passam `Faixas::default()`.
+    #[test]
+    fn faixa_desligada_deixa_a_cor_do_arquivo() {
+        let z = crate::gpu_estatica::Faixas::default();
+        for par in [z.tier, z.cabelo, z.pele] {
+            for cor in par {
+                assert_eq!(cor[3], 0.0, "alfa zero é o que desliga a faixa no shader");
+            }
+        }
+        // E ligada, o alfa sobe — senão o shader ignoraria a cor mandada.
+        let f = crate::gpu_estatica::Faixas::nova(None, None, Some([[1.0, 0.9, 0.8], [0.5, 0.4, 0.3]]));
+        assert_eq!(f.pele[0][3], 1.0);
+        assert_eq!(f.pele[0][0], 1.0);
+        assert_eq!(f.cabelo[0][3], 0.0, "a faixa que não foi pedida fica desligada");
+    }
+}
+
+#[cfg(test)]
+mod testes_do_contrato_de_arte {
+    use super::*;
+
+    /// O CONTRATO de `docs/ARTE_DO_PERSONAGEM.md`, conferido nos arquivos.
+    ///
+    /// Esta é a rede que a carga preguiçosa tira do boot: uma skin mal salva
+    /// deixa de aparecer quando o jogo abre e passa a aparecer quando um
+    /// estranho entra na sua tela. O teste tem que pegar antes.
+    ///
+    /// Confere quatro coisas, e cada uma já foi um jeito de a arte quebrar em
+    /// silêncio: o objeto tem NOME (sem nome, `load_rig` descarta), o nome
+    /// está no rig (fora dele, `pivo` devolvia a raiz), o modelo está na tela
+    /// de 32×24×48 (fora dela a peça não encaixa no corpo) e nenhuma peça
+    /// passa de 500 quads (acima disso `malha` parte em duas e dobra o passe
+    /// de render daquela peça — e passe é o teto no celular).
+    #[test]
+    fn toda_peca_de_personagem_cumpre_o_contrato() {
+        const TELA: [usize; 3] = [32, 24, 48];
+        const QUADS_MAX: usize = 500;
+        let mut conferidos = 0;
+        for dir in ["rostos", "cabelos", "chapeus", "skins"] {
+            let caminho = format!("../../assets/vox/personagem/{dir}");
+            let entradas = std::fs::read_dir(&caminho)
+                .unwrap_or_else(|e| panic!("{caminho}: {e} — rodou o gerador?"));
+            for e in entradas.flatten() {
+                let p = e.path();
+                if p.extension().is_none_or(|x| x != "vox") {
+                    continue;
+                }
+                let arq = p.file_name().unwrap().to_string_lossy().to_string();
+                let bytes = std::fs::read(&p).expect("le o vox");
+                let pecas = parse_nomeado(&bytes)
+                    .unwrap_or_else(|e| panic!("{dir}/{arq}: não é um .vox válido ({e})"));
+                assert!(!pecas.is_empty(), "{dir}/{arq}: sem peça nenhuma");
+                for (nome, m) in &pecas {
+                    assert!(
+                        !nome.is_empty(),
+                        "{dir}/{arq}: peça SEM NOME — `load_rig` a descarta"
+                    );
+                    assert!(
+                        crate::rig::pivo(nome).is_some(),
+                        "{dir}/{arq}: a peça '{nome}' não está no rig — não seria desenhada"
+                    );
+                    assert_eq!(
+                        [m.size[0], m.size[1], m.size[2]],
+                        TELA,
+                        "{dir}/{arq}/{nome}: fora da tela comum — não encaixa no corpo"
+                    );
+                    // Um quad por face exposta é o teto grosseiro; o greedy
+                    // meshing junta e sai bem abaixo. Serve como guarda.
+                    let cheios = m.cells.iter().filter(|c| **c != 0).count();
+                    assert!(
+                        cheios > 0,
+                        "{dir}/{arq}/{nome}: peça vazia (o objeto ficou sem voxel)"
+                    );
+                    let quads = mesh_na_origem(m, 1.0, [0.0; 3])
+                        .iter()
+                        .map(|x| x.indices.len() / 6)
+                        .sum::<usize>();
+                    assert!(
+                        quads <= QUADS_MAX,
+                        "{dir}/{arq}/{nome}: {quads} quads (teto {QUADS_MAX}) — \
+                         acima disso a peça vira DUAS malhas e dobra o passe de render"
+                    );
+                    conferidos += 1;
+                }
+            }
+        }
+        assert!(conferidos >= 40, "só {conferidos} peças conferidas");
+    }
+
+    /// O ROSTO não traz cabelo, e o CABELO não traz pele.
+    ///
+    /// Se o rosto trouxesse couro cabeludo, escolher um cabelo poria DOIS
+    /// cabelos na cabeça. É a regra que separa os dois arquivos, e ela só
+    /// existe se for conferida.
+    #[test]
+    fn o_rosto_nao_traz_cabelo_e_o_cabelo_nao_traz_pele() {
+        let conta = |caminho: &str, faixa: Faixa| -> usize {
+            let bytes = std::fs::read(caminho).unwrap_or_else(|e| panic!("{caminho}: {e}"));
+            parse_nomeado(&bytes)
+                .expect("vox")
+                .iter()
+                .flat_map(|(_, m)| m.cells.iter())
+                .filter(|c| faixa_de(**c).is_some_and(|(f, _)| f == faixa))
+                .count()
+        };
+        for i in 1..=shared::aparencia::ROSTOS {
+            let c = format!("../../assets/vox/personagem/rostos/rosto_{i:02}.vox");
+            assert!(conta(&c, Faixa::Pele) > 0, "{c}: um rosto sem pele?");
+            // A sobrancelha e a barba são de cabelo, e são poucos voxels. O
+            // couro cabeludo inteiro do piratinha eram ~480.
+            let cab = conta(&c, Faixa::Cabelo);
+            assert!(cab < 120, "{c}: {cab} voxels de cabelo — isso é cabeleira");
+        }
+        for i in 1..=shared::aparencia::CABELOS {
+            let c = format!("../../assets/vox/personagem/cabelos/cabelo_{i:02}.vox");
+            assert!(conta(&c, Faixa::Cabelo) > 0, "{c}: um cabelo sem cabelo?");
+            assert_eq!(conta(&c, Faixa::Pele), 0, "{c}: o cabelo traz pele junto");
+        }
+    }
+}
+
+#[cfg(test)]
+mod testes_da_sobreposicao {
+    use super::*;
+
+    fn ocupados(caminho: &str) -> std::collections::HashSet<(usize, usize, usize)> {
+        let bytes = std::fs::read(caminho).unwrap_or_else(|e| panic!("{caminho}: {e}"));
+        let mut s = std::collections::HashSet::new();
+        for (_, m) in parse_nomeado(&bytes).expect("vox") {
+            for z in 0..m.size[2] {
+                for y in 0..m.size[1] {
+                    for x in 0..m.size[0] {
+                        let i = x + y * m.size[0] + z * m.size[0] * m.size[1];
+                        if m.cells[i] != 0 {
+                            s.insert((x, y, z));
+                        }
+                    }
+                }
+            }
+        }
+        s
+    }
+
+    /// NENHUM voxel de cabelo ou chapéu pode cair dentro da cabeça.
+    ///
+    /// Duas malhas separadas no mesmo voxel são duas faces no mesmo plano: a
+    /// GPU não tem como decidir qual fica na frente, e o resultado pisca —
+    /// entre a cor do cabelo e a da pele, que foi exatamente o que o dono viu
+    /// em 21/09/2026.
+    ///
+    /// Antes de existir este teste, `cabelo_01` tinha **140 de 140 voxels**
+    /// dentro do crânio: ele era a superfície da cabeça, não uma casca sobre
+    /// ela. A regra (que `docs/ARTE_DO_PERSONAGEM.md` já pedia pros chapéus)
+    /// é que a casca fique um voxel por fora, em toda volta.
+    ///
+    /// Vale pra TODO rosto contra TODO cabelo e chapéu: rosto novo com cabeça
+    /// mais larga reprova aqui, e não na tela do jogador.
+    #[test]
+    fn nenhum_cabelo_ou_chapeu_invade_a_cabeca() {
+        let base = "../../assets/vox/personagem";
+        let rostos: Vec<(String, _)> = std::fs::read_dir(format!("{base}/rostos"))
+            .expect("rostos")
+            .flatten()
+            .filter(|e| e.path().extension().is_some_and(|x| x == "vox"))
+            .map(|e| {
+                (
+                    e.file_name().to_string_lossy().to_string(),
+                    ocupados(&e.path().to_string_lossy()),
+                )
+            })
+            .collect();
+        assert!(!rostos.is_empty(), "sem rostos — rodou o gerador?");
+        let mut pares = 0;
+        for dir in ["cabelos", "chapeus"] {
+            for e in std::fs::read_dir(format!("{base}/{dir}"))
+                .unwrap_or_else(|x| panic!("{dir}: {x}"))
+                .flatten()
+            {
+                let p = e.path();
+                if p.extension().is_none_or(|x| x != "vox") {
+                    continue;
+                }
+                let arq = e.file_name().to_string_lossy().to_string();
+                let peca = ocupados(&p.to_string_lossy());
+                assert!(!peca.is_empty(), "{dir}/{arq}: vazio");
+                for (rosto, cabeca) in &rostos {
+                    let n = peca.intersection(cabeca).count();
+                    assert_eq!(
+                        n, 0,
+                        "{dir}/{arq} invade {rosto} em {n} voxels — isso PISCA na tela; \
+                         a casca tem que ficar um voxel por fora da cabeça"
+                    );
+                    pares += 1;
+                }
+            }
+        }
+        assert!(pares >= 30, "só {pares} pares conferidos");
+    }
+}
+
+#[cfg(test)]
+mod testes_da_carga_da_cabeca {
+    use super::*;
+
+    /// TODO índice de `cabelo` que o jogo oferece tem arquivo, e o arquivo
+    /// vira GEOMETRIA pelo caminho de verdade (nome → slot → pivô → malha).
+    ///
+    /// O teste anterior conferia os arquivos; este confere o CAMINHO. Foi por
+    /// ele que os chapéus sumiram: eles existem em disco, passam no contrato,
+    /// e mesmo assim não apareciam — porque o índice deles fica acima de
+    /// `CABELOS` e o laço de boot parava ali.
+    #[test]
+    fn todo_indice_de_cabelo_carrega_e_vira_malha() {
+        use shared::aparencia as ap;
+        let total = ap::CABELOS + 1 + ap::CHAPEUS.len() as u8;
+        let mut com_malha = 0;
+        for i in 0..total {
+            let Some(nome) = crate::render3d::rig_do_cabelo(i) else {
+                // Só o "sem cabelo" pode não ter arquivo.
+                assert_eq!(i, ap::CABELOS, "índice {i} sem arquivo e não é 'sem cabelo'");
+                continue;
+            };
+            let caminho = format!("../../assets/vox/{nome}.vox");
+            let bytes = std::fs::read(&caminho)
+                .unwrap_or_else(|e| panic!("índice {i} → {caminho}: {e}"));
+            let pecas = parse_nomeado(&bytes).expect("vox");
+            let mut quads = 0;
+            for (n, m) in &pecas {
+                let slot = crate::rig::slot_de(n)
+                    .unwrap_or_else(|| panic!("{caminho}: peça '{n}' fora do rig"));
+                assert_eq!(slot, "cabelo", "{caminho}: caiu no slot '{slot}'");
+                let p = crate::rig::pivo(n).expect("pivô");
+                quads += mesh_na_origem(m, 1.0, p)
+                    .iter()
+                    .map(|x| x.indices.len() / 6)
+                    .sum::<usize>();
+            }
+            assert!(quads > 0, "{caminho}: virou malha VAZIA");
+            com_malha += 1;
+        }
+        assert_eq!(
+            com_malha as usize,
+            ap::CABELOS as usize + ap::CHAPEUS.len(),
+            "faltou arquivo pra algum índice"
+        );
+    }
+
+    /// O BOOT carrega tudo o que o SELETOR oferece.
+    ///
+    /// Era aqui que os chapéus se perdiam: o laço de boot tinha o seu próprio
+    /// `0..CABELOS` escrito à mão, e os chapéus ficam ACIMA de `CABELOS`. O
+    /// arquivo existia, passava no teste de contrato — e a cabeça saía pelada,
+    /// porque `vox.rig` devolvia `None` e o slot ficava vazio. Nada no jogo
+    /// reclamava.
+    #[test]
+    fn o_boot_carrega_tudo_o_que_o_seletor_oferece() {
+        use shared::aparencia as ap;
+        let carregados = crate::render3d::rigs_da_cabeca();
+        for i in 0..ap::ROSTOS {
+            let n = crate::render3d::rig_do_rosto(i);
+            assert!(carregados.contains(&n), "o rosto {i} ({n}) não é carregado");
+        }
+        let total = ap::CABELOS + 1 + ap::CHAPEUS.len() as u8;
+        for i in 0..total {
+            let Some(n) = crate::render3d::rig_do_cabelo(i) else {
+                continue;
+            };
+            assert!(
+                carregados.contains(&n),
+                "o índice {i} ({n}) é oferecido no seletor e NÃO é carregado —                  a cabeça sairia pelada"
+            );
+        }
+        // E todo arquivo carregado existe em disco.
+        for n in &carregados {
+            let c = format!("../../assets/vox/{n}.vox");
+            assert!(std::path::Path::new(&c).exists(), "{c} não existe");
         }
     }
 }

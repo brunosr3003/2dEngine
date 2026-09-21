@@ -15,7 +15,8 @@ fn meta(i: u32) -> EntityMeta {
         faction: None,
         kind: 0,
         nivel: 1,
-    }
+                aparencia: 0,
+            }
 }
 
 fn state(i: u32) -> EntityState {

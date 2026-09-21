@@ -298,9 +298,6 @@ pub struct EnemyTag {
     /// Skills aprendidas — fase 4 AI escolhe entre auto-attack e skill cast.
     /// Level total do build (pra escalonamento futuro de loot/xp).
     pub level: u32,
-    /// Visual do paper-doll. Replicado pro client renderizar enemy como
-    /// humanoide com a equipa certa em vez de sprite/quadrado tinted.
-    pub visual: shared::VisualConfig,
     /// MP atual (regen passivo, gasto em skill cast). Cap = stats.mp_max.
     pub mp_current: f32,
     /// Cooldowns por skill_id — sim_time absoluto quando a skill volta.
@@ -1575,6 +1572,9 @@ pub struct Session {
     /// A COLONIA do personagem (docs/COLONIA.md): niveis, ultima colheita
     /// e se a quest ja' entregou a ilha.
     pub colonia: shared::colonia::DadosColonia,
+    /// A aparencia e as skins destravadas (docs/PERSONAGEM.md). Substitui o
+    /// `VisualConfig`, que era do paper-doll 2D do cliente Unity morto.
+    pub guarda_roupa: shared::aparencia::GuardaRoupa,
     /// Slots do vault (INVENTORY_SLOTS); carregado no login, salvo no save.
     pub vault: Vec<shared::InventorySlot>,
     /// True quando vault mudou — envia VaultUpdate no proximo tick.
@@ -1582,10 +1582,6 @@ pub struct Session {
     /// Expansoes compradas da bolsa e do banco (`shared::armazem`).
     pub bolsa_extra: u8,
     pub banco_extra: u8,
-    /// Configuracao visual do paper-doll (skin/race/outfit/hair) replicada
-    /// em EntitySnapshot.visual pra todos os clientes que enxergam esse
-    /// player. Defaultada por classe no login.
-    pub visual: shared::VisualConfig,
 
     // ── Defesa ativa (block + parry) ────────────────────────────────────
     /// True enquanto o player segura RMB. Aplica reducao de dano +
@@ -3385,7 +3381,6 @@ impl GameWorld {
             stats,
             equipment: shared::Equipment::default(),
             level: 1,
-            visual: shared::VisualConfig::default(),
             attack_cooldown_base: d.attack_cooldown,
             attack_range: d.attack_range,
             detect_range: d.detect_range,
@@ -4595,10 +4590,11 @@ impl GameWorld {
             .map(|r| shared::protocol::CharacterListEntry {
                 name: r.name.clone(),
                 level: shared::level_of_xp_with_mult(r.xp, crate::economy::xp_multiplier()),
-                visual: r
-                    .visual
-                    .clone()
-                    .unwrap_or_else(|| shared::VisualConfig::for_class("warrior")),
+                aparencia: r
+                    .guarda_roupa
+                    .as_ref()
+                    .map(|g| g.aparencia.empacota())
+                    .unwrap_or(0),
                 weapon_id: r.equipment.weapon,
                 faction: r.faction,
             })
@@ -5235,7 +5231,7 @@ impl GameWorld {
             row.skill_points_spent,
             row.skill_progress.clone(),
             row.colonia.clone(),
-            row.visual.clone(),
+            row.guarda_roupa.clone(),
             row.name.clone(),
         );
         // Peca de equipamento sem instancia (a arma inicial, item antigo) vira
@@ -5544,11 +5540,19 @@ impl GameWorld {
             s.enviar_recuperaveis((now_ms() / 1000) as i64);
             s.poise_current = stats.poise_max as f32;
             s.poise_last_sent = stats.poise_max;
-            // Visual: usa o salvo (escolhido na criacao). Fallback pra class
-            // default pra contas legacy sem visual_json.
-            s.visual = saved_visual
-                .clone()
-                .unwrap_or_else(|| shared::VisualConfig::for_class(&success.class));
+            // O guarda-roupa salvo. Conta antiga (sem `visual_json` util)
+            // cai no padrao, que e' o corpo de sempre.
+            s.guarda_roupa = saved_visual.clone().unwrap_or_default();
+            s.guarda_roupa.aparencia = s.guarda_roupa.aparencia.saneada();
+            // As GRATUITAS nascem destravadas — inclusive pra quem ja' existia.
+            // E' o que faz as tres roupas e os oito chapeus aparecerem no
+            // guarda-roupa sem ninguem ter comprado nada.
+            for id in shared::aparencia::gratuitas() {
+                s.guarda_roupa.destrava(id);
+            }
+            let _ = s.handle.to_client.send(ServerMessage::GuardaRoupa {
+                guarda_roupa: s.guarda_roupa.clone(),
+            });
         }
         self.loja_ao_logar(sid);
         tracing::info!(
@@ -6596,11 +6600,11 @@ impl GameWorld {
                 inventory_dirty: false,
                 stats_dirty: false,
                 colonia: Default::default(),
+                guarda_roupa: Default::default(),
                 vault: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 vault_dirty: false,
                 bolsa_extra: 0,
                 banco_extra: 0,
-                visual: shared::VisualConfig::for_class("warrior"),
                 defending: false,
                 last_press_primary_at: f32::NEG_INFINITY,
                 last_press_secondary_at: f32::NEG_INFINITY,
@@ -7165,11 +7169,11 @@ impl GameWorld {
             ClientMessage::SkillCast { skill_id } => self.handle_skill_cast(id, skill_id),
             ClientMessage::CreateCharacter {
                 name,
-                visual,
+                aparencia,
                 starting_weapon,
                 faction,
             } => {
-                self.handle_create_character(id, name, visual, starting_weapon, faction);
+                self.handle_create_character(id, name, aparencia, starting_weapon, faction);
             }
             ClientMessage::SelectCharacter { name } => {
                 self.handle_select_character(id, name);
@@ -7187,8 +7191,8 @@ impl GameWorld {
             ClientMessage::SalvarPreferencias { prefs } => {
                 self.handle_salvar_preferencias(id, prefs);
             }
-            ClientMessage::UpdateVisual { visual } => {
-                self.handle_update_visual(id, visual);
+            ClientMessage::UpdateVisual { aparencia } => {
+                self.handle_update_visual(id, aparencia);
             }
             ClientMessage::AdminCommand {
                 secret,
@@ -7408,29 +7412,44 @@ impl GameWorld {
     /// Persistencia: o save periodico (`flush_player_persistence`) escreve o
     /// `Session.visual` no DB como `visual_json`, entao reload do player ja
     /// vem com o wardrobe aplicado.
-    fn handle_update_visual(&mut self, sid: SessionId, visual: shared::VisualConfig) {
-        if let Some(s) = self.sessions.get_mut(&sid) {
-            // Aceita tudo que o client enviou — sanitizacao basica de
-            // strings (clamp comprimento). Validacao de codes especificos
-            // (outfit em whitelist, cores em range) e deixada pro cliente
-            // por enquanto — server confia mas trunca pra evitar abuso.
-            let mut v = visual;
-            const MAX_STR: usize = 16;
-            if let Some(s) = v.skin_race.as_mut() {
-                s.truncate(MAX_STR);
-            }
-            if let Some(s) = v.outfit.as_mut() {
-                s.truncate(MAX_STR);
-            }
-            if let Some(s) = v.hair.as_mut() {
-                s.truncate(MAX_STR);
-            }
-            if let Some(s) = v.hat.as_mut() {
-                s.truncate(MAX_STR);
-            }
-            s.visual = v;
-            tracing::info!("UpdateVisual sid={:?} → {:?}", sid, s.visual);
+    fn handle_update_visual(&mut self, sid: SessionId, aparencia: shared::aparencia::Aparencia) {
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        // QUEM MANDA E' O SERVIDOR. O cliente pede o que quiser; rosto,
+        // cabelo, cor e tom sao cortados contra a tabela, e a ROUPA so' passa
+        // se tiver sido destravada — senao bastaria mandar o numero da skin
+        // paga pra vesti-la sem comprar.
+        let mut nova = aparencia.saneada();
+        if !s.guarda_roupa.tem(nova.roupa) {
+            nova.roupa = s.guarda_roupa.aparencia.roupa;
         }
+        // O CHAPEU mora no campo `cabelo`, entao ele passa pela mesma regra:
+        // sem o direito, volta pro que estava. Sem isto bastaria mandar o
+        // indice do chapeu pago pra usa-lo.
+        if let Some(id) = shared::aparencia::chapeu_do_cabelo(nova.cabelo) {
+            if !s.guarda_roupa.tem(id) {
+                nova.cabelo = s.guarda_roupa.aparencia.cabelo;
+            }
+        }
+        if s.guarda_roupa.aparencia == nova {
+            return;
+        }
+        s.guarda_roupa.aparencia = nova;
+        let eid = s.entity_id;
+        // Confirma pro dono: ele aplicou local pra responder na hora, mas quem
+        // manda e' o servidor — se a roupa foi recusada, ele ve' aqui.
+        let _ = s.handle.to_client.send(ServerMessage::GuardaRoupa {
+            guarda_roupa: s.guarda_roupa.clone(),
+        });
+        // Os OUTROS precisam ver. A aparencia vai na meta, que sai uma vez
+        // por entidade — apagar o `last_sent` de todo mundo e' o que forca o
+        // reenvio, e e' o mesmo caminho da montaria
+        // (`loja_mundo::atualizar_montaria_vista`).
+        for outra in self.sessions.values_mut() {
+            outra.last_sent.remove(&eid);
+        }
+        self.save_pending = true;
     }
 
     /// Player downed escolheu respawnar direto na cidade — pula o timer de
@@ -7740,7 +7759,7 @@ impl GameWorld {
         &mut self,
         sid: SessionId,
         name: String,
-        visual: shared::VisualConfig,
+        aparencia: shared::aparencia::Aparencia,
         starting_weapon: u16,
         faction: shared::Faction,
     ) {
@@ -7829,7 +7848,15 @@ impl GameWorld {
                     .unwrap_or_else(|| "warrior".to_string()),
             )
         };
-        let visual_for_db = visual.clone();
+        // A aparencia vira o guarda-roupa inicial: a escolha da criacao e
+        // nenhuma skin destravada.
+        // O personagem nasce com as GRATUITAS destravadas: a tela de criacao
+        // ja' deixa escolher roupa e chapeu, e o guarda-roupa tem que
+        // concordar com o que foi escolhido la'.
+        let visual_for_db = shared::aparencia::GuardaRoupa {
+            aparencia: aparencia.saneada(),
+            desbloqueadas: shared::aparencia::gratuitas(),
+        };
         let name_for_db = name.clone();
         // DB write async + recarga do cache + re-dispatch via AuthResult.
         // Sucesso: gera AuthResult sintetico que faz on_auth_result rodar de
@@ -11849,7 +11876,6 @@ impl GameWorld {
             weapon_id: Option<u16>,
             offhand_id: Option<u16>,
             downed: bool,
-            visual: shared::VisualConfig,
             attack_speed_mult: f32,
             defending: bool,
             casting: bool,
@@ -11904,7 +11930,6 @@ impl GameWorld {
                     weapon_id: s.equipment.weapon,
                     offhand_id: s.equipment.offhand,
                     downed: s.downed,
-                    visual: s.visual.clone(),
                     attack_speed_mult: s.stats.attack_speed_mult,
                     defending: s.defending,
                     casting,
@@ -11995,6 +12020,13 @@ impl GameWorld {
             .values()
             .filter(|s| s.logged_in)
             .map(|s| (s.entity_id, (s.montado, s.montaria_vista.unwrap_or(0))))
+            .collect();
+        // A APARENCIA de cada jogador, ja' empacotada (docs/PERSONAGEM.md).
+        let aparencia_de: HashMap<EntityId, u32> = self
+            .sessions
+            .values()
+            .filter(|s| s.logged_in)
+            .map(|s| (s.entity_id, s.guarda_roupa.aparencia.empacota()))
             .collect();
         let nivel_de: HashMap<EntityId, u16> = self
             .sessions
@@ -12171,6 +12203,9 @@ impl GameWorld {
                             EntityKind::Pet(id) => *id,
                             _ => 0,
                         },
+                        // So' jogador tem aparencia; o resto manda zero, que
+                        // e' o corpo de sempre.
+                        aparencia: aparencia_de.get(&net.0).copied().unwrap_or(0),
                     };
                     let mut state = EntityState::quantize(
                         net.0,
@@ -12556,7 +12591,6 @@ impl GameWorld {
             sp_earned: u32,
             sp_spent: u32,
             account_id: Option<i64>,
-            visual: shared::VisualConfig,
             faction: shared::Faction,
             quests: Vec<crate::quests::CharQuest>,
             faction_points: u32,
@@ -12578,6 +12612,7 @@ impl GameWorld {
             banco_extra: u8,
             skill_progress: shared::skills::ProgressoDeSkills,
             colonia: shared::colonia::DadosColonia,
+            guarda_roupa: shared::aparencia::GuardaRoupa,
         }
         let mut entries: Vec<E> = Vec::new();
         for session in self.sessions.values() {
@@ -12617,7 +12652,6 @@ impl GameWorld {
                 sp_earned: session.skill_points_earned,
                 sp_spent: session.skill_points_spent,
                 account_id: session.account_id,
-                visual: session.visual.clone(),
                 faction: session.faction,
                 quests: session.quests.clone(),
                 faction_points: session.faction_points,
@@ -12640,6 +12674,7 @@ impl GameWorld {
                 banco_extra: session.banco_extra,
                 skill_progress: session.skill_progress.clone(),
                 colonia: session.colonia.clone(),
+                guarda_roupa: session.guarda_roupa.clone(),
             });
         }
         for e in entries {
@@ -12671,7 +12706,7 @@ impl GameWorld {
                 skill_progress: e.skill_progress,
                 colonia: e.colonia,
                 account_id: e.account_id,
-                visual: Some(e.visual),
+                guarda_roupa: Some(e.guarda_roupa),
                 faction: e.faction,
                 quests: e.quests,
                 faction_points: e.faction_points,
@@ -16915,6 +16950,38 @@ impl GameWorld {
         self.send_chat_to(sid, &aviso);
     }
 
+    /// Consome uma skin da bolsa e destrava ela no guarda-roupa.
+    fn usar_skin(&mut self, sid: SessionId, slot_idx: usize, id: u16) {
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        if !s.guarda_roupa.destrava(id) {
+            // Ja' tinha: NAO consome. Gastar o item por um direito que ja'
+            // existe seria cobrar duas vezes pela mesma coisa.
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "SYS".into(),
+                text: "Você já tem essa aparência.".into(),
+            });
+            return;
+        }
+        if let Some(slot) = s.inventory.get_mut(slot_idx) {
+            slot.qty = slot.qty.saturating_sub(1);
+            if slot.qty == 0 {
+                *slot = shared::InventorySlot::default();
+            }
+        }
+        s.inventory_dirty = true;
+        let nome = shared::aparencia::nome_da_skin(id).unwrap_or("Skin");
+        let _ = s.handle.to_client.send(ServerMessage::Chat {
+            from: "SYS".into(),
+            text: format!("{nome} destravado — veja no guarda-roupa."),
+        });
+        let _ = s.handle.to_client.send(ServerMessage::GuardaRoupa {
+            guarda_roupa: s.guarda_roupa.clone(),
+        });
+        self.save_pending = true;
+    }
+
     fn handle_use_item(&mut self, sid: SessionId, slot_idx: usize) {
         let pergaminho = self
             .sessions
@@ -16932,6 +16999,19 @@ impl GameWorld {
             });
         if pergaminho {
             self.handle_abrir_pergaminhos(sid, slot_idx, 1);
+            return;
+        }
+        // SKIN: o item some e o direito fica no guarda-roupa. Mesmo caminho do
+        // tomo — e e' o que impede vestir, revender e continuar vestido.
+        let skin = self
+            .sessions
+            .get(&sid)
+            .and_then(|s| s.inventory.get(slot_idx))
+            .filter(|s| s.qty > 0)
+            .map(|s| s.item_id)
+            .filter(|id| shared::aparencia::nome_da_skin(*id).is_some());
+        if let Some(id) = skin {
+            self.usar_skin(sid, slot_idx, id);
             return;
         }
         // Ração, skill de pet e removedor agem no PET EQUIPADO, nao no corpo
@@ -17963,7 +18043,7 @@ impl GameWorld {
             skill_progress: session.skill_progress.clone(),
             colonia: session.colonia.clone(),
             account_id: session.account_id,
-            visual: Some(session.visual.clone()),
+            guarda_roupa: Some(session.guarda_roupa.clone()),
             faction: session.faction,
             quests: session.quests.clone(),
             faction_points: session.faction_points,

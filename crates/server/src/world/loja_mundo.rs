@@ -193,6 +193,10 @@ impl GameWorld {
                                     Produto::ItemDePet(id) => {
                                         cat::item_de_pet(id).map(|x| x.item_id)
                                     }
+                                    // A SKIN chega como item; usar e' que
+                                    // destrava (`world::usar_skin`). O id do
+                                    // produto E' o id do item.
+                                    Produto::Skin(id) => Some(id),
                                     _ => None,
                                 };
                                 if let Some(item_id) = pergaminho {

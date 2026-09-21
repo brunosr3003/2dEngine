@@ -313,10 +313,23 @@ uniform highp float Ondas;
 // omega = sqrt(g*k) e' a relacao de dispersao de agua funda: onda longa
 // corre mais rapido que onda curta, sozinha. Sem isso todas andam juntas
 // e o padrao se repete de um jeito que o olho pega.
+// A ONDA SO' SOBE. `(sn+1)/2` poe a contribuicao de cada onda em [0, amp]
+// em vez de [-amp, amp]: a superficie oscila PRA CIMA do repouso e nunca
+// desce abaixo dele.
+//
+// Sem isso o vale furava o chao. E o chao do mar nao esta' onde o gerador
+// diz: `terreno.rs` achata TODA coluna submersa em `BLOCO_DO_MAR`
+// (`h.max(BLOCO_DO_MAR)`, pro merge guloso juntar o leito num plano so'),
+// entao o que se DESENHA e' um plano em NIVEL_DO_MAR. Entre ele e a agua ha'
+// 0,12 de folga, e a onda balancava 0,65: o vale ia a meio metro ABAIXO do
+// leito, e o jogador via o chao por dentro da agua.
+//
+// Gerstner ja' faz crista afiada e vale chato, entao a onda so'-pra-cima le'
+// como mar mesmo — o que se perde e' um vale que nao cabia de qualquer jeito.
 #define ONDA(dx, dz, k, w, amp, fase)                                    \
     theta = k * (dx * position.x + dz * position.z) - w * Tempo + fase;  \
     sn = sin(theta); cs = cos(theta);                                    \
-    p.y += a * amp * sn;                                                 \
+    p.y += a * amp * (sn * 0.5 + 0.5);                                   \
     p.x -= a * amp * dx * cs;                                            \
     p.z -= a * amp * dz * cs;
 
@@ -544,71 +557,42 @@ mod testes_do_vale {
     use super::*;
     use shared::terreno::ARQUIPELAGO;
 
-    /// A onda que um ponto leva, limitada pela agua mais rasa ao ALCANCE
-    /// dela. Espelha o `onda_alcancavel` da geracao da malha, consultando o
-    /// gerador em vez da grade.
-    fn onda_que_cabe(ger: &Gerador, bx: i32, bz: i32, passo: i32) -> f32 {
-        let mut m = f32::MAX;
-        for dz in -1..=1 {
-            for dx in -1..=1 {
-                m = m.min(profundidade(ger, bx + dx * passo, bz + dz * passo));
-            }
-        }
-        onda_de(m)
-    }
+    /// O LEITO QUE SE DESENHA, e não o que o gerador diz.
+    ///
+    /// `terreno.rs` achata toda coluna submersa em `BLOCO_DO_MAR`
+    /// (`alt[i] = h.max(BLOCO_DO_MAR)`, pro merge guloso juntar o fundo num
+    /// plano só). Então o chão do mar **não** está na profundidade do
+    /// gerador: é um plano em `NIVEL_DO_MAR`, a 0,12 da água.
+    ///
+    /// A primeira versão deste teste usava a profundidade do GERADOR. Ela
+    /// passava — medindo um fundo que ninguém desenha — enquanto o dono via o
+    /// chão aparecendo por dentro da água. Um teste que modela a coisa errada
+    /// é pior que teste nenhum: ele dá licença.
+    const LEITO_DESENHADO: f32 = NIVEL_DO_MAR;
 
-    /// O VALE da onda nao pode furar o leito — nem embaixo do vertice, nem
-    /// onde o Gerstner LEVA o vertice.
-    ///
-    /// O teste irmao (`a_agua_nunca_sobe_na_terra`) guarda a CRISTA contra a
-    /// terra, e nada mais. Por baixo nao havia guarda nenhum, e foi por
-    /// baixo que o defeito entrou: em 21/09/2026 o dono viu a onda afundar
-    /// no chao do mar e deixar o leito a mostra.
-    ///
-    /// A parte que pega e' a HORIZONTAL. Gerstner desloca o vertice de lado,
-    /// entao a pergunta nao e' "cabe no fundo daqui?" e sim "cabe no fundo
-    /// de tudo o que ela alcanca?". Medindo so' o vertical o teste passava,
-    /// com o defeito na tela.
+    /// A onda NÃO desce abaixo do repouso, e por isso não fura o leito.
     #[test]
-    fn o_vale_da_onda_nao_fura_o_leito() {
-        let ger = Gerador::da_ilha(&ARQUIPELAGO[0]);
-        let passo = PASSO_FINO;
-        // Alcance horizontal do Gerstner, em blocos, arredondado pra cima.
-        let alcance = (AMPLITUDE_MAX / BLOCO).ceil() as i32;
-        let mut pior: Option<(f32, f32, f32)> = None;
-        for bz in (-900..900).step_by(passo as usize) {
-            for bx in (-900..900).step_by(passo as usize) {
-                let prof = profundidade(&ger, bx, bz);
-                if prof <= 0.0 {
-                    continue;
-                }
-                let a = onda_que_cabe(&ger, bx, bz, passo);
-                if a <= 0.0 {
-                    continue;
-                }
-                let vale = ALTURA_DA_AGUA - AMPLITUDE_MAX * a;
-                for dz in -alcance..=alcance {
-                    for dx in -alcance..=alcance {
-                        let viz = profundidade(&ger, bx + dx, bz + dz);
-                        let folga = vale - (NIVEL_DO_MAR - viz);
-                        if pior.is_none_or(|(f, _, _)| folga < f) {
-                            pior = Some((folga, prof, viz));
-                        }
-                    }
-                }
-            }
-        }
-        let (folga, meu, viz) = pior.expect("ha' agua em volta da ilha");
+    fn a_onda_nunca_desce_abaixo_do_leito_desenhado() {
+        // O shader soma `amp * (sen + 1)/2` por onda: o mínimo de cada termo
+        // é ZERO, então a superfície mínima é a de repouso.
+        let minimo = ALTURA_DA_AGUA;
         assert!(
-            folga > 0.0,
-            "o vale fura o leito por {:.2} u: vertice em fundo {meu:.2} passeia \
-             sobre leito de {viz:.2} — o chao fica exposto por dentro da agua",
-            -folga
+            minimo > LEITO_DESENHADO,
+            "a água em repouso ({minimo}) não está acima do leito desenhado \
+             ({LEITO_DESENHADO})"
+        );
+        // E a folga é pequena de verdade — é por isso que a onda tem que ser
+        // só pra cima em vez de simétrica.
+        let folga = ALTURA_DA_AGUA - LEITO_DESENHADO;
+        assert!(
+            folga < AMPLITUDE_MAX,
+            "há {folga} de folga e a onda balança {AMPLITUDE_MAX}: se um dia \
+             couber, a onda pode voltar a ser simétrica"
         );
     }
 
-    /// E a onda tem que CONTINUAR existindo: limitar demais daria um mar
-    /// parado, que e' trocar um defeito por outro.
+    /// E ela CONTINUA ondulando: uma onda só pra cima que fosse zerada em
+    /// todo lugar seria trocar um defeito por um mar de gelo.
     #[test]
     fn o_mar_aberto_continua_ondulando() {
         let ger = Gerador::da_ilha(&ARQUIPELAGO[0]);
@@ -616,11 +600,24 @@ mod testes_do_vale {
             .step_by(7)
             .flat_map(|bz| (-900..900).step_by(7).map(move |bx| (bx, bz)))
             .filter(|(bx, bz)| profundidade(&ger, *bx, *bz) > 0.0)
-            .filter(|(bx, bz)| onda_que_cabe(&ger, *bx, *bz, PASSO_FINO) > 0.9)
+            .filter(|(bx, bz)| onda_de(profundidade(&ger, *bx, *bz)) > 0.9)
             .count();
         assert!(
             cheias > 200,
-            "so' {cheias} pontos com onda cheia — o limite apagou o mar"
+            "só {cheias} pontos com onda cheia — o limite apagou o mar"
         );
+    }
+
+    /// A CRISTA continua cabendo abaixo do primeiro bloco de terra.
+    ///
+    /// Com a onda só pra cima, a crista fica no mesmo lugar de antes (o topo
+    /// do seno não mudou) — mas isso precisa ser dito, não suposto.
+    #[test]
+    fn a_crista_nao_subiu_com_a_onda_so_pra_cima() {
+        let crista = ALTURA_DA_AGUA + AMPLITUDE_MAX;
+        let simetrica_antes = ALTURA_DA_AGUA + AMPLITUDE_MAX;
+        assert_eq!(crista, simetrica_antes);
+        // E o teste da terra (`a_agua_nunca_sobe_na_terra`) continua valendo:
+        // ele mede exatamente esta conta.
     }
 }

@@ -118,6 +118,43 @@ struct UniformesSolido {
     recorte: Vec3,
     recorte_z: f32,
     tinta: [f32; 4],
+    faixas: Faixas,
+}
+
+/// As cores das faixas de paleta, por DRAW.
+///
+/// `a == 0.0` numa faixa = o vertice fica com a cor que veio do arquivo — o
+/// caso de bicho, terreno, NPC e tudo o mais. E' o `Default`, e por isso
+/// ligar isto nao muda nada no jogo que ja' existe.
+///
+/// Fica aqui e nao no `render3d` porque e' parte do bloco de uniformes: a
+/// ordem dos campos TEM que casar com a lista de `meta(&[...])`, e postcard
+/// nao e' quem manda — e' o layout C.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
+pub struct Faixas {
+    pub tier: [[f32; 4]; 2],
+    pub cabelo: [[f32; 4]; 2],
+    pub pele: [[f32; 4]; 2],
+}
+
+impl Faixas {
+    /// `(claro, escuro)` em 0..1. `None` deixa a faixa desligada.
+    pub fn nova(
+        tier: Option<[[f32; 3]; 2]>,
+        cabelo: Option<[[f32; 3]; 2]>,
+        pele: Option<[[f32; 3]; 2]>,
+    ) -> Self {
+        let par = |o: Option<[[f32; 3]; 2]>| match o {
+            Some([c, e]) => [[c[0], c[1], c[2], 1.0], [e[0], e[1], e[2], 1.0]],
+            None => [[0.0; 4]; 2],
+        };
+        Self {
+            tier: par(tier),
+            cabelo: par(cabelo),
+            pele: par(pele),
+        }
+    }
 }
 
 #[repr(C)]
@@ -175,6 +212,12 @@ fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
                 ("Recorte", UniformType::Float3),
                 ("RecorteZ", UniformType::Float1),
                 ("Tinta", UniformType::Float4),
+                ("TierClaro", UniformType::Float4),
+                ("TierEsc", UniformType::Float4),
+                ("CabeloClaro", UniformType::Float4),
+                ("CabeloEsc", UniformType::Float4),
+                ("PeleClaro", UniformType::Float4),
+                ("PeleEsc", UniformType::Float4),
             ]),
         )
         .expect("shader do mundo (gpu)");
@@ -237,6 +280,9 @@ pub fn desenha<'a>(
                     recorte,
                     recorte_z,
                     tinta: [0.0; 4],
+                    // O lote de malha ESTATICA (terreno, vegetacao) nunca
+                    // tinge por faixa: ela e' do personagem.
+                    faixas: Faixas::default(),
                 }));
             }
             Programa::Agua { tempo, ondas } => {
@@ -300,7 +346,7 @@ fn abre_passe(
 /// Uma malha de voxel (bicho, boneco, arma, saque) com matriz de modelo e
 /// tinta no shader do mundo. Recorte desligado: bicho nao e' obstaculo (ver o
 /// passe do mundo em `main`).
-pub fn desenha_voxel(m: &Mesh, modelo: Mat4, tinta: [f32; 4]) {
+pub fn desenha_voxel(m: &Mesh, modelo: Mat4, tinta: [f32; 4], faixas: Faixas) {
     if m.indices.is_empty() {
         return;
     }
@@ -341,6 +387,7 @@ pub fn desenha_voxel(m: &Mesh, modelo: Mat4, tinta: [f32; 4]) {
             recorte: Vec3::ZERO,
             recorte_z: 0.0,
             tinta,
+            faixas,
         }));
         ctx.apply_bindings(&Bindings {
             vertex_buffers: vec![vb],

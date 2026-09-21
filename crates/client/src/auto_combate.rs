@@ -264,6 +264,7 @@ mod tests {
                 faction: None,
                 kind: 0,
                 nivel: 1,
+                aparencia: 0,
             });
             estados.push(shared::EntityState::quantize(
                 EntityId(id),

@@ -721,7 +721,9 @@ impl Bolsa {
         };
         let base = Mat4::from_rotation_y((get_time() as f32 * 0.5).sin() * 0.9);
         let pose = crate::rig::pose(&entrada);
-        render3d::desenha_rig(base, &pose, corpo, vox.rig(render3d::RIG_CHAPEU), vox, None);
+        let mut veste = render3d::Vestimenta::nua(corpo);
+        veste.cabelo = vox.rig(render3d::RIG_CHAPEU);
+        render3d::desenha_rig(base, &pose, &veste, vox, None);
         gl_use_default_material();
         set_default_camera();
         // a plataforma dourada do MIR4, em 2D por cima do pe'

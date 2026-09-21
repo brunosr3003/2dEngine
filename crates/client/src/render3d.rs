@@ -874,9 +874,40 @@ pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
     // fracao `Tinta.a` (zero = cor do voxel). Antes era recopia na CPU.
     uniform vec4 Tinta;
 
+    // AS FAIXAS DE PALETA (docs/ARTE_DO_PERSONAGEM.md).
+    //
+    // A arte escreve uma cor de rascunho nos indices 241-252 e o vertice traz
+    // em `normal.yzw` qual faixa (1 tier, 2 cabelo, 3 pele), o degrau na rampa
+    // e a sombra da face. A cor final e' interpolada aqui, entre o claro e o
+    // escuro que o draw mandou.
+    //
+    // E' isto que faz tom de pele e cor de cabelo custarem ZERO malha: sem
+    // ele, cada tom seria uma copia da geometria, e a peca `cabeca` — que tem
+    // as duas faixas — daria 24 copias de cada rosto.
+    //
+    // `.a == 0` numa faixa = nao tinge (o caso de bicho, terreno e NPC), e ai'
+    // o desenho e' byte-a-byte o de antes.
+    uniform vec4 TierClaro;   uniform vec4 TierEsc;
+    uniform vec4 CabeloClaro; uniform vec4 CabeloEsc;
+    uniform vec4 PeleClaro;   uniform vec4 PeleEsc;
+
     void main() {
         gl_Position = Projection * Model * vec4(position, 1);
         color = color0 / 255.0;
+
+        // Sem array indexado dinamicamente: GLSL ES 1.00 nao garante isso.
+        lowp float slot = normal.y;
+        lowp float t = normal.z;
+        lowp float sombra = normal.w;
+        lowp vec4 claro = vec4(0.0);
+        lowp vec4 escuro = vec4(0.0);
+        if (slot > 2.5)      { claro = PeleClaro;   escuro = PeleEsc; }
+        else if (slot > 1.5) { claro = CabeloClaro; escuro = CabeloEsc; }
+        else if (slot > 0.5) { claro = TierClaro;   escuro = TierEsc; }
+        if (claro.a > 0.0) {
+            color.rgb = mix(escuro.rgb, claro.rgb, t) * sombra;
+        }
+
         color.rgb = mix(color.rgb, Tinta.rgb, Tinta.a);
         uv = texcoord;
         recortavel = normal.x;
@@ -955,6 +986,16 @@ pub fn material_solido() -> Material {
                 UniformDesc::new("Recorte", UniformType::Float3),
                 UniformDesc::new("RecorteZ", UniformType::Float1),
                 UniformDesc::new("Tinta", UniformType::Float4),
+                // As faixas de paleta. Este caminho (o `Material` do
+                // macroquad) e' o das PREVIAS 2D; o desenho do mundo vai pelo
+                // `gpu_estatica`. Os dois declaram a mesma lista, senao o
+                // shader nao compila num deles.
+                UniformDesc::new("TierClaro", UniformType::Float4),
+                UniformDesc::new("TierEsc", UniformType::Float4),
+                UniformDesc::new("CabeloClaro", UniformType::Float4),
+                UniformDesc::new("CabeloEsc", UniformType::Float4),
+                UniformDesc::new("PeleClaro", UniformType::Float4),
+                UniformDesc::new("PeleEsc", UniformType::Float4),
             ],
             pipeline_params: params_solido(),
             ..Default::default()
@@ -1333,7 +1374,8 @@ pub fn draw_entities(
             );
         }
         if let Some(corpo) = rig_do_humanoide(e).and_then(|nome| vox.rig(nome)) {
-            brilhos.extend(desenha_personagem(e, corpo, None, vox, vista, false));
+            let veste = Vestimenta::nua(corpo);
+            brilhos.extend(desenha_personagem(e, &veste, vox, vista, false));
             continue;
         }
         // NPC da vila: o rig do OFICIO dele. Sem o arquivo, cai no corpo de
@@ -1346,7 +1388,8 @@ pub fn draw_entities(
             }
             let nome = rig_do_npc(shared::npc_papel_de_kind(e.meta.kind), e.meta.id.0 as u64);
             if let Some(corpo) = vox.rig(nome) {
-                brilhos.extend(desenha_personagem(e, corpo, None, vox, vista, false));
+                let veste = Vestimenta::nua(corpo);
+                brilhos.extend(desenha_personagem(e, &veste, vox, vista, false));
                 continue;
             }
         }
@@ -1356,14 +1399,9 @@ pub fn draw_entities(
                 .is_some_and(|c| c.corpo == shared::bosses::Corpo::Pirata)
         {
             if let Some(corpo) = vox.rig(RIG_CORPO) {
-                brilhos.extend(desenha_personagem(
-                    e,
-                    corpo,
-                    vox.rig(RIG_CHAPEU),
-                    vox,
-                    vista,
-                    false,
-                ));
+                let mut veste = Vestimenta::nua(corpo);
+                veste.cabelo = vox.rig(RIG_CHAPEU);
+                brilhos.extend(desenha_personagem(e, &veste, vox, vista, false));
                 continue;
             }
         }
@@ -1373,14 +1411,14 @@ pub fn draw_entities(
             shared::EntityTag::Player | shared::EntityTag::Npc
         ) {
             if let Some(corpo) = vox.rig(RIG_CORPO) {
-                brilhos.extend(desenha_personagem(
-                    e,
-                    corpo,
-                    vox.rig(RIG_CHAPEU),
-                    vox,
-                    vista,
-                    self_id == Some(id),
-                ));
+                // A APARÊNCIA veio na meta (`EntityMeta::aparencia`). Zero é
+                // o corpo de sempre, que é o que NPC manda.
+                let veste = vestimenta_de(vox, e.meta.aparencia).unwrap_or_else(|| {
+                    let mut v = Vestimenta::nua(corpo);
+                    v.cabelo = vox.rig(RIG_CHAPEU);
+                    v
+                });
+                brilhos.extend(desenha_personagem(e, &veste, vox, vista, self_id == Some(id)));
                 continue;
             }
         }
@@ -1450,6 +1488,94 @@ pub fn draw_entities(
 pub const RIG_CORPO: &str = "personagem/corpo";
 pub const RIG_CHAPEU: &str = "personagem/cabelo_01";
 
+/// Os rostos, os cabelos e os chapeus (tools/voxrender/personagem.py).
+///
+/// Vao todos no boot: sao 14 arquivos pequenos, contra os 19 rigs que o boot
+/// ja' carrega. So' skin de ROUPA e' que carrega preguiçosa — ela e' o eixo
+/// que cresce com o catalogo.
+/// TODO índice que o seletor de cabelo oferece — cabelos e chapéus.
+///
+/// Existe pra o BOOT e o SELETOR lerem a mesma coisa. Quando o boot tinha o
+/// seu próprio `0..CABELOS` escrito à mão, os chapéus (que ficam acima de
+/// `CABELOS`) nunca eram carregados: o arquivo existia, passava no teste de
+/// contrato, e mesmo assim a cabeça saía pelada — porque `vox.rig` devolvia
+/// `None` e o slot ficava vazio.
+pub fn rigs_da_cabeca() -> Vec<String> {
+    let total = shared::aparencia::CABELOS + 1 + shared::aparencia::CHAPEUS.len() as u8;
+    (0..shared::aparencia::ROSTOS)
+        .map(rig_do_rosto)
+        .chain((0..total).filter_map(rig_do_cabelo))
+        .collect()
+}
+
+pub fn rig_do_rosto(i: u8) -> String {
+    format!("personagem/rostos/rosto_{:02}", i.min(shared::aparencia::ROSTOS - 1) + 1)
+}
+
+pub fn rig_do_cabelo(i: u8) -> Option<String> {
+    // Acima dos cabelos vem o "sem cabelo" e depois os CHAPEUS: os tres
+    // dividem a junta da cabeca, entao dividem o campo.
+    if let Some(id) = shared::aparencia::chapeu_do_cabelo(i) {
+        let arq = shared::aparencia::CHAPEUS
+            .get((id - shared::aparencia::CHAPEU_BASE) as usize)?
+            .0;
+        return Some(format!("personagem/chapeus/{arq}"));
+    }
+    if i >= shared::aparencia::CABELOS {
+        return None;
+    }
+    Some(format!("personagem/cabelos/cabelo_{:02}", i + 1))
+}
+
+/// O rig de uma skin de ROUPA.
+pub fn rig_da_roupa(id: u16) -> Option<String> {
+    shared::aparencia::arquivo_da_roupa(id).map(|a| format!("personagem/skins/{a}"))
+}
+
+/// A VESTIMENTA de uma entidade, a partir do `u32` da meta.
+pub fn vestimenta_de<'a>(vox: &'a VoxCache, aparencia: u32) -> Option<Vestimenta<'a>> {
+    let a = shared::aparencia::Aparencia::desempacota(aparencia).saneada();
+    let mut v = Vestimenta::nua(vox.rig(RIG_CORPO)?);
+    v.rosto = vox.rig(&rig_do_rosto(a.rosto));
+    v.cabelo = rig_do_cabelo(a.cabelo).and_then(|n| vox.rig(&n));
+    // A ROUPA e' o eixo que cresce com o catalogo, entao ela e' a unica que
+    // carrega preguicosa: `rig_ou_pede` anota a falta e devolve `None`, o
+    // laco principal atende UM por quadro, e ate' la' aparece o corpo padrao.
+    v.roupa = rig_da_roupa(a.roupa).and_then(|n| vox.rig_ou_pede(&n));
+    v.pele = Some(cores_da_pele(a.pele));
+    v.cor_cabelo = Some(cores_do_cabelo(a.cor_cabelo));
+    Some(v)
+}
+
+/// As rampas de `tools/voxrender/npcs.py` (`PELES` e `CABELOS`), como
+/// `(claro, escuro)` em 0..1. Os dois extremos bastam: o shader interpola, e
+/// a arte de hoje usa 3 dos 4 degraus da pele e 2 dos 4 do cabelo.
+pub fn cores_da_pele(i: u8) -> [[f32; 3]; 2] {
+    const R: [[[u8; 3]; 2]; 4] = [
+        [[252, 222, 192], [180, 132, 104]], // clara
+        [[226, 184, 140], [140, 98, 70]],   // media
+        [[176, 124, 86], [94, 60, 40]],     // morena
+        [[126, 88, 62], [62, 40, 26]],      // escura
+    ];
+    em_fracao(R[(i as usize).min(R.len() - 1)])
+}
+
+pub fn cores_do_cabelo(i: u8) -> [[f32; 3]; 2] {
+    const R: [[[u8; 3]; 2]; 6] = [
+        [[122, 86, 54], [54, 36, 22]],    // castanho
+        [[58, 52, 50], [20, 18, 17]],     // preto
+        [[196, 104, 52], [104, 48, 22]],  // ruivo
+        [[236, 206, 128], [150, 118, 56]], // loiro
+        [[200, 200, 204], [110, 110, 118]], // grisalho
+        [[244, 244, 246], [168, 168, 176]], // branco
+    ];
+    em_fracao(R[(i as usize).min(R.len() - 1)])
+}
+
+fn em_fracao(p: [[u8; 3]; 2]) -> [[f32; 3]; 2] {
+    p.map(|c| c.map(|v| v as f32 / 255.0))
+}
+
 /// O tombo de quem morre: vai a 90 graus acelerando, como quem cai de
 /// verdade, quica um pouco no chao e fica.
 fn queda(t: f32) -> f32 {
@@ -1488,8 +1614,7 @@ fn clarao(e: &crate::world::Ent, eu: bool) -> Option<([f32; 3], f32)> {
 /// matriz por peca. Devolve o rastro da lamina, se ele esta' cortando.
 fn desenha_personagem(
     e: &mut crate::world::Ent,
-    corpo: &std::collections::HashMap<String, Vec<Mesh>>,
-    chapeu: Option<&std::collections::HashMap<String, Vec<Mesh>>>,
+    veste: &Vestimenta<'_>,
     vox: &VoxCache,
     vista: &Vista,
     eu: bool,
@@ -1679,7 +1804,7 @@ fn desenha_personagem(
         * Mat4::from_rotation_y(e.yaw + giro)
         * Mat4::from_rotation_x(-cai + inclina)
         * Mat4::from_scale(vec3(1.0 + 0.5 * s, 1.0 - s, 1.0 + 0.5 * s));
-    let (mats, armas) = desenha_rig(base, &pose, corpo, chapeu, vox, clarao(e, eu));
+    let (mats, armas) = desenha_rig(base, &pose, veste, vox, clarao(e, eu));
     e.emissores = crate::rig::palmas(&mats, VOXEL);
     // Coleta: a rajada de lascas no quadro em que a cabeca da ferramenta bate.
     if let Some((tipo, _)) = entrada.combate.coleta {
@@ -1999,24 +2124,74 @@ fn desenha_projetil(e: &crate::world::Ent, p: Vec3) {
 }
 
 /// O boneco em pecas numa base qualquer — o mundo usa a posicao da entidade;
+/// QUEM O BONECO E': as malhas que o vestem e as cores das faixas.
+///
+/// Entra no lugar dos dois `HashMap` soltos de antes. O que mudou de verdade
+/// nao foi o numero de parametros: e' que `desenha_rig` tinha UM caso
+/// especial cravado (`if nome == "cabelo"`) e nenhuma substituicao de peca. A
+/// roupa precisa substituir as dez, e isso e' uma CADEIA, nao um `if`.
+pub struct Vestimenta<'a> {
+    /// O corpo base (o piratinha). Sempre presente: e' o fallback de tudo, e
+    /// e' o que aparece se a roupa nao tiver aquela peca.
+    pub corpo: &'a std::collections::HashMap<String, Vec<Mesh>>,
+    /// A roupa: cada peca dela SUBSTITUI a do corpo. `None` = piratinha.
+    pub roupa: Option<&'a std::collections::HashMap<String, Vec<Mesh>>>,
+    /// O rosto: manda na peca `cabeca`.
+    pub rosto: Option<&'a std::collections::HashMap<String, Vec<Mesh>>>,
+    /// Cabelo, chapeu, capuz ou elmo: todos mandam no slot `cabelo`.
+    pub cabelo: Option<&'a std::collections::HashMap<String, Vec<Mesh>>>,
+    /// `(claro, escuro)` em 0..1. `None` = a cor que veio no arquivo.
+    pub pele: Option<[[f32; 3]; 2]>,
+    pub cor_cabelo: Option<[[f32; 3]; 2]>,
+    pub tier: Option<[[f32; 3]; 2]>,
+}
+
+impl<'a> Vestimenta<'a> {
+    /// So' o corpo, sem nada por cima: o NPC, o chefe pirata e as previas.
+    pub fn nua(corpo: &'a std::collections::HashMap<String, Vec<Mesh>>) -> Self {
+        Self {
+            corpo,
+            roupa: None,
+            rosto: None,
+            cabelo: None,
+            pele: None,
+            cor_cabelo: None,
+            tier: None,
+        }
+    }
+
+    /// Quem responde por uma peca. A ordem E' a regra: rosto e cabelo mandam
+    /// nos slots deles, a roupa manda no resto, e o corpo responde por ultimo.
+    fn peca(&self, nome: &str) -> Option<&'a Vec<Mesh>> {
+        let camadas: [Option<&'a std::collections::HashMap<String, Vec<Mesh>>>; 3] = match nome {
+            "cabeca" => [self.rosto, self.roupa, Some(self.corpo)],
+            // O slot do cabelo NAO cai no corpo: o `corpo.vox` nao tem peca
+            // `cabelo`, e quem nao escolheu chapeu nem cabelo anda de cabeca
+            // descoberta — nao herda o tricornio do piratinha.
+            "cabelo" => [self.cabelo, self.roupa, None],
+            _ => [self.roupa, Some(self.corpo), None],
+        };
+        camadas.into_iter().flatten().find_map(|c| c.get(nome))
+    }
+
+    fn faixas(&self) -> crate::gpu_estatica::Faixas {
+        crate::gpu_estatica::Faixas::nova(self.tier, self.cor_cabelo, self.pele)
+    }
+}
+
 /// a bolsa, a origem do retrato. Devolve onde ficaram a espada e o escudo.
 pub fn desenha_rig(
     base: Mat4,
     pose: &crate::rig::Pose,
-    corpo: &std::collections::HashMap<String, Vec<Mesh>>,
-    chapeu: Option<&std::collections::HashMap<String, Vec<Mesh>>>,
+    veste: &Vestimenta<'_>,
     vox: &VoxCache,
     tinta: Option<([f32; 3], f32)>,
 ) -> ([Mat4; crate::rig::N], Vec<(&'static str, Mat4)>) {
     let mats = crate::rig::matrizes(pose, base, VOXEL);
+    let faixas = veste.faixas();
     for (i, (nome, _, _)) in crate::rig::PECAS.iter().enumerate() {
-        let malhas = if *nome == "cabelo" {
-            chapeu.and_then(|c| c.get("cabelo"))
-        } else {
-            corpo.get(*nome)
-        };
-        for m in malhas.into_iter().flatten() {
-            draw_mesh_mat_tinta(m, &mats[i], tinta);
+        for m in veste.peca(nome).into_iter().flatten() {
+            draw_mesh_mat_faixas(m, &mats[i], tinta, faixas);
         }
     }
     // As armas do conjunto: na mao em combate, guardadas fora dele — e o que
@@ -2484,11 +2659,22 @@ fn draw_mesh_mat(m: &Mesh, mat: &Mat4) {
 /// A mesma coisa, puxando a cor de cada vertice pra `tinta` na fracao pedida
 /// — e' o clarao do golpe.
 fn draw_mesh_mat_tinta(m: &Mesh, mat: &Mat4, tinta: Option<([f32; 3], f32)>) {
+    draw_mesh_mat_faixas(m, mat, tinta, crate::gpu_estatica::Faixas::default())
+}
+
+/// Como a de cima, e ainda tinge as FAIXAS de paleta (pele, cabelo, tier).
+/// E' o caminho do personagem; todo o resto passa `Faixas::default()`.
+fn draw_mesh_mat_faixas(
+    m: &Mesh,
+    mat: &Mat4,
+    tinta: Option<([f32; 3], f32)>,
+    faixas: crate::gpu_estatica::Faixas,
+) {
     // Na GPU: a malha do voxel sobe uma vez e a matriz e a tinta vao por
     // uniforme. Recopiar os vertices todo quadro era o que pesava com bicho
     // em volta (ver `gpu_estatica`).
     let tinta = tinta.map_or([0.0; 4], |(c, k)| [c[0], c[1], c[2], k]);
-    crate::gpu_estatica::desenha_voxel(m, *mat, tinta);
+    crate::gpu_estatica::desenha_voxel(m, *mat, tinta, faixas);
 }
 
 /// Desenha uma malha girada em Y e deslocada — com a matriz de modelo no
@@ -2496,7 +2682,7 @@ fn draw_mesh_mat_tinta(m: &Mesh, mat: &Mat4, tinta: Option<([f32; 3], f32)>) {
 fn draw_mesh_at(m: &Mesh, at: Vec3, yaw: f32) {
     // Mesma conta de antes (y pra cima, giro em Y), como matriz.
     let mat = Mat4::from_translation(at) * Mat4::from_rotation_y(yaw);
-    crate::gpu_estatica::desenha_voxel(m, mat, [0.0; 4]);
+    crate::gpu_estatica::desenha_voxel(m, mat, [0.0; 4], crate::gpu_estatica::Faixas::default());
 }
 
 /// Projeta um ponto do mundo pra pixel de tela.
@@ -2665,4 +2851,70 @@ fn draw_ring(center: Vec3, r: f32, color: Color) {
         indices,
         texture: None,
     });
+}
+
+#[cfg(test)]
+mod testes_da_vestimenta {
+    use super::*;
+
+    fn pecas(nomes: &[&str]) -> std::collections::HashMap<String, Vec<Mesh>> {
+        nomes.iter().map(|n| (n.to_string(), Vec::new())).collect()
+    }
+
+    /// A CADEIA: rosto e cabelo mandam nos slots deles, a roupa no resto, e o
+    /// corpo responde por último.
+    ///
+    /// Antes disto havia um `if nome == "cabelo"` cravado e nenhuma
+    /// substituição de peça — a roupa era impossível de escrever.
+    #[test]
+    fn a_roupa_vence_o_corpo_e_o_rosto_vence_a_roupa() {
+        let corpo = pecas(&["torso", "cabeca", "braco_d"]);
+        let roupa = pecas(&["torso", "cabeca"]);
+        let rosto = pecas(&["cabeca"]);
+        let cabelo = pecas(&["cabelo"]);
+        let mut v = Vestimenta::nua(&corpo);
+        assert!(v.peca("torso").is_some(), "sem roupa, o torso é o do corpo");
+        assert!(v.peca("cabelo").is_none(), "de cabeça descoberta, nada no slot");
+
+        v.roupa = Some(&roupa);
+        assert!(std::ptr::eq(v.peca("torso").unwrap(), roupa.get("torso").unwrap()));
+        assert!(
+            std::ptr::eq(v.peca("braco_d").unwrap(), corpo.get("braco_d").unwrap()),
+            "peça que a roupa não tem cai no corpo"
+        );
+        assert!(std::ptr::eq(v.peca("cabeca").unwrap(), roupa.get("cabeca").unwrap()));
+
+        v.rosto = Some(&rosto);
+        assert!(
+            std::ptr::eq(v.peca("cabeca").unwrap(), rosto.get("cabeca").unwrap()),
+            "o rosto vence a roupa na cabeça"
+        );
+
+        v.cabelo = Some(&cabelo);
+        assert!(std::ptr::eq(v.peca("cabelo").unwrap(), cabelo.get("cabelo").unwrap()));
+    }
+
+    /// O slot do cabelo NÃO cai no corpo.
+    ///
+    /// Se caísse, quem escolhesse "sem chapéu" herdaria o tricórnio do
+    /// piratinha — e não haveria como andar de cabeça descoberta.
+    #[test]
+    fn sem_chapeu_e_sem_cabelo_a_cabeca_fica_descoberta() {
+        let corpo = pecas(&["torso", "cabeca", "cabelo"]);
+        let v = Vestimenta::nua(&corpo);
+        assert!(
+            v.peca("cabelo").is_none(),
+            "o slot do cabelo não herda do corpo, mesmo que ele tenha a peça"
+        );
+    }
+
+    /// Vestimenta sem cor = faixas desligadas = o desenho de sempre.
+    #[test]
+    fn a_vestimenta_nua_nao_tinge_nada() {
+        let corpo = pecas(&["torso"]);
+        assert_eq!(
+            Vestimenta::nua(&corpo).faixas(),
+            crate::gpu_estatica::Faixas::default()
+        );
+    }
 }

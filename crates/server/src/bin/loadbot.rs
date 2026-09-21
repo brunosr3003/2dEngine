@@ -208,7 +208,7 @@ async fn bot(
                             Some(c) => ClientMessage::SelectCharacter { name: c.name.clone() },
                             None => ClientMessage::CreateCharacter {
                                 name: format!("{user}_c"),
-                                visual: shared::VisualConfig::default(),
+                                aparencia: Default::default(),
                                 starting_weapon: available_weapons.first().copied().unwrap_or(0),
                                 faction: Default::default(),
                             },

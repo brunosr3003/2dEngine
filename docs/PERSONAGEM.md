@@ -524,3 +524,105 @@ sai UMA rajada na cabeça da ferramenta (`rig::cabeca_da_ferramenta`),
 cor do tier da pedra (`shared::items::tier_color_hex`), com gravidade. O pool
 é fixo (192 vagas, sem alocar por quadro) e é avançado e desenhado uma vez por
 quadro no fim de `render3d::draw_entities`.
+
+---
+
+## A customização, como ficou (21/09/2026)
+
+Implementada. O que estava escrito acima como **PROPOSTA** virou código;
+o que segue é o que existe.
+
+### O que o jogador escolhe
+
+| | onde | quanto custa |
+|---|---|---|
+| **Rosto** (3) | criação e guarda-roupa | grátis |
+| **Cabelo** (3 + "sem cabelo") | idem | grátis |
+| **Cor do cabelo** (6) | idem | grátis |
+| **Tom de pele** (4) | idem | grátis |
+| **Chapéu** (8 formas) | guarda-roupa | grátis |
+| **Roupa** (3 + 1) | guarda-roupa | as três primeiras grátis; a quarta, 300 TP |
+
+**Um corpo só**, como decidido: a roupa é uma skin que substitui as nove peças
+do tronco e dos membros, e a cabeça vem do rosto. Toda roupa é feita uma vez e
+serve em todo mundo.
+
+### As três coisas que fazem isso ser barato
+
+**1. A cor não é geometria.** Tom de pele e cor de cabelo são tingidos no
+SHADER, por faixa de paleta (`vox::faixa_de`, `gpu_estatica::Faixas`). O
+vértice leva a faixa em `normal.yzw` — três componentes que o shader sólido
+não usava —, e as cores vão por uniforme. Custo: **zero byte por vértice, zero
+draw call, zero mudança de pipeline**.
+
+Sem isso, cada tom seria uma cópia da malha. E a conta não era 4×: a peça
+`cabeca` carrega as DUAS faixas, então seriam 4 tons × 6 cores = **24 cópias
+de cada rosto**. Foi medido antes de decidir.
+
+**2. A aparência cabe num `u32`.** Ela viaja na `EntityMeta`, que sai uma vez
+por entidade na entrada da AOI. Medido: a meta foi de **26 para 27 bytes**, e o
+custo por tick não mudou — que é o que pesa. Zero é o corpo padrão, então mob,
+saque e projétil não pagam nada.
+
+O `kind` não servia: no Player ele já carrega o item da montaria.
+
+**3. Só a roupa carrega preguiçosa.** Rostos, cabelos e chapéus são 14
+arquivos pequenos e vão no boot, junto dos 19 rigs que já iam. A roupa é o
+eixo que cresce com o catálogo, então ela é pedida quando alguém à vista a
+usa (`VoxCache::rig_ou_pede`) e o laço principal atende **um por quadro** —
+até chegar, aparece o corpo padrão.
+
+**E nunca descarrega.** O cache de buffer da GPU é chaveado pelo PONTEIRO dos
+vértices, e duas variantes da mesma peça têm contagem de vértices idêntica por
+construção: liberar uma e alocar outra no mesmo endereço devolveria o buffer
+velho, e o jogador apareceria com a roupa errada sem erro nenhum.
+
+### Como a skin vira posse
+
+Pelo caminho do TOMO, e não por slot de equipamento: **o item é consumido e o
+direito fica no guarda-roupa** (`aparencia::GuardaRoupa::desbloqueadas`).
+
+Slot de equipamento foi descartado depois de olhar quem percorre
+`EquipSlot::TODOS` — `effective_stats`, `craft` e `forja_ui` não filtram slot
+cosmético, tanto que **pet e montaria já entram na lista da forja hoje**. Dois
+slots novos herdariam isso e daria para "refinar um chapéu".
+
+Consumir na hora de usar também fecha o furo de vestir a skin e revendê-la.
+
+### O que o servidor não deixa passar
+
+O cliente pede o que quiser; o servidor corta. Rosto, cabelo, cor e tom contra
+a tabela (`Aparencia::saneada`); **roupa e chapéu contra o que foi
+destravado**. Sem isso bastaria mandar o número da skin paga para vesti-la.
+
+O chapéu ocupa o campo `cabelo` — os dois são a mesma junta da cabeça — então
+ele passa pela mesma regra.
+
+### Onde a arte nasce
+
+`tools/voxrender/personagem.py`, que importa `npcs.py` e `molde_corpo.py` sem
+reescrever nada. O `npcs.py` já tinha os 4 tons, as 6 cores e as 8 formas de
+chapéu; o que faltava era **separar**: lá, rosto, cabelo e chapéu saem fundidos
+dentro da peça `cabeca`.
+
+**A regra que faz os arquivos empilharem:** o rosto é pele, olhos, nariz, boca,
+orelha e (no máximo) barba — **o couro cabeludo inteiro mora no arquivo de
+cabelo**. Se o rosto trouxesse cabeleira, escolher um cabelo poria dois na
+cabeça. Há teste conferindo isso nos arquivos.
+
+### A rede de proteção
+
+A carga preguiçosa tira do boot a conferência que acontecia lá: um arquivo mal
+salvo deixa de aparecer quando o jogo abre e passa a aparecer quando um
+estranho entra na sua tela. Então os testes abrem os `.vox` de verdade:
+
+- **`toda_peca_de_personagem_cumpre_o_contrato`** — objeto com nome, nome no
+  rig, tela 32×24×48, e **teto de 500 quads por peça** (acima disso `malha`
+  parte em duas e dobra o passe de render daquela peça; passe é o teto real no
+  celular, não memória).
+- **`o_rosto_nao_traz_cabelo_e_o_cabelo_nao_traz_pele`**.
+- **`toda_peca_de_personagem_tem_pivo`** — `rig::pivo` devolvia a RAIZ para
+  nome desconhecido e `desenha_rig` percorre `PECAS`, então uma peça
+  mal-nomeada virava malha em volta do chão que ninguém desenhava. Duas falhas
+  caladas, uma escondendo a outra. Hoje `pivo` devolve `Option` e `load_rig`
+  reclama.

@@ -24,9 +24,10 @@ use crate::vox::VoxCache;
 /// meio levava o jogador pro lugar errado.
 const ABA_TP: usize = 3;
 
-const ABAS: [(&str, &str); 4] = [
+const ABAS: [(&str, &str); 5] = [
     ("Materiais", "craft"),
     ("Pets", "montaria"),
+    ("Aparência", "ficha"),
     ("Moedas", "bolsa"),
     ("Tempest Points", ""),
 ];
@@ -663,7 +664,8 @@ impl LojaTp {
         match self.aba {
             0 => self.materiais(area, k, m, livre, modal, agora),
             1 => self.aba_pets(area, k, m, livre, modal, agora),
-            2 => self.moedas_e_energia(area, k, m, livre, modal, agora),
+            2 => self.aba_skins(area, k, m, livre, modal),
+            3 => self.moedas_e_energia(area, k, m, livre, modal, agora),
             _ => self.pacotes(area, k, m, livre, modal, agora),
         }
 
@@ -989,6 +991,88 @@ impl LojaTp {
             if !self.em_voo && livre && sobre {
                 self.confirma = Some(Confirma::Item(Produto::ItemDePet(item.id)));
             self.lote = 1;
+            }
+        }
+    }
+
+    /// Aba APARÊNCIA: as skins que a loja vende (docs/PERSONAGEM.md).
+    ///
+    /// Só as PAGAS aparecem: as três roupas e os oito chapéus livres já
+    /// nascem no guarda-roupa, e vender o que o jogador já tem seria
+    /// propaganda enganosa.
+    fn aba_skins(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool) {
+        let venda = shared::aparencia::a_venda();
+        if venda.is_empty() {
+            estilo::texto_centro(
+                area.center().x,
+                area.center().y,
+                "Nenhuma aparência à venda agora.",
+                ts(16.0, k),
+                estilo::alfa(LILAS, 0.9),
+            );
+            return;
+        }
+        let colunas = 4usize;
+        let linhas = venda.len().div_ceil(colunas).max(1);
+        let vao = 12.0 * k;
+        let w = ((area.w - vao * (colunas as f32 - 1.0)) / colunas as f32).min(300.0 * k);
+        let h = ((area.h - 16.0 * k - vao * (linhas as f32 - 1.0)) / linhas as f32).min(320.0 * k);
+        let total = w * colunas as f32 + vao * (colunas as f32 - 1.0);
+        let x0 = area.center().x - total * 0.5;
+        for (n, id) in venda.iter().enumerate() {
+            let r = Rect::new(
+                x0 + (n % colunas) as f32 * (w + vao),
+                area.y + 8.0 * k + (n / colunas) as f32 * (h + vao),
+                w,
+                h,
+            );
+            let sobre = !modal && r.contains(m);
+            estilo::sombra(r, 18.0 * k, 1.0);
+            estilo::ret_gradiente(
+                r,
+                18.0 * k,
+                Color::new(0.20, 0.14, 0.30, 0.98),
+                Color::new(0.045, 0.055, 0.13, 0.98),
+            );
+            estilo::borda_arredondada(
+                r,
+                18.0 * k,
+                1.5 * k.max(0.8),
+                estilo::alfa(if sobre { OURO_CLARO } else { LILAS }, 0.5),
+            );
+            let nome = shared::aparencia::nome_da_skin(*id).unwrap_or("Skin");
+            estilo::texto_centro_forte(
+                r.center().x,
+                r.y + r.h * 0.44,
+                nome,
+                ts(16.0, k),
+                estilo::TEXTO,
+            );
+            estilo::texto_ajustado(
+                if *id >= shared::aparencia::CHAPEU_BASE {
+                    "Chapéu · fica no guarda-roupa deste personagem"
+                } else {
+                    "Roupa completa · fica no guarda-roupa deste personagem"
+                },
+                r.x + 10.0 * k,
+                r.y + r.h * 0.58,
+                r.w - 20.0 * k,
+                ts(12.0, k),
+                estilo::alfa(LILAS, 0.95),
+            );
+            if let Some(preco) = shared::aparencia::preco_da_skin(*id) {
+                let t = milhar(preco);
+                estilo::valor_tp(
+                    r.center().x - estilo::largura_tp_texto(&t, ts(17.0, k), true) * 0.5,
+                    r.y + r.h - 16.0 * k,
+                    preco,
+                    ts(17.0, k),
+                    OURO_CLARO,
+                );
+            }
+            if !self.em_voo && livre && sobre {
+                self.confirma = Some(Confirma::Item(Produto::Skin(*id)));
+                self.lote = 1;
             }
         }
     }
@@ -1609,7 +1693,8 @@ impl LojaTp {
                     | Produto::PergaminhoTomo(_)
                     | Produto::Energia(_)
                     | Produto::PergaminhoPet(_)
-                    | Produto::ItemDePet(_) => 0,
+                    | Produto::ItemDePet(_)
+                    | Produto::Skin(_) => 0,
                 };
                 if matches!(
                     pr,
@@ -1677,6 +1762,10 @@ impl LojaTp {
                 }
                 let tipo = match pr {
                     Produto::Tp(_) => String::new(),
+                    Produto::Skin(_) => {
+                        "Skin · use na bolsa · fica no guarda-roupa deste personagem"
+                            .to_string()
+                    }
                     Produto::BauCraft(_) => {
                         "Pergaminho · abra na bolsa · chave aleatória".to_string()
                     }
@@ -2080,7 +2169,8 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
             faction: None,
             kind,
             nivel: 10,
-        });
+                aparencia: 0,
+            });
         estados.push(EntityState::quantize(
             EntityId(id),
             ::glam::Vec2::new(p.x, p.y),

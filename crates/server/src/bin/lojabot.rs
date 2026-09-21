@@ -223,7 +223,7 @@ async fn main() -> anyhow::Result<()> {
                             Some(c) => ClientMessage::SelectCharacter { name: c.name.clone() },
                             None => ClientMessage::CreateCharacter {
                                 name: format!("{user}_lj"),
-                                visual: shared::VisualConfig::default(),
+                                aparencia: Default::default(),
                                 starting_weapon: available_weapons.first().copied().unwrap_or(0),
                                 faction: Default::default(),
                             },

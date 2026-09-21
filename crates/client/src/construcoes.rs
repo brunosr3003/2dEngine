@@ -884,7 +884,8 @@ mod tests {
             faction: None,
             kind,
             nivel: 1,
-        };
+                aparencia: 0,
+            };
         let estado =
             EntityState::quantize(EntityId(7), ::glam::Vec2::ZERO, ::glam::Vec2::ZERO, 1, 0);
         w.apply(vec![meta], vec![estado], &[]);

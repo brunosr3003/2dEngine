@@ -371,14 +371,27 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
         cw,
         30.0 * s,
     );
-    // Joystick: TODA a faixa esquerda de baixo, do rastreador ate' a EXP e ate'
-    // antes do que estiver mais a' esquerda entre a faixa, a barra de coleta e
-    // o AUTO COLETA. Os avisos passam por cima sem pegar o toque — o dedo pode
-    // comecar em qualquer ponto da faixa (pedido do dono).
-    let jy = rastreador.y + rastreador.h + 8.0 * s;
+    // Joystick: um QUADRADO no canto inferior esquerdo.
+    //
+    // Era a faixa esquerda inteira, do rastreador ate' a EXP e ate' antes da
+    // faixa central — um retangulo de 904x468 na tela do emulador, quase 40%
+    // da largura. O dono pediu em 21/09/2026, jogando: "o joystick ta podendo
+    // ser usado ate' mt no meio, coloca mais no canto inferior esquerdo no
+    // quadrado".
+    //
+    // O lado sai do DESENHO, e nao de um numero escolhido: e' o diametro da
+    // base mais uma margem de polegar de cada lado. Assim a area em que o
+    // toque comeca e o circulo que aparece na tela sao a mesma coisa — area
+    // maior que o desenho e' area que responde onde nada aparece, que e'
+    // exatamente a queixa.
+    //
+    // O que NAO muda: arrastar pra fora do quadrado continua valendo
+    // (`Joystick::quadro` so' testa a area no toque inicial), entao o alcance
+    // do polegar nao encolheu — encolheu onde ele pode POUSAR.
+    let lado_joy = (2.0 * crate::joystick::RAIO_BASE + 56.0) * s;
+    // Preso ao canto: acima da bateria do modo economia, e nunca passando do
+    // que estiver mais a' esquerda no meio da tela.
     let jfim = faixa.x.min(coleta.x).min(auto_coleta.x) - 16.0 * s;
-    // Bateria do modo economia: canto de baixo a' esquerda, sempre na tela. O
-    // joystick termina acima dela.
     let lado_eco = 48.0 * s;
     let economia = Rect::new(m, exp.y - 8.0 * s - lado_eco, lado_eco, lado_eco);
     let montaria = Rect::new(
@@ -387,11 +400,16 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
         lado_eco,
         lado_eco,
     );
+    let jbaixo = economia.y - 8.0 * s;
+    // O teto: nem acima da metade da tela, nem por cima do rastreador.
+    let jtopo = (jbaixo - lado_joy)
+        .max(sh * 0.5)
+        .max(rastreador.y + rastreador.h + 8.0 * s);
     let joystick = Rect::new(
         m,
-        jy,
-        (jfim - m).max(0.0),
-        (economia.y - 8.0 * s - jy).max(0.0),
+        jtopo,
+        (jfim - m).min(lado_joy).max(0.0),
+        (jbaixo - jtopo).max(0.0),
     );
 
     // Minimapa grande: cresce pra baixo, preso a' direita, e PARA antes do arco
@@ -620,7 +638,7 @@ pub fn escurece(alfa: f32) {
 mod tests {
     use super::*;
 
-    const TELAS: [(f32, f32); 8] = [
+    pub(super) const TELAS: [(f32, f32); 8] = [
         (1920.0, 1080.0),
         (1920.0, 1200.0),
         (1280.0, 720.0),
@@ -776,20 +794,28 @@ mod tests {
     /// Os avisos sao texto solto no alto da faixa do joystick, e a faixa
     /// inteira (do rastreador ate' a EXP) aceita o polegar.
     #[test]
-    fn avisos_em_cima_e_joystick_na_faixa_inteira() {
+    fn avisos_em_cima_e_joystick_no_canto_de_baixo() {
         for (sw, sh) in TELAS {
             let z = zonas(sw, sh);
             assert!(
                 z.avisos.y >= z.rastreador.y + z.rastreador.h,
                 "{sw}×{sh}: avisos abaixo do rastreador"
             );
+            // O QUADRANTE INFERIOR ESQUERDO, e nao a faixa esquerda inteira.
+            //
+            // Este teste guardava a regra contraria ("a faixa comeca no alto
+            // dos avisos"), que vinha de um pedido anterior do dono. Em
+            // 21/09/2026 ele pediu o oposto, jogando: o dedo podia comecar
+            // quase no meio vertical da tela. A regra mudou, e o teste com
+            // ela — deixar o antigo de pe' guardaria o defeito.
             assert!(
-                z.joystick.y <= z.avisos.y + 0.01,
-                "{sw}×{sh}: a faixa do joystick comeca no alto dos avisos"
+                z.joystick.y >= sh * 0.5 - 0.01,
+                "{sw}×{sh}: o joystick comeca acima da metade da tela ({})",
+                z.joystick.y
             );
             assert!(
-                z.joystick.contains(z.avisos.center()),
-                "{sw}×{sh}: os avisos ficam DENTRO da faixa do joystick"
+                z.joystick.y + z.joystick.h <= sh + 0.01,
+                "{sw}×{sh}: o joystick passa do fim da tela"
             );
             assert!(
                 z.avisos.x >= 0.0
@@ -868,6 +894,43 @@ mod tests {
                 "{sw}×{sh}: diarias antes do MENU"
             );
             assert_eq!(diarias.y, missoes.y);
+        }
+    }
+}
+
+#[cfg(test)]
+mod testes_do_quadrante {
+    use super::*;
+
+    /// O joystick cabe no QUADRANTE INFERIOR ESQUERDO, e sobra polegar.
+    ///
+    /// Duas coisas ao mesmo tempo, porque so' uma delas nao resolve: encolher
+    /// ate' o canto e' facil, e encolher demais devolve um joystick que o
+    /// polegar nao acha. O piso e' o diametro da base (`RAIO_BASE`), que e' o
+    /// tamanho do desenho na tela.
+    #[test]
+    fn o_joystick_e_o_canto_de_baixo_e_ainda_cabe_o_polegar() {
+        // A do emulador (2400x1080) entra junto: e' nela que o dono testa.
+        for (sw, sh) in super::tests::TELAS.iter().copied().chain([(2400.0, 1080.0)]) {
+            let z = zonas(sw, sh);
+            let j = z.joystick;
+            assert!(
+                j.x + j.w <= sw * 0.5 + 0.01 && j.y >= sh * 0.5 - 0.01,
+                "{sw}×{sh}: {j:?} nao e' o quadrante inferior esquerdo"
+            );
+            let polegar = 2.0 * crate::joystick::RAIO_BASE * z.s;
+            assert!(
+                j.w >= polegar && j.h >= polegar,
+                "{sw}×{sh}: {j:?} menor que o polegar ({polegar:.0})"
+            );
+            // E o desenho da base continua dentro da area em que o toque
+            // comeca: base fora da area seria um joystick que nao responde
+            // onde ele aparece.
+            let b = crate::joystick::Joystick::base_em_repouso(&z);
+            assert!(
+                j.contains(b),
+                "{sw}×{sh}: a base desenhada em {b:?} cai fora de {j:?}"
+            );
         }
     }
 }

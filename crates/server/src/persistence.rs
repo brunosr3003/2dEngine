@@ -48,9 +48,15 @@ pub struct CharacterRow {
     /// Conta dona deste char (1:1, UNIQUE). None pra rows legacy nao migrados
     /// — interpretado como "linkado pelo nome" (backfill ja roda).
     pub account_id: Option<i64>,
-    /// VisualConfig escolhido na criacao (skin race + tone, outfit + color,
+    /// O guarda-roupa escolhido na criacao e trocado depois (
     /// hair + color, body tint). None = usa default por classe.
-    pub visual: Option<shared::VisualConfig>,
+    /// A aparencia e as skins destravadas (docs/PERSONAGEM.md).
+    ///
+    /// Guardada na coluna `visual_json`, que ja' existia e guardava um
+    /// `VisualConfig` sempre `default()` — nao havia NADA pra preservar, e
+    /// reusar a coluna evita inteiramente as quatro edicoes de UPSERT que ja'
+    /// quebraram todo o save uma vez.
+    pub guarda_roupa: Option<shared::aparencia::GuardaRoupa>,
     /// Níveis de skill de coleta. Default 1 (sem bônus). Crescem ao colher.
     /// Facção escolhida na criação (Morganeers/Peacemain). Persistida como
     /// TEXT. Default Peacemain pra rows legacy sem a coluna.
@@ -407,7 +413,9 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
         .await?;
 
     // Character creation: account_id liga char a conta (1:1, UNIQUE).
-    // visual_json armazena VisualConfig serializado (skin/race/outfit/hair/color).
+    // `visual_json` guarda o `aparencia::GuardaRoupa` serializado. O nome da
+    // coluna vem do paper-doll 2D que morreu; o conteudo e' outro desde
+    // 21/09/2026, e renomear coluna custaria uma migracao por nada.
     // starting_weapon = item_id escolhido na criacao (informativo; weapon ja
     // ta em inventory+equipment do save).
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS account_id BIGINT NULL")
@@ -1004,6 +1012,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     //    primeira boot pós-migration (sentinel "ainda não backfilled"). Após
     //    admin editar via web, icon_col != 0 e o seed vira no-op.
     //  - Itens 24-44 (Phase D/E) que ainda não tinham row são inseridos do zero.
+    #[derive(Clone)]
     struct S {
         id: i32,
         name: &'static str,
@@ -2742,7 +2751,54 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             wis: (0, 0),
         },
     ];
-    for s in seed {
+    // AS SKINS DE APARENCIA (docs/PERSONAGEM.md). Uma linha por skin, geradas
+    // da tabela e nao escritas a mao: skin nova e' uma linha em
+    // `shared::aparencia::ROUPAS`/`CHAPEUS`, e o item aparece sozinho.
+    //
+    // Nao empilham alem de 1: cada uma destrava uma vez, e duas na bolsa
+    // sugeririam que a segunda vale alguma coisa.
+    let mut seed = seed.to_vec();
+    for (i, (_, nome)) in shared::aparencia::ROUPAS.iter().enumerate() {
+        seed.push(S {
+            id: (shared::aparencia::ROUPA_BASE + i as u16) as i32,
+            name: nome,
+            sell: 0,
+            buy: None,
+            ord: None,
+            stack: 1,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        });
+    }
+    for (i, (_, nome)) in shared::aparencia::CHAPEUS.iter().enumerate() {
+        seed.push(S {
+            id: (shared::aparencia::CHAPEU_BASE + i as u16) as i32,
+            name: nome,
+            sell: 0,
+            buy: None,
+            ord: None,
+            stack: 1,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        });
+    }
+    for s in &seed {
         sqlx::query(
             "INSERT INTO items \
               (id, name, sell_price, buy_price, shop_order, stack_max, \
@@ -3629,7 +3685,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         {
             allocated[i] = v.max(0) as u32;
         }
-        let visual: Option<shared::VisualConfig> = visual_json
+        let guarda_roupa: Option<shared::aparencia::GuardaRoupa> = visual_json
             .as_deref()
             .and_then(|j| serde_json::from_str(j).ok());
         let last_tut = tut_map.get(&name).cloned().flatten();
@@ -3666,7 +3722,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 skill_points_earned: sp_earned.max(0) as u32,
                 skill_points_spent: sp_spent.max(0) as u32,
                 account_id,
-                visual,
+                guarda_roupa,
                 faction,
                 quests,
                 faction_points,
@@ -3703,12 +3759,12 @@ pub async fn create_character(
     pool: &PgPool,
     account_id: i64,
     name: &str,
-    visual: &shared::VisualConfig,
+    guarda_roupa: &shared::aparencia::GuardaRoupa,
     starting_weapon: u16,
     spawn: Vec2,
     faction: shared::Faction,
 ) -> Result<bool> {
-    let visual_json = serde_json::to_string(visual)?;
+    let visual_json = serde_json::to_string(guarda_roupa)?;
     let allocated_zero: Vec<i32> = vec![0; shared::STAT_COUNT];
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -3993,11 +4049,11 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .unwrap_or(0);
     for row in &batch.rows {
         let allocated_vec: Vec<i32> = row.allocated_points.iter().map(|&v| v as i32).collect();
-        // visual_json: persiste o VisualConfig em vigor (wardrobe mid-game).
+        // `visual_json`: o guarda-roupa em vigor (aparencia + destravadas).
         // None = mantem o que ja existe no banco (mas atualizamos sempre que
         // session.visual estiver setado, o que e o caso pra players logados).
         let visual_json: Option<String> = row
-            .visual
+            .guarda_roupa
             .as_ref()
             .and_then(|v| serde_json::to_string(v).ok());
         let skill_progress_json =

@@ -23,7 +23,8 @@ pub async fn abrir(vox: &VoxCache) {
             faction: None,
             kind,
             nivel: 10,
-        });
+                aparencia: 0,
+            });
         estados.push(shared::EntityState::quantize(
             shared::EntityId(id),
             ::glam::Vec2::new(p.x, p.y),
