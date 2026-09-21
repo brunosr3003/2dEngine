@@ -38,8 +38,9 @@ async fn main() -> Result<()> {
         (1, &[3, 12, 14, 4, 7, 16, 2, 8]),
         // Alquimista: poções
         (3, &[2, 8, 9, 10, 11]),
-        // Nobre: joias/amuletos/barcos
-        (7, &[5, 19, 20, 29, 30, 43, 44, 21, 100]),
+        // Nobre: joias e amuletos. O item 100 era o barco antigo, apagado em
+        // 20/09/2026 — o Nobre passou a anunciar um id que nao existe mais.
+        (7, &[5, 19, 20, 29, 30, 43, 44, 21]),
         // Camponês: comida (placeholder — trocar por itens de comida quando existirem)
         (8, &[2, 11]),
     ];
@@ -61,10 +62,9 @@ async fn main() -> Result<()> {
         println!("loja {} ← {} itens", sid, items.len());
     }
 
-    // buy_price dos itens do Nobre que podem estar sem preço (gem/boat/colares).
+    // buy_price dos itens do Nobre que podem estar sem preço (gema/colares).
     for (item, price) in [
         (21, 500i32),
-        (100, 6000),
         (43, 250),
         (44, 400),
         (5, 200),

@@ -5949,10 +5949,35 @@ impl GameWorld {
 
     // ── Pesca: peixes do oceano ──────────────────────────────────────────
 
-    /// True se o tile que contém `p` é água. Free helper pra usar dentro de
-    /// loops que já têm `self.ecs` emprestado mutável (não pega `&self`).
-    fn tile_is_water(map: &shared::world_gen::WorldMap, p: Vec2) -> bool {
-        map.get(p.x.floor() as i32, p.y.floor() as i32) == shared::constants::tile_id::WATER
+    /// Ha' agua em `p`? Numa ilha quem responde e' o RELEVO
+    /// (`Ilha::agua`); sem ilha, o mapa de tiles antigo.
+    ///
+    /// A pesca nasceu perguntando so' ao mapa de tiles, que nao sabe onde
+    /// fica a agua de uma ilha — por isso o peixe saia andando em terra e o
+    /// sistema foi desligado em 17/09/2026. Aqui a pergunta passou a ter um
+    /// juiz so'.
+    fn ha_agua(&self, p: Vec2) -> bool {
+        match self.ilha.as_ref() {
+            Some(i) => i.agua(p.x, p.y),
+            None => {
+                self.map.get(p.x.floor() as i32, p.y.floor() as i32)
+                    == shared::constants::tile_id::WATER
+            }
+        }
+    }
+
+    /// A mesma pergunta, sem pegar `&self` — pra dentro de laco que ja' tem
+    /// `self.ecs` emprestado mutavel.
+    fn ha_agua_em(
+        ilha: Option<&shared::terreno::Ilha>,
+        map: &shared::world_gen::WorldMap,
+        p: Vec2,
+    ) -> bool {
+        match ilha {
+            Some(i) => i.agua(p.x, p.y),
+            None => map.get(p.x.floor() as i32, p.y.floor() as i32)
+                == shared::constants::tile_id::WATER,
+        }
     }
 
     /// Sorteia a espécie de um peixe (1-4) com viés pra comuns.
@@ -5979,9 +6004,7 @@ impl GameWorld {
             s = lcg(s);
             let rad = 6.0 + lcg_f32(s) * (shared::FISH_VIEW_RADIUS - 6.0);
             let p = center + Vec2::new(ang.cos(), ang.sin()) * rad;
-            if self.map.get(p.x.floor() as i32, p.y.floor() as i32)
-                == shared::constants::tile_id::WATER
-            {
+            if self.ha_agua(p) {
                 return Some(p);
             }
         }
@@ -6009,10 +6032,15 @@ impl GameWorld {
     /// Mantém a população de peixes perto dos players, move (wander + atração
     /// leve pela boia), e detecta a fisgada (peixe encosta na boia → FishingBite).
     fn tick_fish(&mut self, dt: f32) {
-        // Desligado a pedido do dono (17/09/2026): o peixe nasce pelo mapa de
-        // TILES antigo, que nao sabe onde fica a agua da ilha, e saia andando
-        // em terra como cubo cinza (o cliente nao tem modelo de peixe). Volta
-        // quando a pesca for refeita sobre o relevo. Os que ja' existem somem.
+        // Continua desligado, mas por OUTRO motivo desde 21/09/2026.
+        //
+        // O defeito original era o peixe nascer pelo mapa de TILES antigo, que
+        // nao sabe onde fica a agua da ilha: ele saia andando em terra. Isso
+        // acabou — spawn, nado e arremesso agora perguntam ao relevo
+        // (`ha_agua`). O que falta e' do lado do CLIENTE: nao existe uma linha
+        // de UI de pesca no macroquad, nem modelo de peixe.
+        //
+        // Fica falso ate' a UI existir. Os que ja' estiverem no mundo somem.
         if !PEIXES_LIGADOS {
             let peixes: Vec<(Entity, EntityId)> = self
                 .ecs
@@ -6057,6 +6085,7 @@ impl GameWorld {
         let mut to_despawn: Vec<(Entity, EntityId)> = Vec::new();
         {
             let map = &self.map;
+            let ilha = self.ilha.as_ref();
             let mut seq: u64 = 0;
             for (e, (net, pos, vel, tag)) in
                 self.ecs
@@ -6106,10 +6135,10 @@ impl GameWorld {
 
                 // Integra mantendo o peixe na água (reflete na borda water/land).
                 let mut newpos = pos.0 + dir * swim_step;
-                if !Self::tile_is_water(map, newpos) {
+                if !Self::ha_agua_em(ilha, map, newpos) {
                     tag.wander_dir = -tag.wander_dir;
                     newpos = pos.0 + tag.wander_dir * swim_step;
-                    if !Self::tile_is_water(map, newpos) {
+                    if !Self::ha_agua_em(ilha, map, newpos) {
                         newpos = pos.0;
                     }
                 }
@@ -6222,9 +6251,7 @@ impl GameWorld {
         if player_pos.distance(pos) > shared::FISH_CAST_MAX_RANGE {
             return;
         }
-        if self.map.get(pos.x.floor() as i32, pos.y.floor() as i32)
-            != shared::constants::tile_id::WATER
-        {
+        if !self.ha_agua(pos) {
             return;
         }
         // Re-cast solta qualquer peixe que estava fisgado.
@@ -18878,5 +18905,6 @@ mod impacto_tests {
     }
 }
 
-/// Peixes do oceano (`tick_fish`). Desligados: ver o comentario la'.
+/// Peixes do oceano (`tick_fish`). Desligados enquanto o cliente nao tiver UI
+/// de pesca — ver o comentario em `tick_fish`.
 const PEIXES_LIGADOS: bool = false;

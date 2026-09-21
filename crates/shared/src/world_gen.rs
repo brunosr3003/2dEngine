@@ -127,15 +127,14 @@ impl WorldMap {
         false
     }
 
-    /// True se o tile e' agua (apenas barcos podem entrar).
-    pub fn is_water(&self, x: i32, y: i32) -> bool {
-        self.get(x, y) == crate::constants::tile_id::WATER
-    }
-
-    /// True se o tile e' navegavel por barco (somente water — areia ja e' bloqueada).
-    pub fn is_navigable(&self, x: i32, y: i32) -> bool {
-        self.is_water(x, y)
-    }
+    // `is_water`/`is_navigable` sairam em 21/09/2026. Eram do mapa de TILES
+    // velho, que nao sabe onde fica a agua de uma ilha — e agora que existe
+    // mar navegavel elas seriam a resposta errada, em silencio, pra quem
+    // perguntasse "da' pra navegar aqui?".
+    //
+    // "Isto e' agua?" tem UMA autoridade: `Ilha::agua` na ilha, `Mar::agua`
+    // no mar aberto. Ambas leem o campo de altura, que e' o terreno de
+    // verdade.
 
     /// True se o tile e' walkable a pe (FLOOR/DUNGEON_FLOOR/DIRT — qualquer
     /// nao-WALL e nao-WATER conta como walkable).

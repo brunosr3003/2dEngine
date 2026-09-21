@@ -932,6 +932,32 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     .execute(pool)
     .await?;
 
+    // O barco antigo foi apagado em 20/09/2026, mas as MIGRACOES dele tambem
+    // foram — apagadas, nao revertidas. As colunas continuam vivas em toda
+    // base de producao, e nada ia remove-las sozinho.
+    //
+    // Derrubar aqui, antes de existir qualquer coluna `barco_*` do barco novo:
+    // com as duas familias no ar ninguem descobre em qual delas o dado mora
+    // sem perder uma tarde. `IF EXISTS` faz isto valer tambem numa base limpa.
+    for coluna in [
+        "boat_kind",
+        "boat_x",
+        "boat_y",
+        "boat_dir",
+        "boat_yaw",
+        "boat_sail_pos",
+        "boat_sail_angle",
+        "boat_anchor_dropped",
+        "mounted_local_x",
+        "mounted_local_y",
+    ] {
+        sqlx::query(&format!(
+            "ALTER TABLE characters DROP COLUMN IF EXISTS {coluna}"
+        ))
+        .execute(pool)
+        .await?;
+    }
+
     seed_economy_if_needed(pool).await?;
 
     Ok(())
