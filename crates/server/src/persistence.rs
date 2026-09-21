@@ -74,6 +74,10 @@ pub struct CharacterRow {
     /// de logar — e trocaria de ilha de graca, que e' justamente o que a
     /// travessia obrigatoria existe pra impedir.
     pub zona_volta: Option<String>,
+    /// KARMA de PK (docs/MAR_ABERTO.md). Persiste porque o preco de matar
+    /// tem que sobreviver ao logout — senao deslogar e' a forma de limpar a
+    /// ficha, e o sistema inteiro vira teatro.
+    pub karma: i32,
     /// Pocao de Experiencia: bonus de XP ate' este instante (unix secs; 0 =
     /// nenhum). Absoluto, entao sobrevive a relog e reinicio.
     pub xp_bonus_ate: i64,
@@ -490,6 +494,9 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS stamina REAL NULL")
+        .execute(pool)
+        .await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS karma INTEGER NOT NULL DEFAULT 0")
         .execute(pool)
         .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS zona_volta TEXT NULL")
@@ -2888,6 +2895,28 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         .await?;
     }
 
+    // Os BAUS DO COLOSSO (docs/MAR_ABERTO.md). `vinculado` e `stack_max 1`,
+    // e `sell_price 0`: eles nao se vendem nem se empilham. O valor deles nao
+    // esta' no item — esta' em ENTREGAR o item do outro lado do mar.
+    for cor in 1..=5u8 {
+        let id = item_id::bau_na_cor(cor) as i32;
+        let nome = format!("Baú do Colosso ({})", shared::items::tier_name(cor));
+        sqlx::query(
+            "INSERT INTO items \
+              (id, name, sell_price, buy_price, shop_order, stack_max, \
+               equip_slot, item_level, icon_col, icon_row, vinculado) \
+             VALUES ($1,$2,0,NULL,NULL,1,NULL,1,-1,-1,TRUE) \
+             ON CONFLICT (id) DO UPDATE SET \
+               name = EXCLUDED.name, \
+               vinculado = TRUE, \
+               sell_price = 0",
+        )
+        .bind(id)
+        .bind(&nome)
+        .execute(pool)
+        .await?;
+    }
+
     // O pergaminho de pet cai na recompensa diaria, e o calendario nao
     // entrega item negociavel (docs/CALENDARIO.md): ele nasce VINCULADO. O
     // que sai dele — o pet — e' negociavel normalmente, que e' o ponto.
@@ -3014,7 +3043,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             let novo = crate::economy::kind_inicial(kind as u16).map_or(0, |k| k.hp);
             sqlx::query("UPDATE enemy_kinds SET hp_max = $1 WHERE kind = $2 AND hp_max = $3")
                 .bind(novo)
-                .bind(kind)
+                .bind(kind as i32)
                 .bind(velho)
                 .execute(pool)
                 .await?;
@@ -3553,6 +3582,8 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         vida.into_iter()
             .map(|(n, m, s, z, zv)| (n, (m, s, z, zv)))
             .collect();
+    let karma_rows = busca!((String, i32), "name, karma");
+    let karma_map: HashMap<String, i32> = karma_rows.into_iter().collect();
     let bonus = busca!((String, i64), "name, xp_bonus_ate");
     let bonus_map: HashMap<String, i64> = bonus.into_iter().collect();
     let drop = busca!(
@@ -3643,6 +3674,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         let last_tut = tut_map.get(&name).cloned().flatten();
         let (mp, stamina, zona, zona_volta) = vida_map.get(&name).cloned().unwrap_or_default();
         let xp_bonus_ate = bonus_map.get(&name).copied().unwrap_or(0);
+        let karma = karma_map.get(&name).copied().unwrap_or(0);
         let (fortuna_ate, sorte_ate, barra_json) = drop_map.get(&name).cloned().unwrap_or_default();
         let (mortes_json, recuperacoes_dia, recuperacoes_usadas) =
             mortes_map.get(&name).cloned().unwrap_or_default();
@@ -3682,6 +3714,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 stamina,
                 zona,
                 zona_volta,
+                karma,
                 xp_bonus_ate,
                 fortuna_ate,
                 sorte_ate,
@@ -4014,11 +4047,11 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                                      unspent_points, allocated_points,
                                      skill_points_earned, skill_points_spent,
                                      gold, visual_json, updated,
-                                     mp, stamina, zona, zona_volta, xp_bonus_ate,
+                                     mp, stamina, zona, zona_volta, karma, xp_bonus_ate,
                                      mortes_json, recuperacoes_dia, recuperacoes_usadas,
                                      fortuna_ate, sorte_ate, barra_json, preferencias_json, dungeon_json,
                                      bolsa_extra, banco_extra, skill_progress_json)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -4038,6 +4071,7 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                stamina = EXCLUDED.stamina,
                zona = COALESCE(EXCLUDED.zona, characters.zona),
                zona_volta = EXCLUDED.zona_volta,
+               karma = EXCLUDED.karma,
                xp_bonus_ate = EXCLUDED.xp_bonus_ate,
                mortes_json = EXCLUDED.mortes_json,
                recuperacoes_dia = EXCLUDED.recuperacoes_dia,
@@ -4070,6 +4104,7 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(row.stamina)
         .bind(&row.zona)
         .bind(&row.zona_volta)
+        .bind(row.karma)
         .bind(row.xp_bonus_ate)
         .bind(&row.mortes_json)
         .bind(row.recuperacoes_dia)

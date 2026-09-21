@@ -16,6 +16,7 @@ pub mod dungeon;
 pub mod forja;
 pub mod historia;
 pub mod items;
+pub mod karma;
 pub mod loja;
 pub mod mapfile;
 pub mod mar;

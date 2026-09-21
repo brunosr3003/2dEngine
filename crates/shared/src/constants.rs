@@ -609,6 +609,34 @@ pub mod item_id {
         }
     }
 
+    // ── O BAU DO COLOSSO (docs/MAR_ABERTO.md) ────────────────────────
+    //
+    // O tesouro que os chefes de mundo largam, um id por FAIXA de cor. Ele
+    // nao cabe em lugar nenhum a nao ser no CONVES de um barco: nao entra na
+    // bolsa, nao entra no banco, nao entra no mercado e nao entra no correio.
+    //
+    // E' essa recusa em quatro lugares que faz a premissa ser verdade —
+    // "quer o tesouro na outra ilha? navega com ele" — em vez de ser so' uma
+    // frase no doc.
+    pub const BAU_COLOSSO_BASE: u16 = 490;
+    pub const BAU_COLOSSO_ULTIMO: u16 = 494;
+
+    pub const fn e_bau_de_colosso(id: u16) -> bool {
+        id >= BAU_COLOSSO_BASE && id <= BAU_COLOSSO_ULTIMO
+    }
+
+    /// O bau da cor `cor` (1 cinza .. 5 lendario).
+    pub const fn bau_na_cor(cor: u8) -> u16 {
+        BAU_COLOSSO_BASE
+            + (if cor < 1 {
+                0
+            } else if cor > 5 {
+                4
+            } else {
+                cor - 1
+            }) as u16
+    }
+
     pub const fn montaria_de_id(id: u16) -> Option<(u16, u8)> {
         if id < MONTARIA_BASE || id > MONTARIA_ULTIMA {
             return None;

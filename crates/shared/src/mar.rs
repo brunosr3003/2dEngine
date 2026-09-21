@@ -410,6 +410,8 @@ pub enum PedidoBarco {
     Reparar { pagando: bool },
     /// No porto: sobe um eixo de melhoria (`barcos::eixo`).
     Melhorar { eixo: u8 },
+    /// Na Capitania: entrega o bau que esta' no conves.
+    EntregarBau,
 }
 
 /// O que o barco responde.
@@ -512,5 +514,75 @@ impl Mar {
             .map(|k| a.lerp(b, k as f32 / (n + 1) as f32))
             .filter(|p| self.agua(p.x, p.y))
             .collect()
+    }
+}
+
+// ─────────────────────── o tesouro e a marca de PK ───────────────────────
+
+/// Quanto tempo a marca de PK SOBREVIVE a entrega do bau, em segundos.
+///
+/// Sem esse rastro, descarregar um segundo antes do golpe seria um drible: o
+/// carregador chega na Capitania, entrega, e fica intocavel no mesmo quadro
+/// em que o perseguidor ia acertar. Com ele, quem correu a travessia inteira
+/// atras de alguem ainda tem uma janela.
+pub const RASTRO_DA_MARCA_S: i64 = 60;
+
+/// O multiplicador do bau por quantas travessias ele ja' fez.
+///
+/// Abrir onde caiu paga `1,0` — quem nao quer PvP nenhum abre ali e leva um
+/// premio justo de chefe. O resto e' escolha: cada travessia multiplica, e
+/// cada travessia e' uma chance de perder tudo.
+pub fn multiplicador_da_carga(travessias: u32) -> f32 {
+    match travessias {
+        0 => 1.0,
+        1 => 1.8,
+        2 => 2.6,
+        _ => 3.4,
+    }
+}
+
+/// Quantas travessias separam duas ilhas, pelo grafo das rotas.
+pub fn saltos_entre(de: u8, para: u8) -> u32 {
+    if de == para {
+        return 0;
+    }
+    // Quatro ilhas e quatro rotas: uma busca em largura de tres linhas custa
+    // menos que uma tabela escrita a mao, e nao envelhece se uma rota mudar.
+    let mut dist = [u32::MAX; 4];
+    let mut fila = std::collections::VecDeque::new();
+    if (de as usize) < 4 {
+        dist[de as usize] = 0;
+        fila.push_back(de);
+    }
+    while let Some(i) = fila.pop_front() {
+        for r in ROTAS.iter() {
+            for (a, b) in [(r.de, r.para), (r.para, r.de)] {
+                if a == i && (b as usize) < 4 && dist[b as usize] == u32::MAX {
+                    dist[b as usize] = dist[i as usize] + 1;
+                    fila.push_back(b);
+                }
+            }
+        }
+    }
+    dist.get(para as usize).copied().unwrap_or(0).min(3)
+}
+
+#[cfg(test)]
+mod testes_do_tesouro {
+    use super::*;
+
+    /// A distancia paga, e o grafo sai das ROTAS e nao de uma tabela.
+    #[test]
+    fn a_travessia_e_o_que_multiplica() {
+        // Vizinhas: um salto.
+        assert_eq!(saltos_entre(0, 1), 1);
+        assert_eq!(saltos_entre(1, 0), 1);
+        // Bosque e Planalto sao os extremos: dois saltos por qualquer lado.
+        assert_eq!(saltos_entre(0, 3), 2);
+        // Abrir onde caiu nao multiplica.
+        assert_eq!(saltos_entre(2, 2), 0);
+        assert_eq!(multiplicador_da_carga(0), 1.0);
+        assert!(multiplicador_da_carga(1) > multiplicador_da_carga(0));
+        assert!(multiplicador_da_carga(3) > multiplicador_da_carga(2));
     }
 }

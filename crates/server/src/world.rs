@@ -1258,6 +1258,36 @@ impl GameWorld {
             Some(s) => s,
             None => return false,
         };
+        // ── O CORREDOR DA CAPITANIA ─────────────────────────────────────
+        //
+        // Um raio pequeno em volta dos NPCs do cais onde ninguem apanha —
+        // marcado ou nao, foragido ou nao. Vem ANTES de tudo, inclusive da
+        // marca.
+        //
+        // Sem ele, campar a entrega e' a meta inteira: o carregador atravessa
+        // o mar, chega, e morre nos ultimos doze metros pra sempre. Nenhum
+        // bau seria entregue e o laco morreria em vez de ficar tenso. **A
+        // perseguicao e' o jogo; a porta nao e'.**
+        for sess in [att, tgt] {
+            if let Some(e) = sess.entity {
+                if let Ok(p) = self.ecs.get::<&Position>(e) {
+                    if self.no_corredor_da_capitania(p.0) {
+                        return false;
+                    }
+                }
+            }
+        }
+        // ── A MARCA VENCE A SAFE ZONE ───────────────────────────────────
+        //
+        // Regra do dono: quem carrega o bau pode ser atacado em qualquer
+        // lugar, "em safe zones ai' todo mundo pode atacar sem penalidade".
+        // Por isso este teste vem ANTES do da zona segura — e por isso a
+        // posicao do ATACANTE tambem deixa de proteger: senao bastava ficar
+        // no cais atirando de dentro da bolha.
+        let agora = (now_ms() / 1000) as i64;
+        if self.marcado(att, agora) || self.marcado(tgt, agora) {
+            return true;
+        }
         // Safe zone protege todos — atacante OU alvo dentro = sem dano.
         for sess in [att, tgt] {
             if let Some(e) = sess.entity {
@@ -1571,6 +1601,13 @@ pub struct Session {
     pub inventory_dirty: bool,
     /// True quando o equipamento mudou (envia StatsUpdate no proximo tick).
     pub stats_dirty: bool,
+    /// KARMA: o preco de matar quem nao estava marcado (docs/MAR_ABERTO.md).
+    pub karma: i32,
+    /// Ate' quando o RASTRO da marca dura, em unix secs. Sem ele, entregar o
+    /// bau um segundo antes do golpe seria um drible.
+    pub marcado_ate: i64,
+    /// (nome, quando) da ultima vitima: reincidir na mesma pessoa pesa mais.
+    pub ultima_vitima: Option<(String, i64)>,
     /// De que cais o jogador estava perto no tick passado. E' o que faz o
     /// painel de atracar abrir sozinho ao chegar, e so' uma vez.
     pub cais_perto: Option<u8>,
@@ -4291,6 +4328,18 @@ impl GameWorld {
     /// Vale pro pickup por proximidade e pro pet (docs/PETS.md): os dois
     /// entregam pelo mesmo caminho, entao a regra nao mora em dois lugares.
     fn creditar_saque(&mut self, sid: SessionId, ltag: &LootTag) -> Option<Option<(Entity, i32)>> {
+        // O BAU DO COLOSSO vai pro CONVES, nao pra bolsa (docs/MAR_ABERTO.md).
+        // Recusado, ele FICA NO CHAO — quem nao tem barco nao leva o tesouro,
+        // e quem tem passa depois e leva. E' um momento bom, nao um erro.
+        if shared::item_id::e_bau_de_colosso(ltag.item_id) {
+            let ilha = shared::terreno::ARQUIPELAGO
+                .iter()
+                .position(|d| d.zona == self.zona)
+                .unwrap_or(0) as u8;
+            return self
+                .carregar_bau(sid, ltag.item_id, ilha)
+                .then_some(None);
+        }
         let session = self.sessions.get_mut(&sid)?;
         // Se for equipavel e o slot esta vazio, equipa direto.
         // Gate offhand+weapon: se incompativel, fallback pro inv.
@@ -6588,6 +6637,9 @@ impl GameWorld {
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 inventory_dirty: false,
                 stats_dirty: false,
+                karma: 0,
+                marcado_ate: 0,
+                ultima_vitima: None,
                 cais_perto: None,
                 zona_volta: None,
                 vault: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
@@ -11475,6 +11527,26 @@ impl GameWorld {
             })
             .collect();
         let mut mortes_na_dungeon: Vec<(u32, String)> = Vec::new();
+        // Quem derrubou quem, pro bau e pro karma: colhido ANTES do laco
+        // mutavel abaixo, que empresta `self.sessions` inteiro.
+        let derrubados: Vec<(SessionId, Option<SessionId>)> = hp_zero
+            .iter()
+            .filter_map(|(_, eid)| {
+                let sid = self
+                    .sessions
+                    .values()
+                    .find(|s| s.entity_id == *eid && !s.downed)?
+                    .handle
+                    .id;
+                let matador = kill_credits.get(eid).and_then(|k| {
+                    self.sessions
+                        .values()
+                        .find(|s| s.entity_id == *k)
+                        .map(|s| s.handle.id)
+                });
+                Some((sid, matador))
+            })
+            .collect();
         for (entity, eid) in hp_zero {
             for session in self.sessions.values_mut() {
                 if session.entity_id == eid && !session.downed {
@@ -11495,6 +11567,15 @@ impl GameWorld {
         }
         for (inst, nome) in mortes_na_dungeon {
             self.dg_morreu(inst, &nome);
+        }
+        // O BAU E O KARMA (docs/MAR_ABERTO.md). Depois do laco de morte, e
+        // antes do saque cair no chao: quem derrubou leva o tesouro do
+        // conves, e quem matou inocente paga a ficha.
+        for (morto, matador) in derrubados {
+            if let Some(matador) = matador {
+                self.bau_troca_de_dono(morto, matador);
+                self.karma_por_matar(matador, morto);
+            }
         }
         // Transfere fame + aura por kill de player ANTES do despawn.
         // Fame: +20 + 50% da vitima; vitima perde 30%.
@@ -11644,6 +11725,7 @@ impl GameWorld {
         // passar por cima.
         self.sincroniza_pets();
         self.tick_pets(dt);
+        self.tick_karma(dt);
         // A montaria VISTA sai do equipamento, e equipar acontece por muitos
         // caminhos (bolsa, saque que auto-equipa, correio, mercado). Conferir
         // no tick cobre todos: sem isto, equipar nao avisava ninguem e o
@@ -12557,6 +12639,7 @@ impl GameWorld {
         struct E {
             name: String,
             zona_volta: Option<String>,
+            karma: i32,
             pos: Vec2,
             hp: Health,
             xp: u64,
@@ -12617,6 +12700,7 @@ impl GameWorld {
             };
             entries.push(E {
                 zona_volta: session.zona_volta.clone(),
+                karma: session.karma,
                 name: session.name.clone(),
                 pos,
                 hp,
@@ -12694,6 +12778,7 @@ impl GameWorld {
                 stamina: Some(e.stamina),
                 zona: self.zona_do_save(&e.name),
                 zona_volta: e.zona_volta.clone(),
+                karma: e.karma,
                 xp_bonus_ate: e.xp_bonus_ate,
                 mortes_json: e.mortes_json,
                 recuperacoes_dia: e.recuperacoes_dia,
@@ -13747,6 +13832,9 @@ impl GameWorld {
             return;
         }
         // Tenta stackar em slot existente do vault com mesmo item_id
+        if shared::item_id::e_bau_de_colosso(src.item_id) {
+            return; // o bau nao entra no banco — ver `add_to_inventory`
+        }
         let stack_max = crate::economy::item_stack_max(src.item_id);
         let mut moved = false;
         for slot in session.vault.iter_mut() {
@@ -17962,6 +18050,7 @@ impl GameWorld {
             stamina: Some(session.stamina_current),
             zona: self.zona_do_save(&session.name),
             zona_volta: session.zona_volta.clone(),
+            karma: session.karma,
             xp_bonus_ate: session.xp_bonus_ate,
             mortes_json: crate::morte::para_json(&session.mortes),
             recuperacoes_dia: session.recuperacoes_dia,
@@ -18400,6 +18489,12 @@ pub(crate) fn add_to_inventory(
     // no mesmo slot dividiriam uma instancia e teriam que ter o mesmo
     // sorteio. Por isso a checagem de espaco vem antes — `qty` bichos
     // precisam de `qty` vagas, e meio lote entregue seria pior que recusar.
+    // O BAU DO COLOSSO nao cabe na bolsa (docs/MAR_ABERTO.md). E' a primeira
+    // das quatro recusas que fazem a premissa ser verdade em vez de ser uma
+    // frase no doc: bolsa, banco, mercado e correio. Sobra o CONVES.
+    if shared::item_id::e_bau_de_colosso(item_id) {
+        return false;
+    }
     // O BARCO nasce com estado proprio (docs/MAR_ABERTO.md): casco cheio,
     // sem melhoria. Mesmo funil do bicho, e pelo mesmo motivo — craft,
     // quest, mercado, banco e grant de admin passam todos por aqui.

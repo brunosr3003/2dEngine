@@ -4,12 +4,16 @@
 //! puras, entao cliente e servidor concordam sem uma mensagem de protocolo.
 //! O painel do porto desenha exatamente o que o servidor vai cobrar.
 //!
-//! # Tres eixos, e nao quatro
+//! # Dois eixos, e nao tres
 //!
-//! **Casco**, **vela** e **porao** sao os tres verbos que o mar tem:
-//! sobreviver, atravessar, carregar. Um quarto eixo hoje seria um numero
-//! subindo com nada do outro lado. O canhao existe como `melhorias[3]` e fica
-//! zerado ate' o PvP naval.
+//! **Casco** e **vela**: sobreviver e atravessar. Eram tres — havia PORAO —
+//! ate' o dono cortar: *"nao precisa de porao, e o tesouro vai ficar no
+//! conves mesmo"*. Com o tesouro no conves, um por vez, capacidade deixou de
+//! ser uma pergunta, e um eixo que nao responde pergunta nenhuma e' um numero
+//! subindo com nada do outro lado.
+//!
+//! Os indices 2 e 3 do array ficam reservados (porao e canhao) pra o dado
+//! salvo nao precisar migrar se um deles voltar.
 //!
 //! # Nada falha
 //!
@@ -33,9 +37,12 @@ pub const MELHORIA_MAX: u8 = 5;
 pub mod eixo {
     pub const CASCO: usize = 0;
     pub const VELA: usize = 1;
-    pub const PORAO: usize = 2;
-    /// Fase 2 (PvP naval). Fica em 0 ate' la'.
-    pub const CANHAO: usize = 3;
+    /// Reservado: havia porao, e ele saiu. Ver o cabecalho.
+    pub const _PORAO: usize = 2;
+    /// Reservado pro PvP naval.
+    pub const _CANHAO: usize = 3;
+    /// Quantos eixos o estaleiro oferece hoje.
+    pub const QUANTOS: usize = 2;
 }
 
 /// (nome, casco base, +casco por nivel, vela base, +vela, porao base, +porao,
@@ -73,11 +80,6 @@ pub fn casco_max(item_id: u16, melhoria: u8) -> u16 {
 /// ~16 a AOI do mar daria menos de 2,5 s de aviso, que nao da' num celular.
 pub fn velocidade(item_id: u16, melhoria: u8) -> f32 {
     linha(item_id).map_or(9.0, |l| l.3 + l.4 * melhoria.min(MELHORIA_MAX) as f32)
-}
-
-/// Slots do porao.
-pub fn capacidade_do_porao(item_id: u16, melhoria: u8) -> u8 {
-    linha(item_id).map_or(0, |l| l.5 + l.6 * melhoria.min(MELHORIA_MAX))
 }
 
 /// Nivel de personagem pra construir este casco.

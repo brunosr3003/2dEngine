@@ -312,6 +312,16 @@ pub struct BarcoData {
     pub travessias: u32,
     /// Quantas vezes afundou. Honestidade no anuncio.
     pub afundou: u32,
+    /// O BAU no CONVES: o tesouro de chefe global sendo carregado. 0 = nada.
+    ///
+    /// Um por vez, e no barco e nao no jogador. Nao ha' porao — decisao do
+    /// dono: *"nao precisa de porao, e o tesouro vai ficar no conves mesmo"*.
+    /// Um so' mantem a marca de PK BINARIA (ou voce carrega, ou nao) e impede
+    /// uma guilda de juntar seis baus num galeao defendido.
+    pub carga: u16,
+    /// De que ilha o bau veio (indice do `ARQUIPELAGO` + 1; 0 = nenhuma). E'
+    /// o que faz a distancia valer dinheiro na entrega.
+    pub carga_de: u8,
 }
 
 /// O que o pet acumula. Fica na instancia porque o pet e' item: assim nivel e

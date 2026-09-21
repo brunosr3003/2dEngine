@@ -205,13 +205,27 @@ impl GameWorld {
         let Some(eu) = self.pos_do_jogador(sid) else {
             return;
         };
-        // O BARCO FICA AVARIADO. E' a perda do naufragio: nao o item, o
-        // casco. Quem afunda volta pro porto e paga o conserto — ou aceita o
-        // piso de graca e navega com um quarto de casco.
+        // O BARCO FICA AVARIADO e O MAR LEVA O BAU.
+        //
+        // Sao DUAS mortes, e elas nunca podem ser confundidas:
+        //
+        // - casco a zero (bicho, mar): o barco avaria e o bau vai ao FUNDO —
+        //   ninguem ganha;
+        // - morte em PvP: o barco fica INTACTO e o bau troca de dono.
+        //
+        // Se PvP tambem afundasse, o tesouro seria destruido em metade das
+        // cacadas e ninguem cacaria. Roubo tem que pagar o ladrao; o mar leva
+        // o que o mar leva.
         if let Some((_, mut d)) = self.barco_equipado(sid) {
+            let perdeu = d.carga;
             d.casco = 0;
             d.afundou = d.afundou.saturating_add(1);
+            d.carga = 0;
+            d.carga_de = 0;
             self.guarda_barco(sid, d);
+            if perdeu != 0 {
+                self.recusa_barco(sid, "O baú foi ao fundo com o casco.");
+            }
         }
         let mar = shared::mar::Mar::novo();
         let passo = self
@@ -273,6 +287,7 @@ impl GameWorld {
             P::Desembarcar => {}
             P::Reparar { pagando } => self.handle_reparar(sid, pagando),
             P::Melhorar { eixo } => self.handle_melhorar(sid, eixo),
+            P::EntregarBau => self.entregar_bau(sid),
         }
     }
 }
@@ -546,7 +561,7 @@ impl GameWorld {
         let Some((item, d)) = self.barco_equipado(sid) else {
             return;
         };
-        let custos: Vec<Vec<(u16, u32)>> = (0..3)
+        let custos: Vec<Vec<(u16, u32)>> = (0..shared::barcos::eixo::QUANTOS)
             .map(|e| {
                 let n = d.melhorias[e];
                 if n >= shared::barcos::MELHORIA_MAX {
@@ -579,6 +594,10 @@ impl GameWorld {
     fn handle_reparar(&mut self, sid: SessionId, pagando: bool) {
         if !self.no_estaleiro(sid) {
             self.recusa_barco(sid, "O Carpinteiro Naval fica no cais.");
+            return;
+        }
+        if !self.npc_atende(sid) {
+            self.recusa_barco(sid, "Nenhum NPC atende quem tem sangue nas mãos.");
             return;
         }
         let Some((item, mut d)) = self.barco_equipado(sid) else {
@@ -637,8 +656,12 @@ impl GameWorld {
             self.recusa_barco(sid, "O Carpinteiro Naval fica no cais.");
             return;
         }
+        if !self.npc_atende(sid) {
+            self.recusa_barco(sid, "Nenhum NPC atende quem tem sangue nas mãos.");
+            return;
+        }
         let e = eixo as usize;
-        if e >= 3 {
+        if e >= shared::barcos::eixo::QUANTOS {
             return;
         }
         let Some((item, mut d)) = self.barco_equipado(sid) else {
@@ -673,5 +696,273 @@ impl GameWorld {
         self.guarda_barco(sid, d);
         self.recusa_barco(sid, "O Carpinteiro trabalha. O barco melhorou.");
         self.abrir_estaleiro(sid);
+    }
+}
+
+// ────────────────────────── a marca e o karma ──────────────────────────
+
+/// Raio da bolha da Capitania, em unidades. Dentro dela ninguem apanha.
+pub const CORREDOR_DA_CAPITANIA: f32 = 12.0;
+
+impl GameWorld {
+    /// Esta sessao esta' MARCADA (PK aberto)?
+    ///
+    /// Derivada, e nao guardada: ou ha' um bau no conves, ou o rastro dele
+    /// ainda esta' quente, ou o karma passou do degrau. Nao ha' campo pra
+    /// dessincronizar nem pra esquecer de limpar — e ninguem fica atacavel
+    /// sem uma razao que ele proprio consegue ver na tela.
+    pub(super) fn marcado(&self, s: &Session, agora: i64) -> bool {
+        let com_bau = s
+            .equipment
+            .barco
+            .map(|id| shared::barcos::dados(s.equipment.barco_inst.as_ref(), id))
+            .is_some_and(|d| d.carga != 0);
+        com_bau
+            || agora < s.marcado_ate
+            || shared::karma::grau(s.karma).marcado()
+    }
+
+    /// Dentro da bolha da Capitania?
+    pub(super) fn no_corredor_da_capitania(&self, p: Vec2) -> bool {
+        let capitao = shared::construcao::Papel::Estaleiro as u8;
+        self.ecs
+            .query::<(&Position, &NpcDaVilaTag)>()
+            .iter()
+            .any(|(_, (pos, t))| {
+                shared::npc_papel_de_kind(t.rumo) == capitao
+                    && pos.0.distance(p) <= CORREDOR_DA_CAPITANIA
+            })
+    }
+
+    /// O ASSASSINO LEVA O BAU.
+    ///
+    /// Tudo o que a vitima perde e' o bau: equipamento, bolsa, ouro, barco e
+    /// casco ficam. Uma morte em PvP custa o tesouro e a volta — grande, e
+    /// sobrevivivel.
+    ///
+    /// E o matador fica MARCADO na hora, com o bau no conves dele: a cacada
+    /// continua, agora nele. Tres barcos convergindo e o bau trocando de mao
+    /// duas vezes e' exatamente o evento que isto existe pra criar.
+    pub(super) fn bau_troca_de_dono(&mut self, morto: SessionId, matador: SessionId) {
+        let Some((bau, de)) = self.tirar_bau(morto) else {
+            return;
+        };
+        if let Some(s) = self.sessions.get(&morto) {
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "SYS".into(),
+                text: "Levaram o baú do seu convés.".into(),
+            });
+        }
+        if !self.carregar_bau(matador, bau, de) {
+            // O matador nao tinha onde por: o bau cai no mar. Nao some do
+            // jogo por acidente de inventario — mas tambem nao premia quem
+            // matou sem ter barco.
+            if let Some(s) = self.sessions.get(&matador) {
+                let _ = s.handle.to_client.send(ServerMessage::Chat {
+                    from: "SYS".into(),
+                    text: "Sem convés livre, o baú afundou.".into(),
+                });
+            }
+        }
+    }
+
+    /// Cobra o karma de matar quem nao estava marcado.
+    ///
+    /// So' a MORTE cobra, e nao o toque: area necessariamente respinga em
+    /// quem passa, e punir um corte perdido seria injusto e ilegivel.
+    pub(super) fn karma_por_matar(&mut self, matador: SessionId, vitima: SessionId) {
+        let agora = (now_ms() / 1000) as i64;
+        let Some(v) = self.sessions.get(&vitima) else {
+            return;
+        };
+        // Matar quem esta' MARCADO nao e' crime nem virtude: e' o jogo.
+        if self.marcado(v, agora) {
+            return;
+        }
+        let nome_da_vitima = v.name.clone();
+        let mesma_faccao = self
+            .sessions
+            .get(&matador)
+            .is_some_and(|m| m.faction == v.faction);
+        // Faccao e' guerra consentida: as quests de faccao tem que continuar
+        // funcionando, e morrer pro lado contrario nao e' assassinato.
+        if !mesma_faccao {
+            return;
+        }
+        let Some(m) = self.sessions.get_mut(&matador) else {
+            return;
+        };
+        let repetida = m
+            .ultima_vitima
+            .as_ref()
+            .is_some_and(|(n, t)| *n == nome_da_vitima && agora - t < shared::karma::JANELA_REPETIDA_S);
+        m.karma = shared::karma::apos_matar(m.karma, repetida);
+        m.ultima_vitima = Some((nome_da_vitima, agora));
+        let g = shared::karma::grau(m.karma);
+        let _ = m.handle.to_client.send(ServerMessage::Chat {
+            from: "SYS".into(),
+            text: format!(
+                "Você matou alguém que não carregava nada. Karma {} — {}.",
+                m.karma,
+                g.nome()
+            ),
+        });
+        if g.marcado() {
+            let _ = m.handle.to_client.send(ServerMessage::Chat {
+                from: "SYS".into(),
+                text: "Agora você é o caçado: qualquer um pode te atacar, e nenhum NPC te atende."
+                    .into(),
+            });
+        }
+        self.save_pending = true;
+    }
+}
+
+impl GameWorld {
+    /// Poe um Bau do Colosso no CONVES.
+    ///
+    /// Um por vez, e a recusa e' explicita: nao ha' fila, nao ha' "pega o
+    /// segundo e larga o primeiro". Um so' mantem a marca BINARIA — ou voce
+    /// carrega, ou nao — e impede uma guilda de juntar seis baus num galeao
+    /// defendido, que transformaria a caçada numa unica batalha por ano.
+    pub(super) fn carregar_bau(&mut self, sid: SessionId, bau: u16, de_ilha: u8) -> bool {
+        let Some((_, mut d)) = self.barco_equipado(sid) else {
+            self.recusa_barco(sid, "Sem barco não há convés onde pôr o baú.");
+            return false;
+        };
+        if d.carga != 0 {
+            self.recusa_barco(sid, "Já há um baú no convés. Entregue-o primeiro.");
+            return false;
+        }
+        d.carga = bau;
+        d.carga_de = de_ilha + 1;
+        self.guarda_barco(sid, d);
+        if let Some(s) = self.sessions.get(&sid) {
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "SYS".into(),
+                text: "O baú está no convés. A partir de agora QUALQUER UM pode te atacar, \
+                       em qualquer lugar. Entregue numa Capitania de outra ilha."
+                    .into(),
+            });
+        }
+        true
+    }
+
+    /// Tira o bau do conves e devolve (item, ilha de origem).
+    fn tirar_bau(&mut self, sid: SessionId) -> Option<(u16, u8)> {
+        let (_, mut d) = self.barco_equipado(sid)?;
+        if d.carga == 0 {
+            return None;
+        }
+        let saiu = (d.carga, d.carga_de.saturating_sub(1));
+        d.carga = 0;
+        d.carga_de = 0;
+        self.guarda_barco(sid, d);
+        // O RASTRO: a marca sobrevive um minuto a entrega. Sem ele, entregar
+        // um segundo antes do golpe e' um drible — quem correu a travessia
+        // inteira atras de alguem perde no ultimo quadro.
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.marcado_ate = (now_ms() / 1000) as i64 + shared::mar::RASTRO_DA_MARCA_S;
+        }
+        Some(saiu)
+    }
+
+    /// ENTREGAR o bau na Capitania desta ilha.
+    ///
+    /// Quem abre onde o chefe caiu leva o premio de chefe e pronto — nao e'
+    /// castigo, e' o piso. Cada travessia multiplica, e cada travessia e' uma
+    /// chance de perder tudo: o jogador escolhe quanto quer apostar.
+    pub(super) fn entregar_bau(&mut self, sid: SessionId) {
+        if !self.no_cais(sid) {
+            self.recusa_barco(sid, "A entrega é na Capitania, no cais.");
+            return;
+        }
+        let aqui = shared::terreno::ARQUIPELAGO
+            .iter()
+            .position(|d| d.zona == self.zona)
+            .unwrap_or(0) as u8;
+        let Some((bau, de)) = self.tirar_bau(sid) else {
+            return;
+        };
+        let saltos = shared::mar::saltos_entre(de, aqui);
+        let mult = shared::mar::multiplicador_da_carga(saltos);
+        let cor = (bau - shared::item_id::BAU_COLOSSO_BASE) as u8 + 1;
+        let nivel = match cor {
+            1 => 14u32,
+            2 => 30,
+            3 => 42,
+            4 => 55,
+            _ => 60,
+        };
+        let ouro = ((200 + 30 * nivel) as f32 * mult) as u64;
+        let cobre = ((300 + 40 * nivel) as f32 * mult) as u32;
+        let darksteel = ((60 + 10 * nivel) as f32 * mult) as u32;
+        let material = shared::item_id::na_cor(shared::item_id::STEEL, cor.min(4));
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        s.gold = s.gold.saturating_add(ouro);
+        Self::pagar_em_cobre(s, cobre, "bau_do_colosso");
+        add_to_inventory(&mut s.inventory, shared::item_id::DARKSTEEL, darksteel, None);
+        add_to_inventory(&mut s.inventory, material, 2 + nivel / 12, None);
+        // A CHAVE garantida, mas so' a partir de uma travessia. E' a cenoura
+        // da travessia inteira: chefe do mundo da' chave a 5/3/2%, e uma
+        // garantida que custou um mar e uma marca nas costas e' coisa nova.
+        if saltos > 0 {
+            if let Some(chave) = shared::item_id::CHAVES.first() {
+                add_to_inventory(
+                    &mut s.inventory,
+                    shared::item_id::chave_na_cor(*chave, cor.min(5)),
+                    1,
+                    None,
+                );
+            }
+        }
+        s.inventory_dirty = true;
+        let _ = s.handle.to_client.send(ServerMessage::Chat {
+            from: "SYS".into(),
+            text: format!(
+                "Baú entregue após {saltos} travessia(s) — x{mult:.1}: {ouro} ouro, \
+                 {cobre} cobre e {darksteel} darksteel."
+            ),
+        });
+        self.save_pending = true;
+    }
+}
+
+impl GameWorld {
+    /// O karma DECAI com tempo de jogo.
+    ///
+    /// Com tempo ONLINE e nao com tempo de relogio, de proposito: deslogar
+    /// nao pode ser a forma barata de limpar a ficha. Uma morte custa uma
+    /// hora jogando — um preco que o jogador consegue guardar, e karma so'
+    /// funciona se ele souber o preco antes de matar.
+    pub(super) fn tick_karma(&mut self, dt: f32) {
+        for s in self.sessions.values_mut() {
+            if !s.logged_in || s.karma <= 0 {
+                continue;
+            }
+            let antes = shared::karma::grau(s.karma);
+            s.karma = shared::karma::apos_jogar(s.karma, dt);
+            let depois = shared::karma::grau(s.karma);
+            if antes != depois {
+                let _ = s.handle.to_client.send(ServerMessage::Chat {
+                    from: "SYS".into(),
+                    text: format!("Sua ficha melhorou: {}.", depois.nome()),
+                });
+            }
+        }
+    }
+
+    /// O NPC atende este jogador?
+    ///
+    /// A punicao com mais dentes e a mais barata de escrever: nao ha' guarda
+    /// com IA, nao ha' perseguicao. O Criminoso simplesmente nao consegue
+    /// CONSERTAR O CASCO — e um barco que nao repara nao navega. O mar cospe
+    /// ele pra fora sozinho.
+    pub(super) fn npc_atende(&self, sid: SessionId) -> bool {
+        self.sessions
+            .get(&sid)
+            .is_none_or(|s| shared::karma::grau(s.karma).npc_atende())
     }
 }
