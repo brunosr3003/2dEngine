@@ -603,8 +603,91 @@ pub fn yaw_lateral(a: &Anatomia, e: &Entrada) -> f32 {
     std::f32::consts::FRAC_PI_2 * andando * (1.0 - golpe(e.golpe).ergue)
 }
 
+/// Altura do boneco, em unidades de mundo. Nao ha' constante pra isso: o
+/// personagem e' um rig de voxels e a altura sai da malha. 1,8 e' a medida
+/// que o resto do jogo assume (`PULO_ALTURA` e' exatamente um corpo).
+#[cfg(test)]
+const ALTURA_DO_JOGADOR: f32 = 1.8;
+
+/// Altura em unidades de mundo de um pet, ja' com a escala da criatura.
+/// Existe pra os testes de porte falarem do numero que o jogador ve'.
+#[cfg(test)]
+fn altura_do_pet(e: &shared::pets::Especie) -> f32 {
+    BICHOS
+        .iter()
+        .find(|(n, _)| *n == e.bicho)
+        .map_or(0.0, |(_, a)| a * e.escala)
+}
+
+#[cfg(test)]
+fn altura_da_montaria(e: &shared::montarias::Especie) -> f32 {
+    BICHOS
+        .iter()
+        .find(|(n, _)| *n == e.bicho)
+        .map_or(0.0, |(_, a)| a * e.escala)
+}
+
 #[cfg(test)]
 mod tests {
+    /// PET e' bichinho: nenhum chega perto do porte de uma montaria, e a
+    /// escada cresce de leve em vez de dar um salto no topo.
+    ///
+    /// O filhote de dragao saiu com 0,91 na primeira versao — quase o dobro
+    /// dos outros pets e metade de um jogador — porque a altura do catalogo
+    /// (`BICHOS`) e' a do bicho ADULTO, e o dragao vem com 2,4.
+    #[test]
+    fn nenhum_pet_chega_ao_tamanho_de_montaria() {
+        let menor_montaria = shared::montarias::ESPECIES
+            .iter()
+            .map(altura_da_montaria)
+            .fold(f32::MAX, f32::min);
+        let mut anterior = 0.0f32;
+        for e in shared::pets::ESPECIES.iter() {
+            let h = altura_do_pet(e);
+            assert!(h > 0.0, "{}: sem modelo em BICHOS", e.nome);
+            assert!(
+                h < menor_montaria * 0.5,
+                "{} tem {h:.2} — perto da montaria mais baixa ({menor_montaria:.2})",
+                e.nome
+            );
+            assert!(
+                h >= anterior - 0.01,
+                "{} ({h:.2}) encolheu em relacao ao grau anterior ({anterior:.2})",
+                e.nome
+            );
+            anterior = h;
+        }
+        // E o topo nao dispara: o dragao e' filhote, nao um dragao pequeno.
+        let topo = altura_do_pet(shared::pets::ESPECIES.last().unwrap());
+        let base = altura_do_pet(&shared::pets::ESPECIES[0]);
+        assert!(topo < base * 1.6, "o topo ({topo:.2}) dobrou a base ({base:.2})");
+    }
+
+    /// MONTARIA nao pode ser mais baixa que quem monta, e a escada sobe: o
+    /// dragao tem que ser visivelmente maior que o cervo.
+    #[test]
+    fn a_montaria_e_maior_que_o_jogador_e_a_escada_sobe() {
+        let mut anterior = 0.0f32;
+        for e in shared::montarias::ESPECIES.iter() {
+            let h = altura_da_montaria(e);
+            assert!(h > 0.0, "{}: sem modelo em BICHOS", e.nome);
+            assert!(
+                h > ALTURA_DO_JOGADOR * 0.75,
+                "{} tem {h:.2}: montaria mais baixa que quem monta nao le' como montaria",
+                e.nome
+            );
+            assert!(h > anterior, "{} ({h:.2}) nao passou do grau anterior ({anterior:.2})", e.nome);
+            // A sela pousa no lombo: nem no chao, nem acima da cabeca.
+            assert!(
+                e.sela > h * 0.45 && e.sela < h,
+                "{}: sela {:.2} fora do lombo (altura {h:.2})",
+                e.nome,
+                e.sela
+            );
+            anterior = h;
+        }
+    }
+
     use super::*;
 
     const PATAS: [(bool, bool); 4] = [(true, true), (true, false), (false, true), (false, false)];
