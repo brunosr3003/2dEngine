@@ -2790,8 +2790,9 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     // do pet: item de bolsa, pilha 1, slot proprio, sem atributo no template
     // (o que ela da' entra como ponto alocado em `effective_stats`).
     for e in shared::montarias::ESPECIES {
-        for grau in 1..=shared::montarias::GRAU_MAX {
-            let id = item_id::montaria_no_grau(e.base, grau) as i32;
+        {
+            let grau = e.grau;
+            let id = item_id::montaria_no_grau(item_id::MONTARIA_BASE, grau) as i32;
             let nome = shared::montarias::nome_do_item(id as u16).unwrap_or_default();
             let venda = 200i32 * (grau as i32) * (grau as i32);
             sqlx::query(
@@ -2832,8 +2833,9 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     // Eles nao tem atributo no template: o que o pet da' entra como PONTO
     // ALOCADO em `effective_stats`, nao como bonus de item.
     for e in shared::pets::ESPECIES {
-        for grau in 1..=shared::pets::GRAU_MAX {
-            let id = item_id::pet_no_grau(e.base, grau) as i32;
+        {
+            let grau = e.grau;
+            let id = item_id::pet_no_grau(item_id::PET_BASE, grau) as i32;
             let nome = shared::pets::nome_do_item(id as u16).unwrap_or_default();
             let venda = 100i32 * (grau as i32) * (grau as i32);
             sqlx::query(

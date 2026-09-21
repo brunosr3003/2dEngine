@@ -38,13 +38,32 @@ BICHOS = [
     ("tigre",        "tiger",   2600),
     ("owlbear",      "owlbear", 2600),
     ("lobo",         "wolf",   12000),   # o chefe
+    # A escada de pet e montaria: uma CRIATURA por cor, e nao a mesma
+    # tingida (docs/PETS.md, docs/MONTARIAS.md). Orcamento de mob comum —
+    # o laranja aparece pouco, mas aparece ao lado de outros jogadores.
+    ("cervo",        "deer",       2600),
+    ("hipogrifo",    "hippogriff", 3400),   # tem asa
+    ("dragao",       "dragon",     3800),   # tem asa
+    ("porco",        "pig",        2200),
 ]
 
 # arquivo do zone14 -> nome da peca no jogo (ver `bicho::junta_de`)
+# Cada bicho do zone14 nomeia a pata do jeito dele — `paw` no lobo, `hoof` no
+# veado e no hipogrifo, `trotter` no porco, `talon` nas garras da frente do
+# hipogrifo. Todos caem nas MESMAS quatro juntas do cliente: o que muda e' o
+# desenho, nao o esqueleto.
 PECAS = {
     "body": "tronco", "head": "cabeca", "neck": "pescoco", "tail": "cauda",
     "paw_front_right": "pata_fd", "paw_front_left": "pata_fe",
     "paw_back_right": "pata_td", "paw_back_left": "pata_te",
+    "hoof_front_right": "pata_fd", "hoof_front_left": "pata_fe",
+    "hoof_back_right": "pata_td", "hoof_back_left": "pata_te",
+    "trotter_front_right": "pata_fd", "trotter_front_left": "pata_fe",
+    "trotter_back_right": "pata_td", "trotter_back_left": "pata_te",
+    "talon_front_right": "pata_fd", "talon_front_left": "pata_fe",
+    "wing_right": "asa_d", "wing_left": "asa_e",
+    # Alguns so' tem cabeca e pescoco num arquivo so'.
+    "head_snout": "cabeca", "head_antlers": "cabeca",
 }
 
 

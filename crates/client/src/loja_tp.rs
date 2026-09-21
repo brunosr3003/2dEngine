@@ -2066,7 +2066,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
         (
             6,
             EntityTag::Player,
-            shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_TIGRE, 4),
+            shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, 4),
             vec2(-2.5, -4.2),
             shared::ent_flags::MONTADO,
         ),

@@ -1595,7 +1595,7 @@ mod testes {
         assert_eq!(peca(item_id::HIDE_LENDARIA).grau(), 5);
         for grau in 1..=shared::pets::GRAU_MAX {
             assert_eq!(
-                peca(item_id::pet_no_grau(item_id::PET_URSO, grau)).grau(),
+                peca(item_id::pet_no_grau(item_id::PET_BASE, grau)).grau(),
                 grau
             );
         }
@@ -1617,7 +1617,7 @@ mod testes {
     #[test]
     fn o_pet_pega_a_cor_do_grau_pelo_id() {
         for grau in 1..=shared::pets::GRAU_MAX {
-            let id = item_id::pet_no_grau(item_id::PET_TIGRE, grau);
+            let id = item_id::pet_no_grau(item_id::PET_BASE, grau);
             let p = Peca {
                 id,
                 qty: 1,

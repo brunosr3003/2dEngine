@@ -8,21 +8,28 @@
 //! **Nao ha' nivel** — de proposito. O pet tem, porque ele trabalha; a
 //! montaria so' leva voce de um lado pro outro.
 //!
-//! O que a cor da': **velocidade**. O que a especie da': **atributo**. A cor
-//! tambem e' a APARENCIA — a tinta do grau substituiu o sistema de skins, que
-//! saiu inteiro.
+//! **A COR E' A CRIATURA.** Nao ha' especie separada do grau: cinza e' um
+//! cervo, verde um lobo, azul um tigre, roxo um hipogrifo e laranja um
+//! dragao. Antes eram tres especies tingidas de cinco cores, e o dono resumiu
+//! o problema em 20/09/2026: "sao os mesmos, so' muda a cor; eu quero que
+//! tenham realmente mounts diferentes para cada cor". Subir de grau agora e'
+//! trocar de bicho, e e' isso que faz combinar valer a pena.
+//!
+//! Cada criatura tem a sua afinidade de atributo, entao a cor decide as duas
+//! coisas: a velocidade E o que ela empresta.
 
 use crate::constants::{item_id, stat_idx, STAT_COUNT};
 
-/// Quantas especies de montaria existem.
-pub const ESPECIE_COUNT: usize = 3;
+/// Quantas criaturas — uma por grau.
+pub const ESPECIE_COUNT: usize = 5;
 /// Ultimo grau (1 cinza .. 5 laranja).
 pub const GRAU_MAX: u8 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Especie {
-    /// id da montaria CINZA desta especie (e a chave do catalogo).
-    pub base: u16,
+    /// O grau desta criatura (1 cinza .. 5 laranja). E' tambem a posicao
+    /// dela em `ESPECIES`.
+    pub grau: u8,
     pub nome: &'static str,
     /// Arquivo do bicho em pecas (`client::bicho::BICHOS`).
     pub bicho: &'static str,
@@ -40,19 +47,30 @@ pub struct Especie {
 /// Os pesos de `afinidade` somam isto.
 pub const PESO_TOTAL: u8 = 10;
 
+/// A escada: do bicho de carga ao dragao. A ordem E' o grau.
 pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
     Especie {
-        base: item_id::MONTARIA_LOBO,
+        grau: 1,
+        nome: "Cervo do Bosque",
+        bicho: "bichos/cervo",
+        escala: 0.80,
+        sela: 1.22,
+        sela_frente: -0.34,
+        afinidade: pesos(&[(stat_idx::SPD, 6), (stat_idx::DES, 4)]),
+        descricao: "Manso e ligeiro. A primeira montaria de qualquer um.",
+    },
+    Especie {
+        grau: 2,
         nome: "Lobo da Clareira",
         bicho: "bichos/lobo",
         escala: 0.56,
         sela: 1.26,
         sela_frente: -0.38,
-        afinidade: pesos(&[(stat_idx::SPD, 6), (stat_idx::DES, 4)]),
+        afinidade: pesos(&[(stat_idx::DES, 6), (stat_idx::SPD, 4)]),
         descricao: "Leal e ligeiro, criado nas matas do Bosque.",
     },
     Especie {
-        base: item_id::MONTARIA_TIGRE,
+        grau: 3,
         nome: "Tigre das Neves",
         bicho: "bichos/tigre",
         escala: 1.6,
@@ -62,14 +80,24 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         descricao: "Silencioso na neve, feroz na estrada.",
     },
     Especie {
-        base: item_id::MONTARIA_URSO,
-        nome: "Urso de Carga",
-        bicho: "bichos/urso",
-        escala: 1.3,
-        sela: 1.32,
+        grau: 4,
+        nome: "Hipogrifo",
+        bicho: "bichos/hipogrifo",
+        escala: 1.15,
+        sela: 1.34,
         sela_frente: -0.30,
-        afinidade: pesos(&[(stat_idx::VIT, 6), (stat_idx::RES, 4)]),
-        descricao: "Devagar no passo, difícil de derrubar.",
+        afinidade: pesos(&[(stat_idx::INT, 5), (stat_idx::SPD, 5)]),
+        descricao: "Meio águia, meio cavalo. Não anda: quase voa.",
+    },
+    Especie {
+        grau: 5,
+        nome: "Dragão",
+        bicho: "bichos/dragao",
+        escala: 1.05,
+        sela: 1.42,
+        sela_frente: -0.26,
+        afinidade: pesos(&[(stat_idx::FOR, 4), (stat_idx::VIT, 3), (stat_idx::INT, 3)]),
+        descricao: "O topo. Quem monta um, todo mundo vê de longe.",
     },
 ];
 
@@ -83,20 +111,22 @@ const fn pesos(pares: &[(usize, u8)]) -> [u8; STAT_COUNT] {
     v
 }
 
-pub fn especie(base: u16) -> Option<&'static Especie> {
-    ESPECIES.iter().find(|e| e.base == base)
+/// A criatura de um grau (1..=5).
+pub fn especie(grau: u8) -> Option<&'static Especie> {
+    ESPECIES.get(grau.clamp(1, GRAU_MAX) as usize - 1)
 }
 
-/// (especie, grau) de um id de montaria.
+/// (criatura, grau) de um id de montaria.
 pub fn de_item(item_id: u16) -> Option<(&'static Especie, u8)> {
-    let (base, grau) = item_id::montaria_de_id(item_id)?;
-    Some((especie(base)?, grau))
+    let (_, grau) = item_id::montaria_de_id(item_id)?;
+    Some((especie(grau)?, grau))
 }
 
-/// "Tigre das Neves Azul".
+/// "Tigre das Neves". O nome JA' diz o grau — a criatura e' o grau —, entao
+/// nao se cola a cor atras dele como se fazia quando eram tres especies
+/// tingidas de cinco jeitos.
 pub fn nome_do_item(id: u16) -> Option<String> {
-    let (e, grau) = de_item(id)?;
-    Some(format!("{} {}", e.nome, crate::pets::nome_do_grau(grau)))
+    Some(de_item(id)?.0.nome.to_string())
 }
 
 // ─────────────────────────── o que a cor muda ───────────────────────────
@@ -150,10 +180,10 @@ pub fn pontos_por_stat(item_id: u16) -> [u32; STAT_COUNT] {
 /// pergaminho de pet.
 pub const CHANCES_DO_PERGAMINHO: [u8; GRAU_MAX as usize] = [55, 28, 12, 4, 1];
 
-/// Sorteia (especie, grau). `r_especie` e `r_grau` em 0..1.
-pub fn rolar(r_especie: f32, r_grau: f32) -> (u16, u8) {
-    let i = ((r_especie.clamp(0.0, 0.999_999) * ESPECIE_COUNT as f32) as usize)
-        .min(ESPECIE_COUNT - 1);
+/// Sorteia (base, grau). `_r_especie` sobrou do tempo em que especie e grau
+/// eram sorteios separados: agora a criatura E' o grau, entao so' o segundo
+/// dado decide. Mantido na assinatura pra nao mexer em quem chama.
+pub fn rolar(_r_especie: f32, r_grau: f32) -> (u16, u8) {
     let alvo = (r_grau.clamp(0.0, 0.999_999) * 100.0) as u16;
     let mut soma = 0u16;
     let mut grau = GRAU_MAX;
@@ -164,7 +194,7 @@ pub fn rolar(r_especie: f32, r_grau: f32) -> (u16, u8) {
             break;
         }
     }
-    (ESPECIES[i].base, grau)
+    (item_id::MONTARIA_BASE, grau)
 }
 
 /// Montarias consumidas por tentativa de combinar.
@@ -195,25 +225,37 @@ pub const fn cobre_de_combinar(entrada: u8) -> u32 {
 mod testes {
     use super::*;
 
+    /// O id carrega o GRAU, e o grau E' a criatura: cinco ids, cinco bichos
+    /// diferentes. Subir de cor e' trocar de bicho.
     #[test]
-    fn o_id_carrega_a_especie_e_o_grau() {
-        for e in ESPECIES {
-            for grau in 1..=GRAU_MAX {
-                let id = item_id::montaria_no_grau(e.base, grau);
-                assert_eq!(item_id::montaria_de_id(id), Some((e.base, grau)));
-                assert_eq!(de_item(id).map(|(x, g)| (x.base, g)), Some((e.base, grau)));
-                assert_eq!(
-                    crate::equip_slot_of(id),
-                    Some(crate::EquipSlot::Montaria),
-                    "montaria tem que equipar no slot dela"
-                );
-            }
+    fn o_id_carrega_a_criatura_e_o_grau() {
+        let mut bichos = std::collections::HashSet::new();
+        for grau in 1..=GRAU_MAX {
+            let id = item_id::montaria_no_grau(item_id::MONTARIA_BASE, grau);
+            assert_eq!(
+                item_id::montaria_de_id(id),
+                Some((item_id::MONTARIA_BASE, grau))
+            );
+            let (c, g) = de_item(id).expect("id de montaria");
+            assert_eq!(g, grau);
+            assert_eq!(c.grau, grau, "a posicao no catalogo E' o grau");
+            assert!(
+                bichos.insert(c.bicho),
+                "grau {grau} repete o bicho {}: a cor tem que ser outra CRIATURA",
+                c.bicho
+            );
+            assert_eq!(
+                crate::equip_slot_of(id),
+                Some(crate::EquipSlot::Montaria),
+                "montaria tem que equipar no slot dela"
+            );
         }
-        assert_eq!(item_id::montaria_de_id(item_id::MONTARIA_LOBO - 1), None);
+        assert_eq!(bichos.len(), GRAU_MAX as usize);
+        assert_eq!(item_id::montaria_de_id(item_id::MONTARIA_BASE - 1), None);
         assert_eq!(item_id::montaria_de_id(item_id::MONTARIA_ULTIMA + 1), None);
         // Nao se confunde com pet: as duas familias sao ids seguidos.
-        assert_eq!(item_id::pet_de_id(item_id::MONTARIA_LOBO), None);
-        assert_eq!(item_id::montaria_de_id(item_id::PET_LOBO), None);
+        assert_eq!(item_id::pet_de_id(item_id::MONTARIA_BASE), None);
+        assert_eq!(item_id::montaria_de_id(item_id::PET_BASE), None);
     }
 
     /// O cinza tem que valer o que a montaria unica valia antes, senao a
@@ -238,10 +280,8 @@ mod testes {
                 "{}: os pesos tem que somar {PESO_TOTAL}",
                 e.nome
             );
-            for grau in 1..=GRAU_MAX {
-                let id = item_id::montaria_no_grau(e.base, grau);
-                assert_eq!(pontos_por_stat(id).iter().sum::<u32>(), pontos(grau));
-            }
+            let id = item_id::montaria_no_grau(item_id::MONTARIA_BASE, e.grau);
+            assert_eq!(pontos_por_stat(id).iter().sum::<u32>(), pontos(e.grau));
         }
         assert_eq!(pontos_por_stat(item_id::GOLD), [0; STAT_COUNT]);
         // A montaria da' MENOS que o pet no mesmo grau: ela so' anda.
@@ -256,11 +296,12 @@ mod testes {
             CHANCES_DO_PERGAMINHO.iter().map(|c| *c as u16).sum::<u16>(),
             100
         );
-        assert_eq!(rolar(0.0, 0.0), (item_id::MONTARIA_LOBO, 1));
+        assert_eq!(rolar(0.0, 0.0), (item_id::MONTARIA_BASE, 1));
         assert_eq!(rolar(0.999, 0.999).1, GRAU_MAX);
+        // A criatura E' o grau: o primeiro dado nao muda mais nada.
         for k in 0..ESPECIE_COUNT {
             let r = (k as f32 + 0.5) / ESPECIE_COUNT as f32;
-            assert_eq!(rolar(r, 0.0).0, ESPECIES[k].base);
+            assert_eq!(rolar(r, 0.0), (item_id::MONTARIA_BASE, 1));
         }
     }
 }

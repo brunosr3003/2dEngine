@@ -108,7 +108,7 @@ impl PetsUi {
         estilo::texto_centro_forte(
             palco.center().x,
             palco.y + palco.h - 14.0 * f,
-            &format!("{} {}", especie.nome, shared::pets::nome_do_grau(grau)),
+            especie.nome,
             19,
             cor,
         );
@@ -349,7 +349,7 @@ pub async fn previa(vox: &VoxCache, solido: &Material) {
     let mut ui = PetsUi::default();
     ui.abrir();
     let mut equip = shared::Equipment::default();
-    let pet = shared::item_id::pet_no_grau(shared::item_id::PET_TIGRE, 4);
+    let pet = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 4);
     let agora = 1_700_000_000i64;
     let mut inst = shared::items::ItemInstance::vazia_de_grau(4);
     inst.pet = Some(PetData {
@@ -369,10 +369,10 @@ pub async fn previa(vox: &VoxCache, solido: &Material) {
     };
     let bolsa = vec![
         item(shared::item_id::RACAO_DE_PET, 7),
-        item(shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 2), 3),
-        item(shared::item_id::pet_no_grau(shared::item_id::PET_URSO, 1), 1),
+        item(shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 2), 3),
+        item(shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 1), 1),
         item(
-            shared::item_id::pet_no_grau(shared::item_id::PET_CARANGUEJO, 3),
+            shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 3),
             1,
         ),
     ];

@@ -408,7 +408,7 @@ mod testes {
         w.sincroniza_pets();
         assert!(pet_de(&w).is_none(), "sem pet equipado nao nasce nada");
 
-        let id = shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 3);
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 3);
         w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
         w.sincroniza_pets();
         assert!(pet_de(&w).is_some());
@@ -424,7 +424,7 @@ mod testes {
     #[test]
     fn o_pet_anda_ate_o_saque_e_credita_no_dono() {
         let (mut w, sid) = mundo();
-        let id = shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 5);
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 5);
         w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
         w.sincroniza_pets();
         let saque = poe_saque(&mut w, Vec2::new(6.0, 0.0), shared::item_id::COPPER, 40);
@@ -454,7 +454,7 @@ mod testes {
     #[test]
     fn ouro_vai_pro_saldo_e_o_saque_longe_demais_fica_onde_esta() {
         let (mut w, sid) = mundo();
-        let id = shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 1);
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 1);
         w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
         w.sincroniza_pets();
         poe_saque(&mut w, Vec2::new(3.0, 0.0), shared::item_id::GOLD, 250);
@@ -492,7 +492,7 @@ mod testes {
     #[test]
     fn so_pet_alimentado_recebe_experiencia() {
         let (mut w, sid) = mundo();
-        let id = shared::item_id::pet_no_grau(shared::item_id::PET_TIGRE, 2);
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 2);
         w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
 
         w.sessions.get_mut(&sid).unwrap().somar_xp(1_000);
@@ -525,7 +525,7 @@ mod testes {
     #[test]
     fn skill_de_pet_precisa_de_slot_aberto() {
         let (mut w, sid) = mundo();
-        let id = shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 3);
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 3);
         w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
         poe_na_bolsa(&mut w, sid, shared::item_id::SKILL_PET_FARO, 2);
 
@@ -599,7 +599,7 @@ mod testes {
     #[test]
     fn o_pet_reaparece_quando_o_dono_teleporta() {
         let (mut w, sid) = mundo();
-        let id = shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 1);
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 1);
         w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
         w.sincroniza_pets();
         let (_, antes) = pet_de(&w).expect("nasceu");
@@ -635,7 +635,7 @@ mod testes {
     #[test]
     fn o_pet_segue_o_dono_pra_dungeon() {
         let (mut w, sid) = mundo();
-        let id = shared::item_id::pet_no_grau(shared::item_id::PET_URSO, 2);
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 2);
         w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
         w.sincroniza_pets();
         let inst_do_pet = |w: &GameWorld| {
@@ -666,7 +666,7 @@ mod testes {
         let (mut w, sid) = mundo();
         assert_eq!(w.sessions[&sid].montaria_vista, None);
 
-        let id = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_TIGRE, 3);
+        let id = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, 3);
         w.sessions.get_mut(&sid).unwrap().equipment.montaria = Some(id);
         w.sincroniza_montarias();
         assert_eq!(
@@ -692,8 +692,8 @@ mod testes {
     /// A cor da montaria e' que manda na velocidade de quem monta.
     #[test]
     fn a_cor_da_montaria_muda_a_velocidade() {
-        let cinza = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_LOBO, 1);
-        let laranja = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_LOBO, 5);
+        let cinza = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, 1);
+        let laranja = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, 5);
         let vel = |id| {
             shared::loja::velocidade_de_andar(
                 shared::PLAYER_SPEED,
@@ -749,7 +749,7 @@ mod testes {
     #[test]
     fn o_pet_de_quem_nao_matou_espera_a_janela_de_prioridade() {
         let (mut w, sid) = mundo();
-        let id = shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 5);
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 5);
         w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
         w.sincroniza_pets();
         // Caiu agora, e quem matou foi OUTRO corpo.
@@ -789,7 +789,7 @@ mod testes {
     #[test]
     fn o_pet_de_quem_matou_pega_dentro_da_janela() {
         let (mut w, sid) = mundo();
-        let id = shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 5);
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 5);
         w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
         w.sincroniza_pets();
         let meu = w.sessions[&sid].entity_id;
@@ -819,7 +819,7 @@ mod testes {
     #[test]
     fn bolsa_cheia_nao_vira_laco() {
         let (mut w, sid) = mundo();
-        let id = shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 5);
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 5);
         {
             let s = w.sessions.get_mut(&sid).unwrap();
             s.equipment.pet = Some(id);

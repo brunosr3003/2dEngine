@@ -13,15 +13,16 @@
 
 use crate::constants::{item_id, stat_idx, STAT_COUNT};
 
-/// Quantas especies existem.
+/// Quantas criaturas — uma por grau.
 pub const ESPECIE_COUNT: usize = 5;
 /// Ultimo grau (1 cinza, 2 verde, 3 azul, 4 roxo, 5 laranja).
 pub const GRAU_MAX: u8 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Especie {
-    /// id do pet CINZA desta especie (e a chave do catalogo).
-    pub base: u16,
+    /// O grau desta criatura (1 cinza .. 5 laranja). E' tambem a posicao
+    /// dela em `ESPECIES`.
+    pub grau: u8,
     pub nome: &'static str,
     /// Modelo em `client::bicho::BICHOS`.
     pub bicho: &'static str,
@@ -36,51 +37,52 @@ pub struct Especie {
 /// Os pesos de `afinidade` somam isto.
 pub const PESO_TOTAL: u8 = 10;
 
+/// A escada do pet: do bichinho de quintal ao filhote de dragao. A ordem E'
+/// o grau — subir de cor e' trocar de bicho, nao repintar o mesmo.
 pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
     Especie {
-        base: item_id::PET_LOBO,
-        nome: "Lobinho",
+        grau: 1,
+        nome: "Porquinho",
+        bicho: "bichos/porco",
+        escala: 0.62,
+        // VIT 6, RES 4 — o gordinho aguenta.
+        afinidade: pesos(&[(stat_idx::VIT, 6), (stat_idx::RES, 4)]),
+        descricao: "Come tudo e não reclama. Vitalidade.",
+    },
+    Especie {
+        grau: 2,
+        nome: "Filhote de Lobo",
         bicho: "bichos/lobo_pequeno",
         escala: 0.55,
-        // DES 6, SPD 4 — o pet do ataque rapido.
         afinidade: pesos(&[(stat_idx::DES, 6), (stat_idx::SPD, 4)]),
         descricao: "Rápido e curioso. Destreza e velocidade.",
     },
     Especie {
-        base: item_id::PET_URSO,
-        nome: "Ursinho",
-        bicho: "bichos/urso",
-        escala: 0.42,
-        afinidade: pesos(&[(stat_idx::VIT, 6), (stat_idx::RES, 4)]),
-        descricao: "Pesado e teimoso. Vitalidade e resistência.",
-    },
-    Especie {
-        base: item_id::PET_TIGRE,
+        grau: 3,
         nome: "Filhote de Tigre",
         bicho: "bichos/tigre",
-        escala: 0.5,
-        afinidade: pesos(&[(stat_idx::FOR, 6), (stat_idx::DES, 4)]),
-        descricao: "Caçador nato. Força e destreza.",
+        escala: 0.42,
+        afinidade: pesos(&[(stat_idx::FOR, 5), (stat_idx::DES, 5)]),
+        descricao: "Caçador desde pequeno. Força e destreza.",
     },
     Especie {
-        base: item_id::PET_OWLBEAR,
-        nome: "Corujinha-urso",
+        grau: 4,
+        nome: "Corujurso",
         bicho: "bichos/owlbear",
-        escala: 0.36,
-        afinidade: pesos(&[(stat_idx::INT, 7), (stat_idx::VIT, 3)]),
-        descricao: "Estranho e sábio. Inteligência — o pet da arma mágica.",
+        escala: 0.40,
+        afinidade: pesos(&[(stat_idx::INT, 5), (stat_idx::FOR, 5)]),
+        descricao: "Estranho e sábio. O pet da arma mágica.",
     },
     Especie {
-        base: item_id::PET_CARANGUEJO,
-        nome: "Caranguejinho",
-        bicho: "bichos/caranguejo",
-        escala: 0.7,
-        afinidade: pesos(&[(stat_idx::RES, 7), (stat_idx::VIT, 3)]),
-        descricao: "Anda de lado e não larga. Resistência.",
+        grau: 5,
+        nome: "Filhote de Dragão",
+        bicho: "bichos/dragao",
+        escala: 0.38,
+        afinidade: pesos(&[(stat_idx::FOR, 4), (stat_idx::INT, 3), (stat_idx::VIT, 3)]),
+        descricao: "Pequeno, e já sabe disso. O topo da escada.",
     },
 ];
 
-/// Monta o vetor de pesos em tempo de compilacao.
 const fn pesos(pares: &[(usize, u8)]) -> [u8; STAT_COUNT] {
     let mut v = [0u8; STAT_COUNT];
     let mut i = 0;
@@ -91,20 +93,21 @@ const fn pesos(pares: &[(usize, u8)]) -> [u8; STAT_COUNT] {
     v
 }
 
-pub fn especie(base: u16) -> Option<&'static Especie> {
-    ESPECIES.iter().find(|e| e.base == base)
+/// A criatura de um grau (1..=5).
+pub fn especie(grau: u8) -> Option<&'static Especie> {
+    ESPECIES.get(grau.clamp(1, GRAU_MAX) as usize - 1)
 }
 
-/// (especie, grau) de um id de pet.
+/// (criatura, grau) de um id de pet.
 pub fn de_item(item_id: u16) -> Option<(&'static Especie, u8)> {
-    let (base, grau) = item_id::pet_de_id(item_id)?;
-    Some((especie(base)?, grau))
+    let (_, grau) = item_id::pet_de_id(item_id)?;
+    Some((especie(grau)?, grau))
 }
 
-/// Nome completo com o grau: "Lobinho Azul".
+/// O nome JA' diz o grau — a criatura E' o grau —, entao nao se cola a cor
+/// atras dele como quando eram cinco especies tingidas de cinco jeitos.
 pub fn nome_do_item(id: u16) -> Option<String> {
-    let (e, grau) = de_item(id)?;
-    Some(format!("{} {}", e.nome, nome_do_grau(grau)))
+    Some(de_item(id)?.0.nome.to_string())
 }
 
 pub fn nome_do_grau(grau: u8) -> &'static str {
@@ -473,9 +476,11 @@ pub fn pontos_por_stat(item_id: u16, d: &crate::items::PetData) -> [u32; STAT_CO
 /// pro quinto grau.
 pub const CHANCES_DO_PERGAMINHO: [u8; GRAU_MAX as usize] = [55, 28, 12, 4, 1];
 
-/// Sorteia (especie, grau) do pergaminho. `r_especie` e `r_grau` em 0..1.
-pub fn rolar(r_especie: f32, r_grau: f32) -> (u16, u8) {
-    let i = ((r_especie.clamp(0.0, 0.999_999) * ESPECIE_COUNT as f32) as usize).min(ESPECIE_COUNT - 1);
+/// Sorteia (base, grau) do pergaminho. `_r_especie` sobrou do tempo em que
+/// especie e grau eram sorteios separados: agora a criatura E' o grau, entao
+/// so' o segundo dado decide. Mantido na assinatura pra nao mexer em quem
+/// chama.
+pub fn rolar(_r_especie: f32, r_grau: f32) -> (u16, u8) {
     let alvo = (r_grau.clamp(0.0, 0.999_999) * 100.0) as u16;
     let mut soma = 0u16;
     let mut grau = GRAU_MAX;
@@ -486,7 +491,7 @@ pub fn rolar(r_especie: f32, r_grau: f32) -> (u16, u8) {
             break;
         }
     }
-    (ESPECIES[i].base, grau)
+    (item_id::PET_BASE, grau)
 }
 
 /// Pets consumidos por tentativa de combinar.
@@ -527,25 +532,23 @@ mod testes {
                 e.nome
             );
             let novo = crate::items::PetData::default();
-            for grau in 1..=GRAU_MAX {
-                let id = item_id::pet_no_grau(e.base, grau);
-                let v = pontos_por_stat(id, &novo);
-                assert_eq!(
-                    v.iter().sum::<u32>(),
-                    pontos(grau, 1),
-                    "{} grau {grau}: a soma tem que bater com o total",
-                    e.nome
-                );
-                // O atributo de maior peso nunca fica sem nada.
-                let maior = e
-                    .afinidade
-                    .iter()
-                    .enumerate()
-                    .max_by_key(|(_, p)| **p)
-                    .map(|(i, _)| i)
-                    .unwrap();
-                assert!(v[maior] > 0);
-            }
+            let id = item_id::pet_no_grau(item_id::PET_BASE, e.grau);
+            let v = pontos_por_stat(id, &novo);
+            assert_eq!(
+                v.iter().sum::<u32>(),
+                pontos(e.grau, 1),
+                "{}: a soma tem que bater com o total",
+                e.nome
+            );
+            // O atributo de maior peso nunca fica sem nada.
+            let maior = e
+                .afinidade
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, p)| **p)
+                .map(|(i, _)| i)
+                .unwrap();
+            assert!(v[maior] > 0);
         }
         assert_eq!(pontos(1, 1), 5);
         assert_eq!(pontos(2, 1), 8);
@@ -572,21 +575,30 @@ mod testes {
         );
     }
 
+    /// O id carrega o GRAU, e o grau E' a criatura: cinco ids, cinco bichos
+    /// diferentes. Subir de cor e' trocar de bicho.
     #[test]
-    fn o_id_carrega_a_especie_e_o_grau() {
-        for e in ESPECIES {
-            for grau in 1..=GRAU_MAX {
-                let id = item_id::pet_no_grau(e.base, grau);
-                assert_eq!(item_id::pet_de_id(id), Some((e.base, grau)));
-                assert_eq!(de_item(id).map(|(x, g)| (x.base, g)), Some((e.base, grau)));
-                assert_eq!(
-                    crate::equip_slot_of(id),
-                    Some(crate::EquipSlot::Pet),
-                    "pet tem que equipar no slot do pet"
-                );
-            }
+    fn o_id_carrega_a_criatura_e_o_grau() {
+        let mut bichos = std::collections::HashSet::new();
+        for grau in 1..=GRAU_MAX {
+            let id = item_id::pet_no_grau(item_id::PET_BASE, grau);
+            assert_eq!(item_id::pet_de_id(id), Some((item_id::PET_BASE, grau)));
+            let (c, g) = de_item(id).expect("id de pet");
+            assert_eq!(g, grau);
+            assert_eq!(c.grau, grau, "a posicao no catalogo E' o grau");
+            assert!(
+                bichos.insert(c.bicho),
+                "grau {grau} repete o bicho {}: a cor tem que ser outra CRIATURA",
+                c.bicho
+            );
+            assert_eq!(
+                crate::equip_slot_of(id),
+                Some(crate::EquipSlot::Pet),
+                "pet tem que equipar no slot do pet"
+            );
         }
-        assert_eq!(item_id::pet_de_id(item_id::PET_LOBO - 1), None);
+        assert_eq!(bichos.len(), GRAU_MAX as usize);
+        assert_eq!(item_id::pet_de_id(item_id::PET_BASE - 1), None);
         assert_eq!(item_id::pet_de_id(item_id::PET_ULTIMO + 1), None);
     }
 
@@ -618,12 +630,13 @@ mod testes {
             );
         }
         // As bordas do sorteio: 0 cai no primeiro grau, quase 1 no ultimo.
-        assert_eq!(rolar(0.0, 0.0), (item_id::PET_LOBO, 1));
+        assert_eq!(rolar(0.0, 0.0), (item_id::PET_BASE, 1));
         assert_eq!(rolar(0.999, 0.999).1, GRAU_MAX);
         // Toda especie e' alcancavel e nada estoura o catalogo.
         for k in 0..ESPECIE_COUNT {
             let r = (k as f32 + 0.5) / ESPECIE_COUNT as f32;
-            assert_eq!(rolar(r, 0.0).0, ESPECIES[k].base);
+            // A criatura E' o grau: o primeiro dado nao muda mais nada.
+            assert_eq!(rolar(r, 0.0), (item_id::PET_BASE, 1));
         }
     }
 
@@ -686,7 +699,7 @@ mod testes {
         assert_eq!(skills_ativas(&trinta).len(), 3);
         assert!((velocidade_com(3, &trinta) - (velocidade(3) + 0.2)).abs() < 1e-6);
         assert_eq!(
-            pontos_por_stat(item_id::pet_no_grau(item_id::PET_LOBO, 3), &trinta)
+            pontos_por_stat(item_id::pet_no_grau(item_id::PET_BASE, 3), &trinta)
                 .iter()
                 .sum::<u32>(),
             pontos(3, NIVEL_MAX) + 3,
@@ -746,7 +759,7 @@ mod testes {
         assert!(regen_de_vida(&d) > 0.0);
         assert!(regen_de_mana(&d) > 0.0);
 
-        let coruja = item_id::pet_no_grau(item_id::PET_OWLBEAR, 1);
+        let coruja = item_id::pet_no_grau(item_id::PET_BASE, 1);
         let sem = pontos_por_stat(coruja, &vazio);
         let com = pontos_por_stat(coruja, &d);
         assert_eq!(sem[stat_idx::DES], 0, "corujinha nao da' DES sozinha");

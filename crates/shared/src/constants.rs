@@ -536,15 +536,15 @@ pub mod item_id {
     /// ocupa cinco ids seguidos, um por grau — a mesma convencao de `na_cor`
     /// dos materiais. O grau mora no id porque o pet e' item de bolsa:
     /// negociavel no mercado e combinavel na aba Combinar do Craft.
-    pub const PET_LOBO: u16 = 420;
-    pub const PET_URSO: u16 = 425;
-    pub const PET_TIGRE: u16 = 430;
-    pub const PET_OWLBEAR: u16 = 435;
-    pub const PET_CARANGUEJO: u16 = 440;
-    /// O cinza de cada especie, na ordem do catalogo (`shared::pets`).
-    pub const PETS: [u16; 5] = [PET_LOBO, PET_URSO, PET_TIGRE, PET_OWLBEAR, PET_CARANGUEJO];
-    /// Ultimo id de pet — tudo entre `PET_LOBO` e este e' pet.
-    pub const PET_ULTIMO: u16 = PET_CARANGUEJO + 4;
+    /// A COR E' A CRIATURA: cinco ids seguidos, um por grau — porquinho,
+    /// coruja, filhote de lobo, corujurso, filhote de dragao
+    /// (`shared::pets`). Nao ha' mais especie separada do grau, entao ha'
+    /// uma base so'. Os ids 425..444 ficaram vagos de proposito: eram das
+    /// especies antigas e reusar id de item e' como ressuscitar o item.
+    pub const PET_BASE: u16 = 420;
+    pub const PETS: [u16; 1] = [PET_BASE];
+    /// Ultimo id de pet — tudo entre `PET_BASE` e este e' pet.
+    pub const PET_ULTIMO: u16 = PET_BASE + 4;
 
     /// As cinco skills de pet (`shared::pets::SKILLS`), em ids seguidos.
     pub const SKILL_PET_FARO: u16 = 445;
@@ -562,11 +562,12 @@ pub mod item_id {
 
     /// As tres montarias (docs/MONTARIAS.md), pelo id da CINZA. Cinco ids
     /// seguidos por especie, um por cor — a mesma convencao do pet.
-    pub const MONTARIA_LOBO: u16 = 460;
-    pub const MONTARIA_TIGRE: u16 = 465;
-    pub const MONTARIA_URSO: u16 = 470;
-    pub const MONTARIAS: [u16; 3] = [MONTARIA_LOBO, MONTARIA_TIGRE, MONTARIA_URSO];
-    pub const MONTARIA_ULTIMA: u16 = MONTARIA_URSO + 4;
+    /// A COR E' A CRIATURA: cinco ids seguidos, um por grau — cervo, lobo,
+    /// tigre, hipogrifo, dragao (`shared::montarias`). Nao ha' mais especie
+    /// separada do grau, entao ha' uma base so'.
+    pub const MONTARIA_BASE: u16 = 460;
+    pub const MONTARIAS: [u16; 1] = [MONTARIA_BASE];
+    pub const MONTARIA_ULTIMA: u16 = MONTARIA_BASE + 4;
 
     pub const fn montaria_no_grau(base: u16, grau: u8) -> u16 {
         base + (if grau < 1 {
@@ -579,11 +580,10 @@ pub mod item_id {
     }
 
     pub const fn montaria_de_id(id: u16) -> Option<(u16, u8)> {
-        if id < MONTARIA_LOBO || id > MONTARIA_ULTIMA {
+        if id < MONTARIA_BASE || id > MONTARIA_ULTIMA {
             return None;
         }
-        let d = id - MONTARIA_LOBO;
-        Some((MONTARIA_LOBO + (d / 5) * 5, (d % 5) as u8 + 1))
+        Some((MONTARIA_BASE, (id - MONTARIA_BASE) as u8 + 1))
     }
 
     /// E' uma skill de pet?
@@ -604,11 +604,10 @@ pub mod item_id {
 
     /// (especie cinza, grau) de um id de pet. `None` se nao for pet.
     pub const fn pet_de_id(id: u16) -> Option<(u16, u8)> {
-        if id < PET_LOBO || id > PET_ULTIMO {
+        if id < PET_BASE || id > PET_ULTIMO {
             return None;
         }
-        let d = id - PET_LOBO;
-        Some((PET_LOBO + (d / 5) * 5, (d % 5) as u8 + 1))
+        Some((PET_BASE, (id - PET_BASE) as u8 + 1))
     }
 
     /// As quatro CHAVES de craft (uma por receita), pelo id da cinza. So'

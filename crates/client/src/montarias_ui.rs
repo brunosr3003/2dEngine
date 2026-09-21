@@ -159,7 +159,7 @@ impl MontariasUi {
         estilo::texto_centro_forte(
             palco.center().x,
             palco.y + palco.h - 14.0 * f,
-            &format!("{} {}", especie.nome, shared::pets::nome_do_grau(grau)),
+            especie.nome,
             19,
             cor,
         );
@@ -286,14 +286,14 @@ mod testes {
         assert!(!ui.aberto);
         let mut equip = shared::Equipment::default();
         assert!(equip.montaria.is_none());
-        let id = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_URSO, 4);
+        let id = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, 4);
         equip.set(shared::EquipSlot::Montaria, Some(id), None);
         assert_eq!(equip.montaria, Some(id));
         let (e, grau) = shared::montarias::de_item(id).unwrap();
         assert_eq!(grau, 4);
-        assert_eq!(e.base, shared::item_id::MONTARIA_URSO);
+        assert_eq!(e.grau, 4, "a criatura E' o grau");
         // O poder acompanha a cor: roxo vale mais que cinza.
-        let cinza = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_URSO, 1);
+        let cinza = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, 1);
         assert!(poder_da_montaria(id) > poder_da_montaria(cinza));
     }
 }

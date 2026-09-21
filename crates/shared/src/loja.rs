@@ -914,8 +914,8 @@ mod tests {
             "montado nao soma sprint"
         );
         // A COR da montaria equipada e' que manda no multiplicador.
-        let cinza = crate::item_id::montaria_no_grau(crate::item_id::MONTARIA_LOBO, 1);
-        let laranja = crate::item_id::montaria_no_grau(crate::item_id::MONTARIA_LOBO, 5);
+        let cinza = crate::item_id::montaria_no_grau(crate::item_id::MONTARIA_BASE, 1);
+        let laranja = crate::item_id::montaria_no_grau(crate::item_id::MONTARIA_BASE, 5);
         assert_eq!(mult_de_montaria(false, Some(laranja)), None, "a pe' e' a pe'");
         assert_eq!(mult_de_montaria(true, Some(cinza)), Some(VEL_MONTADO));
         assert_eq!(

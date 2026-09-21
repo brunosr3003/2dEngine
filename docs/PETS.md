@@ -8,6 +8,44 @@ Mistura o que o MIR4 faz com o que o Talisman Online faz: a **cor como grau**
 e a evolução por consumo vêm do primeiro; o bicho que anda junto e serve à
 classe, do segundo.
 
+
+## A COR É A CRIATURA (20/09/2026)
+
+Não há espécie separada do grau. Cinco ids seguidos a partir de `PET_BASE`,
+uma criatura em cada:
+
+| cor | pet | o que dá |
+|---|---|---|
+| cinza | **Porquinho** | VIT 6 · RES 4 |
+| verde | **Filhote de Lobo** | DES 6 · SPD 4 |
+| azul | **Filhote de Tigre** | FOR 5 · DES 5 |
+| roxo | **Corujurso** | INT 5 · FOR 5 |
+| laranja | **Filhote de Dragão** | FOR 4 · INT 3 · VIT 3 |
+
+Antes eram cinco espécies tingidas de cinco cores — 25 combinações do mesmo
+punhado de bichos. O dono resumiu o problema: *"são os mesmos, só muda a cor;
+eu quero que tenham realmente pets diferentes para cada cor"*. **Subir de grau
+agora é trocar de bicho**, e é isso que faz combinar valer a pena.
+
+Consequências que valem lembrar:
+
+- **A tinta do grau saiu** (`render3d::tinta_do_grau` devolve `None`). Ela
+  existia porque a cor era a única forma de ler o grau; tingir o filhote de
+  lobo de verde agora só estraga o bicho. O grau continua legível na **borda
+  da célula** e no nome.
+- **O nome não leva a cor atrás.** "Corujurso", não "Corujurso Roxo" — a
+  criatura já é o grau.
+- **Os ids 425..444 ficaram vagos de propósito.** Eram das espécies antigas, e
+  reusar id de item é ressuscitar o item.
+- `o_id_carrega_a_criatura_e_o_grau` cobra que os cinco graus usem **cinco
+  modelos diferentes** — se dois voltarem a apontar pro mesmo bicho, o teste
+  quebra.
+
+Os modelos saem do `tools/voxrender/bichos.py`, fatiados do zone14. Dragão e
+hipogrifo têm **asa**, uma junta nova (`bicho::Junta::Asa`) que bate no ritmo
+da passada e respira devagar parada — sem ela o dragão seria um quadrúpede com
+duas placas presas nas costas.
+
 ## O pet é um item
 
 **Decisão que sustenta o resto**: o pet não é posse de conta como a montaria,

@@ -205,8 +205,11 @@ mod testes {
     #[test]
     fn cada_item_sobe_por_um_caminho_so_e_nunca_vira_ele_mesmo() {
         let v = receitas();
-        // 4 chaves, 3 montarias e 5 pets x 4 degraus; 8 materiais x 3.
-        assert_eq!(v.len(), 4 * 4 + 3 * 4 + 5 * 4 + 8 * 3);
+        // 4 chaves x 4 degraus; UMA escada de montaria e UMA de pet, de 4
+        // degraus cada (a cor E' a criatura desde 20/09/2026 — antes eram
+        // tres especies de montaria e cinco de pet, cada uma com a sua
+        // escada); 8 materiais x 3.
+        assert_eq!(v.len(), 4 * 4 + 1 * 4 + 1 * 4 + 8 * 3);
         for (i, a) in v.iter().enumerate() {
             assert_ne!(a.entrada, a.saida);
             assert!(v[i + 1..].iter().all(|b| b.entrada != a.entrada));
@@ -217,13 +220,13 @@ mod testes {
     /// tentativa, e o id guarda o grau.
     #[test]
     fn tres_pets_do_mesmo_grau_tentam_um_do_grau_de_cima() {
-        let r = receita(item_id::PET_LOBO).expect("lobinho cinza combina");
+        let r = receita(item_id::PET_BASE).expect("lobinho cinza combina");
         assert_eq!(r.qtd, crate::pets::PETS_POR_TENTATIVA);
-        assert_eq!(r.saida, item_id::pet_no_grau(item_id::PET_LOBO, 2));
+        assert_eq!(r.saida, item_id::pet_no_grau(item_id::PET_BASE, 2));
         assert_eq!(r.chance, crate::pets::chance_de_combinar(2));
         assert!(r.cobre > 0 && r.darksteel == 0 && r.po == 0);
         // O laranja e' o teto: nao ha' receita saindo dele.
-        assert!(receita(item_id::pet_no_grau(item_id::PET_LOBO, 5)).is_none());
+        assert!(receita(item_id::pet_no_grau(item_id::PET_BASE, 5)).is_none());
         // Toda especie tem os quatro degraus.
         for &base in &item_id::PETS {
             for grau in 1..crate::pets::GRAU_MAX {

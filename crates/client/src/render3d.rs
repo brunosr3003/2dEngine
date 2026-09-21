@@ -1074,13 +1074,10 @@ fn model_for(tag: shared::EntityTag, boss: bool, kind: u16) -> Option<&'static s
         T::Player | T::Npc => Some("player"),
         T::Enemy if boss => Some("lobo"),
         T::Enemy => Some(modelo_do_mob(kind)),
-        // O pet: o bicho da especie, se o arquivo em pecas faltar.
-        T::Pet => shared::pets::de_item(kind).map(|(e, _)| match e.base {
-            id if id == shared::item_id::PET_URSO => "urso",
-            id if id == shared::item_id::PET_TIGRE => "tigre",
-            id if id == shared::item_id::PET_OWLBEAR => "owlbear",
-            _ => "lobo_pequeno",
-        }),
+        // O pet: o bicho da CRIATURA daquele grau, sem o prefixo de pasta —
+        // e' o nome do modelo inteiro, usado quando o arquivo em pecas falta.
+        T::Pet => shared::pets::de_item(kind)
+            .map(|(e, _)| e.bicho.rsplit('/').next().unwrap_or("lobo_pequeno")),
         // O saque vem com o tier do item no `kind` (0 = ouro/pocao).
         T::Loot => Some(match kind {
             1 => "saque_1",
@@ -2269,9 +2266,22 @@ pub fn vitrine_pet(
     true
 }
 
-/// A cor do grau do pet como tinta. Forca baixa: o bicho tem que continuar
-/// reconhecivel, a cor so' diz o grau.
-fn tinta_do_grau(grau: u8) -> Option<([f32; 3], f32)> {
+/// A cor do grau como tinta — hoje SEM EFEITO, e de proposito.
+///
+/// Ela existia quando a mesma criatura vinha nas cinco cores: a tinta era o
+/// unico jeito de ler o grau. Desde 20/09/2026 a cor E' a criatura (um cervo
+/// nao e' um dragao verde), e tingir o filhote de lobo de verde so' estragava
+/// o bicho. O grau continua legivel na borda da celula (`cor_do_tier`) e no
+/// nome.
+///
+/// Mantida como ponto unico caso volte a fazer falta — e pra o motivo ficar
+/// escrito onde alguem procuraria.
+fn tinta_do_grau(_grau: u8) -> Option<([f32; 3], f32)> {
+    None
+}
+
+#[allow(dead_code)]
+fn tinta_do_grau_antiga(grau: u8) -> Option<([f32; 3], f32)> {
     if grau <= 1 {
         return None;
     }

@@ -225,8 +225,8 @@ mod testes {
     /// isso ela sumia da faixa justamente quando virava a principal.
     #[test]
     fn a_equipada_aparece_mesmo_fora_da_bolsa() {
-        let equipada = shared::item_id::pet_no_grau(shared::item_id::PET_TIGRE, 4);
-        let na_bolsa = shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 1);
+        let equipada = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 4);
+        let na_bolsa = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 1);
         let bolsa = vec![slot(na_bolsa, 2)];
         let da_familia = |id: u16| shared::pets::de_item(id).is_some();
 
@@ -269,8 +269,8 @@ mod testes {
     /// A faixa lista o que esta' na bolsa daquela familia — e so' isso.
     #[test]
     fn a_familia_filtra_o_que_aparece() {
-        let pet = shared::item_id::pet_no_grau(shared::item_id::PET_LOBO, 2);
-        let montaria = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_URSO, 1);
+        let pet = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 2);
+        let montaria = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, 1);
         let bolsa = vec![
             slot(shared::item_id::HEALTH_POTION, 5),
             slot(pet, 1),
@@ -295,8 +295,8 @@ mod testes {
     /// de prometer um grau que nao existe.
     #[test]
     fn o_laranja_nao_tem_para_onde_subir() {
-        for base in [shared::item_id::PET_LOBO, shared::item_id::MONTARIA_URSO] {
-            let topo = if base == shared::item_id::PET_LOBO {
+        for base in [shared::item_id::PET_BASE, shared::item_id::MONTARIA_BASE] {
+            let topo = if base == shared::item_id::PET_BASE {
                 shared::item_id::pet_no_grau(base, shared::pets::GRAU_MAX)
             } else {
                 shared::item_id::montaria_no_grau(base, shared::montarias::GRAU_MAX)

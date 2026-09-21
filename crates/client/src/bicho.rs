@@ -37,7 +37,7 @@ const VEL_DE_TROTE: f32 = 5.0;
 
 /// Cada bicho que anda em pecas: o arquivo (`tools/voxrender/bichos.py`) e a
 /// altura na tela, em unidades de mundo.
-pub const BICHOS: [(&str, f32); 7] = [
+pub const BICHOS: [(&str, f32); 11] = [
     ("bichos/lobo_pequeno", 0.9),
     ("bichos/urso", 1.3),
     ("bichos/tigre", 0.95),
@@ -46,6 +46,13 @@ pub const BICHOS: [(&str, f32); 7] = [
     // `tools/voxrender/caranguejos.py`: andam de lado (`Anatomia::lateral`)
     ("bichos/caranguejo", 0.5),
     ("bichos/caranguejo_rei", 0.85),
+    // A escada de pet e montaria: uma CRIATURA por cor (docs/PETS.md,
+    // docs/MONTARIAS.md). Altura do bicho ADULTO — o pet usa a mesma malha
+    // numa escala menor, que e' o que ja' se fazia com o lobo e o tigre.
+    ("bichos/cervo", 1.6),
+    ("bichos/hipogrifo", 1.9),
+    ("bichos/dragao", 2.4),
+    ("bichos/porco", 0.8),
 ];
 
 /// O bicho deste mob, se ele for bicho. Gente (pistoleiro, mago, arqueiro)
@@ -128,6 +135,9 @@ pub enum Junta {
     Pescoco,
     Cauda,
     Pata { frente: bool, esq: bool },
+    /// Asa: dragao, hipogrifo e coruja. Bate junto com a passada, mas com
+    /// amplitude propria — asa nao e' pata, ela nao toca o chao.
+    Asa { esq: bool },
 }
 
 /// Nome do objeto no `.vox` -> junta.
@@ -153,6 +163,8 @@ pub fn junta_de(nome: &str) -> Option<Junta> {
             frente: false,
             esq: true,
         },
+        "asa_d" => Junta::Asa { esq: false },
+        "asa_e" => Junta::Asa { esq: true },
         _ => return None,
     })
 }
@@ -166,6 +178,13 @@ pub fn pivo_vox(j: Junta, lo: [usize; 3], hi: [usize; 3]) -> [f32; 3] {
     let meio = |i: usize| (lo[i] + hi[i] + 1) as f32 * 0.5;
     match j {
         Junta::Pata { .. } => [meio(0), meio(1), (hi[2] + 1) as f32],
+        // A asa gira onde encosta no tronco: a borda de DENTRO, no eixo X.
+        // Girar no meio dela arrancaria a asa do corpo a cada batida.
+        Junta::Asa { esq } => [
+            if esq { (hi[0] + 1) as f32 } else { lo[0] as f32 },
+            meio(1),
+            meio(2),
+        ],
         Junta::Cabeca | Junta::Pescoco => [meio(0), lo[1] as f32, meio(2)],
         Junta::Cauda => [meio(0), (hi[1] + 1) as f32, meio(2)],
         Junta::Tronco => [meio(0), meio(1), meio(2)],
@@ -462,6 +481,16 @@ pub fn peca(j: Junta, e: &Entrada, a: &Anatomia, pivo: Vec3) -> (Quat, Vec3) {
                 x((e.tempo * 1.6).sin() * 0.12 + e.passada.sin() * 0.05 * m.amp - 0.35 * dor),
                 Vec3::ZERO,
             )
+        }
+        // A asa bate em volta do proprio eixo (Z, o do corpo): pra cima e pra
+        // baixo. Parada ela respira devagar; andando, bate no ritmo da
+        // passada — e' o que faz o dragao parecer que se sustenta, e nao que
+        // desliza com duas placas presas nas costas.
+        Junta::Asa { esq } => {
+            let lento = (e.tempo * 1.5 + e.semente as f32 * 0.01).sin() * 0.10;
+            let batida = e.passada.sin() * 0.42 * m.acorda;
+            let ang = (lento + batida) * if esq { -1.0 } else { 1.0 };
+            (Quat::from_rotation_z(ang), Vec3::ZERO)
         }
         Junta::Pata { frente, esq } if a.lateral => pata_de_caranguejo(frente, esq, e, a, pivo),
         Junta::Pata { frente, esq } => {

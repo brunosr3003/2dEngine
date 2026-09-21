@@ -263,7 +263,7 @@ impl InvocacaoUi {
                     estilo::texto_centro_forte(
                         c.x,
                         c.y + 113.0 * k,
-                        &format!("{} {}", especie.nome, shared::pets::nome_do_grau(grau)),
+                        especie.nome,
                         25,
                         cor,
                     );
@@ -287,7 +287,7 @@ impl InvocacaoUi {
                     estilo::texto_centro_forte(
                         c.x,
                         c.y + 105.0 * k,
-                        &format!("{} {}", especie.nome, shared::pets::nome_do_grau(grau)),
+                        especie.nome,
                         24,
                         cor,
                     );
@@ -386,7 +386,7 @@ pub async fn previa(vox: &VoxCache) {
             "1-abrindo.png",
             vec![PremioInvocacao::Montaria {
                 item_id: shared::item_id::montaria_no_grau(
-                    shared::item_id::MONTARIA_TIGRE,
+                    shared::item_id::MONTARIA_BASE,
                     3,
                 ),
             }],
@@ -404,7 +404,7 @@ pub async fn previa(vox: &VoxCache) {
             "3-montaria.png",
             vec![PremioInvocacao::Montaria {
                 item_id: shared::item_id::montaria_no_grau(
-                    shared::item_id::MONTARIA_TIGRE,
+                    shared::item_id::MONTARIA_BASE,
                     3,
                 ),
             }],

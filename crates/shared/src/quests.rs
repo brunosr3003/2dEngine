@@ -725,7 +725,7 @@ pub const QUESTS: &[QuestDef] = &[
         reward_cobre: 400, reward_xp: 900, reward_item: item_id::HIDE, reward_item_qty: 1,
         // O primeiro PET (docs/PETS.md). Todo mundo ganha o cinza pela historia
         // principal: o auto-loot e' mecanica do jogo, nao privilegio de loja.
-        reward_item2: item_id::PET_LOBO, reward_item2_qty: 1,
+        reward_item2: item_id::PET_BASE, reward_item2_qty: 1,
         requires: 508, min_level: 12, ..mestre() },
     QuestDef { id: 510, title: "O que há sob o naufrágio",
         desc: "O Porão do Naufrágio guarda o que a maré não levou, e quem manda lá dentro cai com a chave no bolso: chefe de dungeon larga chave três vezes mais que chefe de campo. Entre e limpe uma — sozinho já dá.",
