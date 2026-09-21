@@ -1277,6 +1277,24 @@ impl GameWorld {
                 }
             }
         }
+        // ── ZONA SEM LEI ────────────────────────────────────────────────
+        //
+        // Poucas, e com motivo pra parar nelas: os naufragios (onde
+        // carregador e cacador se encontram de qualquer jeito) e a travessia
+        // de endgame inteira. As outras tres rotas seguem governadas por
+        // karma — elas sao OBRIGATORIAS pra progredir, e transformar o
+        // caminho obrigatorio em terra de ninguem e' cobrar imposto por
+        // existir.
+        if let Some(mar) = self.mar.as_ref() {
+            let em = |s: &Session| {
+                s.entity
+                    .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))
+                    .is_some_and(|p| mar.sem_lei(p))
+            };
+            if em(att) && em(tgt) {
+                return true;
+            }
+        }
         // ── A MARCA VENCE A SAFE ZONE ───────────────────────────────────
         //
         // Regra do dono: quem carrega o bau pode ser atacado em qualquer
@@ -12103,6 +12121,15 @@ impl GameWorld {
             .filter(|s| s.logged_in)
             .map(|s| (s.entity_id, shared::level_of_xp(s.xp) as u16))
             .collect();
+        // QUEM ESTA MARCADO (docs/MAR_ABERTO.md). Colhido antes da montagem
+        // do snapshot porque `marcado` le' o equipamento inteiro da sessao.
+        let agora_secs = (now_ms() / 1000) as i64;
+        let marcados: std::collections::HashSet<EntityId> = self
+            .sessions
+            .values()
+            .filter(|s| s.logged_in && self.marcado(s, agora_secs))
+            .map(|s| s.entity_id)
+            .collect();
         let acao_de: HashMap<EntityId, u8> = {
             use shared::components::acao;
             let agora = self.sim_time_s;
@@ -12221,9 +12248,12 @@ impl GameWorld {
                                     _ => None,
                                 })
                         });
-                    let mut flags = 0u8;
+                    let mut flags = 0u16;
                     if dash_agora.contains(&net.0) {
                         flags |= shared::ent_flags::DASHING;
+                    }
+                    if marcados.contains(&net.0) {
+                        flags |= shared::ent_flags::MARCADO;
                     }
                     if etag.map_or(false, |t| t.is_boss) {
                         flags |= shared::ent_flags::BOSS;

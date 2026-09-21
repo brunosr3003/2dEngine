@@ -586,3 +586,56 @@ mod testes_do_tesouro {
         assert!(multiplicador_da_carga(3) > multiplicador_da_carga(2));
     }
 }
+
+// ─────────────────────── as zonas de open PvP ───────────────────────
+
+/// Raio de uma zona sem lei, em unidades.
+pub const ZONA_SEM_LEI_RAIO: f32 = 70.0;
+
+impl Mar {
+    /// Este ponto esta' numa ZONA SEM LEI, onde qualquer um ataca qualquer
+    /// um sem karma?
+    ///
+    /// Sao POUCAS e com motivo pra parar nelas (docs/MAR_ABERTO.md). A regra
+    /// do dono e' que o mar em geral NAO e' open PvP — o que marca alguem e'
+    /// carregar tesouro. Zona sem lei e' a excecao, e excecao que cobre tudo
+    /// deixa de ser excecao.
+    ///
+    /// Hoje sao duas famílias:
+    ///
+    /// - **os naufragios de cada rota**, que e' onde carregador e cacador se
+    ///   encontram de qualquer jeito, porque os dois querem a mesma coisa;
+    /// - **a rota de endgame inteira** (a ultima de `ROTAS`), que e' o "mar
+    ///   amaldicoado" que `docs/GAMEPLAY.md` sempre imaginou — a travessia
+    ///   mais rica e' tambem a unica onde nao ha' regra.
+    ///
+    /// As outras tres travessias seguem governadas por karma. Elas sao
+    /// OBRIGATORIAS pra progredir, e transformar o caminho obrigatorio em
+    /// terra de ninguem e' cobrar imposto por existir.
+    pub fn sem_lei(&self, p: Vec2) -> bool {
+        if let Some(r) = ROTAS.last() {
+            if let (Some(a), Some(b)) = (self.cais_de(r.de as usize), self.cais_de(r.para as usize))
+            {
+                // Perto do segmento da rota de endgame.
+                let ab = b - a;
+                let t = if ab.length_squared() > 1e-3 {
+                    ((p - a).dot(ab) / ab.length_squared()).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                if (a + ab * t).distance(p) <= ZONA_SEM_LEI_RAIO {
+                    return true;
+                }
+            }
+        }
+        // Os naufragios das outras rotas.
+        for r in ROTAS.iter() {
+            for (k, c) in self.pontos_da_rota(r, 7).into_iter().enumerate() {
+                if k % 3 == 1 && c.distance(p) <= ZONA_SEM_LEI_RAIO {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}

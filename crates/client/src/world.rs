@@ -713,7 +713,7 @@ mod testes {
     fn rumo_do_fio_vira_os_outros_suave_e_nao_o_proprio() {
         let q = std::f32::consts::FRAC_PI_2;
         let mut w = World::default();
-        for (id, flags) in [(EntityId(1), 0u8), (EntityId(2), ent_flags::SELF)] {
+        for (id, flags) in [(EntityId(1), 0u16), (EntityId(2), ent_flags::SELF)] {
             w.apply(
                 vec![EntityMeta {
                     id,

@@ -104,7 +104,14 @@ fn placas(world: &World, vista: &Vista) {
         if boss {
             crate::telegrafico::desenha_coroa(vec2(c.x - d.width * 0.5 - 14.0, y - 10.0), 6.0);
         }
-        let cor = if boss {
+        // MARCADO (docs/MAR_ABERTO.md): nome em vermelho. E' o unico aviso
+        // que o cacador tem e o unico que o carregador precisa — quem esta'
+        // atacavel por qualquer um tem que ser visivel de longe, e a cor faz
+        // isso sem ocupar espaco de HUD.
+        let marcado = e.state.flags & shared::ent_flags::MARCADO != 0;
+        let cor = if marcado {
+            Color::new(1.0, 0.28, 0.24, 1.0)
+        } else if boss {
             Color::new(1.0, 0.55, 0.25, 1.0)
         } else if alvo {
             Color::new(1.0, 0.93, 0.7, 1.0)

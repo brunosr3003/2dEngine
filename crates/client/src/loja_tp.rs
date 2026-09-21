@@ -2051,7 +2051,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
     let mut metas = Vec::new();
     let mut estados = Vec::new();
     // (id, tag, kind, pos, flags)
-    let elenco: [(u32, EntityTag, u16, Vec2, u8); 6] = [
+    let elenco: [(u32, EntityTag, u16, Vec2, u16); 6] = [
         (1, EntityTag::Enemy, 0, vec2(-7.5, 0.0), 0),
         (2, EntityTag::Enemy, 1, vec2(-4.2, 0.0), 0),
         (3, EntityTag::Enemy, 3, vec2(-0.9, 0.0), 0),

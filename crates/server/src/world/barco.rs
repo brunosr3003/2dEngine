@@ -205,17 +205,20 @@ impl GameWorld {
         let Some(eu) = self.pos_do_jogador(sid) else {
             return;
         };
-        // O BARCO FICA AVARIADO e O MAR LEVA O BAU.
+        // O BARCO AFUNDA E O BAU BOIA.
         //
         // Sao DUAS mortes, e elas nunca podem ser confundidas:
         //
-        // - casco a zero (bicho, mar): o barco avaria e o bau vai ao FUNDO —
-        //   ninguem ganha;
-        // - morte em PvP: o barco fica INTACTO e o bau troca de dono.
+        // - casco a zero (bicho, mar): o barco avaria e o bau FICA BOIANDO no
+        //   lugar do naufragio, de quem chegar;
+        // - morte em PvP: o barco fica INTACTO e o bau troca de dono na hora.
         //
-        // Se PvP tambem afundasse, o tesouro seria destruido em metade das
-        // cacadas e ninguem cacaria. Roubo tem que pagar o ladrao; o mar leva
-        // o que o mar leva.
+        // O bau nunca e' destruido. Afundar o tesouro faria a estrategia
+        // vencedora ser a NEGACAO — bastava furar o casco de quem carrega pra
+        // ninguem levar nada, que e' soma negativa e um unico mau ator
+        // tornaria a travessia inutil. Boiando, o naufragio vira chamado:
+        // quem passar por ali leva.
+        let mut boiando: Option<(Vec2, u16)> = None;
         if let Some((_, mut d)) = self.barco_equipado(sid) {
             let perdeu = d.carga;
             d.casco = 0;
@@ -224,8 +227,28 @@ impl GameWorld {
             d.carga_de = 0;
             self.guarda_barco(sid, d);
             if perdeu != 0 {
-                self.recusa_barco(sid, "O baú foi ao fundo com o casco.");
+                boiando = Some((eu, perdeu));
+                self.recusa_barco(sid, "O baú boia nos destroços. Quem chegar primeiro leva.");
             }
+        }
+        if let Some((onde, bau)) = boiando {
+            let eid = self.alloc_entity_id();
+            self.ecs.spawn((
+                NetId(eid),
+                Position(onde),
+                Velocity(Vec2::ZERO),
+                EntityKind::Loot(bau),
+                LootTag {
+                    item_id: bau,
+                    qty: 1,
+                    instance: None,
+                    spawn_at: self.sim_time_s,
+                    // De NINGUEM desde o inicio: nao ha' janela de prioridade
+                    // pra quem acabou de afundar. Ele perdeu o barco; o bau
+                    // agora e' do mar.
+                    dono: None,
+                },
+            ));
         }
         let mar = shared::mar::Mar::novo();
         let passo = self
@@ -778,6 +801,15 @@ impl GameWorld {
         // Matar quem esta' MARCADO nao e' crime nem virtude: e' o jogo.
         if self.marcado(v, agora) {
             return;
+        }
+        // Nem matar em ZONA SEM LEI: la' nao ha' regra pra quebrar.
+        if let (Some(mar), Some(p)) = (
+            self.mar.as_ref(),
+            v.entity.and_then(|e| self.ecs.get::<&Position>(e).ok().map(|x| x.0)),
+        ) {
+            if mar.sem_lei(p) {
+                return;
+            }
         }
         let nome_da_vitima = v.name.clone();
         let mesma_faccao = self

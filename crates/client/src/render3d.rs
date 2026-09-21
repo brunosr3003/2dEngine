@@ -1402,6 +1402,17 @@ pub fn draw_entities(
             } else {
                 desenha_casco(p, e.yaw);
             }
+            // O BAU NO CONVES (docs/MAR_ABERTO.md). Quem carrega tem que ser
+            // reconhecivel de longe, e nao so' pela cor do nome: o cacador
+            // precisa ver o TESOURO, nao um rotulo.
+            if e.state.flags & shared::ent_flags::MARCADO != 0 {
+                let t = get_time() as f32;
+                let ouro = Color::from_rgba(236, 190, 84, 255);
+                let madeira = Color::from_rgba(122, 78, 40, 255);
+                let alto = p + vec3(0.0, 1.35 + (t * 2.0).sin() * 0.06, 0.0);
+                draw_cube(alto, vec3(0.7, 0.45, 0.5), None, madeira);
+                draw_cube(alto + vec3(0.0, 0.3, 0.0), vec3(0.76, 0.14, 0.56), None, ouro);
+            }
             continue;
         }
         // NPC da vila: o rig do OFICIO dele. Sem o arquivo, cai no corpo de

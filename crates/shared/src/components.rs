@@ -417,21 +417,31 @@ pub mod acao {
 
 pub mod ent_flags {
     /// E' o personagem do proprio jogador que recebe o pacote.
-    pub const SELF: u8 = 1 << 0;
-    pub const DOWNED: u8 = 1 << 1;
-    pub const CASTING: u8 = 1 << 2;
-    pub const BOSS: u8 = 1 << 3;
+    pub const SELF: u16 = 1 << 0;
+    pub const DOWNED: u16 = 1 << 1;
+    pub const CASTING: u16 = 1 << 2;
+    pub const BOSS: u16 = 1 << 3;
     /// No ar. O cliente desenha o arco; quem decide se o pulo aconteceu e'
     /// o servidor.
-    pub const PULANDO: u8 = 1 << 4;
+    pub const PULANDO: u16 = 1 << 4;
     /// O mob comecou um golpe ha' pouco. O servidor segura o bit uns quadros
     /// (um quadro so' se perderia num snapshot pulado); o cliente toca a
     /// animacao na borda de subida.
-    pub const ATACANDO: u8 = 1 << 5;
+    pub const ATACANDO: u16 = 1 << 5;
     /// Montado (docs/MONTARIAS.md). A skin vai no `EntityMeta::kind` do
     /// jogador.
-    pub const MONTADO: u8 = 1 << 6;
-    pub const DASHING: u8 = 1 << 7;
+    pub const MONTADO: u16 = 1 << 6;
+    pub const DASHING: u16 = 1 << 7;
+    /// PK ABERTO (docs/MAR_ABERTO.md): carrega o Bau do Colosso, ou tem a
+    /// ficha suja o bastante. Qualquer um pode atacar, em qualquer lugar.
+    ///
+    /// **Foi o nono bit, e por isso `flags` virou `u16`.** Os oito estavam
+    /// cheios, e a alternativa era reaproveitar um com significado duplo —
+    /// `MONTADO` nao vale no mar, entao "montado = marcado por la'". Custaria
+    /// zero byte e um bug por ano: toda leitura de flag passaria a depender
+    /// de onde o jogador esta'. Um byte por entidade por snapshot e' mais
+    /// barato que uma flag que quer dizer duas coisas.
+    pub const MARCADO: u16 = 1 << 8;
 }
 
 /// Precisao da posicao no wire: 1/8 de tile.
@@ -567,7 +577,7 @@ pub struct EntityState {
     pub vel: [i8; 2],
     pub hp: u16,
     /// Ver `ent_flags`.
-    pub flags: u8,
+    pub flags: u16,
     /// O que o corpo esta' fazendo — ver `acao`.
     pub acao: u8,
     /// Pra onde o corpo OLHA, quando o servidor sabe (`rumo_de_dir`): 0 = sem
@@ -646,7 +656,7 @@ impl EntityState {
         )
     }
 
-    pub fn quantize(id: EntityId, pos: Vec2, vel: Vec2, hp: i32, flags: u8) -> Self {
+    pub fn quantize(id: EntityId, pos: Vec2, vel: Vec2, hp: i32, flags: u16) -> Self {
         let q = |v: f32| {
             (v * POS_SCALE)
                 .round()
