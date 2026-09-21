@@ -30,6 +30,8 @@ pub enum Item {
     Aventuras,
     /// Calendario de presenca.
     Presenca,
+    /// A colonia (docs/COLONIA.md): colher e melhorar.
+    MinhaIlha,
     Grupo,
     Amigos,
     Correio,
@@ -91,6 +93,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
             (Item::Mapa, "Mapa", None),
             (Item::Aventuras, "Dungeons", None),
             (Item::Presenca, "Presença", None),
+            (Item::MinhaIlha, "Minha Ilha", None),
             (Item::RecuperarXp, "Recuperar XP", None),
         ],
     ),
@@ -361,6 +364,7 @@ fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
         Item::Mapa => "mapa",
         Item::Aventuras => "aventuras",
         Item::Presenca => "presenca",
+        Item::MinhaIlha => "mapa",
         Item::Grupo => "grupo",
         Item::Amigos => "amigos",
         Item::Correio => "correio",
@@ -432,6 +436,7 @@ mod tests {
             Item::Mercado,
             Item::Aventuras,
             Item::Presenca,
+            Item::MinhaIlha,
             Item::LojaTp,
             Item::Montaria,
             Item::RecuperarXp,

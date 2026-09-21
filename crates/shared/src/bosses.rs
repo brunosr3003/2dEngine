@@ -794,6 +794,88 @@ pub struct ChefeNoMapa {
     pub nivel: u16,
     pub centro: [f32; 2],
     pub vivo: bool,
+    /// Unix seconds em que ele volta. 0 = vivo agora.
+    ///
+    /// ABSOLUTO, e nao "faltam N segundos", por dois motivos que se somam:
+    /// quem le' esta' noutro PROCESSO (o mapa-mundi mostra chefe de outra
+    /// ilha, e o `sim_time` de la' nao quer dizer nada aqui), e o cliente
+    /// precisa descontar sozinho entre uma atualizacao e outra, senao a
+    /// contagem congela na tela.
+    #[serde(default)]
+    pub volta_em_unix: i64,
+}
+
+/// Uma ilha no MAPA-MUNDI: o que ela tem de chefe, e se ela esta' no ar.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IlhaNoMundo {
+    /// A zona (`terreno::DefIlha::zona`).
+    pub zona: String,
+    /// Chefes de campo dela. Vazio = zona no ar mas sem chefe registrado.
+    pub chefes: Vec<ChefeNoMapa>,
+    /// O processo daquela ilha esta' respondendo. `false` = o que se mostra
+    /// e' a ultima noticia, e ela pode estar velha.
+    pub no_ar: bool,
+}
+
+/// Quanto falta, em segundos, pro chefe voltar. `None` = esta' vivo.
+///
+/// Uma funcao so' pros dois lados: o cliente conta o mesmo que o servidor
+/// contaria, e "vivo" e "faltam 0s" nunca discordam.
+pub fn falta_pra_voltar(c: &ChefeNoMapa, agora_unix: i64) -> Option<i64> {
+    if c.vivo || c.volta_em_unix <= 0 {
+        return None;
+    }
+    Some((c.volta_em_unix - agora_unix).max(0))
+}
+
+/// "7m12s", "48s", "agora". O formato que o jogador le' no mapa.
+pub fn conta_regressiva(s: i64) -> String {
+    if s <= 0 {
+        return "agora".into();
+    }
+    let (m, r) = (s / 60, s % 60);
+    if m == 0 {
+        format!("{r}s")
+    } else {
+        format!("{m}m{r:02}s")
+    }
+}
+
+#[cfg(test)]
+mod testes_do_mapa {
+    use super::*;
+
+    fn ch(vivo: bool, volta: i64) -> ChefeNoMapa {
+        ChefeNoMapa {
+            kind: 0,
+            nome: "X".into(),
+            nivel: 10,
+            centro: [0.0, 0.0],
+            vivo,
+            volta_em_unix: volta,
+        }
+    }
+
+    /// Vivo nao tem contagem, e contagem vencida nao fica negativa — um
+    /// "-3m" na tela e' pior que nenhum numero, porque parece defeito.
+    #[test]
+    fn so_o_morto_conta_e_a_conta_nunca_vira_negativa() {
+        assert_eq!(falta_pra_voltar(&ch(true, 0), 100), None);
+        // Vivo vence o relogio: se os dois discordarem, o vivo manda.
+        assert_eq!(falta_pra_voltar(&ch(true, 999), 100), None);
+        assert_eq!(falta_pra_voltar(&ch(false, 160), 100), Some(60));
+        assert_eq!(falta_pra_voltar(&ch(false, 40), 100), Some(0));
+        // Morto sem hora marcada (noticia velha) nao inventa contagem.
+        assert_eq!(falta_pra_voltar(&ch(false, 0), 100), None);
+    }
+
+    #[test]
+    fn a_conta_regressiva_le_como_tempo() {
+        assert_eq!(conta_regressiva(0), "agora");
+        assert_eq!(conta_regressiva(48), "48s");
+        assert_eq!(conta_regressiva(432), "7m12s");
+        assert_eq!(conta_regressiva(605), "10m05s");
+    }
 }
 
 #[cfg(test)]

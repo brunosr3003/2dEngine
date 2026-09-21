@@ -269,11 +269,16 @@ impl IntoResponse for RegisterRes {
 /// A vivacidade vem do `updated`: quem parou de bater o coracao ha mais de 15s
 /// nao entra na lista. Servidor que caiu deixa de ser oferecido sozinho, sem
 /// ninguem precisar limpar a tabela.
+///
+/// A COLONIA fica de fora (docs/COLONIA.md): ela nao e' um lugar que se
+/// escolhe na lista, e' pra onde o porto te manda. Ela continua no diretorio
+/// interno (`canais::Diretorio`), que e' quem o `TrocarZona` consulta.
 async fn channels(State(st): State<AppState>) -> impl IntoResponse {
     let rows = sqlx::query_as::<_, (String, String, i32, i32, String, String, bool, f32)>(
         "SELECT id, host, players, capacity, map_name, zone, single, tick_p99_ms
            FROM channels
           WHERE updated > NOW() - INTERVAL '15 seconds'
+            AND zone <> 'colonia'
           ORDER BY players ASC, id ASC",
     )
     .fetch_all(&*st.pool)

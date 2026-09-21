@@ -86,6 +86,8 @@ pub struct CharacterRow {
     pub preferencias_json: String,
     /// Energia, tiers e tomos das doze habilidades.
     pub skill_progress: shared::skills::ProgressoDeSkills,
+    /// A colonia do personagem (`shared::colonia::DadosColonia`).
+    pub colonia: shared::colonia::DadosColonia,
     /// Dungeons do personagem (`shared::dungeon::DadosDungeon`): entradas,
     /// estagios liberados, baus abertos, correio. Vai no MESMO save da bolsa.
     pub dungeon_json: String,
@@ -315,6 +317,24 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     r?;
 
     Ok(pool)
+}
+
+/// Apaga equipamento em slot que nao existe mais.
+///
+/// A lista de slots validos sai de `EquipSlot::TODOS`, e NAO esta' escrita
+/// aqui. Escrita a mao ela ficou pra tras quando o pet e a montaria ganharam
+/// slot, e esta faxina passou a APAGAR pet e montaria equipados de todo mundo
+/// em TODO BOOT — o dono perdeu os dele em 21/09/2026. Uma faxina que le' uma
+/// lista velha nao faz faxina: ela destroi.
+fn faxina_de_slots() -> String {
+    format!(
+        "DELETE FROM equipment WHERE slot NOT IN ({})",
+        shared::EquipSlot::TODOS
+            .iter()
+            .map(|s| format!("'{}'", s.as_db_str()))
+            .collect::<Vec<_>>()
+            .join(",")
+    )
 }
 
 async fn init_schema_travado(pool: &PgPool) -> Result<()> {
@@ -551,6 +571,11 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS preferencias_json TEXT NOT NULL DEFAULT ''")
         .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS skill_progress_json TEXT NOT NULL DEFAULT ''")
+        .execute(pool).await?;
+    // A COLONIA (docs/COLONIA.md) num JSON so'. Vazio = `DadosColonia::default`:
+    // nivel 1 nos tres eixos e sem a quest, que e' o que todo personagem que
+    // ja' existe le' no primeiro login depois desta coluna.
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS colonia_json TEXT NOT NULL DEFAULT ''")
         .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS gold BIGINT NOT NULL DEFAULT 0")
         .execute(pool)
@@ -3345,7 +3370,13 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                  WHERE w.character_name = e.character_name AND w.slot = 'weapon') \
                  WHEN 401 THEN 405 WHEN 402 THEN 406 WHEN 403 THEN 407 ELSE 404 END \
              WHERE e.slot = 'offhand' AND e.item_id BETWEEN 404 AND 407".to_string(),
-            "DELETE FROM equipment WHERE slot NOT IN ('weapon','offhand','armor','earring','necklace','bracelet','belt')".to_string(),
+            // Slot que nao existe mais some. A lista sai de `EquipSlot::TODOS`
+            // e NAO e' escrita aqui: escrita a mao, ela ficou pra tras quando
+            // o pet e a montaria ganharam slot, e esta linha passou a APAGAR
+            // pet e montaria equipados de todo mundo em TODO BOOT — o dono
+            // perdeu os dele em 21/09/2026. Uma limpeza que le' a lista velha
+            // nao limpa: destroi.
+            faxina_de_slots(),
             format!("DELETE FROM equipment WHERE {SO_VELHO}"),
             format!("DELETE FROM inventory WHERE {SO_VELHO}"),
             format!("DELETE FROM vault WHERE {SO_VELHO}"),
@@ -3548,6 +3579,11 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         .collect();
     let prefs = busca!((String, String), "name, preferencias_json");
     let prefs_map: HashMap<String, String> = prefs.into_iter().collect();
+    let colonia = busca!((String, String), "name, colonia_json");
+    let colonia_map: HashMap<String, shared::colonia::DadosColonia> = colonia
+        .into_iter()
+        .map(|(n, json)| (n, serde_json::from_str(&json).unwrap_or_default()))
+        .collect();
     let skill_progress = busca!((String, String), "name, skill_progress_json");
     let skill_progress_map: HashMap<String, shared::skills::ProgressoDeSkills> = skill_progress
         .into_iter()
@@ -3604,6 +3640,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
             mortes_map.get(&name).cloned().unwrap_or_default();
         let preferencias_json = prefs_map.get(&name).cloned().unwrap_or_default();
         let skill_progress = skill_progress_map.get(&name).cloned().unwrap_or_default();
+        let colonia = colonia_map.get(&name).cloned().unwrap_or_default();
         let dungeon_json = dungeon_map.get(&name).cloned().unwrap_or_default();
         let conta_dungeon_json = conta_map.get(&name).cloned().unwrap_or_default();
         let (bolsa_extra, banco_extra) = armazem_map.get(&name).copied().unwrap_or_default();
@@ -3646,6 +3683,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 recuperacoes_usadas,
                 preferencias_json,
                 skill_progress,
+                colonia,
                 dungeon_json,
                 conta_dungeon_json,
                 presenca_aplicados: Vec::new(),
@@ -3964,6 +4002,8 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             .and_then(|v| serde_json::to_string(v).ok());
         let skill_progress_json =
             serde_json::to_string(&row.skill_progress).unwrap_or_else(|_| "{}".to_string());
+        let colonia_json =
+            serde_json::to_string(&row.colonia).unwrap_or_else(|_| "{}".to_string());
         sqlx::query(
             "INSERT INTO characters (name, x, y, hp, max_hp, xp, fame, aura,
                                      unspent_points, allocated_points,
@@ -3972,8 +4012,8 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                                      mp, stamina, zona, xp_bonus_ate,
                                      mortes_json, recuperacoes_dia, recuperacoes_usadas,
                                      fortuna_ate, sorte_ate, barra_json, preferencias_json, dungeon_json,
-                                     bolsa_extra, banco_extra, skill_progress_json)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+                                     bolsa_extra, banco_extra, skill_progress_json, colonia_json)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -4004,7 +4044,8 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                dungeon_json = EXCLUDED.dungeon_json,
                bolsa_extra = EXCLUDED.bolsa_extra,
                banco_extra = EXCLUDED.banco_extra,
-               skill_progress_json = EXCLUDED.skill_progress_json",
+               skill_progress_json = EXCLUDED.skill_progress_json,
+               colonia_json = EXCLUDED.colonia_json",
         )
         .bind(&row.name)
         .bind(row.pos.x)
@@ -4036,6 +4077,7 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(row.bolsa_extra as i16)
         .bind(row.banco_extra as i16)
         .bind(&skill_progress_json)
+        .bind(&colonia_json)
         .execute(&mut *tx)
         .await?;
         // A conta vai junto: bau aberto num personagem e a 1ª vitoria semanal
@@ -4156,4 +4198,45 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         let _ = crate::quests::save_char(pool, &row.name, &row.quests, row.faction_points).await;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod testes_da_faxina_de_slots {
+    use super::faxina_de_slots;
+
+    /// TODO slot que o jogo equipa tem que estar na faxina.
+    ///
+    /// Este teste nasce de um estrago real: a lista estava escrita a mao e
+    /// parou nos sete slots de equipamento. Quando o pet e a montaria ganharam
+    /// slot, ninguem voltou aqui — e a faxina passou a apagar, em todo boot,
+    /// o pet e a montaria equipados de TODOS os personagens. O dono reiniciou
+    /// o servidor em 21/09/2026 e perdeu os dele.
+    ///
+    /// Nao adianta testar o texto do SQL contra uma lista escrita no teste:
+    /// seria a mesma lista a mao, duas vezes. O teste percorre o ENUM.
+    #[test]
+    fn nenhum_slot_do_jogo_e_varrido_pela_faxina() {
+        let sql = faxina_de_slots();
+        for s in shared::EquipSlot::TODOS {
+            assert!(
+                sql.contains(&format!("'{}'", s.as_db_str())),
+                "{:?} ('{}') nao esta' na faxina — ela APAGA esse slot em todo boot:\n{sql}",
+                s,
+                s.as_db_str()
+            );
+        }
+    }
+
+    /// E a faxina tem que continuar varrendo: uma lista que aceita tudo nao
+    /// limpa nada, e slot morto de versao antiga ficaria no banco pra sempre.
+    #[test]
+    fn a_faxina_ainda_varre_o_que_nao_existe_mais() {
+        let sql = faxina_de_slots();
+        for morto in ["ring", "helmet", "boots", "gloves", "cape"] {
+            assert!(
+                !sql.contains(&format!("'{morto}'")),
+                "'{morto}' nao e' slot do jogo e nao devia estar na lista"
+            );
+        }
+    }
 }

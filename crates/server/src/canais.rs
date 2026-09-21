@@ -55,6 +55,59 @@ impl Saude {
     }
 }
 
+/// Os chefes DESTE canal, pro heartbeat publicar. Mesma ideia da
+/// `Populacao`: o world loop escreve, a task de rede le', e nenhuma das duas
+/// precisa falar com a outra.
+#[derive(Clone, Default)]
+pub struct Chefes(Arc<std::sync::RwLock<Vec<shared::bosses::ChefeNoMapa>>>);
+
+impl Chefes {
+    pub fn set(&self, v: Vec<shared::bosses::ChefeNoMapa>) {
+        if let Ok(mut g) = self.0.write() {
+            *g = v;
+        }
+    }
+
+    pub fn get(&self) -> Vec<shared::bosses::ChefeNoMapa> {
+        self.0.read().map(|g| g.clone()).unwrap_or_default()
+    }
+}
+
+/// Os chefes de TODAS as zonas do realm, pro mapa-mundi.
+///
+/// Chefe e' estado de PROCESSO: cada zona so' sabe dos seus. O mapa-mundi
+/// mostra as quatro ilhas, entao o dado tem que cruzar processo — e o unico
+/// caminho que ja' existe pra isso e' o banco, pela mesma ida que o heartbeat
+/// ja' faz a cada 5s pro diretorio de canais. Uma consulta a mais na viagem
+/// que ja' estava marcada.
+#[derive(Clone, Default)]
+pub struct MundoDeChefes(Arc<std::sync::RwLock<Vec<(String, String, Vec<shared::bosses::ChefeNoMapa>)>>>);
+
+impl MundoDeChefes {
+    fn set(&self, v: Vec<(String, String, Vec<shared::bosses::ChefeNoMapa>)>) {
+        if let Ok(mut g) = self.0.write() {
+            *g = v;
+        }
+    }
+
+    /// Os chefes da zona `z`, do canal servido por `host`.
+    ///
+    /// O host importa: cada CANAL e' uma instancia do mapa com os chefes
+    /// dela. Perguntar "os chefes da Geleira" sem dizer de qual canal daria
+    /// a resposta de um canal qualquer — e o jogador iria pro outro.
+    pub fn da_zona(&self, z: &str, host: Option<&str>) -> Option<Vec<shared::bosses::ChefeNoMapa>> {
+        let g = self.0.read().ok()?;
+        let achou = |h: Option<&str>| {
+            g.iter()
+                .find(|(zz, hh, _)| zz == z && h.is_none_or(|h| hh == h))
+                .map(|(_, _, c)| c.clone())
+        };
+        // Sem canal no ar, a ultima noticia daquela zona ainda vale mais que
+        // nada: o mapa mostra e diz que a ilha esta' fora do ar.
+        achou(host).or_else(|| achou(None))
+    }
+}
+
 impl Populacao {
     pub fn set(&self, n: usize) {
         self.0.store(n, Ordering::Relaxed);
@@ -96,6 +149,21 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     // numero de canais visiveis — e errava sempre que a zona estava vazia.
     sqlx::query(
         "ALTER TABLE channels ADD COLUMN IF NOT EXISTS single BOOLEAN NOT NULL DEFAULT FALSE",
+    )
+    .execute(pool)
+    .await?;
+    // Os chefes por canal, pro mapa-mundi. Uma linha por CANAL, nao por
+    // zona: dois canais da mesma ilha sao duas instancias, com chefes que
+    // morrem e voltam em horas diferentes.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS chefes_de_canal (
+            canal      TEXT PRIMARY KEY,
+            realm      TEXT NOT NULL DEFAULT 'SA01',
+            zona       TEXT NOT NULL,
+            host       TEXT NOT NULL,
+            dados_json TEXT NOT NULL DEFAULT '[]',
+            updated    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )",
     )
     .execute(pool)
     .await?;
@@ -153,7 +221,14 @@ pub fn realm() -> String {
 /// A lista de canais e' derivada do `updated`: quem parou de bater some da
 /// lista sozinho, sem ninguem precisar limpar. Servidor que caiu nao aparece
 /// como opcao.
-pub fn spawn_heartbeat(pool: PgPool, pop: Populacao, saude: Saude, dir: Diretorio) {
+pub fn spawn_heartbeat(
+    pool: PgPool,
+    pop: Populacao,
+    saude: Saude,
+    dir: Diretorio,
+    chefes: Chefes,
+    mundo: MundoDeChefes,
+) {
     let id_curto = std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into());
     let realm_id = realm();
     let realm = realm_id.clone();
@@ -207,6 +282,44 @@ pub fn spawn_heartbeat(pool: PgPool, pop: Populacao, saude: Saude, dir: Diretori
             .await;
             if let Err(e) = r {
                 tracing::warn!("heartbeat do canal '{id}': {e}");
+            }
+
+            // Os chefes DESTE canal, pro mapa-mundi de quem estiver noutra
+            // ilha. Zona sem chefe (a colonia, a dungeon) grava lista vazia,
+            // e e' isso que distingue "sem chefe" de "fora do ar".
+            let meus = chefes.get();
+            let json = serde_json::to_string(&meus).unwrap_or_else(|_| "[]".into());
+            let _ = sqlx::query(
+                "INSERT INTO chefes_de_canal (canal, realm, zona, host, dados_json, updated)
+                 VALUES ($1, $2, $3, $4, $5, NOW())
+                 ON CONFLICT (canal) DO UPDATE SET
+                    realm = EXCLUDED.realm,
+                    zona = EXCLUDED.zona,
+                    host = EXCLUDED.host,
+                    dados_json = EXCLUDED.dados_json,
+                    updated = NOW()",
+            )
+            .bind(&id)
+            .bind(&realm)
+            .bind(&zona_local)
+            .bind(&host)
+            .bind(&json)
+            .execute(&pool)
+            .await;
+            if let Ok(linhas) = sqlx::query_as::<_, (String, String, String)>(
+                "SELECT zona, host, dados_json FROM chefes_de_canal
+                  WHERE realm = $1 AND updated > NOW() - INTERVAL '60 seconds'",
+            )
+            .bind(&realm)
+            .fetch_all(&pool)
+            .await
+            {
+                mundo.set(
+                    linhas
+                        .into_iter()
+                        .map(|(z, h, j)| (z, h, serde_json::from_str(&j).unwrap_or_default()))
+                        .collect(),
+                );
             }
 
             // Mesma ida ao banco atualiza o diretorio de zonas do realm.

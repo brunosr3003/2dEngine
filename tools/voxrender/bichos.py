@@ -45,6 +45,17 @@ BICHOS = [
     ("hipogrifo",    "hippogriff", 3400),   # tem asa
     ("dragao",       "dragon",     3800),   # tem asa
     ("porco",        "pig",        2200),
+    # ── O BESTIARIO POR ILHA (docs/MUNDO.md) ──
+    #
+    # Ate' 21/09/2026 as quatro ilhas sorteavam da MESMA lista, e o dono viu
+    # caranguejo na Geleira. Cada ilha passa a ter os bichos dela, e estes
+    # sao os que faltavam. Todos QUADRUPEDES: e' o rig que o `bicho.rs` sabe
+    # animar, e um modelo inteiro (o zone14 tem varios) entraria parado no
+    # meio de bicho que anda.
+    ("escaravelho",  "escaravelho", 2600),   # Ermo: o besouro gigante
+    ("escaravelho_rainha", "rainha", 3400),  # Ermo: a rainha, com as placas
+    ("morsa",        "morsa",       2600),   # Geleira: a morsa
+    ("rochoso",      "rochoso",     2600),   # Planalto: a criatura de pedra
 ]
 
 # arquivo do zone14 -> nome da peca no jogo (ver `bicho::junta_de`)
@@ -64,6 +75,18 @@ PECAS = {
     "wing_right": "asa_d", "wing_left": "asa_e",
     # Alguns so' tem cabeca e pescoco num arquivo so'.
     "head_snout": "cabeca", "head_antlers": "cabeca",
+    # Os insetos e a criatura de pedra chamam a pata de `claw`, e nao tem
+    # pescoco nem cauda — a junta some e o resto anima igual.
+    "claw_front_right": "pata_fd", "claw_front_left": "pata_fe",
+    "claw_back_right": "pata_td", "claw_back_left": "pata_te",
+    # Pecas que nao tem junta propria entram na junta VIZINHA: o focinho e a
+    # mandibula vao com a cabeca, as placas da rainha com o tronco. Elas so'
+    # funcionam porque o pivo e' da JUNTA e nao da peca (`vox::load_bicho`) —
+    # cada uma com o seu pivo abriria fresta na primeira passada.
+    "snout": "cabeca",
+    "mandibula_1": "cabeca",
+    "placa_1": "tronco", "placa_2": "tronco", "placa_3": "tronco",
+    "placa_4": "tronco", "placa_5": "tronco", "placa_6": "tronco",
 }
 
 

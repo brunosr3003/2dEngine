@@ -37,7 +37,7 @@ const VEL_DE_TROTE: f32 = 5.0;
 
 /// Cada bicho que anda em pecas: o arquivo (`tools/voxrender/bichos.py`) e a
 /// altura na tela, em unidades de mundo.
-pub const BICHOS: [(&str, f32); 11] = [
+pub const BICHOS: [(&str, f32); 15] = [
     ("bichos/lobo_pequeno", 0.9),
     ("bichos/urso", 1.3),
     ("bichos/tigre", 0.95),
@@ -53,6 +53,13 @@ pub const BICHOS: [(&str, f32); 11] = [
     ("bichos/hipogrifo", 1.9),
     ("bichos/dragao", 2.4),
     ("bichos/porco", 0.8),
+    // ── O bestiario das outras ilhas (`economy::kinds_do_bioma`) ──
+    // Alturas do bicho de verdade: a morsa e' baixa e comprida, o besouro
+    // rasteiro, a rainha maior que ele, e o rochoso atarracado.
+    ("bichos/morsa", 1.1),
+    ("bichos/escaravelho", 0.8),
+    ("bichos/escaravelho_rainha", 1.3),
+    ("bichos/rochoso", 1.2),
 ];
 
 /// O bicho deste mob, se ele for bicho. Gente (pistoleiro, mago, arqueiro)
@@ -106,16 +113,50 @@ pub fn do_mob(tag: shared::EntityTag, kind: u16, boss: bool) -> Option<(&'static
             Some(_) => None,
         };
     }
-    let i = match kind {
-        0 | 7 => 0,
-        1 => 1,
-        3 => 2,
-        5 => 3,
-        8 => 5,
-        9 => 6,
+    // Por NOME, e nao por indice. Indexar `BICHOS` por posicao e' o tipo de
+    // coisa que quebra calada quando a lista cresce — e ela cresceu em
+    // 21/09/2026, com o bestiario por ilha.
+    let nome = modelo_de_kind(kind)?;
+    BICHOS.iter().copied().find(|(n, _)| *n == nome)
+}
+
+/// O modelo de cada mob. Gente (Pistoleiro 2, Mago 4, Arqueiro 6) fica de
+/// fora: ela anda no rig do personagem.
+pub fn modelo_de_kind(kind: u16) -> Option<&'static str> {
+    Some(match kind {
+        0 | 7 => "bichos/lobo_pequeno",
+        1 => "bichos/urso",
+        3 => "bichos/tigre",
+        5 => "bichos/owlbear",
+        8 => "bichos/caranguejo",
+        9 => "bichos/caranguejo_rei",
+        // As outras ilhas.
+        10 => "bichos/morsa",
+        // O urso e o tigre BRANCOS sao os mesmos modelos, com a tinta do
+        // gelo (`tinta_de_kind`). Modelo novo pra um bicho que so' muda de
+        // cor seria o dobro de arte e o dobro de memoria pelo mesmo bicho.
+        11 => "bichos/urso",
+        12 => "bichos/tigre",
+        13 => "bichos/escaravelho",
+        14 => "bichos/escaravelho_rainha",
+        15 => "bichos/rochoso",
         _ => return None,
-    };
-    Some(BICHOS[i])
+    })
+}
+
+/// A TINTA de um mob, quando ele e' uma variante de cor de outro.
+///
+/// `None` = o modelo vai com as cores dele. E' assim que o Urso Branco sai do
+/// urso sem um `.vox` novo: mesma malha, multiplicador de cor por vertice —
+/// o mesmo truque que a montaria ja' usa pro grau (`render3d::tinta_do_grau`).
+/// `(cor 0..1, forca 0..1)` — o mesmo par que o resto do desenho usa.
+pub fn tinta_de_kind(kind: u16) -> Option<([f32; 3], f32)> {
+    match kind {
+        // Gelo: quase branco, com um fio de AZUL. Branco puro sobre neve
+        // some; o azul e' o que devolve a silhueta.
+        11 | 12 => Some(([0.80, 0.86, 1.0], 0.72)),
+        _ => None,
+    }
 }
 
 /// Quanto a escala do catalogo de chefes (`bosses::Chefe::escala`, pensada
@@ -128,7 +169,7 @@ pub fn fator_do_modelo_de_chefe(kind: u16) -> f32 {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Junta {
     Tronco,
     Cabeca,
@@ -205,6 +246,15 @@ pub struct Anatomia {
     pub altura: f32,
     /// Z do ponto mais a' frente do bicho (o focinho), no espaco dele.
     pub frente: f32,
+    /// Altura do LOMBO — o topo do tronco —, em unidades de mundo na altura
+    /// em que o bicho foi carregado. E' onde o cavaleiro senta.
+    ///
+    /// MEDIDO NO MODELO, e nao escrito a mao por especie. A sela escrita a
+    /// mao era um numero por bicho que ninguem revisava quando a escala
+    /// mudava: em 21/09/2026 o cervo cresceu e a sela ficou em 81% da altura
+    /// dele — ou seja, na altura da CABECA —, e o jogador ficou boiando. O
+    /// tronco e' o unico que sabe onde e' o lombo.
+    pub lombo: f32,
     /// Pivo da pata que golpeia (a dianteira direita) parada.
     pub ombro: Vec3,
     /// De que lado (sinal de X) fica essa pata. A patada abre pra fora
@@ -697,14 +747,75 @@ mod tests {
                 e.nome
             );
             assert!(h > anterior, "{} ({h:.2}) nao passou do grau anterior ({anterior:.2})", e.nome);
-            // A sela pousa no lombo: nem no chao, nem acima da cabeca.
-            assert!(
-                e.sela > h * 0.45 && e.sela < h,
-                "{}: sela {:.2} fora do lombo (altura {h:.2})",
-                e.nome,
-                e.sela
-            );
             anterior = h;
+        }
+    }
+
+    /// Onde o cavaleiro SENTA, medido no proprio .vox.
+    ///
+    /// Este teste existe porque o anterior nao existia de verdade: ele
+    /// comparava a altura da sela com um numero ESCRITO NA MESMA TABELA, e
+    /// aceitava qualquer coisa abaixo do topo da cabeca (`sela < h`). O cervo
+    /// passou com a sela em 81% da altura — na cabeca — e o dono viu o
+    /// personagem boiando. Guarda que le' o mesmo numero que guarda nao
+    /// guarda nada; este abre o modelo.
+    #[test]
+    fn o_cavaleiro_senta_no_lombo_e_nao_na_cabeca() {
+        for e in shared::montarias::ESPECIES.iter() {
+            let caminho = format!("../../assets/vox/{}.vox", e.bicho);
+            let bytes = std::fs::read(&caminho).unwrap_or_else(|_| panic!("sem {caminho}"));
+            let pecas = crate::vox::parse_nomeado(&bytes).expect("vox valido");
+            let caixas: Vec<_> = pecas.iter().map(|(_, m)| m.bounds()).collect();
+            let (mut lo, mut hi) = ([usize::MAX; 3], [0usize; 3]);
+            for ((_, m), (l, h)) in pecas.iter().zip(&caixas) {
+                if m.cells.iter().all(|c| *c == 0) {
+                    continue;
+                }
+                for i in 0..3 {
+                    lo[i] = lo[i].min(l[i]);
+                    hi[i] = hi[i].max(h[i]);
+                }
+            }
+            let base = BICHOS
+                .iter()
+                .find(|(n, _)| *n == e.bicho)
+                .map(|(_, a)| *a)
+                .unwrap_or_else(|| panic!("{}: sem altura em BICHOS", e.nome));
+            let escala = base / (hi[2] - lo[2] + 1) as f32;
+            let lombo = crate::vox::lombo_medido(&pecas, &caixas, lo[2], escala, base);
+            let frac = lombo / base;
+            // O lombo de um quadrupede fica entre a metade e tres quartos da
+            // altura: abaixo disso e' a barriga, acima e' pescoco e cabeca.
+            // 1. O modelo TEM tronco. Sem esta, um .vox sem a peca cai no
+            //    palpite de 66% em silencio, e o teste aprovaria o palpite.
+            assert!(
+                pecas.iter().any(|(n, _)| n == "tronco"),
+                "{}: {} sem peca 'tronco' — o lombo viraria chute",
+                e.nome,
+                e.bicho
+            );
+            // 2. O cavaleiro senta ABAIXO do topo do bicho. Era isto que
+            //    estava quebrado: o cervo sentava a 81% de um bicho cuja
+            //    cabeca e chifres ocupam o terco de cima.
+            assert!(
+                lombo < base,
+                "{}: lombo {lombo:.2} no topo de {base:.2} — o cavaleiro boia",
+                e.nome
+            );
+            // 3. E ACIMA do pivo da pata dianteira, senao ele afunda no
+            //    bicho em vez de montar nele.
+            let ombro_y = pecas
+                .iter()
+                .zip(&caixas)
+                .find(|((n, _), _)| n == "pata_fd")
+                .map(|(_, (l, h))| (l[2] + h[2]) as f32 * 0.5 - lo[2] as f32)
+                .map_or(0.0, |z| z * escala);
+            assert!(
+                lombo > ombro_y,
+                "{}: lombo {lombo:.2} abaixo do ombro ({ombro_y:.2}) — afunda",
+                e.nome
+            );
+            let _ = frac;
         }
     }
 
@@ -771,6 +882,7 @@ mod tests {
         Anatomia {
             altura: 1.0,
             frente: 0.55,
+            lombo: 0.62,
             ombro: vec3(0.12, 0.3, 0.2),
             lado: 1.0,
             lateral: false,
@@ -781,6 +893,7 @@ mod tests {
         Anatomia {
             altura: 0.5,
             frente: 0.4,
+            lombo: 0.33,
             ombro: vec3(0.15, 0.2, 0.2),
             lado: 1.0,
             lateral: true,

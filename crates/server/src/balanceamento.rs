@@ -237,7 +237,12 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
         .into_iter()
         .filter(|s| s.conjunto == conjunto && s.destravada(nivel))
         .collect();
-    let comuns: Vec<u16> = (0..7).collect();
+    // A MESMA lista que o jogo sorteia, e nao uma copia escrita aqui.
+    // `(0..7)` estava cravado: se o bestiario do Bosque mudasse, o simulador
+    // continuaria aprovando o bestiario ANTIGO e reportando verde sobre um
+    // jogo diferente.
+    let comuns: Vec<u16> =
+        crate::economy::kinds_do_bioma(shared::terreno::Bioma::Floresta).to_vec();
     let mobs: Vec<Mob> = vagas()
         .into_iter()
         .enumerate()
@@ -311,7 +316,12 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
         shared::MELEE_RANGE
     };
     let cd_base = cooldown_do_ataque(arma, stats, false);
-    let comuns: Vec<u16> = (0..7).collect();
+    // A MESMA lista que o jogo sorteia, e nao uma copia escrita aqui.
+    // `(0..7)` estava cravado: se o bestiario do Bosque mudasse, o simulador
+    // continuaria aprovando o bestiario ANTIGO e reportando verde sobre um
+    // jogo diferente.
+    let comuns: Vec<u16> =
+        crate::economy::kinds_do_bioma(shared::terreno::Bioma::Floresta).to_vec();
     let alvo_kind = match parada {
         Parada::DoKind(k, _) => Some(k),
         _ => None,
@@ -841,7 +851,12 @@ pub(crate) fn jornada(conjunto: Conjunto, com_pocoes: bool) -> Jornada {
             .map(|z| (z.centro, z.lv_min, z.lv_max))
             .collect()
     };
-    let comuns: Vec<u16> = (0..7).collect();
+    // A MESMA lista que o jogo sorteia, e nao uma copia escrita aqui.
+    // `(0..7)` estava cravado: se o bestiario do Bosque mudasse, o simulador
+    // continuaria aprovando o bestiario ANTIGO e reportando verde sobre um
+    // jogo diferente.
+    let comuns: Vec<u16> =
+        crate::economy::kinds_do_bioma(shared::terreno::Bioma::Floresta).to_vec();
     let mut equip = shared::Equipment::default();
     equip.weapon = Some(arma_do(conjunto));
     let mult = crate::economy::xp_multiplier();
@@ -1923,7 +1938,12 @@ mod testes_das_zonas {
     fn a_missao_manda_pro_forte_depois_do_nivel_de_corte() {
         use crate::world::FORTE_NA_MISSAO_NIVEL;
         let (cidade, zonas) = super::bosque();
-        let comuns: Vec<u16> = (0..7).collect();
+        // A MESMA lista que o jogo sorteia, e nao uma copia escrita aqui.
+    // `(0..7)` estava cravado: se o bestiario do Bosque mudasse, o simulador
+    // continuaria aprovando o bestiario ANTIGO e reportando verde sobre um
+    // jogo diferente.
+    let comuns: Vec<u16> =
+        crate::economy::kinds_do_bioma(shared::terreno::Bioma::Floresta).to_vec();
         let lista = |nivel: u32| -> Vec<(glam::Vec2, u32, u32)> {
             zonas
                 .zonas

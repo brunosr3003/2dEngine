@@ -382,6 +382,14 @@ pub enum ClientMessage {
     Viajar {
         ilha: u8,
     },
+    /// O MAPA-MUNDI: as ilhas do arquipelago e os chefes de cada uma.
+    /// Pedido ao abrir o mapa e enquanto ele fica aberto — o estado de chefe
+    /// muda com o servidor inteiro, nao com quem esta' olhando.
+    Mundo,
+    /// A COLONIA (docs/COLONIA.md): visitar, voltar, colher e melhorar.
+    Colonia {
+        pedido: crate::colonia::PedidoColonia,
+    },
     /// Gasta 1 Pergaminho de Teleporte e salta pro chao firme mais perto de
     /// (x, z), na ilha atual. Recusa (motivo no chat) nao gasta.
     Teleportar {
@@ -1097,6 +1105,14 @@ pub enum ServerMessage {
     Loja {
         aviso: crate::loja::AvisoLoja,
     },
+    /// As ilhas do arquipelago pro mapa-mundi, com os chefes de cada uma.
+    Mundo {
+        ilhas: Vec<crate::bosses::IlhaNoMundo>,
+    },
+    /// O painel da COLONIA (docs/COLONIA.md).
+    Colonia {
+        aviso: crate::colonia::AvisoColonia,
+    },
     /// O alvo esta' no alcance da arma a distancia, mas o relevo barra o
     /// tiro: o ataque nao sai. No maximo 1 por segundo por jogador.
     SemVisada {
@@ -1125,6 +1141,10 @@ pub enum ServerMessage {
     /// Clique no Capitao do Porto: o menu "Viajar", uma linha por ilha.
     Viagem {
         destinos: Vec<crate::viagem::Destino>,
+        /// A quest da ilha propria (docs/COLONIA.md) ja' passou. Falso
+        /// esconde a linha "Minha Ilha" — o menu nao oferece o que a
+        /// historia ainda nao deu.
+        colonia: bool,
     },
     /// Expansoes compradas da bolsa e do banco (`shared::armazem`). Vai no
     /// login, ao abrir o banco e a cada expansao.

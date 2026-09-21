@@ -94,6 +94,7 @@ pub struct ProjTag {
 }
 
 mod boss_teste;
+pub(crate) mod colonia;
 mod chefes;
 mod habilidades;
 pub(crate) use chefes::itens_do_chefe;
@@ -1570,6 +1571,10 @@ pub struct Session {
     pub inventory_dirty: bool,
     /// True quando o equipamento mudou (envia StatsUpdate no proximo tick).
     pub stats_dirty: bool,
+    /// Nivel de cada eixo da COLONIA (docs/COLONIA.md).
+    /// A COLONIA do personagem (docs/COLONIA.md): niveis, ultima colheita
+    /// e se a quest ja' entregou a ilha.
+    pub colonia: shared::colonia::DadosColonia,
     /// Slots do vault (INVENTORY_SLOTS); carregado no login, salvo no save.
     pub vault: Vec<shared::InventorySlot>,
     /// True quando vault mudou — envia VaultUpdate no proximo tick.
@@ -1936,6 +1941,13 @@ pub struct GameWorld {
     /// zonas antigas de tile — enquanto as duas convivem, quem manda e' o
     /// nome da zona.
     pub ilha: Option<shared::terreno::Ilha>,
+    /// A ilha da COLONIA de cada instancia (docs/COLONIA.md). Vazio fora da
+    /// zona `colonia`.
+    pub colonias: HashMap<u32, shared::terreno::Ilha>,
+    /// Os chefes DESTA zona, pro heartbeat publicar (`canais::Chefes`).
+    pub chefes_publicados: Option<crate::canais::Chefes>,
+    /// Os chefes de todas as zonas do realm, pro mapa-mundi.
+    pub mundo_de_chefes: Option<crate::canais::MundoDeChefes>,
     /// Onde cada zona do realm esta rodando. Ver `canais::Diretorio`.
     pub diretorio: Option<crate::canais::Diretorio>,
     /// Quando ESTE processo gravou cada personagem pela ultima vez (sim time).
@@ -2465,6 +2477,9 @@ impl GameWorld {
             admissao_travada: false,
             imortal: std::env::var("MMO_IMORTAL").as_deref() == Ok("1"),
             ilha: None,
+            colonias: HashMap::new(),
+            chefes_publicados: None,
+            mundo_de_chefes: None,
             diretorio: None,
             salvo_aqui_em: HashMap::new(),
             zona_de_saida: HashMap::new(),
@@ -2655,6 +2670,9 @@ impl GameWorld {
             admissao_travada: false,
             imortal: std::env::var("MMO_IMORTAL").as_deref() == Ok("1"),
             ilha: None,
+            colonias: HashMap::new(),
+            chefes_publicados: None,
+            mundo_de_chefes: None,
             diretorio: None,
             salvo_aqui_em: HashMap::new(),
             zona_de_saida: HashMap::new(),
@@ -2742,7 +2760,13 @@ impl GameWorld {
                 DUNGEON_LANE_COUNT
             );
         }
-        w.spawn_mapfile_entities(&mf);
+        // A COLONIA nao herda o mapa de arquivo. O `game.json` e' o mundo
+        // velho de tiles, e as entidades dele caem em coordenadas que nao
+        // querem dizer nada na ilha do jogador — 231 bichos boiando, que foi
+        // exatamente o que aconteceu com a zona do mar.
+        if !shared::colonia::e_colonia(&crate::canais::zona()) {
+            w.spawn_mapfile_entities(&mf);
+        }
         if w.tutorial_mode {
             w.spawn_tutorial_island();
             w.spawn_tutorial_content();
@@ -3194,10 +3218,11 @@ impl GameWorld {
                     // aqui se montava um build procedural (classe, equipamento,
                     // skills); mob agora e' so' o que a tabela diz.
                     // Zona de praia tem bicho proprio (caranguejos).
+                    let bioma = self.bioma_da_zona();
                     let escolhido = if zone_id >= ZONA_DE_PRAIA_ID {
-                        crate::economy::kind_de_praia(lcg(s_lvl))
+                        crate::economy::kind_de_praia(bioma, lcg(s_lvl))
                     } else {
-                        crate::economy::kind_para_nivel(lvl, lcg(s_lvl))
+                        crate::economy::kind_para_nivel(bioma, lvl, lcg(s_lvl))
                     };
                     pending.push(PendingSpawn {
                         zone_id,
@@ -5190,6 +5215,7 @@ impl GameWorld {
             saved_sp_earned,
             saved_sp_spent,
             saved_skill_progress,
+            saved_colonia,
             saved_visual,
             saved_char_name,
         ) = (
@@ -5208,6 +5234,7 @@ impl GameWorld {
             row.skill_points_earned,
             row.skill_points_spent,
             row.skill_progress.clone(),
+            row.colonia.clone(),
             row.visual.clone(),
             row.name.clone(),
         );
@@ -5331,6 +5358,20 @@ impl GameWorld {
         // e' outro mundo. Quem decide e' o relevo, e ele pode empurrar a
         // posicao salva varias dezenas de metros: as coordenadas antigas
         // foram escolhidas num mapa plano de 180x140 e a ilha tem 1,6 km.
+        // A COLONIA nao tem `self.ilha`: o relevo e' por instancia. Gera a
+        // ilha deste personagem AGORA — a fisica do primeiro tick ja' vai
+        // procura-la — e desce nela, porque a coordenada salva veio do porto
+        // de outra zona e nao quer dizer nada aqui.
+        if shared::colonia::e_colonia(&self.zona) {
+            let inst = crate::world::colonia::instancia_do_nome(&saved_char_name);
+            let nivel = saved_colonia.niveis[shared::colonia::eixo::TAMANHO];
+            let ilha = self.colonia_de(inst, &saved_char_name, nivel);
+            spawn = ilha.terra_mais_proxima(
+                shared::colonia::CHEGADA.x,
+                shared::colonia::CHEGADA.y,
+                400.0,
+            );
+        }
         if self.ilha.is_some() {
             let antes = spawn;
             spawn = self.pousar(spawn);
@@ -5417,6 +5458,7 @@ impl GameWorld {
             s.skill_points_earned = saved_sp_earned;
             s.skill_points_spent = saved_sp_spent;
             s.skill_progress = saved_skill_progress;
+            s.colonia = saved_colonia.clone();
             s.skills_dirty = false; // já enviamos PlayerSkillsUpdate no fim do login
             s.vault = saved_vault;
             s.vault_dirty = false;
@@ -5465,7 +5507,15 @@ impl GameWorld {
             s.preferencias = crate::preferencias::de_json(&row.preferencias_json);
             s.dungeon = serde_json::from_str(&row.dungeon_json).unwrap_or_default();
             s.conta_dungeon = serde_json::from_str(&row.conta_dungeon_json).unwrap_or_default();
-            s.instancia = 0;
+            // Instancia: 0 e' "no mundo". Na COLONIA ela sai do NOME do
+            // personagem (docs/COLONIA.md) — a sessao que pediu a viagem
+            // morreu no handoff, entao quem chega aqui tem que se achar
+            // sozinho, e achar SEMPRE a mesma ilha.
+            s.instancia = if shared::colonia::e_colonia(&self.zona) {
+                crate::world::colonia::instancia_do_nome(&row.name)
+            } else {
+                0
+            };
             s.retorno_da_dungeon = None;
             // Calendario de presenca: o estado vem do banco (e entrega o que
             // ficou pendente); a janela abre sozinha no cliente se houver
@@ -5537,6 +5587,18 @@ impl GameWorld {
                 })
                 .collect(),
         });
+        // Na COLONIA o relevo nao sai da zona: sai da semente do personagem.
+        // Vai LOGO DEPOIS do MapChange, que e' quem limpa o terreno velho.
+        if shared::colonia::e_colonia(&self.zona) {
+            let _ = handle.to_client.send(ServerMessage::Colonia {
+                aviso: shared::colonia::AvisoColonia::Terreno {
+                    semente: shared::colonia::semente(&saved_char_name),
+                    raio: shared::colonia::raio_blocos(
+                        saved_colonia.niveis[shared::colonia::eixo::TAMANHO],
+                    ),
+                },
+            });
+        }
         // O mapa da ilha (zonas de mob e regioes de recurso) logo depois: o
         // cliente ja' sabe de que ilha e' e desenha por cima da imagem dela.
         if let Some(m) = self.mapa_da_ilha() {
@@ -5716,7 +5778,7 @@ impl GameWorld {
                 continue;
             }
             s = lcg(s);
-            let build = crate::economy::kind_para_nivel(level, s);
+            let build = crate::economy::kind_para_nivel(self.bioma_da_zona(), level, s);
             let pos = Vec2::new(base.x + lx as f32 + 0.5, base.y + ly as f32 + 0.5);
             ids.push(self.spawn_dungeon_enemy(pos, build, level as u16));
         }
@@ -6533,6 +6595,7 @@ impl GameWorld {
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 inventory_dirty: false,
                 stats_dirty: false,
+                colonia: Default::default(),
                 vault: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 vault_dirty: false,
                 bolsa_extra: 0,
@@ -6648,6 +6711,14 @@ impl GameWorld {
                     }
                 } else {
                     self.broadcast_party_update(pid);
+                }
+            }
+            // Colonia vazia nao precisa de relevo na memoria.
+            let inst = s.instancia;
+            if inst != 0 && shared::colonia::e_colonia(&self.zona) {
+                let sozinho = !self.sessions.values().any(|o| o.instancia == inst);
+                if sozinho {
+                    self.esquece_colonia(inst);
                 }
             }
             tracing::info!("{:?} disconnected", s.entity_id);
@@ -6994,6 +7065,8 @@ impl GameWorld {
                 self.handle_shop_comprar(id, slot_idx as usize, qtd as u32);
             }
             ClientMessage::Viajar { ilha } => self.handle_viajar(id, ilha),
+            ClientMessage::Colonia { pedido } => self.handle_colonia(id, pedido),
+            ClientMessage::Mundo => self.abrir_mapa_mundi(id),
             ClientMessage::ExpandirArmazem { banco } => self.handle_expandir_armazem(id, banco),
             ClientMessage::EscolherNoNpc { npc_eid, missao } => {
                 self.handle_escolher_no_npc(id, npc_eid, missao)
@@ -10003,9 +10076,14 @@ impl GameWorld {
                 .unwrap_or(shared::terreno::DEGRAU_BLOCOS);
             // Numa ilha a parede nao e' tile, e' desnivel: quem barra e' a
             // regra de degrau contra o campo de altura.
+            // NA COLONIA o relevo e' POR INSTANCIA: cada jogador anda na
+            // ilha dele (docs/COLONIA.md). Fora dela, a ilha da zona.
+            let terreno = inst
+                .and_then(|i| self.colonias.get(&i.0))
+                .or(self.ilha.as_ref());
             corpos.push((
                 e,
-                match &self.ilha {
+                match terreno {
                     Some(i) => i.mover_com_degrau(pos.0, vel.0, dt, ENTITY_RADIUS, degrau),
                     None => self.map.move_and_slide(pos.0, vel.0, dt, ENTITY_RADIUS),
                 },
@@ -12499,6 +12577,7 @@ impl GameWorld {
             bolsa_extra: u8,
             banco_extra: u8,
             skill_progress: shared::skills::ProgressoDeSkills,
+            colonia: shared::colonia::DadosColonia,
         }
         let mut entries: Vec<E> = Vec::new();
         for session in self.sessions.values() {
@@ -12560,6 +12639,7 @@ impl GameWorld {
                 bolsa_extra: session.bolsa_extra,
                 banco_extra: session.banco_extra,
                 skill_progress: session.skill_progress.clone(),
+                colonia: session.colonia.clone(),
             });
         }
         for e in entries {
@@ -12589,6 +12669,7 @@ impl GameWorld {
                 skill_points_earned: e.sp_earned,
                 skill_points_spent: e.sp_spent,
                 skill_progress: e.skill_progress,
+                colonia: e.colonia,
                 account_id: e.account_id,
                 visual: Some(e.visual),
                 faction: e.faction,
@@ -13117,6 +13198,18 @@ impl GameWorld {
                     s.inventory_dirty = true;
                 }
             }
+            // A escritura da ilha. E' o passo que a entrega, e nao um item:
+            // a colonia nao cabe na bolsa e nao pode ser vendida.
+            if feito.id == shared::historia::PASSO_DA_COLONIA && !s.colonia.tem {
+                s.colonia.tem = true;
+                // A conta das 12 h comeca AGORA. Sem isso a ilha entregaria,
+                // na primeira visita, tudo o que "rendeu" desde 1970.
+                s.colonia.colhida_em = (now_ms() / 1000) as i64;
+                let _ = s.handle.to_client.send(ServerMessage::Chat {
+                    from: "SYS".into(),
+                    text: "A escritura é sua: fale com o Capitão para visitar a sua ilha.".into(),
+                });
+            }
             if feito.reward_xp > 0 {
                 // A XP da historia e' escrita na curva padrao (e' ela que leva o
                 // nivel do capitulo I): acompanha o multiplicador do servidor.
@@ -13250,6 +13343,33 @@ impl GameWorld {
         true
     }
 
+    /// O bioma DESTA zona. Fora de ilha (dungeon, tutorial, colonia) e'
+    /// Floresta: e' o bestiario de partida, e o unico que o simulador de
+    /// balanceamento cobre.
+    pub(crate) fn bioma_da_zona(&self) -> shared::terreno::Bioma {
+        shared::terreno::def_da_zona(&self.zona)
+            .map(|d| d.bioma)
+            .unwrap_or(shared::terreno::Bioma::Floresta)
+    }
+
+    /// Perto do Capitao do Porto, no cais. E' a porta de TODA viagem —
+    /// embarcar pra outra ilha e visitar a colonia (docs/COLONIA.md) —, e por
+    /// isso mora num lugar so': duas copias dessa consulta viram duas regras
+    /// de quao perto e' perto.
+    pub(crate) fn perto_do_capitao(&self, sid: SessionId) -> bool {
+        let Some(eu) = self.pos_do_jogador(sid) else {
+            return false;
+        };
+        let capitao = shared::construcao::Papel::Estaleiro as u8;
+        self.ecs
+            .query::<(&Position, &NpcDaVilaTag)>()
+            .iter()
+            .any(|(_, (p, t))| {
+                shared::npc_papel_de_kind(t.rumo) == capitao
+                    && p.0.distance(eu) <= shared::viagem::PERTO_DO_CAPITAO
+            })
+    }
+
     /// Perto de quem guarda o banco: o Banqueiro da vila (ou o cofre antigo,
     /// `Npc(2)`, dos mapas de arquivo).
     fn perto_do_banco(&self, sid: SessionId) -> bool {
@@ -13379,7 +13499,10 @@ impl GameWorld {
                     .is_some_and(|d| d.melhor(z).is_some())
         };
         let destinos = shared::viagem::destinos(&self.zona, indice, &no_ar);
-        let _ = s.handle.to_client.send(ServerMessage::Viagem { destinos });
+        let _ = s.handle.to_client.send(ServerMessage::Viagem {
+            destinos,
+            colonia: s.colonia.tem,
+        });
     }
 
     /// "Embarcar" no menu do Capitao: perto dele, ilha liberada pela
@@ -13398,16 +13521,8 @@ impl GameWorld {
         let Some(eu) = self.pos_do_jogador(sid) else {
             return;
         };
-        let capitao = shared::construcao::Papel::Estaleiro as u8;
-        let perto = self
-            .ecs
-            .query::<(&Position, &NpcDaVilaTag)>()
-            .iter()
-            .any(|(_, (p, t))| {
-                shared::npc_papel_de_kind(t.rumo) == capitao
-                    && p.0.distance(eu) <= shared::viagem::PERTO_DO_CAPITAO
-            });
-        if !perto {
+        let _ = eu;
+        if !self.perto_do_capitao(sid) {
             self.avisa_missao(
                 sid,
                 "Fale com o Capitão do Porto, no cais, para embarcar.".into(),
@@ -14740,7 +14855,7 @@ impl GameWorld {
                     );
                     // Praia sorteia os proprios bichos, fora da escada por nivel.
                     if z.id >= ZONA_DE_PRAIA_ID {
-                        zn.bichos = crate::economy::bichos_de_praia();
+                        zn.bichos = crate::economy::bichos_de_praia(self.bioma_da_zona());
                     }
                     zn
                 })
@@ -17846,6 +17961,7 @@ impl GameWorld {
             skill_points_earned: session.skill_points_earned,
             skill_points_spent: session.skill_points_spent,
             skill_progress: session.skill_progress.clone(),
+            colonia: session.colonia.clone(),
             account_id: session.account_id,
             visual: Some(session.visual.clone()),
             faction: session.faction,

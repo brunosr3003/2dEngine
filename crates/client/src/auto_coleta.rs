@@ -380,7 +380,7 @@ mod tests {
         let def = |kind: u8, alvo: u16| shared::quests::QuestDef {
             obj_kind: kind,
             obj_target: alvo,
-            ..*shared::quests::quest_by_id(776).expect("776 existe")
+            ..*shared::quests::quest_by_id(796).expect("796 existe")
         };
 
         let (tipos, energia) = tipos_da_missao(&def(

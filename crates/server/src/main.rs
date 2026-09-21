@@ -92,11 +92,15 @@ async fn main() -> Result<()> {
     let populacao = canais::Populacao::default();
     let saude = canais::Saude::default();
     let diretorio = canais::Diretorio::default();
+    let chefes = canais::Chefes::default();
+    let mundo_de_chefes = canais::MundoDeChefes::default();
     canais::spawn_heartbeat(
         pool.clone(),
         populacao.clone(),
         saude.clone(),
         diretorio.clone(),
+        chefes.clone(),
+        mundo_de_chefes.clone(),
     );
 
     // Olho de cima. So' sobe se PANOPTICO_BIND existir — sem ele o processo
@@ -138,6 +142,8 @@ async fn main() -> Result<()> {
             populacao,
             saude,
             diretorio,
+            chefes,
+            mundo_de_chefes,
         )
         .await
         {

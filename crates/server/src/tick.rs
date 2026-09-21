@@ -32,6 +32,8 @@ pub async fn run_world_loop(
     populacao: crate::canais::Populacao,
     saude: crate::canais::Saude,
     diretorio: crate::canais::Diretorio,
+    chefes: crate::canais::Chefes,
+    mundo_de_chefes: crate::canais::MundoDeChefes,
 ) -> Result<()> {
     // Precisa de um tx pra devolver AuthResult pro loop. Criamos um par
     // interno que e fundido com o rx original via tarefa de forward.
@@ -57,6 +59,8 @@ pub async fn run_world_loop(
     world.populacao = Some(populacao);
     world.saude = Some(saude.clone());
     world.diretorio = Some(diretorio);
+    world.chefes_publicados = Some(chefes);
+    world.mundo_de_chefes = Some(mundo_de_chefes);
     world.zona = crate::canais::zona();
     // Zona que e' ilha do arquipelago carrega o campo de altura. E' o mesmo
     // `Gerador` que o cliente usa pra desenhar — colisao e desenho saem da
@@ -78,6 +82,9 @@ pub async fn run_world_loop(
         // que a dificuldade cresce pra fora.
         let porto = world.porto();
         world.povoar_ilha(porto);
+        // A primeira publicacao. Sem ela o mapa-mundi so' saberia desta ilha
+        // depois do primeiro chefe morrer — que pode levar horas.
+        world.publica_chefes();
     }
     // Mercado global: liga a saida do realm ao banco central (docs/MERCADO.md).
     crate::mercado::spawn_relay(auth_pool.clone(), auth_tx.clone());

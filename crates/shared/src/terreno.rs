@@ -3395,18 +3395,83 @@ impl Ilha {
         let contendo = cel(de);
         let mut inicio = contendo;
         {
+            // O anel CRESCE ate' achar porta. So' os oito vizinhos nao bastam
+            // no CAIS: a celula tem 4 unidades e o cais e' uma lingua estreita
+            // entrando no mar, entao da metade dele pra ponta os nove
+            // candidatos caem todos na agua. O A* saia de um no' sem vizinho e
+            // o jogador tocava no mapa sem nada acontecer — medido em
+            // 21/09/2026: 7 dos 11 pontos do cais da ilha inicial sem rota.
+            //
+            // Alargar e' seguro porque o `trecho_livre` continua mandando:
+            // aceita-se a celula mais PERTO que o corpo realmente alcanca em
+            // linha reta, e do cais a linha reta de volta e' o proprio cais.
+            //
+            // O teto cobre um cais generoso (24 u). Alem dele nao ha' o que
+            // achar: quem esta' a mais de 24 u de qualquer chao alcancavel
+            // esta' no mar, e nao ha' rota a pe' nenhuma.
+            const ANEIS_MAX: i32 = 6;
             let mut melhor = f32::MAX;
-            for dz in -1..=1 {
-                for dx in -1..=1 {
-                    let c = (contendo.0 + dx, contendo.1 + dz);
-                    let p = *pontos.entry(c).or_insert_with(|| {
-                        self.ponto_livre_perto(bruto(c), crate::constants::ENTITY_RADIUS)
-                    });
-                    let d = de.distance(p);
-                    if d < melhor && self.trecho_livre(de, p, PULO_BLOCOS) {
-                        melhor = d;
-                        inicio = c;
+            // Comeca em 0 — a propria celula do corpo e' candidata. Pular o
+            // anel 0 tirava a porta mais obvia de todas e mudava a rota em
+            // terreno comum.
+            for r in 0..=ANEIS_MAX {
+                for dz in -r..=r {
+                    for dx in -r..=r {
+                        // So' o anel de raio r: o miolo ja' foi visto.
+                        if dx.abs() != r && dz.abs() != r {
+                            continue;
+                        }
+                        let c = (contendo.0 + dx, contendo.1 + dz);
+                        let p = *pontos.entry(c).or_insert_with(|| {
+                            self.ponto_livre_perto(bruto(c), crate::constants::ENTITY_RADIUS)
+                        });
+                        // Alcancavel NAO basta: a porta tem que estar LIGADA
+                        // ao grafo. O cais e' mais estreito que os 4 u da
+                        // celula, entao ha' celulas dele que o corpo alcanca
+                        // mas cujos oito vizinhos sao todos agua: o A* expande
+                        // uma vez, nao acha ninguem, e devolve `None`. Era
+                        // isso, e nao a distancia, que fazia a rota falhar em
+                        // uns pontos do cais e funcionar nos vizinhos.
+                        let d = de.distance(p);
+                        if d >= melhor || !self.trecho_livre(de, p, PULO_BLOCOS) {
+                            continue;
+                        }
+                        // Mesmo criterio que o A* usa pra andar de celula em
+                        // celula — se fosse outro, a porta aprovaria o que a
+                        // expansao recusa.
+                        let mut ligada = false;
+                        for (vx, vz) in [
+                            (1, 0),
+                            (-1, 0),
+                            (0, 1),
+                            (0, -1),
+                            (1, 1),
+                            (1, -1),
+                            (-1, 1),
+                            (-1, -1),
+                        ] {
+                            let vc = (c.0 + vx, c.1 + vz);
+                            let pv = *pontos.entry(vc).or_insert_with(|| {
+                                self.ponto_livre_perto(bruto(vc), crate::constants::ENTITY_RADIUS)
+                            });
+                            if !self.ocupado(pv, crate::constants::ENTITY_RADIUS)
+                                && self.trecho_livre(p, pv, PULO_BLOCOS)
+                            {
+                                ligada = true;
+                                break;
+                            }
+                        }
+                        if ligada {
+                            melhor = d;
+                            inicio = c;
+                        }
                     }
+                }
+                // Os aneis 0 e 1 sao o 3x3 de sempre e vao JUNTOS: o mais
+                // perto entre os nove pode ser um vizinho, e nao o centro.
+                // Do 2 em diante e' so' resgate de quem ficou sem porta.
+                if r >= 1 && melhor < f32::MAX {
+                    break;
                 }
             }
         }
@@ -5465,5 +5530,53 @@ mod testes_visada_de_tiro {
     fn morro_alto_no_meio_barra() {
         let morro = |x: f32, _: f32| if (4.0..=6.0).contains(&x) { 8.0 } else { 0.0 };
         assert!(!visada_de_tiro_com(morro, Vec2::ZERO, Vec2::new(10.0, 0.0)));
+    }
+}
+
+#[cfg(test)]
+mod testes_do_cais {
+    use super::*;
+
+    /// Do CAIS tem que sair rota.
+    ///
+    /// O cais e' uma lingua estreita de pedra entrando no mar, e a grade do
+    /// A* tem celula de `PASSO_CAMINHO` blocos — 4 unidades. Na ponta do
+    /// cais, a vizinhanca inteira da celula cai na AGUA, e o A* sai de um no'
+    /// sem vizinho nenhum: o jogador toca no mapa e nao acontece nada. O dono
+    /// relatou isso em 21/09/2026 ("A* nunca funciona qnd eu to na beirada do
+    /// porto").
+    ///
+    /// Percorre o cais inteiro, da raiz a' ponta, porque o defeito e' de
+    /// grau: perto da costa a vizinhanca ainda pega terra e funciona, e so'
+    /// falha quando o mar cerca.
+    #[test]
+    fn do_cais_inteiro_sai_rota() {
+        let d = &ARQUIPELAGO[0];
+        let ilha = Ilha::da_ilha(d);
+        let vila = Gerador::da_ilha(d).vila().clone();
+        let porto = vila.porto.expect("a ilha inicial tem porto");
+        let cidade = Gerador::da_ilha(d)
+            .cidade()
+            .map(|c| c.centro())
+            .unwrap_or(glam::Vec2::ZERO);
+        let mut falhas = Vec::new();
+        for k in 0..=10 {
+            let t = k as f32 / 10.0;
+            let p = porto.raiz.lerp(porto.ponta, t);
+            // So' de onde da' pra estar de pe'.
+            if ilha.agua(p.x, p.y) {
+                continue;
+            }
+            match ilha.caminho(p, cidade, 4000) {
+                Some(r) if !r.is_empty() => {}
+                _ => falhas.push((t, p)),
+            }
+        }
+        assert!(
+            falhas.is_empty(),
+            "sem rota do cais pra cidade em {} de 11 pontos: {:?}",
+            falhas.len(),
+            falhas
+        );
     }
 }

@@ -361,6 +361,7 @@ impl GameWorld {
     pub(super) fn tick_vagas_de_chefe(&mut self) {
         let agora = self.sim_time_s;
         let mut nascer = Vec::new();
+        let mut mudou = false;
         for (i, v) in self.vagas_de_chefe.iter_mut().enumerate() {
             match v.vivo {
                 Some(e) => {
@@ -373,6 +374,7 @@ impl GameWorld {
                         v.vivo = None;
                         let nivel = cat::chefe(v.kind).map_or(1, |c| c.nivel);
                         v.volta_em = agora + cat::respawn_s(nivel);
+                        mudou = true;
                     }
                 }
                 None if agora >= v.volta_em => nascer.push(i),
@@ -383,6 +385,21 @@ impl GameWorld {
             let (kind, pos) = (self.vagas_de_chefe[i].kind, self.vagas_de_chefe[i].pos);
             let e = self.nascer_chefe(kind, pos);
             self.vagas_de_chefe[i].vivo = e;
+            mudou = true;
+        }
+        // So' quando MUDA. O estado de chefe muda umas poucas vezes por hora;
+        // republicar a cada tick seria um clone por quadro pra dizer sempre a
+        // mesma coisa.
+        if mudou {
+            self.publica_chefes();
+        }
+    }
+
+    /// Entrega os chefes desta zona ao heartbeat, que os leva pro banco e
+    /// dali pro mapa-mundi das outras ilhas.
+    pub(crate) fn publica_chefes(&self) {
+        if let Some(c) = self.chefes_publicados.as_ref() {
+            c.set(self.chefes_no_mapa());
         }
     }
 
@@ -574,6 +591,7 @@ impl GameWorld {
 
     /// Os chefes pro `MapaDaIlha`.
     pub(super) fn chefes_no_mapa(&self) -> Vec<cat::ChefeNoMapa> {
+        let agora_unix = (now_ms() / 1000) as i64;
         self.vagas_de_chefe
             .iter()
             .filter_map(|v| {
@@ -584,6 +602,14 @@ impl GameWorld {
                     nivel: c.nivel as u16,
                     centro: [v.pos.x, v.pos.y],
                     vivo: v.vivo.is_some(),
+                    // `volta_em` e' `sim_time`, que so' quer dizer algo DENTRO
+                    // deste processo. Quem le' isto pode ser o mapa-mundi de
+                    // outra ilha, ou o cliente descontando sozinho entre duas
+                    // atualizacoes: os dois precisam de hora de relogio.
+                    volta_em_unix: match v.vivo {
+                        Some(_) => 0,
+                        None => agora_unix + (v.volta_em - self.sim_time_s).max(0.0) as i64,
+                    },
                 })
             })
             .collect()
@@ -711,5 +737,44 @@ mod testes {
             .iter()
             .map(|&b| shared::item_id::chave_na_cor(b, cor))
             .collect()
+    }
+}
+
+impl GameWorld {
+    /// O MAPA-MUNDI: uma linha por ilha do arquipelago, com os chefes dela.
+    ///
+    /// Os chefes da ilha em que o jogador ESTA' saem daqui mesmo, e os das
+    /// outras saem do banco (`canais::MundoDeChefes`), publicados pelo
+    /// heartbeat de cada zona. Preferir o local nao e' otimizacao: o do banco
+    /// tem ate' 5s de atraso, e o jogador que acabou de matar um chefe nao
+    /// pode ver ele vivo no proprio mapa.
+    pub(crate) fn abrir_mapa_mundi(&self, sid: SessionId) {
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        let ilhas = shared::terreno::ARQUIPELAGO
+            .iter()
+            .map(|d| {
+                if d.zona == self.zona {
+                    return shared::bosses::IlhaNoMundo {
+                        zona: d.zona.to_string(),
+                        chefes: self.chefes_no_mapa(),
+                        no_ar: true,
+                    };
+                }
+                let host = self.diretorio.as_ref().and_then(|dir| dir.melhor(d.zona));
+                let chefes = self
+                    .mundo_de_chefes
+                    .as_ref()
+                    .and_then(|m| m.da_zona(d.zona, host.as_deref()))
+                    .unwrap_or_default();
+                shared::bosses::IlhaNoMundo {
+                    zona: d.zona.to_string(),
+                    chefes,
+                    no_ar: host.is_some(),
+                }
+            })
+            .collect();
+        let _ = s.handle.to_client.send(ServerMessage::Mundo { ilhas });
     }
 }

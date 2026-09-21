@@ -70,6 +70,31 @@ pub fn parse(data: &[u8]) -> Result<Vec<VoxModel>, String> {
 /// pela ordem em que ele aparece no arquivo. E' assim que o rig do personagem
 /// sabe qual modelo e' `braco_d` e qual e' `canela_e` — ver
 /// docs/character create.md. Modelo sem nome volta com nome vazio.
+/// O LOMBO do bicho: o topo do TRONCO, que e' onde o cavaleiro senta.
+///
+/// Sai do modelo, e nao de um numero por especie escrito a mao. O numero a
+/// mao nao tem como acompanhar a escala: em 21/09/2026 o cervo cresceu e a
+/// sela dele ficou em 81% da altura — a altura da CABECA —, com o jogador
+/// boiando acima do bicho. O tronco e' quem sabe onde e' o lombo.
+///
+/// Sem peca "tronco", dois tercos da altura: um palpite, mas um palpite
+/// anatomico, e nao o topo da cabeca.
+pub fn lombo_medido(
+    pecas: &[(String, VoxModel)],
+    caixas: &[([usize; 3], [usize; 3])],
+    base_z: usize,
+    escala: f32,
+    altura: f32,
+) -> f32 {
+    pecas
+        .iter()
+        .zip(caixas)
+        .find(|((n, _), _)| n == "tronco")
+        .map_or(altura * 0.66, |(_, (_, h))| {
+            (h[2] + 1 - base_z) as f32 * escala
+        })
+}
+
 pub fn parse_nomeado(data: &[u8]) -> Result<Vec<(String, VoxModel)>, String> {
     if data.len() < 8 || &data[0..4] != b"VOX " {
         return Err("nao e' um .vox".into());
@@ -609,6 +634,20 @@ impl VoxCache {
             .zip(&caixas)
             .find(|((n, _), _)| n == "pescoco")
             .map(|(_, (l, h))| pivo_vox(Junta::Pescoco, *l, *h));
+        // O PIVO E' DA JUNTA, e nao da peca.
+        //
+        // Uma junta pode ter varias pecas — o focinho e a mandibula vao com a
+        // cabeca, as placas da rainha com o tronco. Com um pivo por peca cada
+        // uma giraria em volta de si mesma e elas se separariam no primeiro
+        // passo. Vale o pivo da PRIMEIRA peca de cada junta, que e' a peca
+        // principal (`PECAS`, em `tools/voxrender/bichos.py`, lista a
+        // principal antes das agregadas).
+        let mut pivo_da_junta: HashMap<Junta, [f32; 3]> = HashMap::new();
+        for ((nome, _), (l, h)) in pecas.iter().zip(&caixas) {
+            if let Some(j) = junta_de(nome) {
+                pivo_da_junta.entry(j).or_insert_with(|| pivo_vox(j, *l, *h));
+            }
+        }
         let mut out = Vec::new();
         let mut tris = 0usize;
         for ((nome, m), (l, h)) in pecas.iter().zip(&caixas) {
@@ -616,8 +655,12 @@ impl VoxCache {
                 continue;
             };
             let pv = match (junta, pescoco) {
+                // A cabeca gira no pivo do PESCOCO quando ha' um.
                 (Junta::Cabeca, Some(p)) => p,
-                _ => pivo_vox(junta, *l, *h),
+                _ => pivo_da_junta
+                    .get(&junta)
+                    .copied()
+                    .unwrap_or_else(|| pivo_vox(junta, *l, *h)),
             };
             let malhas = mesh_na_origem(m, escala, origem);
             tris += malhas.iter().map(|x| x.indices.len() / 3).sum::<usize>();
@@ -640,15 +683,20 @@ impl VoxCache {
                     }
             })
             .map_or(vec3(0.0, altura * 0.3, 0.0), |p| p.pivo);
+        let lombo = lombo_medido(&pecas, &caixas, lo[2], escala, altura);
         let anat = crate::bicho::Anatomia {
             altura,
             frente: frente * escala,
+            lombo,
             ombro,
             lado: if ombro.x < 0.0 { -1.0 } else { 1.0 },
             lateral: name.contains("caranguejo"),
         };
         let n = out.len();
-        println!("[vox] {name}: {n} pecas, {tris} triangulos");
+        println!(
+            "[vox] {name}: {n} pecas, {tris} triangulos, lombo {lombo:.2} de {altura:.2} ({:.0}%)",
+            lombo / altura * 100.0
+        );
         self.bichos
             .insert(name.to_string(), Bicho { anat, pecas: out });
         Some(n)
@@ -1258,5 +1306,31 @@ mod testes_orientacao {
             crate::render3d::PAPEL_MISSOES,
             shared::construcao::Papel::Alquimista as u8 + 1
         );
+    }
+}
+
+#[cfg(test)]
+mod testes_de_inspecao {
+    /// Lista as PECAS de um `.vox`. Existe pra decidir se um modelo de fora
+    /// (o zone14, por exemplo) cabe no rig de bicho: sem `tronco` e sem
+    /// `pata_*` ele nao anima, e entra no jogo como um bloco parado.
+    #[test]
+    #[ignore]
+    fn inspecionar() {
+        let Ok(lista) = std::env::var("VOX") else {
+            return;
+        };
+        for caminho in lista.split(',') {
+            match std::fs::read(caminho) {
+                Ok(b) => match super::parse_nomeado(&b) {
+                    Ok(p) => {
+                        let ns: Vec<&str> = p.iter().map(|(n, _)| n.as_str()).collect();
+                        println!("{caminho}: {} pecas {:?}", p.len(), ns);
+                    }
+                    Err(e) => println!("{caminho}: ERRO {e}"),
+                },
+                Err(e) => println!("{caminho}: nao abriu ({e})"),
+            }
+        }
     }
 }

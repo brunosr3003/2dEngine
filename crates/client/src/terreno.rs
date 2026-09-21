@@ -157,9 +157,27 @@ impl Terreno {
     /// nenhum disco, e voltam o gerador da ilha 0 com a coluna bem longe
     /// dela, que e' fundo de mar.
     pub fn novo(def: &DefIlha) -> Self {
+        Self::do_gerador(Gerador::da_ilha(def), def.bioma)
+    }
+
+    /// A COLONIA (docs/COLONIA.md): o relevo sai da semente do personagem, e
+    /// nao de uma entrada do `ARQUIPELAGO` — ela nao tem uma.
+    pub fn da_colonia(semente: i32, raio_blocos: i32) -> Self {
+        Self::do_gerador(
+            Gerador::novo(
+                semente,
+                raio_blocos,
+                shared::terreno::Bioma::Floresta,
+                shared::terreno::ESCALA_ALTURA,
+            ),
+            shared::terreno::Bioma::Floresta,
+        )
+    }
+
+    fn do_gerador(ger: Gerador, bioma: shared::terreno::Bioma) -> Self {
         let mut t = Self {
-            ger: Gerador::da_ilha(def),
-            bioma: def.bioma,
+            ger,
+            bioma,
             arvores: Vec::new(),
             plantas: Vec::new(),
             minerios: Vec::new(),

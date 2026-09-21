@@ -753,11 +753,18 @@ impl GameWorld {
                 vivos.push(e);
             }
         } else {
+            // A dungeon herda o bestiario da ILHA em que ela fica: a masmorra
+            // da Geleira tem bicho de gelo, e nao caranguejo.
+            let bioma = self.bioma_da_zona();
             for i in 0..dg::inimigos_do_andar(c, andar) {
                 let ang = i as f32 * std::f32::consts::TAU / dg::inimigos_do_andar(c, andar) as f32;
                 let pos = centro + Vec2::new(ang.cos(), ang.sin()) * (10.0 + (i % 3) as f32 * 4.0);
                 let kind =
-                    crate::economy::kind_para_nivel(nivel, uid ^ ((andar as u64) << 8) ^ i as u64);
+                    crate::economy::kind_para_nivel(
+                        bioma,
+                        nivel,
+                        uid ^ ((andar as u64) << 8) ^ i as u64,
+                    );
                 let semi = dg::tem_semi_chefe(c, andar) && i == 0;
                 vivos.push(self.dg_nascer_mob(id, kind, pos, centro, nivel, vida, dano, semi));
             }

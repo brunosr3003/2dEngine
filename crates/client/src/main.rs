@@ -94,6 +94,9 @@ mod terreno;
 mod toque;
 mod ui;
 mod vegetacao;
+mod colonia_ui;
+mod mundo_ui;
+mod nivel_vfx;
 mod viagem_ui;
 mod vox;
 mod world;
@@ -364,6 +367,9 @@ struct Jogo {
     presenca: presenca_ui::PresencaUi,
     /// Menu "Viajar" do Capitao do Porto.
     viagem: viagem_ui::ViagemUi,
+    colonia: colonia_ui::ColoniaUi,
+    mundo: mundo_ui::Mundo,
+    subiu_de_nivel: nivel_vfx::SubiuDeNivel,
     /// O banco (Banqueiro da vila).
     banco: banco_ui::Banco,
     /// Banco que chegou com um dialogo aberto: abre quando fechar.
@@ -372,6 +378,9 @@ struct Jogo {
     escolha_npc: escolha_npc::EscolhaNpc,
     /// Menu do Capitao que chegou com um dialogo aberto: abre quando fechar.
     viagem_pendente: Option<Vec<shared::viagem::Destino>>,
+    /// A quest da ilha propria ja' passou (docs/COLONIA.md). Vem no menu do
+    /// Capitao, que e' o unico lugar de onde se viaja pra la'.
+    tem_colonia: bool,
     /// O botao "Teleportar" do ultimo quadro (so' com viagem longa na tela).
     botao_teleporte: Option<Rect>,
     /// Loja de cash (`loja_tp.rs`).
@@ -614,9 +623,13 @@ async fn main() {
         economia: economia::Economia::default(),
         presenca: presenca_ui::PresencaUi::default(),
         viagem: viagem_ui::ViagemUi::default(),
+        colonia: colonia_ui::ColoniaUi::default(),
+        mundo: mundo_ui::Mundo::default(),
+        subiu_de_nivel: nivel_vfx::SubiuDeNivel::default(),
         banco: banco_ui::Banco::default(),
         banco_pendente: None,
         viagem_pendente: None,
+        tem_colonia: false,
         escolha_npc: escolha_npc::EscolhaNpc::default(),
         botao_teleporte: None,
         loja_tp: loja_tp::LojaTp::default(),
@@ -714,6 +727,7 @@ impl Jogo {
                     terreno.map_or(0.0, |t| t.altura_apoio(x, z, shared::ENTITY_RADIUS))
                 });
             }
+            self.subiu_de_nivel.passo(get_frame_time());
             self.seguir_altura();
             // Nenhum painel abre por tecla (docs/HUD.md 2.5): so' os icones do
             // HUD e o Menu. O que a interface pega e' medido ANTES da entrada:
@@ -1096,6 +1110,42 @@ impl Jogo {
                     self.map = Some(m);
                 }
             }
+            ServerMessage::Mundo { ilhas } => {
+                // A ilha em que se esta' tambem se atualiza por aqui.
+                if let Some(z) = self.mapa.zona() {
+                    if let Some(i) = ilhas.iter().find(|i| i.zona == z) {
+                        self.mapa.define_chefes(i.chefes.clone());
+                    }
+                }
+                self.mundo.define(ilhas);
+            }
+            ServerMessage::Colonia { aviso } => {
+                use shared::colonia::AvisoColonia as A;
+                match aviso {
+                    A::Estado { niveis, horas, colheita, custos, banco } => {
+                        let e = colonia_ui::Estado { niveis, horas, colheita, custos, banco };
+                        // Pedido do porto ABRE; colher e melhorar so' atualizam
+                        // o que ja' esta' aberto.
+                        if self.colonia.aberto() {
+                            self.colonia.atualizar(e);
+                        } else {
+                            self.fecha_paineis();
+                            self.colonia.abrir(e);
+                        }
+                    }
+                    A::Terreno { semente, raio } => {
+                        // O relevo da colonia nao sai da zona, sai do
+                        // personagem. Chega depois do MapChange, que e' quem
+                        // limpou o terreno velho.
+                        self.terreno = Some(terreno::Terreno::da_colonia(semente, raio));
+                        self.mapa = mapa::Mapa::da_colonia(semente, raio);
+                        self.construcoes = construcoes::Construcoes::vazia();
+                        self.map = None;
+                        self.ir_para.parar();
+                    }
+                    A::Recusa(t) => self.chat.push(t),
+                }
+            }
             ServerMessage::Snapshot { snapshot } => {
                 self.tick = snapshot.tick;
                 self.world
@@ -1268,7 +1318,8 @@ impl Jogo {
                 self.dialogo.fechar();
                 self.escolha_npc.abrir(npc_eid, nome, funcao);
             }
-            ServerMessage::Viagem { destinos } => {
+            ServerMessage::Viagem { destinos, colonia } => {
+                self.tem_colonia = colonia;
                 // O Capitao pode abrir com uma oferta de missao na frente: o
                 // menu espera o dialogo fechar.
                 if self.dialogo.aberto {
@@ -1362,6 +1413,12 @@ impl Jogo {
                 }
             }
             ServerMessage::ProgressUpdate { xp, level } => {
+                // SUBIU: o cliente ja' sabia o nivel de antes, entao a
+                // comemoracao nao custa um byte de rede. `> 0` exclui o
+                // primeiro `ProgressUpdate` do login, que nao e' subida.
+                if level > self.ficha.nivel && self.ficha.nivel > 0 {
+                    self.subiu_de_nivel.dispara();
+                }
                 self.bolsa.nivel = level;
                 self.ficha.xp = xp;
                 self.ficha.nivel = level;
@@ -2108,6 +2165,7 @@ impl Jogo {
             || self.dungeon.aberto
             || self.presenca.aberto
             || self.viagem.aberto()
+            || self.colonia.aberto()
             || self.banco.aberto()
             || self.escolha_npc.aberta()
             || self.loja_tp.aberto
@@ -2396,6 +2454,7 @@ impl Jogo {
         self.dungeon.fechar();
         self.presenca.fechar();
         self.viagem.fechar();
+        self.colonia.fechar();
         self.banco.fechar();
         self.escolha_npc.fechar();
         self.loja_tp.fechar();
@@ -2496,6 +2555,13 @@ impl Jogo {
                         .chat
                         .push("Banco: só nas ilhas, com o Banqueiro do porto.".into()),
                 }
+            }
+            Item::MinhaIlha => {
+                // Quem manda e' o servidor: se a quest ainda nao passou, ele
+                // recusa, e o cliente nao precisa saber a regra duas vezes.
+                self.envia(ClientMessage::Colonia {
+                    pedido: shared::colonia::PedidoColonia::Painel,
+                });
             }
             Item::Presenca => {
                 for pedido in self.presenca.abrir() {
@@ -4251,6 +4317,15 @@ impl Jogo {
                     &vista.cam,
                     get_time() as f32,
                 );
+                // Subiu de nivel: o estouro de luz em volta de quem subiu.
+                // No mesmo passe dos veios, antes da agua.
+                if self.subiu_de_nivel.ativo() {
+                    if let Some(eu) = self.world.self_pos() {
+                        let y = t.altura(eu.x, eu.y);
+                        self.subiu_de_nivel
+                            .desenha(vec3(eu.x, y, eu.y), &vista.cam);
+                    }
+                }
                 // Golpe de chefe carregando: onde vai bater, crescendo ate' o impacto.
                 {
                     let altura = |x: f32, z: f32| t.altura(x, z);
@@ -4839,7 +4914,27 @@ impl Jogo {
             dialogo::Resultado::Nada => {}
         }
         let nivel = self.ficha.nivel.max(1);
-        match self.mapa.desenha_grande(&self.world, nivel) {
+        // Com o mapa-mundi aberto, repede o estado dos chefes no ritmo do
+        // heartbeat. Fechado, nao pede nada: quem nao esta' olhando nao
+        // precisa saber que um chefe morreu em outra ilha.
+        // Vale pras DUAS abas: o `MapaDaIlha` chega uma vez so', na entrada
+        // da zona, entao o "vivo" dele envelhece em minutos. O mesmo pedido
+        // que enche o mapa-mundi reabastece a ilha — uma fonte so' pros dois,
+        // que e' o que impede as duas abas de discordarem.
+        if self.mapa.aberto && self.mundo.precisa_pedir(get_time()) {
+            self.envia(ClientMessage::Mundo);
+        }
+        if !self.mapa.aberto {
+            self.mundo.fechou();
+        }
+        let agora_unix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        match self
+            .mapa
+            .desenha_grande(&self.world, nivel, &self.mundo, agora_unix)
+        {
             Some(mapa::Entrada::Ir(alvo)) => {
                 self.iniciar_ir_para(alvo);
                 self.tutorial(shared::quests::tutorial::MAPA_IR);
@@ -5048,14 +5143,25 @@ impl Jogo {
                 self.banco.abrir(cofre);
             }
         }
+        nivel_vfx::desenha_faixa(&self.subiu_de_nivel, self.ficha.nivel);
         if let Some(pedido) = self.escolha_npc.desenha() {
             self.envia(pedido);
         }
         if let Some(pedido) = self.banco.desenha(&self.bolsa.slots, self.bolsa.ouro) {
             self.envia(pedido);
         }
-        if let Some(ilha) = self.viagem.desenha() {
-            self.envia(ClientMessage::Viajar { ilha });
+        match self.viagem.desenha(self.tem_colonia) {
+            Some(viagem_ui::Escolha::Ilha(ilha)) => self.envia(ClientMessage::Viajar { ilha }),
+            Some(viagem_ui::Escolha::MinhaIlha) => self.envia(ClientMessage::Colonia {
+                pedido: shared::colonia::PedidoColonia::Visitar,
+            }),
+            None => {}
+        }
+        {
+            let nome_item = |id: u16| self.bolsa.nome(id);
+            if let Some(pedido) = self.colonia.desenha(&nome_item) {
+                self.envia(ClientMessage::Colonia { pedido });
+            }
         }
         // Loja de cash e janela de montarias (Menu).
         for pedido in self.loja_tp.desenha(&self.vox, &self.solido) {

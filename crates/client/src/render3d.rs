@@ -1665,7 +1665,12 @@ fn desenha_personagem(
         Some((m, s, b)) => {
             desenha_montaria(e, m, s, b, p);
             let frente = vec3(e.yaw.sin(), 0.0, e.yaw.cos());
-            Vec3::Y * (m.sela - crate::rig::altura_do_quadril(VOXEL)) + frente * m.sela_frente
+            // A sela e' o LOMBO DO MODELO vezes a escala da especie, e nao um
+            // numero escrito na tabela: numero a mao nao acompanha a escala, e
+            // foi assim que o cavaleiro do cervo acabou boiando na altura da
+            // cabeca do bicho (`vox::lombo_medido`).
+            let sela = b.anat.lombo * m.escala;
+            Vec3::Y * (sela - crate::rig::altura_do_quadril(VOXEL)) + frente * m.sela_frente
         }
         None => Vec3::ZERO,
     };
@@ -2137,10 +2142,16 @@ fn desenha_bicho(
         * Mat4::from_rotation_y(c.torce)
         * Mat4::from_rotation_x(c.pitch);
     // o corpo escurece um pouco: de longe, morto nao se confunde com vivo
+    //
+    // A ordem e' de prioridade: morto vence tudo, o clarao do golpe vence a
+    // cor da especie, e so' no resto do tempo o bicho aparece na cor dele. A
+    // TINTA DA ESPECIE e' o que faz o Urso Branco sair do mesmo `.vox` do
+    // urso (`bicho::tinta_de_kind`) — se ela viesse por cima do clarao, o
+    // jogador deixaria de ver que acertou.
     let tinta = if morto {
         Some(([0.0, 0.0, 0.0], 0.3))
     } else {
-        clarao(e, false)
+        clarao(e, false).or_else(|| crate::bicho::tinta_de_kind(e.meta.kind))
     };
     for peca in &b.pecas {
         let (giro, desloca) = crate::bicho::peca(peca.junta, &entrada, &b.anat, peca.pivo);

@@ -35,8 +35,6 @@ pub struct Especie {
     pub bicho: &'static str,
     /// Escala sobre a altura em que o bicho e' carregado.
     pub escala: f32,
-    /// Altura da sela, em unidades de mundo (ja' com a escala).
-    pub sela: f32,
     /// Quanto a sela fica pra frente do centro do bicho.
     pub sela_frente: f32,
     /// Peso de cada atributo, somando `PESO_TOTAL`.
@@ -59,15 +57,16 @@ pub const PESO_TOTAL: u8 = 10;
 /// montaria ser mais baixa que quem monta.
 ///
 /// Agora o piso e' o jogador INTEIRO, e a escada vai de 1,95 (cervo) a 2,80
-/// (dragao), sempre subindo. A `sela` acompanha: quem esta' em cima tem que
-/// pousar no lombo, nao flutuar nem afundar.
+/// (dragao), sempre subindo. Onde o cavaleiro SENTA nao esta' aqui: sai do
+/// tronco do proprio modelo (`client::vox::lombo_medido`), porque um numero
+/// por especie escrito a mao nao acompanha a escala quando ela muda — e foi
+/// exatamente isso que deixou o cavaleiro do cervo boiando.
 pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
     Especie {
         grau: 1,
         nome: "Cervo do Bosque",
         bicho: "bichos/cervo",
         escala: 1.22,
-        sela: 1.58,
         sela_frente: -0.34,
         afinidade: pesos(&[(stat_idx::SPD, 6), (stat_idx::DES, 4)]),
         descricao: "Manso e ligeiro. A primeira montaria de qualquer um.",
@@ -77,7 +76,6 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         nome: "Lobo da Clareira",
         bicho: "bichos/lobo",
         escala: 0.75,
-        sela: 1.7,
         sela_frente: -0.38,
         afinidade: pesos(&[(stat_idx::DES, 6), (stat_idx::SPD, 4)]),
         descricao: "Leal e ligeiro, criado nas matas do Bosque.",
@@ -87,7 +85,6 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         nome: "Tigre das Neves",
         bicho: "bichos/tigre",
         escala: 2.4,
-        sela: 1.85,
         sela_frente: -0.38,
         afinidade: pesos(&[(stat_idx::FOR, 6), (stat_idx::DES, 4)]),
         descricao: "Silencioso na neve, feroz na estrada.",
@@ -97,7 +94,6 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         nome: "Hipogrifo",
         bicho: "bichos/hipogrifo",
         escala: 1.32,
-        sela: 2.0,
         sela_frente: -0.30,
         afinidade: pesos(&[(stat_idx::INT, 5), (stat_idx::SPD, 5)]),
         descricao: "Meio águia, meio cavalo. Não anda: quase voa.",
@@ -107,7 +103,6 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         nome: "Dragão",
         bicho: "bichos/dragao",
         escala: 1.17,
-        sela: 2.15,
         sela_frente: -0.26,
         afinidade: pesos(&[(stat_idx::FOR, 4), (stat_idx::VIT, 3), (stat_idx::INT, 3)]),
         descricao: "O topo. Quem monta um, todo mundo vê de longe.",

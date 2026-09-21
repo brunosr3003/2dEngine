@@ -122,6 +122,12 @@ pub struct Construcoes {
 impl Construcoes {
     /// Comeca a assar a vila da ilha `def` numa thread. A `Mesh` so' e'
     /// montada no thread principal, em `acompanhar`.
+    /// Sem construcao nenhuma. A COLONIA (docs/COLONIA.md) e' ilha sem vila:
+    /// ela nao tem NPC, e casa vazia e' pior que campo aberto.
+    pub fn vazia() -> Self {
+        Self::default()
+    }
+
     pub fn para(def: Option<&'static DefIlha>) -> Self {
         let Some(def) = def else {
             return Self::default();

@@ -7,6 +7,16 @@ use shared::viagem::{estado, Destino};
 
 use crate::hud_estilo as estilo;
 
+/// O que o jogador escolheu no menu do Capitao.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Escolha {
+    /// Uma ilha do arquipelago.
+    Ilha(u8),
+    /// A colonia (docs/COLONIA.md). Nao e' uma ilha do `ARQUIPELAGO` e nao
+    /// tem indice: e' por isso que a escolha e' um enum e nao um `u8`.
+    MinhaIlha,
+}
+
 #[derive(Debug, Default)]
 pub struct ViagemUi {
     destinos: Option<Vec<Destino>>,
@@ -25,18 +35,25 @@ impl ViagemUi {
         self.destinos.is_some()
     }
 
-    /// Desenha; devolve a ilha escolhida pra embarcar (o menu fecha junto).
-    pub fn desenha(&mut self) -> Option<u8> {
-        estilo::no_painel(estilo::escala_do_painel(560.0, 420.0), || self.desenha_na_escala())
+    /// Desenha; devolve o destino escolhido (o menu fecha junto).
+    ///
+    /// `colonia` e' se a historia ja' entregou a ilha propria: sem isso a
+    /// linha nao aparece, porque o menu nao pode oferecer o que o servidor
+    /// vai recusar.
+    pub fn desenha(&mut self, colonia: bool) -> Option<Escolha> {
+        estilo::no_painel(estilo::escala_do_painel(560.0, 420.0), || {
+            self.desenha_na_escala(colonia)
+        })
     }
 
-    fn desenha_na_escala(&mut self) -> Option<u8> {
+    fn desenha_na_escala(&mut self, colonia: bool) -> Option<Escolha> {
         let destinos = self.destinos.as_ref()?;
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
         let linha_h = 74.0 * f;
         let w = (560.0 * f).min(seguro.w - 16.0);
-        let h = (96.0 * f + linha_h * destinos.len() as f32 + 16.0 * f).min(seguro.h - 16.0);
+        let linhas = destinos.len() + usize::from(colonia);
+        let h = (96.0 * f + linha_h * linhas as f32 + 16.0 * f).min(seguro.h - 16.0);
         let p = Rect::new(
             seguro.center().x - w * 0.5,
             seguro.center().y - h * 0.5,
@@ -91,10 +108,34 @@ impl ViagemUi {
                 );
                 estilo::botao(b, "Embarcar", estilo::estado_de(b, false, false), true);
                 if clicou && b.contains(m) {
-                    escolha = Some(d.ilha);
+                    escolha = Some(Escolha::Ilha(d.ilha));
                 }
             }
             y += linha_h;
+        }
+        // A ilha propria fecha a lista: e' o destino que ninguem disputa, e
+        // ela nao entra no meio das ilhas porque nao e' uma delas.
+        if colonia {
+            let r = Rect::new(x0, y, p.w - 40.0 * f, linha_h - 8.0 * f);
+            estilo::cartao(r, false, false);
+            estilo::texto_forte(r.x + 14.0 * f, r.y + 26.0 * f, "Minha Ilha", 17, estilo::OURO);
+            estilo::texto(
+                r.x + 14.0 * f,
+                r.y + 50.0 * f,
+                "Sua colônia · rende sozinha enquanto você navega",
+                13,
+                estilo::SUAVE,
+            );
+            let b = Rect::new(
+                r.x + r.w - 136.0 * f,
+                r.y + (r.h - 40.0 * f) * 0.5,
+                124.0 * f,
+                40.0 * f,
+            );
+            estilo::botao(b, "Ir", estilo::estado_de(b, false, false), true);
+            if clicou && b.contains(m) {
+                escolha = Some(Escolha::MinhaIlha);
+            }
         }
         if escolha.is_some() || (clicou && (fechar.contains(m) || !p.contains(m))) {
             self.fechar();

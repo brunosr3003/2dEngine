@@ -647,6 +647,7 @@ mod tests {
                 nivel: 60,
                 centro: [900.0, 0.0],
                 vivo: true,
+                volta_em_unix: 0,
             }],
         }
     }

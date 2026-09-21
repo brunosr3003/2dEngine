@@ -649,8 +649,8 @@ const COR_PORTO: Color = Color::new(0.55, 0.82, 0.95, 1.0);
 /// Imagem mais pegadas dos predios e o porto. Tudo FORA do quadro: a vila
 /// gera o voxel de cada predio pra saber o tamanho dele.
 fn gerar_dados(def: &'static DefIlha) -> Dados {
-    let rgba = gerar_imagem(def);
     let ger = Gerador::da_ilha(def);
+    let rgba = gerar_imagem(&ger, def.raio_blocos, def.bioma);
     let vila = ger.vila();
     let pegadas = vila
         .predios
@@ -686,10 +686,29 @@ fn gerar_dados(def: &'static DefIlha) -> Dados {
     }
 }
 
+/// A COLONIA (docs/COLONIA.md) no minimapa: so' o relevo.
+///
+/// Sem vila, porque a colonia nao tem uma: predio no minimapa e nenhum no
+/// chao seria pior que minimapa nenhum.
+fn gerar_dados_da_colonia(semente: i32, raio_blocos: i32) -> Dados {
+    let ger = Gerador::novo(
+        semente,
+        raio_blocos,
+        shared::terreno::Bioma::Floresta,
+        shared::terreno::ESCALA_ALTURA,
+    );
+    Dados {
+        rgba: gerar_imagem(&ger, raio_blocos, shared::terreno::Bioma::Floresta),
+        pegadas: Vec::new(),
+        porto: None,
+        mestre: None,
+        npcs: Vec::new(),
+    }
+}
+
 /// RGBA da ilha inteira. Roda FORA do quadro.
-fn gerar_imagem(def: &'static DefIlha) -> Vec<u8> {
-    let ger = Gerador::da_ilha(def);
-    let raio = def.raio_blocos as f32 * BLOCO;
+fn gerar_imagem(ger: &Gerador, raio_blocos: i32, bioma: shared::terreno::Bioma) -> Vec<u8> {
+    let raio = raio_blocos as f32 * BLOCO;
     let pico = ger.pico().max(1.0);
     let mut hs = vec![0f32; LADO * LADO];
     for j in 0..LADO {
@@ -712,7 +731,7 @@ fn gerar_imagem(def: &'static DefIlha) -> Vec<u8> {
                 // aparecia).
                 let viz = hs[j.saturating_sub(1) * LADO + i.saturating_sub(1)];
                 let luz = (1.0 + (h - viz) * 0.42).clamp(0.55, 1.45);
-                let cor = cor_de_terra(def.bioma, h, pico).map(|v| v * luz);
+                let cor = cor_de_terra(bioma, h, pico).map(|v| v * luz);
                 // Contorno de costa: a primeira faixa acima do mar escurece, pra
                 // a ilha ter silhueta em vez de desbotar na agua.
                 let costa = ((h - NIVEL_DO_MAR) / 0.6).clamp(0.0, 1.0);
@@ -752,6 +771,10 @@ const COR_AGUA: Color = Color::new(0.07, 0.20, 0.36, 1.0);
 
 pub struct Mapa {
     def: Option<&'static DefIlha>,
+    /// Raio e nome quando NAO ha' `DefIlha`: a colonia e' uma ilha de
+    /// verdade sem entrada no `ARQUIPELAGO`.
+    raio_sem_def: Option<f32>,
+    nome_sem_def: String,
     ger: Option<Gerador>,
     cidade: Option<Cidade>,
     rx: Option<Receiver<Dados>>,
@@ -775,6 +798,8 @@ pub struct Mapa {
     /// Zonas de mob e regioes de recurso (`MapaDaIlha`).
     pub info: Option<InfoDaIlha>,
     pub filtros: Filtros,
+    /// A aba aberta: a ilha onde se esta', ou o arquipelago inteiro.
+    pub no_mundo: bool,
     rolagem_lateral: crate::rolagem::Rolagem,
 }
 
@@ -784,6 +809,8 @@ impl Default for Mapa {
             def: None,
             ger: None,
             cidade: None,
+            raio_sem_def: None,
+            nome_sem_def: String::new(),
             rx: None,
             pegadas: Vec::new(),
             porto: None,
@@ -797,6 +824,7 @@ impl Default for Mapa {
             npcs_abertos: false,
             info: None,
             filtros: Filtros::default(),
+            no_mundo: false,
             rolagem_lateral: Default::default(),
         }
     }
@@ -829,6 +857,25 @@ impl Mapa {
         m
     }
 
+    /// O minimapa da COLONIA: mesmo desenho, gerador do personagem.
+    pub fn da_colonia(semente: i32, raio_blocos: i32) -> Self {
+        let mut m = Self::default();
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(gerar_dados_da_colonia(semente, raio_blocos));
+        });
+        m.ger = Some(Gerador::novo(
+            semente,
+            raio_blocos,
+            shared::terreno::Bioma::Floresta,
+            shared::terreno::ESCALA_ALTURA,
+        ));
+        m.raio_sem_def = Some(raio_blocos as f32 * BLOCO);
+        m.nome_sem_def = "Minha Ilha".into();
+        m.rx = Some(rx);
+        m
+    }
+
     /// Sobe a textura quando a thread terminar. GL so' no thread principal.
     pub fn acompanhar(&mut self) {
         let Some(rx) = &self.rx else { return };
@@ -845,7 +892,7 @@ impl Mapa {
     }
 
     pub fn tem_ilha(&self) -> bool {
-        self.def.is_some()
+        self.def.is_some() || self.raio_sem_def.is_some()
     }
 
     /// Os vendedores desta ilha (NPC com loja), da vila gerada da semente:
@@ -1349,7 +1396,10 @@ impl Mapa {
     }
 
     fn raio(&self) -> f32 {
-        self.def.map_or(1.0, |d| d.raio_blocos as f32 * BLOCO)
+        match self.def {
+            Some(d) => d.raio_blocos as f32 * BLOCO,
+            None => self.raio_sem_def.unwrap_or(1.0),
+        }
     }
 
     /// Chao firme? Pela mesma funcao que desenha o chao.
@@ -1378,6 +1428,17 @@ impl Mapa {
     }
 
     /// O mapa quadrado, com o painel lateral de filtros e "Ir para" a' direita.
+    /// As duas abas em cima do mapa: Ilha | Mundo.
+    fn abas_rect(r: Rect) -> (Rect, Rect) {
+        let k = Self::escala();
+        let (w, h) = (92.0 * k, 26.0 * k);
+        let y = r.y - 34.0 * k;
+        (
+            Rect::new(r.x, y, w, h),
+            Rect::new(r.x + w + 6.0 * k, y, w, h),
+        )
+    }
+
     fn grande_rect() -> Rect {
         let k = Self::escala();
         let s = crate::hud_layout::tela_segura();
@@ -1803,14 +1864,26 @@ impl Mapa {
 
     /// O mapa grande (M) com o painel lateral. Devolve o "Ir" clicado no
     /// painel. `nivel` escolhe a zona certa pra cada bicho.
-    pub fn desenha_grande(&mut self, world: &World, nivel: u32) -> Option<Entrada> {
+    pub fn desenha_grande(
+        &mut self,
+        world: &World,
+        nivel: u32,
+        mundo: &crate::mundo_ui::Mundo,
+        agora_unix: i64,
+    ) -> Option<Entrada> {
         if !self.aberto || !self.tem_ilha() {
             return None;
         }
         estilo::no_painel(Self::escala(), || {
-            self.desenha_grande_mapa(world);
             let m = Vec2::from(mouse_position());
             let r = Self::grande_rect();
+            if self.no_mundo {
+                self.desenha_grande_mundo(mundo, agora_unix);
+                self.desenha_abas(r);
+                return self.lateral_do_mundo(r, mundo, agora_unix);
+            }
+            self.desenha_grande_mapa(world);
+            self.desenha_abas(r);
             // Tutorial "abra o mapa e toque num lugar": o alvo e' o mapa todo.
             crate::foco::marca(crate::foco::chave::MAPA_IR, r);
             if r.contains(m) {
@@ -1820,6 +1893,102 @@ impl Mapa {
             }
             self.desenha_lateral(r, world.self_pos(), nivel)
         })
+    }
+
+    /// As abas Ilha | Mundo. Clicar troca a vista.
+    fn desenha_abas(&mut self, r: Rect) {
+        let (ilha, mundo) = Self::abas_rect(r);
+        let m = Vec2::from(mouse_position());
+        let clicou = crate::foco::clique();
+        for (caixa, rotulo, ativa) in [
+            (ilha, "Ilha", !self.no_mundo),
+            (mundo, "Mundo", self.no_mundo),
+        ] {
+            estilo::botao(
+                caixa,
+                rotulo,
+                estilo::estado_de(caixa, false, ativa),
+                ativa,
+            );
+            if clicou && caixa.contains(m) {
+                self.no_mundo = rotulo == "Mundo";
+            }
+        }
+    }
+
+    /// O MAPA-MUNDI no lugar do mapa da ilha (`mundo_ui`).
+    fn desenha_grande_mundo(&self, mundo: &crate::mundo_ui::Mundo, agora_unix: i64) {
+        let (sw, sh) = (screen_width(), screen_height());
+        draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.45));
+        let r = Self::grande_rect();
+        estilo::painel(Rect::new(
+            r.x - u(8.0),
+            r.y - u(38.0),
+            r.w + u(16.0),
+            r.h + u(46.0),
+        ));
+        estilo::texto_forte(r.x, r.y - u(14.0), "Mundo", 17, estilo::OURO);
+        let dica = "chefes de todas as ilhas · Esc fecha";
+        estilo::texto(
+            r.x + r.w - u(36.0) - estilo::medir(dica, 13),
+            r.y - u(14.0),
+            dica,
+            13,
+            estilo::SUAVE,
+        );
+        let f = Self::fechar_rect(r);
+        if !crate::icones_ui::ui("fechar", f.center(), f.w.min(f.h) * 0.55, estilo::TEXTO) {
+            estilo::texto_centro(f.x + f.w * 0.5, f.y + u(19.0), "x", 18, estilo::TEXTO);
+        }
+        crate::mundo_ui::desenha(mundo, r, self.zona(), agora_unix, u);
+    }
+
+    /// O painel lateral do mapa-mundi: os chefes do realm, ordenados por
+    /// quem da' pra caçar primeiro.
+    fn lateral_do_mundo(
+        &mut self,
+        r: Rect,
+        mundo: &crate::mundo_ui::Mundo,
+        agora_unix: i64,
+    ) -> Option<Entrada> {
+        let lat = Self::lateral_rect(r);
+        estilo::painel(lat);
+        estilo::texto_forte(lat.x + u(14.0), lat.y + u(26.0), "Chefes", 16, estilo::OURO);
+        if mundo.vazio() {
+            estilo::texto(
+                lat.x + u(14.0),
+                lat.y + u(52.0),
+                "consultando as ilhas…",
+                14,
+                estilo::SUAVE,
+            );
+            return None;
+        }
+        let linhas = crate::mundo_ui::linhas_de_chefe(mundo, agora_unix);
+        if linhas.is_empty() {
+            estilo::texto(
+                lat.x + u(14.0),
+                lat.y + u(52.0),
+                "nenhuma ilha respondeu.",
+                14,
+                estilo::SUAVE,
+            );
+            return None;
+        }
+        let mut y = lat.y + u(52.0);
+        for (nome, onde, vivo) in linhas {
+            if y > lat.y + lat.h - u(24.0) {
+                break;
+            }
+            // O ponto verde e' o que se le' antes do texto: ele responde
+            // "da' pra ir agora?" sem ninguem precisar ler a linha.
+            let cor = if vivo { estilo::VERDE } else { estilo::SUAVE };
+            draw_circle(lat.x + u(20.0), y - u(4.0), u(4.0), cor);
+            estilo::texto(lat.x + u(32.0), y, &nome, 14, estilo::TEXTO);
+            estilo::texto(lat.x + u(32.0), y + u(16.0), &onde, 12, cor);
+            y += u(40.0);
+        }
+        None
     }
 
     fn desenha_grande_mapa(&self, world: &World) {
@@ -1832,7 +2001,7 @@ impl Mapa {
             r.w + u(16.0),
             r.h + u(46.0),
         ));
-        let nome = self.def.map_or("", |d| d.nome);
+        let nome = self.def.map_or(self.nome_sem_def.as_str(), |d| d.nome);
         estilo::texto_forte(
             r.x,
             r.y - u(14.0),
@@ -1884,12 +2053,7 @@ impl Mapa {
                 if !crate::icones_ui::mapa("chefe", q, u(26.0), ouro, 0.0) {
                     crate::telegrafico::desenha_coroa(q, u(8.0));
                 }
-                let t = format!(
-                    "{} · Nv {}{}",
-                    ch.nome,
-                    ch.nivel,
-                    if ch.vivo { "" } else { " (renascendo)" }
-                );
+                let t = format!("{} · Nv {}{}", ch.nome, ch.nivel, volta_em(ch));
                 estilo::texto_centro(
                     q.x + 1.0,
                     q.y + u(23.0),
@@ -2473,5 +2637,25 @@ mod tests {
         }
         // Norte fixo: z negativo (pra frente da camera em yaw 0) fica em cima.
         assert!(para_tela(vec2(0.0, -100.0), r, 800.0).y < para_tela(Vec2::ZERO, r, 800.0).y);
+    }
+}
+
+/// O sufixo do rotulo de um chefe no mapa da ilha: nada se esta' vivo, e a
+/// contagem se esta' voltando.
+///
+/// DURACAO, e nao hora de relogio. E' a convencao da base inteira — ate' o
+/// reset diario aparece como "3h 12min" —, e ela existe por um motivo: o
+/// cliente roda em celular, nao ha' crate de fuso no projeto, e uma hora
+/// errada na tela e' pior que nenhuma. "Volta em 7m12s" responde o que o
+/// jogador precisa decidir sem depender de fuso nenhum.
+fn volta_em(ch: &shared::bosses::ChefeNoMapa) -> String {
+    let agora = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    match shared::bosses::falta_pra_voltar(ch, agora) {
+        None if ch.vivo => String::new(),
+        None => " (renascendo)".into(),
+        Some(s) => format!(" · volta em {}", shared::bosses::conta_regressiva(s)),
     }
 }

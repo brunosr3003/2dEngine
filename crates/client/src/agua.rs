@@ -175,14 +175,40 @@ pub fn malhas_do_pedaco(ger: &Gerador, cx: i32, cz: i32) -> Vec<Mesh> {
         PASSO_FINO
     };
     let n = CHUNK / passo;
-    let mut grade = vec![0.0f32; ((n + 1) * (n + 1)) as usize];
-    for iz in 0..=n {
-        for ix in 0..=n {
-            grade[(iz * (n + 1) + ix) as usize] =
+    // A grade tem UMA BORDA de folga de cada lado. Ela existe porque a onda
+    // de cada vertice e' limitada pela agua VIZINHA (ver `onda_alcancavel`),
+    // e sem a borda os vertices da beira do pedaco olhariam pra uma vizinhanca
+    // menor que a dos pedacos ao lado — dando alturas diferentes no mesmo
+    // ponto, ou seja, uma costura visivel entre pedacos.
+    let lado = n + 3;
+    let mut grade = vec![0.0f32; (lado * lado) as usize];
+    for iz in -1..=n + 1 {
+        for ix in -1..=n + 1 {
+            grade[((iz + 1) * lado + ix + 1) as usize] =
                 profundidade(ger, bx0 + ix * passo, bz0 + iz * passo);
         }
     }
-    let prof = |ix: i32, iz: i32| grade[(iz * (n + 1) + ix) as usize];
+    let prof = |ix: i32, iz: i32| grade[((iz + 1) * lado + ix + 1) as usize];
+    // A ONDA QUE CABE: o Gerstner nao so' sobe e desce, ele ANDA na
+    // horizontal — ate' `AMPLITUDE_MAX` de deslocamento. Um vertice em agua
+    // funda pode terminar o passeio em cima de uma coluna rasa, e ai o vale
+    // dele fica ABAIXO do leito: o chao aparece por dentro da agua. Medido no
+    // arquipelago, o pior caso era um vertice em 2 u de fundo caindo sobre
+    // terra meio metro ACIMA do mar — 0,80 u de penetracao.
+    //
+    // A regra, entao, nao e' "a onda tem a altura do fundo daqui", e sim "a
+    // onda tem a altura da agua mais rasa que ela ALCANCA". O passo da grade
+    // (>= 1 u) ja' cobre o alcance (0,65 u), entao o minimo dos vizinhos basta
+    // e nao custa uma consulta a mais ao gerador.
+    let onda_alcancavel = |ix: i32, iz: i32| {
+        let mut m = f32::MAX;
+        for dz in -1..=1 {
+            for dx in -1..=1 {
+                m = m.min(prof(ix + dx, iz + dz));
+            }
+        }
+        onda_de(m)
+    };
     let (mut malhas, mut verts, mut idx) = (Vec::new(), Vec::new(), Vec::new());
     for iz in 0..n {
         for ix in 0..n {
@@ -202,7 +228,10 @@ pub fn malhas_do_pedaco(ger: &Gerador, cx: i32, cz: i32) -> Vec<Mesh> {
                     (bz0 + z * passo) as f32 * BLOCO - BLOCO * 0.5,
                 )
             });
-            let extra = profs.map(|p| (onda_de(p), espuma_de(p), cor_da_agua(p)));
+            let extra = [0, 1, 2, 3].map(|k| {
+                let (x, z) = cantos[k];
+                (onda_alcancavel(x, z), espuma_de(profs[k]), cor_da_agua(profs[k]))
+            });
             quad(&mut verts, &mut idx, pos, extra);
         }
     }
@@ -507,5 +536,91 @@ mod testes {
             anel.len()
         );
         assert!(pedacos > 0, "sem agua em volta do porto");
+    }
+}
+
+#[cfg(test)]
+mod testes_do_vale {
+    use super::*;
+    use shared::terreno::ARQUIPELAGO;
+
+    /// A onda que um ponto leva, limitada pela agua mais rasa ao ALCANCE
+    /// dela. Espelha o `onda_alcancavel` da geracao da malha, consultando o
+    /// gerador em vez da grade.
+    fn onda_que_cabe(ger: &Gerador, bx: i32, bz: i32, passo: i32) -> f32 {
+        let mut m = f32::MAX;
+        for dz in -1..=1 {
+            for dx in -1..=1 {
+                m = m.min(profundidade(ger, bx + dx * passo, bz + dz * passo));
+            }
+        }
+        onda_de(m)
+    }
+
+    /// O VALE da onda nao pode furar o leito — nem embaixo do vertice, nem
+    /// onde o Gerstner LEVA o vertice.
+    ///
+    /// O teste irmao (`a_agua_nunca_sobe_na_terra`) guarda a CRISTA contra a
+    /// terra, e nada mais. Por baixo nao havia guarda nenhum, e foi por
+    /// baixo que o defeito entrou: em 21/09/2026 o dono viu a onda afundar
+    /// no chao do mar e deixar o leito a mostra.
+    ///
+    /// A parte que pega e' a HORIZONTAL. Gerstner desloca o vertice de lado,
+    /// entao a pergunta nao e' "cabe no fundo daqui?" e sim "cabe no fundo
+    /// de tudo o que ela alcanca?". Medindo so' o vertical o teste passava,
+    /// com o defeito na tela.
+    #[test]
+    fn o_vale_da_onda_nao_fura_o_leito() {
+        let ger = Gerador::da_ilha(&ARQUIPELAGO[0]);
+        let passo = PASSO_FINO;
+        // Alcance horizontal do Gerstner, em blocos, arredondado pra cima.
+        let alcance = (AMPLITUDE_MAX / BLOCO).ceil() as i32;
+        let mut pior: Option<(f32, f32, f32)> = None;
+        for bz in (-900..900).step_by(passo as usize) {
+            for bx in (-900..900).step_by(passo as usize) {
+                let prof = profundidade(&ger, bx, bz);
+                if prof <= 0.0 {
+                    continue;
+                }
+                let a = onda_que_cabe(&ger, bx, bz, passo);
+                if a <= 0.0 {
+                    continue;
+                }
+                let vale = ALTURA_DA_AGUA - AMPLITUDE_MAX * a;
+                for dz in -alcance..=alcance {
+                    for dx in -alcance..=alcance {
+                        let viz = profundidade(&ger, bx + dx, bz + dz);
+                        let folga = vale - (NIVEL_DO_MAR - viz);
+                        if pior.is_none_or(|(f, _, _)| folga < f) {
+                            pior = Some((folga, prof, viz));
+                        }
+                    }
+                }
+            }
+        }
+        let (folga, meu, viz) = pior.expect("ha' agua em volta da ilha");
+        assert!(
+            folga > 0.0,
+            "o vale fura o leito por {:.2} u: vertice em fundo {meu:.2} passeia \
+             sobre leito de {viz:.2} — o chao fica exposto por dentro da agua",
+            -folga
+        );
+    }
+
+    /// E a onda tem que CONTINUAR existindo: limitar demais daria um mar
+    /// parado, que e' trocar um defeito por outro.
+    #[test]
+    fn o_mar_aberto_continua_ondulando() {
+        let ger = Gerador::da_ilha(&ARQUIPELAGO[0]);
+        let cheias = (-900..900)
+            .step_by(7)
+            .flat_map(|bz| (-900..900).step_by(7).map(move |bx| (bx, bz)))
+            .filter(|(bx, bz)| profundidade(&ger, *bx, *bz) > 0.0)
+            .filter(|(bx, bz)| onda_que_cabe(&ger, *bx, *bz, PASSO_FINO) > 0.9)
+            .count();
+        assert!(
+            cheias > 200,
+            "so' {cheias} pontos com onda cheia — o limite apagou o mar"
+        );
     }
 }

@@ -1315,20 +1315,30 @@ pub const KINDS_DE_PRAIA: [u16; 2] = [8, 9];
 /// Um em quantos caranguejos e' rei.
 pub const UM_REI_EM: u64 = 4;
 
-/// O bicho de uma vaga de praia.
-pub fn kind_de_praia(semente: u64) -> u16 {
-    if semente % UM_REI_EM == 0 {
-        KINDS_DE_PRAIA[1]
-    } else {
-        KINDS_DE_PRAIA[0]
+/// O bicho de uma vaga de praia, no bioma da ilha.
+pub fn kind_de_praia(bioma: shared::terreno::Bioma, semente: u64) -> u16 {
+    let lista = kinds_de_praia_do_bioma(bioma);
+    match lista.len() {
+        0 => KINDS_DE_PRAIA[0],
+        1 => lista[0],
+        // Com dois, o segundo e' o raro (um em `UM_REI_EM`).
+        _ if semente % UM_REI_EM == 0 => lista[1],
+        _ => lista[0],
     }
 }
 
 /// (kind, chance em %) de uma zona de praia, pro mapa — a mesma conta de
 /// `kind_de_praia`.
-pub fn bichos_de_praia() -> Vec<(u16, u8)> {
-    let rei = (100 / UM_REI_EM) as u8;
-    vec![(KINDS_DE_PRAIA[0], 100 - rei), (KINDS_DE_PRAIA[1], rei)]
+pub fn bichos_de_praia(bioma: shared::terreno::Bioma) -> Vec<(u16, u8)> {
+    let lista = kinds_de_praia_do_bioma(bioma);
+    match lista.len() {
+        0 => Vec::new(),
+        1 => vec![(lista[0], 100)],
+        _ => {
+            let rei = (100 / UM_REI_EM) as u8;
+            vec![(lista[0], 100 - rei), (lista[1], rei)]
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1396,17 +1406,23 @@ mod loot_tests {
 /// Entao "nivel" vira posicao na lista: nivel baixo pega os primeiros, nivel
 /// alto abre a escolha ate' o fim. Sorteio simples de proposito — mob nao tem
 /// classe nem build, e uma tabela de oito linhas nao pede mais que isto.
-pub fn kind_para_nivel(nivel: u32, semente: u64) -> u16 {
-    let mut comuns: Vec<u16> = cell()
-        .read()
-        .enemy_kinds
-        .keys()
+pub fn kind_para_nivel(bioma: shared::terreno::Bioma, nivel: u32, semente: u64) -> u16 {
+    // A lista e' a do BIOMA, e ja' vem ordenada do fraco pro forte — nao se
+    // ordena por numero aqui. Ordenar por kind misturaria as ilhas de novo:
+    // o kind e' ordem de criacao, nao de dificuldade.
+    let bestiario = kinds_do_bioma(bioma);
+    // So' os que a tabela do banco conhece: kind semeado pela metade (banco
+    // velho, seed incompleto) viraria um bicho sem stats.
+    let c = cell().read();
+    let comuns: Vec<u16> = bestiario
+        .iter()
         .copied()
-        .filter(|&k| k != KIND_CHEFE && !KINDS_DE_PRAIA.contains(&k))
+        .filter(|k| *k != KIND_CHEFE && c.enemy_kinds.contains_key(k))
         .collect();
-    // Ordem estavel: a tabela vem de um mapa, e sorteio sobre ordem de hash
-    // daria um bicho diferente a cada reinicio do servidor.
-    comuns.sort_unstable();
+    drop(c);
+    if comuns.is_empty() {
+        return bestiario.first().copied().unwrap_or(0);
+    }
     kind_para_nivel_em(&comuns, nivel, semente)
 }
 
@@ -1444,7 +1460,7 @@ pub(crate) struct KindInicial {
 /// Os numeros de antes ficaram (sao o que o balanceamento ja' conhece); mudou
 /// quem eles sao — e o chefe, que agora e' um lobo grande e por isso MORDE em
 /// vez de atirar cinco projeteis.
-pub(crate) const KINDS_INICIAIS: [KindInicial; 10] = [
+pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     KindInicial {
         kind: 0,
         name: "Lobo",
@@ -1608,7 +1624,161 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 10] = [
         sz: 1.0,
         t: [1.0, 1.0, 1.0, 1.0],
     },
+    // ── O BESTIARIO DAS OUTRAS ILHAS (`kinds_do_bioma`) ──
+    //
+    // Ate' 21/09/2026 as quatro ilhas sorteavam da MESMA lista: havia
+    // caranguejo na Geleira e urso-pardo no Ermo. Estes sao os bichos que
+    // faltavam pra cada ilha ter o proprio bestiario.
+    //
+    // Os numeros sao de NIVEL 1, como todos os outros — `vida_e_dano_do_mob`
+    // escala depois. Escrever aqui o valor final da faixa da ilha (o erro que
+    // ja' aconteceu com os bichos do mar) daria um bicho impossivel.
+    KindInicial {
+        kind: 10,
+        name: "Morsa",
+        hp: 340,
+        sp: 1.1,
+        dmg: 20,
+        cd: 3.0,
+        det: 7.0,
+        rng: 1.9,
+        kite: None,
+        proj: 1,
+        xp: 80,
+        def: 6,
+        sz: 1.25,
+        t: [1.0, 1.0, 1.0, 1.0],
+    },
+    KindInicial {
+        kind: 11,
+        name: "Urso Branco",
+        hp: 320,
+        sp: 1.5,
+        dmg: 20,
+        cd: 2.6,
+        det: 9.0,
+        rng: 1.8,
+        kite: None,
+        proj: 1,
+        xp: 75,
+        def: 3,
+        sz: 1.15,
+        t: [1.0, 1.0, 1.0, 1.0],
+    },
+    KindInicial {
+        kind: 12,
+        name: "Tigre Branco",
+        hp: 110,
+        sp: 4.4,
+        dmg: 17,
+        cd: 1.0,
+        det: 12.0,
+        rng: 1.8,
+        kite: None,
+        proj: 1,
+        xp: 65,
+        def: 2,
+        sz: 1.05,
+        t: [1.0, 1.0, 1.0, 1.0],
+    },
+    KindInicial {
+        kind: 13,
+        name: "Escaravelho",
+        hp: 210,
+        sp: 1.7,
+        dmg: 14,
+        cd: 1.9,
+        det: 8.0,
+        rng: 1.7,
+        kite: None,
+        proj: 1,
+        xp: 55,
+        def: 14,
+        sz: 0.9,
+        t: [1.0, 1.0, 1.0, 1.0],
+    },
+    KindInicial {
+        kind: 14,
+        name: "Rainha Escaravelho",
+        hp: 480,
+        sp: 1.3,
+        dmg: 26,
+        cd: 2.8,
+        det: 9.0,
+        rng: 2.0,
+        kite: None,
+        proj: 1,
+        xp: 140,
+        def: 20,
+        sz: 1.45,
+        t: [1.0, 1.0, 1.0, 1.0],
+    },
+    KindInicial {
+        kind: 15,
+        name: "Rochoso",
+        hp: 560,
+        sp: 1.0,
+        dmg: 30,
+        cd: 3.2,
+        det: 8.0,
+        rng: 2.0,
+        kite: None,
+        proj: 1,
+        xp: 175,
+        // 22, e nao 26: a DEFESA nao escala com o nivel, entao ela e' a
+        // estatistica que mais facil vira "imune" em vez de "duro". O teto
+        // sai da escala do Bosque (`testes_do_porte_dos_novos`), e o guarda
+        // pegou o 26 na primeira vez que rodou. A dureza do Rochoso esta' na
+        // vida, que escala.
+        def: 22,
+        sz: 1.35,
+        t: [1.0, 1.0, 1.0, 1.0],
+    },
 ];
+
+/// ─────────────────────── O BESTIARIO POR ILHA ───────────────────────
+///
+/// Cada ilha tem os bichos DELA. Ate' 21/09/2026 as quatro sorteavam da mesma
+/// lista e o dono resumiu jogando: "caranguejo em uma ilha de gelo n faz
+/// sentido nenhum". O bioma passa a escolher.
+///
+/// Gente (Pistoleiro, Mago, Arqueiro) anda em todas: sao os Morganeers, e
+/// eles seguem a historia de ilha em ilha. O que muda e' a FAUNA.
+///
+/// A lista e' ORDENADA e a ordem importa: `kind_para_nivel_em` abre a escolha
+/// do comeco da lista pro fim conforme o nivel sobe, entao o primeiro e' o
+/// mais fraco. Um teste guarda isso contra a XP de cada um.
+pub fn kinds_do_bioma(bioma: shared::terreno::Bioma) -> &'static [u16] {
+    use shared::terreno::Bioma::*;
+    match bioma {
+        // O Bosque e' o que sempre foi. NAO MEXER sem rodar o simulador: o
+        // `balanceamento::metas_do_inicio` esta' calibrado contra exatamente
+        // estes sete.
+        Floresta => &[0, 1, 2, 3, 4, 5, 6],
+        // Geleira: a fauna do gelo, e nada de caranguejo.
+        Gelo => &[12, 6, 11, 4, 10, 5],
+        // Ermo: os insetos do deserto e os bandidos.
+        Deserto => &[2, 13, 6, 4, 14],
+        // Planalto: o que aguenta a altitude, e a criatura de pedra.
+        Montanha => &[3, 6, 1, 4, 15],
+    }
+}
+
+/// O bicho de PRAIA desta ilha. A praia tambem e' do bioma: caranguejo na
+/// areia do Bosque, morsa na borda de gelo da Geleira.
+pub fn kinds_de_praia_do_bioma(bioma: shared::terreno::Bioma) -> &'static [u16] {
+    use shared::terreno::Bioma::*;
+    match bioma {
+        Floresta => &[8, 9],
+        // A morsa vive na beirada: e' o bicho de praia da Geleira, e nao um
+        // caranguejo de agua quente.
+        Gelo => &[10],
+        // Deserto e montanha nao tem praia de verdade; se houver, o bicho
+        // comum mais fraco da ilha serve.
+        Deserto => &[13],
+        Montanha => &[3],
+    }
+}
 
 /// O bicho de um KIND, pelo kind e nao pelo indice.
 ///
@@ -1641,10 +1811,11 @@ mod testes_de_praia {
 
     #[test]
     fn praia_sorteia_um_rei_em_quatro_e_nunca_bicho_comum() {
-        let reis = (0..4000u64).filter(|s| kind_de_praia(*s) == 9).count();
+        let praia = shared::terreno::Bioma::Floresta;
+        let reis = (0..4000u64).filter(|s| kind_de_praia(praia, *s) == 9).count();
         assert_eq!(reis, 1000);
-        assert!((0..4000u64).all(|s| KINDS_DE_PRAIA.contains(&kind_de_praia(s))));
-        assert_eq!(bichos_de_praia(), vec![(8, 75), (9, 25)]);
+        assert!((0..4000u64).all(|s| KINDS_DE_PRAIA.contains(&kind_de_praia(praia, s))));
+        assert_eq!(bichos_de_praia(praia), vec![(8, 75), (9, 25)]);
     }
 }
 
@@ -1773,6 +1944,176 @@ mod testes_da_pedra {
                     .count(),
                 1
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod testes_do_bestiario {
+    use super::*;
+    use shared::terreno::{Bioma, ARQUIPELAGO};
+
+    fn def(k: u16) -> &'static KindInicial {
+        kind_inicial(k).unwrap_or_else(|| panic!("kind {k} sem linha em KINDS_INICIAIS"))
+    }
+
+    /// Todo kind citado num bioma EXISTE na tabela. Sem isto, um kind escrito
+    /// errado vira um bicho sem stats — e o jogo nao reclama, so' fica
+    /// estranho.
+    #[test]
+    fn todo_kind_do_bestiario_tem_linha() {
+        for d in ARQUIPELAGO.iter() {
+            for k in kinds_do_bioma(d.bioma).iter().chain(kinds_de_praia_do_bioma(d.bioma)) {
+                let _ = def(*k);
+                assert_ne!(*k, KIND_CHEFE, "{}: o chefe nao entra no sorteio", d.nome);
+            }
+            assert!(
+                kinds_do_bioma(d.bioma).len() >= 4,
+                "{}: so' {} bichos — a ilha inteira com meia duzia de mobs repetidos",
+                d.nome,
+                kinds_do_bioma(d.bioma).len()
+            );
+        }
+    }
+
+    /// O PRIMEIRO bicho da lista nunca e' o mais forte dela.
+    ///
+    /// `kind_para_nivel_em` abre a escolha do comeco da lista pro fim
+    /// conforme o nivel sobe, e no nivel mais baixo so' o primeiro sai. Se
+    /// ele fosse o mais forte, quem desembarca na ilha encontraria o pior
+    /// bicho dela de cara.
+    ///
+    /// NAO se exige lista ordenada: a do Bosque nunca foi (ela segue o id do
+    /// kind, com o Urso de xp 75 antes do Pistoleiro de 50), e reordenar
+    /// aquela lista invalidaria a calibragem do simulador sem que ele
+    /// percebesse. O que se guarda e' a porta de entrada.
+    #[test]
+    fn o_primeiro_bicho_da_ilha_nao_e_o_mais_forte() {
+        for d in ARQUIPELAGO.iter() {
+            let ks = kinds_do_bioma(d.bioma);
+            let primeiro = def(ks[0]).xp;
+            let maior = ks.iter().map(|k| def(*k).xp).max().unwrap();
+            assert!(
+                primeiro < maior,
+                "{}: o primeiro bicho ({}, xp {primeiro}) e' o mais forte da ilha",
+                d.nome,
+                def(ks[0]).name
+            );
+        }
+    }
+
+    /// AS ILHAS SAO DIFERENTES. Era esta a reclamacao do dono em 21/09/2026:
+    /// "tem q variar mais os inimigos nessas outras ilhas". Duas ilhas com o
+    /// mesmo bestiario sao a mesma ilha com outra cor de chao.
+    #[test]
+    fn duas_ilhas_nunca_tem_o_mesmo_bestiario() {
+        let listas: Vec<(&str, &[u16])> = ARQUIPELAGO
+            .iter()
+            .map(|d| (d.nome, kinds_do_bioma(d.bioma)))
+            .collect();
+        for (i, (na, a)) in listas.iter().enumerate() {
+            for (nb, b) in &listas[i + 1..] {
+                assert_ne!(a, b, "{na} e {nb} tem o mesmo bestiario");
+                // E nao basta trocar a ordem: pelo menos um bicho tem que ser
+                // EXCLUSIVO de cada ilha, senao elas so' embaralham os mesmos.
+                let so_de_a = a.iter().filter(|k| !b.contains(k)).count();
+                assert!(so_de_a > 0, "{na} nao tem nenhum bicho que {nb} nao tenha");
+            }
+        }
+    }
+
+    /// Caranguejo NA GELEIRA, nunca mais. Este teste tem nome de piada e
+    /// motivo serio: foi o exemplo que o dono deu, e e' o mais barato de
+    /// verificar — bicho de praia quente em ilha de gelo.
+    #[test]
+    fn nao_ha_caranguejo_no_gelo() {
+        for b in [Bioma::Gelo, Bioma::Montanha] {
+            for k in kinds_do_bioma(b).iter().chain(kinds_de_praia_do_bioma(b)) {
+                assert!(
+                    !KINDS_DE_PRAIA.contains(k),
+                    "{k} (caranguejo) num bioma que nao tem praia de areia"
+                );
+            }
+        }
+        // E o Bosque continua com eles: tirar de todo mundo nao era o pedido.
+        assert!(kinds_de_praia_do_bioma(Bioma::Floresta)
+            .iter()
+            .any(|k| KINDS_DE_PRAIA.contains(k)));
+    }
+
+    /// O BOSQUE NAO MUDA. O simulador de balanceamento
+    /// (`balanceamento::metas_do_inicio`) esta' calibrado contra exatamente
+    /// estes sete kinds; mexer aqui invalida a calibragem toda sem que o
+    /// simulador perceba, porque ele nao le' esta tabela.
+    #[test]
+    fn o_bestiario_do_bosque_continua_o_de_sempre() {
+        assert_eq!(kinds_do_bioma(Bioma::Floresta), &[0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(kinds_de_praia_do_bioma(Bioma::Floresta), &[8, 9]);
+    }
+}
+
+#[cfg(test)]
+mod testes_do_porte_dos_novos {
+    use super::*;
+    use shared::terreno::{Bioma, ARQUIPELAGO};
+
+    /// Bicho novo nao pode ser um FORA DE SERIE.
+    ///
+    /// O simulador de balanceamento (`balanceamento`) so' percorre a ilha
+    /// inicial: os bichos das outras tres nao passam por guarda nenhuma, e
+    /// um numero digitado com um zero a mais entraria calado. Escrever um
+    /// simulador por ilha e' outro projeto; o que da' pra garantir barato e'
+    /// COMPARACAO: os bichos ja' calibrados do Bosque dizem qual e' a escala
+    /// de um mob justo, e nenhum bicho novo pode sair dela.
+    ///
+    /// As folgas sao largas de proposito (um terco a tres vezes). Nao e'
+    /// calibragem — e' rede contra erro de digitacao e contra bicho que
+    /// mata em um golpe ou que nunca morre.
+    #[test]
+    fn nenhum_bicho_novo_foge_da_escala_do_bosque() {
+        let bosque: Vec<&KindInicial> = kinds_do_bioma(Bioma::Floresta)
+            .iter()
+            .filter_map(|k| kind_inicial(*k))
+            .collect();
+        let faixa = |f: fn(&KindInicial) -> f32| {
+            let mut v: Vec<f32> = bosque.iter().map(|k| f(k)).collect();
+            v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            (v[0], v[v.len() - 1])
+        };
+        let (hp_min, hp_max) = faixa(|k| k.hp as f32);
+        let (dmg_min, dmg_max) = faixa(|k| k.dmg as f32);
+        let (def_min, def_max) = faixa(|k| k.def as f32);
+
+        for d in ARQUIPELAGO.iter() {
+            for k in kinds_do_bioma(d.bioma).iter().chain(kinds_de_praia_do_bioma(d.bioma)) {
+                let m = kind_inicial(*k).expect("kind conhecido");
+                if bosque.iter().any(|b| b.kind == m.kind) {
+                    continue; // ja' calibrado
+                }
+                let dentro = |v: f32, lo: f32, hi: f32, nome: &str| {
+                    assert!(
+                        v >= lo / 3.0 && v <= hi * 3.0,
+                        "{} ({}): {nome} {v} fora da escala do Bosque [{:.0}..{:.0}]",
+                        m.name,
+                        d.nome,
+                        lo / 3.0,
+                        hi * 3.0
+                    );
+                };
+                dentro(m.hp as f32, hp_min, hp_max, "hp");
+                dentro(m.dmg as f32, dmg_min, dmg_max, "dano");
+                // A DEFESA tem teto proprio: ela nao escala com o nivel, e
+                // defesa alta demais deixa o bicho imune a arma de faixa
+                // baixa em vez de so' dificil.
+                dentro(m.def as f32, def_min.max(1.0), def_max.max(4.0), "defesa");
+                assert!(
+                    m.sp > 0.3 && m.sp < 6.0,
+                    "{}: velocidade {} — nem estatua nem raio",
+                    m.name,
+                    m.sp
+                );
+                assert!(m.xp > 0, "{}: sem xp, o bicho nao paga a luta", m.name);
+            }
         }
     }
 }

@@ -50,6 +50,36 @@ pub const BASE_PRAIA: &[(i32, u16, i32, i32, f32)] = &[
     (9, HEALTH_POTION, 1, 1, 0.12),
 ];
 
+/// O BESTIARIO DAS OUTRAS ILHAS (kinds 10-15, `economy::kinds_do_bioma`).
+///
+/// Cada ilha derruba o material que a faixa dela pede, e o cobre sobe com a
+/// faixa. Nenhum da' CHAVE — chave e' so' de chefe e dungeon.
+pub const BASE_ILHAS: &[(i32, u16, i32, i32, f32)] = &[
+    // Geleira
+    (10, COPPER, 30, 70, 1.0),
+    (10, PLATINUM, 1, 3, 0.22),
+    (10, GREATER_HEAL, 1, 1, 0.10),
+    (11, COPPER, 28, 65, 1.0),
+    (11, STEEL, 2, 5, 0.28),
+    (11, ILLUMINATING_FRAGMENT, 1, 2, 0.18),
+    (12, COPPER, 22, 55, 1.0),
+    (12, QUINTESSENCE, 1, 3, 0.24),
+    (12, GREATER_MANA, 1, 1, 0.10),
+    // Ermo
+    (13, COPPER, 26, 60, 1.0),
+    (13, STEEL, 2, 4, 0.26),
+    (13, EXORCISM_BAUBLE, 1, 2, 0.16),
+    (14, COPPER, 70, 160, 1.0),
+    (14, DARKSTEEL, 2, 6, 0.30),
+    (14, ANIMA_STONE, 1, 3, 0.22),
+    (14, GREATER_HEAL, 1, 2, 0.20),
+    // Planalto
+    (15, COPPER, 90, 200, 1.0),
+    (15, DARKSTEEL, 3, 8, 0.34),
+    (15, PLATINUM, 2, 5, 0.26),
+    (15, GLITTERING_POWDER, 1, 1, 0.04),
+];
+
 /// Migra apenas a economia dos mobs, uma vez, dentro de uma transacao.
 pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
@@ -81,6 +111,37 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             .execute(&mut *tx)
             .await?;
         tracing::info!("Loot dos caranguejos semeado");
+    }
+    // O bestiario das outras ilhas: loot dos kinds 10-15, e a faxina dos
+    // kinds do MAR (20-24), que ficaram orfaos quando o Mar Aberto foi
+    // desfeito. Eles nao nascem mais (o sorteio agora e' por bioma), mas
+    // continuavam aparecendo em "onde obter" e nas contas de economia.
+    let ilhas = sqlx::query(
+        "INSERT INTO economy_migrations(name) VALUES ('bestiario_por_ilha_v1') ON CONFLICT DO NOTHING",
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected()
+        > 0;
+    if ilhas {
+        for &(kind, item, min, max, chance) in BASE_ILHAS {
+            sqlx::query("INSERT INTO loot_drops(enemy_kind,item_id,qty_min,qty_max,chance) SELECT $1,$2,$3,$4,$5 WHERE EXISTS(SELECT 1 FROM enemy_kinds WHERE kind=$1)")
+                .bind(kind).bind(item as i32).bind(min).bind(max).bind(chance).execute(&mut *tx).await?;
+        }
+        let orfaos = sqlx::query("DELETE FROM loot_drops WHERE enemy_kind BETWEEN 20 AND 24")
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+        let kinds = sqlx::query("DELETE FROM enemy_kinds WHERE kind BETWEEN 20 AND 24")
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+        sqlx::query("UPDATE economy_version SET version=version+1 WHERE id=1")
+            .execute(&mut *tx)
+            .await?;
+        tracing::info!(
+            "Bestiario por ilha semeado; {kinds} kinds do mar e {orfaos} linhas de loot removidos"
+        );
     }
     // Chaves de craft (Escama, Garra, Chifre, Couro) so' de chefe e
     // dungeon/raid: saem de todo mob e de toda pedra, em toda cor. Banco novo
@@ -185,6 +246,72 @@ mod tests {
                 ) {
                     assert!(e.4 <= if kind == 7 { 0.35 } else { 0.12 });
                 }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    /// TODO bicho do bestiario tem loot.
+    ///
+    /// Bicho sem linha em `loot_drops` cai e nao larga nada — nem cobre. Nao
+    /// da' erro, nao aparece no log: o jogador so' acha que a ilha e' pobre.
+    /// O teste percorre o bestiario de verdade, e nao uma lista escrita aqui.
+    #[test]
+    fn nenhum_bicho_do_bestiario_cai_sem_nada() {
+        use shared::terreno::ARQUIPELAGO;
+        let tem = |k: u16| {
+            BASE.iter()
+                .chain(BASE_PRAIA)
+                .chain(BASE_ILHAS)
+                .any(|(kk, ..)| *kk as u16 == k)
+        };
+        for d in ARQUIPELAGO.iter() {
+            let b = crate::economy::kinds_do_bioma(d.bioma);
+            let p = crate::economy::kinds_de_praia_do_bioma(d.bioma);
+            for k in b.iter().chain(p) {
+                assert!(
+                    tem(*k),
+                    "{}: o kind {k} ({}) nao tem loot nenhum",
+                    d.nome,
+                    crate::economy::kind_inicial(*k).map_or("?", |x| x.name)
+                );
+            }
+        }
+    }
+
+    /// E todo bicho larga COBRE, com chance 1. O cobre e' a moeda do dia a
+    /// dia (docs/ECONOMIA.md): um bicho que as vezes nao paga nada faz a
+    /// ilha inteira parecer quebrada.
+    #[test]
+    fn todo_bicho_paga_cobre_sempre() {
+        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS] {
+            let kinds: std::collections::BTreeSet<i32> =
+                tabela.iter().map(|(k, ..)| *k).collect();
+            for k in kinds {
+                let cobre = tabela
+                    .iter()
+                    .find(|(kk, item, ..)| *kk == k && *item == COPPER);
+                let (.., chance) = cobre.unwrap_or_else(|| panic!("kind {k} sem cobre"));
+                assert_eq!(*chance, 1.0, "kind {k}: cobre com chance {chance}");
+            }
+        }
+    }
+
+    /// Nenhum mob da' CHAVE — so' chefe e dungeon (`shared::chaves`). Uma
+    /// chave num mob comum derruba a economia de craft inteira.
+    #[test]
+    fn nenhum_mob_da_chave() {
+        let chaves = shared::item_id::todas_as_chaves();
+        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS] {
+            for (k, item, ..) in tabela {
+                assert!(
+                    !chaves.contains(item),
+                    "kind {k} larga a chave {item}"
+                );
             }
         }
     }
