@@ -525,6 +525,45 @@ pub fn draw_botao_montaria(z: &Zonas, montado: bool, progresso: Option<f32>, tem
     sobre && crate::foco::clique()
 }
 
+/// O CANHAO, no lugar do botao de montaria enquanto se navega.
+///
+/// Reaproveita a mesma vaga do HUD de proposito: montar nao vale no mar, e
+/// abrir um botao novo pra uma zona so' encheria a tela de todo mundo por
+/// causa de uma minoria. Sem canhao instalado, ele fica apagado — e o toque
+/// diz onde instalar, em vez de nao fazer nada.
+pub fn draw_botao_canhao(z: &Zonas, tem: bool, pronto: bool) -> bool {
+    let r = z.montaria;
+    let m = mouse();
+    let sobre = r.contains(m);
+    estilo::cartao(r, sobre, false);
+    let cor = if !tem {
+        estilo::alfa(estilo::TEXTO, 0.4)
+    } else if pronto {
+        estilo::OURO
+    } else {
+        estilo::alfa(estilo::TEXTO, 0.55)
+    };
+    // Um cano curto apontando pra fora, com a boca aberta.
+    let c = r.center();
+    let s = r.w * 0.26;
+    draw_line(c.x - s, c.y + s * 0.4, c.x + s * 0.8, c.y - s * 0.3, r.w * 0.13, cor);
+    draw_circle(c.x + s * 0.85, c.y - s * 0.35, r.w * 0.1, cor);
+    draw_circle(c.x - s * 0.9, c.y + s * 0.5, r.w * 0.09, cor);
+    if sobre {
+        dica(
+            r,
+            if !tem {
+                "Sem canhão — instale no Estaleiro"
+            } else if pronto {
+                "Disparar"
+            } else {
+                "Recarregando"
+            },
+        );
+    }
+    sobre && crate::foco::clique() && tem && pronto
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  CLUSTER DE COMBATE — o botao grande, a pocao e os slots rapidos
 // ═══════════════════════════════════════════════════════════════════════

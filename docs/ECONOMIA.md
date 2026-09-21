@@ -92,8 +92,13 @@ passageiros e estações, persistência — herdado da geração anterior do cli
 (Unity/2D). O cliente macroquad não tinha **uma linha** disso: nenhum
 `BoardBoat`, nenhum `HelmAdjust`. E mesmo que tivesse, não havia pra onde ir:
 viajar entre ilhas é pelo Capitão do Porto, e o mar não tem bicho nem conteúdo.
-Era código vivo sustentando uma promessa morta. Quando o barco voltar, volta
-com um motivo — colônia — e desenhado pro cliente que existe.
+Era código vivo sustentando uma promessa morta.
+
+**Ele voltou em 21/09/2026, e o motivo não foi a colônia: foi a travessia.**
+Trocar de ilha passou a exigir navegar, o mar ganhou bicho, naufrágio e um
+tesouro que só se move de barco, e o cliente foi desenhado junto desta vez.
+Ver `docs/MAR_ABERTO.md`. A colônia continua de pé como destino futuro — as
+ilhotas do mar são onde ela cabe.
 
 ## Mercado
 

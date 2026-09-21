@@ -1619,6 +1619,8 @@ pub struct Session {
     pub inventory_dirty: bool,
     /// True quando o equipamento mudou (envia StatsUpdate no proximo tick).
     pub stats_dirty: bool,
+    /// Quando o canhao pode atirar de novo (`sim_time_s`).
+    pub canhao_pronto_em: f32,
     /// KARMA: o preco de matar quem nao estava marcado (docs/MAR_ABERTO.md).
     pub karma: i32,
     /// Ate' quando o RASTRO da marca dura, em unix secs. Sem ele, entregar o
@@ -6655,6 +6657,7 @@ impl GameWorld {
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 inventory_dirty: false,
                 stats_dirty: false,
+                canhao_pronto_em: 0.0,
                 karma: 0,
                 marcado_ate: 0,
                 ultima_vitima: None,
@@ -11744,6 +11747,7 @@ impl GameWorld {
         self.sincroniza_pets();
         self.tick_pets(dt);
         self.tick_karma(dt);
+        self.tick_leviata(dt);
         // A montaria VISTA sai do equipamento, e equipar acontece por muitos
         // caminhos (bolsa, saque que auto-equipa, correio, mercado). Conferir
         // no tick cobre todos: sem isto, equipar nao avisava ninguem e o

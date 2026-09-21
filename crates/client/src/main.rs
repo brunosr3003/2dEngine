@@ -20,6 +20,7 @@ mod colecao;
 mod craft_ui;
 mod dungeon_ui;
 mod efeitos;
+mod estaleiro_ui;
 mod energia_vfx;
 mod entrada;
 mod evolucao_skills;
@@ -352,6 +353,12 @@ struct Jogo {
     girando_toque: bool,
     /// WASD virtual na metade esquerda (so' com toque).
     joystick: joystick::Joystick,
+    /// O painel do Carpinteiro Naval (docs/MAR_ABERTO.md).
+    estaleiro: estaleiro_ui::EstaleiroUi,
+    /// Quando o canhao foi disparado (`get_time`). O botao acende de novo
+    /// pela recarga, sem esperar o servidor responder — o servidor continua
+    /// sendo quem decide se o tiro sai.
+    canhao_em: f64,
     /// Esta zona e' o Mar Aberto? Nao muda o controle — muda o que se
     /// DESENHA (um casco no lugar do boneco) e quem responde ao botao do
     /// porto (zarpar ou atracar).
@@ -612,6 +619,8 @@ async fn main() {
         camera_suave: camera_suave::CameraSuave::default(),
         girando_toque: false,
         joystick: joystick::Joystick::default(),
+        estaleiro: estaleiro_ui::EstaleiroUi::default(),
+        canhao_em: 0.0,
         no_mar: false,
         rede: hud::Rede::default(),
         ultimo_ping: 0.0,
@@ -1279,6 +1288,19 @@ impl Jogo {
             } => {
                 self.dialogo.fechar();
                 self.escolha_npc.abrir(npc_eid, nome, funcao);
+            }
+            ServerMessage::Barco { aviso } => {
+                // O estaleiro chega junto com o menu do porto: quem para no
+                // cais quer ver o barco. Recusa e naufragio viram linha de
+                // chat, que e' onde o jogador ja' olha.
+                match &aviso {
+                    shared::mar::AvisoBarco::Recusa(t)
+                    | shared::mar::AvisoBarco::Naufragio { porto: t, .. } => {
+                        self.chat.push(t.clone());
+                    }
+                    _ => {}
+                }
+                self.estaleiro.receber(aviso);
             }
             ServerMessage::Viagem { destinos } => {
                 // O Capitao pode abrir com uma oferta de missao na frente: o
@@ -4071,6 +4093,14 @@ impl Jogo {
             .escreveu(self.cam_yaw, self.cam_pitch_ajuste, self.cam_zoom);
     }
 
+    /// (tem canhao, pronto pra atirar).
+    fn canhao_do_barco(&self) -> (bool, bool) {
+        let tem = self.estaleiro.canhao().is_some_and(|n| n > 0);
+        let pronto =
+            get_time() - self.canhao_em >= shared::barcos::RECARGA_DO_CANHAO as f64;
+        (tem, pronto)
+    }
+
     fn enviar_input(&mut self) {
         let agora = get_time();
         if agora - self.ultimo_input < 1.0 / INPUT_HZ {
@@ -4573,7 +4603,18 @@ impl Jogo {
             }
         }
         // Montaria: ao lado da bateria, sempre na tela.
-        {
+        if self.no_mar {
+            // No mar a vaga da montaria vira CANHAO (docs/MAR_ABERTO.md):
+            // montar nao vale aqui, e abrir um botao novo encheria a tela de
+            // todo mundo por causa de uma zona so'.
+            let (tem, pronto) = self.canhao_do_barco();
+            if hud::draw_botao_canhao(&z, tem, pronto) {
+                self.envia(ClientMessage::Barco {
+                    pedido: shared::mar::PedidoBarco::Canhao,
+                });
+                self.canhao_em = get_time();
+            }
+        } else {
             let montado = self.eu_montado();
             if montado {
                 self.montarias.montou();
@@ -5066,16 +5107,22 @@ impl Jogo {
         if let Some(pedido) = self.banco.desenha(&self.bolsa.slots, self.bolsa.ouro) {
             self.envia(pedido);
         }
-        if let Some(ilha) = self.viagem.desenha() {
+        if let Some(pedido) = self.estaleiro.desenha(&|id| self.bolsa.nome(id)) {
+            self.envia(ClientMessage::Barco { pedido });
+        }
+        if let Some(acao) = self.viagem.desenha() {
+            use crate::viagem_ui::AcaoDoPorto as A;
             // O Capitao nao teleporta mais: no cais o botao ZARPA, e no mar
             // ATRACA (docs/MAR_ABERTO.md). A `Viajar` morreu com ele.
-            self.envia(ClientMessage::Barco {
-                pedido: if self.no_mar {
-                    shared::mar::PedidoBarco::Atracar { ilha }
-                } else {
-                    shared::mar::PedidoBarco::Zarpar
-                },
-            });
+            match acao {
+                A::Zarpar => self.envia(ClientMessage::Barco {
+                    pedido: shared::mar::PedidoBarco::Zarpar,
+                }),
+                A::Atracar(ilha) => self.envia(ClientMessage::Barco {
+                    pedido: shared::mar::PedidoBarco::Atracar { ilha },
+                }),
+                A::Estaleiro => self.estaleiro.abrir(),
+            }
         }
         // Loja de cash e janela de montarias (Menu).
         for pedido in self.loja_tp.desenha(&self.vox, &self.solido) {

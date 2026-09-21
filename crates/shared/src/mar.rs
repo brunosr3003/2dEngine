@@ -412,6 +412,13 @@ pub enum PedidoBarco {
     Melhorar { eixo: u8 },
     /// Na Capitania: entrega o bau que esta' no conves.
     EntregarBau,
+    /// Dispara o canhao no casco mais perto que se possa atacar.
+    ///
+    /// Sem mira: o alvo e' o casco inimigo mais proximo dentro do alcance.
+    /// Mirar num celular, com a mao ja' ocupada pelo leme, seria pedir tres
+    /// dedos — e o combate naval aqui e' de POSICAO, nao de pontaria. Quem
+    /// erra e' quem deixou o inimigo sair do alcance.
+    Canhao,
 }
 
 /// O que o barco responde.
@@ -637,5 +644,66 @@ impl Mar {
             }
         }
         false
+    }
+}
+
+// ──────────────────────── o Leviata da Tempestade ────────────────────────
+
+/// O chefe do mar (docs/MAR_ABERTO.md).
+///
+/// **Ele nao entra em `bosses::CHEFES`, de proposito.** Aquela lista passa
+/// por `todo_telegrafico_e_esquivavel`, que pergunta se da' pra ANDAR pra
+/// fora do golpe em `pior_saida / PLAYER_SPEED` segundos. A pergunta nao faz
+/// sentido aqui: no mar ninguem anda, quem se move e' o casco, e a 11 u/s.
+/// Um chefe com telegrafico de terra reprovaria o teste — e o teste estaria
+/// certo.
+///
+/// Entao o Leviata e' outra coisa: ele nao tem golpe pra desviar. Ele MORDE O
+/// CASCO num ritmo fixo, e a luta e' uma corrida entre o dano dele e o teu.
+/// Quem decide nao e' o reflexo — e' com que barco voce veio.
+pub struct Leviata;
+
+impl Leviata {
+    pub const NOME: &'static str = "Leviatã da Tempestade";
+    /// Vida. Grande o bastante pra pedir canhao; nao tanto que vire parede.
+    pub const VIDA: i32 = 60_000;
+    /// Dano por bocada no CASCO.
+    pub const BOCADA: i32 = 420;
+    /// Segundos entre bocadas.
+    pub const RITMO_S: f32 = 6.0;
+    /// Alcance da bocada.
+    pub const ALCANCE: f32 = 14.0;
+    /// Onde ele mora: o meio da rota de endgame.
+    pub fn covil(mar: &Mar) -> Option<Vec2> {
+        let r = ROTAS.last()?;
+        let a = mar.cais_de(r.de as usize)?;
+        let b = mar.cais_de(r.para as usize)?;
+        Some((a + b) * 0.5)
+    }
+
+    /// Quanto tempo um casco aguenta debaixo dele.
+    pub fn aguenta_s(casco: u16) -> f32 {
+        casco as f32 / (Self::BOCADA as f32 / Self::RITMO_S)
+    }
+}
+
+#[cfg(test)]
+mod testes_do_leviata {
+    use super::*;
+
+    /// O Leviata separa os cascos: a Nau encara, a Chalupa nao.
+    ///
+    /// E' o unico conteudo do mar que EXIGE barco grande, e por isso ele e'
+    /// o que da' razao ao eixo casco existir depois da primeira travessia.
+    #[test]
+    fn o_leviata_exige_casco_grande() {
+        use crate::barcos;
+        let chalupa = barcos::casco_max(crate::item_id::BARCO_BASE, barcos::MELHORIA_MAX);
+        let nau = barcos::casco_max(crate::item_id::BARCO_NAU, barcos::MELHORIA_MAX);
+        let a = Leviata::aguenta_s(chalupa);
+        let b = Leviata::aguenta_s(nau);
+        assert!(a < 120.0, "a Chalupa no maximo aguentaria {a:.0}s — facil demais");
+        assert!(b > 240.0, "a Nau no maximo so' aguenta {b:.0}s — nem ela encara");
+        assert!(b > a * 2.0, "os cascos tem que separar de verdade");
     }
 }

@@ -13,6 +13,18 @@ use shared::viagem::{estado, Destino};
 
 use crate::hud_estilo as estilo;
 
+/// O que o jogador pediu no painel do porto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AcaoDoPorto {
+    /// No cais: sai pro mar. Nao se escolhe destino ao zarpar — se escolhe
+    /// ao chegar.
+    Zarpar,
+    /// No mar, perto do cais: entra naquela ilha.
+    Atracar(u8),
+    /// Abre o Carpinteiro Naval.
+    Estaleiro,
+}
+
 #[derive(Debug, Default)]
 pub struct ViagemUi {
     destinos: Option<Vec<Destino>>,
@@ -34,12 +46,12 @@ impl ViagemUi {
         self.destinos.is_some()
     }
 
-    /// Desenha; devolve a ilha escolhida pra embarcar (o menu fecha junto).
-    pub fn desenha(&mut self) -> Option<u8> {
+    /// Desenha; devolve o que o jogador pediu (o menu fecha junto).
+    pub fn desenha(&mut self) -> Option<AcaoDoPorto> {
         estilo::no_painel(estilo::escala_do_painel(560.0, 420.0), || self.desenha_na_escala())
     }
 
-    fn desenha_na_escala(&mut self) -> Option<u8> {
+    fn desenha_na_escala(&mut self) -> Option<AcaoDoPorto> {
         let destinos = self.destinos.as_ref()?;
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
@@ -107,10 +119,22 @@ impl ViagemUi {
                 let rotulo = if self.no_mar { "Atracar" } else { "Zarpar" };
                 estilo::botao(b, rotulo, estilo::estado_de(b, false, false), true);
                 if clicou && b.contains(m) {
-                    escolha = Some(d.ilha);
+                    escolha = Some(if self.no_mar {
+                        AcaoDoPorto::Atracar(d.ilha)
+                    } else {
+                        AcaoDoPorto::Zarpar
+                    });
                 }
             }
             y += linha_h;
+        }
+        // O ESTALEIRO so' no porto: no mar nao ha' Carpinteiro pra atender.
+        if !self.no_mar {
+            let b = Rect::new(x0, p.y + h - 54.0 * f, 190.0 * f, 40.0 * f);
+            estilo::botao(b, "Estaleiro", estilo::estado_de(b, false, false), false);
+            if clicou && b.contains(m) {
+                escolha = Some(AcaoDoPorto::Estaleiro);
+            }
         }
         if escolha.is_some() || (clicou && (fechar.contains(m) || !p.contains(m))) {
             self.fechar();

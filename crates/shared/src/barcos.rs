@@ -4,16 +4,20 @@
 //! puras, entao cliente e servidor concordam sem uma mensagem de protocolo.
 //! O painel do porto desenha exatamente o que o servidor vai cobrar.
 //!
-//! # Dois eixos, e nao tres
+//! # Tres eixos
 //!
-//! **Casco** e **vela**: sobreviver e atravessar. Eram tres — havia PORAO —
-//! ate' o dono cortar: *"nao precisa de porao, e o tesouro vai ficar no
-//! conves mesmo"*. Com o tesouro no conves, um por vez, capacidade deixou de
-//! ser uma pergunta, e um eixo que nao responde pergunta nenhuma e' um numero
+//! **Casco**, **vela** e **canhao**: sobreviver, atravessar, brigar. Houve um
+//! quarto — PORAO — e ele saiu antes de nascer: *"nao precisa de porao, e o
+//! tesouro vai ficar no conves mesmo"*. Com um bau por vez, capacidade deixou
+//! de ser pergunta, e um eixo que nao responde pergunta nenhuma e' um numero
 //! subindo com nada do outro lado.
 //!
-//! Os indices 2 e 3 do array ficam reservados (porao e canhao) pra o dado
-//! salvo nao precisar migrar se um deles voltar.
+//! O indice 2 fica reservado (era o porao) pra o dado salvo nao migrar.
+//!
+//! O CANHAO e' o unico eixo que so' serve contra GENTE: bicho de mar nao
+//! apanha dele, porque combate no mar e' PvP entre barcos e navegacao e'
+//! navegacao. Ele existe pra a cacada do tesouro ter uma arma que seja do
+//! BARCO, e nao do personagem em cima dele.
 //!
 //! # Nada falha
 //!
@@ -39,11 +43,35 @@ pub mod eixo {
     pub const VELA: usize = 1;
     /// Reservado: havia porao, e ele saiu. Ver o cabecalho.
     pub const _PORAO: usize = 2;
-    /// Reservado pro PvP naval.
-    pub const _CANHAO: usize = 3;
-    /// Quantos eixos o estaleiro oferece hoje.
-    pub const QUANTOS: usize = 2;
+    pub const CANHAO: usize = 3;
+    /// Quantos eixos o estaleiro oferece. O canhao e' o 3, entao a lista que
+    /// o painel desenha pula o 2 — ver `EIXOS`.
+    pub const QUANTOS: usize = 3;
+    /// Os eixos oferecidos, em ordem de painel.
+    pub const EIXOS: [usize; QUANTOS] = [CASCO, VELA, CANHAO];
+    /// O nome de cada um, na mesma ordem.
+    pub const NOMES: [&str; QUANTOS] = ["Casco", "Vela", "Canhão"];
 }
+
+/// Dano de um tiro de canhao no casco inimigo, pelo nivel da melhoria.
+///
+/// Zero em `melhoria = 0`: sem canhao instalado nao ha' tiro. E' o que faz
+/// o eixo ser uma ESCOLHA e nao um imposto — quem so' quer atravessar nunca
+/// paga por ele.
+pub fn dano_do_canhao(item_id: u16, melhoria: u8) -> u16 {
+    if melhoria == 0 {
+        return 0;
+    }
+    let h = crate::item_id::casco_de_id(item_id).unwrap_or(1) as u16;
+    120 * h * melhoria.min(MELHORIA_MAX) as u16
+}
+
+/// Alcance do tiro, em unidades. Nao cresce com a melhoria: o que cresce e'
+/// o dano. Alcance maior premiaria quem nunca chega perto, e a cacada do
+/// tesouro so' e' interessante quando os cascos se encontram.
+pub const ALCANCE_DO_CANHAO: f32 = 26.0;
+/// Segundos entre dois tiros.
+pub const RECARGA_DO_CANHAO: f32 = 4.0;
 
 /// (nome, casco base, +casco por nivel, vela base, +vela, porao base, +porao,
 /// nivel de craft).

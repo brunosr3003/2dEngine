@@ -311,6 +311,7 @@ impl GameWorld {
             P::Reparar { pagando } => self.handle_reparar(sid, pagando),
             P::Melhorar { eixo } => self.handle_melhorar(sid, eixo),
             P::EntregarBau => self.entregar_bau(sid),
+            P::Canhao => self.handle_canhao(sid),
         }
     }
 }
@@ -455,6 +456,22 @@ impl GameWorld {
                 });
             }
         }
+        // O LEVIATA no covil dele: uma entidade so', no mundo inteiro.
+        if let Some(covil) = shared::mar::Leviata::covil(mar) {
+            let eid = self.alloc_entity_id();
+            self.ecs.spawn((
+                NetId(eid),
+                Position(covil),
+                Velocity(Vec2::ZERO),
+                EntityKind::Enemy(24),
+                Health {
+                    current: shared::mar::Leviata::VIDA,
+                    max: shared::mar::Leviata::VIDA,
+                },
+                LeviataTag { proxima: 0.0 },
+            ));
+            tracing::info!("leviata em ({:.0},{:.0})", covil.x, covil.y);
+        }
         tracing::info!(
             "mar aberto: {} zonas de bicho, {} naufragios",
             zonas.len(),
@@ -584,8 +601,9 @@ impl GameWorld {
         let Some((item, d)) = self.barco_equipado(sid) else {
             return;
         };
-        let custos: Vec<Vec<(u16, u32)>> = (0..shared::barcos::eixo::QUANTOS)
-            .map(|e| {
+        let custos: Vec<Vec<(u16, u32)>> = shared::barcos::eixo::EIXOS
+            .iter()
+            .map(|&e| {
                 let n = d.melhorias[e];
                 if n >= shared::barcos::MELHORIA_MAX {
                     Vec::new()
@@ -684,7 +702,7 @@ impl GameWorld {
             return;
         }
         let e = eixo as usize;
-        if e >= shared::barcos::eixo::QUANTOS {
+        if !shared::barcos::eixo::EIXOS.contains(&e) {
             return;
         }
         let Some((item, mut d)) = self.barco_equipado(sid) else {
@@ -996,5 +1014,123 @@ impl GameWorld {
         self.sessions
             .get(&sid)
             .is_none_or(|s| shared::karma::grau(s.karma).npc_atende())
+    }
+}
+
+impl GameWorld {
+    /// DISPARA o canhao no casco inimigo mais perto.
+    ///
+    /// Sem mira e sem projetil: o tiro resolve na hora. Um projetil viajando
+    /// daria a chance de desviar, que e' o que faz sentido em terra — mas
+    /// aqui os dois alvos sao cascos de dez metros a onze unidades por
+    /// segundo, e "desviar" nao e' um verbo que exista. O que decide e'
+    /// entrar no alcance e sair dele.
+    fn handle_canhao(&mut self, sid: SessionId) {
+        let agora = self.sim_time_s;
+        let Some((item, d)) = self.barco_equipado(sid) else {
+            return;
+        };
+        let dano = shared::barcos::dano_do_canhao(item, d.melhorias[shared::barcos::eixo::CANHAO]);
+        if dano == 0 {
+            self.recusa_barco(sid, "Seu barco não tem canhão. O Carpinteiro instala.");
+            return;
+        }
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        if agora < s.canhao_pronto_em {
+            return;
+        }
+        let (eu_eid, eu_pos) = (s.entity_id, self.pos_do_jogador(sid));
+        let Some(eu) = eu_pos else { return };
+        // O alvo: o casco mais perto em que se PODE atirar. A mesma
+        // `can_damage_player` do resto do jogo — o canhao nao inventa uma
+        // segunda regra de quem pode bater em quem.
+        let alvo = self
+            .sessions
+            .values()
+            .filter(|o| o.logged_in && o.handle.id != sid)
+            .filter_map(|o| {
+                let p = o
+                    .entity
+                    .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|x| x.0))?;
+                let d = p.distance(eu);
+                (d <= shared::barcos::ALCANCE_DO_CANHAO
+                    && self.can_damage_player(eu_eid, o.entity_id))
+                .then_some((o.handle.id, d))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1));
+        let Some((alvo, _)) = alvo else {
+            self.recusa_barco(sid, "Nenhum casco no alcance.");
+            return;
+        };
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.canhao_pronto_em = agora + shared::barcos::RECARGA_DO_CANHAO;
+        }
+        self.dano_no_casco(alvo, dano as i32);
+        // Quem levou o tiro precisa saber de ONDE veio: sem isso o casco cai
+        // e o jogador nao tem como reagir a coisa nenhuma.
+        let nome = self
+            .sessions
+            .get(&sid)
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        if let Some(v) = self.sessions.get(&alvo) {
+            let _ = v.handle.to_client.send(ServerMessage::Chat {
+                from: "SYS".into(),
+                text: format!("Canhão de {nome} acerta seu casco!"),
+            });
+        }
+    }
+}
+
+/// O Leviata no mundo. Ver `shared::mar::Leviata`.
+pub struct LeviataTag {
+    /// Quando ele morde de novo (`sim_time_s`).
+    pub proxima: f32,
+}
+
+impl GameWorld {
+    /// O Leviata morde o casco de quem chegar perto.
+    ///
+    /// Nao ha' telegrafico, nao ha' desvio, nao ha' perseguicao: ele fica no
+    /// covil e cobra pedagio. A luta e' uma corrida entre o dano dele e o
+    /// teu, e quem decide nao e' o reflexo — e' com que barco voce veio.
+    pub(super) fn tick_leviata(&mut self, _dt: f32) {
+        if self.mar.is_none() {
+            return;
+        }
+        let agora = self.sim_time_s;
+        let mordidas: Vec<(Entity, Vec<SessionId>)> = self
+            .ecs
+            .query::<(&Position, &LeviataTag)>()
+            .iter()
+            .filter(|(_, (_, t))| agora >= t.proxima)
+            .map(|(e, (pos, _))| {
+                let perto = self
+                    .sessions
+                    .values()
+                    .filter(|s| s.logged_in)
+                    .filter(|s| {
+                        s.entity
+                            .and_then(|pe| self.ecs.get::<&Position>(pe).ok().map(|p| p.0))
+                            .is_some_and(|p| p.distance(pos.0) <= shared::mar::Leviata::ALCANCE)
+                    })
+                    .map(|s| s.handle.id)
+                    .collect::<Vec<_>>();
+                (e, perto)
+            })
+            .collect();
+        for (e, alvos) in mordidas {
+            if alvos.is_empty() {
+                continue;
+            }
+            if let Ok(mut t) = self.ecs.get::<&mut LeviataTag>(e) {
+                t.proxima = agora + shared::mar::Leviata::RITMO_S;
+            }
+            for sid in alvos {
+                self.dano_no_casco(sid, shared::mar::Leviata::BOCADA);
+            }
+        }
     }
 }
