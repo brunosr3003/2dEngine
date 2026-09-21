@@ -50,18 +50,24 @@ pub const PESO_TOTAL: u8 = 10;
 /// A escada: do bicho de carga ao dragao. A ordem E' o grau.
 ///
 /// **O porte tem um piso: o jogador.** A `escala` multiplica a altura do
-/// bicho ADULTO (`client::bicho::BICHOS`), e o cervo saia com 1,28 contra os
-/// 1,8 do boneco — montaria mais baixa que quem monta nao le' como montaria.
-/// A escada vai de 1,46 (cervo) a 2,52 (dragao), sempre subindo, e a `sela`
-/// acompanha: quem esta' em cima tem que pousar no lombo, nao flutuar nem
-/// afundar.
+/// bicho ADULTO (`client::bicho::BICHOS`).
+///
+/// O cervo saiu com 1,28 na primeira versao, depois 1,46, e o dono continuou
+/// vendo o que o numero dizia: *"o veado ainda ta pequeno em relacao ao
+/// player"*. Estava — 1,46 contra os 1,8 do boneco. O teste passava porque o
+/// piso dele era 75% da altura do jogador, e 75% e' exatamente a licenca pra
+/// montaria ser mais baixa que quem monta.
+///
+/// Agora o piso e' o jogador INTEIRO, e a escada vai de 1,95 (cervo) a 2,80
+/// (dragao), sempre subindo. A `sela` acompanha: quem esta' em cima tem que
+/// pousar no lombo, nao flutuar nem afundar.
 pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
     Especie {
         grau: 1,
         nome: "Cervo do Bosque",
         bicho: "bichos/cervo",
-        escala: 0.91,
-        sela: 1.18,
+        escala: 1.22,
+        sela: 1.58,
         sela_frente: -0.34,
         afinidade: pesos(&[(stat_idx::SPD, 6), (stat_idx::DES, 4)]),
         descricao: "Manso e ligeiro. A primeira montaria de qualquer um.",
@@ -70,8 +76,8 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         grau: 2,
         nome: "Lobo da Clareira",
         bicho: "bichos/lobo",
-        escala: 0.56,
-        sela: 1.26,
+        escala: 0.75,
+        sela: 1.7,
         sela_frente: -0.38,
         afinidade: pesos(&[(stat_idx::DES, 6), (stat_idx::SPD, 4)]),
         descricao: "Leal e ligeiro, criado nas matas do Bosque.",
@@ -80,8 +86,8 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         grau: 3,
         nome: "Tigre das Neves",
         bicho: "bichos/tigre",
-        escala: 1.70,
-        sela: 1.30,
+        escala: 2.4,
+        sela: 1.85,
         sela_frente: -0.38,
         afinidade: pesos(&[(stat_idx::FOR, 6), (stat_idx::DES, 4)]),
         descricao: "Silencioso na neve, feroz na estrada.",
@@ -90,8 +96,8 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         grau: 4,
         nome: "Hipogrifo",
         bicho: "bichos/hipogrifo",
-        escala: 1.10,
-        sela: 1.50,
+        escala: 1.32,
+        sela: 2.0,
         sela_frente: -0.30,
         afinidade: pesos(&[(stat_idx::INT, 5), (stat_idx::SPD, 5)]),
         descricao: "Meio águia, meio cavalo. Não anda: quase voa.",
@@ -100,8 +106,8 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         grau: 5,
         nome: "Dragão",
         bicho: "bichos/dragao",
-        escala: 1.05,
-        sela: 1.42,
+        escala: 1.17,
+        sela: 2.15,
         sela_frente: -0.26,
         afinidade: pesos(&[(stat_idx::FOR, 4), (stat_idx::VIT, 3), (stat_idx::INT, 3)]),
         descricao: "O topo. Quem monta um, todo mundo vê de longe.",

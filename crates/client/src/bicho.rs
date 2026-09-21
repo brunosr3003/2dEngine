@@ -684,9 +684,16 @@ mod tests {
         for e in shared::montarias::ESPECIES.iter() {
             let h = altura_da_montaria(e);
             assert!(h > 0.0, "{}: sem modelo em BICHOS", e.nome);
+            // O PISO E' O JOGADOR INTEIRO, e nao 75% dele.
+            //
+            // Com 0,75 este teste dava licenca pra exatamente o defeito que
+            // ele existia pra pegar: o cervo passava com 1,46 contra os 1,8
+            // do boneco, e o dono viu duas vezes antes de eu olhar o numero.
+            // Um guarda que aceita o que ele proibe nao e' guarda.
             assert!(
-                h > ALTURA_DO_JOGADOR * 0.75,
-                "{} tem {h:.2}: montaria mais baixa que quem monta nao le' como montaria",
+                h > ALTURA_DO_JOGADOR,
+                "{} tem {h:.2} contra {ALTURA_DO_JOGADOR:.2} do jogador: \
+                 montaria mais baixa que quem monta nao le' como montaria",
                 e.nome
             );
             assert!(h > anterior, "{} ({h:.2}) nao passou do grau anterior ({anterior:.2})", e.nome);
