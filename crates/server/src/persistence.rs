@@ -68,16 +68,7 @@ pub struct CharacterRow {
     /// Ilha (zona) onde a posicao vale. None = row antiga. Sem isto, quem
     /// entrava num canal de outra ilha usava coordenadas que eram de la'.
     pub zona: Option<String>,
-    /// De que ILHA o personagem zarpou (docs/MAR_ABERTO.md). E' o caminho de
-    /// casa: se a `zona` salva e' o mar e o processo do mar nao esta' no ar,
-    /// sem isto o jogador cairia no porto de qualquer ilha em que calhasse
-    /// de logar — e trocaria de ilha de graca, que e' justamente o que a
-    /// travessia obrigatoria existe pra impedir.
-    pub zona_volta: Option<String>,
-    /// KARMA de PK (docs/MAR_ABERTO.md). Persiste porque o preco de matar
-    /// tem que sobreviver ao logout — senao deslogar e' a forma de limpar a
-    /// ficha, e o sistema inteiro vira teatro.
-    pub karma: i32,
+
     /// Pocao de Experiencia: bonus de XP ate' este instante (unix secs; 0 =
     /// nenhum). Absoluto, entao sobrevive a relog e reinicio.
     pub xp_bonus_ate: i64,
@@ -494,12 +485,6 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS stamina REAL NULL")
-        .execute(pool)
-        .await?;
-    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS karma INTEGER NOT NULL DEFAULT 0")
-        .execute(pool)
-        .await?;
-    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS zona_volta TEXT NULL")
         .execute(pool)
         .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS zona TEXT NULL")
@@ -2866,57 +2851,6 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         }
     }
 
-    // Os tres CASCOS (docs/MAR_ABERTO.md). `sell_price` bem abaixo do custo
-    // de craft de proposito: ninguem deve vender um barco pro NPC. Quem quer
-    // se livrar de um vende no MERCADO, onde a instancia (casco, melhorias,
-    // travessias) vai junto e vale alguma coisa.
-    for id in item_id::BARCO_BASE..=item_id::BARCO_ULTIMO {
-        let Some(nome) = shared::barcos::nome_do_item(id) else {
-            continue;
-        };
-        let classe = item_id::casco_de_id(id).unwrap_or(1) as i32;
-        let venda = 1_500 * classe * classe;
-        sqlx::query(
-            "INSERT INTO items \
-              (id, name, sell_price, buy_price, shop_order, stack_max, \
-               equip_slot, item_level, icon_col, icon_row) \
-             VALUES ($1,$2,$3,NULL,NULL,1,$4,1,-1,-1) \
-             ON CONFLICT (id) DO UPDATE SET \
-               name = EXCLUDED.name, \
-               equip_slot = EXCLUDED.equip_slot, \
-               stack_max = EXCLUDED.stack_max, \
-               sell_price = EXCLUDED.sell_price",
-        )
-        .bind(id as i32)
-        .bind(&nome)
-        .bind(venda)
-        .bind(shared::EquipSlot::Barco.as_db_str())
-        .execute(pool)
-        .await?;
-    }
-
-    // Os BAUS DO COLOSSO (docs/MAR_ABERTO.md). `vinculado` e `stack_max 1`,
-    // e `sell_price 0`: eles nao se vendem nem se empilham. O valor deles nao
-    // esta' no item — esta' em ENTREGAR o item do outro lado do mar.
-    for cor in 1..=5u8 {
-        let id = item_id::bau_na_cor(cor) as i32;
-        let nome = format!("Baú do Colosso ({})", shared::items::tier_name(cor));
-        sqlx::query(
-            "INSERT INTO items \
-              (id, name, sell_price, buy_price, shop_order, stack_max, \
-               equip_slot, item_level, icon_col, icon_row, vinculado) \
-             VALUES ($1,$2,0,NULL,NULL,1,NULL,1,-1,-1,TRUE) \
-             ON CONFLICT (id) DO UPDATE SET \
-               name = EXCLUDED.name, \
-               vinculado = TRUE, \
-               sell_price = 0",
-        )
-        .bind(id)
-        .bind(&nome)
-        .execute(pool)
-        .await?;
-    }
-
     // O pergaminho de pet cai na recompensa diaria, e o calendario nao
     // entrega item negociavel (docs/CALENDARIO.md): ele nasce VINCULADO. O
     // que sai dele — o pet — e' negociavel normalmente, que e' o ponto.
@@ -3568,22 +3502,13 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
     let tut_map: HashMap<String, Option<i64>> = tut_rows.into_iter().collect();
     // Mana, stamina e zona. NULL = row de antes das colunas.
     let vida = busca!(
-        (
-            String,
-            Option<f32>,
-            Option<f32>,
-            Option<String>,
-            Option<String>
-        ),
-        "name, mp, stamina, zona, zona_volta"
+        (String, Option<f32>, Option<f32>, Option<String>),
+        "name, mp, stamina, zona"
     );
-    #[allow(clippy::type_complexity)]
-    let vida_map: HashMap<String, (Option<f32>, Option<f32>, Option<String>, Option<String>)> =
-        vida.into_iter()
-            .map(|(n, m, s, z, zv)| (n, (m, s, z, zv)))
-            .collect();
-    let karma_rows = busca!((String, i32), "name, karma");
-    let karma_map: HashMap<String, i32> = karma_rows.into_iter().collect();
+    let vida_map: HashMap<String, (Option<f32>, Option<f32>, Option<String>)> = vida
+        .into_iter()
+        .map(|(n, m, s, z)| (n, (m, s, z)))
+        .collect();
     let bonus = busca!((String, i64), "name, xp_bonus_ate");
     let bonus_map: HashMap<String, i64> = bonus.into_iter().collect();
     let drop = busca!(
@@ -3672,9 +3597,8 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
             .as_deref()
             .and_then(|j| serde_json::from_str(j).ok());
         let last_tut = tut_map.get(&name).cloned().flatten();
-        let (mp, stamina, zona, zona_volta) = vida_map.get(&name).cloned().unwrap_or_default();
+        let (mp, stamina, zona) = vida_map.get(&name).cloned().unwrap_or_default();
         let xp_bonus_ate = bonus_map.get(&name).copied().unwrap_or(0);
-        let karma = karma_map.get(&name).copied().unwrap_or(0);
         let (fortuna_ate, sorte_ate, barra_json) = drop_map.get(&name).cloned().unwrap_or_default();
         let (mortes_json, recuperacoes_dia, recuperacoes_usadas) =
             mortes_map.get(&name).cloned().unwrap_or_default();
@@ -3713,8 +3637,6 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 mp,
                 stamina,
                 zona,
-                zona_volta,
-                karma,
                 xp_bonus_ate,
                 fortuna_ate,
                 sorte_ate,
@@ -4047,11 +3969,11 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                                      unspent_points, allocated_points,
                                      skill_points_earned, skill_points_spent,
                                      gold, visual_json, updated,
-                                     mp, stamina, zona, zona_volta, karma, xp_bonus_ate,
+                                     mp, stamina, zona, xp_bonus_ate,
                                      mortes_json, recuperacoes_dia, recuperacoes_usadas,
                                      fortuna_ate, sorte_ate, barra_json, preferencias_json, dungeon_json,
                                      bolsa_extra, banco_extra, skill_progress_json)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -4070,8 +3992,7 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                mp = EXCLUDED.mp,
                stamina = EXCLUDED.stamina,
                zona = COALESCE(EXCLUDED.zona, characters.zona),
-               zona_volta = EXCLUDED.zona_volta,
-               karma = EXCLUDED.karma,
+
                xp_bonus_ate = EXCLUDED.xp_bonus_ate,
                mortes_json = EXCLUDED.mortes_json,
                recuperacoes_dia = EXCLUDED.recuperacoes_dia,
@@ -4103,8 +4024,6 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(row.mp)
         .bind(row.stamina)
         .bind(&row.zona)
-        .bind(&row.zona_volta)
-        .bind(row.karma)
         .bind(row.xp_bonus_ate)
         .bind(&row.mortes_json)
         .bind(row.recuperacoes_dia)

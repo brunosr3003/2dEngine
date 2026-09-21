@@ -1114,14 +1114,6 @@ pub fn modelo_do_mob(kind: u16) -> &'static str {
 ///
 /// Gente (jogador, pistoleiro, mago, arqueiro) nao entra aqui: ela usa o
 /// mesmo `VOXEL` do corpo, porque o rig inteiro depende de 1 voxel = 4 cm.
-/// O casco da Chalupa (docs/MAR_ABERTO.md). Vem do zone14, que ja' tinha o
-/// modelo pronto — desenhar barco de cubos foi um andaime de um dia.
-///
-/// Carregado na ALTURA porque o arquivo e' de 160x160x80 voxels: o que
-/// importa e' o tamanho no mundo, nao a resolucao do arquivo.
-pub const MODELO_DO_BARCO: &str = "barcos/chalupa";
-pub const ALTURA_DO_BARCO: f32 = 2.6;
-
 pub const ALTURA_DO_BICHO: [(&str, f32); 5] = [
     ("lobo_pequeno", 0.9),
     ("urso", 1.3),
@@ -1210,50 +1202,6 @@ pub fn rig_do_npc(papel: u8, id: u64) -> &'static str {
 }
 
 /// O bau da dungeon: madeira, faixas de ouro e um anel que pulsa no chao.
-/// O CASCO, de cubos — a RESERVA (docs/MAR_ABERTO.md).
-///
-/// Arte nao podia travar o corte 1, entao o barco nasceu de cubos como o bau
-/// da dungeon. O modelo de verdade veio depois, do zone14, e isto ficou como
-/// desenho de emergencia: sem o arquivo, ainda da' pra navegar.
-fn desenha_casco(p: Vec3, yaw: f32) {
-    let madeira = Color::from_rgba(112, 72, 38, 255);
-    let escura = Color::from_rgba(78, 48, 24, 255);
-    let pano = Color::from_rgba(226, 219, 198, 255);
-    // O modelo do jogo nasce olhando pro +Z, e o yaw e' `x.atan2(z)`: a
-    // frente e' (sin, cos). A mesma convencao do servidor, de proposito —
-    // ter duas seria ter uma errada.
-    let (fx, fz) = (yaw.sin(), yaw.cos());
-    let em = |ao_longo: f32, ao_lado: f32, y: f32| {
-        p + vec3(
-            ao_longo * fx + ao_lado * fz,
-            y,
-            ao_longo * fz - ao_lado * fx,
-        )
-    };
-    // Casco: tres pedacos afunilando pra proa, pra ele ter FRENTE. Um cubo
-    // so' ficaria igual de todos os lados, e ai' nao da' pra pilotar.
-    for (ao_longo, comp, larg) in [(-1.1f32, 1.6f32, 2.0f32), (0.5, 1.4, 1.6), (1.5, 0.9, 0.9)] {
-        draw_cube(
-            em(ao_longo, 0.0, 0.18),
-            vec3(comp, 0.42, larg),
-            None,
-            madeira,
-        );
-    }
-    // Amurada, pra o conves ler como chao e nao como tampo.
-    for lado in [-1.0f32, 1.0] {
-        draw_cube(
-            em(-0.3, lado * 0.92, 0.5),
-            vec3(2.8, 0.26, 0.16),
-            None,
-            escura,
-        );
-    }
-    // Mastro e vela.
-    draw_cube(em(-0.2, 0.0, 1.5), vec3(0.16, 2.2, 0.16), None, escura);
-    draw_cube(em(-0.2, 0.0, 1.9), vec3(0.1, 1.2, 1.7), None, pano);
-}
-
 fn desenha_bau(p: Vec3) {
     let t = get_time() as f32;
     let madeira = Color::from_rgba(122, 78, 40, 255);
@@ -1354,7 +1302,6 @@ pub fn draw_entities(
     vox: &VoxCache,
     target: Option<shared::EntityId>,
     vista: &Vista,
-    no_mar: bool,
 ) {
     let order: Vec<_> = world.draw_order().to_vec();
     // Os rastros sao transparentes: vao depois de tudo que e' solido, senao
@@ -1387,32 +1334,6 @@ pub fn draw_entities(
         }
         if let Some(corpo) = rig_do_humanoide(e).and_then(|nome| vox.rig(nome)) {
             brilhos.extend(desenha_personagem(e, corpo, None, vox, vista, false));
-            continue;
-        }
-        // NO MAR TODO JOGADOR E' UM CASCO.
-        //
-        // Nao ha' entidade barco: navegar e' andar na agua (world/barco.rs),
-        // entao o que muda e' so' o que se DESENHA. O boneco some e o casco
-        // entra no lugar dele, virado pro mesmo rumo que o corpo teria.
-        if no_mar && e.meta.tag == shared::EntityTag::Player {
-            if let Some(meshes) = vox.peek(MODELO_DO_BARCO) {
-                for m in meshes {
-                    draw_mesh_at(m, p, e.yaw);
-                }
-            } else {
-                desenha_casco(p, e.yaw);
-            }
-            // O BAU NO CONVES (docs/MAR_ABERTO.md). Quem carrega tem que ser
-            // reconhecivel de longe, e nao so' pela cor do nome: o cacador
-            // precisa ver o TESOURO, nao um rotulo.
-            if e.state.flags & shared::ent_flags::MARCADO != 0 {
-                let t = get_time() as f32;
-                let ouro = Color::from_rgba(236, 190, 84, 255);
-                let madeira = Color::from_rgba(122, 78, 40, 255);
-                let alto = p + vec3(0.0, 1.35 + (t * 2.0).sin() * 0.06, 0.0);
-                draw_cube(alto, vec3(0.7, 0.45, 0.5), None, madeira);
-                draw_cube(alto + vec3(0.0, 0.3, 0.0), vec3(0.76, 0.14, 0.56), None, ouro);
-            }
             continue;
         }
         // NPC da vila: o rig do OFICIO dele. Sem o arquivo, cai no corpo de

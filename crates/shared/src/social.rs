@@ -101,15 +101,6 @@ pub const MAX_ANEXOS: usize = 8;
 pub const MAX_QTD_ANEXO: u32 = 100_000;
 
 pub fn anexos_validos(anexos: &[Anexo]) -> bool {
-    // O BAU DO COLOSSO nao viaja por correio (docs/MAR_ABERTO.md): a unica
-    // forma de leva-lo pra outra ilha e' o conves de um barco.
-    if anexos
-        .iter()
-        .any(|a| crate::item_id::e_bau_de_colosso(a.item_id))
-    {
-        return false;
-    }
-
     anexos.len() <= MAX_ANEXOS
         && anexos
             .iter()

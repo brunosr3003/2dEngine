@@ -91,7 +91,7 @@ pub async fn abrir(vox: &VoxCache) {
         } else {
             tempo % (skill.impacto_em() + habilidades_vfx::duracao(skill.id) + 0.4)
         };
-        mundo.tick(get_frame_time(), false, &|_, _| 0.0);
+        mundo.tick(get_frame_time(), &|_, _| 0.0);
         for (&id, e) in &mut mundo.ents {
             e.yaw = if id.0 == 2 { std::f32::consts::PI } else { 0.0 };
             if id.0 == 1 {
@@ -124,7 +124,7 @@ pub async fn abrir(vox: &VoxCache) {
         );
         gl_use_material(&solido);
         solido.set_uniform("Recorte", Vec3::ZERO);
-        render3d::draw_entities(&mut mundo, vox, None, &vista, false);
+        render3d::draw_entities(&mut mundo, vox, None, &vista);
         gl_use_default_material();
         let de = Vec3::ZERO;
         habilidades_vfx::desenha(

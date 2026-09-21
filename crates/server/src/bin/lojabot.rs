@@ -80,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
     let mut fase_em = Instant::now();
     let mut eu: Option<EntityId> = None;
     let mut ents: HashMap<EntityId, (EntityTag, glam::Vec2)> = HashMap::new();
-    let (mut minha_pos, mut meus_flags) = (glam::Vec2::ZERO, 0u16);
+    let (mut minha_pos, mut meus_flags) = (glam::Vec2::ZERO, 0u8);
     let (mut seq, mut tick_srv) = (0u32, 0u32);
     let mut andar = glam::Vec2::ZERO;
     let mut tp_inicial: Option<u64> = None;

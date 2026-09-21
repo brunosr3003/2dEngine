@@ -27,9 +27,6 @@ pub mod categoria {
     pub const ARMA: u8 = 1;
     pub const ARMADURA: u8 = 2;
     pub const MATERIAL: u8 = 3;
-    /// O BARCO (docs/MAR_ABERTO.md). Reusa o 4, que era exatamente o valor
-    /// da aba de barco apagada em 20/09/2026 — o buraco estava la' esperando.
-    pub const BARCO: u8 = 4;
     pub const SECUNDARIA: u8 = 5;
     pub const ACESSORIO: u8 = 6;
 }
@@ -39,7 +36,6 @@ pub fn nome_da_categoria(c: u8) -> &'static str {
         categoria::ARMA => "Arma",
         categoria::ARMADURA => "Armadura",
         categoria::MATERIAL => "Material",
-        categoria::BARCO => "Barco",
         categoria::SECUNDARIA => "Secundária",
         categoria::ACESSORIO => "Acessório",
         _ => "Outros",
@@ -307,102 +303,12 @@ pub fn receita_do_selo() -> CraftRecipeNet {
     }
 }
 
-/// As tres receitas de CASCO (docs/MAR_ABERTO.md).
-///
-/// **A Chalupa nao custa darksteel nem chave, de proposito.** Ela e' a porta
-/// de saida da primeira ilha: toda outra receita do jogo comeca com uma chave
-/// que so' cai de chefe, e isso e' certo pra equipamento e catastrofico pra
-/// coisa que da' acesso a VIAJAR. Sessenta madeiras sao umas quinze arvores;
-/// vinte acos e quinhentos cobres saem de uma encosta.
-///
-/// E ela ressuscita `WOOD_T1..T3`, que hoje caem da coleta e quase nada
-/// consome — a floresta passa a alimentar o mar.
-pub fn receitas_de_barco() -> Vec<CraftRecipeNet> {
-    let uma = |id: u16, item: u16, nome: &str, tier: u8, inputs: Vec<[u32; 2]>| CraftRecipeNet {
-        id,
-        name: nome.into(),
-        category: categoria::BARCO,
-        station: 0,
-        tier,
-        inputs,
-        output_item_id: item,
-        output_qty: 1,
-        output_item_level: 0,
-        // O casco nao tem rolagem: `BarcoData` nasce no `add_to_inventory`.
-        roll_instance: false,
-        nivel_min: crate::barcos::nivel_de_craft(item) as u16,
-    };
-    vec![
-        uma(
-            1930,
-            item_id::BARCO_BASE,
-            "Chalupa",
-            1,
-            // Sem couro: `LEATHER_T1` E' o `HIDE`, uma das quatro chaves de
-            // chefe. Foi o teste abaixo que pegou — a Chalupa pedia um item
-            // que so' cai de boss, e a historia teria travado num passo que o
-            // jogador nao tem como cumprir.
-            vec![
-                [item_id::WOOD_T1 as u32, 80],
-                [item_id::na_cor(item_id::STEEL, 1) as u32, 20],
-                [item_id::COPPER as u32, 500],
-            ],
-        ),
-        uma(
-            1931,
-            item_id::BARCO_ESCUNA,
-            "Escuna",
-            2,
-            vec![
-                [item_id::WOOD_T2 as u32, 220],
-                [item_id::na_cor(item_id::STEEL, 2) as u32, 80],
-                [item_id::DARKSTEEL as u32, 1_200],
-                [item_id::COPPER as u32, 6_000],
-            ],
-        ),
-        uma(
-            1932,
-            item_id::BARCO_NAU,
-            "Nau",
-            3,
-            vec![
-                [item_id::WOOD_T3 as u32, 600],
-                [item_id::na_cor(item_id::STEEL, 3) as u32, 240],
-                [item_id::DARKSTEEL as u32, 9_000],
-                [item_id::COPPER as u32, 30_000],
-            ],
-        ),
-    ]
-}
-
 #[cfg(test)]
 mod testes {
     use super::*;
     use crate::items::tier_from_ilvl;
 
-    /// A CHALUPA tem que caber no bolso de quem acabou de chegar no nivel 5.
-    ///
-    /// E' a porta de saida da primeira ilha: se ela pedir chave de chefe ou
-    /// darksteel, a historia trava num item que o jogador ainda nao tem como
-    /// conseguir — e ele nao descobre isso ate' chegar no passo.
-    #[test]
-    fn a_chalupa_nao_pede_chave_nem_darksteel() {
-        let r = receitas_de_barco()
-            .into_iter()
-            .find(|r| r.output_item_id == item_id::BARCO_BASE)
-            .expect("a Chalupa existe");
-        assert_eq!(r.nivel_min, 5);
-        for [id, _] in &r.inputs {
-            let id = *id as u16;
-            assert_ne!(id, item_id::DARKSTEEL, "a Chalupa pediu darksteel");
-            assert!(
-                !item_id::CHAVES
-                    .iter()
-                    .any(|c| (1..=5).any(|cor| item_id::chave_na_cor(*c, cor) == id)),
-                "a Chalupa pediu uma chave de chefe"
-            );
-        }
-    }
+
 
     #[test]
     fn sessenta_receitas_com_ids_unicos_e_seis_ingredientes() {

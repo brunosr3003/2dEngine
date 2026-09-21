@@ -382,15 +382,6 @@ pub enum ClientMessage {
     Viajar {
         ilha: u8,
     },
-    /// Tudo o que o BARCO pede, num lugar so' (docs/MAR_ABERTO.md).
-    ///
-    /// Um par de mensagens em vez de uma por verbo: o barco apagado tinha
-    /// onze (`BoardBoat`, `GrabStation`, `SailAdjust`, `AnchorToggle`,
-    /// `HelmAdjust`, `CannonAim`...) e o cliente nunca implementou uma.
-    /// A loja ja' mostrou que o molde certo e' `Pedido`/`Aviso`.
-    Barco {
-        pedido: crate::mar::PedidoBarco,
-    },
     /// Gasta 1 Pergaminho de Teleporte e salta pro chao firme mais perto de
     /// (x, z), na ilha atual. Recusa (motivo no chat) nao gasta.
     Teleportar {
@@ -1105,10 +1096,6 @@ pub enum ServerMessage {
     /// Loja de cash e montarias: estado, resultado de compra, montando.
     Loja {
         aviso: crate::loja::AvisoLoja,
-    },
-    /// O que o barco responde (docs/MAR_ABERTO.md). Ver `ClientMessage::Barco`.
-    Barco {
-        aviso: crate::mar::AvisoBarco,
     },
     /// O alvo esta' no alcance da arma a distancia, mas o relevo barra o
     /// tiro: o ataque nao sai. No maximo 1 por segundo por jogador.

@@ -122,13 +122,6 @@ pub fn loot_de_chefe(kind: u16, seed: u64) -> Vec<(u16, u32)> {
     {
         v.push((chave, 1));
     }
-    // O BAU DO COLOSSO (docs/MAR_ABERTO.md): garantido, um por chefe.
-    //
-    // Ele nao cabe na bolsa, nem no banco, nem no mercado, nem no correio —
-    // so' no CONVES de um barco. E' por isso que ele e' o que faz o mar
-    // existir: querer o tesouro na outra ilha e' ter que navegar com ele, e
-    // navegar com ele e' virar alvo.
-    v.push((bau_na_cor(cor), 1));
     v
 }
 
@@ -164,8 +157,6 @@ pub fn itens_do_chefe(kind: u16) -> Vec<(u16, f32)> {
     for base in CHAVES {
         v.push((chave_na_cor(base, chave.cor), chave.chance_mundo / 4.0));
     }
-    // O BAU DO COLOSSO: garantido (docs/MAR_ABERTO.md).
-    v.push((bau_na_cor(cor), 1.0));
     v
 }
 

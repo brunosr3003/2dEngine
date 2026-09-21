@@ -1444,7 +1444,7 @@ pub(crate) struct KindInicial {
 /// Os numeros de antes ficaram (sao o que o balanceamento ja' conhece); mudou
 /// quem eles sao — e o chefe, que agora e' um lobo grande e por isso MORDE em
 /// vez de atirar cinco projeteis.
-pub(crate) const KINDS_INICIAIS: [KindInicial; 15] = [
+pub(crate) const KINDS_INICIAIS: [KindInicial; 10] = [
     KindInicial {
         kind: 0,
         name: "Lobo",
@@ -1608,103 +1608,6 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 15] = [
         sz: 1.0,
         t: [1.0, 1.0, 1.0, 1.0],
     },
-    // ── O MAR (docs/MAR_ABERTO.md) ───────────────────────────────────────
-    //
-    // Kinds 20+ de proposito: 0-9 sao os de terra e 10-18 sao chefes. Um
-    // buraco entre eles e o mar e' mais barato que renumerar qualquer coisa,
-    // e `KINDS_INICIAIS[0..9]` NAO pode ser tocado — `metas_do_inicio` esta'
-    // calibrada contra aqueles numeros exatos.
-    //
-    // `hp` e `dmg` aqui sao BASE DE NIVEL 1: `vida_e_dano_do_mob` escala por
-    // cima. A primeira versao destes numeros foi escrita como se fossem os
-    // valores FINAIS da faixa (1.100 de vida pro Corsario) e a simulacao
-    // reprovou tudo — era a escala contada duas vezes. Os valores abaixo
-    // estao na mesma regua do Lobo (120/10) e do Urso (280/18); quem separa
-    // as faixas e' o NIVEL da rota, nao a tabela.
-    //
-    // O que muda no mar e' a DETECCAO: um bicho que enxerga a 9 u nunca
-    // alcanca um casco a 11 u/s, entao o alcance e' maior — senao o mar seria
-    // decorativo.
-    KindInicial {
-        kind: 20,
-        name: "Peixe-serra",
-        hp: 900,
-        sp: 2.6,
-        dmg: 34,
-        cd: 2.2,
-        det: 22.0,
-        rng: 2.2,
-        kite: None,
-        proj: 1,
-        xp: 45,
-        def: 6,
-        sz: 1.2,
-        t: [1.0, 1.0, 1.0, 1.0],
-    },
-    KindInicial {
-        kind: 21,
-        name: "Sereia Naufragadora",
-        hp: 2000,
-        sp: 2.4,
-        dmg: 66,
-        cd: 2.4,
-        det: 24.0,
-        rng: 2.2,
-        kite: None,
-        proj: 1,
-        xp: 90,
-        def: 12,
-        sz: 1.1,
-        t: [1.0, 1.0, 1.0, 1.0],
-    },
-    KindInicial {
-        kind: 22,
-        name: "Tubarão-martelo",
-        hp: 2600,
-        sp: 3.0,
-        dmg: 80,
-        cd: 2.0,
-        det: 26.0,
-        rng: 2.4,
-        kite: None,
-        proj: 1,
-        xp: 150,
-        def: 16,
-        sz: 1.5,
-        t: [1.0, 1.0, 1.0, 1.0],
-    },
-    KindInicial {
-        kind: 23,
-        name: "Corsário Afogado",
-        hp: 2500,
-        sp: 2.2,
-        dmg: 80,
-        cd: 2.6,
-        det: 26.0,
-        rng: 12.0,
-        kite: Some(7.0),
-        proj: 1,
-        xp: 170,
-        def: 18,
-        sz: 1.0,
-        t: [1.0, 1.0, 1.0, 1.0],
-    },
-    KindInicial {
-        kind: 24,
-        name: "Tentáculo",
-        hp: 3600,
-        sp: 1.6,
-        dmg: 170,
-        cd: 3.0,
-        det: 20.0,
-        rng: 3.4,
-        kite: None,
-        proj: 1,
-        xp: 320,
-        def: 24,
-        sz: 2.2,
-        t: [1.0, 1.0, 1.0, 1.0],
-    },
 ];
 
 /// O bicho de um KIND, pelo kind e nao pelo indice.
@@ -1717,24 +1620,6 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 15] = [
 /// Quem tem um kind na mao usa isto. Quem tem um indice, indexa.
 pub(crate) fn kind_inicial(kind: u16) -> Option<&'static KindInicial> {
     KINDS_INICIAIS.iter().find(|k| k.kind as u16 == kind)
-}
-
-/// Os bichos do MAR, em ordem de faixa. `nivel` escolhe qual nasce.
-pub(crate) const KINDS_DO_MAR: [(u16, u32, u32); 5] = [
-    (20, 10, 22),  // Peixe-serra
-    (21, 20, 34),  // Sereia
-    (22, 28, 42),  // Tubarao
-    (23, 34, 50),  // Corsario (atira)
-    (24, 44, 60),  // Tentaculo
-];
-
-/// Que bicho do mar nasce nesta faixa de nivel.
-pub(crate) fn kind_do_mar(nivel: u32) -> u16 {
-    KINDS_DO_MAR
-        .iter()
-        .rev()
-        .find(|(_, min, _)| nivel >= *min)
-        .map_or(20, |(k, _, _)| *k)
 }
 
 #[cfg(test)]

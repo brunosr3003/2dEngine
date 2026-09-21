@@ -1,41 +1,20 @@
-//! O painel do PORTO e o de ATRACAR: uma linha por ilha, com o botao certo
-//! pro lugar onde o jogador esta'. Quem decide tudo e' o servidor
+//! Menu "Viajar" do Capitao do Porto: uma linha por ilha, com "Embarcar" nas
+//! que a historia ja' liberou. Quem decide tudo e' o servidor
 //! (`shared::viagem`); aqui so' se desenha a lista que ele mandou.
-//!
-//! Desde 21/09/2026 o Capitao nao teleporta mais (docs/MAR_ABERTO.md): no
-//! cais o botao e' **Zarpar**, e no mar e' **Atracar**. A lista e a mesma nos
-//! dois — os estados `FORA_DO_AR` e `BLOQUEADA` valem igual, e e' por isso
-//! que a mesma funcao serve os dois: quem esta' no mar precisa saber que um
-//! porto caiu ANTES de navegar ate' ele.
 
 use macroquad::prelude::*;
 use shared::viagem::{estado, Destino};
 
 use crate::hud_estilo as estilo;
 
-/// O que o jogador pediu no painel do porto.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AcaoDoPorto {
-    /// No cais: sai pro mar. Nao se escolhe destino ao zarpar — se escolhe
-    /// ao chegar.
-    Zarpar,
-    /// No mar, perto do cais: entra naquela ilha.
-    Atracar(u8),
-    /// Abre o Carpinteiro Naval.
-    Estaleiro,
-}
-
 #[derive(Debug, Default)]
 pub struct ViagemUi {
     destinos: Option<Vec<Destino>>,
-    /// No mar o painel vira "Atracar". No cais, "Zarpar".
-    pub no_mar: bool,
 }
 
 impl ViagemUi {
-    pub fn abrir(&mut self, destinos: Vec<Destino>, no_mar: bool) {
+    pub fn abrir(&mut self, destinos: Vec<Destino>) {
         self.destinos = Some(destinos);
-        self.no_mar = no_mar;
     }
 
     pub fn fechar(&mut self) {
@@ -46,12 +25,12 @@ impl ViagemUi {
         self.destinos.is_some()
     }
 
-    /// Desenha; devolve o que o jogador pediu (o menu fecha junto).
-    pub fn desenha(&mut self) -> Option<AcaoDoPorto> {
+    /// Desenha; devolve a ilha escolhida pra embarcar (o menu fecha junto).
+    pub fn desenha(&mut self) -> Option<u8> {
         estilo::no_painel(estilo::escala_do_painel(560.0, 420.0), || self.desenha_na_escala())
     }
 
-    fn desenha_na_escala(&mut self) -> Option<AcaoDoPorto> {
+    fn desenha_na_escala(&mut self) -> Option<u8> {
         let destinos = self.destinos.as_ref()?;
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
@@ -69,13 +48,14 @@ impl ViagemUi {
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
         let x0 = p.x + 20.0 * f;
-        let (titulo, explica) = if self.no_mar {
-            ("Atracar", "Chegue perto do cais da ilha para atracar.")
-        } else {
-            ("Porto", "Daqui se zarpa. A travessia é navegada.")
-        };
-        estilo::texto_forte(x0, p.y + 36.0 * f, titulo, 20, estilo::OURO);
-        estilo::texto(x0, p.y + 62.0 * f, explica, 14, estilo::SUAVE);
+        estilo::texto_forte(x0, p.y + 36.0 * f, "Viajar", 20, estilo::OURO);
+        estilo::texto(
+            x0,
+            p.y + 62.0 * f,
+            "O Capitão leva a qualquer ilha que a história já abriu.",
+            14,
+            estilo::SUAVE,
+        );
         let fechar = Rect::new(p.x + p.w - 48.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);
         estilo::texto_centro(
             fechar.center().x,
@@ -102,39 +82,19 @@ impl ViagemUi {
                 13,
                 estilo::SUAVE,
             );
-            // No cais o unico botao e' o da PROPRIA ilha, porque nao se
-            // escolhe destino ao zarpar — se escolhe ao chegar.
-            let mostra = if self.no_mar {
-                d.estado == estado::LIBERADA
-            } else {
-                d.estado == estado::AQUI
-            };
-            if mostra {
+            if d.estado == estado::LIBERADA {
                 let b = Rect::new(
                     r.x + r.w - 136.0 * f,
                     r.y + (r.h - 40.0 * f) * 0.5,
                     124.0 * f,
                     40.0 * f,
                 );
-                let rotulo = if self.no_mar { "Atracar" } else { "Zarpar" };
-                estilo::botao(b, rotulo, estilo::estado_de(b, false, false), true);
+                estilo::botao(b, "Embarcar", estilo::estado_de(b, false, false), true);
                 if clicou && b.contains(m) {
-                    escolha = Some(if self.no_mar {
-                        AcaoDoPorto::Atracar(d.ilha)
-                    } else {
-                        AcaoDoPorto::Zarpar
-                    });
+                    escolha = Some(d.ilha);
                 }
             }
             y += linha_h;
-        }
-        // O ESTALEIRO so' no porto: no mar nao ha' Carpinteiro pra atender.
-        if !self.no_mar {
-            let b = Rect::new(x0, p.y + h - 54.0 * f, 190.0 * f, 40.0 * f);
-            estilo::botao(b, "Estaleiro", estilo::estado_de(b, false, false), false);
-            if clicou && b.contains(m) {
-                escolha = Some(AcaoDoPorto::Estaleiro);
-            }
         }
         if escolha.is_some() || (clicou && (fechar.contains(m) || !p.contains(m))) {
             self.fechar();
@@ -149,7 +109,7 @@ pub fn subtitulo(d: &Destino) -> String {
     match d.estado {
         estado::AQUI => format!("{nivel} · você está aqui"),
         estado::LIBERADA => nivel,
-        estado::FORA_DO_AR => format!("{nivel} · porto fora do ar"),
+        estado::FORA_DO_AR => format!("{nivel} · sem barco agora (servidor fora do ar)"),
         _ if d.requisito.is_empty() => format!("{nivel} · bloqueada"),
         _ => format!("{nivel} · libera em \"{}\"", d.requisito),
     }
@@ -176,17 +136,5 @@ mod tests {
         assert!(subtitulo(&d(estado::AQUI)).ends_with("você está aqui"));
         assert!(subtitulo(&d(estado::BLOQUEADA)).contains("Rumo à Geleira"));
         assert!(subtitulo(&d(estado::FORA_DO_AR)).contains("fora do ar"));
-    }
-
-    /// No cais o botao e' o da PROPRIA ilha (zarpar); no mar, o das outras
-    /// (atracar). Sao os dois lados da mesma lista, e trocar um pelo outro
-    /// deixaria o jogador sem saida de um dos dois lugares.
-    #[test]
-    fn o_botao_muda_de_lado_conforme_onde_se_esta() {
-        let mut ui = ViagemUi::default();
-        ui.abrir(vec![d(estado::AQUI)], false);
-        assert!(!ui.no_mar);
-        ui.abrir(vec![d(estado::LIBERADA)], true);
-        assert!(ui.no_mar);
     }
 }

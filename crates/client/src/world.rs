@@ -424,7 +424,7 @@ impl World {
 
     /// `chao` da' a altura de apoio: e' o mesmo campo de altura que o servidor
     /// usa pra colisao, entao a entidade pisa exatamente onde ela pisa la'.
-    pub fn tick(&mut self, dt: f32, no_mar: bool, chao: &dyn Fn(f32, f32) -> f32) {
+    pub fn tick(&mut self, dt: f32, chao: &dyn Fn(f32, f32) -> f32) {
         let posicoes: HashMap<_, _> = self
             .ents
             .iter()
@@ -654,19 +654,7 @@ impl World {
                 while d < -std::f32::consts::PI {
                     d += std::f32::consts::TAU;
                 }
-                // O CASCO VIRA DEVAGAR. Pedido do dono depois de navegar:
-                // com a mesma suavizacao do corpo a pe', o barco pivotava no
-                // lugar como se nao tivesse inercia. Um barco que gira igual
-                // a um boneco nao parece barco.
-                //
-                // Tres vezes mais lento que o resto, e so' no mar — em terra
-                // um giro preguicoso seria controle emperrado.
-                let giro = if no_mar && ent.meta.tag == shared::EntityTag::Player {
-                    1.0 - (-SMOOTH_K / 3.0 * dt).exp()
-                } else {
-                    a
-                };
-                ent.yaw += d * giro;
+                ent.yaw += d * a;
             }
         }
     }
@@ -713,7 +701,7 @@ mod testes {
     fn rumo_do_fio_vira_os_outros_suave_e_nao_o_proprio() {
         let q = std::f32::consts::FRAC_PI_2;
         let mut w = World::default();
-        for (id, flags) in [(EntityId(1), 0u16), (EntityId(2), ent_flags::SELF)] {
+        for (id, flags) in [(EntityId(1), 0u8), (EntityId(2), ent_flags::SELF)] {
             w.apply(
                 vec![EntityMeta {
                     id,
@@ -736,14 +724,14 @@ mod testes {
                 &[],
             );
         }
-        w.tick(1.0 / 60.0, false, &|_, _| 0.0);
+        w.tick(1.0 / 60.0, &|_, _| 0.0);
         let um_quadro = w.ents[&EntityId(1)].yaw;
         assert!(
             um_quadro > 0.0 && um_quadro < q * 0.9,
             "vira suave, nao de estalo: {um_quadro}"
         );
         for _ in 0..120 {
-            w.tick(1.0 / 60.0, false, &|_, _| 0.0);
+            w.tick(1.0 / 60.0, &|_, _| 0.0);
         }
         assert!(
             (w.ents[&EntityId(1)].yaw - q).abs() < 0.05,
@@ -781,7 +769,7 @@ mod testes {
             &[],
         );
         for _ in 0..30 {
-            w.tick(1.0 / 60.0, false, &|_, _| 0.0);
+            w.tick(1.0 / 60.0, &|_, _| 0.0);
         }
         assert!(
             !std::mem::take(&mut w.salto_do_eu),
@@ -789,18 +777,18 @@ mod testes {
         );
         // Um passo: suave.
         w.apply(vec![], vec![estado(2.0)], &[]);
-        w.tick(1.0 / 60.0, false, &|_, _| 0.0);
+        w.tick(1.0 / 60.0, &|_, _| 0.0);
         assert!(
             w.ents[&id].render_pos.x < 1.9 && !w.salto_do_eu,
             "passo curto desliza"
         );
         // Teleporte: direto, no chao do lugar novo.
         for _ in 0..60 {
-            w.tick(1.0 / 60.0, false, &|_, _| 0.0);
+            w.tick(1.0 / 60.0, &|_, _| 0.0);
         }
         w.apply(vec![], vec![estado(300.0)], &[]);
         assert!(w.salto_do_eu, "teleporte do proprio avisa o carregando");
-        w.tick(1.0 / 60.0, false, &|_, _| 12.0);
+        w.tick(1.0 / 60.0, &|_, _| 12.0);
         let e = &w.ents[&id];
         assert!(
             (e.render_pos.x - 300.0).abs() < 0.1,
@@ -845,7 +833,7 @@ mod testes {
         }
         w.ents.get_mut(&EntityId(1)).unwrap().ataque_mob = Some((Some(EntityId(2)), 0.0, 0.46));
         for _ in 0..26 {
-            w.tick(1.0 / 60.0, false, &|_, _| 0.0);
+            w.tick(1.0 / 60.0, &|_, _| 0.0);
         }
         assert!(
             w.ents[&EntityId(1)].yaw.abs() < 0.01,
@@ -854,7 +842,7 @@ mod testes {
         w.ents.get_mut(&EntityId(2)).unwrap().render_pos = vec2(3.0, 1.0);
         w.ents.get_mut(&EntityId(2)).unwrap().state.pos = [48, 16];
         for _ in 0..16 {
-            w.tick(1.0 / 60.0, false, &|_, _| 0.0);
+            w.tick(1.0 / 60.0, &|_, _| 0.0);
         }
         assert!((w.ents[&EntityId(1)].yaw - std::f32::consts::FRAC_PI_2).abs() < 0.02);
     }
@@ -929,7 +917,7 @@ mod testes {
                 }],
                 &[],
             );
-            w.tick(dt, false, &chao);
+            w.tick(dt, &chao);
             alturas.push(w.ents[&id].render_y);
             t += dt;
         }
@@ -995,7 +983,7 @@ mod testes {
             vec![estado(0.0)],
             &[],
         );
-        w.tick(dt, false, &chao);
+        w.tick(dt, &chao);
 
         let mut x = 0.0f32;
         let (mut afundou, mut flutuou, mut maior_passo) = (0.0f32, 0.0f32, 0.0f32);
@@ -1003,7 +991,7 @@ mod testes {
             x += vel * dt;
             w.apply(Vec::new(), vec![estado(x)], &[]);
             let antes = w.ents[&id].render_y;
-            w.tick(dt, false, &chao);
+            w.tick(dt, &chao);
             let e = &w.ents[&id];
             let solo = chao(e.render_pos.x, e.render_pos.y);
             afundou = afundou.max(solo - e.render_y);
@@ -1097,7 +1085,7 @@ mod testes {
         let mut t = 0.0f32;
         while t < PULO_DURACAO + PULO_ESPERA {
             w.pular_local(); // martelando a tecla
-            w.tick(dt, false, &chao);
+            w.tick(dt, &chao);
             alturas.push(w.ents[&id].render_y);
             t += dt;
         }

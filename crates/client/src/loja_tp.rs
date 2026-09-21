@@ -2051,7 +2051,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
     let mut metas = Vec::new();
     let mut estados = Vec::new();
     // (id, tag, kind, pos, flags)
-    let elenco: [(u32, EntityTag, u16, Vec2, u16); 6] = [
+    let elenco: [(u32, EntityTag, u16, Vec2, u8); 6] = [
         (1, EntityTag::Enemy, 0, vec2(-7.5, 0.0), 0),
         (2, EntityTag::Enemy, 1, vec2(-4.2, 0.0), 0),
         (3, EntityTag::Enemy, 3, vec2(-0.9, 0.0), 0),
@@ -2099,7 +2099,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
     ];
     for (nome, anda, fase) in tomadas {
         for quadro in 0..30 {
-            mundo.tick(get_frame_time(), false, &|_, _| 0.0);
+            mundo.tick(get_frame_time(), &|_, _| 0.0);
             for e in mundo.ents.values_mut() {
                 e.yaw = std::f32::consts::FRAC_PI_2;
                 e.andar = if anda { 1.0 } else { 0.0 };
@@ -2126,7 +2126,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
             );
             macroquad::material::gl_use_material(solido);
             solido.set_uniform("Recorte", Vec3::ZERO);
-            crate::render3d::draw_entities(&mut mundo, vox, None, &vista, false);
+            crate::render3d::draw_entities(&mut mundo, vox, None, &vista);
             macroquad::material::gl_use_default_material();
             crate::render3d::camera_padrao();
             let direita = Rect::new(sw * 0.72, sh * 0.2, sw * 0.26, sh * 0.55);
@@ -2180,7 +2180,7 @@ async fn previa_montado(
     let foco = vec2(-2.5, -4.2);
     for (nome, ang, anda) in tomadas {
         for quadro in 0..30 {
-            mundo.tick(get_frame_time(), false, &|_, _| 0.0);
+            mundo.tick(get_frame_time(), &|_, _| 0.0);
             for e in mundo.ents.values_mut() {
                 e.yaw = std::f32::consts::FRAC_PI_2;
                 e.andar = if anda { 1.0 } else { 0.0 };
@@ -2205,7 +2205,7 @@ async fn previa_montado(
             );
             macroquad::material::gl_use_material(solido);
             solido.set_uniform("Recorte", Vec3::ZERO);
-            crate::render3d::draw_entities(mundo, vox, None, &vista, false);
+            crate::render3d::draw_entities(mundo, vox, None, &vista);
             macroquad::material::gl_use_default_material();
             crate::render3d::camera_padrao();
             estilo::texto(

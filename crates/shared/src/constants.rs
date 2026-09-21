@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 121;
+pub const PROTOCOL_VERSION: u16 = 122;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -582,61 +582,6 @@ pub mod item_id {
         }) as u16
     }
 
-    // ── BARCOS (docs/MAR_ABERTO.md) ──────────────────────────────────
-    //
-    // Tres CASCOS, e os ids guardam a CLASSE — nao a cor. E' a quebra
-    // deliberada com pet e montaria: barco nao tem escada de cor, nao entra
-    // no Combinar, e `cor_de_id` devolve `None` pra eles.
-    //
-    // 465..469 ficam vagos de proposito, como 425..444 ficaram: reusar id de
-    // item e' como ressuscitar o item.
-    pub const BARCO_BASE: u16 = 470;
-    pub const BARCO_ESCUNA: u16 = 471;
-    pub const BARCO_NAU: u16 = 472;
-    pub const BARCO_ULTIMO: u16 = BARCO_NAU;
-
-    /// Este id e' um casco?
-    pub const fn e_barco(id: u16) -> bool {
-        id >= BARCO_BASE && id <= BARCO_ULTIMO
-    }
-
-    /// A classe do casco (1 Chalupa, 2 Escuna, 3 Nau).
-    pub const fn casco_de_id(id: u16) -> Option<u8> {
-        if e_barco(id) {
-            Some((id - BARCO_BASE) as u8 + 1)
-        } else {
-            None
-        }
-    }
-
-    // ── O BAU DO COLOSSO (docs/MAR_ABERTO.md) ────────────────────────
-    //
-    // O tesouro que os chefes de mundo largam, um id por FAIXA de cor. Ele
-    // nao cabe em lugar nenhum a nao ser no CONVES de um barco: nao entra na
-    // bolsa, nao entra no banco, nao entra no mercado e nao entra no correio.
-    //
-    // E' essa recusa em quatro lugares que faz a premissa ser verdade —
-    // "quer o tesouro na outra ilha? navega com ele" — em vez de ser so' uma
-    // frase no doc.
-    pub const BAU_COLOSSO_BASE: u16 = 490;
-    pub const BAU_COLOSSO_ULTIMO: u16 = 494;
-
-    pub const fn e_bau_de_colosso(id: u16) -> bool {
-        id >= BAU_COLOSSO_BASE && id <= BAU_COLOSSO_ULTIMO
-    }
-
-    /// O bau da cor `cor` (1 cinza .. 5 lendario).
-    pub const fn bau_na_cor(cor: u8) -> u16 {
-        BAU_COLOSSO_BASE
-            + (if cor < 1 {
-                0
-            } else if cor > 5 {
-                4
-            } else {
-                cor - 1
-            }) as u16
-    }
-
     pub const fn montaria_de_id(id: u16) -> Option<(u16, u8)> {
         if id < MONTARIA_BASE || id > MONTARIA_ULTIMA {
             return None;
@@ -806,7 +751,6 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
         CINTO => Some(EquipSlot::Belt),
         id if pet_de_id(id).is_some() => Some(EquipSlot::Pet),
         id if montaria_de_id(id).is_some() => Some(EquipSlot::Montaria),
-        id if e_barco(id) => Some(EquipSlot::Barco),
         _ => None,
     }
 }
@@ -871,14 +815,10 @@ pub enum EquipSlot {
     /// A montaria (docs/MONTARIAS.md). E' nela que se monta, e a cor dela
     /// manda na velocidade.
     Montaria,
-    /// O BARCO (docs/MAR_ABERTO.md). Exatamente UM casco ativo, resolvido
-    /// num lookup — sem dialogo de "qual barco?" no cais. Os outros ficam na
-    /// bolsa, e bolsa se vende.
-    Barco,
 }
 
 impl EquipSlot {
-    pub const TODOS: [EquipSlot; 10] = [
+    pub const TODOS: [EquipSlot; 9] = [
         EquipSlot::Weapon,
         EquipSlot::Offhand,
         EquipSlot::Armor,
@@ -888,7 +828,6 @@ impl EquipSlot {
         EquipSlot::Belt,
         EquipSlot::Pet,
         EquipSlot::Montaria,
-        EquipSlot::Barco,
     ];
 
     /// String do slot pra ser persistido no DB (coluna `slot`).
@@ -903,7 +842,6 @@ impl EquipSlot {
             EquipSlot::Belt => "belt",
             EquipSlot::Pet => "pet",
             EquipSlot::Montaria => "montaria",
-            EquipSlot::Barco => "barco",
         }
     }
 

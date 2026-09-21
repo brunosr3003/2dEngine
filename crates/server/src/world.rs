@@ -93,7 +93,6 @@ pub struct ProjTag {
     pub kind: u8,
 }
 
-pub(crate) mod barco;
 mod boss_teste;
 mod chefes;
 mod habilidades;
@@ -1258,54 +1257,6 @@ impl GameWorld {
             Some(s) => s,
             None => return false,
         };
-        // ── O CORREDOR DA CAPITANIA ─────────────────────────────────────
-        //
-        // Um raio pequeno em volta dos NPCs do cais onde ninguem apanha —
-        // marcado ou nao, foragido ou nao. Vem ANTES de tudo, inclusive da
-        // marca.
-        //
-        // Sem ele, campar a entrega e' a meta inteira: o carregador atravessa
-        // o mar, chega, e morre nos ultimos doze metros pra sempre. Nenhum
-        // bau seria entregue e o laco morreria em vez de ficar tenso. **A
-        // perseguicao e' o jogo; a porta nao e'.**
-        for sess in [att, tgt] {
-            if let Some(e) = sess.entity {
-                if let Ok(p) = self.ecs.get::<&Position>(e) {
-                    if self.no_corredor_da_capitania(p.0) {
-                        return false;
-                    }
-                }
-            }
-        }
-        // ── ZONA SEM LEI ────────────────────────────────────────────────
-        //
-        // Poucas, e com motivo pra parar nelas: os naufragios (onde
-        // carregador e cacador se encontram de qualquer jeito) e a travessia
-        // de endgame inteira. As outras tres rotas seguem governadas por
-        // karma — elas sao OBRIGATORIAS pra progredir, e transformar o
-        // caminho obrigatorio em terra de ninguem e' cobrar imposto por
-        // existir.
-        if let Some(mar) = self.mar.as_ref() {
-            let em = |s: &Session| {
-                s.entity
-                    .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))
-                    .is_some_and(|p| mar.sem_lei(p))
-            };
-            if em(att) && em(tgt) {
-                return true;
-            }
-        }
-        // ── A MARCA VENCE A SAFE ZONE ───────────────────────────────────
-        //
-        // Regra do dono: quem carrega o bau pode ser atacado em qualquer
-        // lugar, "em safe zones ai' todo mundo pode atacar sem penalidade".
-        // Por isso este teste vem ANTES do da zona segura — e por isso a
-        // posicao do ATACANTE tambem deixa de proteger: senao bastava ficar
-        // no cais atirando de dentro da bolha.
-        let agora = (now_ms() / 1000) as i64;
-        if self.marcado(att, agora) || self.marcado(tgt, agora) {
-            return true;
-        }
         // Safe zone protege todos — atacante OU alvo dentro = sem dano.
         for sess in [att, tgt] {
             if let Some(e) = sess.entity {
@@ -1619,25 +1570,6 @@ pub struct Session {
     pub inventory_dirty: bool,
     /// True quando o equipamento mudou (envia StatsUpdate no proximo tick).
     pub stats_dirty: bool,
-    /// Quando o canhao pode atirar de novo (`sim_time_s`).
-    pub canhao_pronto_em: f32,
-    /// KARMA: o preco de matar quem nao estava marcado (docs/MAR_ABERTO.md).
-    pub karma: i32,
-    /// Ate' quando o RASTRO da marca dura, em unix secs. Sem ele, entregar o
-    /// bau um segundo antes do golpe seria um drible.
-    pub marcado_ate: i64,
-    /// (nome, quando) da ultima vitima: reincidir na mesma pessoa pesa mais.
-    pub ultima_vitima: Option<(String, i64)>,
-    /// De que cais o jogador estava perto no tick passado. E' o que faz o
-    /// painel de atracar abrir sozinho ao chegar, e so' uma vez.
-    pub cais_perto: Option<u8>,
-    /// De que ILHA este personagem zarpou (docs/MAR_ABERTO.md).
-    ///
-    /// Existe por um modo de falha novo e severo: navegando, a zona salva e'
-    /// `mar_aberto`, e se o processo do mar cair o seletor de canal nao acha
-    /// canal servindo essa zona — TODO mundo que estava no mar fica trancado
-    /// fora do jogo. Este campo e' o caminho de casa.
-    pub zona_volta: Option<String>,
     /// Slots do vault (INVENTORY_SLOTS); carregado no login, salvo no save.
     pub vault: Vec<shared::InventorySlot>,
     /// True quando vault mudou — envia VaultUpdate no proximo tick.
@@ -2004,9 +1936,6 @@ pub struct GameWorld {
     /// zonas antigas de tile — enquanto as duas convivem, quem manda e' o
     /// nome da zona.
     pub ilha: Option<shared::terreno::Ilha>,
-    /// O MAR ABERTO, quando esta zona e' ele (docs/MAR_ABERTO.md). E' o
-    /// exclusivo do `ilha`: ou a zona e' uma ilha, ou e' o mar.
-    pub mar: Option<shared::mar::Mar>,
     /// Onde cada zona do realm esta rodando. Ver `canais::Diretorio`.
     pub diretorio: Option<crate::canais::Diretorio>,
     /// Quando ESTE processo gravou cada personagem pela ultima vez (sim time).
@@ -2536,7 +2465,6 @@ impl GameWorld {
             admissao_travada: false,
             imortal: std::env::var("MMO_IMORTAL").as_deref() == Ok("1"),
             ilha: None,
-            mar: None,
             diretorio: None,
             salvo_aqui_em: HashMap::new(),
             zona_de_saida: HashMap::new(),
@@ -2727,7 +2655,6 @@ impl GameWorld {
             admissao_travada: false,
             imortal: std::env::var("MMO_IMORTAL").as_deref() == Ok("1"),
             ilha: None,
-            mar: None,
             diretorio: None,
             salvo_aqui_em: HashMap::new(),
             zona_de_saida: HashMap::new(),
@@ -2815,14 +2742,7 @@ impl GameWorld {
                 DUNGEON_LANE_COUNT
             );
         }
-        // O MAR ABERTO ignora o mapfile. Ele precisa de um pra bootar (o
-        // `tick` aborta sem), mas o conteudo dele e' do mapa de TILES antigo:
-        // 231 bichos em coordenadas de terra que, no espaco do mar, caem
-        // boiando no meio do oceano. Ilha tambem nao usa — ela e' povoada
-        // pelo relevo — mas ali as coordenadas ao menos caem dentro dela.
-        if !shared::mar::e_mar(&crate::canais::zona()) {
-            w.spawn_mapfile_entities(&mf);
-        }
+        w.spawn_mapfile_entities(&mf);
         if w.tutorial_mode {
             w.spawn_tutorial_island();
             w.spawn_tutorial_content();
@@ -3274,12 +3194,7 @@ impl GameWorld {
                     // aqui se montava um build procedural (classe, equipamento,
                     // skills); mob agora e' so' o que a tabela diz.
                     // Zona de praia tem bicho proprio (caranguejos).
-                    let escolhido = if self.mar.is_some() {
-                        // No MAR o bicho sai da tabela do mar. Sem isto um
-                        // lobo nasceria boiando: a escolha por nivel so'
-                        // conhece os bichos de terra.
-                        crate::economy::kind_do_mar(lvl)
-                    } else if zone_id >= ZONA_DE_PRAIA_ID {
+                    let escolhido = if zone_id >= ZONA_DE_PRAIA_ID {
                         crate::economy::kind_de_praia(lcg(s_lvl))
                     } else {
                         crate::economy::kind_para_nivel(lvl, lcg(s_lvl))
@@ -4348,18 +4263,6 @@ impl GameWorld {
     /// Vale pro pickup por proximidade e pro pet (docs/PETS.md): os dois
     /// entregam pelo mesmo caminho, entao a regra nao mora em dois lugares.
     fn creditar_saque(&mut self, sid: SessionId, ltag: &LootTag) -> Option<Option<(Entity, i32)>> {
-        // O BAU DO COLOSSO vai pro CONVES, nao pra bolsa (docs/MAR_ABERTO.md).
-        // Recusado, ele FICA NO CHAO — quem nao tem barco nao leva o tesouro,
-        // e quem tem passa depois e leva. E' um momento bom, nao um erro.
-        if shared::item_id::e_bau_de_colosso(ltag.item_id) {
-            let ilha = shared::terreno::ARQUIPELAGO
-                .iter()
-                .position(|d| d.zona == self.zona)
-                .unwrap_or(0) as u8;
-            return self
-                .carregar_bau(sid, ltag.item_id, ilha)
-                .then_some(None);
-        }
         let session = self.sessions.get_mut(&sid)?;
         // Se for equipavel e o slot esta vazio, equipa direto.
         // Gate offhand+weapon: se incompativel, fallback pro inv.
@@ -5240,33 +5143,6 @@ impl GameWorld {
                         .to_client
                         .send(ServerMessage::TrocarZona { zona: z, host });
                     return;
-                }
-                // A ZONA SALVA CAIU. Sem isto o jogador entrava no porto de
-                // qualquer ilha em que calhasse de logar — e trocava de ilha
-                // de graca, que e' justamente o que a travessia obrigatoria
-                // existe pra impedir.
-                //
-                // O caso que mais importa e' o MAR: navegando, a zona salva
-                // e' `mar_aberto`, e se aquele processo cair ninguem tem
-                // como voltar pro lugar de onde zarpou. `zona_volta` guarda
-                // esse lugar (docs/MAR_ABERTO.md).
-                if let Some(volta) = row
-                    .zona_volta
-                    .clone()
-                    .filter(|v| *v != z && *v != self.zona)
-                {
-                    if let Some(host) = self.diretorio.as_ref().and_then(|d| d.melhor(&volta)) {
-                        tracing::warn!(
-                            "login '{}': zona salva '{}' fora do ar — volta pra '{}'",
-                            row.name,
-                            z,
-                            volta
-                        );
-                        let _ = handle
-                            .to_client
-                            .send(ServerMessage::TrocarZona { zona: volta, host });
-                        return;
-                    }
                 }
                 tracing::warn!(
                     "login '{}': zona salva '{}' sem canal no ar — entra no porto de '{}'",
@@ -6657,12 +6533,6 @@ impl GameWorld {
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 inventory_dirty: false,
                 stats_dirty: false,
-                canhao_pronto_em: 0.0,
-                karma: 0,
-                marcado_ate: 0,
-                ultima_vitima: None,
-                cais_perto: None,
-                zona_volta: None,
                 vault: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 vault_dirty: false,
                 bolsa_extra: 0,
@@ -7124,7 +6994,6 @@ impl GameWorld {
                 self.handle_shop_comprar(id, slot_idx as usize, qtd as u32);
             }
             ClientMessage::Viajar { ilha } => self.handle_viajar(id, ilha),
-            ClientMessage::Barco { pedido } => self.handle_barco(id, pedido),
             ClientMessage::ExpandirArmazem { banco } => self.handle_expandir_armazem(id, banco),
             ClientMessage::EscolherNoNpc { npc_eid, missao } => {
                 self.handle_escolher_no_npc(id, npc_eid, missao)
@@ -8965,10 +8834,6 @@ impl GameWorld {
                 PLAYER_SPEED * 0.5 * spd_scale
             } else if session.defending {
                 PLAYER_SPEED * shared::MOVE_SPEED_DEFENDING_MULT * spd_scale
-            } else if self.mar.is_some() {
-                // No mar quem anda e' o CASCO: uma velocidade so', sem
-                // montaria e sem sprint. Nao ha' pernas em cima da agua.
-                crate::world::barco::VEL_MAX
             } else {
                 // Montado: so' mobilidade (docs/MONTARIAS.md), sem sprint por cima.
                 shared::loja::velocidade_de_andar(
@@ -10138,30 +10003,11 @@ impl GameWorld {
                 .unwrap_or(shared::terreno::DEGRAU_BLOCOS);
             // Numa ilha a parede nao e' tile, e' desnivel: quem barra e' a
             // regra de degrau contra o campo de altura.
-            // NO MAR O CORPO E' O CASCO (docs/MAR_ABERTO.md).
-            //
-            // Navegar e' andar, so' que na agua: o mesmo direcional, o mesmo
-            // "pra frente e' longe da camera", o mesmo tudo. A tentativa
-            // anterior tinha leme e acelerador, e o dono foi direto ao ponto:
-            // "ta perdendo o referencial de frente tras que tinha antes".
-            // Perdia mesmo — leme e' um esquema de controle NOVO, e nao havia
-            // motivo pra ele existir depois que combate no mar virou PvP entre
-            // barcos, e nao luta de conves.
-            //
-            // Entao nao ha' entidade barco, nao ha' passageiro derivado e nao
-            // ha' conves: ha' um corpo que, no mar, colide com terra em vez de
-            // com agua. O cliente desenha um casco no lugar do boneco.
             corpos.push((
                 e,
-                match (&self.ilha, &self.mar) {
-                    (Some(i), _) => i.mover_com_degrau(pos.0, vel.0, dt, ENTITY_RADIUS, degrau),
-                    (None, Some(m)) => m.mover_no_mar(
-                        pos.0,
-                        vel.0,
-                        dt,
-                        crate::world::barco::RAIO_CASCO,
-                    ),
-                    (None, None) => self.map.move_and_slide(pos.0, vel.0, dt, ENTITY_RADIUS),
+                match &self.ilha {
+                    Some(i) => i.mover_com_degrau(pos.0, vel.0, dt, ENTITY_RADIUS, degrau),
+                    None => self.map.move_and_slide(pos.0, vel.0, dt, ENTITY_RADIUS),
                 },
                 mobilidade,
             ));
@@ -11086,23 +10932,7 @@ impl GameWorld {
             // esconderia justamente o que se quer ver enquanto se constroi
             // mundo: se o mob ACERTA, e quanto.
             let protegido = self.imortal && self.ecs.get::<&PlayerTag>(entity).is_ok();
-            // ── NO MAR QUEM APANHA E' O CASCO ────────────────────────────
-            //
-            // "Navegacao e' navegacao; combate no mar sera PvP entre barcos
-            // apenas" — decisao do dono. Entao bicho de mar nao e' encontro
-            // de combate: e' PERIGO. Ele rói o casco, e a resposta do jogador
-            // e' desviar ou correr, nao trocar golpe boiando.
-            //
-            // Isso tambem e' o que da' sentido ao eixo CASCO das melhorias e
-            // ao reparo: sem dano no casco, os dois seriam numero morto.
-            let no_casco = self.mar.is_some()
-                && self.ecs.get::<&PlayerTag>(entity).is_ok()
-                && !attacker_is_player;
-            if no_casco && !protegido {
-                if let Some(sid) = self.sid_da_entidade(entity) {
-                    self.dano_no_casco(sid, dmg);
-                }
-            } else if !protegido {
+            if !protegido {
                 if let Ok(mut hp) = self.ecs.get::<&mut Health>(entity) {
                     hp.current = (hp.current - dmg).max(0);
                     if hp.current == 0 && attacker_is_player {
@@ -11548,26 +11378,6 @@ impl GameWorld {
             })
             .collect();
         let mut mortes_na_dungeon: Vec<(u32, String)> = Vec::new();
-        // Quem derrubou quem, pro bau e pro karma: colhido ANTES do laco
-        // mutavel abaixo, que empresta `self.sessions` inteiro.
-        let derrubados: Vec<(SessionId, Option<SessionId>)> = hp_zero
-            .iter()
-            .filter_map(|(_, eid)| {
-                let sid = self
-                    .sessions
-                    .values()
-                    .find(|s| s.entity_id == *eid && !s.downed)?
-                    .handle
-                    .id;
-                let matador = kill_credits.get(eid).and_then(|k| {
-                    self.sessions
-                        .values()
-                        .find(|s| s.entity_id == *k)
-                        .map(|s| s.handle.id)
-                });
-                Some((sid, matador))
-            })
-            .collect();
         for (entity, eid) in hp_zero {
             for session in self.sessions.values_mut() {
                 if session.entity_id == eid && !session.downed {
@@ -11588,15 +11398,6 @@ impl GameWorld {
         }
         for (inst, nome) in mortes_na_dungeon {
             self.dg_morreu(inst, &nome);
-        }
-        // O BAU E O KARMA (docs/MAR_ABERTO.md). Depois do laco de morte, e
-        // antes do saque cair no chao: quem derrubou leva o tesouro do
-        // conves, e quem matou inocente paga a ficha.
-        for (morto, matador) in derrubados {
-            if let Some(matador) = matador {
-                self.bau_troca_de_dono(morto, matador);
-                self.karma_por_matar(matador, morto);
-            }
         }
         // Transfere fame + aura por kill de player ANTES do despawn.
         // Fame: +20 + 50% da vitima; vitima perde 30%.
@@ -11746,8 +11547,6 @@ impl GameWorld {
         // passar por cima.
         self.sincroniza_pets();
         self.tick_pets(dt);
-        self.tick_karma(dt);
-        self.tick_leviata(dt);
         // A montaria VISTA sai do equipamento, e equipar acontece por muitos
         // caminhos (bolsa, saque que auto-equipa, correio, mercado). Conferir
         // no tick cobre todos: sem isto, equipar nao avisava ninguem e o
@@ -12125,15 +11924,6 @@ impl GameWorld {
             .filter(|s| s.logged_in)
             .map(|s| (s.entity_id, shared::level_of_xp(s.xp) as u16))
             .collect();
-        // QUEM ESTA MARCADO (docs/MAR_ABERTO.md). Colhido antes da montagem
-        // do snapshot porque `marcado` le' o equipamento inteiro da sessao.
-        let agora_secs = (now_ms() / 1000) as i64;
-        let marcados: std::collections::HashSet<EntityId> = self
-            .sessions
-            .values()
-            .filter(|s| s.logged_in && self.marcado(s, agora_secs))
-            .map(|s| s.entity_id)
-            .collect();
         let acao_de: HashMap<EntityId, u8> = {
             use shared::components::acao;
             let agora = self.sim_time_s;
@@ -12252,12 +12042,9 @@ impl GameWorld {
                                     _ => None,
                                 })
                         });
-                    let mut flags = 0u16;
+                    let mut flags = 0u8;
                     if dash_agora.contains(&net.0) {
                         flags |= shared::ent_flags::DASHING;
-                    }
-                    if marcados.contains(&net.0) {
-                        flags |= shared::ent_flags::MARCADO;
                     }
                     if etag.map_or(false, |t| t.is_boss) {
                         flags |= shared::ent_flags::BOSS;
@@ -12676,8 +12463,6 @@ impl GameWorld {
         // pra não inflar mais o tuple.
         struct E {
             name: String,
-            zona_volta: Option<String>,
-            karma: i32,
             pos: Vec2,
             hp: Health,
             xp: u64,
@@ -12737,9 +12522,7 @@ impl GameWorld {
                 Err(_) => continue,
             };
             entries.push(E {
-                zona_volta: session.zona_volta.clone(),
-                karma: session.karma,
-                name: session.name.clone(),
+                        name: session.name.clone(),
                 pos,
                 hp,
                 xp: session.xp,
@@ -12815,8 +12598,6 @@ impl GameWorld {
                 mp: Some(e.mp),
                 stamina: Some(e.stamina),
                 zona: self.zona_do_save(&e.name),
-                zona_volta: e.zona_volta.clone(),
-                karma: e.karma,
                 xp_bonus_ate: e.xp_bonus_ate,
                 mortes_json: e.mortes_json,
                 recuperacoes_dia: e.recuperacoes_dia,
@@ -13585,7 +13366,7 @@ impl GameWorld {
 
     /// Clique no Capitao do Porto sem passo de viagem da historia: o menu
     /// "Viajar", com toda ilha e se da' pra ir.
-    pub(crate) fn abrir_menu_viagem(&self, sid: SessionId) {
+    fn abrir_menu_viagem(&self, sid: SessionId) {
         let Some(s) = self.sessions.get(&sid) else {
             return;
         };
@@ -13599,9 +13380,6 @@ impl GameWorld {
         };
         let destinos = shared::viagem::destinos(&self.zona, indice, &no_ar);
         let _ = s.handle.to_client.send(ServerMessage::Viagem { destinos });
-        // O ESTALEIRO vem junto: quem chega no cais quer ver o barco. Mandar
-        // os dois num clique evita um NPC a mais e um menu a mais.
-        self.abrir_estaleiro(sid);
     }
 
     /// "Embarcar" no menu do Capitao: perto dele, ilha liberada pela
@@ -13870,9 +13648,6 @@ impl GameWorld {
             return;
         }
         // Tenta stackar em slot existente do vault com mesmo item_id
-        if shared::item_id::e_bau_de_colosso(src.item_id) {
-            return; // o bau nao entra no banco — ver `add_to_inventory`
-        }
         let stack_max = crate::economy::item_stack_max(src.item_id);
         let mut moved = false;
         for slot in session.vault.iter_mut() {
@@ -16031,13 +15806,6 @@ impl GameWorld {
                 self.send_quest_offer(sid, shared::quests::quest_source::NPC, giver, gname);
             }
             Some((entity, 7, _, _)) => {
-                // NAUFRAGIO (docs/MAR_ABERTO.md): o bau que boia na rota. Nao
-                // tem quest, nao tem dono, e da' material — e' o que faz valer
-                // parar no meio da travessia em vez de so' atravessar.
-                if self.ecs.get::<&crate::world::barco::NaufragioTag>(entity).is_ok() {
-                    self.saquear_naufragio(sid, entity);
-                    return;
-                }
                 // Baú de tesouro: abrir conclui a quest TREASURE + dá a relíquia.
                 if let Ok(qid) = self
                     .ecs
@@ -18087,8 +17855,6 @@ impl GameWorld {
             mp: Some(session.mp_current),
             stamina: Some(session.stamina_current),
             zona: self.zona_do_save(&session.name),
-            zona_volta: session.zona_volta.clone(),
-            karma: session.karma,
             xp_bonus_ate: session.xp_bonus_ate,
             mortes_json: crate::morte::para_json(&session.mortes),
             recuperacoes_dia: session.recuperacoes_dia,
@@ -18563,20 +18329,6 @@ pub(crate) fn add_to_inventory(
     // no mesmo slot dividiriam uma instancia e teriam que ter o mesmo
     // sorteio. Por isso a checagem de espaco vem antes — `qty` bichos
     // precisam de `qty` vagas, e meio lote entregue seria pior que recusar.
-    // O BAU DO COLOSSO nao cabe na bolsa (docs/MAR_ABERTO.md). E' a primeira
-    // das quatro recusas que fazem a premissa ser verdade em vez de ser uma
-    // frase no doc: bolsa, banco, mercado e correio. Sobra o CONVES.
-    if shared::item_id::e_bau_de_colosso(item_id) {
-        return false;
-    }
-    // O BARCO nasce com estado proprio (docs/MAR_ABERTO.md): casco cheio,
-    // sem melhoria. Mesmo funil do bicho, e pelo mesmo motivo — craft,
-    // quest, mercado, banco e grant de admin passam todos por aqui.
-    if instance.is_none() && shared::item_id::e_barco(item_id) {
-        let mut inst = shared::items::ItemInstance::vazia_de_grau(1);
-        inst.barco = Some(shared::barcos::novo(item_id));
-        return add_to_inventory(inv, item_id, 1, Some(inst));
-    }
     if instance.is_none() {
         if let Some(grau) = grau_de_bicho(item_id) {
             let n = qty.max(1);

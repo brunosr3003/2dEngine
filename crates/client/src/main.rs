@@ -20,7 +20,6 @@ mod colecao;
 mod craft_ui;
 mod dungeon_ui;
 mod efeitos;
-mod estaleiro_ui;
 mod energia_vfx;
 mod entrada;
 mod evolucao_skills;
@@ -353,16 +352,6 @@ struct Jogo {
     girando_toque: bool,
     /// WASD virtual na metade esquerda (so' com toque).
     joystick: joystick::Joystick,
-    /// O painel do Carpinteiro Naval (docs/MAR_ABERTO.md).
-    estaleiro: estaleiro_ui::EstaleiroUi,
-    /// Quando o canhao foi disparado (`get_time`). O botao acende de novo
-    /// pela recarga, sem esperar o servidor responder — o servidor continua
-    /// sendo quem decide se o tiro sai.
-    canhao_em: f64,
-    /// Esta zona e' o Mar Aberto? Nao muda o controle — muda o que se
-    /// DESENHA (um casco no lugar do boneco) e quem responde ao botao do
-    /// porto (zarpar ou atracar).
-    no_mar: bool,
     rede: hud::Rede,
     ultimo_ping: f64,
     /// Marca da ultima janela de banda: instante e total de bytes.
@@ -426,8 +415,6 @@ async fn main() {
     for (nome, altura) in render3d::ALTURA_DO_BICHO {
         vox.load_na_altura(nome, altura).await;
     }
-    vox.load_na_altura(render3d::MODELO_DO_BARCO, render3d::ALTURA_DO_BARCO)
-        .await;
     // O personagem em PECAS (docs/character create.md). Sem o arquivo, o
     // desenho cai no modelo inteiro de antes.
     vox.load_rig(render3d::RIG_CORPO, render3d::VOXEL, rig::pivo)
@@ -619,9 +606,6 @@ async fn main() {
         camera_suave: camera_suave::CameraSuave::default(),
         girando_toque: false,
         joystick: joystick::Joystick::default(),
-        estaleiro: estaleiro_ui::EstaleiroUi::default(),
-        canhao_em: 0.0,
-        no_mar: false,
         rede: hud::Rede::default(),
         ultimo_ping: 0.0,
         banda_marca: (0.0, 0),
@@ -726,8 +710,7 @@ impl Jogo {
             self.habilidades.acompanhar_alvos(&mut self.world);
             {
                 let terreno = self.terreno.as_ref();
-                let no_mar = self.no_mar;
-                self.world.tick(get_frame_time(), no_mar, &|x, z| {
+                self.world.tick(get_frame_time(), &|x, z| {
                     terreno.map_or(0.0, |t| t.altura_apoio(x, z, shared::ENTITY_RADIUS))
                 });
             }
@@ -1093,16 +1076,7 @@ impl Jogo {
                 self.rastro.limpa();
                 // Ilha do arquipelago: o terreno nasce da SEMENTE, e nem o
                 // arquivo de tiles nem um byte de rede entram nisso.
-                // O MAR ABERTO nao e' ilha do arquipelago: o terreno dele e' o
-                // composto dos quatro geradores (docs/MAR_ABERTO.md), o mesmo
-                // que o servidor monta. Cliente e servidor desenham e colidem
-                // a partir da MESMA funcao — nao ha' como divergirem.
-                self.no_mar = shared::mar::e_mar(&map_name);
-                self.terreno = if shared::mar::e_mar(&map_name) {
-                    Some(terreno::Terreno::do_mar())
-                } else {
-                    shared::terreno::def_da_zona(&map_name).map(terreno::Terreno::novo)
-                };
+                self.terreno = shared::terreno::def_da_zona(&map_name).map(terreno::Terreno::novo);
                 // Mapa novo pra ilha nova; a viagem da ilha anterior morre junto.
                 // Os filtros do mapa valem a sessao: sobrevivem a ilha nova.
                 let filtros = std::mem::take(&mut self.mapa.filtros);
@@ -1294,19 +1268,6 @@ impl Jogo {
                 self.dialogo.fechar();
                 self.escolha_npc.abrir(npc_eid, nome, funcao);
             }
-            ServerMessage::Barco { aviso } => {
-                // O estaleiro chega junto com o menu do porto: quem para no
-                // cais quer ver o barco. Recusa e naufragio viram linha de
-                // chat, que e' onde o jogador ja' olha.
-                match &aviso {
-                    shared::mar::AvisoBarco::Recusa(t)
-                    | shared::mar::AvisoBarco::Naufragio { porto: t, .. } => {
-                        self.chat.push(t.clone());
-                    }
-                    _ => {}
-                }
-                self.estaleiro.receber(aviso);
-            }
             ServerMessage::Viagem { destinos } => {
                 // O Capitao pode abrir com uma oferta de missao na frente: o
                 // menu espera o dialogo fechar.
@@ -1314,7 +1275,7 @@ impl Jogo {
                     self.viagem_pendente = Some(destinos);
                 } else {
                     self.fecha_paineis();
-                    self.viagem.abrir(destinos, self.no_mar);
+                    self.viagem.abrir(destinos);
                 }
             }
             ServerMessage::CombinarResultado {
@@ -4098,14 +4059,6 @@ impl Jogo {
             .escreveu(self.cam_yaw, self.cam_pitch_ajuste, self.cam_zoom);
     }
 
-    /// (tem canhao, pronto pra atirar).
-    fn canhao_do_barco(&self) -> (bool, bool) {
-        let tem = self.estaleiro.canhao().is_some_and(|n| n > 0);
-        let pronto =
-            get_time() - self.canhao_em >= shared::barcos::RECARGA_DO_CANHAO as f64;
-        (tem, pronto)
-    }
-
     fn enviar_input(&mut self) {
         let agora = get_time();
         if agora - self.ultimo_input < 1.0 / INPUT_HZ {
@@ -4325,7 +4278,7 @@ impl Jogo {
         // descarte de face de costas, que os bichos tambem precisam. Dois
         // materiais seriam dois lugares pra a configuracao divergir.
         self.solido.set_uniform("Recorte", Vec3::ZERO);
-        render3d::draw_entities(&mut self.world, &self.vox, self.alvo, &vista, self.no_mar);
+        render3d::draw_entities(&mut self.world, &self.vox, self.alvo, &vista);
         gl_use_default_material();
         self.habilidades.desenha_efeitos(&self.world, &vista);
         set_default_camera();
@@ -4608,18 +4561,7 @@ impl Jogo {
             }
         }
         // Montaria: ao lado da bateria, sempre na tela.
-        if self.no_mar {
-            // No mar a vaga da montaria vira CANHAO (docs/MAR_ABERTO.md):
-            // montar nao vale aqui, e abrir um botao novo encheria a tela de
-            // todo mundo por causa de uma zona so'.
-            let (tem, pronto) = self.canhao_do_barco();
-            if hud::draw_botao_canhao(&z, tem, pronto) {
-                self.envia(ClientMessage::Barco {
-                    pedido: shared::mar::PedidoBarco::Canhao,
-                });
-                self.canhao_em = get_time();
-            }
-        } else {
+        {
             let montado = self.eu_montado();
             if montado {
                 self.montarias.montou();
@@ -5098,7 +5040,7 @@ impl Jogo {
             if let Some(d) = self.viagem_pendente.take() {
                 self.fecha_paineis();
                 self.missoes.fecha();
-                self.viagem.abrir(d, self.no_mar);
+                self.viagem.abrir(d);
             }
             if let Some(cofre) = self.banco_pendente.take() {
                 self.fecha_paineis();
@@ -5112,22 +5054,8 @@ impl Jogo {
         if let Some(pedido) = self.banco.desenha(&self.bolsa.slots, self.bolsa.ouro) {
             self.envia(pedido);
         }
-        if let Some(pedido) = self.estaleiro.desenha(&|id| self.bolsa.nome(id)) {
-            self.envia(ClientMessage::Barco { pedido });
-        }
-        if let Some(acao) = self.viagem.desenha() {
-            use crate::viagem_ui::AcaoDoPorto as A;
-            // O Capitao nao teleporta mais: no cais o botao ZARPA, e no mar
-            // ATRACA (docs/MAR_ABERTO.md). A `Viajar` morreu com ele.
-            match acao {
-                A::Zarpar => self.envia(ClientMessage::Barco {
-                    pedido: shared::mar::PedidoBarco::Zarpar,
-                }),
-                A::Atracar(ilha) => self.envia(ClientMessage::Barco {
-                    pedido: shared::mar::PedidoBarco::Atracar { ilha },
-                }),
-                A::Estaleiro => self.estaleiro.abrir(),
-            }
+        if let Some(ilha) = self.viagem.desenha() {
+            self.envia(ClientMessage::Viajar { ilha });
         }
         // Loja de cash e janela de montarias (Menu).
         for pedido in self.loja_tp.desenha(&self.vox, &self.solido) {
