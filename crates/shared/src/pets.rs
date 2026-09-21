@@ -42,16 +42,16 @@ pub const PESO_TOTAL: u8 = 10;
 ///
 /// **A `escala` e' o que faz o FILHOTE ser filhote.** Ela multiplica a altura
 /// em que o bicho e' carregado (`client::bicho::BICHOS`), e essas alturas sao
-/// do bicho ADULTO: o dragao vem com 2,4 — mais alto que o jogador. Com a
-/// escala do tigre, o filhote de dragao saia com 0,91, quase o dobro dos
-/// outros pets e metade de uma pessoa. A escada cresce de leve, de 0,50 a
-/// 0,65, e `nenhum_pet_chega_ao_tamanho_de_montaria` cobra o teto.
+/// do bicho ADULTO: o dragao vem com 2,4 — mais alto que o jogador, e do
+/// tamanho da montaria. A escada sai em 0,65 / 0,70 / 0,75 / 0,85 / 0,95:
+/// cresce de leve, todos claramente menores que a montaria mais baixa
+/// (1,46), e `nenhum_pet_chega_ao_tamanho_de_montaria` cobra o teto.
 pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
     Especie {
         grau: 1,
         nome: "Porquinho",
         bicho: "bichos/porco",
-        escala: 0.62,
+        escala: 0.812,
         // VIT 6, RES 4 — o gordinho aguenta.
         afinidade: pesos(&[(stat_idx::VIT, 6), (stat_idx::RES, 4)]),
         descricao: "Come tudo e não reclama. Vitalidade.",
@@ -60,7 +60,7 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         grau: 2,
         nome: "Filhote de Lobo",
         bicho: "bichos/lobo_pequeno",
-        escala: 0.55,
+        escala: 0.778,
         afinidade: pesos(&[(stat_idx::DES, 6), (stat_idx::SPD, 4)]),
         descricao: "Rápido e curioso. Destreza e velocidade.",
     },
@@ -68,7 +68,7 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         grau: 3,
         nome: "Filhote de Tigre",
         bicho: "bichos/tigre",
-        escala: 0.55,
+        escala: 0.789,
         afinidade: pesos(&[(stat_idx::FOR, 5), (stat_idx::DES, 5)]),
         descricao: "Caçador desde pequeno. Força e destreza.",
     },
@@ -76,7 +76,7 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         grau: 4,
         nome: "Corujurso",
         bicho: "bichos/owlbear",
-        escala: 0.40,
+        escala: 0.567,
         afinidade: pesos(&[(stat_idx::INT, 5), (stat_idx::FOR, 5)]),
         descricao: "Estranho e sábio. O pet da arma mágica.",
     },
@@ -84,7 +84,7 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         grau: 5,
         nome: "Filhote de Dragão",
         bicho: "bichos/dragao",
-        escala: 0.27,
+        escala: 0.396,
         afinidade: pesos(&[(stat_idx::FOR, 4), (stat_idx::INT, 3), (stat_idx::VIT, 3)]),
         descricao: "Pequeno, e já sabe disso. O topo da escada.",
     },

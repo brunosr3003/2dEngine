@@ -1236,20 +1236,37 @@ fn desenha_bau(p: Vec3) {
     );
 }
 
-/// Escala de desenho do chefe de campo (1 pra quem nao e' chefe).
+/// Escala de desenho do corpo: 1 pro bicho comum, o fator do CHEFE pra ele, e
+/// a escala da criatura pro PET.
+///
+/// O pet precisa entrar aqui porque a altura do modelo e' assada no
+/// carregamento (`vox::load_bicho`), uma vez por ARQUIVO — e o mesmo arquivo
+/// serve o pet e a montaria. Sem este fator, o filhote de dragao desenhava
+/// com os 2,4 do dragao adulto, do mesmo tamanho da montaria; a montaria
+/// escapava porque `desenha_bicho_montaria` sempre recebeu a escala de fora.
 pub(crate) fn escala_de_chefe(e: &crate::world::Ent) -> f32 {
     if e.meta.tag == shared::EntityTag::Enemy && e.state.flags & shared::ent_flags::BOSS != 0 {
         shared::bosses::chefe(e.meta.kind).map_or(1.0, |c| c.escala)
             * crate::bicho::fator_do_modelo_de_chefe(e.meta.kind)
+    } else if e.meta.tag == shared::EntityTag::Pet {
+        shared::pets::de_item(e.meta.kind).map_or(1.0, |(c, _)| c.escala)
     } else {
         1.0
     }
 }
 
-/// Altura do chefe na tela (u), pra sombra, aura, placa e poeira.
+/// Altura do corpo na tela (u), pra sombra, aura, placa e poeira.
 pub(crate) fn altura_de_chefe(e: &crate::world::Ent) -> f32 {
-    crate::bicho::do_mob(e.meta.tag, e.meta.kind, true).map_or(1.95, |(_, a)| a)
-        * escala_de_chefe(e)
+    crate::bicho::do_mob(e.meta.tag, e.meta.kind, true)
+        .or_else(|| crate::bicho::do_pet(e.meta.tag, e.meta.kind))
+        .map_or(1.95, |(_, a)| a)
+        * if e.meta.tag == shared::EntityTag::Pet {
+            // `do_pet` ja' devolve a altura COM a escala: nao multiplicar de
+            // novo, senao a sombra encolhe ao quadrado.
+            1.0
+        } else {
+            escala_de_chefe(e)
+        }
 }
 
 /// O tombo do chefe: o dobro do tempo do tombo comum e o mesmo quique — o

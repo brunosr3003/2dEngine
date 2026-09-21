@@ -646,7 +646,7 @@ mod tests {
             let h = altura_do_pet(e);
             assert!(h > 0.0, "{}: sem modelo em BICHOS", e.nome);
             assert!(
-                h < menor_montaria * 0.5,
+                h < menor_montaria * 0.7,
                 "{} tem {h:.2} — perto da montaria mais baixa ({menor_montaria:.2})",
                 e.nome
             );
@@ -661,6 +661,19 @@ mod tests {
         let topo = altura_do_pet(shared::pets::ESPECIES.last().unwrap());
         let base = altura_do_pet(&shared::pets::ESPECIES[0]);
         assert!(topo < base * 1.6, "o topo ({topo:.2}) dobrou a base ({base:.2})");
+        // E a escala tem que estar CHEGANDO no desenho: `render3d` multiplica
+        // por ela porque a altura e' assada por ARQUIVO, e o mesmo arquivo
+        // serve o pet e a montaria. Se o dragao-pet e o dragao-montaria
+        // dividissem o porte, era este o teste que faltava.
+        let mesmo_bicho = shared::montarias::ESPECIES
+            .iter()
+            .find(|m| m.bicho == shared::pets::ESPECIES[4].bicho)
+            .expect("o dragao serve os dois");
+        assert!(
+            altura_da_montaria(mesmo_bicho) > topo * 2.0,
+            "o dragao-montaria ({:.2}) tem que ser MUITO maior que o filhote ({topo:.2})",
+            altura_da_montaria(mesmo_bicho)
+        );
     }
 
     /// MONTARIA nao pode ser mais baixa que quem monta, e a escada sobe: o
