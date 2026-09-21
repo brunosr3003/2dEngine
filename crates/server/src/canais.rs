@@ -174,6 +174,16 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     )
     .execute(pool)
     .await?;
+    // Onde ESTE canal atende o panoptico. Antes o painel deduzia isso do
+    // `host` anunciado (porta do jogo + offset) — o que so' funcionava
+    // enquanto o endereco publico terminava em `:porta`. Com a zona atras de
+    // um proxy o endereco virou `host/z/ilha/1`, sem porta nenhuma, e o painel
+    // perdeu o retrato de todos os canais de uma vez. O canal e' quem sabe
+    // onde ele escuta; agora ele conta, em vez de deixar adivinharem.
+    // Vazio = canal sem painel (nao subiu com `PANOPTICO_BIND`).
+    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS painel TEXT NOT NULL DEFAULT ''")
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -250,14 +260,19 @@ pub fn spawn_heartbeat(
     // motivo de existirem. O supervisor repassa a variavel pros filhos.
     let unico: bool = std::env::var("MMO_CANAL_UNICO").as_deref() == Ok("1");
     let zona_local = zona();
+    // `0.0.0.0` e' onde se ESCUTA, nao um endereco pra onde falar — o painel
+    // esta' sempre na mesma maquina que o canal.
+    let painel = std::env::var("PANOPTICO_BIND")
+        .unwrap_or_default()
+        .replace("0.0.0.0:", "127.0.0.1:");
 
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(5));
         loop {
             tick.tick().await;
             let r = sqlx::query(
-                "INSERT INTO channels (id, realm, host, players, capacity, map_name, zone, single, tick_p99_ms, updated)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+                "INSERT INTO channels (id, realm, host, players, capacity, map_name, zone, single, tick_p99_ms, painel, updated)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
                  ON CONFLICT (id) DO UPDATE SET
                     realm = EXCLUDED.realm,
                     host = EXCLUDED.host,
@@ -267,6 +282,7 @@ pub fn spawn_heartbeat(
                     zone = EXCLUDED.zone,
                     single = EXCLUDED.single,
                     tick_p99_ms = EXCLUDED.tick_p99_ms,
+                    painel = EXCLUDED.painel,
                     updated = NOW()",
             )
             .bind(&id)
@@ -278,6 +294,7 @@ pub fn spawn_heartbeat(
             .bind(&zona_local)
             .bind(unico)
             .bind(saude.p99_us() as f32 / 1000.0)
+            .bind(&painel)
             .execute(&pool)
             .await;
             if let Err(e) = r {

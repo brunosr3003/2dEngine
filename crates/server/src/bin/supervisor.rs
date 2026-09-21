@@ -84,6 +84,12 @@ async fn main() -> anyhow::Result<()> {
     let cap_realm: u32 = env_num("MMO_REALM_CAPACIDADE", 1500);
     let porta_base: u16 = env_num("MMO_PORTA_BASE", 9000);
     let host_base = std::env::var("MMO_HOST_PUBLICO_BASE").unwrap_or_else(|_| "127.0.0.1".into());
+    // Endereco publico por CAMINHO, quando ha' um proxy na frente:
+    // `MMO_CAMINHO_PUBLICO=/z/ilha_inicial` faz o canal 2 se anunciar como
+    // `host/z/ilha_inicial/2` em vez de `host:9001`. Uma porta publica pro
+    // arquipelago inteiro, em vez de uma por ilha — e TLS num lugar so'.
+    // Vazio (o padrao) mantem o endereco por porta.
+    let caminho = std::env::var("MMO_CAMINHO_PUBLICO").unwrap_or_default();
     let fechar_apos: u32 = env_num("MMO_CANAL_FECHAR_APOS", 6);
     // Fracao do orcamento de tick (33ms) acima da qual o canal conta como
     // cheio, independente de quanta gente tem dentro. 0,70 deixa margem pro
@@ -154,7 +160,7 @@ async fn main() -> anyhow::Result<()> {
                 .find(|n| !canais.iter().any(|c| c.numero == *n))
                 .unwrap();
             let porta = porta_base + numero as u16 - 1;
-            match abrir(&bin, &realm, numero, porta, &host_base, cap_canal, unico) {
+            match abrir(&bin, &realm, numero, porta, &host_base, &caminho, cap_canal, unico) {
                 Ok(processo) => {
                     tracing::info!(
                         "canal {numero} aberto na porta {porta} (total {total} jogadores)"
@@ -249,12 +255,14 @@ async fn estado_dos_canais(pool: &PgPool, realm: &str) -> HashMap<u32, (u32, f32
     .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn abrir(
     bin: &str,
     realm: &str,
     numero: u32,
     porta: u16,
     host_base: &str,
+    caminho: &str,
     cap_canal: u32,
     unico: bool,
 ) -> std::io::Result<Child> {
@@ -265,7 +273,7 @@ fn abrir(
         .env("MMO_CANAL_UNICO", if unico { "1" } else { "0" })
         .env("MMO_CANAL", numero.to_string())
         .env("BIND_ADDR", format!("0.0.0.0:{porta}"))
-        .env("MMO_HOST_PUBLICO", format!("{host_base}:{porta}"))
+        .env("MMO_HOST_PUBLICO", endereco_publico(host_base, caminho, numero, porta))
         .env("MMO_CANAL_CAPACIDADE", cap_canal.to_string());
     // Retrato ao vivo pro panoptico: cada canal na porta do jogo + offset, so'
     // em loopback. Um PANOPTICO_BIND herdado igual pra todos faria os canais
@@ -280,6 +288,22 @@ fn abrir(
     cmd.spawn()
 }
 
+/// Como o canal se anuncia pro CLIENTE — e' isto que vai no heartbeat e que o
+/// `TrocarZona` devolve.
+///
+/// Sem `MMO_CAMINHO_PUBLICO`, e' `host:porta`: o cliente fala direto com o
+/// processo. Com caminho, e' `host/caminho/numero`, e quem mapeia caminho ->
+/// porta e' o proxy — a porta do jogo deixa de ser endereco publico e passa a
+/// ser detalhe da maquina. O cliente nao sabe a diferenca: ele monta
+/// `ws://{host}` com o que vier.
+fn endereco_publico(host_base: &str, caminho: &str, numero: u32, porta: u16) -> String {
+    if caminho.is_empty() {
+        return format!("{host_base}:{porta}");
+    }
+    let caminho = caminho.trim_matches('/');
+    format!("{host_base}/{caminho}/{numero}")
+}
+
 /// `PANOPTICO_BIND` de um canal: `127.0.0.1:(porta + offset)` quando
 /// `PANOPTICO_NOS_CANAIS=1`. Offset padrao 1000, o mesmo que o painel assume.
 fn painel_do_canal(ligado: Option<&str>, offset: Option<&str>, porta: u16) -> Option<String> {
@@ -288,6 +312,41 @@ fn painel_do_canal(ligado: Option<&str>, offset: Option<&str>, porta: u16) -> Op
     }
     let offset: u16 = offset.and_then(|v| v.parse().ok()).unwrap_or(1000);
     Some(format!("127.0.0.1:{}", porta.checked_add(offset)?))
+}
+
+#[cfg(test)]
+mod testes_endereco {
+    use super::endereco_publico;
+
+    #[test]
+    fn sem_caminho_e_porta() {
+        assert_eq!(
+            endereco_publico("mmo.brunji.com.br", "", 2, 9001),
+            "mmo.brunji.com.br:9001"
+        );
+    }
+
+    #[test]
+    fn com_caminho_a_porta_some() {
+        assert_eq!(
+            endereco_publico("mmo.brunji.com.br", "/z/ilha_inicial", 1, 9000),
+            "mmo.brunji.com.br/z/ilha_inicial/1"
+        );
+        assert_eq!(
+            endereco_publico("mmo.brunji.com.br", "/z/ilha_inicial", 3, 9002),
+            "mmo.brunji.com.br/z/ilha_inicial/3"
+        );
+    }
+
+    /// Barra sobrando nao vira `//`: o cliente monta `ws://{host}` com isto
+    /// cru, e `ws://host//z/...` nao bate com a location do nginx.
+    #[test]
+    fn barra_sobrando_nao_dobra() {
+        assert_eq!(
+            endereco_publico("mmo.brunji.com.br", "z/ilha_inicial/", 1, 9000),
+            "mmo.brunji.com.br/z/ilha_inicial/1"
+        );
+    }
 }
 
 #[cfg(test)]

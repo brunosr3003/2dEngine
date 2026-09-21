@@ -287,13 +287,36 @@ async fn pagina() -> Html<&'static str> {
 
 /// Onde o panoptico de um canal escuta.
 ///
-/// Convencao e nao configuracao: a porta do painel e' a do jogo mais
-/// `PANOPTICO_OFFSET` (1000 por padrao). O host e' o anunciado, trocado por
-/// `PANOPTICO_HOST_CANAIS` quando existe (o anunciado e' o publico).
+/// Primeiro o que o PROPRIO canal publicou no heartbeat (`channels.painel`):
+/// ele sabe em que porta subiu, e ninguem precisa deduzir. Vazio quando o
+/// canal e' velho (ainda nao publica a coluna) ou subiu sem painel.
 ///
-/// `0.0.0.0` vira `127.0.0.1`: e' o endereco em que o processo ESCUTA, nao um
-/// em que se possa falar com ele.
-fn endereco_do_painel(host_do_jogo: &str, host_override: Option<&str>) -> Option<String> {
+/// Vazio cai na deducao antiga: porta do jogo mais `PANOPTICO_OFFSET`. Ela so'
+/// funciona enquanto o endereco anunciado termina em `:porta` — com a zona
+/// atras de um proxy (`host/z/ilha/1`) nao ha' porta pra somar, e ai o painel
+/// depende mesmo do que o canal publicou.
+///
+/// Nos dois casos `PANOPTICO_HOST_CANAIS` troca o host, porque o anunciado e'
+/// o publico; e `0.0.0.0` vira `127.0.0.1`, que e' onde se ESCUTA, nao um
+/// endereco pra onde falar.
+fn endereco_do_painel(
+    publicado: &str,
+    host_do_jogo: &str,
+    host_override: Option<&str>,
+) -> Option<String> {
+    if !publicado.is_empty() {
+        let (h, porta) = publicado.rsplit_once(':')?;
+        let h = match host_override {
+            Some(o) => o,
+            None if h == "0.0.0.0" || h.is_empty() => "127.0.0.1",
+            None => h,
+        };
+        return Some(format!("{h}:{porta}"));
+    }
+    endereco_por_convencao(host_do_jogo, host_override)
+}
+
+fn endereco_por_convencao(host_do_jogo: &str, host_override: Option<&str>) -> Option<String> {
     let offset: u16 = std::env::var("PANOPTICO_OFFSET")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -310,8 +333,8 @@ fn endereco_do_painel(host_do_jogo: &str, host_override: Option<&str>) -> Option
 
 /// Canais vivos com o retrato de cada um (em paralelo).
 async fn canais_com_retrato(st: &Estado) -> Vec<serde_json::Value> {
-    let linhas = sqlx::query_as::<_, (String, String, i32, i32, String, f32)>(
-        "SELECT id, host, players, capacity, zone, tick_p99_ms
+    let linhas = sqlx::query_as::<_, (String, String, i32, i32, String, f32, String)>(
+        "SELECT id, host, players, capacity, zone, tick_p99_ms, painel
            FROM channels
           WHERE updated > NOW() - INTERVAL '15 seconds'
           ORDER BY id ASC",
@@ -323,10 +346,10 @@ async fn canais_com_retrato(st: &Estado) -> Vec<serde_json::Value> {
     // Todos os canais em PARALELO. Em serie, onze canais com um lento no meio
     // dariam um painel que anda no ritmo do pior deles.
     let mut tarefas = Vec::new();
-    for (id, host, jogadores, capacidade, zona, tick) in linhas {
+    for (id, host, jogadores, capacidade, zona, tick, publicado) in linhas {
         let st = st.clone();
         tarefas.push(tokio::spawn(async move {
-            let painel = endereco_do_painel(&host, st.host_dos_canais.as_deref());
+            let painel = endereco_do_painel(&publicado, &host, st.host_dos_canais.as_deref());
             let retrato = match &painel {
                 Some(p) => buscar_retrato(&st, p).await,
                 None => None,
@@ -586,20 +609,52 @@ fn png_resposta(png: Arc<Vec<u8>>) -> Response {
 mod testes {
     use super::endereco_do_painel;
 
+    /// Sem a coluna publicada (canal velho), a deducao antiga vale.
     #[test]
     fn painel_do_canal_usa_o_host_certo() {
         assert_eq!(
-            endereco_do_painel("0.0.0.0:9200", None).as_deref(),
+            endereco_do_painel("", "0.0.0.0:9200", None).as_deref(),
             Some("127.0.0.1:10200")
         );
         assert_eq!(
-            endereco_do_painel("10.0.0.5:9000", None).as_deref(),
+            endereco_do_painel("", "10.0.0.5:9000", None).as_deref(),
             Some("10.0.0.5:10000")
         );
         assert_eq!(
-            endereco_do_painel("mmo.brunji.com.br:9000", Some("127.0.0.1")).as_deref(),
+            endereco_do_painel("", "mmo.brunji.com.br:9000", Some("127.0.0.1")).as_deref(),
             Some("127.0.0.1:10000")
         );
-        assert_eq!(endereco_do_painel("sem-porta", None), None);
+        assert_eq!(endereco_do_painel("", "sem-porta", None), None);
+    }
+
+    /// O que o canal publicou vence a deducao — e' o unico caminho que sobra
+    /// quando o endereco publico e' um CAMINHO, sem porta pra somar offset.
+    #[test]
+    fn o_publicado_vence_a_deducao() {
+        assert_eq!(
+            endereco_do_painel("127.0.0.1:10000", "mmo.brunji.com.br/z/ilha_inicial/1", None)
+                .as_deref(),
+            Some("127.0.0.1:10000")
+        );
+        assert_eq!(
+            endereco_do_painel("0.0.0.0:10100", "mmo.brunji.com.br/z/ilha_gelo", None).as_deref(),
+            Some("127.0.0.1:10100"),
+            "0.0.0.0 e' onde se escuta, nao um endereco"
+        );
+        assert_eq!(
+            endereco_do_painel("127.0.0.1:10000", "qualquer", Some("10.0.0.7")).as_deref(),
+            Some("10.0.0.7:10000")
+        );
+    }
+
+    /// Sem painel dos dois lados o canal fica MUDO no painel — melhor que
+    /// bater numa porta que nunca respondeu (a Geleira e a Colonia sobem sem
+    /// `PANOPTICO_BIND`).
+    #[test]
+    fn sem_painel_e_sem_porta_da_none() {
+        assert_eq!(
+            endereco_do_painel("", "mmo.brunji.com.br/z/ilha_gelo", None),
+            None
+        );
     }
 }

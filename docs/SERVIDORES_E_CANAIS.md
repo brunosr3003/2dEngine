@@ -217,6 +217,7 @@ MMO_PORTA_BASE=9000 \
 | `MMO_CANAL_FECHAR_APOS` | ciclos de 5s vazio antes de fechar (default 6 = 30s) |
 | `MMO_REALM_CAPACIDADE` | teto do servidor inteiro; batido, para de abrir canal |
 | `MMO_CANAL_UNICO=1` | área de instância única — nunca abre um segundo |
+| `MMO_CAMINHO_PUBLICO` | anuncia o canal como `host/caminho/n` em vez de `host:porta` |
 
 Comportamento medido, com teto de 25 e abertura em 20:
 
@@ -426,19 +427,64 @@ a tela não mostra mais canal nenhum.
 `MMO_HOST` pula a escolha e `MMO_CHAR` pula a seleção de personagem: é o
 caminho do teste de carga, que não tem quem clique.
 
+## Endereço público: caminho, não porta
+
+O cliente monta `ws://{host}` com o que veio do heartbeat
+(`client/src/main.rs:906`), e `host` é string opaca pra ele. Isso é o que
+permite o endereço público ser um **caminho**:
+
+```
+mmo.brunji.com.br/z/ilha_inicial/1    Bosque, canal 1
+mmo.brunji.com.br/z/ilha_gelo         Geleira
+mmo.brunji.com.br/z/colonia           Colônia
+```
+
+O nginx da VPS mapeia caminho → porta do túnel, e a porta do jogo continua
+existindo na máquina — ela só deixou de ser endereço público.
+
+O que isso resolve não é desempenho, é **custo de abrir zona**. Por porta,
+cada ilha nova pedia porta pública, furo de firewall e unit de túnel. Por
+caminho, pede uma `location` no vhost. É a diferença entre vinte mapas de
+evento serem vinte portas ou vinte linhas.
+
+De brinde, `wss://mmo.brunji.com.br/z/ilha_gelo` **já responde 101** — o
+certificado do vhost passou a valer pro jogo. O que falta pro TLS é o cliente
+pedir `wss` em vez de `ws`; a ponta do servidor está pronta.
+
+`MMO_CAMINHO_PUBLICO=/z/ilha_inicial` liga isso no supervisor, que monta
+`{host}/z/ilha_inicial/{n}` por canal (`endereco_publico`). Zona sem
+supervisor põe o endereço direto em `MMO_HOST_PUBLICO`. Sem nenhum dos dois, o
+endereço continua sendo `host:porta` — nada quebra em dev.
+
+**A armadilha que isso abriu:** o painel deduzia a porta do panóptico do
+endereço anunciado (porta do jogo + 1000). Sem `:porta` no endereço, a dedução
+devolveu `None` e o panóptico perdeu o retrato de **todos** os canais de uma
+vez — sem erro nenhum, só canal mudo. Agora o canal publica onde o painel dele
+escuta (`channels.painel`, do próprio `PANOPTICO_BIND`) e a dedução antiga só
+vale pra canal que ainda não publicou. Convenção que atravessa processo é
+assim: funciona até alguém mudar a ponta que ela lê.
+
 ## Produção
 
 ```
-https://mmo.brunji.com.br/api/…   nginx → 127.0.0.1:8090 (tempest-web)
-ws://mmo.brunji.com.br:9000-9002  campo  (supervisor, até 3 canais de 100)
-ws://mmo.brunji.com.br:9010       cidade (instância única, 40, com fila)
+https://mmo.brunji.com.br/api/…              nginx → 127.0.0.1:8090 → túnel → :18090
+ws://mmo.brunji.com.br/z/ilha_inicial/1      Bosque  (supervisor, canais 1-3)
+ws://mmo.brunji.com.br/z/ilha_gelo           Geleira (instância única)
+ws://mmo.brunji.com.br/z/colonia             Colônia (instância por personagem)
 ```
 
-Três units, todas com `EnvironmentFile=/etc/tempest.env`: `tempest-campo`
-(roda o `supervisor`), `tempest-cidade` (roda o `server` direto) e
-`tempest-web`. Banco `tempest_sa01`, dono `mmo` — realm próprio, banco próprio.
+**Não roda mais na VPS.** Desde 15/09/2026 os processos rodam no PC de casa e
+chegam na VPS por túnel SSH reverso (`tempest-prod-tunel*.service`); a VPS só
+tem o nginx e os `stream` das portas velhas. As units são de usuário
+(`~/.config/systemd/user/tempest-prod-*.service`), todas com
+`EnvironmentFile=/home/brunji/tempest-prod/tempest.env`. Banco `tempest_sa01`
+no container `mmo-pg`. Deploy é trocar o binário em `~/tempest-prod/bin`.
 
-Duas armadilhas que custaram tempo:
+As portas 9000/9100/9200 **continuam de pé** no `stream` da VPS: cliente
+publicado antes da virada ainda entra por elas. Elas saem quando não houver
+mais build antigo no TestFlight.
+
+Três armadilhas que custaram tempo:
 
 - O `web` lê **`WEB_BIND`**, não `PORT`. Com `Environment=PORT=8090` a unit
   subia `active (running)` escutando em 8080 e o nginx apontava pro lugar
@@ -447,14 +493,21 @@ Duas armadilhas que custaram tempo:
   `/www/server/nginx/sbin/nginx` com
   `/www/server/nginx/conf/nginx.conf`; testar e recarregar o `/usr/sbin/nginx`
   não muda nada e não dá erro nenhum.
+- O binário em uso não se sobrescreve (`Área de texto ocupada`): parar a unit
+  vem antes de copiar.
 
 O cliente fala HTTP puro na porta 80 (`MMO_API=mmo.brunji.com.br:80`) e
-WebSocket puro nas portas do jogo. **Senha trafega em claro** — `api.rs` e
-`net.rs` ainda não fazem TLS. Antes de qualquer jogador de verdade, isso tem
-que virar `https`/`wss`.
+WebSocket puro. **Senha trafega em claro** — `api.rs` e `net.rs` ainda não
+fazem TLS. Antes de qualquer jogador de verdade, isso tem que virar
+`https`/`wss`.
 
 ## O que falta
 
 - **Trocar de canal em jogo** sem passar pela tela (o servidor já suporta).
 - **Fila do realm**: hoje o teto do servidor só impede abrir canal novo; falta
   a fila global quando todos os canais estão cheios.
+- **Canal 4+ do Bosque**: o caminho cobre 1-3 (`location` no vhost e `-R` no
+  túnel). Abrir mais exige as duas linhas — hoje `MMO_CANAIS_MAX=1`, então
+  não chega perto.
+- **Geleira e Colônia sem panóptico**: sobem sem `PANOPTICO_BIND`, então
+  aparecem mudas no painel. É uma linha em cada unit.
