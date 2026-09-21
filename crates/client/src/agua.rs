@@ -27,11 +27,20 @@ use crate::terreno::{Terreno, CHUNK};
 /// Altura da superficie parada. Acima do topo das colunas submersas (que
 /// ficam no nivel do mar) e abaixo do primeiro bloco de terra.
 pub const ALTURA_DA_AGUA: f32 = NIVEL_DO_MAR + 0.12;
-/// Soma das duas senoides do shader (0,06 + 0,05).
-pub const AMPLITUDE_MAX: f32 = 0.11;
-/// `false` desliga a ondulacao (o resto continua). Desligada: no playtest a
-/// onda de vertice leu feia; cor por profundidade, espuma e brilho ficam.
-pub const ONDAS: bool = false;
+/// Soma das amplitudes das ondas do shader, em unidades.
+///
+/// Tem que casar com as constantes do vertex shader: ha' um teste que confere
+/// que a crista nao encosta no primeiro bloco de terra.
+pub const AMPLITUDE_MAX: f32 = 0.65;
+
+/// `false` desliga a ondulacao (o resto continua).
+///
+/// **Ficou desligada de 19/09 a 21/09/2026.** O que havia eram duas senoides
+/// de comprimento curto somadas no vertice, e no playtest leu feio — parecia
+/// plastico ondulando, nao agua. Agora o mar e' o modelo de GERSTNER do
+/// zone14 (docs/MAR_ABERTO.md): ondas longas, de cristas afiadas, que e'
+/// o que o olho reconhece como mar aberto.
+pub const ONDAS: bool = true;
 
 /// Profundidade (u) a partir da qual a agua e' "fundo" na cor.
 const PROFUNDO: f32 = 6.0;
@@ -258,11 +267,39 @@ uniform mat4 Projection;
 uniform highp float Tempo;
 uniform highp float Ondas;
 
+// ── O MAR DE GERSTNER ────────────────────────────────────────────────
+//
+// Portado do zone14 (`GameSim/Ocean.cs`), que usa CINCO ondas de
+// comprimentos 52/31/18/9,5/4,8 m. Aqui sao TRES, e o corte tem motivo:
+// a grade da agua em mar aberto tem passo de 4 u, e Nyquist diz que
+// abaixo de 8 u de comprimento a onda nao e' representada — ela vira
+// serrilha andando. As curtas do zone14 existem porque la' a malha e'
+// muito mais fina; aqui elas so' custariam.
+//
+// Gerstner, e nao soma de senoides: alem de subir e descer, o vertice
+// ANDA na horizontal contra a direcao da onda. E' isso que afia a crista
+// e achata o vale — a diferenca entre "agua" e "lencol balancando", que
+// foi exatamente a reclamacao que desligou a onda antiga.
+//
+// omega = sqrt(g*k) e' a relacao de dispersao de agua funda: onda longa
+// corre mais rapido que onda curta, sozinha. Sem isso todas andam juntas
+// e o padrao se repete de um jeito que o olho pega.
+#define ONDA(dx, dz, k, w, amp, fase)                                    \
+    theta = k * (dx * position.x + dz * position.z) - w * Tempo + fase;  \
+    sn = sin(theta); cs = cos(theta);                                    \
+    p.y += a * amp * sn;                                                 \
+    p.x -= a * amp * dx * cs;                                            \
+    p.z -= a * amp * dz * cs;
+
 void main() {
     highp vec3 p = position;
+    // `normal.y` e' o quanto ESTE vertice leva de onda: zero na costa (a
+    // beira fica colada na areia) e cheio no fundo.
     highp float a = normal.y * Ondas;
-    p.y += a * (0.06 * sin(p.x * 0.35 + Tempo * 1.1)
-              + 0.05 * sin(p.z * 0.42 - Tempo * 0.9 + p.x * 0.12));
+    highp float theta, sn, cs;
+    ONDA(0.5646, 0.8253, 0.1208, 1.089, 0.341, 0.0)
+    ONDA(0.7470, 0.6648, 0.2027, 1.410, 0.198, 1.7)
+    ONDA(0.1977, 0.9803, 0.3491, 1.851, 0.110, 4.1)
     gl_Position = Projection * Model * vec4(p, 1.0);
     cor = color0 / 255.0;
     mundo = p;
@@ -389,9 +426,29 @@ mod testes {
 
     #[test]
     fn a_agua_nunca_sobe_na_terra() {
-        // A onda mais alta ainda fica abaixo do topo do primeiro bloco de terra.
+        // A onda so' chega na altura de um bloco de terra em agua FUNDA.
+        //
+        // Este teste ja' exigiu que a crista CHEIA coubesse abaixo do
+        // primeiro bloco. Era simples e errado: cobrava o mar aberto por uma
+        // regra que so' vale na praia. Com o mar de Gerstner a amplitude
+        // cresceu, e a pergunta certa passou a ser outra — a onda cheia so'
+        // acontece onde `onda_de` deixa, e la' a terra mais perto esta'
+        // longe.
+        //
+        // O que se guarda entao e': a partir de que profundidade a crista
+        // alcancaria um bloco de terra? Tem que ser agua funda o bastante
+        // pra nao ser beira de praia nenhuma.
         let primeira_terra = NIVEL_DO_MAR + BLOCO;
-        assert!(ALTURA_DA_AGUA + AMPLITUDE_MAX < primeira_terra);
+        let alcanca = (0..200)
+            .map(|k| k as f32 * 0.05)
+            .find(|p| ALTURA_DA_AGUA + AMPLITUDE_MAX * onda_de(*p) >= primeira_terra)
+            .expect("em algum fundo a crista alcanca");
+        assert!(
+            alcanca >= 1.5,
+            "a crista alcanca terra com so' {alcanca} u de fundo — isso e' praia"
+        );
+        // E na propria linha da costa ela e' zero.
+        assert_eq!(onda_de(0.0), 0.0);
         // E acima do leito (topo das colunas submersas, no nivel do mar).
         assert!(ALTURA_DA_AGUA > NIVEL_DO_MAR);
         assert!(
