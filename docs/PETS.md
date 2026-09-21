@@ -9,6 +9,43 @@ e a evolução por consumo vêm do primeiro; o bicho que anda junto e serve à
 classe, do segundo.
 
 
+
+## O que o bicho dá é SORTEADO (20/09/2026)
+
+Pedido do dono: *"os atributos que o pet dá podem ser aleatórios — ou INT ou
+VIT ou DES — e ter como roletar eles com um item de cash"*. Vale igual pra
+montaria.
+
+A afinidade não sai mais da criatura: ela é **rolada por instância**, em
+`ItemInstance::afinidade` = `[principal, secundário]`, índices de `stat_idx`.
+O principal leva peso 6 e o secundário 4 (`PESO_TOTAL`), e os dois são sempre
+**diferentes** — senão "principal e secundário" viravam um só. O **total não
+muda**: a afinidade só diz *onde* os pontos caem.
+
+Assim a criatura decide o porte e a cor, e o que ela **empresta** é sorte —
+sorte que se pode comprar de novo.
+
+**O sorteio acontece ao EQUIPAR**, e é de propósito o único ponto: cobre o
+pergaminho, a quest, a combinação, o mercado e o correio de uma vez, e migra
+sozinho o que já existia. Não dá pra rolar na bolsa porque pet e montaria
+empilham, e uma pilha tem **uma** instância só — dois bichos do mesmo slot não
+teriam como carregar sorteios diferentes.
+
+Bicho de antes disso (`afinidade: None`) usa a afinidade fixa da criatura até
+ser equipado. Ninguém perde o que tinha.
+
+### Pedra de Afinidade
+
+Item de cash, 250 TP, negociável. Sorteia de novo os atributos do bicho
+equipado, e o chat diz o que saiu e o que era.
+
+Age no **pet** quando há um, e na **montaria** quando não há. Uma pedra, um
+bicho: rolar os dois de uma vez tiraria do jogador a escolha de guardar um
+sorteio bom. Quem quer re-rolar a montaria tira o pet do slot — e o aviso diz
+isso na hora.
+
+Consome só quando o sorteio acontece: recusa não cobra nada.
+
 ## A COR É A CRIATURA (20/09/2026)
 
 Não há espécie separada do grau. Cinco ids seguidos a partir de `PET_BASE`,

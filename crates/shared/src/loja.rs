@@ -186,8 +186,8 @@ pub struct ItemDePet {
     pub preco_tp: u64,
 }
 
-/// Racao e removedor. As skills entram depois, do catalogo de `pets`.
-const FIXOS: [ItemDePet; 2] = [
+/// Racao, removedor e pedra. As skills entram depois, do catalogo de `pets`.
+const FIXOS: [ItemDePet; 3] = [
     ItemDePet {
         id: 1,
         item_id: crate::item_id::RACAO_DE_PET,
@@ -201,6 +201,13 @@ const FIXOS: [ItemDePet; 2] = [
         nome: "Removedor de Skill",
         descricao: "Tira todas as skills do pet e devolve os slots.",
         preco_tp: 200,
+    },
+    ItemDePet {
+        id: 3,
+        item_id: crate::item_id::PEDRA_DE_AFINIDADE,
+        nome: "Pedra de Afinidade",
+        descricao: "Sorteia de novo os atributos do pet ou da montaria equipada.",
+        preco_tp: 250,
     },
 ];
 

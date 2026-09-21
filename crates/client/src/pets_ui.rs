@@ -211,7 +211,8 @@ impl PetsUi {
 
         // ── atributos e poder ──
         y += 62.0 * f;
-        let pontos = shared::pets::pontos_por_stat(pet, &d);
+        let af = equip.pet_inst.as_ref().and_then(|i| i.afinidade);
+        let pontos = shared::pets::pontos_por_stat(pet, &d, af);
         let mut x = dir.x + 14.0 * f;
         for (i, pts) in pontos.iter().enumerate() {
             if *pts == 0 {
@@ -223,7 +224,7 @@ impl PetsUi {
         }
         let poder = format!(
             "PODER  {}",
-            crate::bolsa::milhar(crate::bolsa::poder_do_pet(pet, &d).max(0) as u64)
+            crate::bolsa::milhar(crate::bolsa::poder_do_pet(pet, &d, af).max(0) as u64)
         );
         estilo::texto_forte(
             dir.x + dir.w - 14.0 * f - estilo::medir_forte(&poder, 18),

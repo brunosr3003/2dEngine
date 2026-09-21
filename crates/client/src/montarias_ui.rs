@@ -190,7 +190,8 @@ impl MontariasUi {
         estilo::texto(dir.x + 14.0 * f, y, "ATRIBUTOS", 13, estilo::SUAVE);
         y += 22.0 * f;
         let mut x = dir.x + 14.0 * f;
-        for (i, pts) in shared::montarias::pontos_por_stat(id).iter().enumerate() {
+        let af = equip.montaria_inst.as_ref().and_then(|i| i.afinidade);
+        for (i, pts) in shared::montarias::pontos_por_stat(id, af).iter().enumerate() {
             if *pts == 0 {
                 continue;
             }
@@ -200,7 +201,7 @@ impl MontariasUi {
         }
         let poder = format!(
             "PODER  {}",
-            crate::bolsa::milhar(poder_da_montaria(id).max(0) as u64)
+            crate::bolsa::milhar(poder_da_montaria(id, af).max(0) as u64)
         );
         estilo::texto_forte(
             dir.x + dir.w - 14.0 * f - estilo::medir_forte(&poder, 17),
@@ -255,10 +256,10 @@ fn cor_do_grau(grau: u8) -> Color {
 }
 
 /// O poder que a montaria soma, pela mesma formula do resto da ficha.
-pub(crate) fn poder_da_montaria(id: u16) -> i32 {
+pub(crate) fn poder_da_montaria(id: u16, af: Option<[u8; 2]>) -> i32 {
     let (mut atk, mut def, mut hp, mut mp, mut dex, mut wis) = (0, 0, 0, 0, 0, 0);
     let mut crit = 0.0f32;
-    for (i, pts) in shared::montarias::pontos_por_stat(id).iter().enumerate() {
+    for (i, pts) in shared::montarias::pontos_por_stat(id, af).iter().enumerate() {
         let Some(b) = shared::STAT_POINT_BONUS.get(i) else {
             continue;
         };
@@ -294,6 +295,6 @@ mod testes {
         assert_eq!(e.grau, 4, "a criatura E' o grau");
         // O poder acompanha a cor: roxo vale mais que cinza.
         let cinza = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, 1);
-        assert!(poder_da_montaria(id) > poder_da_montaria(cinza));
+        assert!(poder_da_montaria(id, None) > poder_da_montaria(cinza, None));
     }
 }

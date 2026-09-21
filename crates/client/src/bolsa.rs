@@ -300,7 +300,11 @@ pub(crate) fn poder(s: &PlayerStats) -> i32 {
 
 fn poder_da_peca(p: &Peca) -> i32 {
     if shared::pets::de_item(p.id).is_some() {
-        return poder_do_pet(p.id, &shared::pets::dados(p.inst.as_ref()));
+        return poder_do_pet(
+            p.id,
+            &shared::pets::dados(p.inst.as_ref()),
+            p.inst.as_ref().and_then(|i| i.afinidade),
+        );
     }
     p.inst.map_or(0, |i| poder_da_instancia(&i))
 }
@@ -308,10 +312,14 @@ fn poder_da_peca(p: &Peca) -> i32 {
 /// O poder que um PET soma. Ele nao tem atributo de item: o que ele da' entra
 /// como ponto alocado (docs/PETS.md), entao a conta passa os pontos pela
 /// mesma `STAT_POINT_BONUS` do servidor e depois pela formula do `poder`.
-pub(crate) fn poder_do_pet(id: u16, d: &shared::items::PetData) -> i32 {
+pub(crate) fn poder_do_pet(
+    id: u16,
+    d: &shared::items::PetData,
+    af: Option<[u8; 2]>,
+) -> i32 {
     let (mut atk, mut def, mut hp, mut mp, mut dex, mut wis) = (0, 0, 0, 0, 0, 0);
     let mut crit = 0.0f32;
-    for (i, pts) in shared::pets::pontos_por_stat(id, d).iter().enumerate() {
+    for (i, pts) in shared::pets::pontos_por_stat(id, d, af).iter().enumerate() {
         let Some(b) = shared::STAT_POINT_BONUS.get(i) else {
             continue;
         };
@@ -932,12 +940,13 @@ impl Bolsa {
         // ALOCADO (docs/PETS.md), entao a ficha dele e' outra.
         if let Some((especie, grau)) = shared::pets::de_item(peca.id) {
             let dados = shared::pets::dados(peca.inst.as_ref());
+            let af = peca.inst.as_ref().and_then(|i| i.afinidade);
             ui::texto(r.x + u(20.0), y + u(4.0), especie.descricao, 15, APAGADO);
             y += u(26.0);
             let linhas = [
                 (
                     "Poder",
-                    milhar(poder_do_pet(peca.id, &dados).max(0) as u64),
+                    milhar(poder_do_pet(peca.id, &dados, af).max(0) as u64),
                 ),
                 (
                     "Nível",
@@ -964,7 +973,7 @@ impl Bolsa {
             }
             const SIGLAS: [&str; shared::STAT_COUNT] =
                 ["FOR", "DES", "INT", "VIT", "SPD", "RES"];
-            for (i, pts) in shared::pets::pontos_por_stat(peca.id, &dados)
+            for (i, pts) in shared::pets::pontos_por_stat(peca.id, &dados, af)
                 .iter()
                 .enumerate()
             {

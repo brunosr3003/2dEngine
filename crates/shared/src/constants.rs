@@ -531,6 +531,9 @@ pub mod item_id {
     pub const RACAO_DE_PET: u16 = 364;
     /// Tira TODAS as skills do pet equipado e devolve os slots.
     pub const REMOVEDOR_DE_SKILL_PET: u16 = 365;
+    /// Re-rola a AFINIDADE do pet ou da montaria EQUIPADA (docs/PETS.md):
+    /// que atributos a criatura empresta. Item de cash, negociavel.
+    pub const PEDRA_DE_AFINIDADE: u16 = 366;
 
     /// Os cinco pets coletores (docs/PETS.md), pelo id do CINZA. Cada especie
     /// ocupa cinco ids seguidos, um por grau — a mesma convencao de `na_cor`
@@ -991,6 +994,11 @@ pub mod stat_idx {
     pub const SPD: usize = 4;
     pub const RES: usize = 5;
 }
+
+/// A sigla de cada atributo, na ordem de `stat_idx`. Existe no `shared`
+/// porque o SERVIDOR precisa dela pra escrever no chat qual afinidade saiu na
+/// Pedra (docs/PETS.md) — o cliente tem a tabela dele, com a descricao junto.
+pub const SIGLA_DO_STAT: [&str; STAT_COUNT] = ["FOR", "DES", "INT", "VIT", "SPD", "RES"];
 
 /// Multiplicador de velocidade adicional por ponto em SPD (somado a 1.0).
 /// Zerado: SPD nao escala mais movement speed (movement vira default

@@ -16578,6 +16578,80 @@ impl GameWorld {
         }
     }
 
+    /// A Pedra de Afinidade: sorteia de novo os atributos do bicho equipado.
+    ///
+    /// Age no PET quando ha' um, e na MONTARIA quando nao ha'. Uma pedra,
+    /// um bicho: rolar os dois de uma vez tiraria do jogador a escolha de
+    /// guardar um sorteio bom. Quem quer re-rolar a montaria tira o pet do
+    /// slot — e o aviso diz isso.
+    ///
+    /// Consome so' quando o sorteio acontece: recusa nao cobra nada.
+    fn handle_pedra_de_afinidade(&mut self, sid: SessionId, slot_idx: usize) {
+        let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.logged_in) else {
+            return;
+        };
+        let alvo = if s.equipment.pet.is_some() {
+            shared::EquipSlot::Pet
+        } else if s.equipment.montaria.is_some() {
+            shared::EquipSlot::Montaria
+        } else {
+            self.send_chat_to(sid, "[Afinidade] Equipe um pet ou uma montaria antes.");
+            return;
+        };
+        let Some(id) = s.equipment.get(alvo) else {
+            return;
+        };
+        let grau = shared::pets::de_item(id)
+            .map(|(_, g)| g)
+            .or_else(|| shared::montarias::de_item(id).map(|(_, g)| g))
+            .unwrap_or(1);
+        let mut inst = s
+            .equipment
+            .get_inst(alvo)
+            .unwrap_or_else(|| shared::items::ItemInstance::vazia_de_grau(grau));
+        let antes = inst.afinidade;
+        let nova = shared::pets::rolar_afinidade(fastrand::f32(), fastrand::f32());
+        inst.afinidade = Some(nova);
+        s.equipment.set(alvo, Some(id), Some(inst));
+        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp);
+        s.stats_dirty = true;
+        s.inventory[slot_idx].qty = s.inventory[slot_idx].qty.saturating_sub(1);
+        if s.inventory[slot_idx].qty == 0 {
+            s.inventory[slot_idx] = shared::InventorySlot::default();
+        }
+        s.inventory_dirty = true;
+        let nome = shared::pets::nome_do_item(id)
+            .or_else(|| shared::montarias::nome_do_item(id))
+            .unwrap_or_else(|| "o bicho".into());
+        let stat = |i: u8| shared::SIGLA_DO_STAT.get(i as usize).copied().unwrap_or("?");
+        let de = antes.map_or_else(
+            || " (era a afinidade da criatura)".to_string(),
+            |a| format!(" (era {} e {})", stat(a[0]), stat(a[1])),
+        );
+        self.send_chat_to(
+            sid,
+            &format!(
+                "[Afinidade] {nome} agora dá {} e {}{de}.",
+                stat(nova[0]),
+                stat(nova[1])
+            ),
+        );
+        if alvo == shared::EquipSlot::Pet && self.montaria_equipada(sid) {
+            self.send_chat_to(
+                sid,
+                "[Afinidade] Pra rolar a montaria, tire o pet do slot antes.",
+            );
+        }
+        self.save_pending = true;
+    }
+
+    /// Ha' montaria no slot? So' pra o aviso da Pedra de Afinidade.
+    fn montaria_equipada(&self, sid: SessionId) -> bool {
+        self.sessions
+            .get(&sid)
+            .is_some_and(|s| s.equipment.montaria.is_some())
+    }
+
     /// Ração, skill e removedor: agem no pet EQUIPADO. Consome o item so'
     /// quando o efeito acontece — recusa nao cobra nada.
     fn handle_item_de_pet(&mut self, sid: SessionId, slot_idx: usize, item_id: u16) {
@@ -16684,10 +16758,15 @@ impl GameWorld {
             .filter(|id| {
                 *id == shared::item_id::RACAO_DE_PET
                     || *id == shared::item_id::REMOVEDOR_DE_SKILL_PET
+                    || *id == shared::item_id::PEDRA_DE_AFINIDADE
                     || shared::item_id::e_skill_de_pet(*id)
             });
         if let Some(id) = do_pet {
-            self.handle_item_de_pet(sid, slot_idx, id);
+            if id == shared::item_id::PEDRA_DE_AFINIDADE {
+                self.handle_pedra_de_afinidade(sid, slot_idx);
+            } else {
+                self.handle_item_de_pet(sid, slot_idx, id);
+            }
             return;
         }
         // Extrai estado + identifica a acao fora do borrow mutavel do ECS.
@@ -16743,7 +16822,32 @@ impl GameWorld {
                 let old = session.equipment.get(es);
                 let old_inst = session.equipment.get_inst(es);
                 let new_id = slot.item_id;
-                let new_inst = slot.instance;
+                // PET e MONTARIA ganham a AFINIDADE ao serem equipados, se
+                // ainda nao tiverem (docs/PETS.md). E' o ponto unico: cobre o
+                // pergaminho, a quest, a combinacao, o mercado e o correio de
+                // uma vez, e migra sozinho o que ja' existia. So' aqui porque
+                // pet/montaria na bolsa podem estar em pilha, e pilha tem uma
+                // instancia so' — dois bichos do mesmo slot nao teriam como
+                // carregar sorteios diferentes.
+                let new_inst = match es {
+                    shared::EquipSlot::Pet | shared::EquipSlot::Montaria => {
+                        let grau = shared::pets::de_item(new_id)
+                            .map(|(_, g)| g)
+                            .or_else(|| shared::montarias::de_item(new_id).map(|(_, g)| g))
+                            .unwrap_or(1);
+                        let mut inst = slot
+                            .instance
+                            .unwrap_or_else(|| shared::items::ItemInstance::vazia_de_grau(grau));
+                        if inst.afinidade.is_none() {
+                            inst.afinidade = Some(shared::pets::rolar_afinidade(
+                                fastrand::f32(),
+                                fastrand::f32(),
+                            ));
+                        }
+                        Some(inst)
+                    }
+                    _ => slot.instance,
+                };
                 session.equipment.set(es, Some(new_id), new_inst);
                 session.inventory[slot_idx] = match old {
                     Some(old_id) => shared::InventorySlot {
@@ -17914,7 +18018,13 @@ pub(crate) fn effective_stats(
     let mut allocated = *allocated;
     if let Some(pet) = equip.pet {
         let d = shared::pets::dados(equip.pet_inst.as_ref());
-        for (i, p) in shared::pets::pontos_por_stat(pet, &d).iter().enumerate() {
+        // A afinidade e' ROLADA por instancia (docs/PETS.md): dois corujursos
+        // dao atributos diferentes, e a Pedra de Afinidade re-rola.
+        let af = equip.pet_inst.as_ref().and_then(|i| i.afinidade);
+        for (i, p) in shared::pets::pontos_por_stat(pet, &d, af)
+            .iter()
+            .enumerate()
+        {
             allocated[i] = allocated[i].saturating_add(*p);
         }
         // Regen nao passa por ponto alocado: e' soma direta no stat.
@@ -17930,7 +18040,11 @@ pub(crate) fn effective_stats(
     // A MONTARIA tambem da' atributo, pela especie (docs/MONTARIAS.md). Vale
     // equipada, montado ou nao: o bicho anda com voce de qualquer jeito.
     if let Some(m) = equip.montaria {
-        for (i, p) in shared::montarias::pontos_por_stat(m).iter().enumerate() {
+        let af = equip.montaria_inst.as_ref().and_then(|i| i.afinidade);
+        for (i, p) in shared::montarias::pontos_por_stat(m, af)
+            .iter()
+            .enumerate()
+        {
             allocated[i] = allocated[i].saturating_add(*p);
         }
     }

@@ -159,19 +159,21 @@ pub fn pontos(grau: u8) -> u32 {
 
 /// Os pontos ja' repartidos pelos seis atributos, pela afinidade da especie.
 /// A sobra da divisao vai pro atributo de maior peso.
-pub fn pontos_por_stat(item_id: u16) -> [u32; STAT_COUNT] {
+/// `afinidade` e' a ROLADA da instancia (mesma regra do pet, docs/PETS.md).
+/// `None` = montaria de antes do sorteio, que usa a fixa da criatura.
+pub fn pontos_por_stat(item_id: u16, afinidade: Option<[u8; 2]>) -> [u32; STAT_COUNT] {
     let Some((e, grau)) = de_item(item_id) else {
         return [0; STAT_COUNT];
     };
+    let afin = afinidade.map_or(e.afinidade, crate::pets::pesos_de);
     let total = pontos(grau);
     let mut v = [0u32; STAT_COUNT];
-    for (i, &peso) in e.afinidade.iter().enumerate() {
+    for (i, &peso) in afin.iter().enumerate() {
         v[i] = total * peso as u32 / PESO_TOTAL as u32;
     }
     let dado: u32 = v.iter().sum();
     if dado < total {
-        let maior = e
-            .afinidade
+        let maior = afin
             .iter()
             .enumerate()
             .max_by_key(|(_, p)| **p)
@@ -232,6 +234,26 @@ pub const fn cobre_de_combinar(entrada: u8) -> u32 {
 mod testes {
     use super::*;
 
+    /// A montaria segue a MESMA afinidade rolada do pet: o que a criatura
+    /// empresta e' sorte, e a Pedra de Afinidade re-rola (docs/PETS.md).
+    #[test]
+    fn a_montaria_tambem_usa_a_afinidade_rolada() {
+        let id = item_id::montaria_no_grau(item_id::MONTARIA_BASE, 5);
+        let fixa = pontos_por_stat(id, None);
+        let rolada = pontos_por_stat(id, Some([stat_idx::INT as u8, stat_idx::RES as u8]));
+        assert_eq!(
+            rolada.iter().sum::<u32>(),
+            fixa.iter().sum::<u32>(),
+            "o TOTAL nao muda: a afinidade so' diz ONDE cai"
+        );
+        assert!(rolada[stat_idx::INT] > rolada[stat_idx::RES]);
+        for (i, v) in rolada.iter().enumerate() {
+            if i != stat_idx::INT && i != stat_idx::RES {
+                assert_eq!(*v, 0, "caiu ponto fora da afinidade rolada");
+            }
+        }
+    }
+
     /// O id carrega o GRAU, e o grau E' a criatura: cinco ids, cinco bichos
     /// diferentes. Subir de cor e' trocar de bicho.
     #[test]
@@ -288,9 +310,9 @@ mod testes {
                 e.nome
             );
             let id = item_id::montaria_no_grau(item_id::MONTARIA_BASE, e.grau);
-            assert_eq!(pontos_por_stat(id).iter().sum::<u32>(), pontos(e.grau));
+            assert_eq!(pontos_por_stat(id, None).iter().sum::<u32>(), pontos(e.grau));
         }
-        assert_eq!(pontos_por_stat(item_id::GOLD), [0; STAT_COUNT]);
+        assert_eq!(pontos_por_stat(item_id::GOLD, None), [0; STAT_COUNT]);
         // A montaria da' MENOS que o pet no mesmo grau: ela so' anda.
         for grau in 1..=GRAU_MAX {
             assert!(pontos(grau) < crate::pets::pontos(grau, 1));

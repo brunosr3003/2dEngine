@@ -272,6 +272,15 @@ pub struct ItemInstance {
     /// de antes deste campo, lido como nivel 1 com fome e sem skill.
     #[serde(default)]
     pub pet: Option<PetData>,
+    /// AFINIDADE rolada do pet ou da montaria: `[principal, secundario]`,
+    /// indices de `stat_idx`. Decide em que atributos os pontos da criatura
+    /// caem — e e' o que a Pedra de Afinidade re-rola (docs/PETS.md).
+    ///
+    /// `None` = bicho de antes deste campo, que usa a afinidade fixa da
+    /// criatura. Ninguem perde o que tinha: so' nao da' pra re-rolar ate'
+    /// rolar a primeira vez.
+    #[serde(default)]
+    pub afinidade: Option<[u8; 2]>,
 }
 
 /// O que o pet acumula. Fica na instancia porque o pet e' item: assim nivel e
@@ -306,6 +315,7 @@ impl ItemInstance {
             defense: 0,
             affixes: [AffixSlot::default(); MAX_AFFIXES],
             pet: None,
+            afinidade: None,
             sockets: 0,
             socketed_gems: [0; 3],
             vinculado: false,
@@ -713,6 +723,7 @@ impl ItemInstance {
             defense: 0,
             affixes: [AffixSlot::default(); MAX_AFFIXES],
             pet: None,
+            afinidade: None,
             sockets: sockets_for_tier(tier),
             socketed_gems: [0; 3],
             vinculado: false,

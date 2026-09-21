@@ -90,6 +90,40 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
     },
 ];
 
+/// Peso do atributo PRINCIPAL e do secundario, somando `PESO_TOTAL`.
+pub const PESO_PRINCIPAL: u8 = 6;
+pub const PESO_SECUNDARIO: u8 = 4;
+
+/// Sorteia a afinidade de um bicho: `[principal, secundario]`, indices de
+/// `stat_idx`, sempre DIFERENTES. `r1` e `r2` em 0..1.
+///
+/// A afinidade deixou de sair da criatura em 20/09/2026 (pedido do dono: "os
+/// atributos que o pet da' podem ser aleatorios, e ter como roletar eles com
+/// um item de cash"). A criatura decide o porte e a cor; o que ela EMPRESTA
+/// e' sorte — e sorte que se pode comprar de novo, com a Pedra de Afinidade.
+pub fn rolar_afinidade(r1: f32, r2: f32) -> [u8; 2] {
+    let n = STAT_COUNT as f32;
+    let a = ((r1.clamp(0.0, 0.999_999) * n) as usize).min(STAT_COUNT - 1);
+    // O segundo sorteia entre os N-1 restantes e pula o primeiro: sortear em
+    // N e repetir ate' diferir podia nao terminar.
+    let b = ((r2.clamp(0.0, 0.999_999) * (n - 1.0)) as usize).min(STAT_COUNT - 2);
+    let b = if b >= a { b + 1 } else { b };
+    [a as u8, b as u8]
+}
+
+/// Os pesos de uma afinidade rolada.
+pub fn pesos_de(afinidade: [u8; 2]) -> [u8; STAT_COUNT] {
+    let mut v = [0u8; STAT_COUNT];
+    let (a, b) = (afinidade[0] as usize, afinidade[1] as usize);
+    if a < STAT_COUNT {
+        v[a] = PESO_PRINCIPAL;
+    }
+    if b < STAT_COUNT && b != a {
+        v[b] = PESO_SECUNDARIO;
+    }
+    v
+}
+
 const fn pesos(pares: &[(usize, u8)]) -> [u8; STAT_COUNT] {
     let mut v = [0u8; STAT_COUNT];
     let mut i = 0;
@@ -436,10 +470,17 @@ pub fn pontos(grau: u8, nivel: u8) -> u32 {
 
 /// Os pontos do pet, ja' repartidos pelos seis atributos. A sobra da divisao
 /// vai pro atributo de maior peso — o total bate com `pontos` sempre.
-pub fn pontos_por_stat(item_id: u16, d: &crate::items::PetData) -> [u32; STAT_COUNT] {
+/// `afinidade` e' a ROLADA da instancia. `None` = bicho de antes do sorteio,
+/// que usa a fixa da criatura — ninguem perde o que tinha.
+pub fn pontos_por_stat(
+    item_id: u16,
+    d: &crate::items::PetData,
+    afinidade: Option<[u8; 2]>,
+) -> [u32; STAT_COUNT] {
     let Some((e, grau)) = de_item(item_id) else {
         return [0; STAT_COUNT];
     };
+    let afin = afinidade.map_or(e.afinidade, pesos_de);
     let extra: u32 = soma_efeito(d, |ef| match ef {
         Efeito::PontosExtra(n) => Some(n),
         _ => None,
@@ -454,14 +495,13 @@ pub fn pontos_por_stat(item_id: u16, d: &crate::items::PetData) -> [u32; STAT_CO
         _ => None,
     });
     let mut v = [0u32; STAT_COUNT];
-    for (i, &peso) in e.afinidade.iter().enumerate() {
+    for (i, &peso) in afin.iter().enumerate() {
         v[i] = total * peso as u32 / PESO_TOTAL as u32;
     }
     let dado: u32 = v.iter().sum();
     if dado < total {
         // O maior peso fica com a sobra.
-        let maior = e
-            .afinidade
+        let maior = afin
             .iter()
             .enumerate()
             .max_by_key(|(_, p)| **p)
@@ -540,7 +580,7 @@ mod testes {
             );
             let novo = crate::items::PetData::default();
             let id = item_id::pet_no_grau(item_id::PET_BASE, e.grau);
-            let v = pontos_por_stat(id, &novo);
+            let v = pontos_por_stat(id, &novo, None);
             assert_eq!(
                 v.iter().sum::<u32>(),
                 pontos(e.grau, 1),
@@ -577,9 +617,60 @@ mod testes {
             }
         }
         assert_eq!(
-            pontos_por_stat(item_id::GOLD, &crate::items::PetData::default()),
+            pontos_por_stat(item_id::GOLD, &crate::items::PetData::default(), None),
             [0; STAT_COUNT]
         );
+    }
+
+    /// A afinidade ROLADA manda no reparto, e os dois atributos sao sempre
+    /// DIFERENTES — senao o "principal e secundario" viravam um so'.
+    #[test]
+    fn a_afinidade_rolada_manda_no_reparto() {
+        // Cobre os dois dados de ponta a ponta: todo par sai valido.
+        let mut vistos = std::collections::HashSet::new();
+        for a in 0..40 {
+            for b in 0..40 {
+                let r = rolar_afinidade(a as f32 / 40.0, b as f32 / 40.0);
+                assert!(
+                    (r[0] as usize) < STAT_COUNT && (r[1] as usize) < STAT_COUNT,
+                    "{r:?} fora da tabela"
+                );
+                assert_ne!(r[0], r[1], "principal e secundario iguais: {r:?}");
+                let p = pesos_de(r);
+                assert_eq!(
+                    p.iter().map(|x| *x as u16).sum::<u16>(),
+                    PESO_TOTAL as u16,
+                    "os pesos de {r:?} nao somam {PESO_TOTAL}"
+                );
+                assert_eq!(p[r[0] as usize], PESO_PRINCIPAL);
+                assert_eq!(p[r[1] as usize], PESO_SECUNDARIO);
+                vistos.insert(r);
+            }
+        }
+        // Todos os pares ordenados possiveis saem — o sorteio nao esquece
+        // nenhum atributo.
+        assert_eq!(vistos.len(), STAT_COUNT * (STAT_COUNT - 1));
+
+        // E o reparto segue a ROLADA, nao a da criatura.
+        let id = item_id::pet_no_grau(item_id::PET_BASE, 5);
+        let d = crate::items::PetData::default();
+        let fixa = pontos_por_stat(id, &d, None);
+        let rolada = pontos_por_stat(id, &d, Some([stat_idx::RES as u8, stat_idx::SPD as u8]));
+        assert_eq!(
+            rolada.iter().sum::<u32>(),
+            fixa.iter().sum::<u32>(),
+            "o TOTAL nao muda: a afinidade so' diz ONDE cai"
+        );
+        assert!(rolada[stat_idx::RES] > rolada[stat_idx::SPD]);
+        assert!(
+            rolada[stat_idx::RES] > 0 && rolada[stat_idx::SPD] > 0,
+            "os dois atributos rolados recebem algo"
+        );
+        for (i, v) in rolada.iter().enumerate() {
+            if i != stat_idx::RES && i != stat_idx::SPD {
+                assert_eq!(*v, 0, "caiu ponto fora da afinidade rolada");
+            }
+        }
     }
 
     /// O id carrega o GRAU, e o grau E' a criatura: cinco ids, cinco bichos
@@ -706,7 +797,7 @@ mod testes {
         assert_eq!(skills_ativas(&trinta).len(), 3);
         assert!((velocidade_com(3, &trinta) - (velocidade(3) + 0.2)).abs() < 1e-6);
         assert_eq!(
-            pontos_por_stat(item_id::pet_no_grau(item_id::PET_BASE, 3), &trinta)
+            pontos_por_stat(item_id::pet_no_grau(item_id::PET_BASE, 3), &trinta, None)
                 .iter()
                 .sum::<u32>(),
             pontos(3, NIVEL_MAX) + 3,
@@ -767,14 +858,14 @@ mod testes {
         assert!(regen_de_mana(&d) > 0.0);
 
         let coruja = item_id::pet_no_grau(item_id::PET_BASE, 1);
-        let sem = pontos_por_stat(coruja, &vazio);
-        let com = pontos_por_stat(coruja, &d);
+        let sem = pontos_por_stat(coruja, &vazio, None);
+        let com = pontos_por_stat(coruja, &d, None);
         assert_eq!(sem[stat_idx::DES], 0, "corujinha nao da' DES sozinha");
         assert_eq!(com[stat_idx::DES], PONTOS_DA_SKILL_DE_ATRIBUTO);
         // O resto do reparto so' cresce pelo NIVEL, nao pela skill escolhida.
         assert_eq!(
             com[stat_idx::INT],
-            pontos_por_stat(coruja, &PetData { skills: [0; 3], ..d })[stat_idx::INT]
+            pontos_por_stat(coruja, &PetData { skills: [0; 3], ..d }, None)[stat_idx::INT]
         );
     }
 

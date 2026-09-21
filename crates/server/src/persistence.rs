@@ -2759,6 +2759,11 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                 "Removedor de Skill de Pet".to_string(),
                 200,
             ),
+            (
+                item_id::PEDRA_DE_AFINIDADE as i32,
+                "Pedra de Afinidade".to_string(),
+                250,
+            ),
         ];
         for sk in shared::pets::todas_as_skills() {
             consumiveis.push((sk.item_id as i32, format!("Skill: {}", sk.nome), 400));
