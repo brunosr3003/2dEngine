@@ -93,6 +93,7 @@ pub struct ProjTag {
     pub kind: u8,
 }
 
+mod barco;
 mod boss_teste;
 mod chefes;
 mod habilidades;
@@ -1570,6 +1571,13 @@ pub struct Session {
     pub inventory_dirty: bool,
     /// True quando o equipamento mudou (envia StatsUpdate no proximo tick).
     pub stats_dirty: bool,
+    /// De que ILHA este personagem zarpou (docs/MAR_ABERTO.md).
+    ///
+    /// Existe por um modo de falha novo e severo: navegando, a zona salva e'
+    /// `mar_aberto`, e se o processo do mar cair o seletor de canal nao acha
+    /// canal servindo essa zona — TODO mundo que estava no mar fica trancado
+    /// fora do jogo. Este campo e' o caminho de casa.
+    pub zona_volta: Option<String>,
     /// Slots do vault (INVENTORY_SLOTS); carregado no login, salvo no save.
     pub vault: Vec<shared::InventorySlot>,
     /// True quando vault mudou — envia VaultUpdate no proximo tick.
@@ -1936,6 +1944,9 @@ pub struct GameWorld {
     /// zonas antigas de tile — enquanto as duas convivem, quem manda e' o
     /// nome da zona.
     pub ilha: Option<shared::terreno::Ilha>,
+    /// O MAR ABERTO, quando esta zona e' ele (docs/MAR_ABERTO.md). E' o
+    /// exclusivo do `ilha`: ou a zona e' uma ilha, ou e' o mar.
+    pub mar: Option<shared::mar::Mar>,
     /// Onde cada zona do realm esta rodando. Ver `canais::Diretorio`.
     pub diretorio: Option<crate::canais::Diretorio>,
     /// Quando ESTE processo gravou cada personagem pela ultima vez (sim time).
@@ -2465,6 +2476,7 @@ impl GameWorld {
             admissao_travada: false,
             imortal: std::env::var("MMO_IMORTAL").as_deref() == Ok("1"),
             ilha: None,
+            mar: None,
             diretorio: None,
             salvo_aqui_em: HashMap::new(),
             zona_de_saida: HashMap::new(),
@@ -2655,6 +2667,7 @@ impl GameWorld {
             admissao_travada: false,
             imortal: std::env::var("MMO_IMORTAL").as_deref() == Ok("1"),
             ilha: None,
+            mar: None,
             diretorio: None,
             salvo_aqui_em: HashMap::new(),
             zona_de_saida: HashMap::new(),
@@ -5144,6 +5157,33 @@ impl GameWorld {
                         .send(ServerMessage::TrocarZona { zona: z, host });
                     return;
                 }
+                // A ZONA SALVA CAIU. Sem isto o jogador entrava no porto de
+                // qualquer ilha em que calhasse de logar — e trocava de ilha
+                // de graca, que e' justamente o que a travessia obrigatoria
+                // existe pra impedir.
+                //
+                // O caso que mais importa e' o MAR: navegando, a zona salva
+                // e' `mar_aberto`, e se aquele processo cair ninguem tem
+                // como voltar pro lugar de onde zarpou. `zona_volta` guarda
+                // esse lugar (docs/MAR_ABERTO.md).
+                if let Some(volta) = row
+                    .zona_volta
+                    .clone()
+                    .filter(|v| *v != z && *v != self.zona)
+                {
+                    if let Some(host) = self.diretorio.as_ref().and_then(|d| d.melhor(&volta)) {
+                        tracing::warn!(
+                            "login '{}': zona salva '{}' fora do ar — volta pra '{}'",
+                            row.name,
+                            z,
+                            volta
+                        );
+                        let _ = handle
+                            .to_client
+                            .send(ServerMessage::TrocarZona { zona: volta, host });
+                        return;
+                    }
+                }
                 tracing::warn!(
                     "login '{}': zona salva '{}' sem canal no ar — entra no porto de '{}'",
                     row.name,
@@ -6533,6 +6573,7 @@ impl GameWorld {
                 inventory: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 inventory_dirty: false,
                 stats_dirty: false,
+                zona_volta: None,
                 vault: vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS],
                 vault_dirty: false,
                 bolsa_extra: 0,
@@ -6994,6 +7035,7 @@ impl GameWorld {
                 self.handle_shop_comprar(id, slot_idx as usize, qtd as u32);
             }
             ClientMessage::Viajar { ilha } => self.handle_viajar(id, ilha),
+            ClientMessage::Barco { pedido } => self.handle_barco(id, pedido),
             ClientMessage::ExpandirArmazem { banco } => self.handle_expandir_armazem(id, banco),
             ClientMessage::EscolherNoNpc { npc_eid, missao } => {
                 self.handle_escolher_no_npc(id, npc_eid, missao)
@@ -11547,6 +11589,11 @@ impl GameWorld {
         // passar por cima.
         self.sincroniza_pets();
         self.tick_pets(dt);
+        // Os cascos andam DEPOIS dos jogadores: quem esta' a bordo tem a
+        // posicao derivada do casco, e derivar da posicao do tick passado
+        // faria o passageiro arrastar atras do barco.
+        self.sincroniza_barcos();
+        self.tick_barcos(dt);
         // A montaria VISTA sai do equipamento, e equipar acontece por muitos
         // caminhos (bolsa, saque que auto-equipa, correio, mercado). Conferir
         // no tick cobre todos: sem isto, equipar nao avisava ninguem e o
@@ -12023,6 +12070,7 @@ impl GameWorld {
                         EntityKind::Npc(_) => shared::EntityTag::Npc,
                         EntityKind::Portal => shared::EntityTag::Portal,
                         EntityKind::Pet(_) => shared::EntityTag::Pet,
+                        EntityKind::Barco(_) => shared::EntityTag::Barco,
                         _ => shared::EntityTag::Other,
                     };
                     let name = ptag
@@ -12091,6 +12139,8 @@ impl GameWorld {
                             EntityKind::Player => montaria_de.get(&net.0).map_or(0, |m| m.1),
                             // Pet: o item_id, que ja' diz especie e grau.
                             EntityKind::Pet(id) => *id,
+                            // Casco: a classe dele.
+                            EntityKind::Barco(k) => *k,
                             _ => 0,
                         },
                     };
@@ -12459,6 +12509,7 @@ impl GameWorld {
         // pra não inflar mais o tuple.
         struct E {
             name: String,
+            zona_volta: Option<String>,
             pos: Vec2,
             hp: Health,
             xp: u64,
@@ -12518,6 +12569,7 @@ impl GameWorld {
                 Err(_) => continue,
             };
             entries.push(E {
+                zona_volta: session.zona_volta.clone(),
                 name: session.name.clone(),
                 pos,
                 hp,
@@ -12594,6 +12646,7 @@ impl GameWorld {
                 mp: Some(e.mp),
                 stamina: Some(e.stamina),
                 zona: self.zona_do_save(&e.name),
+                zona_volta: e.zona_volta.clone(),
                 xp_bonus_ate: e.xp_bonus_ate,
                 mortes_json: e.mortes_json,
                 recuperacoes_dia: e.recuperacoes_dia,
@@ -13177,46 +13230,72 @@ impl GameWorld {
         let Some(dest) = shared::terreno::ARQUIPELAGO.get(ilha) else {
             return false;
         };
-        if dest.zona == self.zona {
+        // Chega na praca da outra ilha: a posicao salva vale LA'.
+        let chegada = shared::terreno::Gerador::da_ilha(dest)
+            .cidade()
+            .map(|c| c.centro())
+            .unwrap_or(Vec2::ZERO);
+        let aviso = format!("Você embarca rumo a {}.", dest.nome);
+        self.mandar_para_zona(sid, dest.zona, chegada, Some(&aviso), Some(dest.nome))
+    }
+
+    /// O HANDOFF entre processos, num lugar so'.
+    ///
+    /// Cada zona e' um processo com o mundo dela; trocar de zona e' gravar
+    /// onde o personagem CHEGA, marcar a saida e mandar o cliente reconectar
+    /// no canal certo. A ordem importa — posicao antes de `save_pending`,
+    /// `zona_de_saida` antes do `TrocarZona` — e errar a ordem manda o
+    /// jogador pra coordenada velha na zona nova.
+    ///
+    /// Isto era o corpo do `embarcar`, quando so' o Capitao trocava de zona.
+    /// Agora zarpar, atracar e naufragar fazem o mesmo, e nenhum dos tres
+    /// tem motivo pra ter a sua propria copia dessa ordem.
+    ///
+    /// `chegada` e' na coordenada DA ZONA DE DESTINO. `false` = nao foi
+    /// (mesma zona, ou zona sem canal no ar), e o jogador fica onde estava.
+    fn mandar_para_zona(
+        &mut self,
+        sid: SessionId,
+        zona: &str,
+        chegada: Vec2,
+        aviso: Option<&str>,
+        nome_bonito: Option<&str>,
+    ) -> bool {
+        if zona == self.zona {
             return false;
         }
-        let Some(host) = self.diretorio.as_ref().and_then(|d| d.melhor(dest.zona)) else {
-            self.avisa_missao(
-                sid,
-                format!(
-                    "Rota indisponível no momento: nenhum barco para {} agora.",
-                    dest.nome
-                ),
-            );
+        let Some(host) = self.diretorio.as_ref().and_then(|d| d.melhor(zona)) else {
+            // Recusar aqui e' o que impede a viagem so' de ida pra um
+            // processo morto. Quem esta' no mar continua boiando, com barco:
+            // nao esta' preso, esta' no mar.
+            let onde = nome_bonito.unwrap_or(zona);
+            self.avisa_missao(sid, format!("Rota indisponível no momento: {onde} está fora do ar."));
             return false;
         };
         let Some(s) = self.sessions.get(&sid) else {
             return false;
         };
         let (entidade, nome) = (s.entity, s.name.clone());
-        // Chega na praca da outra ilha: a posicao salva vale LA'.
-        let chegada = shared::terreno::Gerador::da_ilha(dest)
-        .cidade()
-        .map(|c| c.centro())
-        .unwrap_or(Vec2::ZERO);
         if let Some(e) = entidade {
             if let Ok(mut pos) = self.ecs.get::<&mut Position>(e) {
                 pos.0 = chegada;
             }
         }
-        self.zona_de_saida.insert(nome, dest.zona.to_string());
+        self.zona_de_saida.insert(nome, zona.to_string());
         self.save_pending = true;
         if let Some(s) = self.sessions.get(&sid) {
-            let _ = s.handle.to_client.send(ServerMessage::Chat {
-                from: "SYS".into(),
-                text: format!("Você embarca rumo a {}.", dest.nome),
-            });
+            if let Some(a) = aviso {
+                let _ = s.handle.to_client.send(ServerMessage::Chat {
+                    from: "SYS".into(),
+                    text: a.to_string(),
+                });
+            }
             let _ = s.handle.to_client.send(ServerMessage::TrocarZona {
-                zona: dest.zona.to_string(),
+                zona: zona.to_string(),
                 host,
             });
         }
-        tracing::info!("viagem: {} -> {}", self.zona, dest.zona);
+        tracing::info!("viagem: {} -> {}", self.zona, zona);
         true
     }
 
@@ -17825,6 +17904,7 @@ impl GameWorld {
             mp: Some(session.mp_current),
             stamina: Some(session.stamina_current),
             zona: self.zona_do_save(&session.name),
+            zona_volta: session.zona_volta.clone(),
             xp_bonus_ate: session.xp_bonus_ate,
             mortes_json: crate::morte::para_json(&session.mortes),
             recuperacoes_dia: session.recuperacoes_dia,

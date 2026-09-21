@@ -61,7 +61,14 @@ pub async fn run_world_loop(
     // Zona que e' ilha do arquipelago carrega o campo de altura. E' o mesmo
     // `Gerador` que o cliente usa pra desenhar — colisao e desenho saem da
     // mesma funcao, entao nao ha' como divergirem.
-    if let Some(def) = shared::terreno::def_da_zona(&world.zona) {
+    // O MAR ABERTO vem antes: ele nao e' ilha do arquipelago, e nao carrega
+    // campo de altura nenhum. O terreno dele e' o composto dos quatro
+    // geradores (docs/MAR_ABERTO.md) — sem cache, sem `plantar`, sem vila.
+    if shared::mar::e_mar(&world.zona) {
+        let t0 = Instant::now();
+        world.mar = Some(shared::mar::Mar::novo());
+        tracing::info!("mar aberto pronto em {:?}", t0.elapsed());
+    } else if let Some(def) = shared::terreno::def_da_zona(&world.zona) {
         let dir = std::env::var("MMO_ILHAS").unwrap_or_else(|_| "data/ilhas".into());
         let t0 = Instant::now();
         let ilha = shared::terreno::Ilha::carregar_ou_gerar_da_ilha(&dir, def);

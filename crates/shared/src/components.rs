@@ -46,6 +46,13 @@ pub enum EntityKind {
     /// Pet coletor de um jogador (docs/PETS.md). u16 = item_id do pet, que ja'
     /// carrega especie e grau — o cliente tira dele o modelo e a cor.
     Pet(u16),
+    /// Casco no Mar Aberto (docs/MAR_ABERTO.md). u16 = classe do casco.
+    ///
+    /// Entra no FIM da enum de proposito: o postcard grava o INDICE da
+    /// variante, entao enfiar no meio faz um cliente velho ler `Pet` como
+    /// outra coisa — calado. Fim da lista mais o bump de versao e' o par
+    /// seguro.
+    Barco(u16),
 }
 
 /// Slot de inventario. None = vazio. Quando `qty == 0`, o slot esta vazio.
@@ -296,6 +303,9 @@ pub enum EntityTag {
     /// Pet coletor. O `EntityMeta::kind` carrega o item_id do pet, de onde o
     /// cliente tira o modelo e a cor do grau.
     Pet,
+    /// Casco no mar. Ver `EntityKind::Barco` — e o mesmo motivo pra estar no
+    /// fim da lista.
+    Barco,
 }
 
 /// O que o corpo esta' fazendo, num byte do `EntityState`.

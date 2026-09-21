@@ -316,3 +316,43 @@ mod testes {
         assert_eq!(m.ilha_mais_perto(cais), 0);
     }
 }
+
+// ─────────────────────────── protocolo do barco ───────────────────────────
+
+/// O que o jogador pede ao barco.
+///
+/// Um pedido so', com variantes, em vez de uma mensagem por verbo — o molde
+/// de `loja::PedidoLoja`. O barco apagado em 20/09/2026 tinha ONZE mensagens
+/// (`BoardBoat`, `GrabStation`, `SailAdjust`, `AnchorToggle`, `HelmAdjust`,
+/// `CannonAim`, ...) e o cliente macroquad nunca implementou uma.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum PedidoBarco {
+    /// No porto: sai pro Mar Aberto. Vira `TrocarZona`.
+    Zarpar,
+    /// No mar, perto do cais: entra na ilha `ilha` (indice do `ARQUIPELAGO`).
+    Atracar { ilha: u8 },
+    /// Leme e acelerador, -127..127 e 0..127.
+    ///
+    /// NAO entra no `InputFrame`: aquilo viaja na taxa de input pra todo
+    /// jogador de toda zona, e dois bytes pra todo mundo em todo lugar pra
+    /// uma zona poder virar leme e' a troca errada. Vai so' na mudanca.
+    Comando { leme: i8, forca: i8 },
+    /// Desce do casco pra terra firme mais perto.
+    Desembarcar,
+}
+
+/// O que o barco responde.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum AvisoBarco {
+    /// O casco do jogador: entidade, vida e se esta' avariado.
+    Meu {
+        barco: Option<u64>,
+        casco: u16,
+        casco_max: u16,
+        avariado: bool,
+    },
+    /// Naufragou: pra que porto foi e o que o porao levou.
+    Naufragio { porto: String, perdeu: u16 },
+    /// Nao deu, e por que. E' o que impede uma recusa silenciosa.
+    Recusa(String),
+}
