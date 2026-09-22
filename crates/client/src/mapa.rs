@@ -3165,6 +3165,35 @@ mod testes_do_mapa_da_colonia {
         }
     }
 
+
+    /// A Ilha Mágica não tem cidade nem porto — e o minimapa monta mesmo
+    /// assim.
+    ///
+    /// `gerar_dados` pede `ger.vila()`, e a vila sai da CIDADE. Numa zona sem
+    /// nenhuma, o caminho nunca tinha sido exercitado: o jogador descobriria
+    /// entrando, com meia hora de passe correndo.
+    #[test]
+    fn o_mapa_da_ilha_magica_monta_sem_cidade_nem_porto() {
+        let def = shared::terreno::def_da_zona(shared::magica::ZONA).expect("a zona existe");
+        let ger = Gerador::da_ilha(def);
+        assert!(ger.cidade().is_none(), "a Ilha Mágica não tem praça");
+        assert!(ger.porto().is_none(), "nem cais");
+        assert!(ger.vila().predios.is_empty(), "nem casa");
+        let dados = gerar_dados(def);
+        assert_eq!(dados.rgba.len(), LADO * LADO * 4);
+        assert!(dados.pegadas.is_empty());
+        assert!(dados.porto.is_none());
+        // E o desenho mostra TERRA: as sete ilhotas têm que aparecer.
+        let terra = dados
+            .rgba
+            .chunks_exact(4)
+            .filter(|p| p[0] as u16 + 12 > p[2] as u16)
+            .count();
+        let pct = 100.0 * terra as f32 / (LADO * LADO) as f32;
+        println!("Ilha Mágica: {pct:.1}% da imagem é terra");
+        assert!(pct > 3.0, "só {pct:.1}% de terra — o mapa saiu todo mar");
+    }
+
     /// As casas estão na IMAGEM, e não só na camada de filtro.
     ///
     /// O dono: "o mapa só mostra visualmente, sem ser através de filtros, o
