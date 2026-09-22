@@ -61,6 +61,14 @@ pub mod chave {
     pub const ILHA_COLHER: u16 = 108;
     /// O botão "Retirar", do baú.
     pub const ILHA_RETIRAR: u16 = 109;
+    /// A linha "Ilha Mágica" dentro do Menu.
+    ///
+    /// A história trava esperando nível (`objective_kind::NIVEL`), e o
+    /// jogador chega nela uns três níveis abaixo. Antes a trava só dizia
+    /// "História: chegue ao nível 20 para continuar" e deixava ele lá. A
+    /// Ilha Mágica é a resposta — XP em dobro, três entradas de graça por
+    /// dia —, mas só serve se ele souber onde ela fica.
+    pub const MENU_ILHA_MAGICA: u16 = 111;
     /// A linha "Minha Ilha" dentro do Menu.
     ///
     /// O primeiro passo da linha da ilha ("A escritura da ilha") manda

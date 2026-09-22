@@ -417,6 +417,15 @@ struct Jogo {
     /// tocar no passo no rastreador; o prazo existe pra que um alvo que
     /// sumiu da tela nunca deixe o jogador preso atras do escuro.
     foco_tutorial: Option<(u16, f64)>,
+    /// A DICA da trava de nível: acende o caminho até a Ilha Mágica.
+    ///
+    /// A história para esperando nível e o jogador chega uns três abaixo. A
+    /// trava dizia "História: chegue ao nível 20 para continuar" e o
+    /// deixava ali, sem dizer onde arrumar XP. A Ilha Mágica é a resposta —
+    /// XP em dobro e três entradas de graça por dia —, e apontar o caminho é
+    /// o mesmo gesto dos outros tutoriais: o buraco aceso anda MENU → Evento
+    /// → Ilha Mágica.
+    dica_da_trava: Option<f64>,
 }
 
 #[macroquad::main(window_conf)]
@@ -667,6 +676,7 @@ async fn main() {
         dash_recarga: (0.0, 0.0),
         confirmar: None,
         foco_tutorial: None,
+        dica_da_trava: None,
     };
     // `MMO_HOST` explicito pula a escolha — e' o caminho do run-client.sh e dos
     // testes de carga.
@@ -1815,6 +1825,38 @@ impl Jogo {
                     ) {
                         self.chat.push(aviso);
                     }
+                    // TRAVA DE NÍVEL: além de dizer que parou, diz o que
+                    // fazer e ACENDE o caminho.
+                    //
+                    // O dono: "na missão 'pegue nível 20' geralmente ela
+                    // chega nível 17; podia ter uma dica tipo 'faça a Ilha
+                    // Mágica' e, se clicar, levar pra lá mostrando onde fica,
+                    // um tutorial mesmo igual os outros".
+                    //
+                    // É o mesmo gesto dos outros: o buraco aceso anda MENU →
+                    // Evento → Ilha Mágica, e quem toca no que está aceso
+                    // chega lá. Uma dica que só falasse seria a mesma coisa
+                    // que a trava já fazia.
+                    if tipo == shared::quests::destino_tipo::TRAVA {
+                        self.dica_da_trava = Some(get_time());
+                        let faltam = self
+                            .missoes
+                            .log
+                            .iter()
+                            .find(|q| q.id == quest_id)
+                            .map(|q| q.obj_count.saturating_sub(q.progress))
+                            .unwrap_or(0);
+                        self.chat.push(if faltam > 0 {
+                            format!(
+                                "Faltam {faltam} nível(is). A Ilha Mágica dá XP em DOBRO e \
+                                 tem 3 entradas grátis por dia: Menu ▸ Evento ▸ Ilha Mágica."
+                            )
+                        } else {
+                            "A Ilha Mágica dá XP em DOBRO e tem 3 entradas grátis por dia: \
+                             Menu ▸ Evento ▸ Ilha Mágica."
+                                .to_string()
+                        });
+                    }
                 }
             }
             ServerMessage::NoDeColeta { no } => {
@@ -2102,6 +2144,18 @@ impl Jogo {
 
     /// O passo TUTORIAL armado pede o foco. A lista vai do botao mais FUNDO
     /// (dentro do painel) ao mais raso (o MENU): ganha o primeiro que estiver
+    /// O caminho até a Ilha Mágica, aceso enquanto a dica da trava vale.
+    fn foco_da_trava(&mut self) {
+        let Some(armado) = self.dica_da_trava else {
+            return;
+        };
+        if get_time() - armado > Self::FOCO_TUTORIAL_S {
+            self.dica_da_trava = None;
+            return;
+        }
+        foco::pede(&[foco::chave::MENU_ILHA_MAGICA, foco::chave::MENU]);
+    }
+
     /// na tela, e e' assim que o buraco anda sozinho MENU -> Ficha -> "+".
     fn foco_do_tutorial(&mut self) {
         use shared::quests::{objective_kind, quest_status, tutorial as t};
@@ -3568,6 +3622,18 @@ impl Jogo {
                 self.diarias.fechar();
                 self.iniciar_auto_missao(id);
             }
+            // TRAVA DE NÍVEL: o "Ir" abre a Ilha Mágica, que é onde se
+            // arruma XP, e ACENDE o caminho até ela no menu — o jogador vê
+            // onde ela fica, e não só que ela existe. É o mesmo gesto dos
+            // outros tutoriais.
+            menu_missoes::Clique::IlhaMagica => {
+                self.menu_missoes.aberto = false;
+                self.diarias.fechar();
+                self.dica_da_trava = Some(get_time());
+                self.envia(ClientMessage::Magica {
+                    pedido: shared::magica::PedidoMagica::Painel,
+                });
+            }
             menu_missoes::Clique::IrAoGiver(id) => {
                 // Missao ainda nao aceita: vai ate' QUEM DA' (o Mestre ou o
                 // NPC da vila da cadeia) e fala com ele ao chegar.
@@ -4343,6 +4409,7 @@ impl Jogo {
     // ────────────────────────────── desenho ──────────────────────────────
     fn desenhar(&mut self) {
         self.foco_do_tutorial();
+        self.foco_da_trava();
         match &self.tela {
             Tela::Jogando if self.economia.ativa => self.desenhar_economia(),
             Tela::Jogando => {

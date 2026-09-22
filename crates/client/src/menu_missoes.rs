@@ -36,6 +36,14 @@ pub enum Clique {
     AutoMissao(u16),
     /// Nao anda: so' avisa.
     Aviso(String),
+    /// Trava de NIVEL: abre a Ilha Magica, que e' onde se arruma XP.
+    ///
+    /// A historia para esperando nivel e o jogador chega uns tres abaixo —
+    /// o dono viu isso na missao do nivel 20, chegando no 17. O botao "Ir"
+    /// dela nao tinha pra onde ir: mandava `AutoMissao`, que respondia
+    /// "Historia: chegue ao nivel 20 para continuar" e parava. Agora ele
+    /// leva ao lugar que resolve.
+    IlhaMagica,
 }
 
 /// O que o calculo precisa saber do jogador.
@@ -111,6 +119,13 @@ pub fn estado(d: &QuestDef, c: &Contexto) -> Estado {
 pub fn clique_de(d: &QuestDef, e: &Estado) -> Clique {
     match e {
         Estado::Disponivel => Clique::IrAoGiver(d.id),
+        // TRAVA DE NIVEL: o "Ir" leva pra Ilha Magica em vez de dizer que
+        // nao ha' pra onde ir.
+        Estado::EmAndamento { .. }
+            if d.obj_kind == shared::quests::objective_kind::NIVEL =>
+        {
+            Clique::IlhaMagica
+        }
         Estado::EmAndamento { .. } | Estado::Pronta => Clique::AutoMissao(d.id),
         Estado::Concluida => Clique::Aviso(format!("\"{}\" já foi concluída.", d.title)),
         Estado::Bloqueada(m) => {
@@ -395,6 +410,16 @@ pub fn frase(d: &QuestDef, e: &Estado) -> String {
             } else {
                 format!("Tutorial · {o}")
             }
+        }
+        // A TRAVA DE NIVEL diz o que fazer, e nao so' o quanto falta.
+        // "Em andamento · 17/20" e' verdadeiro e nao ajuda ninguem.
+        Estado::EmAndamento { feito, total }
+            if d.obj_kind == shared::quests::objective_kind::NIVEL =>
+        {
+            format!(
+                "Nível {feito}/{total} · a Ilha Mágica dá XP em DOBRO ({} entradas grátis por dia)",
+                shared::magica::GRATIS_POR_DIA
+            )
         }
         Estado::EmAndamento { feito, total } => format!("Em andamento · {feito}/{total}"),
         Estado::Pronta => match shared::quests::quem_da(d) {
@@ -888,5 +913,45 @@ mod tests {
         );
         assert_eq!(estado(quest_by_id(601).unwrap(), &c), Estado::Disponivel);
         assert_eq!(reset_em(86_400 * 10 + 3_600 * 19 + 60 * 53), "4h 07min");
+    }
+}
+#[cfg(test)]
+mod testes_da_trava {
+    use super::*;
+
+    /// A TRAVA DE NÍVEL manda pra Ilha Mágica, e diz por quê.
+    ///
+    /// O dono: "na missão 'pegue nível 20' geralmente ela chega nível 17".
+    /// O botão "Ir" dela não tinha pra onde ir — mandava `AutoMissao`, que
+    /// respondia "História: chegue ao nível 20 para continuar" e parava.
+    /// Uma missão cujo botão não faz nada é pior que uma missão sem botão.
+    #[test]
+    fn a_trava_de_nivel_aponta_a_ilha_magica() {
+        let d = shared::historia::PASSOS
+            .iter()
+            .find(|d| d.obj_kind == shared::quests::objective_kind::NIVEL)
+            .expect("a história tem trava de nível");
+        let andando = Estado::EmAndamento {
+            feito: 17,
+            total: 20,
+        };
+        assert_eq!(clique_de(d, &andando), Clique::IlhaMagica);
+
+        // E a frase diz o que fazer, não só o quanto falta.
+        let f = frase(d, &andando);
+        assert!(f.contains("17/20"), "{f}");
+        assert!(f.contains("Ilha Mágica"), "{f}");
+        assert!(f.contains("DOBRO"), "{f}");
+
+        // Uma missão comum em andamento continua indo pela auto missão.
+        let comum = shared::quests::QUESTS
+            .iter()
+            .find(|q| q.obj_kind == shared::quests::objective_kind::KILL)
+            .expect("há missão de caça");
+        assert_eq!(
+            clique_de(comum, &andando),
+            Clique::AutoMissao(comum.id),
+            "só a trava de nível desvia"
+        );
     }
 }

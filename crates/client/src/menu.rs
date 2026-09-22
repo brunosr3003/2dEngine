@@ -333,6 +333,9 @@ impl Menu {
                         Item::MinhaIlha => {
                             crate::foco::marca(crate::foco::chave::MENU_MINHA_ILHA, r)
                         }
+                        Item::IlhaMagica => {
+                            crate::foco::marca(crate::foco::chave::MENU_ILHA_MAGICA, r)
+                        }
                         _ => {}
                     }
                     estilo::cartao(r, sobre && !travado, false);
