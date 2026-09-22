@@ -126,7 +126,22 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
     // como criar paredão aqui.
     let t = d / r;
     let h = ALTURA_TOPO + (ALTURA_ORLA - ALTURA_TOPO) * t * t;
-    (h / crate::terreno::BLOCO).round() as i32 - 1
+    // RELEVO POR CIMA, senão a ilha vira um alvo de tiro.
+    //
+    // Um domo liso quantizado em blocos de 0,5 u vira ANÉIS: a queda de 12 u
+    // do meio até a orla dá 24 degraus concêntricos, e o olho lê aquilo como
+    // curva de nível de mapa topográfico. O dono viu e disse que "o 3D tá
+    // MUITO feio" — e estava mesmo.
+    //
+    // Três senos cruzados quebram os anéis sem inventar penhasco: a amplitude
+    // total é ±1,1 u (dois blocos), e o degrau que isso acrescenta por coluna
+    // fica em 0,1 u no pior ponto, longe do bloco que o passo vence. A
+    // amplitude cai perto da orla (`t`), pra praia continuar sendo praia.
+    let ondula = ((x * 0.11).sin() * (z * 0.09).cos() * 0.62
+        + (x * 0.05 - z * 0.07).sin() * 0.34
+        + ((x + z) * 0.19).sin() * 0.14)
+        * (0.35 + 0.65 * t);
+    ((h + ondula) / crate::terreno::BLOCO).round() as i32 - 1
 }
 
 /// O raio da ilha. O nivel sobrou da versao que crescia e e' ignorado.

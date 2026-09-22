@@ -1501,6 +1501,29 @@ pub async fn previa_da_colonia(
             (*m, eu + vec2(a.cos(), a.sin()) * (plato * 0.55))
         })
         .collect();
+    // REPRODUZ O PAINEL, com os parâmetros dele: terreno recém-criado e
+    // `atualiza(centro, 3, 8)` por quadro, que é o que `ColoniaUi::desenha`
+    // faz. A prévia antes usava raio 5 e orçamento 400 — e por isso mostrava
+    // uma ilha inteira que o jogo nunca chegava a ter.
+    {
+        let t0 = std::time::Instant::now();
+        let mut tp = Terreno::da_colonia(plato);
+        println!("[previa colonia] painel: montar Terreno levou {:?}", t0.elapsed());
+        let r = Rect::new(0.0, 0.0, 340.0, 270.0);
+        for q in 0..40 {
+            tp.atualiza(eu, 6, 24);
+            let ok = crate::render3d::maquete_da_ilha(
+                &tp, &construcoes, r, eu, 0.9, solido, &[], vox,
+            );
+            if q % 8 == 0 || q == 39 {
+                println!(
+                    "[previa colonia] painel quadro {q:2}: desenhou={ok} pedacos={}",
+                    tp.pedacos_vivos()
+                );
+            }
+            next_frame().await;
+        }
+    }
     for (m, _) in &onde {
         let nome = crate::render3d::rig_do_npc(m.papel() as u8, 0);
         let pecas = vox.rig(nome).map(|h| h.len());
@@ -1508,7 +1531,10 @@ pub async fn previa_da_colonia(
     }
     for _ in 0..2 {
         crate::render3d::camera_padrao();
-        clear_background(Color::new(0.11, 0.35, 0.62, 1.0));
+        // A MESMA COR de fundo que o painel pinta atrás da maquete: o
+        // retângulo dele é 2D e vai pra tela, não pro render target que vira
+        // PNG, então sem isto a prévia mostra um mar que o jogo não tem.
+        clear_background(crate::render3d::COR_DO_MAR_DA_MAQUETE);
         // A MESMA PROPORÇÃO da coluna esquerda do painel (46% de 1040 por
         // 628 de altura = 0,72). Na primeira prévia este retângulo era mais
         // estreito que o de verdade, e o enquadramento que ele mostrou não

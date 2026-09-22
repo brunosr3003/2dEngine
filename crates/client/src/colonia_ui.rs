@@ -122,7 +122,19 @@ impl ColoniaUi {
         if let Some(mq) = &mut self.maquete {
             mq.construcoes.acompanhar();
             let c = mq.centro;
-            mq.terreno.atualiza(c, 3, 8);
+            // RAIO 6, e não 3. Um pedaço tem 32 blocos = 16 u, então raio 3
+            // cobre ±56 u — e a ilhota tem 85 de raio. Um terço dela nunca
+            // era gerado: a maquete mostrava um quadrado de terra com a costa
+            // cortada, boiando no mar. Era parte do "o 3D tá MUITO feio".
+            //
+            // Raio 6 cobre ±104 u, a ilhota inteira com folga. São 169
+            // pedaços; o orçamento de 24 por quadro monta tudo em 7 quadros,
+            // e depois o laço não faz mais nada.
+            //
+            // (Minha prévia não pegou isso porque ela chamava `atualiza` com
+            // raio 5 e orçamento 400 — validei com número diferente do que o
+            // jogo usa, que é o mesmo que não validar.)
+            mq.terreno.atualiza(c, 6, 24);
         }
         // O giro automático só corre quando ninguém está arrastando.
         if self.arrasto.is_none() {

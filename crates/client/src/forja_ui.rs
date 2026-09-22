@@ -59,6 +59,101 @@ pub fn info(inst: &ItemInstance) -> Info {
     }
 }
 
+/// "Refinar mesmo assim?" — a pergunta antes de arriscar a peça.
+///
+/// `None` = ainda esperando; `Some(true)` = manda ver; `Some(false)` = não.
+///
+/// Existe porque o aviso ESCRITO não bastava. O painel já dizia "se falhar, a
+/// peça é DESTRUÍDA" numa linha vermelha ao lado do botão, e o botão já se
+/// chamava "Refinar (arriscado)" — mas quem lê a mesma linha vinte vezes
+/// para de lê-la, e o toque que custa uma peça épica acaba sendo o mesmo
+/// toque de sempre. Um gesto a mais é o que separa a decisão do reflexo.
+///
+/// A chance aparece NOS DOIS SENTIDOS: "30% de subir" e "70% de destruir" são
+/// o mesmo número, e é o segundo que pesa na hora de decidir.
+fn confirma_refino(nome: &str, i: &Info) -> Option<bool> {
+    let f = estilo::fator_texto();
+    let seguro = crate::hud_layout::tela_segura();
+    let (w, h) = (
+        (540.0 * f).min(seguro.w - 24.0),
+        (270.0 * f).min(seguro.h - 24.0),
+    );
+    let r = Rect::new(
+        seguro.center().x - w * 0.5,
+        seguro.center().y - h * 0.5,
+        w,
+        h,
+    );
+    crate::hud_layout::escurece(0.55);
+    estilo::painel_destaque(r, VERMELHO);
+    let x = r.x + 24.0 * f;
+    estilo::texto_forte(x, r.y + 42.0 * f, "Refinar mesmo assim?", 20, VERMELHO);
+    estilo::texto_ajustado(
+        &format!("{nome} +{} → +{}", i.nivel, i.nivel + 1),
+        x,
+        r.y + 80.0 * f,
+        w - 48.0 * f,
+        17,
+        estilo::TEXTO,
+    );
+    estilo::texto_ajustado(
+        &format!(
+            "{}% de subir · {}% de DESTRUIR a peça.",
+            i.chance,
+            100u8.saturating_sub(i.chance)
+        ),
+        x,
+        r.y + 110.0 * f,
+        w - 48.0 * f,
+        16,
+        VERMELHO,
+    );
+    estilo::texto_ajustado(
+        "Destruída, ela não volta: o refino e os materiais dela vão junto.",
+        x,
+        r.y + 140.0 * f,
+        w - 48.0 * f,
+        14,
+        estilo::SUAVE,
+    );
+    let bw = (w - 60.0 * f) * 0.5;
+    let bh = 46.0 * f;
+    let by = r.y + r.h - 24.0 * f - bh;
+    let cancelar = Rect::new(x, by, bw, bh);
+    let sim = Rect::new(cancelar.x + bw + 12.0 * f, by, bw, bh);
+    let m = Vec2::from(mouse_position());
+    // CANCELAR é o botão de destaque, e o "sim" é o apagado: aqui o caminho
+    // seguro é o que deve estar debaixo do polegar.
+    estilo::cartao(cancelar, cancelar.contains(m), true);
+    estilo::texto_centro_forte(
+        cancelar.center().x,
+        cancelar.center().y + 6.0 * f,
+        "Cancelar",
+        16,
+        estilo::OURO,
+    );
+    estilo::cartao(sim, sim.contains(m), false);
+    estilo::texto_centro(
+        sim.center().x,
+        sim.center().y + 6.0 * f,
+        "Sim, refinar",
+        16,
+        VERMELHO,
+    );
+    if !crate::foco::clique() {
+        return None;
+    }
+    if sim.contains(m) {
+        return Some(true);
+    }
+    // Tocar FORA cancela, como em toda janela do jogo — e aqui isso é a
+    // resposta certa por acidente, que é como tem que ser.
+    if cancelar.contains(m) || !r.contains(m) {
+        return Some(false);
+    }
+    None
+}
+
 /// A frase do resultado.
 pub fn texto_do_resultado(res: u8, nivel: u8, nome: &str, motivo: &str) -> (String, Color) {
     match res {
@@ -111,6 +206,19 @@ pub struct Forja {
     aviso: Option<(u8, String, Color, f64)>,
     /// Lupa tocada num material: o item pro "Onde obter".
     pub onde_obter: Option<u16>,
+    /// Refino ARRISCADO esperando um "sim".
+    ///
+    /// Do +6 em diante falhar DESTRÓI a peça, e o painel só dizia isso numa
+    /// linha vermelha ao lado do botão. Quem já tinha lido aquela linha vinte
+    /// vezes parava de lê-la, e o toque que custava uma peça épica era o
+    /// mesmo toque de sempre. O dono: "itens quando tiver chance de
+    /// destruição no refino tem que ter um aviso com sim pra tocar antes de
+    /// refinar".
+    ///
+    /// Guarda o ALVO, e não um booleano: entre abrir a pergunta e responder,
+    /// a seleção do painel pode mudar, e confirmar tem que valer para a peça
+    /// que foi perguntada.
+    confirmar: Option<(AlvoDaForja, u16, ItemInstance)>,
 }
 
 impl Forja {
@@ -389,13 +497,33 @@ impl Forja {
                     },
                     tem_tudo,
                 ) {
-                    pedido = Some(ClientMessage::Refinar { alvo: *alvo });
+                    // ARRISCADO PERGUNTA. Seguro vai direto — pedir "tem
+                    // certeza?" para uma falha que só come material seria
+                    // treinar o jogador a dizer sim sem ler, e aí a pergunta
+                    // que importa não seria lida também.
+                    if i.risco {
+                        self.confirmar = Some((*alvo, *id, *inst));
+                    } else {
+                        pedido = Some(ClientMessage::Refinar { alvo: *alvo });
+                    }
                 }
             }
         }
         if let Some((_, txt, cor, t)) = &self.aviso {
             if agora - t < 4.0 {
                 estilo::texto_centro(p.x + p.w * 0.5, p.y + p.h - u(6.0), txt, 15, *cor);
+            }
+        }
+        // A pergunta vem POR CIMA de tudo, e é a última coisa desenhada: ela
+        // tem que receber o toque antes de qualquer botão do painel.
+        if let Some((alvo, id, inst)) = self.confirmar {
+            match confirma_refino(&nome(id), &info(&inst)) {
+                Some(true) => {
+                    self.confirmar = None;
+                    pedido = Some(ClientMessage::Refinar { alvo });
+                }
+                Some(false) => self.confirmar = None,
+                None => {}
             }
         }
         pedido
@@ -421,6 +549,33 @@ mod tests {
         assert_eq!((i.chance, i.risco), (30, true), "o +6 arrisca a peca");
         let i = info(&peca(forja::REFINO_MAX));
         assert!(i.no_topo && !i.risco);
+    }
+
+    /// A PERGUNTA aparece exatamente onde há destruição, e em lugar nenhum
+    /// mais.
+    ///
+    /// `risco` é quem decide se o toque abre a confirmação ou manda refinar
+    /// direto. Perguntar "tem certeza?" numa falha que só come material
+    /// treinaria o jogador a dizer sim sem ler — e aí a pergunta que importa
+    /// também não seria lida. Não perguntar do +6 em diante é perder a peça
+    /// num toque de rotina, que foi o pedido do dono.
+    #[test]
+    fn so_o_refino_que_destroi_pede_confirmacao() {
+        for nivel in 0..forja::REFINO_MAX {
+            let i = info(&peca(nivel));
+            let destroi = nivel + 1 > forja::REFINO_SEGURO;
+            assert_eq!(
+                i.risco, destroi,
+                "+{nivel} → +{}: risco={} mas destrói={destroi}",
+                nivel + 1,
+                i.risco
+            );
+        }
+        // No topo não há próximo nível, então não há o que perguntar.
+        assert!(!info(&peca(forja::REFINO_MAX)).risco);
+        // E a conta que a janela mostra: os dois lados do mesmo número.
+        let i = info(&peca(5));
+        assert_eq!((i.chance, 100 - i.chance), (30, 70));
     }
 
     #[test]

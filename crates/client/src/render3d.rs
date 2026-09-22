@@ -2993,6 +2993,19 @@ mod testes_da_vestimenta {
 ///
 /// Devolve `false` quando não deu (célula pequena demais, relevo ainda
 /// assando): o painel desenha o resto e tenta de novo no quadro seguinte.
+/// O mar de fundo da maquete.
+///
+/// MEDIDA, não escolhida: (36,110,144) e (26,107,150) amostrados da água que
+/// o terreno desenha. Com o fundo mais escuro que ela, a borda do losango de
+/// água virava uma linha diagonal dura no meio do mar; igual, o que sobra é
+/// uma diferença de brilho que lê como profundidade.
+///
+/// **A prévia só mostra isto se limpar com esta cor.** O retângulo é 2D e vai
+/// pro alvo corrente, que na prévia é a tela — não o render target que vira
+/// PNG. Medi a cor "de fundo" da prévia uma vez achando que era esta, e era o
+/// `clear_background` dela.
+pub const COR_DO_MAR_DA_MAQUETE: Color = Color::new(0.12, 0.42, 0.57, 1.0);
+
 pub fn maquete_da_ilha(
     terreno: &crate::terreno::Terreno,
     construcoes: &crate::construcoes::Construcoes,
@@ -3055,7 +3068,7 @@ pub fn maquete_da_ilha(
     // acaba num losango e fora dele aparecia o cartão do painel — a ilha
     // parecia flutuar num diamante. Visto na prévia. Pintar o retângulo
     // inteiro antes custa um quad e resolve.
-    draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.08, 0.26, 0.47, 1.0));
+    draw_rectangle(r.x, r.y, r.w, r.h, COR_DO_MAR_DA_MAQUETE);
     set_camera(&cam);
     limpa_so_profundidade();
     macroquad::material::gl_use_material(solido);

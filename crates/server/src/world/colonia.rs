@@ -283,6 +283,18 @@ impl GameWorld {
 impl GameWorld {
     /// O painel da colonia.
     pub(super) fn abrir_colonia(&self, sid: SessionId) {
+        // O TERRENO VAI JUNTO, e esse era o buraco.
+        //
+        // Abrir o painel mandava so' o `Estado`. A maquete do cliente nasce
+        // do `Terreno`, e ele so' era enviado ao MELHORAR o assentamento ou ao
+        // CONTRATAR alguem — entao quem abria a Minha Ilha numa sessao nova
+        // via "montando a ilha…" e ficava vendo aquilo pra sempre, porque
+        // nao havia o que montar. O dono: "o 3d da ilha ta ficando em
+        // montando a ilha.... meio q eternamente".
+        //
+        // Antes do `Estado` de proposito: o cliente monta a maquete e depois
+        // abre o painel, em vez de abrir vazio e preencher.
+        self.mandar_terreno_da_colonia(sid);
         let Some(s) = self.sessions.get(&sid) else {
             return;
         };

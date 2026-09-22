@@ -2061,7 +2061,19 @@ impl Mapa {
             None => estilo::texto_centro(c.x, c.y + 30.0, "carregando mapa…", 12, estilo::SUAVE),
         }
         let ponto = |p: Vec2| c + (p - eu) * escala;
-        let visivel = |q: Vec2| dentro.contains(q);
+        // O DISCO é que manda, não o retângulo.
+        //
+        // O minimapa é redondo, mas `visivel` testava a caixa em volta dele:
+        // marcador nos cantos aparecia FORA do disco, boiando no HUD. O dono:
+        // "no mapa e no minimapa tá dando pra ver os ícones mesmo fora do
+        // mapa / minimapa".
+        let visivel = |q: Vec2| q.distance(c) <= rad;
+        // E o RECORTE por baixo, pra quem desenha forma com tamanho: um
+        // círculo de zona ou uma linha de rota não cabem num teste de ponto,
+        // e vazavam pela borda mesmo com o centro dentro. O `scissor` é
+        // retangular (é o que o GL dá), então ele corta o excesso grosseiro e
+        // o teste do disco cuida do resto.
+        crate::rolagem::recortar(Some(dentro));
         // Zonas e regioes de leve: o minimapa e' pra se achar, nao pra ler.
         if let Some(info) = &self.info {
             for z in info.zonas.iter().filter(|z| self.filtros.zona_visivel(z)) {
@@ -2162,6 +2174,7 @@ impl Mapa {
             .and_then(|id| world.ents.get(&id))
             .map_or(0.0, |e| e.yaw);
         seta(c, yaw, 7.0, estilo::TEXTO);
+        crate::rolagem::recortar(None);
         self.moldura(dentro, Some(eu));
     }
 
@@ -2470,6 +2483,17 @@ impl Mapa {
         let foco = self.foco_do_zoom(world.self_pos());
         let escala = r.w / (2.0 * raio);
         let ponto = |p: Vec2| para_tela(p - foco, r, raio);
+        // TUDO O QUE É MARCADOR FICA DENTRO DO DESENHO.
+        //
+        // Com zoom, `ponto` manda pra fora do retângulo o que está fora da
+        // janela vista — e chefe, zona, recurso, NPC e rota eram desenhados
+        // assim mesmo, por cima do painel lateral e do resto da tela. O dono:
+        // "no mapa e no minimapa tá dando pra ver os ícones mesmo fora do
+        // mapa / minimapa".
+        //
+        // O recorte fecha ANTES dos botões de zoom, que ficam por cima do
+        // desenho de propósito e têm que continuar aparecendo.
+        crate::rolagem::recortar(Some(r));
         if let Some(info) = &self.info {
             // Chefes sempre visiveis: sao o que se procura no mapa.
             for ch in &info.chefes {
@@ -2625,6 +2649,7 @@ impl Mapa {
                 .map_or(0.0, |e| e.yaw);
             seta(ponto(eu), yaw, u(9.0), estilo::TEXTO);
         }
+        crate::rolagem::recortar(None);
         // Os BOTOES DE ZOOM, por cima de tudo.
         for (b, rotulo, ativo) in [
             (menos, "−", self.zoom_grande > 1.001),
