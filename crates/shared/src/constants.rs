@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 128;
+pub const PROTOCOL_VERSION: u16 = 129;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -571,6 +571,15 @@ pub mod item_id {
     pub const MONTARIA_BASE: u16 = 460;
     pub const MONTARIAS: [u16; 1] = [MONTARIA_BASE];
     pub const MONTARIA_ULTIMA: u16 = MONTARIA_BASE + 4;
+
+    /// O PASSE DA ILHA MÁGICA (`shared::magica`): gasta 1 pra meia hora lá
+    /// dentro, até três de uma vez.
+    ///
+    /// É ITEM, e não coluna de banco, de propósito: assim ele cai de chefe,
+    /// se compra com TP, se vende no mercado e se dá de presente sem uma
+    /// linha de código nova — e o "quantos eu tenho" é a quantidade na bolsa,
+    /// que o jogador já sabe ler.
+    pub const PASSE_MAGICO: u16 = 466;
 
     pub const fn montaria_no_grau(base: u16, grau: u8) -> u16 {
         base + (if grau < 1 {

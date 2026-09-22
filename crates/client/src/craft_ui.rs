@@ -21,6 +21,8 @@ use shared::receitas::{categoria, nome_da_categoria};
 use shared::InventorySlot;
 
 use crate::hud_estilo::{self as estilo, u};
+use crate::vox::VoxCache;
+use macroquad::material::Material;
 
 const LARGURA: f32 = 780.0;
 const ALTURA: f32 = 520.0;
@@ -64,15 +66,26 @@ pub fn o_que_da(
     r: &CraftRecipeNet,
     faixas: &[(&str, i32, i32)],
     nome_da_saida: &str,
+    nivel: u32,
 ) -> (String, Option<String>) {
     if faixas.is_empty() || !r.roll_instance {
         let qtd = r.output_qty.max(1);
         return (format!("Cria: {qtd}× {nome_da_saida}"), None);
     }
-    let atributos: Vec<String> = faixas
+    let mut atributos: Vec<String> = faixas
         .iter()
         .map(|(n, a, b)| if a == b { format!("{n} +{a}") } else { format!("{n} +{a}–{b}") })
         .collect();
+    // A FOR da armadura MEDIA nao esta' nas faixas: ela entra em
+    // `effective_stats` como ponto alocado, e nao como atributo do template.
+    // A ficha da bolsa ja' tinha sido corrigida; aqui nao — e o dono leu de
+    // novo, montando a peca, que "a media nao da' forca".
+    //
+    // Ela cresce com o NIVEL DO JOGADOR, entao e' o nivel dele que entra.
+    let emp = shared::for_da_armadura(r.output_item_id, nivel.max(1));
+    if emp > 0 {
+        atributos.push(format!("Força +{emp}"));
+    }
     let mut extra = Vec::new();
     if r.output_item_level > 5 {
         extra.push(format!("usar a partir do Nv {}", r.output_item_level / 2));
@@ -107,11 +120,14 @@ pub struct Craft {
     /// Lupa tocada num ingrediente: o item pro "Onde obter".
     pub onde_obter: Option<u16>,
     oficina: crate::oficina_ui::Oficina,
+    /// Aberto pela entrada COMBINAR do menu: sem as abas de categoria.
+    so_combinar: bool,
 }
 
 impl Craft {
     pub fn abrir(&mut self) {
         self.aberto = true;
+        self.so_combinar = false;
     }
 
     pub fn fechar(&mut self) {
@@ -129,6 +145,7 @@ impl Craft {
     /// Abre direto numa receita (o "Abrir" do Onde obter).
     pub fn abrir_receita(&mut self, id: u16) {
         self.aberto = true;
+        self.so_combinar = false;
         if let Some(r) = self.receitas.iter().find(|r| r.id == id) {
             if let Some(i) = ABAS.iter().position(|c| *c == r.category) {
                 self.aba = i;
@@ -156,6 +173,50 @@ impl Craft {
             Some(id) => self.abrir_receita(id),
             None => self.abrir(),
         }
+    }
+
+    /// Abre no que DA' PRA FAZER AGORA (a missao "crie um equipamento").
+    ///
+    /// A missao mandava `abrir()`, que cai na primeira aba — e quase sempre a
+    /// receita possivel esta' noutra. O dono: "na missao de craft manda ja'
+    /// direto no craft q da' pra fazer pela missao, q e' o de armadura, ja'
+    /// abrir direto nessa aba".
+    ///
+    /// Quem decide o que "da' pra fazer" e' o mesmo `motivo` que pinta o
+    /// botao: nivel e ingredientes na mao. Sem nenhuma possivel, abre a mais
+    /// barata — ver a que falta menos ensina mais que uma aba vazia.
+    pub fn abrir_no_que_da(&mut self, slots: &[InventorySlot], nivel: u32) {
+        let possivel = self
+            .receitas
+            .iter()
+            .filter(|r| motivo(r, slots, nivel).is_none())
+            .min_by_key(|r| (r.nivel_min, r.id))
+            .map(|r| r.id);
+        let alcancavel = || {
+            self.receitas
+                .iter()
+                .filter(|r| nivel >= r.nivel_min as u32)
+                .min_by_key(|r| (r.nivel_min, r.id))
+                .map(|r| r.id)
+        };
+        match possivel.or_else(alcancavel) {
+            Some(id) => self.abrir_receita(id),
+            None => self.abrir(),
+        }
+    }
+
+    /// Abre SO' o Combinar (a entrada propria do menu).
+    ///
+    /// O dono: "combinar tem q ser uma aba separada no menu, n junto com o
+    /// craft". Combinar nao e' receita — e' arrastar cinco iguais e torcer —,
+    /// e ficava como a sexta abinha de uma tela de receitas, onde ninguem
+    /// achava. Entrando pelo menu, as abas de categoria somem e a tela e' so'
+    /// dela.
+    pub fn abrir_combinar(&mut self) {
+        self.aberto = true;
+        self.so_combinar = true;
+        self.aba = ABA_COMBINAR;
+        self.oficina.trocou_de_aba();
     }
 
     /// Lupa tocada em qualquer aba (receita ou oficina).
@@ -204,11 +265,12 @@ impl Craft {
         nomes: &HashMap<u16, String>,
         nivel: u32,
         agora: f64,
+        palco: Option<(&VoxCache, &Material)>,
     ) -> Option<ClientMessage> {
         if !self.aberto {
             return None;
         }
-        estilo::no_painel(Self::escala(), || self.desenha_na_escala(slots, nomes, nivel, agora))
+        estilo::no_painel(Self::escala(), || self.desenha_na_escala(slots, nomes, nivel, agora, palco))
     }
 
     fn desenha_na_escala(
@@ -217,11 +279,13 @@ impl Craft {
         nomes: &HashMap<u16, String>,
         nivel: u32,
         agora: f64,
+        palco: Option<(&VoxCache, &Material)>,
     ) -> Option<ClientMessage> {
         let linha_h = u(LINHA);
         let p = Self::painel();
         estilo::painel(p);
-        estilo::texto(p.x + u(18.0), p.y + u(32.0), "Craft", 22, estilo::OURO);
+        let titulo = if self.so_combinar { "Combinar" } else { "Craft" };
+        estilo::texto(p.x + u(18.0), p.y + u(32.0), titulo, 22, estilo::OURO);
         let dica = match self.aba {
             ABA_APRIMORAR => "duas iguais sobem o tier; duas Tier IV +8 sobem a cor",
             ABA_COMBINAR => "chave e material de uma cor tentam a cor de cima",
@@ -243,12 +307,20 @@ impl Craft {
                 .unwrap_or_else(|| format!("item {id}"))
         };
         // Abas: as categorias de receita e depois as duas de oficina.
+        //
+        // Entrando pela entrada COMBINAR do menu nao ha' abas nenhuma: a tela
+        // e' so' dela, e uma fileira de categorias de receita em cima do
+        // arrasta-cinco-iguais so' diria que ele e' um apendice do Craft.
         let mut x = p.x + u(16.0);
-        let rotulos = ABAS
-            .iter()
-            .map(|&c| nome_da_categoria(c))
-            .chain(["Aprimorar", "Combinar"]);
-        for (i, rot) in rotulos.enumerate() {
+        let rotulos: Vec<&str> = if self.so_combinar {
+            Vec::new()
+        } else {
+            ABAS.iter()
+                .map(|&c| nome_da_categoria(c))
+                .chain(["Aprimorar", "Combinar"])
+                .collect()
+        };
+        for (i, rot) in rotulos.into_iter().enumerate() {
             let w = estilo::medir(rot, 15) + u(26.0);
             let r = Rect::new(x, p.y + u(46.0), w, u(28.0));
             if i == self.aba {
@@ -327,10 +399,11 @@ impl Craft {
                 linha.h,
                 Color::new(1.0, 1.0, 1.0, a),
             );
-            crate::bolsa::icone_do_item(
+            crate::bolsa::icone_do_item_com(
                 Rect::new(linha.x + u(4.0), linha.y + u(3.0), u(32.0), u(32.0)),
                 r.output_item_id,
                 1.0,
+                palco,
             );
             let pode = motivo(r, slots, nivel).is_none();
             let cor = if nivel < r.nivel_min as u32 {
@@ -371,10 +444,11 @@ impl Craft {
         // Detalhe.
         let mut pedido = None;
         if let Some(r) = receitas.iter().find(|r| Some(r.id) == self.sel) {
-            crate::bolsa::icone_do_item(
+            crate::bolsa::icone_do_item_com(
                 Rect::new(d.x + u(6.0), d.y + u(4.0), u(56.0), u(56.0)),
                 r.output_item_id,
                 1.0,
+                palco,
             );
             estilo::texto_ajustado(
                 &r.name,
@@ -397,7 +471,7 @@ impl Craft {
             );
             // O que a peça dá: os valores fixos, pela mesma conta do servidor.
             let faixas = shared::items::faixas_do_roll(r.output_item_id, r.output_item_level);
-            let (texto_da, extra) = o_que_da(r, &faixas, &nome(r.output_item_id));
+            let (texto_da, extra) = o_que_da(r, &faixas, &nome(r.output_item_id), nivel);
             estilo::texto_ajustado(&texto_da, d.x + u(6.0), d.y + u(80.0), d.w - u(12.0), 15, VERDE);
             if let Some(e) = &extra {
                 estilo::texto_ajustado(e, d.x + u(6.0), d.y + u(100.0), d.w - u(12.0), 13, estilo::SUAVE);
@@ -405,7 +479,7 @@ impl Craft {
             estilo::texto(d.x + u(6.0), d.y + u(128.0), "Ingredientes", 15, estilo::TEXTO);
             for (i, (id, t, q)) in ingredientes(r, slots).into_iter().enumerate() {
                 let y = d.y + u(138.0) + i as f32 * u(38.0);
-                crate::bolsa::icone_do_item(Rect::new(d.x + u(6.0), y, u(30.0), u(30.0)), id, 1.0);
+                crate::bolsa::icone_do_item_com(Rect::new(d.x + u(6.0), y, u(30.0), u(30.0)), id, 1.0, palco);
                 estilo::texto_ajustado(
                     &nome(id),
                     d.x + u(44.0),
@@ -514,7 +588,7 @@ pub async fn previa() {
         for _ in 0..3 {
             crate::render3d::camera_padrao();
             clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
-            c.desenha(&slots, &nomes, 16, 0.0);
+            c.desenha(&slots, &nomes, 16, 0.0, None);
             unsafe { get_internal_gl().flush() };
             rt.texture
                 .get_texture_data()
@@ -570,11 +644,44 @@ mod tests {
             .find(|r| r.output_item_id == shared::item_id::KATANA)
             .unwrap();
         let f = shared::items::faixas_do_roll(r.output_item_id, r.output_item_level);
-        let (da, extra) = o_que_da(&r, &f, "Katana");
+        let (da, extra) = o_que_da(&r, &f, "Katana", 10);
         assert!(da.starts_with("Dá: Ataque +"), "{da}");
         assert!(da.contains("Destreza +"), "{da}");
         assert!(!da.contains('–'), "não mostra faixa: {da}");
         assert!(extra.as_deref().is_none_or(|e| !e.contains("aleat")));
+    }
+
+    /// A armadura MÉDIA diz que dá Força — na tela onde ela é montada.
+    ///
+    /// O dono leu duas vezes que "a média não dá força": a FOR dela não é
+    /// atributo do template, entra em `effective_stats` como ponto alocado, e
+    /// por isso não aparecia em nenhuma lista de atributos. A ficha da bolsa
+    /// foi corrigida; esta tela ficou, e ele voltou a ler o mesmo.
+    #[test]
+    fn o_craft_diz_que_a_armadura_media_da_forca() {
+        let r = shared::receitas::receitas_de_equipamento()
+            .into_iter()
+            .find(|r| r.output_item_id == shared::item_id::ARMADURA_MEDIA)
+            .expect("não há receita de armadura média");
+        let f = shared::items::faixas_do_roll(r.output_item_id, r.output_item_level);
+        for nivel in [1u32, 30, 60] {
+            let (da, _) = o_que_da(&r, &f, "Armadura Média", nivel);
+            let esperado = shared::for_da_armadura(shared::item_id::ARMADURA_MEDIA, nivel);
+            assert!(esperado > 0, "a média deixou de dar FOR");
+            assert!(
+                da.contains(&format!("Força +{esperado}")),
+                "nível {nivel}: '{da}' não diz a Força que a peça empresta"
+            );
+        }
+        // E a peça que NÃO empresta FOR não ganha a linha.
+        let leve = shared::receitas::receitas_de_equipamento()
+            .into_iter()
+            .find(|r| r.output_item_id == shared::item_id::ARMADURA_LEVE);
+        if let Some(l) = leve {
+            let fl = shared::items::faixas_do_roll(l.output_item_id, l.output_item_level);
+            let (da, _) = o_que_da(&l, &fl, "Armadura Leve", 30);
+            assert!(!da.contains("Força"), "a leve não empresta FOR: {da}");
+        }
     }
 
     #[test]

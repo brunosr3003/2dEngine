@@ -206,8 +206,17 @@ async fn main() -> anyhow::Result<()> {
                         };
                         ws.send(envia(&m)?).await?;
                     }
-                    ServerMessage::MapChange { map_name, .. } => {
+                    ServerMessage::MapChange { ref map_name, .. } => {
                         println!("{n:3} MapChange '{map_name}'   <-- o cliente ZERA o terreno aqui");
+                        // Numa ilha do ARQUIPELAGO o relevo sai da zona (a
+                        // colônia manda o dela por mensagem). Sem isto o
+                        // `--rota` só funcionava na colônia, e a rota do
+                        // PORTO — a que o dono relatou — ficava sem teste.
+                        if rota {
+                            if let Some(d) = shared::terreno::def_da_zona(map_name) {
+                                ilha_da_colonia = Some(shared::terreno::Ilha::da_ilha(d));
+                            }
+                        }
                     }
                     ServerMessage::Colonia { ref aviso } => match *aviso {
                         shared::colonia::AvisoColonia::Terreno {

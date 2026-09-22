@@ -144,10 +144,11 @@ pub fn nome_do_item(id: u16) -> Option<String> {
 /// ficou mais lento do que ja' estava; a cor so' sobe daí.
 /// O multiplicador de velocidade por grau.
 ///
-/// TODOS batem o sprint a pe' (`SPRINT_SPEED_MULT`, 1,65) — e isso e' um
-/// contrato, nao um gosto: montado nao se sprinta (o multiplicador da
-/// montaria SUBSTITUI o do sprint, ver `loja::velocidade_de_andar`), entao
-/// uma montaria abaixo de 1,65 faz o jogador andar MAIS DEVAGAR do que a pe'.
+/// TODOS batem o sprint a pe' (`SPRINT_SPEED_MULT`, 1,65). Desde 22/09/2026 o
+/// sprint MULTIPLICA a montaria em vez de ser substituido por ela ("pode sim
+/// ter sprint montado"), entao o piso nao e' mais uma questao de nao andar
+/// para tras — mas continua valendo: montaria que nao bate o passo de quem
+/// corre a pe' e' uma compra que decepciona no primeiro trecho de corrida.
 ///
 /// Era o que acontecia: o Cervo (grau 1) dava 1,50 e o Lobo (grau 2) 1,60,
 /// contra 1,65 de quem corria. O dono montou nos dois e disse que "nem parece

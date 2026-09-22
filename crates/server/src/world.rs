@@ -95,6 +95,7 @@ pub struct ProjTag {
 
 mod boss_teste;
 pub(crate) mod colonia;
+pub(crate) mod magica;
 mod chefes;
 mod habilidades;
 pub(crate) use chefes::itens_do_chefe;
@@ -1266,6 +1267,18 @@ impl GameWorld {
                 }
             }
         }
+        // ILHA MÁGICA: PvP ABERTO.
+        //
+        // Foi pedido assim ("lá será open pvp"), e é o que dá peso às pontes:
+        // a ilhota do bônus só vale se alguém puder disputá-la. Aqui a facção
+        // e o PK ON não contam — quem entrou com o passe aceitou a regra da
+        // ilha.
+        //
+        // Depois da safe zone de propósito: se algum dia houver uma lá, ela
+        // continua valendo.
+        if self.na_magica() {
+            return true;
+        }
         // Cross-facção: sempre PvP. Mesma facção: opt-in (ambos PK ON).
         if att.faction != tgt.faction {
             return true;
@@ -1460,6 +1473,17 @@ pub struct Session {
     /// Pocao de Experiencia: +30% de XP ate' este instante (unix secs).
     /// Persistido em `characters.xp_bonus_ate`.
     pub xp_bonus_ate: i64,
+    /// ILHA MAGICA (`shared::magica`): ate' quando a sessao dela vale (unix
+    /// secs; 0 = nao esta' valendo). Persistido em `characters.magica_ate`.
+    /// O tempo corre mesmo deslogado — por isso e' um instante, e nao um
+    /// saldo.
+    pub magica_ate: i64,
+    /// A zona de onde ele entrou na Ilha Magica. Vazio = Bosque.
+    pub magica_volta: String,
+    /// Ultimo marco de aviso do relogio da Ilha Magica ja' falado (segundos).
+    /// Volatil: se o jogador reconectar, ele ouve os avisos de novo, e ouvir
+    /// duas vezes e' melhor que nao ouvir.
+    pub magica_avisado: i64,
     /// Mortes com XP recuperavel (ver `morte`). Persistido em `mortes_json`.
     pub mortes: Vec<crate::morte::MorteRecuperavel>,
     /// Dia UTC e recuperacoes gratis ja' usadas nele.
@@ -5550,6 +5574,8 @@ impl GameWorld {
             });
             s.stamina_last_sent = stats.stamina_max;
             s.xp_bonus_ate = row.xp_bonus_ate;
+            s.magica_ate = row.magica_ate;
+            s.magica_volta = row.magica_volta.clone();
             let _ = s.handle.to_client.send(ServerMessage::BuffXp {
                 ate: row.xp_bonus_ate,
             });
@@ -6637,6 +6663,9 @@ impl GameWorld {
                 stamina_current: shared::STAMINA_MAX as f32,
                 stamina_last_sent: shared::STAMINA_MAX,
                 xp_bonus_ate: 0,
+                magica_ate: 0,
+                magica_volta: String::new(),
+                magica_avisado: i64::MAX,
                 mortes: Vec::new(),
                 recuperacoes_dia: 0,
                 recuperacoes_usadas: 0,
@@ -7147,6 +7176,7 @@ impl GameWorld {
             }
             ClientMessage::Viajar { ilha } => self.handle_viajar(id, ilha),
             ClientMessage::Colonia { pedido } => self.handle_colonia(id, pedido),
+            ClientMessage::Magica { pedido } => self.handle_magica(id, pedido),
             ClientMessage::Mundo => self.abrir_mapa_mundi(id),
             ClientMessage::ExpandirArmazem { banco } => self.handle_expandir_armazem(id, banco),
             ClientMessage::EscolherNoNpc { npc_eid, missao } => {
@@ -9056,7 +9086,10 @@ impl GameWorld {
             } else if session.defending {
                 PLAYER_SPEED * shared::MOVE_SPEED_DEFENDING_MULT * spd_scale
             } else {
-                // Montado: so' mobilidade (docs/MONTARIAS.md), sem sprint por cima.
+                // Montado: a mobilidade da montaria E o sprint, que agora
+                // multiplicam (docs/MONTARIAS.md). Esporear gasta o mesmo
+                // folego que correr a pe' — `wants_sprint` nao olha a
+                // montaria, entao a stamina ja' drena sozinha.
                 shared::loja::velocidade_de_andar(
                     PLAYER_SPEED * spd_scale,
                     shared::loja::mult_de_montaria(session.montado, session.equipment.montaria),
@@ -11444,15 +11477,26 @@ impl GameWorld {
                 .get(&eid)
                 .and_then(|a| self.sessions.values().find(|s| s.entity_id == *a))
                 .map_or((0, 0), |s| (s.fortuna_ate, s.sorte_ate));
+            // ILHA MAGICA: a ilhota em que o matador esta' paga o abate.
+            //
+            // O bonus de drop entra pela MESMA porta da pocao de Sorte, que e'
+            // a chance de cada linha da tabela — e' isso que "bonus de drop"
+            // quer dizer. Multiplicar a quantidade do que ja' caiu nao ajuda
+            // em nada quando nao cai nada, que e' o caso comum.
+            let e_chefe_aqui = kind_id == 7 || shared::bosses::e_chefe(kind_id);
+            let (mag_xp, mag_ouro, mag_drop) = kill_credits
+                .get(&eid)
+                .map_or((1.0, 1.0, 1.0), |a| self.mults_de_abate(*a, e_chefe_aqui));
             let drops: Vec<(u16, u32)> = crate::economy::enemy_loot_drops_com_sorte(
                 kind_id,
                 seed,
-                shared::mult_de_sorte(agora_unix, sorte_ate),
+                shared::mult_de_sorte(agora_unix, sorte_ate) * mag_drop,
             )
             .into_iter()
             .map(|(id, q)| {
                 if id == shared::item_id::GOLD || id == shared::item_id::COPPER {
-                    (id, shared::qtd_com_fortuna(q, agora_unix, fortuna_ate))
+                    let q = shared::qtd_com_fortuna(q, agora_unix, fortuna_ate);
+                    (id, (q as f32 * mag_ouro).round() as u32)
                 } else {
                     (id, q)
                 }
@@ -11540,6 +11584,12 @@ impl GameWorld {
                 } else {
                     xp_reward
                 };
+                // ILHA MAGICA: a Ilhota da Experiencia dobra o XP de abate.
+                //
+                // Aplicado ao SHARE, ja' depois da divisao de party: o bonus e'
+                // de quem matou, e o mundo de la' cabe num raio menor que o de
+                // compartilhamento — quem dividiu o abate dividiu a ilhota.
+                let share = (share as f32 * mag_xp).round() as u64;
                 let fame_share = fame_reward;
                 for session in self.sessions.values_mut() {
                     if recipients.contains(&session.entity_id) && session.logged_in {
@@ -11898,6 +11948,17 @@ impl GameWorld {
         // NÃO na cidade-sede do mundo.
         let spawn = if self.tutorial_mode {
             Vec2::new(TUTORIAL_AREA.0, TUTORIAL_AREA.1)
+        } else if let Some(entrada) = self.renascimento_magico() {
+            // ILHA MAGICA: morreu, volta pra ENTRADA da ilha.
+            //
+            // Pedido assim, e por um motivo de desenho: com PvP aberto,
+            // renascer na ilhota em que caiu devolveria o jogador ao pe' de
+            // quem o matou, e a ilha viraria uma fila de execucao. A
+            // travessia de volta e' o preco de ter morrido.
+            //
+            // Antes do `porto()`, que naquela ilha nao existe (ela nao tem
+            // cais) e devolveria o centro.
+            entrada
         } else if self.ilha.is_some() {
             self.porto()
         } else {
@@ -12743,6 +12804,8 @@ impl GameWorld {
             mp: f32,
             stamina: f32,
             xp_bonus_ate: i64,
+            magica_ate: i64,
+            magica_volta: String,
             mortes_json: String,
             recuperacoes_dia: i64,
             recuperacoes_usadas: i32,
@@ -12804,6 +12867,8 @@ impl GameWorld {
                 mp: session.mp_current,
                 stamina: session.stamina_current,
                 xp_bonus_ate: session.xp_bonus_ate,
+                magica_ate: session.magica_ate,
+                magica_volta: session.magica_volta.clone(),
                 mortes_json: crate::morte::para_json(&session.mortes),
                 recuperacoes_dia: session.recuperacoes_dia,
                 recuperacoes_usadas: session.recuperacoes_usadas as i32,
@@ -12861,6 +12926,8 @@ impl GameWorld {
                 stamina: Some(e.stamina),
                 zona: self.zona_do_save(&e.name),
                 xp_bonus_ate: e.xp_bonus_ate,
+                magica_ate: e.magica_ate,
+                magica_volta: e.magica_volta,
                 mortes_json: e.mortes_json,
                 recuperacoes_dia: e.recuperacoes_dia,
                 recuperacoes_usadas: e.recuperacoes_usadas,
@@ -17927,6 +17994,9 @@ impl GameWorld {
                 .position(|d| d.zona == self.zona)
                 .unwrap_or(0);
             let qtd = shared::skills::energia_por_coleta(ilha);
+            // ILHA MAGICA: a Ilhota da Energia dobra o que o veio entrega.
+            let qtd = (qtd as f32 * self.mult_magico(sid, shared::magica::Bonus::Coleta(5)))
+                .round() as u64;
             if let Some(s) = self.sessions.get_mut(&sid) {
                 s.skill_progress.energia = s.skill_progress.energia.saturating_add(qtd);
                 s.skills_dirty = true;
@@ -17967,7 +18037,13 @@ impl GameWorld {
         // Pocao de Sorte de quem coleta: chance de cada linha x1,2 (a garantida
         // continua garantida). Fortuna nao vale aqui — e' ouro de BICHO.
         let sorte_ate = self.sessions.get(&sid).map_or(0, |s| s.sorte_ate);
-        let mult = shared::mult_de_sorte((now_ms() / 1000) as i64, sorte_ate);
+        // ILHA MAGICA: a ilhota do recurso DESTE no' multiplica o rendimento.
+        //
+        // Pelo tier do no', e nao por um tipo generico: quem esta' na Ilhota
+        // da Pedra colhe pedra em dobro e madeira no normal, que e' o que faz
+        // atravessar a ponte ser uma escolha em vez de um detalhe.
+        let mult = shared::mult_de_sorte((now_ms() / 1000) as i64, sorte_ate)
+            * self.mult_magico(sid, shared::magica::Bonus::Coleta(c.tier));
         let drops = crate::economy::farm_node_loot_com_sorte(kind, tier_material, seed, mult);
         let cabe = self.sessions.get(&sid).is_some_and(|s| {
             crate::coleta::cabe_tudo(&s.inventory, &drops, &crate::economy::item_stack_max)
@@ -18263,6 +18339,8 @@ impl GameWorld {
             stamina: Some(session.stamina_current),
             zona: self.zona_do_save(&session.name),
             xp_bonus_ate: session.xp_bonus_ate,
+            magica_ate: session.magica_ate,
+            magica_volta: session.magica_volta.clone(),
             mortes_json: crate::morte::para_json(&session.mortes),
             recuperacoes_dia: session.recuperacoes_dia,
             recuperacoes_usadas: session.recuperacoes_usadas as i32,

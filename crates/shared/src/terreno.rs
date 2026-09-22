@@ -1412,7 +1412,7 @@ fn recurso_montanha_da_coluna(
     // Energia so' dentro do campo — e, la' dentro, TODA candidata vale. O
     // filtro de 1 em 5 que havia aqui espalhava um cristal solto por vez, que
     // e' o contrario de ter um lugar de coletar Energia.
-    if energia && !no_campo_de_energia(bx, bz) {
+    if energia && !ger.campo_de_energia(bx, bz) {
         return None;
     }
     let espaco = if energia {
@@ -1649,6 +1649,9 @@ pub struct Gerador {
     /// Casas, props e NPCs. Calculada na primeira vez que alguem pede — o
     /// cliente e o servidor pedem, o `terreno --varre` nao.
     vila: std::sync::OnceLock<crate::vila::Vila>,
+    /// E' a ILHA MAGICA? Ai' o relevo nao e' ruido nenhum: e' o desenho de
+    /// `magica::bloco_da_coluna`, e a cidade e o porto nao entram.
+    magica: bool,
 }
 
 /// Move um CASCO: a regra da terra, ao contrario.
@@ -2023,6 +2026,27 @@ impl Gerador {
         })
     }
 
+    /// O gerador da ILHA MAGICA: ilhotas e pontes, sem cidade e sem porto.
+    ///
+    /// Publico e num lugar so' pelo mesmo motivo de `da_colonia`: o cliente
+    /// desenha o chao a partir do gerador, nunca de um campo de altura que o
+    /// servidor mande. Duas chamadas soltas a `novo` dariam dois relevos.
+    pub fn da_ilha_magica() -> Self {
+        let mut g = Self::novo(
+            crate::magica::SEMENTE,
+            crate::magica::RAIO_BLOCOS,
+            Bioma::Floresta,
+            ESCALA_ALTURA,
+        );
+        g.magica = true;
+        // `novo` ja' procurou cidade e porto no relevo CRU, que a ilha magica
+        // nao usa. Deixa-los ali daria uma praca aplainada sobre o mar e um
+        // cais para lugar nenhum — visiveis na vila, que le' a cidade.
+        g.cidade = None;
+        g.porto = None;
+        g
+    }
+
     pub fn novo(semente: i32, raio_blocos: i32, bioma: Bioma, escala_altura: f32) -> Self {
         let p = bioma.perfil();
         let (tb, tf) = (p.terraco_blocos, p.terraco_forca);
@@ -2052,6 +2076,7 @@ impl Gerador {
             porto: None,
             rumo_do_mar: None,
             vila: std::sync::OnceLock::new(),
+            magica: false,
         };
         g.cidade = g.achar_cidade();
         g.porto = g.achar_porto(g.cidade);
@@ -2064,6 +2089,12 @@ impl Gerador {
     /// `novo`: com os quatro argumentos soltos o rumo se perde e o porto sai
     /// no lugar errado, sem erro nenhum.
     pub fn da_ilha(def: &DefIlha) -> Self {
+        // A Ilha Magica e' desenhada, nao sorteada: ela desvia aqui pra que
+        // quem passa pela def (cliente, minimapa, construcoes, servidor)
+        // receba o arquipelago de ilhotas e nao uma ilha de Perlin.
+        if crate::magica::e_magica(def.zona) {
+            return Self::da_ilha_magica();
+        }
         let p = def.bioma.perfil();
         let (tb, tf) = (p.terraco_blocos, p.terraco_forca);
         let mut g = Self {
@@ -2081,6 +2112,7 @@ impl Gerador {
             porto: None,
             rumo_do_mar: def.rumo_do_porto(),
             vila: std::sync::OnceLock::new(),
+            magica: false,
         };
         g.cidade = g.achar_cidade();
         g.porto = g.achar_porto(g.cidade);
@@ -2090,6 +2122,13 @@ impl Gerador {
     /// Indice do bloco de topo na coluna `(bx, bz)`, em blocos a partir do
     /// CENTRO da ilha. Ja' com a cidade e o porto aplainados.
     pub fn bloco_em(&self, bx: i32, bz: i32) -> i32 {
+        // A ilha magica e' DESENHADA, nao sorteada: ela sai antes de tudo,
+        // inclusive do ruido. Aplainar por cima de um relevo cru que ninguem
+        // vai ver seria pagar tres oitavas de fbm por coluna a toa — e sao
+        // 1,25 milhao de colunas.
+        if self.magica {
+            return crate::magica::bloco_da_coluna(bx, bz);
+        }
         let cru = self.bloco_cru(bx, bz);
         let b = match &self.cidade {
             Some(c) => c.aplainar(bx, bz, cru),
@@ -2436,6 +2475,18 @@ impl Gerador {
     /// Teto teorico do relevo deste bioma, em unidades. E' a regua contra a
     /// qual "topo de montanha" quer dizer a mesma coisa em todo bioma — o
     /// pico da Floresta e o do Planalto sao numeros bem diferentes.
+    /// Esta coluna esta' num campo de Energia?
+    ///
+    /// Normalmente e' a grade global (`no_campo_de_energia`). A Ilha Magica
+    /// responde por si: a grade global tem celula de 300 blocos e foi feita
+    /// pra ilha de 1,6 km, e numa de 280 u ela cai onde cai.
+    pub fn campo_de_energia(&self, bx: i32, bz: i32) -> bool {
+        if self.magica {
+            return crate::magica::no_campo_de_energia(bx, bz);
+        }
+        no_campo_de_energia(bx, bz)
+    }
+
     pub fn pico(&self) -> f32 {
         (self.perfil.serra.0 + self.perfil.serra.1) * self.escala_altura
     }
@@ -2649,6 +2700,35 @@ impl Ilha {
         }
         Self::com_blocos(
             crate::colonia::SEMENTE,
+            raio_blocos,
+            Bioma::Floresta,
+            ESCALA_ALTURA,
+            lado,
+            blocos,
+            ger,
+        )
+    }
+
+    /// A ILHA MAGICA: as ilhotas e as pontes, plantadas.
+    ///
+    /// O plantio e' o normal (`plantar`), de proposito: as pedras, os troncos
+    /// e a Energia das ilhotas de recurso saem do mesmo sorteio do resto do
+    /// jogo. Um segundo plantador so' pra ca' seria uma segunda regra pra
+    /// mesma coisa, e a primeira a ficar pra tras quando o jogo mudasse.
+    pub fn da_ilha_magica() -> Self {
+        let raio_blocos = crate::magica::RAIO_BLOCOS;
+        let lado = (raio_blocos * 2) as usize;
+        let ger = Gerador::da_ilha_magica();
+        let mut blocos = vec![0i16; lado * lado];
+        for iz in 0..lado {
+            let bz = iz as i32 - raio_blocos;
+            for ix in 0..lado {
+                let bx = ix as i32 - raio_blocos;
+                blocos[iz * lado + ix] = ger.bloco_em(bx, bz) as i16;
+            }
+        }
+        Self::com_blocos(
+            crate::magica::SEMENTE,
             raio_blocos,
             Bioma::Floresta,
             ESCALA_ALTURA,
@@ -4426,7 +4506,80 @@ pub const ARQUIPELAGO: [DefIlha; 4] = [
     },
 ];
 
+#[cfg(test)]
+mod testes_da_ilha_magica {
+    use super::*;
+
+    /// A ILHA de verdade — gerada, plantada e caminhada.
+    ///
+    /// `magica::toda_ilhota_se_alcanca_a_pe` prova a GEOMETRIA; este prova o
+    /// MUNDO: que o campo de altura saiu do desenho, que a ponte e' chao seco
+    /// e que `caminho` (o A\* do jogo) leva da chegada a toda ilhota. Uma
+    /// ponte que existe no desenho e some no relevo prende o jogador com meia
+    /// hora de passe correndo — foi exatamente o que o cais da colonia fez.
+    #[test]
+    fn da_chegada_se_anda_ate_toda_ilhota() {
+        let ilha = Ilha::da_ilha_magica();
+        let chegada = crate::magica::CHEGADA;
+        assert!(!ilha.agua(chegada.x, chegada.y), "a chegada esta' na agua");
+        for i in crate::magica::ilhotas() {
+            let c = i.centro;
+            assert!(
+                !ilha.agua(c.x, c.y),
+                "{}: o centro dela e' agua",
+                i.bonus.nome()
+            );
+            let rota = ilha.caminho(chegada, c, 400_000);
+            assert!(
+                rota.is_some(),
+                "{}: sem rota a pe' da chegada — o jogador fica vendo o bonus \
+                 do outro lado da agua com o passe correndo",
+                i.bonus.nome()
+            );
+        }
+        // E o MAR em volta e' mar: sem isso as ilhotas seriam um continente.
+        let fora = crate::magica::raio_do_mundo();
+        assert!(ilha.agua(fora, 0.0), "o lado de fora tinha que ser mar");
+    }
+
+    /// A ilhota de recurso TEM o recurso dela.
+    ///
+    /// O plantio e' o normal (ruido do gerador), entao a semente e' que
+    /// decide — e uma semente ruim deixa a Ilhota da Pedra sem pedra. O
+    /// jogador atravessaria a ponte pra colher o dobro de nada.
+    #[test]
+    fn toda_ilhota_de_recurso_tem_o_recurso() {
+        let ilha = Ilha::da_ilha_magica();
+        for i in crate::magica::ilhotas() {
+            let crate::magica::Bonus::Coleta(tipo) = i.bonus else {
+                continue;
+            };
+            let mut achados = Vec::new();
+            ilha.coletaveis_em(i.centro, i.raio, &mut achados);
+            let n = achados.iter().filter(|c| c.tier == tipo).count();
+            println!("{}: {n} nos do tipo {tipo}", i.bonus.nome());
+            assert!(
+                n > 0,
+                "{}: nenhum no' do tipo {tipo} nela ({} coletaveis no total) — \
+                 troque `magica::SEMENTE`",
+                i.bonus.nome(),
+                achados.len()
+            );
+        }
+    }
+}
+
 pub fn def_da_zona(zona: &str) -> Option<&'static DefIlha> {
+    // A ILHA MAGICA entra aqui, e nao no `ARQUIPELAGO`.
+    //
+    // Nao e' degrau de progressao (a historia, a faixa de nivel das ilhas e o
+    // mapa-mundi saem daquela tabela), mas E' uma zona com relevo proprio — e
+    // TODO caminho que monta relevo pergunta a esta funcao: o terreno do
+    // cliente, o minimapa, as construcoes e o `tick` do servidor. Devolvendo a
+    // def aqui, os quatro passam a funcionar sem uma linha nova.
+    if crate::magica::e_magica(zona) {
+        return Some(&crate::magica::DEF);
+    }
     ARQUIPELAGO.iter().find(|d| d.zona == zona)
 }
 

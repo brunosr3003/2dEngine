@@ -207,6 +207,10 @@ pub async fn run_world_loop(
         if save_counter % 30 == 0 {
             world.tick_fila();
             world.tick_diarias();
+            // O relogio da Ilha Magica. Uma vez por segundo: o aviso de "10
+            // segundos" nao precisa de mais, e expulsar e' handoff — coisa
+            // que nao se faz trinta vezes por segundo.
+            world.tick_magica();
         }
         // Lotacao do canal pro HUD: a cada 5s.
         if save_counter % 150 == 0 {

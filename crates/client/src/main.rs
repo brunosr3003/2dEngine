@@ -76,6 +76,7 @@ mod joystick;
 mod lascas;
 mod loja_tp;
 mod map;
+mod magica_ui;
 mod mapa;
 mod menu_missoes;
 mod montarias_ui;
@@ -369,6 +370,7 @@ struct Jogo {
     /// Menu "Viajar" do Capitao do Porto.
     viagem: viagem_ui::ViagemUi,
     colonia: colonia_ui::ColoniaUi,
+    magica: magica_ui::MagicaUi,
     mundo: mundo_ui::Mundo,
     guarda_roupa: guarda_roupa_ui::GuardaRoupaUi,
     subiu_de_nivel: nivel_vfx::SubiuDeNivel,
@@ -641,6 +643,7 @@ async fn main() {
         presenca: presenca_ui::PresencaUi::default(),
         viagem: viagem_ui::ViagemUi::default(),
         colonia: colonia_ui::ColoniaUi::default(),
+        magica: magica_ui::MagicaUi::default(),
         mundo: mundo_ui::Mundo::default(),
         guarda_roupa: guarda_roupa_ui::GuardaRoupaUi::default(),
         subiu_de_nivel: nivel_vfx::SubiuDeNivel::default(),
@@ -1218,6 +1221,17 @@ impl Jogo {
                     A::Recusa(t) => self.chat.push(t),
                 }
             }
+            ServerMessage::Magica { aviso } => {
+                // Fechar os outros paineis so' quando ele ABRE: dentro da
+                // ilha este aviso chega a cada troca de ilhota, e fechar a
+                // bolsa de quem esta' lutando seria pior que nao avisar nada.
+                let antes = self.magica.aberto();
+                self.magica.recebe(aviso, get_time());
+                if !antes && self.magica.aberto() {
+                    self.fecha_paineis();
+                    self.magica.abrir();
+                }
+            }
             ServerMessage::Snapshot { snapshot } => {
                 self.tick = snapshot.tick;
                 self.world
@@ -1774,7 +1788,12 @@ impl Jogo {
                         self.auto_missao.parar();
                         if tipo == destino_tipo::PAINEL_CRAFT {
                             self.forja.fechar();
-                            self.craft.abrir();
+                            // Na aba do que DA' pra fazer agora, e nao na
+                            // primeira: a missao pede "crie um equipamento", e
+                            // cair numa aba onde nada e' possivel e' mandar o
+                            // jogador procurar o que a tela ja' sabe.
+                            self.craft
+                                .abrir_no_que_da(&self.bolsa.slots, self.bolsa.nivel);
                             self.chat
                                 .push("Missão: crie um equipamento no Craft.".into());
                         } else {
@@ -2119,6 +2138,10 @@ impl Jogo {
             // A ILHA: os quatro que acontecem DENTRO do painel do mural. O
             // caminho tem um degrau só porque o painel já está aberto quando
             // o passo abre — quem fechou o anterior fechou nele.
+            // O passo que ENSINA A ACHAR o painel. Os quatro de dentro
+            // tinham destaque e este não: o jogador via o buraco aceso a
+            // partir do segundo passo, quando já tinha descoberto sozinho.
+            t::COLONIA_PAINEL => &[c::MENU_MINHA_ILHA, c::MENU],
             t::COLONIA_ASSENTAMENTO => &[c::ILHA_ASSENTAMENTO],
             t::COLONIA_CONTRATAR => &[c::ILHA_CONTRATAR],
             t::COLONIA_COLHER => &[c::ILHA_COLHER],
@@ -2542,6 +2565,7 @@ impl Jogo {
         self.presenca.fechar();
         self.viagem.fechar();
         self.colonia.fechar();
+        self.magica.fechar();
         self.guarda_roupa.fechar();
         self.banco.fechar();
         self.escolha_npc.fechar();
@@ -2613,6 +2637,10 @@ impl Jogo {
             Item::TodasMissoes => self.menu_missoes.abrir(),
             Item::Diarias => self.diarias.abrir(),
             Item::Craft => self.craft.abrir(),
+            Item::Combinar => self.craft.abrir_combinar(),
+            Item::IlhaMagica => self.envia(ClientMessage::Magica {
+                pedido: shared::magica::PedidoMagica::Painel,
+            }),
             Item::Forja => self.forja.abrir(),
             Item::Habilidades => self.evolucao_skills.abrir(),
             Item::Mapa if self.mapa.tem_ilha() => self.mapa.abrir(),
@@ -4879,7 +4907,13 @@ impl Jogo {
             let nivel = self.ficha.nivel.max(1);
             if let Some(m) =
                 self.craft
-                    .desenha(&self.bolsa.slots, &self.bolsa.nomes, nivel, get_time())
+                    .desenha(
+                        &self.bolsa.slots,
+                        &self.bolsa.nomes,
+                        nivel,
+                        get_time(),
+                        Some((&self.vox, &self.solido)),
+                    )
             {
                 self.envia(m);
             }
@@ -4890,6 +4924,7 @@ impl Jogo {
                 &self.bolsa.equip,
                 &self.bolsa.nomes,
                 get_time(),
+                Some((&self.vox, &self.solido)),
             ) {
                 self.envia(m);
             }
@@ -5296,6 +5331,16 @@ impl Jogo {
                 self.envia(ClientMessage::Colonia { pedido });
             }
         }
+        // A ILHA MAGICA: o painel (quando aberto) e a tarja do relogio
+        // (sempre que se esta' la' dentro).
+        let agora_unix = (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)) as i64;
+        if let Some(pedido) = self.magica.desenha(get_time(), agora_unix) {
+            self.envia(ClientMessage::Magica { pedido });
+        }
+        self.magica.desenha_hud(agora_unix);
         // Loja de cash e janela de montarias (Menu).
         for pedido in self.loja_tp.desenha(&self.vox, &self.solido) {
             self.envia(pedido);

@@ -179,7 +179,7 @@ use Mira::{AFrente, EmSi, NoAlvo};
 /// Os chefes de campo: um por mob preset de corpo inteiro. Os mais fracos no
 /// Bosque (a ilha que roda localmente tem tres, pra testar), os fortes
 /// subindo pelas ilhas.
-pub const CHEFES: [Chefe; 9] = [
+pub const CHEFES: [Chefe; 10] = [
     Chefe {
         kind: 10,
         nome: "Lobo Alfa da Clareira",
@@ -629,6 +629,71 @@ pub const CHEFES: [Chefe; 9] = [
             ),
         ],
     },
+    // O COLOSSO DA ILHA MÁGICA (`shared::magica`).
+    //
+    // Ele existe porque a Ilhota do Colosso paga bônus de DROP DE CHEFE, e um
+    // bônus sobre um chefe que não existe é uma promessa vazia — a ilhota
+    // mais cobiçada do desenho ficaria sendo a mais inútil.
+    //
+    // Nível 45: a ilha é aberta a todo nível (o passe é o requisito), então
+    // ele fica no meio da faixa alta em vez de no teto. Um chefe de 60 numa
+    // ilha que qualquer um entra seria um muro; um de 10, um boneco.
+    Chefe {
+        kind: 19,
+        nome: "Colosso da Ilha Mágica",
+        corpo: Corpo::Gente(4),
+        escala: 1.9,
+        zona: crate::magica::ZONA,
+        nivel: 45,
+        habilidades: &[
+            // As CARGAS saem da simulação, não do gosto.
+            //
+            // `todo_telegrafico_e_esquivavel` mede quanto tempo o jogador
+            // precisa pra sair da forma e reprova carga menor que isso — na
+            // fase 2 ela ainda encurta, então a fase 1 tem de ter folga. A
+            // Pancada Sísmica começou com 1,6 s e foi reprovada por 1,36 s
+            // efetivos contra 1,53 s necessários.
+            h(
+                "Pancada Sísmica",
+                Circulo { raio: 5.5 },
+                EmSi,
+                1.9,
+                3.0,
+                8.0,
+                5.5,
+                0,
+                1.0,
+            ),
+            h(
+                "Investida do Colosso",
+                Linha {
+                    comprimento: 16.0,
+                    largura: 2.6,
+                },
+                AFrente,
+                1.5,
+                3.0,
+                7.0,
+                16.0,
+                0,
+                0.9,
+            ),
+            h(
+                "Onda de Pedra",
+                Anel {
+                    interno: 4.0,
+                    externo: 9.5,
+                },
+                EmSi,
+                2.0,
+                3.0,
+                12.0,
+                9.5,
+                1,
+                0.9,
+            ),
+        ],
+    },
 ];
 
 /// Maximo de habilidades por chefe (o estado de recarga e' um array).
@@ -997,10 +1062,10 @@ mod testes {
                 );
                 assert!(h.recarga_s > h.carga_s, "{}/{}", c.nome, h.nome);
             }
-            let def = crate::terreno::ARQUIPELAGO
-                .iter()
-                .find(|d| d.zona == c.zona)
-                .expect("ilha existe");
+            // A zona do chefe tem que EXISTIR. `def_da_zona` e nao o
+            // `ARQUIPELAGO` direto: a Ilha Magica e' zona de verdade e nao
+            // esta' naquela tabela (ela nao e' degrau de progressao).
+            let def = crate::terreno::def_da_zona(c.zona).expect("ilha existe");
             assert!(
                 c.nivel >= def.nivel.0 && c.nivel <= def.nivel.1 + 5,
                 "{}: nivel fora da ilha",
@@ -1012,5 +1077,11 @@ mod testes {
         for z in ["ilha_gelo", "ilha_deserto", "ilha_planalto"] {
             assert!(!da_zona(z).is_empty(), "{z} sem chefe");
         }
+        // A ILHA MÁGICA precisa de chefe: a Ilhota do Colosso paga bônus de
+        // DROP DE CHEFE, e sem chefe nenhum ela promete o que não existe.
+        assert!(
+            !da_zona(crate::magica::ZONA).is_empty(),
+            "Ilha Mágica sem chefe: a Ilhota do Colosso fica sem sentido"
+        );
     }
 }

@@ -122,8 +122,23 @@ pub fn loot_de_chefe(kind: u16, seed: u64) -> Vec<(u16, u32)> {
     {
         v.push((chave, 1));
     }
+    // O PASSE DA ILHA MAGICA (`shared::magica`).
+    //
+    // Chefe de mundo e' a fonte de JOGO dele — a ilha precisa ser alcancavel
+    // sem passar pela loja, senao o evento inteiro e' um anuncio.
+    //
+    // So' a partir do nivel 20 e com chance baixa: o passe vale meia hora de
+    // XP, ouro e drop em dobro, e um que caisse do lobo da clareira seria
+    // farmavel em loop. O chefe da PROPRIA Ilha Magica nao da' passe — a ilha
+    // nao se paga.
+    if n >= 20 && !shared::magica::e_magica(c.zona) && rnd() < CHANCE_DE_PASSE {
+        v.push((PASSE_MAGICO, 1));
+    }
     v
 }
+
+/// Chance de um chefe de mundo (nivel 20+) largar um Passe da Ilha Magica.
+pub const CHANCE_DE_PASSE: f32 = 0.12;
 
 /// Cor do material bom do chefe pelo nivel dele.
 fn cor_da_faixa(nivel: u32) -> u8 {
@@ -157,6 +172,11 @@ pub fn itens_do_chefe(kind: u16) -> Vec<(u16, f32)> {
     for base in CHAVES {
         v.push((chave_na_cor(base, chave.cor), chave.chance_mundo / 4.0));
     }
+    // Tem que andar junto com `loot_de_chefe` — `itens_do_chefe_cobre_o_loot`
+    // e' quem reprova quando os dois se separam.
+    if c.nivel >= 20 && !shared::magica::e_magica(c.zona) {
+        v.push((PASSE_MAGICO, CHANCE_DE_PASSE));
+    }
     v
 }
 
@@ -168,8 +188,14 @@ pub fn onde_obter_snapshot() -> Vec<shared::protocol::ItemResourceSources> {
     let mut mobs = comuns;
     mobs.retain(|k| !cat::e_chefe(*k));
     mobs.extend(crate::economy::KINDS_DE_PRAIA);
+    // So' os chefes de ILHA DO ARQUIPELAGO. O "Onde obter" localiza cada
+    // fonte por INDICE de ilha, e o Colosso da Ilha Magica nao tem um — ela
+    // nao esta' no `ARQUIPELAGO`. Sem este filtro ele caia no `unwrap_or(0)`
+    // de `ilha_da_zona` e a tela diria que ele mora no Bosque, que e' pior
+    // que nao dizer nada.
     let chefes = cat::CHEFES
         .iter()
+        .filter(|c| shared::terreno::ARQUIPELAGO.iter().any(|d| d.zona == c.zona))
         .map(|c| {
             (
                 c.kind,
@@ -724,12 +750,22 @@ mod testes {
         assert!(!m[&ultimo].is_empty());
         assert_eq!(m[&8], vec![0, 1, 2, 3], "caranguejo em toda praia");
         assert_eq!(ilha_da_zona("ilha_gelo"), 1);
-        for c in cat::CHEFES {
+        // Chefe de ilha do arquipelago tem indice de ilha certo. O da Ilha
+        // Magica nao entra: aquela zona nao esta' no `ARQUIPELAGO`, e por
+        // isso `onde_obter_snapshot` a filtra em vez de chuta-la pro Bosque.
+        for c in cat::CHEFES
+            .iter()
+            .filter(|c| !shared::magica::e_magica(c.zona))
+        {
             assert_eq!(
                 shared::terreno::ARQUIPELAGO[ilha_da_zona(c.zona) as usize].zona,
                 c.zona
             );
         }
+        assert!(
+            !cat::da_zona(shared::magica::ZONA).is_empty(),
+            "a Ilha Magica precisa de chefe (a Ilhota do Colosso paga drop dele)"
+        );
     }
 
     fn todas_as_chaves_da_cor(cor: u8) -> Vec<u16> {

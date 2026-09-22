@@ -18,6 +18,7 @@ pub mod forja;
 pub mod historia;
 pub mod items;
 pub mod loja;
+pub mod magica;
 pub mod mapfile;
 pub mod mercado;
 pub mod physics;

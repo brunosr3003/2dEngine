@@ -61,6 +61,15 @@ pub mod chave {
     pub const ILHA_COLHER: u16 = 108;
     /// O botão "Retirar", do baú.
     pub const ILHA_RETIRAR: u16 = 109;
+    /// A linha "Minha Ilha" dentro do Menu.
+    ///
+    /// O primeiro passo da linha da ilha ("A escritura da ilha") manda
+    /// "Abra Menu › Minha Ilha" e caía no `_ => return` do
+    /// `foco_do_tutorial`: os quatro passos de DENTRO do painel tinham
+    /// destaque e o que ensina a ACHAR o painel, não. O dono: "a missão a
+    /// escritura da ilha tá sem tutorial destacando onde é pra clicar igual o
+    /// tutorial de combate ou coleta".
+    pub const MENU_MINHA_ILHA: u16 = 110;
 }
 
 /// Quantas chaves cabem num pedido. Três dá pro caminho mais fundo que existe

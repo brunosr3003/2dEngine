@@ -24,6 +24,12 @@ pub enum Item {
     Diarias,
     Conquistas,
     Craft,
+    /// A oficina de COMBINAR (`craft_ui`, aba propria).
+    ///
+    /// Tinha entrada so' dentro do Craft, como a sexta abinha de uma tela de
+    /// receitas. O dono: "combinar tem q ser uma aba separada no menu, n
+    /// junto com o craft" — nao e' receita, e' arrastar cinco iguais.
+    Combinar,
     Forja,
     Encantar,
     Mapa,
@@ -42,6 +48,8 @@ pub enum Item {
     /// O dono ficou. A porta imersiva pode exigir caminhada; a porta de SAIR
     /// nao pode exigir nada.
     MinhaIlha,
+    /// A ILHA MÁGICA (`shared::magica`): o evento com passe.
+    IlhaMagica,
     Grupo,
     Amigos,
     Correio,
@@ -73,7 +81,7 @@ type Linha = (Item, &'static str, Option<&'static str>);
 const POR_LINHA: f32 = 5.0;
 
 /// Os grupos, na ordem da tela.
-pub const GRUPOS: [(&str, &[Linha]); 7] = [
+pub const GRUPOS: [(&str, &[Linha]); 8] = [
     (
         "PERSONAGEM",
         &[
@@ -98,6 +106,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
         "OFICINA",
         &[
             (Item::Craft, "Craft", None),
+            (Item::Combinar, "Combinar", None),
             (Item::Forja, "Forja", None),
             (Item::Encantar, "Encantar", Some("Em breve")),
             (Item::Coleta, "Coleta", None),
@@ -108,7 +117,6 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
         &[
             (Item::Mapa, "Mapa", None),
             (Item::Aventuras, "Dungeons", None),
-            (Item::Presenca, "Presença", None),
             (Item::MinhaIlha, "Minha Ilha", None),
             (Item::Montaria, "Montaria", None),
         ],
@@ -131,6 +139,20 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
             (Item::Lojas, "Vendedores", None),
             (Item::Mercado, "Mercado", None),
             (Item::Banco, "Banco", None),
+        ],
+    ),
+    // EVENTO: o que tem HORA, e nao o que esta' sempre la'.
+    //
+    // Nasceu porque a Ilha Magica nao cabia — AVENTURA ja' estava nos cinco
+    // de `POR_LINHA`, e `nenhum_grupo_passa_da_linha` reprovou o sexto. Em
+    // vez de apertar a grade, a PRESENCA veio junto: calendario e ilha de
+    // evento sao a mesma categoria de coisa, e ela estava em AVENTURA por
+    // falta de lugar melhor.
+    (
+        "EVENTO",
+        &[
+            (Item::Presenca, "Presença", None),
+            (Item::IlhaMagica, "Ilha Mágica", None),
         ],
     ),
     (
@@ -308,6 +330,9 @@ impl Menu {
                         Item::Habilidades => {
                             crate::foco::marca(crate::foco::chave::MENU_SKILLS, r)
                         }
+                        Item::MinhaIlha => {
+                            crate::foco::marca(crate::foco::chave::MENU_MINHA_ILHA, r)
+                        }
                         _ => {}
                     }
                     estilo::cartao(r, sobre && !travado, false);
@@ -375,6 +400,8 @@ fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
         Item::Diarias => "diarias",
         Item::Conquistas => "conquistas",
         Item::Craft => "craft",
+        Item::Combinar => "combinar",
+        Item::IlhaMagica => "ilha_magica",
         Item::Forja => "forja",
         Item::Encantar => "encantar",
         Item::Mapa => "mapa",
@@ -405,7 +432,7 @@ fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
         Item::Diarias => pictograma(5, c, s, cor),
         Item::Grupo | Item::Amigos | Item::Clan => pictograma(2, c, s, cor),
         Item::Correio => pictograma(3, c, s, cor),
-        Item::Craft => estilo::icone(3, c, s * 1.1, cor),
+        Item::Craft | Item::Combinar => estilo::icone(3, c, s * 1.1, cor),
         Item::Forja | Item::Encantar => estilo::icone(1, c, s * 1.1, cor),
         Item::Habilidades => estilo::icone(6, c, s * 1.1, cor),
         Item::Aventuras => estilo::icone(7, c, s * 1.1, cor),
@@ -445,6 +472,7 @@ mod tests {
             Item::TodasMissoes,
             Item::Diarias,
             Item::Craft,
+            Item::Combinar,
             Item::Forja,
             Item::Habilidades,
             Item::Mapa,
@@ -454,6 +482,7 @@ mod tests {
             Item::Aventuras,
             Item::Presenca,
             Item::MinhaIlha,
+            Item::IlhaMagica,
             Item::GuardaRoupa,
             Item::LojaTp,
             Item::Montaria,

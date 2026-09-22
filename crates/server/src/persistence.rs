@@ -78,6 +78,20 @@ pub struct CharacterRow {
     /// Pocao de Experiencia: bonus de XP ate' este instante (unix secs; 0 =
     /// nenhum). Absoluto, entao sobrevive a relog e reinicio.
     pub xp_bonus_ate: i64,
+    /// ILHA MAGICA: a zona de onde o personagem entrou, pra onde ele volta.
+    ///
+    /// Tem que ser PERSISTIDO, e nao lembrado na sessao: cada zona e' outro
+    /// processo, entao a memoria de quem embarcou nao atravessa junto com
+    /// ele. Vazio = volta pro Bosque.
+    pub magica_volta: String,
+    /// ILHA MAGICA (`shared::magica`): ate' quando a sessao dela vale (unix
+    /// secs; 0 = nao esta' valendo).
+    ///
+    /// Absoluto pelo mesmo motivo das pocoes: o tempo la' dentro CORRE mesmo
+    /// deslogado. Guardar "quanto falta" deixaria o jogador deslogar na
+    /// ilhota boa e voltar amanha' com a meia hora inteira, e a ilha
+    /// deixaria de ter hora.
+    pub magica_ate: i64,
     /// Pocoes de Fortuna e de Sorte: buff ate' este instante (unix secs).
     pub fortuna_ate: i64,
     pub sorte_ate: i64,
@@ -528,6 +542,16 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     }
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS xp_bonus_ate BIGINT NOT NULL DEFAULT 0",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS magica_ate BIGINT NOT NULL DEFAULT 0",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS magica_volta TEXT NOT NULL DEFAULT ''",
     )
     .execute(pool)
     .await?;
@@ -2511,6 +2535,28 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             dex: (0, 0),
             wis: (0, 0),
         },
+        // O PASSE DA ILHA MÁGICA (`shared::magica`): meia hora lá dentro.
+        // Sem `buy`: não se compra em balcão de NPC — ele vem de chefe, da
+        // loja de TP e do mercado. `sell` alto porque jogar um fora é jogar
+        // meia hora fora.
+        S {
+            id: item_id::PASSE_MAGICO as i32,
+            name: "Passe da Ilha Mágica",
+            sell: 500,
+            buy: None,
+            ord: None,
+            stack: 99,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         // Pergaminho de Teleporte: Alquimista, em cobre (`shared::viagem`).
         S {
             id: item_id::PERGAMINHO_TELEPORTE as i32,
@@ -3647,8 +3693,14 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         .into_iter()
         .map(|(n, m, s, z)| (n, (m, s, z)))
         .collect();
-    let bonus = busca!((String, i64), "name, xp_bonus_ate");
-    let bonus_map: HashMap<String, i64> = bonus.into_iter().collect();
+    let bonus = busca!(
+        (String, i64, i64, String),
+        "name, xp_bonus_ate, magica_ate, magica_volta"
+    );
+    let bonus_map: HashMap<String, (i64, i64, String)> = bonus
+        .into_iter()
+        .map(|(n, x, m, v)| (n, (x, m, v)))
+        .collect();
     let drop = busca!(
         (String, i64, i64, String),
         "name, fortuna_ate, sorte_ate, barra_json"
@@ -3741,7 +3793,8 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
             .and_then(|j| serde_json::from_str(j).ok());
         let last_tut = tut_map.get(&name).cloned().flatten();
         let (mp, stamina, zona) = vida_map.get(&name).cloned().unwrap_or_default();
-        let xp_bonus_ate = bonus_map.get(&name).copied().unwrap_or(0);
+        let (xp_bonus_ate, magica_ate, magica_volta) =
+            bonus_map.get(&name).cloned().unwrap_or_default();
         let (fortuna_ate, sorte_ate, barra_json) = drop_map.get(&name).cloned().unwrap_or_default();
         let (mortes_json, recuperacoes_dia, recuperacoes_usadas) =
             mortes_map.get(&name).cloned().unwrap_or_default();
@@ -3782,6 +3835,8 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 stamina,
                 zona,
                 xp_bonus_ate,
+                magica_ate,
+                magica_volta,
                 fortuna_ate,
                 sorte_ate,
                 barra_json,
@@ -4215,8 +4270,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                                      mp, stamina, zona, xp_bonus_ate,
                                      mortes_json, recuperacoes_dia, recuperacoes_usadas,
                                      fortuna_ate, sorte_ate, barra_json, preferencias_json, dungeon_json,
-                                     bolsa_extra, banco_extra, skill_progress_json, colonia_json)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
+                                     bolsa_extra, banco_extra, skill_progress_json, colonia_json,
+                                     magica_ate, magica_volta)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -4248,7 +4304,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                bolsa_extra = EXCLUDED.bolsa_extra,
                banco_extra = EXCLUDED.banco_extra,
                skill_progress_json = EXCLUDED.skill_progress_json,
-               colonia_json = EXCLUDED.colonia_json",
+               colonia_json = EXCLUDED.colonia_json,
+               magica_ate = EXCLUDED.magica_ate,
+               magica_volta = EXCLUDED.magica_volta",
         )
         .bind(&row.name)
         .bind(row.pos.x)
@@ -4281,6 +4339,8 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(row.banco_extra as i16)
         .bind(&skill_progress_json)
         .bind(&colonia_json)
+        .bind(row.magica_ate)
+        .bind(&row.magica_volta)
         .execute(&mut *tx)
         .await?;
         // A conta vai junto: bau aberto num personagem e a 1ª vitoria semanal

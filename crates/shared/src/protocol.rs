@@ -390,6 +390,11 @@ pub enum ClientMessage {
     Colonia {
         pedido: crate::colonia::PedidoColonia,
     },
+    /// A ILHA MAGICA (`shared::magica`): o painel, entrar gastando passe e
+    /// sair antes da hora.
+    Magica {
+        pedido: crate::magica::PedidoMagica,
+    },
     /// Gasta 1 Pergaminho de Teleporte e salta pro chao firme mais perto de
     /// (x, z), na ilha atual. Recusa (motivo no chat) nao gasta.
     Teleportar {
@@ -1117,6 +1122,11 @@ pub enum ServerMessage {
     /// O painel da COLONIA (docs/COLONIA.md).
     Colonia {
         aviso: crate::colonia::AvisoColonia,
+    },
+    /// A ILHA MAGICA (`shared::magica`): o relogio, os passes e o bonus do
+    /// chao onde o jogador esta'.
+    Magica {
+        aviso: crate::magica::AvisoMagica,
     },
     /// O alvo esta' no alcance da arma a distancia, mas o relevo barra o
     /// tiro: o ataque nao sai. No maximo 1 por segundo por jogador.

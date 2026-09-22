@@ -760,8 +760,15 @@ fn gerar_dados_da_colonia(plato: f32) -> Dados {
     }
 }
 
-/// RGBA da ilha inteira. Roda FORA do quadro.
+/// RGBA da ilha inteira: o terreno E as casas. Roda FORA do quadro.
 fn gerar_imagem(ger: &Gerador, raio_blocos: i32, bioma: shared::terreno::Bioma) -> Vec<u8> {
+    let mut rgba = gerar_terreno(ger, raio_blocos, bioma);
+    pintar_casas(&mut rgba, ger, raio_blocos as f32 * BLOCO);
+    rgba
+}
+
+/// So' o relevo, sem nada construido em cima.
+fn gerar_terreno(ger: &Gerador, raio_blocos: i32, bioma: shared::terreno::Bioma) -> Vec<u8> {
     let raio = raio_blocos as f32 * BLOCO;
     let pico = ger.pico().max(1.0);
     let mut hs = vec![0f32; LADO * LADO];
@@ -798,6 +805,47 @@ fn gerar_imagem(ger: &Gerador, raio_blocos: i32, bioma: shared::terreno::Bioma) 
         }
     }
     rgba
+}
+
+
+
+/// As CASAS, assadas na imagem do mapa.
+///
+/// Elas ja' eram desenhadas por cima, mas atras do filtro Vila — e o filtro
+/// vem GUARDADO do servidor, entao ligar o padrao nao alcanca quem ja' tinha
+/// personagem. O dono abriu o mapa e disse que ele "so' mostra o chao".
+///
+/// Aqui elas viram parte do desenho do terreno, como numa carta de verdade:
+/// nao dependem de filtro, nao dependem de zoom e nao dependem de o jogador
+/// descobrir uma caixinha. O filtro continua valendo pro RESTO da vila (o
+/// contorno vivo, o porto, os NPCs).
+fn pintar_casas(rgba: &mut [u8], ger: &Gerador, raio: f32) {
+    // Telhado e parede: duas cores, senao um quarteirao inteiro vira uma
+    // mancha so' e o mapa fica pior do que sem casa nenhuma.
+    const TELHADO: [f32; 3] = [0.68, 0.34, 0.24];
+    const PAREDE: [f32; 3] = [0.88, 0.80, 0.66];
+    let px = |v: f32| ((v + raio) / (2.0 * raio) * LADO as f32).round() as i32;
+    for pr in &ger.vila().predios {
+        let m = pr.construcao().meia(pr.yaw_q);
+        let (x0, x1) = (px(pr.pos.x - m.x), px(pr.pos.x + m.x));
+        let (z0, z1) = (px(pr.pos.z - m.y), px(pr.pos.z + m.y));
+        // Casa menor que um pixel some na conversao: uma ilha de 1,6 km cabe
+        // em 384 pixels, e ai' 2,1 u por pixel apagariam o povoado inteiro.
+        // Um pixel e' o minimo — melhor um ponto no lugar certo que nada.
+        for j in z0.min(z1 - 1)..=z1.max(z0 + 1) {
+            for i in x0.min(x1 - 1)..=x1.max(x0 + 1) {
+                if !(0..LADO as i32).contains(&i) || !(0..LADO as i32).contains(&j) {
+                    continue;
+                }
+                let borda = i <= x0 || i >= x1 || j <= z0 || j >= z1;
+                let c = if borda { TELHADO } else { PAREDE };
+                let k = (j as usize * LADO + i as usize) * 4;
+                for (n, v) in c.iter().enumerate() {
+                    rgba[k + n] = (v * 255.0) as u8;
+                }
+            }
+        }
+    }
 }
 
 /// Ponto do mundo -> pixel do retangulo que mostra a ilha inteira.
@@ -862,10 +910,41 @@ pub struct Mapa {
     /// nele que se procura coisa. Numa ilha de 1,6 km a tela inteira cabia
     /// num quadrado, e cada arvore era um pixel.
     ///
-    /// Aproxima em volta do JOGADOR e nao de um ponto arrastavel: quem
-    /// aproxima o mapa quer ver onde esta', e arrastar num celular briga com
-    /// o toque que manda andar.
+    /// Aproxima em volta do JOGADOR enquanto ninguem arrasta; a partir do
+    /// primeiro arrasto, em volta de `centro`.
     zoom_grande: f32,
+    /// O ponto que o mapa grande mostra no meio. `None` = segue o jogador.
+    ///
+    /// Era so' o jogador, e o comentario dizia que arrastar "briga com o toque
+    /// que manda andar". Brigava porque o clique saia no APERTO: o dedo
+    /// encostava e ja' viajava, entao nao havia arrasto possivel. Com o clique
+    /// no SOLTAR (`GestoDoMapa`) os dois convivem, e o dono pediu o arrasto.
+    centro: Option<Vec2>,
+    gesto: GestoDoMapa,
+}
+
+/// O gesto do mapa grande: arrastar move a vista, dois dedos dao zoom, e
+/// toque so' vira clique se o dedo NAO andou.
+///
+/// Vale pro mouse tambem — a macroquad entrega o dedo como botao esquerdo, e
+/// separar os dois caminhos so' daria duas regras pra mesma coisa.
+#[derive(Debug, Default)]
+struct GestoDoMapa {
+    /// Onde o dedo encostou, SE ele encostou com o mapa ja' aberto.
+    ///
+    /// Essa condicao e' o que impede o mapa de fechar sozinho: o toque que
+    /// ABRE o mapa e' apertado com ele fechado, e o soltar chega um quadro
+    /// depois, ja' aberto e fora do desenho — que e' a regra de fechar.
+    de: Option<Vec2>,
+    /// O aperto caiu dentro do desenho? So' ali o arrasto move a vista.
+    no_desenho: bool,
+    /// Onde o dedo estava no quadro passado.
+    ultimo: Vec2,
+    arrastou: bool,
+    /// Distancia entre os dois dedos no quadro passado.
+    pinca: Option<f32>,
+    /// Houve dois dedos: nada de clique ate' soltar tudo.
+    cancelado: bool,
 }
 
 impl Default for Mapa {
@@ -892,6 +971,8 @@ impl Default for Mapa {
             no_mundo: false,
             rolagem_lateral: Default::default(),
             zoom_grande: 1.0,
+            centro: None,
+            gesto: GestoDoMapa::default(),
         }
     }
 }
@@ -1497,6 +1578,78 @@ impl Mapa {
     /// ilha pra a janela nunca sair do desenho.
     ///
     /// Sem jogador (mapa aberto antes de entrar no mundo), o centro da ilha.
+    /// A pinca deste quadro, como FATOR de zoom. `None` = nao houve.
+    fn pinca_do_quadro(&mut self) -> Option<f32> {
+        let dedos: Vec<Vec2> = touches()
+            .iter()
+            .filter(|t| t.phase != TouchPhase::Ended)
+            .map(|t| t.position)
+            .collect();
+        if dedos.len() < 2 {
+            self.gesto.pinca = None;
+            // Soltar TUDO destrava o clique. Enquanto sobrar dedo na tela
+            // depois da pinca, o toque nao vale — senao tirar um dedo de cada
+            // vez terminaria mandando o jogador andar pro meio do mapa.
+            if touches().is_empty() {
+                self.gesto.cancelado = false;
+            }
+            return None;
+        }
+        self.gesto.de = None;
+        self.gesto.cancelado = true;
+        let d = dedos[0].distance(dedos[1]);
+        let antes = self.gesto.pinca.replace(d)?;
+        (antes > 1.0 && (d - antes).abs() > 0.5).then(|| d / antes)
+    }
+
+    /// Quanto o dedo arrastou o DESENHO neste quadro, em pixels.
+    fn arrasto_do_quadro(&mut self, r: Rect) -> Option<Vec2> {
+        let m = Vec2::from(mouse_position());
+        if is_mouse_button_pressed(MouseButton::Left) {
+            self.gesto.de = Some(m);
+            self.gesto.no_desenho = r.contains(m);
+            self.gesto.ultimo = m;
+            self.gesto.arrastou = false;
+            return None;
+        }
+        if self.gesto.cancelado || !self.gesto.no_desenho {
+            return None;
+        }
+        let de = self.gesto.de?;
+        if !is_mouse_button_down(MouseButton::Left) {
+            return None;
+        }
+        let d = m - self.gesto.ultimo;
+        self.gesto.ultimo = m;
+        // Ate' o limiar nada acontece: um toque tremido ainda e' um toque, e
+        // e' esse mesmo limiar que o resto do jogo usa (`toque::TOLERANCIA_PX`).
+        if !self.gesto.arrastou && m.distance(de) <= crate::toque::TOLERANCIA_PX {
+            return None;
+        }
+        self.gesto.arrastou = true;
+        (d != Vec2::ZERO).then_some(d)
+    }
+
+    /// Soltou sem ter arrastado — o clique do mapa grande.
+    fn soltou_clicando(&mut self, _r: Rect) -> bool {
+        if !is_mouse_button_released(MouseButton::Left) {
+            return false;
+        }
+        let vale = self.gesto.de.is_some() && !self.gesto.arrastou && !self.gesto.cancelado;
+        self.gesto.de = None;
+        self.gesto.arrastou = false;
+        self.gesto.no_desenho = false;
+        // O mesmo portao do `foco::clique`: com o tutorial apontando pra um
+        // lugar, toque fora dele nao conta.
+        vale && crate::foco::passa_ponto(Vec2::from(mouse_position()))
+    }
+
+    /// A moldura do mapa grande: a faixa acima do desenho, onde ficam o
+    /// titulo, o X e as abas Ilha | Mundo.
+    fn moldura_rect(r: Rect) -> Rect {
+        Rect::new(r.x - u(8.0), r.y - u(38.0), r.w + u(16.0), u(38.0))
+    }
+
     fn foco_do_zoom(&self, eu: Option<Vec2>) -> Vec2 {
         if self.zoom_grande <= 1.001 {
             return Vec2::ZERO;
@@ -1504,19 +1657,46 @@ impl Mapa {
         // Preso dentro da ilha: sem isto, aproximar perto da costa mostraria
         // metade de oceano fora do desenho.
         let meia = self.raio() * (1.0 - 1.0 / self.zoom_grande);
-        eu.unwrap_or(Vec2::ZERO)
+        self.centro
+            .or(eu)
+            .unwrap_or(Vec2::ZERO)
             .clamp(Vec2::splat(-meia), Vec2::splat(meia))
+    }
+
+    /// Quantas unidades de mundo cabem num pixel do mapa grande.
+    fn unidade_por_pixel(&self, r: Rect) -> f32 {
+        2.0 * self.raio() / self.zoom_grande / r.w.max(1.0)
+    }
+
+    /// Arrasta a vista. O conteudo segue o dedo, entao o foco anda ao
+    /// CONTRARIO do arrasto.
+    fn arrastar(&mut self, d: Vec2, r: Rect, eu: Option<Vec2>) {
+        // O primeiro arrasto congela o foco onde ele esta': sem isto a vista
+        // voltaria pro jogador no quadro seguinte e o mapa pareceria elastico.
+        let base = self.centro.unwrap_or_else(|| self.foco_do_zoom(eu));
+        self.centro = Some(base - d * self.unidade_por_pixel(r));
+    }
+
+    /// Zoom continuo da pinca. Multiplicativo, pra o gesto responder igual
+    /// perto e longe.
+    fn zoom_por_fator(&mut self, f: f32, eu: Option<Vec2>) {
+        let antes = self.zoom_grande;
+        self.zoom_grande = (self.zoom_grande * f).clamp(1.0, 8.0);
+        // Abrir a pinca a partir da ilha inteira tem que aproximar de ALGUM
+        // lugar: sem fixar o centro aqui, o primeiro zoom pularia pro jogador.
+        if antes <= 1.001 && self.zoom_grande > 1.001 && self.centro.is_none() {
+            // `eu` = None (os botoes − / +) deixa o centro solto de proposito:
+            // ai' vale a regra antiga, que segue o jogador.
+            self.centro = eu;
+        }
+        if self.zoom_grande <= 1.001 {
+            self.centro = None;
+        }
     }
 
     /// Aproxima ou afasta o mapa grande. Um toque = um degrau.
     pub fn zoom_do_mapa(&mut self, perto: bool) {
-        const MIN: f32 = 1.0;
-        const MAX: f32 = 6.0;
-        self.zoom_grande = if perto {
-            (self.zoom_grande * 1.5).min(MAX)
-        } else {
-            (self.zoom_grande / 1.5).max(MIN)
-        };
+        self.zoom_por_fator(if perto { 1.5 } else { 1.0 / 1.5 }, None);
     }
 
     fn raio(&self) -> f32 {
@@ -1693,14 +1873,32 @@ impl Mapa {
         let m = Vec2::from(mouse_position());
         if self.aberto {
             let r = Self::grande_rect();
-            if crate::foco::clique() {
+            // PINCA e ARRASTO antes do clique: o clique do mapa grande passou
+            // a sair no SOLTAR, e quem decide se houve clique e' o gesto.
+            if let Some(f) = self.pinca_do_quadro() {
+                self.zoom_por_fator(f, eu);
+                return None;
+            }
+            if let Some(d) = self.arrasto_do_quadro(r) {
+                self.arrastar(d, r, eu);
+                return None;
+            }
+            if self.soltou_clicando(r) {
                 // O painel lateral trata os proprios botoes no desenho.
                 if Self::lateral_rect(r).contains(m) {
                     return None;
                 }
-                // Fora do mapa ou no X: fecha. Numa zona/regiao: vai. No resto: viaja.
-                if Self::fechar_rect(r).contains(m) || !r.contains(m) {
+                // Fora do mapa ou no X: fecha — MENOS na moldura de cima, que
+                // tem as abas Ilha|Mundo. Elas ficam ACIMA do `grande_rect`, e
+                // sem esta excecao tocar em "Mundo" trocava a aba e fechava o
+                // mapa no mesmo quadro: o dono via o mapa sumir.
+                if Self::fechar_rect(r).contains(m)
+                    || (!r.contains(m) && !Self::moldura_rect(r).contains(m))
+                {
                     self.aberto = false;
+                    return None;
+                }
+                if Self::moldura_rect(r).contains(m) {
                     return None;
                 }
                 // ZOOM antes de tudo: os botoes ficam DENTRO do desenho, e
@@ -2963,6 +3161,38 @@ mod testes_do_mapa_da_colonia {
             assert!(
                 !dados.pegadas.is_empty(),
                 "nível {nivel}: nenhuma casa no mapa"
+            );
+        }
+    }
+
+    /// As casas estão na IMAGEM, e não só na camada de filtro.
+    ///
+    /// O dono: "o mapa só mostra visualmente, sem ser através de filtros, o
+    /// chão; não mostra as casas". Estavam desenhadas por cima, atrás do
+    /// filtro Vila — que vem guardado do servidor, então ligar o padrão não
+    /// alcançava quem já tinha personagem. Este teste olha os PIXELS, que é
+    /// onde o jogador olha.
+    #[test]
+    fn a_casa_aparece_no_desenho_do_mapa() {
+        for def in shared::terreno::ARQUIPELAGO.iter() {
+            let ger = Gerador::da_ilha(def);
+            let raio = def.raio_blocos as f32 * BLOCO;
+            let sem = gerar_terreno(&ger, def.raio_blocos, def.bioma);
+            let mut com = sem.clone();
+            pintar_casas(&mut com, &ger, raio);
+            let mudou = sem
+                .chunks_exact(4)
+                .zip(com.chunks_exact(4))
+                .filter(|(a, b)| a != b)
+                .count();
+            println!("{}: {mudou} pixels de casa", def.nome);
+            assert!(
+                mudou > 0,
+                "{}: a vila tem {} prédios e nenhum pintou pixel — numa ilha \
+                 de {:.0} m a casa é menor que o pixel, e some na conversão",
+                def.nome,
+                ger.vila().predios.len(),
+                raio,
             );
         }
     }

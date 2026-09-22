@@ -17,6 +17,8 @@ use shared::protocol::{AlvoDaForja, ClientMessage};
 use shared::{item_id, EquipSlot, Equipment, InventorySlot, ItemInstance};
 
 use crate::hud_estilo::{self as estilo, u};
+use crate::vox::VoxCache;
+use macroquad::material::Material;
 
 const LARGURA: f32 = 720.0;
 const ALTURA: f32 = 500.0;
@@ -163,11 +165,12 @@ impl Forja {
         equip: &Equipment,
         nomes: &HashMap<u16, String>,
         agora: f64,
+        palco: Option<(&VoxCache, &Material)>,
     ) -> Option<ClientMessage> {
         if !self.aberto {
             return None;
         }
-        estilo::no_painel(Self::escala(), || self.desenha_na_escala(slots, equip, nomes, agora))
+        estilo::no_painel(Self::escala(), || self.desenha_na_escala(slots, equip, nomes, agora, palco))
     }
 
     fn desenha_na_escala(
@@ -176,6 +179,7 @@ impl Forja {
         equip: &Equipment,
         nomes: &HashMap<u16, String>,
         agora: f64,
+        palco: Option<(&VoxCache, &Material)>,
     ) -> Option<ClientMessage> {
         let p = Self::painel();
         estilo::painel(p);
@@ -259,7 +263,7 @@ impl Forja {
             if marcada {
                 draw_rectangle_lines(r.x, r.y, r.w, r.h, u(2.0), estilo::OURO);
             }
-            crate::bolsa::icone_do_item(r, *id, 1.0);
+            crate::bolsa::icone_do_item_com(r, *id, 1.0, palco);
             if inst.refinement > 0 {
                 estilo::texto(
                     r.x + u(3.0),
@@ -286,7 +290,7 @@ impl Forja {
         let mut pedido = None;
         if let Some((alvo, id, inst)) = lista.iter().find(|(a, _, _)| Some(*a) == self.sel) {
             let i = info(inst);
-            crate::bolsa::icone_do_item(Rect::new(d.x, d.y, u(64.0), u(64.0)), *id, 1.0);
+            crate::bolsa::icone_do_item_com(Rect::new(d.x, d.y, u(64.0), u(64.0)), *id, 1.0, palco);
             estilo::texto_ajustado(
                 &nome(*id),
                 d.x + u(74.0),

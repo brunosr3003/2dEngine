@@ -1009,6 +1009,47 @@ impl Bolsa {
                 ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
                 y += u(22.0);
             }
+        } else if let Some((especie, grau)) = shared::montarias::de_item(peca.id) {
+            // A MONTARIA tambem nao tem atributo de item: o que ela da' sao
+            // pontos alocados e, principalmente, VELOCIDADE — que era o unico
+            // numero em lugar nenhum. O dono: "nao ta mostrando o bonus de
+            // mov speed q a mount da no inv".
+            //
+            // Tres numeros, porque sao tres situacoes que o jogador compara:
+            // montado andando, montado ESPOREANDO (o sprint multiplica a
+            // montaria desde 22/09/2026) e quanto isso ganha de quem corre a
+            // pe'. So' o primeiro seria bonito e pouco util.
+            ui::texto(r.x + u(20.0), y + u(4.0), especie.descricao, 15, APAGADO);
+            y += u(26.0);
+            let v = shared::montarias::velocidade(grau);
+            let esporeado = v * shared::SPRINT_SPEED_MULT;
+            let vs_correr = v / shared::SPRINT_SPEED_MULT - 1.0;
+            for (rot, val) in [
+                ("Velocidade", format!("{:.0}%", v * 100.0)),
+                ("Esporeando", format!("{:.0}%", esporeado * 100.0)),
+                ("vs. correr a pé", format!("{:+.0}%", vs_correr * 100.0)),
+            ] {
+                ui::texto(r.x + u(20.0), y + u(4.0), rot, 17, TEXTO);
+                let d = crate::hud_estilo::medir_dim(&val, 17);
+                ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
+                y += u(22.0);
+            }
+            const SIGLAS_M: [&str; shared::STAT_COUNT] =
+                ["FOR", "DES", "INT", "VIT", "SPD", "RES"];
+            let af = peca.inst.as_ref().and_then(|i| i.afinidade);
+            for (i, pts) in shared::montarias::pontos_por_stat(peca.id, af)
+                .iter()
+                .enumerate()
+            {
+                if *pts == 0 {
+                    continue;
+                }
+                ui::texto(r.x + u(20.0), y + u(4.0), SIGLAS_M[i], 17, TEXTO);
+                let val = format!("+{pts}");
+                let d = crate::hud_estilo::medir_dim(&val, 17);
+                ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
+                y += u(22.0);
+            }
         } else if let Some(i) = peca.inst {
             let atributos = [
                 ("Ataque", i.attack_damage),
@@ -1091,7 +1132,11 @@ impl Bolsa {
         // o cartao e' baixo e uma segunda fileira cobriria os atributos.
         // Refinar só em peça com instância de atributos, e leva pra Forja com ela
         // ja' escolhida.
-        let bw3 = (r.w - u(32.0) - u(16.0)) / u(3.0);
+        // Tres colunas: `/ 3.0`, e nao `/ u(3.0)`. `u()` multiplica pela
+        // escala do texto, entao dividir por ela encolhia os botoes no
+        // celular — onde a escala e' > 1 e onde o dono joga. No desktop a
+        // escala e' 1 e o erro nao aparecia.
+        let bw3 = (r.w - u(32.0) - u(16.0)) / 3.0;
         let coluna = |k: f32| Rect::new(r.x + u(16.0) + k * (bw3 + u(8.0)), by, bw3, u(36.0));
         if let Some((rot, a)) = principal {
             if ui::botao(coluna(0.0), rot, true) {
@@ -1123,16 +1168,28 @@ impl Bolsa {
         // bolsa so' diz "este item aqui". Duplicar a tabela de receitas na
         // bolsa seria uma segunda fonte de verdade pra mesma coisa.
         //
-        // So' na coluna do meio quando ela esta' livre: refinar manda mais
-        // (a peca esta' na mao do jogador) e uma segunda fileira de botoes
-        // cobriria os atributos no celular.
-        if self.refinar.is_none() && !matches!(t, Tipo::Pergaminho) {
+        // So' na coluna do meio quando ela esta' livre — e quem a ocupa e'
+        // o Refinar, que existe exatamente quando a peca tem instancia.
+        //
+        // A condicao era `self.refinar.is_none()`, que e' o campo do CLIQUE e
+        // nao do botao: ele e' `None` em todo quadro em que ninguem tocou,
+        // entao os dois botoes eram desenhados NO MESMO RETANGULO. Tocar ali
+        // acendia os dois, e o `main` abria a forja e o craft em seguida —
+        // o craft por ultimo. Era isso o "falta ter como ir pra forja direto
+        // no item": o atalho existia e era encoberto.
+        //
+        // Peca com instancia nao e' combinavel de todo jeito (so' pet,
+        // montaria e recurso), entao nada se perde.
+        if peca.inst.is_none() && !matches!(t, Tipo::Pergaminho) {
             if ui::botao(coluna(1.0), "Combinar", true) {
                 self.combinar = Some(peca.id);
                 self.sel = None;
             }
         }
-        if ui::botao(coluna(u(2.0)), "Fechar", true) {
+        // `coluna(2.0)`: o argumento e' o INDICE da coluna, nao um tamanho.
+        // Com `u(2.0)` ele virava 2 x escala e o Fechar saia do cartao no
+        // celular.
+        if ui::botao(coluna(2.0), "Fechar", true) {
             self.sel = None;
         }
         acao
@@ -1257,6 +1314,25 @@ fn celula(
 /// O icone de um item (bolsa, loja, barra, craft, forja). A arte e' o atlas
 /// de `icones`; o desenho por categoria abaixo so' cobre item sem icone.
 pub(crate) fn icone_do_item(r: Rect, id: u16, a: f32) {
+    icone_do_item_com(r, id, a, None)
+}
+
+/// O icone de um item, com o PALCO 3D quando quem desenha tem um.
+///
+/// Pet e montaria sao modelo girando na bolsa e eram silhueta chapada na
+/// forja e na combinacao — o dono: "o icone dos pets e mounts no combine /
+/// forja tem q ser o icone 3d igual do inv". Eram duas caras pro mesmo bicho,
+/// e na tela de combinar (onde se arrasta cinco da MESMA cor) duas caras pro
+/// mesmo bicho e' o que mais atrapalha.
+pub(crate) fn icone_do_item_com(
+    r: Rect,
+    id: u16,
+    a: f32,
+    palco: Option<(&VoxCache, &Material)>,
+) {
+    if icone_de_bicho(r, id, palco) {
+        return;
+    }
     if crate::icones::desenha(id, r, a) {
         return;
     }

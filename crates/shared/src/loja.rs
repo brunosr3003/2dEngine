@@ -21,7 +21,12 @@ pub const SEM_COMBATE_PRA_MONTAR_S: f32 = 3.0;
 /// cor dela (`montarias::velocidade`) — e perde o sprint; a pe' vale o sprint
 /// de quem esta' correndo. `montado` = `None` quando esta' a pe'.
 pub fn velocidade_de_andar(base: f32, montado: Option<f32>, sprint_mult: f32) -> f32 {
-    base * montado.unwrap_or(sprint_mult)
+    // Os dois MULTIPLICAM. Antes a montaria SUBSTITUIA o sprint: montado, o
+    // botao de correr nao fazia nada, e a montaria de grau 1 (1,80) mal batia
+    // o sprint a pe' (1,65). O dono decidiu o contrario — "pode sim ter
+    // sprint montado" —, entao esporear e' mais rapido que correr a pe',
+    // gastando o mesmo folego.
+    base * montado.unwrap_or(1.0) * sprint_mult
 }
 
 /// O multiplicador da montaria equipada, pra quem esta' montado. `None` = a
@@ -927,13 +932,26 @@ mod tests {
     }
 
     #[test]
-    fn montado_corre_mais_sem_sprint_e_luta_desmonta() {
+    fn montado_corre_mais_e_pode_esporear_e_luta_desmonta() {
         assert_eq!(velocidade_de_andar(3.0, None, 1.0), 3.0);
         assert_eq!(velocidade_de_andar(3.0, None, 1.65), 3.0 * 1.65);
         assert_eq!(
-            velocidade_de_andar(3.0, Some(VEL_MONTADO), 1.65),
+            velocidade_de_andar(3.0, Some(VEL_MONTADO), 1.0),
             3.0 * VEL_MONTADO,
-            "montado nao soma sprint"
+            "montado parado de esporas e' so' a montaria"
+        );
+        // ESPOREAR: o sprint multiplica a montaria (o dono decidiu em
+        // 22/09/2026). Antes a montaria substituia o sprint e o botao de
+        // correr nao fazia nada em cima do bicho.
+        assert_eq!(
+            velocidade_de_andar(3.0, Some(VEL_MONTADO), 1.65),
+            3.0 * VEL_MONTADO * 1.65,
+            "montado esporeado soma o sprint"
+        );
+        assert!(
+            velocidade_de_andar(3.0, Some(VEL_MONTADO), 1.65)
+                > velocidade_de_andar(3.0, None, 1.65),
+            "esporear tem que ser mais rapido que correr a pe'"
         );
         // A COR da montaria equipada e' que manda no multiplicador.
         let cinza = crate::item_id::montaria_no_grau(crate::item_id::MONTARIA_BASE, 1);

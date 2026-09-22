@@ -254,7 +254,18 @@ impl GameWorld {
             let (nova_pos, vel) = if teleportou {
                 (dono_pos, Vec2::ZERO)
             } else if delta.length() <= passo {
-                (mira, Vec2::ZERO)
+                // CHEGOU dentro do passo: anda o que falta, e reporta a
+                // velocidade que ele andou DE VERDADE.
+                //
+                // Zerar aqui era o defeito do "facing" que o dono viu: indo
+                // buscar o saque o pet fica no ramo de baixo e olha certo,
+                // mas SEGUINDO O DONO ele cai neste ramo em todo tick — o
+                // dono anda um pouco, a mira anda com ele, e a sobra e'
+                // sempre menor que um passo. Com `vel` zerada, `rumo::escolhe`
+                // ve' 0 u/s (abaixo de `VEL_MINIMA`), nao manda rumo nenhum, e
+                // o cliente mantem o angulo velho: o bicho desliza de lado
+                // olhando pro lugar onde estava o ultimo saque.
+                (mira, delta / dt.max(1e-4))
             } else {
                 let dir = delta.normalize_or_zero();
                 (pos.0 + dir * passo, dir * velocidade)
@@ -400,6 +411,77 @@ mod testes {
             .iter()
             .map(|(_, (net, p, _))| (net.0, p.0))
             .next()
+    }
+
+    /// SEGUINDO O DONO, o pet reporta a velocidade com que anda de verdade.
+    ///
+    /// O dono: "o facing do pet ta levemente bugado, qnd ele anda pra item ta
+    /// ok mas ele volta pro personagem [e] n se move em direcao da direcao q
+    /// o pet ta andando de fato".
+    ///
+    /// O motivo estava no ramo "chegou dentro do passo", que zerava a
+    /// velocidade. Perseguindo um dono que anda, a sobra e' SEMPRE menor que
+    /// um passo — o pet vivia nesse ramo, `rumo::escolhe` via 0 u/s (abaixo de
+    /// `VEL_MINIMA`) e nao mandava rumo, entao o cliente segurava o angulo
+    /// velho. O teste mede o RUMO que sai no fio, que e' o que vira o bicho.
+    #[test]
+    fn o_pet_que_segue_o_dono_olha_pra_onde_anda() {
+        let (mut w, sid) = mundo();
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 3);
+        w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
+        w.sincroniza_pets();
+        let (_, inicio) = pet_de(&w).expect("o pet tem que nascer");
+
+        // O dono caminha pro +X, bem alem da distancia de seguir, e o pet vai
+        // atras. Sem saque nenhum no chao: e' a volta pro personagem.
+        let dono = w.sessions[&sid].entity.unwrap();
+        let dt = 1.0 / 30.0;
+        let mut vistos = Vec::new();
+        for k in 1..=90 {
+            {
+                let mut p = w.ecs.get::<&mut Position>(dono).unwrap();
+                p.0 = Vec2::new(k as f32 * shared::PLAYER_SPEED * dt, 0.0);
+            }
+            w.tick_pets(dt);
+            let (pos, vel) = w
+                .ecs
+                .query::<(&Position, &Velocity, &PetTag)>()
+                .iter()
+                .map(|(_, (p, v, _))| (p.0, v.0))
+                .next()
+                .unwrap();
+            vistos.push((pos, vel));
+        }
+
+        let (fim, _) = *vistos.last().unwrap();
+        assert!(
+            fim.x - inicio.x > 5.0,
+            "o pet nem seguiu o dono: andou {:.1} u",
+            fim.x - inicio.x
+        );
+
+        // Nos ultimos quadros ele esta' em regime: andando pro +X atras do
+        // dono. O rumo que sai no fio tem que dizer isso.
+        let q = std::f32::consts::FRAC_PI_2; // +X
+        let mut com_rumo = 0;
+        for (pos, vel) in &vistos[60..] {
+            let r = crate::rumo::escolhe(*pos, None, None, *vel, None);
+            if r == 0 {
+                continue;
+            }
+            com_rumo += 1;
+            let y = shared::yaw_de_rumo(r).unwrap();
+            assert!(
+                (y - q).abs() < 0.8,
+                "o pet anda pro +X e o fio manda olhar pra {y:.2} rad \
+                 (velocidade reportada {vel:?})"
+            );
+        }
+        assert!(
+            com_rumo >= 20,
+            "so' {com_rumo} de 30 quadros mandaram rumo: seguindo o dono o pet \
+             reporta velocidade zero e o cliente segura o angulo velho"
+        );
     }
 
     #[test]
