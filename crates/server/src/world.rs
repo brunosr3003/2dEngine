@@ -565,6 +565,14 @@ pub struct NpcDaVilaTag {
     pub rumo: u16,
 }
 
+/// `npc_id` do BARQUEIRO DA ILHA: o que leva de volta, no cais da colonia.
+///
+/// A saida era um botao dentro do painel, e o dono cortou: "tem q ter um
+/// porto na ilha fisico se n perde o sentido". Ele esta' certo — uma ilha de
+/// onde se sai por menu nao e' uma ilha, e o gerador JA' faz o cais dela (o
+/// molhe, o patio aplainado, o tabuado). So' faltava alguem nele.
+pub const BARQUEIRO_DA_ILHA: u16 = 12;
+
 /// `npc_id` do MURAL DA ILHA (`EntityKind::Npc`).
 ///
 /// Os outros em uso: 1 loja, 2 banco, 8 Mestre do Treinamento, 9 oficio sem
@@ -4855,13 +4863,13 @@ impl GameWorld {
         if ja {
             return;
         }
-        let Some(ilha) = self.colonias.get(&Self::chave_da_colonia(
-            self.sessions
-                .values()
-                .find(|s| s.instancia == instancia)
-                .map(|s| s.colonia.niveis[shared::colonia::eixo::ASSENTAMENTO])
-                .unwrap_or(1),
-        )) else {
+        let nivel = self
+            .sessions
+            .values()
+            .find(|s| s.instancia == instancia)
+            .map(|s| s.colonia.niveis[shared::colonia::eixo::ASSENTAMENTO])
+            .unwrap_or(1);
+        let Some(ilha) = self.colonias.get(&Self::chave_da_colonia(nivel)) else {
             return;
         };
         let vila = ilha.vila();
@@ -4887,6 +4895,35 @@ impl GameWorld {
             dungeon::Instancia(instancia),
         ));
         tracing::info!("mural da ilha em ({:.1}, {:.1})", onde.x, onde.y);
+
+        // O BARQUEIRO, no cais. E' a saida da ilha, e ela tem que ser um
+        // LUGAR: o gerador ja' fez o molhe e o patio, e o barqueiro fica no
+        // patio (nao na ponta) pra quem chega de terra esbarrar nele.
+        let cais = self
+            .colonias
+            .get(&Self::chave_da_colonia(nivel))
+            .and_then(|i| i.porto())
+            .map(|p| p.centro);
+        if let Some(cais) = cais {
+            let eid = self.alloc_entity_id();
+            self.ecs.spawn((
+                NetId(eid),
+                Position(cais),
+                Velocity(Vec2::ZERO),
+                EntityKind::Npc(BARQUEIRO_DA_ILHA),
+                NpcDaVilaTag {
+                    nome: "Barqueiro".to_string(),
+                    rumo: shared::npc_kind(None, shared::construcao::Papel::Estaleiro as u8),
+                },
+                dungeon::Instancia(instancia),
+            ));
+            tracing::info!("barqueiro da ilha em ({:.1}, {:.1})", cais.x, cais.y);
+        } else {
+            // Sem cais nao ha' saida fisica, e uma ilha sem saida e' uma
+            // armadilha. O painel continua tendo o "Voltar ao porto", mas isto
+            // tem que gritar no log.
+            tracing::error!("colonia SEM PORTO: nao ha' onde por o barqueiro");
+        }
     }
 
     /// A cidade e o porto da ilha: zonas seguras e os NPCs da vila.
@@ -8558,6 +8595,9 @@ impl GameWorld {
             .collect();
 
         let mut input_results: Vec<InputResult> = Vec::new();
+        /// Quem nao mandou input neste tick: a velocidade deles zera depois do
+        /// laco, onde o ECS esta' livre (ver o `else` do `pending_input`).
+        let mut sem_input: Vec<Entity> = Vec::new();
         // Casters que tiveram o cast cancelado por movimento neste tick:
         // (entity_id, skill_id). Depois do loop de sessoes, dropa
         // pending_delayed_aoe deles e broadcasta SkillCastCancel pra clientes.
@@ -8677,6 +8717,19 @@ impl GameWorld {
                 continue;
             };
             let Some(mut frame) = session.pending_input.take() else {
+                // SEM INPUT NESTE TICK: o corpo PARA.
+                //
+                // Antes o `continue` deixava a Velocity como estava, e o corpo
+                // seguia andando na ultima direcao enquanto o input nao
+                // chegava. Num engasgo de rede de 1,5 s isso da' 1,27 u de
+                // movimento que o jogador NAO pediu (medido com
+                // `colonia_espia --engasgo`) — e cada unidade dessas e' uma
+                // que o input de verdade vai corrigir quando voltar, que e' o
+                // "voltando ao ponto anterior" do celular.
+                //
+                // O servidor e' autoritativo: ele nao pode inventar passo. Sem
+                // ordem, o corpo fica onde esta'.
+                sem_input.push(entity);
                 continue;
             };
             session.last_input_seq = frame.seq;
@@ -9890,6 +9943,14 @@ impl GameWorld {
         }
 
         // ── D: aplicar velocidades de jogadores + coletar ataques ────────────
+        // Quem ficou calado para. Vem ANTES dos resultados: um corpo que
+        // mandou input no mesmo tick tem que ganhar a velocidade dele, e nao a
+        // zerada.
+        for e in sem_input {
+            if let Ok(mut vel) = self.ecs.get::<&mut Velocity>(e) {
+                vel.0 = Vec2::ZERO;
+            }
+        }
         for ir in input_results {
             if let Ok(mut vel) = self.ecs.get::<&mut Velocity>(ir.entity) {
                 vel.0 = ir.new_vel;
@@ -16285,6 +16346,12 @@ impl GameWorld {
                     self.abrir_banco(sid);
                 }
             }
+            Some((_, BARQUEIRO_DA_ILHA, _, _)) => {
+                // O barco de volta. E' o mesmo `Voltar` do painel — o painel
+                // continua tendo o botao, porque quem nao consegue ANDAR ate'
+                // o cais nao pode ficar preso.
+                self.handle_colonia(sid, shared::colonia::PedidoColonia::Voltar);
+            }
             Some((_, MURAL_DA_ILHA, _, _)) => {
                 // O mural E' o painel da colonia. Interagir com ele e' a
                 // unica porta agora: o item de Menu saiu.
@@ -19482,6 +19549,56 @@ fn tutorial_ja_cumprido(s: &Session, def: &shared::quests::QuestDef) -> bool {
         }
         t::COLONIA_CONTRATAR => !s.colonia.trabalhadores.is_empty(),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod testes_do_input {
+    /// SEM INPUT, o corpo PARA. O servidor nao inventa passo.
+    ///
+    /// O `else` do `pending_input` era um `continue` seco: a Velocity ficava
+    /// como estava e o corpo seguia andando na ultima direcao enquanto o input
+    /// nao chegava. Medido com `colonia_espia --engasgo` (1,5 s de silencio
+    /// total, como um celular que perdeu pacote): **1,27 u andados sem
+    /// ninguem pedir**, contra 0,12 u depois da correcao — e 0,12 e' um tick
+    /// so', o input que ja' estava no buffer.
+    ///
+    /// Cada unidade andada no silencio e' uma que o input de verdade corrige
+    /// quando volta. E' o "voltando ao ponto anterior" que o dono viu no
+    /// iPhone: nao e' o cliente adivinhando (ele nao prediz — ver
+    /// `client::world`), e' o servidor andando sozinho.
+    ///
+    /// Le' o FONTE porque o defeito e' de OMISSAO num caminho de tick: um
+    /// teste de comportamento precisaria de um `GameWorld` inteiro, e o que
+    /// precisa ser travado e' que o ramo "sem input" faca ALGO com a
+    /// velocidade em vez de seguir adiante.
+    #[test]
+    fn sem_input_o_corpo_para() {
+        let fonte = include_str!("world.rs");
+        let i = fonte
+            .find("let Some(mut frame) = session.pending_input.take() else {")
+            .expect("o ramo 'sem input' mudou de forma");
+        let ramo = &fonte[i..i + 900];
+        let fim = ramo.find("};").expect("ramo sem fechamento");
+        let ramo = &ramo[..fim];
+        assert!(
+            ramo.contains("sem_input.push(entity)"),
+            "o ramo 'sem input' voltou a ser um `continue` seco: o corpo anda \
+             sozinho no engasgo de rede"
+        );
+        // E a zeragem tem que acontecer ANTES dos resultados de input, senao
+        // ela apagaria a velocidade de quem mandou input no mesmo tick.
+        let zera = fonte
+            .find("for e in sem_input {")
+            .expect("a zeragem da velocidade sumiu");
+        let aplica = fonte
+            .find("for ir in input_results {")
+            .expect("a aplicacao dos resultados sumiu");
+        assert!(
+            zera < aplica,
+            "a zeragem passou pra depois dos resultados: quem mandou input \
+             neste tick teria a velocidade apagada"
+        );
     }
 }
 

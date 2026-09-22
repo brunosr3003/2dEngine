@@ -864,7 +864,11 @@ impl Mapa {
         std::thread::spawn(move || {
             let _ = tx.send(gerar_dados_da_colonia(plato));
         });
-        m.ger = Some(Gerador::da_colonia(plato));
+        let ger = Gerador::da_colonia(plato);
+        // A PRACA. `Mapa::para` define isto e o `da_colonia` esquecia: sem ela
+        // o minimapa da colonia nao sabe onde e' o centro do assentamento.
+        m.cidade = ger.cidade();
+        m.ger = Some(ger);
         m.raio_sem_def = Some(raio_blocos as f32 * BLOCO);
         m.nome_sem_def = "Minha Ilha".into();
         m.rx = Some(rx);

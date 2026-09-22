@@ -856,8 +856,33 @@ impl Jogo {
             self.sincroniza_preferencias();
             self.medir_rede();
             // Com o modo economia ligado nada e' desenhado: malha nova espera.
+            // SALTO DO EU: a tela de carregando cobre o chao que ainda nao
+            // existe — entao ela so' entra se o chao REALMENTE nao existe.
+            //
+            // Antes bastava a posicao pular mais de `SALTO_DE_TELEPORTE`, e
+            // isso e' comum num link ruim: engasgo de rede, os snapshots
+            // chegam em rajada, o corpo aparece longe. A tela subia e
+            // `ui_pega_em` BLOQUEIA TODO O TOQUE enquanto ela esta' de pe' —
+            // ate' 10 s por vez, o teto. Camera travada, clique no mundo
+            // ignorado, e nada explicando. Foi o que o dono viu no iPhone:
+            // "n consigo clicar pra andar e n consigo mover a camera".
+            //
+            // Trocar de zona e morrer continuam cobertos: la' o chao de fato
+            // nao existe, e o teste abaixo diz sim.
             if std::mem::take(&mut self.world.salto_do_eu) {
-                self.comecar_carregando();
+                let chao_pronto = match (self.world.self_pos(), self.terreno.as_ref()) {
+                    (Some(p), Some(t)) => {
+                        let (feitos, de) = t.prontos_em(p, 1);
+                        feitos == de
+                    }
+                    // Sem terreno nenhum (ilha de tiles) nao ha' o que esperar.
+                    (_, None) => true,
+                    // Sem corpo, esperar e' o certo: e' entrada de mundo.
+                    (None, _) => false,
+                };
+                if !chao_pronto {
+                    self.comecar_carregando();
+                }
             }
             let carregando = self.carregando_desde.is_some();
             if let Some(t) = self.terreno.as_mut().filter(|_| !eco_ativa) {
@@ -2617,6 +2642,16 @@ impl Jogo {
                 self.fecha_paineis();
                 let g = self.guarda_roupa_salvo.clone();
                 self.guarda_roupa.abrir(&g);
+            }
+            Item::MinhaIlha => {
+                // A PORTA DE SAIR da ilha. O mural continua sendo o jeito de
+                // administrar (e o unico, de fora daqui o servidor recusa),
+                // mas ele exige ANDAR ate' ele — e a saida mora neste painel.
+                // Quem chegou e nao conseguiu andar ficava preso na ilha, sem
+                // porto e sem porta. O dono ficou.
+                self.envia(ClientMessage::Colonia {
+                    pedido: shared::colonia::PedidoColonia::Painel,
+                });
             }
             Item::Presenca => {
                 for pedido in self.presenca.abrir() {

@@ -502,7 +502,7 @@ pub const PASSOS: &[QuestDef] = &[
     tutorial(799, "Casa vira vila", "Uma casa sozinha não sustenta ninguém. No mural, melhore o ASSENTAMENTO: ele aplaina mais chão e abre a primeira casa de ofício.", tut::COLONIA_ASSENTAMENTO, 0, 10_000, item_id::WOOD_T1, 60),
     tutorial(800, "O primeiro morador", "Casa vazia não rende. No mural, na casa que abriu, escolha um ofício — o Lenhador traz madeira, o Minerador traz aço, o Mercenário traz cobre.", tut::COLONIA_CONTRATAR, 0, 12_000, item_id::GREATER_HEAL, 2),
     tutorial(801, "O que a ilha rendeu", "Seu morador já trabalhou. No mural, toque em COLHER: o que ele produziu vai pro BAÚ DA ILHA, e não pra sua bolsa — é por isso que voltar aqui vale a pena.", tut::COLONIA_COLHER, 0, 12_000, item_id::GREATER_HEAL, 2),
-    tutorial(802, "Buscar no baú", "O baú é da ilha. No mural, toque em RETIRAR para passar o que há nele pra sua bolsa — o que não couber fica guardado.", tut::COLONIA_RETIRAR, 0, 14_000, item_id::XP_POTION, 1),
+    tutorial(802, "Buscar no baú", "O baú é da ilha. No mural, toque em RETIRAR para passar o que há nele pra sua bolsa — o que não couber fica guardado. Quando quiser voltar, o BARQUEIRO espera no cais da ilha.", tut::COLONIA_RETIRAR, 0, 14_000, item_id::XP_POTION, 1),
     viajar(719, "Rumo à Geleira", "O farol da Geleira ainda brilha, mas por pouco. Peça ao Capitão do Porto um lugar no barco.", 1, 400, 1_500),
     // ═════════════ II · O Farol Congelado (Geleira, 15–30) ═════════════
     falar(720, "Frio de rachar os ossos", "Você desembarcou na Geleira. Apresente-se ao Mestre de Missões da praça.", Papel::Missoes, 200, 1_200, item_id::GREATER_HEAL, 2),

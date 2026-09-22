@@ -959,3 +959,69 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod testes_do_assentamento {
+    use super::*;
+
+    /// O ASSENTAMENTO cabe no orçamento de PASSE DE RENDER do celular.
+    ///
+    /// O teto do celular não é memória: é chamada de desenho — uma por `Mesh`
+    /// (docs/ARTE_DO_PERSONAGEM.md). A colônia herda os PROPS da vila do mundo
+    /// normal, e a vila tem centenas deles (cerca, vaso, lampião, floreira).
+    /// Com uma casa só no nível 1, desenhar a praça inteira é pagar o preço de
+    /// uma cidade pra mostrar um quintal — e o dono jogou num iPhone.
+    #[test]
+    fn o_assentamento_nao_estoura_o_orcamento_de_desenho() {
+        for nivel in [1u8, 3, 5] {
+            let plato = shared::colonia::plato_do_assentamento(nivel);
+            let moradores: Vec<shared::colonia::Profissao> =
+                shared::colonia::Profissao::TODAS
+                    .into_iter()
+                    .cycle()
+                    .take(shared::colonia::vagas_de_trabalho(nivel))
+                    .collect();
+            let assadas = assar_colonia(plato, &moradores);
+            let malhas: usize = assadas.iter().map(|a| a.partes.len()).sum();
+            let quads: usize = assadas
+                .iter()
+                .flat_map(|a| a.partes.iter())
+                .map(|(v, _)| v.len() / 4)
+                .sum();
+            println!(
+                "assentamento {} ({} moradores): {} construções, {} malhas, {} quads",
+                shared::colonia::Assentamento::do_nivel(nivel).nome(),
+                moradores.len(),
+                assadas.len(),
+                malhas,
+                quads
+            );
+            // 120 malhas = 120 chamadas de desenho só pro assentamento, com o
+            // terreno (dezenas) e as entidades (13 por corpo) ainda por vir.
+            assert!(
+                malhas <= 120,
+                "{} malhas no nível {nivel}: passa do orçamento de desenho do celular",
+                malhas
+            );
+            // O TETO QUE IMPORTA na macroquad é o de ÍNDICES, 5.000 — e não o
+            // de vértices. Cada quad gasta 6 índices, então 833 quads é o
+            // limite por malha. Passar dele não dá erro: metade da malha é
+            // descartada em silêncio, com um `geometry() exceeded max drawcall
+            // size, clamping` por chamada POR QUADRO. É o mesmo teto que já
+            // abriu buracos em tabuleiro no terreno (ver `terreno::MAX_QUADS`).
+            const TETO_DE_QUADS: usize = 833;
+            let pior = assadas
+                .iter()
+                .flat_map(|a| a.partes.iter())
+                .map(|(v, _)| v.len() / 4)
+                .max()
+                .unwrap_or(0);
+            println!("   pior malha: {pior} quads (teto {TETO_DE_QUADS})");
+            assert!(
+                pior <= TETO_DE_QUADS,
+                "malha de {pior} quads no nível {nivel}: a macroquad descarta \
+                 o excedente em silêncio, todo quadro"
+            );
+        }
+    }
+}

@@ -41,6 +41,12 @@ async fn main() -> anyhow::Result<()> {
     // física anda sem A*, e o A* achava a ilha por outro lugar.
     let rota_un: f32 = arg("--rota", "0").parse().unwrap_or(0.0);
     let rota = rota_un > 0.0;
+    // `--engasgo`: anda 2 s, depois PARA DE MANDAR INPUT por 1,5 s, como um
+    // celular que perdeu pacote. Mede quanto o corpo andou no SILENCIO — o
+    // servidor não deveria mover ninguém sem input, e cada unidade andada aí
+    // é uma que o jogador não pediu e que vai ser corrigida na volta (o
+    // "voltando ao ponto anterior").
+    let engasgo = args.iter().any(|a| a == "--engasgo");
 
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{host}")).await?;
     let envia = |m: &ClientMessage| -> anyhow::Result<Message> {
@@ -65,6 +71,9 @@ async fn main() -> anyhow::Result<()> {
     let mut alvo: Option<glam::Vec2> = None;
     let mut ilha_da_colonia: Option<shared::terreno::Ilha> = None;
     let mut pediu = false;
+    let mut avisou_silencio = false;
+    let mut antes_do_silencio: Option<glam::Vec2> = None;
+    let mut depois_do_silencio: Option<glam::Vec2> = None;
     let mut relogio = tokio::time::interval(Duration::from_millis(33));
 
     while Instant::now() < fim {
@@ -95,16 +104,39 @@ async fn main() -> anyhow::Result<()> {
                         buttons: 0,
                     }})?).await?;
                 } else {
-                    // EM CÍRCULO, e não sempre pro mesmo lado: andando reto o
-                    // corpo encosta na primeira árvore e o teste diz "não anda"
-                    // numa ilha onde anda. Medido: no Bosque, 0,75 u e parava.
-                    let t = seq as f32 * 0.05;
-                    ws.send(envia(&ClientMessage::Input { input: InputFrame {
-                        seq, tick,
-                        move_dir: glam::Vec2::new(t.cos(), t.sin()),
-                        aim: glam::Vec2::X,
-                        buttons: 0,
-                    }})?).await?;
+                    // A JANELA DE SILÊNCIO do `--engasgo`: de 2,0 s a 3,5 s
+                    // depois de entrar no mundo, nenhum input sai.
+                    let t_s = seq as f32 / 30.0;
+                    let calado = engasgo && (2.0..3.5).contains(&t_s);
+                    if calado {
+                        if !avisou_silencio {
+                            avisou_silencio = true;
+                            antes_do_silencio = agora_em;
+                            println!("    [engasgo] parei de mandar input em {:?}", agora_em);
+                        }
+                    } else {
+                        if avisou_silencio && depois_do_silencio.is_none() {
+                            depois_do_silencio = agora_em;
+                            let d = match (antes_do_silencio, agora_em) {
+                                (Some(a), Some(b)) => a.distance(b),
+                                _ => 0.0,
+                            };
+                            println!(
+                                "    [engasgo] voltei a mandar. O corpo andou {d:.2} u                                  SEM input, ate {:?}",
+                                agora_em
+                            );
+                        }
+                        // EM CÍRCULO, e não sempre pro mesmo lado: andando reto
+                        // o corpo encosta na primeira árvore e o teste diz "não
+                        // anda" numa ilha onde anda. Medido: no Bosque, 0,75 u.
+                        let t = seq as f32 * 0.05;
+                        ws.send(envia(&ClientMessage::Input { input: InputFrame {
+                            seq, tick,
+                            move_dir: glam::Vec2::new(t.cos(), t.sin()),
+                            aim: glam::Vec2::X,
+                            buttons: 0,
+                        }})?).await?;
+                    }
                 }
             }
             frame = ws.next() => {

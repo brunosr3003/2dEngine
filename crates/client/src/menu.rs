@@ -33,6 +33,15 @@ pub enum Item {
     /// A colonia (docs/COLONIA.md): colher e melhorar.
     /// O guarda-roupa (docs/PERSONAGEM.md): trocar a aparencia.
     GuardaRoupa,
+    /// SÓ aparece DENTRO da colonia (`Menu::desenha` filtra).
+    ///
+    /// Ele existia e saiu quando o painel virou mural — "pra ficar mais
+    /// imersivo". Mas o mural exige ANDAR ate' ele, e a saida da ilha
+    /// (`PedidoColonia::Voltar`) mora dentro desse painel: quem chegou e nao
+    /// conseguiu andar ficou PRESO na propria ilha, sem porto e sem porta.
+    /// O dono ficou. A porta imersiva pode exigir caminhada; a porta de SAIR
+    /// nao pode exigir nada.
+    MinhaIlha,
     Grupo,
     Amigos,
     Correio,
@@ -100,6 +109,7 @@ pub const GRUPOS: [(&str, &[Linha]); 7] = [
             (Item::Mapa, "Mapa", None),
             (Item::Aventuras, "Dungeons", None),
             (Item::Presenca, "Presença", None),
+            (Item::MinhaIlha, "Minha Ilha", None),
             (Item::Montaria, "Montaria", None),
         ],
     ),
@@ -371,6 +381,7 @@ fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
         Item::Aventuras => "aventuras",
         Item::Presenca => "presenca",
         Item::GuardaRoupa => "ficha",
+        Item::MinhaIlha => "mapa",
         Item::Grupo => "grupo",
         Item::Amigos => "amigos",
         Item::Correio => "correio",
@@ -442,6 +453,7 @@ mod tests {
             Item::Mercado,
             Item::Aventuras,
             Item::Presenca,
+            Item::MinhaIlha,
             Item::GuardaRoupa,
             Item::LojaTp,
             Item::Montaria,

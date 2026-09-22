@@ -651,6 +651,41 @@ mod testes_do_chao {
     ///
     /// Roda sobre as ilhas de VERDADE (`Ilha::da_colonia`), e nao sobre os
     /// numeros: o que precisa ser igual e' o chao, nao a formula.
+    /// A ilha tem CAIS, em todo nivel, e ele nao muda de lugar.
+    ///
+    /// E' por ele que se sai — o barqueiro mora la' (`BARQUEIRO_DA_ILHA`). Uma
+    /// colonia sem cais e' uma armadilha: o jogador chega e nao tem como
+    /// voltar a nao ser por menu, que foi exatamente o que o dono recusou
+    /// ("tem q ter um porto na ilha fisico se n perde o sentido").
+    ///
+    /// Se ele mudasse de lugar entre niveis, subir o assentamento moveria a
+    /// saida — e quem conhecia a ilha teria que reaprender onde e' a porta.
+    #[test]
+    fn a_colonia_tem_cais_e_ele_fica_no_lugar() {
+        let primeiro = crate::terreno::Gerador::da_colonia(plato_do_assentamento(1))
+            .porto()
+            .expect("a colonia nasceu sem cais: nao ha' como sair dela")
+            .centro;
+        for n in 2..=NIVEL_MAX {
+            let p = crate::terreno::Gerador::da_colonia(plato_do_assentamento(n))
+                .porto()
+                .unwrap_or_else(|| panic!("nivel {n}: a colonia ficou sem cais"))
+                .centro;
+            assert_eq!(p, primeiro, "nivel {n}: o cais mudou de lugar");
+        }
+        // E ele fica LONGE da praca: o cais e' na costa, e a caminhada entre
+        // os dois e' o que faz a ilha ter tamanho.
+        let praca = crate::terreno::Gerador::da_colonia(plato_do_assentamento(1))
+            .cidade()
+            .expect("sem praca")
+            .centro();
+        assert!(
+            praca.distance(primeiro) > 30.0,
+            "cais a {:.0}u da praca: eles viraram o mesmo lugar",
+            praca.distance(primeiro)
+        );
+    }
+
     #[test]
     fn subir_o_assentamento_nao_mexe_na_ilha() {
         let base = crate::terreno::Ilha::da_colonia(plato_do_assentamento(1));
