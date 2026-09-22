@@ -1235,8 +1235,23 @@ pub struct Preferencias {
     pub minimapa_oculto: Option<bool>,
 }
 
-/// Filtros do mapa grande e do minimapa. O padrao e' tudo desligado.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+/// Filtros do mapa grande e do minimapa.
+///
+/// O padrao MOSTRA o que serve pra se orientar: recurso, Energia e VILA
+/// (cidade, porto, predios, NPCs). MOB fica desligado — foi ele que poluia a
+/// tela, e a alta densidade ja' aparece sozinha (`Filtros::zona_visivel`).
+///
+/// **Era tudo desligado, e isso derrotava o padrao do cliente.** O
+/// `Filtros::default` de la' ja' nascia com recurso e vila ligados, mas
+/// `From<&FiltrosDoMapa>` sobrescreve tudo com o que vem do servidor — e o
+/// que vinha era este `Default`, com tudo em `false`. O dono reclamou duas
+/// vezes que "o mapa nao mostra recursos, nao mostra casa e porto, apenas a
+/// ilha em si", e das duas vezes o conserto foi no lado que nao mandava.
+///
+/// `#[serde(default)]` faz isto valer tambem pra quem tem preferencia salva
+/// de ANTES de os filtros existirem: campo ausente cai aqui. Quem ja'
+/// escolheu (o JSON traz o valor) continua com a escolha dele.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct FiltrosDoMapa {
     pub mobs: bool,
@@ -1245,6 +1260,18 @@ pub struct FiltrosDoMapa {
     pub recursos: [bool; 5],
     pub energia: bool,
     pub vila: bool,
+}
+
+impl Default for FiltrosDoMapa {
+    fn default() -> Self {
+        Self {
+            mobs: false,
+            bichos_ocultos: Vec::new(),
+            recursos: [true; 5],
+            energia: true,
+            vila: true,
+        }
+    }
 }
 
 impl Preferencias {

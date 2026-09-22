@@ -267,6 +267,40 @@ impl From<&shared::protocol::FiltrosDoMapa> for Filtros {
     }
 }
 
+#[cfg(test)]
+mod testes_dos_filtros {
+    use super::*;
+
+    /// O padrão do SERVIDOR tem que bater com o do cliente.
+    ///
+    /// `From<&FiltrosDoMapa>` sobrescreve o `Filtros::default` do cliente com
+    /// o que vem pelo fio, então quem manda de verdade é o `Default` do
+    /// `FiltrosDoMapa` — e aquele era tudo `false`. O dono reclamou DUAS
+    /// vezes que "o mapa não mostra recursos, não mostra casa e porto, apenas
+    /// a ilha em si", e das duas vezes o conserto foi no lado que não manda.
+    ///
+    /// Este teste é o que impede a terceira.
+    #[test]
+    fn o_padrao_do_fio_e_o_padrao_do_cliente() {
+        let do_fio = Filtros::from(&shared::protocol::FiltrosDoMapa::default());
+        let do_cliente = Filtros::default();
+        assert_eq!(
+            do_fio.recursos, do_cliente.recursos,
+            "recurso desligado no fio: o mapa volta a ser só o contorno da ilha"
+        );
+        assert_eq!(do_fio.energia, do_cliente.energia);
+        assert_eq!(
+            do_fio.vila, do_cliente.vila,
+            "vila desligada no fio: porto e NPCs somem do mapa"
+        );
+        assert_eq!(do_fio.mobs, do_cliente.mobs);
+        // E o que o padrão PROMETE: referência ligada, mob desligado (foi ele
+        // que poluiu a tela; a alta densidade aparece por `zona_visivel`).
+        assert!(do_fio.vila && do_fio.energia && do_fio.recursos.iter().all(|r| *r));
+        assert!(!do_fio.mobs);
+    }
+}
+
 impl Filtros {
     /// Pra guardar no servidor. Lista ordenada: o mesmo conjunto sempre vira
     /// o mesmo valor, e a sincronia nao ve' "mudanca" que nao houve.

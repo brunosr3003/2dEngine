@@ -3088,9 +3088,34 @@ pub fn maquete_da_ilha(
         // Uma balançada lenta, com fase por morador: parados e idênticos eles
         // leriam como estátua.
         let t = get_time() as f32 + i as f32 * 1.7;
-        // Parado, mas RESPIRANDO: `tempo` é o relógio que a pose de quem
-        // está de pé usa. A fase por morador tira o efeito de fileira de
-        // bonecos sincronizados.
+        // TRABALHANDO, e não só de pé.
+        //
+        // O dono pediu "ver visualmente os trabalhadores TRABALHANDO na
+        // ilha". O rig já sabe a animação de coleta — machado e picareta,
+        // com a ferramenta na mão (`rig::ferramenta_de`) —, então quem colhe
+        // colhe. O mercenário fica de arma sacada, que é o ofício dele; o
+        // curtidor e o alquimista trabalham dentro de casa e ficam de pé,
+        // respirando.
+        //
+        // A fase por morador tira o efeito de fileira de bonecos batendo no
+        // mesmo compasso.
+        use shared::colonia::Profissao as P;
+        let combate = match oficio {
+            P::Lenhador => crate::rig::Combate {
+                coleta: Some((0, t)),
+                ..Default::default()
+            },
+            P::Minerador => crate::rig::Combate {
+                coleta: Some((1, t)),
+                ..Default::default()
+            },
+            P::Mercenario => crate::rig::Combate {
+                conjunto: 0,
+                sacada: 1.0,
+                ..Default::default()
+            },
+            _ => Default::default(),
+        };
         let entrada = crate::rig::Entrada {
             fase: 0.0,
             andar: 0.0,
@@ -3098,7 +3123,7 @@ pub fn maquete_da_ilha(
             tempo: t,
             ar: 0.0,
             degrau: [0.0; 2],
-            combate: Default::default(),
+            combate,
         };
         let pose = crate::rig::pose(&entrada);
         // MAIOR QUE A VIDA, e de propósito.
