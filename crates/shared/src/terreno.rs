@@ -1841,14 +1841,45 @@ pub struct Cidade {
     pub cz: f32,
     /// Bloco de topo do plato.
     pub nivel: i32,
+    /// Plato cheio, em unidades de mundo. CAMPO e nao constante porque a
+    /// COLONIA cresce: subir o assentamento aplaina mais chao em volta da
+    /// mesma praca, sem mexer numa coluna do que ja' estava plano. Fora dela
+    /// e' sempre `RAIO_PLATO`.
+    pub raio_plato: f32,
+    /// Fim da rampa: dali pra fora o relevo e' o cru.
+    pub raio: f32,
 }
 
 impl Cidade {
-    /// Plato cheio, em unidades de mundo. Grande o bastante pro anel de
+    /// Plato cheio padrao, em unidades de mundo. Grande o bastante pro anel de
     /// oficios (lojas de ate' 12 x 9 u) caber inteiro no plano.
     pub const RAIO_PLATO: f32 = 28.0;
-    /// Fim da rampa: dali pra fora o relevo e' o cru.
+    /// Fim da rampa padrao: dali pra fora o relevo e' o cru.
     pub const RAIO: f32 = 42.0;
+    /// Quanto a rampa passa do plato. Mantem a inclinacao quando o plato
+    /// cresce: rampa de largura fixa num plato maior fica em pe'.
+    pub const RAMPA: f32 = Self::RAIO - Self::RAIO_PLATO;
+
+    /// A praca de sempre, com os raios padrao.
+    pub fn nova(cx: f32, cz: f32, nivel: i32) -> Self {
+        Self {
+            cx,
+            cz,
+            nivel,
+            raio_plato: Self::RAIO_PLATO,
+            raio: Self::RAIO,
+        }
+    }
+
+    /// A mesma praca com o plato de outro tamanho. A RAMPA acompanha, senao
+    /// um plato maior terminaria num paredao.
+    pub fn com_plato(self, raio_plato: f32) -> Self {
+        Self {
+            raio_plato,
+            raio: raio_plato + Self::RAMPA,
+            ..self
+        }
+    }
     /// Alem do raio, onde mato, arvore e pedra ainda nao nascem.
     pub const FOLGA_DO_MATO: f32 = 3.0;
     /// Acima disto (topo do bloco, em unidades) e' terra seca.
@@ -1886,8 +1917,8 @@ impl Cidade {
             self.cx,
             self.cz,
             self.nivel,
-            Self::RAIO_PLATO,
-            Self::RAIO,
+            self.raio_plato,
+            self.raio,
             bx,
             bz,
             cru,
@@ -1896,6 +1927,87 @@ impl Cidade {
 }
 
 impl Gerador {
+    /// O gerador da COLONIA: semente e raio fixos, PLATO pelo assentamento.
+    ///
+    /// Publico e num lugar so' porque o cliente gera o mesmo chao que o
+    /// servidor (docs/COLONIA.md): duas chamadas soltas a `novo` + um
+    /// `com_plato` esquecido de um dos lados dariam dois relevos, e o jogador
+    /// andaria num chao que nao ve'.
+    pub fn da_colonia(plato: f32) -> Self {
+        let mut g = Self::novo(
+            crate::colonia::SEMENTE,
+            crate::colonia::RAIO_BLOCOS,
+            Bioma::Floresta,
+            ESCALA_ALTURA,
+        );
+        // `achar_cidade` pede uma ENSEADA, e a ilha da colonia nao tem uma que
+        // sirva: ela voltava `None`, a ilha ficava SEM PLATO NENHUM e as casas
+        // assentavam no barranco cru. O dono pediu o contrario — "sempre ter
+        // um terreno aplanado nas construcoes igual no mundo normal".
+        //
+        // Entao a praca dela e' posta na mao quando nao ha' enseada. Mesmo
+        // aplainamento do mundo normal (`aplainar_sitio`); o que muda e' so'
+        // quem escolhe o lugar.
+        let c = g.cidade.unwrap_or_else(|| g.praca_da_colonia());
+        g.cidade = Some(c.com_plato(plato));
+        g
+    }
+
+    /// O melhor lugar pra praca da colonia: seco, plano e perto do centro.
+    ///
+    /// A varredura usa o plato MAXIMO e nao o do nivel atual, de proposito: a
+    /// praca tem que cair no MESMO lugar em todos os niveis. Escolhendo pelo
+    /// plato de agora, subir o assentamento mudaria o centro da vila e a casa
+    /// do jogador andaria pela ilha — que e' exatamente o que "nao cortar a
+    /// ilha" existe pra impedir.
+    fn praca_da_colonia(&self) -> Cidade {
+        let plato_max = crate::colonia::plato_do_assentamento(crate::colonia::NIVEL_MAX);
+        let r = (plato_max / BLOCO) as i32;
+        let mut melhor: Option<(i32, Cidade)> = None;
+        let alcance = (crate::colonia::RAIO_BLOCOS * 2) / 5;
+        let passo = 6;
+        let mut bz = -alcance;
+        while bz <= alcance {
+            let mut bx = -alcance;
+            while bx <= alcance {
+                // Amostra o disco do plato: tudo seco, e o mais plano possivel.
+                let (mut alto, mut baixo, mut molhado) = (i32::MIN, i32::MAX, false);
+                for k in 0..13 {
+                    let a = k as f32 * std::f32::consts::TAU / 13.0;
+                    for f in [0.0, 0.55, 1.0] {
+                        let ox = (a.cos() * r as f32 * f) as i32;
+                        let oz = (a.sin() * r as f32 * f) as i32;
+                        let b = self.bloco_em(bx + ox, bz + oz);
+                        if (b + 1) as f32 * BLOCO <= Cidade::SECO {
+                            molhado = true;
+                        }
+                        alto = alto.max(b);
+                        baixo = baixo.min(b);
+                    }
+                }
+                if !molhado {
+                    // Nota: desnivel primeiro, distancia do centro depois. O
+                    // empate vai pro centro porque e' de la' que o jogador
+                    // chega (`colonia::CHEGADA`).
+                    let d = ((bx * bx + bz * bz) as f32).sqrt() as i32;
+                    let nota = (alto - baixo) * 1_000 + d;
+                    let nivel = (alto + baixo) / 2;
+                    if melhor.as_ref().is_none_or(|(n, _)| nota < *n) {
+                        melhor = Some((nota, Cidade::nova(bx as f32, bz as f32, nivel)));
+                    }
+                }
+                bx += passo;
+            }
+            bz += passo;
+        }
+        // Sem lugar seco nenhum (nao acontece nesta semente, mas o tipo nao
+        // sabe disso): o centro, que o teste do chao garante ser terra.
+        melhor.map(|(_, c)| c).unwrap_or_else(|| {
+            let b = self.bloco_em(0, 0);
+            Cidade::nova(0.0, 0.0, b)
+        })
+    }
+
     pub fn novo(semente: i32, raio_blocos: i32, bioma: Bioma, escala_altura: f32) -> Self {
         let p = bioma.perfil();
         let (tb, tf) = (p.terraco_blocos, p.terraco_forca);
@@ -2009,7 +2121,7 @@ impl Gerador {
     pub fn na_cidade(&self, bx: i32, bz: i32) -> bool {
         let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
         self.cidade
-            .is_some_and(|c| c.distancia(p) < Cidade::RAIO + Cidade::FOLGA_DO_MATO)
+            .is_some_and(|c| c.distancia(p) < c.raio + Cidade::FOLGA_DO_MATO)
             || self
                 .porto
                 .is_some_and(|s| s.contem(p, Cidade::FOLGA_DO_MATO))
@@ -2219,7 +2331,7 @@ impl Gerador {
                 // iguais, o que ela desenhou.
                 let nota = var + ((ix * ix + iz * iz) as f32).sqrt() * 0.5;
                 if melhor.is_none_or(|(n, _)| nota < n) {
-                    melhor = Some((nota, Cidade { cx, cz, nivel }));
+                    melhor = Some((nota, Cidade::nova(cx, cz, nivel)));
                 }
             }
         }
@@ -2494,6 +2606,37 @@ impl Ilha {
             raio_blocos,
             bioma,
             escala_altura,
+            lado,
+            blocos,
+            ger,
+        )
+    }
+
+    /// A ilha da COLONIA, com o PLATO do assentamento no tamanho pedido.
+    ///
+    /// Uma semente e um raio, sempre os mesmos (`colonia::SEMENTE`,
+    /// `colonia::RAIO_BLOCOS`): o contorno da ilha nunca muda. O que o nivel
+    /// muda e' so' quanto chao em volta da praca sai APLAINADO — subir o
+    /// assentamento empurra a rampa pra fora e nao mexe numa coluna do que ja'
+    /// estava plano. E' isso que deixa a vila crescer sem a casa do jogador
+    /// mudar de altura debaixo dele.
+    pub fn da_colonia(plato: f32) -> Self {
+        let raio_blocos = crate::colonia::RAIO_BLOCOS;
+        let lado = (raio_blocos * 2) as usize;
+        let ger = Gerador::da_colonia(plato);
+        let mut blocos = vec![0i16; lado * lado];
+        for iz in 0..lado {
+            let bz = iz as i32 - raio_blocos;
+            for ix in 0..lado {
+                let bx = ix as i32 - raio_blocos;
+                blocos[iz * lado + ix] = ger.bloco_em(bx, bz) as i16;
+            }
+        }
+        Self::com_blocos(
+            crate::colonia::SEMENTE,
+            raio_blocos,
+            Bioma::Floresta,
+            ESCALA_ALTURA,
             lado,
             blocos,
             ger,
@@ -4954,7 +5097,7 @@ mod testes {
             let c = ger
                 .cidade()
                 .unwrap_or_else(|| panic!("{}: sem cidade", d.zona));
-            let r = (Cidade::RAIO_PLATO / BLOCO) as i32;
+            let r = (c.raio_plato / BLOCO) as i32;
             let (mut total, mut no_nivel) = (0, 0);
             for dz in -r..=r {
                 for dx in -r..=r {
@@ -5018,7 +5161,7 @@ mod testes {
                 let mut anterior = c.nivel;
                 let mut livre = true;
                 let mut dist = 0.0;
-                while dist < Cidade::RAIO + 2.0 {
+                while dist < c.raio + 2.0 {
                     dist += BLOCO;
                     let p = c.centro() + dir * dist;
                     let b =

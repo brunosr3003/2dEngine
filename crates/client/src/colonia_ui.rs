@@ -17,6 +17,13 @@ pub struct Estado {
     pub colheita: Vec<(u16, u32)>,
     pub custos: Vec<Vec<(u16, u32)>>,
     pub banco: u8,
+    /// O que esta' NO BAU da ilha. A colheita cai aqui.
+    pub bau: Vec<shared::InventorySlot>,
+    /// Os moradores, na ordem das vagas.
+    pub trabalhadores: Vec<shared::colonia::Profissao>,
+    /// Quantas vagas o assentamento sustenta. Maior que `trabalhadores.len()`
+    /// = ha' casa vazia esperando alguem.
+    pub vagas: u8,
 }
 
 #[derive(Debug, Default)]
@@ -58,7 +65,14 @@ impl ColoniaUi {
         let seguro = crate::hud_layout::tela_segura();
         let linha_h = 86.0 * f;
         let w = (600.0 * f).min(seguro.w - 16.0);
-        let h = (216.0 * f + linha_h * EIXOS as f32).min(seguro.h - 16.0);
+        // A altura conta as VAGAS: sem isso o rodape cobria os moradores, que
+        // foi o mesmo defeito do painel de criacao de personagem.
+        let vagas_h = if e.vagas > 0 {
+            32.0 * f + 48.0 * f * e.vagas as f32
+        } else {
+            0.0
+        };
+        let h = (216.0 * f + 64.0 * f + linha_h * EIXOS as f32 + vagas_h).min(seguro.h - 16.0);
         let p = Rect::new(
             seguro.center().x - w * 0.5,
             seguro.center().y - h * 0.5,
@@ -118,8 +132,47 @@ impl ColoniaUi {
             }
         }
 
-        // Os tres eixos.
+        // O BAU DA ILHA, logo abaixo da colheita: e' onde ela cai, e nao na
+        // bolsa. Sem esta linha o jogador colhia e nao achava nada.
         let mut y = cr.y + cr.h + 12.0 * f;
+        {
+            let br = Rect::new(x0, y, p.w - 40.0 * f, 52.0 * f);
+            estilo::cartao(br, false, !e.bau.is_empty());
+            let dentro: Vec<(u16, u32)> = e.bau.iter().map(|s| (s.item_id, s.qty)).collect();
+            estilo::texto_forte(
+                br.x + 14.0 * f,
+                br.y + 22.0 * f,
+                &format!("Baú da ilha · {}/{} espaços", e.bau.len(), e.banco),
+                14,
+                estilo::OURO,
+            );
+            estilo::texto(
+                br.x + 14.0 * f,
+                br.y + 42.0 * f,
+                &if dentro.is_empty() {
+                    "Vazio — a colheita cai aqui.".to_string()
+                } else {
+                    lista(&dentro, nome_item)
+                },
+                12,
+                if dentro.is_empty() { estilo::SUAVE } else { estilo::TEXTO },
+            );
+            if !e.bau.is_empty() {
+                let b = Rect::new(
+                    br.x + br.w - 136.0 * f,
+                    br.y + (br.h - 38.0 * f) * 0.5,
+                    124.0 * f,
+                    38.0 * f,
+                );
+                estilo::botao(b, "Retirar", estilo::estado_de(b, false, false), false);
+                if clicou && b.contains(m) {
+                    pedido = Some(PedidoColonia::Retirar);
+                }
+            }
+            y += br.h + 12.0 * f;
+        }
+
+        // Os tres eixos.
         for i in 0..EIXOS {
             let r = Rect::new(x0, y, p.w - 40.0 * f, linha_h - 10.0 * f);
             let no_maximo = e.niveis[i] >= NIVEL_MAX;
@@ -157,6 +210,63 @@ impl ColoniaUi {
                 }
             }
             y += linha_h;
+        }
+
+        // OS MORADORES. Uma linha por vaga: quem esta' nela, ou o convite
+        // pra alguem. Vem DEPOIS dos eixos porque o assentamento e' quem abre
+        // as vagas — a ordem da tela e' a ordem em que se faz a coisa.
+        if e.vagas > 0 {
+            estilo::texto_forte(x0, y + 20.0 * f, "Moradores", 16, estilo::OURO);
+            y += 32.0 * f;
+            for vaga in 0..e.vagas as usize {
+                let r = Rect::new(x0, y, p.w - 40.0 * f, 44.0 * f);
+                let quem = e.trabalhadores.get(vaga).copied();
+                estilo::cartao(r, false, quem.is_some());
+                let texto = match quem {
+                    Some(q) => {
+                        let (item, qtd) = shared::colonia::por_hora_do_trabalhador(
+                            q,
+                            e.niveis[eixo::RECURSOS],
+                        );
+                        format!("{} · {} {}/h", q.nome(), qtd, nome_item(item))
+                    }
+                    None => "Casa vazia — escolha um ofício".to_string(),
+                };
+                estilo::texto(
+                    r.x + 12.0 * f,
+                    r.y + 27.0 * f,
+                    &texto,
+                    13,
+                    if quem.is_some() { estilo::TEXTO } else { estilo::SUAVE },
+                );
+                // Um botao por oficio, do lado direito. Sao cinco e cabem:
+                // uma lista suspensa esconderia a escolha atras de um toque.
+                let bw = 62.0 * f;
+                let total = shared::colonia::Profissao::TODAS.len() as f32;
+                let mut bx = r.x + r.w - bw * total - 8.0 * f;
+                for op in shared::colonia::Profissao::TODAS {
+                    let b = Rect::new(bx, r.y + 6.0 * f, bw - 4.0 * f, 32.0 * f);
+                    let posto = quem == Some(op);
+                    estilo::botao(
+                        b,
+                        &op.nome()[..3.min(op.nome().len())],
+                        estilo::estado_de(b, posto, false),
+                        posto,
+                    );
+                    if clicou && b.contains(m) {
+                        pedido = Some(if posto {
+                            PedidoColonia::Demitir { vaga: vaga as u8 }
+                        } else {
+                            PedidoColonia::Contratar {
+                                vaga: vaga as u8,
+                                oficio: op.indice(),
+                            }
+                        });
+                    }
+                    bx += bw;
+                }
+                y += 48.0 * f;
+            }
         }
 
         // A saida. Fica no rodape e nao entre os eixos: sair e' o unico
@@ -256,6 +366,9 @@ mod testes {
             colheita: vec![],
             custos: vec![],
             banco: 10,
+            bau: vec![],
+            trabalhadores: vec![],
+            vagas: 0,
         }
     }
 

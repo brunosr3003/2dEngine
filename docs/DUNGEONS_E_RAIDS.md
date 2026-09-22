@@ -52,7 +52,7 @@ implementacao por um servico entre canais/realms sem mexer na instancia.
 | Idempotência | O id do baú vai em `characters.dungeon_json` no MESMO save da bolsa: reiniciar não reabre |
 | 1ª vitória | Semanal por CONTA (`dungeon_contas`): peça garantida uma linha acima, no correio. De todas (por personagem): peça + 1 chave da cor, no correio |
 | Correio | Local do realm (`dungeon_json.correio`), mostrado na aba **Entregas** do Mercado, com "Receber" por carta. Não depende do banco central |
-| Entradas | Gruta 2/dia (acumula 4), compra 2/dia com ouro (×1, ×3); Porão com recompensa 3/dia. Reset 04:00 de Brasília, semana na quarta. Nunca TP |
+| Entradas | Gruta 2/dia (acumula 4); **compra com ouro sem teto de contagem — o preço TRIPLICA a cada compra do dia** (a 5ª já custa 243× a 1ª). Porão com recompensa 3/dia, sem venda. Reset 04:00 de Brasília, semana na quarta. Nunca TP |
 | Selo | Receita 1900 (120 Marcas + 5.000 darksteel + 3 pó, nível 60) com teto de 2 por semana por conta no servidor |
 | Diárias | "Porão do dia" (6x6) conta a vitória em qualquer dungeon |
 | Telas | Menu → Aventura → Dungeons (lista, estágios com cadeado e motivo, entradas, fila, salas), faixa "PROCURANDO GRUPO", pronto-check, HUD da instância (relógio, andar, inimigos, porta Sair), "VOCÊ CAIU / Reviver em N s", resultado com o baú. Onde obter das chaves abre a janela |
@@ -1034,3 +1034,27 @@ auto-match cego além da lista de recrutamento (não encontrado na pesquisa de s
 taxas de drop das raids (não são públicas); o nível exato de abertura do Boss
 Raid (30 aparece numa fonte só); a tabela completa de andares da Praça Mágica
 (só 1F e 10F confirmados).
+
+## A compra de entrada: teto econômico, não de contagem (21/09/2026)
+
+Até aqui a terceira compra do dia era recusada com "sem mais entradas à venda
+hoje". O dono pediu que houvesse como comprar mais.
+
+O teto de **contagem** saiu; o de **preço** ficou: cada compra do dia custa o
+triplo da anterior. Com base de `500 + 100 × nível`, um personagem de nível 20
+paga 2.500 na primeira, 7.500 na segunda, 22.500 na terceira — e 202.500 na
+quinta.
+
+**Por que isto é melhor que um número.** Um teto de contagem mente: ele diz
+"não dá" quando o que se quer dizer é "não deveria valer a pena". O preço
+crescente diz a verdade — dá, e custa. E ele se ajusta sozinho ao nível do
+personagem e à raridade do ouro (`docs/ECONOMIA.md`: ouro só vem de chefe,
+baú, mercado, venda ao NPC e calendário), sem ninguém recalibrar nada.
+
+Sobra um corte em 24 compras, e ele **não é balanceamento**: é aritmética.
+Triplicar sem parar estoura o `u64` por volta da 40ª, e um preço que dá a
+volta no zero viraria entrada de graça — o oposto do que o preço crescente
+existe para fazer. Há teste (`o_preco_cresce_sempre_e_nunca_da_a_volta`).
+
+O **Porão continua sem venda**: as recompensas dele são por dia, e vender
+entrada ali seria vender a recompensa.

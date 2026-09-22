@@ -91,10 +91,22 @@ pub struct Carta {
     pub resgatada: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+// Sem `Eq`: a instancia tem float (`value_pct` dos afixos), e float nao tem
+// igualdade total. `PartialEq` basta pra tudo o que o correio compara.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Anexo {
     pub item_id: u16,
     pub qtd: u32,
+    /// A INSTANCIA do item: raridade, tier, refino, afixos, afinidade.
+    ///
+    /// Sem ela o correio entregava o item PELADO. Nao e' um detalhe de
+    /// equipamento: pet enviado por correio chegava nivel 1, sem skills e com
+    /// a afinidade re-sorteada, **em silencio** — a mesma coisa com montaria.
+    /// O jogador nao tinha como saber que o correio comia metade do item.
+    ///
+    /// `None` = item sem instancia (material, pocao, cobre), que e' a maioria.
+    #[serde(default)]
+    pub instance: Option<crate::items::ItemInstance>,
 }
 
 pub const MAX_ANEXOS: usize = 8;
@@ -105,6 +117,11 @@ pub fn anexos_validos(anexos: &[Anexo]) -> bool {
         && anexos
             .iter()
             .all(|a| a.item_id > 0 && a.qtd > 0 && a.qtd <= MAX_QTD_ANEXO)
+        // Item COM instancia nao empilha (cada um e' unico), entao mandar
+        // dois de uma vez entregaria um so'.
+        && anexos
+            .iter()
+            .all(|a| a.instance.is_none() || a.qtd == 1)
         && anexos
             .iter()
             .enumerate()
@@ -153,20 +170,21 @@ mod tests {
     #[test]
     fn limites_de_anexos() {
         assert!(anexos_validos(&[]));
-        assert!(anexos_validos(&[Anexo { item_id: 1, qtd: 1 }]));
-        assert!(!anexos_validos(&[Anexo { item_id: 0, qtd: 1 }]));
-        assert!(!anexos_validos(&[Anexo { item_id: 1, qtd: 0 }]));
+        assert!(anexos_validos(&[Anexo { item_id: 1, qtd: 1, instance: None }]));
+        assert!(!anexos_validos(&[Anexo { item_id: 0, qtd: 1, instance: None }]));
+        assert!(!anexos_validos(&[Anexo { item_id: 1, qtd: 0, instance: None }]));
         assert!(!anexos_validos(&[Anexo {
             item_id: 1,
-            qtd: 100_001
+            qtd: 100_001,
+            instance: None
         }]));
         assert!(!anexos_validos(&[
-            Anexo { item_id: 1, qtd: 1 },
-            Anexo { item_id: 1, qtd: 2 }
+            Anexo { item_id: 1, qtd: 1, instance: None },
+            Anexo { item_id: 1, qtd: 2, instance: None }
         ]));
         assert!(!anexos_validos(
             &(1..=9)
-                .map(|i| Anexo { item_id: i, qtd: 1 })
+                .map(|i| Anexo { item_id: i, qtd: 1, instance: None })
                 .collect::<Vec<_>>()
         ));
     }

@@ -690,15 +690,14 @@ fn gerar_dados(def: &'static DefIlha) -> Dados {
 ///
 /// Sem vila, porque a colonia nao tem uma: predio no minimapa e nenhum no
 /// chao seria pior que minimapa nenhum.
-fn gerar_dados_da_colonia(semente: i32, raio_blocos: i32) -> Dados {
-    let ger = Gerador::novo(
-        semente,
-        raio_blocos,
-        shared::terreno::Bioma::Floresta,
-        shared::terreno::ESCALA_ALTURA,
-    );
+fn gerar_dados_da_colonia(plato: f32) -> Dados {
+    let ger = Gerador::da_colonia(plato);
     Dados {
-        rgba: gerar_imagem(&ger, raio_blocos, shared::terreno::Bioma::Floresta),
+        rgba: gerar_imagem(
+            &ger,
+            shared::colonia::RAIO_BLOCOS,
+            shared::terreno::Bioma::Floresta,
+        ),
         pegadas: Vec::new(),
         porto: None,
         mestre: None,
@@ -858,18 +857,14 @@ impl Mapa {
     }
 
     /// O minimapa da COLONIA: mesmo desenho, gerador do personagem.
-    pub fn da_colonia(semente: i32, raio_blocos: i32) -> Self {
+    pub fn da_colonia(plato: f32) -> Self {
+        let raio_blocos = shared::colonia::RAIO_BLOCOS;
         let mut m = Self::default();
         let (tx, rx) = channel();
         std::thread::spawn(move || {
-            let _ = tx.send(gerar_dados_da_colonia(semente, raio_blocos));
+            let _ = tx.send(gerar_dados_da_colonia(plato));
         });
-        m.ger = Some(Gerador::novo(
-            semente,
-            raio_blocos,
-            shared::terreno::Bioma::Floresta,
-            shared::terreno::ESCALA_ALTURA,
-        ));
+        m.ger = Some(Gerador::da_colonia(plato));
         m.raio_sem_def = Some(raio_blocos as f32 * BLOCO);
         m.nome_sem_def = "Minha Ilha".into();
         m.rx = Some(rx);
@@ -1243,7 +1238,12 @@ impl Mapa {
             Vec::new()
         };
         let n_npcs = self.npcs.len();
-        let total = (3 + bichos.len() + tipos.len() + npcs.len()) as f32 * u(LINHA_IR);
+        // VILAS: a praça e o cais. Vão na lista como tudo o mais, com o
+        // mesmo botão "Ir" — antes elas só existiam como desenho no mapa, e
+        // chegar nelas exigia adivinhar onde tocar.
+        let vilas = self.vilas_da_ilha();
+        let total =
+            (4 + vilas.len() + bichos.len() + tipos.len() + npcs.len()) as f32 * u(LINHA_IR);
         // Rola arrastando, pela roda ou pela barra; o "Ir" vale no SOLTAR.
         let clique = self.rolagem_lateral.quadro(area, total, u(LINHA_IR));
         let mut ly = area.y - self.rolagem_lateral.pos;
@@ -1283,6 +1283,29 @@ impl Mapa {
                 }
             }
         };
+        // VILAS primeiro: é para onde se volta, e é o que o jogador procura
+        // quando está perdido no meio da ilha.
+        if visivel(ly) {
+            estilo::texto(area.x + u(6.0), ly + u(18.0), "Vilas", 13, estilo::SUAVE);
+        }
+        ly += u(LINHA_IR);
+        for (nome, p, raio) in &vilas {
+            let alvo = Alvo {
+                objetivo: Objetivo::Lugar,
+                pos: *p,
+                raio: *raio,
+                rotulo: nome.to_string(),
+            };
+            linha(
+                nome,
+                format!("{:.0} m", p.distance(eu)),
+                estilo::OURO,
+                Some(alvo),
+                ly,
+                &mut saida,
+            );
+            ly += u(LINHA_IR);
+        }
         // NPCs: fechados por padrao (a lista e' longa); tocar no titulo abre.
         let titulo_npcs = Rect::new(area.x, ly, area.w - u(14.0), u(LINHA_IR));
         let mut alterna_npcs = false;
@@ -1461,6 +1484,25 @@ impl Mapa {
 
     /// Os NPCs da vila desta ilha: (nome, posicao). Vem da thread do mapa
     /// (gerar a vila no quadro travava a abertura do mapa no celular).
+    /// Os povoados desta ilha: a praça e o cais.
+    ///
+    /// São `(nome, centro, raio)`. O raio existe pra o "Ir" parar na BORDA do
+    /// povoado em vez de mirar o ponto exato — chegar na praça é chegar na
+    /// praça, não pisar no meio dela.
+    pub fn vilas_da_ilha(&self) -> Vec<(&'static str, Vec2, f32)> {
+        let mut v = Vec::new();
+        // O `Cidade` vem do `shared` (glam próprio); o resto do mapa usa o
+        // Vec2 da macroquad. São dois `glam` no grafo de dependências.
+        if let Some(c) = self.cidade {
+            let p = c.centro();
+            v.push(("Praça da vila", vec2(p.x, p.y), 10.0));
+        }
+        if let Some(p) = self.porto {
+            v.push(("Porto", vec2(p.centro.x, p.centro.y), p.raio.max(8.0)));
+        }
+        v
+    }
+
     pub fn npcs_da_vila(&self) -> Vec<(String, Vec2)> {
         self.npcs.clone()
     }
@@ -2657,5 +2699,49 @@ fn volta_em(ch: &shared::bosses::ChefeNoMapa) -> String {
         None if ch.vivo => String::new(),
         None => " (renascendo)".into(),
         Some(s) => format!(" · volta em {}", shared::bosses::conta_regressiva(s)),
+    }
+}
+
+#[cfg(test)]
+mod testes_das_vilas {
+    use super::*;
+
+    /// A ilha que tem povoado mostra o povoado na lista.
+    ///
+    /// Antes disto a praça e o cais só existiam como DESENHO no mapa: para
+    /// chegar neles era preciso adivinhar onde tocar, enquanto bicho, recurso
+    /// e NPC já tinham botão "Ir". O dono resumiu jogando — "vilas tem q
+    /// mostrar no mapa igual npcs para ir sem precisar clicar, se não fica
+    /// confuso".
+    #[test]
+    fn toda_ilha_com_povoado_lista_a_praca_e_o_porto() {
+        use shared::terreno::{Gerador, ARQUIPELAGO};
+        for d in ARQUIPELAGO.iter() {
+            let ger = Gerador::da_ilha(d);
+            let tem_cidade = ger.cidade().is_some();
+            let tem_porto = ger.porto().is_some();
+            // O mapa monta a lista dos mesmos dois campos; aqui se confere
+            // que a ILHA os tem, que é o que alimenta a lista.
+            assert!(
+                tem_cidade || tem_porto,
+                "{}: sem praça e sem porto — nada pra listar",
+                d.nome
+            );
+            if let Some(c) = ger.cidade() {
+                let p = c.centro();
+                assert!(
+                    p.x.is_finite() && p.y.is_finite(),
+                    "{}: praça em posição inválida",
+                    d.nome
+                );
+            }
+        }
+    }
+
+    /// Sem ilha, a lista é vazia — e não um "Ir" que não leva a lugar nenhum.
+    #[test]
+    fn mapa_sem_ilha_nao_inventa_vila() {
+        let m = Mapa::default();
+        assert!(m.vilas_da_ilha().is_empty());
     }
 }

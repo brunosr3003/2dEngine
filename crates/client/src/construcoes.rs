@@ -128,6 +128,24 @@ impl Construcoes {
         Self::default()
     }
 
+    /// O ASSENTAMENTO da colonia: a casa do jogador mais uma construcao por
+    /// morador contratado.
+    ///
+    /// Sai da MESMA vila que o mundo normal (`Gerador::vila`), filtrada pelo
+    /// oficio de quem mora ali. Escrever um gerador de vila proprio pra
+    /// colonia seria uma segunda fonte de verdade pro mesmo desenho — e o
+    /// chao ja' esta' aplainado debaixo dela, porque o plato e' do gerador.
+    pub fn da_colonia(plato: f32, trabalhadores: Vec<shared::colonia::Profissao>) -> Self {
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(assar_colonia(plato, &trabalhadores));
+        });
+        Self {
+            rx: Some(rx),
+            prontas: Vec::new(),
+        }
+    }
+
     pub fn para(def: Option<&'static DefIlha>) -> Self {
         let Some(def) = def else {
             return Self::default();
@@ -249,6 +267,48 @@ pub fn assar_vila(def: &DefIlha) -> Vec<Assada> {
     for p in &vila.predios {
         saida.push(assar(&p.construcao(), p.pos, p.yaw_q, p.chao));
     }
+    let props = vila
+        .props
+        .iter()
+        .map(|p| assar(&p.construcao(), p.pos, p.yaw_q, p.pos.y))
+        .collect();
+    saida.extend(juntar_por_regiao(props, 12.0));
+    saida
+}
+
+/// As construcoes da COLONIA: a casa do jogador e a de cada morador.
+///
+/// A vila do gerador tem o povoado inteiro; aqui so' entra o que foi
+/// CONTRATADO. Um oficio repetido leva mais de um predio daquele papel — dois
+/// lenhadores sao duas casas, e nao uma casa que rende o dobro.
+pub fn assar_colonia(plato: f32, trabalhadores: &[shared::colonia::Profissao]) -> Vec<Assada> {
+    use shared::construcao::Papel;
+    let ger = Gerador::da_colonia(plato);
+    let vila = ger.vila();
+    // Quantos predios de cada papel o assentamento pede.
+    let mut querido: std::collections::HashMap<Papel, usize> = std::collections::HashMap::new();
+    for t in trabalhadores {
+        *querido.entry(t.papel()).or_default() += 1;
+    }
+    let mut saida = Vec::new();
+    let mut usado: std::collections::HashMap<Papel, usize> = std::collections::HashMap::new();
+    for p in &vila.predios {
+        // A CASA do jogador entra sempre: e' ela que faz a ilha ser dele
+        // desde o primeiro dia, antes de existir morador nenhum.
+        let quero = if p.papel == Papel::Casa {
+            1
+        } else {
+            querido.get(&p.papel).copied().unwrap_or(0)
+        };
+        let ja = usado.entry(p.papel).or_default();
+        if *ja >= quero {
+            continue;
+        }
+        *ja += 1;
+        saida.push(assar(&p.construcao(), p.pos, p.yaw_q, p.chao));
+    }
+    // Os props (cerca, vaso, lampiao) ficam: sao eles que fazem o lugar
+    // parecer morado em vez de construido.
     let props = vila
         .props
         .iter()

@@ -1392,7 +1392,9 @@ mod tests {
                     || (p.file_name().is_some_and(|n| n == "pets_ui.rs")
                         && fonte.contains("MMO_PREVIA_PETS"))
                     || (p.file_name().is_some_and(|n| n == "energia_vfx.rs")
-                        && fonte.contains("MMO_PREVIA_ENERGIA"));
+                        && fonte.contains("MMO_PREVIA_ENERGIA"))
+                    || (p.file_name().is_some_and(|n| n == "terreno.rs")
+                        && fonte.contains("MMO_PREVIA_COLONIA"));
                 for (n, l) in fonte.lines().enumerate() {
                     let codigo = l.split("//").next().unwrap_or("");
                     assert!(

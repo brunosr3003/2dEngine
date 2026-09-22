@@ -495,6 +495,10 @@ async fn correio(
             .map(|a| shared::social::Anexo {
                 item_id: a.item_id,
                 qtd: a.qtd,
+                // O painel manda item PELADO de proposito: ele nao rola
+                // instancia, e um equipamento sem ela nasce Comum Tier I no
+                // primeiro login (`craft::instancia_inicial`).
+                instance: None,
             })
             .collect(),
     };

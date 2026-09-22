@@ -56,7 +56,54 @@ BICHOS = [
     ("escaravelho_rainha", "rainha", 3400),  # Ermo: a rainha, com as placas
     ("morsa",        "morsa",       2600),   # Geleira: a morsa
     ("rochoso",      "rochoso",     2600),   # Planalto: a criatura de pedra
+    # Os BRANCOS da Geleira. Mesma malha do urso e do tigre, PALETA outra —
+    # ver `PELAGENS`.
+    ("urso_polar",   "bear",        2600),
+    ("tigre_branco", "tiger",       2600),
 ]
+
+# ── A PELAGEM: trocar a COR DA PELE, indice a indice ──
+#
+# O urso branco e o tigre branco saiam do urso e do tigre com um
+# multiplicador de cor por vertice: a malha inteira puxada pro branco. O dono
+# olhou e disse o obvio — "urso normal pintado de branco, isso nao existe,
+# fica muito feio". E era isso mesmo: multiplicar TUDO come o que nao e'
+# pelo. A listra preta do tigre clareava junto (o tigre branco e' branco COM
+# listra preta, senao e' um gato), o nariz rosa virava branco, a boca vermelha
+# sumia e o olho perdia o brilho. Tinta por cima nao sabe o que e' pelo.
+#
+# Aqui a troca e' por INDICE de paleta: mexe na rampa do pelo e deixa nariz,
+# boca, garra e olho em paz. Custa um `.vox` a mais por bicho (a malha e' a
+# mesma geometria, so' que com outras cores assadas no vertice) e nenhum
+# passe de render — e e' a unica forma de um animal de outra cor ser outro
+# animal, e nao o mesmo com um filtro em cima.
+#
+# Os indices sairam de ler os modelos do zone14:
+#   bear   2,3,4,5 = a rampa do pelo · 9 = o focinho · 8 = o nariz (preto)
+#          1 = coxim · 10,13 = a garra · 11 = a boca · 7 = a pele do focinho
+#   tiger  4,5 = a rampa do pelo · 1 = A LISTRA · 7 = a barriga/rosto branco
+#          9 = o focinho · 8 = o nariz (rosa) · 6 = o pelo da pata
+PELAGENS = {
+    # Urso polar: a rampa marrom vira uma rampa FRIA (o branco puro achata a
+    # silhueta contra a neve; o azul e' o que devolve o volume). Nariz preto,
+    # boca e garra intocados.
+    "urso_polar": {
+        2: (140, 152, 172),   # sombra
+        3: (196, 206, 222),   # o pelo do corpo
+        4: (224, 232, 242),
+        5: (243, 248, 255),   # luz
+        9: (226, 224, 214),   # o focinho, creme — nao dourado
+        7: (210, 206, 196),
+    },
+    # Tigre branco: o laranja vira branco-creme e A LISTRA CONTINUA PRETA —
+    # e' ela que faz o bicho. O nariz rosa (8) fica, que e' assim no animal.
+    "tigre_branco": {
+        4: (226, 231, 240),   # o pelo do corpo
+        5: (243, 247, 252),
+        7: (250, 252, 255),   # barriga e rosto, branco puro
+        9: (240, 244, 250),   # o focinho
+    },
+}
 
 # arquivo do zone14 -> nome da peca no jogo (ver `bicho::junta_de`)
 # Cada bicho do zone14 nomeia a pata do jeito dele — `paw` no lobo, `hoof` no
@@ -108,7 +155,7 @@ def carrega(prefixo):
     return pecas, paleta
 
 
-def monta(saida, prefixo, orcamento):
+def monta(saida, prefixo, orcamento, pelagem=None):
     pecas, paleta = carrega(prefixo)
     fator = 1
     while True:
@@ -127,6 +174,10 @@ def monta(saida, prefixo, orcamento):
     molde_corpo.W, molde_corpo.D, molde_corpo.H = tam
     molde_corpo.TRANSL = f"0 0 {tam[2] // 2}"
     cores = {i: tuple(paleta[i][:3]) for i in range(1, 256)}
+    # A troca de pelagem e' aqui, na PALETA, e nao no vertice: o que nao esta'
+    # no dicionario (nariz, boca, garra, listra) sai exatamente como veio.
+    for i, rgb in (pelagem or {}).items():
+        cores[i] = rgb
     with open(saida, "wb") as f:
         f.write(molde_corpo.arquivo_cena(finais, cores, camada=prefixo))
     print(f"{os.path.basename(saida)}: fator {fator}, {total} faces, tela {tam[0]}x{tam[1]}x{tam[2]}, "
@@ -138,4 +189,5 @@ if __name__ == "__main__":
     pasta = os.path.join(raiz, "assets", "vox", "bichos")
     os.makedirs(pasta, exist_ok=True)
     for nome, prefixo, orcamento in BICHOS:
-        monta(os.path.join(pasta, f"{nome}.vox"), prefixo, orcamento)
+        monta(os.path.join(pasta, f"{nome}.vox"), prefixo, orcamento,
+              PELAGENS.get(nome))

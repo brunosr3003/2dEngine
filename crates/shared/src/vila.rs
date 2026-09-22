@@ -301,7 +301,7 @@ fn montar_cidade(ger: &Gerador, c: &Cidade, vila: &mut Vila) {
     use std::f32::consts::{PI, TAU};
     let centro = c.centro();
     let chao_y = c.altura();
-    let chao = Chao::novo(ger, centro, Cidade::RAIO + 14.0, c.nivel);
+    let chao = Chao::novo(ger, centro, c.raio + 14.0, c.nivel);
     let seed_vila = ger.semente ^ 0x9047;
     let mut r = Rng::novo(seed_vila);
     let ang0 = r.float() * TAU;
@@ -875,7 +875,7 @@ fn decorar_cidade(
         s
     };
     vila.pracas.push((centro, PRACA_RAIO));
-    vila.gramados.push((centro, Cidade::RAIO_PLATO));
+    vila.gramados.push((centro, c.raio_plato));
 
     // CAMINHOS da praca a cada porta, e a saida pro lado do porto.
     let mut caminhos = Vec::new();
@@ -897,7 +897,7 @@ fn decorar_cidade(
     }
     caminhos.push((
         centro + saida * (PRACA_RAIO - 0.5),
-        centro + saida * (Cidade::RAIO_PLATO + 6.0),
+        centro + saida * (c.raio_plato + 6.0),
     ));
     vila.caminhos.extend(caminhos.iter().copied());
 
@@ -994,7 +994,7 @@ fn decorar_cidade(
     }
 
     // PORTAL na saida da cidade.
-    let pp = centro + saida * (Cidade::RAIO_PLATO - 1.5);
+    let pp = centro + saida * (c.raio_plato - 1.5);
     let lado = Vec2::new(-saida.y, saida.x);
     let postes = [pp + lado * 1.8, pp - lado * 1.8];
     if postes.iter().all(|q| oc.livre(*q, 0.3, None, false)) {

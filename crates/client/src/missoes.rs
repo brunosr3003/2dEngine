@@ -100,6 +100,7 @@ fn verbo(q: &QuestNet) -> &'static str {
         objective_kind::LUGAR => "Ir até",
         objective_kind::NIVEL => "Nível",
         objective_kind::VIAGEM => "Viajar",
+        objective_kind::COLONIA => "Visitar",
         objective_kind::DUNGEON => "Vencer",
         objective_kind::TUTORIAL => "Aprender",
         _ => "Objetivo",
@@ -125,6 +126,8 @@ fn estado_da_historia(q: &QuestNet, nivel: u32) -> String {
         objective_kind::NIVEL => format!("Alcance o nível {} · você: {nivel}", q.obj_count),
         objective_kind::LUGAR => format!("Ir até {}", historia::ponto::nome(q.obj_target)),
         objective_kind::VIAGEM => "Fale com o Capitão do Porto".into(),
+        // O Capitao leva; o botao e' MINHA ILHA, e nao Embarcar.
+        objective_kind::COLONIA => "Peça MINHA ILHA ao Capitão do Porto".into(),
         // Tutorial de GESTO nao tem contagem (obj_count 1): "1/1" nao diz
         // nada. O da Energia pede uma quantia, e ai' o quanto falta e' a
         // informacao principal.

@@ -38,39 +38,118 @@ pub const CHEGADA: glam::Vec2 = glam::Vec2::ZERO;
 pub const EIXOS: usize = 3;
 
 pub mod eixo {
-    /// O TAMANHO da ilha: mais chao, mais lugar pra nó.
-    pub const TAMANHO: usize = 0;
-    /// A DENSIDADE de recurso: quanto ela rende por hora.
+    /// O ASSENTAMENTO: casa → vila → castelo. Mais chao aplainado, mais
+    /// construcao e mais gente morando.
+    ///
+    /// Era o TAMANHO da ILHA, e o nome mudou junto com a coisa: a ilha nao
+    /// cresce mais. Ela e' uma so' e inteira desde o primeiro dia (ver
+    /// `RAIO_BLOCOS`), e o que cresce e' o que ha' em cima dela.
+    pub const ASSENTAMENTO: usize = 0;
+    /// Nome velho, pros chamadores que ainda falam em tamanho.
+    pub const TAMANHO: usize = ASSENTAMENTO;
+    /// O OFICIO dos moradores: quanto cada trabalhador rende por hora.
     pub const RECURSOS: usize = 1;
     /// O BANCO LOCAL: espacos de deposito na propria ilha.
     pub const BANCO: usize = 2;
-    pub const NOMES: [&str; super::EIXOS] = ["Tamanho", "Recursos", "Banco"];
+    pub const NOMES: [&str; super::EIXOS] = ["Assentamento", "Ofício", "Banco"];
 }
 
 /// Niveis por eixo, 0..=MAX.
 pub const NIVEL_MAX: u8 = 5;
 
-/// Raio da ilha em blocos, pelo nivel de TAMANHO.
+/// A ilha INTEIRA, sempre. Nao depende de nivel nenhum.
 ///
-/// Pequena de proposito: uma colonia e' um quintal, nao um continente. O raio
-/// tambem decide o custo de memoria — a 120 blocos o campo de altura sao
-/// 57.600 colunas, uns 115 KB. Sessenta colonias vivas cabem em 7 MB, e e'
-/// por isso que dar uma ilha PROPRIA a cada jogador e' possivel.
-pub fn raio_blocos(nivel: u8) -> i32 {
-    120 + 40 * nivel.min(NIVEL_MAX) as i32
+/// Ate' 21/09/2026 o raio crescia com o nivel, e isso CORTAVA a ilha: com a
+/// mesma semente, `Forma::de(semente, raio)` escala o contorno, entao subir o
+/// nivel nao acrescentava terra na beirada — desenhava outra ilha. Tudo
+/// andava de lugar: a costa, a praca, a casa que o jogador via da janela.
+/// O dono cortou a ideia — "a ideia é não cortar a ilha".
+///
+/// Agora o relevo e' FIXO: uma ilha, inteira, igual pra todo mundo e igual
+/// pra sempre. O que cresce e' o ASSENTAMENTO em cima dela
+/// (`plato_do_assentamento`), que so' aplaina mais chao em volta da mesma
+/// praca — nenhuma coluna que ja' estava plana muda.
+pub const RAIO_BLOCOS: i32 = 280;
+
+/// O raio da ilha. O nivel sobrou da versao que crescia e e' ignorado.
+pub fn raio_blocos(_nivel: u8) -> i32 {
+    RAIO_BLOCOS
 }
 
-/// A semente da colonia de `nome`.
+/// O PLATO do assentamento, em unidades de mundo, pelo nivel.
 ///
-/// Do NOME e nao do id: o nome e' o que o jogador reconhece, e duas contas
-/// com o mesmo personagem recriado merecem a mesma ilha.
-pub fn semente(nome: &str) -> i32 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in nome.as_bytes() {
-        h ^= *b as u64;
-        h = h.wrapping_mul(0x1000_0000_01b3);
+/// E' isto que cresce quando o jogador sobe o assentamento: mais chao
+/// APLAINADO em volta da mesma praca, no mesmo nivel de sempre. Crescer o
+/// plato nunca mexe no que ja' estava plano — a rampa e' que anda pra fora.
+pub fn plato_do_assentamento(nivel: u8) -> f32 {
+    22.0 + 9.0 * nivel.clamp(1, NIVEL_MAX) as f32
+}
+
+/// O que o assentamento E', pelo nivel. E' o nome que o jogador ve' e o que
+/// decide quanta construcao nasce na ilha.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Assentamento {
+    Casa,
+    Vila,
+    Castelo,
+}
+
+impl Assentamento {
+    pub fn do_nivel(nivel: u8) -> Self {
+        match nivel.clamp(1, NIVEL_MAX) {
+            1 | 2 => Self::Casa,
+            3 | 4 => Self::Vila,
+            _ => Self::Castelo,
+        }
     }
-    ((h >> 24) as i32).abs().max(1)
+
+    pub fn nome(self) -> &'static str {
+        match self {
+            Self::Casa => "Casa",
+            Self::Vila => "Vila",
+            Self::Castelo => "Castelo",
+        }
+    }
+
+}
+
+/// Quantos MORADORES o assentamento sustenta, por nivel. Um por construcao.
+///
+/// O nivel 2 tem UMA vaga de proposito: e' o degrau do tutorial. Pular da
+/// casa vazia pra vila de tres obrigaria o jogador a contratar tres pessoas
+/// pra aprender a contratar uma, e o tutorial ensinaria o passo errado —
+/// "encha as vagas" em vez de "escolha um oficio".
+const VAGAS: [usize; 5] = [0, 1, 3, 4, 6];
+
+/// Quantos MORADORES o assentamento sustenta. Um por construcao de oficio.
+pub fn vagas_de_trabalho(nivel: u8) -> usize {
+    VAGAS[nivel.clamp(1, NIVEL_MAX) as usize - 1]
+}
+
+/// A semente da colonia. UMA SO', igual pra todo mundo.
+///
+/// Ate' 21/09/2026 ela saia do hash do NOME: cada personagem tinha uma ilha
+/// diferente. O dono cortou a ideia — "não quero que seja única, vai pesar e
+/// ter margem pra erro" — e ele esta' certo nas duas contas:
+///
+/// - **peso**: relevo por jogador e' um campo de altura por jogador VIVO no
+///   processo, e nada o limita a nao ser quantas pessoas entraram. Com uma
+///   semente so', o servidor guarda uma ilha por TAMANHO (seis, no maximo),
+///   quantos jogadores existirem;
+/// - **margem pra erro**: cada semente e' um mundo que ninguem olhou. O teste
+///   `toda_colonia_tem_chao_onde_se_chega` provava seis nomes; os outros bilhoes
+///   iam no escuro — um hash azarado entregava o jogador boiando, e so' ELE
+///   veria. Uma ilha so' e' uma ilha que da' pra olhar.
+///
+/// A ilha continua sendo SUA: a instancia e' por personagem
+/// (`world::colonia::instancia_do_nome`), entao ninguem entra na sua. O que
+/// deixa de ser unico e' o RELEVO, nao a posse.
+pub const SEMENTE: i32 = 1_973_725_076;
+
+/// A semente da colonia. O argumento sobrou da versao por-nome e continua
+/// aqui pros chamadores nao precisarem saber disso.
+pub fn semente(_nome: &str) -> i32 {
+    SEMENTE
 }
 
 // ─────────────────────────── a producao ───────────────────────────
@@ -87,18 +166,106 @@ pub const HORAS_TETO: f32 = 24.0;
 /// hora de sono.
 pub const FRACAO_ATRASADA: f32 = 0.5;
 
-/// Quanto de cada recurso a colonia rende por HORA, pelo nivel de RECURSOS.
+/// O OFICIO de um morador. Cada um faz uma coisa, e o que ele faz e' o que
+/// entra no deposito — a ilha deixa de ser um botao de colher e passa a ser o
+/// que o jogador montou nela.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Profissao {
+    /// Derruba arvore: MADEIRA.
+    Lenhador,
+    /// Quebra pedra: ACO.
+    Minerador,
+    /// Caca e escolta: COBRE (o soldo que ele traz).
+    Mercenario,
+    /// Trabalha o couro e o tecido: COURO.
+    Curtidor,
+    /// Destila: QUINTESSENCIA.
+    Alquimista,
+}
+
+impl Profissao {
+    /// Do indice do fio (`PedidoColonia::Contratar`). `None` = indice que nao
+    /// existe, que e' pedido malformado e nao um oficio novo.
+    pub fn do_indice(i: u8) -> Option<Self> {
+        Self::TODAS.get(i as usize).copied()
+    }
+
+    pub fn indice(self) -> u8 {
+        Self::TODAS.iter().position(|p| *p == self).unwrap_or(0) as u8
+    }
+
+    pub const TODAS: [Profissao; 5] = [
+        Profissao::Lenhador,
+        Profissao::Minerador,
+        Profissao::Mercenario,
+        Profissao::Curtidor,
+        Profissao::Alquimista,
+    ];
+
+    pub fn nome(self) -> &'static str {
+        match self {
+            Self::Lenhador => "Lenhador",
+            Self::Minerador => "Minerador",
+            Self::Mercenario => "Mercenário",
+            Self::Curtidor => "Curtidor",
+            Self::Alquimista => "Alquimista",
+        }
+    }
+
+    /// O que ele produz, e quanto por hora no nivel 1 de OFICIO.
+    ///
+    /// Os numeros sao baixos de proposito: renda passiva que compete com
+    /// jogar mata o jogo. Seis moradores no oficio maximo rendem menos que
+    /// uma hora de caca — a colonia paga quem VOLTA, nao quem some.
+    pub fn por_hora(self) -> (u16, u32) {
+        match self {
+            Self::Lenhador => (item_id::WOOD_T1, 8),
+            Self::Minerador => (item_id::na_cor(item_id::STEEL, 1), 4),
+            Self::Mercenario => (item_id::COPPER, 45),
+            Self::Curtidor => (item_id::HIDE, 2),
+            Self::Alquimista => (item_id::QUINTESSENCE, 2),
+        }
+    }
+
+    /// Que PAPEL da vila desenha a construcao dele. Reusa o gerador de vila
+    /// do mundo normal — a casa com o toldo do oficio ja' existe, e fazer
+    /// outra seria uma segunda fonte de verdade pro mesmo desenho.
+    pub fn papel(self) -> crate::construcao::Papel {
+        use crate::construcao::Papel;
+        match self {
+            Self::Lenhador => Papel::Deposito,
+            Self::Minerador => Papel::Ferreiro,
+            Self::Mercenario => Papel::Treinador,
+            Self::Curtidor => Papel::Alfaiate,
+            Self::Alquimista => Papel::Alquimista,
+        }
+    }
+}
+
+/// Quanto UM trabalhador rende por hora, no nivel de OFICIO dado.
+pub fn por_hora_do_trabalhador(p: Profissao, nivel_oficio: u8) -> (u16, u32) {
+    let (item, base) = p.por_hora();
+    (item, base * (nivel_oficio.clamp(1, NIVEL_MAX) as u32))
+}
+
+/// Quanto a colonia INTEIRA rende por hora: a soma dos moradores.
 ///
-/// Baixo de proposito: a colonia e' renda passiva, e renda passiva que
-/// compete com jogar mata o jogo. O teto de 24 h poe um limite duro no que
-/// ela pode despejar por dia.
-pub fn por_hora(nivel: u8) -> [(u16, u32); 3] {
-    let n = nivel.min(NIVEL_MAX) as u32 + 1;
-    [
-        (item_id::COPPER, 40 * n),
-        (item_id::WOOD_T1, 6 * n),
-        (item_id::na_cor(item_id::STEEL, 1), 3 * n),
-    ]
+/// Sem morador nenhum ela nao rende nada. E' a diferenca entre uma ilha que
+/// pinga recurso sozinha e uma que o jogador POVOOU — e o dono pediu a
+/// segunda.
+pub fn por_hora_dos_trabalhadores(
+    trabalhadores: &[Profissao],
+    nivel_oficio: u8,
+) -> Vec<(u16, u32)> {
+    let mut soma: Vec<(u16, u32)> = Vec::new();
+    for t in trabalhadores {
+        let (item, q) = por_hora_do_trabalhador(*t, nivel_oficio);
+        match soma.iter_mut().find(|(i, _)| *i == item) {
+            Some((_, acc)) => *acc += q,
+            None => soma.push((item, q)),
+        }
+    }
+    soma
 }
 
 /// Quantas HORAS EFETIVAS valeram, dadas `horas` desde a ultima colheita.
@@ -116,9 +283,9 @@ pub fn horas_efetivas(horas: f32) -> f32 {
 }
 
 /// O que ha' pra colher agora.
-pub fn colheita(nivel_recursos: u8, horas: f32) -> Vec<(u16, u32)> {
+pub fn colheita(trabalhadores: &[Profissao], nivel_oficio: u8, horas: f32) -> Vec<(u16, u32)> {
     let h = horas_efetivas(horas);
-    por_hora(nivel_recursos)
+    por_hora_dos_trabalhadores(trabalhadores, nivel_oficio)
         .into_iter()
         .filter_map(|(id, q)| {
             let n = (q as f32 * h) as u32;
@@ -127,10 +294,43 @@ pub fn colheita(nivel_recursos: u8, horas: f32) -> Vec<(u16, u32)> {
         .collect()
 }
 
-/// Espacos do banco local, pelo nivel de BANCO. Zero no nivel 0: o banco e'
-/// uma MELHORIA, e nao um brinde.
+/// Espacos do BAU DA ILHA, pelo nivel de BANCO.
+///
+/// Nunca zero: o bau e' onde a colheita CAI, e um bau de zero espacos faria a
+/// ilha render pra lugar nenhum. O nivel 1 (que todo mundo comeca com) da' o
+/// suficiente pros cinco oficios mais folga.
 pub fn espacos_do_banco(nivel: u8) -> u8 {
-    10 * nivel.min(NIVEL_MAX)
+    8 * nivel.clamp(1, NIVEL_MAX)
+}
+
+/// O mesmo numero, com o nome do que ele e' hoje.
+pub fn espacos_do_bau(nivel: u8) -> usize {
+    espacos_do_banco(nivel) as usize
+}
+
+/// Poe `qtd` de `item` no bau, respeitando o teto de espacos.
+///
+/// Devolve o que NAO caebe. Empilha por item (a colheita nao tem instancia),
+/// entao o bau cheio e' cheio de ITENS DIFERENTES, e nao de quantidade.
+pub fn guardar_no_bau(
+    bau: &mut Vec<crate::InventorySlot>,
+    espacos: usize,
+    item: u16,
+    qtd: u32,
+) -> u32 {
+    if let Some(slot) = bau.iter_mut().find(|s| s.item_id == item) {
+        slot.qty = slot.qty.saturating_add(qtd);
+        return 0;
+    }
+    if bau.len() >= espacos {
+        return qtd;
+    }
+    bau.push(crate::InventorySlot {
+        item_id: item,
+        qty: qtd,
+        instance: None,
+    });
+    0
 }
 
 /// (item, quantidade) pra subir `eixo` ate' `nivel_alvo`.
@@ -183,27 +383,86 @@ mod testes {
         );
     }
 
-    /// A ilha cresce e rende mais a cada nivel, e o banco so' existe depois
+    /// Todo eixo faz alguma coisa a cada nivel, e o banco so' existe depois
     /// de investido.
+    ///
+    /// A ILHA nao cresce mais — o que cresce e' o plato do assentamento
+    /// (`RAIO_BLOCOS` explica por que). Este teste mudou junto: onde ele
+    /// media o raio, mede o plato.
     #[test]
     fn todo_eixo_sobe_e_o_banco_comeca_zerado() {
-        for n in 0..NIVEL_MAX {
-            assert!(raio_blocos(n + 1) > raio_blocos(n));
-            assert!(por_hora(n + 1)[0].1 > por_hora(n)[0].1);
-            assert!(custo(eixo::TAMANHO, n + 1)[0].1 > 0);
+        for n in 1..NIVEL_MAX {
+            assert!(
+                plato_do_assentamento(n + 1) > plato_do_assentamento(n),
+                "o assentamento parou de crescer no {n}"
+            );
+            assert_eq!(
+                raio_blocos(n + 1),
+                raio_blocos(n),
+                "a ilha voltou a mudar de tamanho — ela tem que ser uma so'"
+            );
+            let um = [Profissao::Lenhador];
+            assert!(
+                por_hora_dos_trabalhadores(&um, n + 1)[0].1
+                    > por_hora_dos_trabalhadores(&um, n)[0].1,
+                "o oficio parou de render mais no {n}"
+            );
+            assert!(custo(eixo::ASSENTAMENTO, n + 1)[0].1 > 0);
         }
-        assert_eq!(espacos_do_banco(0), 0);
-        assert!(espacos_do_banco(1) > 0);
+        // O bau NUNCA tem zero espacos: e' onde a colheita cai, e um bau de
+        // zero faria a ilha render pra lugar nenhum.
+        assert!(espacos_do_bau(1) >= Profissao::TODAS.len());
+        assert!(espacos_do_bau(NIVEL_MAX) > espacos_do_bau(1));
         // O banco e' o eixo mais caro: e' o que mais muda a vida.
-        assert!(custo(eixo::BANCO, 1)[0].1 > custo(eixo::TAMANHO, 1)[0].1);
+        assert!(custo(eixo::BANCO, 1)[0].1 > custo(eixo::ASSENTAMENTO, 1)[0].1);
     }
 
-    /// Cada personagem tem a SUA ilha, e sempre a mesma.
+    /// Sem morador a ilha NAO rende. E' a regra que faz o assentamento
+    /// importar: uma ilha vazia e' um terreno, e nao uma fazenda.
     #[test]
-    fn a_semente_e_do_nome_e_nao_muda() {
-        assert_eq!(semente("curandinho"), semente("curandinho"));
-        assert_ne!(semente("curandinho"), semente("onurb"));
-        assert!(semente("a") > 0 && semente("").max(1) > 0);
+    fn ilha_vazia_nao_rende_e_cada_morador_soma() {
+        assert!(colheita(&[], NIVEL_MAX, 24.0).is_empty());
+        let um = colheita(&[Profissao::Lenhador], 1, 12.0);
+        let dois = colheita(&[Profissao::Lenhador, Profissao::Lenhador], 1, 12.0);
+        assert_eq!(um.len(), 1, "um lenhador rende um recurso");
+        assert_eq!(dois[0].1, um[0].1 * 2, "dois lenhadores rendem o dobro");
+        // Oficios diferentes sao LINHAS diferentes, e nao um monte so'.
+        let mistos = colheita(&[Profissao::Lenhador, Profissao::Minerador], 1, 12.0);
+        assert_eq!(mistos.len(), 2);
+    }
+
+    /// As vagas sobem, nunca descem, e o nivel 2 tem UMA — o degrau do
+    /// tutorial de contratar.
+    #[test]
+    fn o_assentamento_abre_as_vagas() {
+        assert_eq!(Assentamento::do_nivel(1), Assentamento::Casa);
+        assert_eq!(vagas_de_trabalho(1), 0, "a casa mora so' o dono");
+        assert_eq!(
+            vagas_de_trabalho(2),
+            1,
+            "o nivel 2 e' o degrau do tutorial: UMA vaga, pra ensinar a              escolher um oficio em vez de encher tres"
+        );
+        for n in 1..NIVEL_MAX {
+            assert!(
+                vagas_de_trabalho(n + 1) >= vagas_de_trabalho(n),
+                "as vagas encolheram do {n} pro {}: alguem seria despejado",
+                n + 1
+            );
+        }
+        assert!(vagas_de_trabalho(NIVEL_MAX) > vagas_de_trabalho(2));
+        // O plato acompanha: gente nova precisa de chao plano pra morar.
+        assert!(plato_do_assentamento(NIVEL_MAX) > plato_do_assentamento(1));
+    }
+
+    /// A ilha e' a MESMA pra todo mundo — de proposito (ver `SEMENTE`).
+    ///
+    /// O que era um teste de que dois nomes dao ilhas DIFERENTES agora prova o
+    /// contrario, e e' o mesmo teste: o que ele guarda e' a decisao.
+    #[test]
+    fn a_semente_e_uma_so_pra_todo_mundo() {
+        assert_eq!(semente("curandinho"), semente("onurb"));
+        assert_eq!(semente(""), SEMENTE);
+        assert!(SEMENTE > 0);
     }
 }
 
@@ -222,6 +481,13 @@ pub enum PedidoColonia {
     Colher,
     /// Sobe um eixo (`colonia::eixo`).
     Melhorar { eixo: u8 },
+    /// Poe (ou troca) o morador da vaga `vaga`. A construcao daquele lugar
+    /// vira a do oficio novo.
+    Contratar { vaga: u8, oficio: u8 },
+    /// Esvazia a vaga: a casa some e o rendimento dela para.
+    Demitir { vaga: u8 },
+    /// Tira do bau da ilha o que couber na bolsa.
+    Retirar,
 }
 
 /// O estado da colonia, pro painel.
@@ -236,11 +502,32 @@ pub enum AvisoColonia {
         colheita: Vec<(u16, u32)>,
         /// Por eixo: o custo do proximo nivel. Vazio = no maximo.
         custos: Vec<Vec<(u16, u32)>>,
-        /// Espacos do banco local.
+        /// Espacos do bau da ilha.
         banco: u8,
+        /// O que esta' NO BAU agora. A colheita cai aqui, e nao na bolsa.
+        #[serde(default)]
+        bau: Vec<crate::InventorySlot>,
+        /// Os moradores, na ordem das vagas. Menor que `vagas` = ha' vaga
+        /// aberta, e o painel mostra o lugar vazio.
+        #[serde(default)]
+        trabalhadores: Vec<Profissao>,
+        /// Quantas vagas o assentamento sustenta hoje.
+        #[serde(default)]
+        vagas: u8,
     },
-    /// O relevo mudou (subiu o TAMANHO): redesenhe com esta semente e raio.
-    Terreno { semente: i32, raio: i32 },
+    /// O relevo e o que ha' em cima dele. A semente e o raio sao constantes
+    /// dos dois lados (`SEMENTE`, `RAIO_BLOCOS`); o que o cliente nao tem como
+    /// adivinhar e' o PLATO do assentamento e QUEM mora na ilha.
+    Terreno {
+        /// Raio do chao aplainado (`plato_do_assentamento`).
+        plato: f32,
+        /// Nivel do assentamento: casa, vila ou castelo.
+        assentamento: u8,
+        /// Os moradores, na ordem das vagas. Sao eles que decidem QUAIS casas
+        /// nascem, e por isso vem junto do relevo e nao so' no painel: o
+        /// desenho da ilha precisa deles antes de o jogador abrir nada.
+        trabalhadores: Vec<Profissao>,
+    },
     Recusa(String),
 }
 
@@ -264,11 +551,37 @@ pub struct DadosColonia {
     /// que sabia de onde ele veio morre na troca de zona. Vazio = volta pra
     /// ilha inicial.
     pub volta: String,
+    /// Os MORADORES, na ordem das vagas (`vagas_de_trabalho`). Vazio = a ilha
+    /// nao rende nada, que e' como ela comeca: uma casa sozinha.
+    ///
+    /// Lista e nao contagem por oficio: a ordem e' a das construcoes na vila,
+    /// e e' ela que decide qual casa nasce onde. Trocar de oficio tem que
+    /// trocar a casa daquele lugar, e nao remontar o assentamento inteiro.
+    #[serde(default)]
+    pub trabalhadores: Vec<Profissao>,
+    /// O BAU DA ILHA: onde a colheita cai.
+    ///
+    /// A colheita ia direto pra bolsa do jogador, e isso apagava a ilha como
+    /// LUGAR — dava pra administrar a colonia inteira de outra ilha, sem
+    /// nunca pisar nela. O dono pediu o contrario: colher enche o bau, e o
+    /// bau esta' aqui. Buscar e' uma viagem.
+    ///
+    /// Vive no `colonia_json`, como o resto: o bau e' da ilha e nao da sessao,
+    /// e tem que sobreviver ao logout (`espacos_do_bau` diz quantos caibem).
+    #[serde(default)]
+    pub bau: Vec<crate::InventorySlot>,
 }
 
 impl Default for DadosColonia {
     fn default() -> Self {
-        Self { niveis: [1; EIXOS], colhida_em: 0, tem: false, volta: String::new() }
+        Self {
+            niveis: [1; EIXOS],
+            colhida_em: 0,
+            tem: false,
+            volta: String::new(),
+            trabalhadores: Vec::new(),
+            bau: Vec::new(),
+        }
     }
 }
 
@@ -301,9 +614,10 @@ mod testes_do_chao {
     /// Tamanho: a chegada tem que cair em terra, e perto.
     #[test]
     fn toda_colonia_tem_chao_onde_se_chega() {
-        for nome in [
-            "brunji", "A", "Zyx", "maria", "ÁÊÎÕÜ", "jogador_muito_longo_mesmo_123",
-        ] {
+        // Uma semente so': o que varia e' o TAMANHO. E' por isso que este
+        // teste virou exaustivo — seis ilhas sao todas as que existem, e
+        // antes ele provava seis NOMES de bilhoes possiveis.
+        for nome in ["qualquer um"] {
             for nivel in 1..=NIVEL_MAX {
                 let ilha = crate::terreno::Ilha::gerar(
                     semente(nome),
@@ -325,17 +639,45 @@ mod testes_do_chao {
         }
     }
 
-    /// Subir o Tamanho so' pode CRESCER a ilha. Se um nivel encolhesse, quem
-    /// estivesse na beirada acordaria na agua depois da melhoria — e pagando
-    /// material por isso.
+    /// Subir o assentamento NAO MEXE NA ILHA. A costa e o relevo de fora do
+    /// plato sao os mesmos em todos os niveis.
+    ///
+    /// Antes isto era "o raio nunca encolhe", porque a ilha crescia e encolher
+    /// afogaria quem estivesse na beirada. Agora a garantia e' mais forte e o
+    /// motivo e' o do dono: "a ideia é não cortar a ilha". Com a mesma semente
+    /// e raios diferentes, `Forma::de` escalava o contorno — subir de nivel
+    /// nao acrescentava terra, desenhava outra ilha, e a casa do jogador
+    /// mudava de lugar embaixo dele.
+    ///
+    /// Roda sobre as ilhas de VERDADE (`Ilha::da_colonia`), e nao sobre os
+    /// numeros: o que precisa ser igual e' o chao, nao a formula.
     #[test]
-    fn melhorar_o_tamanho_nunca_encolhe() {
-        for n in 1..NIVEL_MAX {
-            assert!(
-                raio_blocos(n + 1) > raio_blocos(n),
-                "nivel {n} -> {}: nao cresceu",
-                n + 1
-            );
+    fn subir_o_assentamento_nao_mexe_na_ilha() {
+        let base = crate::terreno::Ilha::da_colonia(plato_do_assentamento(1));
+        for n in 2..=NIVEL_MAX {
+            let maior = crate::terreno::Ilha::da_colonia(plato_do_assentamento(n));
+            // Fora do plato do nivel MAIOR (mais a rampa), tudo igual.
+            let limite = plato_do_assentamento(n) + crate::terreno::Cidade::RAMPA + 2.0;
+            let mut conferidos = 0;
+            let mut passo = -140.0f32;
+            while passo < 140.0 {
+                let mut z = -140.0f32;
+                while z < 140.0 {
+                    let d = glam::Vec2::new(passo, z).distance(glam::Vec2::ZERO);
+                    if d > limite {
+                        assert_eq!(
+                            base.altura(passo, z),
+                            maior.altura(passo, z),
+                            "nivel {n}: o chao em ({passo}, {z}) mudou — a ilha foi cortada"
+                        );
+                        assert_eq!(base.agua(passo, z), maior.agua(passo, z), "a costa mudou");
+                        conferidos += 1;
+                    }
+                    z += 7.0;
+                }
+                passo += 7.0;
+            }
+            assert!(conferidos > 200, "so' {conferidos} colunas conferidas");
         }
     }
 }

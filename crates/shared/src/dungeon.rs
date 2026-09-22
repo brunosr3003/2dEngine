@@ -381,7 +381,23 @@ pub fn semana(unix: i64) -> i64 {
 
 pub const GRUTA_POR_DIA: u8 = 2;
 pub const GRUTA_ACUMULA: u8 = 4;
+/// Quantas entradas se compra por dia ANTES de o preco comecar a triplicar.
+///
+/// Nao e' mais um TETO: ate' 21/09/2026 a terceira compra do dia era
+/// recusada com "sem mais entradas a' venda hoje", e o dono pediu que
+/// houvesse como comprar mais. O limite agora e' economico — o preco triplica
+/// a cada compra, e o ouro e' raro (docs/ECONOMIA.md: so' chefe, bau, mercado,
+/// venda ao NPC e calendario). A quinta compra do dia num personagem de nivel
+/// 20 custa 200 mil.
+///
+/// Um teto ECONOMICO e' melhor que um de contagem porque ele nao mente: o
+/// jogador que quiser muito pode, e paga por isso.
 pub const GRUTA_COMPRAS_POR_DIA: u8 = 2;
+
+/// Quantas compras o preco aguenta antes de estourar o `u64`. Com base de
+/// ~2.500 e fator 3, a 30ª compra ja' passa de 10^15 — o corte existe pra o
+/// numero nao virar lixo, nao pra limitar ninguem.
+pub const COMPRAS_ATE_O_ABSURDO: u8 = 24;
 pub const PORAO_RECOMPENSAS_POR_DIA: u8 = 3;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -425,13 +441,17 @@ impl Entradas {
         true
     }
 
-    /// Preco em gold da proxima entrada comprada hoje; `None` = teto do dia.
+    /// Preco em gold da proxima entrada comprada hoje.
+    ///
+    /// `None` so' pro Porao (que nao vende) e pro absurdo aritmetico. O preco
+    /// TRIPLICA a cada compra do dia: a primeira e' barata, a quarta ja'
+    /// morde, e a decima e' impagavel. Quem manda no limite e' a carteira.
     pub fn preco_da_compra(&self, tipo: Tipo, nivel: u32) -> Option<u64> {
-        if tipo != Tipo::Gruta || self.compradas >= GRUTA_COMPRAS_POR_DIA {
+        if tipo != Tipo::Gruta || self.compradas >= COMPRAS_ATE_O_ABSURDO {
             return None;
         }
         let base = 500 + 100 * nivel as u64;
-        Some(if self.compradas == 0 { base } else { base * 3 })
+        Some(base.saturating_mul(3u64.saturating_pow(self.compradas as u32)))
     }
 
     pub fn comprar(&mut self) {
@@ -1210,7 +1230,7 @@ mod testes {
     }
 
     #[test]
-    fn entradas_do_dia_acumulam_ate_quatro_e_compra_tem_teto() {
+    fn entradas_do_dia_acumulam_ate_quatro_e_a_compra_triplica() {
         let mut e = Entradas::default();
         e.atualizar(Tipo::Gruta, 100);
         assert_eq!(e.saldo, 2);
@@ -1220,16 +1240,55 @@ mod testes {
         assert_eq!(e.saldo, 4, "tres dias fora acumulam so' ate' 4");
         e.atualizar(Tipo::Gruta, 103);
         assert_eq!(e.saldo, 4, "mesmo dia nao da' de novo");
-        let p1 = e.preco_da_compra(Tipo::Gruta, 10).unwrap();
-        e.comprar();
-        let p2 = e.preco_da_compra(Tipo::Gruta, 10).unwrap();
-        e.comprar();
-        assert_eq!(p2, p1 * 3);
-        assert_eq!(e.preco_da_compra(Tipo::Gruta, 10), None, "2 por dia");
+
+        // O PRECO e' o limite, e nao a contagem. Ate' 21/09/2026 a terceira
+        // compra do dia era recusada; o dono pediu que houvesse como comprar
+        // mais, entao o teto virou economico.
+        let base = e.preco_da_compra(Tipo::Gruta, 10).unwrap();
+        let mut anterior = base;
+        for n in 1..6 {
+            e.comprar();
+            let p = e
+                .preco_da_compra(Tipo::Gruta, 10)
+                .unwrap_or_else(|| panic!("a compra {n} foi recusada"));
+            assert_eq!(p, anterior * 3, "a compra {n} tinha que triplicar");
+            anterior = p;
+        }
+        // Cinco compras depois o preco ja' e' 243x o da primeira: quem
+        // quiser muito pode, e paga por isso.
+        assert_eq!(anterior, base * 243);
+        // E o saldo cresceu com as compras.
+        assert!(e.saldo >= 4);
+
+        // O Porao continua sem venda: as recompensas dele sao por dia, e
+        // vender entrada ali seria vender a recompensa.
         let mut p = Entradas::default();
         p.atualizar(Tipo::Porao, 5);
         assert_eq!(p.saldo, PORAO_RECOMPENSAS_POR_DIA);
         assert_eq!(p.preco_da_compra(Tipo::Porao, 10), None);
+    }
+
+    /// O preco nunca vira lixo por estouro de inteiro.
+    ///
+    /// Triplicar sem parar estoura o `u64` por volta da 40ª compra, e um
+    /// preco que dá a volta no zero seria uma entrada de graça — o oposto do
+    /// que o preco crescente existe pra fazer.
+    #[test]
+    fn o_preco_cresce_sempre_e_nunca_da_a_volta() {
+        let mut e = Entradas::default();
+        e.atualizar(Tipo::Gruta, 1);
+        let mut anterior = 0u64;
+        for _ in 0..COMPRAS_ATE_O_ABSURDO {
+            let p = e.preco_da_compra(Tipo::Gruta, 60).expect("dentro do corte");
+            assert!(p > anterior, "o preco caiu: {anterior} -> {p}");
+            anterior = p;
+            e.comprar();
+        }
+        assert_eq!(
+            e.preco_da_compra(Tipo::Gruta, 60),
+            None,
+            "depois do corte a venda para, em vez de dar um numero sem sentido"
+        );
     }
 
     #[test]

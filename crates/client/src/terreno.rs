@@ -160,16 +160,15 @@ impl Terreno {
         Self::do_gerador(Gerador::da_ilha(def), def.bioma)
     }
 
-    /// A COLONIA (docs/COLONIA.md): o relevo sai da semente do personagem, e
-    /// nao de uma entrada do `ARQUIPELAGO` — ela nao tem uma.
-    pub fn da_colonia(semente: i32, raio_blocos: i32) -> Self {
+    /// A COLONIA (docs/COLONIA.md): ilha fixa, PLATO pelo assentamento.
+    ///
+    /// Semente e raio sao constantes dos dois lados — o que vem pelo fio e' o
+    /// plato, que e' a unica coisa que muda. Passa pelo MESMO
+    /// `Gerador::da_colonia` do servidor: duas montagens soltas dariam dois
+    /// relevos, e o jogador andaria num chao que nao ve'.
+    pub fn da_colonia(plato: f32) -> Self {
         Self::do_gerador(
-            Gerador::novo(
-                semente,
-                raio_blocos,
-                shared::terreno::Bioma::Floresta,
-                shared::terreno::ESCALA_ALTURA,
-            ),
+            Gerador::da_colonia(plato),
             shared::terreno::Bioma::Floresta,
         )
     }
@@ -1338,5 +1337,150 @@ mod testes_alinhamento {
         }
         assert!(conferidos > 1000, "so' {conferidos} topos conferidos");
         println!("{conferidos} topos conferidos: desenho e consulta batem");
+    }
+}
+
+#[cfg(test)]
+mod testes_da_colonia {
+    use super::*;
+
+    /// A COLONIA que o cliente desenha e' a MESMA que o servidor gerou.
+    ///
+    /// O dono chegou na propria ilha e viu "tudo azul vazio": nada de chao.
+    /// Azul e' o que sobra quando `terreno` e `map` sao os dois `None` — ou
+    /// quando o relevo existe mas nasce todo debaixo d'agua. Este teste
+    /// separa os dois casos, comparando o relevo do CLIENTE
+    /// (`Terreno::da_colonia`, um `Gerador`) com o do SERVIDOR
+    /// (`terreno::Ilha`, um campo de altura assado).
+    #[test]
+    fn o_chao_da_colonia_bate_com_o_do_servidor() {
+        for nivel in 1..=shared::colonia::NIVEL_MAX {
+            let nome = shared::colonia::Assentamento::do_nivel(nivel).nome();
+            let plato = shared::colonia::plato_do_assentamento(nivel);
+            let t = Terreno::da_colonia(plato);
+            let ilha = shared::terreno::Ilha::da_colonia(plato);
+            let chegada = ilha.terra_mais_proxima(
+                shared::colonia::CHEGADA.x,
+                shared::colonia::CHEGADA.y,
+                400.0,
+            );
+            // 1. O cliente ve' chao onde o servidor pos o jogador.
+            let hc = t.altura(chegada.x, chegada.y);
+            let hs = ilha.altura(chegada.x, chegada.y);
+            assert!(
+                (hc - hs).abs() < 0.51,
+                "{nome}: cliente ve' {hc:.2} onde o servidor ve' {hs:.2} em {chegada:?}"
+            );
+            assert!(
+                hc > shared::terreno::NIVEL_DO_MAR,
+                "{nome}: a chegada nasce DEBAIXO do mar (y={hc:.2}, mar={:.2})",
+                shared::terreno::NIVEL_DO_MAR
+            );
+            // 2. E os pedacos em volta dela tem geometria de verdade.
+            let mut t = t;
+            t.atualiza(vec2(chegada.x, chegada.y), 2, 200);
+            assert!(t.pedacos_vivos() > 0, "{nome}: nenhum pedaco gerado");
+        }
+    }
+}
+
+/// Prévia da COLÔNIA (`MMO_PREVIA_COLONIA=<nome do personagem>`; PNGs em
+/// `MMO_PREVIA_SAIDA`).
+///
+/// O dono chegou na própria ilha e viu "tudo azul vazio". O relevo confere
+/// com o do servidor (`testes_da_colonia`), então o que falta é ver o que o
+/// cliente DESENHA — e ver sem entrar na sessão dele. Isto monta o mesmo
+/// `Terreno::da_colonia` que a mensagem do servidor monta, põe a câmera onde
+/// o jogador nasce e salva o quadro.
+#[cfg(debug_assertions)]
+pub async fn previa_da_colonia(solido: &macroquad::material::Material) {
+    let nome = std::env::var("MMO_PREVIA_COLONIA").unwrap_or_else(|_| "brunji".into());
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-colonia".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    next_frame().await;
+    let rt = macroquad::texture::render_target_ex(
+        screen_width() as u32,
+        screen_height() as u32,
+        macroquad::texture::RenderTargetParams { depth: true, sample_count: 1 },
+    );
+    rt.texture.set_filter(FilterMode::Linear);
+    crate::render3d::define_alvo(Some(rt.clone()));
+
+    let nivel: u8 = std::env::var("MMO_PREVIA_NIVEL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let plato = shared::colonia::plato_do_assentamento(nivel);
+    let mut t = Terreno::da_colonia(plato);
+    // Onde o servidor põe o jogador ao chegar.
+    let ilha = shared::terreno::Ilha::da_colonia(plato);
+    let ch = ilha.terra_mais_proxima(
+        shared::colonia::CHEGADA.x,
+        shared::colonia::CHEGADA.y,
+        400.0,
+    );
+    // A camera vai pra PRACA, e nao pra chegada: e' o plato que precisa ser
+    // olhado — "sempre ter um terreno aplanado nas construcoes".
+    let praca = shared::terreno::Gerador::da_colonia(plato)
+        .cidade()
+        .map(|c| c.centro())
+        .unwrap_or_default();
+    let eu = vec2(praca.x, praca.y);
+    let _ = ch;
+    println!(
+        "[previa colonia] '{nome}' assentamento {} plato {plato:.0} chegada ({:.2}, {:.2}) \
+         altura cliente {:.2} servidor {:.2} mar {:.2}",
+        shared::colonia::Assentamento::do_nivel(nivel).nome(),
+        eu.x, eu.y, t.altura(eu.x, eu.y), ilha.altura(ch.x, ch.y), NIVEL_DO_MAR,
+    );
+    t.atualiza(eu, 5, 400);
+    println!("[previa colonia] {} pedacos vivos", t.pedacos_vivos());
+
+    let apoio = t.altura(eu.x, eu.y);
+    // O ASSENTAMENTO: a casa do jogador e a de cada morador do nivel.
+    let moradores: Vec<shared::colonia::Profissao> = shared::colonia::Profissao::TODAS
+        .into_iter()
+        .cycle()
+        .take(shared::colonia::vagas_de_trabalho(nivel))
+        .collect();
+    let mut construcoes = crate::construcoes::Construcoes::da_colonia(plato, moradores.clone());
+    for _ in 0..200 {
+        construcoes.acompanhar();
+        if construcoes.prontas() {
+            break;
+        }
+        next_frame().await;
+    }
+    println!(
+        "[previa colonia] {} morador(es): {}",
+        moradores.len(),
+        moradores
+            .iter()
+            .map(|m| m.nome())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    for (k, (zoom, pitch)) in [(14.0f32, 0.9f32), (60.0, 1.1)].into_iter().enumerate() {
+        for _ in 0..2 {
+            crate::render3d::camera_padrao();
+            clear_background(Color::new(0.11, 0.35, 0.62, 1.0));
+            let chao = |x: f32, z: f32| t.altura(x, z);
+            let cam = crate::render3d::camera_com_chao(eu, apoio, 0.6, zoom, pitch, &chao);
+            let mut cam = cam;
+            cam.render_target = crate::render3d::alvo();
+            set_camera(&cam);
+            macroquad::material::gl_use_material(solido);
+            let n = t.desenha(&cam, Vec3::ZERO, 0.0);
+            construcoes.desenha(&cam, Some(vec3(eu.x, apoio, eu.y)), Vec3::ZERO, 0.0);
+            crate::agua::desenha(&t, &cam, 0.0);
+            macroquad::material::gl_use_default_material();
+            crate::render3d::camera_padrao();
+            unsafe { macroquad::window::get_internal_gl().flush() };
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/colonia-{k}.png"));
+            println!("[previa colonia] quadro {k}: {n} pedacos desenhados");
+            next_frame().await;
+        }
     }
 }

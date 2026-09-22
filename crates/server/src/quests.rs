@@ -210,6 +210,28 @@ pub fn passo_atual(active: &[CharQuest]) -> Option<&CharQuest> {
 /// primeiro passo. Repoe a linha do passo atual se ela sumiu. Devolve o id
 /// dado, se deu.
 pub fn garantir_historia(active: &mut Vec<CharQuest>) -> Option<u16> {
+    // PASSO FANTASMA: um id que nao e' mais passo da historia trava o jogador
+    // pra sempre — `quest_by_id` devolve `None`, nada avanca, e nada reclama.
+    //
+    // Aconteceu de verdade em 21/09/2026: a historia foi renumerada e dois
+    // personagens ficaram apontando pros ids 775 e 776, que deixaram de
+    // existir. A migracao `historia_renumerada_v1` conserta os que ja' estao
+    // no banco; isto aqui e' pra proxima vez, porque vai haver proxima vez —
+    // a tabela de passos e' codigo e o progresso e' dado, e eles se separam.
+    //
+    // A saida e' o MARCADOR, que guarda o INDICE e nao o id.
+    active.retain(|c| {
+        let fantasma = c.quest_id != historia::ID_MARCO
+            && c.quest_id >= historia::PRIMEIRO_ID
+            && historia::indice(c.quest_id).is_none();
+        if fantasma {
+            tracing::warn!(
+                "passo {} nao existe mais na historia — descartado; o marcador reassume",
+                c.quest_id
+            );
+        }
+        !fantasma
+    });
     // O marcador guarda o INDICE; o passo em andamento guarda o ID. Se a
     // historia ganhou passo no meio (os tutoriais 770+, em 19/09/2026), o
     // indice salvo aponta pra outro passo — o id em andamento e' quem manda,
@@ -1294,5 +1316,111 @@ mod testes_diarias {
             "expirado ainda multiplica"
         );
         assert_eq!(shared::xp_com_bonus(100, agora, 0), 100);
+    }
+}
+
+#[cfg(test)]
+mod testes_do_passo_fantasma {
+    use super::*;
+
+    fn cq(id: u16, status: u8) -> CharQuest {
+        CharQuest {
+            quest_id: id,
+            status,
+            progress: 0,
+            cooldown_until: 0,
+        }
+    }
+
+    /// Um passo que não existe mais NÃO pode travar o jogador.
+    ///
+    /// A tabela de passos é código e o progresso é dado: eles se separam
+    /// quando a história é renumerada. Em 21/09/2026 dois personagens
+    /// ficaram apontando para 775 e 776, ids que deixaram de existir —
+    /// `quest_by_id` devolvia `None`, nada avançava, e **nada reclamava**.
+    ///
+    /// O marcador guarda o ÍNDICE, que sobrevive à renumeração. Descartar o
+    /// fantasma devolve o comando a ele.
+    #[test]
+    fn passo_que_nao_existe_mais_e_descartado_e_o_marcador_reassume() {
+        let inexistente = 899u16; // fora de qualquer faixa de passo
+        assert!(
+            historia::indice(inexistente).is_none(),
+            "o teste precisa de um id que realmente não exista"
+        );
+        let mut q = vec![
+            cq(historia::ID_MARCO, historia::STATUS_MARCO),
+            cq(inexistente, shared::quests::quest_status::ACTIVE),
+        ];
+        let novo = garantir_historia(&mut q);
+        assert!(
+            !q.iter().any(|c| c.quest_id == inexistente),
+            "o fantasma continua no log e vai travar o jogador"
+        );
+        // E um passo de verdade entrou no lugar.
+        let id = novo.expect("o marcador tem que reabrir um passo válido");
+        assert!(historia::indice(id).is_some(), "reabriu outro fantasma");
+    }
+
+    /// E um passo VÁLIDO não é descartado — senão o conserto viraria um
+    /// reset de progresso a cada login.
+    #[test]
+    fn passo_valido_continua_no_log() {
+        let valido = historia::PRIMEIRO_ID + 3;
+        assert!(historia::indice(valido).is_some());
+        let mut q = vec![
+            cq(historia::ID_MARCO, historia::STATUS_MARCO),
+            cq(valido, shared::quests::quest_status::ACTIVE),
+        ];
+        garantir_historia(&mut q);
+        assert!(
+            q.iter().any(|c| c.quest_id == valido),
+            "o passo em andamento foi descartado"
+        );
+    }
+
+    /// PASSO NOVO NO MEIO nao rebobina quem ja' passou dali.
+    ///
+    /// Esta e' a pergunta do dono — "personagem novo ja' vem com as quests
+    /// novas, né?" —, e a resposta interessante e' a OUTRA metade: o que
+    /// acontece com quem ja' existe. O marcador guarda o INDICE, e inserir
+    /// cinco passos no meio (o tutorial da ilha, 798-802, em 21/09/2026)
+    /// desloca o indice de TUDO o que vem depois. Sem defesa, quem estava em
+    /// "Rumo a' Geleira" acordaria cinco passos atras, dentro de um tutorial
+    /// que so' se cumpre na propria ilha — longe de onde ele esta'.
+    ///
+    /// A defesa e' o ID: o passo em andamento guarda o id, que NAO se desloca,
+    /// e o marcador se realinha a ele. Isto trava esse contrato, que hoje
+    /// existe so' como um comentario dentro de `garantir_historia`.
+    #[test]
+    fn passo_novo_no_meio_nao_rebobina_quem_passou() {
+        for id in [710u16, 719, 730, 752, 769] {
+            let certo = historia::indice(id).expect("passo de verdade");
+            // Marcador ERRADO de proposito, como se a lista tivesse crescido
+            // depois do save: cinco passos atras do id em andamento.
+            let mut q = vec![
+                CharQuest {
+                    quest_id: historia::ID_MARCO,
+                    status: historia::STATUS_MARCO,
+                    progress: certo.saturating_sub(5),
+                    cooldown_until: 0,
+                },
+                cq(id, shared::quests::quest_status::ACTIVE),
+            ];
+            garantir_historia(&mut q);
+            let marcador = q
+                .iter()
+                .find(|c| c.quest_id == historia::ID_MARCO)
+                .expect("o marcador tem que continuar la'");
+            assert_eq!(
+                marcador.progress, certo,
+                "o marcador nao se realinhou ao passo {id}: o jogador rebobinou"
+            );
+            assert_eq!(
+                passo_atual(&q).map(|c| c.quest_id),
+                Some(id),
+                "o passo atual deixou de ser o {id}"
+            );
+        }
     }
 }

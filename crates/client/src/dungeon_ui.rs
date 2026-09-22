@@ -584,12 +584,23 @@ impl DungeonUi {
                     let r = Rect::new(dir.x + dir.w - bw, y - 30.0 * f, bw, 36.0 * f);
                     if botao(
                         r,
-                        &format!("Comprar entrada · {preco} ouro"),
+                        &format!("Comprar entrada · {} ouro", crate::economia::milhar(preco)),
                         c.ouro >= preco,
                         false,
                     ) {
                         saida.push(pedir(Pedido::ComprarEntrada));
                     }
+                    // O preço TRIPLICA a cada compra do dia, e isso tem que
+                    // estar escrito: sem isso o jogador compra a segunda sem
+                    // saber que ela custa o triplo da primeira.
+                    y += 18.0 * f;
+                    estilo::texto(
+                        dir.x,
+                        y,
+                        "Cada compra do dia custa o triplo da anterior.",
+                        12,
+                        estilo::SUAVE,
+                    );
                 }
             }
         }

@@ -931,6 +931,7 @@ impl Social {
                 self.anexos.push(social::Anexo {
                     item_id: *id,
                     qtd: qtd.unwrap(),
+                    instance: None,
                 });
             }
         }
@@ -1333,8 +1334,11 @@ pub async fn previa() {
         social::Anexo {
             item_id: 1,
             qtd: 10,
-        },
-        social::Anexo { item_id: 2, qtd: 5 },
+                    instance: None,
+                },
+        social::Anexo { item_id: 2, qtd: 5,
+                    instance: None,
+                },
     ];
     for etapa in ["admin-enviar", "admin-anexos", "oficial-receber"] {
         ui.picker = etapa == "admin-anexos";
@@ -1390,6 +1394,7 @@ mod testes {
                 vec![shared::social::Anexo {
                     item_id: 424,
                     qtd: 1,
+                    instance: None,
                 }]
             } else {
                 Vec::new()

@@ -2318,15 +2318,14 @@ fn desenha_bicho(
         * Mat4::from_rotation_x(c.pitch);
     // o corpo escurece um pouco: de longe, morto nao se confunde com vivo
     //
-    // A ordem e' de prioridade: morto vence tudo, o clarao do golpe vence a
-    // cor da especie, e so' no resto do tempo o bicho aparece na cor dele. A
-    // TINTA DA ESPECIE e' o que faz o Urso Branco sair do mesmo `.vox` do
-    // urso (`bicho::tinta_de_kind`) — se ela viesse por cima do clarao, o
-    // jogador deixaria de ver que acertou.
+    // Morto vence tudo; fora isso, so' o clarao do golpe tinge. Nao ha' mais
+    // TINTA DE ESPECIE: o Urso Branco e o Tigre Branco tem `.vox` proprio,
+    // com a paleta do PELO trocada (`bichos.py: PELAGENS`), porque tinta por
+    // cima clareia tambem o que nao e' pelo — a listra, o nariz, a boca.
     let tinta = if morto {
         Some(([0.0, 0.0, 0.0], 0.3))
     } else {
-        clarao(e, false).or_else(|| crate::bicho::tinta_de_kind(e.meta.kind))
+        clarao(e, false)
     };
     for peca in &b.pecas {
         let (giro, desloca) = crate::bicho::peca(peca.junta, &entrada, &b.anat, peca.pivo);

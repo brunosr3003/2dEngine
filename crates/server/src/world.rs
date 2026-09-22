@@ -565,6 +565,15 @@ pub struct NpcDaVilaTag {
     pub rumo: u16,
 }
 
+/// `npc_id` do MURAL DA ILHA (`EntityKind::Npc`).
+///
+/// Os outros em uso: 1 loja, 2 banco, 8 Mestre do Treinamento, 9 oficio sem
+/// loja, **10 Mestre de Missoes** (`GameWorld::NPC_DE_MISSOES`). Escolhi 10 e
+/// o compilador recusou — "unreachable pattern", porque a arm do Mestre vem
+/// antes e ja' pegava tudo. Sem o aviso, o mural teria aberto o log de
+/// missoes: dois donos pro mesmo numero, e o primeiro ganha calado.
+pub const MURAL_DA_ILHA: u16 = 11;
+
 /// Zona de spawn gerenciada no server. Carregada do MapFile via
 /// MapEntity::EnemySpawner. Mantem o mundo vivo: sempre tenta atingir
 /// `quotas`; quando um inimigo da zona morre, enfileira respawn apos `respawn_delay_s`.
@@ -1939,7 +1948,9 @@ pub struct GameWorld {
     pub ilha: Option<shared::terreno::Ilha>,
     /// A ilha da COLONIA de cada instancia (docs/COLONIA.md). Vazio fora da
     /// zona `colonia`.
-    pub colonias: HashMap<u32, shared::terreno::Ilha>,
+    /// O relevo da colonia, por RAIO (nao por jogador: a semente e' uma so').
+    /// Seis entradas no maximo — uma por nivel de TAMANHO.
+    pub colonias: HashMap<i32, shared::terreno::Ilha>,
     /// Os chefes DESTA zona, pro heartbeat publicar (`canais::Chefes`).
     pub chefes_publicados: Option<crate::canais::Chefes>,
     /// Os chefes de todas as zonas do realm, pro mapa-mundi.
@@ -4823,6 +4834,61 @@ impl GameWorld {
         self.povoar_chefes();
     }
 
+    /// O MURAL DA ILHA: o ponto de administrar a colonia, na propria ilha.
+    ///
+    /// O painel abria pelo Menu, de qualquer canto do arquipelago. O dono
+    /// pediu um mural — "pra ficar mais imersivo" —, e ele tem razao por um
+    /// motivo que nao e' so' estetico: enquanto a ilha se administrava de um
+    /// item de menu, ela nao era um lugar, era uma aba.
+    ///
+    /// O QUADRO DE AVISOS ja' existe como prop da vila e ja' e' DESENHADO
+    /// pelo assentamento. Aqui nasce so' o ponto de interacao, em cima dele —
+    /// nenhum modelo novo, e o que se ve' e o que se toca sao o mesmo objeto.
+    fn montar_mural_da_colonia(&mut self, instancia: u32) {
+        use shared::construcao::TipoProp;
+        // Um por instancia. Reconectar na mesma ilha nao pode empilhar mural.
+        let ja = self
+            .ecs
+            .query::<(&EntityKind, &dungeon::Instancia)>()
+            .iter()
+            .any(|(_, (k, i))| matches!(k, EntityKind::Npc(MURAL_DA_ILHA)) && i.0 == instancia);
+        if ja {
+            return;
+        }
+        let Some(ilha) = self.colonias.get(&Self::chave_da_colonia(
+            self.sessions
+                .values()
+                .find(|s| s.instancia == instancia)
+                .map(|s| s.colonia.niveis[shared::colonia::eixo::ASSENTAMENTO])
+                .unwrap_or(1),
+        )) else {
+            return;
+        };
+        let vila = ilha.vila();
+        let onde = vila
+            .props
+            .iter()
+            .find(|p| p.tipo == TipoProp::QuadroDeAvisos)
+            .map(|p| Vec2::new(p.pos.x, p.pos.z))
+            // Sem quadro na vila, a praca serve: o mural nao pode FALTAR, ou
+            // o jogador chega na ilha e nao tem como mexer nela.
+            .or_else(|| ilha.cidade().map(|c| c.centro()));
+        let Some(onde) = onde else { return };
+        let eid = self.alloc_entity_id();
+        self.ecs.spawn((
+            NetId(eid),
+            Position(onde),
+            Velocity(Vec2::ZERO),
+            EntityKind::Npc(MURAL_DA_ILHA),
+            NpcDaVilaTag {
+                nome: "Mural da Ilha".to_string(),
+                rumo: shared::npc_kind(None, shared::construcao::Papel::Missoes as u8),
+            },
+            dungeon::Instancia(instancia),
+        ));
+        tracing::info!("mural da ilha em ({:.1}, {:.1})", onde.x, onde.y);
+    }
+
     /// A cidade e o porto da ilha: zonas seguras e os NPCs da vila.
     ///
     /// Onde cada casa e cada NPC fica e' `shared::vila` — funcao da semente,
@@ -4931,6 +4997,36 @@ impl GameWorld {
     ///
     /// Nada disso confia no cliente: ele manda um ponto, e o ponto so' vira
     /// movimento se o relevo do servidor concordar.
+    /// O RAIO da colonia desta sessao, se ela estiver numa. `None` fora da
+    /// colonia — e' o que separa "colonia" de "dungeon", que tambem tem
+    /// instancia mas anda na ilha da zona.
+    pub(crate) fn raio_da_colonia(&self, sid: SessionId) -> Option<i32> {
+        if !shared::colonia::e_colonia(&self.zona) {
+            return None;
+        }
+        self.sessions
+            .get(&sid)
+            .map(|s| Self::chave_da_colonia(s.colonia.niveis[shared::colonia::eixo::ASSENTAMENTO]))
+    }
+
+    /// A chave do relevo da colonia: o PLATO em decimos (ver `colonia_de`).
+    pub(crate) fn chave_da_colonia(nivel: u8) -> i32 {
+        (shared::colonia::plato_do_assentamento(nivel) * 10.0) as i32
+    }
+
+    /// A ilha em que ESTE jogador anda.
+    ///
+    /// Na colonia o relevo nao sai da zona (`self.ilha` e' `None` la'): sai do
+    /// TAMANHO da colonia dele. Quem perguntar so' pra `self.ilha` responde
+    /// "nao ha' chao" dentro da colonia — foi assim que o A* parou de achar
+    /// rota nenhuma e que a fisica caiu no mapa de tiles, onde a colonia nao
+    /// existe.
+    pub(crate) fn ilha_da_sessao(&self, sid: SessionId) -> Option<&shared::terreno::Ilha> {
+        self.raio_da_colonia(sid)
+            .and_then(|r| self.colonias.get(&r))
+            .or(self.ilha.as_ref())
+    }
+
     pub fn handle_mover_para(&mut self, sid: SessionId, destino: Vec2) {
         const ROTA_ALCANCE: f32 = 220.0;
         const ROTA_INTERVALO_S: f32 = 0.2;
@@ -4958,7 +5054,7 @@ impl GameWorld {
         if !destino.is_finite() || pos_atual.distance(destino) > ROTA_ALCANCE {
             return;
         }
-        let Some(ilha) = self.ilha.as_ref() else {
+        let Some(ilha) = self.ilha_da_sessao(sid) else {
             return;
         };
         let Some(rota) = ilha.caminho(pos_atual, destino, ROTA_ORCAMENTO) else {
@@ -5152,6 +5248,17 @@ impl GameWorld {
         // ilha em vez de cair num ponto qualquer dela.
         let mut row = row;
         self.zona_de_saida.remove(&row.name);
+        // SEM zona salva = a PRIMEIRA ilha, e nao "fica onde esta'".
+        //
+        // `None` significava "esta zona serve", e por isso quem foi criado sem
+        // zona nascia onde o cliente por acaso se conectou — o dono caiu na
+        // Geleira num personagem nivel 1. A criacao agora grava a zona; isto
+        // aqui e' pra quem JA' nasceu adrift, e pros personagens antigos de
+        // antes da coluna existir (que moram na primeira ilha de qualquer
+        // forma).
+        if row.zona.is_none() {
+            row.zona = Some(shared::terreno::ARQUIPELAGO[0].zona.to_string());
+        }
         if !self.tutorial_mode && !self.dungeon_mode {
             if let Some(z) = row.zona.clone().filter(|z| *z != self.zona) {
                 if let Some(host) = self.diretorio.as_ref().and_then(|d| d.melhor(&z)) {
@@ -5361,7 +5468,7 @@ impl GameWorld {
         if shared::colonia::e_colonia(&self.zona) {
             let inst = crate::world::colonia::instancia_do_nome(&saved_char_name);
             let nivel = saved_colonia.niveis[shared::colonia::eixo::TAMANHO];
-            let ilha = self.colonia_de(inst, &saved_char_name, nivel);
+            let ilha = self.colonia_de(nivel);
             spawn = ilha.terra_mais_proxima(
                 shared::colonia::CHEGADA.x,
                 shared::colonia::CHEGADA.y,
@@ -5415,6 +5522,9 @@ impl GameWorld {
             },
         ));
 
+        // Preenchida dentro do bloco abaixo (que segura `self.sessions`) e
+        // aplicada na entidade logo depois, onde o ECS esta' livre.
+        let mut instancia_pendente = 0u32;
         if let Some(s) = self.sessions.get_mut(&sid) {
             s.entity = Some(e);
             s.logged_in = true;
@@ -5512,6 +5622,15 @@ impl GameWorld {
             } else {
                 0
             };
+            // A instancia da SESSAO nao basta: o filtro de AOI le' a instancia
+            // da ENTIDADE (`dg_instancias_por_eid`), e entidade sem o
+            // componente conta como 0. Sem esta linha o jogador nao via NEM A
+            // SI MESMO na colonia — o snapshot chegava com zero entidades.
+            //
+            // A dungeon sempre pos os dois juntos (`dungeon.rs:660`); a
+            // colonia copiou so' metade. Elas ANDAM JUNTAS: ver o teste
+            // `instancia_da_sessao_e_da_entidade_andam_juntas`.
+            instancia_pendente = s.instancia;
             s.retorno_da_dungeon = None;
             // Calendario de presenca: o estado vem do banco (e entrega o que
             // ficou pendente); a janela abre sozinha no cliente se houver
@@ -5554,9 +5673,19 @@ impl GameWorld {
                 guarda_roupa: s.guarda_roupa.clone(),
             });
         }
+        if instancia_pendente != 0 {
+            let _ = self
+                .ecs
+                .insert_one(e, crate::world::dungeon::Instancia(instancia_pendente));
+            // O mural nasce com a ilha: sem ele o jogador chega e nao tem como
+            // mexer em nada (o item de Menu saiu, de proposito).
+            if shared::colonia::e_colonia(&self.zona) {
+                self.montar_mural_da_colonia(instancia_pendente);
+            }
+        }
         self.loja_ao_logar(sid);
         tracing::info!(
-            "login ok: {} (acc {}, xp {}) -> {:?} / {:?}",
+            "login ok: {} (acc {}, xp {}) -> {:?} / {:?} inst {instancia_pendente}",
             success.username,
             success.account_id,
             saved_xp,
@@ -5591,15 +5720,16 @@ impl GameWorld {
                 })
                 .collect(),
         });
-        // Na COLONIA o relevo nao sai da zona: sai da semente do personagem.
-        // Vai LOGO DEPOIS do MapChange, que e' quem limpa o terreno velho.
+        // Na COLONIA o relevo nao sai da zona: a ilha e' fixa, e o que muda e'
+        // o PLATO do assentamento e quem mora nele. Vai LOGO DEPOIS do
+        // MapChange, que e' quem limpa o terreno velho.
         if shared::colonia::e_colonia(&self.zona) {
+            let nivel = saved_colonia.niveis[shared::colonia::eixo::ASSENTAMENTO];
             let _ = handle.to_client.send(ServerMessage::Colonia {
                 aviso: shared::colonia::AvisoColonia::Terreno {
-                    semente: shared::colonia::semente(&saved_char_name),
-                    raio: shared::colonia::raio_blocos(
-                        saved_colonia.niveis[shared::colonia::eixo::TAMANHO],
-                    ),
+                    plato: shared::colonia::plato_do_assentamento(nivel),
+                    assentamento: nivel,
+                    trabalhadores: saved_colonia.trabalhadores.clone(),
                 },
             });
         }
@@ -6717,14 +6847,10 @@ impl GameWorld {
                     self.broadcast_party_update(pid);
                 }
             }
-            // Colonia vazia nao precisa de relevo na memoria.
-            let inst = s.instancia;
-            if inst != 0 && shared::colonia::e_colonia(&self.zona) {
-                let sozinho = !self.sessions.values().any(|o| o.instancia == inst);
-                if sozinho {
-                    self.esquece_colonia(inst);
-                }
-            }
+            // O relevo da colonia NAO se descarta mais no logout: ele e' de
+            // um TAMANHO e nao de um jogador (`colonia_de`), sao seis ilhas no
+            // maximo, e descartar tirava o chao de quem ainda estava naquele
+            // tamanho.
             tracing::info!("{:?} disconnected", s.entity_id);
         }
     }
@@ -7814,15 +7940,31 @@ impl GameWorld {
             });
             return;
         };
-        // Spawn = ilha-sede da facção (cai no spawn_tile() se o mapa ainda não
-        // tem markers de spawn por facção — ver WorldMap::faction_spawn_tile).
-        // Numa ilha, personagem novo nasce na cidade.
-        let spawn = if self.ilha.is_some() {
+        // Spawn = o PORTO DA PRIMEIRA ILHA, sempre — e nao o da ilha de quem
+        // atendeu a criacao.
+        //
+        // Saia de `self.porto()`, a ilha DESTE servidor, e o cliente pode
+        // estar conectado em qualquer uma: o dono criou um personagem pela
+        // Geleira e nasceu com a coordenada dela. A zona ja' e' gravada como
+        // a primeira ilha (`persistence::create_character`), entao a posicao
+        // tinha que vir da mesma ilha — senao o personagem nasce com o
+        // endereco de uma ilha e o CEP de outra.
+        //
+        // Nao da' na vista porque o login valida a posicao contra o relevo e
+        // reposiciona quem cai na agua. Mas isso e' sorte: coordenada da
+        // Geleira que por acaso caia em terra no Bosque poe o personagem num
+        // canto qualquer da ilha em vez do comeco do jogo.
+        let inicial = &shared::terreno::ARQUIPELAGO[0];
+        let spawn = if inicial.zona == self.zona && self.ilha.is_some() {
             self.porto()
         } else {
-            let t = self.map.faction_spawn_tile(faction);
-            Vec2::new(t.0 as f32 + 0.5, t.1 as f32 + 0.5)
+            let ger = shared::terreno::Gerador::da_ilha(inicial);
+            match ger.porto() {
+                Some(p) => p.centro,
+                None => ger.cidade().map(|c| c.centro()).unwrap_or(Vec2::ZERO),
+            }
         };
+        let _ = faction;
         // Snapshot do que precisamos da sessao antes de spawnar a task async.
         let (auth_ctx, to_client, username, class) = {
             let Some(s) = self.sessions.get(&sid) else {
@@ -8423,6 +8565,7 @@ impl GameWorld {
         // Quem travou seguindo rota: o A* roda DEPOIS do laco, que aqui
         // `self` esta' emprestado pelas sessoes.
         let mut refazer_rota: Vec<(SessionId, Vec2)> = Vec::new();
+        let na_colonia = shared::colonia::e_colonia(&self.zona);
         for (sid_da_sessao, session) in self.sessions.iter_mut() {
             let sid_da_sessao = *sid_da_sessao;
             if session.attack_cooldown > 0.0 {
@@ -8670,7 +8813,18 @@ impl GameWorld {
             // nenhuma no teclado, e sem isto o boneco iria bater na quina ate'
             // a paciencia do seguidor acabar.
             if veio_da_rota && dir.length_squared() > 0.01 {
-                if let Some(ilha) = self.ilha.as_ref() {
+                // A ilha DESTE corpo: na colonia e' a do jogador. Perguntando
+                // so' pra `self.ilha` o pulo nunca disparava la' dentro, e a
+                // rota morria encostada no primeiro degrau.
+                let raio_aqui = na_colonia.then(|| {
+                    Self::chave_da_colonia(
+                        session.colonia.niveis[shared::colonia::eixo::ASSENTAMENTO],
+                    )
+                });
+                if let Some(ilha) = raio_aqui
+                    .and_then(|r| self.colonias.get(&r))
+                    .or(self.ilha.as_ref())
+                {
                     // A pergunta e' feita ao proprio mover: "pular me faria
                     // andar mais que andar?". Qualquer outra formulacao ja'
                     // discordou dele e deixou o corpo empurrando a quina.
@@ -10075,6 +10229,22 @@ impl GameWorld {
                 )
             })
             .collect();
+        // De que TAMANHO e' a colonia de cada instancia viva. A fisica olha a
+        // ENTIDADE (que carrega so' a instancia), e o tamanho mora na SESSAO —
+        // este mapinha e' a ponte, e custa uma entrada por jogador no processo.
+        let raio_da_inst: std::collections::HashMap<u32, i32> = self
+            .sessions
+            .values()
+            .filter(|s| s.instancia != 0)
+            .map(|s| {
+                (
+                    s.instancia,
+                    Self::chave_da_colonia(
+                        s.colonia.niveis[shared::colonia::eixo::ASSENTAMENTO],
+                    ),
+                )
+            })
+            .collect();
         let mut corpos: Vec<(Entity, Vec2, f32)> = Vec::new();
         // Instancia de dungeon de cada corpo (0 = mundo): corpos de fases
         // diferentes nao se empurram nem se bloqueiam.
@@ -10106,7 +10276,8 @@ impl GameWorld {
             // NA COLONIA o relevo e' POR INSTANCIA: cada jogador anda na
             // ilha dele (docs/COLONIA.md). Fora dela, a ilha da zona.
             let terreno = inst
-                .and_then(|i| self.colonias.get(&i.0))
+                .and_then(|i| raio_da_inst.get(&i.0))
+                .and_then(|r| self.colonias.get(r))
                 .or(self.ilha.as_ref());
             corpos.push((
                 e,
@@ -12786,6 +12957,20 @@ impl GameWorld {
             if !crate::economy::is_item_active(item.item_id) {
                 return false;
             }
+            // NIVEL MINIMO. Ate' 21/09/2026 isto nao existia no servidor: o
+            // `level_req` da instancia so' pintava uma linha de vermelho na
+            // bolsa do CLIENTE, e equipar passava assim mesmo — um
+            // personagem de nivel 7 vestia peca de nivel 30. A variavel
+            // `char_level_now` ja' estava calculada aqui, esperando.
+            //
+            // Regra do cliente e regra do servidor tem que ser a mesma, e
+            // quem manda e' o servidor: o cliente pode mentir.
+            if let Some(req) = item.instance.and_then(|i| i.level_req) {
+                if char_level_now < req as u32 {
+                    return false;
+                }
+            }
+            let _ = prof_xp_now;
             can_equip_in_slot(&equip_now, slot, item.item_id)
         };
 
@@ -12828,6 +13013,17 @@ impl GameWorld {
                 let (Some(ia), _) = va else { return };
                 let (_, Some((_, cur_eq))) = vb else { return };
                 if !can_go_into_equip(bs, &ia) {
+                    // Recusar CALADO e' quase tao ruim quanto deixar passar:
+                    // o jogador arrasta a peca, ela volta, e ele nao sabe por
+                    // que. O nivel e' o unico motivo que ele pode resolver.
+                    if let Some(req) = ia.instance.and_then(|i| i.level_req) {
+                        if char_level_now < req as u32 {
+                            let _ = session.handle.to_client.send(ServerMessage::Chat {
+                                from: "SYS".into(),
+                                text: format!("Esta peça pede nível {req}."),
+                            });
+                        }
+                    }
                     return;
                 }
                 if bs == shared::EquipSlot::Weapon && ia.qty > 0 {
@@ -13134,12 +13330,42 @@ impl GameWorld {
         crate::telemetria::conta("cobre_fonte", fonte, qtd as i64);
     }
 
+    /// Entrega a colonia a quem a historia ja' deu — e a' base do passo que
+    /// a pede. Nao e' um item: a ilha nao cabe na bolsa e nao se vende.
+    fn escritura_por_estado(s: &mut Session) {
+        if s.colonia.tem {
+            return;
+        }
+        let atual = crate::quests::passo_atual(&s.quests)
+            .and_then(|c| shared::historia::indice(c.quest_id));
+        let alvo = shared::historia::indice(shared::historia::PASSO_DA_COLONIA);
+        let (Some(atual), Some(alvo)) = (atual, alvo) else {
+            return;
+        };
+        if atual < alvo {
+            return;
+        }
+        s.colonia.tem = true;
+        // A conta das 12 h comeca AGORA. Sem isso a ilha entregaria, na
+        // primeira visita, tudo o que "rendeu" desde 1970.
+        s.colonia.colhida_em = (now_ms() / 1000) as i64;
+        let _ = s.handle.to_client.send(ServerMessage::Chat {
+            from: "SYS".into(),
+            text: "A escritura é sua: fale com o Capitão do Porto e peça MINHA ILHA.".into(),
+        });
+    }
+
     /// A historia (`shared::historia`), a cada tick: da' o primeiro passo a
     /// quem nao tem, acompanha trava de nivel, viagem e ponto-chave, e passa
     /// pro proximo passo assim que um fica pronto — com a recompensa na hora.
     fn tick_historia(&mut self) {
         use shared::quests::{objective_kind, quest_status};
-        if self.ilha.is_none() || self.tutorial_mode || self.dungeon_mode {
+        // A COLONIA nao tem `self.ilha` (o relevo e' por instancia), e mesmo
+        // assim a historia anda la': o passo da escritura so' se cumpre
+        // PISANDO nela. Sem esta excecao o jogador chegava na propria ilha e
+        // o passo continuava aberto.
+        let colonia = shared::colonia::e_colonia(&self.zona);
+        if (self.ilha.is_none() && !colonia) || self.tutorial_mode || self.dungeon_mode {
             return;
         }
         let xpmult = crate::economy::xp_multiplier();
@@ -13169,6 +13395,12 @@ impl GameWorld {
                 s.quests_dirty = true;
                 mudou.push((id, 0, quest_status::ACTIVE));
             }
+            // A ESCRITURA da ilha e' ESTADO, nao evento. Ela tem que existir
+            // ANTES do passo poder ser cumprido — ninguem visita uma ilha que
+            // ainda nao e' sua —, e quem ja' passou do passo (save antigo, ou
+            // a versao em que ele era um TALK com o Capitao e se cumpria
+            // sozinho na conversa da viagem) nunca veria o evento passar.
+            Self::escritura_por_estado(s);
             if let Some(cq) = crate::quests::passo_atual(&s.quests).cloned() {
                 let def = shared::quests::quest_by_id(cq.quest_id);
                 if let (Some(def), quest_status::ACTIVE) = (def, cq.status) {
@@ -13187,6 +13419,28 @@ impl GameWorld {
                                     cq.quest_id,
                                 ));
                             }
+                        }
+                        // Chegou na PROPRIA ilha. Mesma regra da viagem, e a
+                        // colonia nao esta' no ARQUIPELAGO: a zona e' o teste.
+                        objective_kind::COLONIA if colonia => {
+                            mudou
+                                .extend(crate::quests::cumprir_passo(&mut s.quests, cq.quest_id));
+                        }
+                        // TUTORIAL de SALDO: fecha se a condicao JA' estiver
+                        // cumprida quando o passo abre.
+                        //
+                        // Os de interface continuam so' no evento — eles se
+                        // refazem. Os de saldo, nao: o dono chegou ao nivel 4
+                        // com os pontos ja' gastos, o passo "coloque um ponto"
+                        // abriu sem haver ponto, e a historia inteira travou
+                        // ate' o nivel 5. Checar estado no tick e' o mesmo que
+                        // NIVEL, VIAGEM e LUGAR ja' fazem aqui do lado — o
+                        // tutorial e' que estava de fora.
+                        objective_kind::TUTORIAL
+                            if shared::quests::tutorial::tem_estado(def.obj_target)
+                                && tutorial_ja_cumprido(s, def) =>
+                        {
+                            mudou.extend(crate::quests::cumprir_passo(&mut s.quests, cq.quest_id));
                         }
                         objective_kind::LUGAR => {
                             let alvo = self.pontos_historia.get(&def.obj_target).copied().flatten();
@@ -13232,18 +13486,6 @@ impl GameWorld {
                     add_to_inventory(&mut s.inventory, item, qtd as u32, None);
                     s.inventory_dirty = true;
                 }
-            }
-            // A escritura da ilha. E' o passo que a entrega, e nao um item:
-            // a colonia nao cabe na bolsa e nao pode ser vendida.
-            if feito.id == shared::historia::PASSO_DA_COLONIA && !s.colonia.tem {
-                s.colonia.tem = true;
-                // A conta das 12 h comeca AGORA. Sem isso a ilha entregaria,
-                // na primeira visita, tudo o que "rendeu" desde 1970.
-                s.colonia.colhida_em = (now_ms() / 1000) as i64;
-                let _ = s.handle.to_client.send(ServerMessage::Chat {
-                    from: "SYS".into(),
-                    text: "A escritura é sua: fale com o Capitão para visitar a sua ilha.".into(),
-                });
             }
             if feito.reward_xp > 0 {
                 // A XP da historia e' escrita na curva padrao (e' ela que leva o
@@ -14479,6 +14721,18 @@ impl GameWorld {
                     });
                 }
             };
+            // O passo da PROPRIA ilha: o caminho e' o Capitao do Porto, e la'
+            // dentro o botao MINHA ILHA. Vem antes da checagem de zona porque
+            // `zona_da_missao` devolve a ilha do CAPITULO (o Bosque) — sem
+            // isto, estando ja' na colonia, o jogo mandava embarcar pro Bosque.
+            if def.obj_kind == shared::quests::objective_kind::COLONIA {
+                if shared::colonia::e_colonia(&self.zona) {
+                    return; // ja' chegou: o tick fecha o passo neste segundo.
+                }
+                if self.destino_no_capitao(sid, quest_id) {
+                    return;
+                }
+            }
             if let Some(z) = shared::quests::zona_da_missao(quest_id).filter(|z| *z != self.zona) {
                 // Passo de outra ilha: o caminho comeca no Capitao do Porto,
                 // que leva a qualquer ilha liberada (`shared::viagem`).
@@ -16030,6 +16284,11 @@ impl GameWorld {
                 if self.e_estivador(entity) {
                     self.abrir_banco(sid);
                 }
+            }
+            Some((_, MURAL_DA_ILHA, _, _)) => {
+                // O mural E' o painel da colonia. Interagir com ele e' a
+                // unica porta agora: o item de Menu saiu.
+                self.abrir_colonia(sid);
             }
             Some((_, 8, _, _)) => {
                 // Mestre do Treinamento — manda o player (re)fazer o tutorial.
@@ -19184,3 +19443,151 @@ mod impacto_tests {
 /// Peixes do oceano (`tick_fish`). Desligados enquanto o cliente nao tiver UI
 /// de pesca — ver o comentario em `tick_fish`.
 const PEIXES_LIGADOS: bool = false;
+
+/// A condicao de um tutorial de SALDO ja' esta' cumprida?
+///
+/// Le' o ESTADO, e nao o evento. Cada um responde a pergunta que o texto do
+/// passo faz: ja' juntei Energia? ja' gastei um ponto? ja' subi um tier?
+///
+/// So' vale pros tres de `tutorial::tem_estado`. Os de interface nao tem
+/// estado pra ler — e nao precisam, porque se refazem.
+fn tutorial_ja_cumprido(s: &Session, def: &shared::quests::QuestDef) -> bool {
+    use shared::quests::tutorial as t;
+    match def.obj_target {
+        t::COLETA_ENERGIA => s.skill_progress.energia >= def.obj_count.max(1) as u64,
+        // DUAS saidas, e as duas importam:
+        //
+        //   * ja' gastou um ponto — aprendeu, fecha;
+        //   * nao TEM ponto pra gastar — nao ha' como cumprir, fecha.
+        //
+        // O ponto so' vem de subir de nivel (`POINTS_PER_LEVEL` por nivel),
+        // entao "sem ponto" nao e' uma espera: e' um beco. A primeira versao
+        // deste conserto olhava so' pra primeira saida e deixava o beco de
+        // pe' — quem chegasse ao passo sem ponto nenhum continuaria travado,
+        // que e' o mesmo defeito noutra roupa.
+        //
+        // O passo so' fica ABERTO quando ele e' possivel E ainda nao foi
+        // feito: ha' ponto pra gastar e nenhum gasto ainda.
+        t::PONTO_ATRIBUTO => {
+            s.allocated_points.iter().sum::<u32>() > 0 || s.unspent_points == 0
+        }
+        t::EVOLUIR_SKILL => s.skill_progress.tiers.iter().any(|x| *x > 1),
+        // Os da ILHA: condicao de ESTADO, e nao de gesto. Quem chegou com o
+        // assentamento ja' subido, ou com morador, nao teria como refazer o
+        // gesto — e travaria DENTRO da colonia, de onde a unica saida e' o
+        // Capitao. E' o mesmo buraco que travou o dono no nivel 4 com os
+        // pontos gastos, num lugar pior.
+        t::COLONIA_ASSENTAMENTO => {
+            s.colonia.niveis[shared::colonia::eixo::ASSENTAMENTO] > 1
+        }
+        t::COLONIA_CONTRATAR => !s.colonia.trabalhadores.is_empty(),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod testes_do_tutorial_de_saldo {
+    use shared::quests::tutorial as t;
+
+    /// A condição lida do ESTADO, com os números de verdade.
+    ///
+    /// Este é o caso que travou o dono: chegar ao nível 4 com os pontos já
+    /// gastos. O passo "coloque um ponto" abre, não há ponto para gastar, e
+    /// como a história é sequencial **tudo para** até o nível 5.
+    ///
+    /// Não dá para montar um `Session` inteiro num teste de unidade, então o
+    /// que se prova aqui é a REGRA — a mesma que `tutorial_ja_cumprido` lê.
+    /// As QUATRO combinações de (tem ponto, já gastou), e o passo fica
+    /// aberto em exatamente UMA delas.
+    ///
+    /// O passo só é honesto quando é **possível e ainda não foi feito**.
+    /// Fechar nas outras três não é preguiça: ponto de atributo só vem de
+    /// subir de nível, então "não tenho ponto" não é uma espera — é um beco,
+    /// e a história é sequencial.
+    ///
+    /// A primeira versão deste conserto olhava só para "já gastou" e deixava
+    /// o beco de pé. Foi o dono que perguntou: "mas tá identificando se tem
+    /// ponto pra gastar? e se não tiver, não bloquear?".
+    #[test]
+    fn o_passo_so_fica_aberto_quando_e_possivel_e_ainda_nao_foi_feito() {
+        let fecha = |unspent: u32, alocados: [u32; shared::STAT_COUNT]| {
+            alocados.iter().sum::<u32>() > 0 || unspent == 0
+        };
+        let nada = [0u32; shared::STAT_COUNT];
+        let mut gasto = [0u32; shared::STAT_COUNT];
+        gasto[0] = 1;
+
+        // 1. Tem ponto e não gastou: o ÚNICO caso em que o passo fica aberto.
+        assert!(!fecha(3, nada), "há o que fazer e não foi feito: fica aberto");
+        // 2. Tem ponto e já gastou: aprendeu, fecha.
+        assert!(fecha(2, gasto));
+        // 3. Não tem ponto e já gastou — o caso do dono, nível 4 com os
+        //    pontos gastos.
+        assert!(fecha(0, gasto), "o caso que travou a história");
+        // 4. Não tem ponto e nunca gastou: BECO. Fecha, senão trava para
+        //    sempre — e era este que a primeira versão deixava passar.
+        assert!(fecha(0, nada), "sem ponto nenhum não há como cumprir");
+
+        // E vale para qualquer atributo, não só o primeiro.
+        for i in 0..shared::STAT_COUNT {
+            let mut b = [0u32; shared::STAT_COUNT];
+            b[i] = 3;
+            assert!(fecha(5, b), "atributo {i}");
+        }
+    }
+
+    /// A Energia e o tier seguem a mesma regra, com o alvo do passo.
+    #[test]
+    fn energia_e_tier_tambem_fecham_pelo_saldo() {
+        let alvo = 40u32;
+        let tem_energia = |e: u64| e >= alvo.max(1) as u64;
+        assert!(!tem_energia(0));
+        assert!(!tem_energia(39));
+        assert!(tem_energia(40), "no alvo exato o passo fecha");
+        assert!(tem_energia(999));
+
+        let subiu = |tiers: [u8; shared::skills::SKILL_COUNT]| tiers.iter().any(|x| *x > 1);
+        assert!(!subiu([1; shared::skills::SKILL_COUNT]), "tier 1 é o de partida");
+        let mut t2 = [1u8; shared::skills::SKILL_COUNT];
+        t2[5] = 2;
+        assert!(subiu(t2));
+    }
+
+    /// E os de INTERFACE continuam dependendo do evento — eles se refazem, e
+    /// checar estado neles seria fechar o passo sem o jogador aprender nada.
+    #[test]
+    fn os_de_interface_continuam_no_evento() {
+        for a in [t::POCAO_LIMIAR, t::SKILL_AUTO, t::AUTO_COMBATE, t::AUTO_COLETA, t::MAPA_IR] {
+            assert!(!t::tem_estado(a));
+        }
+    }
+}
+
+#[cfg(test)]
+mod testes_do_nivel_minimo {
+    /// A regra do NÍVEL MÍNIMO, que o servidor não aplicava.
+    ///
+    /// Até 21/09/2026 o `level_req` da instância existia só no cliente, para
+    /// pintar "Requer nível 30" de vermelho na bolsa — e equipar passava
+    /// assim mesmo. O dono recebeu um conjunto roxo +8 de nível 30 e vestiu
+    /// inteiro com o personagem no **nível 7**.
+    ///
+    /// Regra de cliente não é regra: o cliente pode mentir, e neste caso ele
+    /// nem precisava mentir — bastava não obedecer a si mesmo.
+    #[test]
+    fn peca_acima_do_nivel_e_recusada_e_no_nivel_passa() {
+        let pode = |nivel: u32, req: Option<u16>| match req {
+            Some(r) => nivel >= r as u32,
+            None => true,
+        };
+        // O caso do dono.
+        assert!(!pode(7, Some(30)), "nível 7 não veste peça de 30");
+        // No nível exato veste.
+        assert!(pode(30, Some(30)));
+        assert!(pode(45, Some(30)));
+        // Um abaixo, não.
+        assert!(!pode(29, Some(30)));
+        // Peça sem requisito veste em qualquer nível — é a maioria.
+        assert!(pode(1, None));
+    }
+}

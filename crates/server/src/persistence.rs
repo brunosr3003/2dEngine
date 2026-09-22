@@ -3459,6 +3459,57 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         }
     }
 
+    // M30: a HISTORIA foi renumerada e o progresso salvo ficou pra tras.
+    //
+    // Em 21/09/2026 um passo novo entrou no meio (a escritura da colonia, id
+    // 718) e a faixa dos tutoriais saiu de 770-789 pra 790-809. A tabela de
+    // passos e' codigo; o PROGRESSO e' dado, e ele continuou apontando pros
+    // ids velhos. Dois estragos:
+    //
+    //   * quem estava num TUTORIAL (770-789) passou a apontar pra um id que
+    //     nao existe mais — `quest_by_id` devolve `None`, o passo nunca
+    //     avanca, e o jogador fica travado pra sempre;
+    //   * quem estava de 718 pra cima ficou UM passo deslocado.
+    //
+    // O remapeamento e' o mesmo que foi aplicado a' tabela, ao contrario:
+    // tutorial +20 PRIMEIRO (senao 769->770 colide), depois +1 no resto.
+    //
+    // So' pra quem foi salvo ANTES da renumeracao ir ao ar. Quem jogou depois
+    // ja' tem id novo, e mexer nele seria criar o defeito em vez de conserta-lo.
+    // `characters.updated` e' o carimbo que separa os dois.
+    {
+        const RENUMERACAO_UNIX: i64 = 1_790_004_068; // 2026-09-21 12:21:08 -03
+        let nova = sqlx::query(
+            "INSERT INTO economy_migrations(name) VALUES ('historia_renumerada_v1') ON CONFLICT DO NOTHING",
+        )
+        .execute(pool)
+        .await?
+        .rows_affected()
+            > 0;
+        if nova {
+            let antigos = "char_name IN (SELECT name FROM characters WHERE updated < $1)";
+            let tut = sqlx::query(&format!(
+                "UPDATE character_quests SET quest_id = quest_id + 20 \
+                 WHERE quest_id BETWEEN 770 AND 789 AND {antigos}"
+            ))
+            .bind(RENUMERACAO_UNIX)
+            .execute(pool)
+            .await?
+            .rows_affected();
+            let resto = sqlx::query(&format!(
+                "UPDATE character_quests SET quest_id = quest_id + 1 \
+                 WHERE quest_id BETWEEN 718 AND 769 AND {antigos}"
+            ))
+            .bind(RENUMERACAO_UNIX)
+            .execute(pool)
+            .await?
+            .rows_affected();
+            tracing::info!(
+                "M30: historia renumerada — {tut} passos de tutorial e {resto} da historia remapeados"
+            );
+        }
+    }
+
     // M28: o COBRE virou a moeda do dia a dia e o OURO ficou raro
     // (docs/ECONOMIA.md, decisao do dono de 17/09/2026).
     //
@@ -3773,12 +3824,22 @@ pub async fn create_character(
     let base = shared::base_player_stats();
     // Insert character row. ON CONFLICT(name) DO NOTHING + check rows_affected
     // pra detectar nome duplicado.
+    // A ZONA vai no INSERT, e nao fica NULL.
+    //
+    // Sem ela o personagem nascia ONDE O CLIENTE POR ACASO ESTAVA conectado:
+    // o login le' `zona`, e `None` quer dizer "fica onde esta'". O dono criou
+    // um personagem e nasceu na GELEIRA — ilha de nivel 15-30, com a historia
+    // do capitulo I na mao e nenhum passo dela acontecendo ali.
+    //
+    // O comeco do jogo nao e' uma escolha do cliente: e' a primeira ilha do
+    // arquipelago, sempre. Ver o teste `personagem_novo_nasce_na_ilha_inicial`.
+    let zona_inicial = shared::terreno::ARQUIPELAGO[0].zona;
     let res = sqlx::query(
         "INSERT INTO characters
          (name, x, y, hp, max_hp, xp, fame, aura, unspent_points, allocated_points,
           skill_points_earned, skill_points_spent,
-          account_id, visual_json, starting_weapon, faction, updated)
-         VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 0, $6, 1, 0, $7, $8, $9, $10, $11)
+          account_id, visual_json, starting_weapon, faction, updated, zona)
+         VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 0, $6, 1, 0, $7, $8, $9, $10, $11, $12)
          ON CONFLICT(name) DO NOTHING",
     )
     .bind(name)
@@ -3792,6 +3853,7 @@ pub async fn create_character(
     .bind(starting_weapon as i16)
     .bind(faction.as_db_str())
     .bind(now)
+    .bind(zona_inicial)
     .execute(pool)
     .await?;
     if res.rows_affected() == 0 {
@@ -4015,6 +4077,91 @@ fn juntar_fotos<T>(velhas: Vec<T>, novas: Vec<T>, nome: impl Fn(&T) -> &str) -> 
         .collect();
     v.extend(novas);
     v
+}
+
+#[cfg(test)]
+mod testes_da_criacao {
+    /// O personagem novo nasce na PRIMEIRA ILHA — e o INSERT diz isso.
+    ///
+    /// A coluna `zona` ficava de fora do INSERT, entao ela nascia NULL; o
+    /// login le' `zona` e `None` queria dizer "fica onde esta'". Resultado: o
+    /// personagem nascia no servidor em que o cliente por acaso estava, e o
+    /// dono criou um nivel 1 na GELEIRA (ilha de 15-30), com a historia do
+    /// capitulo I na mao e nenhum passo dela acontecendo la'.
+    ///
+    /// Le' o FONTE porque o defeito e' de OMISSAO: um teste de valor precisa
+    /// de banco, e o que precisa ser travado e' a coluna estar na lista. E' o
+    /// mesmo erro de sempre — coluna nova que entra no `INSERT INTO` e nao no
+    /// `VALUES`, ou vice-versa.
+    #[test]
+    fn personagem_novo_nasce_na_ilha_inicial() {
+        let fonte = include_str!("persistence.rs");
+        let i = fonte
+            .find("INSERT INTO characters\n")
+            .expect("o INSERT do personagem mudou de forma");
+        let insert = &fonte[i..i + 700];
+        let fim = insert.find("ON CONFLICT").expect("INSERT sem ON CONFLICT");
+        let insert = &insert[..fim];
+        assert!(
+            insert.contains("zona"),
+            "a coluna `zona` saiu do INSERT: o personagem volta a nascer \
+             onde o cliente estiver"
+        );
+        // As duas metades tem que casar: colunas e VALUES.
+        let colunas = insert
+            .split("VALUES")
+            .next()
+            .unwrap()
+            .matches(',')
+            .count()
+            + 1;
+        let valores = insert
+            .split("VALUES")
+            .nth(1)
+            .expect("INSERT sem VALUES")
+            .matches(',')
+            .count()
+            + 1;
+        assert_eq!(
+            colunas, valores,
+            "{colunas} colunas e {valores} valores: o INSERT nao casa, e nada salva"
+        );
+    }
+
+    /// O SPAWN do personagem novo sai da PRIMEIRA ILHA, e nao da ilha de quem
+    /// atendeu a criacao.
+    ///
+    /// A zona certa com a coordenada errada nao da' na vista: o login valida a
+    /// posicao contra o relevo e reposiciona quem cai na agua. Mas coordenada
+    /// da Geleira que por acaso caia em terra no Bosque poe o personagem num
+    /// canto qualquer da ilha, e nao no comeco do jogo — e ninguem saberia.
+    #[test]
+    fn o_spawn_novo_sai_da_primeira_ilha() {
+        let fonte = include_str!("world.rs");
+        let i = fonte
+            .find("let spawn = if inicial.zona == self.zona")
+            .expect("o spawn da criacao mudou de forma — confira se ainda sai da ilha 0");
+        let trecho = &fonte[i..i + 400];
+        assert!(
+            trecho.contains("Gerador::da_ilha(inicial)"),
+            "o spawn voltou a sair da ilha do servidor que atende"
+        );
+        // O porto da primeira ilha existe de verdade: sem ele o `else` cairia
+        // na praca, e sem praca em (0,0) — que e' mar na maioria das ilhas.
+        let inicial = &shared::terreno::ARQUIPELAGO[0];
+        let ger = shared::terreno::Gerador::da_ilha(inicial);
+        let p = ger
+            .porto()
+            .map(|p| p.centro)
+            .or_else(|| ger.cidade().map(|c| c.centro()))
+            .expect("a primeira ilha nao tem porto NEM praca");
+        assert!(
+            ger.altura(p.x, p.y) > shared::terreno::NIVEL_DO_MAR,
+            "o spawn da primeira ilha cai na agua em {p:?} (y={:.2}, mar={:.2})",
+            ger.altura(p.x, p.y),
+            shared::terreno::NIVEL_DO_MAR
+        );
+    }
 }
 
 #[cfg(test)]

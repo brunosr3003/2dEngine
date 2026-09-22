@@ -37,7 +37,7 @@ const VEL_DE_TROTE: f32 = 5.0;
 
 /// Cada bicho que anda em pecas: o arquivo (`tools/voxrender/bichos.py`) e a
 /// altura na tela, em unidades de mundo.
-pub const BICHOS: [(&str, f32); 15] = [
+pub const BICHOS: [(&str, f32); 17] = [
     ("bichos/lobo_pequeno", 0.9),
     ("bichos/urso", 1.3),
     ("bichos/tigre", 0.95),
@@ -60,6 +60,10 @@ pub const BICHOS: [(&str, f32); 15] = [
     ("bichos/escaravelho", 0.8),
     ("bichos/escaravelho_rainha", 1.3),
     ("bichos/rochoso", 1.2),
+    // Os BRANCOS da Geleira. Mesma altura dos parentes: e' o mesmo bicho de
+    // outra pelagem, e nao outra especie.
+    ("bichos/urso_polar", 1.3),
+    ("bichos/tigre_branco", 0.95),
 ];
 
 /// O bicho deste mob, se ele for bicho. Gente (pistoleiro, mago, arqueiro)
@@ -132,31 +136,19 @@ pub fn modelo_de_kind(kind: u16) -> Option<&'static str> {
         9 => "bichos/caranguejo_rei",
         // As outras ilhas.
         10 => "bichos/morsa",
-        // O urso e o tigre BRANCOS sao os mesmos modelos, com a tinta do
-        // gelo (`tinta_de_kind`). Modelo novo pra um bicho que so' muda de
-        // cor seria o dobro de arte e o dobro de memoria pelo mesmo bicho.
-        11 => "bichos/urso",
-        12 => "bichos/tigre",
+        // O urso e o tigre BRANCOS tem MODELO proprio, com a paleta do pelo
+        // trocada no gerador (`bichos.py: PELAGENS`). Ate' 21/09/2026 eram o
+        // urso e o tigre com um multiplicador branco por vertice, e o dono
+        // olhou e matou a ideia: "urso normal pintado de branco, isso nao
+        // existe, fica muito feio". Tinta por cima clareia TUDO — a listra do
+        // tigre junto, e tigre branco sem listra preta e' um gato.
+        11 => "bichos/urso_polar",
+        12 => "bichos/tigre_branco",
         13 => "bichos/escaravelho",
         14 => "bichos/escaravelho_rainha",
         15 => "bichos/rochoso",
         _ => return None,
     })
-}
-
-/// A TINTA de um mob, quando ele e' uma variante de cor de outro.
-///
-/// `None` = o modelo vai com as cores dele. E' assim que o Urso Branco sai do
-/// urso sem um `.vox` novo: mesma malha, multiplicador de cor por vertice —
-/// o mesmo truque que a montaria ja' usa pro grau (`render3d::tinta_do_grau`).
-/// `(cor 0..1, forca 0..1)` — o mesmo par que o resto do desenho usa.
-pub fn tinta_de_kind(kind: u16) -> Option<([f32; 3], f32)> {
-    match kind {
-        // Gelo: quase branco, com um fio de AZUL. Branco puro sobre neve
-        // some; o azul e' o que devolve a silhueta.
-        11 | 12 => Some(([0.80, 0.86, 1.0], 0.72)),
-        _ => None,
-    }
 }
 
 /// Quanto a escala do catalogo de chefes (`bosses::Chefe::escala`, pensada
@@ -1029,6 +1021,45 @@ mod tests {
             a.ombro,
         );
         a.ombro + d
+    }
+
+    /// Todo modelo da tabela tem arquivo, e todo mob aponta pra um da tabela.
+    ///
+    /// Ela cresceu duas vezes em um dia — o bestiario por ilha e, depois, os
+    /// brancos da Geleira — e um nome errado aqui nao da' erro nenhum: o
+    /// bicho some da tela e vira o fallback, calado.
+    #[test]
+    fn todo_modelo_de_bicho_tem_arquivo() {
+        let raiz = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/vox/");
+        for (nome, altura) in BICHOS {
+            let caminho = format!("{raiz}{nome}.vox");
+            assert!(
+                std::path::Path::new(&caminho).exists(),
+                "{nome}: sem .vox (rode tools/voxrender/bichos.py)"
+            );
+            assert!(altura > 0.0, "{nome}: altura {altura}");
+        }
+        for kind in 0..64u16 {
+            let Some(nome) = modelo_de_kind(kind) else {
+                continue;
+            };
+            assert!(
+                BICHOS.iter().any(|(n, _)| *n == nome),
+                "kind {kind} aponta pra {nome}, que nao esta' na tabela"
+            );
+        }
+    }
+
+    /// O urso e o tigre BRANCOS sao malha PROPRIA, e nao os normais tingidos.
+    /// Foi o dono quem reprovou a tinta: ela clareia a listra do tigre junto
+    /// com o pelo, e tigre branco sem listra preta e' um gato.
+    #[test]
+    fn os_brancos_tem_modelo_proprio() {
+        for (branco, normal) in [(11u16, 1u16), (12, 3)] {
+            let b = modelo_de_kind(branco).unwrap();
+            let n = modelo_de_kind(normal).unwrap();
+            assert_ne!(b, n, "o kind {branco} ainda usa a malha do {normal}");
+        }
     }
 
     #[test]

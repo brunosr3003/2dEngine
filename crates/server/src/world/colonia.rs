@@ -19,34 +19,27 @@
 use super::*;
 
 impl GameWorld {
-    /// A `Ilha` da colonia desta instancia, gerando se for a primeira visita.
-    pub(crate) fn colonia_de(
-        &mut self,
-        instancia: u32,
-        nome: &str,
-        nivel: u8,
-    ) -> &shared::terreno::Ilha {
-        self.colonias.entry(instancia).or_insert_with(|| {
+    /// A `Ilha` da colonia deste TAMANHO, gerando na primeira vez que alguem
+    /// daquele tamanho entra.
+    ///
+    /// A chave e' o RAIO, e nao a instancia: a semente e' uma so'
+    /// (`shared::colonia::SEMENTE`), entao duas colonias do mesmo tamanho sao
+    /// o mesmo relevo — guardar uma copia por jogador era pagar memoria por
+    /// uma diferenca que nao existe. Sao SEIS ilhas no maximo, pra qualquer
+    /// numero de jogadores.
+    pub(crate) fn colonia_de(&mut self, nivel: u8) -> &shared::terreno::Ilha {
+        // A chave e' o PLATO, em decimos de unidade: a ilha e' sempre a mesma
+        // e do mesmo tamanho, e a unica coisa que o nivel muda e' quanto chao
+        // sai aplainado em volta da praca. Cinco niveis = cinco relevos no
+        // maximo, pra qualquer numero de jogadores.
+        let plato = shared::colonia::plato_do_assentamento(nivel);
+        let chave = (plato * 10.0) as i32;
+        self.colonias.entry(chave).or_insert_with(|| {
             let t0 = std::time::Instant::now();
-            let i = shared::terreno::Ilha::gerar(
-                shared::colonia::semente(nome),
-                shared::colonia::raio_blocos(nivel),
-                shared::terreno::Bioma::Floresta,
-                shared::terreno::ESCALA_ALTURA,
-            );
-            tracing::info!("colonia de '{nome}' (inst {instancia}) pronta em {:?}", t0.elapsed());
+            let i = shared::terreno::Ilha::da_colonia(plato);
+            tracing::info!("colonia com plato {plato:.0} pronta em {:?}", t0.elapsed());
             i
         })
-    }
-
-    /// Joga fora a colonia de uma instancia que esvaziou.
-    ///
-    /// Regerar custa milissegundos e guardar custa memoria por jogador que
-    /// deslogou: a conta so' fecha de um lado.
-    pub(crate) fn esquece_colonia(&mut self, instancia: u32) {
-        if self.colonias.remove(&instancia).is_some() {
-            tracing::info!("colonia da instancia {instancia} liberada");
-        }
     }
 
     /// Horas desde a ultima colheita.
@@ -68,30 +61,106 @@ impl GameWorld {
             return;
         };
         let nivel = s.colonia.niveis[shared::colonia::eixo::RECURSOS];
-        let ganho = shared::colonia::colheita(nivel, horas);
+        let ganho = shared::colonia::colheita(&s.colonia.trabalhadores, nivel, horas);
         if ganho.is_empty() {
-            self.avisa_colonia(sid, "A ilha ainda não rendeu nada. Volte mais tarde.");
+            // Sem morador a ilha nao rende NADA, e dizer "volte mais tarde"
+            // mandaria o jogador esperar por uma coisa que nao vai acontecer.
+            let texto = if s.colonia.trabalhadores.is_empty() {
+                "Ninguém mora aqui ainda. Suba o Assentamento e contrate alguém."
+            } else {
+                "A ilha ainda não rendeu nada. Volte mais tarde."
+            };
+            self.avisa_colonia(sid, texto);
             return;
         }
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
-        let mut texto = Vec::new();
-        for (id, q) in &ganho {
-            if *id == shared::item_id::COPPER {
-                Self::pagar_em_cobre(s, *q, "colonia");
-            } else {
-                add_to_inventory(&mut s.inventory, *id, *q, None);
-            }
-            texto.push(format!("{q}× {id}"));
-        }
-        s.inventory_dirty = true;
-        s.colonia.colhida_em = (now_ms() / 1000) as i64;
-        self.avisa_colonia(
-            sid,
-            &format!("Colheita de {horas:.0}h: {}.", texto.join(", ")),
+        // A colheita vai pro BAU DA ILHA, e nao pra bolsa.
+        //
+        // Ia pra bolsa, e isso apagava a ilha como lugar: dava pra administrar
+        // a colonia inteira de outra ilha, sem nunca pisar nela. Agora colher
+        // enche o bau, e buscar e' uma viagem — que e' o que o dono pediu.
+        let espacos = shared::colonia::espacos_do_bau(
+            s.colonia.niveis[shared::colonia::eixo::BANCO],
         );
+        let mut texto = Vec::new();
+        let mut sobrou = false;
+        for (id, q) in &ganho {
+            let fora = shared::colonia::guardar_no_bau(&mut s.colonia.bau, espacos, *id, *q);
+            if fora > 0 {
+                sobrou = true;
+            } else {
+                texto.push(format!("{q}× {id}"));
+            }
+        }
+        if texto.is_empty() {
+            // Nada entrou: o relogio NAO e' zerado. Zerar apagaria as horas
+            // de trabalho de quem chegou com o bau cheio, e o jogador nao
+            // teria como saber o que perdeu.
+            self.avisa_colonia(sid, "O baú da ilha está cheio. Retire o que há nele primeiro.");
+            return;
+        }
+        s.colonia.colhida_em = (now_ms() / 1000) as i64;
+        let aviso = if sobrou {
+            format!(
+                "Colheita de {horas:.0}h no baú: {}. O resto não caibe — o baú está cheio.",
+                texto.join(", ")
+            )
+        } else {
+            format!("Colheita de {horas:.0}h, no baú da ilha: {}.", texto.join(", "))
+        };
+        self.avisa_colonia(sid, &aviso);
+        self.passo_de_tutorial(sid, shared::quests::tutorial::COLONIA_COLHER);
         self.save_pending = true;
+    }
+
+    /// RETIRAR: tira do bau o que couber na bolsa.
+    ///
+    /// O que nao couber FICA no bau. Devolver pro chao ou sumir com o item
+    /// seriam as duas formas de o jogador perder o que ele ja' tinha colhido.
+    pub(super) fn retirar_do_bau(&mut self, sid: SessionId) {
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        if s.colonia.bau.is_empty() {
+            self.avisa_colonia(sid, "O baú está vazio.");
+            return;
+        }
+        let mut levou = Vec::new();
+        let mut ficou = 0;
+        let mut resto: Vec<shared::InventorySlot> = Vec::new();
+        for slot in std::mem::take(&mut s.colonia.bau) {
+            if slot.qty == 0 {
+                continue;
+            }
+            if slot.item_id == shared::item_id::COPPER {
+                Self::pagar_em_cobre(s, slot.qty, "colonia");
+                levou.push(format!("{}× {}", slot.qty, slot.item_id));
+                continue;
+            }
+            if add_to_inventory(&mut s.inventory, slot.item_id, slot.qty, None) {
+                levou.push(format!("{}× {}", slot.qty, slot.item_id));
+            } else {
+                ficou += 1;
+                resto.push(slot);
+            }
+        }
+        s.colonia.bau = resto;
+        s.inventory_dirty = true;
+        self.save_pending = true;
+        let aviso = match (levou.is_empty(), ficou) {
+            (true, _) => "A bolsa está cheia: nada saiu do baú.".to_string(),
+            (false, 0) => format!("Do baú: {}.", levou.join(", ")),
+            (false, n) => format!(
+                "Do baú: {}. Ficaram {n} pilha(s) — a bolsa encheu.",
+                levou.join(", ")
+            ),
+        };
+        self.avisa_colonia(sid, &aviso);
+        if !levou.is_empty() {
+            self.passo_de_tutorial(sid, shared::quests::tutorial::COLONIA_RETIRAR);
+        }
     }
 
     /// MELHORAR um eixo.
@@ -123,24 +192,24 @@ impl GameWorld {
         }
         s.colonia.niveis[e] += 1;
         s.inventory_dirty = true;
-        let instancia = s.instancia;
         let novo = s.colonia.niveis[e];
-        let quem = s.name.clone();
         let entidade = s.entity;
         let nome = shared::colonia::eixo::NOMES[e];
         // TAMANHO muda o RELEVO. Regerar na hora, e nao so' descartar: sem
         // ilha nenhuma a fisica cai no mapa de tiles velho, e o jogador
         // atravessa o chao da propria colonia ate' o proximo login.
         if e == shared::colonia::eixo::TAMANHO {
-            self.esquece_colonia(instancia);
-            self.colonia_de(instancia, &quem, novo);
+            // Nao se DESCARTA mais a ilha antiga: ela e' de um TAMANHO, nao
+            // deste jogador, e pode haver outra gente do tamanho de antes.
+            self.colonia_de(novo);
+            let chave = (shared::colonia::plato_do_assentamento(novo) * 10.0) as i32;
             // A costa e' outra: quem estava na beirada pode ter virado agua.
             // Descer de novo e' mais barato que descobrir isso afogado.
             if let Some(ent) = entidade {
                 let onde = self.ecs.get::<&Position>(ent).ok().map(|p| p.0);
                 let destino = onde.and_then(|p| {
                     self.colonias
-                        .get(&instancia)
+                        .get(&chave)
                         .map(|i| i.terra_mais_proxima(p.x, p.y, 400.0))
                 });
                 if let (Some(d), Ok(mut p)) = (destino, self.ecs.get::<&mut Position>(ent)) {
@@ -150,6 +219,9 @@ impl GameWorld {
             let _ = self.mandar_terreno_da_colonia(sid);
         }
         self.avisa_colonia(sid, &format!("{nome} melhorado."));
+        if e == shared::colonia::eixo::ASSENTAMENTO {
+            self.passo_de_tutorial(sid, shared::quests::tutorial::COLONIA_ASSENTAMENTO);
+        }
         self.save_pending = true;
     }
 
@@ -160,12 +232,12 @@ impl GameWorld {
         let Some(s) = self.sessions.get(&sid) else {
             return false;
         };
+        let nivel = s.colonia.niveis[shared::colonia::eixo::ASSENTAMENTO];
         let _ = s.handle.to_client.send(ServerMessage::Colonia {
             aviso: shared::colonia::AvisoColonia::Terreno {
-                semente: shared::colonia::semente(&s.name),
-                raio: shared::colonia::raio_blocos(
-                    s.colonia.niveis[shared::colonia::eixo::TAMANHO],
-                ),
+                plato: shared::colonia::plato_do_assentamento(nivel),
+                assentamento: nivel,
+                trabalhadores: s.colonia.trabalhadores.clone(),
             },
         });
         true
@@ -203,6 +275,7 @@ impl GameWorld {
                 niveis: s.colonia.niveis,
                 horas,
                 colheita: shared::colonia::colheita(
+                    &s.colonia.trabalhadores,
                     s.colonia.niveis[shared::colonia::eixo::RECURSOS],
                     horas,
                 ),
@@ -210,6 +283,11 @@ impl GameWorld {
                 banco: shared::colonia::espacos_do_banco(
                     s.colonia.niveis[shared::colonia::eixo::BANCO],
                 ),
+                bau: s.colonia.bau.clone(),
+                trabalhadores: s.colonia.trabalhadores.clone(),
+                vagas: shared::colonia::vagas_de_trabalho(
+                    s.colonia.niveis[shared::colonia::eixo::ASSENTAMENTO],
+                ) as u8,
             },
         });
     }
@@ -257,6 +335,63 @@ impl GameWorld {
         self.mandar_para_zona(sid, &volta, chegada, Some("De volta ao porto."), None);
     }
 
+    /// CONTRATAR: poe (ou troca) o morador de uma vaga.
+    ///
+    /// A colheita e' contada ANTES, e nao depois: quem trocasse de oficio na
+    /// hora de colher levaria as 12 h do lenhador como se fossem do
+    /// minerador. Colher primeiro fecha o periodo com quem de fato trabalhou.
+    fn contratar_na_colonia(&mut self, sid: SessionId, vaga: u8, oficio: u8) {
+        let Some(p) = shared::colonia::Profissao::do_indice(oficio) else {
+            self.avisa_colonia(sid, "Esse ofício não existe.");
+            return;
+        };
+        let vagas = self
+            .sessions
+            .get(&sid)
+            .map(|s| {
+                shared::colonia::vagas_de_trabalho(
+                    s.colonia.niveis[shared::colonia::eixo::ASSENTAMENTO],
+                )
+            })
+            .unwrap_or(0);
+        if (vaga as usize) >= vagas {
+            self.avisa_colonia(
+                sid,
+                "Não há casa para mais ninguém. Suba o Assentamento primeiro.",
+            );
+            return;
+        }
+        self.colher_colonia(sid);
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        let t = &mut s.colonia.trabalhadores;
+        while t.len() <= vaga as usize {
+            t.push(p);
+        }
+        t[vaga as usize] = p;
+        t.truncate(vagas);
+        self.save_pending = true;
+        self.avisa_colonia(sid, &format!("{} mudou-se para a sua ilha.", p.nome()));
+        self.passo_de_tutorial(sid, shared::quests::tutorial::COLONIA_CONTRATAR);
+        let _ = self.mandar_terreno_da_colonia(sid);
+    }
+
+    /// DEMITIR: esvazia a vaga. A casa some e o rendimento dela para.
+    fn demitir_na_colonia(&mut self, sid: SessionId, vaga: u8) {
+        self.colher_colonia(sid);
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        if (vaga as usize) >= s.colonia.trabalhadores.len() {
+            return;
+        }
+        let quem = s.colonia.trabalhadores.remove(vaga as usize);
+        self.save_pending = true;
+        self.avisa_colonia(sid, &format!("{} foi embora.", quem.nome()));
+        let _ = self.mandar_terreno_da_colonia(sid);
+    }
+
     /// A porta de entrada de tudo o que a colonia pede.
     pub(super) fn handle_colonia(&mut self, sid: SessionId, pedido: shared::colonia::PedidoColonia) {
         use shared::colonia::PedidoColonia as P;
@@ -266,16 +401,49 @@ impl GameWorld {
             self.avisa_colonia(sid, "Você ainda não tem uma ilha.");
             return;
         }
+        // O que MEXE na ilha so' se faz DENTRO dela. Antes dava pra subir o
+        // assentamento, contratar e colher de qualquer canto do arquipelago —
+        // e uma ilha que se administra de longe nao e' um lugar, e' uma aba
+        // de menu. O dono pediu o contrario.
+        //
+        // A trava fica AQUI, na porta, e nao em cada braco: braco novo nasce
+        // travado. `Painel` fica de fora (olhar de longe nao mexe em nada) e
+        // `Visitar` tambem, que e' o que se faz PRA chegar.
+        let dentro = shared::colonia::e_colonia(&self.zona);
+        let mexe = !matches!(pedido, P::Painel | P::Visitar);
+        if mexe && !dentro {
+            self.avisa_colonia(sid, "Isso se faz na ilha. Fale com o Capitão do Porto.");
+            return;
+        }
         match pedido {
-            P::Painel => self.abrir_colonia(sid),
+            P::Painel => {
+                // O tutorial do mural fecha aqui: abrir o painel DENTRO da
+                // ilha e' o gesto. De fora nao conta — de fora nao e' mural.
+                if dentro {
+                    self.passo_de_tutorial(sid, shared::quests::tutorial::COLONIA_MURAL);
+                }
+                self.abrir_colonia(sid)
+            }
             P::Visitar => self.visitar_colonia(sid),
             P::Voltar => self.voltar_da_colonia(sid),
+            P::Retirar => {
+                self.retirar_do_bau(sid);
+                self.abrir_colonia(sid);
+            }
             P::Colher => {
                 self.colher_colonia(sid);
                 self.abrir_colonia(sid);
             }
             P::Melhorar { eixo } => {
                 self.melhorar_colonia(sid, eixo);
+                self.abrir_colonia(sid);
+            }
+            P::Contratar { vaga, oficio } => {
+                self.contratar_na_colonia(sid, vaga, oficio);
+                self.abrir_colonia(sid);
+            }
+            P::Demitir { vaga } => {
+                self.demitir_na_colonia(sid, vaga);
                 self.abrir_colonia(sid);
             }
         }
@@ -293,4 +461,111 @@ pub(crate) fn instancia_do_nome(nome: &str) -> u32 {
         h = h.wrapping_mul(16777619);
     }
     h.max(1)
+}
+
+#[cfg(test)]
+mod testes {
+    /// A instancia da SESSAO e a da ENTIDADE andam juntas — sempre.
+    ///
+    /// O filtro de AOI (`world.rs`, "candidatos por distancia") compara a
+    /// instancia da SESSAO com a da ENTIDADE, e entidade sem o componente
+    /// `Instancia` conta como 0. Entao pôr `s.instancia` sem pôr
+    /// `Instancia(i)` no corpo nao esconde o jogador dos outros: esconde o
+    /// MUNDO INTEIRO dele, inclusive ele mesmo. O snapshot chega com zero
+    /// entidades e a tela fica sem nada — foi o que aconteceu na colonia.
+    ///
+    /// A dungeon sempre fez os dois na mesma linha; a colonia copiou metade.
+    /// Este teste le' o FONTE porque o defeito nao e' de valor, e' de par:
+    /// um teste de runtime precisaria de um mundo inteiro pra dizer o que
+    /// duas linhas de codigo ja' dizem.
+    #[test]
+    fn instancia_da_sessao_e_da_entidade_andam_juntas() {
+        let fonte = include_str!("../world.rs");
+        let atribui = fonte
+            .lines()
+            .filter(|l| {
+                let l = l.trim();
+                l.starts_with("s.instancia =") || l.starts_with("session.instancia =")
+            })
+            .count();
+        assert!(atribui > 0, "ninguem mais define a instancia da sessao?");
+        // Toda atribuicao em `world.rs` tem que ser acompanhada, no mesmo
+        // arquivo, de um `Instancia(...)` indo pra entidade.
+        assert!(
+            fonte.contains("Instancia(instancia_pendente)"),
+            "a instancia da sessao foi definida sem por o componente na entidade: \
+             o jogador nao vai ver nem a si mesmo"
+        );
+    }
+
+    /// A ilha e' a MESMA a cada visita: a instancia sai do nome, e nada mais.
+    #[test]
+    fn a_instancia_e_estavel_e_nunca_zero() {
+        for nome in ["sadasdas", "brunji", "A", "ÁÊÎÕÜ"] {
+            let a = super::instancia_do_nome(nome);
+            assert_eq!(a, super::instancia_do_nome(nome), "{nome}: instavel");
+            // Zero e' "fora de instancia" — o mundo comum. Uma colonia que
+            // caisse em 0 seria visivel de dentro do arquipelago.
+            assert_ne!(a, 0, "{nome}: caiu em zero");
+        }
+        assert_ne!(
+            super::instancia_do_nome("brunji"),
+            super::instancia_do_nome("brunja")
+        );
+    }
+}
+
+#[cfg(test)]
+mod testes_do_relevo {
+    /// O relevo da colonia e' guardado por TAMANHO, e nunca por jogador.
+    ///
+    /// O dono recusou a ilha por personagem — "não quero que seja única, vai
+    /// pesar e ter margem pra erro" — e o peso e' literal: o campo de altura
+    /// de raio 160 sao 102.400 colunas. Uma por jogador no processo cresce com
+    /// quem entra e nada a limita; uma por TAMANHO sao SEIS, com mil jogadores
+    /// ou com um.
+    ///
+    /// O que sobra por personagem e' a INSTANCIA (ninguem entra na sua ilha) e
+    /// os niveis dos eixos. O relevo, nao.
+    #[test]
+    fn o_relevo_e_por_tamanho_e_nao_por_jogador() {
+        let fonte = include_str!("colonia.rs");
+        assert!(
+            fonte.contains("self.colonias.entry(raio)"),
+            "o cache de relevo voltou a ser por jogador"
+        );
+        // Seis tamanhos, e so'.
+        let raios: std::collections::HashSet<i32> = (0..=shared::colonia::NIVEL_MAX)
+            .map(shared::colonia::raio_blocos)
+            .collect();
+        assert!(
+            raios.len() <= 6,
+            "{} tamanhos distintos: o cache deixou de ter teto",
+            raios.len()
+        );
+    }
+
+    /// Dois personagens diferentes pisam no MESMO chao.
+    #[test]
+    fn dois_jogadores_veem_a_mesma_ilha() {
+        let a = shared::colonia::semente("brunji");
+        let b = shared::colonia::semente("outro_qualquer");
+        assert_eq!(a, b, "a semente voltou a sair do nome");
+        let ilha = |s: i32| {
+            shared::terreno::Ilha::gerar(
+                s,
+                shared::colonia::raio_blocos(1),
+                shared::terreno::Bioma::Floresta,
+                shared::terreno::ESCALA_ALTURA,
+            )
+        };
+        let (ia, ib) = (ilha(a), ilha(b));
+        for (x, z) in [(0.0, 0.0), (12.5, -8.0), (-30.0, 22.5), (60.0, 60.0)] {
+            assert_eq!(
+                ia.altura(x, z),
+                ib.altura(x, z),
+                "({x}, {z}) difere entre dois personagens"
+            );
+        }
+    }
 }

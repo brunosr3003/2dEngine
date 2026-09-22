@@ -228,7 +228,7 @@ pub fn item_template(item_id: u16) -> ItemTemplate {
 /// compatibilidade, mas peças atuais sempre o deixam vazio.
 pub const MAX_AFFIXES: usize = 4;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct ItemInstance {
     /// GRAU (a cor) do item, 1 cinza .. 5 lendario. Nome `rarity` mantido por
     /// compat de wire/DB. Sai do nivel do item no drop/craft
@@ -339,7 +339,7 @@ pub fn bonus_do_tier(tier: u8) -> f32 {
 }
 
 /// Slot de affix — name_id=0 = vazio.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 pub struct AffixSlot {
     pub name_id: u16, // 0 = vazio
     pub stat: u8,     // AffixStat as u8

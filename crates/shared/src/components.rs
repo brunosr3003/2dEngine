@@ -53,7 +53,10 @@ pub enum EntityKind {
 /// `instance`: Some(...) para itens equipáveis dropados (atributos fixos
 /// + cor + tier + refino). None pra itens stackáveis (gold, poções) ou
 /// itens legacy pre-Fase A — esses usam stats base via `item_bonus`.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+// `PartialEq` (sem `Eq`): a instancia tem float nos afixos. Existe porque o
+// BAU DA ILHA (`colonia::DadosColonia`) e' comparado inteiro pro painel saber
+// se mudou.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]
 pub struct InventorySlot {
     pub item_id: u16,
     pub qty: u32,

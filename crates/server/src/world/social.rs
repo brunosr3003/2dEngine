@@ -148,7 +148,10 @@ impl GameWorld {
         let mut bolsa = s.inventory.clone();
         if !anexos
             .iter()
-            .all(|a| add_to_inventory(&mut bolsa, a.item_id, a.qtd, None))
+            // A INSTANCIA vai junto. Com `None` aqui o correio entregava o
+            // item pelado — equipamento sem tier nem refino, pet sem nivel
+            // nem skills, montaria sem cor — e nada avisava.
+            .all(|a| add_to_inventory(&mut bolsa, a.item_id, a.qtd, a.instance))
         {
             let _ = aceitou.send(false);
             return;
@@ -237,8 +240,8 @@ mod tests {
         let (ack, mut rx) = tokio::sync::oneshot::channel();
         let antes = s.inventory.clone();
         let anexos = vec![
-            shared::social::Anexo { item_id: 1, qtd: 1 },
-            shared::social::Anexo { item_id: 2, qtd: 1 },
+            shared::social::Anexo { item_id: 1, qtd: 1, instance: None },
+            shared::social::Anexo { item_id: 2, qtd: 1, instance: None },
         ];
         w.on_correio_entrega(crate::correio_admin::Entrega {
             sid,
@@ -261,7 +264,7 @@ mod tests {
                 id: 1,
                 token: "x".into(),
             },
-            anexos: vec![shared::social::Anexo { item_id: 1, qtd: 1 }],
+            anexos: vec![shared::social::Anexo { item_id: 1, qtd: 1, instance: None }],
             aceitou: ack,
         });
         assert!(rx.try_recv().unwrap());
@@ -274,7 +277,7 @@ mod tests {
                 id: 1,
                 token: "x".into(),
             },
-            anexos: vec![shared::social::Anexo { item_id: 1, qtd: 1 }],
+            anexos: vec![shared::social::Anexo { item_id: 1, qtd: 1, instance: None }],
             aceitou: ack,
         });
         assert!(!rx.try_recv().unwrap());

@@ -197,7 +197,11 @@ pub mod tests {
             para: None,
             assunto: "Evento".into(),
             texto: "Recompensa de teste".into(),
-            anexos: vec![Anexo { item_id: 1, qtd: 3 }, Anexo { item_id: 2, qtd: 4 }],
+            anexos: vec![Anexo { item_id: 1, qtd: 3,
+                    instance: None,
+                }, Anexo { item_id: 2, qtd: 4,
+                    instance: None,
+                }],
         };
         assert!(enviar(p, "Ana", 1, &pedido).await.is_err());
         sqlx::query("INSERT INTO social_staff VALUES(1,'admin'),(2,'mod')")

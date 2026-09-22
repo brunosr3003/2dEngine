@@ -485,6 +485,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_COLONIA").is_ok() {
+        terreno::previa_da_colonia(&render3d::material_solido()).await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_FICHA").is_ok() {
         ficha_ui::previa().await;
         return;
@@ -1145,8 +1150,26 @@ impl Jogo {
             ServerMessage::Colonia { aviso } => {
                 use shared::colonia::AvisoColonia as A;
                 match aviso {
-                    A::Estado { niveis, horas, colheita, custos, banco } => {
-                        let e = colonia_ui::Estado { niveis, horas, colheita, custos, banco };
+                    A::Estado {
+                        niveis,
+                        horas,
+                        colheita,
+                        custos,
+                        banco,
+                        bau,
+                        trabalhadores,
+                        vagas,
+                    } => {
+                        let e = colonia_ui::Estado {
+                            niveis,
+                            horas,
+                            colheita,
+                            custos,
+                            banco,
+                            bau,
+                            trabalhadores,
+                            vagas,
+                        };
                         // Pedido do porto ABRE; colher e melhorar so' atualizam
                         // o que ja' esta' aberto.
                         if self.colonia.aberto() {
@@ -1156,13 +1179,22 @@ impl Jogo {
                             self.colonia.abrir(e);
                         }
                     }
-                    A::Terreno { semente, raio } => {
-                        // O relevo da colonia nao sai da zona, sai do
-                        // personagem. Chega depois do MapChange, que e' quem
-                        // limpou o terreno velho.
-                        self.terreno = Some(terreno::Terreno::da_colonia(semente, raio));
-                        self.mapa = mapa::Mapa::da_colonia(semente, raio);
-                        self.construcoes = construcoes::Construcoes::vazia();
+                    A::Terreno {
+                        plato,
+                        assentamento: _,
+                        trabalhadores,
+                    } => {
+                        // O relevo da colonia nao sai da zona: a ilha e' fixa
+                        // e o que varia e' o PLATO do assentamento. Chega
+                        // depois do MapChange, que e' quem limpou o terreno
+                        // velho.
+                        self.terreno = Some(terreno::Terreno::da_colonia(plato));
+                        self.mapa = mapa::Mapa::da_colonia(plato);
+                        // E o que foi CONSTRUIDO em cima: a casa do jogador
+                        // mais uma por morador. Antes isto era `vazia()` —
+                        // a colonia era chao pelado.
+                        self.construcoes =
+                            construcoes::Construcoes::da_colonia(plato, trabalhadores);
                         self.map = None;
                         self.ir_para.parar();
                     }
@@ -2586,13 +2618,6 @@ impl Jogo {
                 let g = self.guarda_roupa_salvo.clone();
                 self.guarda_roupa.abrir(&g);
             }
-            Item::MinhaIlha => {
-                // Quem manda e' o servidor: se a quest ainda nao passou, ele
-                // recusa, e o cliente nao precisa saber a regra duas vezes.
-                self.envia(ClientMessage::Colonia {
-                    pedido: shared::colonia::PedidoColonia::Painel,
-                });
-            }
             Item::Presenca => {
                 for pedido in self.presenca.abrir() {
                     self.envia(pedido);
@@ -3896,6 +3921,19 @@ impl Jogo {
                 let centro = self.world.self_pos()?;
                 let t = self.terreno.as_ref()?;
                 Some(t.altura_apoio(centro.x, centro.y, shared::ENTITY_RADIUS))
+            })
+            // Sem corpo E sem posicao: o chao da ORIGEM, que e' pra onde
+            // `desenhar_mundo` aponta a camera nesse caso.
+            //
+            // Sem isto `cam_altura` ficava em `f32::MIN` e a camera olhava pro
+            // infinito negativo: o mundo inteiro caia fora da tela e sobrava a
+            // cor de fundo. Foi assim que a colonia apareceu "toda azul e
+            // vazia" com o relevo CARREGADO — 121 pedacos prontos, nenhum na
+            // tela. Um defeito de entidade virou um defeito de camera, e o de
+            // camera escondeu o de entidade.
+            .or_else(|| {
+                let t = self.terreno.as_ref()?;
+                Some(t.altura_apoio(0.0, 0.0, shared::ENTITY_RADIUS))
             });
         let Some(alvo) = alvo else { return };
         (self.cam_altura, self.cam_altura_vel) = render3d::altura_da_camera(

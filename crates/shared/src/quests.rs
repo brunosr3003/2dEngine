@@ -89,6 +89,16 @@ pub mod objective_kind {
     /// (`obj_target` = `tutorial::*`). O cliente avisa com
     /// `ClientMessage::Tutorial` quando o jogador faz o gesto.
     pub const TUTORIAL: u8 = 17;
+    /// Ir a' PROPRIA ilha (`colonia::ZONA`) e pisar nela. Conclui ao chegar,
+    /// como VIAGEM — e pelo mesmo motivo de existir separado dela: a colonia
+    /// nao esta' em `terreno::ARQUIPELAGO` e nao tem indice pra `obj_target`.
+    ///
+    /// Ela nasceu porque o passo da escritura era um TALK com o Capitao, o
+    /// MESMO NPC do passo anterior e do seguinte: o jogador falava uma vez,
+    /// recebia a ilha e a viagem pra Geleira na mesma conversa, e zarpava sem
+    /// nunca ter posto o pe' la'. Um objetivo que se cumpre sozinho no
+    /// caminho de outro nao e' um objetivo.
+    pub const COLONIA: u8 = 18;
 }
 
 /// As acoes que os passos tutoriais ensinam (`obj_target` de TUTORIAL).
@@ -110,6 +120,48 @@ pub mod tutorial {
     /// Evoluiu uma habilidade de tier, gastando Energia.
     pub const EVOLUIR_SKILL: u16 = 8;
 
+    // ── A PROPRIA ILHA (docs/COLONIA.md) ──
+    //
+    // A ilha tem regra propria e nenhuma delas esta' em outro lugar do jogo:
+    // o painel abre num MURAL (e nao no Menu), a colheita cai num BAU (e nao
+    // na bolsa) e ela so' rende com MORADOR. Tres coisas que o jogador nao
+    // tem como adivinhar — e ele chega la' uma vez, no meio do capitulo I.
+    /// Interagiu com o mural da ilha.
+    pub const COLONIA_MURAL: u16 = 9;
+    /// Subiu o assentamento (casa → vila).
+    pub const COLONIA_ASSENTAMENTO: u16 = 10;
+    /// Contratou o primeiro morador.
+    pub const COLONIA_CONTRATAR: u16 = 11;
+    /// Colheu pro bau da ilha.
+    pub const COLONIA_COLHER: u16 = 12;
+    /// Tirou do bau pra bolsa.
+    pub const COLONIA_RETIRAR: u16 = 13;
+
+    /// Este tutorial tem condicao de ESTADO, e nao so' de acao?
+    ///
+    /// Os cinco primeiros sao toques na interface: quem ja' os fez pode
+    /// faze-los de novo, entao esperar o evento sempre funciona. Os tres
+    /// ultimos mexem em SALDO — Energia, ponto de atributo, tier de skill —
+    /// e o saldo pode ja' estar gasto quando o passo abre.
+    ///
+    /// Foi assim que o dono travou a historia em 21/09/2026: chegou ao nivel
+    /// 4 com os pontos JA' gastos, o passo "coloque um ponto" abriu sem haver
+    /// ponto pra gastar, e nao havia como fechar ele antes do nivel 5.
+    pub fn tem_estado(acao: u16) -> bool {
+        matches!(
+            acao,
+            COLETA_ENERGIA
+                | PONTO_ATRIBUTO
+                | EVOLUIR_SKILL
+                // Os da ilha tambem sao de SALDO, e pela mesma razao: quem ja'
+                // subiu o assentamento ou ja' tem morador nao teria como
+                // refazer o gesto, e a historia travaria na propria ilha —
+                // longe do Capitao, que e' a unica saida de la'.
+                | COLONIA_ASSENTAMENTO
+                | COLONIA_CONTRATAR
+        )
+    }
+
     /// O que fazer, curto, pro rastreador.
     pub fn instrucao(acao: u16) -> &'static str {
         match acao {
@@ -121,6 +173,11 @@ pub mod tutorial {
             COLETA_ENERGIA => "Junte Energia nos cristais azuis",
             PONTO_ATRIBUTO => "Menu › Ficha: gaste um ponto",
             EVOLUIR_SKILL => "Menu › Habilidades: evolua um tier",
+            COLONIA_MURAL => "Toque no mural, na praça da ilha",
+            COLONIA_ASSENTAMENTO => "No mural: melhore o Assentamento",
+            COLONIA_CONTRATAR => "No mural: escolha um ofício na casa vazia",
+            COLONIA_COLHER => "No mural: Colher",
+            COLONIA_RETIRAR => "No mural: Retirar, do baú da ilha",
             _ => "Siga a dica",
         }
     }
@@ -1267,5 +1324,50 @@ mod testes_dos_givers {
         assert!(mesmos <= 1, "{mesmos} passos seguidos com o mesmo NPC");
         let npcs: std::collections::HashSet<u16> = bosque().map(|d| d.giver).collect();
         assert!(npcs.len() >= 8, "so' {} NPCs dando missao", npcs.len());
+    }
+}
+
+#[cfg(test)]
+mod testes_do_tutorial_travado {
+    use super::tutorial as t;
+
+    /// Os tutoriais de SALDO são exatamente os três, e nenhum a mais.
+    ///
+    /// A distinção não é cosmética: quem tem estado precisa ser fechado pelo
+    /// estado, porque o saldo pode já estar gasto quando o passo abre. Quem
+    /// não tem é um toque na interface, que se refaz sempre.
+    ///
+    /// O dono travou a história em 21/09/2026 chegando ao nível 4 com os
+    /// pontos JÁ gastos: o passo "coloque um ponto" abriu sem haver ponto
+    /// para gastar, e como a história é sequencial, **tudo parou** até o
+    /// nível 5 dar um ponto novo.
+    #[test]
+    fn so_os_de_saldo_precisam_de_estado() {
+        for a in [t::COLETA_ENERGIA, t::PONTO_ATRIBUTO, t::EVOLUIR_SKILL] {
+            assert!(t::tem_estado(a), "{a} mexe em saldo e precisa de estado");
+        }
+        for a in [
+            t::POCAO_LIMIAR,
+            t::SKILL_AUTO,
+            t::AUTO_COMBATE,
+            t::AUTO_COLETA,
+            t::MAPA_IR,
+        ] {
+            assert!(
+                !t::tem_estado(a),
+                "{a} é toque de interface: esperar o evento sempre funciona"
+            );
+        }
+        // E todo tutorial que existe está classificado de um lado ou do
+        // outro — um novo sem classificação cairia no evento por omissão, que
+        // é justamente onde este defeito morava.
+        for a in t::POCAO_LIMIAR..=t::EVOLUIR_SKILL {
+            let _ = t::tem_estado(a);
+            assert_ne!(
+                t::instrucao(a),
+                "Siga a dica",
+                "o tutorial {a} não tem instrução — foi acrescentado sem passar por aqui?"
+            );
+        }
     }
 }
