@@ -69,7 +69,65 @@ pub const NIVEL_MAX: u8 = 5;
 /// pra sempre. O que cresce e' o ASSENTAMENTO em cima dela
 /// (`plato_do_assentamento`), que so' aplaina mais chao em volta da mesma
 /// praca — nenhuma coluna que ja' estava plana muda.
-pub const RAIO_BLOCOS: i32 = 280;
+pub const RAIO_BLOCOS: i32 = 180;
+
+// ──────────────────────── a ilhota, desenhada ────────────────────────
+//
+// Desde 22/09/2026 o relevo da colônia é DESENHADO, como o da Ilha Mágica, e
+// não sorteado por Perlin. O dono, vendo a maquete:
+//
+// > "a ilha que está sendo mostrada em 3D hoje é a ilha que era antigamente.
+// > Como não vai ter mais como andar na ilha, tem que ser algo muito mais
+// > simples e visualmente agradável: tem que ser uma ilhota mesmo, uma praia,
+// > quase que dá pra ver tudo em 360, com o centro sendo a cidade."
+//
+// **Encolher o raio não resolvia.** Medido: com a mesma semente,
+// `Forma::de(semente, raio)` ESCALA o contorno, então a ilha ficava com ~37%
+// de terra em qualquer raio — de 280 blocos a 120 — e o platô do assentamento
+// (81 u com a rampa) só coube nos 140 u originais. Diminuir a ilha só afogava
+// a cidade: o platô seco caía de 84% para 26%.
+//
+// Desenhada, a ilhota é o que ela precisa ser: redonda o bastante para caber
+// na tela inteira, com a cidade no meio e praia em volta.
+
+/// O raio médio da ilhota, em unidades de mundo.
+pub const RAIO: f32 = RAIO_BLOCOS as f32 * crate::terreno::BLOCO * 0.94;
+/// Altura do meio da ilhota, antes de a praça aplainar.
+pub const ALTURA_TOPO: f32 = 9.0;
+/// Altura da ORLA: logo acima do mar, que é o que faz ela ler como praia.
+pub const ALTURA_ORLA: f32 = 0.8;
+/// O fundo do mar em volta.
+pub const NIVEL_FUNDO: i32 = -8;
+
+/// O raio da ilhota naquela direção.
+///
+/// Dois senos e nada mais: a costa precisa ondular para não parecer uma
+/// moeda, e ruído de verdade seria pagar fbm por coluna para desenhar uma
+/// forma que cabe em duas linhas. Determinístico, então cliente e servidor
+/// concordam sem combinar nada.
+pub fn raio_na_direcao(ang: f32) -> f32 {
+    RAIO * (1.0 + 0.10 * (ang * 3.0 + 0.7).sin() + 0.05 * (ang * 5.0 - 1.9).sin())
+}
+
+/// O bloco de topo da coluna, em índice de bloco. A ÚNICA fonte do relevo da
+/// colônia — a praça (`Cidade::aplainar`) entra depois, por cima.
+pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
+    let (x, z) = (
+        bx as f32 * crate::terreno::BLOCO,
+        bz as f32 * crate::terreno::BLOCO,
+    );
+    let d = (x * x + z * z).sqrt();
+    let r = raio_na_direcao(z.atan2(x));
+    if d >= r {
+        return NIVEL_FUNDO;
+    }
+    // Quadrática: quase plana no meio (onde a cidade vai) e caindo para a
+    // praia. No pior ponto isso dá 0,12 bloco de degrau por coluna — não há
+    // como criar paredão aqui.
+    let t = d / r;
+    let h = ALTURA_TOPO + (ALTURA_ORLA - ALTURA_TOPO) * t * t;
+    (h / crate::terreno::BLOCO).round() as i32 - 1
+}
 
 /// O raio da ilha. O nivel sobrou da versao que crescia e e' ignorado.
 pub fn raio_blocos(_nivel: u8) -> i32 {
@@ -82,7 +140,11 @@ pub fn raio_blocos(_nivel: u8) -> i32 {
 /// APLAINADO em volta da mesma praca, no mesmo nivel de sempre. Crescer o
 /// plato nunca mexe no que ja' estava plano — a rampa e' que anda pra fora.
 pub fn plato_do_assentamento(nivel: u8) -> f32 {
-    22.0 + 9.0 * nivel.clamp(1, NIVEL_MAX) as f32
+    // Encolheu junto com a ilhota. O piso é o platô de uma cidade normal do
+    // mundo (`Cidade::RAIO_PLATO`, 28 u), que o comentário de lá descreve
+    // como "grande o bastante pro anel de ofícios caber inteiro no plano" —
+    // então o nível 2 já cabe tudo, e os de cima só abrem espaço.
+    16.0 + 4.0 * nivel.clamp(1, NIVEL_MAX) as f32
 }
 
 /// O que o assentamento E', pelo nivel. E' o nome que o jogador ve' e o que
@@ -655,38 +717,52 @@ mod testes_do_chao {
     ///
     /// Roda sobre as ilhas de VERDADE (`Ilha::da_colonia`), e nao sobre os
     /// numeros: o que precisa ser igual e' o chao, nao a formula.
-    /// A ilha tem CAIS, em todo nivel, e ele nao muda de lugar.
+    /// A ILHOTA CABE NUMA OLHADA, e a cidade fica no meio dela.
     ///
-    /// E' por ele que se sai — o barqueiro mora la' (`BARQUEIRO_DA_ILHA`). Uma
-    /// colonia sem cais e' uma armadilha: o jogador chega e nao tem como
-    /// voltar a nao ser por menu, que foi exatamente o que o dono recusou
-    /// ("tem q ter um porto na ilha fisico se n perde o sentido").
+    /// Substitui `a_colonia_tem_cais_e_ele_fica_no_lugar`, que morreu com o
+    /// que ele guardava: o cais existia porque se ANDAVA na colônia e se saía
+    /// dela de barco. Desde que ela virou painel não há caminhada nem saída
+    /// física — o dono: "como não vai ter mais como andar na ilha, tem que ser
+    /// uma ilhota mesmo, uma praia, quase que dá pra ver tudo em 360, com o
+    /// centro sendo a cidade".
     ///
-    /// Se ele mudasse de lugar entre niveis, subir o assentamento moveria a
-    /// saida — e quem conhecia a ilha teria que reaprender onde e' a porta.
+    /// Então o que precisa ser garantido mudou, e é isto: o assentamento
+    /// inteiro cabe dentro da ilhota com praia sobrando, em TODO nível.
     #[test]
-    fn a_colonia_tem_cais_e_ele_fica_no_lugar() {
-        let primeiro = crate::terreno::Gerador::da_colonia(plato_do_assentamento(1))
-            .porto()
-            .expect("a colonia nasceu sem cais: nao ha' como sair dela")
-            .centro;
-        for n in 2..=NIVEL_MAX {
-            let p = crate::terreno::Gerador::da_colonia(plato_do_assentamento(n))
-                .porto()
-                .unwrap_or_else(|| panic!("nivel {n}: a colonia ficou sem cais"))
-                .centro;
-            assert_eq!(p, primeiro, "nivel {n}: o cais mudou de lugar");
+    fn a_ilhota_cabe_numa_olhada_com_a_cidade_no_meio() {
+        for n in 1..=NIVEL_MAX {
+            let g = crate::terreno::Gerador::da_colonia(plato_do_assentamento(n));
+            let c = g.cidade().expect("sem praça");
+            assert_eq!(c.centro(), CHEGADA, "nível {n}: a praça saiu do centro");
+            assert!(g.porto().is_none(), "nível {n}: a ilhota não tem cais");
+
+            // O platô MAIS a rampa cabem, com praia sobrando. Sem a folga a
+            // cidade encostaria na água e o anel de ofícios ficaria metade no
+            // barranco — que foi o que o dono viu quando a ilha era a antiga.
+            let fim_da_rampa = plato_do_assentamento(n) + crate::terreno::Cidade::RAMPA;
+            let menor_raio = (0..64)
+                .map(|k| raio_na_direcao(k as f32 / 64.0 * std::f32::consts::TAU))
+                .fold(f32::INFINITY, f32::min);
+            assert!(
+                menor_raio > fim_da_rampa + 15.0,
+                "nível {n}: a rampa acaba a {fim_da_rampa:.0} u e a costa mais \
+                 perto está a {menor_raio:.0} u — não sobra praia"
+            );
         }
-        // E ele fica LONGE da praca: o cais e' na costa, e a caminhada entre
-        // os dois e' o que faz a ilha ter tamanho.
-        let praca = crate::terreno::Gerador::da_colonia(plato_do_assentamento(1))
-            .cidade()
-            .expect("sem praca")
-            .centro();
+
+        // E ela CABE NA TELA: a ilhota inteira num raio que a câmera da
+        // maquete enquadra. A antiga tinha 140 u de raio e o dono via um
+        // pedaço de ilha, não uma ilhota.
+        assert!(RAIO < 90.0, "ilhota de {RAIO:.0} u não cabe numa olhada");
+
+        // A COSTA ONDULA: uma moeda perfeita não lê como ilha.
+        let raios: Vec<f32> = (0..64)
+            .map(|k| raio_na_direcao(k as f32 / 64.0 * std::f32::consts::TAU))
+            .collect();
+        let (mn, mx) = raios.iter().fold((f32::MAX, 0.0f32), |a, r| (a.0.min(*r), a.1.max(*r)));
         assert!(
-            praca.distance(primeiro) > 30.0,
-            "cais a {:.0}u da praca: eles viraram o mesmo lugar",
-            praca.distance(primeiro)
+            mx - mn > RAIO * 0.12,
+            "costa quase circular ({mn:.0}..{mx:.0} u): parece uma moeda"
         );
     }
 

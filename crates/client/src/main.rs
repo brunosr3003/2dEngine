@@ -488,7 +488,7 @@ async fn main() {
     }
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_COLONIA").is_ok() {
-        terreno::previa_da_colonia(&render3d::material_solido()).await;
+        terreno::previa_da_colonia(&render3d::material_solido(), &vox).await;
         return;
     }
     #[cfg(debug_assertions)]
@@ -5327,7 +5327,7 @@ impl Jogo {
         }
         {
             let nome_item = |id: u16| self.bolsa.nome(id);
-            if let Some(pedido) = self.colonia.desenha(&nome_item, &self.solido) {
+            if let Some(pedido) = self.colonia.desenha(&nome_item, &self.solido, &self.vox) {
                 self.envia(ClientMessage::Colonia { pedido });
             }
         }

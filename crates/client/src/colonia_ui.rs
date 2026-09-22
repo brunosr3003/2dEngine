@@ -41,8 +41,18 @@ pub struct ColoniaUi {
     /// servidor manda `AvisoColonia::Terreno` — e nao a cada abertura: assar
     /// a vegetacao custa alguns milissegundos, e o painel abre muito.
     maquete: Option<Maquete>,
-    /// O giro da maquete. Lento: ela e' pra ser olhada, nao pra hipnotizar.
+    /// O giro da maquete. Anda sozinho devagar; o dedo manda quando encosta.
     giro: f32,
+    /// Arrastando a maquete: onde o dedo estava no quadro passado.
+    ///
+    /// O dono: "a colônia 3D fica literalmente um 3D na lateral esquerda que
+    /// você consegue movimentar para direita e esquerda para mudar a câmera
+    /// de lugar". Enquanto o dedo está nela o giro automático para — senão a
+    /// ilha escorregaria por baixo do dedo.
+    arrasto: Option<f32>,
+    /// A coluna da direita rola: ela tem colheita, baú, três eixos e até seis
+    /// moradores, e isso não cabe em tela de celular.
+    rolagem: crate::rolagem::Rolagem,
 }
 
 struct Maquete {
@@ -50,6 +60,12 @@ struct Maquete {
     construcoes: crate::construcoes::Construcoes,
     /// Centro do assentamento: e' pra ele que a camera olha.
     centro: Vec2,
+    /// Cada morador e o lugar onde ele fica em pe', na porta do oficio dele.
+    ///
+    /// Calculado aqui e nao no desenho porque sai da VILA, e a vila e' uma
+    /// varredura: refazer por quadro seria pagar a mesma conta trinta vezes
+    /// por segundo pra um resultado que so' muda quando alguem e' contratado.
+    moradores: Vec<(shared::colonia::Profissao, Vec2)>,
 }
 
 impl ColoniaUi {
@@ -60,16 +76,17 @@ impl ColoniaUi {
         trabalhadores: Vec<shared::colonia::Profissao>,
     ) {
         let terreno = crate::terreno::Terreno::da_colonia(plato);
-        let centro = shared::terreno::Gerador::da_colonia(plato)
-            .cidade()
-            .map(|c| c.centro())
-            .unwrap_or_default();
+        let ger = shared::terreno::Gerador::da_colonia(plato);
+        let centro = ger.cidade().map(|c| c.centro()).unwrap_or_default();
+        let moradores = onde_ficam(&ger, &trabalhadores);
         self.maquete = Some(Maquete {
             terreno,
             construcoes: crate::construcoes::Construcoes::da_colonia(plato, trabalhadores),
             centro: vec2(centro.x, centro.y),
+            moradores,
         });
     }
+
 
     pub fn abrir(&mut self, e: Estado) {
         self.estado = Some(e);
@@ -96,6 +113,7 @@ impl ColoniaUi {
         &mut self,
         nome_item: &dyn Fn(u16) -> String,
         solido: &Material,
+        vox: &crate::vox::VoxCache,
     ) -> Option<PedidoColonia> {
         // A maquete vive mesmo com o painel fechado? Nao: assar e' barato o
         // bastante pra refazer, e manter o relevo na memoria o tempo todo
@@ -106,9 +124,15 @@ impl ColoniaUi {
             let c = mq.centro;
             mq.terreno.atualiza(c, 3, 8);
         }
-        self.giro += get_frame_time() * 0.18;
-        estilo::no_painel(estilo::escala_do_painel(600.0, 660.0), || {
-            self.desenha_na_escala(nome_item, solido)
+        // O giro automático só corre quando ninguém está arrastando.
+        if self.arrasto.is_none() {
+            self.giro += get_frame_time() * 0.12;
+        }
+        // O painel cresceu: era 600x660 e o dono disse que "o menu da Minha
+        // Ilha está muito feio, pra começar que está pequeno". Agora ele
+        // ocupa a tela com folga, que é o que permite as duas colunas.
+        estilo::no_painel(estilo::escala_do_painel(1040.0, 720.0), || {
+            self.desenha_na_escala(nome_item, solido, vox)
         })
     }
 
@@ -116,24 +140,19 @@ impl ColoniaUi {
         &mut self,
         nome_item: &dyn Fn(u16) -> String,
         solido: &Material,
+        vox: &crate::vox::VoxCache,
     ) -> Option<PedidoColonia> {
         let e = self.estado.as_ref()?.clone();
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
         let linha_h = 86.0 * f;
-        let w = (600.0 * f).min(seguro.w - 16.0);
-        // A altura conta as VAGAS: sem isso o rodape cobria os moradores, que
-        // foi o mesmo defeito do painel de criacao de personagem.
-        let vagas_h = if e.vagas > 0 {
-            32.0 * f + 48.0 * f * e.vagas as f32
-        } else {
-            0.0
-        };
-        // A MAQUETE ocupa uma faixa no topo. Altura fixa em fracao da tela: num
-        // celular deitado ela nao pode comer o painel inteiro.
-        let maquete_h = (seguro.h * 0.26).clamp(90.0, 200.0);
-        let h = (216.0 * f + 64.0 * f + maquete_h + linha_h * EIXOS as f32 + vagas_h)
-            .min(seguro.h - 16.0);
+        // DUAS COLUNAS, e o painel grande. Era uma coluna só de 600 px com a
+        // maquete numa faixa de 200 px no topo — o dono: "o menu da Minha
+        // Ilha está muito feio, pra começar que está pequeno; a minha ideia
+        // era a colônia 3D ficar literalmente um 3D na lateral esquerda que
+        // você consegue movimentar, e os upgrades na direita".
+        let w = (1040.0 * f).min(seguro.w - 16.0);
+        let h = (720.0 * f).min(seguro.h - 16.0);
         let p = Rect::new(
             seguro.center().x - w * 0.5,
             seguro.center().y - h * 0.5,
@@ -143,7 +162,6 @@ impl ColoniaUi {
         crate::hud_layout::escurece(0.45);
         estilo::painel_destaque(p, estilo::ACENTO);
         let m = Vec2::from(mouse_position());
-        let clicou = crate::foco::clique();
         let x0 = p.x + 20.0 * f;
         estilo::texto_forte(x0, p.y + 36.0 * f, "Minha Ilha", 20, estilo::OURO);
         estilo::texto(x0, p.y + 60.0 * f, &resumo(&e), 14, estilo::SUAVE);
@@ -159,9 +177,14 @@ impl ColoniaUi {
 
         let mut pedido = None;
 
-        // A MAQUETE: a ilha de verdade, girando. Vem antes de tudo porque e'
-        // ela que diz ao jogador que aquilo e' um LUGAR, e nao uma planilha.
-        let mr = Rect::new(x0, p.y + 70.0 * f, p.w - 40.0 * f, maquete_h);
+        // ── ESQUERDA: a ilhota, girando, do tamanho que merece ──
+        //
+        // Ela vem antes de tudo porque é ela que diz ao jogador que aquilo é
+        // um LUGAR, e não uma planilha com tema. Numa faixa de 200 px no topo
+        // isso não acontecia.
+        let topo = p.y + 76.0 * f;
+        let alturac = p.h - 92.0 * f;
+        let mr = Rect::new(x0, topo, (p.w - 56.0 * f) * 0.46, alturac);
         estilo::cartao(mr, false, false);
         let desenhou = match &self.maquete {
             Some(mq) => crate::render3d::maquete_da_ilha(
@@ -171,6 +194,8 @@ impl ColoniaUi {
                 mq.centro,
                 self.giro,
                 solido,
+                &mq.moradores,
+                vox,
             ),
             None => false,
         };
@@ -183,9 +208,46 @@ impl ColoniaUi {
                 estilo::SUAVE,
             );
         }
+        // ARRASTAR GIRA. Só o eixo X: a câmera anda em volta da ilha, ela não
+        // tomba. Subir e descer a câmera daria vistas em que a ilhota some
+        // atrás da própria borda.
+        if is_mouse_button_pressed(MouseButton::Left) && mr.contains(m) {
+            self.arrasto = Some(m.x);
+        }
+        if !is_mouse_button_down(MouseButton::Left) {
+            self.arrasto = None;
+        }
+        if let Some(antes) = self.arrasto {
+            self.giro -= (m.x - antes) * 0.008;
+            self.arrasto = Some(m.x);
+        }
+        estilo::texto_centro(
+            mr.center().x,
+            mr.y + mr.h - 10.0 * f,
+            "arraste para girar",
+            12,
+            estilo::SUAVE,
+        );
 
-        // COLHEITA logo abaixo: e' o motivo de abrir o painel.
-        let cr = Rect::new(x0, mr.y + mr.h + 10.0 * f, p.w - 40.0 * f, 56.0 * f);
+        // ── DIREITA: o que se faz com a ilha ──
+        let dir = Rect::new(mr.x + mr.w + 16.0 * f, topo, p.w - 56.0 * f - mr.w, alturac);
+        let vagas_h = if e.vagas > 0 {
+            32.0 * f + 78.0 * f * e.vagas as f32
+        } else {
+            0.0
+        };
+        let total = 56.0 * f + 12.0 * f + 52.0 * f + 12.0 * f
+            + linha_h * EIXOS as f32
+            + vagas_h
+            + 12.0 * f;
+        // A rolagem é quem decide o que é clique e o que é arrasto: sem isso,
+        // rolar a lista com o dedo contrataria um morador no caminho.
+        let clique = self.rolagem.quadro(dir, total, linha_h);
+        let clicou_em = |r: Rect| clique.is_some_and(|c| r.contains(c));
+        crate::rolagem::recortar(Some(dir));
+        let cx = dir.x;
+        let cw = dir.w - 10.0 * f;
+        let cr = Rect::new(cx, dir.y - self.rolagem.pos, cw, 56.0 * f);
         estilo::cartao(cr, false, !e.colheita.is_empty());
         estilo::texto(
             cr.x + 14.0 * f,
@@ -214,7 +276,7 @@ impl ColoniaUi {
             );
             crate::foco::marca(crate::foco::chave::ILHA_COLHER, b);
             estilo::botao(b, "Colher", estilo::estado_de(b, false, false), true);
-            if clicou && b.contains(m) {
+            if clicou_em(b) {
                 pedido = Some(PedidoColonia::Colher);
             }
         }
@@ -223,7 +285,7 @@ impl ColoniaUi {
         // bolsa. Sem esta linha o jogador colhia e nao achava nada.
         let mut y = cr.y + cr.h + 12.0 * f;
         {
-            let br = Rect::new(x0, y, p.w - 40.0 * f, 52.0 * f);
+            let br = Rect::new(cx, y, cw, 52.0 * f);
             estilo::cartao(br, false, !e.bau.is_empty());
             let dentro: Vec<(u16, u32)> = e.bau.iter().map(|s| (s.item_id, s.qty)).collect();
             estilo::texto_forte(
@@ -253,7 +315,7 @@ impl ColoniaUi {
                 );
                 crate::foco::marca(crate::foco::chave::ILHA_RETIRAR, b);
                 estilo::botao(b, "Retirar", estilo::estado_de(b, false, false), false);
-                if clicou && b.contains(m) {
+                if clicou_em(b) {
                     pedido = Some(PedidoColonia::Retirar);
                 }
             }
@@ -262,7 +324,7 @@ impl ColoniaUi {
 
         // Os tres eixos.
         for i in 0..EIXOS {
-            let r = Rect::new(x0, y, p.w - 40.0 * f, linha_h - 10.0 * f);
+            let r = Rect::new(cx, y, cw, linha_h - 10.0 * f);
             let no_maximo = e.niveis[i] >= NIVEL_MAX;
             estilo::cartao(r, false, false);
             estilo::texto_forte(
@@ -304,7 +366,7 @@ impl ColoniaUi {
                     crate::foco::marca(crate::foco::chave::ILHA_ASSENTAMENTO, b);
                 }
                 estilo::botao(b, "Melhorar", estilo::estado_de(b, false, false), false);
-                if clicou && b.contains(m) {
+                if clicou_em(b) {
                     pedido = Some(PedidoColonia::Melhorar { eixo: i as u8 });
                 }
             }
@@ -315,12 +377,44 @@ impl ColoniaUi {
         // pra alguem. Vem DEPOIS dos eixos porque o assentamento e' quem abre
         // as vagas — a ordem da tela e' a ordem em que se faz a coisa.
         if e.vagas > 0 {
-            estilo::texto_forte(x0, y + 20.0 * f, "Moradores", 16, estilo::OURO);
+            estilo::texto_forte(cx, y + 20.0 * f, "Moradores", 16, estilo::OURO);
             y += 32.0 * f;
             for vaga in 0..e.vagas as usize {
-                let r = Rect::new(x0, y, p.w - 40.0 * f, 44.0 * f);
+                let r = Rect::new(cx, y, cw, 72.0 * f);
                 let quem = e.trabalhadores.get(vaga).copied();
                 estilo::cartao(r, false, quem.is_some());
+                // O RETRATO 3D de quem mora aí — ou de quem o dedo está
+                // prestes a contratar.
+                //
+                // O dono: "quando for comprar um trabalhador ter o modelo 3D
+                // dele também bonitinho na direita". Cinco botões com três
+                // letras ("Len", "Min", "Mer") não dizem nada sobre quem se
+                // está contratando; o modelo diz. Na casa vazia ele mostra o
+                // ofício sob o dedo, então passar por cima dos cinco é um
+                // desfile dos candidatos.
+                let retrato = Rect::new(r.x + 6.0 * f, r.y + 4.0 * f, 64.0 * f, 64.0 * f);
+                let sob_o_dedo = shared::colonia::Profissao::TODAS
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .find(|(i, _)| {
+                        let bw = 62.0 * f;
+                        let n = shared::colonia::Profissao::TODAS.len() as f32;
+                        let bx = r.x + r.w - bw * n - 8.0 * f + *i as f32 * bw;
+                        Rect::new(bx, r.y + 20.0 * f, bw - 4.0 * f, 32.0 * f).contains(m)
+                    })
+                    .map(|(_, op)| op);
+                if let Some(mostrar) = quem.or(sob_o_dedo) {
+                    let nome_do_rig =
+                        crate::render3d::rig_do_npc(mostrar.papel() as u8, vaga as u64);
+                    crate::render3d::vitrine_rig(
+                        vox,
+                        nome_do_rig,
+                        retrato,
+                        (get_time() as f32 * 0.5).sin() * 0.9,
+                        solido,
+                    );
+                }
                 let texto = match quem {
                     Some(q) => {
                         let (item, qtd) = shared::colonia::por_hora_do_trabalhador(
@@ -329,11 +423,20 @@ impl ColoniaUi {
                         );
                         format!("{} · {} {}/h", q.nome(), qtd, nome_item(item))
                     }
-                    None => "Casa vazia — escolha um ofício".to_string(),
+                    None => match sob_o_dedo {
+                        Some(op) => {
+                            let (item, qtd) = shared::colonia::por_hora_do_trabalhador(
+                                op,
+                                e.niveis[eixo::RECURSOS],
+                            );
+                            format!("{} daria {} {}/h", op.nome(), qtd, nome_item(item))
+                        }
+                        None => "Casa vazia — escolha um ofício".to_string(),
+                    },
                 };
                 estilo::texto(
-                    r.x + 12.0 * f,
-                    r.y + 27.0 * f,
+                    r.x + 78.0 * f,
+                    r.y + 30.0 * f,
                     &texto,
                     13,
                     if quem.is_some() { estilo::TEXTO } else { estilo::SUAVE },
@@ -344,7 +447,7 @@ impl ColoniaUi {
                 let total = shared::colonia::Profissao::TODAS.len() as f32;
                 let mut bx = r.x + r.w - bw * total - 8.0 * f;
                 for op in shared::colonia::Profissao::TODAS {
-                    let b = Rect::new(bx, r.y + 6.0 * f, bw - 4.0 * f, 32.0 * f);
+                    let b = Rect::new(bx, r.y + 20.0 * f, bw - 4.0 * f, 32.0 * f);
                     let posto = quem == Some(op);
                     estilo::botao(
                         b,
@@ -358,7 +461,7 @@ impl ColoniaUi {
                     if quem.is_none() && op == shared::colonia::Profissao::TODAS[0] {
                         crate::foco::marca(crate::foco::chave::ILHA_CONTRATAR, b);
                     }
-                    if clicou && b.contains(m) {
+                    if clicou_em(b) {
                         pedido = Some(if posto {
                             PedidoColonia::Demitir { vaga: vaga as u8 }
                         } else {
@@ -370,7 +473,7 @@ impl ColoniaUi {
                     }
                     bx += bw;
                 }
-                y += 48.0 * f;
+                y += 78.0 * f;
             }
         }
 
@@ -379,11 +482,54 @@ impl ColoniaUi {
         //
         // Colher e melhorar NAO fecham: o jogador quase sempre faz os dois
         // seguidos, e fechar a cada toque custa um toque a mais.
-        if clicou && (fechar.contains(m) || !p.contains(m)) {
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(dir, total);
+
+        // O X e o clique POR FORA fecham. Fora da rolagem de propósito: ela
+        // já resolveu o que é arrasto, e arrastar a lista até passar da borda
+        // não pode fechar o painel.
+        if crate::foco::clique() && (fechar.contains(m) || !p.contains(m)) {
             self.fechar();
         }
         pedido
     }
+}
+
+/// Onde cada morador fica em pé: na FRENTE do prédio do ofício dele.
+///
+/// Percorre os prédios na MESMA ordem e com a mesma contagem por papel que
+/// `construcoes::assar_colonia` usa. Fosse outra varredura, um morador podia
+/// aparecer na porta de uma casa que a maquete não desenhou.
+///
+/// Sem prédio do ofício, ele fica na praça: melhor um morador no centro que
+/// um morador invisível.
+fn onde_ficam(
+    ger: &shared::terreno::Gerador,
+    trabalhadores: &[shared::colonia::Profissao],
+) -> Vec<(shared::colonia::Profissao, Vec2)> {
+    use std::collections::HashMap;
+    let vila = ger.vila();
+    let praca = ger.cidade().map(|c| c.centro()).unwrap_or_default();
+    let mut usado: HashMap<shared::construcao::Papel, usize> = HashMap::new();
+    let mut saida = Vec::new();
+    for t in trabalhadores {
+        let papel = t.papel();
+        let n = usado.entry(papel).or_default();
+        let predio = vila
+            .predios
+            .iter()
+            .filter(|p| p.papel == papel)
+            .nth(*n)
+            .map(|p| {
+                // Dois metros À FRENTE da porta, e não dentro da parede: o
+                // `yaw_q` é o quarto de volta que a frente olha.
+                let frente = shared::construcao::frente_de(p.yaw_q);
+                vec2(p.pos.x, p.pos.z) + vec2(frente.x, frente.y) * 2.2
+            });
+        *n += 1;
+        saida.push((*t, predio.unwrap_or(vec2(praca.x, praca.y))));
+    }
+    saida
 }
 
 fn resumo(e: &Estado) -> String {

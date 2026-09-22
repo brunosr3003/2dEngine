@@ -3148,16 +3148,12 @@ mod testes_do_mapa_da_colonia {
                 "nível {nivel}: só {pct:.1}% da imagem é terra — o mapa está \
                  mostrando mar, e a ilha ficou fora do quadro"
             );
-            // E o que IMPORTA em cima dela: o mural (onde se administra) e o
-            // cais (por onde se sai). Sem eles o mapa é um desenho bonito.
-            assert!(dados.porto.is_some(), "nível {nivel}: o mapa não mostra o cais");
-            assert!(dados.mestre.is_some(), "nível {nivel}: o mapa não mostra o mural");
-            assert!(
-                dados.npcs.len() >= 2,
-                "nível {nivel}: {} marcadores — o mural e o barqueiro têm que \
-                 ter 'Ir', que é como o jogador chega neles",
-                dados.npcs.len()
-            );
+            // O CAIS SAIU, e com ele o barqueiro: desde 22/09/2026 a colônia
+            // é uma ilhota desenhada que não se anda nem se navega, e um cais
+            // seria um atracadouro para viagem nenhuma. O que importa agora é
+            // a praça, no centro, e as casas.
+            assert!(dados.porto.is_none(), "nível {nivel}: a ilhota ganhou cais");
+            assert!(dados.mestre.is_some(), "nível {nivel}: o mapa não mostra a praça");
             assert!(
                 !dados.pegadas.is_empty(),
                 "nível {nivel}: nenhuma casa no mapa"

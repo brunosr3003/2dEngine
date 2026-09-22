@@ -1649,9 +1649,23 @@ pub struct Gerador {
     /// Casas, props e NPCs. Calculada na primeira vez que alguem pede — o
     /// cliente e o servidor pedem, o `terreno --varre` nao.
     vila: std::sync::OnceLock<crate::vila::Vila>,
-    /// E' a ILHA MAGICA? Ai' o relevo nao e' ruido nenhum: e' o desenho de
-    /// `magica::bloco_da_coluna`, e a cidade e o porto nao entram.
-    magica: bool,
+    /// Zona de relevo DESENHADO, se for uma. `None` = o Perlin de sempre.
+    desenhado: Option<RelevoDesenhado>,
+}
+
+/// As zonas cujo relevo e' desenhado a mao, e nao sorteado.
+///
+/// As duas existem pelo mesmo motivo: sao lugares PEQUENOS com uma forma que
+/// o jogo precisa garantir. Ruido da' paisagem, nao da' garantia — a Ilha
+/// Magica precisa que a ponte ligue, e a colonia precisa que a cidade caiba
+/// no meio de uma ilhota que cabe na tela.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RelevoDesenhado {
+    /// Ilhotas e pontes (`magica::bloco_da_coluna`). Sem cidade e sem porto.
+    Magica,
+    /// A ilhota de praia da colonia (`colonia::bloco_da_coluna`). A praca
+    /// entra POR CIMA, pelo `aplainar` de sempre.
+    Colonia,
 }
 
 /// Move um CASCO: a regra da terra, ao contrario.
@@ -1930,12 +1944,20 @@ impl Cidade {
 }
 
 impl Gerador {
-    /// O gerador da COLONIA: semente e raio fixos, PLATO pelo assentamento.
+    /// O gerador da COLONIA: a ilhota desenhada, com a praca NO CENTRO.
     ///
     /// Publico e num lugar so' porque o cliente gera o mesmo chao que o
     /// servidor (docs/COLONIA.md): duas chamadas soltas a `novo` + um
     /// `com_plato` esquecido de um dos lados dariam dois relevos, e o jogador
-    /// andaria num chao que nao ve'.
+    /// veria uma ilha e andaria noutra.
+    ///
+    /// A praca fica na ORIGEM, e isso e' desenho e nao acaso. Antes ela era
+    /// VARRIDA: `varrer_praca_da_colonia` percorria a ilha inteira
+    /// procurando o disco mais plano e mais seco, 37,9 ms por chamada — e
+    /// `da_colonia` e' construido quatro vezes ao abrir o painel, duas delas
+    /// na thread que desenha. Numa ilhota desenhada a pergunta nao existe: o
+    /// meio E' o lugar mais plano, e o dono pediu exatamente isso ("o centro
+    /// sendo a cidade"). A varredura e o cache dela sairam junto.
     pub fn da_colonia(plato: f32) -> Self {
         let mut g = Self::novo(
             crate::colonia::SEMENTE,
@@ -1943,87 +1965,16 @@ impl Gerador {
             Bioma::Floresta,
             ESCALA_ALTURA,
         );
-        // `achar_cidade` pede uma ENSEADA, e a ilha da colonia nao tem uma que
-        // sirva: ela voltava `None`, a ilha ficava SEM PLATO NENHUM e as casas
-        // assentavam no barranco cru. O dono pediu o contrario — "sempre ter
-        // um terreno aplanado nas construcoes igual no mundo normal".
-        //
-        // Entao a praca dela e' posta na mao quando nao ha' enseada. Mesmo
-        // aplainamento do mundo normal (`aplainar_sitio`); o que muda e' so'
-        // quem escolhe o lugar.
-        let c = g.cidade.unwrap_or_else(|| g.praca_da_colonia());
-        g.cidade = Some(c.com_plato(plato));
+        g.desenhado = Some(RelevoDesenhado::Colonia);
+        // O que `novo` achou foi no relevo CRU, que a colonia nao usa: uma
+        // praca no lugar errado e um cais para lugar nenhum.
+        g.cidade = None;
+        g.porto = None;
+        // Le' o chao JA' desenhado e sem praca nenhuma — com a cidade posta
+        // antes, `bloco_em` devolveria o nivel dela mesma.
+        let nivel = g.bloco_em(0, 0);
+        g.cidade = Some(Cidade::nova(0.0, 0.0, nivel).com_plato(plato));
         g
-    }
-
-    /// O melhor lugar pra praca da colonia: seco, plano e perto do centro.
-    ///
-    /// A varredura usa o plato MAXIMO e nao o do nivel atual, de proposito: a
-    /// praca tem que cair no MESMO lugar em todos os niveis. Escolhendo pelo
-    /// plato de agora, subir o assentamento mudaria o centro da vila e a casa
-    /// do jogador andaria pela ilha — que e' exatamente o que "nao cortar a
-    /// ilha" existe pra impedir.
-    fn praca_da_colonia(&self) -> Cidade {
-        // A VARREDURA E' CONSTANTE: semente fixa, raio fixo, plato maximo
-        // fixo. Ela custa 37 ms em release num desktop, e `Gerador::da_colonia`
-        // e' construido QUATRO vezes ao entrar na ilha (terreno, minimapa na
-        // thread do quadro, minimapa na thread de fundo, construcoes) — duas
-        // delas na thread que desenha. No celular isso e' meio segundo de tela
-        // congelada por uma conta que da' sempre o mesmo numero.
-        static PRACA: std::sync::OnceLock<Cidade> = std::sync::OnceLock::new();
-        if let Some(c) = PRACA.get() {
-            return *c;
-        }
-        let c = self.varrer_praca_da_colonia();
-        *PRACA.get_or_init(|| c)
-    }
-
-    fn varrer_praca_da_colonia(&self) -> Cidade {
-        let plato_max = crate::colonia::plato_do_assentamento(crate::colonia::NIVEL_MAX);
-        let r = (plato_max / BLOCO) as i32;
-        let mut melhor: Option<(i32, Cidade)> = None;
-        let alcance = (crate::colonia::RAIO_BLOCOS * 2) / 5;
-        let passo = 6;
-        let mut bz = -alcance;
-        while bz <= alcance {
-            let mut bx = -alcance;
-            while bx <= alcance {
-                // Amostra o disco do plato: tudo seco, e o mais plano possivel.
-                let (mut alto, mut baixo, mut molhado) = (i32::MIN, i32::MAX, false);
-                for k in 0..13 {
-                    let a = k as f32 * std::f32::consts::TAU / 13.0;
-                    for f in [0.0, 0.55, 1.0] {
-                        let ox = (a.cos() * r as f32 * f) as i32;
-                        let oz = (a.sin() * r as f32 * f) as i32;
-                        let b = self.bloco_em(bx + ox, bz + oz);
-                        if (b + 1) as f32 * BLOCO <= Cidade::SECO {
-                            molhado = true;
-                        }
-                        alto = alto.max(b);
-                        baixo = baixo.min(b);
-                    }
-                }
-                if !molhado {
-                    // Nota: desnivel primeiro, distancia do centro depois. O
-                    // empate vai pro centro porque e' de la' que o jogador
-                    // chega (`colonia::CHEGADA`).
-                    let d = ((bx * bx + bz * bz) as f32).sqrt() as i32;
-                    let nota = (alto - baixo) * 1_000 + d;
-                    let nivel = (alto + baixo) / 2;
-                    if melhor.as_ref().is_none_or(|(n, _)| nota < *n) {
-                        melhor = Some((nota, Cidade::nova(bx as f32, bz as f32, nivel)));
-                    }
-                }
-                bx += passo;
-            }
-            bz += passo;
-        }
-        // Sem lugar seco nenhum (nao acontece nesta semente, mas o tipo nao
-        // sabe disso): o centro, que o teste do chao garante ser terra.
-        melhor.map(|(_, c)| c).unwrap_or_else(|| {
-            let b = self.bloco_em(0, 0);
-            Cidade::nova(0.0, 0.0, b)
-        })
     }
 
     /// O gerador da ILHA MAGICA: ilhotas e pontes, sem cidade e sem porto.
@@ -2038,7 +1989,7 @@ impl Gerador {
             Bioma::Floresta,
             ESCALA_ALTURA,
         );
-        g.magica = true;
+        g.desenhado = Some(RelevoDesenhado::Magica);
         // `novo` ja' procurou cidade e porto no relevo CRU, que a ilha magica
         // nao usa. Deixa-los ali daria uma praca aplainada sobre o mar e um
         // cais para lugar nenhum — visiveis na vila, que le' a cidade.
@@ -2076,7 +2027,7 @@ impl Gerador {
             porto: None,
             rumo_do_mar: None,
             vila: std::sync::OnceLock::new(),
-            magica: false,
+            desenhado: None,
         };
         g.cidade = g.achar_cidade();
         g.porto = g.achar_porto(g.cidade);
@@ -2112,7 +2063,7 @@ impl Gerador {
             porto: None,
             rumo_do_mar: def.rumo_do_porto(),
             vila: std::sync::OnceLock::new(),
-            magica: false,
+            desenhado: None,
         };
         g.cidade = g.achar_cidade();
         g.porto = g.achar_porto(g.cidade);
@@ -2126,10 +2077,18 @@ impl Gerador {
         // inclusive do ruido. Aplainar por cima de um relevo cru que ninguem
         // vai ver seria pagar tres oitavas de fbm por coluna a toa — e sao
         // 1,25 milhao de colunas.
-        if self.magica {
+        if self.desenhado == Some(RelevoDesenhado::Magica) {
             return crate::magica::bloco_da_coluna(bx, bz);
         }
-        let cru = self.bloco_cru(bx, bz);
+        let cru = match self.desenhado {
+            // A colonia e' desenhada, mas a PRACA continua sendo aplainada
+            // por cima pelo caminho de sempre — e' o mesmo `aplainar_sitio`
+            // do mundo normal, que e' o que o dono pediu quando disse
+            // "sempre ter um terreno aplanado nas construcoes igual no mundo
+            // normal".
+            Some(RelevoDesenhado::Colonia) => crate::colonia::bloco_da_coluna(bx, bz),
+            _ => self.bloco_cru(bx, bz),
+        };
         let b = match &self.cidade {
             Some(c) => c.aplainar(bx, bz, cru),
             None => cru,
@@ -2481,7 +2440,7 @@ impl Gerador {
     /// responde por si: a grade global tem celula de 300 blocos e foi feita
     /// pra ilha de 1,6 km, e numa de 280 u ela cai onde cai.
     pub fn campo_de_energia(&self, bx: i32, bz: i32) -> bool {
-        if self.magica {
+        if self.desenhado == Some(RelevoDesenhado::Magica) {
             return crate::magica::no_campo_de_energia(bx, bz);
         }
         no_campo_de_energia(bx, bz)

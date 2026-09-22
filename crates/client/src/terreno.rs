@@ -1393,7 +1393,10 @@ mod testes_da_colonia {
 /// `Terreno::da_colonia` que a mensagem do servidor monta, põe a câmera onde
 /// o jogador nasce e salva o quadro.
 #[cfg(debug_assertions)]
-pub async fn previa_da_colonia(solido: &macroquad::material::Material) {
+pub async fn previa_da_colonia(
+    solido: &macroquad::material::Material,
+    vox: &crate::vox::VoxCache,
+) {
     let nome = std::env::var("MMO_PREVIA_COLONIA").unwrap_or_else(|_| "brunji".into());
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-colonia".into());
     std::fs::create_dir_all(&saida).unwrap();
@@ -1482,5 +1485,44 @@ pub async fn previa_da_colonia(solido: &macroquad::material::Material) {
             println!("[previa colonia] quadro {k}: {n} pedacos desenhados");
             next_frame().await;
         }
+    }
+
+    // A MAQUETE DO PAINEL: o que o jogador vê de verdade desde 22/09/2026.
+    //
+    // Os quadros acima são a câmera do MUNDO, de quando se andava na ilha —
+    // úteis pro relevo, mas não é mais isso que a tela mostra. Este é o
+    // enquadramento do painel, com os moradores em pé, na proporção da
+    // coluna da esquerda.
+    let onde: Vec<(shared::colonia::Profissao, Vec2)> = moradores
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            let a = i as f32 / moradores.len().max(1) as f32 * std::f32::consts::TAU;
+            (*m, eu + vec2(a.cos(), a.sin()) * (plato * 0.55))
+        })
+        .collect();
+    for (m, _) in &onde {
+        let nome = crate::render3d::rig_do_npc(m.papel() as u8, 0);
+        let pecas = vox.rig(nome).map(|h| h.len());
+        println!("[previa colonia] {} -> rig '{nome}' pecas={pecas:?}", m.nome());
+    }
+    for _ in 0..2 {
+        crate::render3d::camera_padrao();
+        clear_background(Color::new(0.11, 0.35, 0.62, 1.0));
+        // A MESMA PROPORÇÃO da coluna esquerda do painel (46% de 1040 por
+        // 628 de altura = 0,72). Na primeira prévia este retângulo era mais
+        // estreito que o de verdade, e o enquadramento que ele mostrou não
+        // era o que o jogador veria.
+        let lado = (screen_height() * 0.88).min(screen_width() * 0.6);
+        let r = Rect::new(screen_width() * 0.04, screen_height() * 0.05, lado * 0.72, lado);
+        let ok = crate::render3d::maquete_da_ilha(
+            &t, &construcoes, r, eu, 0.9, solido, &onde, vox,
+        );
+        unsafe { macroquad::window::get_internal_gl().flush() };
+        rt.texture
+            .get_texture_data()
+            .export_png(&format!("{saida}/maquete.png"));
+        println!("[previa colonia] maquete do painel: desenhou={ok}, {} morador(es)", onde.len());
+        next_frame().await;
     }
 }

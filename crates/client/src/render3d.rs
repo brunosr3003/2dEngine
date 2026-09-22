@@ -2528,6 +2528,67 @@ fn camera_da_vitrine(
 
 /// Onde o CHAO sob a montaria (origem) cai na tela, dentro de `r`: e' ali
 /// que a Loja poe o pedestal, pra montaria pisar nele.
+/// Um RIG de NPC numa caixinha: o modelo do morador, girando devagar.
+///
+/// O dono, sobre contratar na Minha Ilha: "quando for comprar um trabalhador
+/// ter o modelo 3D dele também bonitinho na direita". Cinco botões com as
+/// três primeiras letras do ofício ("Len", "Min", "Mer") não dizem nada sobre
+/// quem se está contratando — o modelo diz.
+///
+/// Mesmo enquadramento do retrato da bolsa, que é o que já se sabe que cabe.
+/// `false` = o arquivo ainda não carregou (a carga é preguiçosa) ou a caixa é
+/// pequena demais; quem chama desenha o que tinha antes.
+pub fn vitrine_rig(
+    vox: &VoxCache,
+    nome: &str,
+    r: Rect,
+    yaw: f32,
+    solido: &Material,
+) -> bool {
+    if r.w < 16.0 || r.h < 16.0 {
+        return false;
+    }
+    let Some(corpo) = vox.rig_ou_pede(nome) else {
+        return false;
+    };
+    let Some(vp) = viewport_na_tela(r) else {
+        return false;
+    };
+    let cam = Camera3D {
+        position: vec3(0.0, 1.15, 4.6),
+        target: vec3(0.0, 0.92, 0.0),
+        up: Vec3::Y,
+        fovy: 30f32.to_radians(),
+        aspect: Some(vp.2 as f32 / vp.3 as f32),
+        viewport: Some(vp),
+        render_target: alvo(),
+        ..Default::default()
+    };
+    set_camera(&cam);
+    limpa_so_profundidade();
+    macroquad::material::gl_use_material(solido);
+    let entrada = crate::rig::Entrada {
+        fase: 0.0,
+        andar: 0.0,
+        correr: 0.0,
+        tempo: get_time() as f32,
+        ar: 0.0,
+        degrau: [0.0; 2],
+        combate: Default::default(),
+    };
+    let pose = crate::rig::pose(&entrada);
+    desenha_rig(
+        Mat4::from_rotation_y(yaw),
+        &pose,
+        &Vestimenta::nua(corpo),
+        vox,
+        None,
+    );
+    macroquad::material::gl_use_default_material();
+    camera_padrao();
+    true
+}
+
 pub fn vitrine_chao(vox: &crate::vox::VoxCache, item_id: u16, r: Rect) -> Option<Vec2> {
     let (especie, _) = shared::montarias::de_item(item_id)?;
     let b = vox.bicho(especie.bicho)?;
@@ -2939,6 +3000,8 @@ pub fn maquete_da_ilha(
     centro: Vec2,
     yaw: f32,
     solido: &Material,
+    moradores: &[(shared::colonia::Profissao, Vec2)],
+    vox: &VoxCache,
 ) -> bool {
     if r.w < 40.0 || r.h < 40.0 {
         return false;
@@ -2946,30 +3009,142 @@ pub fn maquete_da_ilha(
     let Some(vp) = viewport_na_tela(r) else {
         return false;
     };
-    // Enquadra o ASSENTAMENTO, e não a ilha inteira: de longe o bastante pra
-    // caber os 280 blocos de raio, as casas somem e sobra uma mancha verde.
-    // O que o jogador quer ver é o que ele construiu.
+    // Enquadra a ILHOTA INTEIRA, e não só o assentamento.
+    //
+    // Antes era o assentamento, porque a ilha tinha 140 u de raio e de longe
+    // o bastante pra ela caber as casas viravam pontinhos. Desde 22/09/2026
+    // a colônia é uma ilhota desenhada, pequena de propósito — o dono pediu
+    // "quase que dá pra ver tudo em 360" —, e agora cabe.
+    //
+    // A distância sai do RAIO da ilhota e do FORMATO do painel.
+    //
+    // A primeira versão só olhou a vertical e a ilha vazou pela borda de
+    // baixo — visto na prévia (`MMO_PREVIA_COLONIA`), não deduzido. Num painel
+    // ALTO E ESTREITO quem limita é a HORIZONTAL: o `fovy` é vertical, e o
+    // ângulo horizontal é ele multiplicado pelo aspecto, que ali é menor que
+    // 1. Com aspecto 0,7 o campo horizontal é 30% do vertical, e a conta que
+    // ignora isso deixa a câmera três vezes perto demais.
+    //
+    // Então as duas restrições entram e a maior manda. Derivado de
+    // `colonia::RAIO` e do retângulo, para mexer em qualquer um dos dois
+    // continuar enquadrando certo.
+    const FOVY: f32 = 0.85;
+    const ELEVACAO: f32 = 0.95; // ~54°: mais de cima, para o disco caber
+    let raio = shared::colonia::RAIO * 1.05;
+    let meio_v = (FOVY * 0.5).tan();
+    let meio_h = meio_v * (r.w / r.h).max(0.05);
+    let dist = (raio / meio_h).max(raio * ELEVACAO.sin() / meio_v);
     let alto = terreno.altura(centro.x, centro.y);
-    let dist = 62.0;
     let olho = vec3(
-        centro.x + yaw.cos() * dist,
-        alto + 34.0,
-        centro.y + yaw.sin() * dist,
+        centro.x + yaw.cos() * dist * ELEVACAO.cos(),
+        alto + dist * ELEVACAO.sin(),
+        centro.y + yaw.sin() * dist * ELEVACAO.cos(),
     );
     let cam = Camera3D {
         position: olho,
         target: vec3(centro.x, alto + 2.0, centro.y),
         up: Vec3::Y,
-        fovy: 0.62,
+        fovy: FOVY,
         viewport: Some(vp),
         render_target: alvo(),
         ..Default::default()
     };
+    // O MAR DE FUNDO, em 2D, antes de tudo.
+    //
+    // `agua::desenha` cobre só os pedaços de terreno carregados, então o mar
+    // acaba num losango e fora dele aparecia o cartão do painel — a ilha
+    // parecia flutuar num diamante. Visto na prévia. Pintar o retângulo
+    // inteiro antes custa um quad e resolve.
+    draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.08, 0.26, 0.47, 1.0));
     set_camera(&cam);
     limpa_so_profundidade();
     macroquad::material::gl_use_material(solido);
     let n = terreno.desenha(&cam, Vec3::ZERO, 0.0);
     construcoes.desenha(&cam, None, Vec3::ZERO, 0.0);
+    // O `solido` SAI antes dos moradores.
+    //
+    // O rig desenha por `gpu_estatica::desenha_voxel`, que tem material
+    // próprio: é ele quem conhece as FAIXAS de cor (pele, cabelo, tier) que o
+    // vértice carrega em `normal.yzw`. Com o `solido` preso, o mesmo vértice
+    // era lido por um shader que não sabe das faixas, e cada morador saía
+    // como uma silhueta PRETA — o terreno e as casas não, porque a faixa
+    // deles é zero. Visto na prévia.
+    macroquad::material::gl_use_default_material();
+    // OS MORADORES, em pé na porta do ofício de cada um.
+    //
+    // O dono: "dando pra ver visualmente os trabalhadores trabalhando na
+    // ilha". Sem eles a maquete é um condomínio vazio — as casas nascem por
+    // morador contratado e não havia ninguém dentro delas.
+    //
+    // Vão aqui, e não no `assar_colonia`: aquilo roda numa thread de fundo e
+    // devolve malha estática, e o rig precisa do `VoxCache`, que é da thread
+    // do quadro.
+    for (i, (oficio, onde)) in moradores.iter().enumerate() {
+        let nome = rig_do_npc(oficio.papel() as u8, i as u64);
+        let Some(corpo) = vox.rig_ou_pede(nome) else {
+            continue;
+        };
+        let y = terreno.altura(onde.x, onde.y);
+        // Uma balançada lenta, com fase por morador: parados e idênticos eles
+        // leriam como estátua.
+        let t = get_time() as f32 + i as f32 * 1.7;
+        // Parado, mas RESPIRANDO: `tempo` é o relógio que a pose de quem
+        // está de pé usa. A fase por morador tira o efeito de fileira de
+        // bonecos sincronizados.
+        let entrada = crate::rig::Entrada {
+            fase: 0.0,
+            andar: 0.0,
+            correr: 0.0,
+            tempo: t,
+            ar: 0.0,
+            degrau: [0.0; 2],
+            combate: Default::default(),
+        };
+        let pose = crate::rig::pose(&entrada);
+        // MAIOR QUE A VIDA, e de propósito.
+        //
+        // Enquadrada a ilhota inteira, um morador em escala real tem uns
+        // quatro pixels. A 3× ele já aparece, mas como um risco escuro — a
+        // roupa do NPC é preta, e num risco de dez pixels não há rosto nem
+        // mão que salve. A 26× (só pra olhar) dá pra ver que o modelo está
+        // certo: rosto, mãos e ferramenta, tudo no lugar.
+        //
+        // Sete é onde ele vira gente sem virar gigante. Uma maquete é um
+        // modelo, e num modelo as figuras são exageradas justamente para
+        // serem lidas.
+        const ESCALA_DO_MORADOR: f32 = 7.0;
+        let base = Mat4::from_translation(vec3(onde.x, y, onde.y))
+            * Mat4::from_rotation_y(t * 0.25)
+            * Mat4::from_scale(Vec3::splat(ESCALA_DO_MORADOR));
+        // PELE E CABELO PRECISAM DE COR.
+        //
+        // O rig do NPC pinta pele e cabelo nas FAIXAS (`tools/voxrender/
+        // npcs.py`), e `Vestimenta::nua` manda as faixas com alfa 0 — que
+        // significa "sem cor" e sai PRETO. Na maquete os quatro moradores
+        // apareciam como silhuetas negras; visto na prévia, e confirmado
+        // pintando-os de vermelho num render (aí apareceram vermelhos, então
+        // o desenho estava certo e a cor é que faltava).
+        //
+        // O mundo não tropeça nisso porque quem desenha gente lá passa por
+        // `vestimenta_de`, que preenche as duas faixas.
+        //
+        // O índice dá a variação: quatro moradores idênticos leriam como
+        // quatro cópias do mesmo boneco.
+        let mut veste = Vestimenta::nua(corpo);
+        veste.pele = Some(cores_da_pele((i % 4) as u8));
+        veste.cor_cabelo = Some(cores_do_cabelo((i % 6) as u8));
+        // E a faixa TIER, que no NPC é a ROUPA. As três faixas juntas cobrem
+        // o modelo inteiro: deixar uma sem cor pinta aquela parte de preto.
+        const PANOS: [[[f32; 3]; 2]; 4] = [
+            [[0.58, 0.42, 0.28], [0.34, 0.24, 0.16]], // couro
+            [[0.40, 0.48, 0.62], [0.22, 0.28, 0.38]], // azul
+            [[0.52, 0.56, 0.44], [0.30, 0.33, 0.25]], // verde-oliva
+            [[0.62, 0.36, 0.34], [0.36, 0.20, 0.19]], // terracota
+        ];
+        veste.tier = Some(PANOS[i % PANOS.len()]);
+        desenha_rig(base, &pose, &veste, vox, None);
+    }
+    macroquad::material::gl_use_material(solido);
     crate::agua::desenha(terreno, &cam, get_time() as f32);
     macroquad::material::gl_use_default_material();
     camera_padrao();
