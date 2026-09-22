@@ -17,12 +17,32 @@ use crate::hud_estilo as estilo;
 use crate::ui;
 
 const OURO: Color = Color::new(0.93, 0.76, 0.33, 1.0);
+const VERMELHO: Color = Color::new(0.95, 0.45, 0.40, 1.0);
+
+/// A cor de cada bônus.
+///
+/// São sete ilhotas, e ler o nome de cada uma no meio de uma briga de PvP não
+/// acontece. A cor é o que o olho separa sem ler — e é a mesma no HUD e na
+/// lista do painel, senão seriam dois códigos para a mesma coisa.
+fn cor_do_bonus(b: Bonus) -> Color {
+    match b {
+        Bonus::Xp => Color::new(0.55, 0.78, 0.98, 1.0),
+        Bonus::DropDeMob => Color::new(0.72, 0.86, 0.45, 1.0),
+        Bonus::Ouro => Color::new(0.97, 0.82, 0.35, 1.0),
+        Bonus::DropDeChefe => Color::new(0.95, 0.52, 0.45, 1.0),
+        Bonus::Coleta(0) => Color::new(0.76, 0.58, 0.36, 1.0),
+        Bonus::Coleta(5) => Color::new(0.68, 0.60, 0.98, 1.0),
+        Bonus::Coleta(_) => Color::new(0.72, 0.74, 0.80, 1.0),
+    }
+}
 const VERDE: Color = Color::new(0.55, 0.85, 0.50, 1.0);
 const SUAVE: Color = Color::new(0.72, 0.74, 0.80, 1.0);
 
 #[derive(Debug, Clone, Default)]
 pub struct Estado {
     pub passes: u32,
+    /// Entradas de graça que ainda há hoje (`magica::GRATIS_POR_DIA`).
+    pub gratis: u8,
     pub fim_unix: i64,
     pub dentro: bool,
     pub bonus: u8,
@@ -54,12 +74,14 @@ impl MagicaUi {
         match aviso {
             AvisoMagica::Estado {
                 passes,
+                gratis,
                 fim_unix,
                 dentro,
                 bonus,
             } => {
                 let e = Estado {
                     passes,
+                    gratis,
                     fim_unix,
                     dentro,
                     bonus,
@@ -108,28 +130,46 @@ impl MagicaUi {
         let resta = self.resta(agora_unix);
         let s = crate::hud_layout::tela_segura();
         let f = estilo::fator_texto();
-        let texto = format!("Ilha Mágica · {}:{:02}", resta / 60, resta % 60);
-        let sub = match self.bonus() {
-            Some(b) => format!("{} ×{:.2}", b.nome(), b.multiplicador()),
-            None => "Ponte — sem bônus".to_string(),
-        };
-        let w = estilo::medir(&texto, 18).max(estilo::medir(&sub, 14)) + 24.0 * f;
-        let r = Rect::new(s.x + (s.w - w) * 0.5, s.y + 6.0 * f, w, 48.0 * f);
+        let urgente = resta <= 60;
+
+        // Largura FIXA. Antes ela saía do texto, então a tarja mudava de
+        // tamanho a cada travessia de ponte — o olho via a coisa pular de
+        // lugar e o relógio nunca ficava onde se aprendeu a procurar.
+        let w = 268.0 * f;
+        let h = 62.0 * f;
+        let r = Rect::new(s.x + (s.w - w) * 0.5, s.y + 6.0 * f, w, h);
         estilo::painel(r);
-        // Vermelho no último minuto: a cor avisa antes de o número ser lido.
-        let cor = if resta <= 60 {
-            Color::new(0.95, 0.45, 0.40, 1.0)
-        } else {
-            OURO
+
+        // O RELÓGIO, grande, à esquerda. É o número que decide se vale
+        // atravessar ou não.
+        let cor = if urgente { VERMELHO } else { OURO };
+        let relogio = format!("{}:{:02}", resta / 60, resta % 60);
+        estilo::texto_forte(r.x + 14.0 * f, r.y + 30.0 * f, &relogio, 26, cor);
+
+        // A BARRA, por baixo: o relógio em número diz quanto falta, a barra
+        // diz quanto falta COMPARADO ao que cabe (1h30). Um vê-se lendo, a
+        // outra vê-se de canto de olho no meio de uma briga.
+        let bx = r.x + 14.0 * f;
+        let bw = w - 28.0 * f;
+        let by = r.y + h - 16.0 * f;
+        let frac = (resta as f32 / shared::magica::TETO_S as f32).clamp(0.0, 1.0);
+        draw_rectangle(bx, by, bw, 5.0 * f, Color::new(1.0, 1.0, 1.0, 0.13));
+        draw_rectangle(bx, by, bw * frac, 5.0 * f, cor);
+
+        // A ILHOTA, à direita, NA COR DELA. São sete bônus; cor é o que o
+        // olho separa sem ler.
+        let (nome, mult, c) = match self.bonus() {
+            Some(b) => (b.nome(), format!("×{:.2}", b.multiplicador()), cor_do_bonus(b)),
+            None => ("Ponte", "sem bônus".to_string(), SUAVE),
         };
-        estilo::texto_centro(r.x + r.w * 0.5, r.y + 22.0 * f, &texto, 18, cor);
-        estilo::texto_centro(
-            r.x + r.w * 0.5,
-            r.y + 40.0 * f,
-            &sub,
-            14,
-            if self.bonus().is_some() { VERDE } else { SUAVE },
-        );
+        let x = r.x + w - 14.0 * f;
+        let tn = estilo::medir(nome, 15);
+        estilo::texto(x - tn, r.y + 24.0 * f, nome, 15, c);
+        let tm = estilo::medir(&mult, 17);
+        estilo::texto_forte(x - tm, r.y + 44.0 * f, &mult, 17, c);
+        // O ponto da cor, colado no nome: um rótulo colorido some no fundo
+        // escuro; um disco cheio não.
+        draw_circle(x - tn - 9.0 * f, r.y + 19.0 * f, 4.0 * f, c);
     }
 
     pub fn desenha(&mut self, agora: f64, agora_unix: i64) -> Option<PedidoMagica> {
@@ -168,10 +208,14 @@ impl MagicaUi {
         // pena?" antes de o passe ser gasto — depois de gasto é tarde.
         for i in shared::magica::ilhotas() {
             let aqui = e.dentro && Bonus::do_indice(e.bonus) == Some(i.bonus);
-            let cor = if aqui { VERDE } else { estilo::TEXTO };
-            ui::texto(r.x + 8.0, y, i.bonus.nome(), 15, cor);
+            // A MESMA COR do HUD, e um ponto antes do nome: é assim que a
+            // linha da lista e a tarja lá em cima viram a mesma coisa na
+            // cabeça de quem joga.
+            let c = cor_do_bonus(i.bonus);
+            draw_circle(r.x + 8.0, y - 5.0, 4.0, c);
+            ui::texto(r.x + 20.0, y, i.bonus.nome(), 15, if aqui { VERDE } else { c });
             let v = format!("×{:.2}", i.bonus.multiplicador());
-            ui::texto(r.x + r.w - estilo::medir(&v, 15) - 8.0, y, &v, 15, cor);
+            ui::texto(r.x + r.w - estilo::medir(&v, 15) - 8.0, y, &v, 15, c);
             if aqui {
                 ui::texto(r.x + r.w * 0.62, y, "você está aqui", 13, VERDE);
             }
@@ -192,14 +236,31 @@ impl MagicaUi {
             );
             y += 26.0;
         }
+        // O DE GRAÇA PRIMEIRO, porque é o que ele gasta primeiro — e porque
+        // "tenho 3 entradas grátis hoje" é a informação que faz o jogador
+        // entrar, não "tenho 0 passes".
+        let total = e.passes + e.gratis as u32;
         ui::texto(
             r.x,
             y,
-            &format!("Passes: {}  ·  cada um vale 30 minutos", e.passes),
+            &format!(
+                "Grátis hoje: {}/{}  ·  Passes na bolsa: {}",
+                e.gratis,
+                shared::magica::GRATIS_POR_DIA,
+                e.passes
+            ),
             16,
-            if e.passes > 0 { estilo::TEXTO } else { SUAVE },
+            if total > 0 { estilo::TEXTO } else { SUAVE },
         );
-        y += 30.0;
+        y += 22.0;
+        ui::texto(
+            r.x,
+            y,
+            "Cada entrada vale 30 minutos. As grátis voltam às 4h da manhã.",
+            13,
+            SUAVE,
+        );
+        y += 26.0;
 
         if e.dentro {
             if ui::botao(Rect::new(r.x, y, r.w, 38.0), "Sair da ilha", true) {
@@ -219,7 +280,7 @@ impl MagicaUi {
             let bw = (r.w - 16.0) / 3.0;
             for n in 1u8..=3 {
                 let caixa = Rect::new(r.x + (n - 1) as f32 * (bw + 8.0), y, bw, 34.0);
-                let pode = e.passes >= n as u32;
+                let pode = total >= n as u32;
                 estilo::botao(
                     caixa,
                     &format!("{n} = {}min", 30 * n),
@@ -231,18 +292,24 @@ impl MagicaUi {
                 }
             }
             y += 46.0;
-            let pode = e.passes >= self.entradas.max(1) as u32;
-            let rot = format!("Entrar ({} passe(s))", self.entradas.max(1));
+            let pode = total >= self.entradas.max(1) as u32;
+            let n = self.entradas.max(1);
+            let de_graca = (e.gratis as u32).min(n as u32);
+            let rot = if de_graca == n as u32 {
+                format!("Entrar ({n} grátis)")
+            } else if de_graca > 0 {
+                format!("Entrar ({de_graca} grátis + {} passe)", n as u32 - de_graca)
+            } else {
+                format!("Entrar ({n} passe(s))")
+            };
             if ui::botao(Rect::new(r.x, y, r.w, 38.0), &rot, pode) && pode {
-                pedido = Some(PedidoMagica::Entrar {
-                    entradas: self.entradas.max(1),
-                });
+                pedido = Some(PedidoMagica::Entrar { entradas: n });
             }
             if !pode {
                 ui::texto(
                     r.x,
                     y + 54.0,
-                    "Sem passe: eles caem de chefes e estão na Loja de TP.",
+                    "Sem entrada: as 3 grátis voltam às 4h, e o passe cai de chefes.",
                     13,
                     SUAVE,
                 );
@@ -281,6 +348,7 @@ mod testes {
         ui.recebe(
             AvisoMagica::Estado {
                 passes: 0,
+                gratis: 0,
                 fim_unix: 1_000,
                 dentro: true,
                 bonus: Bonus::Xp.indice(),
@@ -300,6 +368,7 @@ mod testes {
         ui.recebe(
             AvisoMagica::Estado {
                 passes: 2,
+                gratis: shared::magica::GRATIS_POR_DIA,
                 fim_unix: 0,
                 dentro: false,
                 bonus: 255,

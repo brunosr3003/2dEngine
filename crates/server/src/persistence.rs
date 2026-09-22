@@ -78,6 +78,10 @@ pub struct CharacterRow {
     /// Pocao de Experiencia: bonus de XP ate' este instante (unix secs; 0 =
     /// nenhum). Absoluto, entao sobrevive a relog e reinicio.
     pub xp_bonus_ate: i64,
+    /// ILHA MAGICA: a cota DIARIA de entradas de graca, empacotada
+    /// (`magica::empacota_gratis`: dia * 16 + usadas). Uma coluna, e o reset
+    /// acontece ao perguntar — nao ha' tarefa que vire o dia.
+    pub magica_gratis: i64,
     /// ILHA MAGICA: a zona de onde o personagem entrou, pra onde ele volta.
     ///
     /// Tem que ser PERSISTIDO, e nao lembrado na sessao: cada zona e' outro
@@ -552,6 +556,11 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     .await?;
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS magica_volta TEXT NOT NULL DEFAULT ''",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS magica_gratis BIGINT NOT NULL DEFAULT 0",
     )
     .execute(pool)
     .await?;
@@ -3716,12 +3725,12 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         .map(|(n, m, s, z)| (n, (m, s, z)))
         .collect();
     let bonus = busca!(
-        (String, i64, i64, String),
-        "name, xp_bonus_ate, magica_ate, magica_volta"
+        (String, i64, i64, String, i64),
+        "name, xp_bonus_ate, magica_ate, magica_volta, magica_gratis"
     );
-    let bonus_map: HashMap<String, (i64, i64, String)> = bonus
+    let bonus_map: HashMap<String, (i64, i64, String, i64)> = bonus
         .into_iter()
-        .map(|(n, x, m, v)| (n, (x, m, v)))
+        .map(|(n, x, m, v, g)| (n, (x, m, v, g)))
         .collect();
     let drop = busca!(
         (String, i64, i64, String),
@@ -3815,7 +3824,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
             .and_then(|j| serde_json::from_str(j).ok());
         let last_tut = tut_map.get(&name).cloned().flatten();
         let (mp, stamina, zona) = vida_map.get(&name).cloned().unwrap_or_default();
-        let (xp_bonus_ate, magica_ate, magica_volta) =
+        let (xp_bonus_ate, magica_ate, magica_volta, magica_gratis) =
             bonus_map.get(&name).cloned().unwrap_or_default();
         let (fortuna_ate, sorte_ate, barra_json) = drop_map.get(&name).cloned().unwrap_or_default();
         let (mortes_json, recuperacoes_dia, recuperacoes_usadas) =
@@ -3859,6 +3868,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 xp_bonus_ate,
                 magica_ate,
                 magica_volta,
+                magica_gratis,
                 fortuna_ate,
                 sorte_ate,
                 barra_json,
@@ -4293,8 +4303,8 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                                      mortes_json, recuperacoes_dia, recuperacoes_usadas,
                                      fortuna_ate, sorte_ate, barra_json, preferencias_json, dungeon_json,
                                      bolsa_extra, banco_extra, skill_progress_json, colonia_json,
-                                     magica_ate, magica_volta)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
+                                     magica_ate, magica_volta, magica_gratis)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)
              ON CONFLICT(name) DO UPDATE SET
                x = EXCLUDED.x,
                y = EXCLUDED.y,
@@ -4328,7 +4338,8 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
                skill_progress_json = EXCLUDED.skill_progress_json,
                colonia_json = EXCLUDED.colonia_json,
                magica_ate = EXCLUDED.magica_ate,
-               magica_volta = EXCLUDED.magica_volta",
+               magica_volta = EXCLUDED.magica_volta,
+               magica_gratis = EXCLUDED.magica_gratis",
         )
         .bind(&row.name)
         .bind(row.pos.x)
@@ -4363,6 +4374,7 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(&colonia_json)
         .bind(row.magica_ate)
         .bind(&row.magica_volta)
+        .bind(row.magica_gratis)
         .execute(&mut *tx)
         .await?;
         // A conta vai junto: bau aberto num personagem e a 1ª vitoria semanal

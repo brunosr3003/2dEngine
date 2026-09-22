@@ -102,9 +102,11 @@ impl GameWorld {
         let bonus = self
             .bonus_magico_de(sid)
             .map_or(255, |b| shared::magica::Bonus::indice(b));
+        let agora = (now_ms() / 1000) as i64;
         let _ = s.handle.to_client.send(ServerMessage::Magica {
             aviso: shared::magica::AvisoMagica::Estado {
                 passes: self.passes_de(sid),
+                gratis: shared::magica::gratis_restantes(s.magica_gratis, agora),
                 fim_unix: s.magica_ate,
                 dentro,
                 bonus,
@@ -129,11 +131,21 @@ impl GameWorld {
         if !s.logged_in || s.instancia != 0 || s.downed {
             return;
         }
+        // A COTA DIÁRIA ENTRA NA CONTA, e é gasta PRIMEIRO.
+        //
+        // O dono: "a Ilha Mágica terá 3 passes por dia de 30 min grátis".
+        // Gastar o item antes do que é de graça seria cobrar de quem tinha
+        // crédito — e o jogador só descobriria olhando a bolsa depois.
         let passes = self.passes_de(sid);
-        if let Err(motivo) = shared::magica::pode_entrar(s.magica_ate, agora, passes, entradas) {
+        let gratis = shared::magica::gratis_restantes(s.magica_gratis, agora);
+        let disponivel = passes.saturating_add(gratis as u32);
+        if let Err(motivo) = shared::magica::pode_entrar(s.magica_ate, agora, disponivel, entradas)
+        {
             self.avisa_magica(sid, &motivo);
             return;
         }
+        let de_graca = gratis.min(entradas);
+        let do_item = entradas - de_graca;
         // A ZONA TEM QUE ESTAR NO AR antes de gastar o passe. `mandar_para_zona`
         // também confere e recusa, mas ali o passe já teria sumido — e o
         // jogador ficaria sem passe e sem ilha.
@@ -150,12 +162,17 @@ impl GameWorld {
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
-        dungeon::tirar_item(
-            &mut s.inventory,
-            shared::item_id::PASSE_MAGICO,
-            entradas as u32,
-        );
-        s.inventory_dirty = true;
+        if de_graca > 0 {
+            s.magica_gratis = shared::magica::apos_gastar_gratis(s.magica_gratis, agora, de_graca);
+        }
+        if do_item > 0 {
+            dungeon::tirar_item(
+                &mut s.inventory,
+                shared::item_id::PASSE_MAGICO,
+                do_item as u32,
+            );
+            s.inventory_dirty = true;
+        }
         s.magica_ate = shared::magica::fim_apos_entrar(s.magica_ate, agora, entradas);
         s.magica_volta = volta;
         // Os avisos do relogio valem de novo: quem gastou mais um passe
@@ -166,7 +183,9 @@ impl GameWorld {
         self.save_pending = true;
         let aviso = format!("Você entra na Ilha Mágica — {minutos} minutos.");
         crate::telemetria::conta("magica_entrada", self.zona.clone(), entradas as i64);
-        tracing::info!("{nome}: entra na Ilha Mágica por {minutos} min ({entradas} passe(s))");
+        tracing::info!(
+            "{nome}: entra na Ilha Mágica por {minutos} min ({de_graca} de graça, {do_item} passe(s))"
+        );
         self.mandar_para_zona(
             sid,
             shared::magica::ZONA,
@@ -360,6 +379,65 @@ mod testes {
         // Nem um número que não existe.
         w.handle_magica(sid, shared::magica::PedidoMagica::Entrar { entradas: 9 });
         assert_eq!(w.passes_de(sid), 2);
+    }
+
+    /// A COTA DE GRAÇA É GASTA ANTES DO ITEM.
+    ///
+    /// Cobrar o passe de quem tinha crédito é o tipo de erro que o jogador só
+    /// descobre olhando a bolsa depois, e aí já era. Como a entrada de
+    /// verdade exige a zona no ar (que não há no mundo de teste), o teste
+    /// mede as DUAS coisas que `entrar_na_magica` decide antes de viajar: a
+    /// conta do que está disponível e a repartição entre grátis e item.
+    #[test]
+    fn a_entrada_de_graca_sai_antes_do_passe() {
+        use shared::magica as m;
+        let agora = (now_ms() / 1000) as i64;
+
+        // Dia virgem: três de graça, e elas bastam para as três entradas.
+        let g0 = 0i64;
+        assert_eq!(m::gratis_restantes(g0, agora), m::GRATIS_POR_DIA);
+        assert!(m::pode_entrar(0, agora, m::GRATIS_POR_DIA as u32, 3).is_ok());
+
+        // Uma entrada de graça: sobram duas, e o item não foi tocado.
+        let g1 = m::apos_gastar_gratis(g0, agora, 1);
+        assert_eq!(m::gratis_restantes(g1, agora), 2);
+
+        // Gastas as três, quem entra de novo paga com ITEM — e sem item a
+        // entrada é recusada, mesmo com a cota zerada (não vira dívida).
+        let g3 = m::apos_gastar_gratis(g0, agora, 3);
+        assert_eq!(m::gratis_restantes(g3, agora), 0);
+        assert!(
+            m::pode_entrar(0, agora, 0, 1).is_err(),
+            "sem cota e sem passe, não entra"
+        );
+        assert!(m::pode_entrar(0, agora, 1, 1).is_ok(), "com passe, entra");
+
+        // E a repartição: pedindo 3 com 1 de graça restando, 1 sai da cota e
+        // 2 do item — que é o que `entrar_na_magica` calcula.
+        let gratis: u8 = 1;
+        let entradas: u8 = 3;
+        let de_graca = gratis.min(entradas);
+        assert_eq!((de_graca, entradas - de_graca), (1, 2));
+    }
+
+    /// O PAINEL conta a cota junto com a bolsa.
+    #[test]
+    fn o_painel_mostra_a_cota_do_dia() {
+        let (mut w, sid) = mundo("ilha_inicial");
+        dar_passes(&mut w, sid, 2);
+        assert_eq!(w.passes_de(sid), 2);
+        let agora = (now_ms() / 1000) as i64;
+        let s = w.sessions.get_mut(&sid).unwrap();
+        // Personagem novo (coluna zerada) começa com a cota cheia.
+        assert_eq!(
+            shared::magica::gratis_restantes(s.magica_gratis, agora),
+            shared::magica::GRATIS_POR_DIA
+        );
+        // Gastou tudo hoje: a cota zera e só a bolsa conta.
+        s.magica_gratis = shared::magica::apos_gastar_gratis(0, agora, 3);
+        let g = shared::magica::gratis_restantes(w.sessions[&sid].magica_gratis, agora);
+        assert_eq!(g, 0);
+        assert_eq!(w.passes_de(sid) + g as u32, 2);
     }
 
     /// Dentro da ilha, a ilhota em que se está é que paga.

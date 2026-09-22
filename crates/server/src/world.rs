@@ -1480,6 +1480,9 @@ pub struct Session {
     pub magica_ate: i64,
     /// A zona de onde ele entrou na Ilha Magica. Vazio = Bosque.
     pub magica_volta: String,
+    /// Cota DIARIA de entradas de graca, empacotada
+    /// (`magica::empacota_gratis`). Persistida em `characters.magica_gratis`.
+    pub magica_gratis: i64,
     /// Ultimo marco de aviso do relogio da Ilha Magica ja' falado (segundos).
     /// Volatil: se o jogador reconectar, ele ouve os avisos de novo, e ouvir
     /// duas vezes e' melhor que nao ouvir.
@@ -5576,6 +5579,7 @@ impl GameWorld {
             s.xp_bonus_ate = row.xp_bonus_ate;
             s.magica_ate = row.magica_ate;
             s.magica_volta = row.magica_volta.clone();
+            s.magica_gratis = row.magica_gratis;
             let _ = s.handle.to_client.send(ServerMessage::BuffXp {
                 ate: row.xp_bonus_ate,
             });
@@ -6665,6 +6669,7 @@ impl GameWorld {
                 xp_bonus_ate: 0,
                 magica_ate: 0,
                 magica_volta: String::new(),
+                magica_gratis: 0,
                 magica_avisado: i64::MAX,
                 mortes: Vec::new(),
                 recuperacoes_dia: 0,
@@ -12806,6 +12811,7 @@ impl GameWorld {
             xp_bonus_ate: i64,
             magica_ate: i64,
             magica_volta: String,
+            magica_gratis: i64,
             mortes_json: String,
             recuperacoes_dia: i64,
             recuperacoes_usadas: i32,
@@ -12869,6 +12875,7 @@ impl GameWorld {
                 xp_bonus_ate: session.xp_bonus_ate,
                 magica_ate: session.magica_ate,
                 magica_volta: session.magica_volta.clone(),
+                magica_gratis: session.magica_gratis,
                 mortes_json: crate::morte::para_json(&session.mortes),
                 recuperacoes_dia: session.recuperacoes_dia,
                 recuperacoes_usadas: session.recuperacoes_usadas as i32,
@@ -12928,6 +12935,7 @@ impl GameWorld {
                 xp_bonus_ate: e.xp_bonus_ate,
                 magica_ate: e.magica_ate,
                 magica_volta: e.magica_volta,
+                magica_gratis: e.magica_gratis,
                 mortes_json: e.mortes_json,
                 recuperacoes_dia: e.recuperacoes_dia,
                 recuperacoes_usadas: e.recuperacoes_usadas,
@@ -18341,6 +18349,7 @@ impl GameWorld {
             xp_bonus_ate: session.xp_bonus_ate,
             magica_ate: session.magica_ate,
             magica_volta: session.magica_volta.clone(),
+            magica_gratis: session.magica_gratis,
             mortes_json: crate::morte::para_json(&session.mortes),
             recuperacoes_dia: session.recuperacoes_dia,
             recuperacoes_usadas: session.recuperacoes_usadas as i32,

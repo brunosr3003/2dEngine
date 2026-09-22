@@ -49,6 +49,51 @@ pub fn e_magica(z: &str) -> bool {
 pub const DURACAO_S: i64 = 30 * 60;
 /// Quantas entradas cabem numa sessão — as três de uma vez dão 1h30.
 pub const ENTRADAS_MAX: u8 = 3;
+
+// ─────────────────────────── as entradas de graça ───────────────────────────
+
+/// Entradas DE GRAÇA por dia, decididas pelo dono em 22/09/2026: "a Ilha
+/// Mágica terá 3 passes por dia de 30 min grátis".
+///
+/// São separadas do ITEM `PASSE_MAGICO` de propósito. O item cai de chefe, se
+/// compra e se vende; a cota diária não — ela não entra na bolsa, não vai pro
+/// mercado e não acumula de um dia pro outro. Fossem itens entregues todo
+/// dia, três por dia por personagem virariam moeda, e a economia do passe
+/// deixaria de existir.
+pub const GRATIS_POR_DIA: u8 = 3;
+
+/// A cota diária cabe num inteiro só: `dia * 16 + usadas`.
+///
+/// Uma coluna em vez de duas. `usadas` nunca passa de `GRATIS_POR_DIA`, então
+/// quatro bits sobram com folga, e o dia é o mesmo `dungeon::dia` do resto do
+/// jogo (vira às 04:00 de Brasília). Empacotar é o tipo de esperteza que
+/// morde, então ela mora aqui, nestas duas funções, com teste.
+pub fn empacota_gratis(dia: i64, usadas: u8) -> i64 {
+    dia * 16 + usadas.min(15) as i64
+}
+
+/// Quantas entradas de graça ainda há HOJE, a partir do valor guardado.
+///
+/// Dia diferente do salvo = cota cheia: o reset não precisa de tarefa
+/// nenhuma, ele acontece ao perguntar.
+pub fn gratis_restantes(guardado: i64, agora_unix: i64) -> u8 {
+    let hoje = crate::dungeon::dia(agora_unix);
+    if guardado.div_euclid(16) != hoje {
+        return GRATIS_POR_DIA;
+    }
+    GRATIS_POR_DIA.saturating_sub(guardado.rem_euclid(16) as u8)
+}
+
+/// O novo valor guardado depois de gastar `n` entradas de graça.
+pub fn apos_gastar_gratis(guardado: i64, agora_unix: i64, n: u8) -> i64 {
+    let hoje = crate::dungeon::dia(agora_unix);
+    let usadas = if guardado.div_euclid(16) == hoje {
+        guardado.rem_euclid(16) as u8
+    } else {
+        0
+    };
+    empacota_gratis(hoje, usadas.saturating_add(n))
+}
 /// O teto do relógio, em segundos.
 pub const TETO_S: i64 = DURACAO_S * ENTRADAS_MAX as i64;
 
@@ -400,6 +445,8 @@ pub enum AvisoMagica {
     Estado {
         /// Passes na bolsa.
         passes: u32,
+        /// Entradas de graça que ainda há hoje (`GRATIS_POR_DIA`).
+        gratis: u8,
         /// Quando a sessão acaba (unix, segundos). 0 = não está valendo.
         fim_unix: i64,
         /// Está dentro da ilha agora?
@@ -588,6 +635,44 @@ mod testes {
         assert_eq!(v.len(), n, "dois bônus no mesmo índice");
         assert_eq!(Bonus::do_indice(255), None, "255 é 'nenhum'");
         assert_eq!(indice_do_bonus_em(CHEGADA), Bonus::DropDeChefe.indice());
+    }
+
+    /// A COTA DIÁRIA vira sozinha, e o empacotamento vai e volta.
+    ///
+    /// Ela mora num inteiro só (`dia * 16 + usadas`). Empacotar é o tipo de
+    /// esperteza que morde calada: uma conta trocada dá cota infinita num dia
+    /// e zero no outro, sem erro nenhum.
+    #[test]
+    fn a_cota_diaria_reseta_sozinha_e_cabe_num_inteiro() {
+        let hoje = 1_800_000_000i64; // um instante qualquer
+        let amanha = hoje + 86_400;
+
+        // Dia virgem: cota cheia.
+        assert_eq!(gratis_restantes(0, hoje), GRATIS_POR_DIA);
+
+        // Gastando uma por vez, ela desce até zero e para lá.
+        let mut g = 0i64;
+        for k in 1..=GRATIS_POR_DIA {
+            g = apos_gastar_gratis(g, hoje, 1);
+            assert_eq!(gratis_restantes(g, hoje), GRATIS_POR_DIA - k);
+        }
+        assert_eq!(gratis_restantes(g, hoje), 0, "a cota acabou");
+        g = apos_gastar_gratis(g, hoje, 1);
+        assert_eq!(gratis_restantes(g, hoje), 0, "gastar a mais não vira dívida");
+
+        // AMANHÃ ela está cheia de novo, sem ninguém rodar nada.
+        assert_eq!(gratis_restantes(g, amanha), GRATIS_POR_DIA);
+
+        // E as três de uma vez valem o mesmo que três separadas.
+        assert_eq!(
+            gratis_restantes(apos_gastar_gratis(0, hoje, 3), hoje),
+            0
+        );
+        // O dia guardado é o dia do jogo (vira às 04:00 de Brasília).
+        assert_eq!(
+            apos_gastar_gratis(0, hoje, 1).div_euclid(16),
+            crate::dungeon::dia(hoje)
+        );
     }
 
     /// Na PONTE não vale bônus: quem atravessa está entre dois lugares.
