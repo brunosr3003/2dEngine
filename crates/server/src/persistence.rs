@@ -2978,6 +2978,28 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         }
     }
 
+    // O PASSE DA ILHA MAGICA: a forma da linha e' FORCADA, nao inserida.
+    //
+    // O `INSERT ... ON CONFLICT` da lista estatica so' atualiza icone e
+    // atributos, e so' quando o icone esta' zerado — ele NAO mexe em
+    // `stack_max`, `sell_price` nem `equip_slot`. Isso basta pra id novo, e
+    // o 466 nao era novo: a faixa 465-474 guarda linhas MORTAS do esquema
+    // antigo de montaria ("Tigre das Neves Azul", "Urso de Carga Roxo"), de
+    // quando especie e grau eram ids separados. O passe herdou a linha de uma
+    // delas — `stack_max = 1` e, pior, `equip_slot = montaria`: dava pra
+    // EQUIPAR o passe como montaria.
+    //
+    // Achado conferindo o deploy no banco de producao, e nao por teste: um
+    // teste de codigo nao ve' linha velha de banco.
+    sqlx::query(
+        "UPDATE items SET stack_max = 99, sell_price = 500, equip_slot = NULL, \
+                          buy_price = NULL, shop_order = NULL, item_level = 1 \
+         WHERE id = $1",
+    )
+    .bind(item_id::PASSE_MAGICO as i32)
+    .execute(pool)
+    .await?;
+
     // O pergaminho de pet cai na recompensa diaria, e o calendario nao
     // entrega item negociavel (docs/CALENDARIO.md): ele nasce VINCULADO. O
     // que sai dele — o pet — e' negociavel normalmente, que e' o ponto.
