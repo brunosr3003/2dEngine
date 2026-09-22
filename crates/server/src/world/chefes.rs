@@ -306,7 +306,29 @@ impl GameWorld {
             b += passo;
         }
         let seguras: Vec<Vec2> = self.safe_zones.iter().map(|(o, s)| *o + *s * 0.5).collect();
-        let lugares = sitios_de_chefe(&candidatos, self.porto_da_ilha, &seguras, chefes.len());
+        // A ILHA MAGICA poe o chefe na ILHOTA DO COLOSSO, e nao no lugar que
+        // a heuristica escolher.
+        //
+        // `sitios_de_chefe` procura chao plano longe do porto e das zonas
+        // seguras — uma boa regra numa ilha de verdade, e a regra errada
+        // aqui: no primeiro boot ele nasceu em (80,-120), que e' a Ilhota do
+        // Espolio. O bonus de DROP DE CHEFE e' justamente o da ilhota do
+        // meio, entao matar o chefe noutra ilhota tornava aquele bonus
+        // inalcancavel — a ilhota mais cobicada do desenho seria a unica
+        // impossivel de usar.
+        //
+        // Achado LENDO O LOG do primeiro boot em producao, nao por teste: o
+        // teste de povoamento pergunta "nasceu chefe?", e nasceu.
+        let lugares: Vec<Vec2> = if self.na_magica() {
+            shared::magica::ilhotas()
+                .into_iter()
+                .filter(|i| i.bonus == shared::magica::Bonus::DropDeChefe)
+                .map(|i| i.centro)
+                .take(chefes.len())
+                .collect()
+        } else {
+            sitios_de_chefe(&candidatos, self.porto_da_ilha, &seguras, chefes.len())
+        };
         for (c, pos) in chefes.iter().zip(lugares) {
             let e = self.nascer_chefe(c.kind, pos);
             self.vagas_de_chefe.push(VagaDeChefe {

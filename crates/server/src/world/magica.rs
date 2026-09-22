@@ -471,6 +471,24 @@ mod testes {
                     pos.0.x,
                     pos.0.y
                 );
+                // E NA ILHOTA DO COLOSSO, que é a que paga drop de chefe.
+                //
+                // No primeiro boot em produção ele nasceu em (80,-120) — a
+                // Ilhota do Espólio. `sitios_de_chefe` procura chão plano
+                // longe do porto e das zonas seguras, que é boa regra numa
+                // ilha de verdade e a regra errada aqui: matar o chefe noutra
+                // ilhota deixa o bônus de drop DELE inalcançável, e a ilhota
+                // mais cobiçada do desenho vira a única impossível de usar.
+                //
+                // Este teste existia e não pegou: ele perguntava "nasceu
+                // chefe?", e nascia. Achado lendo o log do boot.
+                assert_eq!(
+                    shared::magica::bonus_em(pos.0),
+                    Some(shared::magica::Bonus::DropDeChefe),
+                    "o chefe nasceu em ({:.0},{:.0}), fora da Ilhota do Colosso",
+                    pos.0.x,
+                    pos.0.y
+                );
             }
         }
     }
