@@ -45,6 +45,22 @@ pub mod chave {
     pub const SKILL_EVOLUIR: u16 = 104;
     /// O minimapa do HUD, quando o Mapa grande ainda está fechado.
     pub const MINIMAPA: u16 = 105;
+
+    // ── A ILHA (docs/COLONIA.md) ──
+    //
+    // A linha de tutorial da ilha caía no `_ => return` do `foco_do_tutorial`:
+    // cinco passos seguidos, todos numa interface que o jogador vê uma vez na
+    // vida, e nenhum deles com o buraco aceso. O dono jogou e disse que
+    // "está faltando aquele destaque de onde deve clicar igual outros
+    // tutoriais" — estava faltando mesmo, em todos os cinco.
+    /// O botão "Melhorar" da linha do Assentamento, no painel da ilha.
+    pub const ILHA_ASSENTAMENTO: u16 = 106;
+    /// Um botão de ofício numa casa vazia, no painel da ilha.
+    pub const ILHA_CONTRATAR: u16 = 107;
+    /// O botão "Colher".
+    pub const ILHA_COLHER: u16 = 108;
+    /// O botão "Retirar", do baú.
+    pub const ILHA_RETIRAR: u16 = 109;
 }
 
 /// Quantas chaves cabem num pedido. Três dá pro caminho mais fundo que existe

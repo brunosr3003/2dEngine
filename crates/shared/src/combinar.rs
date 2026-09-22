@@ -1,25 +1,34 @@
-//! A aba "Combinar" do Craft: juntar material de uma cor pra TENTAR a cor de
-//! cima.
+//! A aba "Combinar": juntar CINCO de uma cor pra TENTAR a cor de cima.
 //!
-//! Duas familias, duas regras:
+//! **Uma regra so', pra tudo**, por decisao do dono (22/09/2026):
 //!
-//! - **Chaves** (Escama, Garra, Chifre, Couro — os itens UNICOS de cada
-//!   receita): 5 da mesma cor tentam 1 da cor seguinte com 10% de chance, em
-//!   todo degrau, ate' roxa → lendaria. A chave e' o regulador do craft (so'
-//!   cai de chefe), entao subir de cor por aqui e' aposta, nao conta fechada.
-//!   Falhar consome as 5.
-//! - **Montarias** (docs/MONTARIAS.md) e **pets** (docs/PETS.md): 3 do mesmo grau tentam 1 do grau de cima,
-//!   cobrando cobre. Aposta como a chave — falhar consome os tres — e a
-//!   chance cai a cada degrau. O pet e' item de bolsa justamente pra caber
-//!   aqui e no mercado.
-//! - **Materiais** (os oito coloridos de 100/300): a sintese de
-//!   `docs/ECONOMIA_DE_CRAFT.md` — 10 da cor viram 1 da seguinte, sempre, mas
-//!   cobrando cobre, darksteel e Po Cintilante. E' a unica fonte de material
-//!   roxo.
+//! > "nem tudo pode ser combinado, apenas algumas coisas: pet, mount e
+//! > recursos chave, o resto nao e' combinavel — e tem q ser arrastar 5 de
+//! > qualquer cor igual, 10% de subir de cor pra algo aleatorio da proxima
+//! > cor naquele tipo de recurso"
+//!
+//! Antes eram tres regras diferentes na mesma aba: chave 5 a 10%, montaria e
+//! pet 3 com chance decrescente e cobre, material 10 com garantia mas
+//! cobrando cobre, darksteel e Po. Tres contas pro jogador aprender, e a
+//! unica que ele lembrava era a primeira.
+//!
+//! Agora:
+//!
+//! - **cinco** entram, sempre;
+//! - **10%** de chance, sempre;
+//! - a saida e' **sorteada** entre os itens daquela FAMILIA na cor de cima —
+//!   cinco Escamas Azuis podem virar qualquer chave roxa, nao a Escama Roxa.
+//!   E' o que faz combinar ser uma aposta de verdade e nao uma conversao com
+//!   passo extra;
+//! - falhar consome os cinco.
+//!
+//! Material comum (Aco, Quintessencia e os outros seis) **saiu**: nao e'
+//! combinavel. A sintese garantida de 10 que existia aqui era a unica fonte
+//! de material roxo, e tirar isso e' uma decisao de economia — ver
+//! `docs/ECONOMIA_DE_CRAFT.md`.
 //!
 //! Tudo aqui e' dado e conta pura: o cliente desenha a mesma tabela que o
-//! servidor cobra. O id de uma receita e' o item de ENTRADA — cada item sobe
-//! por um caminho so'.
+//! servidor cobra. O id de uma receita e' o item de ENTRADA.
 
 use crate::constants::item_id;
 
@@ -41,12 +50,14 @@ pub struct ReceitaDeCombinar {
     pub chave: bool,
 }
 
-/// Chaves consumidas por tentativa.
-pub const CHAVES_POR_TENTATIVA: u32 = 5;
-/// Chance de subir a chave da cor `cor` (1 cinza .. 4 roxa → lendaria): 10%
-/// em todo degrau (decisao de 19/09/2026 — era 10/7/5/3).
+/// Quantos entram por tentativa — cinco, pra tudo.
+pub const POR_TENTATIVA: u32 = 5;
+/// Nome velho, pros chamadores que ainda falam em chave.
+pub const CHAVES_POR_TENTATIVA: u32 = POR_TENTATIVA;
+/// A chance de subir, em %: dez, em todo degrau e pra toda familia.
+pub const CHANCE: u8 = 10;
 pub const fn chance_da_chave(_cor: u8) -> u8 {
-    10
+    CHANCE
 }
 
 /// Material consumido por sintese.
@@ -77,13 +88,14 @@ pub const MATERIAIS: [u16; 8] = [
 /// materiais (8 x 3 degraus — nao ha' material lendario).
 pub fn receitas() -> Vec<ReceitaDeCombinar> {
     let mut v = Vec::new();
+    // CHAVES: quatro familias, quatro degraus (cinza→lendaria).
     for &base in &item_id::CHAVES {
         for cor in 1..=4u8 {
             v.push(ReceitaDeCombinar {
                 entrada: item_id::chave_na_cor(base, cor),
-                qtd: CHAVES_POR_TENTATIVA,
+                qtd: POR_TENTATIVA,
                 saida: item_id::chave_na_cor(base, cor + 1),
-                chance: chance_da_chave(cor),
+                chance: CHANCE,
                 cobre: 0,
                 darksteel: 0,
                 po: 0,
@@ -92,14 +104,16 @@ pub fn receitas() -> Vec<ReceitaDeCombinar> {
             });
         }
     }
+    // MONTARIAS e PETS: mesma regra. A `saida` aqui e' so' o representante da
+    // familia — quem sorteia de verdade e' `sorteia_saida`, no servidor.
     for &base in &item_id::MONTARIAS {
         for grau in 1..crate::montarias::GRAU_MAX {
             v.push(ReceitaDeCombinar {
                 entrada: item_id::montaria_no_grau(base, grau),
-                qtd: crate::montarias::MONTARIAS_POR_TENTATIVA,
+                qtd: POR_TENTATIVA,
                 saida: item_id::montaria_no_grau(base, grau + 1),
-                chance: crate::montarias::chance_de_combinar(grau + 1),
-                cobre: crate::montarias::cobre_de_combinar(grau),
+                chance: CHANCE,
+                cobre: 0,
                 darksteel: 0,
                 po: 0,
                 cor: grau,
@@ -111,10 +125,10 @@ pub fn receitas() -> Vec<ReceitaDeCombinar> {
         for grau in 1..crate::pets::GRAU_MAX {
             v.push(ReceitaDeCombinar {
                 entrada: item_id::pet_no_grau(base, grau),
-                qtd: crate::pets::PETS_POR_TENTATIVA,
+                qtd: POR_TENTATIVA,
                 saida: item_id::pet_no_grau(base, grau + 1),
-                chance: crate::pets::chance_de_combinar(grau + 1),
-                cobre: crate::pets::cobre_de_combinar(grau),
+                chance: CHANCE,
+                cobre: 0,
                 darksteel: 0,
                 po: 0,
                 cor: grau,
@@ -122,23 +136,39 @@ pub fn receitas() -> Vec<ReceitaDeCombinar> {
             });
         }
     }
-    for &base in &MATERIAIS {
-        for cor in 1..=3u8 {
-            let (cobre, darksteel, po) = custo_da_sintese(cor);
-            v.push(ReceitaDeCombinar {
-                entrada: item_id::na_cor(base, cor),
-                qtd: MATERIAL_POR_SINTESE,
-                saida: item_id::na_cor(base, cor + 1),
-                chance: 100,
-                cobre,
-                darksteel,
-                po,
-                cor,
-                chave: false,
-            });
-        }
-    }
     v
+}
+
+/// Os candidatos de SAIDA de uma receita: os itens da mesma familia na cor de
+/// cima.
+///
+/// O dono pediu "algo aleatorio da proxima cor naquele tipo de recurso": cinco
+/// Escamas Azuis podem virar qualquer chave roxa, e nao a Escama Roxa. Sem
+/// isso combinar e' uma conversao com um passo a mais; com isso e' aposta.
+///
+/// Devolve a lista pro SERVIDOR sortear (o cliente desenha "uma chave roxa",
+/// sem prometer qual) — e nunca vazia: o primeiro e' a `saida` da receita.
+pub fn saidas_possiveis(r: &ReceitaDeCombinar) -> Vec<u16> {
+    let proxima = r.cor + 1;
+    if r.chave {
+        return item_id::CHAVES
+            .iter()
+            .map(|&b| item_id::chave_na_cor(b, proxima))
+            .collect();
+    }
+    if item_id::montaria_de_id(r.entrada).is_some() {
+        return item_id::MONTARIAS
+            .iter()
+            .map(|&b| item_id::montaria_no_grau(b, proxima))
+            .collect();
+    }
+    if item_id::pet_de_id(r.entrada).is_some() {
+        return item_id::PETS
+            .iter()
+            .map(|&b| item_id::pet_no_grau(b, proxima))
+            .collect();
+    }
+    vec![r.saida]
 }
 
 pub fn receita(entrada: u16) -> Option<ReceitaDeCombinar> {
@@ -192,64 +222,75 @@ mod testes {
         assert_eq!(garra.saida, item_id::na_cor(item_id::CLAW, 2));
     }
 
+    /// Material comum NAO combina.
+    ///
+    /// A sintese garantida (10 viram 1, cobrando cobre, darksteel e Po) saiu
+    /// em 22/09/2026: "nem tudo pode ser combinado, apenas pet, mount e
+    /// recursos chave". Era a unica fonte de material roxo — se voltar, e'
+    /// decisao de economia e nao descuido.
     #[test]
-    fn material_segue_a_sintese_do_documento() {
-        let r = receita(item_id::STEEL).unwrap();
-        assert_eq!((r.qtd, r.chance), (10, 100));
-        assert_eq!((r.cobre, r.darksteel, r.po), (2_000, 1_000, 2));
-        assert_eq!(r.saida, item_id::na_cor(item_id::STEEL, 2));
-        // Roxo nao sobe: nao existe material lendario.
-        assert!(receita(item_id::na_cor(item_id::STEEL, 4)).is_none());
+    fn material_comum_nao_combina() {
+        for base in MATERIAIS {
+            assert!(receita(base).is_none(), "{base} voltou a combinar");
+            assert!(receita(item_id::na_cor(base, 2)).is_none());
+        }
     }
 
     #[test]
     fn cada_item_sobe_por_um_caminho_so_e_nunca_vira_ele_mesmo() {
         let v = receitas();
         // 4 chaves x 4 degraus; UMA escada de montaria e UMA de pet, de 4
-        // degraus cada (a cor E' a criatura desde 20/09/2026 — antes eram
-        // tres especies de montaria e cinco de pet, cada uma com a sua
-        // escada); 8 materiais x 3.
-        assert_eq!(v.len(), 4 * 4 + 1 * 4 + 1 * 4 + 8 * 3);
+        // degraus cada (a cor E' a criatura desde 20/09/2026). Material comum
+        // saiu da tabela em 22/09/2026.
+        assert_eq!(v.len(), 4 * 4 + 4 + 4);
         for (i, a) in v.iter().enumerate() {
             assert_ne!(a.entrada, a.saida);
             assert!(v[i + 1..].iter().all(|b| b.entrada != a.entrada));
         }
     }
 
-    /// O pet sobe de grau pelo MESMO caminho da chave: aposta, 3 por
-    /// tentativa, e o id guarda o grau.
+    /// Pet, montaria e chave sobem pela MESMA regra: cinco, 10%, e o que sai
+    /// e' sorteado na familia.
+    ///
+    /// Eram tres regras diferentes na mesma aba — chave 5 a 10%, pet e
+    /// montaria 3 com chance decrescente e cobre. Uma so' e' o que o jogador
+    /// consegue guardar na cabeca.
     #[test]
-    fn tres_pets_do_mesmo_grau_tentam_um_do_grau_de_cima() {
-        let r = receita(item_id::PET_BASE).expect("lobinho cinza combina");
-        assert_eq!(r.qtd, crate::pets::PETS_POR_TENTATIVA);
-        assert_eq!(r.saida, item_id::pet_no_grau(item_id::PET_BASE, 2));
-        assert_eq!(r.chance, crate::pets::chance_de_combinar(2));
-        assert!(r.cobre > 0 && r.darksteel == 0 && r.po == 0);
+    fn tudo_que_combina_segue_a_mesma_regra() {
+        for r in receitas() {
+            assert_eq!(r.qtd, POR_TENTATIVA, "{} pede {} ", r.entrada, r.qtd);
+            assert_eq!(r.chance, CHANCE, "{}", r.entrada);
+            assert_eq!(
+                (r.cobre, r.darksteel, r.po),
+                (0, 0, 0),
+                "{} cobra material alem dos cinco",
+                r.entrada
+            );
+            // A saida sorteada e' da cor de cima, e a receita esta' entre elas.
+            let saidas = saidas_possiveis(&r);
+            assert!(!saidas.is_empty());
+            assert!(saidas.contains(&r.saida), "{}", r.entrada);
+        }
         // O laranja e' o teto: nao ha' receita saindo dele.
         assert!(receita(item_id::pet_no_grau(item_id::PET_BASE, 5)).is_none());
-        // Toda especie tem os quatro degraus.
-        for &base in &item_id::PETS {
-            for grau in 1..crate::pets::GRAU_MAX {
-                let r = receita(item_id::pet_no_grau(base, grau)).expect("degrau existe");
-                assert_eq!(r.saida, item_id::pet_no_grau(base, grau + 1));
-            }
-        }
     }
 
+    /// Com uma regra so' (cinco, sem custo em material), quem manda no
+    /// numero de tentativas e' a PILHA — e mais nada.
+    ///
+    /// O teste media o cobre limitando a sintese de Aco, que nao existe mais.
     #[test]
-    fn vezes_possiveis_para_no_que_falta_primeiro() {
-        let r = receita(item_id::STEEL).unwrap();
-        let bolsa = |id: u16| match id {
-            item_id::STEEL => 100,
-            item_id::COPPER => 5_000,
-            item_id::DARKSTEEL => 9_000,
-            item_id::GLITTERING_POWDER => 20,
-            _ => 0,
-        };
-        // 100 aco = 10, cobre 5.000 = 2: o cobre manda.
-        assert_eq!(vezes_possiveis(&r, &bolsa), 2);
+    fn vezes_possiveis_e_so_a_pilha() {
         let chifre = receita(item_id::HORN).unwrap();
         let so_chifre = |id: u16| if id == item_id::HORN { 12 } else { 0 };
-        assert_eq!(vezes_possiveis(&chifre, &so_chifre), 2);
+        assert_eq!(vezes_possiveis(&chifre, &so_chifre), 2, "12 chifres = 2x5");
+        assert_eq!(vezes_possiveis(&chifre, &|_| 4), 0, "4 nao pagam uma");
+        // Cobre no bolso nao muda nada: combinar nao cobra cobre.
+        let com_cobre = |id: u16| match id {
+            item_id::HORN => 12,
+            item_id::COPPER => 999_999,
+            _ => 0,
+        };
+        assert_eq!(vezes_possiveis(&chifre, &com_cobre), 2);
     }
 }

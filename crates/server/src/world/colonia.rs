@@ -319,49 +319,6 @@ impl GameWorld {
         });
     }
 
-    /// VISITAR: do porto pra ilha.
-    ///
-    /// A instancia e' o que separa uma colonia da outra, e ela sai do PROPRIO
-    /// personagem: assim dois jogadores nunca dividem ilha, e reconectar cai
-    /// sempre na mesma.
-    fn visitar_colonia(&mut self, sid: SessionId) {
-        if !self.perto_do_capitao(sid) {
-            self.avisa_colonia(sid, "O barco pra sua ilha sai do porto.");
-            return;
-        }
-        let zona = self.zona.clone();
-        let Some(s) = self.sessions.get_mut(&sid) else {
-            return;
-        };
-        // A volta e' gravada ANTES de viajar, e vai pro banco no `save_pending`
-        // que o `mandar_para_zona` liga: e' a sessao de LA' que vai le-la.
-        s.colonia.volta = zona;
-        self.mandar_para_zona(
-            sid,
-            shared::colonia::ZONA,
-            shared::colonia::CHEGADA,
-            Some("Você embarca para a sua ilha."),
-            Some("sua ilha"),
-        );
-    }
-
-    /// VOLTAR: da ilha pro porto de onde veio.
-    fn voltar_da_colonia(&mut self, sid: SessionId) {
-        let volta = self
-            .sessions
-            .get(&sid)
-            .map(|s| s.colonia.volta.clone())
-            .filter(|z| !z.is_empty())
-            .unwrap_or_else(|| shared::terreno::ARQUIPELAGO[0].zona.to_string());
-        // Volta pro CAIS de onde saiu, nao pra praca: quem foi ver a ilha
-        // pelo porto volta olhando pro Capitao.
-        let chegada = shared::terreno::def_da_zona(&volta)
-            .map(shared::terreno::Gerador::da_ilha)
-            .and_then(|g| g.porto().map(|p| p.centro))
-            .unwrap_or(Vec2::ZERO);
-        self.mandar_para_zona(sid, &volta, chegada, Some("De volta ao porto."), None);
-    }
-
     /// CONTRATAR: poe (ou troca) o morador de uma vaga.
     ///
     /// A colheita e' contada ANTES, e nao depois: quem trocasse de oficio na
@@ -396,9 +353,7 @@ impl GameWorld {
         //
         // Sem isso, contratar e colher em seguida nao rende NADA: um lenhador
         // faz 8 de madeira por hora, entao a primeira unidade sai em 7,5
-        // minutos. O passo "Colher" do tutorial abria e ficava esperando — o
-        // jogador parado na ilha sem saber o que fazer, com o barco pra
-        // Geleira atras disso.
+        // minutos. O passo "Colher" do tutorial abria e ficava esperando.
         //
         // So' na primeira contratacao (colonia sem ninguem): depois o relogio
         // e' o relogio, e esperar faz parte.
@@ -436,49 +391,19 @@ impl GameWorld {
     /// A porta de entrada de tudo o que a colonia pede.
     pub(super) fn handle_colonia(&mut self, sid: SessionId, pedido: shared::colonia::PedidoColonia) {
         use shared::colonia::PedidoColonia as P;
-        // SAIR nunca depende da escritura.
-        //
-        // A trava do `tem` vinha antes de tudo, inclusive do `Voltar` — e quem
-        // estivesse DENTRO da colonia sem a escritura (save antigo, escritura
-        // perdida, entrada por outro caminho) nao podia fazer nada ali, nem
-        // ir embora. Nem pelo barqueiro, que passa por aqui. Ilha sem saida e'
-        // armadilha, e esta fechava com o jogador dentro.
-        let dentro_agora = shared::colonia::e_colonia(&self.zona);
-        if matches!(pedido, P::Voltar) && dentro_agora {
-            self.voltar_da_colonia(sid);
-            return;
-        }
-        // Pro resto, sem a escritura nao ha' o que abrir, colher ou melhorar.
-        // A trava fica AQUI, e nao em cada braco: braco novo nasce travado.
+        // Sem a escritura nao ha' o que abrir, colher ou melhorar. A trava
+        // fica AQUI, e nao em cada braco: braco novo nasce travado.
         if !self.sessions.get(&sid).is_some_and(|s| s.colonia.tem) {
             self.avisa_colonia(sid, "Você ainda não tem uma ilha.");
             return;
         }
-        // O que MEXE na ilha so' se faz DENTRO dela. Antes dava pra subir o
-        // assentamento, contratar e colher de qualquer canto do arquipelago —
-        // e uma ilha que se administra de longe nao e' um lugar, e' uma aba
-        // de menu. O dono pediu o contrario.
-        //
-        // A trava fica AQUI, na porta, e nao em cada braco: braco novo nasce
-        // travado. `Painel` fica de fora (olhar de longe nao mexe em nada) e
-        // `Visitar` tambem, que e' o que se faz PRA chegar.
-        let dentro = dentro_agora;
-        let mexe = !matches!(pedido, P::Painel | P::Visitar);
-        if mexe && !dentro {
-            self.avisa_colonia(sid, "Isso se faz na ilha. Fale com o Capitão do Porto.");
-            return;
-        }
+        // A ilha e' um PAINEL: abre e se administra de qualquer lugar. A trava
+        // de "so' dentro da ilha" morreu junto com a zona — nao ha' dentro.
         match pedido {
             P::Painel => {
-                // O tutorial do mural fecha aqui: abrir o painel DENTRO da
-                // ilha e' o gesto. De fora nao conta — de fora nao e' mural.
-                if dentro {
-                    self.passo_de_tutorial(sid, shared::quests::tutorial::COLONIA_MURAL);
-                }
+                self.passo_de_tutorial(sid, shared::quests::tutorial::COLONIA_PAINEL);
                 self.abrir_colonia(sid)
             }
-            P::Visitar => self.visitar_colonia(sid),
-            P::Voltar => self.voltar_da_colonia(sid),
             P::Retirar => {
                 self.retirar_do_bau(sid);
                 self.abrir_colonia(sid);

@@ -183,7 +183,12 @@ impl InvocacaoUi {
                         PremioInvocacao::Chave { item_id, cor } => (
                             nomes.get(item_id).cloned().unwrap_or_else(|| "Chave".into()),
                             shared::forja::Grau::de_u8(*cor).map_or("Comum", |g| g.nome()).to_string(),
-                            Color::from_rgba(80, 170, 255, 255),
+                            // A cor E' a raridade. Era azul cravado
+                            // (80,170,255) pra toda chave: o jogador abria dez
+                            // e as dez saiam iguais, inclusive a roxa. Todos os
+                            // outros premios ja' usavam `cor_do_grau` — a
+                            // chave era a unica que mentia.
+                            cor_do_grau(*cor),
                         ),
                         PremioInvocacao::Montaria { item_id } => (
                             shared::montarias::de_item(*item_id)

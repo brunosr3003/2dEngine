@@ -2,6 +2,8 @@
 //! em andamento), o diario (J), o rastreador no canto e o "!"/"?" sobre o
 //! Mestre. Aceitar, progresso e entrega sao do SERVIDOR: aqui so' se mostra e
 //! se pede.
+use std::collections::HashSet;
+
 use macroquad::prelude::*;
 use shared::historia;
 use shared::protocol::ClientMessage;
@@ -30,6 +32,44 @@ pub enum NoRastreador {
     Diario,
     /// O rodape: abre todas as missoes.
     Todas,
+    /// O alfinete: fixa (ou solta) esta missao no topo do rastreador.
+    Fixar(u16),
+}
+
+/// O CONTADOR de missoes concluidas, no centro superior da tela.
+///
+/// Aparece quando sobe e desaparece sozinho. Terminar uma missao so' deixava
+/// rastro no chat — que rola, some e compete com conversa: o jogador fechava
+/// cinco seguidas e nao via nenhuma. Aqui ele ve' o numero subir, fixada ou
+/// nao, que foi o que o dono pediu.
+///
+/// Nao e' painel: e' um numero que pisca e sai. Desenhado por cima de tudo,
+/// sem pegar toque — nada aqui e' clicavel, e roubar um toque no meio da luta
+/// pra mostrar um placar seria pior que nao mostrar.
+pub fn desenha_contador(m: &Missoes, agora: f64) {
+    const DURACAO: f64 = 3.2;
+    if m.concluidas == 0 {
+        return;
+    }
+    let t = agora - m.concluida_em;
+    if t > DURACAO {
+        return;
+    }
+    // Entra depressa, fica, e some no ultimo terco.
+    let a = ((DURACAO - t) / (DURACAO * 0.33)).clamp(0.0, 1.0) as f32;
+    let sobe = (1.0 - (t / 0.25).clamp(0.0, 1.0) as f32) * 14.0;
+    let s = crate::hud_layout::tela_segura();
+    let x = s.x + s.w * 0.5;
+    let y = s.y + 54.0 - sobe;
+    let texto = format!("Missões concluídas: {}", m.concluidas);
+    estilo::texto_centro(x + 1.0, y + 1.0, &texto, 18, Color::new(0.0, 0.0, 0.0, 0.55 * a));
+    estilo::texto_centro(
+        x,
+        y,
+        &texto,
+        18,
+        Color::new(estilo::OURO.r, estilo::OURO.g, estilo::OURO.b, a),
+    );
 }
 
 /// Quanto do item-alvo o jogador carrega (coleta e' conferida na entrega).
@@ -63,6 +103,16 @@ pub struct Missoes {
     givers: Vec<u16>,
     /// "Ir" apertado no diario neste quadro: o `main` liga a auto missao.
     pub ir: Option<u16>,
+    /// As missoes FIXADAS: ficam no topo do rastreador, logo abaixo da
+    /// historia. Vivem so' na sessao — fixar e' uma decisao do momento.
+    pub fixadas: HashSet<u16>,
+    /// Quantas missoes foram CONCLUIDAS nesta sessao, e quando a ultima.
+    ///
+    /// O dono pediu o contador no centro superior "subindo ao fazer qualquer
+    /// missao, mesmo nao fixada": a recompensa de terminar uma missao estava
+    /// so' no chat, que rola e some.
+    pub concluidas: u32,
+    pub concluida_em: f64,
     /// O giver do NPC que abriu a janela (o Mestre ou um oficio da vila):
     /// so' as missoes DELE se entregam aqui.
     giver: Option<u16>,
@@ -100,7 +150,6 @@ fn verbo(q: &QuestNet) -> &'static str {
         objective_kind::LUGAR => "Ir até",
         objective_kind::NIVEL => "Nível",
         objective_kind::VIAGEM => "Viajar",
-        objective_kind::COLONIA => "Visitar",
         objective_kind::DUNGEON => "Vencer",
         objective_kind::TUTORIAL => "Aprender",
         _ => "Objetivo",
@@ -112,8 +161,28 @@ fn verbo(q: &QuestNet) -> &'static str {
 /// As DIARIAS nao entram: tem painel proprio (icone no topo e Menu), e no
 /// canto elas empurravam a historia e a cadeia pra fora da lista.
 pub fn ordem_do_rastreador(log: &[QuestNet]) -> Vec<&QuestNet> {
+    ordem_com_fixadas(log, &HashSet::new())
+}
+
+/// A mesma ordem, com as FIXADAS na frente.
+///
+/// O rastreador mostra as primeiras N e o resto some. Com a historia sempre no
+/// topo e o log cheio, a missao que o jogador esta' de fato fazendo caia pra
+/// fora da lista — e ele nao tinha como dizer "esta aqui eu quero ver". O dono
+/// pediu: "escolher quais missoes ficam mostrando no menu de missoes na
+/// esquerda o tempo todo. Fixadas."
+///
+/// A HISTORIA continua na frente de tudo: ela e' o fio, e perde-la de vista e'
+/// o jeito mais rapido de travar sem saber por que.
+pub fn ordem_com_fixadas<'a>(log: &'a [QuestNet], fixadas: &HashSet<u16>) -> Vec<&'a QuestNet> {
     let mut v: Vec<&QuestNet> = log.iter().filter(|q| !q.daily).collect();
-    v.sort_by_key(|q| !historia::e_da_historia(q.id));
+    v.sort_by_key(|q| {
+        (
+            !historia::e_da_historia(q.id),
+            !fixadas.contains(&q.id),
+            q.id,
+        )
+    });
     v
 }
 
@@ -127,7 +196,6 @@ fn estado_da_historia(q: &QuestNet, nivel: u32) -> String {
         objective_kind::LUGAR => format!("Ir até {}", historia::ponto::nome(q.obj_target)),
         objective_kind::VIAGEM => "Fale com o Capitão do Porto".into(),
         // O Capitao leva; o botao e' MINHA ILHA, e nao Embarcar.
-        objective_kind::COLONIA => "Peça MINHA ILHA ao Capitão do Porto".into(),
         // Tutorial de GESTO nao tem contagem (obj_count 1): "1/1" nao diz
         // nada. O da Energia pede uma quantia, e ai' o quanto falta e' a
         // informacao principal.
@@ -650,7 +718,7 @@ impl Missoes {
                 estilo::SUAVE,
             );
         }
-        for (i, q) in ordem_do_rastreador(&self.log)
+        for (i, q) in ordem_com_fixadas(&self.log, &self.fixadas)
             .into_iter()
             .take(n)
             .enumerate()
@@ -671,6 +739,20 @@ impl Missoes {
                 draw_poly(c.x, c.y, 4, 6.0 * s, 0.0, estilo::OURO);
                 draw_poly(c.x, c.y, 4, 3.0 * s, 0.0, Color::new(1.0, 0.95, 0.7, 1.0));
             }
+            // O ALFINETE: fixa a missao no topo. So' pra quem nao e' historia
+            // — ela ja' esta' sempre em primeiro, e um alfinete que nao muda
+            // nada e' um botao que mente.
+            let fixada = self.fixadas.contains(&q.id);
+            let alfinete = Rect::new(linha.x + linha.w - 26.0 * s, y + 4.0 * s, 22.0 * s, 22.0 * s);
+            if !principal {
+                estilo::texto_centro(
+                    alfinete.center().x,
+                    alfinete.center().y + 5.0 * s,
+                    "*",
+                    if fixada { 18 } else { 15 },
+                    if fixada { estilo::OURO } else { estilo::SUAVE },
+                );
+            }
             if linha.contains(mouse) {
                 draw_rectangle(
                     linha.x,
@@ -680,7 +762,13 @@ impl Missoes {
                     Color::new(1.0, 1.0, 1.0, 0.06),
                 );
                 if clique {
-                    saida = Some(NoRastreador::Missao(q.id));
+                    // O alfinete vem ANTES: ele esta' dentro da linha, e sem
+                    // isto fixar mandaria o boneco andar pra missao.
+                    saida = Some(if !principal && alfinete.contains(mouse) {
+                        NoRastreador::Fixar(q.id)
+                    } else {
+                        NoRastreador::Missao(q.id)
+                    });
                 }
             }
             if auto == Some(q.id) {

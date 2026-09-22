@@ -392,13 +392,28 @@ pub fn combinar(
     if !por_empilhavel(&mut sim, r.saida, n, cap) {
         return Err("bolsa cheia".into());
     }
-    let sucessos = (0..n).filter(|_| shared::combinar::deu_certo(r, sorte())).count() as u32;
-    cobra(inv);
-    if sucessos > 0 {
-        // Cabe: o pior caso (n) coube na simulacao.
-        por_empilhavel(inv, r.saida, sucessos, cap);
+    // Cada sucesso sorteia o SEU item dentro da familia da cor de cima.
+    //
+    // O dono pediu "algo aleatorio da proxima cor naquele tipo de recurso":
+    // cinco Escamas Azuis podem virar qualquer chave roxa. Sortear por
+    // tentativa e nao uma vez pro lote e' o que faz dez tentativas darem
+    // resultados diferentes — sortear uma vez so' seria uma conversao com
+    // aparencia de aposta.
+    let saidas = shared::combinar::saidas_possiveis(r);
+    let mut ganhos: Vec<u16> = Vec::new();
+    for _ in 0..n {
+        if shared::combinar::deu_certo(r, sorte()) {
+            let k = sorte() as usize % saidas.len();
+            ganhos.push(saidas[k.min(saidas.len() - 1)]);
+        }
     }
-    Ok((n as u16, sucessos as u16))
+    cobra(inv);
+    for id in &ganhos {
+        // Cabe: o pior caso (n do mesmo item) coube na simulacao, e itens
+        // diferentes ocupam no maximo o mesmo tanto de espacos.
+        por_empilhavel(inv, *id, 1, cap);
+    }
+    Ok((n as u16, ganhos.len() as u16))
 }
 
 #[cfg(test)]
@@ -604,36 +619,45 @@ mod testes {
     fn combinar_cobra_todas_e_entrega_so_os_sucessos() {
         let r = shared::combinar::receita(item_id::HORN).unwrap();
         let mut inv = bolsa(&[(item_id::HORN, 23)]);
-        // Sorte alterna 0 (certo) e 50 (errado): 4 tentativas, 2 sucessos.
-        let mut k = 0u8;
-        let mut sorte = || {
-            k = k.wrapping_add(1);
-            if k % 2 == 1 { 0 } else { 50 }
-        };
+        // O SORTEIO CONSOME DOIS numeros num sucesso e um numa falha: o
+        // primeiro decide se subiu, o segundo escolhe QUAL item da familia
+        // saiu (`combinar::saidas_possiveis`). Um gerador que alterna
+        // 0/50/0/50 nao serve mais — o segundo saque desalinha a alternancia
+        // e TODAS as tentativas passam a ver 0.
+        //
+        // Entao o roteiro e' explicito: <sucesso, escolha, falha, ...>.
+        let mut roteiro = [0u8, 0, 50, 0, 0, 50].into_iter();
+        let mut sorte = || roteiro.next().unwrap_or(50);
         let r2 = combinar(&mut inv, &r, 50, 99, &nome, &mut sorte);
-        assert_eq!(r2, Ok((4, 2)));
-        assert_eq!(tem(&inv, item_id::HORN), 3);
-        assert_eq!(tem(&inv, r.saida), 2);
+        assert_eq!(r2, Ok((4, 2)), "quatro tentativas, dois sucessos");
+        assert_eq!(tem(&inv, item_id::HORN), 3, "cobra as quatro");
+        // O que saiu e' da familia das CHAVES, na cor de cima — nao
+        // necessariamente o mesmo chifre.
+        let ganhos: u32 = shared::combinar::saidas_possiveis(&r)
+            .iter()
+            .map(|id| tem(&inv, *id))
+            .sum();
+        assert_eq!(ganhos, 2, "dois premios, da familia da cor de cima");
         // 3 chifres nao pagam uma tentativa.
         let e = combinar(&mut inv, &r, 1, 99, &nome, &mut || 0).unwrap_err();
         assert!(e.contains("3/5"), "{e}");
     }
 
+    /// Material comum NAO combina mais.
+    ///
+    /// A sintese garantida (10 viram 1, cobrando cobre, darksteel e Po) era a
+    /// unica fonte de material roxo. Saiu por decisao do dono em 22/09/2026 —
+    /// "nem tudo pode ser combinado, apenas pet, mount e recursos chave" —, e
+    /// isto trava a decisao: se o Aco voltar pra tabela, alguem precisa
+    /// decidir de novo de onde vem o roxo.
     #[test]
-    fn sintese_de_material_cobra_cobre_darksteel_e_po() {
-        let r = shared::combinar::receita(item_id::STEEL).unwrap();
-        let mut inv = bolsa(&[
-            (item_id::STEEL, 25),
-            (item_id::COPPER, 4_500),
-            (item_id::DARKSTEEL, 3_000),
-            (item_id::GLITTERING_POWDER, 9),
-        ]);
-        assert_eq!(combinar(&mut inv, &r, 50, 999, &nome, &mut || 99), Ok((2, 2)));
-        assert_eq!(tem(&inv, item_id::STEEL), 5);
-        assert_eq!(tem(&inv, item_id::COPPER), 500);
-        assert_eq!(tem(&inv, item_id::DARKSTEEL), 1_000);
-        assert_eq!(tem(&inv, item_id::GLITTERING_POWDER), 5);
-        assert_eq!(tem(&inv, r.saida), 2);
+    fn material_comum_nao_combina() {
+        for base in shared::combinar::MATERIAIS {
+            assert!(
+                shared::combinar::receita(base).is_none(),
+                "{base} voltou a ser combinavel"
+            );
+        }
     }
 
     #[test]
@@ -668,9 +692,9 @@ mod testes {
         let cinza = item_id::pet_no_grau(item_id::PET_BASE, 1);
         let r = shared::combinar::receita(cinza).expect("pet cinza sobe");
         let mut inv = vec![InventorySlot::default(); 24];
-        for (i, s) in inv.iter_mut().take(3).enumerate() {
+        for (i, s) in inv.iter_mut().take(5).enumerate() {
             let mut inst = ItemInstance::vazia_de_grau(1);
-            // Tres afinidades diferentes, pra provar que nao empilham.
+            // Afinidades diferentes, pra provar que nao empilham.
             inst.afinidade = Some([i as u8, (i as u8 + 1) % 6]);
             *s = InventorySlot {
                 item_id: cinza,
@@ -678,16 +702,21 @@ mod testes {
                 instance: Some(inst),
             };
         }
-        inv[3] = InventorySlot {
+        inv[6] = InventorySlot {
             item_id: item_id::COPPER,
             qty: 999_999,
             instance: None,
         };
-        assert_eq!(tem(&inv, cinza), 3, "com instancia, o pet TEM que contar");
+        assert_eq!(tem(&inv, cinza), 5, "com instancia, o pet TEM que contar");
 
         assert_eq!(combinar(&mut inv, &r, 1, 1, &nome, &mut || 0), Ok((1, 1)));
-        assert_eq!(tem(&inv, cinza), 0, "os tres entraram na tentativa");
-        let filho: Vec<_> = inv.iter().filter(|s| s.item_id == r.saida && s.qty > 0).collect();
+        assert_eq!(tem(&inv, cinza), 0, "os cinco entraram na tentativa");
+        // O filho sai da FAMILIA na cor de cima, sorteado — nao e' fixo.
+        let saidas = shared::combinar::saidas_possiveis(&r);
+        let filho: Vec<_> = inv
+            .iter()
+            .filter(|s| saidas.contains(&s.item_id) && s.qty > 0)
+            .collect();
         assert_eq!(filho.len(), 1);
         assert_eq!(filho[0].qty, 1, "bicho nunca empilha");
         assert!(

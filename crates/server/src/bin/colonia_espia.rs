@@ -51,6 +51,8 @@ async fn main() -> anyhow::Result<()> {
     // assentamento, contratar, colher, retirar — e diz qual passo fechou e
     // qual não. É o caminho que o jogador faz, pelas mesmas mensagens.
     let quests = args.iter().any(|a| a == "--quests");
+    // `--mundo`: pede o mapa-múndi e conta quantos chefes vieram por ilha.
+    let mundo = args.iter().any(|a| a == "--mundo");
 
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{host}")).await?;
     let envia = |m: &ClientMessage| -> anyhow::Result<Message> {
@@ -87,7 +89,12 @@ async fn main() -> anyhow::Result<()> {
         tokio::select! {
             _ = relogio.tick(), if no_mundo => {
                 seq += 1;
-                if quests {
+                if mundo {
+                    if seq == 30 {
+                        println!("    -> pedindo o mapa-mundi");
+                        ws.send(envia(&ClientMessage::Mundo)?).await?;
+                    }
+                } else if quests {
                     // Um pedido por segundo, na ordem que a quest ensina.
                     // Cada um responde com `Estado`, e o QuestUpdate diz se o
                     // passo fechou — é isso que o teste está lendo.
@@ -96,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
                         proximo_passo = t_s + 1.2;
                         use shared::colonia::PedidoColonia as P;
                         let pedido = match passo_aberto {
-                            Some(798) => Some(P::Painel),
+                            Some(718) => Some(P::Painel),
                             Some(799) => Some(P::Melhorar {
                                 eixo: shared::colonia::eixo::ASSENTAMENTO as u8,
                             }),
@@ -271,6 +278,18 @@ async fn main() -> anyhow::Result<()> {
                     passo_aberto = Some(q.id);
                 }
             }
+                    ServerMessage::Mundo { ref ilhas } => {
+                        println!("{n:3} MUNDO: {} ilha(s)", ilhas.len());
+                        for i in ilhas {
+                            println!(
+                                "      {} · no_ar={} · {} chefe(s){}",
+                                i.zona,
+                                i.no_ar,
+                                i.chefes.len(),
+                                if i.chefes.is_empty() { "  <-- VAZIO" } else { "" }
+                            );
+                        }
+                    }
                     ServerMessage::Snapshot { snapshot } => {
                         tick = snapshot.tick;
                         if let Some(id) = meu {
@@ -340,7 +359,7 @@ async fn main() -> anyhow::Result<()> {
     if quests {
         println!("\n─────────────── a linha da ilha ───────────────");
         for (id, nome) in [
-            (798u16, "O mural da praça"),
+            (718u16, "A escritura da ilha"),
             (799, "Casa vira vila"),
             (800, "O primeiro morador"),
             (801, "O que a ilha rendeu"),

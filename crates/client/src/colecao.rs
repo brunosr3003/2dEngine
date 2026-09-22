@@ -311,7 +311,10 @@ mod testes {
             let abaixo = topo - 1;
             let r = shared::combinar::receita(abaixo).expect("o roxo sobe");
             assert_eq!(r.saida, topo);
-            assert_eq!(r.qtd, 3);
+            // CINCO, pra tudo (decisao de 22/09/2026): pet e montaria pediam
+            // tres e a chave cinco, e o jogador tinha que lembrar de qual era
+            // qual. Ver `shared::combinar`.
+            assert_eq!(r.qtd, shared::combinar::POR_TENTATIVA);
         }
     }
 }

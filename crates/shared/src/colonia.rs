@@ -471,12 +471,17 @@ mod testes {
 /// O que o jogador pede a colonia.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PedidoColonia {
-    /// So' o estado, pro painel. Nao viaja.
+    /// O estado, pro painel.
+    ///
+    /// A ilha NAO E' MAIS UMA ZONA (decisao do dono, 22/09/2026): ela virou
+    /// painel com maquete. Nao ha' viagem de ida nem de volta, nao ha' mural
+    /// nem cais, e o painel abre de qualquer lugar do arquipelago.
+    ///
+    /// O que motivou: a ilha como LUGAR cobrava a caminhada e nao entregava
+    /// nada nela — praca vazia, um boneco sem icone no cais, e a interface do
+    /// que importa (o que se tem, o que rende) escondida atras de tudo isso.
+    /// "Talvez seja melhor refatorar, virar apenas menu com mapa 3D."
     Painel,
-    /// No porto: teleporta pra ilha.
-    Visitar,
-    /// Na ilha: volta pro porto de onde veio.
-    Voltar,
     /// Colhe o que ela rendeu.
     Colher,
     /// Sobe um eixo (`colonia::eixo`).
@@ -546,10 +551,9 @@ pub struct DadosColonia {
     pub colhida_em: i64,
     /// Se a quest ja' entregou a ilha.
     pub tem: bool,
-    /// A zona de onde o jogador saiu pra visitar. E' o caminho de VOLTA, e
-    /// ele tem que ser persistido: a colonia e' outro processo, e a sessao
-    /// que sabia de onde ele veio morre na troca de zona. Vazio = volta pra
-    /// ilha inicial.
+    /// Sobra da epoca em que a ilha era zona e se viajava pra ela. Fica no
+    /// JSON pra nao quebrar o save de quem tem a coluna preenchida; nada le'.
+    #[serde(default)]
     pub volta: String,
     /// Os MORADORES, na ordem das vagas (`vagas_de_trabalho`). Vazio = a ilha
     /// nao rende nada, que e' como ela comeca: uma casa sozinha.

@@ -440,30 +440,6 @@ const fn viajar(
     }
 }
 
-/// Ir a' PROPRIA ilha e pisar nela. Conclui ao CHEGAR — nao ao falar com quem
-/// leva. O barco pra la' e' o mesmo Capitao, e e' por isso que este passo nao
-/// pode ser um TALK: o Capitao ja' e' o alvo do passo anterior e do seguinte,
-/// e um TALK com ele se cumpriria sozinho na conversa da viagem.
-#[allow(clippy::too_many_arguments)]
-const fn visitar_colonia(
-    id: u16,
-    title: &'static str,
-    desc: &'static str,
-    gold: u32,
-    xp: u64,
-    item: u16,
-    qtd: u16,
-) -> QuestDef {
-    QuestDef {
-        obj_kind: objective_kind::COLONIA,
-        obj_target: 0,
-        obj_count: 1,
-        reward_item: item,
-        reward_item_qty: qtd,
-        ..base(id, title, desc, gold, xp)
-    }
-}
-
 const VERDE: u16 = item_id::na_cor(item_id::STEEL, 2);
 const AZUL: u16 = item_id::na_cor(item_id::STEEL, 3);
 
@@ -503,28 +479,30 @@ pub const PASSOS: &[QuestDef] = &[
     cacar(715, "Garras no caminho do cais", "Tigres cercam a estrada dos carregadores e ninguém passa com carga. Derrote 5 — deles se tira a Quintessência, que toda armadura pede e a pedra dá a conta-gotas.", alvo_de_mob(mob_kind::TIGRE), 5, 250, 90_000, item_id::GREATER_HEAL),
     ir(716, "O cais ao amanhecer", "Vá até a ponta do cais: o Capitão prometeu mostrar a rota das ilhas.", ponto::CAIS, 200, 120_000),
     dungeon(717, "A adega do contrabandista", "Antes de zarpar, o Capitão quer o porto limpo: os contrabandistas de Morgan guardam pedra do farol numa adega sob o cais. Toque no passo (ou em Dungeons, no Menu) e limpe a Adega do Contrabandista.", 2, 500, 97_500, item_id::GREATER_HEAL, 5),
-    visitar_colonia(718, "A escritura da ilha", "O Capitão te entrega uma escritura: uma ilhota a meia hora do cais, sem dono desde a tempestade. É sua. Fale com ele no porto e peça MINHA ILHA — a ilhota rende sozinha enquanto você navega, e daqui em diante você volta a ela quando quiser.", 0, 60_000, item_id::GREATER_HEAL, 3),
+    // A escritura E' o passo de ABRIR o painel.
+    //
+    // Era "pise na ilha" (`objective_kind::COLONIA`), de quando ela era uma
+    // zona com cais e barqueiro. A ilha virou painel (22/09/2026), entao o
+    // gesto virou abrir — e continua sendo um GESTO, que foi o que fez este
+    // passo deixar de ser um TALK que se cumpria sozinho na conversa da
+    // viagem.
+    //
+    // A recompensa e' o custo da primeira obra (`o_tutorial_da_ilha_se_paga`).
+    tutorial_com_cobre(718, "A escritura da ilha", "O Capitão te entrega uma escritura: uma ilhota a meia hora do cais, sem dono desde a tempestade. É sua — e ela rende sozinha enquanto você navega. Abra Menu › Minha Ilha para vê-la: o Capitão deixou lá o material da primeira obra.", tut::COLONIA_PAINEL, 8_000, 60_000, item_id::WOOD_T1, 80),
     // ── O TUTORIAL DA PROPRIA ILHA ──
     //
     // Entram DEPOIS do 718 (pisar na ilha) e ANTES do barco: e' a unica hora
-    // em que o jogador esta' la' com a historia na mao. A ilha tem tres
-    // regras que nao existem em nenhum outro lugar do jogo — o painel e' um
-    // MURAL, a colheita cai num BAU e ela so' rende com MORADOR —, e nenhuma
-    // delas se adivinha.
+    // em que o jogador a recebe com a historia na mao. A ilha tem duas regras
+    // que nao existem em nenhum outro lugar do jogo — a colheita cai num BAU e
+    // ela so' rende com MORADOR —, e nenhuma delas se adivinha.
     //
     // Ids na faixa de tutorial (790+), entao entram no meio do capitulo sem
-    // renumerar passo nenhum (ver `id_do_passo`).
-    // A recompensa deste passo E' o custo do seguinte: 8.000 de cobre e 80 de
-    // madeira, que e' exatamente `colonia::custo(ASSENTAMENTO, 2)`. Sem isso o
-    // passo "melhore o Assentamento" abria e NAO FECHAVA — o jogador chega na
-    // ilha no fim do capitulo I sem oito mil de cobre sobrando, e a historia
-    // inteira (inclusive o barco pra Geleira) fica atras dessa conta.
-    // `o_tutorial_da_ilha_se_paga` trava o contrato.
-    tutorial_com_cobre(798, "O mural da praça", "A ilha é sua, e tudo o que se faz nela se faz no MURAL da praça — não no Menu. Vá até ele e toque: o Capitão deixou lá o material da primeira obra.", tut::COLONIA_MURAL, 8_000, 8_000, item_id::WOOD_T1, 80),
-    tutorial(799, "Casa vira vila", "Uma casa sozinha não sustenta ninguém. No mural, melhore o ASSENTAMENTO: ele aplaina mais chão e abre a primeira casa de ofício.", tut::COLONIA_ASSENTAMENTO, 0, 10_000, item_id::WOOD_T1, 60),
-    tutorial(800, "O primeiro morador", "Casa vazia não rende. No mural, na casa que abriu, escolha um ofício — o Lenhador traz madeira, o Minerador traz aço, o Mercenário traz cobre.", tut::COLONIA_CONTRATAR, 0, 12_000, item_id::GREATER_HEAL, 2),
-    tutorial(801, "O que a ilha rendeu", "Seu morador já trabalhou. No mural, toque em COLHER: o que ele produziu vai pro BAÚ DA ILHA, e não pra sua bolsa — é por isso que voltar aqui vale a pena.", tut::COLONIA_COLHER, 0, 12_000, item_id::GREATER_HEAL, 2),
-    tutorial(802, "Buscar no baú", "O baú é da ilha. No mural, toque em RETIRAR para passar o que há nele pra sua bolsa — o que não couber fica guardado. Quando quiser voltar, o BARQUEIRO espera no cais da ilha.", tut::COLONIA_RETIRAR, 0, 14_000, item_id::XP_POTION, 1),
+    // renumerar passo nenhum (ver `id_do_passo`). O passo de ABRIR o painel e'
+    // o 718, a propria escritura.
+    tutorial(799, "Casa vira vila", "Uma casa sozinha não sustenta ninguém. No painel da ilha, melhore o ASSENTAMENTO: ele abre a primeira casa de ofício.", tut::COLONIA_ASSENTAMENTO, 0, 10_000, item_id::WOOD_T1, 60),
+    tutorial(800, "O primeiro morador", "Casa vazia não rende. Na casa que abriu, escolha um ofício — o Lenhador traz madeira, o Minerador traz aço, o Mercenário traz cobre.", tut::COLONIA_CONTRATAR, 0, 12_000, item_id::GREATER_HEAL, 2),
+    tutorial(801, "O que a ilha rendeu", "Seu morador já trabalhou. Toque em COLHER: o que ele produziu vai pro BAÚ DA ILHA, e não pra sua bolsa.", tut::COLONIA_COLHER, 0, 12_000, item_id::GREATER_HEAL, 2),
+    tutorial(802, "Buscar no baú", "O baú é da ilha. Toque em RETIRAR para passar o que há nele pra sua bolsa — o que não couber fica guardado.", tut::COLONIA_RETIRAR, 0, 14_000, item_id::XP_POTION, 1),
     viajar(719, "Rumo à Geleira", "O farol da Geleira ainda brilha, mas por pouco. Peça ao Capitão do Porto um lugar no barco.", 1, 400, 1_500),
     // ═════════════ II · O Farol Congelado (Geleira, 15–30) ═════════════
     falar(720, "Frio de rachar os ossos", "Você desembarcou na Geleira. Apresente-se ao Mestre de Missões da praça.", Papel::Missoes, 200, 1_200, item_id::GREATER_HEAL, 2),
@@ -1066,18 +1044,32 @@ mod testes {
         assert!(!e_da_historia(ID_MARCO));
     }
 
-    /// A escritura da ilha pede PISAR nela — e nao falar com quem leva.
+    /// A escritura da ilha pede um GESTO — e nao uma conversa que acontece
+    /// sozinha.
     ///
     /// Ela nasceu como um TALK com o Capitao do Porto, que ja' e' o alvo do
     /// passo anterior (714) e de quem da' a viagem no passo seguinte (719).
     /// O jogador falava UMA vez com ele, recebia a escritura e o barco pra
     /// Geleira na mesma conversa, e zarpava: o dono chegou ao nivel 15 sem
-    /// nunca ter posto o pe' na propria ilha. Objetivo que se cumpre sozinho
-    /// no caminho de outro nao e' objetivo.
+    /// nunca ter olhado a propria ilha. Objetivo que se cumpre sozinho no
+    /// caminho de outro nao e' objetivo.
+    ///
+    /// Virou "pise na ilha" enquanto ela era uma zona; virou "abra o painel"
+    /// quando ela deixou de ser. O que NAO pode voltar a ser e' um TALK com o
+    /// Capitao.
     #[test]
-    fn a_escritura_pede_pisar_na_ilha() {
+    fn a_escritura_pede_um_gesto() {
         let d = def_da_historia(PASSO_DA_COLONIA).expect("o passo da colonia existe");
-        assert_eq!(d.obj_kind, objective_kind::COLONIA, "a escritura virou outra coisa");
+        assert_eq!(
+            d.obj_kind,
+            objective_kind::TUTORIAL,
+            "a escritura virou outra coisa"
+        );
+        assert_eq!(
+            d.obj_target,
+            crate::quests::tutorial::COLONIA_PAINEL,
+            "a escritura deixou de pedir o painel"
+        );
         // Nunca um TALK: o Capitao e' o NPC dos vizinhos dos dois lados.
         let capitao = Papel::Estaleiro as u16;
         for vizinho in [PASSO_DA_COLONIA - 1, PASSO_DA_COLONIA + 1] {
@@ -1091,29 +1083,19 @@ mod testes {
         let i = indice(PASSO_DA_COLONIA).unwrap();
         let fim = indice(CAPITULOS[0].ultimo).unwrap();
         assert!(i < fim, "a escritura caiu depois do barco");
-        assert_eq!(
-            PASSOS
-                .iter()
-                .filter(|p| p.obj_kind == objective_kind::COLONIA)
-                .count(),
-            1,
-            "so' existe uma ilha propria"
-        );
     }
 
-    /// O tutorial da ILHA acontece NA ilha: depois de pisar nela e antes do
-    /// barco.
+    /// A LINHA DA ILHA comeca na escritura e termina antes do barco.
     ///
     /// Se um destes passos caisse depois da viagem, o jogador teria que voltar
-    /// da Geleira pra fechar a historia. Se caisse antes do 718, ele abriria
-    /// sem a ilha existir. E os dois que mexem em SALDO (assentamento,
-    /// morador) tem que ter condicao de estado — senao quem chega com a ilha
-    /// ja' montada trava DENTRO dela, de onde a unica saida e' o Capitao.
+    /// da Geleira pra fechar a historia. E os dois que mexem em SALDO
+    /// (assentamento, morador) tem que ter condicao de estado — senao quem
+    /// chega com a ilha ja' montada trava num passo que nao tem como refazer.
     #[test]
-    fn o_tutorial_da_ilha_acontece_na_ilha() {
+    fn a_linha_da_ilha_cabe_no_capitulo_um() {
         use crate::quests::tutorial as t;
         let da_ilha = [
-            t::COLONIA_MURAL,
+            t::COLONIA_PAINEL,
             t::COLONIA_ASSENTAMENTO,
             t::COLONIA_CONTRATAR,
             t::COLONIA_COLHER,
@@ -1128,21 +1110,16 @@ mod testes {
                 .unwrap_or_else(|| panic!("o tutorial da acao {acao} nao esta' na historia"));
             let i = indice(d.id).unwrap();
             assert!(
-                i > escritura,
+                i >= escritura,
                 "{}: abre ANTES de a ilha ser sua",
                 d.title
             );
             assert!(i < barco, "{}: cai depois do barco pra Geleira", d.title);
-            assert!(
-                (PRIMEIRO_ID_TUTORIAL..=ULTIMO_ID_TUTORIAL).contains(&d.id),
-                "{}: fora da faixa de tutorial, renumeraria a historia",
-                d.title
-            );
         }
         // Os de saldo fecham sozinhos; os de gesto se refazem.
         assert!(t::tem_estado(t::COLONIA_ASSENTAMENTO));
         assert!(t::tem_estado(t::COLONIA_CONTRATAR));
-        assert!(!t::tem_estado(t::COLONIA_MURAL), "abrir o mural se refaz");
+        assert!(!t::tem_estado(t::COLONIA_PAINEL), "abrir o painel se refaz");
     }
 
     /// O TUTORIAL DA ILHA SE PAGA: o passo anterior entrega o que o seguinte
@@ -1159,18 +1136,18 @@ mod testes {
     #[test]
     fn o_tutorial_da_ilha_se_paga() {
         use crate::quests::tutorial as t;
-        let mural = PASSOS
+        let abrir = PASSOS
             .iter()
-            .find(|d| d.obj_kind == objective_kind::TUTORIAL && d.obj_target == t::COLONIA_MURAL)
-            .expect("o passo do mural sumiu");
+            .find(|d| d.obj_kind == objective_kind::TUTORIAL && d.obj_target == t::COLONIA_PAINEL)
+            .expect("o passo de abrir o painel sumiu");
         // O que a melhoria do nivel 2 cobra.
         for (item, qtd) in crate::colonia::custo(crate::colonia::eixo::ASSENTAMENTO, 2) {
             let pago = if item == crate::constants::item_id::COPPER {
-                mural.reward_cobre
-            } else if mural.reward_item == item {
-                mural.reward_item_qty as u32
-            } else if mural.reward_item2 == item {
-                mural.reward_item2_qty as u32
+                abrir.reward_cobre
+            } else if abrir.reward_item == item {
+                abrir.reward_item_qty as u32
+            } else if abrir.reward_item2 == item {
+                abrir.reward_item2_qty as u32
             } else {
                 0
             };

@@ -641,10 +641,16 @@ mod tests {
 
     #[test]
     fn combinar_mostra_primeiro_o_que_da_pra_tentar() {
-        let slots = vec![material(item_id::HORN, 7), material(item_id::STEEL, 3)];
+        // Material comum NAO e' mais combinavel (so' chave, pet e montaria —
+        // decisao de 22/09/2026, ver `shared::combinar`), entao o Aco nao
+        // entra na lista. O que ordena continua sendo "da' pra tentar agora".
+        let slots = vec![material(item_id::HORN, 7), material(item_id::SCALE, 2)];
         let rs = receitas(&slots);
         assert_eq!(rs[0].entrada, item_id::HORN, "chifre: 7 pagam uma");
-        assert_eq!(rs[1].entrada, item_id::STEEL, "tem aco, mas falta pra sintese");
+        assert!(
+            rs.iter().all(|r| r.entrada != item_id::STEEL),
+            "material comum voltou pra aba de combinar"
+        );
         assert_eq!(rs.len(), combinar::receitas().len());
     }
 

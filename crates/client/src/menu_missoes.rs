@@ -742,8 +742,10 @@ mod tests {
         // apresentava. A lista fica literal de proposito: e' ela que pega um id
         // legado caindo por engano na faixa da ilha. 511-538 sao as seis
         // cadeias paralelas do resto da ilha (chefes, bestiario, oficina,
-        // coleta, dungeons, vila).
-        let esperado: Vec<u16> = (501..=538).collect();
+        // coleta, dungeons, vila). 539-543 e' a CACADA: a cadeia de volume
+        // (30/60/100) e as duas tematicas, pedidas em 22/09/2026 — "missoes
+        // para matar mais inimigos que leva pras zonas de maior densidade".
+        let esperado: Vec<u16> = (501..=543).collect();
         assert_eq!(&bosque[..], &esperado[..], "so' as cadeias, em ordem");
         assert!(
             todas().iter().all(|d| !d.daily),

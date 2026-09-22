@@ -565,22 +565,6 @@ pub struct NpcDaVilaTag {
     pub rumo: u16,
 }
 
-/// `npc_id` do BARQUEIRO DA ILHA: o que leva de volta, no cais da colonia.
-///
-/// A saida era um botao dentro do painel, e o dono cortou: "tem q ter um
-/// porto na ilha fisico se n perde o sentido". Ele esta' certo — uma ilha de
-/// onde se sai por menu nao e' uma ilha, e o gerador JA' faz o cais dela (o
-/// molhe, o patio aplainado, o tabuado). So' faltava alguem nele.
-pub const BARQUEIRO_DA_ILHA: u16 = 12;
-
-/// `npc_id` do MURAL DA ILHA (`EntityKind::Npc`).
-///
-/// Os outros em uso: 1 loja, 2 banco, 8 Mestre do Treinamento, 9 oficio sem
-/// loja, **10 Mestre de Missoes** (`GameWorld::NPC_DE_MISSOES`). Escolhi 10 e
-/// o compilador recusou — "unreachable pattern", porque a arm do Mestre vem
-/// antes e ja' pegava tudo. Sem o aviso, o mural teria aberto o log de
-/// missoes: dois donos pro mesmo numero, e o primeiro ganha calado.
-pub const MURAL_DA_ILHA: u16 = 11;
 
 /// Zona de spawn gerenciada no server. Carregada do MapFile via
 /// MapEntity::EnemySpawner. Mantem o mundo vivo: sempre tenta atingir
@@ -4842,90 +4826,6 @@ impl GameWorld {
         self.povoar_chefes();
     }
 
-    /// O MURAL DA ILHA: o ponto de administrar a colonia, na propria ilha.
-    ///
-    /// O painel abria pelo Menu, de qualquer canto do arquipelago. O dono
-    /// pediu um mural — "pra ficar mais imersivo" —, e ele tem razao por um
-    /// motivo que nao e' so' estetico: enquanto a ilha se administrava de um
-    /// item de menu, ela nao era um lugar, era uma aba.
-    ///
-    /// O QUADRO DE AVISOS ja' existe como prop da vila e ja' e' DESENHADO
-    /// pelo assentamento. Aqui nasce so' o ponto de interacao, em cima dele —
-    /// nenhum modelo novo, e o que se ve' e o que se toca sao o mesmo objeto.
-    fn montar_mural_da_colonia(&mut self, instancia: u32) {
-        use shared::construcao::TipoProp;
-        // Um por instancia. Reconectar na mesma ilha nao pode empilhar mural.
-        let ja = self
-            .ecs
-            .query::<(&EntityKind, &dungeon::Instancia)>()
-            .iter()
-            .any(|(_, (k, i))| matches!(k, EntityKind::Npc(MURAL_DA_ILHA)) && i.0 == instancia);
-        if ja {
-            return;
-        }
-        let nivel = self
-            .sessions
-            .values()
-            .find(|s| s.instancia == instancia)
-            .map(|s| s.colonia.niveis[shared::colonia::eixo::ASSENTAMENTO])
-            .unwrap_or(1);
-        let Some(ilha) = self.colonias.get(&Self::chave_da_colonia(nivel)) else {
-            return;
-        };
-        let vila = ilha.vila();
-        let onde = vila
-            .props
-            .iter()
-            .find(|p| p.tipo == TipoProp::QuadroDeAvisos)
-            .map(|p| Vec2::new(p.pos.x, p.pos.z))
-            // Sem quadro na vila, a praca serve: o mural nao pode FALTAR, ou
-            // o jogador chega na ilha e nao tem como mexer nela.
-            .or_else(|| ilha.cidade().map(|c| c.centro()));
-        let Some(onde) = onde else { return };
-        let eid = self.alloc_entity_id();
-        self.ecs.spawn((
-            NetId(eid),
-            Position(onde),
-            Velocity(Vec2::ZERO),
-            EntityKind::Npc(MURAL_DA_ILHA),
-            NpcDaVilaTag {
-                nome: "Mural da Ilha".to_string(),
-                rumo: shared::npc_kind(None, shared::construcao::Papel::Missoes as u8),
-            },
-            dungeon::Instancia(instancia),
-        ));
-        tracing::info!("mural da ilha em ({:.1}, {:.1})", onde.x, onde.y);
-
-        // O BARQUEIRO, no cais. E' a saida da ilha, e ela tem que ser um
-        // LUGAR: o gerador ja' fez o molhe e o patio, e o barqueiro fica no
-        // patio (nao na ponta) pra quem chega de terra esbarrar nele.
-        let cais = self
-            .colonias
-            .get(&Self::chave_da_colonia(nivel))
-            .and_then(|i| i.porto())
-            .map(|p| p.centro);
-        if let Some(cais) = cais {
-            let eid = self.alloc_entity_id();
-            self.ecs.spawn((
-                NetId(eid),
-                Position(cais),
-                Velocity(Vec2::ZERO),
-                EntityKind::Npc(BARQUEIRO_DA_ILHA),
-                NpcDaVilaTag {
-                    nome: "Barqueiro".to_string(),
-                    rumo: shared::npc_kind(None, shared::construcao::Papel::Estaleiro as u8),
-                },
-                dungeon::Instancia(instancia),
-            ));
-            tracing::info!("barqueiro da ilha em ({:.1}, {:.1})", cais.x, cais.y);
-        } else {
-            // Sem cais nao ha' saida fisica, e uma ilha sem saida e' uma
-            // armadilha. O painel continua tendo o "Voltar ao porto", mas isto
-            // tem que gritar no log.
-            tracing::error!("colonia SEM PORTO: nao ha' onde por o barqueiro");
-        }
-    }
-
     /// A cidade e o porto da ilha: zonas seguras e os NPCs da vila.
     ///
     /// Onde cada casa e cada NPC fica e' `shared::vila` — funcao da semente,
@@ -5065,7 +4965,21 @@ impl GameWorld {
     }
 
     pub fn handle_mover_para(&mut self, sid: SessionId, destino: Vec2) {
-        const ROTA_ALCANCE: f32 = 220.0;
+        /// Ate' onde o toque no mapa manda ir.
+        ///
+        /// Era 220 u — um chute conservador, e errado: o PORTO da primeira
+        /// ilha fica a **785 u** da cidade (o do Planalto, a 1.109). Tocar na
+        /// cidade estando no cais era recusado aqui, antes de o A* ser
+        /// chamado, e **em silencio**. O dono relatou duas vezes que "o A* do
+        /// porto nao funciona" — nao era o A*.
+        ///
+        /// Medido em release, com o orcamento de 6.000 que ja' existia:
+        /// Bosque 157 pontos em 16,5 ms, Planalto 146 em 34 ms. A conta cabe;
+        /// o limite e' que nao cabia na ilha.
+        ///
+        /// 1.200 cobre a maior travessia do arquipelago com folga. Ver
+        /// `a_rota_alcanca_o_porto_de_toda_ilha`.
+        const ROTA_ALCANCE: f32 = 1_200.0;
         const ROTA_INTERVALO_S: f32 = 0.2;
         const ROTA_ORCAMENTO: usize = 6_000;
 
@@ -5089,12 +5003,17 @@ impl GameWorld {
             s.rota.limpa();
         }
         if !destino.is_finite() || pos_atual.distance(destino) > ROTA_ALCANCE {
+            self.avisa_missao(sid, "Longe demais para ir a pé daqui.".into());
             return;
         }
         let Some(ilha) = self.ilha_da_sessao(sid) else {
             return;
         };
         let Some(rota) = ilha.caminho(pos_atual, destino, ROTA_ORCAMENTO) else {
+            // Nunca calado: o jogador toca, nada acontece, e ele nao tem como
+            // saber se o jogo travou ou se nao ha' caminho. Foi assim que o
+            // limite de 220 u passou meses invisivel.
+            self.avisa_missao(sid, "Não há caminho até ali.".into());
             return;
         };
         tracing::debug!(
@@ -5714,11 +5633,6 @@ impl GameWorld {
             let _ = self
                 .ecs
                 .insert_one(e, crate::world::dungeon::Instancia(instancia_pendente));
-            // O mural nasce com a ilha: sem ele o jogador chega e nao tem como
-            // mexer em nada (o item de Menu saiu, de proposito).
-            if shared::colonia::e_colonia(&self.zona) {
-                self.montar_mural_da_colonia(instancia_pendente);
-            }
         }
         self.loja_ao_logar(sid);
         tracing::info!(
@@ -13481,12 +13395,6 @@ impl GameWorld {
                                 ));
                             }
                         }
-                        // Chegou na PROPRIA ilha. Mesma regra da viagem, e a
-                        // colonia nao esta' no ARQUIPELAGO: a zona e' o teste.
-                        objective_kind::COLONIA if colonia => {
-                            mudou
-                                .extend(crate::quests::cumprir_passo(&mut s.quests, cq.quest_id));
-                        }
                         // TUTORIAL de SALDO: fecha se a condicao JA' estiver
                         // cumprida quando o passo abre.
                         //
@@ -14782,18 +14690,6 @@ impl GameWorld {
                     });
                 }
             };
-            // O passo da PROPRIA ilha: o caminho e' o Capitao do Porto, e la'
-            // dentro o botao MINHA ILHA. Vem antes da checagem de zona porque
-            // `zona_da_missao` devolve a ilha do CAPITULO (o Bosque) — sem
-            // isto, estando ja' na colonia, o jogo mandava embarcar pro Bosque.
-            if def.obj_kind == shared::quests::objective_kind::COLONIA {
-                if shared::colonia::e_colonia(&self.zona) {
-                    return; // ja' chegou: o tick fecha o passo neste segundo.
-                }
-                if self.destino_no_capitao(sid, quest_id) {
-                    return;
-                }
-            }
             if let Some(z) = shared::quests::zona_da_missao(quest_id).filter(|z| *z != self.zona) {
                 // Passo de outra ilha: o caminho comeca no Capitao do Porto,
                 // que leva a qualquer ilha liberada (`shared::viagem`).
@@ -16345,23 +16241,6 @@ impl GameWorld {
                 if self.e_estivador(entity) {
                     self.abrir_banco(sid);
                 }
-            }
-            Some((_, BARQUEIRO_DA_ILHA, _, _)) => {
-                // O barco de volta. E' o mesmo `Voltar` do painel — o painel
-                // continua tendo o botao, porque quem nao consegue ANDAR ate'
-                // o cais nao pode ficar preso.
-                self.handle_colonia(sid, shared::colonia::PedidoColonia::Voltar);
-            }
-            Some((_, MURAL_DA_ILHA, _, _)) => {
-                // O mural E' o painel da colonia — e vai pela MESMA porta do
-                // pedido do cliente, e nao por `abrir_colonia` direto.
-                //
-                // Chamando direto ele pulava `handle_colonia`, que e' onde o
-                // passo de tutorial "O mural da praca" e' marcado: tocar no
-                // mural — o jeito que a quest MANDA — nunca fechava o passo, e
-                // a linha inteira da colonia travava no primeiro degrau. So'
-                // fechava por Menu, que e' o caminho que a quest nao ensina.
-                self.handle_colonia(sid, shared::colonia::PedidoColonia::Painel);
             }
             Some((_, 8, _, _)) => {
                 // Mestre do Treinamento — manda o player (re)fazer o tutorial.

@@ -247,28 +247,85 @@ impl EvolucaoSkills {
                 },
             );
         }
+        // O QUE FALTA, item a item — e nao tudo numa linha cinza.
+        //
+        // Era: "Proximo: Tier V · nv 15 · 1.500 Energia + 2.000 cobre + tomo
+        // Verde". Tudo verdadeiro, e ilegivel: nao dizia o que o jogador TEM,
+        // entao ele nao sabia o que estava faltando nem quanto ia gastar. O
+        // dono: "nao da' pra saber quantos livros ta gastando, quanto eu
+        // tenho, nada ali ta fazendo sentido".
+        //
+        // Uma linha por requisito, cada uma com o que se pede e o que se tem,
+        // verde quando cumprido e vermelho quando nao. O olho acha o vermelho.
         let custo = skills::custo_de_evolucao(tier);
-        let requisito = custo.map_or_else(
-            || "Tier máximo alcançado".to_string(),
-            |c| {
-                let tomo = c
+        match custo {
+            None => estilo::texto_ajustado(
+                "Tier máximo alcançado",
+                x,
+                y + 215.0 * f,
+                555.0 * f,
+                14,
+                estilo::OURO,
+            ),
+            Some(c) => {
+                estilo::texto(
+                    x,
+                    y + 200.0 * f,
+                    &format!("PARA O TIER {}", skills::tier_romano(c.destino)),
+                    13,
+                    estilo::OURO,
+                );
+                let tem_tomo = c
                     .tomo
-                    .map_or(String::new(), |g| format!(" + tomo {}", g.nome()));
-                format!(
-                    "Próximo: Tier {} · nv {} · {} Energia + {} cobre{}",
-                    skills::tier_romano(c.destino),
-                    c.nivel,
-                    crate::bolsa::milhar(c.energia),
-                    crate::bolsa::milhar(c.cobre as u64),
-                    tomo
-                )
-            },
-        );
-        estilo::texto_ajustado(&requisito, x, y + 215.0 * f, 555.0 * f, 14, estilo::TEXTO);
-        estilo::texto(x, y + 239.0 * f, "TOMOS DESTA HABILIDADE", 15, estilo::OURO);
+                    .map_or(0, |g| self.progresso.tomos(skill.id, g) as u64);
+                let linhas: [(String, bool); 4] = [
+                    (
+                        format!("Nível {} · você: {nivel}", c.nivel),
+                        nivel >= c.nivel,
+                    ),
+                    (
+                        format!(
+                            "{} Energia · você: {}",
+                            crate::bolsa::milhar(c.energia),
+                            crate::bolsa::milhar(self.progresso.energia)
+                        ),
+                        self.progresso.energia >= c.energia,
+                    ),
+                    (
+                        format!(
+                            "{} cobre · você: {}",
+                            crate::bolsa::milhar(c.cobre as u64),
+                            crate::bolsa::milhar(cobre as u64)
+                        ),
+                        cobre >= c.cobre,
+                    ),
+                    match c.tomo {
+                        Some(g) => (
+                            format!("1 tomo {} · você: {tem_tomo}", g.nome()),
+                            tem_tomo > 0,
+                        ),
+                        // Dizer que NAO pede tomo importa tanto quanto dizer
+                        // que pede: os tres primeiros tiers nao pedem, e o
+                        // dono achou que estava bugado por conseguir evoluir
+                        // "sem ter livros".
+                        None => ("Este tier não pede tomo.".to_string(), true),
+                    },
+                ];
+                for (i, (t, ok)) in linhas.iter().enumerate() {
+                    estilo::texto(
+                        x + (i % 2) as f32 * 285.0 * f,
+                        y + (216.0 + (i / 2) as f32 * 19.0) * f,
+                        t,
+                        13,
+                        if *ok { estilo::VERDE } else { estilo::VERMELHO },
+                    );
+                }
+            }
+        }
+        estilo::texto(x, y + 258.0 * f, "TOMOS DESTA HABILIDADE", 15, estilo::OURO);
 
         for (i, grau) in GrauTomo::TODOS.iter().enumerate() {
-            let r = Rect::new(x + i as f32 * 188.0 * f, y + 251.0 * f, 180.0 * f, 70.0 * f);
+            let r = Rect::new(x + i as f32 * 188.0 * f, y + 270.0 * f, 180.0 * f, 70.0 * f);
             estilo::cartao(r, r.contains(m), self.tomo_selecionado == i);
             let cor = match grau {
                 GrauTomo::Verde => estilo::VERDE,
@@ -296,8 +353,11 @@ impl EvolucaoSkills {
         estilo::texto(
             x,
             y + 339.0 * f,
+            // "Condensar" nao dizia nada a ninguem — o dono: "condensar livro
+            // nem sei o que e'". O que o botao faz e' FABRICAR um tomo desta
+            // habilidade gastando Energia e cobre; entao e' isso que ele diz.
             &format!(
-                "Condensar tomo {}: {} Energia + {} cobre",
+                "Fabricar 1 tomo {} desta habilidade — custa {} Energia + {} cobre",
                 grau.nome(),
                 crate::bolsa::milhar(custo_tomo.energia),
                 crate::bolsa::milhar(custo_tomo.cobre as u64)
@@ -309,7 +369,7 @@ impl EvolucaoSkills {
         let fabricar = Rect::new(x, y + 357.0 * f, 260.0 * f, 45.0 * f);
         estilo::botao(
             fabricar,
-            "Condensar tomo",
+            &format!("Fabricar tomo {}", grau.nome()),
             estilo::estado_de(fabricar, !fabrica, false),
             fabrica,
         );

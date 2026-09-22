@@ -689,7 +689,9 @@ mod testes {
             vec![508, 534],
             "o Mestre so' tem as dele"
         );
-        assert_eq!(de(giver_do_papel(Papel::Treinador)), vec![511]);
+        // O Treinador ganhou a CACADA (22/09/2026): 539 abre a cadeia de
+        // volume e 543 e' a tematica dos lobos, que nao depende de nada.
+        assert_eq!(de(giver_do_papel(Papel::Treinador)), vec![511, 539, 543]);
         assert_eq!(de(giver_do_papel(Papel::Deposito)), vec![516, 528]);
         assert_eq!(de(giver_do_papel(Papel::Ferreiro)), vec![523]);
         assert_eq!(de(giver_do_papel(Papel::Estaleiro)), vec![531]);

@@ -242,11 +242,44 @@ def picareta(tier):
     return v, (2, 19, 13)
 
 
+def arco():
+    """O ARCO do arqueiro, com a corda RETA e FIXA.
+
+    A corda era desenhada puxada pelo gesto do braço — e não havia arco nenhum
+    no rig (as dez peças do humanoide saem "sem a arma"), então o arqueiro
+    fazia o movimento de puxar no vazio, com o antebraço girando 94°. O dono
+    pediu o óbvio: a corda não precisa ser dinâmica, pode ser fixa.
+
+    Reta e fixa também é o que o voxel faz bem — uma corda curva em blocos de
+    meio bloco vira escada, e puxada vira escada que se mexe.
+
+    Em pé no eixo Z, o cabo no meio: é por ele que a mão esquerda fecha.
+    """
+    v = {}
+    meio = 13
+    for z in range(2, 25):
+        d = abs(z - meio)
+        # a madeira arqueia pra fora nas pontas
+        x = 2 if d < 5 else 1 if d < 9 else 0
+        v[(x, 1, z)] = MADEIRA if d < 10 else MADEIRA_ESC
+        v[(x, 2, z)] = MADEIRA_ESC
+    # A CORDA: uma reta de ponta a ponta, sem puxar.
+    for z in range(3, 24):
+        v[(0, 1, z)] = PINTURA_CLARA
+    # O cabo, no meio, e o marcador da pega dentro dele.
+    for z in range(meio - 2, meio + 3):
+        v[(2, 1, z)] = COURO
+        v[(2, 2, z)] = COURO_ESC
+    v[(2, 1, meio)] = MARCA
+    return v, (3, 3, 26)
+
+
 if __name__ == "__main__":
     raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     pasta = os.path.join(raiz, "assets", "vox", "personagem")
     for nome, (vox, tam) in [("espada", espada()), ("escudo", escudo()), ("katana", katana()),
-                             ("bainha", bainha()), ("pistola", pistola()), ("coldre", coldre())]:
+                             ("bainha", bainha()), ("pistola", pistola()), ("coldre", coldre()),
+                             ("arco", arco())]:
         escrever_vox(os.path.join(pasta, f"{nome}.vox"), vox, tam, paleta())
         print(f"{nome}.vox: {len(vox)} voxels, tela {tam[0]}x{tam[1]}x{tam[2]}")
     ferramentas = [("machado", machado)] + [(f"picareta_{t}", (lambda t=t: picareta(t))) for t in (1, 2, 3, 4)]

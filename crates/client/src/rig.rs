@@ -121,6 +121,12 @@ pub struct Pose {
     /// Coletando: a ferramenta na mao direita (`FERRAMENTAS`) no lugar da
     /// arma.
     pub ferramenta: Option<&'static str>,
+    /// O ARCO, na mao ESQUERDA. Nao e' um `conjunto`: o arco e' de MOB
+    /// (`aplica_arqueiro`), e conjunto e' o que o jogador equipa.
+    ///
+    /// Existe porque o rig do humanoide sai "sem a arma" (as dez pecas
+    /// nomeadas), e o arqueiro ficava fazendo o gesto de puxar no VAZIO.
+    pub arco: bool,
 }
 
 impl Pose {
@@ -133,6 +139,7 @@ impl Pose {
             armado: false,
             conjunto: 0,
             ferramenta: None,
+            arco: false,
         }
     }
 }
@@ -1753,6 +1760,11 @@ pub fn armas(p: &Pose, m: &[Mat4; N], voxel: f32) -> Vec<(&'static str, Mat4)> {
         let _ = mao_d;
         return vec![(f, presa)];
     }
+    // O ARCO vai na mao ESQUERDA, e antes do `match`: ele nao e' um conjunto
+    // de jogador, e' a arma de um mob (`aplica_arqueiro`).
+    if p.arco {
+        return vec![("arco", mao_e)];
+    }
     let no_torso = |pt: [f32; 3], q: Quat| m[TORSO] * encaixe(pt, TORSO) * Mat4::from_quat(q);
     // puxa a peca `v` voxels pra FORA pelo proprio eixo: e' assim que o cabo
     // da katana fica pra fora da bainha e a pega da pistola pra fora do coldre
@@ -1817,11 +1829,30 @@ pub fn pulsos(m: &[Mat4; N], voxel: f32) -> [Mat4; 2] {
     [em(PULSO_D, ANTEBRACO_D), em(PULSO_E, ANTEBRACO_E)]
 }
 
-/// Arco na esquerda; direita puxa a corda ate o rosto e solta no disparo.
+/// Arco na esquerda, CORDA FIXA. A direita recua um pouco no disparo.
+///
+/// Era um gesto de puxar a corda ate' o rosto: o antebraco direito girava
+/// 1,65 rad (94 graus) ao longo do golpe. Dois problemas, e o segundo
+/// explicava o primeiro:
+///
+/// 1. **nao havia arco.** O rig do humanoide sai "sem a arma" (as dez pecas
+///    nomeadas de `humanoides.py`) — so' o modelo PLANO tinha o arco. Entao o
+///    braco fazia o movimento de puxar no vazio;
+/// 2. **a corda nao pode ser puxada em voxel.** Ela e' uma linha de blocos de
+///    meio bloco: curvada vira escada, e curvada ANIMADA vira escada que se
+///    mexe. O dono viu e disse o certo — "nem precisa ser [dinamica] mais,
+///    pode ser fixo".
+///
+/// Entao: arco de verdade na mao esquerda (`arco.vox`, corda reta), e o gesto
+/// vira um RECUO curto do cotovelo direito. O disparo se le' pela flecha que
+/// sai, que e' o que o jogador de fato olha.
 pub fn aplica_arqueiro(p: &mut Pose, golpe: Option<f32>) {
     p.armado = false;
     p.na_mao = false;
-    let puxar = golpe.map_or(0.2, |t| {
+    p.arco = true;
+    // Recuo CURTO (0,35 rad, 20 graus) e so' no golpe: e' pontuacao do tiro,
+    // e nao a animacao inteira de armar o arco.
+    let recuo = golpe.map_or(0.0, |t| {
         if t < IMPACTO {
             suave((t / IMPACTO).clamp(0.0, 1.0))
         } else {
@@ -1831,8 +1862,8 @@ pub fn aplica_arqueiro(p: &mut Pose, golpe: Option<f32>) {
     p.rot[TORSO] = Quat::from_rotation_y(-0.3);
     p.rot[BRACO_E] = ombro(&br(0.05, 1.45, 0.15));
     p.rot[ANTEBRACO_E] = frente(0.15);
-    p.rot[BRACO_D] = ombro(&br(-0.5 - 0.35 * puxar, 1.45, 0.0));
-    p.rot[ANTEBRACO_D] = frente(0.3 + 1.65 * puxar);
+    p.rot[BRACO_D] = ombro(&br(-0.5 - 0.1 * recuo, 1.45, 0.0));
+    p.rot[ANTEBRACO_D] = frente(1.15 + 0.35 * recuo);
 }
 
 /// Onde fica a palma de cada mao (direita, esquerda), no mundo: e' ali que o

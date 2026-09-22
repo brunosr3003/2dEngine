@@ -138,6 +138,26 @@ impl Craft {
         }
     }
 
+    /// Abre no que este ITEM tem a ver: a receita que o FAZ, ou a primeira
+    /// que o gasta.
+    ///
+    /// Peca primeiro: quem olha uma espada quer melhorar a espada. Material
+    /// depois: quem olha madeira quer saber no que ela vira. Sem nenhuma das
+    /// duas, abre o Craft do jeito que estava — abrir e' sempre util, e um
+    /// atalho que nao faz nada e' pior que nenhum.
+    pub fn abrir_pelo_item(&mut self, item_id: u16) {
+        let faz = self.receitas.iter().find(|r| r.output_item_id == item_id);
+        let gasta = || {
+            self.receitas
+                .iter()
+                .find(|r| r.inputs.iter().any(|i| i[0] == item_id as u32))
+        };
+        match faz.or_else(gasta).map(|r| r.id) {
+            Some(id) => self.abrir_receita(id),
+            None => self.abrir(),
+        }
+    }
+
     /// Lupa tocada em qualquer aba (receita ou oficina).
     pub fn onde_obter(&mut self) -> Option<u16> {
         self.onde_obter.take().or_else(|| self.oficina.onde_obter.take())

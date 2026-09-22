@@ -460,7 +460,7 @@ async fn main() {
     // cai no modelo inteiro de antes.
     // As armas do primeiro conjunto (tools/voxrender/armas.py).
     // E as ferramentas de coleta (machado, picareta de cada cor).
-    for nome in ["espada", "escudo", "katana", "bainha", "pistola", "coldre"]
+    for nome in ["espada", "escudo", "katana", "bainha", "pistola", "coldre", "arco"]
         .into_iter()
         .chain(rig::FERRAMENTAS)
     {
@@ -1209,19 +1209,11 @@ impl Jogo {
                         assentamento: _,
                         trabalhadores,
                     } => {
-                        // O relevo da colonia nao sai da zona: a ilha e' fixa
-                        // e o que varia e' o PLATO do assentamento. Chega
-                        // depois do MapChange, que e' quem limpou o terreno
-                        // velho.
-                        self.terreno = Some(terreno::Terreno::da_colonia(plato));
-                        self.mapa = mapa::Mapa::da_colonia(plato);
-                        // E o que foi CONSTRUIDO em cima: a casa do jogador
-                        // mais uma por morador. Antes isto era `vazia()` —
-                        // a colonia era chao pelado.
-                        self.construcoes =
-                            construcoes::Construcoes::da_colonia(plato, trabalhadores);
-                        self.map = None;
-                        self.ir_para.parar();
+                        // A ilha nao e' mais o MUNDO: ela e' a maquete do
+                        // painel. Antes isto trocava `self.terreno`,
+                        // `self.mapa` e `self.construcoes` — o jogador era
+                        // teleportado pra dentro dela.
+                        self.colonia.define_maquete(plato, trabalhadores);
                     }
                     A::Recusa(t) => self.chat.push(t),
                 }
@@ -1626,6 +1618,12 @@ impl Jogo {
                 use shared::historia;
                 if status == shared::quests::quest_status::TURNED_IN {
                     self.quest_entregues.entry(quest_id).or_insert(0);
+                    // O CONTADOR do topo: sobe a cada missao concluida, FIXADA
+                    // OU NAO. Terminar uma missao so' aparecia no chat, que
+                    // rola e some — o jogador fechava cinco e nao via nenhuma.
+                    self.missoes.concluidas += 1;
+                    self.missoes.concluida_em = get_time();
+                    self.missoes.fixadas.remove(&quest_id);
                 }
                 // A historia passou pro proximo passo com a auto missao nela:
                 // segue sozinha pro novo.
@@ -2118,8 +2116,16 @@ impl Jogo {
             t::MAPA_IR => &[c::MAPA_IR, c::MINIMAPA],
             t::PONTO_ATRIBUTO => &[c::FICHA_MAIS, c::MENU_FICHA, c::MENU],
             t::EVOLUIR_SKILL => &[c::SKILL_EVOLUIR, c::MENU_SKILLS, c::MENU],
-            // COLETA_ENERGIA se faz no MUNDO: escurecer a tela esconderia
-            // exatamente a pedra que ele tem que achar.
+            // A ILHA: os quatro que acontecem DENTRO do painel do mural. O
+            // caminho tem um degrau só porque o painel já está aberto quando
+            // o passo abre — quem fechou o anterior fechou nele.
+            t::COLONIA_ASSENTAMENTO => &[c::ILHA_ASSENTAMENTO],
+            t::COLONIA_CONTRATAR => &[c::ILHA_CONTRATAR],
+            t::COLONIA_COLHER => &[c::ILHA_COLHER],
+            t::COLONIA_RETIRAR => &[c::ILHA_RETIRAR],
+            // COLETA_ENERGIA e COLONIA_MURAL se fazem no MUNDO: escurecer a
+            // tela esconderia exatamente a pedra (ou o mural) que ele tem que
+            // achar.
             _ => return,
         };
         foco::pede(caminho);
@@ -4348,6 +4354,9 @@ impl Jogo {
         // O foco do tutorial vai por CIMA de tudo — HUD, paineis, popup: o
         // que ele apaga tem mesmo que sumir. Depois fecha o quadro: o alvo
         // marcado agora e' o buraco do quadro seguinte.
+        // O contador de missoes: por cima de tudo, menos do foco do tutorial
+        // (que apaga o que nao interessa e tem que continuar apagando).
+        missoes::desenha_contador(&self.missoes, get_time());
         foco::desenha(get_time());
         foco::novo_quadro();
     }
@@ -4663,6 +4672,11 @@ impl Jogo {
                         )
                     };
                     match clique {
+                        Some(missoes::NoRastreador::Fixar(id)) => {
+                            if !self.missoes.fixadas.remove(&id) {
+                                self.missoes.fixadas.insert(id);
+                            }
+                        }
                         Some(missoes::NoRastreador::Missao(id)) => self.iniciar_auto_missao(id),
                         Some(missoes::NoRastreador::Diario) => self.abrir_diario(),
                         Some(missoes::NoRastreador::Todas) => {
@@ -5058,6 +5072,10 @@ impl Jogo {
             self.fecha_paineis();
             self.forja.abrir_em(alvo);
         }
+        if let Some(item) = self.bolsa.combinar.take() {
+            self.fecha_paineis();
+            self.craft.abrir_pelo_item(item);
+        }
         if let Some(pedido) = pedido_da_bolsa {
             // Pocao de efeito ja' ativa: pergunta antes de jogar fora o tempo
             // que resta (o servidor renova a hora cheia, nao soma).
@@ -5264,16 +5282,17 @@ impl Jogo {
         if let Some(pedido) = self.banco.desenha(&self.bolsa.slots, self.bolsa.ouro) {
             self.envia(pedido);
         }
-        match self.viagem.desenha(self.tem_colonia) {
+        // O Capitao nao leva mais pra propria ilha: ela virou painel, e abre
+        // pelo Menu de qualquer lugar. `false` tira a linha "Minha Ilha" da
+        // lista de destinos.
+        match self.viagem.desenha(false) {
             Some(viagem_ui::Escolha::Ilha(ilha)) => self.envia(ClientMessage::Viajar { ilha }),
-            Some(viagem_ui::Escolha::MinhaIlha) => self.envia(ClientMessage::Colonia {
-                pedido: shared::colonia::PedidoColonia::Visitar,
-            }),
+            Some(viagem_ui::Escolha::MinhaIlha) => {}
             None => {}
         }
         {
             let nome_item = |id: u16| self.bolsa.nome(id);
-            if let Some(pedido) = self.colonia.desenha(&nome_item) {
+            if let Some(pedido) = self.colonia.desenha(&nome_item, &self.solido) {
                 self.envia(ClientMessage::Colonia { pedido });
             }
         }

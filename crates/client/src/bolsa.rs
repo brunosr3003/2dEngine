@@ -108,6 +108,15 @@ pub struct Bolsa {
     pub onde_obter: Option<u16>,
     /// "Refinar +N" tocado no cartao: a peca pra Forja abrir ja' escolhida.
     pub refinar: Option<shared::protocol::AlvoDaForja>,
+    /// "Combinar" tocado no cartao: a receita pro Craft abrir ja' escolhida.
+    ///
+    /// O dono pediu "atalho para combinar, forjar, aprimorar, tudo direto no
+    /// item no inventario". Refinar ja' saltava pra Forja com a peca na mao;
+    /// faltava o outro lado — do MATERIAL pra receita que o gasta, e da PECA
+    /// pra receita que a faz. Quem esta' com o item na tela ja' sabe o que
+    /// quer; obriga-lo a fechar, abrir o Craft e procurar de novo e' cobrar
+    /// pedagio por uma decisao que ele ja' tomou.
+    pub combinar: Option<u16>,
     /// Expansoes compradas (`ServerMessage::Armazem`).
     pub extra: u8,
     /// A grade rola: com as expansoes ela passa do painel.
@@ -131,6 +140,7 @@ impl Default for Bolsa {
             aviso: None,
             onde_obter: None,
             refinar: None,
+            combinar: None,
             extra: 0,
             rolagem: Default::default(),
         }
@@ -804,7 +814,18 @@ impl Bolsa {
             }
             let peca = onde.and_then(|i| self.peca(Sel::Inv(i)));
             let sel = onde.is_some() && self.sel == onde.map(Sel::Inv);
-            celula(c, peca, sel, None, palco);
+            // Celula de ENCHIMENTO (`onde == None`): ela existe so' pra grade
+            // nao encolher quando a aba tem pouca coisa, e estava sendo
+            // desenhada IGUAL a um espaco vazio de verdade. O jogador via
+            // sessenta quadradinhos, o rodape dizia 12/40, e os dois eram a
+            // mesma tela — "visualmente parece ter mais do que tem de fato".
+            //
+            // Espaco que se tem e espaco que nao existe precisam ser
+            // distinguiveis, senao o botao de AUMENTAR nao quer dizer nada.
+            match onde {
+                Some(_) => celula(c, peca, sel, None, palco),
+                None => celula_fora(c),
+            }
             if let (Some(i), Some(_)) = (onde, peca) {
                 if clique.is_some_and(|p| c.contains(p) && area.contains(p)) {
                     clicado = Some(Sel::Inv(*i));
@@ -1096,11 +1117,27 @@ impl Bolsa {
                 self.sel = None;
             }
         }
+        // COMBINAR: leva pro Craft com a receita deste item ja' escolhida.
+        //
+        // Quem resolve QUAL receita e' o Craft, que e' quem tem a lista — a
+        // bolsa so' diz "este item aqui". Duplicar a tabela de receitas na
+        // bolsa seria uma segunda fonte de verdade pra mesma coisa.
+        //
+        // So' na coluna do meio quando ela esta' livre: refinar manda mais
+        // (a peca esta' na mao do jogador) e uma segunda fileira de botoes
+        // cobriria os atributos no celular.
+        if self.refinar.is_none() && !matches!(t, Tipo::Pergaminho) {
+            if ui::botao(coluna(1.0), "Combinar", true) {
+                self.combinar = Some(peca.id);
+                self.sel = None;
+            }
+        }
         if ui::botao(coluna(u(2.0)), "Fechar", true) {
             self.sel = None;
         }
         acao
     }
+
 }
 
 /// Uma celula avulsa, pra quem desenha lista de item fora da bolsa (a faixa
@@ -1128,6 +1165,14 @@ pub(crate) fn celula_avulsa(
 /// Uma celula de item: fundo na cor do grau, o icone, o tier em romano no
 /// canto de cima, o refino do outro lado e a quantidade embaixo. `vazio` e' o
 /// slot de equipamento sem nada: aparece a silhueta apagada do que vai ali.
+/// Uma celula que NAO E' ESPACO SEU: so' enche a grade.
+///
+/// Sem borda e quase sem cor — ela tem que ler como "fundo", e nao como
+/// "espaco livre". Ver o `match` que a chama.
+fn celula_fora(r: Rect) {
+    draw_rectangle(r.x, r.y, r.w, r.h, Color::new(1.0, 1.0, 1.0, 0.025));
+}
+
 fn celula(
     r: Rect,
     peca: Option<Peca>,

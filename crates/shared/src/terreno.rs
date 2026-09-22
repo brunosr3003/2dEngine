@@ -5695,6 +5695,38 @@ mod testes_visada_de_tiro {
 mod testes_do_cais {
     use super::*;
 
+    /// A rota tem que ALCANCAR o porto de toda ilha.
+    ///
+    /// O A* funcionava; o que nao funcionava era o limite antes dele
+    /// (`world::handle_mover_para: ROTA_ALCANCE`, 220 u). O porto do Bosque
+    /// fica a 785 u da cidade e o do Planalto a 1.109: tocar na cidade
+    /// estando no cais era recusado sem uma palavra, e o dono relatou duas
+    /// vezes que "o A* do porto nao funciona".
+    ///
+    /// Este teste mede a maior travessia que o jogo pede. Se uma ilha nova
+    /// nascer mais larga que o limite, ele reprova aqui — e nao no cais, com
+    /// o jogador tocando na tela e nada acontecendo.
+    #[test]
+    fn a_rota_alcanca_o_porto_de_toda_ilha() {
+        /// Tem que bater com `world::handle_mover_para: ROTA_ALCANCE`.
+        const ALCANCE: f32 = 1_200.0;
+        for d in ARQUIPELAGO.iter() {
+            let g = Gerador::da_ilha(d);
+            let (Some(c), Some(p)) = (
+                g.cidade().map(|x| x.centro()),
+                g.vila().porto.map(|x| x.centro),
+            ) else {
+                continue;
+            };
+            let dist = c.distance(p);
+            assert!(
+                dist <= ALCANCE,
+                "{}: porto a {dist:.0}u da cidade, e a rota so' vai a {ALCANCE:.0}u —                  o jogador toca no mapa e nada acontece",
+                d.zona
+            );
+        }
+    }
+
     /// Do CAIS tem que sair rota.
     ///
     /// O cais e' uma lingua estreita de pedra entrando no mar, e a grade do

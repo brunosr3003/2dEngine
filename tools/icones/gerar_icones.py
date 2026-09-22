@@ -641,6 +641,65 @@ def material_colorido(s, base, tier):
 MATERIAIS_COLORIDOS = [300, 304, 308, 312, 316, 320, 324, 328, 332, 336, 340, 64]
 
 
+def pet(s, grau):
+    """O PET (docs/PETS.md): filhote sentado, na cor do grau.
+
+    Pet e montaria nao tinham icone nenhum: o atlas ia ate' o id 414 e eles
+    comecam em 420 e 460. Na bolsa isso passava porque `icone_de_bicho`
+    desenha o MODELO 3D girando — mas so' onde ha' palco. Na abertura de
+    chave, no mercado e em celula pequena nao ha', e o dono via o quadrado
+    vazio: "pet e mount tbm ta sem icone".
+
+    Silhueta de bicho sentado, e nao o retrato da especie: o grau E' a
+    criatura (um cervo nao e' um dragao verde), e cinco retratos seriam cinco
+    desenhos pra dizer o que a cor ja' diz.
+    """
+    c = TIER[grau]
+    aura_do_tier(s, grau)
+    corpo = mix((92, 78, 66), c, 0.5)
+    # corpo sentado
+    s.peca("M22,54C18,44 20,34 26,30C24,24 26,18 32,18C38,18 40,24 38,30C44,34 46,44 42,54Z",
+           corpo, contorno=2.4, claro=0.5, escuro=0.4)
+    # cabeca
+    s.peca(circ(32, 22, 11), mix(corpo, BRANCO, 0.10), contorno=2.2, claro=0.55, escuro=0.4)
+    # orelhas
+    s.peca(poly([(24, 16), (22, 6), (30, 12)]), mul(corpo, 0.85), contorno=2.0)
+    s.peca(poly([(40, 16), (42, 6), (34, 12)]), mul(corpo, 0.85), contorno=2.0)
+    # focinho e olhos
+    s.peca(elipse(32, 26, 5, 3.4), mix(corpo, BRANCO, 0.45), contorno=1.6)
+    s.faisca(27, 21, 2.2, (24, 22, 28))
+    s.faisca(37, 21, 2.2, (24, 22, 28))
+    # cauda
+    s.traco("M42,50C50,48 52,40 48,34", mul(corpo, 0.9), 3.4, contorno=True)
+    s.brilho(25, 16, 3, 4, 0.5, -20)
+
+
+def montaria(s, grau):
+    """A MONTARIA (docs/MONTARIAS.md): bicho de perfil com sela, na cor do grau.
+
+    De PERFIL, e o pet sentado de frente: as duas silhuetas nao podem ser a
+    mesma coisa em tamanhos diferentes, ou a bolsa vira um mar de bichinhos
+    iguais. A SELA e' o que diz "isto se monta".
+    """
+    c = TIER[grau]
+    aura_do_tier(s, grau)
+    corpo = mix((104, 84, 64), c, 0.5)
+    # tronco de perfil
+    s.peca("M12,40C12,32 20,26 32,26C44,26 52,32 52,40C52,46 46,48 32,48C18,48 12,46 12,40Z",
+           corpo, contorno=2.4, claro=0.5, escuro=0.4)
+    # pescoco e cabeca
+    s.peca("M46,30C50,24 52,16 48,12C44,10 40,14 40,20C40,24 42,28 46,30Z",
+           mix(corpo, BRANCO, 0.08), contorno=2.2)
+    s.faisca(46, 16, 2.0, (24, 22, 28))
+    # pernas
+    for x in (18, 27, 38, 47):
+        s.traco(linha((x, 46), (x, 58)), mul(corpo, 0.85), 3.0, contorno=True)
+    # SELA: e' ela que diz que se monta
+    s.peca("M24,28C24,22 34,22 34,28C34,31 24,31 24,28Z", mix(COURO, c, 0.35), contorno=2.0)
+    s.traco(linha((24, 30), (34, 30)), mul(COURO, 0.7), 1.6, contorno=False, sombra=False)
+    s.brilho(20, 30, 3.4, 5, 0.45, -15)
+
+
 def catalogo():
     itens = {
         1: ouro,
@@ -692,6 +751,10 @@ def catalogo():
     # Chaves lendarias (cor 5): ids proprios, 353..356 (`item_id::*_LENDARIA`).
     for k, base in enumerate([332, 336, 340, 64]):
         itens[353 + k] = (lambda b: lambda s: material_colorido(s, b, 5))(base)
+    # PET (420..424) e MONTARIA (460..464): cinco graus cada, a cor E' o grau.
+    for g in range(1, 6):
+        itens[420 + g - 1] = (lambda gr: lambda s: pet(s, gr))(g)
+        itens[460 + g - 1] = (lambda gr: lambda s: montaria(s, gr))(g)
     return dict(sorted(itens.items()))
 
 

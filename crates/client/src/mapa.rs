@@ -233,13 +233,24 @@ pub struct Filtros {
 }
 
 impl Default for Filtros {
+    /// O mapa nasce MOSTRANDO o que serve pra se orientar.
+    ///
+    /// Nascia com tudo desligado: o jogador abria e via a ilha, o contorno e
+    /// nada mais. O dono: "mapa ta mt simples, n mostra recursos visualmente,
+    /// n mostra casa porto, apenas a ilha em si". Estava tudo la' — atras de
+    /// filtros que ninguem sabia que existiam.
+    ///
+    /// Recurso, Energia e VILA (cidade, porto, predios, NPCs) entram ligados:
+    /// sao pontos de referencia, e mapa sem referencia e' desenho. MOB fica
+    /// desligado, e so' a alta densidade aparece (`zona_visivel`) — foi ele
+    /// que poluia a tela.
     fn default() -> Self {
         Self {
             mobs: false,
             bichos_ocultos: HashSet::new(),
-            recursos: [false; 5],
-            energia: false,
-            vila: false,
+            recursos: [true; 5],
+            energia: true,
+            vila: true,
         }
     }
 }
@@ -273,8 +284,18 @@ impl Filtros {
 
     /// Zona aparece se mobs estao ligados e o bicho DOMINANTE dela nao foi
     /// escondido: esconder "Lobo" tira as zonas de lobo.
+    /// A zona de mob aparece no mapa?
+    ///
+    /// Com o filtro DESLIGADO (o padrao), so' as de ALTA DENSIDADE — as
+    /// `forte`. O dono abriu o mapa e disse que "tá mt poluído os mons, é
+    /// marcar somente área de alta densidade e boss": desenhar toda mancha de
+    /// bicho enche a ilha de circulos, e no meio deles o CHEFE — que e' o que
+    /// se procura num mapa — vira mais um ponto colorido.
+    ///
+    /// Ligando o filtro, tudo aparece: quem quer caçar bicho comum procura
+    /// zona comum, e essa escolha continua sendo dele.
     pub fn zona_visivel(&self, z: &ZonaNoMapa) -> bool {
-        self.mobs
+        (self.mobs || z.forte)
             && z.bichos
                 .first()
                 .is_some_and(|b| !self.bichos_ocultos.contains(&b.0))
@@ -834,6 +855,17 @@ pub struct Mapa {
     /// A aba aberta: a ilha onde se esta', ou o arquipelago inteiro.
     pub no_mundo: bool,
     rolagem_lateral: crate::rolagem::Rolagem,
+    /// Zoom do mapa GRANDE. 1 = a ilha inteira; acima disso, aproxima em
+    /// volta do jogador.
+    ///
+    /// O minimapa ja' tinha zoom (`zoom_minimapa`); o mapa grande, nao — e e'
+    /// nele que se procura coisa. Numa ilha de 1,6 km a tela inteira cabia
+    /// num quadrado, e cada arvore era um pixel.
+    ///
+    /// Aproxima em volta do JOGADOR e nao de um ponto arrastavel: quem
+    /// aproxima o mapa quer ver onde esta', e arrastar num celular briga com
+    /// o toque que manda andar.
+    zoom_grande: f32,
 }
 
 impl Default for Mapa {
@@ -859,6 +891,7 @@ impl Default for Mapa {
             filtros: Filtros::default(),
             no_mundo: false,
             rolagem_lateral: Default::default(),
+            zoom_grande: 1.0,
         }
     }
 }
@@ -1001,8 +1034,12 @@ impl Mapa {
 
     /// A zona ou regiao VISIVEL sob o mouse no mapa grande. Regiao primeiro:
     /// e' o marcador pequeno, que fica por cima da zona.
-    fn marcador_sob(&self, m: Vec2, r: Rect) -> Option<Marcador> {
-        let raio = self.raio();
+    /// `foco` e' o mesmo centro que o DESENHO usou (`foco_do_zoom`).
+    ///
+    /// Vem por parametro, e nao calculado aqui: projetar duas vezes o mesmo
+    /// ponto e' como o marcador acaba desenhado num lugar e clicado noutro.
+    fn marcador_sob(&self, m: Vec2, r: Rect, foco: Vec2) -> Option<Marcador> {
+        let raio = self.raio() / self.zoom_grande;
         let escala = r.w / (2.0 * raio);
         let k = Self::escala();
         // NPC primeiro: e' o menor, dentro da cidade, por cima de tudo.
@@ -1011,7 +1048,7 @@ impl Mapa {
                 .npcs_da_vila()
                 .iter()
                 .enumerate()
-                .map(|(i, (_, p))| (i, para_tela(*p, r, raio).distance(m)))
+                .map(|(i, (_, p))| (i, para_tela(*p - foco, r, raio).distance(m)))
                 .filter(|(_, d)| *d <= 12.0 * k)
                 .min_by(|a, b| a.1.total_cmp(&b.1));
             if let Some((i, _)) = npc {
@@ -1027,7 +1064,7 @@ impl Mapa {
             .map(|(i, g)| {
                 (
                     i,
-                    para_tela(vec2(g.centro[0], g.centro[1]), r, raio).distance(m),
+                    para_tela(vec2(g.centro[0], g.centro[1]) - foco, r, raio).distance(m),
                 )
             })
             .filter(|(_, d)| *d <= 9.0 * k)
@@ -1042,7 +1079,7 @@ impl Mapa {
             .map(|(i, z)| {
                 (
                     i,
-                    para_tela(centro_da_zona(z), r, raio).distance(m),
+                    para_tela(centro_da_zona(z) - foco, r, raio).distance(m),
                     (z.raio * escala).max(9.0 * k),
                 )
             })
@@ -1456,6 +1493,32 @@ impl Mapa {
         saida
     }
 
+    /// Onde o zoom do mapa grande fica centrado: o JOGADOR, preso dentro da
+    /// ilha pra a janela nunca sair do desenho.
+    ///
+    /// Sem jogador (mapa aberto antes de entrar no mundo), o centro da ilha.
+    fn foco_do_zoom(&self, eu: Option<Vec2>) -> Vec2 {
+        if self.zoom_grande <= 1.001 {
+            return Vec2::ZERO;
+        }
+        // Preso dentro da ilha: sem isto, aproximar perto da costa mostraria
+        // metade de oceano fora do desenho.
+        let meia = self.raio() * (1.0 - 1.0 / self.zoom_grande);
+        eu.unwrap_or(Vec2::ZERO)
+            .clamp(Vec2::splat(-meia), Vec2::splat(meia))
+    }
+
+    /// Aproxima ou afasta o mapa grande. Um toque = um degrau.
+    pub fn zoom_do_mapa(&mut self, perto: bool) {
+        const MIN: f32 = 1.0;
+        const MAX: f32 = 6.0;
+        self.zoom_grande = if perto {
+            (self.zoom_grande * 1.5).min(MAX)
+        } else {
+            (self.zoom_grande / 1.5).max(MIN)
+        };
+    }
+
     fn raio(&self) -> f32 {
         match self.def {
             Some(d) => d.raio_blocos as f32 * BLOCO,
@@ -1598,6 +1661,18 @@ impl Mapa {
         Rect::new(r.x + r.w - 32.0 * k, r.y - 36.0 * k, 32.0 * k, 32.0 * k)
     }
 
+    /// Os dois botoes de zoom do mapa GRANDE, no canto de baixo do desenho:
+    /// (− , +). Longe do X pra nao fechar o mapa querendo afastar.
+    fn zoom_grande_rects(r: Rect) -> (Rect, Rect) {
+        let k = Self::escala();
+        let l = 34.0 * k;
+        let y = r.y + r.h - l - 8.0 * k;
+        (
+            Rect::new(r.x + 8.0 * k, y, l, l),
+            Rect::new(r.x + 8.0 * k + l + 6.0 * k, y, l, l),
+        )
+    }
+
     /// O clique e a roda sao do mapa (e nao do mundo nem da camera)?
     pub fn pega_mouse(&self) -> bool {
         let m = Vec2::from(mouse_position());
@@ -1628,13 +1703,29 @@ impl Mapa {
                     self.aberto = false;
                     return None;
                 }
+                // ZOOM antes de tudo: os botoes ficam DENTRO do desenho, e
+                // sem isto o toque neles viraria "andar pra la'".
+                let (menos, mais) = Self::zoom_grande_rects(r);
+                if menos.contains(m) {
+                    self.zoom_do_mapa(false);
+                    return None;
+                }
+                if mais.contains(m) {
+                    self.zoom_do_mapa(true);
+                    return None;
+                }
+                let foco = self.foco_do_zoom(eu);
                 if let Some(a) = self
-                    .marcador_sob(m, r)
+                    .marcador_sob(m, r, foco)
                     .and_then(|mk| self.alvo_do_marcador(mk))
                 {
                     return Some(Entrada::Ir(a));
                 }
-                return Some(Entrada::Viajar(de_tela(m, r, self.raio())));
+                // O destino sai da MESMA janela que o desenho usa: sem somar
+                // o foco, aproximar mandaria o jogador pro lugar errado.
+                let raio_v = self.raio() / self.zoom_grande;
+                let destino = de_tela(m, r, raio_v) + foco;
+                return Some(Entrada::Viajar(destino));
             }
             return None;
         }
@@ -1967,7 +2058,7 @@ impl Mapa {
             // Tutorial "abra o mapa e toque num lugar": o alvo e' o mapa todo.
             crate::foco::marca(crate::foco::chave::MAPA_IR, r);
             if r.contains(m) {
-                if let Some(mk) = self.marcador_sob(m, r) {
+                if let Some(mk) = self.marcador_sob(m, r, self.foco_do_zoom(world.self_pos())) {
                     self.dica(mk, m);
                 }
             }
@@ -2102,18 +2193,36 @@ impl Mapa {
             estilo::texto_centro(f.x + f.w * 0.5, f.y + u(19.0), "x", 18, estilo::TEXTO);
         }
 
+        // Os botoes de ZOOM vao por cima do desenho, no canto de baixo.
+        let (menos, mais) = Self::zoom_grande_rects(r);
         draw_rectangle(r.x, r.y, r.w, r.h, COR_AGUA);
         match &self.tex {
-            Some(tex) => draw_texture_ex(
-                tex,
-                r.x,
-                r.y,
-                WHITE,
-                DrawTextureParams {
-                    dest_size: Some(vec2(r.w, r.h)),
-                    ..Default::default()
-                },
-            ),
+            Some(tex) => {
+                // Com zoom, desenha so' o PEDACO da imagem que esta' a' vista
+                // — a mesma janela que `ponto` usa, senao o desenho e os
+                // marcadores discordariam.
+                let z = self.zoom_grande;
+                let foco = self.foco_do_zoom(world.self_pos());
+                let raio_ilha = self.raio();
+                let lado = LADO as f32 / z;
+                let meio = |v: f32| (v / raio_ilha * 0.5 + 0.5) * LADO as f32;
+                draw_texture_ex(
+                    tex,
+                    r.x,
+                    r.y,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(vec2(r.w, r.h)),
+                        source: (z > 1.001).then(|| Rect::new(
+                            meio(foco.x) - lado * 0.5,
+                            meio(foco.y) - lado * 0.5,
+                            lado,
+                            lado,
+                        )),
+                        ..Default::default()
+                    },
+                )
+            }
             None => estilo::texto_centro(
                 r.x + r.w * 0.5,
                 r.y + r.h * 0.5,
@@ -2122,9 +2231,13 @@ impl Mapa {
                 estilo::SUAVE,
             ),
         }
-        let raio = self.raio();
+        // O ZOOM encolhe o raio VISTO e desloca o mundo pro foco. Uma conta
+        // so' — `ponto` e `escala` saem dela, e tudo o que o mapa desenha
+        // passa por `ponto`.
+        let raio = self.raio() / self.zoom_grande;
+        let foco = self.foco_do_zoom(world.self_pos());
         let escala = r.w / (2.0 * raio);
-        let ponto = |p: Vec2| para_tela(p, r, raio);
+        let ponto = |p: Vec2| para_tela(p - foco, r, raio);
         if let Some(info) = &self.info {
             // Chefes sempre visiveis: sao o que se procura no mapa.
             for ch in &info.chefes {
@@ -2280,9 +2393,25 @@ impl Mapa {
                 .map_or(0.0, |e| e.yaw);
             seta(ponto(eu), yaw, u(9.0), estilo::TEXTO);
         }
+        // Os BOTOES DE ZOOM, por cima de tudo.
+        for (b, rotulo, ativo) in [
+            (menos, "−", self.zoom_grande > 1.001),
+            (mais, "+", self.zoom_grande < 5.99),
+        ] {
+            estilo::botao(b, rotulo, estilo::estado_de(b, false, false), ativo);
+        }
+        if self.zoom_grande > 1.001 {
+            estilo::texto(
+                mais.x + mais.w + u(8.0),
+                mais.y + u(22.0),
+                &format!("{:.0}x", self.zoom_grande),
+                13,
+                estilo::SUAVE,
+            );
+        }
         // Onde o clique cairia: agua avisa antes de clicar.
         let m = Vec2::from(mouse_position());
-        if r.contains(m) && self.tex.is_some() && !self.terra(de_tela(m, r, raio)) {
+        if r.contains(m) && self.tex.is_some() && !self.terra(de_tela(m, r, raio) + foco) {
             estilo::texto_centro(m.x, m.y - u(12.0), "água", 13, estilo::SUAVE);
         }
     }
@@ -2639,11 +2768,18 @@ mod tests {
     #[test]
     fn filtros_escondem_zona_pelo_dominante_e_regiao_pelo_tipo() {
         let lobos = zona(0.0, (1, 3), vec![(0, 83), (1, 17)]);
-        // O mapa abre limpo: nada aparece ate' o jogador ligar.
+        // O mapa abre MOSTRANDO o que serve pra se orientar (22/09/2026).
+        //
+        // Abria com tudo desligado — o jogador via a ilha e nada mais, e o
+        // dono achou que o mapa simplesmente nao tinha aquilo. Recurso,
+        // Energia e vila entram ligados; MOB nao, porque e' o que poluia.
         let padrao = Filtros::default();
-        assert!(!padrao.zona_visivel(&lobos));
-        assert!((0..=5).all(|t| !padrao.regiao_visivel(&regiao(0.0, t))));
-        assert!(!padrao.vila);
+        assert!(!padrao.zona_visivel(&lobos), "mob comum continua desligado");
+        assert!(
+            (0..=5).all(|t| padrao.regiao_visivel(&regiao(0.0, t))),
+            "recurso tem que nascer visivel"
+        );
+        assert!(padrao.vila, "cidade e porto sao referencia, nao enfeite");
         let mut f = Filtros {
             mobs: true,
             bichos_ocultos: HashSet::new(),

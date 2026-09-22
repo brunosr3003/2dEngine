@@ -89,16 +89,6 @@ pub mod objective_kind {
     /// (`obj_target` = `tutorial::*`). O cliente avisa com
     /// `ClientMessage::Tutorial` quando o jogador faz o gesto.
     pub const TUTORIAL: u8 = 17;
-    /// Ir a' PROPRIA ilha (`colonia::ZONA`) e pisar nela. Conclui ao chegar,
-    /// como VIAGEM — e pelo mesmo motivo de existir separado dela: a colonia
-    /// nao esta' em `terreno::ARQUIPELAGO` e nao tem indice pra `obj_target`.
-    ///
-    /// Ela nasceu porque o passo da escritura era um TALK com o Capitao, o
-    /// MESMO NPC do passo anterior e do seguinte: o jogador falava uma vez,
-    /// recebia a ilha e a viagem pra Geleira na mesma conversa, e zarpava sem
-    /// nunca ter posto o pe' la'. Um objetivo que se cumpre sozinho no
-    /// caminho de outro nao e' um objetivo.
-    pub const COLONIA: u8 = 18;
 }
 
 /// As acoes que os passos tutoriais ensinam (`obj_target` de TUTORIAL).
@@ -126,8 +116,11 @@ pub mod tutorial {
     // o painel abre num MURAL (e nao no Menu), a colheita cai num BAU (e nao
     // na bolsa) e ela so' rende com MORADOR. Tres coisas que o jogador nao
     // tem como adivinhar — e ele chega la' uma vez, no meio do capitulo I.
-    /// Interagiu com o mural da ilha.
-    pub const COLONIA_MURAL: u16 = 9;
+    /// Abriu o painel da ilha (Menu › Minha Ilha).
+    ///
+    /// Era "interagiu com o mural", de quando a ilha era uma zona em que se
+    /// andava. Ela virou painel: o gesto passou a ser ABRIR.
+    pub const COLONIA_PAINEL: u16 = 9;
     /// Subiu o assentamento (casa → vila).
     pub const COLONIA_ASSENTAMENTO: u16 = 10;
     /// Contratou o primeiro morador.
@@ -173,7 +166,7 @@ pub mod tutorial {
             COLETA_ENERGIA => "Junte Energia nos cristais azuis",
             PONTO_ATRIBUTO => "Menu › Ficha: gaste um ponto",
             EVOLUIR_SKILL => "Menu › Habilidades: evolua um tier",
-            COLONIA_MURAL => "Toque no mural, na praça da ilha",
+            COLONIA_PAINEL => "Abra Menu › Minha Ilha",
             COLONIA_ASSENTAMENTO => "No mural: melhore o Assentamento",
             COLONIA_CONTRATAR => "No mural: escolha um ofício na casa vazia",
             COLONIA_COLHER => "No mural: Colher",
@@ -943,6 +936,51 @@ pub const QUESTS: &[QuestDef] = &[
         reward_cobre: 1_800, reward_xp: 50_000, reward_item: item_id::XP_POTION, reward_item_qty: 2,
         reward_item2: item_id::GLITTERING_POWDER, reward_item2_qty: 2,
         requires: 532, min_level: 14, ..de(crate::construcao::Papel::Missoes) },
+
+    // E.2) A CACADA: matar MUITO, e o alvo e' a zona cheia.
+    //
+    // O dono pediu "missoes para matar mais inimigos, tipo 30, 60 etc, e que
+    // leva pras zonas q tem maior densidade de mobs". Nao sao diarias: e' uma
+    // CADEIA que sobe junto com o jogador — cada uma pede mais que a anterior
+    // e exige nivel pra abrir, entao ela acompanha o capitulo em vez de virar
+    // tarefa repetida.
+    //
+    // `obj_target: 0` = qualquer bicho. E' de proposito: o que se quer aqui e'
+    // VOLUME, e prender a espécie mandaria o jogador procurar um bicho em vez
+    // de procurar um LUGAR CHEIO — que e' onde o auto-caminho leva
+    // (`spot_de_coleta_longe` / a zona forte do mapa).
+    //
+    // A escada de XP acompanha a da historia no mesmo nivel: 30 mortes valem
+    // mais que a caça de 6 do começo e menos que uma dungeon.
+    QuestDef { id: 539, title: "Rotina de caça",
+        desc: "A ilha está cheia demais. Derrote 30 inimigos, de qualquer espécie — procure as manchas densas no mapa.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 30,
+        reward_cobre: 500, reward_xp: 12_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
+        min_level: 8, ..de(crate::construcao::Papel::Treinador) },
+    QuestDef { id: 540, title: "Limpeza da mata",
+        desc: "Não bastou. Derrote 60 inimigos — as zonas marcadas no mapa rendem mais por minuto.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 60,
+        reward_cobre: 1_200, reward_xp: 30_000, reward_item: item_id::XP_POTION, reward_item_qty: 1,
+        reward_item2: item_id::GREATER_HEAL, reward_item2_qty: 3,
+        requires: 539, min_level: 11, ..de(crate::construcao::Papel::Treinador) },
+    QuestDef { id: 541, title: "Mão pesada",
+        desc: "O Treinador quer ver fôlego: derrote 100 inimigos.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 100,
+        reward_cobre: 2_500, reward_xp: 70_000, reward_item: item_id::XP_POTION, reward_item_qty: 2,
+        reward_item2: item_id::GLITTERING_POWDER, reward_item2_qty: 3,
+        requires: 540, min_level: 14, ..de(crate::construcao::Papel::Treinador) },
+    // A caçada TEMÁTICA: mesma ideia, alvo fechado, pra quem quer o drop
+    // daquele bicho. Abre em paralelo — nao depende da cadeia acima.
+    QuestDef { id: 542, title: "Couro de urso",
+        desc: "O Alfaiate paga bem por couro em quantidade. Derrote 40 ursos.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::URSO), obj_count: 40,
+        reward_cobre: 1_400, reward_xp: 34_000, reward_item: item_id::HIDE, reward_item_qty: 4,
+        min_level: 12, ..de(crate::construcao::Papel::Alfaiate) },
+    QuestDef { id: 543, title: "Presas de lobo",
+        desc: "Os lobos já custaram caro à ilha. Derrote 50 deles.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::LOBO), obj_count: 50,
+        reward_cobre: 1_600, reward_xp: 38_000, reward_item: item_id::QUINTESSENCE, reward_item_qty: 6,
+        min_level: 12, ..de(crate::construcao::Papel::Treinador) },
 
     // F) A vila: quem e' quem.
     QuestDef { id: 534, title: "Notícias da taberna",

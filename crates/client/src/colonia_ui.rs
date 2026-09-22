@@ -1,6 +1,14 @@
 //! O painel da COLONIA (docs/COLONIA.md).
 //!
-//! Tres eixos pra melhorar, uma colheita pra recolher e a saida pro porto.
+//! Desde 22/09/2026 a ilha NAO E' MAIS UMA ZONA: ela e' este painel. Nao ha'
+//! viagem, mural nem cais — ha' a MAQUETE (o relevo e o assentamento de
+//! verdade, girando), os tres eixos, os moradores e o bau.
+//!
+//! A maquete existe porque um painel de numeros sobre uma ilha que ninguem ve'
+//! nao e' uma ilha, e' uma planilha com tema. Ela e' o MESMO `Terreno` e as
+//! MESMAS `Construcoes` de quando se andava nela — uma segunda representacao
+//! seria uma segunda fonte de verdade pro mesmo lugar.
+//!
 //! Quem decide tudo e' o servidor (`shared::colonia`): aqui so' se desenha o
 //! estado que ele mandou e se devolve o pedido que o dedo encostou.
 
@@ -26,12 +34,43 @@ pub struct Estado {
     pub vagas: u8,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct ColoniaUi {
     estado: Option<Estado>,
+    /// O relevo e o assentamento da ilha, pra maquete. Montados quando o
+    /// servidor manda `AvisoColonia::Terreno` — e nao a cada abertura: assar
+    /// a vegetacao custa alguns milissegundos, e o painel abre muito.
+    maquete: Option<Maquete>,
+    /// O giro da maquete. Lento: ela e' pra ser olhada, nao pra hipnotizar.
+    giro: f32,
+}
+
+struct Maquete {
+    terreno: crate::terreno::Terreno,
+    construcoes: crate::construcoes::Construcoes,
+    /// Centro do assentamento: e' pra ele que a camera olha.
+    centro: Vec2,
 }
 
 impl ColoniaUi {
+    /// O relevo mudou (ou o jogador entrou): remonta a maquete.
+    pub fn define_maquete(
+        &mut self,
+        plato: f32,
+        trabalhadores: Vec<shared::colonia::Profissao>,
+    ) {
+        let terreno = crate::terreno::Terreno::da_colonia(plato);
+        let centro = shared::terreno::Gerador::da_colonia(plato)
+            .cidade()
+            .map(|c| c.centro())
+            .unwrap_or_default();
+        self.maquete = Some(Maquete {
+            terreno,
+            construcoes: crate::construcoes::Construcoes::da_colonia(plato, trabalhadores),
+            centro: vec2(centro.x, centro.y),
+        });
+    }
+
     pub fn abrir(&mut self, e: Estado) {
         self.estado = Some(e);
     }
@@ -53,13 +92,31 @@ impl ColoniaUi {
     }
 
     /// Desenha; devolve o pedido que o jogador fez.
-    pub fn desenha(&mut self, nome_item: &dyn Fn(u16) -> String) -> Option<PedidoColonia> {
-        estilo::no_painel(estilo::escala_do_painel(600.0, 520.0), || {
-            self.desenha_na_escala(nome_item)
+    pub fn desenha(
+        &mut self,
+        nome_item: &dyn Fn(u16) -> String,
+        solido: &Material,
+    ) -> Option<PedidoColonia> {
+        // A maquete vive mesmo com o painel fechado? Nao: assar e' barato o
+        // bastante pra refazer, e manter o relevo na memoria o tempo todo
+        // custaria a ilha inteira por jogador — o que foi justamente o que a
+        // colonia deixou de fazer quando virou uma so'.
+        if let Some(mq) = &mut self.maquete {
+            mq.construcoes.acompanhar();
+            let c = mq.centro;
+            mq.terreno.atualiza(c, 3, 8);
+        }
+        self.giro += get_frame_time() * 0.18;
+        estilo::no_painel(estilo::escala_do_painel(600.0, 660.0), || {
+            self.desenha_na_escala(nome_item, solido)
         })
     }
 
-    fn desenha_na_escala(&mut self, nome_item: &dyn Fn(u16) -> String) -> Option<PedidoColonia> {
+    fn desenha_na_escala(
+        &mut self,
+        nome_item: &dyn Fn(u16) -> String,
+        solido: &Material,
+    ) -> Option<PedidoColonia> {
         let e = self.estado.as_ref()?.clone();
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
@@ -72,7 +129,11 @@ impl ColoniaUi {
         } else {
             0.0
         };
-        let h = (216.0 * f + 64.0 * f + linha_h * EIXOS as f32 + vagas_h).min(seguro.h - 16.0);
+        // A MAQUETE ocupa uma faixa no topo. Altura fixa em fracao da tela: num
+        // celular deitado ela nao pode comer o painel inteiro.
+        let maquete_h = (seguro.h * 0.26).clamp(90.0, 200.0);
+        let h = (216.0 * f + 64.0 * f + maquete_h + linha_h * EIXOS as f32 + vagas_h)
+            .min(seguro.h - 16.0);
         let p = Rect::new(
             seguro.center().x - w * 0.5,
             seguro.center().y - h * 0.5,
@@ -98,8 +159,33 @@ impl ColoniaUi {
 
         let mut pedido = None;
 
-        // COLHEITA no topo: e' o motivo de abrir o painel.
-        let cr = Rect::new(x0, p.y + 76.0 * f, p.w - 40.0 * f, 56.0 * f);
+        // A MAQUETE: a ilha de verdade, girando. Vem antes de tudo porque e'
+        // ela que diz ao jogador que aquilo e' um LUGAR, e nao uma planilha.
+        let mr = Rect::new(x0, p.y + 70.0 * f, p.w - 40.0 * f, maquete_h);
+        estilo::cartao(mr, false, false);
+        let desenhou = match &self.maquete {
+            Some(mq) => crate::render3d::maquete_da_ilha(
+                &mq.terreno,
+                &mq.construcoes,
+                mr,
+                mq.centro,
+                self.giro,
+                solido,
+            ),
+            None => false,
+        };
+        if !desenhou {
+            estilo::texto_centro(
+                mr.center().x,
+                mr.center().y,
+                "montando a ilha…",
+                13,
+                estilo::SUAVE,
+            );
+        }
+
+        // COLHEITA logo abaixo: e' o motivo de abrir o painel.
+        let cr = Rect::new(x0, mr.y + mr.h + 10.0 * f, p.w - 40.0 * f, 56.0 * f);
         estilo::cartao(cr, false, !e.colheita.is_empty());
         estilo::texto(
             cr.x + 14.0 * f,
@@ -126,6 +212,7 @@ impl ColoniaUi {
                 124.0 * f,
                 40.0 * f,
             );
+            crate::foco::marca(crate::foco::chave::ILHA_COLHER, b);
             estilo::botao(b, "Colher", estilo::estado_de(b, false, false), true);
             if clicou && b.contains(m) {
                 pedido = Some(PedidoColonia::Colher);
@@ -164,6 +251,7 @@ impl ColoniaUi {
                     124.0 * f,
                     38.0 * f,
                 );
+                crate::foco::marca(crate::foco::chave::ILHA_RETIRAR, b);
                 estilo::botao(b, "Retirar", estilo::estado_de(b, false, false), false);
                 if clicou && b.contains(m) {
                     pedido = Some(PedidoColonia::Retirar);
@@ -184,15 +272,23 @@ impl ColoniaUi {
                 16,
                 estilo::TEXTO,
             );
-            estilo::texto(r.x + 14.0 * f, r.y + 46.0 * f, &efeito(i, &e), 12, estilo::SUAVE);
+            // AGORA em cima, DEPOIS embaixo: o jogador lê o que tem antes de
+            // ler o que ganharia.
+            estilo::texto(
+                r.x + 14.0 * f,
+                r.y + 44.0 * f,
+                &agora(i, e.niveis[i]),
+                12,
+                estilo::TEXTO,
+            );
             let custo = e.custos.get(i).cloned().unwrap_or_default();
             estilo::texto(
                 r.x + 14.0 * f,
-                r.y + 66.0 * f,
+                r.y + 62.0 * f,
                 &if no_maximo {
                     "No máximo.".to_string()
                 } else {
-                    format!("Custa {}", lista(&custo, nome_item))
+                    format!("{} · custa {}", depois(i, e.niveis[i]), lista(&custo, nome_item))
                 },
                 12,
                 estilo::SUAVE,
@@ -204,6 +300,9 @@ impl ColoniaUi {
                     124.0 * f,
                     40.0 * f,
                 );
+                if i == eixo::ASSENTAMENTO {
+                    crate::foco::marca(crate::foco::chave::ILHA_ASSENTAMENTO, b);
+                }
                 estilo::botao(b, "Melhorar", estilo::estado_de(b, false, false), false);
                 if clicou && b.contains(m) {
                     pedido = Some(PedidoColonia::Melhorar { eixo: i as u8 });
@@ -253,6 +352,12 @@ impl ColoniaUi {
                         estilo::estado_de(b, posto, false),
                         posto,
                     );
+                    // O foco aponta pro PRIMEIRO ofício de uma casa vazia:
+                    // qualquer um serve pro tutorial, e apontar pros cinco
+                    // seria não apontar pra nenhum.
+                    if quem.is_none() && op == shared::colonia::Profissao::TODAS[0] {
+                        crate::foco::marca(crate::foco::chave::ILHA_CONTRATAR, b);
+                    }
                     if clicou && b.contains(m) {
                         pedido = Some(if posto {
                             PedidoColonia::Demitir { vaga: vaga as u8 }
@@ -269,24 +374,12 @@ impl ColoniaUi {
             }
         }
 
-        // A saida. Fica no rodape e nao entre os eixos: sair e' o unico
-        // botao daqui que nao se desfaz.
-        let volta = Rect::new(x0, p.y + p.h - 56.0 * f, 200.0 * f, 42.0 * f);
-        estilo::botao(
-            volta,
-            "Voltar ao porto",
-            estilo::estado_de(volta, false, false),
-            false,
-        );
-        if clicou && volta.contains(m) {
-            pedido = Some(PedidoColonia::Voltar);
-        }
-
-        // Voltar fecha o painel. Colher e melhorar NAO: o jogador quase sempre
-        // faz os dois seguidos, e fechar a cada toque custa um toque a mais.
-        if matches!(pedido, Some(PedidoColonia::Voltar))
-            || (clicou && (fechar.contains(m) || !p.contains(m)))
-        {
+        // Nao ha' mais "voltar ao porto": a ilha e' um painel, e sair dele e'
+        // fechar. O X e o clique por fora bastam.
+        //
+        // Colher e melhorar NAO fecham: o jogador quase sempre faz os dois
+        // seguidos, e fechar a cada toque custa um toque a mais.
+        if clicou && (fechar.contains(m) || !p.contains(m)) {
             self.fechar();
         }
         pedido
@@ -302,12 +395,72 @@ fn resumo(e: &Estado) -> String {
     )
 }
 
-fn efeito(i: usize, e: &Estado) -> String {
-    let n = e.niveis[i];
+/// O que o eixo DÁ HOJE — e é isto que faltava.
+///
+/// O painel só dizia o que a melhoria ia dar; o jogador não tinha como saber
+/// o que já tinha. "Não tá mostrando o nível do que já existe upgradado na
+/// ilha, só mostra pra melhorar mas não o que já tem" — e sem o AGORA, o
+/// DEPOIS não quer dizer nada: subir de 3 pra 4 vagas e de 1 pra 4 são a
+/// mesma frase.
+///
+/// A linha do TAMANHO ainda falava em "blocos de raio" de uma ilha que não
+/// cresce mais desde que ela virou uma só (`colonia::RAIO_BLOCOS`).
+fn agora(i: usize, n: u8) -> String {
     match i {
-        eixo::TAMANHO => format!("Ilha de {} blocos de raio.", shared::colonia::raio_blocos(n)),
-        eixo::RECURSOS => "Rende mais por hora, mesmo com você fora.".into(),
-        _ => format!("{} espaços no banco daqui.", shared::colonia::espacos_do_banco(n)),
+        eixo::ASSENTAMENTO => {
+            let a = shared::colonia::Assentamento::do_nivel(n);
+            let v = shared::colonia::vagas_de_trabalho(n);
+            match v {
+                0 => format!("{}, sem casa pra morador.", a.nome()),
+                1 => format!("{}, 1 casa de ofício.", a.nome()),
+                _ => format!("{}, {v} casas de ofício.", a.nome()),
+            }
+        }
+        eixo::RECURSOS => {
+            let (_, q) = shared::colonia::por_hora_do_trabalhador(
+                shared::colonia::Profissao::Lenhador,
+                n,
+            );
+            format!("Cada morador rende {q}/h do ofício dele.")
+        }
+        _ => format!("{} espaços no baú da ilha.", shared::colonia::espacos_do_bau(n)),
+    }
+}
+
+/// O que a PRÓXIMA melhoria muda, em relação ao que se tem.
+fn depois(i: usize, n: u8) -> String {
+    if n >= NIVEL_MAX {
+        return "No máximo.".into();
+    }
+    let p = n + 1;
+    match i {
+        eixo::ASSENTAMENTO => {
+            let (a, b) = (
+                shared::colonia::vagas_de_trabalho(n),
+                shared::colonia::vagas_de_trabalho(p),
+            );
+            let nome = shared::colonia::Assentamento::do_nivel(p).nome();
+            if b > a {
+                format!("→ {nome}, {b} casas (+{})", b - a)
+            } else {
+                format!("→ {nome}, mais terreno plano")
+            }
+        }
+        eixo::RECURSOS => {
+            let ate = |x: u8| {
+                shared::colonia::por_hora_do_trabalhador(
+                    shared::colonia::Profissao::Lenhador,
+                    x,
+                )
+                .1
+            };
+            format!("→ {}/h por morador (de {})", ate(p), ate(n))
+        }
+        _ => format!(
+            "→ {} espaços (de {})",
+            shared::colonia::espacos_do_bau(p),
+            shared::colonia::espacos_do_bau(n)
+        ),
     }
 }
 
@@ -322,11 +475,39 @@ fn lista(itens: &[(u16, u32)], nome_item: &dyn Fn(u16) -> String) -> String {
         .join(", ")
 }
 
+/// O que há pra colher — e POR QUE não há, quando não há.
+///
+/// "Pronto para colher: nada" e "A ilha ainda não rendeu nada" dizem a mesma
+/// coisa pro jogo e coisas opostas pro jogador: uma ilha sem MORADOR não vai
+/// render por mais que ele espere, e uma ilha com morador só precisa de
+/// tempo. O dono disse que estava "bem ruim de entender o que tá sendo
+/// colhido"; a frase que faltava era a que separa esses dois casos.
 fn colheita_em_texto(e: &Estado, nome_item: &dyn Fn(u16) -> String) -> String {
-    if e.colheita.is_empty() {
-        "A ilha ainda não rendeu nada.".into()
-    } else {
-        format!("Pronto para colher: {}", lista(&e.colheita, nome_item))
+    if !e.colheita.is_empty() {
+        return format!("Pronto para colher: {}", lista(&e.colheita, nome_item));
+    }
+    if e.trabalhadores.is_empty() {
+        return if e.vagas == 0 {
+            "Ninguém mora aqui. Melhore o Assentamento para abrir uma casa.".into()
+        } else {
+            "Ninguém mora aqui. Contrate um ofício numa casa vazia.".into()
+        };
+    }
+    // Com morador, é só tempo: dizer QUANTO falta é o que transforma
+    // "não rendeu" em "volte às tantas".
+    let por_hora = shared::colonia::por_hora_dos_trabalhadores(
+        &e.trabalhadores,
+        e.niveis[eixo::RECURSOS],
+    );
+    match por_hora.first() {
+        Some((id, q)) if *q > 0 => {
+            let min = (60.0 / *q as f32).ceil() as u32;
+            format!(
+                "Rendendo {}/h. A primeira unidade sai em ~{min} min.",
+                lista(&por_hora, nome_item)
+            )
+        }
+        _ => "A ilha ainda não rendeu nada.".into(),
     }
 }
 

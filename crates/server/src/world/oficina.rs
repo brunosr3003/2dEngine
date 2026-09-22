@@ -171,8 +171,14 @@ mod tests {
                 assert_eq!((entrada, tentativas), (item_id::HORN, 2));
                 let s = &w.sessions[&sid];
                 assert_eq!(crate::craft::tem(&s.inventory, item_id::HORN), 2);
-                let verde = item_id::na_cor(item_id::HORN, 2);
-                assert_eq!(crate::craft::tem(&s.inventory, verde), sucessos as u32);
+                // O premio e' SORTEADO na familia da cor de cima, e nao o
+                // mesmo chifre verde (22/09/2026): conta a familia inteira.
+                let r = shared::combinar::receita(item_id::HORN).unwrap();
+                let ganhos: u32 = shared::combinar::saidas_possiveis(&r)
+                    .iter()
+                    .map(|id| crate::craft::tem(&s.inventory, *id))
+                    .sum();
+                assert_eq!(ganhos, sucessos as u32);
                 assert!(s.inventory_dirty);
             }
             outra => panic!("resposta errada: {outra:?}"),

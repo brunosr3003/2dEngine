@@ -2917,3 +2917,61 @@ mod testes_da_vestimenta {
         );
     }
 }
+
+/// A MAQUETE da ilha: a colônia inteira girando dentro do painel.
+///
+/// A ilha deixou de ser uma zona em que se anda (decisão do dono, 22/09/2026)
+/// e virou painel. O que ela perdeu em caminhada precisa voltar como VISTA:
+/// um painel de números sobre uma ilha que ninguém vê não é uma ilha, é uma
+/// planilha com tema.
+///
+/// Reusa o mesmo `Terreno` e as mesmas `Construcoes` que desenhavam a ilha
+/// quando se andava nela — o assentamento que aparece aqui é, voxel por
+/// voxel, o que estava no chão. Uma segunda representação seria uma segunda
+/// fonte de verdade pro mesmo lugar.
+///
+/// Devolve `false` quando não deu (célula pequena demais, relevo ainda
+/// assando): o painel desenha o resto e tenta de novo no quadro seguinte.
+pub fn maquete_da_ilha(
+    terreno: &crate::terreno::Terreno,
+    construcoes: &crate::construcoes::Construcoes,
+    r: Rect,
+    centro: Vec2,
+    yaw: f32,
+    solido: &Material,
+) -> bool {
+    if r.w < 40.0 || r.h < 40.0 {
+        return false;
+    }
+    let Some(vp) = viewport_na_tela(r) else {
+        return false;
+    };
+    // Enquadra o ASSENTAMENTO, e não a ilha inteira: de longe o bastante pra
+    // caber os 280 blocos de raio, as casas somem e sobra uma mancha verde.
+    // O que o jogador quer ver é o que ele construiu.
+    let alto = terreno.altura(centro.x, centro.y);
+    let dist = 62.0;
+    let olho = vec3(
+        centro.x + yaw.cos() * dist,
+        alto + 34.0,
+        centro.y + yaw.sin() * dist,
+    );
+    let cam = Camera3D {
+        position: olho,
+        target: vec3(centro.x, alto + 2.0, centro.y),
+        up: Vec3::Y,
+        fovy: 0.62,
+        viewport: Some(vp),
+        render_target: alvo(),
+        ..Default::default()
+    };
+    set_camera(&cam);
+    limpa_so_profundidade();
+    macroquad::material::gl_use_material(solido);
+    let n = terreno.desenha(&cam, Vec3::ZERO, 0.0);
+    construcoes.desenha(&cam, None, Vec3::ZERO, 0.0);
+    crate::agua::desenha(terreno, &cam, get_time() as f32);
+    macroquad::material::gl_use_default_material();
+    camera_padrao();
+    n > 0
+}
