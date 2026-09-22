@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 /// Velocidade de movimento montado, sobre a do personagem a pe'. E' o piso: a
 /// montaria CINZA vale isto, e a cor sobe daí (`montarias::velocidade`).
 /// Antes era a mesma pra toda montaria.
-pub const VEL_MONTADO: f32 = 1.5;
+/// O piso de quem esta' montado sem montaria equipada (nao deveria existir).
+/// Acompanha o grau 1 — ver `montarias::velocidade`, que explica por que o
+/// numero tem que bater o sprint.
+pub const VEL_MONTADO: f32 = 1.8;
 /// Quanto demora pra montar (cancela com golpe, skill ou dano).
 pub const MONTAR_S: f32 = 1.0;
 /// Sem atacar nem apanhar por isto antes de poder montar.
@@ -826,7 +829,7 @@ mod tests {
                 par[0].nome
             );
         }
-        assert!(VEL_MONTADO > 1.0 && VEL_MONTADO <= 1.6);
+        assert!(VEL_MONTADO > crate::SPRINT_SPEED_MULT && VEL_MONTADO <= 2.0);
     }
 
     /// Energia comprada tem que pagar evolucao e atributo — e' o mesmo saldo.

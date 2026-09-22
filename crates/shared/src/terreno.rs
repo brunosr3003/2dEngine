@@ -1961,6 +1961,21 @@ impl Gerador {
     /// do jogador andaria pela ilha — que e' exatamente o que "nao cortar a
     /// ilha" existe pra impedir.
     fn praca_da_colonia(&self) -> Cidade {
+        // A VARREDURA E' CONSTANTE: semente fixa, raio fixo, plato maximo
+        // fixo. Ela custa 37 ms em release num desktop, e `Gerador::da_colonia`
+        // e' construido QUATRO vezes ao entrar na ilha (terreno, minimapa na
+        // thread do quadro, minimapa na thread de fundo, construcoes) — duas
+        // delas na thread que desenha. No celular isso e' meio segundo de tela
+        // congelada por uma conta que da' sempre o mesmo numero.
+        static PRACA: std::sync::OnceLock<Cidade> = std::sync::OnceLock::new();
+        if let Some(c) = PRACA.get() {
+            return *c;
+        }
+        let c = self.varrer_praca_da_colonia();
+        *PRACA.get_or_init(|| c)
+    }
+
+    fn varrer_praca_da_colonia(&self) -> Cidade {
         let plato_max = crate::colonia::plato_do_assentamento(crate::colonia::NIVEL_MAX);
         let r = (plato_max / BLOCO) as i32;
         let mut melhor: Option<(i32, Cidade)> = None;

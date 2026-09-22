@@ -142,13 +142,27 @@ pub fn nome_do_item(id: u16) -> Option<String> {
 /// Velocidade montado, em multiplos da velocidade a pe'. O CINZA e' o que a
 /// montaria unica valia antes desta mudanca (`VEL_MONTADO`), entao ninguem
 /// ficou mais lento do que ja' estava; a cor so' sobe daí.
+/// O multiplicador de velocidade por grau.
+///
+/// TODOS batem o sprint a pe' (`SPRINT_SPEED_MULT`, 1,65) — e isso e' um
+/// contrato, nao um gosto: montado nao se sprinta (o multiplicador da
+/// montaria SUBSTITUI o do sprint, ver `loja::velocidade_de_andar`), entao
+/// uma montaria abaixo de 1,65 faz o jogador andar MAIS DEVAGAR do que a pe'.
+///
+/// Era o que acontecia: o Cervo (grau 1) dava 1,50 e o Lobo (grau 2) 1,60,
+/// contra 1,65 de quem corria. O dono montou nos dois e disse que "nem parece
+/// que tem bonus de velocidade" — nao parecia porque nao tinha: era penalidade
+/// de 9% e de 3%. A primeira montaria do jogo era um downgrade.
+///
+/// A escada mantem o passo de +0,10; so' mudou de onde ela parte.
+/// `nenhuma_montaria_e_mais_lenta_que_correr` trava o piso.
 pub fn velocidade(grau: u8) -> f32 {
     match grau {
-        1 => 1.50,
-        2 => 1.60,
-        3 => 1.70,
-        4 => 1.80,
-        _ => 1.90,
+        1 => 1.80,
+        2 => 1.90,
+        3 => 2.00,
+        4 => 2.10,
+        _ => 2.20,
     }
 }
 
@@ -233,6 +247,48 @@ pub const fn cobre_de_combinar(entrada: u8) -> u32 {
 
 #[cfg(test)]
 mod testes {
+    /// NENHUMA montaria pode ser mais lenta que correr a pe'.
+    ///
+    /// Montado nao se sprinta: o multiplicador da montaria SUBSTITUI o do
+    /// sprint (`loja::velocidade_de_andar`). Entao qualquer grau abaixo de
+    /// `SPRINT_SPEED_MULT` transforma a montaria em PENALIDADE — e foi o que
+    /// aconteceu: Cervo 1,50 e Lobo 1,60 contra 1,65 de quem corria. O dono
+    /// montou nos dois e percebeu que nao ganhava nada; nao ganhava mesmo,
+    /// perdia 9% e 3%.
+    ///
+    /// Este teste amarra as duas pontas: se alguem mexer no sprint, ele
+    /// reprova aqui em vez de a primeira montaria do jogo virar um downgrade
+    /// em silencio.
+    #[test]
+    fn nenhuma_montaria_e_mais_lenta_que_correr() {
+        let sprint = crate::SPRINT_SPEED_MULT;
+        for grau in 1..=GRAU_MAX {
+            let v = velocidade(grau);
+            assert!(
+                v > sprint,
+                "grau {grau} anda a {v}x, e correr a pe' e' {sprint}x: \
+                 montar seria ficar mais lento"
+            );
+        }
+        // E a escada tem que subir de verdade a cada grau.
+        for grau in 1..GRAU_MAX {
+            assert!(
+                velocidade(grau + 1) > velocidade(grau),
+                "o grau {} nao e' mais rapido que o {grau}",
+                grau + 1
+            );
+        }
+        // TETO: a posicao nao pode pular mais que `SALTO_DE_TELEPORTE` (15 u)
+        // num engasgo de rede de ~1 s, ou o cliente trata como teleporte e
+        // manda a tela de carregando — que engole o toque.
+        let topo = crate::PLAYER_SPEED * velocidade(GRAU_MAX);
+        assert!(
+            topo <= 15.0,
+            "{topo:.1} u/s no topo: um segundo de engasgo passa do salto de \
+             teleporte e o cliente pisca a tela de carregando"
+        );
+    }
+
     use super::*;
 
     /// A montaria segue a MESMA afinidade rolada do pet: o que a criatura

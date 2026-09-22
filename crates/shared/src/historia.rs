@@ -366,6 +366,22 @@ const fn nivel(id: u16, title: &'static str, n: u32) -> QuestDef {
     }
 }
 
+/// Tutorial que paga COBRE junto. O `gold` de `base` ja' e' cobre; isto existe
+/// so' pra deixar o chamador obvio quando o dinheiro E' o ponto do passo.
+#[allow(clippy::too_many_arguments)]
+const fn tutorial_com_cobre(
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    acao: u16,
+    cobre: u32,
+    xp: u64,
+    item: u16,
+    qtd: u16,
+) -> QuestDef {
+    tutorial(id, title, desc, acao, cobre, xp, item, qtd)
+}
+
 /// Passo tutorial: fazer uma acao da interface (`quests::tutorial::*`).
 #[allow(clippy::too_many_arguments)]
 const fn tutorial(
@@ -498,7 +514,13 @@ pub const PASSOS: &[QuestDef] = &[
     //
     // Ids na faixa de tutorial (790+), entao entram no meio do capitulo sem
     // renumerar passo nenhum (ver `id_do_passo`).
-    tutorial(798, "O mural da praça", "A ilha é sua, e tudo o que se faz nela se faz no MURAL da praça — não no Menu. Vá até ele e toque.", tut::COLONIA_MURAL, 0, 8_000, item_id::GREATER_HEAL, 2),
+    // A recompensa deste passo E' o custo do seguinte: 8.000 de cobre e 80 de
+    // madeira, que e' exatamente `colonia::custo(ASSENTAMENTO, 2)`. Sem isso o
+    // passo "melhore o Assentamento" abria e NAO FECHAVA — o jogador chega na
+    // ilha no fim do capitulo I sem oito mil de cobre sobrando, e a historia
+    // inteira (inclusive o barco pra Geleira) fica atras dessa conta.
+    // `o_tutorial_da_ilha_se_paga` trava o contrato.
+    tutorial_com_cobre(798, "O mural da praça", "A ilha é sua, e tudo o que se faz nela se faz no MURAL da praça — não no Menu. Vá até ele e toque: o Capitão deixou lá o material da primeira obra.", tut::COLONIA_MURAL, 8_000, 8_000, item_id::WOOD_T1, 80),
     tutorial(799, "Casa vira vila", "Uma casa sozinha não sustenta ninguém. No mural, melhore o ASSENTAMENTO: ele aplaina mais chão e abre a primeira casa de ofício.", tut::COLONIA_ASSENTAMENTO, 0, 10_000, item_id::WOOD_T1, 60),
     tutorial(800, "O primeiro morador", "Casa vazia não rende. No mural, na casa que abriu, escolha um ofício — o Lenhador traz madeira, o Minerador traz aço, o Mercenário traz cobre.", tut::COLONIA_CONTRATAR, 0, 12_000, item_id::GREATER_HEAL, 2),
     tutorial(801, "O que a ilha rendeu", "Seu morador já trabalhou. No mural, toque em COLHER: o que ele produziu vai pro BAÚ DA ILHA, e não pra sua bolsa — é por isso que voltar aqui vale a pena.", tut::COLONIA_COLHER, 0, 12_000, item_id::GREATER_HEAL, 2),
@@ -1121,6 +1143,43 @@ mod testes {
         assert!(t::tem_estado(t::COLONIA_ASSENTAMENTO));
         assert!(t::tem_estado(t::COLONIA_CONTRATAR));
         assert!(!t::tem_estado(t::COLONIA_MURAL), "abrir o mural se refaz");
+    }
+
+    /// O TUTORIAL DA ILHA SE PAGA: o passo anterior entrega o que o seguinte
+    /// cobra.
+    ///
+    /// "Casa vira vila" manda melhorar o Assentamento, e a melhoria custa
+    /// 8.000 de cobre e 80 de madeira. O jogador chega na propria ilha no fim
+    /// do capitulo I — sem oito mil de cobre sobrando. O passo abria e nao
+    /// fechava, e atras dele estao os outros tres e o barco pra Geleira: a
+    /// historia inteira parava numa conta que o jogo nao tinha dado.
+    ///
+    /// Medido com `colonia_espia --quests`: "Falta material para esta
+    /// melhoria", repetido ate' o teste desistir.
+    #[test]
+    fn o_tutorial_da_ilha_se_paga() {
+        use crate::quests::tutorial as t;
+        let mural = PASSOS
+            .iter()
+            .find(|d| d.obj_kind == objective_kind::TUTORIAL && d.obj_target == t::COLONIA_MURAL)
+            .expect("o passo do mural sumiu");
+        // O que a melhoria do nivel 2 cobra.
+        for (item, qtd) in crate::colonia::custo(crate::colonia::eixo::ASSENTAMENTO, 2) {
+            let pago = if item == crate::constants::item_id::COPPER {
+                mural.reward_cobre
+            } else if mural.reward_item == item {
+                mural.reward_item_qty as u32
+            } else if mural.reward_item2 == item {
+                mural.reward_item2_qty as u32
+            } else {
+                0
+            };
+            assert!(
+                pago >= qtd,
+                "a melhoria cobra {qtd} de {item} e o passo anterior da' {pago}: \
+                 a historia trava numa conta que o jogo nao pagou"
+            );
+        }
     }
 
     /// Travas crescem, ficam na faixa da ilha e nunca passam do teto; toda

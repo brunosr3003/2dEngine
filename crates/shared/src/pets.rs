@@ -216,13 +216,19 @@ pub fn alimentado(d: &crate::items::PetData, agora_unix: i64) -> bool {
 
 /// Velocidade do pet, em multiplos de `PLAYER_SPEED`. O laranja empata com a
 /// montaria (`loja::VEL_MONTADO`): so' o topo acompanha quem esta' montado.
+///
+/// A escada SUBIU junto com a das montarias em 22/09/2026. Ela nao e'
+/// independente: o teto do pet e' `VEL_MONTADO` por contrato, e deixar o pet
+/// para tras quando a montaria acelerou seria trocar um defeito por outro —
+/// o jogador montado veria o pet laranja, o mais caro do jogo, ficando
+/// comendo poeira.
 pub fn velocidade(grau: u8) -> f32 {
     match grau {
-        1 => 0.90,
-        2 => 1.05,
-        3 => 1.20,
-        4 => 1.35,
-        _ => 1.50,
+        1 => 1.05,
+        2 => 1.25,
+        3 => 1.45,
+        4 => 1.62,
+        _ => 1.80,
     }
 }
 

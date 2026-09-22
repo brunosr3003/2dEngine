@@ -686,22 +686,56 @@ fn gerar_dados(def: &'static DefIlha) -> Dados {
     }
 }
 
-/// A COLONIA (docs/COLONIA.md) no minimapa: so' o relevo.
+/// A COLONIA (docs/COLONIA.md) no minimapa: o relevo E o que ha' nele.
 ///
-/// Sem vila, porque a colonia nao tem uma: predio no minimapa e nenhum no
-/// chao seria pior que minimapa nenhum.
+/// Mandava `porto: None, mestre: None, npcs: vazio` — a ilha era desenhada e
+/// NADA em cima dela. O dono abriu o mapa e disse que "nao esta' mostrando
+/// nada": estava mostrando o chao, que e' o que menos ajuda. Os dois lugares
+/// que importam na colonia sao o MURAL (onde se administra) e o CAIS (por
+/// onde se sai), e eram justamente os que faltavam — inclusive o "Ir" deles.
+///
+/// As casas entram como pegadas, como na vila: o assentamento cresce, e o
+/// mapa tem que mostrar que cresceu.
 fn gerar_dados_da_colonia(plato: f32) -> Dados {
     let ger = Gerador::da_colonia(plato);
+    let rgba = gerar_imagem(
+        &ger,
+        shared::colonia::RAIO_BLOCOS,
+        shared::terreno::Bioma::Floresta,
+    );
+    let vila = ger.vila();
+    let pegadas = vila
+        .predios
+        .iter()
+        .map(|p| {
+            let m = p.construcao().meia(p.yaw_q);
+            (vec2(p.pos.x, p.pos.z), vec2(m.x, m.y))
+        })
+        .collect();
+    // O cais vem da VILA, e nao do `SitioPorto` cru: e' ela que sabe onde a
+    // ponta do molhe ficou (o mesmo caminho da ilha normal, logo acima).
+    let porto = vila.porto.map(|p| PortoNoMapa {
+        centro: vec2(p.centro.x, p.centro.y),
+        raio: p.raio,
+        raiz: vec2(p.raiz.x, p.raiz.y),
+        ponta: vec2(p.ponta.x, p.ponta.y),
+    });
+    // O MURAL e' o ponto de referencia da ilha: entra como "mestre" porque e'
+    // esse o marcador que o mapa ja' sabe desenhar e levar o jogador ate'.
+    let mural = ger.cidade().map(|c| c.centro()).map(|c| vec2(c.x, c.y));
+    let mut npcs = Vec::new();
+    if let Some(m) = mural {
+        npcs.push(("Mural da Ilha".to_string(), m));
+    }
+    if let Some(p) = &porto {
+        npcs.push(("Barqueiro".to_string(), p.centro));
+    }
     Dados {
-        rgba: gerar_imagem(
-            &ger,
-            shared::colonia::RAIO_BLOCOS,
-            shared::terreno::Bioma::Floresta,
-        ),
-        pegadas: Vec::new(),
-        porto: None,
-        mestre: None,
-        npcs: Vec::new(),
+        rgba,
+        pegadas,
+        porto,
+        mestre: mural,
+        npcs,
     }
 }
 
@@ -2747,5 +2781,68 @@ mod testes_das_vilas {
     fn mapa_sem_ilha_nao_inventa_vila() {
         let m = Mapa::default();
         assert!(m.vilas_da_ilha().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod testes_do_mapa_da_colonia {
+    use super::*;
+
+    /// O minimapa da COLÔNIA mostra a ilha — e não um retângulo de mar.
+    ///
+    /// O dono disse "o mapa tá errado, não tá mostrando nada". A imagem é
+    /// gerada varrendo `ger.altura` num quadrado de `±raio`, e o raio da
+    /// colônia vem de `raio_sem_def` (não há `DefIlha`): se ele não casar com
+    /// o raio DE VERDADE da ilha, a varredura cai toda fora dela e o mapa sai
+    /// todo azul — tecnicamente certo, e inútil.
+    #[test]
+    fn o_mapa_da_colonia_mostra_terra() {
+        for nivel in [1u8, 5] {
+            let plato = shared::colonia::plato_do_assentamento(nivel);
+            let dados = gerar_dados_da_colonia(plato);
+            assert_eq!(dados.rgba.len(), LADO * LADO * 4, "imagem do tamanho errado");
+            // Água é azulada (`cor_da_agua`): o canal B domina o R. Terra não.
+            let terra = dados
+                .rgba
+                .chunks_exact(4)
+                .filter(|p| p[0] as u16 + 12 > p[2] as u16)
+                .count();
+            let pct = 100.0 * terra as f32 / (LADO * LADO) as f32;
+            println!("nivel {nivel}: {pct:.1}% da imagem é terra");
+            assert!(
+                pct > 15.0,
+                "nível {nivel}: só {pct:.1}% da imagem é terra — o mapa está \
+                 mostrando mar, e a ilha ficou fora do quadro"
+            );
+            // E o que IMPORTA em cima dela: o mural (onde se administra) e o
+            // cais (por onde se sai). Sem eles o mapa é um desenho bonito.
+            assert!(dados.porto.is_some(), "nível {nivel}: o mapa não mostra o cais");
+            assert!(dados.mestre.is_some(), "nível {nivel}: o mapa não mostra o mural");
+            assert!(
+                dados.npcs.len() >= 2,
+                "nível {nivel}: {} marcadores — o mural e o barqueiro têm que \
+                 ter 'Ir', que é como o jogador chega neles",
+                dados.npcs.len()
+            );
+            assert!(
+                !dados.pegadas.is_empty(),
+                "nível {nivel}: nenhuma casa no mapa"
+            );
+        }
+    }
+
+    /// O raio que o mapa usa pra desenhar é o raio da ILHA.
+    ///
+    /// `raio()` sai de `raio_sem_def` na colônia. Se ele divergir de
+    /// `colonia::RAIO_BLOCOS`, o ponto do jogador cai no lugar errado do mapa
+    /// — e "terra" responde errado pro auto-caminho.
+    #[test]
+    fn o_raio_do_mapa_e_o_raio_da_ilha() {
+        let m = Mapa::da_colonia(shared::colonia::plato_do_assentamento(1));
+        let esperado = shared::colonia::RAIO_BLOCOS as f32 * BLOCO;
+        assert!(m.tem_ilha(), "o mapa da colônia não se considera uma ilha");
+        assert_eq!(m.raio(), esperado, "o raio do mapa não é o da ilha");
+        // E o centro da ilha tem que ser terra pelo teste que o mapa usa.
+        assert!(m.terra(Vec2::ZERO), "o centro da ilha deu água no mapa");
     }
 }

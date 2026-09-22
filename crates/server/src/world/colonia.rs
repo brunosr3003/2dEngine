@@ -56,6 +56,21 @@ impl GameWorld {
 
     /// COLHER o que a ilha rendeu.
     pub(super) fn colher_colonia(&mut self, sid: SessionId) {
+        self.colher_colonia_com_aviso(sid, true)
+    }
+
+    /// Colher sem falar nada quando nao ha' o que colher.
+    ///
+    /// `contratar` e `demitir` colhem ANTES de mexer nas vagas, pra fechar o
+    /// periodo com quem de fato trabalhou. Numa ilha vazia isso despejava
+    /// "Ninguem mora aqui ainda" no meio do ato de CONTRATAR alguem — o jogo
+    /// reclamando de um problema que o jogador estava resolvendo naquele
+    /// segundo.
+    pub(super) fn colher_colonia_quieto(&mut self, sid: SessionId) {
+        self.colher_colonia_com_aviso(sid, false)
+    }
+
+    fn colher_colonia_com_aviso(&mut self, sid: SessionId, falar: bool) {
         let horas = self.horas_paradas(sid);
         let Some(s) = self.sessions.get(&sid) else {
             return;
@@ -70,7 +85,9 @@ impl GameWorld {
             } else {
                 "A ilha ainda não rendeu nada. Volte mais tarde."
             };
-            self.avisa_colonia(sid, texto);
+            if falar {
+                self.avisa_colonia(sid, texto);
+            }
             return;
         }
         let Some(s) = self.sessions.get_mut(&sid) else {
@@ -91,14 +108,16 @@ impl GameWorld {
             if fora > 0 {
                 sobrou = true;
             } else {
-                texto.push(format!("{q}× {id}"));
+                texto.push(format!("{q}× {}", crate::economy::nome_do_item(*id)));
             }
         }
         if texto.is_empty() {
             // Nada entrou: o relogio NAO e' zerado. Zerar apagaria as horas
             // de trabalho de quem chegou com o bau cheio, e o jogador nao
             // teria como saber o que perdeu.
-            self.avisa_colonia(sid, "O baú da ilha está cheio. Retire o que há nele primeiro.");
+            if falar {
+                self.avisa_colonia(sid, "O baú da ilha está cheio. Retire o que há nele primeiro.");
+            }
             return;
         }
         s.colonia.colhida_em = (now_ms() / 1000) as i64;
@@ -136,11 +155,19 @@ impl GameWorld {
             }
             if slot.item_id == shared::item_id::COPPER {
                 Self::pagar_em_cobre(s, slot.qty, "colonia");
-                levou.push(format!("{}× {}", slot.qty, slot.item_id));
+                levou.push(format!(
+                    "{}× {}",
+                    slot.qty,
+                    crate::economy::nome_do_item(slot.item_id)
+                ));
                 continue;
             }
             if add_to_inventory(&mut s.inventory, slot.item_id, slot.qty, None) {
-                levou.push(format!("{}× {}", slot.qty, slot.item_id));
+                levou.push(format!(
+                    "{}× {}",
+                    slot.qty,
+                    crate::economy::nome_do_item(slot.item_id)
+                ));
             } else {
                 ficou += 1;
                 resto.push(slot);
@@ -361,10 +388,24 @@ impl GameWorld {
             );
             return;
         }
-        self.colher_colonia(sid);
+        self.colher_colonia_quieto(sid);
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
+        // O PRIMEIRO morador chega com a primeira carga.
+        //
+        // Sem isso, contratar e colher em seguida nao rende NADA: um lenhador
+        // faz 8 de madeira por hora, entao a primeira unidade sai em 7,5
+        // minutos. O passo "Colher" do tutorial abria e ficava esperando — o
+        // jogador parado na ilha sem saber o que fazer, com o barco pra
+        // Geleira atras disso.
+        //
+        // So' na primeira contratacao (colonia sem ninguem): depois o relogio
+        // e' o relogio, e esperar faz parte.
+        if s.colonia.trabalhadores.is_empty() {
+            let uma_hora = 3_600;
+            s.colonia.colhida_em = (now_ms() / 1000) as i64 - uma_hora;
+        }
         let t = &mut s.colonia.trabalhadores;
         while t.len() <= vaga as usize {
             t.push(p);
@@ -379,7 +420,7 @@ impl GameWorld {
 
     /// DEMITIR: esvazia a vaga. A casa some e o rendimento dela para.
     fn demitir_na_colonia(&mut self, sid: SessionId, vaga: u8) {
-        self.colher_colonia(sid);
+        self.colher_colonia_quieto(sid);
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
@@ -395,8 +436,20 @@ impl GameWorld {
     /// A porta de entrada de tudo o que a colonia pede.
     pub(super) fn handle_colonia(&mut self, sid: SessionId, pedido: shared::colonia::PedidoColonia) {
         use shared::colonia::PedidoColonia as P;
-        // Sem a escritura nao ha' o que abrir, colher ou melhorar. A trava
-        // fica AQUI, e nao em cada braco: um braco novo nasceria sem ela.
+        // SAIR nunca depende da escritura.
+        //
+        // A trava do `tem` vinha antes de tudo, inclusive do `Voltar` — e quem
+        // estivesse DENTRO da colonia sem a escritura (save antigo, escritura
+        // perdida, entrada por outro caminho) nao podia fazer nada ali, nem
+        // ir embora. Nem pelo barqueiro, que passa por aqui. Ilha sem saida e'
+        // armadilha, e esta fechava com o jogador dentro.
+        let dentro_agora = shared::colonia::e_colonia(&self.zona);
+        if matches!(pedido, P::Voltar) && dentro_agora {
+            self.voltar_da_colonia(sid);
+            return;
+        }
+        // Pro resto, sem a escritura nao ha' o que abrir, colher ou melhorar.
+        // A trava fica AQUI, e nao em cada braco: braco novo nasce travado.
         if !self.sessions.get(&sid).is_some_and(|s| s.colonia.tem) {
             self.avisa_colonia(sid, "Você ainda não tem uma ilha.");
             return;
@@ -409,7 +462,7 @@ impl GameWorld {
         // A trava fica AQUI, na porta, e nao em cada braco: braco novo nasce
         // travado. `Painel` fica de fora (olhar de longe nao mexe em nada) e
         // `Visitar` tambem, que e' o que se faz PRA chegar.
-        let dentro = shared::colonia::e_colonia(&self.zona);
+        let dentro = dentro_agora;
         let mexe = !matches!(pedido, P::Painel | P::Visitar);
         if mexe && !dentro {
             self.avisa_colonia(sid, "Isso se faz na ilha. Fale com o Capitão do Porto.");

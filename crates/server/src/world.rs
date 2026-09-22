@@ -16353,9 +16353,15 @@ impl GameWorld {
                 self.handle_colonia(sid, shared::colonia::PedidoColonia::Voltar);
             }
             Some((_, MURAL_DA_ILHA, _, _)) => {
-                // O mural E' o painel da colonia. Interagir com ele e' a
-                // unica porta agora: o item de Menu saiu.
-                self.abrir_colonia(sid);
+                // O mural E' o painel da colonia — e vai pela MESMA porta do
+                // pedido do cliente, e nao por `abrir_colonia` direto.
+                //
+                // Chamando direto ele pulava `handle_colonia`, que e' onde o
+                // passo de tutorial "O mural da praca" e' marcado: tocar no
+                // mural — o jeito que a quest MANDA — nunca fechava o passo, e
+                // a linha inteira da colonia travava no primeiro degrau. So'
+                // fechava por Menu, que e' o caminho que a quest nao ensina.
+                self.handle_colonia(sid, shared::colonia::PedidoColonia::Painel);
             }
             Some((_, 8, _, _)) => {
                 // Mestre do Treinamento — manda o player (re)fazer o tutorial.

@@ -47,6 +47,10 @@ async fn main() -> anyhow::Result<()> {
     // é uma que o jogador não pediu e que vai ser corrigida na volta (o
     // "voltando ao ponto anterior").
     let engasgo = args.iter().any(|a| a == "--engasgo");
+    // `--quests`: percorre a LINHA DE TUTORIAL DA ILHA inteira — mural,
+    // assentamento, contratar, colher, retirar — e diz qual passo fechou e
+    // qual não. É o caminho que o jogador faz, pelas mesmas mensagens.
+    let quests = args.iter().any(|a| a == "--quests");
 
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{host}")).await?;
     let envia = |m: &ClientMessage| -> anyhow::Result<Message> {
@@ -71,6 +75,9 @@ async fn main() -> anyhow::Result<()> {
     let mut alvo: Option<glam::Vec2> = None;
     let mut ilha_da_colonia: Option<shared::terreno::Ilha> = None;
     let mut pediu = false;
+    let mut passo_aberto: Option<u16> = None;
+    let mut fechados: Vec<u16> = Vec::new();
+    let mut proximo_passo = 0.0f32;
     let mut avisou_silencio = false;
     let mut antes_do_silencio: Option<glam::Vec2> = None;
     let mut depois_do_silencio: Option<glam::Vec2> = None;
@@ -80,7 +87,32 @@ async fn main() -> anyhow::Result<()> {
         tokio::select! {
             _ = relogio.tick(), if no_mundo => {
                 seq += 1;
-                if rota {
+                if quests {
+                    // Um pedido por segundo, na ordem que a quest ensina.
+                    // Cada um responde com `Estado`, e o QuestUpdate diz se o
+                    // passo fechou — é isso que o teste está lendo.
+                    let t_s = seq as f32 / 30.0;
+                    if t_s >= proximo_passo {
+                        proximo_passo = t_s + 1.2;
+                        use shared::colonia::PedidoColonia as P;
+                        let pedido = match passo_aberto {
+                            Some(798) => Some(P::Painel),
+                            Some(799) => Some(P::Melhorar {
+                                eixo: shared::colonia::eixo::ASSENTAMENTO as u8,
+                            }),
+                            Some(800) => Some(P::Contratar { vaga: 0, oficio: 0 }),
+                            Some(801) => Some(P::Colher),
+                            Some(802) => Some(P::Retirar),
+                            // Fora da linha da ilha: só abre o painel, pra ver
+                            // o estado e não ficar mudo.
+                            _ => Some(P::Painel),
+                        };
+                        if let Some(p) = pedido {
+                            println!("    -> pedindo {p:?} (passo aberto: {passo_aberto:?})");
+                            ws.send(envia(&ClientMessage::Colonia { pedido: p })?).await?;
+                        }
+                    }
+                } else if rota {
                     // A rota pede DUAS coisas, e faltar uma não mede nada:
                     //
                     // 1. `MoverPara` uma vez — input com direção MATA a rota
@@ -205,7 +237,40 @@ async fn main() -> anyhow::Result<()> {
                         println!("{n:3} Kick: {reason}");
                         break;
                     }
-                    ServerMessage::Chat { from, text } => println!("{n:3} Chat [{from}] {text}"),
+                    ServerMessage::Chat { ref from, ref text } => {
+                println!("{n:3} Chat [{from}] {text}")
+            }
+            ServerMessage::QuestUpdate {
+                quest_id,
+                status,
+                ..
+            } if quests => {
+                let nome = shared::quests::quest_by_id(quest_id)
+                    .map(|d| d.title)
+                    .unwrap_or("?");
+                let st = match status {
+                    shared::quests::quest_status::ACTIVE => "ABERTO",
+                    shared::quests::quest_status::READY => "pronto",
+                    shared::quests::quest_status::TURNED_IN => "FECHADO",
+                    _ => "?",
+                };
+                println!("    [quest] {quest_id} '{nome}' -> {st}");
+                if status == shared::quests::quest_status::ACTIVE {
+                    passo_aberto = Some(quest_id);
+                }
+                if status == shared::quests::quest_status::TURNED_IN {
+                    fechados.push(quest_id);
+                }
+            }
+            ServerMessage::QuestLog { quests: ref log } if quests => {
+                for q in log.iter().filter(|q| {
+                    q.status == shared::quests::quest_status::ACTIVE
+                        && shared::historia::e_da_historia(q.id)
+                }) {
+                    println!("    [quest] no log, ABERTO: {} '{}'", q.id, q.title);
+                    passo_aberto = Some(q.id);
+                }
+            }
                     ServerMessage::Snapshot { snapshot } => {
                         tick = snapshot.tick;
                         if let Some(id) = meu {
@@ -272,6 +337,20 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    if quests {
+        println!("\n─────────────── a linha da ilha ───────────────");
+        for (id, nome) in [
+            (798u16, "O mural da praça"),
+            (799, "Casa vira vila"),
+            (800, "O primeiro morador"),
+            (801, "O que a ilha rendeu"),
+            (802, "Buscar no baú"),
+        ] {
+            let ok = fechados.contains(&id);
+            println!("  {} {id} {nome}", if ok { "FECHOU " } else { "TRAVOU " });
+        }
+        println!("  passo ainda aberto: {passo_aberto:?}");
+    }
     println!("\n─────────────── o que deu ───────────────");
     println!(
         "relevo mandado .... {}",
