@@ -112,6 +112,7 @@ impl GameWorld {
             aviso: shared::magica::AvisoMagica::Estado {
                 grau_maximo,
                 grau_atual,
+                meu_nivel: nivel,
                 passes: self.passes_de(sid),
                 gratis: shared::magica::gratis_restantes(s.magica_gratis, agora),
                 fim_unix: s.magica_ate,

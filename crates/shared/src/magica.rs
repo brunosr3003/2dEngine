@@ -77,9 +77,12 @@ pub struct NivelMagico {
     pub zona: &'static str,
     pub nome: &'static str,
     /// Nível do personagem pra liberar a entrada.
+    ///
+    /// PODE SER MENOR que o nível dos mobs, e no degrau I é: o dono quis
+    /// "deixa entrar no nv 15 mesmo ele sendo lvl 20, só sobe o poder
+    /// recomendado". A ilha não é obrigação — quem quer entrar abaixo do
+    /// nível e apanhar tem o direito, desde que o número avise.
     pub exige_nivel: u32,
-    /// "Poder recomendado": o número que o jogador compara com o dele.
-    pub poder: u32,
     /// A faixa de nível dos mobs — ESTREITA, que é o pedido.
     pub mob: (u32, u32),
     /// O nome do Colosso deste degrau (`bosses`).
@@ -93,8 +96,7 @@ pub const NIVEIS: &[NivelMagico] = &[
         grau: 1,
         zona: "ilha_magica",
         nome: "Ilha Mágica I",
-        exige_nivel: 20,
-        poder: 1_500,
+        exige_nivel: 15,
         mob: (20, 23),
         nome_do_chefe: "Colosso da Ilha Mágica",
     },
@@ -103,7 +105,6 @@ pub const NIVEIS: &[NivelMagico] = &[
         zona: "ilha_magica_2",
         nome: "Ilha Mágica II",
         exige_nivel: 30,
-        poder: 6_000,
         mob: (30, 33),
         nome_do_chefe: "Colosso Maior da Ilha Mágica",
     },
@@ -112,11 +113,32 @@ pub const NIVEIS: &[NivelMagico] = &[
         zona: "ilha_magica_3",
         nome: "Ilha Mágica III",
         exige_nivel: 45,
-        poder: 18_000,
         mob: (45, 48),
         nome_do_chefe: "Colosso Ancião da Ilha Mágica",
     },
 ];
+
+impl NivelMagico {
+    /// O PODER RECOMENDADO, na escala do próprio jogo.
+    ///
+    /// Sai de `dungeon::poder_referencia` — a mesma conta que as dungeons
+    /// usam e que o jogador já vê na ficha —, e não de um número escolhido a
+    /// dedo. Um "1500" inventado não se compara com nada; este se compara com
+    /// o poder dele.
+    ///
+    /// Usa o TOPO da faixa de mob, e não o nível de entrada: é o que o
+    /// jogador vai enfrentar. No degrau I os dois são diferentes de propósito
+    /// (entra no 15, mobs 20-23), e é justamente aí que o número serve de
+    /// aviso.
+    pub fn poder(&self) -> i32 {
+        crate::dungeon::poder_referencia(self.mob.1)
+    }
+
+    /// O jogador entra abaixo do que a ilha pede?
+    pub fn acima_do_nivel(&self, nivel: u32) -> bool {
+        nivel < self.mob.0
+    }
+}
 
 /// O degrau desta zona.
 pub fn nivel_da_zona(z: &str) -> Option<&'static NivelMagico> {
@@ -705,6 +727,10 @@ pub enum AvisoMagica {
         /// Em que degrau ele está agora (0 = fora da ilha).
         #[serde(default)]
         grau_atual: u8,
+        /// O nível do personagem — o painel compara com a faixa de mob pra
+        /// avisar "você está abaixo desta ilha".
+        #[serde(default)]
+        meu_nivel: u32,
         /// Passes na bolsa.
         passes: u32,
         /// Entradas de graça que ainda há hoje (`GRATIS_POR_DIA`).
@@ -775,6 +801,35 @@ mod testes {
     /// desenho: tudo caía na primeira faixa. O dono: "só tem recurso cinza
     /// lá".
     /// Os degraus são coerentes entre si e com o resto do jogo.
+    /// O poder recomendado sai da escala do JOGO, e avisa quem está abaixo.
+    ///
+    /// O dono: "deixa entrar no nv 15 mesmo ele sendo lvl 20, só sobe o poder
+    /// recomendado". Entrar abaixo do nível é um direito — apanhar por
+    /// escolha é diferente de apanhar por surpresa —, e o que separa os dois
+    /// é o número avisar.
+
+    #[test]
+    fn o_poder_recomendado_e_da_escala_do_jogo() {
+        for n in NIVEIS {
+            // A MESMA conta das dungeons, e não um número escolhido a dedo:
+            // "1500" não se compara com nada; este se compara com o poder que
+            // o jogador já vê na ficha.
+            assert_eq!(n.poder(), crate::dungeon::poder_referencia(n.mob.1));
+            assert!(n.poder() > 0, "{}: poder zerado", n.nome);
+        }
+        // O degrau I: entra no 15, mas a ilha é de 20-23 — e ele avisa.
+        let um = &NIVEIS[0];
+        assert_eq!(um.exige_nivel, 15, "o portão é o que o dono pediu");
+        assert!(
+            um.acima_do_nivel(15),
+            "quem entra no 15 tem que ser avisado de que a ilha é acima"
+        );
+        assert!(
+            !um.acima_do_nivel(um.mob.0),
+            "no nível dos mobs não há o que avisar"
+        );
+    }
+
     #[test]
     fn os_degraus_sobem_juntos() {
         let mut antes: Option<&NivelMagico> = None;
@@ -789,20 +844,21 @@ mod testes {
                 n.nome,
                 n.mob.1 - n.mob.0
             );
-            // O mob não pode ser mais fraco que o portão: entrar num degrau
-            // pra achar bicho do nível do degrau anterior é não ter degrau.
+            // O portão pode ser ABAIXO do mob (é o caso do degrau I: entra
+            // no 15, mobs 20-23), mas nunca acima: entrar num degrau pra
+            // achar bicho mais fraco que você é não ter degrau.
             assert!(
-                n.mob.0 >= n.exige_nivel,
-                "{}: entra no {} e o mob é {}",
+                n.exige_nivel <= n.mob.1,
+                "{}: entra no {} e o mob mais forte é {}",
                 n.nome,
                 n.exige_nivel,
-                n.mob.0
+                n.mob.1
             );
             assert!(crate::terreno::def_da_zona(n.zona).is_some(), "{}: zona sem def", n.nome);
             if let Some(a) = antes {
                 assert!(n.grau == a.grau + 1, "graus fora de ordem");
                 assert!(n.exige_nivel > a.exige_nivel, "{}: não sobe o portão", n.nome);
-                assert!(n.poder > a.poder, "{}: não sobe o poder", n.nome);
+                assert!(n.poder() > a.poder(), "{}: não sobe o poder", n.nome);
                 assert!(n.mob.0 > a.mob.1, "{}: faixa encavalada com a anterior", n.nome);
             }
             antes = Some(n);

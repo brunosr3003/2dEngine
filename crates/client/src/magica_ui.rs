@@ -75,6 +75,8 @@ pub struct Estado {
     /// Maior degrau liberado (0 = nenhum) e em qual ele está.
     grau_maximo: u8,
     grau_atual: u8,
+    /// O nível do personagem, pro aviso de "você está abaixo desta ilha".
+    meu_nivel: u32,
     pub passes: u32,
     /// Entradas de graça que ainda há hoje (`magica::GRATIS_POR_DIA`).
     pub gratis: u8,
@@ -122,6 +124,7 @@ impl MagicaUi {
             AvisoMagica::Estado {
                 grau_maximo,
                 grau_atual,
+                meu_nivel,
                 passes,
                 gratis,
                 fim_unix,
@@ -131,6 +134,7 @@ impl MagicaUi {
                 let e = Estado {
                     grau_maximo,
                     grau_atual,
+                    meu_nivel,
                     passes,
                     gratis,
                     fim_unix,
@@ -395,10 +399,25 @@ impl MagicaUi {
                     estilo::ret_arredondado(r, 6.0, estilo::alfa(estilo::OURO, 0.22));
                 }
                 let rot = if liberado {
-                    format!("{}\npoder {}", nv.nome, crate::bolsa::milhar(nv.poder as u64))
+                    format!("{}\npoder {}", nv.nome, crate::bolsa::milhar(nv.poder() as u64))
                 } else {
                     format!("{}\nnível {}", nv.nome, nv.exige_nivel)
                 };
+                // O AVISO DE QUE VOCÊ ESTÁ ABAIXO.
+                //
+                // O degrau I abre no 15 e tem mob 20-23 de propósito — "deixa
+                // entrar no nv 15 mesmo ele sendo lvl 20, só sobe o poder
+                // recomendado". Só que "poder 1.234" não diz nada sozinho: o
+                // aviso é a frase, e o número é a medida dela.
+                if liberado && nv.acima_do_nivel(e.meu_nivel) {
+                    estilo::texto_centro(
+                        r.center().x,
+                        r.y + r.h + 13.0 * f,
+                        &format!("mobs nv {}-{}", nv.mob.0, nv.mob.1),
+                        11,
+                        estilo::VERMELHO,
+                    );
+                }
                 if ui::botao(r, &rot, liberado) && liberado {
                     self.grau = nv.grau;
                 }
@@ -544,6 +563,7 @@ mod testes {
         let estado = |dentro: bool| AvisoMagica::Estado {
             grau_maximo: 1,
             grau_atual: 0,
+            meu_nivel: 20,
             passes: 0,
             gratis: 3,
             fim_unix: 0,
@@ -582,6 +602,7 @@ mod testes {
             AvisoMagica::Estado {
                 grau_maximo: 1,
                 grau_atual: 1,
+                meu_nivel: 20,
                 passes: 0,
                 gratis: 0,
                 fim_unix: 0,
@@ -600,6 +621,7 @@ mod testes {
             AvisoMagica::Estado {
                 grau_maximo: 1,
                 grau_atual: 1,
+                meu_nivel: 20,
                 passes: 0,
                 gratis: 0,
                 fim_unix: 1_000,
@@ -676,6 +698,7 @@ mod testes {
             AvisoMagica::Estado {
                 grau_maximo: 1,
                 grau_atual: 0,
+                meu_nivel: 20,
                 passes: 2,
                 gratis: shared::magica::GRATIS_POR_DIA,
                 fim_unix: 0,
