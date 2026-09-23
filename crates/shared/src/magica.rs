@@ -442,6 +442,28 @@ fn ondula(p: Vec2, t: f32) -> f32 {
         * (0.25 + 0.75 * t)
 }
 
+/// Esta ilhota é de COMBATE (XP, ouro, drop) e não de coleta?
+///
+/// É nelas que o bônus só vale se houver o que matar: uma Ilhota da
+/// Experiência com XP em dobro e três lobos não é uma ilhota de XP. O dono:
+/// "as ilhas de xp, cobre, drop têm que ter uma densidade de inimigos muito
+/// grande, pra realmente fazer sentido".
+pub fn e_de_combate(b: Bonus) -> bool {
+    matches!(
+        b,
+        Bonus::Xp | Bonus::Ouro | Bonus::DropDeMob | Bonus::DropDeChefe
+    )
+}
+
+/// O centro de cada ilhota de combate — onde as hordas devem nascer.
+pub fn centros_de_combate() -> Vec<Vec2> {
+    ilhotas()
+        .into_iter()
+        .filter(|i| e_de_combate(i.bonus))
+        .map(|i| i.centro)
+        .collect()
+}
+
 /// O tier da pedra desta coluna na Ilha Mágica — `None` fora dela.
 ///
 /// No mundo o tier sai da ALTURA (`terreno::tier_de_minerio`): pedra boa é de

@@ -990,15 +990,44 @@ pub(crate) fn zonas_comuns_da_ilha(
         semente = lcg(semente);
         sitios.swap(i, (semente % (i as u64 + 1)) as usize);
     }
-    for s in &sitios {
-        if r.centros.len() as u32 >= MOB_ZONAS_MAX {
-            break;
+    // A ILHA MÁGICA TEM REGRA PRÓPRIA DE ADENSAMENTO.
+    //
+    // O dono: "as ilhas de xp, cobre, drop têm que ter uma densidade de
+    // inimigos muito grande, pra realmente fazer sentido". E faz: uma Ilhota
+    // da Experiência com XP em dobro e três lobos não é uma ilhota de XP.
+    //
+    // Com a regra do mundo ela ficava com quase nada — as ilhotas têm 46 u de
+    // raio e os centros de horda exigem 90 u entre si, então cabia UMA zona
+    // por ilhota (18 mobs) e ainda por cima nas de coleta também.
+    //
+    // Aqui os centros saem das ILHOTAS DE COMBATE, espaçados pelo que cabe
+    // dentro de uma delas, e as de coleta ficam limpas: quem foi buscar pedra
+    // não foi buscar briga.
+    let magica = def.zona == shared::magica::ZONA;
+    if magica {
+        for centro in shared::magica::centros_de_combate() {
+            // Um anel de hordas dentro da ilhota, mais uma no meio.
+            r.centros.push(centro);
+            for k in 0..4 {
+                let a = k as f32 / 4.0 * std::f32::consts::TAU + 0.4;
+                let p = centro + Vec2::new(a.cos(), a.sin()) * (shared::magica::RAIO_ILHOTA * 0.55);
+                // Só onde há chão plano de verdade: mob em ladeira escorrega.
+                if sitios.iter().any(|s| s.distance(p) < 14.0) {
+                    r.centros.push(p);
+                }
+            }
         }
-        if r.centros
-            .iter()
-            .all(|c| c.distance(*s) >= MOB_ZONA_ESPACO_UN)
-        {
-            r.centros.push(*s);
+    } else {
+        for s in &sitios {
+            if r.centros.len() as u32 >= MOB_ZONAS_MAX {
+                break;
+            }
+            if r.centros
+                .iter()
+                .all(|c| c.distance(*s) >= MOB_ZONA_ESPACO_UN)
+            {
+                r.centros.push(*s);
+            }
         }
     }
     for (i, c) in r.centros.iter().enumerate() {
@@ -1012,6 +1041,10 @@ pub(crate) fn zonas_comuns_da_ilha(
         let forte = e_forte(i);
         let (raio, espaco, teto) = if forte {
             (FORTE_RAIO_UN, FORTE_ESPACO_UN, FORTE_POR_ZONA)
+        } else if magica {
+            // Zona menor (cabe na ilhota), mobs mais colados e teto alto: é
+            // disso que "densidade muito grande" é feito.
+            (MOB_ZONA_RAIO_UN * 0.5, MOB_ESPACO_UN * 0.6, MOB_POR_ZONA)
         } else {
             (MOB_ZONA_RAIO_UN, MOB_ESPACO_UN, MOB_POR_ZONA)
         };
@@ -19763,6 +19796,7 @@ mod testes_do_nivel_minimo {
     ///
     /// O tutorial da COLETA_ENERGIA sempre levou até um veio; este é o mesmo
     /// remédio para a mesma falta.
+
     #[test]
     fn sem_energia_o_passo_aponta_o_veio() {
         use shared::quests::{destino_tipo, objective_kind, tutorial};
@@ -19801,5 +19835,52 @@ mod testes_do_nivel_minimo {
         assert!(!pode(29, Some(30)));
         // Peça sem requisito veste em qualquer nível — é a maioria.
         assert!(pode(1, None));
+    }
+}
+
+#[cfg(test)]
+mod testes_da_ilha_magica_lotada {
+    use super::*;
+
+    /// As ilhotas de combate da Ilha Mágica são LOTADAS, e as de coleta não.
+    ///
+    /// O dono: "as ilhas de xp, cobre, drop têm que ter uma densidade de
+    /// inimigos muito grande, pra realmente fazer sentido". E faz: uma Ilhota
+    /// da Experiência com XP em dobro e três lobos não é uma ilhota de XP.
+    ///
+    /// Com a regra do mundo cabia UMA zona por ilhota (os centros exigem 90 u
+    /// entre si e a ilhota tem 46 de raio), e ainda por cima nas de coleta
+    /// junto.
+    #[test]
+    fn a_ilha_magica_lota_as_ilhotas_de_combate() {
+        let def = &shared::magica::DEF;
+        let ilha = shared::terreno::Ilha::da_ilha(def);
+        let z = zonas_comuns_da_ilha(&ilha, def, Vec2::ZERO);
+
+        let perto_de = |p: Vec2, c: Vec2| p.distance(c) <= shared::magica::RAIO_ILHOTA;
+        let mut de_combate = 0;
+        let mut de_coleta = 0;
+        for i in shared::magica::ilhotas() {
+            let n: usize = z
+                .zonas
+                .iter()
+                .filter(|zz| perto_de(zz.centro, i.centro))
+                .map(|zz| zz.slots.len())
+                .sum();
+            if shared::magica::e_de_combate(i.bonus) {
+                de_combate += n;
+                assert!(
+                    n >= 20,
+                    "{}: só {n} mobs — bônus de combate sem o que matar",
+                    i.bonus.nome()
+                );
+            } else {
+                de_coleta += n;
+            }
+        }
+        assert!(
+            de_combate > de_coleta * 2,
+            "combate {de_combate} contra coleta {de_coleta}: a briga não ficou onde devia"
+        );
     }
 }
