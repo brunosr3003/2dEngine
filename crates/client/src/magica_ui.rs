@@ -16,8 +16,40 @@ use shared::magica::{AvisoMagica, Bonus, PedidoMagica};
 use crate::hud_estilo as estilo;
 use crate::ui;
 
+/// A janela, em unidades de `fator_texto`. `escala_do_painel` encolhe isto
+/// até caber na tela — e era o passo que faltava.
+const LARGURA: f32 = 460.0;
+const ALTURA: f32 = 380.0;
+
 const OURO: Color = Color::new(0.93, 0.76, 0.33, 1.0);
 const VERMELHO: Color = Color::new(0.95, 0.45, 0.40, 1.0);
+
+/// A JANELA, medida a partir da tela. Fora do desenho pra poder ser testada.
+fn janela(seguro: Rect, f: f32) -> Rect {
+    let w = (LARGURA * f).min(seguro.w - 16.0);
+    let h = (ALTURA * f).min(seguro.h - 16.0);
+    Rect::new(
+        seguro.center().x - w * 0.5,
+        seguro.center().y - h * 0.5,
+        w,
+        h,
+    )
+}
+
+/// O RODAPÉ — onde mora o botão de entrar —, ancorado no fundo da janela.
+///
+/// Fora do desenho porque é a medida que quebrou: com a janela em pixels
+/// crus e o texto em `f`, o conteúdo empurrava o botão pra fora e não havia
+/// como entrar na ilha. Ancorado ao fundo e testado, ele não tem como sair.
+fn rodape_de(p: Rect, f: f32, dentro: bool) -> Rect {
+    let alt = if dentro { 64.0 * f } else { 104.0 * f };
+    Rect::new(
+        p.x + 16.0 * f,
+        p.y + p.h - alt - 10.0 * f,
+        p.w - 32.0 * f,
+        alt,
+    )
+}
 
 /// A cor de cada bônus.
 ///
@@ -176,110 +208,73 @@ impl MagicaUi {
         if !self.aberto {
             return None;
         }
-        estilo::no_painel(estilo::escala_do_painel(480.0, 430.0), || {
+        estilo::no_painel(estilo::escala_do_painel(LARGURA, ALTURA), || {
             self.desenha_na_escala(agora, agora_unix)
         })
     }
 
     fn desenha_na_escala(&mut self, agora: f64, agora_unix: i64) -> Option<PedidoMagica> {
         let e = self.estado.clone().unwrap_or_default();
-        let r = ui::painel(480.0, 430.0, "Ilha Mágica");
+        let f = estilo::fator_texto();
+        let seguro = crate::hud_layout::tela_segura();
+
+        // A JANELA É MEDIDA EM `f`, e era esse o defeito.
+        //
+        // Antes ela vinha de `ui::painel(480, 430)`, que monta o retângulo em
+        // PIXELS CRUS — e o texto dentro dele escala por `fator_texto()`. No
+        // celular o conteúdo media ~443 px numa área útil de 346: o botão
+        // "Entrar" caía FORA da janela. O dono: "a HUD de entrar na Ilha
+        // Mágica tá um lixo, nem consigo entrar".
+        //
+        // Agora tudo multiplica por `f`, e `escala_do_painel` (que recebe a
+        // base de verdade) encolhe o conjunto até caber na tela.
+        let p = janela(seguro, f);
+        crate::hud_layout::escurece(0.5);
+        estilo::painel_destaque(p, OURO);
+        let m = Vec2::from(mouse_position());
+        let clicou = crate::foco::clique();
+        let x = p.x + 16.0 * f;
+        let larg = p.w - 32.0 * f;
         let mut pedido = None;
-        let mut y = r.y + 10.0;
 
-        ui::texto(
-            r.x,
-            y,
-            "Sete ilhotas ligadas por pontes. Cada uma paga um bônus.",
-            15,
-            SUAVE,
-        );
-        y += 22.0;
-        ui::texto(
-            r.x,
-            y,
-            "PvP é aberto lá dentro; morrer devolve você à chegada.",
-            15,
-            SUAVE,
-        );
-        y += 34.0;
+        estilo::texto_forte(x, p.y + 32.0 * f, "Ilha Mágica", 20, OURO);
+        let fechar = Rect::new(p.x + p.w - 44.0 * f, p.y + 8.0 * f, 36.0 * f, 34.0 * f);
+        estilo::texto_centro(fechar.center().x, fechar.center().y + 6.0 * f, "X", 18, estilo::TEXTO);
 
-        // As sete, com o que cada uma dá. É a tabela que responde "vale a
-        // pena?" antes de o passe ser gasto — depois de gasto é tarde.
-        for i in shared::magica::ilhotas() {
-            let aqui = e.dentro && Bonus::do_indice(e.bonus) == Some(i.bonus);
-            // A MESMA COR do HUD, e um ponto antes do nome: é assim que a
-            // linha da lista e a tarja lá em cima viram a mesma coisa na
-            // cabeça de quem joga.
-            let c = cor_do_bonus(i.bonus);
-            draw_circle(r.x + 8.0, y - 5.0, 4.0, c);
-            ui::texto(r.x + 20.0, y, i.bonus.nome(), 15, if aqui { VERDE } else { c });
-            let v = format!("×{:.2}", i.bonus.multiplicador());
-            ui::texto(r.x + r.w - estilo::medir(&v, 15) - 8.0, y, &v, 15, c);
-            if aqui {
-                ui::texto(r.x + r.w * 0.62, y, "você está aqui", 13, VERDE);
-            }
-            y += 21.0;
-        }
-        y += 10.0;
-        estilo::separador(r.x, y, r.w);
-        y += 18.0;
-
-        let resta = shared::magica::resta(e.fim_unix, agora_unix);
-        if e.dentro || resta > 0 {
-            ui::texto(
-                r.x,
-                y,
-                &format!("Tempo restante: {}:{:02}", resta / 60, resta % 60),
-                17,
-                if resta > 0 { OURO } else { SUAVE },
-            );
-            y += 26.0;
-        }
-        // O DE GRAÇA PRIMEIRO, porque é o que ele gasta primeiro — e porque
-        // "tenho 3 entradas grátis hoje" é a informação que faz o jogador
-        // entrar, não "tenho 0 passes".
-        let total = e.passes + e.gratis as u32;
-        ui::texto(
-            r.x,
-            y,
-            &format!(
-                "Grátis hoje: {}/{}  ·  Passes na bolsa: {}",
-                e.gratis,
-                shared::magica::GRATIS_POR_DIA,
-                e.passes
-            ),
-            16,
-            if total > 0 { estilo::TEXTO } else { SUAVE },
-        );
-        y += 22.0;
-        ui::texto(
-            r.x,
-            y,
-            "Cada entrada vale 30 minutos. As grátis voltam às 4h da manhã.",
+        estilo::texto(
+            x,
+            p.y + 54.0 * f,
+            "Sete ilhotas por pontes · PvP aberto · morrer volta à chegada",
             13,
             SUAVE,
         );
-        y += 26.0;
+
+        // ── O RODAPÉ É ANCORADO NO FUNDO, e desenhado primeiro ──
+        //
+        // Ele é a razão de a janela existir: entrar. Ancorado, ele não pode
+        // ser empurrado pra fora por nada que venha acima — que foi
+        // exatamente o que aconteceu.
+        let rod = rodape_de(p, f, e.dentro);
+        let total = e.passes + e.gratis as u32;
 
         if e.dentro {
-            if ui::botao(Rect::new(r.x, y, r.w, 38.0), "Sair da ilha", true) {
+            if ui::botao(Rect::new(rod.x, rod.y + 6.0 * f, rod.w, 38.0 * f), "Sair da ilha", true) {
                 pedido = Some(PedidoMagica::Sair);
                 self.aberto = false;
             }
-            ui::texto(
-                r.x,
-                y + 54.0,
+            estilo::texto(
+                rod.x,
+                rod.y + 60.0 * f,
                 "Sair não para o relógio: o tempo continua correndo.",
-                13,
+                12,
                 SUAVE,
             );
         } else {
             // Escolher 1, 2 ou 3 antes de ir: acumular é decisão do jogador,
             // e gastar três de uma vez sem ter pedido seria roubo.
-            let bw = (r.w - 16.0) / 3.0;
+            let bw = (rod.w - 16.0 * f) / 3.0;
             for n in 1u8..=3 {
-                let caixa = Rect::new(r.x + (n - 1) as f32 * (bw + 8.0), y, bw, 34.0);
+                let caixa = Rect::new(rod.x + (n - 1) as f32 * (bw + 8.0 * f), rod.y, bw, 32.0 * f);
                 let pode = total >= n as u32;
                 estilo::botao(
                     caixa,
@@ -287,45 +282,96 @@ impl MagicaUi {
                     estilo::estado_de(caixa, false, self.entradas == n),
                     self.entradas == n,
                 );
-                if pode && crate::foco::clique() && caixa.contains(Vec2::from(mouse_position())) {
+                if pode && clicou && caixa.contains(m) {
                     self.entradas = n;
                 }
             }
-            y += 46.0;
-            let pode = total >= self.entradas.max(1) as u32;
             let n = self.entradas.max(1);
             let de_graca = (e.gratis as u32).min(n as u32);
             let rot = if de_graca == n as u32 {
-                format!("Entrar ({n} grátis)")
+                format!("Entrar — {n} grátis")
             } else if de_graca > 0 {
-                format!("Entrar ({de_graca} grátis + {} passe)", n as u32 - de_graca)
+                format!("Entrar — {de_graca} grátis + {} passe", n as u32 - de_graca)
             } else {
-                format!("Entrar ({n} passe(s))")
+                format!("Entrar — {n} passe(s)")
             };
-            if ui::botao(Rect::new(r.x, y, r.w, 38.0), &rot, pode) && pode {
+            let pode = total >= n as u32;
+            let b = Rect::new(rod.x, rod.y + 40.0 * f, rod.w, 40.0 * f);
+            if ui::botao(b, &rot, pode) && pode {
                 pedido = Some(PedidoMagica::Entrar { entradas: n });
             }
-            if !pode {
-                ui::texto(
-                    r.x,
-                    y + 54.0,
-                    "Sem entrada: as 3 grátis voltam às 4h, e o passe cai de chefes.",
-                    13,
-                    SUAVE,
-                );
-            }
+            estilo::texto(
+                rod.x,
+                rod.y + 96.0 * f,
+                if pode {
+                    "Cada entrada vale 30 min. As grátis voltam às 4h."
+                } else {
+                    "Sem entrada: as 3 grátis voltam às 4h, e o passe cai de chefes."
+                },
+                12,
+                SUAVE,
+            );
         }
 
-        if ui::botao(
-            Rect::new(r.x + r.w - 90.0, r.y + r.h - 34.0, 90.0, 32.0),
-            "Fechar",
-            true,
-        ) {
+        // ── O SALDO, logo acima do rodapé ──
+        let resta = shared::magica::resta(e.fim_unix, agora_unix);
+        let saldo_y = rod.y - 34.0 * f;
+        estilo::texto(
+            x,
+            saldo_y,
+            &format!(
+                "Grátis hoje {}/{}  ·  Passes {}{}",
+                e.gratis,
+                shared::magica::GRATIS_POR_DIA,
+                e.passes,
+                if resta > 0 {
+                    format!("  ·  resta {}:{:02}", resta / 60, resta % 60)
+                } else {
+                    String::new()
+                }
+            ),
+            15,
+            if total > 0 { estilo::TEXTO } else { SUAVE },
+        );
+
+        // ── AS SETE ILHOTAS, em DUAS COLUNAS, no espaço que sobrou ──
+        //
+        // Duas colunas porque sete linhas empurravam o rodapé pra fora da
+        // tela. O que se perde é uma linha por ilhota; o que se ganha é o
+        // botão de entrar existir.
+        let topo = p.y + 74.0 * f;
+        let disponivel = (saldo_y - 22.0 * f - topo).max(0.0);
+        let ilhotas = shared::magica::ilhotas();
+        let linhas = ilhotas.len().div_ceil(2);
+        let passo = (disponivel / linhas as f32).min(24.0 * f);
+        let col = larg * 0.5;
+        for (k, i) in ilhotas.iter().enumerate() {
+            let aqui = e.dentro && Bonus::do_indice(e.bonus) == Some(i.bonus);
+            let c = cor_do_bonus(i.bonus);
+            let cx = x + (k % 2) as f32 * col;
+            let cy = topo + (k / 2) as f32 * passo + 12.0 * f;
+            draw_circle(cx + 4.0 * f, cy - 4.0 * f, 3.5 * f, c);
+            let v = format!("×{:.1}", i.bonus.multiplicador());
+            let tv = estilo::medir(&v, 13);
+            estilo::texto_ajustado(
+                i.bonus.nome(),
+                cx + 14.0 * f,
+                cy,
+                col - tv - 24.0 * f,
+                13,
+                if aqui { VERDE } else { c },
+            );
+            estilo::texto(cx + col - tv - 10.0 * f, cy, &v, 13, c);
+        }
+
+        // FECHAR: no X, ou tocando FORA. Sem a segunda, uma janela que
+        // estoure a tela prende o jogador — e foi o que o dono viu.
+        if clicou && (fechar.contains(m) || !p.contains(m)) {
             self.aberto = false;
         }
         if let Some((t, quando)) = &self.aviso {
             if agora - quando < 5.0 {
-                ui::texto_centro(r.x + r.w * 0.5, r.y + r.h - 44.0, t, 15, OURO);
+                estilo::texto_centro(p.x + p.w * 0.5, p.y + p.h - 4.0 * f, t, 13, OURO);
             }
         }
         pedido
@@ -359,6 +405,60 @@ mod testes {
         assert_eq!(ui.bonus(), Some(Bonus::Xp));
         assert!(ui.dentro(900), "com tempo sobrando ele está dentro");
         assert!(!ui.dentro(1_001), "tempo vencido não conta como dentro");
+    }
+
+    /// O BOTÃO DE ENTRAR FICA DENTRO DA JANELA. Em toda tela.
+    ///
+    /// Era exatamente isto que estava quebrado: a janela vinha de
+    /// `ui::painel(480, 430)`, em pixels CRUS, e o conteúdo escalava por
+    /// `fator_texto()`. No celular o conteúdo media ~443 px numa área útil de
+    /// 346 e o botão caía fora — o dono: "a HUD de entrar na Ilha Mágica tá
+    /// um lixo, nem consigo entrar".
+    ///
+    /// As medidas rodam em telas de verdade, da menor à maior, e nas duas
+    /// escalas que `escala_do_painel` pode devolver.
+    #[test]
+    fn o_botao_de_entrar_nunca_sai_da_janela() {
+        // (largura, altura) de tela segura: iPhone deitado, tablet, desktop.
+        for (w, h) in [
+            (734.0, 320.0),
+            (812.0, 375.0),
+            (1024.0, 768.0),
+            (1920.0, 1080.0),
+        ] {
+            let seguro = Rect::new(0.0, 0.0, w, h);
+            for f in [0.8f32, 1.0, 1.5, 2.2] {
+                let p = janela(seguro, f);
+                assert!(
+                    p.w <= seguro.w && p.h <= seguro.h,
+                    "{w}x{h} f={f}: a janela ({:.0}x{:.0}) passa da tela",
+                    p.w,
+                    p.h
+                );
+                for dentro in [false, true] {
+                    let rod = rodape_de(p, f, dentro);
+                    assert!(
+                        rod.y >= p.y && rod.y + rod.h <= p.y + p.h,
+                        "{w}x{h} f={f} dentro={dentro}: o rodapé vai de {:.0} a {:.0}, \
+                         e a janela de {:.0} a {:.0}",
+                        rod.y,
+                        rod.y + rod.h,
+                        p.y,
+                        p.y + p.h
+                    );
+                    assert!(
+                        rod.x >= p.x && rod.x + rod.w <= p.x + p.w,
+                        "{w}x{h} f={f}: o rodapé vaza de lado"
+                    );
+                    // E o rodapé tem que caber na TELA, não só na janela: uma
+                    // janela que já passou da tela levaria o botão junto.
+                    assert!(
+                        rod.y + rod.h <= seguro.y + seguro.h,
+                        "{w}x{h} f={f}: o botão de entrar cai fora da tela"
+                    );
+                }
+            }
+        }
     }
 
     /// FORA, o primeiro estado abre — é a resposta ao clique do menu.
