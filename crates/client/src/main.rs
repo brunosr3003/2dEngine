@@ -4823,9 +4823,14 @@ impl Jogo {
                         }
                         Some(missoes::NoRastreador::Missao(id)) => self.iniciar_auto_missao(id),
                         Some(missoes::NoRastreador::Diario) => self.abrir_diario(),
-                        Some(missoes::NoRastreador::Todas) => {
-                            self.fecha_paineis();
-                            self.menu_missoes.abrir();
+                        // As setas andam a janela de três.
+                        Some(missoes::NoRastreador::Rolar(pra_frente)) => {
+                            let d = &mut self.missoes.desloca_rastreador;
+                            *d = if pra_frente {
+                                d.saturating_add(1)
+                            } else {
+                                d.saturating_sub(1)
+                            };
                         }
                         None => {}
                     }

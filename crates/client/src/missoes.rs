@@ -30,10 +30,10 @@ pub enum NoRastreador {
     Missao(u16),
     /// O titulo: abre o diario.
     Diario,
-    /// O rodape: abre todas as missoes.
-    Todas,
     /// O alfinete: fixa (ou solta) esta missao no topo do rastreador.
     Fixar(u16),
+    /// As setas: anda a janela de tres. `true` = pra frente.
+    Rolar(bool),
 }
 
 /// O CONTADOR de missoes concluidas, no centro superior da tela.
@@ -106,6 +106,9 @@ pub struct Missoes {
     /// As missoes FIXADAS: ficam no topo do rastreador, logo abaixo da
     /// historia. Vivem so' na sessao — fixar e' uma decisao do momento.
     pub fixadas: HashSet<u16>,
+    /// Primeira missao mostrada no rastreador. So' tres cabem por vez
+    /// (`NO_RASTREADOR`); as setas andam com isto.
+    pub desloca_rastreador: usize,
     /// Quantas missoes foram CONCLUIDAS nesta sessao, e quando a ultima.
     ///
     /// O dono pediu o contador no centro superior "subindo ao fazer qualquer
@@ -136,6 +139,52 @@ fn coleta(q: &QuestNet) -> bool {
 /// Da' pra entregar? Live-track: o servidor marcou READY. Coleta: tem na bolsa.
 pub fn pronta(q: &QuestNet, tem: Tem) -> bool {
     q.status == quest_status::READY || (coleta(q) && tem(q.obj_target) >= q.obj_count)
+}
+
+/// Quantas missões cabem no rastreador de uma vez. As outras vêm rolando.
+///
+/// Três, e não as quatro ou cinco que a tela comportava: o dono pediu
+/// "mostrar 3 por vez, mas daí com scroll para ver as que não couberem". O
+/// rastreador é canto de olho, não leitura — quanto mais linha, menos ele é
+/// lido.
+pub const NO_RASTREADOR: usize = 3;
+
+/// Altura de uma linha. Era 52; o dono: "tem que ser menor, mais resumido,
+/// só tipo urso 1/10". Uma linha só, então cabe em 30.
+const LINHA: f32 = 30.0;
+
+/// O RESUMO de uma missão, do jeito que ele cabe de canto de olho.
+///
+/// "Urso 1/10", e não "Derrotar  1/10" sobre o título em outra linha. O que o
+/// jogador precisa saber num relance é O QUE e QUANTO FALTA; o título inteiro
+/// ele lê no menu, onde há espaço.
+pub fn resumo(q: &QuestNet, tem: Tem) -> String {
+    if pronta(q, tem) {
+        return format!("{} · pronta", curto(&q.title));
+    }
+    let (feito, total) = progresso(q, tem);
+    if total <= 1 {
+        return curto(&q.title);
+    }
+    format!("{} {feito}/{total}", curto(&q.title))
+}
+
+/// O título encurtado: a primeira parte antes de pontuação, com teto.
+///
+/// Títulos de missão são frases ("A caçada do Bosque Sombrio"); no rastreador
+/// elas viram uma tira de texto ilegível.
+fn curto(titulo: &str) -> String {
+    let base = titulo
+        .split(['·', ':', '—', ','])
+        .next()
+        .unwrap_or(titulo)
+        .trim();
+    if base.chars().count() <= 18 {
+        return base.to_string();
+    }
+    let mut s: String = base.chars().take(17).collect();
+    s.push('…');
+    s
 }
 
 fn verbo(q: &QuestNet) -> &'static str {
@@ -455,18 +504,18 @@ impl Missoes {
 
     /// O rastreador na esquerda, abaixo da ficha (docs/HUD.md, B). Cresce com
     /// as missoes ate' o que o layout reserva; sem missao fica so' o cabecalho
-    /// e o link "Todas as missões".
+    /// (sem rodape: "Todas as missões" ja' esta' no Menu).
     pub fn rastreador_rect(&self) -> Rect {
         let z = crate::hud_layout::atual();
-        let n = ordem_do_rastreador(&self.log)
-            .len()
-            .min(z.missoes_no_rastreador)
-            .max(1);
+        let n = ordem_do_rastreador(&self.log).len().min(NO_RASTREADOR).max(1);
+        // MAIS ESTREITO (o dono: "tá muito grande lateralmente"), TRÊS linhas
+        // e SEM RODAPÉ: o link "Todas as missões" saiu porque a mesma coisa
+        // já está no Menu, e um atalho repetido só ocupa a tela.
         Rect::new(
             z.rastreador.x,
             z.rastreador.y,
-            z.rastreador.w,
-            (40.0 + 52.0 * n as f32 + 28.0) * z.s,
+            z.rastreador.w * 0.62,
+            (34.0 + LINHA * n as f32 + 6.0) * z.s,
         )
     }
 
@@ -660,7 +709,7 @@ impl Missoes {
     }
 
     /// O rastreador na esquerda. Clicar numa missao liga a auto missao; o
-    /// titulo "Missões ›" abre o diario; o rodape abre todas as missoes. `auto`
+    /// titulo "Missões ›" abre o diario. `auto`
     /// e' a que esta' em auto agora (marcada).
     pub fn desenha_rastreador(
         &self,
@@ -672,9 +721,15 @@ impl Missoes {
         let z = crate::hud_layout::atual();
         let s = z.s;
         let r = self.rastreador_rect();
-        let n = ordem_do_rastreador(&self.log)
-            .len()
-            .min(z.missoes_no_rastreador);
+        let todas = ordem_com_fixadas(&self.log, &self.fixadas);
+        let total_missoes = todas.len();
+        let n = total_missoes.min(NO_RASTREADOR);
+        // A ROLAGEM é por deslocamento, não por barra: três linhas num canto
+        // de tela não comportam trilho nem polegar, e o gesto que sobra é a
+        // setinha. `desloca` já vem cortado pra nunca passar do fim.
+        let desloca = self
+            .desloca_rastreador
+            .min(todas.len().saturating_sub(NO_RASTREADOR));
         let mouse = Vec2::from(mouse_position());
         let clique = crate::foco::clique();
         let mut saida = None;
@@ -718,38 +773,26 @@ impl Missoes {
                 estilo::SUAVE,
             );
         }
-        for (i, q) in ordem_com_fixadas(&self.log, &self.fixadas)
-            .into_iter()
-            .take(n)
-            .enumerate()
-        {
-            let y = r.y + 40.0 * s + i as f32 * 52.0 * s;
-            let linha = Rect::new(r.x + 2.0, y, r.w - 4.0, 52.0 * s);
+        for (i, q) in todas.into_iter().skip(desloca).take(n).enumerate() {
+            let y = r.y + 34.0 * s + i as f32 * LINHA * s;
+            let linha = Rect::new(r.x + 2.0, y, r.w - 4.0, LINHA * s);
             let principal = historia::e_da_historia(q.id);
             if principal {
-                // A historia: fundo dourado e losango, sempre a primeira.
-                draw_rectangle(
-                    linha.x,
-                    linha.y,
-                    linha.w,
-                    linha.h,
-                    Color::new(1.0, 0.78, 0.25, 0.10),
-                );
-                let c = vec2(r.x + 14.0, y + 15.0 * s);
-                draw_poly(c.x, c.y, 4, 6.0 * s, 0.0, estilo::OURO);
-                draw_poly(c.x, c.y, 4, 3.0 * s, 0.0, Color::new(1.0, 0.95, 0.7, 1.0));
+                // A história: uma tira dourada à esquerda. O losango e o
+                // fundo inteiro comiam a linha que agora é uma só.
+                draw_rectangle(linha.x, linha.y + 4.0 * s, 3.0 * s, linha.h - 8.0 * s, estilo::OURO);
             }
-            // O ALFINETE: fixa a missao no topo. So' pra quem nao e' historia
-            // — ela ja' esta' sempre em primeiro, e um alfinete que nao muda
-            // nada e' um botao que mente.
+            // O ALFINETE: fixa a missão no topo. Só pra quem não é história —
+            // ela já está sempre em primeiro, e um alfinete que não muda nada
+            // é um botão que mente.
             let fixada = self.fixadas.contains(&q.id);
-            let alfinete = Rect::new(linha.x + linha.w - 26.0 * s, y + 4.0 * s, 22.0 * s, 22.0 * s);
+            let alfinete = Rect::new(linha.x + linha.w - 22.0 * s, y + 4.0 * s, 20.0 * s, 20.0 * s);
             if !principal {
                 estilo::texto_centro(
                     alfinete.center().x,
                     alfinete.center().y + 5.0 * s,
                     "*",
-                    if fixada { 18 } else { 15 },
+                    if fixada { 16 } else { 14 },
                     if fixada { estilo::OURO } else { estilo::SUAVE },
                 );
             }
@@ -759,68 +802,70 @@ impl Missoes {
                     linha.y,
                     linha.w,
                     linha.h,
-                    Color::new(1.0, 1.0, 1.0, 0.06),
+                    Color::new(1.0, 1.0, 1.0, 0.05),
                 );
-                if clique {
-                    // O alfinete vem ANTES: ele esta' dentro da linha, e sem
-                    // isto fixar mandaria o boneco andar pra missao.
-                    saida = Some(if !principal && alfinete.contains(mouse) {
-                        NoRastreador::Fixar(q.id)
-                    } else {
-                        NoRastreador::Missao(q.id)
-                    });
-                }
             }
-            if auto == Some(q.id) {
-                draw_rectangle(linha.x, linha.y + 4.0, 3.0, linha.h - 8.0, estilo::AUTO);
-                estilo::texto(r.x + r.w - 58.0, y + 20.0 * s, "› AUTO", 12, estilo::AUTO);
-            }
-            let (tx, cor_titulo) = if principal {
-                (r.x + 26.0 * s, estilo::OURO)
+            // UMA LINHA SÓ: "Urso 1/10". O título inteiro se lê no menu, que
+            // é onde há espaço; aqui é canto de olho.
+            let cor = if pronta(q, tem) {
+                estilo::AUTO
+            } else if principal {
+                estilo::OURO
+            } else if auto == Some(q.id) {
+                estilo::TEXTO
             } else {
-                (r.x + 12.0, estilo::TEXTO)
+                estilo::SUAVE
             };
-            estilo::texto_ajustado(&q.title, tx, y + 20.0 * s, r.w - 80.0, 15, cor_titulo);
-            if principal {
-                let txt = estado_da_historia(q, nivel);
-                let cor = if q.status == quest_status::READY {
-                    estilo::AUTO
+            estilo::texto_ajustado(
+                &resumo(q, tem),
+                linha.x + if principal { 12.0 * s } else { 8.0 },
+                y + 20.0 * s,
+                linha.w - 34.0 * s,
+                14,
+                cor,
+            );
+            // A trava de nível ganha a barrinha, que é o único jeito de ver
+            // que ela anda.
+            if principal && q.obj_kind == objective_kind::NIVEL {
+                let b = Rect::new(linha.x + 8.0, y + LINHA * s - 5.0 * s, linha.w - 40.0 * s, 3.0 * s);
+                draw_rectangle(b.x, b.y, b.w, b.h, Color::new(1.0, 1.0, 1.0, 0.10));
+                draw_rectangle(
+                    b.x,
+                    b.y,
+                    b.w * fracao_da_trava(q.obj_count, nivel, fracao_xp),
+                    b.h,
+                    estilo::OURO,
+                );
+            }
+            if clique && linha.contains(mouse) {
+                saida = Some(if !principal && alfinete.contains(mouse) {
+                    NoRastreador::Fixar(q.id)
                 } else {
-                    estilo::SUAVE
-                };
-                estilo::texto_ajustado(&txt, r.x + 12.0, y + 38.0 * s, r.w - 24.0, 13, cor);
-                if q.obj_kind == objective_kind::NIVEL {
-                    let b = Rect::new(r.x + 12.0, y + 44.0 * s, r.w - 24.0, 4.0 * s);
-                    draw_rectangle(b.x, b.y, b.w, b.h, Color::new(1.0, 1.0, 1.0, 0.10));
-                    draw_rectangle(
-                        b.x,
-                        b.y,
-                        b.w * fracao_da_trava(q.obj_count, nivel, fracao_xp),
-                        b.h,
-                        estilo::OURO,
-                    );
-                }
-                continue;
+                    NoRastreador::Missao(q.id)
+                });
             }
-            let (feito, total) = progresso(q, tem);
-            let (txt, cor) = if pronta(q, tem) {
-                ("Pronta: volte ao Mestre".to_string(), estilo::AUTO)
-            } else {
-                (format!("{}  {feito}/{total}", verbo(q)), estilo::SUAVE)
-            };
-            estilo::texto_ajustado(&txt, r.x + 12.0, y + 40.0 * s, r.w - 24.0, 13, cor);
         }
-        let link = Rect::new(r.x, r.y + r.h - 28.0 * s, r.w, 28.0 * s);
-        let sobre = link.contains(mouse);
-        estilo::texto_centro(
-            link.center().x,
-            link.y + link.h * 0.5 + 5.0,
-            "Todas as missões",
-            13,
-            if sobre { estilo::OURO } else { estilo::SUAVE },
-        );
-        if sobre && clique {
-            saida = Some(NoRastreador::Todas);
+        // AS SETAS, só quando há mais do que cabe. Elas ficam no topo, à
+        // direita do título, que é o único canto livre numa caixa de três
+        // linhas.
+        if total_missoes > NO_RASTREADOR {
+            let sobe = Rect::new(r.x + r.w - 44.0 * s, r.y + 4.0 * s, 20.0 * s, 22.0 * s);
+            let desce = Rect::new(r.x + r.w - 22.0 * s, r.y + 4.0 * s, 20.0 * s, 22.0 * s);
+            for (caixa, glifo, pode) in [
+                (sobe, "‹", desloca > 0),
+                (desce, "›", desloca + NO_RASTREADOR < total_missoes),
+            ] {
+                estilo::texto_centro(
+                    caixa.center().x,
+                    caixa.center().y + 6.0 * s,
+                    glifo,
+                    16,
+                    if pode { estilo::TEXTO } else { estilo::SUAVE },
+                );
+                if pode && clique && caixa.contains(mouse) {
+                    saida = Some(NoRastreador::Rolar(caixa == desce));
+                }
+            }
         }
         saida
     }
@@ -861,6 +906,52 @@ impl Missoes {
 
 #[cfg(test)]
 mod tests {
+    /// O RESUMO é curto de verdade, e diz o que falta.
+    ///
+    /// O dono: "tem que ser menor, mais resumido, só tipo urso 1/10". Um
+    /// título de missão é uma frase ("A caçada do Bosque Sombrio") e no
+    /// rastreador vira uma tira ilegível.
+    #[test]
+    fn o_resumo_do_rastreador_e_curto() {
+        assert_eq!(curto("Urso"), "Urso");
+        assert_eq!(curto("A caçada · Bosque Sombrio"), "A caçada");
+        assert_eq!(curto("Caçar ursos: a temporada"), "Caçar ursos");
+        // Comprido sem pontuação: corta e avisa que cortou.
+        let longo = curto("Uma missão com um nome absurdamente comprido");
+        assert!(longo.chars().count() <= 18, "{longo:?} tem {} chars", longo.chars().count());
+        assert!(longo.ends_with('…'), "{longo:?} não avisa que foi cortado");
+        // E TODO título do jogo cabe: se algum não couber, ele é cortado, mas
+        // o teste existe pra ninguém achar que o rastreador mostra o nome
+        // inteiro.
+        for q in shared::quests::QUESTS.iter().take(60) {
+            let c = curto(q.title);
+            assert!(!c.is_empty(), "{}: resumo vazio", q.title);
+            assert!(c.chars().count() <= 18, "{}: resumo com {} chars", q.title, c.chars().count());
+        }
+    }
+
+    /// A CAIXA do rastreador cabe no canto, e as linhas cabem nela.
+    ///
+    /// Ela era larga demais ("tá muito grande lateralmente") e tinha rodapé
+    /// com um atalho que o Menu já dá. Agora são três linhas de 30 e nada
+    /// mais — e este teste é o que impede a caixa e as linhas de se
+    /// separarem de novo.
+    #[test]
+    fn a_caixa_do_rastreador_cabe_nas_tres_linhas() {
+        for s in [0.8f32, 1.0, 1.5, 2.2] {
+            for n in 1..=NO_RASTREADOR {
+                let altura = (34.0 + LINHA * n as f32 + 6.0) * s;
+                let ultima = 34.0 * s + (n as f32 - 1.0) * LINHA * s + LINHA * s;
+                assert!(
+                    ultima <= altura + 0.01,
+                    "s={s} n={n}: a última linha acaba em {ultima:.0} e a caixa \
+                     tem {altura:.0}"
+                );
+            }
+        }
+        assert_eq!(NO_RASTREADOR, 3, "o dono pediu três por vez");
+    }
+
     use super::*;
     use shared::quests::quest_by_id;
 
