@@ -2997,9 +2997,12 @@ impl Jogo {
             Item::Diarias => self.diarias.abrir(),
             Item::Craft => self.craft.abrir(),
             Item::Combinar => self.craft.abrir_combinar(),
-            Item::IlhaMagica => self.envia(ClientMessage::Magica {
-                pedido: shared::magica::PedidoMagica::Painel,
-            }),
+            Item::IlhaMagica => {
+                self.magica.pedir_abertura();
+                self.envia(ClientMessage::Magica {
+                    pedido: shared::magica::PedidoMagica::Painel,
+                });
+            }
             Item::Forja => self.forja.abrir(),
             Item::Habilidades => self.evolucao_skills.abrir(),
             Item::Mapa if self.mapa.tem_ilha() => self.mapa.abrir(),
@@ -3960,6 +3963,7 @@ impl Jogo {
                 self.menu_missoes.aberto = false;
                 self.diarias.fechar();
                 self.dica_da_trava = Some(get_time());
+                self.magica.pedir_abertura();
                 self.envia(ClientMessage::Magica {
                     pedido: shared::magica::PedidoMagica::Painel,
                 });

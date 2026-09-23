@@ -159,6 +159,13 @@ struct Eu {
     anuncios: Vec<shared::mercado::AnuncioNet>,
     /// Quando o bot olhou o mercado pela última vez (em decisões).
     olhou_mercado: u32,
+    /// Receitas que o servidor disse existir.
+    receitas: Vec<u16>,
+    /// Já pediu pra entrar no Porão nesta vida? Uma vez basta: insistir a
+    /// cada decisão seria uma enxurrada de pedidos na fila.
+    pediu_dungeon: bool,
+    /// Está dentro de uma dungeon agora.
+    na_dungeon: bool,
     /// Destino do passo atual: (missão, tipo, ponto, raio, npc).
     destino: Option<Destino>,
     /// Há quantas decisões o bot está pedindo destino sem receber. Sem este
@@ -428,6 +435,23 @@ async fn recebe(
         }
         ServerMessage::MercadoLista { anuncios, .. } => {
             eu.anuncios = anuncios;
+        }
+        ServerMessage::CraftRecipes { recipes } => {
+            eu.receitas = recipes.iter().map(|r| r.id).collect();
+        }
+        ServerMessage::Dungeon { aviso } => {
+            // Só o que muda decisão: entrou, acabou. O resto do aviso é
+            // detalhe de tela, e o bot não tem tela.
+            let txt = format!("{aviso:?}");
+            let entrou = txt.contains("Entrou") || txt.contains("Sala");
+            let saiu = txt.contains("Fim") || txt.contains("Saiu") || txt.contains("Complet");
+            if entrou {
+                eu.na_dungeon = true;
+            }
+            if saiu {
+                eu.na_dungeon = false;
+            }
+            t.registra(ev(nome, eu, "dungeon", true, txt));
         }
         ServerMessage::MercadoResultado { ok, texto } => {
             t.registra(ev(nome, eu, "mercado_resultado", ok, texto));
@@ -707,7 +731,32 @@ async fn decide(
             return Ok(());
         }
     }
-    // 8. Sem mais nada a fazer: bate no inimigo mais perto.
+    // 8. CRAFT: tenta uma receita de vez em quando.
+    //
+    // Sem conferir se os materiais dão: o servidor recusa com motivo, e a
+    // recusa vai pra trilha. Conferir aqui seria reimplementar a receita no
+    // bot — duas regras pro mesmo assunto, e a do bot ficaria velha.
+    if !eu.receitas.is_empty() && eu.olhou_mercado == 20 {
+        let r = eu.receitas[(eu.nivel as usize) % eu.receitas.len()];
+        ws.send(envia(&ClientMessage::Craft { recipe_id: r })?).await?;
+        t.registra(ev(nome, eu, "tentou_craft", true, format!("receita {r}")));
+        return Ok(());
+    }
+    // 9. DUNGEON: o Porão, que entra sozinho, a partir do nível 5.
+    //
+    // Uma vez por vida do bot. Insistir a cada decisão seria uma enxurrada de
+    // pedidos numa fila que é do servidor — o observador não pode virar a
+    // maior carga do que observa.
+    if eu.nivel >= 5 && !eu.pediu_dungeon && !eu.na_dungeon {
+        eu.pediu_dungeon = true;
+        ws.send(envia(&ClientMessage::Dungeon {
+            pedido: shared::dungeon::Pedido::EntrarSolo { conteudo: 1 },
+        })?)
+        .await?;
+        t.registra(ev(nome, eu, "pediu_dungeon", true, "Porão".into()));
+        return Ok(());
+    }
+    // 10. Sem mais nada a fazer: bate no inimigo mais perto.
     if let Some((id, p)) = eu.alvo {
         ws.send(envia(&ClientMessage::SetTarget { target: Some(id) })?).await?;
         *seq = seq.wrapping_add(1);

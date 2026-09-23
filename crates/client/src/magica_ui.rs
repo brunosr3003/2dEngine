@@ -84,6 +84,15 @@ pub struct Estado {
 pub struct MagicaUi {
     estado: Option<Estado>,
     aberto: bool,
+    /// O jogador PEDIU pra abrir e o estado ainda não voltou do servidor.
+    ///
+    /// Existe porque a abertura tem que vir do PEDIDO, e não de o estado ser
+    /// desconhecido. A versão anterior abria em `estado.is_none()` — ou seja,
+    /// só na primeira vez da sessão. Da segunda em diante o jogador tocava
+    /// "Ilha Mágica" no menu, o pedido saía, o servidor respondia, e nada
+    /// acontecia na tela. O dono: "clico em ilha mágica mas não abre nada e
+    /// me deixa travado na quest".
+    pedida: bool,
     /// Quantas entradas o jogador escolheu gastar (1..3).
     entradas: u8,
     aviso: Option<(String, f64)>,
@@ -118,9 +127,12 @@ impl MagicaUi {
                     dentro,
                     bonus,
                 };
-                if !dentro && self.estado.is_none() {
+                // Abre se FOI PEDIDO, ou na primeira notícia de fora da
+                // ilha (que é o caso de quem chega pelo tutorial).
+                if !dentro && (self.pedida || self.estado.is_none()) {
                     self.aberto = true;
                 }
+                self.pedida = false;
                 self.entradas = self.entradas.clamp(1, 3);
                 self.estado = Some(e);
             }
@@ -131,6 +143,14 @@ impl MagicaUi {
     /// Pedido ao abrir pelo menu.
     pub fn abrir(&mut self) {
         self.aberto = true;
+    }
+
+    /// O jogador tocou "Ilha Mágica": a próxima notícia de estado ABRE.
+    ///
+    /// Chamado junto do envio do pedido, nunca sozinho — é o par do
+    /// `PedidoMagica::Painel`.
+    pub fn pedir_abertura(&mut self) {
+        self.pedida = true;
     }
 
     /// Quanto falta, em segundos, com o relógio do cliente.
@@ -388,6 +408,57 @@ mod testes {
     /// isso abrisse o painel, o jogador atravessaria uma ponte no meio de uma
     /// briga de PvP e levaria uma janela na cara — que é o melhor jeito de
     /// morrer sem entender por quê.
+    /// Tocar "Ilha Mágica" abre o painel TODA vez, não só na primeira.
+    ///
+    /// A versão anterior abria em `estado.is_none()`: da segunda vez em
+    /// diante o jogador tocava no menu, o pedido saía, o servidor respondia e
+    /// nada acontecia — e a missão que manda abrir o painel ficava
+    /// impossível. O dono: "clico em ilha mágica mas não abre nada e me deixa
+    /// travado na quest".
+    #[test]
+    fn o_painel_abre_toda_vez_que_e_pedido() {
+        let estado = |dentro: bool| AvisoMagica::Estado {
+            passes: 0,
+            gratis: 3,
+            fim_unix: 0,
+            dentro,
+            bonus: 255,
+        };
+        let mut ui = MagicaUi::default();
+        // Primeira vez: abre sozinho (é o caminho de quem chega pelo tutorial).
+        ui.recebe(estado(false), 0.0);
+        assert!(ui.aberto(), "a primeira notícia tem que abrir");
+        ui.fechar();
+        assert!(!ui.aberto());
+
+        // SEGUNDA vez, sem pedir: não abre. Estado chega o tempo todo dentro
+        // da ilha, e abrir sozinho seria pior que não abrir.
+        ui.recebe(estado(false), 1.0);
+        assert!(!ui.aberto(), "estado sem pedido não pode abrir sozinho");
+
+        // Segunda vez, PEDINDO: abre.
+        ui.pedir_abertura();
+        ui.recebe(estado(false), 2.0);
+        assert!(ui.aberto(), "o pedido tem que abrir, e era isto que faltava");
+
+        // E o pedido é de uso único: não fica valendo pro estado seguinte.
+        ui.fechar();
+        ui.recebe(estado(false), 3.0);
+        assert!(!ui.aberto(), "o pedido não pode ficar armado");
+    }
+
+    /// Dentro da ilha, nem o pedido abre o painel por cima do jogo.
+    #[test]
+    fn dentro_da_ilha_o_painel_nao_pula_na_tela() {
+        let mut ui = MagicaUi::default();
+        ui.pedir_abertura();
+        ui.recebe(
+            AvisoMagica::Estado { passes: 0, gratis: 0, fim_unix: 0, dentro: true, bonus: 0 },
+            0.0,
+        );
+        assert!(!ui.aberto(), "dentro da ilha o estado chega a cada ilhota");
+    }
+
     #[test]
     fn o_estado_de_dentro_nao_abre_o_painel() {
         let mut ui = MagicaUi::default();
